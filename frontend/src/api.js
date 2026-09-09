@@ -524,6 +524,8 @@ export const api = {
       if (statusOrParams.stalled)      params.set("stalled", "true");
       // Kontak Tim (nomor WA pribadi staf sendiri) — tab baru 7 September 2026.
       if (statusOrParams.scope)        params.set("scope", statusOrParams.scope);
+      // Filter type=GROUP — dipakai ForwardModal buat ambil semua grup WA.
+      if (statusOrParams.type)         params.set("type", statusOrParams.type);
       if (statusOrParams.cursor)       params.set("cursor", statusOrParams.cursor);
       if (statusOrParams.limit)        params.set("limit", statusOrParams.limit);
       const s = params.toString();

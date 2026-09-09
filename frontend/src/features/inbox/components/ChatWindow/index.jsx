@@ -37,13 +37,28 @@ function ForwardModal({ messageToForward, messagesToForward, onClose }) {
 
   const items = messagesToForward?.length ? messagesToForward : (messageToForward ? [messageToForward] : []);
 
+  // BUG (fix, 9 Sep 2026): sebelumnya cuma fetch daftar customer biasa
+  // (limit 100, urut lastMessageAt) — grup WA internal (Grup Sales,
+  // Drivethru, dst) tidak dijamin masuk 100 teratas, dan search/render di
+  // bawah cuma baca c.customer, jadi grup manapun yang KEBETULAN lolos
+  // tetap tampil sebagai "Pelanggan" tak bernama & tak bisa dicari. Fetch
+  // grup TERPISAH lewat ?type=GROUP (baru, backend/routes/conversations.js)
+  // supaya semua grup selalu tersedia sebagai target forward.
   useEffect(() => {
-    api.getConversations().then(({ data }) => { setConvs(data); setLoading(false); }).catch(() => setLoading(false));
+    Promise.all([
+      api.getConversations(),
+      api.getConversations({ type: "GROUP", limit: 200 }),
+    ]).then(([customers, groups]) => {
+      const groupIds = new Set(groups.data.map((g) => g.id));
+      setConvs([...groups.data, ...customers.data.filter((c) => !groupIds.has(c.id))]);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, []);
 
   const filtered = convs.filter((c) => {
     if (!search) return true;
     const q = search.toLowerCase();
+    if (c.type === "GROUP") return (c.groupName || "").toLowerCase().includes(q);
     return c.customer?.name?.toLowerCase().includes(q) || (c.customer?.phone || "").includes(q);
   });
 
@@ -105,14 +120,19 @@ function ForwardModal({ messageToForward, messagesToForward, onClose }) {
           {loading && <p style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Memuat...</p>}
           {!loading && filtered.length === 0 && <p style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Tidak ditemukan</p>}
           {filtered.map((c) => {
-            const name = c.customer?.name || c.customer?.phone || "Pelanggan";
+            const isGroup = c.type === "GROUP";
+            const name = isGroup ? (c.groupName || "Grup WA") : (c.customer?.name || c.customer?.phone || "Pelanggan");
             return (
               <button key={c.id} onClick={() => handleForward(c.id)} disabled={forwarding}
                 style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", background: "none", border: "none", borderBottom: "1px solid #f3f4f6", cursor: forwarding ? "not-allowed" : "pointer", textAlign: "left" }}>
-                <Avatar name={name} src={c.customer?.profilePictureUrl} size="sm" />
+                {isGroup
+                  ? <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--bg-page)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Users size={15} style={{ color: "var(--text-muted)" }} /></div>
+                  : <Avatar name={name} src={c.customer?.profilePictureUrl} size="sm" />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
-                  {c.customer?.phone && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{c.customer.phone}</div>}
+                  {isGroup
+                    ? <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Grup WA</div>
+                    : (c.customer?.phone && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{c.customer.phone}</div>)}
                 </div>
                 <Forward size={13} style={{ color: "var(--color-primary)", flexShrink: 0 }} />
               </button>

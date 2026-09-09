@@ -465,11 +465,15 @@ conversationRouter.get("/cek-nomor", async (req, res) => {
 // seperti perilaku lama). Response SEKARANG {data, nextCursor}, bukan array
 // mentah lagi — frontend (api.js/useConversations.js) sudah disesuaikan.
 conversationRouter.get("/", async (req, res) => {
-  const { status, search, assignedToId, cursor, unread, tag, unanswered, unassigned, stalled, scope } = req.query;
+  const { status, search, assignedToId, cursor, unread, tag, unanswered, unassigned, stalled, scope, type } = req.query;
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
   const where = {};
   if (status)       where.status       = status;
   if (assignedToId) where.assignedToId = assignedToId;
+  // ?type=GROUP — dipakai ForwardModal (ChatWindow/index.jsx) supaya bisa
+  // ambil SEMUA percakapan grup secara reliable sebagai target forward,
+  // lepas dari batas limit/urutan lastMessageAt daftar customer biasa.
+  if (type)         where.type         = type;
   // ?scope=internal — tab "Kontak Tim" (FilterPopover.jsx): tampilkan HANYA
   // percakapan dengan nomor staf internal sendiri (Customer.isInternalStaff,
   // ditandai lewat scripts/mark-internal-staff-customers.js). Default (scope
