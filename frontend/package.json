@@ -6,6 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:capacitor": "vite build --mode capacitor",
+    "build:capacitor:driver": "vite build --mode capacitor-driver --config vite.config.driver.js",
     "preview": "vite preview",
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android"

@@ -1,0 +1,16 @@
+{
+  "name": "sano-driver-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Project Capacitor Android TERPISAH untuk APK Driver (Sano Driver) — bukan aplikasi web sendiri, webDir menunjuk ke ../frontend/dist-driver (build dari kode React yang sama dengan web/APK sales, mode capacitor-driver). Lihat docs/BUILD-APK.md.",
+  "scripts": {
+    "cap:sync": "npx cap sync android",
+    "cap:open": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/cli": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/splash-screen": "^8.0.1"
+  }
+}

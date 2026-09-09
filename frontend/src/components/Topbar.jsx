@@ -63,7 +63,7 @@ const ROUTE_LABELS = {
 // showMobileMenu: tombol hamburger disembunyikan di halaman yang memang tidak
 // punya drawer sidebar (saat ini: /portal). Default true supaya semua pemanggil
 // lama berperilaku persis seperti sebelumnya.
-export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user, onLogout }) {
+export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user, onLogout, hideNotifBell = false }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -191,7 +191,12 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
             Gudang/Armada tidak pernah punya tempat sama sekali.
             Angkanya sekarang dari notificationStore — LINTAS workspace, dan
             TIDAK ADA hubungannya dengan unread Inbox (yang tetap punya badge
-            sendiri di menu Inbox di sidebar). */}
+            sendiri di menu Inbox di sidebar).
+            `hideNotifBell` (9 September 2026) — cuma dikirim true dari
+            Layout.jsx untuk APK Driver, lihat catatan panjang di sana. Chrome
+            tanpa fungsi buat driver (notifikasi lintas divisi yang divisinya
+            sendiri tidak pernah ia lihat). */}
+        {!hideNotifBell && (
         <button
           onClick={toggleDrawer}
           title={notifBadge ? `${notifBadge} notifikasi belum dibaca` : "Notifikasi"}
@@ -213,6 +218,7 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
             </span>
           )}
         </button>
+        )}
 
         {user && (
           <>

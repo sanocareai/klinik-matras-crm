@@ -16,4 +16,13 @@ backend/data/knowledge/meta.json
 
 # Capacitor Android — keystore JANGAN di-commit (simpan terpisah di tempat aman)
 frontend/android/release.keystore
+
+# APK Driver — project Capacitor TERPISAH (../driver-app), lihat catatan
+# panjang di frontend/vite.config.driver.js. dist-driver murni artefak lokal
+# untuk build APK (BUKAN dipakai VPS sama sekali, beda dari frontend/dist/
+# di atas) — diignore, bukan dikomit. Keystore-nya sama alasan dengan
+# frontend/android/release.keystore.
+frontend/dist-driver/
+driver-app/android/release.keystore
+
 backups/

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
@@ -424,6 +424,16 @@ function playNotifSound() {
   } catch {}
 }
 
+// Build APK Driver (9 September 2026) — `VITE_APP_TARGET=driver` cuma diset
+// di .env.capacitor-driver (lihat catatan panjang di sana & di
+// vite.config.driver.js). Nilainya BAKED IN saat build, bukan dicek runtime
+// lewat Capacitor.getPlatform() — appId/platform "android" itu sendiri
+// TIDAK membedakan APK sales (frontend/android) dari APK driver ini,
+// dua-duanya sama-sama Capacitor Android biasa dari sudut pandang API itu.
+// Modul-level (bukan di dalam komponen) karena nilainya tidak pernah
+// berubah selama app hidup.
+const IS_DRIVER_APP = import.meta.env.VITE_APP_TARGET === "driver";
+
 export default function Layout({ user, onLogout, children }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -441,6 +451,16 @@ export default function Layout({ user, onLogout, children }) {
   // kerja asli: /inbox, /bengkel, /gudang, dst).
   const divisionKey = onHub ? null : (portalDivisionKey(location.pathname) || divisionFromPath(location.pathname));
   const divisionBase = DIVISIONS[divisionKey || "growth"];
+
+  // Dipindah ke sini (9 September 2026) dari dalam `division` useMemo di
+  // bawah — SEBELUMNYA dihitung ulang lokal di sana, sekarang dipakai JUGA
+  // untuk memangkas chrome (WorkspaceSwitcher/bel) di APK Driver (IS_DRIVER_APP
+  // di atas), jadi butuh satu sumber di scope komponen, bukan terkunci di
+  // dalam satu useMemo lain.
+  const driverOnly = useMemo(() => {
+    const roles = rolesOf(user);
+    return roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER", "LEADER_DRIVER"].includes(r));
+  }, [user]);
 
   // Pilot kaca Sales CRM (D-090, diperluas D-098, 5 September 2026) — owner:
   // "redesign sales crm dari dashboard, style sama aja seperti delivery".
@@ -565,9 +585,8 @@ export default function Layout({ user, onLogout, children }) {
   // sungguhan (sebelumnya semua pengujian pakai admin, yang punya semua hak).
   const division = React.useMemo(() => {
     const roles = rolesOf(user);
-    // HELPER (D-037) ikut disederhanakan sidebarnya sama seperti DRIVER.
-    // LEADER_DRIVER (D-042) — lihat catatan sama di App.jsx.
-    const driverOnly = roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER", "LEADER_DRIVER"].includes(r));
+    // driverOnly SEKARANG dihitung di scope komponen (lihat di atas,
+    // dipakai juga utk chrome APK Driver) — TIDAK dihitung ulang di sini.
     // LEADER_DRIVER murni (tanpa ADMIN/DISPATCHER) — dipakai item bertanda
     // `hideForLeaderDriver` (D-052, lihat "Semua Order" di sections armada
     // di atas). Beda dari driverOnly: LEADER_DRIVER TETAP dapat sidebar
@@ -596,7 +615,7 @@ export default function Layout({ user, onLogout, children }) {
           .map((i) => ({ ...i, label: "Job Saya" })),
       }],
     };
-  }, [divisionBase, divisionKey, user]);
+  }, [divisionBase, divisionKey, user, driverOnly]);
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }
@@ -825,13 +844,20 @@ export default function Layout({ user, onLogout, children }) {
         </div>
 
         {/* Pemilih workspace — MENGGANTIKAN rail ikon sekaligus tombol
-            "badge divisi" yang dulu juga melompat ke Main Hub. */}
-        <WorkspaceSwitcher
-          activeKey={onHub ? null : divisionKey}
-          collapsed={collapsed}
-          userRoles={rolesOf(user)}
-          onNavigate={closeMobileMenu}
-        />
+            "badge divisi" yang dulu juga melompat ke Main Hub.
+            DISEMBUNYIKAN di APK Driver (IS_DRIVER_APP) untuk user driver-
+            only (9 September 2026) — app ini SATU tujuan (Job Saya), tidak
+            ada divisi lain untuk dipilih; switcher cuma jadi chrome tanpa
+            fungsi. TIDAK disembunyikan di PWA/web (keputusan owner: trim
+            chrome cuma di APK, driver yang masih pakai web tidak berubah). */}
+        {!(IS_DRIVER_APP && driverOnly) && (
+          <WorkspaceSwitcher
+            activeKey={onHub ? null : divisionKey}
+            collapsed={collapsed}
+            userRoles={rolesOf(user)}
+            onNavigate={closeMobileMenu}
+          />
+        )}
 
         {/* Susun ulang menu (D-060) — laporan owner: "sidebar bisa digeser-
             geser, misal Semua Order taruh bawah, Route Planner paling atas".
@@ -950,6 +976,10 @@ export default function Layout({ user, onLogout, children }) {
           onToggleMobileMenu={() => setMobileOpen((v) => !v)}
           user={user}
           onLogout={onLogout}
+          // Bel notifikasi (9 September 2026) — lihat catatan panjang di
+          // WorkspaceSwitcher di atas, alasan sama: chrome tanpa fungsi di
+          // APK Driver, TIDAK disembunyikan di PWA/web.
+          hideNotifBell={IS_DRIVER_APP && driverOnly}
         />
 
         {/* Transisi antar halaman (catatan Gilang 1 Agustus 2026: "animasi
