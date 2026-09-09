@@ -1,7 +1,11 @@
 FROM node:20-slim
 WORKDIR /app
 
-RUN apt-get update -y && apt-get install -y openssl ffmpeg && rm -rf /var/lib/apt/lists/*
+# zip (9 September 2026) — dipakai scripts/publish-driver-bundle.js (OTA
+# self-hosted APK Driver) utk mem-zip frontend/dist-driver sebelum
+# di-publish. Dijalankan via `docker compose exec backend node scripts/
+# publish-driver-bundle.js --apply`, sama pola dengan seed-toll-roads.js.
+RUN apt-get update -y && apt-get install -y openssl ffmpeg zip && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 RUN npm install

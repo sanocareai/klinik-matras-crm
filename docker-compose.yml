@@ -49,6 +49,15 @@ services:
       - "4000:4000"
     volumes:
       - ./frontend/dist:/frontend/dist
+      # dist-driver (9 September 2026) — build khusus APK Driver (npm run
+      # build:capacitor:driver di frontend/), TERPISAH dari dist/ web biasa
+      # di atas. Bind-mount ini yang memungkinkan scripts/publish-driver-
+      # bundle.js (dijalankan via `docker compose exec backend`) menjangkau
+      # hasil build itu dari dalam container — path relatif skrip
+      # (../../frontend/dist-driver dari backend/scripts/) resolve PERSIS
+      # ke /frontend/dist-driver di sini (WORKDIR /app, ../.. dari /app/
+      # scripts = root container).
+      - ./frontend/dist-driver:/frontend/dist-driver
       - ./backend/uploads:/app/uploads
       - ./backend/data:/app/data
     depends_on:
