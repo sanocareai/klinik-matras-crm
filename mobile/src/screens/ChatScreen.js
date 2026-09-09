@@ -383,6 +383,44 @@ export default function ChatScreen({ route, navigation }) {
     })),
   [allMessages]);
 
+  // Dipindah ke atas (sebelumnya di bawah renderItem) — sekarang dipakai
+  // JUGA oleh scrollToMessage/efek "jump to reply" di bawah (butuh
+  // didefinisikan lebih dulu, deps useCallback dievaluasi sinkron saat
+  // render, bukan cuma saat closure-nya jalan belakangan).
+  const openMediaViewer = useCallback((msg) => {
+    const idx = galleryItems.findIndex((x) => x.id === msg.id);
+    setMediaViewer({ items: galleryItems, index: idx === -1 ? 0 : idx });
+  }, [galleryItems]);
+
+  // BUG YANG DIPERBAIKI (9 Sep 2026, laporan owner) — sebelumnya "jump to
+  // reply" ke foto SELALU cuma scroll+flash kuning (highlightedId). Untuk
+  // beberapa foto berurutan yang dikelompokkan jadi SATU bubble AlbumGrid
+  // (lihat MessageBubble.js#AlbumGrid, >2 media beruntun dikelompokkan di
+  // buildItems), flash itu mewarnai SELURUH bubble album — SEMUA foto di
+  // grid situ kelihatan kuning bersamaan, bukan cuma satu yang benar-benar
+  // dikutip, jadi tidak jelas foto MANA yang dimaksud. Sekarang untuk
+  // target bermedia (image/video), buka MediaViewerModal langsung ke foto
+  // itu (findIndex di galleryItems, SAMA seperti tap foto biasa) — hasilnya
+  // tidak ambigu apa pun bentuk pengelompokan bubble-nya, konsisten dgn
+  // permintaan "gambarnya terbuka otomatis di app".
+  // useCallback (BUKAN fungsi biasa) — dipakai di deps scrollToMessage di
+  // bawah, yang sendiri dipakai sebagai prop MessageBubble (lihat catatan
+  // "akar masalah lag scroll" di atas: kalau ini re-create tiap render,
+  // scrollToMessage ikut re-create, SEMUA bubble ikut re-render percuma.
+  // Identitasnya cuma berubah kalau openMediaViewer berubah (yaitu kalau
+  // galleryItems berubah — ada media baru), bukan tiap render.
+  const scrollThenReveal = useCallback((id, target) => {
+    listRef.current?.scrollToItem({ item: target, animated: true, viewPosition: 0.5 });
+    const mtype = target.message.mediaType;
+    if (mtype === "image" || mtype === "video") {
+      openMediaViewer(target.message);
+      return; // tidak perlu flash — viewer yang terbuka sudah tidak ambigu
+    }
+    setHighlightedId(id);
+    clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 1500);
+  }, [openMediaViewer]);
+
   // Setelah window diperlebar demi "jump to reply", baru scroll (lihat scrollToMessage)
   useEffect(() => {
     if (!pendingScrollIdRef.current) return;
@@ -390,12 +428,8 @@ export default function ChatScreen({ route, navigation }) {
     const target = items.find((it) => it._type === "message" && it.message.id === id);
     if (!target) return;
     pendingScrollIdRef.current = null;
-    requestAnimationFrame(() => {
-      listRef.current?.scrollToItem({ item: target, animated: true, viewPosition: 0.5 });
-      setHighlightedId(id);
-      clearTimeout(highlightTimerRef.current);
-      highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 1500);
-    });
+    requestAnimationFrame(() => scrollThenReveal(id, target));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
   // useCallback — dipakai sebagai prop MessageBubble (onJumpToReply) lewat
@@ -424,11 +458,8 @@ export default function ChatScreen({ route, navigation }) {
     }
     const target = items.find((it) => it._type === "message" && it.message.id === id);
     if (!target) return;
-    listRef.current?.scrollToItem({ item: target, animated: true, viewPosition: 0.5 });
-    setHighlightedId(id);
-    clearTimeout(highlightTimerRef.current);
-    highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 1500);
-  }, [allMessages, visibleCount, items]);
+    scrollThenReveal(id, target);
+  }, [allMessages, visibleCount, items, scrollThenReveal]);
 
   // Urutan lama→baru (sama seperti allMessages) — teks pesan biasa
   // (`content`) saja yang dicari, konten terstruktur (lokasi/kontak/poll,
@@ -797,10 +828,8 @@ export default function ChatScreen({ route, navigation }) {
     }
   }
 
-  const openMediaViewer = useCallback((msg) => {
-    const idx = galleryItems.findIndex((x) => x.id === msg.id);
-    setMediaViewer({ items: galleryItems, index: idx === -1 ? 0 : idx });
-  }, [galleryItems]);
+  // openMediaViewer dipindah ke dekat scrollToMessage (dibutuhkan lebih
+  // dulu di sana) — lihat definisinya di atas, dekat galleryItems.
 
   // Stabil (tanpa dependency berubah-ubah) — dulu dibuat inline di dalam
   // renderItem (`onReply={(msg) => ...}`), jadi closure baru tiap render
