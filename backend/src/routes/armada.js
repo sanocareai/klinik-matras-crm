@@ -2389,6 +2389,7 @@ const PIC_INCLUDE_FOR_POD = {
     },
   },
   podVerifiedBy: { select: { id: true, name: true } },
+  podEditedBy: { select: { id: true, name: true } },
 };
 
 // ─── KENDALA & RESCHEDULE — Delivery Tahap 5 ────────────────────────────────
@@ -2569,8 +2570,29 @@ armadaRouter.get("/pod", requirePermission(P.JOB_READ), async (req, res) => {
         ...(Object.keys(scheduledDateFilter).length > 0 && { scheduledDate: scheduledDateFilter }),
       },
       include: PIC_INCLUDE_FOR_POD,
-      orderBy: [{ completedAt: "desc" }, { scheduledDate: "desc" }],
-      take: 500,
+      // NULLS LAST (9 September 2026, laporan owner: "urutannya ini sesuai
+      // apa ya? gue merasa ini ngacak banget aja") — SEBELUMNYA `desc` polos,
+      // yang di Postgres berarti NULL duluan. Mayoritas job "Belum Lengkap"
+      // (job belum dijadwalkan ke rute) punya completedAt DAN scheduledDate
+      // dua-duanya null, jadi dua kunci sortir itu SAMA-SAMA kosong untuk
+      // ratusan baris sekaligus — urutan di antara mereka jadi tidak
+      // bermakna sama sekali (kelihatan acak), sementara job yang justru
+      // paling relevan (baru selesai/terjadwal) malah tenggelam di bawah.
+      // NULLS LAST membalik itu: job dengan tanggal ASLI naik ke atas,
+      // terurut dari yang paling baru, job tanpa tanggal sama sekali
+      // (paling tidak actionable) turun ke bawah.
+      orderBy: [
+        { completedAt: { sort: "desc", nulls: "last" } },
+        { scheduledDate: { sort: "desc", nulls: "last" } },
+      ],
+      // Batas dinaikkan dari 500 (9 September 2026, ditemukan lewat audit
+      // langsung: 582 job eligible di production, 500 di antaranya SAJA yang
+      // pernah sampai ke halaman ini — 82 job lain diam-diam TIDAK PERNAH
+      // muncul sama sekali, persis akar "gue kesulitan cari order" yang
+      // dilaporkan owner. Pola sama dengan perbaikan batas GET /orders
+      // [1 September 2026]: alat internal admin, bukan endpoint publik,
+      // volume ribuan masih jauh dari berat bagi query ini.
+      take: 3000,
     });
     const withDerived = jobs.map((j) => ({ ...j, derivedPodStatus: derivePodStatus(j) }));
     const filtered = status ? withDerived.filter((j) => j.derivedPodStatus === status) : withDerived;
@@ -2615,6 +2637,74 @@ armadaRouter.patch("/pod/:jobId/reject", requirePermission(P.JOB_WRITE), async (
     const updated = await prisma.job.update({
       where: { id: job.id },
       data: { podStatus: "REJECTED", podVerifiedById: req.user.id, podVerifiedAt: new Date(), podRejectionNote: note.trim() },
+      include: PIC_INCLUDE_FOR_POD,
+    });
+    res.json({ ...updated, derivedPodStatus: derivePodStatus(updated) });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// PATCH /api/armada/pod/:jobId/edit { proofPhotoUrls?, completedAt?, driverId?,
+// helperId?, reason } — koreksi ADMIN atas Proof of Delivery yang SUDAH
+// tersimpan (9 September 2026, laporan owner: "ketika proof of delivery
+// sudah di input buat fitur edit khusus admin, karna namanya sistem baru,
+// pasti karyawan masih banyak salah"). Beda dari PATCH /jobs/:id/proof-photos
+// (menambah foto, dorong ke array lama) — endpoint ini MENGGANTI apa yang
+// tersimpan (foto, waktu selesai, driver/helper), untuk kasus foto salah
+// upload/waktu keliru dicatat/driver salah pilih, bukan "ada bukti susulan".
+//
+// Admin only — pola SAMA dengan PATCH /routes/:id (rolesOf(), BUKAN
+// req.user.role langsung, lihat catatan panjang di sana) — dispatcher biasa
+// tetap bisa VERIFY/REJECT (P.JOB_WRITE), tapi mengubah data yang sudah
+// tercatat perlu wewenang lebih tinggi. `reason` WAJIB (audit trail
+// podEditReason/podEditedBy/podEditedAt) — pola sama dengan Route.lastEditReason.
+//
+// Efek samping SENGAJA: podStatus dikosongkan (podVerifiedById/At ikut null,
+// podRejectionNote ikut null) begitu ADA perubahan proofPhotoUrls — bukti
+// yang jadi dasar verifikasi/penolakan SEBELUMNYA sudah berbeda dari yang
+// sekarang, status lama tidak boleh "menempel" ke bukti baru tanpa ditinjau
+// ulang. derivePodStatus() otomatis menghitung ulang jadi PENDING_REVIEW
+// (masih ada foto) begitu podStatus null — tidak perlu logika status
+// terpisah di sini. Edit yang HANYA mengubah completedAt/driver/helper
+// (tanpa mengubah foto) TIDAK mereset podStatus — bukti fotonya sendiri
+// tidak berubah, tidak ada alasan meminta verifikasi ulang.
+armadaRouter.patch("/pod/:jobId/edit", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    if (!rolesOf(req.user).includes("ADMIN")) {
+      throw new ArmadaError("Koreksi Proof of Delivery cuma bisa dilakukan Admin", 403);
+    }
+    const job = await prisma.job.findUnique({ where: { id: req.params.jobId } });
+    if (!job) return res.status(404).json({ error: "Job tidak ditemukan" });
+    if (job.status !== "COMPLETED") {
+      throw new ArmadaError(`Job berstatus ${job.status}, belum ada bukti tersimpan untuk dikoreksi`);
+    }
+
+    const { reason, completedAt, driverId, helperId } = req.body;
+    if (!reason?.trim()) throw new ArmadaError("Alasan koreksi wajib diisi");
+
+    let proofPhotoUrls;
+    if (req.body.proofPhotoUrls !== undefined) {
+      proofPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
+      if (proofPhotoUrls.length === 0) throw new ArmadaError("Minimal 1 foto bukti wajib ada");
+      const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
+      if (!proofPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
+    }
+
+    const updated = await prisma.job.update({
+      where: { id: job.id },
+      data: {
+        ...(proofPhotoUrls !== undefined && {
+          proofPhotoUrls,
+          podStatus: null, podVerifiedById: null, podVerifiedAt: null, podRejectionNote: null,
+        }),
+        ...(completedAt && { completedAt: new Date(completedAt) }),
+        ...(driverId !== undefined && { driverId: driverId || null }),
+        ...(helperId !== undefined && { helperId: helperId || null }),
+        podEditedById: req.user.id,
+        podEditedAt: new Date(),
+        podEditReason: reason.trim(),
+      },
       include: PIC_INCLUDE_FOR_POD,
     });
     res.json({ ...updated, derivedPodStatus: derivePodStatus(updated) });

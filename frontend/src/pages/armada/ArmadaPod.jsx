@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Camera, PenLine } from "lucide-react";
+import { CheckCircle2, Camera, PenLine, User, Truck } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
+import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
+import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import {
@@ -97,6 +99,13 @@ export default function ArmadaPod() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null);
+  // Cari + filter (9 September 2026, laporan owner: "gue kesulitan cari
+  // order customer yang gue ingin update delivery manual" + "tambah filter
+  // something") — SEBELUM ini cuma tab status + rentang tanggal, tidak ada
+  // cara mempersempit 500+ baris ke satu customer/driver/tipe tertentu.
+  const [cari, setCari] = useState("");
+  const [fDriver, setFDriver] = useState("");
+  const [fTipe, setFTipe] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -131,8 +140,29 @@ export default function ArmadaPod() {
     return c;
   }, [jobs]);
 
-  const filtered = tab ? (jobs || []).filter((j) => j.derivedPodStatus === tab) : jobs;
-  const kosong = !loading && filtered && filtered.length === 0;
+  // Daftar driver untuk dropdown filter — diturunkan dari dataset yang
+  // SUDAH termuat (bukan panggilan api.getDrivers() terpisah), supaya cuma
+  // menampilkan driver yang benar-benar relevan ke data di halaman ini.
+  const driverOptions = useMemo(() => {
+    const map = new Map();
+    for (const j of jobs || []) if (j.driver) map.set(j.driver.id, j.driver.name);
+    return [...map.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [jobs]);
+
+  const cariLower = cari.trim().toLowerCase();
+  const filtered = (jobs || []).filter((j) => {
+    if (tab && j.derivedPodStatus !== tab) return false;
+    if (fDriver && j.driverId !== fDriver) return false;
+    if (fTipe && j.type !== fTipe) return false;
+    if (cariLower) {
+      const hay = [customerOf(j), orderNumberOf(j), jobLabelOf(j), j.driver?.name]
+        .filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(cariLower)) return false;
+    }
+    return true;
+  });
+  const kosong = !loading && jobs && filtered.length === 0;
+  const filterAktif = cari || fDriver || fTipe;
 
   return (
     <PageContainer>
@@ -177,7 +207,41 @@ export default function ArmadaPod() {
               {t.label}{jobs && ` (${counts[t.key]})`}
             </button>
           ))}
-          {filtered && <span className="ml-auto self-center text-[11.5px] text-ink3">{filtered.length} job</span>}
+          {jobs && <span className="ml-auto self-center text-[11.5px] text-ink3">{filtered.length} job</span>}
+        </div>
+
+        {/* Cari + filter (9 September 2026) — lihat catatan panjang di
+            state cari/fDriver/fTipe di atas. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            value={cari}
+            onChange={(e) => setCari(e.target.value)}
+            placeholder="Cari pelanggan, nomor order, kode job, driver…"
+            aria-label="Cari job"
+            className="h-9 min-w-[200px] flex-1 rounded-btn border border-border bg-surface px-3 text-[12.5px] text-ink outline-none transition-colors placeholder:text-ink3 focus:border-accent"
+          />
+          <FilterDropdown
+            value={fTipe}
+            onChange={setFTipe}
+            options={[{ value: "PICKUP", label: "Pengambilan" }, { value: "DELIVERY", label: "Pengiriman" }]}
+            placeholder="Semua tipe"
+            icon={Truck}
+            ariaLabel="Filter tipe job"
+          />
+          <FilterDropdown
+            value={fDriver}
+            onChange={setFDriver}
+            options={driverOptions}
+            placeholder="Semua driver"
+            icon={User}
+            ariaLabel="Filter driver"
+          />
+          {filterAktif && (
+            <Button variant="ghost" size="sm" onClick={() => { setCari(""); setFDriver(""); setFTipe(""); }}>
+              Reset
+            </Button>
+          )}
         </div>
 
         {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
@@ -193,11 +257,13 @@ export default function ArmadaPod() {
           ) : kosong ? (
             <EmptyState
               icon={CheckCircle2}
-              title="Tidak ada job pada tab ini"
+              title="Tidak ada job yang cocok"
               description={
-                tab === "PENDING_REVIEW"
-                  ? "Semua bukti sudah ditinjau."
-                  : `Coba pilih tab lain atau ubah rentang tanggal (sekarang: ${formatRangeText(range)}).`
+                filterAktif
+                  ? "Tidak ada yang cocok dengan pencarian/filter saat ini — coba ubah atau reset."
+                  : tab === "PENDING_REVIEW"
+                    ? "Semua bukti sudah ditinjau."
+                    : `Coba pilih tab lain atau ubah rentang tanggal (sekarang: ${formatRangeText(range)}).`
               }
             />
           ) : (

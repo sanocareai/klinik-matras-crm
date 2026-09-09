@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Check, XCircle, Loader2, User, Package, Camera, PenLine, UploadCloud, Clock } from "lucide-react";
+import { X, Check, XCircle, Loader2, User, Package, Camera, PenLine, UploadCloud, Clock, Pencil } from "lucide-react";
 import { api } from "@/api.js";
 import Avatar from "@/components/Avatar.jsx";
 import AssignDropdown from "./AssignDropdown.jsx";
@@ -10,6 +10,7 @@ import DateTimePicker from "@/components/ui/date-time-picker.jsx";
 import { POD_STATUS } from "../podStatus.js";
 import { customerOf, orderNumberOf, unitCountOf, jobLabelOf, orderOf } from "../jobStatus.js";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
+import { isAdminUser } from "@/lib/roles.js";
 
 // "YYYY-MM-DDTHH:mm" dalam jam LOKAL perangkat (kontrak <input type=
 // "datetime-local"> — TIDAK boleh dipakai untuk kolom DATE murni, cuma
@@ -68,11 +69,34 @@ function toDatetimeLocal(d) {
 // manual di sini — bagian "Tanda Tangan Penerima" di bawah TETAP tampil
 // (baca job.signatureUrl apa adanya, kalau suatu saat terisi dari jalur
 // lain), cuma tidak ada cara MENGISINYA dari drawer ini.
+// Koreksi Admin (9 September 2026, laporan owner: "ketika proof of delivery
+// sudah di input buat fitur edit khusus admin, karna namanya sistem baru,
+// pasti karyawan masih banyak salah") — SEBELUM ini, foto/waktu selesai/
+// driver-helper yang sudah tersimpan tidak bisa dikoreksi lagi (cuma bisa
+// DITAMBAH foto lewat "Tambah Bukti" di atas, tidak bisa mengganti/
+// menghapus yang salah). Admin only (isAdminUser, pola sama dengan
+// RouteCard.jsx canEditCompleted) — dispatcher biasa tetap cuma bisa
+// Verifikasi/Tolak. Mengubah foto otomatis mereset podStatus ke "Menunggu
+// Verifikasi" (lihat backend PATCH /pod/:jobId/edit) — bukti yang jadi dasar
+// verifikasi lama sudah beda, wajib ditinjau ulang.
+const currentUser = JSON.parse(localStorage.getItem("user") || "null");
+
 export default function PodReviewDrawer({ job, onClose, onChanged }) {
+  const isAdmin = isAdminUser(currentUser);
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  const [editing, setEditing] = useState(false);
+  const [editKeepUrls, setEditKeepUrls] = useState([]);
+  const [editNewFiles, setEditNewFiles] = useState([]);
+  const [editCompletedAt, setEditCompletedAt] = useState("");
+  const [editDriverId, setEditDriverId] = useState("");
+  const [editHelperId, setEditHelperId] = useState("");
+  const [editReason, setEditReason] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState("");
 
   // Daftar driver/helper untuk AssignDropdown — diambil SEKALI (bukan per
   // job dibuka), sama pola dengan komponen lain yang memakai dropdown ini.
@@ -119,6 +143,14 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
     setManualCompletedAt(toDatetimeLocal(new Date()));
     setManualDriverId(job?.driverId || "");
     setManualHelperId(job?.helperId || "");
+    setEditing(false);
+    setEditKeepUrls(job?.proofPhotoUrls || []);
+    setEditNewFiles([]);
+    setEditCompletedAt(job?.completedAt ? toDatetimeLocal(new Date(job.completedAt)) : toDatetimeLocal(new Date()));
+    setEditDriverId(job?.driverId || "");
+    setEditHelperId(job?.helperId || "");
+    setEditReason("");
+    setEditError("");
   }, [job?.id]);
 
   if (!job) return null;
@@ -224,6 +256,51 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
     }
   }
 
+  // Koreksi Admin — lihat catatan panjang di atas komponen. `photosChanged`
+  // dicek dulu (BUKAN selalu kirim proofPhotoUrls) supaya edit yang cuma
+  // membetulkan waktu selesai/driver TIDAK ikut mereset status verifikasi —
+  // backend (PATCH /pod/:jobId/edit) cuma mereset podStatus kalau
+  // proofPhotoUrls ADA di body request.
+  async function simpanEdit() {
+    if (!editReason.trim()) { setEditError("Alasan koreksi wajib diisi"); return; }
+    const fotoAsli = job.proofPhotoUrls || [];
+    const photosChanged = editNewFiles.length > 0 || editKeepUrls.length !== fotoAsli.length
+      || editKeepUrls.some((u, i) => u !== fotoAsli[i]);
+    if (photosChanged && editKeepUrls.length === 0 && editNewFiles.length === 0) {
+      setEditError("Minimal 1 foto bukti wajib ada");
+      return;
+    }
+    setEditBusy(true);
+    setEditError("");
+    try {
+      let finalUrls;
+      if (photosChanged) {
+        let baru = [];
+        if (editNewFiles.length > 0) {
+          const fd = new FormData();
+          editNewFiles.forEach(({ file }) => fd.append("photos", file));
+          const { urls } = await api.uploadJobPhotos(job.id, fd);
+          baru = urls;
+        }
+        finalUrls = [...editKeepUrls, ...baru];
+      }
+      await api.editPod(job.id, {
+        reason: editReason.trim(),
+        ...(photosChanged && { proofPhotoUrls: finalUrls }),
+        completedAt: editCompletedAt ? new Date(editCompletedAt).toISOString() : undefined,
+        driverId: editDriverId || null,
+        helperId: editHelperId || null,
+      });
+      setEditing(false);
+      setEditNewFiles([]);
+      onChanged();
+    } catch (e) {
+      setEditError(e.message);
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   return (
     <Dialog.Root open={!!job} onOpenChange={(o) => (o ? null : onClose())}>
       <Dialog.Portal>
@@ -280,6 +357,112 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
                 : "Belum selesai"}
             </p>
             <p className="text-[11.5px] text-ink2">Driver: {job.driver?.name || "—"}</p>
+
+            {/* Koreksi Admin (9 September 2026) — lihat catatan panjang di
+                atas komponen. Cuma admin, cuma job yang sudah COMPLETED
+                (belum selesai sistem sudah punya jalur "Input Manual" di
+                bawah, tidak butuh mode edit terpisah). */}
+            {isAdmin && !belumSelesaiSistem && !editing && (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="mt-1.5 flex items-center gap-1 text-[11.5px] font-semibold text-accent hover:underline"
+              >
+                <Pencil size={11} /> Koreksi bukti (Admin)
+              </button>
+            )}
+
+            {editing && (
+              <div className="mt-3 rounded-btn border border-dashed border-orange/40 bg-orangebg/30 p-3">
+                <p className="mb-2.5 text-[11.5px] leading-relaxed text-ink2">
+                  Ganti waktu selesai, driver/helper, atau foto bukti yang salah — foto lama bisa dihapus, foto baru ditambahkan. Mengubah foto akan mengembalikan status ke "Menunggu Verifikasi".
+                </p>
+
+                <div className="mb-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  <div>
+                    <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold text-ink2">
+                      <Clock size={11} aria-hidden /> Waktu Selesai
+                    </p>
+                    <DateTimePicker value={editCompletedAt} onChange={setEditCompletedAt} />
+                  </div>
+                  <div>
+                    <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold text-ink2">
+                      <User size={11} aria-hidden /> Driver &amp; Helper
+                    </p>
+                    <AssignDropdown
+                      drivers={drivers}
+                      helpers={helpers}
+                      currentDriverId={editDriverId}
+                      currentHelperId={editHelperId}
+                      onPick={(driverId, helperId) => {
+                        setEditDriverId(driverId || "");
+                        if (helperId !== undefined) setEditHelperId(helperId || "");
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <p className="mb-1 text-[10.5px] font-semibold text-ink2">
+                  Foto Bukti {job.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
+                </p>
+                {editKeepUrls.length > 0 && (
+                  <div className="mb-2 grid grid-cols-4 gap-2">
+                    {editKeepUrls.map((src) => (
+                      <div key={src} className="group relative">
+                        <img src={src} alt="" className="aspect-square w-full rounded-btn border border-border object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setEditKeepUrls(editKeepUrls.filter((u) => u !== src))}
+                          aria-label="Hapus foto ini"
+                          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red text-white shadow"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <PasteUploadZone
+                  files={editNewFiles}
+                  onFilesChange={setEditNewFiles}
+                  multiple
+                  label="Tambah foto baru (opsional)"
+                />
+
+                <textarea
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  placeholder="Alasan koreksi (wajib) — mis. foto salah upload, waktu selesai keliru dicatat"
+                  rows={2}
+                  className="mt-2.5 w-full rounded-btn border border-border bg-surface px-2.5 py-2 text-[12.5px] text-ink outline-none focus:border-accent"
+                />
+
+                {editError && <p className="mt-1.5 text-[11.5px] text-red">{editError}</p>}
+                <div className="mt-2.5 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={simpanEdit}
+                    disabled={editBusy}
+                    className="flex items-center gap-1.5 rounded-btn bg-accent px-3 py-1.5 text-[12px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {editBusy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Simpan Koreksi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditing(false);
+                      setEditKeepUrls(job.proofPhotoUrls || []);
+                      setEditNewFiles([]);
+                      setEditError("");
+                    }}
+                    disabled={editBusy}
+                    className="rounded-btn px-3 py-1.5 text-[12px] font-semibold text-ink2 hover:bg-hovertint"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="mt-4 border-t border-line pt-3.5">
               {/* Label dibedakan per tipe job (6 September 2026, laporan
@@ -435,6 +618,19 @@ export default function PodReviewDrawer({ job, onClose, onChanged }) {
               <p className="mt-4 text-[11.5px] text-ink3">
                 Diverifikasi oleh {job.podVerifiedBy.name} · {new Date(job.podVerifiedAt).toLocaleDateString("id-ID")}
               </p>
+            )}
+
+            {/* Jejak Koreksi Admin (9 September 2026) — supaya siapa pun
+                yang buka drawer ini tahu bukti pernah dikoreksi manual,
+                bukan asli dari driver/input pertama, dan KENAPA. */}
+            {job.podEditedBy && (
+              <div className="mt-3 rounded-btn border-l-[3px] border-orange bg-orangebg px-3 py-2.5">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-orange">Dikoreksi Admin</div>
+                {job.podEditReason && <p className="mt-0.5 text-[12.5px] text-ink">{job.podEditReason}</p>}
+                <p className="mt-1 text-[10.5px] text-ink3">
+                  oleh {job.podEditedBy.name} · {new Date(job.podEditedAt).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}
+                </p>
+              </div>
             )}
 
             <p className="mt-5 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">

@@ -358,6 +358,7 @@ model User {
   routesAsDriver             Route[]                  @relation("RouteDriver")
   routesAsHelper             Route[]                  @relation("RouteHelper")
   podVerified                Job[]                    @relation("PodVerifier")
+  podEdited                  Job[]                    @relation("PodEditor")
   jobsRescheduled            Job[]                    @relation("JobRescheduler")
   unitRevisionsCreated       UnitRevision[]           @relation("UnitRevisionCreator")
   goodsReceiptsCreated       GoodsReceipt[]           @relation("GoodsReceiptCreator")
@@ -1730,6 +1731,22 @@ model Job {
   podVerifiedBy    User?      @relation("PodVerifier", fields: [podVerifiedById], references: [id], onDelete: SetNull)
   podVerifiedAt    DateTime?  @map("pod_verified_at")
   podRejectionNote String?    @map("pod_rejection_note")
+
+  // Koreksi Admin atas bukti yang SUDAH tersimpan (9 September 2026,
+  // laporan owner: "ketika proof of delivery sudah di input buat fitur
+  // edit khusus admin, karna namanya sistem baru, pasti karyawan masih
+  // banyak salah"). Sebelumnya foto/waktu selesai/driver-helper yang
+  // SUDAH tersimpan (lewat app driver ATAU input manual admin) tidak bisa
+  // dikoreksi lagi — cuma bisa DITAMBAH foto baru (proof-photos endpoint,
+  // push bukan replace), tidak bisa mengganti/menghapus yang salah.
+  // Kolom, bukan tabel ledger terpisah — alasan SAMA dengan podStatus di
+  // atas ("cukup untuk v1"). podEditReason WAJIB diisi tiap edit (pola
+  // sama dengan Route.lastEditReason PATCH /routes/:id) — jejak "kenapa
+  // diubah", bukan cuma "siapa/kapan".
+  podEditedById String?   @map("pod_edited_by")
+  podEditedBy   User?     @relation("PodEditor", fields: [podEditedById], references: [id], onDelete: SetNull)
+  podEditedAt   DateTime? @map("pod_edited_at")
+  podEditReason String?   @map("pod_edit_reason")
 
   // Reschedule setelah gagal (2 Agustus 2026, Tahap 5 Delivery — Kendala &
   // Reschedule). SEBELUM INI: job berstatus FAILED adalah JALAN BUNTU —

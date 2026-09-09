@@ -245,6 +245,9 @@ export const api = {
   getPodJobs: (params = {}) => request(`/armada/pod${buildQuery(params)}`),
   verifyPod: (jobId) => request(`/armada/pod/${jobId}/verify`, { method: "PATCH" }),
   rejectPod: (jobId, note) => request(`/armada/pod/${jobId}/reject`, { method: "PATCH", body: JSON.stringify({ note }) }),
+  // Koreksi Admin (9 September 2026) — lihat catatan panjang di
+  // routes/armada.js PATCH /pod/:jobId/edit.
+  editPod: (jobId, data) => request(`/armada/pod/${jobId}/edit`, { method: "PATCH", body: JSON.stringify(data) }),
 
   // Kendala & Reschedule (Delivery Tahap 5)
   getIssues: (status) => request(`/armada/issues${status ? `?status=${status}` : ""}`),
