@@ -446,21 +446,33 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
 // "pastikan link google maps tiap customer dicantumkan di broadcast") —
 // SEBELUMNYA cuma "📍Alamat" (teks) per stop, link cuma ada SATU untuk
 // seluruh rute gabungan di bawah, driver harus buka link gabungan lalu
-// cari sendiri urutan ke berapa itu stop yang dimaksud. Prioritas SAMA
-// dengan kebijakan LINK-ONLY di maps.js: link ASLI yang sales/customer
-// tandai sendiri (Order.locationUrl) dulu — itu titik paling akurat yang
-// ada. Kalau order tidak punya link tersimpan TAPI job-nya kebetulan
-// sudah punya koordinat (mis. link itu nempel di addressText, sudah
-// digeocode saat "Buat Peta"), fallback ke pin Google Maps dari lat/lng
-// itu — lebih baik daripada tidak ada link sama sekali. Kalau dua-duanya
-// kosong, baris pemanggil menampilkan "(belum ada link)" supaya Natasha
-// tahu harus tanya admin delivery, bukan diam-diam hilang dari pesan.
+// cari sendiri urutan ke berapa itu stop yang dimaksud.
+//
+// KOREKSI (9 September 2026, sesi yang sama — owner tanya lagi "apakah
+// udah 1 source code?"): versi PERTAMA fungsi ini utamakan Order.locationUrl
+// MENTAH, fallback ke lat/lng — TERBALIK dari mapsUrl() frontend
+// (jobStatus.js, dipakai JobDetailDrawer/RouteCard/DriverJobs — SEMUA
+// tombol "Buka di Google Maps" yang dispatcher/driver benar-benar klik)
+// yang utamakan lat/lng, fallback ke locationUrl mentah. Prioritas KENAPA
+// dibalik itu bukan sembarangan — investigasi nyata 8 September 2026
+// (customer Steven, RES-26082026-173): link share mentah `maps.app.goo.gl`
+// ke pin TANPA alamat resmi kadang RENDER HALAMAN KOSONG di browser
+// desktop (WA Web termasuk!), sementara URL `maps/dir` dari koordinat
+// SELALU konsisten di semua platform. Koordinat itu SENDIRI datang dari
+// link sales yang sama (kebijakan LINK-ONLY geocodeAddress()), dan
+// otomatis di-invalidate begitu Order.locationUrl diedit (lihat PATCH
+// /orders/:id di orders.js, guard `locationUrl !== sebelum.locationUrl`
+// -> job.lat/lng dikosongkan, tergeocode ULANG dari link baru lain kali
+// ensureJobsGeocoded() jalan) — jadi TIDAK ada risiko cache basi menang
+// diam-diam. Fungsi ini SEKARANG disamakan urutannya PERSIS dengan
+// mapsUrl() supaya broadcast & tombol in-app selalu tunjuk ke link yang
+// SAMA, bukan dua sumber kebenaran berbeda untuk stop yang sama.
 function linkMapsPelanggan(order, job) {
+  if (job?.lat != null && job?.lng != null) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}`;
+  }
   const raw = order?.locationUrl?.trim();
   if (raw) return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  if (job?.lat != null && job?.lng != null) {
-    return `https://www.google.com/maps/search/?api=1&query=${job.lat},${job.lng}`;
-  }
   return null;
 }
 
