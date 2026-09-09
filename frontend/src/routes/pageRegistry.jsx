@@ -1,5 +1,5 @@
 import React, { lazy } from "react";
-import { Navigate } from "react-router-dom";
+import { matchPath } from "react-router-dom";
 import { rolesOf } from "../lib/roles.js";
 
 // D-143 (9 September 2026) — SATU SUMBER KEBENARAN untuk daftar halaman.
@@ -60,21 +60,48 @@ const WarehouseAdjustments = lazy(() => import("../pages/warehouse/WarehouseAdju
 const WarehouseReplenishment = lazy(() => import("../pages/warehouse/WarehouseReplenishment.jsx"));
 const WarehouseReports = lazy(() => import("../pages/warehouse/WarehouseReports.jsx"));
 
-// Dipindah apa adanya dari App.jsx — logic redirect driver-only TIDAK berubah.
-function ArmadaLanding() {
-  let driverOnly = false;
+// D-144 (9 September 2026) — sistem tab dalam-app: sebuah TAB menyimpan
+// path TUJUAN NYATA-nya sendiri, bukan pernah path redirect ("/", "/armada",
+// "/warehouse", catch-all "*"). `<Navigate>` di dalam elemen yang di-render
+// per-tab (lewat <Routes location={tab.path}>, lihat lib/TabsContext.jsx)
+// akan memanggil navigate() milik ROUTER SUNGGUHAN (BrowserRouter, satu-
+// satunya di app ini) — BUKAN cuma mengubah "lokasi virtual" tab itu — jadi
+// kalau dibiarkan, membuka tab baru di path redirect bisa diam-diam
+// membajak URL asli tab yang SEDANG AKTIF/terlihat, bukan tab yang baru
+// dibuka. Makanya redirect-redirect ini diselesaikan LEBIH DULU di sini
+// (resolveEntryPath), SEBELUM sebuah path pernah sempat tersimpan sebagai
+// path sebuah tab — PAGES di bawah jadi murni "halaman tujuan nyata",
+// tanpa entri redirect sama sekali.
+function isDriverOnlyUser() {
   try {
     const roles = rolesOf(JSON.parse(localStorage.getItem("user") || "null"));
-    driverOnly = roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER", "LEADER_DRIVER"].includes(r));
-  } catch { /* user tidak terbaca — perlakukan sebagai non-driver */ }
-  return <Navigate to={driverOnly ? "/armada/jobs" : "/armada/dashboard"} replace />;
+    return roles.some((r) => ["DRIVER", "HELPER"].includes(r)) && !roles.some((r) => ["ADMIN", "DISPATCHER", "LEADER_DRIVER"].includes(r));
+  } catch {
+    return false; // user tidak terbaca — perlakukan sebagai non-driver
+  }
+}
+
+export function resolveEntryPath(pathname) {
+  if (pathname === "/") return "/portal";
+  if (pathname === "/warehouse") return "/warehouse/dashboard";
+  if (pathname === "/armada") return isDriverOnlyUser() ? "/armada/jobs" : "/armada/dashboard";
+  const dikenal = PAGES.some((p) => matchPath({ path: p.path, end: true }, pathname));
+  return dikenal ? pathname : "/portal"; // setara catch-all "*" lama
+}
+
+export function RouteFallback() {
+  return (
+    <div className="page-loading">
+      <div className="skeleton skeleton-card" style={{ maxWidth: 400, margin: "0 auto" }} />
+    </div>
+  );
 }
 
 // `render(ctx)` menerima { user, onUserUpdate } — konteks yang sebelumnya
 // dioper langsung sebagai prop JSX di App.jsx. Path & props PERSIS sama,
-// cuma sumbernya dipindah ke sini.
+// cuma sumbernya dipindah ke sini. Path redirect ("/", "/armada",
+// "/warehouse", "*") SENGAJA tidak ada di sini — lihat resolveEntryPath.
 export const PAGES = [
-  { path: "/",            render: () => <Navigate to="/portal" replace /> },
   { path: "/portal",      render: () => <Portal /> },
   { path: "/portal/:key", render: (ctx) => <DivisionPage user={ctx.user} /> },
   { path: "/bengkel",     render: () => <Bengkel /> },
@@ -85,7 +112,6 @@ export const PAGES = [
   { path: "/bengkel/materials", render: () => <ProductionMaterialUsage /> },
   { path: "/bengkel/reports", render: () => <ProductionLaporan /> },
   { path: "/bengkel/orders", render: () => <ProductionOrders /> },
-  { path: "/armada",           render: () => <ArmadaLanding /> },
   { path: "/armada/dashboard", render: () => <ArmadaDashboard /> },
   { path: "/armada/ringkasan", render: () => <ArmadaRingkasan /> },
   { path: "/armada/jobs",      render: () => <ArmadaJobs /> },
@@ -99,7 +125,6 @@ export const PAGES = [
   { path: "/armada/reports", render: () => <ArmadaDeliveryReport /> },
   { path: "/kendali",     render: () => <Kendali /> },
   { path: "/gudang",      render: () => <Gudang /> },
-  { path: "/warehouse",   render: () => <Navigate to="/warehouse/dashboard" replace /> },
   { path: "/warehouse/dashboard", render: () => <WarehouseDashboard /> },
   { path: "/warehouse/inventory", render: () => <WarehouseInventory /> },
   { path: "/warehouse/goods-receipt", render: () => <WarehouseGoodsReceipt /> },
@@ -128,5 +153,4 @@ export const PAGES = [
   { path: "/broadcast-sales", render: () => <BroadcastSales /> },
   { path: "/copilot",     render: () => <CoPilot /> },
   { path: "/notifications", render: () => <Notifications /> },
-  { path: "*",            render: () => <Navigate to="/portal" replace /> },
 ];

@@ -1336,6 +1336,65 @@ body {
 .app-content { flex: 1; overflow-y: auto; background: var(--bg-page); display: flex; flex-direction: column; }
 .page-body { flex: 1; overflow-y: auto; }
 
+/* ─── TAB STRIP (D-144, tab dalam-app ala Notion) ───────────────────── */
+/* Duduk DI ANTARA Topbar (60px, tidak disentuh) dan .page-body — flex-shrink:0
+   supaya tidak ikut kompres seperti bug D-141 rail sidebar. Disembunyikan
+   di mobile (lihat media query di bawah), belum ada preseden pola tab di
+   layar sempit. */
+.tab-strip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-page);
+}
+.tab-strip-scroll {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
+}
+.tab-strip-scroll::-webkit-scrollbar { display: none; }
+.tab-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  padding: 6px 8px 6px 10px;
+  border-radius: 8px 8px 0 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.tab-chip:hover { background: var(--bg-hover, rgba(0,0,0,.04)); }
+.tab-chip.active { background: var(--card-bg); color: var(--text-primary); }
+.tab-chip-label { overflow: hidden; text-overflow: ellipsis; }
+.tab-chip-close {
+  display: flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0;
+  color: var(--text-muted); background: transparent; border: none; cursor: pointer;
+}
+.tab-chip-close:hover { background: rgba(0,0,0,.08); color: var(--text-primary); }
+.tab-strip-add {
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+  color: var(--text-secondary); background: transparent; border: none; cursor: pointer;
+}
+.tab-strip-add:hover { background: var(--bg-hover, rgba(0,0,0,.04)); }
+@media (max-width: 768px) {
+  .tab-strip { display: none; }
+}
+
 /* ─── TOAST ──────────────────────────────────────────────── */
 .toast-container {
   position: fixed; bottom: 24px; right: 24px; z-index: 9999;

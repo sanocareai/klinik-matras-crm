@@ -8,12 +8,14 @@ import {
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
   Boxes, ScanLine, Award, ArrowUpDown, Check,
 } from "lucide-react";
-import { LayoutGroup, AnimatePresence, motion } from "framer-motion";
+import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
 import SidebarNavSection from "./SidebarNavSection.jsx";
 import { applyCustomOrder, getSectionOrder, saveSectionOrder } from "@/lib/sidebarOrder.js";
 import { useSSE } from "../hooks/useSSE.js";
 import Topbar from "./Topbar.jsx";
+import TabStrip from "./TabStrip.jsx";
+import TabbedContent from "./TabbedContent.jsx";
 import ToastNotif from "./ToastNotif.jsx";
 import WorkspaceSwitcher from "./WorkspaceSwitcher.jsx";
 import NotificationDrawer from "@/features/notifications/NotificationDrawer.jsx";
@@ -434,7 +436,7 @@ function playNotifSound() {
 // berubah selama app hidup.
 const IS_DRIVER_APP = import.meta.env.VITE_APP_TARGET === "driver";
 
-export default function Layout({ user, onLogout, children }) {
+export default function Layout({ user, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
   // Ikut "hub" untuk keperluan sidebar/switcher: /portal SUNGGUHAN, ATAU
@@ -990,44 +992,26 @@ export default function Layout({ user, onLogout, children }) {
           hideNotifBell={IS_DRIVER_APP && driverOnly}
         />
 
-        {/* Transisi antar halaman (catatan Gilang 1 Agustus 2026: "animasi
-            setiap perpindahan agar lebih smooth"). Di-key oleh pathname —
-            AnimatePresence mendeteksi route berganti dari situ, bukan dari
-            `children` berubah identitas (yang selalu berubah tiap render).
-            mode="wait": halaman lama selesai fade-out DULU baru yang baru
-            fade-in — mode default ("sync") akan tumpang tindih sesaat dan
-            terlihat "kedip" karena kedua halaman punya latar putih penuh.
-            Durasi 160ms konsisten dengan pill aktif sidebar (SidebarLink,
-            180ms) — motion Sano dipatok 150–200ms, jangan lebih lambat.
+        {/* Tab strip dalam-app (D-144) — di antara Topbar dan .page-body,
+            tidak menyentuh tinggi tetap 60px Topbar. */}
+        <TabStrip />
 
-            ⚠️ BUG NYATA yang ditemukan begitu ini dipasang: Inbox tampil
-            KOSONG TOTAL (cuma latar abu-abu). Sebabnya `.inbox-body` di
-            index.css pakai `height:100%`, yang butuh PARENT LANGSUNG-nya
-            (`.page-body`, flex:1 di dalam `.app-content` yang flex-column)
-            py tinggi pasti. motion.div TANPA style apa pun defaultnya
-            height:auto (block biasa) — jadi begitu dia disisipkan DI ANTARA
-            `.page-body` dan `.inbox-body`, rantai height:100% putus di situ:
-            `.inbox-body` menghitung 100% dari sebuah elemen yang tingginya
-            sendiri "auto" (=nol/tak terhingga menurut kontennya), hasilnya
-            grid 3-kolom Inbox kolaps. `h-full` di sini WAJIB ada supaya
-            motion.div ikut menyalurkan tinggi 100% itu — halaman non-Inbox
-            (Dashboard, Pelanggan, dst pakai PageContainer) tidak terpengaruh
-            karena kontennya tetap overflow normal ke .page-body yang
-            overflow-y:auto (h-full cuma menentukan tinggi BOX motion.div,
-            bukan meng-clip konten yang lebih tinggi darinya). */}
-        <div className="page-body">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={location.pathname}
-              className="h-full"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            >
-              {children}
-            </motion.div>
-          </AnimatePresence>
+        {/* D-144 — animasi fade antar-halaman (Gilang, 1 Agustus 2026)
+            SENGAJA DILEPAS di sini: sebelumnya di-key oleh pathname supaya
+            AnimatePresence unmount/remount halaman lama→baru. Sekarang
+            SEMUA tab yang terbuka tetap ter-mount sekaligus (keep-alive,
+            keputusan owner soal sistem tab) — mem-bungkus <TabbedContent/>
+            dengan motion.div berkunci pathname akan REMOUNT seluruh sistem
+            tab (termasuk tab lain yang sedang tidak aktif) setiap kali URL
+            berubah, menghapus persis state yang justru ingin dipertahankan
+            keep-alive. Trade-off yang disadari: pindah tab sekarang instan
+            tanpa fade, bukan bug.
+
+            `h-full` WAJIB tetap ada (lihat catatan panjang sebelumnya di
+            sini soal .inbox-body height:100%) — sekarang dipasang langsung
+            di .page-body sebagai pengganti motion.div yang dihapus. */}
+        <div className="page-body h-full">
+          <TabbedContent />
         </div>
       </main>
     </div>

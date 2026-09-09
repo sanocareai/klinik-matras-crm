@@ -1,26 +1,24 @@
-import React, { useState, useEffect, Suspense } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import React, { useState, useEffect, useMemo } from "react";
+import { BrowserRouter } from "react-router-dom";
 import Login from "./pages/Login.jsx";
 import Layout from "./components/Layout.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
 import UpdateBanner from "./components/UpdateBanner.jsx";
-import ChunkErrorBoundary from "./components/ChunkErrorBoundary.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { disconnectSocket } from "./lib/socket.js";
 import { PAGES } from "./routes/pageRegistry.jsx";
+import { TabsProvider } from "./lib/TabsContext.jsx";
 
 // D-143 (9 September 2026) — daftar halaman (lazy import + path) dipindah ke
-// routes/pageRegistry.js (satu sumber kebenaran, dipakai juga oleh sistem
+// routes/pageRegistry.jsx (satu sumber kebenaran, dipakai juga oleh sistem
 // tab dalam-app). Path/props/perilaku TIDAK berubah, cuma sumbernya.
-
-function RouteFallback() {
-  return (
-    <div className="page-loading">
-      <div className="skeleton skeleton-card" style={{ maxWidth: 400, margin: "0 auto" }} />
-    </div>
-  );
-}
+//
+// D-144 — <Routes>/<Suspense>/<ChunkErrorBoundary> yang dulu ada LANGSUNG di
+// sini SEKARANG per-tab, dipindah ke components/TabbedContent.jsx (dirender
+// di dalam Layout) — supaya beberapa tab bisa tetap mounted bersamaan
+// (keep-alive). App.jsx sekarang cuma menyalakan TabsProvider dengan PAGES +
+// ctx (user, onUserUpdate), tidak lagi merender <Routes> sendiri.
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -112,6 +110,12 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", handler);
   }, [user]);
 
+  // Dimemo supaya identitas objek stabil antar render App yang tidak
+  // mengubah user — TabsProvider taruh `ctx` di dependency array useMemo-nya,
+  // objek baru tiap render App akan bikin context tab ikut render ulang
+  // sia-sia setiap kali (mis. tiap tick usePolling di halaman lain).
+  const tabsCtx = useMemo(() => ({ user, onUserUpdate: handleUserUpdate }), [user]);
+
   if (!user || sessionExpired) {
     return (
       <>
@@ -145,17 +149,9 @@ export default function App() {
       <UpdateBanner />
       {/* Floating "Tanya Sano" (CoPilotFloat) DIHAPUS — sudah ada akses lewat
           sidebar (AI & OTOMASI > Tanya Sano), FAB ini jadi redundan. */}
-      <Layout user={user} onLogout={handleLogout}>
-        <ChunkErrorBoundary>
-        <Suspense fallback={<RouteFallback />}>
-          <Routes>
-            {PAGES.map((p) => (
-              <Route key={p.path} path={p.path} element={p.render({ user, onUserUpdate: handleUserUpdate })} />
-            ))}
-          </Routes>
-        </Suspense>
-        </ChunkErrorBoundary>
-      </Layout>
+      <TabsProvider pages={PAGES} ctx={tabsCtx}>
+        <Layout user={user} onLogout={handleLogout} />
+      </TabsProvider>
     </BrowserRouter>
   );
 }

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import { motion } from "framer-motion";
 import { SquareArrowOutUpRight, AppWindow, Link2, Check } from "lucide-react";
+import { useTabs } from "@/lib/TabsContext.jsx";
 
 // Item navigasi sidebar (presentational). Diekstrak dari Layout HANYA untuk
 // keperluan layout/visual — data nav, role gating, dan route TETAP dikelola
@@ -11,17 +12,22 @@ import { SquareArrowOutUpRight, AppWindow, Link2, Check } from "lucide-react";
 //
 // D-142 (9 September 2026, permintaan owner: "build workspace SANSS
 // seperti Notion — bisa buka tab baru, jendela baru, dst") — item ini
-// SUDAH `<NavLink>` (anchor `<a href>` sungguhan, bukan `<button onClick>`),
-// jadi Ctrl+klik/klik-tengah SEBENARNYA sudah membuka tab baru dari dulu —
-// tapi itu tersembunyi total, tidak ada cara TEMUKAN fitur itu tanpa sudah
-// tahu shortcut keyboard/mouse-nya, dan "buka jendela baru sungguhan"
-// (bukan cuma tab) tidak ada jalannya sama sekali sebelum ini. Klik-kanan
-// sekarang membuka menu kecil — pola SAMA PERSIS dengan menu Sematkan di
-// ConversationItem.jsx (Inbox), termasuk kelas CSS `.conv-context-menu`/
-// `.conv-context-backdrop` yang DIPAKAI ULANG apa adanya (sudah generik:
-// kartu kaca kecil + backdrop klik-luar, dipakai juga oleh
-// TransferPickerPopover.jsx — bukan sesuatu yang khusus Inbox walau
-// namanya begitu) — bukan menulis resep menu kedua yang bisa drift.
+// SUDAH `<NavLink>` (anchor `<a href>` sungguhan). Klik-kanan membuka menu
+// kecil untuk keluar dari app (tab/jendela BROWSER sungguhan) — pola SAMA
+// PERSIS dengan menu Sematkan di ConversationItem.jsx (Inbox), termasuk
+// kelas CSS `.conv-context-menu`/`.conv-context-backdrop` yang DIPAKAI
+// ULANG apa adanya (sudah generik: kartu kaca kecil + backdrop klik-luar,
+// dipakai juga oleh TransferPickerPopover.jsx) — bukan menulis resep menu
+// kedua yang bisa drift.
+//
+// D-144 (permintaan lanjutan: "buka tab PENUH dalam 1 app, kayak Notion")
+// — keputusan owner: klik biasa TETAP navigasi di tab AKTIF (perilaku lama,
+// tidak berubah untuk pengguna yang belum pernah buka tab kedua). Yang
+// BERUBAH: Ctrl/Cmd/klik-tengah SEKARANG membuka TAB DALAM-APP baru
+// (lib/TabsContext.jsx), BUKAN lagi tab browser sungguhan seperti sebelum
+// D-144 — itu sekarang cuma lewat menu klik-kanan di atas. `preventDefault()`
+// di kedua jalur supaya `<a href>` bawaan tidak ikut jalan dobel dengan aksi
+// tab kita (navigasi lewat TabsContext, bukan lewat anchor-nya langsung).
 export default function SidebarLink({
   to,
   label,
@@ -32,8 +38,29 @@ export default function SidebarLink({
   collapsed = false,
   onNavigate,
 }) {
+  const { openInActiveTab, openNewTab } = useTabs();
   const [menu, setMenu] = useState(null); // { x, y }
   const [copied, setCopied] = useState(false);
+
+  function handleClick(e) {
+    if (menu) return; // menu klik-kanan sedang terbuka, biarkan itu yang urus
+    e.preventDefault();
+    if (e.metaKey || e.ctrlKey) {
+      openNewTab(to, { title: label });
+    } else {
+      openInActiveTab(to, { title: label });
+    }
+    onNavigate?.();
+  }
+
+  // Klik-tengah (mouse button 1) — browser tidak selalu memicu onClick
+  // untuk ini, WAJIB ditangkap terpisah lewat onAuxClick.
+  function handleAuxClick(e) {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    openNewTab(to, { title: label });
+    onNavigate?.();
+  }
 
   function fullUrl() {
     return `${window.location.origin}${to}`;
@@ -74,7 +101,8 @@ export default function SidebarLink({
       <NavLink
         to={to}
         title={collapsed ? label : undefined}
-        onClick={onNavigate}
+        onClick={handleClick}
+        onAuxClick={handleAuxClick}
         onContextMenu={handleContextMenu}
         className={({ isActive }) =>
           "sidebar-link" + (isActive ? " active" : "") + (collapsed ? " collapsed" : "")
