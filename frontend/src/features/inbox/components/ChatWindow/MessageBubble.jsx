@@ -471,7 +471,25 @@ function MessageBubbleBase({
             )}
             {m.mediaType === "image" && m.mediaUrl && (
               <button type="button" className="bubble-img-btn" onClick={() => onOpenMedia?.("image", m.mediaUrl)}>
-                <img src={m.mediaUrl} alt="Foto" className="bubble-img" loading="lazy" decoding="async" onError={(e) => { e.target.closest("button").style.display = "none"; }} />
+                {/* BUG YANG DIPERBAIKI (9 Sep 2026) — "loading=lazy" DIHAPUS:
+                    .bubble-img cuma punya max-width/max-height (bukan
+                    width/height tetap seperti .bubble-video-thumb/
+                    .bubble-sticker yang FIXED), jadi sebelum foto asli
+                    selesai dimuat elemen <img> ini KOLAPS nyaris 0px tinggi.
+                    Kombinasi itu dengan "loading=lazy" (defer native
+                    browser, REDUNDAN — Virtuoso di MessageList.jsx SUDAH
+                    virtualize baris yang jauh dari viewport) bikin klik
+                    kutipan foto (bubble-quote → scrollToMessage →
+                    Virtuoso.scrollToIndex) mendarat di baris yang tingginya
+                    masih perkiraan/kolaps — begitu foto akhirnya termuat,
+                    tingginya melonjak, Virtuoso reflow, dan posisi yang
+                    baru saja di-scroll ke situ bergeser lagi. Efeknya:
+                    "klik kutipan foto = seperti tidak terjadi apa-apa".
+                    Kutipan TEKS tidak kena (tinggi baris teks sudah pasti
+                    sejak render pertama). Video/stiker juga TIDAK kena
+                    (.bubble-video-thumb & .bubble-sticker sudah punya
+                    width/height TETAP di index.css, jadi tidak kolaps). */}
+                <img src={m.mediaUrl} alt="Foto" className="bubble-img" decoding="async" onError={(e) => { e.target.closest("button").style.display = "none"; }} />
               </button>
             )}
             {m.mediaType === "video" && m.mediaUrl && (
