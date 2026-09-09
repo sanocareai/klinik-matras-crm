@@ -45,8 +45,13 @@ export const DIVISION_CONTENT = {
   },
   bengkel: {
     icon: Wrench,
-    short: "Production",
-    title: "Production Operations",
+    // D-148 (9 September 2026, audit konsistensi) — "Production"/"Production
+    // Operations"/"Production Board" diterjemahkan supaya cocok PERSIS dengan
+    // label yang sudah dipakai di sidebar (Layout.jsx) dan PageHeader
+    // (Bengkel.jsx: "Operasional Produksi", "Papan Produksi") — sebelumnya
+    // halaman yang SAMA punya 3 nama berbeda di 3 tempat berbeda.
+    short: "Produksi",
+    title: "Operasional Produksi",
     subtitle: "Perencanaan produksi, work order, quality control, dan kapasitas.",
     heroLine: "Workspace operasional untuk memantau tahap pengerjaan work order dan kapasitas produksi.",
     // Production Tahap 1 (2 Agustus 2026): Work Order jadi halaman nyata.
@@ -58,12 +63,12 @@ export const DIVISION_CONTENT = {
     // jujur bahwa mockup pernah menyebutkannya, bukan supaya terlihat
     // seolah sedang dikerjakan.
     modules: [
-      { title: "Production Board",  description: "Papan harian: target hari ini dan tahap yang selesai.", icon: ClipboardList, path: "/bengkel" },
-      { title: "Work Order",        description: "Seluruh unit kasur beserta status dan tahap pengerjaannya.", icon: Boxes, path: "/bengkel/work-orders" },
-      { title: "QC Inspection",     description: "Uji berat badan, verdict QC, dan catatan mutu per unit.", icon: ScanLine, path: "/bengkel/qc" },
-      { title: "Capacity Planning", description: "Rencana kapasitas mesin, tim, dan shift produksi.", icon: BarChart3, path: null },
-      { title: "Product Recipe",    description: "Bill of material dan standar konstruksi tiap tipe kasur.", icon: Boxes, path: null },
-      { title: "Maintenance",       description: "Jadwal perawatan mesin dan laporan downtime.", icon: Wrench, path: null },
+      { title: "Papan Produksi",       description: "Papan harian: target hari ini dan tahap yang selesai.", icon: ClipboardList, path: "/bengkel" },
+      { title: "Work Order",           description: "Seluruh unit kasur beserta status dan tahap pengerjaannya.", icon: Boxes, path: "/bengkel/work-orders" },
+      { title: "Inspeksi QC",          description: "Uji berat badan, verdict QC, dan catatan mutu per unit.", icon: ScanLine, path: "/bengkel/qc" },
+      { title: "Perencanaan Kapasitas", description: "Rencana kapasitas mesin, tim, dan shift produksi.", icon: BarChart3, path: null },
+      { title: "Resep Produk",         description: "Bill of material dan standar konstruksi tiap tipe kasur.", icon: Boxes, path: null },
+      { title: "Perawatan Mesin",      description: "Jadwal perawatan mesin dan laporan downtime.", icon: Wrench, path: null },
     ],
   },
   warehouse: {

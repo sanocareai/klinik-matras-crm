@@ -204,6 +204,15 @@ export default function ProductionOrders() {
       <PageBody>
         {summary && (
           <WorkspaceHero
+            // D-148 (9 September 2026, audit konsistensi) — tone="blue" DI
+            // SINI SENGAJA, bukan lupa mengganti ke "amber" (warna Bengkel).
+            // Halaman ini eksplisit "Ringkasan LINTAS DIVISI" (data order dari
+            // Sales CRM, bukan cuma milik Bengkel) — kembarannya persis di
+            // armada/ArmadaOrders.jsx juga tone="blue" untuk alasan yang sama.
+            // Warna divisi (amber/sky/violet) dipakai KHUSUS landing page
+            // masing-masing workspace (Bengkel/Gudang/Kendali) yang isinya
+            // murni milik divisi itu — JANGAN ikut-ikutan diubah ke warna
+            // divisi kalau nanti diaudit ulang.
             tone="blue"
             title="Ringkasan lintas divisi"
             subtitle="Dihitung dari filter yang sedang aktif — bukan cuma 300 baris pertama di tabel."

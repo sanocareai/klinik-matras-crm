@@ -49,7 +49,7 @@ export default function ProductionQcQueue() {
   return (
     <PageContainer>
       <PageHeader
-        title="QC Inspection"
+        title="Inspeksi QC"
         subtitle="Unit yang sedang menunggu Uji Berat Badan (D-009)."
         actions={
           <Button variant="ghost" size="sm" onClick={load} disabled={loading}>

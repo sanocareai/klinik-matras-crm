@@ -130,9 +130,9 @@ export const SEVERITY_REAL = {
 // Workspace health level (Production Core Slice 2F) — dipakai Command
 // Center, cermin deriveWorkspaceHealth() di backend.
 export const WORKSPACE_HEALTH_REAL = {
-  STABLE:    { label: "Stable",    tone: "ok" },
-  ATTENTION: { label: "Attention", tone: "warn" },
-  CRITICAL:  { label: "Critical",  tone: "critical" },
+  STABLE:    { label: "Stabil",         tone: "ok" },
+  ATTENTION: { label: "Perlu Perhatian", tone: "warn" },
+  CRITICAL:  { label: "Kritis",         tone: "critical" },
 };
 
 // enum FitVerdict & PreferenceOverride (D-005, D-009) — Uji Berat Badan.

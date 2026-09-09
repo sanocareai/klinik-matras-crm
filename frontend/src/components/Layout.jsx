@@ -42,6 +42,17 @@ import { cn } from "@/lib/utils.js";
 // LABEL TEKS di badge divisi + ikon. Kalau suatu saat orientasi divisi terasa
 // hilang, kembalikan `accent` per divisi di bawah (dan PORTAL_ACCENT di
 // Portal.jsx), jangan menambal dengan warna di satu tempat saja.
+//
+// ⚠️ CATATAN (D-148, 9 September 2026, audit konsistensi) — keputusan "satu
+// biru" di atas HANYA berlaku untuk sidebar/badge/Portal. Kartu ringkasan
+// besar tiap workspace (`<WorkspaceHero>`, components/ui/workspace-hero.jsx)
+// dibangun DI HARI YANG SAMA tapi TIDAK PERNAH disamakan — komponen itu
+// masih punya 5 tone warna (amber Bengkel, sky Gudang, violet Kendali, dst)
+// dan MASIH DIPAKAI SENGAJA di landing page tiap workspace. Ini BUKAN bug
+// yang perlu diperbaiki diam-diam — dua sistem warna ini sengaja dibiarkan
+// hidup berdampingan (badge polos vs kartu besar), tapi kalau suatu saat mau
+// disatukan, ubah DUA-DUANYA sekaligus, jangan cuma satu lalu terasa lebih
+// tidak konsisten.
 const DIVISION_ACCENT = {
   text: "text-blue-700",
   bg: "bg-blue-50",
@@ -151,20 +162,36 @@ const DIVISIONS = {
     accent: {
       ...DIVISION_ACCENT,
     },
+    // Dikelompokkan 9 September 2026 (D-148, audit konsistensi — sebelumnya
+    // 6 menu rata dalam SATU section berlabel Inggris "PRODUCTION", satu-
+    // satunya divisi yang belum dikelompokkan seperti Growth/Delivery). Pola
+    // SAMA dengan `armada` di atas: OPERASIONAL untuk kerja harian (papan +
+    // daftar unit + pantau order), lalu section terpisah untuk mutu/revisi
+    // (setara "DOKUMEN & KENDALA" Delivery), lalu LAPORAN sendiri.
     sections: [
       {
-        section: "PRODUCTION",
+        section: "OPERASIONAL",
         items: [
           { to: "/bengkel",                 label: "Papan Produksi",  Icon: ClipboardList },
+          { to: "/bengkel/work-orders",     label: "Work Order",      Icon: Boxes },
           // Semua Order (D-086, 5 September 2026) — pasangan Bengkel dari
           // "Semua Order" Delivery (lihat catatan D-052 di atas) — laporan
           // owner: sales suka lupa update status, semua divisi harus bisa
           // pantau & ubah status order di workspace masing-masing.
           { to: "/bengkel/orders",          label: "Semua Order",     Icon: ClipboardList },
-          { to: "/bengkel/work-orders",     label: "Work Order",      Icon: Boxes },
-          { to: "/bengkel/qc",              label: "QC Inspection",   Icon: ScanLine },
+        ],
+      },
+      {
+        section: "MUTU & REVISI",
+        items: [
+          { to: "/bengkel/qc",              label: "Inspeksi QC",     Icon: ScanLine },
           { to: "/bengkel/scope-revisions", label: "Revisi Lingkup",  Icon: GitBranch },
           { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
+        ],
+      },
+      {
+        section: "LAPORAN",
+        items: [
           { to: "/bengkel/reports",         label: "Laporan",         Icon: BarChart3 },
         ],
       },

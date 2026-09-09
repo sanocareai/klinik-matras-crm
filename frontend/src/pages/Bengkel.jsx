@@ -336,12 +336,12 @@ export default function Bengkel() {
   return (
     <PageContainer>
       <PageHeader
-        title="Production Operations"
+        title="Operasional Produksi"
         subtitle="Kendali produksi harian, risiko, hambatan, dan progress bengkel."
         actions={
           <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={refreshAll} className="h-10">
-              <RefreshCw className="h-4 w-4" /> Refresh
+              <RefreshCw className="h-4 w-4" /> Muat Ulang
             </Button>
             <Button onClick={() => setAdding((v) => !v)} className="h-10">
               <Plus className="h-4 w-4" /> Tambah Target
@@ -367,7 +367,7 @@ export default function Bengkel() {
       <div className="mb-5">
         {ccLoading && !cc ? (
           <Card className="flex items-center justify-center gap-2 p-8 text-ink2">
-            <Loader2 className="h-4 w-4 animate-spin" /> <span className="text-sm">Memuat command center…</span>
+            <Loader2 className="h-4 w-4 animate-spin" /> <span className="text-sm">Memuat pusat kendali…</span>
           </Card>
         ) : ccError && !cc ? (
           <Card className="p-4 text-[12.5px] text-red">{ccError}</Card>
@@ -375,20 +375,20 @@ export default function Bengkel() {
           <>
             <WorkspaceHero
               tone="amber"
-              title="Production command center"
+              title="Pusat Kendali Produksi"
               subtitle="Target harian, progres tahap pengerjaan, dan unit yang belum masuk papan hari ini."
               health={{ label: WORKSPACE_HEALTH_REAL[cc.workspaceHealth.level]?.label || cc.workspaceHealth.level, tone: healthTone }}
               stats={[
                 { label: "Target Hari Ini", value: cc.summary.targetToday, hint: cc.date },
                 { label: "Selesai Hari Ini", value: cc.summary.completedToday, hint: `dari ${cc.summary.targetToday} target` },
                 { label: "Sedang Dikerjakan", value: cc.summary.inProgress },
-                { label: "Blocked", value: cc.summary.blocked, hint: cc.summary.blocked > 0 ? "perlu tindakan" : "tidak ada" },
+                { label: "Terhambat", value: cc.summary.blocked, hint: cc.summary.blocked > 0 ? "perlu tindakan" : "tidak ada" },
                 dueDateTracked
-                  ? { label: "At Risk", value: cc.summary.atRisk, hint: "berisiko terlambat" }
-                  : { label: "At Risk", value: "—", hint: "Belum ada target tanggal" },
+                  ? { label: "Berisiko", value: cc.summary.atRisk, hint: "berisiko terlambat" }
+                  : { label: "Berisiko", value: "—", hint: "Belum ada target tanggal" },
                 dueDateTracked
-                  ? { label: "Overdue", value: cc.summary.overdue, hint: "sudah lewat target" }
-                  : { label: "Overdue", value: "—", hint: "Belum ada target tanggal" },
+                  ? { label: "Terlambat", value: cc.summary.overdue, hint: "sudah lewat target" }
+                  : { label: "Terlambat", value: "—", hint: "Belum ada target tanggal" },
               ]}
             />
 
@@ -440,7 +440,7 @@ export default function Bengkel() {
                           <span className="text-[11px] text-ink3">{formatDurasiMenit(exc.durationMinutes)}</span>
                         )}
                         <Button size="sm" variant="secondary" onClick={() => navigate(exc.href)}>
-                          Open Work Order
+                          Buka Work Order
                         </Button>
                       </div>
                     </li>
@@ -453,15 +453,15 @@ export default function Bengkel() {
                 tahap fisik (routing belum cukup terisi utk semua unit). */}
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               {[
-                ["Queued", cc.flow.queued],
-                ["In Progress", cc.flow.inProgress],
-                // Paused (Production Core Slice 3Q) — SEBELUM Slice 3, action
+                ["Antrean", cc.flow.queued],
+                ["Dikerjakan", cc.flow.inProgress],
+                // Dijeda (Production Core Slice 3Q) — SEBELUM Slice 3, action
                 // PAUSE tidak pernah ditulis jadi kolom ini selalu 0; SEKARANG
                 // menghitung unit yang benar-benar dijeda, TERPISAH dari
-                // Blocked (kartu health di atas) dan In Progress.
-                ["Paused", cc.flow.paused],
-                ["Waiting QC", cc.flow.waitingQc],
-                ["Rework", cc.flow.rework],
+                // Terhambat (kartu health di atas) dan Dikerjakan.
+                ["Dijeda", cc.flow.paused],
+                ["Tunggu QC", cc.flow.waitingQc],
+                ["Diulang", cc.flow.rework],
                 ["Selesai Hari Ini", cc.flow.completed],
               ].map(([label, value]) => (
                 <Card key={label} className="p-3 text-center">
@@ -512,8 +512,14 @@ export default function Bengkel() {
           <p className="text-[12.5px] text-ink2">
             <strong className="text-ink">{available.length} unit</strong> belum masuk target hari ini.
           </p>
+          {/* D-148 (9 September 2026) — audit konsistensi: tombol ini SEBELUMNYA
+              berlabel "Plan Units" walau aksinya (setAdding) IDENTIK dengan
+              tombol "Tambah Target" di header (baris ~347), dan teks bantuan
+              di empty-state (baris ~491) sudah menyebut "Tambah Target" —
+              beda nama untuk aksi yang sama bikin pengguna mencari tombol
+              yang salah. Disamakan, bukan cuma soal bahasa. */}
           <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>
-            Plan Units
+            Tambah Target
           </Button>
         </Card>
       )}
