@@ -1378,6 +1378,9 @@ body {
 }
 .tab-chip:hover { background: var(--bg-hover, rgba(0,0,0,.04)); }
 .tab-chip.active { background: var(--card-bg); color: var(--text-primary); }
+/* D-145 — indikator drop saat drag-reorder tab (HTML5 native drag API,
+   pola sama dengan Pipeline Kanban). */
+.tab-chip.drag-over { box-shadow: inset 2px 0 0 var(--primary, #2563eb); }
 .tab-chip-label { overflow: hidden; text-overflow: ellipsis; }
 .tab-chip-close {
   display: flex; align-items: center; justify-content: center;

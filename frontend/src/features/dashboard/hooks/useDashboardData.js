@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../../api.js";
 import { BAND2_IS_MOCK, MOCK_HOT_LEADS, MOCK_FOLLOW_UPS } from "../data/contracts.js";
+import { useTabVisibility } from "../../../lib/TabsContext.jsx";
 
 // Assembler data dashboard. Hanya mengambil apa yang BENAR-BENAR dipakai
 // pages/Dashboard.jsx: overview (KPI + Sales Overview lama), follow-ups,
@@ -16,6 +17,13 @@ import { BAND2_IS_MOCK, MOCK_HOT_LEADS, MOCK_FOLLOW_UPS } from "../data/contract
 // TIDAK menyentuh WAHA/SSE/inbox — hanya baca /analytics/* yang sudah ada.
 export function useDashboardData(range) {
   const params = { from: range.from, to: range.to };
+  // D-145 (9 September 2026) — sistem tab dalam-app (D-144) bikin Dashboard
+  // bisa tetap MOUNTED di tab background (keep-alive), jadi refetchInterval
+  // di bawah akan terus jalan sia-sia kalau tab-nya tidak sedang dilihat.
+  // `false` di posisi refetchInterval berarti "matikan auto-refetch", BUKAN
+  // "matikan query" — data yang sudah ada tetap tampil, cuma polling-nya
+  // yang pause. Begitu tab ini aktif lagi, efek ini otomatis nyala lagi.
+  const isTabVisible = useTabVisibility();
 
   const overview = useQuery({
     queryKey: ["dash", "overview", params],
@@ -33,7 +41,7 @@ export function useDashboardData(range) {
     queryKey: ["dash", key, BAND2_IS_MOCK ? "mock" : "live"],
     queryFn: () => (BAND2_IS_MOCK ? Promise.resolve(mock) : real()),
     staleTime: BAND2_IS_MOCK ? Infinity : 45_000,
-    refetchInterval: BAND2_IS_MOCK ? false : 45_000,
+    refetchInterval: BAND2_IS_MOCK || !isTabVisible ? false : 45_000,
   });
   const hotLeads  = band2("hot-leads",  api.getHotLeads,  MOCK_HOT_LEADS);
   const followUps = band2("follow-ups", api.getFollowUps, MOCK_FOLLOW_UPS);
@@ -47,7 +55,7 @@ export function useDashboardData(range) {
     queryKey: ["dash", "recent-activity"],
     queryFn: () => api.getRecentActivity({ limit: 12 }),
     staleTime: 45_000,
-    refetchInterval: 45_000,
+    refetchInterval: isTabVisible ? 45_000 : false,
   });
 
   return { overview, hotLeads, followUps, recentActivity };
