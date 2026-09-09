@@ -170,6 +170,33 @@ html:not([data-theme="dark"]) .glass-division .app-content > header {
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.5);
 }
 
+/* Tab strip kaca, pasangan mode terang dari delivery-dark.css (D-147) —
+   strip transparan (gradien di baliknya tetap terlihat), tab AKTIF-nya
+   sendiri yang jadi pill kaca terangkat — "liquid glass" khas Apple,
+   bukan panel putih pekat. */
+html:not([data-theme="dark"]) .glass-division .app-content > .tab-strip {
+  background: transparent !important;
+}
+html:not([data-theme="dark"]) .glass-division .app-content > .tab-strip .tab-chip:hover {
+  background-color: var(--dh-surface);
+  backdrop-filter: blur(14px);
+}
+html:not([data-theme="dark"]) .glass-division .app-content > .tab-strip .tab-chip.active {
+  background-color: var(--dh-elevated) !important;
+  color: var(--dh-accent-2) !important;
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 6px 18px -8px rgba(76,141,255,.35);
+}
+html:not([data-theme="dark"]) .glass-division .app-content > .tab-strip .tab-chip-close:hover {
+  background-color: rgba(0,0,0,.08);
+  color: var(--dh-accent-2);
+}
+html:not([data-theme="dark"]) .glass-division .app-content > .tab-strip .tab-strip-add:hover {
+  background-color: var(--dh-surface);
+  backdrop-filter: blur(14px);
+  color: var(--dh-accent-2);
+}
+
 /* ── 1b/1c. CHROME SIDEBAR & TOPBAR (D-047, koreksi kedua hari yang sama) ──
    Pasangan mode terang untuk blok yang sama di delivery-dark.css — laporan
    owner "masih beda jauh, buat seperti artifacts" berlaku untuk KEDUA mode,

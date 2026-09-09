@@ -297,6 +297,36 @@
   border-bottom: 1px solid var(--dh-hairline);
 }
 
+/* Tab strip kaca (D-147, 9 September 2026, laporan owner: "apple style
+   design, ada glass effect oke banget") — strip itu sendiri DIBIARKAN
+   transparan (background diset transparan) supaya `dh-glow` ambient di
+   belakangnya tetap terlihat menyala, bukan tertutup lapisan blur kedua di
+   atas Topbar yang sudah kaca. Kaca sungguhan ada di tab AKTIF-nya sendiri
+   (pill terangkat, backdrop-filter + tint --dh-elevated), meniru window
+   tab macOS/Arc — bukan strip datar polos. */
+[data-theme="dark"] .glass-division .app-content > .tab-strip {
+  background: transparent !important;
+}
+[data-theme="dark"] .glass-division .app-content > .tab-strip .tab-chip:hover {
+  background-color: var(--dh-surface);
+  backdrop-filter: blur(14px);
+}
+[data-theme="dark"] .glass-division .app-content > .tab-strip .tab-chip.active {
+  background-color: var(--dh-elevated) !important;
+  color: #fff !important;
+  backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.06) inset, 0 6px 18px -8px rgba(76,141,255,.45);
+}
+[data-theme="dark"] .glass-division .app-content > .tab-strip .tab-chip-close:hover {
+  background-color: rgba(255,255,255,.14);
+  color: #fff;
+}
+[data-theme="dark"] .glass-division .app-content > .tab-strip .tab-strip-add:hover {
+  background-color: var(--dh-surface);
+  backdrop-filter: blur(14px);
+  color: #fff;
+}
+
 /* ── 1c. CHROME TOPBAR: cari, lonceng, menu akun (D-047) ──────────────────
    Sama alasan dengan 1b — ketiga kontrol ini di Topbar.jsx cuma memakai
    utility Tailwind polos (bg-inset/hover:bg-hovertint), tidak ada kelas
