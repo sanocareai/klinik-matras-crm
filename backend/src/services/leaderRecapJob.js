@@ -59,7 +59,7 @@ import {
 // yang SELESAI hari ini, dipakai ulang dari services/deliveryCompletionNotify.js
 // (SATU sumber kebenaran dgn notifikasi real-time ke sales), bukan
 // diimplementasi ulang di sini.
-import { loadJobsCompletedTodayBySales } from "./deliveryCompletionNotify.js";
+import { loadJobsCompletedTodayBySales, loadJobsCompletedBetweenBySales } from "./deliveryCompletionNotify.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETTINGS_FILE = path.join(__dirname, "../../data/settings.json");
@@ -67,7 +67,22 @@ const SETTINGS_FILE = path.join(__dirname, "../../data/settings.json");
 const DEFAULT_CONFIG = {
   enabled: false, // lihat catatan header — sengaja mati sampai ditinjau owner
   cronExpression: "30 17 * * 1-6", // 17:30 WIB, Senin-Sabtu — 30 menit setelah topik terakhir (zeroClosing, 17:00)
+  // Rekap Susulan Pagi (9 Sep 2026, permintaan owner: "ada job selesai
+  // diatas jam 5 sore kirim ke novi besok jam 7 pagi") — lihat
+  // buildMorningCatchup/runMorningCatchupCycle di bawah. Pakai FLAG SAMA
+  // (`enabled` di atas) — bukan flag terpisah, karena ini bagian tak
+  // terpisahkan dari fitur leaderRecap yang sudah owner nyalakan &
+  // pahami, bukan topik baru yang perlu ditinjau ulang.
+  morningCatchupCronExpression: "0 7 * * 1-6", // 07:00 WIB, Senin-Sabtu
 };
+
+// Jam:menit rekap SORE (HARUS sinkron dgn cronExpression default di atas,
+// "30 17" = 17:30) — dipakai buildMorningCatchup() menghitung batas AWAL
+// jendela "job yang selesai setelah rekap sore kemarin". Konstanta manual
+// (bukan parse cronExpression) — SENGAJA, project ini condong ke simpel
+// (lihat CLAUDE.md §2) drpd parser cron generik untuk satu titik pakai ini;
+// kalau cronExpression rekap sore diubah owner, WAJIB update ini juga.
+const EVENING_RECAP_CUTOFF_MINUTES = 17 * 60 + 30;
 
 function readConfig() {
   let raw = {};
@@ -222,11 +237,108 @@ export async function runLeaderRecapCycle({ referenceNow = new Date(), dryRun = 
   return summary;
 }
 
+// ─── REKAP SUSULAN PAGI (9 September 2026, permintaan owner) ───────────────
+// "just in case rekap ke novi kan setiap jam 5 sore ya, ada job selesai
+// diatas jam 5 sore kirim ke novi besok jam 7 pagi" — rekap sore (di atas)
+// dihitung SEKALI di 17:30 WIB, jadi job yang baru selesai SETELAH momen
+// itu (mis. driver pulang malam) tidak pernah muncul di rekap manapun
+// sampai skema ini ada. Cakupan SEMPIT (BUKAN rekap ulang semua 7 topik) —
+// cuma job delivery/armada yang selesai di jendela [kemarin 17:30, sekarang
+// WIB), pakai loadJobsCompletedBetweenBySales() yang sama dgn rekap sore.
+// DIAM kalau kosong (tidak ada job selesai di jendela itu) — konsisten dgn
+// prinsip "hindari notifikasi berlebihan" yang sudah dipegang di seluruh
+// sistem broadcast ini (lihat header salesReminderDigestJob.js).
+export async function buildMorningCatchup({ referenceNow = new Date() } = {}) {
+  const config = readConfig();
+  const now = referenceNow.getTime();
+  const { year, month, day } = nowPartsWIB(new Date(now));
+  const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const cutoffKemarin = new Date(
+    startOfDayWIB(todayStr).getTime() - 86_400_000 + EVENING_RECAP_CUTOFF_MINUTES * 60_000
+  );
+
+  const completedBySales = await loadJobsCompletedBetweenBySales(cutoffKemarin, referenceNow);
+  const salesList = await daftarSalesAktif();
+
+  const barisTim = salesList
+    .map((sales) => {
+      const items = completedBySales.get(sales.id);
+      if (!items?.length) return null;
+      return `*${sales.name}*\n${items.map((i) => `- ${i.tipe}: ${i.nama} (${i.orderNumber})`).join("\n")}`;
+    })
+    .filter(Boolean);
+
+  if (barisTim.length === 0) return { config, pesan: null, leaders: [] }; // tidak ada yang perlu dilaporkan — diam
+
+  const pesan = [
+    `🌙 *Rekap Susulan* — pengiriman/pengambilan yang selesai setelah rekap sore kemarin:`,
+    "",
+    barisTim.join("\n\n"),
+  ].join("\n");
+
+  const leaders = await prisma.user.findMany({
+    where: { isSalesTeamLead: true, active: true },
+    select: { id: true, name: true },
+  });
+
+  return { config, pesan, leaders };
+}
+
+export async function runMorningCatchupCycle({ referenceNow = new Date(), dryRun = false } = {}) {
+  const { config, pesan, leaders } = await buildMorningCatchup({ referenceNow });
+  const summary = { enabled: config.enabled, leaders: leaders.length, sent: 0, skippedNoPhone: 0, skippedAlreadySent: 0, skippedEmpty: !pesan };
+  if (!pesan) return summary; // tidak ada job susulan — diam, tidak kirim apa pun
+
+  const directory = readSalesPhoneDirectory();
+
+  let sudahDikirimHariIni = new Set();
+  if (!dryRun && config.enabled) {
+    const { year, month, day } = nowPartsWIB(referenceNow);
+    const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const existing = await prisma.staffBroadcast.findMany({
+      where: { kind: "AUTO_REMINDER", topic: "leaderRecapMorningCatchup", createdAt: { gte: startOfDayWIB(todayStr) } },
+      select: { recipientIds: true },
+    });
+    for (const row of existing) for (const id of row.recipientIds) sudahDikirimHariIni.add(id);
+  }
+
+  for (const leader of leaders) {
+    const phone = resolveSalesPhone(leader.name, directory);
+    if (dryRun) {
+      console.log(`[leader-recap] (dryRun, catch-up pagi) TIDAK dikirim ke ${leader.name} (${phone || "no phone"}):\n${pesan}\n`);
+      continue;
+    }
+    if (!config.enabled) continue;
+    if (sudahDikirimHariIni.has(leader.id)) { summary.skippedAlreadySent++; continue; }
+    if (!phone) { summary.skippedNoPhone++; continue; }
+
+    const ok = await kirimWA(phone, pesan, `Rekap Susulan Pagi — ${leader.name}`);
+    await prisma.staffBroadcast.create({
+      data: {
+        message: pesan,
+        recipientIds: [leader.id],
+        scheduledAt: referenceNow,
+        status: "SENT",
+        sentAt: new Date(),
+        kind: "AUTO_REMINDER",
+        topic: "leaderRecapMorningCatchup",
+        results: { [leader.id]: { nama: leader.name, phone, status: ok ? "TERKIRIM" : "GAGAL" } },
+      },
+    }).catch((err) => console.error("[leader-recap] Gagal catat riwayat (catch-up pagi):", err.message));
+    if (ok) summary.sent++;
+  }
+  return summary;
+}
+
 export function startLeaderRecapJob() {
   const config = readConfig();
   cron.schedule(config.cronExpression, async () => {
     console.log("[leader-recap] Cron fired");
     await runLeaderRecapCycle();
   }, { timezone: "Asia/Jakarta" });
-  console.log(`[leader-recap] Job terdaftar — jadwal "${config.cronExpression}" (Asia/Jakarta), enabled=${config.enabled}`);
+  cron.schedule(config.morningCatchupCronExpression, async () => {
+    console.log("[leader-recap] Cron (catch-up pagi) fired");
+    await runMorningCatchupCycle();
+  }, { timezone: "Asia/Jakarta" });
+  console.log(`[leader-recap] Job terdaftar — jadwal "${config.cronExpression}" + catch-up pagi "${config.morningCatchupCronExpression}" (Asia/Jakarta), enabled=${config.enabled}`);
 }

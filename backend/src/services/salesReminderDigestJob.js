@@ -37,16 +37,20 @@
 //      kirim update dokumentasi ke customer, dan pastikan semua request
 //      customer sudah dipenuhi SEBELUM dikirim (permintaan owner 7 Sep
 //      2026). Default jadwal: 14:00 WIB.
-//   7. Terkirim TAPI BELUM LUNAS (9 September 2026, permintaan owner) —
-//      PERSISTEN (sama pola dgn poin 3/Data Belum Lengkap), BEDA dari
-//      poin 4/Follow-up H+1 yang window sekali-lapor: order ini akan terus
-//      muncul TIAP HARI selama paymentStatus belum LUNAS, karena "belum
-//      lunas" adalah kondisi yang harus terus ditindaklanjuti, bukan
-//      peristiwa sekali-jadi. Default jadwal: 10:00 WIB. Punya flag
-//      enable TERPISAH (`unpaidDeliveredEnabled`, lihat DEFAULT_CONFIG) —
-//      topik baru ini TIDAK ikut aktif otomatis walau `enabled` utama
-//      sudah true di production (6 topik lama sudah live), supaya owner
-//      sempat meninjau contoh pesannya dulu sebelum benar-benar terkirim.
+//   7. Terkirim TAPI BELUM LUNAS — DIKOREKSI 9 September 2026 (masih hari
+//      yang sama dibuat): AWALNYA topik cron terjadwal (10:00 WIB, PERSISTEN
+//      tiap hari) sama seperti 6 topik lain — TAPI owner minta diubah jadi
+//      REAL-TIME juga, TANPA jadwal jam sama sekali: "gaperlu jadwal jam,
+//      jadi selalu kirim info/broadcast ketika dari tim delivery update".
+//      Sekarang loader (`loadUnpaidDeliveredBySales`) + composer
+//      (`composeUnpaidDeliveredMessage`) di file ini TETAP di sini (dipakai
+//      ULANG oleh leaderRecapJob.js untuk angka rekap, DAN oleh
+//      services/deliveryCompletionNotify.js yang memicu WA real-time-nya
+//      begitu POST /armada/jobs/:id/complete membuat status order jadi
+//      DELIVERED) — TIDAK ADA LAGI cron/topik terjadwal untuk poin ini di
+//      file ini. `unpaidDeliveredEnabled` di DEFAULT_CONFIG TETAP ada,
+//      sekarang dicek oleh deliveryCompletionNotify.js (bukan cron di sini)
+//      sebagai flag staging real-time-nya.
 //
 // RIWAYAT (7 September 2026, permintaan owner — "gahanya riwayat broadcast
 // yang dibikin manual, tapi yang dikirim otomatis juga"): tiap kali SATU
@@ -84,13 +88,12 @@ const DEFAULT_CONFIG = {
   // Jam WIB berbeda per topik (revisi 7 Sep 2026) — tersebar sepanjang jam
   // kerja, Senin-Sabtu, supaya tidak ada 1 momen "5 topik sekaligus".
   schedule: {
-    unread:          "0 9 * * 1-6",
-    unpaidDelivered: "0 10 * * 1-6",
-    hanging:         "0 11 * * 1-6",
-    incomplete:      "0 13 * * 1-6",
-    processing:      "0 14 * * 1-6",
-    followUp:        "0 15 * * 1-6",
-    zeroClosing:     "0 17 * * 1-6",
+    unread:      "0 9 * * 1-6",
+    hanging:     "0 11 * * 1-6",
+    incomplete:  "0 13 * * 1-6",
+    processing:  "0 14 * * 1-6",
+    followUp:    "0 15 * * 1-6",
+    zeroClosing: "0 17 * * 1-6",
   },
   unreadThresholdMinutes: 60, // poin 1
   hangingThresholdMinutes: 60, // poin 2
@@ -99,10 +102,8 @@ const DEFAULT_CONFIG = {
   // yang diharapkan sales. Order sebelum tanggal ini TIDAK PERNAH ikut
   // dihitung "perlu dilengkapi" atau "perlu follow-up".
   dataSejakTanggal: "2026-09-01",
-  // Poin 7 (9 Sep 2026) — lihat catatan header. Default MATI TERPISAH dari
-  // `enabled` di atas walau `enabled` sudah true di production — dicek
-  // TAMBAHAN (AND, bukan pengganti) sebelum topik ini benar-benar kirim,
-  // lihat runUnpaidDeliveredCycle().
+  // Poin 7 — lihat catatan header (SEKARANG real-time, bukan cron di file
+  // ini). Flag staging dicek oleh services/deliveryCompletionNotify.js.
   unpaidDeliveredEnabled: false,
 };
 
@@ -423,7 +424,12 @@ function composeFollowUpMessage(nama, items) {
   ].filter(Boolean).join("\n");
 }
 
-function composeUnpaidDeliveredMessage(nama, items) {
+// `export` (9 Sep 2026) — dipakai ULANG oleh
+// services/deliveryCompletionNotify.js untuk pesan real-time-nya, supaya
+// isi/nada pesan SAMA PERSIS dengan yang dulu dipakai cron (sebelum
+// dipindah jadi real-time, lihat catatan header di atas), tidak
+// diimplementasi ulang.
+export function composeUnpaidDeliveredMessage(nama, items) {
   if (!items?.length) return null;
   return [
     `👋 Halo *${nama}*, ada ${items.length} order yang *sudah terkirim* tapi *belum LUNAS*:`,
@@ -577,20 +583,6 @@ export async function runProcessingCycle({ referenceNow = new Date(), dryRun = f
   });
 }
 
-export async function runUnpaidDeliveredCycle({ referenceNow = new Date(), dryRun = false } = {}) {
-  const config = readConfig();
-  const salesList = await daftarSalesAktif();
-  const unpaidBySales = await loadUnpaidDeliveredBySales(config);
-  return dispatchSection({
-    // AND dgn flag khusus topik ini — lihat catatan DEFAULT_CONFIG di atas.
-    // dryRun tidak terpengaruh (dispatchSection tidak cek `enabled` sama
-    // sekali di jalur dryRun), jadi preview tetap jalan normal.
-    config: { ...config, enabled: config.enabled && config.unpaidDeliveredEnabled },
-    dryRun, salesList, label: "Terkirim Belum Lunas", topicKey: "unpaidDelivered",
-    computeMessage: (s) => composeUnpaidDeliveredMessage(s.name, unpaidBySales.get(s.id)),
-  });
-}
-
 export async function runZeroClosingCycle({ referenceNow = new Date(), dryRun = false } = {}) {
   const config = readConfig();
   const now = referenceNow.getTime();
@@ -606,7 +598,6 @@ export function startSalesReminderDigestJob() {
   const config = readConfig();
   const topik = [
     ["unread", config.schedule.unread, runUnreadCycle, "Chat Belum Dibaca"],
-    ["unpaidDelivered", config.schedule.unpaidDelivered, runUnpaidDeliveredCycle, "Terkirim Belum Lunas"],
     ["hanging", config.schedule.hanging, runHangingCycle, "Chat Menggantung"],
     ["incomplete", config.schedule.incomplete, runIncompleteCycle, "Data Belum Lengkap"],
     ["processing", config.schedule.processing, runProcessingCycle, "Mulai Diproses"],

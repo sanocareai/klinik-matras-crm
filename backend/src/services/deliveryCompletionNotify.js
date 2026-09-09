@@ -17,9 +17,22 @@
 //
 // STAGED UNTUK REVIEW: enabled:false by default (config SENDIRI,
 // data/settings.json#jobCompletedNotify — TERPISAH dari
-// salesReminderDigest.enabled yang sudah true di production), pola SAMA
-// dgn semua job WA otomatis lain di project ini — aman di-deploy, tidak
-// pernah kirim WA sampai owner eksplisit menyalakan.
+// salesReminderDigest.enabled), pola SAMA dgn semua job WA otomatis lain
+// di project ini — aman di-deploy, tidak pernah kirim WA sampai owner
+// eksplisit menyalakan.
+//
+// FILE INI JUGA memicu poin 7 salesReminderDigestJob.js ("Terkirim Belum
+// Lunas") — DIKOREKSI 9 Sep 2026, masih hari yang sama dibuat: AWALNYA
+// topik itu cron terjadwal jam 10:00 WIB tersendiri, TAPI owner minta
+// diubah jadi real-time juga: "gaperlu jadwal jam, jadi selalu kirim
+// info/broadcast ketika dari tim delivery update". Jadi begitu job selesai
+// menyebabkan Order.status jadi DELIVERED (weakest-link dari SEMUA unit
+// order itu, lihat orderStatusSync.js — bisa saja job PICKUP/revisi yang
+// baru memicu, bukan cuma DELIVERY biasa) DAN paymentStatus belum LUNAS,
+// notifySalesUnpaidAfterDelivery() di bawah kirim WA TERPISAH (pesan &
+// topic StaffBroadcast BEDA dari "job selesai" di atas — konsisten dgn
+// prinsip "1 topik = 1 pesan pendek" yang jadi alasan salesReminderDigestJob
+// dipecah per topik 7 Sep 2026, bukan digabung).
 
 import fs from "fs";
 import path from "path";
@@ -28,6 +41,7 @@ import { prisma } from "../db.js";
 import { sendText, getDefaultOpsSession } from "./wahaClient.js";
 import { readSalesPhoneDirectory, resolveSalesPhone } from "./salesPhoneDirectory.js";
 import { startOfDayWIB, nowPartsWIB } from "../utils/wib.js";
+import { readConfig as readSalesReminderConfig, composeUnpaidDeliveredMessage } from "./salesReminderDigestJob.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETTINGS_FILE = path.join(__dirname, "../../data/settings.json");
@@ -97,17 +111,83 @@ export async function notifySalesJobCompleted(job) {
   }).catch((err) => console.error("[job-completed-notify] Gagal catat riwayat:", err.message));
 }
 
-// Dipakai leaderRecapJob.js (rekap poin 2 baru) — hitung berapa job
-// (pengiriman+pengambilan) SELESAI HARI INI per sales pemilik order-nya.
-// Murni-hitung, TIDAK terikat config.enabled di atas — rekap ke leader
-// tetap informatif walau notifikasi real-time ke sales masih staged/mati.
-export async function loadJobsCompletedTodayBySales(now = Date.now()) {
-  const { year, month, day } = nowPartsWIB(new Date(now));
-  const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  const startToday = startOfDayWIB(todayStr);
+// Poin 7 salesReminderDigestJob.js, versi REAL-TIME — lihat catatan header
+// panjang di atas kenapa ini pindah dari cron ke sini. Dipanggil TERPISAH
+// dari notifySalesJobCompleted() di atas (pemanggil di armada.js membungkus
+// keduanya dgn .catch() masing-masing) — supaya kegagalan salah satu tidak
+// menggagalkan yang lain, dan supaya query order/customer/sales tetap
+// sendiri-sendiri per notifier (pola sama dgn notifySalesJobFailed di
+// pushNotifications.js — best-effort, self-contained, bukan berbagi hasil
+// query pemanggil).
+export async function notifySalesUnpaidAfterDelivery(job) {
+  const salesConfig = readSalesReminderConfig();
+  if (!salesConfig.enabled || !salesConfig.unpaidDeliveredEnabled) return; // staged, lihat catatan header
+  if (!job?.orderId) return;
 
+  const order = await prisma.order.findUnique({
+    where: { id: job.orderId },
+    select: {
+      orderNumber: true, status: true, paymentStatus: true,
+      customer: { select: { id: true, name: true, phone: true, assignedSalesId: true } },
+    },
+  });
+  // Cuma relevan kalau job INI yang barusan bikin order (weakest-link semua
+  // unit) jadi DELIVERED — job PICKUP/revisi yang tidak mengubah status
+  // akhir order TIDAK memicu apa-apa di sini, diam-diam.
+  if (order?.status !== "DELIVERED" || order?.paymentStatus === "LUNAS") return;
+
+  const salesId = order.customer?.assignedSalesId;
+  if (!salesId) return;
+
+  const sales = await prisma.user.findUnique({ where: { id: salesId }, select: { id: true, name: true } });
+  if (!sales) return;
+
+  const directory = readSalesPhoneDirectory();
+  const phone = resolveSalesPhone(sales.name, directory);
+  if (!phone) return;
+
+  // Reuse composer yang sama dgn dulu dipakai cron — 1 order (baru saja
+  // terkirim), bukan daftar akumulasi seperti sebelumnya.
+  const pesan = composeUnpaidDeliveredMessage(sales.name, [{
+    orderNumber: order.orderNumber || job.orderId,
+    nama: order.customer?.name || order.customer?.phone || "(tanpa nama)",
+    paymentStatus: order.paymentStatus,
+  }]);
+  if (!pesan) return;
+
+  let ok = false;
+  try {
+    await sendText(phone, pesan, null, getDefaultOpsSession());
+    ok = true;
+  } catch (err) {
+    console.warn(`[unpaid-delivered-notify] Gagal kirim WA ke ${sales.name}:`, err.message);
+  }
+
+  await prisma.staffBroadcast.create({
+    data: {
+      message: pesan,
+      recipientIds: [sales.id],
+      scheduledAt: new Date(),
+      status: "SENT",
+      sentAt: new Date(),
+      kind: "AUTO_REMINDER",
+      topic: "unpaidDelivered",
+      results: { [sales.id]: { nama: sales.name, phone, status: ok ? "TERKIRIM" : "GAGAL" } },
+    },
+  }).catch((err) => console.error("[unpaid-delivered-notify] Gagal catat riwayat:", err.message));
+}
+
+// Dipakai leaderRecapJob.js — hitung job (pengiriman+pengambilan) SELESAI
+// dalam RENTANG WAKTU tertentu per sales pemilik order-nya. Generik (bukan
+// cuma "hari ini") supaya bisa dipakai ULANG oleh rekap catch-up pagi (job
+// yang selesai SETELAH rekap sore kemarin terkirim, lihat
+// runMorningCatchupCycle di leaderRecapJob.js) TANPA menduplikasi query
+// yang sama. Murni-hitung, TIDAK terikat config.enabled manapun — rekap ke
+// leader tetap informatif walau notifikasi real-time ke sales masih
+// staged/mati.
+export async function loadJobsCompletedBetweenBySales(since, until) {
   const jobs = await prisma.job.findMany({
-    where: { status: "COMPLETED", completedAt: { gte: startToday } },
+    where: { status: "COMPLETED", completedAt: { gte: since, lt: until } },
     select: {
       type: true,
       order: { select: { orderNumber: true, customer: { select: { name: true, assignedSalesId: true } } } },
@@ -126,4 +206,11 @@ export async function loadJobsCompletedTodayBySales(now = Date.now()) {
     });
   }
   return bySales;
+}
+
+// Wrapper tipis — dipakai runLeaderRecapCycle() (rekap sore, "hari ini").
+export async function loadJobsCompletedTodayBySales(now = Date.now()) {
+  const { year, month, day } = nowPartsWIB(new Date(now));
+  const todayStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return loadJobsCompletedBetweenBySales(startOfDayWIB(todayStr), new Date(now));
 }
