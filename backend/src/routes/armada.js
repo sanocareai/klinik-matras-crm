@@ -3822,6 +3822,26 @@ armadaRouter.get("/revisions/units", requirePermission(P.JOB_READ), async (req, 
 });
 
 // POST /api/armada/revisions — ajukan revisi baru untuk sebuah unit.
+//
+// ⚠️ Order.hasComplaint disinkronkan di sini (9 September 2026, D-111) —
+// ditemukan lewat pengecekan live production: order Sulaeman Iskandar
+// (RES-21082026-121) punya UnitRevision REQUESTED aktif (diajukan lewat
+// Delivery > Retur, RevisionRequestDrawer.jsx, endpoint ini), TAPI
+// Order.hasComplaint tetap `false` — badge "Ada Komplain" di Sales CRM
+// (OrderSection.jsx) dan Semua Order (ArmadaOrders.jsx/ProductionOrders.jsx,
+// lihat D-109) TIDAK PERNAH menyala untuk kasus ini, walau Produksi/Delivery
+// sedang aktif menangani klaimnya. Sebabnya: dua jalur pencatatan komplain
+// yang SAMA SEKALI TERPISAH sejak awal — PATCH /orders/:id/complaint (tombol
+// "+ Ajukan Revisi/Komplain" di Sales CRM) menulis Order.hasComplaint TANPA
+// pernah membuat UnitRevision, sementara endpoint ini (dipakai Delivery)
+// membuat UnitRevision TANPA pernah menyentuh Order.hasComplaint — sales
+// yang tidak kebetulan buka Delivery > Retur tidak akan pernah tahu
+// customer-nya sedang komplain.
+//
+// complaintResolvedAt/By SENGAJA di-null-kan lagi di sini — kalau order ini
+// SEBELUMNYA pernah komplain lalu sudah tuntas, revisi baru ini adalah
+// SIKLUS BARU yang belum selesai (pola sama dengan PATCH /orders/:id/
+// complaint, lihat komentar di sana).
 armadaRouter.post("/revisions", requirePermission(P.JOB_WRITE), async (req, res) => {
   try {
     const { unitId, trigger, complaint } = req.body;
@@ -3833,11 +3853,24 @@ armadaRouter.post("/revisions", requirePermission(P.JOB_WRITE), async (req, res)
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
     if (unit.status !== "DELIVERED") throw new ArmadaError("Hanya unit yang sudah terkirim yang bisa diajukan revisi");
 
-    const revision = await prisma.unitRevision.create({
-      data: { unitId, trigger, complaint: complaint.trim(), createdById: req.user.id },
-      include: unitRevisionInclude,
+    const revision = await prisma.$transaction(async (tx) => {
+      const r = await tx.unitRevision.create({
+        data: { unitId, trigger, complaint: complaint.trim(), createdById: req.user.id },
+      });
+      await tx.order.update({
+        where: { id: unit.orderId },
+        data: {
+          hasComplaint: true,
+          complaintDate: new Date(),
+          complaintDetail: complaint.trim(),
+          complaintResolvedAt: null,
+          complaintResolvedById: null,
+        },
+      });
+      return r;
     });
-    res.status(201).json(revision);
+    const full = await prisma.unitRevision.findUnique({ where: { id: revision.id }, include: unitRevisionInclude });
+    res.status(201).json(full);
   } catch (err) {
     handleErr(err, res);
   }
