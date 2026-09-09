@@ -59,6 +59,19 @@ import "./styles/delivery-dark.css";
 // exclusive dengan file di atas, jadi tidak pernah baku-timpa). Lihat
 // styles/delivery-light.css.
 import "./styles/delivery-light.css";
+// APK Driver — retheme tipografi (9 September 2026), lihat catatan panjang
+// di styles/driver-app-theme.css utk kenapa cuma font (warna sudah cocok
+// tanpa disentuh). CSS-nya sendiri ringan (nama family saja) — aman
+// di-import statis di semua build. File FONT sungguhan (berat, woff/woff2)
+// ditarik lewat alias "virtual:driver-fonts" — import di sini TIDAK
+// bersyarat, pengecualiannya terjadi di vite.config.js/vite.config.
+// driver.js (resolve.alias beda per config), BUKAN kondisi runtime — sudah
+// dicoba pakai import() dinamis + cek VITE_APP_TARGET, TERBUKTI Rollup
+// tetap menyertakan chunk font itu di dist/ build web biasa walau
+// kondisinya tidak pernah true saat runtime (diverifikasi langsung di
+// hasil build, bukan asumsi).
+import "./styles/driver-app-theme.css";
+import "virtual:driver-fonts";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <QueryClientProvider client={queryClient}>

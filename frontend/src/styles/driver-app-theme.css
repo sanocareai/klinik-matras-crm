@@ -1,0 +1,43 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   APK DRIVER — retheme tipografi (9 September 2026, milestone 3 rencana
+   driver app: "Retheme — terapkan token/font mockup ke DriverJobs.jsx").
+
+   ⚠️ TEMUAN PENTING sebelum menulis file ini: WARNA sudah cocok PERSIS
+   dengan mockup ("Sano Driver" Artifact) TANPA perlu diubah apa pun —
+   `--dh-ground`/`--dh-surface`/`--dh-surface-solid`/`--dh-accent`/
+   `--dh-accent-2`/`--dh-accent-glow` (delivery-dark.css/-light.css) dan
+   `--red`/`--orange`/`--green` mode gelap (tokens.css [data-theme="dark"])
+   HEX-nya SAMA PERSIS dengan token mockup — masuk akal, karena mockup itu
+   SENDIRI dulu diambil dari token-token real app ini (bukan kebalikannya).
+   Delivery Hub (Route Planner/Jadwal & Penugasan/dst) SUDAH memakai
+   identitas visual "Sano Driver" secara warna sejak dipilotkan gelap.
+
+   Yang BEDA nyata cuma tipografi: mockup pakai Plus Jakarta Sans (UI) +
+   IBM Plex Mono (kode/angka), app nyata pakai Manrope Variable (UI) +
+   Geist Mono (angka/data) — SATU sumber kebenaran font app-wide
+   (tokens.css --font-ui, "SANSS v4... di SEMUA perangkat", keputusan
+   Gilang 1 Agustus 2026). File ini TIDAK mengubah itu — cuma override
+   SCOPED ke [data-driver-app="true"] (attribute baru, dipasang Layout.jsx
+   HANYA saat IS_DRIVER_APP, lihat main.jsx/Layout.jsx), supaya font Sano
+   Driver TIDAK bocor ke web/PWA/APK sales (yang tetap Manrope, sesuai
+   identitas SANSS umum) — sama disiplin scoping dengan chrome trim
+   (WorkspaceSwitcher/bel) di milestone sebelumnya.
+
+   File font-nya sendiri di-load SECARA DINAMIS (import() bersyarat,
+   digate VITE_APP_TARGET) di main.jsx, BUKAN di sini — CSS ini cuma
+   nama family-nya, tidak menarik file font apa pun sendirian.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+[data-driver-app="true"] {
+  --font-ui: "Plus Jakarta Sans Variable", "Plus Jakarta Sans", system-ui,
+             -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", monospace;
+}
+
+/* .font-mono-data (index.css) hardcode family-nya sendiri, tidak lewat
+   var(--font-mono) — override eksplisit di sini supaya angka/kode (No.
+   Job, waktu, dst) di layar driver ikut IBM Plex Mono juga, bukan cuma
+   teks UI biasa. */
+[data-driver-app="true"] .font-mono-data {
+  font-family: "IBM Plex Mono", ui-monospace, "Cascadia Code", monospace;
+}

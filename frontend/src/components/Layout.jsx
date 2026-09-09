@@ -749,7 +749,15 @@ export default function Layout({ user, onLogout, children }) {
     // dari `[data-division="armada"]` literal ke kelas ini). Bernilai true
     // untuk armada (division penuh) ATAU pilot Dashboard Sales CRM (satu
     // halaman saja) — lihat definisi glassOn di atas.
-    <div className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division")} data-division={divisionKey || "hub"}>
+    <div
+      className={cn("app-shell", collapsed && "sidebar-collapsed", glassOn && "glass-division")}
+      data-division={divisionKey || "hub"}
+      // data-driver-app (9 September 2026) — pagar retheme tipografi APK
+      // Driver (styles/driver-app-theme.css). Sama disiplin dgn IS_DRIVER_APP
+      // di atas: cuma true saat build APK Driver DAN user driver-only, TIDAK
+      // pernah true di web/PWA/APK sales.
+      {...(IS_DRIVER_APP && driverOnly ? { "data-driver-app": "true" } : {})}
+    >
       {/* Glow ambient (D-049, 4 September 2026) — laporan owner: "background
           berubah, tapi yang lain masih sama" setelah D-047/D-048 cuma
           menggambar glow lewat CSS radial-gradient di .app-content (falloff

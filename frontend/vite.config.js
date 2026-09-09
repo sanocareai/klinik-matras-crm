@@ -22,6 +22,15 @@ export default defineConfig({
       // ini TIDAK mengganti pola import di seluruh app, cuma tersedia untuk
       // kode baru yang mengadopsi Tailwind+shadcn (mulai dari Laporan).
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // virtual:driver-fonts (9 September 2026) — default-nya (build ini:
+      // web/PWA & APK sales) resolve ke stub KOSONG. vite.config.driver.js
+      // meng-override alias ini ke file font sungguhan. main.jsx meng-
+      // import "virtual:driver-fonts" TANPA syarat apa pun — pengecualian
+      // dari bundle terjadi di RESOLUSI MODUL (beda file per config), bukan
+      // dari kondisi runtime yang tetap membuat Rollup menyertakan chunk-nya
+      // di dist/ (sudah dicoba & dikonfirmasi TIDAK cukup, lihat komentar
+      // panjang di driver-fonts-noop.js).
+      "virtual:driver-fonts": fileURLToPath(new URL("./src/styles/driver-fonts-noop.js", import.meta.url)),
     },
   },
   plugins: [

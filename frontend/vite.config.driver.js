@@ -1,4 +1,5 @@
 import { mergeConfig } from "vite";
+import { fileURLToPath } from "url";
 import base from "./vite.config.js";
 
 // Build khusus APK Driver (Capacitor project TERPISAH di ../driver-app,
@@ -11,5 +12,13 @@ import base from "./vite.config.js";
 export default mergeConfig(base, {
   build: {
     outDir: "dist-driver",
+  },
+  resolve: {
+    alias: {
+      // Override alias base (default: stub kosong) ke font sungguhan — HANYA
+      // build ini yang menariknya. Lihat catatan panjang di vite.config.js &
+      // styles/driver-fonts.js/driver-fonts-noop.js.
+      "virtual:driver-fonts": fileURLToPath(new URL("./src/styles/driver-fonts.js", import.meta.url)),
+    },
   },
 });
