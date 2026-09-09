@@ -388,7 +388,15 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
   const driverLine = [route.driver?.name, route.helper?.name].filter(Boolean).join(" + ") || "Driver belum diisi";
   const mapsUrlFinal = route.manualMapsUrl?.trim() || mapsUrl;
 
+  // Link Keseluruhan Rute DIPINDAH ke PALING ATAS (9 September 2026, laporan
+  // owner: "link keseluruhan jalur ada paling atas") — SEBELUMNYA di baris
+  // paling bawah setelah semua stop, driver harus scroll dulu buat buka rute
+  // gabungannya. Sekarang jadi hal PERTAMA yang kelihatan begitu chat dibuka.
   const baris = [
+    mapsUrlFinal
+      ? `🔗*Link Keseluruhan Rute:* ${mapsUrlFinal}`
+      : "(Link keseluruhan rute belum bisa dibuat — belum ada stop dengan alamat/koordinat)",
+    "",
     label ? `${label}\n${hariTanggalWIB(route.date)}` : hariTanggalWIB(route.date),
     `*${plat}${tipeKendaraan} — ${driverLine}*`,
   ];
@@ -418,16 +426,35 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
       `🕗EST Jam: ${estJamUntukBroadcast(j.timeWindow)}`,
       `🗒️Catatan: ${j.accessNotes?.trim() || ""}`,
       `📍Alamat: ${alamat}`,
+      `🔗Link Maps: ${linkMapsPelanggan(order, j) || "(belum ada link)"}`,
       `🛏️${produkUntukBroadcast(order)}`,
     ];
   });
   baris.push(...stopLines);
 
-  baris.push(
-    "",
-    mapsUrlFinal ? `Link Maps: ${mapsUrlFinal}` : "(Link maps belum bisa dibuat — belum ada stop dengan alamat/koordinat)"
-  );
   return baris.join("\n");
+}
+
+// Link Maps PER CUSTOMER di tiap stop (9 September 2026, laporan owner:
+// "pastikan link google maps tiap customer dicantumkan di broadcast") —
+// SEBELUMNYA cuma "📍Alamat" (teks) per stop, link cuma ada SATU untuk
+// seluruh rute gabungan di bawah, driver harus buka link gabungan lalu
+// cari sendiri urutan ke berapa itu stop yang dimaksud. Prioritas SAMA
+// dengan kebijakan LINK-ONLY di maps.js: link ASLI yang sales/customer
+// tandai sendiri (Order.locationUrl) dulu — itu titik paling akurat yang
+// ada. Kalau order tidak punya link tersimpan TAPI job-nya kebetulan
+// sudah punya koordinat (mis. link itu nempel di addressText, sudah
+// digeocode saat "Buat Peta"), fallback ke pin Google Maps dari lat/lng
+// itu — lebih baik daripada tidak ada link sama sekali. Kalau dua-duanya
+// kosong, baris pemanggil menampilkan "(belum ada link)" supaya Natasha
+// tahu harus tanya admin delivery, bukan diam-diam hilang dari pesan.
+function linkMapsPelanggan(order, job) {
+  const raw = order?.locationUrl?.trim();
+  if (raw) return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  if (job?.lat != null && job?.lng != null) {
+    return `https://www.google.com/maps/search/?api=1&query=${job.lat},${job.lng}`;
+  }
+  return null;
 }
 
 // EST Jam per stop untuk broadcast (8 September 2026) — data lama
