@@ -426,11 +426,15 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
     return [
       "",
       `${idx + 1}. ${emoji}${nama} - ${tipe}`,
+      // Produk+ukuran DIPINDAH ke urutan ke-2 (9 September 2026, laporan
+      // owner: "bagus jika ditempatkan dibawah nama customer") — SEBELUMNYA
+      // baris paling bawah tiap stop, sekarang langsung di bawah nama biar
+      // driver tahu barang apa duluan sebelum baca detail jam/catatan/alamat.
+      `🛏️${produkUntukBroadcast(order)}`,
       `🕗EST Jam: ${estJamUntukBroadcast(j.timeWindow)}`,
       `🗒️Catatan: ${j.accessNotes?.trim() || ""}`,
       `📍Alamat: ${alamat}`,
       `🔗Link Maps: ${linkMapsPelanggan(order, j) || "(belum ada link)"}`,
-      `🛏️${produkUntukBroadcast(order)}`,
     ];
   });
   baris.push(...stopLines);
