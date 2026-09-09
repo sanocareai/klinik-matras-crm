@@ -75,16 +75,26 @@ export default function TabStrip() {
             </div>
           );
         })}
+        {/* D-146 (9 September 2026, laporan owner: "tanda + nya di bagian
+            mana sih?") — tombol ini SEBELUMNYA sibling dari div scroll ini
+            (di luar), dan `.tab-strip-scroll{flex:1}` bikin dia terdorong
+            ke UJUNG KANAN LAYAR, jauh terpisah dari tab-tab yang justru ada
+            di kiri — bukan cuma sulit ditemukan, tapi tidak terlihat sebagai
+            bagian dari tab-strip sama sekali. Sekarang jadi child TERAKHIR
+            di dalam baris scroll yang sama, jadi selalu nempel tepat di
+            sebelah tab terakhir (pola standar tab browser), ikut sisi kiri
+            walau tab sedikit, dan tetap ikut ter-scroll bersama kalau tab
+            banyak. */}
+        <button
+          type="button"
+          className="tab-strip-add"
+          title="Tab baru"
+          aria-label="Buka tab baru"
+          onClick={() => openNewTab("/portal")}
+        >
+          <Plus size={14} />
+        </button>
       </div>
-      <button
-        type="button"
-        className="tab-strip-add"
-        title="Tab baru"
-        aria-label="Buka tab baru"
-        onClick={() => openNewTab("/portal")}
-      >
-        <Plus size={14} />
-      </button>
 
       {menu && createPortal(
         <>
