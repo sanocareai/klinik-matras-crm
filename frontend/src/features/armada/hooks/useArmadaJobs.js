@@ -14,9 +14,9 @@ import { ACTIVE_STATUSES } from "@/features/armada/jobStatus.js";
 // sama seperti versi lama. ACTIVE_STATUSES di-import (satu sumber
 // kebenaran), bukan disalin ulang di sini.
 
-export function useArmadaJobs({ enabled = true, debounced, range, fStatus, fOrderStatus, fDriver, tab, toApiParams }) {
+export function useArmadaJobs({ enabled = true, debounced, range, fStatus, fOrderStatus, fDriver, tab, toApiParams, fHasConfirmedDate, sortBy }) {
   return useQuery({
-    queryKey: ["armada", "jobs", { debounced, range, fStatus, fOrderStatus, fDriver, tab }],
+    queryKey: ["armada", "jobs", { debounced, range, fStatus, fOrderStatus, fDriver, tab, fHasConfirmedDate, sortBy }],
     queryFn: async () => {
       const params = {
         q: debounced || undefined,
@@ -24,6 +24,10 @@ export function useArmadaJobs({ enabled = true, debounced, range, fStatus, fOrde
         status: fStatus || undefined,
         orderStatus: fOrderStatus || undefined,
         driverId: fDriver || undefined,
+        // Filter+sort tanggal PASTI (9 September 2026) — lihat catatan
+        // panjang di routes/armada.js GET /jobs.
+        hasConfirmedDate: fHasConfirmedDate ? "true" : undefined,
+        sortBy: sortBy || undefined,
       };
       if (tab === "PICKUP" || tab === "DELIVERY") params.type = tab;
       if (tab === "COMPLETED") params.status = "COMPLETED";

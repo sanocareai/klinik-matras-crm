@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation, Lock, PackageCheck, MessageCircle, MapPinned, Clock, BedDouble } from "lucide-react";
+import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation, Lock, PackageCheck, MessageCircle, MapPinned, Clock, BedDouble, CalendarCheck2, ArrowUpDown } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -95,6 +95,13 @@ const TABS = [
   { key: "COMPLETED", label: "Selesai" },
 ];
 
+// Sort tanggal PASTI (9 September 2026) — lihat catatan panjang di
+// ArmadaOrders.jsx SORT_OPTIONS & routes/armada.js GET /jobs.
+const SORT_OPTIONS = [
+  { value: "pickupConfirmedDate", label: "Tanggal Ambil Pasti (terdekat)" },
+  { value: "deliveryConfirmedDate", label: "Tanggal Kirim Pasti (terdekat)" },
+];
+
 // Driver TIDAK punya JOB_READ (cuma JOB_OWN_READ — lihat
 // backend/src/constants/permissions.js), jadi seluruh tampilan "Daftar" di
 // bawah — GET /armada/jobs + GET /armada/drivers — dijawab 403 untuk mereka.
@@ -145,6 +152,12 @@ export default function ArmadaJobs() {
   // yang ini menjawab pertanyaan beda: "order mana yang sudah Siap Kirim".
   const [fOrderStatus, setFOrderStatus] = useState("");
   const [fDriver, setFDriver] = useState("");
+  // Filter+sort tanggal PASTI (9 September 2026, laporan owner: "tambahkan
+  // sebuah filter yang sudah punya tanggal pengambilan dan pengiriman
+  // pasti" + "tambah fitur sort") — lihat catatan panjang di
+  // routes/armada.js GET /jobs & ArmadaOrders.jsx SORT_OPTIONS.
+  const [fHasConfirmedDate, setFHasConfirmedDate] = useState(false);
+  const [sortBy, setSortBy] = useState("");
 
   const [drivers, setDrivers] = useState([]);
   const [openJobId, setOpenJobId] = useState(null);
@@ -183,7 +196,7 @@ export default function ArmadaJobs() {
   // sedikit.
   const {
     data: jobs, isLoading: loading, error: queryError, refetch: load,
-  } = useArmadaJobs({ enabled: !driverOnly, debounced, range, fStatus, fOrderStatus, fDriver, tab, toApiParams });
+  } = useArmadaJobs({ enabled: !driverOnly, debounced, range, fStatus, fOrderStatus, fDriver, tab, toApiParams, fHasConfirmedDate, sortBy });
   const error = queryError?.message || "";
 
   function gantiView(v) {
@@ -369,13 +382,40 @@ export default function ArmadaJobs() {
               icon={User}
               ariaLabel="Filter driver"
             />
+            {/* Filter+sort tanggal PASTI (9 September 2026) — lihat catatan
+                panjang di SORT_OPTIONS di atas. */}
+            <button
+              type="button"
+              onClick={() => setFHasConfirmedDate((v) => !v)}
+              aria-pressed={fHasConfirmedDate}
+              className={cn(
+                "flex h-9 items-center gap-1.5 rounded-btn border px-3 text-[12.5px] font-semibold transition-colors",
+                fHasConfirmedDate ? "border-accent bg-accentbg text-accent" : "border-border text-ink2 hover:bg-hovertint"
+              )}
+            >
+              <CalendarCheck2 size={14} /> Ada Tanggal Pasti
+            </button>
+            <FilterDropdown
+              value={sortBy}
+              onChange={setSortBy}
+              options={SORT_OPTIONS}
+              placeholder="Urutan default"
+              icon={ArrowUpDown}
+              ariaLabel="Urutkan berdasarkan"
+            />
             {/* `range.preset` dibandingkan ke "all_time" (D-083) — bukan
                 membandingkan from/to mentah, supaya tombol Reset tetap
                 akurat walau user memilih "Semua" via preset ATAU lewat
                 kalender manual yang kebetulan menghasilkan from/to kosong
                 juga (preset beda: "all_time" vs "custom"). */}
-            {(cari || range.preset !== "all_time" || fStatus || fOrderStatus || fDriver) && (
-              <Button variant="ghost" size="sm" onClick={() => { setCari(""); setRange(makeRange("all_time")); setFStatus(""); setFOrderStatus(""); setFDriver(""); }}>
+            {(cari || range.preset !== "all_time" || fStatus || fOrderStatus || fDriver || fHasConfirmedDate || sortBy) && (
+              <Button
+                variant="ghost" size="sm"
+                onClick={() => {
+                  setCari(""); setRange(makeRange("all_time")); setFStatus(""); setFOrderStatus(""); setFDriver("");
+                  setFHasConfirmedDate(false); setSortBy("");
+                }}
+              >
                 Reset
               </Button>
             )}

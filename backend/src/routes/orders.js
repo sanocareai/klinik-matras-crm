@@ -715,7 +715,7 @@ orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
 // customer-nya (?conv=<id>) — sama seperti kartu Kanban Pipeline.
 orderRouter.get("/", async (req, res) => {
   try {
-    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished } = req.query;
+    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished, hasConfirmedDate, sortBy } = req.query;
     // BUG YANG DIPERBAIKI (1 September 2026, ditemukan owner lewat audit
     // export Excel — "krusial banget, butuh keakuratan tinggi"): batas
     // atas SEBELUMNYA cuma 500, sementara Export Excel di Orders.jsx
@@ -757,13 +757,36 @@ orderRouter.get("/", async (req, res) => {
       ...(from && to && { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } }),
       ...(Object.keys(customerWhere).length > 0 && { customer: customerWhere }),
       ...(promoId && { promoId }),
-      ...(search && {
-        OR: [
-          { orderNumber: { contains: search, mode: "insensitive" } },
-          { customer: { name:  { contains: search, mode: "insensitive" } } },
-          { customer: { phone: { contains: search } } },
-        ],
-      }),
+      // hasConfirmedDate DAN search dua-duanya butuh `OR` — DIGABUNG lewat
+      // `AND: [{OR:...}, {OR:...}]` (bukan dua key `OR` terpisah, yang akan
+      // SALING MENIMPA seperti bug customerWhere/scheduledDateFilter yang
+      // sudah pernah dibetulkan di endpoint ini & GET /armada/pod).
+      ...(() => {
+        const andClauses = [];
+        // hasConfirmedDate (9 September 2026, laporan owner: "filter yang
+        // sudah punya tanggal pengambilan dan pengiriman pasti") — tanggal
+        // PASTI (pickupConfirmedDate/deliveryConfirmedDate, dikonfirmasi ke
+        // customer) beda dari estimasi teks bebas (pickupEstimate/
+        // deliveryEstimate) — cuma yang PASTI yang relevan buat prioritas
+        // penjadwalan. OR di dalam klausanya sendiri, bukan AND: satu order
+        // pada satu waktu biasanya baru relevan salah satu (belum diambil
+        // -> pickup, sudah diproduksi -> delivery), mewajibkan DUA-DUANYA
+        // terisi akan menyembunyikan mayoritas order yang justru paling
+        // butuh disaring.
+        if (hasConfirmedDate === "true") {
+          andClauses.push({ OR: [{ pickupConfirmedDate: { not: null } }, { deliveryConfirmedDate: { not: null } }] });
+        }
+        if (search) {
+          andClauses.push({
+            OR: [
+              { orderNumber: { contains: search, mode: "insensitive" } },
+              { customer: { name:  { contains: search, mode: "insensitive" } } },
+              { customer: { phone: { contains: search } } },
+            ],
+          });
+        }
+        return andClauses.length > 0 ? { AND: andClauses } : {};
+      })(),
     };
 
     const orders = await prisma.order.findMany({
@@ -853,7 +876,20 @@ orderRouter.get("/", async (req, res) => {
           },
         },
       },
-      orderBy: { updatedAt: "desc" },
+      // sortBy (9 September 2026, laporan owner: "tambah fitur sort untuk
+      // bisa mengurutkan per tanggal pengambilan dan pengiriman pasti") —
+      // ASC + nulls last: tanggal pasti adalah JANJI ke customer, yang
+      // PALING DEKAT paling mendesak buat dijadwalkan, jadi naik ke atas
+      // duluan (beda dari kebanyakan sort tanggal lain di app ini yang
+      // DESC/"terbaru duluan" — ini soal "paling MENDESAK duluan"). Order
+      // tanpa tanggal pasti sama sekali turun ke bawah, bukan bersaing
+      // menang di depan (root cause sort "ngacak" yang sudah dibetulkan di
+      // GET /armada/pod, pola sama diterapkan sejak awal di sini).
+      orderBy: sortBy === "pickupConfirmedDate"
+        ? [{ pickupConfirmedDate: { sort: "asc", nulls: "last" } }, { updatedAt: "desc" }]
+        : sortBy === "deliveryConfirmedDate"
+          ? [{ deliveryConfirmedDate: { sort: "asc", nulls: "last" } }, { updatedAt: "desc" }]
+          : { updatedAt: "desc" },
       take: limit,
     });
 

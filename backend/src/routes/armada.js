@@ -884,7 +884,7 @@ armadaRouter.get("/helpers", requirePermission(P.JOB_WRITE), async (req, res) =>
 // itu saat pertama dibuka.
 armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
   try {
-    const { type, status, orderStatus, driverId, routeId, date, from, to, q, take } = req.query;
+    const { type, status, orderStatus, driverId, routeId, date, from, to, q, take, hasConfirmedDate, sortBy } = req.query;
 
     // Rentang tanggal memakai batas WIB, BUKAN `new Date(x)` polos — container
     // backend jalan di UTC, jadi batas polos menggeser jendela 7 jam dan job
@@ -934,6 +934,22 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
 
     const cari = (q || "").trim();
 
+    // orderStatus & hasConfirmedDate DUA-DUANYA menyaring lewat relasi
+    // `order` — digabung jadi SATU objek (pola sama dengan customerWhere di
+    // GET /orders) supaya kalau dua-duanya dikirim sekaligus, salah satu
+    // tidak diam-diam menimpa yang lain (dua key `order:` terpisah akan
+    // saling timpa, persis kesalahan yang sudah pernah dibetulkan di
+    // endpoint ini untuk `scheduledDateFilter`).
+    const orderWhere = {
+      ...(orderStatus && { status: orderStatus }),
+      // hasConfirmedDate (9 September 2026, laporan owner: "filter yang
+      // sudah punya tanggal pengambilan dan pengiriman pasti") — lihat
+      // catatan panjang yang sama di routes/orders.js GET /.
+      ...(hasConfirmedDate === "true" && {
+        OR: [{ pickupConfirmedDate: { not: null } }, { deliveryConfirmedDate: { not: null } }],
+      }),
+    };
+
     const jobs = await prisma.job.findMany({
       where: {
         ...(type && { type }),
@@ -947,7 +963,7 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
         // seperti orderStatusOf() di frontend (itu urusan tampilan kartu
         // yang datanya kadang cuma ke-include lewat units[], BUKAN soal
         // relasi database yang sebenarnya).
-        ...(orderStatus && { order: { status: orderStatus } }),
+        ...(Object.keys(orderWhere).length > 0 && { order: orderWhere }),
         // "none" = job yang BELUM punya driver — ini yang dicari dispatcher
         // tiap pagi, dan tidak bisa diungkapkan dengan driverId biasa.
         ...(driverId === "none" ? { driverId: null } : driverId ? { driverId } : {}),
@@ -1037,7 +1053,15 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
           },
         },
       },
-      orderBy: [{ scheduledDate: "desc" }, { sequence: "asc" }, { createdAt: "desc" }],
+      // sortBy (9 September 2026) — lihat catatan panjang di GET /orders
+      // soal ASC + nulls-last ("paling MENDESAK duluan", bukan "terbaru
+      // duluan"). Job.order adalah relasi to-one, Prisma mendukung orderBy
+      // lewat field relasinya langsung.
+      orderBy: sortBy === "pickupConfirmedDate"
+        ? [{ order: { pickupConfirmedDate: { sort: "asc", nulls: "last" } } }, { scheduledDate: "desc" }]
+        : sortBy === "deliveryConfirmedDate"
+          ? [{ order: { deliveryConfirmedDate: { sort: "asc", nulls: "last" } } }, { scheduledDate: "desc" }]
+          : [{ scheduledDate: "desc" }, { sequence: "asc" }, { createdAt: "desc" }],
       take: Math.min(Number(take) || 200, 500),
     });
 

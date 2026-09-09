@@ -366,10 +366,21 @@ export default function UnroutedJobsPanel({
   // banyak kartu (nama kalau sudah kenal customer-nya, nomor order kalau
   // pegang catatan sales, alamat kalau menyusun rute per area).
   const [cari, setCari] = useState("");
+  // Filter tanggal PASTI (9 September 2026, laporan owner: "tambahkan
+  // sebuah filter yang sudah punya tanggal pengambilan dan pengiriman
+  // pasti" + "gue ingin ini ada di semua tab delivery yang butuh") — LOKAL
+  // ke panel ini, pola SAMA dengan fOrderStatus di atas. Job dengan
+  // pickupConfirmedDate/deliveryConfirmedDate paling MENDESAK dirutekan —
+  // itu janji ke customer, dispatcher paling butuh menyaring panel ini
+  // KHUSUS ke job berjanji saat menyusun rute hari itu.
+  const [fHasConfirmedDate, setFHasConfirmedDate] = useState(false);
 
   const semuaJob = useMemo(() => {
     let hasil = [...jobs, ...undatedJobs];
     if (fOrderStatus) hasil = hasil.filter((j) => orderStatusOf(j) === fOrderStatus);
+    if (fHasConfirmedDate) {
+      hasil = hasil.filter((j) => orderOf(j)?.pickupConfirmedDate || orderOf(j)?.deliveryConfirmedDate);
+    }
     if (cari.trim()) {
       const q = cari.trim().toLowerCase();
       hasil = hasil.filter((j) =>
@@ -379,7 +390,17 @@ export default function UnroutedJobsPanel({
       );
     }
     return hasil;
-  }, [jobs, undatedJobs, fOrderStatus, cari]);
+  }, [jobs, undatedJobs, fOrderStatus, fHasConfirmedDate, cari]);
+
+  // Tanggal pasti PALING DEKAT milik job ini (ambil ATAU kirim, mana pun
+  // ada — ConfirmedTimeBadge di bawah menampilkan dua-duanya kalau
+  // dua-duanya ada, jadi sort-nya konsisten dengan apa yang kelihatan).
+  // null = tidak punya tanggal pasti sama sekali, selalu paling belakang.
+  function tanggalPastiTerdekat(j) {
+    const order = orderOf(j);
+    const dates = [order?.pickupConfirmedDate, order?.deliveryConfirmedDate].filter(Boolean).map((d) => new Date(d).getTime());
+    return dates.length > 0 ? Math.min(...dates) : null;
+  }
 
   const groups = useMemo(() => {
     const byCity = new Map();
@@ -390,6 +411,22 @@ export default function UnroutedJobsPanel({
       if (!byCity.has(kota)) byCity.set(kota, []);
       byCity.get(kota).push(j);
     }
+    // Urutkan job DI DALAM tiap kota (9 September 2026) — job dengan
+    // tanggal pasti PALING DEKAT naik ke atas dalam kelompok kotanya
+    // sendiri, TANPA mengubah urutan kota (pengelompokan kandidat-1-rute
+    // di bawah TETAP jalan apa adanya) — dua prioritas beda yang tidak
+    // saling menggantikan: kota menjawab "mana yang paling efisien
+    // digabung", urutan dalam kota menjawab "dari yang efisien itu, mana
+    // yang paling mendesak dikerjakan duluan".
+    const urutkanDalamGrup = (list) => [...list].sort((a, b) => {
+      const ta = tanggalPastiTerdekat(a), tb = tanggalPastiTerdekat(b);
+      if (ta == null && tb == null) return 0;
+      if (ta == null) return 1;
+      if (tb == null) return -1;
+      return ta - tb;
+    });
+    for (const [kota, list] of byCity) byCity.set(kota, urutkanDalamGrup(list));
+    const tanpaKotaUrut = urutkanDalamGrup(tanpaKota);
     const semuaKota = [...byCity.entries()].map(([kota, list]) => ({ kota, list }));
     // Kota 2+ job ("kandidat 1 rute") duluan, urut TERBANYAK — peluang
     // gabung rute paling besar. Kota 1 job menyusul, urut alfabet (tidak
@@ -400,7 +437,7 @@ export default function UnroutedJobsPanel({
       if (aKandidat) return b.list.length - a.list.length;
       return a.kota.localeCompare(b.kota, "id");
     });
-    return { semuaKota, tanpaKota };
+    return { semuaKota, tanpaKota: tanpaKotaUrut };
   }, [semuaJob]);
 
   return (
@@ -439,6 +476,22 @@ export default function UnroutedJobsPanel({
           icon={PackageCheck}
           ariaLabel="Filter status order"
         />
+        {/* Filter tanggal PASTI (9 September 2026) — lihat catatan panjang
+            di state fHasConfirmedDate di atas. Job di dalam tiap kota SUDAH
+            terurut dari yang tanggal pastinya paling dekat (lihat
+            urutkanDalamGrup), toggle ini menyaring ke yang PUNYA tanggal
+            pasti saja — dua kontrol saling melengkapi, bukan duplikat. */}
+        <button
+          type="button"
+          onClick={() => setFHasConfirmedDate((v) => !v)}
+          aria-pressed={fHasConfirmedDate}
+          className={cn(
+            "flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border text-[11.5px] font-semibold transition-colors",
+            fHasConfirmedDate ? "border-accent bg-accentbg text-accent" : "border-border text-ink2 hover:bg-hovertint"
+          )}
+        >
+          <Clock size={13} /> Ada Tanggal Pasti
+        </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">

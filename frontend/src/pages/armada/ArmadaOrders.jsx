@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Search, Package, Tag, RefreshCw, Factory, CreditCard, AlertTriangle } from "lucide-react";
+import { Search, Package, Tag, RefreshCw, Factory, CreditCard, AlertTriangle, CalendarCheck2, ArrowUpDown } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -16,6 +16,7 @@ import {
   paymentStatusVariant,
 } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
+import { cn } from "@/lib/utils.js";
 import { JOB_STATUS_REAL } from "@/features/armada/jobStatus.js";
 import OrderTimelineDrawer from "@/features/orders/OrderTimelineDrawer.jsx";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
@@ -68,6 +69,18 @@ const KATEGORI_OPTIONS = [
 
 const STATUS_OPTIONS = Object.keys(ORDER_STATUS_LABELS).map((s) => ({ value: s, label: ORDER_STATUS_LABELS[s] }));
 
+// Filter+sort tanggal PASTI (9 September 2026, laporan owner: "tambahkan
+// sebuah filter yang sudah punya tanggal pengambilan dan pengiriman pasti"
+// + "tambah fitur sort untuk bisa mengurutkan per tanggal pengambilan dan
+// pengiriman pasti") — pickupConfirmedDate/deliveryConfirmedDate (tanggal
+// yang SUDAH dikonfirmasi ke customer, beda dari estimasi teks bebas),
+// SUDAH ada di data (dipakai badge "Pasti: <tanggal>" Route Planner) tapi
+// belum pernah bisa disaring/diurutkan di halaman lintas-divisi ini.
+const SORT_OPTIONS = [
+  { value: "pickupConfirmedDate", label: "Tanggal Ambil Pasti (terdekat)" },
+  { value: "deliveryConfirmedDate", label: "Tanggal Kirim Pasti (terdekat)" },
+];
+
 // D-079 (5 September 2026) — laporan owner: chip Produksi/Pengambilan/
 // Pengiriman "masih pakai UI lama" (pil `bg-inset` polos, beda dari Badge
 // yang dipakai kolom Status/Pembayaran) DAN menampilkan enum job MENTAH
@@ -112,6 +125,8 @@ export default function ArmadaOrders() {
   const [debounced, setDebounced] = useState("");
   const [fKategori, setFKategori] = useState("");
   const [fStatus, setFStatus] = useState("");
+  const [fHasConfirmedDate, setFHasConfirmedDate] = useState(false);
+  const [sortBy, setSortBy] = useState("");
   // Date range picker (D-085, 5 September 2026) — laporan owner: "di tab
   // 'semua order' bisa tambahkan tanggal juga yang di set default 'semua
   // tanggal'". Default "all_time" PERSIS diminta ("semua tanggal" dulu,
@@ -154,6 +169,8 @@ export default function ArmadaOrders() {
         // pekerjaan aktif — hideFinished tidak boleh diam-diam menyembunyikan
         // hasil yang justru sedang dicari.
         hideFinished: (fStatus || debounced) ? undefined : "true",
+        hasConfirmedDate: fHasConfirmedDate ? "true" : undefined,
+        sortBy: sortBy || undefined,
         ...toApiParams(range), // {} untuk preset "Semua" — tanpa filter tanggal
         limit: 300,
       });
@@ -165,7 +182,7 @@ export default function ArmadaOrders() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, fKategori, fStatus, range]);
+  }, [debounced, fKategori, fStatus, fHasConfirmedDate, sortBy, range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -249,6 +266,35 @@ export default function ArmadaOrders() {
             placeholder="Semua Status"
             icon={Package}
           />
+          {/* Filter+sort tanggal PASTI (9 September 2026) — lihat catatan
+              panjang di SORT_OPTIONS di atas. */}
+          <button
+            type="button"
+            onClick={() => setFHasConfirmedDate((v) => !v)}
+            aria-pressed={fHasConfirmedDate}
+            className={cn(
+              "flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-semibold transition-colors",
+              fHasConfirmedDate ? "border-accent bg-accentbg text-accent" : "border-border text-ink2 hover:bg-hovertint"
+            )}
+          >
+            <CalendarCheck2 size={14} /> Ada Tanggal Pasti
+          </button>
+          <FilterDropdown
+            value={sortBy}
+            onChange={setSortBy}
+            options={SORT_OPTIONS}
+            placeholder="Urutan default"
+            icon={ArrowUpDown}
+            ariaLabel="Urutkan berdasarkan"
+          />
+          {(cari || fKategori || fStatus || fHasConfirmedDate || sortBy || range.preset !== "all_time") && (
+            <Button
+              variant="ghost" size="sm"
+              onClick={() => { setCari(""); setFKategori(""); setFStatus(""); setFHasConfirmedDate(false); setSortBy(""); setRange(makeRange("all_time")); }}
+            >
+              Reset
+            </Button>
+          )}
         </div>
 
         {error && (
@@ -311,8 +357,26 @@ export default function ArmadaOrders() {
                       <StatusSelect order={o} onChange={handleStatusChange} />
                     </TD>
                     <TD><ProduksiChip stage={o.productionStage} /></TD>
-                    <TD><JobChip label="Ambil" job={o.pickupJob} /></TD>
-                    <TD><JobChip label="Kirim" job={o.deliveryJob} /></TD>
+                    <TD>
+                      <JobChip label="Ambil" job={o.pickupJob} />
+                      {/* Tanggal pasti (9 September 2026) — supaya hasil
+                          filter/sort "Ada Tanggal Pasti"/"Urutkan" di atas
+                          KELIHATAN alasannya, bukan cuma memengaruhi urutan
+                          baris tanpa bukti visual. */}
+                      {o.pickupConfirmedDate && (
+                        <p className="mt-0.5 flex items-center gap-1 text-[10.5px] text-accent">
+                          <CalendarCheck2 size={10} /> Pasti: {formatTanggalPendek(o.pickupConfirmedDate)}
+                        </p>
+                      )}
+                    </TD>
+                    <TD>
+                      <JobChip label="Kirim" job={o.deliveryJob} />
+                      {o.deliveryConfirmedDate && (
+                        <p className="mt-0.5 flex items-center gap-1 text-[10.5px] text-accent">
+                          <CalendarCheck2 size={10} /> Pasti: {formatTanggalPendek(o.deliveryConfirmedDate)}
+                        </p>
+                      )}
+                    </TD>
                     <TD>
                       <Badge variant={paymentStatusVariant(o.paymentStatus)}>
                         {PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}
