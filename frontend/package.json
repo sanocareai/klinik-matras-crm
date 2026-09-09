@@ -16,6 +16,7 @@
     "@capacitor/cli": "^8.4.1",
     "@capacitor/core": "^8.4.1",
     "@capacitor/splash-screen": "^8.0.1",
+    "@capgo/capacitor-updater": "^8.51.15",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/search": "^6.7.1",

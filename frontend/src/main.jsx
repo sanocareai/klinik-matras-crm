@@ -4,6 +4,21 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient.js";
 import { ThemeProvider } from "./lib/ThemeProvider.jsx";
 import App from "./App.jsx";
+import { CapacitorUpdater } from "@capgo/capacitor-updater";
+
+// OTA self-hosted APK Driver (9 September 2026) — WAJIB dipanggil di setiap
+// app launch, SEPALING AWAL mungkin (sebelum request jaringan apa pun),
+// bukan di dalam App.jsx/komponen React — plugin punya batas waktu
+// (appReadyTimeout, default 10 detik) sejak proses native start, menunggu
+// React mount dulu bisa memakan jatah itu. Gagal memanggil ini = APK
+// otomatis rollback ke bundle sebelumnya, dikira gagal boot.
+// Digate VITE_APP_TARGET (cuma ada di build driver, lihat
+// .env.capacitor-driver & Layout.jsx) — di web/PWA/APK sales biasa,
+// panggilan ini jatuh ke stub web plugin (tidak error, tapi juga tidak
+// berguna, jadi tidak perlu dipanggil sama sekali di sana).
+if (import.meta.env.VITE_APP_TARGET === "driver") {
+  CapacitorUpdater.notifyAppReady().catch(() => {});
+}
 // Font Geist (Vercel) — self-hosted via Fontsource (offline/PWA friendly, tanpa CDN).
 // Geist Sans = font UI utama, Geist Mono = angka/data. Di-import SEBELUM index.css
 // supaya token font-family di sana bisa mereferensikan family-nya.

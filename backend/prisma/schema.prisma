@@ -4512,6 +4512,41 @@ model TollRoad {
   @@map("toll_roads")
 }
 
+// OTA self-hosted APK Driver (9 September 2026, keputusan owner: "OTA di
+// Capacitor dulu" — jawaban atas "kenapa gabuat flow OTA kayak Sano
+// Messenger", lihat catatan panjang di routes/driverApp.js). Plugin
+// @capgo/capacitor-updater cek endpoint ini tiap app driver dibuka
+// (autoUpdate: onLaunch, driver-app/capacitor.config.json), tanpa perlu
+// resideload APK tiap update.
+//
+// buildNumber TERPISAH dari frontend/package.json version (yang shared
+// lintas web/APK sales, bukan driver-khusus) — angka bulat naik terus,
+// diisi otomatis oleh scripts/publish-driver-bundle.js (MAX+1), BUKAN
+// diketik manual — menghindari human error semver.
+//
+// "Rilis terbaru per channel" = row active=true PALING BARU (bukan MAX
+// buildNumber — rollback SENGAJA dilakukan dengan menyalakan lagi row
+// LAMA, bukan menghapus/menulis ulang row baru, supaya createdAt/riwayat
+// tetap jujur). @@unique([channel, active]) TIDAK dipasang di sini SENGAJA
+// (Postgres unique constraint tidak bisa "unique kalau true, boleh
+// banyak kalau false" tanpa partial index manual di luar Prisma) —
+// disiplin "cuma 1 active per channel" dijaga di level script
+// (nonaktifkan yang lama SEBELUM mengaktifkan yang baru, dalam 1
+// transaksi), bukan di level skema.
+model DriverAppBundle {
+  id          String   @id @default(cuid())
+  buildNumber Int      @unique @map("build_number")
+  channel     String   @default("production")
+  zipFilename String   @map("zip_filename")
+  checksum    String
+  active      Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([channel, active])
+  @@map("driver_app_bundles")
+}
+
 // Web Push subscription (8 September 2026) — permintaan owner: driver dapat
 // notifikasi begitu ditugaskan job baru, referensi Lalamove/Gojek, TETAP
 // PWA (bukan app native/Play Store, lihat docs percakapan). Satu user boleh

@@ -9,6 +9,12 @@
       "backgroundColor": "#0A0D16",
       "showSpinner": false,
       "androidScaleType": "CENTER_CROP"
+    },
+    "CapacitorUpdater": {
+      "updateUrl": "https://app.sanomatrassehat.com/api/driver-app/update-check",
+      "statsUrl": "",
+      "autoUpdate": "onLaunch",
+      "version": "0"
     }
   }
 }

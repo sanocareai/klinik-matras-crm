@@ -16,6 +16,7 @@ import { analyticsRouter }  from "./routes/analytics.js";
 import { qualityScorerRouter } from "./routes/qualityScorer.js";
 import { salesRiskRouter } from "./routes/salesRisk.js";
 import { salesPerformanceRouter } from "./routes/salesPerformance.js";
+import { driverAppRouter } from "./routes/driverApp.js";
 import { intelligenceRouter } from "./routes/intelligence.js";
 import { orderRouter }      from "./routes/orders.js";
 import { dashboardRouter }  from "./routes/dashboard.js";
@@ -91,6 +92,10 @@ const warrantyPdfsDir = path.join(__dirname, "../data/warranty-pdfs");
 // invoice-pdfs/warranty-pdfs di atas, WAHA butuh URL yang bisa dijangkau
 // sendiri lewat jaringan Docker internal. Lihat services/routeSheetImage.js.
 const routeSheetsDir = path.join(__dirname, "../data/route-sheets");
+// Bundle zip APK Driver, OTA self-hosted (9 September 2026) — pola SAMA
+// persis dengan dir media lain di atas. Lihat routes/driverApp.js &
+// scripts/publish-driver-bundle.js.
+const driverAppBundlesDir = path.join(__dirname, "../data/driver-app-bundles");
 mkdirSync(uploadsDir,    { recursive: true });
 mkdirSync(productsDir,   { recursive: true });
 mkdirSync(unitPhotosDir, { recursive: true });
@@ -101,6 +106,7 @@ mkdirSync(vehicleReceiptsDir, { recursive: true });
 mkdirSync(invoicePdfsDir, { recursive: true });
 mkdirSync(warrantyPdfsDir, { recursive: true });
 mkdirSync(routeSheetsDir, { recursive: true });
+mkdirSync(driverAppBundlesDir, { recursive: true });
 
 // Pengaman terakhir — BUKAN pengganti try/catch di tiap route (yang tetap
 // wajib, supaya error jadi respons HTTP yang jelas ke user, bukan cuma log).
@@ -136,6 +142,7 @@ app.use("/media/products", express.static(productsDir));
 app.use("/media/invoice-pdfs", express.static(invoicePdfsDir));
 app.use("/media/warranty-pdfs", express.static(warrantyPdfsDir));
 app.use("/media/route-sheets", express.static(routeSheetsDir));
+app.use("/media/driver-app-bundles", express.static(driverAppBundlesDir));
 
 app.use("/api/webhooks",     webhookRouter);
 app.use("/api/auth",         authRouter);
@@ -145,6 +152,7 @@ app.use("/api/analytics",    analyticsRouter);
 app.use("/api/quality-scorer", qualityScorerRouter);
 app.use("/api/sales-risk", salesRiskRouter);
 app.use("/api/sales-intelligence", salesPerformanceRouter);
+app.use("/api/driver-app",   driverAppRouter);
 app.use("/api/intelligence", intelligenceRouter);
 app.use("/api/orders",       orderRouter);
 app.use("/api/promos",       promoRouter);
