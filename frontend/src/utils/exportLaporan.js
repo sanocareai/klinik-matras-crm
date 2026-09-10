@@ -125,10 +125,17 @@ function sheetRingkasan({ periode, summary, perf }) {
 
   sb.row(["INTEGRITAS DATA", "", ""]);
   sb.row(["Pemeriksaan", "Jumlah", "Artinya"]);
+  // Dipecah jadi 2 (10 Sep 2026) — SAMA alasan dgn RingkasanTab.jsx: dua
+  // akar masalah beda, dua tindakan perbaikan beda.
   sb.row([
-    "Pelanggan Paid tanpa order",
-    num(summary?.integritas?.paidTanpaOrder),
-    "Ditandai sudah bayar tapi tidak ada order — pendapatannya belum tercatat",
+    "Pelanggan Paid tanpa order sama sekali",
+    num(summary?.integritas?.orphanNoOrder),
+    "Ditandai sudah bayar tapi tidak ada order sama sekali — pendapatannya belum tercatat, tambahkan order",
+  ]);
+  sb.row([
+    "Pelanggan Paid, semua order dibatalkan",
+    num(summary?.integritas?.orphanAllCancelled),
+    "Order-nya ada tapi semua sudah dibatalkan — stage pipeline kemungkinan lupa digeser balik",
   ]);
 
   return sb.build([34, 18, 62]);

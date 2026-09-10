@@ -425,7 +425,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       orderAgg, lunasAgg, dpAgg,
       statusGroups, categoryGroups,
       cityGroups, complaintCount,
-      paidCustomers, totalCustomers, customersWithOrders, repeatCustomers, paidTanpaOrder,
+      paidCustomers, totalCustomers, customersWithOrders, repeatCustomers, orphanNoOrder, orphanAllCancelled,
       revenueRaw, customerRaw, outstandingOrders,
     ] = await Promise.all([
       prisma.order.aggregate({ where: tanpaOrderSpam(orderWhere), _count: { _all: true }, _sum: { value: true }, _avg: { value: true } }),
@@ -442,7 +442,23 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       // adalah customer yang SUDAH lewat TRANSACTION dan lanjut kasih review
       // publik, jadi tetap "paid customer" — hanya posisinya sudah bergerak
       // maju, bukan lagi customer yang belum bayar.
-      prisma.customer.count({ where: { ...custWhere, pipelineStage: { in: ["TRANSACTION", "REVIEWED"] } } }),
+      // BUG YANG DIPERBAIKI (10 Sep 2026, audit menyeluruh atas laporan
+      // owner) — SAMA persis dengan perbaikan "won" di /source-performance &
+      // /lead-source-detail: pipelineStage tidak otomatis ke-sync kalau
+      // order dibatalkan, jadi pelanggan yang order-nya SEMUA dibatalkan
+      // (bukan cuma yang "tidak pernah punya order" — itu sudah kena
+      // diagnostik `integritas.paidTanpaOrder` di bawah, TIDAK diubah)
+      // sebelumnya tetap ikut kehitung "Pelanggan Sudah Bayar" di blok
+      // `konversi` — angka headline Dashboard ini sekarang konsisten
+      // dengan Performa Sumber Lead: SAMA aturan "punya minimal 1 order
+      // non-CANCELLED" di kedua tempat.
+      prisma.customer.count({
+        where: {
+          ...custWhere,
+          pipelineStage: { in: ["TRANSACTION", "REVIEWED"] },
+          orders: { some: { status: { not: "CANCELLED" } } },
+        },
+      }),
       prisma.customer.count({ where: custWhereKonversi }),
       prisma.customer.count({ where: { ...custWhereKonversi, orders: { some: { status: { not: "CANCELLED" } } } } }),
       // Repeat order — customer dengan >=2 order (CANCELLED sudah
@@ -453,18 +469,33 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       // pelanggan LAMA yang balik order lagi.
       prisma.customer.count({ where: { ...custWhereKonversi, orderCount: { gte: 2 } } }),
 
-      // PEMERIKSAAN INTEGRITAS: customer ditandai TRANSACTION/REVIEWED (pesan
-      // sudah dipastikan order, atau malah sudah lanjut kasih review) TAPI
-      // tidak punya satu pun order. Ini mustahil secara bisnis — kalau order
-      // sudah dipastikan, harus ada order yang tercatat. Penyebabnya stage
-      // digeser manual di Kanban tanpa membuat order, jadi PENDAPATANNYA
-      // TIDAK PERNAH TERCATAT. Ini yang membuat angka seperti "1 pelanggan
-      // bayar tapi Rp0" muncul di Laporan Sales — bukan salah hitung, tapi
-      // data yang memang tidak lengkap. TIDAK difilter tanggal: ini utang
-      // data yang harus dibereskan, kapan pun terjadinya.
+      // PEMERIKSAAN INTEGRITAS — DIPECAH JADI 2 (10 Sep 2026, audit
+      // menyeluruh) — sebelumnya SATU angka gabungan yang teksnya di
+      // frontend cuma menjelaskan skenario pertama, padahal datanya
+      // mencakup DUA skenario penyebab berbeda dengan tindakan perbaikan
+      // berbeda pula:
+      //   1. orphanNoOrder — TIDAK PUNYA order sama sekali. Mustahil
+      //      secara bisnis (kalau order sudah dipastikan, harus ada order
+      //      tercatat) — penyebabnya stage digeser manual di Kanban tanpa
+      //      membuat order, PENDAPATANNYA TIDAK PERNAH TERCATAT. Perbaikan:
+      //      buka profil pelanggan, TAMBAHKAN order yang hilang.
+      //   2. orphanAllCancelled — PUNYA order, tapi SEMUA sudah dibatalkan.
+      //      Beda akar masalah — deal-nya memang batal, TAPI stage
+      //      pipeline lupa digeser balik dari TRANSACTION/REVIEWED.
+      //      Perbaikan: geser pipeline stage-nya balik (bukan menambah
+      //      order baru).
+      // Keduanya SUDAH DIKELUARKAN dari `paidCustomers`/`konversi` di atas
+      // (lihat catatan di query paidCustomers) — banner ini murni untuk
+      // MEMBERESKAN data mentahnya, bukan lagi mempengaruhi angka laporan.
+      // TIDAK difilter tanggal: ini utang data yang harus dibereskan, kapan
+      // pun terjadinya.
+      prisma.customer.count({
+        where: { pipelineStage: { in: ["TRANSACTION", "REVIEWED"] }, orders: { none: {} } },
+      }),
       prisma.customer.count({
         where: {
           pipelineStage: { in: ["TRANSACTION", "REVIEWED"] },
+          orders: { some: {} },
           NOT: { orders: { some: { status: { not: "CANCELLED" } } } },
         },
       }),
@@ -616,7 +647,12 @@ analyticsRouter.get("/business-summary", async (req, res) => {
       // bisa "100% akurat" kalau sumber datanya sendiri tidak konsisten; yang
       // bisa dilakukan sistem adalah mendeteksi & menunjukkannya.
       integritas: {
-        paidTanpaOrder,
+        // paidTanpaOrder dipertahankan (DEPRECATED, 10 Sep 2026) = jumlah
+        // gabungan lama, supaya build frontend lain yang belum sempat
+        // di-deploy bersamaan tidak tiba-tiba crash baca field yang hilang.
+        paidTanpaOrder: orphanNoOrder + orphanAllCancelled,
+        orphanNoOrder,
+        orphanAllCancelled,
       },
 
       revenueSeries:  fillBuckets(win, Object.fromEntries(revenueRaw.map((r) => [r.bucket, Number(r.value)]))),

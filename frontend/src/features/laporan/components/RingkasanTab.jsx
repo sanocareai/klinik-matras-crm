@@ -280,21 +280,38 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
         </div>
       )}
 
-      {/* Integritas data: pelanggan bertanda sudah bayar TAPI tidak punya order
-          sama sekali. Ini mustahil secara bisnis dan artinya pendapatannya
-          TIDAK PERNAH tercatat — penyebab langsung angka aneh seperti "1
-          pelanggan bayar tapi Rp0" di Laporan Sales. Ditampilkan sebagai tugas
-          yang bisa dikerjakan, bukan disembunyikan. */}
-      {summary?.integritas?.paidTanpaOrder > 0 && (
+      {/* Integritas data — DIPECAH JADI 2 (10 Sep 2026, audit menyeluruh):
+          "Paid"/"Already Reviewed" tapi TIDAK PUNYA order sama sekali (data
+          hilang, tambahkan order) VS PUNYA order tapi SEMUA dibatalkan
+          (stage lupa digeser balik). Dua akar masalah beda, dua tindakan
+          perbaikan beda — sebelumnya digabung jadi satu angka yang teksnya
+          cuma menjelaskan skenario pertama, padahal datanya sudah lama
+          mencakup skenario kedua juga (silently). Kedua kelompok ini SUDAH
+          dikeluarkan dari "Pelanggan Sudah Bayar" di atas — banner ini murni
+          checklist beres-beres data, bukan lagi memengaruhi angka laporan. */}
+      {summary?.integritas?.orphanNoOrder > 0 && (
         <div className="flex items-start gap-2.5 rounded-xl bg-redbg px-3.5 py-3">
           <AlertTriangle className="mt-0.5 shrink-0 text-red" size={16} />
           <p className="text-xs leading-relaxed text-ink">
-            <strong>{summary.integritas.paidTanpaOrder} pelanggan</strong> berstatus
+            <strong>{summary.integritas.orphanNoOrder} pelanggan</strong> berstatus
             “Paid”/“Already Reviewed” tapi <strong>tidak punya order sama sekali</strong>.
             Kalau sudah bayar, harusnya ada order yang dibayar — jadi pendapatan
             mereka belum tercatat di sistem dan tidak masuk hitungan Nilai
             Penjualan mana pun. Biasanya karena stage digeser di Kanban tanpa
             membuat order. Perbaiki di Pelanggan → buka profil → tambah order.
+          </p>
+        </div>
+      )}
+      {summary?.integritas?.orphanAllCancelled > 0 && (
+        <div className="flex items-start gap-2.5 rounded-xl bg-redbg px-3.5 py-3">
+          <AlertTriangle className="mt-0.5 shrink-0 text-red" size={16} />
+          <p className="text-xs leading-relaxed text-ink">
+            <strong>{summary.integritas.orphanAllCancelled} pelanggan</strong> berstatus
+            “Paid”/“Already Reviewed” tapi <strong>semua order-nya sudah dibatalkan</strong>.
+            Deal-nya kemungkinan memang batal, tapi stage pipeline-nya lupa
+            digeser balik — kalau memang batal, pindahkan stage-nya (bukan
+            "Paid"/"Already Reviewed" lagi); kalau ternyata masih lanjut, buat
+            order baru yang aktif. Perbaiki di Pelanggan → buka profil.
           </p>
         </div>
       )}
