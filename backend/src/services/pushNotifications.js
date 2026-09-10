@@ -10,6 +10,14 @@
 // notifyDriverEnRoute (services/customerNotifications.js) untuk WA.
 import webpush from "web-push";
 import { prisma } from "../db.js";
+// Expo push (10 Sep 2026, driver-mobile RN) — REUSE PENUH prisma.pushToken
+// + services/expoPush.js yang sudah ada (dipakai Sano Messenger/SLA
+// alert), nol infrastruktur baru. Alias supaya tidak bentrok nama dengan
+// sendPushToUser Web Push di file ini sendiri — dua channel BERBEDA
+// (browser PWA vs app native), driver bisa punya salah satu atau
+// dua-duanya terdaftar selama masa transisi Capacitor -> RN, kirim ke
+// yang ada, BUKAN mengganti satu dengan yang lain.
+import { sendPushToUser as sendExpoPushToUser } from "./expoPush.js";
 
 function vapidConfigured() {
   return Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
@@ -65,11 +73,18 @@ export async function notifyDriverJobAssigned(job) {
   const order = job.order || job.units?.[0]?.unit?.order;
   const nama = order?.customer?.name || "Customer";
   const tipe = job.type === "PICKUP" ? "Pengambilan" : "Pengiriman";
-  await sendPushToUser(job.driverId, {
-    title: "🚚 Job baru ditugaskan",
-    body: `${tipe} — ${nama}`,
-    url: "/armada/jobs",
-  });
+  const title = "🚚 Job baru ditugaskan";
+  const body = `${tipe} — ${nama}`;
+
+  // Dua channel BERBEDA, kirim independen (Promise.allSettled — satu
+  // gagal tidak boleh menggagalkan yang lain): Web Push utk driver yang
+  // masih pakai PWA/APK Capacitor (driver-app/), Expo push utk driver
+  // yang sudah pindah ke app RN (driver-mobile/). Keduanya no-op diam-diam
+  // kalau user itu tidak punya subscription/token di channel tersebut.
+  await Promise.allSettled([
+    sendPushToUser(job.driverId, { title, body, url: "/armada/jobs" }),
+    sendExpoPushToUser(job.driverId, { title, body, data: { type: "job_assigned" }, channelId: "job-updates" }),
+  ]);
 }
 
 // Notifikasi "unit revisi sampai, siap dikerjakan ulang" (9 September 2026,

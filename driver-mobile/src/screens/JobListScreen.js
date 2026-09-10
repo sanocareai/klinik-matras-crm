@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import { useAuth } from "../context/AuthContext";
 import { useMyJobs } from "../hooks/useMyJobs";
+import { useDriverTracking } from "../hooks/useDriverTracking";
 import JobCard from "../components/JobCard";
 import RouteStartCard from "../components/RouteStartCard";
 
@@ -27,6 +28,11 @@ export default function JobListScreen() {
   const { user, logout } = useAuth();
   const { data: jobs, isLoading, error, refetch, isRefetching } = useMyJobs();
   const [showHistory, setShowHistory] = useState(false);
+
+  // D-034 — kirim ping GPS selama ADA job EN_ROUTE. Tidak melakukan apa pun
+  // (tidak minta izin lokasi sekalipun) kalau tidak ada job yang sedang
+  // berjalan — lihat catatan di hook.
+  useDriverTracking(jobs);
 
   const activeJobs = (jobs || []).filter((j) => ACTIVE_STATUSES.includes(j.status));
   const doneJobs = (jobs || []).filter((j) => j.status === "COMPLETED" || j.status === "FAILED");

@@ -8,14 +8,21 @@ const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 // Kirim ke satu batch token (maks 100, batas Expo per request), bersihkan
 // token yang sudah tidak valid (app di-uninstall, dll). Dipakai bersama oleh
 // sendPushToAllUsers (semua device) dan sendPushToUser (1 user tertentu).
-async function sendToTokenBatch(chunk, { title, body, data }) {
+async function sendToTokenBatch(chunk, { title, body, data, channelId = "pesan-masuk" }) {
   const messages = chunk.map((t) => ({
     to: t.token,
     title,
     body,
     data,
     sound: "default",
-    channelId: "pesan-masuk", // channel Android, dibuat oleh aplikasi mobile
+    // channelId (10 Sep 2026, driver-mobile) — parameterized, default
+    // "pesan-masuk" TIDAK berubah utk pemanggil lama (Sano Messenger/SLA
+    // alert). Token PushToken sekarang dipakai 2 app RN berbeda
+    // (Messenger + driver-mobile), masing-masing bikin channel Android
+    // sendiri di sisi klien — kirim ke channel yang salah bukan error
+    // fatal (Android jatuh ke default channel) tapi importance/suara bisa
+    // tidak sesuai, jadi tiap pemanggil kirim channel-nya sendiri.
+    channelId,
   }));
 
   try {
@@ -42,7 +49,7 @@ async function sendToTokenBatch(chunk, { title, body, data }) {
 
 // Kirim notifikasi ke SEMUA device yang terdaftar (semua user).
 // Fire-and-forget: kegagalan push tidak boleh mengganggu alur webhook.
-export async function sendPushToAllUsers({ title, body, data = {} }) {
+export async function sendPushToAllUsers({ title, body, data = {}, channelId }) {
   let tokens;
   try {
     tokens = await prisma.pushToken.findMany();
@@ -55,7 +62,7 @@ export async function sendPushToAllUsers({ title, body, data = {} }) {
 
   // Expo membatasi 100 pesan per request
   for (let i = 0; i < tokens.length; i += 100) {
-    await sendToTokenBatch(tokens.slice(i, i + 100), { title, body, data });
+    await sendToTokenBatch(tokens.slice(i, i + 100), { title, body, data, channelId });
   }
 }
 
@@ -63,7 +70,7 @@ export async function sendPushToAllUsers({ title, body, data = {} }) {
 // menyasar sales pemegang percakapan, bukan broadcast ke seluruh tim).
 // Fire-and-forget, sama seperti sendPushToAllUsers — kegagalan tidak boleh
 // menghentikan job pemanggil.
-export async function sendPushToUser(userId, { title, body, data = {} }) {
+export async function sendPushToUser(userId, { title, body, data = {}, channelId }) {
   if (!userId) return;
   let tokens;
   try {
@@ -75,6 +82,6 @@ export async function sendPushToUser(userId, { title, body, data = {} }) {
   if (!tokens.length) return;
 
   for (let i = 0; i < tokens.length; i += 100) {
-    await sendToTokenBatch(tokens.slice(i, i + 100), { title, body, data });
+    await sendToTokenBatch(tokens.slice(i, i + 100), { title, body, data, channelId });
   }
 }
