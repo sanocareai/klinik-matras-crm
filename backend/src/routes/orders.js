@@ -861,7 +861,7 @@ orderRouter.get("/", async (req, res) => {
         units: {
           where: { status: { not: "CANCELLED" } },
           select: {
-            id: true, status: true,
+            id: true, status: true, serviceId: true,
             currentStage: { select: { labelId: true } },
             // revisionLinks (9 September 2026, D-109) — supaya "Semua Order"
             // Produksi & Delivery bisa lihat & BERTINDAK atas klaim garansi/
@@ -922,8 +922,23 @@ orderRouter.get("/", async (req, res) => {
         const hidup = units.filter((u) => u.status !== "DELIVERED");
         if (hidup.length > 0) {
           const labelSet = [...new Set(hidup.map((u) => u.currentStage?.labelId).filter(Boolean))];
+          // D-148 (audit konsistensi, 9 September 2026) — sebelumnya SEMUA
+          // unit dengan currentStage kosong dilabeli "Belum mulai produksi"
+          // yang sama, padahal ada 2 alasan currentStageId bisa null (lihat
+          // komentar "KENYATAAN DATA" di unitStatus.js): (a) unit BARU,
+          // sudah diadopsi ke stage engine (serviceId terisi lewat PATCH
+          // /units/:id/service) tapi memang belum mulai tahap pertamanya —
+          // ini yang sebenarnya "belum mulai produksi"; (b) unit BACKFILL
+          // LAMA yang tidak pernah diadopsi sama sekali (serviceId masih
+          // null) — order ini bisa saja SUDAH terkirim lewat alur lama,
+          // bukan berarti benar-benar belum dikerjakan. UI yang menyamakan
+          // keduanya bikin kepala produksi salah baca prioritas (order
+          // "Siap Kirim" tampak seolah produksinya belum jalan).
+          const belumDiadopsi = labelSet.length === 0 && hidup.every((u) => !u.serviceId);
           productionStage = labelSet.length === 0
-            ? { label: "Belum mulai produksi", mixed: false, unitCount: hidup.length }
+            ? belumDiadopsi
+              ? { label: "Belum diadopsi ke tahap", mixed: false, unitCount: hidup.length, legacy: true }
+              : { label: "Belum mulai produksi", mixed: false, unitCount: hidup.length }
             : labelSet.length === 1
               ? { label: labelSet[0], mixed: false, unitCount: hidup.length }
               : { label: `${labelSet.length} tahap berbeda`, mixed: true, detail: labelSet, unitCount: hidup.length };

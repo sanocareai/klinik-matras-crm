@@ -63,11 +63,23 @@ function JobChip({ label, job }) {
 
 function ProduksiChip({ stage }) {
   if (!stage) return <span className="text-[11.5px] text-ink3">—</span>;
-  const belumMulai = stage.label === "Belum mulai produksi";
+  // D-148 (audit konsistensi) — "Belum mulai produksi" (unit sudah diadopsi
+  // ke stage engine, cuma belum jalan tahap pertama) dan "Belum diadopsi ke
+  // tahap" (unit backfill lama, TIDAK PERNAH masuk stage engine sama sekali
+  // — order-nya sendiri bisa saja sudah terkirim lewat alur lama) SENGAJA
+  // dibedakan labelnya (lihat routes/orders.js) supaya tidak lagi dibaca
+  // seolah "order ini belum dikerjakan" padahal cuma datanya yang lama.
+  const netral = stage.label === "Belum mulai produksi" || stage.legacy;
   return (
     <Badge
-      variant={belumMulai ? "neutral" : "accent"}
-      title={stage.mixed ? stage.detail.join(", ") : undefined}
+      variant={netral ? "neutral" : "accent"}
+      title={
+        stage.mixed
+          ? stage.detail.join(", ")
+          : stage.legacy
+            ? "Order lama dari sebelum sistem tahap produksi dipakai — bukan berarti belum dikerjakan/dikirim"
+            : undefined
+      }
     >
       {stage.label}{stage.unitCount > 1 && !stage.mixed ? ` (${stage.unitCount} unit)` : ""}
     </Badge>
