@@ -5,8 +5,8 @@
 // HARUS foto baru, bukan foto lama dari galeri) + expo-image-manipulator
 // utk resize/compress sebelum upload (hemat data driver di lapangan).
 import React from "react";
-import { View, Text, Pressable, Image, StyleSheet, ScrollView } from "react-native";
-import { Camera, X } from "lucide-react-native";
+import { View, Text, Pressable, Image, StyleSheet, ScrollView, Alert } from "react-native";
+import { Camera, ImagePlus, X } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 
@@ -19,24 +19,46 @@ const INK2 = "rgba(245,245,247,0.62)";
 const SURFACE = "rgba(255,255,255,0.06)";
 const RED = "#FF453A";
 
+async function kompres(asset) {
+  const out = await ImageManipulator.manipulateAsync(
+    asset.uri,
+    [{ resize: { width: Math.min(MAX_WIDTH, asset.width || MAX_WIDTH) } }],
+    { compress: QUALITY, format: ImageManipulator.SaveFormat.JPEG }
+  );
+  return { uri: out.uri, type: "image/jpeg", name: `foto-${Date.now()}.jpg` };
+}
+
 export default function PhotoCapture({ photos, onChange, label }) {
-  async function ambilFoto() {
+  // Kamera & galeri dua-duanya boleh (permintaan owner 10 Sep 2026) —
+  // sebagian driver foto dulu pakai app kamera bawaan lalu pilih dari
+  // galeri, atau screenshot bukti dari WA. Sama dengan web yang menerima
+  // <input type="file"> biasa (bukan cuma capture kamera).
+  async function ambilKamera() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) return;
-
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 1, // kompresi dilakukan manual di bawah (kontrol ukuran akhir persis)
-    });
+    if (!perm.granted) {
+      Alert.alert("Izin kamera ditolak", "Aktifkan izin kamera di pengaturan HP untuk memakai fitur ini.");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 1 });
     if (result.canceled || !result.assets?.[0]) return;
+    onChange([...photos, await kompres(result.assets[0])]);
+  }
 
-    const asset = result.assets[0];
-    const compressed = await ImageManipulator.manipulateAsync(
-      asset.uri,
-      [{ resize: { width: Math.min(MAX_WIDTH, asset.width || MAX_WIDTH) } }],
-      { compress: QUALITY, format: ImageManipulator.SaveFormat.JPEG }
-    );
-
-    onChange([...photos, { uri: compressed.uri, type: "image/jpeg", name: `foto-${Date.now()}.jpg` }]);
+  async function ambilGaleri() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Izin galeri ditolak", "Aktifkan izin foto/media di pengaturan HP untuk memilih dari galeri.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 1,
+      allowsMultipleSelection: true,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const baru = [];
+    for (const asset of result.assets) baru.push(await kompres(asset));
+    onChange([...photos, ...baru]);
   }
 
   function hapus(idx) {
@@ -55,8 +77,13 @@ export default function PhotoCapture({ photos, onChange, label }) {
             </Pressable>
           </View>
         ))}
-        <Pressable style={styles.addBtn} onPress={ambilFoto}>
-          <Camera size={20} color={ACCENT} />
+        <Pressable style={styles.addBtn} onPress={ambilKamera}>
+          <Camera size={18} color={ACCENT} />
+          <Text style={styles.addBtnText}>Kamera</Text>
+        </Pressable>
+        <Pressable style={styles.addBtn} onPress={ambilGaleri}>
+          <ImagePlus size={18} color={ACCENT} />
+          <Text style={styles.addBtnText}>Galeri</Text>
         </Pressable>
       </ScrollView>
     </View>
@@ -75,6 +102,7 @@ const styles = StyleSheet.create({
   addBtn: {
     width: 64, height: 64, borderRadius: 10, backgroundColor: SURFACE,
     borderWidth: 1, borderColor: "rgba(76,141,255,0.4)", borderStyle: "dashed",
-    alignItems: "center", justifyContent: "center",
+    alignItems: "center", justifyContent: "center", gap: 3,
   },
+  addBtnText: { color: ACCENT, fontSize: 9.5, fontWeight: "600" },
 });

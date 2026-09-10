@@ -59,11 +59,16 @@ function PhotoCapture({ photos, setPhotos }) {
   }
   return (
     <div className="space-y-2">
+      {/* Tanpa atribut `capture` (permintaan owner 10 Sep 2026): di HP,
+          `capture` memaksa buka kamera langsung & menyembunyikan galeri/
+          file. Driver butuh bisa pilih foto yang sudah ada (foto dari app
+          kamera bawaan, screenshot bukti dari WA, dst) — sama dengan
+          <input type=file> biasa. */}
       <label className="flex h-12 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed
                         border-border text-sm font-medium text-ink2 hover:border-accent hover:text-accent">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-        {photos.length > 0 ? `${photos.length} foto siap` : "Ambil Foto"}
-        <input type="file" accept="image/*" capture="environment" multiple hidden onChange={handleFiles} disabled={busy} />
+        {photos.length > 0 ? `${photos.length} foto siap` : "Ambil / Pilih Foto"}
+        <input type="file" accept="image/*" multiple hidden onChange={handleFiles} disabled={busy} />
       </label>
       {photos.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
@@ -269,7 +274,7 @@ function PaymentSection({ job, onChanged, onQueued }) {
                             border-border text-xs font-medium text-ink2 hover:border-accent hover:text-accent">
             <Camera className="h-3.5 w-3.5" />
             {photo ? "Foto siap" : "Foto Bukti (opsional untuk non-tunai)"}
-            <input type="file" accept="image/*" capture="environment" hidden onChange={handlePhoto} />
+            <input type="file" accept="image/*" hidden onChange={handlePhoto} />
           </label>
           {err && <p className="text-[11px] text-red">{err}</p>}
           <div className="flex gap-2">
