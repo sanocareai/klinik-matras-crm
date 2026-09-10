@@ -3,21 +3,19 @@
 // untuk kronologinya: driver antar 2 kasur, customer QC di tempat & minta
 // 1 kasur dipendekkan lagi, kasur diambil balik HARI ITU JUGA — tapi job
 // pengiriman aslinya sudah COMPLETED, jadi tidak pernah masuk sistem Retur
-// (UnitRevision) sama sekali. Sales sudah lapor komplain (Order.hasComplaint,
-// PATCH /orders/:id/complaint) dan dispatcher sudah bikin job pengambilan
-// AD-HOC (di luar sistem Retur) untuk mencatat pengambilan baliknya — script
-// ini MENYAMBUNGKAN yang sudah terjadi itu ke sistem Retur yang sebenarnya
-// (supaya bisa lahir job pengiriman baru untuk besok — endpoint POST /jobs
-// biasa MENOLAK order yang sudah DELIVERED, lihat komentar panjang di
-// POST /revisions/:id/create-delivery-job), BUKAN membangun ulang riwayat.
+// (UnitRevision) sama sekali lewat jalur normal (endpoint POST /jobs biasa
+// MENOLAK order yang sudah DELIVERED — lihat komentar panjang di
+// POST /revisions/:id/create-delivery-job).
 //
-// Owner mengonfirmasi (10 Sep 2026): produksi SUDAH SELESAI merevisi, siap
-// dikirim besok — jadi status UnitRevision di-set LANGSUNG ke READY_REDELIVER
-// (bukan jalan REQUESTED→PICKUP_SCHEDULED→IN_REWORK step-by-step yang
-// normalnya dipakai untuk revisi yang BELUM terjadi) — dan job pengambilan
-// yang SUDAH ADA (dibuat ad-hoc, completedAt mencerminkan kejadian nyata
-// 8 Sept) ditempelkan sebagai jobId, bukan dibuat baru (owner konfirmasi:
-// "Ya, pakai yang sudah ada").
+// SAAT script ini ditulis, OWNER SENDIRI sudah lebih dulu masuk lewat UI
+// Retur dan membuat UnitRevision (trigger KENYAMANAN — belum ada
+// KOMPLAIN_ANTAR saat itu, status IN_REWORK, jobId sudah ditempel ke job
+// pengambilan ad-hoc yang sama). Script ini REUSE revisi itu (bukan bikin
+// duplikat): perbaiki triggernya ke KOMPLAIN_ANTAR yang baru ditambahkan,
+// majukan ke READY_REDELIVER (owner konfirmasi 10 Sep: produksi SUDAH
+// SELESAI, siap kirim besok), lalu buat job DELIVERY baru — path FALLBACK
+// (buat revisi dari nol) tetap ada kalau ternyata belum ada revisi sama
+// sekali saat dijalankan.
 //
 // PEMAKAIAN (dry-run dulu):
 //   node scripts/backfill-richard-revision-201.js
@@ -48,14 +46,17 @@ async function main() {
   const existingRevision = await prisma.unitRevision.findFirst({
     where: { unitId: unit.id, status: { notIn: ["CONFIRMED", "CANCELLED"] } },
   });
-  if (existingRevision) {
-    throw new Error(`Unit ${unit.unitCode} sudah punya revisi aktif (${existingRevision.id}, status ${existingRevision.status}) — tidak dijalankan lagi supaya tidak dobel`);
-  }
 
   console.log(`Unit: ${unit.unitCode} (${unit.id}), status saat ini: ${unit.status}`);
   console.log(`Order: ${unit.order.orderNumber}, status: ${unit.order.status}`);
-  console.log(`Job pengambilan yang akan ditempel: ${pickupJob.id} (selesai ${pickupJob.completedAt})`);
-  console.log(`Rencana: buat UnitRevision (trigger=KOMPLAIN_ANTAR, status=READY_REDELIVER, jobId=job pengambilan di atas), lalu buat job DELIVERY baru (UNSCHEDULED) untuk besok.`);
+
+  if (existingRevision) {
+    console.log(`Revisi AKTIF sudah ada: ${existingRevision.id} (trigger=${existingRevision.trigger}, status=${existingRevision.status}, jobId=${existingRevision.jobId})`);
+    console.log(`Rencana: REUSE revisi ini — set trigger=KOMPLAIN_ANTAR, status=READY_REDELIVER, lalu buat job DELIVERY baru (UNSCHEDULED) untuk besok.`);
+  } else {
+    console.log(`Belum ada revisi aktif untuk unit ini.`);
+    console.log(`Rencana: buat UnitRevision baru (trigger=KOMPLAIN_ANTAR, status=READY_REDELIVER, jobId=job pengambilan ${pickupJob.id}), lalu buat job DELIVERY baru (UNSCHEDULED) untuk besok.`);
+  }
 
   if (!APPLY) {
     console.log("\n[dry-run] Tidak ada perubahan disimpan. Jalankan ulang dengan --apply untuk benar-benar menyimpan.");
@@ -63,15 +64,40 @@ async function main() {
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const revision = await tx.unitRevision.create({
-      data: {
-        unitId: unit.id,
-        trigger: "KOMPLAIN_ANTAR",
-        complaint: COMPLAINT_TEXT,
-        status: "READY_REDELIVER",
-        jobId: pickupJob.id,
-      },
-    });
+    let revisionId;
+    if (existingRevision) {
+      if (existingRevision.status === "READY_REDELIVER" || existingRevision.status === "REDELIVERED") {
+        revisionId = existingRevision.id; // sudah di titik yang benar, jangan mundur
+      } else {
+        const updated = await tx.unitRevision.update({
+          where: { id: existingRevision.id },
+          data: { trigger: "KOMPLAIN_ANTAR", status: "READY_REDELIVER" },
+        });
+        revisionId = updated.id;
+      }
+    } else {
+      const created = await tx.unitRevision.create({
+        data: {
+          unitId: unit.id,
+          trigger: "KOMPLAIN_ANTAR",
+          complaint: COMPLAINT_TEXT,
+          status: "READY_REDELIVER",
+          jobId: pickupJob.id,
+        },
+      });
+      revisionId = created.id;
+    }
+
+    // Guard sama dengan POST /revisions/:id/create-delivery-job — jangan
+    // bikin job pengiriman KEDUA kalau revisi ini sudah punya satu yang aktif.
+    const currentJobId = existingRevision?.jobId;
+    if (currentJobId && currentJobId !== pickupJob.id) {
+      const linkedJob = await tx.job.findUnique({ where: { id: currentJobId } });
+      const ACTIVE = ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
+      if (linkedJob?.type === "DELIVERY" && ACTIVE.includes(linkedJob.status)) {
+        return { revisionId, deliveryJobId: linkedJob.id, reused: true };
+      }
+    }
 
     const deliveryJob = await tx.job.create({
       data: {
@@ -81,13 +107,17 @@ async function main() {
       },
     });
     await tx.jobUnit.create({ data: { jobId: deliveryJob.id, unitId: unit.id } });
-    await tx.unitRevision.update({ where: { id: revision.id }, data: { jobId: deliveryJob.id } });
+    await tx.unitRevision.update({ where: { id: revisionId }, data: { jobId: deliveryJob.id } });
 
-    return { revisionId: revision.id, deliveryJobId: deliveryJob.id };
+    return { revisionId, deliveryJobId: deliveryJob.id, reused: false };
   });
 
-  console.log(`\n[applied] UnitRevision dibuat: ${result.revisionId}`);
-  console.log(`[applied] Job pengiriman baru (UNSCHEDULED, siap dijadwalkan besok): ${result.deliveryJobId}`);
+  console.log(`\n[applied] UnitRevision: ${result.revisionId} (status READY_REDELIVER)`);
+  console.log(
+    result.reused
+      ? `[applied] Sudah ada job pengiriman aktif: ${result.deliveryJobId} — dipakai apa adanya, tidak bikin baru.`
+      : `[applied] Job pengiriman baru (UNSCHEDULED, siap dijadwalkan besok): ${result.deliveryJobId}`
+  );
   console.log("Langkah berikutnya: dispatcher jadwalkan job ini lewat Jadwal & Penugasan / Route Planner seperti biasa.");
 }
 
