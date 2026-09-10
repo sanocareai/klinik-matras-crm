@@ -12,6 +12,7 @@ import { useSocketStatus } from "../features/inbox/hooks/useSocketStatus.js";
 import { useIsMobile } from "../features/inbox/hooks/useIsMobile.js";
 import { useInboxHotkeys } from "../features/inbox/hooks/useInboxHotkeys.js";
 import { useActiveId, useActiveSelectionSeq, useConversation, useConversationStore, useTotalUnreadCount } from "../features/inbox/stores/conversationStore.js";
+import { useHistoryUserState } from "../features/inbox/hooks/useHistoryUserState.js";
 
 // FASE B: daftar percakapan (kolom kiri) virtualized + di-drive oleh
 // conversationStore (Zustand).
@@ -205,13 +206,17 @@ export default function Inbox({ user }) {
   // dulu cuma set state langsung tanpa sentuh history — makanya bug ini
   // gampang lolos manual testing lewat tombol, cuma kelihatan lewat gesture
   // asli/tombol back OS.
-  // Fix: derive mobileView dari location.state, bukan local state lagi.
-  // Buka chat = push 1 history entry baru bertanda chatOpen:true. Baik
-  // swipe-back (popstate asli, ditangkap otomatis oleh react-router lewat
-  // useLocation) MAUPUN tombol back (navigate(-1)) sama-sama cuma pop 1
-  // level (balik ke daftar) — history /inbox itu sendiri tetap utuh,
-  // Dashboard baru ke-pop kalau user tekan back SEKALI LAGI dari daftar.
-  const mobileView = location.state?.chatOpen ? "chat" : "list";
+  // mobileView = tampilan chat vs daftar di HP (< 768px). Derive dari
+  // history-state (`chatOpen`) — buka chat push 1 entry, swipe-back /
+  // tombol-back OS pop-nya kembali ke daftar (BUKAN keluar dari /inbox).
+  //
+  // ⚠️ Dulu baca `useLocation().state` — RUSAK sejak D-144 (sistem tab
+  // dalam-app, commit 74fa4883): `<Routes location={tab.path}>` per-tab
+  // bikin `useLocation().state` selalu null. `useHistoryUserState` baca
+  // `window.history` asli, lolos dari wrapping itu — lihat catatan di hook.
+  // Desktop tidak terpengaruh: layout 3-kolom selalu mount ChatWindow.
+  const [histState, syncHistState] = useHistoryUserState();
+  const mobileView = histState?.chatOpen ? "chat" : "list";
 
   // Percakapan dipilih (dari ConversationItem, self-contained via store,
   // atau dari deep link ?conv=ID) → di mobile pindah ke tampilan chat.
@@ -219,14 +224,15 @@ export default function Inbox({ user }) {
   // yang SAMA setelah balik ke daftar tetap harus buka lagi tampilan chat,
   // padahal activeId-nya tidak berubah nilai (lihat conversationStore.js).
   useEffect(() => {
-    if (activeId && isMobile && !location.state?.chatOpen) {
-      navigate(`${location.pathname}${location.search}`, { state: { chatOpen: true } });
+    if (activeId && isMobile && !(window.history.state?.usr?.chatOpen)) {
+      navigate(`${location.pathname}${location.search}`, { state: { ...(window.history.state?.usr || {}), chatOpen: true } });
+      syncHistState();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSelectionSeq, isMobile]);
 
   function backToMobileList() {
-    if (location.state?.chatOpen) navigate(-1);
+    if (window.history.state?.usr?.chatOpen) navigate(-1); // → popstate → mobileView "list"
   }
 
   // Judul tab browser mencerminkan total unread — supaya kelihatan dari

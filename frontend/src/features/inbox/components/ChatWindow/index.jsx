@@ -21,6 +21,7 @@ import HandoverHistoryBanner from "./HandoverHistoryBanner.jsx";
 import { useMessages } from "../../hooks/useMessages.js";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore, useMessagesForConv } from "../../stores/messageStore.js";
+import { useHistoryUserState } from "../../hooks/useHistoryUserState.js";
 import { isAdminUser } from "@/lib/roles.js";
 import { useConversationStore } from "../../stores/conversationStore.js";
 import { useComposerStore } from "../../stores/composerStore.js";
@@ -201,18 +202,25 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   // local state (showCustomerDetail), tidak terhubung ke browser history.
   // Buka sheet TIDAK push history entry baru, jadi gesture "swipe back"
   // malah langsung pop keluar dari tampilan chat (bahkan sampai ke
-  // Dashboard), bukan menutup sheet dulu. Sekarang derive dari
-  // location.state (pola sama dengan Inbox.jsx) — swipe-back maupun tombol
-  // X di sheet sama-sama cuma nutup sheet ini dulu, chat di baliknya tetap
-  // utuh.
-  const showCustomerDetail = !!location.state?.customerSheetOpen;
+  // Dashboard), bukan menutup sheet dulu.
+  //
+  // ⚠️ Derive-dari-location.state RUSAK sejak D-144 (sistem tab dalam-app,
+  // commit 74fa4883): `<Routes location={tab.path}>` per-tab membuat
+  // `useLocation().state` SELALU null di dalam halaman. useHistoryUserState
+  // baca `window.history` asli (lolos wrapping). `chatOpen` di-spread
+  // supaya saat sheet terbuka, Inbox.jsx tetap lihat chatOpen=true (tidak
+  // balik ke daftar) — hierarki: list → {chatOpen} → {chatOpen,
+  // customerSheetOpen}.
+  const [histState, syncHistState] = useHistoryUserState();
+  const showCustomerDetail = !!histState?.customerSheetOpen;
 
   function openCustomerDetail() {
-    if (location.state?.customerSheetOpen) return;
-    navigate(`${location.pathname}${location.search}`, { state: { ...location.state, customerSheetOpen: true } });
+    if (window.history.state?.usr?.customerSheetOpen) return;
+    navigate(`${location.pathname}${location.search}`, { state: { ...(window.history.state?.usr || {}), customerSheetOpen: true } });
+    syncHistState();
   }
   function closeCustomerDetail() {
-    if (location.state?.customerSheetOpen) navigate(-1);
+    if (window.history.state?.usr?.customerSheetOpen) navigate(-1); // → popstate → sheet tutup
   }
 
   function handleRetry(m) {
