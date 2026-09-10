@@ -151,6 +151,13 @@ export const api = {
   // PWA/APK Capacitor driver-app/), nol perubahan kontrak API.
   getMyJobs: (date) => request(`/armada/my-jobs${buildQuery({ date })}`),
   uploadJobPhotos: uploadJobPhotosMulti,
+  // Mulai SATU rute sekaligus — foto muatan sekali, semua job ASSIGNED di
+  // rute jadi EN_ROUTE (lihat POST /armada/routes/:id/start).
+  startRoute: (routeId, data = {}) =>
+    request(`/armada/routes/${routeId}/start`, { method: "POST", body: JSON.stringify(data) }),
+  // Link Google Maps rute (sumber = manualMapsUrl admin, fallback auto
+  // multi-stop) — sama presedennya dengan broadcast WA.
+  getRouteMap: (routeId) => request(`/armada/routes/${routeId}/map`),
   startArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", body: JSON.stringify(data) }),
   arriveArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", body: JSON.stringify(data) }),
   completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),

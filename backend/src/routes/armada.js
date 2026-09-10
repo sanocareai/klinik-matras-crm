@@ -2315,6 +2315,45 @@ armadaRouter.get("/routes/:id/maps-link", requirePermission(P.JOB_READ), async (
   }
 });
 
+// GET /routes/:id/map — link Maps rute untuk tombol "Buka Rute di Maps" di
+// app/web driver (10 Sep 2026, laporan owner: "1 rute yang berisi link
+// google maps yang di-upload admin delivery di web tampilkan juga di apps
+// ... source-nya harus sama dengan yang diinput admin delivery").
+//
+// PRESEDEN PERSIS SAMA dengan formatRouteWaMessage (broadcast WA):
+// route.manualMapsUrl (link pendek yang admin TEMPEL manual di Route Card)
+// kalau ada — kalau kosong, fallback ke buildRouteMapsUrl() auto multi-stop.
+// Satu sumber kebenaran, bukan cara ketiga membangun link.
+//
+// Beda dari /maps-link di atas (khusus dispatcher, SELALU auto-generate
+// untuk preview sebelum tempel manual) — endpoint ini menghormati link
+// manual, dan driver/helper yang mengerjakan rute ini juga boleh akses.
+armadaRouter.get("/routes/:id/map", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({
+      where: { id: req.params.id },
+      include: { jobs: { include: { order: { select: { locationUrl: true } } } } },
+    });
+    if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+
+    if (!hasPermission(req.user, P.JOB_READ)) {
+      const milikSaya =
+        route.driverId === req.user.id || route.helperId === req.user.id ||
+        route.jobs.some((j) => j.driverId === req.user.id || j.helperId === req.user.id);
+      if (!milikSaya) return res.status(403).json({ error: "Bukan rute Anda" });
+    }
+
+    const manual = route.manualMapsUrl?.trim();
+    if (manual) return res.json({ url: manual, source: "manual", stopCount: route.jobs.length });
+
+    await ensureJobsGeocoded(route.jobs);
+    const { url, stopCount, excludedCount } = buildRouteMapsUrl(route.jobs);
+    res.json({ url, source: "auto", stopCount, excludedCount });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 armadaRouter.patch("/routes/:id/cancel", requirePermission(P.ROUTE_WRITE), async (req, res) => {
   try {
     const route = await prisma.route.findUnique({ where: { id: req.params.id } });
@@ -3386,6 +3425,59 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
     if (customer) notifyDriverEnRoute(full, customer.id, customer.name);
 
     res.json(full);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/routes/:id/start — MULAI SATU RUTE SEKALIGUS (10 Sep
+// 2026, laporan owner: "misal ada 7 jalur di 1 mobil yang sama, apakah
+// harus foto mulai perjalanan satu per satu?"). Satu mobil = satu kali
+// berangkat dari bengkel; foto muatan diambil SEKALI lalu menempel ke
+// semua job ASSIGNED di rute ini. Efeknya PERSIS sama dengan memanggil
+// POST /jobs/:id/start satu-satu (status EN_ROUTE, unit DELIVERY jadi
+// IN_TRANSIT_OUT + sync status order, notif "driver menuju lokasi" ke
+// tiap customer) — cuma dikerjakan sekali jalan.
+//
+// Job yang BUKAN ASSIGNED (mis. sudah EN_ROUTE karena driver start manual,
+// atau masih SCHEDULED) dilewati diam-diam — bukan error, batch cuma
+// mengurus yang memang siap.
+armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const route = await prisma.route.findUniqueOrThrow({ where: { id: req.params.id } });
+
+    const startPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
+    if (startPhotoUrls.length === 0) throw new ArmadaError("Foto bukti wajib diisi sebelum mulai perjalanan");
+    const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
+    if (!startPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
+
+    const semuaJob = await prisma.job.findMany({ where: { routeId: route.id } });
+    const bolehSemua = hasPermission(req.user, P.JOB_WRITE);
+    const target = semuaJob.filter(
+      (j) => j.status === "ASSIGNED" &&
+        (bolehSemua || j.driverId === req.user.id || j.helperId === req.user.id)
+    );
+    if (target.length === 0) throw new ArmadaError("Tidak ada job 'Siap Dimulai' di rute ini");
+
+    await prisma.$transaction(async (tx) => {
+      for (const job of target) {
+        await tx.job.update({ where: { id: job.id }, data: { status: "EN_ROUTE", startPhotoUrls } });
+        if (job.type === "DELIVERY") {
+          const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
+          const unitIds = jobUnits.map((ju) => ju.unitId);
+          await tx.unit.updateMany({ where: { id: { in: unitIds } }, data: { status: "IN_TRANSIT_OUT" } });
+          await syncOrderStatusForUnits(tx, unitIds);
+        }
+      }
+    });
+
+    const full = await prisma.job.findMany({ where: { id: { in: target.map((j) => j.id) } }, include: jobInclude });
+    for (const j of full) {
+      const customer = j.units[0]?.unit?.order?.customer;
+      if (customer) notifyDriverEnRoute(j, customer.id, customer.name);
+    }
+
+    res.json({ started: full.length, jobs: full });
   } catch (err) {
     handleErr(err, res);
   }

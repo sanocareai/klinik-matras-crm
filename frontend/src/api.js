@@ -230,6 +230,13 @@ export const api = {
   // "Buat Peta" manual; publish/edit rute mengirim otomatis lewat backend,
   // TIDAK lewat panggilan ini (dibangun ulang di server, satu sumber kebenaran).
   getRouteMapsLink: (id) => request(`/armada/routes/${id}/maps-link`),
+  // Link Maps rute untuk driver (sumber = manualMapsUrl admin, fallback
+  // auto multi-stop) — presedennya SAMA dengan broadcast WA. Beda dari
+  // getRouteMapsLink di atas yang khusus preview dispatcher (selalu auto).
+  getRouteMap: (id) => request(`/armada/routes/${id}/map`),
+  // Mulai SATU rute sekaligus — foto muatan sekali, semua job ASSIGNED di
+  // rute jadi EN_ROUTE (POST /armada/routes/:id/start).
+  startRoute: (id, data = {}) => request(`/armada/routes/${id}/start`, { method: "POST", body: JSON.stringify(data) }),
   cancelRoute: (id) => request(`/armada/routes/${id}/cancel`, { method: "PATCH" }),
   // Hapus permanen — untuk rute DRAFT atau CANCELLED (D-059, diperluas
   // D-061). Beda dari cancelRoute (soft, riwayatnya tetap ada) — ini

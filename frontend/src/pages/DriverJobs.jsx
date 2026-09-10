@@ -1,17 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Loader2, MapPin,
+  AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Loader2, Map, MapPin,
   Navigation, Phone, RefreshCw, Truck, Wallet, WifiOff, X,
 } from "lucide-react";
 import { compressImage } from "../utils/compressImage.js";
 import { formatRupiah } from "../utils/format.js";
 import { getQueue, removeAction } from "../utils/offlineQueue.js";
-import { submitOrQueue } from "../utils/submitJobAction.js";
+import { submitOrQueue, uploadBlobs } from "../utils/submitJobAction.js";
 import { processQueue } from "../utils/syncQueue.js";
 import { useDriverTracking } from "../hooks/useDriverTracking.js";
 import { usePushSubscription } from "../hooks/usePushSubscription.js";
 import { useMyJobs } from "@/features/armada/hooks/useMyJobs.js";
 import { mapsUrl } from "@/features/armada/jobStatus.js";
+import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -544,6 +545,118 @@ function SyncBar({ queueCount, syncing, offline, onSyncNow }) {
   );
 }
 
+// ── Kartu rute (10 September 2026) ─────────────────────────────────────────
+// Laporan owner: 1 mobil bisa bawa 7 stop — foto "mulai perjalanan" 7x di
+// bengkel tidak masuk akal. Dua aksi tingkat-rute:
+//   1. "Buka Rute di Google Maps" — 1 klik semua titik. SUMBER link SAMA
+//      dengan yang di-input admin di Route Card (route.manualMapsUrl),
+//      fallback auto multi-stop — presedennya identik dengan broadcast WA.
+//   2. "Mulai Perjalanan" — foto muatan SEKALI, semua job ASSIGNED di rute
+//      jadi EN_ROUTE + notif "driver menuju lokasi" ke tiap customer.
+// Per stop tetap Tiba/Selesai/Gagal sendiri-sendiri (foto bukti serah
+// terima tetap wajib per stop). Online-only (sama seperti aksi lain saat
+// pertama ditekan — bedanya ini tidak diantre offline, driver di bengkel
+// umumnya masih ada sinyal; kalau gagal, pesan error apa adanya).
+function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
+  const [mode, setMode] = useState("idle"); // idle | starting
+  const [photos, setPhotos] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [mapBusy, setMapBusy] = useState(false);
+
+  async function openMaps() {
+    setMapBusy(true);
+    setErr("");
+    try {
+      const { url } = await api.getRouteMap(route.id);
+      if (!url) {
+        setErr("Link rute belum ada — admin belum tempel link Maps dan titik rute belum punya koordinat.");
+        return;
+      }
+      window.open(url, "_blank", "noopener");
+    } catch (e) {
+      setErr(e.message || "Gagal mengambil link rute");
+    } finally {
+      setMapBusy(false);
+    }
+  }
+
+  async function mulai() {
+    setBusy(true);
+    setErr("");
+    try {
+      const urls = await uploadBlobs(sampleJobId, photos);
+      await api.startRoute(route.id, { proofPhotoUrls: urls });
+      setMode("idle");
+      setPhotos([]);
+      onChanged();
+    } catch (e) {
+      setErr(e.message || "Gagal memulai rute");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="mb-3 border-accent/30 p-3">
+      <p className="text-sm font-bold text-ink">Rute {route.code}</p>
+      <p className="text-xs text-ink2">
+        {assignedCount > 0 ? `${assignedCount} stop siap berangkat` : "Perjalanan sudah dimulai"}
+      </p>
+
+      <button
+        type="button" onClick={openMaps} disabled={mapBusy}
+        className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-accent/40
+                   text-xs font-semibold text-accent disabled:opacity-50"
+      >
+        {mapBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Map className="h-3.5 w-3.5" />}
+        Buka Rute di Google Maps
+      </button>
+
+      {assignedCount > 0 && mode === "idle" && (
+        <Button className="mt-2 h-11 w-full text-xs" onClick={() => setMode("starting")}>
+          <Navigation className="mr-1.5 h-3.5 w-3.5" /> Mulai Perjalanan ({assignedCount} stop)
+        </Button>
+      )}
+
+      {mode === "starting" && (
+        <div className="mt-2 space-y-2">
+          <p className="text-[11px] font-medium text-ink2">Foto muatan di mobil (wajib, sekali untuk semua stop)</p>
+          <PhotoCapture photos={photos} setPhotos={setPhotos} />
+          <div className="flex gap-2">
+            <Button
+              variant="neutral" className="h-10 flex-1 text-xs" disabled={busy}
+              onClick={() => { setMode("idle"); setPhotos([]); setErr(""); }}
+            >
+              Batal
+            </Button>
+            <Button className="h-10 flex-1 text-xs" disabled={busy || photos.length === 0} onClick={mulai}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Kirim & Mulai"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {err && <p className="mt-2 text-[11px] text-red">{err}</p>}
+    </Card>
+  );
+}
+
+// Kelompokkan job aktif per rute — dipakai web & (pola sama) app.
+function groupRoutes(jobs) {
+  const byId = new Map();
+  for (const j of jobs) {
+    if (!j.route || j.status === "COMPLETED" || j.status === "FAILED") continue;
+    let r = byId.get(j.route.id);
+    if (!r) { r = { route: j.route, assignedCount: 0, sampleJobId: null }; byId.set(j.route.id, r); }
+    if (j.status === "ASSIGNED") {
+      r.assignedCount += 1;
+      if (!r.sampleJobId) r.sampleJobId = j.id;
+    }
+  }
+  return [...byId.values()];
+}
+
 export default function DriverJobs() {
   // Data lewat TanStack Query (8 September 2026, laporan owner: "optimalkan
   // agar lebih smooth, fast, enteng" — lihat catatan panjang di
@@ -692,9 +805,17 @@ function FocusedJobList({ jobs, focusIndex, setFocusIndex, showHistory, setShowH
   // — jepit ke rentang valid daripada render index yang sudah tidak ada.
   const safeIndex = Math.min(focusIndex, Math.max(0, activeJobs.length - 1));
   const focused = activeJobs[safeIndex];
+  const routeGroups = groupRoutes(jobs);
 
   return (
     <div>
+      {routeGroups.map((r) => (
+        <RouteStartBanner
+          key={r.route.id} route={r.route} assignedCount={r.assignedCount}
+          sampleJobId={r.sampleJobId} onChanged={onChanged}
+        />
+      ))}
+
       {activeJobs.length > 0 && (
         <>
           {activeJobs.length > 1 && (

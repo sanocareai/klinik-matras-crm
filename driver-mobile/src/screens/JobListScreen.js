@@ -8,6 +8,7 @@ import { FlashList } from "@shopify/flash-list";
 import { useAuth } from "../context/AuthContext";
 import { useMyJobs } from "../hooks/useMyJobs";
 import JobCard from "../components/JobCard";
+import RouteStartCard from "../components/RouteStartCard";
 
 const NAVY = "#0A0D16";
 const INK = "#F5F5F7";
@@ -24,6 +25,27 @@ export default function JobListScreen() {
   const activeJobs = (jobs || []).filter((j) => ACTIVE_STATUSES.includes(j.status));
   const doneJobs = (jobs || []).filter((j) => j.status === "COMPLETED" || j.status === "FAILED");
   const listData = showHistory ? doneJobs : activeJobs;
+
+  // Rute hari ini — kartu "Mulai Perjalanan sekali" + "Buka Rute di Maps"
+  // di atas daftar (tab Aktif saja). Satu kartu per rute yang masih punya
+  // job belum selesai.
+  const rutes = [];
+  if (!showHistory) {
+    const byId = new Map();
+    for (const j of jobs || []) {
+      if (!j.route || j.status === "COMPLETED" || j.status === "FAILED") continue;
+      let r = byId.get(j.route.id);
+      if (!r) {
+        r = { route: j.route, assignedCount: 0, sampleJobId: null };
+        byId.set(j.route.id, r);
+      }
+      if (j.status === "ASSIGNED") {
+        r.assignedCount += 1;
+        if (!r.sampleJobId) r.sampleJobId = j.id;
+      }
+    }
+    rutes.push(...byId.values());
+  }
 
   return (
     <SafeAreaView style={styles.root}>
@@ -65,6 +87,21 @@ export default function JobListScreen() {
           data={listData}
           keyExtractor={(j) => j.id}
           renderItem={({ item }) => <JobCard job={item} onChanged={refetch} />}
+          ListHeaderComponent={
+            rutes.length > 0 ? (
+              <View>
+                {rutes.map((r) => (
+                  <RouteStartCard
+                    key={r.route.id}
+                    route={r.route}
+                    assignedCount={r.assignedCount}
+                    sampleJobId={r.sampleJobId}
+                    onChanged={refetch}
+                  />
+                ))}
+              </View>
+            ) : null
+          }
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={ACCENT} />}
         />
