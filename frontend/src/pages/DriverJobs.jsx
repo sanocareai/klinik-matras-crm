@@ -303,9 +303,7 @@ const FAIL_REASONS_DELIVERY = [
 
 // ── Kartu satu job ────────────────────────────────────────────────────────
 function JobCard({ job, onChanged, onQueued, pending }) {
-  // starting/arriving (8 September 2026, dokumentasi tiap tahap) — pola
-  // SAMA PERSIS dengan completing/failing di bawah, cuma tahapnya beda.
-  const [mode, setMode] = useState("idle"); // idle | starting | arriving | completing | failing
+  const [mode, setMode] = useState("idle"); // idle | completing | failing
   const [photos, setPhotos] = useState([]);
   const [signatureBlob, setSignatureBlob] = useState(null);
   const [note, setNote] = useState("");
@@ -405,16 +403,28 @@ function JobCard({ job, onChanged, onQueued, pending }) {
         </div>
       )}
 
+      {/* Mulai & Tiba = 1 klik, TANPA foto (10 September 2026, keputusan
+          owner: dokumentasi cuma di "mulai perjalanan rute" [foto muatan,
+          lihat RouteStartBanner] & "serah terima berhasil" [foto di
+          completing] — plus Gagal yang tetap wajib alasan+foto). "Mulai
+          Perjalanan" per-job ini jalur untuk job lepas / belum di-start
+          lewat kartu rute. */}
       {mode === "idle" && job.status === "ASSIGNED" && (
-        <Button className="mt-3 h-12 w-full text-sm" onClick={() => setMode("starting")}>
-          Mulai Perjalanan
+        <Button
+          className="mt-3 h-12 w-full text-sm" disabled={busy}
+          onClick={() => run("start", {}, [], null)}
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mulai Perjalanan"}
         </Button>
       )}
 
       {mode === "idle" && job.status === "EN_ROUTE" && (
         <div className="mt-3 space-y-2">
-          <Button className="h-12 w-full text-sm" onClick={() => setMode("arriving")}>
-            Tiba di Lokasi
+          <Button
+            className="h-12 w-full text-sm" disabled={busy}
+            onClick={() => run("arrive", {}, [], null)}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Tiba di Lokasi"}
           </Button>
           <div className="flex gap-2">
             <Button variant="neutral" className="h-11 flex-1 text-xs" onClick={() => setMode("failing")}>Gagal</Button>
@@ -441,28 +451,6 @@ function JobCard({ job, onChanged, onQueued, pending }) {
       )}
       {mode === "idle" && job.status === "FAILED" && (
         <div className="mt-3 rounded-lg bg-redbg px-2.5 py-2 text-xs text-red">{job.failureReason}</div>
-      )}
-
-      {/* Mulai Perjalanan/Tiba (8 September 2026, dokumentasi tiap tahap —
-          referensi Lalamove/Gojek) — pola SAMA PERSIS dengan mode
-          "completing" di bawah, cuma tanpa SignaturePad/catatan (belum
-          relevan di tahap ini, customer belum tentu ketemu). Foto WAJIB,
-          backend menolak kalau kosong (lihat POST /jobs/:id/start dan
-          /arrive di armada.js). */}
-      {(mode === "starting" || mode === "arriving") && (
-        <div className="mt-3 space-y-2">
-          <PhotoCapture photos={photos} setPhotos={setPhotos} />
-          <div className="flex gap-2">
-            <Button variant="neutral" className="h-11 flex-1 text-xs" onClick={() => setMode("idle")}>Batal</Button>
-            <Button
-              className="h-11 flex-1 text-xs" disabled={busy || photos.length === 0}
-              onClick={() => run(mode === "starting" ? "start" : "arrive", {}, photos, null)}
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Lanjut"}
-            </Button>
-          </div>
-          {photos.length === 0 && <p className="text-center text-[11px] text-ink2">Foto bukti wajib diisi</p>}
-        </div>
       )}
 
       {mode === "completing" && (

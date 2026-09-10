@@ -3396,8 +3396,11 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
     const job = await loadOwnedJob(req);
     if (job.status !== "ASSIGNED") throw new ArmadaError(`Job berstatus ${job.status}, tidak bisa dimulai`);
 
+    // Foto TIDAK lagi wajib di start per-job (10 Sep 2026, keputusan owner:
+    // "hanya driver memulai perjalanan RUTE" yang perlu dokumentasi — lihat
+    // POST /routes/:id/start yang tetap wajib foto muatan). Start per-job
+    // ini jalur cadangan untuk job lepas (tanpa rute) — 1 ketuk, tanpa foto.
     const startPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
-    if (startPhotoUrls.length === 0) throw new ArmadaError("Foto bukti wajib diisi sebelum mulai perjalanan");
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!startPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
 
@@ -3485,15 +3488,17 @@ armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_O
 
 // POST /api/armada/jobs/:id/arrive — driver tiba di lokasi.
 //
-// proofPhotoUrls WAJIB (8 September 2026) — sama alasan dengan /start di
-// atas, disimpan ke Job.arrivalPhotoUrls.
+// Foto TIDAK wajib saat tiba (10 Sep 2026, keputusan owner: "kalo udah
+// tiba di lokasi gaperlu dokumentasi"). Dokumentasi cuma di 2 titik:
+// mulai perjalanan RUTE (foto muatan) & serah terima BERHASIL (foto
+// bukti di /complete) — plus /fail (foto + alasan, tetap wajib). Kalau
+// driver tetap kirim foto opsional saat tiba, tetap disimpan.
 armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
     if (job.status !== "EN_ROUTE") throw new ArmadaError(`Job berstatus ${job.status}, belum bisa ditandai tiba`);
 
     const arrivalPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
-    if (arrivalPhotoUrls.length === 0) throw new ArmadaError("Foto bukti wajib diisi saat tiba di lokasi");
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!arrivalPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
 

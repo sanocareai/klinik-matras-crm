@@ -39,12 +39,28 @@ const STATUS_TONE = {
 };
 
 export default function JobCard({ job, onChanged }) {
-  const [mode, setMode] = useState("idle"); // idle | starting | arriving | completing | failing
+  const [mode, setMode] = useState("idle"); // idle | completing | failing
   const [photos, setPhotos] = useState([]);
   const [note, setNote] = useState("");
   const [failReason, setFailReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  // FlashList me-RECYCLE instance komponen ini — tanpa reset, form yang
+  // sedang terbuka (mode "completing" + foto) bisa "nempel" ke job LAIN saat
+  // cell dipakai ulang, dan tombol "Tandai Selesai" jadi aktif untuk job
+  // yang salah (bug 10 Sep 2026: job ke-complete padahal foto belum diambil
+  // di kartu itu). Pola resmi React "adjusting state when a prop changes".
+  const [prevJobId, setPrevJobId] = useState(job.id);
+  if (job.id !== prevJobId) {
+    setPrevJobId(job.id);
+    setMode("idle");
+    setPhotos([]);
+    setNote("");
+    setFailReason("");
+    setBusy(false);
+    setErr("");
+  }
 
   const nama = customerOf(job) || "Tanpa nama";
   const phone = customerPhoneOf(job);
@@ -109,19 +125,31 @@ export default function JobCard({ job, onChanged }) {
 
       {err ? <Text style={styles.error}>{err}</Text> : null}
 
+      {/* Mulai & Tiba = 1 ketuk, TANPA foto (10 Sep 2026, keputusan owner:
+          dokumentasi cuma di "mulai perjalanan rute" & "serah terima
+          berhasil"). "Mulai" per-job ini untuk job lepas / belum
+          di-start lewat kartu rute. */}
       {mode === "idle" && job.status === "ASSIGNED" && (
-        <Pressable style={styles.primaryBtn} onPress={() => setMode("starting")}>
-          <Text style={styles.primaryBtnText}>Mulai</Text>
+        <Pressable
+          style={[styles.primaryBtn, busy && styles.disabled]}
+          disabled={busy}
+          onPress={() => run("start", {})}
+        >
+          {busy ? <Loader2 size={14} color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Mulai Perjalanan</Text>}
         </Pressable>
       )}
 
       {mode === "idle" && job.status === "EN_ROUTE" && (
         <View style={styles.btnRow}>
-          <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => setMode("failing")}>
+          <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => setMode("failing")} disabled={busy}>
             <Text style={styles.secondaryBtnText}>Gagal</Text>
           </Pressable>
-          <Pressable style={[styles.primaryBtn, { flex: 1.4 }]} onPress={() => setMode("arriving")}>
-            <Text style={styles.primaryBtnText}>Tiba</Text>
+          <Pressable
+            style={[styles.primaryBtn, { flex: 1.4 }, busy && styles.disabled]}
+            disabled={busy}
+            onPress={() => run("arrive", {})}
+          >
+            {busy ? <Loader2 size={14} color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Tiba di Lokasi</Text>}
           </Pressable>
         </View>
       )}
@@ -134,24 +162,6 @@ export default function JobCard({ job, onChanged }) {
           <Pressable style={[styles.primaryBtn, { flex: 1 }]} onPress={() => setMode("completing")}>
             <Text style={styles.primaryBtnText}>Selesai</Text>
           </Pressable>
-        </View>
-      )}
-
-      {(mode === "starting" || mode === "arriving") && (
-        <View style={styles.form}>
-          <PhotoCapture photos={photos} onChange={setPhotos} label="Foto bukti (wajib)" />
-          <View style={styles.btnRow}>
-            <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={resetForm} disabled={busy}>
-              <Text style={styles.secondaryBtnText}>Batal</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.primaryBtn, { flex: 1.4 }, (busy || photos.length === 0) && styles.disabled]}
-              disabled={busy || photos.length === 0}
-              onPress={() => run(mode === "starting" ? "start" : "arrive", {})}
-            >
-              {busy ? <Loader2 size={14} color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Kirim</Text>}
-            </Pressable>
-          </View>
         </View>
       )}
 
