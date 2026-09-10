@@ -12,7 +12,7 @@ import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { error: null };
+    this.state = { error: null, info: null };
   }
 
   static getDerivedStateFromError(error) {
@@ -21,15 +21,28 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error("[ErrorBoundary]", error, info?.componentStack);
+    this.setState({ info });
   }
 
   handleReset = () => {
-    this.setState({ error: null });
+    this.setState({ error: null, info: null });
   };
 
   render() {
-    const { error } = this.state;
+    const { error, info } = this.state;
     if (!error) return this.props.children;
+
+    // Debug sementara (D-198, 10 September 2026): ErrorBoundary v1 cuma
+    // menampilkan error.message ("undefined is not a function" — tidak
+    // cukup buat lacak lokasi bug tanpa akses adb logcat ke HP driver).
+    // Ditambah stack + componentStack di layar supaya bisa dikirim balik
+    // lewat screenshot, dorong lewat EAS Update (JS-only, tidak perlu
+    // build APK baru).
+    const detail = [
+      String(error?.message || error),
+      error?.stack ? `\n--- stack ---\n${error.stack}` : "",
+      info?.componentStack ? `\n--- component stack ---\n${info.componentStack}` : "",
+    ].join("");
 
     return (
       <View style={styles.wrap}>
@@ -40,7 +53,7 @@ export default class ErrorBoundary extends React.Component {
         </Text>
         <ScrollView style={styles.detailBox} contentContainerStyle={{ padding: 12 }}>
           <Text style={styles.detailText} selectable>
-            {String(error?.message || error)}
+            {detail}
           </Text>
         </ScrollView>
         <Pressable style={styles.btn} onPress={this.handleReset}>
