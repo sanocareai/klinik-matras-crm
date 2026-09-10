@@ -21,6 +21,8 @@ import { deriveStageLogStatus, OPEN_WORK_ACTIONS as EXECUTION_OPEN_WORK_ACTIONS 
 import {
   deriveOverdue, deriveAtRisk, deriveWorkspaceHealth, buildExceptions, RISK_CONFIG,
 } from "../lib/domain/productionExceptions.js";
+import { resolveEffectiveWorkCenterId, OPERATOR_SKILL_LEVELS } from "../lib/domain/productionRouting.js";
+import { loadCurrentStageAssignments } from "../services/productionRouting.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { prisma } from "../db.js";
 import { notifyReadyForDelivery } from "../services/customerNotifications.js";
@@ -366,7 +368,16 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     const units = await prisma.unit.findMany({
       where,
       include: {
-        currentStage: { select: { id: true, code: true, labelId: true, phase: true, requiresQc: true } },
+        // defaultWorkCenter (Slice 4E/4O) — fallback tampilan kolom Work
+        // Center kalau tahap ini belum pernah ditugaskan eksplisit lewat
+        // StageAssignment. SATU JOIN dalam query yang SAMA, bukan query
+        // tambahan.
+        currentStage: {
+          select: {
+            id: true, code: true, labelId: true, phase: true, requiresQc: true,
+            defaultWorkCenter: { select: { id: true, code: true, name: true } },
+          },
+        },
         service: { select: { id: true, code: true, labelId: true, serviceLine: true } },
         order: {
           select: {
@@ -383,19 +394,30 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     // batch, lihat catatan di GET /board soal isReworkTarget TIDAK dihitung
     // di endpoint list, dan kenapa ini TIDAK menjadi 1+N seiring jumlah unit.
     const unitIds = units.map((u) => u.id);
-    const [lastLogByUnitId, blockerByUnitId] = await Promise.all([
+    const [lastLogByUnitId, blockerByUnitId, assignmentByUnitId] = await Promise.all([
       loadLastCurrentStageLogs(units),
       loadOpenBlockersByUnit(unitIds),
+      // Kolom Work Center/Assigned To (Slice 4O) — SATU query batch
+      // tambahan, TIDAK bertambah seiring jumlah unit.
+      loadCurrentStageAssignments(units),
     ]);
     const unitsWithStatus = units.map((u) => {
       const lastLog = lastLogByUnitId[u.id] || null;
       const blocker = blockerByUnitId[u.id] || null;
+      const assignment = assignmentByUnitId[u.id] || null;
       const productionStatus = deriveProductionStatus({
         unit: u, lastLog, hasOpenBlocker: !!blocker, currentStageRequiresQc: !!u.currentStage?.requiresQc,
       });
       return {
         ...u, productionStatus,
         productionStatusReason: describeProductionStatus(productionStatus, lastLog, blocker),
+        // Work Center/Assigned To (Slice 4O) — dari StageAssignment tahap
+        // sekarang (batch, di atas), fallback ke defaultWorkCenter tahap
+        // (sudah ikut ter-JOIN di query unit di atas, BUKAN query baru)
+        // kalau belum pernah ditugaskan eksplisit — sama logika dengan
+        // resolveEffectiveWorkCenterId di lib/domain/productionRouting.js.
+        workCenter: assignment?.workCenter || u.currentStage?.defaultWorkCenter || null,
+        assignedOperator: assignment?.operator ? { id: assignment.operator.id, name: assignment.operator.user.name } : null,
         // Kolom "Execution State"/"Elapsed" (Production Core Slice 3P) —
         // SENGAJA dihitung dari `lastLog` yang SUDAH batch-loaded di atas
         // (loadLastCurrentStageLogs, satu query untuk SELURUH daftar), BUKAN
@@ -672,11 +694,14 @@ productionRouter.get("/command-center", requirePermission(P.UNIT_READ), async (r
     });
     const unitIds = units.map((u) => u.id);
 
-    const [blockerByUnitId, lastLogByUnitId, latestQcByUnitId, targetRows] = await Promise.all([
+    const [blockerByUnitId, lastLogByUnitId, latestQcByUnitId, targetRows, assignmentByUnitId] = await Promise.all([
       loadOpenBlockersByUnit(unitIds),
       loadLastCurrentStageLogs(units),
       loadLatestQcFitTestByUnit(unitIds),
       prisma.productionTarget.findMany({ where: { targetDate }, select: { unitId: true } }),
+      // Slice 4P "Unassigned Active Units" — SATU query batch tambahan,
+      // TIDAK bertambah seiring N (lihat catatan performa di atas file).
+      loadCurrentStageAssignments(units),
     ]);
     const targetUnitIds = targetRows.map((t) => t.unitId);
     const movedToday = await movedUnitIdsForDate(targetUnitIds, targetDate);
@@ -692,6 +717,12 @@ productionRouter.get("/command-center", requirePermission(P.UNIT_READ), async (r
     // SENGAJA cuma hitungan (bukan Touch/Paused Time KPI apa pun — itu di
     // luar lingkup Slice 3, lihat lib/domain/stageExecution.js).
     let pausedCount = 0;
+    // Unassigned Active Units (Slice 4P) — unit yang SUDAH masuk mesin
+    // routing (currentStageId terisi) tapi tahap sekarangnya belum punya
+    // operatorId di StageAssignment. TIDAK bergantung pada status
+    // blocked/paused/dst — ini murni sinyal STAFFING, terpisah dari sinyal
+    // eksekusi lain di atas.
+    let unassignedActiveCount = 0;
 
     for (const unit of units) {
       const blocker = blockerByUnitId[unit.id] || null;
@@ -699,6 +730,7 @@ productionRouter.get("/command-center", requirePermission(P.UNIT_READ), async (r
       const latestQc = latestQcByUnitId[unit.id] || null;
       const rework = isReworkTarget({ latestQc, currentStagePhase: unit.currentStage?.phase });
       if (rework) reworkUnitIds.add(unit.id);
+      if (unit.currentStageId && !assignmentByUnitId[unit.id]?.operatorId) unassignedActiveCount++;
 
       const status = deriveProductionStatus({
         unit, lastLog, hasOpenBlocker: !!blocker,
@@ -769,8 +801,280 @@ productionRouter.get("/command-center", requirePermission(P.UNIT_READ), async (r
         completed: movedToday.size,
       },
       unscheduledUnits: { count: unscheduledCount },
+      // Unassigned Active Units (Production Core Slice 4P) — HANYA hitungan,
+      // TIDAK ADA Work Center load/kapasitas apa pun (di luar lingkup slice
+      // ini). Dihitung dari `assignmentByUnitId` yang SUDAH dimuat di atas
+      // (SATU query batch tambahan, TIDAK bertambah seiring N — lihat
+      // definisi di bawah `for (const unit of units)`).
+      unassignedActiveUnits: { count: unassignedActiveCount },
     });
   } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Production Core Slice 4 — Production Route / Work Center / Operator
+// ═══════════════════════════════════════════════════════════════════════
+
+// GET /api/production/routes — daftar ProductionRoute AKTIF (satu per
+// layanan yang sudah pernah diprovisioning), untuk halaman config/tinjauan
+// rute. TIDAK memuat SEMUA versi historis di sini (itu tetap bisa dibaca
+// langsung dari database kalau perlu audit — jarang, tidak perlu endpoint
+// sendiri di Slice 4).
+productionRouter.get("/routes", requirePermission(P.PRODUCTION_ROUTE_READ), async (req, res) => {
+  try {
+    const routes = await prisma.productionRoute.findMany({
+      where: { active: true },
+      include: {
+        service: { select: { id: true, code: true, labelId: true, serviceLine: true } },
+        stages: {
+          orderBy: { sequence: "asc" },
+          include: {
+            stage: { select: { id: true, labelId: true, phase: true } },
+            workCenter: { select: { id: true, code: true, name: true } },
+          },
+        },
+      },
+      orderBy: { code: "asc" },
+    });
+    res.json({ routes });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// ── Work Centers (Slice 4E/4L) ──────────────────────────────────────────
+
+// GET /api/production/work-centers — halaman "Work Centers" (Slice 4L).
+// stageCount/operatorCount/currentUnitCount SEMUA turunan derivable (BUKAN
+// utilisasi/kapasitas — itu di luar lingkup slice ini), dan SEMUA dihitung
+// dari query batch di bawah — TIDAK ADA loop per-Work-Center yang query
+// database (lihat tests/queryBatching.test.js).
+productionRouter.get("/work-centers", requirePermission(P.WORK_CENTER_READ), async (req, res) => {
+  try {
+    const workCenters = await prisma.workCenter.findMany({ orderBy: { sortOrder: "asc" } });
+
+    const [stageCounts, operatorCounts, unitsForCounting] = await Promise.all([
+      prisma.routingStage.groupBy({
+        by: ["defaultWorkCenterId"], where: { defaultWorkCenterId: { not: null } }, _count: { _all: true },
+      }),
+      prisma.productionOperator.groupBy({
+        by: ["primaryWorkCenterId"], where: { primaryWorkCenterId: { not: null }, active: true }, _count: { _all: true },
+      }),
+      // Populasi SAMA dengan Command Center (unit non-terminal) — "current
+      // units" berarti "sedang aktif dikerjakan di sini SEKARANG", bukan
+      // riwayat sepanjang masa.
+      prisma.unit.findMany({
+        where: { status: { notIn: [...PRODUCTION_COMPLETE_UNIT_STATUSES, "CANCELLED"] }, currentStageId: { not: null } },
+        select: { id: true, currentStageId: true, currentStage: { select: { defaultWorkCenterId: true } } },
+      }),
+    ]);
+    const assignmentByUnitId = await loadCurrentStageAssignments(unitsForCounting);
+
+    const unitCountByWorkCenter = {};
+    for (const u of unitsForCounting) {
+      const wcId = resolveEffectiveWorkCenterId(assignmentByUnitId[u.id] || null, u.currentStage);
+      if (wcId) unitCountByWorkCenter[wcId] = (unitCountByWorkCenter[wcId] || 0) + 1;
+    }
+    const stageCountMap = Object.fromEntries(stageCounts.map((s) => [s.defaultWorkCenterId, s._count._all]));
+    const operatorCountMap = Object.fromEntries(operatorCounts.map((o) => [o.primaryWorkCenterId, o._count._all]));
+
+    res.json({
+      workCenters: workCenters.map((w) => ({
+        ...w,
+        stageCount: stageCountMap[w.id] || 0,
+        operatorCount: operatorCountMap[w.id] || 0,
+        currentUnitCount: unitCountByWorkCenter[w.id] || 0,
+      })),
+    });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/production/work-centers/:id — drawer detail ringan (Slice 4L),
+// TANPA chart kapasitas apa pun.
+productionRouter.get("/work-centers/:id", requirePermission(P.WORK_CENTER_READ), async (req, res) => {
+  try {
+    const workCenter = await prisma.workCenter.findUnique({ where: { id: req.params.id } });
+    if (!workCenter) return res.status(404).json({ error: "Work Center tidak ditemukan" });
+
+    const [stages, operators] = await Promise.all([
+      prisma.routingStage.findMany({ where: { defaultWorkCenterId: workCenter.id }, select: { id: true, labelId: true, phase: true } }),
+      prisma.productionOperator.findMany({
+        where: { primaryWorkCenterId: workCenter.id, active: true },
+        include: { user: { select: { id: true, name: true } } },
+      }),
+    ]);
+    res.json({ workCenter, stages, operators });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+productionRouter.post("/work-centers", requirePermission(P.WORK_CENTER_WRITE), async (req, res) => {
+  try {
+    const { code, name, description, standardDailyMinutes, notes, sortOrder } = req.body;
+    if (!code?.trim() || !name?.trim()) return res.status(400).json({ error: "Kode dan nama Work Center wajib diisi" });
+    const workCenter = await prisma.workCenter.create({
+      data: {
+        code: code.trim(), name: name.trim(), description: description?.trim() || null,
+        // standardDailyMinutes SENGAJA nullable, TIDAK diisi tebakan (Slice
+        // 4T) — fondasi Capacity Planning masa depan, bukan fitur aktif.
+        standardDailyMinutes: standardDailyMinutes ?? null,
+        notes: notes?.trim() || null, sortOrder: sortOrder ?? 0,
+      },
+    });
+    res.status(201).json(workCenter);
+  } catch (err) {
+    if (err.code === "P2002") return res.status(409).json({ error: "Kode Work Center ini sudah dipakai" });
+    handleErr(err, res);
+  }
+});
+
+// code SENGAJA TIDAK bisa diedit di sini (identitas tetap, sama pola
+// dengan ServiceCatalog.code/RoutingStage.code — kode dipakai referensi
+// stabil, bukan label tampilan).
+productionRouter.patch("/work-centers/:id", requirePermission(P.WORK_CENTER_WRITE), async (req, res) => {
+  try {
+    const { name, description, active, standardDailyMinutes, notes, sortOrder } = req.body;
+    const data = {};
+    if (name !== undefined) data.name = name.trim();
+    if (description !== undefined) data.description = description?.trim() || null;
+    if (active !== undefined) data.active = !!active;
+    if (standardDailyMinutes !== undefined) data.standardDailyMinutes = standardDailyMinutes;
+    if (notes !== undefined) data.notes = notes?.trim() || null;
+    if (sortOrder !== undefined) data.sortOrder = sortOrder;
+
+    const workCenter = await prisma.workCenter.update({ where: { id: req.params.id }, data });
+    res.json(workCenter);
+  } catch (err) {
+    if (err.code === "P2025") return res.status(404).json({ error: "Work Center tidak ditemukan" });
+    handleErr(err, res);
+  }
+});
+
+// ── Production Operators (Slice 4F/4G/4M) ───────────────────────────────
+
+// GET /api/production/operators — halaman "Operators" (Slice 4M).
+// currentAssignment dihitung dari StageAssignment SATU query batch, HANYA
+// dianggap "aktif" kalau stageId assignment itu masih = currentStageId
+// unit-nya SEKARANG (unit sudah maju tahap = assignment lama itu riwayat,
+// bukan penugasan aktif — datanya TETAP tersimpan, cuma tidak ditandai
+// aktif di sini).
+productionRouter.get("/operators", requirePermission(P.PRODUCTION_OPERATOR_READ), async (req, res) => {
+  try {
+    const operators = await prisma.productionOperator.findMany({
+      include: {
+        user: { select: { id: true, name: true, email: true, active: true } },
+        primaryWorkCenter: { select: { id: true, name: true } },
+        skills: { where: { active: true }, include: { stage: { select: { id: true, labelId: true } } } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const operatorIds = operators.map((o) => o.id);
+    const assignments = operatorIds.length
+      ? await prisma.stageAssignment.findMany({
+          where: { operatorId: { in: operatorIds } },
+          include: {
+            unit: { select: { id: true, unitCode: true, currentStageId: true } },
+            stage: { select: { id: true, labelId: true } },
+          },
+        })
+      : [];
+    const activeAssignmentByOperator = {};
+    for (const a of assignments) {
+      if (a.unit.currentStageId === a.stageId) activeAssignmentByOperator[a.operatorId] = a;
+    }
+
+    res.json({
+      operators: operators.map((o) => {
+        const active = activeAssignmentByOperator[o.id];
+        return {
+          ...o,
+          currentAssignment: active
+            ? { unitId: active.unit.id, unitCode: active.unit.unitCode, stageLabel: active.stage.labelId }
+            : null,
+        };
+      }),
+    });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+productionRouter.post("/operators", requirePermission(P.PRODUCTION_OPERATOR_WRITE), async (req, res) => {
+  try {
+    const { userId, primaryWorkCenterId, employeeCode } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId wajib diisi" });
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: "User tidak ditemukan" });
+
+    const operator = await prisma.productionOperator.create({
+      data: { userId, primaryWorkCenterId: primaryWorkCenterId || null, employeeCode: employeeCode?.trim() || null },
+      include: { user: { select: { id: true, name: true } }, primaryWorkCenter: true },
+    });
+    res.status(201).json(operator);
+  } catch (err) {
+    if (err.code === "P2002") return res.status(409).json({ error: "User ini sudah punya profil operator produksi" });
+    handleErr(err, res);
+  }
+});
+
+productionRouter.patch("/operators/:id", requirePermission(P.PRODUCTION_OPERATOR_WRITE), async (req, res) => {
+  try {
+    const { active, primaryWorkCenterId, employeeCode } = req.body;
+    const data = {};
+    if (active !== undefined) data.active = !!active;
+    if (primaryWorkCenterId !== undefined) data.primaryWorkCenterId = primaryWorkCenterId || null;
+    if (employeeCode !== undefined) data.employeeCode = employeeCode?.trim() || null;
+
+    const operator = await prisma.productionOperator.update({
+      where: { id: req.params.id }, data,
+      include: { user: { select: { id: true, name: true } }, primaryWorkCenter: true },
+    });
+    res.json(operator);
+  } catch (err) {
+    if (err.code === "P2025") return res.status(404).json({ error: "Operator tidak ditemukan" });
+    handleErr(err, res);
+  }
+});
+
+// PUT /api/production/operators/:id/skills — GANTI seluruh daftar skill
+// operator ini (Slice 4G). "Ganti semua" dipilih daripada POST/DELETE per
+// baris — supervisor mengedit skill sebagai SATU daftar pendek di form,
+// bukan menambah satu-satu.
+productionRouter.put("/operators/:id/skills", requirePermission(P.PRODUCTION_OPERATOR_WRITE), async (req, res) => {
+  try {
+    const { skills } = req.body; // [{ stageId, level }]
+    if (!Array.isArray(skills)) return res.status(400).json({ error: "skills wajib berupa array" });
+    for (const s of skills) {
+      if (!s.stageId || !OPERATOR_SKILL_LEVELS.includes(Number(s.level))) {
+        return res.status(400).json({ error: `Level skill harus salah satu dari: ${OPERATOR_SKILL_LEVELS.join(", ")}` });
+      }
+    }
+
+    const operator = await prisma.productionOperator.findUnique({ where: { id: req.params.id } });
+    if (!operator) return res.status(404).json({ error: "Operator tidak ditemukan" });
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.operatorSkill.deleteMany({ where: { operatorId: req.params.id } });
+      if (skills.length > 0) {
+        await tx.operatorSkill.createMany({
+          data: skills.map((s) => ({ operatorId: req.params.id, stageId: s.stageId, level: Number(s.level) })),
+        });
+      }
+      return tx.operatorSkill.findMany({
+        where: { operatorId: req.params.id },
+        include: { stage: { select: { id: true, labelId: true } } },
+      });
+    });
+    res.json({ skills: updated });
+  } catch (err) {
+    if (err.code === "P2003") return res.status(400).json({ error: "Salah satu stageId tidak ditemukan" });
     handleErr(err, res);
   }
 });

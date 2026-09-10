@@ -474,6 +474,7 @@ export const api = {
   updateUnitProduction: (unitId, { priority, productionDueAt } = {}) =>
     request(`/units/${unitId}/production`, { method: "PATCH", body: JSON.stringify({ priority, productionDueAt }) }),
   getServiceCatalog: () => request("/master-data/service-catalog"),
+  getRoutingStages: () => request("/master-data/routing-stages"),
   failUnitStage: (unitId, stageId, { blockReason, note }) =>
     request(`/units/${unitId}/stages/${stageId}/fail`, {
       method: "POST", body: JSON.stringify({ blockReason, note }),
@@ -487,6 +488,28 @@ export const api = {
     }),
   resumeUnitStage: (unitId, stageId) =>
     request(`/units/${unitId}/stages/${stageId}/resume`, { method: "POST" }),
+
+  // Production Core Slice 4 — Route / Work Center / Operator.
+  // Tetapkan/ganti rute produksi unit secara EKSPLISIT — TERPISAH dari
+  // provisioning otomatis yang terjadi di dalam setUnitService() di atas.
+  changeUnitRoute: (unitId) => request(`/units/${unitId}/route`, { method: "POST" }),
+  // Tugaskan Work Center + Operator ke satu tahap. `workCenterId`/
+  // `operatorId` bernilai `null` eksplisit = dikosongkan (unassign);
+  // dihilangkan dari objek = tidak diubah (backend membedakan undefined vs
+  // null, lihat services/productionRouting.js#assignStage).
+  assignUnitStage: (unitId, stageId, { workCenterId, operatorId, note } = {}) =>
+    request(`/units/${unitId}/stages/${stageId}/assign`, {
+      method: "POST", body: JSON.stringify({ workCenterId, operatorId, note }),
+    }),
+  getProductionRoutes: () => request("/production/routes"),
+  getWorkCenters: () => request("/production/work-centers"),
+  getWorkCenter: (id) => request(`/production/work-centers/${id}`),
+  createWorkCenter: (data) => request("/production/work-centers", { method: "POST", body: JSON.stringify(data) }),
+  updateWorkCenter: (id, data) => request(`/production/work-centers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  getProductionOperators: () => request("/production/operators"),
+  createProductionOperator: (data) => request("/production/operators", { method: "POST", body: JSON.stringify(data) }),
+  updateProductionOperator: (id, data) => request(`/production/operators/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  setOperatorSkills: (id, skills) => request(`/production/operators/${id}/skills`, { method: "PUT", body: JSON.stringify({ skills }) }),
   // RESOLVE BLOCKER (Production Core Slice 2A) — TERPISAH dari me-restart
   // tahap (startUnitStage juga auto-resolve, lihat catatan backend).
   resolveBlocker: (unitId, blockerId, resolutionNote) =>

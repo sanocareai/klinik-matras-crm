@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import {
   loadLastCurrentStageLogs, loadOpenBlockersByUnit, loadLatestQcFitTestByUnit,
 } from "../src/services/unitStageEngine.js";
+import { loadCurrentStageAssignments } from "../src/services/productionRouting.js";
 
 function makeUnits(n) {
   return Array.from({ length: n }, (_, i) => ({ id: `unit-${i}`, currentStageId: `stage-${i % 3}` }));
@@ -78,6 +79,40 @@ test("loadLastCurrentStageLogs: unit TANPA currentStageId dikecualikan dari filt
   const units = [{ id: "a", currentStageId: null }, { id: "b", currentStageId: "stage-1" }];
   await loadLastCurrentStageLogs(units, stub.client);
   assert.equal(stub.getCalls(), 1);
+});
+
+// Production Core Slice 4Y — loadCurrentStageAssignments (services/
+// productionRouting.js) dipakai Work Order list, Command Center
+// (Unassigned Active Units), dan Work Centers page (currentUnitCount).
+// Pola tes SAMA PERSIS dengan tiga loader di atas.
+test("loadCurrentStageAssignments: SATU panggilan findMany, baik untuk 5 maupun 500 unit", async () => {
+  const small = countingStub("stageAssignment");
+  await loadCurrentStageAssignments(makeUnits(5), small.client);
+  assert.equal(small.getCalls(), 1);
+
+  const big = countingStub("stageAssignment");
+  await loadCurrentStageAssignments(makeUnits(500), big.client);
+  assert.equal(big.getCalls(), 1, "500 unit HARUS tetap 1 query, bukan 500 (N+1)");
+});
+
+test("loadCurrentStageAssignments: input kosong TIDAK memanggil database sama sekali", async () => {
+  const stub = countingStub("stageAssignment");
+  assert.deepEqual(await loadCurrentStageAssignments([], stub.client), {});
+  assert.equal(stub.getCalls(), 0);
+});
+
+test("loadCurrentStageAssignments: hasil dipetakan per unitId dengan benar", async () => {
+  const rows = [
+    { unitId: "unit-1", stageId: "s1", operatorId: "op-1" },
+    { unitId: "unit-2", stageId: "s2", operatorId: null },
+  ];
+  const client = { stageAssignment: { findMany: async () => rows } };
+  const result = await loadCurrentStageAssignments(
+    [{ id: "unit-1", currentStageId: "s1" }, { id: "unit-2", currentStageId: "s2" }],
+    client
+  );
+  assert.equal(result["unit-1"].operatorId, "op-1");
+  assert.equal(result["unit-2"].operatorId, null);
 });
 
 test("hasil loader batch DIPETAKAN per unitId dengan benar (bentuk data untuk pemanggil)", async () => {

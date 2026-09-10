@@ -21,7 +21,9 @@ import {
 } from "../lib/domain/productionState.js";
 import { deriveOverdue, deriveAtRisk } from "../lib/domain/productionExceptions.js";
 import { groupIntoAttempts, deriveStageLogStatus, summarizeAttempt } from "../lib/domain/stageExecution.js";
+import { mapRouteStagesToVisualization } from "../lib/domain/productionRouting.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services/productionRouting.js";
 import { prisma } from "../db.js";
 
 export const unitRouter = express.Router();
@@ -206,6 +208,12 @@ unitRouter.patch("/:id/service", requirePermission(P.UNIT_ROUTING_WRITE), async 
         eventType: EVENT_TYPES.SERVICE_ASSIGNED, actorId: req.user.id,
         metadata: { serviceId, serviceLabel: service.labelId, serviceLine: service.serviceLine },
       });
+      // Provisioning rute produksi (Production Core Slice 4D) — BEST-EFFORT,
+      // TIDAK PERNAH menggagalkan penetapan layanan di atas kalau gagal, dan
+      // TIDAK PERNAH menimpa snapshot unit yang sudah punya riwayat eksekusi
+      // (guardrail ada DI DALAM tryProvisionUnitRoute — silent no-op, bukan
+      // reject keras; reject keras itu tugas POST /:id/route yang eksplisit).
+      await tryProvisionUnitRoute(tx, req.params.id, serviceId, req.user.id);
       return updated;
     });
     res.json(unit);
@@ -291,6 +299,37 @@ unitRouter.patch("/:id/production", requirePermission(P.UNIT_ROUTING_WRITE), asy
   }
 });
 
+// POST /api/units/:id/route — tetapkan/ganti rute produksi unit secara
+// EKSPLISIT (Production Core Slice 4Q). Permission SAMA dengan
+// PATCH /:id/service (UNIT_ROUTING_WRITE) — dua-duanya keputusan
+// "jalur produksi unit ini apa", level supervisor yang sama. MENOLAK KERAS
+// (409) kalau unit sudah punya riwayat eksekusi dan rutenya akan berubah —
+// lihat changeUnitRoute().
+unitRouter.post("/:id/route", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
+  try {
+    const result = await changeUnitRoute(req.params.id, { actorId: req.user.id });
+    res.json(result);
+  } catch (err) {
+    handleEngineError(err, res);
+  }
+});
+
+// POST /api/units/:id/stages/:stageId/assign — tugaskan Work Center +
+// Operator ke tahap tertentu (Production Core Slice 4H/4I). Permission
+// TERPISAH dari UNIT_STAGE_WRITE — mengerjakan tahap ≠ memutuskan siapa
+// yang DITUGASKAN mengerjakannya (itu keputusan supervisor).
+unitRouter.post("/:id/stages/:stageId/assign", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try {
+    const { workCenterId, operatorId, note } = req.body;
+    const result = await assignStage(req.params.id, req.params.stageId, {
+      workCenterId, operatorId, actorId: req.user.id, note,
+    });
+    res.json(result);
+  } catch (err) {
+    handleEngineError(err, res);
+  }
+});
+
 // GET /api/units/by-code/:code — cari unit dari hasil scan QR / input kiosk.
 // HARUS didaftarkan SEBELUM "/:id" — kalau tidak, Express akan mencocokkan
 // "by-code" sebagai path param :id dan endpoint ini tidak pernah kena.
@@ -352,11 +391,15 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
         currentStage: true,
         order: { select: { id: true, orderNumber: true, status: true, customer: { select: { id: true, name: true, phone: true } } } },
         qcFitTests: { include: { stage: { select: { id: true, labelId: true } }, testedBy: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } },
+        // Snapshot rute produksi (Production Core Slice 4D/4J/4K) — relasi
+        // FK langsung di Unit, SATU JOIN, TIDAK butuh batch loader terpisah
+        // (beda dari StageAssignment yang per-stage, lihat di bawah).
+        productionRoute: { include: { stages: { orderBy: { sequence: "asc" }, include: { stage: { select: { id: true, labelId: true, phase: true } }, workCenter: { select: { id: true, code: true, name: true } } } } } },
       },
     });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
 
-    const [intakeStages, finishStages, moduleMappings, logs, activeBlocker] = await Promise.all([
+    const [intakeStages, finishStages, moduleMappings, logs, activeBlocker, currentStageAssignment] = await Promise.all([
       prisma.routingStage.findMany({ where: { phase: "INTAKE", active: true } }),
       prisma.routingStage.findMany({ where: { phase: "FINISH", active: true } }),
       unit.serviceId
@@ -373,6 +416,15 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
         where: { unitId: unit.id, resolvedAt: null },
         include: { openedBy: { select: { id: true, name: true } }, stage: { select: { id: true, labelId: true } } },
       }),
+      // Assignment tahap SEKARANG (Production Core Slice 4I) — satu query
+      // tambahan, wajar untuk endpoint SATU unit. null kalau belum pernah
+      // ditugaskan ATAU unit belum masuk tahap apa pun.
+      unit.currentStageId
+        ? prisma.stageAssignment.findUnique({
+            where: { unitId_stageId: { unitId: unit.id, stageId: unit.currentStageId } },
+            include: { workCenter: true, operator: { include: { user: { select: { id: true, name: true } } } } },
+          })
+        : Promise.resolve(null),
     ]);
 
     const path = buildUnitPath(intakeStages, moduleMappings.map((m) => m.stage), finishStages);
@@ -428,6 +480,38 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
       unit, hasOpenBlocker: !!activeBlocker, blockerReason: activeBlocker?.reason || null, overdue,
     });
 
+    // Panel Rute Produksi (Production Core Slice 4J/4K) — SELURUHNYA
+    // TURUNAN dari data yang sudah dimuat di atas, TIDAK ADA query
+    // tambahan lagi di sini:
+    //   - route/routeVersion: dari unit.productionRoute (snapshot, null
+    //     untuk unit lama — lihat catatan arsitektur di schema.prisma)
+    //   - routeVisualization: gabungan snapshot rute + status LIVE per
+    //     tahap (`timeline` di atas) — ✓/●/○, lihat
+    //     mapRouteStagesToVisualization(). Kosong kalau unit belum punya
+    //     snapshot rute; UI menampilkannya sebagai "rute belum tercatat",
+    //     BUKAN menebak dari `timeline` mentah.
+    //   - nextStage: tahap SETELAH currentStageId di jalur LIVE yang sama
+    //     dipakai `timeline` (bukan snapshot — jalur LIVE tetap satu-
+    //     satunya sumber kebenaran urutan, D-003).
+    //   - workCenter/assignedOperator: dari currentStageAssignment (Slice
+    //     4H/4I) — "siapa yang DIHARAPKAN mengerjakan".
+    //   - actualPerformer: dari lastLogForCurrentStage.actor — "siapa yang
+    //     SUNGGUHAN start/resume tahap ini" (Slice 3), SENGAJA field
+    //     TERPISAH dari assignedOperator di atas, tidak pernah saling
+    //     menimpa (lihat catatan panjang di schema.prisma StageAssignment).
+    const currentIdx = path.findIndex((s) => s.id === unit.currentStageId);
+    const nextPathStage = currentIdx >= 0 ? (path[currentIdx + 1] || null) : (path[0] || null);
+    const liveStatusByStageId = Object.fromEntries(timeline.map((t) => [t.stage.id, t.status]));
+    const routeVisualization = unit.productionRoute
+      ? mapRouteStagesToVisualization(
+          unit.productionRoute.stages.map((rs) => ({
+            stageId: rs.stageId, sequence: rs.sequence, required: rs.required,
+            workCenterId: rs.workCenterId, stage: rs.stage, workCenter: rs.workCenter,
+          })),
+          liveStatusByStageId, unit.currentStageId,
+        )
+      : [];
+
     res.json({
       unit, path: timeline, qcFitTests: unit.qcFitTests,
       needsService: !unit.serviceId,
@@ -440,6 +524,17 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
       // Eksekusi tahap SEKARANG (Production Core Slice 3O) — riwayat attempt
       // (START/PAUSE/RESUME/.../terminal) untuk currentStageId unit ini.
       executionHistory,
+      // Panel Rute Produksi (Production Core Slice 4).
+      route: unit.productionRoute
+        ? { id: unit.productionRoute.id, code: unit.productionRoute.code, name: unit.productionRoute.name, version: unit.productionRoute.version }
+        : null,
+      routeVisualization,
+      nextStage: nextPathStage,
+      workCenter: currentStageAssignment?.workCenter || null,
+      assignedOperator: currentStageAssignment?.operator
+        ? { id: currentStageAssignment.operator.id, name: currentStageAssignment.operator.user.name }
+        : null,
+      actualPerformer: lastLogForCurrentStage?.actor || null,
     });
   } catch (err) {
     handleEngineError(err, res);

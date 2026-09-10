@@ -51,6 +51,24 @@ export const PERMISSIONS = {
   // opname/transfer gudang, cuma "bahan ini saya pakai untuk unit ini".
   UNIT_MATERIAL_WRITE: "unit:material:write",
 
+  // --- Production Core Slice 4 (Route / Work Center / Operator) ---
+  // "production_route", BUKAN "route" — ROUTE_WRITE di bawah sudah dipakai
+  // untuk rute PENGIRIMAN Armada (model Route, domain sama sekali beda),
+  // menyamakan nama akan tercampur di kepala siapa pun yang membaca log
+  // permission nanti.
+  PRODUCTION_ROUTE_READ: "production_route:read",
+  PRODUCTION_ROUTE_WRITE: "production_route:write",
+  WORK_CENTER_READ: "work_center:read",
+  WORK_CENTER_WRITE: "work_center:write",
+  PRODUCTION_OPERATOR_READ: "production_operator:read",
+  PRODUCTION_OPERATOR_WRITE: "production_operator:write",
+  // SATU permission untuk assign Work Center + Operator ke sebuah tahap —
+  // dua hal itu SELALU diputuskan bersamaan oleh supervisor yang sama
+  // (lihat StageAssignment, satu baris menyimpan keduanya), memisahkannya
+  // jadi 2 permission tidak menambah kontrol nyata (D-010 semangat
+  // "jangan tambah permission kalau yang ada sudah cukup").
+  PRODUCTION_ASSIGNMENT_WRITE: "production_assignment:write",
+
   // --- Armada (pickup & delivery) ---
   JOB_READ: "job:read",
   JOB_WRITE: "job:write",
@@ -98,6 +116,14 @@ export const ROLE_PERMISSIONS = {
     P.JOB_READ, P.JOB_WRITE, P.ROUTE_WRITE,
     P.DASHBOARD_READ, P.PAYMENT_READ,
     P.USER_MANAGE, P.ROLE_GRANT, P.MASTER_DATA_WRITE,
+    // Production Core Slice 4 — ADMIN dapat penuh (config/perencanaan,
+    // BUKAN eksekusi tahap — pola sama dengan UNIT_ROUTING_WRITE di atas,
+    // yang memang sudah dipegang ADMIN sejak awal; D-013 hanya melarang
+    // UNIT_STAGE_WRITE/QC_WRITE, bukan config produksi).
+    P.PRODUCTION_ROUTE_READ, P.PRODUCTION_ROUTE_WRITE,
+    P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
+    P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
+    P.PRODUCTION_ASSIGNMENT_WRITE,
   ],
 
   SALES: [
@@ -140,6 +166,14 @@ export const ROLE_PERMISSIONS = {
     P.ORDER_WRITE,
     P.INVENTORY_READ,
     P.DASHBOARD_READ,
+    // Production Core Slice 4 — PRODUCTION_LEAD adalah supervisor lantai
+    // produksi yang dimaksud ticket ("authorized production supervisor")
+    // untuk mengelola Work Center/Operator dan menugaskan siapa mengerjakan
+    // apa di mana.
+    P.PRODUCTION_ROUTE_READ, P.PRODUCTION_ROUTE_WRITE,
+    P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
+    P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
+    P.PRODUCTION_ASSIGNMENT_WRITE,
   ],
 
   QC_LEAD: [

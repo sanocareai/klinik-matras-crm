@@ -43,6 +43,16 @@ export const EVENT_TYPES = Object.freeze({
   // lengkap, padahal tidak. Kejujuran ledger lebih penting dari
   // kelengkapan tampilan.
   PRODUCTION_ADMIN_BYPASS: "PRODUCTION_ADMIN_BYPASS",
+  // Production Core Slice 4 — Route/Work Center/Operator (lihat
+  // services/productionRouting.js). ROUTE_CHANGED SENGAJA tidak dipisah
+  // dari ROUTE_ASSIGNED (pola sama dengan PRIORITY_CHANGED/DUE_DATE_CHANGED
+  // — satu event, from/to di metadata) — penetapan PERTAMA dan pergantian
+  // rute sama-sama "rute unit ini sekarang X", bedanya cuma isi `from`.
+  ROUTE_ASSIGNED: "ROUTE_ASSIGNED",
+  WORK_CENTER_ASSIGNED: "WORK_CENTER_ASSIGNED",
+  OPERATOR_ASSIGNED: "OPERATOR_ASSIGNED",
+  OPERATOR_REASSIGNED: "OPERATOR_REASSIGNED",
+  OPERATOR_UNASSIGNED: "OPERATOR_UNASSIGNED",
 });
 
 /**
@@ -136,6 +146,20 @@ export function formatActivitySentence(event) {
     }
     case EVENT_TYPES.PRODUCTION_ADMIN_BYPASS:
       return `⚠️ Seluruh tahap produksi dilewati manual (admin) — ${metadata.note || "tanpa keterangan"}`;
+    case EVENT_TYPES.ROUTE_ASSIGNED:
+      return metadata.fromRouteId
+        ? `Rute produksi diganti — ${metadata.routeName || "—"} v${metadata.routeVersion ?? "?"}`
+        : `Rute produksi ditetapkan: ${metadata.routeName || "—"} v${metadata.routeVersion ?? "?"}`;
+    case EVENT_TYPES.WORK_CENTER_ASSIGNED:
+      return metadata.from
+        ? `${metadata.stage || "Tahap"} — Work Center diubah: ${metadata.from} → ${metadata.to || "—"}`
+        : `${metadata.stage || "Tahap"} — Work Center ditetapkan: ${metadata.to || "—"}`;
+    case EVENT_TYPES.OPERATOR_ASSIGNED:
+      return `${metadata.stage || "Tahap"} — Operator ditugaskan: ${metadata.to || "—"}`;
+    case EVENT_TYPES.OPERATOR_REASSIGNED:
+      return `${metadata.stage || "Tahap"} — Operator diganti: ${metadata.from || "—"} → ${metadata.to || "—"}`;
+    case EVENT_TYPES.OPERATOR_UNASSIGNED:
+      return `${metadata.stage || "Tahap"} — Penugasan operator dibatalkan (sebelumnya ${metadata.from || "—"})`;
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya

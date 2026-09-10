@@ -31,6 +31,24 @@ masterDataRouter.get("/service-catalog", async (req, res) => {
   }
 });
 
+// GET /api/master-data/routing-stages — katalog tahap produksi aktif
+// (Production Core Slice 4G), untuk picker skill operator (Operators page)
+// dan tempat lain yang butuh daftar RoutingStage TANPA konteks satu unit
+// spesifik. Sumber SAMA dengan routing_stages yang dipakai stage engine —
+// endpoint ini murni menyingkapnya (read-only), bukan data baru.
+masterDataRouter.get("/routing-stages", async (req, res) => {
+  try {
+    const stages = await prisma.routingStage.findMany({
+      where: { active: true },
+      orderBy: [{ phase: "asc" }, { sequence: "asc" }],
+      select: { id: true, code: true, labelId: true, phase: true },
+    });
+    res.json({ stages });
+  } catch (err) {
+    res.status(500).json({ error: "Server error: " + err.message });
+  }
+});
+
 // GET /api/master-data/price-list?productLine=KASUR&variantKey=160&category=LAYANAN
 // Katalog harga SALES untuk satu lini produk + satu varian — dipakai form
 // order (OrderSection.jsx) menampilkan daftar layanan beserta harga normal &

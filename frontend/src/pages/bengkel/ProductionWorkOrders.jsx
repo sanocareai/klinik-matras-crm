@@ -164,12 +164,12 @@ export default function ProductionWorkOrders() {
                   <THead>
                     <TR>
                       <TH>Kode Unit</TH><TH>Order</TH><TH>Pelanggan</TH>
-                      <TH>Kasur</TH><TH>Lini</TH><TH>Layanan</TH><TH>Tahap</TH><TH>Eksekusi</TH>
+                      <TH>Kasur</TH><TH>Lini</TH><TH>Layanan</TH><TH>Tahap</TH><TH>Eksekusi</TH><TH>Ditugaskan</TH>
                       <TH>Prioritas</TH><TH>Target</TH><TH>Update Terakhir</TH><TH>Status</TH><TH>Progres</TH>
                     </TR>
                   </THead>
                   <TBody>
-                    {loading && <TableSkeletonRows rows={8} cols={13} />}
+                    {loading && <TableSkeletonRows rows={8} cols={14} />}
                     {!loading && rows?.map((u) => (
                       <TR key={u.id} clickable onClick={() => navigate(`/bengkel/units/${u.id}`)}>
                         <TD className="font-semibold text-ink">{u.unitCode}</TD>
@@ -203,6 +203,15 @@ export default function ProductionWorkOrders() {
                               )}
                             </div>
                           ) : <span className="text-ink3">—</span>}
+                        </TD>
+                        {/* Ditugaskan (Production Core Slice 4O) — Operator +
+                            Work Center, SATU kolom gabungan (bukan dua) untuk
+                            menghindari ledakan lebar tabel. Sudah batch-loaded
+                            di backend (routes/production.js), bukan query per
+                            baris. */}
+                        <TD truncate>
+                          {u.assignedOperator?.name || <span className="text-ink3">Belum ditugaskan</span>}
+                          {u.workCenter?.name && <span className="block text-[10px] text-ink3">{u.workCenter.name}</span>}
                         </TD>
                         {/* Prioritas/Target/Progres — Production Core Slice 1.
                             Prioritas NORMAL sengaja tanpa badge (default,
@@ -263,6 +272,7 @@ export default function ProductionWorkOrders() {
                         {u.currentStage?.labelId && ` · ${u.currentStage.labelId}`}
                         {u.executionState === "PAUSED" && " · Dijeda"}
                         {u.currentSegmentStartedAt && ` · Berjalan ${formatDurasiDetik(elapsedSejak(u.currentSegmentStartedAt))}`}
+                        {u.assignedOperator?.name && ` · ${u.assignedOperator.name}`}
                         {` · ${formatTanggal(u.updatedAt)}`}
                         {u.productionDueAt && ` · Target ${formatTanggal(u.productionDueAt)}`}
                       </div>

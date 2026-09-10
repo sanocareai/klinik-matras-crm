@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Camera, CheckCircle2, Loader2, PlayCircle, XCircle, SkipForward,
-  AlertTriangle, PauseCircle, History,
+  AlertTriangle, PauseCircle, History, Circle,
 } from "lucide-react";
 import { api } from "@/api.js";
 import { compressImage } from "@/utils/compressImage.js";
@@ -125,6 +125,21 @@ export default function ProductionUnitDetail() {
   const [prodBusy, setProdBusy] = useState(false);
   const [prodError, setProdError] = useState("");
 
+  // Penugasan Work Center/Operator (Production Core Slice 4H/4I) —
+  // permission SAMA dengan Prioritas di atas (ADMIN + PRODUCTION_LEAD,
+  // cermin PRODUCTION_ASSIGNMENT_WRITE backend).
+  const canAssign = myRoles.some((r) => ["ADMIN", "PRODUCTION_LEAD"].includes(r));
+  const [workCenters, setWorkCenters] = useState([]);
+  const [operators, setOperators] = useState([]);
+  const [assigning, setAssigning] = useState(false);
+  const [assignWorkCenterId, setAssignWorkCenterId] = useState("");
+  const [assignOperatorId, setAssignOperatorId] = useState("");
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [assignError, setAssignError] = useState("");
+  const [skillWarning, setSkillWarning] = useState(null);
+  const [routeBusy, setRouteBusy] = useState(false);
+  const [routeError, setRouteError] = useState("");
+
   // Blokir Produksi (Production Core Slice 2A) — RESOLVE permission SAMA
   // dengan OPEN (UNIT_STAGE_WRITE backend): PRODUCTION_WORKER/PRODUCTION_LEAD/
   // QC_LEAD, BUKAN ADMIN (D-013: admin tidak memajukan/menyentuh produksi
@@ -160,6 +175,9 @@ export default function ProductionUnitDetail() {
         // setelah orang lain mengubahnya.
         setPriorityDraft(d.unit.priority || "NORMAL");
         setDueDateDraft(d.unit.productionDueAt ? d.unit.productionDueAt.slice(0, 10) : "");
+        setAssigning(false); setAssignError(""); setSkillWarning(null);
+        setAssignWorkCenterId(d.workCenter?.id || "");
+        setAssignOperatorId(d.assignedOperator?.id || "");
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -198,6 +216,14 @@ export default function ProductionUnitDetail() {
     // DAN dropdown "ubah ke layanan" saat mengajukan Revisi Lingkup — jadi
     // dimuat sekali di awal, bukan bersyarat.
     api.getServiceCatalog().then((d) => setServices(d.services)).catch(() => {});
+    // Work Center/Operator (Production Core Slice 4) — HANYA dimuat kalau
+    // memang bisa ditugaskan (WORK_CENTER_READ/PRODUCTION_OPERATOR_READ
+    // backend juga ADMIN+PRODUCTION_LEAD saja, lihat constants/permissions.js
+    // — memuatnya untuk role lain cuma akan gagal 403 percuma).
+    if (canAssign) {
+      api.getWorkCenters().then((d) => setWorkCenters(d.workCenters)).catch(() => {});
+      api.getProductionOperators().then((d) => setOperators(d.operators)).catch(() => {});
+    }
   }, []);
 
   if (loading && !data) {
@@ -246,6 +272,38 @@ export default function ProductionUnitDetail() {
       load();
       loadActivity();
     } catch (e) { setProdError(e.message); } finally { setProdBusy(false); }
+  }
+
+  // Tugaskan Work Center + Operator ke tahap SEKARANG (Production Core
+  // Slice 4H/4I). skillWarning TIDAK PERNAH memblokir penyimpanan — cuma
+  // ditampilkan supaya supervisor tahu (lihat lib/domain/productionRouting.js
+  // #deriveSkillWarning backend, prinsip yang sama diikuti di sini).
+  async function simpanAssignment() {
+    if (!current) return;
+    setAssignBusy(true); setAssignError("");
+    try {
+      const result = await api.assignUnitStage(unit.id, current.stage.id, {
+        workCenterId: assignWorkCenterId || null,
+        operatorId: assignOperatorId || null,
+      });
+      setSkillWarning(result.skillWarning?.warning ? result.skillWarning : null);
+      setAssigning(false);
+      load();
+      loadActivity();
+    } catch (e) { setAssignError(e.message); } finally { setAssignBusy(false); }
+  }
+
+  // Tetapkan/segarkan rute produksi unit (Production Core Slice 4Q) — jalur
+  // manual untuk unit lama yang belum punya snapshot rute (productionRoute
+  // null). Backend MENOLAK (409) kalau unit sudah punya riwayat eksekusi
+  // dan rute akan berubah — lihat services/productionRouting.js#changeUnitRoute.
+  async function ubahRute() {
+    setRouteBusy(true); setRouteError("");
+    try {
+      await api.changeUnitRoute(unit.id);
+      load();
+      loadActivity();
+    } catch (e) { setRouteError(e.message); } finally { setRouteBusy(false); }
   }
 
   // RESOLVE BLOCKER (Production Core Slice 2A) — perintah EKSPLISIT
@@ -436,6 +494,95 @@ export default function ProductionUnitDetail() {
               </div>
             </Card>
           )}
+
+          {/* Rute Produksi (Production Core Slice 4J/4K) — snapshot rute
+              versi-tetap + siapa yang bertanggung jawab atas tahap
+              SEKARANG. TERPISAH dari "Jalur Tahap Produksi" di bawah (itu
+              riwayat ledger LENGKAP per tahap dengan log/status detail;
+              ini ringkasan rute + staffing). Unit lama tanpa snapshot
+              (`data.route` null) tetap menampilkan Tahap Sekarang/
+              Berikutnya (dihitung dari jalur LIVE yang sama, bukan dari
+              rute) — engine eksekusi TIDAK PERNAH bergantung pada field ini. */}
+          <Card className="overflow-hidden">
+            <CardHeader>
+              <CardTitle>Rute Produksi</CardTitle>
+              <CardDescription>
+                {data.route ? `${data.route.name} v${data.route.version}` : "Rute belum tercatat (unit lama)"}
+              </CardDescription>
+            </CardHeader>
+
+            {data.routeVisualization.length > 0 && (
+              <ul className="flex flex-wrap gap-x-3 gap-y-1.5 border-b border-line px-4 py-3">
+                {data.routeVisualization.map((rs) => (
+                  <li key={rs.stageId} className="flex items-center gap-1 text-[11.5px]">
+                    {rs.marker === "DONE" ? (
+                      <CheckCircle2 size={13} className="shrink-0 text-green" />
+                    ) : rs.marker === "CURRENT" ? (
+                      <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-accent" />
+                    ) : (
+                      <Circle size={13} className="shrink-0 text-ink3" />
+                    )}
+                    <span className={rs.marker === "CURRENT" ? "font-semibold text-ink" : "text-ink3"}>
+                      {rs.stage?.labelId || "—"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {!data.route && unit.serviceId && (
+              <div className="border-b border-line px-4 py-2.5">
+                {routeError && <div className="mb-2 rounded-btn bg-redbg px-2.5 py-2 text-[11.5px] text-red">{routeError}</div>}
+                {canAssign ? (
+                  <Button size="sm" variant="secondary" onClick={ubahRute} disabled={routeBusy}>
+                    {routeBusy && <Loader2 size={14} className="animate-spin" />} Tetapkan Rute
+                  </Button>
+                ) : (
+                  <p className="text-[11.5px] text-ink3">Unit ini belum pernah diprovisioning ke rute produksi.</p>
+                )}
+              </div>
+            )}
+
+            <dl className="space-y-1.5 px-4 py-3 text-[12px]">
+              <div className="flex justify-between"><dt className="text-ink3">Tahap Sekarang</dt><dd className="text-ink">{current?.stage.labelId || "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-ink3">Tahap Berikutnya</dt><dd className="text-ink">{data.nextStage?.labelId || "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-ink3">Work Center</dt><dd className="text-ink">{data.workCenter?.name || <span className="text-ink3">—</span>}</dd></div>
+              <div className="flex justify-between"><dt className="text-ink3">Ditugaskan</dt><dd className="text-ink">{data.assignedOperator?.name || <span className="text-ink3">Belum ditugaskan</span>}</dd></div>
+              <div className="flex justify-between"><dt className="text-ink3">Dikerjakan Oleh</dt><dd className="text-ink">{data.actualPerformer?.name || <span className="text-ink3">—</span>}</dd></div>
+            </dl>
+
+            {canAssign && current && (
+              <div className="border-t border-line px-4 py-3">
+                {!assigning ? (
+                  <Button size="sm" variant="secondary" className="w-full" onClick={() => setAssigning(true)}>
+                    Tugaskan Work Center / Operator
+                  </Button>
+                ) : (
+                  <div className="space-y-2">
+                    {assignError && <div className="rounded-btn bg-redbg px-2.5 py-2 text-[11.5px] text-red">{assignError}</div>}
+                    {skillWarning && <div className="rounded-btn bg-orangebg px-2.5 py-2 text-[11.5px] text-orange">{skillWarning.warning}</div>}
+                    <label className="block text-[11.5px] font-semibold text-ink2">Work Center</label>
+                    <select value={assignWorkCenterId} onChange={(e) => setAssignWorkCenterId(e.target.value)}
+                      className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent">
+                      <option value="">— Tidak ditugaskan —</option>
+                      {workCenters.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                    <label className="block text-[11.5px] font-semibold text-ink2">Operator</label>
+                    <select value={assignOperatorId} onChange={(e) => setAssignOperatorId(e.target.value)}
+                      className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent">
+                      <option value="">— Tidak ditugaskan —</option>
+                      {operators.filter((o) => o.active).map((o) => <option key={o.id} value={o.id}>{o.user.name}</option>)}
+                    </select>
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="sm" className="flex-1" onClick={() => { setAssigning(false); setAssignError(""); }}>Batal</Button>
+                      <Button size="sm" className="flex-1" onClick={simpanAssignment} disabled={assignBusy}>
+                        {assignBusy && <Loader2 size={14} className="animate-spin" />} Simpan
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
 
           <Card className="overflow-hidden">
             <CardHeader>

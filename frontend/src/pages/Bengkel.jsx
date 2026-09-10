@@ -389,6 +389,13 @@ export default function Bengkel() {
                 dueDateTracked
                   ? { label: "Terlambat", value: cc.summary.overdue, hint: "sudah lewat target" }
                   : { label: "Terlambat", value: "—", hint: "Belum ada target tanggal" },
+                // Unassigned Active Units (Production Core Slice 4P) — HANYA
+                // hitungan, TIDAK ADA load/kapasitas Work Center apa pun (di
+                // luar lingkup slice ini, lihat routes/production.js).
+                {
+                  label: "Belum Ditugaskan", value: cc.unassignedActiveUnits.count,
+                  hint: cc.unassignedActiveUnits.count > 0 ? "unit aktif tanpa operator" : "semua sudah ditugaskan",
+                },
               ]}
             />
 

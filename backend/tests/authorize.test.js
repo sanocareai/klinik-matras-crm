@@ -179,6 +179,52 @@ test("PATCH /units/:id/production butuh UNIT_ROUTING_WRITE — PRODUCTION_WORKER
   );
 });
 
+// --- Production Core Slice 4 (Route/Work Center/Operator) -----------------
+test("Slice 4: ADMIN dan PRODUCTION_LEAD dapat penuh permission Route/Work Center/Operator, role lain tidak", () => {
+  const slice4Perms = [
+    P.PRODUCTION_ROUTE_READ, P.PRODUCTION_ROUTE_WRITE,
+    P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
+    P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
+    P.PRODUCTION_ASSIGNMENT_WRITE,
+  ];
+  for (const perm of slice4Perms) {
+    assert.ok(hasPermission(admin, perm), `ADMIN harus punya ${perm}`);
+    assert.ok(hasPermission({ roles: ["PRODUCTION_LEAD"] }, perm), `PRODUCTION_LEAD harus punya ${perm}`);
+    assert.ok(!hasPermission(worker, perm), `PRODUCTION_WORKER TIDAK boleh punya ${perm}`);
+    assert.ok(!hasPermission({ roles: ["QC_LEAD"] }, perm), `QC_LEAD TIDAK boleh punya ${perm}`);
+    assert.ok(!hasPermission(sales, perm), `SALES TIDAK boleh punya ${perm}`);
+  }
+});
+
+test("POST /units/:id/route memakai UNIT_ROUTING_WRITE (bukan permission baru) — sama seperti PATCH /units/:id/service", () => {
+  assert.ok(hasPermission({ roles: ["PRODUCTION_LEAD"] }, P.UNIT_ROUTING_WRITE));
+  assert.ok(!hasPermission(worker, P.UNIT_ROUTING_WRITE), "PRODUCTION_WORKER tidak boleh mengganti rute produksi unit");
+  const r = runMiddleware(requirePermission(P.UNIT_ROUTING_WRITE), worker);
+  assert.equal(r.status, 403);
+});
+
+test("POST /units/:id/stages/:stageId/assign butuh PRODUCTION_ASSIGNMENT_WRITE — TERPISAH dari UNIT_STAGE_WRITE (mengerjakan tahap ≠ menugaskan siapa yang mengerjakan)", () => {
+  assert.ok(hasPermission(worker, P.UNIT_STAGE_WRITE), "pekerja produksi tetap bisa mengerjakan tahap");
+  assert.ok(!hasPermission(worker, P.PRODUCTION_ASSIGNMENT_WRITE), "tapi TIDAK boleh menugaskan operator/work center");
+  const r = runMiddleware(requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), worker);
+  assert.equal(r.status, 403);
+
+  assert.ok(hasPermission({ roles: ["PRODUCTION_LEAD"] }, P.PRODUCTION_ASSIGNMENT_WRITE));
+});
+
+test("Work Center CRUD: WORK_CENTER_READ untuk lihat daftar, WORK_CENTER_WRITE terpisah untuk kelola", () => {
+  assert.ok(hasPermission(admin, P.WORK_CENTER_READ));
+  assert.ok(hasPermission(admin, P.WORK_CENTER_WRITE));
+  assert.ok(!hasPermission(sales, P.WORK_CENTER_READ));
+});
+
+test("Production Operator: PRODUCTION_OPERATOR_WRITE dibutuhkan utk buat profil/kelola skill, worker tidak dapat", () => {
+  assert.ok(hasPermission({ roles: ["PRODUCTION_LEAD"] }, P.PRODUCTION_OPERATOR_WRITE));
+  assert.ok(!hasPermission(worker, P.PRODUCTION_OPERATOR_WRITE));
+  const r = runMiddleware(requirePermission(P.PRODUCTION_OPERATOR_WRITE), worker);
+  assert.equal(r.status, 403);
+});
+
 // --- portal ----------------------------------------------------------------
 test("portal disaring sesuai role", () => {
   assert.deepEqual(portalsFor(sales).map((p) => p.key), ["growth"]);

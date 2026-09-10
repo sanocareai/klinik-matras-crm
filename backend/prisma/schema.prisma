@@ -387,6 +387,12 @@ model User {
   productionBlockersOpened   ProductionBlocker[]      @relation("ProductionBlockerOpener")
   productionBlockersResolved ProductionBlocker[]      @relation("ProductionBlockerResolver")
   staffBroadcastsCreated     StaffBroadcast[]         @relation("StaffBroadcastCreator")
+  // Production Core Slice 4 — profil operator produksi TIPIS di atas User
+  // ini (lihat catatan panjang di model ProductionOperator soal kenapa
+  // BUKAN identitas paralel). Opsional 1:1 — sebagian besar User TIDAK
+  // PERNAH punya baris ini.
+  productionOperatorProfile  ProductionOperator?      @relation("ProductionOperatorUser")
+  stageAssignmentsMade       StageAssignment[]        @relation("StageAssignmentAssigner")
 
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
@@ -509,7 +515,7 @@ model Customer {
   // slaAlert.salesPhoneDirectory), BUKAN otomatis di webhook — supaya
   // tetap ada 1 langkah tinjau sebelum menyembunyikan percakapan siapa
   // pun dari Inbox.
-  isInternalStaff     Boolean       @default(false) @map("is_internal_staff")
+  isInternalStaff Boolean @default(false) @map("is_internal_staff")
 
   // ── Atribusi iklan Meta Click-to-WhatsApp (CTWA) ──────────────────────
   // Iklan CTWA melompat LANGSUNG ke WhatsApp tanpa lewat website, jadi tag
@@ -910,21 +916,21 @@ model RiskClassificationFeedback {
 }
 
 model Order {
-  id                 String        @id @default(cuid())
-  customerId         String
-  customer           Customer      @relation(fields: [customerId], references: [id])
-  status             OrderStatus   @default(PENDING)
+  id                    String        @id @default(cuid())
+  customerId            String
+  customer              Customer      @relation(fields: [customerId], references: [id])
+  status                OrderStatus   @default(PENDING)
   // D-006, Integrasi Fase 1 — status DIHITUNG dari status unit terkait
   // (weakest-link: unit paling tertinggal yang menentukan), bukan ditulis
   // manual lagi. Lihat services/orderStatusSync.js. Kalau statusLocked=true,
   // sync BERHENTI menyentuh status ini — dikunci oleh override manusia
   // (kasus di luar pola normal: dibatalkan, dst), sampai dilepas lagi.
-  statusLocked       Boolean       @default(false) @map("status_locked")
-  statusOverrideById String?       @map("status_override_by")
-  statusOverrideBy   User?         @relation("OrderStatusOverrider", fields: [statusOverrideById], references: [id], onDelete: SetNull)
-  statusOverrideAt   DateTime?     @map("status_override_at")
-  statusOverrideNote String?       @map("status_override_note")
-  paymentStatus      PaymentStatus @default(BELUM_BAYAR)
+  statusLocked          Boolean       @default(false) @map("status_locked")
+  statusOverrideById    String?       @map("status_override_by")
+  statusOverrideBy      User?         @relation("OrderStatusOverrider", fields: [statusOverrideById], references: [id], onDelete: SetNull)
+  statusOverrideAt      DateTime?     @map("status_override_at")
+  statusOverrideNote    String?       @map("status_override_note")
+  paymentStatus         PaymentStatus @default(BELUM_BAYAR)
   // paidAt (30 Agustus 2026) — kapan order ini PERTAMA KALI jadi LUNAS,
   // diisi OTOMATIS oleh recomputeOrderPaymentStatus() (services/paymentLedger.js),
   // BUKAN diinput manual. Dipakai basis KOMISI SALES: "reach" bulan ini
@@ -941,14 +947,14 @@ model Order {
   // basi. Naik ulang ke waktu SEKARANG kalau lunas lagi setelah itu (bukan
   // "pertama kali sepanjang masa") — itu yang benar-benar mencerminkan
   // "kapan uangnya benar-benar dianggap masuk", termasuk setelah koreksi.
-  paidAt             DateTime?     @map("paid_at")
+  paidAt                DateTime?     @map("paid_at")
   // dpTarget (2 Sep 2026) — nominal DP yang DISEPAKATI dengan customer,
   // bukan yang benar-benar sudah masuk (itu SUM(payments), lihat Payment
   // model). null = tidak ada kesepakatan DP spesifik untuk order ini.
   // Dipakai MURNI sebagai pembanding di UI/invoice ("DP kurang Rp X") —
   // tidak memengaruhi paymentStatus/paidAt/sisa tagihan sama sekali,
   // yang tetap 100% dari ledger vs Order.value seperti sebelumnya.
-  dpTarget           Int?          @map("dp_target")
+  dpTarget              Int?          @map("dp_target")
   // Kartu garansi e-warranty (2 Sep 2026) — warrantyYears cuma 10 atau 20
   // (dipilih manual sales/admin tiap kirim, TIDAK diturunkan otomatis dari
   // paket manapun karena sistem ini belum menyimpan "Paket Standard/Premium"
@@ -957,9 +963,9 @@ model Order {
   // penuh (draft/sent/viewed/gabungan dst), kartu garansi cukup "kapan
   // terakhir dikirim & varian berapa tahun", dibuat ulang tiap kirim dari
   // data order yang sudah ada (bukan dokumen yang di-draft dulu).
-  warrantyYears      Int?          @map("warranty_years")
-  warrantySentAt     DateTime?     @map("warranty_sent_at")
-  category           OrderCategory @default(LAYANAN)
+  warrantyYears         Int?          @map("warranty_years")
+  warrantySentAt        DateTime?     @map("warranty_sent_at")
+  category              OrderCategory @default(LAYANAN)
   // productLine (29 Agustus 2026) — default KASUR supaya migrasi backfill
   // otomatis SEMUA order lama sbg Kasur (fakta historis, 100% order sebelum
   // ini memang kasur — bukan tebakan). productType SENGAJA nullable TANPA
@@ -968,16 +974,16 @@ model Order {
   // bukan ditebak salah satu dari 11 nilai. Order BARU wajib isi lewat form
   // (lihat OrderSection.jsx), backend tidak memaksa di level skema supaya
   // order lama yang di-PATCH utk alasan lain tidak tiba-tiba gagal validasi.
-  productLine        ProductLine   @default(KASUR) @map("product_line")
-  productType        ProductType?  @map("product_type")
-  value              Int // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
-  quantity           Int           @default(1)
-  beratBadan         Int? // berat badan customer dalam kg, nullable
-  orderNumber        String?       @unique // di-generate otomatis saat order dibuat
-  notes              String?
-  hasComplaint       Boolean       @default(false)
-  complaintDate      DateTime?
-  complaintDetail    String?
+  productLine           ProductLine   @default(KASUR) @map("product_line")
+  productType           ProductType?  @map("product_type")
+  value                 Int // nilai order dalam Rupiah (cache = SUM items.harga, 0 jika belum ada item)
+  quantity              Int           @default(1)
+  beratBadan            Int? // berat badan customer dalam kg, nullable
+  orderNumber           String?       @unique // di-generate otomatis saat order dibuat
+  notes                 String?
+  hasComplaint          Boolean       @default(false)
+  complaintDate         DateTime?
+  complaintDetail       String?
   // Penyelesaian komplain (9 September 2026, D-109) — hasComplaint SENGAJA
   // TIDAK direset ke false saat komplain selesai: itu dipakai analitik/
   // badge "Pernah Komplain" sebagai FAKTA HISTORIS (services/salesRisk,
@@ -990,9 +996,9 @@ model Order {
   // /armada/revisions/:id), atau MANUAL lewat "Tandai Selesai" (POST
   // /orders/:id/complaint/resolve) untuk komplain yang tidak lewat alur
   // revisi sama sekali.
-  complaintResolvedAt   DateTime? @map("complaint_resolved_at")
-  complaintResolvedById String?   @map("complaint_resolved_by")
-  complaintResolvedBy   User?     @relation("OrderComplaintResolver", fields: [complaintResolvedById], references: [id], onDelete: SetNull)
+  complaintResolvedAt   DateTime?     @map("complaint_resolved_at")
+  complaintResolvedById String?       @map("complaint_resolved_by")
+  complaintResolvedBy   User?         @relation("OrderComplaintResolver", fields: [complaintResolvedById], references: [id], onDelete: SetNull)
 
   // D-027 (20 Agustus 2026) — kota + alamat pengiriman PER ORDER, diinput
   // sales saat buat order (dropdown kota SAMA dgn Customer.city, lihat
@@ -1324,6 +1330,16 @@ model Unit {
   priority        ProductionPriority @default(NORMAL)
   productionDueAt DateTime?          @map("production_due_at")
 
+  // Snapshot rute produksi (Production Core Slice 4D) — diisi SEKALI saat
+  // unit diprovisioning (PATCH /units/:id/service pertama kali menetapkan
+  // layanan), TIDAK PERNAH auto-berubah lagi setelahnya walau konfigurasi
+  // ServiceCatalogModule berubah. NULL = unit lama/belum diprovisioning
+  // ulang lewat jalur ini — engine eksekusi (unitStageEngine.js) TETAP
+  // jalan normal tanpa field ini, lihat catatan arsitektur di model
+  // ProductionRoute.
+  productionRouteId String?          @map("production_route_id") @db.Uuid
+  productionRoute   ProductionRoute? @relation(fields: [productionRouteId], references: [id], onDelete: Restrict)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1335,6 +1351,7 @@ model Unit {
   scopeRevisions    ScopeRevision[]
   revisions         UnitRevision[]
   blockers          ProductionBlocker[]
+  stageAssignments  StageAssignment[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -1346,6 +1363,7 @@ model Unit {
   // query itu full-scan tabel units tiap kali command-center dibuka.
   @@index([productionDueAt])
   @@index([priority])
+  @@index([productionRouteId])
   @@map("units")
 }
 
@@ -1386,12 +1404,22 @@ model RoutingStage {
   active       Boolean  @default(true)
   createdAt    DateTime @default(now()) @map("created_at")
 
-  serviceModules     ServiceCatalogModule[]
-  unitsHere          Unit[]
-  stageLogs          UnitStageLog[]
-  qcFitTests         QcFitTest[]
-  scopeRevisions     ScopeRevision[]
-  productionBlockers ProductionBlocker[]
+  // Work Center DEFAULT untuk tahap ini (Production Core Slice 4E) —
+  // berlaku untuk SEMUA unit termasuk yang belum pernah punya
+  // ProductionRoute snapshot (unit lama). Override PER UNIT ada di
+  // StageAssignment.workCenterId, bukan di sini.
+  defaultWorkCenterId String?     @map("default_work_center_id") @db.Uuid
+  defaultWorkCenter   WorkCenter? @relation(fields: [defaultWorkCenterId], references: [id], onDelete: SetNull)
+
+  serviceModules        ServiceCatalogModule[]
+  unitsHere             Unit[]
+  stageLogs             UnitStageLog[]
+  qcFitTests            QcFitTest[]
+  scopeRevisions        ScopeRevision[]
+  productionBlockers    ProductionBlocker[]
+  productionRouteStages ProductionRouteStage[]
+  operatorSkills        OperatorSkill[]
+  stageAssignments      StageAssignment[]
 
   @@index([phase, sequence])
   @@map("routing_stages")
@@ -1408,8 +1436,13 @@ model ServiceCatalog {
   sortOrder   Int         @default(0) @map("sort_order")
   createdAt   DateTime    @default(now()) @map("created_at")
 
-  modules ServiceCatalogModule[]
-  units   Unit[]
+  modules          ServiceCatalogModule[]
+  units            Unit[]
+  // Snapshot rute per versi (Production Core Slice 4) — lihat model
+  // ProductionRoute untuk kenapa ini TERPISAH dari `modules` di atas
+  // (modules = konfigurasi LIVE yang dipakai engine eksekusi setiap saat;
+  // productionRoutes = snapshot BEKU per versi untuk visualisasi/staffing).
+  productionRoutes ProductionRoute[]
 
   revisionsFrom ScopeRevision[] @relation("ScopeRevisionFrom")
   revisionsTo   ScopeRevision[] @relation("ScopeRevisionTo")
@@ -1618,6 +1651,233 @@ model ProductionBlocker {
   // unique index di migration.sql untuk invarian "satu blokir aktif/unit".
   @@index([resolvedAt])
   @@map("production_blockers")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SANSS PRODUCTION CORE — SLICE 4 (10 September 2026)
+// Route / Work Center / Operator foundation.
+// ═══════════════════════════════════════════════════════════════════════
+//
+// KEPUTUSAN ARSITEKTUR PALING PENTING slice ini, ditulis di sini supaya
+// tidak hilang: sistem SUDAH punya mesin routing hidup sejak Phase 0
+// (D-003) — ServiceCatalog + ServiceCatalogModule + RoutingStage (backbone
+// INTAKE→MODULE→FINISH, lihat routing.js#buildUnitPath). Model BARU di
+// bawah ini TIDAK menggantikan atau menduplikasi itu sebagai sumber
+// kebenaran EKSEKUSI — unitStageEngine.js (startStage/completeStage/dst)
+// TETAP menghitung jalur unit LANGSUNG dari ServiceCatalog/RoutingStage
+// LIVE, PERSIS seperti sebelum Slice 4, TIDAK DISENTUH SAMA SEKALI.
+//
+// ProductionRoute/ProductionRouteStage di bawah adalah lapisan TERPISAH:
+// SNAPSHOT versi-tetap dari jalur itu, diambil SEKALI saat unit
+// "diprovisioning" (PATCH /units/:id/service pertama kali menetapkan
+// layanan) — gunanya MURNI untuk (a) visualisasi rute yang stabil secara
+// historis walau ServiceCatalogModule berubah di kemudian hari, dan
+// (b) tempat menggantungkan metadata perencanaan yang tidak dipunyai
+// RoutingStage/ServiceCatalogModule (default Work Center per tahap, bobot,
+// estimasi durasi standar). Kalau snapshot ini kosong (unit lama, ATAU
+// gagal dibuat karena suatu sebab), engine eksekusi TETAP jalan normal —
+// dua lapisan ini SENGAJA independen, bukan saling bergantung runtime.
+//
+// SATU service = SATU route AKTIF pada satu waktu (versi lama tetap ada,
+// ditandai active=false, unit yang sudah memakainya tetap menunjuk ke
+// snapshot historisnya — "immutable snapshot", bukan "giant workflow-
+// versioning framework": ganti versi = baris ProductionRoute BARU, bukan
+// mengedit baris lama).
+
+// Area kerja fisik/organisasi produksi (mis. Spring, Foam, Jahit, QC).
+// Level V1 SENGAJA TANPA kapasitas/WIP/utilisasi (lihat catatan lingkup di
+// docs kerja Slice 4) — murni identitas + konfigurasi tahap mana yang
+// dikerjakan di sini.
+model WorkCenter {
+  id          String  @id @default(uuid()) @db.Uuid
+  code        String  @unique
+  name        String
+  description String?
+  active      Boolean @default(true)
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  // Fondasi untuk Capacity Planning MASA DEPAN — SENGAJA nullable, TIDAK
+  // diisi otomatis/ditebak slice ini (lihat SLICE 4T di ticket: "jangan
+  // fabricate default duration/weight"). NULL = belum dikonfigurasi.
+  standardDailyMinutes Int?    @map("standard_daily_minutes")
+  notes                String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Tahap yang DEFAULT-nya dikerjakan di sini (RoutingStage.defaultWorkCenterId)
+  // — satu-satunya sumber kebenaran "work center mana untuk tahap ini" yang
+  // berlaku untuk SEMUA unit termasuk yang lama (tidak butuh route snapshot).
+  stagesDefault    RoutingStage[]
+  routeStages      ProductionRouteStage[]
+  operatorsPrimary ProductionOperator[]
+  stageAssignments StageAssignment[]
+
+  @@map("work_centers")
+}
+
+// SNAPSHOT jalur produksi satu layanan pada satu versi — lihat catatan
+// arsitektur panjang di atas. TIDAK PERNAH diedit setelah dibuat (immutable);
+// versi baru = baris baru + versi lama active=false.
+model ProductionRoute {
+  id      String @id @default(uuid()) @db.Uuid
+  version Int    @default(1)
+
+  serviceId String         @map("service_id") @db.Uuid
+  service   ServiceCatalog @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  // Disalin dari ServiceCatalog SAAT versi ini dibuat (bukan dibaca ulang
+  // dari service.labelId tiap kali) — kalau layanan diganti namanya nanti,
+  // versi rute HISTORIS tetap menampilkan nama yang berlaku saat unit lama
+  // diprovisioning, bukan diam-diam ikut berubah.
+  code        String
+  name        String
+  description String?
+
+  // Hanya SATU versi aktif per service (partial unique index, lihat
+  // migration.sql — pola SAMA dengan production_blockers "satu blokir
+  // aktif per unit").
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stages ProductionRouteStage[]
+  units  Unit[]
+
+  @@unique([serviceId, version])
+  @@index([serviceId])
+  @@map("production_routes")
+}
+
+// Satu baris = satu tahap DI DALAM snapshot rute tsb, urut `sequence`.
+// `stageId` menunjuk ke katalog RoutingStage yang SAMA dipakai engine
+// eksekusi (BUKAN duplikasi identitas tahap) — baris ini murni menambah
+// metadata PERENCANAAN (work center/bobot/durasi) di atas identitas yang
+// sudah ada.
+model ProductionRouteStage {
+  id      String          @id @default(uuid()) @db.Uuid
+  routeId String          @map("route_id") @db.Uuid
+  route   ProductionRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  stageId String       @map("stage_id") @db.Uuid
+  stage   RoutingStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+
+  sequence Int
+  // Disalin dari RoutingStage.isOptional (dibalik) SAAT snapshot dibuat —
+  // "required" lebih langsung dibaca UI rute (✓/●/○) daripada isOptional.
+  required Boolean @default(true)
+
+  // Disalin dari RoutingStage.defaultWorkCenterId SAAT snapshot dibuat.
+  // TIDAK ADA jalur override per-route di Slice 4 (SLICE 4E: "allow an
+  // execution or assignment to override the default where authorized" —
+  // override sungguhan ada di StageAssignment.workCenterId per UNIT, bukan
+  // di sini; kolom ini tetap "default yang berlaku saat itu").
+  workCenterId String?     @map("work_center_id") @db.Uuid
+  workCenter   WorkCenter? @relation(fields: [workCenterId], references: [id], onDelete: SetNull)
+
+  // Fondasi progress calculation & ETA MASA DEPAN (SLICE 4S/4T) — SENGAJA
+  // nullable, TIDAK diisi angka karangan. NULL = belum dikonfigurasi,
+  // fallback perhitungan progress TETAP perilaku lama (lihat frontend).
+  weight                  Int?
+  standardDurationMinutes Int? @map("standard_duration_minutes")
+
+  @@unique([routeId, sequence])
+  @@index([routeId])
+  @@map("production_route_stages")
+}
+
+// Profil PRODUKSI tipis di atas User (BUKAN identitas paralel — lihat
+// audit STEP 0: repo ini TIDAK punya model Staff/Employee terpisah sama
+// sekali, bahkan Driver/Helper cuma Role + relasi langsung di User).
+// Baris ini HANYA untuk data yang murni milik konteks produksi (skill,
+// work center utama) yang akan membengkakkan User kalau ditaruh langsung
+// di sana — satu User boleh TIDAK PERNAH punya baris ini (belum pernah
+// ditetapkan jadi operator produksi).
+model ProductionOperator {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @unique @map("user_id")
+  user   User    @relation("ProductionOperatorUser", fields: [userId], references: [id], onDelete: Cascade)
+  active Boolean @default(true)
+
+  primaryWorkCenterId String?     @map("primary_work_center_id") @db.Uuid
+  primaryWorkCenter   WorkCenter? @relation(fields: [primaryWorkCenterId], references: [id], onDelete: SetNull)
+
+  // Kode pegawai internal — OPSIONAL, HANYA diisi kalau memang sudah ada
+  // identitas itu di tempat lain (SLICE 4F: "if existing employee identity
+  // already exists, extend it" — repo ini belum punya, jadi kolom ini
+  // kosong sampai ada kebutuhan nyata, BUKAN diisi tebakan).
+  employeeCode String? @map("employee_code")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  skills           OperatorSkill[]
+  stageAssignments StageAssignment[]
+
+  @@map("production_operators")
+}
+
+// Kapabilitas operator per TAHAP (bukan per skill generik bebas teks —
+// stageId FK ke RoutingStage yang sama dipakai eksekusi, supaya validasi
+// "operator ini punya skill utk tahap X" bisa JOIN langsung, tidak pernah
+// cocok-cocokan string). level 1-5, CHECK constraint di migration.sql
+// (pola sama dengan educationGiven/customerPreferenceOverride D-009).
+model OperatorSkill {
+  id         String             @id @default(uuid()) @db.Uuid
+  operatorId String             @map("operator_id") @db.Uuid
+  operator   ProductionOperator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  stageId    String             @map("stage_id") @db.Uuid
+  stage      RoutingStage       @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  level  Int
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([operatorId, stageId])
+  @@map("operator_skills")
+}
+
+// ASSIGNED OPERATOR (siapa yang DIHARAPKAN mengerjakan) — TERPISAH TEGAS
+// dari ACTUAL PERFORMER (siapa yang SUNGGUHAN start/pause/resume/complete,
+// itu tetap UnitStageLog.actorId sejak Slice 3, TIDAK diduplikasi di sini).
+//
+// Satu baris per (unit, stage) — bukan ledger append-only seperti
+// UnitStageLog, tapi POINTER STATE SEKARANG (pola sama dengan
+// Unit.priority: kolom mutable + riwayat perubahannya ada di ActivityEvent
+// terpisah — WORK_CENTER_ASSIGNED/OPERATOR_ASSIGNED/OPERATOR_REASSIGNED).
+// Kenapa bukan cuma satu kolom di Unit: unit melalui BANYAK tahap seumur
+// hidupnya, tiap tahap bisa beda work center/operator — satu kolom di
+// Unit cuma bisa merepresentasikan "assignment tahap yang KEBETULAN
+// sekarang", hilang begitu tahap maju. Baris per (unit,stage) di sini
+// membuat assignment TIAP tahap tetap bisa dilihat lagi nanti (riwayat),
+// bukan cuma assignment "sekarang".
+model StageAssignment {
+  id      String       @id @default(uuid()) @db.Uuid
+  unitId  String       @map("unit_id") @db.Uuid
+  unit    Unit         @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  stageId String       @map("stage_id") @db.Uuid
+  stage   RoutingStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+
+  workCenterId String?     @map("work_center_id") @db.Uuid
+  workCenter   WorkCenter? @relation(fields: [workCenterId], references: [id], onDelete: SetNull)
+
+  operatorId String?             @map("operator_id") @db.Uuid
+  operator   ProductionOperator? @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+
+  assignedById String? @map("assigned_by")
+  assignedBy   User?   @relation("StageAssignmentAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  note String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([unitId, stageId])
+  @@index([unitId])
+  @@map("stage_assignments")
 }
 
 enum JobType {
@@ -1852,8 +2112,8 @@ model JobIssueLog {
   // SetNull, bukan Cascade — dispatcher/driver resign TIDAK BOLEH menghapus
   // riwayat kegagalan/reschedule yang sudah terjadi (pola sama dengan
   // UnitStageLog.actor, JobPositionPing.driver).
-  createdById String? @map("created_by")
-  createdBy   User?   @relation("JobIssueLogCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("JobIssueLogCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([jobId, createdAt])
@@ -4335,8 +4595,8 @@ model BroadcastTarget {
 
 enum StaffBroadcastStatus {
   SCHEDULED // menunggu waktu kirim (scheduledAt)
-  SENT      // worker sudah MENCOBA kirim ke semua penerima — lihat `results`
-            // untuk detail per orang, SENT tidak berarti semua sukses
+  SENT // worker sudah MENCOBA kirim ke semua penerima — lihat `results`
+  // untuk detail per orang, SENT tidak berarti semua sukses
   CANCELLED // dibatalkan admin sebelum sempat dikirim
 }
 
@@ -4398,8 +4658,8 @@ model StaffBroadcast {
   // migration.sql yang ditulis tangan). GET /staff-broadcast 500 total,
   // dan karena Promise.all di frontend, ini ikut menggagalkan pemuatan
   // daftar PENERIMA juga (endpoint terpisah, tidak seharusnya ikut gagal).
-  createdAt DateTime  @default(now()) @map("created_at")
-  sentAt    DateTime? @map("sent_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  sentAt      DateTime? @map("sent_at")
 
   // Query terpanas worker: "ambil SCHEDULED yang sudah waktunya".
   @@index([status, scheduledAt])

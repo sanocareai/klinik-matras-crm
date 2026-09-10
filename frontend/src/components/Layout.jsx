@@ -189,6 +189,17 @@ const DIVISIONS = {
           { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
         ],
       },
+      // Konfigurasi rute/staf produksi (Production Core Slice 4, 10
+      // September 2026) — SENGAJA section TERPISAH dari OPERASIONAL harian
+      // di atas: dua menu ini bukan kerja harian, tapi setup/admin (siapa
+      // bekerja di area mana, skill apa) yang jarang diubah.
+      {
+        section: "TIM & AREA KERJA",
+        items: [
+          { to: "/bengkel/work-centers",    label: "Work Centers",    Icon: MapPin },
+          { to: "/bengkel/operators",       label: "Operators",       Icon: UserCog },
+        ],
+      },
       {
         section: "LAPORAN",
         items: [

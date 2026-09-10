@@ -37,6 +37,8 @@ const ProductionMaterialUsage = lazy(() => import("../pages/bengkel/ProductionMa
 const ProductionScopeRevisions = lazy(() => import("../pages/bengkel/ProductionScopeRevisions.jsx"));
 const ProductionLaporan = lazy(() => import("../pages/bengkel/ProductionLaporan.jsx"));
 const ProductionOrders  = lazy(() => import("../pages/bengkel/ProductionOrders.jsx"));
+const ProductionWorkCenters = lazy(() => import("../pages/bengkel/ProductionWorkCenters.jsx"));
+const ProductionOperators   = lazy(() => import("../pages/bengkel/ProductionOperators.jsx"));
 const ArmadaDashboard   = lazy(() => import("../pages/armada/ArmadaDashboard.jsx"));
 const ArmadaRingkasan   = lazy(() => import("../pages/armada/ArmadaRingkasan.jsx"));
 const ArmadaJobs        = lazy(() => import("../pages/armada/ArmadaJobs.jsx"));
@@ -112,6 +114,8 @@ export const PAGES = [
   { path: "/bengkel/materials", render: () => <ProductionMaterialUsage /> },
   { path: "/bengkel/reports", render: () => <ProductionLaporan /> },
   { path: "/bengkel/orders", render: () => <ProductionOrders /> },
+  { path: "/bengkel/work-centers", render: () => <ProductionWorkCenters /> },
+  { path: "/bengkel/operators", render: () => <ProductionOperators /> },
   { path: "/armada/dashboard", render: () => <ArmadaDashboard /> },
   { path: "/armada/ringkasan", render: () => <ArmadaRingkasan /> },
   { path: "/armada/jobs",      render: () => <ArmadaJobs /> },
