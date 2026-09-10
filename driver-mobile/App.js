@@ -21,17 +21,18 @@ import ErrorBoundary from "./src/components/ErrorBoundary";
 import { queryClient } from "./src/lib/queryClient";
 import { checkForUpdateOnLaunch } from "./src/lib/autoUpdate";
 import { isAdminView } from "./src/lib/roles";
+import { useTheme } from "./src/hooks/useTheme";
 
 // Tahan splash sampai sesi (AsyncStorage) selesai dibaca — dipanggil di
 // MODULE LEVEL (bukan di dalam komponen) supaya terjadi SEBELUM render
 // pertama apa pun, pola sama dengan mobile/App.js.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-const NAVY = "#0A0D16";
 const Stack = createNativeStackNavigator();
 
 function Root() {
   const { user, loading } = useAuth();
+  const theme = useTheme();
 
   useEffect(() => { checkForUpdateOnLaunch(); }, []);
 
@@ -41,8 +42,8 @@ function Root() {
 
   if (loading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator color="#4C8DFF" size="large" />
+      <View style={[styles.loading, { backgroundColor: theme.NAVY }]}>
+        <ActivityIndicator color={theme.ACCENT} size="large" />
       </View>
     );
   }
@@ -67,6 +68,11 @@ function Root() {
   );
 }
 
+function ThemedStatusBar() {
+  const theme = useTheme();
+  return <StatusBar style={theme.statusBarStyle} backgroundColor={theme.NAVY} />;
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -74,7 +80,7 @@ export default function App() {
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
             <AuthProvider>
-              <StatusBar style="light" backgroundColor={NAVY} />
+              <ThemedStatusBar />
               <Root />
             </AuthProvider>
           </QueryClientProvider>
@@ -85,5 +91,5 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, backgroundColor: NAVY, alignItems: "center", justifyContent: "center" },
+  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
 });

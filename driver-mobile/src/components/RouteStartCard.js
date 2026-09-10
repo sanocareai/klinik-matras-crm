@@ -8,19 +8,16 @@
 //      ASSIGNED di rute jadi EN_ROUTE + notif ke tiap customer.
 // Per stop tetap Tiba/Selesai/Gagal sendiri-sendiri (foto bukti serah
 // terima tetap wajib per stop — itu yang penting).
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Linking, Alert, ActivityIndicator } from "react-native";
 import { Map, Navigation } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import { api } from "../api";
-
-const SURFACE = "#171B2E";
-const INK = "#F5F5F7";
-const INK2 = "rgba(245,245,247,0.62)";
-const ACCENT = "#4C8DFF";
-const RED = "#FF453A";
+import { useTheme } from "../hooks/useTheme";
 
 export default function RouteStartCard({ route, assignedCount, sampleJobId, onChanged }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [mode, setMode] = useState("idle"); // idle | starting
   const [photos, setPhotos] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -73,7 +70,7 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
       </View>
 
       <Pressable style={styles.mapsBtn} onPress={bukaMaps} disabled={mapBusy}>
-        {mapBusy ? <ActivityIndicator size="small" color={ACCENT} /> : <Map size={15} color={ACCENT} />}
+        {mapBusy ? <ActivityIndicator size="small" color={theme.ACCENT} /> : <Map size={15} color={theme.ACCENT} />}
         <Text style={styles.mapsBtnText}>Buka Rute di Google Maps</Text>
       </Pressable>
 
@@ -110,29 +107,31 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
   );
 }
 
-const styles = StyleSheet.create({
-  card: { backgroundColor: SURFACE, borderRadius: 16, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: "rgba(76,141,255,0.25)" },
-  headerRow: { flexDirection: "row", alignItems: "center" },
-  code: { color: INK, fontSize: 15, fontWeight: "800" },
-  sub: { color: INK2, fontSize: 12, marginTop: 2 },
-  mapsBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
-    marginTop: 12, paddingVertical: 11, borderRadius: 12,
-    borderWidth: 1, borderColor: "rgba(76,141,255,0.4)",
-  },
-  mapsBtnText: { color: ACCENT, fontWeight: "700", fontSize: 13 },
-  startBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
-    marginTop: 10, paddingVertical: 12, borderRadius: 12, backgroundColor: ACCENT,
-  },
-  startBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13.5 },
-  secondaryBtn: {
-    alignItems: "center", justifyContent: "center", paddingVertical: 12, borderRadius: 12,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
-  },
-  secondaryBtnText: { color: INK2, fontWeight: "600", fontSize: 13.5 },
-  form: { marginTop: 10, gap: 10 },
-  btnRow: { flexDirection: "row", gap: 8 },
-  err: { color: RED, fontSize: 12 },
-  disabled: { opacity: 0.4 },
-});
+function makeStyles(t) {
+  return StyleSheet.create({
+    card: { backgroundColor: t.SURFACE, borderRadius: 16, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: t.ACCENT + "40" },
+    headerRow: { flexDirection: "row", alignItems: "center" },
+    code: { color: t.INK, fontSize: 15, fontWeight: "800" },
+    sub: { color: t.INK2, fontSize: 12, marginTop: 2 },
+    mapsBtn: {
+      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+      marginTop: 12, paddingVertical: 11, borderRadius: 12,
+      borderWidth: 1, borderColor: t.ACCENT + "66",
+    },
+    mapsBtnText: { color: t.ACCENT, fontWeight: "700", fontSize: 13 },
+    startBtn: {
+      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+      marginTop: 10, paddingVertical: 12, borderRadius: 12, backgroundColor: t.ACCENT,
+    },
+    startBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13.5 },
+    secondaryBtn: {
+      alignItems: "center", justifyContent: "center", paddingVertical: 12, borderRadius: 12,
+      borderWidth: 1, borderColor: t.BORDER,
+    },
+    secondaryBtnText: { color: t.INK2, fontWeight: "600", fontSize: 13.5 },
+    form: { marginTop: 10, gap: 10 },
+    btnRow: { flexDirection: "row", gap: 8 },
+    err: { color: t.RED, fontSize: 12 },
+    disabled: { opacity: 0.4 },
+  });
+}

@@ -5,19 +5,13 @@
 // metode, foto WAJIB kalau tunai (bukti serah terima uang), opsional utk
 // transfer/QRIS. Gap yang dilaporkan owner (10 Sep 2026): fitur ini sudah
 // ada di backend+web sejak lama, tapi belum pernah ada di app RN.
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, TextInput, StyleSheet } from "react-native";
 import { Wallet, BadgeCheck, Loader2 } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import { api } from "../api";
 import { formatRupiah } from "../lib/jobHelpers";
-
-const INK = "#F5F5F7";
-const INK2 = "rgba(245,245,247,0.62)";
-const INK3 = "rgba(245,245,247,0.40)";
-const ACCENT = "#4C8DFF";
-const GREEN = "#30D158";
-const RED = "#FF453A";
+import { useTheme } from "../hooks/useTheme";
 
 const PAYMENT_METHODS = [
   { value: "CASH", label: "Tunai" },
@@ -26,6 +20,8 @@ const PAYMENT_METHODS = [
 ];
 
 export default function PaymentSection({ job, onChanged }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("CASH");
@@ -69,7 +65,7 @@ export default function PaymentSection({ job, onChanged }) {
                 <Text style={styles.method}>{PAYMENT_METHODS.find((m) => m.value === p.method)?.label || p.method}</Text>
                 {p.verifications?.length > 0 && (
                   <View style={styles.verifiedBadge}>
-                    <BadgeCheck size={11} color={GREEN} />
+                    <BadgeCheck size={11} color={theme.GREEN} />
                     <Text style={styles.verifiedText}>Terverifikasi</Text>
                   </View>
                 )}
@@ -81,7 +77,7 @@ export default function PaymentSection({ job, onChanged }) {
 
       {!open && (
         <Pressable style={styles.openBtn} onPress={() => setOpen(true)}>
-          <Wallet size={14} color={ACCENT} />
+          <Wallet size={14} color={theme.ACCENT} />
           <Text style={styles.openBtnText}>Catat Pembayaran</Text>
         </Pressable>
       )}
@@ -91,7 +87,7 @@ export default function PaymentSection({ job, onChanged }) {
           <TextInput
             style={styles.input}
             placeholder="Jumlah diterima (Rp)"
-            placeholderTextColor={INK3}
+            placeholderTextColor={theme.INK3}
             value={amount}
             onChangeText={setAmount}
             keyboardType="numeric"
@@ -132,41 +128,43 @@ export default function PaymentSection({ job, onChanged }) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)" },
-  row: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
-  },
-  amount: { color: INK, fontWeight: "700", fontSize: 12.5 },
-  method: { color: INK2, fontSize: 11 },
-  verifiedBadge: { flexDirection: "row", alignItems: "center", gap: 3 },
-  verifiedText: { color: GREEN, fontSize: 10.5, fontWeight: "600" },
-  openBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    height: 40, borderRadius: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
-  },
-  openBtnText: { color: ACCENT, fontWeight: "600", fontSize: 12.5 },
-  input: {
-    backgroundColor: "rgba(255,255,255,0.06)", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
-    color: INK, fontSize: 14,
-  },
-  methodRow: { flexDirection: "row", gap: 6 },
-  methodChip: {
-    flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: 10, borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.15)",
-  },
-  methodChipActive: { borderColor: ACCENT, backgroundColor: "rgba(76,141,255,0.12)" },
-  methodChipText: { color: INK2, fontSize: 11.5, fontWeight: "600" },
-  methodChipTextActive: { color: ACCENT },
-  err: { color: RED, fontSize: 11.5 },
-  btnRow: { flexDirection: "row", gap: 8 },
-  secondaryBtn: {
-    alignItems: "center", justifyContent: "center", paddingVertical: 10, borderRadius: 10,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
-  },
-  secondaryBtnText: { color: INK2, fontWeight: "600", fontSize: 12.5 },
-  primaryBtn: { backgroundColor: ACCENT, borderRadius: 10, paddingVertical: 10, alignItems: "center", justifyContent: "center" },
-  primaryBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 12.5 },
-  disabled: { opacity: 0.5 },
-});
+function makeStyles(t) {
+  return StyleSheet.create({
+    wrap: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: t.BORDER },
+    row: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+      backgroundColor: t.FIELD_BG, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
+    },
+    amount: { color: t.INK, fontWeight: "700", fontSize: 12.5 },
+    method: { color: t.INK2, fontSize: 11 },
+    verifiedBadge: { flexDirection: "row", alignItems: "center", gap: 3 },
+    verifiedText: { color: t.GREEN, fontSize: 10.5, fontWeight: "600" },
+    openBtn: {
+      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+      height: 40, borderRadius: 10, borderWidth: 1, borderColor: t.BORDER,
+    },
+    openBtnText: { color: t.ACCENT, fontWeight: "600", fontSize: 12.5 },
+    input: {
+      backgroundColor: t.FIELD_BG, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+      color: t.INK, fontSize: 14,
+    },
+    methodRow: { flexDirection: "row", gap: 6 },
+    methodChip: {
+      flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: 10, borderWidth: 1.5,
+      borderColor: t.BORDER,
+    },
+    methodChipActive: { borderColor: t.ACCENT, backgroundColor: t.ACCENT_BG },
+    methodChipText: { color: t.INK2, fontSize: 11.5, fontWeight: "600" },
+    methodChipTextActive: { color: t.ACCENT },
+    err: { color: t.RED, fontSize: 11.5 },
+    btnRow: { flexDirection: "row", gap: 8 },
+    secondaryBtn: {
+      alignItems: "center", justifyContent: "center", paddingVertical: 10, borderRadius: 10,
+      borderWidth: 1, borderColor: t.BORDER,
+    },
+    secondaryBtnText: { color: t.INK2, fontWeight: "600", fontSize: 12.5 },
+    primaryBtn: { backgroundColor: t.ACCENT, borderRadius: 10, paddingVertical: 10, alignItems: "center", justifyContent: "center" },
+    primaryBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 12.5 },
+    disabled: { opacity: 0.5 },
+  });
+}

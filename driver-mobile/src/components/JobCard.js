@@ -1,28 +1,18 @@
 // Port dari JobCard di frontend/src/pages/DriverJobs.jsx — state machine
-// SAMA PERSIS (idle→starting/arriving→completing/failing), foto WAJIB tiap
-// tahap (FR-D-07 "tanpa kecuali" utk foto kegagalan, ditegakkan backend —
-// UI di sini cuma mencerminkan itu, bukan sumber kebenaran validasinya).
-// TTD penerima SENGAJA TIDAK ada (keputusan owner eksplisit, sama dengan
-// web — lihat catatan panjang di DriverJobs.jsx). Pencatatan pembayaran
-// (PaymentSection, 10 Sep 2026) menyusul milestone ini — gap yang
-// dilaporkan owner: fitur ini sudah lama ada di backend+web, belum pernah
-// ada di app.
-import React, { useState } from "react";
-import { View, Text, Pressable, TextInput, StyleSheet, Linking, Alert } from "react-native";
+// SAMA PERSIS (idle→completing/failing, mulai/tiba 1 ketuk tanpa foto sejak
+// 10 Sep 2026), foto WAJIB tiap tahap yang masih butuh (FR-D-07 "tanpa
+// kecuali" utk foto kegagalan, ditegakkan backend — UI di sini cuma
+// mencerminkan itu, bukan sumber kebenaran validasinya). TTD penerima
+// SENGAJA TIDAK ada (keputusan owner eksplisit, sama dengan web). Light/
+// dark ikut sistem HP (lihat src/theme.js).
+import React, { useMemo, useState } from "react";
+import { View, Text, Pressable, TextInput, StyleSheet, Linking } from "react-native";
 import { MapPin, Phone, Loader2 } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import PaymentSection from "./PaymentSection";
 import { performSubmit } from "../lib/submitJobAction";
 import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, estJamUntukTampilan, JOB_STATUS_REAL } from "../lib/jobHelpers";
-
-const NAVY_SURFACE = "#171B2E";
-const INK = "#F5F5F7";
-const INK2 = "rgba(245,245,247,0.62)";
-const INK3 = "rgba(245,245,247,0.40)";
-const ACCENT = "#4C8DFF";
-const GREEN = "#30D158";
-const RED = "#FF453A";
-const ORANGE = "#FF9F0A";
+import { useTheme } from "../hooks/useTheme";
 
 const FAIL_REASONS_PICKUP = [
   { value: "Customer tidak ada di rumah", label: "Customer Tidak Ada" },
@@ -35,12 +25,14 @@ const FAIL_REASONS_DELIVERY = [
   { value: "Customer minta reschedule", label: "Minta Reschedule" },
 ];
 
-const STATUS_TONE = {
-  ASSIGNED: ACCENT, EN_ROUTE: ACCENT, ARRIVED: ACCENT,
-  COMPLETED: GREEN, FAILED: RED, SCHEDULED: INK3, UNSCHEDULED: INK3, RESCHEDULED: ORANGE,
-};
-
 export default function JobCard({ job, onChanged }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
+  const STATUS_TONE = useMemo(() => ({
+    ASSIGNED: theme.ACCENT, EN_ROUTE: theme.ACCENT, ARRIVED: theme.ACCENT,
+    COMPLETED: theme.GREEN, FAILED: theme.RED, SCHEDULED: theme.INK3, UNSCHEDULED: theme.INK3, RESCHEDULED: theme.ORANGE,
+  }), [theme]);
+
   const [mode, setMode] = useState("idle"); // idle | completing | failing
   const [photos, setPhotos] = useState([]);
   const [note, setNote] = useState("");
@@ -102,8 +94,8 @@ export default function JobCard({ job, onChanged }) {
             {jobLabelOf(job)} · {orderNumberOf(job) || "—"} · {job.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
           </Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: (STATUS_TONE[job.status] || INK3) + "26" }]}>
-          <Text style={[styles.statusBadgeText, { color: STATUS_TONE[job.status] || INK2 }]}>{statusInfo.label}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: (STATUS_TONE[job.status] || theme.INK3) + "26" }]}>
+          <Text style={[styles.statusBadgeText, { color: STATUS_TONE[job.status] || theme.INK2 }]}>{statusInfo.label}</Text>
         </View>
       </View>
 
@@ -113,13 +105,13 @@ export default function JobCard({ job, onChanged }) {
       <View style={styles.quickActions}>
         {maps && (
           <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(maps)}>
-            <MapPin size={13} color={ACCENT} />
+            <MapPin size={13} color={theme.ACCENT} />
             <Text style={styles.quickBtnText}>Peta</Text>
           </Pressable>
         )}
         {phone && (
           <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(`tel:${phone}`)}>
-            <Phone size={13} color={ACCENT} />
+            <Phone size={13} color={theme.ACCENT} />
             <Text style={styles.quickBtnText}>Telepon</Text>
           </Pressable>
         )}
@@ -173,7 +165,7 @@ export default function JobCard({ job, onChanged }) {
           <TextInput
             style={styles.noteInput}
             placeholder="Catatan (opsional)"
-            placeholderTextColor={INK3}
+            placeholderTextColor={theme.INK3}
             value={note}
             onChangeText={setNote}
             multiline
@@ -211,7 +203,7 @@ export default function JobCard({ job, onChanged }) {
           <TextInput
             style={styles.noteInput}
             placeholder="Catatan (opsional)"
-            placeholderTextColor={INK3}
+            placeholderTextColor={theme.INK3}
             value={note}
             onChangeText={setNote}
             multiline
@@ -238,34 +230,36 @@ export default function JobCard({ job, onChanged }) {
   );
 }
 
-const styles = StyleSheet.create({
-  card: { backgroundColor: NAVY_SURFACE, borderRadius: 16, padding: 14, marginBottom: 12 },
-  headerRow: { flexDirection: "row", alignItems: "flex-start" },
-  customerName: { color: INK, fontSize: 15, fontWeight: "700" },
-  jobMeta: { color: INK2, fontSize: 11, marginTop: 2 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100 },
-  statusBadgeText: { fontSize: 10.5, fontWeight: "700" },
-  detailLine: { color: INK2, fontSize: 12, marginTop: 6 },
-  quickActions: { flexDirection: "row", gap: 8, marginTop: 10 },
-  quickBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(76,141,255,0.12)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
-  quickBtnText: { color: ACCENT, fontSize: 11.5, fontWeight: "600" },
-  error: { color: RED, fontSize: 12, marginTop: 10 },
-  primaryBtn: { backgroundColor: ACCENT, borderRadius: 12, paddingVertical: 12, alignItems: "center", justifyContent: "center", marginTop: 12 },
-  primaryBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13.5 },
-  secondaryBtn: { borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", borderRadius: 12, paddingVertical: 12, alignItems: "center", justifyContent: "center", marginTop: 12 },
-  secondaryBtnText: { color: INK2, fontWeight: "600", fontSize: 13.5 },
-  dangerBtn: { backgroundColor: RED, borderRadius: 12, paddingVertical: 12, alignItems: "center", justifyContent: "center", marginTop: 12 },
-  disabled: { opacity: 0.4 },
-  btnRow: { flexDirection: "row", gap: 8 },
-  form: { marginTop: 12, gap: 10 },
-  label: { fontSize: 10.5, fontWeight: "700", color: INK2, textTransform: "uppercase", letterSpacing: 0.4 },
-  reasonRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  reasonChip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 100, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" },
-  reasonChipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  reasonChipText: { color: INK2, fontSize: 11.5, fontWeight: "600" },
-  reasonChipTextActive: { color: "#FFFFFF" },
-  noteInput: {
-    backgroundColor: "rgba(255,255,255,0.06)", borderRadius: 10, padding: 10,
-    color: INK, fontSize: 13, minHeight: 60, textAlignVertical: "top",
-  },
-});
+function makeStyles(t) {
+  return StyleSheet.create({
+    card: { backgroundColor: t.SURFACE, borderRadius: 16, padding: 14, marginBottom: 12 },
+    headerRow: { flexDirection: "row", alignItems: "flex-start" },
+    customerName: { color: t.INK, fontSize: 15, fontWeight: "700" },
+    jobMeta: { color: t.INK2, fontSize: 11, marginTop: 2 },
+    statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100 },
+    statusBadgeText: { fontSize: 10.5, fontWeight: "700" },
+    detailLine: { color: t.INK2, fontSize: 12, marginTop: 6 },
+    quickActions: { flexDirection: "row", gap: 8, marginTop: 10 },
+    quickBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.ACCENT_BG, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+    quickBtnText: { color: t.ACCENT, fontSize: 11.5, fontWeight: "600" },
+    error: { color: t.RED, fontSize: 12, marginTop: 10 },
+    primaryBtn: { backgroundColor: t.ACCENT, borderRadius: 12, paddingVertical: 12, alignItems: "center", justifyContent: "center", marginTop: 12 },
+    primaryBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13.5 },
+    secondaryBtn: { borderWidth: 1, borderColor: t.BORDER, borderRadius: 12, paddingVertical: 12, alignItems: "center", justifyContent: "center", marginTop: 12 },
+    secondaryBtnText: { color: t.INK2, fontWeight: "600", fontSize: 13.5 },
+    dangerBtn: { backgroundColor: t.RED, borderRadius: 12, paddingVertical: 12, alignItems: "center", justifyContent: "center", marginTop: 12 },
+    disabled: { opacity: 0.4 },
+    btnRow: { flexDirection: "row", gap: 8 },
+    form: { marginTop: 12, gap: 10 },
+    label: { fontSize: 10.5, fontWeight: "700", color: t.INK2, textTransform: "uppercase", letterSpacing: 0.4 },
+    reasonRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+    reasonChip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 100, borderWidth: 1, borderColor: t.BORDER },
+    reasonChipActive: { backgroundColor: t.ACCENT, borderColor: t.ACCENT },
+    reasonChipText: { color: t.INK2, fontSize: 11.5, fontWeight: "600" },
+    reasonChipTextActive: { color: "#FFFFFF" },
+    noteInput: {
+      backgroundColor: t.FIELD_BG, borderRadius: 10, padding: 10,
+      color: t.INK, fontSize: 13, minHeight: 60, textAlignVertical: "top",
+    },
+  });
+}

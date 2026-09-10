@@ -1,25 +1,21 @@
-// Layar login — palet navy/aksen biru dari mockup "Sano Driver" (sesi
-// sebelumnya: #0A0D16 ground, #4C8DFF aksen — SAMA persis dengan token
+// Layar login — palet dari mockup "Sano Driver" (SAMA persis dengan token
 // delivery-dark.css di web, lihat catatan panjang di driver-app/ Capacitor
-// [styles/driver-app-theme.css]). Endpoint login SAMA dengan web/Sano
-// Messenger (POST /auth/login) — role apa pun bisa login, tapi app ini
-// SENGAJA cuma berguna utk role DRIVER/HELPER (lihat JobListScreen).
-import React, { useState } from "react";
+// [styles/driver-app-theme.css]) — sekarang light/dark ikut sistem HP
+// (10 Sep 2026, lihat src/theme.js & hooks/useTheme.js). Endpoint login
+// SAMA dengan web/Sano Messenger (POST /auth/login) — role apa pun bisa
+// login, layar tujuan beda per role (lihat App.js/lib/roles.js).
+import React, { useMemo, useState } from "react";
 import {
   View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator,
   KeyboardAvoidingView, Platform, Image,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
-
-const NAVY = "#0A0D16";
-const SURFACE = "#171B2E";
-const ACCENT = "#4C8DFF";
-const INK = "#F5F5F7";
-const INK2 = "rgba(245,245,247,0.62)";
-const RED = "#FF453A";
+import { useTheme } from "../hooks/useTheme";
 
 export default function LoginScreen() {
   const { login } = useAuth();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -58,7 +54,7 @@ export default function LoginScreen() {
             value={email}
             onChangeText={setEmail}
             placeholder="nama@email.com"
-            placeholderTextColor={INK2}
+            placeholderTextColor={theme.INK2}
             autoCapitalize="none"
             keyboardType="email-address"
             editable={!busy}
@@ -69,7 +65,7 @@ export default function LoginScreen() {
             value={password}
             onChangeText={setPassword}
             placeholder="••••••••"
-            placeholderTextColor={INK2}
+            placeholderTextColor={theme.INK2}
             secureTextEntry
             editable={!busy}
           />
@@ -89,23 +85,25 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: NAVY },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 24 },
-  logo: { width: 64, height: 64, borderRadius: 16, marginBottom: 16 },
-  title: { fontSize: 24, fontWeight: "800", color: INK, letterSpacing: -0.5 },
-  subtitle: { fontSize: 13, color: INK2, marginTop: 4, marginBottom: 32 },
-  card: { width: "100%", maxWidth: 360, backgroundColor: SURFACE, borderRadius: 20, padding: 20 },
-  label: { fontSize: 11, fontWeight: "700", color: INK2, textTransform: "uppercase", letterSpacing: 0.4 },
-  input: {
-    marginTop: 6, backgroundColor: "rgba(255,255,255,0.06)", borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: INK,
-  },
-  error: { color: RED, fontSize: 12.5, marginTop: 12 },
-  button: {
-    marginTop: 20, backgroundColor: ACCENT, borderRadius: 12, paddingVertical: 14,
-    alignItems: "center", justifyContent: "center",
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
-});
+function makeStyles(t) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: t.NAVY },
+    center: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 24 },
+    logo: { width: 64, height: 64, borderRadius: 16, marginBottom: 16 },
+    title: { fontSize: 24, fontWeight: "800", color: t.INK, letterSpacing: -0.5 },
+    subtitle: { fontSize: 13, color: t.INK2, marginTop: 4, marginBottom: 32 },
+    card: { width: "100%", maxWidth: 360, backgroundColor: t.SURFACE, borderRadius: 20, padding: 20 },
+    label: { fontSize: 11, fontWeight: "700", color: t.INK2, textTransform: "uppercase", letterSpacing: 0.4 },
+    input: {
+      marginTop: 6, backgroundColor: t.FIELD_BG, borderRadius: 12,
+      paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: t.INK,
+    },
+    error: { color: t.RED, fontSize: 12.5, marginTop: 12 },
+    button: {
+      marginTop: 20, backgroundColor: t.ACCENT, borderRadius: 12, paddingVertical: 14,
+      alignItems: "center", justifyContent: "center",
+    },
+    buttonDisabled: { opacity: 0.6 },
+    buttonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
+  });
+}

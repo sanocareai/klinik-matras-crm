@@ -1,8 +1,8 @@
 // Job list sungguhan — milestone 2 (lihat plan driver-mobile). Job
 // terkonfirmasi (start/arrive/complete/fail, foto wajib) SUDAH jalan
-// lewat backend yang SAMA dipakai PWA/APK Capacitor driver-app/. BELUM
-// ada di sini (menyusul): offline queue, GPS tracking, badge push count.
-import React, { useState } from "react";
+// lewat backend yang SAMA dipakai PWA/APK Capacitor driver-app/. Light/
+// dark ikut sistem HP (10 Sep 2026, lihat src/theme.js/useTheme.js).
+import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
 // SafeAreaView BAWAAN react-native TIDAK menghormati status bar di Android
 // (cuma efektif utk notch iOS) — akar bug "layout ketutupan icon
@@ -12,20 +12,18 @@ import { View, Text, Pressable, StyleSheet, ActivityIndicator, RefreshControl } 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../hooks/useTheme";
 import { useMyJobs } from "../hooks/useMyJobs";
 import { useDriverTracking } from "../hooks/useDriverTracking";
 import JobCard from "../components/JobCard";
 import RouteStartCard from "../components/RouteStartCard";
 
-const NAVY = "#0A0D16";
-const INK = "#F5F5F7";
-const INK2 = "rgba(245,245,247,0.62)";
-const ACCENT = "#4C8DFF";
-
 const ACTIVE_STATUSES = ["ASSIGNED", "EN_ROUTE", "ARRIVED"];
 
 export default function JobListScreen() {
   const { user, logout } = useAuth();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { data: jobs, isLoading, error, refetch, isRefetching } = useMyJobs();
   const [showHistory, setShowHistory] = useState(false);
 
@@ -82,7 +80,7 @@ export default function JobListScreen() {
 
       {isLoading ? (
         <View style={styles.center}>
-          <ActivityIndicator color={ACCENT} />
+          <ActivityIndicator color={theme.ACCENT} />
         </View>
       ) : error ? (
         <View style={styles.center}>
@@ -115,27 +113,29 @@ export default function JobListScreen() {
             ) : null
           }
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={ACCENT} />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.ACCENT} />}
         />
       )}
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: NAVY },
-  header: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  title: { fontSize: 22, fontWeight: "800", color: INK },
-  subtitle: { fontSize: 12.5, color: INK2, marginTop: 2 },
-  logoutBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" },
-  logoutText: { color: ACCENT, fontWeight: "700", fontSize: 12.5 },
-  tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 8 },
-  tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100 },
-  tabActive: { backgroundColor: "rgba(76,141,255,0.16)" },
-  tabText: { color: INK2, fontSize: 12.5, fontWeight: "600" },
-  tabTextActive: { color: ACCENT },
-  list: { paddingHorizontal: 16, paddingBottom: 24 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
-  errorText: { color: "#FF453A", fontSize: 13, textAlign: "center" },
-  emptyText: { color: INK2, fontSize: 13, textAlign: "center" },
-});
+function makeStyles(t) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: t.NAVY },
+    header: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+    title: { fontSize: 22, fontWeight: "800", color: t.INK },
+    subtitle: { fontSize: 12.5, color: t.INK2, marginTop: 2 },
+    logoutBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: t.BORDER },
+    logoutText: { color: t.ACCENT, fontWeight: "700", fontSize: 12.5 },
+    tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 8 },
+    tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100 },
+    tabActive: { backgroundColor: t.ACCENT_BG },
+    tabText: { color: t.INK2, fontSize: 12.5, fontWeight: "600" },
+    tabTextActive: { color: t.ACCENT },
+    list: { paddingHorizontal: 16, paddingBottom: 24 },
+    center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
+    errorText: { color: t.RED, fontSize: 13, textAlign: "center" },
+    emptyText: { color: t.INK2, fontSize: 13, textAlign: "center" },
+  });
+}

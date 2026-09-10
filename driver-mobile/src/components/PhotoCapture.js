@@ -4,20 +4,15 @@
 // expo-image-picker (kamera langsung, bukan galeri — bukti serah terima
 // HARUS foto baru, bukan foto lama dari galeri) + expo-image-manipulator
 // utk resize/compress sebelum upload (hemat data driver di lapangan).
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, Pressable, Image, StyleSheet, ScrollView, Alert } from "react-native";
 import { Camera, ImagePlus, X } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
+import { useTheme } from "../hooks/useTheme";
 
 const MAX_WIDTH = 1600;
 const QUALITY = 0.8;
-
-const ACCENT = "#4C8DFF";
-const INK = "#F5F5F7";
-const INK2 = "rgba(245,245,247,0.62)";
-const SURFACE = "rgba(255,255,255,0.06)";
-const RED = "#FF453A";
 
 async function kompres(asset) {
   const out = await ImageManipulator.manipulateAsync(
@@ -29,6 +24,9 @@ async function kompres(asset) {
 }
 
 export default function PhotoCapture({ photos, onChange, label }) {
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
+
   // Kamera & galeri dua-duanya boleh (permintaan owner 10 Sep 2026) —
   // sebagian driver foto dulu pakai app kamera bawaan lalu pilih dari
   // galeri, atau screenshot bukti dari WA. Sama dengan web yang menerima
@@ -78,11 +76,11 @@ export default function PhotoCapture({ photos, onChange, label }) {
           </View>
         ))}
         <Pressable style={styles.addBtn} onPress={ambilKamera}>
-          <Camera size={18} color={ACCENT} />
+          <Camera size={18} color={theme.ACCENT} />
           <Text style={styles.addBtnText}>Kamera</Text>
         </Pressable>
         <Pressable style={styles.addBtn} onPress={ambilGaleri}>
-          <ImagePlus size={18} color={ACCENT} />
+          <ImagePlus size={18} color={theme.ACCENT} />
           <Text style={styles.addBtnText}>Galeri</Text>
         </Pressable>
       </ScrollView>
@@ -90,19 +88,21 @@ export default function PhotoCapture({ photos, onChange, label }) {
   );
 }
 
-const styles = StyleSheet.create({
-  label: { fontSize: 10.5, fontWeight: "700", color: INK2, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 },
-  row: { gap: 8, paddingVertical: 2 },
-  thumbWrap: { position: "relative" },
-  thumb: { width: 64, height: 64, borderRadius: 10, backgroundColor: SURFACE },
-  removeBtn: {
-    position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10,
-    backgroundColor: RED, alignItems: "center", justifyContent: "center",
-  },
-  addBtn: {
-    width: 64, height: 64, borderRadius: 10, backgroundColor: SURFACE,
-    borderWidth: 1, borderColor: "rgba(76,141,255,0.4)", borderStyle: "dashed",
-    alignItems: "center", justifyContent: "center", gap: 3,
-  },
-  addBtnText: { color: ACCENT, fontSize: 9.5, fontWeight: "600" },
-});
+function makeStyles(t) {
+  return StyleSheet.create({
+    label: { fontSize: 10.5, fontWeight: "700", color: t.INK2, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 },
+    row: { gap: 8, paddingVertical: 2 },
+    thumbWrap: { position: "relative" },
+    thumb: { width: 64, height: 64, borderRadius: 10, backgroundColor: t.FIELD_BG },
+    removeBtn: {
+      position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10,
+      backgroundColor: t.RED, alignItems: "center", justifyContent: "center",
+    },
+    addBtn: {
+      width: 64, height: 64, borderRadius: 10, backgroundColor: t.FIELD_BG,
+      borderWidth: 1, borderColor: t.ACCENT + "66", borderStyle: "dashed",
+      alignItems: "center", justifyContent: "center", gap: 3,
+    },
+    addBtnText: { color: t.ACCENT, fontSize: 9.5, fontWeight: "600" },
+  });
+}

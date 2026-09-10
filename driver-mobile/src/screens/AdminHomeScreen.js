@@ -6,24 +6,15 @@
 // /armada/tracking, /armada/issues), nol perubahan backend. Aksi lanjut
 // (reschedule, edit rute, dst) tetap di web untuk sekarang — app ini
 // jawab "gimana progress hari ini" cepat dari HP, bukan menggantikan
-// Route Planner.
+// Route Planner. Light/dark ikut sistem HP (lihat src/theme.js).
 import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Truck, Route, CheckCircle2, XCircle, Clock } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
 import { relatifWaktu } from "../lib/jobHelpers";
-
-const NAVY = "#0A0D16";
-const SURFACE = "#171B2E";
-const INK = "#F5F5F7";
-const INK2 = "rgba(245,245,247,0.62)";
-const INK3 = "rgba(245,245,247,0.40)";
-const ACCENT = "#4C8DFF";
-const GREEN = "#30D158";
-const RED = "#FF453A";
-const ORANGE = "#FF9F0A";
 
 const TABS = [
   { key: "hari-ini", label: "Hari Ini" },
@@ -80,6 +71,8 @@ function ringkasDriver(jobs, tracking) {
 
 export default function AdminHomeScreen() {
   const { user, logout } = useAuth();
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const { data, isLoading, error, refetch, isRefetching } = useAdminToday();
   const [tab, setTab] = useState("hari-ini");
 
@@ -113,24 +106,24 @@ export default function AdminHomeScreen() {
       </View>
 
       {isLoading ? (
-        <View style={styles.center}><ActivityIndicator color={ACCENT} /></View>
+        <View style={styles.center}><ActivityIndicator color={theme.ACCENT} /></View>
       ) : error ? (
         <View style={styles.center}><Text style={styles.errorText}>Gagal memuat: {error.message}</Text></View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.body}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={ACCENT} />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.ACCENT} />}
         >
-          {tab === "hari-ini" && <HariIniView ringkasan={ringkasan} />}
-          {tab === "driver" && <DriverView drivers={drivers} />}
-          {tab === "masalah" && <MasalahView issues={issues} />}
+          {tab === "hari-ini" && <HariIniView ringkasan={ringkasan} theme={theme} styles={styles} />}
+          {tab === "driver" && <DriverView drivers={drivers} theme={theme} styles={styles} />}
+          {tab === "masalah" && <MasalahView issues={issues} theme={theme} styles={styles} />}
         </ScrollView>
       )}
     </SafeAreaView>
   );
 }
 
-function Kpi({ label, value, color }) {
+function Kpi({ label, value, color, styles }) {
   return (
     <View style={styles.kpi}>
       <Text style={[styles.kpiValue, color && { color }]}>{value}</Text>
@@ -139,15 +132,15 @@ function Kpi({ label, value, color }) {
   );
 }
 
-function HariIniView({ ringkasan }) {
+function HariIniView({ ringkasan, theme: t, styles }) {
   return (
     <View style={{ gap: 12 }}>
       <View style={styles.kpiGrid}>
-        <Kpi label="Total Job" value={ringkasan.total} />
-        <Kpi label="Selesai" value={ringkasan.selesai} color={GREEN} />
-        <Kpi label="Jalan" value={ringkasan.jalan} color={ACCENT} />
-        <Kpi label="Gagal" value={ringkasan.gagal} color={RED} />
-        <Kpi label="Sisa" value={ringkasan.sisa} color={INK2} />
+        <Kpi label="Total Job" value={ringkasan.total} styles={styles} />
+        <Kpi label="Selesai" value={ringkasan.selesai} color={t.GREEN} styles={styles} />
+        <Kpi label="Jalan" value={ringkasan.jalan} color={t.ACCENT} styles={styles} />
+        <Kpi label="Gagal" value={ringkasan.gagal} color={t.RED} styles={styles} />
+        <Kpi label="Sisa" value={ringkasan.sisa} color={t.INK2} styles={styles} />
       </View>
 
       <Text style={styles.sectionTitle}>Rute Hari Ini ({ringkasan.routes.length})</Text>
@@ -158,7 +151,7 @@ function HariIniView({ ringkasan }) {
           <View key={r.id} style={styles.card}>
             <View style={styles.rowBetween}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Route size={14} color={ACCENT} />
+                <Route size={14} color={t.ACCENT} />
                 <Text style={styles.cardTitle}>{r.code}</Text>
               </View>
               <Text style={styles.cardMeta}>{r.selesai}/{r.total} selesai{r.gagal > 0 ? ` · ${r.gagal} gagal` : ""}</Text>
@@ -173,7 +166,7 @@ function HariIniView({ ringkasan }) {
   );
 }
 
-function DriverView({ drivers }) {
+function DriverView({ drivers, theme: t, styles }) {
   if (drivers.length === 0) return <Text style={styles.emptyText}>Belum ada driver bertugas hari ini.</Text>;
   return (
     <View style={{ gap: 10 }}>
@@ -183,7 +176,7 @@ function DriverView({ drivers }) {
             <Text style={styles.cardTitle}>{d.name}</Text>
             {d.jalan > 0 ? (
               <View style={styles.liveBadge}>
-                <Truck size={11} color={ACCENT} />
+                <Truck size={11} color={t.ACCENT} />
                 <Text style={styles.liveBadgeText}>Di jalan</Text>
               </View>
             ) : (
@@ -191,14 +184,14 @@ function DriverView({ drivers }) {
             )}
           </View>
           <View style={styles.driverStatsRow}>
-            <Text style={styles.driverStat}><Text style={{ color: GREEN }}>{d.selesai}</Text> selesai</Text>
-            <Text style={styles.driverStat}><Text style={{ color: ACCENT }}>{d.jalan}</Text> jalan</Text>
-            <Text style={styles.driverStat}><Text style={{ color: d.gagal > 0 ? RED : INK2 }}>{d.gagal}</Text> gagal</Text>
-            <Text style={styles.driverStat}><Text style={{ color: INK2 }}>{d.sisa}</Text> sisa</Text>
+            <Text style={styles.driverStat}><Text style={{ color: t.GREEN }}>{d.selesai}</Text> selesai</Text>
+            <Text style={styles.driverStat}><Text style={{ color: t.ACCENT }}>{d.jalan}</Text> jalan</Text>
+            <Text style={styles.driverStat}><Text style={{ color: d.gagal > 0 ? t.RED : t.INK2 }}>{d.gagal}</Text> gagal</Text>
+            <Text style={styles.driverStat}><Text style={{ color: t.INK2 }}>{d.sisa}</Text> sisa</Text>
           </View>
           {d.lastSeen && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
-              <Clock size={11} color={INK3} />
+              <Clock size={11} color={t.INK3} />
               <Text style={styles.lastSeenText}>Posisi terakhir {relatifWaktu(d.lastSeen)}</Text>
             </View>
           )}
@@ -208,11 +201,11 @@ function DriverView({ drivers }) {
   );
 }
 
-function MasalahView({ issues }) {
+function MasalahView({ issues, theme: t, styles }) {
   if (issues.length === 0) {
     return (
       <View style={styles.center}>
-        <CheckCircle2 size={28} color={GREEN} />
+        <CheckCircle2 size={28} color={t.GREEN} />
         <Text style={[styles.emptyText, { marginTop: 8 }]}>Tidak ada masalah terbuka.</Text>
       </View>
     );
@@ -220,10 +213,10 @@ function MasalahView({ issues }) {
   return (
     <View style={{ gap: 10 }}>
       {issues.map((j) => (
-        <View key={j.id} style={[styles.card, { borderColor: "rgba(255,69,58,0.3)", borderWidth: 1 }]}>
+        <View key={j.id} style={[styles.card, { borderColor: t.RED + "4D", borderWidth: 1 }]}>
           <View style={styles.rowBetween}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <XCircle size={14} color={RED} />
+              <XCircle size={14} color={t.RED} />
               <Text style={styles.cardTitle}>{j.order?.customer?.name || "Tanpa nama"}</Text>
             </View>
             <Text style={styles.cardMeta}>{relatifWaktu(j.updatedAt)}</Text>
@@ -238,37 +231,39 @@ function MasalahView({ issues }) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: NAVY },
-  header: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-  title: { fontSize: 22, fontWeight: "800", color: INK },
-  subtitle: { fontSize: 12.5, color: INK2, marginTop: 2 },
-  logoutBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" },
-  logoutText: { color: ACCENT, fontWeight: "700", fontSize: 12.5 },
-  tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 8 },
-  tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100 },
-  tabActive: { backgroundColor: "rgba(76,141,255,0.16)" },
-  tabText: { color: INK2, fontSize: 12.5, fontWeight: "600" },
-  tabTextActive: { color: ACCENT },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: 40 },
-  errorText: { color: RED, fontSize: 13, textAlign: "center" },
-  emptyText: { color: INK2, fontSize: 13, textAlign: "center" },
-  body: { paddingHorizontal: 16, paddingBottom: 24 },
-  kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  kpi: { flexBasis: "31%", flexGrow: 1, backgroundColor: SURFACE, borderRadius: 14, paddingVertical: 12, alignItems: "center" },
-  kpiValue: { color: INK, fontSize: 20, fontWeight: "800" },
-  kpiLabel: { color: INK2, fontSize: 10.5, marginTop: 2, fontWeight: "600" },
-  sectionTitle: { color: INK, fontSize: 14, fontWeight: "700", marginTop: 4 },
-  card: { backgroundColor: SURFACE, borderRadius: 14, padding: 12 },
-  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  cardTitle: { color: INK, fontSize: 13.5, fontWeight: "700" },
-  cardMeta: { color: INK2, fontSize: 11, marginTop: 1 },
-  progressTrack: { height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.08)", marginTop: 8, overflow: "hidden" },
-  progressFill: { height: 5, borderRadius: 3, backgroundColor: ACCENT },
-  liveBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(76,141,255,0.14)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
-  liveBadgeText: { color: ACCENT, fontSize: 10.5, fontWeight: "700" },
-  driverStatsRow: { flexDirection: "row", gap: 14, marginTop: 8 },
-  driverStat: { color: INK2, fontSize: 11.5, fontWeight: "600" },
-  lastSeenText: { color: INK3, fontSize: 10.5 },
-  issueReason: { color: ORANGE, fontSize: 12, fontWeight: "600", marginTop: 6 },
-});
+function makeStyles(t) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: t.NAVY },
+    header: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+    title: { fontSize: 22, fontWeight: "800", color: t.INK },
+    subtitle: { fontSize: 12.5, color: t.INK2, marginTop: 2 },
+    logoutBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: t.BORDER },
+    logoutText: { color: t.ACCENT, fontWeight: "700", fontSize: 12.5 },
+    tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 8 },
+    tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100 },
+    tabActive: { backgroundColor: t.ACCENT_BG },
+    tabText: { color: t.INK2, fontSize: 12.5, fontWeight: "600" },
+    tabTextActive: { color: t.ACCENT },
+    center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: 40 },
+    errorText: { color: t.RED, fontSize: 13, textAlign: "center" },
+    emptyText: { color: t.INK2, fontSize: 13, textAlign: "center" },
+    body: { paddingHorizontal: 16, paddingBottom: 24 },
+    kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    kpi: { flexBasis: "31%", flexGrow: 1, backgroundColor: t.SURFACE, borderRadius: 14, paddingVertical: 12, alignItems: "center" },
+    kpiValue: { color: t.INK, fontSize: 20, fontWeight: "800" },
+    kpiLabel: { color: t.INK2, fontSize: 10.5, marginTop: 2, fontWeight: "600" },
+    sectionTitle: { color: t.INK, fontSize: 14, fontWeight: "700", marginTop: 4 },
+    card: { backgroundColor: t.SURFACE, borderRadius: 14, padding: 12 },
+    rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    cardTitle: { color: t.INK, fontSize: 13.5, fontWeight: "700" },
+    cardMeta: { color: t.INK2, fontSize: 11, marginTop: 1 },
+    progressTrack: { height: 5, borderRadius: 3, backgroundColor: t.TRACK_BG, marginTop: 8, overflow: "hidden" },
+    progressFill: { height: 5, borderRadius: 3, backgroundColor: t.ACCENT },
+    liveBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.ACCENT_BG, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
+    liveBadgeText: { color: t.ACCENT, fontSize: 10.5, fontWeight: "700" },
+    driverStatsRow: { flexDirection: "row", gap: 14, marginTop: 8 },
+    driverStat: { color: t.INK2, fontSize: 11.5, fontWeight: "600" },
+    lastSeenText: { color: t.INK3, fontSize: 10.5 },
+    issueReason: { color: t.ORANGE, fontSize: 12, fontWeight: "600", marginTop: 6 },
+  });
+}
