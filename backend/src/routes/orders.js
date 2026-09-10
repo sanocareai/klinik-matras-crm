@@ -1408,9 +1408,15 @@ orderRouter.post("/:id/warranty/send", async (req, res) => {
 // ── GET /api/orders/:id/timeline — riwayat status satu order ───────────────
 orderRouter.get("/:id/timeline", async (req, res) => {
   try {
+    // hasComplaint/complaintDate/complaintDetail (10 September 2026) —
+    // supaya RiwayatRevisiKendala (dipakai BERSAMA OrderTimelineDrawer.jsx
+    // & JobDetailDrawer.jsx, lihat komentar panjang di sana) tidak perlu
+    // order LENGKAP dari pemanggil (JobDetailDrawer cuma punya job.order
+    // versi ringkas, TANPA field komplain) — endpoint ini jadi SATU sumber
+    // mandiri, satu fetch cukup untuk kedua drawer.
     const order = await prisma.order.findUnique({
       where: { id: req.params.id },
-      select: { id: true, status: true, createdAt: true },
+      select: { id: true, status: true, createdAt: true, hasComplaint: true, complaintDate: true, complaintDetail: true },
     });
     if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
 
@@ -1485,6 +1491,9 @@ orderRouter.get("/:id/timeline", async (req, res) => {
       riwayatKosong: timeline.length === 0,
       revisions,
       issueJobs,
+      hasComplaint: order.hasComplaint,
+      complaintDate: order.complaintDate,
+      complaintDetail: order.complaintDetail,
     });
   } catch (err) {
     console.error("order timeline error:", err);

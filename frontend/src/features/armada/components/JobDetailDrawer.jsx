@@ -12,6 +12,7 @@ import ChipPilih from "./ChipPilih.jsx";
 import PasteUploadZone from "./PasteUploadZone.jsx";
 import DateTimePicker from "@/components/ui/date-time-picker.jsx";
 import { CustomerProfileCard } from "./JobBadges.jsx";
+import RiwayatRevisiKendala from "./RiwayatRevisiKendala.jsx";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 import {
   JOB_STATUS_REAL, JOB_TYPE_REAL, EDITABLE_JOB_STATUSES, customerOf, orderNumberOf, mapsUrl, orderOf,
@@ -144,6 +145,15 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   // ketikan tidak langsung tersimpan sebelum tombol Simpan ditekan.
   const [showRescheduleNote, setShowRescheduleNote] = useState(false);
   const [rescheduleNoteReason, setRescheduleNoteReason] = useState("");
+  // Riwayat Revisi & Kendala (10 September 2026, kasus Richard
+  // RES-30082026-201 — permintaan owner "source code harus sama, seperti
+  // di tab semua order") — SATU komponen (RiwayatRevisiKendala.jsx) & SATU
+  // endpoint (GET /orders/:id/timeline) yang SAMA dengan OrderTimelineDrawer
+  // ("Rincian Order"), bukan implementasi kedua yang bisa diam-diam
+  // menyimpang. Drawer ini sebelumnya cuma bilang "riwayat aktivitas belum
+  // tersedia" — datanya SUDAH ADA (dipakai tab Semua Order), cuma belum
+  // pernah di-fetch dari sini.
+  const [timelineData, setTimelineData] = useState(null);
 
   // Draft Alamat/Catatan/Jam (31 Agustus 2026, D-039 — laporan owner:
   // "form order-nya bisa buat lebih lengkap?", drawer ini sebelumnya cuma
@@ -206,6 +216,20 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
       .then(([d, h, v]) => { setDrivers(d || []); setHelpers(h || []); setVehicles((v.vehicles || []).filter((x) => x.active)); })
       .catch(() => {});
   }, [jobId]);
+
+  // Riwayat Revisi & Kendala — SATU sumber dengan OrderTimelineDrawer,
+  // lihat catatan panjang di deklarasi timelineData di atas. Menunggu
+  // job.order ke-load dulu (butuh order.id), jadi terpisah dari effect
+  // muat() di atas alih-alih ditumpuk di sana.
+  useEffect(() => {
+    const orderId = orderOf(job)?.id;
+    if (!orderId) { setTimelineData(null); return; }
+    let batal = false;
+    api.getOrderTimeline(orderId)
+      .then((d) => { if (!batal) setTimelineData(d); })
+      .catch(() => { if (!batal) setTimelineData(null); });
+    return () => { batal = true; };
+  }, [job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const units = job?.units?.map((ju) => ju.unit) || [];
   const editable = job && EDITABLE_JOB_STATUSES.has(job.status);
@@ -1126,10 +1150,23 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                   </div>
                 )}
 
+                {/* Riwayat Revisi & Kendala (10 Sep 2026) — SATU sumber
+                    dengan tab Semua Order, lihat catatan di deklarasi
+                    timelineData. null kalau order ini tidak punya revisi/
+                    kendala apa pun (mayoritas job) — tidak render apa-apa. */}
+                <RiwayatRevisiKendala
+                  className="mt-5 border-t border-line pt-3"
+                  revisions={timelineData?.revisions || []}
+                  issueJobs={timelineData?.issueJobs || []}
+                  hasComplaint={timelineData?.hasComplaint}
+                  complaintDetail={timelineData?.complaintDetail}
+                  complaintDate={timelineData?.complaintDate}
+                />
+
                 {/* Jujur soal yang belum ada — lihat catatan di kepala file */}
                 <p className="mt-5 border-t border-line pt-3 text-[11px] leading-relaxed text-ink3">
-                  Area, SLA, prioritas, dan riwayat aktivitas belum tersedia — field-nya
-                  belum ada di database. Ditambahkan bersama Tahap 5.
+                  Area, SLA, dan prioritas belum tersedia — field-nya belum ada
+                  di database. Ditambahkan bersama Tahap 5.
                 </p>
               </>
             )}
