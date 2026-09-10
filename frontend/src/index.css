@@ -2405,8 +2405,22 @@ body {
 .sidebar-collapsed .sidebar {
   width: 72px;
 }
+/* D-149 (9 September 2026, laporan owner: "icon logo masih menyatu dengan
+   icon collapse/expand sidebar") — ROOT CAUSE: sidebar menyempit lebar
+   totalnya 72px (lihat `.sidebar-collapsed .sidebar { width: 72px }` di
+   atas), dikurangi padding kiri+kanan 12px+12px = 48px ruang konten. Logo
+   (.sidebar-brand-icon, 36px, flex-shrink:0) + tombol collapse
+   (.sidebar-collapse-btn, 28px, flex-shrink:0) BERSEBELAHAN butuh minimal
+   64px — lebih lebar dari 48px yang tersedia, jadi keduanya SALING
+   TUMPANG TINDIH alih-alih terpisah rapi. Fix: susun VERTIKAL (logo di
+   atas, tombol collapse di bawahnya) bukan sejajar horizontal — masing-
+   masing dapat baris sendiri, tidak pernah lagi berebut lebar 48px yang
+   sama sempitnya, berapa pun ukuran ikon berubah nanti. */
 .sidebar-collapsed .sidebar-brand {
-  padding: 18px 12px; justify-content: center; gap: 0;
+  flex-direction: column;
+  padding: 16px 12px 12px;
+  justify-content: center;
+  gap: 10px;
 }
 /* Tooltip item nav saat menyempit — muncul di KANAN sidebar. Dipasang di
    .sidebar-link (position:relative) dan tidak boleh ikut ter-clip, makanya
