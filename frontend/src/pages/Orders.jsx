@@ -925,7 +925,17 @@ export default function Orders() {
   }
 
   return (
-    <PageContainer>
+    // D-150 (10 September 2026, laporan owner: "card ga ikut melebar ketika
+    // full screen") — PageContainer default `max-w-[1400px]` (page.jsx) pas
+    // untuk halaman berbentuk form/bacaan, tapi di layar lebar halaman ini
+    // JUSTRU menyisakan ruang kosong besar kiri-kanan sementara tabelnya
+    // sendiri (banyak kolom: ID/Pelanggan/Kategori/Layanan/Ukuran/Status/
+    // Kelengkapan Data/Pembayaran/Sales) sudah butuh scroll horizontal DI
+    // DALAM ruang yang dibatasi itu. `max-w-none` di sini HANYA untuk
+    // halaman ini (twMerge resolve konflik lewat className, tidak mengubah
+    // PageContainer itu sendiri) — halaman lain yang lebih pas dibatasi
+    // (Pengaturan, dst) tidak ikut berubah.
+    <PageContainer className="max-w-none">
       <PageHeader
         title="Order"
         subtitle={
