@@ -1,7 +1,7 @@
 import React from "react";
 import {
   Clock, Phone, PackageOpen, Truck, RotateCcw, CalendarCheck2, MapPinned,
-  Wrench, PackageCheck, CheckCircle2, XCircle, Hourglass, MapPinOff,
+  Wrench, PackageCheck, CheckCircle2, XCircle, Hourglass, MapPinOff, Undo2,
 } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -13,6 +13,7 @@ import {
 } from "../jobStatus.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS, orderStatusVariant } from "@/utils/format.js";
+import { REVISION_STATUS } from "../revisionStatus.js";
 
 // ─── Badge Sales Person & Estimasi Durasi (D-043, 2 September 2026) ──────────
 // Laporan owner: dispatcher perlu tahu SIAPA sales pemilik order (buat
@@ -252,6 +253,50 @@ export function MapsLinkMissingBadge({ job, className, variant = "pill" }) {
       )}
     >
       <MapPinOff size={11} className="shrink-0" /> Tanpa link Maps
+    </span>
+  );
+}
+
+// Job hasil Revisi/Retur (10 September 2026, laporan owner: kasus Richard
+// RES-30082026-201 — job pengiriman ULANG hasil revisi tidak kelihatan
+// beda sama sekali dari job biasa di papan Jadwal & Penugasan/Route
+// Planner, cuma bisa diketahui lewat teks accessNotes kalau kebetulan
+// dibaca. "gue ingin ... di rute delivery, jadwal dan penugasan bisa
+// tambah badge ... sebagai penanda".
+//
+// MERAH (bukan menimpa hijau/biru accent bar yang SUDAH punya arti sendiri
+// — hijau=Pengiriman, biru=Pengambilan, oranye=Sewa, lihat jobAccentBarStyle
+// di jobStatus.js yang sudah berkali-kali direvisi owner. Menimpa artinya
+// di sini bikin dispatcher yang sudah hafal skema warna itu salah baca).
+// Badge TERPISAH, bukan warna baru di garis aksen — job.revisionLinks
+// (terbalik dari UnitRevision.jobId, lihat jobInclude armada.js) biasanya
+// 0 baris, jadi TIDAK render apa pun untuk mayoritas job normal.
+export function RevisionBadge({ job, className, variant = "pill" }) {
+  const revision = job?.revisionLinks?.[0];
+  if (!revision) return null;
+  const statusLabel = REVISION_STATUS[revision.status]?.label || revision.status;
+  const title = `Job hasil Revisi/Retur — status: ${statusLabel}`;
+  if (variant === "dot") {
+    return (
+      <span
+        title={title}
+        aria-label={title}
+        className={cn(
+          "pointer-events-none absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red ring-2 ring-[var(--dh-elevated)]",
+          className
+        )}
+      />
+    );
+  }
+  return (
+    <span
+      title={title}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full bg-redbg px-2 py-0.5 text-[10.5px] font-semibold text-red",
+        className
+      )}
+    >
+      <Undo2 size={11} className="shrink-0" /> Revisi: {statusLabel}
     </span>
   );
 }

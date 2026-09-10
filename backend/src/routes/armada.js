@@ -542,6 +542,15 @@ const jobInclude = {
   // di rute RTE-XXX" begitu job.routeId terisi, TANPA panggilan API kedua
   // ke GET /routes/:id cuma untuk kode & status rutenya.
   route: { select: { id: true, code: true, status: true } },
+  // revisionLinks (10 September 2026, kasus Richard RES-30082026-201) —
+  // laporan owner: "di rute delivery, jadwal dan penugasan bisa tambah
+  // badge ... sebagai penanda" — job pengambilan/pengiriman ULANG hasil
+  // revisi (Retur) TIDAK PERNAH kelihatan beda dari job biasa di papan
+  // Jadwal & Penugasan/Route Planner, driver/dispatcher cuma tahu lewat
+  // teks accessNotes kalau kebetulan dibaca. Field terbalik dari
+  // UnitRevision.jobId (lihat schema.prisma) — biasanya 0 atau 1 baris,
+  // select seminimal mungkin (badge cuma butuh tahu ADA & jenisnya).
+  revisionLinks: { select: { id: true, trigger: true, status: true } },
   // rescheduledBy (6 September 2026) — siapa yang mencatat reschedule
   // (baik dari jalur Gagal->reschedule yang lama, maupun catatan
   // retroaktif job Selesai yang baru, lihat POST /jobs/:id/reschedule-note)
