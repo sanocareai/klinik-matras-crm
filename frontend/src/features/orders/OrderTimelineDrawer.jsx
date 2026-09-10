@@ -3,8 +3,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
   Wallet, PackageCheck, Wrench, Truck, PenTool, Hash,
-  Bed, HeartPulse, Tag, FileText, Ban, ShieldCheck,
+  Bed, HeartPulse, Tag, FileText, Ban, ShieldCheck, Undo2, AlertTriangle,
 } from "lucide-react";
+import { REVISION_STATUS, REVISION_TRIGGER } from "@/features/armada/revisionStatus.js";
+import { ISSUE_STATUS } from "@/features/armada/issueStatus.js";
+import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import InvoicePanel from "./InvoicePanel.jsx";
 import WarrantyPanel from "./WarrantyPanel.jsx";
 import ReadinessPanel from "./ReadinessPanel.jsx";
@@ -949,6 +952,90 @@ const TONE = {
   READY: "bg-accent", SHIPPING: "bg-accent", DELIVERED: "bg-green", CANCELLED: "bg-red",
 };
 
+// Derive status ringkas job kendala/reschedule — SAMA logika dengan
+// deriveIssueStatus() di backend/src/routes/armada.js, disalin ringkas di
+// sini alih-alih backend mengirim field turunan lagi (endpoint ini sudah
+// beri data mentahnya, cukup 1 fungsi kecil, bukan alasan bikin dependency
+// baru antar route file).
+function issueStatusOf(j) {
+  if (j.status === "FAILED") return j.rescheduleReason ? "RESCHEDULED" : "OPEN";
+  if (j.rescheduleReason) return "RESCHEDULED";
+  return null;
+}
+
+// Riwayat Revisi (Retur) & Kendala/Reschedule — SATU tempat, dipakai
+// BERSAMA oleh Sales/Produksi/Delivery karena OrderTimelineDrawer ini
+// sendiri sudah dipakai bersama ketiganya (10 September 2026, permintaan
+// owner: "gue ingin di semua divisi ... request, revisi, komplain,
+// reschedule semua muncul di masing-masing divisi" — kasus Richard
+// RES-30082026-201 jadi pemicunya). SEBELUM ini cuma ada kotak statis
+// "Ada komplain" (order.hasComplaint) tanpa riwayat nyata sama sekali.
+function RiwayatRevisiKendala({ order, revisions, issueJobs }) {
+  const kosong = revisions.length === 0 && issueJobs.length === 0;
+  if (kosong && !order.hasComplaint) return null;
+
+  return (
+    <div className="mt-5">
+      <h4 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">
+        <Undo2 size={12} aria-hidden /> Revisi & Kendala
+      </h4>
+      <div className="flex flex-col gap-2">
+        {revisions.map((r) => (
+          <div key={r.id} className="rounded-xl border-l-[3px] border-accent bg-surface p-2.5 shadow-card">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <StatusBadge map={REVISION_TRIGGER} value={r.trigger} />
+                <StatusBadge map={REVISION_STATUS} value={r.status} />
+              </div>
+              {r.unit?.unitCode && <span className="font-mono text-[10.5px] text-ink3">{r.unit.unitCode}</span>}
+            </div>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-ink">{r.complaint}</p>
+            {r.note && <p className="mt-1 text-[11px] italic leading-relaxed text-ink2">Catatan tim: {r.note}</p>}
+            <p className="mt-1.5 text-[10.5px] text-ink3">
+              {formatTanggal(r.createdAt)}{r.createdBy?.name && ` · diajukan oleh ${r.createdBy.name}`}
+            </p>
+          </div>
+        ))}
+
+        {issueJobs.map((j) => {
+          const status = issueStatusOf(j);
+          return (
+            <div key={j.id} className="rounded-xl border-l-[3px] border-orange bg-surface p-2.5 shadow-card">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11.5px] font-semibold text-ink">
+                  {j.type === "PICKUP" ? "Pengambilan" : "Pengiriman"} gagal/dijadwalkan ulang
+                </span>
+                <StatusBadge map={ISSUE_STATUS} value={status} />
+              </div>
+              {j.failureReason && <p className="mt-1 text-[12px] leading-relaxed text-ink">Alasan gagal: {j.failureReason}</p>}
+              {j.rescheduleReason && <p className="mt-1 text-[12px] leading-relaxed text-ink">{j.rescheduleReason}</p>}
+              <p className="mt-1.5 text-[10.5px] text-ink3">
+                {j.rescheduledAt && formatTanggal(j.rescheduledAt)}
+                {j.rescheduledBy?.name && ` · oleh ${j.rescheduledBy.name}`}
+                {j.customerConfirmedReschedule && " · pelanggan sudah konfirmasi"}
+              </p>
+            </div>
+          );
+        })}
+
+        {/* Fallback: hasComplaint sales flag TANPA revisi/job kendala
+            tertaut (mis. baru dilaporkan, belum masuk sistem Retur sama
+            sekali) — tetap tampil supaya tidak hilang dari radar. */}
+        {kosong && order.hasComplaint && (
+          <div className="flex items-start gap-2 rounded-xl bg-redbg px-3 py-2.5">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-red" />
+            <div>
+              <p className="text-[12px] font-bold text-red">Ada komplain (belum masuk sistem Retur)</p>
+              {order.complaintDetail && <p className="mt-1 text-[11px] leading-relaxed text-ink">{order.complaintDetail}</p>}
+              {order.complaintDate && <p className="mt-1 text-[11px] text-ink3">{formatTanggal(order.complaintDate)}</p>}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // `canEditStatus` (D-086) TIDAK LAGI dibaca di sini sejak 7 September 2026 —
 // Status sekarang SELALU editable di ringkasan atas drawer utk semua
 // pemanggil (lihat komentar di JSX-nya). Prop-nya SENGAJA tetap diterima
@@ -1233,16 +1320,8 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
           </>
           )}
 
-          {o.hasComplaint && (
-            <div className="mt-5 rounded-xl bg-redbg px-3.5 py-3">
-              <p className="text-xs font-bold text-red">Ada komplain</p>
-              {o.complaintDetail && (
-                <p className="mt-1 text-[11px] leading-relaxed text-ink">{o.complaintDetail}</p>
-              )}
-              {o.complaintDate && (
-                <p className="mt-1 text-[11px] text-ink3">{formatTanggal(o.complaintDate)}</p>
-              )}
-            </div>
+          {tab === "status" && (
+            <RiwayatRevisiKendala order={o} revisions={data?.revisions || []} issueJobs={data?.issueJobs || []} />
           )}
         </div>
       </motion.aside>

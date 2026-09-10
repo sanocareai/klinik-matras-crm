@@ -1437,6 +1437,44 @@ orderRouter.get("/:id/timeline", async (req, res) => {
       };
     });
 
+    // Revisi (Retur) & kendala/reschedule (10 September 2026, laporan owner:
+    // "card per order nya juga ada keterangan, history, karna saat ini
+    // jujur belum ada" — kasus Richard RES-30082026-201). SEBELUM ini,
+    // OrderTimelineDrawer (dipakai BERSAMA oleh Sales/Produksi/Delivery,
+    // satu komponen SATU tempat) cuma tahu order.hasComplaint sebagai kotak
+    // statis — tidak pernah menunjukkan riwayat NYATA-nya (kapan diajukan,
+    // status sekarang, siapa yang menangani). Dua sumber DIGABUNG di sini
+    // supaya sales/produksi/delivery lihat riwayat yang SAMA PERSIS, bukan
+    // 3 potongan berbeda di 3 layar berbeda:
+    //   - unit_revisions: sistem Retur (klaim garansi/trial kenyamanan/
+    //     komplain saat antar) — lihat routes/armada.js POST /revisions.
+    //   - jobs (yang PUNYA failureReason/rescheduleReason): kegagalan &
+    //     reschedule pengambilan/pengiriman — SAMA data yang dipakai
+    //     "Kendala & Reschedule" (GET /armada/issues), cuma disaring per
+    //     order ini alih-alih daftar lintas-order.
+    const revisions = await prisma.unitRevision.findMany({
+      where: { unit: { orderId: req.params.id } },
+      include: {
+        unit: { select: { id: true, unitCode: true } },
+        job: { select: { id: true, type: true, status: true, scheduledDate: true } },
+        createdBy: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const issueJobs = await prisma.job.findMany({
+      where: {
+        orderId: req.params.id,
+        OR: [{ status: "FAILED" }, { rescheduleReason: { not: null } }],
+      },
+      select: {
+        id: true, type: true, status: true, failureReason: true,
+        rescheduleReason: true, rescheduledAt: true, customerConfirmedReschedule: true,
+        rescheduledBy: { select: { id: true, name: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+
     res.json({
       orderId: order.id,
       statusSekarang: order.status,
@@ -1445,6 +1483,8 @@ orderRouter.get("/:id/timeline", async (req, res) => {
       // Riwayat tidak bisa di-backfill — UI harus menjelaskan ini kalau kosong
       // padahal order sudah lama ada.
       riwayatKosong: timeline.length === 0,
+      revisions,
+      issueJobs,
     });
   } catch (err) {
     console.error("order timeline error:", err);

@@ -28,6 +28,7 @@ import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
 import ReadinessBadge from "../features/orders/ReadinessBadge.jsx";
 import { JOB_STATUS_REAL } from "../features/armada/jobStatus.js";
+import { REVISION_STATUS } from "../features/armada/revisionStatus.js";
 
 // D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari role
 // lain (backend menegakkan ini di routes/orders.js, guardOrderLocked()).
@@ -344,7 +345,21 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
         {order.daysInStatusPerkiraan && <span title="Riwayat status belum terekam untuk order ini — dihitung dari terakhir diubah">*</span>}
       </p>
 
-      {order.hasComplaint && (
+      {/* Revisi/komplain lintas divisi (10 September 2026, permintaan owner:
+          "gue ingin di semua divisi ... request, revisi, komplain,
+          reschedule semua muncul di masing-masing divisi" + "card per
+          order nya juga ada keterangan" — kasus Richard RES-30082026-201).
+          order.activeRevision SUDAH ada di respons GET /orders sejak D-109
+          (dipakai ProductionOrders.jsx), cuma belum pernah ditampilkan di
+          sini — jadi sales tidak pernah tahu tahap revisi TANPA buka drawer.
+          Fallback ke "Ada komplain" polos kalau belum ada UnitRevision
+          formal (baru dilaporkan, belum masuk Retur). */}
+      {order.activeRevision ? (
+        <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red">
+          <AlertTriangle size={11} className="shrink-0" />
+          Revisi: {REVISION_STATUS[order.activeRevision.status]?.label || order.activeRevision.status}
+        </p>
+      ) : order.hasComplaint && (
         <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-red">
           <AlertTriangle size={11} className="shrink-0" /> Ada komplain
         </p>
@@ -1268,6 +1283,19 @@ export default function Orders() {
                               {o.customerName || "Tanpa nama"}
                             </p>
                             <p className="truncate text-[11px] tabular-nums text-ink3">{o.customerPhone || "—"}</p>
+                            {/* Revisi/komplain (10 Sep 2026) — SAMA data & alasan
+                                dengan OrderCard di atas, tabel sebelumnya sama
+                                sekali tidak menunjukkan ini. */}
+                            {o.activeRevision ? (
+                              <p className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-red">
+                                <AlertTriangle size={10} className="shrink-0" />
+                                Revisi: {REVISION_STATUS[o.activeRevision.status]?.label || o.activeRevision.status}
+                              </p>
+                            ) : o.hasComplaint && (
+                              <p className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-red">
+                                <AlertTriangle size={10} className="shrink-0" /> Ada komplain
+                              </p>
+                            )}
                           </div>
                         </div>
                       </td>

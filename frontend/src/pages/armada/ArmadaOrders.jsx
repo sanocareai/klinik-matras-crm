@@ -18,6 +18,7 @@ import {
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
 import { JOB_STATUS_REAL } from "@/features/armada/jobStatus.js";
+import { REVISION_STATUS } from "@/features/armada/revisionStatus.js";
 import OrderTimelineDrawer from "@/features/orders/OrderTimelineDrawer.jsx";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 
@@ -356,13 +357,28 @@ export default function ArmadaOrders() {
                             lintas divisi ini harus mati begitu complaintResolvedAt terisi,
                             supaya tidak menyala selamanya untuk komplain yang sudah lama
                             tuntas. Lihat komentar panjang di schema.prisma. */}
-                        {o.hasComplaint && !o.complaintResolvedAt && (
-                          <AlertTriangle
-                            size={13} className="shrink-0 text-red"
-                            title={`Ada komplain: ${o.complaintDetail || "(tanpa detail)"}`}
-                          />
-                        )}
                       </span>
+                      {/* Revisi/komplain (10 Sep 2026, permintaan owner: "card
+                          per order nya juga ada keterangan, history") —
+                          sebelumnya cuma ikon kecil + tooltip hover (gampang
+                          kelewat). o.activeRevision (GET /orders, D-109)
+                          dipakai kalau sudah masuk sistem Retur, fallback ke
+                          badge polos "Ada Komplain" kalau belum. */}
+                      {o.hasComplaint && !o.complaintResolvedAt && (
+                        o.activeRevision ? (
+                          <p className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-red">
+                            <AlertTriangle size={10} className="shrink-0" />
+                            Revisi: {REVISION_STATUS[o.activeRevision.status]?.label || o.activeRevision.status}
+                          </p>
+                        ) : (
+                          <p
+                            className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-red"
+                            title={o.complaintDetail || "(tanpa detail)"}
+                          >
+                            <AlertTriangle size={10} className="shrink-0" /> Ada komplain
+                          </p>
+                        )
+                      )}
                     </TD>
                     <TD>{KATEGORI_LABELS[o.category] || o.category}</TD>
                     <TD onClick={(e) => e.stopPropagation()}>
