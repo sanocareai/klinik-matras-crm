@@ -60,7 +60,7 @@ export default function WarehouseStockCount() {
   return (
     <PageContainer>
       <PageHeader
-        title="Cycle Count & Stock Opname"
+        title="Stock Opname"
         subtitle="Jadwal penghitungan stok berkala dan rekonsiliasi selisih."
         actions={
           <>
@@ -97,7 +97,7 @@ export default function WarehouseStockCount() {
           {kosong ? (
             <EmptyState
               icon={Scale}
-              title="Belum ada Stock Count"
+              title="Belum ada Stock Opname"
               description="Jadwalkan cycle count atau stock opname untuk mulai merekonsiliasi stok."
               action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Schedule Count</Button>}
             />

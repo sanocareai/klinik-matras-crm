@@ -56,7 +56,7 @@ export default function WarehouseMaterialIssue() {
   return (
     <PageContainer>
       <PageHeader
-        title="Material Issue"
+        title="Pengeluaran Material"
         subtitle="Pengeluaran material untuk kebutuhan produksi."
         actions={
           <>
@@ -93,8 +93,8 @@ export default function WarehouseMaterialIssue() {
           {kosong ? (
             <EmptyState
               icon={ClipboardList}
-              title="Belum ada Material Issue"
-              description="Permintaan material dari Production akan tampil di sini."
+              title="Belum ada Pengeluaran Material"
+              description="Permintaan material dari Produksi akan tampil di sini."
               action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> New Request</Button>}
             />
           ) : (

@@ -53,7 +53,7 @@ export default function WarehouseTransfers() {
   return (
     <PageContainer>
       <PageHeader
-        title="Stock Transfer"
+        title="Transfer Stok"
         subtitle="Mutasi barang antar lokasi, rak, atau gudang."
         actions={
           <>
@@ -90,7 +90,7 @@ export default function WarehouseTransfers() {
           {kosong ? (
             <EmptyState
               icon={ArrowLeftRight}
-              title="Belum ada Stock Transfer"
+              title="Belum ada Transfer Stok"
               description="Mutasi barang antar lokasi akan tampil di sini."
               action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> New Transfer</Button>}
             />

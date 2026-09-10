@@ -19,7 +19,7 @@ export default function WarehouseAdjustments() {
 
   return (
     <PageContainer>
-      <PageHeader title="Damaged, Return & Adjustment" subtitle="Barang rusak, retur, dan penyesuaian stok yang perlu ditinjau." />
+      <PageHeader title="Barang Rusak, Retur & Penyesuaian" subtitle="Barang rusak, retur, dan penyesuaian stok yang perlu ditinjau." />
       <PageBody>
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>

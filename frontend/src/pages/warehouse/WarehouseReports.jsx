@@ -52,7 +52,7 @@ export default function WarehouseReports() {
   return (
     <PageContainer>
       <PageHeader
-        title="Warehouse Reports"
+        title="Laporan Gudang"
         subtitle="Nilai inventory, akurasi stok, dan pergerakan material."
         actions={<DateRangePicker value={range} onChange={setRange} />}
       />
@@ -103,7 +103,7 @@ export default function WarehouseReports() {
             </div>
 
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              <ChartCard title="Movement Trend" description="Jumlah dokumen selesai per jenis, dalam rentang tanggal terpilih." index={0}>
+              <ChartCard title="Tren Pergerakan" description="Jumlah dokumen selesai per jenis, dalam rentang tanggal terpilih." index={0}>
                 <div className="space-y-2.5">
                   {[
                     { label: "Goods Receipt", value: data.movementTrend.goodsReceipt },
@@ -119,7 +119,7 @@ export default function WarehouseReports() {
               </ChartCard>
 
               <ChartCard
-                title="Inventory by Category"
+                title="Inventory per Kategori"
                 description="Jumlah item aktif per kategori."
                 index={1}
                 empty={!data.byCategory.length ? "Belum ada item aktif." : null}
@@ -133,7 +133,7 @@ export default function WarehouseReports() {
               </ChartCard>
 
               <ChartCard
-                title="Damage Category"
+                title="Kategori Kerusakan"
                 description="Barang rusak dilaporkan per kategori, dalam rentang tanggal terpilih."
                 index={2}
                 empty={!data.damageByCategory.length ? "Belum ada damaged stock pada rentang ini." : null}
@@ -147,7 +147,7 @@ export default function WarehouseReports() {
               </ChartCard>
 
               <ChartCard
-                title="Adjustment Reason"
+                title="Alasan Penyesuaian"
                 description="Stock Adjustment yang sudah diposting per tipe, dalam rentang tanggal terpilih."
                 index={3}
                 empty={!data.adjustmentByType.length ? "Belum ada adjustment yang diposting pada rentang ini." : null}
@@ -163,7 +163,7 @@ export default function WarehouseReports() {
             </div>
 
             <ChartCard
-              title="Slow Moving / Dead Stock"
+              title="Barang Lambat Bergerak / Mati"
               description={`Item tanpa pergerakan ≥${60} hari (kondisi sekarang, tidak terikat rentang tanggal di atas). Tandai "dead" pada ≥180 hari atau tidak pernah bergerak sama sekali.`}
               index={4}
               empty={!data.slowMoving.length ? "Tidak ada item yang stagnan saat ini." : null}

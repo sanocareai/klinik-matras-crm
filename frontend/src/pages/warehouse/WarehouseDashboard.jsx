@@ -40,8 +40,8 @@ export default function WarehouseDashboard() {
   return (
     <PageContainer>
       <PageHeader
-        title={<span className="flex items-center gap-2">Warehouse &amp; Inventory Control <MockBadge /></span>}
-        subtitle="Kelola stock, material movement, receiving, dan inventory accuracy dalam satu workspace."
+        title={<span className="flex items-center gap-2">Operasional Gudang <MockBadge /></span>}
+        subtitle="Kelola stok, pergerakan material, penerimaan barang, dan akurasi inventory dalam satu workspace."
         actions={
           <>
             <select

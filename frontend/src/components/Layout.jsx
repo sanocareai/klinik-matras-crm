@@ -227,6 +227,13 @@ const DIVISIONS = {
   // /gudang TIDAK dihapus — di-redirect ke /warehouse/inventory di App.jsx,
   // dan halaman lamanya (pages/Gudang.jsx) TETAP UTUH sebagai satu-satunya
   // halaman berdata NYATA sampai Tahap 2 menyambungkan backend.
+  // Dikelompokkan & dilabeli ulang 10 September 2026 (D-152, audit
+  // konsistensi lanjutan) — sebelumnya 9 menu rata dalam SATU section
+  // berlabel Inggris "WAREHOUSE" (satu-satunya divisi yang belum
+  // dikelompokkan sejak Bengkel diperbaiki di D-148). Pola grouping SAMA
+  // dengan Bengkel/Delivery: OPERASIONAL (kerja harian), TRANSAKSI
+  // (dokumen keluar-masuk barang), KONTROL STOK (hitung ulang & tindak
+  // lanjut selisih/kekurangan), LAPORAN.
   warehouse: {
     label: "Warehouse",
     accent: {
@@ -234,17 +241,32 @@ const DIVISIONS = {
     },
     sections: [
       {
-        section: "WAREHOUSE",
+        section: "OPERASIONAL",
         items: [
-          { to: "/warehouse/dashboard",     label: "Dashboard",         Icon: LayoutDashboard },
-          { to: "/warehouse/inventory",     label: "Stock & Material",  Icon: Package },
-          { to: "/warehouse/goods-receipt", label: "Goods Receipt",     Icon: ArrowDownToLine },
-          { to: "/warehouse/material-issue",label: "Material Issue",    Icon: ArrowUpFromLine },
-          { to: "/warehouse/transfers",     label: "Stock Transfer",    Icon: ArrowLeftRight },
-          { to: "/warehouse/stock-count",   label: "Cycle Count & Opname", Icon: Scale },
-          { to: "/warehouse/replenishment", label: "Replenishment",     Icon: TrendingUp },
-          { to: "/warehouse/adjustments",   label: "Damaged & Retur",   Icon: AlertTriangle },
-          { to: "/warehouse/reports",       label: "Reports",           Icon: BarChart3 },
+          { to: "/warehouse/dashboard", label: "Dashboard",        Icon: LayoutDashboard },
+          { to: "/warehouse/inventory", label: "Stok & Material",  Icon: Package },
+        ],
+      },
+      {
+        section: "TRANSAKSI",
+        items: [
+          { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
+          { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
+          { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
+        ],
+      },
+      {
+        section: "KONTROL STOK",
+        items: [
+          { to: "/warehouse/stock-count",   label: "Stock Opname",       Icon: Scale },
+          { to: "/warehouse/replenishment", label: "Restok",             Icon: TrendingUp },
+          { to: "/warehouse/adjustments",   label: "Barang Rusak & Retur", Icon: AlertTriangle },
+        ],
+      },
+      {
+        section: "LAPORAN",
+        items: [
+          { to: "/warehouse/reports", label: "Laporan", Icon: BarChart3 },
         ],
       },
     ],

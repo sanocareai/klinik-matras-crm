@@ -73,22 +73,26 @@ export const DIVISION_CONTENT = {
   },
   warehouse: {
     icon: Package,
-    short: "Warehouse",
-    title: "Warehouse & Inventory Control",
-    subtitle: "Stok bahan baku, produk jadi, mutasi, replenishment, dan stock opname.",
+    // D-152 (10 September 2026, audit konsistensi lanjutan) — "Warehouse &
+    // Inventory Control"/"Goods Receipt"/dst diterjemahkan supaya cocok
+    // dengan label sidebar (Layout.jsx) & PageHeader (WarehouseDashboard.jsx)
+    // yang sudah dirapikan bareng ini — pola sama dengan D-148 (Bengkel).
+    short: "Gudang",
+    title: "Operasional Gudang",
+    subtitle: "Stok bahan baku, produk jadi, mutasi, restok, dan stock opname.",
     heroLine: "Workspace operasional untuk memantau saldo stok dan pergerakan material.",
     modules: [
       // Tahap 1-8 Warehouse selesai (2 Agustus 2026) — semua 6 kartu di
       // bawah ini data NYATA. Dashboard masih memakai data contoh
       // (KPI agregatnya belum ada endpoint tersendiri), lihat MockBadge
       // di WarehouseDashboard.jsx.
-      { title: "Dashboard",         description: "Ringkasan stok, penerimaan, pengeluaran, dan akurasi inventory.", icon: Gauge, path: "/warehouse/dashboard" },
-      { title: "Stock & Material",  description: "Pantau saldo, lokasi rak, lot, dan status seluruh inventory.", icon: Package, path: "/warehouse/inventory" },
-      { title: "Goods Receipt",     description: "Penerimaan bahan baku dan produk dari supplier atau produksi.", icon: ScanLine, path: "/warehouse/goods-receipt" },
-      { title: "Material Issue",    description: "Pengeluaran material untuk work order produksi.", icon: ClipboardList, path: "/warehouse/material-issue" },
-      { title: "Stock Transfer",    description: "Mutasi barang antar lokasi, rak, atau gudang.", icon: Route, path: "/warehouse/transfers" },
-      { title: "Cycle Count",       description: "Jadwal stock opname dan rekonsiliasi selisih.", icon: CalendarClock, path: "/warehouse/stock-count" },
-      { title: "Replenishment",     description: "Saran pembelian berdasarkan minimum stock dan kebutuhan produksi.", icon: TrendingUp, path: "/warehouse/replenishment" },
+      { title: "Dashboard",             description: "Ringkasan stok, penerimaan, pengeluaran, dan akurasi inventory.", icon: Gauge, path: "/warehouse/dashboard" },
+      { title: "Stok & Material",       description: "Pantau saldo, lokasi rak, lot, dan status seluruh inventory.", icon: Package, path: "/warehouse/inventory" },
+      { title: "Penerimaan Barang",     description: "Penerimaan bahan baku dan produk dari supplier atau produksi.", icon: ScanLine, path: "/warehouse/goods-receipt" },
+      { title: "Pengeluaran Material",  description: "Pengeluaran material untuk work order produksi.", icon: ClipboardList, path: "/warehouse/material-issue" },
+      { title: "Transfer Stok",         description: "Mutasi barang antar lokasi, rak, atau gudang.", icon: Route, path: "/warehouse/transfers" },
+      { title: "Stock Opname",          description: "Jadwal stock opname dan rekonsiliasi selisih.", icon: CalendarClock, path: "/warehouse/stock-count" },
+      { title: "Restok",                description: "Saran pembelian berdasarkan minimum stock dan kebutuhan produksi.", icon: TrendingUp, path: "/warehouse/replenishment" },
     ],
   },
   armada: {

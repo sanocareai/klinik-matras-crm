@@ -79,7 +79,7 @@ export default function WarehouseReplenishment() {
   return (
     <PageContainer>
       <PageHeader
-        title="Replenishment"
+        title="Restok"
         subtitle="Saran restok berdasarkan minimum stock, dan permintaan yang perlu ditinjau."
         actions={
           <>
@@ -89,7 +89,7 @@ export default function WarehouseReplenishment() {
             <Button variant="secondary" size="sm" onClick={ekspor} disabled={!rows?.length}>
               <Download size={14} /> Export
             </Button>
-            <Button size="sm" onClick={buatManual}><Plus size={14} /> Manual Request</Button>
+            <Button size="sm" onClick={buatManual}><Plus size={14} /> Ajukan Manual</Button>
           </>
         }
       />
@@ -139,8 +139,8 @@ export default function WarehouseReplenishment() {
 
         <Card className="overflow-hidden">
           {kosong ? (
-            <EmptyState icon={TrendingUp} title="Belum ada Replenishment Request" description="Buat dari saran di atas, atau ajukan manual."
-              action={<Button size="sm" onClick={buatManual}><Plus size={14} /> Manual Request</Button>} />
+            <EmptyState icon={TrendingUp} title="Belum ada Permintaan Restok" description="Buat dari saran di atas, atau ajukan manual."
+              action={<Button size="sm" onClick={buatManual}><Plus size={14} /> Ajukan Manual</Button>} />
           ) : (
             <TableWrap>
               <Table>

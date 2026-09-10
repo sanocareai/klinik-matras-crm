@@ -57,7 +57,7 @@ export default function WarehouseGoodsReceipt() {
   return (
     <PageContainer>
       <PageHeader
-        title="Goods Receipt"
+        title="Penerimaan Barang"
         subtitle="Penerimaan barang dari supplier, produksi, atau retur."
         actions={
           <>
@@ -94,7 +94,7 @@ export default function WarehouseGoodsReceipt() {
           {kosong ? (
             <EmptyState
               icon={Inbox}
-              title="Belum ada Goods Receipt"
+              title="Belum ada Penerimaan Barang"
               description="Supplier delivery atau penerimaan barang baru akan tampil di sini."
               action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> New Receipt</Button>}
             />

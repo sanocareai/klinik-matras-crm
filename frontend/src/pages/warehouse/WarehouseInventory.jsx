@@ -89,7 +89,7 @@ export default function WarehouseInventory() {
   return (
     <PageContainer>
       <PageHeader
-        title="Stock & Material"
+        title="Stok & Material"
         subtitle="Saldo stok dihitung langsung dari ledger pergerakan barang."
         actions={
           <>
