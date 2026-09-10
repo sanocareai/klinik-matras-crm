@@ -3,7 +3,13 @@
 // lewat backend yang SAMA dipakai PWA/APK Capacitor driver-app/. BELUM
 // ada di sini (menyusul): offline queue, GPS tracking, badge push count.
 import React, { useState } from "react";
-import { View, Text, Pressable, StyleSheet, SafeAreaView, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
+// SafeAreaView BAWAAN react-native TIDAK menghormati status bar di Android
+// (cuma efektif utk notch iOS) — akar bug "layout ketutupan icon
+// notifikasi" (laporan owner 10 Sep 2026). Ganti ke react-native-safe-
+// area-context (SUDAH ada, dipakai SafeAreaProvider di App.js) yang
+// benar-benar mengukur inset status bar di kedua platform.
+import { SafeAreaView } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import { useAuth } from "../context/AuthContext";
 import { useMyJobs } from "../hooks/useMyJobs";

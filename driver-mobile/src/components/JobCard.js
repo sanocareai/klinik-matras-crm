@@ -4,12 +4,14 @@
 // UI di sini cuma mencerminkan itu, bukan sumber kebenaran validasinya).
 // TTD penerima SENGAJA TIDAK ada (keputusan owner eksplisit, sama dengan
 // web — lihat catatan panjang di DriverJobs.jsx). Pencatatan pembayaran
-// TIDAK ada di v1 RN ini (menyusul kalau dibutuhkan — bukan bagian syarat
-// keras milestone ini).
+// (PaymentSection, 10 Sep 2026) menyusul milestone ini — gap yang
+// dilaporkan owner: fitur ini sudah lama ada di backend+web, belum pernah
+// ada di app.
 import React, { useState } from "react";
 import { View, Text, Pressable, TextInput, StyleSheet, Linking, Alert } from "react-native";
 import { MapPin, Phone, Loader2 } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
+import PaymentSection from "./PaymentSection";
 import { performSubmit } from "../lib/submitJobAction";
 import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, estJamUntukTampilan, JOB_STATUS_REAL } from "../lib/jobHelpers";
 
@@ -227,6 +229,10 @@ export default function JobCard({ job, onChanged }) {
             </Pressable>
           </View>
         </View>
+      )}
+
+      {mode === "idle" && job.status === "COMPLETED" && job.type === "DELIVERY" && (
+        <PaymentSection job={job} onChanged={onChanged} />
       )}
     </View>
   );

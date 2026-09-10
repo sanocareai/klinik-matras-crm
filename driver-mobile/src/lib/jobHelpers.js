@@ -58,6 +58,13 @@ export function mapsUrl(job) {
   return null;
 }
 
+// Sama dengan frontend/src/utils/format.js#formatRupiah — duplikasi murni
+// (runtime beda, bukan reuse lintas bundle), satu fungsi kecil tidak
+// sebanding dengan biaya bikin package bersama.
+export function formatRupiah(n) {
+  return "Rp" + (n || 0).toLocaleString("id-ID");
+}
+
 export function estJamUntukTampilan(timeWindow) {
   if (!timeWindow || !timeWindow.trim()) return null;
   return timeWindow.trim().replace(/^EST:?\s*/i, "").replace(/^di\s*atas\s+jam\s*/i, "Di atas ");
