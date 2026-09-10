@@ -65,6 +65,20 @@ export function formatRupiah(n) {
   return "Rp" + (n || 0).toLocaleString("id-ID");
 }
 
+// Waktu relatif ringkas ("5 menit lalu") — dipakai AdminHomeScreen (status
+// driver/GPS terakhir, kapan job gagal). Bukan dayjs (sudah ada sbg
+// dependency tapi plugin relativeTime + locale id belum di-setup di
+// project ini) — perhitungan manual lebih murah utk 1 kebutuhan kecil ini.
+export function relatifWaktu(dateStr) {
+  if (!dateStr) return "—";
+  const menit = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+  if (menit < 1) return "baru saja";
+  if (menit < 60) return `${menit} menit lalu`;
+  const jam = Math.floor(menit / 60);
+  if (jam < 24) return `${jam} jam lalu`;
+  return `${Math.floor(jam / 24)} hari lalu`;
+}
+
 export function estJamUntukTampilan(timeWindow) {
   if (!timeWindow || !timeWindow.trim()) return null;
   return timeWindow.trim().replace(/^EST:?\s*/i, "").replace(/^di\s*atas\s+jam\s*/i, "Di atas ");

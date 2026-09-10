@@ -158,6 +158,15 @@ export const api = {
   // Link Google Maps rute (sumber = manualMapsUrl admin, fallback auto
   // multi-stop) — sama presedennya dengan broadcast WA.
   getRouteMap: (routeId) => request(`/armada/routes/${routeId}/map`),
+
+  // Tampilan admin/owner (10 Sep 2026) — dipakai AdminHomeScreen. SEMUA
+  // endpoint SUDAH ADA & dipakai dispatcher di web (ArmadaDashboard/
+  // ArmadaTracking/Route Planner "Masalah"), nol perubahan kontrak API —
+  // app cuma klien baru yang memanggilnya, baca-saja (aksi lanjut seperti
+  // reschedule tetap di web untuk v1).
+  getArmadaJobs: (params = {}) => request(`/armada/jobs${buildQuery(params)}`),
+  getArmadaTracking: () => request("/armada/tracking"),
+  getArmadaIssues: (params = {}) => request(`/armada/issues${buildQuery(params)}`),
   startArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", body: JSON.stringify(data) }),
   arriveArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", body: JSON.stringify(data) }),
   completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),
