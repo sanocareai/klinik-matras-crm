@@ -16,8 +16,38 @@ import { resolveEntryPath } from "../routes/pageRegistry.jsx";
 const TabsCtx = createContext(null);
 const TabIdCtx = createContext(null);
 
+// D-151 (10 September 2026, laporan owner — ditemukan lewat screenshot audit
+// Gudang) — BUG NYATA: fallback judul tab ini dipakai untuk SEMUA navigasi
+// yang tidak lewat SidebarLink (mis. tombol "Buka Work Order" di
+// Bengkel.jsx yang `navigate()` langsung ke `/bengkel/units/<uuid>`).
+// Sebelumnya cuma ambil potongan URL TERAKHIR mentah-mentah — untuk rute
+// berisi ID (UUID), hasilnya judul tab jadi UUID yang di-title-case
+// ("D8654bcf 20ec 4b84 972…"), bukan nama halaman. Fix: kalau potongan
+// terakhir "terlihat seperti ID" (UUID atau angka/hex panjang), pakai
+// NAMA RESOURCE-nya (potongan SEBELUM id itu) — mis. "units" dari
+// "/bengkel/units/<uuid>" — bukan ID mentahnya. Kamus kecil di bawah
+// menerjemahkan nama resource yang sudah diketahui ke Bahasa Indonesia;
+// resource baru yang belum terdaftar tetap dapat fallback title-case biasa
+// (lebih baik dari UUID mentah, walau bahasa Inggris) sampai didaftarkan.
+const RESOURCE_LABELS = {
+  units: "Unit",
+};
+
+function looksLikeId(seg) {
+  return (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg) || // UUID
+    /^[0-9a-f]{16,}$/i.test(seg) || // hash/hex panjang
+    /^\d{4,}$/.test(seg) // ID numerik panjang
+  );
+}
+
 function titleFromPath(path) {
-  const seg = path.split("/").filter(Boolean).pop() || "portal";
+  const parts = path.split("/").filter(Boolean);
+  let seg = parts.pop() || "portal";
+  if (looksLikeId(seg) && parts.length > 0) {
+    const resource = parts.pop();
+    seg = RESOURCE_LABELS[resource] || resource;
+  }
   return seg
     .replace(/-/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
