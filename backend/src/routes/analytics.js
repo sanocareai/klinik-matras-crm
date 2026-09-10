@@ -1571,8 +1571,23 @@ analyticsRouter.get("/source-performance", async (req, res) => {
       const [won, spamCount, orderAgg] = await Promise.all([
         // IN [TRANSACTION, REVIEWED] — "won" = sudah pernah closing, REVIEWED
         // (dikembalikan 26 Agustus 2026) sudah lewat TRANSACTION jadi tetap won.
+        // BUG YANG DIPERBAIKI (10 Sep 2026, laporan owner) — sebelumnya cuma
+        // cek pipelineStage, TIDAK peduli order-nya masih ada/dibatalkan.
+        // pipelineStage TIDAK otomatis ke-sync kalau order dibatalkan (field
+        // terpisah, digeser manual sales) — jadi pelanggan yang SEMUA
+        // order-nya dibatalkan tapi stage-nya lupa digeser balik tetap
+        // terhitung "won" di sini, padahal totalValue di bawah (yang sudah
+        // benar exclude CANCELLED) jadi Rp0 untuk pelanggan itu — convRate
+        // & avgOrderValue jadi tidak nyambung dengan angka Rupiah-nya.
+        // `orders: { some: { status: { not: "CANCELLED" } } } }` — SAMA
+        // pola dengan customersWithOrders di /business-summary.
         prisma.customer.count({
-          where: { leadSource: s.leadSource, pipelineStage: { in: ["TRANSACTION", "REVIEWED"] }, ...custDateWhere },
+          where: {
+            leadSource: s.leadSource,
+            pipelineStage: { in: ["TRANSACTION", "REVIEWED"] },
+            orders: { some: { status: { not: "CANCELLED" } } },
+            ...custDateWhere,
+          },
         }),
         prisma.customer.count({
           where: { leadSource: s.leadSource, pipelineStage: "SPAM", ...custDateWhere },
@@ -2062,7 +2077,15 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
         COUNT(DISTINCT c.id)::int                                                  AS leads,
         -- won = IN (TRANSACTION, REVIEWED) — REVIEWED (dikembalikan 26 Agustus
         -- 2026) sudah lewat TRANSACTION, tetap dihitung "won".
-        COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" IN ('TRANSACTION', 'REVIEWED'))::int AS won,
+        -- BUG YANG DIPERBAIKI (10 Sep 2026) — SAMA persis dengan /source-performance
+        -- di atas: tambah "AND o.status <> 'CANCELLED'" supaya pelanggan yang
+        -- SEMUA order-nya dibatalkan (pipelineStage lupa digeser balik, field
+        -- itu manual & tidak otomatis sinkron ke status order) tidak lagi
+        -- ikut "won" — LEFT JOIN Order di bawah + COUNT DISTINCT c.id
+        -- otomatis menghitung pelanggan itu SEKALI kalau ADA SATU SAJA order
+        -- non-CANCELLED yang cocok filter (per-baris), konsisten dgn
+        -- total_value yang sudah benar exclude CANCELLED.
+        COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" IN ('TRANSACTION', 'REVIEWED') AND o.status <> 'CANCELLED')::int AS won,
         COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" = 'SPAM')::int        AS spam_count,
         COALESCE(SUM(o.value) FILTER (WHERE o.status <> 'CANCELLED'), 0)::bigint   AS total_value
       FROM "Customer" c
