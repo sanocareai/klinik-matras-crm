@@ -7,7 +7,10 @@ import { api } from "../api";
 
 export function useMyJobs() {
   return useQuery({
-    queryKey: ["my-jobs"],
-    queryFn: () => api.getMyJobs(),
+    queryKey: ["armada", "my-jobs"],
+    // Backend GET /armada/my-jobs balikin { jobs: [...] } (objek), BUKAN
+    // array langsung — unwrap .jobs, sama dengan hook web
+    // (frontend/src/features/armada/hooks/useMyJobs.js).
+    queryFn: async () => (await api.getMyJobs()).jobs,
   });
 }
