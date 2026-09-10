@@ -6,20 +6,31 @@ import { api } from "@/api.js";
 // Drawer pengajuan Revisi baru — pencarian unit DIBATASI status DELIVERED
 // (lihat GET /armada/revisions/units), karena mengajukan revisi atas kasur
 // yang belum sampai ke customer tidak masuk akal.
-export default function RevisionRequestDrawer({ open, onClose, onCreated }) {
+//
+// presetUnit/initialTrigger (10 September 2026, kasus Richard) — dipakai
+// ArmadaIssues.jsx ("Kendala & Reschedule") supaya dispatcher yang sudah
+// buka job COMPLETED di sana bisa langsung "Ajukan Revisi (Retur)" tanpa
+// cari ulang unit-nya — sebelumnya jalur itu jalan buntu (job COMPLETED
+// tidak bisa dijadwalkan ulang APA PUN, cuma pesan "lihat status di Jadwal
+// & Penugasan" yang tidak membuka jalan ke mana pun).
+export default function RevisionRequestDrawer({ open, onClose, onCreated, presetUnit = null, initialTrigger = "KENYAMANAN" }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  const [unit, setUnit] = useState(null);
-  const [trigger, setTrigger] = useState("KENYAMANAN");
+  const [unit, setUnit] = useState(presetUnit);
+  const [trigger, setTrigger] = useState(initialTrigger);
   const [complaint, setComplaint] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      setUnit(presetUnit);
+      setTrigger(initialTrigger);
+    } else {
       setQ(""); setResults([]); setUnit(null); setTrigger("KENYAMANAN"); setComplaint(""); setError("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
@@ -114,12 +125,13 @@ export default function RevisionRequestDrawer({ open, onClose, onCreated }) {
               <label className="mb-1 block text-[11.5px] font-semibold text-ink2">Jenis *</label>
               <div className="flex gap-2">
                 {[
+                  { key: "KOMPLAIN_ANTAR", label: "Komplain Saat Antar" },
                   { key: "KENYAMANAN", label: "Trial Kenyamanan" },
                   { key: "GARANSI", label: "Klaim Garansi" },
                 ].map((t) => (
                   <button
                     key={t.key} type="button" onClick={() => setTrigger(t.key)}
-                    className={`flex-1 rounded-btn border py-1.5 text-[12px] font-semibold transition-colors ${
+                    className={`flex-1 rounded-btn border py-1.5 text-[11.5px] font-semibold transition-colors ${
                       trigger === t.key ? "border-accent bg-accentbg text-accent" : "border-border text-ink2 hover:bg-hovertint"
                     }`}
                   >

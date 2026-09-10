@@ -17,9 +17,14 @@ export const REVISION_STATUS = {
   CANCELLED:        { label: "Dibatalkan",             tone: "red" },
 };
 
+// KOMPLAIN_ANTAR (10 September 2026, kasus Richard RES-30082026-201) —
+// customer QC di tempat SAAT serah terima & minta revisi HARI ITU JUGA,
+// beda dari KENYAMANAN (baru ketahuan setelah trial berhari-hari) atau
+// GARANSI (klaim bertahun-tahun kemudian).
 export const REVISION_TRIGGER = {
-  KENYAMANAN: { label: "Trial Kenyamanan", tone: "accent" },
-  GARANSI:    { label: "Klaim Garansi",    tone: "orange" },
+  KENYAMANAN:     { label: "Trial Kenyamanan",    tone: "accent" },
+  GARANSI:        { label: "Klaim Garansi",       tone: "orange" },
+  KOMPLAIN_ANTAR: { label: "Komplain Saat Antar", tone: "red" },
 };
 
 export function customerOfUnit(unit) {

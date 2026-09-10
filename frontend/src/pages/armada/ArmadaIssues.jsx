@@ -10,6 +10,7 @@ import {
 import { cn } from "@/lib/utils.js";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import IssueRescheduleDrawer from "@/features/armada/components/IssueRescheduleDrawer.jsx";
+import RevisionRequestDrawer from "@/features/armada/components/RevisionRequestDrawer.jsx";
 import { ISSUE_STATUS } from "@/features/armada/issueStatus.js";
 import { customerOf, orderNumberOf, jobLabelOf } from "@/features/armada/jobStatus.js";
 
@@ -33,6 +34,9 @@ export default function ArmadaIssues() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null);
+  // Jembatan ke Retur (10 September 2026, kasus Richard) — lihat catatan
+  // panjang di IssueRescheduleDrawer.jsx#onAjukanRevisi.
+  const [revisionUnit, setRevisionUnit] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -123,7 +127,22 @@ export default function ArmadaIssues() {
         </Card>
       </PageBody>
 
-      <IssueRescheduleDrawer job={selected} onClose={() => setSelected(null)} onChanged={load} />
+      <IssueRescheduleDrawer
+        job={selected}
+        onClose={() => setSelected(null)}
+        onChanged={load}
+        onAjukanRevisi={(job) => {
+          setSelected(null);
+          setRevisionUnit(job.units?.[0]?.unit || null);
+        }}
+      />
+      <RevisionRequestDrawer
+        open={!!revisionUnit}
+        presetUnit={revisionUnit}
+        initialTrigger="KOMPLAIN_ANTAR"
+        onClose={() => setRevisionUnit(null)}
+        onCreated={load}
+      />
     </PageContainer>
   );
 }

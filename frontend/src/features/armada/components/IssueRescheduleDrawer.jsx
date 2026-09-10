@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, CalendarClock, Loader2 } from "lucide-react";
+import { X, CalendarClock, Loader2, Undo2 } from "lucide-react";
 import { api } from "@/api.js";
 import StatusBadge from "./StatusBadge.jsx";
 import { ISSUE_STATUS } from "../issueStatus.js";
@@ -10,7 +10,17 @@ import { customerOf, orderNumberOf, jobLabelOf } from "../jobStatus.js";
 // catatan panjang di backend/src/routes/armada.js POST /issues/:jobId/reschedule).
 // Job yang statusnya sudah lewat dari FAILED (sudah pernah dijadwalkan ulang)
 // tampil read-only di sini — reschedule kedua kali belum didukung backend.
-export default function IssueRescheduleDrawer({ job, onClose, onChanged }) {
+//
+// onAjukanRevisi (10 September 2026, kasus Richard RES-30082026-201) — job
+// COMPLETED yang dikasih catatan reschedule retroaktif (JobDetailDrawer)
+// SEBELUM ini jalan buntu total di sini: cuma pesan "lihat status di Jadwal
+// & Penugasan" tanpa aksi apa pun, padahal kasus nyatanya (customer QC saat
+// antar & minta revisi) butuh unit diambil-revisi-antar ulang — jalur yang
+// SUDAH ADA (Retur/UnitRevision, sistem sama yang dipakai klaim garansi/
+// trial kenyamanan) cuma tidak pernah tersambung ke sini. Tombol ini
+// membuka RevisionRequestDrawer langsung dengan unit job ini (lihat
+// ArmadaIssues.jsx) — bukan mesin baru, cuma jembatan ke yang sudah ada.
+export default function IssueRescheduleDrawer({ job, onClose, onChanged, onAjukanRevisi }) {
   const [drivers, setDrivers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [scheduledDate, setScheduledDate] = useState("");
@@ -209,10 +219,27 @@ export default function IssueRescheduleDrawer({ job, onClose, onChanged }) {
                 </label>
               </div>
             ) : (
-              <p className="mt-4 border-t border-line pt-3 text-[11.5px] leading-relaxed text-ink3">
-                Job ini sudah dijadwalkan ulang dan tidak lagi berstatus Gagal —
-                lihat status terbaru di halaman Jadwal & Penugasan.
-              </p>
+              <div className="mt-4 space-y-3 border-t border-line pt-3">
+                <p className="text-[11.5px] leading-relaxed text-ink3">
+                  Job ini sudah dijadwalkan ulang dan tidak lagi berstatus Gagal —
+                  lihat status terbaru di halaman Jadwal & Penugasan.
+                </p>
+                {/* COMPLETED + catatan reschedule = kemungkinan besar kasus
+                    "customer minta revisi setelah barang sudah dikirim"
+                    (lihat komentar onAjukanRevisi di atas) — job ITU SENDIRI
+                    tidak bisa dijadwalkan ulang (memang sudah selesai), tapi
+                    unit-nya bisa diajukan Retur supaya ada jalan ke job
+                    pengiriman baru. */}
+                {job.status === "COMPLETED" && onAjukanRevisi && (
+                  <button
+                    type="button"
+                    onClick={() => onAjukanRevisi(job)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-btn border border-accent bg-accentbg py-2 text-[12.5px] font-bold text-accent transition-opacity hover:opacity-90"
+                  >
+                    <Undo2 size={14} /> Ajukan Revisi (Retur)
+                  </button>
+                )}
+              </div>
             )}
           </div>
 

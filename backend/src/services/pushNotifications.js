@@ -113,7 +113,7 @@ export async function notifyProductionRevisionReady(revision) {
     distinct: ["userId"],
   });
   if (rows.length === 0) return; // belum ada akun ber-role Produksi — diam-diam, bukan error
-  const jenis = revision.trigger === "GARANSI" ? "Klaim garansi" : "Trial kenyamanan";
+  const jenis = { GARANSI: "Klaim garansi", KOMPLAIN_ANTAR: "Komplain saat antar" }[revision.trigger] || "Trial kenyamanan";
   const orderNumber = unit.order?.orderNumber || "";
   await Promise.all(
     rows.map((r) =>

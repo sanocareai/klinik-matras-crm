@@ -3863,6 +3863,16 @@ armadaRouter.post("/payments/:id/verify", requirePermission(P.PAYMENT_WRITE), as
 // dispatcher SEPERTI BIASA lewat Jadwal & Penugasan — tidak ada mesin
 // dispatch baru di sini.
 
+// Label singkat per trigger — dipakai di accessNotes job pickup/delivery
+// revisi & notifikasi (services/pushNotifications.js). SATU sumber, bukan
+// ternary GARANSI/lainnya yang diam-diam salah label begitu trigger ke-3
+// (KOMPLAIN_ANTAR, 10 Sep 2026) ditambahkan.
+const REVISION_TRIGGER_LABEL = {
+  KENYAMANAN: "trial kenyamanan",
+  GARANSI: "klaim garansi",
+  KOMPLAIN_ANTAR: "komplain saat antar",
+};
+
 const unitRevisionInclude = {
   unit: {
     select: {
@@ -3943,7 +3953,7 @@ armadaRouter.post("/revisions", requirePermission(P.JOB_WRITE), async (req, res)
   try {
     const { unitId, trigger, complaint } = req.body;
     if (!unitId) throw new ArmadaError("Unit wajib dipilih");
-    if (!["KENYAMANAN", "GARANSI"].includes(trigger)) throw new ArmadaError("Jenis revisi tidak valid");
+    if (!["KENYAMANAN", "GARANSI", "KOMPLAIN_ANTAR"].includes(trigger)) throw new ArmadaError("Jenis revisi tidak valid");
     if (!complaint?.trim()) throw new ArmadaError("Keluhan/alasan wajib diisi");
 
     const unit = await prisma.unit.findUnique({ where: { id: unitId } });
@@ -4095,7 +4105,7 @@ armadaRouter.post("/revisions/:id/create-delivery-job", requirePermission(P.JOB_
         data: {
           type: "DELIVERY",
           orderId: revision.unit.orderId,
-          accessNotes: `Pengiriman ulang setelah revisi ${revision.trigger === "GARANSI" ? "klaim garansi" : "trial kenyamanan"} — ${revision.complaint}`,
+          accessNotes: `Pengiriman ulang setelah revisi ${REVISION_TRIGGER_LABEL[revision.trigger] || revision.trigger} — ${revision.complaint}`,
         },
       });
       await tx.jobUnit.create({ data: { jobId: job.id, unitId: revision.unit.id } });
@@ -4141,7 +4151,7 @@ armadaRouter.post("/revisions/:id/create-pickup-job", requirePermission(P.JOB_WR
         data: {
           type: "PICKUP",
           orderId: revision.unit.orderId,
-          accessNotes: `Pengambilan untuk ${revision.trigger === "GARANSI" ? "klaim garansi" : "trial kenyamanan"} — ${revision.complaint}`,
+          accessNotes: `Pengambilan untuk ${REVISION_TRIGGER_LABEL[revision.trigger] || revision.trigger} — ${revision.complaint}`,
         },
       });
       await tx.jobUnit.create({ data: { jobId: job.id, unitId: revision.unit.id } });

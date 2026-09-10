@@ -2193,6 +2193,18 @@ enum PodStatus {
 enum RevisionTrigger {
   KENYAMANAN // trial period comfort — customer minta tekstur diubah
   GARANSI // klaim garansi amblas/kempes
+  // KOMPLAIN_ANTAR (10 September 2026, kasus Richard RES-30082026-201) —
+  // customer QC di tempat SAAT serah terima dan minta revisi HARI ITU JUGA
+  // (mis. "kasurnya dipendekin lagi"), BEDA dari KENYAMANAN (baru
+  // ketahuan setelah trial berhari-hari dipakai) atau GARANSI (klaim
+  // bertahun-tahun kemudian, defect struktural). Sebelum ini, kasus
+  // seperti Richard TIDAK PERNAH masuk jalur Retur sama sekali — dicatat
+  // lewat POST /jobs/:id/reschedule-note (cuma catatan teks di job yang
+  // sudah COMPLETED, TIDAK membuka jalan untuk job pengiriman baru karena
+  // Order.status sudah DELIVERED) karena SALES (yang paling sering ada di
+  // lokasi/tahu duluan) tidak punya akses ke Retur (JOB_WRITE-gated) dan
+  // 2 trigger yang ada tidak terasa pas untuk kasus "hari ini juga".
+  KOMPLAIN_ANTAR
 }
 
 enum RevisionStatus {
