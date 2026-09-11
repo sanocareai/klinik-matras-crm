@@ -1,13 +1,11 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { AlertTriangle, Plus, Loader2 } from "lucide-react";
+import { AlertTriangle, Plus } from "lucide-react";
 import { api } from "@/api.js";
 import ComplaintCaseDrawer from "@/features/complaints/ComplaintCaseDrawer.jsx";
-import { CATEGORY_LABEL, SEVERITY_LABEL, STATUS_LABEL, STATUS_TONE } from "@/features/complaints/complaintLabels.js";
+import NewComplaintCaseForm from "@/features/complaints/NewComplaintCaseForm.jsx";
+import { CATEGORY_LABEL, STATUS_LABEL, STATUS_TONE } from "@/features/complaints/complaintLabels.js";
 import { Badge } from "@/components/ui/badge.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
-
-const CATEGORY_OPTIONS = Object.keys(CATEGORY_LABEL);
-const SEVERITY_OPTIONS = Object.keys(SEVERITY_LABEL);
 
 // Complaint / After-Sales Case (D-116, 11 September 2026) — SATU sumber
 // kebenaran BARU untuk komplain, TERPISAH dari badge "Ada Komplain"/tombol
@@ -16,17 +14,18 @@ const SEVERITY_OPTIONS = Object.keys(SEVERITY_LABEL);
 // termasuk saat order masih diproduksi — begitu dibuka, sistem otomatis
 // menyinkronkan Order.hasComplaint juga (jadi badge lama tetap menyala),
 // dan merutekan ke Delivery/Produksi/Warehouse/QC lewat status kasus.
+//
+// Form pembuatan DIEKSTRAK ke NewComplaintCaseForm.jsx (12 September 2026,
+// laporan owner: "untuk input komplain belum ada, harus buka chat > klik
+// order nya > isi komplain") — komponen SAMA sekarang dipakai juga oleh
+// RiwayatRevisiKendala.jsx supaya "Buka Kasus" tersedia di SEMUA tempat
+// yang menampilkan order (Semua Order Sales/Delivery/Produksi/B2B, Inbox,
+// Jadwal & Penugasan), bukan cuma di sini.
 export default function ComplaintCaseSection({ orderId }) {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [openCaseId, setOpenCaseId] = useState(null);
-
-  const [category, setCategory] = useState("KUALITAS_PRODUK");
-  const [severity, setSeverity] = useState("SEDANG");
-  const [description, setDescription] = useState("");
 
   const load = useCallback(() => {
     if (!orderId) return;
@@ -35,16 +34,6 @@ export default function ComplaintCaseSection({ orderId }) {
   }, [orderId]);
 
   useEffect(() => { load(); }, [load]);
-
-  async function buatKasus() {
-    if (!description.trim()) { setError("Keluhan customer wajib diisi"); return; }
-    setBusy(true); setError("");
-    try {
-      await api.createComplaintCase({ orderId, category, severity, description: description.trim() });
-      setShowForm(false); setDescription(""); setCategory("KUALITAS_PRODUK"); setSeverity("SEDANG");
-      load();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
-  }
 
   return (
     <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg-secondary)" }}>
@@ -60,27 +49,12 @@ export default function ComplaintCaseSection({ orderId }) {
       </div>
 
       {showForm && (
-        <div style={{ marginBottom: 8, padding: 8, borderRadius: 6, background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}
-              style={{ flex: 1, fontSize: 11.5, padding: "5px 6px", borderRadius: 6, border: "1px solid var(--border)" }}>
-              {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
-            </select>
-            <select value={severity} onChange={(e) => setSeverity(e.target.value)}
-              style={{ width: 110, fontSize: 11.5, padding: "5px 6px", borderRadius: 6, border: "1px solid var(--border)" }}>
-              {SEVERITY_OPTIONS.map((s) => <option key={s} value={s}>{SEVERITY_LABEL[s]}</option>)}
-            </select>
-          </div>
-          <textarea
-            value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
-            placeholder="Keluhan customer secara rinci…"
-            style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", marginBottom: 6, resize: "vertical" }}
+        <div style={{ marginBottom: 8 }}>
+          <NewComplaintCaseForm
+            orderId={orderId}
+            onCreated={() => { setShowForm(false); load(); }}
+            onCancel={() => setShowForm(false)}
           />
-          {error && <p style={{ margin: "0 0 6px", fontSize: 11.5, color: "var(--red)" }}>{error}</p>}
-          <button type="button" onClick={buatKasus} disabled={busy} className="btn btn-primary btn-sm"
-            style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Buat Kasus
-          </button>
         </div>
       )}
 

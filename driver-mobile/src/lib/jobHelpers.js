@@ -15,6 +15,22 @@ export const JOB_STATUS_REAL = {
 
 const JOB_TYPE_SINGKAT = { PICKUP: "Ambil", DELIVERY: "Kirim" };
 
+// Complaint / After-Sales Case (D-116, 12 September 2026 — permintaan
+// owner: driver perlu tahu KENAPA job ini ada, supaya bisa lebih hati-hati/
+// sopan di lokasi kalau ini terkait komplain). Cermin ringkas dari
+// backend/src/services/complaintCase.js CATEGORY_LABEL — sengaja salinan
+// kecil, bukan impor lintas paket (pola sama dengan JOB_STATUS_REAL di
+// atas dan features/bengkel/activityFeed.js di web).
+export const COMPLAINT_CATEGORY_LABEL = {
+  KUALITAS_PRODUK: "Kualitas Produk",
+  KENYAMANAN: "Kenyamanan",
+  KETERLAMBATAN: "Keterlambatan",
+  KERUSAKAN_TRANSIT: "Kerusakan Saat Transit",
+  SALAH_SPESIFIKASI: "Salah Spesifikasi",
+  LAYANAN_STAF: "Layanan Staf",
+  LAINNYA: "Lainnya",
+};
+
 function titleCaseNama(s) {
   if (!s) return s;
   return s.replace(/\w\S*/g, (t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());

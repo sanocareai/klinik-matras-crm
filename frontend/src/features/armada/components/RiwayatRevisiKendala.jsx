@@ -1,5 +1,5 @@
-import React from "react";
-import { Undo2, AlertTriangle } from "lucide-react";
+import React, { useState } from "react";
+import { Undo2, AlertTriangle, Plus } from "lucide-react";
 import StatusBadge from "./StatusBadge.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { REVISION_STATUS, REVISION_TRIGGER } from "../revisionStatus.js";
@@ -8,6 +8,7 @@ import { formatTanggal } from "@/utils/formatDate.js";
 import {
   CATEGORY_LABEL, STATUS_LABEL, STATUS_TONE, OWNER_LABEL,
 } from "@/features/complaints/complaintLabels.js";
+import NewComplaintCaseForm from "@/features/complaints/NewComplaintCaseForm.jsx";
 
 // Riwayat Revisi (Retur) & Kendala/Reschedule — SATU komponen, dipakai
 // BERSAMA oleh 2 drawer yang beda konteks tapi HARUS menunjukkan data
@@ -35,15 +36,49 @@ export default function RiwayatRevisiKendala({
   revisions = [], issueJobs = [], complaintCases = [], hasComplaint = false, complaintDetail = null, complaintDate = null,
   className = "",
   onOpenComplaintCase,
+  // orderId (12 September 2026, D-116 — laporan owner: "untuk input
+  // komplain belum ada, harus buka chat > klik order nya > isi komplain")
+  // — OPSIONAL, cuma diisi pemanggil yang tahu order-nya (semua pemanggil
+  // saat ini SUDAH tahu, lihat OrderTimelineDrawer.jsx/JobDetailDrawer.jsx).
+  // Kalau diisi, tombol "+ Buka Kasus" SELALU tampil di sini — sebelum ini
+  // seksi ini cuma BACA (revisions/issueJobs/complaintCases dari props),
+  // dan bahkan HILANG TOTAL kalau order belum pernah komplain sama sekali
+  // (lihat `kosong` di bawah) — jadi walau order ini dibuka dari Semua
+  // Order Delivery/Produksi/B2B atau Jadwal & Penugasan, TIDAK ADA jalan
+  // membuka kasus baru dari sana. Sekarang ADA, di SATU tempat yang sudah
+  // dipakai 6 halaman sekaligus (lihat catatan berkas di atas).
+  orderId, unitId, onCaseCreated,
 }) {
+  const [showForm, setShowForm] = useState(false);
   const kosong = revisions.length === 0 && issueJobs.length === 0 && complaintCases.length === 0;
-  if (kosong && !hasComplaint) return null;
+  if (kosong && !hasComplaint && !orderId) return null;
 
   return (
     <div className={className}>
-      <h4 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">
-        <Undo2 size={12} aria-hidden /> Revisi & Kendala
-      </h4>
+      <div className="mb-2 flex items-center gap-1.5">
+        <h4 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">
+          <Undo2 size={12} aria-hidden /> Revisi & Kendala
+        </h4>
+        {orderId && (
+          <button
+            type="button" onClick={() => setShowForm((v) => !v)}
+            className="ml-auto flex items-center gap-1 text-[11px] font-bold text-accent hover:underline"
+          >
+            <Plus size={11} /> Buka Kasus
+          </button>
+        )}
+      </div>
+
+      {showForm && (
+        <div className="mb-2">
+          <NewComplaintCaseForm
+            orderId={orderId} unitId={unitId}
+            onCreated={() => { setShowForm(false); onCaseCreated?.(); }}
+            onCancel={() => setShowForm(false)}
+          />
+        </div>
+      )}
+
       <div className="flex flex-col gap-2">
         {/* Complaint Case (D-116, 11 September 2026) — kasus lintas divisi
             yang SUDAH actionable (Delivery Task/Material Requirement/dst),

@@ -11,7 +11,7 @@ import { MapPin, Phone, Loader2 } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import PaymentSection from "./PaymentSection";
 import { performSubmit } from "../lib/submitJobAction";
-import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, estJamUntukTampilan, JOB_STATUS_REAL } from "../lib/jobHelpers";
+import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL } from "../lib/jobHelpers";
 import { useTheme } from "../hooks/useTheme";
 
 const FAIL_REASONS_PICKUP = [
@@ -98,6 +98,19 @@ export default function JobCard({ job, onChanged }) {
           <Text style={[styles.statusBadgeText, { color: STATUS_TONE[job.status] || theme.INK2 }]}>{statusInfo.label}</Text>
         </View>
       </View>
+
+      {/* Complaint / After-Sales Case (D-116, 12 September 2026 —
+          permintaan owner: driver perlu tahu kalau job ini berasal dari
+          kasus komplain, supaya lebih hati-hati/sopan di lokasi). Job.
+          complaintCase SUDAH ikut GET /armada/my-jobs sejak jobInclude
+          diperluas — nol perubahan backend, murni tampilan di sini. */}
+      {job.complaintCase && (
+        <View style={styles.complaintBanner}>
+          <Text style={styles.complaintBannerText}>
+            🚩 Job dari Kasus Komplain {job.complaintCase.caseNumber} — {COMPLAINT_CATEGORY_LABEL[job.complaintCase.category] || job.complaintCase.category}
+          </Text>
+        </View>
+      )}
 
       {estJam && <Text style={styles.detailLine}>🕗 {estJam}</Text>}
       {job.addressText ? <Text style={styles.detailLine} numberOfLines={2}>📍 {job.addressText}</Text> : null}
@@ -239,6 +252,8 @@ function makeStyles(t) {
     statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100 },
     statusBadgeText: { fontSize: 10.5, fontWeight: "700" },
     detailLine: { color: t.INK2, fontSize: 12, marginTop: 6 },
+    complaintBanner: { backgroundColor: t.RED + "1A", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, marginTop: 8 },
+    complaintBannerText: { color: t.RED, fontSize: 11.5, fontWeight: "700" },
     quickActions: { flexDirection: "row", gap: 8, marginTop: 10 },
     quickBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.ACCENT_BG, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
     quickBtnText: { color: t.ACCENT, fontSize: 11.5, fontWeight: "600" },

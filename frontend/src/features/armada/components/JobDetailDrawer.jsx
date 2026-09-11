@@ -1174,8 +1174,10 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
 
                 {/* Riwayat Revisi & Kendala (10 Sep 2026) — SATU sumber
                     dengan tab Semua Order, lihat catatan di deklarasi
-                    timelineData. null kalau order ini tidak punya revisi/
-                    kendala apa pun (mayoritas job) — tidak render apa-apa. */}
+                    timelineData. orderId (12 Sep 2026, D-116) membuka tombol
+                    "+ Buka Kasus" di sini juga — dispatcher yang sedang
+                    lihat job bisa langsung buka kasus komplain tanpa
+                    pindah ke Order Detail. */}
                 <RiwayatRevisiKendala
                   className="mt-5 border-t border-line pt-3"
                   revisions={timelineData?.revisions || []}
@@ -1185,6 +1187,11 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                   complaintDetail={timelineData?.complaintDetail}
                   complaintDate={timelineData?.complaintDate}
                   onOpenComplaintCase={setOpenComplaintCaseId}
+                  orderId={orderOf(job)?.id}
+                  onCaseCreated={() => {
+                    const oid = orderOf(job)?.id;
+                    if (oid) api.getOrderTimeline(oid).then(setTimelineData).catch(() => {});
+                  }}
                 />
 
                 {/* Jujur soal yang belum ada — lihat catatan di kepala file */}

@@ -1248,6 +1248,8 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
               complaintDetail={data?.complaintDetail ?? o.complaintDetail}
               complaintDate={data?.complaintDate ?? o.complaintDate}
               onOpenComplaintCase={setOpenComplaintCaseId}
+              orderId={o.id}
+              onCaseCreated={() => { if (order) api.getOrderTimeline(order.id).then(setData).catch(() => {}); }}
             />
           )}
         </div>
