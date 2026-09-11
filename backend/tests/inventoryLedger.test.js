@@ -39,8 +39,22 @@ test("lockRowForUpdate: mengirim SELECT ... FOR UPDATE dengan nama tabel & id ya
   const { tx, calls } = makeTx();
   await lockRowForUpdate(tx, "goods_receipts", "gr-123");
   assert.equal(calls.lock.length, 1);
-  assert.match(calls.lock[0].sql, /SELECT id FROM goods_receipts WHERE id = \$1 FOR UPDATE/);
+  assert.match(calls.lock[0].sql, /SELECT id FROM goods_receipts WHERE id = \$1::uuid FOR UPDATE/);
   assert.equal(calls.lock[0].id, "gr-123");
+});
+
+// Regresi (13 Sept 2026): $1 TANPA cast eksplisit dikirim Postgres sebagai
+// `text` lewat $queryRawUnsafe (bukan tagged-template $queryRaw biasa),
+// dan `uuid = text` bukan operator yang ada (kode 42883) — bug ini lolos
+// SEMUA tes stub sebelumnya (stub tidak memvalidasi SQL terhadap Postgres
+// sungguhan) dan baru ketahuan lewat smoke test pasca-deploy. Setiap
+// endpoint yang menulis ledger gagal total sampai diperbaiki. Tes ini
+// TIDAK bisa mencegah kelas bug yang sama di masa depan (masih stub) —
+// tapi setidaknya mengunci bahwa cast ini tidak diam-diam dihapus lagi.
+test("lockRowForUpdate: SQL punya cast ::uuid eksplisit pada parameter (tanpa ini, Postgres menolak uuid = text)", async () => {
+  const { tx, calls } = makeTx();
+  await lockRowForUpdate(tx, "materials", "m-1");
+  assert.match(calls.lock[0].sql, /\$1::uuid/);
 });
 
 test("lockRowForUpdate: menolak dipanggil dengan prisma singleton (tanpa $queryRawUnsafe)", async () => {
