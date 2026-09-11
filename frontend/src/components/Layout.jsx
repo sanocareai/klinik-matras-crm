@@ -84,6 +84,12 @@ const DIVISIONS = {
           // Sales sekarang boleh tambah produk sendiri (backend routes/products.js
           // membatasi edit/hapus HANYA ke produk buatannya sendiri, admin bebas).
           { to: "/products",  label: "Galeri Produk", Icon: Package },
+          // Kasus Komplain (D-116, 11 September 2026) — Sales membuka kasus
+          // dari Order Detail (tombol "+ Buka Kasus" di section Kasus
+          // Komplain), menu ini untuk memantau SEMUA kasus miliknya lintas
+          // order. Halaman dibaca lintas divisi (Delivery/Produksi/Warehouse/
+          // QC juga punya menu yang sama, lihat Layout.jsx section lain).
+          { to: "/komplain",  label: "Kasus Komplain", Icon: AlertTriangle },
         ],
       },
       {
@@ -187,6 +193,9 @@ const DIVISIONS = {
           { to: "/bengkel/qc",              label: "Inspeksi QC",     Icon: ScanLine },
           { to: "/bengkel/scope-revisions", label: "Revisi Lingkup",  Icon: GitBranch },
           { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
+          // Kasus Komplain (D-116, 11 September 2026) — halaman dibaca
+          // lintas divisi, lihat catatan panjang di section armada di atas.
+          { to: "/komplain",                label: "Kasus Komplain",  Icon: AlertTriangle },
         ],
       },
       // Konfigurasi rute/staf produksi (Production Core Slice 4, 10
@@ -261,6 +270,11 @@ const DIVISIONS = {
           { to: "/warehouse/stock-count",   label: "Stock Opname",       Icon: Scale },
           { to: "/warehouse/replenishment", label: "Restok",             Icon: TrendingUp },
           { to: "/warehouse/adjustments",   label: "Barang Rusak & Retur", Icon: AlertTriangle },
+          // Kasus Komplain (D-116, 11 September 2026) — Warehouse melihat
+          // kasus yang butuh Material Requirement (status Menunggu Material).
+          // Halaman dibaca lintas divisi, lihat catatan panjang di section
+          // armada di atas.
+          { to: "/komplain",                label: "Kasus Komplain",     Icon: AlertTriangle },
         ],
       },
       {
@@ -329,6 +343,14 @@ const DIVISIONS = {
           { to: "/armada/pod",       label: "Proof of Delivery",   Icon: ClipboardCheck },
           { to: "/armada/issues",    label: "Kendala & Reschedule",Icon: AlertTriangle },
           { to: "/armada/returns",   label: "Retur",               Icon: Undo2 },
+          // Kasus Komplain (D-116, 11 September 2026) — halaman SATU-SATUNYA
+          // dibaca lintas divisi (route /komplain, bukan /armada/komplain),
+          // lihat pageRegistry.jsx & pages/ComplaintCases.jsx. Delivery Task
+          // yang lahir dari sebuah kasus juga MUNCUL biasa di Jadwal &
+          // Penugasan/Route Planner (badge merah "Komplain: CMP-...") —
+          // menu ini untuk melihat/mengerjakan KASUS-nya sendiri (root cause,
+          // material requirement, dst), bukan cuma job-nya.
+          { to: "/komplain",         label: "Kasus Komplain",      Icon: AlertTriangle },
         ],
       },
       {

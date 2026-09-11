@@ -33,6 +33,9 @@ export const ENTITY_TYPES = Object.freeze({
   RETURN_RECORD: "return_record",
   STOCK_ADJUSTMENT: "stock_adjustment",
   REPLENISHMENT: "replenishment",
+  // Complaint / After-Sales Case lintas divisi (D-116, 11 September 2026) —
+  // lihat catatan panjang di schema.prisma model ComplaintCase.
+  COMPLAINT: "complaint",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -84,6 +87,19 @@ export const EVENT_TYPES = Object.freeze({
   DOCUMENT_REJECTED: "DOCUMENT_REJECTED",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
+
+  // Complaint / After-Sales Case lintas divisi (D-116, 11 September 2026).
+  // Satu event generik per titik keputusan (pola sama dengan
+  // DOCUMENT_APPROVED/dst di atas) — detail "apa"/"kenapa" ada di metadata,
+  // bukan diulang jadi eventType baru per kasus.
+  COMPLAINT_CREATED: "COMPLAINT_CREATED",
+  COMPLAINT_STATUS_CHANGED: "COMPLAINT_STATUS_CHANGED",
+  COMPLAINT_DELIVERY_TASK_CREATED: "COMPLAINT_DELIVERY_TASK_CREATED",
+  COMPLAINT_MATERIAL_REQUESTED: "COMPLAINT_MATERIAL_REQUESTED",
+  COMPLAINT_QC_LINKED: "COMPLAINT_QC_LINKED",
+  COMPLAINT_FOLLOW_UP_LOGGED: "COMPLAINT_FOLLOW_UP_LOGGED",
+  COMPLAINT_CUSTOMER_CONFIRMED: "COMPLAINT_CUSTOMER_CONFIRMED",
+  COMPLAINT_CANCELLED: "COMPLAINT_CANCELLED",
 });
 
 /**
@@ -212,6 +228,24 @@ export function formatActivitySentence(event) {
         metadata.receiptNumber || metadata.issueNumber || metadata.transferNumber
         || metadata.countNumber || metadata.adjustmentNumber || metadata.recordNumber || metadata.returnNumber || "—"
       }${metadata.step ? ` (${metadata.step})` : ""}`;
+    case EVENT_TYPES.COMPLAINT_CREATED:
+      return `Kasus komplain dibuka — ${metadata.categoryLabel || metadata.category || "—"}`;
+    case EVENT_TYPES.COMPLAINT_STATUS_CHANGED:
+      return metadata.note
+        ? `Status komplain: ${metadata.fromLabel || metadata.from || "—"} → ${metadata.toLabel || metadata.to || "—"} — ${metadata.note}`
+        : `Status komplain: ${metadata.fromLabel || metadata.from || "—"} → ${metadata.toLabel || metadata.to || "—"}`;
+    case EVENT_TYPES.COMPLAINT_DELIVERY_TASK_CREATED:
+      return `Delivery Task dibuat — ${metadata.jobType === "DELIVERY" ? "Pengiriman ulang" : "Pengambilan/inspeksi"}`;
+    case EVENT_TYPES.COMPLAINT_MATERIAL_REQUESTED:
+      return `Material Requirement diajukan ke Warehouse${metadata.issueNumber ? ` — ${metadata.issueNumber}` : ""}`;
+    case EVENT_TYPES.COMPLAINT_QC_LINKED:
+      return `Hasil QC ditautkan ke kasus — verdict ${metadata.verdict || "—"}`;
+    case EVENT_TYPES.COMPLAINT_FOLLOW_UP_LOGGED:
+      return metadata.note ? `Follow-up ke customer — ${metadata.note}` : "Follow-up ke customer dicatat";
+    case EVENT_TYPES.COMPLAINT_CUSTOMER_CONFIRMED:
+      return "Customer mengonfirmasi komplain SELESAI";
+    case EVENT_TYPES.COMPLAINT_CANCELLED:
+      return metadata.reason ? `Kasus komplain dibatalkan — ${metadata.reason}` : "Kasus komplain dibatalkan";
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya

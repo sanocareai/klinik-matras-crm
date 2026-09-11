@@ -2,6 +2,7 @@ import React from "react";
 import {
   Clock, Phone, PackageOpen, Truck, RotateCcw, CalendarCheck2, MapPinned,
   Wrench, PackageCheck, CheckCircle2, XCircle, Hourglass, MapPinOff, Undo2,
+  AlertTriangle,
 } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -297,6 +298,44 @@ export function RevisionBadge({ job, className, variant = "pill" }) {
       )}
     >
       <Undo2 size={11} className="shrink-0" /> Revisi: {statusLabel}
+    </span>
+  );
+}
+
+// Job hasil Complaint / After-Sales Case (D-116, 11 September 2026) — laporan
+// owner: komplain Sony/Aida sudah dicatat Sales tapi TIDAK MUNCUL di Delivery
+// walau order-nya siap dimasukkan rute BESOK. Job Delivery Task yang lahir
+// dari POST /complaints/:id/delivery-task kini MENAUTKAN diri lewat
+// job.complaintCase (relasi FK langsung Job.complaintCaseId, lihat jobInclude
+// armada.js) — biasanya null untuk mayoritas job normal. Badge TERPISAH dari
+// RevisionBadge di atas (dua sumber berbeda: ComplaintCase vs UnitRevision
+// lama) supaya dispatcher tahu PERSIS kasus mana yang sedang ditangani lewat
+// job ini, bukan cuma "ada sesuatu yang spesial".
+export function ComplaintBadge({ job, className, variant = "pill" }) {
+  const kase = job?.complaintCase;
+  if (!kase) return null;
+  const title = `Job dari Kasus Komplain ${kase.caseNumber} — status: ${kase.status}`;
+  if (variant === "dot") {
+    return (
+      <span
+        title={title}
+        aria-label={title}
+        className={cn(
+          "pointer-events-none absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red ring-2 ring-[var(--dh-elevated)]",
+          className
+        )}
+      />
+    );
+  }
+  return (
+    <span
+      title={title}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full bg-redbg px-2 py-0.5 text-[10.5px] font-semibold text-red",
+        className
+      )}
+    >
+      <AlertTriangle size={11} className="shrink-0" /> Komplain: {kase.caseNumber}
     </span>
   );
 }

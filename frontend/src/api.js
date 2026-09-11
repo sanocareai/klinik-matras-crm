@@ -803,6 +803,23 @@ export const api = {
   // routes/orders.js POST /:id/complaint/resolve).
   resolveOrderComplaint: (orderId) =>
     request(`/orders/${orderId}/complaint/resolve`, { method: "POST" }),
+
+  // Complaint / After-Sales Case lintas divisi (D-116, 11 September 2026) —
+  // SATU sumber kebenaran BARU, terpisah dari markOrderComplaint/
+  // resolveOrderComplaint di atas (jalur lama, TIDAK dihapus — order yang
+  // sudah DELIVERED masih bisa pakai keduanya). Case ini yang membuat
+  // komplain bisa dibuka SEBELUM order DELIVERED dan otomatis merutekan ke
+  // Delivery/Produksi/Warehouse/QC. Lihat backend/src/services/complaintCase.js.
+  getComplaintCases: (params = {}) => request(`/complaints${buildQuery(params)}`),
+  getComplaintCase: (id) => request(`/complaints/${id}`),
+  createComplaintCase: (data) => request("/complaints", { method: "POST", body: JSON.stringify(data) }),
+  updateComplaintCase: (id, data) => request(`/complaints/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  transitionComplaintStatus: (id, data) => request(`/complaints/${id}/status`, { method: "POST", body: JSON.stringify(data) }),
+  createComplaintDeliveryTask: (id, data) => request(`/complaints/${id}/delivery-task`, { method: "POST", body: JSON.stringify(data) }),
+  createComplaintMaterialRequirement: (id, data) => request(`/complaints/${id}/material-requirement`, { method: "POST", body: JSON.stringify(data) }),
+  linkComplaintQc: (id, qcFitTestId) => request(`/complaints/${id}/link-qc`, { method: "POST", body: JSON.stringify({ qcFitTestId }) }),
+  logComplaintFollowUp: (id, note) => request(`/complaints/${id}/follow-up`, { method: "POST", body: JSON.stringify({ note }) }),
+  confirmComplaintCustomer: (id) => request(`/complaints/${id}/confirm-customer`, { method: "POST" }),
   // Buka lagi order yang terlanjur "Terkirim" tanpa job Pengiriman yang
   // pernah selesai (8 September 2026) — lihat catatan panjang di
   // routes/orders.js POST /:id/reopen-for-delivery.

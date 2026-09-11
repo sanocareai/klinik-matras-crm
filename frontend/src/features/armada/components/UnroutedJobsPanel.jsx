@@ -9,7 +9,7 @@ import {
   customerOf, orderOf, unitCountOf, cityOf, mapsUrl, conversationIdOf, customerPhoneOf,
   jobAccentBarStyle, hasJobAccentBar, orderStatusOf, orderNumberOf, salesPersonOf,
 } from "../jobStatus.js";
-import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge } from "./JobBadges.jsx";
+import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS } from "@/utils/format.js";
@@ -234,6 +234,7 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob, draftRoutes,
           <OrderStatusBadge job={j} />
           <RentalBadge job={j} />
           <RevisionBadge job={j} />
+          <ComplaintBadge job={j} />
         </div>
         <div className="relative flex shrink-0 items-center gap-0.5">
           {/* D-140 — "Tanpa link Maps" TIDAK lagi baris pil sendiri (lihat

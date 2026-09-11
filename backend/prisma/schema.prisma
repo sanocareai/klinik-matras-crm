@@ -374,6 +374,8 @@ model User {
   podEdited                  Job[]                    @relation("PodEditor")
   jobsRescheduled            Job[]                    @relation("JobRescheduler")
   unitRevisionsCreated       UnitRevision[]           @relation("UnitRevisionCreator")
+  complaintCasesCreated      ComplaintCase[]          @relation("ComplaintCreator")
+  complaintCasesConfirmed    ComplaintCase[]          @relation("ComplaintCustomerConfirmer")
   goodsReceiptsCreated       GoodsReceipt[]           @relation("GoodsReceiptCreator")
   materialIssuesRequested    MaterialIssue[]          @relation("MaterialIssueRequester")
   materialIssuesApproved     MaterialIssue[]          @relation("MaterialIssueApprover")
@@ -1104,6 +1106,7 @@ model Order {
   scopeRevisions    ScopeRevision[]
   revisionLogs      OrderRevisionLog[]
   invoice           Invoice?
+  complaintCases    ComplaintCase[]
 
   @@index([customerId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
@@ -1366,6 +1369,7 @@ model Unit {
   blockers          ProductionBlocker[]
   stageAssignments  StageAssignment[]
   materialIssues    MaterialIssue[]
+  complaintCases    ComplaintCase[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -2055,6 +2059,16 @@ model Job {
   routeId   String?  @map("route_id") @db.Uuid
   route     Route?   @relation(fields: [routeId], references: [id], onDelete: SetNull)
 
+  // Kasus komplain yang MEMICU job ini (D-116, 11 September 2026) — job
+  // pengambilan/inspeksi/pengiriman ulang lahir LANGSUNG dari ComplaintCase,
+  // TANPA mensyaratkan status Order/Unit apa pun (pola sama dengan
+  // create-pickup-job UnitRevision, tapi tersedia bahkan SEBELUM order
+  // DELIVERED — itulah gap yang ditutup ComplaintCase). SetNull: kasus
+  // dihapus (jarang, tidak ada endpoint delete) tidak boleh menggagalkan
+  // riwayat job yang sudah berjalan.
+  complaintCaseId String?        @map("complaint_case_id") @db.Uuid
+  complaintCase   ComplaintCase? @relation(fields: [complaintCaseId], references: [id], onDelete: SetNull)
+
   units         JobUnit[]
   payments      Payment[]
   revisionLinks UnitRevision[]
@@ -2068,6 +2082,7 @@ model Job {
   @@index([routeId, sequence]) // urutan stop dalam satu rute
   @@index([vehicleId])
   @@index([podStatus])
+  @@index([complaintCaseId])
   @@map("jobs")
 }
 
@@ -2254,12 +2269,209 @@ model UnitRevision {
   createdById String? @map("created_by")
   createdBy   User?   @relation("UnitRevisionCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
+  // Kasus komplain induk (D-116, 11 September 2026) — kalau revisi ini lahir
+  // dari alur ComplaintCase (unit sudah DELIVERED, jadi bisa memakai mesin
+  // UnitRevision yang sudah ada apa adanya), pointer ini menautkannya
+  // kembali supaya linimasa kasus lengkap TANPA menduplikasi state machine
+  // REQUESTED→...→CONFIRMED yang sudah ada di sini. Nullable: revisi yang
+  // diajukan langsung dari Delivery > Retur (tanpa lewat ComplaintCase) TETAP
+  // berjalan seperti sebelumnya, fitur ini murni aditif.
+  complaintCaseId String?        @map("complaint_case_id") @db.Uuid
+  complaintCase   ComplaintCase? @relation(fields: [complaintCaseId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([unitId])
   @@index([status])
+  @@index([complaintCaseId])
   @@map("unit_revisions")
+}
+
+// ─── COMPLAINT CASE — After-Sales lintas divisi (D-116, 11 September 2026) ─
+//
+// Laporan owner: order Sony (RES-21082026) dan Aida (RES-27082026-176) sudah
+// dicatat komplain oleh Sales, tapi TIDAK PERNAH muncul di Delivery walau
+// order-nya siap kirim besok — Delivery butuh kasusnya masuk radar SEKARANG
+// supaya bisa dimasukkan rute, tanpa menunggu order benar-benar DELIVERED.
+//
+// AKAR MASALAHNYA: sebelum model ini ada, komplain punya DUA jalan masuk
+// yang SAMA SEKALI TERPISAH dan KEDUANYA mensyaratkan status "sudah
+// terkirim":
+//   1. PATCH /orders/:id/complaint (tombol "+ Ajukan Revisi/Komplain" di
+//      Sales CRM) — menolak keras kalau Order.status != DELIVERED, dan
+//      HANYA menulis Order.hasComplaint (flag), TIDAK PERNAH membuat objek
+//      apa pun yang bisa dijadwalkan di Delivery.
+//   2. POST /armada/revisions (UnitRevision, dipakai Delivery > Retur) —
+//      menolak keras kalau Unit.status != DELIVERED.
+// Order yang MASIH diproduksi/siap kirim (persis kasus Sony/Aida) jatuh di
+// celah antara keduanya: sudah ada komplain nyata, tapi TIDAK ADA jalan
+// membuatnya actionable di divisi manapun selain catatan teks.
+//
+// ComplaintCase adalah SATU SUMBER KEBENARAN baru yang menutup celah itu —
+// dibuka Sales dari Order Detail kapan pun keluhan masuk, TANPA bergantung
+// pada Order.status/Unit.status sama sekali. Dari sana, sistem merutekan ke
+// divisi terkait via `status`/`currentOwner` (lihat penjelasan tiap field di
+// bawah), dan MENAUTKAN diri ke objek konkret tiap divisi alih-alih
+// menduplikasi state/data yang sudah punya rumah:
+//   - Delivery  → Job (jobs, relasi balik Job.complaintCaseId) — pengambilan/
+//                 inspeksi/pengiriman ulang, job BIASA yang lahir langsung
+//                 UNSCHEDULED, pola sama seperti
+//                 POST /armada/revisions/:id/create-pickup-job, TAPI tidak
+//                 mensyaratkan Unit.status apa pun (itulah bedanya).
+//   - Produksi  → Unit yang SAMA (unitId) berpindah balik ke status
+//                 RECEIVED/IN_PRODUCTION lewat mekanisme job-completion yang
+//                 SUDAH ADA (lihat POST /jobs/:id/complete) — TIDAK ADA
+//                 model "Production Job" baru, produksi di sistem ini SUDAH
+//                 unit-centric (RoutingStage/UnitStageLog), bukan job-based.
+//   - Warehouse → MaterialIssue (materialIssues, relasi balik
+//                 MaterialIssue.complaintCaseId) dengan sourceType
+//                 COMPLAINT_REWORK — Material Requirement TIDAK dimodelkan
+//                 ulang, MaterialIssue SUDAH persis itu (requisition→
+//                 approve→issue).
+//   - QC        → qcFitTestId, pointer ke QcFitTest yang memverifikasi hasil
+//                 rework (opsional, hanya diisi kalau memang lewat QC ulang).
+//   - Delivery-siklus-lengkap → UnitRevision (unitRevisions, relasi balik
+//                 UnitRevision.complaintCaseId), untuk kasus yang unitnya
+//                 SUDAH DELIVERED dan bisa memakai mesin
+//                 jemput→revisi→antar-ulang yang SUDAH ADA & teruji —
+//                 ComplaintCase TIDAK membangun ulang state machine itu.
+//   - Sales     → follow-up & konfirmasi akhir customer (lihat
+//                 customerConfirmedAt di bawah) + ActivityEvent
+//                 (entityType "complaint") untuk linimasa di Order Detail.
+enum ComplaintCategory {
+  KUALITAS_PRODUK
+  KENYAMANAN
+  KETERLAMBATAN
+  KERUSAKAN_TRANSIT
+  SALAH_SPESIFIKASI
+  LAYANAN_STAF
+  LAINNYA
+}
+
+enum ComplaintSeverity {
+  RENDAH
+  SEDANG
+  TINGGI
+  KRITIS
+}
+
+enum ComplaintWarrantyStatus {
+  BELUM_DITENTUKAN
+  DALAM_GARANSI
+  DILUAR_GARANSI
+}
+
+// Divisi mana yang bolanya SEKARANG — SENGAJA terpisah dari `status`
+// (permintaan eksplisit owner): satu status kadang bisa dipegang lebih dari
+// satu kemungkinan divisi tergantung konteks kasus (mis. MENUNGGU_MATERIAL
+// dipegang WAREHOUSE, tapi DALAM_PENANGANAN dipegang PRODUCTION) —
+// menggabungkannya jadi satu enum akan meledak jadi kombinasi status×divisi.
+enum ComplaintOwner {
+  SALES
+  DELIVERY
+  PRODUCTION
+  WAREHOUSE
+  QC
+}
+
+// Alur utama BARU→SELESAI TIDAK LINEAR KAKU (kasus ringan boleh lompat, mis.
+// BARU→VERIFIKASI→SIAP_DIKIRIM kalau ternyata cuma kirim ulang barang
+// pengganti tanpa perlu produksi ulang) — divalidasi di route sebagai
+// "state MANA SAJA yang valid dari state ini", bukan urutan tunggal wajib.
+// 4 status pengecualian (MENUNGGU_*, DIBATALKAN) bisa masuk dari status aktif
+// manapun dan kembali ke status aktif semula setelah blocker-nya hilang.
+enum ComplaintStatus {
+  BARU
+  VERIFIKASI
+  INVESTIGASI
+  ACTION_REQUIRED
+  DIJADWALKAN
+  DALAM_PENANGANAN
+  QC
+  SIAP_DIKIRIM
+  DIKIRIM_ULANG
+  KONFIRMASI_CUSTOMER
+  SELESAI
+  // Exception — lihat catatan di atas.
+  MENUNGGU_CUSTOMER
+  MENUNGGU_MATERIAL
+  MENUNGGU_JADWAL
+  DIBATALKAN
+}
+
+model ComplaintCase {
+  id         String @id @default(uuid()) @db.Uuid
+  caseNumber String @unique @map("case_number") // CMP-DDMMYYYY-NNN
+
+  orderId String @map("order_id")
+  // Restrict — order yang punya riwayat komplain tidak boleh terhapus diam-diam,
+  // pola sama dengan Unit.orderId.
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  // Opsional: komplain bisa menyasar SATU unit spesifik (order isi banyak
+  // kasur, cuma satu yang bermasalah) atau seluruh order (null = order-wide,
+  // mis. keterlambatan pengiriman). SetNull — unit lama/dihapus tidak boleh
+  // menggagalkan riwayat kasus yang sudah tercatat.
+  unitId String? @map("unit_id") @db.Uuid
+  unit   Unit?   @relation(fields: [unitId], references: [id], onDelete: SetNull)
+
+  category       ComplaintCategory
+  severity       ComplaintSeverity       @default(SEDANG)
+  warrantyStatus ComplaintWarrantyStatus @default(BELUM_DITENTUKAN) @map("warranty_status")
+
+  description String // keluhan customer, wajib diisi saat kasus dibuka
+  rootCause   String? @map("root_cause") // diisi saat INVESTIGASI
+  resolution  String? // diisi menjelang SELESAI — apa yang sebenarnya dilakukan
+
+  // Rupiah — biaya menyelesaikan (material/ongkir ekstra/dst), TERPISAH dari
+  // Order.value (itu harga jual, ini biaya internal menuntaskan komplain).
+  resolutionCost Int? @map("resolution_cost")
+
+  attachmentUrls String[] @default([]) @map("attachment_urls")
+
+  status       ComplaintStatus @default(BARU)
+  currentOwner ComplaintOwner  @default(SALES) @map("current_owner")
+
+  // Target internal (SLA) — kapan kasus ini SEHARUSNYA tuntas. BUKAN janji
+  // ke customer (itu Order.customerPromiseDate, konsep berbeda).
+  targetCompletionAt DateTime? @map("target_completion_at")
+
+  // Follow-up & konfirmasi akhir customer — KOLOM, bukan tabel ledger
+  // terpisah (pola sama dengan Job.podStatus: "cukup untuk v1"). Percobaan
+  // follow-up ITU SENDIRI direkam berkali-kali sebagai ActivityEvent
+  // (eventType FOLLOW_UP_LOGGED) — TIDAK butuh tabel baru untuk itu, lihat
+  // lib/activityLog.js. Case HANYA boleh berstatus SELESAI setelah kolom ini
+  // terisi (divalidasi di route, bukan cuma di UI).
+  customerConfirmedAt   DateTime? @map("customer_confirmed_at")
+  customerConfirmedById String?   @map("customer_confirmed_by")
+  customerConfirmedBy   User?     @relation("ComplaintCustomerConfirmer", fields: [customerConfirmedById], references: [id], onDelete: SetNull)
+
+  cancelReason String? @map("cancel_reason") // wajib diisi kalau status DIBATALKAN
+
+  // QC yang memverifikasi hasil rework kasus ini (opsional — hanya kasus
+  // yang benar-benar lewat produksi ulang yang mengisi ini). SetNull: QC
+  // test lama tidak pernah dihapus dalam praktik, tapi skema tidak memaksakan.
+  qcFitTestId String?    @map("qc_fit_test_id") @db.Uuid
+  qcFitTest   QcFitTest? @relation(fields: [qcFitTestId], references: [id], onDelete: SetNull)
+
+  // SetNull: staf resign, riwayat kasus TETAP ada.
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("ComplaintCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  jobs           Job[]
+  unitRevisions  UnitRevision[]
+  materialIssues MaterialIssue[]
+
+  @@index([orderId])
+  @@index([unitId])
+  @@index([status])
+  @@index([currentOwner])
+  @@index([createdAt])
+  @@map("complaint_cases")
 }
 
 // ─── ARMADA (PRD §5.1 Vehicle) ──────────────────────────────────────────────
@@ -2785,6 +2997,8 @@ model QcFitTest {
 
   note      String?
   createdAt DateTime @default(now()) @map("created_at")
+
+  complaintCases ComplaintCase[]
 
   @@index([unitId, createdAt])
   @@map("qc_fit_tests")
@@ -3836,6 +4050,12 @@ enum IssueSourceType {
   INTERNAL_REQUEST
   SAMPLE_REQUEST
   MANUAL
+  // D-116 (11 September 2026) — material yang dibutuhkan spesifik untuk
+  // mengerjakan rework sebuah ComplaintCase (mis. busa pengganti klaim
+  // garansi). Dibedakan dari PRODUCTION_WORK_ORDER supaya laporan Gudang
+  // bisa memisahkan "material produksi normal" vs "material akibat komplain"
+  // tanpa parsing sourceReference.
+  COMPLAINT_REWORK
 }
 
 enum IssueStatus {
@@ -3905,6 +4125,13 @@ model MaterialIssue {
   createdById String? @map("created_by")
   createdBy   User?   @relation("MaterialIssueCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
+  // Kasus komplain yang membutuhkan material ini (D-116, 11 September 2026)
+  // — hanya terisi kalau sourceType = COMPLAINT_REWORK. SetNull: kasus
+  // dihapus tidak boleh menggagalkan riwayat permintaan material yang sudah
+  // tercatat, pola sama dengan unitId di atas.
+  complaintCaseId String?        @map("complaint_case_id") @db.Uuid
+  complaintCase   ComplaintCase? @relation(fields: [complaintCaseId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -3914,6 +4141,7 @@ model MaterialIssue {
   @@index([status])
   @@index([requiredDate])
   @@index([unitId])
+  @@index([complaintCaseId])
   @@map("material_issues")
 }
 

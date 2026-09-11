@@ -7,7 +7,7 @@ import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
 import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf, salesPersonOf } from "../jobStatus.js";
-import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge } from "./JobBadges.jsx";
+import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import QuickChatModal from "./QuickChatModal.jsx";
@@ -785,6 +785,7 @@ export default function RouteCard({
                     <OrderStatusBadge job={j} />
                     <RentalBadge job={j} />
                     <RevisionBadge job={j} />
+                    <ComplaintBadge job={j} />
                   </div>
                   <div className="relative flex shrink-0 items-center gap-0.5">
                     {/* D-140 — "Tanpa link Maps" TIDAK lagi baris pil

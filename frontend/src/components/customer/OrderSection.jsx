@@ -29,6 +29,7 @@ import {
 } from "../../utils/format.js";
 import { isAdminUser } from "../../lib/roles.js";
 import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.jsx";
+import ComplaintCaseSection from "./ComplaintCaseSection.jsx";
 
 // D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari role
 // lain. Backend (guardOrderLocked() di routes/orders.js) yang benar-benar
@@ -683,6 +684,8 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           </>
         )}
       </div>
+
+      <ComplaintCaseSection orderId={order.id} />
 
       {/* D-025: penjelasan kunci — kenapa tombol Edit nonaktif, dan apa yang
           harus dilakukan sales kalau pelanggan minta revisi. */}

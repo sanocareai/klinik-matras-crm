@@ -29,7 +29,10 @@ function handleErr(err, res) {
   return res.status(500).json({ error: "Server error: " + err.message });
 }
 
-const SOURCE_TYPES = ["PRODUCTION_WORK_ORDER", "MAINTENANCE_REQUEST", "INTERNAL_REQUEST", "SAMPLE_REQUEST", "MANUAL"];
+// COMPLAINT_REWORK (D-116, 11 September 2026) — material yang dibutuhkan
+// untuk mengerjakan rework sebuah ComplaintCase, lihat createMaterialIssue
+// di bawah & routes/complaints.js.
+const SOURCE_TYPES = ["PRODUCTION_WORK_ORDER", "MAINTENANCE_REQUEST", "INTERNAL_REQUEST", "SAMPLE_REQUEST", "MANUAL", "COMPLAINT_REWORK"];
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"];
 
 // Integrasi Produksi (13 Sept 2026) — fungsi MURNI, diekspor supaya dites
@@ -103,6 +106,60 @@ materialIssueRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req,
   }
 });
 
+// Inti pembuatan Material Issue — DIEKSTRAK (11 September 2026, D-116) supaya
+// routes/complaints.js#createMaterialRequirement bisa memakai PERSIS logika
+// yang sama (nomor urut, validasi baris, dst) alih-alih menulis ulang jalur
+// kedua yang bisa diam-diam beda aturan. Pola sama dengan
+// services/orderCreation.js#createOrderForCustomer (D-115).
+export async function createMaterialIssue({
+  sourceType, unitId, sourceReference, department, requiredDate, priority, notes, lines, complaintCaseId,
+}, userId) {
+  if (!SOURCE_TYPES.includes(sourceType)) throw new IssueError("Source type tidak valid");
+  if (requiresUnitLink(sourceType) && !unitId) {
+    throw new IssueError("Unit produksi wajib dipilih untuk permintaan dari Work Order Produksi");
+  }
+  if (priority && !PRIORITIES.includes(priority)) throw new IssueError("Priority tidak valid");
+  if (!Array.isArray(lines) || lines.length === 0) throw new IssueError("Minimal satu item wajib diisi");
+  for (const l of lines) {
+    if (!l.materialId) throw new IssueError("Setiap baris wajib memilih item");
+    const qty = Number(l.requestedQty);
+    if (!Number.isFinite(qty) || qty <= 0) throw new IssueError("Requested quantity wajib lebih dari 0");
+  }
+
+  if (unitId) {
+    const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { id: true } });
+    if (!unit) throw new IssueError("Unit produksi tidak ditemukan", 404);
+  }
+
+  const today = new Date();
+  const startOfDay = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const existing = await prisma.materialIssue.count({ where: { createdAt: { gte: startOfDay } } });
+  const issueNumber = `${generateIssueCode(today)}-${String(existing + 1).padStart(2, "0")}`;
+
+  return prisma.materialIssue.create({
+    data: {
+      issueNumber, sourceType,
+      unitId: unitId || null,
+      sourceReference: sourceReference || null,
+      department: department || null,
+      requestedById: userId,
+      requiredDate: requiredDate ? new Date(`${requiredDate}T00:00:00.000Z`) : null,
+      priority: priority || "NORMAL",
+      notes: notes || null,
+      createdById: userId,
+      complaintCaseId: complaintCaseId || null,
+      lines: {
+        create: lines.map((l) => ({
+          materialId: l.materialId,
+          requestedQty: Number(l.requestedQty),
+          sourceLocation: l.sourceLocation || null,
+        })),
+      },
+    },
+    include: issueInclude,
+  });
+}
+
 // POST /api/inventory/material-issues
 // { sourceType, unitId?, sourceReference?, department?, requiredDate?, priority?, notes?,
 //   lines: [{materialId, requestedQty, sourceLocation?}] }
@@ -114,50 +171,7 @@ materialIssueRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req,
 // ditunjuk, jadi unitId tetap opsional untuk itu.
 materialIssueRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { sourceType, unitId, sourceReference, department, requiredDate, priority, notes, lines } = req.body;
-    if (!SOURCE_TYPES.includes(sourceType)) throw new IssueError("Source type tidak valid");
-    if (requiresUnitLink(sourceType) && !unitId) {
-      throw new IssueError("Unit produksi wajib dipilih untuk permintaan dari Work Order Produksi");
-    }
-    if (priority && !PRIORITIES.includes(priority)) throw new IssueError("Priority tidak valid");
-    if (!Array.isArray(lines) || lines.length === 0) throw new IssueError("Minimal satu item wajib diisi");
-    for (const l of lines) {
-      if (!l.materialId) throw new IssueError("Setiap baris wajib memilih item");
-      const qty = Number(l.requestedQty);
-      if (!Number.isFinite(qty) || qty <= 0) throw new IssueError("Requested quantity wajib lebih dari 0");
-    }
-
-    if (unitId) {
-      const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { id: true } });
-      if (!unit) return res.status(404).json({ error: "Unit produksi tidak ditemukan" });
-    }
-
-    const today = new Date();
-    const startOfDay = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-    const existing = await prisma.materialIssue.count({ where: { createdAt: { gte: startOfDay } } });
-    const issueNumber = `${generateIssueCode(today)}-${String(existing + 1).padStart(2, "0")}`;
-
-    const issue = await prisma.materialIssue.create({
-      data: {
-        issueNumber, sourceType,
-        unitId: unitId || null,
-        sourceReference: sourceReference || null,
-        department: department || null,
-        requestedById: req.user.id,
-        requiredDate: requiredDate ? new Date(`${requiredDate}T00:00:00.000Z`) : null,
-        priority: priority || "NORMAL",
-        notes: notes || null,
-        createdById: req.user.id,
-        lines: {
-          create: lines.map((l) => ({
-            materialId: l.materialId,
-            requestedQty: Number(l.requestedQty),
-            sourceLocation: l.sourceLocation || null,
-          })),
-        },
-      },
-      include: issueInclude,
-    });
+    const issue = await createMaterialIssue(req.body, req.user.id);
     res.status(201).json(issue);
   } catch (err) {
     handleErr(err, res);

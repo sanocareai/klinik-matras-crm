@@ -35,6 +35,7 @@ import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } fro
 import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 import { produkLineLabel, parseOrderNotesForInvoice } from "../services/invoice.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -551,6 +552,12 @@ const jobInclude = {
   // UnitRevision.jobId (lihat schema.prisma) — biasanya 0 atau 1 baris,
   // select seminimal mungkin (badge cuma butuh tahu ADA & jenisnya).
   revisionLinks: { select: { id: true, trigger: true, status: true } },
+  // complaintCase (D-116, 11 September 2026) — pola PERSIS sama dengan
+  // revisionLinks di atas: job yang lahir dari ComplaintCase (Delivery Task,
+  // POST /complaints/:id/delivery-task) TIDAK PERNAH kelihatan beda dari job
+  // biasa di papan Jadwal & Penugasan tanpa ini. Select seminimal mungkin
+  // (badge cuma butuh nomor kasus & kategori/severity).
+  complaintCase: { select: { id: true, caseNumber: true, category: true, severity: true, status: true } },
   // rescheduledBy (6 September 2026) — siapa yang mencatat reschedule
   // (baik dari jalur Gagal->reschedule yang lama, maupun catatan
   // retroaktif job Selesai yang baru, lihat POST /jobs/:id/reschedule-note)
@@ -3613,6 +3620,31 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
           data: { status: job.type === "PICKUP" ? "IN_REWORK" : "REDELIVERED" },
         });
       }
+
+      // Auto-advance ComplaintCase (D-116, 11 September 2026) — POLA PERSIS
+      // SAMA dengan auto-advance UnitRevision di atas, di dalam TRANSAKSI &
+      // `jobUnits` yang SAMA: job pengambilan/inspeksi yang lahir dari
+      // POST /complaints/:id/delivery-task (DIJADWALKAN) selesai → kasus
+      // maju ke DALAM_PENANGANAN (unit sudah di tangan tim); job pengiriman
+      // ulang (DIKIRIM_ULANG) selesai → kasus maju ke KONFIRMASI_CUSTOMER
+      // (giliran Sales follow-up). `status` lama di where SEKALIGUS jadi
+      // guard yang sama seperti UnitRevision — kalau kasus sudah dipindah
+      // manual ke status lain, auto-advance diam-diam tidak melakukan apa-apa.
+      if (job.complaintCaseId) {
+        const expectedStatus = job.type === "PICKUP" ? "DIJADWALKAN" : "DIKIRIM_ULANG";
+        const nextStatus = job.type === "PICKUP" ? "DALAM_PENANGANAN" : "KONFIRMASI_CUSTOMER";
+        const nextOwner = job.type === "PICKUP" ? "PRODUCTION" : "SALES";
+        const kase = await tx.complaintCase.findFirst({ where: { id: job.complaintCaseId, status: expectedStatus } });
+        if (kase) {
+          await tx.complaintCase.update({ where: { id: kase.id }, data: { status: nextStatus, currentOwner: nextOwner } });
+          await recordActivity(tx, {
+            entityType: ENTITY_TYPES.COMPLAINT, entityId: kase.id, eventType: EVENT_TYPES.COMPLAINT_STATUS_CHANGED,
+            actorId: req.user.id,
+            metadata: { from: expectedStatus, to: nextStatus, note: `Job ${job.type === "PICKUP" ? "pengambilan" : "pengiriman ulang"} selesai` },
+          });
+        }
+      }
+
       return { job: j, advancedRevisions: job.type === "PICKUP" ? revisiUntukDiajukan : [] };
     });
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });

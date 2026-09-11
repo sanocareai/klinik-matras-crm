@@ -103,6 +103,19 @@ export const PERMISSIONS = {
   // pegang), supaya integrasi lintas divisi tidak perlu jalur khusus.
   B2B_READ: "b2b:read",
   B2B_WRITE: "b2b:write",
+
+  // --- Complaint / After-Sales Case lintas divisi (D-116, 11 September 2026) ---
+  // SATU pasang READ/WRITE dipegang LINTAS divisi (Sales/Delivery/Produksi/
+  // Warehouse/QC) — konsisten dengan cara UnitRevision diberi akses lintas
+  // peran (JOB_WRITE ATAU UNIT_STAGE_WRITE, lihat PATCH /armada/revisions/:id).
+  // Aksi yang MENYENTUH entitas divisi lain (bikin Job, bikin Material Issue,
+  // tautkan QC, override status order) TETAP dijaga permission ASLI divisi
+  // itu (JOB_WRITE/INVENTORY_WRITE/QC_WRITE/ORDER_WRITE) di dalam handler —
+  // COMPLAINT_WRITE cuma pintu untuk field kasus itu sendiri (kategori,
+  // severity, root cause, resolution, dst), BUKAN pintu belakang ke aksi
+  // divisi lain yang seharusnya tetap butuh permission aslinya.
+  COMPLAINT_READ: "complaint:read",
+  COMPLAINT_WRITE: "complaint:write",
 };
 
 const P = PERMISSIONS;
@@ -139,6 +152,9 @@ const ADMIN_PERMS = [
   P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
   P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
   P.PRODUCTION_ASSIGNMENT_WRITE,
+  // D-116 — ADMIN penuh lintas divisi, konsisten dengan ORDER_WRITE/JOB_WRITE
+  // yang sudah dipegang ADMIN sejak awal.
+  P.COMPLAINT_READ, P.COMPLAINT_WRITE,
 ];
 
 export const ROLE_PERMISSIONS = {
@@ -173,6 +189,9 @@ export const ROLE_PERMISSIONS = {
     // pembatasan yang disengaja (bandingkan komentar UNIT_READ di atas:
     // sales MEMANG dimaksudkan bisa lihat status finansial order-nya).
     P.PAYMENT_READ,
+    // D-116 — Sales membuka kasus komplain dari Order Detail & follow-up
+    // customer di ujung alur (KONFIRMASI_CUSTOMER/SELESAI).
+    P.COMPLAINT_READ, P.COMPLAINT_WRITE,
   ],
 
   // Lantai produksi: tahu kasur siapa dan harus diapakan, TIDAK tahu nomor
@@ -180,6 +199,9 @@ export const ROLE_PERMISSIONS = {
   PRODUCTION_WORKER: [
     P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_MATERIAL_WRITE,
     P.CUSTOMER_READ, P.ORDER_READ,
+    // D-116 — baca saja: tahu unit yang dikerjakan sedang menangani komplain
+    // apa, TIDAK memutuskan status/root cause kasus (itu ranah PRODUCTION_LEAD).
+    P.COMPLAINT_READ,
   ],
 
   PRODUCTION_LEAD: [
@@ -202,17 +224,25 @@ export const ROLE_PERMISSIONS = {
     P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
     P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
     P.PRODUCTION_ASSIGNMENT_WRITE,
+    // D-116 — memutuskan root cause/rework & menandai kasus DALAM_PENANGANAN.
+    P.COMPLAINT_READ, P.COMPLAINT_WRITE,
   ],
 
   QC_LEAD: [
     P.UNIT_READ, P.UNIT_STAGE_WRITE, P.QC_WRITE, P.SCOPE_REVISION_PROPOSE,
     P.CUSTOMER_READ, P.ORDER_READ,
     P.DASHBOARD_READ,
+    // D-116 — menautkan hasil QC ulang ke kasus (POST /complaints/:id/link-qc
+    // tetap dijaga QC_WRITE, bukan COMPLAINT_WRITE — lihat catatan di atas).
+    P.COMPLAINT_READ, P.COMPLAINT_WRITE,
   ],
 
   WAREHOUSE: [
     P.INVENTORY_READ, P.INVENTORY_WRITE, P.UNIT_MATERIAL_WRITE,
     P.UNIT_READ,
+    // D-116 — mengelola Material Requirement (POST /complaints/:id/material-
+    // requirement tetap dijaga INVENTORY_WRITE, bukan COMPLAINT_WRITE).
+    P.COMPLAINT_READ, P.COMPLAINT_WRITE,
   ],
 
   // Dispatcher BUTUH PII: menyusun rute tanpa alamat & nomor telepon mustahil.
@@ -226,6 +256,9 @@ export const ROLE_PERMISSIONS = {
     // kerjakan secara fisik.
     P.ORDER_WRITE,
     P.ORDER_READ, P.UNIT_READ,
+    // D-116 — membuat Delivery Task dari kasus komplain (POST /complaints/:id/
+    // delivery-task tetap dijaga JOB_WRITE, bukan COMPLAINT_WRITE) & menjadwalkannya.
+    P.COMPLAINT_READ, P.COMPLAINT_WRITE,
   ],
 
   // Driver melihat PII hanya untuk stop miliknya sendiri — pembatasan baris
