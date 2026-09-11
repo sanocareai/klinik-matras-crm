@@ -1150,6 +1150,12 @@ orderRouter.get("/:id/invoice/mergeable", async (req, res) => {
       where: {
         customerId: order.customerId,
         id: { notIn: idBundleSaatIni },
+        // status (BUKAN cuma invoice.lifecycleStatus) — DIKOREKSI 11 Sep
+        // 2026, laporan owner: order yang SUDAH dibatalkan tetap muncul
+        // sebagai kandidat gabung. Order.status CANCELLED field terpisah
+        // dari Invoice.lifecycleStatus, jadi filter lifecycle saja tidak
+        // menangkap order batal yang invoice-nya sendiri masih SENT/DRAFT.
+        status: { not: "CANCELLED" },
         invoice: { lifecycleStatus: { not: "CANCELLED" } },
       },
       select: { id: true, orderNumber: true, category: true, createdAt: true, invoice: { select: { invoiceNumber: true, sentAt: true } } },

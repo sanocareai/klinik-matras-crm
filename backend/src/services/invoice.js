@@ -407,7 +407,20 @@ export async function buildCombinedInvoiceView(primaryInvoiceId, { userId = null
   const views = await Promise.all(
     memberOrderIds.map((oid) => buildSingleOrderView(oid, { userId, autoCreate: false }))
   );
-  const validViews = views.filter(Boolean);
+  // DIKOREKSI (11 Sep 2026, laporan owner: order Richard yang dibatalkan
+  // tetap masuk invoice gabungan) — Order.status CANCELLED BEDA field dari
+  // Invoice.lifecycleStatus (yang sudah dicek di tempat lain, mis.
+  // attachOrderToInvoice/mergeable) — order bisa CANCELLED sementara
+  // invoice-nya sendiri masih apa adanya (SENT/DRAFT), jadi cek lifecycle
+  // saja TIDAK menangkap kasus ini. Difilter di SINI (view-time, dipanggil
+  // tiap kali bundle dibuka) supaya benar REGARDLESS kapan pembatalan
+  // terjadi relatif terhadap penggabungan (digabung dulu baru dibatalkan
+  // belakangan — TIDAK ADA hook yang melepas otomatis saat itu terjadi,
+  // lihat catatan attachOrderToInvoice soal guard di titik gabung). Relasi
+  // combinedIntoId di DB SENGAJA dibiarkan apa adanya (bukan didetach
+  // paksa) — riwayat "pernah digabung" tetap valid, cuma order yang sudah
+  // batal tidak lagi dihitung/ditampilkan sebagai anggota aktif.
+  const validViews = views.filter((v) => v && v.order.status !== "CANCELLED");
   if (validViews.length === 0) return null;
 
   const orders = validViews.map((v) => v.order);
@@ -494,12 +507,22 @@ export async function attachOrderToInvoice(tx, { sourceOrderId, targetOrderId, u
   }
 
   const [sourceOrder, targetOrder] = await Promise.all([
-    tx.order.findUnique({ where: { id: sourceOrderId }, select: { id: true, customerId: true, invoice: true } }),
-    tx.order.findUnique({ where: { id: targetOrderId }, select: { id: true, customerId: true, invoice: true } }),
+    tx.order.findUnique({ where: { id: sourceOrderId }, select: { id: true, customerId: true, status: true, invoice: true } }),
+    tx.order.findUnique({ where: { id: targetOrderId }, select: { id: true, customerId: true, status: true, invoice: true } }),
   ]);
   if (!sourceOrder || !targetOrder) {
     const e = new Error("Order tidak ditemukan.");
     e.statusCode = 404;
+    throw e;
+  }
+  // DIKOREKSI (11 Sep 2026, laporan owner) — order yang SUDAH dibatalkan
+  // tidak boleh (lagi) digabung ke invoice manapun — buildCombinedInvoiceView
+  // akan mengeluarkannya dari perhitungan REGARDLESS, tapi mencegah di sini
+  // lebih jujur ke user (tidak menawarkan aksi yang hasilnya diam-diam
+  // tidak berefek) & mencegah relasi combinedIntoId nyampah utk kasus baru.
+  if (sourceOrder.status === "CANCELLED" || targetOrder.status === "CANCELLED") {
+    const e = new Error("Order yang sudah dibatalkan tidak bisa digabung ke invoice.");
+    e.statusCode = 400;
     throw e;
   }
   if (sourceOrder.customerId !== targetOrder.customerId) {
