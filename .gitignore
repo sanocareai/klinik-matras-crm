@@ -28,3 +28,4 @@ frontend/dist-driver/
 driver-app/android/release.keystore
 
 backups/
+backend/scripts/data/warehouse-import/

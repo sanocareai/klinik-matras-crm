@@ -3490,6 +3490,18 @@ enum MaterialUnit {
   SHEET
   SPOOL
   KG
+  // Ditambah 11 Sept 2026 untuk import data stock opname real (lihat
+  // backend/scripts/data/warehouse-import/) — satuan nyata yang dipakai
+  // di katalog material real tapi belum ada di enum lama (yang cuma dari
+  // 15 material dummy).
+  PACK // bungkus/pak/dus (BUNGKUS/BKS/PAK/DUS di sumber data)
+  ROLL // gulungan (ROL/ROLL)
+  BUNDLE // ikat (IKAT)
+  ROD // batang (BATANG)
+  PAIR // pasang (PASANG)
+  CAN // kaleng/blek (BLEK/KLG)
+  BOX // dus/box keras, beda dari PACK kalau sumbernya eksplisit "BOX"
+  LITER
 }
 
 enum StockMovementType {
