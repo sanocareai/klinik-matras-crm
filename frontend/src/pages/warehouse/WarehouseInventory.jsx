@@ -15,6 +15,7 @@ import ItemFormModal from "@/features/warehouse/components/ItemFormModal.jsx";
 import {
   STOCK_STATUS_REAL, CATEGORY_REAL, deriveStockStatusReal, formatQty,
 } from "@/features/warehouse/inventoryReal.js";
+import { formatRupiah } from "@/utils/format.js";
 
 // Stock & Material — Warehouse Tahap 2. DATA NYATA.
 //
@@ -24,9 +25,14 @@ import {
 // contoh Tahap 1 sudah DICABUT dari halaman ini (warehouseMock.js sekarang
 // cuma dipakai Dashboard, yang KPI agregatnya memang belum ada di backend).
 //
-// Kolom yang diminta spesifikasi tapi TIDAK ada di sini (Reserved, Location,
-// Batch, Supplier per item, Variant): tidak ada kolomnya di database —
-// daftar lengkap beserta alasan & phase-nya ada di FIELDS_NOT_IN_BACKEND
+// Vendor, sub-kategori (itemGroup), dan Nilai Stok (12 Sept 2026) adalah
+// data REFERENSI snapshot dari import Excel — bukan live, lihat catatan
+// referenceStockValue di schema.prisma. Bisa kosong per item (tidak semua
+// baris di sumbernya punya nilai) — "—" itu jujur apa adanya, bukan bug.
+//
+// Kolom yang diminta spesifikasi tapi TIDAK ada di sini (Reserved per lokasi,
+// Location, Batch, Variant): tidak ada kolomnya di database — daftar
+// lengkap beserta alasan & phase-nya ada di FIELDS_NOT_IN_BACKEND
 // (features/warehouse/inventoryReal.js). Menampilkan kolom yang selalu
 // kosong terbaca sebagai sistem rusak.
 
@@ -86,6 +92,17 @@ export default function WarehouseInventory() {
   const kosong = !loading && terfilter && terfilter.length === 0;
   const katalogKosong = !loading && rows && rows.length === 0;
 
+  // Total nilai stok REFERENSI (snapshot import, bukan live) untuk item yang
+  // sedang tampil — cuma menjumlah baris yang PUNYA angka, bukan mengarang
+  // 0 untuk yang tidak tercatat (lihat catatan referenceStockValue di
+  // schema.prisma). itemsWithValue dipakai supaya jelas ini bukan total
+  // seluruh katalog kalau sebagian item belum punya nilai referensi.
+  const totalNilaiStok = useMemo(() => {
+    if (!terfilter) return null;
+    const withValue = terfilter.filter((r) => r.referenceStockValue != null);
+    return { sum: withValue.reduce((s, r) => s + r.referenceStockValue, 0), count: withValue.length };
+  }, [terfilter]);
+
   return (
     <PageContainer>
       <PageHeader
@@ -117,7 +134,14 @@ export default function WarehouseInventory() {
               {t.label}
             </button>
           ))}
-          {terfilter && <span className="ml-auto self-center text-[11.5px] text-ink3">{terfilter.length} item</span>}
+          {terfilter && (
+            <span className="ml-auto self-center text-[11.5px] text-ink3">
+              {terfilter.length} item
+              {totalNilaiStok && totalNilaiStok.count > 0 && (
+                <> · Nilai Stok Referensi <strong className="text-ink2">{formatRupiah(totalNilaiStok.sum)}</strong> ({totalNilaiStok.count} item tercatat)</>
+              )}
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -168,20 +192,23 @@ export default function WarehouseInventory() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Kode</TH><TH>Nama Item</TH><TH>Kategori</TH>
+                      <TH>Kode</TH><TH>Nama Item</TH><TH>Kategori</TH><TH>Vendor</TH>
                       <TH numeric>Stok</TH><TH numeric>Dipesan</TH><TH numeric>Tersedia</TH>
-                      <TH numeric>Minimum</TH><TH>Satuan</TH><TH>Status</TH>
+                      <TH numeric>Minimum</TH><TH>Satuan</TH>
+                      <TH numeric>Nilai Stok</TH><TH>Status</TH>
                     </TR>
                   </THead>
                   <TBody>
-                    {loading && <TableSkeletonRows rows={6} cols={9} />}
+                    {loading && <TableSkeletonRows rows={6} cols={11} />}
                     {!loading && terfilter?.map((r) => (
                       <TR key={r.materialId} clickable onClick={() => setSelected(r)}>
                         <TD className="font-semibold text-ink">{r.code}</TD>
                         <TD truncate>{r.name}</TD>
                         <TD className="whitespace-nowrap text-ink2">
                           {r.category ? CATEGORY_REAL[r.category]?.label : <span className="text-ink3">—</span>}
+                          {r.itemGroup && <span className="block text-[10.5px] text-ink3">{r.itemGroup}</span>}
                         </TD>
+                        <TD truncate className="text-ink2">{r.vendor || <span className="text-ink3">—</span>}</TD>
                         <TD numeric className="text-ink2">{r.balance}</TD>
                         <TD numeric className={r.reserved > 0 ? "font-semibold text-orange" : "text-ink3"}>
                           {r.reserved > 0 ? r.reserved : "—"}
@@ -193,6 +220,11 @@ export default function WarehouseInventory() {
                           {r.reorderPoint != null ? r.reorderPoint : "—"}
                         </TD>
                         <TD className="text-ink2">{r.unit.toLowerCase()}</TD>
+                        <TD numeric className="text-ink2">
+                          {r.referenceStockValue != null
+                            ? <>{formatRupiah(r.referenceStockValue)}<span className="block text-[10.5px] text-ink3">{r.referenceStockValueMonth}</span></>
+                            : <span className="text-ink3">—</span>}
+                        </TD>
                         <TD><StatusBadge map={STOCK_STATUS_REAL} value={r.stockStatus} /></TD>
                       </TR>
                     ))}
@@ -218,6 +250,12 @@ export default function WarehouseInventory() {
                         {r.reserved > 0 && ` · ${r.reserved} reserved`}
                         {r.reorderPoint != null && ` · minimum ${r.reorderPoint}`}
                         {r.category && ` · ${CATEGORY_REAL[r.category]?.label}`}
+                        {r.itemGroup && ` · ${r.itemGroup}`}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-ink3">
+                        {r.vendor && <>Vendor: {r.vendor}</>}
+                        {r.vendor && r.referenceStockValue != null && " · "}
+                        {r.referenceStockValue != null && <>Nilai stok: {formatRupiah(r.referenceStockValue)} ({r.referenceStockValueMonth})</>}
                       </div>
                     </button>
                   </li>
