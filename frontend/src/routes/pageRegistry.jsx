@@ -51,6 +51,7 @@ const ArmadaIssues      = lazy(() => import("../pages/armada/ArmadaIssues.jsx"))
 const ArmadaReturns     = lazy(() => import("../pages/armada/ArmadaReturns.jsx"));
 const ArmadaDeliveryReport = lazy(() => import("../pages/armada/ArmadaDeliveryReport.jsx"));
 const Kendali        = lazy(() => import("../pages/Kendali.jsx"));
+const B2BOrders       = lazy(() => import("../pages/b2b/B2BOrders.jsx"));
 const Gudang         = lazy(() => import("../pages/Gudang.jsx"));
 const WarehouseDashboard   = lazy(() => import("../pages/warehouse/WarehouseDashboard.jsx"));
 const WarehouseInventory   = lazy(() => import("../pages/warehouse/WarehouseInventory.jsx"));
@@ -128,6 +129,7 @@ export const PAGES = [
   { path: "/armada/returns", render: () => <ArmadaReturns /> },
   { path: "/armada/reports", render: () => <ArmadaDeliveryReport /> },
   { path: "/kendali",     render: () => <Kendali /> },
+  { path: "/b2b",         render: () => <B2BOrders /> },
   { path: "/gudang",      render: () => <Gudang /> },
   { path: "/warehouse/dashboard", render: () => <WarehouseDashboard /> },
   { path: "/warehouse/inventory", render: () => <WarehouseInventory /> },

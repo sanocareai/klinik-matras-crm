@@ -91,6 +91,18 @@ export const PERMISSIONS = {
   USER_MANAGE: "user:manage",
   ROLE_GRANT: "role:grant",
   MASTER_DATA_WRITE: "masterdata:write",
+
+  // --- Workspace B2B/Non-CRM (D-115, 11 September 2026) ---
+  // Order vendor/korporat yang kontak LANGSUNG ke WA pribadi owner, di
+  // luar Inbox omnichannel. SENGAJA permission terpisah (bukan cuma
+  // ORDER_WRITE) — tujuannya membatasi SIAPA yang boleh membuat/melihat
+  // catatan deal B2B ini (data kontak vendor/PIC), bukan membatasi apa
+  // yang boleh dilakukan terhadap Order/Unit hasilnya — begitu Order
+  // dibuat, ia berjalan sebagai Order NORMAL (kelihatan penuh di
+  // Bengkel/Armada/Gudang lewat ORDER_READ/UNIT_READ yang sudah mereka
+  // pegang), supaya integrasi lintas divisi tidak perlu jalur khusus.
+  B2B_READ: "b2b:read",
+  B2B_WRITE: "b2b:write",
 };
 
 const P = PERMISSIONS;
@@ -106,25 +118,41 @@ const P = PERMISSIONS;
 // Kalau Gilang memang ikut mengerjakan di bengkel, jawabannya BUKAN melebarkan
 // ADMIN — tapi memberinya role PRODUCTION_LEAD / QC_LEAD sebagai tambahan.
 // Itu justru gunanya multi-role, dan hasilnya jejak audit tetap jujur.
+// Daftar permission ADMIN diekstrak jadi konstanta (11 September 2026, D-115)
+// supaya Role.OWNER di bawah bisa mewarisinya persis (spread), bukan
+// menyalin ulang daftar yang sama — kalau ADMIN berubah, OWNER ikut
+// berubah otomatis, tidak ada 2 sumber kebenaran yang bisa diam-diam beda.
+const ADMIN_PERMS = [
+  P.CUSTOMER_READ, P.CUSTOMER_WRITE, P.CUSTOMER_PII_READ,
+  P.CONVERSATION_READ, P.CONVERSATION_WRITE,
+  P.ORDER_READ, P.ORDER_WRITE, P.ORDER_PRICE_READ,
+  P.UNIT_READ, P.UNIT_ROUTING_WRITE, P.SCOPE_REVISION_DECIDE,
+  P.INVENTORY_READ,
+  P.JOB_READ, P.JOB_WRITE, P.ROUTE_WRITE,
+  P.DASHBOARD_READ, P.PAYMENT_READ,
+  P.USER_MANAGE, P.ROLE_GRANT, P.MASTER_DATA_WRITE,
+  // Production Core Slice 4 — ADMIN dapat penuh (config/perencanaan,
+  // BUKAN eksekusi tahap — pola sama dengan UNIT_ROUTING_WRITE di atas,
+  // yang memang sudah dipegang ADMIN sejak awal; D-013 hanya melarang
+  // UNIT_STAGE_WRITE/QC_WRITE, bukan config produksi).
+  P.PRODUCTION_ROUTE_READ, P.PRODUCTION_ROUTE_WRITE,
+  P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
+  P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
+  P.PRODUCTION_ASSIGNMENT_WRITE,
+];
+
 export const ROLE_PERMISSIONS = {
-  ADMIN: [
-    P.CUSTOMER_READ, P.CUSTOMER_WRITE, P.CUSTOMER_PII_READ,
-    P.CONVERSATION_READ, P.CONVERSATION_WRITE,
-    P.ORDER_READ, P.ORDER_WRITE, P.ORDER_PRICE_READ,
-    P.UNIT_READ, P.UNIT_ROUTING_WRITE, P.SCOPE_REVISION_DECIDE,
-    P.INVENTORY_READ,
-    P.JOB_READ, P.JOB_WRITE, P.ROUTE_WRITE,
-    P.DASHBOARD_READ, P.PAYMENT_READ,
-    P.USER_MANAGE, P.ROLE_GRANT, P.MASTER_DATA_WRITE,
-    // Production Core Slice 4 — ADMIN dapat penuh (config/perencanaan,
-    // BUKAN eksekusi tahap — pola sama dengan UNIT_ROUTING_WRITE di atas,
-    // yang memang sudah dipegang ADMIN sejak awal; D-013 hanya melarang
-    // UNIT_STAGE_WRITE/QC_WRITE, bukan config produksi).
-    P.PRODUCTION_ROUTE_READ, P.PRODUCTION_ROUTE_WRITE,
-    P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
-    P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
-    P.PRODUCTION_ASSIGNMENT_WRITE,
-  ],
+  ADMIN: ADMIN_PERMS,
+
+  // Workspace B2B/Non-CRM (D-115, 11 September 2026, permintaan owner) —
+  // Gilang/Juri/Kemal SPESIFIK, BUKAN "semua ADMIN": Novi ber-role ADMIN
+  // juga tapi TIDAK boleh ikut akses workspace ini. Role BARU (bukan
+  // melebarkan ADMIN itu sendiri) supaya pemberian akses tetap lewat
+  // Pengguna & Peran per-akun (D-010: jangan infer dari nama), dan Novi
+  // otomatis TIDAK kebagian tanpa perlu disentuh sama sekali. Permission-
+  // nya = ADMIN penuh + B2B_READ/WRITE — role ini TIDAK PERNAH mengurangi
+  // apa pun, cuma menambah.
+  OWNER: [...ADMIN_PERMS, P.B2B_READ, P.B2B_WRITE],
 
   SALES: [
     P.CUSTOMER_READ, P.CUSTOMER_WRITE, P.CUSTOMER_PII_READ,
@@ -284,6 +312,17 @@ export const PORTALS = [
     description: "Executive overview lintas sales, produksi, warehouse, dan delivery.",
     path: "/kendali",
     roles: ["ADMIN", "FINANCE"],
+  },
+  {
+    key: "b2b",
+    label: "B2B & Non-CRM Orders",
+    description: "Order vendor/korporat yang kontak langsung di luar Inbox omnichannel.",
+    path: "/b2b",
+    // SENGAJA cuma "OWNER" — BUKAN "ADMIN" juga. Novi ber-role ADMIN tapi
+    // TIDAK boleh ikut akses (lihat komentar panjang di ROLE_PERMISSIONS.OWNER
+    // di atas). Ini satu-satunya portal di daftar ini yang polanya begini —
+    // semua portal lain sengaja mengikutkan ADMIN sebagai akses universal.
+    roles: ["OWNER"],
   },
 ];
 

@@ -37,6 +37,14 @@ enum Role {
   // job:read/write + route:write supaya bisa lihat & atur ulang job/rute
   // SEMUA driver lain, bukan cuma job miliknya sendiri. Lihat permissions.js.
   LEADER_DRIVER
+  // Workspace B2B/Non-CRM (D-115, 11 September 2026, permintaan owner) —
+  // order vendor/korporat yang kontak LANGSUNG ke WA pribadi owner, di luar
+  // Inbox omnichannel sama sekali. SENGAJA role BARU, bukan melebarkan
+  // ADMIN — Novi juga ber-role ADMIN tapi TIDAK boleh ikut akses workspace
+  // ini (cuma Gilang/Juri/Kemal). ROLE_PERMISSIONS.OWNER di permissions.js
+  // = semua permission ADMIN + B2B_READ/WRITE, jadi role ini TIDAK
+  // mengurangi apa pun yang sudah dipegang ketiganya sebagai admin.
+  OWNER
 }
 
 // Lini produk penentu katalog material, termin garansi, dan lead time (D-004).
@@ -85,6 +93,11 @@ enum LeadSource {
   WHATSAPP_DIRECT // chat organik langsung ke WA
   REFERRAL
   OTHER
+  // Vendor/korporat kontak LANGSUNG ke WA pribadi owner, di luar Inbox
+  // omnichannel sama sekali (D-115, 11 September 2026) — dicatat manual
+  // lewat workspace B2B (routes/b2b.js), BUKAN "OTHER" — supaya bisa
+  // disaring terpisah di Dashboard/Laporan sumber lead, jujur soal asalnya.
+  B2B_DIRECT
   // Deprecated — jangan digunakan di kode baru, dijaga untuk kompatibilitas data lama
   ADS
   WEBSITE

@@ -1110,4 +1110,9 @@ export const api = {
     request(`/knowledge/faq/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteFaq: (id) =>
     request(`/knowledge/faq/${id}`, { method: "DELETE" }),
+
+  // Workspace B2B/Non-CRM (D-115, 11 September 2026) — order vendor/korporat
+  // kontak langsung ke WA pribadi owner, di luar Inbox omnichannel.
+  getB2bOrders: () => request("/b2b/orders"),
+  createB2bOrder: (data) => request("/b2b/orders", { method: "POST", body: JSON.stringify(data) }),
 };

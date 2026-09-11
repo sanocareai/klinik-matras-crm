@@ -6,7 +6,7 @@ import {
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight, Send,
   Wrench, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
-  Boxes, ScanLine, Award, ArrowUpDown, Check,
+  Boxes, ScanLine, Award, ArrowUpDown, Check, Handshake,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
@@ -372,6 +372,24 @@ const DIVISIONS = {
       },
     ],
   },
+  // Workspace B2B/Non-CRM (D-115, 11 September 2026) — order vendor/korporat
+  // kontak langsung ke WA pribadi owner, di luar Inbox omnichannel sama
+  // sekali. Sengaja satu halaman (pola sama dengan Kendali di atas) — belum
+  // ada kebutuhan sub-menu sampai volume order B2B terbukti butuh lebih.
+  b2b: {
+    label: "B2B",
+    accent: {
+      ...DIVISION_ACCENT,
+    },
+    sections: [
+      {
+        section: "B2B & NON-CRM",
+        items: [
+          { to: "/b2b", label: "Order B2B", Icon: Handshake },
+        ],
+      },
+    ],
+  },
 };
 
 // Nav Main Hub (/portal) — SEBELUMNYA kosong total (lihat komentar di atas
@@ -455,6 +473,7 @@ function divisionFromPath(pathname) {
   if (pathname.startsWith("/bengkel")) return "bengkel";
   if (pathname.startsWith("/armada")) return "armada";
   if (pathname.startsWith("/kendali")) return "kendali";
+  if (pathname.startsWith("/b2b")) return "b2b";
   return "growth";
 }
 

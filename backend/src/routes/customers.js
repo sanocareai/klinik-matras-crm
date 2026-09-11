@@ -2,14 +2,11 @@ import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { rolesOf } from "../middleware/authorize.js";
-import { generateOrderNumber } from "../services/orderNumberGenerator.js";
 import { loadCustomerContext, buildCustomerIntelligence } from "../services/intelligence/index.js";
 import { dispatchLeadWon } from "../services/automationWebhook.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
-import { createUnitsForOrder } from "../services/unitProvisioning.js";
-import { syncOrderStatus } from "../services/orderStatusSync.js";
-import { ensureInvoiceForOrder } from "../services/invoice.js";
-import { startOfDayWIB, endOfDayExclusiveWIB, parseTanggalKalender } from "../utils/wib.js";
+import { createOrderForCustomer } from "../services/orderCreation.js";
+import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { buatFileVCard } from "../services/vcard.js";
 
 export const customerRouter = express.Router();
@@ -650,106 +647,13 @@ customerRouter.get("/:id/intelligence", async (req, res) => {
 // `unitCount` OPSIONAL, default 1. SENGAJA BUKAN `quantity`: `quantity` adalah
 // jumlah barang yang dipesan (bisa 2 bantal / 2 guling), bukan jumlah kasur.
 // Klien lama yang tidak mengirim `unitCount` tetap benar untuk mayoritas order.
+// D-115 (11 September 2026) — logika pembuatan Order+Unit+Invoice diekstrak
+// ke services/orderCreation.js supaya jalur B2B (routes/b2b.js) memakai
+// kode yang SAMA PERSIS, bukan menyalin ulang. Lihat komentar panjang di
+// sana untuk alasannya.
 customerRouter.post("/:id/orders", async (req, res) => {
-  const {
-    quantity, status, notes, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress,
-    healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
-    deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, customerPromiseDate,
-  } = req.body;
-
-  const cat = category || "LAYANAN";
-
   try {
-    // Validasi tanggal DULU, sebelum generateOrderNumber() — generate nomor
-    // menaikkan counter OrderSequence secara permanen (transaksi sendiri,
-    // tidak ikut rollback transaksi di bawah). Kalau validasi ditaruh
-    // belakangan, tiap kali sales salah ketik tanggal ada satu nomor order
-    // yang terbakar dan urutannya bolong.
-    const tglPickup   = parseTanggalKalender(pickupConfirmedDate,   "Tanggal Pick Up Pasti");
-    const tglDelivery = parseTanggalKalender(deliveryConfirmedDate, "Tanggal Kirim Pasti");
-    // customerPromiseDate (Production Core, 6 September 2026) — tanggal
-    // YANG DIJANJIKAN ke customer, boleh diisi sales sejak order dibuat.
-    const tglJanji     = parseTanggalKalender(customerPromiseDate,  "Tanggal Janji ke Customer");
-
-    // generateOrderNumber punya transaksinya sendiri (counter OrderSequence) —
-    // dipanggil DI LUAR transaksi di bawah, jangan disarangkan.
-    const orderNumber = await generateOrderNumber(cat);
-
-    // Order + unit-unitnya lahir dalam SATU transaksi. Order tanpa unit persis
-    // keadaan yang sedang diperbaiki di sini; jangan biarkan kegagalan separuh
-    // jalan membuatnya lagi.
-    const order = await prisma.$transaction(async (tx) => {
-      const created = await tx.order.create({
-        data: {
-          customerId: req.params.id,
-          value: 0,
-          quantity: quantity ? Number(quantity) : 1,
-          status: status || "PENDING",
-          category: cat,
-          // productLine (29 Agustus 2026) — default skema KASUR sudah cukup
-          // utk order lama, tapi form BARU (OrderSection.jsx) SELALU
-          // mengirim productLine eksplisit sejak lini Sofa/Divan ada. Kalau
-          // tidak dikirim (klien lama/integrasi luar), fallback KASUR wajar
-          // — itulah satu-satunya lini sebelum ini.
-          productLine: productLine || "KASUR",
-          ...(productType && { productType }),
-          orderNumber,
-          notes,
-          ...(beratBadan !== undefined && { beratBadan: beratBadan ? Number(beratBadan) : null }),
-          ...(promoId && { promoId }),
-          ...(deliveryCity && { deliveryCity }),
-          ...(deliveryAddress && { deliveryAddress }),
-          ...(healthStatus && {
-            healthStatus,
-            complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || []) : [],
-          }),
-          ...(ongkir !== undefined && { ongkir: ongkir === "" || ongkir === null ? null : Number(ongkir) }),
-          ...(ongkirKlaimGaransi !== undefined && { ongkirKlaimGaransi: ongkirKlaimGaransi === "" || ongkirKlaimGaransi === null ? null : Number(ongkirKlaimGaransi) }),
-          ...(pickupEstimate && { pickupEstimate }),
-          // pickupConfirmedDate/deliveryConfirmedDate adalah kolom @db.Date —
-          // klien kirim "YYYY-MM-DD" polos, yang DITOLAK Prisma kalau dikirim
-          // apa adanya. parseTanggalKalender() mengubahnya jadi Date DAN
-          // menolak teks bebas dengan pesan yang bisa dibaca sales (aplikasi
-          // versi lama masih mengirim "21 agustus 2026" ke sini). Lihat
-          // catatan lengkap di utils/wib.js.
-          ...(tglPickup   && { pickupConfirmedDate: tglPickup }),
-          ...(deliveryEstimate && { deliveryEstimate }),
-          ...(tglDelivery && { deliveryConfirmedDate: tglDelivery }),
-          ...(locationUrl && { locationUrl }),
-          ...(tglJanji && { customerPromiseDate: tglJanji }),
-        },
-        include: { items: true },
-      });
-
-      const jumlahUnit = unitCount === undefined ? 1 : Math.max(0, Math.floor(Number(unitCount) || 0));
-      if (jumlahUnit > 0) {
-        await createUnitsForOrder(tx, { order: created, count: jumlahUnit });
-        // SEWA (4 Sep 2026) tidak ikut auto-compute dari Unit — Unit tetap
-        // dibuat (Armada masih butuh utk job antar/ambil), tapi Order.status
-        // dikunci manual ke SEWA_DIKIRIM sejak lahir (bukan hasil sync).
-        // syncOrderStatus() sendiri sudah menjaga ini juga (early-return utk
-        // category SEWA) — dua lapis sengaja, supaya order baru langsung
-        // tampil status yang benar tanpa menunggu unit pertama mulai stage.
-        if (cat === "SEWA") {
-          await tx.order.update({ where: { id: created.id }, data: { status: "SEWA_DIKIRIM", statusLocked: true } });
-        } else {
-          await syncOrderStatus(tx, created.id);
-        }
-      }
-
-      // Draft invoice lahir BERSAMA order-nya, di transaksi yang SAMA (31
-      // Agustus 2026) — sales tidak perlu langkah manual "buat invoice", dan
-      // order yang gagal dibuat tidak meninggalkan invoice yatim. Nominalnya
-      // TIDAK disalin ke sini (order ini masih `value: 0`, itemnya menyusul)
-      // — semua angka diturunkan saat invoice dibaca. Lihat services/invoice.js.
-      await ensureInvoiceForOrder(tx, { orderId: created.id, userId: req.user?.id || null });
-
-      return tx.order.findUnique({
-        where: { id: created.id },
-        include: { items: true, units: { orderBy: { seq: "asc" } } },
-      });
-    });
-
+    const order = await createOrderForCustomer(req.params.id, req.body, req.user?.id);
     await syncCustomerOrderAggregate(req.params.id);
     res.status(201).json(order);
   } catch (err) {

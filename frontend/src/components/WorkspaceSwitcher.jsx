@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Wrench, Package, Truck, Gauge, LayoutGrid, ChevronsUpDown, Check, ArrowUpDown, GripVertical } from "lucide-react";
+import { Users, Wrench, Package, Truck, Gauge, LayoutGrid, ChevronsUpDown, Check, ArrowUpDown, GripVertical, Handshake } from "lucide-react";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
 import { applyCustomOrder, getWorkspaceOrder, saveWorkspaceOrder } from "@/lib/sidebarOrder.js";
@@ -31,6 +31,10 @@ export const WORKSPACES = [
   { key: "bengkel",   label: "Production Operations",      to: "/bengkel",   Icon: Wrench,  roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"] },
   { key: "warehouse", label: "Warehouse & Inventory Control", to: "/gudang", Icon: Package, roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_LEAD"] },
   { key: "kendali",   label: "All Teams Dashboard",        to: "/kendali",   Icon: Gauge,   roles: ["ADMIN", "FINANCE"] },
+  // B2B & Non-CRM Orders (D-115, 11 September 2026) — SENGAJA cuma "OWNER",
+  // BUKAN "ADMIN" juga (satu-satunya workspace dengan pola ini) — lihat
+  // komentar panjang di backend/src/constants/permissions.js.
+  { key: "b2b",       label: "B2B & Non-CRM Orders",       to: "/b2b",       Icon: Handshake, roles: ["OWNER"] },
 ];
 
 export const WORKSPACE_LABEL = Object.fromEntries(WORKSPACES.map((w) => [w.key, w.label]));
