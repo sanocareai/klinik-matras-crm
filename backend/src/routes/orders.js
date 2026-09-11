@@ -1499,6 +1499,23 @@ orderRouter.get("/:id/timeline", async (req, res) => {
       orderBy: { updatedAt: "desc" },
     });
 
+    // ComplaintCase (D-116, 11 September 2026, laporan owner — kasus Sony
+    // RES-27082026-183: begitu ComplaintCase dibuka lewat jalur BARU,
+    // fallback "Ada komplain (belum masuk sistem Retur)" di
+    // RiwayatRevisiKendala.jsx JADI KELIRU/BASI — komplainnya SUDAH
+    // actionable (Delivery Task terjadwal), cuma komponen ini belum tahu
+    // apa-apa soal ComplaintCase sama sekali (cuma kenal unit_revisions/
+    // issueJobs). Ditambahkan di SINI, endpoint yang SAMA dipakai kedua
+    // drawer (OrderTimelineDrawer & JobDetailDrawer), bukan sumber ketiga.
+    const complaintCases = await prisma.complaintCase.findMany({
+      where: { orderId: req.params.id },
+      select: {
+        id: true, caseNumber: true, category: true, severity: true, status: true, currentOwner: true,
+        description: true, createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
     res.json({
       orderId: order.id,
       statusSekarang: order.status,
@@ -1509,6 +1526,7 @@ orderRouter.get("/:id/timeline", async (req, res) => {
       riwayatKosong: timeline.length === 0,
       revisions,
       issueJobs,
+      complaintCases,
       hasComplaint: order.hasComplaint,
       complaintDate: order.complaintDate,
       complaintDetail: order.complaintDetail,

@@ -6,6 +6,7 @@ import {
   Bed, HeartPulse, Tag, FileText, Ban, ShieldCheck,
 } from "lucide-react";
 import RiwayatRevisiKendala from "@/features/armada/components/RiwayatRevisiKendala.jsx";
+import ComplaintCaseDrawer from "@/features/complaints/ComplaintCaseDrawer.jsx";
 import InvoicePanel from "./InvoicePanel.jsx";
 import WarrantyPanel from "./WarrantyPanel.jsx";
 import ReadinessPanel from "./ReadinessPanel.jsx";
@@ -959,6 +960,9 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab]         = useState("status"); // "status" | "dokumentasi" | "pembayaran"
+  // Complaint Case (D-116, 11 September 2026) — buka drawer kasus langsung
+  // dari sini alih-alih pindah ke /komplain, lihat RiwayatRevisiKendala.jsx.
+  const [openComplaintCaseId, setOpenComplaintCaseId] = useState(null);
 
   // Balik ke tab Status tiap kali drawer dibuka order BARU — supaya sales
   // yang barusan lihat dokumentasi order sebelumnya tidak salah kira sedang
@@ -1239,13 +1243,20 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
               className="mt-5"
               revisions={data?.revisions || []}
               issueJobs={data?.issueJobs || []}
+              complaintCases={data?.complaintCases || []}
               hasComplaint={data?.hasComplaint ?? o.hasComplaint}
               complaintDetail={data?.complaintDetail ?? o.complaintDetail}
               complaintDate={data?.complaintDate ?? o.complaintDate}
+              onOpenComplaintCase={setOpenComplaintCaseId}
             />
           )}
         </div>
       </motion.aside>
+      <ComplaintCaseDrawer
+        open={!!openComplaintCaseId} caseId={openComplaintCaseId}
+        onClose={() => setOpenComplaintCaseId(null)}
+        onChanged={() => { if (order) api.getOrderTimeline(order.id).then(setData).catch(() => {}); }}
+      />
       </>
       )}
     </AnimatePresence>

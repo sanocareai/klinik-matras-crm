@@ -121,8 +121,12 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   // Complaint / After-Sales Case (D-116, 11 September 2026) — job Delivery
   // Task yang lahir dari POST /complaints/:id/delivery-task menautkan diri
   // lewat job.complaintCase (lihat ComplaintBadge di JobBadges.jsx). Dispatcher
-  // buka kasusnya langsung dari sini alih-alih pindah halaman.
-  const [showComplaintCase, setShowComplaintCase] = useState(false);
+  // buka kasusnya langsung dari sini alih-alih pindah halaman. Menyimpan
+  // ID kasus (bukan boolean) — order bisa punya LEBIH dari satu
+  // ComplaintCase (lihat RiwayatRevisiKendala di bawah), jadi baris mana
+  // yang diklik harus membuka kasus itu SENDIRI, bukan selalu
+  // job.complaintCase milik job ini.
+  const [openComplaintCaseId, setOpenComplaintCaseId] = useState(null);
   // Input Manual (8 September 2026, laporan owner — "proof of delivery
   // harus ada di route planner... bisa upload bukti pengambilan/pengiriman
   // dengan skema ctrl+v"). Sebelumnya jalur ini CUMA ada di halaman POD
@@ -654,7 +658,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
 
                 {job.complaintCase && (
                   <button
-                    type="button" onClick={() => setShowComplaintCase(true)}
+                    type="button" onClick={() => setOpenComplaintCaseId(job.complaintCase.id)}
                     className="mb-3 flex w-full items-center gap-2 rounded-btn bg-redbg px-3 py-2 text-left text-[12px] font-semibold text-red hover:opacity-90"
                   >
                     <AlertTriangle size={13} className="shrink-0" />
@@ -1176,9 +1180,11 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                   className="mt-5 border-t border-line pt-3"
                   revisions={timelineData?.revisions || []}
                   issueJobs={timelineData?.issueJobs || []}
+                  complaintCases={timelineData?.complaintCases || []}
                   hasComplaint={timelineData?.hasComplaint}
                   complaintDetail={timelineData?.complaintDetail}
                   complaintDate={timelineData?.complaintDate}
+                  onOpenComplaintCase={setOpenComplaintCaseId}
                 />
 
                 {/* Jujur soal yang belum ada — lihat catatan di kepala file */}
@@ -1193,8 +1199,8 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
       </Dialog.Portal>
     </Dialog.Root>
     <ComplaintCaseDrawer
-      open={showComplaintCase} caseId={job?.complaintCase?.id}
-      onClose={() => setShowComplaintCase(false)}
+      open={!!openComplaintCaseId} caseId={openComplaintCaseId}
+      onClose={() => setOpenComplaintCaseId(null)}
       onChanged={() => { onChanged?.(); }}
     />
     </>

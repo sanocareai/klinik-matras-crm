@@ -1,9 +1,13 @@
 import React from "react";
 import { Undo2, AlertTriangle } from "lucide-react";
 import StatusBadge from "./StatusBadge.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
 import { REVISION_STATUS, REVISION_TRIGGER } from "../revisionStatus.js";
 import { ISSUE_STATUS } from "../issueStatus.js";
 import { formatTanggal } from "@/utils/formatDate.js";
+import {
+  CATEGORY_LABEL, STATUS_LABEL, STATUS_TONE, OWNER_LABEL,
+} from "@/features/complaints/complaintLabels.js";
 
 // Riwayat Revisi (Retur) & Kendala/Reschedule — SATU komponen, dipakai
 // BERSAMA oleh 2 drawer yang beda konteks tapi HARUS menunjukkan data
@@ -28,10 +32,11 @@ export function issueStatusOf(j) {
 }
 
 export default function RiwayatRevisiKendala({
-  revisions = [], issueJobs = [], hasComplaint = false, complaintDetail = null, complaintDate = null,
+  revisions = [], issueJobs = [], complaintCases = [], hasComplaint = false, complaintDetail = null, complaintDate = null,
   className = "",
+  onOpenComplaintCase,
 }) {
-  const kosong = revisions.length === 0 && issueJobs.length === 0;
+  const kosong = revisions.length === 0 && issueJobs.length === 0 && complaintCases.length === 0;
   if (kosong && !hasComplaint) return null;
 
   return (
@@ -40,6 +45,33 @@ export default function RiwayatRevisiKendala({
         <Undo2 size={12} aria-hidden /> Revisi & Kendala
       </h4>
       <div className="flex flex-col gap-2">
+        {/* Complaint Case (D-116, 11 September 2026) — kasus lintas divisi
+            yang SUDAH actionable (Delivery Task/Material Requirement/dst),
+            BEDA dari fallback statis di bawah ("belum masuk sistem Retur")
+            yang cuma menandai hasComplaint TANPA riwayat nyata. Kalau kasus
+            ini ADA, itu SUDAH cukup untuk membuktikan komplain sedang
+            ditangani — fallback di bawah otomatis tidak tampil lagi
+            (lihat `kosong` di atas). */}
+        {complaintCases.map((c) => (
+          <button
+            key={c.id} type="button"
+            onClick={onOpenComplaintCase ? () => onOpenComplaintCase(c.id) : undefined}
+            disabled={!onOpenComplaintCase}
+            className="rounded-xl border-l-[3px] border-red bg-surface p-2.5 text-left shadow-card disabled:cursor-default"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-mono text-[10.5px] font-bold text-ink">{c.caseNumber}</span>
+                <Badge variant={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status] || c.status}</Badge>
+                <Badge variant="neutral">{CATEGORY_LABEL[c.category] || c.category}</Badge>
+              </div>
+              <span className="shrink-0 text-[10.5px] text-ink3">Pemegang: {OWNER_LABEL[c.currentOwner] || c.currentOwner}</span>
+            </div>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-ink">{c.description}</p>
+            <p className="mt-1.5 text-[10.5px] text-ink3">{formatTanggal(c.createdAt)}</p>
+          </button>
+        ))}
+
         {revisions.map((r) => (
           <div key={r.id} className="rounded-xl border-l-[3px] border-accent bg-surface p-2.5 shadow-card">
             <div className="flex items-center justify-between gap-2">
