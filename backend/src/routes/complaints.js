@@ -15,6 +15,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { createMaterialIssue } from "./materialIssue.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { notifyComplaintCaseOwnerChanged } from "../services/pushNotifications.js";
 import {
   ComplaintError, complaintCaseInclude,
   createComplaintCase, updateComplaintFields, transitionStatus,
@@ -143,6 +144,9 @@ complaintsRouter.post("/:id/material-requirement", requirePermission(P.INVENTORY
     });
 
     const full = await prisma.complaintCase.findUnique({ where: { id: kase.id }, include: complaintCaseInclude });
+    if (full.currentOwner === "WAREHOUSE") {
+      notifyComplaintCaseOwnerChanged(full).catch((e) => console.error("[complaints] notifikasi gagal:", e.message));
+    }
     res.status(201).json(full);
   } catch (err) {
     handleErr(err, res);

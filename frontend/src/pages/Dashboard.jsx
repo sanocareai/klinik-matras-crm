@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Users, ShoppingCart, Wallet, Target } from "lucide-react";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
 import { formatTanggalIndo, formatRupiahShort } from "../utils/format.js";
 import { makeRange, compareLabel } from "../lib/dateRange.js";
 import { useDashboardData } from "../features/dashboard/hooks/useDashboardData.js";
@@ -85,6 +86,12 @@ export default function Dashboard({ user }) {
       />
 
       <PageBody>
+        {/* Kasus Komplain Aktif (D-116, 11 September 2026) — "komplain itu
+            prioritas". currentOwner="SALES" — kasus baru dibuka atau
+            menunggu follow-up/konfirmasi customer, bukan seluruh kasus
+            lintas divisi (itu ada di /komplain). */}
+        <ActiveComplaintsWidget currentOwner="SALES" title="Kasus Komplain Butuh Follow-up" />
+
         {/* ── KPI ── gradasi kedalaman 1→4 di satu baris */}
         <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           <StatCard

@@ -9,6 +9,7 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
+import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import {
@@ -523,6 +524,13 @@ export default function ArmadaDashboard() {
       />
 
       <PageBody>
+        {/* Kasus Komplain Aktif (D-116, 11 September 2026) — "komplain itu
+            prioritas", ditampilkan PALING ATAS dashboard, di atas snapshot
+            operasional harian. currentOwner="DELIVERY" — cuma kasus yang
+            SEDANG pegang bola di divisi ini, bukan seluruh kasus lintas
+            divisi (itu ada di /komplain). */}
+        <ActiveComplaintsWidget currentOwner="DELIVERY" title="Kasus Komplain Perlu Dijadwalkan" />
+
         {/* 1. Today's Operational Snapshot — 1 kartu utama (antrean belum
             terjadwal) + 4 kartu pendamping, MENGGANTIKAN grid 6-kartu rata
             DeliveryKpiRow khusus di halaman ini. */}

@@ -52,8 +52,16 @@ export const ELIGIBLE_ORDER_STATUS = { PICKUP: ["PENDING", "PICKUP"], DELIVERY: 
 // (RES-18082026-071) baru dibuat tapi tidak muncul di Jadwal & Penugasan
 // sama sekali. `revisionLinks: { none: {} }` — job dengan revisi yang
 // menunjuk ke dirinya TIDAK PERNAH dianggap basi, apa pun status order-nya.
+// KOREKSI KEDUA (11 September 2026, D-116) — bug yang sama terulang untuk
+// ComplaintCase: job PICKUP dari POST /complaints/:id/delivery-task (kasus
+// Sony RES-27082026-183, laporan owner: "di delivery masih belum bisa
+// masuk rute") SELALU order.status=DELIVERED (itulah inti ComplaintCase --
+// komplain baru terjadi SETELAH order pertama kali terkirim) DAN lahir
+// UNSCHEDULED. `complaintCaseId: null` -- job yang menunjuk ke sebuah
+// ComplaintCase TIDAK PERNAH dianggap basi, pola SAMA dengan revisionLinks.
 export const STALE_UNSCHEDULED_JOB = {
   status: "UNSCHEDULED",
   order: { status: { in: ["DELIVERED", "CANCELLED"] } },
   revisionLinks: { none: {} },
+  complaintCaseId: null,
 };

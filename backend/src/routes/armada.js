@@ -26,7 +26,7 @@ import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
-import { notifyDriverJobAssigned, notifyProductionRevisionReady, notifySalesJobFailed } from "../services/pushNotifications.js";
+import { notifyDriverJobAssigned, notifyProductionRevisionReady, notifySalesJobFailed, notifyComplaintCaseOwnerChanged } from "../services/pushNotifications.js";
 import { notifySalesJobCompleted, notifySalesUnpaidAfterDelivery } from "../services/deliveryCompletionNotify.js";
 import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
@@ -3571,7 +3571,7 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
       waktuSelesai = parsed;
     }
 
-    const { job: updated, advancedRevisions } = await prisma.$transaction(async (tx) => {
+    const { job: updated, advancedRevisions, advancedComplaintCaseId } = await prisma.$transaction(async (tx) => {
       const j = await tx.job.update({
         where: { id: job.id },
         data: {
@@ -3630,6 +3630,7 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
       // (giliran Sales follow-up). `status` lama di where SEKALIGUS jadi
       // guard yang sama seperti UnitRevision — kalau kasus sudah dipindah
       // manual ke status lain, auto-advance diam-diam tidak melakukan apa-apa.
+      let advancedComplaintCaseId = null;
       if (job.complaintCaseId) {
         const expectedStatus = job.type === "PICKUP" ? "DIJADWALKAN" : "DIKIRIM_ULANG";
         const nextStatus = job.type === "PICKUP" ? "DALAM_PENANGANAN" : "KONFIRMASI_CUSTOMER";
@@ -3642,10 +3643,11 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
             actorId: req.user.id,
             metadata: { from: expectedStatus, to: nextStatus, note: `Job ${job.type === "PICKUP" ? "pengambilan" : "pengiriman ulang"} selesai` },
           });
+          advancedComplaintCaseId = kase.id;
         }
       }
 
-      return { job: j, advancedRevisions: job.type === "PICKUP" ? revisiUntukDiajukan : [] };
+      return { job: j, advancedRevisions: job.type === "PICKUP" ? revisiUntukDiajukan : [], advancedComplaintCaseId };
     });
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
 
@@ -3676,6 +3678,15 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
         console.error("[jobs/:id/complete] notifyProductionRevisionReady gagal:", err.message)
       )
     );
+
+    // Complaint Case auto-advance (D-116) — divisi yang BARU pegang bola
+    // (Produksi setelah pickup, Sales setelah redelivery) diberi tahu
+    // SEKARANG, pola sama dengan notifyProductionRevisionReady di atas.
+    if (advancedComplaintCaseId) {
+      prisma.complaintCase.findUnique({ where: { id: advancedComplaintCaseId } })
+        .then((kase) => kase && notifyComplaintCaseOwnerChanged(kase))
+        .catch((err) => console.error("[jobs/:id/complete] notifyComplaintCaseOwnerChanged gagal:", err.message));
+    }
 
     // FR-N trigger 2 & 4/4: "Unit sampai bengkel" (PICKUP) / "Terkirim"
     // (DELIVERY) — ke CUSTOMER, beda dari notifyDriverGroup di atas yang

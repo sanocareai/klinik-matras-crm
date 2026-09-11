@@ -7,6 +7,7 @@ import { api } from "../api.js";
 import { compressImage } from "../utils/compressImage.js";
 import { formatDurasiMenit } from "../utils/formatDate.js";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
+import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -359,6 +360,11 @@ export default function Bengkel() {
           </button>
         </div>
       </PageHeader>
+
+      {/* Kasus Komplain Aktif (D-116, 11 September 2026) — "komplain itu
+          prioritas". currentOwner="PRODUCTION" — kasus yang butuh rework
+          SEKARANG, bukan seluruh kasus lintas divisi (itu ada di /komplain). */}
+      <ActiveComplaintsWidget currentOwner="PRODUCTION" title="Kasus Komplain Perlu Rework" className="mb-5" />
 
       {/* TODAY'S PRODUCTION — Production Command Center (Slice 2E/2G). Semua
           angka dari GET /production/command-center, bukan contoh. Dimuat

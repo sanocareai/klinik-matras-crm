@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ShieldCheck, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -59,6 +60,11 @@ export default function ProductionQcQueue() {
       />
 
       <PageBody>
+        {/* Kasus Komplain Aktif (D-116, 11 September 2026) — "komplain itu
+            prioritas". currentOwner="QC" — kasus yang butuh verifikasi hasil
+            rework SEKARANG, bukan seluruh kasus lintas divisi. */}
+        <ActiveComplaintsWidget currentOwner="QC" title="Kasus Komplain Butuh Verifikasi QC" />
+
         {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
         <Card className="overflow-hidden">

@@ -156,3 +156,63 @@ export async function notifySalesJobFailed(job) {
     url: `/customers?id=${order.customer.id}`,
   });
 }
+
+// Complaint / After-Sales Case — notifikasi lintas divisi (D-116, 11
+// September 2026, permintaan owner: "make sure di semua divisi bahkan ada
+// notifikasi karna komplain itu prioritas"). Pola SAMA dengan
+// notifyProductionRevisionReady (push ke semua akun ber-role divisi
+// tujuan) & notifySalesJobFailed (push ke sales pemilik order) di atas —
+// dua pola yang sudah ada digabung di sini, bukan mekanisme ketiga.
+const COMPLAINT_OWNER_ROLES = {
+  DELIVERY: ["DISPATCHER", "LEADER_DRIVER"],
+  PRODUCTION: ["PRODUCTION_LEAD", "PRODUCTION_WORKER"],
+  WAREHOUSE: ["WAREHOUSE"],
+  QC: ["QC_LEAD"],
+};
+
+// Dipanggil SETIAP kali ComplaintCase.currentOwner berpindah tangan (dibuat,
+// transisi status, Delivery Task/Material Requirement dibuat, job selesai
+// via auto-advance) — divisi yang BARU pegang bola diberi tahu SEKARANG,
+// bukan menunggu mereka kebetulan buka halaman "Kasus Komplain".
+// `kase` minimal butuh { id, caseNumber, orderId, currentOwner }.
+export async function notifyComplaintCaseOwnerChanged(kase) {
+  if (!kase?.orderId || !kase?.currentOwner) return;
+  const order = await prisma.order.findUnique({
+    where: { id: kase.orderId },
+    select: { orderNumber: true, customer: { select: { id: true, name: true, assignedSalesId: true } } },
+  });
+  const customerName = order?.customer?.name || "Customer";
+  const orderNumber = order?.orderNumber || "";
+  const title = `🚩 Kasus Komplain ${kase.caseNumber}`;
+  const body = `${customerName}${orderNumber ? ` (${orderNumber})` : ""} butuh tindakan Anda sekarang`;
+  const url = "/komplain";
+
+  if (kase.currentOwner === "SALES") {
+    const salesId = order?.customer?.assignedSalesId;
+    if (salesId) await sendPushToUser(salesId, { title, body, url });
+    return;
+  }
+  const roles = COMPLAINT_OWNER_ROLES[kase.currentOwner];
+  if (!roles) return; // currentOwner tidak dikenal — diam-diam, bukan error
+  const rows = await prisma.userRole.findMany({
+    where: { role: { in: roles } }, select: { userId: true }, distinct: ["userId"],
+  });
+  if (rows.length === 0) return; // belum ada akun ber-role divisi ini — diam-diam
+  await Promise.all(rows.map((r) => sendPushToUser(r.userId, { title, body, url })));
+}
+
+// Alert TERPISAH untuk kasus SEVERITY tinggi/kritis — dikirim SEKALI saat
+// kasus DIBUKA, ke ADMIN/OWNER, TANPA menunggu giliran divisi mana pun.
+// "komplain itu prioritas" (permintaan owner) berarti manajemen perlu tahu
+// SEGERA untuk kasus berat, bukan cuma divisi yang kebetulan pegang bola
+// saat itu.
+export async function notifyComplaintCaseHighSeverity(kase) {
+  if (!kase || !["TINGGI", "KRITIS"].includes(kase.severity)) return;
+  const rows = await prisma.userRole.findMany({
+    where: { role: { in: ["ADMIN", "OWNER"] } }, select: { userId: true }, distinct: ["userId"],
+  });
+  if (rows.length === 0) return;
+  const title = kase.severity === "KRITIS" ? "🔴 Kasus Komplain KRITIS dibuka" : "🟠 Kasus Komplain Prioritas Tinggi dibuka";
+  const body = `${kase.caseNumber} — ${(kase.description || "").slice(0, 80)}`;
+  await Promise.all(rows.map((r) => sendPushToUser(r.userId, { title, body, url: "/komplain" })));
+}

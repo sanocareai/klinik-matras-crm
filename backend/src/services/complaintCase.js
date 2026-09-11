@@ -11,6 +11,14 @@
 import { prisma } from "../db.js";
 import { generateComplaintCaseNumber } from "./orderNumberGenerator.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { notifyComplaintCaseOwnerChanged, notifyComplaintCaseHighSeverity } from "./pushNotifications.js";
+
+// Best-effort, TIDAK PERNAH menggagalkan aksi utama — pola SAMA dengan
+// notifyDriverGroup dkk di routes/armada.js. Dipanggil SETELAH transaksi
+// commit (bukan di dalamnya): kalau push gagal, kasus TETAP tersimpan.
+function beritahuBestEffort(fn, ...args) {
+  fn(...args).catch((err) => console.error("[complaintCase] notifikasi gagal:", err.message));
+}
 
 export class ComplaintError extends Error {
   constructor(message, statusCode = 400) {
@@ -196,7 +204,9 @@ export async function createComplaintCase({
     return c;
   });
 
-  return prisma.complaintCase.findUnique({ where: { id: created.id }, include: complaintCaseInclude });
+  const full = await prisma.complaintCase.findUnique({ where: { id: created.id }, include: complaintCaseInclude });
+  beritahuBestEffort(notifyComplaintCaseHighSeverity, full);
+  return full;
 }
 
 // PATCH field non-status (kategori/severity/warranty/root cause/resolution/
@@ -299,7 +309,11 @@ export async function transitionStatus(caseId, { status, currentOwner, note }, u
     return c;
   });
 
-  return prisma.complaintCase.findUnique({ where: { id: updated.id }, include: complaintCaseInclude });
+  const full = await prisma.complaintCase.findUnique({ where: { id: updated.id }, include: complaintCaseInclude });
+  if (data.currentOwner !== existing.currentOwner) {
+    beritahuBestEffort(notifyComplaintCaseOwnerChanged, full);
+  }
+  return full;
 }
 
 // POST /complaints/:id/delivery-task — Delivery Task (Job) LAHIR LANGSUNG
@@ -339,7 +353,9 @@ export async function createDeliveryTask(caseId, { jobType, accessNotes }, userI
     });
   });
 
-  return prisma.complaintCase.findUnique({ where: { id: caseId }, include: complaintCaseInclude });
+  const full = await prisma.complaintCase.findUnique({ where: { id: caseId }, include: complaintCaseInclude });
+  beritahuBestEffort(notifyComplaintCaseOwnerChanged, full);
+  return full;
 }
 
 // POST /complaints/:id/link-qc — menautkan hasil QcFitTest yang memverifikasi

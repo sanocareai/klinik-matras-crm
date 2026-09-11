@@ -3,6 +3,7 @@ import { AlertTriangle, Loader2, PackageCheck, Truck, Wallet } from "lucide-reac
 import { api } from "../api.js";
 import { formatRupiah } from "../utils/format.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -314,6 +315,12 @@ export default function Kendali() {
       </div>
 
       <PageBody>
+
+        {/* Kasus Komplain Aktif (D-116, 11 September 2026) — "komplain itu
+            prioritas". TANPA filter currentOwner — Kendali adalah overview
+            EKSEKUTIF lintas divisi, owner perlu lihat SEMUA kasus aktif di
+            mana pun bolanya berada sekarang, bukan cuma satu divisi. */}
+        <ActiveComplaintsWidget title="Kasus Komplain Aktif — Lintas Divisi" />
 
         {/* Paling atas dengan sengaja: kalau ada prasyarat yang belum siap,
             itu menjelaskan KENAPA angka-angka di bawahnya nol — percuma

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
@@ -182,6 +183,12 @@ export default function WarehouseDashboard() {
       />
 
       <PageBody>
+        {/* Kasus Komplain Aktif (D-116, 11 September 2026) — "komplain itu
+            prioritas". currentOwner="WAREHOUSE" — Material Requirement yang
+            butuh diproses SEKARANG, bukan seluruh kasus lintas divisi (itu
+            ada di /komplain). */}
+        <ActiveComplaintsWidget currentOwner="WAREHOUSE" title="Kasus Komplain Butuh Material" />
+
         {/* Hero = ringkasan inventory, BUKAN pengulangan judul halaman */}
         <Card className="bg-blue-50">
           <CardContent className="py-4">

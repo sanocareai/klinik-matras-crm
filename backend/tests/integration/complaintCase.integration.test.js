@@ -205,6 +205,44 @@ test("Complaint end-to-end: dibuka SAAT ORDER MASIH DIPRODUKSI (bukan DELIVERED)
   assert.equal(orderFinal.complaintResolvedById, sales.user.id);
 });
 
+// Regresi NYATA (11 September 2026, laporan owner: screenshot Jadwal &
+// Penugasan — "di delivery masih belum bisa masuk rute" untuk kasus Sony
+// RES-27082026-183). Akar masalah: STALE_UNSCHEDULED_JOB (D-064/D-108,
+// services/jobStatus.js) menyembunyikan job UNSCHEDULED yang order induknya
+// SUDAH DELIVERED, dirancang untuk membuang job basi peninggalan pre-
+// Delivery-Hub — tapi TANPA pengecualian untuk ComplaintCase, filter yang
+// SAMA ikut membuang job PICKUP yang justru BARU dibuat untuk kasus
+// komplain (yang SELALU order.status=DELIVERED, itulah intinya). Job dari
+// UnitRevision sudah dikecualikan sejak D-108 (`revisionLinks: { none: {} }`)
+// — ComplaintCase butuh pengecualian yang SAMA (`complaintCaseId: null`).
+test("Regresi: job PICKUP dari ComplaintCase pada order yang SUDAH DELIVERED TETAP muncul di GET /armada/jobs", async () => {
+  const sales = await clientAs(["SALES"]);
+  const dispatcher = await clientAs(["DISPATCHER"]);
+  const { order, unit } = await createTestUnit({ status: "DELIVERED" });
+  await testPrisma.order.update({ where: { id: order.id }, data: { status: "DELIVERED" } });
+
+  const create = await sales.api.post("/api/complaints", {
+    orderId: order.id, unitId: unit.id, category: "KENYAMANAN", description: "Test regresi STALE_UNSCHEDULED_JOB",
+  });
+  const caseId = create.body.id;
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "VERIFIKASI" });
+  await sales.api.post(`/api/complaints/${caseId}/status`, { status: "ACTION_REQUIRED" });
+  const pickup = await dispatcher.api.post(`/api/complaints/${caseId}/delivery-task`, { jobType: "PICKUP" });
+  assert.equal(pickup.status, 201, JSON.stringify(pickup.body));
+  const jobId = pickup.body.jobs[0].id;
+
+  const jobRow = await testPrisma.job.findUnique({ where: { id: jobId } });
+  assert.equal(jobRow.status, "UNSCHEDULED");
+  assert.equal(jobRow.complaintCaseId, caseId);
+
+  // GET /armada/jobs TANPA filter apa pun ("Semua waktu") — job ini WAJIB
+  // ada di hasil, TIDAK boleh disaring diam-diam sebagai "job basi".
+  const list = await dispatcher.api.get("/api/armada/jobs");
+  assert.equal(list.status, 200, JSON.stringify(list.body));
+  const found = (list.body.jobs || []).find((j) => j.id === jobId);
+  assert.ok(found, "Job dari ComplaintCase HARUS muncul di GET /armada/jobs walau order-nya sudah DELIVERED");
+});
+
 test("Edge case: transisi status TIDAK VALID ditolak (BARU langsung ke DALAM_PENANGANAN)", async () => {
   const sales = await clientAs(["SALES"]);
   const { order } = await createTestUnit();
