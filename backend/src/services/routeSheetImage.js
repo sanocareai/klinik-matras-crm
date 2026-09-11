@@ -34,6 +34,12 @@ const KOLOM = [
   { key: "resi", label: "No. Resi", width: 130, align: "center" },
   { key: "tipe", label: "Tipe", width: 96, align: "center" },
   { key: "customer", label: "Customer", width: 190 },
+  // Sales (12 September 2026, permintaan owner: "ketika terbitkan rute,
+  // gambar tergenerate, bisa tambah 1 kolom cantumkan nama setiap sales")
+  // — order.customer.assignedSales SUDAH ikut jobInclude (dipakai badge
+  // SalesBadge di app), nol perubahan query, cuma belum pernah tampil di
+  // gambar tabel ini.
+  { key: "sales", label: "Sales", width: 110 },
   { key: "phone", label: "No. HP", width: 130 },
   { key: "produk", label: "Produk & Ukuran", width: 190 },
   { key: "alamat", label: "Alamat", width: 320 },
@@ -101,6 +107,7 @@ export async function buildRouteSheetImage(route) {
   const baris = jobs.map((j, idx) => {
     const order = j.order || j.units?.[0]?.unit?.order;
     const customer = order?.customer?.name || "Tanpa nama";
+    const sales = order?.customer?.assignedSales?.name || "-";
     const phone = order?.customer?.phone || "-";
     const tipe = j.type === "PICKUP" ? "PENGAMBILAN" : "PENGIRIMAN";
     const alamat = j.addressText?.trim() || "(alamat belum diisi)";
@@ -120,7 +127,7 @@ export async function buildRouteSheetImage(route) {
 
     const resi = order?.orderNumber || "-";
 
-    return { no: String(idx + 1), resi, tipe, tipeRaw: j.type, customer, phone, produk, alamat, estimasi };
+    return { no: String(idx + 1), resi, tipe, tipeRaw: j.type, customer, sales, phone, produk, alamat, estimasi };
   });
 
   // Hitung tinggi tiap baris dari kolom PALING BANYAK wrap (biasanya Alamat
