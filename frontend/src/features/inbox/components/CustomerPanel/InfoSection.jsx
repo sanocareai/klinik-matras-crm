@@ -9,6 +9,7 @@ const LEAD_SOURCE_LABELS = {
   WHATSAPP_DIRECT: "WA Langsung",
   REFERRAL:        "Referral",
   OTHER:           "Lainnya",
+  B2B_DIRECT:      "B2B & Non-CRM",
   ADS:             "Iklan (lama)",
   WEBSITE:         "Website (lama)",
 };

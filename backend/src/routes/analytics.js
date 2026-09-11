@@ -131,6 +131,19 @@ analyticsRouter.get("/overview", async (req, res) => {
     // dilakukan — ditemukan karena kartu "Conversion" di Dashboard tidak
     // sinkron dengan Laporan.
     const custWhereKonversi = { ...custWhere, pipelineStage: { not: "SPAM" } };
+    // "New Leads"/"Conversion Rate" mengukur hasil FUNNEL chat/sales — vendor
+    // B2B (D-115, workspace /b2b) manual-input LANGSUNG dengan order sudah
+    // dibuat bersamaan, jadi kalau ikut dihitung di sini akan selalu tampak
+    // "konversi 100%" instan, membuat Conversion Rate keliatan lebih bagus
+    // dari yang sebenarnya dicapai tim sales. Dikecualikan HANYA dari kluster
+    // funnel ini (dan repeatCustomersCount di bawah, supaya populasi
+    // pembilang/penyebut repeatRate tetap konsisten) — TIDAK dari
+    // leadSourceGroups (Sumber Lead tetap harus menampilkan B2B_DIRECT
+    // sebagai baris tersendiri, itu breakdown transparansi bukan KPI funnel)
+    // maupun dari totalOrders/totalOrderValue (itu wajib mencakup B2B, kan
+    // memang tujuan awal fitur ini: pendataan omzet B2B). Keputusan owner,
+    // 11 September 2026.
+    const custWhereFunnel = { ...custWhereKonversi, leadSource: { not: "B2B_DIRECT" } };
     const prevRange  = buildPrevRange(from, to);
 
     // Kalau ada date filter, hitung juga periode sebelumnya untuk persentase pertumbuhan
@@ -147,8 +160,8 @@ analyticsRouter.get("/overview", async (req, res) => {
       customersWithOrdersCountPrev,
       repeatCustomersCount,
     ] = await Promise.all([
-      prisma.customer.count({ where: custWhereKonversi }),
-      prevRange ? prisma.customer.count({ where: { createdAt: prevRange, pipelineStage: { not: "SPAM" } } }) : Promise.resolve(null),
+      prisma.customer.count({ where: custWhereFunnel }),
+      prevRange ? prisma.customer.count({ where: { createdAt: prevRange, pipelineStage: { not: "SPAM" }, leadSource: { not: "B2B_DIRECT" } } }) : Promise.resolve(null),
 
       prisma.order.aggregate({
         where: tanpaOrderSpam({ ...orderWhere, status: { not: "CANCELLED" } }),
@@ -189,8 +202,13 @@ analyticsRouter.get("/overview", async (req, res) => {
       // sudah lama pakai `custWhereKonversi` (SPAM dikecualikan). Kalau
       // dibiarkan, jumlah breakdown per sumber tidak akan pernah sama dengan
       // "New Leads" di atasnya — persis kelas bug conversion-rate yang sudah
-      // diperbaiki 25 Agustus 2026.
-      prisma.customer.groupBy({ by: ["leadSource"], _count: { _all: true }, where: custWhereKonversi }),
+      // diperbaiki 25 Agustus 2026. Sama alasannya B2B_DIRECT dikecualikan
+      // juga (custWhereFunnel, bukan custWhereKonversi) sejak D-115 — kalau
+      // tidak, breakdown "Sumber Lead" akan menampilkan B2B tapi jumlahnya
+      // tidak pernah pas dengan "New Leads" yang sudah mengecualikannya.
+      // Visibilitas order/nilai B2B tetap ada penuh, hanya bukan di sini —
+      // lihat tabel Order B2B di workspace /b2b itu sendiri.
+      prisma.customer.groupBy({ by: ["leadSource"], _count: { _all: true }, where: custWhereFunnel }),
 
       // ⚠️ BUCKET BULANAN WAJIB WIB, BUKAN UTC.
       // Kolom "createdAt" adalah timestamp UTC, jadi date_trunc('month', ...)
@@ -249,7 +267,7 @@ analyticsRouter.get("/overview", async (req, res) => {
       // Jumlah pelanggan yang punya minimal 1 order
       prisma.customer.count({
         where: {
-          ...custWhereKonversi,
+          ...custWhereFunnel,
           orders: { some: { status: { not: "CANCELLED" } } },
         },
       }),
@@ -257,13 +275,16 @@ analyticsRouter.get("/overview", async (req, res) => {
       // sama pola dengan totalCustomersPrev/orderAggPrev di atas.
       prevRange ? prisma.customer.count({
         where: {
-          createdAt: prevRange, pipelineStage: { not: "SPAM" },
+          createdAt: prevRange, pipelineStage: { not: "SPAM" }, leadSource: { not: "B2B_DIRECT" },
           orders: { some: { status: { not: "CANCELLED" } } },
         },
       }) : Promise.resolve(null),
 
-      // Repeat order — lihat catatan sama di /business-summary.
-      prisma.customer.count({ where: { ...custWhereKonversi, orderCount: { gte: 2 } } }),
+      // Repeat order — lihat catatan sama di /business-summary. Populasi
+      // funnel (custWhereFunnel), bukan custWhereKonversi — supaya konsisten
+      // dengan customersWithOrdersCount di atas (repeatRate = repeat/withOrders,
+      // dua-duanya harus dari populasi yang sama).
+      prisma.customer.count({ where: { ...custWhereFunnel, orderCount: { gte: 2 } } }),
     ]);
 
     // Conversion rate periode ini vs sebelumnya (dipakai kartu "Conversion"
@@ -418,6 +439,13 @@ analyticsRouter.get("/business-summary", async (req, res) => {
     // sekali (beda dari /sales-report yang sudah benar) — inkonsistensi yang
     // diperbaiki di sini.
     const custWhereKonversi = { ...custWhere, pipelineStage: { not: "SPAM" } };
+    // Sama seperti custWhereFunnel di /overview — vendor B2B (D-115) manual-
+    // input DENGAN order sudah dibuat bersamaan, jadi selalu "konversi 100%"
+    // instan dan bukan cerminan hasil funnel sales. Dikecualikan cuma dari
+    // blok `konversi` (totalCustomers/customersWithOrders/repeatCustomers)
+    // di bawah — leadSource breakdown & totalOrders/grossValue tetap
+    // mencakup B2B penuh. Keputusan owner, 11 September 2026.
+    const custWhereFunnel = { ...custWhereKonversi, leadSource: { not: "B2B_DIRECT" } };
     const orderWhere = { ...buildDateWhere(from, to), status: { not: "CANCELLED" } };
     const win = seriesWindow(from, to);
 
@@ -459,15 +487,15 @@ analyticsRouter.get("/business-summary", async (req, res) => {
           orders: { some: { status: { not: "CANCELLED" } } },
         },
       }),
-      prisma.customer.count({ where: custWhereKonversi }),
-      prisma.customer.count({ where: { ...custWhereKonversi, orders: { some: { status: { not: "CANCELLED" } } } } }),
+      prisma.customer.count({ where: custWhereFunnel }),
+      prisma.customer.count({ where: { ...custWhereFunnel, orders: { some: { status: { not: "CANCELLED" } } } } }),
       // Repeat order — customer dengan >=2 order (CANCELLED sudah
       // dikecualikan di kolom denormalized ini, lihat customerOrderAggregate.js,
       // konsisten dengan customersWithOrders di atas). Indikator loyalitas:
       // AOV/Total Revenue bisa naik cuma karena lebih banyak pelanggan BARU,
       // padahal yang lebih murah didapat & lebih menandakan puas adalah
       // pelanggan LAMA yang balik order lagi.
-      prisma.customer.count({ where: { ...custWhereKonversi, orderCount: { gte: 2 } } }),
+      prisma.customer.count({ where: { ...custWhereFunnel, orderCount: { gte: 2 } } }),
 
       // PEMERIKSAAN INTEGRITAS — DIPECAH JADI 2 (10 Sep 2026, audit
       // menyeluruh) — sebelumnya SATU angka gabungan yang teksnya di
@@ -2269,11 +2297,17 @@ analyticsRouter.get("/traffic", async (req, res) => {
       // file ini bahkan masih salah bilang "belum ada mekanisme menandai
       // lead sampah", padahal sudah ada & dipakai luas). Bukan beda definisi
       // yg disengaja — murni oversight, diperbaiki supaya konsisten.
+      // B2B_DIRECT dikecualikan juga (D-115, 11 September 2026) — sama
+      // alasan dgn custWhereFunnel di /overview & /business-summary: vendor
+      // B2B manual-input bukan hasil funnel chat/sales, dan endpoint ini
+      // WAJIB tetap cocok dengan "New Leads" Dashboard (lihat catatan SPAM
+      // di atas soal insiden 2585 vs 2561 — kelas bug yang sama persis kalau
+      // salah satu endpoint lupa dikecualikan).
       prisma.$queryRaw`
         SELECT to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
                COUNT(*)::int AS value
         FROM "Customer"
-        WHERE "createdAt" >= ${warmup} AND "createdAt" < ${selesai} AND "pipelineStage" <> 'SPAM'
+        WHERE "createdAt" >= ${warmup} AND "createdAt" < ${selesai} AND "pipelineStage" <> 'SPAM' AND "leadSource" <> 'B2B_DIRECT'
         GROUP BY 1 ORDER BY 1`,
 
       // Heatmap VOLUME: kapan lead masuk (hari-dalam-minggu × jam WIB).
@@ -2282,7 +2316,7 @@ analyticsRouter.get("/traffic", async (req, res) => {
                EXTRACT(hour FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta')::int AS jam,
                COUNT(*)::int AS n
         FROM "Customer"
-        WHERE "createdAt" >= ${mulai} AND "createdAt" < ${selesai} AND "pipelineStage" <> 'SPAM'
+        WHERE "createdAt" >= ${mulai} AND "createdAt" < ${selesai} AND "pipelineStage" <> 'SPAM' AND "leadSource" <> 'B2B_DIRECT'
         GROUP BY 1, 2`,
 
       // Heatmap RESPONS: seberapa cepat dibalas, di-bucket menurut jam pesan
@@ -2301,16 +2335,16 @@ analyticsRouter.get("/traffic", async (req, res) => {
           AND i.ts >= ${mulai} AND i.ts < ${selesai}
         GROUP BY 1, 2`,
 
-      // SPAM dikecualikan (sama alasan di atas) — kalau tidak, growthPct
-      // membandingkan pembilang bersih dgn penyebut kotor.
-      prisma.customer.count({ where: { createdAt: { gte: prevMulai, lt: mulai }, pipelineStage: { not: "SPAM" } } }),
+      // SPAM & B2B_DIRECT dikecualikan (sama alasan di atas) — kalau tidak,
+      // growthPct membandingkan pembilang bersih dgn penyebut kotor.
+      prisma.customer.count({ where: { createdAt: { gte: prevMulai, lt: mulai }, pipelineStage: { not: "SPAM" }, leadSource: { not: "B2B_DIRECT" } } }),
 
-      // SPAM dikecualikan juga di sini — kalau tidak, jumlah bySource tidak
-      // akan pernah pas dgn totalLeads (yang sekarang sudah bersih SPAM di
-      // atas), dan atribusi.rate ikut salah hitung.
+      // SPAM & B2B_DIRECT dikecualikan juga di sini — kalau tidak, jumlah
+      // bySource tidak akan pernah pas dgn totalLeads (yang sekarang sudah
+      // bersih keduanya di atas), dan atribusi.rate ikut salah hitung.
       prisma.customer.groupBy({
         by: ["leadSource", "leadSourceConfirmed"],
-        where: { createdAt: { gte: mulai, lt: selesai }, pipelineStage: { not: "SPAM" } },
+        where: { createdAt: { gte: mulai, lt: selesai }, pipelineStage: { not: "SPAM" }, leadSource: { not: "B2B_DIRECT" } },
         _count: { _all: true },
       }),
     ]);

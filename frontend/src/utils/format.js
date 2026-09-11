@@ -176,6 +176,7 @@ export const SOURCE_LABELS = {
   WHATSAPP_DIRECT: "WhatsApp Langsung",
   REFERRAL:        "Referral",
   OTHER:           "Lainnya",
+  B2B_DIRECT:      "B2B & Non-CRM",
   // Enum lama — tetap dipetakan agar data customer lama tampil benar
   ADS:     "Iklan",
   WEBSITE: "Website",
