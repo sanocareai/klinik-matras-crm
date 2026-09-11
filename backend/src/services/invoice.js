@@ -529,14 +529,20 @@ export async function attachOrderToInvoice(tx, { sourceOrderId, targetOrderId, u
     // supaya tombol "Gabung" di UI aman diklik idempoten.
     return { primaryInvoiceId: sourcePrimary.id };
   }
-  if (sourcePrimary.sentAt || targetPrimary.sentAt) {
-    const e = new Error(
-      "Salah satu invoice sudah pernah dikirim ke customer — tidak bisa digabung lagi (riwayat dokumen " +
-      "yang sudah diterima customer harus tetap akurat)."
-    );
-    e.statusCode = 409;
-    throw e;
-  }
+
+  // BOLEH gabung invoice yang sudah terkirim (10 Sep 2026, laporan owner —
+  // 2 order Lim Fie Boen kelihatan "gabisa digabung", ternyata KARENA
+  // keduanya sudah terlanjur terkirim terpisah sebelum sempat digabung).
+  // DULU ditolak keras di sini. Sekarang diizinkan, TAPI kalau bundle
+  // PEMENANG (primary yang akan bertahan) sudah pernah terkirim, statusnya
+  // di-reset jadi DRAFT/belum-terkirim — isinya BERUBAH (nambah order),
+  // jadi PDF/pesan WA yang customer sudah terima tidak lagi mencerminkan
+  // bundle gabungan yang baru ini, harus dikirim ulang sebagai dokumen
+  // baru (tombol "Kirim ke WhatsApp Pelanggan" yang sudah ada, manual —
+  // TIDAK auto-kirim di sini). Invoice PIHAK YANG KALAH TIDAK disentuh
+  // sentAt/lifecycleStatus-nya sendiri — riwayat bahwa dokumen ITU memang
+  // pernah terkirim persis seperti itu tetap akurat & tidak dihapus.
+  const perluResetKirim = !!(sourcePrimary.sentAt || targetPrimary.sentAt);
 
   // Bundle beranggota lebih banyak MENANG (tetap jadi primary) — supaya
   // bundle yang sudah lebih "mapan" tidak berubah identitas nomor
@@ -553,6 +559,12 @@ export async function attachOrderToInvoice(tx, { sourceOrderId, targetOrderId, u
     await tx.invoice.updateMany({
       where: { id: { in: kalah.bundledInvoices.map((b) => b.id) } },
       data: { combinedIntoId: menang.id },
+    });
+  }
+  if (perluResetKirim && menang.sentAt) {
+    await tx.invoice.update({
+      where: { id: menang.id },
+      data: { lifecycleStatus: "DRAFT", sentAt: null, viewedAt: null },
     });
   }
   return { primaryInvoiceId: menang.id };

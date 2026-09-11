@@ -209,7 +209,19 @@ export default function InvoicePanel({ orderId, onChanged }) {
     }
   }
 
-  async function gabungkanKe(targetOrderId) {
+  async function gabungkanKe(targetOrderId, candidate) {
+    // Konfirmasi eksplisit kalau salah satu sisi sudah terkirim — backend
+    // akan mereset bundle pemenang jadi belum-terkirim (lihat catatan
+    // attachOrderToInvoice di invoice.js), user perlu tahu itu SEBELUM
+    // klik, bukan kaget setelahnya.
+    if (invoice.sentAt || candidate?.sudahTerkirim) {
+      const ok = window.confirm(
+        "Salah satu invoice sudah pernah dikirim ke customer. Setelah digabung, status invoice gabungan " +
+        "akan direset jadi \"belum terkirim\" dan perlu dikirim ulang manual supaya customer terima " +
+        "invoice yang sudah benar. Lanjutkan?"
+      );
+      if (!ok) return;
+    }
     setAttachingId(targetOrderId);
     try {
       const r = await api.attachOrderToInvoice(orderId, targetOrderId);
@@ -343,7 +355,14 @@ export default function InvoicePanel({ orderId, onChanged }) {
         </div>
       )}
 
-      {!invoice.sentAt && !dibatalkan && (
+      {/* DIKOREKSI (10 Sep 2026, laporan owner) — DULU seksi ini disembunyikan
+          total kalau invoice.sentAt terisi ("Gabungkan dengan Order Lain"
+          hilang begitu invoice sudah terkirim), padahal kasus paling sering
+          BUTUH digabung justru saat 2 invoice sudah terlanjur terkirim
+          terpisah. attachOrderToInvoice() backend sudah diizinkan menggabung
+          invoice terkirim (bundle pemenang di-reset ke DRAFT, perlu dikirim
+          ulang) — tombolnya sekarang selalu tampil selama belum dibatalkan. */}
+      {!dibatalkan && (
         <div className="rounded-xl bg-surface p-3.5 shadow-card">
           <button
             type="button"
@@ -355,6 +374,14 @@ export default function InvoicePanel({ orderId, onChanged }) {
           </button>
           {showMergePicker && (
             <div className="mt-2 flex flex-col gap-1.5 border-t border-line pt-2">
+              {(invoice.sentAt || mergeCandidates.some((c) => c.sudahTerkirim)) && (
+                <p className="text-[11px] leading-relaxed text-ink3">
+                  ⚠️ Kalau salah satu invoice sudah terkirim, menggabungkan akan
+                  mereset status jadi <strong>belum terkirim</strong> (isinya
+                  berubah) — kirim ulang manual lewat "Kirim ke WhatsApp
+                  Pelanggan" setelah digabung.
+                </p>
+              )}
               {!mergeLoading && mergeCandidates.length === 0 && (
                 <p className="text-[11.5px] text-ink3">Tidak ada order lain milik pelanggan ini yang bisa digabung.</p>
               )}
@@ -363,10 +390,13 @@ export default function InvoicePanel({ orderId, onChanged }) {
                   key={c.orderId}
                   type="button"
                   disabled={attachingId === c.orderId}
-                  onClick={() => gabungkanKe(c.orderId)}
+                  onClick={() => gabungkanKe(c.orderId, c)}
                   className="flex items-center justify-between gap-2 rounded-lg bg-inset px-2.5 py-1.5 text-left text-[12px] text-ink2 transition-colors hover:bg-hovertint disabled:opacity-60"
                 >
-                  <span>{c.orderNumber} <span className="text-ink3">({c.category})</span></span>
+                  <span>
+                    {c.orderNumber} <span className="text-ink3">({c.category})</span>
+                    {c.sudahTerkirim && <span className="ml-1 text-[10.5px] font-semibold text-amber">sudah terkirim</span>}
+                  </span>
                   {attachingId === c.orderId ? <Loader2 size={12} className="animate-spin" /> : <span className="font-semibold text-accent">Gabung</span>}
                 </button>
               ))}

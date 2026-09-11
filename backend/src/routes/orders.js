@@ -1106,8 +1106,8 @@ orderRouter.get("/:id/invoice/pdf", async (req, res) => {
 });
 
 // GET /api/orders/:id/invoice/mergeable — order LAIN milik customer yang
-// sama, yang invoice-nya masih bisa digabung ke bundle order ini (belum
-// terkirim). Dipakai isi picker "Gabungkan dengan Order Lain" di InvoicePanel.
+// sama, yang invoice-nya bisa digabung ke bundle order ini. Dipakai isi
+// picker "Gabungkan dengan Order Lain" di InvoicePanel.
 //
 // SENGAJA tidak difilter "belum jadi anggota bundle lain" (beda dari versi
 // awal 2 Sep 2026) — attachOrderToInvoice() sekarang melakukan UNION 2
@@ -1115,6 +1115,17 @@ orderRouter.get("/:id/invoice/pdf", async (req, res) => {
 // di bundle LAIN tetap valid dipilih (2 bundle akan digabung jadi 1). Yang
 // TIDAK valid cuma order yang sudah 1 bundle YANG SAMA dengan order ini —
 // itu bukan "bisa digabung", itu sudah 1 dokumen yang sama.
+//
+// DIKOREKSI (10 Sep 2026) — SEBELUMNYA filter `invoice.sentAt: null` di
+// sini membuang order yang invoice-nya sudah terkirim dari daftar
+// kandidat sama sekali. Ternyata itu skenario NYATA yang dilaporkan owner:
+// 2 order sengaja/tidak sengaja terkirim invoice TERPISAH sebelum sempat
+// digabung — sekarang jadi TIDAK ADA JALAN membetulkannya lewat UI.
+// attachOrderToInvoice() SUDAH diizinkan menggabung invoice terkirim (lihat
+// catatan di sana) — filter di sini WAJIB ikut dilonggarkan, kalau tidak
+// backend attach sudah benar tapi picker-nya sendiri tidak pernah
+// menawarkan opsi itu. `sudahTerkirim` dikirim ke frontend supaya kandidat
+// yang sudah terkirim ditandai jelas (bukan disembunyikan diam-diam).
 orderRouter.get("/:id/invoice/mergeable", async (req, res) => {
   try {
     const order = await prisma.order.findUnique({
@@ -1139,14 +1150,15 @@ orderRouter.get("/:id/invoice/mergeable", async (req, res) => {
       where: {
         customerId: order.customerId,
         id: { notIn: idBundleSaatIni },
-        invoice: { sentAt: null, lifecycleStatus: { not: "CANCELLED" } },
+        invoice: { lifecycleStatus: { not: "CANCELLED" } },
       },
-      select: { id: true, orderNumber: true, category: true, createdAt: true, invoice: { select: { invoiceNumber: true } } },
+      select: { id: true, orderNumber: true, category: true, createdAt: true, invoice: { select: { invoiceNumber: true, sentAt: true } } },
       orderBy: { createdAt: "desc" },
     });
     res.json(kandidat.map((o) => ({
       orderId: o.id, orderNumber: o.orderNumber, category: o.category,
       createdAt: o.createdAt, invoiceNumber: o.invoice?.invoiceNumber || null,
+      sudahTerkirim: !!o.invoice?.sentAt,
     })));
   } catch (err) {
     console.error("get mergeable orders error:", err);
