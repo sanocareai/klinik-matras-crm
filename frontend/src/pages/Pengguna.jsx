@@ -35,6 +35,10 @@ const ROLE_LABELS = {
   HELPER: "Helper",
   LEADER_DRIVER: "Leader Driver",
   FINANCE: "Keuangan",
+  // Workspace B2B/Non-CRM (D-115, 11 September 2026) — akses SPESIFIK
+  // Gilang/Juri/Kemal, diberikan manual di sini (BUKAN otomatis untuk
+  // semua ADMIN — Novi ber-role ADMIN juga tapi sengaja tidak ikut).
+  OWNER: "Owner (B2B)",
 };
 // Sejak redesain 22 Agustus 2026 nilai ini cuma dipakai sebagai warna titik
 // RoleChip + ikon stat strip (bukan lagi latar blok penuh) — lihat RoleChip
@@ -53,6 +57,7 @@ const ROLE_COLORS = {
   HELPER:            { color: "#0d9488" },
   LEADER_DRIVER:     { color: "#0369a1" },
   FINANCE:           { color: "#7c3aed" },
+  OWNER:             { color: "#dc2626" },
 };
 const ALL_ROLES = Object.keys(ROLE_LABELS);
 
