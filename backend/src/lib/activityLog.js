@@ -17,6 +17,22 @@ import { BLOCK_REASON_LABEL } from "./domain/productionExceptions.js";
 export const ENTITY_TYPES = Object.freeze({
   UNIT: "unit",
   ORDER: "order",
+  // Audit Gudang & Inventory (12 Sept 2026) — MATERIAL untuk perubahan data
+  // master (reorderPoint/kategori/aktif-nonaktif, sebelumnya tidak
+  // tercatat SAMA SEKALI), sisanya satu entityType per jenis dokumen
+  // proses (Goods Receipt, Material Issue, dst) untuk keputusan
+  // approve/reject/cancel/post/complete — StockMovement sendiri SUDAH
+  // jadi ledger lengkap (who/when/why per baris), jadi di sini HANYA
+  // titik keputusan manusia yang direkam, bukan tiap penulisan ledger.
+  MATERIAL: "material",
+  GOODS_RECEIPT: "goods_receipt",
+  MATERIAL_ISSUE: "material_issue",
+  STOCK_TRANSFER: "stock_transfer",
+  STOCK_COUNT: "stock_count",
+  DAMAGED_STOCK: "damaged_stock",
+  RETURN_RECORD: "return_record",
+  STOCK_ADJUSTMENT: "stock_adjustment",
+  REPLENISHMENT: "replenishment",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -53,6 +69,21 @@ export const EVENT_TYPES = Object.freeze({
   OPERATOR_ASSIGNED: "OPERATOR_ASSIGNED",
   OPERATOR_REASSIGNED: "OPERATOR_REASSIGNED",
   OPERATOR_UNASSIGNED: "OPERATOR_UNASSIGNED",
+
+  // Audit Gudang & Inventory (12 Sept 2026). MATERIAL_UPDATED = satu event
+  // generik untuk PATCH /materials/:id (from/to per field yang berubah di
+  // metadata) — sebelumnya edit reorderPoint/kategori/aktif-nonaktif tidak
+  // tercatat sama sekali, siapa saja bisa menimpa diam-diam.
+  MATERIAL_UPDATED: "MATERIAL_UPDATED",
+  // Satu event generik per titik keputusan dokumen proses (approve/reject/
+  // cancel/post/complete/putaway) — nama dokumennya sendiri sudah ada di
+  // entityType (GOODS_RECEIPT/MATERIAL_ISSUE/dst), jadi eventType di sini
+  // fokus ke JENIS keputusannya, bukan diulang per dokumen (pola sama
+  // dengan STAGE_STARTED/dst yang generik lintas tahap produksi).
+  DOCUMENT_APPROVED: "DOCUMENT_APPROVED",
+  DOCUMENT_REJECTED: "DOCUMENT_REJECTED",
+  DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
+  DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 });
 
 /**
@@ -160,6 +191,27 @@ export function formatActivitySentence(event) {
       return `${metadata.stage || "Tahap"} — Operator diganti: ${metadata.from || "—"} → ${metadata.to || "—"}`;
     case EVENT_TYPES.OPERATOR_UNASSIGNED:
       return `${metadata.stage || "Tahap"} — Penugasan operator dibatalkan (sebelumnya ${metadata.from || "—"})`;
+    case EVENT_TYPES.MATERIAL_UPDATED: {
+      const fields = Object.keys(metadata.changes || {});
+      return fields.length
+        ? `Data material ${metadata.code || "—"} diubah: ${fields.join(", ")}`
+        : `Data material ${metadata.code || "—"} diubah`;
+    }
+    case EVENT_TYPES.DOCUMENT_APPROVED:
+      return `Dokumen ${metadata.adjustmentNumber || metadata.transferNumber || metadata.issueNumber || metadata.receiptNumber || "—"} disetujui`;
+    case EVENT_TYPES.DOCUMENT_REJECTED:
+      return metadata.reason
+        ? `Dokumen ${metadata.receiptNumber || metadata.recordNumber || "—"} ditolak — ${metadata.reason}`
+        : `Dokumen ${metadata.receiptNumber || metadata.recordNumber || "—"} ditolak`;
+    case EVENT_TYPES.DOCUMENT_CANCELLED:
+      return metadata.reason
+        ? `Dokumen ${metadata.issueNumber || metadata.transferNumber || "—"} dibatalkan — ${metadata.reason}`
+        : `Dokumen ${metadata.issueNumber || metadata.transferNumber || "—"} dibatalkan`;
+    case EVENT_TYPES.DOCUMENT_POSTED:
+      return `Ledger stok ditulis dari dokumen ${
+        metadata.receiptNumber || metadata.issueNumber || metadata.transferNumber
+        || metadata.countNumber || metadata.adjustmentNumber || metadata.recordNumber || metadata.returnNumber || "—"
+      }${metadata.step ? ` (${metadata.step})` : ""}`;
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya

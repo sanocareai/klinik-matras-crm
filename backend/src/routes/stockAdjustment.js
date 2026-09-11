@@ -11,6 +11,8 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
+import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const stockAdjustmentRouter = express.Router();
 stockAdjustmentRouter.use(requireAuth);
@@ -19,7 +21,7 @@ class AdjustmentError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (err instanceof AdjustmentError) return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor adjustment sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Stock adjustment error:", err);
@@ -108,34 +110,47 @@ stockAdjustmentRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req
 // { status?, reason?, notes? }
 stockAdjustmentRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const existing = await prisma.stockAdjustmentRequest.findUnique({ where: { id: req.params.id } });
-    if (!existing) return res.status(404).json({ error: "Adjustment request tidak ditemukan" });
-    if (!FORWARD_FLOW.includes(existing.status)) {
-      throw new AdjustmentError(`Request berstatus ${existing.status} tidak bisa diubah lewat sini`);
-    }
-
+    const preCheck = await prisma.stockAdjustmentRequest.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Adjustment request tidak ditemukan" });
     const { status, reason, notes } = req.body;
-    const data = {};
-    if (reason !== undefined) {
-      if (!reason?.trim()) throw new AdjustmentError("Alasan tidak boleh dikosongkan");
-      data.reason = reason.trim();
-    }
-    if (notes !== undefined) data.notes = notes || null;
 
-    if (status) {
-      const currentIdx = FORWARD_FLOW.indexOf(existing.status);
-      const nextIdx = FORWARD_FLOW.indexOf(status);
-      if (nextIdx === -1 || nextIdx !== currentIdx + 1) {
-        throw new AdjustmentError(`Tidak bisa langsung ke status ${status} dari ${existing.status} — harus berurutan`);
+    const request = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "stock_adjustment_requests", preCheck.id);
+      const existing = await tx.stockAdjustmentRequest.findUnique({ where: { id: preCheck.id } });
+      if (!FORWARD_FLOW.includes(existing.status)) {
+        throw new AdjustmentError(`Request berstatus ${existing.status} tidak bisa diubah lewat sini`);
       }
-      data.status = status;
+
+      const data = {};
+      if (reason !== undefined) {
+        if (!reason?.trim()) throw new AdjustmentError("Alasan tidak boleh dikosongkan");
+        data.reason = reason.trim();
+      }
+      if (notes !== undefined) data.notes = notes || null;
+
+      if (status) {
+        const currentIdx = FORWARD_FLOW.indexOf(existing.status);
+        const nextIdx = FORWARD_FLOW.indexOf(status);
+        if (nextIdx === -1 || nextIdx !== currentIdx + 1) {
+          throw new AdjustmentError(`Tidak bisa langsung ke status ${status} dari ${existing.status} — harus berurutan`);
+        }
+        data.status = status;
+        if (status === "APPROVED") {
+          data.approvedById = req.user.id;
+          data.approvedAt = new Date();
+        }
+      }
+
+      const updated = await tx.stockAdjustmentRequest.update({ where: { id: preCheck.id }, data, include: requestInclude });
       if (status === "APPROVED") {
-        data.approvedById = req.user.id;
-        data.approvedAt = new Date();
+        await recordActivity(tx, {
+          entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, entityId: updated.id,
+          eventType: EVENT_TYPES.DOCUMENT_APPROVED, actorId: req.user.id,
+          metadata: { adjustmentNumber: updated.adjustmentNumber },
+        });
       }
-    }
-
-    const request = await prisma.stockAdjustmentRequest.update({ where: { id: req.params.id }, data, include: requestInclude });
+      return updated;
+    });
     res.json(request);
   } catch (err) {
     handleErr(err, res);
@@ -144,25 +159,41 @@ stockAdjustmentRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async 
 
 // POST /api/inventory/adjustments/:id/post
 // SATU-SATUNYA jalan request ini menulis ledger. Wajib APPROVED.
+//
+// PERBAIKAN (12 Sept 2026): sebelumnya endpoint ini menulis `adjustmentQty`
+// mentah TANPA mengecek saldo berjalan sama sekali — `beforeQty` cuma
+// snapshot informational saat REQUEST DIBUAT (bisa berhari-hari sebelum
+// approve+post), jadi kalau saldo sudah berubah sejak itu (issue/receipt/
+// opname lain berjalan di antaranya, yang realistis untuk alur approval
+// berjenjang), posting delta lama itu bisa mendorong saldo ke negatif tanpa
+// terdeteksi. postStockMovement() sekarang mengunci material & mengecek
+// ulang saldo BERJALAN persis sebelum menulis, bukan beforeQty basi.
 stockAdjustmentRouter.post("/:id/post", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const request = await prisma.stockAdjustmentRequest.findUnique({ where: { id: req.params.id }, include: requestInclude });
-    if (!request) return res.status(404).json({ error: "Adjustment request tidak ditemukan" });
-    if (request.status !== "APPROVED") throw new AdjustmentError("Hanya request berstatus Approved yang bisa diposting");
+    const preCheck = await prisma.stockAdjustmentRequest.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Adjustment request tidak ditemukan" });
 
     const result = await prisma.$transaction(async (tx) => {
-      await tx.stockMovement.create({
-        data: {
-          materialId: request.materialId, type: "ADJUSTMENT", qty: request.adjustmentQty,
-          reason: request.reason, note: `Stock Adjustment ${request.adjustmentNumber}`,
-          stockAdjustmentRequestId: request.id, createdById: req.user.id,
-        },
+      await lockRowForUpdate(tx, "stock_adjustment_requests", preCheck.id);
+      const request = await tx.stockAdjustmentRequest.findUnique({ where: { id: preCheck.id }, include: requestInclude });
+      if (request.status !== "APPROVED") throw new AdjustmentError("Hanya request berstatus Approved yang bisa diposting");
+
+      await postStockMovement(tx, {
+        materialId: request.materialId, type: "ADJUSTMENT", qty: request.adjustmentQty,
+        reason: request.reason, note: `Stock Adjustment ${request.adjustmentNumber}`,
+        stockAdjustmentRequestId: request.id, createdById: req.user.id,
       });
-      return tx.stockAdjustmentRequest.update({
+      const updated = await tx.stockAdjustmentRequest.update({
         where: { id: request.id },
         data: { status: "POSTED", postedById: req.user.id, postedAt: new Date() },
         include: requestInclude,
       });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, entityId: request.id,
+        eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
+        metadata: { adjustmentNumber: request.adjustmentNumber, adjustmentQty: request.adjustmentQty },
+      });
+      return updated;
     });
     res.json(result);
   } catch (err) {

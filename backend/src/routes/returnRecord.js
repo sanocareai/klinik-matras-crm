@@ -8,6 +8,8 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
+import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const returnRecordRouter = express.Router();
 returnRecordRouter.use(requireAuth);
@@ -16,7 +18,7 @@ class ReturnRecordError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (err instanceof ReturnRecordError) return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor retur sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Return record error:", err);
@@ -131,27 +133,35 @@ returnRecordRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (re
 // RETURN_TO_AVAILABLE.
 returnRecordRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const record = await prisma.returnRecord.findUnique({ where: { id: req.params.id }, include: recordInclude });
-    if (!record) return res.status(404).json({ error: "Retur tidak ditemukan" });
-    if (record.status !== "INSPECTION") throw new ReturnRecordError("Hanya retur berstatus Inspection yang bisa diselesaikan");
+    const preCheck = await prisma.returnRecord.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Retur tidak ditemukan" });
     const { resolution } = req.body;
     if (!RESOLUTIONS.includes(resolution)) throw new ReturnRecordError("Resolusi tidak valid");
 
     const result = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "return_records", preCheck.id);
+      const record = await tx.returnRecord.findUnique({ where: { id: preCheck.id }, include: recordInclude });
+      if (record.status !== "INSPECTION") throw new ReturnRecordError("Hanya retur berstatus Inspection yang bisa diselesaikan");
+
       if (resolution === "RETURN_TO_AVAILABLE") {
-        await tx.stockMovement.create({
-          data: {
-            materialId: record.materialId, type: "RETURN", qty: record.qty,
-            note: `Return ${record.returnNumber}`, returnRecordId: record.id,
-            createdById: req.user.id,
-          },
+        await postStockMovement(tx, {
+          materialId: record.materialId, type: "RETURN", qty: record.qty,
+          note: `Return ${record.returnNumber}`, returnRecordId: record.id,
+          createdById: req.user.id,
         });
       }
-      return tx.returnRecord.update({
+      const updated = await tx.returnRecord.update({
         where: { id: record.id },
         data: { status: "COMPLETED", resolution, completedAt: new Date() },
         include: recordInclude,
       });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.RETURN_RECORD, entityId: record.id,
+        eventType: resolution === "RETURN_TO_AVAILABLE" ? EVENT_TYPES.DOCUMENT_POSTED : EVENT_TYPES.DOCUMENT_APPROVED,
+        actorId: req.user.id,
+        metadata: { returnNumber: record.returnNumber, resolution },
+      });
+      return updated;
     });
     res.json(result);
   } catch (err) {

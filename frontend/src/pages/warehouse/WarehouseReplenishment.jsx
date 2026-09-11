@@ -117,7 +117,7 @@ export default function WarehouseReplenishment() {
                       {s.reorderQty != null && ` · Suggested Qty ${s.reorderQty}`}
                     </p>
                   </div>
-                  <Button size="sm" variant="secondary" onClick={() => buatDariSaran(s)}>Create Request</Button>
+                  <Button size="sm" variant="secondary" onClick={() => buatDariSaran(s)}>Buat Permintaan</Button>
                 </li>
               ))}
             </ul>
@@ -146,8 +146,8 @@ export default function WarehouseReplenishment() {
               <Table>
                 <THead>
                   <TR>
-                    <TH>Request ID</TH><TH>Item</TH><TH numeric>Current</TH><TH numeric>Minimum</TH>
-                    <TH numeric>Suggested</TH><TH>Required</TH><TH>Source</TH><TH>Supplier</TH><TH>Status</TH>
+                    <TH>No. Request</TH><TH>Item</TH><TH numeric>Saat Ini</TH><TH numeric>Minimum</TH>
+                    <TH numeric>Saran</TH><TH>Dibutuhkan</TH><TH>Sumber</TH><TH>Supplier</TH><TH>Status</TH>
                   </TR>
                 </THead>
                 <TBody>

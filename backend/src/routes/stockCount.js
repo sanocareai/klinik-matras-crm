@@ -9,6 +9,8 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
+import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const stockCountRouter = express.Router();
 stockCountRouter.use(requireAuth);
@@ -17,7 +19,7 @@ class CountError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (err instanceof CountError) return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor count sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Stock count error:", err);
@@ -131,11 +133,14 @@ stockCountRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req,
 // BERJALAN — baseline blind count, tidak dihitung ulang setelah ini.
 stockCountRouter.post("/:id/start", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const count = await prisma.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
-    if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
-    if (count.status !== "SCHEDULED") throw new CountError("Hanya count berstatus Scheduled yang bisa dimulai");
+    const preCheck = await prisma.stockCount.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Stock count tidak ditemukan" });
 
     const result = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "stock_counts", preCheck.id);
+      const count = await tx.stockCount.findUnique({ where: { id: preCheck.id }, include: countInclude });
+      if (count.status !== "SCHEDULED") throw new CountError("Hanya count berstatus Scheduled yang bisa dimulai");
+
       for (const line of count.lines) {
         const [{ balance }] = await tx.$queryRaw`
           SELECT COALESCE(SUM(qty), 0)::float AS balance FROM stock_movements WHERE material_id = ${line.materialId}::uuid
@@ -233,31 +238,38 @@ stockCountRouter.post("/:id/recount", requirePermission(P.INVENTORY_WRITE), asyn
 // Baris tanpa selisih dilewati — tidak ada yang perlu disesuaikan.
 stockCountRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const count = await prisma.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
-    if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
-    if (count.status !== "WAITING_REVIEW") throw new CountError("Hanya count berstatus Waiting Review yang bisa diselesaikan");
-
-    const berselisih = count.lines.filter((l) => Number(l.countedQty) !== Number(l.systemQty));
-    for (const l of berselisih) {
-      if (!l.reason?.trim()) throw new CountError(`Alasan wajib diisi untuk selisih pada ${l.material.code}`);
-    }
+    const preCheck = await prisma.stockCount.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Stock count tidak ditemukan" });
 
     const result = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "stock_counts", preCheck.id);
+      const count = await tx.stockCount.findUnique({ where: { id: preCheck.id }, include: countInclude });
+      if (count.status !== "WAITING_REVIEW") throw new CountError("Hanya count berstatus Waiting Review yang bisa diselesaikan");
+
+      const berselisih = count.lines.filter((l) => Number(l.countedQty) !== Number(l.systemQty));
+      for (const l of berselisih) {
+        if (!l.reason?.trim()) throw new CountError(`Alasan wajib diisi untuk selisih pada ${l.material.code}`);
+      }
+
       for (const line of berselisih) {
         const variance = Number(line.countedQty) - Number(line.systemQty);
-        await tx.stockMovement.create({
-          data: {
-            materialId: line.materialId, type: "ADJUSTMENT", qty: variance,
-            reason: line.reason.trim(), note: `Stock Count ${count.countNumber}`,
-            stockCountId: count.id, createdById: req.user.id,
-          },
+        await postStockMovement(tx, {
+          materialId: line.materialId, type: "ADJUSTMENT", qty: variance,
+          reason: line.reason.trim(), note: `Stock Count ${count.countNumber}`,
+          stockCountId: count.id, createdById: req.user.id,
         });
       }
-      return tx.stockCount.update({
+      const updated = await tx.stockCount.update({
         where: { id: count.id },
         data: { status: "COMPLETED", reviewedById: req.user.id, completedAt: new Date() },
         include: countInclude,
       });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id,
+        eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
+        metadata: { countNumber: count.countNumber, varianceLines: berselisih.length },
+      });
+      return updated;
     });
     res.json(result);
   } catch (err) {

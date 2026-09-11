@@ -257,7 +257,7 @@ export default function ReturnsTab() {
         <Button variant="ghost" size="sm" className="ml-auto" onClick={load} disabled={loading}>
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </Button>
-        <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> New Return</Button>
+        <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Retur Baru</Button>
       </div>
 
       {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
@@ -265,11 +265,11 @@ export default function ReturnsTab() {
       <Card className="overflow-hidden">
         {kosong ? (
           <EmptyState icon={Undo2} title="Belum ada Return" description="Retur pelanggan, pengiriman, produksi, atau supplier akan tampil di sini."
-            action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> New Return</Button>} />
+            action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Retur Baru</Button>} />
         ) : (
           <TableWrap>
             <Table>
-              <THead><TR><TH>Return ID</TH><TH>Type</TH><TH>Item</TH><TH numeric>Qty</TH><TH>Resolution</TH><TH>Status</TH></TR></THead>
+              <THead><TR><TH>No. Retur</TH><TH>Tipe</TH><TH>Item</TH><TH numeric>Qty</TH><TH>Resolusi</TH><TH>Status</TH></TR></THead>
               <TBody>
                 {loading && <TableSkeletonRows rows={5} cols={6} />}
                 {!loading && rows?.map((r) => (

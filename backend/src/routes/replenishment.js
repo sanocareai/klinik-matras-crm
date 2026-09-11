@@ -10,6 +10,7 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
+import { computeStockSnapshot } from "../services/inventoryLedger.js";
 
 export const replenishmentRouter = express.Router();
 replenishmentRouter.use(requireAuth);
@@ -18,7 +19,7 @@ class ReplenishmentError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (err instanceof ReplenishmentError) return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor request sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Replenishment error:", err);
@@ -50,31 +51,30 @@ function generateCode(date) {
 // Material aktif dengan reorderPoint terisi DAN available ≤ reorderPoint,
 // DIKURANGI material yang sudah punya request aktif (belum
 // COMPLETED/REJECTED) — supaya tidak menyarankan hal yang sudah diajukan.
+// Saran DITURUNKAN dari computeStockSnapshot() — SUMBER TUNGGAL yang sama
+// dipakai GET /inventory/stock & GET /inventory/reports/summary (sebelumnya
+// endpoint ini punya query SUM+reserved sendiri, nyaris identik, gampang
+// drift dari dua endpoint lain). Filter "material yang sudah punya request
+// aktif" tetap query terpisah (butuh join ke replenishment_requests yang
+// tidak relevan buat konsumen computeStockSnapshot lain).
 replenishmentRouter.get("/suggestions", requirePermission(P.INVENTORY_READ), async (req, res) => {
   try {
-    const rows = await prisma.$queryRaw`
-      SELECT m.id AS "materialId", m.code, m.name, m.unit,
-             m.reorder_point AS "reorderPoint", m.reorder_qty AS "reorderQty",
-             (COALESCE(SUM(sm.qty), 0) - COALESCE(res.reserved, 0))::float AS available
-      FROM materials m
-      LEFT JOIN stock_movements sm ON sm.material_id = m.id
-      LEFT JOIN (
-        SELECT mil.material_id, SUM(mil.requested_qty) AS reserved
-        FROM material_issue_lines mil
-        JOIN material_issues mi ON mi.id = mil.material_issue_id
-        WHERE mi.status = ANY(ARRAY['APPROVED','READY_TO_PICK','PICKED']::"IssueStatus"[])
-        GROUP BY mil.material_id
-      ) res ON res.material_id = m.id
-      WHERE m.active = true AND m.reorder_point IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM replenishment_requests rr
-          WHERE rr.material_id = m.id AND rr.status NOT IN ('COMPLETED', 'REJECTED')
-        )
-      GROUP BY m.id, m.code, m.name, m.unit, m.reorder_point, m.reorder_qty, res.reserved
-      HAVING (COALESCE(SUM(sm.qty), 0) - COALESCE(res.reserved, 0)) <= m.reorder_point
-      ORDER BY m.code ASC
-    `;
-    res.json({ suggestions: rows });
+    const [snapshot, activeRequestRows] = await Promise.all([
+      computeStockSnapshot(prisma),
+      prisma.replenishmentRequest.findMany({
+        where: { status: { notIn: ["COMPLETED", "REJECTED"] } },
+        select: { materialId: true },
+      }),
+    ]);
+    const materialsWithActiveRequest = new Set(activeRequestRows.map((r) => r.materialId));
+    const suggestions = snapshot
+      .filter((r) => r.active && r.reorderPoint != null && !materialsWithActiveRequest.has(r.materialId))
+      .filter((r) => r.available <= r.reorderPoint)
+      .map((r) => ({
+        materialId: r.materialId, code: r.code, name: r.name, unit: r.unit,
+        reorderPoint: r.reorderPoint, reorderQty: r.reorderQty, available: r.available,
+      }));
+    res.json({ suggestions });
   } catch (err) {
     handleErr(err, res);
   }

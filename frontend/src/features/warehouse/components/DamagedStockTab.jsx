@@ -233,7 +233,7 @@ export default function DamagedStockTab() {
         ) : (
           <TableWrap>
             <Table>
-              <THead><TR><TH>Record ID</TH><TH>Item</TH><TH numeric>Qty</TH><TH>Category</TH><TH>Reported By</TH><TH>Status</TH></TR></THead>
+              <THead><TR><TH>No. Record</TH><TH>Item</TH><TH numeric>Qty</TH><TH>Kategori</TH><TH>Dilaporkan Oleh</TH><TH>Status</TH></TR></THead>
               <TBody>
                 {loading && <TableSkeletonRows rows={5} cols={6} />}
                 {!loading && rows?.map((r) => (

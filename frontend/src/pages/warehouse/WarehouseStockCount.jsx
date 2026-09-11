@@ -107,8 +107,8 @@ export default function WarehouseStockCount() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Count ID</TH><TH>Type</TH><TH>Scheduled</TH><TH>Assigned</TH>
-                      <TH numeric>Total Items</TH><TH numeric>Counted</TH><TH numeric>Difference</TH><TH>Status</TH>
+                      <TH>No. Count</TH><TH>Tipe</TH><TH>Dijadwalkan</TH><TH>Ditugaskan</TH>
+                      <TH numeric>Total Item</TH><TH numeric>Terhitung</TH><TH numeric>Selisih</TH><TH>Status</TH>
                     </TR>
                   </THead>
                   <TBody>

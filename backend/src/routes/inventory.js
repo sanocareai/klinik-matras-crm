@@ -9,10 +9,12 @@
 // tidak bisa bilang "salah di mana" (PRD §8.1).
 
 import express from "express";
+import { MaterialUnit, MaterialCategory } from "@prisma/client";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { RESERVED_STATUSES } from "./materialIssue.js";
+import { postStockMovement, computeStockSnapshot, lockMaterialBalance } from "../services/inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const inventoryRouter = express.Router();
 inventoryRouter.use(requireAuth);
@@ -21,15 +23,23 @@ class InventoryError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (err instanceof InventoryError) return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Kode material sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Inventory error:", err);
   return res.status(500).json({ error: "Server error: " + err.message });
 }
 
-const VALID_UNITS = ["PCS", "METER", "M3", "SHEET", "SPOOL", "KG"];
-const VALID_CATEGORIES = ["RAW_MATERIAL", "WIP", "FINISHED_GOODS", "CONSUMABLE"];
+// SUMBER TUNGGAL untuk daftar satuan/kategori valid — diambil LANGSUNG dari
+// enum Prisma (hasil generate dari schema.prisma), BUKAN array hardcode
+// yang harus diingat-ingat untuk diperbarui manual tiap kali enum berubah.
+// Bug nyata yang menyebabkan ini diperbaiki (12 Sept 2026): array hardcode
+// lama cuma 6 satuan, ketinggalan 8 satuan baru (PACK/ROLL/dst) yang
+// ditambahkan migrasi 20260911100000 untuk import katalog material real —
+// akibatnya POST/PATCH material dengan satuan baru itu ditolak validasi
+// padahal sudah valid di database.
+const VALID_UNITS = Object.values(MaterialUnit);
+const VALID_CATEGORIES = Object.values(MaterialCategory);
 
 function parseQty(input, { allowNegative = false } = {}) {
   const qty = Number(input);
@@ -97,21 +107,40 @@ inventoryRouter.post("/materials", requirePermission(P.INVENTORY_WRITE), async (
 // diubah") — lihat catatan di schema.prisma.
 inventoryRouter.patch("/materials/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
+    const existing = await prisma.material.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Material tidak ditemukan" });
     const { name, active, category, reorderPoint, reorderQty } = req.body;
     if (category !== undefined && category !== null && category !== "" && !VALID_CATEGORIES.includes(category)) {
       throw new InventoryError("Kategori tidak valid");
     }
-    const material = await prisma.material.update({
-      where: { id: req.params.id },
-      data: {
-        ...(name?.trim() && { name: name.trim() }),
-        ...(typeof active === "boolean" && { active }),
-        // Sama polanya dengan reorderPoint: kirim null/"" eksplisit untuk
-        // MENGOSONGKAN kategori, `undefined` berarti "tidak diubah".
-        ...(category !== undefined && { category: category === "" || category === null ? null : category }),
-        ...(reorderPoint !== undefined && { reorderPoint: reorderPoint === "" || reorderPoint === null ? null : Number(reorderPoint) }),
-        ...(reorderQty !== undefined && { reorderQty: reorderQty === "" || reorderQty === null ? null : Number(reorderQty) }),
-      },
+    const data = {
+      ...(name?.trim() && { name: name.trim() }),
+      ...(typeof active === "boolean" && { active }),
+      // Sama polanya dengan reorderPoint: kirim null/"" eksplisit untuk
+      // MENGOSONGKAN kategori, `undefined` berarti "tidak diubah".
+      ...(category !== undefined && { category: category === "" || category === null ? null : category }),
+      ...(reorderPoint !== undefined && { reorderPoint: reorderPoint === "" || reorderPoint === null ? null : Number(reorderPoint) }),
+      ...(reorderQty !== undefined && { reorderQty: reorderQty === "" || reorderQty === null ? null : Number(reorderQty) }),
+    };
+
+    // Audit trail (12 Sept 2026) — PATCH material sebelumnya menimpa data
+    // master TANPA jejak sama sekali (siapa mengubah reorderPoint/kategori/
+    // aktif-nonaktif, kapan, dari apa ke apa — semuanya hilang begitu
+    // di-overwrite). Sekarang direkam per field yang BENAR-BENAR berubah.
+    const changedFields = Object.keys(data).filter((k) => data[k] !== existing[k]);
+    const material = await prisma.$transaction(async (tx) => {
+      const updated = await tx.material.update({ where: { id: existing.id }, data });
+      if (changedFields.length > 0) {
+        await recordActivity(tx, {
+          entityType: ENTITY_TYPES.MATERIAL, entityId: existing.id,
+          eventType: EVENT_TYPES.MATERIAL_UPDATED, actorId: req.user.id,
+          metadata: {
+            code: existing.code,
+            changes: Object.fromEntries(changedFields.map((k) => [k, { from: existing[k], to: data[k] }])),
+          },
+        });
+      }
+      return updated;
     });
     res.json(material);
   } catch (err) {
@@ -122,37 +151,17 @@ inventoryRouter.patch("/materials/:id", requirePermission(P.INVENTORY_WRITE), as
 // ── Saldo stok (dihitung, bukan disimpan) ───────────────────────────────
 
 // GET /api/inventory/stock — saldo per material, dari agregat ledger.
+// `category` & `lastMovementAt` ikut di-select (Tahap 2) supaya halaman
+// Stock & Material tidak perlu memanggil /materials terpisah lalu
+// menggabungkan dua daftar di frontend. Query saldo/reserved/available
+// SEKARANG satu fungsi bersama (services/inventoryLedger.js#computeStockSnapshot)
+// — dipakai juga oleh GET /reports/summary & GET /replenishment/suggestions,
+// supaya ketiganya TIDAK BISA menampilkan angka yang berbeda untuk material
+// yang sama (sebelum ini masing-masing punya query SUM+reserved sendiri).
 inventoryRouter.get("/stock", requirePermission(P.INVENTORY_READ), async (req, res) => {
   try {
-    // `category` & `lastMovementAt` ikut di-select (Tahap 2) supaya halaman
-    // Stock & Material tidak perlu memanggil /materials terpisah lalu
-    // menggabungkan dua daftar di frontend.
-    //
-    // `reserved` (Tahap 3) — SUM(requested_qty) dari material_issue_lines
-    // yang induknya berstatus APPROVED/READY_TO_PICK/PICKED. RESERVED_STATUSES
-    // diimpor dari routes/materialIssue.js supaya definisinya SATU tempat,
-    // tidak bisa drift antara file yang menghitung dan file yang menulis.
-    const balances = await prisma.$queryRaw`
-      SELECT m.id AS "materialId", m.code, m.name, m.unit, m.active, m.category,
-             m.service_line AS "serviceLine",
-             m.reorder_point AS "reorderPoint", m.reorder_qty AS "reorderQty",
-             COALESCE(SUM(sm.qty), 0)::float AS balance,
-             COALESCE(res.reserved, 0)::float AS reserved,
-             MAX(sm.created_at) AS "lastMovementAt"
-      FROM materials m
-      LEFT JOIN stock_movements sm ON sm.material_id = m.id
-      LEFT JOIN (
-        SELECT mil.material_id, SUM(mil.requested_qty) AS reserved
-        FROM material_issue_lines mil
-        JOIN material_issues mi ON mi.id = mil.material_issue_id
-        WHERE mi.status = ANY(${RESERVED_STATUSES}::"IssueStatus"[])
-        GROUP BY mil.material_id
-      ) res ON res.material_id = m.id
-      GROUP BY m.id, m.code, m.name, m.unit, m.active, m.category,
-               m.service_line, m.reorder_point, m.reorder_qty, res.reserved
-      ORDER BY m.code ASC
-    `;
-    res.json(balances.map((b) => ({ ...b, available: b.balance - b.reserved })));
+    const balances = await computeStockSnapshot(prisma);
+    res.json(balances);
   } catch (err) {
     handleErr(err, res);
   }
@@ -198,15 +207,10 @@ inventoryRouter.post("/movements/receipt", requirePermission(P.INVENTORY_WRITE),
     const { materialId, location, unitCost, supplier, batchNumber, note } = req.body;
     await assertMaterialActive(materialId);
     const qty = parseQty(req.body.qty);
-    const movement = await prisma.stockMovement.create({
-      data: {
-        materialId, type: "RECEIPT", qty, location: location || undefined,
-        unitCost: unitCost != null ? Number(unitCost) : null,
-        supplier: supplier || null, batchNumber: batchNumber || null, note: note || null,
-        createdById: req.user.id,
-      },
-      include: { material: { select: { code: true, name: true, unit: true } } },
-    });
+    const movement = await prisma.$transaction((tx) => postStockMovement(tx, {
+      materialId, type: "RECEIPT", qty, location,
+      unitCost, supplier, batchNumber, note, createdById: req.user.id,
+    }));
     res.status(201).json(movement);
   } catch (err) {
     handleErr(err, res);
@@ -223,13 +227,9 @@ inventoryRouter.post("/movements/issue", requirePermission(P.INVENTORY_WRITE), a
     const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { id: true } });
     if (!unit) throw new InventoryError("Unit tidak ditemukan", 404);
     const qty = parseQty(req.body.qty);
-    const movement = await prisma.stockMovement.create({
-      data: {
-        materialId, type: "ISSUE", qty: -qty, unitId, location: location || undefined, note: note || null,
-        createdById: req.user.id,
-      },
-      include: { material: { select: { code: true, name: true, unit: true } }, unit: { select: { unitCode: true } } },
-    });
+    const movement = await prisma.$transaction((tx) => postStockMovement(tx, {
+      materialId, type: "ISSUE", qty: -qty, unitId, location, note, createdById: req.user.id,
+    }));
     res.status(201).json(movement);
   } catch (err) {
     handleErr(err, res);
@@ -243,13 +243,9 @@ inventoryRouter.post("/movements/return", requirePermission(P.INVENTORY_WRITE), 
     const { materialId, unitId, location, note } = req.body;
     await assertMaterialActive(materialId);
     const qty = parseQty(req.body.qty);
-    const movement = await prisma.stockMovement.create({
-      data: {
-        materialId, type: "RETURN", qty, unitId: unitId || null, location: location || undefined,
-        note: note || null, createdById: req.user.id,
-      },
-      include: { material: { select: { code: true, name: true, unit: true } } },
-    });
+    const movement = await prisma.$transaction((tx) => postStockMovement(tx, {
+      materialId, type: "RETURN", qty, unitId, location, note, createdById: req.user.id,
+    }));
     res.status(201).json(movement);
   } catch (err) {
     handleErr(err, res);
@@ -264,13 +260,9 @@ inventoryRouter.post("/movements/waste", requirePermission(P.INVENTORY_WRITE), a
     if (!reason?.trim()) throw new InventoryError("Alasan wajib diisi untuk material terbuang");
     await assertMaterialActive(materialId);
     const qty = parseQty(req.body.qty);
-    const movement = await prisma.stockMovement.create({
-      data: {
-        materialId, type: "WASTE", qty: -qty, reason: reason.trim(), location: location || undefined,
-        note: note || null, createdById: req.user.id,
-      },
-      include: { material: { select: { code: true, name: true, unit: true } } },
-    });
+    const movement = await prisma.$transaction((tx) => postStockMovement(tx, {
+      materialId, type: "WASTE", qty: -qty, reason: reason.trim(), location, note, createdById: req.user.id,
+    }));
     res.status(201).json(movement);
   } catch (err) {
     handleErr(err, res);
@@ -279,9 +271,14 @@ inventoryRouter.post("/movements/waste", requirePermission(P.INVENTORY_WRITE), a
 
 // POST /api/inventory/movements/adjustment { materialId, actualQty, location?, reason, note? }
 // FR-I-06 (stock opname): admin/gudang input HASIL HITUNG FISIK, sistem
-// menghitung selisih dari saldo sekarang dan mencatatnya sebagai satu baris
-// ADJUSTMENT (±) — bukan qty mentah, supaya tidak salah tanda saat variance
-// negatif (fisik lebih sedikit dari sistem, kasus paling umum).
+// menghitung selisih dari saldo GLOBAL sekarang (lintas semua `location` —
+// SEBELUMNYA dihitung PER lokasi, yang keliru: `location` di ledger cuma
+// metadata bebas, bukan partisi saldo nyata; Stock & Material page & semua
+// endpoint lain SELALU membaca saldo global, jadi variance yang dihitung
+// per-lokasi bisa salah kalau material itu pernah disentuh Stock Transfer
+// dengan kode lokasi lain) dan mencatatnya sebagai satu baris ADJUSTMENT
+// (±) — bukan qty mentah, supaya tidak salah tanda saat variance negatif
+// (fisik lebih sedikit dari sistem, kasus paling umum).
 inventoryRouter.post("/movements/adjustment", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
     const { materialId, location, reason, note } = req.body;
@@ -291,21 +288,18 @@ inventoryRouter.post("/movements/adjustment", requirePermission(P.INVENTORY_WRIT
     if (!Number.isFinite(actualQty) || actualQty < 0) {
       throw new InventoryError("Hasil hitung fisik wajib angka 0 atau lebih");
     }
-    const loc = location || "GUDANG_UTAMA";
-    const [{ balance }] = await prisma.$queryRaw`
-      SELECT COALESCE(SUM(qty), 0)::float AS balance FROM stock_movements
-      WHERE material_id = ${materialId}::uuid AND location = ${loc}
-    `;
-    const variance = actualQty - balance;
-    if (variance === 0) throw new InventoryError("Tidak ada selisih — hasil hitung sama dengan catatan sistem");
-    const movement = await prisma.stockMovement.create({
-      data: {
-        materialId, type: "ADJUSTMENT", qty: variance, location: loc,
-        reason: reason.trim(), note: note || null, createdById: req.user.id,
-      },
-      include: { material: { select: { code: true, name: true, unit: true } } },
+
+    const movement = await prisma.$transaction(async (tx) => {
+      const balance = await lockMaterialBalance(tx, materialId);
+      const variance = actualQty - balance;
+      if (Math.abs(variance) < 1e-6) throw new InventoryError("Tidak ada selisih — hasil hitung sama dengan catatan sistem");
+      const created = await postStockMovement(tx, {
+        materialId, type: "ADJUSTMENT", qty: variance, location: location || "GUDANG_UTAMA",
+        reason: reason.trim(), note, createdById: req.user.id,
+      });
+      return { ...created, previousBalance: balance, actualQty };
     });
-    res.status(201).json({ ...movement, previousBalance: balance, actualQty });
+    res.status(201).json(movement);
   } catch (err) {
     handleErr(err, res);
   }

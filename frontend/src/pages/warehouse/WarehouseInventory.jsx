@@ -168,9 +168,9 @@ export default function WarehouseInventory() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Item Code</TH><TH>Item Name</TH><TH>Category</TH>
-                      <TH numeric>On Hand</TH><TH numeric>Reserved</TH><TH numeric>Available</TH>
-                      <TH numeric>Minimum</TH><TH>Unit</TH><TH>Status</TH>
+                      <TH>Kode</TH><TH>Nama Item</TH><TH>Kategori</TH>
+                      <TH numeric>Stok</TH><TH numeric>Dipesan</TH><TH numeric>Tersedia</TH>
+                      <TH numeric>Minimum</TH><TH>Satuan</TH><TH>Status</TH>
                     </TR>
                   </THead>
                   <TBody>

@@ -61,7 +61,7 @@ export default function WarehouseTransfers() {
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
             </Button>
             <Button size="sm" onClick={() => setFormOpen(true)}>
-              <Plus size={14} /> New Transfer
+              <Plus size={14} /> Transfer Baru
             </Button>
           </>
         }
@@ -92,7 +92,7 @@ export default function WarehouseTransfers() {
               icon={ArrowLeftRight}
               title="Belum ada Transfer Stok"
               description="Mutasi barang antar lokasi akan tampil di sini."
-              action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> New Transfer</Button>}
+              action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Transfer Baru</Button>}
             />
           ) : (
             <>
@@ -100,8 +100,8 @@ export default function WarehouseTransfers() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Transfer ID</TH><TH>Source</TH><TH>Destination</TH>
-                      <TH numeric>Items</TH><TH>Requested By</TH><TH>Status</TH>
+                      <TH>No. Transfer</TH><TH>Asal</TH><TH>Tujuan</TH>
+                      <TH numeric>Item</TH><TH>Diminta Oleh</TH><TH>Status</TH>
                     </TR>
                   </THead>
                   <TBody>

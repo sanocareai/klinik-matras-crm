@@ -10,10 +10,20 @@
 //
 // Pola yang sama persis dengan jobStatus.js/podStatus.js di modul Delivery.
 
-// enum MaterialUnit — label Indonesia, sama dengan pages/Gudang.jsx supaya
-// satu material tidak punya dua sebutan satuan di dua halaman.
+// enum MaterialUnit — label Indonesia. Diperluas 11 Sept 2026 (migrasi
+// 20260911100000) untuk import katalog material real dari stock opname —
+// 8 satuan baru DITAMBAHKAN di sini pada saat yang sama, tapi bug: file ini
+// sempat KETINGGALAN sampai audit 12 Sept 2026 (material dengan satuan baru
+// tampil "PACK"/"ROLL" mentah alih-alih label Indonesia, dan validasi
+// backend routes/inventory.js VALID_UNITS punya bug SERUPA — lihat catatan
+// di sana, sekarang diambil dari enum Prisma langsung supaya tidak bisa
+// basi lagi. UNIT_LABEL di sini TETAP hardcode manual karena frontend tidak
+// bisa impor enum Prisma langsung (paket terpisah) — kalau nambah satuan
+// baru lagi, WAJIB update di sini juga.
 export const UNIT_LABEL = {
   PCS: "pcs", METER: "meter", M3: "m³", SHEET: "lembar", SPOOL: "gulung", KG: "kg",
+  PACK: "pak", ROLL: "gulungan", BUNDLE: "ikat", ROD: "batang",
+  PAIR: "pasang", CAN: "kaleng", BOX: "dus", LITER: "liter",
 };
 export const ALL_UNITS = Object.keys(UNIT_LABEL);
 

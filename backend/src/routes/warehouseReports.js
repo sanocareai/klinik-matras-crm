@@ -22,6 +22,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+import { computeStockSnapshot } from "../services/inventoryLedger.js";
 
 export const warehouseReportsRouter = express.Router();
 warehouseReportsRouter.use(requireAuth);
@@ -56,23 +57,16 @@ warehouseReportsRouter.get("/summary", requirePermission(P.INVENTORY_READ), asyn
       stockRows, byCategoryRaw,
       receiptsInRange, issuesInRange, transfersInRange,
       damagedInRange, adjustmentsInRange, countsInRange,
+      pendingGoodsReceipt, pendingMaterialIssue, openDiscrepancy,
     ] = await Promise.all([
       // Saldo per material — dasar untuk status stok, kategori, slow/dead
-      // moving, dan valuasi parsial. Query yang SAMA dengan GET /inventory/
-      // stock (Tahap 2A/3), diulang di sini supaya laporan tidak bergantung
-      // pada endpoint lain berubah bentuk responsnya.
-      prisma.$queryRaw`
-        SELECT m.id AS "materialId", m.code, m.name, m.category, m.active,
-               m.reorder_point AS "reorderPoint",
-               COALESCE(SUM(sm.qty), 0)::float AS balance,
-               MAX(sm.created_at) AS "lastMovementAt",
-               (SELECT sm2.unit_cost FROM stock_movements sm2
-                WHERE sm2.material_id = m.id AND sm2.unit_cost IS NOT NULL
-                ORDER BY sm2.created_at DESC LIMIT 1) AS "latestUnitCost"
-        FROM materials m
-        LEFT JOIN stock_movements sm ON sm.material_id = m.id
-        GROUP BY m.id, m.code, m.name, m.category, m.active, m.reorder_point
-      `,
+      // moving, dan valuasi parsial. SUMBER TUNGGAL sekarang computeStockSnapshot
+      // (services/inventoryLedger.js) — SAMA PERSIS dengan GET /inventory/stock,
+      // supaya status LOW/OUT_OF_STOCK di Reports dan di Stock & Material page
+      // TIDAK BISA berbeda untuk material yang sama (sebelumnya laporan ini
+      // pakai `balance` mentah, Stock & Material pakai `available` — material
+      // yang stoknya penuh ter-reserved bisa tampil beda status di 2 halaman).
+      computeStockSnapshot(prisma),
       prisma.material.groupBy({ by: ["category"], where: { active: true }, _count: { _all: true } }),
 
       prisma.goodsReceipt.findMany({
@@ -95,17 +89,31 @@ warehouseReportsRouter.get("/summary", requirePermission(P.INVENTORY_READ), asyn
         where: { status: "COMPLETED", ...buildDateWhere(from, to, "completedAt") },
         include: { lines: { select: { systemQty: true, countedQty: true } } },
       }),
+      // ── Backlog SAAT INI (bukan dibatasi rentang tanggal, sama alasan
+      // dengan slow/dead moving di bawah) — dipakai Dashboard KPI DAN
+      // laporan ini, supaya angka "menunggu approval"/"selisih terbuka"
+      // tidak dihitung dua cara berbeda di dua halaman. ──
+      prisma.goodsReceipt.count({ where: { status: { notIn: ["COMPLETED", "REJECTED"] } } }),
+      prisma.materialIssue.count({ where: { status: { notIn: ["ISSUED", "CANCELLED"] } } }),
+      Promise.all([
+        prisma.stockCount.count({ where: { status: "WAITING_REVIEW" } }),
+        prisma.stockAdjustmentRequest.count({ where: { status: { in: ["DRAFT", "WAITING_APPROVAL", "APPROVED"] } } }),
+      ]).then(([waitingReview, pendingAdjustments]) => waitingReview + pendingAdjustments),
     ]);
 
-    // ── Status stok & kategori (dari stockRows, sama disiplin dengan
-    // deriveStockStatusReal di frontend — LOW_STOCK/OUT_OF_STOCK dari
-    // balance vs reorderPoint, bukan kolom tersimpan) ──
+    // ── Status stok & kategori (dari stockRows, dari `available` — saldo
+    // DIKURANGI reserved — sama disiplin dengan deriveStockStatusReal
+    // frontend & deriveStockStatus di inventoryLedger.js, BUKAN `balance`
+    // mentah. Sebelum ini laporan pakai balance mentah, jadi material yang
+    // stoknya penuh ter-reserve tapi belum keluar fisik bisa tercatat
+    // IN_STOCK di sini padahal Stock & Material page sudah bilang LOW/OUT). ──
     const activeRows = stockRows.filter((r) => r.active);
     const totals = {
       totalItems: activeRows.length,
-      outOfStock: activeRows.filter((r) => r.balance <= 0).length,
-      lowStock: activeRows.filter((r) => r.balance > 0 && r.reorderPoint != null && r.balance <= r.reorderPoint).length,
+      outOfStock: activeRows.filter((r) => r.available <= 0).length,
+      lowStock: activeRows.filter((r) => r.available > 0 && r.reorderPoint != null && r.available <= r.reorderPoint).length,
       inactive: stockRows.length - activeRows.length,
+      pendingGoodsReceipt, pendingMaterialIssue, openDiscrepancy,
     };
     totals.inStock = totals.totalItems - totals.outOfStock - totals.lowStock;
 

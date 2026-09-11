@@ -5,6 +5,7 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD,
 } from "@/components/ui/table.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { CATEGORY_REAL } from "../inventoryReal.js";
 
 // C. Low Stock Alert — item yang available-nya sudah menyentuh/di bawah
 // minimum stock. Empty state-nya SENGAJA berbunyi positif ("semua di atas
@@ -15,8 +16,8 @@ export default function LowStockTable({ items, onCreateReplenishment }) {
     return (
       <EmptyState
         icon={PackageCheck}
-        title="Tidak ada low stock item"
-        description="Semua item berada di atas minimum stock level."
+        title="Tidak ada item stok menipis"
+        description="Semua item berada di atas titik pesan ulang (reorder point)."
       />
     );
   }
@@ -27,9 +28,9 @@ export default function LowStockTable({ items, onCreateReplenishment }) {
         <Table>
           <THead>
             <TR>
-              <TH>Item Code</TH><TH>Item Name</TH><TH>Category</TH>
-              <TH numeric>Available</TH><TH numeric>Minimum</TH><TH numeric>Shortage</TH>
-              <TH>Supplier</TH><TH>Action</TH>
+              <TH>Kode</TH><TH>Nama Item</TH><TH>Kategori</TH>
+              <TH numeric>Tersedia</TH><TH numeric>Minimum</TH><TH numeric>Kekurangan</TH>
+              <TH>Aksi</TH>
             </TR>
           </THead>
           <TBody>
@@ -37,16 +38,15 @@ export default function LowStockTable({ items, onCreateReplenishment }) {
               <TR key={i.id}>
                 <TD className="font-semibold text-ink">{i.itemCode}</TD>
                 <TD truncate>{i.name}</TD>
-                <TD className="text-ink2">{i.category.replace("_", " ")}</TD>
-                <TD numeric className={i.available === 0 ? "font-bold text-red" : "text-ink"}>
+                <TD className="text-ink2">{CATEGORY_REAL[i.category]?.labelId || "Tanpa Kategori"}</TD>
+                <TD numeric className={i.available <= 0 ? "font-bold text-red" : "text-ink"}>
                   {i.available} {i.unit.toLowerCase()}
                 </TD>
                 <TD numeric className="text-ink2">{i.minimumStock}</TD>
                 <TD numeric className="font-bold text-orange">{i.shortage}</TD>
-                <TD truncate className="text-ink2">{i.supplier || "—"}</TD>
                 <TD>
                   <Button variant="ghost" size="sm" onClick={() => onCreateReplenishment?.(i)}>
-                    Replenish
+                    Ajukan Restok
                   </Button>
                 </TD>
               </TR>
@@ -66,7 +66,7 @@ export default function LowStockTable({ items, onCreateReplenishment }) {
             </div>
             <div className="mt-0.5 truncate text-[13px] text-ink">{i.name}</div>
             <div className="mt-0.5 text-[11px] text-ink2">
-              Available {i.available} · Minimum {i.minimumStock} · {i.supplier || "tanpa supplier"}
+              Tersedia {i.available} · Minimum {i.minimumStock}
             </div>
           </li>
         ))}

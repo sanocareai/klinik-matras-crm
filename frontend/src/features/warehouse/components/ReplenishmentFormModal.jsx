@@ -110,7 +110,7 @@ export default function ReplenishmentFormModal({ open, prefill, onClose, onCreat
 
         <div className="flex justify-end gap-2 border-t border-line pt-3">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>Batal</Button>
-          <Button type="submit" size="sm" disabled={busy}>{busy && <Loader2 size={14} className="animate-spin" />} Create Request</Button>
+          <Button type="submit" size="sm" disabled={busy}>{busy && <Loader2 size={14} className="animate-spin" />} Buat Permintaan</Button>
         </div>
       </form>
     </Modal>

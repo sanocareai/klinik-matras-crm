@@ -11,6 +11,8 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
+import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const goodsReceiptRouter = express.Router();
 goodsReceiptRouter.use(requireAuth);
@@ -19,7 +21,7 @@ class ReceiptError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (err instanceof ReceiptError) return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor receipt sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Goods receipt error:", err);
@@ -196,33 +198,43 @@ goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRI
 // setengah tertulis.
 goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const receipt = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
-    if (!receipt) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
-    if (receipt.status !== "READY_FOR_PUTAWAY") {
-      throw new ReceiptError("Hanya receipt berstatus Ready for Putaway yang bisa ditempatkan");
-    }
-    const diterima = receipt.lines.filter((l) => l.acceptedQty != null && l.acceptedQty > 0);
-    if (diterima.length === 0) {
-      throw new ReceiptError("Tidak ada baris dengan Accepted Quantity — isi hasil inspeksi dulu");
-    }
-
+    const preCheck = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
     const { location } = req.body;
+
     const result = await prisma.$transaction(async (tx) => {
+      // Kunci dokumen ini DULU (lock "goods_receipts") — mencegah dua request
+      // putaway paralel untuk receipt YANG SAMA dua-duanya lolos cek status
+      // sebelum salah satu commit (double posting ledger yang sama).
+      await lockRowForUpdate(tx, "goods_receipts", preCheck.id);
+      const receipt = await tx.goodsReceipt.findUnique({ where: { id: preCheck.id }, include: receiptInclude });
+      if (receipt.status !== "READY_FOR_PUTAWAY") {
+        throw new ReceiptError("Hanya receipt berstatus Ready for Putaway yang bisa ditempatkan");
+      }
+      const diterima = receipt.lines.filter((l) => l.acceptedQty != null && l.acceptedQty > 0);
+      if (diterima.length === 0) {
+        throw new ReceiptError("Tidak ada baris dengan Accepted Quantity — isi hasil inspeksi dulu");
+      }
+
       for (const line of diterima) {
-        await tx.stockMovement.create({
-          data: {
-            materialId: line.materialId, type: "RECEIPT", qty: line.acceptedQty,
-            location: location || undefined, supplier: receipt.supplier || null,
-            note: `Putaway ${receipt.receiptNumber}`, goodsReceiptId: receipt.id,
-            createdById: req.user.id,
-          },
+        await postStockMovement(tx, {
+          materialId: line.materialId, type: "RECEIPT", qty: line.acceptedQty,
+          location, supplier: receipt.supplier || null,
+          note: `Putaway ${receipt.receiptNumber}`, goodsReceiptId: receipt.id,
+          createdById: req.user.id,
         });
       }
-      return tx.goodsReceipt.update({
+      const updated = await tx.goodsReceipt.update({
         where: { id: receipt.id },
         data: { status: "COMPLETED", receivedDate: receipt.receivedDate || new Date() },
         include: receiptInclude,
       });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: receipt.id,
+        eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
+        metadata: { receiptNumber: receipt.receiptNumber, lineCount: diterima.length },
+      });
+      return updated;
     });
     res.json(result);
   } catch (err) {
@@ -233,17 +245,28 @@ goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), as
 // PATCH /api/inventory/goods-receipts/:id/reject { reason }
 goodsReceiptRouter.patch("/:id/reject", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const receipt = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id } });
-    if (!receipt) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
-    if (receipt.status === "COMPLETED" || receipt.status === "REJECTED") {
-      throw new ReceiptError(`Receipt berstatus ${receipt.status} tidak bisa ditolak`);
-    }
+    const preCheck = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
     const { reason } = req.body;
     if (!reason?.trim()) throw new ReceiptError("Alasan penolakan wajib diisi");
-    const updated = await prisma.goodsReceipt.update({
-      where: { id: receipt.id },
-      data: { status: "REJECTED", notes: [receipt.notes, `Ditolak: ${reason.trim()}`].filter(Boolean).join(" — ") },
-      include: receiptInclude,
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "goods_receipts", preCheck.id);
+      const receipt = await tx.goodsReceipt.findUnique({ where: { id: preCheck.id } });
+      if (receipt.status === "COMPLETED" || receipt.status === "REJECTED") {
+        throw new ReceiptError(`Receipt berstatus ${receipt.status} tidak bisa ditolak`);
+      }
+      const result = await tx.goodsReceipt.update({
+        where: { id: receipt.id },
+        data: { status: "REJECTED", notes: [receipt.notes, `Ditolak: ${reason.trim()}`].filter(Boolean).join(" — ") },
+        include: receiptInclude,
+      });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: receipt.id,
+        eventType: EVENT_TYPES.DOCUMENT_REJECTED, actorId: req.user.id,
+        metadata: { receiptNumber: receipt.receiptNumber, reason: reason.trim() },
+      });
+      return result;
     });
     res.json(updated);
   } catch (err) {

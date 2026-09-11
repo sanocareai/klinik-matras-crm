@@ -64,7 +64,7 @@ export default function WarehouseMaterialIssue() {
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
             </Button>
             <Button size="sm" onClick={() => setFormOpen(true)}>
-              <Plus size={14} /> New Request
+              <Plus size={14} /> Permintaan Baru
             </Button>
           </>
         }
@@ -95,7 +95,7 @@ export default function WarehouseMaterialIssue() {
               icon={ClipboardList}
               title="Belum ada Pengeluaran Material"
               description="Permintaan material dari Produksi akan tampil di sini."
-              action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> New Request</Button>}
+              action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Permintaan Baru</Button>}
             />
           ) : (
             <>
@@ -103,8 +103,8 @@ export default function WarehouseMaterialIssue() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Issue ID</TH><TH>Reference</TH><TH>Department</TH><TH>Requested By</TH>
-                      <TH numeric>Items</TH><TH>Required</TH><TH>Priority</TH><TH>Status</TH>
+                      <TH>No. Issue</TH><TH>Referensi</TH><TH>Departemen</TH><TH>Diminta Oleh</TH>
+                      <TH numeric>Item</TH><TH>Dibutuhkan</TH><TH>Prioritas</TH><TH>Status</TH>
                     </TR>
                   </THead>
                   <TBody>

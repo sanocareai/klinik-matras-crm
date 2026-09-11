@@ -9,6 +9,8 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
+import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const damagedStockRouter = express.Router();
 damagedStockRouter.use(requireAuth);
@@ -17,7 +19,7 @@ class DamagedStockError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (err instanceof DamagedStockError) return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor record sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Damaged stock error:", err);
@@ -119,24 +121,31 @@ damagedStockRouter.patch("/:id/inspect", requirePermission(P.INVENTORY_WRITE), a
 // empat resolusi (lihat catatan di schema.prisma).
 damagedStockRouter.post("/:id/resolve", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const record = await prisma.damagedStockRecord.findUnique({ where: { id: req.params.id }, include: recordInclude });
-    if (!record) return res.status(404).json({ error: "Record tidak ditemukan" });
-    if (record.status === "RESOLVED") throw new DamagedStockError("Record ini sudah selesai");
+    const preCheck = await prisma.damagedStockRecord.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Record tidak ditemukan" });
     const { resolution, resolutionNote } = req.body;
     if (!RESOLUTIONS.includes(resolution)) throw new DamagedStockError("Resolusi tidak valid");
 
     const result = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "damaged_stock_records", preCheck.id);
+      const record = await tx.damagedStockRecord.findUnique({ where: { id: preCheck.id }, include: recordInclude });
+      if (record.status === "RESOLVED") throw new DamagedStockError("Record ini sudah selesai");
+
+      // Sebelum ini TIDAK ADA pengecekan stok cukup sama sekali — resolve
+      // bisa menulis WASTE lebih besar dari saldo berjalan (mis. sebagian
+      // material yang sama sudah dikeluarkan/disesuaikan sejak record ini
+      // dilaporkan) dan membuat saldo negatif. postStockMovement() sekarang
+      // menolaknya secara otomatis (saldo tidak boleh < 0 untuk jenis
+      // movement apa pun).
       if (STOCK_LEAVING_RESOLUTIONS.includes(resolution)) {
-        await tx.stockMovement.create({
-          data: {
-            materialId: record.materialId, type: "WASTE", qty: -record.qty,
-            reason: `${record.damageCategory} — ${resolution === "DISPOSE" ? "dibuang" : "diretur ke supplier"}`,
-            note: `Damaged Stock ${record.recordNumber}`, damagedStockRecordId: record.id,
-            createdById: req.user.id,
-          },
+        await postStockMovement(tx, {
+          materialId: record.materialId, type: "WASTE", qty: -record.qty,
+          reason: `${record.damageCategory} — ${resolution === "DISPOSE" ? "dibuang" : "diretur ke supplier"}`,
+          note: `Damaged Stock ${record.recordNumber}`, damagedStockRecordId: record.id,
+          createdById: req.user.id,
         });
       }
-      return tx.damagedStockRecord.update({
+      const updated = await tx.damagedStockRecord.update({
         where: { id: record.id },
         data: {
           status: "RESOLVED", resolution, resolutionNote: resolutionNote || null,
@@ -144,6 +153,13 @@ damagedStockRouter.post("/:id/resolve", requirePermission(P.INVENTORY_WRITE), as
         },
         include: recordInclude,
       });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.DAMAGED_STOCK, entityId: record.id,
+        eventType: STOCK_LEAVING_RESOLUTIONS.includes(resolution) ? EVENT_TYPES.DOCUMENT_POSTED : EVENT_TYPES.DOCUMENT_APPROVED,
+        actorId: req.user.id,
+        metadata: { recordNumber: record.recordNumber, resolution },
+      });
+      return updated;
     });
     res.json(result);
   } catch (err) {

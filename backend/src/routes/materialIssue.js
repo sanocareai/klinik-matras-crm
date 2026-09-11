@@ -12,6 +12,8 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
+import { postStockMovement, lockRowForUpdate, RESERVED_STATUSES } from "../services/inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const materialIssueRouter = express.Router();
 materialIssueRouter.use(requireAuth);
@@ -20,7 +22,7 @@ class IssueError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (err instanceof IssueError) return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor issue sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Material issue error:", err);
@@ -30,10 +32,12 @@ function handleErr(err, res) {
 const SOURCE_TYPES = ["PRODUCTION_WORK_ORDER", "MAINTENANCE_REQUEST", "INTERNAL_REQUEST", "SAMPLE_REQUEST", "MANUAL"];
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"];
 
-// Status yang MEREGISTRASI stok sebagai Reserved (dipakai juga oleh
-// GET /inventory/stock — lihat routes/inventory.js). Diekspor supaya kedua
-// file selalu memakai definisi yang SAMA, tidak ada risiko drift.
-export const RESERVED_STATUSES = ["APPROVED", "READY_TO_PICK", "PICKED"];
+// Status yang MEREGISTRASI stok sebagai Reserved — definisi kanonik sekarang
+// di services/inventoryLedger.js (dipakai juga oleh computeStockSnapshot).
+// Diekspor ULANG di sini supaya import lama (`from "./materialIssue.js"`,
+// dipakai routes/inventory.js & routes/replenishment.js) tetap jalan tanpa
+// perlu mengubah lokasi impor di file lain.
+export { RESERVED_STATUSES };
 
 // Urutan maju yang sah. CANCELLED dijangkau lewat endpoint terpisah
 // (/cancel) dari status mana pun sebelum ISSUED.
@@ -133,41 +137,55 @@ materialIssueRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, 
 // { sourceReference?, department?, requiredDate?, priority?, notes?, status? }
 materialIssueRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const existing = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
-    if (!existing) return res.status(404).json({ error: "Material issue tidak ditemukan" });
-    if (existing.status === "ISSUED" || existing.status === "CANCELLED") {
-      throw new IssueError(`Issue berstatus ${existing.status} tidak bisa diubah lagi`);
-    }
+    const preCheck = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Material issue tidak ditemukan" });
 
     const { sourceReference, department, requiredDate, priority, notes, status } = req.body;
-    const data = {};
-    if (sourceReference !== undefined) data.sourceReference = sourceReference || null;
-    if (department !== undefined) data.department = department || null;
-    if (requiredDate !== undefined) data.requiredDate = requiredDate ? new Date(`${requiredDate}T00:00:00.000Z`) : null;
-    if (priority !== undefined) {
-      if (!PRIORITIES.includes(priority)) throw new IssueError("Priority tidak valid");
-      data.priority = priority;
-    }
-    if (notes !== undefined) data.notes = notes || null;
 
-    if (status) {
-      const currentIdx = FORWARD_FLOW.indexOf(existing.status);
-      const nextIdx = FORWARD_FLOW.indexOf(status);
-      if (nextIdx === -1) throw new IssueError("Status tidak valid");
-      if (nextIdx !== currentIdx + 1) {
-        throw new IssueError(`Tidak bisa langsung ke status ${status} dari ${existing.status} — harus berurutan`);
+    const issue = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "material_issues", preCheck.id);
+      const existing = await tx.materialIssue.findUnique({ where: { id: preCheck.id } });
+      if (existing.status === "ISSUED" || existing.status === "CANCELLED") {
+        throw new IssueError(`Issue berstatus ${existing.status} tidak bisa diubah lagi`);
       }
-      if (status === "ISSUED") {
-        throw new IssueError("Status ISSUED hanya ditetapkan lewat POST /:id/issue");
+
+      const data = {};
+      if (sourceReference !== undefined) data.sourceReference = sourceReference || null;
+      if (department !== undefined) data.department = department || null;
+      if (requiredDate !== undefined) data.requiredDate = requiredDate ? new Date(`${requiredDate}T00:00:00.000Z`) : null;
+      if (priority !== undefined) {
+        if (!PRIORITIES.includes(priority)) throw new IssueError("Priority tidak valid");
+        data.priority = priority;
       }
-      data.status = status;
+      if (notes !== undefined) data.notes = notes || null;
+
+      if (status) {
+        const currentIdx = FORWARD_FLOW.indexOf(existing.status);
+        const nextIdx = FORWARD_FLOW.indexOf(status);
+        if (nextIdx === -1) throw new IssueError("Status tidak valid");
+        if (nextIdx !== currentIdx + 1) {
+          throw new IssueError(`Tidak bisa langsung ke status ${status} dari ${existing.status} — harus berurutan`);
+        }
+        if (status === "ISSUED") {
+          throw new IssueError("Status ISSUED hanya ditetapkan lewat POST /:id/issue");
+        }
+        data.status = status;
+        if (status === "APPROVED") {
+          data.approvedById = req.user.id;
+          data.approvedAt = new Date();
+        }
+      }
+
+      const updated = await tx.materialIssue.update({ where: { id: preCheck.id }, data, include: issueInclude });
       if (status === "APPROVED") {
-        data.approvedById = req.user.id;
-        data.approvedAt = new Date();
+        await recordActivity(tx, {
+          entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: updated.id,
+          eventType: EVENT_TYPES.DOCUMENT_APPROVED, actorId: req.user.id,
+          metadata: { issueNumber: updated.issueNumber },
+        });
       }
-    }
-
-    const issue = await prisma.materialIssue.update({ where: { id: req.params.id }, data, include: issueInclude });
+      return updated;
+    });
     res.json(issue);
   } catch (err) {
     handleErr(err, res);
@@ -210,49 +228,48 @@ materialIssueRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WR
 // (kasus umum: keluar persis sesuai reservasi) — bisa dioverride PER BARIS
 // lewat body { lines: [{ lineId, issuedQty }] } untuk shortage parsial.
 //
-// VALIDASI SHORTAGE: issuedQty tidak boleh melebihi saldo ledger BERJALAN
-// (SUM stock_movements per material) — dicek satu per satu di dalam
-// transaksi yang sama supaya dua Material Issue tidak bisa lolos bersamaan
-// mengeluarkan stok yang sama (race condition) — transaksi Postgres
-// menyerialkan write ke stock_movements per material lewat lock baris
-// implisit dari agregasi di dalam transaksi yang sama.
+// Baris didobel-kunci di dalam SATU transaksi: dokumen ini sendiri (lock
+// "material_issues" — cegah dua klik/dua request paralel men-double-post
+// issue YANG SAMA) dan tiap material yang disentuh (lock di dalam
+// postStockMovement() — cegah race lintas dokumen berbeda yang menyentuh
+// material sama). Keduanya WAJIB, satu tidak menggantikan yang lain.
 materialIssueRouter.post("/:id/issue", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const issue = await prisma.materialIssue.findUnique({ where: { id: req.params.id }, include: issueInclude });
-    if (!issue) return res.status(404).json({ error: "Material issue tidak ditemukan" });
-    if (issue.status !== "PICKED") {
-      throw new IssueError("Hanya issue berstatus Picked yang bisa dikeluarkan");
-    }
+    const preCheck = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Material issue tidak ditemukan" });
 
     const overrides = Object.fromEntries((req.body.lines || []).map((l) => [l.lineId, l.issuedQty]));
 
     const result = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "material_issues", preCheck.id);
+      const issue = await tx.materialIssue.findUnique({ where: { id: preCheck.id }, include: issueInclude });
+      if (issue.status !== "PICKED") {
+        throw new IssueError("Hanya issue berstatus Picked yang bisa dikeluarkan");
+      }
+
       for (const line of issue.lines) {
         const qty = overrides[line.id] != null && overrides[line.id] !== "" ? Number(overrides[line.id]) : line.requestedQty;
         if (!Number.isFinite(qty) || qty <= 0) throw new IssueError(`Jumlah keluar untuk ${line.material.code} tidak valid`);
 
-        const [{ balance }] = await tx.$queryRaw`
-          SELECT COALESCE(SUM(qty), 0)::float AS balance FROM stock_movements WHERE material_id = ${line.materialId}::uuid
-        `;
-        if (qty > balance) {
-          throw new IssueError(`Stok ${line.material.code} tidak cukup — tersedia ${balance}, diminta ${qty}`);
-        }
-
-        await tx.stockMovement.create({
-          data: {
-            materialId: line.materialId, type: "ISSUE", qty: -qty,
-            location: line.sourceLocation || undefined,
-            note: `Material Issue ${issue.issueNumber}`, materialIssueId: issue.id,
-            createdById: req.user.id,
-          },
+        await postStockMovement(tx, {
+          materialId: line.materialId, type: "ISSUE", qty: -qty,
+          location: line.sourceLocation || undefined,
+          note: `Material Issue ${issue.issueNumber}`, materialIssueId: issue.id,
+          createdById: req.user.id,
         });
         await tx.materialIssueLine.update({ where: { id: line.id }, data: { issuedQty: qty } });
       }
-      return tx.materialIssue.update({
+      const updated = await tx.materialIssue.update({
         where: { id: issue.id },
         data: { status: "ISSUED", issuedById: req.user.id, issuedAt: new Date() },
         include: issueInclude,
       });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: issue.id,
+        eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
+        metadata: { issueNumber: issue.issueNumber, lineCount: issue.lines.length },
+      });
+      return updated;
     });
     res.json(result);
   } catch (err) {
@@ -263,17 +280,28 @@ materialIssueRouter.post("/:id/issue", requirePermission(P.INVENTORY_WRITE), asy
 // PATCH /api/inventory/material-issues/:id/cancel { reason }
 materialIssueRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const issue = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
-    if (!issue) return res.status(404).json({ error: "Material issue tidak ditemukan" });
-    if (issue.status === "ISSUED" || issue.status === "CANCELLED") {
-      throw new IssueError(`Issue berstatus ${issue.status} tidak bisa dibatalkan`);
-    }
+    const preCheck = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Material issue tidak ditemukan" });
     const { reason } = req.body;
     if (!reason?.trim()) throw new IssueError("Alasan pembatalan wajib diisi");
-    const updated = await prisma.materialIssue.update({
-      where: { id: issue.id },
-      data: { status: "CANCELLED", notes: [issue.notes, `Dibatalkan: ${reason.trim()}`].filter(Boolean).join(" — ") },
-      include: issueInclude,
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "material_issues", preCheck.id);
+      const issue = await tx.materialIssue.findUnique({ where: { id: preCheck.id } });
+      if (issue.status === "ISSUED" || issue.status === "CANCELLED") {
+        throw new IssueError(`Issue berstatus ${issue.status} tidak bisa dibatalkan`);
+      }
+      const result = await tx.materialIssue.update({
+        where: { id: issue.id },
+        data: { status: "CANCELLED", notes: [issue.notes, `Dibatalkan: ${reason.trim()}`].filter(Boolean).join(" — ") },
+        include: issueInclude,
+      });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: issue.id,
+        eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: req.user.id,
+        metadata: { issueNumber: issue.issueNumber, reason: reason.trim() },
+      });
+      return result;
     });
     res.json(updated);
   } catch (err) {

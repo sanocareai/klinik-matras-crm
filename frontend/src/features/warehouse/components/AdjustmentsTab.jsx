@@ -233,7 +233,7 @@ export default function AdjustmentsTab() {
         <Button variant="ghost" size="sm" className="ml-auto" onClick={load} disabled={loading}>
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </Button>
-        <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> New Adjustment</Button>
+        <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Penyesuaian Baru</Button>
       </div>
 
       {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
@@ -241,11 +241,11 @@ export default function AdjustmentsTab() {
       <Card className="overflow-hidden">
         {kosong ? (
           <EmptyState icon={Scale} title="Belum ada Stock Adjustment" description="Koreksi stok yang perlu ditinjau akan tampil di sini."
-            action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> New Adjustment</Button>} />
+            action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Penyesuaian Baru</Button>} />
         ) : (
           <TableWrap>
             <Table>
-              <THead><TR><TH>Adjustment ID</TH><TH>Item</TH><TH numeric>Before</TH><TH numeric>Adj</TH><TH numeric>After</TH><TH>Requested By</TH><TH>Status</TH></TR></THead>
+              <THead><TR><TH>No. Adjustment</TH><TH>Item</TH><TH numeric>Sebelum</TH><TH numeric>Penyesuaian</TH><TH numeric>Sesudah</TH><TH>Diminta Oleh</TH><TH>Status</TH></TR></THead>
               <TBody>
                 {loading && <TableSkeletonRows rows={5} cols={7} />}
                 {!loading && rows?.map((r) => (

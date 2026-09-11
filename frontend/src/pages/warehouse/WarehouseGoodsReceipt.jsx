@@ -65,7 +65,7 @@ export default function WarehouseGoodsReceipt() {
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
             </Button>
             <Button size="sm" onClick={() => setFormOpen(true)}>
-              <Plus size={14} /> New Receipt
+              <Plus size={14} /> Penerimaan Baru
             </Button>
           </>
         }
@@ -96,7 +96,7 @@ export default function WarehouseGoodsReceipt() {
               icon={Inbox}
               title="Belum ada Penerimaan Barang"
               description="Supplier delivery atau penerimaan barang baru akan tampil di sini."
-              action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> New Receipt</Button>}
+              action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Penerimaan Baru</Button>}
             />
           ) : (
             <>
@@ -104,8 +104,8 @@ export default function WarehouseGoodsReceipt() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Receipt ID</TH><TH>Reference</TH><TH>Source</TH><TH>Supplier</TH>
-                      <TH>Expected</TH><TH numeric>Items</TH><TH>Status</TH>
+                      <TH>No. Receipt</TH><TH>Referensi</TH><TH>Sumber</TH><TH>Supplier</TH>
+                      <TH>Perkiraan Tiba</TH><TH numeric>Item</TH><TH>Status</TH>
                     </TR>
                   </THead>
                   <TBody>

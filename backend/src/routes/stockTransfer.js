@@ -10,6 +10,8 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
+import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const stockTransferRouter = express.Router();
 stockTransferRouter.use(requireAuth);
@@ -18,7 +20,7 @@ class TransferError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (err instanceof TransferError) return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor transfer sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Stock transfer error:", err);
@@ -133,31 +135,44 @@ stockTransferRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, 
 // PATCH /api/inventory/transfers/:id — header + transisi DRAFT..PICKED.
 stockTransferRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const existing = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
-    if (!existing) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
-    if (!FORWARD_FLOW.includes(existing.status)) {
-      throw new TransferError(`Transfer berstatus ${existing.status} tidak bisa diubah lewat sini`);
-    }
-
+    const preCheck = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
     const { notes, status } = req.body;
-    const data = {};
-    if (notes !== undefined) data.notes = notes || null;
 
-    if (status) {
-      const currentIdx = FORWARD_FLOW.indexOf(existing.status);
-      const nextIdx = FORWARD_FLOW.indexOf(status);
-      if (nextIdx === -1) throw new TransferError("Status tidak valid dari sini — gunakan /dispatch untuk In Transit");
-      if (nextIdx !== currentIdx + 1) {
-        throw new TransferError(`Tidak bisa langsung ke status ${status} dari ${existing.status} — harus berurutan`);
+    const transfer = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "stock_transfers", preCheck.id);
+      const existing = await tx.stockTransfer.findUnique({ where: { id: preCheck.id } });
+      if (!FORWARD_FLOW.includes(existing.status)) {
+        throw new TransferError(`Transfer berstatus ${existing.status} tidak bisa diubah lewat sini`);
       }
-      data.status = status;
+
+      const data = {};
+      if (notes !== undefined) data.notes = notes || null;
+
+      if (status) {
+        const currentIdx = FORWARD_FLOW.indexOf(existing.status);
+        const nextIdx = FORWARD_FLOW.indexOf(status);
+        if (nextIdx === -1) throw new TransferError("Status tidak valid dari sini — gunakan /dispatch untuk In Transit");
+        if (nextIdx !== currentIdx + 1) {
+          throw new TransferError(`Tidak bisa langsung ke status ${status} dari ${existing.status} — harus berurutan`);
+        }
+        data.status = status;
+        if (status === "APPROVED") {
+          data.approvedById = req.user.id;
+          data.approvedAt = new Date();
+        }
+      }
+
+      const updated = await tx.stockTransfer.update({ where: { id: preCheck.id }, data, include: transferInclude });
       if (status === "APPROVED") {
-        data.approvedById = req.user.id;
-        data.approvedAt = new Date();
+        await recordActivity(tx, {
+          entityType: ENTITY_TYPES.STOCK_TRANSFER, entityId: updated.id,
+          eventType: EVENT_TYPES.DOCUMENT_APPROVED, actorId: req.user.id,
+          metadata: { transferNumber: updated.transferNumber },
+        });
       }
-    }
-
-    const transfer = await prisma.stockTransfer.update({ where: { id: req.params.id }, data, include: transferInclude });
+      return updated;
+    });
     res.json(transfer);
   } catch (err) {
     handleErr(err, res);
@@ -169,31 +184,32 @@ stockTransferRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (r
 // dalam transaksi yang sama, sama pola dengan POST /material-issues/:id/issue.
 stockTransferRouter.post("/:id/dispatch", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const transfer = await prisma.stockTransfer.findUnique({ where: { id: req.params.id }, include: transferInclude });
-    if (!transfer) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
-    if (transfer.status !== "PICKED") throw new TransferError("Hanya transfer berstatus Picked yang bisa dikirim");
+    const preCheck = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
 
     const result = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "stock_transfers", preCheck.id);
+      const transfer = await tx.stockTransfer.findUnique({ where: { id: preCheck.id }, include: transferInclude });
+      if (transfer.status !== "PICKED") throw new TransferError("Hanya transfer berstatus Picked yang bisa dikirim");
+
       for (const line of transfer.lines) {
-        const [{ balance }] = await tx.$queryRaw`
-          SELECT COALESCE(SUM(qty), 0)::float AS balance FROM stock_movements WHERE material_id = ${line.materialId}::uuid
-        `;
-        if (line.qtySent > balance) {
-          throw new TransferError(`Stok ${line.material.code} tidak cukup — tersedia ${balance}, dikirim ${line.qtySent}`);
-        }
-        await tx.stockMovement.create({
-          data: {
-            materialId: line.materialId, type: "TRANSFER", qty: -line.qtySent,
-            location: transfer.sourceLocation.code, note: `Dispatch ${transfer.transferNumber}`,
-            stockTransferId: transfer.id, createdById: req.user.id,
-          },
+        await postStockMovement(tx, {
+          materialId: line.materialId, type: "TRANSFER", qty: -line.qtySent,
+          location: transfer.sourceLocation.code, note: `Dispatch ${transfer.transferNumber}`,
+          stockTransferId: transfer.id, createdById: req.user.id,
         });
       }
-      return tx.stockTransfer.update({
+      const updated = await tx.stockTransfer.update({
         where: { id: transfer.id },
         data: { status: "IN_TRANSIT", dispatchedAt: new Date() },
         include: transferInclude,
       });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.STOCK_TRANSFER, entityId: transfer.id,
+        eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
+        metadata: { transferNumber: transfer.transferNumber, step: "dispatch" },
+      });
+      return updated;
     });
     res.json(result);
   } catch (err) {
@@ -206,31 +222,42 @@ stockTransferRouter.post("/:id/dispatch", requirePermission(P.INVENTORY_WRITE), 
 // baris untuk kasus barang susut/rusak di perjalanan.
 stockTransferRouter.post("/:id/receive", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const transfer = await prisma.stockTransfer.findUnique({ where: { id: req.params.id }, include: transferInclude });
-    if (!transfer) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
-    if (transfer.status !== "IN_TRANSIT") throw new TransferError("Hanya transfer berstatus In Transit yang bisa diterima");
-
+    const preCheck = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
     const overrides = Object.fromEntries((req.body.lines || []).map((l) => [l.lineId, l.qtyReceived]));
 
     const result = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "stock_transfers", preCheck.id);
+      const transfer = await tx.stockTransfer.findUnique({ where: { id: preCheck.id }, include: transferInclude });
+      if (transfer.status !== "IN_TRANSIT") throw new TransferError("Hanya transfer berstatus In Transit yang bisa diterima");
+
       for (const line of transfer.lines) {
         const qty = overrides[line.id] != null && overrides[line.id] !== "" ? Number(overrides[line.id]) : line.qtySent;
         if (!Number.isFinite(qty) || qty < 0) throw new TransferError(`Jumlah diterima untuk ${line.material.code} tidak valid`);
 
-        await tx.stockMovement.create({
-          data: {
+        // qty 0 = seluruhnya hilang/rusak di jalan — tetap catat qtyReceived
+        // di baris transfer, tapi TIDAK ada baris ledger (postStockMovement
+        // menolak qty nol; movement nol memang tidak berarti apa-apa).
+        if (qty > 0) {
+          await postStockMovement(tx, {
             materialId: line.materialId, type: "TRANSFER", qty,
             location: transfer.destinationLocation.code, note: `Receive ${transfer.transferNumber}`,
             stockTransferId: transfer.id, createdById: req.user.id,
-          },
-        });
+          });
+        }
         await tx.stockTransferLine.update({ where: { id: line.id }, data: { qtyReceived: qty } });
       }
-      return tx.stockTransfer.update({
+      const updated = await tx.stockTransfer.update({
         where: { id: transfer.id },
         data: { status: "COMPLETED", receivedAt: new Date() },
         include: transferInclude,
       });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.STOCK_TRANSFER, entityId: transfer.id,
+        eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
+        metadata: { transferNumber: transfer.transferNumber, step: "receive" },
+      });
+      return updated;
     });
     res.json(result);
   } catch (err) {
@@ -243,17 +270,28 @@ stockTransferRouter.post("/:id/receive", requirePermission(P.INVENTORY_WRITE), a
 // alur retur fisik, itu di luar cakupan endpoint ini.
 stockTransferRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const transfer = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
-    if (!transfer) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
-    if (!FORWARD_FLOW.includes(transfer.status)) {
-      throw new TransferError(`Transfer berstatus ${transfer.status} tidak bisa dibatalkan lewat sini`);
-    }
+    const preCheck = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
+    if (!preCheck) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
     const { reason } = req.body;
     if (!reason?.trim()) throw new TransferError("Alasan pembatalan wajib diisi");
-    const updated = await prisma.stockTransfer.update({
-      where: { id: transfer.id },
-      data: { status: "CANCELLED", notes: [transfer.notes, `Dibatalkan: ${reason.trim()}`].filter(Boolean).join(" — ") },
-      include: transferInclude,
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "stock_transfers", preCheck.id);
+      const transfer = await tx.stockTransfer.findUnique({ where: { id: preCheck.id } });
+      if (!FORWARD_FLOW.includes(transfer.status)) {
+        throw new TransferError(`Transfer berstatus ${transfer.status} tidak bisa dibatalkan lewat sini`);
+      }
+      const result = await tx.stockTransfer.update({
+        where: { id: transfer.id },
+        data: { status: "CANCELLED", notes: [transfer.notes, `Dibatalkan: ${reason.trim()}`].filter(Boolean).join(" — ") },
+        include: transferInclude,
+      });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.STOCK_TRANSFER, entityId: transfer.id,
+        eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: req.user.id,
+        metadata: { transferNumber: transfer.transferNumber, reason: reason.trim() },
+      });
+      return result;
     });
     res.json(updated);
   } catch (err) {
