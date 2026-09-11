@@ -3547,6 +3547,27 @@ model Material {
   // "Tanpa kategori" apa adanya, bukan menyamarkannya jadi RAW_MATERIAL.
   category MaterialCategory?
 
+  // Ditambah 12 Sept 2026 dari kolom VENDOR & BARANG di stock opname Excel
+  // asli (backend/scripts/data/warehouse-import/) — TIDAK dikarang, hanya
+  // baris yang punya nilai di sumbernya yang diisi.
+  vendor String? // nama vendor/supplier langganan untuk material ini
+  // Sub-kategori bebas dari Excel (kolom "BARANG"), lebih rinci dari
+  // `category` — contoh nyata: "REBONDED", "HR FOAM", "HR KULIT", "BED".
+  // TIDAK dibuat enum: nilainya bebas ketik di sumber, memaksa jadi enum
+  // akan mengarang daftar yang belum tentu lengkap.
+  itemGroup String? @map("item_group")
+
+  // Harga & nilai stok REFERENSI — SNAPSHOT satu kali dari import 12 Sept
+  // 2026 (kolom HARGA ACT/STOCK VALUE bulan Agustus 2026 di Excel, atau
+  // bulan terdekat sebelumnya kalau Agustus kosong — lihat *Month di bawah).
+  // BUKAN nilai hidup: tidak pernah diperbarui otomatis dari transaksi
+  // berjalan (StockMovement.unitCost per penerimaan itu yang live, lihat
+  // model StockMovement). Dua field ini murni referensi historis import.
+  referenceUnitCost      Int?    @map("reference_unit_cost") // Rupiah per satuan
+  referenceUnitCostMonth String? @map("reference_unit_cost_month") // "2026-08" dst — bulan ASLI sumber harga ini
+  referenceStockValue      Int?    @map("reference_stock_value") // Rupiah, total nilai stok bulan itu
+  referenceStockValueMonth String? @map("reference_stock_value_month")
+
   active Boolean @default(true)
 
   // Reorder alert (PRD FR-I-05), D-024. Keduanya OPSIONAL dengan sengaja —

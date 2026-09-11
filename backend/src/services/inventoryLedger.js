@@ -138,7 +138,10 @@ export async function postStockMovement(tx, {
 /**
  * Snapshot saldo SEMUA material aktif+nonaktif: on-hand (balance), reserved
  * (Material Issue APPROVED..PICKED), available (balance − reserved), plus
- * metadata dipakai UI (lastMovementAt, latestUnitCost). SUMBER TUNGGAL —
+ * metadata dipakai UI (lastMovementAt, latestUnitCost dari ledger — LIVE;
+ * vendor/itemGroup/referenceUnitCost/referenceStockValue dari kolom
+ * Material — SNAPSHOT statis diisi 12 Sept 2026 dari import Excel, lihat
+ * catatan di model Material, BUKAN dihitung ulang). SUMBER TUNGGAL —
  * dipakai GET /inventory/stock, GET /inventory/reports/summary, dan
  * GET /inventory/replenishment/suggestions. Sebelumnya masing-masing
  * endpoint itu punya query SUM+reserved sendiri yang nyaris identik.
@@ -151,6 +154,9 @@ export async function computeStockSnapshot(client) {
     SELECT m.id AS "materialId", m.code, m.name, m.unit, m.active, m.category,
            m.service_line AS "serviceLine",
            m.reorder_point AS "reorderPoint", m.reorder_qty AS "reorderQty",
+           m.vendor, m.item_group AS "itemGroup",
+           m.reference_unit_cost AS "referenceUnitCost", m.reference_unit_cost_month AS "referenceUnitCostMonth",
+           m.reference_stock_value AS "referenceStockValue", m.reference_stock_value_month AS "referenceStockValueMonth",
            COALESCE(SUM(sm.qty), 0)::float AS balance,
            COALESCE(res.reserved, 0)::float AS reserved,
            (COALESCE(SUM(sm.qty), 0) - COALESCE(res.reserved, 0))::float AS available,
@@ -168,7 +174,9 @@ export async function computeStockSnapshot(client) {
       GROUP BY mil.material_id
     ) res ON res.material_id = m.id
     GROUP BY m.id, m.code, m.name, m.unit, m.active, m.category,
-             m.service_line, m.reorder_point, m.reorder_qty, res.reserved
+             m.service_line, m.reorder_point, m.reorder_qty, res.reserved,
+             m.vendor, m.item_group, m.reference_unit_cost, m.reference_unit_cost_month,
+             m.reference_stock_value, m.reference_stock_value_month
     ORDER BY m.code ASC
   `;
 }

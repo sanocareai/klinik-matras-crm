@@ -8,6 +8,7 @@ import {
   STOCK_STATUS_REAL, CATEGORY_REAL, SERVICE_LINE_REAL, MOVEMENT_LABEL_REAL,
   UNIT_LABEL, formatQty, deriveStockStatusReal,
 } from "../inventoryReal.js";
+import { formatRupiah } from "@/utils/format.js";
 
 // Detail item — data NYATA. Riwayat pergerakan diambil dari ledger
 // (GET /inventory/movements?materialId=), sumber kebenaran yang SAMA dengan
@@ -52,8 +53,12 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
   if (!item) return null;
 
   const status = deriveStockStatusReal(item);
-  // Supplier BUKAN atribut material — ia tercatat per penerimaan di ledger.
-  // Yang bisa dikatakan jujur: supplier pada penerimaan TERAKHIR.
+  // Dua sumber vendor BEDA maksud — sengaja ditampilkan terpisah, bukan
+  // ditimpa satu sama lain:
+  //  - item.vendor: vendor LANGGANAN dari data referensi (snapshot import
+  //    stock opname Excel 12 Sept 2026) — siapa yang BIASA memasok.
+  //  - supplierTerakhir: supplier pada penerimaan TERAKHIR yang benar-benar
+  //    tercatat di ledger — bisa beda kalau order terakhir dari vendor lain.
   const supplierTerakhir = movements?.find((m) => m.type === "RECEIPT" && m.supplier)?.supplier;
 
   async function toggleAktif() {
@@ -123,11 +128,33 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
               <Baris label="Reorder Quantity">
                 {item.reorderQty != null ? formatQty(item.reorderQty, item.unit) : <span className="text-ink3">—</span>}
               </Baris>
+              <Baris label="Vendor Langganan">
+                {item.vendor || <span className="text-ink3">Tidak tercatat</span>}
+              </Baris>
               <Baris label="Supplier terakhir">
                 {supplierTerakhir || <span className="text-ink3">Belum ada penerimaan</span>}
               </Baris>
+              <Baris label="Sub-kategori">
+                {item.itemGroup || <span className="text-ink3">—</span>}
+              </Baris>
+              <Baris label="Harga Referensi">
+                {item.referenceUnitCost != null
+                  ? <>{formatRupiah(item.referenceUnitCost)} <span className="text-ink3">({item.referenceUnitCostMonth})</span></>
+                  : <span className="text-ink3">Tidak tercatat</span>}
+              </Baris>
+              <Baris label="Nilai Stok Referensi">
+                {item.referenceStockValue != null
+                  ? <>{formatRupiah(item.referenceStockValue)} <span className="text-ink3">({item.referenceStockValueMonth})</span></>
+                  : <span className="text-ink3">Tidak tercatat</span>}
+              </Baris>
               <Baris label="Status item">{item.active ? "Aktif" : "Nonaktif"}</Baris>
             </dl>
+            <p className="mt-1 text-[10.5px] leading-relaxed text-ink3">
+              Harga &amp; nilai stok referensi adalah snapshot satu kali dari stock
+              opname Excel (bulan tertulis di kurung — kalau bulan yang diminta
+              kosong, diambil dari bulan terdekat sebelumnya). Bukan angka hidup,
+              tidak berubah otomatis mengikuti transaksi berjalan.
+            </p>
 
             <div className="mt-4 border-t border-line pt-3">
               <h4 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">

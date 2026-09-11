@@ -307,9 +307,11 @@ export const REPLENISHMENT_FORWARD_FLOW = ["DRAFT", "WAITING_APPROVAL", "APPROVE
  *     keduanya ke StorageLocation adalah pembersihan terpisah, bukan gap
  *     fungsional yang mendesak (lihat catatan di schema.prisma model
  *     StorageLocation).
- *   · Supplier per item → supplier tercatat PER PENERIMAAN di ledger, bukan
- *     atribut material. Drawer detail menampilkan supplier penerimaan
- *     TERAKHIR — itu yang benar-benar diketahui sistem.
+ *   · Vendor per item → SEKARANG ADA (12 Sept 2026, Material.vendor) sebagai
+ *     data REFERENSI dari import stock opname Excel (vendor langganan) —
+ *     BEDA dari supplier per penerimaan di ledger (siapa yang BENAR-BENAR
+ *     mengirim kiriman terakhir). Drawer detail menampilkan DUA-DUANYA
+ *     terpisah, tidak saling menimpa.
  *   · Batch/lot, expiry, barcode, dimensi, variant, maximumStock → belum ada
  *     kolomnya sama sekali.
  *   · Status OVER_STOCK/QUARANTINE/DAMAGED (Stock & Material) → item bisa
