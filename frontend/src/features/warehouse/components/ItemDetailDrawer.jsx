@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Pencil, Loader2, History } from "lucide-react";
+import { X, Pencil, Loader2, History, TriangleAlert } from "lucide-react";
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import StatusBadge from "./StatusBadge.jsx";
@@ -155,6 +155,16 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
               kosong, diambil dari bulan terdekat sebelumnya). Bukan angka hidup,
               tidak berubah otomatis mengikuti transaksi berjalan.
             </p>
+
+            {item.dataNote && (
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-orange/30 bg-orange/10 px-3 py-2">
+                <TriangleAlert size={14} className="mt-0.5 shrink-0 text-orange" aria-hidden />
+                <p className="text-[11.5px] leading-relaxed text-ink2">
+                  <span className="font-semibold text-orange">Data belum lengkap: </span>
+                  {item.dataNote}
+                </p>
+              </div>
+            )}
 
             <div className="mt-4 border-t border-line pt-3">
               <h4 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">

@@ -28,6 +28,19 @@ import { prisma } from "../src/db.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APPLY = process.argv.includes("--apply");
 
+// Koreksi EKSPLISIT disetujui user (11 Sept 2026) — di luar backfill normal
+// (yang cuma isi field yang masih kosong), karena sheet sumber diperbaiki
+// pemiliknya SETELAH material ini sudah pernah di-backfill (nilai lama:
+// harga Juni Rp79.803 — ternyata salah/kosong di sheet baru, koreksi
+// bulan sumbernya jadi Mei). SENGAJA daftar terpisah & kecil supaya jelas
+// ini timpa data yang SUDAH ADA, bukan backfill silent seperti field lain.
+const FORCE_CORRECTIONS = {
+  "KAIN-LAVA-PREMIUM-NATURAL": {
+    referenceUnitCost: 85803, referenceUnitCostMonth: "2026-05",
+    referenceStockValue: 2145075, referenceStockValueMonth: "2026-05",
+  },
+};
+
 function referenceFields(m) {
   return {
     vendor: m.vendor || null,
@@ -36,6 +49,7 @@ function referenceFields(m) {
     referenceUnitCostMonth: m.referenceUnitCostMonth ?? null,
     referenceStockValue: m.referenceStockValue ?? null,
     referenceStockValueMonth: m.referenceStockValueMonth ?? null,
+    dataNote: m.dataNote ?? null,
   };
 }
 
@@ -46,7 +60,7 @@ async function main() {
   console.log(`${catalog.length} material di draf.\n`);
 
   const existing = await prisma.material.findMany({
-    select: { id: true, code: true, vendor: true, itemGroup: true, referenceUnitCost: true, referenceStockValue: true },
+    select: { id: true, code: true, vendor: true, itemGroup: true, referenceUnitCost: true, referenceStockValue: true, dataNote: true },
   });
   const existingByCode = new Map(existing.map((m) => [m.code, m]));
 
@@ -66,20 +80,32 @@ async function main() {
     const needsBackfill = (found.vendor == null && ref.vendor != null)
       || (found.itemGroup == null && ref.itemGroup != null)
       || (found.referenceUnitCost == null && ref.referenceUnitCost != null)
-      || (found.referenceStockValue == null && ref.referenceStockValue != null);
+      || (found.referenceStockValue == null && ref.referenceStockValue != null)
+      || (found.dataNote == null && ref.dataNote != null);
     if (needsBackfill) toUpdate.push({ id: found.id, code: m.code, ...ref });
+  }
+
+  const toCorrect = [];
+  for (const [code, fields] of Object.entries(FORCE_CORRECTIONS)) {
+    const found = existingByCode.get(code);
+    if (found) toCorrect.push({ id: found.id, code, ...fields });
   }
 
   console.log(`Sudah ada (semua field): ${existingByCode.size - toUpdate.length}`);
   console.log(`Akan dibuat baru: ${toCreate.length}`);
   console.log(`Akan di-backfill (field referensi kosong): ${toUpdate.length}`);
+  console.log(`Akan dikoreksi (timpa data lama, disetujui user): ${toCorrect.length}`);
 
   if (!APPLY) {
     console.log("\nIni DRY-RUN — jalankan ulang dengan --apply untuk benar-benar menulis.");
     console.log("Contoh 5 baris pertama yang akan dibuat:");
     for (const c of toCreate.slice(0, 5)) console.log(`  - [${c.code}] ${c.name} (${c.unit}, ${c.category || "tanpa kategori"})`);
     console.log("Contoh 5 baris pertama yang akan di-backfill:");
-    for (const c of toUpdate.slice(0, 5)) console.log(`  - [${c.code}] vendor=${c.vendor} itemGroup=${c.itemGroup} cost=${c.referenceUnitCost} value=${c.referenceStockValue}`);
+    for (const c of toUpdate.slice(0, 5)) console.log(`  - [${c.code}] vendor=${c.vendor} itemGroup=${c.itemGroup} cost=${c.referenceUnitCost} value=${c.referenceStockValue} dataNote=${c.dataNote}`);
+    if (toCorrect.length) {
+      console.log("Koreksi yang akan ditimpa:");
+      for (const c of toCorrect) console.log(`  - [${c.code}] cost=${c.referenceUnitCost} (${c.referenceUnitCostMonth}) value=${c.referenceStockValue} (${c.referenceStockValueMonth})`);
+    }
     return;
   }
 
@@ -95,6 +121,15 @@ async function main() {
       count++;
     }
     console.log(`Di-backfill: ${count} material.`);
+  }
+  if (toCorrect.length) {
+    let count = 0;
+    for (const u of toCorrect) {
+      const { id, code, ...data } = u;
+      await prisma.material.update({ where: { id }, data });
+      count++;
+    }
+    console.log(`Dikoreksi: ${count} material.`);
   }
 }
 

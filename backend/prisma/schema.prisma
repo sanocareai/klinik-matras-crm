@@ -3569,6 +3569,13 @@ model Material {
   referenceStockValue      Int?    @map("reference_stock_value") // Rupiah, total nilai stok bulan itu
   referenceStockValueMonth String? @map("reference_stock_value_month")
 
+  // Catatan gudang bebas teks — dipakai untuk menandai data yang BELUM
+  // LENGKAP di sumbernya (mis. Sept 2026: order pemakaian bahan yang qty/
+  // tanggalnya belum diisi pemilik di Excel, atau material yang varian
+  // warnanya masih ambigu) supaya kelihatan di UI dan gudang tahu perlu
+  // ditindaklanjuti — BUKAN log transaksi (itu tugas StockMovement.note).
+  dataNote String? @map("data_note")
+
   active Boolean @default(true)
 
   // Reorder alert (PRD FR-I-05), D-024. Keduanya OPSIONAL dengan sengaja —

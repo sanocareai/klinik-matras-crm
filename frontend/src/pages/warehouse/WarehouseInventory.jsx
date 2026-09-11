@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Package, Plus, RefreshCw } from "lucide-react";
+import { Package, Plus, RefreshCw, TriangleAlert } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -202,7 +202,14 @@ export default function WarehouseInventory() {
                     {loading && <TableSkeletonRows rows={6} cols={11} />}
                     {!loading && terfilter?.map((r) => (
                       <TR key={r.materialId} clickable onClick={() => setSelected(r)}>
-                        <TD className="font-semibold text-ink">{r.code}</TD>
+                        <TD className="font-semibold text-ink">
+                          <span className="inline-flex items-center gap-1">
+                            {r.code}
+                            {r.dataNote && (
+                              <TriangleAlert size={12} className="shrink-0 text-orange" aria-hidden title={r.dataNote} />
+                            )}
+                          </span>
+                        </TD>
                         <TD truncate>{r.name}</TD>
                         <TD className="whitespace-nowrap text-ink2">
                           {r.category ? CATEGORY_REAL[r.category]?.label : <span className="text-ink3">—</span>}
@@ -242,6 +249,7 @@ export default function WarehouseInventory() {
                     >
                       <div className="flex items-center gap-2">
                         <span className="truncate text-[12.5px] font-semibold text-ink">{r.code}</span>
+                        {r.dataNote && <TriangleAlert size={12} className="shrink-0 text-orange" aria-hidden />}
                         <StatusBadge map={STOCK_STATUS_REAL} value={r.stockStatus} className="ml-auto shrink-0" />
                       </div>
                       <div className="mt-0.5 truncate text-[13px] text-ink">{r.name}</div>
