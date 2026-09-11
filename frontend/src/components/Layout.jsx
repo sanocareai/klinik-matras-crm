@@ -653,7 +653,13 @@ export default function Layout({ user, onLogout }) {
   // D-139 (6 September 2026, laporan owner: "redesign untuk warehouse") —
   // "warehouse" (Gudang/Warehouse & Inventory Control) menyusul dengan
   // pola SAMA PERSIS (divisi operasional penuh, bukan per-halaman).
-  const glassOn = divisionKey === "armada" || divisionKey === "bengkel" || divisionKey === "warehouse" || pageGlassPilot;
+  // D-115 (11 September 2026) — "b2b" (workspace B2B/Non-CRM) menyusul
+  // pola SAMA dengan bengkel/warehouse (divisi operasional kecil, penuh
+  // sekaligus, bukan per-halaman): halamannya baru dibangun langsung
+  // dengan Sano DS v2 (PageContainer/Card/Badge/TableWrap, `dh-table` di
+  // wrapper tabel manual) — NOL kelas CSS legacy/hardcode warna, sama
+  // kategori paling aman dengan /sales-intelligence dkk di D-109.
+  const glassOn = divisionKey === "armada" || divisionKey === "bengkel" || divisionKey === "warehouse" || divisionKey === "b2b" || pageGlassPilot;
 
   // Driver murni cuma punya JOB_OWN_READ/JOB_OWN_WRITE — DELAPAN dari sembilan
   // menu Delivery (Dashboard, Route Planner, Live Tracking, Driver & Armada,
