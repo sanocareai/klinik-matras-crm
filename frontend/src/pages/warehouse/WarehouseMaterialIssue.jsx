@@ -22,12 +22,12 @@ import { ISSUE_STATUS_REAL, ISSUE_PRIORITY_REAL } from "@/features/warehouse/inv
 // Material — lihat catatan panjang di schema.prisma & routes/materialIssue.js.
 const TABS = [
   { key: "",                label: "Semua" },
-  { key: "WAITING_APPROVAL",label: "Waiting Approval" },
-  { key: "APPROVED",        label: "Approved" },
-  { key: "READY_TO_PICK",   label: "Ready to Pick" },
-  { key: "PICKED",          label: "Picked" },
-  { key: "ISSUED",          label: "Issued" },
-  { key: "CANCELLED",       label: "Cancelled" },
+  { key: "WAITING_APPROVAL",label: "Menunggu Approval" },
+  { key: "APPROVED",        label: "Disetujui" },
+  { key: "READY_TO_PICK",   label: "Siap Diambil" },
+  { key: "PICKED",          label: "Sudah Diambil" },
+  { key: "ISSUED",          label: "Dikeluarkan" },
+  { key: "CANCELLED",       label: "Dibatalkan" },
 ];
 
 const tanggal = (s) => new Date(s).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
@@ -84,7 +84,7 @@ export default function WarehouseMaterialIssue() {
               {t.label}
             </button>
           ))}
-          {rows && <span className="ml-auto self-center text-[11.5px] text-ink3">{rows.length} request</span>}
+          {rows && <span className="ml-auto self-center text-[11.5px] text-ink3">{rows.length} permintaan</span>}
         </div>
 
         {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
@@ -103,7 +103,7 @@ export default function WarehouseMaterialIssue() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>No. Issue</TH><TH>Referensi</TH><TH>Departemen</TH><TH>Diminta Oleh</TH>
+                      <TH>No. Issue</TH><TH>Unit Produksi</TH><TH>Departemen</TH><TH>Diminta Oleh</TH>
                       <TH numeric>Item</TH><TH>Dibutuhkan</TH><TH>Prioritas</TH><TH>Status</TH>
                     </TR>
                   </THead>
@@ -112,7 +112,11 @@ export default function WarehouseMaterialIssue() {
                     {!loading && rows?.map((r) => (
                       <TR key={r.id} clickable onClick={() => setSelectedId(r.id)}>
                         <TD className="font-semibold text-ink">{r.issueNumber}</TD>
-                        <TD className="text-ink2">{r.sourceReference || "—"}</TD>
+                        <TD className="text-ink2">
+                          {r.unit
+                            ? <>{r.unit.unitCode}<span className="block text-[10.5px] text-ink3">{r.unit.order?.orderNumber} · {r.unit.order?.customer?.name}</span></>
+                            : (r.sourceReference || <span className="text-ink3">—</span>)}
+                        </TD>
                         <TD truncate>{r.department || "—"}</TD>
                         <TD className="text-ink2">{r.requestedBy?.name || "—"}</TD>
                         <TD numeric>{r.lines.length}</TD>

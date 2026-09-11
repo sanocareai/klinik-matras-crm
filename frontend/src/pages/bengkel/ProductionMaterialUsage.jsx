@@ -105,12 +105,15 @@ export default function ProductionMaterialUsage() {
                       <TD truncate>{m.unit?.order?.customer?.name || "—"}</TD>
                       <TD truncate className="text-ink2">{m.material.name}</TD>
                       <TD>
-                        <Badge variant={m.type === "ISSUE" ? "accent" : "orange"}>
-                          {m.type === "ISSUE" ? "Pemakaian" : "Koreksi"}
+                        <Badge variant={m.type === "ISSUE" ? "accent" : m.type === "WASTE" ? "red" : "orange"}>
+                          {m.type === "ISSUE" ? "Pemakaian" : m.type === "WASTE" ? "Terbuang" : "Koreksi"}
                         </Badge>
+                        {m.type === "WASTE" && m.reason && (
+                          <div className="mt-0.5 truncate text-[10.5px] text-ink3">{m.reason}</div>
+                        )}
                       </TD>
                       <TD className="text-ink2">
-                        {m.type === "ISSUE" ? "" : "-"}{Math.abs(Number(m.qty))} {m.material.unit}
+                        {m.type === "RETURN" ? "-" : ""}{Math.abs(Number(m.qty))} {m.material.unit}
                       </TD>
                       <TD className="text-ink2">{m.createdBy?.name || "—"}</TD>
                     </TR>

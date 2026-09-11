@@ -735,11 +735,12 @@ export default function ProductionUnitDetail() {
                   <li key={m.id} className="flex items-center justify-between px-4 py-2 text-[12px]">
                     <div className="min-w-0">
                       <span className="font-semibold text-ink">{m.material.name}</span>
+                      {m.type === "WASTE" && <Badge variant="red" className="ml-2">Terbuang</Badge>}
                       <span className="ml-2 text-ink3">{m.createdBy?.name || "—"}</span>
-                      {m.note && <p className="text-[11px] text-ink3">{m.note}</p>}
+                      {(m.note || m.reason) && <p className="text-[11px] text-ink3">{m.reason || m.note}</p>}
                     </div>
-                    <Badge variant={m.type === "ISSUE" ? "accent" : "orange"} className="shrink-0">
-                      {m.type === "ISSUE" ? "" : "-"}{Math.abs(Number(m.qty))} {m.material.unit}
+                    <Badge variant={m.type === "ISSUE" ? "accent" : m.type === "WASTE" ? "red" : "orange"} className="shrink-0">
+                      {m.type === "RETURN" ? "-" : ""}{Math.abs(Number(m.qty))} {m.material.unit}
                     </Badge>
                   </li>
                 ))}

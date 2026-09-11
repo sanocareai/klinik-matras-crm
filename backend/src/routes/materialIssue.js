@@ -32,6 +32,16 @@ function handleErr(err, res) {
 const SOURCE_TYPES = ["PRODUCTION_WORK_ORDER", "MAINTENANCE_REQUEST", "INTERNAL_REQUEST", "SAMPLE_REQUEST", "MANUAL"];
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"];
 
+// Integrasi Produksi (13 Sept 2026) — fungsi MURNI, diekspor supaya dites
+// langsung tanpa Express/DB (pola sama dengan lib/domain/*.js). SATU tempat
+// dipakai POST / dan PATCH /:id supaya aturannya tidak bisa drift antara
+// keduanya: PRODUCTION_WORK_ORDER TIDAK PUNYA ARTI tanpa unit yang
+// ditunjuk — itu yang membedakan integrasi nyata dari sekadar teks bebas
+// sourceReference.
+export function requiresUnitLink(sourceType) {
+  return sourceType === "PRODUCTION_WORK_ORDER";
+}
+
 // Status yang MEREGISTRASI stok sebagai Reserved — definisi kanonik sekarang
 // di services/inventoryLedger.js (dipakai juga oleh computeStockSnapshot).
 // Diekspor ULANG di sini supaya import lama (`from "./materialIssue.js"`,
@@ -49,6 +59,15 @@ const issueInclude = {
   approvedBy: { select: { id: true, name: true } },
   issuedBy: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },
+  // Integrasi Produksi — supaya UI Gudang bisa langsung tampilkan unit/order/
+  // pelanggan tanpa request terpisah (sama pola dengan m.unit di
+  // ProductionMaterialUsage.jsx sisi Bengkel).
+  unit: {
+    select: {
+      id: true, unitCode: true,
+      order: { select: { id: true, orderNumber: true, customer: { select: { name: true } } } },
+    },
+  },
 };
 
 function generateIssueCode(date) {
@@ -85,18 +104,32 @@ materialIssueRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req,
 });
 
 // POST /api/inventory/material-issues
-// { sourceType, sourceReference?, department?, requiredDate?, priority?, notes?,
+// { sourceType, unitId?, sourceReference?, department?, requiredDate?, priority?, notes?,
 //   lines: [{materialId, requestedQty, sourceLocation?}] }
+//
+// unitId WAJIB kalau sourceType = PRODUCTION_WORK_ORDER — inilah yang
+// membuat permintaan material BENAR-BENAR terhubung ke unit produksi
+// (bukan cuma teks bebas di sourceReference seperti sebelumnya). Sumber
+// lain (Maintenance/Internal/Sample/Manual) tidak punya Unit untuk
+// ditunjuk, jadi unitId tetap opsional untuk itu.
 materialIssueRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { sourceType, sourceReference, department, requiredDate, priority, notes, lines } = req.body;
+    const { sourceType, unitId, sourceReference, department, requiredDate, priority, notes, lines } = req.body;
     if (!SOURCE_TYPES.includes(sourceType)) throw new IssueError("Source type tidak valid");
+    if (requiresUnitLink(sourceType) && !unitId) {
+      throw new IssueError("Unit produksi wajib dipilih untuk permintaan dari Work Order Produksi");
+    }
     if (priority && !PRIORITIES.includes(priority)) throw new IssueError("Priority tidak valid");
     if (!Array.isArray(lines) || lines.length === 0) throw new IssueError("Minimal satu item wajib diisi");
     for (const l of lines) {
       if (!l.materialId) throw new IssueError("Setiap baris wajib memilih item");
       const qty = Number(l.requestedQty);
       if (!Number.isFinite(qty) || qty <= 0) throw new IssueError("Requested quantity wajib lebih dari 0");
+    }
+
+    if (unitId) {
+      const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { id: true } });
+      if (!unit) return res.status(404).json({ error: "Unit produksi tidak ditemukan" });
     }
 
     const today = new Date();
@@ -107,6 +140,7 @@ materialIssueRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, 
     const issue = await prisma.materialIssue.create({
       data: {
         issueNumber, sourceType,
+        unitId: unitId || null,
         sourceReference: sourceReference || null,
         department: department || null,
         requestedById: req.user.id,
@@ -140,7 +174,7 @@ materialIssueRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (r
     const preCheck = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Material issue tidak ditemukan" });
 
-    const { sourceReference, department, requiredDate, priority, notes, status } = req.body;
+    const { unitId, sourceReference, department, requiredDate, priority, notes, status } = req.body;
 
     const issue = await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, "material_issues", preCheck.id);
@@ -150,6 +184,15 @@ materialIssueRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (r
       }
 
       const data = {};
+      if (unitId !== undefined) {
+        if (unitId) {
+          const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true } });
+          if (!unit) throw new IssueError("Unit produksi tidak ditemukan", 404);
+        } else if (requiresUnitLink(existing.sourceType)) {
+          throw new IssueError("Unit produksi wajib diisi untuk permintaan dari Work Order Produksi");
+        }
+        data.unitId = unitId || null;
+      }
       if (sourceReference !== undefined) data.sourceReference = sourceReference || null;
       if (department !== undefined) data.department = department || null;
       if (requiredDate !== undefined) data.requiredDate = requiredDate ? new Date(`${requiredDate}T00:00:00.000Z`) : null;
@@ -254,6 +297,7 @@ materialIssueRouter.post("/:id/issue", requirePermission(P.INVENTORY_WRITE), asy
         await postStockMovement(tx, {
           materialId: line.materialId, type: "ISSUE", qty: -qty,
           location: line.sourceLocation || undefined,
+          unitId: issue.unitId || undefined,
           note: `Material Issue ${issue.issueNumber}`, materialIssueId: issue.id,
           createdById: req.user.id,
         });

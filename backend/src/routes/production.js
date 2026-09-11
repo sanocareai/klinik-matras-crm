@@ -526,12 +526,16 @@ productionRouter.get("/qc-queue", requirePermission(P.UNIT_READ), async (req, re
 // (Tahap 5). Daftar LINTAS ORDER seluruh bahan yang sudah dipakai per
 // unit, supaya pengecekan tidak perlu buka Work Order satu-satu. Sumbernya
 // stock_movements yang SAMA dengan yang dicatat dari halaman Detail Unit
-// (POST /units/:id/materials) — tidak ada agregasi/tabel tersendiri, jadi
-// tidak mungkin drift dari angka yang sebenarnya tercatat di ledger.
+// (POST /units/:id/materials) MAUPUN Material Issue formal sisi Gudang
+// (POST /material-issues/:id/issue, kalau requestnya terikat unitId) —
+// tidak ada agregasi/tabel tersendiri, jadi tidak mungkin drift dari angka
+// yang sebenarnya tercatat di ledger. WASTE ikut disertakan (13 Sept 2026)
+// supaya bahan yang rusak/terbuang saat mengerjakan unit ini juga terlihat
+// di sini, bukan cuma yang benar-benar terpakai.
 productionRouter.get("/material-usage", requirePermission(P.UNIT_READ), async (req, res) => {
   try {
     const { materialId, q } = req.query;
-    const where = { unitId: { not: null }, type: { in: ["ISSUE", "RETURN"] } };
+    const where = { unitId: { not: null }, type: { in: ["ISSUE", "RETURN", "WASTE"] } };
     if (materialId) where.materialId = materialId;
     if (q?.trim()) {
       const term = q.trim();
@@ -547,7 +551,7 @@ productionRouter.get("/material-usage", requirePermission(P.UNIT_READ), async (r
     const movements = await prisma.stockMovement.findMany({
       where,
       select: {
-        id: true, type: true, qty: true, note: true, createdAt: true,
+        id: true, type: true, qty: true, reason: true, note: true, createdAt: true,
         material: { select: { id: true, code: true, name: true, unit: true } },
         createdBy: { select: { id: true, name: true } },
         unit: {

@@ -142,38 +142,45 @@ export default function MaterialIssueDetailDrawer({ issueId, onClose, onChanged 
             {issue && (
               <>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[12px]">
-                  <div><dt className="text-ink3">Source Type</dt><dd className="font-medium text-ink">{ISSUE_SOURCE_REAL[issue.sourceType]?.label}</dd></div>
-                  <div><dt className="text-ink3">Reference</dt><dd className="font-medium text-ink">{issue.sourceReference || "—"}</dd></div>
-                  <div><dt className="text-ink3">Department</dt><dd className="font-medium text-ink">{issue.department || "—"}</dd></div>
-                  <div><dt className="text-ink3">Required Date</dt><dd className="font-medium text-ink">{issue.requiredDate ? waktu(issue.requiredDate) : "—"}</dd></div>
-                  <div><dt className="text-ink3">Requested By</dt><dd className="font-medium text-ink">{issue.requestedBy?.name || "—"}</dd></div>
-                  <div><dt className="text-ink3">Approved By</dt><dd className="font-medium text-ink">{issue.approvedBy?.name || "—"}</dd></div>
-                  {issue.issuedBy && <div><dt className="text-ink3">Issued By</dt><dd className="font-medium text-ink">{issue.issuedBy.name}</dd></div>}
+                  <div><dt className="text-ink3">Sumber</dt><dd className="font-medium text-ink">{ISSUE_SOURCE_REAL[issue.sourceType]?.labelId || ISSUE_SOURCE_REAL[issue.sourceType]?.label}</dd></div>
+                  <div>
+                    <dt className="text-ink3">Unit Produksi</dt>
+                    <dd className="font-medium text-ink">
+                      {issue.unit
+                        ? `${issue.unit.unitCode} — ${issue.unit.order?.orderNumber || "—"}`
+                        : (issue.sourceReference || "—")}
+                    </dd>
+                  </div>
+                  <div><dt className="text-ink3">Departemen</dt><dd className="font-medium text-ink">{issue.department || "—"}</dd></div>
+                  <div><dt className="text-ink3">Dibutuhkan Tanggal</dt><dd className="font-medium text-ink">{issue.requiredDate ? waktu(issue.requiredDate) : "—"}</dd></div>
+                  <div><dt className="text-ink3">Diminta Oleh</dt><dd className="font-medium text-ink">{issue.requestedBy?.name || "—"}</dd></div>
+                  <div><dt className="text-ink3">Disetujui Oleh</dt><dd className="font-medium text-ink">{issue.approvedBy?.name || "—"}</dd></div>
+                  {issue.issuedBy && <div><dt className="text-ink3">Dikeluarkan Oleh</dt><dd className="font-medium text-ink">{issue.issuedBy.name}</dd></div>}
                 </dl>
                 {issue.notes && <p className="mt-2 text-[11.5px] text-ink2">{issue.notes}</p>}
 
                 <div className="mt-4 border-t border-line pt-3">
-                  <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">Item Lines</h4>
+                  <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">Daftar Item</h4>
                   <div className="space-y-2.5">
                     {issue.lines.map((line) => (
                       <div key={line.id} className="rounded-btn border border-border p-2.5">
                         <div className="flex items-center justify-between">
                           <p className="text-[12.5px] font-semibold text-ink">{line.material.code}</p>
                           <p className="text-[11px] text-ink3">
-                            Requested {line.requestedQty} {UNIT_LABEL[line.material.unit]}
+                            Diminta {line.requestedQty} {UNIT_LABEL[line.material.unit]}
                           </p>
                         </div>
                         <p className="text-[11px] text-ink2">{line.material.name}</p>
 
                         {selesai ? (
                           <p className="mt-1.5 text-[11px] text-ink3">
-                            {status === "ISSUED" ? `Issued ${line.issuedQty} ${UNIT_LABEL[line.material.unit]}` : "Dibatalkan"}
+                            {status === "ISSUED" ? `Dikeluarkan ${line.issuedQty} ${UNIT_LABEL[line.material.unit]}` : "Dibatalkan"}
                             {line.sourceLocation && ` · ${line.sourceLocation}`}
                           </p>
                         ) : bisaAturLokasi ? (
                           <div className="mt-2 grid grid-cols-2 gap-2">
                             <div>
-                              <label className="mb-0.5 block text-[10px] text-ink3">Source Location</label>
+                              <label className="mb-0.5 block text-[10px] text-ink3">Lokasi Sumber</label>
                               <input
                                 type="text"
                                 value={lineEdits[line.id] ?? line.sourceLocation ?? ""}
@@ -184,7 +191,7 @@ export default function MaterialIssueDetailDrawer({ issueId, onClose, onChanged 
                             </div>
                             {bisaIssue && (
                               <div>
-                                <label className="mb-0.5 block text-[10px] text-ink3">Issue Qty</label>
+                                <label className="mb-0.5 block text-[10px] text-ink3">Jumlah Keluar</label>
                                 <input
                                   type="number" step="any" min="0" value={issueQty[line.id] ?? ""}
                                   onChange={(e) => setIssueQty((q) => ({ ...q, [line.id]: e.target.value }))}
@@ -194,7 +201,7 @@ export default function MaterialIssueDetailDrawer({ issueId, onClose, onChanged 
                             )}
                           </div>
                         ) : (
-                          <p className="mt-1.5 text-[11px] text-ink3">Bisa diatur setelah status Ready to Pick.</p>
+                          <p className="mt-1.5 text-[11px] text-ink3">Bisa diatur setelah status Siap Diambil.</p>
                         )}
                       </div>
                     ))}
@@ -223,23 +230,23 @@ export default function MaterialIssueDetailDrawer({ issueId, onClose, onChanged 
                   <div className="flex justify-end gap-2">
                     <Button variant="ghost" size="sm" onClick={() => setCancelling(false)}>Batal</Button>
                     <Button variant="destructive" size="sm" onClick={batalkan} disabled={busy}>
-                      {busy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} Cancel Issue
+                      {busy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} Batalkan Permintaan
                     </Button>
                   </div>
                 </div>
               ) : (
                 <div className="flex gap-2">
                   <Button variant="ghost" size="sm" onClick={() => setCancelling(true)}>
-                    <XCircle size={14} /> Cancel
+                    <XCircle size={14} /> Batalkan
                   </Button>
                   {bisaIssue ? (
                     <Button size="sm" className="ml-auto" onClick={konfirmasiIssue} disabled={busy}>
-                      {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Confirm Issue
+                      {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Konfirmasi Keluar
                     </Button>
                   ) : nextStatus && nextStatus !== "ISSUED" ? (
                     <Button size="sm" className="ml-auto" onClick={majukan} disabled={busy}>
                       {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
-                      Advance to {ISSUE_STATUS_REAL[nextStatus]?.label}
+                      Lanjut ke {ISSUE_STATUS_REAL[nextStatus]?.labelId || ISSUE_STATUS_REAL[nextStatus]?.label}
                     </Button>
                   ) : null}
                 </div>

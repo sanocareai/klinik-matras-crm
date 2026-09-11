@@ -24,6 +24,7 @@ import { groupIntoAttempts, deriveStageLogStatus, summarizeAttempt } from "../li
 import { mapRouteStagesToVisualization } from "../lib/domain/productionRouting.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services/productionRouting.js";
+import { postStockMovement } from "../services/inventoryLedger.js";
 import { prisma } from "../db.js";
 
 export const unitRouter = express.Router();
@@ -52,7 +53,11 @@ const upload = multer({
 });
 
 function handleEngineError(err, res) {
-  if (err instanceof StageTransitionError) {
+  // Duck-typed, bukan cuma `instanceof StageTransitionError` — supaya
+  // LedgerError dari services/inventoryLedger.js (POST /:id/materials,
+  // "stok tidak cukup") juga dijawab 400 yang jelas, bukan bocor ke 500
+  // generik di bawah.
+  if (typeof err.statusCode === "number") {
     return res.status(err.statusCode).json({ error: err.message });
   }
   // P2034 = konflik transaksi SERIALIZABLE (Production Core Slice 3I) — dua
@@ -557,10 +562,14 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
 // positif, mengembalikan sebagian ke stok).
 unitRouter.get("/:id/materials", requirePermission(P.UNIT_READ), async (req, res) => {
   try {
+    // WASTE ikut disertakan (13 Sept 2026, integrasi Produksi) — bahan yang
+    // rusak/salah potong SAAT mengerjakan unit ini sekarang bisa dikaitkan
+    // ke unitId (lihat POST /movements/waste), jadi histori "bahan apa saja
+    // yang tersentuh unit ini" tidak lengkap kalau WASTE dilewati.
     const movements = await prisma.stockMovement.findMany({
-      where: { unitId: req.params.id, type: { in: ["ISSUE", "RETURN"] } },
+      where: { unitId: req.params.id, type: { in: ["ISSUE", "RETURN", "WASTE"] } },
       select: {
-        id: true, type: true, qty: true, note: true, createdAt: true,
+        id: true, type: true, qty: true, reason: true, note: true, createdAt: true,
         material: { select: { id: true, code: true, name: true, unit: true } },
         createdBy: { select: { id: true, name: true } },
       },
@@ -583,6 +592,16 @@ unitRouter.get("/:id/materials", requirePermission(P.UNIT_READ), async (req, res
   }
 });
 
+// PERBAIKAN (13 Sept 2026, integrasi Warehouse<->Production end-to-end):
+// endpoint ini sebelumnya menulis stock_movements LANGSUNG lewat
+// prisma.stockMovement.create — TIDAK dikunci, TIDAK dicek saldo cukup
+// atau tidak sama sekali. Karena jalur ini dipakai lantai produksi (bukan
+// gudang, yang lebih hati-hati lewat Material Issue formal), risikonya
+// nyata: dua staf mencatat pemakaian bahan yang sama nyaris bersamaan bisa
+// dua-duanya lolos, atau satu staf salah ketik jumlah besar dan mendorong
+// saldo ke negatif tanpa peringatan. Sekarang lewat postStockMovement()
+// yang sama dipakai seluruh alur Gudang — mengunci material, mengecek
+// saldo, dan menolak kalau hasilnya akan negatif.
 unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), async (req, res) => {
   try {
     const { materialId, note } = req.body;
@@ -604,13 +623,10 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
     const type = rawQty > 0 ? "ISSUE" : "RETURN";
     const ledgerQty = -rawQty;
 
-    const movement = await prisma.stockMovement.create({
-      data: {
-        materialId, type, qty: ledgerQty, unitId: unit.id,
-        note: note || null, createdById: req.user.id,
-      },
-      include: { material: { select: { id: true, code: true, name: true, unit: true } } },
-    });
+    const movement = await prisma.$transaction((tx) => postStockMovement(tx, {
+      materialId, type, qty: ledgerQty, unitId: unit.id,
+      note: note || null, createdById: req.user.id,
+    }));
     res.status(201).json(movement);
   } catch (err) {
     handleEngineError(err, res);

@@ -142,6 +142,30 @@ test("postStockMovement: field opsional yang tidak diisi disimpan null, bukan un
   assert.equal(data.createdById, null);
 });
 
+// Integrasi Warehouse<->Production (13 Sept 2026) — unitId WAJIB tersimpan
+// persis untuk ISSUE/RETURN/WASTE, ini yang membuat "histori material per
+// unit produksi" (GET /units/:id/materials, GET /production/material-usage)
+// bisa menemukan baris ini kembali. Kalau field ini diam-diam hilang/typo,
+// baris ledger tetap tertulis (tidak ada error) tapi TIDAK PERNAH muncul di
+// riwayat unit manapun — bug senyap, jadi wajib dites eksplisit.
+test("postStockMovement: unitId tersimpan persis untuk ISSUE (dari Material Issue yang terhubung ke unit produksi)", async () => {
+  const { tx, calls } = makeTx({ balance: 10 });
+  await postStockMovement(tx, { materialId: "m-1", type: "ISSUE", qty: -5, unitId: "unit-abc" });
+  assert.equal(calls.create[0].data.unitId, "unit-abc");
+});
+
+test("postStockMovement: unitId tersimpan persis untuk WASTE (bahan rusak saat mengerjakan unit tertentu, 13 Sept 2026)", async () => {
+  const { tx, calls } = makeTx({ balance: 10 });
+  await postStockMovement(tx, { materialId: "m-1", type: "WASTE", qty: -2, unitId: "unit-abc", reason: "sobek" });
+  assert.equal(calls.create[0].data.unitId, "unit-abc");
+});
+
+test("postStockMovement: unitId tersimpan persis untuk RETURN (sisa bahan unit dikembalikan ke gudang)", async () => {
+  const { tx, calls } = makeTx({ balance: 0 });
+  await postStockMovement(tx, { materialId: "m-1", type: "RETURN", qty: 3, unitId: "unit-abc" });
+  assert.equal(calls.create[0].data.unitId, "unit-abc");
+});
+
 // ---------------------------------------------------------------------------
 // deriveStockStatus — HARUS identik dengan deriveStockStatusReal frontend
 // (features/warehouse/inventoryReal.js) supaya Reports & Stock and Material

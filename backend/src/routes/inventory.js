@@ -252,16 +252,20 @@ inventoryRouter.post("/movements/return", requirePermission(P.INVENTORY_WRITE), 
   }
 });
 
-// POST /api/inventory/movements/waste { materialId, qty, reason, location?, note? }
-// WAJIB alasan — terbuang/rusak bukan angka tanpa penjelasan.
+// POST /api/inventory/movements/waste { materialId, qty, reason, location?, unitId?, note? }
+// WAJIB alasan — terbuang/rusak bukan angka tanpa penjelasan. unitId
+// opsional (13 Sept 2026, integrasi Produksi) — sama pola dengan
+// /movements/return: bahan yang terbuang SAAT dipakai mengerjakan unit
+// tertentu (rusak/salah potong) bisa ditelusuri balik ke unit itu, sama
+// seperti pemakaian & retur normal.
 inventoryRouter.post("/movements/waste", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { materialId, reason, location, note } = req.body;
+    const { materialId, reason, location, unitId, note } = req.body;
     if (!reason?.trim()) throw new InventoryError("Alasan wajib diisi untuk material terbuang");
     await assertMaterialActive(materialId);
     const qty = parseQty(req.body.qty);
     const movement = await prisma.$transaction((tx) => postStockMovement(tx, {
-      materialId, type: "WASTE", qty: -qty, reason: reason.trim(), location, note, createdById: req.user.id,
+      materialId, type: "WASTE", qty: -qty, reason: reason.trim(), location, unitId, note, createdById: req.user.id,
     }));
     res.status(201).json(movement);
   } catch (err) {

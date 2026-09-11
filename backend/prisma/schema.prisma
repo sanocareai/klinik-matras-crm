@@ -1352,6 +1352,7 @@ model Unit {
   revisions         UnitRevision[]
   blockers          ProductionBlocker[]
   stageAssignments  StageAssignment[]
+  materialIssues    MaterialIssue[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -3840,9 +3841,26 @@ model MaterialIssue {
   sourceType  IssueSourceType @map("source_type")
 
   // String bebas, BUKAN FK — tidak ada sistem Work Order/Maintenance Ticket
-  // terpisah di v1. Sama pola dengan GoodsReceipt.sourceReference.
+  // terpisah di v1. Sama pola dengan GoodsReceipt.sourceReference. TETAP
+  // ADA di samping unitId di bawah untuk sourceType selain
+  // PRODUCTION_WORK_ORDER (Maintenance/Internal/Sample/Manual tidak punya
+  // entitas nyata untuk ditunjuk).
   sourceReference String? @map("source_reference")
   department      String?
+
+  // Integrasi Produksi (12 Sept 2026, Warehouse↔Production end-to-end).
+  // NULLABLE: hanya diisi kalau sourceType = PRODUCTION_WORK_ORDER — jenis
+  // sumber lain (Maintenance/Internal/Sample/Manual) tidak punya Unit untuk
+  // ditunjuk. SetNull, bukan Restrict: unit lama/dihapus tidak boleh
+  // menggagalkan riwayat permintaan material yang sudah tercatat (pola sama
+  // dengan StockMovement.unitId). Ini yang membuat histori material PER
+  // UNIT bisa ditelusuri baik lewat jalur formal (Material Issue) maupun
+  // jalur cepat (POST /units/:id/materials, routes/units.js) — DUA-DUANYA
+  // akhirnya menulis StockMovement.unitId yang SAMA, jadi GET /units/:id/
+  // materials & Bahan Produksi (ProductionMaterialUsage.jsx) otomatis
+  // menunjukkan keduanya tanpa perlu query terpisah.
+  unitId String? @map("unit_id") @db.Uuid
+  unit   Unit?   @relation(fields: [unitId], references: [id], onDelete: SetNull)
 
   // SetNull: staf resign, riwayat permintaan TETAP ada. Default pembuat
   // record — kalau warehouse yang input atas nama orang lain, department
@@ -3875,6 +3893,7 @@ model MaterialIssue {
 
   @@index([status])
   @@index([requiredDate])
+  @@index([unitId])
   @@map("material_issues")
 }
 
