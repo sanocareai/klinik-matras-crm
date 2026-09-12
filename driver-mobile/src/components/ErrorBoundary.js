@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
   },
   detailText: { color: "#fca5a5", fontSize: 12, fontFamily: "monospace" },
   btn: {
-    backgroundColor: "#4C8DFF", borderRadius: 12, paddingVertical: 13,
+    backgroundColor: "#2D64B6", borderRadius: 12, paddingVertical: 13,
     alignItems: "center",
   },
   btnText: { color: "#fff", fontWeight: "700", fontSize: 14 },

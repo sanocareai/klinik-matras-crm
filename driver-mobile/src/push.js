@@ -51,7 +51,7 @@ async function ensureChannels() {
     importance: Notifications.AndroidImportance.HIGH,
     sound: "default",
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: "#4C8DFF",
+    lightColor: "#2D64B6",
   });
 }
 
