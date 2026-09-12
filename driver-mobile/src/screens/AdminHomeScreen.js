@@ -326,6 +326,11 @@ function MasalahView({ issues, theme: t, styles }) {
 function PerformaView({ performa, periode, setPeriode, theme: t, styles }) {
   const { data, isLoading, error, refetch, isRefetching } = performa;
   const orang = data?.orang || [];
+  // Detail alamat/resi (13 Sep 2026, laporan owner: "ketika diklik bisa
+  // kasih detail alamat/resi order mana aja dari masing-masing driver?")
+  // — tap kartu utk buka/tutup daftarnya inline, data-nya SUDAH ikut
+  // respons (field `detail` per orang), tidak perlu panggilan API kedua.
+  const [expandedId, setExpandedId] = useState(null);
   return (
     <ScrollView
       contentContainerStyle={styles.body}
@@ -351,29 +356,51 @@ function PerformaView({ performa, periode, setPeriode, theme: t, styles }) {
         <Text style={styles.emptyText}>Belum ada alamat selesai di periode ini.</Text>
       ) : (
         <View style={{ gap: 10 }}>
-          {orang.map((o, i) => (
-            <View key={o.id} style={styles.card}>
-              <View style={styles.rowBetween}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Award size={14} color={i === 0 ? t.ORANGE : t.INK3} />
-                  <Text style={styles.cardTitle}>{o.name}</Text>
-                  <View style={[styles.simBadge, { backgroundColor: o.hasSim ? t.GREEN + "26" : t.INK3 + "26" }]}>
-                    <Text style={[styles.simBadgeText, { color: o.hasSim ? t.GREEN : t.INK3 }]}>
-                      {o.hasSim ? "SIM" : "Tanpa SIM"}
-                    </Text>
+          {orang.map((o, i) => {
+            const expanded = expandedId === o.id;
+            return (
+              <Pressable key={o.id} style={styles.card} onPress={() => setExpandedId(expanded ? null : o.id)}>
+                <View style={styles.rowBetween}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Award size={14} color={i === 0 ? t.ORANGE : t.INK3} />
+                    <Text style={styles.cardTitle}>{o.name}</Text>
+                    <View style={[styles.simBadge, { backgroundColor: o.hasSim ? t.GREEN + "26" : t.INK3 + "26" }]}>
+                      <Text style={[styles.simBadgeText, { color: o.hasSim ? t.GREEN : t.INK3 }]}>
+                        {o.hasSim ? "SIM" : "Tanpa SIM"}
+                      </Text>
+                    </View>
                   </View>
+                  <Text style={[styles.kpiValue, { fontSize: 16 }]}>{o.totalAlamat} <Text style={styles.cardMeta}>alamat</Text></Text>
                 </View>
-                <Text style={[styles.kpiValue, { fontSize: 16 }]}>{o.totalAlamat} <Text style={styles.cardMeta}>alamat</Text></Text>
-              </View>
-              <View style={styles.driverStatsRow}>
-                <Text style={styles.driverStat}>Sebagai driver: <Text style={{ color: t.ACCENT }}>{o.asDriver}</Text></Text>
-                <Text style={styles.driverStat}>Sebagai helper: <Text style={{ color: t.ACCENT }}>{o.asHelper}</Text></Text>
-              </View>
-              <Text style={[styles.driverStat, { marginTop: 4, fontWeight: "700", color: t.ACCENT }]}>
-                {formatRupiah(o.totalInsentif)} <Text style={{ color: t.INK3, fontWeight: "600" }}>({formatRupiah(o.ratePerAlamat)}/alamat)</Text>
-              </Text>
-            </View>
-          ))}
+                <View style={styles.driverStatsRow}>
+                  <Text style={styles.driverStat}>Sebagai driver: <Text style={{ color: t.ACCENT }}>{o.asDriver}</Text></Text>
+                  <Text style={styles.driverStat}>Sebagai helper: <Text style={{ color: t.ACCENT }}>{o.asHelper}</Text></Text>
+                </View>
+                <Text style={[styles.driverStat, { marginTop: 4, fontWeight: "700", color: t.ACCENT }]}>
+                  {formatRupiah(o.totalInsentif)} <Text style={{ color: t.INK3, fontWeight: "600" }}>({formatRupiah(o.ratePerAlamat)}/alamat)</Text>
+                </Text>
+
+                {expanded && (
+                  <View style={{ marginTop: 10, gap: 6, borderTopWidth: 1, borderTopColor: t.BORDER, paddingTop: 8 }}>
+                    {(o.detail || []).length === 0 ? (
+                      <Text style={styles.cardMeta}>Tidak ada data.</Text>
+                    ) : (
+                      o.detail.map((d) => (
+                        <View key={`${d.orderId}-${d.date}`} style={{ backgroundColor: t.TRACK_BG, borderRadius: 10, padding: 8 }}>
+                          <View style={styles.rowBetween}>
+                            <Text style={[styles.cardMeta, { fontWeight: "700", color: t.INK }]}>{d.orderNumber}</Text>
+                            <Text style={styles.cardMeta}>{new Date(d.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</Text>
+                          </View>
+                          <Text style={[styles.cardMeta, { color: t.INK, marginTop: 2 }]}>{d.customerName}</Text>
+                          <Text style={styles.cardMeta} numberOfLines={2}>{d.addressText}</Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
         </View>
       )}
     </ScrollView>

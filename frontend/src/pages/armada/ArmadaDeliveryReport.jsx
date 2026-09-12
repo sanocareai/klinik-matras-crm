@@ -3,6 +3,7 @@ import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { Modal } from "@/components/ui/modal.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "@/lib/dateRange.js";
 import { KpiRowSkeleton, ChartGridSkeleton } from "@/features/laporan/components/LaporanSkeleton.jsx";
@@ -76,6 +77,12 @@ export default function ArmadaDeliveryReport() {
   // sama dengan seluruh laporan lain di halaman ini, sama alasan dengan
   // Ringkasan Biaya Armada di atas.
   const [insentif, setInsentif] = useState(null);
+  // Detail alamat/resi per orang (13 September 2026, laporan owner:
+  // "ketika diklik bisa kasih detail alamat/resi order mana aja dari
+  // masing-masing driver?") — data-nya SUDAH ikut respons
+  // getIncentiveSummary (field `detail` per orang), murni state UI baris
+  // mana yang lagi dibuka.
+  const [selectedOrang, setSelectedOrang] = useState(null);
 
   const load = useCallback(() => {
     const params = toApiParams(range);
@@ -306,7 +313,7 @@ export default function ArmadaDeliveryReport() {
                       </THead>
                       <TBody>
                         {insentif.orang.map((o) => (
-                          <TR key={o.id}>
+                          <TR key={o.id} clickable onClick={() => setSelectedOrang(o)}>
                             <TD className="font-semibold text-ink">
                               <span className="flex items-center gap-2">
                                 <Avatar name={o.name} size="sm" gradient className="h-7 w-7 shrink-0 text-[10px]" />
@@ -352,6 +359,40 @@ export default function ArmadaDeliveryReport() {
           </>
         )}
       </PageBody>
+
+      {/* Detail alamat/resi per orang (13 September 2026) — daftar
+          `selectedOrang.detail` SUDAH terurut tanggal terbaru dulu dari
+          backend. `types` array PICKUP/DELIVERY sekaligus di satu baris
+          = itulah contoh "1 pelanggan, lokasi sama, tanggal sama,
+          ambil+kirim = dihitung 1" yang jadi dasar hitungannya. */}
+      <Modal
+        open={!!selectedOrang}
+        onOpenChange={(o) => !o && setSelectedOrang(null)}
+        title={selectedOrang ? `Detail Alamat — ${selectedOrang.name}` : ""}
+        description={selectedOrang ? `${selectedOrang.totalAlamat} alamat · ${formatRupiah(selectedOrang.totalInsentif)}` : ""}
+      >
+        <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+          {selectedOrang?.detail?.length === 0 ? (
+            <p className="py-4 text-center text-[12.5px] text-ink3">Tidak ada data.</p>
+          ) : (
+            selectedOrang?.detail?.map((d) => (
+              <div key={`${d.orderId}-${d.date}`} className="rounded-btn border border-line bg-inset/30 p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[11.5px] font-semibold text-ink">{d.orderNumber}</span>
+                  <span className="text-[11px] text-ink3">{new Date(d.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</span>
+                </div>
+                <p className="mt-0.5 text-[12.5px] font-medium text-ink">{d.customerName}</p>
+                <p className="mt-0.5 truncate text-[11.5px] text-ink2">{d.addressText}</p>
+                <div className="mt-1 flex gap-1">
+                  {d.types.map((t) => (
+                    <Badge key={t} variant="accent">{JOB_TYPE_REAL[t]?.label || t}</Badge>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
     </PageContainer>
   );
 }

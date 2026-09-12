@@ -1980,25 +1980,58 @@ armadaRouter.get("/incentive-summary", requirePermission(P.JOB_READ), async (req
       ...(to && { lt: endOfDayExclusiveWIB(to) }),
     };
 
+    // order.orderNumber/customer.name/addressText (13 September 2026,
+    // laporan owner: "ketika diklik bisa kasih detail alamat/resi order
+    // mana aja dari masing-masing driver?") — dipakai BUKAN untuk hitung
+    // (itu tetap orderId+tanggal, lihat catatan di atas), murni supaya
+    // tiap "alamat" di daftar bisa ditelusuri balik ke resi/customer/
+    // alamat aslinya tanpa panggilan API kedua per baris.
     const jobs = await prisma.job.findMany({
       where: { status: "COMPLETED", completedAt: completedAtWhere },
-      select: { orderId: true, completedAt: true, driverId: true, helperId: true },
+      select: {
+        orderId: true, completedAt: true, driverId: true, helperId: true, type: true, addressText: true,
+        order: { select: { orderNumber: true, customer: { select: { name: true } } } },
+      },
     });
 
-    // dedup per orang: 3 Set terpisah (asDriver/asHelper/gabungan) berisi
-    // kunci "orderId|tanggalWIB" — Set otomatis membuang duplikat.
+    // dedup per orang: 3 Map terpisah (asDriver/asHelper/gabungan),
+    // key = "orderId|tanggalWIB" -> { orderNumber, customerName,
+    // addressText, date, types: Set } — Map (bukan Set polos lagi)
+    // supaya detailnya ikut terbawa, BUKAN cuma dihitung. `types`
+    // mengumpulkan PICKUP/DELIVERY yang tuntas di alamat+tanggal itu
+    // (biasanya 1, bisa 2 kalau ambil&kirim tuntas di hari yang sama —
+    // itulah situasi "= dihitung 1" yang dimaksud, terlihat eksplisit di
+    // detailnya, bukan cuma angka tunggal).
     const perOrang = new Map();
     function baris(userId) {
       let b = perOrang.get(userId);
-      if (!b) { b = { asDriverSet: new Set(), asHelperSet: new Set(), allSet: new Set() }; perOrang.set(userId, b); }
+      if (!b) { b = { asDriverMap: new Map(), asHelperMap: new Map(), allMap: new Map() }; perOrang.set(userId, b); }
       return b;
+    }
+    function catat(map, key, j, tanggalWIB) {
+      let entri = map.get(key);
+      if (!entri) {
+        entri = {
+          orderId: j.orderId, orderNumber: j.order?.orderNumber || "-",
+          customerName: j.order?.customer?.name || "Tanpa nama",
+          addressText: j.addressText?.trim() || "-", date: tanggalWIB, types: new Set(),
+        };
+        map.set(key, entri);
+      }
+      entri.types.add(j.type);
     }
     for (const j of jobs) {
       const tanggalWIB = new Date(j.completedAt.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
       const key = `${j.orderId}|${tanggalWIB}`;
-      if (j.driverId) { const b = baris(j.driverId); b.asDriverSet.add(key); b.allSet.add(key); }
-      if (j.helperId) { const b = baris(j.helperId); b.asHelperSet.add(key); b.allSet.add(key); }
+      if (j.driverId) { const b = baris(j.driverId); catat(b.asDriverMap, key, j, tanggalWIB); catat(b.allMap, key, j, tanggalWIB); }
+      if (j.helperId) { const b = baris(j.helperId); catat(b.asHelperMap, key, j, tanggalWIB); catat(b.allMap, key, j, tanggalWIB); }
     }
+
+    // Set -> array biasa (JSON tidak bisa serialize Set), diurutkan
+    // tanggal terbaru dulu — paling relevan buat ditelusuri.
+    const ringkasDetail = (map) => [...map.values()]
+      .map((e) => ({ ...e, types: [...e.types] }))
+      .sort((a, b) => b.date.localeCompare(a.date));
 
     const userIds = [...perOrang.keys()];
     const users = userIds.length
@@ -2008,12 +2041,13 @@ armadaRouter.get("/incentive-summary", requirePermission(P.JOB_READ), async (req
     const orang = users
       .map((u) => {
         const b = perOrang.get(u.id);
-        const totalAlamat = b.allSet.size;
+        const totalAlamat = b.allMap.size;
         const ratePerAlamat = u.hasSim ? RATE_PER_ALAMAT.withSim : RATE_PER_ALAMAT.withoutSim;
         return {
           id: u.id, name: u.name, hasSim: u.hasSim,
-          asDriver: b.asDriverSet.size, asHelper: b.asHelperSet.size,
+          asDriver: b.asDriverMap.size, asHelper: b.asHelperMap.size,
           totalAlamat, ratePerAlamat, totalInsentif: totalAlamat * ratePerAlamat,
+          detail: ringkasDetail(b.allMap),
         };
       })
       .sort((a, b) => b.totalAlamat - a.totalAlamat);
