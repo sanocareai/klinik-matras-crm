@@ -157,11 +157,12 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   const [extraProofFiles, setExtraProofFiles] = useState([]);
   const [extraProofBusy, setExtraProofBusy] = useState(false);
   const [extraProofError, setExtraProofError] = useState("");
-  // Catatan reschedule retroaktif (6 September 2026) — form kecil, cuma
-  // muncul di job yang SUDAH Selesai TAPI belum punya rescheduleReason.
-  // Draft LOKAL (pola sama dengan textarea gagal di AksiFotoForm) supaya
-  // ketikan tidak langsung tersimpan sebelum tombol Simpan ditekan.
-  const [showRescheduleNote, setShowRescheduleNote] = useState(false);
+  // Catatan reschedule retroaktif (6 September 2026, formnya langsung
+  // tampil sejak 13 September 2026 — lihat catatan panjang di JSX-nya)
+  // — cuma muncul di job yang SUDAH Selesai TAPI belum punya
+  // rescheduleReason. Draft LOKAL (pola sama dengan textarea gagal di
+  // AksiFotoForm) supaya ketikan tidak langsung tersimpan sebelum tombol
+  // Simpan ditekan.
   const [rescheduleNoteReason, setRescheduleNoteReason] = useState("");
   // Riwayat Revisi & Kendala (10 September 2026, kasus Richard
   // RES-30082026-201 — permintaan owner "source code harus sama, seperti
@@ -447,7 +448,6 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     try {
       const updated = await api.addRescheduleNote(job.id, { reason: rescheduleNoteReason.trim() });
       setJob(updated);
-      setShowRescheduleNote(false);
       setRescheduleNoteReason("");
       onChanged?.();
     } catch (e) {
@@ -1023,7 +1023,17 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     terkunci total, tidak ada cara mencatat kalau ternyata
                     ini mundur dari rencana awal). CUMA muncul untuk job
                     Selesai — job aktif tinggal ganti Tanggal langsung di
-                    kartu Penugasan di atas, tidak perlu jalur terpisah. */}
+                    kartu Penugasan di atas, tidak perlu jalur terpisah.
+                    ⚠️ BUG UX DIPERBAIKI (13 September 2026, laporan owner:
+                    admin klik tombol ini, isinya TIDAK PERNAH tersimpan,
+                    diverifikasi langsung ke database — reschedule_reason
+                    kosong total) — SEBELUM INI tombol "Catat sebagai
+                    reschedule" cuma MEMBUKA form (textarea+Simpan
+                    terpisah), bukan aksi langsung. Admin wajar mengira
+                    satu klik itu sudah cukup, tidak sadar masih ada
+                    langkah kedua (isi alasan + klik Simpan) — form-nya
+                    SEKARANG langsung tampil, tidak ada lagi tombol
+                    "pembuka" yang menyamar seperti aksi 1-klik. */}
                 {job.status === "COMPLETED" && (
                   <div className="mt-3 rounded-btn border border-border bg-inset/30 p-3">
                     {job.rescheduleReason ? (
@@ -1035,9 +1045,11 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                           {job.rescheduledAt ? ` · ${new Date(job.rescheduledAt).toLocaleDateString("id-ID")}` : ""}
                         </p>
                       </>
-                    ) : showRescheduleNote ? (
+                    ) : (
                       <div className="space-y-2">
-                        <p className="text-[10px] font-bold uppercase tracking-wide text-ink3">Catat sebagai Reschedule</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-ink3">
+                          Job ini mundur dari rencana awal? Catat sebagai reschedule
+                        </p>
                         <textarea
                           value={rescheduleNoteReason}
                           onChange={(e) => setRescheduleNoteReason(e.target.value)}
@@ -1045,23 +1057,10 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                           rows={2}
                           className="w-full rounded-btn border border-border bg-surface px-2.5 py-2 text-[12.5px] text-ink outline-none focus:border-accent"
                         />
-                        <div className="flex gap-2">
-                          <Button size="sm" disabled={busy || !rescheduleNoteReason.trim()} onClick={simpanCatatanReschedule}>
-                            {busy ? <Loader2 size={13} className="animate-spin" /> : "Simpan"}
-                          </Button>
-                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setShowRescheduleNote(false); setRescheduleNoteReason(""); }}>
-                            Batal
-                          </Button>
-                        </div>
+                        <Button size="sm" disabled={busy || !rescheduleNoteReason.trim()} onClick={simpanCatatanReschedule}>
+                          {busy ? <Loader2 size={13} className="animate-spin" /> : "Simpan sebagai Reschedule"}
+                        </Button>
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setShowRescheduleNote(true)}
-                        className="text-[12px] font-semibold text-accent hover:underline"
-                      >
-                        Job ini mundur dari rencana awal? Catat sebagai reschedule
-                      </button>
                     )}
                   </div>
                 )}
