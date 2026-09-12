@@ -448,6 +448,66 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
   return baris.join("\n");
 }
 
+// Laporan Kurir Eksternal (D-161, 13 September 2026, permintaan owner:
+// "untuk yang lalamove perlu info juga di grup delivery... ada laporan
+// khusus kurir eksternal yang dikirim ke natasha") — job Lalamove TIDAK
+// PERNAH masuk Route Planner (lihat catatan panjang di model RescheduleCase
+// soal filosofi serupa, dan komentar Job.externalCourierRef), jadi tidak
+// ada "rute" yang bisa diterbitkan/dikirim ulang seperti formatRouteWaMessage
+// di atas. Ini padanannya: SATU pesan ringkas berisi SEMUA job hari itu yang
+// drivernya berflag isExternalCourier, dikirim ke Natasha sama seperti
+// broadcast rute (lihat notifyNatashaText).
+const EXTERNAL_COURIER_STATUS_LABEL = {
+  UNSCHEDULED: "Belum Dijadwalkan", SCHEDULED: "Terjadwal", ASSIGNED: "Ditugaskan",
+  EN_ROUTE: "Menuju Lokasi", ARRIVED: "Tiba di Lokasi", COMPLETED: "Selesai", FAILED: "Gagal",
+};
+
+function formatExternalCourierWaMessage(jobs, date) {
+  const baris = [`🛵*Laporan Kurir Eksternal (Lalamove/dst)*`, hariTanggalWIB(date)];
+  jobs.forEach((j, idx) => {
+    const nama = j.order?.customer?.name || "Tanpa nama";
+    const tipe = j.type === "PICKUP" ? "Pengambilan" : "Pengiriman";
+    const alamat = j.addressText?.trim() || "(alamat belum diisi)";
+    baris.push(
+      "",
+      `${idx + 1}. ${nama} — ${tipe}`,
+      `📦${j.order?.orderNumber || "-"} · ${EXTERNAL_COURIER_STATUS_LABEL[j.status] || j.status}`,
+      `📍${alamat}`,
+    );
+    if (j.externalCourierRef) baris.push(`🔗Tracking: ${j.externalCourierRef}`);
+    if (j.externalCourierCost != null) baris.push(`💰Ongkos: Rp${j.externalCourierCost.toLocaleString("id-ID")}`);
+  });
+  return baris.join("\n");
+}
+
+// POST /armada/external-courier/notify-natasha — kirim laporan hari ini
+// (atau tanggal lain lewat body.date) ke Natasha. Best-effort di sisi
+// pengiriman WA (sama pola dgn seluruh notifyNatasha*), TAPI kegagalan
+// "tidak ada job" dianggap error nyata (bukan diam-diam no-op) — dispatcher
+// yang klik tombol ini WAJIB tahu kalau ternyata tidak ada apa pun untuk
+// dikirim, bukan mengira pesannya sudah terkirim.
+armadaRouter.post("/external-courier/notify-natasha", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const { date } = req.body;
+    const targetDate = date ? toDateOnly(date) : startOfDayWIB(new Date());
+    const jobs = await prisma.job.findMany({
+      where: { scheduledDate: targetDate, driver: { isExternalCourier: true } },
+      select: {
+        id: true, type: true, status: true, addressText: true,
+        externalCourierRef: true, externalCourierCost: true,
+        order: { select: { orderNumber: true, customer: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    if (jobs.length === 0) throw new ArmadaError("Tidak ada job kurir eksternal untuk tanggal ini");
+
+    await notifyNatashaText(formatExternalCourierWaMessage(jobs, targetDate));
+    res.json({ ok: true, jobCount: jobs.length });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // Link Maps PER CUSTOMER di tiap stop (9 September 2026, laporan owner:
 // "pastikan link google maps tiap customer dicantumkan di broadcast") —
 // SEBELUMNYA cuma "📍Alamat" (teks) per stop, link cuma ada SATU untuk

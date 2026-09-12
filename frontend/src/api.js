@@ -259,6 +259,8 @@ export const api = {
   // Kurir pihak ketiga / Lalamove (D-161, 13 September 2026).
   updateExternalCourier: (jobId, data) =>
     request(`/armada/jobs/${jobId}/external-courier`, { method: "PATCH", body: JSON.stringify(data) }),
+  notifyExternalCourierNatasha: (date) =>
+    request("/armada/external-courier/notify-natasha", { method: "POST", body: JSON.stringify({ date }) }),
 
   // Kendala & Reschedule (Delivery Tahap 5)
   getIssues: (status) => request(`/armada/issues${status ? `?status=${status}` : ""}`),

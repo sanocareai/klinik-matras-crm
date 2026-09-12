@@ -162,6 +162,12 @@ export default function ArmadaJobs() {
 
   const [drivers, setDrivers] = useState([]);
   const [openJobId, setOpenJobId] = useState(null);
+  // Laporan Kurir Eksternal (D-161, 13 September 2026) — kirim ringkasan
+  // job hari ini yang drivernya Kurir Eksternal ke Natasha, satu tombol,
+  // padanan "Terbitkan Rute" utk job Lalamove (yang memang tidak pernah
+  // masuk Route Planner, lihat catatan di routes/armada.js).
+  const [courierReportBusy, setCourierReportBusy] = useState(false);
+  const [courierReportMsg, setCourierReportMsg] = useState("");
   // Chat WA cepat (8 September 2026, disamakan dengan RouteCard.jsx —
   // lihat catatan panjang di komentar kartu job di bawah) — job yang
   // QuickChatModal sedang dibuka untuknya, null = tertutup.
@@ -203,6 +209,19 @@ export default function ArmadaJobs() {
   function gantiView(v) {
     setView(v);
     localStorage.setItem("armada-jobs-view", v);
+  }
+
+  async function kirimLaporanKurirEksternal() {
+    setCourierReportBusy(true);
+    setCourierReportMsg("");
+    try {
+      const { jobCount } = await api.notifyExternalCourierNatasha();
+      setCourierReportMsg(`Terkirim ke Natasha (${jobCount} job).`);
+    } catch (e) {
+      setCourierReportMsg(e.message);
+    } finally {
+      setCourierReportBusy(false);
+    }
   }
 
   const kosong = !loading && jobs && jobs.length === 0;
@@ -419,6 +438,19 @@ export default function ArmadaJobs() {
               >
                 Reset
               </Button>
+            )}
+            {!driverOnly && (
+              <div className="ml-auto flex items-center gap-2">
+                {courierReportMsg && <span className="text-[11.5px] text-ink3">{courierReportMsg}</span>}
+                <Button
+                  variant="outline" size="sm"
+                  disabled={courierReportBusy}
+                  onClick={kirimLaporanKurirEksternal}
+                  title="Kirim ringkasan job Kurir Eksternal (Lalamove/dst) hari ini ke Natasha"
+                >
+                  <MessageCircle size={14} /> {courierReportBusy ? "Mengirim…" : "Kirim Laporan Kurir Eksternal"}
+                </Button>
+              </div>
             )}
           </div>
 
