@@ -211,11 +211,24 @@ export default function ArmadaJobs() {
     localStorage.setItem("armada-jobs-view", v);
   }
 
-  async function kirimLaporanKurirEksternal() {
+  // BUG DIPERBAIKI (13 September 2026, laporan owner — screenshot "Tidak
+  // ada job kurir eksternal untuk tanggal ini" walau kartunya jelas ada) —
+  // sebelumnya SELALU query "hari ini" versi jam server, padahal tombolnya
+  // duduk di kartu job yang scheduledDate-nya bisa BEDA hari (mis. job
+  // besok yang sudah dijadwalkan hari ini). Sekarang WAJIB dikirim tanggal
+  // job yang kartunya diklik — laporan mencakup tanggal itu, bukan tebakan
+  // "hari ini" yang bisa salah.
+  async function kirimLaporanKurirEksternal(scheduledDate) {
     setCourierReportBusy(true);
     setCourierReportMsg("");
     try {
-      const { jobCount } = await api.notifyExternalCourierNatasha();
+      // j.scheduledDate dari API adalah ISO PENUH ("2026-09-13T00:00:00.000Z")
+      // — backend toDateOnly() menempelkan "T00:00:00.000Z" LAGI di
+      // belakang string yang dikirim (lihat catatan di routes/armada.js),
+      // jadi WAJIB dipotong ke "YYYY-MM-DD" saja di sini dulu, bukan
+      // dikirim mentah.
+      const tanggalSaja = scheduledDate ? String(scheduledDate).slice(0, 10) : undefined;
+      const { jobCount } = await api.notifyExternalCourierNatasha(tanggalSaja);
       setCourierReportMsg(`Terkirim ke Natasha (${jobCount} job).`);
     } catch (e) {
       setCourierReportMsg(e.message);
@@ -659,7 +672,7 @@ export default function ArmadaJobs() {
                         {j.driver?.isExternalCourier && (
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); kirimLaporanKurirEksternal(); }}
+                            onClick={(e) => { e.stopPropagation(); kirimLaporanKurirEksternal(j.scheduledDate); }}
                             disabled={courierReportBusy}
                             title="Kirim ringkasan SEMUA job Kurir Eksternal hari ini ke Natasha"
                             className="flex w-fit items-center gap-1.5 rounded-full bg-accentbg px-2.5 py-1 text-[11px] font-semibold text-accent transition-opacity hover:opacity-80 disabled:opacity-50"
