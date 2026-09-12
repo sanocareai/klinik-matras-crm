@@ -1868,6 +1868,20 @@ async function gagalkanJobAktif(tx, orderId) {
     where: { orderId, status: { in: ["EN_ROUTE", "ARRIVED"] } },
     data: { status: "FAILED", failureReason: "Order dibatalkan sales — dihentikan otomatis, bukan kegagalan driver di lapangan." },
   });
+  // Kasus reschedule AKTIF ikut ditutup (13 September 2026, D-160 lanjutan,
+  // kasus nyata Mizroza/RES-10092026-050) — job.status FAILED TETAP apa
+  // adanya (itu benar, delivery-nya memang gagal), TAPI kalau job ini
+  // KEBETULAN sudah punya RescheduleCase AKTIF dari ronde sebelumnya
+  // (mis. sempat direschedule dulu, lalu gagal lagi, order baru dibatalkan
+  // SEKARANG), kasus itu tidak boleh menggantung selamanya seolah masih
+  // menunggu jadwal ulang — order-nya sudah mati, tidak ada yang perlu
+  // dijadwalkan lagi. GET /armada/issues sendiri SUDAH menyaring order
+  // CANCELLED (lihat catatan di sana) jadi ini murni kebersihan data
+  // kasusnya, bukan yang menutup celah utamanya.
+  await tx.rescheduleCase.updateMany({
+    where: { job: { orderId }, status: "AKTIF" },
+    data: { status: "DIBATALKAN", cancelReason: "Order dibatalkan", resolvedAt: new Date() },
+  });
 }
 
 // Job yang BELUM jalan (UNSCHEDULED/SCHEDULED/ASSIGNED) tidak punya alasan

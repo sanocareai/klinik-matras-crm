@@ -2720,7 +2720,19 @@ armadaRouter.get("/issues", requirePermission(P.JOB_READ), async (req, res) => {
   try {
     const { status } = req.query; // OPEN | RESCHEDULED
     const jobs = await prisma.job.findMany({
-      where: { OR: [{ status: "FAILED" }, { rescheduleReason: { not: null } }, { rescheduleCaseId: { not: null } }] },
+      where: {
+        OR: [{ status: "FAILED" }, { rescheduleReason: { not: null } }, { rescheduleCaseId: { not: null } }],
+        // Order dibatalkan (13 September 2026, laporan owner — kasus nyata
+        // Mizroza/RES-10092026-050: driver sampai rumah, customer batal
+        // sepihak, sales membatalkan order lewat POST /orders/:id/cancel
+        // -> gagalkanJobAktif menandai job FAILED otomatis dengan alasan
+        // "Order dibatalkan sales", TIDAK PERNAH dimaksudkan actionable)
+        // TIDAK PERNAH relevan di sini — tidak ada apa pun yang bisa
+        // "dijadwalkan ulang" untuk order yang sudah mati. SENGAJA hanya
+        // dicek kalau order-nya ADA (order: null mustahil di skema, tapi
+        // defensif) — job tanpa order sama sekali tetap lolos filter ini.
+        order: { status: { not: "CANCELLED" } },
+      },
       include: {
         ...jobInclude,
         order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
