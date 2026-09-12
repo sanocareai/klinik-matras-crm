@@ -8,6 +8,7 @@ import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
 import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf, salesPersonOf } from "../jobStatus.js";
 import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
+import ExternalCourierBadge from "./ExternalCourierBadge.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import QuickChatModal from "./QuickChatModal.jsx";
@@ -496,9 +497,12 @@ export default function RouteCard({
           </>
         ) : (
           <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 text-[11.5px] text-ink2">
-              {route.driver?.name || "Tanpa driver"}
-              {route.helper?.name && ` + ${route.helper.name}`} · {route.vehicle?.plateNumber || "Tanpa kendaraan"}
+            <div className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-ink2">
+              <span className="truncate">
+                {route.driver?.name || "Tanpa driver"}
+                {route.helper?.name && ` + ${route.helper.name}`} · {route.vehicle?.plateNumber || "Tanpa kendaraan"}
+              </span>
+              <ExternalCourierBadge person={route.driver} className="shrink-0" />
             </div>
             {/* Kirim Ulang (6 September 2026) — HANYA PUBLISHED, sama cakupan
                 dengan Edit darurat di sebelahnya. TIDAK mengedit apa pun,

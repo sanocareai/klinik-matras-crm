@@ -15,6 +15,7 @@ import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import QuickChatModal from "@/features/armada/components/QuickChatModal.jsx";
+import ExternalCourierBadge from "@/features/armada/components/ExternalCourierBadge.jsx";
 import { useArmadaJobs } from "@/features/armada/hooks/useArmadaJobs.js";
 import {
   RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge,
@@ -617,6 +618,7 @@ export default function ArmadaJobs() {
                           <span className={cn(!j.driver && !historis && "font-semibold text-orange")}>
                             {j.driver?.name || (historis ? "—" : "Belum ada driver")}
                           </span>
+                          <ExternalCourierBadge person={j.driver} />
                           {j.vehicle?.plateNumber && (
                             <>
                               <span aria-hidden>·</span>

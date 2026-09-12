@@ -269,6 +269,27 @@ export default function ArmadaDeliveryReport() {
                 km/liter dihitung dari selisih odometer tertinggi−terendah dibagi total liter periode ini (minimal 2 pengisian BBM ber-odometer). Rp/km ikut naik-turun mengikuti harga BBM — km/liter yang murni mengukur cara bawa mobil.
               </p>
             </div>
+
+            {/* Kurir Eksternal / Lalamove (D-161, 13 September 2026) — kajian
+                owner: "ada beberapa customer yang minta cepat dan memilih
+                delivery lalamove", biaya perlu direkap supaya kelihatan total
+                pengeluarannya, bukan cuma dicatat per job tanpa rekap. */}
+            {data?.externalCourier?.jobCount > 0 && (
+              <div>
+                <h2 className="mb-1 text-[15px] font-bold text-ink">Kurir Eksternal (Lalamove/dst)</h2>
+                <p className="mb-3 text-[12px] text-ink3">Job yang dikirim lewat kurir pihak ketiga, dalam rentang tanggal yang sama di atas.</p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <KpiCard label="Jumlah Job" numericValue={data.externalCourier.jobCount} index={0} />
+                  <KpiCard label="Total Ongkos" numericValue={data.externalCourier.totalCost} format={formatRupiah} index={1} />
+                  <KpiCard
+                    label="Belum Diisi Ongkosnya"
+                    numericValue={data.externalCourier.missingCost}
+                    index={2}
+                    sub={data.externalCourier.missingCost > 0 ? "Lengkapi di JobDetailDrawer" : "Semua sudah terisi"}
+                  />
+                </div>
+              </div>
+            )}
           </>
         )}
       </PageBody>

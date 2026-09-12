@@ -544,8 +544,11 @@ const jobInclude = {
   // bisa tampilkan titik Online/Offline per driver di tab "Driver" TANPA
   // panggilan API kedua, konsisten dengan pola route/id:code/status di
   // bawah (sekali select, dipakai di mana pun job ini muncul).
-  driver: { select: { id: true, name: true, isOnline: true, onlineSince: true } },
-  helper: { select: { id: true, name: true, isOnline: true, onlineSince: true } },
+  // isExternalCourier (13 September 2026, D-161) — supaya badge "Kurir
+  // Eksternal" & field ongkos Lalamove di JobDetailDrawer bisa tahu tanpa
+  // panggilan API kedua, pola sama dengan isOnline di atas.
+  driver: { select: { id: true, name: true, isOnline: true, onlineSince: true, isExternalCourier: true } },
+  helper: { select: { id: true, name: true, isOnline: true, onlineSince: true, isExternalCourier: true } },
   vehicle: { select: { id: true, plateNumber: true } },
   // route (D-077) — supaya frontend Penjadwalan bisa menampilkan "diatur
   // di rute RTE-XXX" begitu job.routeId terisi, TANPA panggilan API kedua
@@ -873,7 +876,9 @@ armadaRouter.get("/drivers", requirePermission(P.JOB_WRITE), async (req, res) =>
   try {
     const rows = await prisma.userRole.findMany({
       where: { role: "DRIVER" },
-      include: { user: { select: { id: true, name: true } } },
+      // isExternalCourier (D-161) — dropdown Driver bisa tandai "Kurir
+      // Eksternal (Lalamove/dst)" secara visual sebelum dispatcher assign.
+      include: { user: { select: { id: true, name: true, isExternalCourier: true } } },
       orderBy: { user: { name: "asc" } },
     });
     res.json(rows.map((r) => r.user));
@@ -3468,6 +3473,33 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
   }
 });
 
+// PATCH /jobs/:id/external-courier — nomor order/tracking & ongkos Lalamove
+// (D-161, 13 September 2026). Endpoint TERPISAH dari PATCH /jobs/:id di
+// atas SENGAJA — dua field ini murni administratif (dicatat dispatcher
+// kapan pun infonya tersedia, kadang baru diketahui SETELAH unit sudah
+// diambil/dikirim), tidak boleh terkunci oleh guard status ketat PATCH
+// /jobs/:id (UNSCHEDULED/SCHEDULED/ASSIGNED saja). Tidak ada guard
+// "driver harus isExternalCourier" — dispatcher yang tahu konteksnya,
+// field yang tidak relevan cukup dibiarkan kosong (tidak tampil di UI).
+armadaRouter.patch("/jobs/:id/external-courier", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const { externalCourierRef, externalCourierCost } = req.body;
+    const data = {};
+    if (externalCourierRef !== undefined) data.externalCourierRef = externalCourierRef?.trim() || null;
+    if (externalCourierCost !== undefined) {
+      const cost = externalCourierCost === null || externalCourierCost === "" ? null : Number(externalCourierCost);
+      if (cost !== null && (!Number.isFinite(cost) || cost < 0)) throw new ArmadaError("Ongkos tidak valid");
+      data.externalCourierCost = cost;
+    }
+    if (Object.keys(data).length === 0) throw new ArmadaError("Tidak ada field yang diubah");
+
+    const job = await prisma.job.update({ where: { id: req.params.id }, data, include: jobInclude });
+    res.json(job);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // DELETE /api/armada/jobs/:id — hanya job yang belum berjalan (salah pilih
 // unit itu wajar; job aktif TIDAK boleh dihapus, cukup ditandai FAILED).
 armadaRouter.delete("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res) => {
@@ -4497,13 +4529,23 @@ armadaRouter.get("/reports/summary", requirePermission(P.JOB_READ), async (req, 
     const dateWhere = from && to ? { scheduledDate: { gte: toDateOnly(from), lt: new Date(toDateOnly(to).getTime() + 86_400_000) } } : {};
     const routeDateWhere = from && to ? { date: { gte: toDateOnly(from), lt: new Date(toDateOnly(to).getTime() + 86_400_000) } } : {};
 
-    const [byStatus, byType, jobsForPod, routeByStatus, vehicleByStatus, driverGroups] = await Promise.all([
+    const [byStatus, byType, jobsForPod, routeByStatus, vehicleByStatus, driverGroups, externalCourierJobs] = await Promise.all([
       prisma.job.groupBy({ by: ["status"], where: dateWhere, _count: { _all: true } }),
       prisma.job.groupBy({ by: ["type"], where: dateWhere, _count: { _all: true } }),
       prisma.job.findMany({ where: { ...dateWhere, status: "COMPLETED" }, select: { status: true, podStatus: true, proofPhotoUrls: true } }),
       prisma.route.groupBy({ by: ["status"], where: routeDateWhere, _count: { _all: true } }),
       prisma.vehicle.groupBy({ by: ["status"], _count: { _all: true } }), // status ARMADA SEKARANG, sengaja tidak dibatasi rentang tanggal
       prisma.job.groupBy({ by: ["driverId"], where: { ...dateWhere, status: "COMPLETED", driverId: { not: null } }, _count: { _all: true } }),
+      // Kurir eksternal (D-161, 13 September 2026) — jumlah job & total
+      // ongkos Lalamove/dst di rentang ini, supaya kebiasaan "customer minta
+      // cepat, pilih Lalamove" kelihatan biayanya, bukan cuma dicatat per
+      // job tanpa rekap sama sekali. TIDAK dibatasi status COMPLETED (beda
+      // dari driverGroups di atas) — ongkos relevan dihitung begitu job
+      // dibuat/dijalankan, bukan cuma yang sudah tuntas.
+      prisma.job.findMany({
+        where: { ...dateWhere, driver: { isExternalCourier: true } },
+        select: { id: true, status: true, externalCourierCost: true, driver: { select: { name: true } } },
+      }),
     ]);
 
     const podCounts = { INCOMPLETE: 0, PENDING_REVIEW: 0, VERIFIED: 0, REJECTED: 0 };
@@ -4526,6 +4568,11 @@ armadaRouter.get("/reports/summary", requirePermission(P.JOB_READ), async (req, 
       byRouteStatus: routeByStatus.map((r) => ({ status: r.status, count: r._count._all })),
       byVehicleStatus: vehicleByStatus.map((r) => ({ status: r.status, count: r._count._all })),
       driverProductivity,
+      externalCourier: {
+        jobCount: externalCourierJobs.length,
+        totalCost: externalCourierJobs.reduce((sum, j) => sum + (j.externalCourierCost || 0), 0),
+        missingCost: externalCourierJobs.filter((j) => j.externalCourierCost == null).length,
+      },
     });
   } catch (err) {
     handleErr(err, res);

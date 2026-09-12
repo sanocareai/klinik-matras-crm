@@ -12,6 +12,7 @@ import ChipPilih from "./ChipPilih.jsx";
 import PasteUploadZone from "./PasteUploadZone.jsx";
 import DateTimePicker from "@/components/ui/date-time-picker.jsx";
 import { CustomerProfileCard } from "./JobBadges.jsx";
+import ExternalCourierBadge from "./ExternalCourierBadge.jsx";
 import RiwayatRevisiKendala from "./RiwayatRevisiKendala.jsx";
 import ComplaintCaseDrawer from "@/features/complaints/ComplaintCaseDrawer.jsx";
 import { AlertTriangle } from "lucide-react";
@@ -127,6 +128,12 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
   // yang diklik harus membuka kasus itu SENDIRI, bukan selalu
   // job.complaintCase milik job ini.
   const [openComplaintCaseId, setOpenComplaintCaseId] = useState(null);
+  // Kurir pihak ketiga / Lalamove (D-161, 13 September 2026) — input lokal
+  // + simpan saat blur (BEDA dari ubahJadwal di atas yang langsung POST
+  // per klik, tidak cocok utk field teks/angka yang diketik huruf demi
+  // huruf). Disinkronkan ulang tiap `job` berganti lewat useEffect di bawah.
+  const [courierRef, setCourierRef] = useState("");
+  const [courierCost, setCourierCost] = useState("");
   // Input Manual (8 September 2026, laporan owner — "proof of delivery
   // harus ada di route planner... bisa upload bukti pengambilan/pengiriman
   // dengan skema ctrl+v"). Sebelumnya jalur ini CUMA ada di halaman POD
@@ -201,6 +208,27 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
       .then((data) => { if (jobIdRef.current === jobIdSaatDiminta) setJob(data); })
       .catch((e) => { if (jobIdRef.current === jobIdSaatDiminta) setError(e.message); })
       .finally(() => { if (jobIdRef.current === jobIdSaatDiminta) setLoading(false); });
+  }
+
+  // Sinkron input kurir eksternal (D-161) tiap job (ganti/refetch setelah
+  // simpan) — job.externalCourierRef/Cost SUMBER KEBENARAN, state lokal di
+  // atas cuma salinan yang diketik untuk sementara.
+  useEffect(() => {
+    setCourierRef(job?.externalCourierRef || "");
+    setCourierCost(job?.externalCourierCost != null ? String(job.externalCourierCost) : "");
+  }, [job?.id, job?.externalCourierRef, job?.externalCourierCost]);
+
+  async function simpanKurirEksternal() {
+    try {
+      const updated = await api.updateExternalCourier(job.id, {
+        externalCourierRef: courierRef,
+        externalCourierCost: courierCost === "" ? null : Number(courierCost),
+      });
+      setJob(updated);
+      onChanged?.();
+    } catch (e) {
+      setActionError(e.message);
+    }
   }
 
   useEffect(() => {
@@ -720,6 +748,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                         </div>
                         <p className="flex items-center gap-1.5 text-[12px] text-ink2">
                           <User size={13} className="text-ink3" /> {job.driver?.name || "Belum ditugaskan"}
+                          <ExternalCourierBadge person={job.driver} />
                         </p>
                         {job.helper?.name && (
                           <p className="flex items-center gap-1.5 text-[12px] text-ink2">
@@ -784,6 +813,43 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                         )}
                       </>
                     )}
+
+                    {/* Kurir pihak ketiga / Lalamove (D-161, 13 September
+                        2026, kajian owner: "customer minta cepat dan pilih
+                        delivery lalamove"). Cuma tampil kalau driver yang
+                        ditugaskan berflag isExternalCourier — job dgn driver
+                        internal biasa tidak pernah lihat 2 field ini. Simpan
+                        TERPISAH dari ubahJadwal di atas (endpoint sendiri,
+                        tidak terkunci status job — lihat PATCH
+                        /jobs/:id/external-courier). */}
+                    {job.driver?.isExternalCourier && (
+                      <div className="space-y-2 rounded-btn border border-accent/30 bg-accentbg/40 p-2.5">
+                        <p className="flex items-center gap-1.5 text-[11px] font-bold text-accent">
+                          <Truck size={12} /> Kurir Eksternal
+                        </p>
+                        <div>
+                          <label className="mb-1 block text-[11px] text-ink2">Nomor order/tracking Lalamove</label>
+                          <input
+                            type="text" value={courierRef} disabled={busy}
+                            onChange={(e) => setCourierRef(e.target.value)}
+                            onBlur={simpanKurirEksternal}
+                            placeholder="mis. LM-ID-8827301"
+                            className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[11px] text-ink2">Ongkos (Rp)</label>
+                          <input
+                            type="number" min="0" value={courierCost} disabled={busy}
+                            onChange={(e) => setCourierCost(e.target.value)}
+                            onBlur={simpanKurirEksternal}
+                            placeholder="mis. 35000"
+                            className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     {/* Tanggal sudah diedit lewat "Tanggal Pengambilan/
                         Pengiriman" di atas (field Order, nyambung otomatis
                         ke Job.scheduledDate job ini — lihat ubahTanggalOrder).
@@ -906,6 +972,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     </Baris>
                     <Baris icon={User} label="Driver">
                       {job.driver?.name || (historis ? "— (data riwayat)" : "Belum ditugaskan")}
+                      <ExternalCourierBadge person={job.driver} className="ml-1.5" />
                     </Baris>
                     <Baris icon={User} label="Helper">{job.helper?.name || null}</Baris>
                     <Baris icon={Truck} label="Kendaraan">
@@ -914,6 +981,40 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     <Baris icon={Clock} label="Estimasi Durasi">
                       {estimasiDurasiLabel(job.estimatedDurationMinutes)}
                     </Baris>
+                  </div>
+                )}
+
+                {/* Kurir pihak ketiga / Lalamove (D-161) — SENGAJA tetap
+                    editable walau job ini sudah tidak "editable" lagi
+                    (EN_ROUTE/COMPLETED/dst, lihat cabang di atas): ongkos
+                    Lalamove kadang baru diketahui SETELAH job jalan/tuntas,
+                    endpoint-nya memang tidak dikunci status (lihat catatan
+                    di PATCH /jobs/:id/external-courier). */}
+                {!editable && job.driver?.isExternalCourier && (
+                  <div className="mt-3 space-y-2 rounded-btn border border-accent/30 bg-accentbg/40 p-2.5">
+                    <p className="flex items-center gap-1.5 text-[11px] font-bold text-accent">
+                      <Truck size={12} /> Kurir Eksternal
+                    </p>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Nomor order/tracking Lalamove</label>
+                      <input
+                        type="text" value={courierRef}
+                        onChange={(e) => setCourierRef(e.target.value)}
+                        onBlur={simpanKurirEksternal}
+                        placeholder="mis. LM-ID-8827301"
+                        className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] text-ink2">Ongkos (Rp)</label>
+                      <input
+                        type="number" min="0" value={courierCost}
+                        onChange={(e) => setCourierCost(e.target.value)}
+                        onBlur={simpanKurirEksternal}
+                        placeholder="mis. 35000"
+                        className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent"
+                      />
+                    </div>
                   </div>
                 )}
 

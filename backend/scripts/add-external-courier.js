@@ -48,10 +48,14 @@ async function main() {
 
   const passwordHash = await bcrypt.hash(PASSWORD, 10);
 
+  // isExternalCourier (13 September 2026, D-161) — ditambahkan belakangan
+  // supaya UI (badge, field ongkos Lalamove, laporan biaya) bisa mengenali
+  // akun ini tanpa menebak dari nama/email. Idempoten, upsert existing juga
+  // ikut disetel true kalau skrip ini dijalankan ulang di akun yang sudah ada.
   const user = await prisma.user.upsert({
     where: { email: EMAIL },
-    update: { name: NAMA, active: true },
-    create: { email: EMAIL, name: NAMA, passwordHash, role: "DRIVER", active: true },
+    update: { name: NAMA, active: true, isExternalCourier: true },
+    create: { email: EMAIL, name: NAMA, passwordHash, role: "DRIVER", active: true, isExternalCourier: true },
   });
 
   // UserRole DRIVER — ini yang benar-benar dibaca GET /armada/drivers

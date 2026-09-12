@@ -256,6 +256,10 @@ export const api = {
   // routes/armada.js PATCH /pod/:jobId/edit.
   editPod: (jobId, data) => request(`/armada/pod/${jobId}/edit`, { method: "PATCH", body: JSON.stringify(data) }),
 
+  // Kurir pihak ketiga / Lalamove (D-161, 13 September 2026).
+  updateExternalCourier: (jobId, data) =>
+    request(`/armada/jobs/${jobId}/external-courier`, { method: "PATCH", body: JSON.stringify(data) }),
+
   // Kendala & Reschedule (Delivery Tahap 5)
   getIssues: (status) => request(`/armada/issues${status ? `?status=${status}` : ""}`),
   rescheduleIssue: (jobId, data) => request(`/armada/issues/${jobId}/reschedule`, { method: "POST", body: JSON.stringify(data) }),

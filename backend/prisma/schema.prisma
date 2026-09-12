@@ -335,6 +335,19 @@ model User {
   isOnline    Boolean   @default(false) @map("is_online")
   onlineSince DateTime? @map("online_since")
 
+  // Kurir pihak ketiga (Lalamove/dst) — 13 September 2026 (D-161). Akun ini
+  // TIDAK PERNAH login sendiri (dispatcher yang operasikan atas nama akun,
+  // lihat scripts/add-external-courier.js, keputusan owner 6 September
+  // 2026 SEBELUM flag ini ada: daripada model data terpisah untuk kurir
+  // eksternal, satu akun placeholder yang diperlakukan PERSIS seperti
+  // driver internal — seluruh mekanisme assignment/riwayat/laporan yang
+  // sudah ada langsung jalan tanpa kode baru). Flag ini DITAMBAHKAN
+  // belakangan supaya UI (badge "Kurir Eksternal", field ongkos Lalamove
+  // di JobDetailDrawer, laporan biaya) bisa mengenali akun ini TANPA
+  // menebak dari nama/email (rapuh, dan tidak generalisasi kalau nanti
+  // ada akun kedua utk kurir lain, mis. GrabExpress).
+  isExternalCourier Boolean @default(false) @map("is_external_courier")
+
   // Leader sales (mis. Novi) — ber-role ADMIN tapi secara bisnis mengawasi
   // tim sales & kadang closing sendiri. Flag EKSPLISIT (25 Agustus 2026),
   // BUKAN diinfer dari role/nama — konsisten dengan preseden UserRole/D-010
@@ -2074,6 +2087,19 @@ model Job {
   vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   routeId   String?  @map("route_id") @db.Uuid
   route     Route?   @relation(fields: [routeId], references: [id], onDelete: SetNull)
+
+  // Kurir pihak ketiga (Lalamove/dst) — 13 September 2026 (D-161, kajian
+  // owner: "ada beberapa customer yang minta cepat dan memilih delivery
+  // lalamove"). Cuma relevan kalau driverId menunjuk akun ber-flag
+  // User.isExternalCourier — TIDAK ditegakkan lewat constraint DB (job
+  // biasa yang kebetulan diisi field ini tidak merusak apa pun, cuma tidak
+  // pernah ditampilkan), cukup konvensi di UI (JobDetailDrawer cuma
+  // menampilkan 2 field ini kalau driver terpasang berflag itu). Job kurir
+  // eksternal SENGAJA TIDAK butuh Route sama sekali (Lalamove point-to-
+  // point, bukan multi-stop) — routeId di atas dibiarkan null, jalur
+  // "assign driver langsung tanpa rute" yang sudah ada dipakai apa adanya.
+  externalCourierRef  String? @map("external_courier_ref") // nomor order/tracking dari Lalamove
+  externalCourierCost Int?    @map("external_courier_cost") // ongkos Lalamove, Rupiah
 
   // Kasus komplain yang MEMICU job ini (D-116, 11 September 2026) — job
   // pengambilan/inspeksi/pengiriman ulang lahir LANGSUNG dari ComplaintCase,
