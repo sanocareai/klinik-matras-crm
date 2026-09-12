@@ -10,17 +10,49 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Truck, Route, CheckCircle2, XCircle, Clock } from "lucide-react-native";
+import { Truck, Route, CheckCircle2, XCircle, Clock, Award } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
+import { useRouteIncentiveSummary } from "../hooks/useRouteIncentiveSummary";
 import { relatifWaktu } from "../lib/jobHelpers";
 
 const TABS = [
   { key: "hari-ini", label: "Hari Ini" },
   { key: "driver", label: "Driver" },
   { key: "masalah", label: "Masalah" },
+  { key: "performa", label: "Performa" },
 ];
+
+// Preset rentang tanggal utk tab Performa (12 Sep 2026) — default "Bulan
+// Ini" (backend juga default ke ini kalau from/to kosong, lihat
+// armada.js#incentive-summary), owner tidak menegaskan kebutuhan custom
+// date picker jadi cukup 3 preset umum dulu.
+const PERIODE_PRESET = [
+  { key: "bulan-ini", label: "Bulan Ini" },
+  { key: "minggu-ini", label: "Minggu Ini" },
+  { key: "bulan-lalu", label: "Bulan Lalu" },
+];
+
+function rentangPeriode(preset) {
+  const now = new Date(Date.now() + 7 * 3600_000); // WIB
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  const toISO = (d) => d.toISOString().slice(0, 10);
+  if (preset === "minggu-ini") {
+    const dow = now.getUTCDay() || 7; // Senin=1..Minggu=7
+    const senin = new Date(Date.UTC(y, m, now.getUTCDate() - dow + 1));
+    return { from: toISO(senin), to: toISO(now) };
+  }
+  if (preset === "bulan-lalu") {
+    const awal = new Date(Date.UTC(y, m - 1, 1));
+    const akhir = new Date(Date.UTC(y, m, 0));
+    return { from: toISO(awal), to: toISO(akhir) };
+  }
+  // bulan-ini (default)
+  const awal = new Date(Date.UTC(y, m, 1));
+  return { from: toISO(awal), to: toISO(now) };
+}
 
 function ringkasHariIni(jobs) {
   const counts = {};
@@ -52,7 +84,15 @@ function ringkasDriver(jobs, tracking) {
   for (const j of jobs) {
     if (!j.driver) continue;
     let d = driverMap.get(j.driver.id);
-    if (!d) d = { id: j.driver.id, name: j.driver.name, total: 0, selesai: 0, gagal: 0, jalan: 0, sisa: 0, lastSeen: null };
+    if (!d) {
+      d = {
+        id: j.driver.id, name: j.driver.name, total: 0, selesai: 0, gagal: 0, jalan: 0, sisa: 0, lastSeen: null,
+        // Status Online/Offline (12 Sep 2026) — data sama utk baris driver
+        // ini di semua job-nya, cukup ambil sekali dari job pertama yang
+        // ditemukan.
+        isOnline: !!j.driver.isOnline, onlineSince: j.driver.onlineSince || null,
+      };
+    }
     d.total += 1;
     if (j.status === "COMPLETED") d.selesai += 1;
     else if (j.status === "FAILED") d.gagal += 1;
@@ -75,6 +115,7 @@ export default function AdminHomeScreen() {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { data, isLoading, error, refetch, isRefetching } = useAdminToday();
   const [tab, setTab] = useState("hari-ini");
+  const [periode, setPeriode] = useState("bulan-ini");
 
   const jobs = data?.jobs || [];
   const issues = data?.issues || [];
@@ -82,6 +123,9 @@ export default function AdminHomeScreen() {
 
   const ringkasan = useMemo(() => ringkasHariIni(jobs), [jobs]);
   const drivers = useMemo(() => ringkasDriver(jobs, tracking), [jobs, tracking]);
+
+  const { from, to } = useMemo(() => rentangPeriode(periode), [periode]);
+  const performa = useRouteIncentiveSummary(from, to);
 
   return (
     <SafeAreaView style={styles.root}>
@@ -105,7 +149,15 @@ export default function AdminHomeScreen() {
         ))}
       </View>
 
-      {isLoading ? (
+      {tab === "performa" ? (
+        <PerformaView
+          performa={performa}
+          periode={periode}
+          setPeriode={setPeriode}
+          theme={theme}
+          styles={styles}
+        />
+      ) : isLoading ? (
         <View style={styles.center}><ActivityIndicator color={theme.ACCENT} /></View>
       ) : error ? (
         <View style={styles.center}><Text style={styles.errorText}>Gagal memuat: {error.message}</Text></View>
@@ -173,7 +225,13 @@ function DriverView({ drivers, theme: t, styles }) {
       {drivers.map((d) => (
         <View key={d.id} style={styles.card}>
           <View style={styles.rowBetween}>
-            <Text style={styles.cardTitle}>{d.name}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              {/* Titik Online/Offline (12 Sep 2026) — BUKAN "sedang jalan"
+                  (badge "Di jalan" di sebelah kanan sudah pakai itu), ini
+                  murni toggle manual driver di app-nya. */}
+              <View style={[styles.onlineDot, { backgroundColor: d.isOnline ? t.GREEN : t.INK3 }]} />
+              <Text style={styles.cardTitle}>{d.name}</Text>
+            </View>
             {d.jalan > 0 ? (
               <View style={styles.liveBadge}>
                 <Truck size={11} color={t.ACCENT} />
@@ -231,6 +289,61 @@ function MasalahView({ issues, theme: t, styles }) {
   );
 }
 
+// Tab Performa (12 Sep 2026, permintaan owner: "insentif sistem kita
+// menghitung nya per jalur, jadi boleh ada status masing-masing driver/
+// helper ada status sudah berapa jalur mereka, dan bisa disetting
+// tanggal"). "Jalur" = Route selesai, dipisah asDriver/asHelper (satu
+// orang bisa dua peran). Query terpisah dari useAdminToday (rentang
+// tanggalnya beda, bukan "hari ini") — lihat useRouteIncentiveSummary.js.
+function PerformaView({ performa, periode, setPeriode, theme: t, styles }) {
+  const { data, isLoading, error, refetch, isRefetching } = performa;
+  const orang = data?.orang || [];
+  return (
+    <ScrollView
+      contentContainerStyle={styles.body}
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={t.ACCENT} />}
+    >
+      <View style={styles.periodeRow}>
+        {PERIODE_PRESET.map((p) => (
+          <Pressable
+            key={p.key}
+            style={[styles.periodeChip, periode === p.key && styles.periodeChipActive]}
+            onPress={() => setPeriode(p.key)}
+          >
+            <Text style={[styles.periodeChipText, periode === p.key && styles.periodeChipTextActive]}>{p.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {isLoading ? (
+        <View style={styles.center}><ActivityIndicator color={t.ACCENT} /></View>
+      ) : error ? (
+        <View style={styles.center}><Text style={styles.errorText}>Gagal memuat: {error.message}</Text></View>
+      ) : orang.length === 0 ? (
+        <Text style={styles.emptyText}>Belum ada rute selesai di periode ini.</Text>
+      ) : (
+        <View style={{ gap: 10 }}>
+          {orang.map((o, i) => (
+            <View key={o.id} style={styles.card}>
+              <View style={styles.rowBetween}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Award size={14} color={i === 0 ? t.ORANGE : t.INK3} />
+                  <Text style={styles.cardTitle}>{o.name}</Text>
+                </View>
+                <Text style={[styles.kpiValue, { fontSize: 16 }]}>{o.total} <Text style={styles.cardMeta}>jalur</Text></Text>
+              </View>
+              <View style={styles.driverStatsRow}>
+                <Text style={styles.driverStat}>Sebagai driver: <Text style={{ color: t.ACCENT }}>{o.asDriver}</Text></Text>
+                <Text style={styles.driverStat}>Sebagai helper: <Text style={{ color: t.ACCENT }}>{o.asHelper}</Text></Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
 function makeStyles(t) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: t.NAVY },
@@ -265,5 +378,11 @@ function makeStyles(t) {
     driverStat: { color: t.INK2, fontSize: 11.5, fontWeight: "600" },
     lastSeenText: { color: t.INK3, fontSize: 10.5 },
     issueReason: { color: t.ORANGE, fontSize: 12, fontWeight: "600", marginTop: 6 },
+    onlineDot: { width: 8, height: 8, borderRadius: 4 },
+    periodeRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
+    periodeChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 100, borderWidth: 1, borderColor: t.BORDER },
+    periodeChipActive: { backgroundColor: t.ACCENT_BG, borderColor: t.ACCENT },
+    periodeChipText: { color: t.INK2, fontSize: 12, fontWeight: "600" },
+    periodeChipTextActive: { color: t.ACCENT },
   });
 }
