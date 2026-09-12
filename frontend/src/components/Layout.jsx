@@ -694,7 +694,19 @@ export default function Layout({ user, onLogout }) {
   // dengan Sano DS v2 (PageContainer/Card/Badge/TableWrap, `dh-table` di
   // wrapper tabel manual) — NOL kelas CSS legacy/hardcode warna, sama
   // kategori paling aman dengan /sales-intelligence dkk di D-109.
-  const glassOn = divisionKey === "armada" || divisionKey === "bengkel" || divisionKey === "warehouse" || divisionKey === "b2b" || pageGlassPilot;
+  // D-155 (13 September 2026, laporan owner: "notifikasi, pengaturan,
+  // pengguna & peran belum di-redesign") — 3 dari 3 halaman HUB_ONLY_PATHS
+  // (Notifikasi/Pengaturan/Pengguna & Peran) dicek: dibangun bersih pakai
+  // Sano DS v2 (PageContainer/Card/Badge), NOL bg-white/hex hardcode
+  // sebesar halaman — kategori aman yang sama dengan /broadcast-sales,
+  // /komplain di D-109/D-154. "/portal" (Main Hub) SENGAJA TIDAK diikutkan
+  // di sini — itu halaman bespoke yang meniru docs/design-system/SANSS-
+  // integrated-smart-system-v4.html apa adanya (warna hex + latar putih
+  // hardcode, bukan token tema), menyalakan glassOn di situ tanpa
+  // menulis ulang halamannya akan membuat teks gelap tidak terbaca di
+  // atas latar kaca gelap — perlu redesign sendiri, bukan flag.
+  const hubGlassPilot = onHub && HUB_ONLY_PATHS.includes(location.pathname);
+  const glassOn = divisionKey === "armada" || divisionKey === "bengkel" || divisionKey === "warehouse" || divisionKey === "b2b" || pageGlassPilot || hubGlassPilot;
 
   // Driver murni cuma punya JOB_OWN_READ/JOB_OWN_WRITE — DELAPAN dari sembilan
   // menu Delivery (Dashboard, Route Planner, Live Tracking, Driver & Armada,
