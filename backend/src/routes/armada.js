@@ -25,8 +25,12 @@ import { sendMedia, sendText } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
-import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
-import { notifyDriverJobAssigned, notifyDriverRouteChanged, notifyProductionRevisionReady, notifySalesJobFailed, notifyComplaintCaseOwnerChanged } from "../services/pushNotifications.js";
+import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered, sendCustomerText } from "../services/customerNotifications.js";
+import { notifyDriverJobAssigned, notifyDriverRouteChanged, notifyProductionRevisionReady, notifySalesJobFailed, notifySalesJobRescheduled, notifyComplaintCaseOwnerChanged } from "../services/pushNotifications.js";
+import {
+  openOrAdvanceCase, closeCaseOnJobComplete, cancelCase, RescheduleCaseError,
+  RESCHEDULE_STATUS_LABEL, rescheduleCaseInclude,
+} from "../services/rescheduleCase.js";
 import { notifySalesJobCompleted, notifySalesUnpaidAfterDelivery } from "../services/deliveryCompletionNotify.js";
 import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
@@ -562,6 +566,12 @@ const jobInclude = {
   // biasa di papan Jadwal & Penugasan tanpa ini. Select seminimal mungkin
   // (badge cuma butuh nomor kasus & kategori/severity).
   complaintCase: { select: { id: true, caseNumber: true, category: true, severity: true, status: true } },
+  // rescheduleCase (D-160, 13 September 2026) — pola PERSIS sama dengan
+  // complaintCase di atas: kasus reschedule tersatukan (lihat catatan
+  // panjang di services/rescheduleCase.js) supaya badge "Reschedule RSC-
+  // ..." bisa tampil di JobDetailDrawer/RiwayatRevisiKendala/RouteCard
+  // TANPA panggilan API kedua.
+  rescheduleCase: { select: { id: true, caseNumber: true, status: true, round: true, reason: true, newScheduledDate: true } },
   // rescheduledBy (6 September 2026) — siapa yang mencatat reschedule
   // (baik dari jalur Gagal->reschedule yang lama, maupun catatan
   // retroaktif job Selesai yang baru, lihat POST /jobs/:id/reschedule-note)
@@ -2577,10 +2587,16 @@ const PIC_INCLUDE_FOR_POD = {
 // sudah wajib diisi driver sejak Phase 2), dan kemampuan BARU menjadwalkan
 // ulangnya — itu satu-satunya bagian yang sebelumnya benar-benar buntu.
 function deriveIssueStatus(job) {
-  if (job.status === "FAILED") return job.rescheduleReason ? "RESCHEDULED" : "OPEN";
+  // rescheduleCaseId (D-160, 13 September 2026) — OR tambahan, BUKAN
+  // pengganti rescheduleReason. Jalur PROACTIVE sekarang MENULIS
+  // rescheduleReason juga (lihat PATCH /jobs/:id di atas), tapi data lama
+  // dari SEBELUM perbaikan ini cuma punya rescheduleCaseId sebagai
+  // penanda — dua-duanya dicek supaya job lama & baru sama-sama kebaca.
+  const pernahDireschedule = !!(job.rescheduleReason || job.rescheduleCaseId);
+  if (job.status === "FAILED") return pernahDireschedule ? "RESCHEDULED" : "OPEN";
   // Job yang sudah lewat dari FAILED (SCHEDULED/ASSIGNED/dst setelah
   // di-reschedule) tapi PERNAH gagal — riwayatnya tetap relevan ditelusuri.
-  if (job.rescheduleReason) return "RESCHEDULED";
+  if (pernahDireschedule) return "RESCHEDULED";
   return null;
 }
 
@@ -2588,11 +2604,12 @@ armadaRouter.get("/issues", requirePermission(P.JOB_READ), async (req, res) => {
   try {
     const { status } = req.query; // OPEN | RESCHEDULED
     const jobs = await prisma.job.findMany({
-      where: { OR: [{ status: "FAILED" }, { rescheduleReason: { not: null } }] },
+      where: { OR: [{ status: "FAILED" }, { rescheduleReason: { not: null } }, { rescheduleCaseId: { not: null } }] },
       include: {
         ...jobInclude,
         order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } },
         rescheduledBy: { select: { id: true, name: true } },
+        rescheduleCase: { select: { id: true, caseNumber: true, status: true, round: true, cancelReason: true } },
       },
       orderBy: { updatedAt: "desc" },
       take: 300,
@@ -2623,7 +2640,7 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
     const nextDate = toDateOnly(scheduledDate);
     const nextDriverId = driverId || null;
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const { job: updated, kase } = await prisma.$transaction(async (tx) => {
       const j = await tx.job.update({
         where: { id: job.id },
         data: {
@@ -2637,6 +2654,17 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
           rescheduledById: req.user.id,
           rescheduledAt: new Date(),
           customerConfirmedReschedule: !!customerConfirmed,
+          // BUG FIX (D-160, 13 September 2026, audit skema reschedule) —
+          // job gagal yang direschedule SEBELUM ini tetap menunjuk routeId
+          // lamanya selamanya. Kalau rute itu kebetulan rute lain di
+          // dalamnya sudah semua tuntas, syncRouteCompletionStatus SUDAH
+          // menandainya COMPLETED — job aktif ini jadi nyangkut diam-diam
+          // di rute yang sudah "hijau" (persis pola kasus Alwan/
+          // RTE-110926-01, sumber beda). Rute lama tidak lagi relevan
+          // untuk tanggal/driver BARU job ini — dilepas total, dispatcher
+          // sadar menambahkannya lagi ke rute yang tepat lewat Route
+          // Planner kalau memang mau digabung rute.
+          routeId: null, sequence: null,
         },
         include: jobInclude,
       });
@@ -2652,9 +2680,19 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
           createdById: req.user.id,
         },
       });
-      return j;
+      // Kasus reschedule tersatukan (D-160) — lihat catatan panjang di
+      // services/rescheduleCase.js.
+      const k = await openOrAdvanceCase(tx, {
+        job, cause: "AFTER_FAILURE", reason: reason.trim(),
+        previousScheduledDate: job.scheduledDate, newScheduledDate: nextDate,
+        customerConfirmed, userId: req.user.id,
+      });
+      return { job: j, kase: k };
     });
-    res.json({ ...updated, issueStatus: deriveIssueStatus(updated) });
+    notifySalesJobRescheduled(updated, kase).catch((err) =>
+      console.error("[POST /issues/:jobId/reschedule] Gagal kirim push ke sales:", err.message)
+    );
+    res.json({ ...updated, issueStatus: deriveIssueStatus(updated), rescheduleCase: kase });
   } catch (err) {
     handleErr(err, res);
   }
@@ -2702,6 +2740,55 @@ armadaRouter.post("/jobs/:id/reschedule-note", requirePermission(P.JOB_WRITE), a
       include: jobInclude,
     });
     res.json({ ...updated, issueStatus: deriveIssueStatus(updated) });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /reschedule-cases/:id/cancel — dispatcher menutup kasus reschedule
+// secara eksplisit (D-160, 13 September 2026 — mis. order dibatalkan
+// total, tidak jadi diambil/diantar sama sekali). Lihat catatan panjang di
+// services/rescheduleCase.js#cancelCase — TIDAK menyentuh job-nya sama
+// sekali, cuma menutup kasusnya supaya tidak nyangkut AKTIF selamanya.
+armadaRouter.post("/reschedule-cases/:id/cancel", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const updated = await prisma.$transaction((tx) => cancelCase(tx, req.params.id, reason));
+    res.json(updated);
+  } catch (err) {
+    if (err instanceof RescheduleCaseError) return res.status(err.statusCode).json({ error: err.message });
+    handleErr(err, res);
+  }
+});
+
+// POST /reschedule-cases/:id/notify-customer — kirim WA "jadwal Anda
+// berubah" ke customer, TAPI manual (dispatcher klik sendiri), BUKAN
+// otomatis (D-160, 13 September 2026). SENGAJA tidak auto-fire dari
+// openOrAdvanceCase — customerNotifications.js menegaskan batas KETAT
+// "persis 4 notifikasi WA customer" dari PRD, dan 3 dari 4 itu sendiri
+// SEDANG DIMATIKAN atas keputusan owner ("sales pegang manual dulu
+// komunikasi jadwal ke customer") — menambah trigger otomatis kelima di
+// sini akan melanggar batas itu tanpa izin eksplisit. Tombol manual
+// tetap memberi nilai (1 klik, bukan pindah ke WA manual) tanpa
+// melanggar kebijakan yang sudah didokumentasikan.
+armadaRouter.post("/reschedule-cases/:id/notify-customer", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const kase = await prisma.rescheduleCase.findUnique({ where: { id: req.params.id }, include: rescheduleCaseInclude });
+    if (!kase) return res.status(404).json({ error: "Kasus reschedule tidak ditemukan" });
+    const customer = kase.job?.order?.customer;
+    if (!customer?.phone) throw new ArmadaError("Customer belum punya nomor HP tercatat");
+
+    const tipe = kase.job.type === "PICKUP" ? "pengambilan" : "pengiriman";
+    const tanggalBaru = kase.newScheduledDate
+      ? new Date(kase.newScheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jakarta" })
+      : "-";
+    const pesan = `Halo ${customer.name || ""}, jadwal ${tipe} untuk pesanan${kase.job.order?.orderNumber ? ` ${kase.job.order.orderNumber}` : ""} sudah diperbarui menjadi *${tanggalBaru}*. Mohon maaf atas perubahan ini. Terima kasih 🙏`;
+
+    await sendCustomerText(customer.id, pesan);
+    const updated = await prisma.rescheduleCase.update({
+      where: { id: kase.id }, data: { customerNotifiedAt: new Date() },
+    });
+    res.json(updated);
   } catch (err) {
     handleErr(err, res);
   }
@@ -3320,9 +3407,29 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     if (isReschedule && !rescheduleReason?.trim()) {
       throw new ArmadaError("Job ini sudah punya tanggal — jelaskan alasan reschedule-nya (mis. permintaan pelanggan)");
     }
+    if (isReschedule) {
+      // Job.rescheduleReason dkk SEBELUM ini TIDAK PERNAH terisi lewat
+      // jalur proaktif (D-160, 13 September 2026, audit skema reschedule)
+      // — cuma ditulis ke JobIssueLog, jadi konsumen yang baca field
+      // Job.rescheduleReason langsung (RiwayatRevisiKendala, GET /issues)
+      // diam-diam kelewat untuk reschedule proaktif. Disamakan dengan
+      // jalur AFTER_FAILURE di atas.
+      data.rescheduleReason = rescheduleReason.trim();
+      data.rescheduledAt = new Date();
+      data.rescheduledById = req.user.id;
+      data.customerConfirmedReschedule = !!customerConfirmed;
+      // BUG FIX yang sama dengan POST /issues/:jobId/reschedule — job
+      // routed yang tanggalnya digeser menyimpang dari Route.date tidak
+      // boleh diam-diam tetap menunjuk rute lamanya (rute itu dibangun
+      // utk tanggal LAMA). Dilepas total, konsisten dengan filosofi
+      // "Route otoritas penuh begitu job masuk rute" (D-077) — kebalikannya
+      // juga berlaku, job yang keluar dari rencana rute keluar dari rute.
+      if (existing.routeId) { data.routeId = null; data.sequence = null; }
+    }
 
-    const job = await prisma.$transaction(async (tx) => {
+    const { job, kase } = await prisma.$transaction(async (tx) => {
       const j = await tx.job.update({ where: { id: req.params.id }, data, include: jobInclude });
+      let k = null;
       if (isReschedule) {
         await tx.jobIssueLog.create({
           data: {
@@ -3332,9 +3439,19 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
             createdById: req.user.id,
           },
         });
+        k = await openOrAdvanceCase(tx, {
+          job: existing, cause: "PROACTIVE", reason: rescheduleReason.trim(),
+          previousScheduledDate: existing.scheduledDate, newScheduledDate: nextDate,
+          customerConfirmed, userId: req.user.id,
+        });
       }
-      return j;
+      return { job: j, kase: k };
     });
+    if (kase) {
+      notifySalesJobRescheduled(job, kase).catch((err) =>
+        console.error("[PATCH /jobs/:id] Gagal kirim push ke sales (reschedule):", err.message)
+      );
+    }
 
     // Push notifikasi (8 September 2026) — HANYA saat driver benar-benar
     // BARU/BERGANTI (bukan tiap PATCH lain, mis. ubah catatan/jam) supaya
@@ -3345,7 +3462,7 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
       );
     }
 
-    res.json(job);
+    res.json(kase ? { ...job, rescheduleCase: kase } : job);
   } catch (err) {
     handleErr(err, res);
   }
@@ -3723,6 +3840,12 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
       });
       await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       await syncRouteCompletionStatus(tx, job.routeId);
+      // Tutup kasus reschedule (D-160, 13 September 2026) — job yang PERNAH
+      // direschedule dan AKHIRNYA benar-benar Selesai menutup kasusnya
+      // sendiri di sini, pola sama dengan auto-advance UnitRevision/
+      // ComplaintCase di bawah. No-op diam-diam kalau job ini tidak pernah
+      // punya kasus reschedule sama sekali.
+      await closeCaseOnJobComplete(tx, job.id);
       // Auto-advance UnitRevision (9 September 2026, D-109) — job ini bisa
       // saja bukan job pengiriman/pengambilan pertama order (lihat
       // POST /revisions/:id/create-pickup-job & create-delivery-job), jadi

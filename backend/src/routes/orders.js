@@ -839,6 +839,12 @@ orderRouter.get("/", async (req, res) => {
             id: true, type: true, status: true, scheduledDate: true,
             driver: { select: { name: true } },
             vehicle: { select: { plateNumber: true } },
+            // rescheduleCase (D-160, 13 September 2026) — badge "Dijadwal
+            // Ulang" di Orders.jsx/ArmadaOrders.jsx, pola sama dengan
+            // revisionLinks di `units` di bawah. Cuma AKTIF yang relevan
+            // ditampilkan sebagai badge — kasus SELESAI/DIBATALKAN tidak
+            // perlu menyala lagi di daftar order.
+            rescheduleCase: { select: { id: true, caseNumber: true, status: true, round: true } },
           },
           orderBy: { createdAt: "desc" },
         },
@@ -906,6 +912,7 @@ orderRouter.get("/", async (req, res) => {
       const ringkasJob = (j) => j && {
         status: j.status, scheduledDate: j.scheduledDate,
         driverName: j.driver?.name || null, vehiclePlate: j.vehicle?.plateNumber || null,
+        rescheduleCase: j.rescheduleCase?.status === "AKTIF" ? j.rescheduleCase : null,
       };
       // Ringkasan tahap Produksi (D-078) — lihat komentar panjang di include
       // `units` di atas. SEWA lepas total dari Unit/Bengkel (sama alasan
@@ -1489,12 +1496,17 @@ orderRouter.get("/:id/timeline", async (req, res) => {
     const issueJobs = await prisma.job.findMany({
       where: {
         orderId: req.params.id,
-        OR: [{ status: "FAILED" }, { rescheduleReason: { not: null } }],
+        // rescheduleCaseId (D-160, 13 September 2026) — OR tambahan, sama
+        // alasan dengan GET /armada/issues (armada.js#deriveIssueStatus):
+        // jalur PROACTIVE sekarang ikut menulis rescheduleReason juga, tapi
+        // job LAMA (sebelum perbaikan ini) cuma punya rescheduleCaseId.
+        OR: [{ status: "FAILED" }, { rescheduleReason: { not: null } }, { rescheduleCaseId: { not: null } }],
       },
       select: {
         id: true, type: true, status: true, failureReason: true,
         rescheduleReason: true, rescheduledAt: true, customerConfirmedReschedule: true,
         rescheduledBy: { select: { id: true, name: true } },
+        rescheduleCase: { select: { id: true, caseNumber: true, status: true, round: true, cancelReason: true } },
       },
       orderBy: { updatedAt: "desc" },
     });

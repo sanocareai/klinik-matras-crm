@@ -38,3 +38,11 @@ export async function generateOrderNumber(category) {
 export async function generateComplaintCaseNumber() {
   return generateSequenceNumber("CMP");
 }
+
+// Generate nomor kasus reschedule otomatis: RSC-13092026-001 (D-160, 13
+// September 2026, audit skema reschedule — lihat catatan panjang di
+// schema.prisma model RescheduleCase). Mesin counter SAMA (OrderSequence),
+// prefix ketiga setelah RES/SWS/NEW dan CMP.
+export async function generateRescheduleCaseNumber() {
+  return generateSequenceNumber("RSC");
+}

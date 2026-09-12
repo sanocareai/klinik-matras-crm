@@ -188,6 +188,38 @@ export async function notifySalesJobFailed(job) {
   });
 }
 
+// Notifikasi "pengambilan/pengiriman customer Anda dijadwalkan ULANG" ke
+// SALES pemilik order (13 September 2026, D-160 — celah yang ditemukan
+// saat audit skema reschedule: notifySalesJobFailed di atas SUDAH ada
+// untuk job Gagal, tapi begitu job itu direschedule tidak ada satu pun
+// notifikasi ke sales — mereka baru tahu kalau kebetulan buka "Semua
+// Order"). Push INTERNAL ke staf, BUKAN WA ke customer — TIDAK melanggar
+// batas "persis 4 notifikasi WA customer" di customerNotifications.js
+// (constraint itu soal komunikasi ke customer, ini staf-ke-staf).
+// `job` minimal butuh { id, orderId, type }, `kase` { caseNumber, round,
+// newScheduledDate }.
+export async function notifySalesJobRescheduled(job, kase) {
+  if (!job?.orderId) return;
+  const order = await prisma.order.findUnique({
+    where: { id: job.orderId },
+    select: {
+      orderNumber: true,
+      customer: { select: { id: true, name: true, assignedSalesId: true } },
+    },
+  });
+  const salesId = order?.customer?.assignedSalesId;
+  if (!salesId) return;
+  const tipe = job.type === "PICKUP" ? "Pengambilan" : "Pengiriman";
+  const tanggalBaru = kase?.newScheduledDate
+    ? new Date(kase.newScheduledDate).toLocaleDateString("id-ID", { day: "numeric", month: "long", timeZone: "Asia/Jakarta" })
+    : null;
+  await sendPushToUser(salesId, {
+    title: `🔄 ${tipe} dijadwalkan ulang${kase?.round > 1 ? ` (ronde ${kase.round})` : ""}`,
+    body: `${order.customer.name || "Customer"}${order.orderNumber ? ` (${order.orderNumber})` : ""}${tanggalBaru ? ` — jadwal baru ${tanggalBaru}` : ""}`,
+    url: `/customers?id=${order.customer.id}`,
+  });
+}
+
 // Complaint / After-Sales Case — notifikasi lintas divisi (D-116, 11
 // September 2026, permintaan owner: "make sure di semua divisi bahkan ada
 // notifikasi karna komplain itu prioritas"). Pola SAMA dengan

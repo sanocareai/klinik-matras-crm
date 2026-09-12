@@ -264,6 +264,10 @@ export const api = {
   // ganti tanggal/driver & menyalakan job lagi). Ini murni catatan, tidak
   // ada apa pun di job yang berubah selain rescheduleReason/rescheduledAt.
   addRescheduleNote: (jobId, data) => request(`/armada/jobs/${jobId}/reschedule-note`, { method: "POST", body: JSON.stringify(data) }),
+  // Kasus reschedule tersatukan (D-160, 13 September 2026) — lihat catatan
+  // panjang di backend/src/services/rescheduleCase.js.
+  cancelRescheduleCase: (caseId, reason) => request(`/armada/reschedule-cases/${caseId}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  notifyRescheduleCaseCustomer: (caseId) => request(`/armada/reschedule-cases/${caseId}/notify-customer`, { method: "POST" }),
 
   // Revisi, disebut "Retur" di menu (Delivery Tahap 6)
   getRevisions: (params = {}) => {

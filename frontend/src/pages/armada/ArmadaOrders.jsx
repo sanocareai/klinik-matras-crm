@@ -94,12 +94,23 @@ function JobChip({ label, job }) {
   if (!job) return <span className="text-[11.5px] text-ink3">—</span>;
   const info = JOB_STATUS_REAL[job.status];
   return (
-    <Badge
-      variant={info?.tone || "neutral"}
-      title={job.driverName ? `${label} · ${job.driverName}` : label}
-    >
-      {label}: {info?.label || job.status}
-    </Badge>
+    <span className="inline-flex items-center gap-1">
+      <Badge
+        variant={info?.tone || "neutral"}
+        title={job.driverName ? `${label} · ${job.driverName}` : label}
+      >
+        {label}: {info?.label || job.status}
+      </Badge>
+      {/* Kasus reschedule AKTIF (D-160, 13 September 2026) — backend cuma
+          mengembalikan rescheduleCase kalau statusnya AKTIF (lihat
+          ringkasJob di routes/orders.js), jadi ada/tidaknya field ini
+          sudah berarti "perlu perhatian". */}
+      {job.rescheduleCase && (
+        <Badge variant="orange" title={job.rescheduleCase.caseNumber}>
+          Dijadwal Ulang{job.rescheduleCase.round > 1 ? ` ×${job.rescheduleCase.round}` : ""}
+        </Badge>
+      )}
+    </span>
   );
 }
 

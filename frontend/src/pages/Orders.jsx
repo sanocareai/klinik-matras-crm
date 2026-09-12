@@ -380,6 +380,13 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
                 {j.label}: {JOB_STATUS_REAL[j.status]?.label || j.status}
                 {j.scheduledDate ? ` · ${formatTanggalPendek(j.scheduledDate)}` : ""}
                 {j.driverName ? ` · ${j.driverName}` : ""}
+                {/* Kasus reschedule AKTIF (D-160, 13 September 2026) — ringkasJob
+                    di backend cuma mengembalikan rescheduleCase kalau
+                    statusnya AKTIF, jadi ada/tidaknya field ini SUDAH berarti
+                    "perlu perhatian", tidak perlu cek status lagi di sini. */}
+                {j.rescheduleCase && (
+                  <span className="font-semibold text-orange"> · Dijadwal Ulang{j.rescheduleCase.round > 1 ? ` (ronde ${j.rescheduleCase.round})` : ""}</span>
+                )}
               </p>
             ))}
         </div>

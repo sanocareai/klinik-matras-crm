@@ -26,9 +26,14 @@ import NewComplaintCaseForm from "@/features/complaints/NewComplaintCaseForm.jsx
 // Derive status ringkas job kendala/reschedule — SAMA logika dengan
 // deriveIssueStatus() di backend/src/routes/armada.js, disalin ringkas di
 // sini alih-alih backend mengirim field turunan lagi.
+// rescheduleCaseId (D-160, 13 September 2026) — OR tambahan, sama alasan
+// dengan backend deriveIssueStatus (armada.js): jalur PROACTIVE sekarang
+// ikut menulis rescheduleReason juga, tapi job LAMA (sebelum perbaikan
+// ini) cuma punya rescheduleCase.
 export function issueStatusOf(j) {
-  if (j.status === "FAILED") return j.rescheduleReason ? "RESCHEDULED" : "OPEN";
-  if (j.rescheduleReason) return "RESCHEDULED";
+  const pernahDireschedule = !!(j.rescheduleReason || j.rescheduleCase);
+  if (j.status === "FAILED") return pernahDireschedule ? "RESCHEDULED" : "OPEN";
+  if (pernahDireschedule) return "RESCHEDULED";
   return null;
 }
 
@@ -129,9 +134,20 @@ export default function RiwayatRevisiKendala({
           return (
             <div key={j.id} className="rounded-xl border-l-[3px] border-orange bg-surface p-2.5 shadow-card">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11.5px] font-semibold text-ink">
-                  {j.type === "PICKUP" ? "Pengambilan" : "Pengiriman"} gagal/dijadwalkan ulang
-                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11.5px] font-semibold text-ink">
+                    {j.type === "PICKUP" ? "Pengambilan" : "Pengiriman"} gagal/dijadwalkan ulang
+                  </span>
+                  {/* Kasus reschedule tersatukan (D-160, 13 September 2026) —
+                      nomor kasus + ronde ke berapa, supaya "sudah berapa kali
+                      job ini gagal->dijadwalkan ulang" langsung kelihatan
+                      tanpa menghitung manual dari histori. */}
+                  {j.rescheduleCase && (
+                    <span className="font-mono text-[10px] font-bold text-ink3">
+                      {j.rescheduleCase.caseNumber}{j.rescheduleCase.round > 1 ? ` · ronde ${j.rescheduleCase.round}` : ""}
+                    </span>
+                  )}
+                </div>
                 <StatusBadge map={ISSUE_STATUS} value={status} />
               </div>
               {j.failureReason && <p className="mt-1 text-[12px] leading-relaxed text-ink">Alasan gagal: {j.failureReason}</p>}

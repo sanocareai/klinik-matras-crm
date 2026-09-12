@@ -63,7 +63,14 @@ async function findOrCreateConversation(customerId) {
   return conversation;
 }
 
-async function sendCustomerText(customerId, text) {
+// Diekspor (13 September 2026, D-160) KHUSUS untuk aksi WA yang
+// DIPICU MANUAL oleh staf (mis. POST /reschedule-cases/:id/notify-customer
+// — dispatcher klik sendiri), BUKAN trigger otomatis baru. TIDAK melanggar
+// batas "persis 4 notifikasi WA customer" di atas (constraint itu soal
+// pesan yang sistem kirim SENDIRI tanpa staf menekan apa pun) — reuse
+// mesin kirim WA yang sudah teruji (find-or-create conversation, dedup
+// externalId, dst) supaya tidak menduplikasi logika itu di routes/armada.js.
+export async function sendCustomerText(customerId, text) {
   const conversation = await findOrCreateConversation(customerId);
   if (!conversation?.customer?.phone) return; // tidak ada nomor — diam, bukan error keras
   const target = conversation.customer.phone;

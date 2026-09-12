@@ -388,6 +388,7 @@ model User {
   podVerified                Job[]                    @relation("PodVerifier")
   podEdited                  Job[]                    @relation("PodEditor")
   jobsRescheduled            Job[]                    @relation("JobRescheduler")
+  rescheduleCasesCreated     RescheduleCase[]         @relation("RescheduleCaseCreator")
   unitRevisionsCreated       UnitRevision[]           @relation("UnitRevisionCreator")
   complaintCasesCreated      ComplaintCase[]          @relation("ComplaintCreator")
   complaintCasesConfirmed    ComplaintCase[]          @relation("ComplaintCustomerConfirmer")
@@ -2084,11 +2085,22 @@ model Job {
   complaintCaseId String?        @map("complaint_case_id") @db.Uuid
   complaintCase   ComplaintCase? @relation(fields: [complaintCaseId], references: [id], onDelete: SetNull)
 
-  units         JobUnit[]
-  payments      Payment[]
-  revisionLinks UnitRevision[]
-  positionPings JobPositionPing[]
-  issueLogs     JobIssueLog[]
+  // Kasus reschedule TERSATUKAN yang sedang menaungi job ini (D-160, 13
+  // September 2026 — lihat catatan panjang di model RescheduleCase).
+  // SetNull: kasus dihapus (belum ada endpoint delete) tidak boleh
+  // menggagalkan job-nya. TIDAK pernah di-null-kan lagi setelah kasus
+  // SELESAI/DIBATALKAN — dibiarkan menunjuk kasus terakhirnya utk jejak
+  // historis ("job ini PERNAH direschedule, lihat kasusnya"), badge di
+  // UI yang membaca status kasus (AKTIF vs tidak), bukan ada/tidaknya FK.
+  rescheduleCaseId String?         @map("reschedule_case_id") @db.Uuid
+  rescheduleCase   RescheduleCase? @relation("JobCurrentRescheduleCase", fields: [rescheduleCaseId], references: [id], onDelete: SetNull)
+
+  units          JobUnit[]
+  payments       Payment[]
+  revisionLinks  UnitRevision[]
+  positionPings  JobPositionPing[]
+  issueLogs      JobIssueLog[]
+  rescheduleCases RescheduleCase[] @relation("RescheduleCaseOriginJob")
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
@@ -2098,6 +2110,7 @@ model Job {
   @@index([vehicleId])
   @@index([podStatus])
   @@index([complaintCaseId])
+  @@index([rescheduleCaseId])
   @@map("jobs")
 }
 
@@ -2162,6 +2175,80 @@ model JobIssueLog {
 
   @@index([jobId, createdAt])
   @@map("job_issue_logs")
+}
+
+enum RescheduleCaseStatus {
+  AKTIF
+  SELESAI
+  DIBATALKAN
+}
+
+// Kasus Reschedule tersatukan (D-160, 13 September 2026, permintaan owner:
+// "audit skema reschedule yang ada di sistem saat ini, karna gue merasa
+// masih kurang proper dan sistematis"). SEBELUM ini reschedule cuma
+// kumpulan EVENT di JobIssueLog (append-only, benar, tapi TIDAK PUNYA
+// status "kasus ini masih aktif atau sudah kelar", TIDAK PUNYA nomor
+// kasus, dan yang PALING nyata: job yang di-reschedule lewat POST
+// /issues/:jobId/reschedule TIDAK PERNAH dilepas dari Route lamanya —
+// kalau rute lain di rute itu sudah semua tuntas, rute otomatis kepentok
+// status COMPLETED (syncRouteCompletionStatus) padahal job yang baru
+// dijadwalkan ulang ini MASIH AKTIF, nyangkut diam-diam di rute yang
+// sudah "hijau". Itu BUG NYATA yang ditemukan lewat kasus Alwan/
+// RTE-110926-01 — pola sama, sumber beda.
+//
+// RescheduleCase BUKAN pengganti JobIssueLog — JobIssueLog TETAP jalan
+// APA ADANYA sebagai log mentah per-ronde (tidak disentuh sama sekali).
+// RescheduleCase adalah PEMBUNGKUS di atasnya: SATU kasus per job yang
+// butuh reschedule, bertahan lintas berapa pun ronde gagal->jadwal
+// ulang->gagal lagi (field `round` naik tiap ronde, bukan bikin kasus
+// baru) sampai job itu akhirnya benar-benar Selesai atau dibatalkan.
+// TIDAK ada konsep currentOwner/divisi lain seperti ComplaintCase (D-116)
+// — SENGAJA, reschedule murni urusan Delivery, tidak pernah pindah
+// tangan ke Produksi/Gudang/QC seperti komplain, jadi meniru struktur
+// multi-divisi ComplaintCase di sini cuma kerumitan tanpa manfaat nyata.
+model RescheduleCase {
+  id         String @id @default(uuid()) @db.Uuid
+  caseNumber String @unique @map("case_number") // RSC-DDMMYYYY-NNN, mesin sama dgn CMP/RES (generateSequenceNumber)
+
+  jobId String @map("job_id") @db.Uuid
+  job   Job    @relation("RescheduleCaseOriginJob", fields: [jobId], references: [id], onDelete: Cascade)
+
+  status RescheduleCaseStatus @default(AKTIF)
+  round  Int                  @default(1) // ronde ke berapa (naik tiap job gagal lagi lalu dijadwalkan ulang lagi)
+
+  // Snapshot RONDE TERAKHIR — histori lengkap tiap ronde tetap di
+  // JobIssueLog (query by jobId), field ini cuma untuk tampilan cepat
+  // "kondisi kasus sekarang" tanpa join tambahan (pola sama dengan
+  // Job.rescheduleReason vs JobIssueLog).
+  cause                 RescheduleCause
+  reason                String
+  previousScheduledDate DateTime? @map("previous_scheduled_date") @db.Date
+  newScheduledDate      DateTime? @map("new_scheduled_date") @db.Date
+  customerConfirmed     Boolean   @default(false) @map("customer_confirmed")
+  // Kapan WA otomatis "jadwal Anda berubah" terkirim ke customer (13
+  // September 2026, celah yang sama ditemukan saat audit: sebelum ini
+  // TIDAK ADA notifikasi otomatis sama sekali ke customer/sales saat
+  // reschedule, murni mengandalkan dispatcher telepon manual). Null =
+  // belum terkirim/gagal kirim — best-effort, tidak menggagalkan kasus.
+  customerNotifiedAt DateTime? @map("customer_notified_at")
+
+  cancelReason String? @map("cancel_reason")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("RescheduleCaseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  resolvedAt  DateTime? @map("resolved_at")
+
+  // Reverse pointer dari Job (Job.rescheduleCaseId) — lihat catatan di
+  // model Job, relasi terpisah dari `job` di atas (jobId di sini SELALU
+  // menunjuk job ASAL kasusnya, tidak pernah berubah; Job.rescheduleCaseId
+  // di sisi Job yang jadi "kasus aktif sekarang").
+  jobsPointingHere Job[] @relation("JobCurrentRescheduleCase")
+
+  @@index([jobId, createdAt])
+  @@index([status])
+  @@map("reschedule_cases")
 }
 
 // Ping GPS driver selama job aktif — Live Tracking NYATA (D-034, 22 Agustus

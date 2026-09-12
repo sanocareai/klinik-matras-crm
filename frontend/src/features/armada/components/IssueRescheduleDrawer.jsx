@@ -31,6 +31,15 @@ export default function IssueRescheduleDrawer({ job, onClose, onChanged, onAjuka
   const [customerConfirmed, setCustomerConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Kasus reschedule tersatukan (D-160, 13 September 2026) — kirim WA
+  // manual ke customer & batalkan kasus, lihat catatan panjang di
+  // backend/src/services/rescheduleCase.js soal kenapa WA-nya MANUAL
+  // (bukan otomatis).
+  const [notifyBusy, setNotifyBusy] = useState(false);
+  const [notifyMsg, setNotifyMsg] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [showCancelForm, setShowCancelForm] = useState(false);
 
   useEffect(() => {
     if (!job) return;
@@ -71,6 +80,35 @@ export default function IssueRescheduleDrawer({ job, onClose, onChanged, onAjuka
     }
   }
 
+  async function kirimWaCustomer() {
+    if (!job.rescheduleCase) return;
+    setNotifyBusy(true);
+    setNotifyMsg("");
+    try {
+      await api.notifyRescheduleCaseCustomer(job.rescheduleCase.id);
+      setNotifyMsg("Terkirim.");
+      onChanged();
+    } catch (e) {
+      setNotifyMsg(e.message);
+    } finally {
+      setNotifyBusy(false);
+    }
+  }
+
+  async function batalkanKasus() {
+    if (!job.rescheduleCase || !cancelReason.trim()) return;
+    setCancelBusy(true);
+    try {
+      await api.cancelRescheduleCase(job.rescheduleCase.id, cancelReason);
+      onChanged();
+      onClose();
+    } catch (e) {
+      setNotifyMsg(e.message);
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
   return (
     <Dialog.Root open={!!job} onOpenChange={(o) => (o ? null : onClose())}>
       <Dialog.Portal>
@@ -82,6 +120,12 @@ export default function IssueRescheduleDrawer({ job, onClose, onChanged, onAjuka
           <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
             <Dialog.Title className="text-[15px] font-bold text-ink">Kendala Job</Dialog.Title>
             <StatusBadge map={ISSUE_STATUS} value={job.issueStatus} />
+            {/* Kasus reschedule tersatukan (D-160, 13 September 2026) —
+                nomor kasus supaya bisa disebut lisan/dicari, konsisten
+                dengan pola CMP-.../RSC-... kasus lain di sistem ini. */}
+            {job.rescheduleCase && (
+              <span className="font-mono text-[11px] font-bold text-ink3">{job.rescheduleCase.caseNumber}</span>
+            )}
             <Dialog.Close aria-label="Tutup" className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-ink3 hover:bg-hovertint hover:text-ink">
               <X size={16} />
             </Dialog.Close>
@@ -224,6 +268,60 @@ export default function IssueRescheduleDrawer({ job, onClose, onChanged, onAjuka
                   Job ini sudah dijadwalkan ulang dan tidak lagi berstatus Gagal —
                   lihat status terbaru di halaman Jadwal & Penugasan.
                 </p>
+
+                {/* Aksi kasus reschedule (D-160, 13 September 2026) — cuma
+                    tampil kalau kasusnya MASIH AKTIF (job belum benar-benar
+                    Selesai/dibatalkan). WA manual, BUKAN otomatis — lihat
+                    catatan panjang di services/rescheduleCase.js. */}
+                {job.rescheduleCase?.status === "AKTIF" && (
+                  <div className="space-y-2">
+                    <button
+                      type="button" onClick={kirimWaCustomer} disabled={notifyBusy}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-btn border border-border py-2 text-[12.5px] font-semibold text-ink2 transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {notifyBusy ? "Mengirim…" : "Kirim WA \"Jadwal Berubah\" ke Customer"}
+                    </button>
+                    {notifyMsg && <p className="text-[11px] text-ink3">{notifyMsg}</p>}
+                    {job.rescheduleCase.customerNotifiedAt && (
+                      <p className="text-[10.5px] text-ink3">
+                        Terakhir dikirim {new Date(job.rescheduleCase.customerNotifiedAt).toLocaleString("id-ID")}
+                      </p>
+                    )}
+
+                    {!showCancelForm ? (
+                      <button
+                        type="button" onClick={() => setShowCancelForm(true)}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-btn border border-red/40 py-2 text-[12.5px] font-semibold text-red transition-opacity hover:opacity-90"
+                      >
+                        Batalkan Kasus Reschedule
+                      </button>
+                    ) : (
+                      <div className="space-y-2 rounded-btn border border-red/40 p-2.5">
+                        <textarea
+                          value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
+                          placeholder="Alasan pembatalan (mis. order dibatalkan customer)"
+                          rows={2}
+                          className="w-full rounded-btn border border-border bg-surface px-2.5 py-2 text-[12px] text-ink outline-none placeholder:text-ink3 focus:border-red"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button" onClick={() => setShowCancelForm(false)}
+                            className="flex-1 rounded-btn border border-border py-1.5 text-[12px] font-semibold text-ink2"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="button" onClick={batalkanKasus} disabled={cancelBusy || !cancelReason.trim()}
+                            className="flex-1 rounded-btn bg-red py-1.5 text-[12px] font-bold text-white disabled:opacity-50"
+                          >
+                            {cancelBusy ? "Memproses…" : "Batalkan"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* COMPLETED + catatan reschedule = kemungkinan besar kasus
                     "customer minta revisi setelah barang sudah dikirim"
                     (lihat komentar onAjukanRevisi di atas) — job ITU SENDIRI
