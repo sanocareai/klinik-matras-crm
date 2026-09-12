@@ -175,11 +175,11 @@ function PortalHero({ summary, onOpenDashboard }) {
       <div>
         <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.17] bg-white/[0.08] px-2.5 py-[7px] text-[10px] font-extrabold uppercase tracking-[.08em]">
           <span className="h-[7px] w-[7px] rounded-full bg-[#65EAB9] shadow-[0_0_0_5px_rgba(101,234,185,.11)]" />
-          SANSS Operations Platform
+          Platform Operasional SANSS
         </span>
 
         <h2 className="mt-[18px] max-w-[620px] text-[35px] font-bold leading-[1.0] tracking-[-.055em] sm:text-[44px] xl:text-[58px]">
-          One integrated system for every SANO operation.
+          Satu sistem terintegrasi untuk seluruh operasional SANO.
         </h2>
 
         <p className="mt-3 max-w-[560px] text-[15px] leading-[1.6] text-white/[0.72]">
@@ -193,7 +193,7 @@ function PortalHero({ summary, onOpenDashboard }) {
             onClick={() => onOpenDashboard()}
             className="rounded-[13px] bg-white px-4 py-3 text-[12px] font-extrabold text-[#0B2454] transition-transform hover:-translate-y-px focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
           >
-            Open integrated dashboard
+            Buka Dashboard Terintegrasi
           </button>
           <button
             type="button"
@@ -238,10 +238,13 @@ function WorkspaceCard({ portal, stat, span, onOpen }) {
         }
       }}
       className={cn(
-        "group flex min-h-[342px] cursor-pointer flex-col overflow-hidden rounded-[24px] border border-[#DEE5EF] bg-white text-left",
-        "shadow-[0_10px_30px_rgba(15,40,85,.07)] transition-all duration-200",
-        "hover:-translate-y-[5px] hover:border-[#B7CBF4] hover:shadow-[0_20px_48px_rgba(15,40,85,.14)]",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2F73F2] focus-visible:ring-offset-2",
+        // rounded-card (bukan rounded-[24px] custom lama) SENGAJA — supaya
+        // ikut wildcard kaca `[class*="rounded-card"]` (delivery-dark.css/
+        // -light.css) sama seperti panggung pembungkus di atas, D-156.
+        "group flex min-h-[342px] cursor-pointer flex-col overflow-hidden rounded-card border border-line bg-surface text-left",
+        "shadow-card transition-all duration-200",
+        "hover:-translate-y-[5px] hover:border-accent/40 hover:shadow-[0_20px_48px_rgba(15,40,85,.14)]",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2",
         span
       )}
     >
@@ -294,34 +297,36 @@ function WorkspaceCard({ portal, stat, span, onOpen }) {
               : "border border-white/80 bg-white/[0.82] text-[#0D9A6C] shadow-[0_8px_22px_rgba(16,48,104,.08)]"
           )}
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-current" /> Active
+          <span className="h-1.5 w-1.5 rounded-full bg-current" /> Aktif
         </span>
       </div>
 
-      {/* Isi kartu */}
-      <div className="flex min-h-[165px] flex-1 flex-col bg-white px-5 pb-[18px] pt-[19px]">
-        <h4 className="text-[18px] font-bold leading-[1.18] tracking-[-.035em] text-[#10213D]">
+      {/* Isi kartu — token DS v2 (bg-surface, text-ink, bg-accentbg, text-accent)
+          gantikan bg-white/hex hardcode, D-156, supaya theme dan kaca-aware
+          sama seperti pembungkus di atas. */}
+      <div className="flex min-h-[165px] flex-1 flex-col bg-surface px-5 pb-[18px] pt-[19px]">
+        <h4 className="text-[18px] font-bold leading-[1.18] tracking-[-.035em] text-ink">
           {portal.label}
         </h4>
-        <p className="mt-[7px] max-w-[430px] text-[11px] leading-[1.55] text-[#6E7E96]">
+        <p className="mt-[7px] max-w-[430px] text-[11px] leading-[1.55] text-ink3">
           {portal.description}
         </p>
 
         <div className="mt-auto flex items-end justify-between gap-4 pt-3.5">
           {stat ? (
             <div>
-              <strong className="block text-[22px] font-bold leading-none tracking-[-.045em] text-[#10213D]">
+              <strong className="block text-[22px] font-bold leading-none tracking-[-.045em] text-ink">
                 {stat.value}
               </strong>
-              <span className="mt-[5px] block text-[8px] font-extrabold uppercase tracking-[.09em] text-[#6E7E96]">
+              <span className="mt-[5px] block text-[8px] font-extrabold uppercase tracking-[.09em] text-ink3">
                 {stat.label}
               </span>
             </div>
           ) : (
-            <span className="text-[11px] text-[#6E7E96]">Buka workspace</span>
+            <span className="text-[11px] text-ink3">Buka workspace</span>
           )}
 
-          <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[13px] bg-[#F4F7FF] text-[#1457D9] transition-all group-hover:translate-x-[3px] group-hover:bg-[#E8F0FF]">
+          <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[13px] bg-accentbg text-accent transition-all group-hover:translate-x-[3px] group-hover:brightness-95">
             <ArrowRight className="h-[17px] w-[17px]" strokeWidth={2} />
           </span>
         </div>
@@ -403,21 +408,28 @@ export default function Portal() {
       {/* Baris sambutan + tanggal — `.welcome-line` di mockup */}
       <div className="mb-[18px] flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-[22px] font-bold tracking-[-.035em] text-[#10213D] sm:text-[24px]">
-            Welcome to SANSS{me?.name ? `, ${me.name}` : ""} 👋
+          <h1 className="text-[22px] font-bold tracking-[-.035em] text-ink sm:text-[24px]">
+            Selamat datang di SANSS{me?.name ? `, ${me.name}` : ""} 👋
           </h1>
-          <p className="mt-[5px] text-[12px] text-[#6E7E96]">
+          <p className="mt-[5px] text-[12px] text-ink3">
             Pilih workspace untuk mulai mengelola operasional.
           </p>
         </div>
-        <div className="hidden shrink-0 items-center gap-2 rounded-full border border-[#DEE5EF] bg-white px-3 py-2.5 text-[11px] font-bold text-[#657992] sm:inline-flex">
+        <div className="hidden shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-3 py-2.5 text-[11px] font-bold text-ink2 sm:inline-flex">
           <Calendar className="h-[15px] w-[15px]" strokeWidth={1.9} />
           <span>{todayText()}</span>
         </div>
       </div>
 
-      {/* Panggung putih yang membungkus hero + grid — `.hub-stage` */}
-      <div className="rounded-[30px] border border-[rgba(222,229,239,.85)] bg-white p-3 shadow-[0_20px_55px_rgba(15,40,85,.10)] sm:p-5">
+      {/* Panggung yang membungkus hero + grid — `.hub-stage` di mockup.
+          D-156 (13 September 2026, laporan owner: "main hub belum di
+          redesign") — SEBELUMNYA `bg-white`/hex hardcode tetap putih di
+          mode gelap (teks gelap di atas latar gelap = tidak terbaca).
+          Diganti token DS v2 (bg-surface/border-line/text-ink*) yang
+          otomatis ikut tema DAN otomatis ikut kaca lewat wildcard
+          `.glass-division .card`/`[class*="rounded-card"]` — sama pola
+          dengan halaman glass pilot lain, TANPA CSS baru. */}
+      <div className="rounded-card border border-line bg-surface p-3 shadow-card sm:p-5">
         <PortalHero
           summary={summary}
           onOpenDashboard={(path) => navigate(path || portals[0].path)}
@@ -425,14 +437,14 @@ export default function Portal() {
 
         <div className="mx-1 mb-[15px] mt-[30px] flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h3 className="mb-[5px] text-[20px] font-bold tracking-[-.035em] text-[#10213D]">
-              Choose your workspace
+            <h3 className="mb-[5px] text-[20px] font-bold tracking-[-.035em] text-ink">
+              Pilih workspace kamu
             </h3>
-            <p className="text-[11px] text-[#6E7E96]">
+            <p className="text-[11px] text-ink3">
               Masuk ke divisi untuk membuka modul dan aktivitas operasional terkait.
             </p>
           </div>
-          <span className="text-[10px] font-extrabold text-[#1457D9]">
+          <span className="text-[10px] font-extrabold text-accent">
             {portals.length} workspace tersedia
           </span>
         </div>

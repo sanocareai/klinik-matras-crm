@@ -699,13 +699,16 @@ export default function Layout({ user, onLogout }) {
   // (Notifikasi/Pengaturan/Pengguna & Peran) dicek: dibangun bersih pakai
   // Sano DS v2 (PageContainer/Card/Badge), NOL bg-white/hex hardcode
   // sebesar halaman — kategori aman yang sama dengan /broadcast-sales,
-  // /komplain di D-109/D-154. "/portal" (Main Hub) SENGAJA TIDAK diikutkan
-  // di sini — itu halaman bespoke yang meniru docs/design-system/SANSS-
-  // integrated-smart-system-v4.html apa adanya (warna hex + latar putih
-  // hardcode, bukan token tema), menyalakan glassOn di situ tanpa
-  // menulis ulang halamannya akan membuat teks gelap tidak terbaca di
-  // atas latar kaca gelap — perlu redesign sendiri, bukan flag.
-  const hubGlassPilot = onHub && HUB_ONLY_PATHS.includes(location.pathname);
+  // /komplain di D-109/D-154.
+  // D-156 (13 September 2026, lanjutan laporan yang sama, "main hub belum
+  // di redesign") — "/portal" (Main Hub) awalnya DIKECUALIKAN: halaman itu
+  // bespoke, meniru docs/design-system/SANSS-integrated-smart-system-v4.html
+  // apa adanya (warna hex + latar putih hardcode). Sudah ditulis ulang
+  // (pages/Portal.jsx) supaya pakai token DS v2 yang sama (bg-surface/
+  // text-ink*/bg-accentbg) — SEKARANG aman ikut kaca juga, jadi cukup
+  // `hubGlassPilot = onHub` (keempat HUB_ONLY_PATHS + "/portal" sama-sama
+  // aman), bukan daftar terpisah lagi.
+  const hubGlassPilot = onHub;
   const glassOn = divisionKey === "armada" || divisionKey === "bengkel" || divisionKey === "warehouse" || divisionKey === "b2b" || pageGlassPilot || hubGlassPilot;
 
   // Driver murni cuma punya JOB_OWN_READ/JOB_OWN_WRITE — DELAPAN dari sembilan
