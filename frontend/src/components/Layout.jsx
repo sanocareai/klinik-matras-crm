@@ -659,6 +659,19 @@ export default function Layout({ user, onLogout }) {
     // intelligence, /copilot, /pengaturan-sales di D-109 — lihat catatan
     // di atas), jadi langsung ikut wildcard kaca tanpa perubahan CSS lain.
     "/broadcast-sales",
+    // "/komplain" (12 September 2026, D-154, laporan owner: "redesign ala
+    // style kita, glass/apple style") — sama kategori aman dengan
+    // /broadcast-sales: kartu kasus (D-153) murni Card/Badge/FilterDropdown
+    // DS v2, nol CSS legacy, jadi langsung ikut wildcard `.glass-division
+    // .card`/`[class*="rounded-card"]` (delivery-dark.css/-light.css) tanpa
+    // perubahan CSS lain. Halaman ini dibaca lintas divisi (sidebar
+    // Bengkel/Delivery/Warehouse juga menunjuk path yang sama persis), tapi
+    // divisionFromPath() di bawah TIDAK mengenali "/komplain" sebagai
+    // prefiks divisi manapun — selalu jatuh ke fallback "growth" APA PUN
+    // sidebar asalnya. Karena itu SATU baris ini di GLASS_PILOT_PATHS sudah
+    // cukup: halaman ini kaca konsisten dari pintu masuk mana pun, tidak
+    // perlu didaftarkan ulang per divisi.
+    "/komplain",
   ];
   const pageGlassPilot = divisionKey === "growth" && GLASS_PILOT_PATHS.includes(location.pathname);
   // D-138 (6 September 2026, laporan owner: "redesign production
