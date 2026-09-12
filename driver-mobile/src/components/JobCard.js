@@ -12,7 +12,7 @@ import PhotoCapture from "./PhotoCapture";
 import PaymentSection from "./PaymentSection";
 import JobProgressStepper from "./JobProgressStepper";
 import { performSubmit } from "../lib/submitJobAction";
-import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL } from "../lib/jobHelpers";
+import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, waLinkFromPhone, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL } from "../lib/jobHelpers";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 
@@ -61,6 +61,7 @@ export default function JobCard({ job, onChanged }) {
 
   const nama = customerOf(job) || "Tanpa nama";
   const phone = customerPhoneOf(job);
+  const waLink = waLinkFromPhone(phone);
   const maps = mapsUrl(job);
   const estJam = estJamUntukTampilan(job.timeWindow);
   const failReasons = job.type === "PICKUP" ? FAIL_REASONS_PICKUP : FAIL_REASONS_DELIVERY;
@@ -131,10 +132,10 @@ export default function JobCard({ job, onChanged }) {
             <Text style={styles.quickBtnText}>Peta</Text>
           </Pressable>
         )}
-        {phone && (
-          <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(`tel:${phone}`)}>
+        {waLink && (
+          <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(waLink)}>
             <Phone size={13} color={theme.ACCENT} />
-            <Text style={styles.quickBtnText}>Telepon</Text>
+            <Text style={styles.quickBtnText}>WhatsApp</Text>
           </Pressable>
         )}
       </View>

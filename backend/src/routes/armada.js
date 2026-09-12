@@ -26,7 +26,7 @@ import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered } from "../services/customerNotifications.js";
-import { notifyDriverJobAssigned, notifyProductionRevisionReady, notifySalesJobFailed, notifyComplaintCaseOwnerChanged } from "../services/pushNotifications.js";
+import { notifyDriverJobAssigned, notifyDriverRouteChanged, notifyProductionRevisionReady, notifySalesJobFailed, notifyComplaintCaseOwnerChanged } from "../services/pushNotifications.js";
 import { notifySalesJobCompleted, notifySalesUnpaidAfterDelivery } from "../services/deliveryCompletionNotify.js";
 import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
@@ -2015,6 +2015,17 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     const route = await prisma.route.findUnique({ where: { id: req.params.id } });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
 
+    // Anggota LAMA rute ini SEBELUM diedit (12 September 2026) — dipakai
+    // buat 2 hal: (1) hitung stop mana yang ditambah/dikeluarkan lewat
+    // edit ini, (2) deteksi rute "sedang berjalan" (ada job EN_ROUTE/
+    // ARRIVED/COMPLETED) supaya driver dapat notifikasi KHUSUS perubahan
+    // mid-rute, lihat notifyDriverRouteChanged di bawah — BEDA dari
+    // notifyDriverJobAssigned yang sudah ada (itu generik "job baru",
+    // relevan untuk rute yang belum jalan).
+    const anggotaLama = await prisma.job.findMany({ where: { routeId: route.id }, select: { id: true, status: true } });
+    const IN_PROGRESS_STATUSES = ["EN_ROUTE", "ARRIVED", "COMPLETED"];
+    const ruteSudahJalan = anggotaLama.some((j) => IN_PROGRESS_STATUSES.includes(j.status));
+
     const { reason } = req.body;
     const editingPublished = route.status === "PUBLISHED";
     // Tambah job ke rute SELESAI — admin only (8 September 2026, permintaan
@@ -2178,6 +2189,22 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
           console.error("[PATCH /routes/:id/jobs] Gagal kirim push ke driver:", err.message)
         );
       }
+    }
+
+    // Notifikasi KHUSUS "rute diubah di tengah jalan" (12 September 2026)
+    // — cuma dikirim kalau rute ini SEBELUM diedit sudah punya job yang
+    // sedang/sudah dikerjakan (ruteSudahJalan, dihitung di atas SEBELUM
+    // transaksi) DAN anggotanya benar-benar berubah (bukan sekadar
+    // susun-ulang urutan job yang sama — itu tidak butuh alert terpisah,
+    // job list driver otomatis ikut urut baru).
+    if (ruteSudahJalan) {
+      const anggotaLamaIds = new Set(anggotaLama.map((j) => j.id));
+      const anggotaBaruIds = new Set(jobIds);
+      const addedCount = jobIds.filter((id) => !anggotaLamaIds.has(id)).length;
+      const removedCount = anggotaLama.filter((j) => !anggotaBaruIds.has(j.id)).length;
+      notifyDriverRouteChanged(updated, { addedCount, removedCount }).catch((err) =>
+        console.error("[PATCH /routes/:id/jobs] Gagal kirim push perubahan rute:", err.message)
+      );
     }
 
     res.json(updated);

@@ -13,7 +13,7 @@ import {
   salesLocationUrl, ACTIVE_STATUSES,
 } from "../jobStatus.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
-import { ORDER_STATUS_LABELS, orderStatusVariant } from "@/utils/format.js";
+import { ORDER_STATUS_LABELS, orderStatusVariant, waLinkFromPhone } from "@/utils/format.js";
 import { REVISION_STATUS } from "../revisionStatus.js";
 
 // ─── Badge Sales Person & Estimasi Durasi (D-043, 2 September 2026) ──────────
@@ -423,6 +423,11 @@ export function CustomerProfileCard({ job, className }) {
   const nama = customerOf(job);
   const telepon = customerPhoneOf(job);
   const sales = salesPersonOf(job);
+  // wa.me, bukan tel: (12 September 2026, laporan owner: "ketika klik
+  // nomer customer itu langsung menuju wa bukan tambah kontak/ketik
+  // nomer") — tel: di browser tidak konsisten (dialer/prompt tambah
+  // kontak/tanpa aksi di desktop), wa.me SELALU buka WhatsApp langsung.
+  const waLink = waLinkFromPhone(telepon);
   if (!nama) return null;
 
   return (
@@ -440,9 +445,11 @@ export function CustomerProfileCard({ job, className }) {
       />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-bold text-ink">{nama}</p>
-        {telepon ? (
+        {waLink ? (
           <a
-            href={`tel:${telepon}`}
+            href={waLink}
+            target="_blank"
+            rel="noreferrer"
             className="truncate text-[13px] font-medium text-ink2 hover:text-accent hover:underline"
           >
             {telepon}
@@ -452,10 +459,12 @@ export function CustomerProfileCard({ job, className }) {
         )}
         {sales && <SalesBadge job={job} className="mt-1.5" />}
       </div>
-      {telepon && (
+      {waLink && (
         <a
-          href={`tel:${telepon}`}
-          aria-label={`Telepon ${nama}`}
+          href={waLink}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`WhatsApp ${nama}`}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform hover:scale-105 active:scale-95"
         >
           <Phone size={17} strokeWidth={2.25} />

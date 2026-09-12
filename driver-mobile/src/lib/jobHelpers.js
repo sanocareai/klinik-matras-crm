@@ -46,6 +46,20 @@ export function customerPhoneOf(job) {
   return job?.order?.customer?.phone || job?.units?.[0]?.unit?.order?.customer?.phone || null;
 }
 
+// Sama dengan frontend/src/utils/format.js#waLinkFromPhone (12 September
+// 2026, laporan owner: "klik nomer customer langsung ke wa, bukan
+// tambah kontak/ketik nomer") — duplikasi murni (runtime beda), tel:
+// dulu dipakai tombol "Telepon" di JobCard.js, Linking.openURL(tel:)
+// di Android SELALU buka dialer (bukan bug spesifik app ini), tapi
+// intent-nya driver memang mau chat WA, bukan menelepon.
+export function waLinkFromPhone(phone) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, "");
+  if (!digits) return null;
+  const num = digits.startsWith("0") ? "62" + digits.slice(1) : digits;
+  return `https://wa.me/${num}`;
+}
+
 export function orderNumberOf(job) {
   return job?.order?.orderNumber || job?.units?.[0]?.unit?.order?.orderNumber || null;
 }

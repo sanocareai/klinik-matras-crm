@@ -347,17 +347,25 @@ export default function ArmadaOrders() {
                       <span className="flex items-center gap-2">
                         <Avatar name={o.customerName} size="sm" />
                         <span className="truncate">{o.customerName || "—"}</span>
-                        {/* Komplain (D-108, 6 September 2026) — laporan owner: komplain
-                            yang dicatat Sales CRM tidak pernah kelihatan di Delivery/
-                            Produksi (silo total). Data-nya SUDAH ada di respons ini
-                            (Order.hasComplaint disertakan apa adanya, tidak pernah
-                            di-select keluar) — cuma belum pernah ditampilkan di sini.
-                            ⚠️ Syarat diperluas (D-109, 9 September 2026): hasComplaint
-                            SENGAJA tidak pernah direset (fakta historis analitik) — badge
-                            lintas divisi ini harus mati begitu complaintResolvedAt terisi,
-                            supaya tidak menyala selamanya untuk komplain yang sudah lama
-                            tuntas. Lihat komentar panjang di schema.prisma. */}
                       </span>
+                      {/* Sales (12 September 2026, laporan owner: "di tampilan
+                          tiap order cantumkan nama salesnya") — data SUDAH ada
+                          di respons ini (o.assignedSales, sama field yang dipakai
+                          Orders.jsx Sales CRM), cuma belum pernah ditampilkan di
+                          tabel Semua Order Delivery ini. */}
+                      <p className={cn("mt-0.5 truncate text-[10.5px]", o.assignedSales ? "text-ink3" : "text-ink3/60")}>
+                        Sales: {o.assignedSales?.name || "belum ada"}
+                      </p>
+                      {/* Komplain (D-108, 6 September 2026) — laporan owner: komplain
+                          yang dicatat Sales CRM tidak pernah kelihatan di Delivery/
+                          Produksi (silo total). Data-nya SUDAH ada di respons ini
+                          (Order.hasComplaint disertakan apa adanya, tidak pernah
+                          di-select keluar) — cuma belum pernah ditampilkan di sini.
+                          ⚠️ Syarat diperluas (D-109, 9 September 2026): hasComplaint
+                          SENGAJA tidak pernah direset (fakta historis analitik) — badge
+                          lintas divisi ini harus mati begitu complaintResolvedAt terisi,
+                          supaya tidak menyala selamanya untuk komplain yang sudah lama
+                          tuntas. Lihat komentar panjang di schema.prisma. */}
                       {/* Revisi/komplain (10 Sep 2026, permintaan owner: "card
                           per order nya juga ada keterangan, history") —
                           sebelumnya cuma ikon kecil + tooltip hover (gampang

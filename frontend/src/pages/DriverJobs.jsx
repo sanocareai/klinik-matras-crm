@@ -4,7 +4,7 @@ import {
   Navigation, Phone, RefreshCw, Truck, Wallet, WifiOff, X,
 } from "lucide-react";
 import { compressImage } from "../utils/compressImage.js";
-import { formatRupiah } from "../utils/format.js";
+import { formatRupiah, waLinkFromPhone } from "../utils/format.js";
 import { getQueue, removeAction } from "../utils/offlineQueue.js";
 import { submitOrQueue, uploadBlobs } from "../utils/submitJobAction.js";
 import { processQueue } from "../utils/syncQueue.js";
@@ -378,7 +378,10 @@ function JobCard({ job, onChanged, onQueued, pending }) {
 
       <div className="mt-2 space-y-1 text-xs text-ink2">
         {customer?.phone && (
-          <a href={`tel:${customer.phone}`} className="flex items-center gap-1.5 text-accent">
+          // wa.me, bukan tel: (12 September 2026, laporan owner: "klik
+          // nomer customer langsung ke wa, bukan tambah kontak/ketik
+          // nomer") — lihat waLinkFromPhone di utils/format.js.
+          <a href={waLinkFromPhone(customer.phone)} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-accent">
             <Phone className="h-3 w-3" /> {customer.phone}
           </a>
         )}

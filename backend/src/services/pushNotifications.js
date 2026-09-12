@@ -87,6 +87,37 @@ export async function notifyDriverJobAssigned(job) {
   ]);
 }
 
+// Notifikasi "rute Anda diubah di tengah jalan" (12 September 2026,
+// permintaan owner: "sistem notifikasi pada apps dan web, untuk info
+// ketika ada perubahan jalur ditengah jalan") — BEDA dari
+// notifyDriverJobAssigned di atas (itu ditembak setiap kali PATCH
+// /routes/:id/jobs, termasuk untuk rute yang BELUM jalan sama sekali —
+// wajar untuk kasus itu, tapi jadi noise generik "job baru" kalau
+// dipakai untuk rute yang driver-nya SUDAH di jalan). Notifikasi ini
+// KHUSUS dipicu saat susunan rute berubah SETELAH driver mulai
+// menjalankannya (ada job EN_ROUTE/ARRIVED/COMPLETED di rute itu SEBELUM
+// perubahan) — driver wajib tahu ada stop ditambah/dikeluarkan supaya
+// tidak bablas ke alamat yang sudah bukan tujuan, atau kelewat stop baru
+// yang disisipkan di tengah. `route` minimal butuh { id, code, driverId,
+// helperId }.
+export async function notifyDriverRouteChanged(route, { addedCount = 0, removedCount = 0 } = {}) {
+  if (!route?.driverId) return;
+  if (addedCount === 0 && removedCount === 0) return;
+  const bagian = [];
+  if (addedCount > 0) bagian.push(`${addedCount} stop ditambahkan`);
+  if (removedCount > 0) bagian.push(`${removedCount} stop dikeluarkan`);
+  const title = "🔄 Rute Anda diubah";
+  const body = `Rute ${route.code || ""} — ${bagian.join(", ")}. Cek daftar job terbaru.`;
+  const penerima = [route.driverId, route.helperId].filter(Boolean);
+
+  await Promise.allSettled(
+    penerima.flatMap((userId) => [
+      sendPushToUser(userId, { title, body, url: "/armada/jobs" }),
+      sendExpoPushToUser(userId, { title, body, data: { type: "route_changed", routeId: route.id }, channelId: "job-updates" }),
+    ])
+  );
+}
+
 // Notifikasi "unit revisi sampai, siap dikerjakan ulang" (9 September 2026,
 // D-109) — celah keterlibatan Produksi yang ditemukan di kasus Dewi
 // (RES-18082026-071): sebelumnya Produksi cuma tahu ada klaim garansi/trial

@@ -36,6 +36,21 @@ export function formatPhoneDisplay(phone) {
   return "+" + digits;
 }
 
+// Link WhatsApp dari nomor HP customer (12 September 2026, laporan
+// owner: "ketika klik nomer customer itu langsung menuju wa bukan
+// tambah kontak/ketik nomer") — tel: link browser-nya tidak konsisten
+// (dialer HP, prompt "tambah ke kontak", atau tanpa aksi sama sekali di
+// desktop). wa.me SELALU buka WhatsApp langsung (app kalau ada, web
+// kalau tidak) — sama pola normalisasi 0xxx->62xxx dengan
+// nomorKeWaMe (backend/src/services/warrantyPdf.js).
+export function waLinkFromPhone(phone) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, "");
+  if (!digits) return null;
+  const num = digits.startsWith("0") ? "62" + digits.slice(1) : digits;
+  return `https://wa.me/${num}`;
+}
+
 export function formatTanggalIndo(date = new Date()) {
   return formatTanggalLengkap(date);
 }
