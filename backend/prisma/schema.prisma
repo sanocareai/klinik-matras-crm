@@ -358,6 +358,17 @@ model User {
   // diasumsikan true untuk siapa pun.
   hasSim Boolean @default(false) @map("has_sim")
 
+  // Freelance/paruh waktu (13 September 2026, D-162 lanjutan — permintaan
+  // owner: "arman, ujang sigit, dan sulaiman jangan dimasukkan ke insentif
+  // driver & helper karna mereka part time/freelance"). TIDAK menghapus
+  // job/riwayat mereka apa pun — cuma menyaring MEREKA dari daftar
+  // Insentif Driver & Helper (mereka dibayar dengan skema lain di luar
+  // sistem). Job yang mereka kerjakan TETAP dihitung penuh untuk driver/
+  // helper LAIN yang bertugas bersama mereka di job yang sama (mis. jadi
+  // helper freelance mendampingi driver tetap — driver tetap itu tetap
+  // dapat kreditnya).
+  isFreelance Boolean @default(false) @map("is_freelance")
+
   // Leader sales (mis. Novi) — ber-role ADMIN tapi secara bisnis mengawasi
   // tim sales & kadang closing sendiri. Flag EKSPLISIT (25 Agustus 2026),
   // BUKAN diinfer dari role/nama — konsisten dengan preseden UserRole/D-010

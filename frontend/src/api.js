@@ -262,10 +262,12 @@ export const api = {
   notifyExternalCourierNatasha: (date) =>
     request("/armada/external-courier/notify-natasha", { method: "POST", body: JSON.stringify({ date }) }),
 
-  // Insentif per alamat (D-162, 13 September 2026).
+  // Insentif per alamat (D-162, 13 September 2026). `patch` bisa
+  // { hasSim } dan/atau { isFreelance } — PATCH /armada/drivers/:id
+  // menerima keduanya opsional.
   getIncentiveSummary: (from, to) => request(`/armada/incentive-summary${buildQuery({ from, to })}`),
-  updateDriverSim: (driverId, hasSim) =>
-    request(`/armada/drivers/${driverId}`, { method: "PATCH", body: JSON.stringify({ hasSim }) }),
+  updateDriverIncentiveFlags: (driverId, patch) =>
+    request(`/armada/drivers/${driverId}`, { method: "PATCH", body: JSON.stringify(patch) }),
 
   // Kendala & Reschedule (Delivery Tahap 5)
   getIssues: (status) => request(`/armada/issues${status ? `?status=${status}` : ""}`),

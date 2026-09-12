@@ -829,11 +829,14 @@ function DriverTab() {
   const [drivers, setDrivers] = useState(null);
   const [jobCounts, setJobCounts] = useState({});
   const [loading, setLoading] = useState(true);
-  // Punya SIM (D-162, 13 September 2026) — tarif insentif per alamat beda
-  // (Rp7.000 vs Rp3.000, lihat GET /armada/incentive-summary). Simpan
-  // saat toggle, ID yang lagi disimpan supaya toggle-nya bisa disabled
-  // sementara request jalan (cegah klik dobel).
-  const [simBusyId, setSimBusyId] = useState(null);
+  // Punya SIM & Freelance (D-162, 13 September 2026) — tarif insentif per
+  // alamat beda (Rp7.000 vs Rp3.000), dan status freelance MENYARING
+  // orang itu total dari daftar Insentif Driver & Helper (laporan owner:
+  // "arman, ujang sigit, dan sulaiman jangan dimasukkan... karna mereka
+  // part time/freelance"). Simpan saat toggle, "id:field" yang lagi
+  // disimpan supaya toggle spesifik itu bisa disabled sementara request
+  // jalan (bukan seluruh baris — 2 toggle independen per orang).
+  const [busyKey, setBusyKey] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -856,15 +859,16 @@ function DriverTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function toggleSim(driver) {
-    setSimBusyId(driver.id);
+  async function toggleFlag(driver, field) {
+    const key = `${driver.id}:${field}`;
+    setBusyKey(key);
     try {
-      const updated = await api.updateDriverSim(driver.id, !driver.hasSim);
-      setDrivers((list) => list.map((d) => (d.id === driver.id ? { ...d, hasSim: updated.hasSim } : d)));
+      const updated = await api.updateDriverIncentiveFlags(driver.id, { [field]: !driver[field] });
+      setDrivers((list) => list.map((d) => (d.id === driver.id ? { ...d, [field]: updated[field] } : d)));
     } catch {
       // diam-diam gagal — toggle balik ke posisi semula karena state tidak diubah
     } finally {
-      setSimBusyId(null);
+      setBusyKey(null);
     }
   }
 
@@ -886,7 +890,7 @@ function DriverTab() {
         <TableWrap>
           <Table>
             <THead>
-              <TR><TH>Nama</TH><TH numeric>Job Terkait</TH><TH>Punya SIM</TH></TR>
+              <TR><TH>Nama</TH><TH numeric>Job Terkait</TH><TH>Punya SIM</TH><TH>Freelance</TH></TR>
             </THead>
             <TBody>
               {drivers.map((d) => (
@@ -908,14 +912,31 @@ function DriverTab() {
                   <TD>
                     <button
                       type="button"
-                      disabled={simBusyId === d.id}
-                      onClick={() => toggleSim(d)}
+                      disabled={busyKey === `${d.id}:hasSim`}
+                      onClick={() => toggleFlag(d, "hasSim")}
                       className={cn(
                         "rounded-chip px-2 py-1 text-[11px] font-semibold transition-opacity disabled:opacity-50",
                         d.hasSim ? "bg-greenbg text-green" : "bg-inset text-ink3"
                       )}
                     >
                       {d.hasSim ? "Ya · Rp7.000/alamat" : "Tidak · Rp3.000/alamat"}
+                    </button>
+                  </TD>
+                  {/* Freelance (D-162 lanjutan, 13 September 2026) —
+                      menyaring orang ini TOTAL dari daftar Insentif Driver
+                      & Helper (dibayar skema lain di luar sistem), TIDAK
+                      menyembunyikan job/riwayat mereka di tempat lain. */}
+                  <TD>
+                    <button
+                      type="button"
+                      disabled={busyKey === `${d.id}:isFreelance`}
+                      onClick={() => toggleFlag(d, "isFreelance")}
+                      className={cn(
+                        "rounded-chip px-2 py-1 text-[11px] font-semibold transition-opacity disabled:opacity-50",
+                        d.isFreelance ? "bg-orangebg text-orange" : "bg-inset text-ink3"
+                      )}
+                    >
+                      {d.isFreelance ? "Ya · dikecualikan" : "Tidak"}
                     </button>
                   </TD>
                 </TR>

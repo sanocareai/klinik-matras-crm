@@ -991,7 +991,9 @@ armadaRouter.get("/drivers", requirePermission(P.JOB_WRITE), async (req, res) =>
       // Eksternal (Lalamove/dst)" secara visual sebelum dispatcher assign.
       // hasSim (D-162) — dipakai tab Driver di Pengaturan Delivery utk
       // toggle status SIM per orang (tarif insentif per alamat beda).
-      include: { user: { select: { id: true, name: true, isExternalCourier: true, hasSim: true } } },
+      // isFreelance (D-162 lanjutan) — sama, toggle "part time/freelance"
+      // yang menyaring orang itu dari daftar Insentif Driver & Helper.
+      include: { user: { select: { id: true, name: true, isExternalCourier: true, hasSim: true, isFreelance: true } } },
       orderBy: { user: { name: "asc" } },
     });
     res.json(rows.map((r) => r.user));
@@ -1000,19 +1002,32 @@ armadaRouter.get("/drivers", requirePermission(P.JOB_WRITE), async (req, res) =>
   }
 });
 
-// PATCH /armada/drivers/:id — SATU-SATUNYA field yang boleh diubah lewat
-// sini: hasSim (D-162, 13 September 2026). Endpoint SEMPIT SENGAJA (bukan
+// PATCH /armada/drivers/:id — field yang boleh diubah lewat sini: hasSim
+// & isFreelance (D-162, 13 September 2026). Endpoint SEMPIT SENGAJA (bukan
 // PATCH /users/:id umum, itu belum ada sama sekali) — data akun lain
 // (nama/email/role/dst) tetap lewat Pengguna & Peran, ini murni atribut
-// Delivery-specific yang menentukan tarif insentif per alamat.
+// Delivery-specific (tarif & kelayakan insentif per alamat). Kedua field
+// OPSIONAL di body — kirim salah satu saja juga boleh, tidak wajib
+// dua-duanya tiap panggilan.
 armadaRouter.patch("/drivers/:id", requirePermission(P.JOB_WRITE), async (req, res) => {
   try {
-    const { hasSim } = req.body;
-    if (typeof hasSim !== "boolean") throw new ArmadaError("hasSim wajib boolean");
+    const { hasSim, isFreelance } = req.body;
+    if (hasSim === undefined && isFreelance === undefined) {
+      throw new ArmadaError("Tidak ada field yang diubah");
+    }
+    const data = {};
+    if (hasSim !== undefined) {
+      if (typeof hasSim !== "boolean") throw new ArmadaError("hasSim wajib boolean");
+      data.hasSim = hasSim;
+    }
+    if (isFreelance !== undefined) {
+      if (typeof isFreelance !== "boolean") throw new ArmadaError("isFreelance wajib boolean");
+      data.isFreelance = isFreelance;
+    }
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { hasSim },
-      select: { id: true, name: true, hasSim: true },
+      data,
+      select: { id: true, name: true, hasSim: true, isFreelance: true },
     });
     res.json(user);
   } catch (err) {
@@ -2033,9 +2048,15 @@ armadaRouter.get("/incentive-summary", requirePermission(P.JOB_READ), async (req
       .map((e) => ({ ...e, types: [...e.types] }))
       .sort((a, b) => b.date.localeCompare(a.date));
 
+    // isFreelance: false (13 September 2026, laporan owner: "arman, ujang
+    // sigit, dan sulaiman jangan dimasukkan ke insentif driver & helper
+    // karna mereka part time/freelance") — MURNI menyaring MEREKA dari
+    // daftar hasil, job yang sudah dihitung di atas (perOrang) TIDAK
+    // disentuh sama sekali, jadi driver/helper LAIN yang bertugas
+    // bersama mereka di job yang sama tetap dapat kredit penuh.
     const userIds = [...perOrang.keys()];
     const users = userIds.length
-      ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, hasSim: true } })
+      ? await prisma.user.findMany({ where: { id: { in: userIds }, isFreelance: false }, select: { id: true, name: true, hasSim: true } })
       : [];
 
     const orang = users
