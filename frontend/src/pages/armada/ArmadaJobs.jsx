@@ -439,19 +439,6 @@ export default function ArmadaJobs() {
                 Reset
               </Button>
             )}
-            {!driverOnly && (
-              <div className="ml-auto flex items-center gap-2">
-                {courierReportMsg && <span className="text-[11.5px] text-ink3">{courierReportMsg}</span>}
-                <Button
-                  variant="outline" size="sm"
-                  disabled={courierReportBusy}
-                  onClick={kirimLaporanKurirEksternal}
-                  title="Kirim ringkasan job Kurir Eksternal (Lalamove/dst) hari ini ke Natasha"
-                >
-                  <MessageCircle size={14} /> {courierReportBusy ? "Mengirim…" : "Kirim Laporan Kurir Eksternal"}
-                </Button>
-              </div>
-            )}
           </div>
 
           {error && (
@@ -658,6 +645,32 @@ export default function ArmadaJobs() {
                             </>
                           )}
                         </div>
+
+                        {/* Laporan Kurir Eksternal (D-161, 13 September 2026,
+                            laporan owner: "tombol itu muncul khusus untuk
+                            order yang dikirim dengan kurir eksternal") —
+                            SENGAJA nempel di kartu job yang drivernya Kurir
+                            Eksternal, BUKAN tombol umum di toolbar (itu
+                            sebelumnya bikin bingung — tombolnya seolah relevan
+                            utk semua job, padahal cuma berarti kalau ada job
+                            Lalamove). Aksinya TETAP sama: kirim SATU laporan
+                            berisi SEMUA job Kurir Eksternal hari ini (bukan
+                            cuma job ini), lihat kirimLaporanKurirEksternal. */}
+                        {j.driver?.isExternalCourier && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); kirimLaporanKurirEksternal(); }}
+                            disabled={courierReportBusy}
+                            title="Kirim ringkasan SEMUA job Kurir Eksternal hari ini ke Natasha"
+                            className="flex w-fit items-center gap-1.5 rounded-full bg-accentbg px-2.5 py-1 text-[11px] font-semibold text-accent transition-opacity hover:opacity-80 disabled:opacity-50"
+                          >
+                            <MessageCircle size={12} />
+                            {courierReportBusy ? "Mengirim…" : "Kirim Laporan Kurir Eksternal ke Natasha"}
+                          </button>
+                        )}
+                        {courierReportMsg && j.driver?.isExternalCourier && (
+                          <p className="text-[10.5px] text-ink3">{courierReportMsg}</p>
+                        )}
 
                         {/* Kelompok 3 — JADWAL: EST jam, tanggal PASTI ambil/
                             kirim, sales — SAMA persis dengan RouteCard.jsx. */}

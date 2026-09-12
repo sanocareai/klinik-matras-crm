@@ -489,7 +489,14 @@ function formatExternalCourierWaMessage(jobs, date) {
 armadaRouter.post("/external-courier/notify-natasha", requirePermission(P.JOB_WRITE), async (req, res) => {
   try {
     const { date } = req.body;
-    const targetDate = date ? toDateOnly(date) : startOfDayWIB(new Date());
+    // BUG DIPERBAIKI (13 September 2026) — startOfDayWIB butuh STRING
+    // "YYYY-MM-DD" (lihat utils/wib.js, template literal `${dateStr}T00:00...`),
+    // bukan objek Date. `startOfDayWIB(new Date())` menghasilkan string
+    // template rusak ("Fri Sep 13 2026...T00:00:00.000Z") -> Invalid Date.
+    // Pola yang sama dipakai routes/auth.js: geser UTC +7 jam lalu potong
+    // 10 karakter pertama.
+    const todayWIB = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    const targetDate = toDateOnly(date || todayWIB);
     const jobs = await prisma.job.findMany({
       where: { scheduledDate: targetDate, driver: { isExternalCourier: true } },
       select: {
