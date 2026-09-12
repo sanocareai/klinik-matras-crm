@@ -462,30 +462,68 @@ const EXTERNAL_COURIER_STATUS_LABEL = {
   EN_ROUTE: "Menuju Lokasi", ARRIVED: "Tiba di Lokasi", COMPLETED: "Selesai", FAILED: "Gagal",
 };
 
+// DIPERKAYA (13 September 2026, laporan owner: "gue ingin chat laporan
+// kurir eksternal seperti laporan rute yang detail hingga generate gambar
+// seperti detail rute") — versi PERTAMA (di atas, sekarang diganti) cuma 4
+// baris ringkas per stop, jauh lebih tipis dari formatRouteWaMessage yang
+// dipakai broadcast rute biasa (produk+ukuran, EST jam, catatan, alamat,
+// link Maps PER stop). Sekarang disamakan persis strukturnya — beda MURNI
+// di 2 baris tambahan khusus kurir eksternal (tracking/ongkos) dan TANPA
+// "Link Keseluruhan Rute" (job-job ini tujuannya independen, tidak masuk
+// akal digabung jadi satu rute Maps).
 function formatExternalCourierWaMessage(jobs, date) {
   const baris = [`🛵*Laporan Kurir Eksternal (Lalamove/dst)*`, hariTanggalWIB(date)];
   jobs.forEach((j, idx) => {
-    const nama = j.order?.customer?.name || "Tanpa nama";
-    const tipe = j.type === "PICKUP" ? "Pengambilan" : "Pengiriman";
+    const order = j.order;
+    const nama = order?.customer?.name || "Tanpa nama";
+    const isPickup = j.type === "PICKUP";
+    const emoji = isPickup ? "🔵" : "🟢";
+    const tipe = isPickup ? "Pengambilan" : "Pengiriman";
     const alamat = j.addressText?.trim() || "(alamat belum diisi)";
     baris.push(
       "",
-      `${idx + 1}. ${nama} — ${tipe}`,
-      `📦${j.order?.orderNumber || "-"} · ${EXTERNAL_COURIER_STATUS_LABEL[j.status] || j.status}`,
-      `📍${alamat}`,
+      `${idx + 1}. ${emoji}${nama} - ${tipe}`,
+      `📦${order?.orderNumber || "-"} · ${EXTERNAL_COURIER_STATUS_LABEL[j.status] || j.status}`,
+      `🛏️${produkUntukBroadcast(order)}`,
+      `🕗EST Jam: ${estJamUntukBroadcast(j.timeWindow) || "-"}`,
+      `🗒️Catatan: ${j.accessNotes?.trim() || ""}`,
+      `📍Alamat: ${alamat}`,
+      `🔗Link Maps: ${linkMapsPelanggan(order, j) || "(belum ada link)"}`,
     );
-    if (j.externalCourierRef) baris.push(`🔗Tracking: ${j.externalCourierRef}`);
+    if (j.externalCourierRef) baris.push(`🚚Tracking Lalamove: ${j.externalCourierRef}`);
     if (j.externalCourierCost != null) baris.push(`💰Ongkos: Rp${j.externalCourierCost.toLocaleString("id-ID")}`);
   });
   return baris.join("\n");
 }
 
+// Select job Kurir Eksternal — SATU tempat, dipakai gambar (buildRouteSheetImage)
+// DAN teks (formatExternalCourierWaMessage) supaya field yang dibutuhkan
+// dua-duanya selalu sinkron kalau salah satu berubah nanti. Field order-nya
+// SENGAJA dipilih sama dengan yang dipakai stopLines formatRouteWaMessage/
+// buildRouteSheetImage (produkLineLabel, parseOrderNotesForInvoice, dst)
+// supaya visualnya identik antara laporan rute biasa & laporan ini.
+const EXTERNAL_COURIER_JOB_SELECT = {
+  id: true, type: true, status: true, addressText: true, timeWindow: true, accessNotes: true,
+  lat: true, lng: true,
+  externalCourierRef: true, externalCourierCost: true,
+  order: {
+    select: {
+      orderNumber: true, productLine: true, notes: true, locationUrl: true,
+      customer: { select: { name: true, phone: true, assignedSales: { select: { name: true } } } },
+    },
+  },
+};
+
 // POST /armada/external-courier/notify-natasha — kirim laporan hari ini
-// (atau tanggal lain lewat body.date) ke Natasha. Best-effort di sisi
-// pengiriman WA (sama pola dgn seluruh notifyNatasha*), TAPI kegagalan
-// "tidak ada job" dianggap error nyata (bukan diam-diam no-op) — dispatcher
-// yang klik tombol ini WAJIB tahu kalau ternyata tidak ada apa pun untuk
-// dikirim, bukan mengira pesannya sudah terkirim.
+// (atau tanggal lain lewat body.date) ke Natasha. GAMBAR TABEL dulu
+// (buildRouteSheetImage — REUSE PENUH, fungsi itu cuma pernah baca
+// `route.jobs`, jadi objek palsu `{ jobs }` tanpa Route sungguhan diterima
+// apa adanya, TIDAK PERNAH disentuh/diubah), lalu teks — urutan & fungsi
+// PERSIS SAMA dengan kirimRingkasanRuteKeNatasha (broadcast rute biasa).
+// Best-effort di sisi pengiriman WA (sama pola dgn seluruh notifyNatasha*),
+// TAPI kegagalan "tidak ada job" dianggap error nyata (bukan diam-diam
+// no-op) — dispatcher yang klik tombol ini WAJIB tahu kalau ternyata tidak
+// ada apa pun untuk dikirim, bukan mengira pesannya sudah terkirim.
 armadaRouter.post("/external-courier/notify-natasha", requirePermission(P.JOB_WRITE), async (req, res) => {
   try {
     const { date } = req.body;
@@ -499,16 +537,22 @@ armadaRouter.post("/external-courier/notify-natasha", requirePermission(P.JOB_WR
     const targetDate = toDateOnly(date || todayWIB);
     const jobs = await prisma.job.findMany({
       where: { scheduledDate: targetDate, driver: { isExternalCourier: true } },
-      select: {
-        id: true, type: true, status: true, addressText: true,
-        externalCourierRef: true, externalCourierCost: true,
-        order: { select: { orderNumber: true, customer: { select: { name: true } } } },
-      },
+      select: EXTERNAL_COURIER_JOB_SELECT,
       orderBy: { createdAt: "asc" },
     });
     if (jobs.length === 0) throw new ArmadaError("Tidak ada job kurir eksternal untuk tanggal ini");
 
+    try {
+      const buffer = await buildRouteSheetImage({ jobs });
+      if (buffer) {
+        const filename = `kurir-eksternal-${targetDate.toISOString().slice(0, 10)}-${Date.now()}.png`;
+        await notifyNatashaImage(buffer, filename, `Detail Kurir Eksternal (Lalamove/dst) — ${hariTanggalWIB(targetDate)}`);
+      }
+    } catch (err) {
+      console.error("[POST /external-courier/notify-natasha] Gagal kirim gambar tabel:", err.message);
+    }
     await notifyNatashaText(formatExternalCourierWaMessage(jobs, targetDate));
+
     res.json({ ok: true, jobCount: jobs.length });
   } catch (err) {
     handleErr(err, res);
