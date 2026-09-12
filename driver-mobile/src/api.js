@@ -176,4 +176,20 @@ export const api = {
   // Ping GPS (D-034, Live Tracking) — pings: array {lat,lng,accuracy,recordedAt}.
   sendJobPositions: (jobId, pings) =>
     request(`/armada/jobs/${jobId}/positions`, { method: "POST", body: JSON.stringify({ pings }) }),
+
+  // Status Online/Offline (12 Sep 2026, referensi Gojek/Grab) — MURNI
+  // status, gerbang GPS tracking sisi klien (lihat hooks/useDriverTracking.js
+  // & AuthContext.js). Online juga bisa otomatis nyala dari backend saat
+  // job pertama dimulai — endpoint ini dipanggil utk toggle MANUAL (via
+  // AuthContext) DAN untuk sinkron state lokal begitu backend
+  // meng-auto-online-kan (lihat pemanggilan di AuthContext setelah start job).
+  setOnlineStatus: (online) =>
+    request("/armada/me/online-status", { method: "POST", body: JSON.stringify({ online }) }),
+
+  // Insentif per ALAMAT selesai per driver/helper — AdminHomeScreen tab
+  // Performa (D-162, 13 September 2026, GANTI dari versi "per jalur" —
+  // itu salah kaprah, insentif Klinik Matras dihitung per alamat/stop,
+  // bukan per rute). from/to opsional (kosong = default backend "bulan
+  // ini").
+  getIncentiveSummary: (from, to) => request(`/armada/incentive-summary${buildQuery({ from, to })}`),
 };

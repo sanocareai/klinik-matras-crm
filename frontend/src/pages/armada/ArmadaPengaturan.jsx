@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, User, Truck as TruckIcon, AlertTriangle, Wallet, Wrench, ShieldAlert, Info, Camera, X, Pencil, Loader2, Trash2 } from "lucide-react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { api } from "@/api.js";
+import { cn } from "@/lib/utils.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -828,6 +829,11 @@ function DriverTab() {
   const [drivers, setDrivers] = useState(null);
   const [jobCounts, setJobCounts] = useState({});
   const [loading, setLoading] = useState(true);
+  // Punya SIM (D-162, 13 September 2026) — tarif insentif per alamat beda
+  // (Rp7.000 vs Rp3.000, lihat GET /armada/incentive-summary). Simpan
+  // saat toggle, ID yang lagi disimpan supaya toggle-nya bisa disabled
+  // sementara request jalan (cegah klik dobel).
+  const [simBusyId, setSimBusyId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -850,6 +856,18 @@ function DriverTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  async function toggleSim(driver) {
+    setSimBusyId(driver.id);
+    try {
+      const updated = await api.updateDriverSim(driver.id, !driver.hasSim);
+      setDrivers((list) => list.map((d) => (d.id === driver.id ? { ...d, hasSim: updated.hasSim } : d)));
+    } catch {
+      // diam-diam gagal — toggle balik ke posisi semula karena state tidak diubah
+    } finally {
+      setSimBusyId(null);
+    }
+  }
+
   return (
     <Card className="overflow-hidden p-0">
       <div className="flex items-center gap-2 border-b border-line px-4 py-3">
@@ -868,7 +886,7 @@ function DriverTab() {
         <TableWrap>
           <Table>
             <THead>
-              <TR><TH>Nama</TH><TH numeric>Job Terkait</TH></TR>
+              <TR><TH>Nama</TH><TH numeric>Job Terkait</TH><TH>Punya SIM</TH></TR>
             </THead>
             <TBody>
               {drivers.map((d) => (
@@ -883,6 +901,22 @@ function DriverTab() {
                     {jobCounts[d.id] > 0
                       ? <Badge variant="accent">{jobCounts[d.id]} job</Badge>
                       : <span className="text-ink3">—</span>}
+                  </TD>
+                  {/* Punya SIM (D-162, 13 September 2026) — menentukan
+                      tarif insentif per alamat (Rp7.000 vs Rp3.000, lihat
+                      Laporan Delivery > Insentif Driver & Helper). */}
+                  <TD>
+                    <button
+                      type="button"
+                      disabled={simBusyId === d.id}
+                      onClick={() => toggleSim(d)}
+                      className={cn(
+                        "rounded-chip px-2 py-1 text-[11px] font-semibold transition-opacity disabled:opacity-50",
+                        d.hasSim ? "bg-greenbg text-green" : "bg-inset text-ink3"
+                      )}
+                    >
+                      {d.hasSim ? "Ya · Rp7.000/alamat" : "Tidak · Rp3.000/alamat"}
+                    </button>
                   </TD>
                 </TR>
               ))}

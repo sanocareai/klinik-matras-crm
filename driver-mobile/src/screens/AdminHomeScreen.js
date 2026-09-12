@@ -14,8 +14,8 @@ import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle 
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
-import { useRouteIncentiveSummary } from "../hooks/useRouteIncentiveSummary";
-import { relatifWaktu } from "../lib/jobHelpers";
+import { useIncentiveSummary } from "../hooks/useIncentiveSummary";
+import { relatifWaktu, formatRupiah } from "../lib/jobHelpers";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
 
@@ -129,7 +129,7 @@ export default function AdminHomeScreen() {
   const drivers = useMemo(() => ringkasDriver(jobs, tracking), [jobs, tracking]);
 
   const { from, to } = useMemo(() => rentangPeriode(periode), [periode]);
-  const performa = useRouteIncentiveSummary(from, to);
+  const performa = useIncentiveSummary(from, to);
 
   return (
     <SafeAreaView style={styles.root}>
@@ -314,12 +314,15 @@ function MasalahView({ issues, theme: t, styles }) {
   );
 }
 
-// Tab Performa (12 Sep 2026, permintaan owner: "insentif sistem kita
-// menghitung nya per jalur, jadi boleh ada status masing-masing driver/
-// helper ada status sudah berapa jalur mereka, dan bisa disetting
-// tanggal"). "Jalur" = Route selesai, dipisah asDriver/asHelper (satu
-// orang bisa dua peran). Query terpisah dari useAdminToday (rentang
-// tanggalnya beda, bukan "hari ini") — lihat useRouteIncentiveSummary.js.
+// Tab Performa (13 Sep 2026, D-162 — GANTI dari versi "per jalur" 12 Sep,
+// cara Klinik Matras SUNGGUHAN menghitung insentif adalah per ALAMAT
+// selesai, bukan per Rute: "1 pelanggan, lokasi sama, tanggal sama, ambil
+// dan kirim hingga finish = dihitung 1, tapi kalau pelanggan yang sama
+// order lagi di lain hari/minggu/bulan tetap dihitung lagi". Tarif beda
+// tergantung SIM (Rp7.000/alamat kalau punya, Rp3.000 kalau tidak) — dari
+// data yang sama, GET /armada/incentive-summary. Query terpisah dari
+// useAdminToday (rentang tanggalnya beda, bukan "hari ini") — lihat
+// useIncentiveSummary.js.
 function PerformaView({ performa, periode, setPeriode, theme: t, styles }) {
   const { data, isLoading, error, refetch, isRefetching } = performa;
   const orang = data?.orang || [];
@@ -345,7 +348,7 @@ function PerformaView({ performa, periode, setPeriode, theme: t, styles }) {
       ) : error ? (
         <View style={styles.center}><Text style={styles.errorText}>Gagal memuat: {error.message}</Text></View>
       ) : orang.length === 0 ? (
-        <Text style={styles.emptyText}>Belum ada rute selesai di periode ini.</Text>
+        <Text style={styles.emptyText}>Belum ada alamat selesai di periode ini.</Text>
       ) : (
         <View style={{ gap: 10 }}>
           {orang.map((o, i) => (
@@ -354,13 +357,21 @@ function PerformaView({ performa, periode, setPeriode, theme: t, styles }) {
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <Award size={14} color={i === 0 ? t.ORANGE : t.INK3} />
                   <Text style={styles.cardTitle}>{o.name}</Text>
+                  <View style={[styles.simBadge, { backgroundColor: o.hasSim ? t.GREEN + "26" : t.INK3 + "26" }]}>
+                    <Text style={[styles.simBadgeText, { color: o.hasSim ? t.GREEN : t.INK3 }]}>
+                      {o.hasSim ? "SIM" : "Tanpa SIM"}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={[styles.kpiValue, { fontSize: 16 }]}>{o.total} <Text style={styles.cardMeta}>jalur</Text></Text>
+                <Text style={[styles.kpiValue, { fontSize: 16 }]}>{o.totalAlamat} <Text style={styles.cardMeta}>alamat</Text></Text>
               </View>
               <View style={styles.driverStatsRow}>
                 <Text style={styles.driverStat}>Sebagai driver: <Text style={{ color: t.ACCENT }}>{o.asDriver}</Text></Text>
                 <Text style={styles.driverStat}>Sebagai helper: <Text style={{ color: t.ACCENT }}>{o.asHelper}</Text></Text>
               </View>
+              <Text style={[styles.driverStat, { marginTop: 4, fontWeight: "700", color: t.ACCENT }]}>
+                {formatRupiah(o.totalInsentif)} <Text style={{ color: t.INK3, fontWeight: "600" }}>({formatRupiah(o.ratePerAlamat)}/alamat)</Text>
+              </Text>
             </View>
           ))}
         </View>
@@ -423,5 +434,7 @@ function makeStyles(t) {
     periodeChipActive: { backgroundColor: t.ACCENT_BG, borderColor: t.ACCENT },
     periodeChipText: { color: t.INK2, fontSize: 12, fontWeight: "600" },
     periodeChipTextActive: { color: t.ACCENT },
+    simBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 100 },
+    simBadgeText: { fontSize: 9, fontWeight: "700" },
   });
 }

@@ -348,6 +348,16 @@ model User {
   // ada akun kedua utk kurir lain, mis. GrabExpress).
   isExternalCourier Boolean @default(false) @map("is_external_courier")
 
+  // Punya SIM (13 September 2026, D-162 — permintaan owner: skema insentif
+  // per alamat, tarif beda tergantung SIM: "Klo yg punya sim 7.000/alamat,
+  // Klo gk ada 3.000/alamat"). Flag EKSPLISIT (bukan diinfer dari role) —
+  // driver DAN helper dua-duanya bisa punya/tidak punya SIM, status ini
+  // TIDAK berkorelasi dengan role User (seorang HELPER bisa saja punya SIM
+  // walau tidak pernah menyetir untuk Klinik Matras). Default false —
+  // admin WAJIB set eksplisit lewat Pengaturan Delivery > Driver, tidak
+  // diasumsikan true untuk siapa pun.
+  hasSim Boolean @default(false) @map("has_sim")
+
   // Leader sales (mis. Novi) — ber-role ADMIN tapi secara bisnis mengawasi
   // tim sales & kadang closing sendiri. Flag EKSPLISIT (25 Agustus 2026),
   // BUKAN diinfer dari role/nama — konsisten dengan preseden UserRole/D-010

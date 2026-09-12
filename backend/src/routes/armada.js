@@ -989,10 +989,32 @@ armadaRouter.get("/drivers", requirePermission(P.JOB_WRITE), async (req, res) =>
       where: { role: "DRIVER" },
       // isExternalCourier (D-161) — dropdown Driver bisa tandai "Kurir
       // Eksternal (Lalamove/dst)" secara visual sebelum dispatcher assign.
-      include: { user: { select: { id: true, name: true, isExternalCourier: true } } },
+      // hasSim (D-162) — dipakai tab Driver di Pengaturan Delivery utk
+      // toggle status SIM per orang (tarif insentif per alamat beda).
+      include: { user: { select: { id: true, name: true, isExternalCourier: true, hasSim: true } } },
       orderBy: { user: { name: "asc" } },
     });
     res.json(rows.map((r) => r.user));
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// PATCH /armada/drivers/:id — SATU-SATUNYA field yang boleh diubah lewat
+// sini: hasSim (D-162, 13 September 2026). Endpoint SEMPIT SENGAJA (bukan
+// PATCH /users/:id umum, itu belum ada sama sekali) — data akun lain
+// (nama/email/role/dst) tetap lewat Pengguna & Peran, ini murni atribut
+// Delivery-specific yang menentukan tarif insentif per alamat.
+armadaRouter.patch("/drivers/:id", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const { hasSim } = req.body;
+    if (typeof hasSim !== "boolean") throw new ArmadaError("hasSim wajib boolean");
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { hasSim },
+      select: { id: true, name: true, hasSim: true },
+    });
+    res.json(user);
   } catch (err) {
     handleErr(err, res);
   }
@@ -1906,60 +1928,100 @@ armadaRouter.get("/routes", requirePermission(P.JOB_READ), async (req, res) => {
   }
 });
 
-// GET /routes/incentive-summary?from=&to= — jumlah RUTE Selesai per
-// driver/helper dalam rentang tanggal (12 September 2026, permintaan
-// owner: "insentif sistem kita menghitung nya per jalur, jadi boleh ada
-// status masing-masing driver/helper ada status sudah berapa jalur
-// mereka ... bisa disetting tanggal"). "Jalur" = Route (RTE-XXX), BUKAN
-// job satuan — satu rute isinya banyak stop tapi cuma dihitung 1 jalur.
-// Cuma Route.status COMPLETED yang dihitung (auto-set oleh
-// syncRouteCompletionStatus begitu semua job anggotanya tuntas) — DRAFT/
-// PUBLISHED-belum-jalan/CANCELLED bukan kerja yang sudah selesai, tidak
-// relevan buat insentif. Dipisah per PERAN (asDriver/asHelper) — satu
-// orang bisa jadi driver di sebagian rute & helper di rute lain (LEADER_
-// DRIVER khususnya), dan insentif driver vs helper wajar beda besarannya,
-// jadi TIDAK digabung jadi satu angka begitu saja.
-armadaRouter.get("/routes/incentive-summary", requirePermission(P.JOB_READ), async (req, res) => {
+// GET /incentive-summary?from=&to= — jumlah ALAMAT selesai per driver/
+// helper dalam rentang tanggal + insentif Rupiah (13 September 2026, D-162
+// — GANTI TOTAL dari versi "per jalur" sebelumnya, keputusan eksplisit
+// owner setelah dijelaskan cara Klinik Matras SUNGGUHAN menghitung
+// insentif: "klinik matras sano menghitungnya 1 pelanggan, lokasi sama,
+// tanggal sama ambil dan kirim hingga finish = dihitung 1, tapi jika 1
+// pelanggan yang sama order lagi di lain hari/minggu/bulan tetap
+// dihitung juga". "Per jalur" (Route) SALAH KAPRAH — 1 rute isinya
+// banyak stop customer BERBEDA, itu bukan cara Klinik Matras hitung
+// insentif sama sekali.
+//
+// KUNCI dedup: (orderId, tanggal WIB job selesai). Order yang SAMA
+// (pickup+delivery, walau 2 job terpisah) yang tuntas di TANGGAL YANG
+// SAMA cuma dihitung 1 — itulah "1 pelanggan, lokasi sama, tanggal sama".
+// Order yang SAMA tapi pickup/delivery-nya tuntas di HARI BERBEDA
+// (kasus NORMAL — produksi makan waktu di antaranya) dihitung 2, sesuai
+// kata kuncinya sendiri "tanggal sama" sebagai syarat, bukan "order
+// sama". orderId (bukan customerId) yang dipakai — order BARU dari
+// customer yang SAMA di lain hari otomatis "reset"/dihitung lagi karena
+// orderId-nya pasti beda, tidak perlu logika reset terpisah.
+//
+// TIDAK dipisah per Route sama sekali lagi — job lepas (belum/tidak
+// pernah masuk Route, mis. Kurir Eksternal) ikut terhitung selama
+// statusnya COMPLETED, konsisten dengan makna "alamat yang dia
+// selesaikan" apa adanya.
+//
+// Tarif (owner, verbatim): "Klo yg punya sim 7.000/alamat, Klo gk ada
+// 3.000/alamat" — per ORANG (User.hasSim), BUKAN per peran (driver vs
+// helper) — seorang helper bisa saja punya SIM juga. asDriver/asHelper
+// TETAP dipisah di respons murni untuk TRANSPARANSI (biar kelihatan
+// perannya apa saja), tapi `totalAlamat` yang dipakai hitung Rupiah
+// adalah GABUNGAN unik lintas peran (1 orang, 1 tanggal, 1 order —
+// tetap 1 alamat, walau kebetulan jadi driver di 1 job & helper di job
+// lain untuk order yang sama).
+const RATE_PER_ALAMAT = { withSim: 7000, withoutSim: 3000 };
+
+armadaRouter.get("/incentive-summary", requirePermission(P.JOB_READ), async (req, res) => {
   try {
     const { from, to } = req.query;
     // Default "bulan ini" (WIB) kalau tidak dikirim — insentif lazimnya
     // dihitung per periode berjalan, bukan akumulasi dari awal selamanya.
     const now = new Date(Date.now() + 7 * 3600_000);
     const defaultFrom = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const dateWhere = {
+    const completedAtWhere = {
       gte: from ? toDateOnly(from) : defaultFrom,
-      ...(to && { lte: toDateOnly(to) }),
+      // endOfDayExclusiveWIB, bukan toDateOnly(to) polos — completedAt
+      // adalah TIMESTAMP (jam berapa pun di hari itu), toDateOnly(to)
+      // sendirian berarti "sebelum jam 00:00 WIB tanggal `to`" — buang
+      // seluruh job yang selesai di HARI `to` itu sendiri.
+      ...(to && { lt: endOfDayExclusiveWIB(to) }),
     };
 
-    const routes = await prisma.route.findMany({
-      where: { status: "COMPLETED", date: dateWhere },
-      select: {
-        driverId: true, driver: { select: { id: true, name: true } },
-        helperId: true, helper: { select: { id: true, name: true } },
-      },
+    const jobs = await prisma.job.findMany({
+      where: { status: "COMPLETED", completedAt: completedAtWhere },
+      select: { orderId: true, completedAt: true, driverId: true, helperId: true },
     });
 
+    // dedup per orang: 3 Set terpisah (asDriver/asHelper/gabungan) berisi
+    // kunci "orderId|tanggalWIB" — Set otomatis membuang duplikat.
     const perOrang = new Map();
-    function tambah(user, peran) {
-      if (!user) return;
-      let baris = perOrang.get(user.id);
-      if (!baris) {
-        baris = { id: user.id, name: user.name, asDriver: 0, asHelper: 0 };
-        perOrang.set(user.id, baris);
-      }
-      baris[peran] += 1;
+    function baris(userId) {
+      let b = perOrang.get(userId);
+      if (!b) { b = { asDriverSet: new Set(), asHelperSet: new Set(), allSet: new Set() }; perOrang.set(userId, b); }
+      return b;
     }
-    for (const r of routes) {
-      tambah(r.driver, "asDriver");
-      tambah(r.helper, "asHelper");
+    for (const j of jobs) {
+      const tanggalWIB = new Date(j.completedAt.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+      const key = `${j.orderId}|${tanggalWIB}`;
+      if (j.driverId) { const b = baris(j.driverId); b.asDriverSet.add(key); b.allSet.add(key); }
+      if (j.helperId) { const b = baris(j.helperId); b.asHelperSet.add(key); b.allSet.add(key); }
     }
-    const orang = [...perOrang.values()]
-      .map((o) => ({ ...o, total: o.asDriver + o.asHelper }))
-      .sort((a, b) => b.total - a.total);
+
+    const userIds = [...perOrang.keys()];
+    const users = userIds.length
+      ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, hasSim: true } })
+      : [];
+
+    const orang = users
+      .map((u) => {
+        const b = perOrang.get(u.id);
+        const totalAlamat = b.allSet.size;
+        const ratePerAlamat = u.hasSim ? RATE_PER_ALAMAT.withSim : RATE_PER_ALAMAT.withoutSim;
+        return {
+          id: u.id, name: u.name, hasSim: u.hasSim,
+          asDriver: b.asDriverSet.size, asHelper: b.asHelperSet.size,
+          totalAlamat, ratePerAlamat, totalInsentif: totalAlamat * ratePerAlamat,
+        };
+      })
+      .sort((a, b) => b.totalAlamat - a.totalAlamat);
 
     res.json({
-      from: dateWhere.gte.toISOString().slice(0, 10),
-      to: dateWhere.lte ? dateWhere.lte.toISOString().slice(0, 10) : null,
+      from: completedAtWhere.gte.toISOString().slice(0, 10),
+      to: to || null,
+      ratePerAlamat: RATE_PER_ALAMAT,
       orang,
     });
   } catch (err) {

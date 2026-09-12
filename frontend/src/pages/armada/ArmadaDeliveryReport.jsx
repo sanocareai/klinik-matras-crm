@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "@/lib/dateRange.js";
 import { KpiRowSkeleton, ChartGridSkeleton } from "@/features/laporan/components/LaporanSkeleton.jsx";
@@ -11,6 +12,7 @@ import BarRow from "@/features/laporan/components/BarRow.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@/components/ui/table.jsx";
 import { Users, Truck as TruckIcon } from "lucide-react";
+import Avatar from "@/components/Avatar.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES } from "@/features/armada/jobStatus.js";
 import { POD_STATUS } from "@/features/armada/podStatus.js";
@@ -70,6 +72,10 @@ export default function ArmadaDeliveryReport() {
   // di halaman ini (satu date picker untuk semuanya, bukan date picker
   // kedua yang terpisah seperti sebelumnya).
   const [fleet, setFleet] = useState(null);
+  // Insentif per alamat (D-162, 13 September 2026) — IKUT `range` yang
+  // sama dengan seluruh laporan lain di halaman ini, sama alasan dengan
+  // Ringkasan Biaya Armada di atas.
+  const [insentif, setInsentif] = useState(null);
 
   const load = useCallback(() => {
     const params = toApiParams(range);
@@ -80,8 +86,9 @@ export default function ArmadaDeliveryReport() {
     Promise.all([
       api.getDeliveryReportSummary(params),
       api.getFleetSummary(params),
+      api.getIncentiveSummary(params.from, params.to),
     ])
-      .then(([d, f]) => { setData(d); setFleet(f); })
+      .then(([d, f, ins]) => { setData(d); setFleet(f); setInsentif(ins); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [range]);
@@ -269,6 +276,58 @@ export default function ArmadaDeliveryReport() {
                 km/liter dihitung dari selisih odometer tertinggi−terendah dibagi total liter periode ini (minimal 2 pengisian BBM ber-odometer). Rp/km ikut naik-turun mengikuti harga BBM — km/liter yang murni mengukur cara bawa mobil.
               </p>
             </div>
+
+            {/* Insentif Driver & Helper (D-162, 13 September 2026) — cara
+                Klinik Matras SUNGGUHAN menghitung insentif: per ALAMAT
+                selesai (1 pelanggan + lokasi sama + tanggal sama = 1,
+                order lain hari dihitung lagi), tarif Rp7.000/alamat kalau
+                punya SIM, Rp3.000 kalau tidak (lihat GET
+                /armada/incentive-summary). Sebagai Driver/Sebagai Helper
+                ditampilkan terpisah murni informasi peran — Total Alamat
+                (yang dipakai hitung Rupiah) sudah digabung lintas peran,
+                supaya orang yang kebetulan jadi driver di 1 job & helper
+                di job lain untuk PELANGGAN+TANGGAL yang sama tetap
+                dihitung 1 alamat, bukan 2. */}
+            {insentif?.orang?.length > 0 && (
+              <div>
+                <h2 className="mb-1 text-[15px] font-bold text-ink">Insentif Driver &amp; Helper</h2>
+                <p className="mb-3 text-[12px] text-ink3">
+                  Per alamat selesai, dalam rentang tanggal yang sama di atas — Rp{insentif.ratePerAlamat.withSim.toLocaleString("id-ID")}/alamat (punya SIM) · Rp{insentif.ratePerAlamat.withoutSim.toLocaleString("id-ID")}/alamat (tidak punya SIM).
+                </p>
+                <Card className="overflow-hidden p-0">
+                  <TableWrap>
+                    <Table>
+                      <THead>
+                        <TR>
+                          <TH>Nama</TH><TH>Punya SIM</TH>
+                          <TH numeric>Sebagai Driver</TH><TH numeric>Sebagai Helper</TH>
+                          <TH numeric>Total Alamat</TH><TH numeric>Insentif</TH>
+                        </TR>
+                      </THead>
+                      <TBody>
+                        {insentif.orang.map((o) => (
+                          <TR key={o.id}>
+                            <TD className="font-semibold text-ink">
+                              <span className="flex items-center gap-2">
+                                <Avatar name={o.name} size="sm" gradient className="h-7 w-7 shrink-0 text-[10px]" />
+                                {o.name}
+                              </span>
+                            </TD>
+                            <TD>
+                              <Badge variant={o.hasSim ? "green" : "neutral"}>{o.hasSim ? "Ya" : "Tidak"}</Badge>
+                            </TD>
+                            <TD numeric className="text-ink2">{o.asDriver}</TD>
+                            <TD numeric className="text-ink2">{o.asHelper}</TD>
+                            <TD numeric className="font-semibold text-ink">{o.totalAlamat}</TD>
+                            <TD numeric className="font-semibold text-accent">{formatRupiah(o.totalInsentif)}</TD>
+                          </TR>
+                        ))}
+                      </TBody>
+                    </Table>
+                  </TableWrap>
+                </Card>
+              </div>
+            )}
 
             {/* Kurir Eksternal / Lalamove (D-161, 13 September 2026) — kajian
                 owner: "ada beberapa customer yang minta cepat dan memilih
