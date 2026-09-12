@@ -14,9 +14,11 @@ import { Map, Navigation } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import { api } from "../api";
 import { useTheme } from "../hooks/useTheme";
+import { useAuth } from "../context/AuthContext";
 
 export default function RouteStartCard({ route, assignedCount, sampleJobId, onChanged }) {
   const theme = useTheme();
+  const { markOnlineLocally } = useAuth();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [mode, setMode] = useState("idle"); // idle | starting
   const [photos, setPhotos] = useState([]);
@@ -46,6 +48,7 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
     try {
       const { urls } = await api.uploadJobPhotos(sampleJobId, photos);
       await api.startRoute(route.id, { proofPhotoUrls: urls });
+      markOnlineLocally(); // backend auto-online-kan driver — lihat catatan di JobCard.js
       setMode("idle");
       setPhotos([]);
       onChanged();
@@ -109,7 +112,10 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
 
 function makeStyles(t) {
   return StyleSheet.create({
-    card: { backgroundColor: t.SURFACE, borderRadius: 16, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: t.ACCENT + "40" },
+    card: {
+      backgroundColor: t.SURFACE, borderRadius: 16, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: t.ACCENT + "40",
+      shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
+    },
     headerRow: { flexDirection: "row", alignItems: "center" },
     code: { color: t.INK, fontSize: 15, fontWeight: "800" },
     sub: { color: t.INK2, fontSize: 12, marginTop: 2 },

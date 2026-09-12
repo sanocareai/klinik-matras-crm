@@ -19,6 +19,7 @@ import { useDriverTracking } from "../hooks/useDriverTracking";
 import JobCard from "../components/JobCard";
 import RouteStartCard from "../components/RouteStartCard";
 import BottomNavBar from "../components/BottomNavBar";
+import GradientCard from "../components/GradientCard";
 
 const ACTIVE_STATUSES = ["ASSIGNED", "EN_ROUTE", "ARRIVED"];
 
@@ -103,32 +104,36 @@ export default function JobListScreen() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Job Saya</Text>
-          <Text style={styles.subtitle}>Halo, {user?.name || "Driver"}</Text>
-        </View>
-        <Pressable onPress={logout} style={styles.logoutBtn}>
-          <Text style={styles.logoutText}>Keluar</Text>
-        </Pressable>
-      </View>
-
-      {/* Online/Offline (12 Sep 2026, referensi Gojek/Grab driver app) —
+      {/* Hero card gradasi (12 Sep 2026, fase 3 redesign — referensi
+          Gojek/DelTrack) — gabungan sapaan + toggle Online/Offline yang
+          dulunya 2 elemen terpisah (header polos + kotak status). Toggle
           MURNI status, BUKAN "terima order" (order di sini sudah
-          ditentukan PIC-nya dispatcher). Kegunaan: gerbang GPS tracking,
-          lihat useDriverTracking.js. */}
-      <View style={styles.onlineRow}>
-        <View style={[styles.onlineDot, { backgroundColor: isOnline ? theme.GREEN : theme.INK3 }]} />
-        <Text style={styles.onlineText}>{isOnline ? "Online" : "Offline"}</Text>
-        <Switch
-          value={isOnline}
-          onValueChange={toggleOnline}
-          disabled={togglingOnline}
-          trackColor={{ false: theme.BORDER, true: theme.GREEN + "66" }}
-          thumbColor={isOnline ? theme.GREEN : theme.INK3}
-          style={{ marginLeft: "auto" }}
-        />
-      </View>
+          ditentukan PIC-nya dispatcher) — kegunaannya gerbang GPS
+          tracking, lihat useDriverTracking.js. */}
+      <GradientCard colors={theme.GRADIENT} style={styles.hero}>
+        <View style={styles.heroTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heroGreeting}>Halo, {user?.name || "Driver"}</Text>
+            <Text style={styles.heroSubtitle}>Semoga perjalanan hari ini lancar</Text>
+          </View>
+          <Pressable onPress={logout} style={styles.heroLogoutBtn}>
+            <Text style={styles.heroLogoutText}>Keluar</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.heroOnlineRow}>
+          <View style={[styles.onlineDot, { backgroundColor: isOnline ? "#3DDC84" : "rgba(255,255,255,0.45)" }]} />
+          <Text style={styles.heroOnlineText}>{isOnline ? "Online" : "Offline"}</Text>
+          <Switch
+            value={isOnline}
+            onValueChange={toggleOnline}
+            disabled={togglingOnline}
+            trackColor={{ false: "rgba(255,255,255,0.25)", true: "rgba(61,220,132,0.55)" }}
+            thumbColor={isOnline ? "#3DDC84" : "#FFFFFF"}
+            style={{ marginLeft: "auto" }}
+          />
+        </View>
+      </GradientCard>
 
       {isLoading ? (
         <View style={styles.center}>
@@ -183,18 +188,21 @@ export default function JobListScreen() {
 function makeStyles(t) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: t.NAVY },
-    header: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-    title: { fontSize: 22, fontWeight: "800", color: t.INK },
-    subtitle: { fontSize: 12.5, color: t.INK2, marginTop: 2 },
-    logoutBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: t.BORDER },
-    logoutText: { color: t.ACCENT, fontWeight: "700", fontSize: 12.5 },
-    onlineRow: {
-      flexDirection: "row", alignItems: "center", gap: 8,
-      marginHorizontal: 16, marginBottom: 10, paddingHorizontal: 12, paddingVertical: 9,
-      borderRadius: 12, backgroundColor: t.SURFACE,
+    hero: {
+      marginHorizontal: 16, marginTop: 8, marginBottom: 14,
+      shadowColor: t.ACCENT, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.28, shadowRadius: 16, elevation: 6,
     },
+    heroTopRow: { flexDirection: "row", alignItems: "flex-start" },
+    heroGreeting: { fontSize: 19, fontWeight: "800", color: "#FFFFFF" },
+    heroSubtitle: { fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 },
+    heroLogoutBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.35)" },
+    heroLogoutText: { color: "#FFFFFF", fontWeight: "700", fontSize: 12 },
+    heroOnlineRow: {
+      flexDirection: "row", alignItems: "center", gap: 8,
+      marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.18)",
+    },
+    heroOnlineText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
     onlineDot: { width: 8, height: 8, borderRadius: 4 },
-    onlineText: { color: t.INK, fontWeight: "700", fontSize: 13 },
     // paddingBottom 96 (bukan 24) — ruang buat BottomNavBar melayang
     // (fase 2 redesign, lihat BottomNavBar.js) supaya card terakhir tidak
     // ketutupan bar.

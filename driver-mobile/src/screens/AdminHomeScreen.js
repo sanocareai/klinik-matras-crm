@@ -17,6 +17,7 @@ import { useAdminToday } from "../hooks/useAdminToday";
 import { useRouteIncentiveSummary } from "../hooks/useRouteIncentiveSummary";
 import { relatifWaktu } from "../lib/jobHelpers";
 import BottomNavBar from "../components/BottomNavBar";
+import GradientCard from "../components/GradientCard";
 
 // Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
 // dulu di atas konten, lihat BottomNavBar.js.
@@ -132,15 +133,38 @@ export default function AdminHomeScreen() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Delivery Hari Ini</Text>
-          <Text style={styles.subtitle}>Halo, {user?.name || "Admin"}</Text>
+      {/* Hero card gradasi (12 Sep 2026, fase 3 redesign — referensi
+          Gojek/DelTrack) — sapaan + ringkasan singkat hari ini, tampil
+          konstan di SEMUA tab (bukan cuma tab Hari Ini) supaya admin
+          selalu lihat sekilas progress tanpa pindah tab. */}
+      <GradientCard colors={theme.GRADIENT} style={styles.hero}>
+        <View style={styles.heroTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heroGreeting}>Halo, {user?.name || "Admin"}</Text>
+            <Text style={styles.heroSubtitle}>Ringkasan delivery hari ini</Text>
+          </View>
+          <Pressable onPress={logout} style={styles.heroLogoutBtn}>
+            <Text style={styles.heroLogoutText}>Keluar</Text>
+          </Pressable>
         </View>
-        <Pressable onPress={logout} style={styles.logoutBtn}>
-          <Text style={styles.logoutText}>Keluar</Text>
-        </Pressable>
-      </View>
+
+        {!isLoading && !error && (
+          <View style={styles.heroStatsRow}>
+            <View style={styles.heroStat}>
+              <Text style={styles.heroStatValue}>{ringkasan.total}</Text>
+              <Text style={styles.heroStatLabel}>Total Job</Text>
+            </View>
+            <View style={styles.heroStat}>
+              <Text style={styles.heroStatValue}>{ringkasan.selesai}</Text>
+              <Text style={styles.heroStatLabel}>Selesai</Text>
+            </View>
+            <View style={styles.heroStat}>
+              <Text style={styles.heroStatValue}>{ringkasan.jalan}</Text>
+              <Text style={styles.heroStatLabel}>Jalan</Text>
+            </View>
+          </View>
+        )}
+      </GradientCard>
 
       {tab === "performa" ? (
         <PerformaView
@@ -348,11 +372,21 @@ function PerformaView({ performa, periode, setPeriode, theme: t, styles }) {
 function makeStyles(t) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: t.NAVY },
-    header: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
-    title: { fontSize: 22, fontWeight: "800", color: t.INK },
-    subtitle: { fontSize: 12.5, color: t.INK2, marginTop: 2 },
-    logoutBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: t.BORDER },
-    logoutText: { color: t.ACCENT, fontWeight: "700", fontSize: 12.5 },
+    hero: {
+      marginHorizontal: 16, marginTop: 8, marginBottom: 14,
+      shadowColor: t.ACCENT, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.28, shadowRadius: 16, elevation: 6,
+    },
+    heroTopRow: { flexDirection: "row", alignItems: "flex-start" },
+    heroGreeting: { fontSize: 19, fontWeight: "800", color: "#FFFFFF" },
+    heroSubtitle: { fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 },
+    heroLogoutBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.35)" },
+    heroLogoutText: { color: "#FFFFFF", fontWeight: "700", fontSize: 12 },
+    heroStatsRow: {
+      flexDirection: "row", marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.18)",
+    },
+    heroStat: { flex: 1, alignItems: "center" },
+    heroStatValue: { color: "#FFFFFF", fontSize: 18, fontWeight: "800" },
+    heroStatLabel: { color: "rgba(255,255,255,0.78)", fontSize: 10.5, marginTop: 2, fontWeight: "600" },
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: 40, paddingBottom: 80 },
     errorText: { color: t.RED, fontSize: 13, textAlign: "center" },
     emptyText: { color: t.INK2, fontSize: 13, textAlign: "center" },
@@ -361,11 +395,17 @@ function makeStyles(t) {
     // ketutupan bar.
     body: { paddingHorizontal: 16, paddingBottom: 96 },
     kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    kpi: { flexBasis: "31%", flexGrow: 1, backgroundColor: t.SURFACE, borderRadius: 14, paddingVertical: 12, alignItems: "center" },
+    kpi: {
+      flexBasis: "31%", flexGrow: 1, backgroundColor: t.SURFACE, borderRadius: 14, paddingVertical: 12, alignItems: "center",
+      shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 2,
+    },
     kpiValue: { color: t.INK, fontSize: 20, fontWeight: "800" },
     kpiLabel: { color: t.INK2, fontSize: 10.5, marginTop: 2, fontWeight: "600" },
     sectionTitle: { color: t.INK, fontSize: 14, fontWeight: "700", marginTop: 4 },
-    card: { backgroundColor: t.SURFACE, borderRadius: 14, padding: 12 },
+    card: {
+      backgroundColor: t.SURFACE, borderRadius: 14, padding: 12,
+      shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 2,
+    },
     rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     cardTitle: { color: t.INK, fontSize: 13.5, fontWeight: "700" },
     cardMeta: { color: t.INK2, fontSize: 11, marginTop: 1 },

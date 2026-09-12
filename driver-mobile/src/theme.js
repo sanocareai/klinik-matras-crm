@@ -28,6 +28,11 @@ export const darkColors = {
   GREEN: "#30D158",
   RED: "#FF453A",
   ORANGE: "#FF9F0A",
+  // GRADIENT (12 Sep 2026, fase 3 redesign — hero card gaya Gojek/
+  // DelTrack) — 2 titik warna dipakai GradientCard.js lewat react-native-
+  // svg (SUDAH dependency native ter-compile sejak awal, dipakai lucide-
+  // react-native — aman dipakai lewat OTA, TIDAK butuh native rebuild).
+  GRADIENT: ["#2D64B6", "#0F2B52"],
   statusBarStyle: "light",
 };
 
@@ -45,5 +50,6 @@ export const lightColors = {
   GREEN: "#1E9A4B",
   RED: "#D93025",
   ORANGE: "#B26B00",
+  GRADIENT: ["#2D64B6", "#1B4586"],
   statusBarStyle: "dark",
 };

@@ -10,9 +10,11 @@ import { View, Text, Pressable, TextInput, StyleSheet, Linking } from "react-nat
 import { MapPin, Phone, Loader2 } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import PaymentSection from "./PaymentSection";
+import JobProgressStepper from "./JobProgressStepper";
 import { performSubmit } from "../lib/submitJobAction";
 import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL } from "../lib/jobHelpers";
 import { useTheme } from "../hooks/useTheme";
+import { useAuth } from "../context/AuthContext";
 
 const FAIL_REASONS_PICKUP = [
   { value: "Customer tidak ada di rumah", label: "Customer Tidak Ada" },
@@ -27,6 +29,7 @@ const FAIL_REASONS_DELIVERY = [
 
 export default function JobCard({ job, onChanged }) {
   const theme = useTheme();
+  const { markOnlineLocally } = useAuth();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const STATUS_TONE = useMemo(() => ({
     ASSIGNED: theme.ACCENT, EN_ROUTE: theme.ACCENT, ARRIVED: theme.ACCENT,
@@ -76,6 +79,10 @@ export default function JobCard({ job, onChanged }) {
     setErr("");
     try {
       await performSubmit(job.id, action, payload, photos);
+      // Sinkron lokal (12 Sep 2026) — backend auto-online-kan driver saat
+      // job dimulai (POST /jobs/:id/start), refleksikan efek samping itu
+      // di switch Beranda TANPA driver perlu toggle manual juga.
+      if (action === "start") markOnlineLocally();
       resetForm();
       onChanged();
     } catch (e) {
@@ -111,6 +118,8 @@ export default function JobCard({ job, onChanged }) {
           </Text>
         </View>
       )}
+
+      <JobProgressStepper status={job.status} theme={theme} />
 
       {estJam && <Text style={styles.detailLine}>🕗 {estJam}</Text>}
       {job.addressText ? <Text style={styles.detailLine} numberOfLines={2}>📍 {job.addressText}</Text> : null}
@@ -245,7 +254,10 @@ export default function JobCard({ job, onChanged }) {
 
 function makeStyles(t) {
   return StyleSheet.create({
-    card: { backgroundColor: t.SURFACE, borderRadius: 16, padding: 14, marginBottom: 12 },
+    card: {
+      backgroundColor: t.SURFACE, borderRadius: 16, padding: 14, marginBottom: 12,
+      shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
+    },
     headerRow: { flexDirection: "row", alignItems: "flex-start" },
     customerName: { color: t.INK, fontSize: 15, fontWeight: "700" },
     jobMeta: { color: t.INK2, fontSize: 11, marginTop: 2 },
