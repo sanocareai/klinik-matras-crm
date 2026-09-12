@@ -838,23 +838,35 @@ export default function RouteCard({
                       </a>
                     )}
                     {/* Stop yang SUDAH TUNTAS (COMPLETED/FAILED) TIDAK BOLEH
-                        dikeluarkan dari rute (8 September 2026) — sejak
-                        edit rute Selesai dibuka utk Admin (permintaan
-                        owner: "tambah orderan yang ketinggalan"), tombol
-                        ini SEKARANG bisa muncul di kartu stop yang fisiknya
-                        sudah selesai dikerjakan. Tanpa guard ini, admin bisa
-                        tidak sengaja klik X di stop yang sudah terkirim
-                        (mis. salah pencet saat menambah stop lain di rute
-                        yang sama) dan diam-diam kehilangan jejak riwayat
-                        rutenya — job.status tidak berubah, tapi routeId
-                        jadi null, hilang dari kartu ini selamanya. Job yang
-                        BELUM tuntas (termasuk job baru yang ditambah) tetap
-                        bisa dikeluarkan seperti biasa. */}
-                    {isEditable && !["COMPLETED", "FAILED"].includes(j.status) && (
+                        dikeluarkan dari rute BEGITU SAJA (8 September 2026)
+                        — sejak edit rute Selesai dibuka utk Admin
+                        (permintaan owner: "tambah orderan yang
+                        ketinggalan"), tombol ini SEKARANG bisa muncul di
+                        kartu stop yang fisiknya sudah selesai dikerjakan.
+                        Tanpa guard, dispatcher biasa bisa tidak sengaja
+                        klik X di stop yang sudah terkirim (mis. salah
+                        pencet saat menambah stop lain di rute yang sama)
+                        dan diam-diam kehilangan jejak riwayat rutenya.
+                        Job yang BELUM tuntas (termasuk job baru yang
+                        ditambah) tetap bisa dikeluarkan seperti biasa.
+                        ⚠️ DIPERLONGGAR 12 September 2026 (kasus Aida
+                        RES-27082026-176) — laporan owner: stop pengambilan
+                        yang SUDAH selesai lewat kasus komplain (kasurnya
+                        sudah diambil, direvisi, siap kirim lewat job
+                        pengiriman BARU) bikin rute tampak dobel ("Aida"
+                        muncul 2x) tanpa cara membersihkannya. Sama pola
+                        dengan canEditCompleted di atas: khusus ADMIN
+                        (isAdminUser, D-010 — bukan cek role langsung) yang
+                        boleh mengeluarkan stop TUNTAS, tetap wajib alasan
+                        (editingReason, ditegakkan lagi di backend PATCH
+                        /routes/:id/jobs) — dispatcher biasa TETAP tidak
+                        lihat tombolnya untuk stop yang sudah selesai. */}
+                    {isEditable && (!["COMPLETED", "FAILED"].includes(j.status) || isAdminUser(currentUser)) && (
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); jalankan(() => onRemoveJob(route, j.id, editingReason)); }}
                         aria-label={`Keluarkan job dari ${route.code}`}
+                        title={["COMPLETED", "FAILED"].includes(j.status) ? "Stop ini sudah tuntas — hanya Admin yang bisa mengeluarkannya dari rute" : undefined}
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors hover:bg-redbg hover:text-red"
                       >
                         <X size={14} />
