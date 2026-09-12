@@ -165,7 +165,7 @@ export default function ArmadaRoutes() {
   // aman sebelum fetch pertama selesai (react-query `data` awalnya
   // `undefined`, beda dari `useState(null)` versi lama — efeknya SAMA,
   // field individual tetap `undefined` sampai data datang).
-  const { data: board, error: queryError, refetch: load } = useArmadaRoutesBoard(range, toApiParams);
+  const { data: board, error: queryError, refetch: load } = useArmadaRoutesBoard(range, toApiParams, { pausePolling: !!draggingJobId });
   const { routes, unrouted, undated, drivers = [], vehicles = [], helpers = [] } = board || {};
   const error = queryError?.message || "";
 

@@ -8,8 +8,8 @@ import React, { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { ActivityIndicator, View, StyleSheet } from "react-native";
+import { QueryClientProvider, focusManager } from "@tanstack/react-query";
+import { ActivityIndicator, View, StyleSheet, AppState, Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -73,7 +73,28 @@ function ThemedStatusBar() {
   return <StatusBar style={theme.statusBarStyle} backgroundColor={theme.NAVY} />;
 }
 
+// focusManager (12 September 2026, bagian dari perbaikan BUG "job sudah
+// selesai di web tapi masih aktif di app" — lihat catatan panjang di
+// useMyJobs.js) — react-query BAWAAN cuma tahu soal "window focus" di
+// web (browser tab), BUKAN "app resume dari background" di React
+// Native. Tanpa wiring ini, react-query TIDAK PERNAH tahu app baru saja
+// kembali ke foreground, jadi query yang stale menunggu sampai
+// refetchInterval berikutnya (bisa sampai 30 detik) alih-alih langsung
+// refresh begitu driver buka app lagi — pola resmi TanStack Query utk
+// React Native (docs "React Native > Refetch on App Focus"), BUKAN
+// implementasi ad-hoc. Menguntungkan SEMUA query di app ini (my-jobs,
+// admin-today, route-incentive-summary), bukan cuma satu hook.
+function useReactQueryAppFocus() {
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (status) => {
+      if (Platform.OS !== "web") focusManager.setFocused(status === "active");
+    });
+    return () => sub.remove();
+  }, []);
+}
+
 export default function App() {
+  useReactQueryAppFocus();
   return (
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>

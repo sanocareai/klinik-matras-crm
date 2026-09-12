@@ -14,7 +14,15 @@ import { api } from "@/api.js";
 // lihat komentar asli D-063/D-069 di ArmadaRoutes.jsx untuk alasan tiap
 // baris filter, TIDAK diulang di sini supaya tidak ada dua sumber
 // penjelasan yang bisa diam-diam beda.
-export function useArmadaRoutesBoard(range, toApiParams) {
+// refetchInterval 30s, DIJEDA saat drag berlangsung (12 September 2026)
+// — dispatcher yang cuma mengamati papan ini tidak pernah lihat job
+// yang diselesaikan driver via app tanpa reload manual (BUG yang sama
+// dengan useArmadaJobs.js/useMyJobs.js). BEDA dari kedua hook itu:
+// papan ini PUNYA drag-drop (ArmadaRoutes.jsx#draggingJobId) — refetch
+// yang menimpa `board` di tengah drag bisa mengganti referensi objek
+// job yang sedang di-drag, bikin drop target kacau. `pausePolling`
+// dikontrol pemanggil (true selama draggingJobId != null).
+export function useArmadaRoutesBoard(range, toApiParams, { pausePolling = false } = {}) {
   return useQuery({
     queryKey: ["armada", "routes-board", toApiParams(range)],
     queryFn: async () => {
@@ -36,5 +44,6 @@ export function useArmadaRoutesBoard(range, toApiParams) {
         helpers: helpersRes || [],
       };
     },
+    refetchInterval: pausePolling ? false : 30_000,
   });
 }

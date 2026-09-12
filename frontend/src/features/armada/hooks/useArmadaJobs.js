@@ -38,5 +38,13 @@ export function useArmadaJobs({ enabled = true, debounced, range, fStatus, fOrde
       return list;
     },
     enabled,
+    // refetchInterval 30s (12 September 2026) — dispatcher yang membuka
+    // Jadwal & Penugasan dan cuma MENGAMATI (tanpa klik apa pun) tidak
+    // pernah lihat perubahan yang dibuat driver via app (mis. tandai
+    // Selesai) sampai reload manual. Halaman ini TIDAK punya drag-drop
+    // (itu di Route Planner/useArmadaRoutesBoard.js, dijaga terpisah
+    // karena poll di tengah drag bisa mengacaukan state-nya) — aman
+    // polling tanpa syarat tambahan.
+    refetchInterval: 30_000,
   });
 }
