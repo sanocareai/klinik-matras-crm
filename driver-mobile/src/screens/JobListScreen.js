@@ -3,7 +3,7 @@
 // lewat backend yang SAMA dipakai PWA/APK Capacitor driver-app/. Light/
 // dark ikut sistem HP (10 Sep 2026, lihat src/theme.js/useTheme.js).
 import React, { useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Switch, Alert } from "react-native";
 // SafeAreaView BAWAAN react-native TIDAK menghormati status bar di Android
 // (cuma efektif utk notch iOS) — akar bug "layout ketutupan icon
 // notifikasi" (laporan owner 10 Sep 2026). Ganti ke react-native-safe-
@@ -11,26 +11,70 @@ import { View, Text, Pressable, StyleSheet, ActivityIndicator, RefreshControl } 
 // benar-benar mengukur inset status bar di kedua platform.
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
+import { Home, History } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useMyJobs } from "../hooks/useMyJobs";
 import { useDriverTracking } from "../hooks/useDriverTracking";
 import JobCard from "../components/JobCard";
 import RouteStartCard from "../components/RouteStartCard";
+import BottomNavBar from "../components/BottomNavBar";
 
 const ACTIVE_STATUSES = ["ASSIGNED", "EN_ROUTE", "ARRIVED"];
 
+// Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
+// dulu di atas konten, lihat BottomNavBar.js.
+const NAV_ITEMS = [
+  { key: "aktif", label: "Aktif", icon: Home },
+  { key: "riwayat", label: "Riwayat", icon: History },
+];
+
 export default function JobListScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, isOnline, setOnline } = useAuth();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { data: jobs, isLoading, error, refetch, isRefetching } = useMyJobs();
   const [showHistory, setShowHistory] = useState(false);
+  const [togglingOnline, setTogglingOnline] = useState(false);
 
-  // D-034 — kirim ping GPS selama ADA job EN_ROUTE. Tidak melakukan apa pun
-  // (tidak minta izin lokasi sekalipun) kalau tidak ada job yang sedang
-  // berjalan — lihat catatan di hook.
-  useDriverTracking(jobs);
+  // D-034 — kirim ping GPS selama ADA job EN_ROUTE, DAN Online (12 Sep
+  // 2026 — gerbang isOnline ditambahkan di hook, lihat catatan panjang di
+  // sana). Tidak melakukan apa pun (tidak minta izin lokasi sekalipun)
+  // kalau Offline atau tidak ada job yang sedang berjalan.
+  useDriverTracking(jobs, isOnline);
+
+  // Toggle Online/Offline (12 Sep 2026, referensi Gojek/Grab, semi-
+  // otomatis) — Offline WAJIB konfirmasi dulu (kalau ada job EN_ROUTE,
+  // ditegaskan lagi supaya driver tidak tidak sengaja mematikan
+  // tracking di tengah perjalanan), Online langsung tanpa konfirmasi
+  // (tidak ada downside).
+  async function toggleOnline(next) {
+    if (togglingOnline) return;
+    if (!next) {
+      const adaJobJalan = (jobs || []).some((j) => j.status === "EN_ROUTE");
+      const lanjut = await new Promise((resolve) => {
+        Alert.alert(
+          "Jadi Offline?",
+          adaJobJalan
+            ? "Masih ada job yang sedang dalam perjalanan. Kalau Offline, posisi Anda BERHENTI dilacak sampai Online lagi."
+            : "Anda tidak akan terlacak sampai Online lagi.",
+          [
+            { text: "Batal", style: "cancel", onPress: () => resolve(false) },
+            { text: "Ya, Offline", style: "destructive", onPress: () => resolve(true) },
+          ]
+        );
+      });
+      if (!lanjut) return;
+    }
+    setTogglingOnline(true);
+    try {
+      await setOnline(next);
+    } catch (e) {
+      Alert.alert("Gagal", e.message || "Coba lagi.");
+    } finally {
+      setTogglingOnline(false);
+    }
+  }
 
   const activeJobs = (jobs || []).filter((j) => ACTIVE_STATUSES.includes(j.status));
   const doneJobs = (jobs || []).filter((j) => j.status === "COMPLETED" || j.status === "FAILED");
@@ -69,13 +113,21 @@ export default function JobListScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.tabs}>
-        <Pressable style={[styles.tab, !showHistory && styles.tabActive]} onPress={() => setShowHistory(false)}>
-          <Text style={[styles.tabText, !showHistory && styles.tabTextActive]}>Aktif ({activeJobs.length})</Text>
-        </Pressable>
-        <Pressable style={[styles.tab, showHistory && styles.tabActive]} onPress={() => setShowHistory(true)}>
-          <Text style={[styles.tabText, showHistory && styles.tabTextActive]}>Riwayat ({doneJobs.length})</Text>
-        </Pressable>
+      {/* Online/Offline (12 Sep 2026, referensi Gojek/Grab driver app) —
+          MURNI status, BUKAN "terima order" (order di sini sudah
+          ditentukan PIC-nya dispatcher). Kegunaan: gerbang GPS tracking,
+          lihat useDriverTracking.js. */}
+      <View style={styles.onlineRow}>
+        <View style={[styles.onlineDot, { backgroundColor: isOnline ? theme.GREEN : theme.INK3 }]} />
+        <Text style={styles.onlineText}>{isOnline ? "Online" : "Offline"}</Text>
+        <Switch
+          value={isOnline}
+          onValueChange={toggleOnline}
+          disabled={togglingOnline}
+          trackColor={{ false: theme.BORDER, true: theme.GREEN + "66" }}
+          thumbColor={isOnline ? theme.GREEN : theme.INK3}
+          style={{ marginLeft: "auto" }}
+        />
       </View>
 
       {isLoading ? (
@@ -116,6 +168,14 @@ export default function JobListScreen() {
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.ACCENT} />}
         />
       )}
+
+      <BottomNavBar
+        items={NAV_ITEMS}
+        active={showHistory ? "riwayat" : "aktif"}
+        onChange={(key) => setShowHistory(key === "riwayat")}
+        theme={theme}
+        badge={{ aktif: activeJobs.length }}
+      />
     </SafeAreaView>
   );
 }
@@ -128,13 +188,18 @@ function makeStyles(t) {
     subtitle: { fontSize: 12.5, color: t.INK2, marginTop: 2 },
     logoutBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: t.BORDER },
     logoutText: { color: t.ACCENT, fontWeight: "700", fontSize: 12.5 },
-    tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 8 },
-    tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100 },
-    tabActive: { backgroundColor: t.ACCENT_BG },
-    tabText: { color: t.INK2, fontSize: 12.5, fontWeight: "600" },
-    tabTextActive: { color: t.ACCENT },
-    list: { paddingHorizontal: 16, paddingBottom: 24 },
-    center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
+    onlineRow: {
+      flexDirection: "row", alignItems: "center", gap: 8,
+      marginHorizontal: 16, marginBottom: 10, paddingHorizontal: 12, paddingVertical: 9,
+      borderRadius: 12, backgroundColor: t.SURFACE,
+    },
+    onlineDot: { width: 8, height: 8, borderRadius: 4 },
+    onlineText: { color: t.INK, fontWeight: "700", fontSize: 13 },
+    // paddingBottom 96 (bukan 24) — ruang buat BottomNavBar melayang
+    // (fase 2 redesign, lihat BottomNavBar.js) supaya card terakhir tidak
+    // ketutupan bar.
+    list: { paddingHorizontal: 16, paddingBottom: 96 },
+    center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingBottom: 80 },
     errorText: { color: t.RED, fontSize: 13, textAlign: "center" },
     emptyText: { color: t.INK2, fontSize: 13, textAlign: "center" },
   });

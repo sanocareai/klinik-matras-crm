@@ -10,18 +10,21 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Truck, Route, CheckCircle2, XCircle, Clock, Award } from "lucide-react-native";
+import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
 import { useRouteIncentiveSummary } from "../hooks/useRouteIncentiveSummary";
 import { relatifWaktu } from "../lib/jobHelpers";
+import BottomNavBar from "../components/BottomNavBar";
 
+// Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
+// dulu di atas konten, lihat BottomNavBar.js.
 const TABS = [
-  { key: "hari-ini", label: "Hari Ini" },
-  { key: "driver", label: "Driver" },
-  { key: "masalah", label: "Masalah" },
-  { key: "performa", label: "Performa" },
+  { key: "hari-ini", label: "Hari Ini", icon: Home },
+  { key: "driver", label: "Driver", icon: Truck },
+  { key: "masalah", label: "Masalah", icon: AlertTriangle },
+  { key: "performa", label: "Performa", icon: Award },
 ];
 
 // Preset rentang tanggal utk tab Performa (12 Sep 2026) — default "Bulan
@@ -139,16 +142,6 @@ export default function AdminHomeScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.tabs}>
-        {TABS.map((t) => (
-          <Pressable key={t.key} style={[styles.tab, tab === t.key && styles.tabActive]} onPress={() => setTab(t.key)}>
-            <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>
-              {t.label}{t.key === "masalah" && issues.length > 0 ? ` (${issues.length})` : ""}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
       {tab === "performa" ? (
         <PerformaView
           performa={performa}
@@ -171,6 +164,14 @@ export default function AdminHomeScreen() {
           {tab === "masalah" && <MasalahView issues={issues} theme={theme} styles={styles} />}
         </ScrollView>
       )}
+
+      <BottomNavBar
+        items={TABS}
+        active={tab}
+        onChange={setTab}
+        theme={theme}
+        badge={{ masalah: issues.length }}
+      />
     </SafeAreaView>
   );
 }
@@ -352,15 +353,13 @@ function makeStyles(t) {
     subtitle: { fontSize: 12.5, color: t.INK2, marginTop: 2 },
     logoutBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: t.BORDER },
     logoutText: { color: t.ACCENT, fontWeight: "700", fontSize: 12.5 },
-    tabs: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 8 },
-    tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100 },
-    tabActive: { backgroundColor: t.ACCENT_BG },
-    tabText: { color: t.INK2, fontSize: 12.5, fontWeight: "600" },
-    tabTextActive: { color: t.ACCENT },
-    center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: 40 },
+    center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: 40, paddingBottom: 80 },
     errorText: { color: t.RED, fontSize: 13, textAlign: "center" },
     emptyText: { color: t.INK2, fontSize: 13, textAlign: "center" },
-    body: { paddingHorizontal: 16, paddingBottom: 24 },
+    // paddingBottom 96 (bukan 24) — ruang buat BottomNavBar melayang
+    // (fase 2 redesign, lihat BottomNavBar.js) supaya card terakhir tidak
+    // ketutupan bar.
+    body: { paddingHorizontal: 16, paddingBottom: 96 },
     kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     kpi: { flexBasis: "31%", flexGrow: 1, backgroundColor: t.SURFACE, borderRadius: 14, paddingVertical: 12, alignItems: "center" },
     kpiValue: { color: t.INK, fontSize: 20, fontWeight: "800" },
