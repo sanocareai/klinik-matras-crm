@@ -320,6 +320,21 @@ model User {
   // Order/Customer langsung, tidak difilter per-user.
   active Boolean @default(true)
 
+  // Status Online/Offline driver (12 September 2026, referensi Gojek/Grab
+  // driver app — permintaan owner) — TOGGLE MURNI status, BUKAN "terima
+  // order" (order di sini sudah ditentukan PIC-nya oleh dispatcher, beda
+  // dari ride-hailing). Kegunaan utama: gerbang GPS tracking sisi klien
+  // (driver-mobile) — begitu Offline, app BERHENTI mengirim ping posisi
+  // sama sekali, apa pun status job-nya (lihat useDriverTracking.js RN),
+  // supaya lokasi pribadi driver tidak terus terpantau di luar jam kerja.
+  // SEMI-OTOMATIS (keputusan owner): Offline WAJIB manual (driver yang
+  // tap), tapi Online bisa otomatis nyala begitu driver mulai job pertama
+  // hari itu (POST /jobs/:id/start & /routes/:id/start) — jaga-jaga driver
+  // lupa tap manual. onlineSince null berarti sedang Offline (dipakai UI
+  // admin utk "online sejak jam berapa", bukan cuma titik biner).
+  isOnline    Boolean   @default(false) @map("is_online")
+  onlineSince DateTime? @map("online_since")
+
   // Leader sales (mis. Novi) — ber-role ADMIN tapi secara bisnis mengawasi
   // tim sales & kadang closing sendiri. Flag EKSPLISIT (25 Agustus 2026),
   // BUKAN diinfer dari role/nama — konsisten dengan preseden UserRole/D-010

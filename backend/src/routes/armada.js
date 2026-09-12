@@ -536,8 +536,12 @@ async function kirimRingkasanRuteKeNatasha(route, mapsUrl, label = "") {
 // dijadwalkan" tidak drift antara dua file.
 
 const jobInclude = {
-  driver: { select: { id: true, name: true } },
-  helper: { select: { id: true, name: true } },
+  // isOnline/onlineSince (12 September 2026) — supaya AdminHomeScreen (app)
+  // bisa tampilkan titik Online/Offline per driver di tab "Driver" TANPA
+  // panggilan API kedua, konsisten dengan pola route/id:code/status di
+  // bawah (sekali select, dipakai di mana pun job ini muncul).
+  driver: { select: { id: true, name: true, isOnline: true, onlineSince: true } },
+  helper: { select: { id: true, name: true, isOnline: true, onlineSince: true } },
   vehicle: { select: { id: true, plateNumber: true } },
   // route (D-077) — supaya frontend Penjadwalan bisa menampilkan "diatur
   // di rute RTE-XXX" begitu job.routeId terisi, TANPA panggilan API kedua
@@ -1776,6 +1780,67 @@ armadaRouter.get("/routes", requirePermission(P.JOB_READ), async (req, res) => {
   }
 });
 
+// GET /routes/incentive-summary?from=&to= — jumlah RUTE Selesai per
+// driver/helper dalam rentang tanggal (12 September 2026, permintaan
+// owner: "insentif sistem kita menghitung nya per jalur, jadi boleh ada
+// status masing-masing driver/helper ada status sudah berapa jalur
+// mereka ... bisa disetting tanggal"). "Jalur" = Route (RTE-XXX), BUKAN
+// job satuan — satu rute isinya banyak stop tapi cuma dihitung 1 jalur.
+// Cuma Route.status COMPLETED yang dihitung (auto-set oleh
+// syncRouteCompletionStatus begitu semua job anggotanya tuntas) — DRAFT/
+// PUBLISHED-belum-jalan/CANCELLED bukan kerja yang sudah selesai, tidak
+// relevan buat insentif. Dipisah per PERAN (asDriver/asHelper) — satu
+// orang bisa jadi driver di sebagian rute & helper di rute lain (LEADER_
+// DRIVER khususnya), dan insentif driver vs helper wajar beda besarannya,
+// jadi TIDAK digabung jadi satu angka begitu saja.
+armadaRouter.get("/routes/incentive-summary", requirePermission(P.JOB_READ), async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    // Default "bulan ini" (WIB) kalau tidak dikirim — insentif lazimnya
+    // dihitung per periode berjalan, bukan akumulasi dari awal selamanya.
+    const now = new Date(Date.now() + 7 * 3600_000);
+    const defaultFrom = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const dateWhere = {
+      gte: from ? toDateOnly(from) : defaultFrom,
+      ...(to && { lte: toDateOnly(to) }),
+    };
+
+    const routes = await prisma.route.findMany({
+      where: { status: "COMPLETED", date: dateWhere },
+      select: {
+        driverId: true, driver: { select: { id: true, name: true } },
+        helperId: true, helper: { select: { id: true, name: true } },
+      },
+    });
+
+    const perOrang = new Map();
+    function tambah(user, peran) {
+      if (!user) return;
+      let baris = perOrang.get(user.id);
+      if (!baris) {
+        baris = { id: user.id, name: user.name, asDriver: 0, asHelper: 0 };
+        perOrang.set(user.id, baris);
+      }
+      baris[peran] += 1;
+    }
+    for (const r of routes) {
+      tambah(r.driver, "asDriver");
+      tambah(r.helper, "asHelper");
+    }
+    const orang = [...perOrang.values()]
+      .map((o) => ({ ...o, total: o.asDriver + o.asHelper }))
+      .sort((a, b) => b.total - a.total);
+
+    res.json({
+      from: dateWhere.gte.toISOString().slice(0, 10),
+      to: dateWhere.lte ? dateWhere.lte.toISOString().slice(0, 10) : null,
+      orang,
+    });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 armadaRouter.get("/routes/:id", requirePermission(P.JOB_READ), async (req, res) => {
   try {
     const route = await prisma.route.findUnique({ where: { id: req.params.id }, include: routeInclude });
@@ -2977,6 +3042,29 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
   }
 });
 
+// POST /api/armada/me/online-status — toggle Online/Offline driver (12
+// September 2026, referensi Gojek/Grab driver app, permintaan owner).
+// MURNI status, BUKAN "terima order" (order sudah ditentukan PIC-nya oleh
+// dispatcher) — kegunaannya gerbang GPS tracking sisi klien: driver-mobile
+// BERHENTI mengirim ping posisi sama sekali begitu Offline, apa pun status
+// job-nya (lihat useDriverTracking.js RN). requireAuth polos (bukan
+// JOB_OWN_WRITE) — endpoint ini murni menulis status MILIK SENDIRI
+// (req.user.id), siapa pun yang login boleh, sama pola dengan POST
+// /push/subscribe di atas.
+armadaRouter.post("/me/online-status", requireAuth, async (req, res) => {
+  try {
+    const online = !!req.body.online;
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { isOnline: online, onlineSince: online ? new Date() : null },
+      select: { id: true, isOnline: true, onlineSince: true },
+    });
+    res.json(user);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // ─── Web Push (8 September 2026) — subscribe/unsubscribe device driver ─────
 // requireAuth polos (BUKAN requirePermission JOB_OWN_READ) — SIAPA PUN yang
 // login boleh subscribe device-nya sendiri (dispatcher/admin juga masuk akal
@@ -3433,6 +3521,16 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
         });
         await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       }
+      // Auto-Online (12 September 2026, keputusan owner: semi-otomatis —
+      // Offline wajib manual, tapi Online boleh otomatis begitu driver
+      // mulai job pertama hari itu, jaga-jaga lupa tap). `isOnline: false`
+      // di where = no-op kalau sudah Online, tidak mereset onlineSince
+      // tanpa alasan. Driver DAN helper (kalau ada) sama-sama dianggap
+      // mulai kerja.
+      const pelakuId = [job.driverId, job.helperId].filter(Boolean);
+      if (pelakuId.length > 0) {
+        await tx.user.updateMany({ where: { id: { in: pelakuId }, isOnline: false }, data: { isOnline: true, onlineSince: new Date() } });
+      }
     });
     const full = await prisma.job.findUnique({ where: { id: job.id }, include: jobInclude });
 
@@ -3487,6 +3585,14 @@ armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_O
           await tx.unit.updateMany({ where: { id: { in: unitIds } }, data: { status: "IN_TRANSIT_OUT" } });
           await syncOrderStatusForUnits(tx, unitIds);
         }
+      }
+      // Auto-Online (12 September 2026) — sama alasan dgn POST
+      // /jobs/:id/start, dikumpulkan dari SELURUH job yang dimulai batch
+      // ini (rute biasanya 1 driver+helper, tapi dikumpulkan generik
+      // jaga-jaga ada campuran).
+      const pelakuId = [...new Set(target.flatMap((j) => [j.driverId, j.helperId]).filter(Boolean))];
+      if (pelakuId.length > 0) {
+        await tx.user.updateMany({ where: { id: { in: pelakuId }, isOnline: false }, data: { isOnline: true, onlineSince: new Date() } });
       }
     });
 

@@ -111,7 +111,11 @@ userRouter.get("/me", async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, name: true, email: true, role: true, avatarUrl: true, createdAt: true },
+      // isOnline/onlineSince (12 September 2026) — driver-mobile baca ini
+      // saat login/restore sesi supaya toggle Online/Offline di app
+      // mencerminkan status TERAKHIR yang tersimpan, bukan selalu mulai
+      // dari Offline tiap buka app.
+      select: { id: true, name: true, email: true, role: true, avatarUrl: true, createdAt: true, isOnline: true, onlineSince: true },
     });
     res.json(user);
   } catch (err) {
