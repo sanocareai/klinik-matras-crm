@@ -167,18 +167,38 @@ userRouter.post("/", adminOnly, async (req, res) => {
 });
 
 // PATCH /me — update profil sendiri
+//
+// email ditambahkan 12 September 2026 (D-163, laporan owner: "buat semua
+// user bisa diedit dari nama, email, dan lainnya") — sebelumnya HANYA nama
+// yang bisa diubah di sini, email sama sekali tidak ada jalan mengubahnya
+// (bukan cuma di halaman Pengguna & Peran, di /me pun tidak). Validasi
+// keunikan WAJIB manual (bukan cuma mengandalkan `@unique` Prisma
+// melempar P2002) supaya errornya jelas ke pengguna, pola sama dengan
+// POST / (buat user baru) di atas.
 userRouter.patch("/me", async (req, res) => {
   try {
-    const { name } = req.body;
-    if (!name?.trim()) return res.status(400).json({ error: "Nama tidak boleh kosong" });
+    const { name, email } = req.body;
+    if (name !== undefined && !name?.trim()) return res.status(400).json({ error: "Nama tidak boleh kosong" });
+
+    const data = {};
+    if (name !== undefined) data.name = name.trim();
+    if (email !== undefined) {
+      const trimmedEmail = email.trim().toLowerCase();
+      if (!trimmedEmail) return res.status(400).json({ error: "Email tidak boleh kosong" });
+      const existing = await prisma.user.findUnique({ where: { email: trimmedEmail } });
+      if (existing && existing.id !== req.user.id) return res.status(409).json({ error: "Email sudah dipakai pengguna lain" });
+      data.email = trimmedEmail;
+    }
+    if (Object.keys(data).length === 0) return res.status(400).json({ error: "Tidak ada field yang diubah" });
 
     const updated = await prisma.user.update({
       where: { id: req.user.id },
-      data: { name: name.trim() },
+      data,
       select: { id: true, name: true, email: true, role: true, avatarUrl: true },
     });
     res.json(updated);
   } catch (err) {
+    if (err.code === "P2002") return res.status(409).json({ error: "Email sudah dipakai pengguna lain" });
     res.status(500).json({ error: err.message });
   }
 });
@@ -274,7 +294,7 @@ userRouter.post("/me/change-password", async (req, res) => {
   }
 });
 
-// PATCH /:id — update user oleh admin (nama, role, aktif/nonaktif)
+// PATCH /:id — update user oleh admin (nama, email, role, aktif/nonaktif)
 //
 // `active: false` = "nonaktifkan" (mis. sales resign) — TIDAK menghapus
 // User atau melepas assignedCustomers/assignedConversations yang sudah ada
@@ -285,19 +305,36 @@ userRouter.post("/me/change-password", async (req, res) => {
 // SUDAH tertaut ke dia tetap menampilkan namanya, cuma tidak bisa dipilih
 // lagi untuk tugas baru. `assignedCustomersCount` dikembalikan supaya admin
 // langsung tahu berapa pelanggan yang mungkin perlu di-assign ulang.
+//
+// email ditambahkan 12 September 2026 (D-163, laporan owner: "buat semua
+// user bisa diedit dari nama, email, dan lainnya") — sebelumnya halaman
+// Pengguna & Peran cuma bisa ubah peran/reset password/nonaktifkan/hapus,
+// TIDAK ADA jalan mengoreksi nama/email user LAIN yang salah ketik (mis.
+// typo email login), padahal admin sering perlu itu (staf resign lalu
+// akunnya dipakai staf pengganti, dst).
 userRouter.patch("/:id", adminOnly, async (req, res) => {
   try {
     if (req.params.id === req.user.id) {
       return res.status(400).json({ error: "Gunakan endpoint /me untuk update profil sendiri" });
     }
-    const { name, role, active } = req.body;
+    const { name, email, role, active } = req.body;
+    if (name !== undefined && !name?.trim()) return res.status(400).json({ error: "Nama tidak boleh kosong" });
+
+    const data = {};
+    if (name !== undefined) data.name = name.trim();
+    if (role) data.role = role;
+    if (active !== undefined) data.active = !!active;
+    if (email !== undefined) {
+      const trimmedEmail = email.trim().toLowerCase();
+      if (!trimmedEmail) return res.status(400).json({ error: "Email tidak boleh kosong" });
+      const existing = await prisma.user.findUnique({ where: { email: trimmedEmail } });
+      if (existing && existing.id !== req.params.id) return res.status(409).json({ error: "Email sudah dipakai pengguna lain" });
+      data.email = trimmedEmail;
+    }
+
     const updated = await prisma.user.update({
       where: { id: req.params.id },
-      data: {
-        ...(name?.trim() && { name: name.trim() }),
-        ...(role && { role }),
-        ...(active !== undefined && { active: !!active }),
-      },
+      data,
       select: {
         id: true, name: true, email: true, role: true, active: true, avatarUrl: true, createdAt: true,
         _count: { select: { assignedCustomers: true, assignedConversations: true } },
@@ -310,6 +347,7 @@ userRouter.patch("/:id", adminOnly, async (req, res) => {
     });
   } catch (err) {
     if (err.code === "P2025") return res.status(404).json({ error: "User tidak ditemukan" });
+    if (err.code === "P2002") return res.status(409).json({ error: "Email sudah dipakai pengguna lain" });
     res.status(500).json({ error: err.message });
   }
 });

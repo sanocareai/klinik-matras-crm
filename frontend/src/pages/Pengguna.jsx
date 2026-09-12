@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   UserPlus, Trash2, Key, Shield, ShieldCheck, Lock, X, Eye, EyeOff,
-  MessageSquare, Users, FileText, Check, UserX, UserCheck, MoreVertical,
+  MessageSquare, Users, FileText, Check, UserX, UserCheck, MoreVertical, Pencil,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
@@ -82,7 +82,7 @@ function RoleChip({ role }) {
 // terpisah yang gampang saling menyimpang). Mengganti 3-4 tombol berjejer
 // (kadang ikon polos tanpa label, kadang teks — tidak konsisten) dengan
 // SATU kebab, pola yang sama dengan menu profil di sidebar (Layout.jsx).
-function UserRowActions({ u, isMe, onEditRole, onResetPw, onToggleActive, onDelete }) {
+function UserRowActions({ u, isMe, onEditProfile, onEditRole, onResetPw, onToggleActive, onDelete }) {
   const nonaktif = u.active === false;
   return (
     <Menu
@@ -97,6 +97,7 @@ function UserRowActions({ u, isMe, onEditRole, onResetPw, onToggleActive, onDele
         </button>
       }
     >
+      <MenuItem icon={Pencil} onSelect={onEditProfile}>Ubah Profil</MenuItem>
       {!isMe && <MenuItem icon={Shield} onSelect={onEditRole}>Ubah Peran</MenuItem>}
       <MenuItem icon={Key} onSelect={onResetPw}>Reset Password</MenuItem>
       {!isMe && (
@@ -132,6 +133,17 @@ export default function Pengguna({ user: currentUser }) {
   const [showReset, setShowReset]       = useState(null); // user object
   const [showDelete, setShowDelete]     = useState(null); // user object
   const [showRoleEdit, setShowRoleEdit] = useState(null); // user object
+  const [showEditUser, setShowEditUser] = useState(null); // user object
+
+  // Ubah Profil (nama/email) — D-163, 12 September 2026, laporan owner:
+  // "buat semua user bisa diedit dari nama, email, dan lainnya". Sengaja
+  // dibatasi ke nama+email saja (bukan hasSim/isSalesTeamLead/dst) karena
+  // field lain sudah punya UI khusus sendiri (Pengaturan Delivery > Driver,
+  // Laporan Sales > Target Sales) — menduplikasinya di sini cuma menambah
+  // 2 sumber kebenaran untuk hal yang sama.
+  const [editUserForm, setEditUserForm] = useState({ name: "", email: "" });
+  const [editUserLoading, setEditUserLoading] = useState(false);
+  const [editUserError, setEditUserError] = useState("");
 
   // Add user form
   const [addForm, setAddForm]   = useState({ name: "", email: "", password: "", role: "SALES" });
@@ -268,6 +280,39 @@ export default function Pengguna({ user: currentUser }) {
         : `"${u.name}" diaktifkan kembali.`);
     } catch (err) {
       showFeedback("error", err.message);
+    }
+  }
+
+  function openEditUser(u) {
+    setShowEditUser(u);
+    setEditUserForm({ name: u.name || "", email: u.email || "" });
+    setEditUserError("");
+  }
+
+  // Diri sendiri WAJIB lewat /users/me (PATCH /:id menolak self-edit,
+  // lihat backend/src/routes/users.js) — dua endpoint beda, satu form.
+  async function handleEditUser(e) {
+    e.preventDefault();
+    setEditUserError("");
+    const name = editUserForm.name.trim();
+    const email = editUserForm.email.trim();
+    if (!name || !email) {
+      setEditUserError("Nama dan email wajib diisi.");
+      return;
+    }
+    const isMe = showEditUser.id === currentUser?.id;
+    setEditUserLoading(true);
+    try {
+      const updated = isMe
+        ? await api.updateMe({ name, email })
+        : await api.updateUser(showEditUser.id, { name, email });
+      setUsers((prev) => prev.map((x) => (x.id === showEditUser.id ? { ...x, ...updated } : x)));
+      setShowEditUser(null);
+      showFeedback("success", `Profil "${name}" berhasil diperbarui.`);
+    } catch (err) {
+      setEditUserError(err.message);
+    } finally {
+      setEditUserLoading(false);
     }
   }
 
@@ -430,6 +475,7 @@ export default function Pengguna({ user: currentUser }) {
                     <td style={{ textAlign: "center" }}>
                       <UserRowActions
                         u={u} isMe={isMe}
+                        onEditProfile={() => openEditUser(u)}
                         onEditRole={() => { setShowRoleEdit(u); setRoleEditError(""); }}
                         onResetPw={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}
                         onToggleActive={() => handleToggleActive(u)}
@@ -599,6 +645,39 @@ export default function Pengguna({ user: currentUser }) {
             <div className="modal-footer">
               <button className="btn btn-primary" onClick={() => setShowRoleEdit(null)}>Selesai</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL UBAH PROFIL (nama/email) ── */}
+      {showEditUser && (
+        <div className="modal-overlay" onClick={() => setShowEditUser(null)}>
+          <div className="modal-box" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Ubah Profil {showEditUser.name}</h3>
+              <button className="modal-close" onClick={() => setShowEditUser(null)}><X size={18} /></button>
+            </div>
+            <form onSubmit={handleEditUser}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Nama Lengkap</label>
+                  <input type="text" placeholder="Nama pengguna" value={editUserForm.name}
+                    onChange={(e) => setEditUserForm((f) => ({ ...f, name: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Email (untuk login)</label>
+                  <input type="email" placeholder="email@klinikmatras.com" value={editUserForm.email}
+                    onChange={(e) => setEditUserForm((f) => ({ ...f, email: e.target.value }))} />
+                </div>
+                {editUserError && <p style={{ color: "var(--color-danger)", fontSize: 13, margin: "4px 0 0" }}>{editUserError}</p>}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setShowEditUser(null)}>Batal</button>
+                <button type="submit" className="btn btn-primary" disabled={editUserLoading}>
+                  {editUserLoading ? "Menyimpan..." : "Simpan Perubahan"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
