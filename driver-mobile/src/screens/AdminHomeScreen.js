@@ -96,19 +96,34 @@ function rentangPeriode(preset) {
   return { from: toISO(awal), to: toISO(now) };
 }
 
+// Nama tim rute (13 Sep 2026, audit tab Driver — celah #4) — dipakai di
+// header kartu rute (Hari Ini & tab Rute) supaya admin tidak perlu pindah
+// ke tab Driver dulu cuma buat tahu siapa yang pegang satu rute.
+function namaTimRute(r) {
+  return [r.driverName, r.helperName].filter(Boolean).join(" + ") || "Belum ada driver";
+}
+
 function ringkasHariIni(jobs) {
   const counts = {};
   for (const j of jobs) counts[j.status] = (counts[j.status] || 0) + 1;
   const sisa = (counts.ASSIGNED || 0) + (counts.SCHEDULED || 0) + (counts.UNSCHEDULED || 0);
 
+  // driverName/helperName (13 Sep 2026, audit tab Driver — celah #4:
+  // "Rute Hari Ini" & tab Rute cuma tampil kode rute, admin harus pindah
+  // ke tab Driver dulu buat tahu siapa yang pegang). Diambil dari job
+  // PERTAMA di rute itu yang punya driver/helper — dalam praktiknya SATU
+  // rute selalu 1 driver+helper yang sama di semua job-nya (assignment di
+  // level rute), jadi representatif tanpa perlu query/field baru.
   const routeMap = new Map();
   for (const j of jobs) {
     if (!j.route) continue;
     let r = routeMap.get(j.route.id);
-    if (!r) { r = { id: j.route.id, code: j.route.code, total: 0, selesai: 0, gagal: 0 }; routeMap.set(j.route.id, r); }
+    if (!r) { r = { id: j.route.id, code: j.route.code, total: 0, selesai: 0, gagal: 0, driverName: null, helperName: null }; routeMap.set(j.route.id, r); }
     r.total += 1;
     if (j.status === "COMPLETED") r.selesai += 1;
     if (j.status === "FAILED") r.gagal += 1;
+    if (!r.driverName && j.driver) r.driverName = j.driver.name;
+    if (!r.helperName && j.helper) r.helperName = j.helper.name;
   }
 
   return {
@@ -167,7 +182,13 @@ function ruteAktifDariJobs(jobs) {
   for (const j of jobs) {
     if (!j.route) continue;
     let r = byRoute.get(j.route.id);
-    if (!r) { r = { id: j.route.id, code: j.route.code, jobs: [] }; byRoute.set(j.route.id, r); }
+    // driverName/helperName (13 Sep 2026, audit tab Driver — celah #4) —
+    // sama pola dengan ringkasHariIni: ambil dari job pertama di rute ini
+    // yang punya driver/helper, representatif karena 1 rute = 1 pasangan
+    // driver+helper di semua job-nya.
+    if (!r) { r = { id: j.route.id, code: j.route.code, driverName: null, helperName: null, jobs: [] }; byRoute.set(j.route.id, r); }
+    if (!r.driverName && j.driver) r.driverName = j.driver.name;
+    if (!r.helperName && j.helper) r.helperName = j.helper.name;
     r.jobs.push(j);
   }
   return [...byRoute.values()]
@@ -459,6 +480,7 @@ function HariIniView({ ringkasan, aktivitas, theme: t, styles }) {
               </View>
               <Text style={styles.cardMeta}>{r.selesai}/{r.total} selesai{r.gagal > 0 ? ` · ${r.gagal} gagal` : ""}</Text>
             </View>
+            <Text style={[styles.cardMeta, { marginTop: 2 }]}>{namaTimRute(r)}</Text>
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${r.total ? Math.round((r.selesai / r.total) * 100) : 0}%` }]} />
             </View>
@@ -799,12 +821,15 @@ function RuteAktifSubView({ ruteAktif, onChanged, t, styles }) {
         const selesai = r.jobs.filter((j) => j.status === "COMPLETED").length;
         return (
           <View key={r.id}>
-            <View style={[styles.rowBetween, { marginBottom: 8 }]}>
+            <View style={styles.rowBetween}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Route size={14} color={t.ACCENT} />
                 <Text style={styles.cardTitle}>{r.code}</Text>
               </View>
               <Text style={styles.cardMeta}>{selesai}/{r.jobs.length} selesai</Text>
+            </View>
+            <View style={{ marginBottom: 8 }}>
+              <Text style={styles.cardMeta}>{namaTimRute(r)}</Text>
             </View>
             {r.jobs.map((j) => (
               <JobCard key={j.id} job={j} onChanged={onChanged} />
