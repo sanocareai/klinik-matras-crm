@@ -25,15 +25,36 @@ function svgIcon(google, inner, size, anchor) {
   };
 }
 
+// Cache per-input (14 September 2026, laporan owner: "buka live tracking di
+// web jadi glitch") — SEMUA fungsi ikon di bawah dipanggil LANGSUNG di JSX
+// (`icon={driverIcon(...)}` dst, lihat ArmadaTracking.jsx/RouteMap.jsx),
+// jadi tanpa cache, tiap render (poll 15 detik, klik marker mana pun, hasil
+// OSRM baru) membuat OBJEK ICON BARU untuk SEMUA marker di peta sekaligus —
+// @react-google-maps/api lalu memanggil ulang `marker.setIcon()` untuk
+// semuanya serentak, kelihatan sebagai kedipan/flicker di seluruh peta.
+// Fungsi svgIcon() murni (output SAMA untuk input SAMA) jadi aman di-cache:
+// icon yang identik BOLEH dipakai bersama oleh banyak Marker sekaligus,
+// pola umum Google Maps API. `google` sengaja TIDAK ikut kunci cache — dia
+// singleton (window.google) yang stabil sepanjang umur halaman.
+const iconCache = new Map();
+function cached(key, factory) {
+  if (iconCache.has(key)) return iconCache.get(key);
+  const icon = factory();
+  iconCache.set(key, icon);
+  return icon;
+}
+
 // Avatar bulat berwarna + inisial — posisi driver (ArmadaTracking.jsx).
 export function driverIcon(google, name) {
-  const { bg, text } = avatarColor(name || "?");
-  const initials = escapeXml(getInitials(name));
-  const inner = `
-    <circle cx="19" cy="19" r="16" fill="${bg}" stroke="white" stroke-width="3"/>
-    <text x="19" y="20" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-weight="700" font-size="13" fill="${text}">${initials}</text>
-  `;
-  return svgIcon(google, inner, [38, 38], [19, 19]);
+  return cached(`driver:${name || "?"}`, () => {
+    const { bg, text } = avatarColor(name || "?");
+    const initials = escapeXml(getInitials(name));
+    const inner = `
+      <circle cx="19" cy="19" r="16" fill="${bg}" stroke="white" stroke-width="3"/>
+      <text x="19" y="20" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-weight="700" font-size="13" fill="${text}">${initials}</text>
+    `;
+    return svgIcon(google, inner, [38, 38], [19, 19]);
+  });
 }
 
 // Pin tujuan (alamat customer) — belah ketupat merah, bentuk SENGAJA beda
@@ -45,22 +66,26 @@ export function driverIcon(google, name) {
 // var(--red) langsung) — theme dilewatkan manual oleh pemanggil (`resolved`
 // dari useTheme()), BUKAN ditebak di sini.
 export function destinationIcon(google, theme) {
-  const merah = theme === "dark" ? "#FF453A" : "#D70015";
-  const inner = `
-    <g transform="translate(11,10) rotate(45)">
-      <rect x="-7" y="-7" width="14" height="14" rx="3" fill="${merah}" stroke="white" stroke-width="2"/>
-    </g>
-  `;
-  return svgIcon(google, inner, [22, 22], [11, 20]);
+  return cached(`dest:${theme}`, () => {
+    const merah = theme === "dark" ? "#FF453A" : "#D70015";
+    const inner = `
+      <g transform="translate(11,10) rotate(45)">
+        <rect x="-7" y="-7" width="14" height="14" rx="3" fill="${merah}" stroke="white" stroke-width="2"/>
+      </g>
+    `;
+    return svgIcon(google, inner, [22, 22], [11, 20]);
+  });
 }
 
 // Lingkaran bernomor per warna rute — stop Route Planner (RouteMap.jsx).
 export function stopIcon(google, warna, nomor) {
-  const inner = `
-    <circle cx="12" cy="12" r="10" fill="${warna}" stroke="white" stroke-width="2"/>
-    <text x="12" y="13" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-weight="700" font-size="11" fill="white">${nomor}</text>
-  `;
-  return svgIcon(google, inner, [24, 24], [12, 12]);
+  return cached(`stop:${warna}:${nomor}`, () => {
+    const inner = `
+      <circle cx="12" cy="12" r="10" fill="${warna}" stroke="white" stroke-width="2"/>
+      <text x="12" y="13" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-weight="700" font-size="11" fill="white">${nomor}</text>
+    `;
+    return svgIcon(google, inner, [24, 24], [12, 12]);
+  });
 }
 
 // Stop yang SUDAH SELESAI di Live Tracking (14 September 2026, D-165 —
@@ -70,11 +95,13 @@ export function stopIcon(google, warna, nomor) {
 // dari stopIcon bernomor (upcoming) supaya status "sudah lewat" langsung
 // kebaca tanpa perlu baca angka nomor urutnya.
 export function stopIconDone(google) {
-  const inner = `
-    <circle cx="11" cy="11" r="9" fill="#248A3D" stroke="white" stroke-width="2"/>
-    <path d="M6.5 11l3 3 5-6" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-  `;
-  return svgIcon(google, inner, [22, 22], [11, 11]);
+  return cached("stopDone", () => {
+    const inner = `
+      <circle cx="11" cy="11" r="9" fill="#248A3D" stroke="white" stroke-width="2"/>
+      <path d="M6.5 11l3 3 5-6" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    `;
+    return svgIcon(google, inner, [22, 22], [11, 11]);
+  });
 }
 
 // Stop yang GAGAL di Live Tracking (14 September 2026, D-165) — lingkaran
@@ -82,22 +109,26 @@ export function stopIconDone(google) {
 // gagal TIDAK pernah terlihat seolah berhasil di peta cuma karena sudah
 // "lewat" secara urutan.
 export function stopIconFailed(google) {
-  const inner = `
-    <circle cx="11" cy="11" r="9" fill="#D70015" stroke="white" stroke-width="2"/>
-    <path d="M7.5 7.5l7 7M14.5 7.5l-7 7" stroke="white" stroke-width="2" stroke-linecap="round"/>
-  `;
-  return svgIcon(google, inner, [22, 22], [11, 11]);
+  return cached("stopFailed", () => {
+    const inner = `
+      <circle cx="11" cy="11" r="9" fill="#D70015" stroke="white" stroke-width="2"/>
+      <path d="M7.5 7.5l7 7M14.5 7.5l-7 7" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    `;
+    return svgIcon(google, inner, [22, 22], [11, 11]);
+  });
 }
 
 // Titik pangkalan (Klinik Matras) — kotak gelap + ikon rumah, MILIK BERSAMA
 // semua rute (bukan salah satu warna PALET_RUTE), sama alasan dgn Leaflet lama.
 export function depotIcon(google) {
-  const inner = `
-    <rect x="1" y="1" width="28" height="28" rx="8" fill="#1D1D1F" stroke="white" stroke-width="2"/>
-    <g transform="translate(3,3)" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-      <path d="M9 22V12h6v10"/>
-    </g>
-  `;
-  return svgIcon(google, inner, [30, 30], [15, 28]);
+  return cached("depot", () => {
+    const inner = `
+      <rect x="1" y="1" width="28" height="28" rx="8" fill="#1D1D1F" stroke="white" stroke-width="2"/>
+      <g transform="translate(3,3)" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <path d="M9 22V12h6v10"/>
+      </g>
+    `;
+    return svgIcon(google, inner, [30, 30], [15, 28]);
+  });
 }

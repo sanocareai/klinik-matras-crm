@@ -179,9 +179,22 @@ export default function ArmadaTracking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sinyalJalur]);
 
-  const center = kendaraanTerurai.length > 0
-    ? { lat: kendaraanTerurai[0].lastPosition.lat, lng: kendaraanTerurai[0].lastPosition.lng }
-    : JAKARTA_CENTER;
+  // BUG NYATA (14 Sep 2026, laporan owner: "buka live tracking di web jadi
+  // glitch") — `center` di-passing SEBAGAI OBJEK BARU tiap render kalau
+  // dibuat langsung di sini. @react-google-maps/api WAJIB memanggil ulang
+  // `map.setCenter(center)` tiap kali PROP `center` berbeda REFERENSI (lihat
+  // useEffect dep [map, center] di source library) — bukan cuma saat nilai
+  // lat/lng-nya benar-benar berubah. Redesain D-165 menambah BANYAK elemen
+  // interaktif baru (klik tiap stop, tombol expand) + 2x panggilan OSRM per
+  // kendaraan (traveled+upcoming) yang tiap resolve men-trigger re-render —
+  // tiap re-render itu MEMAKSA peta snap-recenter ke posisi driver, kelihatan
+  // sebagai peta "glitch"/melompat-lompat saat halaman dipakai. Sekarang
+  // `center` HANYA berganti referensi kalau lat/lng-nya (angka, dibandingkan
+  // by value) benar-benar beda — klik marker/expand/poll data yang tidak
+  // mengubah posisi TIDAK lagi memicu setCenter ulang.
+  const centerLat = kendaraanTerurai.length > 0 ? kendaraanTerurai[0].lastPosition.lat : JAKARTA_CENTER.lat;
+  const centerLng = kendaraanTerurai.length > 0 ? kendaraanTerurai[0].lastPosition.lng : JAKARTA_CENTER.lng;
+  const center = useMemo(() => ({ lat: centerLat, lng: centerLng }), [centerLat, centerLng]);
 
   return (
     <PageContainer>
