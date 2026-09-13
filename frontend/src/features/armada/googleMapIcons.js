@@ -39,10 +39,16 @@ export function driverIcon(google, name) {
 // Pin tujuan (alamat customer) — belah ketupat merah, bentuk SENGAJA beda
 // total dari avatar driver (kotak vs lingkaran) supaya tidak pernah tertukar
 // sekilas mata di peta yang sama, sama alasan dengan versi Leaflet lama.
-export function destinationIcon(google) {
+// Warna SEKARANG persis --red dari tokens.css (13 Sep 2026, redesign Live
+// Tracking sesuai referensi owner) — sebelumnya #dc2626 generik, bukan token
+// Sano. Data-URI SVG dirender lepas dari DOM halaman (jadi tidak bisa baca
+// var(--red) langsung) — theme dilewatkan manual oleh pemanggil (`resolved`
+// dari useTheme()), BUKAN ditebak di sini.
+export function destinationIcon(google, theme) {
+  const merah = theme === "dark" ? "#FF453A" : "#D70015";
   const inner = `
     <g transform="translate(11,10) rotate(45)">
-      <rect x="-7" y="-7" width="14" height="14" rx="3" fill="#dc2626" stroke="white" stroke-width="2"/>
+      <rect x="-7" y="-7" width="14" height="14" rx="3" fill="${merah}" stroke="white" stroke-width="2"/>
     </g>
   `;
   return svgIcon(google, inner, [22, 22], [11, 20]);

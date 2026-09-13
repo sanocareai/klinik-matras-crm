@@ -40,8 +40,19 @@ import { useArmadaTracking } from "@/features/armada/hooks/useArmadaTracking.js"
 // durasi OSRM. TIDAK diganti Google Directions API saat migrasi tile —
 // lihat alasan yang sama di RouteMap.jsx (API berbayar ketiga belum tentu
 // perlu).
+//
+// REDESIGN 13 September 2026 (permintaan owner: referensi UI app navigasi/
+// tracking — kartu ringkasan MELAYANG di atas peta, peta sebagai elemen
+// utama yang besar) — "make sure warnanya sesuai style Klinik Matras Sano",
+// JADI bukan replikasi warna referensi (hijau/oranye), cuma pola layoutnya:
+// peta lebih tinggi & jadi fokus, pil "N Driver Aktif" melayang di pojok
+// kiri-atas peta (shadow-popover, rounded-full — token DS v2 yang sama
+// dipakai popover lain), daftar driver di kanan jadi kartu individual
+// (shadow-card, TANPA border — aturan "kartu tanpa border" tokens.css)
+// menggantikan list hairline polos. Warna rute & pin tujuan sekarang persis
+// token Sano (--accent/--red per tema) — sebelumnya #4C8DFF/#dc2626 generik
+// yang bukan bagian dari palet manapun di tokens.css.
 const JAKARTA_CENTER = { lat: -6.2088, lng: 106.8456 };
-const WARNA_JALUR = "#4C8DFF";
 
 function waktuLalu(iso) {
   if (!iso) return null;
@@ -77,6 +88,11 @@ function EtaBadge({ position, children }) {
 
 export default function ArmadaTracking() {
   const { resolved } = useTheme();
+  // Rute & pin tujuan ikut token accent/red Sano per tema (13 Sep 2026) —
+  // SVG data-URI (googleMapIcons.js) dan opsi Polyline dievaluasi di luar
+  // DOM halaman, jadi tidak bisa baca var(--accent)/var(--red) langsung;
+  // nilainya disalin manual dari tokens.css di sini, BUKAN ditebak.
+  const warnaJalur = resolved === "dark" ? "#0A84FF" : "#1457D9";
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: GOOGLE_MAPS_JS_KEY,
@@ -149,9 +165,33 @@ export default function ArmadaTracking() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="overflow-hidden p-0">
-          <div className="h-[460px] w-full">
+          <div className="relative h-[560px] w-full">
+            {/* Pil "N Driver Aktif" melayang di atas peta (13 Sep 2026,
+                referensi owner: app navigasi/tracking selalu punya ringkasan
+                mengambang, bukan header terpisah di luar peta). shadow-popover
+                + bg-surface/95 — token DS v2 yang sama dipakai popover lain,
+                BUKAN warna baru. Dot hijau berdenyut = penanda "live", sama
+                bahasa visual dengan status Online driver di tempat lain. */}
+            {items != null && (
+              <div className="absolute left-3 top-3 z-10 flex items-center gap-2.5 rounded-full bg-surface/95 py-2 pl-2.5 pr-3.5 shadow-popover backdrop-blur-sm">
+                <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accentbg">
+                  <Truck size={14} className="text-accent" aria-hidden />
+                  {withPosition.length > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green" />
+                    </span>
+                  )}
+                </span>
+                <div className="leading-tight">
+                  <p className="text-[13px] font-bold text-ink">{withPosition.length} Driver Aktif</p>
+                  <p className="text-[10px] text-ink3">Live · update tiap 15 detik</p>
+                </div>
+              </div>
+            )}
+
             {!GOOGLE_MAPS_JS_KEY ? (
               <div className="flex h-full flex-col items-center justify-center gap-1.5 px-4 text-center">
                 <MapPinned size={28} className="text-ink3" strokeWidth={1.5} aria-hidden />
@@ -187,7 +227,7 @@ export default function ArmadaTracking() {
                     <Polyline
                       key={`jalur-${j.jobId}`}
                       path={posisiGaris}
-                      options={{ strokeColor: WARNA_JALUR, strokeWeight: 4, strokeOpacity: 0.8 }}
+                      options={{ strokeColor: warnaJalur, strokeWeight: 4, strokeOpacity: 0.8 }}
                     />
                   );
                 })}
@@ -225,7 +265,7 @@ export default function ArmadaTracking() {
                     <React.Fragment key={`tujuan-${j.jobId}`}>
                       <Marker
                         position={posisi}
-                        icon={destinationIcon(window.google)}
+                        icon={destinationIcon(window.google, resolved)}
                         onClick={() => setActiveInfo(`tujuan-${j.jobId}`)}
                       />
                       {estimasiDetik != null && <EtaBadge position={posisi}>{formatMenit(estimasiDetik)}</EtaBadge>}
@@ -245,50 +285,56 @@ export default function ArmadaTracking() {
           </div>
         </Card>
 
-        <div className="rounded-card border border-border bg-surface">
-          <div className="border-b border-line px-3 py-2.5">
-            <h3 className="flex items-center gap-1.5 text-[12.5px] font-bold text-ink">
-              <Truck size={13} aria-hidden /> {withPosition.length} Driver Dalam Perjalanan
-            </h3>
-          </div>
+        {/* Daftar driver — kartu individual (shadow-card, TANPA border) 13
+            Sep 2026, ganti dari list hairline datar. Tinggi disamakan dengan
+            peta (h-[560px]) supaya kedua kolom rata, konsisten dengan
+            referensi owner (map + panel ringkasan sejajar tinggi). */}
+        <div className="flex h-[560px] flex-col gap-2 overflow-y-auto pr-0.5">
+          <p className="flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wide text-ink3">
+            <Truck size={12} aria-hidden /> {withPosition.length} Driver Dalam Perjalanan
+          </p>
           {items == null ? (
-            <div className="px-3 py-6 text-center text-[11.5px] text-ink3">Memuat…</div>
+            <Card className="p-4 text-center text-[11.5px] text-ink3">Memuat…</Card>
           ) : withPosition.length === 0 ? (
-            <div className="px-3 py-8 text-center">
-              <MapPinned className="mx-auto mb-2 h-8 w-8 text-ink3" strokeWidth={1.5} />
+            <Card className="flex flex-col items-center gap-2 py-8 text-center">
+              <MapPinned className="h-8 w-8 text-ink3" strokeWidth={1.5} aria-hidden />
               <p className="text-[12px] text-ink3">Belum ada driver dalam perjalanan sekarang.</p>
-            </div>
+            </Card>
           ) : (
-            <ul className="max-h-[400px] divide-y divide-line overflow-y-auto">
-              {withPosition.map((j) => (
-                <li key={j.jobId}>
-                  <button
-                    type="button"
-                    onClick={() => { setSelectedJobId(j.jobId); setOpenJobId(j.jobId); }}
-                    className={cn(
-                      "w-full px-3 py-2.5 text-left transition-colors hover:bg-hovertint",
-                      selectedJobId === j.jobId && "bg-accentbg"
-                    )}
-                  >
+            withPosition.map((j) => (
+              <button
+                key={j.jobId}
+                type="button"
+                onClick={() => { setSelectedJobId(j.jobId); setOpenJobId(j.jobId); }}
+                className={cn(
+                  "rounded-card bg-surface p-3 text-left shadow-card transition-colors",
+                  selectedJobId === j.jobId && "bg-accentbg"
+                )}
+              >
+                <div className="flex items-start gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50">
+                    <Truck size={14} className="text-blue-ink" aria-hidden />
+                  </span>
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="truncate text-[12.5px] font-semibold text-ink">{j.driverName}</span>
+                      <span className="truncate text-[13px] font-bold text-ink">{j.driverName}</span>
                       <span className="ml-auto shrink-0 text-[10px] text-ink3">
                         {waktuLalu(j.lastPosition?.recordedAt)}
                       </span>
                     </div>
-                    <div className="mt-0.5 truncate text-[11px] text-ink2">
+                    <p className="mt-0.5 truncate text-[11.5px] text-ink2">
                       {j.customerName} · {JOB_TYPE_REAL[j.type]?.label || j.type}
-                    </div>
+                    </p>
                     {j.addressText && (
-                      <div className="mt-0.5 flex items-start gap-1 text-[10.5px] text-ink3">
-                        <Navigation size={10} className="mt-[1.5px] shrink-0" />
+                      <p className="mt-1 flex items-start gap-1 text-[10.5px] text-ink3">
+                        <Navigation size={10} className="mt-[1.5px] shrink-0" aria-hidden />
                         <span className="truncate">{j.addressText}</span>
-                      </div>
+                      </p>
                     )}
-                  </button>
-                </li>
-              ))}
-            </ul>
+                  </div>
+                </div>
+              </button>
+            ))
           )}
         </div>
       </div>
