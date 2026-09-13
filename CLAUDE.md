@@ -903,6 +903,10 @@ cd frontend && npm run dev           # terminal 2 (port 5173)
 
 # 2. BUILD FRONTEND DI LAPTOP (kalau ada perubahan frontend), lalu COMMIT
 #    termasuk frontend/dist, & PUSH ke GitHub
+#    ⚠️ VITE_* dibaca SAAT BUILD, bukan saat runtime — frontend/.env di laptop
+#    WAJIB berisi VITE_GOOGLE_MAPS_JS_KEY yang SAMA dengan VPS. Kalau kosong,
+#    peta Live Tracking & Route Planner di production jadi "Peta belum aktif"
+#    (terjadi 14 Sep 2026). Cek: grep VITE_GOOGLE_MAPS_JS_KEY frontend/.env
 cd frontend && npm run build && cd ..
 git add <file yang diubah> frontend/dist
 git commit -m "feat: deskripsi"
