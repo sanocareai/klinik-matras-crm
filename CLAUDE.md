@@ -876,14 +876,24 @@ Order" per sales. Sudah diperbaiki; jangan diulang. Offset WIB dipatok tetap
 
 ## 12. WORKFLOW DEVELOPMENT
 
-⚠️ **PENYEBAB PALING SERING "kode sudah benar tapi tampilan tidak berubah":**
-`frontend/dist` di VPS itu **bind mount** ke container backend (lihat 
-docker-compose.yml) — artinya perubahan HANYA muncul setelah `npm run build` 
-BENAR-BENAR dijalankan ulang di folder `frontend` di VPS. `docker compose 
-up -d --build` **TIDAK** membangun ulang frontend (itu cuma rebuild image 
-backend). Kalau lupa jalankan `npm run build`, file lama akan terus 
-disajikan selamanya walau kode di GitHub sudah benar. SELALU jalankan 
-kedua langkah di bawah SECARA BERURUTAN, jangan skip salah satu.
+⚠️ **DIKOREKSI 14 September 2026 — JANGAN `npm run build` DI VPS.**
+`frontend/dist` sekarang **DI-COMMIT ke git** (lihat `.gitignore` baris 3:
+"agar VPS bisa git pull langsung tanpa perlu npm run build di VPS"). Build
+dilakukan di LAPTOP, hasil `dist/` ikut di-commit, VPS cukup `git pull`.
+Instruksi lama di bagian ini ("npm run build di VPS, WAJIB") BERTENTANGAN
+dengan itu dan **menyebabkan outage nyata**: build di VPS (13 Sep malam)
+mengosongkan `dist/` lalu menulis chunk dengan hash BERBEDA — file yang
+di-track git (mis. `googleMaps-ClhRTj3W.js`, logo `sano_logo_invoice/*`)
+TERHAPUS dari disk, dan `git pull` berikutnya TIDAK mengembalikannya
+(git cuma menyentuh file yang berubah antar-commit). Hasilnya Live Tracking
+& Route Planner gagal load ("Gagal memuat versi terbaru"). `frontend/dist`
+tetap **bind mount** ke container backend — `docker compose up -d --build`
+TIDAK menyentuh frontend, tapi itu sudah beres lewat `git pull`.
+
+Kalau curiga `dist/` di VPS tidak cocok dengan git (tampilan aneh, chunk
+404): `git status --short frontend/dist | grep '^ D'` HARUS kosong. Kalau
+ada isinya, pulihkan dengan `git checkout -- frontend/dist` (aman — isinya
+murni artefak build, bukan kerja manual).
 
 ```bash
 # 1. LAPTOP — edit & test lokal
@@ -891,17 +901,19 @@ docker compose up -d postgres waha  # nyalakan DB & WAHA
 cd backend && npm run dev            # terminal 1 (port 4000)
 cd frontend && npm run dev           # terminal 2 (port 5173)
 
-# 2. COMMIT & PUSH ke GitHub
-git add .
+# 2. BUILD FRONTEND DI LAPTOP (kalau ada perubahan frontend), lalu COMMIT
+#    termasuk frontend/dist, & PUSH ke GitHub
+cd frontend && npm run build && cd ..
+git add <file yang diubah> frontend/dist
 git commit -m "feat: deskripsi"
 git push
 
-# 3. DEPLOY ke VPS — JALANKAN SEMUA BARIS INI, JANGAN ADA YANG DI-SKIP
+# 3. DEPLOY ke VPS — TANPA npm run build (lihat peringatan di atas)
 ssh ubuntu@43.133.152.6
 cd ~/klinik-matras
 git pull
-cd frontend && npm install && npm run build && cd ..   # ← WAJIB, sering kelupaan
-docker compose up -d --build backend                    # ← cuma untuk backend
+git status --short frontend/dist | grep '^ D'   # ← HARUS kosong; kalau tidak: git checkout -- frontend/dist
+docker compose up -d --build backend             # ← cuma kalau ada perubahan backend
 
 # 4. VERIFIKASI deploy frontend benar-benar baru (bukan asumsi):
 curl -s https://app.sanomatrassehat.com/ | grep -o 'index-[a-zA-Z0-9]*\.js'
