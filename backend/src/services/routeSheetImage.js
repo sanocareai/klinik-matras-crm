@@ -43,6 +43,15 @@ const KOLOM = [
   { key: "phone", label: "No. HP", width: 130 },
   { key: "produk", label: "Produk & Ukuran", width: 190 },
   { key: "alamat", label: "Alamat", width: 320 },
+  // Kota (13 September 2026, permintaan owner: "ketika terbitkan jalur >
+  // generate image, boleh tambah 1 kolom kota customer") — Order.deliveryCity
+  // (dropdown kota TETAP yang diisi sales, D-058), BUKAN Customer.city —
+  // sama field yang SUDAH dipakai buat pengelompokan job searah di Route
+  // Planner ("Belum Masuk Rute"), jadi kolom ini konsisten dengan kota yang
+  // dispatcher lihat di tempat lain untuk order yang sama. Width 120 cukup
+  // muat "Jakarta Selatan"/"Jakarta Timur" (nama terpanjang di daftar kota
+  // tetap CLAUDE.md §7) satu baris tanpa wrap.
+  { key: "kota", label: "Kota", width: 120 },
   { key: "estimasi", label: "Estimasi Jam", width: 150 },
 ];
 const LEBAR = KOLOM.reduce((s, k) => s + k.width, 0);
@@ -126,8 +135,9 @@ export async function buildRouteSheetImage(route) {
     }
 
     const resi = order?.orderNumber || "-";
+    const kota = order?.deliveryCity || "-";
 
-    return { no: String(idx + 1), resi, tipe, tipeRaw: j.type, customer, sales, phone, produk, alamat, estimasi };
+    return { no: String(idx + 1), resi, tipe, tipeRaw: j.type, customer, sales, phone, produk, alamat, kota, estimasi };
   });
 
   // Hitung tinggi tiap baris dari kolom PALING BANYAK wrap (biasanya Alamat

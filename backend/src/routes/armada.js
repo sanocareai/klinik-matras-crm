@@ -513,6 +513,11 @@ const EXTERNAL_COURIER_JOB_SELECT = {
   order: {
     select: {
       orderNumber: true, productLine: true, notes: true, locationUrl: true,
+      // deliveryCity (13 September 2026) — kolom "Kota" baru di
+      // buildRouteSheetImage, ditambahkan di sini juga supaya laporan
+      // kurir eksternal tetap identik dengan laporan rute biasa (lihat
+      // komentar di atas const ini).
+      deliveryCity: true,
       customer: { select: { name: true, phone: true, assignedSales: { select: { name: true } } } },
     },
   },
