@@ -222,8 +222,25 @@ app.use("/r", trackingRedirectRouter);
 import fs from "fs";
 const frontendDist = path.join(__dirname, "../../frontend/dist");
 app.use(express.static(frontendDist));
+// File statis yang TIDAK ADA harus dijawab 404 — JANGAN index.html (BUG
+// NYATA, 14 September 2026, laporan owner: "buka tracking delivery glitch
+// ... memuat versi baru terus"). Tiap deploy mengganti nama file chunk
+// (ArmadaTracking-4ziuY0Is.js -> ArmadaTracking-97dGBCr0.js, lihat CLAUDE.md
+// §12). Tab yang masih pegang index.html LAMA akan import() nama chunk lama;
+// tanpa penjagaan ini catch-all di bawah membalasnya dengan index.html
+// (HTTP 200, Content-Type text/html) — browser lalu gagal mem-parse HTML
+// sebagai ES module, ChunkErrorBoundary menangkapnya sebagai "ada versi
+// baru" lalu reload, dapat shell basi yang sama, dan begitu seterusnya:
+// LOOP RELOAD TAK BERUJUNG. Dengan 404 jujur, kegagalannya jadi benar
+// (bukan MIME error menyesatkan) dan pemulihan di sisi klien bisa jalan.
+// Sengaja dibatasi ke ekstensi aset yang dikenal — route SPA yang kebetulan
+// mengandung titik (mis. /customers/john.doe) TETAP dapat index.html.
+const EKSTENSI_ASET = /\.(?:js|mjs|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|eot|wasm|webmanifest)$/i;
 app.get("*", (req, res) => {
   if (req.path.startsWith("/api")) return res.status(404).json({ error: "Not found" });
+  if (req.path.startsWith("/assets/") || EKSTENSI_ASET.test(req.path)) {
+    return res.status(404).type("text/plain").send("Not found");
+  }
   const indexFile = path.join(frontendDist, "index.html");
   if (!fs.existsSync(indexFile)) {
     return res.status(200).send("Backend jalan. Buka http://localhost:5173 untuk development.");
