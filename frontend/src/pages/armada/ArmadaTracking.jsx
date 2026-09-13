@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { GoogleMap, Marker, Polyline, InfoWindow, OverlayView, useJsApiLoader } from "@react-google-maps/api";
-import { Truck, MapPinned, Navigation } from "lucide-react";
+import { Truck, MapPinned, Navigation, ChevronDown, ChevronUp, CheckCircle2, XCircle } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { cn } from "@/lib/utils.js";
@@ -8,50 +8,32 @@ import { useTheme } from "@/lib/ThemeProvider.jsx";
 import { getRoadRoute } from "@/services/osrm.js";
 import { GOOGLE_MAPS_JS_KEY, GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from "@/lib/googleMaps.js";
 import { MAP_STYLE_DARK } from "@/features/armada/googleMapStyle.js";
-import { driverIcon, destinationIcon } from "@/features/armada/googleMapIcons.js";
+import { driverIcon, destinationIcon, stopIcon, stopIconDone, stopIconFailed } from "@/features/armada/googleMapIcons.js";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import { JOB_TYPE_REAL } from "@/features/armada/jobStatus.js";
 import { useArmadaTracking } from "@/features/armada/hooks/useArmadaTracking.js";
 
-// Live Tracking — D-036 (30 Agustus 2026), DATA NYATA.
+// Live Tracking — D-036 (30 Agustus 2026), DATA NYATA. Redesain kartu
+// melayang 13 September 2026 (lihat riwayat git untuk detail itu).
 //
-// SEBELUM INI halaman ini 100% simulasi (trackingMock.js, badge "Contoh") —
-// TAPI backend-nya sudah nyata sejak D-034 (GPS ping dari HP driver via
-// useDriverTracking.js) dan sudah diperbaiki bug 500-nya (23 Agustus 2026,
-// mismatch tipe uuid/text di raw query GET /armada/tracking). Yang palsu
-// SELALU cuma halaman ini, bukan datanya — sekarang disambungkan.
+// REDESAIN BESAR 14 September 2026 (D-165, permintaan owner: "coba lo
+// explore bagusnya seperti apa... mekanisme nya seperti delivery shopee,
+// grab, gojek") — SEBELUM ini halaman cuma gambar 1 job EN_ROUTE lepas
+// (posisi driver -> 1 tujuan). SEKARANG untuk job yang bagian dari Route,
+// SELURUH urutan stop hari itu digambar sekaligus: stop yang SUDAH LEWAT
+// (hijau/merah tergantung selesai/gagal), stop yang SEDANG DITUJU (pin
+// merah + badge ETA, sama seperti sebelumnya), dan stop yang BELUM
+// dimulai (bernomor, redup) — persis pola app pengantaran pada umumnya.
+// Jalur dipecah 2 warna: "sudah dilalui" (abu-abu, dari stop terakhir yang
+// selesai sampai posisi GPS sekarang) dan "akan dilalui" (accent, dari
+// posisi sekarang lewat tujuan aktif sampai stop terakhir).
 //
-// Peta pakai Google Maps JavaScript API (DIMIGRASI 8 September 2026 dari
-// Leaflet + tile CARTO — CARTO tiba-tiba mewajibkan API key akhir Agustus
-// 2026, watermark "API KEY REQUIRED" muncul di production, DAN billing
-// Google Cloud sudah aktif hari yang sama — lihat catatan panjang di
-// lib/googleMaps.js). Pin driver SELALU akurat (koordinat GPS asli dari HP,
-// bukan hasil geocode).
-//
-// Pin TUJUAN (alamat customer) ikut ditampilkan kalau job-nya sudah punya
-// koordinat (destinationLat/Lng dari GET /armada/tracking). Kalau job BELUM
-// punya koordinat sama sekali, tidak ada pin dipaksakan — alamat tetap
-// tampil sebagai teks di panel kanan, supaya tidak berpura-pura akurat
-// padahal datanya tidak ada.
-//
-// Garis driver->tujuan minta geometri jalan asli ke OSRM (services/osrm.js)
-// — fallback senyap ke garis lurus kalau OSRM gagal/timeout (server demo
-// publik, bukan SLA production). Badge "±N menit lagi" di pin tujuan dari
-// durasi OSRM. TIDAK diganti Google Directions API saat migrasi tile —
-// lihat alasan yang sama di RouteMap.jsx (API berbayar ketiga belum tentu
-// perlu).
-//
-// REDESIGN 13 September 2026 (permintaan owner: referensi UI app navigasi/
-// tracking — kartu ringkasan MELAYANG di atas peta, peta sebagai elemen
-// utama yang besar) — "make sure warnanya sesuai style Klinik Matras Sano",
-// JADI bukan replikasi warna referensi (hijau/oranye), cuma pola layoutnya:
-// peta lebih tinggi & jadi fokus, pil "N Driver Aktif" melayang di pojok
-// kiri-atas peta (shadow-popover, rounded-full — token DS v2 yang sama
-// dipakai popover lain), daftar driver di kanan jadi kartu individual
-// (shadow-card, TANPA border — aturan "kartu tanpa border" tokens.css)
-// menggantikan list hairline polos. Warna rute & pin tujuan sekarang persis
-// token Sano (--accent/--red per tema) — sebelumnya #4C8DFF/#dc2626 generik
-// yang bukan bagian dari palet manapun di tokens.css.
+// GET /armada/tracking sekarang mengembalikan array per-KENDARAAN (bukan
+// per-job lepas) — lihat komentar panjang di backend armada.js untuk
+// bentuk responsnya. turunkanKendaraan() di bawah menyeragamkan 2 bentuk
+// ("route" ber-banyak-stop, "loose" 1 titik seperti Kurir Eksternal) jadi
+// satu struktur render yang sama, supaya sisa komponen tidak bercabang
+// if/else kind di mana-mana.
 const JAKARTA_CENTER = { lat: -6.2088, lng: 106.8456 };
 
 function waktuLalu(iso) {
@@ -71,6 +53,10 @@ function formatMenit(detik) {
   return sisaMenit > 0 ? `${jam} j ${sisaMenit} mnt lagi` : `${jam} jam lagi`;
 }
 
+function labelTipe(tipe) {
+  return JOB_TYPE_REAL[tipe]?.label || tipe;
+}
+
 // Badge waktu tempuh mengambang di atas pin tujuan — OverlayView (bukan
 // Marker.label) supaya bisa dipasangi class CSS `.dh-route-eta-badge` yang
 // sudah ada, sama tampilan dengan versi Leaflet Tooltip lama.
@@ -86,77 +72,122 @@ function EtaBadge({ position, children }) {
   );
 }
 
+// Satu entri backend (kind "route" ATAU "loose") -> struktur render SAMA.
+// "loose" dipetakan jadi rute ber-1-stop supaya kode di bawah cukup tahu
+// SATU bentuk data, tidak perlu tahu asalnya.
+function turunkanKendaraan(item) {
+  if (item.kind === "loose") {
+    return {
+      vehicleId: `loose-${item.jobId}`,
+      routeCode: null,
+      driverName: item.driverName, helperName: null,
+      lastPosition: item.lastPosition,
+      activeJobId: item.jobId,
+      stops: [{
+        jobId: item.jobId, sequence: 1, status: item.status || "EN_ROUTE", type: item.type,
+        addressText: item.addressText, lat: item.destinationLat, lng: item.destinationLng,
+        orderNumber: item.orderNumber, customerName: item.customerName,
+      }],
+    };
+  }
+  return {
+    vehicleId: `route-${item.routeId}`,
+    routeCode: item.routeCode,
+    driverName: item.driverName, helperName: item.helperName,
+    lastPosition: item.lastPosition,
+    activeJobId: item.activeJobId,
+    stops: item.stops,
+  };
+}
+
 export default function ArmadaTracking() {
   const { resolved } = useTheme();
   // Rute & pin tujuan ikut token accent/red Sano per tema (13 Sep 2026) —
   // SVG data-URI (googleMapIcons.js) dan opsi Polyline dievaluasi di luar
   // DOM halaman, jadi tidak bisa baca var(--accent)/var(--red) langsung;
   // nilainya disalin manual dari tokens.css di sini, BUKAN ditebak.
-  const warnaJalur = resolved === "dark" ? "#0A84FF" : "#1457D9";
+  const warnaAkanDilalui = resolved === "dark" ? "#0A84FF" : "#1457D9";
+  const warnaSudahDilalui = resolved === "dark" ? "#48505C" : "#B9C2CE";
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: GOOGLE_MAPS_JS_KEY,
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
-  // Data + polling 15 detik sekarang lewat TanStack Query (8 September
-  // 2026, lihat useArmadaTracking.js) — MENGGANTIKAN state+setInterval
-  // manual yang sebelumnya di sini. `items` tetap `undefined` sesaat di
-  // load pertama (bukan `null`) — kode di bawah sudah toleran keduanya
-  // lewat `items || []` pada withPosition/withDestination.
-  // BUG NYATA (9 September 2026, laporan owner: Live Tracking crash total,
-  // "Terjadi kesalahan saat memuat halaman ini") — migrasi react-query
-  // sesi ini mengganti `load` manual dengan hook ini, TAPI `refetch` tidak
-  // pernah didestrukturisasi di sini padahal `<JobDetailDrawer onChanged=
-  // {load}>` di bawah masih memakai nama itu — `load` jadi identifier yang
-  // TIDAK PERNAH dideklarasikan sama sekali (ReferenceError, bukan cuma
-  // prop undefined), meledak di SETIAP render halaman ini tanpa syarat,
-  // terlepas dari status Maps. Pola alias `refetch: load` di sini SAMA
-  // dengan ArmadaDashboard.jsx/ArmadaRoutes.jsx/ArmadaJobs.jsx yang migrasi
-  // sama tapi tidak lupa menyertakannya.
   const { data: items, error: queryError, refetch: load } = useArmadaTracking();
   const error = queryError?.message || "";
-  const [selectedJobId, setSelectedJobId] = useState(null);
+  const [selectedVehicleId, setSelectedVehicleId] = useState(null);
   const [openJobId, setOpenJobId] = useState(null);
-  const [activeInfo, setActiveInfo] = useState(null); // jobId marker YANG SEDANG buka InfoWindow
-  // Hasil OSRM per job — { [jobId]: { coords, legDurations } | undefined }.
-  // `undefined` (belum ada key) = belum selesai diminta ATAU gagal; kedua
-  // kasus itu fallback ke garis lurus di render, TIDAK dibedakan di sini.
-  const [jalurByJob, setJalurByJob] = useState({});
+  const [activeInfo, setActiveInfo] = useState(null); // "driver-<vehicleId>" | "stop-<jobId>"
+  const [expandedVehicleId, setExpandedVehicleId] = useState(null);
 
-  const withPosition = useMemo(() => (items || []).filter((j) => j.lastPosition), [items]);
-  const withDestination = useMemo(
-    () => withPosition.filter((j) => j.destinationLat != null && j.destinationLng != null),
-    [withPosition]
-  );
+  const kendaraan = useMemo(() => (items || []).map(turunkanKendaraan), [items]);
 
-  // Sinyal perubahan posisi yang RINGKAS (dibulatkan 5 desimal ~1m, sama
-  // dengan cache di services/osrm.js) — dipakai sebagai dependency effect
-  // supaya tidak minta ulang OSRM tiap poll 15 detik kalau driver belum
-  // benar-benar bergerak jauh (posisi GPS yang dibulatkan tetap sama).
-  const sinyalJalur = withDestination
-    .map((j) => `${j.jobId}:${j.lastPosition.lat.toFixed(5)},${j.lastPosition.lng.toFixed(5)}:${j.destinationLat.toFixed(5)},${j.destinationLng.toFixed(5)}`)
+  // Pecah tiap kendaraan jadi before/active/after berdasar `sequence` —
+  // ini yang membedakan stop yang SUDAH LEWAT dari yang BELUM, terlepas
+  // dari nilai status persisnya (COMPLETED/FAILED keduanya "sudah lewat").
+  const kendaraanTerurai = useMemo(() => kendaraan
+    .map((k) => {
+      const activeStop = k.stops.find((s) => s.jobId === k.activeJobId);
+      if (!activeStop || !k.lastPosition) return null;
+      const before = k.stops.filter((s) => s.sequence < activeStop.sequence);
+      const after = k.stops.filter((s) => s.sequence > activeStop.sequence);
+      return { ...k, activeStop, before, after };
+    })
+    .filter(Boolean), [kendaraan]);
+
+  // Hasil OSRM per kendaraan — { [vehicleId]: { traveled, upcoming } },
+  // masing-masing { coords, legDurations } | undefined (belum selesai
+  // ATAU gagal, dua-duanya fallback ke garis lurus di render).
+  const [jalurByVehicle, setJalurByVehicle] = useState({});
+
+  const sinyalJalur = kendaraanTerurai
+    .map((v) => {
+      const titik = (s) => (s.lat != null ? `${s.lat.toFixed(5)},${s.lng.toFixed(5)}` : "-");
+      return [
+        v.vehicleId,
+        `${v.lastPosition.lat.toFixed(5)},${v.lastPosition.lng.toFixed(5)}`,
+        ...v.before.map(titik), titik(v.activeStop), ...v.after.map(titik),
+      ].join(":");
+    })
     .join("|");
 
   useEffect(() => {
     let batal = false;
-    for (const j of withDestination) {
-      getRoadRoute([[j.lastPosition.lat, j.lastPosition.lng], [j.destinationLat, j.destinationLng]]).then((hasil) => {
-        if (!batal && hasil) setJalurByJob((prev) => ({ ...prev, [j.jobId]: hasil }));
-      });
+    for (const v of kendaraanTerurai) {
+      const posisiSekarang = [v.lastPosition.lat, v.lastPosition.lng];
+      const traveledPts = [
+        ...v.before.filter((s) => s.lat != null).map((s) => [s.lat, s.lng]),
+        posisiSekarang,
+      ];
+      const upcomingPts = [
+        posisiSekarang,
+        ...(v.activeStop.lat != null ? [[v.activeStop.lat, v.activeStop.lng]] : []),
+        ...v.after.filter((s) => s.lat != null).map((s) => [s.lat, s.lng]),
+      ];
+      if (traveledPts.length >= 2) {
+        getRoadRoute(traveledPts).then((hasil) => {
+          if (!batal && hasil) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], traveled: hasil } }));
+        });
+      }
+      if (upcomingPts.length >= 2) {
+        getRoadRoute(upcomingPts).then((hasil) => {
+          if (!batal && hasil) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], upcoming: hasil } }));
+        });
+      }
     }
     return () => { batal = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sinyalJalur]);
 
-  const center = withPosition.length > 0
-    ? { lat: withPosition[0].lastPosition.lat, lng: withPosition[0].lastPosition.lng }
+  const center = kendaraanTerurai.length > 0
+    ? { lat: kendaraanTerurai[0].lastPosition.lat, lng: kendaraanTerurai[0].lastPosition.lng }
     : JAKARTA_CENTER;
 
   return (
     <PageContainer>
       <PageHeader
         title="Live Tracking"
-        subtitle="Posisi driver yang sedang dalam perjalanan — data GPS asli dari aplikasi driver."
+        subtitle="Rute aktif hari ini, urut per stop — data GPS asli dari aplikasi driver."
       />
 
       {error && (
@@ -165,20 +196,14 @@ export default function ArmadaTracking() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="overflow-hidden p-0">
           <div className="relative h-[560px] w-full">
-            {/* Pil "N Driver Aktif" melayang di atas peta (13 Sep 2026,
-                referensi owner: app navigasi/tracking selalu punya ringkasan
-                mengambang, bukan header terpisah di luar peta). shadow-popover
-                + bg-surface/95 — token DS v2 yang sama dipakai popover lain,
-                BUKAN warna baru. Dot hijau berdenyut = penanda "live", sama
-                bahasa visual dengan status Online driver di tempat lain. */}
             {items != null && (
               <div className="absolute left-3 top-3 z-10 flex items-center gap-2.5 rounded-full bg-surface/95 py-2 pl-2.5 pr-3.5 shadow-popover backdrop-blur-sm">
                 <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accentbg">
                   <Truck size={14} className="text-accent" aria-hidden />
-                  {withPosition.length > 0 && (
+                  {kendaraanTerurai.length > 0 && (
                     <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green opacity-75" />
                       <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green" />
@@ -186,7 +211,7 @@ export default function ArmadaTracking() {
                   )}
                 </span>
                 <div className="leading-tight">
-                  <p className="text-[13px] font-bold text-ink">{withPosition.length} Driver Aktif</p>
+                  <p className="text-[13px] font-bold text-ink">{kendaraanTerurai.length} Rute Aktif</p>
                   <p className="text-[10px] text-ink3">Live · update tiap 15 detik</p>
                 </div>
               </div>
@@ -214,66 +239,110 @@ export default function ArmadaTracking() {
                   clickableIcons: false,
                 }}
               >
-                {withDestination.map((j) => {
-                  const jalanAsli = jalurByJob[j.jobId];
-                  const garisLurus = [
-                    { lat: j.lastPosition.lat, lng: j.lastPosition.lng },
-                    { lat: j.destinationLat, lng: j.destinationLng },
+                {kendaraanTerurai.map((v) => {
+                  const jalur = jalurByVehicle[v.vehicleId];
+                  const posisiSekarang = { lat: v.lastPosition.lat, lng: v.lastPosition.lng };
+
+                  const traveledLurus = [
+                    ...v.before.filter((s) => s.lat != null).map((s) => ({ lat: s.lat, lng: s.lng })),
+                    posisiSekarang,
                   ];
-                  const posisiGaris = jalanAsli?.coords
-                    ? jalanAsli.coords.map(([lat, lng]) => ({ lat, lng }))
-                    : garisLurus;
+                  const traveledPath = jalur?.traveled?.coords
+                    ? jalur.traveled.coords.map(([lat, lng]) => ({ lat, lng }))
+                    : traveledLurus;
+
+                  const upcomingLurus = [
+                    posisiSekarang,
+                    ...(v.activeStop.lat != null ? [{ lat: v.activeStop.lat, lng: v.activeStop.lng }] : []),
+                    ...v.after.filter((s) => s.lat != null).map((s) => ({ lat: s.lat, lng: s.lng })),
+                  ];
+                  const upcomingPath = jalur?.upcoming?.coords
+                    ? jalur.upcoming.coords.map(([lat, lng]) => ({ lat, lng }))
+                    : upcomingLurus;
+
+                  const etaAktifDetik = v.activeStop.lat != null ? jalur?.upcoming?.legDurations?.[0] : null;
+
                   return (
-                    <Polyline
-                      key={`jalur-${j.jobId}`}
-                      path={posisiGaris}
-                      options={{ strokeColor: warnaJalur, strokeWeight: 4, strokeOpacity: 0.8 }}
-                    />
-                  );
-                })}
-                {withPosition.map((j) => {
-                  const posisi = { lat: j.lastPosition.lat, lng: j.lastPosition.lng };
-                  return (
-                    <React.Fragment key={j.jobId}>
-                      <Marker
-                        position={posisi}
-                        icon={driverIcon(window.google, j.driverName)}
-                        onClick={() => { setSelectedJobId(j.jobId); setActiveInfo(`driver-${j.jobId}`); }}
-                      />
-                      {activeInfo === `driver-${j.jobId}` && (
-                        <InfoWindow position={posisi} onCloseClick={() => setActiveInfo(null)}>
-                          <div className="text-xs">
-                            <p className="font-semibold">{j.driverName}</p>
-                            <p>{j.customerName} · {JOB_TYPE_REAL[j.type]?.label || j.type}</p>
-                            <button
-                              type="button"
-                              className="mt-1 font-semibold text-blue-600 underline"
-                              onClick={() => setOpenJobId(j.jobId)}
-                            >
-                              Buka detail job
-                            </button>
-                          </div>
-                        </InfoWindow>
+                    <React.Fragment key={v.vehicleId}>
+                      {traveledLurus.length >= 2 && (
+                        <Polyline path={traveledPath} options={{ strokeColor: warnaSudahDilalui, strokeWeight: 4, strokeOpacity: 0.7, geodesic: false }} />
                       )}
-                    </React.Fragment>
-                  );
-                })}
-                {withDestination.map((j) => {
-                  const estimasiDetik = jalurByJob[j.jobId]?.legDurations?.[0];
-                  const posisi = { lat: j.destinationLat, lng: j.destinationLng };
-                  return (
-                    <React.Fragment key={`tujuan-${j.jobId}`}>
+                      {upcomingLurus.length >= 2 && (
+                        <Polyline path={upcomingPath} options={{ strokeColor: warnaAkanDilalui, strokeWeight: 4, strokeOpacity: 0.85, geodesic: false }} />
+                      )}
+
+                      {/* Stop yang sudah lewat — hijau (selesai) / merah (gagal) */}
+                      {v.before.filter((s) => s.lat != null).map((s) => (
+                        <React.Fragment key={`before-${s.jobId}`}>
+                          <Marker
+                            position={{ lat: s.lat, lng: s.lng }}
+                            icon={s.status === "FAILED" ? stopIconFailed(window.google) : stopIconDone(window.google)}
+                            onClick={() => setActiveInfo(`stop-${s.jobId}`)}
+                          />
+                          {activeInfo === `stop-${s.jobId}` && (
+                            <InfoWindow position={{ lat: s.lat, lng: s.lng }} onCloseClick={() => setActiveInfo(null)}>
+                              <div className="text-xs">
+                                <p className="font-semibold">Stop {s.sequence} — {s.customerName}</p>
+                                <p>{s.status === "FAILED" ? "Gagal" : "Selesai"} · {labelTipe(s.type)}</p>
+                                <button type="button" className="mt-1 font-semibold text-blue-600 underline" onClick={() => setOpenJobId(s.jobId)}>Buka detail job</button>
+                              </div>
+                            </InfoWindow>
+                          )}
+                        </React.Fragment>
+                      ))}
+
+                      {/* Stop yang belum dimulai — bernomor, redup */}
+                      {v.after.filter((s) => s.lat != null).map((s) => (
+                        <React.Fragment key={`after-${s.jobId}`}>
+                          <Marker
+                            position={{ lat: s.lat, lng: s.lng }}
+                            icon={stopIcon(window.google, resolved === "dark" ? "#5B6472" : "#9AA5B4", s.sequence)}
+                            onClick={() => setActiveInfo(`stop-${s.jobId}`)}
+                          />
+                          {activeInfo === `stop-${s.jobId}` && (
+                            <InfoWindow position={{ lat: s.lat, lng: s.lng }} onCloseClick={() => setActiveInfo(null)}>
+                              <div className="text-xs">
+                                <p className="font-semibold">Stop {s.sequence} — {s.customerName}</p>
+                                <p>Belum dimulai · {labelTipe(s.type)}</p>
+                                <button type="button" className="mt-1 font-semibold text-blue-600 underline" onClick={() => setOpenJobId(s.jobId)}>Buka detail job</button>
+                              </div>
+                            </InfoWindow>
+                          )}
+                        </React.Fragment>
+                      ))}
+
+                      {/* Stop AKTIF — pin merah + badge ETA, sama bahasa visual dgn sebelumnya */}
+                      {v.activeStop.lat != null && (
+                        <>
+                          <Marker
+                            position={{ lat: v.activeStop.lat, lng: v.activeStop.lng }}
+                            icon={destinationIcon(window.google, resolved)}
+                            onClick={() => setActiveInfo(`stop-${v.activeStop.jobId}`)}
+                          />
+                          {etaAktifDetik != null && <EtaBadge position={{ lat: v.activeStop.lat, lng: v.activeStop.lng }}>{formatMenit(etaAktifDetik)}</EtaBadge>}
+                          {activeInfo === `stop-${v.activeStop.jobId}` && (
+                            <InfoWindow position={{ lat: v.activeStop.lat, lng: v.activeStop.lng }} onCloseClick={() => setActiveInfo(null)}>
+                              <div className="text-xs">
+                                <p className="font-semibold">Tujuan — {v.activeStop.customerName}</p>
+                                <p>{v.activeStop.addressText}</p>
+                              </div>
+                            </InfoWindow>
+                          )}
+                        </>
+                      )}
+
+                      {/* Posisi driver */}
                       <Marker
-                        position={posisi}
-                        icon={destinationIcon(window.google, resolved)}
-                        onClick={() => setActiveInfo(`tujuan-${j.jobId}`)}
+                        position={posisiSekarang}
+                        icon={driverIcon(window.google, v.driverName)}
+                        onClick={() => { setSelectedVehicleId(v.vehicleId); setActiveInfo(`driver-${v.vehicleId}`); }}
                       />
-                      {estimasiDetik != null && <EtaBadge position={posisi}>{formatMenit(estimasiDetik)}</EtaBadge>}
-                      {activeInfo === `tujuan-${j.jobId}` && (
-                        <InfoWindow position={posisi} onCloseClick={() => setActiveInfo(null)}>
+                      {activeInfo === `driver-${v.vehicleId}` && (
+                        <InfoWindow position={posisiSekarang} onCloseClick={() => setActiveInfo(null)}>
                           <div className="text-xs">
-                            <p className="font-semibold">Tujuan — {j.customerName}</p>
-                            <p>{j.addressText}</p>
+                            <p className="font-semibold">{v.driverName}{v.helperName ? ` + ${v.helperName}` : ""}</p>
+                            <p>{v.routeCode || "Kurir Eksternal"} · Stop {v.activeStop.sequence} dari {v.stops.length}</p>
+                            <button type="button" className="mt-1 font-semibold text-blue-600 underline" onClick={() => setOpenJobId(v.activeStop.jobId)}>Buka detail job</button>
                           </div>
                         </InfoWindow>
                       )}
@@ -285,56 +354,120 @@ export default function ArmadaTracking() {
           </div>
         </Card>
 
-        {/* Daftar driver — kartu individual (shadow-card, TANPA border) 13
-            Sep 2026, ganti dari list hairline datar. Tinggi disamakan dengan
-            peta (h-[560px]) supaya kedua kolom rata, konsisten dengan
-            referensi owner (map + panel ringkasan sejajar tinggi). */}
+        {/* Daftar kendaraan — 1 kartu per RUTE (bukan lagi per job, 14 Sep
+            2026, D-165), progress "stop X dari Y" + tujuan aktif menonjol +
+            expand utk lihat seluruh urutan stop. Tinggi disamakan dengan
+            peta (h-[560px]). */}
         <div className="flex h-[560px] flex-col gap-2 overflow-y-auto pr-0.5">
           <p className="flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wide text-ink3">
-            <Truck size={12} aria-hidden /> {withPosition.length} Driver Dalam Perjalanan
+            <Truck size={12} aria-hidden /> {kendaraanTerurai.length} Rute Dalam Perjalanan
           </p>
           {items == null ? (
             <Card className="p-4 text-center text-[11.5px] text-ink3">Memuat…</Card>
-          ) : withPosition.length === 0 ? (
+          ) : kendaraanTerurai.length === 0 ? (
             <Card className="flex flex-col items-center gap-2 py-8 text-center">
               <MapPinned className="h-8 w-8 text-ink3" strokeWidth={1.5} aria-hidden />
-              <p className="text-[12px] text-ink3">Belum ada driver dalam perjalanan sekarang.</p>
+              <p className="text-[12px] text-ink3">Belum ada rute dalam perjalanan sekarang.</p>
             </Card>
           ) : (
-            withPosition.map((j) => (
-              <button
-                key={j.jobId}
-                type="button"
-                onClick={() => { setSelectedJobId(j.jobId); setOpenJobId(j.jobId); }}
-                className={cn(
-                  "rounded-card bg-surface p-3 text-left shadow-card transition-colors",
-                  selectedJobId === j.jobId && "bg-accentbg"
-                )}
-              >
-                <div className="flex items-start gap-2.5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50">
-                    <Truck size={14} className="text-blue-ink" aria-hidden />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate text-[13px] font-bold text-ink">{j.driverName}</span>
-                      <span className="ml-auto shrink-0 text-[10px] text-ink3">
-                        {waktuLalu(j.lastPosition?.recordedAt)}
+            kendaraanTerurai.map((v) => {
+              const total = v.stops.length;
+              const selesai = v.before.filter((s) => s.status === "COMPLETED").length;
+              const expanded = expandedVehicleId === v.vehicleId;
+              const sedangTiba = v.activeStop.status === "ARRIVED";
+              return (
+                <div
+                  key={v.vehicleId}
+                  className={cn("rounded-card bg-surface p-3 shadow-card transition-colors", selectedVehicleId === v.vehicleId && "bg-accentbg")}
+                >
+                  <button type="button" className="w-full text-left" onClick={() => setSelectedVehicleId(v.vehicleId)}>
+                    <div className="flex items-start gap-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50">
+                        <Truck size={14} className="text-blue-ink" aria-hidden />
                       </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-[13px] font-bold text-ink">
+                            {v.driverName}{v.helperName ? ` + ${v.helperName}` : ""}
+                          </span>
+                          <span className="ml-auto shrink-0 text-[10px] text-ink3">{waktuLalu(v.lastPosition?.recordedAt)}</span>
+                        </div>
+                        <p className="mt-0.5 text-[10.5px] text-ink3">
+                          {v.routeCode || "Kurir Eksternal"} · Stop {v.activeStop.sequence}/{total}
+                        </p>
+                      </div>
                     </div>
-                    <p className="mt-0.5 truncate text-[11.5px] text-ink2">
-                      {j.customerName} · {JOB_TYPE_REAL[j.type]?.label || j.type}
-                    </p>
-                    {j.addressText && (
-                      <p className="mt-1 flex items-start gap-1 text-[10.5px] text-ink3">
-                        <Navigation size={10} className="mt-[1.5px] shrink-0" aria-hidden />
-                        <span className="truncate">{j.addressText}</span>
+
+                    {/* Progress bar mini — sama pola dgn Rute Hari Ini di driver-mobile */}
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-inset">
+                      <div className="h-full rounded-full bg-accent" style={{ width: `${total ? Math.round((selesai / total) * 100) : 0}%` }} />
+                    </div>
+
+                    {/* Tujuan aktif — blok menonjol, sama semangat referensi
+                        owner (bottom sheet Grab/Gojek: nama customer, jarak/
+                        ETA, aksi). */}
+                    <div className="mt-2.5 rounded-btn bg-accentbg p-2.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-accent">
+                        {sedangTiba ? "Tiba Di Lokasi" : "Sedang Menuju"}
                       </p>
-                    )}
-                  </div>
+                      <p className="mt-0.5 truncate text-[12.5px] font-bold text-ink">{v.activeStop.customerName}</p>
+                      <p className="text-[10.5px] text-ink2">
+                        {v.activeStop.orderNumber || "—"} · {labelTipe(v.activeStop.type)}
+                      </p>
+                      {v.activeStop.addressText && (
+                        <p className="mt-1 flex items-start gap-1 text-[10.5px] text-ink3">
+                          <Navigation size={10} className="mt-[1.5px] shrink-0" aria-hidden />
+                          <span className="truncate">{v.activeStop.addressText}</span>
+                        </p>
+                      )}
+                    </div>
+                  </button>
+
+                  {total > 1 && (
+                    <button
+                      type="button"
+                      className="mt-2 flex w-full items-center justify-center gap-1 rounded-btn py-1.5 text-[10.5px] font-semibold text-ink3 hover:bg-hovertint"
+                      onClick={() => setExpandedVehicleId(expanded ? null : v.vehicleId)}
+                    >
+                      {expanded ? "Sembunyikan urutan stop" : `Lihat semua ${total} stop`}
+                      {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                  )}
+
+                  {expanded && (
+                    <div className="mt-1.5 flex flex-col gap-1.5 border-t border-line pt-2">
+                      {v.stops.map((s) => {
+                        const isActive = s.jobId === v.activeJobId;
+                        const sudahLewat = s.sequence < v.activeStop.sequence;
+                        return (
+                          <button
+                            key={s.jobId}
+                            type="button"
+                            onClick={() => setOpenJobId(s.jobId)}
+                            className={cn("flex items-center gap-2 rounded-btn px-2 py-1.5 text-left hover:bg-hovertint", isActive && "bg-accentbg")}
+                          >
+                            {sudahLewat ? (
+                              s.status === "FAILED"
+                                ? <XCircle size={14} className="shrink-0 text-red" aria-hidden />
+                                : <CheckCircle2 size={14} className="shrink-0 text-green" aria-hidden />
+                            ) : (
+                              <span className={cn(
+                                "flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full text-[8.5px] font-bold",
+                                isActive ? "bg-accent text-white" : "bg-inset text-ink3"
+                              )}>{s.sequence}</span>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className={cn("truncate text-[11.5px] font-semibold", isActive ? "text-accent" : "text-ink")}>{s.customerName}</p>
+                              <p className="truncate text-[10px] text-ink3">{s.orderNumber || "—"} · {labelTipe(s.type)}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </button>
-            ))
+              );
+            })
           )}
         </div>
       </div>

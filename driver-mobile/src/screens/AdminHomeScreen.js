@@ -242,13 +242,50 @@ function ringkasDriver(jobs, tracking) {
     if (j.helper) ids.push(j.helper.id);
     jobIdToPersonIds.set(j.id, ids);
   }
-  for (const t of tracking) {
-    for (const personId of jobIdToPersonIds.get(t.jobId) || []) {
+  // Bentuk GET /armada/tracking BERUBAH (D-165, 14 Sep 2026) dari array
+  // datar per-job jadi per-KENDARAAN ("route" py `activeJobId`, "loose" py
+  // `jobId`) — di sini cuma butuh 1 jobId aktif per item utk cari lastSeen,
+  // jadi cukup baca field yang sesuai `kind`, tanpa turunkanKendaraan penuh.
+  for (const item of tracking) {
+    const jobId = item.kind === "route" ? item.activeJobId : item.jobId;
+    for (const personId of jobIdToPersonIds.get(jobId) || []) {
       const d = personMap.get(personId);
-      if (d && t.lastPosition?.recordedAt) d.lastSeen = t.lastPosition.recordedAt;
+      if (d && item.lastPosition?.recordedAt) d.lastSeen = item.lastPosition.recordedAt;
     }
   }
   return [...personMap.values()].sort((a, b) => b.jalan - a.jalan || b.total - a.total);
+}
+
+// Ratakan bentuk backend (D-165, 14 Sep 2026, permintaan owner: "mekanisme
+// nya seperti delivery shopee, grab, gojek" — SELURUH urutan stop rute
+// aktif ditampilkan, bukan cuma 1 job EN_ROUTE lepas seperti sebelumnya)
+// — "route" (py banyak stop) ATAU "loose" (Kurir Eksternal, D-161, 1
+// titik) jadi SATU struktur render yang sama. Pola SAMA PERSIS dengan
+// turunkanKendaraan() di web (ArmadaTracking.jsx) — jangan biarkan drift,
+// kalau bentuk backend berubah lagi keduanya harus diperbarui bersamaan.
+function turunkanKendaraan(item) {
+  if (item.kind === "loose") {
+    return {
+      vehicleId: `loose-${item.jobId}`,
+      routeCode: null,
+      driverName: item.driverName, helperName: null,
+      lastPosition: item.lastPosition,
+      activeJobId: item.jobId,
+      stops: [{
+        jobId: item.jobId, sequence: 1, status: item.status || "EN_ROUTE", type: item.type,
+        addressText: item.addressText, lat: item.destinationLat, lng: item.destinationLng,
+        orderNumber: item.orderNumber, customerName: item.customerName,
+      }],
+    };
+  }
+  return {
+    vehicleId: `route-${item.routeId}`,
+    routeCode: item.routeCode,
+    driverName: item.driverName, helperName: item.helperName,
+    lastPosition: item.lastPosition,
+    activeJobId: item.activeJobId,
+    stops: item.stops,
+  };
 }
 
 export default function AdminHomeScreen() {
@@ -581,28 +618,12 @@ function DriverView({ drivers, theme: t, styles }) {
   );
 }
 
-// Link Google Maps posisi terakhir driver / rute posisi→tujuan — pola SAMA
-// dengan mapsUrl() di jobHelpers.js (JobCard.js "Peta"), duplikasi kecil
-// karena bentuk datanya beda (item GET /armada/tracking, bukan Job).
-function posisiMapsUrl(t) {
-  if (!t.lastPosition) return null;
-  return `https://www.google.com/maps?q=${t.lastPosition.lat},${t.lastPosition.lng}`;
-}
-function ruteMapsUrl(t) {
-  if (!t.lastPosition) return null;
-  const dest = t.destinationLat && t.destinationLng
-    ? `${t.destinationLat},${t.destinationLng}`
-    : t.addressText ? encodeURIComponent(t.addressText) : null;
-  if (!dest) return null;
-  return `https://www.google.com/maps/dir/?api=1&origin=${t.lastPosition.lat},${t.lastPosition.lng}&destination=${dest}`;
-}
-
 // Marker driver — lingkaran ACCENT + ikon truck, dibuat dari View biasa
 // (bukan Marker.image) supaya warnanya ikut tema langsung. tracksViewChanges
 //={false} SENGAJA (bukan lupa) — marker di sini statis sekali render per
-// posisi baru (key sudah termasuk lat/lng, lihat pemanggil), true di sini
-// cuma memboroskan render setiap frame tanpa manfaat, pola umum
-// react-native-maps utk custom marker yang tidak animasi.
+// posisi baru (key sudah termasuk jobId/vehicleId, bukan lat/lng, lihat
+// pemanggil), true di sini cuma memboroskan render setiap frame tanpa
+// manfaat, pola umum react-native-maps utk custom marker yang tidak animasi.
 function DriverMarkerDot({ t }) {
   return (
     <View style={[dotStyles.wrap, { backgroundColor: t.ACCENT, borderColor: t.SURFACE }]}>
@@ -617,21 +638,54 @@ function DestinationMarkerDot({ t }) {
     </View>
   );
 }
+// 3 marker stop baru (14 Sep 2026, D-165) — sama semangat dgn
+// stopIconDone/stopIconFailed/stopIcon di googleMapIcons.js web, versi View
+// biasa (bukan SVG data-URI, react-native-maps custom marker = children
+// biasa) supaya warnanya ikut tema tanpa perlu hex manual per tema.
+function StopDoneMarkerDot({ t }) {
+  return (
+    <View style={[dotStyles.wrap, dotStyles.wrapKecil, { backgroundColor: t.GREEN, borderColor: t.SURFACE }]}>
+      <CheckCircle2 size={12} color="#FFFFFF" />
+    </View>
+  );
+}
+function StopFailedMarkerDot({ t }) {
+  return (
+    <View style={[dotStyles.wrap, dotStyles.wrapKecil, { backgroundColor: t.RED, borderColor: t.SURFACE }]}>
+      <XCircle size={12} color="#FFFFFF" />
+    </View>
+  );
+}
+function StopNumberMarkerDot({ t, nomor }) {
+  return (
+    <View style={[dotStyles.wrap, dotStyles.wrapKecil, { backgroundColor: t.INK3, borderColor: t.SURFACE }]}>
+      <Text style={{ fontSize: 10, fontWeight: "800", color: "#FFFFFF" }}>{nomor}</Text>
+    </View>
+  );
+}
 const dotStyles = StyleSheet.create({
   wrap: {
     width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center",
     borderWidth: 2,
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3, elevation: 4,
   },
+  wrapKecil: { width: 22, height: 22, borderRadius: 11 },
 });
 
 const JAKARTA_CENTER = { latitude: -6.2088, longitude: 106.8456, latitudeDelta: 0.15, longitudeDelta: 0.15 };
 
-// Peta asli (13 Sep 2026) — SEMUA job EN_ROUTE dengan posisi GPS, auto-fit
-// ke batas semua marker tiap kali datanya berubah (poll 30 detik). Rute
-// posisi->tujuan garis LURUS (lihat catatan di atas import) — beda dari web
-// yang road-matched OSRM.
-function TrackingMap({ withPosition, withDestination, t, dark }) {
+// Peta asli — REDESAIN 14 September 2026 (D-165, permintaan owner:
+// "mekanisme nya seperti delivery shopee, grab, gojek"). SEBELUMNYA cuma
+// gambar 1 job EN_ROUTE lepas (posisi driver -> 1 tujuan). SEKARANG per
+// rute aktif: stop yang SUDAH LEWAT (hijau/merah selesai/gagal), stop yang
+// SEDANG DITUJU (pin merah, sama seperti sebelumnya), stop yang BELUM
+// dimulai (bernomor, redup) — digambar sekaligus, sama jalur pikir dengan
+// web (ArmadaTracking.jsx), auto-fit ke batas SEMUA marker (bukan cuma
+// posisi+1 tujuan) tiap kali datanya berubah (poll 30 detik). Rute
+// posisi->stop garis LURUS (lihat catatan lama di atas import) — sengaja
+// beda dari web yang road-matched OSRM, supaya tidak menduplikasi seluruh
+// services/osrm.js cuma untuk layar ringkasan "sekilas lihat".
+function TrackingMap({ kendaraan, t, dark }) {
   const mapRef = useRef(null);
   const [siap, setSiap] = useState(false);
   // `siap` HARUS reset ke false setiap `dark` berganti (14 Sep 2026) —
@@ -648,10 +702,16 @@ function TrackingMap({ withPosition, withDestination, t, dark }) {
     setSiap(false);
   }
 
-  const titik = useMemo(() => [
-    ...withPosition.map((j) => ({ latitude: j.lastPosition.lat, longitude: j.lastPosition.lng })),
-    ...withDestination.map((j) => ({ latitude: j.destinationLat, longitude: j.destinationLng })),
-  ], [withPosition, withDestination]);
+  const titik = useMemo(() => {
+    const pts = [];
+    for (const v of kendaraan) {
+      pts.push({ latitude: v.lastPosition.lat, longitude: v.lastPosition.lng });
+      for (const s of v.stops) {
+        if (s.lat != null) pts.push({ latitude: s.lat, longitude: s.lng });
+      }
+    }
+    return pts;
+  }, [kendaraan]);
 
   // Sinyal ringkas + fit lewat effect (13 Sep 2026, audit performa) —
   // SEBELUMNYA fitToCoordinates dipanggil ulang di SETIAP `onLayout`, event
@@ -685,146 +745,237 @@ function TrackingMap({ withPosition, withDestination, t, dark }) {
         style={{ flex: 1 }}
         provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
         initialRegion={
-          withPosition.length > 0
-            ? { latitude: withPosition[0].lastPosition.lat, longitude: withPosition[0].lastPosition.lng, latitudeDelta: 0.08, longitudeDelta: 0.08 }
+          kendaraan.length > 0
+            ? { latitude: kendaraan[0].lastPosition.lat, longitude: kendaraan[0].lastPosition.lng, latitudeDelta: 0.08, longitudeDelta: 0.08 }
             : JAKARTA_CENTER
         }
         customMapStyle={dark ? MAP_STYLE_DARK : undefined}
         onMapReady={() => setSiap(true)}
       >
-        {withDestination.map((j) => (
-          <Polyline
-            key={`jalur-${j.jobId}`}
-            coordinates={[
-              { latitude: j.lastPosition.lat, longitude: j.lastPosition.lng },
-              { latitude: j.destinationLat, longitude: j.destinationLng },
-            ]}
-            strokeColor={t.ACCENT}
-            strokeWidth={3}
-          />
-        ))}
-        {/* key = HANYA jobId (13 Sep 2026, audit performa) — SEBELUMNYA
-            lat/lng ikut disisipkan ke key, jadi GPS jitter sedetik saja
-            (angka berubah di desimal ke-5) bikin React anggap ini Marker
-            BARU dan unmount+remount PENUH, membatalkan sendiri manfaat
-            tracksViewChanges={false} di bawah (yang justru dipasang supaya
-            marker TIDAK di-re-render ulang tiap posisi berubah). Posisi
-            tetap ikut update normal lewat prop `coordinate` — react-native-
-            maps mengurus animasi pergeseran marker tanpa perlu remount. */}
-        {withPosition.map((j) => (
-          <Marker
-            key={`driver-${j.jobId}`}
-            coordinate={{ latitude: j.lastPosition.lat, longitude: j.lastPosition.lng }}
-            title={j.driverName || "Driver"}
-            description={j.customerName || undefined}
-            tracksViewChanges={false}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <DriverMarkerDot t={t} />
-          </Marker>
-        ))}
-        {withDestination.map((j) => (
-          <Marker
-            key={`tujuan-${j.jobId}`}
-            coordinate={{ latitude: j.destinationLat, longitude: j.destinationLng }}
-            title={`Tujuan — ${j.customerName || ""}`}
-            description={j.addressText || undefined}
-            tracksViewChanges={false}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <DestinationMarkerDot t={t} />
-          </Marker>
-        ))}
+        {kendaraan.map((v) => {
+          const activeStop = v.stops.find((s) => s.jobId === v.activeJobId);
+          if (!activeStop) return null;
+          const posisiSekarang = { latitude: v.lastPosition.lat, longitude: v.lastPosition.lng };
+          const before = v.stops.filter((s) => s.sequence < activeStop.sequence && s.lat != null);
+          const after = v.stops.filter((s) => s.sequence > activeStop.sequence && s.lat != null);
+          const traveled = [...before.map((s) => ({ latitude: s.lat, longitude: s.lng })), posisiSekarang];
+          const upcoming = [
+            posisiSekarang,
+            ...(activeStop.lat != null ? [{ latitude: activeStop.lat, longitude: activeStop.lng }] : []),
+            ...after.map((s) => ({ latitude: s.lat, longitude: s.lng })),
+          ];
+          return (
+            <React.Fragment key={v.vehicleId}>
+              {traveled.length >= 2 && <Polyline coordinates={traveled} strokeColor={t.INK3} strokeWidth={3} />}
+              {upcoming.length >= 2 && <Polyline coordinates={upcoming} strokeColor={t.ACCENT} strokeWidth={3} />}
+
+              {/* key = HANYA jobId/vehicleId (13 Sep 2026, audit performa) —
+                  SEBELUMNYA lat/lng ikut disisipkan ke key, jadi GPS jitter
+                  sedetik saja (angka berubah di desimal ke-5) bikin React
+                  anggap ini Marker BARU dan unmount+remount PENUH,
+                  membatalkan sendiri manfaat tracksViewChanges={false} di
+                  bawah. Posisi tetap ikut update normal lewat prop
+                  `coordinate` — react-native-maps mengurus animasi
+                  pergeseran marker tanpa perlu remount. */}
+              {before.map((s) => (
+                <Marker
+                  key={`before-${s.jobId}`}
+                  coordinate={{ latitude: s.lat, longitude: s.lng }}
+                  title={`Stop ${s.sequence} — ${s.customerName || ""}`}
+                  description={s.status === "FAILED" ? "Gagal" : "Selesai"}
+                  tracksViewChanges={false}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                >
+                  {s.status === "FAILED" ? <StopFailedMarkerDot t={t} /> : <StopDoneMarkerDot t={t} />}
+                </Marker>
+              ))}
+              {after.map((s) => (
+                <Marker
+                  key={`after-${s.jobId}`}
+                  coordinate={{ latitude: s.lat, longitude: s.lng }}
+                  title={`Stop ${s.sequence} — ${s.customerName || ""}`}
+                  description="Belum dimulai"
+                  tracksViewChanges={false}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                >
+                  <StopNumberMarkerDot t={t} nomor={s.sequence} />
+                </Marker>
+              ))}
+              {activeStop.lat != null && (
+                <Marker
+                  key={`aktif-${activeStop.jobId}`}
+                  coordinate={{ latitude: activeStop.lat, longitude: activeStop.lng }}
+                  title={`Tujuan — ${activeStop.customerName || ""}`}
+                  description={activeStop.addressText || undefined}
+                  tracksViewChanges={false}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                >
+                  <DestinationMarkerDot t={t} />
+                </Marker>
+              )}
+              <Marker
+                key={`driver-${v.vehicleId}`}
+                coordinate={posisiSekarang}
+                title={v.driverName || "Driver"}
+                description={`${v.routeCode || "Kurir Eksternal"} · Stop ${activeStop.sequence}/${v.stops.length}`}
+                tracksViewChanges={false}
+                anchor={{ x: 0.5, y: 0.5 }}
+              >
+                <DriverMarkerDot t={t} />
+              </Marker>
+            </React.Fragment>
+          );
+        })}
       </MapView>
     </View>
   );
 }
 
-// Tab Live Tracking (13 Sep 2026) — posisi GPS TERAKHIR tiap job yang
-// sedang EN_ROUTE, data SAMA dengan papan Live Tracking web
-// (ArmadaTracking.jsx, GET /armada/tracking), sudah ikut poll 30 detik
-// `useAdminToday`. Peta asli di atas (TrackingMap) + kartu detail per
-// driver di bawah (tombol buka Google Maps eksternal tetap ada — pelengkap
-// utk rute turn-by-turn yang peta di dalam app ini tidak coba tiru).
+// Tab Live Tracking — REDESAIN 14 September 2026 (D-165). Data SAMA dengan
+// papan Live Tracking web (ArmadaTracking.jsx, GET /armada/tracking, bentuk
+// respons per-KENDARAAN sejak D-165 — lihat turunkanKendaraan()), sudah
+// ikut poll 30 detik `useAdminToday`. Peta asli di atas (TrackingMap) +
+// SATU kartu per rute di bawah — progress "stop X dari Y", tujuan aktif
+// menonjol, expand utk lihat seluruh urutan stop (tombol Google Maps
+// eksternal tetap ada — pelengkap utk rute turn-by-turn yang peta di dalam
+// app ini tidak coba tiru).
 function TrackingView({ tracking, theme: t, styles }) {
   const dark = t.statusBarStyle === "light"; // konvensi token, lihat theme.js
-  const withPosition = useMemo(() => tracking.filter((j) => j.lastPosition), [tracking]);
-  const withDestination = useMemo(
-    () => withPosition.filter((j) => j.destinationLat != null && j.destinationLng != null),
-    [withPosition]
+  const kendaraan = useMemo(
+    () => (tracking || [])
+      .map(turunkanKendaraan)
+      .filter((v) => v.lastPosition && v.stops.some((s) => s.jobId === v.activeJobId)),
+    [tracking]
   );
+  const [expandedVehicleId, setExpandedVehicleId] = useState(null);
 
   // Peta SELALU dirender (13 Sep 2026, konfirmasi owner: "betul lets do it"
   // — samakan dengan web yang tetap tampilkan peta kosong center Jakarta
   // walau belum ada driver aktif, bukan langsung lompat ke pesan teks).
   // TrackingMap sendiri sudah toleran array kosong (initialRegion fallback
-  // JAKARTA_CENTER, fitKeSemuaMarker no-op kalau titik.length===0).
+  // JAKARTA_CENTER, fit no-op kalau titik.length===0).
   return (
     <View style={{ gap: 10 }}>
-      <TrackingMap withPosition={withPosition} withDestination={withDestination} t={t} dark={dark} />
-      {tracking.length === 0 && (
+      <TrackingMap kendaraan={kendaraan} t={t} dark={dark} />
+      {kendaraan.length === 0 && (
         <View style={[styles.center, { flex: 0, paddingVertical: 28 }]}>
           <Navigation size={28} color={t.INK3} />
-          <Text style={[styles.emptyText, { marginTop: 8 }]}>Tidak ada driver yang sedang dalam perjalanan sekarang.</Text>
+          <Text style={[styles.emptyText, { marginTop: 8 }]}>Tidak ada rute yang sedang dalam perjalanan sekarang.</Text>
         </View>
       )}
-      {tracking.map((tr) => {
-        const posisiUrl = posisiMapsUrl(tr);
-        const ruteUrl = ruteMapsUrl(tr);
+      {kendaraan.map((v) => {
+        const activeStop = v.stops.find((s) => s.jobId === v.activeJobId);
+        const total = v.stops.length;
+        const selesai = v.stops.filter((s) => s.sequence < activeStop.sequence && s.status === "COMPLETED").length;
+        const expanded = expandedVehicleId === v.vehicleId;
+        const posisiUrl = `https://www.google.com/maps?q=${v.lastPosition.lat},${v.lastPosition.lng}`;
+        const ruteUrl = activeStop.lat != null
+          ? `https://www.google.com/maps/dir/?api=1&origin=${v.lastPosition.lat},${v.lastPosition.lng}&destination=${activeStop.lat},${activeStop.lng}`
+          : activeStop.addressText
+          ? `https://www.google.com/maps/dir/?api=1&origin=${v.lastPosition.lat},${v.lastPosition.lng}&destination=${encodeURIComponent(activeStop.addressText)}`
+          : null;
         return (
-          <View key={tr.jobId} style={styles.card}>
+          <View key={v.vehicleId} style={styles.card}>
             <View style={styles.rowBetween}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
                 <Truck size={14} color={t.ACCENT} />
-                <Text style={styles.cardTitle}>{tr.driverName || "Driver tidak diketahui"}</Text>
+                <Text style={styles.cardTitle} numberOfLines={1}>
+                  {v.driverName || "Driver tidak diketahui"}{v.helperName ? ` + ${v.helperName}` : ""}
+                </Text>
               </View>
-              {tr.lastPosition ? (
-                <View style={styles.liveBadge}>
-                  <Navigation size={11} color={t.ACCENT} />
-                  <Text style={styles.liveBadgeText}>Live</Text>
+              <View style={styles.liveBadge}>
+                <Navigation size={11} color={t.ACCENT} />
+                <Text style={styles.liveBadgeText}>Live</Text>
+              </View>
+            </View>
+            <Text style={[styles.cardMeta, { marginTop: 2 }]}>
+              {v.routeCode || "Kurir Eksternal"} · Stop {activeStop.sequence}/{total}
+            </Text>
+
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${total ? Math.round((selesai / total) * 100) : 0}%` }]} />
+            </View>
+
+            {/* Tujuan aktif — blok menonjol, sama semangat referensi owner
+                (bottom sheet Grab/Gojek: nama customer, alamat, aksi). */}
+            <View style={{ backgroundColor: t.TRACK_BG, borderRadius: 10, padding: 8, marginTop: 8 }}>
+              <Text style={{ fontSize: 10, fontWeight: "800", letterSpacing: 0.3, textTransform: "uppercase", color: t.ACCENT }}>
+                {activeStop.status === "ARRIVED" ? "Tiba Di Lokasi" : "Sedang Menuju"}
+              </Text>
+              <Text style={[styles.cardMeta, { color: t.INK, fontWeight: "700", marginTop: 2 }]} numberOfLines={1}>
+                {activeStop.customerName || "—"}
+              </Text>
+              <Text style={styles.cardMeta}>
+                {activeStop.orderNumber || "—"} · {activeStop.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
+              </Text>
+              {activeStop.addressText ? (
+                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4, marginTop: 4 }}>
+                  <MapPin size={11} color={t.INK3} style={{ marginTop: 1 }} />
+                  <Text style={[styles.cardMeta, { flex: 1 }]} numberOfLines={2}>{activeStop.addressText}</Text>
                 </View>
-              ) : (
-                <View style={[styles.liveBadge, { backgroundColor: t.INK3 + "26" }]}>
-                  <Text style={[styles.liveBadgeText, { color: t.INK3 }]}>Belum ada sinyal GPS</Text>
-                </View>
+              ) : null}
+            </View>
+
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
+              <Clock size={11} color={t.INK3} />
+              <Text style={styles.lastSeenText}>
+                Posisi terakhir {relatifWaktu(v.lastPosition.recordedAt)}
+                {v.lastPosition.accuracy ? ` · akurasi ±${Math.round(v.lastPosition.accuracy)}m` : ""}
+              </Text>
+            </View>
+
+            <View style={styles.quickActions}>
+              <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(posisiUrl)}>
+                <MapPin size={13} color={t.ACCENT} />
+                <Text style={styles.quickBtnText}>Lihat Posisi</Text>
+              </Pressable>
+              {ruteUrl && (
+                <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(ruteUrl)}>
+                  <Navigation size={13} color={t.ACCENT} />
+                  <Text style={styles.quickBtnText}>Rute ke Tujuan</Text>
+                </Pressable>
               )}
             </View>
 
-            <Text style={[styles.cardMeta, { color: t.INK, marginTop: 4 }]}>{tr.customerName || "—"}</Text>
-            <Text style={styles.cardMeta}>
-              {tr.orderNumber || "—"} · {tr.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
-            </Text>
-            {tr.addressText ? (
-              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4, marginTop: 6 }}>
-                <MapPin size={11} color={t.INK3} style={{ marginTop: 1 }} />
-                <Text style={[styles.cardMeta, { flex: 1 }]} numberOfLines={2}>{tr.addressText}</Text>
-              </View>
-            ) : null}
-
-            {tr.lastPosition && (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
-                <Clock size={11} color={t.INK3} />
-                <Text style={styles.lastSeenText}>
-                  Posisi terakhir {relatifWaktu(tr.lastPosition.recordedAt)}
-                  {tr.lastPosition.accuracy ? ` · akurasi ±${Math.round(tr.lastPosition.accuracy)}m` : ""}
+            {total > 1 && (
+              <Pressable
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingVertical: 8, marginTop: 2 }}
+                onPress={() => setExpandedVehicleId(expanded ? null : v.vehicleId)}
+              >
+                <Text style={{ fontSize: 11, fontWeight: "700", color: t.INK3 }}>
+                  {expanded ? "Sembunyikan urutan stop" : `Lihat semua ${total} stop`}
                 </Text>
-              </View>
+                {expanded ? <ChevronUp size={12} color={t.INK3} /> : <ChevronDown size={12} color={t.INK3} />}
+              </Pressable>
             )}
 
-            {(posisiUrl || ruteUrl) && (
-              <View style={styles.quickActions}>
-                {posisiUrl && (
-                  <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(posisiUrl)}>
-                    <MapPin size={13} color={t.ACCENT} />
-                    <Text style={styles.quickBtnText}>Lihat Posisi</Text>
-                  </Pressable>
-                )}
-                {ruteUrl && (
-                  <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(ruteUrl)}>
-                    <Navigation size={13} color={t.ACCENT} />
-                    <Text style={styles.quickBtnText}>Rute ke Tujuan</Text>
-                  </Pressable>
-                )}
+            {expanded && (
+              <View style={{ marginTop: 2, gap: 8, borderTopWidth: 1, borderTopColor: t.BORDER, paddingTop: 8 }}>
+                {v.stops.map((s) => {
+                  const isActive = s.jobId === v.activeJobId;
+                  const sudahLewat = s.sequence < activeStop.sequence;
+                  return (
+                    <View key={s.jobId} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      {sudahLewat ? (
+                        s.status === "FAILED"
+                          ? <XCircle size={14} color={t.RED} />
+                          : <CheckCircle2 size={14} color={t.GREEN} />
+                      ) : (
+                        <View style={{
+                          width: 14, height: 14, borderRadius: 7, alignItems: "center", justifyContent: "center",
+                          backgroundColor: isActive ? t.ACCENT : t.TRACK_BG,
+                        }}>
+                          <Text style={{ fontSize: 8, fontWeight: "800", color: isActive ? "#FFFFFF" : t.INK3 }}>{s.sequence}</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.cardMeta, { color: isActive ? t.ACCENT : t.INK, fontWeight: "600" }]} numberOfLines={1}>
+                          {s.customerName || "—"}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             )}
           </View>

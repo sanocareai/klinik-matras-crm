@@ -3895,59 +3895,143 @@ armadaRouter.post("/jobs/:id/positions", requireAnyPermission(P.JOB_WRITE, P.JOB
   }
 });
 
-// GET /api/armada/tracking — posisi TERAKHIR tiap job yang SEDANG EN_ROUTE,
-// untuk papan Live Tracking dispatcher (D-034, menggantikan trackingMock.js).
-// DISTINCT ON per job — bukan JOIN biasa, karena yang dibutuhkan cuma 1 baris
-// (ping terbaru) per job, bukan seluruh riwayat.
+// GET /api/armada/tracking — D-165 (14 September 2026, permintaan owner:
+// "coba lo explore bagusnya seperti apa... mekanisme nya seperti delivery
+// shopee, grab, gojek" — rute AKTIF hari itu ditampilkan SELURUH urutan
+// stop-nya, bukan cuma 1 job EN_ROUTE lepas seperti sebelumnya, supaya
+// jelas kelihatan "sedang menuju alamat A, nanti lanjut ke alamat B").
 //
-// TIDAK ADA filter tanggal "hari ini" — status EN_ROUTE itu sendiri SUDAH
+// GANTI TOTAL bentuk respons dari array datar per-job (D-034) jadi array
+// per-KENDARAAN, didiskriminasi lewat `kind`:
+//   { kind: "route", routeId, routeCode, driverName, helperName,
+//     activeJobId, lastPosition, stops: [{jobId, sequence, status, ...}] }
+//   { kind: "loose", jobId, ..., lastPosition }               (job lepas)
+// "route" = Route yang PUNYA setidaknya 1 job AKTIF sekarang (EN_ROUTE
+// ATAU ARRIVED — lihat catatan di bawah kenapa 2 status, bukan 1) — stops
+// mencakup SEMUA job rute itu (bukan cuma yang aktif) diurutkan sequence,
+// jadi frontend bisa gambar seluruh jalur + tandai mana yang sudah
+// selesai/sedang dituju/belum dimulai, persis pola app pengantaran pada
+// umumnya. "loose" = job aktif TANPA routeId (Kurir Eksternal/Lalamove,
+// D-161 — SENGAJA tidak pernah masuk Route Planner, titik tunggal, bukan
+// multi-stop) — bentuknya PERSIS sama dengan respons lama, supaya kasus
+// ini tidak kehilangan apa pun.
+//
+// ARRIVED ikut dihitung "aktif" (14 September 2026) — TANPA ini, rute
+// akan HILANG total dari Live Tracking selama driver sedang berada DI
+// LOKASI mengerjakan serah terima (status ARRIVED, belum COMPLETED) —
+// tidak ada job berstatus EN_ROUTE sama sekali di rute itu selama jeda
+// itu, cuma muncul lagi begitu driver lanjut ke stop berikutnya. Itu akan
+// terlihat seperti bug ("driver-nya hilang") padahal dia justru sedang
+// bekerja di lapangan. GPS ping berhenti otomatis saat ARRIVED (lihat
+// useDriverTracking.js, gerbangnya cuma job EN_ROUTE) — `lastPosition`
+// untuk stop ARRIVED adalah ping TERAKHIR sebelum tiba (posisi
+// lokasinya, cukup akurat, bukan basi).
+//
+// TIDAK ADA filter tanggal "hari ini" — status aktif itu sendiri SUDAH
 // berarti "job ini sedang berlangsung sekarang" (cuma dicapai lewat
-// POST .../start, yang cuma masuk akal driver panggil di hari job-nya).
-// Menambah filter `scheduledDate >= new Date()` di sini justru berisiko kena
-// bug kelas yang dilarang CLAUDE.md §11: container jalan UTC, `new Date()`
-// tanpa lewat utils/wib.js bisa menghitung "hari ini" mundur/maju 7 jam dari
-// yang dimaksud WIB.
+// POST .../start atau .../arrive, yang cuma masuk akal driver panggil di
+// hari job-nya). Menambah filter `scheduledDate >= new Date()` di sini
+// justru berisiko kena bug kelas yang dilarang CLAUDE.md §11: container
+// jalan UTC, `new Date()` tanpa lewat utils/wib.js bisa menghitung "hari
+// ini" mundur/maju 7 jam dari yang dimaksud WIB.
 armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) => {
   try {
-    const jobs = await prisma.job.findMany({
-      where: { status: "EN_ROUTE" },
-      include: {
-        driver: { select: { id: true, name: true } },
-        // lat/lng SUDAH ADA di select default (bukan lewat include) —
-        // dipetakan eksplisit sbg destinationLat/Lng di bawah. Fase 2
-        // (30 Agustus 2026): kolom ini sekarang bisa terisi dari fallback
-        // Nominatim juga (lihat services/maps.js), bukan cuma Google, jadi
-        // pin tujuan di peta Live Tracking punya kans jauh lebih besar
-        // untuk terisi hari ini.
-        order: { select: { orderNumber: true, customer: { select: { name: true } } } },
-      },
+    const jobsAktif = await prisma.job.findMany({
+      where: { status: { in: ["EN_ROUTE", "ARRIVED"] } },
+      select: { id: true, routeId: true },
     });
-    if (jobs.length === 0) return res.json([]);
+    if (jobsAktif.length === 0) return res.json([]);
 
-    // job_id di job_position_pings bertipe uuid — tanpa cast ::uuid[] di
-    // sini, driver Postgres node-postgres mengirim array param sebagai
-    // text[] dan query gagal total ("operator does not exist: uuid = text",
-    // ditemukan 23 Agustus 2026 saat tes end-to-end job pickup nyata:
-    // endpoint ini 500 setiap kali dipanggil, papan Live Tracking mati).
-    const latest = await prisma.$queryRaw`
-      SELECT DISTINCT ON (job_id) job_id, lat, lng, accuracy, recorded_at
-      FROM job_position_pings
-      WHERE job_id = ANY(${jobs.map((j) => j.id)}::uuid[])
-      ORDER BY job_id, recorded_at DESC
-    `;
-    const byJob = new Map(latest.map((p) => [p.job_id, p]));
+    const routeIds = [...new Set(jobsAktif.filter((j) => j.routeId).map((j) => j.routeId))];
+    const looseJobIds = jobsAktif.filter((j) => !j.routeId).map((j) => j.id);
 
-    res.json(jobs.map((j) => {
-      const p = byJob.get(j.id);
-      return {
-        jobId: j.id, type: j.type, addressText: j.addressText,
+    const [routes, looseJobs, latest] = await Promise.all([
+      routeIds.length
+        ? prisma.route.findMany({
+            where: { id: { in: routeIds } },
+            select: {
+              id: true, code: true,
+              driver: { select: { id: true, name: true } },
+              helper: { select: { id: true, name: true } },
+              // SEMUA job rute ini, bukan cuma yang EN_ROUTE (14 September
+              // 2026, D-165) — frontend butuh stop yang SUDAH SELESAI &
+              // yang BELUM DIMULAI juga supaya urutan penuh kelihatan,
+              // bukan cuma titik yang sedang dituju sekarang.
+              jobs: {
+                select: {
+                  id: true, sequence: true, status: true, type: true, addressText: true, lat: true, lng: true,
+                  order: { select: { orderNumber: true, customer: { select: { name: true } } } },
+                },
+                orderBy: { sequence: "asc" },
+              },
+            },
+          })
+        : [],
+      looseJobIds.length
+        ? prisma.job.findMany({
+            where: { id: { in: looseJobIds } },
+            select: {
+              id: true, status: true, type: true, addressText: true, lat: true, lng: true,
+              driver: { select: { id: true, name: true } },
+              order: { select: { orderNumber: true, customer: { select: { name: true } } } },
+            },
+          })
+        : [],
+      // job_id di job_position_pings bertipe uuid — tanpa cast ::uuid[] di
+      // sini, driver Postgres node-postgres mengirim array param sebagai
+      // text[] dan query gagal total ("operator does not exist: uuid =
+      // text", ditemukan 23 Agustus 2026 saat tes end-to-end job pickup
+      // nyata: endpoint ini 500 setiap kali dipanggil, papan Live Tracking
+      // mati).
+      prisma.$queryRaw`
+        SELECT DISTINCT ON (job_id) job_id, lat, lng, accuracy, recorded_at
+        FROM job_position_pings
+        WHERE job_id = ANY(${jobsAktif.map((j) => j.id)}::uuid[])
+        ORDER BY job_id, recorded_at DESC
+      `,
+    ]);
+
+    const posByJob = new Map(latest.map((p) => [p.job_id, p]));
+    const posisiJob = (jobId) => {
+      const p = posByJob.get(jobId);
+      return p ? { lat: p.lat, lng: p.lng, accuracy: p.accuracy, recordedAt: p.recorded_at } : null;
+    };
+
+    const hasil = [];
+    for (const r of routes) {
+      const stops = r.jobs.map((j) => ({
+        jobId: j.id, sequence: j.sequence, status: j.status, type: j.type,
+        addressText: j.addressText, lat: j.lat, lng: j.lng,
+        orderNumber: j.order?.orderNumber || null,
+        customerName: j.order?.customer?.name || null,
+      }));
+      const aktif = stops.find((s) => s.status === "EN_ROUTE" || s.status === "ARRIVED");
+      // Jaga-jaga kondisi balap (job baru saja pindah ARRIVED->COMPLETED
+      // atau EN_ROUTE->FAILED tepat di antara 2 query di atas) — tanpa
+      // job aktif, rute ini tidak punya apa pun untuk ditandai "sedang
+      // dituju/dikerjakan", jangan dipaksakan tampil daripada menyesatkan.
+      if (!aktif) continue;
+      hasil.push({
+        kind: "route",
+        routeId: r.id, routeCode: r.code,
+        driverName: r.driver?.name || null, helperName: r.helper?.name || null,
+        activeJobId: aktif.jobId,
+        lastPosition: posisiJob(aktif.jobId),
+        stops,
+      });
+    }
+    for (const j of looseJobs) {
+      hasil.push({
+        kind: "loose",
+        jobId: j.id, status: j.status, type: j.type, addressText: j.addressText,
         destinationLat: j.lat, destinationLng: j.lng,
         driverName: j.driver?.name || null,
         orderNumber: j.order?.orderNumber || null,
         customerName: j.order?.customer?.name || null,
-        lastPosition: p ? { lat: p.lat, lng: p.lng, accuracy: p.accuracy, recordedAt: p.recorded_at } : null,
-      };
-    }));
+        lastPosition: posisiJob(j.id),
+      });
+    }
+    res.json(hasil);
   } catch (err) {
     handleErr(err, res);
   }

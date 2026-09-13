@@ -63,6 +63,32 @@ export function stopIcon(google, warna, nomor) {
   return svgIcon(google, inner, [24, 24], [12, 12]);
 }
 
+// Stop yang SUDAH SELESAI di Live Tracking (14 September 2026, D-165 —
+// seluruh urutan rute sekarang ditampilkan, bukan cuma tujuan yang sedang
+// dituju) — lingkaran hijau (--green tema terang, cukup dekat di kedua
+// tema untuk ikon kecil beropacity solid) + checkmark, SENGAJA beda bentuk
+// dari stopIcon bernomor (upcoming) supaya status "sudah lewat" langsung
+// kebaca tanpa perlu baca angka nomor urutnya.
+export function stopIconDone(google) {
+  const inner = `
+    <circle cx="11" cy="11" r="9" fill="#248A3D" stroke="white" stroke-width="2"/>
+    <path d="M6.5 11l3 3 5-6" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  `;
+  return svgIcon(google, inner, [22, 22], [11, 11]);
+}
+
+// Stop yang GAGAL di Live Tracking (14 September 2026, D-165) — lingkaran
+// merah + silang, dipisah dari stopIconDone (hijau+centang) supaya stop
+// gagal TIDAK pernah terlihat seolah berhasil di peta cuma karena sudah
+// "lewat" secara urutan.
+export function stopIconFailed(google) {
+  const inner = `
+    <circle cx="11" cy="11" r="9" fill="#D70015" stroke="white" stroke-width="2"/>
+    <path d="M7.5 7.5l7 7M14.5 7.5l-7 7" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  `;
+  return svgIcon(google, inner, [22, 22], [11, 11]);
+}
+
 // Titik pangkalan (Klinik Matras) — kotak gelap + ikon rumah, MILIK BERSAMA
 // semua rute (bukan salah satu warna PALET_RUTE), sama alasan dgn Leaflet lama.
 export function depotIcon(google) {

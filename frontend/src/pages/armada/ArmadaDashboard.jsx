@@ -405,7 +405,20 @@ export default function ArmadaDashboard() {
     () => (jobs || []).filter((j) => j.status === "EN_ROUTE" || j.status === "ARRIVED"),
     [jobs]
   );
-  const trackingByJob = useMemo(() => new Map((tracking || []).map((t) => [t.jobId, t])), [tracking]);
+  // Bentuk respons GET /armada/tracking BERUBAH (D-165, 14 September 2026)
+  // dari array datar per-job jadi array per-KENDARAAN (route dengan
+  // seluruh stop, atau job lepas) — trackingByJob di sini cuma butuh
+  // "posisi terakhir per job", jadi normalisasi balik ke bentuk lama:
+  // kind "route" ambil lastPosition-nya dari activeJobId (satu-satunya
+  // job di rute itu yang sedang dituju), kind "loose" sama seperti dulu.
+  const trackingByJob = useMemo(() => {
+    const m = new Map();
+    for (const t of tracking || []) {
+      if (t.kind === "route") m.set(t.activeJobId, { lastPosition: t.lastPosition });
+      else m.set(t.jobId, { lastPosition: t.lastPosition });
+    }
+    return m;
+  }, [tracking]);
 
   function estimasiJarak(job) {
     if (job.status === "ARRIVED") return { label: "Tiba di lokasi", tone: "text-green" };
