@@ -8,9 +8,9 @@
 // jawab "gimana progress hari ini" cepat dari HP, bukan menggantikan
 // Route Planner. Light/dark ikut sistem HP (lihat src/theme.js).
 import React, { useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle } from "lucide-react-native";
+import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle, Navigation, MapPin } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
@@ -21,9 +21,19 @@ import GradientCard from "../components/GradientCard";
 
 // Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
 // dulu di atas konten, lihat BottomNavBar.js.
+// Tab Live Tracking (13 Sep 2026, permintaan owner: "live tracking bisa
+// dilakukan di web/apps" — web sudah punya papan peta penuh di
+// ArmadaTracking.jsx, GET /armada/tracking; sudah dipanggil `useAdminToday`
+// di bawah tapi cuma dipakai utk lastSeen driver, datanya belum ditampilkan
+// sendiri). App ini TIDAK pakai react-native-maps (butuh native rebuild +
+// Google Maps API key Android, tidak bisa lewat OTA) — pola yang SUDAH ada
+// di app ini (JobCard.js "Peta") adalah buka Google Maps eksternal lewat
+// Linking, jadi tab ini ikut pola yang sama: daftar driver EN_ROUTE +
+// tombol buka posisi/rute di Google Maps.
 const TABS = [
   { key: "hari-ini", label: "Hari Ini", icon: Home },
   { key: "driver", label: "Driver", icon: Truck },
+  { key: "tracking", label: "Tracking", icon: Navigation },
   { key: "masalah", label: "Masalah", icon: AlertTriangle },
   { key: "performa", label: "Performa", icon: Award },
 ];
@@ -185,6 +195,7 @@ export default function AdminHomeScreen() {
         >
           {tab === "hari-ini" && <HariIniView ringkasan={ringkasan} theme={theme} styles={styles} />}
           {tab === "driver" && <DriverView drivers={drivers} theme={theme} styles={styles} />}
+          {tab === "tracking" && <TrackingView tracking={tracking} theme={theme} styles={styles} />}
           {tab === "masalah" && <MasalahView issues={issues} theme={theme} styles={styles} />}
         </ScrollView>
       )}
@@ -280,6 +291,105 @@ function DriverView({ drivers, theme: t, styles }) {
           )}
         </View>
       ))}
+    </View>
+  );
+}
+
+// Link Google Maps posisi terakhir driver / rute posisi→tujuan — pola SAMA
+// dengan mapsUrl() di jobHelpers.js (JobCard.js "Peta"), duplikasi kecil
+// karena bentuk datanya beda (item GET /armada/tracking, bukan Job).
+function posisiMapsUrl(t) {
+  if (!t.lastPosition) return null;
+  return `https://www.google.com/maps?q=${t.lastPosition.lat},${t.lastPosition.lng}`;
+}
+function ruteMapsUrl(t) {
+  if (!t.lastPosition) return null;
+  const dest = t.destinationLat && t.destinationLng
+    ? `${t.destinationLat},${t.destinationLng}`
+    : t.addressText ? encodeURIComponent(t.addressText) : null;
+  if (!dest) return null;
+  return `https://www.google.com/maps/dir/?api=1&origin=${t.lastPosition.lat},${t.lastPosition.lng}&destination=${dest}`;
+}
+
+// Tab Live Tracking (13 Sep 2026) — posisi GPS TERAKHIR tiap job yang
+// sedang EN_ROUTE, data SAMA dengan papan Live Tracking web
+// (ArmadaTracking.jsx, GET /armada/tracking), sudah ikut poll 30 detik
+// `useAdminToday`. Tanpa peta di dalam app (lihat catatan di TABS) — buka
+// posisi/rute di Google Maps eksternal, sama seperti tombol "Peta" di
+// JobCard driver.
+function TrackingView({ tracking, theme: t, styles }) {
+  if (tracking.length === 0) {
+    return (
+      <View style={styles.center}>
+        <Navigation size={28} color={t.INK3} />
+        <Text style={[styles.emptyText, { marginTop: 8 }]}>Tidak ada driver yang sedang dalam perjalanan sekarang.</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={{ gap: 10 }}>
+      {tracking.map((tr) => {
+        const posisiUrl = posisiMapsUrl(tr);
+        const ruteUrl = ruteMapsUrl(tr);
+        return (
+          <View key={tr.jobId} style={styles.card}>
+            <View style={styles.rowBetween}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Truck size={14} color={t.ACCENT} />
+                <Text style={styles.cardTitle}>{tr.driverName || "Driver tidak diketahui"}</Text>
+              </View>
+              {tr.lastPosition ? (
+                <View style={styles.liveBadge}>
+                  <Navigation size={11} color={t.ACCENT} />
+                  <Text style={styles.liveBadgeText}>Live</Text>
+                </View>
+              ) : (
+                <View style={[styles.liveBadge, { backgroundColor: t.INK3 + "26" }]}>
+                  <Text style={[styles.liveBadgeText, { color: t.INK3 }]}>Belum ada sinyal GPS</Text>
+                </View>
+              )}
+            </View>
+
+            <Text style={[styles.cardMeta, { color: t.INK, marginTop: 4 }]}>{tr.customerName || "—"}</Text>
+            <Text style={styles.cardMeta}>
+              {tr.orderNumber || "—"} · {tr.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
+            </Text>
+            {tr.addressText ? (
+              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4, marginTop: 6 }}>
+                <MapPin size={11} color={t.INK3} style={{ marginTop: 1 }} />
+                <Text style={[styles.cardMeta, { flex: 1 }]} numberOfLines={2}>{tr.addressText}</Text>
+              </View>
+            ) : null}
+
+            {tr.lastPosition && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
+                <Clock size={11} color={t.INK3} />
+                <Text style={styles.lastSeenText}>
+                  Posisi terakhir {relatifWaktu(tr.lastPosition.recordedAt)}
+                  {tr.lastPosition.accuracy ? ` · akurasi ±${Math.round(tr.lastPosition.accuracy)}m` : ""}
+                </Text>
+              </View>
+            )}
+
+            {(posisiUrl || ruteUrl) && (
+              <View style={styles.quickActions}>
+                {posisiUrl && (
+                  <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(posisiUrl)}>
+                    <MapPin size={13} color={t.ACCENT} />
+                    <Text style={styles.quickBtnText}>Lihat Posisi</Text>
+                  </Pressable>
+                )}
+                {ruteUrl && (
+                  <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(ruteUrl)}>
+                    <Navigation size={13} color={t.ACCENT} />
+                    <Text style={styles.quickBtnText}>Rute ke Tujuan</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -463,5 +573,11 @@ function makeStyles(t) {
     periodeChipTextActive: { color: t.ACCENT },
     simBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 100 },
     simBadgeText: { fontSize: 9, fontWeight: "700" },
+    // Sama dengan quickActions/quickBtn di JobCard.js (duplikasi kecil,
+    // file style terpisah) — dipakai tombol "Lihat Posisi"/"Rute ke
+    // Tujuan" di tab Live Tracking.
+    quickActions: { flexDirection: "row", gap: 8, marginTop: 10 },
+    quickBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.ACCENT_BG, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+    quickBtnText: { color: t.ACCENT, fontSize: 11.5, fontWeight: "600" },
   });
 }
