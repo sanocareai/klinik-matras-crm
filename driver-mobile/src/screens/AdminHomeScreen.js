@@ -24,7 +24,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import Svg, { Circle } from "react-native-svg";
-import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle, Navigation, MapPin, ChevronDown, ChevronUp } from "lucide-react-native";
+import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle, Navigation, MapPin, ChevronDown, ChevronUp, WifiOff } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
@@ -256,37 +256,51 @@ function ringkasDriver(jobs, tracking) {
   return [...personMap.values()].sort((a, b) => b.jalan - a.jalan || b.total - a.total);
 }
 
-// Ratakan bentuk backend (D-165, 14 Sep 2026, permintaan owner: "mekanisme
-// nya seperti delivery shopee, grab, gojek" — SELURUH urutan stop rute
-// aktif ditampilkan, bukan cuma 1 job EN_ROUTE lepas seperti sebelumnya)
-// — "route" (py banyak stop) ATAU "loose" (Kurir Eksternal, D-161, 1
-// titik) jadi SATU struktur render yang sama. Pola SAMA PERSIS dengan
-// turunkanKendaraan() di web (ArmadaTracking.jsx) — jangan biarkan drift,
-// kalau bentuk backend berubah lagi keduanya harus diperbarui bersamaan.
+// Ratakan bentuk backend GET /armada/tracking — "route" (banyak stop) ATAU
+// "loose" (Kurir Eksternal, D-161, 1 titik) jadi SATU struktur render, stop
+// dipecah jadi done/active/pending berdasar STATUS (D-166, 14 Sep 2026) —
+// BUKAN urutan sequence, driver di lapangan tidak selalu ikut urutan rencana.
+// Pola SAMA PERSIS dengan turunkanKendaraan() di web (ArmadaTracking.jsx) —
+// kalau bentuk backend berubah lagi, keduanya WAJIB diperbarui bersamaan.
+// `position` = titik yang digambar (GPS asli, atau Klinik Matras dengan
+// source "depot" kalau GPS belum ada); `lastPosition` = GPS asli saja.
+const STATUS_TUNTAS = new Set(["COMPLETED", "FAILED", "RESCHEDULED"]);
 function turunkanKendaraan(item) {
-  if (item.kind === "loose") {
-    return {
-      vehicleId: `loose-${item.jobId}`,
-      routeCode: null,
-      driverName: item.driverName, helperName: null,
-      lastPosition: item.lastPosition,
-      activeJobId: item.jobId,
-      stops: [{
-        jobId: item.jobId, sequence: 1, status: item.status || "EN_ROUTE", type: item.type,
+  const stops = item.kind === "loose"
+    ? [{
+        jobId: item.jobId, sequence: 1, status: item.status, type: item.type,
         addressText: item.addressText, lat: item.destinationLat, lng: item.destinationLng,
         orderNumber: item.orderNumber, customerName: item.customerName,
-      }],
-    };
-  }
+      }]
+    : item.stops;
+  const activeJobId = item.kind === "loose" ? item.jobId : item.activeJobId;
+  const active = stops.find((s) => s.jobId === activeJobId) || null;
+  const done = stops
+    .filter((s) => STATUS_TUNTAS.has(s.status))
+    .sort((a, b) => new Date(a.completedAt || 0) - new Date(b.completedAt || 0) || (a.sequence ?? 0) - (b.sequence ?? 0));
+  const pending = stops.filter((s) => s !== active && !STATUS_TUNTAS.has(s.status));
   return {
-    vehicleId: `route-${item.routeId}`,
-    routeCode: item.routeCode,
-    driverName: item.driverName, helperName: item.helperName,
+    vehicleId: item.kind === "loose" ? `loose-${item.jobId}` : `route-${item.routeId}`,
+    routeCode: item.kind === "loose" ? null : item.routeCode,
+    driverName: item.driverName,
+    helperName: item.kind === "loose" ? null : item.helperName,
+    driverOnline: !!item.driverOnline,
+    phase: item.kind === "loose" ? item.status : item.phase,
     lastPosition: item.lastPosition,
-    activeJobId: item.activeJobId,
-    stops: item.stops,
+    position: item.position,
+    depot: item.depot,
+    stops, active, done, pending,
   };
 }
+
+function labelFase(v) {
+  if (v.phase === "EN_ROUTE") return "Sedang Menuju";
+  if (v.phase === "ARRIVED") return "Tiba Di Lokasi";
+  if (v.phase === "DONE") return "Rute Selesai";
+  return v.done.length > 0 ? "Berikutnya" : "Belum Berangkat";
+}
+
+const punyaKoordinat = (s) => s.lat != null && s.lng != null;
 
 export default function AdminHomeScreen() {
   const { user, logout } = useAuth();
@@ -674,152 +688,163 @@ const dotStyles = StyleSheet.create({
 
 const JAKARTA_CENTER = { latitude: -6.2088, longitude: 106.8456, latitudeDelta: 0.15, longitudeDelta: 0.15 };
 
-// Peta asli — REDESAIN 14 September 2026 (D-165, permintaan owner:
-// "mekanisme nya seperti delivery shopee, grab, gojek"). SEBELUMNYA cuma
-// gambar 1 job EN_ROUTE lepas (posisi driver -> 1 tujuan). SEKARANG per
-// rute aktif: stop yang SUDAH LEWAT (hijau/merah selesai/gagal), stop yang
-// SEDANG DITUJU (pin merah, sama seperti sebelumnya), stop yang BELUM
-// dimulai (bernomor, redup) — digambar sekaligus, sama jalur pikir dengan
-// web (ArmadaTracking.jsx), auto-fit ke batas SEMUA marker (bukan cuma
-// posisi+1 tujuan) tiap kali datanya berubah (poll 30 detik). Rute
-// posisi->stop garis LURUS (lihat catatan lama di atas import) — sengaja
-// beda dari web yang road-matched OSRM, supaya tidak menduplikasi seluruh
-// services/osrm.js cuma untuk layar ringkasan "sekilas lihat".
+// Klinik Matras (depot) — kotak gelap + ikon rumah, sama bahasa visual dgn
+// depotIcon() web (googleMapIcons.js). Titik berangkat semua rute.
+function DepotMarkerDot() {
+  return (
+    <View style={[dotStyles.wrap, { borderRadius: 8, backgroundColor: "#1D1D1F", borderColor: "#FFFFFF" }]}>
+      <Home size={13} color="#FFFFFF" />
+    </View>
+  );
+}
+
+// Peta Live Tracking — D-165 + D-166 (14 September 2026, owner: "mekanisme
+// nya seperti delivery shopee, grab, gojek" + "rute ini sudah diterbitkan,
+// tapi kenapa di live tracking 0 rute aktif? ... ketika gps belum aktif
+// atau driver belum menyalakan tombol online pakai aja icon driver yang
+// masih di klinik matras"). Per rute terbit hari ini: stop tuntas (hijau/
+// merah), tujuan sekarang (pin merah), stop menunggu (bernomor), depot
+// Klinik Matras, dan driver di posisi GPS asli ATAU di Klinik Matras kalau
+// GPS belum ada. Jalur rencana (driver belum jalan) digambar PUTUS-PUTUS
+// supaya tidak dikira driver sudah berangkat. Garis LURUS antar titik
+// (bukan road-matched OSRM seperti web) — sengaja, layar ringkasan "sekilas
+// lihat", bukan navigasi turn-by-turn.
 function TrackingMap({ kendaraan, t, dark }) {
   const mapRef = useRef(null);
   const [siap, setSiap] = useState(false);
-  // `siap` HARUS reset ke false setiap `dark` berganti (14 Sep 2026) —
-  // MapView di bawah di-remount lewat `key={dark ? "dark" : "light"}`
-  // (fix "maps ga ikut light mode"), jadi mapRef.current akan menunjuk ke
-  // instance native BARU yang BELUM tentu siap dipanggil fitToCoordinates
-  // — tanpa reset ini, effect fit di bawah bisa terpicu (dependency `dark`
-  // berubah) SEBELUM instance baru benar-benar `onMapReady`, methodnya
-  // dipanggil ke map yang belum selesai init. Pola "adjusting state
-  // saat prop berubah" (sama dengan prevJobId di JobCard.js).
+  // `siap` HARUS reset ke false setiap `dark` berganti — MapView di-remount
+  // lewat `key` (fix "maps ga ikut light mode"), instance native BARU belum
+  // tentu siap dipanggil fitToCoordinates. Pola "adjusting state saat prop
+  // berubah" (sama dengan prevJobId di JobCard.js).
   const [prevDark, setPrevDark] = useState(dark);
   if (dark !== prevDark) {
     setPrevDark(dark);
     setSiap(false);
   }
 
-  const titik = useMemo(() => {
-    const pts = [];
+  const depot = kendaraan[0]?.depot || null;
+
+  // Driver di Klinik Matras (tanpa GPS) digeser sedikit dari titik depot —
+  // supaya tidak menutupi ikon depot & tidak saling tumpuk. GPS asli TIDAK
+  // pernah digeser. Sama dengan web.
+  const posisiDigambar = useMemo(() => {
+    const m = new Map();
+    const diDepot = kendaraan.filter((v) => v.position.source === "depot");
+    diDepot.forEach((v, i) => {
+      const sudut = Math.PI / 4 + (2 * Math.PI * i) / Math.max(diDepot.length, 1);
+      m.set(v.vehicleId, { latitude: v.position.lat + 0.0035 * Math.sin(sudut), longitude: v.position.lng + 0.0035 * Math.cos(sudut) });
+    });
     for (const v of kendaraan) {
-      pts.push({ latitude: v.lastPosition.lat, longitude: v.lastPosition.lng });
-      for (const s of v.stops) {
-        if (s.lat != null) pts.push({ latitude: s.lat, longitude: s.lng });
-      }
+      if (v.position.source !== "depot") m.set(v.vehicleId, { latitude: v.position.lat, longitude: v.position.lng });
     }
-    return pts;
+    return m;
   }, [kendaraan]);
 
-  // Sinyal ringkas + fit lewat effect (13 Sep 2026, audit performa) —
-  // SEBELUMNYA fitToCoordinates dipanggil ulang di SETIAP `onLayout`, event
-  // sistem layout yang bisa terpicu tanpa data driver benar-benar berubah
-  // (poll 30 detik, ganti tab, dst) — peta jadi "melompat re-center" sendiri
-  // berulang kali walau tidak ada yang bergerak, JANK yang terlihat jelas.
-  // Sekarang fit ulang HANYA kalau titik-nya benar-benar beda dari render
-  // sebelumnya (dibulatkan 5 desimal, presisi sama dengan cache OSRM web).
-  const sinyalTitik = titik.map((p) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`).join("|");
+  // Fit ulang HANYA kalau kumpulan rute/stop berubah — BUKAN tiap GPS driver
+  // bergeser (poll 30 detik), supaya peta tidak "melompat" merebut kontrol
+  // dari admin yang sedang geser/zoom (audit performa 13 Sep 2026).
+  const sinyalFit = kendaraan
+    .map((v) => [v.vehicleId, v.position.source, ...v.stops.filter(punyaKoordinat).map((s) => `${s.lat.toFixed(5)},${s.lng.toFixed(5)}`)].join(":"))
+    .join("|");
   useEffect(() => {
-    if (!siap || !mapRef.current || titik.length === 0) return;
-    mapRef.current.fitToCoordinates(titik, { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true });
+    if (!siap || !mapRef.current || kendaraan.length === 0) return;
+    const titik = [];
+    if (depot) titik.push({ latitude: depot.lat, longitude: depot.lng });
+    for (const v of kendaraan) {
+      titik.push(posisiDigambar.get(v.vehicleId));
+      for (const s of v.stops) if (punyaKoordinat(s)) titik.push({ latitude: s.lat, longitude: s.lng });
+    }
+    mapRef.current.fitToCoordinates(titik, { edgePadding: { top: 40, right: 40, bottom: 40, left: 40 }, animated: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siap, sinyalTitik, dark]); // `dark` ikut jadi dep (14 Sep 2026) — MapView remount saat tema berubah (lihat key di bawah), instance BARU perlu di-fit ulang juga
+  }, [siap, sinyalFit, dark]);
 
   return (
-    <View style={{ height: 260, borderRadius: 14, overflow: "hidden", marginBottom: 10 }}>
+    <View style={{ height: 300, borderRadius: 14, overflow: "hidden", marginBottom: 10 }}>
       <MapView
-        // key berisi `dark` (14 Sep 2026, laporan owner: "bug ketika mode
-        // light mode, maps ga ikut menjadi light mode") — react-native-maps
-        // di Android TERBUKTI tidak selalu menerapkan ULANG customMapStyle
-        // kalau propnya berubah SETELAH map pertama kali dibuat (native
-        // Google Maps SDK menyimpan style saat instance dibuat, bukan
-        // reaktif ke prop React) — peta yang sudah terbuka di tema gelap
-        // tetap gelap walau HP dipindah ke mode terang tanpa restart app
-        // penuh. `key` yang berubah memaksa React unmount+mount MapView
-        // BARU dari nol, jadi customMapStyle yang benar ikut terpasang
-        // sejak awal instance native-nya, bukan cuma prop update biasa.
+        // key berisi `dark` (14 Sep 2026, "maps ga ikut light mode") —
+        // react-native-maps Android tidak menerapkan ULANG customMapStyle
+        // setelah instance dibuat; key yang berubah memaksa MapView baru.
         key={dark ? "dark" : "light"}
         ref={mapRef}
         style={{ flex: 1 }}
         provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
-        initialRegion={
-          kendaraan.length > 0
-            ? { latitude: kendaraan[0].lastPosition.lat, longitude: kendaraan[0].lastPosition.lng, latitudeDelta: 0.08, longitudeDelta: 0.08 }
-            : JAKARTA_CENTER
-        }
+        initialRegion={JAKARTA_CENTER}
         customMapStyle={dark ? MAP_STYLE_DARK : undefined}
         onMapReady={() => setSiap(true)}
       >
+        {depot && (
+          <Marker
+            key="depot"
+            coordinate={{ latitude: depot.lat, longitude: depot.lng }}
+            title={depot.label || "Klinik Matras"}
+            description="Titik berangkat semua rute"
+            tracksViewChanges={false}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <DepotMarkerDot />
+          </Marker>
+        )}
+
         {kendaraan.map((v) => {
-          const activeStop = v.stops.find((s) => s.jobId === v.activeJobId);
-          if (!activeStop) return null;
-          const posisiSekarang = { latitude: v.lastPosition.lat, longitude: v.lastPosition.lng };
-          const before = v.stops.filter((s) => s.sequence < activeStop.sequence && s.lat != null);
-          const after = v.stops.filter((s) => s.sequence > activeStop.sequence && s.lat != null);
-          const traveled = [...before.map((s) => ({ latitude: s.lat, longitude: s.lng })), posisiSekarang];
+          const posisi = posisiDigambar.get(v.vehicleId);
+          const jalan = v.phase === "EN_ROUTE" || v.phase === "ARRIVED";
+          const keKoord = (s) => ({ latitude: s.lat, longitude: s.lng });
+          // Jalur "sudah dilalui" cuma kalau GPS asli — dari Klinik Matras
+          // tanpa GPS tidak ada yang bisa diklaim sudah dilalui.
+          const traveled = v.position.source === "gps" ? [...v.done.filter(punyaKoordinat).map(keKoord), posisi] : [];
           const upcoming = [
-            posisiSekarang,
-            ...(activeStop.lat != null ? [{ latitude: activeStop.lat, longitude: activeStop.lng }] : []),
-            ...after.map((s) => ({ latitude: s.lat, longitude: s.lng })),
+            posisi,
+            ...(v.active && punyaKoordinat(v.active) ? [keKoord(v.active)] : []),
+            ...v.pending.filter(punyaKoordinat).map(keKoord),
           ];
           return (
             <React.Fragment key={v.vehicleId}>
               {traveled.length >= 2 && <Polyline coordinates={traveled} strokeColor={t.INK3} strokeWidth={3} />}
-              {upcoming.length >= 2 && <Polyline coordinates={upcoming} strokeColor={t.ACCENT} strokeWidth={3} />}
-
-              {/* key = HANYA jobId/vehicleId (13 Sep 2026, audit performa) —
-                  SEBELUMNYA lat/lng ikut disisipkan ke key, jadi GPS jitter
-                  sedetik saja (angka berubah di desimal ke-5) bikin React
-                  anggap ini Marker BARU dan unmount+remount PENUH,
-                  membatalkan sendiri manfaat tracksViewChanges={false} di
-                  bawah. Posisi tetap ikut update normal lewat prop
-                  `coordinate` — react-native-maps mengurus animasi
-                  pergeseran marker tanpa perlu remount. */}
-              {before.map((s) => (
-                <Marker
-                  key={`before-${s.jobId}`}
-                  coordinate={{ latitude: s.lat, longitude: s.lng }}
-                  title={`Stop ${s.sequence} — ${s.customerName || ""}`}
-                  description={s.status === "FAILED" ? "Gagal" : "Selesai"}
-                  tracksViewChanges={false}
-                  anchor={{ x: 0.5, y: 0.5 }}
-                >
-                  {s.status === "FAILED" ? <StopFailedMarkerDot t={t} /> : <StopDoneMarkerDot t={t} />}
-                </Marker>
-              ))}
-              {after.map((s) => (
-                <Marker
-                  key={`after-${s.jobId}`}
-                  coordinate={{ latitude: s.lat, longitude: s.lng }}
-                  title={`Stop ${s.sequence} — ${s.customerName || ""}`}
-                  description="Belum dimulai"
-                  tracksViewChanges={false}
-                  anchor={{ x: 0.5, y: 0.5 }}
-                >
-                  <StopNumberMarkerDot t={t} nomor={s.sequence} />
-                </Marker>
-              ))}
-              {activeStop.lat != null && (
-                <Marker
-                  key={`aktif-${activeStop.jobId}`}
-                  coordinate={{ latitude: activeStop.lat, longitude: activeStop.lng }}
-                  title={`Tujuan — ${activeStop.customerName || ""}`}
-                  description={activeStop.addressText || undefined}
-                  tracksViewChanges={false}
-                  anchor={{ x: 0.5, y: 0.5 }}
-                >
-                  <DestinationMarkerDot t={t} />
-                </Marker>
+              {upcoming.length >= 2 && (
+                <Polyline
+                  coordinates={upcoming}
+                  strokeColor={t.ACCENT}
+                  strokeWidth={3}
+                  lineDashPattern={jalan ? undefined : [8, 8]}
+                />
               )}
+
+              {/* key = HANYA jobId/vehicleId, bukan lat/lng — GPS jitter tidak
+                  boleh memicu remount marker (audit performa 13 Sep 2026). */}
+              {v.stops.filter(punyaKoordinat).map((s) => {
+                const isActive = s === v.active;
+                const tuntas = STATUS_TUNTAS.has(s.status);
+                return (
+                  <Marker
+                    key={`stop-${s.jobId}`}
+                    coordinate={keKoord(s)}
+                    title={`Stop ${s.sequence} — ${s.customerName || ""}`}
+                    description={isActive
+                      ? `${labelFase(v)} · ${s.addressText || ""}`
+                      : s.status === "COMPLETED" ? "Selesai" : tuntas ? "Gagal / dijadwal ulang" : "Belum dimulai"}
+                    tracksViewChanges={false}
+                    anchor={{ x: 0.5, y: 0.5 }}
+                    zIndex={isActive ? 3 : 2}
+                  >
+                    {isActive
+                      ? <DestinationMarkerDot t={t} />
+                      : tuntas
+                        ? (s.status === "COMPLETED" ? <StopDoneMarkerDot t={t} /> : <StopFailedMarkerDot t={t} />)
+                        : <StopNumberMarkerDot t={t} nomor={s.sequence} />}
+                  </Marker>
+                );
+              })}
+
               <Marker
                 key={`driver-${v.vehicleId}`}
-                coordinate={posisiSekarang}
-                title={v.driverName || "Driver"}
-                description={`${v.routeCode || "Kurir Eksternal"} · Stop ${activeStop.sequence}/${v.stops.length}`}
+                coordinate={posisi}
+                title={v.driverName || "Belum ada driver"}
+                description={v.position.source === "gps"
+                  ? `${v.routeCode || "Kurir Eksternal"} · ${labelFase(v)}`
+                  : "GPS belum aktif — ditampilkan di Klinik Matras"}
                 tracksViewChanges={false}
                 anchor={{ x: 0.5, y: 0.5 }}
+                zIndex={4}
               >
                 <DriverMarkerDot t={t} />
               </Marker>
@@ -831,111 +856,127 @@ function TrackingMap({ kendaraan, t, dark }) {
   );
 }
 
-// Tab Live Tracking — REDESAIN 14 September 2026 (D-165). Data SAMA dengan
-// papan Live Tracking web (ArmadaTracking.jsx, GET /armada/tracking, bentuk
-// respons per-KENDARAAN sejak D-165 — lihat turunkanKendaraan()), sudah
-// ikut poll 30 detik `useAdminToday`. Peta asli di atas (TrackingMap) +
-// SATU kartu per rute di bawah — progress "stop X dari Y", tujuan aktif
-// menonjol, expand utk lihat seluruh urutan stop (tombol Google Maps
-// eksternal tetap ada — pelengkap utk rute turn-by-turn yang peta di dalam
-// app ini tidak coba tiru).
+// Tab Live Tracking — D-165 + D-166 (14 Sep 2026). Data SAMA dengan papan
+// Live Tracking web (GET /armada/tracking), ikut poll 30 detik useAdminToday.
+// Peta di atas + SATU kartu per rute terbit hari ini: status sekarang
+// ("Belum Berangkat" / "Sedang Menuju" / "Tiba Di Lokasi" / "Berikutnya" /
+// "Rute Selesai"), progress stop tuntas, tujuan aktif menonjol, status GPS
+// jujur ("GPS belum aktif" kalau belum ada), expand utk seluruh urutan stop.
 function TrackingView({ tracking, theme: t, styles }) {
   const dark = t.statusBarStyle === "light"; // konvensi token, lihat theme.js
   const kendaraan = useMemo(
-    () => (tracking || [])
-      .map(turunkanKendaraan)
-      .filter((v) => v.lastPosition && v.stops.some((s) => s.jobId === v.activeJobId)),
+    () => (tracking || []).map(turunkanKendaraan).filter((v) => v.position),
     [tracking]
   );
   const [expandedVehicleId, setExpandedVehicleId] = useState(null);
 
-  // Peta SELALU dirender (13 Sep 2026, konfirmasi owner: "betul lets do it"
-  // — samakan dengan web yang tetap tampilkan peta kosong center Jakarta
-  // walau belum ada driver aktif, bukan langsung lompat ke pesan teks).
-  // TrackingMap sendiri sudah toleran array kosong (initialRegion fallback
-  // JAKARTA_CENTER, fit no-op kalau titik.length===0).
+  // Peta SELALU dirender (13 Sep 2026, konfirmasi owner) — walau belum ada
+  // rute, sama dengan web.
   return (
     <View style={{ gap: 10 }}>
       <TrackingMap kendaraan={kendaraan} t={t} dark={dark} />
       {kendaraan.length === 0 && (
         <View style={[styles.center, { flex: 0, paddingVertical: 28 }]}>
           <Navigation size={28} color={t.INK3} />
-          <Text style={[styles.emptyText, { marginTop: 8 }]}>Tidak ada rute yang sedang dalam perjalanan sekarang.</Text>
+          <Text style={[styles.emptyText, { marginTop: 8 }]}>Belum ada rute yang diterbitkan untuk hari ini.</Text>
         </View>
       )}
       {kendaraan.map((v) => {
-        const activeStop = v.stops.find((s) => s.jobId === v.activeJobId);
         const total = v.stops.length;
-        const selesai = v.stops.filter((s) => s.sequence < activeStop.sequence && s.status === "COMPLETED").length;
+        const selesai = v.done.length;
         const expanded = expandedVehicleId === v.vehicleId;
-        const posisiUrl = `https://www.google.com/maps?q=${v.lastPosition.lat},${v.lastPosition.lng}`;
-        const ruteUrl = activeStop.lat != null
-          ? `https://www.google.com/maps/dir/?api=1&origin=${v.lastPosition.lat},${v.lastPosition.lng}&destination=${activeStop.lat},${activeStop.lng}`
-          : activeStop.addressText
-          ? `https://www.google.com/maps/dir/?api=1&origin=${v.lastPosition.lat},${v.lastPosition.lng}&destination=${encodeURIComponent(activeStop.addressText)}`
+        const gps = v.position.source === "gps";
+        const asal = gps ? `${v.position.lat},${v.position.lng}` : v.depot ? `${v.depot.lat},${v.depot.lng}` : null;
+        const tujuan = v.active
+          ? punyaKoordinat(v.active)
+            ? `${v.active.lat},${v.active.lng}`
+            : v.active.addressText ? encodeURIComponent(v.active.addressText) : null
           : null;
+        const posisiUrl = gps ? `https://www.google.com/maps?q=${v.position.lat},${v.position.lng}` : null;
+        const ruteUrl = asal && tujuan ? `https://www.google.com/maps/dir/?api=1&origin=${asal}&destination=${tujuan}` : null;
         return (
           <View key={v.vehicleId} style={styles.card}>
             <View style={styles.rowBetween}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
-                <Truck size={14} color={t.ACCENT} />
+                <View style={[styles.onlineDot, { backgroundColor: v.driverOnline ? t.GREEN : t.INK3 }]} />
                 <Text style={styles.cardTitle} numberOfLines={1}>
-                  {v.driverName || "Driver tidak diketahui"}{v.helperName ? ` + ${v.helperName}` : ""}
+                  {v.driverName || "Belum ada driver"}{v.helperName ? ` + ${v.helperName}` : ""}
                 </Text>
               </View>
-              <View style={styles.liveBadge}>
-                <Navigation size={11} color={t.ACCENT} />
-                <Text style={styles.liveBadgeText}>Live</Text>
-              </View>
+              {gps ? (
+                <View style={styles.liveBadge}>
+                  <Navigation size={11} color={t.ACCENT} />
+                  <Text style={styles.liveBadgeText}>Live</Text>
+                </View>
+              ) : (
+                <View style={[styles.liveBadge, { backgroundColor: t.INK3 + "26" }]}>
+                  <WifiOff size={11} color={t.INK3} />
+                  <Text style={[styles.liveBadgeText, { color: t.INK3 }]}>GPS belum aktif</Text>
+                </View>
+              )}
             </View>
             <Text style={[styles.cardMeta, { marginTop: 2 }]}>
-              {v.routeCode || "Kurir Eksternal"} · Stop {activeStop.sequence}/{total}
+              {v.routeCode || "Kurir Eksternal"} · {selesai}/{total} stop tuntas
             </Text>
 
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${total ? Math.round((selesai / total) * 100) : 0}%` }]} />
             </View>
 
-            {/* Tujuan aktif — blok menonjol, sama semangat referensi owner
-                (bottom sheet Grab/Gojek: nama customer, alamat, aksi). */}
+            {/* Status sekarang + tujuan aktif — sama semangat kartu status
+                app Grab/Gojek (referensi owner). */}
             <View style={{ backgroundColor: t.TRACK_BG, borderRadius: 10, padding: 8, marginTop: 8 }}>
               <Text style={{ fontSize: 10, fontWeight: "800", letterSpacing: 0.3, textTransform: "uppercase", color: t.ACCENT }}>
-                {activeStop.status === "ARRIVED" ? "Tiba Di Lokasi" : "Sedang Menuju"}
+                {labelFase(v)}
               </Text>
-              <Text style={[styles.cardMeta, { color: t.INK, fontWeight: "700", marginTop: 2 }]} numberOfLines={1}>
-                {activeStop.customerName || "—"}
-              </Text>
-              <Text style={styles.cardMeta}>
-                {activeStop.orderNumber || "—"} · {activeStop.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
-              </Text>
-              {activeStop.addressText ? (
-                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4, marginTop: 4 }}>
-                  <MapPin size={11} color={t.INK3} style={{ marginTop: 1 }} />
-                  <Text style={[styles.cardMeta, { flex: 1 }]} numberOfLines={2}>{activeStop.addressText}</Text>
-                </View>
-              ) : null}
+              {v.active ? (
+                <>
+                  <Text style={[styles.cardMeta, { color: t.INK, fontWeight: "700", marginTop: 2 }]} numberOfLines={1}>
+                    Stop {v.active.sequence} · {v.active.customerName || "—"}
+                  </Text>
+                  <Text style={styles.cardMeta}>
+                    {v.active.orderNumber || "—"} · {v.active.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
+                  </Text>
+                  {v.active.addressText ? (
+                    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4, marginTop: 4 }}>
+                      <MapPin size={11} color={t.INK3} style={{ marginTop: 1 }} />
+                      <Text style={[styles.cardMeta, { flex: 1 }]} numberOfLines={2}>{v.active.addressText}</Text>
+                    </View>
+                  ) : null}
+                  {!punyaKoordinat(v.active) && (
+                    <Text style={[styles.cardMeta, { color: t.ORANGE, marginTop: 2 }]}>Alamat ini belum punya titik peta.</Text>
+                  )}
+                </>
+              ) : (
+                <Text style={[styles.cardMeta, { marginTop: 2 }]}>Semua stop di rute ini sudah tuntas.</Text>
+              )}
             </View>
 
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
-              <Clock size={11} color={t.INK3} />
+              {gps ? <Clock size={11} color={t.INK3} /> : <Home size={11} color={t.INK3} />}
               <Text style={styles.lastSeenText}>
-                Posisi terakhir {relatifWaktu(v.lastPosition.recordedAt)}
-                {v.lastPosition.accuracy ? ` · akurasi ±${Math.round(v.lastPosition.accuracy)}m` : ""}
+                {gps
+                  ? `Posisi terakhir ${relatifWaktu(v.lastPosition?.recordedAt)}${v.lastPosition?.accuracy ? ` · akurasi ±${Math.round(v.lastPosition.accuracy)}m` : ""}`
+                  : "Ditampilkan di Klinik Matras sampai driver mulai jalan"}
               </Text>
             </View>
 
-            <View style={styles.quickActions}>
-              <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(posisiUrl)}>
-                <MapPin size={13} color={t.ACCENT} />
-                <Text style={styles.quickBtnText}>Lihat Posisi</Text>
-              </Pressable>
-              {ruteUrl && (
-                <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(ruteUrl)}>
-                  <Navigation size={13} color={t.ACCENT} />
-                  <Text style={styles.quickBtnText}>Rute ke Tujuan</Text>
-                </Pressable>
-              )}
-            </View>
+            {(posisiUrl || ruteUrl) && (
+              <View style={styles.quickActions}>
+                {posisiUrl && (
+                  <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(posisiUrl)}>
+                    <MapPin size={13} color={t.ACCENT} />
+                    <Text style={styles.quickBtnText}>Lihat Posisi</Text>
+                  </Pressable>
+                )}
+                {ruteUrl && (
+                  <Pressable style={styles.quickBtn} onPress={() => Linking.openURL(ruteUrl)}>
+                    <Navigation size={13} color={t.ACCENT} />
+                    <Text style={styles.quickBtnText}>{gps ? "Rute ke Tujuan" : "Rute dari Klinik"}</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
 
             {total > 1 && (
               <Pressable
@@ -952,14 +993,13 @@ function TrackingView({ tracking, theme: t, styles }) {
             {expanded && (
               <View style={{ marginTop: 2, gap: 8, borderTopWidth: 1, borderTopColor: t.BORDER, paddingTop: 8 }}>
                 {v.stops.map((s) => {
-                  const isActive = s.jobId === v.activeJobId;
-                  const sudahLewat = s.sequence < activeStop.sequence;
+                  const isActive = s === v.active;
                   return (
                     <View key={s.jobId} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      {sudahLewat ? (
-                        s.status === "FAILED"
-                          ? <XCircle size={14} color={t.RED} />
-                          : <CheckCircle2 size={14} color={t.GREEN} />
+                      {s.status === "COMPLETED" ? (
+                        <CheckCircle2 size={14} color={t.GREEN} />
+                      ) : STATUS_TUNTAS.has(s.status) ? (
+                        <XCircle size={14} color={t.RED} />
                       ) : (
                         <View style={{
                           width: 14, height: 14, borderRadius: 7, alignItems: "center", justifyContent: "center",
@@ -970,7 +1010,7 @@ function TrackingView({ tracking, theme: t, styles }) {
                       )}
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={[styles.cardMeta, { color: isActive ? t.ACCENT : t.INK, fontWeight: "600" }]} numberOfLines={1}>
-                          {s.customerName || "—"}
+                          {s.customerName || "—"}{!punyaKoordinat(s) ? "  · tanpa titik peta" : ""}
                         </Text>
                       </View>
                     </View>
