@@ -130,15 +130,17 @@ export default function ArmadaTracking() {
   const kendaraan = useMemo(() => (items || []).map(turunkanKendaraan).filter((v) => v.position), [items]);
   const depot = kendaraan[0]?.depot || null;
 
-  // Driver yang sama-sama "di Klinik Matras" (belum ada GPS) akan bertumpuk
-  // persis di satu titik — digeser sedikit melingkar supaya tiap avatar tetap
-  // bisa diklik. Cuma untuk source "depot"; posisi GPS asli TIDAK digeser.
+  // Driver yang "di Klinik Matras" (belum ada GPS) digeser sedikit melingkar
+  // dari titik depot — SELALU, walau cuma 1 driver, supaya avatar driver
+  // tidak menutupi ikon Klinik Matras (terlihat di tes visual 14 Sep 2026),
+  // dan kalau lebih dari 1 driver, tiap avatar tetap bisa diklik. Posisi GPS
+  // asli TIDAK pernah digeser.
   const posisiDigambar = useMemo(() => {
     const m = new Map();
     const diDepot = kendaraan.filter((v) => v.position.source === "depot");
     diDepot.forEach((v, i) => {
-      const sudut = (2 * Math.PI * i) / Math.max(diDepot.length, 1);
-      const r = diDepot.length > 1 ? 0.0009 : 0;
+      const sudut = Math.PI / 4 + (2 * Math.PI * i) / Math.max(diDepot.length, 1);
+      const r = 0.0035;
       m.set(v.vehicleId, { lat: v.position.lat + r * Math.sin(sudut), lng: v.position.lng + r * Math.cos(sudut) });
     });
     for (const v of kendaraan) {
@@ -206,7 +208,9 @@ export default function ArmadaTracking() {
       for (const s of v.stops) if (punyaKoordinat(s)) bounds.extend({ lat: s.lat, lng: s.lng });
     }
     if (depot) bounds.extend({ lat: depot.lat, lng: depot.lng });
-    map.fitBounds(bounds, 56);
+    // Padding atas lebih besar: pil "N Rute Hari Ini" melayang di kiri-atas
+    // peta dan menutupi stop di pojok itu (terlihat di tes visual).
+    map.fitBounds(bounds, { top: 96, left: 48, right: 48, bottom: 48 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sinyalFit]);
   useEffect(() => { fitKeSemua(); }, [fitKeSemua]);
