@@ -121,34 +121,58 @@ function aktivitasTerbaru(jobs) {
     .slice(0, 8);
 }
 
+// BUG NYATA (13 Sep 2026, laporan owner: tab Driver cuma menampilkan Alwan
+// + Kurir Eksternal, padahal rute yang sama SELALU dijalankan 2 orang
+// [driver+helper] — Agung/Apriansyah yang bertugas sbg HELPER di rute itu
+// hilang total). Root cause: fungsi ini SEBELUMNYA cuma memproses
+// `j.driver`, `j.helper` tidak pernah disentuh sama sekali — pola yang
+// SAMA persis sudah diperbaiki di backend utk Insentif (D-162, armada.js
+// GET /incentive-summary sudah hitung asDriver+asHelper terpisah per
+// orang) tapi tab ini di app belum ikut. Sekarang SETIAP job menyumbang
+// hitungan ke KEDUA orang (driver DAN helper, kalau ada), bukan cuma satu
+// — 1 orang bisa muncul sbg driver di 1 job dan helper di job lain (pool
+// SAMA, lihat CLAUDE.md §1: "helper bisa jadi driver dan driver bisa jadi
+// helper"), makanya `roles` dikumpulkan sbg Set utk badge di UI.
 function ringkasDriver(jobs, tracking) {
-  const driverMap = new Map();
-  for (const j of jobs) {
-    if (!j.driver) continue;
-    let d = driverMap.get(j.driver.id);
+  const personMap = new Map();
+  function sentuh(person, peran) {
+    if (!person) return null;
+    let d = personMap.get(person.id);
     if (!d) {
       d = {
-        id: j.driver.id, name: j.driver.name, total: 0, selesai: 0, gagal: 0, jalan: 0, sisa: 0, lastSeen: null,
-        // Status Online/Offline (12 Sep 2026) — data sama utk baris driver
-        // ini di semua job-nya, cukup ambil sekali dari job pertama yang
-        // ditemukan.
-        isOnline: !!j.driver.isOnline, onlineSince: j.driver.onlineSince || null,
+        id: person.id, name: person.name, total: 0, selesai: 0, gagal: 0, jalan: 0, sisa: 0, lastSeen: null,
+        isOnline: !!person.isOnline, onlineSince: person.onlineSince || null,
+        roles: new Set(),
       };
+      personMap.set(person.id, d);
     }
-    d.total += 1;
-    if (j.status === "COMPLETED") d.selesai += 1;
-    else if (j.status === "FAILED") d.gagal += 1;
-    else if (j.status === "EN_ROUTE" || j.status === "ARRIVED") d.jalan += 1;
-    else d.sisa += 1;
-    driverMap.set(j.driver.id, d);
+    d.roles.add(peran);
+    return d;
   }
-  const jobIdToDriverId = new Map(jobs.filter((j) => j.driver).map((j) => [j.id, j.driver.id]));
+  for (const j of jobs) {
+    for (const d of [sentuh(j.driver, "driver"), sentuh(j.helper, "helper")]) {
+      if (!d) continue;
+      d.total += 1;
+      if (j.status === "COMPLETED") d.selesai += 1;
+      else if (j.status === "FAILED") d.gagal += 1;
+      else if (j.status === "EN_ROUTE" || j.status === "ARRIVED") d.jalan += 1;
+      else d.sisa += 1;
+    }
+  }
+  const jobIdToPersonIds = new Map();
+  for (const j of jobs) {
+    const ids = [];
+    if (j.driver) ids.push(j.driver.id);
+    if (j.helper) ids.push(j.helper.id);
+    jobIdToPersonIds.set(j.id, ids);
+  }
   for (const t of tracking) {
-    const driverId = jobIdToDriverId.get(t.jobId);
-    const d = driverId && driverMap.get(driverId);
-    if (d && t.lastPosition?.recordedAt) d.lastSeen = t.lastPosition.recordedAt;
+    for (const personId of jobIdToPersonIds.get(t.jobId) || []) {
+      const d = personMap.get(personId);
+      if (d && t.lastPosition?.recordedAt) d.lastSeen = t.lastPosition.recordedAt;
+    }
   }
-  return [...driverMap.values()].sort((a, b) => b.jalan - a.jalan || b.total - a.total);
+  return [...personMap.values()].sort((a, b) => b.jalan - a.jalan || b.total - a.total);
 }
 
 export default function AdminHomeScreen() {
@@ -391,6 +415,15 @@ function HariIniView({ ringkasan, aktivitas, theme: t, styles }) {
   );
 }
 
+// "Driver" / "Helper" / "Driver & Helper" (13 Sep 2026) — pool orang SAMA
+// bisa jadi driver di 1 rute dan helper di rute lain (CLAUDE.md §1), jadi
+// label ini dihitung per-hari dari `roles` (Set), bukan field tetap di User.
+function labelPeran(roles) {
+  const arr = [...roles];
+  if (arr.length >= 2) return "Driver & Helper";
+  return arr[0] === "helper" ? "Helper" : "Driver";
+}
+
 function DriverView({ drivers, theme: t, styles }) {
   if (drivers.length === 0) return <Text style={styles.emptyText}>Belum ada driver bertugas hari ini.</Text>;
   return (
@@ -398,12 +431,15 @@ function DriverView({ drivers, theme: t, styles }) {
       {drivers.map((d) => (
         <View key={d.id} style={styles.card}>
           <View style={styles.rowBetween}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
               {/* Titik Online/Offline (12 Sep 2026) — BUKAN "sedang jalan"
                   (badge "Di jalan" di sebelah kanan sudah pakai itu), ini
                   murni toggle manual driver di app-nya. */}
               <View style={[styles.onlineDot, { backgroundColor: d.isOnline ? t.GREEN : t.INK3 }]} />
-              <Text style={styles.cardTitle}>{d.name}</Text>
+              <Text style={styles.cardTitle} numberOfLines={1}>{d.name}</Text>
+              <View style={styles.roleChip}>
+                <Text style={styles.roleChipText}>{labelPeran(d.roles)}</Text>
+              </View>
             </View>
             {d.jalan > 0 ? (
               <View style={styles.liveBadge}>
@@ -820,6 +856,8 @@ function makeStyles(t) {
     lastSeenText: { color: t.INK3, fontSize: 10.5 },
     issueReason: { color: t.ORANGE, fontSize: 12, fontWeight: "600", marginTop: 6 },
     onlineDot: { width: 8, height: 8, borderRadius: 4 },
+    roleChip: { backgroundColor: t.ACCENT_BG, borderRadius: 100, paddingHorizontal: 7, paddingVertical: 2 },
+    roleChipText: { color: t.ACCENT, fontSize: 9.5, fontWeight: "700" },
     periodeRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
     periodeChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 100, borderWidth: 1, borderColor: t.BORDER },
     periodeChipActive: { backgroundColor: t.ACCENT_BG, borderColor: t.ACCENT },

@@ -17,12 +17,7 @@
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION"
-      ],
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyAWW-49tH6lCpjnDELCxetaiFv73ADDl_s"
-        }
-      }
+      ]
     },
     "plugins": [
       [
@@ -64,7 +59,12 @@
       ],
       "expo-image",
       "expo-asset",
-      "react-native-maps"
+      [
+        "react-native-maps",
+        {
+          "androidGoogleMapsApiKey": "AIzaSyAWW-49tH6lCpjnDELCxetaiFv73ADDl_s"
+        }
+      ]
     ],
     "runtimeVersion": {
       "policy": "appVersion"
