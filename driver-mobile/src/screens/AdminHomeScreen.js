@@ -11,12 +11,13 @@ import React, { useMemo, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl, Linking, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
+import Svg, { Circle } from "react-native-svg";
 import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle, Navigation, MapPin } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
 import { useIncentiveSummary } from "../hooks/useIncentiveSummary";
-import { relatifWaktu, formatRupiah } from "../lib/jobHelpers";
+import { relatifWaktu, formatRupiah, customerOf, orderNumberOf } from "../lib/jobHelpers";
 import { MAP_STYLE_DARK } from "../lib/googleMapStyle";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
@@ -97,6 +98,29 @@ function ringkasHariIni(jobs) {
   };
 }
 
+// Aktivitas Terbaru (13 Sep 2026, permintaan owner: "dashboard admin masih
+// belum detail, hanya ada rute hari ini" + referensi app fitness — list
+// "Daily Activities" kronologis). Job SELESAI/GAGAL hari ini, terbaru dulu
+// — customerOf()/orderNumberOf() dari jobHelpers.js (fallback units[].unit.
+// order SAMA seperti dipakai JobCard, bukan logic baru) supaya nama/nomor
+// order tetap terisi walau job cuma py order lewat jalur lama itu.
+function aktivitasTerbaru(jobs) {
+  return jobs
+    .filter((j) => j.status === "COMPLETED" || j.status === "FAILED")
+    .map((j) => ({
+      id: j.id,
+      status: j.status,
+      customerName: customerOf(j),
+      orderNumber: orderNumberOf(j),
+      type: j.type,
+      driverName: j.driver?.name || null,
+      time: j.completedAt || j.updatedAt,
+      failureReason: j.failureReason || null,
+    }))
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+    .slice(0, 8);
+}
+
 function ringkasDriver(jobs, tracking) {
   const driverMap = new Map();
   for (const j of jobs) {
@@ -140,6 +164,7 @@ export default function AdminHomeScreen() {
   const tracking = data?.tracking || [];
 
   const ringkasan = useMemo(() => ringkasHariIni(jobs), [jobs]);
+  const aktivitas = useMemo(() => aktivitasTerbaru(jobs), [jobs]);
   const drivers = useMemo(() => ringkasDriver(jobs, tracking), [jobs, tracking]);
 
   const { from, to } = useMemo(() => rentangPeriode(periode), [periode]);
@@ -197,7 +222,7 @@ export default function AdminHomeScreen() {
           contentContainerStyle={styles.body}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.ACCENT} />}
         >
-          {tab === "hari-ini" && <HariIniView ringkasan={ringkasan} theme={theme} styles={styles} />}
+          {tab === "hari-ini" && <HariIniView ringkasan={ringkasan} aktivitas={aktivitas} theme={theme} styles={styles} />}
           {tab === "driver" && <DriverView drivers={drivers} theme={theme} styles={styles} />}
           {tab === "tracking" && <TrackingView tracking={tracking} theme={theme} styles={styles} />}
           {tab === "masalah" && <MasalahView issues={issues} theme={theme} styles={styles} />}
@@ -215,24 +240,115 @@ export default function AdminHomeScreen() {
   );
 }
 
-function Kpi({ label, value, color, styles }) {
+// Ring status job hari ini (13 Sep 2026, permintaan owner: "dashboard
+// admin masih belum detail" + referensi app fintech Nexora — ring donut
+// jadi ringkasan utama, gantikan 5 kartu angka datar). SVG murni
+// (react-native-svg SUDAH ter-compile di binary sejak awal, dipakai
+// lucide-react-native utk tiap ikon) — aman lewat OTA, TIDAK butuh native
+// rebuild. Pola arc: tiap segmen Circle FULL (r sama), dibedakan lewat
+// strokeDasharray (panjang segmen vs sisa lingkaran) + strokeDashoffset
+// (titik mulai, negatif = geser searah jarum jam) + rotation=-90 supaya
+// segmen pertama mulai dari jam 12, bukan jam 3 (default SVG).
+function StatusRing({ segments, total, t, size = 132, strokeWidth = 18 }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const cx = size / 2;
+  const cy = size / 2;
+  const denom = total || 1;
+  let kumulatif = 0;
+  const arcs = segments
+    .filter((s) => s.value > 0)
+    .map((seg) => {
+      const segLen = (seg.value / denom) * circumference;
+      const offset = -(kumulatif / denom) * circumference;
+      kumulatif += seg.value;
+      return { ...seg, segLen, offset };
+    });
   return (
-    <View style={styles.kpi}>
-      <Text style={[styles.kpiValue, color && { color }]}>{value}</Text>
-      <Text style={styles.kpiLabel}>{label}</Text>
+    <View style={{ width: size, height: size }}>
+      <Svg width={size} height={size}>
+        <Circle cx={cx} cy={cy} r={radius} stroke={t.TRACK_BG} strokeWidth={strokeWidth} fill="none" />
+        {arcs.map((seg) => (
+          <Circle
+            key={seg.key}
+            cx={cx} cy={cy} r={radius}
+            stroke={seg.color} strokeWidth={strokeWidth} fill="none"
+            strokeDasharray={`${seg.segLen} ${circumference - seg.segLen}`}
+            strokeDashoffset={seg.offset}
+            strokeLinecap="butt"
+            rotation={-90}
+            origin={`${cx}, ${cy}`}
+          />
+        ))}
+      </Svg>
+      <View style={StyleSheet.absoluteFillObject}>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ fontSize: 24, fontWeight: "800", color: t.INK }}>{total}</Text>
+          <Text style={{ fontSize: 10, fontWeight: "600", color: t.INK3 }}>Total Job</Text>
+        </View>
+      </View>
     </View>
   );
 }
 
-function HariIniView({ ringkasan, theme: t, styles }) {
+function LegendRow({ color, label, value, styles }) {
+  return (
+    <View style={styles.legendRow}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+        <View style={[styles.legendDot, { backgroundColor: color }]} />
+        <Text style={styles.legendLabel}>{label}</Text>
+      </View>
+      <Text style={styles.legendValue}>{value}</Text>
+    </View>
+  );
+}
+
+function AktivitasRow({ item, t, styles }) {
+  const gagal = item.status === "FAILED";
+  const Icon = gagal ? XCircle : CheckCircle2;
+  const warna = gagal ? t.RED : t.GREEN;
+  return (
+    <View style={{ flexDirection: "row", gap: 10 }}>
+      <View style={[styles.activityIconWrap, { backgroundColor: warna + "1F" }]}>
+        <Icon size={15} color={warna} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={styles.rowBetween}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{item.customerName || "Tanpa nama"}</Text>
+          <Text style={styles.cardMeta}>{relatifWaktu(item.time)}</Text>
+        </View>
+        <Text style={styles.cardMeta} numberOfLines={1}>
+          {item.orderNumber || "—"} · {item.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
+          {item.driverName ? ` · ${item.driverName}` : ""}
+        </Text>
+        {gagal && item.failureReason ? (
+          <Text style={[styles.cardMeta, { color: t.RED, marginTop: 2 }]} numberOfLines={2}>{item.failureReason}</Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function HariIniView({ ringkasan, aktivitas, theme: t, styles }) {
   return (
     <View style={{ gap: 12 }}>
-      <View style={styles.kpiGrid}>
-        <Kpi label="Total Job" value={ringkasan.total} styles={styles} />
-        <Kpi label="Selesai" value={ringkasan.selesai} color={t.GREEN} styles={styles} />
-        <Kpi label="Jalan" value={ringkasan.jalan} color={t.ACCENT} styles={styles} />
-        <Kpi label="Gagal" value={ringkasan.gagal} color={t.RED} styles={styles} />
-        <Kpi label="Sisa" value={ringkasan.sisa} color={t.INK2} styles={styles} />
+      <View style={[styles.card, { flexDirection: "row", alignItems: "center", gap: 16 }]}>
+        <StatusRing
+          total={ringkasan.total}
+          t={t}
+          segments={[
+            { key: "selesai", value: ringkasan.selesai, color: t.GREEN },
+            { key: "jalan", value: ringkasan.jalan, color: t.ACCENT },
+            { key: "gagal", value: ringkasan.gagal, color: t.RED },
+            { key: "sisa", value: ringkasan.sisa, color: t.INK3 },
+          ]}
+        />
+        <View style={{ flex: 1, gap: 9 }}>
+          <LegendRow color={t.GREEN} label="Selesai" value={ringkasan.selesai} styles={styles} />
+          <LegendRow color={t.ACCENT} label="Jalan" value={ringkasan.jalan} styles={styles} />
+          <LegendRow color={t.RED} label="Gagal" value={ringkasan.gagal} styles={styles} />
+          <LegendRow color={t.INK3} label="Sisa" value={ringkasan.sisa} styles={styles} />
+        </View>
       </View>
 
       <Text style={styles.sectionTitle}>Rute Hari Ini ({ringkasan.routes.length})</Text>
@@ -253,6 +369,23 @@ function HariIniView({ ringkasan, theme: t, styles }) {
             </View>
           </View>
         ))
+      )}
+
+      {/* Aktivitas Terbaru (13 Sep 2026) — job SELESAI/GAGAL hari ini,
+          terbaru dulu, referensi "Daily Activities" app fitness: dispatcher
+          lihat pulsa lapangan tanpa pindah ke tab Masalah/Driver. */}
+      <Text style={styles.sectionTitle}>Aktivitas Terbaru</Text>
+      {aktivitas.length === 0 ? (
+        <Text style={styles.emptyText}>Belum ada job selesai/gagal hari ini.</Text>
+      ) : (
+        <View style={styles.card}>
+          {aktivitas.map((item, i) => (
+            <View key={item.id}>
+              {i > 0 && <View style={{ height: 1, backgroundColor: t.BORDER, marginVertical: 10 }} />}
+              <AktivitasRow item={item} t={t} styles={styles} />
+            </View>
+          ))}
+        </View>
       )}
     </View>
   );
@@ -659,13 +792,16 @@ function makeStyles(t) {
     // (fase 2 redesign, lihat BottomNavBar.js) supaya card terakhir tidak
     // ketutupan bar.
     body: { paddingHorizontal: 16, paddingBottom: 96 },
-    kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    kpi: {
-      flexBasis: "31%", flexGrow: 1, backgroundColor: t.SURFACE, borderRadius: 14, paddingVertical: 12, alignItems: "center",
-      shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 2,
-    },
     kpiValue: { color: t.INK, fontSize: 20, fontWeight: "800" },
-    kpiLabel: { color: t.INK2, fontSize: 10.5, marginTop: 2, fontWeight: "600" },
+    // Ring status + legend (13 Sep 2026) — gantikan kpiGrid/kpi/kpiLabel
+    // lama (5 kartu angka datar). legendRow pakai justify space-between
+    // supaya dot+label nempel kiri, angka rapat kanan (rata kolom, sama
+    // pola dengan driverStatsRow).
+    legendRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    legendDot: { width: 9, height: 9, borderRadius: 5 },
+    legendLabel: { color: t.INK2, fontSize: 12.5, fontWeight: "600" },
+    legendValue: { color: t.INK, fontSize: 13.5, fontWeight: "800" },
+    activityIconWrap: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
     sectionTitle: { color: t.INK, fontSize: 14, fontWeight: "700", marginTop: 4 },
     card: {
       backgroundColor: t.SURFACE, borderRadius: 14, padding: 12,
