@@ -1917,7 +1917,7 @@ const routeInclude = {
 // dipertahankan apa adanya untuk kompatibilitas pemanggil lama.
 armadaRouter.get("/routes", requirePermission(P.JOB_READ), async (req, res) => {
   try {
-    const { date, from, to, status } = req.query;
+    const { date, from, to, status, driverId, take, skip } = req.query;
     let dateWhere;
     if (date) {
       dateWhere = toDateOnly(date);
@@ -1929,13 +1929,27 @@ armadaRouter.get("/routes", requirePermission(P.JOB_READ), async (req, res) => {
       // (kolom ini @db.Date, bukan datetime, jadi lte apa adanya sudah benar).
       if (to) dateWhere.lte = toDateOnly(to);
     }
+    // driverId/take/skip (13 September 2026, D-163 — tab "Riwayat Rute" di
+    // app admin driver-mobile). driverId cocok DRIVER ATAU HELPER (OR) —
+    // pool orang SAMA bisa jadi driver di 1 rute dan helper di rute lain
+    // (CLAUDE.md §1), sama filosofi dengan ringkasDriver() di
+    // AdminHomeScreen.js. take/skip SEBELUMNYA tidak ada sama sekali —
+    // endpoint ini mengembalikan SEMUA rute tanpa batas (aman untuk Route
+    // Planner web yang memang butuh seluruh papan sekaligus), tapi untuk
+    // riwayat di HP (potensi ratusan rute lama, tiap rute bawa jobInclude
+    // PENUH lewat routeInclude) itu berat — parameter ini OPSIONAL, kalau
+    // tidak dikirim perilaku lama (semua rute) tetap sama persis, jadi
+    // pemanggil lain (Route Planner) tidak terpengaruh.
     const routes = await prisma.route.findMany({
       where: {
         ...(dateWhere !== undefined && { date: dateWhere }),
         ...(status && { status }),
+        ...(driverId && { OR: [{ driverId }, { helperId: driverId }] }),
       },
       include: routeInclude,
       orderBy: [{ date: "desc" }, { createdAt: "asc" }],
+      ...(take && { take: Number(take) }),
+      ...(skip && { skip: Number(skip) }),
     });
     res.json({ routes });
   } catch (err) {

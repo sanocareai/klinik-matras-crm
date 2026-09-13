@@ -1,26 +1,39 @@
 // Beranda admin/dispatcher (10 Sep 2026, permintaan owner: "tambahkan
 // tampilan untuk login admin, yang menampilkan status driver"). Login
 // dengan role ADMIN/DISPATCHER mendarat di sini, bukan Job Saya (lihat
-// lib/roles.js#isAdminView, App.js). Baca-saja v1 — SEMUA data lewat
-// endpoint yang SUDAH dipakai dispatcher web (GET /armada/jobs,
-// /armada/tracking, /armada/issues), nol perubahan backend. Aksi lanjut
-// (reschedule, edit rute, dst) tetap di web untuk sekarang — app ini
-// jawab "gimana progress hari ini" cepat dari HP, bukan menggantikan
-// Route Planner. Light/dark ikut sistem HP (lihat src/theme.js).
+// lib/roles.js#isAdminView, App.js). SEMUA data lewat endpoint yang SUDAH
+// dipakai dispatcher web (GET /armada/jobs, /armada/tracking, /armada/
+// issues, /armada/routes), nol/minim perubahan backend. Light/dark ikut
+// sistem HP (lihat src/theme.js).
+//
+// ⚠️ TIDAK LAGI baca-saja murni sejak tab "Rute" > "Aktif" (13 Sep 2026,
+// D-163) — owner: "gue yakin pasti akan ada case driver lupa update juga
+// di apps driver, otomatis harus ada tab baru dong ... yang menampilkan
+// rute aktif" utk admin bisa BANTU update status job atas nama driver
+// (mekanisme lama: driver lapor lewat WhatsApp). Ini AMAN dari sisi
+// backend TANPA perubahan apa pun — `loadOwnedJob()` (armada.js) sudah
+// meloloskan siapa pun berbekal permission JOB_WRITE (yang dimiliki
+// ADMIN) melewati pengecekan "job ini punya saya", persis pola yang SUDAH
+// dipakai dispatcher web di JobDetailDrawer.jsx ("Ubah status manual —
+// dispatcher bertindak atas nama driver"). Komponen JobCard yang dipakai
+// di sini SAMA PERSIS dengan yang dipakai driver sendiri (JobListScreen) —
+// reuse penuh, bukan implementasi kedua.
 import React, { useMemo, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl, Linking, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import Svg, { Circle } from "react-native-svg";
-import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle, Navigation, MapPin } from "lucide-react-native";
+import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle, Navigation, MapPin, ChevronDown, ChevronUp } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
 import { useIncentiveSummary } from "../hooks/useIncentiveSummary";
+import { useRouteHistory } from "../hooks/useRouteHistory";
 import { relatifWaktu, formatRupiah, customerOf, orderNumberOf } from "../lib/jobHelpers";
 import { MAP_STYLE_DARK } from "../lib/googleMapStyle";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
+import JobCard from "../components/JobCard";
 
 // Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
 // dulu di atas konten, lihat BottomNavBar.js.
@@ -39,9 +52,19 @@ const TABS = [
   { key: "hari-ini", label: "Hari Ini", icon: Home },
   { key: "driver", label: "Driver", icon: Truck },
   { key: "tracking", label: "Tracking", icon: Navigation },
+  { key: "rute", label: "Rute", icon: Route },
   { key: "masalah", label: "Masalah", icon: AlertTriangle },
   { key: "performa", label: "Performa", icon: Award },
 ];
+
+// Sub-tab "Aktif"/"Riwayat" di dalam tab Rute (13 Sep 2026) — pola SAMA
+// dengan PERIODE_PRESET di Performa (chip segmented), TIDAK dijadikan tab
+// bottom-nav terpisah supaya bar bawah tidak membengkak jadi 7 item.
+const RUTE_SUB = [
+  { key: "aktif", label: "Aktif" },
+  { key: "riwayat", label: "Riwayat" },
+];
+const RIWAYAT_PAGE_SIZE = 10;
 
 // Preset rentang tanggal utk tab Performa (12 Sep 2026) — default "Bulan
 // Ini" (backend juga default ke ini kalau from/to kosong, lihat
@@ -133,6 +156,37 @@ function aktivitasTerbaru(jobs) {
 // — 1 orang bisa muncul sbg driver di 1 job dan helper di job lain (pool
 // SAMA, lihat CLAUDE.md §1: "helper bisa jadi driver dan driver bisa jadi
 // helper"), makanya `roles` dikumpulkan sbg Set utk badge di UI.
+// Rute Aktif (13 Sep 2026, D-163) — kelompokkan job HARI INI (sudah
+// dipanggil useAdminToday, nol panggilan API baru) per rute, SISAKAN
+// cuma rute yang MASIH punya job belum COMPLETED/FAILED. Job DALAM rute
+// aktif tetap ditampilkan SEMUA (bukan cuma yang pending) supaya admin
+// lihat konteks penuh rute itu, urut sesuai `sequence` sama seperti Route
+// Planner web.
+function ruteAktifDariJobs(jobs) {
+  const byRoute = new Map();
+  for (const j of jobs) {
+    if (!j.route) continue;
+    let r = byRoute.get(j.route.id);
+    if (!r) { r = { id: j.route.id, code: j.route.code, jobs: [] }; byRoute.set(j.route.id, r); }
+    r.jobs.push(j);
+  }
+  return [...byRoute.values()]
+    .filter((r) => r.jobs.some((j) => j.status !== "COMPLETED" && j.status !== "FAILED"))
+    .map((r) => ({ ...r, jobs: [...r.jobs].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0)) }));
+}
+
+// Hitung selesai/gagal/total dari route.jobs (Riwayat Rute, 13 Sep 2026) —
+// GET /armada/routes sudah sertakan jobs penuh per rute (routeInclude),
+// tidak perlu hitungan terpisah dari backend.
+function hitungRute(route) {
+  const jobs = route.jobs || [];
+  return {
+    total: jobs.length,
+    selesai: jobs.filter((j) => j.status === "COMPLETED").length,
+    gagal: jobs.filter((j) => j.status === "FAILED").length,
+  };
+}
+
 function ringkasDriver(jobs, tracking) {
   const personMap = new Map();
   function sentuh(person, peran) {
@@ -182,6 +236,8 @@ export default function AdminHomeScreen() {
   const { data, isLoading, error, refetch, isRefetching } = useAdminToday();
   const [tab, setTab] = useState("hari-ini");
   const [periode, setPeriode] = useState("bulan-ini");
+  const [subRute, setSubRute] = useState("aktif");
+  const [riwayatTake, setRiwayatTake] = useState(RIWAYAT_PAGE_SIZE);
 
   const jobs = data?.jobs || [];
   const issues = data?.issues || [];
@@ -190,9 +246,11 @@ export default function AdminHomeScreen() {
   const ringkasan = useMemo(() => ringkasHariIni(jobs), [jobs]);
   const aktivitas = useMemo(() => aktivitasTerbaru(jobs), [jobs]);
   const drivers = useMemo(() => ringkasDriver(jobs, tracking), [jobs, tracking]);
+  const ruteAktif = useMemo(() => ruteAktifDariJobs(jobs), [jobs]);
 
   const { from, to } = useMemo(() => rentangPeriode(periode), [periode]);
   const performa = useIncentiveSummary(from, to);
+  const riwayat = useRouteHistory(riwayatTake, tab === "rute" && subRute === "riwayat");
 
   return (
     <SafeAreaView style={styles.root}>
@@ -249,6 +307,19 @@ export default function AdminHomeScreen() {
           {tab === "hari-ini" && <HariIniView ringkasan={ringkasan} aktivitas={aktivitas} theme={theme} styles={styles} />}
           {tab === "driver" && <DriverView drivers={drivers} theme={theme} styles={styles} />}
           {tab === "tracking" && <TrackingView tracking={tracking} theme={theme} styles={styles} />}
+          {tab === "rute" && (
+            <RuteView
+              subRute={subRute}
+              setSubRute={setSubRute}
+              ruteAktif={ruteAktif}
+              riwayat={riwayat}
+              riwayatTake={riwayatTake}
+              setRiwayatTake={setRiwayatTake}
+              onChanged={refetch}
+              theme={theme}
+              styles={styles}
+            />
+          )}
           {tab === "masalah" && <MasalahView issues={issues} theme={theme} styles={styles} />}
         </ScrollView>
       )}
@@ -681,6 +752,179 @@ function TrackingView({ tracking, theme: t, styles }) {
   );
 }
 
+// Tab "Rute" (13 Sep 2026, D-163) — 2 sub-tab:
+// - Aktif: rute yang masih punya job berjalan HARI INI, admin bisa BANTU
+//   update status (JobCard, komponen SAMA dengan driver, lihat catatan
+//   header file) — jawab langsung permintaan owner "bantu update jalur
+//   yang sedang dijalani ... driver lupa update juga di apps driver".
+// - Riwayat: rute yang SUDAH selesai (status COMPLETED), read-only, tap
+//   utk buka detail stop-nya — jawab "history rute yang selesai beserta
+//   datanya ... tanpa harus buka web".
+function RuteView({ subRute, setSubRute, ruteAktif, riwayat, riwayatTake, setRiwayatTake, onChanged, theme: t, styles }) {
+  return (
+    <View style={{ gap: 12 }}>
+      <View style={styles.periodeRow}>
+        {RUTE_SUB.map((s) => (
+          <Pressable
+            key={s.key}
+            style={[styles.periodeChip, subRute === s.key && styles.periodeChipActive]}
+            onPress={() => setSubRute(s.key)}
+          >
+            <Text style={[styles.periodeChipText, subRute === s.key && styles.periodeChipTextActive]}>{s.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {subRute === "aktif" ? (
+        <RuteAktifSubView ruteAktif={ruteAktif} onChanged={onChanged} t={t} styles={styles} />
+      ) : (
+        <RiwayatRuteSubView riwayat={riwayat} riwayatTake={riwayatTake} setRiwayatTake={setRiwayatTake} t={t} styles={styles} />
+      )}
+    </View>
+  );
+}
+
+function RuteAktifSubView({ ruteAktif, onChanged, t, styles }) {
+  if (ruteAktif.length === 0) {
+    return (
+      <View style={styles.center}>
+        <Route size={28} color={t.INK3} />
+        <Text style={[styles.emptyText, { marginTop: 8 }]}>Tidak ada rute aktif hari ini.</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={{ gap: 16 }}>
+      {ruteAktif.map((r) => {
+        const selesai = r.jobs.filter((j) => j.status === "COMPLETED").length;
+        return (
+          <View key={r.id}>
+            <View style={[styles.rowBetween, { marginBottom: 8 }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Route size={14} color={t.ACCENT} />
+                <Text style={styles.cardTitle}>{r.code}</Text>
+              </View>
+              <Text style={styles.cardMeta}>{selesai}/{r.jobs.length} selesai</Text>
+            </View>
+            {r.jobs.map((j) => (
+              <JobCard key={j.id} job={j} onChanged={onChanged} />
+            ))}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function statusRuteLabel(status) {
+  switch (status) {
+    case "COMPLETED": return "Selesai";
+    case "FAILED": return "Gagal";
+    case "EN_ROUTE": return "Menuju Lokasi";
+    case "ARRIVED": return "Tiba di Lokasi";
+    default: return "Belum Jalan";
+  }
+}
+
+function RiwayatRuteItem({ route, expanded, onToggle, t, styles }) {
+  const { total, selesai, gagal } = hitungRute(route);
+  const tanggal = route.date
+    ? new Date(route.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
+    : "—";
+  return (
+    <Pressable style={styles.card} onPress={onToggle}>
+      <View style={styles.rowBetween}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Route size={14} color={t.ACCENT} />
+          <Text style={styles.cardTitle}>{route.code}</Text>
+        </View>
+        {expanded ? <ChevronUp size={16} color={t.INK3} /> : <ChevronDown size={16} color={t.INK3} />}
+      </View>
+      <Text style={[styles.cardMeta, { marginTop: 4 }]}>
+        {tanggal} · {route.driver?.name || "Tanpa driver"}{route.helper?.name ? ` & ${route.helper.name}` : ""}
+      </Text>
+      <Text style={styles.cardMeta}>
+        {selesai}/{total} selesai{gagal > 0 ? ` · ${gagal} gagal` : ""}
+      </Text>
+
+      {expanded && (
+        <View style={{ marginTop: 10, gap: 8, borderTopWidth: 1, borderTopColor: t.BORDER, paddingTop: 10 }}>
+          {(route.jobs || []).length === 0 ? (
+            <Text style={styles.cardMeta}>Tidak ada stop di rute ini.</Text>
+          ) : (
+            [...route.jobs].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0)).map((j) => (
+              <View key={j.id} style={{ backgroundColor: t.TRACK_BG, borderRadius: 10, padding: 8 }}>
+                <View style={styles.rowBetween}>
+                  <Text style={[styles.cardMeta, { fontWeight: "700", color: t.INK }]} numberOfLines={1}>
+                    {customerOf(j) || "Tanpa nama"}
+                  </Text>
+                  <Text style={[styles.cardMeta, { color: j.status === "FAILED" ? t.RED : t.GREEN }]}>
+                    {statusRuteLabel(j.status)}
+                  </Text>
+                </View>
+                <Text style={styles.cardMeta}>
+                  {orderNumberOf(j) || "—"} · {j.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
+                </Text>
+                {j.addressText ? <Text style={styles.cardMeta} numberOfLines={2}>{j.addressText}</Text> : null}
+                {j.status === "FAILED" && j.failureReason ? (
+                  <Text style={[styles.cardMeta, { color: t.RED, marginTop: 2 }]} numberOfLines={2}>{j.failureReason}</Text>
+                ) : null}
+              </View>
+            ))
+          )}
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
+function RiwayatRuteSubView({ riwayat, riwayatTake, setRiwayatTake, t, styles }) {
+  const { data, isLoading, error, isFetching } = riwayat;
+  const routes = data?.routes || [];
+  const [expandedId, setExpandedId] = useState(null);
+
+  if (isLoading) {
+    return <View style={styles.center}><ActivityIndicator color={t.ACCENT} /></View>;
+  }
+  if (error) {
+    return <Text style={styles.errorText}>Gagal memuat riwayat: {error.message}</Text>;
+  }
+  if (routes.length === 0) {
+    return (
+      <View style={styles.center}>
+        <Route size={28} color={t.INK3} />
+        <Text style={[styles.emptyText, { marginTop: 8 }]}>Belum ada rute yang selesai.</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={{ gap: 10 }}>
+      {routes.map((r) => (
+        <RiwayatRuteItem
+          key={r.id}
+          route={r}
+          expanded={expandedId === r.id}
+          onToggle={() => setExpandedId((cur) => (cur === r.id ? null : r.id))}
+          t={t}
+          styles={styles}
+        />
+      ))}
+      {/* Heuristik "mungkin masih ada lagi": kalau jumlah baris yang balik
+          PERSIS sama dengan take yang diminta, kemungkinan besar dipotong
+          limit, bukan memang cuma segitu jumlahnya. */}
+      {routes.length >= riwayatTake && (
+        <Pressable
+          style={styles.secondaryBtn}
+          onPress={() => setRiwayatTake((n) => n + RIWAYAT_PAGE_SIZE)}
+          disabled={isFetching}
+        >
+          <Text style={styles.secondaryBtnText}>{isFetching ? "Memuat…" : "Muat Lebih Banyak"}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 function MasalahView({ issues, theme: t, styles }) {
   if (issues.length === 0) {
     return (
@@ -871,5 +1115,10 @@ function makeStyles(t) {
     quickActions: { flexDirection: "row", gap: 8, marginTop: 10 },
     quickBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.ACCENT_BG, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
     quickBtnText: { color: t.ACCENT, fontSize: 11.5, fontWeight: "600" },
+    // Tombol "Muat Lebih Banyak" (Riwayat Rute, 13 Sep 2026) — sama pola
+    // secondaryBtn di JobCard.js (border tipis, bukan isi), file style
+    // terpisah jadi duplikasi kecil, bukan reuse lintas komponen.
+    secondaryBtn: { borderWidth: 1, borderColor: t.BORDER, borderRadius: 12, paddingVertical: 12, alignItems: "center", justifyContent: "center" },
+    secondaryBtnText: { color: t.INK2, fontWeight: "600", fontSize: 13.5 },
   });
 }

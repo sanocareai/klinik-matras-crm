@@ -165,6 +165,12 @@ export const api = {
   // app cuma klien baru yang memanggilnya, baca-saja (aksi lanjut seperti
   // reschedule tetap di web untuk v1).
   getArmadaJobs: (params = {}) => request(`/armada/jobs${buildQuery(params)}`),
+  // Riwayat Rute (13 Sep 2026, D-163) — GET /armada/routes sudah include
+  // driver/helper/vehicle/jobs penuh per rute (routeInclude backend), take/
+  // skip/driverId baru ditambah backend khusus utk tab ini (sebelumnya
+  // endpoint ini SELALU kembalikan SEMUA rute tanpa batas, cukup aman untuk
+  // Route Planner web tapi berat kalau dipanggil polos dari HP).
+  getArmadaRoutes: (params = {}) => request(`/armada/routes${buildQuery(params)}`),
   getArmadaTracking: () => request("/armada/tracking"),
   getArmadaIssues: (params = {}) => request(`/armada/issues${buildQuery(params)}`),
   startArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", body: JSON.stringify(data) }),
