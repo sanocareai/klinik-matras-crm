@@ -565,18 +565,19 @@ function TrackingView({ tracking, theme: t, styles }) {
     [withPosition]
   );
 
-  if (tracking.length === 0) {
-    return (
-      <View style={styles.center}>
-        <Navigation size={28} color={t.INK3} />
-        <Text style={[styles.emptyText, { marginTop: 8 }]}>Tidak ada driver yang sedang dalam perjalanan sekarang.</Text>
-      </View>
-    );
-  }
+  // Peta SELALU dirender (13 Sep 2026, konfirmasi owner: "betul lets do it"
+  // — samakan dengan web yang tetap tampilkan peta kosong center Jakarta
+  // walau belum ada driver aktif, bukan langsung lompat ke pesan teks).
+  // TrackingMap sendiri sudah toleran array kosong (initialRegion fallback
+  // JAKARTA_CENTER, fitKeSemuaMarker no-op kalau titik.length===0).
   return (
     <View style={{ gap: 10 }}>
-      {withPosition.length > 0 && (
-        <TrackingMap withPosition={withPosition} withDestination={withDestination} t={t} dark={dark} />
+      <TrackingMap withPosition={withPosition} withDestination={withDestination} t={t} dark={dark} />
+      {tracking.length === 0 && (
+        <View style={[styles.center, { flex: 0, paddingVertical: 28 }]}>
+          <Navigation size={28} color={t.INK3} />
+          <Text style={[styles.emptyText, { marginTop: 8 }]}>Tidak ada driver yang sedang dalam perjalanan sekarang.</Text>
+        </View>
       )}
       {tracking.map((tr) => {
         const posisiUrl = posisiMapsUrl(tr);
