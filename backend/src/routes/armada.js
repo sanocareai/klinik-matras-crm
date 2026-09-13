@@ -2077,9 +2077,21 @@ armadaRouter.get("/incentive-summary", requirePermission(P.JOB_READ), async (req
     // daftar hasil, job yang sudah dihitung di atas (perOrang) TIDAK
     // disentuh sama sekali, jadi driver/helper LAIN yang bertugas
     // bersama mereka di job yang sama tetap dapat kredit penuh.
+    //
+    // isExternalCourier: false (14 September 2026, koreksi owner: "di apps
+    // dan web, kurir eksternal ada insentifnya seharusnya tidak perlu") —
+    // akun placeholder "Kurir Eksternal (Lalamove/dst)" SEBELUMNYA ikut
+    // dihitung (komentar lama di atas const RATE_PER_ALAMAT sengaja
+    // menyertakan "job lepas ... mis. Kurir Eksternal ikut terhitung" —
+    // itu keputusan D-162 yang SEKARANG dikoreksi owner: kurir eksternal
+    // sudah dibayar lewat externalCourierCost per job [D-161], bukan
+    // insentif per-alamat karyawan internal. Sama pola penyaringan dengan
+    // isFreelance — job yang sudah dihitung TIDAK disentuh, driver/helper
+    // LAIN yang kebetulan satu job dengan kurir eksternal (jarang terjadi
+    // dalam praktik, tapi tidak mustahil) tetap dapat kredit penuh.
     const userIds = [...perOrang.keys()];
     const users = userIds.length
-      ? await prisma.user.findMany({ where: { id: { in: userIds }, isFreelance: false }, select: { id: true, name: true, hasSim: true } })
+      ? await prisma.user.findMany({ where: { id: { in: userIds }, isFreelance: false, isExternalCourier: false }, select: { id: true, name: true, hasSim: true } })
       : [];
 
     const orang = users

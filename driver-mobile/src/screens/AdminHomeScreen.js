@@ -634,6 +634,19 @@ const JAKARTA_CENTER = { latitude: -6.2088, longitude: 106.8456, latitudeDelta: 
 function TrackingMap({ withPosition, withDestination, t, dark }) {
   const mapRef = useRef(null);
   const [siap, setSiap] = useState(false);
+  // `siap` HARUS reset ke false setiap `dark` berganti (14 Sep 2026) —
+  // MapView di bawah di-remount lewat `key={dark ? "dark" : "light"}`
+  // (fix "maps ga ikut light mode"), jadi mapRef.current akan menunjuk ke
+  // instance native BARU yang BELUM tentu siap dipanggil fitToCoordinates
+  // — tanpa reset ini, effect fit di bawah bisa terpicu (dependency `dark`
+  // berubah) SEBELUM instance baru benar-benar `onMapReady`, methodnya
+  // dipanggil ke map yang belum selesai init. Pola "adjusting state
+  // saat prop berubah" (sama dengan prevJobId di JobCard.js).
+  const [prevDark, setPrevDark] = useState(dark);
+  if (dark !== prevDark) {
+    setPrevDark(dark);
+    setSiap(false);
+  }
 
   const titik = useMemo(() => [
     ...withPosition.map((j) => ({ latitude: j.lastPosition.lat, longitude: j.lastPosition.lng })),
@@ -652,11 +665,22 @@ function TrackingMap({ withPosition, withDestination, t, dark }) {
     if (!siap || !mapRef.current || titik.length === 0) return;
     mapRef.current.fitToCoordinates(titik, { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siap, sinyalTitik]);
+  }, [siap, sinyalTitik, dark]); // `dark` ikut jadi dep (14 Sep 2026) — MapView remount saat tema berubah (lihat key di bawah), instance BARU perlu di-fit ulang juga
 
   return (
     <View style={{ height: 260, borderRadius: 14, overflow: "hidden", marginBottom: 10 }}>
       <MapView
+        // key berisi `dark` (14 Sep 2026, laporan owner: "bug ketika mode
+        // light mode, maps ga ikut menjadi light mode") — react-native-maps
+        // di Android TERBUKTI tidak selalu menerapkan ULANG customMapStyle
+        // kalau propnya berubah SETELAH map pertama kali dibuat (native
+        // Google Maps SDK menyimpan style saat instance dibuat, bukan
+        // reaktif ke prop React) — peta yang sudah terbuka di tema gelap
+        // tetap gelap walau HP dipindah ke mode terang tanpa restart app
+        // penuh. `key` yang berubah memaksa React unmount+mount MapView
+        // BARU dari nol, jadi customMapStyle yang benar ikut terpasang
+        // sejak awal instance native-nya, bukan cuma prop update biasa.
+        key={dark ? "dark" : "light"}
         ref={mapRef}
         style={{ flex: 1 }}
         provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
