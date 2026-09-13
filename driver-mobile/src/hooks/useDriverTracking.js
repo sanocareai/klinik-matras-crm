@@ -8,16 +8,27 @@
 // diport ke sini — sama keputusan dengan submitJobAction.js RN, gagal
 // jaringan = ping itu hilang, tidak diam-diam diantre. Ditambahkan kalau
 // offline queue penuh (foto+aksi) sudah diport ke AsyncStorage.
+//
+// Gerbang isOnline (12 Sep 2026, referensi Gojek/Grab — permintaan owner:
+// "ketika driver sudah offline otomatis gps ga mendeteksi driver kemana-
+// mana lagi") — BEDA dari gerbang job EN_ROUTE di bawah (yang sudah ada
+// sejak awal): isOnline SENGAJA jadi gerbang PALING LUAR, bukan cuma
+// tambahan kondisi. Offline WAJIB manual (AuthContext#setOnline), jadi
+// driver yang lupa/sengaja Offline TIDAK PERNAH terlacak lagi apa pun
+// status job-nya — bahkan kalau (jarang) masih ada job EN_ROUTE
+// menggantung. Ini KHUSUS app RN — web/PWA (driver-app/) TIDAK disentuh,
+// belum ada konsep Online/Offline di sana.
 import { useEffect, useRef } from "react";
 import * as Location from "expo-location";
 import { api } from "../api";
 
 const PING_INTERVAL_MS = 2 * 60 * 1000; // 2 menit — sama dengan PRD FR-L-06
 
-export function useDriverTracking(jobs) {
+export function useDriverTracking(jobs, isOnline) {
   const timerRef = useRef(null);
 
   useEffect(() => {
+    if (!isOnline) return undefined; // Offline — jangan pasang timer/minta izin sama sekali
     const activeJobIds = (jobs || []).filter((j) => j.status === "EN_ROUTE").map((j) => j.id);
     if (activeJobIds.length === 0) return undefined; // tidak ada job aktif — jangan pasang timer/minta izin sama sekali
 
@@ -47,5 +58,5 @@ export function useDriverTracking(jobs) {
       clearInterval(timerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify((jobs || []).map((j) => `${j.id}:${j.status}`))]);
+  }, [isOnline, (jobs || []).map((j) => `${j.id}:${j.status}`).join(",")]); // .join lebih murah dari JSON.stringify (13 Sep 2026, audit performa) — hasil akhirnya sama-sama string pembanding, tidak perlu escaping JSON
 }

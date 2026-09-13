@@ -9,9 +9,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 
-export function useIncentiveSummary(from, to) {
+// `enabled` (13 Sep 2026, audit performa) — SEBELUMNYA selalu fetch begitu
+// AdminHomeScreen mount, TERLEPAS dari tab aktif (dipanggil unconditional
+// di AdminHomeScreen.js). Insentif cuma dilihat di tab Performa — default
+// true supaya pemanggil yang TIDAK butuh gating (kalau ada suatu saat)
+// tidak perlu berubah.
+export function useIncentiveSummary(from, to, enabled = true) {
   return useQuery({
     queryKey: ["admin", "incentive-summary", from, to],
     queryFn: () => api.getIncentiveSummary(from, to),
+    enabled,
   });
 }

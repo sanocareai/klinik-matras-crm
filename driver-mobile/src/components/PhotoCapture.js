@@ -5,7 +5,8 @@
 // HARUS foto baru, bukan foto lama dari galeri) + expo-image-manipulator
 // utk resize/compress sebelum upload (hemat data driver di lapangan).
 import React, { useMemo } from "react";
-import { View, Text, Pressable, Image, StyleSheet, ScrollView, Alert } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Alert } from "react-native";
+import { Image } from "expo-image"; // 13 Sep 2026, audit performa — expo-image SUDAH jadi dependency native (app.json plugins) tapi sebelumnya tidak pernah dipakai, thumbnail masih lewat Image polos react-native tanpa cache disk/memory bawaan expo-image
 import { Camera, ImagePlus, X } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -54,8 +55,13 @@ export default function PhotoCapture({ photos, onChange, label }) {
       allowsMultipleSelection: true,
     });
     if (result.canceled || !result.assets?.length) return;
-    const baru = [];
-    for (const asset of result.assets) baru.push(await kompres(asset));
+    // Promise.all, bukan for-await berurutan (13 Sep 2026, audit performa) —
+    // tiap manipulateAsync() adalah round-trip native TERPISAH per foto;
+    // versi lama menunggu foto 1 kelar dulu baru mulai foto 2, dst — memilih
+    // 5 foto artinya UI "Add Photos" nge-block 5x durasi 1 kompresi. Native
+    // module gambar aman dipanggil paralel (tiap panggilan proses file
+    // berbeda, tidak ada state bersama), jadi jalankan sekaligus.
+    const baru = await Promise.all(result.assets.map(kompres));
     onChange([...photos, ...baru]);
   }
 

@@ -18,9 +18,10 @@
 // dispatcher bertindak atas nama driver"). Komponen JobCard yang dipakai
 // di sini SAMA PERSIS dengan yang dipakai driver sendiri (JobListScreen) —
 // reuse penuh, bukan implementasi kedua.
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl, Linking, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FlashList } from "@shopify/flash-list";
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import Svg, { Circle } from "react-native-svg";
 import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle, Navigation, MapPin, ChevronDown, ChevronUp } from "lucide-react-native";
@@ -270,7 +271,7 @@ export default function AdminHomeScreen() {
   const ruteAktif = useMemo(() => ruteAktifDariJobs(jobs), [jobs]);
 
   const { from, to } = useMemo(() => rentangPeriode(periode), [periode]);
-  const performa = useIncentiveSummary(from, to);
+  const performa = useIncentiveSummary(from, to, tab === "performa");
   const riwayat = useRouteHistory(riwayatTake, tab === "rute" && subRute === "riwayat");
 
   return (
@@ -308,7 +309,29 @@ export default function AdminHomeScreen() {
         )}
       </GradientCard>
 
-      {tab === "performa" ? (
+      {tab === "rute" && subRute === "riwayat" ? (
+        // FlashList terpisah dari ScrollView bersama di bawah (13 Sep 2026,
+        // audit performa) — VirtualizedList (FlashList) TIDAK BOLEH
+        // disarangkan di dalam ScrollView orientasi sama (peringatan RN
+        // resmi, dan virtualisasinya JADI PERCUMA kalau tetap dipaksa —
+        // seluruh isi tetap dirender sekaligus oleh ScrollView induk).
+        // Riwayat Rute dipilih utk virtualisasi (bukan Driver/Masalah/Rute
+        // Aktif) karena SATU-SATUNYA list di app ini yang datanya BENAR
+        // tumbuh tanpa batas alami seiring waktu (riwayat rute selesai
+        // terus bertambah tiap hari), beda dari Driver/Masalah yang
+        // dibatasi jumlah armada (8 orang, CLAUDE.md §1) — daftar pendek
+        // itu TIDAK butuh virtualisasi, cuma nambah kompleksitas struktur
+        // tanpa manfaat nyata.
+        <RiwayatRuteView
+          subRute={subRute}
+          setSubRute={setSubRute}
+          riwayat={riwayat}
+          riwayatTake={riwayatTake}
+          setRiwayatTake={setRiwayatTake}
+          theme={theme}
+          styles={styles}
+        />
+      ) : tab === "performa" ? (
         <PerformaView
           performa={performa}
           periode={periode}
@@ -333,9 +356,6 @@ export default function AdminHomeScreen() {
               subRute={subRute}
               setSubRute={setSubRute}
               ruteAktif={ruteAktif}
-              riwayat={riwayat}
-              riwayatTake={riwayatTake}
-              setRiwayatTake={setRiwayatTake}
               onChanged={refetch}
               theme={theme}
               styles={styles}
@@ -613,17 +633,26 @@ const JAKARTA_CENTER = { latitude: -6.2088, longitude: 106.8456, latitudeDelta: 
 // yang road-matched OSRM.
 function TrackingMap({ withPosition, withDestination, t, dark }) {
   const mapRef = useRef(null);
+  const [siap, setSiap] = useState(false);
 
-  function fitKeSemuaMarker() {
-    const map = mapRef.current;
-    if (!map) return;
-    const titik = [
-      ...withPosition.map((j) => ({ latitude: j.lastPosition.lat, longitude: j.lastPosition.lng })),
-      ...withDestination.map((j) => ({ latitude: j.destinationLat, longitude: j.destinationLng })),
-    ];
-    if (titik.length === 0) return;
-    map.fitToCoordinates(titik, { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true });
-  }
+  const titik = useMemo(() => [
+    ...withPosition.map((j) => ({ latitude: j.lastPosition.lat, longitude: j.lastPosition.lng })),
+    ...withDestination.map((j) => ({ latitude: j.destinationLat, longitude: j.destinationLng })),
+  ], [withPosition, withDestination]);
+
+  // Sinyal ringkas + fit lewat effect (13 Sep 2026, audit performa) —
+  // SEBELUMNYA fitToCoordinates dipanggil ulang di SETIAP `onLayout`, event
+  // sistem layout yang bisa terpicu tanpa data driver benar-benar berubah
+  // (poll 30 detik, ganti tab, dst) — peta jadi "melompat re-center" sendiri
+  // berulang kali walau tidak ada yang bergerak, JANK yang terlihat jelas.
+  // Sekarang fit ulang HANYA kalau titik-nya benar-benar beda dari render
+  // sebelumnya (dibulatkan 5 desimal, presisi sama dengan cache OSRM web).
+  const sinyalTitik = titik.map((p) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`).join("|");
+  useEffect(() => {
+    if (!siap || !mapRef.current || titik.length === 0) return;
+    mapRef.current.fitToCoordinates(titik, { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siap, sinyalTitik]);
 
   return (
     <View style={{ height: 260, borderRadius: 14, overflow: "hidden", marginBottom: 10 }}>
@@ -637,8 +666,7 @@ function TrackingMap({ withPosition, withDestination, t, dark }) {
             : JAKARTA_CENTER
         }
         customMapStyle={dark ? MAP_STYLE_DARK : undefined}
-        onMapReady={fitKeSemuaMarker}
-        onLayout={fitKeSemuaMarker}
+        onMapReady={() => setSiap(true)}
       >
         {withDestination.map((j) => (
           <Polyline
@@ -651,9 +679,17 @@ function TrackingMap({ withPosition, withDestination, t, dark }) {
             strokeWidth={3}
           />
         ))}
+        {/* key = HANYA jobId (13 Sep 2026, audit performa) — SEBELUMNYA
+            lat/lng ikut disisipkan ke key, jadi GPS jitter sedetik saja
+            (angka berubah di desimal ke-5) bikin React anggap ini Marker
+            BARU dan unmount+remount PENUH, membatalkan sendiri manfaat
+            tracksViewChanges={false} di bawah (yang justru dipasang supaya
+            marker TIDAK di-re-render ulang tiap posisi berubah). Posisi
+            tetap ikut update normal lewat prop `coordinate` — react-native-
+            maps mengurus animasi pergeseran marker tanpa perlu remount. */}
         {withPosition.map((j) => (
           <Marker
-            key={`driver-${j.jobId}-${j.lastPosition.lat.toFixed(5)}-${j.lastPosition.lng.toFixed(5)}`}
+            key={`driver-${j.jobId}`}
             coordinate={{ latitude: j.lastPosition.lat, longitude: j.lastPosition.lng }}
             title={j.driverName || "Driver"}
             description={j.customerName || undefined}
@@ -782,26 +818,41 @@ function TrackingView({ tracking, theme: t, styles }) {
 // - Riwayat: rute yang SUDAH selesai (status COMPLETED), read-only, tap
 //   utk buka detail stop-nya — jawab "history rute yang selesai beserta
 //   datanya ... tanpa harus buka web".
-function RuteView({ subRute, setSubRute, ruteAktif, riwayat, riwayatTake, setRiwayatTake, onChanged, theme: t, styles }) {
+// Chip "Aktif"/"Riwayat" — diekstrak jadi komponen sendiri (13 Sep 2026,
+// audit performa) supaya bisa dipakai DUA tempat: di dalam RuteView
+// (ScrollView bersama, sub-tab Aktif) DAN sebagai header RiwayatRuteView
+// (FlashList sendiri, sub-tab Riwayat) — dua kontainer scroll BERBEDA
+// (lihat catatan di RiwayatRuteView), tapi kontrolnya harus konsisten.
+function RuteSubTabs({ subRute, setSubRute, styles }) {
+  return (
+    <View style={styles.periodeRow}>
+      {RUTE_SUB.map((s) => (
+        <Pressable
+          key={s.key}
+          style={[styles.periodeChip, subRute === s.key && styles.periodeChipActive]}
+          onPress={() => setSubRute(s.key)}
+        >
+          <Text style={[styles.periodeChipText, subRute === s.key && styles.periodeChipTextActive]}>{s.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+// RuteView SEKARANG cuma menangani sub-tab "Aktif" (13 Sep 2026, audit
+// performa) — "Riwayat" dipindah jadi cabang render TERPISAH di
+// AdminHomeScreen (RiwayatRuteView, FlashList sendiri). Alasan: FlashList
+// TIDAK BOLEH disarangkan di dalam ScrollView orientasi sama (peringatan
+// resmi RN) yang membungkus komponen ini — kalau dipaksa, virtualisasinya
+// jadi percuma total (ScrollView induk tetap me-render semua item
+// sekaligus). RuteAktifSubView TIDAK ikut divirtualisasi — datanya
+// dibatasi jumlah armada (8 orang, CLAUDE.md §1), bukan tumbuh tanpa batas
+// seperti riwayat.
+function RuteView({ subRute, setSubRute, ruteAktif, onChanged, theme: t, styles }) {
   return (
     <View style={{ gap: 12 }}>
-      <View style={styles.periodeRow}>
-        {RUTE_SUB.map((s) => (
-          <Pressable
-            key={s.key}
-            style={[styles.periodeChip, subRute === s.key && styles.periodeChipActive]}
-            onPress={() => setSubRute(s.key)}
-          >
-            <Text style={[styles.periodeChipText, subRute === s.key && styles.periodeChipTextActive]}>{s.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {subRute === "aktif" ? (
-        <RuteAktifSubView ruteAktif={ruteAktif} onChanged={onChanged} t={t} styles={styles} />
-      ) : (
-        <RiwayatRuteSubView riwayat={riwayat} riwayatTake={riwayatTake} setRiwayatTake={setRiwayatTake} t={t} styles={styles} />
-      )}
+      <RuteSubTabs subRute={subRute} setSubRute={setSubRute} styles={styles} />
+      <RuteAktifSubView ruteAktif={ruteAktif} onChanged={onChanged} t={t} styles={styles} />
     </View>
   );
 }
@@ -913,48 +964,66 @@ function RiwayatRuteItem({ route, expanded, onToggle, t, styles }) {
   );
 }
 
-function RiwayatRuteSubView({ riwayat, riwayatTake, setRiwayatTake, t, styles }) {
+// FlashList SUNGGUHAN (13 Sep 2026, audit performa — GANTI dari
+// RiwayatRuteSubView yang ScrollView+.map() polos). Riwayat Rute adalah
+// SATU-SATUNYA list di app ini yang datanya tumbuh tanpa batas alami
+// seiring waktu (rute selesai terus bertambah tiap hari, "Muat Lebih
+// Banyak" bisa dipencet berkali-kali sampai take mencapai ratusan) — jadi
+// satu-satunya yang benar-benar butuh virtualisasi, bukan sekadar ikut-
+// ikutan. Dirender sebagai SIBLING hero/BottomNavBar di AdminHomeScreen
+// (bukan child ScrollView bersama) — pola SAMA PERSIS dengan FlashList di
+// JobListScreen.js (isLoading/error/empty di-cek DULU sebelum FlashList
+// dipasang, bukan lewat ListEmptyComponent, supaya centering styles.center
+// konsisten dengan pola yang sudah terbukti jalan di sana).
+function RiwayatRuteView({ subRute, setSubRute, riwayat, riwayatTake, setRiwayatTake, theme: t, styles }) {
   const { data, isLoading, error, isFetching } = riwayat;
   const routes = data?.routes || [];
   const [expandedId, setExpandedId] = useState(null);
 
-  if (isLoading) {
-    return <View style={styles.center}><ActivityIndicator color={t.ACCENT} /></View>;
-  }
-  if (error) {
-    return <Text style={styles.errorText}>Gagal memuat riwayat: {error.message}</Text>;
-  }
-  if (routes.length === 0) {
-    return (
-      <View style={styles.center}>
-        <Route size={28} color={t.INK3} />
-        <Text style={[styles.emptyText, { marginTop: 8 }]}>Belum ada rute yang selesai.</Text>
-      </View>
-    );
-  }
   return (
-    <View style={{ gap: 10 }}>
-      {routes.map((r) => (
-        <RiwayatRuteItem
-          key={r.id}
-          route={r}
-          expanded={expandedId === r.id}
-          onToggle={() => setExpandedId((cur) => (cur === r.id ? null : r.id))}
-          t={t}
-          styles={styles}
+    <View style={{ flex: 1 }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 }}>
+        <RuteSubTabs subRute={subRute} setSubRute={setSubRute} styles={styles} />
+      </View>
+      {isLoading ? (
+        <View style={styles.center}><ActivityIndicator color={t.ACCENT} /></View>
+      ) : error ? (
+        <View style={styles.center}><Text style={styles.errorText}>Gagal memuat riwayat: {error.message}</Text></View>
+      ) : routes.length === 0 ? (
+        <View style={styles.center}>
+          <Route size={28} color={t.INK3} />
+          <Text style={[styles.emptyText, { marginTop: 8 }]}>Belum ada rute yang selesai.</Text>
+        </View>
+      ) : (
+        <FlashList
+          data={routes}
+          keyExtractor={(r) => r.id}
+          renderItem={({ item }) => (
+            <RiwayatRuteItem
+              route={item}
+              expanded={expandedId === item.id}
+              onToggle={() => setExpandedId((cur) => (cur === item.id ? null : item.id))}
+              t={t}
+              styles={styles}
+            />
+          )}
+          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+          // Heuristik "mungkin masih ada lagi": kalau jumlah baris yang
+          // balik PERSIS sama dengan take yang diminta, kemungkinan besar
+          // dipotong limit, bukan memang cuma segitu jumlahnya.
+          ListFooterComponent={
+            routes.length >= riwayatTake ? (
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => setRiwayatTake((n) => n + RIWAYAT_PAGE_SIZE)}
+                disabled={isFetching}
+              >
+                <Text style={styles.secondaryBtnText}>{isFetching ? "Memuat…" : "Muat Lebih Banyak"}</Text>
+              </Pressable>
+            ) : null
+          }
+          contentContainerStyle={styles.body}
         />
-      ))}
-      {/* Heuristik "mungkin masih ada lagi": kalau jumlah baris yang balik
-          PERSIS sama dengan take yang diminta, kemungkinan besar dipotong
-          limit, bukan memang cuma segitu jumlahnya. */}
-      {routes.length >= riwayatTake && (
-        <Pressable
-          style={styles.secondaryBtn}
-          onPress={() => setRiwayatTake((n) => n + RIWAYAT_PAGE_SIZE)}
-          disabled={isFetching}
-        >
-          <Text style={styles.secondaryBtnText}>{isFetching ? "Memuat…" : "Muat Lebih Banyak"}</Text>
-        </Pressable>
       )}
     </View>
   );
