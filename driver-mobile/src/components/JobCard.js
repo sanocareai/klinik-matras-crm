@@ -7,7 +7,7 @@
 // dark ikut sistem HP (lihat src/theme.js).
 import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, TextInput, StyleSheet, Linking } from "react-native";
-import { MapPin, Phone, Loader2 } from "lucide-react-native";
+import { MapPin, Phone, Loader2, Home } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import PaymentSection from "./PaymentSection";
 import JobProgressStepper from "./JobProgressStepper";
@@ -116,6 +116,19 @@ export default function JobCard({ job, onChanged }) {
         <View style={styles.complaintBanner}>
           <Text style={styles.complaintBannerText}>
             🚩 Job dari Kasus Komplain {job.complaintCase.caseNumber} — {COMPLAINT_CATEGORY_LABEL[job.complaintCase.category] || job.complaintCase.category}
+          </Text>
+        </View>
+      )}
+
+      {/* returnToDepotBefore (D-164, 13 September 2026, permintaan owner:
+          "sering juga 1 rute misal dari alamat 1,2, ke 3 nya balik dulu ke
+          klinik matras") — driver WAJIB lihat ini sebelum berangkat, sama
+          pola visual dengan complaintBanner di atas tapi warna oranye
+          (perhatian, bukan urgensi tinggi). */}
+      {job.returnToDepotBefore && (
+        <View style={[styles.complaintBanner, { backgroundColor: theme.ORANGE + "1A" }]}>
+          <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>
+            🏠 Kembali ke Klinik Matras dulu sebelum stop ini
           </Text>
         </View>
       )}

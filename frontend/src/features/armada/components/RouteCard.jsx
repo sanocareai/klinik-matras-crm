@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check, Map, Clock, MapPinned, MessageCircle, BedDouble } from "lucide-react";
+import { GripVertical, X, ArrowUpDown, Send, Ban, Trash2, Loader2, User, Users, Truck, Pencil, Check, Map, Clock, MapPinned, MessageCircle, BedDouble, Home } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
@@ -57,6 +57,7 @@ function estimasiJamSingkat(timeWindow) {
 export default function RouteCard({
   route, drivers, vehicles, helpers = [], draggingJobId,
   onDrop, onReorder, onRemoveJob, onAssign, onPublish, onCancel, onDelete, onOptimize, onOpenJob,
+  onToggleReturnToDepot,
 }) {
   const [dragOverIdx, setDragOverIdx] = useState(null);
   // Stop yang SEDANG diseret (D-072, 4 September 2026) — SEBELUMNYA tidak
@@ -762,6 +763,17 @@ export default function RouteCard({
                   draggingStopId === j.id && "scale-[0.97] opacity-40"
                 )}
               >
+                {/* Pita "kembali ke Klinik Matras dulu" (D-164, 13 September
+                    2026) — ditempel di ATAS kartu stop yang ditandai, bukan
+                    sebagai item terpisah di grid (grid 2 kolom bikin item
+                    terpisah bisa jatuh di kolom manapun, ambigu "sebelum
+                    stop yang mana"). Menempel di dalam kartu stop TARGET
+                    selalu jelas: "sebelum stop INI, balik dulu ke klinik". */}
+                {j.returnToDepotBefore && (
+                  <div className="-mx-2.5 -mt-2 mb-0.5 flex items-center gap-1.5 rounded-t-btn bg-orangebg px-2.5 py-1 text-[10.5px] font-bold text-orange">
+                    <Home size={11} className="shrink-0" /> Kembali ke Klinik Matras dulu
+                  </div>
+                )}
                 {/* Kelompok 1 — STATUS: nomor urut jadi chip bulat (D-140,
                     laporan owner: nomor urut "kalah tonjol", padahal di
                     kartu rute urutan stop adalah info yang paling sering
@@ -840,6 +852,34 @@ export default function RouteCard({
                       >
                         <MapPinned size={16} />
                       </a>
+                    )}
+                    {/* Toggle "kembali dulu ke Klinik Matras sebelum stop
+                        ini" (D-164, 13 September 2026, permintaan owner:
+                        "sering juga 1 rute misal dari alamat 1,2, ke 3 nya
+                        balik dulu ke klinik matras"). Ikon Home menyala
+                        (bg-orangebg) kalau aktif — dipilih oranye (bukan
+                        accent biru) supaya beda jelas dari status "aktif
+                        terpilih" biasa di kartu ini, konsisten dengan
+                        peringatan/perhatian-khusus di tempat lain (EST jam
+                        juga oranye). Sengaja TIDAK dikunci isEditable saja
+                        seperti tombol X di atas — dispatcher perlu bisa
+                        menandai ini juga untuk rute yang sudah terbit,
+                        sama alasan dengan editingReason mode edit darurat. */}
+                    {isEditable && onToggleReturnToDepot && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          jalankan(() => onToggleReturnToDepot(route, j.id, !j.returnToDepotBefore));
+                        }}
+                        title={j.returnToDepotBefore ? "Batalkan: kembali ke Klinik Matras dulu sebelum stop ini" : "Tandai: kembali ke Klinik Matras dulu sebelum stop ini"}
+                        className={cn(
+                          "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors",
+                          j.returnToDepotBefore ? "bg-orangebg text-orange" : "text-ink3 hover:bg-orangebg hover:text-orange"
+                        )}
+                      >
+                        <Home size={14} />
+                      </button>
                     )}
                     {/* Stop yang SUDAH TUNTAS (COMPLETED/FAILED) TIDAK BOLEH
                         dikeluarkan dari rute BEGITU SAJA (8 September 2026)

@@ -409,11 +409,22 @@ function stopParam(stop) {
 export function buildRouteMapsUrl(jobs) {
   const terurut = [...jobs].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
   const excluded = terurut.filter((j) => j.lat == null || j.lng == null);
-  const params = terurut.map(stopParam).filter(Boolean);
+  const depotParam = `${DEPOT.lat},${DEPOT.lng}`;
+  // returnToDepotBefore (D-164, 13 September 2026) — sisipkan DEPOT sebagai
+  // waypoint TAMBAHAN persis SEBELUM stop yang ditandai, bukan cuma di
+  // origin/destination seperti sebelumnya. Disisipkan APA ADANYA (tidak
+  // peduli stop itu sendiri punya lat/lng atau tidak) — detour ke klinik
+  // tetap terjadi secara fisik terlepas dari apakah stop-nya kebetulan
+  // dikecualikan link-only.
+  const params = [];
+  for (const j of terurut) {
+    if (j.returnToDepotBefore) params.push(depotParam);
+    const p = stopParam(j);
+    if (p) params.push(p);
+  }
 
   if (params.length === 0) return { url: null, stopCount: 0, excludedCount: excluded.length };
 
-  const depotParam = `${DEPOT.lat},${DEPOT.lng}`;
   const url =
     `https://www.google.com/maps/dir/?api=1&travelmode=driving` +
     `&origin=${depotParam}&destination=${depotParam}` +

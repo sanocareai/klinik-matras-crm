@@ -2003,6 +2003,19 @@ model Job {
   // driver+scheduledDate+type yang sama, tidak lintas grup.
   sequence Int? @map("sequence")
 
+  // returnToDepotBefore (13 September 2026, D-164 — permintaan owner:
+  // "sering juga 1 rute misal dari alamat 1,2, ke 3 nya balik dulu ke
+  // klinik matras"). Sebelum field ini, depot (konstanta DEPOT di
+  // services/maps.js) SELALU implisit — cuma dipakai sebagai titik AWAL
+  // & AKHIR rute (route/summary, buildRouteMapsUrl, polyline OSRM), TIDAK
+  // PERNAH bisa disisipkan di TENGAH urutan stop. Field ini murni PENANDA
+  // (bukan stop sungguhan/bukan Job baru) — kalau true, artinya driver
+  // singgah balik ke Klinik Matras SEBELUM mengerjakan job ini, disisipkan
+  // sebagai titik lewat tambahan di kalkulasi jarak/rute/link Maps/pesan
+  // WA. `Job.sequence` TETAP urutan stop asli, tidak berubah — depot
+  // bukan entri baru di urutan, cuma metadata di job SESUDAHNYA.
+  returnToDepotBefore Boolean @default(false) @map("return_to_depot_before")
+
   // Snapshot alamat PER KUNJUNGAN, bukan tabel Address bersama — CRM ini
   // belum punya entitas Address (Customer cuma punya field "city"). PRD §5.1:
   // GPS yang benar didapat dari pin SUKSES PERTAMA di lapangan, jadi ini

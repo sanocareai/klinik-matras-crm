@@ -853,7 +853,16 @@ function RiwayatRuteItem({ route, expanded, onToggle, t, styles }) {
             <Text style={styles.cardMeta}>Tidak ada stop di rute ini.</Text>
           ) : (
             [...route.jobs].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0)).map((j) => (
-              <View key={j.id} style={{ backgroundColor: t.TRACK_BG, borderRadius: 10, padding: 8 }}>
+              <View key={j.id}>
+                {/* returnToDepotBefore (D-164, 13 Sep 2026) — sama pola
+                    dengan RouteCard.jsx web: pita di ATAS stop yang
+                    ditandai, bukan entri terpisah di daftar. */}
+                {j.returnToDepotBefore && (
+                  <Text style={[styles.cardMeta, { color: t.ORANGE, fontWeight: "700", marginBottom: 3 }]}>
+                    🏠 Kembali ke Klinik Matras dulu
+                  </Text>
+                )}
+              <View style={{ backgroundColor: t.TRACK_BG, borderRadius: 10, padding: 8 }}>
                 <View style={styles.rowBetween}>
                   <Text style={[styles.cardMeta, { fontWeight: "700", color: t.INK }]} numberOfLines={1}>
                     {customerOf(j) || "Tanpa nama"}
@@ -869,6 +878,7 @@ function RiwayatRuteItem({ route, expanded, onToggle, t, styles }) {
                 {j.status === "FAILED" && j.failureReason ? (
                   <Text style={[styles.cardMeta, { color: t.RED, marginTop: 2 }]} numberOfLines={2}>{j.failureReason}</Text>
                 ) : null}
+              </View>
               </View>
             ))
           )}

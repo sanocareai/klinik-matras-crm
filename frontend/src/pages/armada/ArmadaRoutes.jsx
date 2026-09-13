@@ -228,6 +228,14 @@ export default function ArmadaRoutes() {
     await terapkanUrutan(route, idsBaru, reason);
   }
 
+  // returnToDepotBefore (D-164, 13 September 2026) — toggle per-stop, TIDAK
+  // menyentuh sequence/keanggotaan rute (beda dari fungsi di atas), jadi
+  // cukup panggil endpoint job-nya langsung lalu `load()`.
+  async function ubahKembaliKeDepot(route, jobId, value) {
+    await api.toggleReturnToDepot(jobId, value);
+    await load();
+  }
+
   async function ubahPenugasan(route, patch, reason) {
     await api.updateRoute(route.id, reason ? { ...patch, reason } : patch);
     await load();
@@ -516,6 +524,7 @@ export default function ArmadaRoutes() {
                     onDrop={tambahKeRute}
                     onReorder={urutkanUlang}
                     onRemoveJob={keluarkanDariRute}
+                    onToggleReturnToDepot={ubahKembaliKeDepot}
                     onAssign={ubahPenugasan}
                     onPublish={terbitkan}
                     onCancel={batalkan}

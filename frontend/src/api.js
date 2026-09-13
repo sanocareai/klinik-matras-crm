@@ -216,6 +216,10 @@ export const api = {
   // guard di backend armada.js PATCH /routes/:id/jobs. undefined/kosong
   // untuk rute DRAFT (tidak diminta, tidak dikirim juga aman).
   setRouteJobs: (id, jobIds, reason) => request(`/armada/routes/${id}/jobs`, { method: "PATCH", body: JSON.stringify({ jobIds, ...(reason && { reason }) }) }),
+  // returnToDepotBefore (D-164, 13 September 2026) — "kembali dulu ke
+  // Klinik Matras sebelum stop ini", lihat catatan panjang di armada.js.
+  toggleReturnToDepot: (jobId, returnToDepotBefore) =>
+    request(`/armada/jobs/${jobId}/return-to-depot`, { method: "PATCH", body: JSON.stringify({ returnToDepotBefore }) }),
   publishRoute: (id) => request(`/armada/routes/${id}/publish`, { method: "POST" }),
   // Kirim ULANG broadcast rute ke Natasha tanpa mengedit apa pun (6 September
   // 2026) — beda dari publish (sekali, DRAFT->PUBLISHED) atau edit darurat

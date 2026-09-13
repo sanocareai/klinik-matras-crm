@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Loader2, Map, MapPin,
+  AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Home, Loader2, Map, MapPin,
   Navigation, Phone, RefreshCw, Truck, Wallet, WifiOff, X,
 } from "lucide-react";
 import { compressImage } from "../utils/compressImage.js";
@@ -367,6 +367,17 @@ function JobCard({ job, onChanged, onQueued, pending }) {
           {job.type === "PICKUP" ? "Ambil" : "Kirim"}
         </Badge>
       </div>
+
+      {/* returnToDepotBefore (D-164, 13 September 2026, permintaan owner:
+          "sering juga 1 rute misal dari alamat 1,2, ke 3 nya balik dulu ke
+          klinik matras") — driver WAJIB tahu ini sebelum berangkat ke stop
+          ini, bukan cuma info dispatcher di Route Planner. Sama pola visual
+          dengan banner offline-queue di atas (bg-orangebg/text-orange). */}
+      {job.returnToDepotBefore && (
+        <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-orangebg px-3 py-2 text-xs font-semibold text-orange">
+          <Home className="h-3.5 w-3.5 shrink-0" /> Kembali ke Klinik Matras dulu sebelum stop ini
+        </div>
+      )}
 
       <div className="mt-2 flex flex-wrap gap-1">
         {job.units.map((ju) => (

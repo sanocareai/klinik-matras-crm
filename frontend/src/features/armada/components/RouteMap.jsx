@@ -61,41 +61,66 @@ function EtaBadge({ position, children }) {
   );
 }
 
-// SATU rute (garis + marker stop-nya). Minta geometri jalan asli ke OSRM
-// begitu daftar stop-nya berubah; sementara menunggu/gagal, tampil garis
-// lurus dulu (TIDAK pernah kosong sama sekali) supaya dispatcher tetap lihat
-// urutan rute. Titik yang diminta ke OSRM SELALU [DEPOT, ...stops, DEPOT]
-// (D-076) — garis & badge waktu tempuh jadi bulat-balik dari/ke klinik.
+// Titik jalur SATU rute, dengan DEPOT disisipkan bukan cuma di depan/
+// belakang (D-076) TAPI JUGA di tengah untuk tiap stop ber-flag
+// `returnToDepotBefore` (D-164, 13 September 2026 — permintaan owner:
+// "sering juga 1 rute misal dari alamat 1,2, ke 3 nya balik dulu ke klinik
+// matras"). `posisiStopDiTitik[i]` = indeks titik stop ke-i di dalam array
+// `titik` (BUKAN sama dengan `i` lagi begitu ada penyisipan depot) — dipakai
+// utk cocokkan legDurations OSRM (1 leg per pasangan titik berurutan) ke
+// stop yang benar, supaya badge ETA kumulatif tetap akurat walau rutenya
+// sudah tidak lurus stop-ke-stop.
+function titikRuteDenganDepot(stops) {
+  const titik = [{ lat: DEPOT.lat, lng: DEPOT.lng }];
+  const posisiStopDiTitik = [];
+  for (const s of stops) {
+    if (s.returnToDepotBefore) titik.push({ lat: DEPOT.lat, lng: DEPOT.lng });
+    titik.push({ lat: s.lat, lng: s.lng });
+    posisiStopDiTitik.push(titik.length - 1);
+  }
+  titik.push({ lat: DEPOT.lat, lng: DEPOT.lng });
+  return { titik, posisiStopDiTitik };
+}
+
+// SATU rute (garis + marker stop-nya, + marker depot TAMBAHAN di titik
+// balik-tengah kalau ada). Minta geometri jalan asli ke OSRM begitu daftar
+// stop-nya berubah; sementara menunggu/gagal, tampil garis lurus dulu
+// (TIDAK pernah kosong sama sekali) supaya dispatcher tetap lihat urutan
+// rute.
 function RouteLine({ route, warna, stops, google, activeStop, onStopClick, onStopClose }) {
   const [jalanAsli, setJalanAsli] = useState(null); // { coords, legDurations } | null
+
+  const { titik, posisiStopDiTitik } = useMemo(() => titikRuteDenganDepot(stops), [stops]);
 
   useEffect(() => {
     setJalanAsli(null);
     if (stops.length === 0) return;
     let batal = false;
-    const titik = [[DEPOT.lat, DEPOT.lng], ...stops.map((s) => [s.lat, s.lng]), [DEPOT.lat, DEPOT.lng]];
-    getRoadRoute(titik).then((hasil) => {
+    getRoadRoute(titik.map((t) => [t.lat, t.lng])).then((hasil) => {
       if (!batal && hasil) setJalanAsli(hasil);
     });
     return () => { batal = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stops.map((s) => `${s.id}:${s.lat}:${s.lng}`).join(",")]);
+  }, [stops.map((s) => `${s.id}:${s.lat}:${s.lng}:${s.returnToDepotBefore ? 1 : 0}`).join(",")]);
 
-  const garisLurus = [
-    { lat: DEPOT.lat, lng: DEPOT.lng },
-    ...stops.map((s) => ({ lat: s.lat, lng: s.lng })),
-    { lat: DEPOT.lat, lng: DEPOT.lng },
-  ];
   const posisiGaris = jalanAsli?.coords
     ? jalanAsli.coords.map(([lat, lng]) => ({ lat, lng }))
-    : garisLurus;
+    : titik;
+
+  // Depot tengah (13 September 2026) — marker TAMBAHAN persis di titik
+  // balik, dipisah dari marker depot utama (start/akhir) di RouteMap agar
+  // key-nya unik & tidak bentrok kalau lebih dari 1 rute punya detour.
+  const depotTengah = stops.filter((s) => s.returnToDepotBefore);
 
   return (
     <>
       <Polyline path={posisiGaris} options={{ strokeColor: warna, strokeWeight: 4, strokeOpacity: 0.75, geodesic: false }} />
+      {depotTengah.map((s) => (
+        <Marker key={`depot-tengah-${s.id}`} position={{ lat: DEPOT.lat, lng: DEPOT.lng }} icon={depotIcon(google)} title="Kembali ke Klinik Matras" />
+      ))}
       {stops.map((s, i) => {
         const menitKumulatif = jalanAsli?.legDurations
-          ? jalanAsli.legDurations.slice(0, i + 1).reduce((a, b) => a + b, 0)
+          ? jalanAsli.legDurations.slice(0, posisiStopDiTitik[i]).reduce((a, b) => a + b, 0)
           : null;
         const posisi = { lat: s.lat, lng: s.lng };
         return (
@@ -107,6 +132,7 @@ function RouteLine({ route, warna, stops, google, activeStop, onStopClick, onSto
                 <div className="text-xs">
                   <p className="font-semibold">{route.code} · stop {i + 1}</p>
                   <p>{s.addressText}</p>
+                  {s.returnToDepotBefore && <p className="mt-1 font-semibold text-orange">↩ Kembali ke Klinik Matras dulu sebelum stop ini</p>}
                 </div>
               </InfoWindow>
             )}

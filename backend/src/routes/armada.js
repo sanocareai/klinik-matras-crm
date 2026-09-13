@@ -430,6 +430,10 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
     const tipe = isPickup ? "Pengambilan" : "Pengiriman";
     const alamat = j.addressText?.trim() || "(alamat belum diisi)";
     return [
+      // returnToDepotBefore (D-164, 13 September 2026) — baris penanda
+      // SEBELUM stop ini, bukan bagian dari nomor urut stop (nomornya
+      // TETAP idx+1 asli, depot bukan stop sungguhan).
+      ...(j.returnToDepotBefore ? ["", "↩️ *Kembali dulu ke Klinik Matras*"] : []),
       "",
       `${idx + 1}. ${emoji}${nama} - ${tipe}`,
       // Produk+ukuran DIPINDAH ke urutan ke-2 (9 September 2026, laporan
@@ -2498,8 +2502,19 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
     const geocoded = route.jobs.filter((j) => j.lat != null && j.lng != null);
     if (geocoded.length === route.jobs.length && route.jobs.length >= 1) {
       try {
-        const stopsRuteSaja = [...route.jobs].sort((a, b) => (a.sequence || 0) - (b.sequence || 0)).map((j) => ({ lat: j.lat, lng: j.lng }));
-        const legs = await routeLegs([DEPOT, ...stopsRuteSaja, DEPOT]);
+        // returnToDepotBefore (D-164, 13 September 2026) — sisipkan DEPOT
+        // di TENGAH titik yang dihitung routeLegs, bukan cuma di depan/
+        // belakang seperti sebelumnya, supaya plannedDistanceKm/
+        // plannedDurationMin mencerminkan detour balik-ke-klinik yang
+        // SUNGGUHAN terjadi, bukan cuma perjalanan stop-ke-stop langsung.
+        const stopsRuteSaja = [...route.jobs].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+        const titik = [DEPOT];
+        for (const j of stopsRuteSaja) {
+          if (j.returnToDepotBefore) titik.push(DEPOT);
+          titik.push({ lat: j.lat, lng: j.lng });
+        }
+        titik.push(DEPOT);
+        const legs = await routeLegs(titik);
         let meters = 0, seconds = 0;
         for (const leg of legs) { if (leg) { meters += leg.distanceMeters; seconds += leg.durationSeconds; } }
         plannedDistanceKm = meters > 0 ? Math.round((meters / 1000) * 100) / 100 : null;
@@ -3748,6 +3763,27 @@ armadaRouter.patch("/jobs/:id/external-courier", requirePermission(P.JOB_WRITE),
     if (Object.keys(data).length === 0) throw new ArmadaError("Tidak ada field yang diubah");
 
     const job = await prisma.job.update({ where: { id: req.params.id }, data, include: jobInclude });
+    res.json(job);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// PATCH /api/armada/jobs/:id/return-to-depot — tandai/batalkan "driver
+// balik dulu ke Klinik Matras sebelum stop ini" (D-164, 13 September 2026,
+// permintaan owner: "sering juga 1 rute misal dari alamat 1,2, ke 3 nya
+// balik dulu ke klinik matras"). ROUTE_WRITE (BUKAN JOB_WRITE) — ini
+// metadata PERENCANAAN rute, permission SAMA dengan PATCH /routes/:id/jobs
+// (reorder stop), bukan operasi job driver sehari-hari.
+armadaRouter.patch("/jobs/:id/return-to-depot", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const { returnToDepotBefore } = req.body;
+    if (typeof returnToDepotBefore !== "boolean") throw new ArmadaError("returnToDepotBefore wajib boolean");
+    const job = await prisma.job.update({
+      where: { id: req.params.id },
+      data: { returnToDepotBefore },
+      include: jobInclude,
+    });
     res.json(job);
   } catch (err) {
     handleErr(err, res);
