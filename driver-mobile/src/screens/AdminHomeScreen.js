@@ -7,29 +7,33 @@
 // (reschedule, edit rute, dst) tetap di web untuk sekarang — app ini
 // jawab "gimana progress hari ini" cepat dari HP, bukan menggantikan
 // Route Planner. Light/dark ikut sistem HP (lihat src/theme.js).
-import React, { useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl, Linking } from "react-native";
+import React, { useMemo, useRef, useState } from "react";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl, Linking, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import { Truck, Route, CheckCircle2, XCircle, Clock, Award, Home, AlertTriangle, Navigation, MapPin } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
 import { useIncentiveSummary } from "../hooks/useIncentiveSummary";
 import { relatifWaktu, formatRupiah } from "../lib/jobHelpers";
+import { MAP_STYLE_DARK } from "../lib/googleMapStyle";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
 
 // Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
 // dulu di atas konten, lihat BottomNavBar.js.
 // Tab Live Tracking (13 Sep 2026, permintaan owner: "live tracking bisa
-// dilakukan di web/apps" — web sudah punya papan peta penuh di
-// ArmadaTracking.jsx, GET /armada/tracking; sudah dipanggil `useAdminToday`
-// di bawah tapi cuma dipakai utk lastSeen driver, datanya belum ditampilkan
-// sendiri). App ini TIDAK pakai react-native-maps (butuh native rebuild +
-// Google Maps API key Android, tidak bisa lewat OTA) — pola yang SUDAH ada
-// di app ini (JobCard.js "Peta") adalah buka Google Maps eksternal lewat
-// Linking, jadi tab ini ikut pola yang sama: daftar driver EN_ROUTE +
-// tombol buka posisi/rute di Google Maps.
+// dilakukan di web/apps"; PETA ASLI ditambah sehari kemudian setelah owner
+// kirim key Maps Android baru — web sudah punya papan peta penuh di
+// ArmadaTracking.jsx, GET /armada/tracking sudah ikut dipanggil
+// `useAdminToday` sejak awal). react-native-maps BUTUH native rebuild
+// (bukan OTA) — versionCode dinaikkan di app.json, build baru WAJIB
+// diinstal manual sekali oleh owner (bukan auto-update lewat OTA seperti
+// biasa; OTA jalan normal lagi SETELAH itu). Rute driver->tujuan di sini
+// garis LURUS (bukan road-matched OSRM seperti web) — sengaja, supaya tidak
+// menduplikasi seluruh services/osrm.js cuma untuk layar ringkasan "sekilas
+// lihat", bukan navigasi turn-by-turn.
 const TABS = [
   { key: "hari-ini", label: "Hari Ini", icon: Home },
   { key: "driver", label: "Driver", icon: Truck },
@@ -311,13 +315,123 @@ function ruteMapsUrl(t) {
   return `https://www.google.com/maps/dir/?api=1&origin=${t.lastPosition.lat},${t.lastPosition.lng}&destination=${dest}`;
 }
 
+// Marker driver — lingkaran ACCENT + ikon truck, dibuat dari View biasa
+// (bukan Marker.image) supaya warnanya ikut tema langsung. tracksViewChanges
+//={false} SENGAJA (bukan lupa) — marker di sini statis sekali render per
+// posisi baru (key sudah termasuk lat/lng, lihat pemanggil), true di sini
+// cuma memboroskan render setiap frame tanpa manfaat, pola umum
+// react-native-maps utk custom marker yang tidak animasi.
+function DriverMarkerDot({ t }) {
+  return (
+    <View style={[dotStyles.wrap, { backgroundColor: t.ACCENT, borderColor: t.SURFACE }]}>
+      <Truck size={13} color="#FFFFFF" />
+    </View>
+  );
+}
+function DestinationMarkerDot({ t }) {
+  return (
+    <View style={[dotStyles.wrap, { backgroundColor: t.RED, borderColor: t.SURFACE }]}>
+      <MapPin size={13} color="#FFFFFF" />
+    </View>
+  );
+}
+const dotStyles = StyleSheet.create({
+  wrap: {
+    width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center",
+    borderWidth: 2,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3, elevation: 4,
+  },
+});
+
+const JAKARTA_CENTER = { latitude: -6.2088, longitude: 106.8456, latitudeDelta: 0.15, longitudeDelta: 0.15 };
+
+// Peta asli (13 Sep 2026) — SEMUA job EN_ROUTE dengan posisi GPS, auto-fit
+// ke batas semua marker tiap kali datanya berubah (poll 30 detik). Rute
+// posisi->tujuan garis LURUS (lihat catatan di atas import) — beda dari web
+// yang road-matched OSRM.
+function TrackingMap({ withPosition, withDestination, t, dark }) {
+  const mapRef = useRef(null);
+
+  function fitKeSemuaMarker() {
+    const map = mapRef.current;
+    if (!map) return;
+    const titik = [
+      ...withPosition.map((j) => ({ latitude: j.lastPosition.lat, longitude: j.lastPosition.lng })),
+      ...withDestination.map((j) => ({ latitude: j.destinationLat, longitude: j.destinationLng })),
+    ];
+    if (titik.length === 0) return;
+    map.fitToCoordinates(titik, { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true });
+  }
+
+  return (
+    <View style={{ height: 260, borderRadius: 14, overflow: "hidden", marginBottom: 10 }}>
+      <MapView
+        ref={mapRef}
+        style={{ flex: 1 }}
+        provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
+        initialRegion={
+          withPosition.length > 0
+            ? { latitude: withPosition[0].lastPosition.lat, longitude: withPosition[0].lastPosition.lng, latitudeDelta: 0.08, longitudeDelta: 0.08 }
+            : JAKARTA_CENTER
+        }
+        customMapStyle={dark ? MAP_STYLE_DARK : undefined}
+        onMapReady={fitKeSemuaMarker}
+        onLayout={fitKeSemuaMarker}
+      >
+        {withDestination.map((j) => (
+          <Polyline
+            key={`jalur-${j.jobId}`}
+            coordinates={[
+              { latitude: j.lastPosition.lat, longitude: j.lastPosition.lng },
+              { latitude: j.destinationLat, longitude: j.destinationLng },
+            ]}
+            strokeColor={t.ACCENT}
+            strokeWidth={3}
+          />
+        ))}
+        {withPosition.map((j) => (
+          <Marker
+            key={`driver-${j.jobId}-${j.lastPosition.lat.toFixed(5)}-${j.lastPosition.lng.toFixed(5)}`}
+            coordinate={{ latitude: j.lastPosition.lat, longitude: j.lastPosition.lng }}
+            title={j.driverName || "Driver"}
+            description={j.customerName || undefined}
+            tracksViewChanges={false}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <DriverMarkerDot t={t} />
+          </Marker>
+        ))}
+        {withDestination.map((j) => (
+          <Marker
+            key={`tujuan-${j.jobId}`}
+            coordinate={{ latitude: j.destinationLat, longitude: j.destinationLng }}
+            title={`Tujuan — ${j.customerName || ""}`}
+            description={j.addressText || undefined}
+            tracksViewChanges={false}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <DestinationMarkerDot t={t} />
+          </Marker>
+        ))}
+      </MapView>
+    </View>
+  );
+}
+
 // Tab Live Tracking (13 Sep 2026) — posisi GPS TERAKHIR tiap job yang
 // sedang EN_ROUTE, data SAMA dengan papan Live Tracking web
 // (ArmadaTracking.jsx, GET /armada/tracking), sudah ikut poll 30 detik
-// `useAdminToday`. Tanpa peta di dalam app (lihat catatan di TABS) — buka
-// posisi/rute di Google Maps eksternal, sama seperti tombol "Peta" di
-// JobCard driver.
+// `useAdminToday`. Peta asli di atas (TrackingMap) + kartu detail per
+// driver di bawah (tombol buka Google Maps eksternal tetap ada — pelengkap
+// utk rute turn-by-turn yang peta di dalam app ini tidak coba tiru).
 function TrackingView({ tracking, theme: t, styles }) {
+  const dark = t.statusBarStyle === "light"; // konvensi token, lihat theme.js
+  const withPosition = useMemo(() => tracking.filter((j) => j.lastPosition), [tracking]);
+  const withDestination = useMemo(
+    () => withPosition.filter((j) => j.destinationLat != null && j.destinationLng != null),
+    [withPosition]
+  );
+
   if (tracking.length === 0) {
     return (
       <View style={styles.center}>
@@ -328,6 +442,9 @@ function TrackingView({ tracking, theme: t, styles }) {
   }
   return (
     <View style={{ gap: 10 }}>
+      {withPosition.length > 0 && (
+        <TrackingMap withPosition={withPosition} withDestination={withDestination} t={t} dark={dark} />
+      )}
       {tracking.map((tr) => {
         const posisiUrl = posisiMapsUrl(tr);
         const ruteUrl = ruteMapsUrl(tr);
