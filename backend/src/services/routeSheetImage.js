@@ -109,6 +109,17 @@ const WARNA_TIPE = {
   DELIVERY: { bg: "#e9f3ec", teks: "#248a3d" }, // hijau — samakan dgn --green terang
 };
 
+// SEWA (14 September 2026, D-168, laporan owner — gambar Tabel Rute
+// menampilkan order SWS-14092026-007 sebagai "PENGAMBILAN" biru biasa,
+// padahal order kasur SEWA seharusnya kelihatan beda sekilas lihat). Chip
+// SEWA SELALU oranye, TERLEPAS dari job.type PICKUP/DELIVERY-nya — sama
+// konvensi dengan badge "Sewa" + garis aksen kiri oranye yang SUDAH ada di
+// web (frontend jobStatus.js#isRentalOrder: "Kasur SEWA ... penanda
+// TAMBAHAN di atasnya", bukan pengganti warna tipe). Hex dari --orange tema
+// TERANG (tokens.css) + bg 10% di atas putih, pola perhitungan SAMA dengan
+// WARNA_TIPE di atas.
+const WARNA_SEWA = { bg: "#faebe6", teks: "#c93400" };
+
 export async function buildRouteSheetImage(route) {
   const jobs = route.jobs || [];
   if (jobs.length === 0) return null;
@@ -137,7 +148,7 @@ export async function buildRouteSheetImage(route) {
     const resi = order?.orderNumber || "-";
     const kota = order?.deliveryCity || "-";
 
-    return { no: String(idx + 1), resi, tipe, tipeRaw: j.type, customer, sales, phone, produk, alamat, kota, estimasi };
+    return { no: String(idx + 1), resi, tipe, tipeRaw: j.type, kategori: order?.category || null, customer, sales, phone, produk, alamat, kota, estimasi };
   });
 
   // Hitung tinggi tiap baris dari kolom PALING BANYAK wrap (biasanya Alamat
@@ -177,8 +188,9 @@ export async function buildRouteSheetImage(route) {
     let cx = 0;
     for (const k of KOLOM) {
       if (k.key === "tipe") {
-        // Chip biru/hijau per tipe (lihat catatan WARNA_TIPE di atas)
-        const warna = WARNA_TIPE[baris[i].tipeRaw] || WARNA_TIPE.DELIVERY;
+        // Chip biru/hijau per tipe, ATAU oranye kalau order kategori SEWA
+        // (lihat catatan WARNA_SEWA di atas — menang atas WARNA_TIPE).
+        const warna = baris[i].kategori === "SEWA" ? WARNA_SEWA : (WARNA_TIPE[baris[i].tipeRaw] || WARNA_TIPE.DELIVERY);
         parts.push(`<rect x="${cx + 4}" y="${y + h / 2 - 11}" width="${k.width - 8}" height="22" rx="4" fill="${warna.bg}"/>`);
         parts.push(`<text x="${cx + k.width / 2}" y="${y + h / 2 + 4}" font-size="10.5" font-weight="700" fill="${warna.teks}" text-anchor="middle">${escapeXml(w.tipe[0])}</text>`);
       } else {

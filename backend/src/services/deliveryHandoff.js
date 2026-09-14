@@ -23,8 +23,24 @@
 // muatan job yang sudah dikomit dispatcher tanpa sepengetahuannya; unit
 // berikutnya mulai job UNSCHEDULED baru.
 
+// Alamat sales (Order.deliveryAddress/deliveryCity) diisi LANGSUNG ke job
+// baru — sama alasan & pola dengan D-040 (alamatDariOrder() di
+// armadaAutoJob.js untuk job PICKUP otomatis): tanpa ini, job DELIVERY yang
+// lahir di sini SELALU addressText null, memaksa dispatcher klik "Pakai
+// alamat order" satu-satu di JobDetailDrawer. Ditemukan 14 September 2026
+// saat membetulkan D-168 (job auto SEWA) — celah ini SEBENARNYA sudah ada
+// sejak fungsi ini pertama dibuat (24 Agustus 2026), untuk SEMUA jalur yang
+// memanggilnya (unit tuntas produksi, dropdown status manual "Siap Kirim"),
+// bukan cuma SEWA — diperbaiki di sini sekali untuk semua pemanggil.
+function alamatDariOrder(order) {
+  return [order?.deliveryAddress, order?.deliveryCity].filter(Boolean).join(", ") || null;
+}
+
 export async function suggestDeliveryJob(tx, unitId) {
-  const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, orderId: true } });
+  const unit = await tx.unit.findUnique({
+    where: { id: unitId },
+    select: { id: true, orderId: true, order: { select: { deliveryAddress: true, deliveryCity: true } } },
+  });
   if (!unit) return;
 
   // Jaring pengaman: unit ini sudah pernah dimasukkan ke job DELIVERY
@@ -39,11 +55,18 @@ export async function suggestDeliveryJob(tx, unitId) {
 
   const existing = await tx.job.findFirst({
     where: { orderId: unit.orderId, type: "DELIVERY", status: "UNSCHEDULED" },
-    select: { id: true },
+    select: { id: true, addressText: true },
   });
 
   if (existing) {
     await tx.jobUnit.create({ data: { jobId: existing.id, unitId } });
+    // Job existing yang belum sempat punya alamat (dibuat sebelum fix ini)
+    // — lengkapi juga, konsisten dengan job baru di bawah. Job yang SUDAH
+    // punya alamat TIDAK ditimpa.
+    if (!existing.addressText) {
+      const alamat = alamatDariOrder(unit.order);
+      if (alamat) await tx.job.update({ where: { id: existing.id }, data: { addressText: alamat } });
+    }
     return;
   }
 
@@ -52,6 +75,7 @@ export async function suggestDeliveryJob(tx, unitId) {
       type: "DELIVERY",
       orderId: unit.orderId,
       status: "UNSCHEDULED",
+      addressText: alamatDariOrder(unit.order),
       units: { create: [{ unitId }] },
     },
   });

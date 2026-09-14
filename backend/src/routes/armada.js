@@ -518,6 +518,12 @@ const EXTERNAL_COURIER_JOB_SELECT = {
       // kurir eksternal tetap identik dengan laporan rute biasa (lihat
       // komentar di atas const ini).
       deliveryCity: true,
+      // category (14 September 2026, D-168) — chip Tipe oranye utk order
+      // SEWA di buildRouteSheetImage (lihat WARNA_SEWA). Kurir eksternal
+      // pada praktiknya nyaris tidak pernah SEWA, tapi tanpa field ini
+      // kalaupun terjadi chip-nya akan diam-diam jatuh ke biru/hijau biasa
+      // — sama komentar "select yang SAMA supaya visual identik" di atas.
+      category: true,
       customer: { select: { name: true, phone: true, assignedSales: { select: { name: true } } } },
     },
   },

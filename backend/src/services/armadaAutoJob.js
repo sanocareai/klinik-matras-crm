@@ -31,6 +31,7 @@
 // terpisah, bukan tebakan diam-diam ditambahkan di sini.
 
 import { ACTIVE_JOB_STATUSES } from "./jobStatus.js";
+import { suggestDeliveryJob } from "./deliveryHandoff.js";
 
 /**
  * Pastikan setiap unit AWAITING_PICKUP milik `orderId` yang belum terikat
@@ -118,4 +119,31 @@ export async function ensurePickupJobForOrder(tx, order) {
     select: { id: true },
   });
   return job.id;
+}
+
+// D-168 (14 September 2026, laporan owner — gambar Tabel Rute menampilkan
+// job order SWS-14092026-007 sebagai "PENGAMBILAN" padahal itu order KASUR
+// SEWA yang baru dibuat, yang justru perlu DIKIRIM ke customer, bukan
+// diambil dari mereka). Analog PERSIS dengan ensurePickupJobForOrder() di
+// atas, tapi untuk arah sebaliknya — dipanggil services/unitProvisioning.js
+// saat unit SEWA lahir langsung READY_FOR_DELIVERY (SEWA tidak melalui fase
+// pengambilan ATAU produksi sama sekali, lihat komentar panjang di sana).
+//
+// TIDAK menduplikasi logika dedup/reuse-job/isi-alamat milik
+// suggestDeliveryJob() (deliveryHandoff.js, jalur yang SAMA dipakai "unit
+// tuntas produksi" & dropdown status manual "Siap Kirim" di orders.js) —
+// fungsi ini cuma mencari unit READY_FOR_DELIVERY yang BELUM terikat job
+// DELIVERY aktif manapun (analog `freeUnits` di ensurePickupJobForOrder),
+// lalu serahkan tiap unit ke suggestDeliveryJob() satu-satu (fungsi itu
+// sendiri idempotent, aman dipanggil berulang).
+export async function ensureDeliveryJobForOrder(tx, order) {
+  const freeUnits = await tx.unit.findMany({
+    where: {
+      orderId: order.id,
+      status: "READY_FOR_DELIVERY",
+      jobUnits: { none: { job: { type: "DELIVERY", status: { in: ACTIVE_JOB_STATUSES } } } },
+    },
+    select: { id: true },
+  });
+  for (const u of freeUnits) await suggestDeliveryJob(tx, u.id);
 }

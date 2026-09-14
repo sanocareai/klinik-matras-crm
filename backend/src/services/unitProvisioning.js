@@ -24,7 +24,7 @@
 // mengirim apa-apa tetap benar untuk 94% kasus.
 
 import { prisma } from "../db.js";
-import { ensurePickupJobForOrder } from "./armadaAutoJob.js";
+import { ensurePickupJobForOrder, ensureDeliveryJobForOrder } from "./armadaAutoJob.js";
 
 // Peta status Order → status Unit. SENGAJA sama persis dengan CASE di migrasi
 // backfill supaya unit hasil backfill dan unit hasil runtime tidak pernah
@@ -93,10 +93,10 @@ export async function createUnitsForOrder(tx, { order, count = 1, statusOverride
   // produk/kasur baru, prosesnya beda dari service/upgrade, jangan status
   // pengambilan". unitStatusFromOrderStatus() SELALU menghasilkan
   // AWAITING_PICKUP untuk order yang baru dibuat (Order.status masih
-  // PENDING) — itu benar untuk LAYANAN/SEWA (memang ada barang lama yang
-  // perlu diambil dari customer), tapi SALAH untuk BARU: tidak ada apa pun
-  // untuk "diambil", unit-nya adalah kasur baru yang akan DIBUAT dari nol
-  // di workshop. Skip AWAITING_PICKUP → PICKUP job → RECEIVED sama sekali;
+  // PENDING) — itu benar untuk LAYANAN (memang ada barang lama yang perlu
+  // diambil dari customer), tapi SALAH untuk BARU: tidak ada apa pun untuk
+  // "diambil", unit-nya adalah kasur baru yang akan DIBUAT dari nol di
+  // workshop. Skip AWAITING_PICKUP → PICKUP job → RECEIVED sama sekali;
   // unit BARU lahir langsung RECEIVED (setara "sudah di workshop, siap
   // mulai tahap produksi pertama"). Efek berantai yang diinginkan:
   //   1. Baris `if (status === "AWAITING_PICKUP")` di bawah TIDAK terpicu
@@ -105,13 +105,34 @@ export async function createUnitsForOrder(tx, { order, count = 1, statusOverride
   //      di Papan Produksi hari itu juga, bukan nyangkut menunggu "diambil"
   //      dulu oleh driver yang sebenarnya tidak perlu datang.
   //   3. Begitu seluruh tahap produksi tuntas, unit jadi READY_FOR_DELIVERY
-  //      → suggestDeliveryJob() (unitStageEngine.js) buat Job DELIVERY —
+  //      → suggestDeliveryJob() (deliveryHandoff.js) buat Job DELIVERY —
   //      jalur ini SUDAH kategori-agnostik, tidak perlu disentuh.
+  //
+  // D-168 (14 September 2026, laporan owner — gambar Tabel Rute
+  // menampilkan job order SWS-14092026-007 sebagai "PENGAMBILAN" padahal
+  // order itu KASUR SEWA yang baru dibuat) — KOREKSI kelanjutan D-051.
+  // SEWA dulu ikut dianggap sama dengan LAYANAN di sini ("memang ada
+  // barang lama yang perlu diambil") — itu SALAH KAPRAH yang sama persis
+  // dengan yang sudah diperbaiki untuk BARU: order SEWA BARU tidak ada
+  // barang APA PUN yang diambil dari customer, sebaliknya kasur SEWA justru
+  // perlu DIKIRIM ke customer. SEWA juga tidak butuh fase produksi (bukan
+  // dibuat dari nol seperti BARU, kasur sewa sudah siap pakai) — jadi
+  // unit-nya lahir langsung di UJUNG SIKLUS, READY_FOR_DELIVERY (bukan
+  // RECEIVED seperti BARU yang masih perlu diproses), lalu
+  // suggestDeliveryJob() langsung membuat Job DELIVERY (lihat blok di
+  // bawah `tx.unit.createMany`) — jalur yang SAMA dipakai "unit tuntas
+  // produksi" & dropdown status manual "Siap Kirim" (orders.js), bukan
+  // jalur baru.
+  //
   // Bukan cabang berdasar Order.status (yang tetap PENDING) — SENGAJA
   // berdasar Order.category, supaya statusOverride pemanggil lain (mis.
   // menambah unit ke order yang sudah PROCESSING) tetap menang seperti
   // biasa lewat `statusOverride ||` di bawah.
-  const status = statusOverride || (order.category === "BARU" ? "RECEIVED" : unitStatusFromOrderStatus(order.status));
+  const status = statusOverride || (
+    order.category === "BARU" ? "RECEIVED" :
+    order.category === "SEWA" ? "READY_FOR_DELIVERY" :
+    unitStatusFromOrderStatus(order.status)
+  );
   const prefix = unitCodePrefix(order);
 
   // Nomor urut terakhir di order ini. Unique constraint @@unique([orderId, seq])
@@ -145,6 +166,12 @@ export async function createUnitsForOrder(tx, { order, count = 1, statusOverride
     // (deliveryAddress/deliveryCity) langsung diisi ke job baru, lihat
     // catatan lengkap di armadaAutoJob.js.
     await ensurePickupJobForOrder(tx, order);
+  } else if (status === "READY_FOR_DELIVERY") {
+    // D-168 — pasangan `ensureDeliveryJobForOrder` untuk unit SEWA yang
+    // lahir langsung di ujung siklus (lihat komentar panjang di cabang
+    // status di atas). Sama prinsip dengan cabang PICKUP: kerangka job saja
+    // (UNSCHEDULED, tanpa driver/tanggal), bukan penjadwalan sungguhan.
+    await ensureDeliveryJobForOrder(tx, order);
   }
 
   // KOREKSI D-051 lanjutan (4 September 2026) — ditemukan lewat halaman

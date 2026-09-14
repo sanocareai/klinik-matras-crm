@@ -23,16 +23,32 @@ import {
 // TERMASUK job/jobUnit sejak 24 Agustus 2026 (createUnitsForOrder sekarang
 // juga memanggil services/armadaAutoJob.js#ensurePickupJobForOrder untuk
 // unit yang lahir AWAITING_PICKUP, lihat tes "auto-job" di bawah).
-function fakeTx({ seqTertinggi = null } = {}) {
+//
+// `unit.findUnique`/`jobUnit.create`/`jobUnit.findFirst`/`job.update`
+// ditambahkan D-168 (14 September 2026) — dipakai suggestDeliveryJob()
+// (deliveryHandoff.js) yang kini dipanggil (lewat
+// armadaAutoJob.js#ensureDeliveryJobForOrder) untuk unit SEWA yang lahir
+// langsung READY_FOR_DELIVERY. `createMany` sekarang menempelkan id
+// sintetis ke tiap baris — Prisma createMany SUNGGUHAN tidak mengembalikan
+// baris yang dibuat, tapi suggestDeliveryJob() butuh id nyata untuk
+// findUnique(); id sintetis di sini cukup supaya alurnya bisa ditelusuri
+// dalam tes (sama semangat dengan id job "job1"/"job2" di bawah).
+// `orderInfo` (opsional) = alamat yang dikembalikan unit.findUnique() untuk
+// order — dipakai tes yang mengecek addressText job DELIVERY terisi benar.
+function fakeTx({ seqTertinggi = null, orderInfo = {} } = {}) {
   const dibuat = [];
   const jobsDibuat = [];
+  const jobUnitLinks = [];
   const orderUpdates = [];
   const transitions = [];
+  const jobUpdates = [];
   return {
     dibuat,
     jobsDibuat,
+    jobUnitLinks,
     orderUpdates,
     transitions,
+    jobUpdates,
     // order.update/orderStatusTransition.create (D-051 lanjutan) — dipakai
     // cabang BARU yang men-set Order.status langsung ke PROCESSING begitu
     // unit-nya RECEIVED, tanpa menunggu syncOrderStatus (yang sengaja no-op
@@ -45,7 +61,11 @@ function fakeTx({ seqTertinggi = null } = {}) {
     },
     unit: {
       findFirst: async () => (seqTertinggi === null ? null : { seq: seqTertinggi }),
-      createMany: async ({ data }) => { dibuat.push(...data); return { count: data.length }; },
+      createMany: async ({ data }) => {
+        const withIds = data.map((d, i) => ({ id: `unit${dibuat.length + i + 1}`, ...d }));
+        dibuat.push(...withIds);
+        return { count: data.length };
+      },
       // Fake SEDERHANA: filter status persis seperti Prisma, tapi TIDAK
       // meniru `jobUnits.none` (tidak relevan di tes ini — tidak ada tes
       // yang memanggil createUnitsForOrder dua kali untuk order yang sama
@@ -54,20 +74,33 @@ function fakeTx({ seqTertinggi = null } = {}) {
         if (!where) return dibuat;
         return dibuat.filter((u) => !where.status || u.status === where.status.in?.[0] || u.status === where.status);
       },
+      findUnique: async ({ where }) => {
+        const u = dibuat.find((x) => x.id === where.id);
+        return u ? { id: u.id, orderId: u.orderId, order: orderInfo } : null;
+      },
     },
     job: {
-      // Tidak ada job existing di skenario tes murni ini — tiap panggilan
-      // createUnitsForOrder di sini mewakili ORDER BARU, bukan menambah
-      // unit ke order yang jobnya sudah ada.
-      findFirst: async () => null,
+      // Cocokkan job yang SUDAH dibuat panggilan sebelumnya DI TX YANG SAMA
+      // (mis. unit kedua dari order SEWA 2-unit ikut ke job DELIVERY unit
+      // pertama, bukan bikin job baru) — meniru Postgres membaca commit-nya
+      // sendiri di dalam satu transaksi. Untuk semua tes lain (satu unit per
+      // panggilan, fakeTx() baru = jobsDibuat kosong) ini tetap balik null
+      // persis seperti sebelumnya, tidak ada perubahan perilaku.
+      findFirst: async ({ where } = {}) => {
+        if (!where) return null;
+        return jobsDibuat.find((j) => j.orderId === where.orderId && j.type === where.type && j.status === where.status) || null;
+      },
       create: async ({ data }) => {
         const job = { id: `job${jobsDibuat.length + 1}`, ...data };
         jobsDibuat.push(job);
         return job;
       },
+      update: async ({ where, data }) => { jobUpdates.push({ where, data }); return data; },
     },
     jobUnit: {
       createMany: async () => ({ count: 0 }),
+      create: async ({ data }) => { jobUnitLinks.push(data); return data; },
+      findFirst: async () => null, // tidak ada unit yang "sudah pernah" di skenario tes murni
     },
   };
 }
@@ -116,7 +149,11 @@ test("membuat satu unit dengan kode & merk/ukuran dari notes", async () => {
   await createUnitsForOrder(tx, { order: orderDasar, count: 1 });
 
   assert.equal(tx.dibuat.length, 1);
-  assert.deepEqual(tx.dibuat[0], {
+  // `id` sintetis (D-168, ditempelkan fakeTx() supaya suggestDeliveryJob()
+  // punya sesuatu untuk di-findUnique) SENGAJA tidak diikutkan di sini —
+  // bentuknya arbitrer punya fake, bukan bagian dari kontrak yang diuji.
+  const { id, ...tanpaId } = tx.dibuat[0];
+  assert.deepEqual(tanpaId, {
     unitCode: "RES-01082026-007-U1",
     orderId: orderDasar.id,
     seq: 1,
@@ -250,17 +287,61 @@ test("order kategori BARU: TIDAK PERNAH dapat Job PICKUP", async () => {
   assert.equal(tx.jobsDibuat.length, 0);
 });
 
-test("order kategori LAYANAN/SEWA TETAP AWAITING_PICKUP + Job PICKUP seperti sebelumnya", async () => {
-  // Jaring pengaman regresi — perbaikan BARU tidak boleh ikut mengubah
-  // perilaku dua kategori lain yang MEMANG butuh fase pengambilan barang
-  // lama dari customer.
-  for (const category of ["LAYANAN", "SEWA", undefined]) {
+test("order kategori LAYANAN (atau tanpa kategori) TETAP AWAITING_PICKUP + Job PICKUP seperti sebelumnya", async () => {
+  // Jaring pengaman regresi — perbaikan BARU/SEWA tidak boleh ikut mengubah
+  // perilaku kategori yang MEMANG butuh fase pengambilan barang lama dari
+  // customer. SEWA DIKELUARKAN dari daftar ini D-168 (14 September 2026) —
+  // lihat tes "order kategori SEWA" di bawah untuk alasannya.
+  for (const category of ["LAYANAN", undefined]) {
     const tx = fakeTx();
     await createUnitsForOrder(tx, { order: { ...orderDasar, category }, count: 1 });
     assert.equal(tx.dibuat[0].status, "AWAITING_PICKUP", `category=${category}`);
     assert.equal(tx.jobsDibuat.length, 1, `category=${category}`);
     assert.equal(tx.jobsDibuat[0].type, "PICKUP", `category=${category}`);
   }
+});
+
+// --- order kategori SEWA (D-168, 14 September 2026) -------------------------
+// Laporan owner: gambar Tabel Rute (routeSheetImage.js) menampilkan job
+// order SWS-14092026-007 sebagai "PENGAMBILAN", padahal order itu KASUR
+// SEWA yang baru dibuat — contoh nyata, sama pola penemuan dengan bug BARU
+// D-051 (order NEW-30082026-022/Leo Witarsa): SEWA sebelumnya ikut lewat
+// unitStatusFromOrderStatus(order.status) dengan alasan "memang ada barang
+// lama yang perlu diambil dari customer" — SALAH untuk SEWA, order rental
+// BARU tidak ada apa pun yang diambil DARI customer, justru kasur sewa
+// perlu DIKIRIM KE customer.
+test("order kategori SEWA: unit lahir READY_FOR_DELIVERY, BUKAN AWAITING_PICKUP", async () => {
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, { order: { ...orderDasar, category: "SEWA" }, count: 1 });
+  assert.equal(tx.dibuat[0].status, "READY_FOR_DELIVERY");
+});
+
+test("order kategori SEWA: dapat Job DELIVERY (bukan PICKUP), dengan alamat order langsung terisi", async () => {
+  const tx = fakeTx({ orderInfo: { deliveryAddress: "Jl. Mawar 5", deliveryCity: "Depok" } });
+  await createUnitsForOrder(tx, { order: { ...orderDasar, category: "SEWA" }, count: 1 });
+  assert.equal(tx.jobsDibuat.length, 1);
+  assert.equal(tx.jobsDibuat[0].type, "DELIVERY");
+  assert.equal(tx.jobsDibuat[0].status, "UNSCHEDULED");
+  assert.equal(tx.jobsDibuat[0].orderId, orderDasar.id);
+  // Alamat sales langsung diisi (D-040 diterapkan juga ke jalur DELIVERY,
+  // lihat suggestDeliveryJob() di deliveryHandoff.js) — dispatcher tidak
+  // perlu klik "Pakai alamat order" manual untuk job SEWA otomatis ini.
+  assert.equal(tx.jobsDibuat[0].addressText, "Jl. Mawar 5, Depok");
+});
+
+test("order kategori SEWA: dua unit di order yang sama digabung jadi SATU job DELIVERY", async () => {
+  // Meniru PRD §5.2 "satu job = satu order" — sama semangat dengan
+  // ensurePickupJobForOrder untuk LAYANAN/BARU, sekarang berlaku juga untuk
+  // jalur DELIVERY otomatis SEWA (lewat suggestDeliveryJob(), yang memang
+  // sudah punya perilaku "gabung ke job UNSCHEDULED yang sama" sejak awal
+  // — dites di sini lewat createUnitsForOrder, bukan langsung).
+  const tx = fakeTx();
+  await createUnitsForOrder(tx, { order: { ...orderDasar, category: "SEWA" }, count: 2 });
+  assert.equal(tx.dibuat.length, 2);
+  assert.ok(tx.dibuat.every((u) => u.status === "READY_FOR_DELIVERY"));
+  assert.equal(tx.jobsDibuat.length, 1, "kedua unit harus jadi SATU job, bukan dua job terpisah");
+  assert.equal(tx.jobsDibuat[0].type, "DELIVERY");
+  assert.equal(tx.jobUnitLinks.length, 1, "unit kedua ditautkan ke job yang sudah ada, bukan bikin job baru");
 });
 
 test("order kategori BARU: statusOverride tetap menang (mis. tambah unit ke order yang sudah PROCESSING)", async () => {
