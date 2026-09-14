@@ -19,6 +19,7 @@ import { renderWarrantyPdf } from "../services/warrantyPdf.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus, selesaikanJobBelumJalan, selesaikanJobPengambilanTertinggal } from "../services/orderStatusSync.js";
 import { suggestDeliveryJob } from "../services/deliveryHandoff.js";
+import { ensurePickupJobForOrder } from "../services/armadaAutoJob.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SESSION_UNKNOWN_ERROR } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
@@ -476,6 +477,29 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           // sudah tidak relevan lagi — bukan job Pengiriman yang baru saja
           // dibuat suggestDeliveryJob() di atas (itu TETAP aktif).
           await selesaikanJobPengambilanTertinggal(tx, updated.id);
+        } else if (status === "SEWA_DIAMBIL") {
+          // D-169 (14 September 2026, laporan owner: "make sure ketika
+          // kasur sewa sudah selesai statusnya akan pengambilan kembali
+          // sesuai sistem"). SEBELUM ini, memilih "Pengambilan Kembali" di
+          // dropdown SEWA (StatusSelect.jsx/OrderSection.jsx) CUMA menulis
+          // label Order.status — order.category === "SEWA" sengaja lepas
+          // dari syncOrderStatus() (orderStatusSync.js), jadi TIDAK ADA
+          // Job apa pun yang pernah dibuat untuk benar-benar menjemput
+          // kasurnya kembali. Sama pola dengan cabang READY di atas
+          // (D-051 lanjutan, "Order bilang Siap Kirim tapi Job Pengiriman
+          // tidak pernah dibuat"): begitu dispatcher/sales bilang sewa ini
+          // selesai, ensurePickupJobForOrder() langsung membuat KERANGKA
+          // Job PICKUP (UNSCHEDULED, alamat sudah terisi dari
+          // Order.deliveryAddress/City — lokasi yang SAMA tempat kasurnya
+          // dikirim). `unitStatus: "DELIVERED"` (bukan default
+          // AWAITING_PICKUP) — unit rental yang dijemput di sini sudah
+          // SELESAI dipakai customer (lihat komentar D-169 di
+          // armadaAutoJob.js), beda makna dari "belum pernah diambil sama
+          // sekali" tapi bentuk Job-nya identik, jadi fungsi yang sama
+          // dipakai ulang, bukan ditulis kedua kalinya. Idempotent (aman
+          // dipanggil berulang kalau dispatcher bolak-balik ganti status)
+          // sama seperti ensurePickupJobForOrder() untuk kategori lain.
+          await ensurePickupJobForOrder(tx, updated, { unitStatus: "DELIVERED" });
         }
       }
 

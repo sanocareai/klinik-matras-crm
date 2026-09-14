@@ -49,8 +49,18 @@ import { suggestDeliveryJob } from "./deliveryHandoff.js";
  * job cuma karena panggilan ini gagal setengah jalan.
  *
  * Return: id job yang dipakai (baru atau existing), atau null kalau tidak
- * ada unit yang perlu diurus (order ini tidak punya unit AWAITING_PICKUP
+ * ada unit yang perlu diurus (order ini tidak punya unit ber-`unitStatus`
  * yang masih bebas).
+ *
+ * `unitStatus` (D-169, 14 September 2026, laporan owner: "make sure ketika
+ * kasur sewa sudah selesai statusnya akan pengambilan kembali sesuai
+ * sistem") — default "AWAITING_PICKUP" (pemakaian asli, unit yang BELUM
+ * PERNAH diambil dari customer). Dipanggil dengan "DELIVERED" dari
+ * routes/orders.js saat dropdown SEWA diubah ke "Pengambilan Kembali" —
+ * unit rental yang SUDAH terkirim & dipakai customer, sekarang perlu
+ * PICKUP untuk retur, makna yang sama sekali beda dari "belum pernah
+ * diambil" tapi butuh Job PICKUP yang PERSIS sama bentuknya (kerangka
+ * UNSCHEDULED + alamat terisi) — bukan alasan untuk menulis fungsi kedua.
  */
 // D-040 (31 Agustus 2026, laporan owner: "alamat udah ada semua [di
 // Order], masukkan ke sini juga") — job pickup yang lahir di sini
@@ -71,12 +81,12 @@ function alamatDariOrder(order) {
   return [order.deliveryAddress, order.deliveryCity].filter(Boolean).join(", ") || null;
 }
 
-export async function ensurePickupJobForOrder(tx, order) {
+export async function ensurePickupJobForOrder(tx, order, { unitStatus = "AWAITING_PICKUP" } = {}) {
   const orderId = order.id;
   const freeUnits = await tx.unit.findMany({
     where: {
       orderId,
-      status: "AWAITING_PICKUP",
+      status: unitStatus,
       // "Bebas" = tidak terikat job PICKUP mana pun yang statusnya masih
       // aktif. Unit.status TETAP AWAITING_PICKUP sepanjang job pickup-nya
       // berjalan (lihat catatan armada.js baris ~7-13) — jadi status unit
