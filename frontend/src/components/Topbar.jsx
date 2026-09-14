@@ -44,6 +44,9 @@ const ROUTE_LABELS = {
   "/armada/issues":    ["Delivery", "Kendala & Reschedule"],
   "/armada/returns":   ["Delivery", "Retur"],
   "/armada/reports":   ["Delivery", "Laporan"],
+  // Biaya Armada (D-167, 14 September 2026) — /armada/biaya, lihat
+  // Layout.jsx untuk kenapa halaman ini ada.
+  "/armada/biaya":     ["Delivery", "Biaya Armada"],
   // /armada/resources → /armada/pengaturan (D-084, 5 September 2026) —
   // halaman "Driver & Armada" berganti nama & rute jadi "Pengaturan
   // Delivery". Route lama TIDAK di-redirect (lihat catatan di App.jsx).
