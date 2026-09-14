@@ -78,6 +78,14 @@ persis `https://claude.ai/api/mcp/auth_callback` (lihat
 `validateRedirectUris` di `oauthCrypto.js`). Tidak ada tempat lain
 authorization code/token bisa dikirim.
 
+> ⚠️ **Dikoreksi 14 September 2026** — baris di atas cuma benar untuk jalur
+> OAuth (login browser claude.ai). Jalur token statis TIDAK terikat ke
+> protokol MCP sama sekali (cuma Bearer token biasa), jadi bisa dipakai
+> klien MCP mana pun (termasuk "remote MCP server" di API OpenAI). Untuk
+> ChatGPT versi konsumen (Custom GPT), datanya yang sama juga tersedia lewat
+> `/gpt-actions` (REST/OpenAPI, bukan JSON-RPC MCP) — lihat
+> `docs/CHATGPT-ACTIONS.md`.
+
 **Rotasi/cabut akses:**
 - Token statis: ganti `MCP_API_TOKEN` di `.env` lalu restart backend.
 - OAuth: ganti `MCP_OAUTH_JWT_SECRET` → semua access token OAuth yang

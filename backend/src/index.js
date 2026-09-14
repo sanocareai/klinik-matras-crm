@@ -54,6 +54,7 @@ import { warehouseReportsRouter } from "./routes/warehouseReports.js";
 import { scopeRevisionRouter } from "./routes/scopeRevisions.js";
 import { masterDataRouter } from "./routes/masterData.js";
 import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/index.js";
+import { gptActionsRouter, logStatusGptActions } from "./mcp/gptActions.js";
 import { mcpHubRouter, logStatusMcpHub } from "./mcpHub/index.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
@@ -208,6 +209,11 @@ app.use("/mcp", mcpRouter);
 // mana pun mengharapkannya.
 app.use(wellKnownRouter);
 app.use(mcpOAuthRouter);
+// Jembatan REST/OpenAPI ke tool MCP yang SAMA, untuk ChatGPT Custom GPT
+// Actions (src/mcp/gptActions.js) — lihat komentar di file itu kenapa
+// ChatGPT butuh jalur terpisah dari /mcp (beda protokol transport, BUKAN
+// beda data/aturan). Auth pakai token MCP_API_TOKEN yang SAMA.
+app.use("/gpt-actions", gptActionsRouter);
 // SANO Hub Analytics MCP (connector KEDUA, PARALEL -- lihat src/mcpHub/index.js).
 // Authorization server /oauth/* di atas DIPAKAI BERSAMA (resource beda,
 // lihat mcp/oauth.js#KNOWN_RESOURCES), jadi TIDAK perlu mount OAuth kedua.
@@ -269,6 +275,7 @@ initSocket(server);
 server.listen(PORT, () => {
   console.log(`Backend jalan di http://localhost:${PORT}`);
   logStatusMcp();
+  logStatusGptActions();
   logStatusMcpHub();
   startReconciliationJob();
   startSlaAlertJob();

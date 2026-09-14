@@ -48,7 +48,12 @@ export const MCP_SERVER_VERSION = "1.0.0";
 // Satu instance McpServer per request. Ini pola stateless yang dianjurkan SDK:
 // server & transport hidup selama satu request lalu ditutup, jadi tidak ada
 // akumulasi memori dan tidak ada kebocoran konteks antar pemanggil.
-function buatServer() {
+//
+// Diekspor (bukan lagi private) sejak jembatan ChatGPT Actions (gptActions.js,
+// 14 September 2026) — dia butuh instance McpServer yang SAMA PERSIS (tool,
+// deskripsi, aturan masking semuanya ikut) supaya tidak ada definisi tool
+// kedua yang bisa diam-diam menyimpang dari yang dipakai Claude.
+export function buatServer() {
   const server = new McpServer(
     { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     {
