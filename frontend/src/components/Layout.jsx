@@ -4,7 +4,7 @@ import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog, Bell,
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight, Send,
-  Wrench, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2,
+  Wrench, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2, Wallet,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
   Boxes, ScanLine, Award, ArrowUpDown, Check, Handshake,
 } from "lucide-react";
@@ -335,6 +335,16 @@ const DIVISIONS = {
           { to: "/armada/orders",    label: "Semua Order",         Icon: ClipboardList, hideForLeaderDriver: true },
           { to: "/armada/routes",    label: "Route Planner",       Icon: Route },
           { to: "/armada/tracking",  label: "Live Tracking",       Icon: MapPin },
+          // Biaya Armada (D-167, 14 September 2026, laporan owner: "input
+          // rincian biaya pengeluaran per kendaraan, servis dan lainnya...
+          // skema saat ini masih repot sekali... bisa buat terpisah dari
+          // pengaturan dan ada fieldnya sendiri"). SEBELUMNYA cuma bisa
+          // dicatat lewat Pengaturan Delivery > Armada > Detail satu
+          // kendaraan (ArmadaPengaturan.jsx) — sekarang menu sendiri di sini
+          // (kerja HARIAN mencatat struk, sama semangat dengan Jadwal &
+          // Penugasan di atas), bukan lagi disembunyikan di balik modal
+          // pengaturan. Ringkasan agregatnya tetap di Laporan (di bawah).
+          { to: "/armada/biaya",     label: "Biaya Armada",        Icon: Wallet },
         ],
       },
       {

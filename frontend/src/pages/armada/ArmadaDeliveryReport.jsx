@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "@/lib/dateRange.js";
@@ -12,7 +14,7 @@ import KpiCard from "@/features/laporan/components/KpiCard.jsx";
 import BarRow from "@/features/laporan/components/BarRow.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@/components/ui/table.jsx";
-import { Users, Truck as TruckIcon } from "lucide-react";
+import { Users, Truck as TruckIcon, Wallet, ArrowRight } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES } from "@/features/armada/jobStatus.js";
@@ -48,6 +50,15 @@ function statusBars(counts, map) {
   }));
 }
 
+// Label kategori biaya — SAMA PERSIS dengan enum ExpenseCategory & map di
+// ArmadaBiaya.jsx (D-167, 14 September 2026). Duplikasi kecil yang sengaja
+// dibiarkan (bentuk pemakaiannya beda: di sini murni label chart baca-saja,
+// bukan opsi form) — pola yang sama dipakai konstanta kecil lain di project
+// ini (mis. DEPOT di beberapa file peta).
+const KATEGORI_BIAYA_LABEL = {
+  BBM: "BBM", TOL: "Tol", PARKIR: "Parkir", CUCI: "Cuci Mobil", DENDA: "Denda/Tilang", LAINNYA: "Lainnya",
+};
+
 // Efisiensi km/liter + Rp/km per baris Ringkasan Biaya (D-084, dipindah
 // dari ArmadaPengaturan.jsx — lihat catatan di bawah header untuk alasan
 // pemindahannya).
@@ -60,6 +71,7 @@ function EfisiensiCell({ e }) {
 }
 
 export default function ArmadaDeliveryReport() {
+  const navigate = useNavigate();
   const [range, setRange] = useState(() => makeRange("last_30_days"));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -116,6 +128,30 @@ export default function ArmadaDeliveryReport() {
   const totalRoutes = Object.values(byRouteCounts).reduce((a, b) => a + b, 0);
   const totalVehicles = Object.values(byVehicleCounts).reduce((a, b) => a + b, 0);
   const totalDrivers = data?.driverProductivity?.length || 0;
+
+  // Total lintas-armada + breakdown per kategori (D-167, 14 September
+  // 2026, laporan owner: "summary laporan bisa terlihat di tab laporan") —
+  // dihitung dari `fleet.perKendaraan` yang SUDAH dimuat untuk tabel "Per
+  // Kendaraan" di bawah (nol panggilan API tambahan). Sebelum ini,
+  // "Ringkasan Biaya Armada" cuma menampilkan total per kendaraan/per
+  // supir — tidak ada satu pun angka gabungan seluruh armada per kategori
+  // (BBM vs Tol vs Parkir dst), padahal itulah yang paling sering ditanya
+  // pemilik usaha: "bulan ini paling banyak habis di mana".
+  const fleetTotals = useMemo(() => {
+    const perKendaraan = fleet?.perKendaraan || [];
+    const perKategori = {};
+    let totalBiaya = 0, totalServis = 0, totalInsiden = 0, biayaPerbaikanInsiden = 0;
+    for (const v of perKendaraan) {
+      totalBiaya += v.totalBiaya;
+      totalServis += v.biayaServis;
+      totalInsiden += v.jumlahInsiden;
+      biayaPerbaikanInsiden += v.biayaPerbaikanInsiden;
+      for (const [kat, jumlah] of Object.entries(v.perKategori || {})) {
+        perKategori[kat] = (perKategori[kat] || 0) + jumlah;
+      }
+    }
+    return { totalBiaya, totalServis, totalInsiden, biayaPerbaikanInsiden, perKategori };
+  }, [fleet]);
 
   return (
     <PageContainer>
@@ -219,14 +255,61 @@ export default function ArmadaDeliveryReport() {
             </div>
 
             {/* Ringkasan Biaya Armada (D-084) — lihat komentar `fleet` di
-                atas untuk kenapa ini pindah ke sini. Tabel, bukan
-                ChartCard/BarRow seperti bagian lain di halaman ini — datanya
-                genuinely tabular (banyak kolom per baris: PIC, efisiensi,
-                biaya, servis, insiden sekaligus), bukan satu angka per
-                kategori yang cocok jadi bar. */}
+                atas untuk kenapa ini pindah ke sini. Tabel per baris (bukan
+                ChartCard/BarRow seperti bagian lain) untuk "Per Kendaraan"/
+                "Per Supir" — datanya genuinely tabular (PIC, efisiensi,
+                biaya, servis, insiden sekaligus per baris). Breakdown per
+                KATEGORI (BBM/Tol/dst, D-167) SEBALIKNYA satu angka per
+                kategori — itu yang cocok jadi BarRow. */}
             <div>
-              <h2 className="mb-1 text-[15px] font-bold text-ink">Ringkasan Biaya Armada</h2>
-              <p className="mb-3 text-[12px] text-ink3">Efisiensi BBM &amp; total biaya operasional, dalam rentang tanggal yang sama di atas.</p>
+              <div className="mb-1 flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h2 className="text-[15px] font-bold text-ink">Ringkasan Biaya Armada</h2>
+                  <p className="text-[12px] text-ink3">Efisiensi BBM &amp; total biaya operasional, dalam rentang tanggal yang sama di atas.</p>
+                </div>
+                {/* Kelola Biaya Armada (D-167, 14 September 2026) — laporan
+                    owner: input biaya/servis "bisa buat terpisah dari
+                    pengaturan". Halaman itu sekarang ada (/armada/biaya,
+                    menu sidebar sendiri) — tombol ini jembatan dari
+                    RINGKASAN (di sini) ke tempat MENCATATNYA, supaya alur
+                    "lihat angkanya kurang lengkap -> langsung tambah
+                    catatan" tidak perlu buka sidebar lagi. */}
+                <Button size="sm" variant="secondary" onClick={() => navigate("/armada/biaya")}>
+                  <Wallet size={13} /> Kelola Biaya Armada <ArrowRight size={13} />
+                </Button>
+              </div>
+
+              <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <KpiCard label="Total Biaya Operasional" numericValue={fleetTotals.totalBiaya} format={formatRupiah} index={0} />
+                <KpiCard label="Total Biaya Servis" numericValue={fleetTotals.totalServis} format={formatRupiah} index={1} />
+                <KpiCard label="Insiden Tercatat" numericValue={fleetTotals.totalInsiden} index={2} />
+                <KpiCard label="Biaya Perbaikan Insiden" numericValue={fleetTotals.biayaPerbaikanInsiden} format={formatRupiah} index={3} />
+              </div>
+
+              <ChartCard
+                title="Biaya per Kategori"
+                description="BBM, tol, parkir, dan lainnya — gabungan seluruh kendaraan aktif, dalam rentang tanggal yang sama di atas."
+                index={0}
+                className="mb-4"
+                empty={!fleet ? null : Object.keys(fleetTotals.perKategori).length === 0 ? "Belum ada catatan biaya pada rentang ini." : null}
+              >
+                {!fleet ? (
+                  <TableSkeletonRows rows={3} cols={2} />
+                ) : (
+                  <div className="space-y-2.5">
+                    {Object.entries(KATEGORI_BIAYA_LABEL)
+                      .map(([key, label]) => ({ key, label, value: fleetTotals.perKategori[key] || 0 }))
+                      .sort((a, b) => b.value - a.value)
+                      .map((k) => (
+                        <BarRow
+                          key={k.key} label={k.label} value={k.value}
+                          max={Math.max(1, ...Object.values(fleetTotals.perKategori))}
+                          display={formatRupiah(k.value)}
+                        />
+                      ))}
+                  </div>
+                )}
+              </ChartCard>
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <Card className="overflow-hidden p-0">

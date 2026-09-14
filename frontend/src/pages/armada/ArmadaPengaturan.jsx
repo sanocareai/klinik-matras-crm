@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, User, Truck as TruckIcon, AlertTriangle, Wallet, Wrench, ShieldAlert, Info, Camera, X, Pencil, Loader2, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Plus, User, Truck as TruckIcon, AlertTriangle, Wallet, Wrench, ShieldAlert, Info, Camera, X, Pencil, Loader2, Trash2, ArrowRight } from "lucide-react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
@@ -88,13 +89,6 @@ const TABS = [
   { key: "armada",  label: "Armada",  Icon: TruckIcon },
 ];
 
-const EXPENSE_CATEGORIES = {
-  BBM: "BBM", TOL: "Tol", PARKIR: "Parkir", CUCI: "Cuci Mobil", DENDA: "Denda/Tilang", LAINNYA: "Lainnya",
-};
-const SERVICE_TYPES = {
-  RUTIN: "Servis Rutin", PERBAIKAN: "Perbaikan", GANTI_OLI: "Ganti Oli",
-  GANTI_BAN: "Ganti Ban", BODY_REPAIR: "Body Repair", LAINNYA: "Lainnya",
-};
 const INCIDENT_TYPES = { KECELAKAAN: "Kecelakaan", LECET: "Lecet", MOGOK: "Mogok", TILANG: "Tilang", LAINNYA: "Lainnya" };
 const SEVERITIES = { RINGAN: "Ringan", SEDANG: "Sedang", BERAT: "Berat" };
 const FAULT_PARTIES = { DRIVER_KITA: "Supir Kita", PIHAK_LAIN: "Pihak Lain", TIDAK_JELAS: "Belum Jelas" };
@@ -291,306 +285,6 @@ function InfoTab({ vehicle, drivers, onSaved }) {
   );
 }
 
-// ── Sub-tab BIAYA: BBM/tol/parkir/dst ────────────────────────────────────
-// ── Pemilih foto struk/nota — upload LANGSUNG saat file dipilih (bukan
-// nunggu form disubmit), balikin URL yang tinggal disisipkan ke
-// receiptUrl. Dipakai bareng di form Biaya & Servis — "dokumentasinya"
-// yang diminta eksplisit, dibuat sesederhana mungkin: 1 tombol, 1 file.
-function ReceiptPicker({ url, onChange }) {
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleFile(e) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // supaya memilih file YANG SAMA lagi tetap memicu onChange
-    if (!file) return;
-    setUploading(true);
-    setError("");
-    try {
-      const fd = new FormData();
-      fd.append("receipt", file);
-      const { url: uploaded } = await api.uploadVehicleReceiptStandalone(fd);
-      onChange(uploaded);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      {url && (
-        <a href={url} target="_blank" rel="noreferrer" className="block h-9 w-9 shrink-0 overflow-hidden rounded-btn border border-border">
-          <img src={url} alt="Struk" className="h-full w-full object-cover" />
-        </a>
-      )}
-      <label className={`flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-btn border border-dashed px-2.5 text-[11.5px] transition-colors ${uploading ? "border-border text-ink3" : "border-border text-ink2 hover:border-accent hover:text-accent"}`}>
-        {uploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
-        {url ? "Ganti Foto" : "Foto Struk"}
-        <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
-      </label>
-      {url && (
-        <button type="button" onClick={() => onChange(null)} className="shrink-0 text-ink3 hover:text-red" title="Hapus foto">
-          <X size={14} />
-        </button>
-      )}
-      {error && <span className="text-[11px] text-red">{error}</span>}
-    </div>
-  );
-}
-
-const KOSONG_EXPENSE = { date: "", category: "BBM", amount: "", odometerKm: "", liters: "", driverId: "", receiptUrl: "", notes: "" };
-
-function BiayaTab({ vehicle, drivers }) {
-  const [rows, setRows] = useState(null);
-  const [form, setForm] = useState(KOSONG_EXPENSE);
-  const [editingId, setEditingId] = useState(null); // null = mode Tambah, terisi = mode Edit
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const load = useCallback(() => {
-    api.getVehicleExpenses({ vehicleId: vehicle.id }).then(setRows).catch(() => setRows([]));
-  }, [vehicle.id]);
-  useEffect(() => { load(); }, [load]);
-
-  function mulaiEdit(r) {
-    setEditingId(r.id);
-    setForm({
-      date: r.date.slice(0, 10), category: r.category, amount: String(r.amount),
-      odometerKm: r.odometerKm ?? "", liters: r.liters ?? "", driverId: r.driverId || "",
-      receiptUrl: r.receiptUrl || "", notes: r.notes || "",
-    });
-    setError("");
-  }
-  function batalEdit() {
-    setEditingId(null);
-    setForm(KOSONG_EXPENSE);
-    setError("");
-  }
-
-  async function submit(e) {
-    e.preventDefault();
-    if (!form.date || !form.amount) { setError("Tanggal dan nominal wajib diisi"); return; }
-    setSaving(true);
-    setError("");
-    try {
-      const payload = {
-        date: form.date, category: form.category, amount: Number(form.amount),
-        odometerKm: form.odometerKm || null,
-        liters: form.category === "BBM" && form.liters ? Number(form.liters) : null,
-        driverId: form.driverId || null, receiptUrl: form.receiptUrl || null, notes: form.notes || null,
-      };
-      if (editingId) {
-        await api.updateVehicleExpense(editingId, payload);
-      } else {
-        await api.createVehicleExpense({ ...payload, vehicleId: vehicle.id });
-      }
-      batalEdit();
-      load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function hapus(id) {
-    if (!confirm("Hapus catatan biaya ini?")) return;
-    if (editingId === id) batalEdit();
-    await api.deleteVehicleExpense(id);
-    load();
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <form onSubmit={submit} className="grid grid-cols-3 gap-2.5 rounded-2xl bg-inset/60 p-3">
-        {editingId && (
-          <div className="col-span-3 flex items-center gap-1.5 text-[11.5px] font-semibold text-accent">
-            <Pencil size={12} /> Mengedit catatan — <button type="button" onClick={batalEdit} className="underline">batal</button>
-          </div>
-        )}
-        {/* allowFuture={false} — biaya adalah pengeluaran yang SUDAH terjadi,
-            tidak masuk akal dicatat untuk tanggal masa depan (beda dari
-            "Servis Berikutnya"/dokumen di InfoTab yang justru butuh
-            tanggal ke depan). */}
-        <Field label="Tanggal" required><DatePicker value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} placeholder="Pilih tanggal" allowFuture={false} /></Field>
-        <Field label="Kategori">
-          <select className={inputCls} value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
-            {Object.entries(EXPENSE_CATEGORIES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </select>
-        </Field>
-        <Field label="Nominal (Rp)" required><Input type="number" min="0" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} /></Field>
-        <Field label="Odometer (km)" hint={form.category === "BBM" ? "Kunci hitung km/liter" : "Opsional"}>
-          <Input type="number" min="0" value={form.odometerKm} onChange={(e) => setForm((f) => ({ ...f, odometerKm: e.target.value }))} />
-        </Field>
-        {form.category === "BBM" && (
-          <Field label="Liter" hint="Kunci hitung km/liter"><Input type="number" step="0.01" min="0" value={form.liters} onChange={(e) => setForm((f) => ({ ...f, liters: e.target.value }))} /></Field>
-        )}
-        <Field label="Supir">
-          <select className={inputCls} value={form.driverId} onChange={(e) => setForm((f) => ({ ...f, driverId: e.target.value }))}>
-            <option value="">— Pilih —</option>
-            {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Dokumentasi" className="col-span-3">
-          <ReceiptPicker url={form.receiptUrl} onChange={(url) => setForm((f) => ({ ...f, receiptUrl: url || "" }))} />
-        </Field>
-        <div className="col-span-3 flex items-center gap-2">
-          <Input className="flex-1" placeholder="Catatan (opsional)" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
-          <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan…" : editingId ? "Simpan Perubahan" : "Tambah"}</Button>
-        </div>
-        {error && <p className="col-span-3 text-[12px] text-red">{error}</p>}
-      </form>
-
-      {rows === null ? <TableSkeletonRows rows={3} cols={6} /> : rows.length === 0 ? (
-        <EmptyState icon={Wallet} title="Belum ada catatan biaya" description="Tambahkan pengisian BBM/tol/dst lewat form di atas." />
-      ) : (
-        <TableWrap>
-          <Table>
-            <THead><TR><TH>Tanggal</TH><TH>Kategori</TH><TH>Supir</TH><TH>Odo/Liter</TH><TH>Struk</TH><TH>Nominal</TH><TH /></TR></THead>
-            <TBody>
-              {rows.map((r) => (
-                <TR key={r.id} className={editingId === r.id ? "bg-accentbg/40" : undefined}>
-                  <TD className="whitespace-nowrap text-ink2">{fmtTanggal(r.date)}</TD>
-                  <TD>{EXPENSE_CATEGORIES[r.category] || r.category}</TD>
-                  <TD className="text-ink2">{r.driver?.name || "—"}</TD>
-                  <TD className="text-ink3">{r.odometerKm ? `${r.odometerKm} km` : "—"}{r.liters ? ` · ${r.liters} L` : ""}</TD>
-                  <TD>
-                    {r.receiptUrl ? (
-                      <a href={r.receiptUrl} target="_blank" rel="noreferrer" className="block h-8 w-8 overflow-hidden rounded-btn border border-border">
-                        <img src={r.receiptUrl} alt="Struk" className="h-full w-full object-cover" />
-                      </a>
-                    ) : <span className="text-ink3">—</span>}
-                  </TD>
-                  <TD numeric className="font-semibold text-ink">{formatRupiah(r.amount)}</TD>
-                  <TD>
-                    <div className="flex items-center gap-2.5">
-                      <button type="button" className="text-[11px] font-semibold text-accent hover:underline" onClick={() => mulaiEdit(r)}>Edit</button>
-                      <button type="button" className="text-[11px] text-red hover:underline" onClick={() => hapus(r.id)}>Hapus</button>
-                    </div>
-                  </TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
-        </TableWrap>
-      )}
-    </div>
-  );
-}
-
-// ── Sub-tab SERVIS ────────────────────────────────────────────────────────
-const KOSONG_SERVICE = { date: "", type: "RUTIN", odometerKm: "", cost: "", workshop: "", description: "", receiptUrl: "", nextServiceKm: "", nextServiceDate: "" };
-
-function ServisTab({ vehicle }) {
-  const [rows, setRows] = useState(null);
-  const [form, setForm] = useState(KOSONG_SERVICE);
-  const [editingId, setEditingId] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const load = useCallback(() => {
-    api.getVehicleServices({ vehicleId: vehicle.id }).then(setRows).catch(() => setRows([]));
-  }, [vehicle.id]);
-  useEffect(() => { load(); }, [load]);
-
-  function mulaiEdit(r) {
-    setEditingId(r.id);
-    setForm({
-      date: r.date.slice(0, 10), type: r.type, odometerKm: String(r.odometerKm), cost: String(r.cost),
-      workshop: r.workshop || "", description: r.description || "", receiptUrl: r.receiptUrl || "",
-      nextServiceKm: r.nextServiceKm ?? "", nextServiceDate: r.nextServiceDate?.slice(0, 10) || "",
-    });
-    setError("");
-  }
-  function batalEdit() { setEditingId(null); setForm(KOSONG_SERVICE); setError(""); }
-
-  async function submit(e) {
-    e.preventDefault();
-    if (!form.date || !form.odometerKm || !form.cost) { setError("Tanggal, odometer, dan biaya wajib diisi"); return; }
-    setSaving(true);
-    setError("");
-    try {
-      const payload = {
-        date: form.date, type: form.type, odometerKm: Number(form.odometerKm), cost: Number(form.cost),
-        workshop: form.workshop || null, description: form.description || null, receiptUrl: form.receiptUrl || null,
-        nextServiceKm: form.nextServiceKm || null, nextServiceDate: form.nextServiceDate || null,
-      };
-      if (editingId) {
-        await api.updateVehicleService(editingId, payload);
-      } else {
-        await api.createVehicleService({ ...payload, vehicleId: vehicle.id });
-      }
-      batalEdit();
-      load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <form onSubmit={submit} className="grid grid-cols-3 gap-2.5 rounded-2xl bg-inset/60 p-3">
-        {editingId && (
-          <div className="col-span-3 flex items-center gap-1.5 text-[11.5px] font-semibold text-accent">
-            <Pencil size={12} /> Mengedit catatan — <button type="button" onClick={batalEdit} className="underline">batal</button>
-          </div>
-        )}
-        <Field label="Tanggal" required><DatePicker value={form.date} onChange={(v) => setForm((f) => ({ ...f, date: v }))} placeholder="Pilih tanggal" allowFuture={false} /></Field>
-        <Field label="Jenis">
-          <select className={inputCls} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
-            {Object.entries(SERVICE_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </select>
-        </Field>
-        <Field label="Odometer (km)" required><Input type="number" min="0" value={form.odometerKm} onChange={(e) => setForm((f) => ({ ...f, odometerKm: e.target.value }))} /></Field>
-        <Field label="Biaya (Rp)" required><Input type="number" min="0" value={form.cost} onChange={(e) => setForm((f) => ({ ...f, cost: e.target.value }))} /></Field>
-        <Field label="Bengkel"><Input value={form.workshop} onChange={(e) => setForm((f) => ({ ...f, workshop: e.target.value }))} /></Field>
-        <Field label="Servis berikutnya (km)"><Input type="number" value={form.nextServiceKm} onChange={(e) => setForm((f) => ({ ...f, nextServiceKm: e.target.value }))} /></Field>
-        <Field label="Servis berikutnya (tanggal)"><DatePicker value={form.nextServiceDate} onChange={(v) => setForm((f) => ({ ...f, nextServiceDate: v }))} placeholder="Opsional" /></Field>
-        <Field label="Dokumentasi" className="col-span-3">
-          <ReceiptPicker url={form.receiptUrl} onChange={(url) => setForm((f) => ({ ...f, receiptUrl: url || "" }))} />
-        </Field>
-        <div className="col-span-2 flex items-center gap-2">
-          <Input className="flex-1" placeholder="Keterangan (opsional)" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-          <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan…" : editingId ? "Simpan Perubahan" : "Tambah"}</Button>
-        </div>
-        {error && <p className="col-span-3 text-[12px] text-red">{error}</p>}
-      </form>
-
-      {rows === null ? <TableSkeletonRows rows={3} cols={6} /> : rows.length === 0 ? (
-        <EmptyState icon={Wrench} title="Belum ada riwayat servis" />
-      ) : (
-        <TableWrap>
-          <Table>
-            <THead><TR><TH>Tanggal</TH><TH>Jenis</TH><TH>Odometer</TH><TH>Bengkel</TH><TH>Nota</TH><TH>Biaya</TH><TH /></TR></THead>
-            <TBody>
-              {rows.map((r) => (
-                <TR key={r.id} className={editingId === r.id ? "bg-accentbg/40" : undefined}>
-                  <TD className="whitespace-nowrap text-ink2">{fmtTanggal(r.date)}</TD>
-                  <TD>{SERVICE_TYPES[r.type] || r.type}</TD>
-                  <TD className="text-ink3">{r.odometerKm} km</TD>
-                  <TD className="text-ink2">{r.workshop || "—"}</TD>
-                  <TD>
-                    {r.receiptUrl ? (
-                      <a href={r.receiptUrl} target="_blank" rel="noreferrer" className="block h-8 w-8 overflow-hidden rounded-btn border border-border">
-                        <img src={r.receiptUrl} alt="Nota" className="h-full w-full object-cover" />
-                      </a>
-                    ) : <span className="text-ink3">—</span>}
-                  </TD>
-                  <TD numeric className="font-semibold text-ink">{formatRupiah(r.cost)}</TD>
-                  <TD><button type="button" className="text-[11px] font-semibold text-accent hover:underline" onClick={() => mulaiEdit(r)}>Edit</button></TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
-        </TableWrap>
-      )}
-    </div>
-  );
-}
 
 // ── Sub-tab INSIDEN ───────────────────────────────────────────────────────
 const KOSONG_INCIDENT = {
@@ -598,11 +292,11 @@ const KOSONG_INCIDENT = {
   location: "", repairCost: "", faultParty: "TIDAK_JELAS", downtimeDays: "",
 };
 
-// Upload multi-foto SETELAH insiden tersimpan (beda dari ReceiptPicker
-// biaya/servis yang upload-lalu-tempel — kecelakaan sering butuh beberapa
-// sudut foto, dan foto pertama biasanya baru ada sesudah insiden dicatat
-// buru-buru dari lapangan). Tombol ini muncul di tiap kartu, foto langsung
-// bertambah ke galeri tanpa perlu buka form edit.
+// Upload multi-foto SETELAH insiden tersimpan (beda dari ReceiptPicker di
+// ArmadaBiaya.jsx yang upload-lalu-tempel — kecelakaan sering butuh
+// beberapa sudut foto, dan foto pertama biasanya baru ada sesudah insiden
+// dicatat buru-buru dari lapangan). Tombol ini muncul di tiap kartu, foto
+// langsung bertambah ke galeri tanpa perlu buka form edit.
 function TambahFotoInsiden({ incidentId, onUploaded }) {
   const [uploading, setUploading] = useState(false);
   async function handleFiles(e) {
@@ -787,6 +481,36 @@ function InsidenTab({ vehicle, drivers }) {
   );
 }
 
+// Kartu pengalih ke halaman Biaya Armada (D-167, 14 September 2026) —
+// GANTI TOTAL dari form Biaya/Servis penuh yang dulu ada di sini. Mencatat
+// pengeluaran/servis sekarang SATU-SATUNYA jalan lewat /armada/biaya (menu
+// sidebar sendiri) — modal kendaraan ini cuma titik masuk CEPAT ke sana
+// dengan kendaraan ini SUDAH terisi (?vehicleId=), bukan implementasi
+// kedua yang bisa drift dari yang pertama. Insiden TIDAK dipindah (lihat
+// catatan panjang di ArmadaBiaya.jsx) — tab itu tetap penuh di bawah.
+function BiayaServisRedirect({ vehicle, tab }) {
+  const navigate = useNavigate();
+  const Icon = tab === "servis" ? Wrench : Wallet;
+  const judul = tab === "servis" ? "Riwayat Servis" : "Biaya Pengeluaran";
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-2xl bg-inset/60 px-6 py-10 text-center">
+      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accentbg text-accent">
+        <Icon size={18} />
+      </span>
+      <div>
+        <p className="text-[13px] font-bold text-ink">{judul} — sekarang di halaman sendiri</p>
+        <p className="mt-1 max-w-xs text-[12px] leading-relaxed text-ink3">
+          Mencatat {tab === "servis" ? "servis" : "BBM/tol/parkir/dst"} untuk {vehicle.plateNumber}
+          {" "}dipindah ke <b>Biaya Armada</b> — satu halaman untuk semua kendaraan sekaligus, tidak perlu buka modal ini setiap kali ganti kendaraan.
+        </p>
+      </div>
+      <Button size="sm" onClick={() => navigate(`/armada/biaya?vehicleId=${vehicle.id}&tab=${tab === "servis" ? "servis" : "pengeluaran"}`)}>
+        Buka Biaya Armada <ArrowRight size={13} />
+      </Button>
+    </div>
+  );
+}
+
 function VehicleDetailModal({ vehicle, drivers, onOpenChange, onSaved }) {
   return (
     <Modal
@@ -815,8 +539,8 @@ function VehicleDetailModal({ vehicle, drivers, onOpenChange, onSaved }) {
           </TabsList>
           <div className="mt-4 max-h-[62vh] overflow-y-auto pr-1">
             <TabsContent value="info"><InfoTab vehicle={vehicle} drivers={drivers} onSaved={onSaved} /></TabsContent>
-            <TabsContent value="biaya"><BiayaTab vehicle={vehicle} drivers={drivers} /></TabsContent>
-            <TabsContent value="servis"><ServisTab vehicle={vehicle} /></TabsContent>
+            <TabsContent value="biaya"><BiayaServisRedirect vehicle={vehicle} tab="biaya" /></TabsContent>
+            <TabsContent value="servis"><BiayaServisRedirect vehicle={vehicle} tab="servis" /></TabsContent>
             <TabsContent value="insiden"><InsidenTab vehicle={vehicle} drivers={drivers} /></TabsContent>
           </div>
         </Tabs>
