@@ -83,7 +83,24 @@ export const PRODUCT_TYPE_LABELS = {
 // frontend (features/inbox/components/CustomerPanel/orderSummary.js) —
 // DIBIARKAN apa adanya di sana (di luar cakupan perbaikan sesi ini,
 // belum dilaporkan owner), TAPI jangan tiru bug itu di kode BARU manapun.
+// SEWA (15 September 2026, D-170, laporan owner: kartu/gambar rute
+// menampilkan "Kasur Spring" untuk order SWS-14092026-007, padahal itu
+// kasur SEWA — "karna kasur kita bukan spring", yang benar brand-nya
+// "Sano"). Klinik Matras cuma menyewakan SATU jenis kasur (brand sendiri),
+// productType TIDAK PERNAH relevan untuk SEWA — form order (OrderSection.
+// jsx) sengaja melompati pilihan Jenis Produk untuk kategori ini dan
+// mengunci merkKasur="Sano" otomatis saat order dibuat (lihat komentar
+// "Klinik Matras cuma menyewakan SATU jenis" di sana). Order SEWA jadi
+// SELALU pakai BRAND sebagai label produk di sini, bukan Lini+Jenis —
+// termasuk kalau ada order lama yang kebetulan masih menyimpan productType
+// (mis. dari sebelum aturan ini, atau kategori order diubah manual
+// belakangan lewat PATCH /orders/:id) — nilai itu tidak pernah dibaca lagi
+// untuk SEWA, supaya data nyasar seperti itu tidak pernah tampil lagi.
 export function produkLineLabel(order) {
+  if (order.category === "SEWA") {
+    const { merkKasur } = parseOrderNotesForInvoice(order.notes);
+    return merkKasur || "Sano";
+  }
   const line = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
   const type = order.productType ? (PRODUCT_TYPE_LABELS[order.productType] || order.productType) : "";
   if (!type) return line;

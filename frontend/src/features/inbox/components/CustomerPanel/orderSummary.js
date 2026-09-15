@@ -17,6 +17,23 @@ export function statusLabel(status) {
 }
 
 export function productSummary(order) {
+  const { ukuranKasur, merkKasur } = parseOrderNotes(order.notes);
+
+  // SEWA (15 September 2026, D-170, laporan owner: kartu Route Planner
+  // menampilkan "Kasur Spring" untuk order kasur SEWA — "karna kasur kita
+  // bukan spring", yang benar brand-nya "Sano"). Klinik Matras cuma
+  // menyewakan SATU jenis kasur (brand sendiri) — productType TIDAK
+  // PERNAH relevan untuk SEWA (form order sengaja melompati pilihan
+  // Jenis Produk untuk kategori ini dan mengunci merkKasur="Sano"
+  // otomatis, lihat OrderSection.jsx). SELALU pakai BRAND di sini untuk
+  // SEWA, bukan Lini+Jenis — termasuk kalau ada order lama yang kebetulan
+  // masih menyimpan productType nyasar (SATU SUMBER dengan backend
+  // services/invoice.js#produkLineLabel — perbaikan yang sama, jangan
+  // biarkan drift lagi seperti sebelumnya).
+  if (order.category === "SEWA") {
+    return [merkKasur || "Sano", ukuranKasur].filter(Boolean).join(" · ");
+  }
+
   const line = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
   const type = order.productType ? (PRODUCT_TYPE_LABELS[order.productType] || order.productType) : "";
   // Guard duplikasi kata (7 September 2026) — beberapa label di
@@ -28,7 +45,6 @@ export function productSummary(order) {
   // waktu itu; sekarang dipakai Dashboard Delivery, jadi diperbaiki
   // sekalian dengan guard yang sama, bukan didiamkan lagi.
   const produk = type && !type.toLowerCase().startsWith(line.toLowerCase()) ? `${line} ${type}` : (type || line);
-  const { ukuranKasur } = parseOrderNotes(order.notes);
   return [produk, ukuranKasur].filter(Boolean).join(" · ");
 }
 
