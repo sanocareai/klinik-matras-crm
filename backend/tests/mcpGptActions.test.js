@@ -92,6 +92,19 @@ test("GET /openapi.json — OpenAPI 3.1 valid, satu path per tool MCP, tidak ada
   const schema = op.requestBody.content["application/json"].schema;
   assert.equal(schema.type, "object");
   assert.ok(schema.properties.unmask, "param unmask (dari toolsShared.js) harus ikut ke schema OpenAPI");
+
+  // REGRESI (15 September 2026): validator Custom GPT Actions milik OpenAI
+  // menolak skema object TANPA `properties` sebagai "object schema missing
+  // properties" — gagal untuk SEMUA 18 path sekaligus karena dulu semuanya
+  // memakai satu konstanta respons yang sama, `{type:"object"}` polos.
+  for (const p of paths) {
+    const respSchema = spec.paths[p].post.responses["200"].content["application/json"].schema;
+    assert.equal(respSchema.type, "object", `${p}: skema respons 200 harus type object`);
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(respSchema, "properties"),
+      `${p}: skema respons 200 wajib punya kunci "properties" (walau kosong) — ditolak Custom GPT Actions kalau tidak ada`,
+    );
+  }
 });
 
 test("POST /gpt-actions/tools/:nama untuk tool yang tidak ada dijawab 400, bukan 500", async (t) => {

@@ -60,6 +60,15 @@ async function withClient(fn) {
 // ({type:"object", properties, required}) — SDK MCP yang mengonversinya dari
 // zod, bukan kita. Ini yang membuat OpenAPI di bawah otomatis sinkron dengan
 // definisi tool tanpa perlu ditulis ulang manual per tool.
+// Skema placeholder untuk respons 200 — bentuk data ASLI beda-beda per tool
+// (lihat komentar hasil() di toolsShared.js: sengaja tidak ada outputSchema
+// ketat). `properties: {}` WAJIB ada secara eksplisit — validator skema
+// Custom GPT Actions milik OpenAI menolak `{type:"object"}` tanpa `properties`
+// sebagai "object schema missing properties" (ditemukan 15 September 2026
+// lewat percobaan langsung: SEMUA 18 path gagal validasi dengan pesan yang
+// sama persis, karena constant ini dipakai berulang untuk tiap tool).
+const RESPONS_BEBAS = { type: "object", properties: {}, additionalProperties: true };
+
 function buildOpenApiSpec(tools, baseUrl) {
   const paths = {};
   for (const tool of tools) {
@@ -75,7 +84,7 @@ function buildOpenApiSpec(tools, baseUrl) {
         responses: {
           200: {
             description: "Hasil tool dalam JSON — struktur persis mengikuti deskripsi tool di atas.",
-            content: { "application/json": { schema: { type: "object" } } },
+            content: { "application/json": { schema: RESPONS_BEBAS } },
           },
           400: { description: "Argumen tidak valid, atau tool gagal dijalankan." },
           401: { description: "Token tidak ada / tidak valid." },
