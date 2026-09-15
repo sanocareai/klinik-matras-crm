@@ -20,6 +20,7 @@ import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus, selesaikanJobBelumJalan, selesaikanJobPengambilanTertinggal } from "../services/orderStatusSync.js";
 import { suggestDeliveryJob } from "../services/deliveryHandoff.js";
 import { ensurePickupJobForOrder } from "../services/armadaAutoJob.js";
+import { ACTIVE_JOB_STATUSES } from "../services/jobStatus.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SESSION_UNKNOWN_ERROR } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
@@ -622,6 +623,88 @@ orderRouter.post("/:id/reopen-for-delivery", requirePermission(P.ORDER_WRITE), a
       if (sebelum !== "READY") {
         await tx.orderStatusTransition.create({
           data: { orderId: order.id, fromStatus: sebelum, toStatus: "READY", changedById: req.user?.id || null },
+        });
+      }
+    });
+
+    const fresh = await prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { items: { orderBy: { sortOrder: "asc" } }, weightEntries: { orderBy: { sortOrder: "asc" } } },
+    });
+    await syncCustomerOrderAggregate(order.customerId);
+    res.json(fresh);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+// POST /api/orders/:id/reopen-for-pickup — "buka lagi" order yang
+// terlanjur ditandai job Pengambilan-nya COMPLETED oleh
+// scripts/backfill-complete-stale-pickups.js (8 September 2026, backfill
+// sekali-jalan yang disetujui owner untuk MENUTUP job PICKUP basi —
+// UNSCHEDULED/ASSIGNED dari order lama, scheduledDate kosong/lewat —
+// SENGAJA tanpa completedAt/foto, unit ikut ditandai RECEIVED). Laporan
+// admin delivery 15 September 2026: beberapa order dari daftar itu
+// TERNYATA fisiknya belum pernah benar-benar diambil sama sekali —
+// backfill itu cuma membereskan status ADMINISTRATIF job lama, bukan
+// menyatakan barang sudah di tangan. Endpoint ini untuk membuka kembali
+// order semacam itu SATU PER SATU (owner sudah konfirmasi daftar resi
+// mana yang perlu, bukan backfill massal kedua tanpa tinjauan manusia).
+//
+// Yang dilakukan: unit yang statusnya RECEIVED TAPI currentStageId masih
+// null (sinyal aman: unit itu TIDAK PERNAH benar-benar masuk produksi —
+// kalau sudah pernah diproses beneran, currentStageId pasti terisi lewat
+// startStage(), jadi unit itu tidak disentuh endpoint ini) dikembalikan
+// ke AWAITING_PICKUP, lalu ensurePickupJobForOrder() dipanggil — fungsi
+// yang SAMA dipakai jalur otomatis saat order dibuat (idempotent, job
+// baru muncul UNSCHEDULED, langsung kelihatan di Route Planner > Belum
+// Dijadwalkan). Job PICKUP lama yang COMPLETED TIDAK disentuh/dihapus —
+// tetap tersimpan sebagai riwayat, cuma tidak lagi satu-satunya jejak.
+//
+// SENGAJA menolak kalau order sudah punya job PICKUP yang masih AKTIF
+// (ACTIVE_JOB_STATUSES) — endpoint ini untuk kasus "belum pernah benar-
+// benar diambil", bukan untuk membuka job pengambilan kedua pada order
+// yang sudah punya driver berjalan (kejadian nyata: RES-24082026-150
+// ternyata sudah EN_ROUTE lewat job lain yang dibuat terpisah).
+orderRouter.post("/:id/reopen-for-pickup", requirePermission(P.ORDER_WRITE), async (req, res) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.id },
+      include: { units: true, jobs: { select: { id: true, type: true, status: true } } },
+    });
+    if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
+    if (order.category === "SEWA") {
+      return res.status(400).json({ error: "Order Sewa punya alur sendiri (SEWA_DIKIRIM/SEWA_DIAMBIL) — tidak berlaku di sini." });
+    }
+    if (order.jobs.some((j) => j.type === "PICKUP" && ACTIVE_JOB_STATUSES.includes(j.status))) {
+      return res.status(400).json({ error: "Order ini sudah punya job Pengambilan yang masih berjalan — tidak perlu dibuka lagi." });
+    }
+    const unitsPerluDibuka = order.units.filter((u) => u.status === "RECEIVED" && u.currentStageId === null);
+    if (unitsPerluDibuka.length === 0) {
+      return res.status(400).json({ error: "Tidak ada unit yang cocok (Diterima tapi belum pernah masuk produksi) pada order ini untuk dibuka kembali." });
+    }
+
+    let sebelum;
+    await prisma.$transaction(async (tx) => {
+      await tx.unit.updateMany({
+        where: { id: { in: unitsPerluDibuka.map((u) => u.id) } },
+        data: { status: "AWAITING_PICKUP" },
+      });
+      await ensurePickupJobForOrder(tx, order);
+
+      sebelum = order.status;
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          status: "PICKUP", statusLocked: true,
+          statusOverrideById: req.user?.id || null,
+          statusOverrideAt: new Date(),
+          statusOverrideNote: "Dibuka kembali untuk pengambilan — job Pengambilan sebelumnya belum pernah benar-benar selesai",
+        },
+      });
+      if (sebelum !== "PICKUP") {
+        await tx.orderStatusTransition.create({
+          data: { orderId: order.id, fromStatus: sebelum, toStatus: "PICKUP", changedById: req.user?.id || null },
         });
       }
     });
