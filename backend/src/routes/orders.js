@@ -658,8 +658,21 @@ orderRouter.post("/:id/reopen-for-delivery", requirePermission(P.ORDER_WRITE), a
 // ke AWAITING_PICKUP, lalu ensurePickupJobForOrder() dipanggil — fungsi
 // yang SAMA dipakai jalur otomatis saat order dibuat (idempotent, job
 // baru muncul UNSCHEDULED, langsung kelihatan di Route Planner > Belum
-// Dijadwalkan). Job PICKUP lama yang COMPLETED TIDAK disentuh/dihapus —
-// tetap tersimpan sebagai riwayat, cuma tidak lagi satu-satunya jejak.
+// Dijadwalkan).
+//
+// Job PICKUP lama yang COMPLETED oleh backfill ditandai FAILED (BUKAN
+// dihapus — endpoint DELETE /armada/jobs/:id SENGAJA menolak menghapus
+// job COMPLETED apa pun alasannya, "tandai FAILED kalau batal", dan
+// aturan itu dihormati di sini juga, bukan dilewati lewat jalur lain).
+// SEBELUM perbaikan ini job basi itu dibiarkan berstatus COMPLETED —
+// laporan admin delivery 15 September 2026: itu bikin Delivery &
+// Fulfillment menampilkan 2 kartu untuk 1 order (satu "Selesai" yang
+// PALSU dari backfill, satu "Belum Dijadwalkan" yang baru/asli), seolah
+// pengambilan sudah terjadi 2 kali padahal cuma 1 kali yang sungguhan.
+// Dicocokkan lewat SIGNATURE PERSIS backfill (completedAt null DAN
+// proofPhotoUrls kosong) — bukan "job PICKUP status COMPLETED apa pun",
+// supaya job yang BENAR-BENAR pernah selesai (ada completedAt/foto asli)
+// tidak pernah ikut tersentuh.
 //
 // SENGAJA menolak kalau order sudah punya job PICKUP yang masih AKTIF
 // (ACTIVE_JOB_STATUSES) — endpoint ini untuk kasus "belum pernah benar-
@@ -691,6 +704,17 @@ orderRouter.post("/:id/reopen-for-pickup", requirePermission(P.ORDER_WRITE), asy
         data: { status: "AWAITING_PICKUP" },
       });
       await ensurePickupJobForOrder(tx, order);
+
+      await tx.job.updateMany({
+        where: {
+          orderId: order.id, type: "PICKUP", status: "COMPLETED",
+          completedAt: null, proofPhotoUrls: { equals: [] },
+        },
+        data: {
+          status: "FAILED",
+          failureReason: "Ditutup otomatis oleh pembersihan data 8 September 2026 (backfill-complete-stale-pickups.js) — BUKAN pengambilan yang benar-benar terjadi. Order dibuka kembali untuk pengambilan sungguhan, lihat job Pengambilan baru.",
+        },
+      });
 
       sebelum = order.status;
       await tx.order.update({
