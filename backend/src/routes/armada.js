@@ -3828,6 +3828,45 @@ armadaRouter.delete("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res
   }
 });
 
+// POST /api/armada/jobs/:id/void-backfill-completion — koreksi SEMPIT untuk
+// job PICKUP yang ditutup COMPLETED oleh backfill-complete-stale-pickups.js
+// (8 September 2026), bukan lewat PATCH /jobs/:id biasa (yang SENGAJA
+// menolak apa pun selain job UNSCHEDULED/SCHEDULED/ASSIGNED — job COMPLETED
+// memang dikunci di jalur itu, dan aturan itu benar untuk job yang BENAR-
+// BENAR selesai). Endpoint ini SEMPIT: hanya menerima job yang cocok
+// SIGNATURE PERSIS backfill (status COMPLETED, completedAt null,
+// proofPhotoUrls kosong) — job yang punya bukti selesai asli (completedAt
+// terisi/ada foto) DITOLAK, tidak bisa "dibatalkan" lewat sini.
+//
+// Dipakai 15 September 2026 untuk 3 order yang sudah terlanjur dibuka lewat
+// POST /orders/:id/reopen-for-pickup SEBELUM endpoint itu ikut membereskan
+// job basinya sendiri (Dean Kazama, Anna Sampetoding, RES-01092026-003) —
+// laporan admin delivery: order-order itu menampilkan 2 kartu job seolah
+// pengambilan terjadi 2 kali padahal cuma 1 kali sungguhan. Perbaikan
+// reopen-for-pickup sendiri (commit berikutnya) sudah melakukan ini
+// otomatis untuk pemakaian ke depan — endpoint ini murni untuk order yang
+// sudah TERLANJUR diproses sebelum perbaikan itu ada.
+armadaRouter.post("/jobs/:id/void-backfill-completion", requirePermission(P.JOB_WRITE), async (req, res) => {
+  try {
+    const existing = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id } });
+    const cocokSignatureBackfill = existing.type === "PICKUP" && existing.status === "COMPLETED"
+      && existing.completedAt === null && (existing.proofPhotoUrls || []).length === 0;
+    if (!cocokSignatureBackfill) {
+      throw new ArmadaError("Job ini bukan artefak backfill (bukan PICKUP/COMPLETED tanpa completedAt & foto) — tidak bisa diubah lewat sini.");
+    }
+    const job = await prisma.job.update({
+      where: { id: req.params.id },
+      data: {
+        status: "FAILED",
+        failureReason: "Ditutup otomatis oleh pembersihan data 8 September 2026 (backfill-complete-stale-pickups.js) — BUKAN pengambilan yang benar-benar terjadi. Order dibuka kembali untuk pengambilan sungguhan lewat job Pengambilan baru.",
+      },
+    });
+    res.json(job);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // Guard bersama untuk endpoint driver (start/arrive/complete/fail/photos):
 // job harus milik driver ATAU helper yang login (D-037, 31 Agustus 2026 —
 // keduanya sama-sama di lapangan, siapa pun yang pegang HP saat itu boleh
