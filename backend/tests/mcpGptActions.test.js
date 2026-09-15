@@ -107,6 +107,26 @@ test("GET /openapi.json — OpenAPI 3.1 valid, satu path per tool MCP, tidak ada
   }
 });
 
+// REGRESI (15 September 2026): Custom GPT Actions menolak operation dengan
+// `description` > 300 karakter ("description has length N exceeding limit
+// of 300") — 9 dari 18 tool kena karena deskripsi tool.js/toolsChat.js
+// sengaja detail untuk Claude. potongDeskripsi() di gptActions.js harus
+// selalu memendekkan sebelum dikirim ke skema OpenAPI.
+test("GET /openapi.json — description tiap operation <= 300 karakter (batas Custom GPT Actions)", async (t) => {
+  const { url, tutup } = await jalankanServer();
+  t.after(tutup);
+
+  const res = await get(url, "/openapi.json");
+  const spec = await res.json();
+
+  for (const [p, item] of Object.entries(spec.paths)) {
+    assert.ok(
+      item.post.description.length <= 300,
+      `${p}: description ${item.post.description.length} karakter, melebihi batas 300 Custom GPT Actions`,
+    );
+  }
+});
+
 test("POST /gpt-actions/tools/:nama untuk tool yang tidak ada dijawab 400, bukan 500", async (t) => {
   const { url, tutup } = await jalankanServer();
   t.after(tutup);

@@ -69,6 +69,18 @@ async function withClient(fn) {
 // sama persis, karena constant ini dipakai berulang untuk tiap tool).
 const RESPONS_BEBAS = { type: "object", properties: {}, additionalProperties: true };
 
+// Custom GPT Actions membatasi `description` per operation MAKS 300 karakter
+// (ditemukan 15 September 2026, error langsung dari ChatGPT: "description
+// has length N exceeding limit of 300" untuk 9 dari 18 tool — deskripsi
+// tool.js/toolsChat.js/toolsTraffic.js sengaja detail untuk Claude, yang
+// TIDAK punya batas ini). Batas ini KHUSUS lapisan OpenAPI ChatGPT — deskripsi
+// asli tool di /mcp TIDAK dipotong, cuma cerminan di sini yang dipendekkan.
+const OPENAI_BATAS_DESKRIPSI = 300;
+function potongDeskripsi(teks) {
+  if (!teks || teks.length <= OPENAI_BATAS_DESKRIPSI) return teks;
+  return teks.slice(0, OPENAI_BATAS_DESKRIPSI - 1) + "…";
+}
+
 function buildOpenApiSpec(tools, baseUrl) {
   const paths = {};
   for (const tool of tools) {
@@ -76,7 +88,7 @@ function buildOpenApiSpec(tools, baseUrl) {
       post: {
         operationId: tool.name,
         summary: tool.title || tool.name,
-        description: tool.description || tool.name,
+        description: potongDeskripsi(tool.description || tool.name),
         requestBody: {
           required: false,
           content: { "application/json": { schema: tool.inputSchema } },
