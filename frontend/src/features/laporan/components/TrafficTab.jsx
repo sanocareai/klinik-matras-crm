@@ -68,6 +68,7 @@ function TrafficTip({ active, payload, label }) {
 const WARNA_SUMBER = {
   META_ADS: "var(--blue-600)",
   GOOGLE_ADS: "var(--green)",
+  TIKTOK_ADS: "var(--red)",
   INSTAGRAM: "var(--violet, #7c3aed)",
   WEBSITE_ORGANIC: "var(--orange)",
   WHATSAPP_DIRECT: "var(--text-tertiary)",

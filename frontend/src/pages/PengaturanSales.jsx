@@ -502,14 +502,16 @@ function SalesTargetSection() {
   );
 }
 
-// AD_SPEND_SOURCES — cuma 2 platform yang realistis punya biaya iklan
-// dikeluarkan (organik tidak butuh input). Pola SAMA PERSIS dengan
-// SalesTargetSection di atas (input manual admin per bulan), lihat komentar
-// panjang di backend/src/routes/settings.js. Dipakai menghitung CPA/ROAS
-// di Laporan > Traffic > kartu "Performa per Platform" (30 Agustus 2026).
+// AD_SPEND_SOURCES — cuma platform yang realistis punya biaya iklan
+// dikeluarkan (organik tidak butuh input); TikTok Ads ditambah 16 September
+// 2026 (D-165). Pola SAMA PERSIS dengan SalesTargetSection di atas (input
+// manual admin per bulan), lihat komentar panjang di
+// backend/src/routes/settings.js. Dipakai menghitung CPA/ROAS di Laporan >
+// Traffic > kartu "Performa per Platform" (30 Agustus 2026).
 const AD_SPEND_SOURCES = [
   { key: "META_ADS", label: "Meta Ads" },
   { key: "GOOGLE_ADS", label: "Google Ads" },
+  { key: "TIKTOK_ADS", label: "TikTok Ads" },
 ];
 
 function AdSpendSection() {

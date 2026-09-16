@@ -10,7 +10,7 @@ import { SOURCE_LABELS, KOTA_LIST, formatTanggalWaktu } from "../../../utils/for
 // enum lama "ADS"/"WEBSITE" di SOURCE_LABELS, yang cuma dipertahankan
 // supaya data historis tetap tampil benar, bukan untuk dipilih ulang).
 const LEAD_SOURCE_OPTIONS = [
-  "META_ADS", "GOOGLE_ADS", "WEBSITE_ORGANIC", "INSTAGRAM",
+  "META_ADS", "GOOGLE_ADS", "TIKTOK_ADS", "WEBSITE_ORGANIC", "INSTAGRAM",
   "WHATSAPP_DIRECT", "REFERRAL", "OTHER",
 ];
 

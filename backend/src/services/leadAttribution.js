@@ -70,6 +70,7 @@ export function matchCampaignByMessage(text, links) {
 export const CATEGORY_TO_LEAD_SOURCE = {
   META_ADS: "META_ADS",
   GOOGLE_ADS: "GOOGLE_ADS",
+  TIKTOK_ADS: "TIKTOK_ADS",
   WEBSITE_ORGANIC: "WEBSITE_ORGANIC",
   OTHER: "OTHER",
 };
@@ -187,12 +188,18 @@ export function leadSourceFromRefTag(tag) {
     return dibayar ? "META_ADS" : "INSTAGRAM";
   }
   if (source === "referral" || medium === "referral") return "REFERRAL";
+  // TikTok Ads (D-165, 16 September 2026) — cuma medium BERBAYAR yang
+  // diklaim, sama seperti google/meta di atas. TikTok organik (mis. bio
+  // link) TIDAK punya bucket khusus (beda dari google->WEBSITE_ORGANIC atau
+  // ig->INSTAGRAM) — tidak ada cukup sinyal/kebutuhan laporan terpisah
+  // untuk itu saat ini, jadi tetap OTHER dengan tag mentah utuh di
+  // leadSourceDetail.
+  if (source === "tiktok") return dibayar ? "TIKTOK_ADS" : "OTHER";
 
-  // TikTok & sumber lain di luar daftar: TIDAK ADA nilai enum TikTok di
-  // LeadSource (schema.prisma) -- jangan dikarang jadi salah satu
-  // platform yang memang ada. Tag mentahnya tetap utuh di
-  // leadSourceDetail ("Website - tiktok-organic" dst) supaya sales
-  // masih lihat sumber aslinya walau dibucket OTHER.
+  // Sumber lain di luar daftar: jangan dikarang jadi salah satu platform
+  // yang memang ada. Tag mentahnya tetap utuh di leadSourceDetail
+  // ("Website - snapchat-organic" dst) supaya sales masih lihat sumber
+  // aslinya walau dibucket OTHER.
   return "OTHER";
 }
 

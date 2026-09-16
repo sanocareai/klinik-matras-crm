@@ -95,15 +95,16 @@ settingsRouter.put("/sales-targets", requireAdmin, async (req, res) => {
 });
 
 // GET /api/settings/ad-spend?year=&month= — biaya iklan per sumber bulan itu
-// (30 Agustus 2026). Pola SAMA PERSIS dengan /sales-targets di atas — INPUT
-// MANUAL admin, bukan ditarik dari API Meta/Google Ads mana pun (sistem ini
-// tidak tersambung ke API iklan). Cuma sumber yang REALISTIS punya biaya
-// iklan yang dikembalikan (META_ADS, GOOGLE_ADS) — sumber organik tidak
-// pernah punya baris input, ditampilkan "0 belum diisi" apa adanya di UI,
-// BUKAN disembunyikan (supaya jelas kalau memang belum pernah diisi, bukan
-// sengaja Rp0 karena organik tidak butuh biaya — dua hal beda, keputusan
-// itu tetap ada di tangan admin yang isi angkanya, bukan diasumsikan sistem).
-const AD_SPEND_SOURCES = ["META_ADS", "GOOGLE_ADS"];
+// (30 Agustus 2026, TIKTOK_ADS ditambah 16 September 2026/D-165). Pola SAMA
+// PERSIS dengan /sales-targets di atas — INPUT MANUAL admin, bukan ditarik
+// dari API Meta/Google/TikTok Ads mana pun (sistem ini tidak tersambung ke
+// API iklan manapun). Cuma sumber yang REALISTIS punya biaya iklan yang
+// dikembalikan — sumber organik tidak pernah punya baris input, ditampilkan
+// "0 belum diisi" apa adanya di UI, BUKAN disembunyikan (supaya jelas kalau
+// memang belum pernah diisi, bukan sengaja Rp0 karena organik tidak butuh
+// biaya — dua hal beda, keputusan itu tetap ada di tangan admin yang isi
+// angkanya, bukan diasumsikan sistem).
+const AD_SPEND_SOURCES = ["META_ADS", "GOOGLE_ADS", "TIKTOK_ADS"];
 
 settingsRouter.get("/ad-spend", requireAdmin, async (req, res) => {
   const year  = Number(req.query.year  || new Date().getFullYear());

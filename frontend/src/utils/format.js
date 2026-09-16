@@ -186,6 +186,7 @@ export const ORDER_STATUS_LABELS = {
 export const SOURCE_LABELS = {
   META_ADS:        "Meta Ads",
   GOOGLE_ADS:      "Google Ads",
+  TIKTOK_ADS:      "TikTok Ads",
   WEBSITE_ORGANIC: "Website Organik",
   INSTAGRAM:       "Instagram Organik",
   WHATSAPP_DIRECT: "WhatsApp Langsung",
@@ -201,6 +202,7 @@ export const SOURCE_LABELS = {
 export const LEAD_SOURCES = [
   { value: "META_ADS",        label: "Meta Ads" },
   { value: "GOOGLE_ADS",      label: "Google Ads" },
+  { value: "TIKTOK_ADS",      label: "TikTok Ads" },
   { value: "WEBSITE_ORGANIC", label: "Website Organik" },
   { value: "INSTAGRAM",       label: "Instagram Organik" },
   { value: "WHATSAPP_DIRECT", label: "WhatsApp Langsung" },

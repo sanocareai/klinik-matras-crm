@@ -160,6 +160,9 @@ test("leadSourceFromRefTag: source+medium berbayar -> LeadSource iklan yang sesu
   assert.equal(leadSourceFromRefTag("google-pmax"), "GOOGLE_ADS");
   assert.equal(leadSourceFromRefTag("meta-cpc"), "META_ADS");
   assert.equal(leadSourceFromRefTag("ig-cpc"), "META_ADS");
+  // TikTok Ads (D-165, 16 September 2026)
+  assert.equal(leadSourceFromRefTag("tiktok-cpc"), "TIKTOK_ADS");
+  assert.equal(leadSourceFromRefTag("tiktok-paid-brand"), "TIKTOK_ADS");
 });
 
 test("leadSourceFromRefTag: medium TIDAK berbayar -> jangan diklaim sebagai belanja iklan", () => {
@@ -180,9 +183,17 @@ test("leadSourceFromRefTag: medium referral -> REFERRAL", () => {
   assert.equal(leadSourceFromRefTag("referral-whatsapp"), "REFERRAL");
 });
 
-test("leadSourceFromRefTag: prefix lain (mis. tiktok) -> OTHER (bukan dikarang jadi salah satu platform)", () => {
+test("leadSourceFromRefTag: tiktok TANPA medium berbayar -> OTHER (belum ada bucket organik TikTok)", () => {
+  // "tiktok-ads" SENGAJA dipertahankan: medium "ads" (bukan cpc/paid/dst)
+  // TIDAK ada di MEDIUM_BERBAYAR — kalau ini berubah jadi TIKTOK_ADS berarti
+  // MEDIUM_BERBAYAR ikut berubah, sekalian cek definisinya di sana.
   assert.equal(leadSourceFromRefTag("tiktok-ads"), "OTHER");
   assert.equal(leadSourceFromRefTag("tiktok-organic"), "OTHER");
+});
+
+test("leadSourceFromRefTag: prefix lain (mis. snapchat) -> OTHER (bukan dikarang jadi salah satu platform)", () => {
+  assert.equal(leadSourceFromRefTag("snapchat-cpc"), "OTHER");
+  assert.equal(leadSourceFromRefTag("snapchat-organic"), "OTHER");
 });
 
 test("leadSourceFromRefTag: tidak ada tag -> null", () => {

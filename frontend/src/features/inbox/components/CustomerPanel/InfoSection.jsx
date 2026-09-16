@@ -4,6 +4,7 @@ import { api } from "../../../../api.js";
 const LEAD_SOURCE_LABELS = {
   META_ADS:        "Iklan Meta",
   GOOGLE_ADS:      "Google Ads",
+  TIKTOK_ADS:      "TikTok Ads",
   WEBSITE_ORGANIC: "Website Organik",
   INSTAGRAM:       "Instagram",
   WHATSAPP_DIRECT: "WA Langsung",
@@ -25,6 +26,7 @@ const LEAD_SOURCE_LABELS = {
 const LEAD_SOURCE_HEX = {
   META_ADS:        "#2563eb",
   GOOGLE_ADS:      "#b45309",
+  TIKTOK_ADS:      "#be123c",
   WEBSITE_ORGANIC: "#16a34a",
   INSTAGRAM:       "#db2777",
   WHATSAPP_DIRECT: "#059669",
@@ -128,6 +130,7 @@ export default function InfoSection({ customer, onUpdate }) {
           >
             <option value="META_ADS">Iklan Meta</option>
             <option value="GOOGLE_ADS">Google Ads</option>
+            <option value="TIKTOK_ADS">TikTok Ads</option>
             <option value="WEBSITE_ORGANIC">Website Organik</option>
             <option value="INSTAGRAM">Instagram</option>
             <option value="WHATSAPP_DIRECT">WA Langsung</option>

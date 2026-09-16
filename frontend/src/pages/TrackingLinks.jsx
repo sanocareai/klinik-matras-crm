@@ -5,6 +5,7 @@ import { api } from "../api.js";
 const KATEGORI_OPTIONS = [
   { value: "META_ADS",        label: "Iklan Meta (Instagram/Facebook)" },
   { value: "GOOGLE_ADS",      label: "Google Ads" },
+  { value: "TIKTOK_ADS",      label: "TikTok Ads" },
   { value: "WEBSITE_ORGANIC", label: "Website Organik" },
   { value: "OTHER",           label: "Lainnya" },
 ];
@@ -12,6 +13,7 @@ const KATEGORI_OPTIONS = [
 const KATEGORI_LABEL = {
   META_ADS:        "Iklan Meta",
   GOOGLE_ADS:      "Google Ads",
+  TIKTOK_ADS:      "TikTok Ads",
   WEBSITE_ORGANIC: "Website Organik",
   OTHER:           "Lainnya",
 };
@@ -19,6 +21,7 @@ const KATEGORI_LABEL = {
 const KATEGORI_COLOR = {
   META_ADS:        { bg: "#dbeafe", color: "#1e40af" },
   GOOGLE_ADS:      { bg: "#fef9c3", color: "#854d0e" },
+  TIKTOK_ADS:      { bg: "#fee2e2", color: "#991b1b" },
   WEBSITE_ORGANIC: { bg: "#dcfce7", color: "#166534" },
   OTHER:           { bg: "#f3f4f6", color: "#374151" },
 };

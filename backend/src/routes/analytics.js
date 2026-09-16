@@ -2084,7 +2084,7 @@ function metrikKualitas(leads, won, totalValue, spam = 0) {
 // termasuk 2 nilai lawas (ADS/WEBSITE) supaya data customer lama masih bisa
 // difilter, walau dropdown UI cuma menawarkan yang aktif dipakai sekarang.
 const LEAD_SOURCE_VALUES = new Set([
-  "META_ADS", "GOOGLE_ADS", "WEBSITE_ORGANIC", "INSTAGRAM",
+  "META_ADS", "GOOGLE_ADS", "TIKTOK_ADS", "WEBSITE_ORGANIC", "INSTAGRAM",
   "WHATSAPP_DIRECT", "REFERRAL", "OTHER", "ADS", "WEBSITE",
 ]);
 

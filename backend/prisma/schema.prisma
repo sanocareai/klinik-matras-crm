@@ -88,6 +88,14 @@ enum Channel {
 enum LeadSource {
   META_ADS // iklan Instagram/Facebook — menggantikan ADS
   GOOGLE_ADS // iklan Google
+  // Iklan TikTok (D-165, 16 September 2026) — dari TrackedLink kategori
+  // TIKTOK_ADS (klik "Instant Messaging URL" di ad TikTok, lihat komentar
+  // enum LinkCategory di bawah). TIDAK ada Lapis 1 auto-detect setara CTWA
+  // Meta untuk TikTok (TikTok tidak menyuntikkan referral ke payload WA) —
+  // jadi sumber ini HANYA bisa terisi lewat TrackedLink (Lapis 1 pencocokan
+  // teks & Lapis 2 jendela klik 15 menit di webhooks.js), tidak pernah dari
+  // deteksi otomatis payload WhatsApp seperti META_ADS.
+  TIKTOK_ADS
   WEBSITE_ORGANIC // klik organik dari website — menggantikan WEBSITE
   INSTAGRAM // DM organik Instagram (bukan iklan)
   WHATSAPP_DIRECT // chat organik langsung ke WA
@@ -107,6 +115,7 @@ enum LeadSource {
 enum LinkCategory {
   META_ADS
   GOOGLE_ADS
+  TIKTOK_ADS
   WEBSITE_ORGANIC
   OTHER
 }
@@ -3531,10 +3540,11 @@ model SalesTarget {
 // join-nya di analytics.js terasa konsisten dengan yang sudah ada.
 //
 // `source` pakai enum LeadSource yang SAMA dengan Customer.leadSource —
-// join langsung tanpa tabel mapping tambahan. Realistisnya cuma META_ADS &
-// GOOGLE_ADS yang akan pernah diisi (sumber organik tidak punya biaya iklan),
-// tapi field ini TIDAK dibatasi ke keduanya saja — kalau nanti ada TikTok
-// Ads dsb, enum LeadSource yang perlu ditambah, bukan model ini.
+// join langsung tanpa tabel mapping tambahan. Realistisnya cuma platform
+// berbayar (META_ADS, GOOGLE_ADS, dan sejak 16 September 2026 TIKTOK_ADS)
+// yang akan pernah diisi (sumber organik tidak punya biaya iklan), tapi
+// field ini TIDAK dibatasi ke daftar itu — kalau nanti ada platform baru
+// lagi, enum LeadSource yang perlu ditambah, bukan model ini.
 model AdSpend {
   id     String     @id @default(cuid())
   source LeadSource
