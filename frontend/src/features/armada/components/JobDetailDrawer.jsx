@@ -800,51 +800,6 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                             <Truck size={13} className="text-ink3" /> {job.vehicle.plateNumber}
                           </p>
                         )}
-                        {/* Edit Darurat (15 September 2026) — lihat catatan
-                            panjang di ubahDaruratRute() di atas. Hanya rute
-                            PUBLISHED (driver sudah lihat, sedang berjalan) —
-                            sama syarat dengan canEmergencyEdit di
-                            RouteCard.jsx, DRAFT/COMPLETED/CANCELLED tidak
-                            relevan untuk "ganti PIC di tengah jalan". */}
-                        {job.route?.status === "PUBLISHED" && (
-                          ruteEditReason == null ? (
-                            <button
-                              type="button" onClick={mulaiEditDaruratRute} disabled={busy}
-                              className="mt-1 text-[11.5px] font-semibold text-accent hover:underline disabled:opacity-50"
-                            >
-                              Ganti Driver/Helper (Darurat)
-                            </button>
-                          ) : (
-                            <div className="space-y-2 rounded-btn border border-orange/40 bg-orangebg/40 p-2">
-                              <p className="text-[11px] text-orange">
-                                Mengganti driver/helper akan berlaku untuk SEMUA stop rute ini yang
-                                belum Selesai/Gagal — stop yang sudah tuntas tidak ikut berubah.
-                              </p>
-                              <div>
-                                <label className="mb-1 block text-[11px] text-ink2">Driver baru</label>
-                                <ChipPilih
-                                  items={drivers} selectedId={job.driverId} disabled={busy}
-                                  kosongLabel="Belum ditugaskan"
-                                  onPick={(id) => ubahDaruratRute({ driverId: id })}
-                                />
-                              </div>
-                              <div>
-                                <label className="mb-1 block text-[11px] text-ink2">Helper baru</label>
-                                <ChipPilih
-                                  items={helpers} selectedId={job.helperId} disabled={busy}
-                                  kosongLabel="Tanpa helper"
-                                  onPick={(id) => ubahDaruratRute({ helperId: id })}
-                                />
-                              </div>
-                              <button
-                                type="button" onClick={() => setRuteEditReason(null)} disabled={busy}
-                                className="text-[11px] text-ink3 hover:underline"
-                              >
-                                Batal
-                              </button>
-                            </div>
-                          )
-                        )}
                       </div>
                     ) : (
                       <>
@@ -1066,6 +1021,64 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     <Baris icon={Clock} label="Estimasi Durasi">
                       {estimasiDurasiLabel(job.estimatedDurationMinutes)}
                     </Baris>
+                  </div>
+                )}
+
+                {/* Edit Darurat driver/helper (15 September 2026) — lihat
+                    catatan panjang di ubahDaruratRute() di atas. SENGAJA
+                    DI LUAR ternary editable/!editable persis di atas —
+                    kasus nyata yang dilaporkan owner ("driver jalan
+                    ambil/kirim kasur, lalu tiba-tiba ada urusan mendesak,
+                    gabisa lanjut ke alamat lain") justru terjadi saat job
+                    statusnya EN_ROUTE/ARRIVED, yaitu status yang membuat
+                    `editable` FALSE (EDITABLE_JOB_STATUSES cuma
+                    UNSCHEDULED/SCHEDULED/ASSIGNED) — kalau tombol ini
+                    ditaruh di dalam salah satu cabang saja, dispatcher
+                    justru tidak akan pernah melihatnya di momen yang
+                    paling butuh. Sama syarat dengan canEmergencyEdit di
+                    RouteCard.jsx (rute PUBLISHED) — status job ITU SENDIRI
+                    tidak relevan di sini, karena yang diubah bukan job ini
+                    saja tapi SISA stop rute yang belum Selesai/Gagal. */}
+                {terkunciRute && job.route?.status === "PUBLISHED" && (
+                  <div className="mt-3">
+                    {ruteEditReason == null ? (
+                      <button
+                        type="button" onClick={mulaiEditDaruratRute} disabled={busy}
+                        className="flex items-center gap-1.5 text-[11.5px] font-semibold text-accent hover:underline disabled:opacity-50"
+                      >
+                        <Lock size={12} /> Ganti Driver/Helper (Darurat) — rute {job.route?.code || "?"}
+                      </button>
+                    ) : (
+                      <div className="space-y-2 rounded-btn border border-orange/40 bg-orangebg/40 p-2.5">
+                        <p className="text-[11px] text-orange">
+                          Mengganti driver/helper akan berlaku untuk SEMUA stop rute {job.route?.code} yang
+                          belum Selesai/Gagal — stop yang sudah tuntas (termasuk job ini kalau sudah
+                          Selesai/Gagal) tidak ikut berubah.
+                        </p>
+                        <div>
+                          <label className="mb-1 block text-[11px] text-ink2">Driver baru</label>
+                          <ChipPilih
+                            items={drivers} selectedId={job.driverId} disabled={busy}
+                            kosongLabel="Belum ditugaskan"
+                            onPick={(id) => ubahDaruratRute({ driverId: id })}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[11px] text-ink2">Helper baru</label>
+                          <ChipPilih
+                            items={helpers} selectedId={job.helperId} disabled={busy}
+                            kosongLabel="Tanpa helper"
+                            onPick={(id) => ubahDaruratRute({ helperId: id })}
+                          />
+                        </div>
+                        <button
+                          type="button" onClick={() => setRuteEditReason(null)} disabled={busy}
+                          className="text-[11px] text-ink3 hover:underline"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 

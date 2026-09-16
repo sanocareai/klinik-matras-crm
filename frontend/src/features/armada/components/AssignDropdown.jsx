@@ -66,7 +66,18 @@ export default function AssignDropdown({
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           align="start" sideOffset={6}
-          className="z-50 min-w-[190px] rounded-btn border border-border bg-surface p-1.5 shadow-popover"
+          // z-[250] (15 September 2026, laporan owner: "di proof of delivery
+          // ketika mau edit driver/helper... gaada pilihan driver/helper
+          // lain") — SEBELUM INI z-50, cukup di Armada.jsx (halaman polos,
+          // tidak ada yang bersaing) tapi TIDAK di PodReviewDrawer, yang
+          // Dialog.Content-nya z-[201]. Portal DropdownMenu di-append ke
+          // document.body (lepas dari urutan DOM induknya), jadi angka
+          // z-index-lah yang menentukan tampil di depan/belakang — z-50
+          // dulu me-render dropdown-nya DI BAWAH panel drawer: klik
+          // "Driver & Helper" TERLIHAT tidak berbuat apa-apa (menu-nya
+          // sebenarnya terbuka, cuma tersembunyi di belakang drawer).
+          // Dipatok di atas z-[201] manapun yang sudah ada di project ini.
+          className="z-[250] min-w-[190px] rounded-btn border border-border bg-surface p-1.5 shadow-popover"
         >
           <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink3">
             Driver
@@ -100,7 +111,7 @@ export default function AssignDropdown({
                 <DropdownMenu.Portal>
                   <DropdownMenu.SubContent
                     sideOffset={4}
-                    className="z-50 min-w-[170px] rounded-btn border border-border bg-surface p-1.5 shadow-popover"
+                    className="z-[250] min-w-[170px] rounded-btn border border-border bg-surface p-1.5 shadow-popover"
                   >
                     <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink3">
                       Helper (opsional)
