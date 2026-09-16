@@ -237,6 +237,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     muat();
     setShowForm(null);
     setActionError("");
+    setRuteEditReason(null);
     setShowManualInput(false);
     setManualProofFiles([]);
     setManualCompletedAt(toDatetimeLocal(new Date()));
@@ -341,6 +342,45 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
     try {
       const updated = await api.updateArmadaJob(job.id, patch);
       setJob(updated);
+      onChanged?.();
+    } catch (e) {
+      setActionError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Edit Darurat driver/helper untuk job yang sudah masuk Route (15
+  // September 2026, laporan owner: "ada case dimana tiba-tiba rute sudah
+  // diterbitkan > driver jalan ambil/kirim kasur, lalu tiba-tiba salah satu
+  // antara driver/helper ada urusan mendesak ketika kerja, lalu gabisa
+  // lanjut ke alamat lain dalam rute tersebut" — sebelum ini, satu-satunya
+  // jalur ganti PIC darurat cuma tombol "Edit Darurat" di Route Planner
+  // (RouteCard.jsx), sementara drawer ini (dipakai dari Jadwal & Penugasan)
+  // cuma menampilkan pesan terkunci tanpa cara bertindak — dispatcher harus
+  // pindah halaman dulu, cari rutenya, baru bisa ganti. Endpoint yang
+  // dipakai (PATCH /routes/:id) PERSIS SAMA dengan Route Planner — SENGAJA
+  // TIDAK menulis Job.driverId langsung dari sini, supaya aturan aman yang
+  // sudah ada di sana tetap berlaku: hanya stop yang BELUM Selesai/Gagal
+  // yang ikut berpindah PIC, stop yang sudah tuntas tetap mencatat siapa
+  // yang benar-benar mengerjakannya (lihat catatan panjang di armada.js).
+  const [ruteEditReason, setRuteEditReason] = useState(null);
+
+  function mulaiEditDaruratRute() {
+    const alasan = window.prompt(
+      "Ganti driver/helper untuk SISA stop yang BELUM Selesai di rute ini (mis. driver/helper ada urusan mendesak di tengah jalan). Stop yang sudah Selesai/Gagal TIDAK ikut berubah.\n\nTulis alasan singkat:"
+    );
+    if (!alasan?.trim()) return;
+    setRuteEditReason(alasan.trim());
+  }
+
+  async function ubahDaruratRute(patch) {
+    setBusy(true);
+    setActionError("");
+    try {
+      await api.updateRoute(job.route.id, { ...patch, reason: ruteEditReason });
+      setRuteEditReason(null);
+      muat();
       onChanged?.();
     } catch (e) {
       setActionError(e.message);
@@ -759,6 +799,51 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                           <p className="flex items-center gap-1.5 text-[12px] text-ink2">
                             <Truck size={13} className="text-ink3" /> {job.vehicle.plateNumber}
                           </p>
+                        )}
+                        {/* Edit Darurat (15 September 2026) — lihat catatan
+                            panjang di ubahDaruratRute() di atas. Hanya rute
+                            PUBLISHED (driver sudah lihat, sedang berjalan) —
+                            sama syarat dengan canEmergencyEdit di
+                            RouteCard.jsx, DRAFT/COMPLETED/CANCELLED tidak
+                            relevan untuk "ganti PIC di tengah jalan". */}
+                        {job.route?.status === "PUBLISHED" && (
+                          ruteEditReason == null ? (
+                            <button
+                              type="button" onClick={mulaiEditDaruratRute} disabled={busy}
+                              className="mt-1 text-[11.5px] font-semibold text-accent hover:underline disabled:opacity-50"
+                            >
+                              Ganti Driver/Helper (Darurat)
+                            </button>
+                          ) : (
+                            <div className="space-y-2 rounded-btn border border-orange/40 bg-orangebg/40 p-2">
+                              <p className="text-[11px] text-orange">
+                                Mengganti driver/helper akan berlaku untuk SEMUA stop rute ini yang
+                                belum Selesai/Gagal — stop yang sudah tuntas tidak ikut berubah.
+                              </p>
+                              <div>
+                                <label className="mb-1 block text-[11px] text-ink2">Driver baru</label>
+                                <ChipPilih
+                                  items={drivers} selectedId={job.driverId} disabled={busy}
+                                  kosongLabel="Belum ditugaskan"
+                                  onPick={(id) => ubahDaruratRute({ driverId: id })}
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[11px] text-ink2">Helper baru</label>
+                                <ChipPilih
+                                  items={helpers} selectedId={job.helperId} disabled={busy}
+                                  kosongLabel="Tanpa helper"
+                                  onPick={(id) => ubahDaruratRute({ helperId: id })}
+                                />
+                              </div>
+                              <button
+                                type="button" onClick={() => setRuteEditReason(null)} disabled={busy}
+                                className="text-[11px] text-ink3 hover:underline"
+                              >
+                                Batal
+                              </button>
+                            </div>
+                          )
                         )}
                       </div>
                     ) : (
