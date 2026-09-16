@@ -225,6 +225,23 @@ export function hitungNominal(order, payments = []) {
   const dpTarget = order.dpTarget || null;
   const dpKurang = dpTarget && adaLedger ? Math.max(dpTarget - dibayar, 0) : 0;
 
+  // modeDP (16 Sep 2026, laporan owner: "customer kadang mau invoice DP
+  // dulu") — sebelumnya invoice SELALU menampilkan TOTAL = nilai order
+  // PENUH sebagai angka utama, dpTarget cuma catatan kecil pembanding di
+  // bawahnya. Sales tidak punya cara mengirim dokumen yang headline-nya
+  // "Tagihan DP: Rp X" (yang sungguh diminta ke customer di fase DP),
+  // bukan total order yang belum relevan ditagih penuh.
+  // true SELAMA nominal yang sudah dibayar BELUM mencapai dpTarget —
+  // turunan LANGSUNG dari dpKurang (sudah > 0 persis di kondisi itu,
+  // termasuk sudah otomatis mensyaratkan dpTarget terisi & ledger ada),
+  // TIDAK butuh state/kolom baru. Begitu DP terpenuhi (dpKurang balik ke
+  // 0 — bisa dari pembayaran BARU, atau dari dpTarget dikosongkan admin),
+  // modeDP mati sendiri, invoice balik normal menampilkan TOTAL order
+  // penuh seperti sebelum fitur ini ada. Dipakai invoicePdf.js &
+  // InvoicePanel.jsx (frontend) — DUA tempat itu WAJIB dijaga konsisten,
+  // supaya PDF yang dikirim & yang dilihat sales di panel tidak beda.
+  const modeDP = dpKurang > 0;
+
   return {
     totalLayanan,
     hargaSebelumDiskon,
@@ -244,6 +261,7 @@ export function hitungNominal(order, payments = []) {
     dibayarTidakRinci,
     dpTarget,
     dpKurang,
+    modeDP,
   };
 }
 
@@ -455,6 +473,7 @@ export async function buildCombinedInvoiceView(primaryInvoiceId, { userId = null
   const totalTagihan = jumlah((n) => n.totalTagihan);
   const dibayar = jumlah((n) => n.dibayar);
   const dpTargetSum = jumlah((n) => n.dpTarget);
+  const dpKurangSum = semuaLedger && dpTargetSum ? Math.max(dpTargetSum - dibayar, 0) : 0;
 
   const nominal = {
     totalLayanan: jumlah((n) => n.totalLayanan),
@@ -471,7 +490,11 @@ export async function buildCombinedInvoiceView(primaryInvoiceId, { userId = null
     sumber: semuaLedger ? "ledger" : "statusManual",
     dibayarTidakRinci: validViews.some((v) => v.nominal.dibayarTidakRinci),
     dpTarget: dpTargetSum || null,
-    dpKurang: semuaLedger && dpTargetSum ? Math.max(dpTargetSum - dibayar, 0) : 0,
+    dpKurang: dpKurangSum,
+    // modeDP — SAMA turunan dgn buildSingleOrderView (lihat catatan di
+    // sana): true selama dibayar belum mencapai jumlah dpTarget SEMUA
+    // anggota bundle (dpTarget per-order dijumlahkan di atas).
+    modeDP: dpKurangSum > 0,
   };
 
   const status = statusEfektif({ invoice: primaryRow, nominal });

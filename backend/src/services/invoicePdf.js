@@ -484,8 +484,12 @@ export function renderInvoicePdf(view) {
     // halaman kalau perkiraannya sedikit meleset.
     let estimasiKananTinggi = 18 * 2 + 22 + 12; // subtotal + diskon + TOTAL(bold) + garis putus
     if (nominal.ongkir > 0) estimasiKananTinggi += 18;
-    if (nominal.dibayar > 0 || nominal.dibayarTidakRinci) estimasiKananTinggi += 18 * 2;
-    if (nominal.dpTarget > 0 && nominal.sumber === "ledger") estimasiKananTinggi += 18;
+    if (nominal.modeDP) {
+      estimasiKananTinggi += 18 * 2 + 18; // sudah dibayar? + Sisa DP + info total order
+    } else {
+      if (nominal.dibayar > 0 || nominal.dibayarTidakRinci) estimasiKananTinggi += 18 * 2;
+      if (nominal.dpTarget > 0 && nominal.sumber === "ledger") estimasiKananTinggi += 18;
+    }
     if (payments && payments.length > 1) estimasiKananTinggi += 19 + payments.length * 13;
     if (invoice.dueDate) estimasiKananTinggi += 36;
     estimasiKananTinggi += 16 + 9 + 6 + 16 + 20; // blok "Terima kasih!" + margin aman
@@ -522,28 +526,45 @@ export function renderInvoicePdf(view) {
     doc.moveTo(bawahKananX, yr + 3).lineTo(bawahKananX + bawahKananW, yr + 3).dash(2, { space: 2 }).strokeColor(GARIS).stroke();
     doc.undash();
     yr += 12;
-    barisTotal("TOTAL", formatRupiah(nominal.totalTagihan), { bold: true, warna: BIRU });
-
-    if (nominal.dibayar > 0 || nominal.dibayarTidakRinci) {
-      barisTotal("Sudah dibayar", nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.dibayar), { warna: "#16a34a" });
-      barisTotal("Sisa tagihan", nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.sisa), {
-        bold: true, warna: nominal.sisa > 0 ? "#dc2626" : "#16a34a",
-      });
-    }
-
-    // DP disepakati (2 Sep 2026) — MURNI pembanding terhadap kesepakatan
-    // awal, cuma tampil kalau ledger-nya ada (ledger kosong = dibayar sendiri
-    // tidak pasti, dpKurang sengaja 0 di services/invoice.js untuk kasus itu).
-    if (nominal.dpTarget > 0 && nominal.sumber === "ledger") {
+    if (nominal.modeDP) {
+      // Tagihan DP (16 September 2026, laporan owner: "customer kadang
+      // mau invoice DP dulu") — SEBELUMNYA headline SELALU nilai order
+      // PENUH walau baru fase DP, dpTarget cuma catatan kecil di bawah.
+      // Sekarang selama dibayar BELUM mencapai dpTarget (nominal.modeDP,
+      // lihat services/invoice.js), headline berganti jadi nominal DP yang
+      // SUNGGUH diminta ke customer saat ini — bukan total order yang
+      // belum relevan ditagih penuh. Rincian layanan di atas TETAP tampil
+      // apa adanya (tidak diringkas), + baris info "Total keseluruhan
+      // order" di bawah supaya customer tetap lihat konteks lengkap.
+      barisTotal("Tagihan DP", formatRupiah(nominal.dpTarget), { bold: true, warna: BIRU });
+      if (nominal.dibayar > 0) {
+        barisTotal("Sudah dibayar", formatRupiah(nominal.dibayar), { warna: "#16a34a" });
+      }
+      barisTotal("Sisa DP", formatRupiah(nominal.dpKurang), { bold: true, warna: "#dc2626" });
       yr += 4;
-      doc.fontSize(8.5).font(FONT_TEKS).fillColor(nominal.dpKurang > 0 ? "#c2410c" : "#16a34a")
-        .text(
-          nominal.dpKurang > 0
-            ? `DP disepakati ${formatRupiah(nominal.dpTarget)} — kurang ${formatRupiah(nominal.dpKurang)}`
-            : `DP disepakati ${formatRupiah(nominal.dpTarget)} — terpenuhi`,
-          bawahKananX, yr, { width: bawahKananW, align: "right" }
-        );
+      doc.fontSize(8.5).font(FONT_TEKS).fillColor(ABU)
+        .text(`Total keseluruhan order: ${formatRupiah(nominal.totalTagihan)}`, bawahKananX, yr, { width: bawahKananW, align: "right" });
       yr += 14;
+    } else {
+      barisTotal("TOTAL", formatRupiah(nominal.totalTagihan), { bold: true, warna: BIRU });
+
+      if (nominal.dibayar > 0 || nominal.dibayarTidakRinci) {
+        barisTotal("Sudah dibayar", nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.dibayar), { warna: "#16a34a" });
+        barisTotal("Sisa tagihan", nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.sisa), {
+          bold: true, warna: nominal.sisa > 0 ? "#dc2626" : "#16a34a",
+        });
+      }
+
+      // DP disepakati (2 Sep 2026) — hanya tersisa jalur "terpenuhi" sejak
+      // modeDP ada (kasus "kurang" sekarang jadi headline di atas, bukan
+      // di sini lagi) — MURNI catatan riwayat bahwa DP sudah dipenuhi,
+      // cuma tampil kalau ledger-nya ada.
+      if (nominal.dpTarget > 0 && nominal.sumber === "ledger") {
+        yr += 4;
+        doc.fontSize(8.5).font(FONT_TEKS).fillColor("#16a34a")
+          .text(`DP disepakati ${formatRupiah(nominal.dpTarget)} — terpenuhi`, bawahKananX, yr, { width: bawahKananW, align: "right" });
+        yr += 14;
+      }
     }
 
     // Riwayat Pembayaran per transaksi (2 Sep 2026) — cuma kalau lebih dari

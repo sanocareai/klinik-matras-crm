@@ -436,35 +436,55 @@ export default function InvoicePanel({ orderId, onChanged }) {
           </>
         ) : null}
         {nominal.ongkir > 0 && <BarisUang label="Ongkir" value={formatRupiah(nominal.ongkir)} />}
-        <BarisUang label="Total tagihan" value={formatRupiah(nominal.totalTagihan)} strong />
 
-        <div className="my-2 border-t border-line" />
-        <BarisUang
-          label="Sudah dibayar"
-          hint={nominal.dibayarTidakRinci ? "(nominal DP belum tercatat)" : null}
-          value={nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.dibayar)}
-          tone="green"
-        />
-        <BarisUang
-          label="Sisa tagihan"
-          value={nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.sisa)}
-          tone={nominal.sisa > 0 ? "red" : "green"}
-          strong
-        />
+        {/* modeDP (16 Sep 2026, laporan owner: "customer kadang mau
+            invoice DP dulu") — SEBELUMNYA headline SELALU total order
+            PENUH walau baru fase DP, dpTarget cuma catatan kecil di
+            bawah. Sekarang selama dibayar BELUM mencapai dpTarget
+            (nominal.modeDP, backend services/invoice.js), headline
+            berganti jadi nominal DP yang SUNGGUH diminta saat ini —
+            rincian layanan di atas TETAP tampil apa adanya, cuma bagian
+            total ini yang berganti mode. WAJIB konsisten dengan
+            invoicePdf.js (PDF yang dikirim ke customer) — sama struktur,
+            sama syarat modeDP. */}
+        {nominal.modeDP ? (
+          <>
+            <BarisUang label="Tagihan DP" value={formatRupiah(nominal.dpTarget)} strong />
+            <div className="my-2 border-t border-line" />
+            {nominal.dibayar > 0 && (
+              <BarisUang label="Sudah dibayar" value={formatRupiah(nominal.dibayar)} tone="green" />
+            )}
+            <BarisUang label="Sisa DP" value={formatRupiah(nominal.dpKurang)} tone="red" strong />
+            <p className="mt-2 text-[11px] text-ink3">
+              Total keseluruhan order: <strong>{formatRupiah(nominal.totalTagihan)}</strong>
+            </p>
+          </>
+        ) : (
+          <>
+            <BarisUang label="Total tagihan" value={formatRupiah(nominal.totalTagihan)} strong />
 
-        {/* DP disepakati (2 Sep 2026) — MURNI pembanding terhadap
-            kesepakatan awal, cuma tampil kalau ledger-nya ada (dpKurang
-            null/0 kalau dibayarTidakRinci, lihat hitungNominal). */}
-        {nominal.dpTarget > 0 && nominal.sumber === "ledger" && (
-          <p className={cn(
-            "mt-2 rounded-lg px-2.5 py-2 text-[11px] leading-relaxed",
-            nominal.dpKurang > 0 ? "bg-orangebg text-ink" : "bg-greenbg text-ink"
-          )}>
-            DP disepakati <strong>{formatRupiah(nominal.dpTarget)}</strong> —{" "}
-            {nominal.dpKurang > 0
-              ? <>kurang <strong className="text-orange">{formatRupiah(nominal.dpKurang)}</strong> dari kesepakatan.</>
-              : <strong className="text-green">terpenuhi.</strong>}
-          </p>
+            <div className="my-2 border-t border-line" />
+            <BarisUang
+              label="Sudah dibayar"
+              hint={nominal.dibayarTidakRinci ? "(nominal DP belum tercatat)" : null}
+              value={nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.dibayar)}
+              tone="green"
+            />
+            <BarisUang
+              label="Sisa tagihan"
+              value={nominal.dibayarTidakRinci ? "—" : formatRupiah(nominal.sisa)}
+              tone={nominal.sisa > 0 ? "red" : "green"}
+              strong
+            />
+
+            {/* DP disepakati — hanya jalur "terpenuhi" sejak modeDP ada
+                (kasus "kurang" sekarang jadi headline di atas). */}
+            {nominal.dpTarget > 0 && nominal.sumber === "ledger" && (
+              <p className="mt-2 rounded-lg bg-greenbg px-2.5 py-2 text-[11px] leading-relaxed text-ink">
+                DP disepakati <strong>{formatRupiah(nominal.dpTarget)}</strong> — <strong className="text-green">terpenuhi.</strong>
+              </p>
+            )}
+          </>
         )}
 
         {/* Rincian per transaksi (2 Sep 2026) — untuk order yang dibayar
