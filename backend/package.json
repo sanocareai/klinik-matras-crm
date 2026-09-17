@@ -11,7 +11,7 @@
     "prisma:studio": "prisma studio",
     "test": "node --test \"tests/*.test.js\"",
     "pretest:integration": "node tests/integration/setup/bootstrapTestDb.js",
-    "test:integration": "node --test --test-concurrency=1 \"tests/integration/*.integration.test.js\"",
+    "test:integration": "node --test --test-concurrency=1 tests/integration/*.integration.test.js",
     "test:all": "npm run test && npm run test:integration",
     "smoke": "node scripts/smoke-test-persistence.js"
   },
