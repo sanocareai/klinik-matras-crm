@@ -21,6 +21,7 @@ const { stockAdjustmentRouter } = await import("../../../src/routes/stockAdjustm
 const { replenishmentRouter } = await import("../../../src/routes/replenishment.js");
 const { warehouseReportsRouter } = await import("../../../src/routes/warehouseReports.js");
 const { unitRouter } = await import("../../../src/routes/units.js");
+const { financeRouter } = await import("../../../src/routes/finance.js");
 const { financeTxRouter } = await import("../../../src/routes/financeTransactions.js");
 
 export function buildTestApp() {
@@ -42,6 +43,9 @@ export function buildTestApp() {
   app.use("/api/inventory/adjustments", stockAdjustmentRouter);
   app.use("/api/inventory/replenishment", replenishmentRouter);
   app.use("/api/inventory/reports", warehouseReportsRouter);
+  // Mount PERSIS urutan src/index.js: financeRouter dulu, financeTxRouter
+  // additive di path yang SAMA (lihat komentar di index.js).
+  app.use("/api/finance", financeRouter);
   app.use("/api/finance", financeTxRouter);
 
   return app;
