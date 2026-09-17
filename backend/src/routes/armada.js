@@ -674,8 +674,13 @@ const jobInclude = {
   // isExternalCourier (13 September 2026, D-161) — supaya badge "Kurir
   // Eksternal" & field ongkos Lalamove di JobDetailDrawer bisa tahu tanpa
   // panggilan API kedua, pola sama dengan isOnline di atas.
-  driver: { select: { id: true, name: true, isOnline: true, onlineSince: true, isExternalCourier: true } },
-  helper: { select: { id: true, name: true, isOnline: true, onlineSince: true, isExternalCourier: true } },
+  // avatarUrl (18 September 2026, layar Akun driver-mobile — foto profil
+  // sekarang bisa diganti driver sendiri) — supaya tab Hari Ini/Driver/
+  // Performa/Live Tracking di app admin bisa tampilkan foto asli per orang,
+  // pola sama dengan isOnline: sekali select di sini, dipakai di mana pun
+  // job ini muncul.
+  driver: { select: { id: true, name: true, avatarUrl: true, isOnline: true, onlineSince: true, isExternalCourier: true } },
+  helper: { select: { id: true, name: true, avatarUrl: true, isOnline: true, onlineSince: true, isExternalCourier: true } },
   vehicle: { select: { id: true, plateNumber: true } },
   // route (D-077) — supaya frontend Penjadwalan bisa menampilkan "diatur
   // di rute RTE-XXX" begitu job.routeId terisi, TANPA panggilan API kedua
@@ -2106,7 +2111,7 @@ armadaRouter.get("/incentive-summary", requireAnyPermission(P.JOB_READ, P.JOB_OW
     // dalam praktik, tapi tidak mustahil) tetap dapat kredit penuh.
     const userIds = [...perOrang.keys()];
     const users = userIds.length
-      ? await prisma.user.findMany({ where: { id: { in: userIds }, isFreelance: false, isExternalCourier: false }, select: { id: true, name: true, hasSim: true } })
+      ? await prisma.user.findMany({ where: { id: { in: userIds }, isFreelance: false, isExternalCourier: false }, select: { id: true, name: true, avatarUrl: true, hasSim: true } })
       : [];
 
     let orang = users
@@ -2115,7 +2120,7 @@ armadaRouter.get("/incentive-summary", requireAnyPermission(P.JOB_READ, P.JOB_OW
         const totalAlamat = b.allMap.size;
         const ratePerAlamat = u.hasSim ? RATE_PER_ALAMAT.withSim : RATE_PER_ALAMAT.withoutSim;
         return {
-          id: u.id, name: u.name, hasSim: u.hasSim,
+          id: u.id, name: u.name, avatarUrl: u.avatarUrl, hasSim: u.hasSim,
           asDriver: b.asDriverMap.size, asHelper: b.asHelperMap.size,
           totalAlamat, ratePerAlamat, totalInsentif: totalAlamat * ratePerAlamat,
           detail: ringkasDetail(b.allMap),
@@ -4062,8 +4067,8 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
             orderBy: { code: "asc" },
             select: {
               id: true, code: true, status: true,
-              driver: { select: { id: true, name: true, isOnline: true } },
-              helper: { select: { id: true, name: true, isOnline: true } },
+              driver: { select: { id: true, name: true, avatarUrl: true, isOnline: true } },
+              helper: { select: { id: true, name: true, avatarUrl: true, isOnline: true } },
               jobs: {
                 select: {
                   id: true, sequence: true, status: true, type: true, addressText: true, lat: true, lng: true,
@@ -4080,7 +4085,7 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
             where: { id: { in: looseJobIds } },
             select: {
               id: true, status: true, type: true, addressText: true, lat: true, lng: true,
-              driver: { select: { id: true, name: true, isOnline: true } },
+              driver: { select: { id: true, name: true, avatarUrl: true, isOnline: true } },
               order: { select: { orderNumber: true, customer: { select: { name: true } } } },
             },
           })
@@ -4128,6 +4133,7 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
         kind: "route",
         routeId: r.id, routeCode: r.code, routeStatus: r.status,
         driverName: r.driver?.name || null, helperName: r.helper?.name || null,
+        driverAvatarUrl: r.driver?.avatarUrl || null, helperAvatarUrl: r.helper?.avatarUrl || null,
         driverOnline: !!r.driver?.isOnline, helperOnline: !!r.helper?.isOnline,
         phase,
         activeJobId: berikutnya?.jobId || null,
@@ -4144,6 +4150,7 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
         jobId: j.id, status: j.status, type: j.type, addressText: j.addressText,
         destinationLat: j.lat, destinationLng: j.lng,
         driverName: j.driver?.name || null,
+        driverAvatarUrl: j.driver?.avatarUrl || null,
         driverOnline: !!j.driver?.isOnline,
         orderNumber: j.order?.orderNumber || null,
         customerName: j.order?.customer?.name || null,

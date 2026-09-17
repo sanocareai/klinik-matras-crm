@@ -35,6 +35,7 @@ import { MAP_STYLE_DARK } from "../lib/googleMapStyle";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
 import JobCard from "../components/JobCard";
+import Avatar from "../components/Avatar";
 
 // Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
 // dulu di atas konten, lihat BottomNavBar.js.
@@ -119,12 +120,12 @@ function ringkasHariIni(jobs) {
   for (const j of jobs) {
     if (!j.route) continue;
     let r = routeMap.get(j.route.id);
-    if (!r) { r = { id: j.route.id, code: j.route.code, total: 0, selesai: 0, gagal: 0, driverName: null, helperName: null }; routeMap.set(j.route.id, r); }
+    if (!r) { r = { id: j.route.id, code: j.route.code, total: 0, selesai: 0, gagal: 0, driverName: null, driverAvatarUrl: null, helperName: null, helperAvatarUrl: null }; routeMap.set(j.route.id, r); }
     r.total += 1;
     if (j.status === "COMPLETED") r.selesai += 1;
     if (j.status === "FAILED") r.gagal += 1;
-    if (!r.driverName && j.driver) r.driverName = j.driver.name;
-    if (!r.helperName && j.helper) r.helperName = j.helper.name;
+    if (!r.driverName && j.driver) { r.driverName = j.driver.name; r.driverAvatarUrl = j.driver.avatarUrl || null; }
+    if (!r.helperName && j.helper) { r.helperName = j.helper.name; r.helperAvatarUrl = j.helper.avatarUrl || null; }
   }
 
   return {
@@ -216,7 +217,7 @@ function ringkasDriver(jobs, tracking) {
     let d = personMap.get(person.id);
     if (!d) {
       d = {
-        id: person.id, name: person.name, total: 0, selesai: 0, gagal: 0, jalan: 0, sisa: 0, lastSeen: null,
+        id: person.id, name: person.name, avatarUrl: person.avatarUrl || null, total: 0, selesai: 0, gagal: 0, jalan: 0, sisa: 0, lastSeen: null,
         isOnline: !!person.isOnline, onlineSince: person.onlineSince || null,
         roles: new Set(),
       };
@@ -283,7 +284,9 @@ function turunkanKendaraan(item) {
     vehicleId: item.kind === "loose" ? `loose-${item.jobId}` : `route-${item.routeId}`,
     routeCode: item.kind === "loose" ? null : item.routeCode,
     driverName: item.driverName,
+    driverAvatarUrl: item.driverAvatarUrl || null,
     helperName: item.kind === "loose" ? null : item.helperName,
+    helperAvatarUrl: item.kind === "loose" ? null : (item.helperAvatarUrl || null),
     driverOnline: !!item.driverOnline,
     phase: item.kind === "loose" ? item.status : item.phase,
     lastPosition: item.lastPosition,
@@ -551,7 +554,11 @@ function HariIniView({ ringkasan, aktivitas, theme: t, styles }) {
               </View>
               <Text style={styles.cardMeta}>{r.selesai}/{r.total} selesai{r.gagal > 0 ? ` · ${r.gagal} gagal` : ""}</Text>
             </View>
-            <Text style={[styles.cardMeta, { marginTop: 2 }]}>{namaTimRute(r)}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+              {r.driverName && <Avatar name={r.driverName} avatarUrl={r.driverAvatarUrl} size={20} />}
+              {r.helperName && <Avatar name={r.helperName} avatarUrl={r.helperAvatarUrl} size={20} />}
+              <Text style={styles.cardMeta}>{namaTimRute(r)}</Text>
+            </View>
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${r.total ? Math.round((r.selesai / r.total) * 100) : 0}%` }]} />
             </View>
@@ -596,6 +603,7 @@ function DriverView({ drivers, theme: t, styles }) {
         <View key={d.id} style={styles.card}>
           <View style={styles.rowBetween}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
+              <Avatar name={d.name} avatarUrl={d.avatarUrl} size={28} />
               {/* Titik Online/Offline (12 Sep 2026) — BUKAN "sedang jalan"
                   (badge "Di jalan" di sebelah kanan sudah pakai itu), ini
                   murni toggle manual driver di app-nya. */}
@@ -898,6 +906,7 @@ function TrackingView({ tracking, theme: t, styles }) {
           <View key={v.vehicleId} style={styles.card}>
             <View style={styles.rowBetween}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
+                {v.driverName && <Avatar name={v.driverName} avatarUrl={v.driverAvatarUrl} size={26} />}
                 <View style={[styles.onlineDot, { backgroundColor: v.driverOnline ? t.GREEN : t.INK3 }]} />
                 <Text style={styles.cardTitle} numberOfLines={1}>
                   {v.driverName || "Belum ada driver"}{v.helperName ? ` + ${v.helperName}` : ""}
@@ -1322,6 +1331,7 @@ function PerformaView({ performa, periode, setPeriode, theme: t, styles }) {
               <Pressable key={o.id} style={styles.card} onPress={() => setExpandedId(expanded ? null : o.id)}>
                 <View style={styles.rowBetween}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Avatar name={o.name} avatarUrl={o.avatarUrl} size={26} />
                     <Award size={14} color={i === 0 ? t.ORANGE : t.INK3} />
                     <Text style={styles.cardTitle}>{o.name}</Text>
                     <View style={[styles.simBadge, { backgroundColor: o.hasSim ? t.GREEN + "26" : t.INK3 + "26" }]}>
