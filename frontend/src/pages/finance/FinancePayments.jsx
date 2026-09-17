@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ShieldCheck, Image as ImageIcon, Split } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -10,7 +10,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, Penjelasan, TombolAksi,
+  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   PeriodePicker, periodeDefault, tanggalJam, InputUang,
 } from "@/features/finance/shared.jsx";
 
@@ -106,13 +106,20 @@ export default function FinancePayments() {
       </Penjelasan>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <KartuAngka label="Total Pembayaran Periode" value={formatUang(total)} sub={`${payments.length} entri`} />
-        <KartuAngka label="Belum Diverifikasi" value={belum} tone={belum > 0 ? "orange" : "default"} sub="Menunggu dicocokkan" />
+        <KartuAngka
+          label="Total Pembayaran Periode" value={formatUang(total)} sub={`${payments.length} entri`}
+          info="Jumlah seluruh pembayaran yang tercatat di periode yang dipilih, terverifikasi atau belum."
+        />
+        <KartuAngka
+          label="Belum Diverifikasi" value={belum} tone={belum > 0 ? "orange" : "default"} sub="Menunggu dicocokkan"
+          info="Uang yang tercatat diterima sales/driver tapi belum ada yang mengonfirmasi kalau setorannya memang benar-benar sampai ke rekening/kas perusahaan."
+        />
         <KartuAngka
           label="Sudah Diverifikasi"
           value={payments.filter((p) => p.terverifikasi).length}
           tone="green"
           sub="Cocok dengan setoran"
+          info="Sudah dicek dan cocok dengan setoran nyata — bukan berarti pelanggannya sudah lunas, itu urusan status bayar order di CRM."
         />
       </div>
 
@@ -123,15 +130,17 @@ export default function FinancePayments() {
           </Button>
         ))}
       </div>
+      <p className="text-[13px] leading-relaxed text-ink3">
+        Prioritaskan yang "Belum Diverifikasi" — itu pekerjaan finance yang sebenarnya di halaman ini.
+      </p>
 
       <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle>Daftar Pembayaran</CardTitle>
-          <CardDescription>
-            Entri pembayaran bersifat append-only: koreksi salah input dilakukan lewat pembatalan di halaman
-            Order, bukan dengan menghapus baris.
-          </CardDescription>
-        </CardHeader>
+        <JudulKartu
+          title="Daftar Pembayaran"
+          description="Entri pembayaran bersifat append-only: koreksi salah input dilakukan lewat pembatalan di halaman
+            Order, bukan dengan menghapus baris."
+          info="'Append-only' artinya baris pembayaran tidak pernah diedit atau dihapus diam-diam — kalau ada yang salah, dibatalkan lewat halaman Order (bukan di sini) supaya tetap ada jejak siapa membatalkan dan kenapa."
+        />
         {payments.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada pembayaran di filter ini.</p></CardContent>
         ) : (

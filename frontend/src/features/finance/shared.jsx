@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { AlertTriangle, Info, Loader2 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 
 // Potongan UI yang dipakai berulang di SELURUH workspace Finance.
@@ -239,11 +240,23 @@ export function HalamanFinance({ title, subtitle, actions, loading, error, onRet
   );
 }
 
-/** Kartu angka ringkas — lebih padat dari KpiCard Laporan, muat 4-6 sebaris. */
-export function KartuAngka({ label, value, sub, tone = "default", onClick }) {
+/**
+ * Kartu angka ringkas — lebih padat dari KpiCard Laporan, muat 4-6 sebaris.
+ *
+ * `info` (opsional) — penjelasan singkat angka ini dalam bahasa manusia,
+ * ditampilkan lewat ikon "i" (InfoTooltip) di sebelah label. Prinsipnya:
+ * kalau seseorang yang BARU PERTAMA KALI melihat kartu ini bisa bingung
+ * angkanya dihitung dari mana atau kenapa penting, kartunya WAJIB punya
+ * `info` — bukan hiasan, ini pengganti training manual untuk tim yang baru
+ * pindah dari pencatatan manual (Notion) ke sistem ini.
+ */
+export function KartuAngka({ label, value, sub, tone = "default", onClick, info }) {
   const isi = (
     <>
-      <p className="text-[12px] font-medium text-ink3">{label}</p>
+      <div className="flex items-center gap-1">
+        <p className="text-[12px] font-medium text-ink3">{label}</p>
+        {info && <InfoTooltip text={info} />}
+      </div>
       <p className={cn(
         "mt-1.5 text-[20px] font-bold tabular-nums leading-tight",
         tone === "red" && "text-red",
@@ -262,6 +275,29 @@ export function KartuAngka({ label, value, sub, tone = "default", onClick }) {
   return onClick
     ? <button type="button" onClick={onClick} className={kelas}>{isi}</button>
     : <div className={kelas}>{isi}</div>;
+}
+
+/**
+ * Header kartu berpasangan (judul + penjelasan singkat + ikon info opsional
+ * untuk detail lebih dalam) — dipakai supaya SETIAP kartu isi (tabel,
+ * daftar) di workspace Finance punya penjelasan yang konsisten posisinya,
+ * bukan separuh kartu punya CardDescription dan separuh tidak.
+ *
+ * `description` = kalimat pendek yang SELALU terlihat (menjawab "kartu ini
+ * isinya apa"). `info` (opsional) = detail tambahan yang baru tampil kalau
+ * ikon "i" disentuh (menjawab "kenapa/bagaimana ini dihitung", biasanya
+ * lebih teknis/panjang daripada yang pantas ditulis permanen di layar).
+ */
+export function JudulKartu({ title, description, info }) {
+  return (
+    <CardHeader>
+      <CardTitle className="flex items-center gap-1.5">
+        {title}
+        {info && <InfoTooltip text={info} />}
+      </CardTitle>
+      {description && <CardDescription>{description}</CardDescription>}
+    </CardHeader>
+  );
 }
 
 /**

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Lock, Unlock, AlertTriangle, Plus } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardHeader, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, Penjelasan, TombolAksi,
+  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, tanggalPendek, tanggalJam, LABEL_DIVISI,
 } from "@/features/finance/shared.jsx";
 
@@ -104,17 +104,16 @@ export default function FinanceSettings() {
 
       {/* ── 1. DATA BELUM LENGKAP ── */}
       <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle>
+        <JudulKartu
+          title={<>
             Data Belum Lengkap
             {gapTerbuka.length > 0 && <Badge variant="red" className="ml-2">{gapTerbuka.length}</Badge>}
-          </CardTitle>
-          <CardDescription>
-            Transaksi yang SUDAH terjadi tapi belum bisa masuk buku besar — biasanya karena rekening belum
+          </>}
+          description="Transaksi yang SUDAH terjadi tapi belum bisa masuk buku besar — biasanya karena rekening belum
             dipetakan atau material belum punya harga perolehan. Selama daftar ini berisi, laporan keuangan
-            JUJUR menyebut dirinya belum lengkap alih-alih menyajikan angka yang diam-diam kurang.
-          </CardDescription>
-        </CardHeader>
+            JUJUR menyebut dirinya belum lengkap alih-alih menyajikan angka yang diam-diam kurang."
+          info="Ini bagian yang paling butuh dicek rutin — bukan sekali atur lalu lupa. Setelah membereskan penyebabnya (mis. memetakan rekening di bawah), klik 'Coba Lagi' pada barisnya untuk memposting ulang."
+        />
         {gapTerbuka.length === 0 ? (
           <CardContent>
             <p className="py-4 text-[13px] text-green">
@@ -149,15 +148,16 @@ export default function FinanceSettings() {
 
       {/* ── 2. PEMETAAN REKENING ── */}
       <Card>
-        <CardHeader>
-          <CardTitle>Rekening Tujuan per Metode Pembayaran</CardTitle>
-          <CardDescription>
+        <JudulKartu
+          title="Rekening Tujuan per Metode Pembayaran"
+          description={<>
             Pembayaran pelanggan dicatat sales/driver dengan metode CASH/TRANSFER/QRIS, tapi metode saja tidak
             memberi tahu buku besar uangnya masuk ke rekening mana. Pemetaan ini yang menjawabnya.
             <strong> Selama belum dipetakan, pembayaran tetap tercatat normal di CRM</strong> tapi jurnalnya
             tertahan di daftar Data Belum Lengkap di atas.
-          </CardDescription>
-        </CardHeader>
+          </>}
+          info="Atur ini SEBELUM tim mulai mencatat pembayaran rutin — kalau terlambat dipetakan, pembayaran yang sudah masuk akan menumpuk sebagai 'Data Belum Lengkap' sampai dipetakan dan diulang manual."
+        />
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {[
             { key: K.CASH_ACCOUNT_CASH, label: "Tunai (CASH)" },
@@ -178,12 +178,11 @@ export default function FinanceSettings() {
 
       {/* ── 3. GERBANG VERIFIKASI ── */}
       <Card>
-        <CardHeader>
-          <CardTitle>Gerbang Verifikasi Pembayaran</CardTitle>
-          <CardDescription>
-            Menentukan apakah status bayar order di CRM ikut menunggu verifikasi finance.
-          </CardDescription>
-        </CardHeader>
+        <JudulKartu
+          title="Gerbang Verifikasi Pembayaran"
+          description="Menentukan apakah status bayar order di CRM ikut menunggu verifikasi finance."
+          info="Aman dinyalakan kapan saja — TIDAK berlaku surut ke pembayaran lama, jadi order yang sudah dianggap DP/Lunas tidak akan mendadak berubah status di hari yang sama saat gerbang dinyalakan."
+        />
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <Badge variant={settings?.gate?.enabled ? "green" : "neutral"}>
@@ -225,14 +224,13 @@ export default function FinanceSettings() {
 
       {/* ── 4. SINKRONISASI SUMBER LAMA ── */}
       <Card>
-        <CardHeader>
-          <CardTitle>Bukukan Transaksi dari Workspace Lain</CardTitle>
-          <CardDescription>
-            Transaksi ini diinput di workspace-nya masing-masing dan TIDAK diketik ulang di Finance. Tombol di
+        <JudulKartu
+          title="Bukukan Transaksi dari Workspace Lain"
+          description="Transaksi ini diinput di workspace-nya masing-masing dan TIDAK diketik ulang di Finance. Tombol di
             bawah membaca baris yang sudah ada lalu membukukannya — idempoten, jadi aman ditekan berkali-kali
-            (yang sudah punya jurnal dilewati).
-          </CardDescription>
-        </CardHeader>
+            (yang sudah punya jurnal dilewati)."
+          info="Kenapa tidak otomatis: supaya Finance bisa mengontrol KAPAN transaksi dari divisi lain masuk buku besar — misalnya menunggu bagan akun siap dulu, baru membukukan yang tertunda sekaligus."
+        />
         <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {SUMBER_SYNC.map((s) => (
             <div key={s.key} className="flex items-center justify-between gap-3 rounded-lg bg-inset px-3 py-2.5">
@@ -256,13 +254,12 @@ export default function FinanceSettings() {
 
       {/* ── 5. PERIODE AKUNTANSI ── */}
       <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle>Periode Akuntansi</CardTitle>
-          <CardDescription>
-            Menutup periode mengunci angkanya: jurnal baru untuk bulan itu ditolak. Inilah yang membuat laporan
-            yang sudah dibaca owner tidak berubah diam-diam.
-          </CardDescription>
-        </CardHeader>
+        <JudulKartu
+          title="Periode Akuntansi"
+          description="Menutup periode mengunci angkanya: jurnal baru untuk bulan itu ditolak. Inilah yang membuat laporan
+            yang sudah dibaca owner tidak berubah diam-diam."
+          info="Kalau masih ada 'Data Belum Lengkap' terbuka, sistem akan bertanya dulu sebelum menutup periode — supaya tidak mengunci laporan yang diam-diam kurang tanpa disadari. Sebaiknya selesaikan dulu daftarnya di kartu paling atas."
+        />
         {periods.length === 0 ? (
           <CardContent><p className="py-4 text-[13px] text-ink3">Belum ada periode — periode dibuat otomatis saat jurnal pertama bulan itu diposting.</p></CardContent>
         ) : (
@@ -320,17 +317,16 @@ export default function FinanceSettings() {
 
       {/* ── 6. KATEGORI BIAYA ── */}
       <Card className="overflow-hidden">
+        <JudulKartu
+          title="Kategori Biaya"
+          description="Jembatan antara bahasa operasional (“Bensin”, “Upah Tukang”) dan akun pembukuan yang benar —
+            supaya orang yang mencatat pengeluaran tidak perlu memilih akun dari bagan akun."
+          info="Kolom 'Otomatis Dari' menandai kategori yang dipetakan ke sumber lain (biaya kendaraan, iklan) — kategori itu dipakai sinkronisasi otomatis di kartu 'Bukukan Transaksi dari Workspace Lain', jangan diubah akun tujuannya sembarangan."
+        />
         <CardHeader>
-          <CardTitle>Kategori Biaya</CardTitle>
-          <CardDescription>
-            Jembatan antara bahasa operasional (“Bensin”, “Upah Tukang”) dan akun pembukuan yang benar —
-            supaya orang yang mencatat pengeluaran tidak perlu memilih akun dari bagan akun.
-          </CardDescription>
-          <div className="mt-3">
-            <Button size="sm" variant="secondary" onClick={() => setModalKategori(true)}>
-              <Plus size={14} /> Kategori Baru
-            </Button>
-          </div>
+          <Button size="sm" variant="secondary" onClick={() => setModalKategori(true)}>
+            <Plus size={14} /> Kategori Baru
+          </Button>
         </CardHeader>
         <TableWrap>
           <Table>

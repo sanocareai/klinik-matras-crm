@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { BookOpen } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, Pilihan,
+  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Pilihan,
   PeriodePicker, periodeDefault, tanggalPendek, LABEL_SUMBER_JURNAL, LABEL_TIPE_AKUN,
 } from "@/features/finance/shared.jsx";
 
@@ -83,30 +83,39 @@ export default function FinanceLedger() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-            <KartuAngka label="Saldo Awal" value={formatUang(data.saldoAwal)} sub={`per ${tanggalPendek(periode.from)}`} />
+            <KartuAngka
+              label="Saldo Awal" value={formatUang(data.saldoAwal)} sub={`per ${tanggalPendek(periode.from)}`}
+              info="Saldo akun ini tepat sebelum periode yang dipilih dimulai — titik awal untuk menelusuri kenapa saldo akhir jadi segini."
+            />
             <KartuAngka
               label="Total Debit"
               value={formatUang(data.baris.reduce((s, b) => s + b.debit, 0))}
+              info="Jumlah seluruh sisi debit dari mutasi akun ini selama periode yang dipilih."
             />
             <KartuAngka
               label="Total Kredit"
               value={formatUang(data.baris.reduce((s, b) => s + b.kredit, 0))}
+              info="Jumlah seluruh sisi kredit dari mutasi akun ini selama periode yang dipilih."
             />
-            <KartuAngka label="Saldo Akhir" value={formatUang(data.saldoAkhir)} sub={`per ${tanggalPendek(periode.to)}`} />
+            <KartuAngka
+              label="Saldo Akhir" value={formatUang(data.saldoAkhir)} sub={`per ${tanggalPendek(periode.to)}`}
+              info="Saldo Awal ditambah/dikurangi seluruh mutasi periode ini, sesuai arah saldo normal akunnya (Debit atau Kredit)."
+            />
           </div>
 
           <Card className="overflow-hidden">
-            <CardHeader>
-              <CardTitle>
+            <JudulKartu
+              title={<>
                 {data.account.code} · {data.account.name}
                 <Badge variant="neutral" className="ml-2">{LABEL_TIPE_AKUN[data.account.type] || data.account.type}</Badge>
-              </CardTitle>
-              <CardDescription>
+              </>}
+              description={<>
                 Saldo normal {data.account.normalBalance === "DEBIT" ? "debit" : "kredit"} — saldo berjalan di
                 kolom kanan sudah mengikuti arah itu.
                 {data.terpotong && " Menampilkan 500 baris pertama; persempit periodenya untuk melihat sisanya."}
-              </CardDescription>
-            </CardHeader>
+              </>}
+              info="Buku besar ini menjawab pertanyaan 'kenapa saldo akun ini segini' — setiap baris membawa dokumen sumbernya (order/pelanggan/supplier/rekening) supaya bisa ditelusuri balik ke transaksi aslinya, bukan cuma daftar angka."
+            />
             {data.baris.length === 0 ? (
               <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada mutasi di periode ini.</p></CardContent>
             ) : (

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ShieldCheck, ArrowRight, Wallet } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
@@ -9,7 +9,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import { api } from "@/api.js";
 import {
-  HalamanFinance, KartuAngka, Uang, formatUang, CatatanLaporan, Penjelasan,
+  HalamanFinance, KartuAngka, JudulKartu, Uang, formatUang, CatatanLaporan, Penjelasan,
   PeriodePicker, periodeDefault, tanggalPendek, tanggalJam,
   LABEL_SUMBER_JURNAL,
 } from "@/features/finance/shared.jsx";
@@ -117,6 +117,7 @@ export default function FinanceDashboard() {
               value={formatUang(data.totalKas)}
               sub={`${data.kasBank.length} rekening aktif`}
               onClick={() => navigate("/finance/cash")}
+              info="Uang yang benar-benar dipegang perusahaan sekarang — jumlah seluruh rekening kas, bank, dan e-wallet yang berstatus Aktif. Klik untuk lihat rinciannya per rekening."
             />
             <KartuAngka
               label="Laba Bersih Periode"
@@ -124,6 +125,7 @@ export default function FinanceDashboard() {
               tone={(lr?.labaBersih ?? 0) < 0 ? "red" : "green"}
               sub={lr?.marginBersih != null ? `Margin ${lr.marginBersih.toFixed(1)}%` : "Belum ada pendapatan"}
               onClick={() => navigate("/finance/reports")}
+              info="Pendapatan dikurangi seluruh beban (HPP + operasional) untuk periode yang dipilih. DP yang belum diserahkan ke pelanggan TIDAK dihitung sebagai pendapatan di sini."
             />
             <KartuAngka
               label="Piutang Usaha"
@@ -131,22 +133,25 @@ export default function FinanceDashboard() {
               tone={data.piutang.ringkasan?.["90_plus"] > 0 ? "red" : "default"}
               sub={`${data.piutang.teratas.length ? `${data.piutang.teratas.length}+ order belum lunas` : "Tidak ada tagihan terbuka"}`}
               onClick={() => navigate("/finance/receivables")}
+              info="Total tagihan yang belum dibayar lunas oleh pelanggan, tapi HANYA untuk order yang sudah diserahkan (barang/jasanya sudah diterima pelanggan). Order yang belum diserahkan tidak dihitung sebagai piutang."
             />
             <KartuAngka
               label="Utang Usaha"
               value={formatUang(data.utang.total)}
               sub="Tagihan supplier belum dibayar"
               onClick={() => navigate("/finance/suppliers")}
+              info="Total tagihan dari supplier yang sudah disetujui tapi belum kita bayar — kebalikan dari piutang."
             />
           </div>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             {/* ── Saldo per rekening ── */}
             <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle>Saldo per Rekening</CardTitle>
-                <CardDescription>Menurut buku besar, bukan menurut koran bank.</CardDescription>
-              </CardHeader>
+              <JudulKartu
+                title="Saldo per Rekening"
+                description="Menurut buku besar, bukan menurut koran bank."
+                info="Angka ini dihitung dari jurnal yang tercatat di sistem, bukan ditarik langsung dari aplikasi bank. Kalau ada selisih dengan mutasi bank asli (transfer belum masuk, biaya admin belum tercatat), itu wajar — cocokkan lewat halaman Rekonsiliasi Bank."
+              />
               <CardContent>
                 {data.kasBank.length === 0 ? (
                   <EmptyState
@@ -176,12 +181,11 @@ export default function FinanceDashboard() {
 
             {/* ── Laba rugi ringkas ── */}
             <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Laba Rugi {tanggalPendek(periode.from)} – {tanggalPendek(periode.to)}</CardTitle>
-                <CardDescription>
-                  Pendapatan diakui saat order DISERAHKAN — DP yang belum diserahkan tidak masuk sini.
-                </CardDescription>
-              </CardHeader>
+              <JudulKartu
+                title={`Laba Rugi ${tanggalPendek(periode.from)} – ${tanggalPendek(periode.to)}`}
+                description="Pendapatan diakui saat order DISERAHKAN — DP yang belum diserahkan tidak masuk sini."
+                info="Kenapa DP tidak langsung dihitung untung: uang yang masuk sebelum barang/jasa diserahkan masih bisa direfund atau order-nya batal. Menganggapnya untung dari awal akan membuat laporan bulan ini terlihat lebih bagus dari kenyataan, lalu 'turun' lagi kalau ternyata batal."
+              />
               <CardContent>
                 <dl className="space-y-2 text-[13px]">
                   <Baris label="Pendapatan" value={lr?.pendapatanBruto} />
@@ -209,6 +213,7 @@ export default function FinanceDashboard() {
               tone={antrean.jumlahPembayaranBelumVerifikasi > 0 ? "orange" : "default"}
               sub={data.gate.enabled ? "Menahan status bayar di CRM" : "Tidak menahan status bayar"}
               onClick={() => navigate("/finance/payments")}
+              info="Uang yang tercatat diterima sales/driver tapi belum dicocokkan dengan setoran nyata di rekening. Klik untuk memverifikasi satu per satu."
             />
             <KartuAngka
               label="Pengeluaran Menunggu"
@@ -216,6 +221,7 @@ export default function FinanceDashboard() {
               tone={antrean.pengeluaranMenunggu > 0 ? "orange" : "default"}
               sub="Perlu persetujuan"
               onClick={() => navigate("/finance/expenses")}
+              info="Pengeluaran yang sudah diajukan tim tapi belum disetujui — belum masuk buku besar sampai disetujui."
             />
             <KartuAngka
               label="Tagihan Supplier Menunggu"
@@ -223,6 +229,7 @@ export default function FinanceDashboard() {
               tone={antrean.tagihanMenunggu > 0 ? "orange" : "default"}
               sub="Perlu persetujuan"
               onClick={() => navigate("/finance/suppliers")}
+              info="Tagihan dari supplier yang sudah diinput tapi belum disetujui — belum tercatat sebagai utang sampai disetujui."
             />
             <KartuAngka
               label="Data Belum Lengkap"
@@ -230,6 +237,7 @@ export default function FinanceDashboard() {
               tone={data.catatan.gapTerbuka > 0 ? "red" : "default"}
               sub="Transaksi belum masuk buku besar"
               onClick={() => navigate("/finance/settings")}
+              info="Transaksi yang seharusnya dibukukan tapi tertahan karena datanya belum lengkap (mis. rekening belum dipetakan, harga bahan belum diisi). Sistem TIDAK menebak angkanya — lebih baik terlihat sebagai pekerjaan tertunda daripada laporan yang diam-diam salah."
             />
           </div>
 
@@ -253,10 +261,11 @@ export default function FinanceDashboard() {
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             {/* ── Piutang tertua ── */}
             <Card className="overflow-hidden">
-              <CardHeader>
-                <CardTitle>Piutang Paling Lama</CardTitle>
-                <CardDescription>Order yang sudah diserahkan tapi belum lunas.</CardDescription>
-              </CardHeader>
+              <JudulKartu
+                title="Piutang Paling Lama"
+                description="Order yang sudah diserahkan tapi belum lunas."
+                info="Diurutkan dari yang paling lama menunggak — semakin lama umurnya, semakin besar risiko tidak tertagih. Jatuh tempo lebih dari 60 hari ditandai merah, lebih baik segera ditindaklanjuti."
+              />
               {data.piutang.teratas.length === 0 ? (
                 <CardContent><p className="py-4 text-[13px] text-ink3">Tidak ada piutang terbuka.</p></CardContent>
               ) : (
@@ -288,10 +297,11 @@ export default function FinanceDashboard() {
 
             {/* ── Jurnal terakhir ── */}
             <Card className="overflow-hidden">
-              <CardHeader>
-                <CardTitle>Jurnal Terakhir</CardTitle>
-                <CardDescription>8 pencatatan terbaru di buku besar.</CardDescription>
-              </CardHeader>
+              <JudulKartu
+                title="Jurnal Terakhir"
+                description="8 pencatatan terbaru di buku besar."
+                info="Setiap transaksi keuangan (pembayaran, pengeluaran, refund, dst) otomatis mencatat satu jurnal double-entry di sini — ini bukti bahwa sistem benar-benar membukukannya, bukan sekadar menyimpan angka."
+              />
               {data.jurnalTerakhir.length === 0 ? (
                 <CardContent><p className="py-4 text-[13px] text-ink3">Belum ada jurnal.</p></CardContent>
               ) : (
@@ -319,12 +329,11 @@ export default function FinanceDashboard() {
           {/* ── Antrean verifikasi (daftar nyata, bukan cuma angka) ── */}
           {antrean.pembayaranBelumVerifikasi.length > 0 && (
             <Card className="overflow-hidden">
-              <CardHeader>
-                <CardTitle>Pembayaran Menunggu Verifikasi</CardTitle>
-                <CardDescription>
-                  Uang yang tercatat diterima sales/driver dan perlu dicocokkan dengan setoran nyata.
-                </CardDescription>
-              </CardHeader>
+              <JudulKartu
+                title="Pembayaran Menunggu Verifikasi"
+                description="Uang yang tercatat diterima sales/driver dan perlu dicocokkan dengan setoran nyata."
+                info="Ini bukan berarti uangnya hilang atau bermasalah — cuma belum ada yang mengonfirmasi kalau setoran itu memang sudah benar-benar masuk ke rekening perusahaan. Klik salah satu baris untuk memverifikasi."
+              />
               <TableWrap>
                 <Table>
                   <THead>

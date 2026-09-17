@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Plus, Receipt } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -11,7 +11,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, Penjelasan, TombolAksi,
+  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
   LABEL_DIVISI,
 } from "@/features/finance/shared.jsx";
@@ -121,16 +121,19 @@ export default function FinanceExpenses() {
           label="Total di Filter Ini"
           value={formatUang(data?.total ?? 0)}
           sub={`${expenses.length} pengeluaran`}
+          info="Jumlah nominal seluruh baris yang tampil di tabel bawah, sesuai filter periode & status yang sedang aktif — bukan total pengeluaran sepanjang masa."
         />
         <KartuAngka
           label="Menunggu Persetujuan"
           value={expenses.filter((e) => e.status === "MENUNGGU_APPROVAL").length}
           tone={expenses.some((e) => e.status === "MENUNGGU_APPROVAL") ? "orange" : "default"}
+          info="Pengajuan yang belum ada keputusan — belum masuk buku besar sama sekali. Perlu Setujui atau Tolak."
         />
         <KartuAngka
           label="Disetujui, Belum Dibayar"
           value={expenses.filter((e) => e.status === "DISETUJUI").length}
           sub="Reimbursement & utang"
+          info="Bebannya SUDAH tercatat di laba rugi, tapi uangnya belum benar-benar keluar — menunggu diganti ke karyawan atau dibayar ke pihak ketiga."
         />
       </div>
 
@@ -141,12 +144,16 @@ export default function FinanceExpenses() {
           </Button>
         ))}
       </div>
+      <p className="text-[13px] leading-relaxed text-ink3">
+        Saring daftar di bawah berdasarkan tahap prosesnya — dari pengajuan sampai uangnya benar-benar keluar.
+      </p>
 
       <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle>Daftar Pengeluaran</CardTitle>
-          <CardDescription>Nomor EXP dibuat otomatis per bulan.</CardDescription>
-        </CardHeader>
+        <JudulKartu
+          title="Daftar Pengeluaran"
+          description="Nomor EXP dibuat otomatis per bulan."
+          info="Nomor dokumen (EXP-tanggal-urutan) dibuat sistem sendiri, tidak bisa diketik manual — supaya tidak ada dua pengeluaran berbeda yang kebetulan pakai nomor yang sama."
+        />
         {expenses.length === 0 ? (
           <CardContent>
             <EmptyState

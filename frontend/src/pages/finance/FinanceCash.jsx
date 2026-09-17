@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, Penjelasan, Pilihan, InputUang,
+  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, Pilihan, InputUang,
   TombolAksi, PeriodePicker, periodeDefault, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 
@@ -23,9 +23,9 @@ import {
 // jadi keduanya tidak boleh ditampilkan seolah satu angka.
 
 const TAB = [
-  { key: "rekening", label: "Rekening", Icon: Wallet },
-  { key: "transfer", label: "Mutasi Antar Rekening", Icon: ArrowLeftRight },
-  { key: "pemasukan", label: "Pemasukan Lain", Icon: TrendingUp },
+  { key: "rekening", label: "Rekening", Icon: Wallet, penjelasan: "Semua tempat uang perusahaan disimpan — kas tunai, rekening bank, dan e-wallet — beserta saldo terkini masing-masing." },
+  { key: "transfer", label: "Mutasi Antar Rekening", Icon: ArrowLeftRight, penjelasan: "Riwayat perpindahan uang dari satu rekening perusahaan ke rekening lain, misalnya setor tunai dari kas ke bank." },
+  { key: "pemasukan", label: "Pemasukan Lain", Icon: TrendingUp, penjelasan: "Uang masuk yang BUKAN dari pembayaran pelanggan — jual barang bekas, bunga bank, klaim asuransi, dan sejenisnya." },
 ];
 
 export default function FinanceCash() {
@@ -124,13 +124,22 @@ export default function FinanceCash() {
           </Button>
         ))}
       </div>
+      <p className="text-[13px] leading-relaxed text-ink3">
+        {TAB.find((t) => t.key === tab)?.penjelasan}
+      </p>
 
       {tab === "rekening" && (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KartuAngka label="Total Kas & Bank" value={formatUang(rekening?.totalSaldo ?? 0)} sub="Menurut buku besar" />
+            <KartuAngka
+              label="Total Kas & Bank" value={formatUang(rekening?.totalSaldo ?? 0)} sub="Menurut buku besar"
+              info="Jumlah semua rekening yang masih Aktif. Ini angka 'uang kita ada berapa sekarang', dihitung dari seluruh jurnal yang pernah tercatat — bukan tebakan."
+            />
             {(rekening?.accounts || []).filter((a) => a.active).slice(0, 3).map((a) => (
-              <KartuAngka key={a.id} label={a.name} value={formatUang(a.saldo)} sub={a.kind === "KAS" ? "Kas tunai" : a.bankName || a.kind} />
+              <KartuAngka
+                key={a.id} label={a.name} value={formatUang(a.saldo)} sub={a.kind === "KAS" ? "Kas tunai" : a.bankName || a.kind}
+                info={`Saldo rekening ini menurut buku besar sistem. Kalau beda dengan mutasi bank asli, cek halaman Rekonsiliasi Bank — jangan diubah manual di sini.`}
+              />
             ))}
           </div>
 
@@ -141,10 +150,12 @@ export default function FinanceCash() {
           </Penjelasan>
 
           <Card className="overflow-hidden">
-            <CardHeader>
-              <CardTitle>Daftar Rekening</CardTitle>
-              <CardDescription>Kas tunai, rekening bank, dan e-wallet yang dipegang perusahaan.</CardDescription>
-            </CardHeader>
+            <JudulKartu
+              title="Daftar Rekening"
+              description="Kas tunai, rekening bank, dan e-wallet yang dipegang perusahaan."
+              info="Rekening 'Nonaktif' bukan berarti dihapus — riwayat transaksinya tetap tersimpan, cuma tidak lagi muncul sebagai pilihan saat mencatat transaksi baru. Kalau sebuah rekening ternyata dobel input dan belum pernah dipakai sama sekali, hapus saja lewat tombol di kolom Aksi."
+            />
+
             {(rekening?.accounts || []).length === 0 ? (
               <CardContent>
                 <EmptyState
@@ -194,13 +205,12 @@ export default function FinanceCash() {
 
       {tab === "transfer" && (
         <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Mutasi Antar Rekening</CardTitle>
-            <CardDescription>
-              Setor tunai ke bank, tarik tunai, pindah antar bank. Bukan pendapatan & bukan beban —
-              laporan arus kas sengaja tidak menghitungnya sebagai uang masuk/keluar.
-            </CardDescription>
-          </CardHeader>
+          <JudulKartu
+            title="Mutasi Antar Rekening"
+            description="Setor tunai ke bank, tarik tunai, pindah antar bank. Bukan pendapatan & bukan beban —
+              laporan arus kas sengaja tidak menghitungnya sebagai uang masuk/keluar."
+            info="Kenapa dipisah dari Pengeluaran/Pemasukan: uang yang pindah dari kas ke bank tetap uang milik perusahaan yang sama, cuma beda tempat penyimpanan — bukan uang baru masuk atau keluar dari perusahaan. Kalau dicatat sebagai pemasukan/pengeluaran, laba rugi akan salah baca."
+          />
           {transfers.length === 0 ? (
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada mutasi di periode ini.</p></CardContent>
           ) : (
@@ -234,13 +244,12 @@ export default function FinanceCash() {
 
       {tab === "pemasukan" && (
         <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Pemasukan di Luar Order</CardTitle>
-            <CardDescription>
-              Penjualan aset bekas, bunga bank, klaim asuransi. Pembayaran dari pelanggan TIDAK dicatat di
-              sini — itu mengalir sendiri dari Order & Pengiriman.
-            </CardDescription>
-          </CardHeader>
+          <JudulKartu
+            title="Pemasukan di Luar Order"
+            description="Penjualan aset bekas, bunga bank, klaim asuransi. Pembayaran dari pelanggan TIDAK dicatat di
+              sini — itu mengalir sendiri dari Order & Pengiriman."
+            info="Kalau yang mau dicatat adalah pembayaran dari pelanggan (DP, cicilan, pelunasan), catatannya BUKAN di sini — cari order-nya di CRM, pembayaran akan otomatis muncul di halaman Pembayaran & Verifikasi."
+          />
           {incomes.length === 0 ? (
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada pemasukan lain di periode ini.</p></CardContent>
           ) : (

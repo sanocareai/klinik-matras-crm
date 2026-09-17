@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Plus, Link2, Unlink, EyeOff, CheckCircle2, Scale } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardHeader, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, Penjelasan, TombolAksi,
+  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 
@@ -92,10 +92,11 @@ export default function FinanceReconciliation() {
       </Penjelasan>
 
       <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle>Periode Rekonsiliasi</CardTitle>
-          <CardDescription>Satu baris = satu rekening, satu rentang tanggal koran bank.</CardDescription>
-        </CardHeader>
+        <JudulKartu
+          title="Periode Rekonsiliasi"
+          description="Satu baris = satu rekening, satu rentang tanggal koran bank."
+          info="Klik salah satu baris untuk membuka detailnya dan mulai mencocokkan mutasi satu per satu. Kolom 'Belum Cocok' menunjukkan berapa baris koran bank yang masih perlu dijelaskan."
+        />
         {statements.length === 0 ? (
           <CardContent>
             <EmptyState
@@ -139,26 +140,35 @@ export default function FinanceReconciliation() {
       {detail && (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-            <KartuAngka label="Saldo Menurut Buku" value={formatUang(detail.rekonsiliasi.saldoBuku)} />
-            <KartuAngka label="Saldo Menurut Bank" value={formatUang(detail.rekonsiliasi.saldoKoran)} />
+            <KartuAngka
+              label="Saldo Menurut Buku" value={formatUang(detail.rekonsiliasi.saldoBuku)}
+              info="Saldo rekening ini menurut jurnal yang tercatat di sistem — hasil hitungan sendiri, bukan disalin dari bank."
+            />
+            <KartuAngka
+              label="Saldo Menurut Bank" value={formatUang(detail.rekonsiliasi.saldoKoran)}
+              info="Saldo akhir yang tertulis di koran bank asli untuk periode ini — diisi manual saat membuat periode rekonsiliasi."
+            />
             <KartuAngka
               label="Selisih" value={formatUang(detail.rekonsiliasi.selisih)}
               tone={detail.rekonsiliasi.cocok ? "green" : "red"}
               sub={detail.rekonsiliasi.cocok ? "Cocok" : "Perlu dijelaskan"}
+              info="Selisih antara saldo buku dan saldo bank. Kalau tidak nol, biasanya ada mutasi yang belum tercatat di salah satu sisi — telusuri lewat baris yang masih 'Belum Cocok'."
             />
             <KartuAngka
               label="Baris Belum Cocok" value={detail.rekonsiliasi.belumCocok}
               tone={detail.rekonsiliasi.belumCocok > 0 ? "orange" : "green"}
+              info="Baris mutasi dari koran bank yang belum ditemukan pasangannya di buku besar. Cocokkan satu per satu, atau tandai 'Abaikan' dengan alasan kalau memang tidak ada pasangannya (mis. biaya admin kecil yang belum dicatat)."
             />
           </div>
 
           <Card className="overflow-hidden">
+            <JudulKartu
+              title={`${detail.statement.cashAccount?.name} · ${tanggalPendek(detail.statement.periodStart)} – ${tanggalPendek(detail.statement.periodEnd)}`}
+              description="Mutasi menurut koran bank, dan pasangannya di buku besar."
+              info="Pencocokan menuntut nominal SAMA PERSIS, termasuk arahnya (masuk/keluar) — kalau dipaksakan cocok padahal beda nominal, selisihnya justru tersembunyi, bukan terselesaikan."
+            />
             <CardHeader>
-              <CardTitle>
-                {detail.statement.cashAccount?.name} · {tanggalPendek(detail.statement.periodStart)} – {tanggalPendek(detail.statement.periodEnd)}
-              </CardTitle>
-              <CardDescription>Mutasi menurut koran bank, dan pasangannya di buku besar.</CardDescription>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setModalBaris(true)}>
                   <Plus size={14} /> Tambah Baris Koran Bank
                 </Button>

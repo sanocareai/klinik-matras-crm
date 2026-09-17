@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, CatatanLaporan, Penjelasan,
+  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, CatatanLaporan, Penjelasan,
   PeriodePicker, periodeDefault, tanggalPendek, LABEL_TIPE_AKUN,
 } from "@/features/finance/shared.jsx";
 
@@ -21,10 +21,10 @@ import {
 // keputusan bisnis diambil dari angka ini.
 
 const TAB = [
-  { key: "labarugi", label: "Laba Rugi" },
-  { key: "neraca", label: "Neraca" },
-  { key: "aruskas", label: "Arus Kas" },
-  { key: "neracasaldo", label: "Neraca Saldo" },
+  { key: "labarugi", label: "Laba Rugi", penjelasan: "Untung atau rugi perusahaan selama periode ini — pendapatan dikurangi seluruh beban." },
+  { key: "neraca", label: "Neraca", penjelasan: "Potret kekayaan perusahaan di satu titik waktu: apa yang dimiliki (aset), apa yang menjadi kewajiban, dan sisanya milik siapa (ekuitas)." },
+  { key: "aruskas", label: "Arus Kas", penjelasan: "Ke mana saja uang tunai benar-benar mengalir masuk dan keluar selama periode ini — beda dari laba rugi yang menghitung pendapatan walau uangnya belum diterima." },
+  { key: "neracasaldo", label: "Neraca Saldo", penjelasan: "Daftar lengkap seluruh akun beserta saldonya — versi 'mentah' sebelum disusun jadi Laba Rugi & Neraca yang rapi. Berguna untuk menelusuri kalau ada angka yang terasa aneh." },
 ];
 
 export default function FinanceReports() {
@@ -74,6 +74,9 @@ export default function FinanceReports() {
           </Button>
         ))}
       </div>
+      <p className="text-[13px] leading-relaxed text-ink3">
+        {TAB.find((t) => t.key === tab)?.penjelasan}
+      </p>
 
       {tab === "labarugi" && data.labarugi && <LabaRugi d={data.labarugi} />}
       {tab === "neraca" && data.neraca && <Neraca d={data.neraca} />}
@@ -88,13 +91,23 @@ function LabaRugi({ d }) {
   return (
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KartuAngka label="Pendapatan Bersih" value={formatUang(r.pendapatanBersih)} />
-        <KartuAngka label="Laba Kotor" value={formatUang(r.labaKotor)} sub={r.marginKotor != null ? `Margin ${r.marginKotor.toFixed(1)}%` : undefined} />
-        <KartuAngka label="Beban Operasional" value={formatUang(r.bebanOperasional)} />
+        <KartuAngka
+          label="Pendapatan Bersih" value={formatUang(r.pendapatanBersih)}
+          info="Pendapatan kotor dikurangi retur & potongan. Hanya dari order yang SUDAH diserahkan ke pelanggan — DP untuk order yang belum diserahkan tidak dihitung sebagai pendapatan."
+        />
+        <KartuAngka
+          label="Laba Kotor" value={formatUang(r.labaKotor)} sub={r.marginKotor != null ? `Margin ${r.marginKotor.toFixed(1)}%` : undefined}
+          info="Pendapatan bersih dikurangi beban pokok (harga bahan/produksi) — untung sebelum dipotong biaya operasional kantor."
+        />
+        <KartuAngka
+          label="Beban Operasional" value={formatUang(r.bebanOperasional)}
+          info="Biaya menjalankan bisnis di luar produksi langsung — gaji, sewa, listrik, dan sejenisnya."
+        />
         <KartuAngka
           label="Laba Bersih" value={formatUang(r.labaBersih)}
           tone={r.labaBersih < 0 ? "red" : "green"}
           sub={r.marginBersih != null ? `Margin ${r.marginBersih.toFixed(1)}%` : undefined}
+          info="Angka paling bawah — untung/rugi sesungguhnya setelah SEMUA beban dikurangkan. Ini yang biasanya dimaksud saat orang bertanya 'untung berapa bulan ini'."
         />
       </div>
 
@@ -105,7 +118,7 @@ function LabaRugi({ d }) {
       </Penjelasan>
 
       <Card className="overflow-hidden">
-        <CardHeader><CardTitle>Laba Rugi</CardTitle></CardHeader>
+        <JudulKartu title="Laba Rugi" info="Disusun dari atas ke bawah: Pendapatan → dikurangi Beban Pokok → Laba Kotor → dikurangi Beban Operasional → Laba Bersih. Setiap baris bisa ditelusuri ke akun aslinya di Bagan Akun." />
         <TableWrap>
           <Table>
             <TBody>
@@ -158,9 +171,18 @@ function Neraca({ d }) {
   return (
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <KartuAngka label="Total Aset" value={formatUang(d.ringkasan.totalAset)} />
-        <KartuAngka label="Total Kewajiban" value={formatUang(d.ringkasan.totalKewajiban)} />
-        <KartuAngka label="Total Ekuitas" value={formatUang(d.ringkasan.totalEkuitas)} sub={`termasuk laba berjalan ${formatUang(d.labaTahunBerjalan)}`} />
+        <KartuAngka
+          label="Total Aset" value={formatUang(d.ringkasan.totalAset)}
+          info="Semua yang dimiliki/dikuasai perusahaan dan bernilai uang — kas, bank, piutang, persediaan bahan, dan sejenisnya."
+        />
+        <KartuAngka
+          label="Total Kewajiban" value={formatUang(d.ringkasan.totalKewajiban)}
+          info="Semua yang harus dibayar/diselesaikan perusahaan ke pihak lain — utang supplier, uang muka pelanggan yang belum jadi pendapatan, dan sejenisnya."
+        />
+        <KartuAngka
+          label="Total Ekuitas" value={formatUang(d.ringkasan.totalEkuitas)} sub={`termasuk laba berjalan ${formatUang(d.labaTahunBerjalan)}`}
+          info="Sisa kekayaan perusahaan setelah kewajiban dilunasi — hak pemilik. Aset = Kewajiban + Ekuitas, itu sebabnya neraca harus selalu seimbang."
+        />
       </div>
 
       {!d.ringkasan.seimbang && (
@@ -187,18 +209,20 @@ function Neraca({ d }) {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Aset</CardTitle>
-            <CardDescription>Per {tanggalPendek(d.perTanggal)}</CardDescription>
-          </CardHeader>
+          <JudulKartu
+            title="Aset"
+            description={`Per ${tanggalPendek(d.perTanggal)}`}
+            info="Diurutkan dari yang paling likuid (kas) ke yang paling tidak likuid (persediaan) — urutan baku laporan keuangan."
+          />
           <TabelNeraca rows={d.aset} total={d.ringkasan.totalAset} labelTotal="TOTAL ASET" />
         </Card>
 
         <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Kewajiban & Ekuitas</CardTitle>
-            <CardDescription>Per {tanggalPendek(d.perTanggal)}</CardDescription>
-          </CardHeader>
+          <JudulKartu
+            title="Kewajiban & Ekuitas"
+            description={`Per ${tanggalPendek(d.perTanggal)}`}
+            info="Menjawab 'uang/aset perusahaan itu sebenarnya milik/dijanjikan ke siapa' — sebagian ke kreditur (kewajiban), sisanya hak pemilik (ekuitas)."
+          />
           <TableWrap>
             <Table>
               <TBody>
@@ -255,11 +279,11 @@ function ArusKas({ d }) {
   return (
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <KartuAngka label="Saldo Awal Kas" value={formatUang(r.saldoAwal)} />
-        <KartuAngka label="Kas Masuk" value={formatUang(r.masuk)} tone="green" />
-        <KartuAngka label="Kas Keluar" value={formatUang(r.keluar)} tone="red" />
-        <KartuAngka label="Arus Bersih" value={formatUang(r.arusBersih)} tone={r.arusBersih < 0 ? "red" : "green"} />
-        <KartuAngka label="Saldo Akhir Kas" value={formatUang(r.saldoAkhir)} />
+        <KartuAngka label="Saldo Awal Kas" value={formatUang(r.saldoAwal)} info="Total kas & bank tepat sebelum periode ini dimulai." />
+        <KartuAngka label="Kas Masuk" value={formatUang(r.masuk)} tone="green" info="Seluruh uang tunai yang benar-benar masuk selama periode ini, dari mana pun sumbernya." />
+        <KartuAngka label="Kas Keluar" value={formatUang(r.keluar)} tone="red" info="Seluruh uang tunai yang benar-benar keluar selama periode ini, untuk apa pun tujuannya." />
+        <KartuAngka label="Arus Bersih" value={formatUang(r.arusBersih)} tone={r.arusBersih < 0 ? "red" : "green"} info="Kas Masuk dikurangi Kas Keluar. Bisa beda dari Laba Bersih di laporan Laba Rugi — laba dihitung saat diakui, arus kas dihitung saat uangnya benar-benar berpindah." />
+        <KartuAngka label="Saldo Akhir Kas" value={formatUang(r.saldoAkhir)} info="Saldo Awal ditambah Arus Bersih — harus sama persis dengan total Kas & Bank aktual di akhir periode." />
       </div>
 
       <Penjelasan>
@@ -284,13 +308,16 @@ function ArusKas({ d }) {
   );
 }
 
+const INFO_ARUS = {
+  "Aktivitas Operasi": "Arus kas dari kegiatan usaha sehari-hari — pembayaran pelanggan, pengeluaran operasional, pembayaran supplier. Ini yang paling penting untuk melihat 'apakah bisnis ini sehat dari kegiatan intinya'.",
+  "Aktivitas Investasi": "Arus kas dari membeli/menjual aset jangka panjang (mis. peralatan, kendaraan) — biasanya jarang terjadi, tapi nilainya besar saat terjadi.",
+  "Aktivitas Pendanaan": "Arus kas dari modal pemilik atau pinjaman — uang yang masuk/keluar terkait permodalan perusahaan, bukan dari kegiatan usaha.",
+};
+
 function SeksiArus({ judul, rows, catatan }) {
   return (
     <Card className="overflow-hidden">
-      <CardHeader>
-        <CardTitle>{judul}</CardTitle>
-        {catatan && <CardDescription>{catatan}</CardDescription>}
-      </CardHeader>
+      <JudulKartu title={judul} description={catatan} info={INFO_ARUS[judul]} />
       {rows.length === 0 ? (
         <CardContent><p className="py-4 text-[13px] text-ink3">Tidak ada arus kas di kelompok ini.</p></CardContent>
       ) : (
@@ -331,13 +358,12 @@ function NeracaSaldo({ d }) {
       )}
 
       <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle>Neraca Saldo</CardTitle>
-          <CardDescription>
-            Kolom “Mutasi” = pergerakan periode ini. Kolom “Saldo” = saldo akhir — kumulatif sejak awal untuk
-            akun neraca, dan sebatas periode ini untuk akun laba rugi.
-          </CardDescription>
-        </CardHeader>
+        <JudulKartu
+          title="Neraca Saldo"
+          description="Kolom “Mutasi” = pergerakan periode ini. Kolom “Saldo” = saldo akhir — kumulatif sejak awal untuk
+            akun neraca, dan sebatas periode ini untuk akun laba rugi."
+          info="Total Mutasi Debit dan Mutasi Kredit di baris paling bawah WAJIB sama persis — kalau tidak, berarti ada jurnal yang tidak seimbang masuk lewat jalur di luar aplikasi normal, dan itu bug yang harus segera dilaporkan."
+        />
         <TableWrap>
           <Table>
             <THead>

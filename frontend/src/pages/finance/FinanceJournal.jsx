@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Plus, Undo2, ChevronRight } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardHeader, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import {
-  HalamanFinance, Uang, formatUang, Penjelasan, TombolAksi, StatusBadge,
+  HalamanFinance, Uang, formatUang, JudulKartu, Penjelasan, TombolAksi, StatusBadge,
   Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
   LABEL_SUMBER_JURNAL,
 } from "@/features/finance/shared.jsx";
@@ -99,10 +99,13 @@ export default function FinanceJournal() {
       </Penjelasan>
 
       <Card className="overflow-hidden">
+        <JudulKartu
+          title={`${data?.total ?? 0} jurnal di periode ini`}
+          description="Menampilkan maksimal 100 terbaru."
+          info="Setiap baris di sini adalah SATU peristiwa keuangan yang sudah tercatat lengkap dengan pasangan debit-kreditnya (double-entry) — klik baris mana pun untuk melihat rinciannya."
+        />
         <CardHeader>
-          <CardTitle>{data?.total ?? 0} jurnal di periode ini</CardTitle>
-          <CardDescription>Menampilkan maksimal 100 terbaru.</CardDescription>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Input
               value={filter.search}
               onChange={(e) => setFilter((f) => ({ ...f, search: e.target.value }))}

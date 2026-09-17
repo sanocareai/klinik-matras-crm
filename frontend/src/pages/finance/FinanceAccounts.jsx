@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Lock, Download } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardHeader, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import {
-  HalamanFinance, Uang, Penjelasan, Pilihan, TombolAksi,
+  HalamanFinance, Uang, JudulKartu, Penjelasan, Pilihan, TombolAksi,
   LABEL_TIPE_AKUN,
 } from "@/features/finance/shared.jsx";
 
@@ -131,12 +131,13 @@ export default function FinanceAccounts() {
           </Penjelasan>
 
           <Card className="overflow-hidden">
+            <JudulKartu
+              title={`${terlihat.length} akun`}
+              description="Akun kelompok (header) tidak bisa dijurnal — ia cuma pengelompokan tampilan di laporan."
+              info="Ini fondasi seluruh modul Finance — setiap transaksi akhirnya menempel ke salah satu akun di sini. Akun bergembok dipakai mesin pembukuan otomatis dan tidak bisa dinonaktifkan; sisanya bebas diatur sesuai kebutuhan."
+            />
             <CardHeader>
-              <CardTitle>{terlihat.length} akun</CardTitle>
-              <CardDescription>
-                Akun kelompok (header) tidak bisa dijurnal — ia cuma pengelompokan tampilan di laporan.
-              </CardDescription>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   value={cari} onChange={(e) => setCari(e.target.value)}
                   placeholder="Cari kode atau nama akun…" className="max-w-[240px]"

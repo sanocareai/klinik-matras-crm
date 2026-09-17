@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Building2, FileText, Banknote } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, Penjelasan, TombolAksi,
+  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 
@@ -24,9 +24,9 @@ import {
 // persediaan yang SUDAH tercatat tidak pernah diubah surut.
 
 const TAB = [
-  { key: "tagihan", label: "Tagihan (Utang)", Icon: FileText },
-  { key: "pembayaran", label: "Pembayaran", Icon: Banknote },
-  { key: "supplier", label: "Master Supplier", Icon: Building2 },
+  { key: "tagihan", label: "Tagihan (Utang)", Icon: FileText, penjelasan: "Tagihan yang datang dari supplier — begitu disetujui, jadi utang resmi di buku besar." },
+  { key: "pembayaran", label: "Pembayaran", Icon: Banknote, penjelasan: "Riwayat uang yang sudah dikeluarkan untuk melunasi tagihan supplier." },
+  { key: "supplier", label: "Master Supplier", Icon: Building2, penjelasan: "Data lengkap para supplier — kontak, termin pembayaran, dan rekening tujuan transfer." },
 ];
 
 export default function FinanceSuppliers() {
@@ -109,15 +109,23 @@ export default function FinanceSuppliers() {
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KartuAngka label="Total Utang Usaha" value={formatUang(aging?.total ?? 0)} sub={`${aging?.baris?.length ?? 0} tagihan terbuka`} />
+        <KartuAngka
+          label="Total Utang Usaha" value={formatUang(aging?.total ?? 0)} sub={`${aging?.baris?.length ?? 0} tagihan terbuka`}
+          info="Total tagihan yang sudah disetujui tapi belum lunas dibayar ke supplier."
+        />
         <KartuAngka
           label="Lewat Jatuh Tempo" value={formatUang(lewatTempo.reduce((s, b) => s + b.sisa, 0))}
           tone={lewatTempo.length > 0 ? "red" : "default"} sub={`${lewatTempo.length} tagihan`}
+          info="Tagihan yang sudah lewat batas waktu pembayaran menurut termin supplier — sebaiknya diprioritaskan supaya hubungan dengan supplier tetap baik."
         />
-        <KartuAngka label="Menunggu Persetujuan" value={menunggu.length} tone={menunggu.length > 0 ? "orange" : "default"} />
+        <KartuAngka
+          label="Menunggu Persetujuan" value={menunggu.length} tone={menunggu.length > 0 ? "orange" : "default"}
+          info="Tagihan yang sudah diinput tapi belum disetujui — belum tercatat sebagai utang sampai disetujui."
+        />
         <KartuAngka
           label="Penerimaan Belum Ditagih" value={unbilled.length}
           sub="Barang sudah masuk, tagihan belum datang"
+          info="Barang sudah diterima & tercatat di gudang, tapi supplier belum mengirim tagihan resminya — nilainya sudah masuk Persediaan lewat akun sementara 'Utang Barang Belum Ditagih', menunggu tagihan aslinya diinput di sini."
         />
       </div>
 
@@ -135,13 +143,17 @@ export default function FinanceSuppliers() {
           </Button>
         ))}
       </div>
+      <p className="text-[13px] leading-relaxed text-ink3">
+        {TAB.find((t) => t.key === tab)?.penjelasan}
+      </p>
 
       {tab === "tagihan" && (
         <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Tagihan Supplier</CardTitle>
-            <CardDescription>Utang lahir di buku besar saat tagihan DISETUJUI, bukan saat diinput.</CardDescription>
-          </CardHeader>
+          <JudulKartu
+            title="Tagihan Supplier"
+            description="Utang lahir di buku besar saat tagihan DISETUJUI, bukan saat diinput."
+            info="Tagihan yang menaut penerimaan barang tidak bisa disetujui kalau harga satuan barangnya belum lengkap di Gudang — sistem menahannya dulu supaya nilai persediaan tidak tercatat salah."
+          />
           {bills.length === 0 ? (
             <CardContent>
               <EmptyState icon={FileText} title="Belum ada tagihan" description="Catat tagihan yang datang dari supplier di sini." />
@@ -208,10 +220,11 @@ export default function FinanceSuppliers() {
 
       {tab === "pembayaran" && (
         <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Pembayaran ke Supplier</CardTitle>
-            <CardDescription>Satu pembayaran bisa melunasi beberapa tagihan sekaligus.</CardDescription>
-          </CardHeader>
+          <JudulKartu
+            title="Pembayaran ke Supplier"
+            description="Satu pembayaran bisa melunasi beberapa tagihan sekaligus."
+            info="Cocok untuk transfer gabungan akhir bulan — satu kali transfer ke supplier, dialokasikan ke beberapa tagihan yang jatuh tempo bersamaan."
+          />
           {payments.length === 0 ? (
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada pembayaran.</p></CardContent>
           ) : (
@@ -241,13 +254,12 @@ export default function FinanceSuppliers() {
 
       {tab === "supplier" && (
         <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>Master Supplier</CardTitle>
-            <CardDescription>
-              Entitas supplier baru ada sejak modul Finance. Kolom supplier di dokumen Gudang tetap teks bebas
-              seperti sebelumnya — penautannya dilakukan per tagihan, bukan dengan memigrasikan riwayat lama.
-            </CardDescription>
-          </CardHeader>
+          <JudulKartu
+            title="Master Supplier"
+            description="Entitas supplier baru ada sejak modul Finance. Kolom supplier di dokumen Gudang tetap teks bebas
+              seperti sebelumnya — penautannya dilakukan per tagihan, bukan dengan memigrasikan riwayat lama."
+            info="Daftarkan supplier di sini dulu sebelum mencatat tagihannya — data kontak & termin pembayaran yang tersimpan di sini yang dipakai menghitung jatuh tempo otomatis."
+          />
           {suppliers.length === 0 ? (
             <CardContent>
               <EmptyState icon={Building2} title="Belum ada supplier" description="Daftarkan supplier yang tagihannya perlu dilacak." />

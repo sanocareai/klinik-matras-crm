@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Undo2, Plus } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -10,7 +10,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
-  HalamanFinance, Uang, formatUang, KartuAngka, Penjelasan, TombolAksi,
+  HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 
@@ -103,6 +103,7 @@ export default function FinanceReceivables() {
           label="Total Piutang" value={formatUang(data?.total ?? 0)}
           sub={`${data?.baris?.length ?? 0} order`}
           onClick={() => setFilterEmber("")}
+          info="Total tagihan yang belum lunas dari order yang SUDAH diserahkan ke pelanggan. Klik untuk menghapus filter umur di bawah."
         />
         {(data?.ember || []).map((e) => {
           const nilai = data.ringkasan?.[e.key] ?? 0;
@@ -114,22 +115,22 @@ export default function FinanceReceivables() {
               tone={e.key === "90_plus" && nilai > 0 ? "red" : e.key === "61_90" && nilai > 0 ? "orange" : "default"}
               sub={filterEmber === e.key ? "sedang difilter" : undefined}
               onClick={() => setFilterEmber(filterEmber === e.key ? "" : e.key)}
+              info="Piutang dikelompokkan menurut sudah berapa lama lewat jatuh tempo. Semakin ke kanan (90+ hari), semakin berisiko tidak tertagih — klik untuk menyaring daftar di bawah."
             />
           );
         })}
       </div>
 
       <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle>
+        <JudulKartu
+          title={<>
             {baris.length} order belum lunas
             {filterEmber && <Button size="sm" variant="tertiary" className="ml-2" onClick={() => setFilterEmber("")}>hapus filter</Button>}
-          </CardTitle>
-          <CardDescription>
-            Umur dihitung dari jatuh tempo invoice kalau ada; kalau tidak, dari tanggal order —
-            dan kolom “Acuan” menyebutkan yang mana, bukan menyamarkannya.
-          </CardDescription>
-        </CardHeader>
+          </>}
+          description="Umur dihitung dari jatuh tempo invoice kalau ada; kalau tidak, dari tanggal order —
+            dan kolom “Acuan” menyebutkan yang mana, bukan menyamarkannya."
+          info="Order dengan umur piutang lebih dari 60 hari (badge oranye/merah) sebaiknya segera ditindaklanjuti — semakin lama menunggak, semakin kecil peluang tertagih penuh."
+        />
         {baris.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada piutang terbuka.</p></CardContent>
         ) : (
@@ -170,14 +171,15 @@ export default function FinanceReceivables() {
 
       {/* ── Refund ── */}
       <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle>Refund ke Pelanggan</CardTitle>
-          <CardDescription>
+        <JudulKartu
+          title="Refund ke Pelanggan"
+          description={<>
             Pengembalian uang yang BENAR-BENAR pernah diterima. Berbeda dari membatalkan entri pembayaran
             (itu untuk salah input — uangnya tidak pernah masuk).
             {refundMenunggu.length > 0 && ` ${refundMenunggu.length} menunggu persetujuan.`}
-          </CardDescription>
-        </CardHeader>
+          </>}
+          info="Sistem otomatis menolak refund yang nilainya melebihi uang yang pernah benar-benar diterima untuk order itu — jadi tidak mungkin 'mengeluarkan' uang yang sebenarnya belum pernah masuk."
+        />
         {refunds.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada refund.</p></CardContent>
         ) : (
