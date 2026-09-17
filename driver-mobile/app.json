@@ -9,7 +9,7 @@
     "android": {
       "package": "com.klinikmatras.drivermobile",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 4,
+      "versionCode": 5,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#0A0D16",
