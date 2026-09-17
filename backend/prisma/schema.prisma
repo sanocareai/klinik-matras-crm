@@ -5627,6 +5627,7 @@ enum FinJournalSource {
   PEMBAYARAN_SUPPLIER // FinSupplierPayment
   PEMAKAIAN_BAHAN // HPP dari stock ledger (ISSUE/WASTE) - TIDAK menggandakan pergerakan stok
   PENERIMAAN_BAHAN // nilai persediaan dari goods receipt (putaway)
+  KASBON // uang muka gaji karyawan - Piutang Karyawan (1-1350), lihat posting/kasbon.js
   REVERSAL // jurnal balik dari pembatalan jurnal lain
 }
 

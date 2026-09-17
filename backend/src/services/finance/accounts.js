@@ -62,6 +62,12 @@ export const SYSTEM_KEYS = Object.freeze({
   SELISIH_HARGA_PEMBELIAN: "SELISIH_HARGA_PEMBELIAN",
   SELISIH_STOK: "SELISIH_STOK",
   BEBAN_ADMIN_BANK: "BEBAN_ADMIN_BANK",
+  ASET_TAK_BERWUJUD: "ASET_TAK_BERWUJUD",
+  UTANG_PIHAK_KETIGA: "UTANG_PIHAK_KETIGA",
+  BEBAN_PEMELIHARAAN_MESIN: "BEBAN_PEMELIHARAAN_MESIN",
+  BEBAN_LANGGANAN_APLIKASI: "BEBAN_LANGGANAN_APLIKASI",
+  BEBAN_OPERASIONAL_TRIP: "BEBAN_OPERASIONAL_TRIP",
+  BEBAN_POKOK_BAHAN_MANUAL: "BEBAN_POKOK_BAHAN_MANUAL",
 });
 
 const A = "ASET";
@@ -94,6 +100,9 @@ export const DEFAULT_COA = Object.freeze([
   { code: "1-2000", name: "Aset Tetap", type: A, normalBalance: D, isPostable: false, parent: "1-0000" },
   { code: "1-2100", name: "Kendaraan", type: A, normalBalance: D, parent: "1-2000", cashFlowCategory: "INVESTASI" },
   { code: "1-2200", name: "Peralatan & Mesin", type: A, normalBalance: D, parent: "1-2000", cashFlowCategory: "INVESTASI" },
+  { code: "1-2300", name: "Aset Tak Berwujud", type: A, normalBalance: D, parent: "1-2000",
+    systemKey: SYSTEM_KEYS.ASET_TAK_BERWUJUD, cashFlowCategory: "INVESTASI",
+    description: "Paten, HAKI, domain, dan hak tak berwujud lain yang nilainya material — dicatat sebagai aset, bukan langsung dibebankan, supaya sejalan dengan umur manfaatnya." },
   // Akun KONTRA: bertipe ASET tapi saldo normalnya KREDIT (lihat komentar
   // enum FinNormalBalance di schema.prisma).
   { code: "1-2900", name: "Akumulasi Penyusutan", type: A, normalBalance: C, parent: "1-2000" },
@@ -114,6 +123,9 @@ export const DEFAULT_COA = Object.freeze([
   { code: "2-1400", name: "Utang Pajak", type: K, normalBalance: C, parent: "2-1000", cashFlowCategory: "OPERASI",
     description: "Tersedia untuk jurnal MANUAL. Sistem ini belum punya mesin hitung pajak otomatis — jangan berasumsi terisi sendiri." },
   { code: "2-1500", name: "Utang Gaji", type: K, normalBalance: C, parent: "2-1000", cashFlowCategory: "OPERASI" },
+  { code: "2-1600", name: "Utang Pihak Ketiga (Investor/Mitra)", type: K, normalBalance: C, parent: "2-1000",
+    systemKey: SYSTEM_KEYS.UTANG_PIHAK_KETIGA, cashFlowCategory: "PENDANAAN",
+    description: "Pinjaman/suntikan dari investor & mitra non-bank yang diharapkan dikembalikan (mis. Pasamebel, MUF, investor perorangan) — pencairannya PENDANAAN masuk, pelunasannya PENDANAAN keluar, bukan beban. Fee/bagi hasil yang dibayarkan ke pemberi pinjaman dicatat terpisah sebagai beban di 6-1900 atau akun beban yang sesuai." },
   { code: "2-2000", name: "Kewajiban Jangka Panjang", type: K, normalBalance: C, isPostable: false, parent: "2-0000" },
   { code: "2-2100", name: "Utang Bank", type: K, normalBalance: C, parent: "2-2000", cashFlowCategory: "PENDANAAN" },
 
@@ -149,6 +161,9 @@ export const DEFAULT_COA = Object.freeze([
   { code: "5-1100", name: "Beban Pokok Bahan Baku", type: BP, normalBalance: D, parent: "5-0000",
     systemKey: SYSTEM_KEYS.BEBAN_POKOK_BAHAN, cashFlowCategory: "OPERASI",
     description: "Nilai bahan yang benar-benar dikeluarkan gudang ke produksi (stock_movements ISSUE). Tidak pernah ditulis manual." },
+  { code: "5-1150", name: "Pembelian Bahan Baku (Input Manual)", type: BP, normalBalance: D, parent: "5-0000",
+    systemKey: SYSTEM_KEYS.BEBAN_POKOK_BAHAN_MANUAL, cashFlowCategory: "OPERASI",
+    description: "Pembelian bahan baku yang dicatat manual SEBELUM modul Gudang dipakai — sengaja dipisah dari 5-1100 supaya akun itu tetap murni otomatis dari stock_movements begitu Gudang mulai jalan, tanpa perlu memilah mana baris manual mana baris otomatis di kemudian hari." },
   { code: "5-1200", name: "Beban Upah Produksi", type: BP, normalBalance: D, parent: "5-0000", cashFlowCategory: "OPERASI" },
   { code: "5-1300", name: "Beban Overhead Produksi", type: BP, normalBalance: D, parent: "5-0000", cashFlowCategory: "OPERASI" },
   { code: "5-1900", name: "Beban Susut & Bahan Rusak", type: BP, normalBalance: D, parent: "5-0000",
@@ -164,6 +179,15 @@ export const DEFAULT_COA = Object.freeze([
   // ── 6 BEBAN OPERASIONAL ───────────────────────────────────────────────
   { code: "6-0000", name: "BEBAN OPERASIONAL", type: B, normalBalance: D, isPostable: false },
   { code: "6-1100", name: "Beban Gaji & Tunjangan", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI" },
+  { code: "6-1150", name: "Beban Pemeliharaan Mesin & Peralatan", type: B, normalBalance: D, parent: "6-0000",
+    systemKey: SYSTEM_KEYS.BEBAN_PEMELIHARAAN_MESIN, cashFlowCategory: "OPERASI",
+    description: "Servis & perawatan mesin produksi (kompresor, mesin corner, mesin jahit) — beda dari 6-1320 yang khusus kendaraan." },
+  { code: "6-1160", name: "Beban Langganan Aplikasi", type: B, normalBalance: D, parent: "6-0000",
+    systemKey: SYSTEM_KEYS.BEBAN_LANGGANAN_APLIKASI, cashFlowCategory: "OPERASI",
+    description: "Langganan software/SaaS bulanan atau tahunan (mis. Claude, Adobe, Capcut, VPS)." },
+  { code: "6-1170", name: "Beban Operasional & Perjalanan Dinas", type: B, normalBalance: D, parent: "6-0000",
+    systemKey: SYSTEM_KEYS.BEBAN_OPERASIONAL_TRIP, cashFlowCategory: "OPERASI",
+    description: "Meeting, perjalanan dinas, dan operasional kecil lain yang bukan bensin/tol kendaraan operasional harian." },
   { code: "6-1200", name: "Beban Iklan & Pemasaran", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI",
     description: "Termasuk belanja iklan bulanan per platform (tabel ad_spends) yang diposting otomatis." },
   { code: "6-1300", name: "Beban BBM", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI" },
@@ -202,6 +226,10 @@ export const DEFAULT_EXPENSE_CATEGORIES = Object.freeze([
   { code: "PERLENGKAPAN", name: "Perlengkapan Kantor", accountCode: "6-1600", division: "UMUM" },
   { code: "ADMIN_BANK", name: "Biaya Administrasi Bank", accountCode: "6-1700", division: "UMUM" },
   { code: "LAIN_LAIN", name: "Lain-lain", accountCode: "6-1900", division: "UMUM" },
+  { code: "MAINT_MESIN", name: "Pemeliharaan Mesin & Peralatan", accountCode: "6-1150", division: "PRODUKSI" },
+  { code: "LANGGANAN_APLIKASI", name: "Langganan Aplikasi", accountCode: "6-1160", division: "UMUM" },
+  { code: "OPS_MEETING", name: "Operasional Meeting & Perjalanan Dinas", accountCode: "6-1170", division: "UMUM" },
+  { code: "BAHAN_BAKU_MANUAL", name: "Pembelian Bahan Baku (Manual)", accountCode: "5-1150", division: "PRODUKSI" },
 ]);
 
 /**

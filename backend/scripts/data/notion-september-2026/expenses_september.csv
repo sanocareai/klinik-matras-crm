@@ -1,0 +1,236 @@
+Expense,Account,Amount,Date,SubCategory
+Uang sampah sano sep,SANOBANK,"IDR 400,000",01/09/2026,Biaya Lainnya
+Bensin agung,SANOBANK,"IDR 250,000",01/09/2026,Bensin
+Etoll agung,SANOBANK,"IDR 150,000",01/09/2026,Etoll
+Bensin alwan,SANOBANK,"IDR 250,000",01/09/2026,Bensin
+Server crm 2bln,SANOBANK,"IDR 200,000",31/08/2026,Aplikasi
+Etoll alwan,SANOBANK,"IDR 100,000",31/08/2026,Etoll
+Admin bulanan sanobank,SANOBANK,"IDR 6,000",01/09/2026,Biaya Lainnya
+Bi fast,SANOBANK,"IDR 40,000",31/08/2026,Biaya Lainnya
+Pajak pt,PT Sano,"IDR 1,951",31/08/2026,Biaya Lainnya
+Biaya adm,PT Sano,"IDR 13,000",31/08/2026,Biaya Lainnya
+Gaji MJ,PT Sano,"IDR 7,000,000",31/08/2026,Gaji
+Gaji Kemal,PT Sano,"IDR 7,850,000",31/08/2026,Gaji
+Gaji Gilang,PT Sano,"IDR 9,000,000",31/08/2026,Gaji
+Sisa gajian Agustus,PT Sano,"IDR 35,616,129",31/08/2026,Gaji
+Spaylater sano sep,SANOBANK,"IDR 3,585,000",01/09/2026,
+Tali tis,UANG KAS SANO,"IDR 60,000",01/09/2026,Belanja Lain-Lain
+Reimburse ongkos fadlan,PT Sano,"IDR 224,000",01/09/2026,Operasional Meeting/Trip
+Claude coding,SANOBANK,"IDR 401,200",01/09/2026,Aplikasi
+Driver harian sigit 2hari,SANOBANK,"IDR 151,200",01/09/2026,Fee Part Time
+Op meeting,SANOBANK,"IDR 361,000",01/09/2026,Operasional Meeting/Trip
+Bensin+etoll alwan,SANOBANK,"IDR 350,000",01/09/2026,Bensin
+Lalamove toko cilodong,SANOBANK,"IDR 50,000",01/09/2026,Ongkos Lainnya
+Tambahan bensin agung,SANOBANK,"IDR 50,000",02/09/2026,Bensin
+Belanja toko bersama,SANOBANK,"IDR 2,580,000",02/09/2026,Belanja Bahan Baku
+Etoll agung,SANOBANK,"IDR 100,000",02/09/2026,Etoll
+Bensin agung,SANOBANK,"IDR 300,000",02/09/2026,Bensin
+Bensin alwan,SANOBANK,"IDR 200,000",02/09/2026,Bensin
+Lalamove toko bersama,UANG KAS SANO,"IDR 41,000",02/09/2026,Ongkos Lainnya
+Etoll alwan,SANOBANK,"IDR 150,000",02/09/2026,Etoll
+Triplek 6ml 2lbr,SANOBANK,"IDR 176,000",02/09/2026,Belanja Bahan Baku
+Lalamove kasur Indah sweety,UANG KAS SANO,"IDR 30,000",01/09/2026,Ongkos Lainnya
+Galon 2 pcs,UANG KAS SANO,"IDR 19,000",02/09/2026,BO Produksi
+Tisu 1 pcs,UANG KAS SANO,"IDR 12,000",02/09/2026,BO Office
+Aquaviva botol 2 karton,UANG KAS SANO,"IDR 46,000",02/09/2026,BO Office
+Servis mobil sano biru 3,SANOBANK,"IDR 1,000,000",02/09/2026,"Maintanance, Upgrade Alat"
+Skyfoam rebond pelunasan,PT Sano,"IDR 27,775,588",02/09/2026,Busa
+Dp servis mobil merah,SANOBANK,"IDR 1,000,000",02/09/2026,"Maintanance, Upgrade Alat"
+Obat hansaplast kasa betadine sangobion,SANOBANK,"IDR 90,000",02/09/2026,Biaya Lainnya
+Haki klinik matras,SANOBANK,"IDR 2,800,000",02/09/2026,Aset Tak Berwujud
+Etoll alwan tambahan,SANOBANK,"IDR 150,000",02/09/2026,Etoll
+Fotokopi form produksi+masterlist barang,UANG KAS SANO,"IDR 37,000",03/09/2026,Biaya Lainnya
+Bensin agung,SANOBANK,"IDR 300,000",03/09/2026,Bensin
+Bensin alwan,SANOBANK,"IDR 300,000",03/09/2026,Bensin
+Etoll alwan,SANOBANK,"IDR 100,000",03/09/2026,Etoll
+Etoll agung,SANOBANK,"IDR 150,000",03/09/2026,Etoll
+Meta ads,SANOBANK,"IDR 5,000,000",03/09/2026,Ads Meta
+Biaya kartu,PT Sano,"IDR 10,500",03/09/2026,Biaya Lainnya
+Kain oscar ivory,SANOBANK,"IDR 216,000",03/09/2026,Kain
+Lalamove kain,UANG KAS SANO,"IDR 30,000",03/09/2026,Ongkos Lainnya
+Pulpen 2kotak/24pcs + parkir 2k,UANG KAS SANO,"IDR 39,000",03/09/2026,Biaya Lainnya
+Triplek 12 mm 1lbr,SANOBANK,"IDR 155,000",03/09/2026,Belanja Bahan Baku
+Etoll alwan,SANOBANK,"IDR 100,000",04/09/2026,Etoll
+Potongan EDC bunga rezma,PT Sano,"IDR 66,420",04/09/2026,Biaya Lainnya
+Bensin alwan,SANOBANK,"IDR 300,000",04/09/2026,Bensin
+Etoll afri,SANOBANK,"IDR 150,000",04/09/2026,Etoll
+Op general meeting,SANOBANK,"IDR 135,500",03/09/2026,BO Office
+Op lembur,SANOBANK,"IDR 35,000",03/09/2026,BO Produksi
+Sewa mobil hitam 7 hari,SANOBANK,"IDR 1,575,000",04/09/2026,Ongkos Lainnya
+Dp sewa mobil biru,SANOBANK,"IDR 1,000,000",04/09/2026,Ongkos Lainnya
+Biaya admin bank,SANOBANK,"IDR 9,000",03/09/2026,Biaya Lainnya
+Tarikan laci 4pcs,UANG KAS SANO,"IDR 26,000",04/09/2026,Belanja Lain-Lain
+Servis mobil merah ZAB,SANOBANK,"IDR 2,580,000",04/09/2026,"Maintanance, Upgrade Alat"
+Op shooting,SANOBANK,"IDR 68,000",04/09/2026,Operasional Meeting/Trip
+Rembes transport Ervina,PT Sano,"IDR 280,500",04/09/2026,Operasional Meeting/Trip
+Potongan EDC Sonny,PT Sano,"IDR 37,800",05/09/2026,Biaya Lainnya
+Insentif lembur,PT Sano,"IDR 2,505,000",05/09/2026,Gaji
+Tunjangan Ferdi (QC),PT Sano,"IDR 300,000",05/09/2026,Gaji
+Tunjangan Imam,PT Sano,"IDR 800,000",05/09/2026,Gaji
+Tunjangan Nana (Delivery),PT Sano,"IDR 1,000,000",05/09/2026,Gaji
+Fee SEO Richel,PT Sano,"IDR 1,500,000",05/09/2026,Gaji
+Etoll alwan,SANOBANK,"IDR 150,000",05/09/2026,Etoll
+Bensin Alwanu,SANOBANK,"IDR 250,000",05/09/2026,Bensin
+Etoll agung,SANOBANK,"IDR 200,000",05/09/2026,Etoll
+Bensin agung,SANOBANK,"IDR 200,000",05/09/2026,Bensin
+Etoll agung tamba,SANOBANK,"IDR 100,000",05/09/2026,Etoll
+Bensin agung tambahan,SANOBANK,"IDR 100,000",05/09/2026,Bensin
+Lalamove cilodong,SANOBANK,"IDR 85,000",04/09/2026,Ongkos Lainnya
+Perbantuan 2org cst puri subana,SANOBANK,"IDR 50,000",05/09/2026,Ongkos Lainnya
+Bensin afri,SANOBANK,"IDR 250,000",04/09/2026,Bensin
+Servis mobil sewa oking,SANOBANK,"IDR 300,000",06/09/2026,Ongkos Lainnya
+Potongan qris dp Richard,SANOBANK,"IDR 5,220",06/09/2026,Biaya Lainnya
+Etoll alwan,SANOBANK,"IDR 150,000",07/09/2026,Etoll
+Bensin alwan,SANOBANK,"IDR 250,000",07/09/2026,Bensin
+Etoll agung,SANOBANK,"IDR 150,000",07/09/2026,Etoll
+Bensin agung,SANOBANK,"IDR 250,000",07/09/2026,Bensin
+ATK pulpen standbook folder,SANOBANK,"IDR 89,500",07/09/2026,BO Office
+Parkir tokser,UANG KAS SANO,"IDR 2,000",07/09/2026,Biaya Lainnya
+Galon 2pcs,UANG KAS SANO,"IDR 19,000",07/09/2026,BO Produksi
+Potongan EDC Putri Subana,,"IDR 63,540",07/09/2026,Biaya Lainnya
+Bensin survey supplier,SANOBANK,"IDR 300,000",07/09/2026,Operasional Meeting/Trip
+Op survey,SANOBANK,"IDR 305,800",07/09/2026,Operasional Meeting/Trip
+Triplek 6mm 2lbr,SANOBANK,"IDR 176,000",07/09/2026,Belanja Bahan Baku
+Perlengkapan equipment delivery,SANOBANK,"IDR 455,787",07/09/2026,Perlengkapan
+Meta ads,SANOBANK,"IDR 3,000,000",08/09/2026,Ads Meta
+Bensin+etoll,SANOBANK,"IDR 400,000",08/09/2026,Bensin
+Kain Lava,PT Sano,"IDR 13,437,615",08/09/2026,Kain
+Akun google console platform,SANOBANK,"IDR 323,000",08/09/2026,Aplikasi
+Ptongan qris nova,SANOBANK,"IDR 23,000",08/09/2026,Biaya Lainnya
+Bi fast 1-8 sep,SANOBANK,"IDR 80,000",08/09/2026,Biaya Lainnya
+Rembes transport fadlan,PT Sano,"IDR 64,928",08/09/2026,Operasional Meeting/Trip
+Rembes transport novi,PT Sano,"IDR 37,610",08/09/2026,Operasional Meeting/Trip
+Jarum jahit,SANOBANK,"IDR 22,000",08/09/2026,Perlengkapan
+Bensin alwan,SANOBANK,"IDR 150,000",08/09/2026,Bensin
+Etoll alwan,SANOBANK,"IDR 100,000",08/09/2026,Etoll
+Pelunasan Yulius,PT Sano,"IDR 1,178,500",08/09/2026,Busa
+Lalamove pasamebel,SANOBANK,"IDR 150,000",08/09/2026,
+Etoll agung,SANOBANK,"IDR 100,000",08/09/2026,Etoll
+Bensin mobil agung,SANOBANK,"IDR 250,000",09/09/2026,Bensin
+Pelunasan servis mobil biru ZAE,SANOBANK,"IDR 2,200,000",09/09/2026,"Maintanance, Upgrade Alat"
+Etoll afri,SANOBANK,"IDR 150,000",09/09/2026,Etoll
+Bensin afri,SANOBANK,"IDR 250,000",09/09/2026,Bensin
+Claude email sanocare,SANOBANK,"IDR 400,000",08/09/2026,Aplikasi
+Sewa mobil bg oking 2,SANOBANK,"IDR 2,000,000",09/09/2026,Ongkos Lainnya
+Webing kaki benang ring kain,SANOBANK,"IDR 1,864,000",09/09/2026,Belanja Bahan Baku
+Lalamove toko bersama,UANG KAS SANO,"IDR 30,000",09/09/2026,Ongkos Lainnya
+Galon kantor atas,UANG KAS SANO,"IDR 22,500",09/09/2026,BO Office
+Lalamove citeureup,SANOBANK,"IDR 100,000",09/09/2026,Ongkos Lainnya
+Etoll agung,SANOBANK,"IDR 100,000",09/09/2026,Etoll
+Listrik sano september,SANOBANK,"IDR 1,216,005",09/09/2026,Biaya Lainnya
+Inet sano September,SANOBANK,"IDR 357,700",09/09/2026,Biaya Lainnya
+Dp label garansi kasur,SANOBANK,"IDR 600,000",09/09/2026,Perlengkapan
+Potongan qris ingke,SANOBANK,"IDR 11,070",09/09/2026,Biaya Lainnya
+Pengki 2pcs,UANG KAS SANO,"IDR 50,000",09/09/2026,Biaya Lainnya
+Sewa mobil ajiz,SANOBANK,"IDR 300,000",09/09/2026,Ongkos Lainnya
+Colokan+cooling pad,SANOBANK,"IDR 314,595",09/09/2026,Perlengkapan
+Bensin bersihin lem,UANG KAS SANO,"IDR 20,000",07/09/2026,Biaya Lainnya
+Meta ads,SANOBANK,"IDR 4,000,000",10/09/2026,Ads Meta
+Lalamove kain,UANG KAS SANO,"IDR 30,000",10/09/2026,Ongkos Lainnya
+Bensin difa,SANOBANK,"IDR 250,000",10/09/2026,Bensin
+Etoll difa,SANOBANK,"IDR 100,000",10/09/2026,Etoll
+Hr foam 2cm 9rol 37N 4rol 44N 11rol,PT Sano,"IDR 18,704,500",10/09/2026,Busa
+Triplek 6mm 2lbr,SANOBANK,"IDR 176,000",10/09/2026,Belanja Bahan Baku
+Lem esa tempo 9 sep,PT Sano,"IDR 6,496,000",10/09/2026,Belanja Bahan Baku
+Kain oscar+streples+sudut gold,SANOBANK,"IDR 520,000",10/09/2026,Belanja Bahan Baku
+Harian pak Wongso 2H,SANOBANK,"IDR 150,000",10/09/2026,Fee Part Time
+Servis mesin jait,SANOBANK,"IDR 150,000",10/09/2026,"Maintanance, Upgrade Alat"
+Triplek 12mm 2lbr+dinabolt,SANOBANK,"IDR 395,000",10/09/2026,Belanja Bahan Baku
+Mesin potong kayu,SANOBANK,"IDR 395,967",10/09/2026,Peralatan
+Kayu racuk 2m 2kubik,SANOBANK,"IDR 3,000,000",10/09/2026,Belanja Bahan Baku
+Op bongkar skyfoam,SANOBANK,"IDR 100,000",09/09/2026,Belanja Bahan Baku
+Op meeting,SANOBANK,"IDR 70,000",10/09/2026,BO Office
+Bensin Alwan,SANOBANK,"IDR 250,000",11/09/2026,Bensin
+Etoll alwan,SANOBANK,"IDR 150,000",11/09/2026,Etoll
+Bensin utk ke cst Dedy,SANOBANK,"IDR 30,000",11/09/2026,Bensin
+Sewa mobil ajiz 2,SANOBANK,"IDR 300,000",11/09/2026,Ongkos Lainnya
+Potongan qris Richard,SANOBANK,"IDR 12,600",11/09/2026,Biaya Lainnya
+Etoll tambahan agung,SANOBANK,"IDR 100,000",11/09/2026,Etoll
+Subsidi token mes,SANOBANK,"IDR 700,000",12/09/2026,Biaya Lainnya
+Etoll difa 12 sep,SANOBANK,"IDR 200,000",11/09/2026,Etoll
+Support bensin+oli agustus motor vario & rembes survey 10 sep,PT Sano,"IDR 150,000",11/09/2026,Operasional Meeting/Trip
+Bensin difa,SANOBANK,"IDR 400,000",12/09/2026,Bensin
+Pe encase MBB invoice ke-2,PT Sano,"IDR 19,264,862",12/09/2026,PE Enchasement
+Op lembur 30 gorengan+40 es kelapa,UANG KAS SANO,"IDR 70,000",11/09/2026,Biaya Lainnya
+Spanbon+benang,SANOBANK,"IDR 1,655,000",12/09/2026,Belanja Bahan Baku
+Lalamove spanbon+benang,SANOBANK,"IDR 70,000",12/09/2026,Ongkos Lainnya
+Pelunasan sewa mobil oking,SANOBANK,"IDR 1,500,000",12/09/2026,Ongkos Lainnya
+Bohlam 2pcs,SANOBANK,"IDR 50,000",12/09/2026,Biaya Lainnya
+Bensin alwan 13sep,SANOBANK,"IDR 250,000",12/09/2026,Bensin
+Etoll alwan,SANOBANK,"IDR 150,000",12/09/2026,Etoll
+Lalamove Yos dan Seno,SANOBANK,"IDR 200,000",12/09/2026,Ongkos Lainnya
+Fee rowongso jumat-sabtu,SANOBANK,"IDR 150,000",12/09/2026,Fee Part Time
+Meta ads,SANOBANK,"IDR 3,000,000",13/09/2026,Ads Meta
+Potongan admin cst nanda,SANOBANK,"IDR 20,000",13/09/2026,Biaya Lainnya
+Bensin alwan tambahan,SANOBANK,"IDR 100,000",13/09/2026,Bensin
+Maintenance pc,SANOBANK,"IDR 100,000",13/09/2026,"Maintanance, Upgrade Alat"
+Galon 2pcs,UANG KAS SANO,"IDR 19,000",12/09/2026,BO Produksi
+Beli jarum mesin jahit 2pcs,UANG KAS SANO,"IDR 20,000",12/09/2026,"Maintanance, Upgrade Alat"
+Bensin utk ke rumah cst Dedy,UANG KAS SANO,"IDR 30,000",11/09/2026,Bensin
+Potongan qris Suci,SANOBANK,"IDR 17,070",13/09/2026,Biaya Lainnya
+Bensin alwan,SANOBANK,"IDR 250,000",14/09/2026,Bensin
+Etoll alwan,SANOBANK,"IDR 150,000",14/09/2026,Etoll
+Besi hollo 4x4 3btg,SANOBANK,"IDR 314,000",14/09/2026,Belanja Lain-Lain
+Sewa mobil aziz,SANOBANK,"IDR 300,000",14/09/2026,Ongkos Lainnya
+13sep lalamove gudang 2x cilodong 1x,SANOBANK,"IDR 243,000",14/09/2026,Ongkos Lainnya
+Op shooting,SANOBANK,"IDR 120,700",14/09/2026,Operasional Meeting/Trip
+Bensin bersihin lem,UANG KAS SANO,"IDR 20,000",14/09/2026,BO Produksi
+Lalamove kain,UANG KAS SANO,"IDR 30,000",14/09/2026,Ongkos Lainnya
+Kain toko bersama,SANOBANK,"IDR 342,000",14/09/2026,Belanja Bahan Baku
+Lalamove cst kemal,SANOBANK,"IDR 162,000",14/09/2026,Ongkos Lainnya
+Sepatu mesin jait 2pcs,UANG KAS SANO,"IDR 20,000",14/09/2026,BO Produksi
+Bensin alwan,SANOBANK,"IDR 200,000",14/09/2026,Bensin
+Etoll alwan,SANOBANK,"IDR 100,000",14/09/2026,Etoll
+Rebon batu kerawang 540kg,SANOBANK,"IDR 7,560,000",14/09/2026,Belanja Bahan Baku
+Meta ads,SANOBANK,"IDR 3,000,000",14/09/2026,Ads Meta
+Subsidi listrik sano sep-nov,SANOBANK,"IDR 500,000",14/09/2026,Listrik
+Bensin ZAE biru,SANOBANK,"IDR 300,000",14/09/2026,Bensin
+Klakson ZAE biru,SANOBANK,"IDR 150,000",14/09/2026,"Maintanance, Upgrade Alat"
+Lalamove + tol rebon batu,SANOBANK,"IDR 310,000",14/09/2026,Ongkos Lainnya
+Servis mesin corner,SANOBANK,"IDR 125,000",15/09/2026,"Maintanance, Upgrade Alat"
+Cicilan MUF,SANOBANK,"IDR 1,625,000",15/09/2026,Pembayaran Pinjaman
+PJR,SANOBANK,"IDR 50,000",13/09/2026,Ongkos Lainnya
+Paku 4 5kg,SANOBANK,"IDR 150,000",15/09/2026,Belanja Bahan Baku
+Bensin alwan,SANOBANK,"IDR 300,000",15/09/2026,Bensin
+Etoll alwan,SANOBANK,"IDR 100,000",15/09/2026,Etoll
+Cat sky blue 5kaleng,SANOBANK,"IDR 791,200",15/09/2026,BO Produksi
+Material,SANOBANK,"IDR 170,000",15/09/2026,BO Produksi
+Peralatan kmar mandi,SANOBANK,"IDR 48,000",15/09/2026,"Maintanance, Upgrade Alat"
+Santunan lahiran Afriansyah,SANOBANK,"IDR 500,000",15/09/2026,Biaya Lainnya
+Etoll emon,SANOBANK,"IDR 150,000",15/09/2026,Etoll
+Op arman,SANOBANK,"IDR 50,000",15/09/2026,Fee Part Time
+Es batu 1bal,SANOBANK,"IDR 22,000",15/09/2026,Biaya Lainnya
+Kain pd natasha,SANOBANK,"IDR 1,090,000",15/09/2026,Belanja Lain-Lain
+Kayu papan 2 x 15,PT Sano,"IDR 3,910,900",15/09/2026,Belanja Lain-Lain
+Rebond yulius,PT Sano,"IDR 1,971,700",15/09/2026,Busa
+Rollan cat,SANOBANK,"IDR 70,000",15/09/2026,Perlengkapan
+Insentif Sales Agustus,PT Sano,"IDR 11,338,548",15/09/2026,Gaji
+Bensin alwan,SANOBANK,"IDR 250,000",16/09/2026,Bensin
+Freelance ipan 1hari,SANOBANK,"IDR 101,000",16/09/2026,Fee Part Time
+Etoll alwan,SANOBANK,"IDR 150,000",16/09/2026,Etoll
+Etoll bandung,SANOBANK,"IDR 300,000",15/09/2026,Etoll
+Bensin,SANOBANK,"IDR 300,000",15/09/2026,Bensin
+Op bandung,SANOBANK,"IDR 200,000",15/09/2026,Fee Part Time
+Stiker kaca,SANOBANK,"IDR 82,745",11/09/2026,Biaya Lainnya
+Lalamove cilodong dan pasamebel,SANOBANK,"IDR 150,000",15/09/2026,Ongkos Lainnya
+Op shooting trans7,SANOBANK,"IDR 560,000",16/09/2026,Operasional Meeting/Trip
+Etoll emon,SANOBANK,"IDR 50,000",16/09/2026,Etoll
+Budget konsumsi syukuran 17 sep,SANOBANK,"IDR 2,000,000",16/09/2026,Biaya Lainnya
+Meta ads,SANOBANK,"IDR 3,000,000",16/09/2026,Ads Meta
+Tambahan bensin bandung,SANOBANK,"IDR 250,000",16/09/2026,Bensin
+Jarum corner 10pack,SANOBANK,"IDR 342,481",16/09/2026,Perlengkapan
+Bensin emon,SANOBANK,"IDR 150,000",16/09/2026,Bensin
+Etoll alwan,SANOBANK,"IDR 100,000",16/09/2026,Etoll
+Selisih fee sales agustus Kakoy,PT Sano,"IDR 735,000",16/09/2026,Gaji
+Fee rowongso 14-16 sep,SANOBANK,"IDR 225,000",16/09/2026,Fee Part Time
+Tambahan etoll bandung,SANOBANK,"IDR 50,000",16/09/2026,Etoll
+Snack+tisu trans7,UANG KAS SANO,"IDR 70,000",17/09/2026,Operasional Meeting/Trip
+Bensin alwan,SANOBANK,"IDR 200,000",17/09/2026,Bensin
+Bensin agung,SANOBANK,"IDR 250,000",17/09/2026,Bensin
+Etoll agung,SANOBANK,"IDR 100,000",17/09/2026,Etoll
+Mata bor,UANG KAS SANO,"IDR 30,000",17/09/2026,Perlengkapan
+Insentif driver Agustus,PT Sano,"IDR 833,000",17/09/2026,Gaji
+Sewa mobil aziz,SANOBANK,"IDR 300,000",17/09/2026,Ongkos Lainnya
+Fee pak imam king,SANOBANK,"IDR 1,000,000",17/09/2026,Biaya Lainnya
+Material,SANOBANK,"IDR 185,000",17/09/2026,Belanja Lain-Lain
+Buah buahan syukuran,SANOBANK,"IDR 200,000",17/09/2026,Biaya Lainnya

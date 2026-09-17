@@ -140,6 +140,7 @@ export const LABEL_SUMBER_JURNAL = {
   PEMBAYARAN_SUPPLIER: "Pembayaran Supplier",
   PEMAKAIAN_BAHAN: "Pemakaian Bahan",
   PENERIMAAN_BAHAN: "Penerimaan Bahan",
+  KASBON: "Kasbon",
   REVERSAL: "Jurnal Balik",
 };
 
