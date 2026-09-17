@@ -2,6 +2,7 @@ import {
   Users, Wrench, Truck, Gauge, Package,
   MessageSquare, GitBranch, ClipboardList, BarChart3,
   Boxes, ScanLine, Route, CalendarClock, TrendingUp, HeartPulse,
+  Landmark, Banknote, Receipt, BookOpen, Building2, Wallet,
 } from "lucide-react";
 
 // Konten halaman command center per divisi (`.division-page` di file desain
@@ -136,6 +137,26 @@ export const DIVISION_CONTENT = {
       { title: "Inventory Health",        description: "Stock accuracy, low stock, dan aging inventory.", icon: Package, path: null },
       { title: "Delivery SLA",            description: "On-time rate, route performance, dan failed delivery.", icon: Truck, path: null },
       { title: "Customer Experience",     description: "Rating layanan, komplain, dan resolution time.", icon: HeartPulse, path: null },
+    ],
+  },
+  // Finance & Accounting (D-180, 17 September 2026). SELURUH modul di sini
+  // punya path REAL — tidak ada slot "Segera hadir": modul finance dibangun
+  // utuh sekaligus karena buku besar yang setengah jadi menghasilkan laporan
+  // yang salah, bukan laporan yang kurang lengkap.
+  finance: {
+    icon: Landmark,
+    short: "Finance",
+    title: "Finance & Accounting",
+    subtitle: "Kas & bank, piutang, utang, pengeluaran, jurnal, dan laporan keuangan.",
+    heroLine: "Buku besar double-entry yang menurunkan angkanya dari transaksi operasional yang sudah ada — bukan dari input ulang.",
+    modules: [
+      { title: "Ringkasan Keuangan",   description: "Posisi kas, laba rugi berjalan, dan pekerjaan yang menunggu.", icon: Landmark, path: "/finance/dashboard" },
+      { title: "Pembayaran & Verifikasi", description: "Cocokkan uang yang tercatat dengan setoran yang benar-benar masuk.", icon: Banknote, path: "/finance/payments" },
+      { title: "Kas & Bank",           description: "Saldo tiap rekening, mutasi antar rekening, pemasukan lain.", icon: Wallet, path: "/finance/cash" },
+      { title: "Pengeluaran",          description: "Biaya operasional, upah produksi, dan reimbursement karyawan.", icon: Receipt, path: "/finance/expenses" },
+      { title: "Invoice & Jatuh Tempo", description: "Tagihan ke pelanggan, umurnya, dan yang belum punya tempo.", icon: Receipt, path: "/finance/invoices" },
+      { title: "Supplier & Utang",     description: "Tagihan masuk, pembayaran supplier, dan sisa utang.", icon: Building2, path: "/finance/suppliers" },
+      { title: "Laporan Keuangan",     description: "Laba rugi, neraca, arus kas, dan neraca saldo.", icon: BarChart3, path: "/finance/reports" },
     ],
   },
 };

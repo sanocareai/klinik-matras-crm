@@ -16,6 +16,11 @@
 
 import { prisma } from "../db.js";
 import { ACTIVE_JOB_STATUSES } from "./jobStatus.js";
+// D-180 — pengakuan pendapatan menempel di titik yang SAMA dengan tempat
+// order dinyatakan terkirim, supaya tidak ada jalur "order selesai tapi
+// pendapatannya tidak pernah masuk buku". Fungsi ini sendiri yang memutuskan
+// status mana yang layak diakui (STATUS_PENGAKUAN) & idempoten per order.
+import { bukukanPengakuanPendapatan } from "./finance/hooks.js";
 
 // SHIPPING ditambahkan 5 September 2026 (permintaan owner: penanda "sedang
 // di jalan diantar", sebelumnya loncat langsung READY->DELIVERED).
@@ -197,6 +202,12 @@ export async function syncOrderStatus(tx, orderId) {
   if (computed === "DELIVERED") {
     await selesaikanJobBelumJalan(tx, orderId);
   }
+
+  // Pendapatan diakui SAAT DISERAHKAN (bukan saat invoice dibuat — invoice
+  // di sistem ini lahir otomatis sebagai draft begitu order dibuat, lihat
+  // services/invoice.js). Dipanggil untuk SEMUA status hasil hitung; yang
+  // menyaring "sudah diserahkan atau belum" ada di dalam.
+  await bukukanPengakuanPendapatan(tx, { orderId, status: computed });
 }
 
 /**

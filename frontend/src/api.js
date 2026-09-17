@@ -51,6 +51,18 @@ async function request(path, options = {}) {
   }
 }
 
+// Query string yang MEMBUANG nilai kosong/undefined — dipakai seluruh
+// endpoint Finance (D-180). Tanpa ini, `?status=` terkirim sebagai filter
+// string kosong dan backend mengembalikan nol baris untuk filter yang
+// sebenarnya "tidak difilter" — pola yang sudah dipakai getGoodsReceipts
+// dkk, diangkat jadi helper supaya tidak diulang 30 kali.
+function qsFinance(params = {}) {
+  const q = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "")
+  ).toString();
+  return q ? `?${q}` : "";
+}
+
 // Khusus untuk upload file (multipart/form-data — tanpa Content-Type header agar boundary otomatis)
 async function requestFormData(path, formData, method = "POST") {
   const controller = new AbortController();
@@ -1148,6 +1160,115 @@ export const api = {
     request(`/knowledge/faq/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteFaq: (id) =>
     request(`/knowledge/faq/${id}`, { method: "DELETE" }),
+
+  // ── Finance Workspace (D-180, 17 September 2026) ────────────────────────
+  // Backend: routes/finance.js (master data, jurnal, laporan) +
+  // routes/financeTransactions.js (transaksi harian) — dua file, SATU
+  // prefix /api/finance.
+  //
+  // `qs` di bawah SELALU membuang nilai kosong (pola sama dengan
+  // getGoodsReceipts dkk di atas): tanpa itu, "?status=" terkirim sebagai
+  // filter status string kosong dan mengembalikan nol baris.
+  getFinanceDashboard: (params = {}) => request(`/finance/dashboard${qsFinance(params)}`),
+
+  // Bagan akun & master data
+  getFinanceAccounts: (params = {}) => request(`/finance/accounts${qsFinance(params)}`),
+  installFinanceDefaultAccounts: () => request("/finance/accounts/install-defaults", { method: "POST" }),
+  createFinanceAccount: (data) => request("/finance/accounts", { method: "POST", body: JSON.stringify(data) }),
+  updateFinanceAccount: (id, data) => request(`/finance/accounts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  getFinanceCashAccounts: () => request("/finance/cash-accounts"),
+  createFinanceCashAccount: (data) => request("/finance/cash-accounts", { method: "POST", body: JSON.stringify(data) }),
+  updateFinanceCashAccount: (id, data) => request(`/finance/cash-accounts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  getFinanceExpenseCategories: (params = {}) => request(`/finance/expense-categories${qsFinance(params)}`),
+  createFinanceExpenseCategory: (data) => request("/finance/expense-categories", { method: "POST", body: JSON.stringify(data) }),
+  updateFinanceExpenseCategory: (id, data) => request(`/finance/expense-categories/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  getFinancePeriods: () => request("/finance/periods"),
+  closeFinancePeriod: (data) => request("/finance/periods/close", { method: "POST", body: JSON.stringify(data) }),
+  reopenFinancePeriod: (data) => request("/finance/periods/reopen", { method: "POST", body: JSON.stringify(data) }),
+
+  getFinanceSettings: () => request("/finance/settings"),
+  updateFinanceSettings: (settings) => request("/finance/settings", { method: "PATCH", body: JSON.stringify({ settings }) }),
+
+  // Jurnal
+  getFinanceJournal: (params = {}) => request(`/finance/journal${qsFinance(params)}`),
+  getFinanceJournalEntry: (id) => request(`/finance/journal/${id}`),
+  createFinanceJournal: (data) => request("/finance/journal", { method: "POST", body: JSON.stringify(data) }),
+  postFinanceJournalDraft: (id) => request(`/finance/journal/${id}/post`, { method: "POST" }),
+  deleteFinanceJournalDraft: (id) => request(`/finance/journal/${id}`, { method: "DELETE" }),
+  reverseFinanceJournal: (id, data) => request(`/finance/journal/${id}/reverse`, { method: "POST", body: JSON.stringify(data) }),
+
+  // Data belum lengkap (posting gap) & sinkronisasi sumber lama
+  getFinanceGaps: (params = {}) => request(`/finance/gaps${qsFinance(params)}`),
+  retryFinanceGap: (id) => request(`/finance/gaps/${id}/retry`, { method: "POST" }),
+  syncFinanceSource: (sumber, data = {}) => request(`/finance/sync/${sumber}`, { method: "POST", body: JSON.stringify(data) }),
+
+  // Laporan
+  getFinanceTrialBalance: (params = {}) => request(`/finance/reports/trial-balance${qsFinance(params)}`),
+  getFinanceIncomeStatement: (params = {}) => request(`/finance/reports/income-statement${qsFinance(params)}`),
+  getFinanceBalanceSheet: (params = {}) => request(`/finance/reports/balance-sheet${qsFinance(params)}`),
+  getFinanceCashFlow: (params = {}) => request(`/finance/reports/cash-flow${qsFinance(params)}`),
+  getFinanceLedger: (accountId, params = {}) => request(`/finance/reports/ledger/${accountId}${qsFinance(params)}`),
+  getFinanceReceivables: (params = {}) => request(`/finance/reports/receivables${qsFinance(params)}`),
+  getFinancePayables: (params = {}) => request(`/finance/reports/payables${qsFinance(params)}`),
+
+  // Pengeluaran & reimbursement
+  getFinanceExpenses: (params = {}) => request(`/finance/expenses${qsFinance(params)}`),
+  createFinanceExpense: (data) => request("/finance/expenses", { method: "POST", body: JSON.stringify(data) }),
+  submitFinanceExpense: (id) => request(`/finance/expenses/${id}/submit`, { method: "POST" }),
+  approveFinanceExpense: (id) => request(`/finance/expenses/${id}/approve`, { method: "POST" }),
+  rejectFinanceExpense: (id, reason) => request(`/finance/expenses/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  payFinanceExpense: (id, data) => request(`/finance/expenses/${id}/pay`, { method: "POST", body: JSON.stringify(data) }),
+  cancelFinanceExpense: (id, reason) => request(`/finance/expenses/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+
+  // Supplier, tagihan, pembayaran supplier
+  getFinanceSuppliers: (params = {}) => request(`/finance/suppliers${qsFinance(params)}`),
+  createFinanceSupplier: (data) => request("/finance/suppliers", { method: "POST", body: JSON.stringify(data) }),
+  updateFinanceSupplier: (id, data) => request(`/finance/suppliers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  getFinanceBills: (params = {}) => request(`/finance/bills${qsFinance(params)}`),
+  getFinanceUnbilledReceipts: () => request("/finance/bills/unbilled-receipts"),
+  createFinanceBill: (data) => request("/finance/bills", { method: "POST", body: JSON.stringify(data) }),
+  approveFinanceBill: (id) => request(`/finance/bills/${id}/approve`, { method: "POST" }),
+  rejectFinanceBill: (id, reason) => request(`/finance/bills/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  getFinanceSupplierPayments: (params = {}) => request(`/finance/supplier-payments${qsFinance(params)}`),
+  createFinanceSupplierPayment: (data) => request("/finance/supplier-payments", { method: "POST", body: JSON.stringify(data) }),
+  cancelFinanceSupplierPayment: (id, reason) => request(`/finance/supplier-payments/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+
+  // Kas: transfer & pemasukan lain
+  getFinanceTransfers: (params = {}) => request(`/finance/transfers${qsFinance(params)}`),
+  createFinanceTransfer: (data) => request("/finance/transfers", { method: "POST", body: JSON.stringify(data) }),
+  cancelFinanceTransfer: (id, reason) => request(`/finance/transfers/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  getFinanceOtherIncome: (params = {}) => request(`/finance/other-income${qsFinance(params)}`),
+  createFinanceOtherIncome: (data) => request("/finance/other-income", { method: "POST", body: JSON.stringify(data) }),
+  cancelFinanceOtherIncome: (id, reason) => request(`/finance/other-income/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+
+  // Invoice & jatuh tempo (baca dari Finance; penulisan dueDate tetap
+  // lewat updateInvoice/PATCH /orders/:id/invoice yang sudah ada).
+  getFinanceInvoices: (params = {}) => request(`/finance/invoices${qsFinance(params)}`),
+
+  // Pembayaran pelanggan: verifikasi, alokasi, refund
+  getFinanceCustomerPayments: (params = {}) => request(`/finance/customer-payments${qsFinance(params)}`),
+  setFinancePaymentAllocations: (paymentId, allocations) =>
+    request(`/finance/customer-payments/${paymentId}/allocations`, { method: "POST", body: JSON.stringify({ allocations }) }),
+  getFinanceRefunds: (params = {}) => request(`/finance/refunds${qsFinance(params)}`),
+  createFinanceRefund: (data) => request("/finance/refunds", { method: "POST", body: JSON.stringify(data) }),
+  approveFinanceRefund: (id) => request(`/finance/refunds/${id}/approve`, { method: "POST" }),
+  rejectFinanceRefund: (id, reason) => request(`/finance/refunds/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+
+  // Rekonsiliasi bank
+  getFinanceBankStatements: (params = {}) => request(`/finance/bank-statements${qsFinance(params)}`),
+  getFinanceBankStatement: (id) => request(`/finance/bank-statements/${id}`),
+  createFinanceBankStatement: (data) => request("/finance/bank-statements", { method: "POST", body: JSON.stringify(data) }),
+  addFinanceBankLine: (statementId, data) =>
+    request(`/finance/bank-statements/${statementId}/lines`, { method: "POST", body: JSON.stringify(data) }),
+  matchFinanceBankLine: (lineId, journalLineId) =>
+    request(`/finance/bank-lines/${lineId}/match`, { method: "POST", body: JSON.stringify({ journalLineId }) }),
+  unmatchFinanceBankLine: (lineId) => request(`/finance/bank-lines/${lineId}/unmatch`, { method: "POST" }),
+  ignoreFinanceBankLine: (lineId, note) => request(`/finance/bank-lines/${lineId}/ignore`, { method: "POST", body: JSON.stringify({ note }) }),
+  completeFinanceBankStatement: (id, note) =>
+    request(`/finance/bank-statements/${id}/complete`, { method: "POST", body: JSON.stringify({ note }) }),
 
   // Workspace B2B/Non-CRM (D-115, 11 September 2026) — order vendor/korporat
   // kontak langsung ke WA pribadi owner, di luar Inbox omnichannel.

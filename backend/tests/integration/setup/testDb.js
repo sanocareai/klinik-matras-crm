@@ -25,6 +25,34 @@ const TABLES_TO_TRUNCATE = [
   "stock_adjustment_requests", "replenishment_requests",
   "materials",
   "storage_locations", "warehouses",
+  // ── Finance Workspace (D-180, 17 September 2026) ────────────────────────
+  // WAJIB ada di daftar ini, bukan mengandalkan CASCADE dari "Order".
+  // Alasannya BUKAN teoretis: sejak D-180, putaway goods receipt & material
+  // issue MEMANGGIL mesin posting finance (lihat routes/goodsReceipt.js dan
+  // routes/materialIssue.js). Di database tes yang bagan akunnya belum
+  // dipasang, panggilan itu menulis baris fin_posting_gaps + fin_journal_*.
+  // Baris-baris itu TIDAK tersentuh CASCADE dari tabel mana pun di bawah
+  // (relasinya ke Order/Customer/User semua SetNull, dan sourceId-nya
+  // polimorfik tanpa FK sama sekali) — jadi tanpa baris ini, sampah
+  // menumpuk lintas file test dan assertion "berapa gap yang terbuka"
+  // di financeLedger.integration.test.js akan melihat sisa test lain.
+  "fin_bank_statement_lines", "fin_bank_statements",
+  "fin_supplier_payment_allocations", "fin_supplier_payments", "fin_supplier_bills",
+  "fin_payment_allocations", "fin_refunds", "fin_expenses", "fin_other_incomes",
+  "fin_cash_transfers",
+  "fin_journal_lines", "fin_journal_entries",
+  "fin_posting_gaps", "fin_periods", "fin_settings",
+  "fin_expense_categories", "fin_cash_accounts", "fin_suppliers", "fin_accounts",
+  // payment_verifications & payments: sebelumnya ikut terbawa CASCADE dari
+  // "Order", sekarang disebut eksplisit supaya urutan pembersihannya tidak
+  // bergantung pada detail cascade yang tidak terlihat dari file ini.
+  "payment_verifications", "payments",
+  // OrderSequence: counter nomor dokumen (ORD/INV/JV/EXP/BILL/...) yang
+  // dipakai bersama seluruh domain. Tanpa direset, nomor dokumen di test
+  // akan terus naik lintas run — bukan kesalahan fatal, tapi membuat
+  // assertion terhadap nomor dokumen (mis. "JV-17092026-001") mustahil.
+  "OrderSequence",
+
   // Customer/Order/User TIDAK punya @@map — nama tabel fisiknya PERSIS nama
   // model PascalCase (case-sensitive, wajib dikutip di SQL), BEDA dari
   // model lain di daftar ini yang semuanya snake_case lewat @@map. Gotcha

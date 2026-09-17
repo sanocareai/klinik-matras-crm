@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Wrench, Package, Truck, Gauge, LayoutGrid, ChevronsUpDown, Check, ArrowUpDown, GripVertical, Handshake } from "lucide-react";
+import { Users, Wrench, Package, Truck, Gauge, LayoutGrid, ChevronsUpDown, Check, ArrowUpDown, GripVertical, Handshake, Landmark } from "lucide-react";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
 import { applyCustomOrder, getWorkspaceOrder, saveWorkspaceOrder } from "@/lib/sidebarOrder.js";
@@ -31,6 +31,13 @@ export const WORKSPACES = [
   { key: "bengkel",   label: "Production Operations",      to: "/bengkel",   Icon: Wrench,  roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"] },
   { key: "warehouse", label: "Warehouse & Inventory Control", to: "/gudang", Icon: Package, roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_LEAD"] },
   { key: "kendali",   label: "All Teams Dashboard",        to: "/kendali",   Icon: Gauge,   roles: ["ADMIN", "FINANCE"] },
+  // Finance & Accounting (D-180, 17 September 2026) — buku besar, kas/bank,
+  // piutang/utang, dan laporan keuangan. TERPISAH dari "All Teams Dashboard"
+  // yang isinya ringkasan OPERASIONAL lintas divisi: angka di sana omzet &
+  // volume kerja, angka di sini pendapatan & posisi keuangan akuntansi.
+  // Menggabungkan keduanya akan menaruh dua angka berbeda untuk hal yang
+  // terdengar sama dalam satu layar.
+  { key: "finance",   label: "Finance & Accounting",       to: "/finance",   Icon: Landmark, roles: ["ADMIN", "OWNER", "FINANCE"] },
   // B2B & Non-CRM Orders (D-115, 11 September 2026) — SENGAJA cuma "OWNER",
   // BUKAN "ADMIN" juga (satu-satunya workspace dengan pola ini) — lihat
   // komentar panjang di backend/src/constants/permissions.js.

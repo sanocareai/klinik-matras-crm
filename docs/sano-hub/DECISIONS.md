@@ -787,3 +787,55 @@ badge "Reorder" di baris hilang. Kosongkan reorderPoint lewat modal Atur
 → dikonfirmasi di DB benar-benar `NULL` (bukan 0), reorderQty yang tidak
 disentuh tetap 50 — membuktikan `undefined` vs `null` ditangani terpisah
 dengan benar, bukan kebetulan berhasil.
+
+---
+
+## D-180 — Finance Workspace: buku besar double-entry di atas transaksi yang sudah ada
+
+**Dokumen lengkap:** `docs/sano-hub/FINANCE-WORKSPACE.md` (alasan tiap
+keputusan, peta integrasi, dan daftar yang sengaja belum dikerjakan).
+Entri ini hanya pointer + ringkasan keputusan yang mengunci.
+
+**Keputusan.** Workspace ke-6 (`/finance/*`) dengan 19 tabel `fin_*`, mesin
+posting idempoten, dan 4 laporan keuangan baku. Migration MURNI ADITIF — nol
+`ALTER TABLE` pada tabel yang sudah ada.
+
+**Empat aturan yang mengunci bentuknya** (lengkap di kepala blok FINANCE,
+`schema.prisma`): tidak ada sumber data tandingan · nominal Decimal(18,2) ·
+posting atomik & idempoten lewat `idempotencyKey @unique` · jurnal terposting
+hanya bisa dibatalkan lewat REVERSAL.
+
+**Konsekuensi paling penting.** DP pelanggan masuk `Uang Muka Pelanggan`
+(KEWAJIBAN), BUKAN pendapatan. Pendapatan diakui saat order DISERAHKAN, bukan
+saat invoice dibuat — invoice di sistem ini lahir otomatis sebagai draft begitu
+order dibuat, jadi memakainya sebagai pemicu akan mengakui pendapatan untuk
+order yang belum dikerjakan sama sekali.
+
+**Disiplin ledger area ini diikuti apa adanya** (aturan 2 CLAUDE.md Sano Hub):
+`fin_journal_entries`/`fin_journal_lines` append-only, koreksi = baris
+kompensasi (jurnal balik), saldo SELALU dihitung dari SUM ledger — tidak ada
+satu pun kolom saldo tersimpan. Kuantitas stok TETAP milik `stock_movements`:
+modul finance TIDAK MENULIS satu baris pun ke sana, hanya membaca `unitCost`
+yang sudah ditulis gudang.
+
+**Yang TIDAK dikarang, dan konsekuensinya terlihat di UI.** HPP material tanpa
+harga perolehan, pembayaran dengan metode yang rekeningnya belum dipetakan, dan
+order yang diserahkan tapi masih Rp0 → lahir baris `fin_posting_gaps`,
+ditampilkan sebagai daftar kerja, dan SEMUA laporan menyebut jumlahnya di
+banner atas. Saldo awal tidak pernah diisi otomatis; 228 order LUNAS historis
+TIDAK di-backfill (larangan §19 CLAUDE.md root dipatuhi).
+
+**Gerbang verifikasi pembayaran dibangun penuh tapi DEFAULT MATI.** Permintaan
+aslinya "status pembayaran di CRM harus mengikuti pembayaran terverifikasi" —
+menyalakannya di hari deploy akan membuat ratusan order yang sales anggap sudah
+DP mendadak balik jadi "Belum Bayar". Penyalaan jadi satu klik admin, dan saat
+dinyalakan tanggal aktivasinya dikunci sehingga HANYA payment baru yang terkena
+— riwayat tidak pernah dinilai ulang surut.
+
+**Verifikasi.** 475 tes unit hijau (termasuk 60 tes finance baru), diverifikasi
+ulang di TZ UTC, UTC−4, dan UTC+14. Build frontend hijau, 13 halaman Finance
+ter-compile. Tes integrasi terhadap Postgres sungguhan (19 kasus, mencakup CHECK
+constraint & UNIQUE idempotency yang MUSTAHIL dibuktikan stub) SUDAH DITULIS
+tapi BELUM PERNAH DIJALANKAN — tidak ada Postgres/Docker di mesin tempat modul
+ini dibangun. **Jalankan `npm run test:integration` sebelum deploy** (lihat
+pelajaran `$1::uuid` di `services/inventoryLedger.js`).

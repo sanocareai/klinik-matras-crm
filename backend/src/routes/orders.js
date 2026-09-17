@@ -12,6 +12,9 @@ import { rolesOf, requirePermission, PERMISSIONS as P } from "../middleware/auth
 import { startOfDayWIB, endOfDayExclusiveWIB, parseTanggalKalender } from "../utils/wib.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
+// D-180 — jembatan ke buku besar. Lihat catatan panjang di hooks.js: modul
+// finance TIDAK PERNAH boleh menjatuhkan pencatatan pembayaran/order.
+import { bukukanPembayaran, batalkanJurnalPembayaran, bukukanPengakuanPendapatan } from "../services/finance/hooks.js";
 import { buildInvoiceView, setInvoiceLifecycle, attachOrderToInvoice, detachInvoiceFromBundle } from "../services/invoice.js";
 import { renderInvoicePdf } from "../services/invoicePdf.js";
 import { buildWarrantyView, markWarrantySent, WARRANTY_YEARS_VALID } from "../services/warranty.js";
@@ -502,6 +505,25 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           // sama seperti ensurePickupJobForOrder() untuk kategori lain.
           await ensurePickupJobForOrder(tx, updated, { unitStatus: "DELIVERED" });
         }
+
+        // D-180 — PENGAKUAN PENDAPATAN dari jalur MANUAL.
+        //
+        // syncOrderStatus() (services/orderStatusSync.js) sudah memanggil
+        // hook yang sama, TAPI jalur itu BERHENTI TOTAL untuk order yang
+        // statusLocked=true — dan dropdown ini justru yang MENYALAKAN
+        // statusLocked. Tanpa baris di bawah, setiap order yang ditutup
+        // manual (servis di tempat, order SEWA yang memang tidak pernah
+        // lewat alur unit sama sekali) akan punya uang masuk di buku besar
+        // tapi pendapatannya TIDAK PERNAH diakui — saldo Uang Muka
+        // Pelanggan menggelembung selamanya dan laba rugi terlihat jauh
+        // lebih kecil dari kenyataan.
+        //
+        // Idempoten per order (idempotencyKey PENGAKUAN_PENDAPATAN:<id>),
+        // jadi order yang statusnya bolak-balik DELIVERED -> READY ->
+        // DELIVERED tetap cuma menghasilkan SATU pengakuan. Koreksi
+        // sungguhan (order batal setelah diserahkan) lewat reversal +
+        // refund, bukan lewat pengakuan kedua.
+        await bukukanPengakuanPendapatan(tx, { orderId: updated.id, status, userId: req.user?.id || null });
       }
 
       // Batalkan koordinat job yang sudah di-cache begitu link Maps order
@@ -783,7 +805,11 @@ orderRouter.post("/:id/payments", async (req, res) => {
         },
       });
       const status = await recomputeOrderPaymentStatus(tx, req.params.id);
-      return { payment, status };
+      // Buku besar: Dr Kas/Bank, Cr Uang Muka Pelanggan (atau Cr Piutang
+      // kalau pendapatannya sudah pernah diakui). DP TIDAK PERNAH langsung
+      // jadi pendapatan — lihat services/finance/posting/orderRevenue.js.
+      const jurnal = await bukukanPembayaran(tx, { paymentId: payment.id, userId: req.user.id });
+      return { payment, status, jurnal };
     });
 
     res.status(201).json(result);
@@ -824,8 +850,15 @@ orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
           cancelReason: reason || null,
         },
       });
+      // Jurnal penerimaannya DIBALIK (reversal), bukan dihapus — ledger
+      // finance append-only sama seperti tabel payments itu sendiri.
+      const jurnal = await batalkanJurnalPembayaran(tx, {
+        paymentId: req.params.paymentId,
+        reason: reason || "Entri pembayaran dibatalkan di CRM",
+        userId: req.user.id,
+      });
       const status = await recomputeOrderPaymentStatus(tx, req.params.id);
-      return { status };
+      return { status, jurnal };
     });
 
     res.json(result);

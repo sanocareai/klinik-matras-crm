@@ -478,6 +478,38 @@ model User {
   mcpAuthorizationCodes           McpAuthorizationCode[]
   mcpRefreshTokens                McpRefreshToken[]
   riskClassificationFeedbackGiven RiskClassificationFeedback[]
+
+  // ── Finance Workspace (D-180, 17 September 2026) ───────────────────────
+  // SEMUANYA SetNull di sisi sana (lihat blok FINANCE di bawah): staf
+  // resign, jejak keuangan yang pernah ia buat/setujui TETAP ada — pola
+  // sama dengan Promo.createdById & GoodsReceipt.createdById. TIDAK ada
+  // yang Restrict di sini: berbeda dari Payment.recordedById (siapa
+  // MENERIMA uang tunai dari customer, jejak yang wajib permanen), seluruh
+  // relasi di bawah adalah pembuat/penyetuju DOKUMEN yang isinya sendiri
+  // sudah tersimpan lengkap dan tidak kehilangan arti kalau aktornya null.
+  finJournalsCreated        FinJournalEntry[]      @relation("FinJournalCreator")
+  finJournalsPosted         FinJournalEntry[]      @relation("FinJournalPoster")
+  finPeriodsClosed          FinPeriod[]            @relation("FinPeriodCloser")
+  finSettingsUpdated        FinSetting[]           @relation("FinSettingUpdater")
+  finSuppliersCreated       FinSupplier[]          @relation("FinSupplierCreator")
+  finBillsCreated           FinSupplierBill[]      @relation("FinBillCreator")
+  finBillsApproved          FinSupplierBill[]      @relation("FinBillApprover")
+  finSupplierPaymentsMade   FinSupplierPayment[]   @relation("FinSupplierPaymentCreator")
+  finSupplierPaymentsVoided FinSupplierPayment[]   @relation("FinSupplierPaymentCanceller")
+  finPaymentAllocations     FinPaymentAllocation[] @relation("FinPaymentAllocationCreator")
+  finRefundsCreated         FinRefund[]            @relation("FinRefundCreator")
+  finRefundsApproved        FinRefund[]            @relation("FinRefundApprover")
+  finExpensesCreated        FinExpense[]           @relation("FinExpenseCreator")
+  finExpensesApproved       FinExpense[]           @relation("FinExpenseApprover")
+  finExpensesPaid           FinExpense[]           @relation("FinExpensePayer")
+  finExpensesReimbursed     FinExpense[]           @relation("FinExpenseReimburseTo")
+  finOtherIncomesCreated    FinOtherIncome[]       @relation("FinOtherIncomeCreator")
+  finOtherIncomesVoided     FinOtherIncome[]       @relation("FinOtherIncomeCanceller")
+  finCashTransfersCreated   FinCashTransfer[]      @relation("FinCashTransferCreator")
+  finCashTransfersVoided    FinCashTransfer[]      @relation("FinCashTransferCanceller")
+  finBankStatementsCreated  FinBankStatement[]     @relation("FinBankStatementCreator")
+  finBankStatementsDone     FinBankStatement[]     @relation("FinReconCompleter")
+  finBankLinesMatched       FinBankStatementLine[] @relation("FinBankLineMatcher")
 }
 
 // Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
@@ -648,6 +680,9 @@ model Customer {
   staleLeadAlertLog             StaleLeadAlertLog?
   salesRiskIntentClassification SalesRiskIntentClassification?
   riskClassificationFeedback    RiskClassificationFeedback[]
+
+  // Finance (D-180) — dimensi piutang per pelanggan di buku besar.
+  finJournalLines FinJournalLine[] @relation("FinJournalLineCustomer")
 
   @@index([createdAt]) // widget "Distribusi Lead per Sesi" & drill-down leads-detail — filter by createdAt tiap hari/minggu/bulan
   @@index([orderValue]) // sort "Nilai Order" & filter VIP (>=Rp5jt) di tabel Pelanggan
@@ -1166,6 +1201,16 @@ model Order {
   revisionLogs      OrderRevisionLog[]
   invoice           Invoice?
   complaintCases    ComplaintCase[]
+
+  // Finance (D-180) — dimensi analitik buku besar + dokumen keuangan yang
+  // menunjuk order ini. SetNull/Restrict diputuskan di sisi sana: baris
+  // jurnal boleh kehilangan tautan order (SetNull, angka jurnalnya tetap
+  // benar), tapi REFUND & ALOKASI pembayaran TIDAK boleh (Restrict) — dua
+  // dokumen itu kehilangan arti total tanpa order-nya.
+  finJournalLines       FinJournalLine[]       @relation("FinJournalLineOrder")
+  finPaymentAllocations FinPaymentAllocation[]
+  finRefunds            FinRefund[]
+  finExpenses           FinExpense[]           @relation("FinExpenseOrder")
 
   @@index([customerId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
@@ -2164,12 +2209,12 @@ model Job {
   rescheduleCaseId String?         @map("reschedule_case_id") @db.Uuid
   rescheduleCase   RescheduleCase? @relation("JobCurrentRescheduleCase", fields: [rescheduleCaseId], references: [id], onDelete: SetNull)
 
-  units          JobUnit[]
-  payments       Payment[]
-  revisionLinks  UnitRevision[]
-  positionPings  JobPositionPing[]
-  issueLogs      JobIssueLog[]
-  rescheduleCases RescheduleCase[] @relation("RescheduleCaseOriginJob")
+  units           JobUnit[]
+  payments        Payment[]
+  revisionLinks   UnitRevision[]
+  positionPings   JobPositionPing[]
+  issueLogs       JobIssueLog[]
+  rescheduleCases RescheduleCase[]  @relation("RescheduleCaseOriginJob")
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
@@ -2291,22 +2336,22 @@ model RescheduleCase {
   // Job.rescheduleReason vs JobIssueLog).
   cause                 RescheduleCause
   reason                String
-  previousScheduledDate DateTime? @map("previous_scheduled_date") @db.Date
-  newScheduledDate      DateTime? @map("new_scheduled_date") @db.Date
-  customerConfirmed     Boolean   @default(false) @map("customer_confirmed")
+  previousScheduledDate DateTime?       @map("previous_scheduled_date") @db.Date
+  newScheduledDate      DateTime?       @map("new_scheduled_date") @db.Date
+  customerConfirmed     Boolean         @default(false) @map("customer_confirmed")
   // Kapan WA otomatis "jadwal Anda berubah" terkirim ke customer (13
   // September 2026, celah yang sama ditemukan saat audit: sebelum ini
   // TIDAK ADA notifikasi otomatis sama sekali ke customer/sales saat
   // reschedule, murni mengandalkan dispatcher telepon manual). Null =
   // belum terkirim/gagal kirim — best-effort, tidak menggagalkan kasus.
-  customerNotifiedAt DateTime? @map("customer_notified_at")
+  customerNotifiedAt    DateTime?       @map("customer_notified_at")
 
   cancelReason String? @map("cancel_reason")
 
-  createdById String?  @map("created_by")
-  createdBy   User?    @relation("RescheduleCaseCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdById String?   @map("created_by")
+  createdBy   User?     @relation("RescheduleCaseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
   resolvedAt  DateTime? @map("resolved_at")
 
   // Reverse pointer dari Job (Job.rescheduleCaseId) — lihat catatan di
@@ -3066,6 +3111,12 @@ model Payment {
   cancelReason  String?   @map("cancel_reason")
 
   verifications PaymentVerification[]
+
+  // Finance (D-180) — alokasi ke order. KOSONG untuk hampir semua baris:
+  // tanpa alokasi eksplisit, seluruh nominal dianggap milik Payment.orderId
+  // (lihat model FinPaymentAllocation). Tidak ada backfill, tidak ada
+  // perubahan arti kolom lama.
+  finAllocations FinPaymentAllocation[]
 
   @@index([orderId])
   @@index([jobId])
@@ -3950,7 +4001,7 @@ model Material {
   // Ditambah 12 Sept 2026 dari kolom VENDOR & BARANG di stock opname Excel
   // asli (backend/scripts/data/warehouse-import/) — TIDAK dikarang, hanya
   // baris yang punya nilai di sumbernya yang diisi.
-  vendor String? // nama vendor/supplier langganan untuk material ini
+  vendor    String? // nama vendor/supplier langganan untuk material ini
   // Sub-kategori bebas dari Excel (kolom "BARANG"), lebih rinci dari
   // `category` — contoh nyata: "REBONDED", "HR FOAM", "HR KULIT", "BED".
   // TIDAK dibuat enum: nilainya bebas ketik di sumber, memaksa jadi enum
@@ -3963,8 +4014,8 @@ model Material {
   // BUKAN nilai hidup: tidak pernah diperbarui otomatis dari transaksi
   // berjalan (StockMovement.unitCost per penerimaan itu yang live, lihat
   // model StockMovement). Dua field ini murni referensi historis import.
-  referenceUnitCost      Int?    @map("reference_unit_cost") // Rupiah per satuan
-  referenceUnitCostMonth String? @map("reference_unit_cost_month") // "2026-08" dst — bulan ASLI sumber harga ini
+  referenceUnitCost        Int?    @map("reference_unit_cost") // Rupiah per satuan
+  referenceUnitCostMonth   String? @map("reference_unit_cost_month") // "2026-08" dst — bulan ASLI sumber harga ini
   referenceStockValue      Int?    @map("reference_stock_value") // Rupiah, total nilai stok bulan itu
   referenceStockValueMonth String? @map("reference_stock_value_month")
 
@@ -4163,6 +4214,10 @@ model GoodsReceipt {
   lines                 GoodsReceiptLine[]
   movements             StockMovement[]
   replenishmentRequests ReplenishmentRequest[]
+
+  // Finance (D-180) — tagihan supplier yang menagih penerimaan ini. TIDAK
+  // menulis pergerakan stok apa pun (lihat catatan di FinSupplierBill).
+  finSupplierBills FinSupplierBill[]
 
   @@index([status])
   @@index([expectedDate])
@@ -5336,4 +5391,939 @@ model GoldStandardExample {
   createdAt DateTime @default(now())
 
   @@index([category])
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FINANCE WORKSPACE — BUKU BESAR DOUBLE-ENTRY (17 September 2026, D-180)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// KENAPA SELURUH BLOK INI ADA. Sampai hari ini sistem sudah punya SEMUA
+// transaksi nyata (Order, Invoice, Payment, StockMovement, VehicleExpense,
+// AdSpend) tapi TIDAK PUNYA akuntansi: tidak ada bagan akun, tidak ada
+// jurnal, tidak ada cara menjawab "kas kita berapa", "piutang berapa",
+// "bulan ini untung atau rugi". Angka-angka di Laporan/Kendali selama ini
+// murni agregasi operasional (SUM(Order.value)) — itu OMZET, bukan
+// pendapatan akuntansi, dan tidak pernah dipisahkan dari DP yang belum jadi
+// hak kita.
+//
+// ── EMPAT ATURAN YANG MENENTUKAN BENTUK SELURUH BLOK INI ──────────────────
+//
+// 1. TIDAK ADA SUMBER DATA TANDINGAN. Finance TIDAK PERNAH meminta orang
+//    mengetik ulang transaksi yang sudah ada di sistem. Payment, Order,
+//    StockMovement, VehicleExpense, AdSpend tetap SATU-SATUNYA tempat
+//    transaksinya dicatat — blok ini cuma MENURUNKAN jurnal dari sana
+//    (services/finance/posting/*.js). Yang benar-benar BARU di sini
+//    hanyalah transaksi yang memang belum pernah punya tempat: pengeluaran
+//    operasional non-kendaraan, tagihan supplier, transfer antar kas,
+//    refund, dan jurnal manual.
+//
+// 2. NOMINAL PRESISI DESIMAL. Seluruh kolom uang di blok ini
+//    Decimal(18,2) — BUKAN Int seperti Order.value/Payment.amount (Rupiah
+//    bulat). Konversi Int ke Decimal selalu eksak, jadi tidak ada kehilangan
+//    presisi dari sumbernya; yang Decimal lindungi adalah hasil HITUNGAN
+//    (alokasi pembayaran proporsional, HPP rata-rata tertimbang, pembagian
+//    biaya per unit) yang kalau dibulatkan per langkah akan menghasilkan
+//    jurnal TIDAK SEIMBANG — kelas bug yang mustahil ditemukan belakangan.
+//
+// 3. POSTING ATOMIK & IDEMPOTEN. Satu kejadian sumber = MAKSIMAL satu
+//    jurnal. Dijamin kolom `idempotencyKey` @unique (mis.
+//    "PEMBAYARAN_ORDER:<uuid>", "PENGAKUAN_PENDAPATAN:<orderId>") — bukan
+//    cuma cek "sudah ada belum" di kode (itu punya celah TOCTOU persis
+//    seperti yang sudah pernah terjadi di inventoryLedger.js). Retry/
+//    double-click/replay job TIDAK bisa menghasilkan jurnal dobel karena
+//    yang kalah race ditolak Postgres di level constraint, bukan logika.
+//
+// 4. JURNAL TERPOSTING TIDAK PERNAH DIUBAH/DIHAPUS. Koreksi SELALU lewat
+//    REVERSAL (jurnal balik dengan tanggal sendiri) — pola yang sama dengan
+//    Payment.cancelledAt & StockMovement yang append-only. `status`
+//    REVERSED cuma penanda; baris aslinya utuh selamanya.
+//
+// ── YANG SENGAJA TIDAK DIKERJAKAN (jujur, bukan kelupaan) ────────────────
+// - SALDO AWAL (opening balance) TIDAK diisi otomatis/dikarang. Neraca
+//   baru benar setelah admin memasukkan saldo awal lewat jurnal pembukaan
+//   (FinJournalEntry source=SALDO_AWAL). Sebelum itu, laporan JUJUR
+//   menyebut dirinya "sejak sistem finance aktif", bukan berpura-pura
+//   neraca lengkap.
+// - HPP (harga pokok) TIDAK dikarang untuk material yang belum punya data
+//   harga. StockMovement.unitCost baru terisi di jalur goods receipt;
+//   material tanpa riwayat harga menghasilkan baris FinPostingGap
+//   (tercatat & tampil di UI), BUKAN jurnal dengan angka tebakan.
+// - PAJAK (PPN/PPh) belum dimodelkan sama sekali — Klinik Matras belum
+//   punya data faktur pajak di sistem ini. Akun "Utang Pajak" tersedia di
+//   bagan akun untuk jurnal manual, tapi tidak ada mesin hitung otomatis.
+
+// Tipe akun — dasar klasifikasi laporan. BEBAN_POKOK dipisah dari BEBAN
+// supaya Laba Rugi bisa menampilkan LABA KOTOR (Pendapatan - Beban Pokok)
+// tanpa menebak-nebak akun mana yang HPP dari namanya.
+enum FinAccountType {
+  ASET
+  KEWAJIBAN
+  EKUITAS
+  PENDAPATAN
+  BEBAN_POKOK
+  BEBAN
+}
+
+// Saldo normal DISIMPAN, bukan diturunkan dari `type` — akun KONTRA
+// (mis. "Retur & Potongan Penjualan" bertipe PENDAPATAN tapi bersaldo
+// normal DEBIT, "Akumulasi Penyusutan" bertipe ASET tapi KREDIT) adalah
+// kasus nyata yang akan salah total kalau saldo normal ditebak dari tipe.
+enum FinNormalBalance {
+  DEBIT
+  KREDIT
+}
+
+// Klasifikasi Arus Kas (PSAK 2). NULL untuk akun yang tidak pernah muncul
+// sebagai lawan transaksi kas (mis. akun kas itu sendiri) — laporan arus
+// kas memakai METODE LANGSUNG: tiap baris jurnal yang menyentuh akun kas
+// dikelompokkan menurut kategori akun LAWANNYA, bukan direkonstruksi dari
+// laba bersih (metode tidak langsung butuh penyesuaian non-kas yang belum
+// ada datanya di sistem ini — penyusutan, dst).
+enum FinCashFlowCategory {
+  OPERASI
+  INVESTASI
+  PENDANAAN
+}
+
+// Bagan Akun (Chart of Accounts). Hierarki 1 tingkat lewat parentId —
+// akun HEADER (isPostable=false) cuma untuk pengelompokan tampilan laporan,
+// jurnal SELALU menempel ke akun DETAIL.
+model FinAccount {
+  id   String         @id @default(uuid()) @db.Uuid
+  code String         @unique // "1-1100" — dipakai urut tampil & pencarian
+  name String
+  type FinAccountType
+
+  normalBalance FinNormalBalance @map("normal_balance")
+
+  parentId String?      @map("parent_id") @db.Uuid
+  parent   FinAccount?  @relation("FinAccountTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children FinAccount[] @relation("FinAccountTree")
+
+  // false = akun header/kelompok. Jurnal ke akun header DITOLAK service
+  // (postJournal) — bukan cuma disembunyikan di UI.
+  isPostable Boolean @default(true) @map("is_postable")
+
+  cashFlowCategory FinCashFlowCategory? @map("cash_flow_category")
+
+  // Kunci yang dipakai MESIN POSTING untuk menemukan akun tanpa
+  // meng-hardcode kode akun di kode program ("PIUTANG_USAHA", "KAS", dst —
+  // lihat services/finance/accounts.js SYSTEM_KEYS). Akun ber-systemKey
+  // TIDAK BOLEH dihapus/dinonaktifkan (dijaga di route), karena mesin
+  // posting akan berhenti bekerja tanpanya. NULL untuk akun biasa yang
+  // bebas dibuat/dinonaktifkan admin.
+  systemKey String? @unique @map("system_key")
+
+  active      Boolean @default(true)
+  description String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  journalLines      FinJournalLine[]
+  cashAccounts      FinCashAccount[]
+  expenseCategories FinExpenseCategory[]
+
+  @@index([type, code])
+  @@index([active])
+  @@map("fin_accounts")
+}
+
+enum FinCashAccountKind {
+  KAS // uang tunai fisik (kas kecil, kas driver)
+  BANK // rekening bank
+  EWALLET // OVO/GoPay/QRIS settlement — dipisah karena rekonsiliasinya beda
+}
+
+// REKENING kas/bank yang benar-benar dipegang perusahaan. TERPISAH dari
+// FinAccount: satu akun COA "Bank" bisa menaungi beberapa rekening fisik,
+// dan rekonsiliasi bank butuh entitas per-rekening (nomor rekening, saldo
+// menurut koran bank) yang tidak punya tempat di bagan akun.
+model FinCashAccount {
+  id   String             @id @default(uuid()) @db.Uuid
+  name String // "BCA 1234567890 - Operasional"
+  kind FinCashAccountKind
+
+  bankName      String? @map("bank_name")
+  accountNumber String? @map("account_number")
+  accountHolder String? @map("account_holder")
+
+  // Akun COA tempat saldo rekening ini bermuara. Restrict: akun yang masih
+  // dipakai rekening aktif tidak boleh dihapus diam-diam.
+  accountId String     @map("account_id") @db.Uuid
+  account   FinAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  active Boolean @default(true)
+  notes  String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  journalLines     FinJournalLine[]
+  bankStatements   FinBankStatement[]
+  expenses         FinExpense[]
+  otherIncomes     FinOtherIncome[]
+  transfersFrom    FinCashTransfer[]    @relation("FinTransferFrom")
+  transfersTo      FinCashTransfer[]    @relation("FinTransferTo")
+  supplierPayments FinSupplierPayment[]
+  refunds          FinRefund[]
+
+  @@index([active])
+  @@map("fin_cash_accounts")
+}
+
+// Periode akuntansi (bulanan). Jurnal ke periode TERTUTUP ditolak —
+// inilah yang membuat laporan bulan lalu tidak bisa berubah diam-diam
+// setelah dilaporkan ke owner. Periode dibuat otomatis (status OPEN) saat
+// jurnal pertama bulan itu diposting; penutupan SELALU keputusan manusia.
+enum FinPeriodStatus {
+  OPEN
+  CLOSED
+}
+
+model FinPeriod {
+  id     String          @id @default(uuid()) @db.Uuid
+  year   Int
+  month  Int // 1-12
+  status FinPeriodStatus @default(OPEN)
+
+  closedAt   DateTime? @map("closed_at")
+  closedById String?   @map("closed_by")
+  closedBy   User?     @relation("FinPeriodCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  closeNote  String?   @map("close_note")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([year, month])
+  @@index([status])
+  @@map("fin_periods")
+}
+
+enum FinJournalStatus {
+  DRAFT // jurnal manual yang belum diposting (satu-satunya jenis yang bisa DRAFT)
+  POSTED
+  REVERSED // sudah dibalik oleh jurnal reversal — baris aslinya TETAP utuh
+}
+
+// Jenis SUMBER jurnal — menjawab "baris ini lahir dari mana", dan jadi
+// setengah pertama `idempotencyKey`. SENGAJA enum (bukan string bebas):
+// laporan "jurnal apa saja yang otomatis vs manual" harus bisa dipercaya.
+enum FinJournalSource {
+  MANUAL // jurnal umum diketik finance
+  SALDO_AWAL // jurnal pembukaan - saldo awal yang DIINPUT manusia, tidak pernah dikarang sistem
+  PEMBAYARAN_ORDER // Payment (DP/cicilan/pelunasan) dari CRM/Armada
+  PENGAKUAN_PENDAPATAN // order diserahkan, pendapatan diakui + piutang lahir
+  REFUND // pengembalian uang ke customer
+  PENGELUARAN // FinExpense (biaya operasional/produksi/delivery/reimbursement)
+  // Dua sumber di bawah SUDAH punya tabelnya sendiri sejak lama dan TETAP
+  // jadi tempat input aslinya (lihat catatan di model FinExpense) - nilai
+  // enum terpisah supaya laporan bisa membedakan "biaya yang diinput
+  // finance" dari "biaya yang mengalir sendiri dari workspace lain".
+  BIAYA_KENDARAAN // VehicleExpense + VehicleService (Armada, D-035)
+  BIAYA_IKLAN // AdSpend (belanja iklan bulanan per platform)
+  PEMASUKAN_LAIN // FinOtherIncome (non-order)
+  TRANSFER_KAS // mutasi antar rekening sendiri
+  TAGIHAN_SUPPLIER // FinSupplierBill
+  PEMBAYARAN_SUPPLIER // FinSupplierPayment
+  PEMAKAIAN_BAHAN // HPP dari stock ledger (ISSUE/WASTE) - TIDAK menggandakan pergerakan stok
+  PENERIMAAN_BAHAN // nilai persediaan dari goods receipt (putaway)
+  REVERSAL // jurnal balik dari pembatalan jurnal lain
+}
+
+// ── JURNAL UMUM (header) ──────────────────────────────────────────────────
+// SATU kejadian = SATU FinJournalEntry berisi minimal 2 FinJournalLine yang
+// jumlah debit-nya PERSIS sama dengan jumlah kredit-nya. Keseimbangan
+// ditegakkan DUA lapis: (a) service postJournal() menolak selisih sekecil
+// apa pun sebelum menulis, (b) constraint CHECK per baris (debit>=0,
+// credit>=0, tepat satu yang > 0) di migration — supaya baris cacat
+// mustahil masuk walau lewat jalur SQL langsung.
+model FinJournalEntry {
+  id          String   @id @default(uuid()) @db.Uuid
+  entryNumber String   @unique @map("entry_number") // JV-DDMMYYYY-NNN
+  // DATE polos - ini "tanggal buku", bukan instant (pola sama dengan
+  // ProductionTarget.targetDate). Rentang WIB diterjemahkan di tepi.
+  date        DateTime @db.Date
+  description String
+
+  source   FinJournalSource
+  // Id baris sumbernya di tabel asal (Payment.id, FinExpense.id, dst).
+  // SENGAJA polimorfik TANPA FK: sumbernya tersebar di 8+ tabel yang
+  // sebagian (Payment, StockMovement) sudah berjalan lama dan tidak boleh
+  // ikut berubah cuma demi relasi balik yang tidak pernah dibaca dari sisi
+  // sana. Penelusuran dua arah tetap ada lewat index [source, sourceId].
+  sourceId String?          @map("source_id")
+
+  // KUNCI IDEMPOTENSI — "PEMBAYARAN_ORDER:<paymentId>",
+  // "PENGAKUAN_PENDAPATAN:<orderId>". NULL untuk jurnal manual (boleh
+  // banyak, memang tidak punya kejadian sumber tunggal). Lihat aturan 3 di
+  // kepala blok ini.
+  idempotencyKey String? @unique @map("idempotency_key")
+
+  status FinJournalStatus @default(POSTED)
+
+  postedAt   DateTime? @map("posted_at")
+  postedById String?   @map("posted_by")
+  postedBy   User?     @relation("FinJournalPoster", fields: [postedById], references: [id], onDelete: SetNull)
+
+  // Reversal - dua arah, self-relation supaya bisa ditanya dari sisi mana
+  // pun ("jurnal ini membalik apa" & "jurnal ini dibalik oleh apa").
+  reversalOfId   String?          @unique @map("reversal_of_id") @db.Uuid
+  reversalOf     FinJournalEntry? @relation("FinJournalReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversedBy     FinJournalEntry? @relation("FinJournalReversal")
+  reversedAt     DateTime?        @map("reversed_at")
+  reversalReason String?          @map("reversal_reason")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinJournalCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  lines FinJournalLine[]
+
+  @@index([date, status]) // laporan per periode
+  @@index([source, sourceId]) // "jurnal dari transaksi ini mana"
+  @@index([status])
+  @@map("fin_journal_entries")
+}
+
+model FinJournalLine {
+  id      String          @id @default(uuid()) @db.Uuid
+  entryId String          @map("entry_id") @db.Uuid
+  entry   FinJournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  lineNo Int @map("line_no")
+
+  accountId String     @map("account_id") @db.Uuid
+  account   FinAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  debit  Decimal @default(0) @db.Decimal(18, 2)
+  credit Decimal @default(0) @db.Decimal(18, 2)
+
+  description String?
+
+  // ── DIMENSI ANALITIK ────────────────────────────────────────────────
+  // Semua OPSIONAL. Ini yang membuat buku besar bisa menjawab "piutang si
+  // A berapa", "biaya delivery bulan ini dari order mana saja" TANPA tabel
+  // subsidiary ledger terpisah yang harus dijaga sinkron.
+  orderId    String?   @map("order_id")
+  order      Order?    @relation("FinJournalLineOrder", fields: [orderId], references: [id], onDelete: SetNull)
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation("FinJournalLineCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+
+  supplierId String?      @map("supplier_id") @db.Uuid
+  supplier   FinSupplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  cashAccountId String?         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: SetNull)
+
+  // Unit produksi (dimensi HPP per kasur). String polos TANPA FK -
+  // alasannya sama dengan sourceId di header: jangan menambah relasi balik
+  // ke model Unit yang sudah padat demi kolom yang cuma dibaca dari sisi
+  // finance. Nilainya SELALU Unit.id yang sah (ditulis mesin posting,
+  // bukan input manusia).
+  unitId String? @map("unit_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  bankStatementLines FinBankStatementLine[]
+
+  @@index([accountId, createdAt]) // buku besar per akun
+  @@index([entryId])
+  @@index([orderId])
+  @@index([customerId])
+  @@index([supplierId])
+  @@index([cashAccountId])
+  @@map("fin_journal_lines")
+}
+
+// Catatan JUJUR tentang jurnal yang SEHARUSNYA terbentuk tapi TIDAK BISA,
+// karena datanya memang belum ada (mis. material dipakai produksi tapi
+// belum pernah punya harga perolehan di ledger stok).
+//
+// KENAPA TABEL, BUKAN cuma log/diam: kalau HPP diam-diam dilewati, Laba
+// Rugi akan terlihat TERLALU UNTUNG dan tidak ada yang tahu kenapa. Baris
+// di sini tampil sebagai daftar "Data Belum Lengkap" di workspace Finance -
+// angka laporan tetap jujur, DAN gap-nya bisa ditutup (isi harga material,
+// lalu posting ulang lewat tombol, yang idempoten seperti posting lain).
+model FinPostingGap {
+  id       String           @id @default(uuid()) @db.Uuid
+  source   FinJournalSource
+  sourceId String           @map("source_id")
+
+  reason String // kode singkat: "TANPA_HARGA_PEROLEHAN", "AKUN_BELUM_DIPETAKAN", dst
+  detail String // kalimat Bahasa Indonesia siap tampil
+
+  // Konteks secukupnya untuk menindaklanjuti tanpa query balik ke sumber.
+  metadata Json @default("{}")
+
+  resolvedAt      DateTime? @map("resolved_at")
+  // Jurnal yang AKHIRNYA terbentuk setelah gap ditutup (kalau ada).
+  resolvedEntryId String?   @map("resolved_entry_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([source, sourceId])
+  @@index([resolvedAt])
+  @@map("fin_posting_gaps")
+}
+
+// Pengaturan Finance - key/value, bukan kolom-kolom di tabel singleton.
+// Alasannya: pengaturan finance tumbuh sedikit-sedikit (gate verifikasi,
+// tanggal mulai buku, default jatuh tempo) dan tiap penambahan tidak layak
+// bikin migration baru. Nilai disimpan sebagai string; parsing & default
+// ada di services/finance/settings.js (SATU tempat).
+model FinSetting {
+  key   String @id
+  value String
+
+  updatedById String?  @map("updated_by")
+  updatedBy   User?    @relation("FinSettingUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("fin_settings")
+}
+
+// ── DIVISI PEMBEBANAN BIAYA ───────────────────────────────────────────────
+// Dipakai FinExpenseCategory & FinExpense untuk menjawab "biaya bulan ini
+// paling besar di divisi mana". SENGAJA enum sendiri, BUKAN memakai ulang
+// daftar Role atau PORTALS: ini sumbu BIAYA (satu pengeluaran bisa dibebankan
+// ke Produksi walau yang mengajukan orang Gudang), bukan sumbu akses.
+enum FinDivision {
+  SALES
+  PRODUKSI
+  GUDANG
+  DELIVERY
+  UMUM // biaya kantor/administrasi yang tidak spesifik divisi
+}
+
+// Kategori pengeluaran yang DAPAT DIKELOLA ADMIN — jembatan antara bahasa
+// operasional ("Bensin", "Gaji Tukang") dan akun COA yang benar. Tanpa
+// tabel ini, setiap pengeluaran memaksa orang non-akuntansi memilih akun
+// dari bagan akun — cara tercepat mendapatkan buku besar yang kacau.
+model FinExpenseCategory {
+  id   String @id @default(uuid()) @db.Uuid
+  code String @unique // "BBM", "GAJI_PRODUKSI", "SEWA_TEMPAT"
+  name String
+
+  accountId String     @map("account_id") @db.Uuid
+  account   FinAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  division FinDivision @default(UMUM)
+  active   Boolean     @default(true)
+
+  // Kunci pemetaan OTOMATIS dari sumber yang sudah ada — mis. "BBM" untuk
+  // VehicleExpense.category=BBM, "IKLAN" untuk AdSpend. NULL untuk kategori
+  // yang murni dipakai input manual. @unique supaya satu sumber otomatis
+  // tidak pernah punya dua kategori tujuan yang saling berebut.
+  autoMapKey String? @unique @map("auto_map_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  expenses FinExpense[]
+
+  @@index([active])
+  @@map("fin_expense_categories")
+}
+
+// Supplier/vendor. SEBELUM INI tidak ada entitas supplier sama sekali —
+// GoodsReceipt.supplier, StockMovement.supplier, dan Material.vendor
+// semuanya STRING BEBAS (lihat komentar di model-model itu). Tabel ini
+// TIDAK mengubah kolom-kolom itu dan TIDAK memaksa mereka jadi FK: yang
+// dibutuhkan akuntansi adalah "kepada siapa kita berutang berapa", dan itu
+// butuh identitas yang stabil. Penautan ke dokumen gudang dilakukan
+// OPSIONAL per tagihan (FinSupplierBill.goodsReceiptId), bukan dengan
+// memigrasikan seluruh riwayat string yang ejaannya belum tentu konsisten.
+model FinSupplier {
+  id      String   @id @default(uuid()) @db.Uuid
+  code    String   @unique // "SUP-001"
+  name    String
+  phone   String?
+  email   String?
+  address String?
+  // Nama-nama yang dipakai di kolom string bebas gudang (GoodsReceipt.
+  // supplier dst) untuk supplier yang SAMA - dipakai UI menawarkan
+  // pencocokan saat membuat tagihan dari goods receipt, BUKAN untuk
+  // menulis balik ke tabel gudang.
+  aliases String[] @default([])
+
+  // Termin pembayaran default dalam HARI (30 = jatuh tempo 30 hari setelah
+  // tanggal tagihan). NULL = tidak ada termin baku, jatuh tempo diisi
+  // manual per tagihan.
+  paymentTermDays Int? @map("payment_term_days")
+
+  bankName    String? @map("bank_name")
+  bankAccount String? @map("bank_account")
+  bankHolder  String? @map("bank_holder")
+
+  active Boolean @default(true)
+  notes  String?
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinSupplierCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  bills        FinSupplierBill[]
+  payments     FinSupplierPayment[]
+  expenses     FinExpense[]
+  journalLines FinJournalLine[]
+
+  @@index([active])
+  @@map("fin_suppliers")
+}
+
+enum FinBillStatus {
+  DRAFT // diinput, belum diverifikasi/diposting - belum jadi utang di buku
+  MENUNGGU_APPROVAL
+  DISETUJUI // sudah diposting: Utang Usaha lahir di buku besar
+  DIBAYAR_SEBAGIAN // TURUNAN alokasi pembayaran, bukan diketik
+  LUNAS // TURUNAN alokasi pembayaran, bukan diketik
+  DITOLAK
+  DIBATALKAN // setelah DISETUJUI hanya bisa lewat reversal jurnal
+}
+
+// Tagihan dari supplier (Accounts Payable). Nominalnya DIINPUT dari
+// dokumen tagihan fisik/PDF supplier - ini SATU-SATUNYA sumbernya, tidak
+// ada tempat lain di sistem yang tahu berapa supplier menagih.
+//
+// HUBUNGAN DENGAN GUDANG: `goodsReceiptId` OPSIONAL. Kalau diisi, tagihan
+// ini dianggap menagih barang yang penerimaannya SUDAH tercatat di ledger
+// stok - jurnalnya mendebet PERSEDIAAN (bukan beban), dan NILAINYA diambil
+// dari baris StockMovement RECEIPT dokumen itu. TIDAK ADA pergerakan stok
+// baru yang ditulis dari sini, sama sekali: stok sudah bergerak saat
+// putaway, tagihan ini cuma memberi tahu buku besar siapa yang harus
+// dibayar. Selisih antara nilai tagihan supplier dan nilai penerimaan
+// (mis. ongkos kirim/pembulatan) masuk akun selisih harga pembelian,
+// BUKAN diam-diam mengubah nilai persediaan yang sudah tercatat.
+model FinSupplierBill {
+  id          String  @id @default(uuid()) @db.Uuid
+  billNumber  String  @unique @map("bill_number") // BILL-DDMMYYYY-NNN (nomor INTERNAL kita)
+  // Nomor faktur/invoice menurut SUPPLIER - beda dari billNumber kita.
+  // Tidak unik: supplier berbeda bisa saja memakai penomoran yang sama.
+  supplierRef String? @map("supplier_ref")
+
+  supplierId String      @map("supplier_id") @db.Uuid
+  supplier   FinSupplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  billDate DateTime  @map("bill_date") @db.Date
+  dueDate  DateTime? @map("due_date") @db.Date
+
+  // Total tagihan menurut dokumen supplier. Decimal - lihat aturan 2 di
+  // kepala blok finance.
+  amount Decimal @db.Decimal(18, 2)
+
+  description   String
+  attachmentUrl String? @map("attachment_url")
+
+  // Penautan OPSIONAL ke penerimaan barang yang sudah tercatat gudang.
+  // SetNull: menghapus dokumen gudang tidak boleh menghancurkan tagihan
+  // yang sudah jadi utang di buku besar.
+  goodsReceiptId String?       @map("goods_receipt_id") @db.Uuid
+  goodsReceipt   GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+
+  // Akun beban tujuan kalau tagihan ini BUKAN pembelian barang persediaan
+  // (jasa, sewa, maklon). Diabaikan kalau goodsReceiptId terisi.
+  expenseCategoryId String? @map("expense_category_id") @db.Uuid
+
+  status FinBillStatus @default(DRAFT)
+
+  approvedAt   DateTime? @map("approved_at")
+  approvedById String?   @map("approved_by")
+  approvedBy   User?     @relation("FinBillApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectReason String?   @map("reject_reason")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinBillCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  allocations FinSupplierPaymentAllocation[]
+
+  @@index([supplierId, status])
+  @@index([dueDate])
+  @@index([status])
+  @@map("fin_supplier_bills")
+}
+
+// Pembayaran KE supplier. Satu pembayaran bisa melunasi beberapa tagihan
+// sekaligus (transfer gabungan akhir bulan) - karena itu alokasinya tabel
+// sendiri, bukan kolom billId tunggal. Pola yang sama dipakai di sisi
+// piutang (FinPaymentAllocation).
+model FinSupplierPayment {
+  id            String @id @default(uuid()) @db.Uuid
+  paymentNumber String @unique @map("payment_number") // PAYOUT-DDMMYYYY-NNN
+
+  supplierId String      @map("supplier_id") @db.Uuid
+  supplier   FinSupplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  date   DateTime @db.Date
+  amount Decimal  @db.Decimal(18, 2)
+
+  cashAccountId String         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  reference     String? // nomor referensi transfer
+  notes         String?
+  attachmentUrl String? @map("attachment_url")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinSupplierPaymentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Pembatalan lewat REVERSAL jurnal - baris ini TIDAK PERNAH dihapus.
+  cancelledAt   DateTime? @map("cancelled_at")
+  cancelledById String?   @map("cancelled_by")
+  cancelledBy   User?     @relation("FinSupplierPaymentCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancelReason  String?   @map("cancel_reason")
+
+  allocations FinSupplierPaymentAllocation[]
+
+  @@index([supplierId, date])
+  @@map("fin_supplier_payments")
+}
+
+model FinSupplierPaymentAllocation {
+  id        String             @id @default(uuid()) @db.Uuid
+  paymentId String             @map("payment_id") @db.Uuid
+  payment   FinSupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  billId String          @map("bill_id") @db.Uuid
+  bill   FinSupplierBill @relation(fields: [billId], references: [id], onDelete: Restrict)
+
+  amount Decimal @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([paymentId, billId])
+  @@index([billId])
+  @@map("fin_supplier_payment_allocations")
+}
+
+// ── ALOKASI PEMBAYARAN CUSTOMER ──────────────────────────────────────────
+// Payment (tabel LAMA, tidak diubah) sudah punya orderId - satu pembayaran
+// menempel ke satu order. Itu benar untuk 99% kasus dan TETAP jadi perilaku
+// default: kalau sebuah Payment tidak punya satu pun baris alokasi di sini,
+// seluruh nominalnya dianggap teralokasi ke Payment.orderId (lihat
+// services/finance/allocation.js) - jadi SELURUH data lama tetap sah tanpa
+// backfill apa pun.
+//
+// Tabel ini untuk kasus yang tidak bisa diwakili satu kolom: customer
+// mentransfer SATU kali untuk BEBERAPA order (invoice gabungan sudah ada di
+// sistem, lihat Invoice.combinedIntoId), atau finance memindahkan kelebihan
+// bayar satu order ke order lain milik customer yang sama.
+model FinPaymentAllocation {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Payment.id bertipe uuid (lihat model Payment).
+  paymentId String  @map("payment_id") @db.Uuid
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  amount Decimal @db.Decimal(18, 2)
+
+  note String?
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinPaymentAllocationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([paymentId, orderId])
+  @@index([orderId])
+  @@map("fin_payment_allocations")
+}
+
+// ── REFUND (pengembalian uang ke customer) ───────────────────────────────
+// TERPISAH dari Payment.cancelledAt. Dua hal yang berbeda:
+//   - cancel  = "entri ini SALAH INPUT, uangnya tidak pernah masuk"
+//   - refund  = "uangnya BENAR masuk, lalu kita kembalikan"
+// Menggabungkan keduanya akan membuat mustahil menjawab "berapa uang yang
+// pernah kita terima" vs "berapa yang kita kembalikan".
+enum FinRefundStatus {
+  MENUNGGU_APPROVAL
+  DISETUJUI // sudah diposting ke buku besar & uang keluar
+  DITOLAK
+  DIBATALKAN
+}
+
+model FinRefund {
+  id           String @id @default(uuid()) @db.Uuid
+  refundNumber String @unique @map("refund_number") // RFD-DDMMYYYY-NNN
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  date   DateTime @db.Date
+  amount Decimal  @db.Decimal(18, 2)
+  reason String
+
+  cashAccountId String         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  status FinRefundStatus @default(MENUNGGU_APPROVAL)
+
+  approvedAt   DateTime? @map("approved_at")
+  approvedById String?   @map("approved_by")
+  approvedBy   User?     @relation("FinRefundApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectReason String?   @map("reject_reason")
+
+  attachmentUrl String? @map("attachment_url")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinRefundCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([orderId])
+  @@index([status])
+  @@map("fin_refunds")
+}
+
+// ── PENGELUARAN ──────────────────────────────────────────────────────────
+enum FinExpenseMode {
+  LANGSUNG // dibayar saat itu juga dari kas/bank perusahaan
+  REIMBURSEMENT // ditalangi karyawan dulu, perusahaan berutang ke karyawan
+  UTANG // belum dibayar, jadi Utang Usaha ke pihak ketiga
+}
+
+enum FinExpenseStatus {
+  DRAFT
+  MENUNGGU_APPROVAL
+  DISETUJUI // sudah diposting ke buku besar (beban diakui)
+  DITOLAK
+  DIBAYAR // khusus REIMBURSEMENT/UTANG: uangnya benar-benar sudah keluar
+  DIBATALKAN
+}
+
+// Pengeluaran operasional/produksi/delivery + reimbursement karyawan.
+//
+// ⚠️ TIDAK MENGGANTIKAN VehicleExpense (biaya kendaraan, sudah dipakai
+// Armada sejak D-035) maupun AdSpend (belanja iklan bulanan). Dua tabel itu
+// TETAP jadi tempat input aslinya - divisi yang bersangkutan yang paling
+// tahu angkanya, dan memindahkan input mereka ke sini berarti membuat
+// sumber tandingan (melanggar aturan 1 di kepala blok finance). Keduanya
+// DIPOSTING ke buku besar lewat mesin posting sendiri
+// (services/finance/posting/expense.js), bukan disalin jadi baris di sini.
+//
+// Yang masuk ke tabel ini HANYA pengeluaran yang memang belum punya rumah:
+// gaji, sewa, listrik, perlengkapan, biaya produksi non-bahan, reimbursement.
+model FinExpense {
+  id            String @id @default(uuid()) @db.Uuid
+  expenseNumber String @unique @map("expense_number") // EXP-DDMMYYYY-NNN
+
+  date        DateTime @db.Date
+  amount      Decimal  @db.Decimal(18, 2)
+  description String
+
+  categoryId String             @map("category_id") @db.Uuid
+  category   FinExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  division FinDivision    @default(UMUM)
+  mode     FinExpenseMode @default(LANGSUNG)
+
+  // Wajib kalau mode LANGSUNG (atau saat REIMBURSEMENT/UTANG akhirnya
+  // dibayar) - divalidasi di service, bukan di skema, karena aturannya
+  // bergantung status.
+  cashAccountId String?         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  // Kepada siapa uang ini keluar. Ketiganya opsional & saling melengkapi:
+  // supplierId untuk pihak yang sudah jadi master data, reimburseToUserId
+  // untuk karyawan yang menalangi, payeeName untuk sisanya (tukang harian,
+  // toko kecil) - mengarang master data supplier untuk warung bensin
+  // pinggir jalan cuma akan mengotori daftar supplier.
+  supplierId String?      @map("supplier_id") @db.Uuid
+  supplier   FinSupplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  reimburseToId String? @map("reimburse_to")
+  reimburseTo   User?   @relation("FinExpenseReimburseTo", fields: [reimburseToId], references: [id], onDelete: SetNull)
+
+  payeeName String? @map("payee_name")
+
+  // Dimensi pembebanan OPSIONAL - "biaya ini untuk order/unit mana".
+  // unitId string polos tanpa FK, alasan sama dengan FinJournalLine.unitId.
+  orderId String? @map("order_id")
+  order   Order?  @relation("FinExpenseOrder", fields: [orderId], references: [id], onDelete: SetNull)
+  unitId  String? @map("unit_id")
+
+  receiptUrl String? @map("receipt_url")
+  notes      String?
+
+  status FinExpenseStatus @default(DRAFT)
+
+  submittedAt  DateTime? @map("submitted_at")
+  approvedAt   DateTime? @map("approved_at")
+  approvedById String?   @map("approved_by")
+  approvedBy   User?     @relation("FinExpenseApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectReason String?   @map("reject_reason")
+
+  paidAt   DateTime? @map("paid_at")
+  paidById String?   @map("paid_by")
+  paidBy   User?     @relation("FinExpensePayer", fields: [paidById], references: [id], onDelete: SetNull)
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinExpenseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([status, date])
+  @@index([categoryId, date])
+  @@index([division, date])
+  @@index([reimburseToId, status])
+  @@map("fin_expenses")
+}
+
+// Pemasukan NON-ORDER (penjualan aset bekas, bunga bank, klaim asuransi,
+// sewa ruang). Dipisah dari FinExpense supaya arah uang tidak pernah
+// bergantung pada tanda +/- yang gampang salah input.
+model FinOtherIncome {
+  id           String @id @default(uuid()) @db.Uuid
+  incomeNumber String @unique @map("income_number") // INC-DDMMYYYY-NNN
+
+  date        DateTime @db.Date
+  amount      Decimal  @db.Decimal(18, 2)
+  description String
+
+  // Akun pendapatan tujuan - langsung ke COA (bukan lewat tabel kategori
+  // seperti pengeluaran): jenisnya sedikit dan yang menginput selalu
+  // finance, bukan orang lapangan.
+  accountId String @map("account_id") @db.Uuid
+
+  cashAccountId String         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  attachmentUrl String? @map("attachment_url")
+  notes         String?
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinOtherIncomeCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  cancelledAt   DateTime? @map("cancelled_at")
+  cancelledById String?   @map("cancelled_by")
+  cancelledBy   User?     @relation("FinOtherIncomeCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancelReason  String?   @map("cancel_reason")
+
+  @@index([date])
+  @@map("fin_other_incomes")
+}
+
+// Mutasi antar rekening SENDIRI (setor tunai ke bank, tarik tunai, pindah
+// antar bank). Bukan pendapatan & bukan beban - jurnalnya cuma memindahkan
+// saldo, dan laporan arus kas WAJIB tidak menghitungnya sebagai arus masuk
+// maupun keluar (dijaga di services/finance/reports.js).
+model FinCashTransfer {
+  id             String @id @default(uuid()) @db.Uuid
+  transferNumber String @unique @map("transfer_number") // TRF-DDMMYYYY-NNN
+
+  date   DateTime @db.Date
+  amount Decimal  @db.Decimal(18, 2)
+
+  fromAccountId String         @map("from_account_id") @db.Uuid
+  fromAccount   FinCashAccount @relation("FinTransferFrom", fields: [fromAccountId], references: [id], onDelete: Restrict)
+  toAccountId   String         @map("to_account_id") @db.Uuid
+  toAccount     FinCashAccount @relation("FinTransferTo", fields: [toAccountId], references: [id], onDelete: Restrict)
+
+  // Biaya admin transfer - dibebankan terpisah ke akun beban administrasi
+  // bank, BUKAN dikurangkan diam-diam dari `amount` (kalau dikurangkan,
+  // saldo rekening tujuan di buku tidak akan cocok dengan mutasi bank).
+  feeAmount Decimal @default(0) @map("fee_amount") @db.Decimal(18, 2)
+
+  reference String?
+  notes     String?
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinCashTransferCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  cancelledAt   DateTime? @map("cancelled_at")
+  cancelledById String?   @map("cancelled_by")
+  cancelledBy   User?     @relation("FinCashTransferCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancelReason  String?   @map("cancel_reason")
+
+  @@index([date])
+  @@map("fin_cash_transfers")
+}
+
+// ── REKONSILIASI BANK ────────────────────────────────────────────────────
+// "Koran bank" satu periode untuk satu rekening. Barisnya diinput manual
+// atau di-paste/impor CSV - TIDAK ada integrasi API bank di sistem ini, dan
+// berpura-pura ada akan lebih berbahaya daripada jujur manual.
+enum FinReconStatus {
+  DRAFT // baris koran bank sedang dicocokkan
+  SELESAI // sudah dicocokkan & disetujui, selisihnya nol atau dijelaskan
+}
+
+model FinBankStatement {
+  id String @id @default(uuid()) @db.Uuid
+
+  cashAccountId String         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  periodStart DateTime @map("period_start") @db.Date
+  periodEnd   DateTime @map("period_end") @db.Date
+
+  // Saldo MENURUT KORAN BANK. Saldo menurut BUKU dihitung dari jurnal
+  // (tidak disimpan) - selisih keduanya itulah yang direkonsiliasi.
+  openingBalance Decimal @map("opening_balance") @db.Decimal(18, 2)
+  closingBalance Decimal @map("closing_balance") @db.Decimal(18, 2)
+
+  status FinReconStatus @default(DRAFT)
+
+  completedAt   DateTime? @map("completed_at")
+  completedById String?   @map("completed_by")
+  completedBy   User?     @relation("FinReconCompleter", fields: [completedById], references: [id], onDelete: SetNull)
+  note          String?
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinBankStatementCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  lines FinBankStatementLine[]
+
+  @@index([cashAccountId, periodStart])
+  @@map("fin_bank_statements")
+}
+
+enum FinBankLineStatus {
+  BELUM_COCOK
+  COCOK // sudah ditautkan ke satu baris jurnal
+  DIABAIKAN // disengaja tidak dicocokkan (mis. sudah dijelaskan di catatan)
+}
+
+model FinBankStatementLine {
+  id          String           @id @default(uuid()) @db.Uuid
+  statementId String           @map("statement_id") @db.Uuid
+  statement   FinBankStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+
+  date        DateTime @db.Date
+  description String
+  reference   String?
+
+  // BERTANDA: positif = uang masuk rekening, negatif = keluar. Di sini
+  // tanda memang wakil arah yang benar - ini transkrip koran bank apa
+  // adanya, bukan transaksi yang kita buat sendiri.
+  amount Decimal @db.Decimal(18, 2)
+
+  status FinBankLineStatus @default(BELUM_COCOK)
+
+  // Baris jurnal yang dianggap SAMA dengan baris koran bank ini. SetNull:
+  // jurnal yang di-reverse tidak boleh menghapus baris koran bank-nya.
+  matchedLineId String?         @map("matched_line_id") @db.Uuid
+  matchedLine   FinJournalLine? @relation(fields: [matchedLineId], references: [id], onDelete: SetNull)
+
+  matchedAt   DateTime? @map("matched_at")
+  matchedById String?   @map("matched_by")
+  matchedBy   User?     @relation("FinBankLineMatcher", fields: [matchedById], references: [id], onDelete: SetNull)
+
+  note String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([statementId, status])
+  @@index([matchedLineId])
+  @@map("fin_bank_statement_lines")
 }

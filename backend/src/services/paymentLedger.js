@@ -11,21 +11,51 @@
 // sales override manual SETELAH ini, override itu berlaku sampai ada
 // Payment baru lagi yang memicu perhitungan ulang.
 //
-// SEMUA payment (terverifikasi atau belum) DIHITUNG — verifikasi finance
-// (D-011) adalah audit "uangnya benar sampai ke kas", BUKAN gerbang
-// "apakah customer sudah bayar". Uangnya sudah diterima (ada foto bukti)
-// begitu Payment tercatat; verifikasi cuma mencocokkan setoran driver.
+// ─── DUA PERUBAHAN DARI D-180 (Finance Workspace, 17 September 2026) ──────
+//
+// 1. ALOKASI. "Sudah dibayar berapa" tidak lagi sekadar SUM(payments WHERE
+//    orderId=...). Satu pembayaran bisa dipecah ke beberapa order
+//    (transfer gabungan; invoice gabungan lintas order memang sudah ada di
+//    sistem lewat Invoice.combinedIntoId). Perhitungannya pindah ke
+//    services/finance/allocation.js#paidForOrder — yang PERILAKU DEFAULT-nya
+//    identik dengan rumus lama: payment tanpa alokasi eksplisit dihitung
+//    PENUH ke Payment.orderId. Nol perubahan untuk seluruh data yang ada.
+//
+// 2. GERBANG VERIFIKASI (opsional, DEFAULT MATI).
+//
+//    Perilaku lama yang TETAP jadi default: SEMUA payment (terverifikasi
+//    atau belum) dihitung — verifikasi finance (D-011) adalah audit "uangnya
+//    benar sampai ke kas", BUKAN gerbang "apakah customer sudah bayar".
+//    Uangnya sudah diterima (ada foto bukti) begitu Payment tercatat.
+//
+//    Yang ditambahkan: admin bisa MENYALAKAN gerbang di Finance >
+//    Pengaturan, sehingga status bayar di CRM hanya bergerak setelah finance
+//    memverifikasi. Saat dinyalakan, gerbang HANYA berlaku untuk payment
+//    yang dibuat SEJAK saat penyalaan — riwayat tidak pernah berubah surut.
+//    Alasan lengkapnya ada di services/finance/allocation.js#isPaymentCounted
+//    dan services/finance/settings.js.
+
+import { paidForOrder } from "./finance/allocation.js";
+import { getVerificationGate } from "./finance/settings.js";
+
 export async function recomputeOrderPaymentStatus(tx, orderId) {
-  const [order, sum] = await Promise.all([
+  const [order, gate] = await Promise.all([
     tx.order.findUnique({ where: { id: orderId }, select: { value: true, paymentStatus: true } }),
-    // cancelledAt: null — entri yang dibatalkan (2 Sep 2026, koreksi salah
-    // input) TIDAK ikut dihitung, tapi TETAP ada di tabel (ledger tidak
-    // pernah menghapus baris, lihat komentar Payment.cancelledAt di schema).
-    tx.payment.aggregate({ where: { orderId, cancelledAt: null }, _sum: { amount: true } }),
+    getVerificationGate(tx),
   ]);
   if (!order) return null;
 
-  const paid = sum._sum.amount || 0;
+  // cancelledAt: null — entri yang dibatalkan (2 Sep 2026, koreksi salah
+  // input) TIDAK ikut dihitung, tapi TETAP ada di tabel (ledger tidak
+  // pernah menghapus baris, lihat komentar Payment.cancelledAt di schema).
+  // Penyaringan itu sekarang ada di paidForOrder(), bersama penyaringan
+  // gerbang verifikasi & alokasi.
+  const paidDecimal = await paidForOrder(tx, orderId, gate);
+  // Rupiah bulat — Order.value bertipe Int dan status di bawah dibandingkan
+  // terhadapnya. Pembulatan HANYA di tepi perbandingan ini; buku besar
+  // sendiri tetap menyimpan Decimal apa adanya.
+  const paid = Number(paidDecimal.toFixed(0));
+
   // order.value bisa 0 (belum ada OrderItem sama sekali) — jangan pernah
   // anggap LUNAS hanya karena 0 >= 0, itu "belum dihargai", bukan "lunas".
   const paymentStatus =

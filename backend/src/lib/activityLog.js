@@ -36,6 +36,18 @@ export const ENTITY_TYPES = Object.freeze({
   // Complaint / After-Sales Case lintas divisi (D-116, 11 September 2026) —
   // lihat catatan panjang di schema.prisma model ComplaintCase.
   COMPLAINT: "complaint",
+  // Finance Workspace (D-180, 17 September 2026). Jurnal sendiri SUDAH
+  // jadi ledger lengkap (siapa/kapan/apa per baris) — yang direkam di sini
+  // HANYA titik KEPUTUSAN MANUSIA di sekitarnya: menyetujui pengeluaran/
+  // tagihan/refund, membalik jurnal terposting, menutup & membuka periode,
+  // dan mengubah bagan akun. Pola persis sama dengan dokumen gudang di atas.
+  FIN_JOURNAL: "fin_journal",
+  FIN_EXPENSE: "fin_expense",
+  FIN_SUPPLIER_BILL: "fin_supplier_bill",
+  FIN_REFUND: "fin_refund",
+  FIN_PERIOD: "fin_period",
+  FIN_ACCOUNT: "fin_account",
+  FIN_SETTING: "fin_setting",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -100,6 +112,16 @@ export const EVENT_TYPES = Object.freeze({
   COMPLAINT_FOLLOW_UP_LOGGED: "COMPLAINT_FOLLOW_UP_LOGGED",
   COMPLAINT_CUSTOMER_CONFIRMED: "COMPLAINT_CUSTOMER_CONFIRMED",
   COMPLAINT_CANCELLED: "COMPLAINT_CANCELLED",
+
+  // Finance (D-180). DOCUMENT_APPROVED/REJECTED/CANCELLED/POSTED di atas
+  // DIPAKAI ULANG untuk dokumen finance — jenis keputusannya sama persis,
+  // dan entityType sudah membedakan dokumennya. Yang BARU di bawah hanya
+  // kejadian yang memang tidak punya padanan di domain lain.
+  JOURNAL_REVERSED: "JOURNAL_REVERSED",
+  PERIOD_CLOSED: "PERIOD_CLOSED",
+  PERIOD_REOPENED: "PERIOD_REOPENED",
+  FINANCE_SETTING_CHANGED: "FINANCE_SETTING_CHANGED",
+  CHART_OF_ACCOUNTS_CHANGED: "CHART_OF_ACCOUNTS_CHANGED",
 });
 
 /**
@@ -246,6 +268,24 @@ export function formatActivitySentence(event) {
       return "Customer mengonfirmasi komplain SELESAI";
     case EVENT_TYPES.COMPLAINT_CANCELLED:
       return metadata.reason ? `Kasus komplain dibatalkan — ${metadata.reason}` : "Kasus komplain dibatalkan";
+
+    // ── Finance (D-180) ───────────────────────────────────────────────
+    case EVENT_TYPES.JOURNAL_REVERSED:
+      return `Jurnal ${metadata.entryNumber || "—"} dibalik — ${metadata.reason || "tanpa keterangan"}`;
+    case EVENT_TYPES.PERIOD_CLOSED:
+      return `Periode ${metadata.periode || "—"} ditutup${metadata.note ? ` — ${metadata.note}` : ""}`;
+    case EVENT_TYPES.PERIOD_REOPENED:
+      return `Periode ${metadata.periode || "—"} dibuka kembali${metadata.note ? ` — ${metadata.note}` : ""}`;
+    case EVENT_TYPES.FINANCE_SETTING_CHANGED:
+      return `Pengaturan finance "${metadata.key || "—"}" diubah: ${metadata.from ?? "(kosong)"} → ${metadata.to ?? "(kosong)"}`;
+    case EVENT_TYPES.CHART_OF_ACCOUNTS_CHANGED: {
+      const fields = Object.keys(metadata.changes || {});
+      if (metadata.aksi === "dibuat") return `Akun ${metadata.code || "—"} ${metadata.name || ""} ditambahkan ke bagan akun`.trim();
+      if (metadata.aksi === "pasang_bawaan") return `Bagan akun bawaan dipasang (${metadata.jumlah ?? 0} akun tersedia)`;
+      return fields.length
+        ? `Akun ${metadata.code || "—"} diubah: ${fields.join(", ")}`
+        : `Akun ${metadata.code || "—"} diubah`;
+    }
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya

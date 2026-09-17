@@ -116,6 +116,31 @@ export const PERMISSIONS = {
   // divisi lain yang seharusnya tetap butuh permission aslinya.
   COMPLAINT_READ: "complaint:read",
   COMPLAINT_WRITE: "complaint:write",
+
+  // --- Finance Workspace (D-180, 17 September 2026) ------------------------
+  // EMPAT permission, bukan satu pasang READ/WRITE seperti domain lain.
+  // Alasannya konkret dan khas akuntansi: pemisahan tugas (segregation of
+  // duties) adalah inti kontrol keuangan, bukan hiasan. Orang yang MENCATAT
+  // pengeluaran tidak boleh jadi orang yang MENYETUJUI-nya, dan yang
+  // menyetujui pembayaran harian tidak otomatis boleh mengubah bagan akun
+  // atau menutup periode. Kalau semuanya dilebur jadi "finance:write",
+  // seluruh jejak approval kehilangan arti — persis alasan ADMIN sengaja
+  // TIDAK diberi UNIT_STAGE_WRITE (lihat catatan panjang di bawah).
+  FINANCE_READ: "finance:read",
+  // Membuat & memposting transaksi keuangan (jurnal, pengeluaran, tagihan
+  // supplier, transfer kas, pencocokan bank).
+  FINANCE_POST: "finance:post",
+  // Menyetujui pengeluaran/tagihan/refund & memverifikasi pembayaran.
+  FINANCE_APPROVE: "finance:approve",
+  // Bagan akun, rekening kas/bank, kategori biaya, tutup/buka periode,
+  // pengaturan finance, dan PEMBATALAN jurnal terposting lewat reversal.
+  FINANCE_ADMIN: "finance:admin",
+  // Mengajukan pengeluaran/reimbursement DARI workspace masing-masing —
+  // dipegang LINTAS divisi (pola sama dengan COMPLAINT_WRITE). Ini pintu
+  // untuk MENGAJUKAN saja: pengajuan lahir berstatus MENUNGGU_APPROVAL dan
+  // tidak pernah menyentuh buku besar sampai disetujui pemegang
+  // FINANCE_APPROVE.
+  FINANCE_EXPENSE_SUBMIT: "finance:expense:submit",
 };
 
 const P = PERMISSIONS;
@@ -155,6 +180,16 @@ const ADMIN_PERMS = [
   // D-116 — ADMIN penuh lintas divisi, konsisten dengan ORDER_WRITE/JOB_WRITE
   // yang sudah dipegang ADMIN sejak awal.
   P.COMPLAINT_READ, P.COMPLAINT_WRITE,
+  // D-180 — ADMIN memegang SELURUH permission finance, termasuk
+  // FINANCE_ADMIN (bagan akun, tutup periode, reversal jurnal). Ini
+  // KONSISTEN dengan pola yang sudah berlaku: ADMIN memegang MASTER_DATA_WRITE
+  // dan seluruh config produksi. Yang TETAP tidak dilebur adalah pemisahan
+  // tugas ANTAR PERAN lain — FINANCE tidak dapat FINANCE_ADMIN, dan divisi
+  // lain cuma dapat FINANCE_EXPENSE_SUBMIT. Kalau kelak owner minta seorang
+  // staf finance bisa mengubah bagan akun, jawabannya memberi dia role ADMIN
+  // atau membuat role FINANCE_LEAD baru — BUKAN melebarkan FINANCE.
+  P.FINANCE_READ, P.FINANCE_POST, P.FINANCE_APPROVE, P.FINANCE_ADMIN,
+  P.FINANCE_EXPENSE_SUBMIT,
 ];
 
 export const ROLE_PERMISSIONS = {
@@ -192,6 +227,10 @@ export const ROLE_PERMISSIONS = {
     // D-116 — Sales membuka kasus komplain dari Order Detail & follow-up
     // customer di ujung alur (KONFIRMASI_CUSTOMER/SELESAI).
     P.COMPLAINT_READ, P.COMPLAINT_WRITE,
+    // D-180 — mengajukan reimbursement (bensin kunjungan, biaya entertain
+    // customer). MENGAJUKAN saja: pengajuan lahir MENUNGGU_APPROVAL dan
+    // tidak menyentuh buku besar sampai finance menyetujui.
+    P.FINANCE_EXPENSE_SUBMIT,
   ],
 
   // Lantai produksi: tahu kasur siapa dan harus diapakan, TIDAK tahu nomor
@@ -226,6 +265,10 @@ export const ROLE_PERMISSIONS = {
     P.PRODUCTION_ASSIGNMENT_WRITE,
     // D-116 — memutuskan root cause/rework & menandai kasus DALAM_PENANGANAN.
     P.COMPLAINT_READ, P.COMPLAINT_WRITE,
+    // D-180 — mengajukan biaya produksi non-bahan (upah harian tukang,
+    // perkakas kecil). Bahan baku TIDAK lewat sini: nilainya sudah mengalir
+    // sendiri dari ledger stok (lihat services/finance/posting/inventory.js).
+    P.FINANCE_EXPENSE_SUBMIT,
   ],
 
   QC_LEAD: [
@@ -243,6 +286,8 @@ export const ROLE_PERMISSIONS = {
     // D-116 — mengelola Material Requirement (POST /complaints/:id/material-
     // requirement tetap dijaga INVENTORY_WRITE, bukan COMPLAINT_WRITE).
     P.COMPLAINT_READ, P.COMPLAINT_WRITE,
+    // D-180 — mengajukan biaya gudang (sewa forklift, kemasan).
+    P.FINANCE_EXPENSE_SUBMIT,
   ],
 
   // Dispatcher BUTUH PII: menyusun rute tanpa alamat & nomor telepon mustahil.
@@ -259,6 +304,10 @@ export const ROLE_PERMISSIONS = {
     // D-116 — membuat Delivery Task dari kasus komplain (POST /complaints/:id/
     // delivery-task tetap dijaga JOB_WRITE, bukan COMPLAINT_WRITE) & menjadwalkannya.
     P.COMPLAINT_READ, P.COMPLAINT_WRITE,
+    // D-180 — mengajukan biaya delivery yang BUKAN biaya kendaraan (kurir
+    // eksternal, kuli bongkar muat). Biaya kendaraan TETAP lewat Armada >
+    // Biaya (VehicleExpense) seperti sekarang — tidak ada input ganda.
+    P.FINANCE_EXPENSE_SUBMIT,
   ],
 
   // Driver melihat PII hanya untuk stop miliknya sendiri — pembatasan baris
@@ -291,6 +340,22 @@ export const ROLE_PERMISSIONS = {
     P.ORDER_READ, P.ORDER_PRICE_READ,
     P.CUSTOMER_READ,
     P.DASHBOARD_READ,
+    // D-180 (17 September 2026) — Finance Workspace. Dapat READ/POST/APPROVE
+    // tapi SENGAJA TIDAK FINANCE_ADMIN: bagan akun, rekening kas/bank, tutup
+    // periode, dan pembatalan jurnal terposting tetap di tangan ADMIN. Itu
+    // bukan ketidakpercayaan pada orang finance — itu pemisahan tugas yang
+    // membuat angka bulan lalu tidak bisa berubah tanpa jejak di luar tim
+    // yang menyusunnya.
+    //
+    // FINANCE_APPROVE + FINANCE_POST memang di satu orang untuk saat ini
+    // (tim 7 orang, cuma ada satu orang finance) — pemisahannya SUDAH ADA
+    // di level permission, tinggal dipecah ke dua akun begitu timnya tumbuh,
+    // tanpa perlu mengubah satu baris kode pun.
+    P.FINANCE_READ, P.FINANCE_POST, P.FINANCE_APPROVE,
+    P.FINANCE_EXPENSE_SUBMIT,
+    // Melihat nilai persediaan & dokumen gudang yang jadi dasar tagihan
+    // supplier — BACA SAJA, finance tidak pernah menulis pergerakan stok.
+    P.INVENTORY_READ,
   ],
 };
 
@@ -345,6 +410,17 @@ export const PORTALS = [
     description: "Executive overview lintas sales, produksi, warehouse, dan delivery.",
     path: "/kendali",
     roles: ["ADMIN", "FINANCE"],
+  },
+  {
+    key: "finance",
+    label: "Finance & Accounting",
+    description: "Kas & bank, piutang, utang, pengeluaran, jurnal, dan laporan keuangan.",
+    path: "/finance/dashboard",
+    // FINANCE + ADMIN. OWNER otomatis ikut lewat ROLE_PERMISSIONS (OWNER =
+    // ADMIN_PERMS + B2B), tapi PORTALS dicek per ROLE (bukan permission),
+    // jadi harus disebut eksplisit di sini — pola yang sama dipakai portal
+    // lain yang menyebut "ADMIN" satu per satu.
+    roles: ["ADMIN", "OWNER", "FINANCE"],
   },
   {
     key: "b2b",

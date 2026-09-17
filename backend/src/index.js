@@ -40,6 +40,11 @@ import { productionRouter } from "./routes/production.js";
 import { activityRouter } from "./routes/activity.js";
 import { armadaRouter }     from "./routes/armada.js";
 import { kendaliRouter }    from "./routes/kendali.js";
+// Finance Workspace (D-180) — DUA router, SATU prefix /api/finance.
+// Pemisahannya semata soal panjang file (lihat catatan di kepala
+// routes/financeTransactions.js), bukan dua domain berbeda.
+import { financeRouter }    from "./routes/finance.js";
+import { financeTxRouter }  from "./routes/financeTransactions.js";
 import { inventoryRouter }  from "./routes/inventory.js";
 import { goodsReceiptRouter } from "./routes/goodsReceipt.js";
 import { materialIssueRouter } from "./routes/materialIssue.js";
@@ -179,6 +184,8 @@ app.use("/api/activity",     activityRouter);
 app.use("/api/complaints",   complaintsRouter);
 app.use("/api/armada",       armadaRouter);
 app.use("/api/kendali",      kendaliRouter);
+app.use("/api/finance",      financeRouter);
+app.use("/api/finance",      financeTxRouter); // additive, tidak mengubah financeRouter
 app.use("/api/inventory",    inventoryRouter);
 app.use("/api/inventory/goods-receipts", goodsReceiptRouter);
 app.use("/api/inventory/material-issues", materialIssueRouter);

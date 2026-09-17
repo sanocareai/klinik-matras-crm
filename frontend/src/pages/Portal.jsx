@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Wrench, Truck, Gauge, Package, Loader2, ArrowRight, Plus, Calendar, Handshake } from "lucide-react";
+import { Users, Wrench, Truck, Gauge, Package, Loader2, ArrowRight, Plus, Calendar, Handshake , Landmark } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer } from "@/components/ui/page.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
@@ -53,6 +53,7 @@ export const PORTAL_ICONS = {
   warehouse: Package,
   armada: Truck,
   kendali: Gauge,
+  finance: Landmark,
   b2b: Handshake,
 };
 

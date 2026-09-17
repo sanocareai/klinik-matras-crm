@@ -13,6 +13,14 @@ import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js"
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+// D-180 — nilai RUPIAH penerimaan barang masuk buku besar (Dr Persediaan,
+// Cr Utang Barang Belum Ditagih). TIDAK menulis pergerakan stok apa pun:
+// kuantitasnya sudah ditulis postStockMovement() di atas, fungsi ini cuma
+// MEMBACA baris itu beserta unitCost-nya. Lihat catatan lengkap di
+// services/finance/posting/supplier.js.
+import { postGoodsReceiptValue } from "../services/finance/posting/supplier.js";
+import { JournalError } from "../services/finance/journal.js";
+import { AccountError } from "../services/finance/accounts.js";
 
 export const goodsReceiptRouter = express.Router();
 goodsReceiptRouter.use(requireAuth);
@@ -234,6 +242,19 @@ goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), as
         eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
         metadata: { receiptNumber: receipt.receiptNumber, lineCount: diterima.length },
       });
+
+      // Buku besar (D-180) — DIPANGGIL SETELAH postStockMovement di atas,
+      // urutannya wajib: fungsi ini membaca ledger yang baru saja ditulis.
+      // Kegagalan konfigurasi finance (bagan akun belum dipasang, periode
+      // tertutup) TIDAK boleh menggagalkan putaway — gudang harus tetap
+      // bisa menempatkan barang. Kegagalan seperti itu sudah dicatat
+      // sebagai FinPostingGap di dalam fungsinya sendiri; yang ditangkap di
+      // sini hanya JournalError/AccountError yang lolos keluar.
+      try {
+        await postGoodsReceiptValue(tx, { goodsReceiptId: receipt.id, userId: req.user.id });
+      } catch (e) {
+        if (!(e instanceof JournalError) && !(e instanceof AccountError)) throw e;
+      }
       return updated;
     });
     res.json(result);

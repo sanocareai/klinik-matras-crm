@@ -52,6 +52,20 @@ const ArmadaReturns     = lazy(() => import("../pages/armada/ArmadaReturns.jsx")
 const ArmadaDeliveryReport = lazy(() => import("../pages/armada/ArmadaDeliveryReport.jsx"));
 const ArmadaBiaya       = lazy(() => import("../pages/armada/ArmadaBiaya.jsx"));
 const Kendali        = lazy(() => import("../pages/Kendali.jsx"));
+// Finance Workspace (D-180, 17 September 2026)
+const FinanceDashboard      = lazy(() => import("../pages/finance/FinanceDashboard.jsx"));
+const FinanceAccounts       = lazy(() => import("../pages/finance/FinanceAccounts.jsx"));
+const FinanceCash           = lazy(() => import("../pages/finance/FinanceCash.jsx"));
+const FinancePayments       = lazy(() => import("../pages/finance/FinancePayments.jsx"));
+const FinanceReceivables    = lazy(() => import("../pages/finance/FinanceReceivables.jsx"));
+const FinanceInvoices       = lazy(() => import("../pages/finance/FinanceInvoices.jsx"));
+const FinanceExpenses       = lazy(() => import("../pages/finance/FinanceExpenses.jsx"));
+const FinanceSuppliers      = lazy(() => import("../pages/finance/FinanceSuppliers.jsx"));
+const FinanceJournal        = lazy(() => import("../pages/finance/FinanceJournal.jsx"));
+const FinanceLedger         = lazy(() => import("../pages/finance/FinanceLedger.jsx"));
+const FinanceReports        = lazy(() => import("../pages/finance/FinanceReports.jsx"));
+const FinanceReconciliation = lazy(() => import("../pages/finance/FinanceReconciliation.jsx"));
+const FinanceSettings       = lazy(() => import("../pages/finance/FinanceSettings.jsx"));
 const B2BOrders       = lazy(() => import("../pages/b2b/B2BOrders.jsx"));
 const ComplaintCases  = lazy(() => import("../pages/ComplaintCases.jsx"));
 const Gudang         = lazy(() => import("../pages/Gudang.jsx"));
@@ -88,6 +102,10 @@ function isDriverOnlyUser() {
 
 export function resolveEntryPath(pathname) {
   if (pathname === "/") return "/portal";
+  // /finance (tanpa sub-path) dirujuk PORTALS backend & WorkspaceSwitcher —
+  // diselesaikan di sini supaya tidak pernah tersimpan sebagai path sebuah
+  // tab (lihat catatan panjang D-144 di atas).
+  if (pathname === "/finance") return "/finance/dashboard";
   if (pathname === "/warehouse") return "/warehouse/dashboard";
   if (pathname === "/armada") return isDriverOnlyUser() ? "/armada/jobs" : "/armada/dashboard";
   const dikenal = PAGES.some((p) => matchPath({ path: p.path, end: true }, pathname));
@@ -132,6 +150,19 @@ export const PAGES = [
   { path: "/armada/returns", render: () => <ArmadaReturns /> },
   { path: "/armada/reports", render: () => <ArmadaDeliveryReport /> },
   { path: "/kendali",     render: () => <Kendali /> },
+  { path: "/finance/dashboard",      render: () => <FinanceDashboard /> },
+  { path: "/finance/payments",       render: () => <FinancePayments /> },
+  { path: "/finance/invoices",       render: () => <FinanceInvoices /> },
+  { path: "/finance/receivables",    render: () => <FinanceReceivables /> },
+  { path: "/finance/cash",           render: () => <FinanceCash /> },
+  { path: "/finance/expenses",       render: () => <FinanceExpenses /> },
+  { path: "/finance/suppliers",      render: () => <FinanceSuppliers /> },
+  { path: "/finance/reconciliation", render: () => <FinanceReconciliation /> },
+  { path: "/finance/journal",        render: () => <FinanceJournal /> },
+  { path: "/finance/ledger",         render: () => <FinanceLedger /> },
+  { path: "/finance/reports",        render: () => <FinanceReports /> },
+  { path: "/finance/accounts",       render: () => <FinanceAccounts /> },
+  { path: "/finance/settings",       render: () => <FinanceSettings /> },
   { path: "/b2b",         render: () => <B2BOrders /> },
   { path: "/komplain",    render: () => <ComplaintCases /> },
   { path: "/gudang",      render: () => <Gudang /> },

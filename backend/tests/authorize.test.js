@@ -234,9 +234,45 @@ test("portal disaring sesuai role", () => {
   // portal sendiri). Test ini sempat tertinggal saat portal itu ditambahkan,
   // jadi suite merah walau kodenya benar — dan suite merah yang dibiarkan
   // membuat regresi berikutnya tidak kelihatan.
+  // "finance" (Finance & Accounting, D-180) adalah workspace KE-6 — ADMIN
+  // memegang semuanya, sama pola dengan 5 portal sebelumnya.
   assert.deepEqual(portalsFor(admin).map((p) => p.key),
-    ["growth", "bengkel", "warehouse", "armada", "kendali"]);
+    ["growth", "bengkel", "warehouse", "armada", "kendali", "finance"]);
   assert.deepEqual(portalsFor({ roles: [] }), []);
+});
+
+// --- Finance Workspace (D-180) ---------------------------------------------
+test("FINANCE membuka portal kendali & finance, TIDAK membuka portal operasional lain", () => {
+  const finance = { id: "u9", roles: ["FINANCE"] };
+  assert.deepEqual(portalsFor(finance).map((p) => p.key), ["kendali", "finance"]);
+});
+
+test("FINANCE tidak memegang finance:admin — bagan akun & tutup periode tetap milik ADMIN", () => {
+  // Pemisahan tugas: yang menyusun angka bulan ini bukan yang bisa
+  // mengubah bagan akun / menutup periode / membalik jurnal terposting.
+  const finance = { id: "u9", roles: ["FINANCE"] };
+  assert.ok(hasPermission(finance, P.FINANCE_READ));
+  assert.ok(hasPermission(finance, P.FINANCE_POST));
+  assert.ok(hasPermission(finance, P.FINANCE_APPROVE));
+  assert.ok(!hasPermission(finance, P.FINANCE_ADMIN));
+  assert.ok(hasPermission(admin, P.FINANCE_ADMIN));
+});
+
+test("divisi lain cuma boleh MENGAJUKAN pengeluaran, tidak memposting/menyetujui", () => {
+  for (const roles of [["SALES"], ["DISPATCHER"], ["WAREHOUSE"], ["PRODUCTION_LEAD"]]) {
+    const u = { id: "x", roles };
+    assert.ok(hasPermission(u, P.FINANCE_EXPENSE_SUBMIT), `${roles} harus bisa mengajukan`);
+    assert.ok(!hasPermission(u, P.FINANCE_POST), `${roles} TIDAK boleh memposting`);
+    assert.ok(!hasPermission(u, P.FINANCE_APPROVE), `${roles} TIDAK boleh menyetujui`);
+    assert.ok(!hasPermission(u, P.FINANCE_ADMIN), `${roles} TIDAK boleh mengelola bagan akun`);
+  }
+});
+
+test("driver & pekerja produksi sama sekali tidak menyentuh finance", () => {
+  for (const u of [driver, worker]) {
+    assert.ok(!hasPermission(u, P.FINANCE_READ));
+    assert.ok(!hasPermission(u, P.FINANCE_EXPENSE_SUBMIT));
+  }
 });
 
 test("setiap portal menyebut role yang benar-benar ada", () => {

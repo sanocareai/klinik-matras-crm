@@ -34,6 +34,7 @@ import {
 import { notifySalesJobCompleted, notifySalesUnpaidAfterDelivery } from "../services/deliveryCompletionNotify.js";
 import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
+import { bukukanPembayaran } from "../services/finance/hooks.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
@@ -4615,6 +4616,10 @@ armadaRouter.post("/jobs/:id/payment", requireAnyPermission(P.JOB_WRITE, P.JOB_O
         },
       });
       await recomputeOrderPaymentStatus(tx, job.orderId);
+      // Buku besar (D-180) — jalur yang SAMA dengan DP sales di
+      // routes/orders.js, supaya uang yang diterima driver tidak punya
+      // perlakuan akuntansi berbeda dari uang yang diterima sales.
+      await bukukanPembayaran(tx, { paymentId: p.id, userId: req.user.id });
       return p;
     });
     res.status(201).json(await prisma.payment.findUnique({ where: { id: payment.id }, include: paymentInclude }));
@@ -4651,8 +4656,20 @@ armadaRouter.get("/payments", requirePermission(P.PAYMENT_READ), async (req, res
 // menolak (satu payment cuma sekali verifikasi).
 armadaRouter.post("/payments/:id/verify", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
   try {
-    await prisma.paymentVerification.create({
-      data: { paymentId: req.params.id, verifiedById: req.user.id },
+    // D-180 — verifikasi & hitung ulang status bayar dalam SATU transaksi.
+    // Sebelumnya cukup membuat baris verifikasi saja, karena status bayar
+    // tidak pernah bergantung padanya. Sejak gerbang verifikasi ada (lihat
+    // services/paymentLedger.js), verifikasi BISA menjadi peristiwa yang
+    // mengubah status bayar order — dan dua hal itu tidak boleh terpisah:
+    // kalau recompute gagal, verifikasinya ikut batal, bukan meninggalkan
+    // order yang statusnya tertinggal di belakang faktanya.
+    await prisma.$transaction(async (tx) => {
+      const v = await tx.paymentVerification.create({
+        data: { paymentId: req.params.id, verifiedById: req.user.id },
+      });
+      const p = await tx.payment.findUnique({ where: { id: req.params.id }, select: { orderId: true } });
+      if (p) await recomputeOrderPaymentStatus(tx, p.orderId);
+      return v;
     });
     const payment = await prisma.payment.findUnique({ where: { id: req.params.id }, include: paymentInclude });
     res.json(payment);

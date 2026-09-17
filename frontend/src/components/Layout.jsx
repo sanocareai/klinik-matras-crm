@@ -7,6 +7,7 @@ import {
   Wrench, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2, Wallet,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
   Boxes, ScanLine, Award, ArrowUpDown, Check, Handshake,
+  Landmark, BookOpen, FileSpreadsheet, Banknote, Receipt, Building2, Scale as ScaleIcon, ListTree,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
@@ -404,6 +405,61 @@ const DIVISIONS = {
       },
     ],
   },
+  // Finance & Accounting (D-180, 17 September 2026). Pengelompokan section
+  // mengikuti CARA KERJA, bukan struktur laporan akuntansi:
+  //   OPERASIONAL   — yang dibuka tiap hari (uang masuk, uang keluar)
+  //   PIUTANG & UTANG — siapa berutang ke siapa
+  //   PEMBUKUAN     — jurnal & buku besar, dibuka saat menelusuri angka
+  //   LAPORAN       — dibaca per periode
+  //   PENGATURAN    — sekali atur, jarang disentuh
+  // Menyusunnya sebagai Aset/Kewajiban/Ekuitas (urutan bagan akun) akan
+  // benar secara akuntansi tapi tidak cocok dengan pekerjaan siapa pun.
+  finance: {
+    label: "Finance",
+    accent: {
+      ...DIVISION_ACCENT,
+    },
+    sections: [
+      {
+        section: "OPERASIONAL",
+        items: [
+          { to: "/finance/dashboard", label: "Ringkasan",              Icon: LayoutDashboard },
+          { to: "/finance/payments",  label: "Pembayaran & Verifikasi", Icon: Banknote },
+          { to: "/finance/cash",      label: "Kas & Bank",             Icon: Wallet },
+          { to: "/finance/expenses",  label: "Pengeluaran",            Icon: Receipt },
+        ],
+      },
+      {
+        section: "PIUTANG & UTANG",
+        items: [
+          { to: "/finance/invoices",    label: "Invoice & Jatuh Tempo", Icon: FileSpreadsheet },
+          { to: "/finance/receivables", label: "Piutang & Refund",      Icon: Users },
+          { to: "/finance/suppliers",   label: "Supplier & Utang", Icon: Building2 },
+        ],
+      },
+      {
+        section: "PEMBUKUAN",
+        items: [
+          { to: "/finance/journal",        label: "Jurnal Umum",       Icon: FileSpreadsheet },
+          { to: "/finance/ledger",         label: "Buku Besar",        Icon: BookOpen },
+          { to: "/finance/reconciliation", label: "Rekonsiliasi Bank", Icon: ScaleIcon },
+        ],
+      },
+      {
+        section: "LAPORAN",
+        items: [
+          { to: "/finance/reports", label: "Laporan Keuangan", Icon: BarChart3 },
+        ],
+      },
+      {
+        section: "PENGATURAN FINANCE",
+        items: [
+          { to: "/finance/accounts", label: "Bagan Akun", Icon: ListTree },
+          { to: "/finance/settings", label: "Pengaturan", Icon: Settings },
+        ],
+      },
+    ],
+  },
   // Workspace B2B/Non-CRM (D-115, 11 September 2026) — order vendor/korporat
   // kontak langsung ke WA pribadi owner, di luar Inbox omnichannel sama
   // sekali. Sengaja satu halaman (pola sama dengan Kendali di atas) — belum
@@ -505,6 +561,7 @@ function divisionFromPath(pathname) {
   if (pathname.startsWith("/bengkel")) return "bengkel";
   if (pathname.startsWith("/armada")) return "armada";
   if (pathname.startsWith("/kendali")) return "kendali";
+  if (pathname.startsWith("/finance")) return "finance";
   if (pathname.startsWith("/b2b")) return "b2b";
   return "growth";
 }

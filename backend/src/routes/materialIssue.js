@@ -13,6 +13,14 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate, RESERVED_STATUSES } from "../services/inventoryLedger.js";
+// D-180 — HPP (harga pokok bahan) masuk buku besar dari pergerakan stok
+// yang SUDAH ditulis di bawah. Tidak ada pergerakan stok baru yang dibuat
+// dari sisi finance. Material tanpa harga perolehan menghasilkan catatan
+// "Data Belum Lengkap", BUKAN angka tebakan — lihat
+// services/finance/posting/inventory.js.
+import { postMaterialIssueCost } from "../services/finance/posting/inventory.js";
+import { JournalError } from "../services/finance/journal.js";
+import { AccountError } from "../services/finance/accounts.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const materialIssueRouter = express.Router();
@@ -327,6 +335,15 @@ materialIssueRouter.post("/:id/issue", requirePermission(P.INVENTORY_WRITE), asy
         eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
         metadata: { issueNumber: issue.issueNumber, lineCount: issue.lines.length },
       });
+
+      // Buku besar (D-180) — alasan urutan & penanganan error sama persis
+      // dengan putaway di routes/goodsReceipt.js: pengeluaran material tidak
+      // boleh gagal gara-gara modul finance belum disiapkan.
+      try {
+        await postMaterialIssueCost(tx, { materialIssueId: issue.id, userId: req.user.id });
+      } catch (e) {
+        if (!(e instanceof JournalError) && !(e instanceof AccountError)) throw e;
+      }
       return updated;
     });
     res.json(result);
