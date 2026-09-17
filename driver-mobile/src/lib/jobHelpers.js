@@ -15,6 +15,16 @@ export const JOB_STATUS_REAL = {
 
 const JOB_TYPE_SINGKAT = { PICKUP: "Ambil", DELIVERY: "Kirim" };
 
+// Port dari frontend/src/features/armada/issueStatus.js — status Kendala
+// DIHITUNG BACKEND (deriveIssueStatus, GET /armada/issues), dipakai tab
+// "Masalah" driver (17 September 2026, lihat catatan panjang di
+// JobListScreen.js). Hanya 2 nilai: job.issueStatus ada di respons kalau
+// job ini pernah Gagal.
+export const ISSUE_STATUS = {
+  OPEN: { label: "Belum Dijadwalkan Ulang", color: "RED" },
+  RESCHEDULED: { label: "Sudah Dijadwalkan Ulang", color: "ORANGE" },
+};
+
 // Complaint / After-Sales Case (D-116, 12 September 2026 — permintaan
 // owner: driver perlu tahu KENAPA job ini ada, supaya bisa lebih hati-hati/
 // sopan di lokasi kalau ini terkait komplain). Cermin ringkas dari

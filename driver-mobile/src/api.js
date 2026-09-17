@@ -150,6 +150,12 @@ export const api = {
   // Job driver — SEMUA endpoint SUDAH ADA di backend (dipakai juga oleh
   // PWA/APK Capacitor driver-app/), nol perubahan kontrak API.
   getMyJobs: (date) => request(`/armada/my-jobs${buildQuery({ date })}`),
+  // Masalah (17 September 2026, laporan owner: "tab/section masalah
+  // tampilkan juga untuk driver") — GET /armada/issues, SEKARANG juga
+  // menerima JOB_OWN_READ (dibatasi otomatis ke job milik sendiri di
+  // backend), sebelumnya cuma dispatcher (JOB_READ). Read-only murni —
+  // tidak ada endpoint reschedule di sini, itu tetap dispatcher-only.
+  getIssues: () => request("/armada/issues"),
   uploadJobPhotos: uploadJobPhotosMulti,
   // Mulai SATU rute sekaligus — foto muatan sekali, semua job ASSIGNED di
   // rute jadi EN_ROUTE (lihat POST /armada/routes/:id/start).

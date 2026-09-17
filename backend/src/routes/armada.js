@@ -2886,9 +2886,22 @@ function deriveIssueStatus(job) {
   return null;
 }
 
-armadaRouter.get("/issues", requirePermission(P.JOB_READ), async (req, res) => {
+// requireAnyPermission JOB_READ ATAU JOB_OWN_READ (17 September 2026,
+// laporan owner: "tab/section masalah tampilkan juga untuk driver") —
+// SEBELUM ini cuma JOB_READ (dispatcher/admin), driver (yang cuma pegang
+// JOB_OWN_READ) tidak pernah bisa melihat daftar ini sama sekali, walau
+// job-nya sendiri yang gagal/dijadwalkan ulang. Driver TETAP tidak bisa
+// menjadwalkan ulang dari sini (POST /issues/:jobId/reschedule di bawah
+// masih JOB_WRITE murni, dispatcher-only, sengaja tidak diubah) — ini
+// cuma membuka JALUR LIHAT, bukan jalur tindak.
+armadaRouter.get("/issues", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), async (req, res) => {
   try {
     const { status } = req.query; // OPEN | RESCHEDULED
+    // Driver TANPA JOB_READ (dispatcher penuh) hanya boleh lihat job
+    // miliknya sendiri (driver ATAU helper) — sama pola pembatasan dengan
+    // GET /my-jobs, supaya driver tidak diam-diam bisa mengintip kegagalan
+    // driver lain lewat endpoint ini.
+    const hanyaMilikSendiri = !hasPermission(req.user, P.JOB_READ);
     const jobs = await prisma.job.findMany({
       where: {
         OR: [{ status: "FAILED" }, { rescheduleReason: { not: null } }, { rescheduleCaseId: { not: null } }],
@@ -2902,6 +2915,7 @@ armadaRouter.get("/issues", requirePermission(P.JOB_READ), async (req, res) => {
         // dicek kalau order-nya ADA (order: null mustahil di skema, tapi
         // defensif) — job tanpa order sama sekali tetap lolos filter ini.
         order: { status: { not: "CANCELLED" } },
+        ...(hanyaMilikSendiri && { AND: { OR: [{ driverId: req.user.id }, { helperId: req.user.id }] } }),
       },
       include: {
         ...jobInclude,

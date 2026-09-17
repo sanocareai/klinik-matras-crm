@@ -13,6 +13,7 @@ import { usePushSubscription } from "../hooks/usePushSubscription.js";
 import { useMyJobs } from "@/features/armada/hooks/useMyJobs.js";
 import { mapsUrl } from "@/features/armada/jobStatus.js";
 import { SalesBadge, ProductBadge } from "@/features/armada/components/JobBadges.jsx";
+import { ISSUE_STATUS } from "@/features/armada/issueStatus.js";
 import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -688,6 +689,21 @@ export default function DriverJobs() {
   const [focusIndex, setFocusIndex] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
 
+  // Tab/section "Masalah" (17 September 2026, laporan owner: "tab/section
+  // masalah tampilkan juga untuk driver") — SEBELUM ini GET /armada/issues
+  // cuma bisa dilihat dispatcher (JOB_READ); driver TIDAK PERNAH bisa lihat
+  // riwayat job miliknya sendiri yang Gagal/Dijadwalkan Ulang, apalagi yang
+  // sudah lewat dari jendela "hari ini" (lihat catatan GET /my-jobs).
+  // Backend sekarang membuka JOB_OWN_READ juga, DIBATASI otomatis ke job
+  // milik sendiri di sana — driver TETAP tidak bisa menjadwalkan ulang dari
+  // sini (itu tetap JOB_WRITE, dispatcher-only), murni tampilan status.
+  const [issues, setIssues] = useState(null);
+  const [showIssues, setShowIssues] = useState(false);
+  const loadIssues = useCallback(() => {
+    api.getIssues().then((d) => setIssues(d.jobs)).catch(() => setIssues([]));
+  }, []);
+  useEffect(() => { loadIssues(); }, [loadIssues]);
+
   // Notifikasi push job baru (8 September 2026) — subscribe device begitu
   // halaman driver dibuka, lihat catatan panjang di hook.
   usePushSubscription();
@@ -792,8 +808,47 @@ export default function DriverJobs() {
         <FocusedJobList
           jobs={jobs} focusIndex={focusIndex} setFocusIndex={setFocusIndex}
           showHistory={showHistory} setShowHistory={setShowHistory}
-          onChanged={load} onQueued={refreshQueue} pendingJobIds={pendingJobIds}
+          onChanged={() => { load(); loadIssues(); }} onQueued={refreshQueue} pendingJobIds={pendingJobIds}
         />
+      )}
+
+      {/* Masalah — lihat catatan panjang di deklarasi state issues di atas.
+          Cakupan JUJUR sama dengan ArmadaIssues.jsx sisi dispatcher: cuma
+          job Gagal (failureReason wajib) + yang pernah dijadwalkan ulang,
+          BUKAN sistem tiket terpisah. Kosong = tidak dirender sama sekali
+          (bukan "Tidak ada masalah" kosong yang menambah kebisingan layar
+          driver — beda dari Riwayat yang memang selalu relevan dicek). */}
+      {issues && issues.length > 0 && (
+        <div className="mt-4">
+          <button
+            type="button" onClick={() => setShowIssues((s) => !s)}
+            className="flex w-full items-center justify-between rounded-lg border border-red/30 bg-redbg px-3 py-2 text-xs font-semibold text-red"
+          >
+            <span className="flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> Masalah ({issues.length})</span>
+            <span>{showIssues ? "▲" : "▼"}</span>
+          </button>
+          {showIssues && (
+            <div className="mt-2 space-y-2">
+              {issues.map((job) => {
+                const info = ISSUE_STATUS[job.issueStatus];
+                return (
+                  <div key={job.id}>
+                    {info && (
+                      <span
+                        className={`mb-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          info.tone === "red" ? "bg-redbg text-red" : "bg-orangebg text-orange"
+                        }`}
+                      >
+                        {info.label}
+                      </span>
+                    )}
+                    <JobCard job={job} onChanged={() => { load(); loadIssues(); }} onQueued={refreshQueue} pending={false} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

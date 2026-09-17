@@ -11,23 +11,32 @@ import { View, Text, Pressable, StyleSheet, ActivityIndicator, RefreshControl, S
 // benar-benar mengukur inset status bar di kedua platform.
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
-import { Home, History } from "lucide-react-native";
+import { Home, History, AlertTriangle, XCircle, CheckCircle2 } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useMyJobs } from "../hooks/useMyJobs";
+import { useIssues } from "../hooks/useIssues";
 import { useDriverTracking } from "../hooks/useDriverTracking";
 import JobCard from "../components/JobCard";
 import RouteStartCard from "../components/RouteStartCard";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
+import { customerOf, orderNumberOf, relatifWaktu, ISSUE_STATUS } from "../lib/jobHelpers";
 
 const ACTIVE_STATUSES = ["ASSIGNED", "EN_ROUTE", "ARRIVED"];
 
 // Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
-// dulu di atas konten, lihat BottomNavBar.js.
+// dulu di atas konten, lihat BottomNavBar.js. Tab "Masalah" (17 September
+// 2026, laporan owner: "tab/section masalah tampilkan juga untuk driver")
+// — port POLA yang SAMA dengan AdminHomeScreen.js (MasalahView di sana),
+// TAPI dibatasi ke job milik driver sendiri di backend (GET /armada/issues
+// sekarang menerima JOB_OWN_READ juga, lihat catatan panjang di
+// backend/src/routes/armada.js). Read-only murni — driver TIDAK bisa
+// menjadwalkan ulang dari sini, itu tetap dispatcher-only.
 const NAV_ITEMS = [
   { key: "aktif", label: "Aktif", icon: Home },
   { key: "riwayat", label: "Riwayat", icon: History },
+  { key: "masalah", label: "Masalah", icon: AlertTriangle },
 ];
 
 export default function JobListScreen() {
@@ -35,7 +44,9 @@ export default function JobListScreen() {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { data: jobs, isLoading, error, refetch, isRefetching } = useMyJobs();
-  const [showHistory, setShowHistory] = useState(false);
+  const { data: issues, isLoading: issuesLoading, error: issuesError, refetch: refetchIssues, isRefetching: issuesRefetching } = useIssues();
+  const [tab, setTab] = useState("aktif"); // "aktif" | "riwayat" | "masalah"
+  const showHistory = tab === "riwayat";
   const [togglingOnline, setTogglingOnline] = useState(false);
 
   // D-034 — kirim ping GPS selama ADA job EN_ROUTE, DAN Online (12 Sep
@@ -135,7 +146,13 @@ export default function JobListScreen() {
         </View>
       </GradientCard>
 
-      {isLoading ? (
+      {tab === "masalah" ? (
+        <MasalahView
+          issues={issues} isLoading={issuesLoading} error={issuesError}
+          refetch={refetchIssues} isRefetching={issuesRefetching}
+          theme={theme} styles={styles}
+        />
+      ) : isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator color={theme.ACCENT} />
         </View>
@@ -176,12 +193,75 @@ export default function JobListScreen() {
 
       <BottomNavBar
         items={NAV_ITEMS}
-        active={showHistory ? "riwayat" : "aktif"}
-        onChange={(key) => setShowHistory(key === "riwayat")}
+        active={tab}
+        onChange={setTab}
         theme={theme}
-        badge={{ aktif: activeJobs.length }}
+        badge={{ aktif: activeJobs.length, masalah: (issues || []).length }}
       />
     </SafeAreaView>
+  );
+}
+
+// MasalahView (17 September 2026) — port dari MasalahView di
+// AdminHomeScreen.js, TAPI datanya sudah dibatasi ke job milik driver
+// sendiri di backend (bukan filter ulang di sini — satu sumber kebenaran
+// dengan GET /armada/issues). BEDA dari versi admin: badge status
+// (OPEN/RESCHEDULED, dari ISSUE_STATUS) ditambahkan supaya driver tahu
+// apakah kendalanya SUDAH ditindaklanjuti dispatcher atau masih menunggu
+// — admin tidak butuh ini karena mereka yang menindaklanjuti.
+function MasalahView({ issues, isLoading, error, refetch, isRefetching, theme: t, styles }) {
+  if (isLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={t.ACCENT} />
+      </View>
+    );
+  }
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>Gagal memuat: {error.message}</Text>
+      </View>
+    );
+  }
+  if (!issues || issues.length === 0) {
+    return (
+      <View style={styles.center}>
+        <CheckCircle2 size={28} color={t.GREEN} />
+        <Text style={[styles.emptyText, { marginTop: 8 }]}>Tidak ada masalah terbuka.</Text>
+      </View>
+    );
+  }
+  return (
+    <FlashList
+      data={issues}
+      keyExtractor={(j) => j.id}
+      contentContainerStyle={styles.list}
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={t.ACCENT} />}
+      renderItem={({ item: j }) => {
+        const info = ISSUE_STATUS[j.issueStatus];
+        return (
+          <View style={[styles.issueCard, { borderColor: t.RED + "4D" }]}>
+            <View style={styles.issueHeaderRow}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+                <XCircle size={14} color={t.RED} />
+                <Text style={styles.issueTitle}>{customerOf(j) || "Tanpa nama"}</Text>
+              </View>
+              <Text style={styles.issueMeta}>{relatifWaktu(j.updatedAt)}</Text>
+            </View>
+            {info && (
+              <View style={[styles.issueStatusBadge, { backgroundColor: t[info.color] + "26" }]}>
+                <Text style={[styles.issueStatusBadgeText, { color: t[info.color] }]}>{info.label}</Text>
+              </View>
+            )}
+            <Text style={styles.issueReason}>{j.failureReason || j.rescheduleReason || "Tidak ada alasan tercatat"}</Text>
+            <Text style={styles.issueMeta}>
+              {orderNumberOf(j) || "—"} · {j.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
+            </Text>
+          </View>
+        );
+      }}
+    />
   );
 }
 
@@ -210,5 +290,15 @@ function makeStyles(t) {
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingBottom: 80 },
     errorText: { color: t.RED, fontSize: 13, textAlign: "center" },
     emptyText: { color: t.INK2, fontSize: 13, textAlign: "center" },
+    // Kartu tab Masalah (17 September 2026) — pola sama dengan styles.card
+    // AdminHomeScreen.js (bg SURFACE, border tipis), warna border merah
+    // muda konsisten dgn MasalahView versi admin.
+    issueCard: { backgroundColor: t.SURFACE, borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 10 },
+    issueHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    issueTitle: { color: t.INK, fontSize: 14, fontWeight: "700" },
+    issueMeta: { color: t.INK2, fontSize: 11, marginTop: 2 },
+    issueStatusBadge: { alignSelf: "flex-start", borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6 },
+    issueStatusBadgeText: { fontSize: 10.5, fontWeight: "700" },
+    issueReason: { color: t.INK, fontSize: 12.5, marginTop: 6, lineHeight: 17 },
   });
 }
