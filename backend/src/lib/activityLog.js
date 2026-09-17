@@ -48,6 +48,14 @@ export const ENTITY_TYPES = Object.freeze({
   FIN_PERIOD: "fin_period",
   FIN_ACCOUNT: "fin_account",
   FIN_SETTING: "fin_setting",
+  // Koreksi transaksi finance (17 Sept 2026, permintaan owner: sistem baru
+  // mulai dipakai, wajar ada salah input, tapi tidak boleh diam-diam
+  // menimpa angka yang sudah diposting) — lihat DOCUMENT_CORRECTED di
+  // bawah. Dua entity type baru untuk dua dokumen yang SEBELUMNYA tidak
+  // pernah butuh dicatat di sini sendiri-sendiri (transfer & pemasukan
+  // lain langsung posting tanpa approval, beda dari expense/bill/refund).
+  FIN_CASH_TRANSFER: "fin_cash_transfer",
+  FIN_OTHER_INCOME: "fin_other_income",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -122,6 +130,14 @@ export const EVENT_TYPES = Object.freeze({
   PERIOD_REOPENED: "PERIOD_REOPENED",
   FINANCE_SETTING_CHANGED: "FINANCE_SETTING_CHANGED",
   CHART_OF_ACCOUNTS_CHANGED: "CHART_OF_ACCOUNTS_CHANGED",
+  // Koreksi (17 Sept 2026) — admin mengubah nilai transaksi yang SUDAH
+  // diposting. BUKAN edit diam-diam: jurnal lama dibalik (tetap ada,
+  // tidak dihapus), jurnal baru diposting dengan nilai baru, dan baris
+  // ini menyimpan before/after di metadata. DOCUMENT_EDITED terpisah
+  // untuk dokumen yang MASIH draft/menunggu approval (belum menyentuh
+  // buku besar sama sekali — edit langsung, tidak perlu reversal).
+  DOCUMENT_CORRECTED: "DOCUMENT_CORRECTED",
+  DOCUMENT_EDITED: "DOCUMENT_EDITED",
 });
 
 /**
@@ -285,6 +301,19 @@ export function formatActivitySentence(event) {
       return fields.length
         ? `Akun ${metadata.code || "—"} diubah: ${fields.join(", ")}`
         : `Akun ${metadata.code || "—"} diubah`;
+    }
+    case EVENT_TYPES.DOCUMENT_CORRECTED: {
+      const nomor = metadata.expenseNumber || metadata.transferNumber || metadata.incomeNumber
+        || metadata.billNumber || metadata.refundNumber || "—";
+      return `Dokumen ${nomor} dikoreksi (jurnal lama dibalik, jurnal baru diposting) — ${metadata.reason || "tanpa keterangan"}`;
+    }
+    case EVENT_TYPES.DOCUMENT_EDITED: {
+      const nomor = metadata.expenseNumber || metadata.transferNumber || metadata.incomeNumber
+        || metadata.billNumber || metadata.refundNumber || "—";
+      const fields = Object.keys(metadata.changes || {});
+      return fields.length
+        ? `Dokumen ${nomor} diubah (masih ${metadata.status || "draft"}): ${fields.join(", ")}`
+        : `Dokumen ${nomor} diubah (masih ${metadata.status || "draft"})`;
     }
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice

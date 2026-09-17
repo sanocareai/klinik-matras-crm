@@ -20,6 +20,7 @@
 //    dihapus atau diubah nominalnya.
 
 import express from "express";
+import { randomUUID } from "node:crypto";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, PERMISSIONS as P, hasPermission } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
@@ -54,6 +55,36 @@ function err(message, statusCode = 400) {
 function parseTanggal(value, fallback = null) {
   if (!value) return fallback || todayBookDateWIB();
   return toBookDate(value);
+}
+
+/**
+ * Balikkan jurnal AKTIF (status POSTED) untuk SATU KELUARGA idempotencyKey
+ * (mis. semua "PENGELUARAN:<id>*", terlepas dari suffix koreksi) — dipakai
+ * BERSAMA oleh /cancel (batal total) dan /koreksi (batal lalu posting ulang
+ * dengan nilai baru).
+ *
+ * ⚠️ Dicari lewat PREFIX idempotencyKey, BUKAN source+sourceId polos.
+ * Untuk expense, jurnal PENGAKUAN BEBAN dan jurnal PEMBAYARAN dua-duanya
+ * memakai `source: "PENGELUARAN"` DAN `sourceId` yang SAMA (lihat
+ * posting/expense.js) — cuma idempotencyKey-nya yang beda
+ * ("PENGELUARAN:<id>" vs "PENGELUARAN_DIBAYAR:<id>"). Mencari lewat
+ * source+sourceId polos akan mengembalikan SALAH SATU secara acak kalau
+ * dua-duanya POSTED sekaligus (kasus nyata: expense DIBAYAR mode
+ * REIMBURSEMENT/UTANG), meninggalkan satu jurnal aktif tidak terbalik —
+ * itu sebabnya keyPrefix WAJIB dipisah per "keluarga" jurnal, dipanggil
+ * SEKALI per keluarga oleh pemanggilnya.
+ */
+async function balikkanJurnalAktif(tx, { keyPrefix, alasan, userId }) {
+  const entry = await tx.finJournalEntry.findFirst({
+    where: { status: "POSTED", idempotencyKey: { startsWith: keyPrefix } },
+  });
+  if (entry) await reverseJournal(tx, { entryId: entry.id, reason: alasan, userId });
+  return entry;
+}
+
+/** Suffix idempotencyKey BARU untuk jurnal pengganti sebuah koreksi. */
+function suffixKoreksi() {
+  return `:KOREKSI:${randomUUID()}`;
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -324,14 +355,16 @@ financeTxRouter.post("/expenses/:id/cancel", requirePermission(P.FINANCE_ADMIN),
       if (!e) throw err("Pengeluaran tidak ditemukan", 404);
       if (e.status === "DIBATALKAN") throw err("Pengeluaran ini sudah dibatalkan", 409);
 
-      // Balikkan SEMUA jurnal yang pernah lahir dari dokumen ini — jurnal
-      // pembayaran dulu (kalau ada), baru jurnal pengakuan bebannya.
-      for (const key of [EXPENSE_KEY.expensePaid(e.id), EXPENSE_KEY.expense(e.id)]) {
-        const entry = await findEntryByKey(tx, key);
-        if (entry && entry.status === "POSTED") {
-          await reverseJournal(tx, { entryId: entry.id, reason: `Pengeluaran ${e.expenseNumber} dibatalkan — ${reason}`, userId: req.user.id });
-        }
-      }
+      // Balikkan jurnal AKTIF-nya — pembayaran dulu (kalau ada), baru
+      // pengakuan beban. Lewat prefix (balikkanJurnalAktif), BUKAN key
+      // persis: kalau dokumen ini sudah pernah dikoreksi (POST .../koreksi)
+      // sebelumnya, key ASLI (tanpa suffix) sudah REVERSED — mencari key
+      // persis di sini akan melewatkan jurnal PENGGANTI yang sebenarnya
+      // masih aktif sekarang, dan /cancel akan menandai dokumen batal tanpa
+      // benar-benar membalik uangnya.
+      const alasanBatal = `Pengeluaran ${e.expenseNumber} dibatalkan — ${reason}`;
+      await balikkanJurnalAktif(tx, { keyPrefix: EXPENSE_KEY.expensePaid(e.id), alasan: alasanBatal, userId: req.user.id });
+      await balikkanJurnalAktif(tx, { keyPrefix: EXPENSE_KEY.expense(e.id), alasan: alasanBatal, userId: req.user.id });
 
       const updated = await tx.finExpense.update({
         where: { id: e.id },
@@ -345,6 +378,139 @@ financeTxRouter.post("/expenses/:id/cancel", requirePermission(P.FINANCE_ADMIN),
       return updated;
     });
     res.json(bentukExpense(hasil));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+/**
+ * Validasi & normalisasi payload edit/koreksi pengeluaran — dipakai DUA
+ * jalur di bawah (PATCH pra-approval & POST .../koreksi pasca-posting),
+ * field yang diterima SAMA dengan POST /expenses (create) MINUS `mode`
+ * (lihat catatan di POST .../koreksi kenapa mode sengaja dikecualikan).
+ */
+async function siapkanPerubahanExpense(tx, body, modeSaatIni) {
+  const perubahan = {};
+  if (body.date !== undefined) perubahan.date = parseTanggal(body.date);
+  if (body.amount !== undefined) {
+    const nominal = toMoney(body.amount, { field: "Nominal pengeluaran" });
+    if (nominal.lessThanOrEqualTo(0)) throw err("Nominal pengeluaran harus lebih dari 0");
+    perubahan.amount = nominal;
+  }
+  if (body.description !== undefined) {
+    if (!body.description?.trim()) throw err("Keterangan pengeluaran wajib diisi");
+    perubahan.description = body.description.trim();
+  }
+  if (body.categoryId !== undefined) {
+    const kategori = await tx.finExpenseCategory.findUnique({ where: { id: body.categoryId }, select: { id: true, active: true } });
+    if (!kategori || !kategori.active) throw err("Kategori biaya tidak ditemukan atau sudah nonaktif", 404);
+    perubahan.categoryId = body.categoryId;
+  }
+  if (body.division !== undefined) perubahan.division = body.division;
+  if (body.cashAccountId !== undefined) perubahan.cashAccountId = body.cashAccountId || null;
+  if (body.supplierId !== undefined) perubahan.supplierId = body.supplierId || null;
+  if (body.reimburseToId !== undefined) perubahan.reimburseToId = body.reimburseToId || null;
+  if (body.payeeName !== undefined) perubahan.payeeName = body.payeeName?.trim() || null;
+  if (body.orderId !== undefined) perubahan.orderId = body.orderId || null;
+  if (body.unitId !== undefined) perubahan.unitId = body.unitId || null;
+  if (body.receiptUrl !== undefined) perubahan.receiptUrl = body.receiptUrl || null;
+  if (body.notes !== undefined) perubahan.notes = body.notes?.trim() || null;
+
+  if (modeSaatIni === "LANGSUNG" && perubahan.cashAccountId === null) {
+    throw err("Pengeluaran mode Langsung wajib punya rekening kas/bank sumber dananya");
+  }
+  return perubahan;
+}
+
+// Edit LANGSUNG (tanpa reversal) — HANYA sah selama pengeluaran belum
+// menyentuh buku besar sama sekali (DRAFT/MENUNGGU_APPROVAL). Admin-only
+// atas permintaan eksplisit (17 Sept 2026: sistem baru mulai dipakai,
+// wajar ada salah input, tapi perubahan tetap harus lewat satu pintu yang
+// bisa diaudit, bukan siapa saja boleh menimpa punya orang lain).
+financeTxRouter.patch("/expenses/:id", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction(async (tx) => {
+      const e = await tx.finExpense.findUnique({ where: { id: req.params.id } });
+      if (!e) throw err("Pengeluaran tidak ditemukan", 404);
+      if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status)) {
+        throw err(
+          `Pengeluaran berstatus ${e.status} sudah menyentuh buku besar — pakai Koreksi, bukan edit langsung`,
+          409
+        );
+      }
+      const perubahan = await siapkanPerubahanExpense(tx, req.body, e.mode);
+      const updated = await tx.finExpense.update({ where: { id: e.id }, data: perubahan, include: expenseInclude });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_EXPENSE, entityId: e.id,
+        eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: {
+          expenseNumber: e.expenseNumber, status: e.status,
+          changes: Object.fromEntries(Object.keys(perubahan).map((k) => [k, { from: e[k], to: perubahan[k] }])),
+        },
+      });
+      return updated;
+    });
+    res.json(bentukExpense(hasil));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Koreksi pengeluaran yang SUDAH diposting (DISETUJUI/DIBAYAR) — reversal
+// jurnal lama + posting jurnal baru dengan nilai yang dikoreksi, SATU
+// transaksi atomik. Beda dari /cancel: dokumennya TIDAK menjadi DIBATALKAN,
+// statusnya tetap sama, cuma jurnal & field-nya yang diganti. `mode`
+// SENGAJA tidak boleh diubah lewat sini (lihat EXPENSE_EDITABLE_FIELDS) —
+// mengubah mode berarti mengubah seluruh struktur jurnal & alur pembayaran,
+// itu kasus "batalkan lalu buat baru", bukan "koreksi angka yang salah"
+// (lihat siapkanPerubahanExpense di atas untuk daftar field yang diterima).
+financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim();
+    if (!reason) throw err("Alasan koreksi wajib diisi");
+
+    const hasil = await prisma.$transaction(async (tx) => {
+      const e = await tx.finExpense.findUnique({ where: { id: req.params.id } });
+      if (!e) throw err("Pengeluaran tidak ditemukan", 404);
+      if (!["DISETUJUI", "DIBAYAR"].includes(e.status)) {
+        throw err(
+          `Koreksi hanya untuk pengeluaran yang sudah diposting (status sekarang: ${e.status}) — pakai edit langsung kalau belum`,
+          409
+        );
+      }
+
+      const perubahan = await siapkanPerubahanExpense(tx, req.body, e.mode);
+      if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
+
+      // Balikkan jurnal PEMBAYARAN dulu (kalau ada), baru jurnal pengakuan
+      // beban — urutan yang sama dengan /cancel. Dua keluarga key TERPISAH
+      // (lihat komentar balikkanJurnalAktif) — tanpa ini, expense DIBAYAR
+      // hanya salah satu jurnalnya yang terbalik.
+      const alasanKoreksi = `Koreksi ${e.expenseNumber} — ${reason}`;
+      await balikkanJurnalAktif(tx, { keyPrefix: EXPENSE_KEY.expensePaid(e.id), alasan: alasanKoreksi, userId: req.user.id });
+      await balikkanJurnalAktif(tx, { keyPrefix: EXPENSE_KEY.expense(e.id), alasan: alasanKoreksi, userId: req.user.id });
+
+      const before = Object.fromEntries(Object.keys(perubahan).map((k) => [k, e[k]]));
+      const updated = await tx.finExpense.update({ where: { id: e.id }, data: perubahan });
+
+      const suffix = suffixKoreksi();
+      await postExpenseApproved(tx, { expenseId: e.id, userId: req.user.id, keySuffix: suffix });
+      if (e.status === "DIBAYAR" && e.mode !== "LANGSUNG") {
+        await postExpensePaid(tx, { expenseId: e.id, userId: req.user.id, keySuffix: suffix });
+      }
+
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_EXPENSE, entityId: e.id,
+        eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: req.user.id,
+        metadata: {
+          expenseNumber: e.expenseNumber, reason,
+          before, after: perubahan,
+        },
+      });
+      return updated;
+    });
+    const lengkap = await prisma.finExpense.findUnique({ where: { id: hasil.id }, include: expenseInclude });
+    res.json(bentukExpense(lengkap));
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -817,14 +983,70 @@ financeTxRouter.post("/transfers/:id/cancel", requirePermission(P.FINANCE_ADMIN)
       const t = await tx.finCashTransfer.findUnique({ where: { id: req.params.id } });
       if (!t) throw err("Transfer tidak ditemukan", 404);
       if (t.cancelledAt) throw err("Transfer ini sudah dibatalkan", 409);
-      const entry = await findEntryByKey(tx, CASH_KEY.transfer(t.id));
-      if (entry && entry.status === "POSTED") {
-        await reverseJournal(tx, { entryId: entry.id, reason: `Transfer ${t.transferNumber} dibatalkan — ${reason}`, userId: req.user.id });
-      }
+      await balikkanJurnalAktif(tx, {
+        keyPrefix: CASH_KEY.transfer(t.id),
+        alasan: `Transfer ${t.transferNumber} dibatalkan — ${reason}`, userId: req.user.id,
+      });
       return tx.finCashTransfer.update({
         where: { id: t.id },
         data: { cancelledAt: new Date(), cancelledById: req.user.id, cancelReason: reason },
       });
+    });
+    res.json({ ...hasil, amount: moneyToNumber(hasil.amount), feeAmount: moneyToNumber(hasil.feeAmount) });
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Transfer TIDAK punya tahap draft/approval (langsung posting saat
+// dibuat), jadi cuma /koreksi yang relevan di sini, tidak ada PATCH
+// pra-approval seperti expense.
+function siapkanPerubahanTransfer(body) {
+  const perubahan = {};
+  if (body.date !== undefined) perubahan.date = parseTanggal(body.date);
+  if (body.amount !== undefined) {
+    const nominal = toMoney(body.amount, { field: "Nominal transfer" });
+    if (nominal.lessThanOrEqualTo(0)) throw err("Nominal transfer harus lebih dari 0");
+    perubahan.amount = nominal;
+  }
+  if (body.feeAmount !== undefined) perubahan.feeAmount = toMoney(body.feeAmount || 0, { field: "Biaya admin" });
+  if (body.fromAccountId !== undefined) perubahan.fromAccountId = body.fromAccountId;
+  if (body.toAccountId !== undefined) perubahan.toAccountId = body.toAccountId;
+  if (body.reference !== undefined) perubahan.reference = body.reference?.trim() || null;
+  if (body.notes !== undefined) perubahan.notes = body.notes?.trim() || null;
+
+  const asal = body.fromAccountId ?? undefined;
+  const tujuan = body.toAccountId ?? undefined;
+  if (asal && tujuan && asal === tujuan) throw err("Rekening asal dan tujuan tidak boleh sama");
+  return perubahan;
+}
+
+financeTxRouter.post("/transfers/:id/koreksi", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim();
+    if (!reason) throw err("Alasan koreksi wajib diisi");
+
+    const hasil = await prisma.$transaction(async (tx) => {
+      const t = await tx.finCashTransfer.findUnique({ where: { id: req.params.id } });
+      if (!t) throw err("Transfer tidak ditemukan", 404);
+      if (t.cancelledAt) throw err("Transfer yang sudah dibatalkan tidak bisa dikoreksi — buat transfer baru", 409);
+
+      const perubahan = siapkanPerubahanTransfer(req.body);
+      if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
+
+      const alasanKoreksi = `Koreksi ${t.transferNumber} — ${reason}`;
+      await balikkanJurnalAktif(tx, { keyPrefix: CASH_KEY.transfer(t.id), alasan: alasanKoreksi, userId: req.user.id });
+
+      const before = Object.fromEntries(Object.keys(perubahan).map((k) => [k, t[k]]));
+      const updated = await tx.finCashTransfer.update({ where: { id: t.id }, data: perubahan });
+      await postCashTransfer(tx, { transferId: t.id, userId: req.user.id, keySuffix: suffixKoreksi() });
+
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_CASH_TRANSFER, entityId: t.id,
+        eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: req.user.id,
+        metadata: { transferNumber: t.transferNumber, reason, before, after: perubahan },
+      });
+      return updated;
     });
     res.json({ ...hasil, amount: moneyToNumber(hasil.amount), feeAmount: moneyToNumber(hasil.feeAmount) });
   } catch (e) {
@@ -898,14 +1120,76 @@ financeTxRouter.post("/other-income/:id/cancel", requirePermission(P.FINANCE_ADM
       const inc = await tx.finOtherIncome.findUnique({ where: { id: req.params.id } });
       if (!inc) throw err("Pemasukan tidak ditemukan", 404);
       if (inc.cancelledAt) throw err("Pemasukan ini sudah dibatalkan", 409);
-      const entry = await findEntryByKey(tx, CASH_KEY.otherIncome(inc.id));
-      if (entry && entry.status === "POSTED") {
-        await reverseJournal(tx, { entryId: entry.id, reason: `Pemasukan ${inc.incomeNumber} dibatalkan — ${reason}`, userId: req.user.id });
-      }
+      await balikkanJurnalAktif(tx, {
+        keyPrefix: CASH_KEY.otherIncome(inc.id),
+        alasan: `Pemasukan ${inc.incomeNumber} dibatalkan — ${reason}`, userId: req.user.id,
+      });
       return tx.finOtherIncome.update({
         where: { id: inc.id },
         data: { cancelledAt: new Date(), cancelledById: req.user.id, cancelReason: reason },
       });
+    });
+    res.json({ ...hasil, amount: moneyToNumber(hasil.amount) });
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Pemasukan lain TIDAK punya tahap draft/approval (langsung posting saat
+// dibuat), sama seperti transfer — cuma /koreksi yang relevan di sini.
+function siapkanPerubahanOtherIncome(body) {
+  const perubahan = {};
+  if (body.date !== undefined) perubahan.date = parseTanggal(body.date);
+  if (body.amount !== undefined) {
+    const nominal = toMoney(body.amount, { field: "Nominal pemasukan" });
+    if (nominal.lessThanOrEqualTo(0)) throw err("Nominal pemasukan harus lebih dari 0");
+    perubahan.amount = nominal;
+  }
+  if (body.description !== undefined) {
+    if (!body.description?.trim()) throw err("Keterangan pemasukan wajib diisi");
+    perubahan.description = body.description.trim();
+  }
+  if (body.accountId !== undefined) perubahan.accountId = body.accountId;
+  if (body.cashAccountId !== undefined) perubahan.cashAccountId = body.cashAccountId;
+  if (body.attachmentUrl !== undefined) perubahan.attachmentUrl = body.attachmentUrl || null;
+  if (body.notes !== undefined) perubahan.notes = body.notes?.trim() || null;
+  return perubahan;
+}
+
+financeTxRouter.post("/other-income/:id/koreksi", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim();
+    if (!reason) throw err("Alasan koreksi wajib diisi");
+
+    const hasil = await prisma.$transaction(async (tx) => {
+      const inc = await tx.finOtherIncome.findUnique({ where: { id: req.params.id } });
+      if (!inc) throw err("Pemasukan tidak ditemukan", 404);
+      if (inc.cancelledAt) throw err("Pemasukan yang sudah dibatalkan tidak bisa dikoreksi — buat pemasukan baru", 409);
+
+      const perubahan = siapkanPerubahanOtherIncome(req.body);
+      if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
+
+      if (perubahan.accountId) {
+        const akun = await tx.finAccount.findUnique({ where: { id: perubahan.accountId }, select: { type: true } });
+        if (!akun) throw err("Akun pendapatan tidak ditemukan", 404);
+        if (akun.type !== "PENDAPATAN") {
+          throw err("Pemasukan lain-lain harus menunjuk akun bertipe Pendapatan — memilih akun lain akan merusak laba rugi");
+        }
+      }
+
+      const alasanKoreksi = `Koreksi ${inc.incomeNumber} — ${reason}`;
+      await balikkanJurnalAktif(tx, { keyPrefix: CASH_KEY.otherIncome(inc.id), alasan: alasanKoreksi, userId: req.user.id });
+
+      const before = Object.fromEntries(Object.keys(perubahan).map((k) => [k, inc[k]]));
+      const updated = await tx.finOtherIncome.update({ where: { id: inc.id }, data: perubahan });
+      await postOtherIncome(tx, { incomeId: inc.id, userId: req.user.id, keySuffix: suffixKoreksi() });
+
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_OTHER_INCOME, entityId: inc.id,
+        eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: req.user.id,
+        metadata: { incomeNumber: inc.incomeNumber, reason, before, after: perubahan },
+      });
+      return updated;
     });
     res.json({ ...hasil, amount: moneyToNumber(hasil.amount) });
   } catch (e) {

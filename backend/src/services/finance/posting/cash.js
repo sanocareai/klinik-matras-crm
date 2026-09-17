@@ -17,11 +17,14 @@ import { resolveAccount, SYSTEM_KEYS } from "../accounts.js";
 import { toMoney } from "../money.js";
 
 export const KEY = {
-  transfer: (id) => `TRANSFER_KAS:${id}`,
-  otherIncome: (id) => `PEMASUKAN_LAIN:${id}`,
+  // `suffix` (opsional) — lihat catatan yang sama di posting/expense.js:
+  // dipakai jalur Koreksi supaya jurnal PENGGANTI (setelah reversal) tidak
+  // bentrok UNIQUE idempotencyKey dengan jurnal lama yang sudah REVERSED.
+  transfer: (id, suffix = "") => `TRANSFER_KAS:${id}${suffix}`,
+  otherIncome: (id, suffix = "") => `PEMASUKAN_LAIN:${id}${suffix}`,
 };
 
-export async function postCashTransfer(tx, { transferId, userId = null }) {
+export async function postCashTransfer(tx, { transferId, userId = null, keySuffix = "" }) {
   const t = await tx.finCashTransfer.findUnique({
     where: { id: transferId },
     include: {
@@ -31,7 +34,7 @@ export async function postCashTransfer(tx, { transferId, userId = null }) {
   });
   if (!t) throw new Error(`Transfer ${transferId} tidak ditemukan`);
 
-  const sudahAda = await findEntryByKey(tx, KEY.transfer(transferId));
+  const sudahAda = await findEntryByKey(tx, KEY.transfer(transferId, keySuffix));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
   const amount = toMoney(t.amount);
@@ -67,21 +70,21 @@ export async function postCashTransfer(tx, { transferId, userId = null }) {
     description: `${t.transferNumber} — ${t.fromAccount.name} → ${t.toAccount.name}${t.notes ? `: ${t.notes}` : ""}`,
     source: "TRANSFER_KAS",
     sourceId: transferId,
-    idempotencyKey: KEY.transfer(transferId),
+    idempotencyKey: KEY.transfer(transferId, keySuffix),
     userId,
     lines,
   });
   return { posted: true, entry, created };
 }
 
-export async function postOtherIncome(tx, { incomeId, userId = null }) {
+export async function postOtherIncome(tx, { incomeId, userId = null, keySuffix = "" }) {
   const inc = await tx.finOtherIncome.findUnique({
     where: { id: incomeId },
     include: { cashAccount: { select: { id: true, name: true, accountId: true } } },
   });
   if (!inc) throw new Error(`Pemasukan ${incomeId} tidak ditemukan`);
 
-  const sudahAda = await findEntryByKey(tx, KEY.otherIncome(incomeId));
+  const sudahAda = await findEntryByKey(tx, KEY.otherIncome(incomeId, keySuffix));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
   const amount = toMoney(inc.amount);
@@ -91,7 +94,7 @@ export async function postOtherIncome(tx, { incomeId, userId = null }) {
     description: `${inc.incomeNumber} — ${inc.description}`,
     source: "PEMASUKAN_LAIN",
     sourceId: incomeId,
-    idempotencyKey: KEY.otherIncome(incomeId),
+    idempotencyKey: KEY.otherIncome(incomeId, keySuffix),
     userId,
     lines: [
       {

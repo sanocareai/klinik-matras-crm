@@ -28,8 +28,15 @@ import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { toMoney } from "../money.js";
 
 export const KEY = {
-  expense: (id) => `PENGELUARAN:${id}`,
-  expensePaid: (id) => `PENGELUARAN_DIBAYAR:${id}`,
+  // `suffix` (opsional) — dipakai SATU-SATUNYA oleh alur Koreksi
+  // (routes/financeTransactions.js, POST /expenses/:id/koreksi). Jurnal
+  // asli TETAP idempotencyKey polos (kompatibel dengan seluruh data yang
+  // sudah terposting); setelah dikoreksi, jurnal PENGGANTI butuh key BARU
+  // supaya tidak bentrok UNIQUE constraint dengan jurnal lama yang sudah
+  // REVERSED (findEntryByKey tidak peduli status — lihat komentar panjang
+  // di POST /expenses/:id/koreksi).
+  expense: (id, suffix = "") => `PENGELUARAN:${id}${suffix}`,
+  expensePaid: (id, suffix = "") => `PENGELUARAN_DIBAYAR:${id}${suffix}`,
   vehicleExpense: (id) => `BIAYA_KENDARAAN:${id}`,
   vehicleService: (id) => `BIAYA_SERVIS_KENDARAAN:${id}`,
   adSpend: (id) => `BIAYA_IKLAN:${id}`,
@@ -41,7 +48,7 @@ export const KEY = {
  * approval sengaja tidak menyentuh buku besar sama sekali: pengajuan yang
  * belum tentu disetujui bukan beban.
  */
-export async function postExpenseApproved(tx, { expenseId, userId = null }) {
+export async function postExpenseApproved(tx, { expenseId, userId = null, keySuffix = "" }) {
   const e = await tx.finExpense.findUnique({
     where: { id: expenseId },
     include: {
@@ -53,7 +60,7 @@ export async function postExpenseApproved(tx, { expenseId, userId = null }) {
   });
   if (!e) throw new Error(`Pengeluaran ${expenseId} tidak ditemukan`);
 
-  const sudahAda = await findEntryByKey(tx, KEY.expense(expenseId));
+  const sudahAda = await findEntryByKey(tx, KEY.expense(expenseId, keySuffix));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
   const amount = toMoney(e.amount);
@@ -90,7 +97,7 @@ export async function postExpenseApproved(tx, { expenseId, userId = null }) {
     description: `${e.expenseNumber} — ${e.description}`,
     source: "PENGELUARAN",
     sourceId: expenseId,
-    idempotencyKey: KEY.expense(expenseId),
+    idempotencyKey: KEY.expense(expenseId, keySuffix),
     userId,
     lines: [
       {
@@ -119,7 +126,7 @@ export async function postExpenseApproved(tx, { expenseId, userId = null }) {
  * benar-benar keluar. Mode LANGSUNG tidak pernah melewati fungsi ini
  * (uangnya sudah keluar di jurnal pengakuan bebannya).
  */
-export async function postExpensePaid(tx, { expenseId, userId = null }) {
+export async function postExpensePaid(tx, { expenseId, userId = null, keySuffix = "" }) {
   const e = await tx.finExpense.findUnique({
     where: { id: expenseId },
     include: {
@@ -131,7 +138,7 @@ export async function postExpensePaid(tx, { expenseId, userId = null }) {
   if (!e) throw new Error(`Pengeluaran ${expenseId} tidak ditemukan`);
   if (e.mode === "LANGSUNG") return { posted: false, reason: "mode_langsung" };
 
-  const sudahAda = await findEntryByKey(tx, KEY.expensePaid(expenseId));
+  const sudahAda = await findEntryByKey(tx, KEY.expensePaid(expenseId, keySuffix));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
   if (!e.cashAccount) {
@@ -149,7 +156,7 @@ export async function postExpensePaid(tx, { expenseId, userId = null }) {
     description: `Pembayaran ${e.expenseNumber} — ${e.description}`,
     source: "PENGELUARAN",
     sourceId: expenseId,
-    idempotencyKey: KEY.expensePaid(expenseId),
+    idempotencyKey: KEY.expensePaid(expenseId, keySuffix),
     userId,
     lines: [
       {
