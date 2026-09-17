@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "983388686179",
-    "project_id": "klinik-matras-driver",
-    "storage_bucket": "klinik-matras-driver.firebasestorage.app"
+    "project_number": "360586392686",
+    "project_id": "klinik-matras-driver-23a9c",
+    "storage_bucket": "klinik-matras-driver-23a9c.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:983388686179:android:218bca5413dc04cc6f3556",
+        "mobilesdk_app_id": "1:360586392686:android:fcb68009ab46db7837227f",
         "android_client_info": {
           "package_name": "com.klinikmatras.drivermobile"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBjRq7mAIlONpMJX0mSgXSwnmm4UZXnmXE"
+          "current_key": "AIzaSyBeKSuBoWJ4Qh760CJmuZvpXBfAxY0fRpA"
         }
       ],
       "services": {
