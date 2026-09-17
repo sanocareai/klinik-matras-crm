@@ -776,7 +776,19 @@ export default function Layout({ user, onLogout }) {
   // `hubGlassPilot = onHub` (keempat HUB_ONLY_PATHS + "/portal" sama-sama
   // aman), bukan daftar terpisah lagi.
   const hubGlassPilot = onHub;
-  const glassOn = divisionKey === "armada" || divisionKey === "bengkel" || divisionKey === "warehouse" || divisionKey === "b2b" || pageGlassPilot || hubGlassPilot;
+  // D-180 (17 September 2026) — "finance" (Finance & Accounting) menyusul
+  // pola SAMA PERSIS dengan bengkel/warehouse/b2b: divisi operasional BARU,
+  // dibangun langsung dengan Sano DS v2 (PageContainer/Card/Badge/Modal/
+  // TableWrap), nol kelas CSS legacy/hardcode warna — diaudit ulang saat
+  // menyalakan gerbang ini (grep menyeluruh atas pages/finance/* +
+  // features/finance/*): nol `rounded-2xl` bare (satu-satunya pemakaian ada
+  // di dalam TableWrap sendiri, komponen bersama yang SUDAH terbukti aman
+  // di Warehouse — pola Card > TableWrap identik), nol bg-white/hex
+  // hardcode, nol classname legacy di luar utility Tailwind biasa. Kategori
+  // paling aman yang sama dengan /broadcast-sales, /komplain, /pengaturan-
+  // sales (D-109/D-154) — jadi langsung ikut kaca penuh sekaligus, bukan
+  // per-halaman.
+  const glassOn = divisionKey === "armada" || divisionKey === "bengkel" || divisionKey === "warehouse" || divisionKey === "b2b" || divisionKey === "finance" || pageGlassPilot || hubGlassPilot;
 
   // Driver murni cuma punya JOB_OWN_READ/JOB_OWN_WRITE — DELAPAN dari sembilan
   // menu Delivery (Dashboard, Route Planner, Live Tracking, Driver & Armada,

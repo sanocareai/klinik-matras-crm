@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
+import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import { api } from "@/api.js";
 import {
   HalamanFinance, KartuAngka, Uang, formatUang, CatatanLaporan, Penjelasan,
@@ -60,6 +61,34 @@ export default function FinanceDashboard() {
     >
       {data && (
         <>
+          {/* Command center — pola SAMA dengan Bengkel/Armada/Kendali/B2B
+              (D-180, menyusul rollout kaca/hero yang sama). tone="blue"
+              mengikuti konvensi workspace BARU pasca-unifikasi 1 Agustus
+              2026 (lihat B2BOrders.jsx) — bukan warna baru per divisi.
+              SELURUH angka di stats/health diambil langsung dari respons
+              API, tidak ada yang dikarang: kalau finance belum disiapkan
+              (totalKas 0 & belum ada rekening), tile-nya tetap tampil apa
+              adanya (Rp0), bukan disembunyikan atau diganti data contoh. */}
+          <WorkspaceHero
+            tone="blue"
+            title="Posisi Keuangan"
+            subtitle={`Periode ${tanggalPendek(periode.from)} – ${tanggalPendek(periode.to)}.`}
+            health={
+              data.catatan.gapTerbuka > 0
+                ? { label: `${data.catatan.gapTerbuka} transaksi belum lengkap`, tone: "warn" }
+                : { label: "Semua transaksi terbukukan", tone: "ok" }
+            }
+            stats={[
+              { label: "Kas & Bank", value: formatUang(data.totalKas), hint: `${data.kasBank.length} rekening` },
+              {
+                label: "Laba Bersih Periode", value: formatUang(data.labaRugi.labaBersih),
+                hint: data.labaRugi.marginBersih != null ? `Margin ${data.labaRugi.marginBersih.toFixed(1)}%` : undefined,
+              },
+              { label: "Piutang", value: formatUang(data.piutang.total) },
+              { label: "Utang Usaha", value: formatUang(data.utang.total) },
+            ]}
+          />
+
           <CatatanLaporan catatan={data.catatan} />
 
           {/* Bagan akun belum dipasang = modul belum bisa membukukan apa pun.
