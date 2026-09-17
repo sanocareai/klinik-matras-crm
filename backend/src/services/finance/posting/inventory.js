@@ -42,10 +42,24 @@ export const KEY = {
  * Mengembalikan null kalau material itu belum pernah punya penerimaan
  * bermuatan harga — pemanggil WAJIB memperlakukan null sebagai gap, bukan
  * sebagai nol.
+ *
+ * `asOf` (opsional) — batasi penerimaan yang ikut dihitung sampai TANGGAL
+ * INI SAJA (createdAt <= asOf). WAJIB dioper saat menilai pengeluaran yang
+ * baru diposting BELAKANGAN dari yang seharusnya (retry gap, sinkronisasi
+ * /finance/sync/pemakaian-bahan) — tanpa ini, rata-rata dihitung dari
+ * SELURUH penerimaan yang ada SAAT INI, termasuk yang baru masuk SETELAH
+ * pengeluaran itu sendiri terjadi. Contoh nyata: pemakaian tanggal 1
+ * tertahan gap (rekening belum siap), lalu tanggal 15 ada penerimaan baru
+ * dengan harga jauh berbeda — begitu gap tanggal 1 di-retry, HPP-nya wajib
+ * memakai harga yang berlaku SAMPAI tanggal 1, bukan rata-rata yang sudah
+ * tercampur penerimaan tanggal 15 yang belum ada saat pemakaian itu terjadi.
  */
-export async function hargaRataRata(tx, materialId) {
+export async function hargaRataRata(tx, materialId, { asOf } = {}) {
   const receipts = await tx.stockMovement.findMany({
-    where: { materialId, type: "RECEIPT", unitCost: { not: null } },
+    where: {
+      materialId, type: "RECEIPT", unitCost: { not: null },
+      ...(asOf && { createdAt: { lte: asOf } }),
+    },
     select: { qty: true, unitCost: true },
   });
   const berharga = receipts.filter((r) => Number(r.qty) > 0 && r.unitCost > 0);
@@ -87,7 +101,7 @@ async function bukukanPergerakan(tx, {
   const movements = await tx.stockMovement.findMany({
     where: movementWhere,
     select: {
-      id: true, type: true, qty: true, unitId: true,
+      id: true, type: true, qty: true, unitId: true, createdAt: true,
       material: { select: { id: true, code: true, name: true } },
     },
   });
@@ -98,7 +112,9 @@ async function bukukanPergerakan(tx, {
   const tanpaHarga = [];
 
   for (const m of movements) {
-    const harga = await hargaRataRata(tx, m.material.id);
+    // asOf = createdAt movement ITU SENDIRI — lihat komentar panjang di
+    // hargaRataRata soal kenapa ini wajib, bukan opsional.
+    const harga = await hargaRataRata(tx, m.material.id, { asOf: m.createdAt });
     if (harga == null) {
       tanpaHarga.push(m);
       continue;

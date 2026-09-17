@@ -29,14 +29,27 @@ function bikinTx({ periode = null, entriBerdasarKey = new Map(), lemparP2002 = f
     entries: [],
     periodeDibuat: [],
     seq: 0,
+    lockCalls: [],
+    savepointCalls: [],
   };
   const tx = {
     _state: state,
+    // ensurePeriodOpen() mengunci baris periode lewat lockRowForUpdate()
+    // (reuse dari inventoryLedger.js) — stub ini TIDAK memverifikasi
+    // semantik locking Postgres sungguhan (itu tugas tes integrasi
+    // financeLedger.integration.test.js), cuma memastikan pemanggilnya
+    // tidak pernah menyentuh tabel selain literal yang sudah dikenal.
+    $queryRawUnsafe: async (sql, id) => { state.lockCalls.push({ sql, id }); return []; },
+    // SAVEPOINT/ROLLBACK TO SAVEPOINT (ensurePeriodOpen & postJournal, lihat
+    // komentar panjang di journal.js soal kenapa ini wajib) — stub cuma
+    // perlu menerima pemanggilannya tanpa error, semantik rollback-nya
+    // sendiri hanya bisa dibuktikan terhadap Postgres sungguhan (integration).
+    $executeRawUnsafe: async (sql) => { state.savepointCalls.push(sql); return 0; },
     orderSequence: {
       upsert: async () => ({ lastSeq: ++state.seq }),
     },
     finPeriod: {
-      findUnique: async () => periode,
+      findUnique: async () => (periode ? { id: "p-existing", ...periode } : periode),
       create: async ({ data }) => {
         state.periodeDibuat.push(data);
         return { ...data, id: "p1" };

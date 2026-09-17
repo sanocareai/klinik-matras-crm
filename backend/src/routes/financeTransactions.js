@@ -36,8 +36,11 @@ import {
   postSupplierBill, postSupplierPayment, recomputeBillStatus, KEY as SUPPLIER_KEY,
 } from "../services/finance/posting/supplier.js";
 import { postCashTransfer, postOtherIncome, KEY as CASH_KEY } from "../services/finance/posting/cash.js";
-import { postRefund, KEY as ORDER_KEY } from "../services/finance/posting/orderRevenue.js";
-import { setAllocations, paidForOrder, AllocationError } from "../services/finance/allocation.js";
+import { postRefund, sisaBisaDirefund, KEY as ORDER_KEY } from "../services/finance/posting/orderRevenue.js";
+import { setAllocations, AllocationError } from "../services/finance/allocation.js";
+// Reuse SENGAJA lintas domain — lihat catatan yang sama di allocation.js
+// soal kenapa lockRowForUpdate dipakai ulang, bukan disalin.
+import { lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { handleFinanceError, rentangDariQuery } from "./finance.js";
 
@@ -1039,16 +1042,15 @@ financeTxRouter.post("/refunds", requirePermission(P.FINANCE_POST), async (req, 
     // Refund TIDAK BOLEH melebihi uang yang benar-benar pernah diterima
     // untuk order itu. Tanpa cek ini, "refund" jadi jalan mengeluarkan uang
     // perusahaan tanpa dokumen pengeluaran & tanpa approval yang sesuai.
+    // (Cek ini DIULANG LAGI di dalam transaksi POST /refunds/:id/approve —
+    // lihat komentar di sana soal kenapa satu kali cek di sini saja tidak
+    // cukup untuk dua refund yang dibuat hampir bersamaan.)
     const gate = await getVerificationGate(prisma);
-    const sudahDibayar = await paidForOrder(prisma, orderId, gate);
-    const refundSebelumnya = await prisma.finRefund.aggregate({
-      where: { orderId, status: "DISETUJUI" }, _sum: { amount: true },
-    });
-    const sisaBisaDirefund = sudahDibayar.minus(toMoney(refundSebelumnya._sum.amount || 0));
-    if (nominal.greaterThan(sisaBisaDirefund)) {
+    const sisa = await sisaBisaDirefund(prisma, orderId, gate);
+    if (nominal.greaterThan(sisa)) {
       throw err(
         `Refund ${nominal.toFixed(2)} melebihi uang yang pernah diterima untuk order ini ` +
-        `(sisa yang bisa dikembalikan: ${sisaBisaDirefund.toFixed(2)})`
+        `(sisa yang bisa dikembalikan: ${sisa.toFixed(2)})`
       );
     }
 
@@ -1076,6 +1078,37 @@ financeTxRouter.post("/refunds/:id/approve", requirePermission(P.FINANCE_APPROVE
       const r = await tx.finRefund.findUnique({ where: { id: req.params.id } });
       if (!r) throw err("Refund tidak ditemukan", 404);
       if (r.status !== "MENUNGGU_APPROVAL") throw err(`Refund ini sudah berstatus ${r.status}`, 409);
+
+      // ⚠️ KUNCI baris Order SEBELUM menghitung sisa yang bisa direfund.
+      //
+      // Cek "tidak melebihi uang yang pernah diterima" DIULANG DI SINI
+      // memakai `tx` (bukan cuma di POST /refunds yang memakai `prisma`
+      // singleton di luar transaksi) — tapi tanpa lock ini, mengulang cek
+      // itu SENDIRIAN TIDAK CUKUP: dua transaksi approve yang berjalan
+      // BERSAMAAN untuk DUA refund BERBEDA pada order yang SAMA sama-sama
+      // membaca `sisaBisaDirefund` SEBELUM salah satu sempat menulis
+      // `tx.finRefund.update` di bawah (READ COMMITTED, default Postgres,
+      // tidak memblokir SELECT biasa) — keduanya melihat sisa yang SAMA,
+      // dua-duanya lolos, dua-duanya commit. Dibuktikan NYATA lewat
+      // Promise.all di financeLedger.integration.test.js sebelum lock ini
+      // ditambahkan (17 Sept 2026): dua refund yang bersama-sama melebihi
+      // uang yang diterima, DUA-DUANYA berstatus fulfilled.
+      //
+      // Order.id BUKAN kolom uuid (String @default(cuid()), lihat
+      // schema.prisma) — `cast: null` wajib, lihat komentar di
+      // lockRowForUpdate soal kenapa cast salah = error 42883.
+      await lockRowForUpdate(tx, '"Order"', r.orderId, { cast: null });
+
+      const gate = await getVerificationGate(tx);
+      const sisa = await sisaBisaDirefund(tx, r.orderId, gate);
+      if (toMoney(r.amount).greaterThan(sisa)) {
+        throw err(
+          `Refund ${r.refundNumber} (${toMoney(r.amount).toFixed(2)}) melebihi sisa yang bisa dikembalikan untuk order ` +
+          `ini sekarang (${sisa.toFixed(2)}) — kemungkinan ada refund lain untuk order yang sama sudah ` +
+          "disetujui lebih dulu. Tolak salah satu, atau kurangi nominalnya.",
+          409
+        );
+      }
 
       const updated = await tx.finRefund.update({
         where: { id: r.id },
@@ -1352,11 +1385,31 @@ financeTxRouter.post("/bank-lines/:id/match", requirePermission(P.FINANCE_POST),
   }
 });
 
+// Guard "rekonsiliasi sudah SELESAI" bersama — dipakai match (di atas) DAN
+// unmatch/ignore (di bawah). SEBELUM ini match sudah menolak periode yang
+// sudah ditutup, tapi unmatch/ignore TIDAK — jadi baris yang sudah
+// direkonsiliasi & dikunci lewat POST /complete tetap bisa diam-diam
+// dilepas/diabaikan ulang tanpa membuka kembali periodenya secara sadar
+// lewat endpoint yang memang untuk itu. Satu aturan, tiga endpoint.
+async function guardStatementBelumSelesai(tx, lineId) {
+  const baris = await tx.finBankStatementLine.findUnique({
+    where: { id: lineId },
+    select: { statement: { select: { status: true } } },
+  });
+  if (!baris) throw err("Baris koran bank tidak ditemukan", 404);
+  if (baris.statement.status === "SELESAI") {
+    throw err("Rekonsiliasi periode ini sudah ditutup — buka kembali kalau memang perlu diubah", 409);
+  }
+}
+
 financeTxRouter.post("/bank-lines/:id/unmatch", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    const updated = await prisma.finBankStatementLine.update({
-      where: { id: req.params.id },
-      data: { status: "BELUM_COCOK", matchedLineId: null, matchedAt: null, matchedById: null },
+    const updated = await prisma.$transaction(async (tx) => {
+      await guardStatementBelumSelesai(tx, req.params.id);
+      return tx.finBankStatementLine.update({
+        where: { id: req.params.id },
+        data: { status: "BELUM_COCOK", matchedLineId: null, matchedAt: null, matchedById: null },
+      });
     });
     res.json({ ...updated, amount: moneyToNumber(updated.amount) });
   } catch (e) {
@@ -1368,9 +1421,12 @@ financeTxRouter.post("/bank-lines/:id/ignore", requirePermission(P.FINANCE_POST)
   try {
     const note = req.body?.note?.trim();
     if (!note) throw err("Catatan wajib diisi — baris yang sengaja tidak dicocokkan harus punya penjelasan");
-    const updated = await prisma.finBankStatementLine.update({
-      where: { id: req.params.id },
-      data: { status: "DIABAIKAN", note, matchedById: req.user.id, matchedAt: new Date() },
+    const updated = await prisma.$transaction(async (tx) => {
+      await guardStatementBelumSelesai(tx, req.params.id);
+      return tx.finBankStatementLine.update({
+        where: { id: req.params.id },
+        data: { status: "DIABAIKAN", note, matchedById: req.user.id, matchedAt: new Date() },
+      });
     });
     res.json({ ...updated, amount: moneyToNumber(updated.amount) });
   } catch (e) {

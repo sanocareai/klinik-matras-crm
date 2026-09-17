@@ -25,24 +25,38 @@ import "./setup/env.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
-import { createTestUser } from "./setup/fixtures.js";
+import { createTestUser, createTestMaterial } from "./setup/fixtures.js";
+import { buildTestApp, startTestServer } from "./setup/testApp.js";
+import { makeClient } from "./setup/httpClient.js";
 
 import { postJournal, reverseJournal, STATUS_DIHITUNG } from "../../src/services/finance/journal.js";
 import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/finance/accounts.js";
-import { postPaymentReceived, postRevenueRecognition } from "../../src/services/finance/posting/orderRevenue.js";
+import { postPaymentReceived, postRevenueRecognition, postRefund, sisaBisaDirefund } from "../../src/services/finance/posting/orderRevenue.js";
+import { setAllocations } from "../../src/services/finance/allocation.js";
+import { postSupplierBill, nilaiPenerimaan } from "../../src/services/finance/posting/supplier.js";
+import { hargaRataRata, postStockMovementCost } from "../../src/services/finance/posting/inventory.js";
 import { SETTING_KEYS, setSetting } from "../../src/services/finance/settings.js";
 import { recomputeOrderPaymentStatus } from "../../src/services/paymentLedger.js";
 import { neracaSaldo, labaRugi, neraca, umurPiutang } from "../../src/services/finance/reports.js";
-import { toMoney } from "../../src/services/finance/money.js";
+import { toMoney, ZERO } from "../../src/services/finance/money.js";
 
 // Pembersihan memakai truncateAll() BERSAMA dari setup/testDb.js — tabel
 // fin_* sudah terdaftar eksplisit di sana. SENGAJA tidak punya daftar
 // tabel sendiri di file ini: dua daftar yang harus dijaga sinkron adalah
 // cara paling pasti salah satunya tertinggal saat ada tabel baru.
 
-test.before(async () => { await truncateAll(); });
+let server;
+test.before(async () => {
+  await truncateAll();
+  // Server HTTP nyata HANYA untuk test yang benar-benar butuh menembus
+  // middleware requirePermission + urutan operasi PERSIS route asli (lihat
+  // test konkurensi refund di bawah) — sisa file ini sengaja memanggil
+  // fungsi service langsung, lebih cepat & cukup untuk membuktikan logika
+  // akuntansinya.
+  server = await startTestServer(buildTestApp());
+});
 test.afterEach(async () => { await truncateAll(); });
-test.after(async () => { await truncateAll(); await testPrisma.$disconnect(); });
+test.after(async () => { await truncateAll(); await server.close(); await testPrisma.$disconnect(); });
 
 // ── Penyiapan lingkungan finance yang lengkap ───────────────────────────
 async function siapkanFinance() {
@@ -455,4 +469,237 @@ test("Periode TERTUTUP menolak jurnal baru terhadap Postgres sungguhan", async (
 
   const jumlah = await testPrisma.finJournalEntry.count({ where: { description: "uji periode tertutup" } });
   assert.equal(jumlah, 0, "tidak boleh ada jejak jurnal yang ditolak");
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// 5. KONKURENSI NYATA — 5 celah yang ditemukan code review (17 Sept 2026)
+// ═════════════════════════════════════════════════════════════════════════
+//
+// KENAPA BAGIAN INI ADA: kelima perbaikan di bawah SEMUANYA lolos
+// tests/financeJournal.test.js & tests/financeAllocation.test.js (stub) —
+// stub itu memanggil fungsinya SEKALI, SEKUENSIAL, jadi mustahil menguji
+// klaim inti perbaikan ini: "dua permintaan yang tumpang tindih waktu di
+// Postgres SUNGGUHAN tidak bisa dua-duanya lolos". Meniru pola
+// concurrency.integration.test.js: Promise.all ke Postgres nyata, baca
+// hasil akhirnya, bukan menebak dari kode.
+
+test("KONKURENSI NYATA: dua refund MENUNGGU_APPROVAL untuk order yang SAMA — tidak boleh dua-duanya disetujui kalau totalnya melebihi uang yang pernah diterima", async () => {
+  // Lewat HTTP ke route ASLI (bukan meniru ulang logikanya di sini) —
+  // supaya lock yang benar-benar melindungi race ini (lockRowForUpdate atas
+  // baris Order di POST /refunds/:id/approve) ikut teruji. Pola yang sama
+  // dengan concurrency.integration.test.js.
+  const { rekeningKas } = await siapkanFinance();
+  const { user, token } = await createTestUser({ roles: ["FINANCE"] });
+  const client = makeClient(server.baseUrl, token);
+  const { order } = await buatOrder({ value: 2_000_000 });
+
+  const payment = await testPrisma.payment.create({
+    data: { orderId: order.id, amount: 2_000_000, method: "CASH", recordedById: user.id },
+  });
+  await testPrisma.$transaction((tx) => postPaymentReceived(tx, { paymentId: payment.id, userId: user.id }));
+
+  // Dua refund, masing-masing 1.500.000 — SENDIRI-SENDIRI valid saat dibuat
+  // (sisa 2.000.000, belum ada satu pun yang DISETUJUI), tapi BERSAMA-SAMA
+  // (3.000.000) melebihi uang yang pernah diterima untuk order ini.
+  const refundA = await testPrisma.finRefund.create({
+    data: {
+      refundNumber: `RFD-TESA-${Date.now()}`, orderId: order.id, date: new Date("2026-09-17"),
+      amount: 1_500_000, reason: "uji A", cashAccountId: rekeningKas.id,
+      status: "MENUNGGU_APPROVAL", createdById: user.id,
+    },
+  });
+  const refundB = await testPrisma.finRefund.create({
+    data: {
+      refundNumber: `RFD-TESB-${Date.now()}`, orderId: order.id, date: new Date("2026-09-17"),
+      amount: 1_500_000, reason: "uji B", cashAccountId: rekeningKas.id,
+      status: "MENUNGGU_APPROVAL", createdById: user.id,
+    },
+  });
+
+  const [resA, resB] = await Promise.all([
+    client.post(`/api/finance/refunds/${refundA.id}/approve`, {}),
+    client.post(`/api/finance/refunds/${refundB.id}/approve`, {}),
+  ]);
+
+  const statuses = [resA.status, resB.status].sort((a, b) => a - b);
+  assert.deepEqual(
+    statuses, [200, 409],
+    "tepat SATU refund yang boleh disetujui walau dua permintaan approve dikirim nyaris bersamaan — " +
+    `dua-duanya lolos berarti order ini dikembalikan uang melebihi yang pernah diterima. Hasil: ${JSON.stringify([resA.status, resB.status])} ` +
+    `body: ${JSON.stringify([resA.body, resB.body])}`
+  );
+
+  const disetujui = await testPrisma.finRefund.count({ where: { orderId: order.id, status: "DISETUJUI" } });
+  assert.equal(disetujui, 1, "hanya satu refund yang benar-benar berstatus DISETUJUI di database");
+
+  const sisaAkhir = await sisaBisaDirefund(testPrisma, order.id, { enabled: false });
+  assert.ok(sisaAkhir.greaterThanOrEqualTo(0), "sisa yang bisa direfund TIDAK BOLEH pernah negatif");
+});
+
+test("KONKURENSI NYATA: setAllocations dua panggilan PARALEL untuk payment yang SAMA — alokasi akhir tidak boleh menggandakan nominal payment", async () => {
+  await siapkanFinance();
+  const { user } = await createTestUser({ roles: ["FINANCE"] });
+  const { order: orderAsal } = await buatOrder({ value: 1_000_000 });
+  const { order: orderB } = await buatOrder({ value: 1_000_000 });
+  const { order: orderC } = await buatOrder({ value: 1_000_000 });
+
+  const payment = await testPrisma.payment.create({
+    data: { orderId: orderAsal.id, amount: 1_000_000, method: "CASH", recordedById: user.id },
+  });
+
+  const [hasilA, hasilB] = await Promise.allSettled([
+    testPrisma.$transaction((tx) => setAllocations(tx, {
+      paymentId: payment.id, allocations: [{ orderId: orderB.id, amount: 1_000_000 }], userId: user.id,
+    })),
+    testPrisma.$transaction((tx) => setAllocations(tx, {
+      paymentId: payment.id, allocations: [{ orderId: orderC.id, amount: 1_000_000 }], userId: user.id,
+    })),
+  ]);
+
+  // Lock hanya MENYERIALKAN, tidak menolak — dua-duanya boleh "berhasil"
+  // (yang belakangan menang, itu memang perilaku "ganti total" yang
+  // didokumentasikan). Yang TIDAK BOLEH: hasil akhir menggandakan nominal.
+  assert.ok(
+    hasilA.status === "fulfilled" || hasilB.status === "fulfilled",
+    "minimal satu panggilan harus berhasil"
+  );
+
+  const rows = await testPrisma.finPaymentAllocation.findMany({ where: { paymentId: payment.id } });
+  const total = rows.reduce((acc, r) => acc.plus(toMoney(r.amount)), ZERO);
+  assert.equal(
+    total.toFixed(2), "1000000.00",
+    `total alokasi akhir HARUS persis sama dengan nominal payment (1000000.00), didapat ${total.toFixed(2)} dari ${rows.length} baris — ` +
+    "kalau lebih besar, dua panggilan yang tumpang tindih waktu berhasil menulis alokasi yang saling menggandakan nominal"
+  );
+});
+
+test("KONKURENSI NYATA: ensurePeriodOpen menyerialkan posting jurnal vs penutupan periode — urutan commit menentukan hasil, tidak pernah dua-duanya 'menang' tanpa saling tahu", async () => {
+  await siapkanFinance();
+  const kas = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.KAS } });
+  const pendapatan = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.PENDAPATAN_LAIN } });
+  const { user } = await createTestUser({ roles: ["FINANCE"] });
+
+  const urutanSelesai = [];
+  const posting = testPrisma.$transaction((tx) => postJournal(tx, {
+    date: "2026-11-15", description: "uji race periode", source: "MANUAL",
+    lines: [{ accountId: kas.id, debit: 1000 }, { accountId: pendapatan.id, credit: 1000 }],
+  })).then(
+    (r) => { urutanSelesai.push("POSTING"); return r; },
+    (e) => { urutanSelesai.push("POSTING"); throw e; }
+  );
+  const penutupan = testPrisma.$transaction((tx) => tx.finPeriod.upsert({
+    where: { year_month: { year: 2026, month: 11 } },
+    update: { status: "CLOSED", closedAt: new Date(), closedById: user.id },
+    create: { year: 2026, month: 11, status: "CLOSED", closedAt: new Date(), closedById: user.id },
+  })).then(
+    (r) => { urutanSelesai.push("PENUTUPAN"); return r; },
+    (e) => { urutanSelesai.push("PENUTUPAN"); throw e; }
+  );
+
+  const [hasilPosting, hasilPenutupan] = await Promise.allSettled([posting, penutupan]);
+
+  // Penutupan (upsert polos) mustahil gagal karena race ini.
+  assert.equal(hasilPenutupan.status, "fulfilled", "penutupan periode tidak boleh gagal akibat race ini");
+
+  if (urutanSelesai[0] === "PENUTUPAN") {
+    // Penutupan commit LEBIH DULU (menang lock) -> posting yang baru
+    // mendapat giliran setelahnya WAJIB membaca ulang status CLOSED dan
+    // ditolak. Kalau posting tetap lolos di sini, itu berarti lock tidak
+    // benar-benar menyerialkan — persis bug yang diperbaiki.
+    assert.equal(hasilPosting.status, "rejected", "penutupan menang duluan (commit lebih dulu) — posting SETELAHNYA wajib ditolak karena periode sudah tertutup");
+    assert.match(hasilPosting.reason.message, /sudah ditutup/i);
+  } else {
+    // Posting commit lebih dulu (menang lock) -> boleh berhasil, periode
+    // baru ditutup SETELAHNYA (itu sah, jurnalnya sudah aman masuk sebelum
+    // periode benar-benar tertutup).
+    assert.equal(hasilPosting.status, "fulfilled", "posting menang duluan (commit lebih dulu) — harus berhasil, periode baru ditutup setelahnya");
+  }
+
+  const jumlahJurnal = await testPrisma.finJournalEntry.count({ where: { description: "uji race periode" } });
+  assert.equal(jumlahJurnal, hasilPosting.status === "fulfilled" ? 1 : 0, "jurnal ada TEPAT kalau posting benar-benar berhasil, tidak ada jejak kalau ditolak");
+});
+
+test("hargaRataRata(asOf) memakai harga yang BERLAKU SAAT transaksi terjadi, bukan rata-rata sekarang yang sudah tercampur penerimaan belakangan", async () => {
+  await siapkanFinance();
+  const material = await createTestMaterial({ unit: "PCS" });
+
+  // R1: 1 Jan, 10 pcs @ Rp1.000 (rata-rata saat itu = 1.000)
+  await testPrisma.stockMovement.create({
+    data: { materialId: material.id, type: "RECEIPT", qty: 10, unitCost: 1000, createdAt: new Date("2026-01-01T00:00:00Z") },
+  });
+  // ISSUE terjadi 15 Jan — SEBELUM penerimaan R2 di bawah pernah ada.
+  const issue = await testPrisma.stockMovement.create({
+    data: { materialId: material.id, type: "ISSUE", qty: -4, createdAt: new Date("2026-01-15T00:00:00Z") },
+  });
+  // R2: 1 Feb, 10 pcs @ Rp3.000 — masuk BELAKANGAN, harga jauh lebih mahal.
+  await testPrisma.stockMovement.create({
+    data: { materialId: material.id, type: "RECEIPT", qty: 10, unitCost: 3000, createdAt: new Date("2026-02-01T00:00:00Z") },
+  });
+
+  const hargaSaatIssue = await testPrisma.$transaction((tx) => hargaRataRata(tx, material.id, { asOf: issue.createdAt }));
+  assert.equal(hargaSaatIssue.toFixed(2), "1000.00", "asOf 15 Jan hanya boleh melihat R1 (1 Jan) — R2 (1 Feb) belum ada saat itu");
+
+  const hargaSekarang = await testPrisma.$transaction((tx) => hargaRataRata(tx, material.id, {}));
+  assert.equal(hargaSekarang.toFixed(2), "2000.00", "tanpa asOf, rata-rata SEKARANG memang sudah tercampur R1+R2 = (10*1000+10*3000)/20 = 2000 — beda dari yang berlaku saat issue");
+
+  // Buktikan end-to-end lewat jalur produksi sungguhan: postStockMovementCost
+  // WAJIB memakai harga 1.000 (asOf createdAt ISSUE), bukan 2.000.
+  const hasil = await testPrisma.$transaction((tx) => postStockMovementCost(tx, { movementId: issue.id }));
+  assert.equal(hasil.posted, true, JSON.stringify(hasil));
+
+  const bebanPokok = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.BEBAN_POKOK_BAHAN } });
+  const baris = await testPrisma.finJournalLine.findFirst({ where: { entryId: hasil.entry.id, accountId: bebanPokok.id } });
+  assert.equal(toMoney(baris.debit).toFixed(2), "4000.00", "4 pcs x Rp1.000 (harga saat transaksi) = Rp4.000, BUKAN 4 x Rp2.000 = Rp8.000");
+});
+
+test("postSupplierBill MENOLAK memposting tagihan atas goods receipt yang nilainya belum lengkap (bukan diam-diam salah klasifikasi ke Selisih Harga)", async () => {
+  await siapkanFinance();
+  const { user } = await createTestUser({ roles: ["FINANCE"] });
+  const material = await createTestMaterial({ unit: "PCS" });
+
+  const gr = await testPrisma.goodsReceipt.create({
+    data: { receiptNumber: `GR-TES-${Date.now()}`, sourceType: "MANUAL", supplier: "Supplier Tes", status: "COMPLETED" },
+  });
+  // Baris RECEIPT TANPA unitCost — gudang belum mengisi harga.
+  await testPrisma.stockMovement.create({
+    data: { materialId: material.id, type: "RECEIPT", qty: 5, unitCost: null, goodsReceiptId: gr.id },
+  });
+
+  const { total, tanpaHarga } = await nilaiPenerimaan(testPrisma, gr.id);
+  assert.equal(total.toFixed(2), "0.00");
+  assert.equal(tanpaHarga.length, 1);
+
+  const supplier = await testPrisma.finSupplier.create({
+    data: { code: `SUP-TES-${Date.now()}`, name: "Supplier Tes" },
+  });
+  const bill = await testPrisma.finSupplierBill.create({
+    data: {
+      billNumber: `BILL-TES-${Date.now()}`, supplierId: supplier.id, billDate: new Date("2026-09-17"),
+      amount: 5_000_000, description: "Uji tagihan tanpa harga", goodsReceiptId: gr.id,
+      status: "MENUNGGU_APPROVAL", createdById: user.id,
+    },
+  });
+
+  await assert.rejects(
+    () => testPrisma.$transaction((tx) => postSupplierBill(tx, { billId: bill.id, userId: user.id })),
+    /Lengkapi harga di Gudang/i,
+    "tagihan atas penerimaan yang belum lengkap harganya WAJIB ditolak, bukan dibukukan dengan nilai persediaan 0"
+  );
+
+  const jumlahJurnal = await testPrisma.finJournalEntry.count({ where: { sourceId: bill.id } });
+  assert.equal(jumlahJurnal, 0, "tidak boleh ada jurnal yang terlanjur tertulis untuk tagihan yang ditolak");
+
+  // Setelah harga dilengkapi, posting ulang harus berhasil dan nilai
+  // persediaannya PERSIS sama dengan nilai penerimaan, bukan 0.
+  await testPrisma.stockMovement.updateMany({ where: { goodsReceiptId: gr.id }, data: { unitCost: 10_000 } });
+  const hasil = await testPrisma.$transaction((tx) => postSupplierBill(tx, { billId: bill.id, userId: user.id }));
+  assert.equal(hasil.posted, true);
+
+  const utangBelumDitagih = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.UTANG_BELUM_DITAGIH } });
+  const barisGrir = await testPrisma.finJournalLine.findFirst({ where: { entryId: hasil.entry.id, accountId: utangBelumDitagih.id } });
+  assert.equal(toMoney(barisGrir.debit).toFixed(2), "50000.00", "5 pcs x Rp10.000 = Rp50.000 nilai penerimaan, menutup GRIR");
+
+  const akunSelisih = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.SELISIH_HARGA_PEMBELIAN } });
+  const barisSelisih = await testPrisma.finJournalLine.findFirst({ where: { entryId: hasil.entry.id, accountId: akunSelisih.id } });
+  assert.equal(toMoney(barisSelisih.debit).toFixed(2), "4950000.00", "selisih tagihan (5.000.000) vs nilai penerimaan (50.000) = 4.950.000, TIDAK diam-diam masuk Persediaan");
 });

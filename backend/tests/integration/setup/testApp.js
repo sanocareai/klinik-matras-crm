@@ -21,6 +21,7 @@ const { stockAdjustmentRouter } = await import("../../../src/routes/stockAdjustm
 const { replenishmentRouter } = await import("../../../src/routes/replenishment.js");
 const { warehouseReportsRouter } = await import("../../../src/routes/warehouseReports.js");
 const { unitRouter } = await import("../../../src/routes/units.js");
+const { financeTxRouter } = await import("../../../src/routes/financeTransactions.js");
 
 export function buildTestApp() {
   const app = express();
@@ -41,6 +42,7 @@ export function buildTestApp() {
   app.use("/api/inventory/adjustments", stockAdjustmentRouter);
   app.use("/api/inventory/replenishment", replenishmentRouter);
   app.use("/api/inventory/reports", warehouseReportsRouter);
+  app.use("/api/finance", financeTxRouter);
 
   return app;
 }

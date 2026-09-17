@@ -26,6 +26,10 @@
 //    boleh ditambahkan. Koreksi = reverseJournal().
 
 import { toMoney, sumMoney, ZERO, MoneyError } from "./money.js";
+// Reuse SENGAJA lintas domain — lihat catatan panjang di definisinya
+// (inventoryLedger.js) soal kenapa trik SQL ini (cast ::uuid) tidak boleh
+// disalin ulang di tempat kedua.
+import { lockRowForUpdate } from "../inventoryLedger.js";
 
 // Status jurnal yang IKUT DIHITUNG saat menyusun saldo/laporan.
 //
@@ -105,15 +109,75 @@ export async function ensurePeriodOpen(tx, date, { allowClosed = false } = {}) {
   const year = date.getUTCFullYear();
   const month = date.getUTCMonth() + 1;
 
-  const period = await tx.finPeriod.findUnique({ where: { year_month: { year, month } } });
+  let period = await tx.finPeriod.findUnique({ where: { year_month: { year, month } } });
   if (!period) {
+    // SAVEPOINT sebelum percobaan INSERT yang bisa gagal karena race dua
+    // transaksi sama-sama menciptakan periode yang sama — lihat komentar
+    // panjang di blok catch soal kenapa ini WAJIB, bukan sekadar try/catch.
+    await tx.$executeRawUnsafe("SAVEPOINT sp_ensure_period");
     try {
+      // Baru dibuat DI TRANSAKSI INI — tidak ada transaksi lain yang bisa
+      // sudah memegang baris yang baru saja kita INSERT, jadi aman
+      // dikembalikan langsung tanpa lock tambahan.
       return await tx.finPeriod.create({ data: { year, month, status: "OPEN" } });
     } catch (e) {
+      // ⚠️ ROLLBACK TO SAVEPOINT WAJIB SEBELUM query apa pun berikutnya di
+      // transaksi ini.
+      //
+      // Constraint violation (P2002) di Postgres MERACUNI SELURUH transaksi
+      // (kode 25P02 "current transaction is aborted, commands ignored
+      // until end of transaction block") sampai transaksi itu diakhiri —
+      // BUKAN cuma statement yang gagal. try/catch biasa di level JS
+      // menangkap error-nya, tapi TIDAK membersihkan status transaksi
+      // Postgres di baliknya: query BERIKUTNYA di tx yang sama (termasuk
+      // findUnique "baca ulang" di bawah, yang MEMANG tujuannya memulihkan
+      // diri dari race ini) ikut gagal dengan 25P02 alih-alih benar-benar
+      // membaca ulang. ROLLBACK TO SAVEPOINT mengembalikan transaksi ke
+      // keadaan SEHAT tepat sebelum INSERT yang gagal, tanpa membatalkan
+      // apa pun yang terjadi SEBELUM savepoint ini (jurnal pemanggil yang
+      // sedang diposting tetap utuh).
+      //
+      // Dibuktikan NYATA (bukan teori) lewat race dua postJournal()
+      // PARALEL ke bulan yang sama-sama belum punya baris fin_periods —
+      // financeLedger.integration.test.js, 17 Sept 2026: tanpa ROLLBACK TO
+      // SAVEPOINT ini, pemanggil yang kalah race gagal dengan error 25P02
+      // yang membingungkan alih-alih ditolak dengan pesan "periode sudah
+      // ditutup" yang jelas (atau berhasil posting kalau memang belum
+      // ditutup). Stub tidak pernah menangkap ini karena stub TIDAK PERNAH
+      // benar-benar mengirim SQL ke Postgres.
+      await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT sp_ensure_period");
       if (e.code !== "P2002") throw e; // dua request bersamaan — yang kalah baca ulang
-      return tx.finPeriod.findUnique({ where: { year_month: { year, month } } });
+      period = await tx.finPeriod.findUnique({ where: { year_month: { year, month } } });
     }
   }
+
+  // ⚠️ KUNCI baris periode SEBELUM memutuskan boleh/tidaknya posting.
+  //
+  // Tanpa ini: transaksi A (posting jurnal) membaca periode OPEN lewat
+  // findUnique biasa (SELECT polos, TIDAK mengunci apa pun di READ
+  // COMMITTED — default Postgres). SEBELUM A sampai ke INSERT jurnalnya
+  // sendiri, transaksi B (POST /periods/close, `finPeriod.upsert` — yang
+  // MEMANG mengunci baris lewat ON CONFLICT DO UPDATE) menutup periode
+  // yang SAMA dan commit lebih dulu. INSERT jurnal A tetap lolos karena
+  // tidak pernah ada yang memblokirnya — periode yang finance baru saja
+  // kunci diam-diam kebobolan satu jurnal lagi, tanpa error, tanpa gap.
+  //
+  // Dengan `FOR UPDATE` di sini: kalau B menang giliran lock duluan
+  // (closenya commit duluan), A menunggu sampai B selesai, LALU baru
+  // membaca status — melihat CLOSED dan menolak dengan benar. Kalau A
+  // menang duluan, B (upsert-nya juga butuh lock row yang sama untuk
+  // ON CONFLICT DO UPDATE) menunggu A commit dulu, baru menutup — jurnal A
+  // sudah aman masuk SEBELUM periode benar-benar tertutup. Kedua urutan
+  // sama-sama benar; yang tidak boleh terjadi cuma keduanya jalan
+  // berbarengan tanpa saling menunggu, dan itu yang dicegah lock ini.
+  await lockRowForUpdate(tx, "fin_periods", period.id);
+
+  // Baca ULANG statusnya SETELAH lock benar-benar didapat — kalau lock ini
+  // sempat menunggu (giliran B/close menang duluan), `period` hasil
+  // findUnique di atas sudah basi; status SEBENARNYA cuma pasti benar
+  // setelah lock ini lolos.
+  period = await tx.finPeriod.findUnique({ where: { id: period.id } });
+
   if (period.status === "CLOSED" && !allowClosed) {
     throw new JournalError(
       `Periode ${String(month).padStart(2, "0")}/${year} sudah ditutup — jurnal baru untuk periode itu ditolak. ` +
@@ -281,6 +345,10 @@ export async function postJournal(tx, {
 
   const entryNumber = await generateDocumentNumber(tx, "JV", bookDate);
 
+  // SAVEPOINT sebelum INSERT yang bisa gagal karena race idempotencyKey —
+  // lihat komentar panjang di catch (dan yang serupa di ensurePeriodOpen)
+  // soal kenapa ROLLBACK TO SAVEPOINT wajib, bukan sekadar try/catch biasa.
+  await tx.$executeRawUnsafe("SAVEPOINT sp_post_journal");
   try {
     const entry = await tx.finJournalEntry.create({
       data: {
@@ -313,6 +381,15 @@ export async function postJournal(tx, {
     });
     return { entry, created: true };
   } catch (e) {
+    // ⚠️ ROLLBACK TO SAVEPOINT WAJIB SEBELUM query apa pun berikutnya —
+    // constraint violation (P2002) MERACUNI SELURUH transaksi Postgres
+    // (25P02) sampai transaksi berakhir, bukan cuma statement yang gagal.
+    // Tanpa ini, `findUnique` pemulihan di bawah (yang MEMANG tujuannya
+    // membaca jurnal yang menang race) ikut gagal dengan 25P02 alih-alih
+    // benar-benar membaca ulang. Lihat komentar lengkap di ensurePeriodOpen
+    // (kelas bug yang SAMA, dibuktikan nyata di sana lewat integration
+    // test 17 Sept 2026).
+    await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT sp_post_journal");
     // P2002 pada idempotencyKey = request kembar yang lolos cek di atas.
     // Yang kalah race memakai jurnal yang menang, BUKAN gagal — hasil
     // akhirnya identik dari sudut pandang pemanggil.

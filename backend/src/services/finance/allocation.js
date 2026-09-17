@@ -15,6 +15,13 @@
 //     keputusan manusia (kelebihan bayar bisa saja memang mau direfund).
 
 import { toMoney, sumMoney, ZERO, MoneyError } from "./money.js";
+// Reuse SENGAJA lintas domain (bukan menyalin ulang) — lockRowForUpdate
+// adalah trik SQL yang sudah punya jejak bug nyata (lihat komentar panjang
+// di definisinya, inventoryLedger.js: cast ::uuid wajib, celah ini pernah
+// membuat SELURUH endpoint gudang gagal pasca-deploy). Menyalinnya di sini
+// berarti dua tempat yang harus diingat sama-sama benar; memakai ulang yang
+// sudah terbukti lebih aman.
+import { lockRowForUpdate } from "../inventoryLedger.js";
 
 export class AllocationError extends Error {
   constructor(message, statusCode = 400) {
@@ -160,6 +167,17 @@ export async function setAllocations(tx, { paymentId, allocations, userId = null
   if (!tx?.finPaymentAllocation) {
     throw new Error("setAllocations butuh `tx` (klien transaksi Prisma)");
   }
+
+  // Kunci baris payment SEBELUM membaca alokasinya — tanpa ini, dua
+  // permintaan bersamaan untuk PEMBAYARAN YANG SAMA sama-sama membaca
+  // state awal yang identik, memvalidasi independen, lalu menimpa hasil
+  // satu sama lain begitu keduanya commit (yang terakhir menang, yang lain
+  // hilang tanpa jejak/pemberitahuan). Mengunci di sini membuat permintaan
+  // KEDUA menunggu sampai permintaan PERTAMA selesai — bukan mencegah
+  // race sepenuhnya (permintaan kedua tetap bisa "menang" kalau memang
+  // itu yang dimaksud pengguna), tapi memastikan keduanya berurutan,
+  // bukan bertabrakan diam-diam.
+  await lockRowForUpdate(tx, "payments", paymentId);
 
   const payment = await tx.payment.findUnique({
     where: { id: paymentId },

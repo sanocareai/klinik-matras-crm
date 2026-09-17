@@ -109,6 +109,11 @@ function stubTx({ payment: p, orders }) {
   const dibuat = [];
   return {
     _dibuat: dibuat,
+    // setAllocations() mengunci baris payment lewat lockRowForUpdate()
+    // SEBELUM membacanya (reuse dari inventoryLedger.js) — stub ini cuma
+    // mencatat pemanggilan, semantik locking sungguhan diverifikasi tes
+    // integrasi terhadap Postgres asli.
+    $queryRawUnsafe: async () => [],
     payment: { findUnique: async () => p },
     order: { findMany: async ({ where }) => orders.filter((o) => where.id.in.includes(o.id)) },
     finPaymentAllocation: {

@@ -164,7 +164,30 @@ export async function postSupplierBill(tx, { billId, userId = null }) {
   if (bill.goodsReceiptId) {
     // Tagihan atas barang yang penerimaannya SUDAH tercatat di ledger stok.
     const grir = await resolveAccount(tx, SYSTEM_KEYS.UTANG_BELUM_DITAGIH);
-    const { total: nilaiTerima } = await nilaiPenerimaan(tx, bill.goodsReceiptId);
+    const { total: nilaiTerima, jumlahBaris, tanpaHarga } = await nilaiPenerimaan(tx, bill.goodsReceiptId);
+
+    // ⚠️ Kalau penerimaannya BELUM PUNYA NILAI SAMA SEKALI (material belum
+    // punya harga perolehan, atau memang belum ada baris RECEIPT untuk
+    // goodsReceiptId ini), JANGAN lanjut memposting. `nilaiTerima` akan
+    // bernilai 0, dan tanpa pengaman ini seluruh nominal tagihan akan
+    // "kebetulan" masuk ke Selisih Harga Pembelian di bawah (selisih =
+    // tagihan - 0 = tagihan penuh) — bukan salah HITUNG, tapi salah
+    // KLASIFIKASI: nilai persediaan yang sesungguhnya diam-diam berubah
+    // jadi beban varian harga, understating Persediaan & overstating beban.
+    // Berhenti di sini dan minta Gudang melengkapi harga dulu — sama
+    // prinsipnya dengan postGoodsReceiptValue yang juga menolak mengarang
+    // nilai untuk baris tanpa harga.
+    if (tanpaHarga.length > 0 || jumlahBaris === 0) {
+      throw new AccountError(
+        `Penerimaan ${bill.goodsReceipt?.receiptNumber || bill.goodsReceiptId} yang ditagih ${bill.billNumber} ` +
+        (jumlahBaris === 0
+          ? "belum punya satu pun baris penerimaan di ledger stok."
+          : `punya ${tanpaHarga.length} dari ${jumlahBaris} baris tanpa harga satuan.`) +
+        " Lengkapi harga di Gudang lalu posting ulang Penerimaan Barang (Finance > Data Belum Lengkap) " +
+        "sebelum tagihan ini bisa disetujui — supaya nilai persediaan tidak salah tercatat sebagai beban.",
+        409
+      );
+    }
 
     if (nilaiTerima.greaterThan(0)) {
       lines.push({

@@ -67,6 +67,7 @@ import { postJournal, recordPostingGap, findEntryByKey, todayBookDateWIB, STATUS
 import { resolveAccount, revenueSystemKeyForOrder, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { resolveCashAccountForMethod } from "../settings.js";
 import { toMoney, sumMoney, minMoney, ZERO } from "../money.js";
+import { paidForOrder } from "../allocation.js";
 
 export const KEY = {
   payment: (paymentId) => `PEMBAYARAN_ORDER:${paymentId}`,
@@ -358,6 +359,40 @@ async function hitungUangMukaOrder(tx, orderId) {
   const debit = sumMoney(baris.map((b) => b.debit));
   const saldo = kredit.minus(debit); // saldo normal kewajiban = kredit
   return saldo.greaterThan(0) ? saldo : ZERO;
+}
+
+/**
+ * Sisa uang yang MASIH BOLEH direfund untuk satu order — SATU tempat,
+ * dipakai KEDUANYA oleh `POST /refunds` (create) dan `POST /refunds/:id/
+ * approve` (SEBELUM ini diekstrak, dua endpoint itu menghitung ulang
+ * rumus yang sama secara terpisah, dan endpoint approve TIDAK menghitungnya
+ * sama sekali — celah yang membuat dua refund yang sama-sama MENUNGGU_
+ * APPROVAL untuk order yang sama bisa disetujui satu-satu dan bersama-sama
+ * mengeluarkan lebih banyak uang daripada yang pernah diterima).
+ *
+ * `status: "DISETUJUI"` sebagai satu-satunya filter (bukan "semua refund
+ * kecuali yang ini") sudah cukup di KEDUA titik pakai: saat CREATE, refund
+ * yang sedang dibuat belum punya baris sama sekali; saat APPROVE, refund
+ * yang sedang disetujui MASIH berstatus MENUNGGU_APPROVAL sampai baris
+ * statusnya benar-benar ditulis setelah pengecekan ini — jadi ia tidak
+ * pernah ikut terhitung sebagai "refund lain yang sudah disetujui".
+ *
+ * WAJIB dipanggil di DALAM transaksi yang sama dengan keputusan approve —
+ * lihat komentar di pemanggilnya (routes/financeTransactions.js) soal
+ * kenapa ini menutup race dua approval bersamaan.
+ *
+ * ⚠️ `paidForOrder` SUDAH mengurangi refund yang DISETUJUI di dalam
+ * hitungannya sendiri (lihat "bersih = diterima.minus(dikembalikan)" di
+ * allocation.js) — jadi hasilnya di sini TIDAK BOLEH dikurangi refund
+ * DISETUJUI SEKALI LAGI. Versi sebelumnya melakukan itu (bug nyata,
+ * ditemukan lewat financeLedger.integration.test.js 17 Sept 2026: sisa
+ * yang dilaporkan jadi NEGATIF setelah SATU SAJA refund disetujui,
+ * padahal sisa sebenarnya masih positif) — akibatnya refund susulan yang
+ * SAH untuk order yang sudah pernah direfund sebagian akan selalu ditolak
+ * "melebihi sisa", walau uangnya jelas masih ada.
+ */
+export async function sisaBisaDirefund(tx, orderId, gate = { enabled: false }) {
+  return paidForOrder(tx, orderId, gate);
 }
 
 /**

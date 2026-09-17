@@ -56,23 +56,34 @@ const EPSILON = 1e-6;
  *
  * `table` SELALU literal internal dari kode ini sendiri (bukan input user)
  * — aman diinterpolasi langsung, tidak ada celah SQL injection.
+ *
+ * `cast` (opsional, default "uuid") — tipe kolom `id` tabel target. Semua
+ * tabel finance/warehouse yang sudah dikunci lewat fungsi ini pakai
+ * `@db.Uuid`, jadi default-nya tetap "uuid". `Order.id` TERKECUALI — dia
+ * `String @default(cuid())` TANPA `@db.Uuid` (kolom fisiknya `text`), jadi
+ * pemanggil yang mengunci baris Order WAJIB oper `{ cast: null }` — dengan
+ * cast "uuid" dipaksakan ke kolom text, Postgres menolak dengan
+ * "operator does not exist: text = uuid" (kode 42883), persis kelas bug
+ * yang komentar di atas sudah pernah catat untuk arah sebaliknya.
  */
-export async function lockRowForUpdate(tx, table, id) {
+export async function lockRowForUpdate(tx, table, id, { cast = "uuid" } = {}) {
   if (!tx?.$queryRawUnsafe) {
     throw new Error("lockRowForUpdate butuh `tx` (klien transaksi Prisma), bukan prisma singleton di luar transaksi");
   }
-  // ::uuid WAJIB — tanpa cast eksplisit, $queryRawUnsafe mengirim parameter
-  // posisi ($1) sebagai `text` (Postgres tidak tahu tipe kolom target lewat
-  // jalur unsafe/positional ini seperti tagged-template $queryRaw biasa),
-  // dan `uuid = text` bukan operator yang ada di Postgres (kode 42883) —
-  // BUKAN cuma teori, ini bug NYATA yang lolos semua tes stub (yang
-  // memalsukan $queryRawUnsafe) dan baru ketahuan lewat smoke test
-  // terhadap database sungguhan pasca-deploy (13 Sept 2026, lihat riwayat
-  // git) — SETIAP endpoint yang menulis ledger gagal total sampai baris
-  // ini diperbaiki. Pelajaran: tes stub membuktikan LOGIKA benar, bukan
-  // bahwa SQL-nya valid — untuk raw SQL, tetap wajib diverifikasi sekali
-  // langsung ke Postgres sungguhan sebelum dianggap selesai.
-  await tx.$queryRawUnsafe(`SELECT id FROM ${table} WHERE id = $1::uuid FOR UPDATE`, id);
+  // ::uuid WAJIB untuk tabel ber-id uuid — tanpa cast eksplisit,
+  // $queryRawUnsafe mengirim parameter posisi ($1) sebagai `text` (Postgres
+  // tidak tahu tipe kolom target lewat jalur unsafe/positional ini seperti
+  // tagged-template $queryRaw biasa), dan `uuid = text` bukan operator yang
+  // ada di Postgres (kode 42883) — BUKAN cuma teori, ini bug NYATA yang
+  // lolos semua tes stub (yang memalsukan $queryRawUnsafe) dan baru
+  // ketahuan lewat smoke test terhadap database sungguhan pasca-deploy
+  // (13 Sept 2026, lihat riwayat git) — SETIAP endpoint yang menulis ledger
+  // gagal total sampai baris ini diperbaiki. Pelajaran: tes stub
+  // membuktikan LOGIKA benar, bukan bahwa SQL-nya valid — untuk raw SQL,
+  // tetap wajib diverifikasi sekali langsung ke Postgres sungguhan sebelum
+  // dianggap selesai.
+  const castSql = cast ? `::${cast}` : "";
+  await tx.$queryRawUnsafe(`SELECT id FROM ${table} WHERE id = $1${castSql} FOR UPDATE`, id);
 }
 
 /**
