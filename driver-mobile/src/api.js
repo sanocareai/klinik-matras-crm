@@ -138,6 +138,12 @@ export const api = {
   login: (email, password) =>
     request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   getMe: () => request("/users/me"),
+  // Foto profil (18 September 2026) — port dari mobile/src/api.js, endpoint
+  // SAMA (POST /users/me/avatar): backend kompres+resize ke ~256px pakai
+  // sharp, balikin user dengan avatarUrl terbaru. Field name "file" (bukan
+  // "photos" seperti uploadJobPhotos) — WAJIB dipassing eksplisit, beda
+  // dari default uploadFile().
+  uploadAvatar: (file) => uploadFile("/users/me/avatar", file, {}, "file"),
 
   // Push (Expo push token — SAMA endpoint dgn Sano Messenger, backend
   // sudah punya infrastrukturnya lewat services/expoPush.js + prisma.

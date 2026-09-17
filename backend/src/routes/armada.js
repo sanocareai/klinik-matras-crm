@@ -2009,8 +2009,16 @@ armadaRouter.get("/routes", requirePermission(P.JOB_READ), async (req, res) => {
 // lain untuk order yang sama).
 const RATE_PER_ALAMAT = { withSim: 7000, withoutSim: 3000 };
 
-armadaRouter.get("/incentive-summary", requirePermission(P.JOB_READ), async (req, res) => {
+// requireAnyPermission JOB_READ ATAU JOB_OWN_READ (18 September 2026,
+// laporan owner: driver app dapat tab "Performa Saya" — sebelumnya cuma
+// dispatcher/admin [JOB_READ] yang bisa lihat, driver sendiri tidak pernah
+// tahu berapa insentif yang sudah dia kumpulkan). Perhitungan TETAP jalan
+// untuk SEMUA orang seperti biasa (dedup lintas driver/helper butuh data
+// penuh) — pembatasan cuma di RESPONS: driver tanpa JOB_READ cuma
+// menerima barisnya sendiri, sama pola dengan GET /issues.
+armadaRouter.get("/incentive-summary", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), async (req, res) => {
   try {
+    const hanyaMilikSendiri = !hasPermission(req.user, P.JOB_READ);
     const { from, to } = req.query;
     // Default "bulan ini" (WIB) kalau tidak dikirim — insentif lazimnya
     // dihitung per periode berjalan, bukan akumulasi dari awal selamanya.
@@ -2101,7 +2109,7 @@ armadaRouter.get("/incentive-summary", requirePermission(P.JOB_READ), async (req
       ? await prisma.user.findMany({ where: { id: { in: userIds }, isFreelance: false, isExternalCourier: false }, select: { id: true, name: true, hasSim: true } })
       : [];
 
-    const orang = users
+    let orang = users
       .map((u) => {
         const b = perOrang.get(u.id);
         const totalAlamat = b.allMap.size;
@@ -2114,6 +2122,10 @@ armadaRouter.get("/incentive-summary", requirePermission(P.JOB_READ), async (req
         };
       })
       .sort((a, b) => b.totalAlamat - a.totalAlamat);
+    // Driver tanpa JOB_READ (lihat guard di atas) cuma boleh lihat barisnya
+    // sendiri — dihitung LEBIH DULU untuk semua orang (dedup butuh data
+    // penuh), baru disaring di respons.
+    if (hanyaMilikSendiri) orang = orang.filter((o) => o.id === req.user.id);
 
     res.json({
       from: completedAtWhere.gte.toISOString().slice(0, 10),

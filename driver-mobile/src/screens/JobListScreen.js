@@ -21,6 +21,7 @@ import JobCard from "../components/JobCard";
 import RouteStartCard from "../components/RouteStartCard";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
+import Avatar from "../components/Avatar";
 import { customerOf, orderNumberOf, relatifWaktu, ISSUE_STATUS } from "../lib/jobHelpers";
 
 const ACTIVE_STATUSES = ["ASSIGNED", "EN_ROUTE", "ARRIVED"];
@@ -39,7 +40,7 @@ const NAV_ITEMS = [
   { key: "masalah", label: "Masalah", icon: AlertTriangle },
 ];
 
-export default function JobListScreen() {
+export default function JobListScreen({ navigation }) {
   const { user, logout, isOnline, setOnline } = useAuth();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -123,10 +124,17 @@ export default function JobListScreen() {
           tracking, lihat useDriverTracking.js. */}
       <GradientCard colors={theme.GRADIENT} style={styles.hero}>
         <View style={styles.heroTopRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.heroGreeting}>Halo, {user?.name || "Driver"}</Text>
-            <Text style={styles.heroSubtitle}>Semoga perjalanan hari ini lancar</Text>
-          </View>
+          {/* Tap avatar/nama → layar Akun (18 September 2026, foto profil +
+              cek update — permintaan owner). Bukan tombol Keluar (itu tetap
+              di heroLogoutBtn, jangan digabung — Keluar butuh akses cepat
+              satu tap, jangan disembunyikan di balik layar lain). */}
+          <Pressable style={styles.heroIdentityRow} onPress={() => navigation.navigate("Account")}>
+            <Avatar name={user?.name} avatarUrl={user?.avatarUrl} size={40} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroGreeting}>Halo, {user?.name || "Driver"}</Text>
+              <Text style={styles.heroSubtitle}>Semoga perjalanan hari ini lancar</Text>
+            </View>
+          </Pressable>
           <Pressable onPress={logout} style={styles.heroLogoutBtn}>
             <Text style={styles.heroLogoutText}>Keluar</Text>
           </Pressable>
@@ -273,6 +281,7 @@ function makeStyles(t) {
       shadowColor: t.ACCENT, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.28, shadowRadius: 16, elevation: 6,
     },
     heroTopRow: { flexDirection: "row", alignItems: "flex-start" },
+    heroIdentityRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
     heroGreeting: { fontSize: 19, fontWeight: "800", color: "#FFFFFF" },
     heroSubtitle: { fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 2 },
     heroLogoutBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.35)" },

@@ -108,8 +108,24 @@ export function AuthProvider({ children }) {
     });
   }
 
+  // Sinkron LOKAL setelah patch profil di server (18 September 2026, layar
+  // Akun) — dipanggil AccountScreen setelah api.uploadAvatar/PATCH /me
+  // sukses, supaya avatarUrl/nama baru langsung kepakai di seluruh app
+  // (hero card JobListScreen, dst) tanpa logout/login ulang. BUKAN panggilan
+  // API sendiri — cuma menggabungkan hasil yang backend SUDAH kembalikan ke
+  // state lokal + AsyncStorage, sama pola dengan setOnline/markOnlineLocally
+  // di atas.
+  function updateUser(patch) {
+    setUser((u) => {
+      if (!u) return u;
+      const next = { ...u, ...patch };
+      AsyncStorage.setItem("user", JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, server, login, logout, isOnline, setOnline, markOnlineLocally }}>
+    <AuthContext.Provider value={{ user, loading, server, login, logout, isOnline, setOnline, markOnlineLocally, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -17,6 +17,8 @@ import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
 import JobListScreen from "./src/screens/JobListScreen";
 import AdminHomeScreen from "./src/screens/AdminHomeScreen";
+import AccountScreen from "./src/screens/AccountScreen";
+import PerformaScreen from "./src/screens/PerformaScreen";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { queryClient } from "./src/lib/queryClient";
 import { checkForUpdateOnLaunch } from "./src/lib/autoUpdate";
@@ -58,7 +60,17 @@ function Root() {
           isAdminView(user) ? (
             <Stack.Screen name="AdminHome" component={AdminHomeScreen} />
           ) : (
-            <Stack.Screen name="JobList" component={JobListScreen} />
+            // Account/Performa (18 September 2026) — dibuka lewat
+            // navigation.navigate dari hero card JobListScreen, BUKAN tab
+            // bottom-nav baru (lihat catatan panjang di JobListScreen.js).
+            // Cuma didaftarkan di cabang driver — admin sudah punya
+            // Performa sendiri (tab di AdminHomeScreen) & belum ada
+            // permintaan Akun terpisah untuk admin.
+            <>
+              <Stack.Screen name="JobList" component={JobListScreen} />
+              <Stack.Screen name="Account" component={AccountScreen} />
+              <Stack.Screen name="Performa" component={PerformaScreen} />
+            </>
           )
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
