@@ -8,6 +8,7 @@
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.klinikmatras.drivermobile",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 4,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
