@@ -147,9 +147,14 @@ async function main() {
   console.log("Rekening kas/bank yang ditemukan:", cashAccountRows.map((c) => c.name).join(", ") || "(tidak ada!)");
   const cashByName = new Map(cashAccountRows.map((c) => [c.name.trim().toUpperCase(), c]));
 
+  // Nama rekening di export Notion ("SANOBANK") tidak selalu sama persis
+  // dengan nama rekening yang sudah didaftarkan di FinCashAccount produksi
+  // ("KEM - Sano Bank") — alias eksplisit, bukan tebakan fuzzy-match.
+  const ALIAS = { "SANOBANK": "KEM - SANO BANK" };
+
   function resolveCash(name) {
-    const key = (name || "PT Sano").trim().toUpperCase() || "PT SANO";
-    const found = cashByName.get(key) || cashByName.get("PT SANO");
+    const raw = (name || "PT Sano").trim().toUpperCase() || "PT SANO";
+    const found = cashByName.get(raw) || cashByName.get(ALIAS[raw]) || cashByName.get("PT SANO");
     if (!found) {
       throw new Error(
         `Rekening "${name || "(kosong -> default PT Sano)"}" tidak ditemukan di FinCashAccount. Rekening yang ada: ${[...cashByName.keys()].join(", ")}`
