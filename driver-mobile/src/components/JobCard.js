@@ -7,7 +7,7 @@
 // dark ikut sistem HP (lihat src/theme.js).
 import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, TextInput, StyleSheet, Linking } from "react-native";
-import { MapPin, Phone, Loader2, Home } from "lucide-react-native";
+import { MapPin, Phone, Loader2, Home, AlertTriangle } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import PaymentSection from "./PaymentSection";
 import JobProgressStepper from "./JobProgressStepper";
@@ -21,6 +21,10 @@ const FAIL_REASONS_PICKUP = [
   { value: "Customer tidak ada di rumah", label: "Customer Tidak Ada" },
   { value: "Akses ditolak", label: "Akses Ditolak" },
   { value: "Customer menolak", label: "Customer Menolak" },
+  // 18 September 2026 — port dari perbaikan yang sama di web DriverJobs.jsx,
+  // teks harus identik (backend mencocokkan string ini untuk otomatis buka
+  // draft RescheduleCase, lihat POST /jobs/:id/fail).
+  { value: "Customer minta reschedule", label: "Minta Reschedule" },
 ];
 const FAIL_REASONS_DELIVERY = [
   { value: "Customer tidak ada di rumah", label: "Customer Tidak Ada" },
@@ -37,12 +41,16 @@ export default function JobCard({ job, onChanged }) {
     COMPLETED: theme.GREEN, FAILED: theme.RED, SCHEDULED: theme.INK3, UNSCHEDULED: theme.INK3, RESCHEDULED: theme.ORANGE,
   }), [theme]);
 
-  const [mode, setMode] = useState("idle"); // idle | completing | failing
+  const [mode, setMode] = useState("idle"); // idle | completing | failing | revising
   const [photos, setPhotos] = useState([]);
   const [note, setNote] = useState("");
   const [failReason, setFailReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // Lapor Revisi (18 September 2026) — lihat catatan panjang di web
+  // DriverJobs.jsx JobCard. State lokal murni, direset kalau FlashList
+  // recycle komponen ini ke job LAIN (lihat blok prevJobId di bawah).
+  const [revisionSubmitted, setRevisionSubmitted] = useState(false);
 
   // FlashList me-RECYCLE instance komponen ini — tanpa reset, form yang
   // sedang terbuka (mode "completing" + foto) bisa "nempel" ke job LAIN saat
@@ -58,6 +66,7 @@ export default function JobCard({ job, onChanged }) {
     setFailReason("");
     setBusy(false);
     setErr("");
+    setRevisionSubmitted(false);
   }
 
   const nama = customerOf(job) || "Tanpa nama";
@@ -92,6 +101,7 @@ export default function JobCard({ job, onChanged }) {
       // job dimulai (POST /jobs/:id/start), refleksikan efek samping itu
       // di switch Beranda TANPA driver perlu toggle manual juga.
       if (action === "start") markOnlineLocally();
+      if (action === "report-revision") setRevisionSubmitted(true);
       resetForm();
       onChanged();
     } catch (e) {
@@ -292,6 +302,55 @@ export default function JobCard({ job, onChanged }) {
       {mode === "idle" && job.status === "COMPLETED" && job.type === "DELIVERY" && (
         <PaymentSection job={job} onChanged={onChanged} />
       )}
+
+      {/* Lapor Revisi (18 September 2026, laporan owner: "customer komplain
+          kain tidak sesuai, minta revisi — otomatis driver di menit yang
+          sama ambil lagi kasur itu"). Cuma job Pengiriman yang sudah
+          Selesai — lihat catatan panjang di backend routes/armada.js POST
+          /jobs/:id/report-revision. */}
+      {mode === "idle" && job.status === "COMPLETED" && job.type === "DELIVERY" && !revisionSubmitted && (
+        <Pressable style={styles.revisionBtn} onPress={() => setMode("revising")}>
+          <AlertTriangle size={13} color={theme.RED} />
+          <Text style={styles.revisionBtnText}>Ada Komplain / Revisi?</Text>
+        </Pressable>
+      )}
+      {revisionSubmitted && (
+        <View style={[styles.complaintBanner, { backgroundColor: theme.ORANGE + "1A" }]}>
+          <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>
+            Revisi diajukan — job Pengambilan baru sudah dibuat untuk Anda
+          </Text>
+        </View>
+      )}
+
+      {mode === "revising" && (
+        <View style={styles.form}>
+          <Text style={styles.detailLine}>
+            Jelaskan apa yang salah (mis. kain tidak sesuai pilihan) — begitu disimpan, job
+            Pengambilan baru langsung muncul di daftar Anda untuk mengambil kembali kasurnya.
+          </Text>
+          <TextInput
+            style={styles.noteInput}
+            placeholder="Keluhan customer (wajib)"
+            placeholderTextColor={theme.INK3}
+            value={note}
+            onChangeText={setNote}
+            multiline
+          />
+          <PhotoCapture photos={photos} onChange={setPhotos} label="Foto bukti (wajib)" />
+          <View style={styles.btnRow}>
+            <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={resetForm} disabled={busy}>
+              <Text style={styles.secondaryBtnText}>Batal</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.dangerBtn, { flex: 1.4 }, (busy || photos.length === 0 || !note.trim()) && styles.disabled]}
+              disabled={busy || photos.length === 0 || !note.trim()}
+              onPress={() => run("report-revision", { complaint: note, unitId: job.units?.[0]?.unit?.id })}
+            >
+              {busy ? <Loader2 size={14} color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Ajukan Revisi</Text>}
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -316,6 +375,15 @@ function makeStyles(t) {
     detailLine: { color: t.INK2, fontSize: 12, marginTop: 6 },
     complaintBanner: { backgroundColor: t.RED + "1A", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, marginTop: 8 },
     complaintBannerText: { color: t.RED, fontSize: 11.5, fontWeight: "700" },
+    // Tombol Lapor Revisi (18 September 2026) — pola sama dengan
+    // secondaryBtn/dangerBtn tapi outline merah tipis (bukan tombol utama,
+    // ini aksi opsional yang jarang dipakai, tidak boleh terasa seketat
+    // "Gagal"/"Selesai").
+    revisionBtn: {
+      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+      borderWidth: 1, borderColor: t.RED + "4D", borderRadius: 12, paddingVertical: 10, marginTop: 10,
+    },
+    revisionBtnText: { color: t.RED, fontWeight: "700", fontSize: 12.5 },
     quickActions: { flexDirection: "row", gap: 8, marginTop: 10 },
     quickBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.ACCENT_BG, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
     quickBtnText: { color: t.ACCENT, fontSize: 11.5, fontWeight: "600" },

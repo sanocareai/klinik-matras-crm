@@ -359,6 +359,12 @@ export const api = {
   // catatan panjang di routes/armada.js PATCH /jobs/:id/proof-photos.
   addJobProofPhotos: (jobId, data) => request(`/armada/jobs/${jobId}/proof-photos`, { method: "PATCH", body: JSON.stringify(data) }),
   recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
+  // Lapor revisi di lokasi (18 September 2026) — driver menandai job
+  // Pengiriman yang SUDAH Selesai sebagai ada komplain (mis. kain salah),
+  // buat UnitRevision + job Pengambilan baru SEKALIGUS, langsung
+  // ditugaskan ke driver ini sendiri hari ini juga. Lihat catatan panjang
+  // di backend routes/armada.js POST /jobs/:id/report-revision.
+  reportRevision: (jobId, data) => request(`/armada/jobs/${jobId}/report-revision`, { method: "POST", body: JSON.stringify(data) }),
   // Web Push (8 September 2026) — subscribe/unsubscribe device driver.
   getVapidPublicKey: () => request("/armada/push/vapid-public-key"),
   subscribePush: (subscription) => request("/armada/push/subscribe", { method: "POST", body: JSON.stringify({ subscription }) }),

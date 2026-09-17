@@ -4583,6 +4583,29 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
           createdById: req.user.id,
         },
       });
+      // Buka draft RescheduleCase OTOMATIS (18 September 2026, laporan owner
+      // — kasus nyata: "driver sedang jalan ke rumah customer, tiba-tiba
+      // customer minta reschedule"). SEBELUM INI, alasan "Customer minta
+      // reschedule" cuma tersimpan sebagai teks failureReason — job masuk
+      // daftar Kendala & Reschedule berstatus OPEN, TAPI belum ada
+      // RescheduleCase sama sekali sampai dispatcher benar-benar mengisi
+      // tanggal baru lewat POST /issues/:jobId/reschedule (yang BARU di
+      // titik itu membuat kasusnya). Sekarang kasusnya dibuka SAAT ITU JUGA
+      // (newScheduledDate SENGAJA null — openOrAdvanceCase menerimanya,
+      // lihat schema RescheduleCase.newScheduledDate yang nullable), supaya
+      // dispatcher tinggal ISI tanggal untuk MELANJUTKAN kasus yang sudah
+      // ada (round 2), bukan mulai dari nol. Job.rescheduleReason SENGAJA
+      // TIDAK diisi di sini (field itu berarti "sudah benar-benar
+      // dijadwalkan ulang", ditulis PATCH /jobs/:id atau POST /issues/
+      // :jobId/reschedule saja) — draft ini murni MEMBUKA kasusnya, belum
+      // menjadwalkan apa pun.
+      if (failureReason.trim() === "Customer minta reschedule") {
+        await openOrAdvanceCase(tx, {
+          job, cause: "AFTER_FAILURE", reason: failureReason.trim(),
+          previousScheduledDate: job.scheduledDate, newScheduledDate: null,
+          customerConfirmed: false, userId: req.user.id,
+        });
+      }
       return j;
     });
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
@@ -5023,6 +5046,99 @@ armadaRouter.post("/revisions/:id/create-pickup-job", requirePermission(P.JOB_WR
 
     const full = await prisma.unitRevision.findUnique({ where: { id: revision.id }, include: unitRevisionInclude });
     res.status(201).json(full);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/jobs/:id/report-revision — driver melaporkan komplain
+// LANGSUNG di lokasi (18 September 2026, kasus nyata yang diajukan owner:
+// "driver mengirim kasur, pas sudah sampai customer komplain kain tidak
+// sesuai, minta revisi — otomatis di menit yang sama driver ambil lagi
+// kasur itu untuk revisi"). SENGAJA dibangun di atas UnitRevision
+// (POST /revisions + create-pickup-job di atas), BUKAN ComplaintCase
+// (routes/complaints.js) — ComplaintCase sengaja bergerbang ketat lintas
+// divisi (BARU→VERIFIKASI→...→DIJADWALKAN, lihat ALLOWED_TRANSITIONS di
+// services/complaintCase.js) karena BIASANYA komplain masuk lewat Sales
+// dari cerita customer, perlu diverifikasi dulu sebelum berkomitmen job
+// pengambilan. Kasus INI beda: driver BERDIRI DI LOKASI, foto ADA saat itu
+// juga — pemeriksaan "apa benar?" sudah terjadi secara fisik, menambahkan
+// gerbang verifikasi jarak jauh di atasnya cuma memperlambat tanpa nilai
+// tambah. UnitRevision trigger KOMPLAIN_ANTAR memang literally dibuat
+// untuk skenario ini (lihat REVISION_TRIGGER_LABEL) dan TIDAK bergerbang
+// sama sekali — cocok.
+//
+// Dua langkah (endpoint ini menggabungnya jadi SATU aksi atomik untuk
+// driver): 1) POST /revisions biasa (buat UnitRevision), 2) job PICKUP
+// baru — TAPI beda dari create-pickup-job dispatcher (job lahir
+// UNSCHEDULED, driver isi manual nanti): di sini job langsung diisi
+// driverId=diri sendiri, scheduledDate=hari ini, status ASSIGNED — supaya
+// driver bisa langsung "Mulai Perjalanan" tanpa menunggu dispatcher
+// menjadwalkan, itulah maksud "menit yang sama".
+//
+// Syarat: job DELIVERY milik driver ini sendiri, SUDAH Selesai (unit harus
+// DELIVERED dulu — sama syarat dengan POST /revisions manual) — alur
+// driver: tekan "Selesai" seperti biasa (foto bukti serah terima wajib,
+// TIDAK berubah), BARU tombol "Ada Revisi?" muncul. TIDAK digabung jadi
+// satu tombol dengan "Selesai" supaya transaksi complete() yang sudah
+// teruji (sinkron unit/order/route/pembayaran, dst — lihat POST
+// /jobs/:id/complete) tidak perlu ditulis ulang/diduplikasi di sini.
+armadaRouter.post("/jobs/:id/report-revision", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const job = await loadOwnedJob(req);
+    if (job.type !== "DELIVERY") throw new ArmadaError("Lapor revisi cuma untuk job Pengiriman");
+    if (job.status !== "COMPLETED") throw new ArmadaError("Selesaikan job pengiriman ini dulu (foto bukti serah terima), baru bisa lapor revisi");
+
+    const { complaint, photoUrls, unitId } = req.body;
+    if (!complaint?.trim()) throw new ArmadaError("Keluhan customer wajib diisi");
+    const fotoRevisi = Array.isArray(photoUrls) ? photoUrls.filter((u) => typeof u === "string" && u.startsWith("/media/job-photos/")) : [];
+    if (fotoRevisi.length === 0) throw new ArmadaError("Foto bukti wajib diisi (FR-D-07, tanpa kecuali)");
+
+    const jobUnits = await prisma.jobUnit.findMany({ where: { jobId: job.id }, select: { unitId: true } });
+    if (jobUnits.length === 0) throw new ArmadaError("Job ini tidak punya unit — tidak bisa diajukan revisi");
+    const targetUnitId = jobUnits.length === 1 ? jobUnits[0].unitId : unitId;
+    if (!targetUnitId || !jobUnits.some((ju) => ju.unitId === targetUnitId)) {
+      throw new ArmadaError(jobUnits.length > 1 ? "Job ini punya beberapa unit — pilih unit yang direvisi" : "Unit tidak valid");
+    }
+
+    const unit = await prisma.unit.findUnique({ where: { id: targetUnitId } });
+    if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
+    if (unit.status !== "DELIVERED") throw new ArmadaError("Hanya unit yang sudah terkirim yang bisa diajukan revisi");
+
+    const todayWib = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+
+    const { revisionId, pickupJobId } = await prisma.$transaction(async (tx) => {
+      const trimmed = complaint.trim();
+      const revision = await tx.unitRevision.create({
+        data: { unitId: targetUnitId, trigger: "KOMPLAIN_ANTAR", complaint: trimmed, createdById: req.user.id },
+      });
+      await tx.order.update({
+        where: { id: unit.orderId },
+        data: {
+          hasComplaint: true, complaintDate: new Date(), complaintDetail: trimmed,
+          complaintResolvedAt: null, complaintResolvedById: null,
+        },
+      });
+      const pickupJob = await tx.job.create({
+        data: {
+          type: "PICKUP", orderId: unit.orderId,
+          accessNotes: `Pengambilan untuk ${REVISION_TRIGGER_LABEL.KOMPLAIN_ANTAR} — ${trimmed}`,
+          driverId: req.user.id, scheduledDate: toDateOnly(todayWib), status: "ASSIGNED",
+        },
+      });
+      await tx.jobUnit.create({ data: { jobId: pickupJob.id, unitId: targetUnitId } });
+      await tx.unitRevision.update({
+        where: { id: revision.id },
+        data: { jobId: pickupJob.id, status: "PICKUP_SCHEDULED" },
+      });
+      return { revisionId: revision.id, pickupJobId: pickupJob.id };
+    });
+
+    const [revision, pickupJob] = await Promise.all([
+      prisma.unitRevision.findUnique({ where: { id: revisionId }, include: unitRevisionInclude }),
+      prisma.job.findUnique({ where: { id: pickupJobId }, include: jobInclude }),
+    ]);
+    res.status(201).json({ revision, pickupJob });
   } catch (err) {
     handleErr(err, res);
   }

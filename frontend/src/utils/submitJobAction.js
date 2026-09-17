@@ -53,6 +53,12 @@ export async function performSubmit(jobId, action, payload, photoFiles = [], sig
       amount: payload.amount, method: payload.method, proofPhotoUrl: proofPhotoUrls[0] || null,
     });
   }
+  // Lapor revisi di lokasi (18 September 2026) — lihat catatan panjang di
+  // backend routes/armada.js POST /jobs/:id/report-revision. Pola upload
+  // foto SAMA dengan complete/fail di atas, cuma endpoint tujuannya beda.
+  if (action === "report-revision") {
+    return api.reportRevision(jobId, { complaint: payload.complaint, photoUrls: proofPhotoUrls, unitId: payload.unitId });
+  }
   throw new Error(`Aksi tidak dikenal: ${action}`);
 }
 

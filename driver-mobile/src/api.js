@@ -184,6 +184,9 @@ export const api = {
   completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),
   failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
   recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
+  // Lapor revisi di lokasi (18 September 2026) — port dari frontend/src/api.js,
+  // lihat catatan panjang di backend routes/armada.js POST /jobs/:id/report-revision.
+  reportRevision: (jobId, data) => request(`/armada/jobs/${jobId}/report-revision`, { method: "POST", body: JSON.stringify(data) }),
   addJobProofPhotos: (jobId, data) => request(`/armada/jobs/${jobId}/proof-photos`, { method: "PATCH", body: JSON.stringify(data) }),
   // Ping GPS (D-034, Live Tracking) — pings: array {lat,lng,accuracy,recordedAt}.
   sendJobPositions: (jobId, pings) =>

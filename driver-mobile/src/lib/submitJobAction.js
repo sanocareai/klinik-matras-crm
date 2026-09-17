@@ -33,5 +33,11 @@ export async function performSubmit(jobId, action, payload, photoFiles = []) {
       failureReason: payload.failureReason, failurePhotoUrls: proofPhotoUrls, note: payload.note,
     });
   }
+  // Lapor revisi di lokasi (18 September 2026) — port dari
+  // frontend/src/utils/submitJobAction.js, lihat catatan panjang di backend
+  // routes/armada.js POST /jobs/:id/report-revision.
+  if (action === "report-revision") {
+    return api.reportRevision(jobId, { complaint: payload.complaint, photoUrls: proofPhotoUrls, unitId: payload.unitId });
+  }
   throw new Error(`Aksi tidak dikenal: ${action}`);
 }

@@ -296,6 +296,13 @@ const FAIL_REASONS_PICKUP = [
   { value: "Customer tidak ada di rumah", label: "Customer Tidak Ada" },
   { value: "Akses ditolak", label: "Akses Ditolak" },
   { value: "Customer menolak", label: "Customer Menolak" },
+  // Ditambahkan 18 September 2026 (laporan owner: "driver sedang jalan ke
+  // rumah customer, tiba-tiba customer minta reschedule" — skenario itu
+  // bisa job Pengambilan ATAU Pengiriman, sebelumnya alasan ini cuma ada
+  // di daftar Pengiriman). Teks SAMA PERSIS dengan FAIL_REASONS_DELIVERY —
+  // backend (POST /jobs/:id/fail) mencocokkan string ini utk otomatis
+  // membuka draft RescheduleCase, harus identik di kedua daftar.
+  { value: "Customer minta reschedule", label: "Minta Reschedule" },
 ];
 const FAIL_REASONS_DELIVERY = [
   { value: "Customer tidak ada di rumah", label: "Customer Tidak Ada" },
@@ -305,13 +312,22 @@ const FAIL_REASONS_DELIVERY = [
 
 // ── Kartu satu job ────────────────────────────────────────────────────────
 function JobCard({ job, onChanged, onQueued, pending }) {
-  const [mode, setMode] = useState("idle"); // idle | completing | failing
+  const [mode, setMode] = useState("idle"); // idle | completing | failing | revising
   const [photos, setPhotos] = useState([]);
   const [signatureBlob, setSignatureBlob] = useState(null);
   const [note, setNote] = useState("");
   const [failReason, setFailReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // Lapor Revisi (18 September 2026) — lihat catatan panjang di backend
+  // POST /jobs/:id/report-revision. State LOKAL murni (bukan dari job.*) —
+  // begitu berhasil sekali (tersimpan ATAU sekadar teratre offline), tombol
+  // disembunyikan supaya driver tidak tidak sengaja bikin 2 job pengambilan
+  // untuk komplain yang sama; reset kalau komponen remount (buka lagi
+  // drawer/tab), tapi itu wajar — laporan yang SUDAH terkirim tidak akan
+  // ke-submit ulang cuma karena tombolnya kelihatan lagi, cuma driver perlu
+  // sadar sendiri kalau sudah pernah lapor.
+  const [revisionSubmitted, setRevisionSubmitted] = useState(false);
 
   const customer = job.units[0]?.unit?.order?.customer;
   const maps = mapsUrl(job);
@@ -330,6 +346,7 @@ function JobCard({ job, onChanged, onQueued, pending }) {
     setErr("");
     try {
       const { queued } = await submitOrQueue(job.id, action, payload, files, sig);
+      if (action === "report-revision") setRevisionSubmitted(true);
       resetForm();
       if (queued) onQueued(); else onChanged();
     } catch (e) {
@@ -472,6 +489,24 @@ function JobCard({ job, onChanged, onQueued, pending }) {
             {job.signatureUrl && <span className="text-ink2">· bertanda tangan</span>}
           </div>
           {job.type === "DELIVERY" && <PaymentSection job={job} onChanged={onChanged} onQueued={onQueued} />}
+          {/* Lapor Revisi (18 September 2026, laporan owner: "customer
+              komplain kain tidak sesuai, minta revisi — otomatis driver di
+              menit yang sama ambil lagi kasur itu"). Cuma job Pengiriman —
+              revisi hanya masuk akal untuk unit yang BARU diserahkan ke
+              customer, bukan job Pengambilan. */}
+          {job.type === "DELIVERY" && !revisionSubmitted && (
+            <button
+              type="button" onClick={() => setMode("revising")}
+              className="mt-2 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-redbg text-xs font-semibold text-red"
+            >
+              <AlertTriangle className="h-3.5 w-3.5" /> Ada Komplain / Revisi?
+            </button>
+          )}
+          {revisionSubmitted && (
+            <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-orangebg px-3 py-2 text-xs font-medium text-orange">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Revisi diajukan — job Pengambilan baru sudah dibuat untuk Anda
+            </div>
+          )}
         </>
       )}
       {mode === "idle" && job.status === "FAILED" && (
@@ -526,6 +561,38 @@ function JobCard({ job, onChanged, onQueued, pending }) {
           </div>
           {(!failReason || photos.length === 0) && (
             <p className="text-center text-[11px] text-ink2">Alasan dan foto wajib diisi (tanpa kecuali)</p>
+          )}
+        </div>
+      )}
+
+      {/* Lapor Revisi (18 September 2026) — form terpisah dari "Gagal" di
+          atas: ini BUKAN kegagalan pengiriman (barangnya SUDAH sampai &
+          sudah Selesai), ini komplain SETELAH serah terima. Foto di sini
+          jadi bukti kondisi/kesalahan (mis. kain salah), bukan bukti serah
+          terima (itu sudah ada dari langkah Selesai sebelumnya). */}
+      {mode === "revising" && (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs text-ink2">
+            Jelaskan apa yang salah (mis. kain tidak sesuai pilihan) — begitu disimpan, job
+            Pengambilan baru langsung muncul di daftar Anda untuk mengambil kembali kasurnya.
+          </p>
+          <textarea
+            value={note} onChange={(e) => setNote(e.target.value)} placeholder="Keluhan customer (wajib)"
+            className="h-16 w-full rounded-lg border border-border p-2 text-xs outline-none focus:border-accent"
+          />
+          <PhotoCapture photos={photos} setPhotos={setPhotos} />
+          <div className="flex gap-2">
+            <Button variant="neutral" className="h-11 flex-1 text-xs" onClick={() => setMode("idle")}>Batal</Button>
+            <Button
+              variant="destructive" className="h-11 flex-1 text-xs"
+              disabled={busy || !note.trim() || photos.length === 0}
+              onClick={() => run("report-revision", { complaint: note, unitId: job.units[0]?.unit?.id }, photos, null)}
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Ajukan Revisi"}
+            </Button>
+          </div>
+          {(!note.trim() || photos.length === 0) && (
+            <p className="text-center text-[11px] text-ink2">Keluhan dan foto wajib diisi</p>
           )}
         </div>
       )}
