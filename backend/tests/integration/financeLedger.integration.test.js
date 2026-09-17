@@ -536,6 +536,30 @@ test("KONKURENSI NYATA: dua refund MENUNGGU_APPROVAL untuk order yang SAMA — t
   assert.ok(sisaAkhir.greaterThanOrEqualTo(0), "sisa yang bisa direfund TIDAK BOLEH pernah negatif");
 });
 
+test("GET /api/finance/customer-payments memuat data tanpa error — pernah gagal total karena select memakai field yang tidak ada di model Job", async () => {
+  // KENAPA TES INI ADA: stub tidak pernah memvalidasi nama field select()
+  // terhadap schema.prisma sungguhan — `job: { select: { jobNumber: true } }`
+  // (Job TIDAK PERNAH punya kolom itu) lolos SELURUH tes stub dan baru
+  // ketahuan di production sebagai PrismaClientValidationError yang
+  // membuat halaman "Pembayaran & Verifikasi" gagal total (dilaporkan
+  // pengguna 17 Sept 2026, sore hari setelah deploy fix konkurensi).
+  await siapkanFinance();
+  const { user, token } = await createTestUser({ roles: ["FINANCE"] });
+  const client = makeClient(server.baseUrl, token);
+  const { order } = await buatOrder({ value: 1_000_000 });
+  await testPrisma.payment.create({
+    data: { orderId: order.id, amount: 1_000_000, method: "CASH", recordedById: user.id },
+  });
+
+  for (const status of ["belum_verifikasi", "terverifikasi", "dibatalkan", "semua"]) {
+    const res = await client.get(
+      `/api/finance/customer-payments?status=${status}&from=2026-09-01&to=2026-09-30`
+    );
+    assert.equal(res.status, 200, `status=${status} — ${JSON.stringify(res.body)}`);
+    assert.ok(Array.isArray(res.body.payments), `status=${status} — respons wajib punya array payments`);
+  }
+});
+
 test("KONKURENSI NYATA: setAllocations dua panggilan PARALEL untuk payment yang SAMA — alokasi akhir tidak boleh menggandakan nominal payment", async () => {
   await siapkanFinance();
   const { user } = await createTestUser({ roles: ["FINANCE"] });

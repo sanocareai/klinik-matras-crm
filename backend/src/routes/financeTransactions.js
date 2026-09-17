@@ -948,7 +948,13 @@ financeTxRouter.get("/customer-payments", requirePermission(P.FINANCE_READ), asy
               customer: { select: { id: true, name: true } },
             },
           },
-          job: { select: { id: true, jobNumber: true } },
+          // Job TIDAK punya kolom "jobNumber" (bukan seperti Order.orderNumber
+          // — lihat model Job di schema.prisma, tidak ada nomor dokumen
+          // manusiawi untuknya). Field itu sebelumnya di sini menyebabkan
+          // SELURUH endpoint ini gagal dengan PrismaClientValidationError
+          // ("Unknown field `jobNumber`") — halaman Pembayaran & Verifikasi
+          // tidak bisa memuat data sama sekali.
+          job: { select: { id: true, type: true } },
         },
       }),
       getVerificationGate(prisma),
