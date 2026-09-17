@@ -320,6 +320,43 @@ financeRouter.patch("/cash-accounts/:id", requirePermission(P.FINANCE_ADMIN), as
   }
 });
 
+// Hapus PERMANEN rekening — HANYA kalau belum pernah tersentuh satu
+// transaksi pun (jurnal, expense, transfer, dst — lihat relasi FinCashAccount
+// di schema.prisma). Rekening yang sudah punya riwayat TIDAK BOLEH dihapus:
+// itu akan meninggalkan baris jurnal/dokumen yang menunjuk ke rekening yang
+// tidak ada lagi. Jalan keluarnya nonaktifkan (PATCH active:false), bukan
+// hapus — pesan errornya eksplisit mengarahkan ke situ.
+financeRouter.delete("/cash-accounts/:id", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const akun = await prisma.finCashAccount.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true, name: true,
+        _count: {
+          select: {
+            journalLines: true, bankStatements: true, expenses: true, otherIncomes: true,
+            transfersFrom: true, transfersTo: true, supplierPayments: true, refunds: true,
+          },
+        },
+      },
+    });
+    if (!akun) return res.status(404).json({ error: "Rekening tidak ditemukan" });
+
+    const totalTerpakai = Object.values(akun._count).reduce((a, b) => a + b, 0);
+    if (totalTerpakai > 0) {
+      return res.status(409).json({
+        error: `Rekening "${akun.name}" sudah punya ${totalTerpakai} transaksi/jurnal yang menunjuk ke sini — ` +
+          "tidak bisa dihapus (akan meninggalkan riwayat yang menggantung). Nonaktifkan saja lewat Edit.",
+      });
+    }
+
+    await prisma.finCashAccount.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    handleFinanceError(err, res);
+  }
+});
+
 // ═════════════════════════════════════════════════════════════════════════
 // KATEGORI BIAYA
 // ═════════════════════════════════════════════════════════════════════════

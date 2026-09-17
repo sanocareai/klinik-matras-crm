@@ -283,3 +283,41 @@ test("Koreksi & edit HANYA admin — role FINANCE biasa ditolak 403", async () =
   const koreksi = await client.post(`/api/finance/expenses/${created.body.id}/koreksi`, { amount: 200_000, reason: "coba" });
   assert.equal(koreksi.status, 403);
 });
+
+test("DELETE cash-account: rekening yang belum pernah tersentuh transaksi apa pun boleh dihapus permanen", async () => {
+  await siapkanFinance();
+  const { token } = await createTestUser({ roles: ["ADMIN"] });
+  const client = makeClient(server.baseUrl, token);
+  const akunBank = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.BANK } });
+
+  const dobel = await testPrisma.finCashAccount.create({
+    data: { name: "SANOBANK (dobel input)", kind: "BANK", accountId: akunBank.id },
+  });
+
+  const hapus = await client.delete(`/api/finance/cash-accounts/${dobel.id}`);
+  assert.equal(hapus.status, 200, JSON.stringify(hapus.body));
+
+  const cekLagi = await testPrisma.finCashAccount.findUnique({ where: { id: dobel.id } });
+  assert.equal(cekLagi, null, "baris benar-benar hilang dari database, bukan cuma nonaktif");
+});
+
+test("DELETE cash-account: rekening yang SUDAH punya transaksi ditolak 409, bukan dihapus paksa", async () => {
+  const { rekeningKas } = await siapkanFinance();
+  const { token } = await createTestUser({ roles: ["ADMIN"] });
+  const client = makeClient(server.baseUrl, token);
+  const kategori = await testPrisma.finExpenseCategory.findFirst({ where: { active: true } });
+
+  const created = await client.post("/api/finance/expenses", {
+    date: "2026-09-10", amount: 50_000, description: "Sudah ada transaksi", categoryId: kategori.id,
+    mode: "LANGSUNG", cashAccountId: rekeningKas.id,
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  await client.post(`/api/finance/expenses/${created.body.id}/approve`, {});
+
+  const hapus = await client.delete(`/api/finance/cash-accounts/${rekeningKas.id}`);
+  assert.equal(hapus.status, 409, JSON.stringify(hapus.body));
+  assert.match(hapus.body.error, /nonaktifkan/i);
+
+  const cekLagi = await testPrisma.finCashAccount.findUnique({ where: { id: rekeningKas.id } });
+  assert.ok(cekLagi, "rekening TETAP ada di database — ditolak, bukan diam-diam dihapus");
+});

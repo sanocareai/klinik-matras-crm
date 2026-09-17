@@ -21,5 +21,6 @@ export function makeClient(baseUrl, token) {
     get: (path) => call("GET", path),
     post: (path, body) => call("POST", path, body),
     patch: (path, body) => call("PATCH", path, body),
+    delete: (path) => call("DELETE", path),
   };
 }

@@ -1180,6 +1180,7 @@ export const api = {
   getFinanceCashAccounts: () => request("/finance/cash-accounts"),
   createFinanceCashAccount: (data) => request("/finance/cash-accounts", { method: "POST", body: JSON.stringify(data) }),
   updateFinanceCashAccount: (id, data) => request(`/finance/cash-accounts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteFinanceCashAccount: (id) => request(`/finance/cash-accounts/${id}`, { method: "DELETE" }),
 
   getFinanceExpenseCategories: (params = {}) => request(`/finance/expense-categories${qsFinance(params)}`),
   createFinanceExpenseCategory: (data) => request("/finance/expense-categories", { method: "POST", body: JSON.stringify(data) }),

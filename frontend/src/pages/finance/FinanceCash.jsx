@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Plus, ArrowLeftRight, TrendingUp, Wallet } from "lucide-react";
+import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -39,6 +39,7 @@ export default function FinanceCash() {
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
   const [modal, setModal] = useState(null); // "rekening" | "transfer" | "pemasukan"
+  const [editRekening, setEditRekening] = useState(null); // akun yang sedang diedit, null = mode "tambah baru"
 
   const muat = useCallback(async () => {
     setLoading(true);
@@ -67,8 +68,21 @@ export default function FinanceCash() {
     try {
       await fn();
       setModal(null);
+      setEditRekening(null);
       await muat();
     } catch (e) {
+      setPesan(e.message);
+    }
+  }
+
+  async function hapusRekening(a) {
+    if (!confirm(`Hapus rekening "${a.name}" secara permanen? Aksi ini tidak bisa dibatalkan.`)) return;
+    try {
+      await api.deleteFinanceCashAccount(a.id);
+      await muat();
+    } catch (e) {
+      // 409 = sudah punya transaksi — pesan dari backend sudah mengarahkan
+      // ke "nonaktifkan lewat Edit", tampilkan apa adanya.
       setPesan(e.message);
     }
   }
@@ -144,7 +158,7 @@ export default function FinanceCash() {
               <TableWrap>
                 <Table>
                   <THead>
-                    <TR><TH>Nama</TH><TH>Jenis</TH><TH>Nomor</TH><TH>Akun COA</TH><TH numeric>Saldo Buku</TH><TH>Status</TH></TR>
+                    <TR><TH>Nama</TH><TH>Jenis</TH><TH>Nomor</TH><TH>Akun COA</TH><TH numeric>Saldo Buku</TH><TH>Status</TH><TH>Aksi</TH></TR>
                   </THead>
                   <TBody>
                     {rekening.accounts.map((a) => (
@@ -158,6 +172,16 @@ export default function FinanceCash() {
                         <TD className="font-mono text-[12px]">{a.account?.code} · {a.account?.name}</TD>
                         <TD numeric><Uang value={a.saldo} className="font-bold" /></TD>
                         <TD>{a.active ? <Badge variant="green">Aktif</Badge> : <Badge variant="neutral">Nonaktif</Badge>}</TD>
+                        <TD>
+                          <div className="flex items-center gap-1">
+                            <Button size="icon" variant="neutral" title="Edit" onClick={() => setEditRekening(a)}>
+                              <Pencil size={14} />
+                            </Button>
+                            <Button size="icon" variant="neutral" title="Hapus" onClick={() => hapusRekening(a)}>
+                              <Trash2 size={14} />
+                            </Button>
+                          </div>
+                        </TD>
                       </TR>
                     ))}
                   </TBody>
@@ -244,8 +268,12 @@ export default function FinanceCash() {
       )}
 
       <ModalRekening
-        open={modal === "rekening"} onClose={() => setModal(null)}
-        onSubmit={(d) => aksi(() => api.createFinanceCashAccount(d))}
+        open={modal === "rekening" || Boolean(editRekening)}
+        onClose={() => { setModal(null); setEditRekening(null); }}
+        initial={editRekening}
+        onSubmit={(d) => aksi(() => (
+          editRekening ? api.updateFinanceCashAccount(editRekening.id, d) : api.createFinanceCashAccount(d)
+        ))}
       />
       <ModalTransfer
         open={modal === "transfer"} onClose={() => setModal(null)}
@@ -262,14 +290,32 @@ export default function FinanceCash() {
   );
 }
 
-function ModalRekening({ open, onClose, onSubmit }) {
-  const [f, setF] = useState({ name: "", kind: "BANK", bankName: "", accountNumber: "", accountHolder: "", notes: "" });
+const REKENING_KOSONG = { name: "", kind: "BANK", bankName: "", accountNumber: "", accountHolder: "", notes: "", active: true };
+
+function ModalRekening({ open, onClose, initial, onSubmit }) {
+  const editMode = Boolean(initial);
+  const [f, setF] = useState(REKENING_KOSONG);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+
+  // Isi ulang form setiap kali modal dibuka dengan target BEDA (edit rekening
+  // lain) atau dibuka dalam mode tambah baru — bukan cuma sekali saat mount,
+  // supaya klik "Edit" di baris kedua tidak menampilkan data baris pertama
+  // yang sempat tersimpan di state sebelumnya.
+  useEffect(() => {
+    if (!open) return;
+    setF(initial ? {
+      name: initial.name || "", kind: initial.kind || "BANK",
+      bankName: initial.bankName || "", accountNumber: initial.accountNumber || "",
+      accountHolder: initial.accountHolder || "", notes: initial.notes || "",
+      active: initial.active ?? true,
+    } : REKENING_KOSONG);
+  }, [open, initial]);
+
   return (
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
-      title="Rekening Baru"
-      description="Kas tunai, rekening bank, atau e-wallet."
+      title={editMode ? `Edit — ${initial?.name}` : "Rekening Baru"}
+      description={editMode ? "Jenis rekening tidak bisa diubah setelah dibuat." : "Kas tunai, rekening bank, atau e-wallet."}
       footer={
         <>
           <Button variant="neutral" onClick={onClose}>Batal</Button>
@@ -281,13 +327,19 @@ function ModalRekening({ open, onClose, onSubmit }) {
         <Field label="Nama rekening" required hint="Yang mudah dikenali tim, mis. “BCA Operasional”">
           <Input value={f.name} onChange={(e) => set("name", e.target.value)} />
         </Field>
-        <Field label="Jenis">
-          <Pilihan value={f.kind} onChange={(v) => set("kind", v)}>
-            <option value="KAS">Kas tunai</option>
-            <option value="BANK">Rekening bank</option>
-            <option value="EWALLET">E-wallet / QRIS</option>
-          </Pilihan>
-        </Field>
+        {editMode ? (
+          <Field label="Jenis">
+            <Input value={f.kind === "KAS" ? "Kas tunai" : f.kind === "EWALLET" ? "E-wallet / QRIS" : "Rekening bank"} disabled />
+          </Field>
+        ) : (
+          <Field label="Jenis">
+            <Pilihan value={f.kind} onChange={(v) => set("kind", v)}>
+              <option value="KAS">Kas tunai</option>
+              <option value="BANK">Rekening bank</option>
+              <option value="EWALLET">E-wallet / QRIS</option>
+            </Pilihan>
+          </Field>
+        )}
         {f.kind !== "KAS" && (
           <>
             <Field label="Nama bank / penyedia">
@@ -304,6 +356,14 @@ function ModalRekening({ open, onClose, onSubmit }) {
         <Field label="Catatan">
           <Input value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Opsional" />
         </Field>
+        {editMode && (
+          <Field label="Status" hint="Nonaktifkan kalau rekening ini tidak dipakai lagi tapi riwayat transaksinya harus tetap ada (tidak bisa dihapus permanen).">
+            <Pilihan value={f.active ? "1" : "0"} onChange={(v) => set("active", v === "1")}>
+              <option value="1">Aktif</option>
+              <option value="0">Nonaktif</option>
+            </Pilihan>
+          </Field>
+        )}
       </div>
     </Modal>
   );
