@@ -12,7 +12,8 @@ import PhotoCapture from "./PhotoCapture";
 import PaymentSection from "./PaymentSection";
 import JobProgressStepper from "./JobProgressStepper";
 import { performSubmit } from "../lib/submitJobAction";
-import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, waLinkFromPhone, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL, serviceLabelOf, salesPersonOf } from "../lib/jobHelpers";
+import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, waLinkFromPhone, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL, produkLabelOf, salesPersonOf } from "../lib/jobHelpers";
+import { Package, User as UserIcon } from "lucide-react-native";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 
@@ -69,7 +70,7 @@ export default function JobCard({ job, onChanged }) {
   // planner") — helper & data backend SUDAH ada (jobInclude di
   // /armada/my-jobs sudah menyertakan order.items & customer.assignedSales,
   // dipakai RouteCard.jsx sisi dispatcher), murni penambahan tampilan.
-  const layanan = serviceLabelOf(job);
+  const produk = produkLabelOf(job);
   const sales = salesPersonOf(job);
   const failReasons = job.type === "PICKUP" ? FAIL_REASONS_PICKUP : FAIL_REASONS_DELIVERY;
   const statusInfo = JOB_STATUS_REAL[job.status] || { label: job.status };
@@ -108,8 +109,28 @@ export default function JobCard({ job, onChanged }) {
           <Text style={styles.jobMeta}>
             {jobLabelOf(job)} · {orderNumberOf(job) || "—"} · {job.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
           </Text>
-          {layanan ? <Text style={styles.serviceLabel}>{layanan}</Text> : null}
-          {sales ? <Text style={styles.salesLabel}>Sales: {sales}</Text> : null}
+          {/* PRODUK (kasur+ukuran) & Sales — chip berwarna, BUKAN teks abu
+              polos (17 September 2026, laporan owner: "yang muncul jenis
+              layanan, bukan produk contoh kasur... ukuran..." + "kasih
+              highlight atau label yang contrast jangan text berwarna abu
+              aja"). produkLabelOf BEDA dari serviceLabelOf lama (nama
+              PAKET, mis. "Paket Upgrade...") — ini BENDANYA. */}
+          {(produk || sales) && (
+            <View style={styles.chipRow}>
+              {produk && (
+                <View style={[styles.chip, { backgroundColor: theme.ACCENT_BG }]}>
+                  <Package size={10} color={theme.ACCENT} />
+                  <Text style={[styles.chipText, { color: theme.ACCENT }]} numberOfLines={1}>{produk}</Text>
+                </View>
+              )}
+              {sales && (
+                <View style={[styles.chip, { backgroundColor: theme.ACCENT_BG }]}>
+                  <UserIcon size={10} color={theme.ACCENT} />
+                  <Text style={[styles.chipText, { color: theme.ACCENT }]} numberOfLines={1}>{sales}</Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
         <View style={[styles.statusBadge, { backgroundColor: (STATUS_TONE[job.status] || theme.INK3) + "26" }]}>
           <Text style={[styles.statusBadgeText, { color: STATUS_TONE[job.status] || theme.INK2 }]}>{statusInfo.label}</Text>
@@ -284,8 +305,12 @@ function makeStyles(t) {
     headerRow: { flexDirection: "row", alignItems: "flex-start" },
     customerName: { color: t.INK, fontSize: 15, fontWeight: "700" },
     jobMeta: { color: t.INK2, fontSize: 11, marginTop: 2 },
-    serviceLabel: { color: t.INK3, fontSize: 11, marginTop: 2 },
-    salesLabel: { color: t.INK3, fontSize: 11, marginTop: 2 },
+    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
+    chip: {
+      flexDirection: "row", alignItems: "center", gap: 4,
+      paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100, maxWidth: 200,
+    },
+    chipText: { fontSize: 10.5, fontWeight: "700" },
     statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100 },
     statusBadgeText: { fontSize: 10.5, fontWeight: "700" },
     detailLine: { color: t.INK2, fontSize: 12, marginTop: 6 },

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 import {
   salesPersonOf, estimasiDurasiLabel, customerOf, customerPhoneOf,
-  isRentalOrder, serviceLabelOf, cityOf, orderStatusOf, orderOf,
+  isRentalOrder, serviceLabelOf, produkLabelOf, cityOf, orderStatusOf, orderOf,
   salesLocationUrl, ACTIVE_STATUSES,
 } from "../jobStatus.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
@@ -393,6 +393,27 @@ export function ServiceLabel({ job, className }) {
   const label = serviceLabelOf(job);
   if (!label) return null;
   return <p className={cn("truncate text-[10.5px] text-ink3", className)}>{label}</p>;
+}
+
+// Badge PRODUK (kasur + ukuran) — chip berwarna, BUKAN teks abu polos
+// (laporan owner 17 September 2026: kartu driver app cuma menampilkan
+// nama PAKET layanan yang mirip teks biasa, sulit dibaca sekilas & bukan
+// info yang paling dibutuhkan driver di lapangan — mereka perlu tahu
+// BARANGNYA, kasur apa & ukuran berapa). Pola warna SAMA dengan
+// RentalBadge/CityBadge di atas (chip kontras, bukan teks polos).
+export function ProductBadge({ job, className }) {
+  const label = produkLabelOf(job);
+  if (!label) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center gap-1 rounded-full bg-accentbg px-2 py-0.5 text-[10.5px] font-semibold text-accent",
+        className
+      )}
+    >
+      <PackageOpen size={11} className="shrink-0" /> <span className="truncate">{label}</span>
+    </span>
+  );
 }
 
 // Baris gabungan dua badge di atas, dipakai kalau keduanya wajar tampil

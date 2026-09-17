@@ -1,4 +1,4 @@
-import { titleCaseNama } from "@/utils/format.js";
+import { titleCaseNama, parseOrderNotes, PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS } from "@/utils/format.js";
 import { hariSejak } from "@/utils/formatDate.js";
 
 // Peta status & tipe job NYATA — dari enum backend (prisma/schema.prisma),
@@ -165,6 +165,29 @@ export function isRentalOrder(job) {
 // Route Planner ruang sempit, cukup satu baris untuk konteks cepat).
 export function serviceLabelOf(job) {
   return job?.order?.items?.[0]?.layananName || job?.units?.[0]?.unit?.order?.items?.[0]?.layananName || null;
+}
+
+// Label PRODUK ringkas (kasur + ukuran) — BEDA dari serviceLabelOf di atas
+// (itu nama PAKET/layanan, mis. "Paket Upgrade Fondasi + Lapisan Matras
+// Sehat"; ini BENDANYA, mis. "Kasur Spring · 160x200"). Laporan owner 17
+// September 2026: "ini yang muncul jenis layanan, bukan produk contoh
+// kasur... ukuran..." — awal salah pasang serviceLabelOf di kartu driver
+// app, padahal yang diminta sejak awal ("keterangan produk") adalah ini.
+// SATU SUMBER dengan produkLineLabel (backend services/invoice.js) dan
+// productSummary (frontend features/inbox/.../orderSummary.js) — logika
+// SEWA-selalu-pakai-brand yang sama (D-170), jangan duplikasi aturan lagi
+// di tempat ketiga.
+export function produkLabelOf(job) {
+  const order = job?.order || job?.units?.[0]?.unit?.order;
+  if (!order) return null;
+  const { ukuranKasur, merkKasur } = parseOrderNotes(order.notes);
+  if (order.category === "SEWA") {
+    return [merkKasur || "Sano", ukuranKasur].filter(Boolean).join(" · ") || null;
+  }
+  const line = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
+  const type = order.productType ? (PRODUCT_TYPE_LABELS[order.productType] || order.productType) : "";
+  const produk = type && !type.toLowerCase().startsWith(line.toLowerCase()) ? `${line} ${type}` : (type || line);
+  return [produk, ukuranKasur].filter(Boolean).join(" · ") || null;
 }
 
 // Tanggal PASTI pengambilan/pengiriman — dari Order.pickupConfirmedDate/

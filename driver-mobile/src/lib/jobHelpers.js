@@ -80,6 +80,51 @@ export function serviceLabelOf(job) {
   return job?.order?.items?.[0]?.layananName || job?.units?.[0]?.unit?.order?.items?.[0]?.layananName || null;
 }
 
+// Port dari frontend/src/utils/format.js — HANYA yang dipakai produkLabelOf
+// di bawah, bukan seluruh peta enum produk (banyak yang khusus form order
+// sales, tidak relevan di sini).
+const PRODUCT_LINE_LABELS = { KASUR: "Kasur", SOFA: "Sofa", DIVAN: "Divan" };
+const PRODUCT_TYPE_LABELS = {
+  KASUR_SPRING: "Kasur Spring", KASUR_BUSA: "Kasur Busa", MULTIBED: "Multibed",
+  KASUR_2IN1_ATAS: "Kasur 2in1 Atas", KASUR_2IN1_BAWAH: "Kasur 2in1 Bawah",
+  SOFABED: "Sofabed", SOFA_L: "Sofa L", SOFA_1_SEATER: "Sofa 1 Seater",
+  SOFA_2_SEATER: "Sofa 2 Seater", SOFA_3_SEATER: "Sofa 3 Seater",
+  DIVAN_SANDARAN: "Sandaran", KASUR_SEHAT: "Kasur Sehat", KASUR_2IN1: "Kasur 2in1",
+  KASUR_LAINNYA: "Lainnya", DIVAN_UTAMA: "Divan",
+};
+
+// Port dari frontend/src/utils/format.js#parseOrderNotes — Order.notes JSON
+// (merk/ukuran kasur, D-029) belum punya kolom sendiri.
+function parseOrderNotes(notes) {
+  if (!notes) return { merkKasur: "", ukuranKasur: "" };
+  try {
+    const p = JSON.parse(notes);
+    return { merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "" };
+  } catch {
+    return { merkKasur: "", ukuranKasur: "" };
+  }
+}
+
+// Label PRODUK ringkas (kasur + ukuran) — port dari jobStatus.js#produkLabelOf
+// web (17 September 2026, laporan owner: "yang muncul jenis layanan, bukan
+// produk contoh kasur... ukuran..."). BEDA dari serviceLabelOf di atas (itu
+// nama PAKET, mis. "Paket Upgrade..."; ini BENDANYA, mis. "Kasur Spring ·
+// 160x200"). SATU SUMBER dengan produkLineLabel (backend services/invoice.js)
+// / productSummary (frontend orderSummary.js) — logika SEWA-selalu-pakai-
+// brand (D-170) sama, jangan duplikasi aturan lagi di tempat keempat.
+export function produkLabelOf(job) {
+  const order = job?.order || job?.units?.[0]?.unit?.order;
+  if (!order) return null;
+  const { ukuranKasur, merkKasur } = parseOrderNotes(order.notes);
+  if (order.category === "SEWA") {
+    return [merkKasur || "Sano", ukuranKasur].filter(Boolean).join(" · ") || null;
+  }
+  const line = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
+  const type = order.productType ? (PRODUCT_TYPE_LABELS[order.productType] || order.productType) : "";
+  const produk = type && !type.toLowerCase().startsWith(line.toLowerCase()) ? `${line} ${type}` : (type || line);
+  return [produk, ukuranKasur].filter(Boolean).join(" · ") || null;
+}
+
 // Sales yang pegang order ini — port dari jobStatus.js#salesPersonOf, sama
 // laporan owner dengan serviceLabelOf di atas.
 export function salesPersonOf(job) {
