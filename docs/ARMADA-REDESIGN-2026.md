@@ -1,7 +1,7 @@
 # Armada (Delivery & Fulfillment) — Redesign & Maximization
 ### Design & Roadmap Document
 **Owner:** Sano · **Company:** Klinik Matras by SANO Care · **Date:** September 2026
-**Status:** Phases A-D shipped. Phase E deliberately not built (owner decision, §5). Route Planner card-identification + emergency-edit follow-up shipped (§10, outside the original 4-gap scope, requested directly on top of it after Phase D).
+**Status:** Phases A-D shipped. Phase E deliberately not built (owner decision, §5). Route Planner card-identification + emergency-edit follow-up shipped (§10, outside the original 4-gap scope, requested directly on top of it after Phase D). Driver app (`DriverJobs.jsx`) revision notes added §12 — one item shipped, two open backlog items (16-17 Sep 2026).
 
 ---
 
@@ -184,3 +184,37 @@ Requested directly against the live Route Planner after Phase D, not part of the
 - It does not touch the Expo `mobile/` app — that's a separate Sales/CRM product with no armada surface today; extending it is a distinct decision, not assumed here.
 - It does not attempt full VRP route optimization — consistent with PRD §1.5, that stays out of scope.
 - It does not implement the full cross-portal PRD §1.4 "Command" vision — §6's "Delivery Command" is scoped to this workspace's own data only.
+
+---
+
+## 12. Driver app (`Job Saya` / `frontend/src/pages/DriverJobs.jsx`) — revision notes
+
+Requested directly by the owner while using the driver app, not part of the original 4-gap scope — same continuity pattern as §10. This is the web PWA driver experience (not the planned native RN app, which is a separate, unstarted decision — see §11 and the `driver-mobile` plan file, if/when that's picked up).
+
+### 12.1 Shipped — Edit Darurat (emergency driver/helper reassignment) not reachable from active jobs (16 Sep 2026)
+
+Report: a route gets published, the driver is already en route to pick up/deliver a mattress, then the driver or helper has an urgent matter mid-route and can't continue to the remaining stops — there was no way to reassign driver/helper for the rest of the route from the places a dispatcher would naturally be looking.
+
+Root cause found: the emergency-reassignment capability already existed at the *route* level (`PATCH /routes/:id` — "Edit Darurat" in `RouteCard.jsx`, cascades the new driver/helper only to stops not yet `COMPLETED`/`FAILED`), but `JobDetailDrawer.jsx` (the job-level drawer opened from "Jadwal & Penugasan") only showed a read-only lock message with no way to act, forcing the dispatcher to leave the page. First attempt at a fix placed the new button inside the `editable` branch (`EDITABLE_JOB_STATUSES` = UNSCHEDULED/SCHEDULED/ASSIGNED only) — invisible for exactly the reported scenario, since a driver already "jalan" means the job is EN_ROUTE/ARRIVED, which is `!editable`. Fixed by moving the button outside the editable/non-editable branches entirely, gated only on `terkunciRute && job.route?.status === "PUBLISHED"` — reachable for a job in any status as long as its route is still published.
+
+A second, unrelated bug surfaced in the same testing pass: in Proof of Delivery review (`PodReviewDrawer.jsx`, "Koreksi bukti Admin"), clicking the Driver & Helper picker (`AssignDropdown.jsx`) opened no visible options. Root cause: `DropdownMenu.Content`/`SubContent` was pinned `z-50`, fine on the plain "Papan" board page (`Armada.jsx`, no competing overlay) but `PodReviewDrawer` is a Radix Dialog with `Dialog.Content` at `z-[201]` — the dropdown's portal (appended to `document.body`, independent of DOM nesting) rendered behind the drawer panel. Raised to `z-[250]`.
+
+Files: `frontend/src/features/armada/components/JobDetailDrawer.jsx`, `frontend/src/features/armada/components/AssignDropdown.jsx`.
+
+### 12.2 Backlog — sales name + product/service label missing from driver app job cards
+
+Request: job cards in the driver's own list should show the same context Route Planner already shows dispatchers — who the sales person is and what the order is for — not just customer name + address.
+
+Current state: `DriverJobs.jsx`'s `JobCard` renders badge (Ambil/Kirim), customer name, order number, unit codes, phone (tap-to-WhatsApp), address, access notes — no sales name, no service/product label.
+
+What already exists and should be reused, not reimplemented: `salesPersonOf(job)` and `serviceLabelOf(job)` in `frontend/src/features/armada/jobStatus.js`, already rendered via `SalesBadge`/`ServiceLabel` (`JobBadges.jsx`) inside `RouteCard.jsx`'s `JobMetaRow`. Confirmed the backend data is already there for the driver's own endpoint too — `GET /armada/my-jobs` (`backend/src/routes/armada.js:3433`) uses the same shared `jobInclude` as `/armada/jobs` and `/routes`, which already selects `order.items` (first item, for `serviceLabelOf`) and `order.customer.assignedSales.name` (for `salesPersonOf`). This is a frontend-only change: import both helpers into `DriverJobs.jsx` and render them on `JobCard`, no backend/include changes needed.
+
+### 12.3 Backlog — driver app date window: today only, plus anything still unfinished regardless of date
+
+Request: the driver app should show only *today's* scheduled jobs by default — tomorrow's route should not appear yet. Exception: a job that's still unfinished (no pickup/delivery proof submitted — i.e. not `COMPLETED`/`FAILED`) should keep appearing regardless of how many days old its `scheduledDate` is, e.g. a 17 Sep stop still missing its pickup/delivery photo should still show on 18, 19 Sep etc. until it's actually resolved — that part is fine as-is, nothing should silently drop off the list.
+
+Current state (confirmed in code, not assumed): `GET /armada/my-jobs` (`backend/src/routes/armada.js:3431-3450`) filters `scheduledDate: { gte: yesterday, lt: tomorrow+1 }` — a fixed 3-day "today ±1" window per PRD §9.3, applied regardless of job status. Two concrete mismatches with this request:
+1. Tomorrow's jobs already show today (the `+1` side of the window) — the request wants this removed.
+2. A job stuck incomplete for *more* than 1 day would silently disappear from the driver's list once it ages past the `-1` boundary — the opposite of what's wanted (nothing should ever disappear while still unfinished, whether it's 1 day or 2 weeks old).
+
+Proposed direction (not implemented yet — flagging for owner sign-off since it changes PRD §9.3's literal contract, not a silent reinterpretation): replace the single date-window `where` with an `OR` of two conditions — (a) `scheduledDate` within *today* only, using WIB day boundaries (`startOfDayWIB`/`endOfDayExclusiveWIB` from `backend/src/utils/wib.js` — per CLAUDE.md §11, never naive `new Date()` day math, container runs UTC), OR (b) `status NOT IN ("COMPLETED", "FAILED")` regardless of `scheduledDate` (covers any unfinished job from any past date, including `scheduledDate: null`). Same file/endpoint as 12.2, so worth doing together.
