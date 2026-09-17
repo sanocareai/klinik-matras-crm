@@ -72,6 +72,24 @@ export function jobLabelOf(job) {
   return `${urut}-${jenis}`;
 }
 
+// Label layanan/produk ringkas ("apa yang dikerjakan di order ini") — port
+// dari jobStatus.js#serviceLabelOf (17 September 2026, laporan owner:
+// "tambah nama sales, keterangan produk setiap card seperti di web route
+// planner"). Dari OrderItem pertama (sortOrder asc), bukan rincian lengkap.
+export function serviceLabelOf(job) {
+  return job?.order?.items?.[0]?.layananName || job?.units?.[0]?.unit?.order?.items?.[0]?.layananName || null;
+}
+
+// Sales yang pegang order ini — port dari jobStatus.js#salesPersonOf, sama
+// laporan owner dengan serviceLabelOf di atas.
+export function salesPersonOf(job) {
+  return (
+    job?.order?.customer?.assignedSales?.name ||
+    job?.units?.[0]?.unit?.order?.customer?.assignedSales?.name ||
+    null
+  );
+}
+
 function salesLocationUrl(job) {
   return job?.order?.locationUrl || job?.units?.[0]?.unit?.order?.locationUrl || null;
 }

@@ -3428,14 +3428,28 @@ armadaRouter.get("/route/summary", requirePermission(P.JOB_READ), async (req, re
   }
 });
 
-// GET /api/armada/my-jobs?date=YYYY-MM-DD — driver sendiri, hari ini ±1
-// (PRD §9.3: "drivers read only jobs assigned to them, dated today ±1").
+// GET /api/armada/my-jobs?date=YYYY-MM-DD — driver sendiri.
+//
+// DIKOREKSI 17 September 2026 (laporan owner: "rute yang muncul di driver
+// app hanya yang hari itu saja... rute besok gaperlu muncul kecuali ada
+// yang belum diselesaikan..., itu gamasalah kalo tetap muncul"). SEBELUM
+// INI jendelanya "hari ini ±1" tetap (PRD §9.3), TERLEPAS dari status job
+// — dua akibat yang tidak diinginkan: (a) job BESOK sudah kelihatan hari
+// ini (bikin driver bingung mana yang harus dikerjakan sekarang), dan
+// (b) job yang masih belum selesai lebih dari 1 hari malah HILANG dari
+// daftar begitu lewat batas "-1" (padahal itu yang paling penting supaya
+// tidak ada laporan/foto yang kececer). Sekarang: OR dari dua kondisi —
+// (a) scheduledDate HARI INI saja (batas WIB, bukan `new Date()` polos —
+// container jalan UTC, lihat CLAUDE.md §11/utils/wib.js), ATAU (b) job
+// APA PUN yang belum tuntas (bukan COMPLETED/FAILED), berapa pun lama
+// sudah lewat tanggalnya, termasuk scheduledDate null. Ini SENGAJA
+// menyimpang dari kalimat literal PRD §9.3 "today ±1" — perubahan
+// disetujui langsung oleh owner, bukan reinterpretasi diam-diam.
 armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res) => {
   try {
     const centerDateStr = req.query.date || new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-    const centerDate = toDateOnly(centerDateStr);
-    const from = new Date(centerDate); from.setUTCDate(from.getUTCDate() - 1);
-    const to = new Date(centerDate); to.setUTCDate(to.getUTCDate() + 2); // +1 hari, eksklusif
+    const from = startOfDayWIB(centerDateStr);
+    const to = endOfDayExclusiveWIB(centerDateStr);
 
     // D-037 (31 Agustus 2026) — helper melihat job yang sama dengan driver
     // TERPISAH: OR driverId/helperId, bukan cuma driverId. Helper accompany
@@ -3443,7 +3457,12 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
     const jobs = await prisma.job.findMany({
       where: {
         OR: [{ driverId: req.user.id }, { helperId: req.user.id }],
-        scheduledDate: { gte: from, lt: to },
+        AND: {
+          OR: [
+            { scheduledDate: { gte: from, lt: to } },
+            { status: { notIn: ["COMPLETED", "FAILED"] } },
+          ],
+        },
       },
       include: jobInclude,
       orderBy: [{ scheduledDate: "asc" }, { sequence: "asc" }, { createdAt: "asc" }],

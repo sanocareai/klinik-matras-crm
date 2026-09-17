@@ -12,6 +12,7 @@ import { useDriverTracking } from "../hooks/useDriverTracking.js";
 import { usePushSubscription } from "../hooks/usePushSubscription.js";
 import { useMyJobs } from "@/features/armada/hooks/useMyJobs.js";
 import { mapsUrl } from "@/features/armada/jobStatus.js";
+import { SalesBadge, ServiceLabel } from "@/features/armada/components/JobBadges.jsx";
 import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -344,6 +345,7 @@ function JobCard({ job, onChanged, onQueued, pending }) {
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-ink">{customer?.name || "—"}</p>
             <p className="font-mono text-xs text-ink2">{job.units[0]?.unit?.order?.orderNumber}</p>
+            <ServiceLabel job={job} className="mt-0.5" />
           </div>
           <Badge variant={job.type === "PICKUP" ? "accent" : "green"}>
             {job.type === "PICKUP" ? "Ambil" : "Kirim"}
@@ -362,11 +364,18 @@ function JobCard({ job, onChanged, onQueued, pending }) {
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-ink">{customer?.name || "—"}</p>
           <p className="font-mono text-xs text-ink2">{job.units[0]?.unit?.order?.orderNumber}</p>
+          {/* Nama sales & label layanan/produk (17 September 2026, laporan
+              owner: "tambah nama sales, keterangan produk setiap card
+              seperti di web route planner") — helper & data backend SUDAH
+              ada (dipakai RouteCard.jsx sisi dispatcher), murni penambahan
+              tampilan di sini, bukan perubahan data. */}
+          <ServiceLabel job={job} className="mt-0.5" />
         </div>
         <Badge variant={job.type === "PICKUP" ? "accent" : "green"}>
           {job.type === "PICKUP" ? "Ambil" : "Kirim"}
         </Badge>
       </div>
+      <SalesBadge job={job} className="mt-2" />
 
       {/* returnToDepotBefore (D-164, 13 September 2026, permintaan owner:
           "sering juga 1 rute misal dari alamat 1,2, ke 3 nya balik dulu ke

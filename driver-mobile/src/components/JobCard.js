@@ -12,7 +12,7 @@ import PhotoCapture from "./PhotoCapture";
 import PaymentSection from "./PaymentSection";
 import JobProgressStepper from "./JobProgressStepper";
 import { performSubmit } from "../lib/submitJobAction";
-import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, waLinkFromPhone, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL } from "../lib/jobHelpers";
+import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, waLinkFromPhone, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL, serviceLabelOf, salesPersonOf } from "../lib/jobHelpers";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 
@@ -64,6 +64,13 @@ export default function JobCard({ job, onChanged }) {
   const waLink = waLinkFromPhone(phone);
   const maps = mapsUrl(job);
   const estJam = estJamUntukTampilan(job.timeWindow);
+  // Nama sales & label layanan/produk (17 September 2026, laporan owner:
+  // "tambah nama sales, keterangan produk setiap card seperti di web route
+  // planner") — helper & data backend SUDAH ada (jobInclude di
+  // /armada/my-jobs sudah menyertakan order.items & customer.assignedSales,
+  // dipakai RouteCard.jsx sisi dispatcher), murni penambahan tampilan.
+  const layanan = serviceLabelOf(job);
+  const sales = salesPersonOf(job);
   const failReasons = job.type === "PICKUP" ? FAIL_REASONS_PICKUP : FAIL_REASONS_DELIVERY;
   const statusInfo = JOB_STATUS_REAL[job.status] || { label: job.status };
 
@@ -101,6 +108,8 @@ export default function JobCard({ job, onChanged }) {
           <Text style={styles.jobMeta}>
             {jobLabelOf(job)} · {orderNumberOf(job) || "—"} · {job.type === "PICKUP" ? "Pengambilan" : "Pengiriman"}
           </Text>
+          {layanan ? <Text style={styles.serviceLabel}>{layanan}</Text> : null}
+          {sales ? <Text style={styles.salesLabel}>Sales: {sales}</Text> : null}
         </View>
         <View style={[styles.statusBadge, { backgroundColor: (STATUS_TONE[job.status] || theme.INK3) + "26" }]}>
           <Text style={[styles.statusBadgeText, { color: STATUS_TONE[job.status] || theme.INK2 }]}>{statusInfo.label}</Text>
@@ -275,6 +284,8 @@ function makeStyles(t) {
     headerRow: { flexDirection: "row", alignItems: "flex-start" },
     customerName: { color: t.INK, fontSize: 15, fontWeight: "700" },
     jobMeta: { color: t.INK2, fontSize: 11, marginTop: 2 },
+    serviceLabel: { color: t.INK3, fontSize: 11, marginTop: 2 },
+    salesLabel: { color: t.INK3, fontSize: 11, marginTop: 2 },
     statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100 },
     statusBadgeText: { fontSize: 10.5, fontWeight: "700" },
     detailLine: { color: t.INK2, fontSize: 12, marginTop: 6 },
