@@ -43,7 +43,10 @@ const STATUS_TAB = [
 
 export default function FinancePurchases() {
   const [periode, setPeriode] = useState(periodeDefault);
-  const [status, setStatus] = useState("MENUNGGU_APPROVAL");
+  // Default "Semua" — lihat catatan yang sama di FinanceExpenses.jsx
+  // (histori impor Notion masuk sebagai DIBAYAR langsung, jadi default
+  // "Menunggu Persetujuan" membuat halaman ini tampak kosong).
+  const [status, setStatus] = useState("");
   const [data, setData] = useState(null);
   const [kategori, setKategori] = useState([]);
   const [rekening, setRekening] = useState([]);

@@ -38,7 +38,11 @@ const STATUS_TAB = [
 
 export default function FinanceExpenses() {
   const [periode, setPeriode] = useState(periodeDefault);
-  const [status, setStatus] = useState("MENUNGGU_APPROVAL");
+  // Default "Semua" (bukan "Menunggu Persetujuan") — histori impor Notion
+  // (D-181, 18 Sep 2026) masuk sebagai DIBAYAR langsung (transaksi lama,
+  // sudah lunas), jadi default lama membuat halaman ini tampak kosong
+  // padahal datanya ada ribuan baris.
+  const [status, setStatus] = useState("");
   const [data, setData] = useState(null);
   const [kategori, setKategori] = useState([]);
   const [rekening, setRekening] = useState([]);
