@@ -32,6 +32,7 @@ import { useIncentiveSummary } from "../hooks/useIncentiveSummary";
 import { useRouteHistory } from "../hooks/useRouteHistory";
 import { relatifWaktu, formatRupiah, customerOf, orderNumberOf } from "../lib/jobHelpers";
 import { MAP_STYLE_DARK } from "../lib/googleMapStyle";
+import { getRoadRoute } from "../lib/osrm";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
 import JobCard from "../components/JobCard";
@@ -646,7 +647,18 @@ function DriverView({ drivers, theme: t, styles }) {
 // posisi baru (key sudah termasuk jobId/vehicleId, bukan lat/lng, lihat
 // pemanggil), true di sini cuma memboroskan render setiap frame tanpa
 // manfaat, pola umum react-native-maps utk custom marker yang tidak animasi.
-function DriverMarkerDot({ t }) {
+// Foto driver/helper AKTIF sebagai marker (18 September 2026, permintaan
+// owner: "di maps bisa ga logo atau icon mobilnya diganti dengan foto
+// driver/helper yang aktif sesuai rute mereka?") — fallback ke ikon truck
+// polos kalau orangnya belum pernah pasang foto profil (layar Akun).
+function DriverMarkerDot({ t, name, avatarUrl }) {
+  if (avatarUrl) {
+    return (
+      <View style={[dotStyles.avatarWrap, { borderColor: t.SURFACE }]}>
+        <Avatar name={name} avatarUrl={avatarUrl} size={28} />
+      </View>
+    );
+  }
   return (
     <View style={[dotStyles.wrap, { backgroundColor: t.ACCENT, borderColor: t.SURFACE }]}>
       <Truck size={13} color="#FFFFFF" />
@@ -692,6 +704,11 @@ const dotStyles = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3, elevation: 4,
   },
   wrapKecil: { width: 22, height: 22, borderRadius: 11 },
+  avatarWrap: {
+    width: 32, height: 32, borderRadius: 16, borderWidth: 2,
+    alignItems: "center", justifyContent: "center", overflow: "hidden",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3, elevation: 4,
+  },
 });
 
 const JAKARTA_CENTER = { latitude: -6.2088, longitude: 106.8456, latitudeDelta: 0.15, longitudeDelta: 0.15 };
@@ -714,9 +731,14 @@ function DepotMarkerDot() {
 // merah), tujuan sekarang (pin merah), stop menunggu (bernomor), depot
 // Klinik Matras, dan driver di posisi GPS asli ATAU di Klinik Matras kalau
 // GPS belum ada. Jalur rencana (driver belum jalan) digambar PUTUS-PUTUS
-// supaya tidak dikira driver sudah berangkat. Garis LURUS antar titik
-// (bukan road-matched OSRM seperti web) — sengaja, layar ringkasan "sekilas
-// lihat", bukan navigasi turn-by-turn.
+// supaya tidak dikira driver sudah berangkat.
+//
+// Garis road-matched via OSRM (18 September 2026, laporan owner: "maps nya
+// kayak ga mengikuti pattern jalan, lurus aja") — port pola PERSIS dari
+// ArmadaTracking.jsx web (lib/osrm.js#getRoadRoute, sudah production di
+// sana sejak D-075). Garis LURUS tetap dipakai sebagai fallback instan
+// (dirender duluan) sampai hasil OSRM datang ATAU kalau OSRM gagal —
+// server demo publik, tidak boleh jadi satu-satunya sumber.
 function TrackingMap({ kendaraan, t, dark }) {
   const mapRef = useRef(null);
   const [siap, setSiap] = useState(false);
@@ -747,6 +769,52 @@ function TrackingMap({ kendaraan, t, dark }) {
     }
     return m;
   }, [kendaraan]);
+
+  // Hasil OSRM per kendaraan — { [vehicleId]: { traveled, upcoming } },
+  // masing-masing { coords: [[lat,lng],...], legDurations }. Pola SAMA
+  // persis dgn ArmadaTracking.jsx web.
+  const [jalurByVehicle, setJalurByVehicle] = useState({});
+  const titikStr = (p) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`;
+  const sinyalJalur = kendaraan
+    .map((v) => {
+      const posisi = posisiDigambar.get(v.vehicleId);
+      const keKoord = (s) => ({ latitude: s.lat, longitude: s.lng });
+      return [
+        v.vehicleId, posisi ? titikStr(posisi) : "-",
+        ...v.done.filter(punyaKoordinat).map((s) => titikStr(keKoord(s))),
+        v.active && punyaKoordinat(v.active) ? titikStr(keKoord(v.active)) : "-",
+        ...v.pending.filter(punyaKoordinat).map((s) => titikStr(keKoord(s))),
+      ].join(":");
+    })
+    .join("|");
+  useEffect(() => {
+    let batal = false;
+    for (const v of kendaraan) {
+      const posisi = posisiDigambar.get(v.vehicleId);
+      if (!posisi) continue;
+      const keLatLng = (s) => [s.lat, s.lng];
+      const traveledPts = v.position.source === "gps"
+        ? [...v.done.filter(punyaKoordinat).map(keLatLng), [posisi.latitude, posisi.longitude]]
+        : [];
+      const upcomingPts = [
+        [posisi.latitude, posisi.longitude],
+        ...(v.active && punyaKoordinat(v.active) ? [keLatLng(v.active)] : []),
+        ...v.pending.filter(punyaKoordinat).map(keLatLng),
+      ];
+      if (traveledPts.length >= 2) {
+        getRoadRoute(traveledPts).then((hasil) => {
+          if (!batal && hasil) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], traveled: hasil } }));
+        });
+      }
+      if (upcomingPts.length >= 2) {
+        getRoadRoute(upcomingPts).then((hasil) => {
+          if (!batal && hasil) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], upcoming: hasil } }));
+        });
+      }
+    }
+    return () => { batal = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sinyalJalur]);
 
   // Fit ulang HANYA kalau kumpulan rute/stop berubah — BUKAN tiap GPS driver
   // bergeser (poll 30 detik), supaya peta tidak "melompat" merebut kontrol
@@ -805,12 +873,19 @@ function TrackingMap({ kendaraan, t, dark }) {
             ...(v.active && punyaKoordinat(v.active) ? [keKoord(v.active)] : []),
             ...v.pending.filter(punyaKoordinat).map(keKoord),
           ];
+          // Road-matched OSRM kalau sudah datang, fallback garis lurus di
+          // atas selagi menunggu/kalau gagal (lihat catatan panjang di atas).
+          const jalur = jalurByVehicle[v.vehicleId];
+          const traveledRoad = jalur?.traveled?.coords?.map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
+          const upcomingRoad = jalur?.upcoming?.coords?.map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
+          const traveledGambar = traveledRoad?.length >= 2 ? traveledRoad : traveled;
+          const upcomingGambar = upcomingRoad?.length >= 2 ? upcomingRoad : upcoming;
           return (
             <React.Fragment key={v.vehicleId}>
-              {traveled.length >= 2 && <Polyline coordinates={traveled} strokeColor={t.INK3} strokeWidth={3} />}
-              {upcoming.length >= 2 && (
+              {traveledGambar.length >= 2 && <Polyline coordinates={traveledGambar} strokeColor={t.INK3} strokeWidth={3} />}
+              {upcomingGambar.length >= 2 && (
                 <Polyline
-                  coordinates={upcoming}
+                  coordinates={upcomingGambar}
                   strokeColor={t.ACCENT}
                   strokeWidth={3}
                   lineDashPattern={jalan ? undefined : [8, 8]}
@@ -850,11 +925,16 @@ function TrackingMap({ kendaraan, t, dark }) {
                 description={v.position.source === "gps"
                   ? `${v.routeCode || "Kurir Eksternal"} · ${labelFase(v)}`
                   : "GPS belum aktif — ditampilkan di Klinik Matras"}
-                tracksViewChanges={false}
+                // tracksViewChanges TRUE kalau markernya foto (async, expo-
+                // image butuh 1+ frame untuk memuat dari network/cache) —
+                // false akan membekukan marker di keadaan "belum termuat".
+                // Armada kecil (CLAUDE.md §1: 8 driver/helper), jadi biaya
+                // re-render terus-menerus di sini bisa diabaikan.
+                tracksViewChanges={!!v.driverAvatarUrl}
                 anchor={{ x: 0.5, y: 0.5 }}
                 zIndex={4}
               >
-                <DriverMarkerDot t={t} />
+                <DriverMarkerDot t={t} name={v.driverName} avatarUrl={v.driverAvatarUrl} />
               </Marker>
             </React.Fragment>
           );
@@ -906,7 +986,17 @@ function TrackingView({ tracking, theme: t, styles }) {
           <View key={v.vehicleId} style={styles.card}>
             <View style={styles.rowBetween}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
-                {v.driverName && <Avatar name={v.driverName} avatarUrl={v.driverAvatarUrl} size={26} />}
+                {/* Foto driver + helper (18 September 2026, permintaan owner)
+                    — 2 avatar kalau rute punya keduanya, sama pola dgn kartu
+                    "Rute Hari Ini" di HariIniView. */}
+                <View style={{ flexDirection: "row" }}>
+                  {v.driverName && <Avatar name={v.driverName} avatarUrl={v.driverAvatarUrl} size={26} />}
+                  {v.helperName && (
+                    <View style={{ marginLeft: -8, borderRadius: 13, borderWidth: 2, borderColor: t.SURFACE }}>
+                      <Avatar name={v.helperName} avatarUrl={v.helperAvatarUrl} size={26} />
+                    </View>
+                  )}
+                </View>
                 <View style={[styles.onlineDot, { backgroundColor: v.driverOnline ? t.GREEN : t.INK3 }]} />
                 <Text style={styles.cardTitle} numberOfLines={1}>
                   {v.driverName || "Belum ada driver"}{v.helperName ? ` + ${v.helperName}` : ""}
