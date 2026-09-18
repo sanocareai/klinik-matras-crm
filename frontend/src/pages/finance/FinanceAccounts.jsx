@@ -267,7 +267,7 @@ function FormAkunBaru({ open, onClose, accounts, onSaved, onError }) {
         <Field label="Nama akun" required>
           <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Beban Pelatihan Karyawan" />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tipe">
             <Pilihan value={form.type} onChange={(v) => set("type", v)}>
               {TIPE.map((t) => <option key={t} value={t}>{LABEL_TIPE_AKUN[t]}</option>)}

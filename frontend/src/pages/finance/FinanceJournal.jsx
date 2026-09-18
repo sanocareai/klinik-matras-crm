@@ -11,7 +11,7 @@ import { api } from "@/api.js";
 import {
   HalamanFinance, Uang, formatUang, JudulKartu, Penjelasan, TombolAksi, StatusBadge,
   Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
-  LABEL_SUMBER_JURNAL,
+  LABEL_SUMBER_JURNAL, DateChip,
 } from "@/features/finance/shared.jsx";
 
 // JURNAL UMUM — seluruh pencatatan buku besar, dari mana pun asalnya.
@@ -318,9 +318,9 @@ function ModalJurnalManual({ open, onClose, akun, onSubmit }) {
         <Field label="Keterangan" required>
           <Input value={f.description} onChange={(e) => setF((s) => ({ ...s, description: e.target.value }))} placeholder="Saldo awal kas per 1 September 2026" />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tanggal buku">
-            <Input type="date" value={f.date} onChange={(e) => setF((s) => ({ ...s, date: e.target.value }))} />
+            <DateChip className="w-full" value={f.date} onChange={(v) => setF((s) => ({ ...s, date: v }))} ariaLabel="Tanggal buku" />
           </Field>
           <Field label="Jenis" hint="Saldo awal ditandai terpisah supaya laporan tahu neraca sudah lengkap">
             <label className="flex h-9 items-center gap-2 text-[13px] text-ink2">

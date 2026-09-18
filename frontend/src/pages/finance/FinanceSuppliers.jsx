@@ -11,7 +11,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { api } from "@/api.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek,
+  StatusBadge, Pilihan, InputUang, tanggalPendek, DateChip,
 } from "@/features/finance/shared.jsx";
 
 // SUPPLIER & UTANG USAHA — master supplier, tagihan masuk, dan pembayaran.
@@ -318,7 +318,7 @@ function ModalSupplier({ open, onClose, onSubmit }) {
       <div className="space-y-3">
         <Field label="Nama supplier" required><Input value={f.name} onChange={(e) => set("name", e.target.value)} /></Field>
         <Field label="Kode" hint="Kosongkan untuk dibuatkan otomatis"><Input value={f.code} onChange={(e) => set("code", e.target.value)} placeholder="SUP-004" /></Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Telepon"><Input value={f.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
           <Field label="Email"><Input value={f.email} onChange={(e) => set("email", e.target.value)} /></Field>
         </div>
@@ -326,7 +326,7 @@ function ModalSupplier({ open, onClose, onSubmit }) {
         <Field label="Termin pembayaran (hari)" hint="Dipakai menghitung jatuh tempo tagihan otomatis">
           <Input type="number" value={f.paymentTermDays} onChange={(e) => set("paymentTermDays", e.target.value)} placeholder="30" />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Bank"><Input value={f.bankName} onChange={(e) => set("bankName", e.target.value)} /></Field>
           <Field label="No. rekening"><Input value={f.bankAccount} onChange={(e) => set("bankAccount", e.target.value)} /></Field>
         </div>
@@ -364,14 +364,14 @@ function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, onSubmit }
         <Field label="Keterangan" required>
           <Input value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Busa rebonded 10 lembar" />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Nomor faktur supplier"><Input value={f.supplierRef} onChange={(e) => set("supplierRef", e.target.value)} /></Field>
           <Field label="Nominal tagihan" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Tanggal tagihan"><Input type="date" value={f.billDate} onChange={(e) => set("billDate", e.target.value)} /></Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Tanggal tagihan"><DateChip className="w-full" value={f.billDate} onChange={(v) => set("billDate", v)} ariaLabel="Tanggal tagihan" /></Field>
           <Field label="Jatuh tempo" hint="Kosongkan untuk ikut termin supplier">
-            <Input type="date" value={f.dueDate} onChange={(e) => set("dueDate", e.target.value)} />
+            <DateChip className="w-full" value={f.dueDate} onChange={(v) => set("dueDate", v)} ariaLabel="Jatuh tempo" />
           </Field>
         </div>
 
@@ -461,8 +461,8 @@ function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmi
             {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name} · sisa {formatUang(s.sisaUtang)}</option>)}
           </Pilihan>
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Tanggal"><Input type="date" value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Tanggal"><DateChip className="w-full" value={f.date} onChange={(v) => set("date", v)} ariaLabel="Tanggal" /></Field>
           <Field label="Dibayar dari" required>
             <Pilihan value={f.cashAccountId} onChange={(v) => set("cashAccountId", v)}>
               <option value="">— pilih —</option>

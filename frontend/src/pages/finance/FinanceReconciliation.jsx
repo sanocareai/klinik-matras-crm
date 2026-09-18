@@ -11,7 +11,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { api } from "@/api.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek,
+  StatusBadge, Pilihan, InputUang, tanggalPendek, DateChip,
 } from "@/features/finance/shared.jsx";
 
 // REKONSILIASI BANK — mencocokkan mutasi menurut KORAN BANK dengan mutasi
@@ -289,9 +289,9 @@ function ModalPeriodeBaru({ open, onClose, rekening, onSubmit }) {
             {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Pilihan>
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Dari tanggal" required><Input type="date" value={f.periodStart} onChange={(e) => set("periodStart", e.target.value)} /></Field>
-          <Field label="Sampai tanggal" required><Input type="date" value={f.periodEnd} onChange={(e) => set("periodEnd", e.target.value)} /></Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Dari tanggal" required><DateChip className="w-full" value={f.periodStart} onChange={(v) => set("periodStart", v)} ariaLabel="Dari tanggal" /></Field>
+          <Field label="Sampai tanggal" required><DateChip className="w-full" value={f.periodEnd} onChange={(v) => set("periodEnd", v)} ariaLabel="Sampai tanggal" /></Field>
         </div>
         <Field label="Saldo awal menurut koran bank"><InputUang value={f.openingBalance} onChange={(v) => set("openingBalance", v)} /></Field>
         <Field label="Saldo akhir menurut koran bank"><InputUang value={f.closingBalance} onChange={(v) => set("closingBalance", v)} /></Field>
@@ -312,7 +312,7 @@ function ModalBarisBaru({ open, onClose, onSubmit }) {
       footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!f.description.trim() || !f.amount}>Simpan</TombolAksi></>}
     >
       <div className="space-y-3">
-        <Field label="Tanggal"><Input type="date" value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
+        <Field label="Tanggal"><DateChip className="w-full" value={f.date} onChange={(v) => set("date", v)} ariaLabel="Tanggal" /></Field>
         <Field label="Keterangan di koran bank" required>
           <Input value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="TRSF E-BANKING CR 1709/FTSCY/WS95051" />
         </Field>

@@ -11,7 +11,7 @@ import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek,
+  StatusBadge, Pilihan, InputUang, tanggalPendek, DateChip,
 } from "@/features/finance/shared.jsx";
 
 // PIUTANG — siapa berutang ke kita, berapa, dan sudah lewat berapa lama.
@@ -278,7 +278,7 @@ function ModalRefund({ open, onClose, rekening, piutang, onSubmit }) {
             saranLabel="Piutang terbuka"
           />
         </Field>
-        <Field label="Tanggal"><Input type="date" value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
+        <Field label="Tanggal"><DateChip className="w-full" value={f.date} onChange={(v) => set("date", v)} ariaLabel="Tanggal" /></Field>
         <Field
           label="Nominal" required
           hint="Tidak boleh melebihi uang yang pernah benar-benar diterima untuk order itu"

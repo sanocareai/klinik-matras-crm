@@ -38,7 +38,14 @@ export function Modal({
         <Dialog.Overlay className="fixed inset-0 z-[200] bg-black/30 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0" />
         <Dialog.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-[201] w-[440px] max-w-[96vw] -translate-x-1/2 -translate-y-1/2",
+            // "flex max-h-[85vh] flex-col" (D-182, laporan owner: form panjang
+            // di HP — tombol "Ajukan" tidak terjangkau sama sekali). Sebelum ini
+            // Content TANPA batas tinggi, form dgn banyak field jadi lebih tinggi
+            // dari viewport dan overflow ke ATAS+BAWAH sekaligus (posisinya
+            // center via top-1/2+translate) — TIDAK ADA scroll di mana pun untuk
+            // menjangkau footer. Body sekarang yang scroll (min-h-0 flex-1
+            // overflow-y-auto di bawah), header+footer tetap terlihat (shrink-0).
+            "fixed left-1/2 top-1/2 z-[201] flex max-h-[85vh] w-[440px] max-w-[96vw] -translate-x-1/2 -translate-y-1/2 flex-col",
             // "kpi-glass-guard" — className POPOVER_SURFACE membawa "rounded-card",
             // yang di dalam .glass-division (sejak fix container di atas) kena
             // wildcard kaca generik `[class*="rounded-card"]` (delivery-dark/-light
@@ -57,7 +64,7 @@ export function Modal({
           {...contentProps}
         >
           {(title || showClose) && (
-            <div className="flex items-start justify-between px-6 pb-0 pt-5">
+            <div className="flex shrink-0 items-start justify-between px-6 pb-0 pt-5">
               <div className="min-w-0">
                 {title && (
                   <Dialog.Title className="t-card-title">{title}</Dialog.Title>
@@ -78,9 +85,9 @@ export function Modal({
               )}
             </div>
           )}
-          <div className="px-6 py-5">{children}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
           {footer && (
-            <div className="flex justify-end gap-2 px-6 pb-6 pt-2">{footer}</div>
+            <div className="flex shrink-0 justify-end gap-2 border-t border-line px-6 pb-6 pt-4">{footer}</div>
           )}
         </Dialog.Content>
       </Dialog.Portal>

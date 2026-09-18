@@ -197,10 +197,15 @@ export function PeriodePicker({ from, to, onChange, className }) {
  * OS/browser tetap yang dipakai, tidak menulis widget kalender sendiri.
  * Yang terlihat cuma ikon + teks terformat ("17 Sep 2026"), bukan
  * "mm/dd/yyyy" bawaan browser saat kosong.
+ *
+ * Diekspor (bukan cuma dipakai PeriodePicker) — 15 titik lain di halaman
+ * finance pakai <Input type="date"> mentah untuk SATU tanggal (Tanggal
+ * pengeluaran, Tanggal bayar, dst), bukan rentang. Pemanggil form tunggal
+ * pakai `className="w-full"` supaya lebar sama dengan field lain di form.
  */
-function DateChip({ value, onChange, ariaLabel }) {
+export function DateChip({ value, onChange, ariaLabel, className }) {
   return (
-    <span className="relative inline-flex h-9 items-center gap-1.5 rounded-full bg-accentbg px-3 text-[13px] font-medium text-ink has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent/40">
+    <span className={cn("relative inline-flex h-9 items-center gap-1.5 rounded-full bg-accentbg px-3 text-[13px] font-medium text-ink has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent/40", className)}>
       <CalendarDays size={14} className="shrink-0 text-accent" aria-hidden="true" />
       <span className="tabular-nums">{value ? tanggalPendek(value) : "Pilih tanggal"}</span>
       <input

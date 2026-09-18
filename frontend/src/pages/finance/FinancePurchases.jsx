@@ -12,7 +12,7 @@ import { api } from "@/api.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
-  LABEL_DIVISI,
+  LABEL_DIVISI, DateChip,
 } from "@/features/finance/shared.jsx";
 
 // PEMBELIAN — barang/aset yang DIBELI dari luar, tanpa tagihan resmi supplier:
@@ -283,8 +283,8 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
         <Field label="Keterangan" required>
           <Input value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Busa rebonded 160x200x4, 10 lembar" />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Tanggal"><Input type="date" value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Tanggal"><DateChip className="w-full" value={f.date} onChange={(v) => set("date", v)} ariaLabel="Tanggal" /></Field>
           <Field label="Nominal" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
         </div>
         <Field label="Jenis pembelian" required hint="Menentukan akun tujuan di buku besar">
@@ -302,7 +302,7 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
             tidak otomatis.
           </Penjelasan>
         )}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Dibebankan ke divisi">
             <Pilihan value={f.division} onChange={(v) => set("division", v)}>
               <option value="">— Umum —</option>
@@ -370,7 +370,7 @@ function ModalBayar({ purchase, onClose, rekening, onSubmit }) {
           </Pilihan>
         </Field>
         <Field label="Tanggal bayar">
-          <Input type="date" value={f.paidAt} onChange={(e) => setF((s) => ({ ...s, paidAt: e.target.value }))} />
+          <DateChip className="w-full" value={f.paidAt} onChange={(v) => setF((s) => ({ ...s, paidAt: v }))} ariaLabel="Tanggal bayar" />
         </Field>
       </div>
     </Modal>

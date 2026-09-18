@@ -3251,8 +3251,12 @@ body {
   .btn { min-height: 44px; }
   .sidebar-link { min-height: 44px; }
   .conv-tab { min-height: 44px; padding: 10px 14px; }
-  /* 16px agar tidak auto-zoom keyboard di iOS */
-  input, select, textarea { font-size: 16px; }
+  /* 16px agar tidak auto-zoom keyboard di iOS. line-height DITULIS ULANG
+     bareng (bukan cuma font-size) — line-height 1.25rem/20px dari utility
+     Tailwind text-sm (dirancang utk font 14px) ketinggalan begitu font
+     dipaksa naik ke 16px di sini, rasio 20/16=1.25 terlalu mepet untuk
+     descender (g/y/p) di beberapa render engine Android, kepotong bawahnya. */
+  input, select, textarea { font-size: 16px; line-height: 1.5; }
 
   /* ── Halaman admin lain (Tracking Links, Laporan, dll) ── */
   .tracking-links-table-wrap { overflow-x: auto; }

@@ -11,7 +11,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { api } from "@/api.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  Pilihan, tanggalPendek,
+  Pilihan, tanggalPendek, DateChip,
 } from "@/features/finance/shared.jsx";
 
 // INVOICE & JATUH TEMPO — sisi FINANCE dari invoice yang sudah ada.
@@ -290,7 +290,7 @@ function ModalJatuhTempo({ invoice, onClose, onSubmit }) {
           label="Tanggal jatuh tempo"
           hint="Kosongkan untuk melepas tempo — umur tagihan lalu dihitung dari tanggal order, dan laporan menyebutkan acuannya apa adanya."
         >
-          <Input type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)} />
+          <DateChip className="w-full" value={tanggal} onChange={setTanggal} ariaLabel="Tanggal jatuh tempo" />
         </Field>
         <div className="flex flex-wrap gap-2">
           {[7, 14, 30].map((n) => (
