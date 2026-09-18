@@ -9,7 +9,7 @@
     "android": {
       "package": "com.klinikmatras.drivermobile",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 5,
+      "versionCode": 6,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#0A0D16",
@@ -17,7 +17,10 @@
       },
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "plugins": [
@@ -36,7 +39,10 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Sano Driver butuh akses lokasi untuk melacak posisi selama perjalanan"
+          "locationWhenInUsePermission": "Sano Driver butuh akses lokasi untuk melacak posisi selama perjalanan",
+          "locationAlwaysAndWhenInUsePermission": "Sano Driver mengirim posisi ke admin selama job berjalan, termasuk saat layar mati atau app tidak dibuka — supaya admin tahu perjalanan Anda tanpa perlu menelepon",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [
