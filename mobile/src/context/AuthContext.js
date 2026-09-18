@@ -1,6 +1,7 @@
 // Context autentikasi — simpan token JWT + info user di AsyncStorage
 // supaya sales tidak perlu login ulang tiap buka aplikasi.
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api, configureApi, DEFAULT_SERVER } from "../api";
 import { registerForPush, unregisterPush } from "../push";
@@ -34,11 +35,48 @@ export function AuthProvider({ children }) {
           setUser(parsedUser);
           registerForPush(parsedUser); // refresh token push tiap app dibuka (fire-and-forget)
           refreshSocketAuth(); // sambungkan socket pakai token yang baru dipulihkan
+          // Tarik profil TERBARU dari server (19 September 2026, D-168 — bug
+          // yang sama ditemukan & diperbaiki dulu di driver-mobile: admin
+          // ganti nama/foto SALES dari web (Pengguna & Peran), app ini tidak
+          // pernah tahu sampai logout/login ulang karena `user` cuma pernah
+          // ditulis dari AsyncStorage atau updateUser() lokal. Best-effort,
+          // tidak memblokir loading.
+          refreshUser();
         }
       } finally {
         setLoading(false);
       }
     })();
+  }, []);
+
+  // Sama persis pola driver-mobile/src/context/AuthContext.js#refreshUser —
+  // JANGAN biarkan dua implementasi ini diam-diam menyimpang, keduanya
+  // menyelesaikan masalah yang identik (profil user diubah admin dari web).
+  async function refreshUser() {
+    try {
+      const fresh = await api.getMe();
+      if (!fresh) return;
+      setUser((u) => {
+        if (!u) return u;
+        const next = { ...u, ...fresh };
+        AsyncStorage.setItem("user", JSON.stringify(next)).catch(() => {});
+        return next;
+      });
+    } catch {
+      // diam-diam — offline/timeout tidak boleh mengganggu apa pun
+    }
+  }
+
+  // Refresh lagi setiap app kembali ke foreground — pola AppState SAMA
+  // dengan useBadgeSync.js (sudah ada di app ini). Ref supaya listener
+  // cukup didaftar sekali tapi tetap memanggil closure refreshUser terbaru.
+  const refreshUserRef = useRef(refreshUser);
+  refreshUserRef.current = refreshUser;
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshUserRef.current();
+    });
+    return () => sub.remove();
   }, []);
 
   async function login(email, password, serverUrl) {
@@ -77,7 +115,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, server, login, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, server, login, logout, updateUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

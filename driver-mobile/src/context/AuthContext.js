@@ -1,6 +1,7 @@
 // Context autentikasi — pola SAMA dengan mobile/src/context/AuthContext.js
 // (Sano Messenger), TANPA socket.js (driver app tidak butuh realtime chat).
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api, configureApi, DEFAULT_SERVER } from "../api";
 import { registerForPush, unregisterPush } from "../push";
@@ -38,11 +39,57 @@ export function AuthProvider({ children }) {
           setUser(parsedUser);
           setIsOnline(!!parsedUser.isOnline);
           registerForPush(parsedUser);
+          // Tarik profil TERBARU dari server (19 September 2026, D-168,
+          // laporan owner: "gue baru ganti foto para driver di web, tapi di
+          // app belum keupdate") — sebelum ini `user` HANYA pernah ditulis
+          // ulang dari AsyncStorage (sekali saat login) atau saat driver
+          // MENGEDIT PROFILNYA SENDIRI (AccountScreen -> updateUser()). Kalau
+          // ADMIN yang ganti nama/foto driver dari web (Pengguna & Peran),
+          // tidak ada jalan bagi app ini untuk pernah tahu — sampai driver
+          // logout lalu login lagi. Best-effort, tidak memblokir loading.
+          refreshUser();
         }
       } finally {
         setLoading(false);
       }
     })();
+  }, []);
+
+  // Ambil profil terbaru dari GET /users/me, gabungkan ke `user` yang
+  // sedang tersimpan (nama role dkk ikut, bukan cuma avatar) + AsyncStorage
+  // — pola SAMA dengan updateUser()/setOnline() di bawah, bedanya sumber
+  // datanya server (fetch), bukan hasil panggilan API lain yang sudah ada
+  // di tangan. Sengaja menelan error (offline/timeout) — refresh diam-diam
+  // ini TIDAK BOLEH mengganggu app kalau gagal, cukup coba lagi nanti.
+  async function refreshUser() {
+    try {
+      const fresh = await api.getMe();
+      if (!fresh) return;
+      setUser((u) => {
+        if (!u) return u;
+        const next = { ...u, ...fresh };
+        AsyncStorage.setItem("user", JSON.stringify(next)).catch(() => {});
+        return next;
+      });
+      if (fresh.isOnline !== undefined) setIsOnline(!!fresh.isOnline);
+    } catch {
+      // diam-diam — lihat komentar di atas
+    }
+  }
+
+  // refreshUser dipanggil lagi setiap app kembali ke foreground (bukan
+  // cuma sekali saat cold start di atas) — driver yang membiarkan app
+  // berjalan di background berhari-hari (paling umum di lapangan) tidak
+  // akan pernah lewat jalur restore-session itu lagi. Pakai ref supaya
+  // listener AppState cukup didaftar SEKALI (bukan tiap render ulang),
+  // tapi tetap memanggil versi refreshUser TERBARU (closure `user` segar).
+  const refreshUserRef = useRef(refreshUser);
+  refreshUserRef.current = refreshUser;
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") refreshUserRef.current();
+    });
+    return () => sub.remove();
   }, []);
 
   async function login(email, password, serverUrl) {
@@ -125,7 +172,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, server, login, logout, isOnline, setOnline, markOnlineLocally, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, server, login, logout, isOnline, setOnline, markOnlineLocally, updateUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
