@@ -4037,6 +4037,13 @@ body {
   color: var(--text-primary);
 }
 
+/* Bug kelas yang SAMA PERSIS berlaku untuk popup kalender bawaan
+   <input type="date"> (dipakai DateChip di features/finance/shared.jsx) —
+   :root color-scheme tidak selalu cukup untuk popup native di semua WebView. */
+[data-theme="dark"] input[type="date"] {
+  color-scheme: dark;
+}
+
 /* ── Bug ditemukan 24 Agustus 2026: field form APA PUN yang tidak diberi
    className (mis. <textarea> polos di OrderSection.jsx "Ajukan Revisi",
    atau input generik lainnya) jatuh ke base rule @layer base di atas

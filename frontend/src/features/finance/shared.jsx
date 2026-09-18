@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, Info, Loader2 } from "lucide-react";
+import { AlertTriangle, Info, Loader2, CalendarDays } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -181,21 +181,34 @@ export function PeriodePicker({ from, to, onChange, className }) {
 
   return (
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
-      <input
-        type="date" value={from || ""} aria-label="Tanggal mulai"
-        onChange={(e) => onChange({ from: e.target.value, to })}
-        className="h-9 rounded-btn bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-      />
+      <DateChip value={from} ariaLabel="Tanggal mulai" onChange={(v) => onChange({ from: v, to })} />
       <span className="text-ink3">—</span>
-      <input
-        type="date" value={to || ""} aria-label="Tanggal akhir"
-        onChange={(e) => onChange({ from, to: e.target.value })}
-        className="h-9 rounded-btn bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-      />
+      <DateChip value={to} ariaLabel="Tanggal akhir" onChange={(v) => onChange({ from, to: v })} />
       <Button size="sm" variant="neutral" onClick={() => onChange(preset.bulanIni)}>Bulan Ini</Button>
       <Button size="sm" variant="neutral" onClick={() => onChange(preset.bulanLalu)}>Bulan Lalu</Button>
       <Button size="sm" variant="neutral" onClick={() => onChange(preset.tahunIni)}>Tahun Ini</Button>
     </div>
+  );
+}
+
+/**
+ * Tampilan pill untuk <input type="date"> — TETAP input native di baliknya
+ * (transparan penuh, menutupi seluruh pill) supaya date-picker bawaan
+ * OS/browser tetap yang dipakai, tidak menulis widget kalender sendiri.
+ * Yang terlihat cuma ikon + teks terformat ("17 Sep 2026"), bukan
+ * "mm/dd/yyyy" bawaan browser saat kosong.
+ */
+function DateChip({ value, onChange, ariaLabel }) {
+  return (
+    <span className="relative inline-flex h-9 items-center gap-1.5 rounded-full bg-accentbg px-3 text-[13px] font-medium text-ink has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent/40">
+      <CalendarDays size={14} className="shrink-0 text-accent" aria-hidden="true" />
+      <span className="tabular-nums">{value ? tanggalPendek(value) : "Pilih tanggal"}</span>
+      <input
+        type="date" value={value || ""} aria-label={ariaLabel}
+        onChange={(e) => onChange(e.target.value)}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+      />
+    </span>
   );
 }
 

@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
+import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import { formatRupiahShort } from "@/utils/format.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, CatatanLaporan, Penjelasan,
   PeriodePicker, periodeDefault, tanggalPendek, LABEL_TIPE_AKUN,
@@ -117,6 +119,8 @@ function LabaRugi({ d }) {
         “Uang Muka Pelanggan” di Neraca.
       </Penjelasan>
 
+      <LabaRugiChart r={r} />
+
       <Card className="overflow-hidden">
         <JudulKartu title="Laba Rugi" info="Disusun dari atas ke bawah: Pendapatan → dikurangi Beban Pokok → Laba Kotor → dikurangi Beban Operasional → Laba Bersih. Setiap baris bisa ditelusuri ke akun aslinya di Bagan Akun." />
         <TableWrap>
@@ -134,6 +138,36 @@ function LabaRugi({ d }) {
         </TableWrap>
       </Card>
     </>
+  );
+}
+
+const CHART_TOOLTIP_STYLE = { borderRadius: 12, border: "1px solid var(--hairline)", fontSize: 12, background: "var(--bg-surface)" };
+
+function LabaRugiChart({ r }) {
+  const rows = [
+    { name: "Pendapatan Bersih", value: r.pendapatanBersih, color: "var(--green)" },
+    { name: "Beban Pokok", value: r.bebanPokok, color: "var(--orange)" },
+    { name: "Beban Operasional", value: r.bebanOperasional, color: "var(--orange)" },
+    { name: "Laba Bersih", value: r.labaBersih, color: r.labaBersih < 0 ? "var(--red)" : "var(--accent)" },
+  ];
+  return (
+    <Card>
+      <JudulKartu title="Perbandingan Visual" description="Pendapatan, beban, dan laba bersih dalam satu tampilan." />
+      <CardContent>
+        <div style={{ height: 168 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
+              <XAxis type="number" hide />
+              <YAxis type="category" dataKey="name" width={132} tick={{ fontSize: 11.5, fill: "var(--text-tertiary)" }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={(v) => [formatRupiahShort(v), ""]} contentStyle={CHART_TOOLTIP_STYLE} />
+              <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={22}>
+                {rows.map((row, i) => <Cell key={i} fill={row.color} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -214,6 +248,7 @@ function Neraca({ d }) {
             description={`Per ${tanggalPendek(d.perTanggal)}`}
             info="Diurutkan dari yang paling likuid (kas) ke yang paling tidak likuid (persediaan) — urutan baku laporan keuangan."
           />
+          <AsetDonut rows={d.aset} total={d.ringkasan.totalAset} />
           <TabelNeraca rows={d.aset} total={d.ringkasan.totalAset} labelTotal="TOTAL ASET" />
         </Card>
 
@@ -254,6 +289,43 @@ function Neraca({ d }) {
   );
 }
 
+const ASET_PALETTE = ["var(--accent)", "var(--green)", "var(--orange)", "var(--color-chart-violet)", "var(--red)"];
+
+/** Donut komposisi 5 akun aset terbesar, sisanya digabung "Lainnya" — pelengkap TabelNeraca, data sama. */
+function AsetDonut({ rows, total }) {
+  const terurut = [...rows].filter((r) => r.nilai > 0).sort((a, b) => b.nilai - a.nilai);
+  if (terurut.length === 0) return null;
+  const sliced = terurut.slice(0, 5).map((r, i) => ({ name: r.name, value: r.nilai, color: ASET_PALETTE[i % ASET_PALETTE.length] }));
+  const sisa = terurut.slice(5).reduce((s, r) => s + r.nilai, 0);
+  if (sisa > 0) sliced.push({ name: "Lainnya", value: sisa, color: "var(--hairline)" });
+
+  return (
+    <div className="flex flex-col items-center gap-4 border-b border-line px-4 py-4 sm:flex-row">
+      <div className="h-[136px] w-[136px] shrink-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={sliced} dataKey="value" nameKey="name" innerRadius={42} outerRadius={62} paddingAngle={2} stroke="none">
+              {sliced.map((s, i) => <Cell key={i} fill={s.color} />)}
+            </Pie>
+            <Tooltip formatter={(v) => [formatRupiahShort(v), ""]} contentStyle={CHART_TOOLTIP_STYLE} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <ul className="min-w-0 flex-1 space-y-1.5">
+        {sliced.map((s, i) => (
+          <li key={i} className="flex items-center justify-between gap-3 text-[12.5px]">
+            <span className="flex min-w-0 items-center gap-2 text-ink2">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color }} />
+              <span className="truncate">{s.name}</span>
+            </span>
+            <span className="shrink-0 font-medium text-ink">{total ? `${((s.value / total) * 100).toFixed(0)}%` : "—"}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function TabelNeraca({ rows, total, labelTotal }) {
   return (
     <TableWrap>
@@ -286,6 +358,8 @@ function ArusKas({ d }) {
         <KartuAngka label="Saldo Akhir Kas" value={formatUang(r.saldoAkhir)} info="Saldo Awal ditambah Arus Bersih — harus sama persis dengan total Kas & Bank aktual di akhir periode." />
       </div>
 
+      <ArusKasChart r={r} />
+
       <Penjelasan>
         Disusun dengan <strong>metode langsung</strong> — dari mutasi kas yang benar-benar terjadi,
         dikelompokkan menurut akun lawannya. Mutasi antar rekening sendiri (setor tunai ke bank, tarik tunai)
@@ -305,6 +379,33 @@ function ArusKas({ d }) {
         )}
       </div>
     </>
+  );
+}
+
+function ArusKasChart({ r }) {
+  const rows = [
+    { name: "Kas Masuk", value: r.masuk, color: "var(--green)" },
+    { name: "Kas Keluar", value: r.keluar, color: "var(--red)" },
+  ];
+  if (!rows.some((row) => row.value > 0)) return null;
+  return (
+    <Card>
+      <JudulKartu title="Kas Masuk vs Keluar" description="Total pergerakan kas selama periode ini." />
+      <CardContent>
+        <div style={{ height: 108 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
+              <XAxis type="number" hide />
+              <YAxis type="category" dataKey="name" width={92} tick={{ fontSize: 11.5, fill: "var(--text-tertiary)" }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={(v) => [formatRupiahShort(v), ""]} contentStyle={CHART_TOOLTIP_STYLE} />
+              <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={26}>
+                {rows.map((row, i) => <Cell key={i} fill={row.color} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

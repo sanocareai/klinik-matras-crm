@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ShieldCheck, ArrowRight, Wallet } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -8,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
 import { api } from "@/api.js";
+import { formatRupiahShort } from "@/utils/format.js";
 import {
   HalamanFinance, KartuAngka, JudulKartu, Uang, formatUang, CatatanLaporan, Penjelasan,
   PeriodePicker, periodeDefault, tanggalPendek, tanggalJam,
@@ -161,20 +163,47 @@ export default function FinanceDashboard() {
                     action={<Button size="sm" onClick={() => navigate("/finance/cash")}>Tambah Rekening</Button>}
                   />
                 ) : (
-                  <ul className="space-y-2.5">
-                    {data.kasBank.map((r) => (
-                      <li key={r.id} className="flex items-center justify-between gap-3">
-                        <span className="min-w-0">
-                          <span className="block truncate text-[13px] font-medium text-ink">{r.name}</span>
-                          <span className="text-[12px] text-ink3">
-                            {r.kind === "KAS" ? "Kas tunai" : r.kind === "BANK" ? (r.bankName || "Bank") : "E-wallet"}
-                            {r.accountNumber ? ` · ${r.accountNumber}` : ""}
+                  <>
+                    <ul className="space-y-2.5">
+                      {data.kasBank.map((r) => (
+                        <li key={r.id} className="flex items-center justify-between gap-3">
+                          <span className="min-w-0">
+                            <span className="block truncate text-[13px] font-medium text-ink">{r.name}</span>
+                            <span className="text-[12px] text-ink3">
+                              {r.kind === "KAS" ? "Kas tunai" : r.kind === "BANK" ? (r.bankName || "Bank") : "E-wallet"}
+                              {r.accountNumber ? ` · ${r.accountNumber}` : ""}
+                            </span>
                           </span>
-                        </span>
-                        <Uang value={r.saldo} className="text-[13px] font-bold" />
-                      </li>
-                    ))}
-                  </ul>
+                          <Uang value={r.saldo} className="text-[13px] font-bold" />
+                        </li>
+                      ))}
+                    </ul>
+                    {/* Pelengkap visual daftar di atas — data SAMA PERSIS
+                        (data.kasBank), bukan sumber terpisah. */}
+                    <div className="mt-4 border-t border-line pt-3" style={{ height: Math.max(80, data.kasBank.length * 30) }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={data.kasBank} layout="vertical" margin={{ top: 0, right: 8, left: 0, bottom: 0 }}>
+                          <XAxis type="number" hide />
+                          <YAxis
+                            type="category" dataKey="name" width={92}
+                            tick={{ fontSize: 10.5, fill: "var(--text-tertiary)" }}
+                            axisLine={false} tickLine={false}
+                            tickFormatter={(v) => (v.length > 12 ? `${v.slice(0, 11)}…` : v)}
+                          />
+                          <Tooltip
+                            formatter={(v) => [formatRupiahShort(v), "Saldo"]}
+                            labelFormatter={(name) => name}
+                            contentStyle={{ borderRadius: 12, border: "1px solid var(--hairline)", fontSize: 12, background: "var(--bg-surface)" }}
+                          />
+                          <Bar dataKey="saldo" radius={[0, 6, 6, 0]} maxBarSize={14}>
+                            {data.kasBank.map((r) => (
+                              <Cell key={r.id} fill={r.saldo < 0 ? "var(--red)" : "var(--accent)"} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
