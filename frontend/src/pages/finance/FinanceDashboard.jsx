@@ -206,7 +206,7 @@ export default function FinanceDashboard() {
           </div>
 
           {/* ── Antrean pekerjaan ── */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <KartuAngka
               label="Pembayaran Belum Diverifikasi"
               value={antrean.jumlahPembayaranBelumVerifikasi}
@@ -222,6 +222,14 @@ export default function FinanceDashboard() {
               sub="Perlu persetujuan"
               onClick={() => navigate("/finance/expenses")}
               info="Pengeluaran yang sudah diajukan tim tapi belum disetujui — belum masuk buku besar sampai disetujui."
+            />
+            <KartuAngka
+              label="Pembelian Menunggu"
+              value={antrean.pembelianMenunggu ?? 0}
+              tone={antrean.pembelianMenunggu > 0 ? "orange" : "default"}
+              sub="Perlu persetujuan"
+              onClick={() => navigate("/finance/purchases")}
+              info="Pembelian bahan baku/aset/uang muka yang sudah diajukan tapi belum disetujui — belum masuk buku besar sampai disetujui."
             />
             <KartuAngka
               label="Tagihan Supplier Menunggu"

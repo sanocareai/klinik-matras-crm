@@ -21,8 +21,9 @@ import {
 // ⚠️ YANG TIDAK DICATAT DI SINI, dan ini disengaja:
 //   - Biaya kendaraan (BBM/tol/parkir/servis) → tetap di Delivery > Biaya.
 //   - Belanja iklan bulanan → tetap di Pengaturan CRM.
-//   - Bahan baku → nilainya mengalir sendiri dari ledger stok Gudang.
-// Ketiganya sudah punya tempat input yang benar dan orang yang paling tahu
+//   - Bahan baku → nilainya mengalir sendiri dari ledger stok Gudang; yang
+//     dibeli manual/tunai (plus aset & uang muka) → tab Pembelian.
+// Semuanya sudah punya tempat input yang benar dan orang yang paling tahu
 // angkanya. Modul Finance MEMBACA dan membukukannya, bukan meminta
 // diketik ulang — menyalinnya ke sini akan menghasilkan dua angka untuk
 // pengeluaran yang sama, dan yang kedua pasti tertinggal.

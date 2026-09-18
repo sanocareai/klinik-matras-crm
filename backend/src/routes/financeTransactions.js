@@ -33,6 +33,7 @@ import { toMoney, sumMoney, moneyToNumber, ZERO, MoneyError } from "../services/
 import { AccountError } from "../services/finance/accounts.js";
 import { SETTING_KEYS, getSettingRaw, parseIntOr, getVerificationGate } from "../services/finance/settings.js";
 import { postExpenseApproved, postExpensePaid, KEY as EXPENSE_KEY } from "../services/finance/posting/expense.js";
+import { postPurchaseApproved, postPurchasePaid, KEY as PURCHASE_KEY } from "../services/finance/posting/purchase.js";
 import {
   postSupplierBill, postSupplierPayment, recomputeBillStatus, KEY as SUPPLIER_KEY,
 } from "../services/finance/posting/supplier.js";
@@ -511,6 +512,400 @@ financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN)
     });
     const lengkap = await prisma.finExpense.findUnique({ where: { id: hasil.id }, include: expenseInclude });
     res.json(bentukExpense(lengkap));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// PEMBELIAN — bahan baku manual / aset tetap / aset tak berwujud / uang
+// muka pembelian, TANPA tagihan resmi supplier. Pola SENGAJA identik 1:1
+// dengan blok PENGELUARAN di atas (lihat services/finance/posting/purchase.js
+// untuk penjelasan lengkap) — kalau memperbaiki bug di sini, cek juga blok
+// Pengeluaran, dan sebaliknya, supaya dua alur kembar ini tidak drift diam-
+// diam. Pembelian BERTAGIHAN resmi TETAP lewat blok SUPPLIER di bawah
+// (FinSupplierBill) — tidak digantikan oleh blok ini.
+// ═════════════════════════════════════════════════════════════════════════
+
+const purchaseInclude = {
+  category: { select: { id: true, code: true, name: true, account: { select: { code: true, name: true } } } },
+  cashAccount: { select: { id: true, name: true, kind: true } },
+  supplier: { select: { id: true, name: true } },
+  reimburseTo: { select: { id: true, name: true } },
+  approvedBy: { select: { id: true, name: true } },
+  createdBy: { select: { id: true, name: true } },
+  paidBy: { select: { id: true, name: true } },
+};
+
+function bentukPurchase(p) {
+  return { ...p, amount: moneyToNumber(p.amount) };
+}
+
+financeTxRouter.get("/purchases",
+  requireAnyPermission(P.FINANCE_READ, P.FINANCE_EXPENSE_SUBMIT),
+  async (req, res) => {
+    try {
+      const { from, to } = rentangDariQuery(req.query);
+      const { status, division, categoryId, mode } = req.query;
+
+      const hanyaMilikSendiri = !hasPermission(req.user, P.FINANCE_READ);
+
+      const purchases = await prisma.finPurchase.findMany({
+        where: {
+          date: { gte: from, lte: to },
+          ...(status && { status }),
+          ...(division && { division }),
+          ...(categoryId && { categoryId }),
+          ...(mode && { mode }),
+          ...(hanyaMilikSendiri && {
+            OR: [{ createdById: req.user.id }, { reimburseToId: req.user.id }],
+          }),
+        },
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+        take: 300,
+        include: purchaseInclude,
+      });
+
+      const total = purchases.length === 0 ? ZERO : sumMoney(purchases.map((p) => p.amount));
+      res.json({
+        purchases: purchases.map(bentukPurchase),
+        total: moneyToNumber(total),
+        hanyaMilikSendiri,
+      });
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
+
+financeTxRouter.post("/purchases",
+  requireAnyPermission(P.FINANCE_POST, P.FINANCE_EXPENSE_SUBMIT),
+  async (req, res) => {
+    try {
+      const {
+        date, amount, description, categoryId, division, mode,
+        cashAccountId, supplierId, reimburseToId, payeeName, receiptUrl, notes,
+        langsungAjukan,
+      } = req.body;
+
+      if (!description?.trim()) throw err("Keterangan pembelian wajib diisi");
+      if (!categoryId) throw err("Jenis pembelian wajib dipilih");
+      const nominal = toMoney(amount, { field: "Nominal pembelian" });
+      if (nominal.lessThanOrEqualTo(0)) throw err("Nominal pembelian harus lebih dari 0");
+
+      const kategori = await prisma.finPurchaseCategory.findUnique({
+        where: { id: categoryId }, select: { id: true, active: true },
+      });
+      if (!kategori || !kategori.active) throw err("Jenis pembelian tidak ditemukan atau sudah nonaktif", 404);
+
+      const modeFinal = ["LANGSUNG", "REIMBURSEMENT", "UTANG"].includes(mode) ? mode : "LANGSUNG";
+
+      // Sama seperti Pengeluaran: orang divisi (cuma finance:expense:submit)
+      // selalu mengajukan REIMBURSEMENT, tidak pernah langsung bayar dari
+      // kas perusahaan.
+      const bolehPosting = hasPermission(req.user, P.FINANCE_POST);
+      const modeEfektif = bolehPosting ? modeFinal : "REIMBURSEMENT";
+
+      if (modeEfektif === "LANGSUNG" && !cashAccountId) {
+        throw err("Pembelian yang dibayar langsung wajib memilih rekening kas/bank sumber dananya");
+      }
+
+      const created = await prisma.finPurchase.create({
+        data: {
+          purchaseNumber: await prisma.$transaction((tx) => generateDocumentNumber(tx, "PUR", parseTanggal(date))),
+          date: parseTanggal(date),
+          amount: nominal,
+          description: description.trim(),
+          categoryId,
+          division: division || "UMUM",
+          mode: modeEfektif,
+          cashAccountId: modeEfektif === "LANGSUNG" ? cashAccountId : (cashAccountId || null),
+          supplierId: supplierId || null,
+          reimburseToId: modeEfektif === "REIMBURSEMENT" ? (reimburseToId || req.user.id) : null,
+          payeeName: payeeName?.trim() || null,
+          receiptUrl: receiptUrl || null,
+          notes: notes?.trim() || null,
+          status: langsungAjukan === false ? "DRAFT" : "MENUNGGU_APPROVAL",
+          submittedAt: langsungAjukan === false ? null : new Date(),
+          createdById: req.user.id,
+        },
+        include: purchaseInclude,
+      });
+      res.status(201).json(bentukPurchase(created));
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
+
+financeTxRouter.post("/purchases/:id/submit",
+  requireAnyPermission(P.FINANCE_POST, P.FINANCE_EXPENSE_SUBMIT),
+  async (req, res) => {
+    try {
+      const p = await prisma.finPurchase.findUnique({ where: { id: req.params.id }, select: { status: true, createdById: true } });
+      if (!p) throw err("Pembelian tidak ditemukan", 404);
+      if (p.status !== "DRAFT") throw err("Hanya draft yang bisa diajukan", 409);
+      const updated = await prisma.finPurchase.update({
+        where: { id: req.params.id },
+        data: { status: "MENUNGGU_APPROVAL", submittedAt: new Date() },
+        include: purchaseInclude,
+      });
+      res.json(bentukPurchase(updated));
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
+
+financeTxRouter.post("/purchases/:id/approve", requirePermission(P.FINANCE_APPROVE), async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction(async (tx) => {
+      const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
+      if (!p) throw err("Pembelian tidak ditemukan", 404);
+      if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status)) {
+        throw err(`Pembelian ini sudah berstatus ${p.status} — tidak bisa disetujui lagi`, 409);
+      }
+
+      const menyetujuiSendiri = p.createdById === req.user.id;
+      if (menyetujuiSendiri && !hasPermission(req.user, P.FINANCE_ADMIN)) {
+        throw err(
+          "Pengajuan Anda sendiri harus disetujui orang lain. Ini bukan soal kepercayaan — " +
+          "persetujuan yang diberikan sendiri tidak punya nilai kontrol apa pun saat diaudit.",
+          403
+        );
+      }
+
+      const updated = await tx.finPurchase.update({
+        where: { id: p.id },
+        data: {
+          status: p.mode === "LANGSUNG" ? "DIBAYAR" : "DISETUJUI",
+          approvedAt: new Date(),
+          approvedById: req.user.id,
+          ...(p.mode === "LANGSUNG" && { paidAt: new Date(), paidById: req.user.id }),
+        },
+      });
+
+      await postPurchaseApproved(tx, { purchaseId: p.id, userId: req.user.id });
+
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: p.id,
+        eventType: EVENT_TYPES.DOCUMENT_APPROVED, actorId: req.user.id,
+        metadata: {
+          purchaseNumber: p.purchaseNumber, amount: String(p.amount), mode: p.mode,
+          ...(menyetujuiSendiri && { menyetujuiPengajuanSendiri: true }),
+        },
+      });
+      return updated;
+    });
+
+    const lengkap = await prisma.finPurchase.findUnique({ where: { id: hasil.id }, include: purchaseInclude });
+    res.json(bentukPurchase(lengkap));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+financeTxRouter.post("/purchases/:id/reject", requirePermission(P.FINANCE_APPROVE), async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim();
+    if (!reason) throw err("Alasan penolakan wajib diisi");
+    const hasil = await prisma.$transaction(async (tx) => {
+      const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
+      if (!p) throw err("Pembelian tidak ditemukan", 404);
+      if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status)) {
+        throw err("Pembelian yang sudah disetujui tidak bisa ditolak — batalkan lewat jurnal balik", 409);
+      }
+      const updated = await tx.finPurchase.update({
+        where: { id: p.id },
+        data: { status: "DITOLAK", rejectReason: reason, approvedById: req.user.id, approvedAt: new Date() },
+      });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: p.id,
+        eventType: EVENT_TYPES.DOCUMENT_REJECTED, actorId: req.user.id,
+        metadata: { purchaseNumber: p.purchaseNumber, reason },
+      });
+      return updated;
+    });
+    const lengkap = await prisma.finPurchase.findUnique({ where: { id: hasil.id }, include: purchaseInclude });
+    res.json(bentukPurchase(lengkap));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Bayar pembelian mode REIMBURSEMENT/UTANG yang sudah disetujui.
+financeTxRouter.post("/purchases/:id/pay", requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const { cashAccountId, paidAt } = req.body;
+    if (!cashAccountId) throw err("Rekening sumber pembayaran wajib dipilih");
+
+    const hasil = await prisma.$transaction(async (tx) => {
+      const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
+      if (!p) throw err("Pembelian tidak ditemukan", 404);
+      if (p.status !== "DISETUJUI") {
+        throw err(`Hanya pembelian berstatus Disetujui yang bisa dibayar (status sekarang: ${p.status})`, 409);
+      }
+      await tx.finPurchase.update({
+        where: { id: p.id },
+        data: {
+          status: "DIBAYAR",
+          cashAccountId,
+          paidAt: paidAt ? parseTanggal(paidAt) : new Date(),
+          paidById: req.user.id,
+        },
+      });
+      await postPurchasePaid(tx, { purchaseId: p.id, userId: req.user.id });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: p.id,
+        eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
+        metadata: { purchaseNumber: p.purchaseNumber, aksi: "dibayar", amount: String(p.amount) },
+      });
+      return p;
+    });
+
+    const lengkap = await prisma.finPurchase.findUnique({ where: { id: hasil.id }, include: purchaseInclude });
+    res.json(bentukPurchase(lengkap));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Batalkan pembelian yang SUDAH diposting — lewat reversal, bukan hapus.
+financeTxRouter.post("/purchases/:id/cancel", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim();
+    if (!reason) throw err("Alasan pembatalan wajib diisi");
+
+    const hasil = await prisma.$transaction(async (tx) => {
+      const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
+      if (!p) throw err("Pembelian tidak ditemukan", 404);
+      if (p.status === "DIBATALKAN") throw err("Pembelian ini sudah dibatalkan", 409);
+
+      const alasanBatal = `Pembelian ${p.purchaseNumber} dibatalkan — ${reason}`;
+      await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchasePaid(p.id), alasan: alasanBatal, userId: req.user.id });
+      await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchase(p.id), alasan: alasanBatal, userId: req.user.id });
+
+      const updated = await tx.finPurchase.update({
+        where: { id: p.id },
+        data: { status: "DIBATALKAN", rejectReason: reason },
+      });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: p.id,
+        eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: req.user.id,
+        metadata: { purchaseNumber: p.purchaseNumber, reason },
+      });
+      return updated;
+    });
+    res.json(bentukPurchase(hasil));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+/** Validasi & normalisasi payload edit/koreksi pembelian — pola persis siapkanPerubahanExpense. */
+async function siapkanPerubahanPurchase(tx, body, modeSaatIni) {
+  const perubahan = {};
+  if (body.date !== undefined) perubahan.date = parseTanggal(body.date);
+  if (body.amount !== undefined) {
+    const nominal = toMoney(body.amount, { field: "Nominal pembelian" });
+    if (nominal.lessThanOrEqualTo(0)) throw err("Nominal pembelian harus lebih dari 0");
+    perubahan.amount = nominal;
+  }
+  if (body.description !== undefined) {
+    if (!body.description?.trim()) throw err("Keterangan pembelian wajib diisi");
+    perubahan.description = body.description.trim();
+  }
+  if (body.categoryId !== undefined) {
+    const kategori = await tx.finPurchaseCategory.findUnique({ where: { id: body.categoryId }, select: { id: true, active: true } });
+    if (!kategori || !kategori.active) throw err("Jenis pembelian tidak ditemukan atau sudah nonaktif", 404);
+    perubahan.categoryId = body.categoryId;
+  }
+  if (body.division !== undefined) perubahan.division = body.division;
+  if (body.cashAccountId !== undefined) perubahan.cashAccountId = body.cashAccountId || null;
+  if (body.supplierId !== undefined) perubahan.supplierId = body.supplierId || null;
+  if (body.reimburseToId !== undefined) perubahan.reimburseToId = body.reimburseToId || null;
+  if (body.payeeName !== undefined) perubahan.payeeName = body.payeeName?.trim() || null;
+  if (body.receiptUrl !== undefined) perubahan.receiptUrl = body.receiptUrl || null;
+  if (body.notes !== undefined) perubahan.notes = body.notes?.trim() || null;
+
+  if (modeSaatIni === "LANGSUNG" && perubahan.cashAccountId === null) {
+    throw err("Pembelian mode Langsung wajib punya rekening kas/bank sumber dananya");
+  }
+  return perubahan;
+}
+
+// Edit LANGSUNG (tanpa reversal) — HANYA sah selama pembelian belum
+// menyentuh buku besar sama sekali (DRAFT/MENUNGGU_APPROVAL).
+financeTxRouter.patch("/purchases/:id", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction(async (tx) => {
+      const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
+      if (!p) throw err("Pembelian tidak ditemukan", 404);
+      if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status)) {
+        throw err(
+          `Pembelian berstatus ${p.status} sudah menyentuh buku besar — pakai Koreksi, bukan edit langsung`,
+          409
+        );
+      }
+      const perubahan = await siapkanPerubahanPurchase(tx, req.body, p.mode);
+      const updated = await tx.finPurchase.update({ where: { id: p.id }, data: perubahan, include: purchaseInclude });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: p.id,
+        eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: {
+          purchaseNumber: p.purchaseNumber, status: p.status,
+          changes: Object.fromEntries(Object.keys(perubahan).map((k) => [k, { from: p[k], to: perubahan[k] }])),
+        },
+      });
+      return updated;
+    });
+    res.json(bentukPurchase(hasil));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Koreksi pembelian yang SUDAH diposting — pola persis POST /expenses/:id/koreksi.
+financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim();
+    if (!reason) throw err("Alasan koreksi wajib diisi");
+
+    const hasil = await prisma.$transaction(async (tx) => {
+      const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
+      if (!p) throw err("Pembelian tidak ditemukan", 404);
+      if (!["DISETUJUI", "DIBAYAR"].includes(p.status)) {
+        throw err(
+          `Koreksi hanya untuk pembelian yang sudah diposting (status sekarang: ${p.status}) — pakai edit langsung kalau belum`,
+          409
+        );
+      }
+
+      const perubahan = await siapkanPerubahanPurchase(tx, req.body, p.mode);
+      if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
+
+      const alasanKoreksi = `Koreksi ${p.purchaseNumber} — ${reason}`;
+      await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchasePaid(p.id), alasan: alasanKoreksi, userId: req.user.id });
+      await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchase(p.id), alasan: alasanKoreksi, userId: req.user.id });
+
+      const before = Object.fromEntries(Object.keys(perubahan).map((k) => [k, p[k]]));
+      const updated = await tx.finPurchase.update({ where: { id: p.id }, data: perubahan });
+
+      const suffix = suffixKoreksi();
+      await postPurchaseApproved(tx, { purchaseId: p.id, userId: req.user.id, keySuffix: suffix });
+      if (p.status === "DIBAYAR" && p.mode !== "LANGSUNG") {
+        await postPurchasePaid(tx, { purchaseId: p.id, userId: req.user.id, keySuffix: suffix });
+      }
+
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: p.id,
+        eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: req.user.id,
+        metadata: {
+          purchaseNumber: p.purchaseNumber, reason,
+          before, after: perubahan,
+        },
+      });
+      return updated;
+    });
+    const lengkap = await prisma.finPurchase.findUnique({ where: { id: hasil.id }, include: purchaseInclude });
+    res.json(bentukPurchase(lengkap));
   } catch (e) {
     handleFinanceError(e, res);
   }

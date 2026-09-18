@@ -1,7 +1,6 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import multer from "multer";
-import sharp from "sharp";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -9,6 +8,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { ROLE_PERMISSIONS } from "../constants/permissions.js";
 import { rolesOf } from "../middleware/authorize.js";
+import { bulatkanFoto } from "../services/avatarImage.js";
 
 // Peran valid — sumber kebenaran TUNGGAL adalah kunci ROLE_PERMISSIONS
 // (constants/permissions.js), supaya daftar ini tidak pernah drift dari
@@ -203,20 +203,34 @@ userRouter.patch("/me", async (req, res) => {
   }
 });
 
-// Kompres+resize ke ~256px pakai sharp, simpan sebagai jpg di
-// backend/uploads/avatars/, hapus file avatar lama (kalau ada) supaya tidak
-// menumpuk sampah di disk tiap ganti foto. Dipakai KEDUA endpoint di bawah
-// (diri sendiri & admin-untuk-user-lain, D-166, 18 September 2026) — supaya
-// perilaku upload/kompresi/cleanup TIDAK bisa diam-diam menyimpang antara
-// dua jalur itu (pola sama dengan createComplaintCase dkk: satu fungsi
-// dipakai ulang, bukan disalin ke endpoint kedua).
+// Kompres+resize+bulatkan ke ~256px pakai sharp, simpan sebagai png
+// (transparan di luar lingkaran) di backend/uploads/avatars/, hapus file
+// avatar lama (kalau ada) supaya tidak menumpuk sampah di disk tiap ganti
+// foto. Dipakai KEDUA endpoint di bawah (diri sendiri & admin-untuk-user-
+// lain, D-166, 18 September 2026) — supaya perilaku upload/kompresi/
+// cleanup TIDAK bisa diam-diam menyimpang antara dua jalur itu (pola sama
+// dengan createComplaintCase dkk: satu fungsi dipakai ulang, bukan disalin
+// ke endpoint kedua).
+//
+// SEKARANG DIBULATKAN DI SERVER (19 September 2026, D-169) — SEBELUMNYA
+// persegi polos (jpg), dibulatkan belakangan di klien lewat borderRadius
+// (web Avatar.jsx / app Avatar.js). Itu CUKUP untuk kartu/daftar biasa,
+// TAPI TIDAK CUKUP untuk marker peta Live Tracking (driver-mobile
+// VehicleMarker.js) — ikon marker native react-native-maps TIDAK bisa
+// di-crop lewat CSS/View sama sekali, bitmapnya dipakai APA ADANYA. Kalau
+// sumbernya tetap persegi, marker peta SELAMANYA jadi foto kotak walau
+// tampilan lain di app tetap bulat (masking di sisi klien) — laporan
+// owner: "berarti gabisa ya pake foto mereka di live tracking?" — jawabnya
+// BISA, asal bulatnya dibakar di file-nya sendiri, bukan cuma di CSS.
+// Efek sampingnya di tempat LAIN (kartu/daftar) NOL — Avatar.jsx/Avatar.js
+// tetap membungkus dgn View/CSS bulat yang UKURANNYA SAMA PERSIS, jadi
+// cuma dobel-crop yang tidak kelihatan (foto sudah bulat, dibungkus bulat
+// lagi = tetap bulat, bukan berubah bentuk).
 async function processAvatarUpload(userId, buffer) {
-  const filename = `${userId}-${Date.now()}.jpg`;
+  const filename = `${userId}-${Date.now()}.png`;
   const filePath = path.join(avatarsDir, filename);
-  await sharp(buffer)
-    .resize(256, 256, { fit: "cover" })
-    .jpeg({ quality: 80 })
-    .toFile(filePath);
+  const png = await bulatkanFoto(buffer, 256, 10);
+  await fs.promises.writeFile(filePath, png);
 
   const avatarUrl = `/uploads/avatars/${filename}`;
 

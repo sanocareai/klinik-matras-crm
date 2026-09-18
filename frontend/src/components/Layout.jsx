@@ -8,6 +8,7 @@ import {
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
   Boxes, ScanLine, Award, ArrowUpDown, Check, Handshake,
   Landmark, BookOpen, FileSpreadsheet, Banknote, Receipt, Building2, Scale as ScaleIcon, ListTree,
+  ShoppingCart,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
@@ -427,6 +428,7 @@ const DIVISIONS = {
           { to: "/finance/payments",  label: "Pembayaran & Verifikasi", Icon: Banknote },
           { to: "/finance/cash",      label: "Kas & Bank",             Icon: Wallet },
           { to: "/finance/expenses",  label: "Pengeluaran",            Icon: Receipt },
+          { to: "/finance/purchases", label: "Pembelian",              Icon: ShoppingCart },
         ],
       },
       {

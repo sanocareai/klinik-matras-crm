@@ -132,6 +132,7 @@ export const LABEL_SUMBER_JURNAL = {
   PENGAKUAN_PENDAPATAN: "Pengakuan Pendapatan",
   REFUND: "Refund",
   PENGELUARAN: "Pengeluaran",
+  PEMBELIAN: "Pembelian",
   BIAYA_KENDARAAN: "Biaya Kendaraan",
   BIAYA_IKLAN: "Belanja Iklan",
   PEMASUKAN_LAIN: "Pemasukan Lain",

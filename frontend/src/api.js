@@ -1239,6 +1239,16 @@ export const api = {
   payFinanceExpense: (id, data) => request(`/finance/expenses/${id}/pay`, { method: "POST", body: JSON.stringify(data) }),
   cancelFinanceExpense: (id, reason) => request(`/finance/expenses/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
 
+  // Pembelian (bahan baku manual, aset tetap, aset tak berwujud, uang muka)
+  getFinancePurchaseCategories: (params = {}) => request(`/finance/purchase-categories${qsFinance(params)}`),
+  getFinancePurchases: (params = {}) => request(`/finance/purchases${qsFinance(params)}`),
+  createFinancePurchase: (data) => request("/finance/purchases", { method: "POST", body: JSON.stringify(data) }),
+  submitFinancePurchase: (id) => request(`/finance/purchases/${id}/submit`, { method: "POST" }),
+  approveFinancePurchase: (id) => request(`/finance/purchases/${id}/approve`, { method: "POST" }),
+  rejectFinancePurchase: (id, reason) => request(`/finance/purchases/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  payFinancePurchase: (id, data) => request(`/finance/purchases/${id}/pay`, { method: "POST", body: JSON.stringify(data) }),
+  cancelFinancePurchase: (id, reason) => request(`/finance/purchases/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+
   // Supplier, tagihan, pembayaran supplier
   getFinanceSuppliers: (params = {}) => request(`/finance/suppliers${qsFinance(params)}`),
   createFinanceSupplier: (data) => request("/finance/suppliers", { method: "POST", body: JSON.stringify(data) }),

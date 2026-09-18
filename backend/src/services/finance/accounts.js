@@ -68,6 +68,7 @@ export const SYSTEM_KEYS = Object.freeze({
   BEBAN_LANGGANAN_APLIKASI: "BEBAN_LANGGANAN_APLIKASI",
   BEBAN_OPERASIONAL_TRIP: "BEBAN_OPERASIONAL_TRIP",
   BEBAN_POKOK_BAHAN_MANUAL: "BEBAN_POKOK_BAHAN_MANUAL",
+  UANG_MUKA_PEMBELIAN: "UANG_MUKA_PEMBELIAN",
 });
 
 const A = "ASET";
@@ -96,7 +97,9 @@ export const DEFAULT_COA = Object.freeze([
   { code: "1-1400", name: "Persediaan Bahan Baku", type: A, normalBalance: D, parent: "1-1000",
     systemKey: SYSTEM_KEYS.PERSEDIAAN_BAHAN, cashFlowCategory: "OPERASI",
     description: "Nilai bahan di gudang. Kuantitasnya TETAP milik ledger stok (stock_movements) — akun ini cuma nilai rupiahnya." },
-  { code: "1-1500", name: "Uang Muka Pembelian", type: A, normalBalance: D, parent: "1-1000", cashFlowCategory: "OPERASI" },
+  { code: "1-1500", name: "Uang Muka Pembelian", type: A, normalBalance: D, parent: "1-1000",
+    systemKey: SYSTEM_KEYS.UANG_MUKA_PEMBELIAN, cashFlowCategory: "OPERASI",
+    description: "DP/uang muka yang sudah dibayar ke supplier untuk barang/jasa yang BELUM diterima — aset, bukan beban, sampai barang/jasanya benar-benar diterima. Penyelesaiannya (Dr akun tujuan sebenarnya / Cr akun ini) dilakukan manual lewat Jurnal Umum, lihat model FinPurchase." },
   { code: "1-2000", name: "Aset Tetap", type: A, normalBalance: D, isPostable: false, parent: "1-0000" },
   { code: "1-2100", name: "Kendaraan", type: A, normalBalance: D, parent: "1-2000", cashFlowCategory: "INVESTASI" },
   { code: "1-2200", name: "Peralatan & Mesin", type: A, normalBalance: D, parent: "1-2000", cashFlowCategory: "INVESTASI" },
@@ -232,6 +235,25 @@ export const DEFAULT_EXPENSE_CATEGORIES = Object.freeze([
   { code: "BAHAN_BAKU_MANUAL", name: "Pembelian Bahan Baku (Manual)", accountCode: "5-1150", division: "PRODUKSI" },
 ]);
 
+// Kode kategori pengeluaran yang DIPENSIUNKAN — masih dipakai histori
+// FinExpense lama (jangan pernah disentuh), tapi TIDAK BOLEH lagi dipilih
+// untuk pengeluaran baru sejak tab Pembelian ada. ensureDefaultChartOfAccounts
+// menonaktifkannya (active:false) tiap dijalankan, idempoten, TANPA
+// mengubah accountId/histori transaksi yang sudah memakainya.
+const DEPRECATED_EXPENSE_CATEGORY_CODES = Object.freeze(["BAHAN_BAKU_MANUAL"]);
+
+// Kategori PEMBELIAN bawaan — jembatan yang sama seperti kategori
+// pengeluaran, tapi akun tujuannya bisa ASET (bahan baku manual masih ke
+// akun BEBAN POKOK yang sama seperti sebelumnya, supaya laporan tidak
+// pecah dua; aset tetap & aset tak berwujud & uang muka ke akun ASET).
+export const DEFAULT_PURCHASE_CATEGORIES = Object.freeze([
+  { code: "BAHAN_BAKU_MANUAL", name: "Bahan Baku (Manual)", accountCode: "5-1150" },
+  { code: "ASET_KENDARAAN", name: "Aset Tetap — Kendaraan", accountCode: "1-2100" },
+  { code: "ASET_PERALATAN", name: "Aset Tetap — Peralatan & Mesin", accountCode: "1-2200" },
+  { code: "ASET_TAK_BERWUJUD", name: "Aset Tak Berwujud", accountCode: "1-2300" },
+  { code: "UANG_MUKA_PEMBELIAN", name: "Uang Muka Pembelian (DP)", accountCode: "1-1500" },
+]);
+
 /**
  * Pasang bagan akun bawaan — IDEMPOTEN, aman dijalankan berkali-kali.
  * Akun yang SUDAH ADA tidak pernah ditimpa (admin boleh mengganti nama/
@@ -275,6 +297,22 @@ export async function ensureDefaultChartOfAccounts(tx) {
     }
   }
 
+  // Backfill systemKey untuk akun LAMA yang baru sekarang dapat systemKey
+  // di DEFAULT_COA (mis. "1-1500 Uang Muka Pembelian" dipasang jauh sebelum
+  // ada mesin posting yang memakainya). Beda dari name/description yang
+  // sengaja tidak pernah ditimpa (customization admin) — systemKey murni
+  // dikelola kode, jadi aman & perlu di-backfill supaya resolveAccount()
+  // tidak gagal keras di instalasi yang akunnya sudah lama ada.
+  for (const def of DEFAULT_COA) {
+    if (!def.systemKey) continue;
+    const id = byCode.get(def.code);
+    if (!id) continue;
+    const row = await tx.finAccount.findUnique({ where: { id }, select: { systemKey: true } });
+    if (row?.systemKey == null) {
+      await tx.finAccount.update({ where: { id }, data: { systemKey: def.systemKey } });
+    }
+  }
+
   // Kategori pengeluaran bawaan — sama idempotennya.
   const existingCats = await tx.finExpenseCategory.findMany({ select: { code: true } });
   const catCodes = new Set(existingCats.map((c) => c.code));
@@ -290,6 +328,26 @@ export async function ensureDefaultChartOfAccounts(tx) {
         division: def.division,
         autoMapKey: def.autoMapKey || null,
       },
+    });
+  }
+
+  // Pensiunkan kategori pengeluaran yang sudah pindah ke tab Pembelian —
+  // tidak menyentuh accountId/histori, cuma menyembunyikannya dari form
+  // pengajuan baru. Idempoten: sudah nonaktif ya dilewati saja.
+  await tx.finExpenseCategory.updateMany({
+    where: { code: { in: DEPRECATED_EXPENSE_CATEGORY_CODES }, active: true },
+    data: { active: false },
+  });
+
+  // Kategori pembelian bawaan — pola identik kategori pengeluaran di atas.
+  const existingPurchaseCats = await tx.finPurchaseCategory.findMany({ select: { code: true } });
+  const purchaseCatCodes = new Set(existingPurchaseCats.map((c) => c.code));
+  for (const def of DEFAULT_PURCHASE_CATEGORIES) {
+    if (purchaseCatCodes.has(def.code)) continue;
+    const accountId = byCode.get(def.accountCode);
+    if (!accountId) continue; // akun tujuan tidak ada — lewati, jangan bikin kategori yatim
+    await tx.finPurchaseCategory.create({
+      data: { code: def.code, name: def.name, accountId },
     });
   }
 

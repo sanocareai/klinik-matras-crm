@@ -424,6 +424,65 @@ financeRouter.patch("/expense-categories/:id", requirePermission(P.FINANCE_ADMIN
   }
 });
 
+// Kategori PEMBELIAN — pola sama seperti kategori pengeluaran di atas,
+// bedanya akun tujuan boleh ASET (bahan baku manual tetap BEBAN_POKOK,
+// aset tetap/tak berwujud/uang muka ASET) — lihat model FinPurchaseCategory.
+financeRouter.get("/purchase-categories", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const categories = await prisma.finPurchaseCategory.findMany({
+      where: req.query.includeInactive === "1" ? {} : { active: true },
+      orderBy: [{ name: "asc" }],
+      include: { account: { select: { id: true, code: true, name: true, type: true } } },
+    });
+    res.json({ categories });
+  } catch (err) {
+    handleFinanceError(err, res);
+  }
+});
+
+financeRouter.post("/purchase-categories", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const { code, name, accountId } = req.body;
+    if (!code?.trim() || !name?.trim() || !accountId) {
+      return res.status(400).json({ error: "Kode, nama, dan akun tujuan wajib diisi" });
+    }
+    const akun = await prisma.finAccount.findUnique({ where: { id: accountId }, select: { isPostable: true, type: true } });
+    if (!akun) return res.status(404).json({ error: "Akun tujuan tidak ditemukan" });
+    if (!akun.isPostable) return res.status(400).json({ error: "Akun tujuan harus akun detail, bukan akun kelompok" });
+    if (!["ASET", "BEBAN_POKOK"].includes(akun.type)) {
+      return res.status(400).json({
+        error: "Kategori pembelian harus menunjuk akun bertipe Aset atau Beban Pokok — memilih akun kewajiban/pendapatan/beban operasional akan membuat laporan salah",
+      });
+    }
+
+    const created = await prisma.finPurchaseCategory.create({
+      data: { code: code.trim().toUpperCase(), name: name.trim(), accountId },
+      include: { account: { select: { code: true, name: true } } },
+    });
+    res.status(201).json(created);
+  } catch (err) {
+    handleFinanceError(err, res);
+  }
+});
+
+financeRouter.patch("/purchase-categories/:id", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const { name, accountId, active } = req.body;
+    const updated = await prisma.finPurchaseCategory.update({
+      where: { id: req.params.id },
+      data: {
+        ...(name !== undefined && { name: name.trim() }),
+        ...(accountId !== undefined && { accountId }),
+        ...(active !== undefined && { active: Boolean(active) }),
+      },
+      include: { account: { select: { code: true, name: true } } },
+    });
+    res.json(updated);
+  } catch (err) {
+    handleFinanceError(err, res);
+  }
+});
+
 // ═════════════════════════════════════════════════════════════════════════
 // PERIODE AKUNTANSI
 // ═════════════════════════════════════════════════════════════════════════
@@ -1032,7 +1091,7 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
 
     const [
       kasBank, lr, piutang, utang, gate, catatan,
-      pembayaranBelumVerifikasi, pengeluaranMenunggu, tagihanMenunggu, refundMenunggu,
+      pembayaranBelumVerifikasi, pengeluaranMenunggu, pembelianMenunggu, tagihanMenunggu, refundMenunggu,
       jurnalTerakhir,
     ] = await Promise.all([
       saldoKasBank(prisma, { to: sekarang }),
@@ -1053,6 +1112,7 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
         },
       }),
       prisma.finExpense.count({ where: { status: "MENUNGGU_APPROVAL" } }),
+      prisma.finPurchase.count({ where: { status: "MENUNGGU_APPROVAL" } }),
       prisma.finSupplierBill.count({ where: { status: "MENUNGGU_APPROVAL" } }),
       prisma.finRefund.count({ where: { status: "MENUNGGU_APPROVAL" } }),
       prisma.finJournalEntry.findMany({
@@ -1083,6 +1143,7 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
         })),
         jumlahPembayaranBelumVerifikasi: pembayaranBelumVerifikasi.length,
         pengeluaranMenunggu,
+        pembelianMenunggu,
         tagihanMenunggu,
         refundMenunggu,
       },

@@ -503,6 +503,10 @@ model User {
   finExpensesApproved       FinExpense[]           @relation("FinExpenseApprover")
   finExpensesPaid           FinExpense[]           @relation("FinExpensePayer")
   finExpensesReimbursed     FinExpense[]           @relation("FinExpenseReimburseTo")
+  finPurchasesCreated       FinPurchase[]          @relation("FinPurchaseCreator")
+  finPurchasesApproved      FinPurchase[]          @relation("FinPurchaseApprover")
+  finPurchasesPaid          FinPurchase[]          @relation("FinPurchasePayer")
+  finPurchasesReimbursed    FinPurchase[]          @relation("FinPurchaseReimburseTo")
   finOtherIncomesCreated    FinOtherIncome[]       @relation("FinOtherIncomeCreator")
   finOtherIncomesVoided     FinOtherIncome[]       @relation("FinOtherIncomeCanceller")
   finCashTransfersCreated   FinCashTransfer[]      @relation("FinCashTransferCreator")
@@ -5520,9 +5524,10 @@ model FinAccount {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  journalLines      FinJournalLine[]
-  cashAccounts      FinCashAccount[]
-  expenseCategories FinExpenseCategory[]
+  journalLines       FinJournalLine[]
+  cashAccounts       FinCashAccount[]
+  expenseCategories  FinExpenseCategory[]
+  purchaseCategories FinPurchaseCategory[]
 
   @@index([type, code])
   @@index([active])
@@ -5562,6 +5567,7 @@ model FinCashAccount {
   journalLines     FinJournalLine[]
   bankStatements   FinBankStatement[]
   expenses         FinExpense[]
+  purchases        FinPurchase[]
   otherIncomes     FinOtherIncome[]
   transfersFrom    FinCashTransfer[]    @relation("FinTransferFrom")
   transfersTo      FinCashTransfer[]    @relation("FinTransferTo")
@@ -5615,6 +5621,7 @@ enum FinJournalSource {
   PENGAKUAN_PENDAPATAN // order diserahkan, pendapatan diakui + piutang lahir
   REFUND // pengembalian uang ke customer
   PENGELUARAN // FinExpense (biaya operasional/produksi/delivery/reimbursement)
+  PEMBELIAN // FinPurchase (bahan baku manual/aset tetap/aset tak berwujud/uang muka pembelian TANPA tagihan supplier resmi — lihat model FinPurchase & FinanceSuppliers untuk pembelian bertagihan)
   // Dua sumber di bawah SUDAH punya tabelnya sendiri sejak lama dan TETAP
   // jadi tempat input aslinya (lihat catatan di model FinExpense) - nilai
   // enum terpisah supaya laporan bisa membedakan "biaya yang diinput
@@ -5827,6 +5834,36 @@ model FinExpenseCategory {
   @@map("fin_expense_categories")
 }
 
+// Kategori PEMBELIAN — jembatan yang SAMA seperti FinExpenseCategory, tapi
+// untuk pembelian tunai/manual TANPA tagihan resmi supplier (bahan baku,
+// aset tetap, aset tak berwujud, uang muka pembelian). SENGAJA tabel
+// terpisah dari FinExpenseCategory walau strukturnya kembar: kategori
+// pengeluaran menjawab "beban ini ke akun BEBAN yang mana", kategori
+// pembelian menjawab "barang/aset ini ke akun ASET/BEBAN POKOK yang mana"
+// — dua pertanyaan berbeda yang kalau digabung satu tabel akan mengaburkan
+// scope tab Pengeluaran vs tab Pembelian lagi (masalah yang justru sedang
+// diperbaiki tabel ini). Pembelian BERTAGIHAN resmi dari supplier TETAP
+// lewat FinSupplierBill (lihat komentar di sana) — tabel ini tidak
+// menggantikannya.
+model FinPurchaseCategory {
+  id   String @id @default(uuid()) @db.Uuid
+  code String @unique // "BAHAN_BAKU_MANUAL", "ASET_KENDARAAN", "UANG_MUKA_PEMBELIAN"
+  name String
+
+  accountId String     @map("account_id") @db.Uuid
+  account   FinAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  purchases FinPurchase[]
+
+  @@index([active])
+  @@map("fin_purchase_categories")
+}
+
 // Supplier/vendor. SEBELUM INI tidak ada entitas supplier sama sekali —
 // GoodsReceipt.supplier, StockMovement.supplier, dan Material.vendor
 // semuanya STRING BEBAS (lihat komentar di model-model itu). Tabel ini
@@ -5868,6 +5905,7 @@ model FinSupplier {
   bills        FinSupplierBill[]
   payments     FinSupplierPayment[]
   expenses     FinExpense[]
+  purchases    FinPurchase[]
   journalLines FinJournalLine[]
 
   @@index([active])
@@ -6174,6 +6212,77 @@ model FinExpense {
   @@index([division, date])
   @@index([reimburseToId, status])
   @@map("fin_expenses")
+}
+
+// ── PEMBELIAN ────────────────────────────────────────────────────────────
+// Pembelian tunai/manual TANPA tagihan resmi supplier: bahan baku (COGS),
+// aset tetap (kendaraan/peralatan), aset tak berwujud (paten/HAKI/domain),
+// dan uang muka/DP ke supplier. Field & alur status SENGAJA identik dengan
+// FinExpense (reuse FinExpenseMode/FinExpenseStatus — semantiknya sama
+// persis: LANGSUNG/REIMBURSEMENT/UTANG, DRAFT→MENUNGGU_APPROVAL→DISETUJUI→
+// DIBAYAR) — bedanya HANYA akun tujuan debit yang bisa berupa ASET (lihat
+// FinPurchaseCategory), bukan cuma BEBAN.
+//
+// ⚠️ BUKAN pengganti FinSupplierBill (Tagihan Supplier di workspace
+// Supplier & Utang) — itu tetap satu-satunya tempat pembelian BERTAGIHAN
+// resmi (termin, opsional menaut penerimaan barang Gudang). Tabel ini
+// khusus pembelian yang TIDAK melalui proses tagihan formal itu.
+//
+// ⚠️ Kategori "Uang Muka Pembelian" TIDAK mengakhiri sendiri prepayment-nya
+// — saat barang/jasa akhirnya diterima, penyelesaian saldo 1-1500 dilakukan
+// lewat Jurnal Umum manual (Dr akun tujuan sebenarnya / Cr Uang Muka
+// Pembelian), BUKAN oleh mesin posting otomatis di sini. Sengaja sederhana
+// (tidak ada sistem pencocokan/alokasi) — lihat services/finance/posting/purchase.js.
+model FinPurchase {
+  id             String @id @default(uuid()) @db.Uuid
+  purchaseNumber String @unique @map("purchase_number") // PUR-DDMMYYYY-NNN
+
+  date        DateTime @db.Date
+  amount      Decimal  @db.Decimal(18, 2)
+  description String
+
+  categoryId String              @map("category_id") @db.Uuid
+  category   FinPurchaseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  division FinDivision    @default(UMUM)
+  mode     FinExpenseMode @default(LANGSUNG)
+
+  cashAccountId String?         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  supplierId String?      @map("supplier_id") @db.Uuid
+  supplier   FinSupplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  reimburseToId String? @map("reimburse_to")
+  reimburseTo   User?   @relation("FinPurchaseReimburseTo", fields: [reimburseToId], references: [id], onDelete: SetNull)
+
+  payeeName String? @map("payee_name")
+
+  receiptUrl String? @map("receipt_url")
+  notes      String?
+
+  status FinExpenseStatus @default(DRAFT)
+
+  submittedAt  DateTime? @map("submitted_at")
+  approvedAt   DateTime? @map("approved_at")
+  approvedById String?   @map("approved_by")
+  approvedBy   User?     @relation("FinPurchaseApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectReason String?   @map("reject_reason")
+
+  paidAt   DateTime? @map("paid_at")
+  paidById String?   @map("paid_by")
+  paidBy   User?     @relation("FinPurchasePayer", fields: [paidById], references: [id], onDelete: SetNull)
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinPurchaseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([status, date])
+  @@index([categoryId, date])
+  @@index([division, date])
+  @@index([reimburseToId, status])
+  @@map("fin_purchases")
 }
 
 // Pemasukan NON-ORDER (penjualan aset bekas, bunga bank, klaim asuransi,
