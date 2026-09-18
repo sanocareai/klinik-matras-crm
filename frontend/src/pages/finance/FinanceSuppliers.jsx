@@ -163,7 +163,7 @@ export default function FinanceSuppliers() {
               <Table>
                 <THead>
                   <TR>
-                    <TH>Nomor</TH><TH>Ref Supplier</TH><TH>Supplier</TH><TH>Keterangan</TH>
+                    <TH sticky>Nomor</TH><TH>Ref Supplier</TH><TH>Supplier</TH><TH>Keterangan</TH>
                     <TH>Tanggal</TH><TH>Jatuh Tempo</TH>
                     <TH numeric>Nilai</TH><TH numeric>Terbayar</TH><TH numeric>Sisa</TH>
                     <TH>Status</TH><TH />
@@ -172,7 +172,7 @@ export default function FinanceSuppliers() {
                 <TBody>
                   {bills.map((b) => (
                     <TR key={b.id}>
-                      <TD className="font-mono text-[12px]">{b.billNumber}</TD>
+                      <TD sticky className="font-mono text-[12px]">{b.billNumber}</TD>
                       <TD className="text-[12px] text-ink2">{b.supplierRef || "—"}</TD>
                       <TD>{b.supplier?.name}</TD>
                       <TD className="max-w-[220px]">
@@ -231,12 +231,12 @@ export default function FinanceSuppliers() {
             <TableWrap className="dh-table">
               <Table>
                 <THead>
-                  <TR><TH>Nomor</TH><TH>Tanggal</TH><TH>Supplier</TH><TH>Dari Rekening</TH><TH>Tagihan</TH><TH numeric>Nominal</TH><TH>Status</TH></TR>
+                  <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Supplier</TH><TH>Dari Rekening</TH><TH>Tagihan</TH><TH numeric>Nominal</TH><TH>Status</TH></TR>
                 </THead>
                 <TBody>
                   {payments.map((p) => (
                     <TR key={p.id}>
-                      <TD className="font-mono text-[12px]">{p.paymentNumber}</TD>
+                      <TD sticky className="font-mono text-[12px]">{p.paymentNumber}</TD>
                       <TD>{tanggalPendek(p.date)}</TD>
                       <TD>{p.supplier?.name}</TD>
                       <TD>{p.cashAccount?.name}</TD>
@@ -268,12 +268,12 @@ export default function FinanceSuppliers() {
             <TableWrap className="dh-table">
               <Table>
                 <THead>
-                  <TR><TH>Kode</TH><TH>Nama</TH><TH>Kontak</TH><TH>Termin</TH><TH>Rekening</TH><TH numeric>Sisa Utang</TH><TH>Status</TH></TR>
+                  <TR><TH sticky>Kode</TH><TH>Nama</TH><TH>Kontak</TH><TH>Termin</TH><TH>Rekening</TH><TH numeric>Sisa Utang</TH><TH>Status</TH></TR>
                 </THead>
                 <TBody>
                   {suppliers.map((s) => (
                     <TR key={s.id}>
-                      <TD className="font-mono text-[12px]">{s.code}</TD>
+                      <TD sticky className="font-mono text-[12px]">{s.code}</TD>
                       <TD className="font-medium">{s.name}</TD>
                       <TD className="text-[12px] text-ink2">{s.phone || s.email || "—"}</TD>
                       <TD className="text-[12px]">{s.paymentTermDays ? `${s.paymentTermDays} hari` : "—"}</TD>
@@ -313,7 +313,7 @@ function ModalSupplier({ open, onClose, onSubmit }) {
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
       title="Supplier Baru"
-      footer={<><Button variant="neutral" onClick={onClose}>Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!f.name.trim()}>Simpan</TombolAksi></>}
+      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!f.name.trim()}>Simpan</TombolAksi></>}
     >
       <div className="space-y-3">
         <Field label="Nama supplier" required><Input value={f.name} onChange={(e) => set("name", e.target.value)} /></Field>
@@ -352,7 +352,7 @@ function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, onSubmit }
       title="Tagihan Supplier Baru"
       description="Nominalnya diinput dari dokumen tagihan fisik/PDF supplier — ini satu-satunya sumbernya."
       className="w-[560px]"
-      footer={<><Button variant="neutral" onClick={onClose}>Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Simpan</TombolAksi></>}
+      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Simpan</TombolAksi></>}
     >
       <div className="space-y-3">
         <Field label="Supplier" required>
@@ -439,7 +439,7 @@ function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmi
       className="w-[560px]"
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi
             disabled={!valid}
             onClick={() => onSubmit({

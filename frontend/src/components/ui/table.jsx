@@ -71,8 +71,14 @@ export function TR({ className, clickable, selected, ...props }) {
 //   numeric   : rata kanan (angka)
 //   sortable  : bisa diklik untuk sort; butuh onSort
 //   sortDir   : "asc" | "desc" | null — arah aktif kolom INI
+//   sticky    : OPT-IN — kolom ini menempel di tepi kiri saat tabel
+//     di-scroll horizontal (dipakai untuk kolom identitas baris, mis.
+//     "Nomor", supaya tidak hilang konteks saat swipe ke kanan lihat
+//     nominal/status di tabel lebar pada layar sempit). TIDAK PERNAH
+//     nyala default — halaman lama yang tidak memakainya tidak berubah
+//     sama sekali.
 export function TH({
-  className, children, numeric, sortable, sortDir, onSort, ...props
+  className, children, numeric, sortable, sortDir, onSort, sticky, ...props
 }) {
   const isi = (
     <>
@@ -95,6 +101,7 @@ export function TH({
       className={cn(
         "whitespace-nowrap border-b border-line px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide text-ink3",
         numeric ? "text-right" : "text-left",
+        sticky && "sticky left-0 z-20 bg-inset/95 backdrop-blur-sm",
         className
       )}
       {...props}
@@ -119,13 +126,17 @@ export function TH({
 // TD — sel data.
 //   numeric : rata kanan + tabular-nums (angka sejajar antar baris)
 //   truncate: batasi 1 baris + ellipsis (butuh `max-w-*` dari pemanggil)
-export function TD({ className, numeric, truncate, ...props }) {
+//   sticky  : pasangan TH sticky — lihat catatan di TH. Latar solid
+//     (bukan transparan) supaya konten yang di-scroll di baliknya benar-
+//     benar tertutup, bukan cuma dijaga anggapan.
+export function TD({ className, numeric, truncate, sticky, ...props }) {
   return (
     <td
       className={cn(
         "px-3 py-2.5 align-middle text-[13px] text-ink2",
         numeric && "text-right tabular-nums",
         truncate && "truncate",
+        sticky && "sticky left-0 z-[1] bg-surface",
         className
       )}
       {...props}

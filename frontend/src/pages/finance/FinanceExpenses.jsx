@@ -173,14 +173,14 @@ export default function FinanceExpenses() {
             <Table>
               <THead>
                 <TR>
-                  <TH>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Kategori</TH>
+                  <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Kategori</TH>
                   <TH>Divisi</TH><TH>Mode</TH><TH numeric>Nominal</TH><TH>Status</TH><TH />
                 </TR>
               </THead>
               <TBody>
                 {expenses.map((e) => (
                   <TR key={e.id}>
-                    <TD className="font-mono text-[12px]">{e.expenseNumber}</TD>
+                    <TD sticky className="font-mono text-[12px]">{e.expenseNumber}</TD>
                     <TD className="whitespace-nowrap">{tanggalPendek(e.date)}</TD>
                     <TD className="max-w-[260px]">
                       <span className="block truncate">{e.description}</span>
@@ -262,7 +262,7 @@ function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
       className="w-[520px]"
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Ajukan</TombolAksi>
         </>
       }
@@ -334,7 +334,7 @@ function ModalBayar({ expense, onClose, rekening, onSubmit }) {
       description={`${formatUang(expense.amount)} · ${expense.description}`}
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={() => onSubmit(f)} disabled={!f.cashAccountId}>Catat Pembayaran</TombolAksi>
         </>
       }

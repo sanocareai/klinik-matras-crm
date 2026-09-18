@@ -182,14 +182,14 @@ export default function FinancePurchases() {
             <Table>
               <THead>
                 <TR>
-                  <TH>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Jenis</TH>
+                  <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Jenis</TH>
                   <TH>Divisi</TH><TH>Mode</TH><TH numeric>Nominal</TH><TH>Status</TH><TH />
                 </TR>
               </THead>
               <TBody>
                 {purchases.map((p) => (
                   <TR key={p.id}>
-                    <TD className="font-mono text-[12px]">{p.purchaseNumber}</TD>
+                    <TD sticky className="font-mono text-[12px]">{p.purchaseNumber}</TD>
                     <TD className="whitespace-nowrap">{tanggalPendek(p.date)}</TD>
                     <TD className="max-w-[260px]">
                       <span className="block truncate">{p.description}</span>
@@ -274,7 +274,7 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
       className="w-[520px]"
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Ajukan</TombolAksi>
         </>
       }
@@ -352,7 +352,7 @@ function ModalBayar({ purchase, onClose, rekening, onSubmit }) {
       description={`${formatUang(purchase.amount)} · ${purchase.description}`}
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={() => onSubmit(f)} disabled={!f.cashAccountId}>Catat Pembayaran</TombolAksi>
         </>
       }

@@ -286,10 +286,24 @@ export function KartuAngka({ label, value, sub, tone = "default", onClick, info 
   );
   const kelas = cn(
     "rounded-card bg-surface p-4 shadow-card text-left",
-    onClick && "transition-shadow hover:shadow-popover cursor-pointer"
+    onClick && "transition-shadow hover:shadow-popover cursor-pointer",
+    onClick && "outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
   );
+  // `role="button"` di <div>, BUKAN <button> sungguhan — kartu ini hampir
+  // selalu punya `info` (InfoTooltip, komponennya SENDIRI <button>), dan
+  // <button> di dalam <button> itu markup TIDAK VALID (browser boleh
+  // memperlakukan fokus/tap-nya secara tidak konsisten, terutama di HP).
+  // Tetap bisa diklik & keyboard-accessible lewat tabIndex + onKeyDown.
   return onClick
-    ? <button type="button" onClick={onClick} className={kelas}>{isi}</button>
+    ? (
+      <div
+        role="button" tabIndex={0} className={kelas}
+        onClick={onClick}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(e); } }}
+      >
+        {isi}
+      </div>
+    )
     : <div className={kelas}>{isi}</div>;
 }
 
@@ -337,7 +351,16 @@ export function TombolAksi({ onClick, children, confirmText, ...props }) {
     }
   }
   return (
-    <Button {...props} disabled={sibuk || props.disabled} onClick={jalankan}>
+    <Button
+      {...props}
+      disabled={sibuk || props.disabled}
+      onClick={jalankan}
+      // Target sentuh 44px di HP (standar mobile project ini, lihat CLAUDE.md
+      // §8) — ukuran Button bawaan (32-40px) di bawah itu. Cuma di layar
+      // sempit (max-sm) supaya kepadatan desktop/tablet tidak berubah;
+      // TombolAksi eksklusif dipakai Finance, jadi tidak menyentuh divisi lain.
+      className={cn("max-sm:min-h-11 max-sm:px-4", props.className)}
+    >
       {sibuk && <Loader2 size={14} className="animate-spin" />}
       {children}
     </Button>

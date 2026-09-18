@@ -129,12 +129,12 @@ export default function FinanceJournal() {
           <TableWrap className="dh-table">
             <Table>
               <THead>
-                <TR><TH>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Sumber</TH><TH numeric>Nilai</TH><TH>Status</TH><TH /></TR>
+                <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Sumber</TH><TH numeric>Nilai</TH><TH>Status</TH><TH /></TR>
               </THead>
               <TBody>
                 {entries.map((e) => (
                   <TR key={e.id} clickable onClick={() => setDetail(e.id)}>
-                    <TD className="font-mono text-[12px]">{e.entryNumber}</TD>
+                    <TD sticky className="font-mono text-[12px]">{e.entryNumber}</TD>
                     <TD className="whitespace-nowrap">{tanggalPendek(e.date)}</TD>
                     <TD className="max-w-[320px] truncate">{e.description}</TD>
                     <TD><Badge variant={e.source === "MANUAL" || e.source === "SALDO_AWAL" ? "accent" : "neutral"}>
@@ -296,7 +296,7 @@ function ModalJurnalManual({ open, onClose, akun, onSubmit }) {
       className="w-[680px]"
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi
             disabled={!valid}
             onClick={() => onSubmit({

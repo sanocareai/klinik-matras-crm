@@ -124,12 +124,12 @@ export default function FinanceSettings() {
           <TableWrap className="dh-table">
             <Table>
               <THead>
-                <TR><TH>Waktu</TH><TH>Sumber</TH><TH>Masalah</TH><TH>Penjelasan</TH><TH /></TR>
+                <TR><TH sticky>Waktu</TH><TH>Sumber</TH><TH>Masalah</TH><TH>Penjelasan</TH><TH /></TR>
               </THead>
               <TBody>
                 {gapTerbuka.map((g) => (
                   <TR key={g.id}>
-                    <TD className="whitespace-nowrap">{tanggalJam(g.createdAt)}</TD>
+                    <TD sticky className="whitespace-nowrap">{tanggalJam(g.createdAt)}</TD>
                     <TD><Badge variant="neutral">{g.source}</Badge></TD>
                     <TD className="text-[12px] text-ink2">{g.reason}</TD>
                     <TD className="max-w-[420px] text-[12px] leading-relaxed">{g.detail}</TD>
@@ -265,11 +265,11 @@ export default function FinanceSettings() {
         ) : (
           <TableWrap className="dh-table">
             <Table>
-              <THead><TR><TH>Periode</TH><TH>Status</TH><TH>Ditutup</TH><TH>Catatan</TH><TH /></TR></THead>
+              <THead><TR><TH sticky>Periode</TH><TH>Status</TH><TH>Ditutup</TH><TH>Catatan</TH><TH /></TR></THead>
               <TBody>
                 {periods.map((p) => (
                   <TR key={p.id}>
-                    <TD className="font-medium">{String(p.month).padStart(2, "0")}/{p.year}</TD>
+                    <TD sticky className="font-medium">{String(p.month).padStart(2, "0")}/{p.year}</TD>
                     <TD><StatusBadge status={p.status} /></TD>
                     <TD className="text-[12px] text-ink2">
                       {p.closedAt ? `${tanggalPendek(p.closedAt)} · ${p.closedBy?.name || "—"}` : "—"}
@@ -330,11 +330,11 @@ export default function FinanceSettings() {
         </CardHeader>
         <TableWrap className="dh-table">
           <Table>
-            <THead><TR><TH>Kode</TH><TH>Nama</TH><TH>Akun Tujuan</TH><TH>Divisi</TH><TH>Otomatis Dari</TH><TH>Status</TH></TR></THead>
+            <THead><TR><TH sticky>Kode</TH><TH>Nama</TH><TH>Akun Tujuan</TH><TH>Divisi</TH><TH>Otomatis Dari</TH><TH>Status</TH></TR></THead>
             <TBody>
               {kategori.map((k) => (
                 <TR key={k.id}>
-                  <TD className="font-mono text-[12px]">{k.code}</TD>
+                  <TD sticky className="font-mono text-[12px]">{k.code}</TD>
                   <TD>{k.name}</TD>
                   <TD className="text-[12px]">{k.account?.code} · {k.account?.name}</TD>
                   <TD><Badge variant="neutral">{LABEL_DIVISI[k.division] || k.division}</Badge></TD>
@@ -362,7 +362,7 @@ function ModalKategori({ open, onClose, akun, onSubmit }) {
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
       title="Kategori Biaya Baru"
-      footer={<><Button variant="neutral" onClick={onClose}>Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!f.code.trim() || !f.name.trim() || !f.accountId}>Simpan</TombolAksi></>}
+      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!f.code.trim() || !f.name.trim() || !f.accountId}>Simpan</TombolAksi></>}
     >
       <div className="space-y-3">
         <Field label="Kode" required><Input value={f.code} onChange={(e) => set("code", e.target.value)} placeholder="PELATIHAN" /></Field>

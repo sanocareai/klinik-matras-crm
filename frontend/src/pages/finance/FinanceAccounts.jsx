@@ -156,14 +156,14 @@ export default function FinanceAccounts() {
               <Table>
                 <THead>
                   <TR>
-                    <TH>Kode</TH><TH>Nama Akun</TH><TH>Tipe</TH>
+                    <TH sticky>Kode</TH><TH>Nama Akun</TH><TH>Tipe</TH>
                     <TH>Saldo Normal</TH><TH>Arus Kas</TH><TH>Status</TH><TH />
                   </TR>
                 </THead>
                 <TBody>
                   {terlihat.map((a) => (
                     <TR key={a.id} className={!a.isPostable ? "bg-inset/50" : undefined}>
-                      <TD className="font-mono text-[12px] tabular-nums">{a.code}</TD>
+                      <TD sticky className="font-mono text-[12px] tabular-nums">{a.code}</TD>
                       <TD>
                         <span className={a.isPostable ? "" : "font-bold uppercase tracking-wide text-ink2"}>
                           {a.name}
@@ -255,7 +255,7 @@ function FormAkunBaru({ open, onClose, accounts, onSaved, onError }) {
       description="Akun tambahan di luar bagan akun bawaan."
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={simpan} disabled={!form.code.trim() || !form.name.trim()}>Simpan</TombolAksi>
         </>
       }

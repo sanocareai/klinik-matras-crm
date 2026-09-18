@@ -310,13 +310,13 @@ export default function FinanceDashboard() {
                   <Table>
                     <THead>
                       <TR>
-                        <TH>Order</TH><TH>Pelanggan</TH><TH numeric>Sisa</TH><TH numeric>Umur</TH>
+                        <TH sticky>Order</TH><TH>Pelanggan</TH><TH numeric>Sisa</TH><TH numeric>Umur</TH>
                       </TR>
                     </THead>
                     <TBody>
                       {data.piutang.teratas.map((b) => (
                         <TR key={b.orderId}>
-                          <TD className="font-medium">{b.orderNumber || "—"}</TD>
+                          <TD sticky className="font-medium">{b.orderNumber || "—"}</TD>
                           <TD className="max-w-[160px] truncate">{b.customerName}</TD>
                           <TD numeric><Uang value={b.sisaTagihan} /></TD>
                           <TD numeric>
@@ -345,12 +345,12 @@ export default function FinanceDashboard() {
                 <TableWrap className="dh-table">
                   <Table>
                     <THead>
-                      <TR><TH>Tanggal</TH><TH>Keterangan</TH><TH>Sumber</TH><TH numeric>Nilai</TH></TR>
+                      <TR><TH sticky>Tanggal</TH><TH>Keterangan</TH><TH>Sumber</TH><TH numeric>Nilai</TH></TR>
                     </THead>
                     <TBody>
                       {data.jurnalTerakhir.map((e) => (
                         <TR key={e.id} clickable onClick={() => navigate("/finance/journal")}>
-                          <TD className="whitespace-nowrap">{tanggalPendek(e.date)}</TD>
+                          <TD sticky className="whitespace-nowrap">{tanggalPendek(e.date)}</TD>
                           <TD className="max-w-[240px] truncate">{e.description}</TD>
                           <TD><Badge variant="neutral">{LABEL_SUMBER_JURNAL[e.source] || e.source}</Badge></TD>
                           <TD numeric><Uang value={e.total} /></TD>
@@ -375,14 +375,14 @@ export default function FinanceDashboard() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Waktu</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Dicatat oleh</TH>
+                      <TH sticky>Waktu</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Dicatat oleh</TH>
                       <TH>Metode</TH><TH numeric>Nominal</TH>
                     </TR>
                   </THead>
                   <TBody>
                     {antrean.pembayaranBelumVerifikasi.slice(0, 10).map((p) => (
                       <TR key={p.id} clickable onClick={() => navigate("/finance/payments")}>
-                        <TD className="whitespace-nowrap">{tanggalJam(p.createdAt)}</TD>
+                        <TD sticky className="whitespace-nowrap">{tanggalJam(p.createdAt)}</TD>
                         <TD className="font-medium">{p.orderNumber || "—"}</TD>
                         <TD className="max-w-[160px] truncate">{p.customerName || "—"}</TD>
                         <TD>{p.recordedBy?.name || "—"}</TD>

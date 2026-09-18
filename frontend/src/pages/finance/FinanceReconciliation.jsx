@@ -111,7 +111,7 @@ export default function FinanceReconciliation() {
             <Table>
               <THead>
                 <TR>
-                  <TH>Rekening</TH><TH>Periode</TH>
+                  <TH sticky>Rekening</TH><TH>Periode</TH>
                   <TH numeric>Saldo Awal</TH><TH numeric>Saldo Akhir (Bank)</TH>
                   <TH numeric>Baris</TH><TH numeric>Belum Cocok</TH><TH>Status</TH><TH />
                 </TR>
@@ -119,7 +119,7 @@ export default function FinanceReconciliation() {
               <TBody>
                 {statements.map((s) => (
                   <TR key={s.id} clickable selected={aktif === s.id} onClick={() => setAktif(s.id)}>
-                    <TD className="font-medium">{s.cashAccount?.name}</TD>
+                    <TD sticky className="font-medium">{s.cashAccount?.name}</TD>
                     <TD className="whitespace-nowrap">{tanggalPendek(s.periodStart)} – {tanggalPendek(s.periodEnd)}</TD>
                     <TD numeric><Uang value={s.openingBalance} /></TD>
                     <TD numeric><Uang value={s.closingBalance} /></TD>
@@ -195,14 +195,14 @@ export default function FinanceReconciliation() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Tanggal</TH><TH>Keterangan Bank</TH><TH>Referensi</TH>
+                      <TH sticky>Tanggal</TH><TH>Keterangan Bank</TH><TH>Referensi</TH>
                       <TH numeric>Nominal</TH><TH>Pasangan di Buku</TH><TH>Status</TH><TH />
                     </TR>
                   </THead>
                   <TBody>
                     {detail.statement.lines.map((l) => (
                       <TR key={l.id}>
-                        <TD className="whitespace-nowrap">{tanggalPendek(l.date)}</TD>
+                        <TD sticky className="whitespace-nowrap">{tanggalPendek(l.date)}</TD>
                         <TD className="max-w-[260px] truncate">{l.description}</TD>
                         <TD className="text-[12px] text-ink2">{l.reference || "—"}</TD>
                         <TD numeric><Uang value={l.amount} /></TD>
@@ -280,7 +280,7 @@ function ModalPeriodeBaru({ open, onClose, rekening, onSubmit }) {
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
       title="Periode Rekonsiliasi Baru"
-      footer={<><Button variant="neutral" onClick={onClose}>Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Buat</TombolAksi></>}
+      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Buat</TombolAksi></>}
     >
       <div className="space-y-3">
         <Field label="Rekening" required>
@@ -309,7 +309,7 @@ function ModalBarisBaru({ open, onClose, onSubmit }) {
       open={open} onOpenChange={(v) => !v && onClose()}
       title="Baris Koran Bank"
       description="Salin apa adanya dari mutasi rekening."
-      footer={<><Button variant="neutral" onClick={onClose}>Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!f.description.trim() || !f.amount}>Simpan</TombolAksi></>}
+      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!f.description.trim() || !f.amount}>Simpan</TombolAksi></>}
     >
       <div className="space-y-3">
         <Field label="Tanggal"><Input type="date" value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
@@ -348,7 +348,7 @@ function ModalCocokkan({ baris, kandidat, onClose, onSubmit }) {
       title="Cocokkan dengan Buku Besar"
       description={`${tanggalPendek(baris.date)} · ${formatUang(baris.amount)} · ${baris.description}`}
       className="w-[560px]"
-      footer={<><Button variant="neutral" onClick={onClose}>Batal</Button><TombolAksi onClick={() => onSubmit(pilih)} disabled={!pilih}>Cocokkan</TombolAksi></>}
+      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit(pilih)} disabled={!pilih}>Cocokkan</TombolAksi></>}
     >
       <div className="space-y-3">
         {cocokPersis.length === 0 ? (

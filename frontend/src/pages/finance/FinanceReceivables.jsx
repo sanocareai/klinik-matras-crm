@@ -138,7 +138,7 @@ export default function FinanceReceivables() {
             <Table>
               <THead>
                 <TR>
-                  <TH>Order</TH><TH>Invoice</TH><TH>Pelanggan</TH><TH>Sales</TH>
+                  <TH sticky>Order</TH><TH>Invoice</TH><TH>Pelanggan</TH><TH>Sales</TH>
                   <TH numeric>Nilai Order</TH><TH numeric>Sisa Tagihan</TH>
                   <TH>Jatuh Tempo</TH><TH>Acuan</TH><TH numeric>Umur</TH>
                 </TR>
@@ -146,7 +146,7 @@ export default function FinanceReceivables() {
               <TBody>
                 {baris.map((b) => (
                   <TR key={b.orderId}>
-                    <TD className="font-medium">{b.orderNumber || "—"}</TD>
+                    <TD sticky className="font-medium">{b.orderNumber || "—"}</TD>
                     <TD className="font-mono text-[12px]">{b.invoiceNumber || "—"}</TD>
                     <TD className="max-w-[180px] truncate">{b.customerName}</TD>
                     <TD className="text-[12px] text-ink2">{b.salesName || "—"}</TD>
@@ -186,12 +186,12 @@ export default function FinanceReceivables() {
           <TableWrap className="dh-table">
             <Table>
               <THead>
-                <TR><TH>Nomor</TH><TH>Tanggal</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Alasan</TH><TH numeric>Nominal</TH><TH>Status</TH><TH /></TR>
+                <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Alasan</TH><TH numeric>Nominal</TH><TH>Status</TH><TH /></TR>
               </THead>
               <TBody>
                 {refunds.map((r) => (
                   <TR key={r.id}>
-                    <TD className="font-mono text-[12px]">{r.refundNumber}</TD>
+                    <TD sticky className="font-mono text-[12px]">{r.refundNumber}</TD>
                     <TD>{tanggalPendek(r.date)}</TD>
                     <TD className="font-medium">{r.order?.orderNumber || "—"}</TD>
                     <TD className="max-w-[160px] truncate">{r.order?.customer?.name || "—"}</TD>
@@ -251,7 +251,7 @@ function ModalRefund({ open, onClose, rekening, piutang, onSubmit }) {
       description="Pengembalian uang ke pelanggan. Butuh persetujuan sebelum uang benar-benar keluar."
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Ajukan</TombolAksi>
         </>
       }

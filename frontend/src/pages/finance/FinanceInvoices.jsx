@@ -184,7 +184,7 @@ export default function FinanceInvoices() {
             <Table>
               <THead>
                 <TR>
-                  <TH>Invoice</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Sales</TH>
+                  <TH sticky>Invoice</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Sales</TH>
                   <TH numeric>Tagihan</TH><TH numeric>Dibayar</TH><TH numeric>Sisa</TH>
                   <TH>Sumber</TH><TH>Jatuh Tempo</TH><TH>Status</TH><TH />
                 </TR>
@@ -194,7 +194,7 @@ export default function FinanceInvoices() {
                   const st = STATUS_INVOICE[inv.status] || { label: inv.status, variant: "neutral" };
                   return (
                     <TR key={inv.id}>
-                      <TD className="font-mono text-[12px]">
+                      <TD sticky className="font-mono text-[12px]">
                         {inv.invoiceNumber}
                         {inv.jumlahOrder > 1 && (
                           <Badge variant="accent" className="ml-1.5">{inv.jumlahOrder} order</Badge>
@@ -280,7 +280,7 @@ function ModalJatuhTempo({ invoice, onClose, onSubmit }) {
       description={`${invoice.customerName || "—"} · sisa ${formatUang(invoice.sisa)}`}
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={() => onSubmit(invoice.orderId, tanggal)}>Simpan</TombolAksi>
         </>
       }

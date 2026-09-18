@@ -148,14 +148,14 @@ export default function FinancePayments() {
             <Table>
               <THead>
                 <TR>
-                  <TH>Waktu</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Dicatat oleh</TH>
+                  <TH sticky>Waktu</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Dicatat oleh</TH>
                   <TH>Metode</TH><TH numeric>Nominal</TH><TH>Alokasi</TH><TH>Status</TH><TH />
                 </TR>
               </THead>
               <TBody>
                 {payments.map((p) => (
                   <TR key={p.id}>
-                    <TD className="whitespace-nowrap">{tanggalJam(p.createdAt)}</TD>
+                    <TD sticky className="whitespace-nowrap">{tanggalJam(p.createdAt)}</TD>
                     <TD className="font-medium">{p.order?.orderNumber || "—"}</TD>
                     <TD className="max-w-[160px] truncate">{p.order?.customer?.name || "—"}</TD>
                     <TD>{p.recordedBy?.name || "—"}</TD>
@@ -274,7 +274,7 @@ function ModalAlokasi({ payment, onClose, onSaved, onError }) {
       className="w-[560px]"
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={simpan} disabled={!valid}>Simpan Alokasi</TombolAksi>
         </>
       }

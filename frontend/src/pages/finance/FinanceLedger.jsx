@@ -123,14 +123,14 @@ export default function FinanceLedger() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Tanggal</TH><TH>Jurnal</TH><TH>Keterangan</TH><TH>Sumber</TH>
+                      <TH sticky>Tanggal</TH><TH>Jurnal</TH><TH>Keterangan</TH><TH>Sumber</TH>
                       <TH numeric>Debit</TH><TH numeric>Kredit</TH><TH numeric>Saldo</TH>
                     </TR>
                   </THead>
                   <TBody>
                     {data.baris.map((b) => (
                       <TR key={b.lineId} className={b.status === "REVERSED" ? "opacity-60" : undefined}>
-                        <TD className="whitespace-nowrap">{tanggalPendek(b.tanggal)}</TD>
+                        <TD sticky className="whitespace-nowrap">{tanggalPendek(b.tanggal)}</TD>
                         <TD className="font-mono text-[12px]">{b.entryNumber}</TD>
                         <TD className="max-w-[300px]">
                           <span className="block truncate">{b.keterangan}</span>

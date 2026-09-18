@@ -469,7 +469,7 @@ function NeracaSaldo({ d }) {
           <Table>
             <THead>
               <TR>
-                <TH>Kode</TH><TH>Nama Akun</TH><TH>Tipe</TH>
+                <TH sticky>Kode</TH><TH>Nama Akun</TH><TH>Tipe</TH>
                 <TH numeric>Mutasi Debit</TH><TH numeric>Mutasi Kredit</TH>
                 <TH numeric>Saldo Debit</TH><TH numeric>Saldo Kredit</TH>
               </TR>
@@ -477,7 +477,7 @@ function NeracaSaldo({ d }) {
             <TBody>
               {d.baris.map((b) => (
                 <TR key={b.accountId}>
-                  <TD className="font-mono text-[12px]">{b.code}</TD>
+                  <TD sticky className="font-mono text-[12px]">{b.code}</TD>
                   <TD>{b.name}</TD>
                   <TD><Badge variant="neutral">{LABEL_TIPE_AKUN[b.type] || b.type}</Badge></TD>
                   <TD numeric><Uang value={b.mutasiDebit} nolSebagaiStrip sen /></TD>

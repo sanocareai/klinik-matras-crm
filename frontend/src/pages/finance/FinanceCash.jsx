@@ -169,12 +169,12 @@ export default function FinanceCash() {
               <TableWrap className="dh-table">
                 <Table>
                   <THead>
-                    <TR><TH>Nama</TH><TH>Jenis</TH><TH>Nomor</TH><TH>Akun COA</TH><TH numeric>Saldo Buku</TH><TH>Status</TH><TH>Aksi</TH></TR>
+                    <TR><TH sticky>Nama</TH><TH>Jenis</TH><TH>Nomor</TH><TH>Akun COA</TH><TH numeric>Saldo Buku</TH><TH>Status</TH><TH>Aksi</TH></TR>
                   </THead>
                   <TBody>
                     {rekening.accounts.map((a) => (
                       <TR key={a.id}>
-                        <TD className="font-medium">{a.name}</TD>
+                        <TD sticky className="font-medium">{a.name}</TD>
                         <TD><Badge variant="neutral">{a.kind}</Badge></TD>
                         <TD className="text-[12px] text-ink2">
                           {a.accountNumber ? `${a.bankName || ""} ${a.accountNumber}`.trim() : "—"}
@@ -217,12 +217,12 @@ export default function FinanceCash() {
             <TableWrap className="dh-table">
               <Table>
                 <THead>
-                  <TR><TH>Nomor</TH><TH>Tanggal</TH><TH>Dari</TH><TH>Ke</TH><TH numeric>Nominal</TH><TH numeric>Biaya Admin</TH><TH>Status</TH></TR>
+                  <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Dari</TH><TH>Ke</TH><TH numeric>Nominal</TH><TH numeric>Biaya Admin</TH><TH>Status</TH></TR>
                 </THead>
                 <TBody>
                   {transfers.map((t) => (
                     <TR key={t.id}>
-                      <TD className="font-mono text-[12px]">{t.transferNumber}</TD>
+                      <TD sticky className="font-mono text-[12px]">{t.transferNumber}</TD>
                       <TD>{tanggalPendek(t.date)}</TD>
                       <TD>{t.fromAccount?.name}</TD>
                       <TD>{t.toAccount?.name}</TD>
@@ -256,12 +256,12 @@ export default function FinanceCash() {
             <TableWrap className="dh-table">
               <Table>
                 <THead>
-                  <TR><TH>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Akun</TH><TH>Masuk ke</TH><TH numeric>Nominal</TH></TR>
+                  <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Akun</TH><TH>Masuk ke</TH><TH numeric>Nominal</TH></TR>
                 </THead>
                 <TBody>
                   {incomes.map((i) => (
                     <TR key={i.id}>
-                      <TD className="font-mono text-[12px]">{i.incomeNumber}</TD>
+                      <TD sticky className="font-mono text-[12px]">{i.incomeNumber}</TD>
                       <TD>{tanggalPendek(i.date)}</TD>
                       <TD className="max-w-[280px] truncate">{i.description}</TD>
                       <TD className="text-[12px]">{i.account ? `${i.account.code} · ${i.account.name}` : "—"}</TD>
@@ -327,7 +327,7 @@ function ModalRekening({ open, onClose, initial, onSubmit }) {
       description={editMode ? "Jenis rekening tidak bisa diubah setelah dibuat." : "Kas tunai, rekening bank, atau e-wallet."}
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={() => onSubmit(f)} disabled={!f.name.trim()}>Simpan</TombolAksi>
         </>
       }
@@ -388,7 +388,7 @@ function ModalTransfer({ open, onClose, rekening, onSubmit }) {
       title="Catat Mutasi Antar Rekening"
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Simpan</TombolAksi>
         </>
       }
@@ -442,7 +442,7 @@ function ModalPemasukan({ open, onClose, rekening, akunPendapatan, onSubmit }) {
       description="Pemasukan yang BUKAN dari order pelanggan."
       footer={
         <>
-          <Button variant="neutral" onClick={onClose}>Batal</Button>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Simpan</TombolAksi>
         </>
       }
