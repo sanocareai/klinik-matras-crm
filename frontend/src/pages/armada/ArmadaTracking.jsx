@@ -572,16 +572,24 @@ export default function ArmadaTracking() {
                       )}
                     </p>
 
-                    {/* Penjelasan kenapa posisinya basi (19 September 2026) —
-                        tanpa ini admin cuma melihat titik yang tidak berpindah
-                        dan menebak sendiri. Penyebab paling sering: app driver
-                        masuk background dan Android membekukan timer ping. */}
+                    {/* Penjelasan kenapa posisinya basi (19 September 2026,
+                        diperluas setelah laporan owner: "itu maksudnya
+                        tertunda apa ya? tapi di sistem mereka online ada
+                        icon hijau nya menyala") — dua sinyal BEDA yang
+                        gampang disangka sama: titik hijau kecil di kartu
+                        cuma toggle manual "siap kerja" driver, TIDAK
+                        menyentuh GPS sama sekali; badge & pesan ini soal
+                        PING GPS yang benar-benar masuk ke server. Driver
+                        bisa Online tapi GPS-nya basi — paling sering app
+                        driver belum dapat izin lokasi "Izinkan sepanjang
+                        waktu", atau HP-nya (umum di Xiaomi/Oppo/Vivo)
+                        membatasi app di background. */}
                     {!diDepot && (segar.key === "tertunda" || segar.key === "terhenti") && (
                       <p className={cn("mt-1.5 rounded-btn px-2 py-1.5 text-[10px] leading-[14px] font-medium",
                         segar.key === "terhenti" ? "bg-red/10 text-red" : "bg-orange/10 text-orange")}>
                         {segar.key === "terhenti"
-                          ? "Posisi ini sudah lama tidak diperbarui — kemungkinan app driver tertutup/di background, atau HP-nya kehilangan sinyal. Titik di peta BUKAN posisi sekarang."
-                          : "Ping GPS agak tertinggal — titik di peta mungkin sudah bergeser dari posisi sebenarnya."}
+                          ? "Status \"Online\" driver TIDAK BERARTI GPS-nya aktif — ini soal beda: sudah lama tidak ada ping GPS masuk. Titik di peta BUKAN posisi sekarang. Kemungkinan izin lokasi \"Izinkan sepanjang waktu\" belum diaktifkan di HP driver, app tertutup total, atau HP-nya membatasi aplikasi di background (umum di Xiaomi/Oppo/Vivo) — cek ke driver."
+                          : "Ping GPS agak tertinggal dari status Online-nya — titik di peta mungkin sudah bergeser. Kalau berlanjut, minta driver cek izin lokasi \"Izinkan sepanjang waktu\" & nonaktifkan pembatasan baterai untuk app ini."}
                       </p>
                     )}
                   </button>

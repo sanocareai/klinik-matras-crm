@@ -15,6 +15,18 @@
 // menggambar ulang ikon ini tiap frame (boros baterai & bikin peta patah-
 // patah); kalau false dari awal, snapshot diambil sebelum foto termuat dan
 // marker membeku dalam keadaan kosong.
+//
+// BUG NYATA (19 September 2026, laporan owner: "foto driver di maps
+// tracking ga muncul") — Android SECARA TERPISAH lagi juga menghapus View
+// pembungkus yang dianggap murni presentasional dari native view tree
+// ("view flattening", optimisasi Yoga bawaan React Native), untuk
+// memangkas kedalaman hierarki. Marker react-native-maps men-snapshot
+// hierarki native yang SUNGGUHAN, jadi kalau View/Image di dalamnya
+// keburu diratakan/dihapus SEBELUM snapshot diambil, hasilnya lingkaran
+// kosong persis seperti yang dilaporkan — root cause BERBEDA dari (dan
+// terjadi DI ATAS) masalah timing tracksViewChanges di atas, dua-duanya
+// harus benar sekaligus. `collapsable={false}` di SETIAP View pembungkus
+// foto memaksa Android mempertahankannya di native tree apa adanya.
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, Image, StyleSheet } from "react-native";
 import { mediaUrl } from "../api";
@@ -46,7 +58,7 @@ function FotoBulat({ name, avatarUrl, size, borderColor, onLoad }) {
 
   if (!uri) {
     return (
-      <View style={[dasar, styles.tengah, { backgroundColor: avatarColor(name) }]}>
+      <View collapsable={false} style={[dasar, styles.tengah, { backgroundColor: avatarColor(name) }]}>
         <Text style={[styles.inisial, { fontSize: size * 0.38 }]}>{initials(name)}</Text>
       </View>
     );
@@ -54,6 +66,7 @@ function FotoBulat({ name, avatarUrl, size, borderColor, onLoad }) {
 
   return (
     <Image
+      collapsable={false}
       source={{ uri }}
       style={dasar}
       onLoad={() => onLoad?.()}
@@ -91,9 +104,9 @@ export default function DriverMapMarker({ orang, borderColor, size = 30, onSiap 
   if (daftar.length === 0) return null;
 
   return (
-    <View style={styles.baris}>
+    <View collapsable={false} style={styles.baris}>
       {daftar.map((o, i) => (
-        <View key={`${o.name}-${i}`} style={i > 0 ? { marginLeft: -size * 0.32 } : null}>
+        <View key={`${o.name}-${i}`} collapsable={false} style={i > 0 ? { marginLeft: -size * 0.32 } : null}>
           <FotoBulat
             name={o.name}
             avatarUrl={o.avatarUrl}

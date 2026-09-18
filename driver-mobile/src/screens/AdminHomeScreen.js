@@ -211,38 +211,55 @@ function hitungRute(route) {
   };
 }
 
+// DIUBAH 19 September 2026 (laporan owner: "di tab driver contoh hari ini
+// agung jalan bersama difa, apakah gabisa mereka 1 grup gitu di card ga
+// terpisah?") — SEBELUMNYA satu entri per ORANG, jadi driver+helper yang
+// mengerjakan rute yang SAMA (job yang SAMA persis) muncul sbg 2 kartu
+// terpisah dengan angka yang nyaris identik (sama-sama menghitung job yang
+// sama). Sekarang satu entri per TIM (pasangan driverId+helperId yang
+// benar-benar bekerja bersama), pola yang SAMA dengan namaTimRute()/
+// ringkasHariIni() di atas — job dihitung SEKALI per tim (bukan dobel utk
+// driver+helper), 1 orang tetap BISA muncul di lebih dari 1 kartu kalau dia
+// benar-benar berganti pasangan di rute berbeda hari itu (CLAUDE.md §1:
+// "helper bisa jadi driver dan driver bisa jadi helper") — itu bukan bug,
+// itu memang 2 tim berbeda.
+function kunciTim(driver, helper) {
+  const ids = [driver?.id, helper?.id].filter(Boolean).sort();
+  return ids.length ? ids.join("+") : null;
+}
+
 function ringkasDriver(jobs, tracking) {
-  const personMap = new Map();
-  function sentuh(person, peran) {
-    if (!person) return null;
-    let d = personMap.get(person.id);
-    if (!d) {
-      d = {
-        id: person.id, name: person.name, avatarUrl: person.avatarUrl || null, total: 0, selesai: 0, gagal: 0, jalan: 0, sisa: 0, lastSeen: null,
-        isOnline: !!person.isOnline, onlineSince: person.onlineSince || null,
-        roles: new Set(),
+  const timMap = new Map();
+  for (const j of jobs) {
+    const key = kunciTim(j.driver, j.helper);
+    if (!key) continue; // job belum ada driver/helper sama sekali
+    let t = timMap.get(key);
+    if (!t) {
+      t = {
+        key,
+        driver: j.driver ? { id: j.driver.id, name: j.driver.name, avatarUrl: j.driver.avatarUrl || null, isOnline: !!j.driver.isOnline } : null,
+        helper: j.helper ? { id: j.helper.id, name: j.helper.name, avatarUrl: j.helper.avatarUrl || null, isOnline: !!j.helper.isOnline } : null,
+        total: 0, selesai: 0, gagal: 0, jalan: 0, sisa: 0, lastSeen: null,
+        jobIds: new Set(),
       };
-      personMap.set(person.id, d);
+      timMap.set(key, t);
     }
-    d.roles.add(peran);
-    return d;
+    // Job SEKALI per tim — beda dari versi lama yang menghitung job yang
+    // sama 2x (sekali sbg driver, sekali sbg helper) karena dulu tiap
+    // orang py entri sendiri.
+    if (t.jobIds.has(j.id)) continue;
+    t.jobIds.add(j.id);
+    t.total += 1;
+    if (j.status === "COMPLETED") t.selesai += 1;
+    else if (j.status === "FAILED") t.gagal += 1;
+    else if (j.status === "EN_ROUTE" || j.status === "ARRIVED") t.jalan += 1;
+    else t.sisa += 1;
   }
+
+  const jobIdToTimKey = new Map();
   for (const j of jobs) {
-    for (const d of [sentuh(j.driver, "driver"), sentuh(j.helper, "helper")]) {
-      if (!d) continue;
-      d.total += 1;
-      if (j.status === "COMPLETED") d.selesai += 1;
-      else if (j.status === "FAILED") d.gagal += 1;
-      else if (j.status === "EN_ROUTE" || j.status === "ARRIVED") d.jalan += 1;
-      else d.sisa += 1;
-    }
-  }
-  const jobIdToPersonIds = new Map();
-  for (const j of jobs) {
-    const ids = [];
-    if (j.driver) ids.push(j.driver.id);
-    if (j.helper) ids.push(j.helper.id);
-    jobIdToPersonIds.set(j.id, ids);
+    const key = kunciTim(j.driver, j.helper);
+    if (key) jobIdToTimKey.set(j.id, key);
   }
   // Bentuk GET /armada/tracking BERUBAH (D-165, 14 Sep 2026) dari array
   // datar per-job jadi per-KENDARAAN ("route" py `activeJobId`, "loose" py
@@ -250,12 +267,11 @@ function ringkasDriver(jobs, tracking) {
   // jadi cukup baca field yang sesuai `kind`, tanpa turunkanKendaraan penuh.
   for (const item of tracking) {
     const jobId = item.kind === "route" ? item.activeJobId : item.jobId;
-    for (const personId of jobIdToPersonIds.get(jobId) || []) {
-      const d = personMap.get(personId);
-      if (d && item.lastPosition?.recordedAt) d.lastSeen = item.lastPosition.recordedAt;
-    }
+    const key = jobIdToTimKey.get(jobId);
+    const t = key ? timMap.get(key) : null;
+    if (t && item.lastPosition?.recordedAt) t.lastSeen = item.lastPosition.recordedAt;
   }
-  return [...personMap.values()].sort((a, b) => b.jalan - a.jalan || b.total - a.total);
+  return [...timMap.values()].sort((a, b) => b.jalan - a.jalan || b.total - a.total);
 }
 
 // Ratakan bentuk backend GET /armada/tracking — "route" (banyak stop) ATAU
@@ -587,56 +603,67 @@ function HariIniView({ ringkasan, aktivitas, theme: t, styles }) {
   );
 }
 
-// "Driver" / "Helper" / "Driver & Helper" (13 Sep 2026) — pool orang SAMA
-// bisa jadi driver di 1 rute dan helper di rute lain (CLAUDE.md §1), jadi
-// label ini dihitung per-hari dari `roles` (Set), bukan field tetap di User.
-function labelPeran(roles) {
-  const arr = [...roles];
-  if (arr.length >= 2) return "Driver & Helper";
-  return arr[0] === "helper" ? "Helper" : "Driver";
-}
-
-function DriverView({ drivers, theme: t, styles }) {
-  if (drivers.length === 0) return <Text style={styles.emptyText}>Belum ada driver bertugas hari ini.</Text>;
+function DriverView({ drivers: tim, theme: t, styles }) {
+  if (tim.length === 0) return <Text style={styles.emptyText}>Belum ada driver bertugas hari ini.</Text>;
   return (
     <View style={{ gap: 10 }}>
-      {drivers.map((d) => (
-        <View key={d.id} style={styles.card}>
-          <View style={styles.rowBetween}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
-              <Avatar name={d.name} avatarUrl={d.avatarUrl} size={28} />
-              {/* Titik Online/Offline (12 Sep 2026) — BUKAN "sedang jalan"
-                  (badge "Di jalan" di sebelah kanan sudah pakai itu), ini
-                  murni toggle manual driver di app-nya. */}
-              <View style={[styles.onlineDot, { backgroundColor: d.isOnline ? t.GREEN : t.INK3 }]} />
-              <Text style={styles.cardTitle} numberOfLines={1}>{d.name}</Text>
-              <View style={styles.roleChip}>
-                <Text style={styles.roleChipText}>{labelPeran(d.roles)}</Text>
+      {tim.map((d) => {
+        const namaTim = [d.driver?.name, d.helper?.name].filter(Boolean).join(" + ") || "Tanpa nama";
+        // Online = toggle SALAH SATU anggota tim menyala (bukan cuma driver
+        // — helper juga bisa nyalakan togglenya sendiri di app masing-
+        // masing). Sama semangat dgn driverOnline di turunkanKendaraan().
+        const online = !!(d.driver?.isOnline || d.helper?.isOnline);
+        return (
+          <View key={d.key} style={styles.card}>
+            <View style={styles.rowBetween}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
+                <View style={{ flexDirection: "row" }}>
+                  {d.driver && <Avatar name={d.driver.name} avatarUrl={d.driver.avatarUrl} size={28} />}
+                  {d.helper && (
+                    <View style={{ marginLeft: d.driver ? -8 : 0, borderRadius: 14, borderWidth: 2, borderColor: t.SURFACE }}>
+                      <Avatar name={d.helper.name} avatarUrl={d.helper.avatarUrl} size={28} />
+                    </View>
+                  )}
+                </View>
+                {/* Titik Online/Offline (12 Sep 2026) — BUKAN "sedang jalan"
+                    (badge "Di jalan" di sebelah kanan sudah pakai itu), ini
+                    murni toggle manual tiap orang di app-nya. */}
+                <View style={[styles.onlineDot, { backgroundColor: online ? t.GREEN : t.INK3 }]} />
+                <Text style={styles.cardTitle} numberOfLines={1}>{namaTim}</Text>
+                {/* Chip peran cuma perlu kalau SOLO (tanpa pasangan) —
+                    kalau berdua, "A + B" sudah cukup jelas siapa driver
+                    (nama pertama) & siapa helper (nama kedua), sama
+                    konvensi dengan namaTimRute() di HariIniView. */}
+                {!(d.driver && d.helper) && (
+                  <View style={styles.roleChip}>
+                    <Text style={styles.roleChipText}>{d.driver ? "Driver" : "Helper"}</Text>
+                  </View>
+                )}
               </View>
+              {d.jalan > 0 ? (
+                <View style={styles.liveBadge}>
+                  <Truck size={11} color={t.ACCENT} />
+                  <Text style={styles.liveBadgeText}>Di jalan</Text>
+                </View>
+              ) : (
+                <Text style={styles.cardMeta}>Tidak sedang jalan</Text>
+              )}
             </View>
-            {d.jalan > 0 ? (
-              <View style={styles.liveBadge}>
-                <Truck size={11} color={t.ACCENT} />
-                <Text style={styles.liveBadgeText}>Di jalan</Text>
+            <View style={styles.driverStatsRow}>
+              <Text style={styles.driverStat}><Text style={{ color: t.GREEN }}>{d.selesai}</Text> selesai</Text>
+              <Text style={styles.driverStat}><Text style={{ color: t.ACCENT }}>{d.jalan}</Text> jalan</Text>
+              <Text style={styles.driverStat}><Text style={{ color: d.gagal > 0 ? t.RED : t.INK2 }}>{d.gagal}</Text> gagal</Text>
+              <Text style={styles.driverStat}><Text style={{ color: t.INK2 }}>{d.sisa}</Text> sisa</Text>
+            </View>
+            {d.lastSeen && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
+                <Clock size={11} color={t.INK3} />
+                <Text style={styles.lastSeenText}>Posisi terakhir {relatifWaktu(d.lastSeen)}</Text>
               </View>
-            ) : (
-              <Text style={styles.cardMeta}>Tidak sedang jalan</Text>
             )}
           </View>
-          <View style={styles.driverStatsRow}>
-            <Text style={styles.driverStat}><Text style={{ color: t.GREEN }}>{d.selesai}</Text> selesai</Text>
-            <Text style={styles.driverStat}><Text style={{ color: t.ACCENT }}>{d.jalan}</Text> jalan</Text>
-            <Text style={styles.driverStat}><Text style={{ color: d.gagal > 0 ? t.RED : t.INK2 }}>{d.gagal}</Text> gagal</Text>
-            <Text style={styles.driverStat}><Text style={{ color: t.INK2 }}>{d.sisa}</Text> sisa</Text>
-          </View>
-          {d.lastSeen && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
-              <Clock size={11} color={t.INK3} />
-              <Text style={styles.lastSeenText}>Posisi terakhir {relatifWaktu(d.lastSeen)}</Text>
-            </View>
-          )}
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -1088,17 +1115,26 @@ function TrackingView({ tracking, theme: t, styles }) {
               </Text>
             </View>
 
-            {/* Penjelasan kenapa posisinya basi (19 September 2026) — tanpa
-                ini admin cuma melihat titik yang tidak berpindah dan menebak
-                sendiri (driver mogok? app rusak? sudah pulang?). Penyebab
-                paling sering di lapangan: app driver masuk background, dan
-                Android membekukan timer ping GPS-nya. */}
+            {/* Penjelasan kenapa posisinya basi (19 September 2026, diperluas
+                setelah laporan owner: "itu maksudnya tertunda apa ya? tapi
+                di sistem mereka online ada icon hijau nya menyala") — dua
+                sinyal BEDA yang gampang disangka sama: titik hijau kecil di
+                atas cuma toggle manual "siap kerja" driver (AuthContext#
+                setOnline, TIDAK menyentuh GPS sama sekali); badge & pesan
+                ini soal PING GPS yang benar-benar masuk ke server. Driver
+                bisa Online tapi GPS-nya basi — paling sering karena app
+                driver BARU pasang versi background-tracking (izin lokasi
+                "Izinkan sepanjang waktu" belum disetujui) atau HP-nya
+                (umum di Xiaomi/Oppo/Vivo) membatasi app di background
+                walau sudah minta foreground service. Disebut eksplisit di
+                sini supaya admin tahu APA yang perlu dicek ke driver,
+                bukan cuma "kenapa titiknya diam". */}
             {segar.key === "tertunda" || segar.key === "terhenti" ? (
               <View style={[styles.gpsWarn, { backgroundColor: t[segar.color] + "18" }]}>
                 <Text style={[styles.gpsWarnText, { color: t[segar.color] }]}>
                   {segar.key === "terhenti"
-                    ? "Posisi ini sudah lama tidak diperbarui — kemungkinan app driver tertutup/di background, atau HP-nya kehilangan sinyal. Titik di peta BUKAN posisi sekarang."
-                    : "Ping GPS agak tertinggal — titik di peta mungkin sudah bergeser dari posisi sebenarnya."}
+                    ? "Status \"Online\" driver TIDAK BERARTI GPS-nya aktif — ini soal beda: sudah lama tidak ada ping GPS masuk. Titik di peta BUKAN posisi sekarang. Kemungkinan izin lokasi \"Izinkan sepanjang waktu\" belum diaktifkan di HP driver, app tertutup total, atau HP-nya membatasi aplikasi di background (umum di Xiaomi/Oppo/Vivo) — cek ke driver."
+                    : "Ping GPS agak tertinggal dari status Online-nya — titik di peta mungkin sudah bergeser. Kalau berlanjut, minta driver cek izin lokasi \"Izinkan sepanjang waktu\" & nonaktifkan pembatasan baterai untuk app ini."}
                 </Text>
               </View>
             ) : null}
