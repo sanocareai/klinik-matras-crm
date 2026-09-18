@@ -966,6 +966,7 @@ export const api = {
     request("/users", { method: "POST", body: JSON.stringify(data) }),
   updateUser: (id, data) =>
     request(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  uploadAvatarFor: (id, formData) => requestFormData(`/users/${id}/avatar`, formData),
   resetUserPassword: (id, newPassword) =>
     request(`/users/${id}/reset-password`, { method: "POST", body: JSON.stringify({ newPassword }) }),
   deleteUser: (id) =>

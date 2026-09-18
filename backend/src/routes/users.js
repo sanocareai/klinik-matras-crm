@@ -203,38 +203,62 @@ userRouter.patch("/me", async (req, res) => {
   }
 });
 
-// POST /me/avatar — upload foto profil sendiri (multipart, field "file" —
-// SAMA dengan field name yang dipakai uploadFile() di mobile/src/api.js).
 // Kompres+resize ke ~256px pakai sharp, simpan sebagai jpg di
 // backend/uploads/avatars/, hapus file avatar lama (kalau ada) supaya tidak
-// menumpuk sampah di disk tiap ganti foto.
+// menumpuk sampah di disk tiap ganti foto. Dipakai KEDUA endpoint di bawah
+// (diri sendiri & admin-untuk-user-lain, D-166, 18 September 2026) — supaya
+// perilaku upload/kompresi/cleanup TIDAK bisa diam-diam menyimpang antara
+// dua jalur itu (pola sama dengan createComplaintCase dkk: satu fungsi
+// dipakai ulang, bukan disalin ke endpoint kedua).
+async function processAvatarUpload(userId, buffer) {
+  const filename = `${userId}-${Date.now()}.jpg`;
+  const filePath = path.join(avatarsDir, filename);
+  await sharp(buffer)
+    .resize(256, 256, { fit: "cover" })
+    .jpeg({ quality: 80 })
+    .toFile(filePath);
+
+  const avatarUrl = `/uploads/avatars/${filename}`;
+
+  const prevUser = await prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { avatarUrl },
+    select: { id: true, name: true, email: true, role: true, avatarUrl: true },
+  });
+
+  if (prevUser?.avatarUrl) {
+    const prevPath = path.join(__dirname, "../..", prevUser.avatarUrl);
+    fs.unlink(prevPath, () => {}); // fire-and-forget, jangan gagalkan request kalau hapus lama gagal
+  }
+
+  return updated;
+}
+
+// POST /me/avatar — upload foto profil sendiri (multipart, field "file" —
+// SAMA dengan field name yang dipakai uploadFile() di mobile/src/api.js).
 userRouter.post("/me/avatar", avatarUpload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "File foto wajib diisi" });
-
-    const filename = `${req.user.id}-${Date.now()}.jpg`;
-    const filePath = path.join(avatarsDir, filename);
-    await sharp(req.file.buffer)
-      .resize(256, 256, { fit: "cover" })
-      .jpeg({ quality: 80 })
-      .toFile(filePath);
-
-    const avatarUrl = `/uploads/avatars/${filename}`;
-
-    const prevUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { avatarUrl: true } });
-    const updated = await prisma.user.update({
-      where: { id: req.user.id },
-      data: { avatarUrl },
-      select: { id: true, name: true, email: true, role: true, avatarUrl: true },
-    });
-
-    if (prevUser?.avatarUrl) {
-      const prevPath = path.join(__dirname, "../..", prevUser.avatarUrl);
-      fs.unlink(prevPath, () => {}); // fire-and-forget, jangan gagalkan request kalau hapus lama gagal
-    }
-
-    res.json(updated);
+    res.json(await processAvatarUpload(req.user.id, req.file.buffer));
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /:id/avatar — admin ganti foto profil user LAIN (D-166, 18 September
+// 2026, laporan owner: "gue ingin ganti foto di pengguna dan peran"). Sama
+// dengan PATCH /:id, diri sendiri WAJIB lewat /me/avatar — bukan pembatasan
+// baru, cuma konsisten dengan endpoint admin lain di file ini.
+userRouter.post("/:id/avatar", adminOnly, avatarUpload.single("file"), async (req, res) => {
+  try {
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ error: "Gunakan endpoint /me/avatar untuk ganti foto sendiri" });
+    }
+    if (!req.file) return res.status(400).json({ error: "File foto wajib diisi" });
+    res.json(await processAvatarUpload(req.params.id, req.file.buffer));
+  } catch (err) {
+    if (err.code === "P2025") return res.status(404).json({ error: "User tidak ditemukan" });
     res.status(500).json({ error: err.message });
   }
 });

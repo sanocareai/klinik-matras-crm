@@ -188,7 +188,7 @@ export const PAGES = [
   { path: "/quality-scorer", render: () => <QualityScorer /> },
   { path: "/sales-risk", render: () => <SalesRisk /> },
   { path: "/sales-intelligence", render: () => <SalesPerformance /> },
-  { path: "/pengguna",    render: (ctx) => <Pengguna user={ctx.user} /> },
+  { path: "/pengguna",    render: (ctx) => <Pengguna user={ctx.user} onUserUpdate={ctx.onUserUpdate} /> },
   { path: "/products",    render: (ctx) => <Products user={ctx.user} /> },
   { path: "/tracking",    render: () => <TrackingLinks /> },
   { path: "/broadcast-sales", render: () => <BroadcastSales /> },

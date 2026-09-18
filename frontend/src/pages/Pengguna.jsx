@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   UserPlus, Trash2, Key, Shield, ShieldCheck, Lock, X, Eye, EyeOff,
-  MessageSquare, Users, FileText, Check, UserX, UserCheck, MoreVertical, Pencil,
+  MessageSquare, Users, FileText, Check, UserX, UserCheck, MoreVertical, Pencil, Camera,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
@@ -123,7 +123,7 @@ function effectiveRoles(u) {
   return Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : [u.role];
 }
 
-export default function Pengguna({ user: currentUser }) {
+export default function Pengguna({ user: currentUser, onUserUpdate }) {
   const [users, setUsers]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [feedback, setFeedback]     = useState(null);
@@ -144,6 +144,15 @@ export default function Pengguna({ user: currentUser }) {
   const [editUserForm, setEditUserForm] = useState({ name: "", email: "" });
   const [editUserLoading, setEditUserLoading] = useState(false);
   const [editUserError, setEditUserError] = useState("");
+
+  // Foto profil dari modal Ubah Profil (D-166, 18 September 2026, laporan
+  // owner: "gue ingin ganti foto di pengguna dan peran"). Reuse endpoint
+  // avatar yang SUDAH ADA (POST /users/me/avatar untuk diri sendiri, POST
+  // /users/:id/avatar untuk user lain — lihat backend/src/routes/users.js)
+  // dan UI yang sama polanya dengan Pengaturan.jsx (avatar bulat + badge
+  // kamera), bukan komponen baru.
+  const avatarInputRef = useRef(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Add user form
   const [addForm, setAddForm]   = useState({ name: "", email: "", password: "", role: "SALES" });
@@ -313,6 +322,36 @@ export default function Pengguna({ user: currentUser }) {
       setEditUserError(err.message);
     } finally {
       setEditUserLoading(false);
+    }
+  }
+
+  // Sama pola self-vs-others dengan handleEditUser di atas: diri sendiri
+  // lewat /users/me/avatar, user lain lewat /users/:id/avatar.
+  async function handleAvatarChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // supaya pilih file YANG SAMA lagi tetap memicu onChange
+    if (!file || !showEditUser) return;
+    if (!file.type.startsWith("image/")) {
+      setEditUserError("File harus berupa gambar");
+      return;
+    }
+    const isMe = showEditUser.id === currentUser?.id;
+    setUploadingAvatar(true);
+    setEditUserError("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const updated = isMe
+        ? await api.uploadAvatar(fd)
+        : await api.uploadAvatarFor(showEditUser.id, fd);
+      setUsers((prev) => prev.map((x) => (x.id === showEditUser.id ? { ...x, avatarUrl: updated.avatarUrl } : x)));
+      setShowEditUser((prev) => (prev ? { ...prev, avatarUrl: updated.avatarUrl } : prev));
+      if (isMe) onUserUpdate?.({ avatarUrl: updated.avatarUrl });
+      showFeedback("success", "Foto profil berhasil diganti.");
+    } catch (err) {
+      setEditUserError(err.message);
+    } finally {
+      setUploadingAvatar(false);
     }
   }
 
@@ -659,6 +698,32 @@ export default function Pengguna({ user: currentUser }) {
             </div>
             <form onSubmit={handleEditUser}>
               <div className="modal-body">
+                <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={uploadingAvatar}
+                    title="Ganti foto profil"
+                    style={{ position: "relative", border: 0, background: "none", padding: 0, cursor: uploadingAvatar ? "wait" : "pointer" }}
+                  >
+                    <Avatar name={showEditUser.name || showEditUser.email} src={showEditUser.avatarUrl} size="lg" />
+                    <span style={{
+                      position: "absolute", bottom: -2, right: -2, width: 22, height: 22, borderRadius: "50%",
+                      border: "2px solid var(--bg-surface)", background: "var(--accent)", color: "#fff",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <Camera size={11} />
+                    </span>
+                  </button>
+                  <div>
+                    <button type="button" className="btn btn-ghost" style={{ padding: "6px 12px" }}
+                      onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}>
+                      {uploadingAvatar ? "Mengunggah..." : "Ganti Foto"}
+                    </button>
+                    <p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--text-muted)" }}>JPG/PNG, otomatis dipotong persegi</p>
+                  </div>
+                  <input ref={avatarInputRef} type="file" accept="image/*" hidden onChange={handleAvatarChange} />
+                </div>
                 <div className="form-group">
                   <label className="form-label">Nama Lengkap</label>
                   <input type="text" placeholder="Nama pengguna" value={editUserForm.name}
