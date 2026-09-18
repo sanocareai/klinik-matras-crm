@@ -6,6 +6,7 @@ import {
 import { api } from "../api.js";
 import { getSocket } from "../lib/socket.js";
 import Avatar from "../components/Avatar.jsx";
+import AvatarCropModal from "../components/AvatarCropModal.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: exportToExcel() (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 import { formatRupiah, STAGE_LABELS, SOURCE_LABELS, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS } from "../utils/format.js";
@@ -176,8 +177,13 @@ export default function Pengaturan({ user, onUserUpdate }) {
   const avatarInputRef = useRef(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarMsg, setAvatarMsg]             = useState(null);
+  // File yang baru dipilih, menunggu diatur framing-nya di AvatarCropModal
+  // (D-167, 19 September 2026, laporan owner: "buat agar bisa di reframe,
+  // crop") — komponen SAMA dipakai di Pengguna.jsx supaya dua titik upload
+  // avatar (diri sendiri vs admin-untuk-user-lain) tidak diam-diam menyimpang.
+  const [cropFile, setCropFile] = useState(null);
 
-  async function handleAvatarChange(e) {
+  function handleAvatarChange(e) {
     const file = e.target.files?.[0];
     e.target.value = ""; // supaya pilih file YANG SAMA lagi tetap memicu onChange
     if (!file) return;
@@ -185,14 +191,20 @@ export default function Pengaturan({ user, onUserUpdate }) {
       setAvatarMsg({ type: "error", text: "File harus berupa gambar" });
       return;
     }
+    setAvatarMsg(null);
+    setCropFile(file);
+  }
+
+  async function handleCroppedAvatar(blob) {
     setUploadingAvatar(true);
     setAvatarMsg(null);
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", blob, "avatar.jpg");
       const updated = await api.uploadAvatar(fd);
       onUserUpdate?.({ avatarUrl: updated.avatarUrl });
       setAvatarMsg({ type: "success", text: "Foto profil berhasil diganti" });
+      setCropFile(null);
     } catch (err) {
       setAvatarMsg({ type: "error", text: err.message });
     } finally {
@@ -595,7 +607,7 @@ export default function Pengaturan({ user, onUserUpdate }) {
                     >
                       {uploadingAvatar ? "Mengunggah..." : "Ganti Foto"}
                     </Button>
-                    <p className="mt-1.5 text-[11.5px] text-ink3">JPG/PNG, otomatis dipotong persegi</p>
+                    <p className="mt-1.5 text-[11.5px] text-ink3">JPG/PNG, atur posisi & zoom sebelum disimpan</p>
                   </div>
                   <input
                     ref={avatarInputRef}
@@ -606,6 +618,14 @@ export default function Pengaturan({ user, onUserUpdate }) {
                   />
                 </div>
               </Card>
+
+              {cropFile && (
+                <AvatarCropModal
+                  file={cropFile}
+                  onCancel={() => setCropFile(null)}
+                  onCropped={handleCroppedAvatar}
+                />
+              )}
 
               <Card>
               <CardTitle className="mb-1">Ganti Password</CardTitle>

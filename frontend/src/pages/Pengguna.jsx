@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
+import AvatarCropModal from "../components/AvatarCropModal.jsx";
 import { formatTanggalWaktu } from "../utils/format.js";
 import { isAdminUser } from "@/lib/roles.js";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu.jsx";
@@ -153,6 +154,9 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
   // kamera), bukan komponen baru.
   const avatarInputRef = useRef(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  // File yang baru dipilih, menunggu diatur framing-nya di AvatarCropModal
+  // (D-167) — null berarti modal crop tidak sedang terbuka.
+  const [cropFile, setCropFile] = useState(null);
 
   // Add user form
   const [addForm, setAddForm]   = useState({ name: "", email: "", password: "", role: "SALES" });
@@ -325,9 +329,11 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
     }
   }
 
-  // Sama pola self-vs-others dengan handleEditUser di atas: diri sendiri
-  // lewat /users/me/avatar, user lain lewat /users/:id/avatar.
-  async function handleAvatarChange(e) {
+  // File dipilih → buka AvatarCropModal dulu (D-167, 19 September 2026,
+  // laporan owner: "buat agar bisa di reframe, crop") — TIDAK langsung
+  // upload seperti sebelumnya. Upload sungguhan terjadi di
+  // handleCroppedAvatar setelah user selesai atur framing.
+  function handleAvatarChange(e) {
     const file = e.target.files?.[0];
     e.target.value = ""; // supaya pilih file YANG SAMA lagi tetap memicu onChange
     if (!file || !showEditUser) return;
@@ -335,12 +341,22 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
       setEditUserError("File harus berupa gambar");
       return;
     }
+    setEditUserError("");
+    setCropFile(file);
+  }
+
+  // Sama pola self-vs-others dengan handleEditUser di atas: diri sendiri
+  // lewat /users/me/avatar, user lain lewat /users/:id/avatar. `blob` dari
+  // AvatarCropModal sudah persegi 512x512 — endpoint backend TETAP resize
+  // ke 256px (jaring pengaman kalau ada jalur upload lain yang belum crop).
+  async function handleCroppedAvatar(blob) {
+    if (!showEditUser) return;
     const isMe = showEditUser.id === currentUser?.id;
     setUploadingAvatar(true);
     setEditUserError("");
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", blob, "avatar.jpg");
       const updated = isMe
         ? await api.uploadAvatar(fd)
         : await api.uploadAvatarFor(showEditUser.id, fd);
@@ -348,6 +364,7 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
       setShowEditUser((prev) => (prev ? { ...prev, avatarUrl: updated.avatarUrl } : prev));
       if (isMe) onUserUpdate?.({ avatarUrl: updated.avatarUrl });
       showFeedback("success", "Foto profil berhasil diganti.");
+      setCropFile(null);
     } catch (err) {
       setEditUserError(err.message);
     } finally {
@@ -720,7 +737,7 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
                       onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}>
                       {uploadingAvatar ? "Mengunggah..." : "Ganti Foto"}
                     </button>
-                    <p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--text-muted)" }}>JPG/PNG, otomatis dipotong persegi</p>
+                    <p style={{ margin: "4px 0 0", fontSize: 11.5, color: "var(--text-muted)" }}>JPG/PNG, atur posisi & zoom sebelum disimpan</p>
                   </div>
                   <input ref={avatarInputRef} type="file" accept="image/*" hidden onChange={handleAvatarChange} />
                 </div>
@@ -745,6 +762,16 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ── MODAL ATUR FOTO (reframe/crop, D-167) — tampil DI ATAS modal
+          Ubah Profil begitu file dipilih, bukan menggantikannya. ── */}
+      {cropFile && (
+        <AvatarCropModal
+          file={cropFile}
+          onCancel={() => setCropFile(null)}
+          onCropped={handleCroppedAvatar}
+        />
       )}
 
       {/* ── MODAL RESET PASSWORD ── */}
