@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { GoogleMap, Marker, Polyline, InfoWindow, OverlayView, useJsApiLoader } from "@react-google-maps/api";
 import { MapPinned } from "lucide-react";
 import { useTheme } from "@/lib/ThemeProvider.jsx";
-import { getRoadRoute } from "@/services/osrm.js";
+import { api } from "@/api.js";
 import { GOOGLE_MAPS_JS_KEY, GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from "@/lib/googleMaps.js";
 import { MAP_STYLE_DARK } from "../googleMapStyle.js";
 import { stopIcon, depotIcon } from "../googleMapIcons.js";
@@ -15,12 +15,13 @@ import { stopIcon, depotIcon } from "../googleMapIcons.js";
 // baru) — dua alasan sekaligus untuk pindah, bukan cuma tambal CARTO.
 // Lihat catatan panjang di lib/googleMaps.js untuk detail pemisahan key.
 //
-// Garis antar stop TETAP minta geometri jalan asli ke OSRM (services/osrm.js,
-// server demo publik gratis) — TIDAK diganti Google Directions API. Alasan:
-// OSRM sudah cukup baik untuk garis rute (bukan navigasi turn-by-turn) dan
-// mengaktifkan Directions API berarti API berbayar KETIGA (setelah
-// Geocoding+Distance Matrix) yang belum tentu perlu — kalau nanti garis OSRM
-// dirasa kurang akurat, itu keputusan terpisah, bukan ikut migrasi tile ini.
+// Garis antar stop minta geometri jalan asli ke GET /armada/route-path
+// (Google Directions di belakangnya) — DIGANTI 19 September 2026 dari OSRM
+// demo publik. Catatan lama di sini menyebut OSRM "sudah cukup baik" dan
+// menunda Directions API sebagai keputusan terpisah; keputusan itu SUDAH
+// diambil: owner melaporkan garis rute "ga sesuai dengan google maps" di
+// Live Tracking, dan Route Planner WAJIB memakai sumber yang sama — kalau
+// tidak, rute yang sama akan tergambar berbeda di dua halaman.
 //
 // SEMUA RUTE MULAI & BERAKHIR DI KLINIK (D-076, 4 September 2026) — laporan
 // owner: "buat semua jalur mulai dan berakhir di lokasi klinik matras".
@@ -88,7 +89,7 @@ function titikRuteDenganDepot(stops) {
 // (TIDAK pernah kosong sama sekali) supaya dispatcher tetap lihat urutan
 // rute.
 function RouteLine({ route, warna, stops, google, activeStop, onStopClick, onStopClose }) {
-  const [jalanAsli, setJalanAsli] = useState(null); // { coords, legDurations } | null
+  const [jalanAsli, setJalanAsli] = useState(null); // { coords, legs } | null
 
   const { titik, posisiStopDiTitik } = useMemo(() => titikRuteDenganDepot(stops), [stops]);
 
@@ -96,9 +97,11 @@ function RouteLine({ route, warna, stops, google, activeStop, onStopClick, onSto
     setJalanAsli(null);
     if (stops.length === 0) return;
     let batal = false;
-    getRoadRoute(titik.map((t) => [t.lat, t.lng])).then((hasil) => {
-      if (!batal && hasil) setJalanAsli(hasil);
-    });
+    api.getRoutePath(titik.map((t) => [t.lat, t.lng]))
+      .then((hasil) => {
+        if (!batal && hasil?.coords) setJalanAsli(hasil);
+      })
+      .catch(() => {}); // gagal = garis lurus, lihat catatan di kepala komponen
     return () => { batal = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stops.map((s) => `${s.id}:${s.lat}:${s.lng}:${s.returnToDepotBefore ? 1 : 0}`).join(",")]);
@@ -119,8 +122,8 @@ function RouteLine({ route, warna, stops, google, activeStop, onStopClick, onSto
         <Marker key={`depot-tengah-${s.id}`} position={{ lat: DEPOT.lat, lng: DEPOT.lng }} icon={depotIcon(google)} title="Kembali ke Klinik Matras" />
       ))}
       {stops.map((s, i) => {
-        const menitKumulatif = jalanAsli?.legDurations
-          ? jalanAsli.legDurations.slice(0, posisiStopDiTitik[i]).reduce((a, b) => a + b, 0)
+        const menitKumulatif = jalanAsli?.legs
+          ? jalanAsli.legs.slice(0, posisiStopDiTitik[i]).reduce((a, l) => a + (l.durationSeconds || 0), 0)
           : null;
         const posisi = { lat: s.lat, lng: s.lng };
         return (

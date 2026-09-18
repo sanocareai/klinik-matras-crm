@@ -9,12 +9,6 @@
 // JS API selesai dimuat, dari useJsApiLoader) sebagai argumen pertama —
 // google.maps.Size/Point belum ada sebelum script-nya termuat, jadi
 // pemanggil WAJIB menahan render sampai `isLoaded` true.
-import { avatarColor, getInitials } from "@/utils/format.js";
-
-function escapeXml(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 function svgIcon(google, inner, size, anchor) {
   const [w, h] = size;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${inner}</svg>`;
@@ -44,18 +38,12 @@ function cached(key, factory) {
   return icon;
 }
 
-// Avatar bulat berwarna + inisial — posisi driver (ArmadaTracking.jsx).
-export function driverIcon(google, name) {
-  return cached(`driver:${name || "?"}`, () => {
-    const { bg, text } = avatarColor(name || "?");
-    const initials = escapeXml(getInitials(name));
-    const inner = `
-      <circle cx="19" cy="19" r="16" fill="${bg}" stroke="white" stroke-width="3"/>
-      <text x="19" y="20" text-anchor="middle" dominant-baseline="central" font-family="Arial, sans-serif" font-weight="700" font-size="13" fill="${text}">${initials}</text>
-    `;
-    return svgIcon(google, inner, [38, 38], [19, 19]);
-  });
-}
+// CATATAN (19 September 2026): driverIcon() DIHAPUS dari sini. Marker posisi
+// driver di ArmadaTracking.jsx sekarang menampilkan FOTO PROFIL asli driver
+// + helper (permintaan owner), dan itu tidak bisa dilakukan lewat ikon Google
+// Maps — ikon di file ini data-URI SVG yang dirender LEPAS dari DOM halaman,
+// jadi tidak bisa memuat gambar dari /uploads. Penggantinya komponen
+// DriverPhotoMarker (OverlayView + HTML sungguhan) di ArmadaTracking.jsx.
 
 // Pin tujuan (alamat customer) — belah ketupat merah, bentuk SENGAJA beda
 // total dari avatar driver (kotak vs lingkaran) supaya tidak pernah tertukar

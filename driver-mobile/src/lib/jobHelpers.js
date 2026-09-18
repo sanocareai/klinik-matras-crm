@@ -182,6 +182,54 @@ export function relatifWaktu(dateStr) {
   return `${Math.floor(jam / 24)} hari lalu`;
 }
 
+// Kesegaran GPS (19 September 2026, laporan owner: "driver padahal live
+// tapi tidak live sedang jalan gitu" — screenshot menunjukkan badge "Live"
+// hijau padahal barisnya sendiri menulis "Posisi terakhir 26 menit lalu").
+//
+// BUG-nya bukan di data, tapi di JANJI badge itu: "Live" SEBELUMNYA cuma
+// berarti "ping GPS ini pernah ada" (position.source === "gps"), TIDAK
+// peduli seberapa basi. Ping GPS berhenti diam-diam setiap app driver masuk
+// background (timer JS ikut dibekukan Android) — jadi kondisi paling sering
+// di lapangan justru posisi basi, dan admin menatap titik yang sudah tidak
+// berpindah sambil percaya itu posisi sekarang.
+//
+// Ambang: app mengirim ping tiap 2 menit (useDriverTracking.js), jadi 5
+// menit memberi toleransi 2 ping terlewat sebelum berhenti menyebutnya
+// "Live" — cukup longgar untuk sinyal jelek sesaat, cukup ketat untuk tidak
+// membohongi admin. Nama warna dikembalikan sebagai KUNCI token tema
+// (GREEN/ORANGE/INK3), bukan hex — pemanggil yang menerjemahkan ke tema
+// aktif (light/dark), lihat src/theme.js.
+export const GPS_SEGAR_MENIT = 5;
+export const GPS_TERTUNDA_MENIT = 20;
+
+export function kesegaranGps(recordedAt) {
+  if (!recordedAt) return { key: "none", label: "GPS belum aktif", color: "INK3", live: false };
+  const menit = Math.floor((Date.now() - new Date(recordedAt).getTime()) / 60000);
+  if (menit <= GPS_SEGAR_MENIT) return { key: "live", label: "Live", color: "GREEN", live: true, menit };
+  if (menit <= GPS_TERTUNDA_MENIT) return { key: "tertunda", label: `Tertunda ${menit}m`, color: "ORANGE", live: false, menit };
+  const jam = Math.floor(menit / 60);
+  return {
+    key: "terhenti",
+    label: jam >= 1 ? `Terhenti ${jam}j` : `Terhenti ${menit}m`,
+    color: "RED",
+    live: false,
+    menit,
+  };
+}
+
+// ETA dari durasi leg Google Directions (detik) — "berapa lama lagi sampai
+// stop berikutnya". Dibulatkan ke menit; di bawah 1 menit tidak pernah
+// ditulis "0 menit" (terbaca seperti sudah sampai padahal belum).
+export function formatEta(detik) {
+  if (detik == null || !Number.isFinite(detik)) return null;
+  const menit = Math.round(detik / 60);
+  if (menit < 1) return "<1 mnt";
+  if (menit < 60) return `${menit} mnt`;
+  const jam = Math.floor(menit / 60);
+  const sisa = menit % 60;
+  return sisa ? `${jam}j ${sisa}m` : `${jam} jam`;
+}
+
 export function estJamUntukTampilan(timeWindow) {
   if (!timeWindow || !timeWindow.trim()) return null;
   return timeWindow.trim().replace(/^EST:?\s*/i, "").replace(/^di\s*atas\s+jam\s*/i, "Di atas ");

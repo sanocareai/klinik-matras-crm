@@ -349,6 +349,14 @@ export const api = {
   sendJobPositions: (jobId, pings) =>
     request(`/armada/jobs/${jobId}/positions`, { method: "POST", body: JSON.stringify({ pings }) }),
   getArmadaTracking: () => request("/armada/tracking"),
+  // Geometri jalur jalan sungguhan (19 September 2026) — GANTI dari OSRM
+  // demo publik yang dipanggil langsung dari browser,
+  // lihat catatan panjang di backend services/maps.js#routePath: sumbernya
+  // sekarang Google Directions, SAMA dengan Google Maps di HP driver.
+  // `points` = array [lat, lng] terurut. Respons { coords, legs, source };
+  // coords `null` = semua sumber gagal, pemanggil gambar garis lurus.
+  getRoutePath: (points) =>
+    request(`/armada/route-path?points=${encodeURIComponent(points.map(([lat, lng]) => `${lat},${lng}`).join(";"))}`),
   // Jalur perjalanan driver (map-matched) + estimasi tol (8 September 2026)
   // — lihat services/routeTracking.js. SEMUA angka di sini ESTIMASI, bukan
   // tagihan pasti — label UI WAJIB menyebutnya begitu.

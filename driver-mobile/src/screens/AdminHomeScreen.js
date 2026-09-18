@@ -30,13 +30,14 @@ import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
 import { useIncentiveSummary } from "../hooks/useIncentiveSummary";
 import { useRouteHistory } from "../hooks/useRouteHistory";
-import { relatifWaktu, formatRupiah, customerOf, orderNumberOf } from "../lib/jobHelpers";
+import { relatifWaktu, formatRupiah, customerOf, orderNumberOf, kesegaranGps, formatEta } from "../lib/jobHelpers";
+import { api } from "../api";
 import { MAP_STYLE_DARK } from "../lib/googleMapStyle";
-import { getRoadRoute } from "../lib/osrm";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
 import JobCard from "../components/JobCard";
 import Avatar from "../components/Avatar";
+import DriverMapMarker from "../components/DriverMapMarker";
 
 // Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
 // dulu di atas konten, lihat BottomNavBar.js.
@@ -47,10 +48,9 @@ import Avatar from "../components/Avatar";
 // `useAdminToday` sejak awal). react-native-maps BUTUH native rebuild
 // (bukan OTA) — versionCode dinaikkan di app.json, build baru WAJIB
 // diinstal manual sekali oleh owner (bukan auto-update lewat OTA seperti
-// biasa; OTA jalan normal lagi SETELAH itu). Rute driver->tujuan di sini
-// garis LURUS (bukan road-matched OSRM seperti web) — sengaja, supaya tidak
-// menduplikasi seluruh services/osrm.js cuma untuk layar ringkasan "sekilas
-// lihat", bukan navigasi turn-by-turn.
+// biasa; OTA jalan normal lagi SETELAH itu). Rute driver->tujuan digambar
+// mengikuti JALAN sungguhan lewat GET /armada/route-path (lihat TrackingMap
+// di bawah) — garis lurus cuma dipakai selagi menunggu/kalau gagal.
 const TABS = [
   { key: "hari-ini", label: "Hari Ini", icon: Home },
   { key: "driver", label: "Driver", icon: Truck },
@@ -641,30 +641,13 @@ function DriverView({ drivers, theme: t, styles }) {
   );
 }
 
-// Marker driver — lingkaran ACCENT + ikon truck, dibuat dari View biasa
-// (bukan Marker.image) supaya warnanya ikut tema langsung. tracksViewChanges
-//={false} SENGAJA (bukan lupa) — marker di sini statis sekali render per
-// posisi baru (key sudah termasuk jobId/vehicleId, bukan lat/lng, lihat
-// pemanggil), true di sini cuma memboroskan render setiap frame tanpa
-// manfaat, pola umum react-native-maps utk custom marker yang tidak animasi.
-// Foto driver/helper AKTIF sebagai marker (18 September 2026, permintaan
-// owner: "di maps bisa ga logo atau icon mobilnya diganti dengan foto
-// driver/helper yang aktif sesuai rute mereka?") — fallback ke ikon truck
-// polos kalau orangnya belum pernah pasang foto profil (layar Akun).
-function DriverMarkerDot({ t, name, avatarUrl }) {
-  if (avatarUrl) {
-    return (
-      <View style={[dotStyles.avatarWrap, { borderColor: t.SURFACE }]}>
-        <Avatar name={name} avatarUrl={avatarUrl} size={28} />
-      </View>
-    );
-  }
-  return (
-    <View style={[dotStyles.wrap, { backgroundColor: t.ACCENT, borderColor: t.SURFACE }]}>
-      <Truck size={13} color="#FFFFFF" />
-    </View>
-  );
-}
+// Marker stop/depot — View biasa (bukan Marker.image) supaya warnanya ikut
+// tema langsung. tracksViewChanges={false} SENGAJA (bukan lupa) — marker di
+// sini statis sekali render per posisi baru (key sudah termasuk jobId/
+// vehicleId, bukan lat/lng, lihat pemanggil), true di sini cuma memboroskan
+// render setiap frame tanpa manfaat, pola umum react-native-maps utk custom
+// marker yang tidak animasi. Marker DRIVER beda urusan (foto = async), lihat
+// components/DriverMapMarker.js.
 function DestinationMarkerDot({ t }) {
   return (
     <View style={[dotStyles.wrap, { backgroundColor: t.RED, borderColor: t.SURFACE }]}>
@@ -704,11 +687,6 @@ const dotStyles = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3, elevation: 4,
   },
   wrapKecil: { width: 22, height: 22, borderRadius: 11 },
-  avatarWrap: {
-    width: 32, height: 32, borderRadius: 16, borderWidth: 2,
-    alignItems: "center", justifyContent: "center", overflow: "hidden",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3, elevation: 4,
-  },
 });
 
 const JAKARTA_CENTER = { latitude: -6.2088, longitude: 106.8456, latitudeDelta: 0.15, longitudeDelta: 0.15 };
@@ -733,13 +711,16 @@ function DepotMarkerDot() {
 // GPS belum ada. Jalur rencana (driver belum jalan) digambar PUTUS-PUTUS
 // supaya tidak dikira driver sudah berangkat.
 //
-// Garis road-matched via OSRM (18 September 2026, laporan owner: "maps nya
-// kayak ga mengikuti pattern jalan, lurus aja") — port pola PERSIS dari
-// ArmadaTracking.jsx web (lib/osrm.js#getRoadRoute, sudah production di
-// sana sejak D-075). Garis LURUS tetap dipakai sebagai fallback instan
-// (dirender duluan) sampai hasil OSRM datang ATAU kalau OSRM gagal —
-// server demo publik, tidak boleh jadi satu-satunya sumber.
-function TrackingMap({ kendaraan, t, dark }) {
+// Garis mengikuti JALAN sungguhan (19 September 2026, laporan owner: "maps
+// nya kayak ga mengikuti pattern jalan... masih ga sesuai dengan google
+// maps") — dari GET /armada/route-path, yang di belakangnya Google
+// Directions: SUMBER YANG SAMA dengan Google Maps di HP driver, jadi garis
+// di sini benar-benar cocok dengan yang dia lihat. Percobaan sebelumnya
+// (18 Sep) memakai OSRM demo publik langsung dari HP — road-matched, tapi
+// datanya OpenStreetMap jadi belokannya masih sering beda dari Google.
+// Garis LURUS tetap dirender duluan sebagai fallback instan sampai hasilnya
+// datang ATAU kalau semua sumber gagal.
+function TrackingMap({ kendaraan, t, dark, jalurByVehicle, setJalurByVehicle }) {
   const mapRef = useRef(null);
   const [siap, setSiap] = useState(false);
   // `siap` HARUS reset ke false setiap `dark` berganti — MapView di-remount
@@ -770,10 +751,17 @@ function TrackingMap({ kendaraan, t, dark }) {
     return m;
   }, [kendaraan]);
 
-  // Hasil OSRM per kendaraan — { [vehicleId]: { traveled, upcoming } },
-  // masing-masing { coords: [[lat,lng],...], legDurations }. Pola SAMA
-  // persis dgn ArmadaTracking.jsx web.
-  const [jalurByVehicle, setJalurByVehicle] = useState({});
+  // `jalurByVehicle` datang dari TrackingView (state diangkat ke sana — ETA
+  // di kartu memakai `legs` dari permintaan yang SAMA). Isinya per
+  // kendaraan: { traveled, upcoming }, masing-masing { coords, legs }.
+  // Sumbernya GET /armada/route-path (Google Directions lewat backend,
+  // lihat catatan di services/maps.js#routePath) — GANTI dari OSRM demo
+  // publik yang dulu dipanggil langsung dari HP, yang jalurnya sering tidak
+  // cocok dengan Google Maps yang dilihat driver.
+  //
+  // vehicleId -> true begitu foto marker-nya selesai dimuat; sebelum itu
+  // marker harus terus di-track supaya snapshot-nya ikut fotonya.
+  const [markerSiap, setMarkerSiap] = useState({});
   const titikStr = (p) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`;
   const sinyalJalur = kendaraan
     .map((v) => {
@@ -801,15 +789,22 @@ function TrackingMap({ kendaraan, t, dark }) {
         ...(v.active && punyaKoordinat(v.active) ? [keLatLng(v.active)] : []),
         ...v.pending.filter(punyaKoordinat).map(keLatLng),
       ];
+      // Diam-diam gagal (catch kosong) — jalur cuma hiasan di atas data
+      // yang sudah benar; kalau Google/LocationIQ tidak terjangkau, peta
+      // TETAP berguna dengan garis lurus, tidak perlu mengganggu admin.
       if (traveledPts.length >= 2) {
-        getRoadRoute(traveledPts).then((hasil) => {
-          if (!batal && hasil) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], traveled: hasil } }));
-        });
+        api.getRoutePath(traveledPts)
+          .then((hasil) => {
+            if (!batal && hasil?.coords) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], traveled: hasil } }));
+          })
+          .catch(() => {});
       }
       if (upcomingPts.length >= 2) {
-        getRoadRoute(upcomingPts).then((hasil) => {
-          if (!batal && hasil) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], upcoming: hasil } }));
-        });
+        api.getRoutePath(upcomingPts)
+          .then((hasil) => {
+            if (!batal && hasil?.coords) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], upcoming: hasil } }));
+          })
+          .catch(() => {});
       }
     }
     return () => { batal = true; };
@@ -921,20 +916,24 @@ function TrackingMap({ kendaraan, t, dark }) {
               <Marker
                 key={`driver-${v.vehicleId}`}
                 coordinate={posisi}
-                title={v.driverName || "Belum ada driver"}
+                title={[v.driverName, v.helperName].filter(Boolean).join(" + ") || "Belum ada driver"}
                 description={v.position.source === "gps"
-                  ? `${v.routeCode || "Kurir Eksternal"} · ${labelFase(v)}`
+                  ? `${v.routeCode || "Kurir Eksternal"} · ${labelFase(v)} · ${kesegaranGps(v.lastPosition?.recordedAt).label}`
                   : "GPS belum aktif — ditampilkan di Klinik Matras"}
-                // tracksViewChanges TRUE kalau markernya foto (async, expo-
-                // image butuh 1+ frame untuk memuat dari network/cache) —
-                // false akan membekukan marker di keadaan "belum termuat".
-                // Armada kecil (CLAUDE.md §1: 8 driver/helper), jadi biaya
-                // re-render terus-menerus di sini bisa diabaikan.
-                tracksViewChanges={!!v.driverAvatarUrl}
+                // Foto itu async — snapshot marker HARUS menunggu sampai
+                // fotonya termuat, lalu berhenti (lihat DriverMapMarker.js).
+                tracksViewChanges={!markerSiap[v.vehicleId]}
                 anchor={{ x: 0.5, y: 0.5 }}
                 zIndex={4}
               >
-                <DriverMarkerDot t={t} name={v.driverName} avatarUrl={v.driverAvatarUrl} />
+                <DriverMapMarker
+                  borderColor={t.SURFACE}
+                  orang={[
+                    { name: v.driverName, avatarUrl: v.driverAvatarUrl },
+                    { name: v.helperName, avatarUrl: v.helperAvatarUrl },
+                  ]}
+                  onSiap={() => setMarkerSiap((prev) => (prev[v.vehicleId] ? prev : { ...prev, [v.vehicleId]: true }))}
+                />
               </Marker>
             </React.Fragment>
           );
@@ -957,12 +956,23 @@ function TrackingView({ tracking, theme: t, styles }) {
     [tracking]
   );
   const [expandedVehicleId, setExpandedVehicleId] = useState(null);
+  // State jalur DIANGKAT ke sini (19 September 2026) — yang mengambilnya
+  // tetap TrackingMap (dia yang punya posisi titik gambar), tapi kartu di
+  // bawah peta juga butuh `legs`-nya untuk ETA "berapa lama lagi sampai
+  // stop berikutnya", jadi satu permintaan dipakai dua tempat.
+  const [jalurByVehicle, setJalurByVehicle] = useState({});
 
   // Peta SELALU dirender (13 Sep 2026, konfirmasi owner) — walau belum ada
   // rute, sama dengan web.
   return (
     <View style={{ gap: 10 }}>
-      <TrackingMap kendaraan={kendaraan} t={t} dark={dark} />
+      <TrackingMap
+        kendaraan={kendaraan}
+        t={t}
+        dark={dark}
+        jalurByVehicle={jalurByVehicle}
+        setJalurByVehicle={setJalurByVehicle}
+      />
       {kendaraan.length === 0 && (
         <View style={[styles.center, { flex: 0, paddingVertical: 28 }]}>
           <Navigation size={28} color={t.INK3} />
@@ -982,6 +992,15 @@ function TrackingView({ tracking, theme: t, styles }) {
           : null;
         const posisiUrl = gps ? `https://www.google.com/maps?q=${v.position.lat},${v.position.lng}` : null;
         const ruteUrl = asal && tujuan ? `https://www.google.com/maps/dir/?api=1&origin=${asal}&destination=${tujuan}` : null;
+        // GPS belum pernah ada sama sekali (driver di Klinik Matras) beda
+        // dari GPS basi — yang pertama bukan "terhenti", memang belum mulai.
+        const segar = gps ? kesegaranGps(v.lastPosition?.recordedAt) : { key: "none", label: "GPS belum aktif", color: "INK3", live: false };
+        // Leg PERTAMA jalur "upcoming" = posisi driver -> stop aktif, jadi
+        // ETA ke tujuan sekarang. Cuma ditampilkan kalau GPS masih segar —
+        // ETA dihitung dari posisi terakhir, dan posisi basi bikin ETA-nya
+        // ikut bohong (lebih buruk dari tidak menampilkan apa-apa).
+        const etaDetik = segar.live ? jalurByVehicle[v.vehicleId]?.upcoming?.legs?.[0]?.durationSeconds : null;
+        const eta = formatEta(etaDetik);
         return (
           <View key={v.vehicleId} style={styles.card}>
             <View style={styles.rowBetween}>
@@ -1002,17 +1021,16 @@ function TrackingView({ tracking, theme: t, styles }) {
                   {v.driverName || "Belum ada driver"}{v.helperName ? ` + ${v.helperName}` : ""}
                 </Text>
               </View>
-              {gps ? (
-                <View style={styles.liveBadge}>
-                  <Navigation size={11} color={t.ACCENT} />
-                  <Text style={styles.liveBadgeText}>Live</Text>
-                </View>
-              ) : (
-                <View style={[styles.liveBadge, { backgroundColor: t.INK3 + "26" }]}>
-                  <WifiOff size={11} color={t.INK3} />
-                  <Text style={[styles.liveBadgeText, { color: t.INK3 }]}>GPS belum aktif</Text>
-                </View>
-              )}
+              {/* Badge kesegaran GPS (19 September 2026) — SEBELUMNYA selalu
+                  "Live" asal pernah ada ping, walau ping terakhir 26 menit
+                  lalu (laporan owner). Sekarang jujur: Live / Tertunda /
+                  Terhenti, lihat kesegaranGps() di jobHelpers.js. */}
+              <View style={[styles.liveBadge, { backgroundColor: t[segar.color] + "26" }]}>
+                {segar.live
+                  ? <Navigation size={11} color={t[segar.color]} />
+                  : <WifiOff size={11} color={t[segar.color]} />}
+                <Text style={[styles.liveBadgeText, { color: t[segar.color] }]}>{segar.label}</Text>
+              </View>
             </View>
             <Text style={[styles.cardMeta, { marginTop: 2 }]}>
               {v.routeCode || "Kurir Eksternal"} · {selesai}/{total} stop tuntas
@@ -1025,9 +1043,19 @@ function TrackingView({ tracking, theme: t, styles }) {
             {/* Status sekarang + tujuan aktif — sama semangat kartu status
                 app Grab/Gojek (referensi owner). */}
             <View style={{ backgroundColor: t.TRACK_BG, borderRadius: 10, padding: 8, marginTop: 8 }}>
-              <Text style={{ fontSize: 10, fontWeight: "800", letterSpacing: 0.3, textTransform: "uppercase", color: t.ACCENT }}>
-                {labelFase(v)}
-              </Text>
+              <View style={styles.rowBetween}>
+                <Text style={{ fontSize: 10, fontWeight: "800", letterSpacing: 0.3, textTransform: "uppercase", color: t.ACCENT }}>
+                  {labelFase(v)}
+                </Text>
+                {/* ETA Google (memperhitungkan macet saat ini) — lihat
+                    departure_time=now di services/maps.js#routePathGoogle. */}
+                {eta && (
+                  <View style={styles.etaBadge}>
+                    <Clock size={10} color={t.ACCENT} />
+                    <Text style={styles.etaBadgeText}>± {eta} lagi</Text>
+                  </View>
+                )}
+              </View>
               {v.active ? (
                 <>
                   <Text style={[styles.cardMeta, { color: t.INK, fontWeight: "700", marginTop: 2 }]} numberOfLines={1}>
@@ -1051,14 +1079,29 @@ function TrackingView({ tracking, theme: t, styles }) {
               )}
             </View>
 
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
-              {gps ? <Clock size={11} color={t.INK3} /> : <Home size={11} color={t.INK3} />}
-              <Text style={styles.lastSeenText}>
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4, marginTop: 6 }}>
+              {gps ? <Clock size={11} color={t.INK3} style={{ marginTop: 1 }} /> : <Home size={11} color={t.INK3} style={{ marginTop: 1 }} />}
+              <Text style={[styles.lastSeenText, { flex: 1 }]}>
                 {gps
                   ? `Posisi terakhir ${relatifWaktu(v.lastPosition?.recordedAt)}${v.lastPosition?.accuracy ? ` · akurasi ±${Math.round(v.lastPosition.accuracy)}m` : ""}`
                   : "Ditampilkan di Klinik Matras sampai driver mulai jalan"}
               </Text>
             </View>
+
+            {/* Penjelasan kenapa posisinya basi (19 September 2026) — tanpa
+                ini admin cuma melihat titik yang tidak berpindah dan menebak
+                sendiri (driver mogok? app rusak? sudah pulang?). Penyebab
+                paling sering di lapangan: app driver masuk background, dan
+                Android membekukan timer ping GPS-nya. */}
+            {segar.key === "tertunda" || segar.key === "terhenti" ? (
+              <View style={[styles.gpsWarn, { backgroundColor: t[segar.color] + "18" }]}>
+                <Text style={[styles.gpsWarnText, { color: t[segar.color] }]}>
+                  {segar.key === "terhenti"
+                    ? "Posisi ini sudah lama tidak diperbarui — kemungkinan app driver tertutup/di background, atau HP-nya kehilangan sinyal. Titik di peta BUKAN posisi sekarang."
+                    : "Ping GPS agak tertinggal — titik di peta mungkin sudah bergeser dari posisi sebenarnya."}
+                </Text>
+              </View>
+            ) : null}
 
             {(posisiUrl || ruteUrl) && (
               <View style={styles.quickActions}>
@@ -1514,6 +1557,10 @@ function makeStyles(t) {
     progressFill: { height: 5, borderRadius: 3, backgroundColor: t.ACCENT },
     liveBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.ACCENT_BG, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
     liveBadgeText: { color: t.ACCENT, fontSize: 10.5, fontWeight: "700" },
+    etaBadge: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: t.ACCENT_BG, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 100 },
+    etaBadgeText: { color: t.ACCENT, fontSize: 10, fontWeight: "800" },
+    gpsWarn: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, marginTop: 6 },
+    gpsWarnText: { fontSize: 10.5, lineHeight: 15, fontWeight: "600" },
     driverStatsRow: { flexDirection: "row", gap: 14, marginTop: 8 },
     driverStat: { color: t.INK2, fontSize: 11.5, fontWeight: "600" },
     lastSeenText: { color: t.INK3, fontSize: 10.5 },

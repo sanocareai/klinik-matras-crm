@@ -184,6 +184,13 @@ export const api = {
   // Route Planner web tapi berat kalau dipanggil polos dari HP).
   getArmadaRoutes: (params = {}) => request(`/armada/routes${buildQuery(params)}`),
   getArmadaTracking: () => request("/armada/tracking"),
+  // Geometri jalur jalan sungguhan (19 September 2026) — GANTI dari OSRM
+  // demo publik yang dipanggil langsung dari HP, lihat
+  // catatan panjang di backend services/maps.js#routePath. `points` =
+  // array [lat, lng] terurut. Respons { coords, legs, source }; coords
+  // `null` artinya semua sumber gagal → pemanggil gambar garis lurus.
+  getRoutePath: (points) =>
+    request(`/armada/route-path${buildQuery({ points: points.map(([lat, lng]) => `${lat},${lng}`).join(";") })}`),
   getArmadaIssues: (params = {}) => request(`/armada/issues${buildQuery(params)}`),
   startArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", body: JSON.stringify(data) }),
   arriveArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", body: JSON.stringify(data) }),

@@ -5,10 +5,11 @@ import { PageContainer, PageHeader } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { cn } from "@/lib/utils.js";
 import { useTheme } from "@/lib/ThemeProvider.jsx";
-import { getRoadRoute } from "@/services/osrm.js";
+import { api } from "@/api.js";
+import Avatar from "@/components/Avatar.jsx";
 import { GOOGLE_MAPS_JS_KEY, GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from "@/lib/googleMaps.js";
 import { MAP_STYLE_DARK } from "@/features/armada/googleMapStyle.js";
-import { driverIcon, destinationIcon, stopIcon, stopIconDone, stopIconFailed, depotIcon } from "@/features/armada/googleMapIcons.js";
+import { destinationIcon, stopIcon, stopIconDone, stopIconFailed, depotIcon } from "@/features/armada/googleMapIcons.js";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import { JOB_TYPE_REAL } from "@/features/armada/jobStatus.js";
 import { useArmadaTracking } from "@/features/armada/hooks/useArmadaTracking.js";
@@ -38,6 +39,34 @@ function waktuLalu(iso) {
   if (menit < 60) return `${menit} menit lalu`;
   return `${Math.floor(menit / 60)} jam lalu`;
 }
+
+// Kesegaran GPS (19 September 2026, laporan owner: "driver padahal live tapi
+// tidak live sedang jalan gitu"). Badge SEBELUMNYA cuma berarti "ping GPS
+// ini pernah ada", tidak peduli seberapa basi — jadi admin menatap titik
+// yang sudah 26 menit tidak berpindah sambil percaya itu posisi sekarang.
+// Ambang SENGAJA sama persis dengan app driver (driver-mobile
+// lib/jobHelpers.js#kesegaranGps): app mengirim ping tiap 2 menit, jadi 5
+// menit = toleransi 2 ping terlewat. Duplikasi kecil lintas codebase yang
+// disengaja (runtime beda) — kalau salah satu diubah, ubah KEDUANYA, kalau
+// tidak web & app akan menyebut kondisi yang sama dengan nama berbeda.
+const GPS_SEGAR_MENIT = 5;
+const GPS_TERTUNDA_MENIT = 20;
+
+function kesegaranGps(recordedAt) {
+  if (!recordedAt) return { key: "none", label: "GPS belum aktif", live: false };
+  const menit = Math.floor((Date.now() - new Date(recordedAt).getTime()) / 60000);
+  if (menit <= GPS_SEGAR_MENIT) return { key: "live", label: "Live", live: true, menit };
+  if (menit <= GPS_TERTUNDA_MENIT) return { key: "tertunda", label: `Tertunda ${menit}m`, live: false, menit };
+  const jam = Math.floor(menit / 60);
+  return { key: "terhenti", label: jam >= 1 ? `Terhenti ${jam}j` : `Terhenti ${menit}m`, live: false, menit };
+}
+
+const WARNA_KESEGARAN = {
+  live: "text-green",
+  tertunda: "text-orange",
+  terhenti: "text-red",
+  none: "text-ink3",
+};
 
 function formatMenit(detik) {
   const menit = Math.round(detik / 60);
@@ -75,6 +104,52 @@ function EtaBadge({ position, children }) {
   );
 }
 
+// Marker driver = FOTO driver + helper (19 September 2026, permintaan owner:
+// "icon mobil ganti foto driver + helper"). OverlayView (HTML sungguhan),
+// BUKAN Marker+icon seperti driverIcon() — ikon Google Maps itu data-URI SVG
+// yang dirender lepas dari DOM, jadi tidak bisa memuat foto dari /uploads.
+// Pane OVERLAY_MOUSE_TARGET supaya tetap bisa diklik (sama dengan EtaBadge).
+// Fallback inisial berwarna dipakai kalau orangnya belum pernah pasang foto
+// profil — warnanya dari avatarColor() yang SAMA dengan dipakai driverIcon
+// sebelumnya, jadi orang yang sama tetap berwarna sama.
+function DriverPhotoMarker({ position, orang, onClick }) {
+  const daftar = (orang || []).filter((o) => o && o.name).slice(0, 2);
+  if (daftar.length === 0) return null;
+  return (
+    <OverlayView
+      position={position}
+      mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+      getPixelPositionOffset={(w, h) => ({ x: -w / 2, y: -h / 2 })}
+    >
+      {/* Gaya inline (bukan class CSS) — OverlayView dirender ke dalam DOM
+          milik Google Maps, di luar pohon .glass-division tempat aturan
+          delivery-*.css menempel; cincin putih + bayangan juga sengaja SAMA
+          di kedua tema, sama seperti pin peta pada umumnya. */}
+      <div
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter") onClick?.(); }}
+        title={daftar.map((o) => o.name).join(" + ")}
+        style={{ display: "flex", alignItems: "center", cursor: "pointer" }}
+      >
+        {daftar.map((o, i) => (
+          <span
+            key={`${o.name}-${i}`}
+            className="rounded-full"
+            style={{
+              marginLeft: i > 0 ? -10 : 0,
+              boxShadow: "0 0 0 2px #fff, 0 3px 8px -2px rgba(0,0,0,0.45)",
+            }}
+          >
+            <Avatar name={o.name} src={o.avatarUrl || undefined} size="sm" />
+          </span>
+        ))}
+      </div>
+    </OverlayView>
+  );
+}
+
 // Satu entri backend ("route" / "loose") -> SATU bentuk render. Stop
 // dipecah jadi done / active / pending berdasar status.
 function turunkanKendaraan(item) {
@@ -95,7 +170,9 @@ function turunkanKendaraan(item) {
     vehicleId: item.kind === "loose" ? `loose-${item.jobId}` : `route-${item.routeId}`,
     routeCode: item.kind === "loose" ? null : item.routeCode,
     driverName: item.driverName,
+    driverAvatarUrl: item.driverAvatarUrl || null,
     helperName: item.kind === "loose" ? null : item.helperName,
+    helperAvatarUrl: item.kind === "loose" ? null : (item.helperAvatarUrl || null),
     driverOnline: !!item.driverOnline,
     phase: item.kind === "loose" ? item.status : item.phase,
     lastPosition: item.lastPosition,
@@ -176,15 +253,22 @@ export default function ArmadaTracking() {
         ...(v.active && punyaKoordinat(v.active) ? [[v.active.lat, v.active.lng]] : []),
         ...v.pending.filter(punyaKoordinat).map((s) => [s.lat, s.lng]),
       ];
+      // Diam-diam gagal (.catch kosong) — jalur cuma hiasan di atas data yang
+      // sudah benar; kalau Google/LocationIQ tidak terjangkau, peta TETAP
+      // berguna dengan garis lurus, tidak perlu mengganggu admin.
       if (traveledPts.length >= 2) {
-        getRoadRoute(traveledPts).then((hasil) => {
-          if (!batal && hasil) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], traveled: hasil } }));
-        });
+        api.getRoutePath(traveledPts)
+          .then((hasil) => {
+            if (!batal && hasil?.coords) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], traveled: hasil } }));
+          })
+          .catch(() => {});
       }
       if (upcomingPts.length >= 2) {
-        getRoadRoute(upcomingPts).then((hasil) => {
-          if (!batal && hasil) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], upcoming: hasil } }));
-        });
+        api.getRoutePath(upcomingPts)
+          .then((hasil) => {
+            if (!batal && hasil?.coords) setJalurByVehicle((prev) => ({ ...prev, [v.vehicleId]: { ...prev[v.vehicleId], upcoming: hasil } }));
+          })
+          .catch(() => {});
       }
     }
     return () => { batal = true; };
@@ -306,8 +390,14 @@ export default function ArmadaTracking() {
                   // ETA cuma saat benar-benar sedang menuju (EN_ROUTE + GPS asli)
                   // — dari Klinik Matras sebelum berangkat, angka itu bukan
                   // "kapan tiba", jangan disajikan seolah perkiraan tiba.
-                  const etaDetik = v.phase === "EN_ROUTE" && v.position.source === "gps" && v.active && punyaKoordinat(v.active)
-                    ? jalur?.upcoming?.legDurations?.[0]
+                  // Syarat TAMBAHAN (19 September 2026): GPS harus masih SEGAR.
+                  // ETA dihitung dari posisi terakhir; kalau posisi itu sudah
+                  // 26 menit basi, ETA-nya ikut bohong — lebih buruk daripada
+                  // tidak menampilkan angka sama sekali.
+                  const etaDetik = v.phase === "EN_ROUTE" && v.position.source === "gps"
+                    && kesegaranGps(v.lastPosition?.recordedAt).live
+                    && v.active && punyaKoordinat(v.active)
+                    ? jalur?.upcoming?.legs?.[0]?.durationSeconds
                     : null;
                   const jalan = v.phase === "EN_ROUTE" || v.phase === "ARRIVED";
 
@@ -357,10 +447,12 @@ export default function ArmadaTracking() {
 
                       {etaDetik != null && <EtaBadge position={{ lat: v.active.lat, lng: v.active.lng }}>{formatMenit(etaDetik)}</EtaBadge>}
 
-                      <Marker
+                      <DriverPhotoMarker
                         position={posisi}
-                        icon={driverIcon(window.google, v.driverName)}
-                        zIndex={4}
+                        orang={[
+                          { name: v.driverName, avatarUrl: v.driverAvatarUrl },
+                          { name: v.helperName, avatarUrl: v.helperAvatarUrl },
+                        ]}
                         onClick={() => { setSelectedVehicleId(v.vehicleId); setActiveInfo(`driver-${v.vehicleId}`); }}
                       />
                       {activeInfo === `driver-${v.vehicleId}` && (
@@ -399,6 +491,7 @@ export default function ArmadaTracking() {
               const selesai = v.done.length;
               const expanded = expandedVehicleId === v.vehicleId;
               const diDepot = v.position.source === "depot";
+              const segar = kesegaranGps(v.lastPosition?.recordedAt);
               return (
                 <div
                   key={v.vehicleId}
@@ -406,8 +499,22 @@ export default function ArmadaTracking() {
                 >
                   <button type="button" className="w-full text-left" onClick={() => setSelectedVehicleId(v.vehicleId)}>
                     <div className="flex items-start gap-2.5">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accentbg">
-                        <Truck size={14} className="text-accent" aria-hidden />
+                      {/* Foto driver + helper (19 September 2026, permintaan
+                          owner) — gantikan ikon truck generik; dua foto
+                          bertumpuk kalau rutenya berdua. */}
+                      <span className="flex shrink-0 items-center">
+                        <Avatar name={v.driverName} src={v.driverAvatarUrl || undefined} size="sm" />
+                        {v.helperName && (
+                          // Cincin pemisah lewat WRAPPER + inline style
+                          // var(--bg-surface): Avatar.jsx tidak meneruskan
+                          // prop `style` (dipakai 13 tempat lain, tidak
+                          // diubah cuma untuk ini), dan utility warna kustom
+                          // `ring-surface` kadang tidak ter-generate Tailwind
+                          // (lihat peringatan di CLAUDE.md §3).
+                          <span className="-ml-2.5 rounded-full" style={{ boxShadow: "0 0 0 2px var(--bg-surface)" }}>
+                            <Avatar name={v.helperName} src={v.helperAvatarUrl || undefined} size="sm" />
+                          </span>
+                        )}
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
@@ -447,7 +554,7 @@ export default function ArmadaTracking() {
                       )}
                     </div>
 
-                    <p className="mt-2 flex items-center gap-1.5 text-[10.5px] text-ink3">
+                    <p className={cn("mt-2 flex items-center gap-1.5 text-[10.5px]", diDepot ? "text-ink3" : WARNA_KESEGARAN[segar.key])}>
                       {diDepot ? (
                         <>
                           <WifiOff size={11} aria-hidden />
@@ -455,12 +562,28 @@ export default function ArmadaTracking() {
                         </>
                       ) : (
                         <>
-                          <Navigation size={11} aria-hidden />
-                          GPS {waktuLalu(v.lastPosition?.recordedAt)}
-                          {v.lastPosition?.accuracy ? ` · ±${Math.round(v.lastPosition.accuracy)}m` : ""}
+                          {segar.live ? <Navigation size={11} aria-hidden /> : <WifiOff size={11} aria-hidden />}
+                          <span className="font-semibold">{segar.label}</span>
+                          <span className="text-ink3">
+                            · GPS {waktuLalu(v.lastPosition?.recordedAt)}
+                            {v.lastPosition?.accuracy ? ` · ±${Math.round(v.lastPosition.accuracy)}m` : ""}
+                          </span>
                         </>
                       )}
                     </p>
+
+                    {/* Penjelasan kenapa posisinya basi (19 September 2026) —
+                        tanpa ini admin cuma melihat titik yang tidak berpindah
+                        dan menebak sendiri. Penyebab paling sering: app driver
+                        masuk background dan Android membekukan timer ping. */}
+                    {!diDepot && (segar.key === "tertunda" || segar.key === "terhenti") && (
+                      <p className={cn("mt-1.5 rounded-btn px-2 py-1.5 text-[10px] leading-[14px] font-medium",
+                        segar.key === "terhenti" ? "bg-red/10 text-red" : "bg-orange/10 text-orange")}>
+                        {segar.key === "terhenti"
+                          ? "Posisi ini sudah lama tidak diperbarui — kemungkinan app driver tertutup/di background, atau HP-nya kehilangan sinyal. Titik di peta BUKAN posisi sekarang."
+                          : "Ping GPS agak tertinggal — titik di peta mungkin sudah bergeser dari posisi sebenarnya."}
+                      </p>
+                    )}
                   </button>
 
                   {total > 1 && (
