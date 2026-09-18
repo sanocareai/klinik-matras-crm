@@ -134,7 +134,7 @@ export default function FinanceReceivables() {
         {baris.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada piutang terbuka.</p></CardContent>
         ) : (
-          <TableWrap>
+          <TableWrap className="dh-table">
             <Table>
               <THead>
                 <TR>
@@ -183,7 +183,7 @@ export default function FinanceReceivables() {
         {refunds.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada refund.</p></CardContent>
         ) : (
-          <TableWrap>
+          <TableWrap className="dh-table">
             <Table>
               <THead>
                 <TR><TH>Nomor</TH><TH>Tanggal</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Alasan</TH><TH numeric>Nominal</TH><TH>Status</TH><TH /></TR>

@@ -178,7 +178,7 @@ export default function FinancePurchases() {
             />
           </CardContent>
         ) : (
-          <TableWrap>
+          <TableWrap className="dh-table">
             <Table>
               <THead>
                 <TR>

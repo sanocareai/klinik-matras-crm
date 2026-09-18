@@ -123,7 +123,7 @@ function LabaRugi({ d }) {
 
       <Card className="overflow-hidden">
         <JudulKartu title="Laba Rugi" info="Disusun dari atas ke bawah: Pendapatan → dikurangi Beban Pokok → Laba Kotor → dikurangi Beban Operasional → Laba Bersih. Setiap baris bisa ditelusuri ke akun aslinya di Bagan Akun." />
-        <TableWrap>
+        <TableWrap className="dh-table">
           <Table>
             <TBody>
               <SeksiLR judul="PENDAPATAN" rows={d.pendapatan} />
@@ -258,7 +258,7 @@ function Neraca({ d }) {
             description={`Per ${tanggalPendek(d.perTanggal)}`}
             info="Menjawab 'uang/aset perusahaan itu sebenarnya milik/dijanjikan ke siapa' — sebagian ke kreditur (kewajiban), sisanya hak pemilik (ekuitas)."
           />
-          <TableWrap>
+          <TableWrap className="dh-table">
             <Table>
               <TBody>
                 <TR className="bg-inset"><TD className="text-[11px] font-bold uppercase tracking-wide text-ink3" colSpan={2}>KEWAJIBAN</TD></TR>
@@ -328,7 +328,7 @@ function AsetDonut({ rows, total }) {
 
 function TabelNeraca({ rows, total, labelTotal }) {
   return (
-    <TableWrap>
+    <TableWrap className="dh-table">
       <Table>
         <TBody>
           {rows.length === 0 ? (
@@ -422,7 +422,7 @@ function SeksiArus({ judul, rows, catatan }) {
       {rows.length === 0 ? (
         <CardContent><p className="py-4 text-[13px] text-ink3">Tidak ada arus kas di kelompok ini.</p></CardContent>
       ) : (
-        <TableWrap>
+        <TableWrap className="dh-table">
           <Table>
             <TBody>
               {rows.map((r) => (
@@ -465,7 +465,7 @@ function NeracaSaldo({ d }) {
             akun neraca, dan sebatas periode ini untuk akun laba rugi."
           info="Total Mutasi Debit dan Mutasi Kredit di baris paling bawah WAJIB sama persis — kalau tidak, berarti ada jurnal yang tidak seimbang masuk lewat jalur di luar aplikasi normal, dan itu bug yang harus segera dilaporkan."
         />
-        <TableWrap>
+        <TableWrap className="dh-table">
           <Table>
             <THead>
               <TR>

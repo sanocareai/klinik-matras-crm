@@ -126,7 +126,7 @@ export default function FinanceJournal() {
         {entries.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada jurnal di filter ini.</p></CardContent>
         ) : (
-          <TableWrap>
+          <TableWrap className="dh-table">
             <Table>
               <THead>
                 <TR><TH>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Sumber</TH><TH numeric>Nilai</TH><TH>Status</TH><TH /></TR>
@@ -224,7 +224,7 @@ function DetailJurnal({ entryId, onClose, onReversed, onError }) {
             </div>
           )}
 
-          <TableWrap>
+          <TableWrap className="dh-table">
             <Table>
               <THead>
                 <TR><TH>Akun</TH><TH>Keterangan</TH><TH numeric>Debit</TH><TH numeric>Kredit</TH></TR>

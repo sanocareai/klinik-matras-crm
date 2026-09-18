@@ -159,7 +159,7 @@ export default function FinanceSuppliers() {
               <EmptyState icon={FileText} title="Belum ada tagihan" description="Catat tagihan yang datang dari supplier di sini." />
             </CardContent>
           ) : (
-            <TableWrap>
+            <TableWrap className="dh-table">
               <Table>
                 <THead>
                   <TR>
@@ -228,7 +228,7 @@ export default function FinanceSuppliers() {
           {payments.length === 0 ? (
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada pembayaran.</p></CardContent>
           ) : (
-            <TableWrap>
+            <TableWrap className="dh-table">
               <Table>
                 <THead>
                   <TR><TH>Nomor</TH><TH>Tanggal</TH><TH>Supplier</TH><TH>Dari Rekening</TH><TH>Tagihan</TH><TH numeric>Nominal</TH><TH>Status</TH></TR>
@@ -265,7 +265,7 @@ export default function FinanceSuppliers() {
               <EmptyState icon={Building2} title="Belum ada supplier" description="Daftarkan supplier yang tagihannya perlu dilacak." />
             </CardContent>
           ) : (
-            <TableWrap>
+            <TableWrap className="dh-table">
               <Table>
                 <THead>
                   <TR><TH>Kode</TH><TH>Nama</TH><TH>Kontak</TH><TH>Termin</TH><TH>Rekening</TH><TH numeric>Sisa Utang</TH><TH>Status</TH></TR>

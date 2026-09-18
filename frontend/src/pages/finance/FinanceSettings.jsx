@@ -121,7 +121,7 @@ export default function FinanceSettings() {
             </p>
           </CardContent>
         ) : (
-          <TableWrap>
+          <TableWrap className="dh-table">
             <Table>
               <THead>
                 <TR><TH>Waktu</TH><TH>Sumber</TH><TH>Masalah</TH><TH>Penjelasan</TH><TH /></TR>
@@ -263,7 +263,7 @@ export default function FinanceSettings() {
         {periods.length === 0 ? (
           <CardContent><p className="py-4 text-[13px] text-ink3">Belum ada periode — periode dibuat otomatis saat jurnal pertama bulan itu diposting.</p></CardContent>
         ) : (
-          <TableWrap>
+          <TableWrap className="dh-table">
             <Table>
               <THead><TR><TH>Periode</TH><TH>Status</TH><TH>Ditutup</TH><TH>Catatan</TH><TH /></TR></THead>
               <TBody>
@@ -328,7 +328,7 @@ export default function FinanceSettings() {
             <Plus size={14} /> Kategori Baru
           </Button>
         </CardHeader>
-        <TableWrap>
+        <TableWrap className="dh-table">
           <Table>
             <THead><TR><TH>Kode</TH><TH>Nama</TH><TH>Akun Tujuan</TH><TH>Divisi</TH><TH>Otomatis Dari</TH><TH>Status</TH></TR></THead>
             <TBody>

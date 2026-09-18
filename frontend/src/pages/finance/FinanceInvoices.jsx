@@ -180,7 +180,7 @@ export default function FinanceInvoices() {
             <EmptyState icon={FileText} title="Tidak ada invoice" description="Belum ada invoice yang cocok dengan filter ini." />
           </CardContent>
         ) : (
-          <TableWrap>
+          <TableWrap className="dh-table">
             <Table>
               <THead>
                 <TR>

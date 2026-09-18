@@ -152,7 +152,7 @@ export default function FinanceAccounts() {
                 </label>
               </div>
             </CardHeader>
-            <TableWrap>
+            <TableWrap className="dh-table">
               <Table>
                 <THead>
                   <TR>

@@ -166,7 +166,7 @@ export default function FinanceCash() {
                 />
               </CardContent>
             ) : (
-              <TableWrap>
+              <TableWrap className="dh-table">
                 <Table>
                   <THead>
                     <TR><TH>Nama</TH><TH>Jenis</TH><TH>Nomor</TH><TH>Akun COA</TH><TH numeric>Saldo Buku</TH><TH>Status</TH><TH>Aksi</TH></TR>
@@ -214,7 +214,7 @@ export default function FinanceCash() {
           {transfers.length === 0 ? (
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada mutasi di periode ini.</p></CardContent>
           ) : (
-            <TableWrap>
+            <TableWrap className="dh-table">
               <Table>
                 <THead>
                   <TR><TH>Nomor</TH><TH>Tanggal</TH><TH>Dari</TH><TH>Ke</TH><TH numeric>Nominal</TH><TH numeric>Biaya Admin</TH><TH>Status</TH></TR>
@@ -253,7 +253,7 @@ export default function FinanceCash() {
           {incomes.length === 0 ? (
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada pemasukan lain di periode ini.</p></CardContent>
           ) : (
-            <TableWrap>
+            <TableWrap className="dh-table">
               <Table>
                 <THead>
                   <TR><TH>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Akun</TH><TH>Masuk ke</TH><TH numeric>Nominal</TH></TR>

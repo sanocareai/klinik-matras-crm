@@ -107,7 +107,7 @@ export default function FinanceReconciliation() {
             />
           </CardContent>
         ) : (
-          <TableWrap>
+          <TableWrap className="dh-table">
             <Table>
               <THead>
                 <TR>
@@ -191,7 +191,7 @@ export default function FinanceReconciliation() {
             {detail.statement.lines.length === 0 ? (
               <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada baris koran bank.</p></CardContent>
             ) : (
-              <TableWrap>
+              <TableWrap className="dh-table">
                 <Table>
                   <THead>
                     <TR>

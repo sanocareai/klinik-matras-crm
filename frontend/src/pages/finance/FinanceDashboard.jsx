@@ -306,7 +306,7 @@ export default function FinanceDashboard() {
               {data.piutang.teratas.length === 0 ? (
                 <CardContent><p className="py-4 text-[13px] text-ink3">Tidak ada piutang terbuka.</p></CardContent>
               ) : (
-                <TableWrap>
+                <TableWrap className="dh-table">
                   <Table>
                     <THead>
                       <TR>
@@ -342,7 +342,7 @@ export default function FinanceDashboard() {
               {data.jurnalTerakhir.length === 0 ? (
                 <CardContent><p className="py-4 text-[13px] text-ink3">Belum ada jurnal.</p></CardContent>
               ) : (
-                <TableWrap>
+                <TableWrap className="dh-table">
                   <Table>
                     <THead>
                       <TR><TH>Tanggal</TH><TH>Keterangan</TH><TH>Sumber</TH><TH numeric>Nilai</TH></TR>
@@ -371,7 +371,7 @@ export default function FinanceDashboard() {
                 description="Uang yang tercatat diterima sales/driver dan perlu dicocokkan dengan setoran nyata."
                 info="Ini bukan berarti uangnya hilang atau bermasalah — cuma belum ada yang mengonfirmasi kalau setoran itu memang sudah benar-benar masuk ke rekening perusahaan. Klik salah satu baris untuk memverifikasi."
               />
-              <TableWrap>
+              <TableWrap className="dh-table">
                 <Table>
                   <THead>
                     <TR>
