@@ -37,7 +37,7 @@ import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { bukukanPembayaran } from "../services/finance/hooks.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
-import { geocodeAddress, routeLegs, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
+import { geocodeAddress, routeLegs, routePath, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 import { produkLineLabel, parseOrderNotesForInvoice } from "../services/invoice.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
@@ -4163,6 +4163,39 @@ armadaRouter.get("/tracking", requirePermission(P.JOB_READ), async (req, res) =>
     const faseOf = (h) => (h.kind === "loose" ? h.status : h.phase);
     hasil.sort((a, b) => (URUTAN_FASE[faseOf(a)] ?? 9) - (URUTAN_FASE[faseOf(b)] ?? 9));
     res.json(hasil);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/armada/route-path?points=lat,lng;lat,lng;... — geometri jalur
+// JALAN SUNGGUHAN untuk digambar di peta Live Tracking (19 September 2026,
+// laporan owner: "rute nya masih ga sesuai dengan google maps"). Lihat
+// catatan panjang di services/maps.js#routePath: sumbernya Google Directions
+// (SAMA dengan yang dilihat driver di HP-nya), lewat backend supaya API key
+// tidak ikut ke bundle web/APK dan cache-nya dipakai bersama semua admin.
+//
+// `null` coords BUKAN error — artinya semua sumber gagal dan klien WAJIB
+// menggambar garis lurus antar titik apa adanya (tetap 200, supaya klien
+// tidak perlu bedakan "gagal" dari "error jaringan").
+const ROUTE_PATH_MAX_TITIK = 25; // batas waypoint Directions API (origin + 23 waypoint + destination)
+
+armadaRouter.get("/route-path", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), async (req, res) => {
+  try {
+    const mentah = String(req.query.points || "").trim();
+    if (!mentah) throw new ArmadaError("Parameter points wajib diisi");
+
+    const points = mentah.split(";").map((pasangan) => {
+      const [lat, lng] = pasangan.split(",").map(Number);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new ArmadaError(`Titik tidak valid: ${pasangan}`);
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) throw new ArmadaError(`Koordinat di luar jangkauan: ${pasangan}`);
+      return [lat, lng];
+    });
+    if (points.length < 2) throw new ArmadaError("Minimal 2 titik");
+    if (points.length > ROUTE_PATH_MAX_TITIK) throw new ArmadaError(`Maksimal ${ROUTE_PATH_MAX_TITIK} titik`);
+
+    const hasil = await routePath(points);
+    res.json(hasil || { coords: null, legs: [], source: null });
   } catch (err) {
     handleErr(err, res);
   }

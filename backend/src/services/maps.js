@@ -42,6 +42,7 @@
 // masalah, tetap dipakai apa adanya.
 
 const DISTANCE_MATRIX_URL = "https://maps.googleapis.com/maps/api/distancematrix/json";
+const DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json";
 const LOCATIONIQ_DIRECTIONS_URL = "https://us1.locationiq.com/v1/directions/driving";
 
 // Nominatim WAJIB User-Agent yang mengidentifikasi aplikasi (kebijakan
@@ -499,4 +500,138 @@ export async function routeLegs(stops) {
   }
 
   return haversineLegs(stops);
+}
+
+// ─── GEOMETRI JALUR JALAN (Live Tracking, 19 September 2026) ───────────────
+// Laporan owner: "maps nya kayak ga mengikuti pattern jalan... masih ga
+// sesuai dengan google maps". Sebelumnya klien (web ArmadaTracking.jsx dan
+// app AdminHomeScreen.js) menggambar jalur pakai OSRM demo publik
+// (router.project-osrm.org) LANGSUNG dari browser/HP — gratis tanpa key,
+// TAPI datanya OpenStreetMap dan profil "driving"-nya SERING beda dari
+// Google Maps (jalan tol, satu arah, jalan baru di Jabodetabek), jadi garis
+// yang tergambar tidak cocok dengan yang dilihat driver di Google Maps.
+//
+// Sekarang jalur diambil dari GOOGLE DIRECTIONS API lewat backend — SUMBER
+// YANG SAMA dengan yang dipakai driver di lapangan, jadi garis di peta admin
+// benar-benar cocok. Lewat backend (bukan langsung dari klien) karena:
+//   1. GOOGLE_MAPS_API_KEY server TIDAK BOLEH ikut ke bundle web/APK.
+//   2. Cache bisa dipakai BERSAMA semua admin yang sedang membuka Live
+//      Tracking (polling tiap 15-30 detik x banyak admin = boros kuota
+//      kalau tiap klien memanggil Google sendiri-sendiri).
+// Urutan fallback SAMA semangatnya dengan routeLegs() di atas: Google ->
+// LocationIQ -> null (klien gambar garis lurus apa adanya).
+const pathCache = new Map();
+const PATH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 menit — geometri jalan nyaris tidak berubah, durasi/ETA iya (macet)
+const PATH_CACHE_MAX = 200;
+
+function pathCacheKey(points) {
+  return points.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join(";");
+}
+
+// Decoder Encoded Polyline Algorithm Format Google (dipakai juga oleh
+// LocationIQ/OSRM dgn precision 5) — algoritma resmi, ~20 baris, tidak perlu
+// dependency baru.
+export function decodePolyline(encoded) {
+  const coords = [];
+  let index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let result = 0, shift = 0, b;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    result = 0; shift = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+    coords.push([lat / 1e5, lng / 1e5]);
+  }
+  return coords;
+}
+
+async function routePathGoogle(points) {
+  const [origin, ...sisa] = points;
+  const destination = sisa.pop();
+  const waypoints = sisa.length ? `&waypoints=${sisa.map(([lat, lng]) => `${lat},${lng}`).join("|")}` : "";
+  const url =
+    `${DIRECTIONS_URL}?origin=${origin[0]},${origin[1]}&destination=${destination[0]},${destination[1]}` +
+    `${waypoints}&mode=driving&departure_time=now&key=${apiKey()}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Directions API HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.status !== "OK") throw new Error(`Directions API status ${data.status}${data.error_message ? ` (${data.error_message})` : ""}`);
+  const route = data.routes?.[0];
+  const encoded = route?.overview_polyline?.points;
+  if (!encoded) return null;
+  return {
+    coords: decodePolyline(encoded),
+    // durationInTraffic dipakai ETA — SENGAJA pakai duration_in_traffic
+    // (departure_time=now di atas) kalau Google menyediakannya, karena
+    // gunanya justru "berapa lama SEKARANG", bukan waktu tempuh ideal.
+    legs: (route.legs || []).map((l) => ({
+      distanceMeters: l.distance?.value ?? 0,
+      durationSeconds: (l.duration_in_traffic?.value ?? l.duration?.value) ?? 0,
+    })),
+    source: "google",
+  };
+}
+
+async function routePathLocationIq(points) {
+  const koordinat = points.map(([lat, lng]) => `${lng},${lat}`).join(";");
+  const url = `${LOCATIONIQ_DIRECTIONS_URL}/${koordinat}?key=${locationIqKey()}&overview=full&geometries=geojson&steps=false`;
+  const res = await fetch(url, { headers: { "User-Agent": NOMINATIM_USER_AGENT } });
+  if (!res.ok) throw new Error(`LocationIQ Directions HTTP ${res.status}`);
+  const data = await res.json();
+  const route = data.routes?.[0];
+  const geo = route?.geometry?.coordinates;
+  if (!Array.isArray(geo) || geo.length === 0) return null;
+  return {
+    coords: geo.map(([lng, lat]) => [lat, lng]),
+    legs: (route.legs || []).map((l) => ({
+      distanceMeters: Math.round(l.distance || 0),
+      durationSeconds: Math.round(l.duration || 0),
+    })),
+    source: "locationiq",
+  };
+}
+
+// routePath(points) — points: array [lat, lng] TERURUT, minimal 2.
+// -> { coords: [[lat,lng],...], legs: [{distanceMeters,durationSeconds}], source }
+// atau null kalau SEMUA sumber gagal (pemanggil WAJIB fallback garis lurus).
+export async function routePath(points) {
+  if (!Array.isArray(points) || points.length < 2) return null;
+
+  const key = pathCacheKey(points);
+  const cached = pathCache.get(key);
+  if (cached && Date.now() - cached.at < PATH_CACHE_TTL_MS) return cached.value;
+
+  let hasil = null;
+  if (mapsConfigured()) {
+    try {
+      hasil = await routePathGoogle(points);
+    } catch (err) {
+      console.error("[maps] Directions gagal, coba LocationIQ:", err.message);
+    }
+  }
+  if (!hasil && locationIqConfigured()) {
+    try {
+      hasil = await routePathLocationIq(points);
+    } catch (err) {
+      console.error("[maps] LocationIQ Directions gagal, klien pakai garis lurus:", err.message);
+    }
+  }
+
+  if (hasil) {
+    // Buang entri terlama kalau cache penuh — Map menjaga urutan sisip,
+    // jadi key pertama = paling lama disisipkan (cukup untuk kebutuhan ini,
+    // tidak perlu LRU penuh).
+    if (pathCache.size >= PATH_CACHE_MAX) pathCache.delete(pathCache.keys().next().value);
+    pathCache.set(key, { at: Date.now(), value: hasil });
+  }
+  return hasil;
 }
