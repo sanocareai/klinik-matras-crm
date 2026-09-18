@@ -19,13 +19,36 @@ export function Modal({
   showClose = true,
   contentProps = {},
 }) {
+  // Portal TANPA `container` (default Radix) menaruh modal langsung di
+  // <body>, DI LUAR `.app-shell.glass-division` — akibatnya SELURUH CSS kaca
+  // untuk field (delivery-dark/-light.css, selector `.glass-division input`
+  // dkk) tidak pernah cocok di dalam modal manapun, walau modal SHELL-nya
+  // sendiri tetap kelihatan kaca (POPOVER_SURFACE pakai utility class
+  // langsung, tidak bergantung nesting). Dibuktikan lewat computed style
+  // nyata: backdrop-filter "none", bg solid #1C1C1E, bukan rgba tembus
+  // pandang. Fix: portal ke `.app-shell` (satu-satunya di tiap halaman,
+  // TANPA transform/filter jadi position:fixed anak tetap relatif viewport,
+  // `overflow:hidden`-nya juga tidak meng-clip fixed descendant) — kalau
+  // tidak ketemu (halaman tanpa shell, mis. Login), Radix jatuh balik ke
+  // document.body seperti semula, jadi tidak ada regresi di luar shell.
+  const glassContainer = typeof document !== "undefined" ? document.querySelector(".app-shell") : undefined;
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
+      <Dialog.Portal container={glassContainer}>
         <Dialog.Overlay className="fixed inset-0 z-[200] bg-black/30 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0" />
         <Dialog.Content
           className={cn(
             "fixed left-1/2 top-1/2 z-[201] w-[440px] max-w-[96vw] -translate-x-1/2 -translate-y-1/2",
+            // "kpi-glass-guard" — className POPOVER_SURFACE membawa "rounded-card",
+            // yang di dalam .glass-division (sejak fix container di atas) kena
+            // wildcard kaca generik `[class*="rounded-card"]` (delivery-dark/-light
+            // .css). Wildcard itu set `position: relative` (CSS TANPA @layer,
+            // otomatis menang lawan utility `fixed` yang ter-layer, terlepas dari
+            // specificity) — modal jadi lepas dari `fixed`, sentering-nya (left-1/2
+            // + translate) rusak total. Dialog sudah punya glass sendiri lewat
+            // selector khusus `[role="dialog"]` (blok §7 kedua file), jadi guard
+            // ini aman: cuma keluar dari wildcard generik, glass-nya tidak hilang.
+            "kpi-glass-guard",
             // DS v2: tanpa border, elevasi popover + translucent blur (surface.jsx).
             POPOVER_SURFACE, "outline-none",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
