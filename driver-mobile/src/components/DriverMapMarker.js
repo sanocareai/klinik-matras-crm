@@ -36,9 +36,12 @@ import { initials, avatarColor } from "./Avatar";
 // pemanggil untuk mematikan tracksViewChanges. onLoad menandakan "bitmap
 // sudah siap", TAPI belum tentu sudah ter-layout & tergambar di frame
 // berikutnya — mematikan tracksViewChanges di frame yang sama kadang
-// membekukan marker tepat sebelum foto muncul. Satu putaran frame saja
-// sering cukup; 350ms dipilih supaya aman juga di HP kentang.
-const JEDA_SNAPSHOT_MS = 350;
+// membekukan marker tepat sebelum foto muncul. Dinaikkan dari 350ms ke
+// 600ms (19 September 2026) — root cause SEBENARNYA sudah dibereskan lewat
+// fadeDuration={0} di atas, tapi tetap sisakan margin ekstra untuk jeda
+// commit bitmap lintas-bridge (JS onLoad ke native draw) yang bisa berbeda-
+// beda di tiap HP, terutama yang spek rendah.
+const JEDA_SNAPSHOT_MS = 600;
 
 function FotoBulat({ name, avatarUrl, size, borderColor, onLoad }) {
   const [gagal, setGagal] = useState(false);
@@ -69,6 +72,19 @@ function FotoBulat({ name, avatarUrl, size, borderColor, onLoad }) {
       collapsable={false}
       source={{ uri }}
       style={dasar}
+      // fadeDuration={0} (19 September 2026, foto masih tidak muncul
+      // setelah collapsable={false}, laporan owner: "hanya circle putih
+      // stroke") — Android bawaan React Native MEMBERI ANIMASI FADE-IN
+      // ~300ms ke gambar network SECARA DIAM-DIAM, walau tidak pernah
+      // diminta. Ini balapan LANGSUNG dengan JEDA_SNAPSHOT_MS di bawah:
+      // onLoad menandakan bitmap SUDAH ADA, tapi opacity-nya baru mulai
+      // naik dari 0 di frame itu — snapshot yang diambil terlalu awal
+      // (sebelum fade selesai) menangkap gambar TRANSPARAN, dan yang
+      // tersisa cuma border lingkaran yang kita gambar sendiri. Persis
+      // gejala yang dilaporkan. Mematikan animasinya sama sekali
+      // (bukan menambah jeda lebih panjang) menghilangkan balapannya
+      // dari akarnya — foto langsung 100% opaque begitu digambar.
+      fadeDuration={0}
       onLoad={() => onLoad?.()}
       onError={() => { setGagal(true); }}
     />
