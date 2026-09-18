@@ -182,6 +182,27 @@ export function relatifWaktu(dateStr) {
   return `${Math.floor(jam / 24)} hari lalu`;
 }
 
+// Warna per rute/kendaraan di Live Tracking (19 September 2026, laporan
+// owner: "jika ada lebih dari 1 rute coba dibedain warna nya agar ga
+// bingung untuk tracking mereka") — SEBELUMNYA semua rute menggambar
+// polyline "upcoming" dengan warna ACCENT yang SAMA, jadi begitu ada 2+
+// rute aktif sekaligus di peta, admin tidak bisa tahu garis biru mana
+// milik tim mana. Warna dipilih DETERMINISTIK dari vehicleId (hash
+// sederhana, pola SAMA dengan avatarColor() di components/Avatar.js)
+// supaya rute yang SAMA selalu dapat warna yang SAMA di tiap poll (30
+// detik) — bukan acak ulang tiap render, yang justru akan MENAMBAH
+// bingung (garis yang sama berubah warna sendiri). Merah & hijau SENGAJA
+// tidak dipakai di palet ini — merah sudah berarti "tujuan sekarang/GPS
+// terhenti", hijau sudah berarti "selesai/online", dipakai lagi di sini
+// akan membingungkan makna yang SUDAH ada di layar yang sama.
+export const WARNA_RUTE = ["#2D64B6", "#E67E22", "#8E44AD", "#16A085", "#D64BA0", "#6C5CE7", "#B8860B"];
+
+export function warnaRuteUntuk(vehicleId) {
+  let hash = 0;
+  for (const ch of vehicleId || "?") hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff;
+  return WARNA_RUTE[hash % WARNA_RUTE.length];
+}
+
 // Kesegaran GPS (19 September 2026, laporan owner: "driver padahal live
 // tapi tidak live sedang jalan gitu" — screenshot menunjukkan badge "Live"
 // hijau padahal barisnya sendiri menulis "Posisi terakhir 26 menit lalu").

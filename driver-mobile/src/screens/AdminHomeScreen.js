@@ -30,14 +30,14 @@ import { useTheme } from "../hooks/useTheme";
 import { useAdminToday } from "../hooks/useAdminToday";
 import { useIncentiveSummary } from "../hooks/useIncentiveSummary";
 import { useRouteHistory } from "../hooks/useRouteHistory";
-import { relatifWaktu, formatRupiah, customerOf, orderNumberOf, kesegaranGps, formatEta } from "../lib/jobHelpers";
+import { relatifWaktu, formatRupiah, customerOf, orderNumberOf, kesegaranGps, formatEta, warnaRuteUntuk } from "../lib/jobHelpers";
 import { api } from "../api";
 import { MAP_STYLE_DARK } from "../lib/googleMapStyle";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
 import JobCard from "../components/JobCard";
 import Avatar from "../components/Avatar";
-import DriverMapMarker from "../components/DriverMapMarker";
+import VehicleMarker from "../components/VehicleMarker";
 
 // Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
 // dulu di atas konten, lihat BottomNavBar.js.
@@ -673,8 +673,11 @@ function DriverView({ drivers: tim, theme: t, styles }) {
 // sini statis sekali render per posisi baru (key sudah termasuk jobId/
 // vehicleId, bukan lat/lng, lihat pemanggil), true di sini cuma memboroskan
 // render setiap frame tanpa manfaat, pola umum react-native-maps utk custom
-// marker yang tidak animasi. Marker DRIVER beda urusan (foto = async), lihat
-// components/DriverMapMarker.js.
+// marker yang tidak animasi. Ini AMAN dari children-snapshot-blank karena
+// isinya cuma View+ikon statis, tidak ada Image network — beda dari marker
+// DRIVER (foto profil) yang sekarang lewat ikon native, lihat
+// components/VehicleMarker.js untuk kenapa itu perlu jalur berbeda sama
+// sekali.
 function DestinationMarkerDot({ t }) {
   return (
     <View style={[dotStyles.wrap, { backgroundColor: t.RED, borderColor: t.SURFACE }]}>
@@ -785,10 +788,6 @@ function TrackingMap({ kendaraan, t, dark, jalurByVehicle, setJalurByVehicle }) 
   // lihat catatan di services/maps.js#routePath) — GANTI dari OSRM demo
   // publik yang dulu dipanggil langsung dari HP, yang jalurnya sering tidak
   // cocok dengan Google Maps yang dilihat driver.
-  //
-  // vehicleId -> true begitu foto marker-nya selesai dimuat; sebelum itu
-  // marker harus terus di-track supaya snapshot-nya ikut fotonya.
-  const [markerSiap, setMarkerSiap] = useState({});
   const titikStr = (p) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`;
   const sinyalJalur = kendaraan
     .map((v) => {
@@ -902,14 +901,21 @@ function TrackingMap({ kendaraan, t, dark, jalurByVehicle, setJalurByVehicle }) 
           const upcomingRoad = jalur?.upcoming?.coords?.map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
           const traveledGambar = traveledRoad?.length >= 2 ? traveledRoad : traveled;
           const upcomingGambar = upcomingRoad?.length >= 2 ? upcomingRoad : upcoming;
+          // Warna per kendaraan (19 September 2026) — lihat catatan panjang
+          // di warnaRuteUntuk() (jobHelpers.js). Cuma dipakai di jalur
+          // "upcoming" (yang aktif/akan dilalui) — jalur "traveled" TETAP
+          // abu netral, sengaja: "sudah selesai" tidak perlu identitas
+          // warna, "akan/sedang dilalui" itu yang bikin bingung kalau
+          // rutenya banyak.
+          const warnaRute = warnaRuteUntuk(v.vehicleId);
           return (
             <React.Fragment key={v.vehicleId}>
               {traveledGambar.length >= 2 && <Polyline coordinates={traveledGambar} strokeColor={t.INK3} strokeWidth={3} />}
               {upcomingGambar.length >= 2 && (
                 <Polyline
                   coordinates={upcomingGambar}
-                  strokeColor={t.ACCENT}
-                  strokeWidth={3}
+                  strokeColor={warnaRute}
+                  strokeWidth={4}
                   lineDashPattern={jalan ? undefined : [8, 8]}
                 />
               )}
@@ -940,28 +946,19 @@ function TrackingMap({ kendaraan, t, dark, jalurByVehicle, setJalurByVehicle }) 
                 );
               })}
 
-              <Marker
+              <VehicleMarker
                 key={`driver-${v.vehicleId}`}
                 coordinate={posisi}
                 title={[v.driverName, v.helperName].filter(Boolean).join(" + ") || "Belum ada driver"}
                 description={v.position.source === "gps"
                   ? `${v.routeCode || "Kurir Eksternal"} · ${labelFase(v)} · ${kesegaranGps(v.lastPosition?.recordedAt).label}`
                   : "GPS belum aktif — ditampilkan di Klinik Matras"}
-                // Foto itu async — snapshot marker HARUS menunggu sampai
-                // fotonya termuat, lalu berhenti (lihat DriverMapMarker.js).
-                tracksViewChanges={!markerSiap[v.vehicleId]}
-                anchor={{ x: 0.5, y: 0.5 }}
+                driverName={v.driverName}
+                helperName={v.helperName}
+                driverAvatarUrl={v.driverAvatarUrl}
+                helperAvatarUrl={v.helperAvatarUrl}
                 zIndex={4}
-              >
-                <DriverMapMarker
-                  borderColor={t.SURFACE}
-                  orang={[
-                    { name: v.driverName, avatarUrl: v.driverAvatarUrl },
-                    { name: v.helperName, avatarUrl: v.helperAvatarUrl },
-                  ]}
-                  onSiap={() => setMarkerSiap((prev) => (prev[v.vehicleId] ? prev : { ...prev, [v.vehicleId]: true }))}
-                />
-              </Marker>
+              />
             </React.Fragment>
           );
         })}
@@ -1028,8 +1025,24 @@ function TrackingView({ tracking, theme: t, styles }) {
         // ikut bohong (lebih buruk dari tidak menampilkan apa-apa).
         const etaDetik = segar.live ? jalurByVehicle[v.vehicleId]?.upcoming?.legs?.[0]?.durationSeconds : null;
         const eta = formatEta(etaDetik);
+        // Sama warna dgn polyline rute ini di peta (lihat warnaRuteUntuk() di
+        // jobHelpers.js) — garis kiri kartu supaya admin gampang mencocokkan
+        // "kartu ini = garis warna apa di peta" begitu ada >1 rute aktif.
+        const warnaRute = warnaRuteUntuk(v.vehicleId);
+        // Stop TANPA titik peta (19 September 2026, laporan owner: "jalur
+        // stop 6, 7 itu gaada di maps route") — BUKAN bug jalur/rute, tapi
+        // kebijakan link-only geocoding (services/maps.js#geocodeAddress):
+        // stop cuma dapat koordinat kalau order-nya SUNGGUHAN pernah dikasih
+        // link Google Maps, tidak pernah ditebak dari teks alamat. Stop
+        // tanpa koordinat otomatis TIDAK IKUT digambar (baik sbg marker
+        // maupun titik jalur upcoming/traveled) — makanya garis rute
+        // "melompati" stop itu di peta, padahal urutan aslinya berurutan.
+        // Sebelum ini cuma kelihatan kalau admin expand daftar stop
+        // (tulisan kecil "· tanpa titik peta" per baris) — sekarang
+        // diringkas di kartu supaya tidak perlu expand dulu utk tahu.
+        const stopTanpaTitik = v.stops.filter((s) => !punyaKoordinat(s)).length;
         return (
-          <View key={v.vehicleId} style={styles.card}>
+          <View key={v.vehicleId} style={[styles.card, { borderLeftWidth: 3, borderLeftColor: warnaRute }]}>
             <View style={styles.rowBetween}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
                 {/* Foto driver + helper (18 September 2026, permintaan owner)
@@ -1066,6 +1079,12 @@ function TrackingView({ tracking, theme: t, styles }) {
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${total ? Math.round((selesai / total) * 100) : 0}%` }]} />
             </View>
+
+            {stopTanpaTitik > 0 && (
+              <Text style={[styles.cardMeta, { color: t.ORANGE, marginTop: 4 }]}>
+                {stopTanpaTitik} stop belum punya titik peta — rute di peta melompati stop itu, urutan aslinya tetap seperti biasa
+              </Text>
+            )}
 
             {/* Status sekarang + tujuan aktif — sama semangat kartu status
                 app Grab/Gojek (referensi owner). */}

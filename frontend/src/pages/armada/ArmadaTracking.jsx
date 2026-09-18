@@ -184,11 +184,28 @@ function turunkanKendaraan(item) {
 
 const punyaKoordinat = (s) => s.lat != null && s.lng != null;
 
+// Warna per rute/kendaraan (19 September 2026, laporan owner: "jika ada
+// lebih dari 1 rute coba dibedain warna nya agar ga bingung untuk tracking
+// mereka") — SEBELUMNYA semua rute menggambar garis "akan dilalui" dengan
+// satu warna flat (warnaAkanDilalui), jadi begitu ada 2+ rute aktif
+// sekaligus admin tidak bisa tahu garis mana milik tim mana. Deterministik
+// dari vehicleId (hash sederhana) supaya rute yang SAMA selalu dapat warna
+// yang SAMA tiap poll — SENGAJA duplikasi kecil dari warnaRuteUntuk() di
+// driver-mobile/src/lib/jobHelpers.js (runtime terpisah, sama pola dengan
+// kesegaranGps() di atas) — kalau salah satu diubah, ubah keduanya supaya
+// warna rute yang sama tidak beda antara web & app. Merah & hijau dihindari
+// (sudah berarti "tujuan sekarang/terhenti" & "selesai/online").
+const WARNA_RUTE = ["#2D64B6", "#E67E22", "#8E44AD", "#16A085", "#D64BA0", "#6C5CE7", "#B8860B"];
+function warnaRuteUntuk(vehicleId) {
+  let hash = 0;
+  for (const ch of vehicleId || "?") hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff;
+  return WARNA_RUTE[hash % WARNA_RUTE.length];
+}
+
 export default function ArmadaTracking() {
   const { resolved } = useTheme();
   // Warna disalin manual dari tokens.css — SVG data-URI & opsi Polyline
   // dievaluasi di luar DOM halaman, tidak bisa baca var(--accent).
-  const warnaAkanDilalui = resolved === "dark" ? "#0A84FF" : "#1457D9";
   const warnaSudahDilalui = resolved === "dark" ? "#48505C" : "#B9C2CE";
   const warnaMenunggu = resolved === "dark" ? "#5B6472" : "#9AA5B4";
   const { isLoaded } = useJsApiLoader({
@@ -400,6 +417,7 @@ export default function ArmadaTracking() {
                     ? jalur?.upcoming?.legs?.[0]?.durationSeconds
                     : null;
                   const jalan = v.phase === "EN_ROUTE" || v.phase === "ARRIVED";
+                  const warnaRute = warnaRuteUntuk(v.vehicleId);
 
                   return (
                     <React.Fragment key={v.vehicleId}>
@@ -410,10 +428,10 @@ export default function ArmadaTracking() {
                         <Polyline
                           path={upcomingPath}
                           options={jalan
-                            ? { strokeColor: warnaAkanDilalui, strokeWeight: 4, strokeOpacity: 0.85 }
+                            ? { strokeColor: warnaRute, strokeWeight: 4, strokeOpacity: 0.85 }
                             // Belum berangkat = RENCANA, bukan perjalanan — garis
                             // putus-putus supaya tidak dikira driver sudah jalan.
-                            : { strokeOpacity: 0, icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 0.8, strokeColor: warnaAkanDilalui, scale: 3 }, offset: "0", repeat: "14px" }] }}
+                            : { strokeOpacity: 0, icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 0.8, strokeColor: warnaRute, scale: 3 }, offset: "0", repeat: "14px" }] }}
                         />
                       )}
 
@@ -492,9 +510,22 @@ export default function ArmadaTracking() {
               const expanded = expandedVehicleId === v.vehicleId;
               const diDepot = v.position.source === "depot";
               const segar = kesegaranGps(v.lastPosition?.recordedAt);
+              // Sama warna dgn polyline rute ini di peta — garis kiri kartu
+              // supaya admin gampang mencocokkan "kartu ini = garis warna
+              // apa di peta" begitu ada >1 rute aktif (lihat warnaRuteUntuk()).
+              const warnaRute = warnaRuteUntuk(v.vehicleId);
+              // Stop TANPA titik peta (19 September 2026, laporan owner:
+              // "jalur stop 6, 7 itu gaada di maps route") — BUKAN bug rute,
+              // kebijakan link-only geocoding (services/maps.js#geocodeAddress):
+              // stop cuma dapat koordinat kalau order-nya pernah dikasih link
+              // Google Maps sungguhan. Stop tanpa koordinat otomatis tidak
+              // ikut digambar, garis "melompati"-nya — diringkas di sini
+              // supaya tidak perlu expand dulu utk tahu.
+              const stopTanpaTitik = v.stops.filter((s) => !punyaKoordinat(s)).length;
               return (
                 <div
                   key={v.vehicleId}
+                  style={{ borderLeftWidth: 3, borderLeftColor: warnaRute }}
                   className={cn("rounded-card bg-surface p-3 shadow-card transition-colors", selectedVehicleId === v.vehicleId && "bg-accentbg")}
                 >
                   <button type="button" className="w-full text-left" onClick={() => setSelectedVehicleId(v.vehicleId)}>
@@ -532,6 +563,12 @@ export default function ArmadaTracking() {
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-inset">
                       <div className="h-full rounded-full bg-accent" style={{ width: `${total ? Math.round((selesai / total) * 100) : 0}%` }} />
                     </div>
+
+                    {stopTanpaTitik > 0 && (
+                      <p className="mt-1.5 text-[10.5px] text-orange">
+                        {stopTanpaTitik} stop belum punya titik peta — rute di peta melompati stop itu, urutan aslinya tetap seperti biasa
+                      </p>
+                    )}
 
                     <div className="mt-2.5 rounded-btn bg-accentbg p-2.5">
                       <p className="text-[10px] font-bold uppercase tracking-wide text-accent">{labelFase(v)}</p>
