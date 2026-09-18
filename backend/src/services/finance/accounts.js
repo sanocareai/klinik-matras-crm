@@ -219,7 +219,7 @@ export const DEFAULT_EXPENSE_CATEGORIES = Object.freeze([
   { code: "DENDA_TILANG", name: "Denda / Tilang", accountCode: "6-1330", division: "DELIVERY", autoMapKey: "VEHICLE:DENDA" },
   { code: "BIAYA_KENDARAAN_LAIN", name: "Biaya Kendaraan Lainnya", accountCode: "6-1900", division: "DELIVERY", autoMapKey: "VEHICLE:LAINNYA" },
   { code: "SERVIS_KENDARAAN", name: "Servis & Perawatan Kendaraan", accountCode: "6-1320", division: "DELIVERY", autoMapKey: "VEHICLE_SERVICE" },
-  { code: "IKLAN", name: "Belanja Iklan", accountCode: "6-1200", division: "SALES", autoMapKey: "ADSPEND" },
+  { code: "IKLAN", name: "Belanja Iklan", accountCode: "6-1200", division: "DIGITAL_TECHNOLOGY", autoMapKey: "ADSPEND" },
   { code: "KURIR_EKSTERNAL", name: "Kurir Eksternal", accountCode: "6-1340", division: "DELIVERY" },
   { code: "GAJI_KARYAWAN", name: "Gaji & Tunjangan", accountCode: "6-1100", division: "UMUM" },
   { code: "UPAH_PRODUKSI", name: "Upah Produksi / Tukang", accountCode: "5-1200", division: "PRODUKSI" },
