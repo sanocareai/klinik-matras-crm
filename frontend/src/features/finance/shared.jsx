@@ -147,7 +147,8 @@ export const LABEL_SUMBER_JURNAL = {
 
 export const LABEL_DIVISI = {
   SALES: "Sales", PRODUKSI: "Produksi", GUDANG: "Gudang",
-  DELIVERY: "Delivery", UMUM: "Umum",
+  DELIVERY: "Delivery", DIGITAL_TECHNOLOGY: "D&T (Digital & Technology)",
+  OFFICE: "Office", MANAGEMENT: "Management", UMUM: "Umum",
 };
 
 export const LABEL_TIPE_AKUN = {

@@ -5801,6 +5801,13 @@ enum FinDivision {
   PRODUKSI
   GUDANG
   DELIVERY
+  // Ditambahkan 18 September 2026 (permintaan owner) — tiga sumbu biaya yang
+  // TIDAK cocok dipaksa masuk salah satu divisi operasional di atas maupun
+  // "Umum" polos, karena masing-masing punya penanggung jawab & pola biaya
+  // sendiri (meeting/survey/dll):
+  DIGITAL_TECHNOLOGY // Tim Digital & Technology (D&T)
+  OFFICE // Leader/kepala tiap divisi — meeting, survey, dan biaya lintas-divisi yang mereka ajukan sendiri, bukan biaya operasional harian divisinya
+  MANAGEMENT // Owner — meeting, survey, dan biaya level manajemen
   UMUM // biaya kantor/administrasi yang tidak spesifik divisi
 }
 
