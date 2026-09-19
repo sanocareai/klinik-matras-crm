@@ -2217,7 +2217,7 @@ financeTxRouter.post("/bank-statements/:id/complete", requirePermission(P.FINANC
 
 const uploadBukti = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024 }, // foto HP mentah; dikompres server sebelum disimpan
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) return cb(new Error("Hanya file gambar (foto nota) yang diperbolehkan"));
     cb(null, true);
@@ -2235,8 +2235,8 @@ financeTxRouter.post("/receipts/upload",
   async (req, res) => {
     try {
       if (!req.file) throw err("File foto wajib disertakan");
-      const url = simpanFotoBukti(req.file.buffer, req.file.mimetype);
-      res.status(201).json({ url, dipakaiDi: await cariPemakaiBukti(prisma, url) });
+      const { url, ukuranAsli, ukuranAkhir } = await simpanFotoBukti(req.file.buffer);
+      res.status(201).json({ url, ukuranAsli, ukuranAkhir, dipakaiDi: await cariPemakaiBukti(prisma, url) });
     } catch (e) {
       handleFinanceError(e, res);
     }

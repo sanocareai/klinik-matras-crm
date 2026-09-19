@@ -9,12 +9,15 @@
 //   2. VERIFIKASI oleh ORANG LAIN — pembuat transaksi TIDAK BOLEH memverifikasi
 //      buktinya sendiri (owner/admin lain mengecek berkala lewat antrean).
 //
-// Foto disimpan dengan nama = SHA-256 isi file, jadi foto yang persis sama
-// selalu punya URL yang sama — itulah dasar deteksi "nota dipakai dua kali".
-// Deteksi ini PERINGATAN, bukan blokir: satu nota sah bisa mencakup dua
-// catatan (mis. belanja campuran bahan baku + perlengkapan).
+// Foto DIKOMPRES saat upload (lihat simpanFotoBukti) dan disimpan dengan nama =
+// SHA-256 isi hasil kompres, jadi foto yang sama selalu punya URL yang sama —
+// dasar deteksi "nota dipakai dua kali". Deteksi ini PERINGATAN, bukan blokir:
+// satu nota sah bisa mencakup dua catatan (mis. belanja campuran bahan baku +
+// perlengkapan). Catatan: foto yang dijepret ULANG dari nota yang sama
+// menghasilkan file berbeda dan tidak terdeteksi — itu batas metode ini.
 
 import { createHash } from "node:crypto";
+import sharp from "sharp";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,17 +30,50 @@ export const RECEIPTS_URL_PREFIX = "/media/finance-receipts";
 // Kategori yang buktinya memang bukan nota toko (slip gaji/mutasi bank).
 const KATEGORI_TANPA_NOTA = new Set(["GAJI_KARYAWAN", "UPAH_PRODUKSI", "ADMIN_BANK"]);
 
-const EXT_BY_MIME = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/heic": ".heic", "image/heif": ".heif" };
+// Batas ukuran hasil kompres — cukup tajam untuk membaca angka & nama toko di
+// nota, tapi jauh lebih kecil dari foto HP asli (biasanya 3–8 MB → ~150–400 KB).
+// Sisi terpanjang dibatasi 2200px supaya nota panjang (struk) tetap terbaca.
+const MAKS_LEBAR = 1600;
+const MAKS_TINGGI = 2200;
+const KUALITAS_UTAMA = 78;
+const SISI_THUMB = 400;
+const KUALITAS_THUMB = 70;
 
-/** Simpan buffer foto ke disk (idempoten — isi sama = file sama). Balikkan URL publik. */
-export function simpanFotoBukti(buffer, mimetype) {
-  const ext = EXT_BY_MIME[mimetype] || ".jpg";
-  const hash = createHash("sha256").update(buffer).digest("hex").slice(0, 40);
-  const filename = `${hash}${ext}`;
-  fs.mkdirSync(RECEIPTS_DIR, { recursive: true });
-  const target = path.join(RECEIPTS_DIR, filename);
-  if (!fs.existsSync(target)) fs.writeFileSync(target, buffer);
-  return `${RECEIPTS_URL_PREFIX}/${filename}`;
+/**
+ * Kompres foto bukti (seperti WhatsApp: diperkecil + JPEG, bukan HD asli),
+ * simpan ke disk, balikkan URL publik. Yang disimpan:
+ *   <hash>.jpg    foto utama terkompres (dibuka saat foto diklik)
+ *   <hash>_t.jpg  thumbnail 400px (dipakai di tabel supaya daftar ringan)
+ * Nama file = hash ISI HASIL KOMPRES → idempoten, dan dasar deteksi "nota
+ * dipakai dua kali". Orientasi EXIF diterapkan lalu metadata (termasuk GPS
+ * lokasi pemotretan) dibuang. `dir` hanya untuk tes.
+ */
+export async function simpanFotoBukti(buffer, { dir = RECEIPTS_DIR } = {}) {
+  let utama;
+  let kecil;
+  try {
+    const dasar = sharp(buffer, { failOn: "none" }).rotate().flatten({ background: "#ffffff" });
+    utama = await dasar.clone()
+      .resize({ width: MAKS_LEBAR, height: MAKS_TINGGI, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: KUALITAS_UTAMA, mozjpeg: true }).toBuffer();
+    kecil = await dasar.clone()
+      .resize({ width: SISI_THUMB, height: SISI_THUMB, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: KUALITAS_THUMB, mozjpeg: true }).toBuffer();
+  } catch {
+    throw Object.assign(new Error("File bukan gambar yang valid"), { statusCode: 400 });
+  }
+
+  const hash = createHash("sha256").update(utama).digest("hex").slice(0, 40);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [nama, isi] of [[`${hash}.jpg`, utama], [`${hash}_t.jpg`, kecil]]) {
+    const target = path.join(dir, nama);
+    if (!fs.existsSync(target)) fs.writeFileSync(target, isi);
+  }
+  return {
+    url: `${RECEIPTS_URL_PREFIX}/${hash}.jpg`,
+    ukuranAsli: buffer.length,
+    ukuranAkhir: utama.length,
+  };
 }
 
 /**

@@ -8,6 +8,7 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
+import { compressImage } from "@/utils/compressImage.js";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { SIMPLE_PRESETS, makeRange, makeCustomRange, todayWIB } from "@/lib/dateRange.js";
 
@@ -402,6 +403,34 @@ export function tanggalJam(v) {
 // nota WAJIB sebelum disetujui (pembelian, reimbursement, nominal di atas
 // ambang), dan verifikasinya harus dilakukan ORANG LAIN (bukan pembuat).
 
+/**
+ * Kompres ringan di browser SEBELUM upload (hemat kuota HP, foto mentah 5–8 MB
+ * jadi ratusan KB). Server tetap mengompres ulang sebagai jaminan — ini cuma
+ * mempercepat upload. Gagal/kelamaan (mis. format HEIC yang tak bisa dibaca
+ * browser) → kirim file aslinya, biar server yang memutuskan.
+ */
+async function siapkanFoto(file) {
+  if (!file.type?.startsWith("image/") || file.size < 400 * 1024) return file;
+  try {
+    const kecil = await Promise.race([
+      compressImage(file, 1600, 0.8),
+      new Promise((res) => setTimeout(() => res(null), 8000)),
+    ]);
+    return kecil && kecil.size < file.size ? kecil : file;
+  } catch {
+    return file;
+  }
+}
+
+// Thumbnail kecil (~20 KB) dibuat server berdampingan dengan foto utama
+// (<hash>.jpg → <hash>_t.jpg) supaya tabel tidak memuat foto penuh. Foto lama
+// tanpa thumbnail otomatis jatuh balik ke foto utama.
+function Foto({ url, className, alt = "Nota" }) {
+  const [pakaiAsli, setPakaiAsli] = useState(false);
+  const src = !pakaiAsli && /\.jpg$/.test(url) ? url.replace(/\.jpg$/, "_t.jpg") : url;
+  return <img src={src} alt={alt} loading="lazy" className={className} onError={() => setPakaiAsli(true)} />;
+}
+
 function peringatanDobel(dipakaiDi) {
   if (dipakaiDi?.length) {
     window.alert(`Perhatian: foto nota ini sudah dipakai di ${dipakaiDi.join(", ")}. Kalau satu nota memang mencakup dua catatan, abaikan — kalau bukan, kemungkinan nota terpakai dua kali.`);
@@ -421,7 +450,7 @@ export function PemilihBukti({ url, onChange }) {
     setGalat("");
     try {
       const fd = new FormData();
-      fd.append("receipt", file);
+      fd.append("receipt", await siapkanFoto(file));
       const r = await api.uploadFinanceReceipt(fd);
       onChange(r.url);
       peringatanDobel(r.dipakaiDi);
@@ -436,7 +465,7 @@ export function PemilihBukti({ url, onChange }) {
     <div className="flex flex-wrap items-center gap-2">
       {url && (
         <a href={url} target="_blank" rel="noreferrer" className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line">
-          <img src={url} alt="Nota" className="h-full w-full object-cover" />
+          <Foto url={url} className="h-full w-full object-cover" />
         </a>
       )}
       <label className={cn(
@@ -471,7 +500,7 @@ export function SelBukti({ doc, jenis, aksi }) {
     if (!file) return;
     await aksi(async () => {
       const fd = new FormData();
-      fd.append("receipt", file);
+      fd.append("receipt", await siapkanFoto(file));
       const up = await api.uploadFinanceReceipt(fd);
       const r = await api.setFinanceReceipt(jenis, doc.id, up.url);
       peringatanDobel(r.dipakaiDi);
@@ -491,7 +520,7 @@ export function SelBukti({ doc, jenis, aksi }) {
   return (
     <div className="flex items-center gap-2">
       <a href={doc.receiptUrl} target="_blank" rel="noreferrer" className="block h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-line">
-        <img src={doc.receiptUrl} alt="Nota" className="h-full w-full object-cover" />
+        <Foto url={doc.receiptUrl} className="h-full w-full object-cover" />
       </a>
       {doc.receiptVerifiedAt ? (
         <span className="inline-flex items-center gap-1 text-[12px] font-medium text-green"><ShieldCheck size={13} /> Terverifikasi</span>

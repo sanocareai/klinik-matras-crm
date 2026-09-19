@@ -148,7 +148,8 @@ app.use("/media/job-photos",  express.static(jobPhotosDir));
 app.use("/media/payment-proofs", express.static(paymentProofsDir));
 app.use("/media/scope-revision-photos", express.static(scopeRevisionPhotosDir));
 app.use("/media/vehicle-receipts", express.static(vehicleReceiptsDir));
-app.use("/media/finance-receipts", express.static(path.join(__dirname, "../data/finance-receipts")));
+// Nama file = hash isi → tidak pernah berubah, aman di-cache lama di browser.
+app.use("/media/finance-receipts", express.static(path.join(__dirname, "../data/finance-receipts"), { maxAge: "30d", immutable: true }));
 app.use("/media/products", express.static(productsDir));
 app.use("/media/invoice-pdfs", express.static(invoicePdfsDir));
 app.use("/media/warranty-pdfs", express.static(warrantyPdfsDir));
