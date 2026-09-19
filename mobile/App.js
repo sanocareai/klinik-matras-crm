@@ -9,6 +9,7 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { LinearGradient } from "expo-linear-gradient";
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { House, MessageCircle, Users, UserRound, ClipboardList } from "lucide-react-native";
 import { setAudioModeAsync } from "expo-audio";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
@@ -101,32 +102,93 @@ function TabBarButton({ children, style, ...rest }) {
 // Tab bar kapsul kaca (19 Sep 2026, redesain liquid glass). TETAP di dalam alur layout (bukan
 // absolute) supaya konten layar tidak tertutup; area di belakang kapsul diberi warna dasar
 // gradien agar menyatu dengan latar layar.
+const PILL = 46; // diameter lingkaran aktif di tab bar
+
+// Satu tab: DUA ikon ditumpuk (aktif putih + non-aktif abu) yang saling memudar mengikuti posisi
+// pil. Warna stroke lucide tidak bisa dianimasikan di UI thread, tapi opacity bisa — jadi crossfade
+// ini berjalan penuh di UI thread dan tidak ikut tersendat walau thread JS sedang sibuk.
+function GlassTabItem({ route, index, focused, progress, slot, onPress, mutedColor }) {
+  const Icon = TAB_ICONS[route.name];
+  const dekat = useAnimatedStyle(() => {
+    const d = Math.min(1, Math.abs(progress.value - index));
+    return { opacity: 1 - d, transform: [{ scale: 0.88 + 0.12 * (1 - d) }] };
+  });
+  const jauh = useAnimatedStyle(() => {
+    const d = Math.min(1, Math.abs(progress.value - index));
+    return { opacity: d };
+  });
+  return (
+    <Pressable
+      onPress={onPress}
+      android_ripple={null}
+      accessibilityRole="button"
+      accessibilityState={focused ? { selected: true } : {}}
+      style={{ width: slot || PILL, height: PILL, alignItems: "center", justifyContent: "center" }}
+    >
+      <Animated.View style={[StyleSheet.absoluteFill, jauh, { alignItems: "center", justifyContent: "center" }]}>
+        <Icon size={22} color={mutedColor} strokeWidth={2} />
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, dekat, { alignItems: "center", justifyContent: "center" }]}>
+        <Icon size={22} color="#fff" strokeWidth={2.4} />
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+// Tab bar kapsul kaca (19 Sep 2026, redesain liquid glass). TETAP di dalam alur layout (bukan
+// absolute) supaya konten layar tidak tertutup; area di belakang kapsul diberi warna dasar
+// gradien agar menyatu dengan latar layar.
+//
+// Pil biru TIDAK lagi muncul-hilang di tab yang berbeda (dulu potong mendadak) — satu pil yang sama
+// MELUNCUR ke tab tujuan dengan pegas lembut, dijalankan Reanimated di UI thread.
 function GlassTabBar({ state, navigation }) {
   const insets = useSafeAreaInsets();
   const tokens = useTokens();
   const g = tokens.glass;
+  const [lebar, setLebar] = useState(0);
+  const jumlah = state.routes.length;
+  const slot = lebar ? lebar / jumlah : 0;
+  const progress = useSharedValue(state.index);
+
+  useEffect(() => {
+    // Pegas tanpa pantulan berlebih — terasa "meluncur dan berhenti", bukan memantul.
+    progress.value = withSpring(state.index, { damping: 20, stiffness: 190, mass: 0.7 });
+  }, [state.index, progress]);
+
+  const pilStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progress.value * slot + (slot - PILL) / 2 }],
+  }), [slot]);
+
   return (
     <View style={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: Math.max(insets.bottom, 10), backgroundColor: g.tabBarBg }}>
-      <View style={[g.surface, g.shadow, { flexDirection: "row", alignItems: "center", justifyContent: "space-around", height: 58, borderRadius: 30, paddingHorizontal: 6 }]}>
+      <View
+        onLayout={(e) => setLebar(e.nativeEvent.layout.width - 12)} // 12 = paddingHorizontal kiri+kanan
+        style={[g.surface, g.shadow, { flexDirection: "row", alignItems: "center", height: 58, borderRadius: 30, paddingHorizontal: 6 }]}
+      >
+        {slot > 0 && (
+          <Animated.View
+            pointerEvents="none"
+            style={[{ position: "absolute", left: 6, width: PILL, height: PILL, borderRadius: PILL / 2, overflow: "hidden" }, pilStyle]}
+          >
+            <LinearGradient colors={["#4C86FF", "#1F4FD8"]} style={StyleSheet.absoluteFill} />
+          </Animated.View>
+        )}
         {state.routes.map((route, index) => {
           const focused = state.index === index;
-          const Icon = TAB_ICONS[route.name];
-          const onPress = () => {
-            const e = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
-            if (!focused && !e.defaultPrevented) navigation.navigate(route.name, route.params);
-          };
           return (
-            <Pressable
+            <GlassTabItem
               key={route.key}
-              onPress={onPress}
-              android_ripple={null}
-              accessibilityRole="button"
-              accessibilityState={focused ? { selected: true } : {}}
-              style={{ width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center", overflow: "hidden" }}
-            >
-              {focused && <LinearGradient colors={["#4C86FF", "#1F4FD8"]} style={StyleSheet.absoluteFill} />}
-              <Icon size={22} color={focused ? "#fff" : tokens.color.textMuted} strokeWidth={focused ? 2.4 : 2} />
-            </Pressable>
+              route={route}
+              index={index}
+              focused={focused}
+              progress={progress}
+              slot={slot}
+              mutedColor={tokens.color.textMuted}
+              onPress={() => {
+                const e = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+                if (!focused && !e.defaultPrevented) navigation.navigate(route.name, route.params);
+              }}
+            />
           );
         })}
       </View>
@@ -147,15 +209,28 @@ function MainTabs() {
   return (
     <Tab.Navigator
       tabBar={(props) => <GlassTabBar {...props} />}
+      // Layar tab tetap TERPASANG di hierarki native (default-nya dilepas & dipasang ulang tiap
+      // pindah). Melepas-pasang itu pekerjaan native tepat saat animasi berjalan — sumber patah
+      // yang tidak kelihatan dari sisi JS.
+      detachInactiveScreens={false}
       screenOptions={({ route }) => ({
         headerShown: false,
         // Perpindahan tab: silang-pudar 160 ms. Durasi default (±250 ms) terasa menggantung karena
         // layar tujuan baru selesai dirender di awal animasi; 160 ms + easing keluar membuat
         // perpindahan terbaca "langsung" tapi tetap halus, dan dua layar tumpang tindih lebih singkat.
         animation: "fade",
-        transitionSpec: { animation: "timing", config: { duration: 160, easing: Easing.out(Easing.quad) } },
-        // Layar yang tidak terlihat dibekukan: tidak ikut render ulang saat ada event socket.
-        freezeOnBlur: true,
+        transitionSpec: {
+          animation: "timing",
+          // Kurva standar iOS (ease-in-out halus), 220 ms — cukup panjang untuk terbaca sebagai
+          // gerakan, cukup pendek untuk tetap terasa responsif.
+          config: { duration: 220, easing: Easing.bezier(0.25, 0.1, 0.25, 1) },
+        },
+        // freezeOnBlur SENGAJA TIDAK dipakai di tab (dicoba & dicabut 19 Sep 2026): membekukan layar
+        // berarti React harus merender ULANG SELURUH pohon layar tujuan tepat saat animasi mulai —
+        // thread JS sibuk di 2-3 frame pertama dan perpindahan terlihat patah, justru gejala yang
+        // mau dihilangkan. Kelima tab dibiarkan hidup; biayanya kecil karena layar-layar ini tidak
+        // menjalankan timer sendiri, dan event socket hanya menyentuh Inbox.
+        freezeOnBlur: false,
         tabBarShowLabel: false,
         tabBarIcon: ({ focused }) => <TabIcon routeName={route.name} focused={focused} />,
         tabBarButton: (props) => <TabBarButton {...props} />,
@@ -310,10 +385,10 @@ function Root() {
 
   return (
     <>
-      {/* animation eksplisit + freezeOnBlur (19 Sep 2026): transisi seragam geser dari kanan, dan layar di
-          belakang (tab Home/Chats) dibekukan selama Chat/Detail terbuka sehingga tidak ikut dirender ulang
-          oleh event socket saat transisi berjalan. */}
-      <Stack.Navigator screenOptions={{ headerShown: false, animation: "slide_from_right", freezeOnBlur: true }}>
+      {/* Transisi seragam geser-dari-kanan, dijalankan react-native-screens di sisi native.
+          freezeOnBlur SENGAJA tidak dipakai: layar di belakang (Inbox) harus tetap hidup supaya saat
+          menekan kembali tidak ada render ulang besar yang bertabrakan dengan animasi. */}
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: "slide_from_right" }}>
         {user ? (
           <>
             {/* MainTabs = 4 tab bawah (Home/Chats/Pelanggan/Profil). Layar di
