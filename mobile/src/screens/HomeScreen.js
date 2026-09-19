@@ -64,6 +64,7 @@ export default function HomeScreen({ navigation }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [perf, setPerf] = useState([]); // sales-performance rows (target/achieved), semua sales
   const [csPerf, setCsPerf] = useState([]); // sales-report .rows (chat/orderConversionRate), semua sales
+  const [csTotal, setCsTotal] = useState(null); // sales-report .total (Lunas tim = 8 sales biasa, tanpa Team Lead)
   const [csSortAsc, setCsSortAsc] = useState(false); // default: conversion tertinggi dulu
   const [unreadCount, setUnreadCount] = useState(0);
   const [myConvCount, setMyConvCount] = useState(0);
@@ -85,6 +86,7 @@ export default function HomeScreen({ navigation }) {
         api.getSessionDistribution("today").catch(() => []),
       ]);
       setPerf(perfRows || []);
+      setCsTotal(salesReport?.total || null);
       setCsPerf(salesReport?.rows || []); // sales-report balikin { rows, total }, bukan array langsung
       setUnreadCount(unread?.count || 0);
       setMyConvCount(counts?.milikSaya || 0);
@@ -161,6 +163,17 @@ export default function HomeScreen({ navigation }) {
     });
     return sorted;
   }, [csPerf, isAdmin, user?.id, csSortAsc]);
+
+  // Lunas bulan ini — lihat komentar di JSX. Baris Team Lead tidak ikut peringkat (sama dgn web).
+  const lunasView = useMemo(() => {
+    if (!csPerf.length) return null;
+    if (isAdmin) {
+      const rows = csPerf.filter((r) => !r.isTeamLead).sort((a, b) => b.collectedValue - a.collectedValue);
+      return { total: csTotal?.collectedValue ?? rows.reduce((n, r) => n + r.collectedValue, 0), gross: csTotal?.grossValue || 0, rows, max: rows[0]?.collectedValue || 0 };
+    }
+    const me = csPerf.find((r) => r.userId === user?.id);
+    return me ? { total: me.collectedValue || 0, gross: me.grossValue || 0, rows: [], max: 0 } : null;
+  }, [csPerf, csTotal, isAdmin, user?.id]);
 
   if (loading) {
     return (
@@ -285,6 +298,33 @@ export default function HomeScreen({ navigation }) {
               Target belum diatur — atur lewat CRM web (menu Laporan/Pengaturan).
             </Text>
           )}
+        </View>
+      )}
+
+      {/* Lunas bulan ini — dasar KOMISI (Order.paymentStatus lunas, bukan nilai order). Sales hanya
+          melihat angkanya SENDIRI; admin melihat semua sales berurutan. Angkanya dari /sales-report
+          yang sama dengan tabel "Rincian Penjualan" di web (kolom Lunas), jadi selalu sinkron. */}
+      {lunasView && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Lunas Bulan Ini</Text>
+          <Text style={styles.lunasBig}>{formatRupiah(lunasView.total)}</Text>
+          <Text style={styles.lunasSub}>
+            {isAdmin ? "Total tim · dasar perhitungan komisi" : "Dasar perhitungan komisimu"}
+            {lunasView.gross > 0 ? ` · ${Math.min(100, Math.round((lunasView.total / lunasView.gross) * 100))}% dari order bulan ini sudah lunas` : ""}
+          </Text>
+          {isAdmin && lunasView.rows.map((r, i) => (
+            <View key={r.userId} style={styles.lunasRow}>
+              <Text style={styles.lunasRank}>{i + 1}</Text>
+              <Avatar name={r.name} avatarUrl={r.avatarUrl} size={28} />
+              <View style={styles.personBody}>
+                <Text style={styles.personName} numberOfLines={1}>{r.name}</Text>
+                <View style={styles.personTrack}>
+                  <View style={[styles.lunasFill, { width: `${lunasView.max > 0 ? Math.max(3, Math.round((r.collectedValue / lunasView.max) * 100)) : 0}%` }]} />
+                </View>
+              </View>
+              <Text style={styles.lunasValue}>{formatRupiah(r.collectedValue)}</Text>
+            </View>
+          ))}
         </View>
       )}
 
@@ -429,6 +469,12 @@ function createStyles(tokens) {
     ...tokens.glass.surface, borderRadius: tokens.radius.card, padding: 16, ...tokens.glass.shadow,
   },
   sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
+  lunasBig: { fontSize: 30, fontWeight: "800", color: tokens.color.success, letterSpacing: -0.5, marginTop: 6 },
+  lunasSub: { fontSize: 12, color: tokens.color.textSecondary, marginTop: 4, marginBottom: 6, lineHeight: 17 },
+  lunasRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: tokens.color.subtle },
+  lunasRank: { width: 14, fontSize: 12, fontWeight: "800", color: tokens.color.textMuted, textAlign: "center" },
+  lunasFill: { height: "100%", borderRadius: 3, backgroundColor: tokens.color.success },
+  lunasValue: { fontSize: 12.5, fontWeight: "800", color: tokens.color.textPrimary },
   sectionTitle: {
     fontSize: 13, fontWeight: "700", color: tokens.color.textSecondary,
     textTransform: "uppercase", letterSpacing: 0.4,
