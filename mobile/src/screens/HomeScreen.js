@@ -47,11 +47,19 @@ function fmtWaitDuration(mins) {
   return `${Math.floor(hours / 24)} hari`;
 }
 
+// Bulan berjalan menurut kalender WIB (UTC+7, tanpa DST) — BUKAN timezone HP dan BUKAN UTC.
+// Versi lama memakai new Date(y, m, 1).toISOString(): tengah malam WIB tanggal 1 jatuh di jam 17:00 UTC
+// hari SEBELUMNYA, jadi "dari" bergeser ke tanggal terakhir bulan lalu dan angka Lunas ikut memuat
+// pembayaran satu hari itu (19 Sep 2026: tampil Rp574jt padahal 1–19 Sep hanya Rp250jt).
+// Lihat CLAUDE.md §11 (UTC di dalam, WIB di tepi).
+function wibNow() {
+  const w = new Date(Date.now() + 7 * 3600 * 1000);
+  return { year: w.getUTCFullYear(), month: w.getUTCMonth() + 1, day: w.getUTCDate() };
+}
 function monthRangeStrings() {
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  const to = now.toISOString().slice(0, 10);
-  return { from, to };
+  const { year, month, day } = wibNow();
+  const p2 = (n) => String(n).padStart(2, "0");
+  return { from: `${year}-${p2(month)}-01`, to: `${year}-${p2(month)}-${p2(day)}` };
 }
 
 export default function HomeScreen({ navigation }) {
@@ -75,10 +83,10 @@ export default function HomeScreen({ navigation }) {
     if (!silent) setLoading(true);
     setErrorMsg(null);
     try {
-      const now = new Date();
+      const { year, month } = wibNow();
       const { from, to } = monthRangeStrings();
       const [perfRows, salesReport, unread, counts, convRes, sessionRows] = await Promise.all([
-        api.getSalesPerformance(now.getFullYear(), now.getMonth() + 1).catch(() => []),
+        api.getSalesPerformance(year, month).catch(() => []),
         api.getSalesReport(from, to).catch(() => null),
         api.getUnreadCount().catch(() => ({ count: 0 })),
         api.getConversationCounts().catch(() => ({})),
