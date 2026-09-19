@@ -22,6 +22,7 @@ import {
   CalendarClock, Tag, MessageSquareText, Download, Share2, Square, CheckSquare,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
+import * as ImagePicker from "expo-image-picker";
 import { saveToGallery, shareOne } from "../lib/docPhotos";
 import { useTokens } from "../constants/theme";
 import {
@@ -29,7 +30,7 @@ import {
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes, promoLabel,
 } from "../utils/format";
 
-const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
+const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS", CARD: "Kartu" };
 const TABS = [
   { key: "status", label: "Status", Icon: Clock },
   { key: "dokumentasi", label: "Dokumentasi", Icon: Camera },
@@ -485,7 +486,42 @@ function PembayaranTab({ order, tokens, styles }) {
   const [form, setForm] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("TRANSFER");
+  const [accounts, setAccounts] = useState([]);
+  const [cashAccountId, setCashAccountId] = useState(null);
+  const [photo, setPhoto] = useState(null); // { uri, name, type } foto bukti
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => { api.getPaymentAccounts().then(setAccounts).catch(() => {}); }, []);
+
+  function resetForm() {
+    setForm(false); setAmount(""); setMethod("TRANSFER"); setCashAccountId(null); setPhoto(null);
+  }
+
+  function toFile(asset) {
+    return { uri: asset.uri, name: asset.fileName || "bukti-bayar.jpg", type: asset.mimeType || "image/jpeg" };
+  }
+
+  async function pickProof() {
+    Alert.alert("Foto bukti bayar", "Ambil dari mana?", [
+      {
+        text: "Kamera",
+        onPress: async () => {
+          const perm = await ImagePicker.requestCameraPermissionsAsync();
+          if (!perm.granted) { Alert.alert("Kamera", "Izin kamera diperlukan untuk ambil foto"); return; }
+          const r = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.7 });
+          if (!r.canceled && r.assets?.length) setPhoto(toFile(r.assets[0]));
+        },
+      },
+      {
+        text: "Galeri",
+        onPress: async () => {
+          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7 });
+          if (!r.canceled && r.assets?.length) setPhoto(toFile(r.assets[0]));
+        },
+      },
+      { text: "Batal", style: "cancel" },
+    ]);
+  }
 
   const load = useCallback(() => {
     setError("");
@@ -498,8 +534,14 @@ function PembayaranTab({ order, tokens, styles }) {
     if (!amountInt || amountInt <= 0) { Alert.alert("Jumlah wajib diisi"); return; }
     setBusy(true);
     try {
-      await api.recordOrderPayment(order.id, { amount: amountInt, method });
-      setForm(false); setAmount(""); setMethod("TRANSFER");
+      // Foto diunggah dulu; kalau upload gagal, pencatatan dibatalkan (bukan
+      // dicatat tanpa bukti diam-diam) supaya sales bisa coba lagi.
+      let proofPhotoUrl;
+      if (photo) ({ url: proofPhotoUrl } = await api.uploadPaymentProof(order.id, photo));
+      await api.recordOrderPayment(order.id, {
+        amount: amountInt, method, proofPhotoUrl, cashAccountId: cashAccountId || undefined,
+      });
+      resetForm();
       load();
     } catch (err) {
       Alert.alert("Gagal catat pembayaran", err.message);
@@ -534,7 +576,7 @@ function PembayaranTab({ order, tokens, styles }) {
           <View>
             <Text style={styles.paymentAmount}>{formatRupiah(p.amount)}</Text>
             <Text style={styles.paymentMeta}>
-              {PAYMENT_METHOD_LABEL[p.method] || p.method} · {p.recordedBy?.name || "—"} · {shortDate(p.createdAt)}
+              {PAYMENT_METHOD_LABEL[p.method] || p.method}{p.cashAccount?.name ? ` → ${p.cashAccount.name}` : ""} · {p.recordedBy?.name || "—"} · {shortDate(p.createdAt)}
             </Text>
           </View>
           {p.verifications?.length > 0 && <CheckCircle2 size={16} color={tokens.color.success} />}
@@ -556,7 +598,7 @@ function PembayaranTab({ order, tokens, styles }) {
             value={amount}
             onChangeText={setAmount}
           />
-          <View style={{ flexDirection: "row", gap: 6, marginTop: 8 }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
             {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => {
               const active = method === value;
               return (
@@ -570,8 +612,34 @@ function PembayaranTab({ order, tokens, styles }) {
               );
             })}
           </View>
+          {accounts.length > 0 && (
+            <>
+              <Text style={[styles.miniCardLabel, { marginTop: 12 }]}>Dibayar ke rekening</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                {accounts.map((a) => {
+                  const active = cashAccountId === a.id;
+                  return (
+                    <TouchableOpacity
+                      key={a.id}
+                      style={[styles.methodChip, { flexGrow: 0, paddingHorizontal: 12 }, active && { borderColor: tokens.color.accent, backgroundColor: tokens.color.accentSoft }]}
+                      onPress={() => setCashAccountId(active ? null : a.id)}
+                    >
+                      <Text style={[styles.methodChipText, active && { color: tokens.color.accent }]}>{a.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          )}
+          <TouchableOpacity style={[styles.methodChip, { flex: 0, marginTop: 12, flexDirection: "row", gap: 6, justifyContent: "center" }]} onPress={pickProof} disabled={busy}>
+            <Camera size={14} color={photo ? tokens.color.success : tokens.color.textSecondary} strokeWidth={2.2} />
+            <Text style={[styles.methodChipText, photo && { color: tokens.color.success }]}>
+              {photo ? "Foto bukti siap (ketuk untuk ganti)" : "Foto bukti bayar (opsional)"}
+            </Text>
+          </TouchableOpacity>
+          {photo ? <Image source={{ uri: photo.uri }} style={{ width: 96, height: 96, borderRadius: 10, marginTop: 8 }} /> : null}
           <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => { setForm(false); setAmount(""); }} disabled={busy}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={resetForm} disabled={busy}>
               <Text style={styles.cancelBtnText}>Batal</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.saveBtn} onPress={save} disabled={busy}>

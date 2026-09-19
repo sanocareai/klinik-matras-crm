@@ -127,7 +127,7 @@ function formatTanggalPendek(d) {
   if (!d) return "-";
   return new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "short", timeZone: "UTC" });
 }
-const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
+const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS", CARD: "Kartu" };
 
 // Heuristik ikon per item — lihat catatan lisensi/keputusan di kepala file.
 function pilihIkonItem(nama = "") {

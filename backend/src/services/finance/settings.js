@@ -50,6 +50,7 @@ export const SETTING_KEYS = Object.freeze({
   CASH_ACCOUNT_CASH: "cash_account_cash",
   CASH_ACCOUNT_TRANSFER: "cash_account_transfer",
   CASH_ACCOUNT_QRIS: "cash_account_qris",
+  CASH_ACCOUNT_CARD: "cash_account_card",
 });
 
 const DEFAULTS = Object.freeze({
@@ -77,6 +78,7 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.CASH_ACCOUNT_CASH]: "",
   [SETTING_KEYS.CASH_ACCOUNT_TRANSFER]: "",
   [SETTING_KEYS.CASH_ACCOUNT_QRIS]: "",
+  [SETTING_KEYS.CASH_ACCOUNT_CARD]: "",
 });
 
 // Payment.method → kunci pengaturan rekening tujuannya. SATU tempat, supaya
@@ -85,6 +87,7 @@ export const METHOD_SETTING_KEY = Object.freeze({
   CASH: SETTING_KEYS.CASH_ACCOUNT_CASH,
   TRANSFER: SETTING_KEYS.CASH_ACCOUNT_TRANSFER,
   QRIS: SETTING_KEYS.CASH_ACCOUNT_QRIS,
+  CARD: SETTING_KEYS.CASH_ACCOUNT_CARD,
 });
 
 /**
@@ -104,6 +107,24 @@ export async function resolveCashAccountForMethod(db, method) {
   });
   if (!akun || !akun.active) return null;
   return akun;
+}
+
+/**
+ * Rekening kas/bank untuk SATU pembayaran: rekening yang dipilih pencatat
+ * (payment.cashAccountId) kalau ada & masih aktif, kalau tidak jatuh ke
+ * pemetaan per-metode. Pilihan eksplisit yang sudah dinonaktifkan sengaja
+ * TIDAK diganti diam-diam ke rekening lain — dikembalikan null supaya
+ * pemanggil mencatat FinPostingGap (aturan yang sama dengan di atas).
+ */
+export async function resolveCashAccountForPayment(db, payment) {
+  if (payment.cashAccountId) {
+    const akun = await db.finCashAccount.findUnique({
+      where: { id: payment.cashAccountId },
+      select: { id: true, name: true, accountId: true, active: true },
+    });
+    return akun && akun.active ? akun : null;
+  }
+  return resolveCashAccountForMethod(db, payment.method);
 }
 
 /** Baca satu setting (string mentah + default). */

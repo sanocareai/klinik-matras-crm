@@ -29,7 +29,7 @@ const STATUS_META = {
   OVERDUE:        { label: "Jatuh Tempo", variant: "red",     Icon: CalendarClock },
 };
 
-const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
+const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS", CARD: "Kartu" };
 
 function StatusInvoiceBadge({ status }) {
   const meta = STATUS_META[status] || STATUS_META.DRAFT;

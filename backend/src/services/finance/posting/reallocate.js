@@ -15,14 +15,14 @@
 
 import { postJournal, findEntryByKey, STATUS_DIHITUNG } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS } from "../accounts.js";
-import { resolveCashAccountForMethod } from "../settings.js";
+import { resolveCashAccountForPayment } from "../settings.js";
 import { toMoney } from "../money.js";
 
 export async function bukukanUlangAlokasi(tx, { paymentId, userId = null }) {
   const payment = await tx.payment.findUnique({
     where: { id: paymentId },
     select: {
-      id: true, amount: true, method: true, createdAt: true, cancelledAt: true, orderId: true,
+      id: true, amount: true, method: true, cashAccountId: true, createdAt: true, cancelledAt: true, orderId: true,
       finAllocations: { select: { orderId: true, amount: true } },
       order: {
         select: {
@@ -45,7 +45,7 @@ export async function bukukanUlangAlokasi(tx, { paymentId, userId = null }) {
   const sudahAda = await findEntryByKey(tx, key);
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
-  const cashAccount = await resolveCashAccountForMethod(tx, payment.method);
+  const cashAccount = await resolveCashAccountForPayment(tx, payment);
   if (!cashAccount) return { posted: false, reason: "rekening_belum_dipetakan" };
 
   const piutang = await resolveAccount(tx, SYSTEM_KEYS.PIUTANG_USAHA);

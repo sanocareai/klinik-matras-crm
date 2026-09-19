@@ -4692,6 +4692,7 @@ const paymentInclude = {
   verifications: { include: { verifiedBy: { select: { id: true, name: true } } } },
   order: { select: { id: true, orderNumber: true, customer: { select: { name: true } } } },
   job: { select: { id: true, type: true } },
+  cashAccount: { select: { id: true, name: true } },
 };
 
 // POST /api/armada/jobs/:id/payment { amount, method, proofPhotoUrl? }
@@ -4708,7 +4709,7 @@ armadaRouter.post("/jobs/:id/payment", requireAnyPermission(P.JOB_WRITE, P.JOB_O
     if (!Number.isInteger(amountInt) || amountInt <= 0) {
       throw new ArmadaError("Jumlah pembayaran wajib angka bulat lebih dari 0");
     }
-    if (!["CASH", "TRANSFER", "QRIS"].includes(method)) {
+    if (!["CASH", "TRANSFER", "QRIS", "CARD"].includes(method)) {
       throw new ArmadaError("Metode pembayaran tidak valid");
     }
     if (proofPhotoUrl != null && !String(proofPhotoUrl).startsWith("/media/job-photos/")) {

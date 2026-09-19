@@ -23,7 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { cn } from "@/lib/utils.js";
 
-const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
+const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS", CARD: "Kartu" };
 
 // Warna khas per kategori dokumentasi — supaya sekilas lihat langsung
 // kebaca "ini tahap yang mana" (Penjemputan/Produksi/Pengiriman), mengikuti
@@ -434,6 +434,8 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
   const [form, setForm] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("TRANSFER");
+  const [accounts, setAccounts] = useState([]);
+  const [cashAccountId, setCashAccountId] = useState("");
   const [photo, setPhoto] = useState(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -448,6 +450,7 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
     api.getOrderPayments(order.id).then(setPayments).catch((e) => setError(e.message));
   }
   useEffect(() => { setPayments(null); load(); }, [order.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { api.getPaymentAccounts().then(setAccounts).catch(() => {}); }, []);
 
   async function handlePhoto(e) {
     const file = e.target.files?.[0];
@@ -472,8 +475,8 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
     setBusy(true);
     setFormErr("");
     try {
-      await api.recordOrderPayment(order.id, { amount: amountInt, method, proofPhotoUrl: photo });
-      setForm(false); setAmount(""); setMethod("TRANSFER"); setPhoto(null);
+      await api.recordOrderPayment(order.id, { amount: amountInt, method, proofPhotoUrl: photo, cashAccountId: cashAccountId || undefined });
+      setForm(false); setAmount(""); setMethod("TRANSFER"); setCashAccountId(""); setPhoto(null);
       load();
       onRecorded?.();
     } catch (e2) {
@@ -610,7 +613,7 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
             <div className="min-w-0">
               <p className={cn("text-[13px] font-semibold text-ink", batal && "line-through")}>{formatRupiah(p.amount)}</p>
               <p className="text-[11px] text-ink3">
-                {PAYMENT_METHOD_LABEL[p.method] || p.method} · {p.recordedBy?.name || "—"} · {formatTanggal(p.createdAt)}
+                {PAYMENT_METHOD_LABEL[p.method] || p.method}{p.cashAccount?.name ? ` → ${p.cashAccount.name}` : ""} · {p.recordedBy?.name || "—"} · {formatTanggal(p.createdAt)}
                 {p.job?.type && (p.job.type === "PICKUP" ? " · saat ambil" : " · saat kirim")}
               </p>
               {batal && (
@@ -664,7 +667,7 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
             value={amount} onChange={(e) => setAmount(e.target.value)}
             className="h-10 rounded-lg border border-line px-3 text-[13px] outline-none focus:border-accent"
           />
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-4 gap-1.5">
             {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => (
               <button
                 key={value} type="button" onClick={() => setMethod(value)}
@@ -677,6 +680,15 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
               </button>
             ))}
           </div>
+          {accounts.length > 0 && (
+            <select
+              value={cashAccountId} onChange={(e) => setCashAccountId(e.target.value)}
+              className="h-10 rounded-lg border border-line bg-white px-3 text-[13px] outline-none focus:border-accent"
+            >
+              <option value="">Dibayar ke rekening… (opsional)</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          )}
           <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line text-[12px] font-medium text-ink2">
             {uploadingPhoto ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
             {photo ? "Foto siap" : "Foto Bukti (opsional)"}

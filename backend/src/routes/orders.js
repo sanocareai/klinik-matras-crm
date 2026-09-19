@@ -773,7 +773,24 @@ orderRouter.post("/:id/payments/proof", proofUpload.single("photo"), async (req,
   res.json({ url: `/media/payment-proofs/${req.file.filename}` });
 });
 
-// POST /api/orders/:id/payments { amount, method, proofPhotoUrl? }
+// GET /api/orders/payment-accounts — daftar rekening tujuan yang boleh dipilih
+// saat mencatat pembayaran (Finance > Rekening Kas & Bank, yang aktif). Terbuka
+// untuk semua user login (sales mencatat DP), tapi HANYA field yang perlu
+// untuk memilih: nomor rekening & saldo TIDAK ikut keluar.
+orderRouter.get("/payment-accounts", async (_req, res) => {
+  try {
+    const rows = await prisma.finCashAccount.findMany({
+      where: { active: true },
+      select: { id: true, name: true, kind: true, bankName: true, accountHolder: true },
+      orderBy: [{ kind: "asc" }, { name: "asc" }],
+    });
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: "Server error: " + err.message });
+  }
+});
+
+// POST /api/orders/:id/payments { amount, method, proofPhotoUrl?, cashAccountId? }
 // DP saat konfirmasi order (FR-M-01, D-023) — TANPA jobId, beda dari
 // pencatatan driver di stop pengiriman (D-011). Sales/admin mana pun yang
 // login boleh mencatat (sama longgarnya dengan PATCH paymentStatus manual
@@ -784,13 +801,17 @@ orderRouter.post("/:id/payments", async (req, res) => {
     const guarded = await guardOrderLocked(req, res, req.params.id, "mencatat pembayaran baru");
     if (!guarded) return;
 
-    const { amount, method, proofPhotoUrl } = req.body;
+    const { amount, method, proofPhotoUrl, cashAccountId } = req.body;
     const amountInt = Number(amount);
     if (!Number.isInteger(amountInt) || amountInt <= 0) {
       return res.status(400).json({ error: "Jumlah pembayaran wajib angka bulat lebih dari 0" });
     }
-    if (!["CASH", "TRANSFER", "QRIS"].includes(method)) {
+    if (!["CASH", "TRANSFER", "QRIS", "CARD"].includes(method)) {
       return res.status(400).json({ error: "Metode pembayaran tidak valid" });
+    }
+    if (cashAccountId) {
+      const akun = await prisma.finCashAccount.findUnique({ where: { id: String(cashAccountId) }, select: { active: true } });
+      if (!akun || !akun.active) return res.status(400).json({ error: "Rekening tujuan tidak valid atau sudah nonaktif" });
     }
     if (proofPhotoUrl != null && !String(proofPhotoUrl).startsWith("/media/payment-proofs/")) {
       return res.status(400).json({ error: "URL foto bukti tidak valid" });
@@ -801,6 +822,7 @@ orderRouter.post("/:id/payments", async (req, res) => {
         data: {
           orderId: req.params.id, amount: amountInt, method,
           proofPhotoUrl: proofPhotoUrl || null,
+          cashAccountId: cashAccountId || null,
           recordedById: req.user.id,
         },
       });

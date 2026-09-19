@@ -151,18 +151,19 @@ export default function FinanceSettings() {
         <JudulKartu
           title="Rekening Tujuan per Metode Pembayaran"
           description={<>
-            Pembayaran pelanggan dicatat sales/driver dengan metode CASH/TRANSFER/QRIS, tapi metode saja tidak
+            Pembayaran pelanggan dicatat sales/driver dengan metode CASH/TRANSFER/QRIS/KARTU, tapi metode saja tidak
             memberi tahu buku besar uangnya masuk ke rekening mana. Pemetaan ini yang menjawabnya.
             <strong> Selama belum dipetakan, pembayaran tetap tercatat normal di CRM</strong> tapi jurnalnya
             tertahan di daftar Data Belum Lengkap di atas.
           </>}
           info="Atur ini SEBELUM tim mulai mencatat pembayaran rutin — kalau terlambat dipetakan, pembayaran yang sudah masuk akan menumpuk sebagai 'Data Belum Lengkap' sampai dipetakan dan diulang manual."
         />
-        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {[
             { key: K.CASH_ACCOUNT_CASH, label: "Tunai (CASH)" },
             { key: K.CASH_ACCOUNT_TRANSFER, label: "Transfer bank" },
             { key: K.CASH_ACCOUNT_QRIS, label: "QRIS / e-wallet" },
+            { key: K.CASH_ACCOUNT_CARD, label: "Kartu kredit/debit (EDC)" },
           ].map((m) => (
             <Field key={m.key} label={m.label}>
               <Pilihan value={S[m.key] || ""} onChange={(v) => ubahSetting(m.key, v)}>

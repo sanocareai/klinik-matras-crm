@@ -65,7 +65,7 @@
 
 import { postJournal, recordPostingGap, findEntryByKey, todayBookDateWIB, STATUS_DIHITUNG } from "../journal.js";
 import { resolveAccount, revenueSystemKeyForOrder, SYSTEM_KEYS, AccountError } from "../accounts.js";
-import { resolveCashAccountForMethod } from "../settings.js";
+import { resolveCashAccountForPayment } from "../settings.js";
 import { toMoney, sumMoney, minMoney, ZERO } from "../money.js";
 import { paidForOrder } from "../allocation.js";
 
@@ -103,7 +103,7 @@ export async function postPaymentReceived(tx, { paymentId, userId = null }) {
   const payment = await tx.payment.findUnique({
     where: { id: paymentId },
     select: {
-      id: true, amount: true, method: true, createdAt: true, cancelledAt: true, orderId: true,
+      id: true, amount: true, method: true, cashAccountId: true, createdAt: true, cancelledAt: true, orderId: true,
       finAllocations: { select: { orderId: true, amount: true } },
       order: {
         select: {
@@ -120,7 +120,7 @@ export async function postPaymentReceived(tx, { paymentId, userId = null }) {
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
   try {
-    const cashAccount = await resolveCashAccountForMethod(tx, payment.method);
+    const cashAccount = await resolveCashAccountForPayment(tx, payment);
     if (!cashAccount) {
       await recordPostingGap(tx, {
         source: "PEMBAYARAN_ORDER",

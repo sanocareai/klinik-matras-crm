@@ -412,6 +412,10 @@ export const api = {
     request(`/conversations/${conversationId}/send-documentation`, {
       method: "POST", body: JSON.stringify({ orderId, entries }),
     }),
+  // Rekening tujuan yang bisa dipilih saat mencatat pembayaran (Finance > Rekening Kas & Bank).
+  getPaymentAccounts: () => request("/orders/payment-accounts"),
+  // Foto bukti bayar — multipart field "photo", balikan { url } dipakai sbg proofPhotoUrl.
+  uploadPaymentProof: (orderId, file) => uploadFile(`/orders/${orderId}/payments/proof`, file, {}, "photo"),
   getOrderPayments: (orderId) => request(`/armada/payments?orderId=${orderId}`),
   recordOrderPayment: (orderId, data) =>
     request(`/orders/${orderId}/payments`, { method: "POST", body: JSON.stringify(data) }),

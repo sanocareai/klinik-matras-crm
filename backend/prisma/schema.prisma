@@ -3098,6 +3098,14 @@ model Payment {
   method        PaymentMethod
   proofPhotoUrl String?       @map("proof_photo_url")
 
+  // Rekening tujuan yang DIPILIH pencatat (Tunai/Bank Kemal/Bank PT/QRIS,
+  // dst — daftar dari Finance > Rekening Kas & Bank). NULL = tidak dipilih:
+  // buku besar jatuh ke pemetaan per-metode di Finance > Pengaturan (perilaku
+  // lama, tidak berubah untuk baris yang sudah ada). Restrict: rekening yang
+  // sudah dipakai pembayaran tidak boleh dihapus diam-diam.
+  cashAccountId String?         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
   // Restrict, BUKAN SetNull: siapa yang mencatat penerimaan uang adalah inti
   // jejak audit ini — kalau pencatatnya (driver) dihapus, baris ini justru
   // TIDAK BOLEH kehilangan jejak pelakunya. Hapus user driver harus diblokir
@@ -3130,6 +3138,7 @@ model Payment {
   @@index([orderId])
   @@index([jobId])
   @@index([recordedById, createdAt]) // rekonsiliasi harian per driver
+  @@index([cashAccountId])
   @@map("payments")
 }
 
@@ -3137,6 +3146,7 @@ enum PaymentMethod {
   CASH
   TRANSFER
   QRIS
+  CARD // kartu kredit/debit (EDC) — ditambah 19 Sep 2026
 }
 
 // Verifikasi finance atas satu Payment — baris terpisah, BUKAN kolom
@@ -5580,6 +5590,7 @@ model FinCashAccount {
   transfersTo      FinCashTransfer[]    @relation("FinTransferTo")
   supplierPayments FinSupplierPayment[]
   refunds          FinRefund[]
+  payments         Payment[]
 
   @@index([active])
   @@map("fin_cash_accounts")

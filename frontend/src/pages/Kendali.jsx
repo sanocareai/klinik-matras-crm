@@ -18,7 +18,7 @@ function currentRoles() {
   }
 }
 
-const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS" };
+const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS", CARD: "Kartu" };
 
 // Pembayaran Driver (D-011) — rekonsiliasi finance. Bagian ini SENGAJA
 // punya loading/error state SENDIRI, terpisah dari overview di atas:
