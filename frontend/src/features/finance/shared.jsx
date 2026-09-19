@@ -193,10 +193,22 @@ export function PeriodePicker({ from, to, onChange, className }) {
 
 /**
  * Tampilan pill untuk <input type="date"> — TETAP input native di baliknya
- * (transparan penuh, menutupi seluruh pill) supaya date-picker bawaan
- * OS/browser tetap yang dipakai, tidak menulis widget kalender sendiri.
- * Yang terlihat cuma ikon + teks terformat ("17 Sep 2026"), bukan
- * "mm/dd/yyyy" bawaan browser saat kosong.
+ * supaya date-picker bawaan OS/browser tetap yang dipakai, tidak menulis
+ * widget kalender sendiri. Yang TERLIHAT cuma ikon + teks terformat
+ * ("17 Sep 2026"), bukan "mm/dd/yyyy" bawaan browser saat kosong.
+ *
+ * ⚠️ BUKAN `opacity-0` pada input (versi pertama, D-182) — laporan owner:
+ * di web klik jadi "stuck" (input dapat fokus, kalender TIDAK PERNAH
+ * terbuka), padahal di HP normal. Root cause: Chromium SENGAJA menolak
+ * memunculkan popup native (date/color/file picker) untuk elemen yang
+ * `opacity`-nya nyaris 0 — proteksi anti-clickjacking bawaan browser,
+ * berlaku untuk desktop (popup dropdown in-page) tapi tidak menyentuh
+ * date-picker Android (sheet level-OS terpisah), itu sebabnya cuma
+ * "stuck di web, di HP bisa". Perbaikan: input TETAP `opacity` 1 (jadi
+ * lolos proteksi itu) — yang disembunyikan cuma isinya (`text-transparent`
+ * + ikon kalender bawaan browser via ::-webkit-calendar-picker-indicator
+ * di index.css), ikon+teks kita jadi OVERLAY `pointer-events-none` di
+ * atasnya supaya klik tetap tembus ke input asli di baliknya.
  *
  * Diekspor (bukan cuma dipakai PeriodePicker) — 15 titik lain di halaman
  * finance pakai <Input type="date"> mentah untuk SATU tanggal (Tanggal
@@ -205,14 +217,21 @@ export function PeriodePicker({ from, to, onChange, className }) {
  */
 export function DateChip({ value, onChange, ariaLabel, className }) {
   return (
-    <span className={cn("relative inline-flex h-9 items-center gap-1.5 rounded-full bg-accentbg px-3 text-[13px] font-medium text-ink has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent/40", className)}>
-      <CalendarDays size={14} className="shrink-0 text-accent" aria-hidden="true" />
-      <span className="tabular-nums">{value ? tanggalPendek(value) : "Pilih tanggal"}</span>
+    <span className={cn("relative inline-flex h-9 items-center", className)}>
       <input
         type="date" value={value || ""} aria-label={ariaLabel}
         onChange={(e) => onChange(e.target.value)}
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        // Klik di mana pun pada pill (bukan cuma ikon kalender bawaan yang
+        // sudah disembunyikan) WAJIB membuka popup — mengandalkan area klik
+        // bawaan browser tidak konsisten begitu ikonnya disembunyikan lewat
+        // CSS. showPicker() API standar untuk kasus persis ini.
+        onClick={(e) => e.currentTarget.showPicker?.()}
+        className="date-chip-input h-9 w-full cursor-pointer rounded-full bg-accentbg px-3 text-[13px] text-transparent outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
+      <span className="pointer-events-none absolute inset-0 flex items-center gap-1.5 px-3 text-[13px] font-medium text-ink">
+        <CalendarDays size={14} className="shrink-0 text-accent" aria-hidden="true" />
+        <span className="tabular-nums">{value ? tanggalPendek(value) : "Pilih tanggal"}</span>
+      </span>
     </span>
   );
 }

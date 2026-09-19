@@ -4048,6 +4048,16 @@ body {
   color-scheme: dark;
 }
 
+/* DateChip (features/finance/shared.jsx) — teks tanggal bawaan browser
+   sudah disembunyikan lewat text-transparent di elemen itu sendiri, tapi
+   ikon kalender bawaan (bagian TERPISAH dari teks, warnanya sendiri)
+   tetap kelihatan dobel di sebelah ikon custom kita. Disembunyikan di
+   sini (bukan lewat opacity pada input-nya SENDIRI — itu justru akar bug
+   "klik stuck", lihat komentar DateChip). */
+.date-chip-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+}
+
 /* ── Bug ditemukan 24 Agustus 2026: field form APA PUN yang tidak diberi
    className (mis. <textarea> polos di OrderSection.jsx "Ajukan Revisi",
    atau input generik lainnya) jatuh ke base rule @layer base di atas
