@@ -780,7 +780,9 @@ orderRouter.post("/:id/payments/proof", proofUpload.single("photo"), async (req,
 orderRouter.get("/payment-accounts", async (_req, res) => {
   try {
     const rows = await prisma.finCashAccount.findMany({
-      where: { active: true },
+      // Kas tunai TIDAK ikut: pembayaran Tunai tidak memilih rekening, jurnalnya
+      // mengikuti pemetaan Tunai di Finance > Pengaturan (keputusan owner 19 Sep 2026).
+      where: { active: true, kind: { in: ["BANK", "EWALLET"] } },
       select: { id: true, name: true, kind: true, bankName: true, accountHolder: true },
       orderBy: [{ kind: "asc" }, { name: "asc" }],
     });
