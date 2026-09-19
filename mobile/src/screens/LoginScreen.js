@@ -1,6 +1,6 @@
 // Layar Login — email + password, sama dengan akun CRM web.
 // Ada opsi "Alamat server" tersembunyi untuk testing dengan server lokal.
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
@@ -13,6 +13,11 @@ import {
   biometricAvailable, hasSavedLogin, saveLogin, readSavedLogin, clearSavedLogin,
 } from "../lib/savedLogin";
 
+// Auto-buka prompt sidik jari SEKALI per proses app (bukan per mount layar): layar ini bisa
+// ter-mount ulang (ganti tema, rotasi, sesi habis) dan tiap mount memicu prompt baru yang
+// membatalkan prompt sebelumnya — itu yang membuat pindai harus diulang.
+let autoBiometricTried = false;
+
 export default function LoginScreen() {
   const colors = useColors();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -24,7 +29,6 @@ export default function LoginScreen() {
   const [busy, setBusy] = useState(false);
 
   const [hasSaved, setHasSaved] = useState(false);
-  const autoTried = useRef(false);
 
   // Kalau sudah pernah mengaktifkan login sidik jari, langsung tawarkan prompt
   // sekali saat layar dibuka (tanpa mengetik apa pun).
@@ -32,8 +36,8 @@ export default function LoginScreen() {
     (async () => {
       const saved = await hasSavedLogin();
       setHasSaved(saved);
-      if (saved && !autoTried.current) {
-        autoTried.current = true;
+      if (saved && !autoBiometricTried) {
+        autoBiometricTried = true;
         handleBiometric();
       }
     })();
