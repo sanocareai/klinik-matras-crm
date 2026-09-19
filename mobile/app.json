@@ -86,6 +86,13 @@
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "Aplikasi butuh izin untuk menyimpan foto dokumentasi order ke galeri",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
         "expo-local-authentication",
         { "faceIDPermission": "Gunakan biometrik untuk masuk ke SANO Messenger" }
       ]

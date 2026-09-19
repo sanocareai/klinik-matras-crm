@@ -402,11 +402,16 @@ export const api = {
   getOrderTimeline: (orderId) => request(`/orders/${orderId}/timeline`),
   // D-030 paritas mobile (21 Agustus 2026) — "Rincian Pesanan"
   // (OrderTimelineScreen.js), sama endpoint dengan web
-  // (features/orders/OrderTimelineDrawer.jsx). Upload bukti bayar/kirim
-  // dokumentasi ke customer SENGAJA belum dibuatkan di sini — v1 mobile ini
-  // cuma LIHAT dokumentasi + catat pembayaran teks, dua aksi berbasis foto
-  // itu scope terpisah.
+  // (features/orders/OrderTimelineDrawer.jsx). Upload bukti bayar
+  // (foto) belum ada di mobile; kirim dokumentasi: lihat sendDocumentation.
   getOrderDocumentation: (orderId) => request(`/production/orders/${orderId}/documentation`),
+  // Kirim foto dokumentasi terpilih ke chat WhatsApp customer lewat WAHA —
+  // endpoint SAMA dengan web (19 Sep 2026). entries = elemen doc.entries apa
+  // adanya (photoUrls path relatif /media/...; backend memvalidasi allowlist).
+  sendDocumentation: (conversationId, orderId, entries) =>
+    request(`/conversations/${conversationId}/send-documentation`, {
+      method: "POST", body: JSON.stringify({ orderId, entries }),
+    }),
   getOrderPayments: (orderId) => request(`/armada/payments?orderId=${orderId}`),
   recordOrderPayment: (orderId, data) =>
     request(`/orders/${orderId}/payments`, { method: "POST", body: JSON.stringify(data) }),

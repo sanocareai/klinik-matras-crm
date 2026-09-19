@@ -7,12 +7,9 @@
 // params), supaya selalu dapat bentuk data yang sama persis dari kedua
 // pemanggil.
 //
-// Scope v1 — BEDA dari web: upload bukti bayar (foto) dan "kirim
-// dokumentasi ke customer" (checkbox + WAHA) BELUM ada di sini. Screen ini
-// baru LIHAT riwayat status, LIHAT foto dokumentasi (buka via browser
-// eksternal, bukan viewer in-app), dan CATAT pembayaran (teks doang, tanpa
-// foto bukti). Kalau nanti dibutuhkan, itu scope terpisah — jangan
-// dianggap "lupa".
+// Scope: upload bukti bayar (foto) BELUM ada di sini. Kirim dokumentasi ke
+// customer (checkbox + WAHA), simpan ke galeri, dan bagikan SUDAH ada
+// (19 Sep 2026). Foto dibuka lewat viewer eksternal.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
@@ -22,9 +19,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ChevronLeft, Clock, Camera, Wallet, Timer, ImageOff, PackageCheck, Wrench, Truck,
   CheckCircle2, Hash, Send, MapPin, Link2, Bed, Weight, HeartPulse, Banknote,
-  CalendarClock, Tag, MessageSquareText,
+  CalendarClock, Tag, MessageSquareText, Download, Share2, Square, CheckSquare,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
+import { saveToGallery, shareOne } from "../lib/docPhotos";
 import { useTokens } from "../constants/theme";
 import {
   formatRupiah, shortDate, shortDateWithYear, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -288,8 +286,11 @@ function StatusTab({ orderId, tokens, styles }) {
   );
 }
 
-function DokumentasiTab({ orderId, tokens, styles }) {
+function DokumentasiTab({ orderId, conversationId, customerNameLabel, tokens, styles }) {
   const [doc, setDoc] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
+  const [sending, setSending] = useState(false);
+  const [working, setWorking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -303,6 +304,68 @@ function DokumentasiTab({ orderId, tokens, styles }) {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [orderId]);
+
+  function toggle(i) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  }
+
+  const selectedEntries = () => [...selected].map((i) => doc.entries[i]);
+  const selectedUrls = () => selectedEntries().flatMap((e) => e.photoUrls || []);
+
+  function handleSend() {
+    if (!conversationId || selected.size === 0) return;
+    const jumlahFoto = selectedUrls().length;
+    Alert.alert(
+      "Kirim ke customer?",
+      `${jumlahFoto} foto dari ${selected.size} tahap akan dikirim ke chat WhatsApp ${customerNameLabel || "customer"}.`,
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Kirim",
+          onPress: async () => {
+            setSending(true);
+            try {
+              const r = await api.sendDocumentation(conversationId, orderId, selectedEntries());
+              Alert.alert("Terkirim", `${r.sent}/${r.total} foto terkirim ke customer.`);
+              setSelected(new Set());
+            } catch (e) {
+              Alert.alert("Gagal kirim", e.message);
+            } finally {
+              setSending(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  async function handleSave() {
+    setWorking(true);
+    try {
+      const n = await saveToGallery(selectedUrls());
+      Alert.alert("Tersimpan", `${n} foto disimpan ke galeri.`);
+    } catch (e) {
+      Alert.alert("Gagal simpan", e.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleShare() {
+    const urls = selectedUrls();
+    if (urls.length !== 1) {
+      Alert.alert("Bagikan", "Bagikan lewat aplikasi lain hanya bisa satu foto sekali. Pilih satu tahap yang berisi satu foto, atau gunakan Simpan ke galeri.");
+      return;
+    }
+    setWorking(true);
+    try { await shareOne(urls[0]); }
+    catch (e) { Alert.alert("Gagal bagikan", e.message); }
+    finally { setWorking(false); }
+  }
 
   if (loading) return <ActivityIndicator color={tokens.color.accent} style={{ marginTop: 24 }} />;
   if (error) return <Text style={styles.errorText}>{error}</Text>;
@@ -320,9 +383,9 @@ function DokumentasiTab({ orderId, tokens, styles }) {
 
   return (
     <View style={{ paddingTop: 4 }}>
-      <Text style={styles.docCount}>{doc.totalPhotos} foto sepanjang perjalanan order ini. Ketuk foto untuk buka ukuran penuh.</Text>
+      <Text style={styles.docCount}>{doc.totalPhotos} foto sepanjang perjalanan order ini. Centang tahap lalu kirim ke customer, simpan ke galeri, atau bagikan. Ketuk foto untuk buka ukuran penuh.</Text>
       {KATEGORI.map(({ key, label, Icon, hex }) => {
-        const items = doc.entries.filter((e) => e.kategori === key);
+        const items = doc.entries.map((e, idx) => ({ ...e, _idx: idx })).filter((e) => e.kategori === key);
         if (items.length === 0) return null;
         return (
           <View key={key} style={{ marginBottom: 16 }}>
@@ -332,14 +395,23 @@ function DokumentasiTab({ orderId, tokens, styles }) {
               </View>
               <Text style={styles.docHeadLabel}>{label}</Text>
             </View>
-            {items.map((entry, i) => (
-              <View key={i} style={styles.docEntry}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={styles.docStageLabel}>
-                    {entry.unitCode ? `${entry.unitCode} · ` : ""}{entry.stageLabel}
-                  </Text>
+            {items.map((entry) => (
+              <View key={entry._idx} style={[styles.docEntry, selected.has(entry._idx) && styles.docEntrySelected]}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => toggle(entry._idx)}
+                  style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
+                    {selected.has(entry._idx)
+                      ? <CheckSquare size={18} color={tokens.color.accent} strokeWidth={2.2} />
+                      : <Square size={18} color={tokens.color.textMuted} strokeWidth={2} />}
+                    <Text style={[styles.docStageLabel, { flexShrink: 1 }]}>
+                      {entry.unitCode ? `${entry.unitCode} · ` : ""}{entry.stageLabel}
+                    </Text>
+                  </View>
                   <Text style={styles.docStageDate}>{shortDate(entry.recordedAt)}</Text>
-                </View>
+                </TouchableOpacity>
                 {entry.note ? <Text style={styles.docNote}>{entry.note}</Text> : null}
                 <View style={styles.docPhotoRow}>
                   {(entry.photoUrls || []).map((url) => (
@@ -368,6 +440,41 @@ function DokumentasiTab({ orderId, tokens, styles }) {
           </Text>
         </View>
       )}
+
+      <View style={styles.sendBar}>
+        {!conversationId ? (
+          <Text style={styles.docCount}>Belum ada percakapan WhatsApp untuk pelanggan ini — tidak bisa kirim langsung.</Text>
+        ) : (
+          <TouchableOpacity
+            style={[styles.sendBtn, (selected.size === 0 || sending) && { opacity: 0.4 }]}
+            disabled={selected.size === 0 || sending}
+            onPress={handleSend}
+          >
+            {sending ? <ActivityIndicator color="#fff" /> : <Send size={16} color="#fff" strokeWidth={2.2} />}
+            <Text style={styles.sendBtnText}>
+              {sending ? "Mengirim…" : selected.size > 0 ? `Kirim ${selected.size} dokumentasi ke customer` : "Pilih dokumentasi untuk dikirim"}
+            </Text>
+          </TouchableOpacity>
+        )}
+        <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+          <TouchableOpacity
+            style={[styles.secBtn, (selected.size === 0 || working) && { opacity: 0.4 }]}
+            disabled={selected.size === 0 || working}
+            onPress={handleSave}
+          >
+            <Download size={15} color={tokens.color.textPrimary} strokeWidth={2.2} />
+            <Text style={styles.secBtnText}>Simpan ke galeri</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.secBtn, (selected.size === 0 || working) && { opacity: 0.4 }]}
+            disabled={selected.size === 0 || working}
+            onPress={handleShare}
+          >
+            <Share2 size={15} color={tokens.color.textPrimary} strokeWidth={2.2} />
+            <Text style={styles.secBtnText}>Bagikan</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
 }
@@ -554,7 +661,7 @@ export default function OrderTimelineScreen({ route, navigation }) {
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
         {tab === "status" && <StatusTab orderId={orderId} tokens={tokens} styles={styles} />}
-        {tab === "dokumentasi" && <DokumentasiTab orderId={orderId} tokens={tokens} styles={styles} />}
+        {tab === "dokumentasi" && <DokumentasiTab orderId={orderId} conversationId={order?.conversationId || null} customerNameLabel={customerName} tokens={tokens} styles={styles} />}
         {tab === "pembayaran" && order && <PembayaranTab order={order} tokens={tokens} styles={styles} />}
       </ScrollView>
     </View>
@@ -617,6 +724,18 @@ function createStyles(tokens) {
     docStageLabel: { fontSize: 12, fontWeight: "600", color: tokens.color.textPrimary, flexShrink: 1 },
     docStageDate: { fontSize: 10, color: tokens.color.textMuted },
     docNote: { fontSize: 11, color: tokens.color.textSecondary, marginTop: 2 },
+    docEntrySelected: { borderWidth: 2, borderColor: tokens.color.accent },
+    sendBar: { marginTop: 8 },
+    sendBtn: {
+      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+      backgroundColor: tokens.color.accent, borderRadius: 12, paddingVertical: 13,
+    },
+    sendBtnText: { color: "#fff", fontWeight: "700", fontSize: 13.5 },
+    secBtn: {
+      flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+      backgroundColor: tokens.color.card, borderRadius: 12, paddingVertical: 11,
+    },
+    secBtnText: { fontSize: 12.5, fontWeight: "600", color: tokens.color.textPrimary },
     docPhotoRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
     docPhoto: { width: 64, height: 64, borderRadius: 8, backgroundColor: tokens.color.subtle },
     signatureBox: { backgroundColor: tokens.color.success + "14", borderRadius: 12, padding: 10, marginTop: 4 },
