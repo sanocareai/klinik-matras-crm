@@ -3,6 +3,7 @@
 // DEFAULT = dry-run (hanya menampilkan kandidat). File asli DITIMPA saat --apply
 // dan TIDAK BISA dikembalikan — coba dulu dengan --limit kecil dan periksa hasilnya.
 //
+//   docker compose exec backend node scripts/compress-videos.js --sample-dir _sample --limit 10   (hasil ke uploads/_sample/, asli utuh)
 //   docker compose exec backend node scripts/compress-videos.js --limit 20
 //   docker compose exec backend node scripts/compress-videos.js --apply --limit 20
 //   docker compose exec backend node scripts/compress-videos.js --apply --budget-min 120
@@ -21,10 +22,13 @@ const arg = (name, def) => {
 };
 
 const apply = process.argv.includes("--apply");
+const oi = process.argv.indexOf("--sample-dir");
+const outDir = oi >= 0 ? path.join(uploadsDir, process.argv[oi + 1]) : null; // mode sampel: file asli TIDAK disentuh
 console.log(apply ? "MODE APPLY — file asli akan ditimpa" : "MODE DRY-RUN — tidak ada file diubah (tambahkan --apply)");
 
 const r = await compressUploadsBatch(uploadsDir, {
   apply,
+  outDir,
   limit: arg("limit", Infinity),
   minAgeHours: arg("min-age-hours", 24),
   minSizeMb: arg("min-size-mb", 1.5),

@@ -64,7 +64,9 @@ async function probe(file) {
  * Kompres SATU file. Return { status, before, after? , reason? }.
  * status: "compressed" | "skipped" | "failed" | "dry-run"
  */
-export async function compressVideoInPlace(absPath, { apply = false, minSizeBytes = MIN_SIZE_BYTES_DEFAULT } = {}) {
+// outDir (opsional): MODE SAMPEL — hasil ditulis ke folder itu dan file asli TIDAK disentuh,
+// dipakai untuk membandingkan kualitas sebelum menimpa apa pun.
+export async function compressVideoInPlace(absPath, { apply = false, minSizeBytes = MIN_SIZE_BYTES_DEFAULT, outDir = null } = {}) {
   const ext = path.extname(absPath).toLowerCase();
   const fmt = EXT_FORMAT[ext];
   if (!fmt) return { status: "skipped", reason: "ekstensi_tidak_didukung" };
@@ -80,7 +82,7 @@ export async function compressVideoInPlace(absPath, { apply = false, minSizeByte
   }
   if (!info.hasVideo) return { status: "skipped", reason: "bukan_video", before };
   if (info.tagged) return { status: "skipped", reason: "sudah_dikompres", before };
-  if (!apply) return { status: "dry-run", before };
+  if (!apply && !outDir) return { status: "dry-run", before };
 
   const tmp = `${absPath}.compress-tmp`;
   const args = [
@@ -88,9 +90,13 @@ export async function compressVideoInPlace(absPath, { apply = false, minSizeByte
     "-map", "0:v:0", "-map", "0:a:0?",
     // Sisi terpanjang maksimal 1280px, tidak pernah diperbesar, rasio tetap.
     "-vf", "scale=w=min(iw\\,1280):h=min(ih\\,1280):force_original_aspect_ratio=decrease:force_divisible_by=2",
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-maxrate", "1500k", "-bufsize", "3000k",
+    // Kualitas didahulukan (crf 22 ≈ nyaris tanpa kehilangan visual dibanding sumbernya),
+    // BUKAN bitrate tetap: video yang sumbernya sudah kecil akan menghasilkan file yang tidak
+    // lebih kecil lalu DIBUANG oleh pengecekan MAX_RATIO di bawah — jadi hanya video
+    // berbitrate boros yang benar-benar diubah. maxrate hanya pengaman untuk sumber ekstrem.
+    "-c:v", "libx264", "-preset", "faster", "-crf", "22", "-maxrate", "4000k", "-bufsize", "8000k",
     "-pix_fmt", "yuv420p", "-threads", "1",
-    "-c:a", "aac", "-b:a", "64k", "-ac", "2",
+    "-c:a", "aac", "-b:a", "96k", "-ac", "2",
     "-movflags", "+faststart", "-map_metadata", "-1", "-metadata", `comment=${TAG}`,
     "-f", fmt, tmp,
   ];
@@ -109,6 +115,11 @@ export async function compressVideoInPlace(absPath, { apply = false, minSizeByte
       fs.rmSync(tmp, { force: true });
       return { status: "skipped", reason: "tidak_cukup_hemat", before, after };
     }
+    if (outDir) {
+      fs.mkdirSync(outDir, { recursive: true });
+      fs.renameSync(tmp, path.join(outDir, path.basename(absPath)));
+      return { status: "sampled", before, after };
+    }
     fs.renameSync(tmp, absPath); // atomik
     return { status: "compressed", before, after };
   } catch (err) {
@@ -123,7 +134,7 @@ export async function compressVideoInPlace(absPath, { apply = false, minSizeByte
  */
 export async function compressUploadsBatch(uploadsDir, opts = {}) {
   const {
-    apply = false, limit = Infinity, minAgeHours = 24, minSizeMb = 1.5, maxSizeMb = Infinity,
+    apply = false, outDir = null, limit = Infinity, minAgeHours = 24, minSizeMb = 1.5, maxSizeMb = Infinity,
     budgetMinutes = Infinity, log = () => {},
   } = opts;
   const state = loadState(uploadsDir);
@@ -146,14 +157,19 @@ export async function compressUploadsBatch(uploadsDir, opts = {}) {
     if (ringkas.compressed + ringkas.skipped + ringkas.failed + ringkas.dryRun >= limit) break;
     if ((Date.now() - mulai) / 60000 > budgetMinutes) { log(`Anggaran waktu ${budgetMinutes} menit habis, berhenti.`); break; }
 
-    const r = await compressVideoInPlace(path.join(uploadsDir, f.n), { apply, minSizeBytes });
+    const r = await compressVideoInPlace(path.join(uploadsDir, f.n), { apply, minSizeBytes, outDir });
+    if (r.status === "sampled") {
+      ringkas.compressed++; ringkas.bytesBefore += r.before; ringkas.bytesAfter += r.after;
+      log(`SAMPEL ${f.n}  ${(r.before / 1048576).toFixed(1)}MB → ${(r.after / 1048576).toFixed(1)}MB`);
+      continue;
+    }
     if (r.status === "compressed") {
       ringkas.compressed++; ringkas.bytesBefore += r.before; ringkas.bytesAfter += r.after;
       state.done[f.n] = { before: r.before, after: r.after, at: new Date().toISOString() };
       log(`OK   ${f.n}  ${(r.before / 1048576).toFixed(1)}MB → ${(r.after / 1048576).toFixed(1)}MB`);
     } else if (r.status === "skipped") {
       ringkas.skipped++;
-      if (apply) state.skipped[f.n] = r.reason;
+      if (apply && !outDir) state.skipped[f.n] = r.reason;
       log(`SKIP ${f.n}  ${r.reason}`);
     } else if (r.status === "failed") {
       ringkas.failed++; // TIDAK dicatat ke state: boleh dicoba lagi (mungkin gagal sementara)
@@ -164,6 +180,6 @@ export async function compressUploadsBatch(uploadsDir, opts = {}) {
     }
     if (apply && (ringkas.compressed + ringkas.skipped) % 10 === 0) saveState(uploadsDir, state);
   }
-  if (apply) saveState(uploadsDir, state);
+  if (apply && !outDir) saveState(uploadsDir, state);
   return ringkas;
 }
