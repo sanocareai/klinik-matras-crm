@@ -1,0 +1,76 @@
+import React, { createContext, useContext, useRef } from "react";
+import { RefreshControl, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { BlurTargetView } from "expo-blur";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTheme } from "./theme";
+import { GUTTER } from "./tokens";
+
+// Konteks lapisan latar yang di-blur (tier FULL, Android). Tiap <Screen> punya
+// targetnya sendiri sehingga banyak layar (tab) tidak berebut satu ref.
+export const BlurTargetContext = createContext<React.RefObject<View | null> | null>(null);
+export function useBlurTarget() {
+  return useContext(BlurTargetContext);
+}
+
+/** Latar "Biru Kaca": gradien statis + dua bulatan cahaya. Satu-satunya lapisan besar di layar. */
+function Latar() {
+  const { colors } = useTheme();
+  return (
+    <>
+      <LinearGradient colors={[colors.bgTop, colors.bgBottom]} style={StyleSheet.absoluteFill} />
+      <View pointerEvents="none" style={[styles.blob, { top: -80, right: -60, backgroundColor: colors.blob1 }]} />
+      <View pointerEvents="none" style={[styles.blob, { top: 260, left: -110, width: 260, height: 260, borderRadius: 130, backgroundColor: colors.blob2 }]} />
+    </>
+  );
+}
+
+type Props = {
+  children: React.ReactNode;
+  /** false = konten tidak digulir (mis. daftar yang punya FlatList sendiri). */
+  scroll?: boolean;
+  refreshing?: boolean;
+  onRefresh?: () => void;
+  /** Ruang bawah untuk tab bar + FAB. */
+  bawah?: number;
+  contentStyle?: StyleProp<ViewStyle>;
+};
+
+export function Screen({ children, scroll = true, refreshing = false, onRefresh, bawah = 120, contentStyle }: Props) {
+  const { colors, glassTier } = useTheme();
+  const insets = useSafeAreaInsets();
+  const target = useRef<View | null>(null);
+  const pakaiBlur = glassTier === "FULL";
+
+  const isi = scroll ? (
+    <ScrollView
+      contentContainerStyle={[{ paddingTop: insets.top + 8, paddingHorizontal: GUTTER, paddingBottom: bawah }, contentStyle]}
+      showsVerticalScrollIndicator={false}
+      refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined}
+    >
+      {children}
+    </ScrollView>
+  ) : (
+    <View style={[{ flex: 1, paddingTop: insets.top + 8, paddingHorizontal: GUTTER }, contentStyle]}>{children}</View>
+  );
+
+  return (
+    <BlurTargetContext.Provider value={pakaiBlur ? target : null}>
+      <View style={[styles.root, { backgroundColor: colors.bgBottom }]}>
+        {pakaiBlur ? (
+          <BlurTargetView ref={target} style={StyleSheet.absoluteFill}>
+            <Latar />
+          </BlurTargetView>
+        ) : (
+          <View style={StyleSheet.absoluteFill}><Latar /></View>
+        )}
+        {isi}
+      </View>
+    </BlurTargetContext.Provider>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  blob: { position: "absolute", width: 320, height: 320, borderRadius: 160 },
+});

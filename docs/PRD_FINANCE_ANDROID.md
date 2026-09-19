@@ -2,16 +2,22 @@
 
 | | |
 |---|---|
-| **Status** | Final untuk dikerjakan (belum ada kode aplikasi) |
-| **Tanggal** | 19 September 2026 |
+| **Status** | **Revisi 2 (19 Sep 2026)** — S0 backend selesai & live; scaffold `finance-mobile/` dibuat (data contoh); fitur S1+ belum dikerjakan |
+| **Tanggal** | 19 September 2026 (revisi 2: platform diganti ke React Native + Expo) |
 | **Pemilik produk** | Gilang (CCO/Owner) |
-| **Platform** | Android native — Kotlin + Jetpack Compose |
+| **Platform** | **React Native + Expo (SDK 57), TypeScript, Expo Router**, Android; build **EAS Build**, OTA **EAS Update** (kanal `development` / `preview` / `production`). *Rencana awal Kotlin/Compose dibatalkan.* |
+| **Folder aplikasi** | `finance-mobile/` (sejajar `mobile/` & `driver-mobile/`, yang **tidak diubah**) |
 | **Backend** | SANSS existing (`backend/`, Express + Prisma + PostgreSQL) — **single source of truth** |
 | **Referensi visual** | `docs/references/finance-mobile/` (3 gambar: `vaulta-home-cards.png`, `nexora-portfolio.png`, `wallet-light.png`) |
 | **Bahasa UI** | Bahasa Indonesia sehari-hari (aturan `CLAUDE.md` §2) |
 
 > Dokumen ini hasil audit langsung terhadap kode SANSS per 19 September 2026. Semua klaim tentang backend
 > disertai lokasi file. Yang **belum diverifikasi** ditandai eksplisit "(belum diverifikasi)".
+>
+> **Riwayat revisi.** Rev 1 (19 Sep 2026): PRD awal (Kotlin + Jetpack Compose). Rev 2 (19 Sep 2026): keputusan produk mengganti platform ke
+> **React Native + Expo** — §15 (arsitektur), §18 (testing/build/EAS), sebagian §9–§11 (foto, glass, keamanan), §17 (status gap), §19–§20
+> ditulis ulang. Bagian fungsional (§1–§8, §12–§14, §16) tidak bergantung platform dan tetap berlaku. Backend S0 dijelaskan di
+> `docs/FINANCE-MOBILE-BACKEND.md`.
 
 ---
 
@@ -181,7 +187,7 @@ Aturan server yang mempengaruhi UX:
 | F6 | **Tidak ada endpoint inbox approval gabungan.** Approval tersebar di 4 daftar (`/expenses`, `/purchases`, `/bills`, `/refunds`) filter status; dashboard hanya memberi *jumlah* | `finance.js:1115-1118` |
 | F7 | **Tidak ada `Idempotency-Key` pada command pembuatan** (POST expenses/purchases/kasbon/refunds/transfers/…). Dobel-tap di jaringan lambat = dokumen ganda (preseden nyata: 22 pengeluaran ganda yang dibatalkan 19 Sep 2026) | `financeTransactions.js` POST; idempotensi hanya di level jurnal |
 | F8 | **Daftar dibatasi keras tanpa cursor**: expenses/customer-payments `take: 300` (+ flag `terpotong`), jurnal `limit ≤ 500` + `offset`, invoice `≤ 500` | `financeTransactions.js:172-210`, `finance.js:578` |
-| F9 | **Push: hanya Expo Push Token & Web Push.** `PushToken.token` berformat `ExponentPushToken[...]`; Kotlin native butuh token FCM. **Tidak ada satu pun event notifikasi finance** (approval, verifikasi) | `schema.prisma:590`, `services/expoPush.js`, `services/pushNotifications.js` |
+| F9 | **Push: hanya Expo Push Token & Web Push.** `PushToken.token` berformat `ExponentPushToken[...]`; Aplikasi Expo dapat memakai token Expo Push (sudah didukung) atau token FCM asli. **Tidak ada satu pun event notifikasi finance** (approval, verifikasi) | `schema.prisma:590`, `services/expoPush.js`, `services/pushNotifications.js` |
 | F10 | **Audit trail finance tidak bisa dibaca via API.** `GET /api/activity` hanya whitelist `UNIT/ORDER/COMPLAINT`; `entityType` `fin_*` ditolak 400 | `routes/activity.js:20-24` |
 | F11 | **Foto nota disajikan sebagai file statis publik** `GET /media/finance-receipts/<hash>.jpg` tanpa auth (nama = hash konten; tidak bisa ditebak tanpa memiliki fotonya, tapi tidak dilindungi izin) | `index.js:155` |
 | F12 | **Tidak ada ekspor sisi server untuk data finance** (ekspor Excel dibuat di browser). Hanya PDF invoice: `GET /api/orders/:id/invoice/pdf` | `routes/orders.js:1287` |
@@ -346,7 +352,7 @@ capability pengguna **disembunyikan/disederhanakan**, bukan dinonaktifkan.
 | **Laporan** | 6 laporan keuangan + ekspor | Owner, Accountant | — |
 | **Lainnya** | Kas & Bank, Piutang & Refund, Invoice, Supplier & Utang, Jurnal, Buku Besar, Rekonsiliasi, Data Belum Lengkap, Tinjau Bukti, Periode, Keamanan, Tampilan, Perangkat, Bantuan, Keluar | semua | data belum lengkap |
 
-- **FAB "+" tengah-bawah** (mengacu tombol tengah di `wallet-light.png`) hadir di **Beranda & Transaksi**:
+- **FAB "+" kanan-bawah, di atas tab bar** (keputusan implementasi: posisi tengah menimpa tab Persetujuan) hadir di **Beranda & Transaksi**:
   membuka *sheet aksi cepat* (Foto Nota, Pengeluaran, Pembelian, Kasbon, Transfer, Pemasukan). Bukan tab kelima.
 - Persona **Approver**: tab Transaksi & Laporan menampilkan mode baca-saja; **Persetujuan** menjadi tab awal.
 - Persona **Owner**: tab awal Beranda; Persetujuan menonjol lewat kartu "Perlu Tindakan".
@@ -558,7 +564,7 @@ Semua daftar mendukung tarik-untuk-muat-ulang; kembali ke foreground > 60 dtk �
 
 | Jenis | MVP | Catatan |
 |---|---|---|
-| PDF Invoice | ✔ | Unduh `GET /orders/:id/invoice/pdf` (Bearer) → simpan ke cache app → Share Sheet (`FileProvider`) |
+| PDF Invoice | ✔ | Unduh `GET /orders/:id/invoice/pdf` (Bearer) → simpan ke cache app (`expo-file-system`) → Share Sheet (`expo-sharing`) |
 | CSV daftar | ✔ | Serialisasi **apa adanya** baris yang tampil (tanpa perhitungan baru); nama berkas `sano-{daftar}-{from}_{to}.csv`; kolom sesuai layar |
 | Gambar ringkasan laporan | ✔ | Tangkapan layar komposisi laporan (dengan cap "per {waktu}" dan catatan laporan) |
 | PDF/Excel laporan resmi | 1.1 | Dibuat server (G-11) supaya angka identik dengan web |
@@ -571,7 +577,9 @@ Semua daftar mendukung tarik-untuk-muat-ulang; kembali ke foreground > 60 dtk �
 ### 9.1 Notifikasi
 
 Kondisi nyata: **belum ada** event notifikasi finance di backend dan push yang ada hanya Expo/Web Push (F9).
-Solusi: push **FCM langsung** dari backend (G-10) + tabel notifikasi in-app.
+Solusi (G-10): fondasi **sudah dibuat di S0** — `POST /api/mobile/devices` (token `expo` atau `fcm`), `services/financeNotifications.js`
+(dispatch, aman by default: mati kecuali `FINANCE_PUSH_ENABLED=true`). Aplikasi 1.0 memakai **Expo Push** (`expo-notifications`) — server tidak butuh kredensial
+untuk token Expo; kunci FCM V1 diunggah ke EAS. **Pemicu** di route finance (submit/approve/verifikasi) dipasang di S11; pusat notifikasi dalam app = tabel baru di S11.
 
 | Event (dibuat server) | Penerima | Isi | Aksi (deep link) |
 |---|---|---|---|
@@ -604,14 +612,14 @@ Aturan:
 
 | Aspek | Keputusan |
 |---|---|
-| Sumber | Kamera (CameraX, autofokus, koreksi rotasi EXIF), Galeri (Photo Picker — tanpa izin storage luas), **Share-target** (`ACTION_SEND` `image/*`, mendukung multi-foto) dan **tempel dari clipboard** (gambar) |
-| Kompres di perangkat | Sisi panjang maks **1600 px**, JPEG kualitas ~80, target < 400 KB (menyerupai kompres WhatsApp yang diminta pengguna: irit storage & tidak berat dibuka). Server tetap mengompres ulang (`simpanFotoBukti`) dan menjadi acuan |
+| Sumber | Kamera & Galeri (`expo-image-picker`; Photo Picker Android, tanpa izin storage luas), **Share dari WhatsApp/galeri** (`expo-share-intent`: intent `ACTION_SEND`/`SEND_MULTIPLE` `image/*`; wajib development build/EAS build, **tidak jalan di Expo Go**) dan **tempel gambar dari clipboard** (`expo-clipboard`) |
+| Kompres di perangkat | `expo-image-manipulator`: sisi panjang maks **1600 px**, JPEG kualitas ~80, target < 400 KB (menyerupai kompres WhatsApp yang diminta pengguna: irit storage & tidak berat dibuka). Server tetap mengompres ulang (`simpanFotoBukti`) dan menjadi acuan |
 | Unggah | `multipart/form-data` field **`receipt`**, endpoint `POST /finance/receipts/upload`; progres + batal; ulang otomatis 2× untuk kegagalan jaringan (aman — mengunggah foto **bukan** command finansial dan idempoten oleh nama = hash konten) |
 | Validasi klien | Hanya gambar; tolak file > 25 MB sebelum kompres |
 | Duplikasi | Respons `dipakaiDi[]` → tampilkan peringatan "Foto ini sudah dipakai di EXP-… ". Boleh lanjut (kebijakan sama dengan web) |
 | Ganti/lepas | Bila dokumen sudah tersimpan → wajib alasan (`POST …/bukti` server menegakkan) |
-| Tampilan | Thumbnail `_t.jpg` di daftar; gambar penuh di penampil zoom (Coil + cache disk terenkripsi ringan / dibersihkan saat logout) |
-| Keamanan | Foto nota **tidak** disimpan ke Galeri; file sementara di cache privat dan dihapus setelah unggah. Akses ke media butuh otorisasi (G-08) |
+| Tampilan | Thumbnail `_t.jpg` di daftar; gambar penuh di penampil zoom (`expo-image` dengan header `Authorization: Bearer`; cache dibersihkan saat logout) |
+| Keamanan | Foto nota **tidak** disimpan ke Galeri; file sementara di cache privat dan dihapus setelah unggah. **Akses media sudah terlindungi di backend (S0, G-08 selesai)**: `GET /media/finance-receipts/<file>` atau `GET /api/finance/media/receipts/<file>` dengan Bearer; URL bertanda-tangan lewat `POST /api/finance/media/sign` (10 menit) untuk komponen yang tak bisa mengirim header |
 | Draft offline | Foto yang diambil saat offline disimpan **sebagai draft lokal** (bukan command); pengguna mengunggah & menyimpan setelah online |
 
 ---
@@ -643,47 +651,48 @@ Aturan:
 - Kontras minimum **WCAG AA** (4.5:1 teks, 3:1 komponen) diuji di **kedua tema di atas glass** (glass memudarkan kontras — teks di atas glass memakai `text-strong` ditambah scrim bila perlu).
 - Dark/light: **Ikuti sistem** (default) | Terang | Gelap; Material You dinamis **tidak dipakai** (identitas merek diutamakan).
 - Tipografi: **Inter** (sama dengan app Expo Sano) variabel, subset Latin; angka **tabular** (`tnum`) untuk semua nominal; skala: hero 40/44 (Semibold), judul 22, kepala kartu 16 (Semibold), isi 14, keterangan 12. Mendukung skala font sistem s.d. 200% (layout tidak boleh patah).
-- Sudut: kartu 24 dp, sheet 28 dp, chip 999 dp, tombol 16 dp. Ikon: Material Symbols Rounded (garis 1.75 dp).
+- Sudut: kartu 24 dp, sheet 28 dp, chip 999 dp, tombol 16 dp. Ikon: `lucide-react-native` (garis 1.75, sama dengan app Sano lain).
 - Tinggi target sentuh ≥ **48 dp**.
 
 ### 10.3 Material glass — implementasi bertingkat (penting untuk Android lama)
 
 | Tier | Kondisi | Teknik |
 |---|---|---|
-| **FULL** | Android 12+ (API 31+), bukan `isLowRamDevice`, "Efek Ringan" mati | Blur latar sungguhan (`RenderEffect`/`Modifier.blur`) **hanya pada ≤ 2 permukaan per layar** (hero + sheet), sisanya translucent |
-| **LITE** | API 26–30, RAM rendah, atau Efek Ringan hidup | **Tanpa blur**: isi translucent + gradien halus + hairline + bayangan ringan; blob gradien latar berupa satu `Brush` statis |
+| **FULL** | Android 12+ (API 31+), RAM ≥ 4 GB (`expo-device.totalMemory`), "Efek Ringan" mati | `expo-blur` (`BlurView`) **hanya pada ≤ 2 permukaan per layar** (hero + sheet/filter); sisanya translucent |
+| **LITE** | API 26–30, RAM rendah, atau Efek Ringan hidup | **Tanpa blur**: isi translucent + `expo-linear-gradient` halus + hairline + bayangan ringan |
 | **MINIMAL** | Mode hemat daya / animasi sistem dimatikan | Kartu solid dengan hairline, tanpa bayangan berlapis |
 
-- Tier dipilih **otomatis saat pertama jalan** + bisa diubah manual di M3 (Efek Ringan).
-- **Tidak boleh** ada `blur` di dalam item daftar yang di-scroll (LazyColumn). Kartu daftar memakai fill translucent murah.
-- Semua gradien/efek bergambar dirender sebagai `drawBehind` sederhana; bitmap latar dihindari.
+- Tier dipilih **otomatis saat pertama jalan** (`src/design/glass.ts`) + bisa diubah manual di M3 (Efek Ringan); pilihan disimpan.
+- **Tidak boleh** ada `BlurView` di dalam item daftar yang di-scroll (FlatList/FlashList). Kartu daftar memakai fill translucent murah.
+- Latar layar = satu `LinearGradient` statis di root (bukan bitmap); bayangan memakai `elevation` Android + `boxShadow` sederhana.
+- Semua warna berasal dari token (`src/design/tokens.ts`), tidak ada warna literal di layar.
 
 ### 10.4 Animasi & haptic
 
 | Elemen | Spesifikasi |
 |---|---|
-| Transisi layar | Shared-axis lembut 220 ms (`FastOutSlowIn`); back prediktif |
-| Kartu masuk | Fade+translate 12 dp, *stagger* 30 ms, maks 6 item |
-| Angka uang | *Count-up* 400 ms **hanya saat data pertama kali tampil** (tidak saat refresh) — angka akhir selalu dari server |
-| Tombol | Tekan: skala 0.97 + *spring* |
-| Sheet | Spring redam sedang; *drag handle* |
-| Chart | Gambar-tumbuh 500 ms sekali |
-| Haptic | `CONFIRM` saat approve/verifikasi sukses; `REJECT` saat error/penolakan; `TICK` (ringan) saat ganti tab & toggle; **tidak** ada haptic pada scroll |
-| Aksesibilitas gerak | Hormati `ANIMATOR_DURATION_SCALE = 0` dan pengaturan "Hapus animasi": semua animasi non-esensial mati |
+| Transisi layar | Bawaan Expo Router/React Navigation (native stack, ±220 ms); gestur back sistem didukung |
+| Kartu masuk | Fade+translate 12 px, *stagger* 30 ms, maks 6 item (`Animated` core, `useNativeDriver`) |
+| Angka uang | Tanpa hitung ulang; *fade/slide* singkat saat data pertama kali tampil (angka akhir selalu dari server) |
+| Tombol | Tekan: skala 0.97 (`PressableScale`) |
+| Sheet | Modal kustom dengan *spring* redam sedang; *drag handle* |
+| Chart | Gambar-tumbuh 500 ms sekali (SVG) |
+| Haptic (`expo-haptics`) | `notificationAsync(Success)` saat approve/verifikasi sukses; `Error` saat galat/penolakan; `selectionAsync` saat ganti tab & toggle; **tidak** ada haptic pada scroll |
+| Aksesibilitas gerak | Hormati `AccessibilityInfo.isReduceMotionEnabled` — semua animasi non-esensial mati |
 | Frame budget | 60 fps stabil pada perangkat acuan; jank > 5% frame = gagal tes performa (§18) |
 
 ### 10.5 Anggaran performa & perangkat
 
 | Metrik | Target |
 |---|---|
-| minSdk / targetSdk | **26 (Android 8.0)** / SDK stabil terbaru saat rilis |
+| Android minimum | **Android 8.0 (API 26)** (default Expo SDK 57 dapat menaikkan minimum — dicek saat `expo-doctor`; bila SDK menuntut lebih tinggi, angka ini diikuti SDK) |
 | Perangkat acuan bawah | 3 GB RAM, Android 9, SoC kelas Helio G-series |
-| Cold start → Beranda terisi | ≤ 3,0 dtk (4G), ≤ 1,5 dtk ke layar kunci |
-| Ukuran APK (release, arm64) | ≤ 18 MB; universal ≤ 28 MB |
-| Memori puncak Beranda | ≤ 180 MB |
-| Scroll daftar 300 baris | ≥ 55 fps, tanpa alokasi berlebih |
-| Baseline Profile | Wajib (startup + scroll daftar) |
-| Kompilasi | R8 penuh, shrink resources, ABI split arm64-v8a + armeabi-v7a |
+| Cold start → Beranda terisi | ≤ 3,5 dtk (4G, build rilis), ≤ 2 dtk ke layar kunci |
+| Ukuran APK (release) | ≤ 45 MB (universal); target arm64-only ≤ 30 MB |
+| Memori puncak Beranda | ≤ 250 MB |
+| Scroll daftar 300 baris | ≥ 55 fps (FlashList), tanpa alokasi berlebih |
+| Kompilasi | Hermes bytecode, Proguard/shrink/minify rilis (`expo-build-properties`), `transform-remove-console` di produksi |
+| Pembaruan | Bundel JS ≤ 6 MB agar OTA cepat |
 
 ---
 
@@ -722,16 +731,20 @@ tidak perlu diubah:
 | Rate limit | Login: 5 gagal / 15 menit per (email+IP) → tunda bertahap; API: 120 req/menit/pengguna; unggah foto 20/menit (G-03) |
 | Endpoint | `POST /mobile/auth/login`, `/refresh`, `/logout`, `GET /mobile/auth/sessions`, `DELETE /mobile/auth/sessions/:id`, `GET /mobile/config` |
 
-Klien: interceptor OkHttp `Authenticator` men-*refresh* satu kali untuk banyak request paralel (mutex); kegagalan refresh ⇒ A6.
+**Status: SELESAI dan live di produksi (S0, 19 Sep 2026)** — dengan tes integrasi (`mobileAuth.integration.test.js`). Rincian & endpoint: `docs/FINANCE-MOBILE-BACKEND.md`.
+Tambahan yang ikut dibangun: token mobile hanya berlaku untuk jalur `/api/finance`, `/api/mobile`, `/api/auth/me`, `POST /api/armada/payments/:id/verify`,
+`GET /api/orders/:id/invoice/pdf`; `code` pada galat (`SESSION_REVOKED`, `REFRESH_REUSED`, …).
+
+Klien: `apiClient` men-*refresh* satu kali untuk banyak request paralel (*single-flight*) dan menyimpan token baru ke SecureStore **sebelum** dipakai; kegagalan refresh ⇒ A6.
 
 ### 11.4 Kunci aplikasi (PIN & biometrik)
 
 | Aspek | Ketentuan |
 |---|---|
-| PIN | 6 digit, dicek **lokal**, tidak pernah dikirim ke server. Verifier = PBKDF2-HMAC-SHA256 (≥ 310.000 iterasi) + salt acak, disimpan terenkripsi kunci Android Keystore |
-| Percobaan | 5 salah → jeda 30 dtk; 8 → 5 menit; 10 → **hapus sesi & data lokal**, wajib login penuh |
-| Biometrik | `BiometricPrompt` **BIOMETRIC_STRONG** dengan `CryptoObject` (kunci Keystore `setUserAuthenticationRequired(true)`, `setInvalidatedByBiometricEnrollment(true)`); PIN selalu tersedia sebagai cadangan |
-| Auto-lock | Default **60 detik** setelah app ke background (pilihan: langsung / 30 dtk / 1 mnt / 5 mnt). Juga saat layar mati, HP restart, dan proses app dimatikan sistem |
+| PIN | 6 digit, dicek **lokal**, tidak pernah dikirim ke server. Verifier = PBKDF2-HMAC-SHA256 (`@noble/hashes`, iterasi disetel agar ≈ 300–500 ms di perangkat acuan, tidak kurang dari 100.000) + salt acak; disimpan di `expo-secure-store` (Android Keystore) |
+| Percobaan | 5 salah → jeda 30 dtk; 8 → 5 menit; 10 → **hapus sesi & data lokal**, wajib login penuh; penghitung percobaan ikut di SecureStore |
+| Biometrik | `expo-local-authentication` (`biometricsSecurityLevel: "strong"`, tanpa fallback ke passcode perangkat); sukses biometrik membuka kunci layar yang sama; PIN selalu tersedia sebagai cadangan. Catatan: pengikatan kunci ke biometrik di level Keystore (`CryptoObject`) tidak tersedia di Expo → ditutup oleh G-19 (step-up server) |
+| Auto-lock | Default **60 detik** setelah app ke background (pilihan: langsung / 30 dtk / 1 mnt / 5 mnt) via `AppState`. Juga saat proses app dimatikan sistem (cold start selalu terkunci) |
 | Layar kunci | Tidak menampilkan angka apa pun; menampilkan nama pengguna & tombol biometrik |
 | Ganti PIN | Butuh PIN lama; lupa PIN ⇒ login ulang (sesi lama dicabut) |
 
@@ -745,29 +758,30 @@ nominal + tujuan dengan jelas:
 (Tolak, baca, dan buat draft tidak butuh step-up.)
 
 **Keputusan yang diterima & risikonya:** MVP menegakkan step-up di **klien**. Penyerang yang sudah memegang refresh token
-(mis. perangkat di-root) bisa memanggil API tanpa layar kunci. Mitigasi MVP: token di Keystore (StrongBox bila ada),
-access token 15 menit, pencabutan sesi instan, pengecekan integritas dasar (§11.7), notifikasi "login dari perangkat baru".
+(mis. perangkat di-root) bisa memanggil API tanpa layar kunci. Mitigasi MVP: token di SecureStore (Android Keystore),
+access token 15 menit, pencabutan sesi instan (sudah ada di S0), pengecekan integritas dasar (§11.7), notifikasi "login dari perangkat baru".
 **Rilis 1.1**: step-up diverifikasi server (challenge–signature dengan kunci perangkat yang dilindungi biometrik) — G-19.
 
 ### 11.6 Jaringan
 
-- HTTPS saja (`usesCleartextTraffic=false`; hanya flavor `dev` mengizinkan `10.0.2.2`). TLS ≥ 1.2.
-- **Certificate pinning** SPKI untuk `app.sanomatrassehat.com`: sematkan **intermediate + ISRG Root** (Let's Encrypt, certbot memperbarui
-  sertifikat daun berkala — jangan pin daun) plus 1 pin cadangan. Rencana rotasi didokumentasikan; kegagalan pin ⇒ pesan jelas "Koneksi tidak aman", tanpa fallback.
-- Header `X-Request-Id` (UUID) di setiap request untuk korelasi log (G-17). Tidak mencatat body/`Authorization`.
+- HTTPS saja; `usesCleartextTraffic` hanya aktif di varian `development` (emulator `10.0.2.2`, lewat `expo-build-properties`). TLS ≥ 1.2.
+- **Certificate pinning: tidak ada di 1.0.** Pinning di React Native membutuhkan modul native pihak ketiga (mis. `react-native-ssl-public-key-pinning`) dan
+  meningkatkan risiko terkunci saat sertifikat Let's Encrypt berganti. Keputusan: dievaluasi di rilis 1.1 (pin **intermediate + ISRG Root**, bukan daun) setelah
+  runbook rotasi ada. Mitigasi 1.0: HTTPS + HSTS di nginx, token berumur pendek, sesi bisa dicabut instan.
+- Header `X-Request-Id` (UUID) di setiap request untuk korelasi log (G-17). Tidak mencatat body/`Authorization` (log klien menyaring header & body).
 
 ### 11.7 Penyimpanan & integritas
 
 | Aspek | Ketentuan |
 |---|---|
-| Rahasia | Access/refresh token & PIN-verifier dalam DataStore yang dienkripsi AES-GCM kunci Keystore (bukan `SharedPreferences` polos) |
-| Cache | Snapshot baca-saja di Room + **SQLCipher** (kunci Keystore); TTL 24 jam; **dihapus** saat logout, sesi dicabut, atau PIN terkunci |
-| Backup | `allowBackup=false`, `dataExtractionRules` mengecualikan semua |
-| Layar | `FLAG_SECURE` pada **seluruh** layar (blokir screenshot, rekam layar, & thumbnail Recents) — bagikan hasil lewat fitur "Bagikan" resmi |
-| Log | Release: nol log yang memuat nominal/nama/token; Crashlytics tanpa PII |
-| Integritas | Tolak jalan bila build `debuggable` di produksi atau tanda-tangan APK tidak cocok hash yang diharapkan; **peringatan** (bukan blok) untuk root/emulator/USB debugging aktif, dilaporkan ke server; Play Integrity dipakai bila kelak lewat Play Store |
-| Dependensi | Pin versi, `dependencyVerification`, pemindaian kerentanan di CI |
-| Overlay | `filterTouchesWhenObscured=true` pada tombol aksi sensitif (anti-tapjacking) |
+| Rahasia | Refresh token, access token, PIN-verifier, penghitung percobaan: **`expo-secure-store`** (Android Keystore). **Dilarang** AsyncStorage/berkas biasa untuk rahasia |
+| Cache | Snapshot baca-saja dari TanStack Query yang di-*persist* ke penyimpanan lokal **terenkripsi** (kunci acak 256-bit di SecureStore; enkripsi AES-GCM `react-native-quick-crypto` atau setara) — TTL 24 jam; **dihapus** saat logout, sesi dicabut, atau PIN terkunci. Bila enkripsi belum tersedia pada slice awal: **jangan** mem-*persist* data keuangan (memori saja) |
+| Backup | `android.allowBackup: false` (`expo-build-properties`) |
+| Layar | `expo-screen-capture` `preventScreenCaptureAsync` di **seluruh** layar (`FLAG_SECURE`: blokir screenshot, rekam layar, thumbnail Recents) — bagikan hasil lewat fitur "Bagikan" resmi |
+| Log | Build produksi menghapus `console.*` (`transform-remove-console`); tidak ada log yang memuat nominal/nama/token; pelaporan galat tanpa PII |
+| Integritas | Peringatan (bukan blok) bila perangkat di-root/emulator/USB debugging, dilaporkan ke server; APK ditandatangani EAS; Play Integrity dipakai bila kelak lewat Play Store |
+| Dependensi | Versi dikunci (`package-lock.json`), `npm audit` di CI, `expo-doctor`, hanya modul dengan dukungan SDK 57 |
+| Overlay | Modul kecil/`filterTouchesWhenObscured` pada tombol aksi sensitif (anti-tapjacking) — dievaluasi di S12 |
 
 ---
 
@@ -876,71 +890,125 @@ peran (`FINANCE` → `ACCOUNTANT`+`FINANCE_APPROVER`) tanpa ubah kode aplikasi.
 
 ---
 
-## 15. Arsitektur mobile
+## 15. Arsitektur mobile (React Native + Expo)
+
+> **Keputusan produk 19 Sep 2026 (menggantikan rencana Kotlin/Compose):** aplikasi dibuat dengan **React Native + Expo (TypeScript, Expo Router)**
+> di folder `finance-mobile/`, dibangun & didistribusikan lewat **EAS Build**, pembaruan lewat **EAS Update**. Alasan: satu bahasa dengan
+> aplikasi `mobile/` dan `driver-mobile/` (Expo SDK 57), pemeliharaan satu orang, OTA update untuk perbaikan cepat, dan infrastruktur push Expo
+> yang sudah ada di backend.
 
 ### 15.1 Stack
 
-| Lapisan | Pilihan | Alasan |
+| Lapisan | Pilihan | Alasan / catatan |
 |---|---|---|
-| Bahasa/UI | Kotlin 2.x, Jetpack Compose (Material 3 sebagai basis, tema kustom "Biru Kaca") | Diminta; Compose cocok untuk glass & animasi |
-| Arsitektur | **MVVM + UDF** (`UiState` immutable, `Event` satu arah), modul per fitur, Clean-lite (`domain` hanya use-case tipis; **tanpa** logika keuangan) | Sederhana, mudah dirawat 1 orang (filosofi `CLAUDE.md` §2) |
-| DI | Hilt | Standar |
-| Jaringan | Retrofit + OkHttp + **kotlinx.serialization** | Tanpa refleksi (cepat, R8 aman) |
-| Async | Coroutines + Flow | |
-| Navigasi | Navigation-Compose (type-safe routes) + deep link | |
-| Cache | Room + SQLCipher (**snapshot saja**) ; DataStore terenkripsi untuk preferensi & token | §11.7 |
-| Gambar | Coil 3 (thumbnail `_t.jpg`), CameraX, Photo Picker | |
-| Latar | WorkManager **hanya** untuk unggah foto & pembersihan cache (bukan command finansial) | §14 |
-| Push | Firebase Cloud Messaging (FCM) | G-10 |
-| Observability | Firebase Crashlytics + Timber (release: redaksi) | §18.3 |
-| Build | Gradle KTS + version catalog, R8, Baseline Profile | §18.4 |
+| Runtime | **Expo SDK 57**, React Native 0.86, React 19.2, Hermes, New Architecture | Selaras `mobile/` & `driver-mobile/` (audit §15.6) |
+| Bahasa | **TypeScript strict** (`noUncheckedIndexedAccess`) | Diminta; tipe DTO menjaga kontrak API |
+| Routing | **Expo Router** (file-based, typed routes), deep link skema `sanofinance://` | Lima tab = `app/(tabs)/*` |
+| Data server | **TanStack Query v5** (cache, refetch saat fokus, invalidasi setelah command) | Sama dengan app lain; tidak ada store global untuk data keuangan |
+| State UI lokal | Zustand kecil (kunci layar, preferensi, sembunyikan angka) | Bukan sumber data keuangan |
+| Jaringan | `fetch` + pembungkus `apiClient` (timeout `AbortController`, `ApiError`, refresh *single-flight*, `Idempotency-Key`, `X-Request-Id`) | Tanpa axios |
+| Parsing JSON uang | **`lossless-json`**: literal angka dipertahankan, kolom uang diubah menjadi **string desimal** di batas API | JS `Number` tidak dipakai untuk uang (§15.3) |
+| Penyimpanan aman | **`expo-secure-store`** (Android Keystore) untuk refresh token & verifier PIN | Bukan AsyncStorage |
+| Kunci layar | `expo-local-authentication` (biometrik) + PIN 6 digit | §11.4 |
+| Anti-tangkapan layar | `expo-screen-capture` (`preventScreenCaptureAsync` = `FLAG_SECURE`) | §11.7 |
+| UI | React Native core + **`expo-blur`**, **`expo-linear-gradient`**, `lucide-react-native` + `react-native-svg`, `expo-image`, **`expo-haptics`** | Biru Kaca (§10). Tanpa Reanimated di awal (audit performa `driver-mobile`: biaya start-up native); animasi memakai `Animated` core |
+| Foto | `expo-image-picker` (kamera/galeri) + `expo-image-manipulator` (kompres) + `expo-clipboard` (tempel gambar) + **`expo-share-intent`** (Share dari WhatsApp/galeri Android) | §9.3 |
+| Push | `expo-notifications` — token **Expo Push** (`provider:"expo"`) untuk 1.0; token FCM asli (`provider:"fcm"`) didukung backend bila kelak dibutuhkan | Backend S0 mendukung keduanya |
+| Pembaruan | **`expo-updates`** + EAS Update, kanal `development` / `preview` / `production` | §18.4 |
+| Build | **EAS Build** (APK internal & AAB) | §18.4 |
+| Uji | `jest-expo`, `@testing-library/react-native`, `tsc --noEmit`, ESLint (`eslint-config-expo`), `expo-doctor` | §18.1 |
+| Observability | Sentry (`@sentry/react-native`, tanpa PII) atau setara — keputusan di S12; sementara `ErrorBoundary` + log terstruktur | §18.3 |
 
-### 15.2 Struktur proyek (lokasi: `finance-android/` di root repo, sejajar `mobile/` & `driver-mobile/`)
+### 15.2 Struktur proyek `finance-mobile/`
 
 ```
-finance-android/
-  app/                       # Application, MainActivity, NavHost, DI graph
-  core/
-    designsystem/            # tema, token, GlassCard, MoneyText, StatusBadge, chart primitif
-    network/                 # OkHttp, Authenticator, pinning, Idempotency, ApiError
-    security/                # Keystore, PIN, biometrik, auto-lock, FLAG_SECURE
-    data/                    # repositori, DTO, mapper, cache snapshot
-    common/                  # Money (BigDecimal parser/formatter), tanggal WIB, util
-    testing/                 # fake server, fixture JSON dari backend
-  feature/
-    auth/  home/  transactions/  payments/  approvals/  cash/  receivables/
-    suppliers/  ledger/  reconciliation/  reports/  notifications/  more/  search/
-  baselineprofile/  benchmark/
+finance-mobile/
+  app/                         # Expo Router
+    _layout.tsx                # provider (tema, query, sesi), gerbang login/kunci
+    login.tsx                  # A2 (+ A3/A5/A6 pada slice S2)
+    +native-intent.tsx         # tautan share dari Android → aksi-cepat
+    (tabs)/_layout.tsx         # 5 tab + FAB
+    (tabs)/index.tsx           # Beranda
+    (tabs)/transaksi.tsx       # Transaksi
+    (tabs)/persetujuan.tsx     # Persetujuan
+    (tabs)/laporan.tsx         # Laporan
+    (tabs)/lainnya.tsx         # Lainnya
+    aksi-cepat.tsx             # sheet FAB (modal): kamera/galeri/tempel/share
+    persetujuan/[id].tsx       # detail persetujuan (AP2)
+    laporan/[jenis].tsx        # detail laporan (L2–L7)
+    approval/[jenis]/[id].tsx  # tautan push → persetujuan/[id]
+    …                          # layar detail lain ditambah per slice
+  src/
+    design/                    # token, GlassCard, MoneyText, StatusBadge, Sheet, tier glass
+    api/                       # apiClient, ApiError, endpoint per domain, tipe DTO
+    auth/                      # sesi mobile, secure storage, kunci layar (PIN/biometrik)
+    lib/                       # money (string desimal), tanggal WIB, format, env
+    features/                  # komponen per fitur (beranda, transaksi, persetujuan, …)
+    mocks/                     # data contoh realistis (dipakai sebelum API tersambung)
+    hooks/  state/
+  assets/  scripts/
+  app.config.ts  eas.json  babel.config.js  metro.config.js  tsconfig.json  jest.config.js  eslint.config.js
+  README.md
 ```
 
 ### 15.3 Aturan kode yang menjaga "server sebagai sumber kebenaran"
 
-1. **Uang = `BigDecimal`**, di-*parse* dari literal JSON mentah (adapter kustom; **dilarang** `Double/Float` untuk uang). Command mengirim nominal sebagai **string desimal** (server `toMoney` menerima string).
-2. **Tidak ada penjumlahan/pengurangan uang untuk ditampilkan sebagai angka resmi.** Boleh: format, pembulatan tampilan, urutan, geometri chart. Total selalu dari server (`total`, `ringkasan`, `totalKas`).
-   Lint kustom (Detekt rule) menandai `+`/`-`/`sumOf` pada `Money` di luar paket `core.common` dan pengujian.
-3. **Tidak ada enum/aturan status buatan sendiri.** Status ditampilkan dari string server; pemetaan label tunggal di `StatusBadge`; status tak dikenal → tampil apa adanya + warna netral (tidak crash).
-4. **Tidak ada perhitungan jurnal, saldo, umur piutang, alokasi, HPP, pajak di klien.**
-5. **Command → tunggu respons → re-fetch entitas** (tidak ada *optimistic update* pada data keuangan). Pengecualian UI murni: status "sedang mengirim".
-6. Kesalahan server ditampilkan **apa adanya** (`error` sudah Bahasa Indonesia yang ditujukan ke pengguna, `handleFinanceError`).
-7. Tanggal dokumen dikirim/diterima `YYYY-MM-DD` (WIB); instant ISO-UTC dirender dengan zona **Asia/Jakarta** (bukan zona perangkat) lewat satu util — sesuai `CLAUDE.md` §11.
-8. Semua *feature flag*/ambang (mis. ambang approval) dibaca dari server; app tidak menyimpan angka bisnis.
+1. **Uang = string desimal** bertipe `Money` (`"1234567.89"`). Respons server (angka JSON) di-*parse* dengan `lossless-json` dan kolom uang dikonversi ke string
+   **di satu tempat** (`src/api/normalize.ts`); **command mengirim string** (`toMoney` server menerima string). Dilarang: `parseFloat`, `Number()`, `+x`,
+   `toFixed` pada uang. ESLint `no-restricted-syntax` + tes `money.test.ts` menjaga ini.
+2. **Tidak ada penjumlahan/pengurangan uang untuk tampilan resmi.** Yang boleh: format ribuan, memecah tampilan ("8.200" + ",28" redup), tanda +/−, singkatan
+   tampilan ("Rp 1,2 jt" lewat `BigInt` khusus tampilan), urutan, geometri chart. Total selalu dari server (`total`, `ringkasan`, `totalKas`).
+3. **Tidak ada enum/aturan status buatan sendiri.** Status dari string server; pemetaan label tunggal di `StatusBadge`; status tak dikenal → tampil apa adanya, netral.
+4. **Tidak ada perhitungan jurnal, saldo, umur piutang, alokasi, HPP, pajak di klien.** Laporan hanya dirender dari respons `/finance/reports/*`.
+5. **Command → tunggu respons → invalidasi query** (TanStack Query) agar data diambil ulang dari server. **Tidak ada optimistic update** pada data keuangan, tidak ada antrean command, tidak ada posting offline (§14).
+6. Galat server ditampilkan **apa adanya** (`error` sudah Bahasa Indonesia); pemetaan `code` (`SESSION_REVOKED`, `RATE_LIMITED`, `IDEMPOTENCY_*`, …) di satu tempat.
+7. Tanggal dokumen `YYYY-MM-DD` (WIB); instant ISO-UTC dirender **Asia/Jakarta** lewat satu util (bukan zona perangkat) — `CLAUDE.md` §11.
+8. Seluruh teks UI **Bahasa Indonesia**; string ditaruh di `src/lib/strings.ts` (bukan tersebar) supaya mudah ditinjau.
+9. Ambang/aturan bisnis dibaca dari server; app tidak menyimpan angka bisnis.
 
-### 15.4 Lapisan data (per fitur)
+### 15.4 Lapisan data
 
 ```
-Screen(Compose) ⇄ ViewModel(UiState) ⇄ UseCase(tipis) ⇄ Repository ⇄ ApiService(Retrofit)
-                                                           └─ SnapshotStore(Room, baca-saja, TTL 24 jam)
+Screen(app/*) ⇄ hook fitur (useQuery/useMutation) ⇄ src/api/* (apiClient) ⇄ backend SANSS
+                                └─ cache snapshot baca-saja (react-query persister terenkripsi, TTL 24 jam, dihapus saat logout)
 ```
 
-- Repositori mengekspos `Flow<Loadable<T>>` : `Loading | Data(value, asOf, fromCache) | Error`.
-- **Snapshot** diisi hanya setelah respons server sukses; ditandai `asOf`; dipakai hanya untuk tampilan offline (§14).
-- **Command** melalui `CommandExecutor`: cek jaringan → step-up bila perlu → set `Idempotency-Key` (UUID per niat pengguna, disimpan selama form terbuka) → panggil → tangani hasil pasti/tidak pasti (§14) → *invalidate* & re-fetch.
-- Paginasi: kini offset/limit & `take 300` (F8); Paging 3 dipakai begitu server menyediakan cursor (G-16). Sampai itu, daftar dimuat dengan **batas periode** + indikator "terpotong" (`terpotong:true`) yang mengajak mempersempit filter.
+- `useMutation` command memakai `CommandExecutor`: cek jaringan → step-up bila perlu → `Idempotency-Key` (UUID dari `expo-crypto`, dibuat **sekali per niat pengguna** dan dipakai ulang saat mencoba lagi) → panggil → tangani hasil pasti/tidak pasti (§14) → `invalidateQueries`.
+- **Refresh token** *single-flight*: banyak request paralel yang menerima 401 `TOKEN_INVALID`/kedaluwarsa menunggu satu panggilan `POST /mobile/auth/refresh`; token baru **disimpan ke SecureStore sebelum dipakai** (server mencabut sesi bila token lama dipakai ulang). Kode `SESSION_REVOKED`/`REFRESH_REUSED`/`ACCOUNT_INACTIVE` ⇒ layar A6 + hapus data lokal.
+- Paginasi: kini offset/limit & `take 300` (F8); `useInfiniteQuery` dipakai begitu server menyediakan cursor (G-16). Sampai itu, daftar dimuat dengan **batas periode** + indikator "terpotong".
 
-### 15.5 Modul & tanggung jawab tim
+### 15.5 Lingkungan (dev / preview / production)
 
-Satu developer utama (moderate skill, pemeliharaan sederhana): **hindari** modularisasi berlebihan. Modul `core:*` + `feature:*` di atas dipertahankan,
-tetapi boleh disatukan menjadi satu modul `app` pada slice awal jika build lambat/ribet; pemisahan paket tetap dijaga.
+`app.config.ts` membaca `APP_VARIANT` (`development` | `preview` | `production`) dan `EXPO_PUBLIC_*` dari profil `eas.json`:
+
+| Variabel | development | preview | production |
+|---|---|---|---|
+| `APP_VARIANT` | `development` | `preview` | `production` |
+| `EXPO_PUBLIC_API_URL` | `http://10.0.2.2:4000/api` (emulator) / IP LAN | `https://app.sanomatrassehat.com/api` | `https://app.sanomatrassehat.com/api` |
+| `EXPO_PUBLIC_USE_MOCKS` | `true` | `false` | `false` |
+| Package Android | `com.sanomatrassehat.finance.dev` | `com.sanomatrassehat.finance.preview` | `com.sanomatrassehat.finance` |
+| Nama | "SANO Finance (Dev)" | "SANO Finance (Preview)" | "SANO Finance" |
+| Kanal EAS Update | `development` | `preview` | `production` |
+
+Tiga varian punya package berbeda sehingga bisa **terpasang bersamaan** di satu HP. `runtimeVersion` memakai kebijakan **`fingerprint`** (hash konfigurasi native + dependensi):
+OTA **tidak pernah** dikirim ke build yang native-nya berbeda — lebih aman daripada `appVersion` yang dipakai dua app lain (yang bisa lupa dinaikkan).
+
+### 15.6 Hasil audit pola Expo di repo (yang dipakai ulang)
+
+| Pola di `mobile/` & `driver-mobile/` | Dipakai di `finance-mobile/` |
+|---|---|
+| Expo SDK ~57, RN 0.86, React 19.2.3, `expo-*` ~57 | Sama persis (versi ditetapkan lewat `npx expo install`) |
+| `eas.json`: profil `development` (dev client, internal), `preview` (internal), `production`, `apk`; kanal sama dengan nama profil | Dipertahankan + `env` per profil + `production-apk` |
+| `app.json`: `userInterfaceStyle: automatic`, `expo-build-properties` (Proguard/shrink/minify rilis), `expo-notifications` (warna), `expo-splash-screen` | Dipertahankan (jadi `app.config.ts`) |
+| `runtimeVersion.policy = appVersion`, `updates.url = https://u.expo.dev/<projectId>` | Diganti `fingerprint`; `projectId` **diisi lewat `eas init`** (tidak boleh memakai ID app lain) |
+| `babel.config.js`: `babel-preset-expo` + `transform-remove-console` di produksi | Dipakai |
+| `expo-secure-store`, `expo-local-authentication` (di `mobile/`) | Dipakai untuk token & kunci layar |
+| `@tanstack/react-query` v5, `lucide-react-native`, `expo-image`, `expo-haptics`, `expo-notifications` | Dipakai |
+| Tanpa Reanimated di `driver-mobile` (audit performa 13 Sep 2026) | Diikuti; `Animated` core |
+| `@shopify/flash-list` 2.0.2 | Dipakai untuk daftar panjang (S6+) |
+| `push.js`: registrasi token Expo + channel Android, `Constants.expoConfig.extra.eas.projectId` | Diadaptasi (`src/auth/push.ts`) ke `POST /api/mobile/devices` |
+| Proyek TypeScript **belum ada** di repo; `mobile/AGENTS.md`: "Expo has changed — baca dokumen v57" | Baca docs SDK 57 sebelum menambah modul; TS baru di `finance-mobile/` saja |
+| **Tidak diubah**: `mobile/`, `driver-mobile/`, `driver-app/` | Nol perubahan pada app lain |
 
 ---
 
@@ -1023,7 +1091,7 @@ Format kesalahan: `{"error":"…"}`. Semua respons JSON kecuali unggah (multipar
 ### 16.7 Konvensi yang harus dipatuhi klien
 
 - **Tanggal**: `from`/`to` = `YYYY-MM-DD` WIB. Default server = bulan berjalan.
-- **Uang**: respons `number` (dua desimal); baca sebagai `BigDecimal` dari literal; kirim string.
+- **Uang**: respons `number` (dua desimal); di klien di-*parse* dengan `lossless-json` dan diubah ke **string desimal** (`Money`) di `src/api/normalize.ts`; **kirim string**. Jangan memakai JS `Number` untuk uang.
 - **Status HTTP**: 200/201 sukses; 400 validasi; 401 sesi; 403 izin/pemisahan tugas; 404; 409 konflik status; 422 aturan bisnis (mis. batas kasbon + `kodeBatas`); 5xx server.
 - **Idempotensi**: belum ada di command pembuatan (F7) → G-07.
 - **Nomor dokumen** ada di respons (`expenseNumber`, `kasbonNumber`, `entryNumber`, …) — ditampilkan, tidak dibuat klien.
@@ -1059,7 +1127,22 @@ Prioritas: **P0** = memblokir rilis; **P1** = dibutuhkan MVP tetapi ada penyiasa
 | **G-18** | Pencarian global | `GET /finance/search?q=` → gabungan nomor dokumen/order/pelanggan/supplier (batas 20) | **P2** | `routes/finance.js` |
 | **G-19** | Step-up hanya klien (§11.5) | Enrollment kunci publik perangkat + `POST /mobile/auth/step-up` (challenge–signature) ⇒ `X-StepUp-Token` 5 mnt wajib pada command uang | **P2** | `routes/mobileAuth.js` |
 
-Ringkasan blokade MVP: **G-01, G-02, G-03, G-04, G-07, G-10 (push)** harus selesai **sebelum** aplikasi boleh dipakai dengan data produksi.
+**Status 19 Sep 2026 (S0 selesai, live di produksi, 175 tes integrasi + 494 tes unit hijau):**
+
+| Gap | Status | Catatan |
+|---|---|---|
+| G-01 sesi mobile | ✔ selesai | `/api/mobile/auth/*`, tabel `mobile_sessions` |
+| G-02 tanpa perpanjangan otomatis | ✔ selesai | `requireAuth` cabang `typ:"mobile"` |
+| G-03 rate limit | ✔ selesai | login (email+IP, IP), refresh, API mobile, media sign; helmet/CORS **belum** |
+| G-04 capabilities | ✔ selesai | `/auth/me` + login |
+| G-07 Idempotency-Key | ✔ selesai | 4 router finance; wajib untuk token mobile (428) |
+| G-08 foto nota | ✔ selesai | Bearer atau URL bertanda-tangan; web disesuaikan; media lain (`payment-proofs`, dll.) **belum** |
+| G-10 push | ◐ fondasi selesai | token perangkat (`expo`/`fcm`), dispatch, transport FCM v1; **pemicu & pusat notifikasi = S11**; mati kecuali `FINANCE_PUSH_ENABLED=true` |
+| G-17 config | ◐ dasar selesai | `GET /api/mobile/config`; `X-Request-Id` di log server belum |
+| G-15 role baru | ✘ belum | dijadwalkan sebelum rilis 1.0 final |
+| G-05, G-06, G-09, G-13, G-16 | ✘ belum | penyiasatan tercantum; S3–S6 |
+
+Ringkasan blokade MVP (semula): **G-01, G-02, G-03, G-04, G-07, G-10 (push)** harus selesai **sebelum** aplikasi boleh dipakai dengan data produksi — kini terpenuhi kecuali **pemicu push (S11)**.
 G-05, G-06, G-08, G-09, G-13, G-15, G-16, G-17 harus selesai sebelum rilis 1.0 final; penyiasatan sementara tercantum agar pengembangan tidak menunggu.
 
 Aturan pengerjaan backend (dari `CLAUDE.md`): uji integrasi per role nyata (bukan admin) · route baru **wajib** dimount di `tests/integration/setup/testApp.js` ·
@@ -1073,60 +1156,90 @@ migrasi lewat `prisma migrate` · deploy: `git pull` di VPS, `docker compose up 
 
 | Lapisan | Alat | Cakupan wajib |
 |---|---|---|
-| Unit | JUnit5, Turbine, MockK | Parser/formatter `Money` (BigDecimal, ribuan `.` desimal `,`, `150.000`→150000), `StatusBadge`, mapper DTO, util tanggal WIB (batas 00:00–07:00 WIB), `CommandExecutor` (hasil pasti/tidak pasti), `AutoLock`, backoff PIN |
-| Kontrak | Fixture JSON **dihasilkan dari tes integrasi backend** (respons nyata) + tes klien memparse semuanya; CI mengulang bila skema berubah | Semua endpoint §16; **status tak dikenal tidak crash**; angka besar & 2 desimal |
-| UI Compose | Compose Testing + Robolectric | State kosong/loading/error tiap daftar; form validasi; tombol nonaktif tanpa capability |
-| Screenshot | Roborazzi/Paparazzi | Terang/gelap × tier glass FULL/LITE × skala font 100/150/200% untuk layar utama |
-| Integrasi end-to-end | Emulator + backend lokal dengan DB uji (`tests/integration/setup/bootstrapTestDb.js`) | Alur §7.2–§7.6 dengan **akun Finance, Approver, Owner, Accountant** (bukan admin) |
-| Keamanan | Checklist **OWASP MASVS-L1 + bagian L2** (storage, crypto, auth, network, platform) + uji manual | Screenshot terblokir, backup mati, token tak terbaca tanpa Keystore, pinning gagal saat proxy MITM, reuse refresh-token mencabut sesi, PIN lockout |
-| Performa | Macrobenchmark + Baseline Profile | Cold start, scroll 300 baris, kompres 12 MP < 1,5 dtk di perangkat acuan |
-| Aksesibilitas | TalkBack manual + Accessibility Scanner | Label konten, urutan fokus, kontras AA di atas glass, target 48 dp, teks 200% |
-| Perangkat | Matriks: API 26, 28, 30, 33, 35; RAM 3/4/8 GB; layar 5,5–6,8"; 1 perangkat Android Go bila ada | Tier glass benar, tidak ada jank |
-| Regresi backend | Suite existing 11 berkas finance harus tetap hijau + tes baru G-01…G-19 | Wajib di CI sebelum deploy |
+| Tipe & gaya | `tsc --noEmit` (strict), ESLint (`eslint-config-expo` + aturan larangan `parseFloat`/`Number()` untuk uang), `expo-doctor` | Bersih di CI sebelum build |
+| Unit | `jest-expo` | `money.ts` (parse/format/pecah desimal, `150.000`→`150000`, negatif, sangat besar), `dates.ts` (batas 00:00–07:00 WIB), `normalize.ts` (angka JSON → string desimal, literal `1234.50` tetap), `StatusBadge` (status tak dikenal), `apiClient` (refresh single-flight, pemetaan galat, `Idempotency-Key`), `pin.ts` (verifier, jeda percobaan), `CommandExecutor` (hasil pasti/tidak pasti) |
+| Komponen | `@testing-library/react-native` | State kosong/loading/error tiap daftar; form validasi; tombol nonaktif tanpa capability; teks Bahasa Indonesia |
+| Kontrak | Fixture JSON **dihasilkan dari tes integrasi backend** (respons nyata) + tes klien memparse semuanya | Semua endpoint §16; status tak dikenal tidak crash; angka besar & 2 desimal |
+| Snapshot visual | Jest snapshot komponen desain + tangkapan manual per rilis | Terang/gelap × tier glass FULL/LITE/MINIMAL × skala font 100/150/200% |
+| E2E | **Maestro** (YAML) pada emulator/perangkat dengan backend lokal & DB uji (`tests/integration/setup/bootstrapTestDb.js`) | Alur §7.2–§7.5 dengan **akun Finance, Approver, Owner, Accountant** (bukan admin) |
+| Keamanan | Checklist **OWASP MASVS-L1 + butir L2 terpilih** + uji manual | Screenshot terblokir, token hanya di SecureStore, pinning/HTTPS, reuse refresh-token mencabut sesi, PIN lockout |
+| Performa | Profil Hermes/React DevTools + pengukuran manual | Cold start, scroll 300 baris (FlashList), kompres 12 MP < 1,5 dtk di perangkat acuan |
+| Aksesibilitas | TalkBack manual + `accessibilityLabel` diaudit | Label, urutan fokus, kontras AA di atas glass, target 48 dp, teks 200% |
+| Perangkat | Matriks: Android 8 (API 26), 10, 13, 15; RAM 3/4/8 GB; layar 5,5–6,8" | Tier glass benar, tidak ada jank |
+| Regresi backend | Suite existing 11 berkas finance + tes S0 (mobileAuth, idempotency, media, notifikasi) | Wajib hijau sebelum deploy backend |
 
-Definisi selesai (DoD) fitur: kode + tes unit + tes UI + screenshot terang/gelap + diuji dengan akun peran nyata + tidak ada perhitungan uang baru di klien (lint bersih) + review keamanan checklist.
+Definisi selesai (DoD) fitur: kode + tes unit + tes komponen + diuji dengan **akun peran nyata** + tidak ada aritmetika uang baru di klien (lint bersih) + teks Bahasa Indonesia + review keamanan singkat.
 
 ### 18.2 Kualitas data yang diuji khusus
 
-- Total di layar **identik** dengan web untuk periode & akun yang sama (uji otomatis: bandingkan respons yang sama; **tidak** ada logika turunan).
-- Order LUNAS **tidak** muncul di Piutang; pembayaran sebelum 18 Sep 2026 tidak menambah kas (uji end-to-end lewat mode `SEBELUM_SALDO_AWAL`).
+- Total di layar **identik** dengan web untuk periode & akun yang sama (uji otomatis membandingkan respons; **tidak** ada logika turunan).
+- Order LUNAS **tidak** muncul di Piutang; pembayaran sebelum 18 Sep 2026 tidak menambah kas (uji E2E lewat mode `SEBELUM_SALDO_AWAL`).
 - Verifikasi massal parsial menampilkan hasil per order benar.
-- Dobel-tap Simpan menghasilkan **satu** dokumen (dengan G-07).
+- Dobel-tap Simpan menghasilkan **satu** dokumen (backend S0 sudah memastikan lewat `Idempotency-Key`).
 
 ### 18.3 Observability
 
 | Kebutuhan | Implementasi |
 |---|---|
-| Crash & ANR | Firebase Crashlytics (tanpa PII; kunci kustom: versi, tier glass, peran) |
-| Jejak layar/perf | Firebase Performance (start, layar utama) — sampel 10% |
-| Analitik produk (minimal, tanpa data finansial) | Event: `login_success`, `approval_decided(jenis,hasil)`, `payment_verified(mode)`, `receipt_uploaded(sumber)`, `command_failed(kode)`, `offline_blocked`. **Tanpa** nominal/nama/nomor |
-| Korelasi | `X-Request-Id` klien ↔ log server (G-17); kode request-id ditampilkan pada error 5xx |
-| Server | Log terstruktur untuk `/mobile/auth/*` & command finance (userId, sid, deviceId, route, status, durasi); hitungan 401/403/409/422 per rute; alert bila login gagal melonjak (F3) |
-| Kesehatan | `/api/health` + `/mobile/config`; pemantau uptime eksternal (opsional) |
+| Crash & galat JS | `ErrorBoundary` global + pelaporan (Sentry atau setara; keputusan S12), **tanpa PII**, kunci kustom: versi, varian, tier glass, preset peran |
+| Analitik produk (minimal, tanpa data finansial) | Event: `login_success`, `approval_decided(jenis,hasil)`, `payment_verified(mode)`, `receipt_uploaded(sumber)`, `command_failed(kode)`, `offline_blocked`. **Tanpa** nominal/nama/nomor dokumen |
+| Korelasi | `X-Request-Id` (UUID) dikirim tiap request; ditampilkan sebagai kode kecil pada galat 5xx (G-17) |
+| Server | Log terstruktur untuk `/mobile/auth/*` & command finance; hitungan 401/403/409/422/429; alert bila login gagal melonjak |
+| Kesehatan | `/api/health` + `/api/mobile/config` (versi minimum, maintenance) — **sudah ada (S0)** |
 | Metrik keberhasilan | Dasbor sederhana atas G1–G5 (§1.2) dari log audit server |
 | Privasi | Opt-out analitik di M5 |
 
-### 18.4 Build & rilis
+### 18.4 Build, EAS, dan rilis
 
-| Aspek | Keputusan |
-|---|---|
-| Lokasi | `finance-android/` (monorepo); `applicationId` **`com.sanomatrassehat.finance`** (beda dari `com.sanomatrassehat.salesapp`) |
-| Varian | `dev` (base URL `http://10.0.2.2:4000/api`, cleartext dev saja, tanpa pinning, ikon berlabel DEV) · `prod` (`https://app.sanomatrassehat.com/api`) |
-| Versi | `versionName` semver (1.0.0); `versionCode` naik monoton; dibaca `GET /mobile/config` untuk paksa-update |
-| Penandatanganan | Keystore **baru**, dibuat sekali, disimpan **di luar repo** (password manager + cadangan offline terpisah); `signingConfig` dibaca dari properti lokal/CI secret. **Kehilangan keystore = tidak bisa update** — dicatat di `docs/` runbook. (Bandingkan `docs/BUILD-APK.md`: jangan commit keystore) |
-| Kompilasi | R8 full, shrink resources, ABI split; hasil: `app-prod-release.apk` (universal, sideload) & `app-prod-release.aab` (jika kelak ke Play) |
-| CI | GitHub Actions (repo `sanocareai/klinik-matras-crm`): lint (Detekt, Android Lint), unit, kontrak, build `prod` release ter-sign dengan secret; artefak diunggah |
-| Distribusi 1.0 | **Sideload terkontrol**: APK ter-sign dibagikan ke Natasha/Gilang/Kemal/Juri lewat **Firebase App Distribution** (undangan email, kanal terbatas). Lalu opsional **Play Internal Testing** (biaya akun developer sekali bayar) untuk update mulus + Play Integrity |
-| Pembaruan | Cek `mobile/config` saat buka: versi < `minVersionCode` ⇒ layar paksa-update (tautan APK/App Distribution); `latest` ⇒ banner lembut |
-| Pemulihan | Rilis buruk: `minVersionCode` naik + kill-switch fitur lewat `flags`; backend tetap kompatibel mundur minimal 2 versi app |
-| Lingkungan server | Tidak ada staging terpisah saat ini (hanya dev lokal + VPS produksi). Sebelum G-01… di-deploy ke produksi, uji dengan DB uji lokal; deploy backend bertahap (endpoint baru tidak mengubah yang lama) — ikuti alur `CLAUDE.md` §12 |
-| Dokumen operasional | `docs/RUNBOOK_FINANCE_ANDROID.md` (dibuat saat slice 12): cara build, tanda tangan, rotasi pin, cabut sesi darurat, prosedur kehilangan perangkat |
+**Lokasi & identitas:** `finance-mobile/`; package produksi **`com.sanomatrassehat.finance`** (varian `.dev` / `.preview` memakai sufiks); nama "SANO Finance".
+
+**Profil EAS (`eas.json`)**
+
+| Profil | Tujuan | Output | Kanal update | Distribusi |
+|---|---|---|---|---|
+| `development` | Dev client (hot reload, uji native) | APK | `development` | internal |
+| `preview` | Uji tim (Natasha/Gilang/Kemal/Juri) sebelum rilis | APK | `preview` | internal (tautan/QR EAS) |
+| `production` | Rilis toko | **AAB** | `production` | Play Store (bila kelak dipakai) |
+| `production-apk` | Rilis sideload terkontrol | **APK** | `production` | internal |
+
+**Perintah (dijalankan dari `finance-mobile/`; butuh `eas login` & `eas init` sekali)**
+
+```bash
+eas build --platform android --profile development      # dev client
+eas build --platform android --profile preview          # APK uji
+eas build --platform android --profile production-apk   # APK rilis
+eas build --platform android --profile production       # AAB
+eas update --channel preview    --message "…"            # OTA ke preview
+eas update --channel production --message "…"            # OTA ke production
+eas update:rollback                                       # tarik OTA bermasalah
+```
+
+**OTA aman (EAS Update):**
+- `runtimeVersion.policy = "fingerprint"` — OTA hanya menjangkau build yang **native-nya identik**; menambah/mengubah modul native ⇒ fingerprint berubah ⇒ wajib build baru.
+- OTA hanya untuk JS/aset. Perubahan pada kontrak API yang **tidak kompatibel mundur** harus lewat `minVersionCode` di `/api/mobile/config` (paksa-update).
+- Alur: PR → tes → `eas update --channel preview` → uji Natasha/Owner → `eas update --channel production`. Tiap update diberi pesan; rollback dengan `eas update:rollback`.
+- `expo-updates`: `checkAutomatically: ON_LOAD`, `fallbackToCacheTimeout` singkat; dokumen aman terhadap update yang gagal (kembali ke bundel tertanam).
+
+**Penandatanganan:** keystore Android dikelola **EAS (credentials service)**; simpan cadangan (`eas credentials` → unduh) di password manager. Kehilangan keystore = tidak bisa memperbarui aplikasi yang sudah terpasang.
+
+**Push:** unggah kunci **FCM V1** (akun layanan Firebase) ke EAS (`eas credentials`) — Expo Push memakainya. Server SANSS **tidak** butuh kredensial untuk token Expo (`FINANCE_PUSH_ENABLED=true` sudah cukup); kredensial FCM di env server hanya bila memakai token FCM langsung. Lihat `docs/FINANCE-MOBILE-BACKEND.md`.
+
+**CI (GitHub Actions, repo `sanocareai/klinik-matras-crm`):** `npm ci` → `tsc` → lint → `jest` → `expo-doctor`; build EAS dipicu manual/`workflow_dispatch` dengan `EXPO_TOKEN`.
+
+**Distribusi 1.0:** APK `production-apk` via tautan internal EAS ke Natasha/Gilang/Kemal/Juri; opsional Play Internal Testing (akun developer sekali bayar).
+
+**Pembaruan versi:** cek `GET /api/mobile/config` saat buka: `versionCode` < `minVersionCode` ⇒ layar paksa-update; `< latestVersionCode` ⇒ banner lembut. Backend kompatibel mundur minimal 2 versi app.
+
+**Lingkungan server:** tidak ada staging terpisah (hanya dev lokal + VPS produksi). Uji backend dengan DB uji lokal; deploy backend bertahap (endpoint baru tidak mengubah yang lama) — alur `CLAUDE.md` §12.
+
+**Dokumen operasional:** `docs/RUNBOOK_FINANCE_MOBILE.md` (dibuat di S12): build, kredensial, OTA & rollback, cabut sesi darurat, HP hilang.
 
 ### 18.5 Prosedur darurat
 
-- **HP hilang**: Owner/Admin menonaktifkan sesi (`DELETE /mobile/auth/sessions/:id` atau nonaktifkan akun) ⇒ command finance langsung ditolak (cek `sid`), cache lokal tak terbaca tanpa Keystore + PIN.
+- **HP hilang**: Owner/Admin menonaktifkan akun atau memanggil `POST /api/mobile/auth/sessions/revoke-user` ⇒ token akses langsung ditolak (cek sesi tiap request), token push dihapus, cache lokal tak terbaca tanpa SecureStore + PIN.
 - **Token bocor**: rotasi refresh + cabut semua sesi pengguna; catat di audit.
 - **Bug angka**: tidak ada perhitungan di klien ⇒ perbaikan di backend berlaku instan tanpa rilis app.
+- **Bug UI**: `eas update:rollback` atau OTA perbaikan ke kanal `production`; bila menyangkut native ⇒ build baru + naikkan `minVersionCode`.
 
 ---
 
@@ -1138,8 +1251,9 @@ Format AC: *Given/When/Then* ringkas.
 
 ### Fase A — Fondasi (backend + kerangka app)
 
-#### S0 — Prasyarat backend (L) — G-01, G-02, G-03, G-04, G-07, G-15 (+ G-17 dasar)
-Cakupan: sesi mobile, rate limit, capabilities, idempotency, role baru, `mobile/config`.
+#### S0 — Prasyarat backend (L) — G-01, G-02, G-03, G-04, G-07, G-08, G-10 (fondasi), G-17 (dasar)
+**Status: SELESAI & live (19 Sep 2026)** — kecuali role baru G-15 (ditunda). Bukti: `mobileAuth`, `financeIdempotency`, `financeMedia`, `financeNotifications` integration test + `rateLimit`, `mediaSigning`, `fcmTransport` unit test. Dokumen: `docs/FINANCE-MOBILE-BACKEND.md`.
+Cakupan: sesi mobile, rate limit, capabilities, idempotency, foto nota terlindungi, token push perangkat + dispatch, `mobile/config`.
 | AC | Kriteria |
 |---|---|
 | S0-1 | *Given* kredensial benar *When* `POST /mobile/auth/login` *Then* dapat access token 15 mnt (`typ:"mobile"`, `sid`) + refresh token; respons memuat `capabilities` |
@@ -1152,13 +1266,15 @@ Cakupan: sesi mobile, rate limit, capabilities, idempotency, role baru, `mobile/
 | S0-8 | Suite finance existing (11 berkas) tetap hijau; router baru terpasang di `testApp.js` |
 
 #### S1 — Kerangka app + design system (M)
-Proyek `finance-android/`, tema Biru Kaca, `GlassCard`, `MoneyText`, `StatusBadge`, `FilterBar`, `ReasonSheet`, tier glass, dark/light, navigasi 5 tab (kosong), CI dasar.
+**Status: scaffold SELESAI (19 Sep 2026)** — `finance-mobile/` sudah berisi Expo Router + TypeScript, token & `GlassCard`/`MoneyText`/`StatusBadge`/`Sheet`, tier glass, dark/light,
+lima tab + FAB, `apiClient`, SecureStore, konfigurasi EAS, dan data contoh. Sisa S1: `FilterBar`, `ReasonSheet`, CI, pemasangan Inter, snapshot visual.
+Proyek `finance-mobile/`, tema Biru Kaca, `GlassCard`, `MoneyText`, `StatusBadge`, `FilterBar`, `ReasonSheet`, tier glass, dark/light, navigasi 5 tab, CI dasar.
 | AC | Kriteria |
 |---|---|
-| S1-1 | Build `dev` & `prod` berjalan di API 26 dan 35; tab bawah 5 item berpindah dengan state dipertahankan |
-| S1-2 | Tier glass otomatis (FULL di API ≥ 31 non-low-RAM, LITE lainnya); tombol Efek Ringan mengganti seketika |
+| S1-1 | Build EAS `development` & `preview` berjalan di Android 8 dan 15; tab bawah 5 item berpindah dengan state dipertahankan; ketiga varian (`.dev`, `.preview`, produksi) terpasang bersamaan |
+| S1-2 | Tier glass otomatis (FULL di API ≥ 31 & RAM ≥ 4 GB, LITE lainnya); tombol Efek Ringan mengganti seketika |
 | S1-3 | Screenshot tes terang/gelap × skala font 100/200% lulus tanpa teks terpotong |
-| S1-4 | `Money.parse("1234567.89")` = `BigDecimal("1234567.89")`; tidak ada `Double` uang (lint hijau) |
+| S1-4 | `parseMoney("1234567.89")` mengembalikan string desimal yang sama; `formatRupiah` benar untuk nol, negatif, dan nilai > 2^53; tidak ada `Number`/`parseFloat` pada uang (lint + tes hijau) |
 | S1-5 | Tema mengikuti sistem; kontras AA untuk teks di atas glass (Accessibility Scanner bersih) |
 
 #### S2 — Auth, kunci, keamanan dasar (L) — butuh S0
@@ -1170,8 +1286,8 @@ Proyek `finance-android/`, tema Biru Kaca, `GlassCard`, `MoneyText`, `StatusBadg
 | S2-4 | 10 PIN salah ⇒ data lokal & sesi dihapus, kembali ke login |
 | S2-5 | Access token kedaluwarsa saat beberapa request paralel ⇒ tepat **satu** refresh; hasil semua request benar |
 | S2-6 | Refresh gagal (dicabut) ⇒ A6, data cache dihapus |
-| S2-7 | Proxy MITM (sertifikat tak dikenal) ⇒ koneksi ditolak (pinning) — tes manual terdokumentasi |
-| S2-8 | `allowBackup=false`; `adb backup`/`run-as` tidak menghasilkan token terbaca |
+| S2-7 | Klien menolak HTTP polos dan sertifikat tidak valid (HTTPS bawaan sistem); pinning ditunda ke 1.1 (§11.6) — keputusan tercatat |
+| S2-8 | `android.allowBackup=false`; `adb backup`/`run-as` tidak menghasilkan token terbaca (token hanya di SecureStore) |
 | S2-9 | M4 menampilkan sesi/perangkat & bisa mengeluarkan perangkat lain |
 
 ### Fase B — Nilai inti (baca + putuskan)
@@ -1282,12 +1398,12 @@ Layar H1, K1, K2 (baca); `GET /finance/dashboard`, `/cash-accounts`, `/reports/l
 #### S12 — Hardening, performa, QA, dan rilis (L)
 | AC | Kriteria |
 |---|---|
-| S12-1 | Semua target §10.5 tercapai pada perangkat acuan (cold start, ukuran APK, memori, fps) dengan Baseline Profile |
+| S12-1 | Semua target §10.5 tercapai pada perangkat acuan (cold start, ukuran APK, memori, fps) pada build rilis Hermes |
 | S12-2 | Checklist MASVS-L1 (+ butir L2 yang dipilih) lulus dan terdokumentasi; uji MITM/root/backup/screenshot tercatat |
 | S12-3 | TalkBack menavigasi alur §7.2–§7.5 dari awal sampai akhir; kontras AA di kedua tema |
 | S12-4 | Regresi lengkap: suite backend finance hijau + tes klien + E2E dengan 4 persona |
-| S12-5 | APK `prod` ter-sign didistribusikan ke 4 pengguna via Firebase App Distribution; paksa-update diuji (naikkan `minVersionCode`) |
-| S12-6 | `docs/RUNBOOK_FINANCE_ANDROID.md` selesai (build, keystore, rotasi pin, pencabutan sesi, HP hilang) |
+| S12-5 | APK `production-apk` (EAS) didistribusikan ke 4 pengguna; OTA `eas update --channel production` dan `eas update:rollback` diuji; paksa-update diuji (naikkan `minVersionCode`) |
+| S12-6 | `docs/RUNBOOK_FINANCE_MOBILE.md` selesai (build, kredensial EAS, OTA & rollback, pencabutan sesi, HP hilang) |
 | S12-7 | Pilot 2 minggu dengan pengguna nyata; metrik G1–G5 diukur; daftar temuan diprioritaskan |
 
 ### 19.1 Ringkasan fase & ketergantungan
@@ -1317,8 +1433,11 @@ langsung menjawab masalah Owner (G2, G4), sebelum fitur pencatatan yang lebih be
 | R4 | Foto nota dapat diakses tanpa auth | Sedang | G-08; sementara: nama = hash konten, tidak pernah ditampilkan di log/deeplink publik |
 | R5 | Blur pada Android lama lambat/panas | Sedang | Tier glass, batas 2 blur/layar, tanpa blur di daftar, uji perangkat 3 GB |
 | R6 | Klien tergoda menghitung angka | Tinggi | Aturan §15.3 + lint + review; bug angka ⇒ perbaiki di server |
-| R7 | Pinning sertifikat memutus semua pengguna saat rotasi Let's Encrypt | Sedang | Pin intermediate + root + cadangan; runbook rotasi; uji sebelum perpanjangan |
-| R8 | Kehilangan keystore rilis | Tinggi | Simpan di password manager + cadangan offline; runbook |
+| R7 | Tanpa certificate pinning di 1.0 (RN butuh modul native pihak ketiga) | Rendah–Sedang | HTTPS + HSTS, token 15 menit, revoke instan; evaluasi pinning (intermediate + root) di 1.1 dengan runbook rotasi |
+| R8 | Kehilangan kredensial penandatanganan Android (dikelola EAS) | Tinggi | Unduh cadangan `eas credentials`, simpan di password manager; runbook |
+| R13 | OTA (EAS Update) mengirim JS yang tidak kompatibel dengan native build | Tinggi | `runtimeVersion` kebijakan **fingerprint**; kanal terpisah; uji di `preview` dulu; `eas update:rollback` |
+| R14 | Modul native pihak ketiga (`expo-share-intent`, enkripsi cache) tertinggal dari SDK Expo | Sedang | Hanya modul yang mendukung SDK 57 (dicek `expo-doctor`); fitur bisa dimatikan lewat `flags` `/mobile/config`; fallback ke galeri |
+| R15 | JS `Number` menyelinap ke perhitungan uang | Tinggi | Uang = string desimal, ESLint melarang `parseFloat`/`Number()` pada uang, tes `money`, review; server tetap penentu |
 | R9 | Push nominal bocor di layar terkunci | Sedang | `visibility=PRIVATE`, nominal tidak di teks publik |
 | R10 | Pemeliharaan oleh satu orang | Sedang | Modul sederhana, tanpa framework eksotis, dokumentasi runbook |
 | R11 | Perilaku backend berubah tanpa app tahu | Rendah | Tes kontrak berbasis fixture; `min/latestVersionCode`; kompatibilitas mundur 2 versi |
@@ -1326,15 +1445,15 @@ langsung menjawab masalah Owner (G2, G4), sebelum fitur pencatatan yang lebih be
 
 ### 20.2 Keputusan produk yang **sudah diambil** (tanpa menunggu konfirmasi)
 
-1. Native Kotlin + Compose, folder `finance-android/`, terpisah dari app Expo `mobile/` dan `driver-mobile/`.
+1. **React Native + Expo (SDK 57) + TypeScript + Expo Router**, folder `finance-mobile/`, terpisah dari `mobile/` dan `driver-mobile/` (tidak diubah). Build **EAS Build**, OTA **EAS Update** (kanal `development`/`preview`/`production`, `runtimeVersion` = `fingerprint`). *(Mengganti keputusan awal Kotlin/Compose.)*
 2. 5 tab: Beranda, Transaksi, Persetujuan, Laporan, Lainnya; FAB "+" untuk aksi cepat.
 3. MVP **tidak** memuat jurnal manual, tutup/buka periode, reversal, bagan akun, pengaturan finance (web-only) — risiko tinggi & butuh konteks akuntansi.
 4. Kasbon tanpa approval dan hanya potong gaji (sesuai backend & keputusan owner) — tidak dimasukkan ke Pengeluaran; tampil di tab Kasbon + banner.
 5. Verifikasi pembayaran hanya untuk `PAYMENT_WRITE` (Finance); Owner/Approver/Accountant baca saja.
 6. Sesi mobile terpisah (access 15 mnt + refresh rotasi) dengan token format sama sehingga route existing tidak diubah.
-7. Push lewat FCM langsung; nominal tidak ditampilkan di layar terkunci.
+7. Push lewat **Expo Push** (`expo-notifications`) untuk 1.0; token FCM asli didukung backend (`provider:"fcm"`); nominal tidak ditampilkan di layar terkunci; server mati-secara-default (`FINANCE_PUSH_ENABLED`).
 8. Ekspor MVP: PDF invoice + CSV serialisasi + gambar; PDF/Excel laporan resmi menunggu endpoint server.
-9. Distribusi awal: sideload lewat Firebase App Distribution; Play Internal Testing opsional.
+9. Distribusi awal: APK internal via **EAS** (`production-apk`, tautan/QR EAS); Play Internal Testing opsional. Uang di klien = **string desimal** (`lossless-json` di batas API).
 10. Tanpa mode offline penuh; draft lokal diperbolehkan, command tidak.
 11. Bahasa UI Indonesia sehari-hari; menghindari jargon ("sebelum saldo awal", "pemetaan metode") — pelajaran dari perombakan halaman Pembayaran & Verifikasi web.
 
@@ -1346,7 +1465,7 @@ langsung menjawab masalah Owner (G2, G4), sebelum fitur pencatatan yang lebih be
 | Q2 | Siapa yang menjadi Accountant & Approver pertama? | Role disiapkan, belum ada akun; Owner tetap penyetuju |
 | Q3 | Ambang nominal yang butuh konfirmasi tambahan (double-confirm) di app? | Semua command uang memakai dialog konfirmasi + step-up; ambang khusus tidak ada |
 | Q4 | Perlu 2FA (TOTP) sebelum 1.0? | Tidak; PIN + biometrik + sesi perangkat cukup untuk tim 4 orang; evaluasi 1.1 |
-| Q5 | Akun Firebase (FCM, App Distribution, Crashlytics) dimiliki siapa? | Akun Google milik perusahaan (bukan pribadi); **perlu dibuat/ditentukan** sebelum S11 |
+| Q5 | Akun **Expo/EAS** (organisasi `sanocare`, proyek baru `finance-mobile`) dan **Firebase** (kunci FCM V1 untuk push) dimiliki siapa? | Akun perusahaan (bukan pribadi); `eas init` + unggah kunci FCM **wajib sebelum build pertama & S11** — lihat blocker di `finance-mobile/README.md` |
 | Q6 | Kebijakan ganti `PAYMENT_WRITE` untuk Owner (agar Owner juga bisa verifikasi)? | Tidak — sengaja hanya Finance (pemisahan tugas) |
 
 ### 20.4 Di luar cakupan dokumen ini
