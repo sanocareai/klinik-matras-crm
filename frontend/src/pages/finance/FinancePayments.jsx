@@ -14,6 +14,7 @@ import {
   PeriodePicker, periodeDefault, tanggalJam, InputUang,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 
 // PEMBAYARAN PELANGGAN & VERIFIKASI.
 //
@@ -28,6 +29,7 @@ import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 // dua cara memverifikasi hal yang sama.
 
 const TAB = [
+  { key: "lunas_crm", label: "Lunas di CRM (perlu diverifikasi)" },
   { key: "belum_verifikasi", label: "Belum Diverifikasi" },
   { key: "terverifikasi", label: "Terverifikasi" },
   { key: "dibatalkan", label: "Dibatalkan" },
@@ -35,7 +37,7 @@ const TAB = [
 ];
 
 export default function FinancePayments() {
-  const [tab, setTab] = useState("belum_verifikasi");
+  const [tab, setTab] = useState("lunas_crm");
   const [periode, setPeriode] = useState(periodeDefault);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -50,6 +52,12 @@ export default function FinancePayments() {
   const [fBukti, setFBukti] = useState("");
 
   const muat = useCallback(async () => {
+    // Tab "Lunas di CRM" memuat datanya sendiri (LunasBelumDicatat).
+    if (tab === "lunas_crm") {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -141,7 +149,7 @@ export default function FinancePayments() {
         </p>
       </Penjelasan>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className={tab === "lunas_crm" ? "hidden" : "grid grid-cols-1 gap-4 sm:grid-cols-3"}>
         <KartuAngka
           label="Total Pembayaran Periode" value={formatUang(total)} sub={`${payments.length} entri`}
           info="Jumlah seluruh pembayaran yang tercatat di periode yang dipilih, terverifikasi atau belum."
@@ -167,10 +175,15 @@ export default function FinancePayments() {
         ))}
       </div>
       <p className="text-[13px] leading-relaxed text-ink3">
-        Prioritaskan yang "Belum Diverifikasi" — itu pekerjaan finance yang sebenarnya di halaman ini.
+        {tab === "lunas_crm"
+          ? "Order yang sudah ditandai lunas oleh sales tapi uang masuknya belum tercatat — verifikasi di sini."
+          : "Pembayaran yang sudah punya catatan (sales/driver) tinggal dicocokkan dengan setoran yang masuk."}
       </p>
 
+      {tab === "lunas_crm" && <LunasBelumDicatat />}
+
       <FilterBar
+        className={tab === "lunas_crm" ? "hidden" : undefined}
         q={q} onQ={setQ}
         placeholder="Cari order, pelanggan, nominal…"
         filters={[
@@ -183,7 +196,7 @@ export default function FinancePayments() {
         onReset={aturUlangFilter}
       />
 
-      <Card className="overflow-hidden">
+      <Card className={tab === "lunas_crm" ? "hidden" : "overflow-hidden"}>
         <JudulKartu
           title="Daftar Pembayaran"
           description="Entri pembayaran bersifat append-only: koreksi salah input dilakukan lewat pembatalan di halaman
@@ -198,7 +211,7 @@ export default function FinancePayments() {
               <THead>
                 <TR>
                   <TH sticky>Waktu</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Dicatat oleh</TH>
-                  <TH>Metode</TH><TH numeric>Nominal</TH><TH>Alokasi</TH><TH>Status</TH><TH />
+                  <TH>Metode</TH><TH>Rekening</TH><TH numeric>Nominal</TH><TH>Alokasi</TH><TH>Status</TH><TH />
                 </TR>
               </THead>
               <TBody>
@@ -209,6 +222,7 @@ export default function FinancePayments() {
                     <TD className="max-w-[160px] truncate">{p.order?.customer?.name || "—"}</TD>
                     <TD>{p.recordedBy?.name || "—"}</TD>
                     <TD><Badge variant="neutral">{p.method}</Badge></TD>
+                    <TD className="text-[12px]">{p.cashAccount?.name || <span className="text-ink3">ikut pemetaan metode</span>}</TD>
                     <TD numeric><Uang value={p.amount} /></TD>
                     <TD className="text-[12px] text-ink2">
                       {p.finAllocations.length === 0

@@ -500,6 +500,13 @@ function emberUmur(hariLewat) {
  * UMUR PIUTANG per order — dari saldo akun Piutang Usaha per dimensi
  * orderId, bukan dari Order.value dikurangi pembayaran.
  *
+ * Order yang sudah ditandai LUNAS di CRM TIDAK ditampilkan sebagai piutang
+ * (19 Sep 2026): sales sudah menyatakan uangnya diterima, tinggal finance
+ * memverifikasi & mencatat rekeningnya (Pembayaran & Verifikasi). Jumlahnya
+ * dilaporkan terpisah di `menungguVerifikasi` supaya angka piutang di
+ * halaman ini tetap bisa direkonsiliasi ke saldo Piutang Usaha di neraca:
+ * neraca = piutang di daftar + menungguVerifikasi.
+ *
  * Bedanya penting: order yang belum diserahkan TIDAK punya piutang sama
  * sekali (uangnya masih uang muka), dan order yang sudah dilunasi saldonya
  * nol tanpa perlu membandingkan dua angka dari sumber berbeda.
@@ -509,7 +516,7 @@ export async function umurPiutang(db, { to = new Date() } = {}) {
     where: { systemKey: "PIUTANG_USAHA" },
     select: { id: true },
   });
-  if (!akunPiutang) return { baris: [], ringkasan: {}, ember: EMBER_UMUR, catatan: await catatanLaporan(db) };
+  if (!akunPiutang) return { baris: [], ringkasan: {}, ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
 
   const grouped = await db.finJournalLine.groupBy({
     by: ["orderId"],
@@ -526,21 +533,27 @@ export async function umurPiutang(db, { to = new Date() } = {}) {
     .filter((g) => g.saldo.greaterThan(0));
 
   if (bersaldo.length === 0) {
-    return { baris: [], ringkasan: ringkasanKosong(), ember: EMBER_UMUR, catatan: await catatanLaporan(db) };
+    return { baris: [], ringkasan: ringkasanKosong(), ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
   }
 
   const orders = await db.order.findMany({
     where: { id: { in: bersaldo.map((b) => b.orderId) } },
     select: {
-      id: true, orderNumber: true, value: true, createdAt: true, status: true,
+      id: true, orderNumber: true, value: true, createdAt: true, status: true, paymentStatus: true,
       customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { name: true } } } },
       invoice: { select: { invoiceNumber: true, dueDate: true, lifecycleStatus: true } },
     },
   });
   const byId = new Map(orders.map((o) => [o.id, o]));
 
+  const lunasDiCrm = bersaldo.filter((b) => byId.get(b.orderId)?.paymentStatus === "LUNAS");
+  const menungguVerifikasi = {
+    jumlah: lunasDiCrm.length,
+    total: moneyToNumber(lunasDiCrm.length ? sumMoney(lunasDiCrm.map((b) => b.saldo)) : ZERO),
+  };
+
   const ringkasan = ringkasanKosong();
-  const baris = bersaldo.map((b) => {
+  const baris = bersaldo.filter((b) => byId.get(b.orderId)?.paymentStatus !== "LUNAS").map((b) => {
     const o = byId.get(b.orderId);
     // Tanpa jatuh tempo eksplisit di invoice, umur dihitung dari tanggal
     // order dibuat — dinyatakan apa adanya lewat `sumberJatuhTempo` supaya
@@ -571,7 +584,8 @@ export async function umurPiutang(db, { to = new Date() } = {}) {
     perTanggal: to,
     baris,
     ringkasan: Object.fromEntries(Object.entries(ringkasan).map(([k, v]) => [k, moneyToNumber(v)])),
-    total: moneyToNumber(sumMoney(baris.map((b) => b.sisaTagihan))),
+    total: moneyToNumber(baris.length ? sumMoney(baris.map((b) => b.sisaTagihan)) : ZERO),
+    menungguVerifikasi,
     ember: EMBER_UMUR,
     catatan: await catatanLaporan(db),
   };

@@ -1711,6 +1711,7 @@ financeTxRouter.get("/customer-payments", requirePermission(P.FINANCE_READ), asy
         select: {
           id: true, amount: true, method: true, createdAt: true, proofPhotoUrl: true,
           cancelledAt: true, cancelReason: true, orderId: true,
+          cashAccount: { select: { id: true, name: true } },
           recordedBy: { select: { id: true, name: true } },
           cancelledBy: { select: { id: true, name: true } },
           verifications: { select: { id: true, createdAt: true, verifiedBy: { select: { id: true, name: true } } } },

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Undo2, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -81,6 +82,7 @@ export default function FinanceReceivables() {
     }
   }
 
+  const navigate = useNavigate();
   const barisEmber = (data?.baris || []).filter((b) => !filterEmber || b.ember === filterEmber);
   const refundMenunggu = refunds.filter((r) => r.status === "MENUNGGU_APPROVAL");
 
@@ -126,6 +128,19 @@ export default function FinanceReceivables() {
           <CardContent className="flex items-center justify-between gap-3 py-3">
             <p className="text-[13px] text-ink">{pesan}</p>
             <Button size="sm" variant="neutral" onClick={() => setPesan(null)}>Tutup</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {(data?.menungguVerifikasi?.jumlah ?? 0) > 0 && (
+        <Card className="bg-accentbg">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+            <p className="text-[13px] leading-relaxed text-ink">
+              <strong>{data.menungguVerifikasi.jumlah} order ({formatUang(data.menungguVerifikasi.total)})</strong> sudah
+              ditandai <strong>Lunas</strong> oleh sales dan <strong>tidak dihitung sebagai piutang</strong> di bawah — tinggal
+              diverifikasi finance (rekening + bukti). Angka ini masih tercatat di Piutang Usaha pada neraca sampai diverifikasi.
+            </p>
+            <Button size="sm" onClick={() => navigate("/finance/payments")}>Buka antrean verifikasi</Button>
           </CardContent>
         </Card>
       )}

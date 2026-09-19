@@ -1292,6 +1292,11 @@ export const api = {
   batalPelunasanKasbon: (id, rid, reason) => request(`/finance/kasbon/${id}/pelunasan/${rid}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
   batalKasbon: (id, reason) => request(`/finance/kasbon/${id}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
   editKasbon: (id, data) => request(`/finance/kasbon/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Verifikasi penerimaan order yang ditandai LUNAS sales tanpa catatan pembayaran
+  getFinanceLunasBelumDicatat: () => request("/finance/penerimaan/lunas-belum-dicatat"),
+  verifikasiPenerimaan: (data) => request("/finance/penerimaan/verifikasi", { method: "POST", body: JSON.stringify(data) }),
+  verifikasiPenerimaanMassal: (data) => request("/finance/penerimaan/verifikasi-massal", { method: "POST", body: JSON.stringify(data) }),
+  tolakLunas: (orderId, reason) => request("/finance/penerimaan/tolak", { method: "POST", body: JSON.stringify({ orderId, reason }) }),
   getFinanceReceiptReview: () => request("/finance/bukti-review"),
   getFinancePurchaseCategories: (params = {}) => request(`/finance/purchase-categories${qsFinance(params)}`),
   getFinancePurchases: (params = {}) => request(`/finance/purchases${qsFinance(params)}`),

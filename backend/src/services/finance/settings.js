@@ -33,6 +33,11 @@ export const SETTING_KEYS = Object.freeze({
   // Batas total kasbon AKTIF per karyawan (Rp). 0 = tidak dibatasi. Kasbon
   // yang melewati batas ditolak kecuali admin sengaja mengizinkan.
   KASBON_BATAS_AKTIF: "kasbon_batas_aktif",
+  // Tanggal (YYYY-MM-DD) saldo kas/bank disamakan ke saldo bank asli
+  // (penyesuaian SALDO_AWAL 18 Sep 2026). Uang yang diterima SEBELUM tanggal
+  // ini sudah tercermin di saldo itu — menjurnalnya lagi ke rekening akan
+  // menggandakan kas. Lihat services/finance/penerimaanOrder.js.
+  SALDO_AWAL_CUTOFF: "balance_cutover_date",
 
   // ── Pemetaan metode pembayaran → rekening kas/bank ──────────────────────
   // Payment.method (CASH/TRANSFER/QRIS) sudah ada sejak lama dan TIDAK
@@ -75,6 +80,7 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.RECEIPT_REQUIRED_THRESHOLD]: "500000",
   [SETTING_KEYS.RECEIPT_POLICY_SINCE]: "2026-09-19",
   [SETTING_KEYS.KASBON_BATAS_AKTIF]: "0",
+  [SETTING_KEYS.SALDO_AWAL_CUTOFF]: "2026-09-18",
   [SETTING_KEYS.CASH_ACCOUNT_CASH]: "",
   [SETTING_KEYS.CASH_ACCOUNT_TRANSFER]: "",
   [SETTING_KEYS.CASH_ACCOUNT_QRIS]: "",

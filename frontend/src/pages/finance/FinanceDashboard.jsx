@@ -239,9 +239,9 @@ export default function FinanceDashboard() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <KartuAngka
               label="Pembayaran Belum Diverifikasi"
-              value={antrean.jumlahPembayaranBelumVerifikasi}
-              tone={antrean.jumlahPembayaranBelumVerifikasi > 0 ? "orange" : "default"}
-              sub={data.gate.enabled ? "Menahan status bayar di CRM" : "Tidak menahan status bayar"}
+              value={antrean.jumlahPembayaranBelumVerifikasi + (antrean.lunasBelumDicatat?.jumlah || 0)}
+              tone={(antrean.jumlahPembayaranBelumVerifikasi + (antrean.lunasBelumDicatat?.jumlah || 0)) > 0 ? "orange" : "default"}
+              sub={`${antrean.lunasBelumDicatat?.jumlah || 0} order lunas di CRM belum tercatat · ${antrean.jumlahPembayaranBelumVerifikasi} pembayaran`}
               onClick={() => navigate("/finance/payments")}
               info="Uang yang tercatat diterima sales/driver tapi belum dicocokkan dengan setoran nyata di rekening. Klik untuk memverifikasi satu per satu."
             />

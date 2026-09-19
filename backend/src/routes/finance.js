@@ -28,6 +28,7 @@ import {
   ensureDefaultChartOfAccounts, DEFAULT_COA, SYSTEM_KEYS, AccountError,
 } from "../services/finance/accounts.js";
 import { MoneyError, moneyToNumber, toMoney, sumMoney } from "../services/finance/money.js";
+import { ringkasLunasBelumDicatat } from "../services/finance/penerimaanOrder.js";
 import {
   SETTING_KEYS, getAllSettings, setSetting, getVerificationGate, parseBool,
 } from "../services/finance/settings.js";
@@ -1092,7 +1093,7 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
     const [
       kasBank, lr, piutang, utang, gate, catatan,
       pembayaranBelumVerifikasi, pengeluaranMenunggu, pembelianMenunggu, tagihanMenunggu, refundMenunggu,
-      jurnalTerakhir,
+      jurnalTerakhir, lunasBelumDicatat,
     ] = await Promise.all([
       saldoKasBank(prisma, { to: sekarang }),
       labaRugi(prisma, { from, to }),
@@ -1124,6 +1125,7 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
           lines: { select: { debit: true } },
         },
       }),
+      ringkasLunasBelumDicatat(prisma),
     ]);
 
     const totalKas = kasBank.reduce((s, a) => s + a.saldo, 0);
@@ -1133,7 +1135,7 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
       kasBank,
       totalKas,
       labaRugi: lr.ringkasan,
-      piutang: { total: piutang.total, ringkasan: piutang.ringkasan, teratas: piutang.baris.slice(0, 8) },
+      piutang: { total: piutang.total, ringkasan: piutang.ringkasan, teratas: piutang.baris.slice(0, 8), menungguVerifikasi: piutang.menungguVerifikasi },
       utang: { total: utang.total, ringkasan: utang.ringkasan, teratas: utang.baris.slice(0, 8) },
       antrean: {
         pembayaranBelumVerifikasi: pembayaranBelumVerifikasi.map((p) => ({
@@ -1142,6 +1144,7 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
           customerName: p.order?.customer?.name || null,
         })),
         jumlahPembayaranBelumVerifikasi: pembayaranBelumVerifikasi.length,
+        lunasBelumDicatat,
         pengeluaranMenunggu,
         pembelianMenunggu,
         tagihanMenunggu,

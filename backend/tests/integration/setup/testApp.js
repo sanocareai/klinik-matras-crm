@@ -24,6 +24,7 @@ const { unitRouter } = await import("../../../src/routes/units.js");
 const { financeRouter } = await import("../../../src/routes/finance.js");
 const { financeTxRouter } = await import("../../../src/routes/financeTransactions.js");
 const { financeKasbonRouter } = await import("../../../src/routes/financeKasbon.js");
+const { financePenerimaanRouter } = await import("../../../src/routes/financePenerimaan.js");
 
 export function buildTestApp() {
   const app = express();
@@ -49,6 +50,7 @@ export function buildTestApp() {
   app.use("/api/finance", financeRouter);
   app.use("/api/finance", financeTxRouter);
   app.use("/api/finance", financeKasbonRouter);
+  app.use("/api/finance", financePenerimaanRouter);
 
   return app;
 }
