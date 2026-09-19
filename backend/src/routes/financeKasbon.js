@@ -236,7 +236,7 @@ async function catatPelunasan(tx, kasbonId, { date, amount, method, cashAccountI
   const sisa = toMoney(k.amount).minus(bayar);
   const nominal = toMoney(amount, { field: "Nominal pelunasan" });
   if (nominal.lessThanOrEqualTo(0)) throw err("Nominal pelunasan harus lebih dari 0");
-  if (nominal.greaterThan(sisa)) throw err(`Nominal melebihi sisa kasbon ${k.kasbonNumber} (Rp${Number(sisa).toLocaleString("id-ID")})`);
+  if (nominal.greaterThan(sisa)) throw err(`Nominal melebihi kasbon yang belum dikembalikan pada ${k.kasbonNumber} (Rp${Number(sisa).toLocaleString("id-ID")})`);
 
   let rekening = null;
   if (method === "TUNAI") {
@@ -281,7 +281,7 @@ financeKasbonRouter.post("/kasbon/pelunasan-karyawan", requirePermission(P.FINAN
       });
       if (daftar.length === 0) throw err(`${employeeName} tidak punya kasbon aktif`, 404);
       const sisaTotal = daftar.reduce((acc, k) => acc.plus(toMoney(k.amount).minus(k.repayments.length ? sumMoney(k.repayments.map((r) => r.amount)) : ZERO)), ZERO);
-      if (total.greaterThan(sisaTotal)) throw err(`Nominal melebihi total sisa kasbon (Rp${Number(sisaTotal).toLocaleString("id-ID")})`);
+      if (total.greaterThan(sisaTotal)) throw err(`Nominal melebihi total kasbon yang belum dikembalikan (Rp${Number(sisaTotal).toLocaleString("id-ID")})`);
 
       let sisaUang = total;
       const dialokasikan = [];

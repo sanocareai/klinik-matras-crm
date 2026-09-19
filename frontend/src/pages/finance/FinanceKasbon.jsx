@@ -101,7 +101,7 @@ export default function FinanceKasbon() {
   return (
     <HalamanFinance
       title="Kasbon Karyawan"
-      subtitle="Uang muka gaji: sisa per karyawan, pelunasan lewat potong gaji atau tunai."
+      subtitle="Uang muka gaji: siapa yang masih punya kasbon, dan cara mengembalikannya (potong gaji atau tunai)."
       loading={loading}
       error={error}
       onRetry={muat}
@@ -125,26 +125,26 @@ export default function FinanceKasbon() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KartuAngka
-          label="Sisa Kasbon Aktif" value={formatUang(data?.totalSisa ?? 0)}
-          tone={(data?.totalSisa ?? 0) > 0 ? "orange" : "default"} sub="Piutang Karyawan"
-          info="Total uang yang sudah dikeluarkan ke karyawan tapi belum kembali — sama dengan saldo akun Piutang Karyawan (1-1350) di neraca."
+          label="Belum Dikembalikan" value={formatUang(data?.totalSisa ?? 0)}
+          tone={(data?.totalSisa ?? 0) > 0 ? "orange" : "default"} sub="total kasbon yang belum lunas"
+          info="Uang yang sudah diberikan ke karyawan sebagai kasbon tapi belum dipotong dari gaji atau dikembalikan. Angka ini sama dengan saldo akun Piutang Karyawan di neraca."
         />
-        <KartuAngka label="Karyawan Berutang" value={perKaryawan.length} sub="masih punya kasbon aktif" />
-        <KartuAngka label="Diberikan Bulan Ini" value={formatUang(data?.bulanIni?.diberikan ?? 0)} sub="kasbon baru bulan berjalan" />
-        <KartuAngka label="Terpotong Bulan Ini" value={formatUang(data?.bulanIni?.terpotong ?? 0)} sub="pelunasan bulan berjalan" />
+        <KartuAngka label="Karyawan yang Masih Punya Kasbon" value={perKaryawan.length} sub="orang, kasbonnya belum lunas" />
+        <KartuAngka label="Diberikan Bulan Ini" value={formatUang(data?.bulanIni?.diberikan ?? 0)} sub="kasbon baru yang diberikan bulan ini" />
+        <KartuAngka label="Sudah Dikembalikan Bulan Ini" value={formatUang(data?.bulanIni?.terpotong ?? 0)} sub="dipotong gaji atau dikembalikan tunai" />
       </div>
 
       {perKaryawan.length > 0 && (
         <Card className="overflow-hidden">
           <JudulKartu
-            title="Sisa per Karyawan"
-            description="Siapa berutang berapa. Tekan Potong saat gajian — dialokasikan ke kasbon yang paling lama dulu."
-            info="Angka di sini selalu dihitung dari SEMUA kasbon aktif, tidak berubah mengikuti pencarian di bawah."
+            title="Kasbon yang Belum Dikembalikan, per Karyawan"
+            description="Siapa yang masih punya kasbon dan berapa yang belum dikembalikan. Saat gajian, tekan Potong — otomatis mengurangi kasbon yang paling lama dulu."
+            info="Angka di sini dihitung dari SEMUA kasbon yang belum lunas, jadi tidak berubah walau Anda sedang mencari atau memfilter daftar di bawah."
           />
           <TableWrap className="dh-table">
             <Table>
               <THead>
-                <TR><TH sticky>Karyawan</TH><TH numeric>Jumlah Kasbon</TH><TH>Terlama</TH><TH numeric>Sisa</TH><TH /></TR>
+                <TR><TH sticky>Karyawan</TH><TH numeric>Berapa Kali Kasbon</TH><TH>Kasbon Tertua</TH><TH numeric>Belum Dikembalikan</TH><TH /></TR>
               </THead>
               <TBody>
                 {perKaryawan.map((p) => (
@@ -205,7 +205,7 @@ export default function FinanceKasbon() {
               <THead>
                 <TR>
                   <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Karyawan</TH><TH>Urgensi</TH>
-                  <TH numeric>Nominal</TH><TH numeric>Terlunasi</TH><TH numeric>Sisa</TH><TH>Status</TH><TH />
+                  <TH numeric>Kasbon</TH><TH numeric>Sudah Dikembalikan</TH><TH numeric>Belum Dikembalikan</TH><TH>Status</TH><TH />
                 </TR>
               </THead>
               <TBody>
@@ -231,10 +231,10 @@ export default function FinanceKasbon() {
                     <TD>
                       <div className="flex justify-end gap-1">
                         {k.status === "AKTIF" && (
-                          <Button size="sm" variant="secondary" onClick={() => setLunasiUntuk({ kasbon: k })}>Lunasi</Button>
+                          <Button size="sm" variant="secondary" onClick={() => setLunasiUntuk({ kasbon: k })}>Catat Pengembalian</Button>
                         )}
                         {k.repayments.length > 0 && (
-                          <Button size="sm" variant="neutral" onClick={() => setRiwayatId(k.id)} title="Riwayat pelunasan">
+                          <Button size="sm" variant="neutral" onClick={() => setRiwayatId(k.id)} title="Riwayat pengembalian">
                             <History size={13} /> {k.repayments.filter((r) => !r.cancelledAt).length}
                           </Button>
                         )}
@@ -288,7 +288,7 @@ export default function FinanceKasbon() {
       <ModalRiwayat
         kasbon={riwayat} onClose={() => setRiwayatId(null)}
         onBatal={(rep) => {
-          const alasan = window.prompt("Alasan membatalkan pelunasan ini? Jurnalnya akan dibalik:");
+          const alasan = window.prompt("Alasan membatalkan pengembalian ini? Catatannya akan dibalik:");
           if (alasan?.trim()) return aksi(() => api.batalPelunasanKasbon(riwayat.id, rep.id, alasan.trim()));
         }}
       />
@@ -376,18 +376,18 @@ function ModalLunasi({ target, onClose, rekening, onSubmit }) {
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()}
-      title={target.kasbon ? `Lunasi ${target.kasbon.kasbonNumber}` : `Potong kasbon ${nama}`}
-      description={`Sisa ${formatUang(sisa)}${target.kasbon ? "" : " — dialokasikan ke kasbon paling lama dulu"}`}
+      title={target.kasbon ? `Catat pengembalian ${target.kasbon.kasbonNumber}` : `Potong kasbon ${nama}`}
+      description={`Belum dikembalikan: ${formatUang(sisa)}${target.kasbon ? "" : " — otomatis mengurangi kasbon yang paling lama dulu"}`}
       className="w-[480px]"
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit({ ...f, amount: Number(f.amount) })} disabled={!valid}>Catat Pelunasan</TombolAksi>
+          <TombolAksi onClick={() => onSubmit({ ...f, amount: Number(f.amount) })} disabled={!valid}>Simpan</TombolAksi>
         </>
       }
     >
       <div className="space-y-3">
-        <Field label="Cara pelunasan">
+        <Field label="Dikembalikan lewat">
           <Pilihan value={f.method} onChange={(v) => set("method", v)}>
             {CARA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </Pilihan>
@@ -395,11 +395,11 @@ function ModalLunasi({ target, onClose, rekening, onSubmit }) {
         <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
           {f.method === "POTONG_GAJI"
             ? "Kas tidak tersentuh. Pastikan gaji BERSIH yang dibayarkan sudah dicatat di Pengeluaran — bagian yang dipotong ini otomatis ditambahkan ke beban gaji (gaji kotor = bersih + potongan)."
-            : "Uang masuk ke rekening yang dipilih dan piutang karyawan berkurang."}
+            : "Uang masuk ke rekening yang dipilih, dan kasbon karyawan berkurang."}
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
-          <Field label="Nominal" required hint={Number(f.amount) > sisa ? "Melebihi sisa" : undefined}><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
+          <Field label="Nominal" required hint={Number(f.amount) > sisa ? "Melebihi kasbon yang belum dikembalikan" : undefined}><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
         </div>
         {f.method === "TUNAI" && (
           <Field label="Masuk ke rekening" required>
@@ -420,13 +420,13 @@ function ModalRiwayat({ kasbon, onClose, onBatal }) {
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()}
-      title={`Riwayat pelunasan ${kasbon.kasbonNumber}`}
-      description={`${kasbon.employeeName} · ${formatUang(kasbon.amount)} · sisa ${formatUang(kasbon.sisa)}`}
+      title={`Riwayat pengembalian ${kasbon.kasbonNumber}`}
+      description={`${kasbon.employeeName} · kasbon ${formatUang(kasbon.amount)} · belum dikembalikan ${formatUang(kasbon.sisa)}`}
       className="w-[520px]"
       footer={<Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Tutup</Button>}
     >
       <div className="space-y-2">
-        {kasbon.repayments.length === 0 && <p className="text-[13px] text-ink3">Belum ada pelunasan.</p>}
+        {kasbon.repayments.length === 0 && <p className="text-[13px] text-ink3">Belum ada pengembalian.</p>}
         {kasbon.repayments.map((r) => (
           <div key={r.id} className="flex items-center justify-between gap-3 rounded-lg bg-inset px-3 py-2.5">
             <div className="min-w-0 text-[13px]">
