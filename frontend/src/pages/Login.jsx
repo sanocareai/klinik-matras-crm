@@ -138,12 +138,13 @@ export default function Login({ onLogin }) {
                 <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink3" />
                 <input
                   id="login-email"
+                  name="username"
                   type="email"
                   placeholder="nama@klinikmatras.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  autoComplete="email"
+                  autoComplete="username"
                   className="h-12 w-full rounded-xl border border-border bg-white pl-11 pr-4 text-[14px] text-ink outline-none transition-colors placeholder:text-ink3 focus:border-accent focus:ring-4 focus:ring-accent/10"
                 />
               </div>
@@ -157,6 +158,7 @@ export default function Login({ onLogin }) {
                 <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink3" />
                 <input
                   id="login-password"
+                  name="password"
                   type={showPass ? "text" : "password"}
                   placeholder="••••••••"
                   value={password}

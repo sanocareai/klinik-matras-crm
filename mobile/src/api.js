@@ -55,6 +55,15 @@ async function request(path, options = {}) {
         ...options.headers,
       },
     });
+    // Sesi bergulir (paritas dgn frontend/src/api.js): backend menyelipkan token
+    // baru lewat header ini saat sisa umur token < 6 hari. Tanpa menyimpannya,
+    // token 7 hari dari login PERTAMA tetap dipakai apa adanya dan app memaksa
+    // login ulang tepat 7 hari kemudian, seaktif apa pun user memakainya.
+    const refreshed = res.headers.get("X-Refreshed-Token");
+    if (refreshed && res.status !== 401) {
+      token = refreshed;
+      AsyncStorage.setItem("token", refreshed).catch(() => {});
+    }
     if (res.status === 401) {
       token = null;
       await AsyncStorage.removeItem("token");
