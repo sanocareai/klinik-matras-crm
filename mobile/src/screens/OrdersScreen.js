@@ -12,6 +12,7 @@
 // karena butuh detail spesifik pelanggan itu. Layar ini murni untuk
 // TRACKING & update status order yang sudah ada.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import GlassBackdrop from "../components/GlassBackdrop";
 import {
   View, Text, TextInput, StyleSheet, ActivityIndicator, RefreshControl,
 } from "react-native";
@@ -282,6 +283,7 @@ export default function OrdersScreen() {
 
   return (
     <View style={styles.container}>
+      <GlassBackdrop />
       <View style={styles.header}>
         <Text style={styles.title}>Order</Text>
       </View>
@@ -421,7 +423,7 @@ export default function OrdersScreen() {
 
 function createStyles(tokens) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: tokens.color.bg },
+    container: { flex: 1, backgroundColor: "transparent" },
     header: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
       paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6,
@@ -429,9 +431,9 @@ function createStyles(tokens) {
     title: { fontSize: 24, fontWeight: "700", color: tokens.color.textPrimary },
     searchWrap: {
       flexDirection: "row", alignItems: "center", gap: 8,
-      marginHorizontal: 16, marginBottom: 8, backgroundColor: tokens.color.card,
+      marginHorizontal: 16, marginBottom: 8, ...tokens.glass.surface,
       borderRadius: tokens.radius.pill, paddingHorizontal: 14, paddingVertical: 10,
-      ...tokens.shadow.soft, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+      ...tokens.glass.shadow, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
     },
     searchInput: { flex: 1, fontSize: 14, color: tokens.color.textPrimary },
     searchIconBtn: { padding: 2 },
@@ -454,19 +456,19 @@ function createStyles(tokens) {
     mandekPill: {
       flexDirection: "row", alignItems: "center", gap: 4,
       paddingHorizontal: 9, paddingVertical: 4, borderRadius: tokens.radius.chip,
-      borderWidth: 1, borderColor: tokens.color.border, backgroundColor: tokens.color.card,
+      borderWidth: 1, borderColor: tokens.color.border, ...tokens.glass.surface,
     },
     mandekPillText: { fontSize: 11, fontWeight: "700", color: tokens.color.textMuted },
     tabsWrap: { flexGrow: 0, marginBottom: 8 },
     tabsContent: { paddingHorizontal: 16, gap: 8 },
     statusChip: {
       paddingHorizontal: 12, paddingVertical: 7, borderRadius: tokens.radius.chip,
-      backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border,
+      ...tokens.glass.surface, borderWidth: 1, borderColor: tokens.color.border,
     },
     statusChipText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
     card: {
-      backgroundColor: tokens.color.card, borderRadius: tokens.radius.card, padding: 10,
-      marginBottom: 10, ...tokens.shadow.soft,
+      ...tokens.glass.surface, borderRadius: tokens.radius.card, padding: 10,
+      marginBottom: 10, ...tokens.glass.shadow,
     },
     customerHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8, paddingHorizontal: 2 },
     customerName: { fontSize: 13.5, fontWeight: "700", color: tokens.color.textPrimary },

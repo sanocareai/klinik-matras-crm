@@ -8,6 +8,7 @@
 // getNotifPrefs/saveNotifPrefs di bawah sengaja dipisah supaya gampang
 // diswap tanpa ubah UI).
 import React, { useEffect, useMemo, useState } from "react";
+import GlassBackdrop from "../components/GlassBackdrop";
 import {
   View, Text, StyleSheet, TouchableOpacity, Switch, Modal, ScrollView, Alert, Platform, ActivityIndicator,
 } from "react-native";
@@ -199,6 +200,7 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <GlassBackdrop />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -372,7 +374,7 @@ function describeUpdateError(err) {
 
 function createStyles(tokens) {
   return StyleSheet.create({
-  container: { flex: 1, backgroundColor: tokens.color.bg },
+  container: { flex: 1, backgroundColor: "transparent" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: tokens.color.border,
@@ -382,7 +384,7 @@ function createStyles(tokens) {
   headerTitle: { fontSize: 16, fontWeight: "700", color: tokens.color.textPrimary },
   scrollContent: { padding: 16, paddingBottom: 40, gap: 14 },
   card: {
-    backgroundColor: tokens.color.card, borderRadius: tokens.radius.card, padding: 18,
+    ...tokens.glass.surface, borderRadius: tokens.radius.card, padding: 18,
     borderWidth: 1, borderColor: tokens.color.border, alignItems: "center",
   },
   avatarWrap: { width: 64, height: 64 },
@@ -433,7 +435,7 @@ function createStyles(tokens) {
   logoutBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   hourSheet: {
-    backgroundColor: tokens.color.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16,
+    ...tokens.glass.surface, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16,
   },
   sheetTitle: { fontSize: 15, fontWeight: "700", color: tokens.color.textPrimary, marginBottom: 8 },
   hourOption: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border },

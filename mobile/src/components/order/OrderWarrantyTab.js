@@ -82,7 +82,7 @@ export default function OrderWarrantyTab({ orderId, order }) {
 
 function createStyles(t) {
   return StyleSheet.create({
-    card: { backgroundColor: t.color.card, borderRadius: 12, padding: 12, gap: 10 },
+    card: { ...t.glass.surface, borderRadius: 12, padding: 12, gap: 10 },
     head: { flexDirection: "row", alignItems: "center", gap: 6 },
     title: { fontSize: 11, fontWeight: "700", color: t.color.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
     muted: { fontSize: 12, color: t.color.textSecondary, lineHeight: 17 },

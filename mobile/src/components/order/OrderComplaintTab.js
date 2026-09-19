@@ -112,7 +112,7 @@ export default function OrderComplaintTab({ orderId }) {
 
 function createStyles(t) {
   return StyleSheet.create({
-    card: { backgroundColor: t.color.card, borderRadius: 12, padding: 12, gap: 8 },
+    card: { ...t.glass.surface, borderRadius: 12, padding: 12, gap: 8 },
     head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
     number: { fontSize: 13, fontWeight: "800", color: t.color.textPrimary, fontFamily: "monospace" },
     pill: { backgroundColor: t.color.accentSoft, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 },
@@ -125,7 +125,7 @@ function createStyles(t) {
     chipOn: { borderColor: t.color.accent, backgroundColor: t.color.accentSoft },
     chipText: { fontSize: 12, fontWeight: "600", color: t.color.textSecondary },
     input: { backgroundColor: t.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13.5, minHeight: 84, textAlignVertical: "top", color: t.color.textPrimary },
-    open: { flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", backgroundColor: t.color.card, borderRadius: 12, paddingVertical: 13 },
+    open: { flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", ...t.glass.surface, borderRadius: 12, paddingVertical: 13 },
     openText: { color: t.color.accent, fontWeight: "700", fontSize: 13.5 },
     primary: { flex: 1, alignItems: "center", backgroundColor: t.color.accent, borderRadius: 11, paddingVertical: 11 },
     primaryText: { color: "#fff", fontWeight: "700", fontSize: 13.5 },

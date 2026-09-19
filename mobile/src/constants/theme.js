@@ -61,6 +61,26 @@ const DARK_COLOR = {
   warning: "#FBBF24",
 };
 
+// Liquid glass (19 Sep 2026): permukaan translusen di atas GlassBackdrop. `surface` menggantikan
+// backgroundColor: color.card di layar yang sudah dimigrasi; `shadow` hanya bayangan iOS
+// (elevation Android dinolkan — di atas fill translusen ia tampak sebagai noda abu-abu).
+const GLASS_LIGHT = {
+  gradient: ["#BFD8FF", "#DCE9FF", "#F2F7FF"],
+  blobA: "#FFFFFF", blobAOpacity: 0.85,
+  blobB: "#7EB0FF", blobBOpacity: 0.42,
+  tabBarBg: "#F2F7FF",
+  surface: { backgroundColor: "rgba(255,255,255,0.66)", borderWidth: 1, borderColor: "rgba(255,255,255,0.92)" },
+  shadow: { shadowColor: "#1F4FD8", shadowOpacity: 0.14, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 0 },
+};
+const GLASS_DARK = {
+  gradient: ["#0A1430", "#0B1B3E", "#0B1220"],
+  blobA: "#3B74FF", blobAOpacity: 0.32,
+  blobB: "#1F4FD8", blobBOpacity: 0.28,
+  tabBarBg: "#0B1220",
+  surface: { backgroundColor: "rgba(255,255,255,0.07)", borderWidth: 1, borderColor: "rgba(255,255,255,0.12)" },
+  shadow: { shadowColor: "#000000", shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 0 },
+};
+
 const SHARED = {
   radius: {
     card: 20,      // card/sheet — spec: 20-24
@@ -98,7 +118,7 @@ const SHARED = {
 // tidak bisa akses hook (di luar komponen React, mis. konstanta modul-level
 // murni). SEMUA komponen React harus pakai useTokens() di bawah, BUKAN ini,
 // supaya reaktif ikut tema sistem.
-export const tokens = { color: LIGHT_COLOR, ...SHARED };
+export const tokens = { color: LIGHT_COLOR, glass: GLASS_LIGHT, ...SHARED };
 
 // Hook utama — panggil di dalam body komponen. Ikut Appearance sistem HP
 // otomatis (useColorScheme dari react-native sudah subscribe ke perubahan
@@ -124,7 +144,7 @@ export function useTokens() {
   const scheme = useColorScheme();
   return useMemo(() => {
     const color = scheme === "dark" ? DARK_COLOR : LIGHT_COLOR;
-    return { color, ...SHARED };
+    return { color, glass: scheme === "dark" ? GLASS_DARK : GLASS_LIGHT, ...SHARED };
   }, [scheme]);
 }
 

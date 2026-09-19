@@ -24,6 +24,7 @@
 //   isUnanswered + unansweredMinutes per item — difilter/diurutkan
 //   client-side (tidak ada endpoint khusus "top unanswered" di backend).
 import React, { useCallback, useMemo, useState } from "react";
+import GlassBackdrop, { HeroGradient } from "../components/GlassBackdrop";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator,
 } from "react-native";
@@ -164,6 +165,7 @@ export default function HomeScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.container}>
+      <GlassBackdrop />
         <ActivityIndicator style={{ marginTop: 60 }} color={tokens.color.accent} size="large" />
       </View>
     );
@@ -171,6 +173,7 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <GlassBackdrop />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -201,6 +204,7 @@ export default function HomeScreen({ navigation }) {
       {isAdmin ? (
         <>
           <View style={styles.heroCard}>
+            <HeroGradient />
             <Text style={styles.heroLabel}>Target Tim Bulan Ini</Text>
             {hasTeamTarget ? (
               <>
@@ -264,6 +268,7 @@ export default function HomeScreen({ navigation }) {
         </>
       ) : (
         <View style={styles.heroCard}>
+            <HeroGradient />
           <Text style={styles.heroLabel}>Target Bulan Ini</Text>
           {hasMyTarget ? (
             <>
@@ -390,8 +395,8 @@ export default function HomeScreen({ navigation }) {
 
 function createStyles(tokens) {
   return StyleSheet.create({
-  container: { flex: 1, backgroundColor: tokens.color.bg },
-  scrollContent: { padding: 16, paddingBottom: 40, gap: 14 },
+  container: { flex: 1, backgroundColor: "transparent" },
+  scrollContent: { padding: 16, paddingBottom: 110, gap: 14 }, // ruang untuk tombol Sano agar tidak menutup kartu terakhir
   header: { flexDirection: "row", alignItems: "center", gap: 12 },
   greeting: { flex: 1, fontSize: 18, fontWeight: "700", color: tokens.color.textPrimary },
   bellBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
@@ -403,10 +408,11 @@ function createStyles(tokens) {
   errorBanner: { backgroundColor: "#fef3c7", borderRadius: 10, padding: 10 },
   errorText: { color: "#92400e", fontSize: 12 },
   heroCard: {
-    backgroundColor: tokens.color.accent, borderRadius: tokens.radius.card, padding: 20,
+    borderRadius: 26, padding: 20, overflow: "hidden", backgroundColor: tokens.color.accent,
+    shadowColor: "#1F4FD8", shadowOpacity: 0.35, shadowRadius: 20, shadowOffset: { width: 0, height: 10 },
   },
   heroLabel: { color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "600", marginBottom: 8 },
-  heroPercent: { color: "#fff", fontSize: 36, fontWeight: "800" },
+  heroPercent: { color: "#fff", fontSize: 44, fontWeight: "800", letterSpacing: -1 },
   progressTrack: {
     height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.25)", marginTop: 10, overflow: "hidden",
   },
@@ -414,13 +420,13 @@ function createStyles(tokens) {
   heroSub: { color: "rgba(255,255,255,0.9)", fontSize: 13, marginTop: 10 },
   statsRow: { flexDirection: "row", gap: 10 },
   statCard: {
-    flex: 1, backgroundColor: tokens.color.card, borderRadius: tokens.radius.card,
-    padding: 14, ...tokens.shadow.soft,
+    flex: 1, ...tokens.glass.surface, borderRadius: tokens.radius.card,
+    padding: 14, ...tokens.glass.shadow,
   },
   statValue: { fontSize: 18, fontWeight: "700", color: tokens.color.textPrimary },
   statLabel: { fontSize: 11, color: tokens.color.textSecondary, marginTop: 4 },
   section: {
-    backgroundColor: tokens.color.card, borderRadius: tokens.radius.card, padding: 16, ...tokens.shadow.soft,
+    ...tokens.glass.surface, borderRadius: tokens.radius.card, padding: 16, ...tokens.glass.shadow,
   },
   sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   sectionTitle: {

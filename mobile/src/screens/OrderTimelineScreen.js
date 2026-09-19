@@ -11,6 +11,7 @@
 // customer (checkbox + WAHA), simpan ke galeri, dan bagikan SUDAH ada
 // (19 Sep 2026). Foto dibuka lewat viewer eksternal.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import GlassBackdrop from "../components/GlassBackdrop";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   TextInput, Alert, Linking, Image,
@@ -702,6 +703,7 @@ export default function OrderTimelineScreen({ route, navigation }) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <GlassBackdrop />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <ChevronLeft size={22} color={tokens.color.textPrimary} strokeWidth={2.2} />
@@ -764,7 +766,7 @@ export default function OrderTimelineScreen({ route, navigation }) {
 
 function createStyles(tokens) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: tokens.color.bg },
+    container: { flex: 1, backgroundColor: "transparent" },
     header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10, gap: 8 },
     backBtn: { padding: 6 },
     headerTitle: { fontSize: 16, fontWeight: "700", color: tokens.color.textPrimary },
@@ -774,11 +776,11 @@ function createStyles(tokens) {
     },
     orderNumberText: { fontSize: 11, fontWeight: "700", color: tokens.color.success, fontFamily: "monospace" },
     summaryRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 10 },
-    summaryCard: { flex: 1, backgroundColor: tokens.color.card, borderRadius: 12, padding: 10 },
+    summaryCard: { flex: 1, ...tokens.glass.surface, borderRadius: 12, padding: 10 },
     summaryLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
     summaryValue: { fontSize: 13, fontWeight: "700", color: tokens.color.textPrimary, marginTop: 2 },
     detailBox: {
-      backgroundColor: tokens.color.card, borderRadius: 12, padding: 12,
+      ...tokens.glass.surface, borderRadius: 12, padding: 12,
       marginHorizontal: 16, marginBottom: 10, gap: 10,
     },
     detailRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
@@ -791,7 +793,7 @@ function createStyles(tokens) {
     detailMuted: { fontSize: 12.5, color: tokens.color.textMuted },
     tabBar: { flexGrow: 0, flexShrink: 0, marginHorizontal: 16, backgroundColor: tokens.color.subtle, borderRadius: 12, padding: 3, marginBottom: 4 },
     tabBtn: { paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 8, borderRadius: 9 },
-    tabBtnActive: { backgroundColor: tokens.color.card },
+    tabBtnActive: { ...tokens.glass.surface },
     tabBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.textMuted },
     tabBtnTextActive: { color: tokens.color.textPrimary },
 
@@ -814,7 +816,7 @@ function createStyles(tokens) {
     docHeadRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border, paddingBottom: 6 },
     docHeadIcon: { width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
     docHeadLabel: { fontSize: 12.5, fontWeight: "700", color: tokens.color.textPrimary },
-    docEntry: { backgroundColor: tokens.color.card, borderRadius: 12, padding: 10, marginBottom: 8 },
+    docEntry: { ...tokens.glass.surface, borderRadius: 12, padding: 10, marginBottom: 8 },
     docStageLabel: { fontSize: 12, fontWeight: "600", color: tokens.color.textPrimary, flexShrink: 1 },
     docStageDate: { fontSize: 10, color: tokens.color.textMuted },
     docNote: { fontSize: 11, color: tokens.color.textSecondary, marginTop: 2 },
@@ -827,7 +829,7 @@ function createStyles(tokens) {
     sendBtnText: { color: "#fff", fontWeight: "700", fontSize: 13.5 },
     secBtn: {
       flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-      backgroundColor: tokens.color.card, borderRadius: 12, paddingVertical: 11,
+      ...tokens.glass.surface, borderRadius: 12, paddingVertical: 11,
     },
     secBtnText: { fontSize: 12.5, fontWeight: "600", color: tokens.color.textPrimary },
     docPhotoRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
@@ -835,15 +837,15 @@ function createStyles(tokens) {
     signatureBox: { backgroundColor: tokens.color.success + "14", borderRadius: 12, padding: 10, marginTop: 4 },
     signatureImg: { width: "100%", height: 100, backgroundColor: "#fff", borderRadius: 8, marginBottom: 6 },
 
-    miniCard: { flex: 1, backgroundColor: tokens.color.card, borderRadius: 12, padding: 10 },
+    miniCard: { flex: 1, ...tokens.glass.surface, borderRadius: 12, padding: 10 },
     miniCardLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase" },
     miniCardValue: { fontSize: 14, fontWeight: "700", marginTop: 2 },
-    paymentRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: tokens.color.card, borderRadius: 12, padding: 10, marginBottom: 8 },
+    paymentRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", ...tokens.glass.surface, borderRadius: 12, padding: 10, marginBottom: 8 },
     paymentAmount: { fontSize: 13, fontWeight: "700", color: tokens.color.textPrimary },
     paymentMeta: { fontSize: 11, color: tokens.color.textMuted, marginTop: 2 },
     recordBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: tokens.color.accentSoft, borderRadius: 12, paddingVertical: 11, marginTop: 4 },
     recordBtnText: { fontSize: 13, fontWeight: "700", color: tokens.color.accent },
-    paymentForm: { backgroundColor: tokens.color.card, borderRadius: 12, padding: 12, marginTop: 4 },
+    paymentForm: { ...tokens.glass.surface, borderRadius: 12, padding: 12, marginTop: 4 },
     input: { backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: tokens.color.textPrimary },
     methodChip: { flex: 1, alignItems: "center", paddingVertical: 8, borderRadius: 9, borderWidth: 1.5, borderColor: tokens.color.border },
     methodChipText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },

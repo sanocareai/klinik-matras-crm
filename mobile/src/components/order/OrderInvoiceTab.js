@@ -187,7 +187,7 @@ export default function OrderInvoiceTab({ orderId }) {
 
 function createStyles(t) {
   return StyleSheet.create({
-    card: { backgroundColor: t.color.card, borderRadius: 12, padding: 12, gap: 6 },
+    card: { ...t.glass.surface, borderRadius: 12, padding: 12, gap: 6 },
     head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
     number: { fontSize: 14, fontWeight: "800", color: t.color.textPrimary, fontFamily: "monospace" },
     pill: { backgroundColor: t.color.accentSoft, borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 },
@@ -202,7 +202,7 @@ function createStyles(t) {
     input: { backgroundColor: t.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 13.5, color: t.color.textPrimary },
     btnPrimary: { flex: 1, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", backgroundColor: t.color.accent, borderRadius: 12, paddingVertical: 13 },
     btnPrimaryText: { color: "#fff", fontWeight: "700", fontSize: 13.5 },
-    btnGhost: { flex: 1, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", backgroundColor: t.color.card, borderRadius: 12, paddingVertical: 12 },
+    btnGhost: { flex: 1, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", ...t.glass.surface, borderRadius: 12, paddingVertical: 12 },
     btnGhostText: { color: t.color.textPrimary, fontWeight: "600", fontSize: 13 },
     err: { color: t.color.danger, fontSize: 12.5, marginTop: 12 },
   });

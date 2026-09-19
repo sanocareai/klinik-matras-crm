@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
+import { LinearGradient } from "expo-linear-gradient";
 import { House, MessageCircle, Users, UserRound, ClipboardList } from "lucide-react-native";
 import { setAudioModeAsync } from "expo-audio";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
@@ -97,6 +98,42 @@ function TabBarButton({ children, style, ...rest }) {
   );
 }
 
+// Tab bar kapsul kaca (19 Sep 2026, redesain liquid glass). TETAP di dalam alur layout (bukan
+// absolute) supaya konten layar tidak tertutup; area di belakang kapsul diberi warna dasar
+// gradien agar menyatu dengan latar layar.
+function GlassTabBar({ state, navigation }) {
+  const insets = useSafeAreaInsets();
+  const tokens = useTokens();
+  const g = tokens.glass;
+  return (
+    <View style={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: Math.max(insets.bottom, 10), backgroundColor: g.tabBarBg }}>
+      <View style={[g.surface, g.shadow, { flexDirection: "row", alignItems: "center", justifyContent: "space-around", height: 58, borderRadius: 30, paddingHorizontal: 6 }]}>
+        {state.routes.map((route, index) => {
+          const focused = state.index === index;
+          const Icon = TAB_ICONS[route.name];
+          const onPress = () => {
+            const e = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+            if (!focused && !e.defaultPrevented) navigation.navigate(route.name, route.params);
+          };
+          return (
+            <Pressable
+              key={route.key}
+              onPress={onPress}
+              android_ripple={null}
+              accessibilityRole="button"
+              accessibilityState={focused ? { selected: true } : {}}
+              style={{ width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center", overflow: "hidden" }}
+            >
+              {focused && <LinearGradient colors={["#4C86FF", "#1F4FD8"]} style={StyleSheet.absoluteFill} />}
+              <Icon size={22} color={focused ? "#fff" : tokens.color.textMuted} strokeWidth={focused ? 2.4 : 2} />
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function MainTabs() {
   const insets = useSafeAreaInsets();
   const tokens = useTokens();
@@ -109,6 +146,7 @@ function MainTabs() {
   const bottomPad = Math.max(insets.bottom, 6);
   return (
     <Tab.Navigator
+      tabBar={(props) => <GlassTabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarShowLabel: false,

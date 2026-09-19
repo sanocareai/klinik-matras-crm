@@ -23,6 +23,7 @@
 //   seperti sebelumnya (yang mana itu pemborosan ekstra untuk mayoritas
 //   sales yang cuma pakai List view).
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import GlassBackdrop from "../components/GlassBackdrop";
 import {
   View, Text, TextInput, StyleSheet, ActivityIndicator, RefreshControl, TouchableOpacity, Modal, FlatList, ScrollView,
 } from "react-native";
@@ -301,6 +302,7 @@ export default function PelangganScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <GlassBackdrop />
       <View style={styles.header}>
         <Text style={styles.title}>Pelanggan</Text>
         <TouchableOpacity style={styles.viewToggleBtn} onPress={toggleViewMode}>
@@ -437,7 +439,7 @@ export default function PelangganScreen({ navigation }) {
 
 function createStyles(tokens) {
   return StyleSheet.create({
-  container: { flex: 1, backgroundColor: tokens.color.bg },
+  container: { flex: 1, backgroundColor: "transparent" },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6,
@@ -446,16 +448,16 @@ function createStyles(tokens) {
   viewToggleBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   searchWrap: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    marginHorizontal: 16, marginBottom: 8, backgroundColor: tokens.color.card,
+    marginHorizontal: 16, marginBottom: 8, ...tokens.glass.surface,
     borderRadius: tokens.radius.pill, paddingHorizontal: 14, paddingVertical: 10,
-    ...tokens.shadow.soft, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+    ...tokens.glass.shadow, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
   searchInput: { flex: 1, fontSize: 14, color: tokens.color.textPrimary },
   salesFilterPill: {
     flexDirection: "row", alignItems: "center", alignSelf: "flex-start",
-    marginHorizontal: 16, marginBottom: 10, backgroundColor: tokens.color.card,
+    marginHorizontal: 16, marginBottom: 10, ...tokens.glass.surface,
     borderRadius: tokens.radius.chip, paddingHorizontal: 14, paddingVertical: 8,
-    ...tokens.shadow.soft, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+    ...tokens.glass.shadow, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
   salesFilterLabel: { fontSize: 12, color: tokens.color.textMuted, fontWeight: "600" },
   salesFilterValue: { fontSize: 12, color: tokens.color.textPrimary, fontWeight: "700", maxWidth: 140 },
@@ -463,13 +465,13 @@ function createStyles(tokens) {
   tabsContent: { paddingHorizontal: 16, gap: 8 },
   stageChip: {
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: tokens.radius.chip,
-    backgroundColor: tokens.color.card, borderWidth: 1, borderColor: tokens.color.border,
+    ...tokens.glass.surface, borderWidth: 1, borderColor: tokens.color.border,
   },
   stageChipText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
   list: { paddingHorizontal: 0 },
   row: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: tokens.color.card, paddingHorizontal: 16, paddingVertical: 12,
+    ...tokens.glass.surface, paddingHorizontal: 16, paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.subtle,
   },
   rowBody: { flex: 1, marginLeft: 12 },

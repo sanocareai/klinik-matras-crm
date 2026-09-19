@@ -2,7 +2,7 @@
   "expo": {
     "name": "SANO Messenger",
     "slug": "klinik-matras-crm",
-    "version": "3.2.2",
+    "version": "3.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -12,7 +12,7 @@
     "jsEngine": "hermes",
     "android": {
       "package": "com.sanomatrassehat.salesapp",
-      "versionCode": 21,
+      "versionCode": 22,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {

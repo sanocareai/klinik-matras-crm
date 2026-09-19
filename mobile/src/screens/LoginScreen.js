@@ -6,6 +6,9 @@ import {
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from "react-native";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import GlassBackdrop from "../components/GlassBackdrop";
+import { useTokens } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import { useColors } from "../theme";
 import { DEFAULT_SERVER } from "../api";
@@ -20,7 +23,8 @@ let autoBiometricTried = false;
 
 export default function LoginScreen() {
   const colors = useColors();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { glass } = useTokens();
+  const styles = useMemo(() => createStyles(colors, glass), [colors, glass]);
   const { login, server } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -96,6 +100,7 @@ export default function LoginScreen() {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
+      <GlassBackdrop />
       <View style={styles.card}>
         <Image source={require("../../assets/icon.png")} style={styles.logo} contentFit="contain" />
         <Text style={styles.title}>Klinik Matras CRM</Text>
@@ -138,6 +143,7 @@ export default function LoginScreen() {
         )}
 
         <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={busy}>
+          <LinearGradient colors={["#1F6BFF", "#19B5F0"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
           {busy ? (
             <ActivityIndicator color="#fff" />
           ) : (
@@ -168,11 +174,11 @@ export default function LoginScreen() {
   );
 }
 
-function createStyles(colors) {
+function createStyles(colors, glass) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.header, justifyContent: "center", padding: 24 },
+    container: { flex: 1, backgroundColor: glass.tabBarBg, justifyContent: "center", padding: 24 },
     card: {
-      backgroundColor: colors.card, borderRadius: 16, padding: 24, alignItems: "center",
+      ...glass.surface, ...glass.shadow, borderRadius: 26, padding: 24, alignItems: "center",
     },
     logo: { width: 56, height: 56, marginBottom: 4, borderRadius: 14 },
     title: { fontSize: 22, fontWeight: "700", color: colors.text },
@@ -180,18 +186,19 @@ function createStyles(colors) {
     input: {
       width: "100%", borderWidth: 1, borderColor: colors.border, borderRadius: 10,
       paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, marginBottom: 12,
-      color: colors.text, backgroundColor: colors.bg,
+      color: colors.text, backgroundColor: "rgba(255,255,255,0.65)", borderColor: "rgba(255,255,255,0.9)",
     },
     button: {
-      width: "100%", backgroundColor: colors.header, borderRadius: 10,
-      paddingVertical: 14, alignItems: "center", marginTop: 4,
+      width: "100%", borderRadius: 99, overflow: "hidden",
+      paddingVertical: 15, alignItems: "center", marginTop: 4,
+      shadowColor: "#19B5F0", shadowOpacity: 0.5, shadowRadius: 14, shadowOffset: { width: 0, height: 4 },
     },
     buttonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
     bioButton: {
-      width: "100%", borderWidth: 1, borderColor: colors.header, borderRadius: 10,
+      width: "100%", borderWidth: 1.5, borderColor: colors.primary, borderRadius: 99,
       paddingVertical: 13, alignItems: "center", marginTop: 10,
     },
-    bioText: { color: colors.header, fontWeight: "700", fontSize: 15 },
+    bioText: { color: colors.primary, fontWeight: "700", fontSize: 15 },
     serverToggle: { marginTop: 16, fontSize: 12, color: colors.textMuted },
   });
 }
