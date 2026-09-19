@@ -47,6 +47,8 @@ import { financeRouter }    from "./routes/finance.js";
 import { financeTxRouter }  from "./routes/financeTransactions.js";
 import { financeKasbonRouter } from "./routes/financeKasbon.js";
 import { financePenerimaanRouter } from "./routes/financePenerimaan.js";
+import { financeMediaRouter, financeReceiptsLegacyPathRouter } from "./routes/financeMedia.js";
+import { mobileRouter } from "./routes/mobileAuth.js";
 import { inventoryRouter }  from "./routes/inventory.js";
 import { goodsReceiptRouter } from "./routes/goodsReceipt.js";
 import { materialIssueRouter } from "./routes/materialIssue.js";
@@ -152,7 +154,9 @@ app.use("/media/payment-proofs", express.static(paymentProofsDir));
 app.use("/media/scope-revision-photos", express.static(scopeRevisionPhotosDir));
 app.use("/media/vehicle-receipts", express.static(vehicleReceiptsDir));
 // Nama file = hash isi → tidak pernah berubah, aman di-cache lama di browser.
-app.use("/media/finance-receipts", express.static(path.join(__dirname, "../data/finance-receipts"), { maxAge: "30d", immutable: true }));
+// Foto nota finance TIDAK lagi statis publik — butuh Bearer+izin atau URL bertanda-tangan
+// (routes/financeMedia.js). Path tetap sama supaya receiptUrl lama tetap valid.
+app.use("/media/finance-receipts", financeReceiptsLegacyPathRouter);
 app.use("/media/products", express.static(productsDir));
 app.use("/media/invoice-pdfs", express.static(invoicePdfsDir));
 app.use("/media/warranty-pdfs", express.static(warrantyPdfsDir));
@@ -195,6 +199,9 @@ app.use("/api/finance",      financeRouter);
 app.use("/api/finance",      financeTxRouter); // additive, tidak mengubah financeRouter
 app.use("/api/finance",      financeKasbonRouter);
 app.use("/api/finance",      financePenerimaanRouter);
+app.use("/api/finance",      financeMediaRouter);
+// Aplikasi mobile Finance: sesi 15 menit + refresh rotasi, token push perangkat, config.
+app.use("/api/mobile",       mobileRouter);
 app.use("/api/inventory",    inventoryRouter);
 app.use("/api/inventory/goods-receipts", goodsReceiptRouter);
 app.use("/api/inventory/material-issues", materialIssueRouter);

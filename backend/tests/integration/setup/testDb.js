@@ -59,6 +59,8 @@ const TABLES_TO_TRUNCATE = [
   // ini sudah pernah bikin query gagal sebelumnya di sesi kerja lain —
   // dicatat di sini supaya tidak terulang.
   "units", "Order", "Customer",
+  // Finance Android S0: sesi mobile, token push perangkat, kunci idempotency.
+  "api_idempotency_keys", "mobile_device_tokens", "mobile_sessions",
   "user_roles", "User",
 ];
 

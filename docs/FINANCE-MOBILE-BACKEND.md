@@ -1,0 +1,142 @@
+# Backend untuk Finance Mobile (S0) — sesi, idempotency, push, foto nota
+
+Dikerjakan 19 September 2026 sebagai prasyarat aplikasi `finance-mobile/` (React Native + Expo).
+Semua perubahan **kompatibel mundur untuk web**: tanpa header/klaim baru, perilaku lama persis sama.
+
+## 1. Ringkasan perubahan
+
+| Area | Perubahan | Berlaku untuk web? |
+|---|---|---|
+| Sesi mobile | Access token 15 mnt (`typ:"mobile"`, `sid`) + refresh token rotasi, bisa dicabut, tidak diperpanjang otomatis | Tidak (jalur terpisah `/api/mobile/auth/*`) |
+| Rate limit | Login 5 gagal/15 mnt per email+IP, 30 gagal/15 mnt per IP; refresh 60/mnt/IP; API mobile 120/mnt/pengguna; media sign 60/mnt; unggah nota tetap seperti semula | Login web **ikut** dibatasi (hanya kegagalan yang dihitung) |
+| Capabilities | `capabilities` di `GET /api/auth/me` dan di respons login (`user.capabilities`) | Ya (field tambahan, aman) |
+| Idempotency-Key | Middleware di 4 router `/api/finance/*` untuk POST/PUT/PATCH/DELETE | Opsional untuk web; **wajib** untuk token mobile (428) |
+| Push | Token perangkat (`fcm`/`expo`), servis dispatch, transport FCM HTTP v1 tanpa dependency baru | Tidak |
+| Foto nota | `/media/finance-receipts/*` tidak lagi statis publik; Bearer+izin atau URL bertanda-tangan | Ya — web sudah disesuaikan (lihat §6) |
+
+## 2. Endpoint baru
+
+Prefix `/api/mobile` (kecuali disebut). Semua galat: `{ "error": "...", "code": "..." }`.
+
+| Method | Path | Auth | Fungsi |
+|---|---|---|---|
+| POST | `/auth/login` | — | `{email,password,device:{id,label,appVersion,platform}}` → `{accessToken,refreshToken,expiresIn:900,accessTokenExpiresAt,refreshTokenExpiresAt,session,user,capabilities}`. 403 `NOT_FINANCE_TEAM` bila akun bukan tim Finance |
+| POST | `/auth/refresh` | refresh token | `{refreshToken,device?:{appVersion}}` → pasangan baru (token lama tidak berlaku lagi) |
+| POST | `/auth/logout` | refresh token **atau** Bearer | Selalu 200; mencabut sesi + menghapus token push perangkat |
+| GET | `/auth/sessions` | Bearer | Sesi/perangkat aktif milik sendiri (`current` menandai yang dipakai) |
+| DELETE | `/auth/sessions/:id` | Bearer | Keluarkan satu perangkat sendiri |
+| POST | `/auth/sessions/revoke-user` | Bearer + `USER_MANAGE` | `{userId}` cabut semua sesi seorang pengguna |
+| POST | `/devices` | Bearer (mobile) | `{deviceId,token,provider:"fcm"\|"expo",platform,appVersion}` daftar/ganti token push. `deviceId` harus sama dengan perangkat sesi |
+| DELETE | `/devices/:deviceId` | Bearer | Hapus token push perangkat |
+| GET | `/config` | — | `{minVersionCode,latestVersionCode,updateUrl,maintenance,fcmConfigured,serverTime}` |
+| POST | `/api/finance/media/sign` | Bearer | `{urls:[...]}` → `{signed:{url:{url,thumbUrl,expiresAt}}}` (maks 60) |
+| GET | `/api/finance/media/receipts/:file` | Bearer | Alias streaming untuk klien native |
+| GET | `/media/finance-receipts/:file` | Bearer **atau** `?exp&sig` | Path lama, kini terlindungi |
+
+### Kode galat penting
+`SESSION_REVOKED` · `TOKEN_INVALID` · `REFRESH_INVALID` · `REFRESH_REUSED` · `SESSION_EXPIRED` · `ACCOUNT_INACTIVE` ·
+`NOT_FINANCE_TEAM` · `RATE_LIMITED` (429 + `Retry-After`) · `IDEMPOTENCY_KEY_REQUIRED` (428) · `IDEMPOTENCY_KEY_INVALID` (400) ·
+`IDEMPOTENCY_KEY_REUSED` (422) · `IDEMPOTENCY_IN_PROGRESS` (409).
+
+## 3. Sesi mobile — aturan
+
+- Access token: JWT dengan `JWT_SECRET` yang sama dan payload web (`id,name,role,roles`) + `typ:"mobile"`, `sid`. Semua `requirePermission` existing bekerja tanpa diubah.
+- Refresh token: `smr_<43 char>` acak; di database hanya **SHA-256**-nya. **Rotasi tiap dipakai**; token yang sudah diganti dipakai lagi ⇒ sesi dicabut (`REFRESH_REUSED`). Klien **harus menyimpan token baru sebelum memakainya**.
+- Umur: idle 14 hari (bergeser tiap rotasi), absolut 60 hari. Maksimal **2 sesi aktif/pengguna**; login ulang di perangkat yang sama menggantikan sesinya.
+- `requireAuth` untuk token mobile: memeriksa sesi di database **setiap request** (revoke & akun nonaktif berlaku seketika), tidak memberi `X-Refreshed-Token`, dan hanya mengizinkan jalur: `/api/finance/*`, `/api/mobile/*`, `/api/auth/me`, `POST /api/armada/payments/:id/verify`, `GET /api/orders/:id/invoice/pdf` (hak akses minimum).
+- Role dibaca ulang dari database tiap refresh (perubahan peran berlaku ≤ 15 mnt).
+- Menonaktifkan akun (`PATCH /api/users/:id {active:false}`) mencabut semua sesi + token push.
+- Batas percobaan disimpan **di memori proses** (satu container). Kalau backend di-scale ke banyak instance, batas menjadi per-instance.
+- IP klien: entri **terakhir** `X-Forwarded-For` bila soket berasal dari proxy privat (nginx menambahkannya); header dari sumber publik diabaikan.
+
+## 4. Idempotency-Key
+
+Header `Idempotency-Key: <8–128 karakter [A-Za-z0-9_-:.]>`.
+
+| Situasi | Hasil |
+|---|---|
+| Kunci baru | Diproses normal; respons 2xx disimpan (24 jam) |
+| Kunci sama + isi sama | Respons pertama diputar ulang, header `Idempotent-Replayed: true`, tidak dieksekusi ulang |
+| Kunci sama + isi beda | 422 `IDEMPOTENCY_KEY_REUSED` |
+| Kunci sama, masih diproses | 409 `IDEMPOTENCY_IN_PROGRESS` (+`Retry-After: 2`) |
+| Respons non-2xx | Kunci dilepas, boleh dikirim ulang |
+| Token mobile tanpa header pada command | 428 `IDEMPOTENCY_KEY_REQUIRED` |
+
+Dikecualikan: `POST /api/finance/receipts/upload` (multipart, idempoten lewat nama = hash isi) dan `POST /api/finance/media/sign`.
+Kunci dilingkupi **per pengguna**. Tabel `api_idempotency_keys`; baris > 48 jam dibersihkan otomatis.
+Klien: buat **satu UUID per niat pengguna** (saat form dibuka), pakai ulang saat mencoba lagi setelah timeout, buat baru untuk perintah baru.
+
+## 5. Push (FCM / Expo)
+
+**Aman by default — tidak ada push keluar** kecuali `FINANCE_PUSH_ENABLED=true`. Token FCM hanya dikirim bila kredensial FCM lengkap; token Expo tidak butuh kredensial di server (Expo Push).
+
+| Env | Keterangan |
+|---|---|
+| `FINANCE_PUSH_ENABLED` | `"true"` untuk menyalakan |
+| `FCM_SERVICE_ACCOUNT_JSON` **atau** `FCM_PROJECT_ID`+`FCM_CLIENT_EMAIL`+`FCM_PRIVATE_KEY` | Akun layanan Firebase (Project settings → Service accounts → Generate key). Untuk Expo, upload FCM V1 key ke EAS (`eas credentials`) |
+
+Servis: `services/financeNotifications.js` — `dispatchFinanceNotification`, `notifyApprovalRequested`, `notifyApprovalDecided`, `notifyPaymentsPending`.
+Isi title/body **generik** (tanpa nominal/nama); detail hanya di `data` (`url: sanofinance://…`). Token mati (FCM `UNREGISTERED`/404, Expo `DeviceNotRegistered`) dihapus otomatis.
+**Pemicu di route finance belum dipasang** (slice S11) supaya perilaku endpoint yang berjalan tidak berubah di S0.
+
+## 6. Foto nota
+
+- File tetap di `backend/data/finance-receipts/` (`FINANCE_RECEIPTS_DIR` untuk mengubah), nilai `receiptUrl` di database **tidak berubah**.
+- Izin: `FINANCE_READ` melihat semua; pemegang `FINANCE_EXPENSE_SUBMIT` saja hanya foto pada pengeluaran/pembelian yang ia buat/ajukan.
+- URL bertanda-tangan: `HMAC-SHA256(file.exp)`, umur 10 menit, kunci `MEDIA_SIGNING_SECRET` (default turunan `JWT_SECRET`, label `finance-media-v1`).
+- Cache `private, max-age=300`, `X-Content-Type-Options: nosniff`; nama file divalidasi `^[a-f0-9]{40}(_t)?\.jpg$` (tanpa path traversal).
+- **Web**: `features/finance/receiptMedia.jsx` menukar URL foto dengan URL bertanda-tangan lewat `POST /finance/media/sign` (digabung per layar, di-cache) — dipakai `Foto`, `PemilihBukti`, `SelBukti`, dan tautan bukti di Kasbon.
+- **Belum dilindungi** (di luar cakupan S0): `/media/payment-proofs`, `/media/vehicle-receipts`, `/media/invoice-pdfs`, dll. (dipakai app CRM/driver lain).
+
+## 7. Database
+
+Migration `20260919230000_mobile_sessions_idempotency_devices` (additive): `mobile_sessions`, `mobile_device_tokens`, `api_idempotency_keys`.
+Deploy: `git pull` → `docker compose up -d --build backend` → `docker compose exec backend npx prisma migrate deploy`.
+
+## 8. Tes
+
+```bash
+cd backend
+npm test                                   # unit: rateLimit, mediaSigning, fcmTransport (+ yang lama)
+node tests/integration/setup/bootstrapTestDb.js
+node --test --test-concurrency=1 \
+  tests/integration/mobileAuth.integration.test.js \
+  tests/integration/financeIdempotency.integration.test.js \
+  tests/integration/financeMedia.integration.test.js \
+  tests/integration/financeNotifications.integration.test.js
+npm run test:integration                   # seluruh suite (regresi)
+```
+
+## 9. QA manual (dengan curl)
+
+```bash
+B=https://app.sanomatrassehat.com/api          # dev: http://localhost:4000/api
+# 1) login mobile
+curl -s -X POST $B/mobile/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"natasha@klinikmatras.com","password":"...","device":{"id":"qa-1","label":"QA","appVersion":"0.0.1"}}' | tee /tmp/l.json
+A=$(jq -r .accessToken /tmp/l.json); R=$(jq -r .refreshToken /tmp/l.json)
+# 2) capabilities
+curl -s $B/auth/me -H "Authorization: Bearer $A" | jq .capabilities
+# 3) token mobile tidak diperpanjang → header X-Refreshed-Token TIDAK ada
+curl -si $B/auth/me -H "Authorization: Bearer $A" | grep -i x-refreshed || echo "OK: tidak ada"
+# 4) command tanpa Idempotency-Key ditolak (428)
+curl -s -X POST $B/finance/transfers -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{}'
+# 5) rotasi refresh, lalu pakai token LAMA → REFRESH_REUSED, sesi mati
+curl -s -X POST $B/mobile/auth/refresh -H 'Content-Type: application/json' -d "{\"refreshToken\":\"$R\"}" | jq -c '{ok:(.accessToken!=null)}'
+curl -s -X POST $B/mobile/auth/refresh -H 'Content-Type: application/json' -d "{\"refreshToken\":\"$R\"}"
+# 6) foto nota tanpa login → 401
+curl -si https://app.sanomatrassehat.com/media/finance-receipts/<hash>.jpg | head -1
+# 7) rate limit login: 6× password salah → 429
+for i in 1 2 3 4 5 6; do curl -s -o /dev/null -w "%{http_code} " -X POST $B/mobile/auth/login -H 'Content-Type: application/json' -d '{"email":"x@y.z","password":"salah","device":{"id":"qa"}}'; done
+```
+Di web: buka Finance → Pengeluaran/Pembelian/Kasbon — thumbnail nota harus tetap tampil, klik membuka foto penuh.
+
+## 10. Risiko tersisa
+
+1. **Step-up biometrik hanya di klien** (PRD §11.5) — penyerang yang memegang refresh token bisa memanggil API tanpa layar kunci. Mitigasi: token di secure storage, access 15 mnt, revoke instan. Step-up terverifikasi server = rilis berikutnya.
+2. **Refresh token dipakai ulang karena respons hilang** (jaringan putus tepat setelah rotasi) mencabut sesi → pengguna login ulang. Aman tetapi bisa mengganggu; klien wajib menyimpan token baru secara atomik.
+3. **Rate limit di memori**: hilang saat restart, per-instance.
+4. **Foto yang baru diunggah oleh pemegang izin ajukan-saja** belum terikat ke dokumen sehingga belum bisa ditampilkan sampai dokumennya tersimpan (finance tidak terpengaruh).
+5. **Media lain masih publik** (bukti pembayaran lama, struk kendaraan, invoice PDF) — dipakai app CRM/driver; perlu migrasi terpisah.
+6. Pemicu notifikasi belum dipasang (S11); `FINANCE_PUSH_ENABLED` masih `false`.
+7. Batas `Idempotency-Key`: respons yang gagal tidak disimpan, jadi request yang menghasilkan efek samping lalu 5xx bisa dieksekusi ulang bila klien memakai kunci yang sama — route finance memakai transaksi sehingga 5xx = tidak ada efek.

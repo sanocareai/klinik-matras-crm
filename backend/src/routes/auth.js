@@ -4,6 +4,8 @@ import jwt from "jsonwebtoken";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { portalsFor } from "../middleware/authorize.js";
+import { capabilitiesFor } from "../services/capabilities.js";
+import { createFailureLimiter, clientIp, tooMany } from "../lib/rateLimit.js";
 
 export const authRouter = express.Router();
 
@@ -17,7 +19,7 @@ export const authRouter = express.Router();
 // backfill migrasi seharusnya sudah mengisinya, tapi user yang DIBUAT setelah
 // migrasi lewat jalur lama (routes/users.js) belum tentu punya barisnya.
 // Tanpa fallback, user baru langsung kehilangan seluruh akses.
-async function loadRoles(user) {
+export async function loadRoles(user) {
   const rows = await prisma.userRole.findMany({
     where: { userId: user.id },
     select: { role: true },
@@ -26,15 +28,45 @@ async function loadRoles(user) {
   return roles.length > 0 ? roles : [user.role];
 }
 
+// BATAS PERCOBAAN LOGIN (19 Sep 2026, Finance Android S0). Sebelumnya tidak ada
+// pembatasan sama sekali. Yang dihitung hanya KEGAGALAN: 5 gagal / 15 menit
+// per (email + IP) dan 30 gagal / 15 menit per IP. Login yang berhasil
+// mereset hitungan email+IP, jadi pengguna sah tidak pernah terkunci oleh
+// salah ketik sesekali. Dipakai bersama oleh /api/mobile/auth/login.
+export const loginLimiterPair = createFailureLimiter({ windowMs: 15 * 60_000, max: 5 });
+export const loginLimiterIp = createFailureLimiter({ windowMs: 15 * 60_000, max: 30 });
+const PESAN_TERKUNCI = "Terlalu banyak percobaan login yang gagal. Coba lagi beberapa menit lagi.";
+
+/** Cek batas; balas 429 & kembalikan null bila terkunci, selain itu kembalikan kunci-kuncinya. */
+export function gerbangLogin(req, res, email) {
+  const ip = clientIp(req);
+  const kunciPasangan = `${String(email || "").trim().toLowerCase()}|${ip}`;
+  for (const [lim, kunci] of [[loginLimiterPair, kunciPasangan], [loginLimiterIp, ip]]) {
+    const g = lim.check(kunci);
+    if (g.blocked) {
+      tooMany(res, g.retryAfterSeconds, PESAN_TERKUNCI);
+      return null;
+    }
+  }
+  return {
+    gagal() { loginLimiterPair.fail(kunciPasangan); loginLimiterIp.fail(ip); },
+    berhasil() { loginLimiterPair.success(kunciPasangan); },
+  };
+}
+
 authRouter.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    const gerbang = gerbangLogin(req, res, email);
+    if (!gerbang) return;
+
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) return res.status(401).json({ error: "Email atau password salah" });
+    if (!user) { gerbang.gagal(); return res.status(401).json({ error: "Email atau password salah" }); }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) return res.status(401).json({ error: "Email atau password salah" });
+    if (!valid) { gerbang.gagal(); return res.status(401).json({ error: "Email atau password salah" }); }
+    gerbang.berhasil();
 
     // Akun nonaktif (mis. sudah resign) — dicek SETELAH password benar,
     // supaya pesannya tidak jadi oracle "email ini terdaftar" untuk akun
@@ -65,6 +97,12 @@ authRouter.post("/login", async (req, res) => {
         roles,
         avatarUrl: user.avatarUrl,
         portals: portalsFor({ roles }),
+        capabilities: capabilitiesFor({ roles, role: user.role }),
+        // isOnline/onlineSince (12 Sep 2026) — driver-mobile langsung tahu
+        // status Online/Offline sejak login pertama, tidak perlu panggilan
+        // /users/me kedua cuma untuk field ini.
+        isOnline: user.isOnline,
+        onlineSince: user.onlineSince,
       },
     });
   } catch (err) {
@@ -87,7 +125,9 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     if (!user) return res.status(401).json({ error: "User tidak ditemukan" });
 
     const roles = await loadRoles(user);
-    res.json({ ...user, roles, portals: portalsFor({ roles }) });
+    // capabilities (19 Sep 2026): daftar kemampuan dari role/permission AKTUAL,
+    // supaya klien tidak menyalin peta role→izin. Additive — field lama utuh.
+    res.json({ ...user, roles, portals: portalsFor({ roles }), capabilities: capabilitiesFor({ roles, role: user.role }) });
   } catch (err) {
     console.error("Auth me error:", err.message);
     res.status(500).json({ error: "Server error: " + err.message });

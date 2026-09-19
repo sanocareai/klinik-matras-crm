@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
+import { LinkBukti } from "@/features/finance/receiptMedia.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, PeriodePicker, tanggalPendek, PemilihBukti,
@@ -215,7 +216,7 @@ export default function FinanceKasbon() {
                       <span className="block truncate">{k.urgency || "—"}</span>
                       {k.cashAccount && <span className="text-[11px] text-ink3">dari {k.cashAccount.name}</span>}
                       {k.receiptUrl && (
-                        <a href={k.receiptUrl} target="_blank" rel="noreferrer" className="ml-1 text-[11px] text-accent hover:underline">bukti</a>
+                        <LinkBukti url={k.receiptUrl} className="ml-1 text-[11px] text-accent hover:underline">bukti</LinkBukti>
                       )}
                     </TD>
                     <TD numeric><Uang value={k.amount} /></TD>

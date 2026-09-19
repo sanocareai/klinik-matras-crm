@@ -17,6 +17,7 @@
 
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
+import { idempotency } from "../middleware/idempotency.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
@@ -48,6 +49,8 @@ import { hitungNominal, statusEfektif } from "../services/invoice.js";
 
 export const financeRouter = express.Router();
 financeRouter.use(requireAuth);
+// Idempotency-Key untuk command uang (opsional di web, wajib di token mobile).
+financeRouter.use(idempotency);
 
 // Satu penanganan error untuk seluruh router — MoneyError/JournalError/
 // AccountError semuanya membawa statusCode sendiri dan pesan Bahasa

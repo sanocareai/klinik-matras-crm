@@ -1279,6 +1279,8 @@ export const api = {
   // Pembelian (bahan baku manual, aset tetap, aset tak berwujud, uang muka)
   // Bukti/nota pengeluaran & pembelian (jenis = "expenses" | "purchases")
   uploadFinanceReceipt: (formData) => requestFormData("/finance/receipts/upload", formData),
+  // URL foto nota bertanda-tangan (foto nota tidak lagi publik) — lihat features/finance/receiptMedia.jsx
+  signFinanceMedia: (urls) => request("/finance/media/sign", { method: "POST", body: JSON.stringify({ urls }) }),
   setFinanceReceipt: (jenis, id, receiptUrl) => request(`/finance/${jenis}/${id}/bukti`, { method: "POST", body: JSON.stringify({ receiptUrl }) }),
   verifyFinanceReceipt: (jenis, id) => request(`/finance/${jenis}/${id}/verifikasi-bukti`, { method: "POST" }),
   editFinanceDoc: (jenis, id, data) => request(`/finance/${jenis}/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

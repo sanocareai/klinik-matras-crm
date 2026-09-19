@@ -25,6 +25,9 @@ const { financeRouter } = await import("../../../src/routes/finance.js");
 const { financeTxRouter } = await import("../../../src/routes/financeTransactions.js");
 const { financeKasbonRouter } = await import("../../../src/routes/financeKasbon.js");
 const { financePenerimaanRouter } = await import("../../../src/routes/financePenerimaan.js");
+const { financeMediaRouter, financeReceiptsLegacyPathRouter } = await import("../../../src/routes/financeMedia.js");
+const { mobileRouter } = await import("../../../src/routes/mobileAuth.js");
+const { authRouter } = await import("../../../src/routes/auth.js");
 
 export function buildTestApp() {
   const app = express();
@@ -51,6 +54,10 @@ export function buildTestApp() {
   app.use("/api/finance", financeTxRouter);
   app.use("/api/finance", financeKasbonRouter);
   app.use("/api/finance", financePenerimaanRouter);
+  app.use("/api/finance", financeMediaRouter);
+  app.use("/media/finance-receipts", financeReceiptsLegacyPathRouter);
+  app.use("/api/auth", authRouter);
+  app.use("/api/mobile", mobileRouter);
 
   return app;
 }

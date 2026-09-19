@@ -8,6 +8,7 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
+import { useUrlBukti, LinkBukti } from "@/features/finance/receiptMedia.jsx";
 import { compressImage } from "@/utils/compressImage.js";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { SIMPLE_PRESETS, makeRange, makeCustomRange, todayWIB } from "@/lib/dateRange.js";
@@ -429,7 +430,10 @@ async function siapkanFoto(file) {
 // tanpa thumbnail otomatis jatuh balik ke foto utama.
 function Foto({ url, className, alt = "Nota" }) {
   const [pakaiAsli, setPakaiAsli] = useState(false);
-  const src = !pakaiAsli && /\.jpg$/.test(url) ? url.replace(/\.jpg$/, "_t.jpg") : url;
+  // Foto nota finance butuh URL bertanda-tangan (tidak lagi publik).
+  const h = useUrlBukti(url);
+  if (!h) return <span className={className} aria-hidden />;
+  const src = pakaiAsli ? h.url : h.thumbUrl || h.url;
   return <img src={src} alt={alt} loading="lazy" className={className} onError={() => setPakaiAsli(true)} />;
 }
 
@@ -532,9 +536,9 @@ export function PemilihBukti({ url, onChange }) {
     >
       <div className="flex flex-wrap items-center gap-2">
         {url && (
-          <a href={url} target="_blank" rel="noreferrer" className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line">
+          <LinkBukti url={url} className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line">
             <Foto url={url} className="h-full w-full object-cover" />
-          </a>
+          </LinkBukti>
         )}
         <label className={cn(
           "inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] text-ink2 transition-colors hover:border-accent hover:text-accent sm:h-9",
@@ -612,9 +616,9 @@ export function SelBukti({ doc, jenis, aksi }) {
 
   return (
     <div className="flex items-center gap-2">
-      <a href={doc.receiptUrl} target="_blank" rel="noreferrer" className="block h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-line">
+      <LinkBukti url={doc.receiptUrl} className="block h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-line">
         <Foto url={doc.receiptUrl} className="h-full w-full object-cover" />
-      </a>
+      </LinkBukti>
       {doc.receiptVerifiedAt ? (
         <span className="inline-flex items-center gap-1 text-[12px] font-medium text-green"><ShieldCheck size={13} /> Terverifikasi</span>
       ) : tertutup ? null : (

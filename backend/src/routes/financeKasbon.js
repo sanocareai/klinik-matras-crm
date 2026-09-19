@@ -17,6 +17,7 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { requireAuth } from "../middleware/auth.js";
+import { idempotency } from "../middleware/idempotency.js";
 import { requirePermission, PERMISSIONS as P, hasPermission } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
@@ -29,6 +30,8 @@ import { handleFinanceError } from "./finance.js";
 
 export const financeKasbonRouter = express.Router();
 financeKasbonRouter.use(requireAuth);
+// Idempotency-Key untuk command uang (opsional di web, wajib di token mobile).
+financeKasbonRouter.use(idempotency);
 
 function err(message, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });

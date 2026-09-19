@@ -1,6 +1,8 @@
 import jwt from "jsonwebtoken";
 import { prisma } from "../db.js";
 import { rolesOf } from "./authorize.js";
+import { isMobileSessionActive } from "../services/mobileSession.js";
+import { createLimiter } from "../lib/rateLimit.js";
 
 // BUG (QA 1 Agustus 2026): SEBELUMNYA `req.user?.role !== "ADMIN"` — field
 // legacy JWT tunggal, bukan `roles` array dari sistem multi-role (D-010).
@@ -61,6 +63,59 @@ async function tokenBaruJikaPerlu(payload) {
   }
 }
 
+// ─── TOKEN MOBILE (Finance Android, 19 Sep 2026) ───────────────────────────
+// Token `typ:"mobile"` BERBEDA dari token web di tiga hal:
+//   1. TIDAK pernah diperpanjang otomatis (tidak ada X-Refreshed-Token) —
+//      umurnya 15 menit, perpanjangan hanya lewat POST /api/mobile/auth/refresh.
+//   2. Sesinya diperiksa ke database di SETIAP request (revoke berlaku instan,
+//      akun nonaktif langsung ditolak).
+//   3. Hanya boleh menjangkau path yang memang dibutuhkan aplikasi Finance
+//      (prinsip hak akses minimum) dan dibatasi 120 request/menit/pengguna.
+// Token web (tanpa `typ`) sama sekali tidak tersentuh cabang ini.
+const JALUR_MOBILE_BOLEH = [
+  /^\/api\/finance(\/|$)/,
+  /^\/api\/mobile(\/|$)/,
+  /^\/api\/auth\/me$/,
+  /^\/api\/armada\/payments\/[^/]+\/verify$/,
+  /^\/api\/orders\/[^/]+\/invoice\/pdf$/,
+];
+
+export function jalurMobileBoleh(originalUrl = "") {
+  const path = String(originalUrl).split("?")[0];
+  return JALUR_MOBILE_BOLEH.some((re) => re.test(path));
+}
+
+const mobileApiLimiter = createLimiter({
+  windowMs: 60_000,
+  max: 120,
+  keyFn: (req) => (req.user?.id ? `mobile-api:${req.user.id}` : null),
+  message: "Terlalu banyak permintaan. Coba lagi sebentar lagi.",
+});
+
+/** Verifikasi JWT (tanpa efek samping) — dipakai juga handler media. Mengembalikan payload atau null. */
+export function verifyAccessJwt(token) {
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Untuk handler yang mengotentikasi sendiri (mis. streaming media): validasi
+ * token Bearer termasuk pemeriksaan sesi bila token mobile. Kembalikan user
+ * (payload) atau null.
+ */
+export async function authenticateBearer(req) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) return null;
+  const payload = verifyAccessJwt(token);
+  if (!payload) return null;
+  if (payload.typ === "mobile" && !(await isMobileSessionActive(prisma, payload.sid))) return null;
+  return payload;
+}
+
 export async function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
@@ -71,9 +126,31 @@ export async function requireAuth(req, res, next) {
   try {
     payload = jwt.verify(token, process.env.JWT_SECRET);
   } catch {
-    return res.status(401).json({ error: "Sesi tidak valid, silakan login ulang" });
+    return res.status(401).json({ error: "Sesi tidak valid, silakan login ulang", code: "TOKEN_INVALID" });
   }
   req.user = payload;
+
+  if (payload.typ === "mobile") {
+    if (!jalurMobileBoleh(req.originalUrl)) {
+      return res.status(403).json({ error: "Token aplikasi mobile tidak berlaku untuk alamat ini" });
+    }
+    let aktif = false;
+    try {
+      aktif = await isMobileSessionActive(prisma, payload.sid);
+    } catch (err) {
+      console.error("[auth] cek sesi mobile gagal:", err.message);
+      return res.status(503).json({ error: "Server sedang sibuk, coba lagi sebentar" });
+    }
+    if (!aktif) {
+      return res.status(401).json({ error: "Sesi sudah dicabut atau berakhir, silakan login ulang", code: "SESSION_REVOKED" });
+    }
+    let lolos = false;
+    mobileApiLimiter(req, res, () => { lolos = true; });
+    if (!lolos) return; // 429 sudah dikirim limiter
+    req.mobileSessionId = payload.sid;
+    return next();
+  }
+
   const baru = await tokenBaruJikaPerlu(payload);
   if (baru) res.setHeader("X-Refreshed-Token", baru);
   next();

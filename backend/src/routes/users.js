@@ -9,6 +9,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { ROLE_PERMISSIONS } from "../constants/permissions.js";
 import { rolesOf } from "../middleware/authorize.js";
 import { bulatkanFoto } from "../services/avatarImage.js";
+import { revokeAllForUser } from "../services/mobileSession.js";
 
 // Peran valid — sumber kebenaran TUNGGAL adalah kunci ROLE_PERMISSIONS
 // (constants/permissions.js), supaya daftar ini tidak pernah drift dari
@@ -378,6 +379,11 @@ userRouter.patch("/:id", adminOnly, async (req, res) => {
         _count: { select: { assignedCustomers: true, assignedConversations: true } },
       },
     });
+    // Akun dinonaktifkan → cabut semua sesi aplikasi mobile + hapus token push
+    // (sesi mobile juga otomatis ditolak karena user.active=false; ini pembersihan).
+    if (active === false) {
+      revokeAllForUser(prisma, req.params.id, "akun_dinonaktifkan").catch((e) => console.error("[users] cabut sesi mobile:", e.message));
+    }
     res.json({
       ...updated,
       assignedCustomersCount: updated._count.assignedCustomers,

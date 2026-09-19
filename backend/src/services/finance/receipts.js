@@ -24,7 +24,8 @@ import { fileURLToPath } from "node:url";
 import { getSettingRaw, parseIntOr, SETTING_KEYS } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const RECEIPTS_DIR = path.join(__dirname, "../../../data/finance-receipts");
+// FINANCE_RECEIPTS_DIR hanya untuk tes/deploy khusus; default = data/finance-receipts.
+export const RECEIPTS_DIR = process.env.FINANCE_RECEIPTS_DIR || path.join(__dirname, "../../../data/finance-receipts");
 export const RECEIPTS_URL_PREFIX = "/media/finance-receipts";
 
 // Kategori yang buktinya memang bukan nota toko (slip gaji/mutasi bank).

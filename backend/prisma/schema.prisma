@@ -396,6 +396,8 @@ model User {
   adSpends                   AdSpend[]
   invoicesCreated            Invoice[]                @relation("InvoiceCreator")
   pushTokens                 PushToken[]
+  mobileSessions             MobileSession[]
+  mobileDeviceTokens         MobileDeviceToken[]
   sentMessages               Message[]                @relation("MessageSender")
   firstResponderFor          Conversation[]           @relation("FirstResponder")
   handoverEventsFrom         HandoverEvent[]          @relation("HandoverFrom")
@@ -6563,4 +6565,84 @@ model FinKasbonRepayment {
 
   @@index([kasbonId])
   @@map("fin_kasbon_repayments")
+}
+
+// ═══ SESI MOBILE (Finance Android, 19 September 2026) ═══════════════════════
+// Sesi terpisah dari JWT web 7 hari: access token 15 menit + refresh token
+// acak yang DIROTASI setiap dipakai. Yang disimpan hanya HASH refresh token.
+// Lihat routes/mobileAuth.js dan docs/FINANCE-ANDROID-BACKEND.md.
+model MobileSession {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  deviceId    String  @map("device_id")
+  deviceLabel String? @map("device_label")
+  platform    String  @default("android")
+  appVersion  String? @map("app_version")
+
+  // SHA-256 refresh token yang SEDANG berlaku, dan yang baru saja diganti.
+  // Token lama dipakai lagi (prevRefreshTokenHash cocok) = tanda token dicuri
+  // → seluruh sesi dicabut.
+  refreshTokenHash     String  @unique @map("refresh_token_hash")
+  prevRefreshTokenHash String? @map("prev_refresh_token_hash")
+
+  createdAt          DateTime  @default(now()) @map("created_at")
+  lastSeenAt         DateTime  @default(now()) @map("last_seen_at")
+  refreshExpiresAt   DateTime  @map("refresh_expires_at") // batas diam (idle), digeser tiap rotasi
+  absoluteExpiresAt  DateTime  @map("absolute_expires_at") // batas mutlak sejak login
+  revokedAt          DateTime? @map("revoked_at")
+  revokedReason      String?   @map("revoked_reason")
+
+  deviceTokens MobileDeviceToken[]
+
+  @@index([userId, revokedAt])
+  @@index([prevRefreshTokenHash])
+  @@map("mobile_sessions")
+}
+
+// Token FCM per perangkat (satu baris per user+perangkat).
+model MobileDeviceToken {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sessionId String?        @map("session_id") @db.Uuid
+  session   MobileSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  deviceId   String   @map("device_id")
+  platform   String   @default("android")
+  // "fcm" = token FCM asli (getDevicePushTokenAsync); "expo" = ExponentPushToken[...]
+  provider   String   @default("fcm")
+  fcmToken   String   @unique @map("fcm_token")
+  appVersion String?  @map("app_version")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, deviceId])
+  @@index([sessionId])
+  @@map("mobile_device_tokens")
+}
+
+// Idempotency-Key untuk command uang di /api/finance/*. Permintaan kembar
+// (kunci sama, isi sama) dijawab dengan respons pertama, bukan mengeksekusi
+// ulang. Lihat middleware/idempotency.js.
+model ApiIdempotencyKey {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id")
+  key    String
+
+  method      String
+  path        String
+  requestHash String @map("request_hash")
+
+  state          String    @default("PROCESSING") // PROCESSING | DONE
+  responseStatus Int?      @map("response_status")
+  responseBody   Json?     @map("response_body")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  completedAt    DateTime? @map("completed_at")
+
+  @@unique([userId, key])
+  @@index([createdAt])
+  @@map("api_idempotency_keys")
 }
