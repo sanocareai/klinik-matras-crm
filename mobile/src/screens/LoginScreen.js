@@ -170,7 +170,7 @@ function createStyles(colors) {
     card: {
       backgroundColor: colors.card, borderRadius: 16, padding: 24, alignItems: "center",
     },
-    logo: { width: 56, height: 56, marginBottom: 4 },
+    logo: { width: 56, height: 56, marginBottom: 4, borderRadius: 14 },
     title: { fontSize: 22, fontWeight: "700", color: colors.text },
     subtitle: { fontSize: 13, color: colors.textSecondary, marginBottom: 20 },
     input: {

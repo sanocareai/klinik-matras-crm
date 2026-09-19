@@ -19,11 +19,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ChevronLeft, Clock, Camera, Wallet, Timer, ImageOff, PackageCheck, Wrench, Truck,
   CheckCircle2, Hash, Send, MapPin, Link2, Bed, Weight, HeartPulse, Banknote,
-  CalendarClock, Tag, MessageSquareText, Download, Share2, Square, CheckSquare,
+  CalendarClock, Tag, MessageSquareText, Download, Share2, Square, CheckSquare, FileText, ShieldCheck, AlertTriangle,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import * as ImagePicker from "expo-image-picker";
 import { saveToGallery, shareOne } from "../lib/docPhotos";
+import MediaViewerModal from "../components/MediaViewerModal";
+import OrderInvoiceTab from "../components/order/OrderInvoiceTab";
+import OrderWarrantyTab from "../components/order/OrderWarrantyTab";
+import OrderComplaintTab from "../components/order/OrderComplaintTab";
 import { useTokens } from "../constants/theme";
 import {
   formatRupiah, shortDate, shortDateWithYear, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -35,6 +39,9 @@ const TABS = [
   { key: "status", label: "Status", Icon: Clock },
   { key: "dokumentasi", label: "Dokumentasi", Icon: Camera },
   { key: "pembayaran", label: "Pembayaran", Icon: Wallet },
+  { key: "invoice", label: "Invoice", Icon: FileText },
+  { key: "garansi", label: "Garansi", Icon: ShieldCheck },
+  { key: "komplain", label: "Komplain", Icon: AlertTriangle },
 ];
 // Warna khas per kategori dokumentasi — sama pola dengan web (KATEGORI_TONE
 // di OrderTimelineDrawer.jsx).
@@ -292,6 +299,7 @@ function DokumentasiTab({ orderId, conversationId, customerNameLabel, tokens, st
   const [selected, setSelected] = useState(() => new Set());
   const [sending, setSending] = useState(false);
   const [working, setWorking] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -368,6 +376,12 @@ function DokumentasiTab({ orderId, conversationId, customerNameLabel, tokens, st
     finally { setWorking(false); }
   }
 
+  // Semua foto order ini (urut tampil) + tanda tangan, untuk viewer geser/zoom di dalam app.
+  const viewerItems = doc
+    ? [...doc.entries.flatMap((e) => e.photoUrls || []), ...(doc.tandaTangan ? [doc.tandaTangan.url] : [])]
+        .map((u) => ({ id: u, type: "image", url: mediaUrl(u) }))
+    : [];
+
   if (loading) return <ActivityIndicator color={tokens.color.accent} style={{ marginTop: 24 }} />;
   if (error) return <Text style={styles.errorText}>{error}</Text>;
   if (!doc || doc.entries.length === 0) {
@@ -384,7 +398,7 @@ function DokumentasiTab({ orderId, conversationId, customerNameLabel, tokens, st
 
   return (
     <View style={{ paddingTop: 4 }}>
-      <Text style={styles.docCount}>{doc.totalPhotos} foto sepanjang perjalanan order ini. Centang tahap lalu kirim ke customer, simpan ke galeri, atau bagikan. Ketuk foto untuk buka ukuran penuh.</Text>
+      <Text style={styles.docCount}>{doc.totalPhotos} foto sepanjang perjalanan order ini. Centang tahap lalu kirim ke customer, simpan ke galeri, atau bagikan. Ketuk foto untuk memperbesar.</Text>
       {KATEGORI.map(({ key, label, Icon, hex }) => {
         const items = doc.entries.map((e, idx) => ({ ...e, _idx: idx })).filter((e) => e.kategori === key);
         if (items.length === 0) return null;
@@ -416,7 +430,7 @@ function DokumentasiTab({ orderId, conversationId, customerNameLabel, tokens, st
                 {entry.note ? <Text style={styles.docNote}>{entry.note}</Text> : null}
                 <View style={styles.docPhotoRow}>
                   {(entry.photoUrls || []).map((url) => (
-                    <TouchableOpacity key={url} onPress={() => Linking.openURL(mediaUrl(url))}>
+                    <TouchableOpacity key={url} onPress={() => setViewerIndex(Math.max(0, viewerItems.findIndex((it) => it.id === url)))}>
                       <Image source={{ uri: mediaUrl(url) }} style={styles.docPhoto} />
                     </TouchableOpacity>
                   ))}
@@ -435,12 +449,21 @@ function DokumentasiTab({ orderId, conversationId, customerNameLabel, tokens, st
             </View>
             <Text style={styles.docHeadLabel}>Tanda Tangan Penerima</Text>
           </View>
-          <Image source={{ uri: mediaUrl(doc.tandaTangan.url) }} style={styles.signatureImg} resizeMode="contain" />
+          <TouchableOpacity onPress={() => setViewerIndex(viewerItems.length - 1)}>
+            <Image source={{ uri: mediaUrl(doc.tandaTangan.url) }} style={styles.signatureImg} resizeMode="contain" />
+          </TouchableOpacity>
           <Text style={styles.docStageDate}>
             {shortDate(doc.tandaTangan.waktu)}{doc.tandaTangan.driver ? ` · diterima oleh driver ${doc.tandaTangan.driver}` : ""}
           </Text>
         </View>
       )}
+
+      <MediaViewerModal
+        visible={viewerIndex !== null}
+        items={viewerItems}
+        initialIndex={viewerIndex || 0}
+        onClose={() => setViewerIndex(null)}
+      />
 
       <View style={styles.sendBar}>
         {!conversationId ? (
@@ -715,7 +738,7 @@ export default function OrderTimelineScreen({ route, navigation }) {
           dirender di layar mobile ini) — jadi tidak perlu fetch tambahan. */}
       {order && <DetailPesananSection order={order} tokens={tokens} styles={styles} />}
 
-      <View style={styles.tabBar}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={{ gap: 2 }}>
         {TABS.map(({ key, label, Icon }) => {
           const active = tab === key;
           return (
@@ -725,12 +748,15 @@ export default function OrderTimelineScreen({ route, navigation }) {
             </TouchableOpacity>
           );
         })}
-      </View>
+      </ScrollView>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
         {tab === "status" && <StatusTab orderId={orderId} tokens={tokens} styles={styles} />}
         {tab === "dokumentasi" && <DokumentasiTab orderId={orderId} conversationId={order?.conversationId || null} customerNameLabel={customerName} tokens={tokens} styles={styles} />}
         {tab === "pembayaran" && order && <PembayaranTab order={order} tokens={tokens} styles={styles} />}
+        {tab === "invoice" && <OrderInvoiceTab orderId={orderId} />}
+        {tab === "garansi" && <OrderWarrantyTab orderId={orderId} order={order} />}
+        {tab === "komplain" && <OrderComplaintTab orderId={orderId} />}
       </ScrollView>
     </View>
   );
@@ -763,8 +789,8 @@ function createStyles(tokens) {
     detailLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
     detailText: { fontSize: 12.5, color: tokens.color.textPrimary, lineHeight: 18 },
     detailMuted: { fontSize: 12.5, color: tokens.color.textMuted },
-    tabBar: { flexDirection: "row", marginHorizontal: 16, backgroundColor: tokens.color.subtle, borderRadius: 12, padding: 3, marginBottom: 4 },
-    tabBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 8, borderRadius: 9 },
+    tabBar: { flexGrow: 0, flexShrink: 0, marginHorizontal: 16, backgroundColor: tokens.color.subtle, borderRadius: 12, padding: 3, marginBottom: 4 },
+    tabBtn: { paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 8, borderRadius: 9 },
     tabBtnActive: { backgroundColor: tokens.color.card },
     tabBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.textMuted },
     tabBtnTextActive: { color: tokens.color.textPrimary },

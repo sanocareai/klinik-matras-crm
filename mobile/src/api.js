@@ -2,7 +2,8 @@
 // Sama persis dengan frontend/src/api.js versi web, tapi pakai AsyncStorage
 // (React Native tidak punya localStorage) dan base URL absolut ke server produksi.
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { File, UploadType } from "expo-file-system";
+import { File, UploadType, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 
 // Alamat server default — bisa diubah di layar Login (untuk testing server lokal)
 export const DEFAULT_SERVER = "https://app.sanomatrassehat.com";
@@ -17,6 +18,18 @@ export function configureApi({ server, jwt, unauthorizedHandler }) {
   if (server !== undefined) serverUrl = server || DEFAULT_SERVER;
   if (jwt !== undefined) token = jwt;
   if (unauthorizedHandler !== undefined) onUnauthorized = unauthorizedHandler;
+}
+
+// Unduh file yang dijaga login (PDF invoice/garansi) ke cache lalu buka sheet Bagikan/Buka
+// Android — di sana sales bisa membuka di aplikasi PDF, atau meneruskannya ke WhatsApp.
+export async function downloadAndShareFile(path, fileName, mimeType) {
+  const dest = new File(Paths.cache, fileName.replace(/[^\w.\-]+/g, "_"));
+  const file = await File.downloadFileAsync(`${serverUrl}/api${path}`, dest, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    idempotent: true,
+  });
+  if (!(await Sharing.isAvailableAsync())) throw new Error("Fitur bagikan tidak tersedia di perangkat ini");
+  await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: fileName });
 }
 
 export function getServerUrl() {
@@ -416,6 +429,15 @@ export const api = {
   getPaymentAccounts: () => request("/orders/payment-accounts"),
   // Foto bukti bayar — multipart field "photo", balikan { url } dipakai sbg proofPhotoUrl.
   uploadPaymentProof: (orderId, file) => uploadFile(`/orders/${orderId}/payments/proof`, file, {}, "photo"),
+  // Invoice & garansi & komplain (19 Sep 2026) — endpoint SAMA dengan web.
+  getOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice`),
+  updateOrderInvoice: (orderId, data) =>
+    request(`/orders/${orderId}/invoice`, { method: "PATCH", body: JSON.stringify(data) }),
+  sendOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice/send`, { method: "POST" }),
+  sendOrderWarranty: (orderId, years) =>
+    request(`/orders/${orderId}/warranty/send`, { method: "POST", body: JSON.stringify({ years }) }),
+  getComplaintCases: (params) => request("/complaints" + buildQuery(params)),
+  createComplaintCase: (data) => request("/complaints", { method: "POST", body: JSON.stringify(data) }),
   getOrderPayments: (orderId) => request(`/armada/payments?orderId=${orderId}`),
   recordOrderPayment: (orderId, data) =>
     request(`/orders/${orderId}/payments`, { method: "POST", body: JSON.stringify(data) }),
