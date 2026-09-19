@@ -27,6 +27,24 @@ const MIN_SIZE_BYTES_DEFAULT = 1.5 * 1024 * 1024; // di bawah ini tidak sepadan 
 const MAX_RATIO = 0.85;                            // hasil harus ≥15% lebih kecil, kalau tidak dibuang
 const ENCODE_TIMEOUT_MS = 15 * 60 * 1000;
 
+// Kunci antar-proses: skrip manual & job malam tidak boleh jalan bersamaan (keduanya menulis
+// file state yang sama dan berebut CPU). mtime kunci disentuh tiap file selesai; kunci yang
+// tidak disentuh >30 menit dianggap basi (proses mati/kontainer restart).
+const LOCK_STALE_MS = 30 * 60 * 1000;
+function lockPath(uploadsDir) { return path.join(uploadsDir, ".video-compress.lock"); }
+function acquireLock(uploadsDir) {
+  const lp = lockPath(uploadsDir);
+  try {
+    if (fs.existsSync(lp) && Date.now() - fs.statSync(lp).mtimeMs > LOCK_STALE_MS) fs.rmSync(lp, { force: true });
+    fs.writeFileSync(lp, String(process.pid), { flag: "wx" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+function touchLock(uploadsDir) { try { fs.utimesSync(lockPath(uploadsDir), new Date(), new Date()); } catch {} }
+function releaseLock(uploadsDir) { fs.rmSync(lockPath(uploadsDir), { force: true }); }
+
 export function stateFilePath(uploadsDir) {
   return path.join(uploadsDir, ".video-compress-state.json");
 }
@@ -148,12 +166,19 @@ export async function compressUploadsBatch(uploadsDir, opts = {}) {
     apply = false, outDir = null, limit = Infinity, minAgeHours = 24, minSizeMb = 1.5, maxSizeMb = Infinity,
     budgetMinutes = Infinity, log = () => {},
   } = opts;
+  // Mode sampel (outDir) tidak menulis apa pun ke file asli/state, jadi tidak perlu kunci.
+  const pakaiKunci = !outDir;
+  if (pakaiKunci && !acquireLock(uploadsDir)) {
+    log("Proses kompresi lain sedang berjalan, keluar.");
+    return { kandidat: 0, compressed: 0, skipped: 0, failed: 0, dryRun: 0, bytesBefore: 0, bytesAfter: 0, terkunci: true };
+  }
+  try {
   const state = loadState(uploadsDir);
   const cutoff = Date.now() - minAgeHours * 3600 * 1000;
   const minSizeBytes = minSizeMb * 1024 * 1024;
 
   const kandidat = fs.readdirSync(uploadsDir)
-    .filter((n) => EXT_FORMAT[path.extname(n).toLowerCase()] && !state.done[n] && !state.skipped[n])
+    .filter((n) => EXT_FORMAT[path.extname(n).toLowerCase()] && !state.done[n] && !state.skipped[n] && !((state.failed?.[n] || 0) >= 2))
     .map((n) => {
       const st = fs.statSync(path.join(uploadsDir, n));
       return { n, size: st.size, mtime: st.mtimeMs };
@@ -183,14 +208,19 @@ export async function compressUploadsBatch(uploadsDir, opts = {}) {
       if (apply && !outDir) state.skipped[f.n] = r.reason;
       log(`SKIP ${f.n}  ${r.reason}`);
     } else if (r.status === "failed") {
-      ringkas.failed++; // TIDAK dicatat ke state: boleh dicoba lagi (mungkin gagal sementara)
+      ringkas.failed++; // dicoba lagi malam berikutnya (mungkin gagal sementara); menyerah setelah 2x
+      if (apply && !outDir) { state.failed = state.failed || {}; state.failed[f.n] = (state.failed[f.n] || 0) + 1; }
       log(`GAGAL ${f.n}  ${r.reason}`);
     } else {
       ringkas.dryRun++;
       log(`(dry-run) ${f.n}  ${(r.before / 1048576).toFixed(1)}MB`);
     }
+    touchLock(uploadsDir);
     if (apply && (ringkas.compressed + ringkas.skipped) % 10 === 0) saveState(uploadsDir, state);
   }
   if (apply && !outDir) saveState(uploadsDir, state);
   return ringkas;
+  } finally {
+    if (pakaiKunci) releaseLock(uploadsDir);
+  }
 }

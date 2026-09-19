@@ -64,6 +64,7 @@ import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/
 import { gptActionsRouter, logStatusGptActions } from "./mcp/gptActions.js";
 import { mcpHubRouter, logStatusMcpHub } from "./mcpHub/index.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
+import { startVideoCompressJob } from "./services/videoCompressJob.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
 import { startStaleLeadAlertJob } from "./services/staleLeadAlertJob.js";
 import { startSalesReminderDigestJob } from "./services/salesReminderDigestJob.js";
@@ -293,6 +294,7 @@ server.listen(PORT, () => {
   logStatusGptActions();
   logStatusMcpHub();
   startReconciliationJob();
+  startVideoCompressJob();
   startSlaAlertJob();
   startStaleLeadAlertJob();
   // Terdaftar tapi DORMAN — enabled:false default (lihat
