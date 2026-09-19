@@ -55,7 +55,11 @@ async function probe(file) {
     hasVideo: !!v,
     width: v?.width || 0,
     height: v?.height || 0,
-    duration: parseFloat(j.format?.duration) || 0,
+    // Durasi STREAM VIDEO, bukan durasi format: sumber dari WhatsApp kadang punya video
+    // ber-start_time jauh (mis. 138 dtk) sehingga durasi format 163 dtk padahal isinya 25 dtk.
+    // Membandingkan durasi format membuat kegagalan seperti itu lolos validasi.
+    duration: parseFloat(v?.duration) || parseFloat(j.format?.duration) || 0,
+    nbFrames: parseInt(v?.nb_frames, 10) || 0,
     tagged: String(j.format?.tags?.comment || "").includes(TAG),
   };
 }
@@ -89,7 +93,11 @@ export async function compressVideoInPlace(absPath, { apply = false, minSizeByte
     "-y", "-nostdin", "-v", "error", "-i", absPath,
     "-map", "0:v:0", "-map", "0:a:0?",
     // Sisi terpanjang maksimal 1280px, tidak pernah diperbesar, rasio tetap.
-    "-vf", "scale=w=min(iw\\,1280):h=min(ih\\,1280):force_original_aspect_ratio=decrease:force_divisible_by=2",
+    // setpts=PTS-STARTPTS: geser linimasa video ke 0. Tanpa ini video ber-start_time besar
+    // (lihat probe) diisi frame duplikat sepanjang offsetnya — hasilnya "gambar macet tapi
+    // durasi jalan". -fps_mode vfr: jangan pernah menambah frame duplikat.
+    "-fps_mode", "vfr", "-af", "aresample=async=1:first_pts=0",
+    "-vf", "setpts=PTS-STARTPTS,scale=w=min(iw\\,1280):h=min(ih\\,1280):force_original_aspect_ratio=decrease:force_divisible_by=2",
     // Kualitas didahulukan (crf 22 ≈ nyaris tanpa kehilangan visual dibanding sumbernya),
     // BUKAN bitrate tetap: video yang sumbernya sudah kecil akan menghasilkan file yang tidak
     // lebih kecil lalu DIBUANG oleh pengecekan MAX_RATIO di bawah — jadi hanya video
@@ -110,6 +118,9 @@ export async function compressVideoInPlace(absPath, { apply = false, minSizeByte
     if (!out.hasVideo) throw new Error("hasil tanpa stream video");
     if (info.duration > 0 && Math.abs(out.duration - info.duration) > Math.max(1, info.duration * 0.03)) {
       throw new Error(`durasi berbeda (${info.duration.toFixed(1)}s → ${out.duration.toFixed(1)}s)`);
+    }
+    if (info.nbFrames > 0 && out.nbFrames > info.nbFrames * 1.1) {
+      throw new Error(`jumlah frame membengkak (${info.nbFrames} → ${out.nbFrames}), kemungkinan frame duplikat`);
     }
     if (after > before * MAX_RATIO) {
       fs.rmSync(tmp, { force: true });
