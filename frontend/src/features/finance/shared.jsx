@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { AlertTriangle, Info, Loader2, Camera, X, ShieldCheck } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Info, Loader2, Camera, X, ShieldCheck, ClipboardPaste } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -437,15 +437,50 @@ function peringatanDobel(dipakaiDi) {
   }
 }
 
-/** Pemilih foto nota di dalam form (upload langsung saat file dipilih). */
+/** Ambil file gambar dari event tempel (Ctrl+V) atau seret-lepas; null kalau tidak ada. */
+function gambarDariEvent(e) {
+  const dt = e.clipboardData || e.dataTransfer;
+  if (!dt) return null;
+  for (const item of dt.items || []) {
+    if (item.kind === "file" && item.type.startsWith("image/")) return item.getAsFile();
+  }
+  for (const file of dt.files || []) {
+    if (file.type.startsWith("image/")) return file;
+  }
+  return null;
+}
+
+/** Baca gambar dari clipboard lewat tombol (butuh izin browser & HTTPS). */
+async function bacaGambarClipboard() {
+  if (!navigator.clipboard?.read) {
+    throw new Error("Browser ini tidak bisa membaca clipboard lewat tombol — klik kotak Bukti lalu tekan Ctrl+V");
+  }
+  let items;
+  try {
+    items = await navigator.clipboard.read();
+  } catch {
+    throw new Error("Izin membaca clipboard ditolak — klik kotak Bukti lalu tekan Ctrl+V");
+  }
+  for (const it of items) {
+    const tipe = it.types.find((t) => t.startsWith("image/"));
+    if (tipe) return new File([await it.getType(tipe)], "tempel.png", { type: tipe });
+  }
+  throw new Error("Tidak ada gambar di clipboard — di WhatsApp, klik kanan fotonya lalu pilih Salin gambar");
+}
+
+/**
+ * Pemilih foto nota di dalam form. Tiga cara memasukkan foto:
+ *  1. klik "Foto / unggah nota" (galeri/kamera),
+ *  2. TEMPEL (Ctrl+V) — selama form terbuka, di mana pun kursor berada
+ *     (alur utama: salin foto dari WhatsApp Web/Desktop lalu tempel),
+ *  3. seret-lepas file ke kotak ini.
+ */
 export function PemilihBukti({ url, onChange }) {
   const [sibuk, setSibuk] = useState(false);
   const [galat, setGalat] = useState("");
+  const [sorot, setSorot] = useState(false);
 
-  async function pilih(e) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  async function proses(file) {
     setSibuk(true);
     setGalat("");
     try {
@@ -461,43 +496,76 @@ export function PemilihBukti({ url, onChange }) {
     }
   }
 
+  // Tempel di level dokumen: form ini hanya ada selama modalnya terbuka, jadi
+  // tidak bentrok dengan halaman lain. Hanya event yang MEMBAWA GAMBAR yang
+  // diambil — tempel teks biasa ke kolom isian tidak terganggu.
+  useEffect(() => {
+    function saatTempel(e) {
+      const file = gambarDariEvent(e);
+      if (!file) return;
+      e.preventDefault();
+      proses(file);
+    }
+    document.addEventListener("paste", saatTempel);
+    return () => document.removeEventListener("paste", saatTempel);
+  });
+
+  function pilih(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) proses(file);
+  }
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {url && (
-        <a href={url} target="_blank" rel="noreferrer" className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line">
-          <Foto url={url} className="h-full w-full object-cover" />
-        </a>
-      )}
-      <label className={cn(
-        "inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-line px-3 text-[13px] text-ink2 transition-colors hover:border-accent hover:text-accent sm:h-9",
-        sibuk && "pointer-events-none opacity-60"
-      )}>
-        {sibuk ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
-        {url ? "Ganti foto" : "Foto / unggah nota"}
-        <input type="file" accept="image/*" className="hidden" onChange={pilih} disabled={sibuk} />
-      </label>
-      {url && (
-        <button type="button" onClick={() => onChange("")} className="inline-flex h-11 w-11 items-center justify-center text-ink3 hover:text-red sm:h-9 sm:w-9" title="Lepas foto">
-          <X size={14} />
-        </button>
-      )}
-      {galat && <span className="text-[12px] text-red">{galat}</span>}
+    <div
+      onDragOver={(e) => { e.preventDefault(); setSorot(true); }}
+      onDragLeave={() => setSorot(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setSorot(false);
+        const file = gambarDariEvent(e);
+        if (file) proses(file);
+      }}
+      className={cn("rounded-lg border border-dashed p-2.5 transition-colors", sorot ? "border-accent bg-accentbg" : "border-line")}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {url && (
+          <a href={url} target="_blank" rel="noreferrer" className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line">
+            <Foto url={url} className="h-full w-full object-cover" />
+          </a>
+        )}
+        <label className={cn(
+          "inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] text-ink2 transition-colors hover:border-accent hover:text-accent sm:h-9",
+          sibuk && "pointer-events-none opacity-60"
+        )}>
+          {sibuk ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+          {url ? "Ganti foto" : "Foto / unggah nota"}
+          <input type="file" accept="image/*" className="hidden" onChange={pilih} disabled={sibuk} />
+        </label>
+        {url && (
+          <button type="button" onClick={() => onChange("")} className="inline-flex h-11 w-11 items-center justify-center text-ink3 hover:text-red sm:h-9 sm:w-9" title="Lepas foto">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      <p className="mt-1.5 text-[11.5px] text-ink3">
+        Dari WhatsApp: klik kanan foto → <strong>Salin gambar</strong> → tekan <kbd className="rounded bg-inset px-1">Ctrl</kbd>+<kbd className="rounded bg-inset px-1">V</kbd> di sini. Bisa juga seret file ke kotak ini.
+      </p>
+      {galat && <p className="mt-1 text-[12px] text-red">{galat}</p>}
     </div>
   );
 }
 
 /**
  * Sel tabel "Bukti" untuk baris pengeluaran/pembelian yang SUDAH ada:
- * thumbnail + status verifikasi, atau tombol unggah kalau belum ada nota.
+ * thumbnail + status verifikasi, atau — kalau belum ada nota — tombol Unggah,
+ * tombol Tempel (dari clipboard), dan kotak yang menerima Ctrl+V saat difokus.
  * `aksi(fn)` = pembungkus halaman (jalankan → muat ulang → tampilkan galat).
  */
 export function SelBukti({ doc, jenis, aksi }) {
   const tertutup = ["DIBATALKAN", "DITOLAK"].includes(doc.status);
 
-  async function unggah(e) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  async function kirim(file) {
     await aksi(async () => {
       const fd = new FormData();
       fd.append("receipt", await siapkanFoto(file));
@@ -510,10 +578,33 @@ export function SelBukti({ doc, jenis, aksi }) {
   if (!doc.receiptUrl) {
     if (tertutup) return <span className="text-ink3">—</span>;
     return (
-      <label className="inline-flex h-11 cursor-pointer items-center gap-1 rounded-lg border border-dashed border-line px-2.5 text-[12px] text-ink2 hover:border-accent hover:text-accent sm:h-8">
-        <Camera size={13} /> Unggah
-        <input type="file" accept="image/*" className="hidden" onChange={unggah} />
-      </label>
+      <div
+        tabIndex={0}
+        title="Klik kotak ini lalu tekan Ctrl+V untuk menempel foto"
+        onPaste={(e) => {
+          const file = gambarDariEvent(e);
+          if (!file) return;
+          e.preventDefault();
+          kirim(file);
+        }}
+        className="flex items-center gap-1 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      >
+        <label className="inline-flex h-11 cursor-pointer items-center gap-1 rounded-lg border border-dashed border-line px-2.5 text-[12px] text-ink2 hover:border-accent hover:text-accent sm:h-8">
+          <Camera size={13} /> Unggah
+          <input
+            type="file" accept="image/*" className="hidden"
+            onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) kirim(file); }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => aksi(async () => { await kirim(await bacaGambarClipboard()); })}
+          className="inline-flex h-11 items-center gap-1 rounded-lg border border-dashed border-line px-2.5 text-[12px] text-ink2 hover:border-accent hover:text-accent sm:h-8"
+          title="Tempel foto yang baru disalin (mis. dari WhatsApp)"
+        >
+          <ClipboardPaste size={13} /> Tempel
+        </button>
+      </div>
     );
   }
 
