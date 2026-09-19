@@ -23,7 +23,7 @@
 // - Perlu Ditindak: GET /conversations (list biasa) sudah balikin
 //   isUnanswered + unansweredMinutes per item — difilter/diurutkan
 //   client-side (tidak ada endpoint khusus "top unanswered" di backend).
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import GlassBackdrop, { HeroGradient } from "../components/GlassBackdrop";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator,
@@ -68,6 +68,7 @@ export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const [loading, setLoading] = useState(true);
+  const loadedOnce = useRef(false); // fokus ulang tab = muat diam-diam, jangan ganti layar dengan spinner
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [perf, setPerf] = useState([]); // sales-performance rows (target/achieved), semua sales
@@ -108,6 +109,7 @@ export default function HomeScreen({ navigation }) {
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
+      loadedOnce.current = true;
       setLoading(false);
       setRefreshing(false);
     }
@@ -125,7 +127,7 @@ export default function HomeScreen({ navigation }) {
   // (pola sama dengan ChatListScreen.js) bikin load() jalan ulang tiap kali
   // tab Home ini di-fokus (termasuk balik dari tab lain), bukan cuma sekali.
   useFocusEffect(
-    useCallback(() => { load(); }, [load])
+    useCallback(() => { load(loadedOnce.current); }, [load])
   );
 
   function handleRefresh() {

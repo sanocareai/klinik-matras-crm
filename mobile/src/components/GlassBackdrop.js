@@ -2,13 +2,13 @@
 // container layar (absolute, di bawah konten) — layar tidak perlu diubah strukturnya.
 // Kartu kaca di atasnya cukup translusen (tokens.glass.surface); blur sungguhan tidak dipakai
 // karena di atas gradien halus hasilnya nyaris tak terlihat tapi memakan kinerja Android.
-import React from "react";
+import React, { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Defs, RadialGradient, Stop, Circle } from "react-native-svg";
 import { useTokens } from "../constants/theme";
 
-export default function GlassBackdrop() {
+function GlassBackdrop() {
   const { glass } = useTokens();
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -30,6 +30,9 @@ export default function GlassBackdrop() {
     </View>
   );
 }
+
+// memo: latar tidak boleh ikut dirender ulang tiap layar induknya berganti state.
+export default memo(GlassBackdrop);
 
 // Gradien untuk kartu utama (mis. Target Tim) — anak pertama kartu ber-overflow hidden.
 export function HeroGradient() {

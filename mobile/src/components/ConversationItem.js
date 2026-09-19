@@ -211,11 +211,11 @@ function ConversationItemBase({ id, onPress, selectionMode, selected, onToggleSe
   }
 
   return (
-    // entering: fade + slide-in ringan SEKALI saat cell ini pertama mount —
-    // memo() di bawah mencegah remount tiap kali FlashList recycle cell
-    // dengan id/data baru, jadi animasi ini tidak mengganggu recycling
-    // (tidak replay tiap scroll, cuma sekali per slot baru muncul).
-    <Animated.View entering={FadeInDown.duration(220)} style={styles.itemWrap}>
+    // TANPA entering animation (19 Sep 2026): dulu tiap baris memakai FadeInDown, padahal FlashList
+    // me-mount SEMUA baris yang terlihat sekaligus saat daftar dibuka dan sel baru saat digulir —
+    // belasan animasi layout berjalan bersamaan tepat ketika transisi Home → Inbox, dan itu yang
+    // terasa patah. Dua baris pertama Inbox sekarang langsung tampil.
+    <Animated.View style={styles.itemWrap}>
       <Swipeable
         ref={swipeableRef}
         enabled={!selectionMode}

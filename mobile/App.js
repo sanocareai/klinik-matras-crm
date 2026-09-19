@@ -149,6 +149,8 @@ function MainTabs() {
       tabBar={(props) => <GlassTabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: false,
+        animation: "fade", // perpindahan tab: pudar singkat, bukan potong mendadak
+        freezeOnBlur: true,
         tabBarShowLabel: false,
         tabBarIcon: ({ focused }) => <TabIcon routeName={route.name} focused={focused} />,
         tabBarButton: (props) => <TabBarButton {...props} />,
@@ -159,7 +161,7 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Chats" component={ChatListScreen} />
+      <Tab.Screen name="Chats" component={ChatListScreen} options={{ lazy: false }} />
       <Tab.Screen name="Pelanggan" component={PelangganScreen} />
       <Tab.Screen name="Order" component={OrdersScreen} />
       <Tab.Screen name="Profil" component={ProfileScreen} />
@@ -303,7 +305,10 @@ function Root() {
 
   return (
     <>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {/* animation eksplisit + freezeOnBlur (19 Sep 2026): transisi seragam geser dari kanan, dan layar di
+          belakang (tab Home/Chats) dibekukan selama Chat/Detail terbuka sehingga tidak ikut dirender ulang
+          oleh event socket saat transisi berjalan. */}
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: "slide_from_right", freezeOnBlur: true }}>
         {user ? (
           <>
             {/* MainTabs = 4 tab bawah (Home/Chats/Pelanggan/Profil). Layar di

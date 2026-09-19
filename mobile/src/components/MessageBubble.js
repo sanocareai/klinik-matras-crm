@@ -435,6 +435,11 @@ function MessageBubbleBase({
   // dalamnya), cuma di sini custom (translateX+reveal icon) bukan Swipeable
   // bawaan, karena butuh reveal ikon proporsional ke jarak geser, bukan
   // panel aksi penuh.
+  // Animasi masuk HANYA untuk pesan yang baru saja tiba/terkirim (≤3 dtk). Saat chat dibuka, puluhan
+  // bubble lama ikut ter-mount bersamaan — kalau semuanya animasi (seperti sebelumnya), pembukaan chat
+  // patah dan sel baru saat menggulir ke atas ikut berkedip.
+  const [enterAnim] = useState(() =>
+    Date.now() - new Date(m.createdAt).getTime() < 3000 ? FadeInDown.duration(180) : undefined);
   const canSwipeReply = !isSending && !isFailed && !isRevoked && !!onReply && !selectionMode;
   const translateX = useSharedValue(0);
   const replyIconProgress = useSharedValue(0);
@@ -504,7 +509,7 @@ function MessageBubbleBase({
     // memo() di bawah (lihat export) mencegah remount tiap FlashList recycle
     // cell dengan pesan lain, jadi animasi ini tidak mengganggu recycling,
     // sama seperti pola yang sudah dipakai ConversationItem.js.
-    <Animated.View entering={FadeInDown.duration(180)} style={[styles.row, isOut ? styles.rowOut : styles.rowIn]}>
+    <Animated.View entering={enterAnim} style={[styles.row, isOut ? styles.rowOut : styles.rowIn]}>
       {/* Ikon reply muncul dari sisi yang digeser — kiri utk inbound (geser
           kanan), kanan utk outbound (geser kiri) — opacity+scale ikut jarak
           geser (0 di posisi diam, 1 begitu lewat threshold). */}

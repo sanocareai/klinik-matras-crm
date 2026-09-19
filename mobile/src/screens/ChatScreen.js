@@ -15,7 +15,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, Modal, ScrollView,
+  Alert, ActivityIndicator, Modal, ScrollView, InteractionManager,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -154,6 +154,13 @@ export default function ChatScreen({ route, navigation }) {
 
   const [text, setText] = useState(draft);
   const [loading, setLoading] = useState(true);
+  // Daftar pesan (FlashList + puluhan bubble) baru dirender SETELAH animasi pindah layar selesai;
+  // selama transisi cukup header + skeleton, supaya geser Inbox → Chat tidak patah.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const h = InteractionManager.runAfterInteractions(() => setReady(true));
+    return () => h.cancel();
+  }, []);
   const [loadError, setLoadError] = useState(null);
   const [sending, setSending] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -971,7 +978,7 @@ export default function ChatScreen({ route, navigation }) {
       {!isGroup && <HandoverHistoryBanner conversationId={conversationId} />}
 
       {/* Daftar pesan */}
-      {loading ? (
+      {loading || !ready ? (
         <ChatListSkeleton />
       ) : loadError && items.length === 0 ? (
         <View style={styles.emptyWrap}>
