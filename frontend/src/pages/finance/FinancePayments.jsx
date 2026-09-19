@@ -29,17 +29,20 @@ import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 // dua cara memverifikasi hal yang sama.
 
 const TAB = [
-  { key: "lunas_crm", label: "Lunas di CRM (perlu diverifikasi)" },
-  { key: "belum_verifikasi", label: "Belum Diverifikasi" },
-  { key: "terverifikasi", label: "Terverifikasi" },
+  { key: "lunas_crm", label: "Ditandai Lunas oleh Sales" },
+  { key: "belum_verifikasi", label: "Menunggu Verifikasi" },
+  { key: "terverifikasi", label: "Sudah Diverifikasi" },
   { key: "dibatalkan", label: "Dibatalkan" },
   { key: "", label: "Semua" },
 ];
+
+const LABEL_CARA_BAYAR = { TRANSFER: "Transfer", CASH: "Tunai", QRIS: "QRIS", CARD: "Kartu" };
 
 export default function FinancePayments() {
   const [tab, setTab] = useState("lunas_crm");
   const [periode, setPeriode] = useState(periodeDefault);
   const [data, setData] = useState(null);
+  const [semuaPeriode, setSemuaPeriode] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
@@ -61,7 +64,13 @@ export default function FinancePayments() {
     setLoading(true);
     setError(null);
     try {
-      setData(await api.getFinanceCustomerPayments({ ...periode, status: tab }));
+      // Kartu angka di atas selalu menghitung SEMUA pembayaran periode ini, apa pun tab yang dibuka.
+      const [tabData, semua] = await Promise.all([
+        api.getFinanceCustomerPayments({ ...periode, status: tab }),
+        tab === "" ? null : api.getFinanceCustomerPayments({ ...periode, status: "" }),
+      ]);
+      setData(tabData);
+      setSemuaPeriode((semua || tabData).payments || []);
     } catch (e) {
       setError(e.message || "Gagal memuat pembayaran");
     } finally {
@@ -81,11 +90,16 @@ export default function FinancePayments() {
   }
 
   const payments = data?.payments || [];
-  const total = payments.reduce((s, p) => s + (p.amount || 0), 0);
-  const belum = payments.filter((p) => !p.terverifikasi && !p.cancelledAt).length;
+  const aktif = semuaPeriode.filter((p) => !p.cancelledAt);
+  const jumlahRp = (arr) => arr.reduce((s, p) => s + (p.amount || 0), 0);
+  const sudahList = aktif.filter((p) => p.terverifikasi);
+  const belumList = aktif.filter((p) => !p.terverifikasi);
+  const total = jumlahRp(aktif);
+  const belum = jumlahRp(belumList);
+  const sudah = jumlahRp(sudahList);
 
   const opsiMetode = useMemo(
-    () => [...new Set(payments.map((p) => p.method).filter(Boolean))].sort().map((m) => [m, m]),
+    () => [...new Set(payments.map((p) => p.method).filter(Boolean))].sort().map((m) => [m, LABEL_CARA_BAYAR[m] || m]),
     [payments]
   );
   const tampil = useMemo(() => {
@@ -117,7 +131,7 @@ export default function FinancePayments() {
   return (
     <HalamanFinance
       title="Pembayaran & Verifikasi"
-      subtitle="Cocokkan uang yang tercatat diterima sales/driver dengan setoran yang benar-benar masuk."
+      subtitle="Pastikan uang dari pelanggan benar-benar masuk ke rekening perusahaan, dan lampirkan foto buktinya."
       loading={loading}
       error={error}
       onRetry={muat}
@@ -135,35 +149,33 @@ export default function FinancePayments() {
       <Penjelasan>
         <span className="inline-flex items-center gap-1.5 font-medium text-ink">
           <ShieldCheck size={14} className="text-accent" />
-          {data?.gate?.enabled
-            ? "Gerbang verifikasi AKTIF"
-            : "Gerbang verifikasi TIDAK aktif"}
+          Cara kerja saat ini
         </span>
         <p className="mt-1">
           {data?.gate?.enabled
-            ? "Status bayar order di CRM HANYA bergerak setelah pembayaran diverifikasi di sini. Pembayaran yang " +
-              "tercatat sebelum gerbang dinyalakan tetap dihitung apa adanya — riwayat tidak pernah berubah surut."
-            : "Verifikasi di sini adalah audit “uangnya benar sampai ke kas”, BUKAN gerbang “apakah customer sudah " +
-              "bayar”. Status bayar order di CRM tetap mengikuti seluruh pembayaran yang tercatat. Gerbangnya bisa " +
-              "dinyalakan admin di Pengaturan Finance kalau tim sudah siap."}
+            ? "Status Lunas di CRM baru berlaku setelah pembayarannya Anda verifikasi di sini (untuk pembayaran baru; " +
+              "yang lama tidak berubah)."
+            : "Kalau sales menandai order Lunas, statusnya langsung berlaku di CRM. Tugas Anda di halaman ini adalah " +
+              "memastikan uangnya benar-benar masuk ke rekening perusahaan. Kalau ingin status Lunas baru berlaku " +
+              "setelah diverifikasi, admin bisa menyalakannya di Pengaturan Finance."}
         </p>
       </Penjelasan>
 
       <div className={tab === "lunas_crm" ? "hidden" : "grid grid-cols-1 gap-4 sm:grid-cols-3"}>
         <KartuAngka
-          label="Total Pembayaran Periode" value={formatUang(total)} sub={`${payments.length} entri`}
-          info="Jumlah seluruh pembayaran yang tercatat di periode yang dipilih, terverifikasi atau belum."
+          label="Total Uang Masuk (periode ini)" value={formatUang(total)}
+          sub={`Sudah diverifikasi ${formatUang(sudah)} · Menunggu ${formatUang(belum)}`}
+          info={`Jumlah semua pembayaran pelanggan di periode yang dipilih (${aktif.length} pembayaran; yang dibatalkan tidak dihitung), dipisah antara yang sudah dan yang masih menunggu verifikasi.`}
         />
         <KartuAngka
-          label="Belum Diverifikasi" value={belum} tone={belum > 0 ? "orange" : "default"} sub="Menunggu dicocokkan"
-          info="Uang yang tercatat diterima sales/driver tapi belum ada yang mengonfirmasi kalau setorannya memang benar-benar sampai ke rekening/kas perusahaan."
+          label="Menunggu Verifikasi" value={formatUang(belum)} tone={belum > 0 ? "orange" : "default"}
+          sub={`${belumList.length} pembayaran`}
+          info="Pembayaran yang sudah dicatat sales atau driver, tapi belum ada yang memastikan uangnya benar-benar masuk ke rekening atau kas perusahaan."
         />
         <KartuAngka
-          label="Sudah Diverifikasi"
-          value={payments.filter((p) => p.terverifikasi).length}
-          tone="green"
-          sub="Cocok dengan setoran"
-          info="Sudah dicek dan cocok dengan setoran nyata — bukan berarti pelanggannya sudah lunas, itu urusan status bayar order di CRM."
+          label="Sudah Diverifikasi" value={formatUang(sudah)} tone="green"
+          sub={`${sudahList.length} pembayaran`}
+          info="Sudah dicek dan uangnya memang masuk. Status Lunas order tetap diatur dari CRM."
         />
       </div>
 
@@ -176,8 +188,8 @@ export default function FinancePayments() {
       </div>
       <p className="text-[13px] leading-relaxed text-ink3">
         {tab === "lunas_crm"
-          ? "Order yang sudah ditandai lunas oleh sales tapi uang masuknya belum tercatat — verifikasi di sini."
-          : "Pembayaran yang sudah punya catatan (sales/driver) tinggal dicocokkan dengan setoran yang masuk."}
+          ? "Order yang sudah ditandai Lunas oleh sales, tapi belum ada catatan uang masuknya. Cek uangnya, pilih rekening, lalu verifikasi."
+          : "Pembayaran yang sudah dicatat sales atau driver — tinggal dicek apakah uangnya benar-benar masuk."}
       </p>
 
       {tab === "lunas_crm" && <LunasBelumDicatat />}
@@ -187,10 +199,10 @@ export default function FinancePayments() {
         q={q} onQ={setQ}
         placeholder="Cari order, pelanggan, nominal…"
         filters={[
-          { key: "metode", label: "Metode", value: fMetode, onChange: setFMetode, options: opsiMetode },
-          { key: "verif", label: "Verifikasi", value: fVerif, onChange: setFVerif, options: [["terverifikasi", "Terverifikasi"], ["belum", "Belum diverifikasi"], ["dibatalkan", "Dibatalkan"]] },
-          { key: "alokasi", label: "Alokasi", value: fAlokasi, onChange: setFAlokasi, options: [["ada", "Ada alokasi"], ["tanpa", "Tanpa alokasi"]] },
-          { key: "bukti", label: "Bukti", value: fBukti, onChange: setFBukti, options: [["ada", "Ada bukti"], ["tanpa", "Tanpa bukti"]] },
+          { key: "metode", label: "Cara bayar", value: fMetode, onChange: setFMetode, options: opsiMetode },
+          { key: "verif", label: "Status", value: fVerif, onChange: setFVerif, options: [["terverifikasi", "Sudah diverifikasi"], ["belum", "Menunggu verifikasi"], ["dibatalkan", "Dibatalkan"]] },
+          { key: "alokasi", label: "Dibagi ke order lain", value: fAlokasi, onChange: setFAlokasi, options: [["ada", "Ya, dibagi"], ["tanpa", "Tidak dibagi"]] },
+          { key: "bukti", label: "Foto bukti", value: fBukti, onChange: setFBukti, options: [["ada", "Ada foto"], ["tanpa", "Tanpa foto"]] },
         ]}
         ringkasan={disaring ? `${tampil.length} pembayaran dari ${payments.length}` : `${payments.length} pembayaran`}
         onReset={aturUlangFilter}
@@ -198,20 +210,19 @@ export default function FinancePayments() {
 
       <Card className={tab === "lunas_crm" ? "hidden" : "overflow-hidden"}>
         <JudulKartu
-          title="Daftar Pembayaran"
-          description="Entri pembayaran bersifat append-only: koreksi salah input dilakukan lewat pembatalan di halaman
-            Order, bukan dengan menghapus baris."
-          info="'Append-only' artinya baris pembayaran tidak pernah diedit atau dihapus diam-diam — kalau ada yang salah, dibatalkan lewat halaman Order (bukan di sini) supaya tetap ada jejak siapa membatalkan dan kenapa."
+          title="Daftar Uang Masuk"
+          description="Kalau ada yang salah catat, batalkan lewat halaman Order. Barisnya tidak dihapus supaya jejaknya tetap ada."
+          info="Pembayaran yang sudah tercatat tidak bisa diedit atau dihapus diam-diam. Kalau ada kesalahan, pembayaran itu dibatalkan dari halaman Order sehingga tetap terlihat siapa yang membatalkan dan kenapa."
         />
         {tampil.length === 0 ? (
-          <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada pembayaran di filter ini.</p></CardContent>
+          <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada uang masuk yang cocok dengan pencarian ini.</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
             <Table>
               <THead>
                 <TR>
-                  <TH sticky>Waktu</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Dicatat oleh</TH>
-                  <TH>Metode</TH><TH>Rekening</TH><TH numeric>Nominal</TH><TH>Alokasi</TH><TH>Status</TH><TH />
+                  <TH sticky>Tanggal</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Dicatat oleh</TH>
+                  <TH>Cara Bayar</TH><TH>Masuk ke Rekening</TH><TH numeric>Nominal</TH><TH>Untuk Order</TH><TH>Status</TH><TH />
                 </TR>
               </THead>
               <TBody>
@@ -221,12 +232,18 @@ export default function FinancePayments() {
                     <TD className="font-medium">{p.order?.orderNumber || "—"}</TD>
                     <TD className="max-w-[160px] truncate">{p.order?.customer?.name || "—"}</TD>
                     <TD>{p.recordedBy?.name || "—"}</TD>
-                    <TD><Badge variant="neutral">{p.method}</Badge></TD>
-                    <TD className="text-[12px]">{p.cashAccount?.name || <span className="text-ink3">ikut pemetaan metode</span>}</TD>
+                    <TD><Badge variant="neutral">{LABEL_CARA_BAYAR[p.method] || p.method}</Badge></TD>
+                    <TD className="text-[12px]">
+                      {p.cashAccount?.name || (
+                        <span className="text-ink3" title="Rekening tidak dipilih saat pembayaran dicatat, jadi sistem memakai rekening standar untuk cara bayar ini.">
+                          belum dipilih
+                        </span>
+                      )}
+                    </TD>
                     <TD numeric><Uang value={p.amount} /></TD>
                     <TD className="text-[12px] text-ink2">
                       {p.finAllocations.length === 0
-                        ? <span className="text-ink3">penuh ke order ini</span>
+                        ? <span className="text-ink3">order ini saja</span>
                         : p.finAllocations.map((a) => (
                             <span key={a.id} className="block">
                               {a.order?.orderNumber || "—"}: {formatUang(a.amount)}
@@ -237,8 +254,8 @@ export default function FinancePayments() {
                       {p.cancelledAt
                         ? <Badge variant="red">Dibatalkan</Badge>
                         : p.terverifikasi
-                          ? <Badge variant="green">Terverifikasi</Badge>
-                          : <Badge variant="orange">Belum</Badge>}
+                          ? <Badge variant="green">Sudah diverifikasi</Badge>
+                          : <Badge variant="orange">Menunggu</Badge>}
                       {p.terverifikasi && (
                         <span className="mt-0.5 block text-[11px] text-ink3">
                           oleh {p.verifications[0]?.verifiedBy?.name || "—"}
@@ -248,12 +265,12 @@ export default function FinancePayments() {
                     <TD>
                       <div className="flex items-center justify-end gap-1">
                         {p.proofPhotoUrl && (
-                          <Button size="sm" variant="tertiary" onClick={() => setFotoBukti(p.proofPhotoUrl)} title="Lihat bukti">
+                          <Button size="sm" variant="tertiary" onClick={() => setFotoBukti(p.proofPhotoUrl)} title="Lihat foto bukti">
                             <ImageIcon size={14} />
                           </Button>
                         )}
                         {!p.cancelledAt && (
-                          <Button size="sm" variant="tertiary" onClick={() => setAlokasiUntuk(p)} title="Atur alokasi">
+                          <Button size="sm" variant="tertiary" onClick={() => setAlokasiUntuk(p)} title="Bagi pembayaran ke beberapa order">
                             <Split size={14} />
                           </Button>
                         )}
@@ -332,25 +349,25 @@ function ModalAlokasi({ payment, onClose, onSaved, onError }) {
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()}
-      title="Alokasi Pembayaran"
-      description={`${formatUang(payment.amount)} · ${payment.method} · ${tanggalJam(payment.createdAt)}`}
+      title="Bagi Pembayaran ke Beberapa Order"
+      description={`${formatUang(payment.amount)} · ${LABEL_CARA_BAYAR[payment.method] || payment.method} · ${tanggalJam(payment.createdAt)}`}
       className="w-[560px]"
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={simpan} disabled={!valid}>Simpan Alokasi</TombolAksi>
+          <TombolAksi onClick={simpan} disabled={!valid}>Simpan Pembagian</TombolAksi>
         </>
       }
     >
       <div className="space-y-3">
         <p className="text-[13px] leading-relaxed text-ink2">
-          Satu pembayaran bisa dipecah ke beberapa order — misalnya customer mentransfer sekali untuk dua
-          order sekaligus. Jurnal penerimaannya otomatis dibalik & dibukukan ulang dengan pembagian yang baru.
+          Satu pembayaran bisa dibagi ke beberapa order — misalnya pelanggan transfer sekali untuk dua order
+          sekaligus. Pembukuannya otomatis menyesuaikan dengan pembagian yang baru.
         </p>
 
         {baris.map((b, i) => (
           <div key={i} className="grid grid-cols-[1fr_140px_32px] items-end gap-2">
-            <Field label={i === 0 ? "Order tujuan" : undefined}>
+            <Field label={i === 0 ? "Untuk order" : undefined}>
               <OrderPicker
                 value={b.orderId}
                 onChange={(id, order) => {
@@ -367,8 +384,8 @@ function ModalAlokasi({ payment, onClose, onSaved, onError }) {
                   value: payment.order.value,
                   paymentStatus: payment.order.paymentStatus,
                 }] : []}
-                saranLabel="Order pembayaran ini"
-                placeholder="Cari order tujuan…"
+                saranLabel="Order asal pembayaran ini"
+                placeholder="Cari order…"
               />
             </Field>
             <Field label={i === 0 ? "Nominal" : undefined}>
@@ -393,7 +410,7 @@ function ModalAlokasi({ payment, onClose, onSaved, onError }) {
         </Button>
 
         <div className={`rounded-lg px-3 py-2 text-[13px] ${Math.abs(sisa) < 0.005 ? "bg-greenbg text-green" : "bg-orangebg text-orange"}`}>
-          Total dialokasikan {formatUang(total)} dari {formatUang(payment.amount)}
+          Total yang dibagi {formatUang(total)} dari {formatUang(payment.amount)}
           {Math.abs(sisa) >= 0.005 && ` — ${sisa > 0 ? "kurang" : "lebih"} ${formatUang(Math.abs(sisa))}`}
         </div>
       </div>

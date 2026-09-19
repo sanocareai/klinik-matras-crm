@@ -125,8 +125,8 @@ async function pendapatanSudahDiakui(tx, orderId) {
  *   mode "SEBELUM_SALDO_AWAL"  tanpa rekening; jurnal ke Laba Ditahan.
  */
 export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, verifierId }) {
-  if (!["REKENING", "SEBELUM_SALDO_AWAL"].includes(mode)) throw err("Cara pencatatan tidak dikenal");
-  if (!["CASH", "TRANSFER", "QRIS", "CARD"].includes(method)) throw err("Metode pembayaran tidak valid");
+  if (!["REKENING", "SEBELUM_SALDO_AWAL"].includes(mode)) throw err("Pilihan \"uangnya masuk ke mana\" tidak dikenali");
+  if (!["CASH", "TRANSFER", "QRIS", "CARD"].includes(method)) throw err("Cara bayar tidak dikenali");
 
   const order = await tx.order.findUnique({
     where: { id: orderId },
@@ -136,20 +136,20 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
     },
   });
   if (!order) throw err("Order tidak ditemukan", 404);
-  if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} tidak berstatus Lunas lagi — muat ulang daftar`, 409);
+  if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM (mungkin baru diubah sales). Muat ulang halaman ini.`, 409);
 
   const gate = await getVerificationGate(tx);
   const sisa = toMoney(order.value).minus(await paidForOrder(tx, orderId, gate));
-  if (sisa.lessThanOrEqualTo(0)) throw err(`Order ${order.orderNumber} sudah tercatat lunas penuh`, 409);
+  if (sisa.lessThanOrEqualTo(0)) throw err(`Order ${order.orderNumber} sudah tercatat lunas penuh, tidak ada yang perlu diverifikasi lagi`, 409);
   const nominal = amount === null || amount === "" || amount === undefined ? sisa : toMoney(amount, { field: "Nominal" });
   if (nominal.lessThanOrEqualTo(0)) throw err("Nominal harus lebih dari 0");
-  if (nominal.greaterThan(sisa)) throw err(`Nominal melebihi yang belum tercatat (Rp${Number(sisa).toLocaleString("id-ID")})`);
+  if (nominal.greaterThan(sisa)) throw err(`Nominal terlalu besar. Yang masih perlu dicek untuk order ini hanya Rp${Number(sisa).toLocaleString("id-ID")}`);
 
   let rekening = null;
   if (mode === "REKENING") {
-    if (!cashAccountId) throw err("Pilih rekening tempat uang itu masuk");
+    if (!cashAccountId) throw err("Pilih dulu uangnya masuk ke rekening mana");
     rekening = await tx.finCashAccount.findUnique({ where: { id: cashAccountId }, select: { id: true, name: true, accountId: true, active: true } });
-    if (!rekening || !rekening.active) throw err("Rekening tidak ditemukan atau nonaktif", 404);
+    if (!rekening || !rekening.active) throw err("Rekening itu tidak ditemukan atau sudah tidak dipakai", 404);
   }
 
   const tglStr = date || (order.paidAt ? tanggalWIB(order.paidAt) : tanggalWIB(new Date()));
@@ -176,7 +176,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   if (mode === "REKENING") {
     const hasil = await bukukanPembayaran(tx, { paymentId: payment.id, userId: verifierId });
     if (!hasil.posted) {
-      throw err("Pembayaran belum bisa dibukukan (cek Data Belum Lengkap di Pengaturan Finance) — tidak ada yang disimpan", 422);
+      throw err("Pembayaran ini belum bisa dicatat karena ada pengaturan akun keuangan yang belum lengkap (lihat menu Data Belum Lengkap). Belum ada yang tersimpan.", 422);
     }
   } else {
     const diakui = await pendapatanSudahDiakui(tx, orderId);
@@ -229,7 +229,7 @@ export async function tolakLunas(tx, { orderId, reason, userId }) {
   if (!reason?.trim()) throw err("Alasan wajib diisi");
   const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, orderNumber: true, paymentStatus: true, value: true } });
   if (!order) throw err("Order tidak ditemukan", 404);
-  if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas`, 409);
+  if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM`, 409);
 
   const gate = await getVerificationGate(tx);
   const dibayar = await paidForOrder(tx, orderId, gate);

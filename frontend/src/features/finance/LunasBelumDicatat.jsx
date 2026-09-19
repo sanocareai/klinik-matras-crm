@@ -16,7 +16,7 @@ import {
 import { cn } from "@/lib/utils.js";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 
-// LUNAS DI CRM, UANG MASUKNYA BELUM TERCATAT.
+// ORDER YANG DITANDAI LUNAS OLEH SALES, UANG MASUKNYA BELUM DICEK.
 //
 // Sales menandai order Lunas di CRM, tapi itu hanya mengubah status — belum ada
 // catatan uang masuk, jadi belum ada yang bisa diverifikasi dan piutangnya belum
@@ -24,12 +24,11 @@ import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 // uang itu masuk (SANOBANK Kemal / PT Sano / …), lampirkan foto bukti, dan sistem
 // membuat catatan pembayaran + verifikasi + jurnalnya sekaligus.
 // Alasan desain & aturan akuntansinya: backend services/finance/penerimaanOrder.js.
+//
+// Bahasa UI sengaja sehari-hari. Di kode: kelompok "LAMA" = di layar "Lunas
+// sebelum <tanggal saldo awal>", kelompok "BARU" = "Perlu dicek".
 
 const METODE = [["TRANSFER", "Transfer bank"], ["CASH", "Tunai"], ["QRIS", "QRIS / e-wallet"], ["CARD", "Kartu"]];
-const CARA = [
-  ["REKENING", "Uang masuk ke rekening (bukti + jurnal kas)"],
-  ["SEBELUM_SALDO_AWAL", "Sudah lunas sebelum saldo awal (tanpa rekening)"],
-];
 
 function hariIniISO() {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
@@ -97,6 +96,8 @@ export default function LunasBelumDicatat({ onBerubah }) {
   if (galat) return <Card><CardContent className="py-6 text-center text-[13px] text-red">{galat}</CardContent></Card>;
   if (!data) return <Card><CardContent className="py-6 text-center text-[13px] text-ink3">Memuat…</CardContent></Card>;
 
+  const tgl = tanggalPendek(data.cutoff);
+
   return (
     <>
       {pesan && (
@@ -110,29 +111,29 @@ export default function LunasBelumDicatat({ onBerubah }) {
 
       <Penjelasan>
         Order di bawah sudah ditandai <strong>Lunas</strong> oleh sales di CRM, tapi belum ada catatan uang masuknya.
-        Tugas finance: <strong>Verifikasi</strong> — pilih rekening tempat uang itu masuk dan lampirkan foto bukti;
-        sistem membuat catatan pembayaran dan menutup piutangnya. Kalau uangnya ternyata belum masuk, tekan
-        <strong> Bukan lunas</strong> — status order dikembalikan.
+        Tugas Anda: cek uangnya benar-benar sudah masuk, lalu tekan <strong>Verifikasi</strong> — pilih rekening
+        tempat uangnya masuk dan lampirkan foto bukti. Kalau ternyata uangnya belum masuk, tekan
+        <strong> Belum Lunas</strong> — status order dikembalikan.
       </Penjelasan>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KartuAngka
-          label="Perlu Diverifikasi" value={data.baru.jumlah} tone={data.baru.jumlah > 0 ? "orange" : "default"}
+          label="Perlu Anda Cek" value={data.baru.jumlah} tone={data.baru.jumlah > 0 ? "orange" : "default"}
           sub={formatUang(data.baru.total)}
-          info={`Lunas ditandai pada/setelah ${tanggalPendek(data.cutoff)} — uangnya harus masuk ke salah satu rekening, jadi perlu rekening dan (idealnya) foto bukti.`}
+          info={`Order yang ditandai lunas pada atau setelah ${tgl}. Uangnya masuk ke salah satu rekening, jadi Anda perlu memilih rekening dan sebaiknya melampirkan foto bukti.`}
         />
         <KartuAngka
-          label="Lunas Sebelum Saldo Awal" value={data.lama.jumlah} sub={formatUang(data.lama.total)}
-          info={`Ditandai lunas sebelum ${tanggalPendek(data.cutoff)}: saldo bank asli pada tanggal itu sudah memuat uangnya (saldo sistem disamakan lewat penyesuaian saldo awal). Cukup ditandai selesai — TIDAK dijurnal ke rekening lagi supaya kas tidak dobel. Order lama yang pendapatannya memang tidak pernah masuk buku dicatat tanpa jurnal sama sekali.`}
+          label={`Lunas Sebelum ${tgl}`} value={data.lama.jumlah} sub={formatUang(data.lama.total)}
+          info={`Order yang ditandai lunas sebelum ${tgl}. Uangnya sudah termasuk di saldo bank asli yang kita masukkan pada tanggal itu, jadi saldo rekening TIDAK ditambah lagi — cukup ditandai selesai. Tidak perlu memilih rekening atau foto bukti.`}
         />
-        <KartuAngka label="Total Belum Tercatat" value={formatUang(data.semua.total)} sub={`${data.semua.jumlah} order`} />
+        <KartuAngka label="Total Belum Dicek" value={formatUang(data.semua.total)} sub={`${data.semua.jumlah} order`} />
       </div>
 
       <FilterBar
         q={q} onQ={setQ}
         placeholder="Cari order, pelanggan, sales, nominal…"
         filters={[
-          { key: "kel", label: "Kelompok", value: fKelompok, onChange: setFKelompok, options: [["BARU", "Perlu diverifikasi"], ["LAMA", "Lunas sebelum saldo awal"]] },
+          { key: "kel", label: "Jenis", value: fKelompok, onChange: setFKelompok, options: [["BARU", `Perlu dicek (sejak ${tgl})`], ["LAMA", `Lunas sebelum ${tgl}`]] },
           { key: "sales", label: "Sales", value: fSales, onChange: setFSales, options: opsiSales },
         ]}
         ringkasan={tampil.length === items.length ? `${items.length} order` : `${tampil.length} dari ${items.length} order`}
@@ -151,13 +152,13 @@ export default function LunasBelumDicatat({ onBerubah }) {
 
       <Card className="overflow-hidden">
         <JudulKartu
-          title="Order Lunas yang Belum Diverifikasi"
-          description="Urut dari yang paling baru ditandai lunas."
-          info="Daftar ini dihitung langsung dari status order di CRM dan pembayaran yang tercatat — bukan salinan, jadi otomatis berkurang begitu sebuah order diverifikasi."
+          title="Order yang Ditandai Lunas oleh Sales"
+          description="Yang paling baru ditandai lunas ada di atas."
+          info="Daftar ini otomatis dari status order di CRM dan pembayaran yang sudah dicatat, jadi langsung berkurang begitu sebuah order diverifikasi."
         />
         {tampil.length === 0 ? (
           <CardContent>
-            <EmptyState icon={CheckCircle2} title="Tidak ada yang menunggu" description="Semua order yang ditandai lunas sudah tercatat uang masuknya." />
+            <EmptyState icon={CheckCircle2} title="Tidak ada yang menunggu" description="Semua order yang ditandai lunas sudah dicek uang masuknya." />
           </CardContent>
         ) : (
           <TableWrap className="dh-table">
@@ -168,8 +169,8 @@ export default function LunasBelumDicatat({ onBerubah }) {
                     <input type="checkbox" checked={semuaTerpilih} aria-label="Pilih semua"
                       onChange={() => setPilih(semuaTerpilih ? new Set() : new Set(tampil.map((i) => i.orderId)))} />
                   </TH>
-                  <TH>Order</TH><TH>Pelanggan</TH><TH>Sales</TH><TH>Lunas Sejak</TH>
-                  <TH numeric>Nilai Order</TH><TH numeric>Belum Tercatat</TH><TH>Kelompok</TH><TH />
+                  <TH>Order</TH><TH>Pelanggan</TH><TH>Sales</TH><TH>Ditandai Lunas</TH>
+                  <TH numeric>Nilai Order</TH><TH numeric>Perlu Dicek</TH><TH>Jenis</TH><TH />
                 </TR>
               </THead>
               <TBody>
@@ -181,21 +182,21 @@ export default function LunasBelumDicatat({ onBerubah }) {
                     <TD className="font-medium">{i.orderNumber || "—"}</TD>
                     <TD className="max-w-[180px] truncate">{i.customerName}</TD>
                     <TD className="text-[12px] text-ink2">{i.salesName || "—"}</TD>
-                    <TD className="whitespace-nowrap">{i.lunasSejak ? tanggalPendek(i.lunasSejak) : <span className="text-ink3">tak tercatat</span>}</TD>
+                    <TD className="whitespace-nowrap">{i.lunasSejak ? tanggalPendek(i.lunasSejak) : <span className="text-ink3">tanggal tidak diketahui</span>}</TD>
                     <TD numeric><Uang value={i.nilaiOrder} /></TD>
                     <TD numeric><Uang value={i.sisa} className="font-bold" /></TD>
-                    <TD><Badge variant={i.kelompok === "BARU" ? "orange" : "neutral"}>{i.kelompok === "BARU" ? "Perlu verifikasi" : "Sebelum saldo awal"}</Badge></TD>
+                    <TD><Badge variant={i.kelompok === "BARU" ? "orange" : "neutral"}>{i.kelompok === "BARU" ? "Perlu dicek" : `Sebelum ${tgl}`}</Badge></TD>
                     <TD>
                       <div className="flex justify-end gap-1">
                         <Button size="sm" variant="secondary" onClick={() => setModal({ item: i })}>Verifikasi</Button>
                         <TombolAksi
-                          size="sm" variant="neutral" title="Uangnya belum masuk"
+                          size="sm" variant="neutral" title="Uangnya ternyata belum masuk"
                           onClick={() => {
-                            const alasan = window.prompt(`Alasan ${i.orderNumber} BUKAN lunas (uang belum masuk)? Status order dikembalikan:`);
+                            const alasan = window.prompt(`Kenapa ${i.orderNumber} belum lunas (uangnya belum masuk)? Status order akan dikembalikan ke belum lunas:`);
                             if (alasan?.trim()) return aksi(() => api.tolakLunas(i.orderId, alasan.trim()));
                           }}
                         >
-                          <XCircle size={13} /> Bukan lunas
+                          <XCircle size={13} /> Belum Lunas
                         </TombolAksi>
                       </div>
                     </TD>
@@ -208,7 +209,7 @@ export default function LunasBelumDicatat({ onBerubah }) {
       </Card>
 
       <ModalVerifikasi
-        modal={modal} onClose={() => setModal(null)} rekening={rekening} terpilih={terpilih} cutoff={data.cutoff}
+        modal={modal} onClose={() => setModal(null)} rekening={rekening} terpilih={terpilih} tgl={tgl}
         onSubmit={(payload) => aksi(() => (modal.massal
           ? api.verifikasiPenerimaanMassal({ ...payload, orderIds: terpilih.map((i) => i.orderId) }).then((r) => {
               if (r.gagal > 0) throw new Error(`${r.berhasil} berhasil, ${r.gagal} gagal: ${r.hasil.filter((h) => !h.ok).map((h) => h.error).slice(0, 2).join("; ")}`);
@@ -219,7 +220,7 @@ export default function LunasBelumDicatat({ onBerubah }) {
   );
 }
 
-function ModalVerifikasi({ modal, onClose, rekening, terpilih, cutoff, onSubmit }) {
+function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, onSubmit }) {
   const item = modal?.item;
   const [f, setF] = useState({ mode: "REKENING", method: "TRANSFER", cashAccountId: "", date: "", amount: "", proofPhotoUrl: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -245,7 +246,7 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, cutoff, onSubmit 
       title={massal ? `Verifikasi ${terpilih.length} order` : `Verifikasi ${item.orderNumber}`}
       description={massal
         ? `Total ${formatUang(terpilih.reduce((s, i) => s + i.sisa, 0))} — tanggal tiap order mengikuti tanggal sales menandainya lunas`
-        : `${item.customerName} · belum tercatat ${formatUang(item.sisa)}`}
+        : `${item.customerName} · uang yang perlu dicek ${formatUang(item.sisa)}`}
       className="w-[520px]"
       footer={
         <>
@@ -263,21 +264,22 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, cutoff, onSubmit 
       }
     >
       <div className="space-y-3">
-        <Field label="Cara pencatatan">
+        <Field label="Uangnya masuk ke mana?">
           <Pilihan value={f.mode} onChange={(v) => set("mode", v)}>
-            {CARA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            <option value="REKENING">Masuk ke rekening perusahaan</option>
+            <option value="SEBELUM_SALDO_AWAL">{`Sudah lunas sebelum ${tgl} (tidak menambah saldo)`}</option>
           </Pilihan>
         </Field>
 
         {f.mode === "SEBELUM_SALDO_AWAL" ? (
           <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
-            Untuk uang yang diterima sebelum {tanggalPendek(cutoff)}: saldo bank asli sudah memuatnya, jadi saldo rekening
-            tidak ditambah (kas tidak dobel). Kalau order itu masih tercatat sebagai piutang, piutangnya ditutup; kalau
-            pendapatannya memang tidak pernah masuk buku, tidak ada jurnal. Tetap tercatat sebagai pembayaran terverifikasi.
+            Uang order ini sudah termasuk di saldo bank asli yang kita masukkan pada {tgl}, jadi saldo rekening
+            tidak ditambah lagi. Kalau order ini masih tercatat sebagai piutang, otomatis dianggap lunas.
+            Tetap tercatat sebagai pembayaran yang sudah diverifikasi.
           </p>
         ) : (
           <>
-            <Field label="Uang masuk ke rekening" required>
+            <Field label="Masuk ke rekening mana?" required>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {rekening.map((r) => (
                   <button
@@ -293,7 +295,7 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, cutoff, onSubmit 
               </div>
             </Field>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Metode">
+              <Field label="Cara bayar">
                 <Pilihan value={f.method} onChange={(v) => set("method", v)}>
                   {METODE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </Pilihan>
@@ -306,10 +308,10 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, cutoff, onSubmit 
             </div>
             {!massal && (
               <>
-                <Field label="Nominal" hint="Bisa diubah kalau yang masuk lebih kecil dari sisa (sisanya tetap menunggu)">
+                <Field label="Nominal yang masuk" hint="Kalau uang yang masuk lebih kecil dari nilai order, ubah di sini — sisanya tetap menunggu dicek">
                   <InputUang value={f.amount} onChange={(v) => set("amount", v)} />
                 </Field>
-                <Field label="Foto bukti pembayaran" hint="Salin dari WhatsApp lalu Ctrl+V, atau unggah">
+                <Field label="Foto bukti pembayaran" hint="Salin fotonya dari WhatsApp lalu tekan Ctrl+V, atau unggah dari galeri">
                   <PemilihBukti url={f.proofPhotoUrl} onChange={(v) => set("proofPhotoUrl", v)} />
                 </Field>
               </>
