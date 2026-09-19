@@ -4057,6 +4057,15 @@ body {
 .date-chip-input::-webkit-calendar-picker-indicator {
   opacity: 0;
 }
+/* `text-transparent` TIDAK menyembunyikan segmen tanggal bawaan Chromium
+   (mm/dd/yyyy punya pewarnaan sendiri, + blok biru saat segmen fokus) —
+   tampil dobel menimpa teks terformat kita ("09/01/2026" di atas "01 Sep
+   2026", laporan owner). Disembunyikan lewat pseudo-elemen isinya, BUKAN
+   opacity input-nya (itu yang memicu proteksi anti-clickjacking, lihat
+   komentar DateChip). */
+.date-chip-input::-webkit-datetime-edit {
+  opacity: 0;
+}
 
 /* ── Bug ditemukan 24 Agustus 2026: field form APA PUN yang tidak diberi
    className (mis. <textarea> polos di OrderSection.jsx "Ajukan Revisi",
