@@ -9,7 +9,14 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+// EasingReanimated di-alias SENGAJA: ada DUA `Easing` yang tidak bisa saling menggantikan.
+// `Easing` dari react-native dipakai RN Animated (transitionSpec React Navigation); `Easing` dari
+// Reanimated adalah worklet yang bisa dijalankan di UI thread. Menukar keduanya = app CRASH saat
+// animasi mulai ("non-worklet function on the UI thread") — persis yang terjadi 19 Sep 2026 saat
+// tab Inbox ditekan.
+import Animated, {
+  useAnimatedStyle, useSharedValue, withTiming, Easing as EasingReanimated,
+} from "react-native-reanimated";
 import { House, MessageCircle, Users, UserRound, ClipboardList } from "lucide-react-native";
 import { setAudioModeAsync } from "expo-audio";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
@@ -107,7 +114,13 @@ const PILL = 46; // diameter lingkaran aktif di tab bar
 // Kurva gerak tunggal untuk seluruh perpindahan tab (pil + isi layar), meniru ease-out iOS:
 // berangkat cepat, mendarat pelan. Timing, BUKAN pegas — pegas punya ekor panjang yang terbaca
 // sebagai "delay" walau gerakannya sendiri halus.
-const TAB_SPEC = { duration: 220, easing: Easing.bezier(0.33, 0, 0.2, 1) };
+const TAB_DUR = 220;
+const TAB_BEZ = [0.33, 0, 0.2, 1];
+// Untuk RN Animated (isi layar, lewat transitionSpec React Navigation).
+const TAB_SPEC = { duration: TAB_DUR, easing: Easing.bezier(...TAB_BEZ) };
+// Untuk Reanimated (pil di tab bar, berjalan di UI thread). Kurva & durasi identik dengan di atas
+// supaya pil dan isi layar bergerak sebagai satu kesatuan — hanya mesin animasinya yang beda.
+const PILL_SPEC = { duration: TAB_DUR, easing: EasingReanimated.bezier(...TAB_BEZ) };
 
 // Perpindahan ISI LAYAR antar tab: geser murni (transform), TANPA opacity.
 //
@@ -170,7 +183,7 @@ function GlassTabBar({ state, navigation }) {
   useEffect(() => {
     if (terakhir.current === state.index) return;
     terakhir.current = state.index;
-    progress.value = withTiming(state.index, TAB_SPEC);
+    progress.value = withTiming(state.index, PILL_SPEC);
   }, [state.index, progress]);
 
   const pilStyle = useAnimatedStyle(() => ({
@@ -207,7 +220,7 @@ function GlassTabBar({ state, navigation }) {
                 // selesai memproses perpindahan. Inilah yang menghilangkan kesan "delay"; versi
                 // sebelumnya baru mulai bergerak setelah state navigasi berubah (±1-2 frame telat).
                 terakhir.current = index;
-                progress.value = withTiming(index, TAB_SPEC);
+                progress.value = withTiming(index, PILL_SPEC);
                 navigation.navigate(route.name, route.params);
               }}
             />
