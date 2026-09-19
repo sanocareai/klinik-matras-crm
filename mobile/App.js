@@ -15,7 +15,7 @@ import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { ActivityIndicator, View, Text, TextInput, StyleSheet, Pressable } from "react-native";
+import { ActivityIndicator, View, Text, TextInput, StyleSheet, Pressable, Easing } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
@@ -149,7 +149,12 @@ function MainTabs() {
       tabBar={(props) => <GlassTabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: false,
-        animation: "fade", // perpindahan tab: pudar singkat, bukan potong mendadak
+        // Perpindahan tab: silang-pudar 160 ms. Durasi default (±250 ms) terasa menggantung karena
+        // layar tujuan baru selesai dirender di awal animasi; 160 ms + easing keluar membuat
+        // perpindahan terbaca "langsung" tapi tetap halus, dan dua layar tumpang tindih lebih singkat.
+        animation: "fade",
+        transitionSpec: { animation: "timing", config: { duration: 160, easing: Easing.out(Easing.quad) } },
+        // Layar yang tidak terlihat dibekukan: tidak ikut render ulang saat ada event socket.
         freezeOnBlur: true,
         tabBarShowLabel: false,
         tabBarIcon: ({ focused }) => <TabIcon routeName={route.name} focused={focused} />,

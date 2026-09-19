@@ -21,17 +21,33 @@ function computeTotalUnread(conversationsById) {
 
 export function useBadgeSync() {
   useEffect(() => {
+    // PERF (19 Sep 2026): dulu tiap perubahan store (tiap pesan, tiap ack, tiap tandai-dibaca)
+    // langsung menjumlahkan unread SELURUH percakapan (±1.400 entri) lalu memanggil API native
+    // badge. Sekarang penjumlahan itu ditunda 400 ms — ledakan event beruntun (mis. sinkron ulang
+    // daftar) cukup dihitung SEKALI — dan panggilan native dilewati kalau angkanya tidak berubah.
+    let timer = null;
+    let terakhir = -1;
+
+    function hitung() {
+      timer = null;
+      const total = computeTotalUnread(useConversationStore.getState().conversationsById);
+      if (total === terakhir) return;
+      terakhir = total;
+      updateBadgeCount(total);
+    }
     function sync() {
-      updateBadgeCount(computeTotalUnread(useConversationStore.getState().conversationsById));
+      if (timer) return;
+      timer = setTimeout(hitung, 400);
     }
 
-    sync();
+    hitung();
     const unsubscribeStore = useConversationStore.subscribe(sync);
     const appStateSub = AppState.addEventListener("change", (state) => {
       if (state === "active") sync();
     });
 
     return () => {
+      if (timer) clearTimeout(timer);
       unsubscribeStore();
       appStateSub.remove();
     };

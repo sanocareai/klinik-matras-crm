@@ -7,17 +7,29 @@ import { create } from "zustand";
 
 // Urutan daftar: pinned dulu (by pinnedAt terbaru), lalu sisanya
 // by lastMessageAt terbaru.
+// PERF (19 Sep 2026): kunci urut dihitung SEKALI per id (O(n)), lalu sort membandingkan ANGKA.
+// Versi lama memanggil `new Date(...)` DI DALAM comparator — dengan ~1.400 percakapan di cache
+// itu berarti ±29.000 objek Date dibuat & dibuang tiap satu event socket (sort O(n log n) × 2
+// Date per perbandingan). Itu beban CPU + sampah memori yang nyata terasa sebagai panas/tersendat,
+// padahal hasil urutannya sama persis: pinned dulu (pinnedAt terbaru), lalu lastMessageAt terbaru.
 function sortOrder(conversationsById, order) {
-  return [...order].sort((a, b) => {
-    const ca = conversationsById[a];
-    const cb = conversationsById[b];
-    if (!ca || !cb) return 0;
-    if (!!ca.pinned !== !!cb.pinned) return ca.pinned ? -1 : 1;
-    if (ca.pinned && cb.pinned) {
-      return new Date(cb.pinnedAt || 0) - new Date(ca.pinnedAt || 0);
-    }
-    return new Date(cb.lastMessageAt || 0) - new Date(ca.lastMessageAt || 0);
-  });
+  const key = new Map();
+  for (const id of order) {
+    const c = conversationsById[id];
+    if (!c) { key.set(id, -1); continue; } // entri rusak/hilang → taruh paling belakang
+    const t = Date.parse((c.pinned ? c.pinnedAt : c.lastMessageAt) || "") || 0;
+    key.set(id, c.pinned ? 1e16 + t : t); // offset 1e16 >> epoch ms, jadi pinned selalu menang
+  }
+  return [...order].sort((a, b) => key.get(b) - key.get(a));
+}
+
+// Apakah perubahan ini menyentuh field yang menentukan URUTAN? Kalau tidak (mis. isRead/unreadCount/
+// assignedTo/preview), daftar tidak perlu di-sort ulang sama sekali.
+function urutanBerubah(prev, next) {
+  return !prev
+    || prev.lastMessageAt !== next.lastMessageAt
+    || !!prev.pinned !== !!next.pinned
+    || prev.pinnedAt !== next.pinnedAt;
 }
 
 export const useConversationStore = create((set) => ({
@@ -46,13 +58,15 @@ export const useConversationStore = create((set) => ({
 
   // Insert/update 1 percakapan (dari fetch detail, event socket, dll) + re-sort.
   upsertConversation: (conv) => set((state) => {
-    const conversationsById = {
-      ...state.conversationsById,
-      [conv.id]: { ...state.conversationsById[conv.id], ...conv },
-    };
-    const order = state.conversationOrder.includes(conv.id)
-      ? state.conversationOrder
-      : [...state.conversationOrder, conv.id];
+    const prev = state.conversationsById[conv.id];
+    const next = { ...prev, ...conv };
+    const conversationsById = { ...state.conversationsById, [conv.id]: next };
+    const sudahAda = state.conversationOrder.includes(conv.id);
+    // Tanpa perubahan urutan (mis. tandai sudah dibaca dari ChatScreen, event ack) daftar dibiarkan
+    // apa adanya — referensi array yang SAMA juga berarti komponen yang subscribe ke urutan
+    // tidak ikut render ulang.
+    if (sudahAda && !urutanBerubah(prev, next)) return { conversationsById };
+    const order = sudahAda ? state.conversationOrder : [...state.conversationOrder, conv.id];
     return { conversationsById, conversationOrder: sortOrder(conversationsById, order) };
   }),
 
@@ -82,6 +96,8 @@ export const useConversationStore = create((set) => ({
       unreadCount: unreadDelta > 0 ? (existing.unreadCount || 0) + unreadDelta : existing.unreadCount,
     };
     const conversationsById = { ...state.conversationsById, [id]: updated };
+    // Percakapan yang sudah paling atas (dan tidak ada yang dipin di atasnya) tidak perlu sort ulang.
+    if (state.conversationOrder[0] === id && !existing.pinned) return { conversationsById };
     return { conversationsById, conversationOrder: sortOrder(conversationsById, state.conversationOrder) };
   }),
 }));

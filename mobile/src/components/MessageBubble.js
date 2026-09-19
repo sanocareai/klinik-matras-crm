@@ -729,6 +729,9 @@ function MessageBubbleBase({
         </View>
       </View>
 
+      {/* PERF: host <Modal> native hanya dibuat saat menu benar-benar dibuka (dulu ikut ter-mount
+          di SETIAP bubble yang terlihat). */}
+      {showActions && (
       <Modal visible={showActions} transparent animationType="fade" onRequestClose={() => setShowActions(false)}>
         <TouchableOpacity style={styles.actionOverlay} activeOpacity={1} onPress={() => setShowActions(false)}>
           <View style={styles.actionSheet}>
@@ -777,6 +780,7 @@ function MessageBubbleBase({
           </View>
         </TouchableOpacity>
       </Modal>
+      )}
     </Animated.View>
   );
 }

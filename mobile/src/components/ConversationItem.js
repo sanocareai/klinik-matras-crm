@@ -5,7 +5,6 @@
 import React, { memo, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import Animated, { FadeInDown } from "react-native-reanimated";
 import {
   Check, CheckCheck, Clock, Circle, Pin, PinOff, Image as ImageIcon, Video, Mic, FileText, CheckCircle2,
 } from "lucide-react-native";
@@ -215,7 +214,7 @@ function ConversationItemBase({ id, onPress, selectionMode, selected, onToggleSe
     // me-mount SEMUA baris yang terlihat sekaligus saat daftar dibuka dan sel baru saat digulir —
     // belasan animasi layout berjalan bersamaan tepat ketika transisi Home → Inbox, dan itu yang
     // terasa patah. Dua baris pertama Inbox sekarang langsung tampil.
-    <Animated.View style={styles.itemWrap}>
+    <View style={styles.itemWrap}>
       <Swipeable
         ref={swipeableRef}
         enabled={!selectionMode}
@@ -319,9 +318,13 @@ function ConversationItemBase({ id, onPress, selectionMode, selected, onToggleSe
           status di atas (sama seperti web ConversationItem.jsx), TANPA
           perlu buka chat dulu (beda dari tombol "Transfer" yang sudah ada
           di menu ⋮ ChatScreen.js, itu tetap ada, ini entry point baru). */}
-      {isAdmin && (
+      {/* PERF (19 Sep 2026): DUA modal di bawah dulu selalu ikut dirender tiap baris dengan
+          visible={false}. <Modal> RN tetap membuat host native walau tidak terlihat — untuk admin
+          itu ±2 host × belasan baris yang terlihat, memberatkan hierarki view & daur ulang sel
+          FlashList. Sekarang baru dipasang saat benar-benar dibuka. */}
+      {isAdmin && showTransfer && (
         <TransferModal
-          visible={showTransfer}
+          visible
           conversationId={id}
           currentAssignedId={c.assignedToId}
           onClose={() => setShowTransfer(false)}
@@ -329,14 +332,16 @@ function ConversationItemBase({ id, onPress, selectionMode, selected, onToggleSe
         />
       )}
 
+      {showPeek && (
       <PeekPreviewModal
-        visible={showPeek}
+        visible
         conversation={c}
         anchorY={peekAnchorY}
         onClose={() => setShowPeek(false)}
         onOpenChat={() => { setShowPeek(false); onPress(c); }}
       />
-    </Animated.View>
+      )}
+    </View>
   );
 }
 

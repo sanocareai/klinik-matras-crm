@@ -15,7 +15,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, Modal, ScrollView, InteractionManager,
+  Alert, ActivityIndicator, Modal, ScrollView, InteractionManager, AppState,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -345,8 +345,14 @@ export default function ChatScreen({ route, navigation }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     if (socketConnected) return; // live via socket, tidak perlu polling
-    pollRef.current = setInterval(() => load(true), POLL_MS);
-    return () => clearInterval(pollRef.current);
+    // Hanya saat app benar-benar di layar: di background, interval JS tetap jalan di Android —
+    // tanpa penjaga ini app terus menarik data tiap 5 detik di saku (baterai & panas), padahal
+    // pesan masuk sudah ditangani push notification. Saat kembali aktif, load() dipanggil sekali.
+    pollRef.current = setInterval(() => {
+      if (AppState.currentState === "active") load(true);
+    }, POLL_MS);
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") load(true); });
+    return () => { clearInterval(pollRef.current); sub.remove(); };
   }, [load, socketConnected]);
 
   // WAJIB ADA karena polling tak-bersyarat di atas dihapus: pesan yang masuk
