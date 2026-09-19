@@ -22,6 +22,14 @@ export const SETTING_KEYS = Object.freeze({
   // Ambang nominal pengeluaran yang WAJIB lewat approval. Di bawah ini,
   // pengeluaran yang dibuat pemegang finance:post langsung DISETUJUI.
   EXPENSE_APPROVAL_THRESHOLD: "expense_approval_threshold",
+  // Kebijakan bukti/nota (lihat services/finance/receipts.js). Pengeluaran
+  // NON-reimbursement di/atas nominal ini wajib punya foto nota sebelum
+  // disetujui (Pembelian & Reimbursement selalu wajib, berapa pun).
+  RECEIPT_REQUIRED_THRESHOLD: "receipt_required_threshold",
+  // Tanggal (YYYY-MM-DD) mulai berlakunya antrean tinjau bukti — transaksi
+  // yang dibuat SEBELUM tanggal ini (data impor historis) tidak pernah masuk
+  // antrean "tanpa bukti".
+  RECEIPT_POLICY_SINCE: "receipt_policy_since",
 
   // ── Pemetaan metode pembayaran → rekening kas/bank ──────────────────────
   // Payment.method (CASH/TRANSFER/QRIS) sudah ada sejak lama dan TIDAK
@@ -60,6 +68,8 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.BOOK_START_DATE]: "",
   [SETTING_KEYS.DEFAULT_INVOICE_DUE_DAYS]: "14",
   [SETTING_KEYS.EXPENSE_APPROVAL_THRESHOLD]: "1000000",
+  [SETTING_KEYS.RECEIPT_REQUIRED_THRESHOLD]: "500000",
+  [SETTING_KEYS.RECEIPT_POLICY_SINCE]: "2026-09-19",
   [SETTING_KEYS.CASH_ACCOUNT_CASH]: "",
   [SETTING_KEYS.CASH_ACCOUNT_TRANSFER]: "",
   [SETTING_KEYS.CASH_ACCOUNT_QRIS]: "",

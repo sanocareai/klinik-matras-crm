@@ -19,6 +19,9 @@ import { setSetting, SETTING_KEYS } from "../../src/services/finance/settings.js
 import { toMoney } from "../../src/services/finance/money.js";
 import { STATUS_DIHITUNG } from "../../src/services/finance/journal.js";
 
+// Kebijakan bukti (services/finance/receipts.js): dokumen yang disetujui butuh nota.
+const NOTA_TES = "/media/finance-receipts/tes.jpg";
+
 let server;
 test.before(async () => {
   await truncateAll();
@@ -79,7 +82,7 @@ test("Uang Muka Pembelian (LANGSUNG): Dr 1-1500 ASET / Cr Kas — BUKAN beban", 
   const client = makeClient(server.baseUrl, token);
 
   const kat = await kategori("UANG_MUKA_PEMBELIAN");
-  const created = await client.post("/api/finance/purchases", {
+  const created = await client.post("/api/finance/purchases", { receiptUrl: NOTA_TES,
     date: "2026-09-10", amount: 2_000_000, description: "DP mesin corner",
     categoryId: kat.id, mode: "LANGSUNG", cashAccountId: rekeningKas.id,
   });
@@ -103,7 +106,7 @@ test("Bahan Baku mode REIMBURSEMENT: approve → Dr 5-1150 / Cr Utang Reimbursem
   const client = makeClient(server.baseUrl, token);
 
   const kat = await kategori("BAHAN_BAKU_MANUAL");
-  const created = await client.post("/api/finance/purchases", {
+  const created = await client.post("/api/finance/purchases", { receiptUrl: NOTA_TES,
     date: "2026-09-11", amount: 500_000, description: "Busa rebonded",
     categoryId: kat.id, mode: "REIMBURSEMENT",
   });
@@ -138,7 +141,7 @@ test("Kategori pembelian nonaktif ditolak saat membuat pembelian baru", async ()
   const kat = await kategori("ASET_KENDARAAN");
   await testPrisma.finPurchaseCategory.update({ where: { id: kat.id }, data: { active: false } });
 
-  const res = await client.post("/api/finance/purchases", {
+  const res = await client.post("/api/finance/purchases", { receiptUrl: NOTA_TES,
     date: "2026-09-12", amount: 1_000_000, description: "Ban mobil", categoryId: kat.id, mode: "UTANG",
   });
   assert.equal(res.status, 404, JSON.stringify(res.body));

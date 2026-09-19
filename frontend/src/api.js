@@ -1275,6 +1275,11 @@ export const api = {
   cancelFinanceExpense: (id, reason) => request(`/finance/expenses/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
 
   // Pembelian (bahan baku manual, aset tetap, aset tak berwujud, uang muka)
+  // Bukti/nota pengeluaran & pembelian (jenis = "expenses" | "purchases")
+  uploadFinanceReceipt: (formData) => requestFormData("/finance/receipts/upload", formData),
+  setFinanceReceipt: (jenis, id, receiptUrl) => request(`/finance/${jenis}/${id}/bukti`, { method: "POST", body: JSON.stringify({ receiptUrl }) }),
+  verifyFinanceReceipt: (jenis, id) => request(`/finance/${jenis}/${id}/verifikasi-bukti`, { method: "POST" }),
+  getFinanceReceiptReview: () => request("/finance/bukti-review"),
   getFinancePurchaseCategories: (params = {}) => request(`/finance/purchase-categories${qsFinance(params)}`),
   getFinancePurchases: (params = {}) => request(`/finance/purchases${qsFinance(params)}`),
   createFinancePurchase: (data) => request("/finance/purchases", { method: "POST", body: JSON.stringify(data) }),

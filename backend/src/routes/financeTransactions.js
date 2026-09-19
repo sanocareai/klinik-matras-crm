@@ -45,6 +45,11 @@ import { setAllocations, AllocationError } from "../services/finance/allocation.
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { handleFinanceError, rentangDariQuery } from "./finance.js";
+import multer from "multer";
+import {
+  pastikanNotaLengkap, notaWajib, simpanFotoBukti, cariPemakaiBukti,
+  tanggalMulaiKebijakan, RECEIPTS_URL_PREFIX,
+} from "../services/finance/receipts.js";
 
 export const financeTxRouter = express.Router();
 financeTxRouter.use(requireAuth);
@@ -247,6 +252,9 @@ financeTxRouter.post("/expenses/:id/approve", requirePermission(P.FINANCE_APPROV
           403
         );
       }
+
+      const kat = await tx.finExpenseCategory.findUnique({ where: { id: e.categoryId }, select: { code: true } });
+      await pastikanNotaLengkap(tx, { jenis: "expense", doc: e, categoryCode: kat?.code, err });
 
       const updated = await tx.finExpense.update({
         where: { id: e.id },
@@ -671,6 +679,8 @@ financeTxRouter.post("/purchases/:id/approve", requirePermission(P.FINANCE_APPRO
           403
         );
       }
+
+      await pastikanNotaLengkap(tx, { jenis: "purchase", doc: p, err });
 
       const updated = await tx.finPurchase.update({
         where: { id: p.id },
@@ -2149,5 +2159,140 @@ financeTxRouter.post("/bank-statements/:id/complete", requirePermission(P.FINANC
     handleFinanceError(e, res);
   }
 });
+
+// ═════════════════════════════════════════════════════════════════════════
+// BUKTI / NOTA — upload, pasang ke dokumen, verifikasi oleh orang lain,
+// dan antrean tinjau. Kebijakannya dijelaskan di services/finance/receipts.js.
+// ═════════════════════════════════════════════════════════════════════════
+
+const uploadBukti = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) return cb(new Error("Hanya file gambar (foto nota) yang diperbolehkan"));
+    cb(null, true);
+  },
+});
+
+const MODEL_BUKTI = { expenses: "finExpense", purchases: "finPurchase" };
+const JENIS_BUKTI = { expenses: "expense", purchases: "purchase" };
+
+// Upload bebas: foto dipilih SEBELUM dokumennya disimpan (satu langkah di
+// form). Balikkan URL + daftar dokumen lain yang sudah memakai foto ini.
+financeTxRouter.post("/receipts/upload",
+  requireAnyPermission(P.FINANCE_POST, P.FINANCE_EXPENSE_SUBMIT),
+  (req, res, next) => uploadBukti.single("receipt")(req, res, (e) => (e ? handleFinanceError(err(e.message), res) : next())),
+  async (req, res) => {
+    try {
+      if (!req.file) throw err("File foto wajib disertakan");
+      const url = simpanFotoBukti(req.file.buffer, req.file.mimetype);
+      res.status(201).json({ url, dipakaiDi: await cariPemakaiBukti(prisma, url) });
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
+
+// Pasang / ganti / lepas bukti pada dokumen yang sudah ada. Boleh di status
+// apa pun kecuali DIBATALKAN — bukti tidak mengubah angka buku besar. Ganti
+// foto = verifikasi lama gugur (yang diverifikasi adalah foto yang lama).
+financeTxRouter.post("/:jenis(expenses|purchases)/:id/bukti",
+  requireAnyPermission(P.FINANCE_POST, P.FINANCE_EXPENSE_SUBMIT),
+  async (req, res) => {
+    try {
+      const model = prisma[MODEL_BUKTI[req.params.jenis]];
+      const receiptUrl = req.body?.receiptUrl || null;
+      if (receiptUrl && !String(receiptUrl).startsWith(`${RECEIPTS_URL_PREFIX}/`)) {
+        throw err("Bukti harus diunggah lewat fitur upload nota");
+      }
+      const doc = await model.findUnique({ where: { id: req.params.id }, select: { id: true, status: true, createdById: true } });
+      if (!doc) throw err("Dokumen tidak ditemukan", 404);
+      if (doc.status === "DIBATALKAN") throw err("Dokumen yang sudah dibatalkan tidak bisa diubah buktinya", 409);
+      if (!hasPermission(req.user, P.FINANCE_POST) && doc.createdById !== req.user.id) {
+        throw err("Anda hanya bisa mengubah bukti pengajuan Anda sendiri", 403);
+      }
+      await model.update({
+        where: { id: doc.id },
+        data: { receiptUrl, receiptVerifiedAt: null, receiptVerifiedById: null },
+      });
+      res.json({ ok: true, receiptUrl, dipakaiDi: receiptUrl ? await cariPemakaiBukti(prisma, receiptUrl, { kecuali: doc.id }) : [] });
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
+
+// Verifikasi bukti — WAJIB orang lain (bukan pembuat), pemegang FINANCE_ADMIN.
+financeTxRouter.post("/:jenis(expenses|purchases)/:id/verifikasi-bukti",
+  requirePermission(P.FINANCE_ADMIN),
+  async (req, res) => {
+    try {
+      const model = prisma[MODEL_BUKTI[req.params.jenis]];
+      const doc = await model.findUnique({ where: { id: req.params.id }, select: { id: true, status: true, createdById: true, receiptUrl: true } });
+      if (!doc) throw err("Dokumen tidak ditemukan", 404);
+      if (!doc.receiptUrl) throw err("Belum ada bukti yang bisa diverifikasi", 409);
+      if (["DIBATALKAN", "DITOLAK"].includes(doc.status)) throw err("Dokumen ini sudah dibatalkan/ditolak", 409);
+      if (doc.createdById === req.user.id) {
+        throw err(
+          "Bukti tidak boleh diverifikasi oleh pembuat transaksinya sendiri — minta owner/admin lain memeriksanya. " +
+          "Verifikasi sendiri tidak punya nilai kontrol saat diaudit.",
+          403
+        );
+      }
+      await model.update({
+        where: { id: doc.id },
+        data: { receiptVerifiedAt: new Date(), receiptVerifiedById: req.user.id },
+      });
+      res.json({ ok: true });
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
+
+// Antrean tinjau: transaksi baru (sejak RECEIPT_POLICY_SINCE) yang buktinya
+// belum diverifikasi, atau yang WAJIB bernota tapi notanya belum ada.
+financeTxRouter.get("/bukti-review",
+  requirePermission(P.FINANCE_READ),
+  async (req, res) => {
+    try {
+      const sejak = await tanggalMulaiKebijakan(prisma);
+      const where = { createdAt: { gte: sejak }, status: { in: ["MENUNGGU_APPROVAL", "DISETUJUI", "DIBAYAR"] } };
+      const [ex, pu] = await Promise.all([
+        prisma.finExpense.findMany({
+          where, orderBy: { createdAt: "desc" }, take: 200,
+          include: { category: { select: { code: true, name: true } }, createdBy: { select: { id: true, name: true } } },
+        }),
+        prisma.finPurchase.findMany({
+          where, orderBy: { createdAt: "desc" }, take: 200,
+          include: { category: { select: { code: true, name: true } }, createdBy: { select: { id: true, name: true } } },
+        }),
+      ]);
+
+      const items = [];
+      const tambah = async (jenis, d, nomor) => {
+        const wajib = await notaWajib(prisma, { jenis, mode: d.mode, amount: d.amount, categoryCode: d.category?.code });
+        const adaNota = !!d.receiptUrl;
+        if (adaNota && d.receiptVerifiedAt) return;   // beres
+        if (!adaNota && !wajib) return;               // tidak wajib & tidak ada — bukan urusan antrean
+        items.push({
+          jenis: jenis === "expense" ? "expenses" : "purchases",
+          id: d.id, nomor, date: d.date, description: d.description,
+          amount: moneyToNumber(d.amount), status: d.status, kategori: d.category?.name,
+          createdBy: d.createdBy, receiptUrl: d.receiptUrl,
+          masalah: adaNota ? "BELUM_DIVERIFIKASI" : "TANPA_NOTA",
+        });
+      };
+      for (const d of ex) await tambah("expense", d, d.expenseNumber);
+      for (const d of pu) await tambah("purchase", d, d.purchaseNumber);
+
+      items.sort((a, b) => new Date(b.date) - new Date(a.date));
+      res.json({
+        sejak,
+        tanpaNota: items.filter((i) => i.masalah === "TANPA_NOTA").length,
+        belumDiverifikasi: items.filter((i) => i.masalah === "BELUM_DIVERIFIKASI").length,
+        items,
+      });
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
 
 export default financeTxRouter;

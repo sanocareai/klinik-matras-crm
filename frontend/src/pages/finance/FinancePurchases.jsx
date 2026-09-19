@@ -13,7 +13,7 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
-  LABEL_DIVISI,
+  LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
 
 // PEMBELIAN — barang/aset yang DIBELI dari luar, tanpa tagihan resmi supplier:
@@ -184,7 +184,7 @@ export default function FinancePurchases() {
               <THead>
                 <TR>
                   <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Jenis</TH>
-                  <TH>Divisi</TH><TH>Mode</TH><TH numeric>Nominal</TH><TH>Status</TH><TH />
+                  <TH>Divisi</TH><TH>Mode</TH><TH numeric>Nominal</TH><TH>Status</TH><TH>Bukti</TH><TH />
                 </TR>
               </THead>
               <TBody>
@@ -205,6 +205,7 @@ export default function FinancePurchases() {
                     </TD>
                     <TD numeric><Uang value={p.amount} /></TD>
                     <TD><StatusBadge status={p.status} /></TD>
+                    <TD><SelBukti doc={p} jenis="purchases" aksi={aksi} /></TD>
                     <TD>
                       <div className="flex justify-end gap-1">
                         {["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) && (
@@ -258,7 +259,7 @@ export default function FinancePurchases() {
 function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit }) {
   const [f, setF] = useState({
     date: "", amount: "", description: "", categoryId: "", division: "",
-    mode: "LANGSUNG", cashAccountId: "", supplierId: "", payeeName: "", notes: "",
+    mode: "LANGSUNG", cashAccountId: "", supplierId: "", payeeName: "", notes: "", receiptUrl: "",
   });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.description.trim() && f.categoryId && Number(f.amount) > 0 &&
@@ -334,6 +335,9 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
         </Field>
         <Field label="Dibeli dari" hint="Nama toko/orang kalau belum jadi supplier terdaftar — opsional">
           <Input value={f.payeeName} onChange={(e) => set("payeeName", e.target.value)} />
+        </Field>
+        <Field label="Foto nota / bukti" hint="Wajib sebelum disetujui untuk reimbursement, pembelian, dan nominal besar — foto nota dari bawahan di sini">
+          <PemilihBukti url={f.receiptUrl} onChange={(v) => set("receiptUrl", v)} />
         </Field>
         <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
       </div>

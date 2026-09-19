@@ -507,6 +507,8 @@ model User {
   finPurchasesApproved      FinPurchase[]          @relation("FinPurchaseApprover")
   finPurchasesPaid          FinPurchase[]          @relation("FinPurchasePayer")
   finPurchasesReimbursed    FinPurchase[]          @relation("FinPurchaseReimburseTo")
+  finExpensesReceiptVerified  FinExpense[]         @relation("FinExpenseReceiptVerifier")
+  finPurchasesReceiptVerified FinPurchase[]        @relation("FinPurchaseReceiptVerifier")
   finOtherIncomesCreated    FinOtherIncome[]       @relation("FinOtherIncomeCreator")
   finOtherIncomesVoided     FinOtherIncome[]       @relation("FinOtherIncomeCanceller")
   finCashTransfersCreated   FinCashTransfer[]      @relation("FinCashTransferCreator")
@@ -6197,6 +6199,12 @@ model FinExpense {
   receiptUrl String? @map("receipt_url")
   notes      String?
 
+  // Verifikasi bukti oleh ORANG LAIN (bukan pembuat) — lihat
+  // services/finance/receipts.js. receiptUrl diganti = verifikasi direset.
+  receiptVerifiedAt   DateTime? @map("receipt_verified_at")
+  receiptVerifiedById String?   @map("receipt_verified_by")
+  receiptVerifiedBy   User?     @relation("FinExpenseReceiptVerifier", fields: [receiptVerifiedById], references: [id], onDelete: SetNull)
+
   status FinExpenseStatus @default(DRAFT)
 
   submittedAt  DateTime? @map("submitted_at")
@@ -6218,6 +6226,7 @@ model FinExpense {
   @@index([categoryId, date])
   @@index([division, date])
   @@index([reimburseToId, status])
+  @@index([receiptUrl])
   @@map("fin_expenses")
 }
 
@@ -6268,6 +6277,10 @@ model FinPurchase {
   receiptUrl String? @map("receipt_url")
   notes      String?
 
+  receiptVerifiedAt   DateTime? @map("receipt_verified_at")
+  receiptVerifiedById String?   @map("receipt_verified_by")
+  receiptVerifiedBy   User?     @relation("FinPurchaseReceiptVerifier", fields: [receiptVerifiedById], references: [id], onDelete: SetNull)
+
   status FinExpenseStatus @default(DRAFT)
 
   submittedAt  DateTime? @map("submitted_at")
@@ -6289,6 +6302,7 @@ model FinPurchase {
   @@index([categoryId, date])
   @@index([division, date])
   @@index([reimburseToId, status])
+  @@index([receiptUrl])
   @@map("fin_purchases")
 }
 

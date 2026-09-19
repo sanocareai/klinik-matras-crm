@@ -14,7 +14,7 @@ import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
-  LABEL_DIVISI,
+  LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
 
 // PENGELUARAN & REIMBURSEMENT.
@@ -175,7 +175,7 @@ export default function FinanceExpenses() {
               <THead>
                 <TR>
                   <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Kategori</TH>
-                  <TH>Divisi</TH><TH>Mode</TH><TH numeric>Nominal</TH><TH>Status</TH><TH />
+                  <TH>Divisi</TH><TH>Mode</TH><TH numeric>Nominal</TH><TH>Status</TH><TH>Bukti</TH><TH />
                 </TR>
               </THead>
               <TBody>
@@ -196,6 +196,7 @@ export default function FinanceExpenses() {
                     </TD>
                     <TD numeric><Uang value={e.amount} /></TD>
                     <TD><StatusBadge status={e.status} /></TD>
+                    <TD><SelBukti doc={e} jenis="expenses" aksi={aksi} /></TD>
                     <TD>
                       <div className="flex justify-end gap-1">
                         {["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status) && (
@@ -249,7 +250,7 @@ export default function FinanceExpenses() {
 function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
   const [f, setF] = useState({
     date: "", amount: "", description: "", categoryId: "", division: "",
-    mode: "LANGSUNG", cashAccountId: "", payeeName: "", orderId: "", notes: "",
+    mode: "LANGSUNG", cashAccountId: "", payeeName: "", orderId: "", notes: "", receiptUrl: "",
   });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.description.trim() && f.categoryId && Number(f.amount) > 0 &&
@@ -316,6 +317,9 @@ function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
         </Field>
         <Field label="Order terkait" hint="Opsional — untuk membebankan biaya ke order tertentu">
           <OrderPicker value={f.orderId} onChange={(id) => set("orderId", id)} placeholder="Cari order…" />
+        </Field>
+        <Field label="Foto nota / bukti" hint="Wajib sebelum disetujui untuk reimbursement, pembelian, dan nominal besar — foto nota dari bawahan di sini">
+          <PemilihBukti url={f.receiptUrl} onChange={(v) => set("receiptUrl", v)} />
         </Field>
         <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
       </div>

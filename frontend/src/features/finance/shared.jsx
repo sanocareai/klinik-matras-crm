@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, Info, Loader2 } from "lucide-react";
+import { AlertTriangle, Info, Loader2, Camera, X, ShieldCheck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
+import { api } from "@/api.js";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { SIMPLE_PRESETS, makeRange, makeCustomRange, todayWIB } from "@/lib/dateRange.js";
 
@@ -394,4 +395,111 @@ export function tanggalJam(v) {
     day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta",
   });
+}
+
+// ─── BUKTI / NOTA ────────────────────────────────────────────────────────
+// Kebijakan lengkap: backend services/finance/receipts.js. Ringkasnya —
+// nota WAJIB sebelum disetujui (pembelian, reimbursement, nominal di atas
+// ambang), dan verifikasinya harus dilakukan ORANG LAIN (bukan pembuat).
+
+function peringatanDobel(dipakaiDi) {
+  if (dipakaiDi?.length) {
+    window.alert(`Perhatian: foto nota ini sudah dipakai di ${dipakaiDi.join(", ")}. Kalau satu nota memang mencakup dua catatan, abaikan — kalau bukan, kemungkinan nota terpakai dua kali.`);
+  }
+}
+
+/** Pemilih foto nota di dalam form (upload langsung saat file dipilih). */
+export function PemilihBukti({ url, onChange }) {
+  const [sibuk, setSibuk] = useState(false);
+  const [galat, setGalat] = useState("");
+
+  async function pilih(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setSibuk(true);
+    setGalat("");
+    try {
+      const fd = new FormData();
+      fd.append("receipt", file);
+      const r = await api.uploadFinanceReceipt(fd);
+      onChange(r.url);
+      peringatanDobel(r.dipakaiDi);
+    } catch (err) {
+      setGalat(err.message);
+    } finally {
+      setSibuk(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {url && (
+        <a href={url} target="_blank" rel="noreferrer" className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line">
+          <img src={url} alt="Nota" className="h-full w-full object-cover" />
+        </a>
+      )}
+      <label className={cn(
+        "inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-line px-3 text-[13px] text-ink2 transition-colors hover:border-accent hover:text-accent sm:h-9",
+        sibuk && "pointer-events-none opacity-60"
+      )}>
+        {sibuk ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+        {url ? "Ganti foto" : "Foto / unggah nota"}
+        <input type="file" accept="image/*" className="hidden" onChange={pilih} disabled={sibuk} />
+      </label>
+      {url && (
+        <button type="button" onClick={() => onChange("")} className="inline-flex h-11 w-11 items-center justify-center text-ink3 hover:text-red sm:h-9 sm:w-9" title="Lepas foto">
+          <X size={14} />
+        </button>
+      )}
+      {galat && <span className="text-[12px] text-red">{galat}</span>}
+    </div>
+  );
+}
+
+/**
+ * Sel tabel "Bukti" untuk baris pengeluaran/pembelian yang SUDAH ada:
+ * thumbnail + status verifikasi, atau tombol unggah kalau belum ada nota.
+ * `aksi(fn)` = pembungkus halaman (jalankan → muat ulang → tampilkan galat).
+ */
+export function SelBukti({ doc, jenis, aksi }) {
+  const tertutup = ["DIBATALKAN", "DITOLAK"].includes(doc.status);
+
+  async function unggah(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    await aksi(async () => {
+      const fd = new FormData();
+      fd.append("receipt", file);
+      const up = await api.uploadFinanceReceipt(fd);
+      const r = await api.setFinanceReceipt(jenis, doc.id, up.url);
+      peringatanDobel(r.dipakaiDi);
+    });
+  }
+
+  if (!doc.receiptUrl) {
+    if (tertutup) return <span className="text-ink3">—</span>;
+    return (
+      <label className="inline-flex h-11 cursor-pointer items-center gap-1 rounded-lg border border-dashed border-line px-2.5 text-[12px] text-ink2 hover:border-accent hover:text-accent sm:h-8">
+        <Camera size={13} /> Unggah
+        <input type="file" accept="image/*" className="hidden" onChange={unggah} />
+      </label>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <a href={doc.receiptUrl} target="_blank" rel="noreferrer" className="block h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-line">
+        <img src={doc.receiptUrl} alt="Nota" className="h-full w-full object-cover" />
+      </a>
+      {doc.receiptVerifiedAt ? (
+        <span className="inline-flex items-center gap-1 text-[12px] font-medium text-green"><ShieldCheck size={13} /> Terverifikasi</span>
+      ) : tertutup ? null : (
+        <TombolAksi size="sm" variant="neutral" onClick={() => aksi(() => api.verifyFinanceReceipt(jenis, doc.id))}>
+          Verifikasi
+        </TombolAksi>
+      )}
+    </div>
+  );
 }

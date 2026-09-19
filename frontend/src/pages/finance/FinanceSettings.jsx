@@ -222,6 +222,29 @@ export default function FinanceSettings() {
         </CardContent>
       </Card>
 
+      {/* ── KEBIJAKAN BUKTI / NOTA ── */}
+      <Card>
+        <JudulKartu
+          title="Kebijakan Bukti (Nota)"
+          description="Kapan foto nota WAJIB ada sebelum pengeluaran/pembelian bisa disetujui."
+          info="Pembelian dan Reimbursement SELALU wajib bernota, berapa pun nominalnya. Pengeluaran lain baru wajib kalau nominalnya di atas ambang ini (kecuali gaji, upah, dan biaya admin bank — buktinya bukan nota toko). Verifikasi bukti harus dilakukan orang lain, bukan pembuat transaksinya."
+        />
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <PengaturanAngka
+            label="Ambang nota wajib (Rp)"
+            hint="Pengeluaran non-reimbursement di atau di atas nominal ini wajib bernota"
+            nilai={S[K.RECEIPT_REQUIRED_THRESHOLD]}
+            onSimpan={(v) => ubahSetting(K.RECEIPT_REQUIRED_THRESHOLD, v)}
+          />
+          <PengaturanAngka
+            label="Antrean tinjau berlaku sejak"
+            hint="Format YYYY-MM-DD — transaksi sebelum tanggal ini tidak masuk antrean tinjau"
+            nilai={S[K.RECEIPT_POLICY_SINCE]} tipe="text"
+            onSimpan={(v) => ubahSetting(K.RECEIPT_POLICY_SINCE, v)}
+          />
+        </CardContent>
+      </Card>
+
       {/* ── 4. SINKRONISASI SUMBER LAMA ── */}
       <Card>
         <JudulKartu
@@ -380,5 +403,21 @@ function ModalKategori({ open, onClose, akun, onSubmit }) {
         </Field>
       </div>
     </Modal>
+  );
+}
+
+// Field pengaturan bernilai tunggal — disimpan saat fokus keluar (bukan tiap
+// ketikan), supaya tiap perubahan jadi SATU catatan audit pengaturan.
+function PengaturanAngka({ label, hint, nilai, onSimpan, tipe = "number" }) {
+  const [draft, setDraft] = useState(nilai ?? "");
+  useEffect(() => { setDraft(nilai ?? ""); }, [nilai]);
+  return (
+    <Field label={label} hint={hint}>
+      <Input
+        type={tipe} value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { if (String(draft) !== String(nilai ?? "") && String(draft).trim() !== "") onSimpan(String(draft).trim()); }}
+      />
+    </Field>
   );
 }

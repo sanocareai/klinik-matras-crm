@@ -15,6 +15,7 @@ import {
   PeriodePicker, periodeDefault, tanggalPendek, tanggalJam,
   LABEL_SUMBER_JURNAL,
 } from "@/features/finance/shared.jsx";
+import BuktiReview from "@/features/finance/BuktiReview.jsx";
 
 // Dashboard Finance — SATU layar yang menjawab empat pertanyaan yang
 // benar-benar ditanyakan tiap pagi:
@@ -277,6 +278,8 @@ export default function FinanceDashboard() {
               info="Transaksi yang seharusnya dibukukan tapi tertahan karena datanya belum lengkap (mis. rekening belum dipetakan, harga bahan belum diisi). Sistem TIDAK menebak angkanya — lebih baik terlihat sebagai pekerjaan tertunda daripada laporan yang diam-diam salah."
             />
           </div>
+
+          <BuktiReview />
 
           {/* Gerbang verifikasi — dijelaskan apa adanya supaya tidak ada yang
               mengira antrean ini sudah menahan status bayar padahal tidak. */}

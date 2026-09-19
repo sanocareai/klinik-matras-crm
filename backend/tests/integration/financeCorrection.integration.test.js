@@ -35,6 +35,9 @@ import { setSetting, SETTING_KEYS } from "../../src/services/finance/settings.js
 import { toMoney } from "../../src/services/finance/money.js";
 import { STATUS_DIHITUNG } from "../../src/services/finance/journal.js";
 
+// Kebijakan bukti (services/finance/receipts.js): dokumen yang disetujui butuh nota.
+const NOTA_TES = "/media/finance-receipts/tes.jpg";
+
 let server;
 test.before(async () => {
   await truncateAll();
@@ -82,7 +85,7 @@ test("Koreksi EXPENSE mode LANGSUNG: jurnal lama dibalik, jurnal baru dengan nom
 
   const kategori = await testPrisma.finExpenseCategory.findFirst({ where: { active: true } });
 
-  const created = await client.post("/api/finance/expenses", {
+  const created = await client.post("/api/finance/expenses", { receiptUrl: NOTA_TES,
     date: "2026-09-10", amount: 100_000, description: "Bensin (salah ketik)",
     categoryId: kategori.id, mode: "LANGSUNG", cashAccountId: rekeningKas.id,
   });
@@ -125,7 +128,7 @@ test("Koreksi EXPENSE mode REIMBURSEMENT yang sudah DIBAYAR: DUA jurnal (pengaku
   const client = makeClient(server.baseUrl, token);
   const kategori = await testPrisma.finExpenseCategory.findFirst({ where: { active: true } });
 
-  const created = await client.post("/api/finance/expenses", {
+  const created = await client.post("/api/finance/expenses", { receiptUrl: NOTA_TES,
     date: "2026-09-10", amount: 500_000, description: "Servis kendaraan ditalangi",
     categoryId: kategori.id, mode: "REIMBURSEMENT", reimburseToId: user.id,
   });
@@ -170,7 +173,7 @@ test("Cancel SETELAH koreksi tetap membalik jurnal yang BENAR-BENAR aktif (bukan
   const client = makeClient(server.baseUrl, token);
   const kategori = await testPrisma.finExpenseCategory.findFirst({ where: { active: true } });
 
-  const created = await client.post("/api/finance/expenses", {
+  const created = await client.post("/api/finance/expenses", { receiptUrl: NOTA_TES,
     date: "2026-09-10", amount: 100_000, description: "Uji cancel setelah koreksi",
     categoryId: kategori.id, mode: "LANGSUNG", cashAccountId: rekeningKas.id,
   });
@@ -240,7 +243,7 @@ test("PATCH edit pengeluaran HANYA sah selama DRAFT/MENUNGGU_APPROVAL — ditola
 
   // REIMBURSEMENT — tidak butuh cashAccountId saat DRAFT, jadi PATCH-nya
   // murni menguji edit field biasa, bukan terjebak validasi mode LANGSUNG.
-  const created = await client.post("/api/finance/expenses", {
+  const created = await client.post("/api/finance/expenses", { receiptUrl: NOTA_TES,
     date: "2026-09-10", amount: 100_000, description: "Draft dulu", categoryId: kategori.id,
     mode: "REIMBURSEMENT", reimburseToId: user.id, langsungAjukan: false,
   });
@@ -270,7 +273,7 @@ test("Koreksi & edit HANYA admin — role FINANCE biasa ditolak 403", async () =
   const client = makeClient(server.baseUrl, token);
   const kategori = await testPrisma.finExpenseCategory.findFirst({ where: { active: true } });
 
-  const created = await client.post("/api/finance/expenses", {
+  const created = await client.post("/api/finance/expenses", { receiptUrl: NOTA_TES,
     date: "2026-09-10", amount: 100_000, description: "Uji permission", categoryId: kategori.id,
     mode: "LANGSUNG", cashAccountId: rekeningKas.id,
   });
@@ -307,7 +310,7 @@ test("DELETE cash-account: rekening yang SUDAH punya transaksi ditolak 409, buka
   const client = makeClient(server.baseUrl, token);
   const kategori = await testPrisma.finExpenseCategory.findFirst({ where: { active: true } });
 
-  const created = await client.post("/api/finance/expenses", {
+  const created = await client.post("/api/finance/expenses", { receiptUrl: NOTA_TES,
     date: "2026-09-10", amount: 50_000, description: "Sudah ada transaksi", categoryId: kategori.id,
     mode: "LANGSUNG", cashAccountId: rekeningKas.id,
   });
