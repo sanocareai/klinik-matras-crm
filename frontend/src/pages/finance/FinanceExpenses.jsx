@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Plus, Receipt } from "lucide-react";
+import { Plus, Receipt, Pencil } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -16,6 +16,7 @@ import {
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
   LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
+import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 
 // PENGELUARAN & REIMBURSEMENT.
 //
@@ -52,6 +53,7 @@ export default function FinanceExpenses() {
   const [pesan, setPesan] = useState(null);
   const [modalBaru, setModalBaru] = useState(false);
   const [bayarUntuk, setBayarUntuk] = useState(null);
+  const [editUntuk, setEditUntuk] = useState(null);
 
   const muat = useCallback(async () => {
     setLoading(true);
@@ -199,6 +201,22 @@ export default function FinanceExpenses() {
                     <TD><SelBukti doc={e} jenis="expenses" aksi={aksi} /></TD>
                     <TD>
                       <div className="flex justify-end gap-1">
+                        {STATUS_BISA_DIEDIT.includes(e.status) && (
+                          <Button size="sm" variant="neutral" onClick={() => setEditUntuk(e)} title="Edit / koreksi">
+                            <Pencil size={13} /> Edit
+                          </Button>
+                        )}
+                        {["DISETUJUI", "DIBAYAR"].includes(e.status) && (
+                          <TombolAksi
+                            size="sm" variant="neutral"
+                            onClick={() => {
+                              const alasan = window.prompt("Alasan membatalkan pengeluaran ini (salah input total)? Jurnalnya akan dibalik, riwayat tetap tersimpan:");
+                              if (alasan?.trim()) return aksi(() => api.cancelFinanceExpense(e.id, alasan.trim()));
+                            }}
+                          >
+                            Batalkan
+                          </TombolAksi>
+                        )}
                         {["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status) && (
                           <>
                             <TombolAksi
@@ -242,6 +260,11 @@ export default function FinanceExpenses() {
         expense={bayarUntuk} onClose={() => setBayarUntuk(null)}
         rekening={rekening}
         onSubmit={(d) => aksi(() => api.payFinanceExpense(bayarUntuk.id, d))}
+      />
+      <EditDokumen
+        doc={editUntuk} jenis="expenses" kategori={kategori} rekening={rekening}
+        onClose={() => setEditUntuk(null)}
+        onSaved={() => { setEditUntuk(null); muat(); }}
       />
     </HalamanFinance>
   );

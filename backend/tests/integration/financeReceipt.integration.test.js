@@ -99,7 +99,7 @@ test("Verifikasi bukti: pembuat DILARANG memverifikasi sendiri; admin lain boleh
   let row = await testPrisma.finPurchase.findUnique({ where: { id: p.body.id } });
   assert.equal(row.receiptVerifiedById, owner.user.id);
 
-  await cNat.post(`/api/finance/purchases/${p.body.id}/bukti`, { receiptUrl: "/media/finance-receipts/baru.jpg" });
+  await cNat.post(`/api/finance/purchases/${p.body.id}/bukti`, { receiptUrl: "/media/finance-receipts/baru.jpg", reason: "foto salah upload" });
   row = await testPrisma.finPurchase.findUnique({ where: { id: p.body.id } });
   assert.equal(row.receiptVerifiedAt, null, "foto diganti = verifikasi lama gugur");
 });
@@ -144,4 +144,60 @@ test("Antrean tinjau: memuat yang belum diverifikasi & yang wajib nota tapi koso
   q = await cOwner.get("/api/finance/bukti-review");
   assert.equal(q.body.belumDiverifikasi, 0);
   assert.equal(q.body.tanpaNota, 1);
+});
+
+test("Edit: WAJIB alasan; tanpa perubahan nyata ditolak; verifikasi gugur saat nominal berubah", async () => {
+  const { rekening, katBahan } = await siapkan();
+  const natasha = await createTestUser({ roles: ["ADMIN"] });
+  const owner = await createTestUser({ roles: ["ADMIN"] });
+  const cNat = makeClient(server.baseUrl, natasha.token);
+  const cOwner = makeClient(server.baseUrl, owner.token);
+
+  const p = await cNat.post("/api/finance/purchases", {
+    receiptUrl: NOTA, date: "2026-09-19", amount: 100_000, description: "Kain", categoryId: katBahan.id,
+    mode: "LANGSUNG", cashAccountId: rekening.id,
+  });
+  await cOwner.post(`/api/finance/purchases/${p.body.id}/verifikasi-bukti`, {});
+
+  const tanpaAlasan = await cNat.patch(`/api/finance/purchases/${p.body.id}`, { amount: 120_000 });
+  assert.equal(tanpaAlasan.status, 400);
+  assert.match(tanpaAlasan.body.error, /alasan/i);
+
+  const samaSaja = await cNat.patch(`/api/finance/purchases/${p.body.id}`, { amount: 100_000, description: "Kain", reason: "iseng" });
+  assert.equal(samaSaja.status, 400, "field yang nilainya sama tidak dihitung sebagai perubahan");
+
+  const ok = await cNat.patch(`/api/finance/purchases/${p.body.id}`, { amount: 120_000, reason: "salah ketik nominal" });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const row = await testPrisma.finPurchase.findUnique({ where: { id: p.body.id } });
+  assert.equal(row.receiptVerifiedAt, null, "nominal berubah = bukti perlu diverifikasi ulang");
+  const log = await testPrisma.activityEvent.findFirst({ where: { entityId: p.body.id, eventType: "DOCUMENT_EDITED" } });
+  assert.equal(log.metadata.reason, "salah ketik nominal");
+});
+
+test("Ganti foto bukti yang sudah ada WAJIB beralasan; koreksi yang cuma menyentuh foto/catatan TIDAK membalik jurnal", async () => {
+  const { rekening, katBahan } = await siapkan();
+  const { token } = await createTestUser({ roles: ["ADMIN"] });
+  const client = makeClient(server.baseUrl, token);
+
+  const p = await client.post("/api/finance/purchases", {
+    receiptUrl: NOTA, date: "2026-09-19", amount: 100_000, description: "Paku", categoryId: katBahan.id,
+    mode: "LANGSUNG", cashAccountId: rekening.id,
+  });
+  await client.post(`/api/finance/purchases/${p.body.id}/approve`, {});
+  const jurnalAwal = await testPrisma.finJournalEntry.count();
+
+  const tanpaAlasan = await client.post(`/api/finance/purchases/${p.body.id}/bukti`, { receiptUrl: "/media/finance-receipts/lain.jpg" });
+  assert.equal(tanpaAlasan.status, 400);
+  const denganAlasan = await client.post(`/api/finance/purchases/${p.body.id}/bukti`, { receiptUrl: "/media/finance-receipts/lain.jpg", reason: "foto tertukar" });
+  assert.equal(denganAlasan.status, 200, JSON.stringify(denganAlasan.body));
+
+  const koreksiFoto = await client.post(`/api/finance/purchases/${p.body.id}/koreksi`, {
+    receiptUrl: "/media/finance-receipts/tiga.jpg", notes: "nota asli menyusul", reason: "nota diganti",
+  });
+  assert.equal(koreksiFoto.status, 200, JSON.stringify(koreksiFoto.body));
+  assert.equal(await testPrisma.finJournalEntry.count(), jurnalAwal, "foto/catatan tidak menambah jurnal apa pun");
+
+  const koreksiNominal = await client.post(`/api/finance/purchases/${p.body.id}/koreksi`, { amount: 90_000, reason: "salah ketik" });
+  assert.equal(koreksiNominal.status, 200, JSON.stringify(koreksiNominal.body));
+  assert.ok(await testPrisma.finJournalEntry.count() > jurnalAwal, "nominal berubah = jurnal lama dibalik + jurnal baru");
 });

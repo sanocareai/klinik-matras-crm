@@ -250,7 +250,7 @@ test("PATCH edit pengeluaran HANYA sah selama DRAFT/MENUNGGU_APPROVAL — ditola
   assert.equal(created.status, 201, JSON.stringify(created.body));
   assert.equal(created.body.status, "DRAFT");
 
-  const edit = await client.patch(`/api/finance/expenses/${created.body.id}`, { amount: 150_000, description: "Sudah benar" });
+  const edit = await client.patch(`/api/finance/expenses/${created.body.id}`, { amount: 150_000, description: "Sudah benar", reason: "salah ketik" });
   assert.equal(edit.status, 200, JSON.stringify(edit.body));
   assert.equal(edit.body.amount, 150_000);
   assert.equal(edit.body.description, "Sudah benar");
@@ -263,7 +263,7 @@ test("PATCH edit pengeluaran HANYA sah selama DRAFT/MENUNGGU_APPROVAL — ditola
   assert.equal(approved.status, 200, JSON.stringify(approved.body));
   assert.equal(approved.body.status, "DISETUJUI");
 
-  const editSetelahPosting = await client.patch(`/api/finance/expenses/${created.body.id}`, { amount: 999_000 });
+  const editSetelahPosting = await client.patch(`/api/finance/expenses/${created.body.id}`, { amount: 999_000, reason: "coba" });
   assert.equal(editSetelahPosting.status, 409, JSON.stringify(editSetelahPosting.body));
 });
 

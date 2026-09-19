@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Plus, ShoppingCart } from "lucide-react";
+import { Plus, ShoppingCart, Pencil } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -15,6 +15,7 @@ import {
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
   LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
+import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 
 // PEMBELIAN — barang/aset yang DIBELI dari luar, tanpa tagihan resmi supplier:
 // bahan baku (manual, sebelum Gudang dipakai penuh), aset tetap (kendaraan,
@@ -57,6 +58,7 @@ export default function FinancePurchases() {
   const [pesan, setPesan] = useState(null);
   const [modalBaru, setModalBaru] = useState(false);
   const [bayarUntuk, setBayarUntuk] = useState(null);
+  const [editUntuk, setEditUntuk] = useState(null);
 
   const muat = useCallback(async () => {
     setLoading(true);
@@ -208,6 +210,22 @@ export default function FinancePurchases() {
                     <TD><SelBukti doc={p} jenis="purchases" aksi={aksi} /></TD>
                     <TD>
                       <div className="flex justify-end gap-1">
+                        {STATUS_BISA_DIEDIT.includes(p.status) && (
+                          <Button size="sm" variant="neutral" onClick={() => setEditUntuk(p)} title="Edit / koreksi">
+                            <Pencil size={13} /> Edit
+                          </Button>
+                        )}
+                        {["DISETUJUI", "DIBAYAR"].includes(p.status) && (
+                          <TombolAksi
+                            size="sm" variant="neutral"
+                            onClick={() => {
+                              const alasan = window.prompt("Alasan membatalkan pembelian ini (salah input total)? Jurnalnya akan dibalik, riwayat tetap tersimpan:");
+                              if (alasan?.trim()) return aksi(() => api.cancelFinancePurchase(p.id, alasan.trim()));
+                            }}
+                          >
+                            Batalkan
+                          </TombolAksi>
+                        )}
                         {["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) && (
                           <>
                             <TombolAksi
@@ -251,6 +269,11 @@ export default function FinancePurchases() {
         purchase={bayarUntuk} onClose={() => setBayarUntuk(null)}
         rekening={rekening}
         onSubmit={(d) => aksi(() => api.payFinancePurchase(bayarUntuk.id, d))}
+      />
+      <EditDokumen
+        doc={editUntuk} jenis="purchases" kategori={kategori} rekening={rekening}
+        onClose={() => setEditUntuk(null)}
+        onSaved={() => { setEditUntuk(null); muat(); }}
       />
     </HalamanFinance>
   );

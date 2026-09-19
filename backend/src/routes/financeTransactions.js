@@ -88,6 +88,35 @@ async function balikkanJurnalAktif(tx, { keyPrefix, alasan, userId }) {
   return entry;
 }
 
+// Field yang MEMPENGARUHI isi jurnal. Perubahan yang HANYA menyentuh field di
+// luar daftar ini (foto bukti, catatan) tidak perlu membalik & memposting ulang
+// jurnal — cukup dicatat, supaya salah foto tidak menambah 3 jurnal di buku besar.
+const FIELD_JURNAL = new Set([
+  "date", "amount", "description", "categoryId", "division", "cashAccountId",
+  "supplierId", "reimburseToId", "payeeName", "orderId", "unitId",
+]);
+
+/** Buang field yang nilainya SAMA dengan aslinya — form edit mengirim semua kolom. */
+function bedaDenganAsli(asli, perubahan) {
+  const beda = {};
+  for (const [k, v] of Object.entries(perubahan)) {
+    const lama = asli[k];
+    let sama;
+    if (k === "amount") sama = toMoney(lama).equals(v);
+    else if (k === "date") sama = new Date(lama).toISOString().slice(0, 10) === new Date(v).toISOString().slice(0, 10);
+    else sama = (lama ?? null) === (v ?? null);
+    if (!sama) beda[k] = v;
+  }
+  return beda;
+}
+
+/** Verifikasi bukti gugur kalau yang diverifikasi (foto/nominal/tanggal) berubah. */
+function resetVerifikasiBukti(perubahan) {
+  return ["amount", "date", "receiptUrl"].some((k) => k in perubahan)
+    ? { receiptVerifiedAt: null, receiptVerifiedById: null }
+    : {};
+}
+
 /** Suffix idempotencyKey BARU untuk jurnal pengganti sebuah koreksi. */
 function suffixKoreksi() {
   return `:KOREKSI:${randomUUID()}`;
@@ -439,6 +468,8 @@ async function siapkanPerubahanExpense(tx, body, modeSaatIni) {
 financeTxRouter.patch("/expenses/:id", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
   try {
     const hasil = await prisma.$transaction(async (tx) => {
+      const reason = req.body?.reason?.trim();
+      if (!reason) throw err("Alasan perubahan wajib diisi");
       const e = await tx.finExpense.findUnique({ where: { id: req.params.id } });
       if (!e) throw err("Pengeluaran tidak ditemukan", 404);
       if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status)) {
@@ -447,13 +478,16 @@ financeTxRouter.patch("/expenses/:id", requirePermission(P.FINANCE_ADMIN), async
           409
         );
       }
-      const perubahan = await siapkanPerubahanExpense(tx, req.body, e.mode);
-      const updated = await tx.finExpense.update({ where: { id: e.id }, data: perubahan, include: expenseInclude });
+      const perubahan = bedaDenganAsli(e, await siapkanPerubahanExpense(tx, req.body, e.mode));
+      if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
+      const updated = await tx.finExpense.update({
+        where: { id: e.id }, data: { ...perubahan, ...resetVerifikasiBukti(perubahan) }, include: expenseInclude,
+      });
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_EXPENSE, entityId: e.id,
         eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
         metadata: {
-          expenseNumber: e.expenseNumber, status: e.status,
+          expenseNumber: e.expenseNumber, status: e.status, reason,
           changes: Object.fromEntries(Object.keys(perubahan).map((k) => [k, { from: e[k], to: perubahan[k] }])),
         },
       });
@@ -488,24 +522,30 @@ financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN)
         );
       }
 
-      const perubahan = await siapkanPerubahanExpense(tx, req.body, e.mode);
+      const perubahan = bedaDenganAsli(e, await siapkanPerubahanExpense(tx, req.body, e.mode));
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
+      const menyentuhJurnal = Object.keys(perubahan).some((k) => FIELD_JURNAL.has(k));
 
       // Balikkan jurnal PEMBAYARAN dulu (kalau ada), baru jurnal pengakuan
       // beban — urutan yang sama dengan /cancel. Dua keluarga key TERPISAH
       // (lihat komentar balikkanJurnalAktif) — tanpa ini, expense DIBAYAR
-      // hanya salah satu jurnalnya yang terbalik.
+      // hanya salah satu jurnalnya yang terbalik. Dilewati kalau yang
+      // dikoreksi cuma foto/catatan (tidak mengubah isi jurnal).
       const alasanKoreksi = `Koreksi ${e.expenseNumber} — ${reason}`;
-      await balikkanJurnalAktif(tx, { keyPrefix: EXPENSE_KEY.expensePaid(e.id), alasan: alasanKoreksi, userId: req.user.id });
-      await balikkanJurnalAktif(tx, { keyPrefix: EXPENSE_KEY.expense(e.id), alasan: alasanKoreksi, userId: req.user.id });
+      if (menyentuhJurnal) {
+        await balikkanJurnalAktif(tx, { keyPrefix: EXPENSE_KEY.expensePaid(e.id), alasan: alasanKoreksi, userId: req.user.id });
+        await balikkanJurnalAktif(tx, { keyPrefix: EXPENSE_KEY.expense(e.id), alasan: alasanKoreksi, userId: req.user.id });
+      }
 
       const before = Object.fromEntries(Object.keys(perubahan).map((k) => [k, e[k]]));
-      const updated = await tx.finExpense.update({ where: { id: e.id }, data: perubahan });
+      const updated = await tx.finExpense.update({ where: { id: e.id }, data: { ...perubahan, ...resetVerifikasiBukti(perubahan) } });
 
-      const suffix = suffixKoreksi();
-      await postExpenseApproved(tx, { expenseId: e.id, userId: req.user.id, keySuffix: suffix });
-      if (e.status === "DIBAYAR" && e.mode !== "LANGSUNG") {
-        await postExpensePaid(tx, { expenseId: e.id, userId: req.user.id, keySuffix: suffix });
+      if (menyentuhJurnal) {
+        const suffix = suffixKoreksi();
+        await postExpenseApproved(tx, { expenseId: e.id, userId: req.user.id, keySuffix: suffix });
+        if (e.status === "DIBAYAR" && e.mode !== "LANGSUNG") {
+          await postExpensePaid(tx, { expenseId: e.id, userId: req.user.id, keySuffix: suffix });
+        }
       }
 
       await recordActivity(tx, {
@@ -846,6 +886,8 @@ async function siapkanPerubahanPurchase(tx, body, modeSaatIni) {
 financeTxRouter.patch("/purchases/:id", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
   try {
     const hasil = await prisma.$transaction(async (tx) => {
+      const reason = req.body?.reason?.trim();
+      if (!reason) throw err("Alasan perubahan wajib diisi");
       const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
       if (!p) throw err("Pembelian tidak ditemukan", 404);
       if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status)) {
@@ -854,13 +896,16 @@ financeTxRouter.patch("/purchases/:id", requirePermission(P.FINANCE_ADMIN), asyn
           409
         );
       }
-      const perubahan = await siapkanPerubahanPurchase(tx, req.body, p.mode);
-      const updated = await tx.finPurchase.update({ where: { id: p.id }, data: perubahan, include: purchaseInclude });
+      const perubahan = bedaDenganAsli(p, await siapkanPerubahanPurchase(tx, req.body, p.mode));
+      if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
+      const updated = await tx.finPurchase.update({
+        where: { id: p.id }, data: { ...perubahan, ...resetVerifikasiBukti(perubahan) }, include: purchaseInclude,
+      });
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: p.id,
         eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
         metadata: {
-          purchaseNumber: p.purchaseNumber, status: p.status,
+          purchaseNumber: p.purchaseNumber, status: p.status, reason,
           changes: Object.fromEntries(Object.keys(perubahan).map((k) => [k, { from: p[k], to: perubahan[k] }])),
         },
       });
@@ -888,20 +933,25 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
         );
       }
 
-      const perubahan = await siapkanPerubahanPurchase(tx, req.body, p.mode);
+      const perubahan = bedaDenganAsli(p, await siapkanPerubahanPurchase(tx, req.body, p.mode));
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
+      const menyentuhJurnal = Object.keys(perubahan).some((k) => FIELD_JURNAL.has(k));
 
       const alasanKoreksi = `Koreksi ${p.purchaseNumber} — ${reason}`;
-      await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchasePaid(p.id), alasan: alasanKoreksi, userId: req.user.id });
-      await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchase(p.id), alasan: alasanKoreksi, userId: req.user.id });
+      if (menyentuhJurnal) {
+        await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchasePaid(p.id), alasan: alasanKoreksi, userId: req.user.id });
+        await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchase(p.id), alasan: alasanKoreksi, userId: req.user.id });
+      }
 
       const before = Object.fromEntries(Object.keys(perubahan).map((k) => [k, p[k]]));
-      const updated = await tx.finPurchase.update({ where: { id: p.id }, data: perubahan });
+      const updated = await tx.finPurchase.update({ where: { id: p.id }, data: { ...perubahan, ...resetVerifikasiBukti(perubahan) } });
 
-      const suffix = suffixKoreksi();
-      await postPurchaseApproved(tx, { purchaseId: p.id, userId: req.user.id, keySuffix: suffix });
-      if (p.status === "DIBAYAR" && p.mode !== "LANGSUNG") {
-        await postPurchasePaid(tx, { purchaseId: p.id, userId: req.user.id, keySuffix: suffix });
+      if (menyentuhJurnal) {
+        const suffix = suffixKoreksi();
+        await postPurchaseApproved(tx, { purchaseId: p.id, userId: req.user.id, keySuffix: suffix });
+        if (p.status === "DIBAYAR" && p.mode !== "LANGSUNG") {
+          await postPurchasePaid(tx, { purchaseId: p.id, userId: req.user.id, keySuffix: suffix });
+        }
       }
 
       await recordActivity(tx, {
@@ -2204,15 +2254,27 @@ financeTxRouter.post("/:jenis(expenses|purchases)/:id/bukti",
       if (receiptUrl && !String(receiptUrl).startsWith(`${RECEIPTS_URL_PREFIX}/`)) {
         throw err("Bukti harus diunggah lewat fitur upload nota");
       }
-      const doc = await model.findUnique({ where: { id: req.params.id }, select: { id: true, status: true, createdById: true } });
+      const doc = await model.findUnique({ where: { id: req.params.id }, select: { id: true, status: true, createdById: true, receiptUrl: true } });
       if (!doc) throw err("Dokumen tidak ditemukan", 404);
+      const menggantiFoto = !!doc.receiptUrl && doc.receiptUrl !== receiptUrl;
+      const alasanGanti = req.body?.reason?.trim();
+      if (menggantiFoto && !alasanGanti) throw err("Alasan wajib diisi untuk mengganti atau melepas foto bukti yang sudah ada");
       if (doc.status === "DIBATALKAN") throw err("Dokumen yang sudah dibatalkan tidak bisa diubah buktinya", 409);
       if (!hasPermission(req.user, P.FINANCE_POST) && doc.createdById !== req.user.id) {
         throw err("Anda hanya bisa mengubah bukti pengajuan Anda sendiri", 403);
       }
-      await model.update({
-        where: { id: doc.id },
-        data: { receiptUrl, receiptVerifiedAt: null, receiptVerifiedById: null },
+      await prisma.$transaction(async (tx) => {
+        await tx[MODEL_BUKTI[req.params.jenis]].update({
+          where: { id: doc.id },
+          data: { receiptUrl, receiptVerifiedAt: null, receiptVerifiedById: null },
+        });
+        if (menggantiFoto) {
+          await recordActivity(tx, {
+            entityType: req.params.jenis === "expenses" ? ENTITY_TYPES.FIN_EXPENSE : ENTITY_TYPES.FIN_PURCHASE,
+            entityId: doc.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+            metadata: { aksi: "ganti_bukti", reason: alasanGanti, from: doc.receiptUrl, to: receiptUrl },
+          });
+        }
       });
       res.json({ ok: true, receiptUrl, dipakaiDi: receiptUrl ? await cariPemakaiBukti(prisma, receiptUrl, { kecuali: doc.id }) : [] });
     } catch (e) {

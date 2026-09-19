@@ -1279,6 +1279,8 @@ export const api = {
   uploadFinanceReceipt: (formData) => requestFormData("/finance/receipts/upload", formData),
   setFinanceReceipt: (jenis, id, receiptUrl) => request(`/finance/${jenis}/${id}/bukti`, { method: "POST", body: JSON.stringify({ receiptUrl }) }),
   verifyFinanceReceipt: (jenis, id) => request(`/finance/${jenis}/${id}/verifikasi-bukti`, { method: "POST" }),
+  editFinanceDoc: (jenis, id, data) => request(`/finance/${jenis}/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  koreksiFinanceDoc: (jenis, id, data) => request(`/finance/${jenis}/${id}/koreksi`, { method: "POST", body: JSON.stringify(data) }),
   getFinanceReceiptReview: () => request("/finance/bukti-review"),
   getFinancePurchaseCategories: (params = {}) => request(`/finance/purchase-categories${qsFinance(params)}`),
   getFinancePurchases: (params = {}) => request(`/finance/purchases${qsFinance(params)}`),
