@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ENV } from "@/lib/env";
-import { periodeBulanIni } from "@/lib/dates";
 import { fetchDashboard } from "@/api/finance";
-import { approvalContoh, dashboardContoh, laporanContoh, transaksiContoh, trenContoh } from "@/mocks/data";
+import { approvalContoh, laporanContoh, transaksiContoh, trenContoh } from "@/mocks/data";
+import { dashboardSkenario, getSkenario } from "@/mocks/skenario";
+import { ApiError } from "@/api/errors";
 import type { ApprovalItem, DashboardData, JenisLaporan, LaporanRingkas, TransaksiItem, TrenBulan } from "@/api/types";
 
 // HOOK DATA — satu tempat yang memilih sumber: data contoh (dev) atau server.
@@ -18,12 +19,16 @@ export class BelumTersedia extends Error {
 
 const tunda = <T,>(v: T, ms = 350) => new Promise<T>((res) => setTimeout(() => res(v), ms));
 
-export function useDashboard() {
-  const periode = periodeBulanIni();
+/** Dashboard Beranda untuk satu periode. Data periode sebelumnya tetap tampil selama periode baru dimuat. */
+export function useDashboard(periode: { from: string; to: string }) {
   return useQuery<DashboardData>({
-    queryKey: ["dashboard", periode.from, periode.to, ENV.useMocks],
-    queryFn: () => (ENV.useMocks ? tunda(dashboardContoh) : fetchDashboard(periode)),
+    queryKey: ["dashboard", periode.from, periode.to, ENV.useMocks, ENV.useMocks ? getSkenario() : ""],
+    queryFn: () => (ENV.useMocks ? dashboardSkenario() : fetchDashboard(periode)),
     staleTime: 60_000,
+    refetchOnWindowFocus: true, // kembali ke app → ambil ulang bila data sudah > 1 menit
+    placeholderData: keepPreviousData,
+    // Galat 4xx (izin, sesi) tidak diulang; jaringan/server diulang sekali.
+    retry: (n, e) => n < 1 && !(e instanceof ApiError && e.status >= 400 && e.status < 500),
   });
 }
 

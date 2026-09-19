@@ -12,45 +12,47 @@ const m = toMoney;
 export const dashboardContoh: DashboardData = {
   periode: { from: "2026-09-01", to: "2026-09-30" },
   kasBank: [
-    { id: "kb1", name: "SANOBANK Kemal", kind: "BANK", saldo: m("158420350.00") },
-    { id: "kb2", name: "PT Sano", kind: "BANK", saldo: m("96780125.50") },
-    { id: "kb3", name: "Kas Kantor", kind: "KAS", saldo: m("12450000.00") },
-    { id: "kb4", name: "QRIS / e-wallet", kind: "EWALLET", saldo: m("5300250.00") },
+    { id: "kb1", name: "SANOBANK Kemal", kind: "BANK", bankName: "SANOBANK", saldo: m("158420350.00") },
+    { id: "kb2", name: "PT Sano", kind: "BANK", bankName: "BCA", saldo: m("96780125.50") },
+    { id: "kb3", name: "Kas Kantor", kind: "KAS", bankName: null, saldo: m("12450000.00") },
+    { id: "kb4", name: "QRIS / e-wallet", kind: "EWALLET", bankName: null, saldo: m("5300250.00") },
   ],
   totalKas: m("272950725.50"),
   labaRugi: {
     pendapatanBruto: m("418600000.00"), retur: m("3200000.00"), pendapatanBersih: m("415400000.00"),
     bebanPokok: m("201350000.00"), labaKotor: m("214050000.00"), bebanOperasional: m("172300000.00"), labaBersih: m("41750000.00"),
+    marginKotor: 51.53, marginBersih: 10.05,
   },
   piutang: {
     total: m("236900000.00"),
     ember: [
-      { label: "Belum jatuh tempo", total: m("118400000.00"), jumlah: 14 },
-      { label: "1–30 hari", total: m("64200000.00"), jumlah: 9 },
-      { label: "31–60 hari", total: m("31800000.00"), jumlah: 5 },
-      { label: "61–90 hari", total: m("14500000.00"), jumlah: 3 },
-      { label: "> 90 hari", total: m("8000000.00"), jumlah: 2 },
+      { label: "Belum jatuh tempo", total: m("118400000.00"), jumlah: null },
+      { label: "1–30 hari", total: m("64200000.00"), jumlah: null },
+      { label: "31–60 hari", total: m("31800000.00"), jumlah: null },
+      { label: "61–90 hari", total: m("14500000.00"), jumlah: null },
+      { label: "> 90 hari", total: m("8000000.00"), jumlah: null },
     ],
     menungguVerifikasi: { jumlah: 12, total: m("38600000.00") },
   },
   utang: {
     total: m("57450000.00"),
     ember: [
-      { label: "Belum jatuh tempo", total: m("31200000.00"), jumlah: 4 },
-      { label: "1–30 hari", total: m("18750000.00"), jumlah: 3 },
-      { label: "31–60 hari", total: m("7500000.00"), jumlah: 1 },
-      { label: "61–90 hari", total: m("0.00"), jumlah: 0 },
-      { label: "> 90 hari", total: m("0.00"), jumlah: 0 },
+      { label: "Belum jatuh tempo", total: m("31200000.00"), jumlah: null },
+      { label: "1–30 hari", total: m("18750000.00"), jumlah: null },
+      { label: "31–60 hari", total: m("7500000.00"), jumlah: null },
+      { label: "61–90 hari", total: m("0.00"), jumlah: null },
+      { label: "> 90 hari", total: m("0.00"), jumlah: null },
     ],
   },
   antrean: {
     jumlahPembayaranBelumVerifikasi: 4,
-    lunasBelumDicatat: { jumlah: 12, total: m("38600000.00") },
+    lunasBelumDicatat: { jumlah: 12, total: m("38600000.00"), baru: { jumlah: 5, total: m("21400000.00") }, lama: { jumlah: 7, total: m("17200000.00") } },
     pengeluaranMenunggu: 3,
     pembelianMenunggu: 2,
     tagihanMenunggu: 1,
     refundMenunggu: 1,
   },
+  gate: { aktif: true, sejak: "2026-09-01T00:00:00.000Z" },
   jurnalTerakhir: [
     { id: "j1", entryNumber: "JV-19092026-014", date: "2026-09-19", description: "Pembelian kain Ekstra Fleece — CV Tekstil Jaya", source: "PEMBELIAN", status: "POSTED", total: m("18450000.00") },
     { id: "j2", entryNumber: "JV-19092026-013", date: "2026-09-19", description: "Pelunasan piutang order RES-05092026-027", source: "PEMBAYARAN_ORDER", status: "POSTED", total: m("4750000.00") },
@@ -64,8 +66,11 @@ export const dashboardContoh: DashboardData = {
   catatan: {
     gapTerbuka: 2,
     saldoAwalTerisi: true,
+    mulaiPembukuan: "2026-08-01",
+    periodeTerbuka: 2,
     pesan: ["2 transaksi belum bisa dibukukan (lihat Data Belum Lengkap). Selama itu belum dibereskan, angka di laporan ini KURANG dari kenyataan."],
   },
+  bagianHilang: [],
 };
 
 export const trenContoh: TrenBulan[] = [
@@ -99,7 +104,7 @@ export const transaksiContoh: TransaksiItem[] = [
 ];
 
 const l = (judul: string, periode: string, ringkasan: LaporanRingkas["ringkasan"], kelompok: LaporanRingkas["kelompok"], extra: Partial<LaporanRingkas> = {}): LaporanRingkas => ({
-  judul, periode, ringkasan, kelompok, catatan: dashboardContoh.catatan.pesan, ...extra,
+  judul, periode, ringkasan, kelompok, catatan: dashboardContoh.catatan?.pesan ?? [], ...extra,
 });
 
 export const laporanContoh: Record<JenisLaporan, LaporanRingkas> = {
@@ -139,11 +144,11 @@ export const laporanContoh: Record<JenisLaporan, LaporanRingkas> = {
     { label: "Total piutang", nilai: m("236900000.00"), tebal: true },
     { label: "Menunggu verifikasi (Lunas di CRM)", nilai: m("38600000.00") },
   ], [
-    { judul: "Per umur", baris: dashboardContoh.piutang.ember.map((e) => ({ nama: e.label, nilai: e.total })) },
+    { judul: "Per umur", baris: (dashboardContoh.piutang?.ember ?? []).map((e) => ({ nama: e.label, nilai: e.total })) },
   ]),
   "umur-utang": l("Umur Utang", "per 19 September 2026", [
     { label: "Total utang", nilai: m("57450000.00"), tebal: true },
   ], [
-    { judul: "Per umur", baris: dashboardContoh.utang.ember.map((e) => ({ nama: e.label, nilai: e.total })) },
+    { judul: "Per umur", baris: (dashboardContoh.utang?.ember ?? []).map((e) => ({ nama: e.label, nilai: e.total })) },
   ]),
 };

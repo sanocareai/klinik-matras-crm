@@ -7,6 +7,7 @@ import type { Capabilities, LoginResponse, SessionUser } from "@/api/types";
 import { ENV } from "@/lib/env";
 import { log } from "@/lib/log";
 import { peranContoh } from "@/mocks/roles";
+import { setSkenario, skenarioDariEmail } from "@/mocks/skenario";
 import { clearSession, getDeviceId, loadSession, saveSession, saveTokens } from "./storage";
 import { useLock } from "./lock";
 
@@ -67,6 +68,7 @@ export const useSession = create<SessionState>((set, get) => ({
   login: async (email, password) => {
     if (ENV.useMocks) {
       const p = peranContoh(email);
+      setSkenario(skenarioDariEmail(email));
       if ("tanpaAkses" in p) {
         throw new ApiError({ status: 403, code: "NOT_FINANCE_TEAM", message: PESAN_TIDAK_BERIZIN });
       }

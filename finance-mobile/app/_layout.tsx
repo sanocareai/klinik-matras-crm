@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
-import { Text, View } from "react-native";
+import { AppState, Text, View } from "react-native";
+import NetInfo from "@react-native-community/netinfo";
 import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
@@ -9,7 +10,7 @@ import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
 import { Inter_500Medium } from "@expo-google-fonts/inter/500Medium";
 import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
 import { Inter_700Bold } from "@expo-google-fonts/inter/700Bold";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { preventScreenCaptureAsync, allowScreenCaptureAsync } from "expo-screen-capture";
 import Constants, { ExecutionEnvironment } from "expo-constants";
@@ -29,6 +30,9 @@ void SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });
+
+// TanStack Query mengikuti status jaringan & app: kembali online / kembali ke depan → data basi diambil ulang.
+onlineManager.setEventListener((setOnline) => NetInfo.addEventListener((st) => setOnline(st.isConnected !== false && st.isInternetReachable !== false)));
 
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
@@ -98,6 +102,11 @@ export default function RootLayout() {
   const prefsLoaded = usePrefs((s) => s.loaded);
   const status = useSession((s) => s.status);
   const lockReady = useLock((s) => s.ready);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (st) => focusManager.setFocused(st === "active"));
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     void usePrefs.getState().load();

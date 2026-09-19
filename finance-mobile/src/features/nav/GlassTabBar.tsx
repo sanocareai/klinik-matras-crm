@@ -8,6 +8,7 @@ import { PressableScale } from "@/design/ui";
 import { font } from "@/design/tokens";
 import { haptic } from "@/design/haptics";
 import { useDashboard } from "@/hooks/data";
+import { usePeriodeAktif } from "@/features/beranda/usePeriodeAktif";
 import { NEED_TAB, bisaMencatatAtauVerifikasi, has } from "@/auth/capabilities";
 import { useSession } from "@/auth/session";
 import { S } from "@/lib/strings";
@@ -35,11 +36,11 @@ export function GlassTabBar({ state, navigation }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { data } = useDashboard();
+  const { data } = useDashboard(usePeriodeAktif());
   const caps = useSession((s) => s.capabilities);
-  const menunggu = data
-    ? data.antrean.pengeluaranMenunggu + data.antrean.pembelianMenunggu + data.antrean.tagihanMenunggu + data.antrean.refundMenunggu
-    : 0;
+  // Lencana Persetujuan = angka dari server (bukan dihitung ulang): jumlah pengajuan yang menunggu.
+  const a = data?.antrean;
+  const menunggu = a ? a.pengeluaranMenunggu + a.pembelianMenunggu + a.tagihanMenunggu + a.refundMenunggu : 0;
   const aktifNama = state.routes[state.index]?.name;
   // FAB hanya untuk yang boleh mencatat atau memverifikasi pembayaran (Approver/Accountant-baca tidak melihatnya).
   const tampilFab = (aktifNama === "index" || aktifNama === "transaksi") && bisaMencatatAtauVerifikasi(caps);
@@ -90,7 +91,7 @@ export function GlassTabBar({ state, navigation }: Props) {
                   </View>
                 ) : null}
               </View>
-              <Text style={{ color: warna, fontFamily: fokus ? font.semibold : font.medium, fontSize: 11 }}>{meta.label}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={1.15} style={{ color: warna, fontFamily: fokus ? font.semibold : font.medium, fontSize: 11, maxWidth: "100%" }}>{meta.label}</Text>
             </PressableScale>
           );
         })}

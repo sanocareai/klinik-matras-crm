@@ -27,5 +27,17 @@ jest.mock("expo-local-authentication", () => ({
   authenticateAsync: jest.fn(async () => ({ success: true })),
 }));
 jest.mock("react-native-safe-area-context", () => require("react-native-safe-area-context/jest/mock").default);
+// Jaringan: online secara default; tes mengubah nilai balik useNetInfo untuk skenario offline.
+jest.mock("@react-native-community/netinfo", () => ({
+  __esModule: true,
+  default: { addEventListener: jest.fn(() => jest.fn()), fetch: jest.fn(async () => ({ isConnected: true, isInternetReachable: true })) },
+  addEventListener: jest.fn(() => jest.fn()),
+  useNetInfo: jest.fn(() => ({ isConnected: true, isInternetReachable: true })),
+}));
+// Router: hanya push/back yang dipakai layar.
+jest.mock("expo-router", () => {
+  const push = jest.fn();
+  return { useRouter: () => ({ push, back: jest.fn(), replace: jest.fn() }), __push: push, Stack: () => null, useLocalSearchParams: () => ({}) };
+});
 // Ikon: komponen kosong per nama (paket ESM tidak diproses Jest).
 jest.mock("lucide-react-native", () => new Proxy({}, { get: (_t, nama) => (nama === "__esModule" ? true : () => null) }));

@@ -4,6 +4,7 @@ import { Eye, EyeOff, Lock } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/design/theme";
+import { StatusBarScrim } from "@/design/Screen";
 import { GlassCard } from "@/design/GlassCard";
 import { Button, MockBanner, OfflineBanner, PressableScale } from "@/design/ui";
 import { useOnline } from "@/hooks/useOnline";
@@ -95,6 +96,7 @@ export default function Login() {
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
+      <StatusBarScrim />
     </View>
   );
 }

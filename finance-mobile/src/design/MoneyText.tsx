@@ -28,10 +28,12 @@ type Props = {
   ringkas?: boolean;
   /** Paksa sembunyikan (mis. layar kunci) di luar preferensi pengguna. */
   sembunyikan?: boolean;
+  /** Kecilkan huruf otomatis agar nominal panjang tidak terpotong (default nyala). */
+  muat?: boolean;
   style?: StyleProp<TextStyle>;
 };
 
-export function MoneyText({ value, size = "md", color, autoNegatif = false, redupkanPecahan = false, ringkas = false, sembunyikan, style }: Props) {
+export function MoneyText({ value, size = "md", color, autoNegatif = false, redupkanPecahan = false, ringkas = false, sembunyikan, muat = true, style }: Props) {
   const { colors } = useTheme();
   const prefSembunyi = usePrefs((s) => s.sembunyikanAngka);
   const u = UKURAN[size];
@@ -41,20 +43,23 @@ export function MoneyText({ value, size = "md", color, autoNegatif = false, redu
     fontVariant: ["tabular-nums"], includeFontPadding: false,
   };
 
+  // Satu baris + mengecil sampai 60% agar rupiah panjang / font besar tidak terpotong atau membungkus.
+  const fit = muat ? { numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.6, maxFontSizeMultiplier: 1.3 } : {};
+
   if (sembunyikan ?? prefSembunyi) {
-    return <Text style={[dasar, style]} accessibilityLabel="Nominal disembunyikan">Rp ••••••</Text>;
+    return <Text {...fit} style={[dasar, style]} accessibilityLabel="Nominal disembunyikan">Rp ••••••</Text>;
   }
   if (ringkas) {
-    return <Text style={[dasar, style]}>{formatRupiahRingkas(value)}</Text>;
+    return <Text {...fit} style={[dasar, style]} accessibilityLabel={formatRupiah(value)}>{formatRupiahRingkas(value)}</Text>;
   }
   if (redupkanPecahan) {
     const { negatif, utuh, pecahan } = splitRupiah(value);
     return (
-      <Text style={[dasar, style]} accessibilityLabel={formatRupiah(value)}>
+      <Text {...fit} style={[dasar, style]} accessibilityLabel={formatRupiah(value)}>
         {negatif ? "-" : ""}Rp {utuh}
         {pecahan ? <Text style={{ opacity: 0.55 }}>,{pecahan}</Text> : null}
       </Text>
     );
   }
-  return <Text style={[dasar, style]}>{formatRupiah(value)}</Text>;
+  return <Text {...fit} style={[dasar, style]}>{formatRupiah(value)}</Text>;
 }

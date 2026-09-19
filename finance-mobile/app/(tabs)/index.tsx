@@ -1,12 +1,11 @@
 import React from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { BadgeCheck, CircleCheck, Eye, EyeOff, Landmark, TriangleAlert, Wallet, type LucideIcon } from "lucide-react-native";
+import { CloudOff, Eye, EyeOff, LogOut, ShieldOff, TriangleAlert, WifiOff, type LucideIcon } from "lucide-react-native";
 import { Screen } from "@/design/Screen";
 import { GlassCard } from "@/design/GlassCard";
-import { MoneyText } from "@/design/MoneyText";
-import { BarTren, DonatEmber, Legenda, WARNA_EMBER } from "@/design/charts";
-import { ErrorState, IconCircle, MockBanner, OfflineBanner, PressableScale, SectionHeader, Skeleton } from "@/design/ui";
+import { BarTren } from "@/design/charts";
+import { EmptyState, ErrorState, IconCircle, MockBanner, OfflineBanner, PressableScale, SectionHeader, Skeleton } from "@/design/ui";
 import { font, radius } from "@/design/tokens";
 import { useTheme } from "@/design/theme";
 import { usePrefs } from "@/design/prefs";
@@ -14,14 +13,21 @@ import { haptic } from "@/design/haptics";
 import { useDashboard, useTren } from "@/hooks/data";
 import { useOnline } from "@/hooks/useOnline";
 import { useSession } from "@/auth/session";
-import { has } from "@/auth/capabilities";
 import { aksiUntuk } from "@/features/aksi";
-import { ENV } from "@/lib/env";
-import { hariIniWIB, labelBulan, sapaan, tanggalPendek, tanggalPanjang } from "@/lib/dates";
-import { S } from "@/lib/strings";
 import { denganAkses } from "@/features/guard/RequireCapability";
+import { ENV } from "@/lib/env";
+import { hariIniWIB, sapaan, tanggalPanjang } from "@/lib/dates";
+import { isZero } from "@/lib/money";
+import { S } from "@/lib/strings";
+import { PeriodeBar } from "@/features/beranda/PeriodeBar";
+import { usePeriode } from "@/features/beranda/periodeStore";
+import { usePeriodeAktif } from "@/features/beranda/usePeriodeAktif";
+import { klasifikasiGalat, type JenisGalat } from "@/features/beranda/galat";
+import {
+  BagianBelumTersedia, DaftarRekening, HeroKas, JurnalTerakhir, KartuLabaRugi, KartuUmur, KesehatanPembukuan, PekerjaanTertunda, daftarTindakan,
+} from "@/features/beranda/Bagian";
 
-const IKON_REKENING: Record<string, LucideIcon> = { BANK: Landmark, KAS: Wallet, EWALLET: Wallet };
+const IKON_GALAT: Record<JenisGalat, LucideIcon> = { offline: WifiOff, sesi: LogOut, izin: ShieldOff, server: CloudOff, batas: TriangleAlert, lain: TriangleAlert };
 
 function Beranda() {
   const { colors } = useTheme();
@@ -31,25 +37,29 @@ function Beranda() {
   const caps = useSession((s) => s.capabilities);
   const sembunyi = usePrefs((s) => s.sembunyikanAngka);
   const setSembunyi = usePrefs((s) => s.setSembunyikanAngka);
-  const { data, isLoading, isError, error, refetch, isRefetching } = useDashboard();
+
+  const setPeriodeId = usePeriode((s) => s.setId);
+  const hari = hariIniWIB();
+  const periode = usePeriodeAktif();
+
+  const { data, isLoading, isError, error, refetch, isRefetching, isFetching, isPlaceholderData, dataUpdatedAt } = useDashboard(periode);
   const tren = useTren();
+  const muatUlang = () => void refetch();
 
-  // Aksi cepat berdasarkan capabilities (Owner: aksi catat bukan aksi cepat — PRD §12.4).
   const aksiTampil = aksiUntuk(caps);
-
-  const menunggu = data ? data.antrean.pengeluaranMenunggu + data.antrean.pembelianMenunggu + data.antrean.tagihanMenunggu + data.antrean.refundMenunggu : 0;
-  const verifikasi = data ? data.antrean.lunasBelumDicatat.jumlah + data.antrean.jumlahPembayaranBelumVerifikasi : 0;
-  const gap = data?.catatan.gapTerbuka ?? 0;
+  const gerakPeriode = isPlaceholderData; // periode baru sedang dimuat; data lama tampil redup
 
   return (
-    <Screen refreshing={isRefetching} onRefresh={() => void refetch()}>
+    <Screen refreshing={isRefetching && !isPlaceholderData} onRefresh={muatUlang}>
       {ENV.useMocks ? <MockBanner /> : null}
       {!online ? <OfflineBanner /> : null}
 
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 12 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 13 }}>{tanggalPanjang(hariIniWIB())}</Text>
-          <Text numberOfLines={1} style={{ color: colors.text, fontFamily: font.semibold, fontSize: 22 }}>{sapaan()}, {user?.name.split(" ")[0] ?? ""}</Text>
+          <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 13 }}>{tanggalPanjang(hari)}</Text>
+          <Text accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ color: colors.text, fontFamily: font.semibold, fontSize: 22 }}>
+            {sapaan()}, {user?.name.split(" ")[0] ?? ""}
+          </Text>
         </View>
         <PressableScale
           onPress={() => { haptic.tick(); setSembunyi(!sembunyi); }}
@@ -60,53 +70,65 @@ function Beranda() {
         </PressableScale>
       </View>
 
-      {isLoading ? (
+      <PeriodeBar periode={periode} onPilih={setPeriodeId} memuat={isLoading || gerakPeriode || (isFetching && !data)} diperbaruiMs={data && dataUpdatedAt ? dataUpdatedAt : null} />
+
+      {isLoading && !data ? (
         <BerandaMemuat />
-      ) : isError || !data ? (
-        <ErrorState judul="Beranda belum bisa dimuat" isi={error instanceof Error ? error.message : undefined} onCoba={() => void refetch()} />
+      ) : !data ? (
+        <GalatPenuh error={error} online={online} onCoba={muatUlang} />
+      ) : (
+        <View style={{ opacity: gerakPeriode ? 0.55 : 1 }}>
+          {isError ? <BannerBasi error={error} online={online} onCoba={muatUlang} /> : null}
+          <IsiBeranda
+            data={data}
+            aksiTampil={aksiTampil}
+            trenTampil={tren.data ?? null}
+            onBuka={(tujuan) => router.push(tujuan as never)}
+            onAksi={(id) => { haptic.ringan(); router.push({ pathname: "/aksi-cepat", params: { aksi: id } }); }}
+            onCoba={muatUlang}
+          />
+        </View>
+      )}
+    </Screen>
+  );
+}
+
+function IsiBeranda({
+  data, aksiTampil, trenTampil, onBuka, onAksi, onCoba,
+}: {
+  data: NonNullable<ReturnType<typeof useDashboard>["data"]>;
+  aksiTampil: ReturnType<typeof aksiUntuk>;
+  trenTampil: ReturnType<typeof useTren>["data"] | null;
+  onBuka: (tujuan: string) => void;
+  onAksi: (id: string) => void;
+  onCoba: () => void;
+}) {
+  const { colors } = useTheme();
+  const caps = useSession((s) => s.capabilities);
+  const tindakan = daftarTindakan(data.antrean, data.catatan?.gapTerbuka ?? 0, caps);
+  const belumAdaData = data.kasBank.length === 0 && data.jurnalTerakhir.length === 0 && data.bagianHilang.length === 0
+    && tindakan.length === 0 && data.labaRugi != null && isZero(data.labaRugi.pendapatanBersih);
+
+  return (
+    <>
+      {belumAdaData ? (
+        <EmptyState judul="Belum ada data keuangan" isi="Belum ada transaksi atau saldo rekening yang terbukukan. Tarik layar ke bawah untuk memuat ulang." aksi="Muat ulang" onAksi={onCoba} />
       ) : (
         <>
-          {/* Hero: total kas & bank */}
-          <GlassCard variant="hero" padding={20}>
-            <Text style={{ color: colors.heroTextMuted, fontFamily: font.medium, fontSize: 13 }}>{S.beranda.totalKas}</Text>
-            <View style={{ marginTop: 6 }}>
-              <MoneyText value={data.totalKas} size="hero" color={colors.heroText} redupkanPecahan />
-            </View>
-            <Text style={{ color: colors.heroTextMuted, fontFamily: font.regular, fontSize: 12, marginTop: 10 }}>
-              {data.kasBank.length} rekening · {labelBulan(data.periode.from)}
-            </Text>
-          </GlassCard>
+          {data.bagianHilang.includes("kasBank") ? <BagianBelumTersedia bagian="kasBank" onCoba={onCoba} /> : <HeroKas totalKas={data.totalKas} jumlahRekening={data.kasBank.length} />}
 
-          {/* Rekening */}
-          <SectionHeader judul={S.beranda.rekening} aksi={S.umum.lihatSemua} onAksi={() => router.push("/aksi-cepat?aksi=kas")} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingRight: 16 }} style={{ marginHorizontal: -16, paddingHorizontal: 16 }}>
-            {data.kasBank.map((k) => {
-              const Ikon = IKON_REKENING[k.kind] ?? Wallet;
-              return (
-                <GlassCard key={k.id} padding={14} style={{ width: 176 }}>
-                  <IconCircle icon={Ikon} tone="info" size={38} />
-                  <Text numberOfLines={1} style={{ color: colors.textMuted, fontFamily: font.medium, fontSize: 12, marginTop: 12 }}>{k.name}</Text>
-                  <MoneyText value={k.saldo} size="md" ringkas autoNegatif style={{ marginTop: 2 }} />
-                </GlassCard>
-              );
-            })}
-          </ScrollView>
+          <SectionHeader judul="Saldo per rekening" sub="Posisi saat ini" />
+          {data.bagianHilang.includes("kasBank") ? null : <DaftarRekening rekening={data.kasBank} />}
 
-          {/* Aksi cepat */}
           {aksiTampil.length > 0 ? (
             <>
               <SectionHeader judul={S.beranda.aksiCepat} />
               <GlassCard padding={12}>
                 <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
                   {aksiTampil.map((a) => (
-                    <PressableScale
-                      key={a.id}
-                      onPress={() => { haptic.ringan(); router.push({ pathname: "/aksi-cepat", params: { aksi: a.id } }); }}
-                      accessibilityLabel={a.label}
-                      style={{ width: "25%", alignItems: "center", paddingVertical: 10, gap: 6 }}
-                    >
+                    <PressableScale key={a.id} onPress={() => onAksi(a.id)} accessibilityLabel={a.label} style={{ width: "25%", alignItems: "center", paddingVertical: 10, gap: 6 }}>
                       <IconCircle icon={a.Icon} tone="info" size={46} />
-                      <Text numberOfLines={2} style={{ color: colors.text, fontFamily: font.medium, fontSize: 11, textAlign: "center", lineHeight: 14 }}>{a.label}</Text>
+                      <Text numberOfLines={2} maxFontSizeMultiplier={1.2} style={{ color: colors.text, fontFamily: font.medium, fontSize: 11, textAlign: "center", lineHeight: 14 }}>{a.label}</Text>
                     </PressableScale>
                   ))}
                 </View>
@@ -114,120 +136,85 @@ function Beranda() {
             </>
           ) : null}
 
-          {/* Perlu tindakan */}
-          {(menunggu > 0 || verifikasi > 0 || gap > 0) ? (
-            <>
-              <SectionHeader judul={S.beranda.perluTindakan} />
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                {has(caps, "financeApprove") ? (
-                  <Tindakan ikon={CircleCheck} nilai={menunggu} label="Menunggu persetujuan" tone="warning" onPress={() => router.push("/persetujuan")} />
-                ) : null}
-                {has(caps, "paymentRead") ? (
-                  <Tindakan ikon={BadgeCheck} nilai={verifikasi} label="Menunggu verifikasi" tone="info" onPress={() => router.push("/transaksi")} />
-                ) : null}
-                {gap > 0 ? <Tindakan ikon={TriangleAlert} nilai={gap} label="Data belum lengkap" tone="danger" onPress={() => router.push("/lainnya")} /> : null}
-              </View>
-            </>
-          ) : null}
-
-          {/* Ringkasan periode */}
-          <SectionHeader judul={S.beranda.periode} />
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <Kpi label={S.beranda.labaBersih} nilai={data.labaRugi.labaBersih} autoNegatif />
-            <Kpi label={S.beranda.piutang} nilai={data.piutang.total} />
-            <Kpi label={S.beranda.utang} nilai={data.utang.total} />
-          </View>
-
-          {tren.data ? (
-            <>
-              <SectionHeader judul={S.beranda.tren} />
-              <GlassCard><BarTren data={tren.data} /></GlassCard>
-            </>
-          ) : null}
-
-          <SectionHeader judul={S.beranda.komposisiPiutang} />
-          <GlassCard>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
-              <DonatEmber
-                ember={data.piutang.ember}
-                totalServer={data.piutang.total}
-                tengah={<><Text style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 11 }}>Piutang</Text><MoneyText value={data.piutang.total} size="sm" ringkas /></>}
-              />
-              <View style={{ flex: 1, gap: 8 }}>
-                {data.piutang.ember.map((e, i) => (
-                  <View key={e.label} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                    <Legenda warna={WARNA_EMBER(colors)[i % 5] ?? colors.primary} label={e.label} />
-                    <MoneyText value={e.total} size="sm" ringkas />
-                  </View>
-                ))}
-              </View>
-            </View>
-          </GlassCard>
-
-          <SectionHeader judul={S.beranda.jurnalTerakhir} />
-          <GlassCard padding={4}>
-            {data.jurnalTerakhir.map((j, i) => (
-              <View key={j.id} style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.hairline }}>
-                <View style={{ flex: 1 }}>
-                  <Text numberOfLines={2} style={{ color: colors.text, fontFamily: font.medium, fontSize: 14, lineHeight: 19 }}>{j.description}</Text>
-                  <Text style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 2 }}>{j.entryNumber} · {tanggalPendek(j.date)}</Text>
-                </View>
-                <MoneyText value={j.total} size="md" />
-              </View>
-            ))}
-          </GlassCard>
-
-          {data.catatan.pesan.length > 0 ? (
-            <GlassCard variant="flat" style={{ marginTop: 16 }}>
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <TriangleAlert size={18} color={colors.warning} strokeWidth={1.75} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: colors.text, fontFamily: font.semibold, fontSize: 13 }}>{S.beranda.catatan}</Text>
-                  {data.catatan.pesan.map((p) => (
-                    <Text key={p} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, lineHeight: 17, marginTop: 4 }}>{p}</Text>
-                  ))}
-                </View>
-              </View>
-            </GlassCard>
-          ) : null}
+          <SectionHeader judul="Pekerjaan tertunda" />
+          {data.antrean ? <PekerjaanTertunda daftar={tindakan} onBuka={onBuka} /> : <BagianBelumTersedia bagian="antrean" onCoba={onCoba} />}
         </>
       )}
-    </Screen>
+
+      <SectionHeader judul="Laba rugi" sub={`${tanggalPeriode(data.periode)}`} />
+      {data.labaRugi ? <KartuLabaRugi data={data.labaRugi} /> : <BagianBelumTersedia bagian="labaRugi" onCoba={onCoba} />}
+
+      <SectionHeader judul="Piutang" sub="Posisi saat ini · umur tagihan" />
+      {data.piutang ? (
+        <KartuUmur
+          judul="Total piutang" total={data.piutang.total} ember={data.piutang.ember} kosongTeks="Tidak ada piutang berjalan."
+          catatan={data.piutang.menungguVerifikasi && data.piutang.menungguVerifikasi.jumlah > 0 ? `${data.piutang.menungguVerifikasi.jumlah} pembayaran menunggu verifikasi.` : undefined}
+        />
+      ) : <BagianBelumTersedia bagian="piutang" onCoba={onCoba} />}
+
+      <SectionHeader judul="Utang usaha" sub="Posisi saat ini · umur tagihan" />
+      {data.utang ? <KartuUmur judul="Total utang usaha" total={data.utang.total} ember={data.utang.ember} kosongTeks="Tidak ada utang usaha berjalan." /> : <BagianBelumTersedia bagian="utang" onCoba={onCoba} />}
+
+      <SectionHeader judul="Kesehatan pembukuan" />
+      {data.catatan ? <KesehatanPembukuan catatan={data.catatan} gate={data.gate} /> : <BagianBelumTersedia bagian="catatan" onCoba={onCoba} />}
+
+      {trenTampil ? (
+        <>
+          <SectionHeader judul={S.beranda.tren} />
+          <GlassCard><BarTren data={trenTampil} /></GlassCard>
+        </>
+      ) : null}
+
+      <SectionHeader judul={S.beranda.jurnalTerakhir} />
+      {data.bagianHilang.includes("jurnal") ? <BagianBelumTersedia bagian="jurnal" onCoba={onCoba} /> : <JurnalTerakhir daftar={data.jurnalTerakhir} />}
+    </>
   );
 }
 
-function Tindakan({ ikon, nilai, label, tone, onPress }: { ikon: LucideIcon; nilai: number; label: string; tone: "warning" | "info" | "danger"; onPress: () => void }) {
-  const { colors } = useTheme();
+function tanggalPeriode(p: { from: string; to: string }): string {
+  return p.from && p.to ? `${p.from.split("-").reverse().join("/")} – ${p.to.split("-").reverse().join("/")}` : "";
+}
+
+function GalatPenuh({ error, online, onCoba }: { error: unknown; online: boolean; onCoba: () => void }) {
+  const info = klasifikasiGalat(error, online);
+  const sesi = info.jenis === "sesi";
   return (
-    <PressableScale onPress={() => { haptic.tick(); onPress(); }} accessibilityLabel={`${label}: ${nilai}`} style={{ flex: 1 }}>
-      <GlassCard padding={12}>
-        <IconCircle icon={ikon} tone={tone} size={36} />
-        <Text style={{ color: colors.text, fontFamily: font.semibold, fontSize: 22, marginTop: 10 }}>{nilai}</Text>
-        <Text numberOfLines={2} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 11, lineHeight: 14 }}>{label}</Text>
-      </GlassCard>
-    </PressableScale>
+    <ErrorState
+      icon={IKON_GALAT[info.jenis]}
+      tone={info.jenis === "offline" || info.jenis === "batas" ? "warning" : "danger"}
+      judul={info.judul}
+      isi={info.isi}
+      onCoba={sesi ? undefined : onCoba}
+    />
   );
 }
 
-function Kpi({ label, nilai, autoNegatif }: { label: string; nilai: string; autoNegatif?: boolean }) {
+/** Penyegaran gagal tetapi data terakhir masih ada: tetap tampilkan data, beri tahu, dan tawarkan coba lagi. */
+function BannerBasi({ error, online, onCoba }: { error: unknown; online: boolean; onCoba: () => void }) {
   const { colors } = useTheme();
+  const info = klasifikasiGalat(error, online);
   return (
-    <GlassCard padding={12} style={{ flex: 1 }}>
-      <Text numberOfLines={1} style={{ color: colors.textMuted, fontFamily: font.medium, fontSize: 11 }}>{label}</Text>
-      <MoneyText value={nilai} size="md" ringkas autoNegatif={autoNegatif} style={{ marginTop: 6 }} />
-    </GlassCard>
+    <View accessibilityRole="alert" style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderRadius: radius.small, backgroundColor: colors.warningSoft, marginBottom: 12 }}>
+      <TriangleAlert size={18} color={colors.warning} strokeWidth={1.75} />
+      <View style={{ flex: 1 }}>
+        <Text maxFontSizeMultiplier={1.3} style={{ color: colors.text, fontFamily: font.medium, fontSize: 13 }}>Gagal memperbarui</Text>
+        <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12 }}>{info.judul}. Menampilkan data terakhir yang berhasil dimuat.</Text>
+      </View>
+      <PressableScale onPress={onCoba} accessibilityLabel="Coba muat ulang" style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 6 }}>
+        <Text style={{ color: colors.primary, fontFamily: font.semibold, fontSize: 13 }}>Coba lagi</Text>
+      </PressableScale>
+    </View>
   );
 }
 
 function BerandaMemuat() {
   return (
-    <View style={{ gap: 14 }}>
-      <Skeleton tinggi={150} style={{ borderRadius: radius.card }} />
-      <View style={{ flexDirection: "row", gap: 12 }}>
-        <Skeleton tinggi={96} lebar={176} style={{ borderRadius: radius.card }} />
-        <Skeleton tinggi={96} lebar={176} style={{ borderRadius: radius.card }} />
-      </View>
+    <View style={{ gap: 14 }} accessibilityLabel="Memuat Beranda" accessibilityLiveRegion="polite">
       <Skeleton tinggi={140} style={{ borderRadius: radius.card }} />
+      <Skeleton tinggi={16} lebar="40%" />
+      <Skeleton tinggi={180} style={{ borderRadius: radius.card }} />
+      <Skeleton tinggi={16} lebar="35%" />
+      <Skeleton tinggi={120} style={{ borderRadius: radius.card }} />
       <Skeleton tinggi={200} style={{ borderRadius: radius.card }} />
     </View>
   );

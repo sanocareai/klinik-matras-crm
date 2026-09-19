@@ -74,7 +74,7 @@ export const colors: Record<Scheme, Colors> = {
     infoSoft: "#EAF2FC",
     neutral: "#5B6B85",
     neutralSoft: "#E8EDF5",
-    tabBar: "rgba(255,255,255,0.86)",
+    tabBar: "#FCFDFF",
     overlay: "rgba(10,23,48,0.45)",
   },
   dark: {
@@ -109,7 +109,7 @@ export const colors: Record<Scheme, Colors> = {
     infoSoft: "rgba(123,177,234,0.18)",
     neutral: "#9DB0D0",
     neutralSoft: "rgba(157,176,208,0.16)",
-    tabBar: "rgba(14,42,85,0.9)",
+    tabBar: "#0F2A55",
     overlay: "rgba(0,0,0,0.6)",
   },
 };

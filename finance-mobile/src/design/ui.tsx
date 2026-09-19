@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Animated, Easing, Pressable, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { Inbox, TriangleAlert, WifiOff } from "lucide-react-native";
 import { useTheme } from "./theme";
@@ -20,11 +20,34 @@ type PressProps = {
   hitSlop?: number;
 };
 
+// Gaya tata letak (flex/lebar/margin/posisi) harus berlaku pada Pressable — elemen yang menjadi anak induknya —
+// bukan pada Animated.View di dalamnya. Kalau tidak, item baris (tab bar, kisi aksi cepat) tidak melebar rata.
+const KUNCI_LUAR = new Set([
+  "flex", "flexGrow", "flexShrink", "flexBasis", "alignSelf", "position", "top", "right", "bottom", "left", "zIndex",
+  "margin", "marginTop", "marginBottom", "marginLeft", "marginRight", "marginHorizontal", "marginVertical", "marginStart", "marginEnd",
+  "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
+]);
+const KUNCI_UKURAN = new Set(["width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight"]);
+
+export function pisahGayaTekan(style: StyleProp<ViewStyle>): { luar: ViewStyle; dalam: ViewStyle } {
+  const rata = (StyleSheet.flatten(style) ?? {}) as Record<string, unknown>;
+  const luar: Record<string, unknown> = {};
+  const dalam: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(rata)) {
+    if (KUNCI_LUAR.has(k)) luar[k] = v;
+    // Ukuran pasti (angka) juga dipakai di dalam supaya latar/bentuk mengisi penuh; persen hanya di luar.
+    if (!KUNCI_LUAR.has(k) || (KUNCI_UKURAN.has(k) && typeof v === "number")) dalam[k] = v;
+  }
+  return { luar: luar as ViewStyle, dalam: dalam as ViewStyle };
+}
+
 export function PressableScale({ onPress, onLongPress, disabled, style, children, accessibilityLabel, accessibilityRole = "button", hitSlop }: PressProps) {
   const [skala] = useState(() => new Animated.Value(1));
   const ke = (v: number) => Animated.spring(skala, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
+  const { luar, dalam } = pisahGayaTekan(style);
   return (
     <Pressable
+      style={luar}
       onPress={onPress}
       onLongPress={onLongPress}
       disabled={disabled}
@@ -35,7 +58,7 @@ export function PressableScale({ onPress, onLongPress, disabled, style, children
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: !!disabled }}
     >
-      <Animated.View style={[{ transform: [{ scale: skala }], opacity: disabled ? 0.5 : 1 }, style]}>{children}</Animated.View>
+      <Animated.View style={[{ transform: [{ scale: skala }], opacity: disabled ? 0.5 : 1 }, dalam]}>{children}</Animated.View>
     </Pressable>
   );
 }
@@ -64,10 +87,10 @@ export function Button({ label, onPress, variant = "primary", icon: Icon, loadin
       onPress={() => { haptic.ringan(); onPress?.(); }}
       disabled={disabled || loading}
       accessibilityLabel={label}
-      style={{
+      style={[{
         minHeight: TOUCH, borderRadius: radius.button, backgroundColor: v.bg, borderWidth: 1, borderColor: v.border,
         flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 18,
-      }}
+      }, style]}
     >
       {loading ? <ActivityIndicator color={v.fg} /> : Icon ? <Icon size={18} color={v.fg} strokeWidth={1.75} /> : null}
       <Text style={{ color: v.fg, fontFamily: font.semibold, fontSize: 15 }}>{label}</Text>
@@ -99,13 +122,16 @@ export function Chip({ label, aktif, onPress, jumlah }: { label: string; aktif?:
 }
 
 // ─── SectionHeader ─────────────────────────────────────────────────────────────────────────
-export function SectionHeader({ judul, aksi, onAksi }: { judul: string; aksi?: string; onAksi?: () => void }) {
+export function SectionHeader({ judul, sub, aksi, onAksi }: { judul: string; sub?: string; aksi?: string; onAksi?: () => void }) {
   const { colors } = useTheme();
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 24, marginBottom: 10 }}>
-      <Text accessibilityRole="header" style={{ color: colors.text, fontFamily: font.semibold, fontSize: 16 }}>{judul}</Text>
+    <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 12, marginTop: 24, marginBottom: 10 }}>
+      <View style={{ flex: 1 }}>
+        <Text accessibilityRole="header" maxFontSizeMultiplier={1.4} style={{ color: colors.text, fontFamily: font.semibold, fontSize: 16 }}>{judul}</Text>
+        {sub ? <Text maxFontSizeMultiplier={1.4} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 2 }}>{sub}</Text> : null}
+      </View>
       {aksi ? (
-        <Pressable onPress={onAksi} hitSlop={12} accessibilityRole="link">
+        <Pressable onPress={onAksi} hitSlop={12} accessibilityRole="link" style={{ paddingBottom: 1 }}>
           <Text style={{ color: colors.primary, fontFamily: font.medium, fontSize: 13 }}>{aksi}</Text>
         </Pressable>
       ) : null}
@@ -160,8 +186,8 @@ export const EmptyState = ({ judul, isi, aksi, onAksi }: { judul: string; isi?: 
   <StatePanel icon={Inbox} tone="info" judul={judul} isi={isi} aksi={aksi} onAksi={onAksi} />
 );
 
-export const ErrorState = ({ judul = "Gagal memuat", isi, onCoba }: { judul?: string; isi?: string; onCoba?: () => void }) => (
-  <StatePanel icon={TriangleAlert} tone="danger" judul={judul} isi={isi} aksi={onCoba ? S.umum.coba : undefined} onAksi={onCoba} />
+export const ErrorState = ({ judul = "Gagal memuat", isi, onCoba, icon = TriangleAlert, tone = "danger", aksi }: { judul?: string; isi?: string; onCoba?: () => void; icon?: LucideIcon; tone?: Tone; aksi?: string }) => (
+  <StatePanel icon={icon} tone={tone} judul={judul} isi={isi} aksi={onCoba ? (aksi ?? S.umum.coba) : undefined} onAksi={onCoba} />
 );
 
 export function OfflineBanner() {

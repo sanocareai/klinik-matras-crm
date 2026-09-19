@@ -25,6 +25,13 @@ function Latar() {
   );
 }
 
+/** Pelindung status bar: konten yang bergulir ke atas tidak boleh menembus jam & ikon sistem. */
+export function StatusBarScrim() {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  return <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, height: insets.top, backgroundColor: colors.bgTop }} />;
+}
+
 type Props = {
   children: React.ReactNode;
   /** false = konten tidak digulir (mis. daftar yang punya FlatList sendiri). */
@@ -65,6 +72,7 @@ export function Screen({ children, scroll = true, refreshing = false, onRefresh,
           <View style={StyleSheet.absoluteFill}><Latar /></View>
         )}
         {isi}
+        <StatusBarScrim />
       </View>
     </BlurTargetContext.Provider>
   );

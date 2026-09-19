@@ -97,6 +97,10 @@ Deploy: `git pull` → `docker compose up -d --build backend` → `docker compos
 
 Enum `Role` bertambah `ACCOUNTANT` dan `APPROVER` (migration `20260920100000_role_accountant_approver`, hanya `ADD VALUE`, aman diulang). Belum ada pengguna yang ditetapkan — atur lewat halaman Pengguna & Peran ("Akuntan", "Penyetuju Keuangan"). `ACCOUNTANT`: FINANCE_READ, FINANCE_POST, PAYMENT_READ, DASHBOARD_READ. `APPROVER`: FINANCE_READ, FINANCE_APPROVE, PAYMENT_READ, DASHBOARD_READ. `PAYMENT_WRITE` tetap khusus `FINANCE`. Keduanya masuk portal Finance dan `capabilities.financeApp=true` (preset `ACCOUNTANT`/`APPROVER`). Tes: `tests/authorize.test.js`, `tests/integration/financeRoles.integration.test.js`.
 
+### Kontrak dashboard untuk Beranda (S3, 20 Sep 2026)
+
+`GET /api/finance/dashboard?from=&to=` (FINANCE_READ; FINANCE/ACCOUNTANT/APPROVER/OWNER 200, SALES 403). Uang berupa angka JSON; `kasBank`, `totalKas`, `piutang`, `utang` adalah posisi saat ini, hanya `labaRugi` mengikuti periode. Perbaikan: saat belum ada piutang (`umurPiutang` kosong) respons sebelumnya tidak memuat `total`/`perTanggal` dan `ringkasan` berupa Decimal bertipe string — sekarang bentuknya sama dengan saat berisi (angka). Perubahan aditif, aman untuk web. Tes kontrak: `tests/integration/financeDashboardContract.integration.test.js`.
+
 ## 8. Tes
 
 ```bash

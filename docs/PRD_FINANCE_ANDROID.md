@@ -1295,6 +1295,8 @@ Proyek `finance-mobile/`, tema Biru Kaca, `GlassCard`, `MoneyText`, `StatusBadge
 ### Fase B — Nilai inti (baca + putuskan)
 
 #### S3 — Beranda & rekening (M)
+
+**Status: SELESAI (20 Sep 2026, diuji di emulator Android + API dev; belum ada build EAS).** Kontrak `GET /finance/dashboard` diaudit dari respons asli (bukan ditebak): uang = angka JSON → string desimal lewat lossless parse, margin = persen (bukan uang), kas/piutang/utang = posisi saat ini dan hanya laba rugi mengikuti `?from&to`. Diimplementasikan: pemilih periode (Bulan ini/lalu, kuartal, tahun, 12 bulan), pull-to-refresh, "Diperbarui … WIB", hero kas, saldo per rekening, aksi cepat berbasis capabilities, pekerjaan tertunda (per peran), laba rugi, umur piutang & utang, kesehatan pembukuan, jurnal terakhir; state memuat/kosong/galat/offline/sesi habis/data parsial/penyegaran gagal (data lama tetap tampil) berbahasa Indonesia. Backend: perbaikan bentuk respons piutang saat kosong (`total`, `perTanggal`, ringkasan numerik) + tes kontrak. Deviasi: S3-5 "snapshot offline" hanya di memori selama aplikasi terbuka (belum ada cache terenkripsi lintas peluncuran — ditunda); jurnal terakhir memuat nama pelanggan dalam deskripsi (dibiarkan, tim internal).
 Layar H1, K1, K2 (baca); `GET /finance/dashboard`, `/cash-accounts`, `/reports/ledger`.
 | AC | Kriteria |
 |---|---|

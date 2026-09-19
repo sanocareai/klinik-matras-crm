@@ -516,7 +516,9 @@ export async function umurPiutang(db, { to = new Date() } = {}) {
     where: { systemKey: "PIUTANG_USAHA" },
     select: { id: true },
   });
-  if (!akunPiutang) return { baris: [], ringkasan: {}, ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
+  // Bentuk respons kosong SAMA dengan yang berisi (total + ringkasan berupa angka): klien (web & mobile)
+  // tidak boleh menebak-nebak kunci yang hilang saat belum ada piutang.
+  if (!akunPiutang) return { perTanggal: to, baris: [], ringkasan: ringkasanKosongAngka(), total: 0, ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
 
   const grouped = await db.finJournalLine.groupBy({
     by: ["orderId"],
@@ -533,7 +535,7 @@ export async function umurPiutang(db, { to = new Date() } = {}) {
     .filter((g) => g.saldo.greaterThan(0));
 
   if (bersaldo.length === 0) {
-    return { baris: [], ringkasan: ringkasanKosong(), ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
+    return { perTanggal: to, baris: [], ringkasan: ringkasanKosongAngka(), total: 0, ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
   }
 
   const orders = await db.order.findMany({
@@ -589,6 +591,10 @@ export async function umurPiutang(db, { to = new Date() } = {}) {
     ember: EMBER_UMUR,
     catatan: await catatanLaporan(db),
   };
+}
+
+function ringkasanKosongAngka() {
+  return Object.fromEntries(EMBER_UMUR.map((e) => [e.key, 0]));
 }
 
 function ringkasanKosong() {

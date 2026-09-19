@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Alert, Text, View } from "react-native";
+import { Alert, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Lock } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -100,14 +100,19 @@ export function KunciPanel({ mode, onBerhasil, onBatal }: Props) {
     );
   }
 
+  const kecil = useWindowDimensions().height < 720;
   const pesanTampil = dijeda ? { teks: `Terlalu banyak salah. Coba lagi dalam ${mmss(sisa)}.`, tone: "error" as const } : pesan;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgBottom }}>
       <LinearGradient colors={[colors.bgTop, colors.bgBottom]} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: insets.top, paddingBottom: insets.bottom }}>
-        <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
-          <Lock size={26} color={colors.onPrimary} strokeWidth={1.75} />
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={{ width: kecil ? 44 : 56, height: kecil ? 44 : 56, borderRadius: kecil ? 22 : 28, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginBottom: kecil ? 10 : 18 }}>
+          <Lock size={kecil ? 22 : 26} color={colors.onPrimary} strokeWidth={1.75} />
         </View>
         <PinPad
           judul={mode === "kunci" ? "Masukkan PIN" : "Konfirmasi dulu"}
@@ -118,7 +123,7 @@ export function KunciPanel({ mode, onBerhasil, onBatal }: Props) {
           nonaktif={dijeda}
           biometrik={biometrikBisa ? { label: "Buka dengan biometrik", onPress: () => { void cobaBiometrik(); } } : null}
         />
-        <View style={{ marginTop: 20, alignItems: "center", gap: 14 }}>
+        <View style={{ marginTop: kecil ? 8 : 20, alignItems: "center", gap: 14 }}>
           {mode === "stepup" ? (
             <PressableScale onPress={onBatal} accessibilityLabel="Batal" style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 16 }}>
               <Text style={{ color: colors.primary, fontFamily: font.semibold, fontSize: 15 }}>Batal</Text>
@@ -129,7 +134,7 @@ export function KunciPanel({ mode, onBerhasil, onBatal }: Props) {
             </PressableScale>
           )}
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }

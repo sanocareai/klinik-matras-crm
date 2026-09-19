@@ -76,11 +76,11 @@ describe("mapDashboard — bentuk dashboard asli server", () => {
     );
     const d = mapDashboard(raw as Parameters<typeof mapDashboard>[0]);
     expect(d.totalKas).toBe("158420350.00");
-    expect(d.piutang.ember).toHaveLength(5);
-    expect(d.piutang.ember[0]).toEqual({ label: "Belum jatuh tempo", total: "118400000.00", jumlah: 0 });
-    expect(d.piutang.ember[4]?.total).toBe("8000000.00");
-    expect(d.antrean.pengeluaranMenunggu).toBe(3);
-    expect(d.antrean.lunasBelumDicatat.jumlah).toBe(12);
+    expect(d.piutang?.ember).toHaveLength(5);
+    expect(d.piutang?.ember[0]).toEqual({ label: "Belum jatuh tempo", total: "118400000.00", jumlah: null });
+    expect(d.piutang?.ember[4]?.total).toBe("8000000.00");
+    expect(d.antrean?.pengeluaranMenunggu).toBe(3);
+    expect(d.antrean?.lunasBelumDicatat.jumlah).toBe(12);
     // nomor rekening tidak ikut ke model klien
     expect(JSON.stringify(d.kasBank)).not.toContain("1234567890");
   });

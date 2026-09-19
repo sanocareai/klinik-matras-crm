@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Fingerprint } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -72,7 +72,11 @@ export function PinSetup() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bgBottom }}>
       <LinearGradient colors={[colors.bgTop, colors.bgBottom]} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: insets.top, paddingBottom: insets.bottom }}>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {langkah === "biometrik" ? (
           <View style={{ alignItems: "center", width: "100%", gap: 14 }}>
             <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" }}>
@@ -100,7 +104,7 @@ export function PinSetup() {
             sibuk={sibuk}
           />
         )}
-      </View>
+      </ScrollView>
     </View>
   );
 }

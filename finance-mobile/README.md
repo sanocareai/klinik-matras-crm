@@ -121,6 +121,22 @@ Mode contoh (development): pilih peran lewat isi email di layar login — `owner
 | 13 | Mode pesawat di layar login | Banner offline, tombol Masuk nonaktif |
 | 14 | Keluar akun | Konfirmasi; token, PIN, dan pengaturan kunci terhapus; sesi dicabut di server |
 
+## Beranda (S3) — skenario uji & QA
+
+Skenario data contoh dipilih dengan tanda `+` di email (mode contoh): `finance+kosong@`, `+parsial`, `+panjang` (angka 14 digit + nama panjang), `+negatif`, `+lambat` (5 dtk), `+galat` (500), `+offline`, `+sesi` (401), `+basi` (muat pertama sukses, tarik-untuk-muat gagal). Bisa digabung dengan peran: `owner+panjang@x`.
+
+Menjalankan di emulator dengan API dev: `EXPO_PUBLIC_USE_MOCKS=false EXPO_PUBLIC_API_URL=http://10.0.2.2:4000/api npx expo start --dev-client --clear` (build native: `npx expo run:android` dari path pendek, mis. `C:m` — path proyek yang panjang membuat ninja/CMake gagal di Windows).
+
+| # | Skenario | Hasil yang benar |
+|---|---|---|
+| 1 | Beranda terisi | Hero kas, saldo per rekening, pekerjaan tertunda, laba rugi, piutang, utang, kesehatan pembukuan, jurnal |
+| 2 | Ganti periode | Chip → sheet → data lama redup sebentar, lalu laba rugi periode baru; kas/piutang/utang tetap "posisi saat ini" |
+| 3 | Tarik ke bawah | Muat ulang; "Diperbarui" segar |
+| 4 | Mode pesawat | Banner "Tidak ada koneksi internet"; data terakhir tetap tampil |
+| 5 | Layar 360×640dp + font 1.5 (gelap) | Tidak ada teks terpotong; nominal panjang mengecil satu baris |
+| 6 | Latar belakang < 2 mnt / > 2 mnt | Langsung terbuka / layar kunci |
+| 7 | Peran approver / akuntan / owner | Tanpa FAB & aksi cepat / tanpa tab Persetujuan & Verifikasi / tanpa aksi cepat tulis |
+
 ## Blocker yang tersisa (butuh tindakan manusia / akun)
 
 1. **Proyek EAS belum dibuat** — jalankan `eas login` + `eas init`, isi `EAS_PROJECT_ID`. Tanpa itu OTA (`expo-updates`) nonaktif dan `eas build` belum bisa.

@@ -43,6 +43,8 @@ export type KasBankItem = {
   id: string;
   name: string;
   kind: CashAccountKind;
+  /** Nama bank bila ada; nomor rekening TIDAK dibawa ke layar (PRD §13). */
+  bankName: string | null;
   saldo: Money;
 };
 
@@ -56,28 +58,50 @@ export type JurnalRingkas = {
   total: Money;
 };
 
-export type Ember = { label: string; total: Money; jumlah: number };
+/** Satu baris umur piutang/utang. Server hanya mengirim total per ember (bukan jumlah dokumen). */
+export type Ember = { label: string; total: Money; jumlah: number | null };
+
+export type LabaRugiRingkas = {
+  pendapatanBruto: Money; retur: Money; pendapatanBersih: Money; bebanPokok: Money;
+  labaKotor: Money; bebanOperasional: Money; labaBersih: Money;
+  /** Persen dari server (bukan uang). null bila tidak dikirim. */
+  marginKotor: number | null;
+  marginBersih: number | null;
+};
+
+export type AntreanRingkas = {
+  jumlahPembayaranBelumVerifikasi: number;
+  lunasBelumDicatat: { jumlah: number; total: Money; baru: { jumlah: number; total: Money } | null; lama: { jumlah: number; total: Money } | null };
+  pengeluaranMenunggu: number;
+  pembelianMenunggu: number;
+  tagihanMenunggu: number;
+  refundMenunggu: number;
+};
+
+export type CatatanPembukuan = {
+  gapTerbuka: number;
+  saldoAwalTerisi: boolean;
+  mulaiPembukuan: string | null;
+  periodeTerbuka: number | null;
+  pesan: string[];
+};
+
+/** Bagian respons dashboard. Bila salah satu tidak ada di payload, ia dicatat di `bagianHilang` (data parsial). */
+export type BagianDashboard = "kasBank" | "labaRugi" | "piutang" | "utang" | "antrean" | "jurnal" | "catatan";
 
 export type DashboardData = {
   periode: { from: string; to: string };
   kasBank: KasBankItem[];
-  totalKas: Money;
-  labaRugi: {
-    pendapatanBruto: Money; retur: Money; pendapatanBersih: Money; bebanPokok: Money;
-    labaKotor: Money; bebanOperasional: Money; labaBersih: Money;
-  };
-  piutang: { total: Money; ember: Ember[]; menungguVerifikasi: { jumlah: number; total: Money } };
-  utang: { total: Money; ember: Ember[] };
-  antrean: {
-    jumlahPembayaranBelumVerifikasi: number;
-    lunasBelumDicatat: { jumlah: number; total: Money };
-    pengeluaranMenunggu: number;
-    pembelianMenunggu: number;
-    tagihanMenunggu: number;
-    refundMenunggu: number;
-  };
+  totalKas: Money | null;
+  labaRugi: LabaRugiRingkas | null;
+  piutang: { total: Money; ember: Ember[]; menungguVerifikasi: { jumlah: number; total: Money } | null } | null;
+  utang: { total: Money; ember: Ember[] } | null;
+  antrean: AntreanRingkas | null;
+  /** Gerbang verifikasi pembayaran: aktif = antrean verifikasi memengaruhi status bayar di CRM. */
+  gate: { aktif: boolean; sejak: string | null } | null;
   jurnalTerakhir: JurnalRingkas[];
-  catatan: { gapTerbuka: number; saldoAwalTerisi: boolean; pesan: string[] };
+  catatan: CatatanPembukuan | null;
+  bagianHilang: BagianDashboard[];
 };
 
 export type TrenBulan = { bulan: string; pendapatanBersih: Money; beban: Money };

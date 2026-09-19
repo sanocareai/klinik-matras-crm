@@ -25,7 +25,9 @@ export function GlassCard({ variant = "default", blur = false, padding = 16, sty
   const blurTarget = useBlurTarget();
 
   const bentuk: ViewStyle = { borderRadius: radius.card, overflow: "hidden" };
-  const bayangan: ViewStyle = glassTier === "MINIMAL" ? {} : { elevation: variant === "hero" ? 6 : 3, shadowColor: colors.shadow, shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } };
+  // Elevation Android menggambar bayangan MENEMBUS isian yang tembus pandang (tampak seperti persegi di dalam kartu),
+  // jadi hanya kartu hero yang berisi gradien pekat memakainya; kartu kaca cukup dengan garis tepi + isian.
+  const bayangan: ViewStyle = glassTier === "MINIMAL" ? {} : { elevation: variant === "hero" ? 6 : 0, shadowColor: colors.shadow, shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } };
 
   if (variant === "hero") {
     return (
