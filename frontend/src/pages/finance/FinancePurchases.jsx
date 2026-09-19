@@ -60,8 +60,12 @@ export default function FinancePurchases() {
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
 
-  const muat = useCallback(async () => {
-    setLoading(true);
+  // { diam: true } = muat ulang di latar belakang: layar TIDAK berubah jadi
+  // "memuat" dan posisi scroll tetap (dipakai setelah upload foto/aksi baris).
+  // Argumen selain { diam: true } (mis. event klik dari onRetry) diabaikan.
+  const muat = useCallback(async (opsi) => {
+    const diam = opsi?.diam === true;
+    if (!diam) setLoading(true);
     setError(null);
     try {
       const [p, k, r, s] = await Promise.all([
@@ -75,9 +79,10 @@ export default function FinancePurchases() {
       setRekening((r.accounts || []).filter((a) => a.active));
       setSuppliers((s.suppliers || []).filter((x) => x.active));
     } catch (er) {
-      setError(er.message || "Gagal memuat pembelian");
+      if (diam) setPesan(er.message || "Gagal menyegarkan daftar");
+      else setError(er.message || "Gagal memuat pembelian");
     } finally {
-      setLoading(false);
+      if (!diam) setLoading(false);
     }
   }, [periode, status]);
 
@@ -88,7 +93,7 @@ export default function FinancePurchases() {
       await fn();
       setModalBaru(false);
       setBayarUntuk(null);
-      await muat();
+      await muat({ diam: true });
     } catch (e) {
       setPesan(e.message);
     }
@@ -273,7 +278,7 @@ export default function FinancePurchases() {
       <EditDokumen
         doc={editUntuk} jenis="purchases" kategori={kategori} rekening={rekening}
         onClose={() => setEditUntuk(null)}
-        onSaved={() => { setEditUntuk(null); muat(); }}
+        onSaved={() => { setEditUntuk(null); muat({ diam: true }); }}
       />
     </HalamanFinance>
   );
