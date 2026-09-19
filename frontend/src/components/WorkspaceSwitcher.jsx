@@ -37,7 +37,7 @@ export const WORKSPACES = [
   // volume kerja, angka di sini pendapatan & posisi keuangan akuntansi.
   // Menggabungkan keduanya akan menaruh dua angka berbeda untuk hal yang
   // terdengar sama dalam satu layar.
-  { key: "finance",   label: "Finance & Accounting",       to: "/finance",   Icon: Landmark, roles: ["ADMIN", "OWNER", "FINANCE"] },
+  { key: "finance",   label: "Finance & Accounting",       to: "/finance",   Icon: Landmark, roles: ["ADMIN", "OWNER", "FINANCE", "ACCOUNTANT", "APPROVER"] },
   // B2B & Non-CRM Orders (D-115, 11 September 2026) — SENGAJA cuma "OWNER",
   // BUKAN "ADMIN" juga (satu-satunya workspace dengan pola ini) — lihat
   // komentar panjang di backend/src/constants/permissions.js.

@@ -22,6 +22,8 @@ export function capabilitiesFor(user) {
   let preset = "NONE";
   if (roles.includes("FINANCE")) preset = "FINANCE";
   else if (roles.includes("OWNER") || roles.includes("ADMIN")) preset = "OWNER";
+  else if (roles.includes("APPROVER")) preset = "APPROVER";
+  else if (roles.includes("ACCOUNTANT")) preset = "ACCOUNTANT";
   else if (financeApprove && !financePost) preset = "APPROVER";
   else if (financeRead) preset = "ACCOUNTANT";
   else if (expenseSubmit) preset = "SUBMITTER";

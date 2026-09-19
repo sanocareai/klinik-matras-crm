@@ -1,4 +1,4 @@
-import { buatVerifier, cekPin, jedaSetelahSalah, pinValid } from "@/auth/pin";
+import { buatVerifier, cekPin, jedaSetelahSalah, pinLemah, pinValid } from "@/auth/pin";
 import { pickGlassTier } from "@/design/glass";
 import { hariIniWIB, periodeBulanIni, tanggalPendek, tanggalPanjang, waktuLengkap, wibParts, sapaan } from "@/lib/dates";
 import { statusInfo, STATUS } from "@/lib/strings";
@@ -7,21 +7,27 @@ import { colors, toneColors } from "@/design/tokens";
 const GB = 1024 * 1024 * 1024;
 
 describe("PIN lokal", () => {
-  it("verifier PBKDF2: PIN benar lolos, salah gagal; salt acak membuat hash berbeda", () => {
-    const v1 = buatVerifier("123456", { iterations: 1000 });
-    const v2 = buatVerifier("123456", { iterations: 1000, salt: new Uint8Array(16).fill(9) });
-    expect(cekPin("123456", v1)).toBe(true);
-    expect(cekPin("123457", v1)).toBe(false);
-    expect(v1.hash).not.toContain("123456");
+  it("verifier PBKDF2: PIN benar lolos, salah gagal; salt berbeda membuat hash berbeda", async () => {
+    const v1 = await buatVerifier("482913", { iterations: 1000 });
+    const v2 = await buatVerifier("482913", { iterations: 1000, salt: new Uint8Array(16).fill(9) });
+    expect(await cekPin("482913", v1)).toBe(true);
+    expect(await cekPin("482914", v1)).toBe(false);
+    expect(v1.hash).not.toContain("482913");
     expect(v1.hash).toHaveLength(64);
+    expect(v2.hash).not.toBe(v1.hash);
     expect(v2.salt).not.toBe(v1.salt);
   });
 
-  it("hanya 6 digit angka", () => {
+  it("hanya 6 digit angka", async () => {
     expect(pinValid("123456")).toBe(true);
     for (const buruk of ["12345", "1234567", "12345a", "", "12 456"]) expect(pinValid(buruk)).toBe(false);
-    expect(() => buatVerifier("abc")).toThrow();
-    expect(cekPin("abc", buatVerifier("123456", { iterations: 1000 }))).toBe(false);
+    await expect(buatVerifier("abc")).rejects.toThrow();
+    expect(await cekPin("abc", await buatVerifier("482913", { iterations: 1000 }))).toBe(false);
+  });
+
+  it("PIN lemah: digit sama semua atau berurutan naik/turun", () => {
+    for (const p of ["000000", "111111", "123456", "234567", "654321", "987654"]) expect(pinLemah(p)).toBe(true);
+    for (const p of ["482913", "135790", "121212"]) expect(pinLemah(p)).toBe(false);
   });
 
   it("jeda percobaan salah: 5→30 dtk, 8→5 mnt, 10→hapus data", () => {

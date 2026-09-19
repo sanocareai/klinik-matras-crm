@@ -15,6 +15,9 @@ import { useApprovals, BelumTersedia } from "@/hooks/data";
 import { ENV } from "@/lib/env";
 import { tanggalPendek } from "@/lib/dates";
 import { S } from "@/lib/strings";
+import { denganAkses } from "@/features/guard/RequireCapability";
+import { jalankanPerintah, StepUpDibatalkan } from "@/api/command";
+import { AksesDitolak } from "@/auth/capabilities";
 
 function Baris({ label, isi }: { label: string; isi: string }) {
   const { colors } = useTheme();
@@ -26,7 +29,7 @@ function Baris({ label, isi }: { label: string; isi: string }) {
   );
 }
 
-export default function DetailPersetujuan() {
+function DetailPersetujuan() {
   const { colors } = useTheme();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -36,15 +39,33 @@ export default function DetailPersetujuan() {
 
   const item = data?.find((a) => a.id === id);
 
-  // Di scaffold ini keputusan hanya simulasi (mode contoh). Versi nyata: POST /api/finance/{jenis}/:id/approve|reject
-  // dengan Idempotency-Key + step-up (S4). Tidak ada keputusan yang dikirim ke server dari sini.
+  // Keputusan lewat jalankanPerintah: capability guard + step-up (biometrik/PIN) + Idempotency-Key. Di scaffold ini
+  // hanya simulasi (mode contoh); versi nyata: POST /api/finance/{jenis}/:id/approve (slice S4).
+  async function eksekusiSetuju() {
+    try {
+      await jalankanPerintah({
+        need: "financeApprove",
+        stepUp: true,
+        run: async () => {
+          if (!ENV.useMocks) throw new BelumTersedia("Persetujuan");
+          haptic.sukses();
+          router.back();
+        },
+      });
+    } catch (e) {
+      if (e instanceof StepUpDibatalkan) return;
+      haptic.galat();
+      Alert.alert("Belum bisa menyetujui", e instanceof AksesDitolak || e instanceof BelumTersedia ? e.message : "Terjadi kesalahan. Coba lagi.");
+    }
+  }
+
   function setuju() {
     Alert.alert(
       "Setujui pengajuan?",
-      ENV.useMocks ? "Ini mode contoh — tidak ada data yang berubah." : "Persetujuan belum tersambung ke server pada versi ini.",
+      ENV.useMocks ? "Ini mode contoh — tidak ada data yang berubah." : "Persetujuan akan dicatat atas nama Anda.",
       [
         { text: S.umum.batal, style: "cancel" },
-        { text: "Setujui", onPress: () => { if (ENV.useMocks) { haptic.sukses(); router.back(); } } },
+        { text: "Setujui", onPress: () => { void eksekusiSetuju(); } },
       ],
     );
   }
@@ -118,3 +139,5 @@ export default function DetailPersetujuan() {
     </Screen>
   );
 }
+
+export default denganAkses(DetailPersetujuan, "financeApprove");

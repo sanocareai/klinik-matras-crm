@@ -12,6 +12,7 @@ import { ENV } from "@/lib/env";
 import { labelBulan, periodeBulanIni } from "@/lib/dates";
 import { S } from "@/lib/strings";
 import type { JenisLaporan } from "@/api/types";
+import { denganAkses } from "@/features/guard/RequireCapability";
 
 const DAFTAR: { jenis: JenisLaporan; label: string; sub: string; Icon: LucideIcon }[] = [
   { jenis: "laba-rugi", label: S.laporan.labaRugi, sub: "Pendapatan, beban, dan laba periode", Icon: TrendingUp },
@@ -22,7 +23,7 @@ const DAFTAR: { jenis: JenisLaporan; label: string; sub: string; Icon: LucideIco
   { jenis: "umur-utang", label: S.laporan.umurUtang, sub: "Utang ke supplier berdasarkan umur", Icon: TrendingDown },
 ];
 
-export default function Laporan() {
+function Laporan() {
   const { colors } = useTheme();
   const router = useRouter();
   const periode = periodeBulanIni();
@@ -52,3 +53,5 @@ export default function Laporan() {
     </Screen>
   );
 }
+
+export default denganAkses(Laporan, "financeRead");

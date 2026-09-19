@@ -357,6 +357,24 @@ export const ROLE_PERMISSIONS = {
     // supplier — BACA SAJA, finance tidak pernah menulis pergerakan stok.
     P.INVENTORY_READ,
   ],
+
+  // ACCOUNTANT (Finance Mobile S2, 19 Sep 2026) — akuntan: membaca seluruh pembukuan dan
+  // MENCATAT/memposting (jurnal, rekonsiliasi, transfer, dokumen), TETAP tidak menyetujui
+  // dan tidak memverifikasi pembayaran pelanggan (PAYMENT_WRITE khusus FINANCE). Tanpa
+  // FINANCE_ADMIN: bagan akun, periode, dan reversal tetap di ADMIN/OWNER.
+  ACCOUNTANT: [
+    P.FINANCE_READ, P.FINANCE_POST,
+    P.PAYMENT_READ,
+    P.DASHBOARD_READ,
+  ],
+
+  // APPROVER — penyetuju: membaca dan MEMUTUSKAN (setuju/tolak) pengajuan, tidak
+  // mencatat apa pun (tanpa FINANCE_POST) dan tidak memverifikasi pembayaran.
+  APPROVER: [
+    P.FINANCE_READ, P.FINANCE_APPROVE,
+    P.PAYMENT_READ,
+    P.DASHBOARD_READ,
+  ],
 };
 
 // Portal → role yang boleh masuk. Dipakai landing page untuk memilih kartu
@@ -420,7 +438,7 @@ export const PORTALS = [
     // ADMIN_PERMS + B2B), tapi PORTALS dicek per ROLE (bukan permission),
     // jadi harus disebut eksplisit di sini — pola yang sama dipakai portal
     // lain yang menyebut "ADMIN" satu per satu.
-    roles: ["ADMIN", "OWNER", "FINANCE"],
+    roles: ["ADMIN", "OWNER", "FINANCE", "ACCOUNTANT", "APPROVER"],
   },
   {
     key: "b2b",

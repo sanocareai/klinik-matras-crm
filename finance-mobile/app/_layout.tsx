@@ -17,6 +17,8 @@ import { ShareIntentProvider, useShareIntentContext } from "expo-share-intent";
 import { ThemeProvider, useTheme } from "@/design/theme";
 import { usePrefs } from "@/design/prefs";
 import { useSession } from "@/auth/session";
+import { useLock } from "@/auth/lock";
+import { AppLockGate } from "@/features/lock/AppLockGate";
 import { daftarkanPush } from "@/auth/push";
 import { ENV } from "@/lib/env";
 
@@ -80,6 +82,8 @@ function Gerbang() {
           <Stack.Screen name="persetujuan/[id]" />
           <Stack.Screen name="laporan/[jenis]" />
           <Stack.Screen name="approval/[jenis]/[id]" />
+          <Stack.Screen name="keamanan" />
+          <Stack.Screen name="ubah-pin" />
         </Stack.Protected>
         <Stack.Protected guard={status === "signedOut"}>
           <Stack.Screen name="login" options={{ animation: "none" }} />
@@ -93,13 +97,15 @@ export default function RootLayout() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold });
   const prefsLoaded = usePrefs((s) => s.loaded);
   const status = useSession((s) => s.status);
+  const lockReady = useLock((s) => s.ready);
 
   useEffect(() => {
     void usePrefs.getState().load();
+    void useLock.getState().load();
     void useSession.getState().restore();
   }, []);
 
-  const siap = fontsLoaded && prefsLoaded && status !== "loading";
+  const siap = fontsLoaded && prefsLoaded && lockReady && status !== "loading";
   useEffect(() => {
     if (siap) void SplashScreen.hideAsync();
   }, [siap]);
@@ -111,7 +117,9 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <ThemeProvider>
-            <Gerbang />
+            <AppLockGate>
+              <Gerbang />
+            </AppLockGate>
           </ThemeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

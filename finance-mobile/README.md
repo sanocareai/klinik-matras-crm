@@ -100,10 +100,31 @@ src/mocks/            data contoh realistis (bukan angka asli)
 4. Token hanya di `expo-secure-store`. Build produksi menghapus `console.*` dan memblokir screenshot (`FLAG_SECURE`).
 5. Semua teks UI Bahasa Indonesia sehari-hari (`src/lib/strings.ts`).
 
+## Keamanan & RBAC (S2) — QA manual
+
+Mode contoh (development): pilih peran lewat isi email di layar login — `owner@…`, `akuntan@…`, `approver@…`, `tanpaakses@…`, selain itu = Finance. Kata sandi bebas.
+
+| # | Skenario | Hasil yang benar |
+|---|---|---|
+| 1 | Login pertama | Wajib buat PIN 6 digit (tidak bisa dilewati); PIN "111111"/"123456" ditolak; lalu tawaran biometrik (boleh dilewati) |
+| 2 | Tutup lalu buka app | Selalu minta PIN/biometrik |
+| 3 | Ke background < 2 mnt lalu kembali | Langsung terbuka. > 2 mnt → layar kunci. Recents menampilkan layar tertutup |
+| 4 | Lainnya → Keamanan → ubah batas kunci | Pilihan Langsung/30 dtk/1/2/5 mnt; bertahan setelah app ditutup |
+| 5 | PIN salah 5× / 8× / 10× | Jeda 30 dtk / 5 mnt / data dihapus + kembali ke login; tutup-buka app tidak mereset hitungan |
+| 6 | Biometrik gagal 3× | Kembali ke PIN, tidak terkunci di luar |
+| 7 | Ubah PIN | PIN lama → baru → ulangi; PIN lama tak lagi berlaku |
+| 8 | Setujui pengajuan (aksi sensitif) | Bila unlock terakhir > 2 mnt, diminta PIN/biometrik dulu |
+| 9 | Peran akuntan | Tanpa tab Persetujuan, tanpa aksi Verifikasi |
+| 10 | Peran approver | Tanpa tombol + (FAB) dan tanpa aksi cepat |
+| 11 | Peran owner | Tanpa aksi cepat tulis; hanya baca/setujui |
+| 12 | tanpaakses@ | Ditolak: "Akun ini tidak punya akses Finance" |
+| 13 | Mode pesawat di layar login | Banner offline, tombol Masuk nonaktif |
+| 14 | Keluar akun | Konfirmasi; token, PIN, dan pengaturan kunci terhapus; sesi dicabut di server |
+
 ## Blocker yang tersisa (butuh tindakan manusia / akun)
 
 1. **Proyek EAS belum dibuat** — jalankan `eas login` + `eas init`, isi `EAS_PROJECT_ID`. Tanpa itu OTA (`expo-updates`) nonaktif dan `eas build` belum bisa.
 2. **Push Android** — buat/daftarkan aplikasi Android (`com.sanomatrassehat.finance*`) di Firebase, simpan `google-services.json` (di-gitignore; di EAS pakai secret file `GOOGLE_SERVICES_JSON`), lalu unggah kunci **FCM V1** ke EAS (`eas credentials`). Server: `FINANCE_PUSH_ENABLED=true` (lihat `docs/FINANCE-MOBILE-BACKEND.md`).
 3. **Belum dijalankan di perangkat/emulator** — scaffold divalidasi lewat `tsc`, ESLint, Jest, `expo-doctor`, bundling Metro (`expo export`) dan `expo prebuild` (manifest, izin, share-target). Uji visual pertama butuh development build.
-4. **Fitur belum dikerjakan** (slice PRD): layar kunci PIN/biometrik (S2), cache snapshot terenkripsi, formulir transaksi + kompres/unggah foto (S6), keputusan approval nyata (S4), notifikasi & pemicunya (S11), pelaporan galat (Sentry, keputusan S12).
-5. **Gap backend** yang masih terbuka (PRD §17): inbox approval gabungan (G-06), tren bulanan (G-09), audit trail (G-05), role Accountant/Approver (G-15), cursor pagination (G-16).
+4. **Fitur belum dikerjakan** (slice PRD): cache snapshot terenkripsi, formulir transaksi + kompres/unggah foto (S6), keputusan approval nyata (S4), notifikasi & pemicunya (S11), pelaporan galat (Sentry, keputusan S12).
+5. **Gap backend** yang masih terbuka (PRD §17): inbox approval gabungan (G-06), tren bulanan (G-09), audit trail (G-05), cursor pagination (G-16).

@@ -741,7 +741,7 @@ Klien: `apiClient` men-*refresh* satu kali untuk banyak request paralel (*single
 
 | Aspek | Ketentuan |
 |---|---|
-| PIN | 6 digit, dicek **lokal**, tidak pernah dikirim ke server. Verifier = PBKDF2-HMAC-SHA256 (`@noble/hashes`, iterasi disetel agar ≈ 300–500 ms di perangkat acuan, tidak kurang dari 100.000) + salt acak; disimpan di `expo-secure-store` (Android Keystore) |
+| PIN | 6 digit, dicek **lokal**, tidak pernah dikirim ke server. Verifier = PBKDF2-HMAC-SHA256 (`@noble/hashes`, iterasi **25.000**, disimpan di dalam verifier sehingga bisa dinaikkan tanpa memutus PIN lama; angka ini dipilih karena mesin Hermes menjalankan PBKDF2 murni-JS jauh lebih lambat dari native — 100.000 iterasi membekukan UI beberapa detik di HP menengah. Perlindungan utama bukan kerasnya hash, melainkan jeda percobaan (5→30 dtk, 8→5 mnt, 10→hapus data) dan Keystore) + salt acak; disimpan di `expo-secure-store` (Android Keystore) |
 | Percobaan | 5 salah → jeda 30 dtk; 8 → 5 menit; 10 → **hapus sesi & data lokal**, wajib login penuh; penghitung percobaan ikut di SecureStore |
 | Biometrik | `expo-local-authentication` (`biometricsSecurityLevel: "strong"`, tanpa fallback ke passcode perangkat); sukses biometrik membuka kunci layar yang sama; PIN selalu tersedia sebagai cadangan. Catatan: pengikatan kunci ke biometrik di level Keystore (`CryptoObject`) tidak tersedia di Expo → ditutup oleh G-19 (step-up server) |
 | Auto-lock | Default **60 detik** setelah app ke background (pilihan: langsung / 30 dtk / 1 mnt / 5 mnt) via `AppState`. Juga saat proses app dimatikan sistem (cold start selalu terkunci) |
@@ -803,8 +803,8 @@ Portal Finance: roles `["ADMIN","OWNER","FINANCE"]` (`permissions.js:415-424`). 
 | Persona | Role backend | Status | Izin |
 |---|---|---|---|
 | **Finance** | `FINANCE` | ada | seperti tabel di atas |
-| **Accountant** | `ACCOUNTANT` | **baru (G-15)** | `FINANCE_READ`, `FINANCE_POST` (jurnal, rekonsiliasi, transfer, catat dokumen), `PAYMENT_READ`, `DASHBOARD_READ`. **Tanpa** `FINANCE_APPROVE`, `PAYMENT_WRITE`, `FINANCE_ADMIN` |
-| **Approver** | `FINANCE_APPROVER` | **baru (G-15)** | `FINANCE_READ`, `FINANCE_APPROVE`, `PAYMENT_READ`, `DASHBOARD_READ`. **Tanpa** `FINANCE_POST` (tidak bisa mencatat, hanya memutuskan) |
+| **Accountant** | `ACCOUNTANT` | **selesai (S2, 19 Sep 2026)** | `FINANCE_READ`, `FINANCE_POST` (jurnal, rekonsiliasi, transfer, catat dokumen), `PAYMENT_READ`, `DASHBOARD_READ`. **Tanpa** `FINANCE_APPROVE`, `PAYMENT_WRITE`, `FINANCE_ADMIN` |
+| **Approver** | `APPROVER` | **selesai (S2, 19 Sep 2026)** | `FINANCE_READ`, `FINANCE_APPROVE`, `PAYMENT_READ`, `DASHBOARD_READ`. **Tanpa** `FINANCE_POST` (tidak bisa mencatat, hanya memutuskan) |
 | **Owner** | `OWNER` | ada | `ADMIN_PERMS`; layout mobile menonjolkan baca + approve + tinjau bukti; aksi catat tetap ada tetapi tidak menjadi aksi cepat |
 
 Pemberian peran tetap lewat halaman **Pengguna & Peran** (D-010: jangan menyimpulkan dari nama). Role baru = migrasi enum + konstanta
@@ -849,7 +849,7 @@ permission; **tidak** mengubah role existing.
 | Tutup/buka periode, reversal jurnal, bagan akun, rekening, kategori, pengaturan | web saja | web saja | — | web saja |
 
 Catatan: `FINANCE` memegang `POST`+`APPROVE` (tim kecil). Pemisahan sudah ada di level izin; saat tim tumbuh cukup memindahkan
-peran (`FINANCE` → `ACCOUNTANT`+`FINANCE_APPROVER`) tanpa ubah kode aplikasi.
+peran (`FINANCE` → `ACCOUNTANT`+`APPROVER`) tanpa ubah kode aplikasi.
 
 ---
 
@@ -1121,7 +1121,7 @@ Prioritas: **P0** = memblokir rilis; **P1** = dibutuhkan MVP tetapi ada penyiasa
 | **G-12** | Pratinjau jurnal sebelum approve | `GET /finance/{expenses|purchases|bills|refunds}/:id/preview-journal` (dry-run `postJournal` tanpa commit) | **P2** | posting service |
 | **G-13** | Ringkasan pembayaran per periode & pembanding periode | `GET /finance/customer-payments/summary?from&to` → `{total, terverifikasi{jumlah,nominal}, menunggu{jumlah,nominal}, dibatalkan}`; pembanding periode di dashboard (`?bandingkan=periodeLalu`). **Penyiasatan**: dua panggilan `customer-payments` seperti web | **P1** | `routes/financeTransactions.js` |
 | **G-14** | Ringkasan kasbon periode (banner di Pengeluaran) | Tambah `ringkasan{totalPeriode, sisaAktif}` pada `GET /kasbon` | **P2** | `routes/financeKasbon.js` |
-| **G-15** | Role `ACCOUNTANT` & `FINANCE_APPROVER` tiada (F5) | Migrasi enum `Role` + entri `ROLE_PERMISSIONS` (§12.2) + `PORTALS.finance.roles`; uji per role | **P1** | `schema.prisma`, `constants/permissions.js`, tes |
+| **G-15** | Role `ACCOUNTANT` & `APPROVER` tiada (F5) — **SELESAI di S2** | Migrasi enum `Role` + entri `ROLE_PERMISSIONS` (§12.2) + `PORTALS.finance.roles`; uji per role | **P1** | `schema.prisma`, `constants/permissions.js`, tes |
 | **G-16** | Daftar tanpa cursor, `take 300` (F8) | Tambahkan `limit` + `cursor` (keyset `date,createdAt,id`) & `total` pada daftar expenses/purchases/bills/refunds/customer-payments/kasbon/invoices/journal | **P1** (MVP hidup dengan batas periode) | route finance |
 | **G-17** | Tanpa versi/konfigurasi/`X-Request-Id` (F15) | `GET /mobile/config` → `{minVersionCode, latestVersionCode, apkUrl, maintenance{active,message}, flags}` (tanpa auth); log `X-Request-Id` di server | **P1** | `routes/mobileAuth.js`, `index.js` |
 | **G-18** | Pencarian global | `GET /finance/search?q=` → gabungan nomor dokumen/order/pelanggan/supplier (batas 20) | **P2** | `routes/finance.js` |
@@ -1139,7 +1139,7 @@ Prioritas: **P0** = memblokir rilis; **P1** = dibutuhkan MVP tetapi ada penyiasa
 | G-08 foto nota | ✔ selesai | Bearer atau URL bertanda-tangan; web disesuaikan; media lain (`payment-proofs`, dll.) **belum** |
 | G-10 push | ◐ fondasi selesai | token perangkat (`expo`/`fcm`), dispatch, transport FCM v1; **pemicu & pusat notifikasi = S11**; mati kecuali `FINANCE_PUSH_ENABLED=true` |
 | G-17 config | ◐ dasar selesai | `GET /api/mobile/config`; `X-Request-Id` di log server belum |
-| G-15 role baru | ✘ belum | dijadwalkan sebelum rilis 1.0 final |
+| G-15 role baru | ✔ selesai (S2) | enum `ACCOUNTANT`/`APPROVER`, migration `20260920100000_role_accountant_approver`; belum ada pengguna yang ditetapkan |
 | G-05, G-06, G-09, G-13, G-16 | ✘ belum | penyiasatan tercantum; S3–S6 |
 
 Ringkasan blokade MVP (semula): **G-01, G-02, G-03, G-04, G-07, G-10 (push)** harus selesai **sebelum** aplikasi boleh dipakai dengan data produksi — kini terpenuhi kecuali **pemicu push (S11)**.
@@ -1252,7 +1252,7 @@ Format AC: *Given/When/Then* ringkas.
 ### Fase A — Fondasi (backend + kerangka app)
 
 #### S0 — Prasyarat backend (L) — G-01, G-02, G-03, G-04, G-07, G-08, G-10 (fondasi), G-17 (dasar)
-**Status: SELESAI & live (19 Sep 2026)** — kecuali role baru G-15 (ditunda). Bukti: `mobileAuth`, `financeIdempotency`, `financeMedia`, `financeNotifications` integration test + `rateLimit`, `mediaSigning`, `fcmTransport` unit test. Dokumen: `docs/FINANCE-MOBILE-BACKEND.md`.
+**Status: SELESAI & live (19 Sep 2026)** — role baru G-15 diselesaikan pada S2 (nama peran: `APPROVER`, bukan `FINANCE_APPROVER`). Bukti: `mobileAuth`, `financeIdempotency`, `financeMedia`, `financeNotifications` integration test + `rateLimit`, `mediaSigning`, `fcmTransport` unit test. Dokumen: `docs/FINANCE-MOBILE-BACKEND.md`.
 Cakupan: sesi mobile, rate limit, capabilities, idempotency, foto nota terlindungi, token push perangkat + dispatch, `mobile/config`.
 | AC | Kriteria |
 |---|---|
@@ -1262,7 +1262,7 @@ Cakupan: sesi mobile, rate limit, capabilities, idempotency, foto nota terlindun
 | S0-4 | *Given* token `typ:"mobile"` *When* request apa pun *Then* **tidak ada** `X-Refreshed-Token` |
 | S0-5 | *Given* 6 login gagal / 15 mnt (email+IP sama) *Then* percobaan ke-6 ditolak 429 dengan pesan Indonesia; login sah dari pengguna lain tidak terpengaruh |
 | S0-6 | *Given* `Idempotency-Key` sama & body sama pada `POST /expenses` *Then* hanya **satu** dokumen dan respons kedua bertanda `Idempotent-Replayed`; body beda ⇒ 422 |
-| S0-7 | Role `ACCOUNTANT`/`FINANCE_APPROVER` ada; tes izin per role lulus (Approver 403 pada `POST /expenses`; Accountant 403 pada `/expenses/:id/approve` dan `/penerimaan/verifikasi`) |
+| S0-7 | Role `ACCOUNTANT`/`APPROVER` ada; tes izin per role lulus (Approver 403 pada `POST /expenses`; Accountant 403 pada `/expenses/:id/approve` dan `/penerimaan/verifikasi`) |
 | S0-8 | Suite finance existing (11 berkas) tetap hijau; router baru terpasang di `testApp.js` |
 
 #### S1 — Kerangka app + design system (M)
@@ -1278,6 +1278,8 @@ Proyek `finance-mobile/`, tema Biru Kaca, `GlassCard`, `MoneyText`, `StatusBadge
 | S1-5 | Tema mengikuti sistem; kontras AA untuk teks di atas glass (Accessibility Scanner bersih) |
 
 #### S2 — Auth, kunci, keamanan dasar (L) — butuh S0
+
+**Status: SELESAI (19 Sep 2026, belum ada build EAS).** Diimplementasikan: login sesi mobile SANSS Hub, refresh rotasi single-flight, logout/revoke, sesi habis, SecureStore; app lock PIN 6 digit (PBKDF2 25.000 iterasi, verifier saja) + biometrik opsional dengan cadangan PIN; auto-lock default 2 menit (pilihan Langsung/30 dtk/1/2/5 mnt), tutup layar saat ke background, jeda percobaan salah tersimpan, step-up 2 menit untuk aksi sensitif; RBAC end-to-end berbasis capabilities (tab, FAB, route, command); layar Keamanan dan Ubah PIN; role `ACCOUNTANT` & `APPROVER` di backend. Push tidak diaktifkan; layar transaksi belum dikerjakan. Bukti: 101 tes Jest, `tsc`, `eslint`, `expo-doctor` 21/21, bundle Android sukses; backend `authorize` 34 tes + `financeRoles` 7 tes.
 | AC | Kriteria |
 |---|---|
 | S2-1 | Login sukses → wajib buat PIN 6 digit → (opsional) biometrik → Beranda |
@@ -1325,7 +1327,7 @@ Layar H1, K1, K2 (baca); `GET /finance/dashboard`, `/cash-accounts`, `/reports/l
 | S5-5 | Verifikasi massal ⇒ dialog hasil "N berhasil, M gagal" + alasan; yang berhasil tidak diulang |
 | S5-6 | **Belum Lunas** wajib alasan; status order kembali ke DP/BELUM_BAYAR di web |
 | S5-7 | Kartu total periode menampilkan nominal Menunggu vs Sudah Diverifikasi (server) dan **tidak berubah** saat pindah tab |
-| S5-8 | Akun `FINANCE_APPROVER`/`OWNER`/`ACCOUNTANT` hanya melihat daftar (tanpa tombol verifikasi) |
+| S5-8 | Akun `APPROVER`/`OWNER`/`ACCOUNTANT` hanya melihat daftar (tanpa tombol verifikasi) |
 | S5-9 | Foto bukti dari galeri (screenshot m-banking) terunggah terkompres < 400 KB dan tampil di detail |
 
 ### Fase C — Mencatat transaksi
@@ -1428,7 +1430,7 @@ langsung menjawab masalah Owner (G2, G4), sebelum fitur pencatatan yang lebih be
 | # | Risiko | Dampak | Mitigasi |
 |---|---|---|---|
 | R1 | Backend punya lubang keamanan (tanpa rate limit, sesi 7 hari) yang jadi lebih berbahaya saat ada app finansial | Tinggi | G-01…G-03 = P0, memblokir rilis |
-| R2 | Satu orang finance memegang POST+APPROVE | Sedang | Server melarang menyetujui pengajuan sendiri; approval pengajuan Natasha oleh Owner; peran `FINANCE_APPROVER` (G-15) |
+| R2 | Satu orang finance memegang POST+APPROVE | Sedang | Server melarang menyetujui pengajuan sendiri; approval pengajuan Natasha oleh Owner; peran `APPROVER` (G-15) |
 | R3 | Dokumen ganda karena jaringan mobile tidak stabil (preseden 22 pengeluaran ganda) | Tinggi | G-07 wajib sebelum command uang; UI "status belum pasti" |
 | R4 | Foto nota dapat diakses tanpa auth | Sedang | G-08; sementara: nama = hash konten, tidak pernah ditampilkan di log/deeplink publik |
 | R5 | Blur pada Android lama lambat/panas | Sedang | Tier glass, batas 2 blur/layar, tanpa blur di daftar, uji perangkat 3 GB |

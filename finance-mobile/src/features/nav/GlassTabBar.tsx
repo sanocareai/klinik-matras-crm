@@ -8,6 +8,8 @@ import { PressableScale } from "@/design/ui";
 import { font } from "@/design/tokens";
 import { haptic } from "@/design/haptics";
 import { useDashboard } from "@/hooks/data";
+import { NEED_TAB, bisaMencatatAtauVerifikasi, has } from "@/auth/capabilities";
+import { useSession } from "@/auth/session";
 import { S } from "@/lib/strings";
 
 // Tab bar 5 item (Beranda, Transaksi, Persetujuan, Laporan, Lainnya) + FAB "+" kanan-bawah di atas
@@ -34,11 +36,13 @@ export function GlassTabBar({ state, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { data } = useDashboard();
+  const caps = useSession((s) => s.capabilities);
   const menunggu = data
     ? data.antrean.pengeluaranMenunggu + data.antrean.pembelianMenunggu + data.antrean.tagihanMenunggu + data.antrean.refundMenunggu
     : 0;
   const aktifNama = state.routes[state.index]?.name;
-  const tampilFab = aktifNama === "index" || aktifNama === "transaksi";
+  // FAB hanya untuk yang boleh mencatat atau memverifikasi pembayaran (Approver/Accountant-baca tidak melihatnya).
+  const tampilFab = (aktifNama === "index" || aktifNama === "transaksi") && bisaMencatatAtauVerifikasi(caps);
 
   return (
     <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}>
@@ -65,6 +69,8 @@ export function GlassTabBar({ state, navigation }: Props) {
         {state.routes.map((r, i) => {
           const meta = ITEM[r.name];
           if (!meta) return null;
+          const butuh = NEED_TAB[r.name as keyof typeof NEED_TAB];
+          if (butuh && !has(caps, butuh)) return null;
           const fokus = state.index === i;
           const warna = fokus ? colors.primary : colors.textMuted;
           const badge = r.name === "persetujuan" ? menunggu : 0;

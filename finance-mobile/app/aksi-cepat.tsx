@@ -13,6 +13,7 @@ import { useTheme } from "@/design/theme";
 import { haptic } from "@/design/haptics";
 import { useOnline } from "@/hooks/useOnline";
 import { S } from "@/lib/strings";
+import { denganAkses } from "@/features/guard/RequireCapability";
 
 // SHEET TRANSAKSI CEPAT (FAB). Foto nota bisa masuk dari kamera, galeri, tempel dari clipboard, atau
 // dibagikan dari WhatsApp/galeri ("Bagikan → SANO Finance"). Scaffold ini baru MENAMPILKAN foto yang
@@ -25,7 +26,7 @@ const JUDUL_AKSI: Record<string, string> = {
   transfer: S.aksi.transfer, pemasukan: S.aksi.pemasukan, verifikasi: S.aksi.verifikasi, refund: S.aksi.refund, kas: S.lainnya.kasBank,
 };
 
-export default function AksiCepat() {
+function AksiCepat() {
   const { colors } = useTheme();
   const router = useRouter();
   const online = useOnline();
@@ -105,3 +106,6 @@ function Sumber({ ikon, label, onPress }: { ikon: LucideIcon; label: string; onP
     </View>
   );
 }
+
+// Mencatat butuh FINANCE_POST; memverifikasi pembayaran butuh PAYMENT_WRITE (khusus FINANCE).
+export default denganAkses(AksiCepat, ["financePost", "paymentWrite"], "any");

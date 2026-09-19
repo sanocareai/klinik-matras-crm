@@ -5,24 +5,21 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/design/theme";
 import { GlassCard } from "@/design/GlassCard";
-import { Button, MockBanner, PressableScale } from "@/design/ui";
+import { Button, MockBanner, OfflineBanner, PressableScale } from "@/design/ui";
+import { useOnline } from "@/hooks/useOnline";
 import { font, radius, GUTTER } from "@/design/tokens";
 import { haptic } from "@/design/haptics";
 import { useSession } from "@/auth/session";
-import { ApiError } from "@/api/errors";
+import { pesanSesiHilang, pesanUntukPengguna } from "@/api/errors";
 import { ENV } from "@/lib/env";
 import { S } from "@/lib/strings";
-
-const PESAN_KODE: Record<string, string> = {
-  NOT_FINANCE_TEAM: "Aplikasi ini untuk tim Finance. Akun Anda tidak punya akses Finance.",
-  RATE_LIMITED: "Terlalu banyak percobaan. Tunggu beberapa menit lalu coba lagi.",
-};
 
 export default function Login() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const login = useSession((s) => s.login);
   const sesiHilang = useSession((s) => s.sesiHilang);
+  const online = useOnline();
   const [email, setEmail] = useState("");
   const [sandi, setSandi] = useState("");
   const [lihat, setLihat] = useState(false);
@@ -38,7 +35,7 @@ export default function Login() {
       haptic.sukses();
     } catch (e) {
       haptic.galat();
-      setGalat(e instanceof ApiError ? (PESAN_KODE[String(e.code)] ?? e.message) : "Terjadi kesalahan. Coba lagi.");
+      setGalat(pesanUntukPengguna(e));
     } finally {
       setSibuk(false);
     }
@@ -63,9 +60,10 @@ export default function Login() {
           </View>
 
           {ENV.useMocks ? <MockBanner /> : null}
+          {!online ? <OfflineBanner /> : null}
           {sesiHilang ? (
-            <Text accessibilityRole="alert" style={{ color: colors.warning, fontFamily: font.medium, fontSize: 13, textAlign: "center", marginBottom: 12 }}>
-              Sesi Anda berakhir. Silakan masuk lagi.
+            <Text accessibilityRole="alert" style={{ color: colors.warning, fontFamily: font.medium, fontSize: 13, lineHeight: 18, textAlign: "center", marginBottom: 12 }}>
+              {pesanSesiHilang(sesiHilang)}
             </Text>
           ) : null}
 
@@ -88,7 +86,8 @@ export default function Login() {
               </PressableScale>
             </View>
             {galat ? <Text accessibilityRole="alert" style={{ color: colors.danger, fontFamily: font.medium, fontSize: 13, marginTop: 12 }}>{galat}</Text> : null}
-            <Button label={S.login.tombol} onPress={masuk} loading={sibuk} style={{ marginTop: 18 }} />
+            <Button label={S.login.tombol} onPress={masuk} loading={sibuk} disabled={!online && !ENV.useMocks} style={{ marginTop: 18 }} />
+            {ENV.useMocks ? <Text style={{ color: colors.textFaint, fontFamily: font.regular, fontSize: 11, lineHeight: 16, marginTop: 10 }}>Mode contoh: isi email apa saja. Awali dengan owner, akuntan, approver, atau tanpaakses untuk mencoba peran lain.</Text> : null}
           </GlassCard>
 
           <Text style={{ color: colors.textFaint, fontFamily: font.regular, fontSize: 11, textAlign: "center", marginTop: 20 }}>

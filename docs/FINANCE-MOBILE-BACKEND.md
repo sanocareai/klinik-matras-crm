@@ -93,6 +93,10 @@ Isi title/body **generik** (tanpa nominal/nama); detail hanya di `data` (`url: s
 Migration `20260919230000_mobile_sessions_idempotency_devices` (additive): `mobile_sessions`, `mobile_device_tokens`, `api_idempotency_keys`.
 Deploy: `git pull` → `docker compose up -d --build backend` → `docker compose exec backend npx prisma migrate deploy`.
 
+### Role baru (S2, 19 Sep 2026)
+
+Enum `Role` bertambah `ACCOUNTANT` dan `APPROVER` (migration `20260920100000_role_accountant_approver`, hanya `ADD VALUE`, aman diulang). Belum ada pengguna yang ditetapkan — atur lewat halaman Pengguna & Peran ("Akuntan", "Penyetuju Keuangan"). `ACCOUNTANT`: FINANCE_READ, FINANCE_POST, PAYMENT_READ, DASHBOARD_READ. `APPROVER`: FINANCE_READ, FINANCE_APPROVE, PAYMENT_READ, DASHBOARD_READ. `PAYMENT_WRITE` tetap khusus `FINANCE`. Keduanya masuk portal Finance dan `capabilities.financeApp=true` (preset `ACCOUNTANT`/`APPROVER`). Tes: `tests/authorize.test.js`, `tests/integration/financeRoles.integration.test.js`.
+
 ## 8. Tes
 
 ```bash

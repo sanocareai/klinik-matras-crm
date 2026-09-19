@@ -1,10 +1,7 @@
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import {
-  BadgeCheck, Banknote, Camera, CircleCheck, Eye, EyeOff, HandCoins, Landmark, Receipt, RefreshCw, ShoppingCart,
-  ArrowLeftRight, TriangleAlert, Wallet, type LucideIcon,
-} from "lucide-react-native";
+import { BadgeCheck, CircleCheck, Eye, EyeOff, Landmark, TriangleAlert, Wallet, type LucideIcon } from "lucide-react-native";
 import { Screen } from "@/design/Screen";
 import { GlassCard } from "@/design/GlassCard";
 import { MoneyText } from "@/design/MoneyText";
@@ -17,25 +14,16 @@ import { haptic } from "@/design/haptics";
 import { useDashboard, useTren } from "@/hooks/data";
 import { useOnline } from "@/hooks/useOnline";
 import { useSession } from "@/auth/session";
+import { has } from "@/auth/capabilities";
+import { aksiUntuk } from "@/features/aksi";
 import { ENV } from "@/lib/env";
 import { hariIniWIB, labelBulan, sapaan, tanggalPendek, tanggalPanjang } from "@/lib/dates";
 import { S } from "@/lib/strings";
-
-type Aksi = { id: string; label: string; Icon: LucideIcon; perlu: "post" | "payment" | "any" };
-const AKSI: Aksi[] = [
-  { id: "foto", label: S.aksi.fotoNota, Icon: Camera, perlu: "post" },
-  { id: "pengeluaran", label: S.aksi.pengeluaran, Icon: Receipt, perlu: "post" },
-  { id: "pembelian", label: S.aksi.pembelian, Icon: ShoppingCart, perlu: "post" },
-  { id: "kasbon", label: S.aksi.kasbon, Icon: HandCoins, perlu: "post" },
-  { id: "transfer", label: S.aksi.transfer, Icon: ArrowLeftRight, perlu: "post" },
-  { id: "pemasukan", label: S.aksi.pemasukan, Icon: Banknote, perlu: "post" },
-  { id: "verifikasi", label: S.aksi.verifikasi, Icon: BadgeCheck, perlu: "payment" },
-  { id: "refund", label: S.aksi.refund, Icon: RefreshCw, perlu: "post" },
-];
+import { denganAkses } from "@/features/guard/RequireCapability";
 
 const IKON_REKENING: Record<string, LucideIcon> = { BANK: Landmark, KAS: Wallet, EWALLET: Wallet };
 
-export default function Beranda() {
+function Beranda() {
   const { colors } = useTheme();
   const router = useRouter();
   const online = useOnline();
@@ -46,12 +34,8 @@ export default function Beranda() {
   const { data, isLoading, isError, error, refetch, isRefetching } = useDashboard();
   const tren = useTren();
 
-  // Owner: aksi catat bukan aksi cepat (PRD §12.4, preset OWNER menonjolkan baca + approve).
-  const aksiTampil = AKSI.filter((a) => {
-    if (a.perlu === "post") return !!caps?.financePost && caps.preset !== "OWNER";
-    if (a.perlu === "payment") return !!caps?.paymentWrite;
-    return true;
-  });
+  // Aksi cepat berdasarkan capabilities (Owner: aksi catat bukan aksi cepat — PRD §12.4).
+  const aksiTampil = aksiUntuk(caps);
 
   const menunggu = data ? data.antrean.pengeluaranMenunggu + data.antrean.pembelianMenunggu + data.antrean.tagihanMenunggu + data.antrean.refundMenunggu : 0;
   const verifikasi = data ? data.antrean.lunasBelumDicatat.jumlah + data.antrean.jumlahPembayaranBelumVerifikasi : 0;
@@ -135,10 +119,10 @@ export default function Beranda() {
             <>
               <SectionHeader judul={S.beranda.perluTindakan} />
               <View style={{ flexDirection: "row", gap: 10 }}>
-                {caps?.financeApprove ? (
+                {has(caps, "financeApprove") ? (
                   <Tindakan ikon={CircleCheck} nilai={menunggu} label="Menunggu persetujuan" tone="warning" onPress={() => router.push("/persetujuan")} />
                 ) : null}
-                {caps?.paymentRead ? (
+                {has(caps, "paymentRead") ? (
                   <Tindakan ikon={BadgeCheck} nilai={verifikasi} label="Menunggu verifikasi" tone="info" onPress={() => router.push("/transaksi")} />
                 ) : null}
                 {gap > 0 ? <Tindakan ikon={TriangleAlert} nilai={gap} label="Data belum lengkap" tone="danger" onPress={() => router.push("/lainnya")} /> : null}
@@ -248,3 +232,5 @@ function BerandaMemuat() {
     </View>
   );
 }
+
+export default denganAkses(Beranda, "financeRead");

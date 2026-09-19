@@ -14,6 +14,7 @@ import { ENV } from "@/lib/env";
 import { tanggalPendek } from "@/lib/dates";
 import { S } from "@/lib/strings";
 import type { TransaksiItem } from "@/api/types";
+import { denganAkses } from "@/features/guard/RequireCapability";
 
 type Segmen = "terbukukan" | "pengeluaran" | "pembelian" | "kasbon" | "pembayaran";
 const SEGMEN: { id: Segmen; label: string }[] = [
@@ -38,7 +39,7 @@ function cocok(q: string, ...isi: string[]): boolean {
   return kata.every((k) => gudang.includes(k));
 }
 
-export default function Transaksi() {
+function Transaksi() {
   const { colors } = useTheme();
   const online = useOnline();
   const [segmen, setSegmen] = useState<Segmen>("pengeluaran");
@@ -110,3 +111,5 @@ export default function Transaksi() {
     </Screen>
   );
 }
+
+export default denganAkses(Transaksi, "financeRead");

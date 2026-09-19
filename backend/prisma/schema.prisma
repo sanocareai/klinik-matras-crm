@@ -45,6 +45,11 @@ enum Role {
   // = semua permission ADMIN + B2B_READ/WRITE, jadi role ini TIDAK
   // mengurangi apa pun yang sudah dipegang ketiganya sebagai admin.
   OWNER
+  // Finance Mobile S2 (19 Sep 2026) — dua peran BARU untuk memisahkan tugas keuangan
+  // saat tim tumbuh. Tidak ada pengguna yang otomatis diberi peran ini; pemberiannya
+  // lewat halaman Pengguna & Peran. Lihat constants/permissions.js.
+  ACCOUNTANT
+  APPROVER
 }
 
 // Lini produk penentu katalog material, termin garansi, dan lead time (D-004).

@@ -322,3 +322,26 @@ test("setiap permission yang dipetakan ke role benar-benar terdaftar", () => {
     }
   }
 });
+
+// --- Finance Mobile S2: ACCOUNTANT & APPROVER, PAYMENT_WRITE khusus FINANCE ---------
+test("ACCOUNTANT: baca + catat, tanpa approve/verifikasi pembayaran/admin", () => {
+  const u = { roles: ["ACCOUNTANT"] };
+  for (const p of [P.FINANCE_READ, P.FINANCE_POST, P.PAYMENT_READ]) assert.ok(hasPermission(u, p), p);
+  for (const p of [P.FINANCE_APPROVE, P.FINANCE_ADMIN, P.PAYMENT_WRITE]) assert.ok(!hasPermission(u, p), p);
+});
+
+test("APPROVER: baca + putuskan, tanpa mencatat/verifikasi pembayaran/admin", () => {
+  const u = { roles: ["APPROVER"] };
+  for (const p of [P.FINANCE_READ, P.FINANCE_APPROVE, P.PAYMENT_READ]) assert.ok(hasPermission(u, p), p);
+  for (const p of [P.FINANCE_POST, P.FINANCE_ADMIN, P.PAYMENT_WRITE]) assert.ok(!hasPermission(u, p), p);
+});
+
+test("PAYMENT_WRITE (verifikasi pembayaran) HANYA dipegang FINANCE — bukan OWNER, ADMIN, ACCOUNTANT, APPROVER", () => {
+  const pemegang = Object.entries(ROLE_PERMISSIONS).filter(([, perms]) => perms.includes(P.PAYMENT_WRITE)).map(([r]) => r);
+  assert.deepEqual(pemegang, ["FINANCE"]);
+});
+
+test("portal Finance menerima ACCOUNTANT dan APPROVER; role lama tetap", () => {
+  const finance = PORTALS.find((p) => p.key === "finance");
+  for (const r of ["ADMIN", "OWNER", "FINANCE", "ACCOUNTANT", "APPROVER"]) assert.ok(finance.roles.includes(r), r);
+});

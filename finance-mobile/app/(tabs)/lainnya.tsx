@@ -1,8 +1,9 @@
 import React from "react";
 import { Alert, Switch, Text, View } from "react-native";
+import { useRouter } from "expo-router";
 import {
-  BookOpen, ChevronRight, FileSpreadsheet, FileText, Landmark, LogOut, Palette, Scale, ShieldCheck, Smartphone, Users, Info,
-  TriangleAlert, Wallet, BadgeCheck, type LucideIcon,
+  BadgeCheck, BookOpen, ChevronRight, FileSpreadsheet, FileText, Info, Landmark, LogOut, Palette, Scale, ShieldCheck, Smartphone,
+  TriangleAlert, Users, Wallet, type LucideIcon,
 } from "lucide-react-native";
 import { Screen } from "@/design/Screen";
 import { GlassCard } from "@/design/GlassCard";
@@ -12,35 +13,55 @@ import { useTheme } from "@/design/theme";
 import { usePrefs, type ThemePref } from "@/design/prefs";
 import { haptic } from "@/design/haptics";
 import { useSession } from "@/auth/session";
+import { has, type Need } from "@/auth/capabilities";
 import { ENV } from "@/lib/env";
 import { S } from "@/lib/strings";
 
-type Menu = { label: string; Icon: LucideIcon };
+type Menu = { label: string; Icon: LucideIcon; need?: Need; href?: "/keamanan" };
+
+// Setiap menu punya izin yang dibutuhkan (capability-driven). Menu tanpa izin tidak ditampilkan.
 const KEUANGAN: Menu[] = [
-  { label: S.lainnya.kasBank, Icon: Wallet },
-  { label: S.lainnya.piutangRefund, Icon: Users },
-  { label: S.lainnya.invoice, Icon: FileText },
-  { label: S.lainnya.supplierUtang, Icon: Landmark },
+  { label: S.lainnya.kasBank, Icon: Wallet, need: "financeRead" },
+  { label: S.lainnya.piutangRefund, Icon: Users, need: "financeRead" },
+  { label: S.lainnya.invoice, Icon: FileText, need: "financeRead" },
+  { label: S.lainnya.supplierUtang, Icon: Landmark, need: "financeRead" },
 ];
 const AKUNTANSI: Menu[] = [
-  { label: S.lainnya.jurnal, Icon: FileSpreadsheet },
-  { label: S.lainnya.bukuBesar, Icon: BookOpen },
-  { label: S.lainnya.rekonsiliasi, Icon: Scale },
-  { label: S.lainnya.dataBelumLengkap, Icon: TriangleAlert },
-  { label: S.lainnya.tinjauBukti, Icon: BadgeCheck },
+  { label: S.lainnya.jurnal, Icon: FileSpreadsheet, need: "financeRead" },
+  { label: S.lainnya.bukuBesar, Icon: BookOpen, need: "financeRead" },
+  { label: S.lainnya.rekonsiliasi, Icon: Scale, need: "financeRead" },
+  { label: S.lainnya.dataBelumLengkap, Icon: TriangleAlert, need: "financeRead" },
+  { label: S.lainnya.tinjauBukti, Icon: BadgeCheck, need: "financeAdmin" },
+];
+const PENGATURAN: Menu[] = [
+  { label: S.lainnya.keamanan, Icon: ShieldCheck, href: "/keamanan" },
+  { label: S.lainnya.perangkat, Icon: Smartphone, href: "/keamanan" },
+  { label: S.lainnya.tentang, Icon: Info },
 ];
 
-function DaftarMenu({ items }: { items: Menu[] }) {
+function bolehLihat(caps: ReturnType<typeof useSession.getState>["capabilities"], m: Menu) {
+  return !m.need || has(caps, m.need);
+}
+
+function DaftarMenu({ items, ikon = "info" }: { items: Menu[]; ikon?: "info" | "neutral" }) {
   const { colors } = useTheme();
+  const router = useRouter();
+  const caps = useSession((s) => s.capabilities);
+  const tampil = items.filter((m) => bolehLihat(caps, m));
+  if (tampil.length === 0) return null;
   return (
     <GlassCard padding={4}>
-      {items.map((m, i) => (
+      {tampil.map((m, i) => (
         <PressableScale
           key={m.label} accessibilityLabel={m.label}
-          onPress={() => { haptic.tick(); Alert.alert(m.label, `${S.segera}. ${S.segeraIsi}`); }}
+          onPress={() => {
+            haptic.tick();
+            if (m.href) router.push(m.href);
+            else Alert.alert(m.label, `${S.segera}. ${S.segeraIsi}`);
+          }}
           style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.hairline }}
         >
-          <IconCircle icon={m.Icon} tone="info" size={38} />
+          <IconCircle icon={m.Icon} tone={ikon} size={38} />
           <Text style={{ flex: 1, color: colors.text, fontFamily: font.medium, fontSize: 15 }}>{m.label}</Text>
           <ChevronRight size={20} color={colors.textFaint} strokeWidth={1.75} />
         </PressableScale>
@@ -57,6 +78,13 @@ export default function Lainnya() {
   const { theme, setTheme, efekRingan, setEfekRingan, sembunyikanAngka, setSembunyikanAngka } = usePrefs();
 
   const pilihTema: [ThemePref, string][] = [["system", S.tampilan.sistem], ["light", S.tampilan.terang], ["dark", S.tampilan.gelap]];
+
+  function keluar() {
+    Alert.alert("Keluar dari akun?", "Anda perlu masuk lagi dan membuat PIN baru di HP ini.", [
+      { text: S.umum.batal, style: "cancel" },
+      { text: S.umum.keluar, style: "destructive", onPress: () => { haptic.ringan(); void logout(); } },
+    ]);
+  }
 
   return (
     <Screen>
@@ -77,9 +105,9 @@ export default function Lainnya() {
         </View>
       </GlassCard>
 
-      <SectionHeader judul={S.lainnya.keuangan} />
+      {KEUANGAN.some((m) => bolehLihat(caps, m)) ? <SectionHeader judul={S.lainnya.keuangan} /> : null}
       <DaftarMenu items={KEUANGAN} />
-      <SectionHeader judul={S.lainnya.akuntansi} />
+      {AKUNTANSI.some((m) => bolehLihat(caps, m)) ? <SectionHeader judul={S.lainnya.akuntansi} /> : null}
       <DaftarMenu items={AKUNTANSI} />
 
       <SectionHeader judul={S.lainnya.tampilan} />
@@ -96,22 +124,9 @@ export default function Lainnya() {
       </GlassCard>
 
       <SectionHeader judul={S.lainnya.pengaturan} />
-      <GlassCard padding={4}>
-        {[
-          { label: S.lainnya.keamanan, Icon: ShieldCheck },
-          { label: S.lainnya.perangkat, Icon: Smartphone },
-          { label: S.lainnya.tentang, Icon: Info },
-        ].map((m, i) => (
-          <PressableScale key={m.label} accessibilityLabel={m.label} onPress={() => { haptic.tick(); Alert.alert(m.label, `${S.segera}. ${S.segeraIsi}`); }}
-            style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.hairline }}>
-            <IconCircle icon={m.Icon} tone="neutral" size={38} />
-            <Text style={{ flex: 1, color: colors.text, fontFamily: font.medium, fontSize: 15 }}>{m.label}</Text>
-            <ChevronRight size={20} color={colors.textFaint} strokeWidth={1.75} />
-          </PressableScale>
-        ))}
-      </GlassCard>
+      <DaftarMenu items={PENGATURAN} ikon="neutral" />
 
-      <Button label={S.umum.keluar} variant="danger" icon={LogOut} onPress={() => { haptic.ringan(); void logout(); }} style={{ marginTop: 24 }} />
+      <Button label={S.umum.keluar} variant="danger" icon={LogOut} onPress={keluar} style={{ marginTop: 24 }} />
       <Text style={{ color: colors.textFaint, fontFamily: font.regular, fontSize: 11, textAlign: "center", marginTop: 16 }}>
         {S.app} {ENV.version} · {ENV.variant}{ENV.useMocks ? " · data contoh" : ""}
       </Text>

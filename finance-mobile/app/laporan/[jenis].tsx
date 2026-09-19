@@ -11,10 +11,11 @@ import { useTheme } from "@/design/theme";
 import { useLaporan, BelumTersedia } from "@/hooks/data";
 import { S } from "@/lib/strings";
 import type { JenisLaporan } from "@/api/types";
+import { denganAkses } from "@/features/guard/RequireCapability";
 
 const VALID: JenisLaporan[] = ["laba-rugi", "neraca", "arus-kas", "neraca-saldo", "umur-piutang", "umur-utang"];
 
-export default function DetailLaporan() {
+function DetailLaporan() {
   const { colors } = useTheme();
   const router = useRouter();
   const { jenis } = useLocalSearchParams<{ jenis: string }>();
@@ -94,3 +95,5 @@ export default function DetailLaporan() {
     </Screen>
   );
 }
+
+export default denganAkses(DetailLaporan, "financeRead");

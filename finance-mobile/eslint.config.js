@@ -11,6 +11,8 @@ module.exports = defineConfig([
   { ignores: ["dist/*", ".expo/*", "node_modules/*", "coverage/*"] },
   {
     rules: {
+      // Log hanya lewat src/lib/log.ts (redaksi token/PIN/nominal).
+      "no-console": "error",
       "no-restricted-syntax": [
         "error",
         { selector: "CallExpression[callee.name='parseFloat']", message: PESAN },

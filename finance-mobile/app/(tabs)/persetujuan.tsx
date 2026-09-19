@@ -16,10 +16,11 @@ import { ENV } from "@/lib/env";
 import { tanggalPendek } from "@/lib/dates";
 import { S } from "@/lib/strings";
 import type { JenisApproval } from "@/api/types";
+import { denganAkses } from "@/features/guard/RequireCapability";
 
 const JENIS: (JenisApproval | "semua")[] = ["semua", "expense", "purchase", "bill", "refund"];
 
-export default function Persetujuan() {
+function Persetujuan() {
   const { colors } = useTheme();
   const router = useRouter();
   const online = useOnline();
@@ -94,3 +95,5 @@ export default function Persetujuan() {
     </Screen>
   );
 }
+
+export default denganAkses(Persetujuan, "financeApprove");
