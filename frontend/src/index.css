@@ -4169,3 +4169,48 @@ body {
   outline-offset: -2px;
 }
 
+
+/* ── Finance: bar pencarian + filter bergaya glass (Apple) ─────────────────
+   Dipakai FilterBar (features/finance/FilterBar.jsx) di setiap tab transaksi.
+   Warna murni dari token tema, jadi otomatis ikut mode terang/gelap. */
+.fin-glass {
+  background: color-mix(in srgb, var(--bg-surface) 58%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  border: 1px solid color-mix(in srgb, var(--bg-surface) 75%, transparent);
+  border-radius: 20px;
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+[data-theme="dark"] .fin-glass {
+  border-color: rgba(255, 255, 255, 0.10);
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.fin-search {
+  display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px;
+  border-radius: 999px; min-width: 0;
+  background: color-mix(in srgb, var(--bg-inset) 70%, transparent);
+  transition: box-shadow .15s ease, background .15s ease;
+}
+.fin-search:focus-within { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); background: var(--bg-surface); }
+.fin-search input {
+  flex: 1; min-width: 0; height: 100%; background: transparent; border: 0; outline: 0;
+  font-size: 14px; color: var(--text-primary);
+}
+.fin-search input::placeholder { color: var(--text-tertiary); }
+.fin-chip {
+  position: relative; display: inline-flex; align-items: center; flex: 0 0 auto; height: 36px;
+  border-radius: 999px; padding: 0 30px 0 12px; font-size: 13px; white-space: nowrap;
+  background: color-mix(in srgb, var(--bg-inset) 70%, transparent); color: var(--text-secondary);
+  transition: background .15s ease, color .15s ease;
+}
+.fin-chip:hover { background: var(--bg-hover); }
+.fin-chip[data-aktif="true"] { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.fin-chip select {
+  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px;
+}
+.fin-chip svg.fin-chip-caret { position: absolute; right: 10px; pointer-events: none; opacity: .7; }
+.fin-scroll-x { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.fin-scroll-x::-webkit-scrollbar { display: none; }
+.fin-search input:focus, .fin-search input:focus-visible { outline: 0; box-shadow: none; }
+.fin-search input[type="search"]::-webkit-search-cancel-button { display: none; }
+.fin-search input, .fin-search input:hover { background: transparent !important; border-radius: 0; padding-left: 0; padding-right: 0; }

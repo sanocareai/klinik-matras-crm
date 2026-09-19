@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Receipt, Pencil } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -17,6 +17,7 @@ import {
   LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
+import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 
 // PENGELUARAN & REIMBURSEMENT.
 //
@@ -45,6 +46,15 @@ export default function FinanceExpenses() {
   // sudah lunas), jadi default lama membuat halaman ini tampak kosong
   // padahal datanya ada ribuan baris.
   const [status, setStatus] = useState("");
+  // Pencarian & filter — dikirim ke SERVER (bukan disaring di browser) supaya
+  // hasilnya mencakup seluruh periode, bukan cuma 300 baris yang termuat.
+  const [q, setQ] = useState("");
+  const [fKategori, setFKategori] = useState("");
+  const [fDivisi, setFDivisi] = useState("");
+  const [fMode, setFMode] = useState("");
+  const [fBukti, setFBukti] = useState("");
+  const qTunda = useTertunda(q);
+  const pernahMuat = useRef(false);
   const [data, setData] = useState(null);
   const [kategori, setKategori] = useState([]);
   const [rekening, setRekening] = useState([]);
@@ -64,7 +74,10 @@ export default function FinanceExpenses() {
     setError(null);
     try {
       const [e, k, r] = await Promise.all([
-        api.getFinanceExpenses({ ...periode, status }),
+        api.getFinanceExpenses({
+          ...periode, status, q: qTunda.trim(),
+          categoryId: fKategori, division: fDivisi, mode: fMode, bukti: fBukti,
+        }),
         api.getFinanceExpenseCategories(),
         api.getFinanceCashAccounts().catch(() => ({ accounts: [] })),
       ]);
@@ -77,9 +90,19 @@ export default function FinanceExpenses() {
     } finally {
       if (!diam) setLoading(false);
     }
-  }, [periode, status]);
+  }, [periode, status, qTunda, fKategori, fDivisi, fMode, fBukti]);
 
-  useEffect(() => { muat(); }, [muat]);
+  // Pemuatan pertama menampilkan layar "memuat"; setelah itu (ganti filter,
+  // ketik pencarian) daftar disegarkan diam-diam supaya kolom cari tidak
+  // ikut hilang dan kursor tidak lepas.
+  useEffect(() => {
+    muat({ diam: pernahMuat.current });
+    pernahMuat.current = true;
+  }, [muat]);
+
+  function aturUlangFilter() {
+    setQ(""); setFKategori(""); setFDivisi(""); setFMode(""); setFBukti("");
+  }
 
   async function aksi(fn) {
     try {
@@ -160,6 +183,19 @@ export default function FinanceExpenses() {
       <p className="text-[13px] leading-relaxed text-ink3">
         Saring daftar di bawah berdasarkan tahap prosesnya — dari pengajuan sampai uangnya benar-benar keluar.
       </p>
+
+      <FilterBar
+        q={q} onQ={setQ}
+        placeholder="Cari nomor, keterangan, penerima, nominal…"
+        filters={[
+          { key: "kat", label: "Kategori", value: fKategori, onChange: setFKategori, options: kategori.map((k) => [k.id, k.name]) },
+          { key: "div", label: "Divisi", value: fDivisi, onChange: setFDivisi, options: Object.entries(LABEL_DIVISI) },
+          { key: "mode", label: "Cara bayar", value: fMode, onChange: setFMode, options: [["LANGSUNG", "Bayar langsung"], ["REIMBURSEMENT", "Reimbursement"], ["UTANG", "Utang"]] },
+          { key: "bukti", label: "Bukti", value: fBukti, onChange: setFBukti, options: [["ada", "Ada nota"], ["tanpa", "Tanpa nota"], ["terverifikasi", "Terverifikasi"], ["belum", "Belum diverifikasi"]] },
+        ]}
+        ringkasan={`${expenses.length} pengeluaran${data?.terpotong ? " · baru 300 teratas tampil — persempit pencarian atau periode" : ""}`}
+        onReset={aturUlangFilter}
+      />
 
       <Card className="overflow-hidden">
         <JudulKartu

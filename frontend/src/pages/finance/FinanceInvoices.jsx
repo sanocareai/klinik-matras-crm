@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, FileText, AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
-import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
@@ -14,6 +13,7 @@ import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   Pilihan, tanggalPendek,
 } from "@/features/finance/shared.jsx";
+import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 
 // INVOICE & JATUH TEMPO — sisi FINANCE dari invoice yang sudah ada.
 //
@@ -46,25 +46,38 @@ const FILTER = [
 export default function FinanceInvoices() {
   const [jatuhTempo, setJatuhTempo] = useState("");
   const [search, setSearch] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  const [fSumber, setFSumber] = useState("");
+  const [fSales, setFSales] = useState("");
+  const [fTempo, setFTempo] = useState("");
+  const searchTunda = useTertunda(search);
+  const pernahMuat = useRef(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
   const [aturTempo, setAturTempo] = useState(null);
 
-  const muat = useCallback(async () => {
-    setLoading(true);
+  // { diam: true } = muat ulang tanpa layar "memuat" supaya kolom cari tidak
+  // hilang dan kursor tidak lepas. Argumen lain (mis. event onRetry) diabaikan.
+  const muat = useCallback(async (opsi) => {
+    const diam = opsi?.diam === true;
+    if (!diam) setLoading(true);
     setError(null);
     try {
-      setData(await api.getFinanceInvoices({ jatuhTempo, search }));
+      setData(await api.getFinanceInvoices({ jatuhTempo, search: searchTunda.trim() }));
     } catch (e) {
-      setError(e.message || "Gagal memuat invoice");
+      if (diam) setPesan(e.message || "Gagal menyegarkan daftar");
+      else setError(e.message || "Gagal memuat invoice");
     } finally {
-      setLoading(false);
+      if (!diam) setLoading(false);
     }
-  }, [jatuhTempo, search]);
+  }, [jatuhTempo, searchTunda]);
 
-  useEffect(() => { muat(); }, [muat]);
+  useEffect(() => {
+    muat({ diam: pernahMuat.current });
+    pernahMuat.current = true;
+  }, [muat]);
 
   async function simpanTempo(orderId, dueDate) {
     try {
@@ -72,14 +85,34 @@ export default function FinanceInvoices() {
       // untuk kolom yang sama.
       await api.updateOrderInvoice(orderId, { dueDate: dueDate || null });
       setAturTempo(null);
-      await muat();
+      await muat({ diam: true });
     } catch (e) {
       setPesan(e.message);
     }
   }
 
-  const invoices = data?.invoices || [];
+  const semuaInvoice = data?.invoices || [];
   const r = data?.ringkasan;
+
+  // Pencarian (nomor/pelanggan) dikerjakan server; filter chip di bawah hanya
+  // menyaring baris yang sudah termuat.
+  const opsiSales = useMemo(
+    () => [...new Set(semuaInvoice.map((i) => i.salesName).filter(Boolean))].sort().map((s) => [s, s]),
+    [semuaInvoice]
+  );
+  const invoices = useMemo(() => semuaInvoice.filter((i) => {
+    if (fStatus && i.status !== fStatus) return false;
+    if (fSumber && i.sumber !== fSumber) return false;
+    if (fSales && i.salesName !== fSales) return false;
+    if (fTempo === "ada" && !i.dueDate) return false;
+    if (fTempo === "belum" && i.dueDate) return false;
+    return true;
+  }), [semuaInvoice, fStatus, fSumber, fSales, fTempo]);
+  const disaringLokal = !!(fStatus || fSumber || fSales || fTempo);
+
+  function aturUlangFilter() {
+    setSearch(""); setFStatus(""); setFSumber(""); setFSales(""); setFTempo("");
+  }
 
   return (
     <HalamanFinance
@@ -88,12 +121,6 @@ export default function FinanceInvoices() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={
-        <Input
-          value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari nomor invoice/order atau pelanggan…" className="max-w-[280px]"
-        />
-      }
     >
       {pesan && (
         <Card className="bg-redbg">
@@ -168,6 +195,19 @@ export default function FinanceInvoices() {
       <p className="text-[13px] leading-relaxed text-ink3">
         Fokus ke tagihan yang paling butuh tindakan — yang sudah lewat tempo atau belum punya tanggal tempo sama sekali.
       </p>
+
+      <FilterBar
+        q={search} onQ={setSearch}
+        placeholder="Cari invoice, order, pelanggan…"
+        filters={[
+          { key: "status", label: "Status", value: fStatus, onChange: setFStatus, options: Object.entries(STATUS_INVOICE).map(([k, v]) => [k, v.label]) },
+          { key: "sumber", label: "Sumber", value: fSumber, onChange: setFSumber, options: [["ledger", "Ledger"], ["manual", "Status manual"]] },
+          { key: "sales", label: "Sales", value: fSales, onChange: setFSales, options: opsiSales },
+          { key: "tempo", label: "Jatuh tempo", value: fTempo, onChange: setFTempo, options: [["ada", "Sudah diatur"], ["belum", "Belum diatur"]] },
+        ]}
+        ringkasan={disaringLokal ? `${invoices.length} invoice dari ${semuaInvoice.length}` : `${invoices.length} invoice`}
+        onReset={aturUlangFilter}
+      />
 
       <Card className="overflow-hidden">
         <JudulKartu

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -14,6 +14,12 @@ import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, Pilihan, InputUang,
   TombolAksi, PeriodePicker, periodeDefault, tanggalPendek,
 } from "@/features/finance/shared.jsx";
+import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+
+// Nominal dicari sebagai angka polos maupun berformat titik ("1500000" / "1.500.000").
+const angka = (x) => `${Math.round(Number(x) || 0)} ${(Number(x) || 0).toLocaleString("id-ID")}`;
+const unik = (arr) => [...new Set(arr.filter(Boolean))].sort().map((v) => [v, v]);
+const LABEL_JENIS = { KAS: "Kas tunai", BANK: "Rekening bank", EWALLET: "E-wallet / QRIS" };
 
 // KAS & BANK — rekening yang benar-benar dipegang perusahaan, mutasi antar
 // rekening, dan pemasukan di luar order.
@@ -41,6 +47,35 @@ export default function FinanceCash() {
   const [pesan, setPesan] = useState(null);
   const [modal, setModal] = useState(null); // "rekening" | "transfer" | "pemasukan"
   const [editRekening, setEditRekening] = useState(null); // akun yang sedang diedit, null = mode "tambah baru"
+  // Pencarian & filter per tab (sisi-klien) — state tiap tab terpisah.
+  const [qR, setQR] = useState("");
+  const [fJenis, setFJenis] = useState("");
+  const [fStatusR, setFStatusR] = useState("");
+  const [qT, setQT] = useState("");
+  const [fDari, setFDari] = useState("");
+  const [fKe, setFKe] = useState("");
+  const [fStatusT, setFStatusT] = useState("");
+  const [qP, setQP] = useState("");
+  const [fAkun, setFAkun] = useState("");
+  const [fMasuk, setFMasuk] = useState("");
+
+  const semuaRekening = rekening?.accounts || [];
+  const rekeningTampil = useMemo(() => semuaRekening.filter((a) =>
+    (!fJenis || a.kind === fJenis) &&
+    (!fStatusR || (fStatusR === "aktif") === !!a.active) &&
+    cocok(qR, a.name, a.kind, LABEL_JENIS[a.kind], a.accountNumber, a.bankName, a.accountHolder, a.account?.code, a.account?.name, angka(a.saldo), a.active ? "aktif" : "nonaktif")
+  ), [semuaRekening, qR, fJenis, fStatusR]);
+  const transferTampil = useMemo(() => transfers.filter((t) =>
+    (!fDari || t.fromAccount?.name === fDari) &&
+    (!fKe || t.toAccount?.name === fKe) &&
+    (!fStatusT || (fStatusT === "batal") === !!t.cancelledAt) &&
+    cocok(qT, t.transferNumber, t.date, tanggalPendek(t.date), t.fromAccount?.name, t.toAccount?.name, angka(t.amount), angka(t.feeAmount), t.note, t.notes, t.cancelledAt ? "dibatalkan" : "terposting")
+  ), [transfers, qT, fDari, fKe, fStatusT]);
+  const pemasukanTampil = useMemo(() => incomes.filter((i) =>
+    (!fAkun || i.account?.name === fAkun) &&
+    (!fMasuk || i.cashAccount?.name === fMasuk) &&
+    cocok(qP, i.incomeNumber, i.date, tanggalPendek(i.date), i.description, i.account?.code, i.account?.name, i.cashAccount?.name, angka(i.amount))
+  ), [incomes, qP, fAkun, fMasuk]);
 
   const muat = useCallback(async () => {
     setLoading(true);
@@ -150,6 +185,17 @@ export default function FinanceCash() {
             belum dicatat); mencocokkan keduanya adalah pekerjaan halaman Rekonsiliasi Bank.
           </Penjelasan>
 
+          <FilterBar
+            q={qR} onQ={setQR}
+            placeholder="Cari nama, bank, nomor, saldo…"
+            filters={[
+              { key: "jenis", label: "Jenis", value: fJenis, onChange: setFJenis, options: Object.entries(LABEL_JENIS) },
+              { key: "status", label: "Status", value: fStatusR, onChange: setFStatusR, options: [["aktif", "Aktif"], ["nonaktif", "Nonaktif"]] },
+            ]}
+            ringkasan={rekeningTampil.length === semuaRekening.length ? `${semuaRekening.length} rekening` : `${rekeningTampil.length} dari ${semuaRekening.length} rekening`}
+            onReset={() => { setQR(""); setFJenis(""); setFStatusR(""); }}
+          />
+
           <Card className="overflow-hidden">
             <JudulKartu
               title="Daftar Rekening"
@@ -166,6 +212,8 @@ export default function FinanceCash() {
                   action={<Button size="sm" onClick={() => setModal("rekening")}>Tambah Rekening</Button>}
                 />
               </CardContent>
+            ) : rekeningTampil.length === 0 ? (
+              <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada rekening yang cocok dengan pencarian ini.</p></CardContent>
             ) : (
               <TableWrap className="dh-table">
                 <Table>
@@ -173,7 +221,7 @@ export default function FinanceCash() {
                     <TR><TH sticky>Nama</TH><TH>Jenis</TH><TH>Nomor</TH><TH>Akun COA</TH><TH numeric>Saldo Buku</TH><TH>Status</TH><TH>Aksi</TH></TR>
                   </THead>
                   <TBody>
-                    {rekening.accounts.map((a) => (
+                    {rekeningTampil.map((a) => (
                       <TR key={a.id}>
                         <TD sticky className="font-medium">{a.name}</TD>
                         <TD><Badge variant="neutral">{a.kind}</Badge></TD>
@@ -205,6 +253,18 @@ export default function FinanceCash() {
       )}
 
       {tab === "transfer" && (
+        <>
+        <FilterBar
+          q={qT} onQ={setQT}
+          placeholder="Cari nomor, rekening, nominal…"
+          filters={[
+            { key: "dari", label: "Dari", value: fDari, onChange: setFDari, options: unik(transfers.map((t) => t.fromAccount?.name)) },
+            { key: "ke", label: "Ke", value: fKe, onChange: setFKe, options: unik(transfers.map((t) => t.toAccount?.name)) },
+            { key: "status", label: "Status", value: fStatusT, onChange: setFStatusT, options: [["posting", "Terposting"], ["batal", "Dibatalkan"]] },
+          ]}
+          ringkasan={transferTampil.length === transfers.length ? `${transfers.length} mutasi` : `${transferTampil.length} dari ${transfers.length} mutasi`}
+          onReset={() => { setQT(""); setFDari(""); setFKe(""); setFStatusT(""); }}
+        />
         <Card className="overflow-hidden">
           <JudulKartu
             title="Mutasi Antar Rekening"
@@ -212,8 +272,8 @@ export default function FinanceCash() {
               laporan arus kas sengaja tidak menghitungnya sebagai uang masuk/keluar."
             info="Kenapa dipisah dari Pengeluaran/Pemasukan: uang yang pindah dari kas ke bank tetap uang milik perusahaan yang sama, cuma beda tempat penyimpanan — bukan uang baru masuk atau keluar dari perusahaan. Kalau dicatat sebagai pemasukan/pengeluaran, laba rugi akan salah baca."
           />
-          {transfers.length === 0 ? (
-            <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada mutasi di periode ini.</p></CardContent>
+          {transferTampil.length === 0 ? (
+            <CardContent><p className="py-6 text-center text-[13px] text-ink3">{transfers.length === 0 ? "Belum ada mutasi di periode ini." : "Tidak ada mutasi yang cocok dengan pencarian ini."}</p></CardContent>
           ) : (
             <TableWrap className="dh-table">
               <Table>
@@ -221,7 +281,7 @@ export default function FinanceCash() {
                   <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Dari</TH><TH>Ke</TH><TH numeric>Nominal</TH><TH numeric>Biaya Admin</TH><TH>Status</TH></TR>
                 </THead>
                 <TBody>
-                  {transfers.map((t) => (
+                  {transferTampil.map((t) => (
                     <TR key={t.id}>
                       <TD sticky className="font-mono text-[12px]">{t.transferNumber}</TD>
                       <TD>{tanggalPendek(t.date)}</TD>
@@ -241,9 +301,21 @@ export default function FinanceCash() {
             </TableWrap>
           )}
         </Card>
+        </>
       )}
 
       {tab === "pemasukan" && (
+        <>
+        <FilterBar
+          q={qP} onQ={setQP}
+          placeholder="Cari nomor, keterangan, nominal…"
+          filters={[
+            { key: "akun", label: "Akun", value: fAkun, onChange: setFAkun, options: unik(incomes.map((i) => i.account?.name)) },
+            { key: "masuk", label: "Masuk ke", value: fMasuk, onChange: setFMasuk, options: unik(incomes.map((i) => i.cashAccount?.name)) },
+          ]}
+          ringkasan={pemasukanTampil.length === incomes.length ? `${incomes.length} pemasukan` : `${pemasukanTampil.length} dari ${incomes.length} pemasukan`}
+          onReset={() => { setQP(""); setFAkun(""); setFMasuk(""); }}
+        />
         <Card className="overflow-hidden">
           <JudulKartu
             title="Pemasukan di Luar Order"
@@ -251,8 +323,8 @@ export default function FinanceCash() {
               sini — itu mengalir sendiri dari Order & Pengiriman."
             info="Kalau yang mau dicatat adalah pembayaran dari pelanggan (DP, cicilan, pelunasan), catatannya BUKAN di sini — cari order-nya di CRM, pembayaran akan otomatis muncul di halaman Pembayaran & Verifikasi."
           />
-          {incomes.length === 0 ? (
-            <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada pemasukan lain di periode ini.</p></CardContent>
+          {pemasukanTampil.length === 0 ? (
+            <CardContent><p className="py-6 text-center text-[13px] text-ink3">{incomes.length === 0 ? "Belum ada pemasukan lain di periode ini." : "Tidak ada pemasukan yang cocok dengan pencarian ini."}</p></CardContent>
           ) : (
             <TableWrap className="dh-table">
               <Table>
@@ -260,7 +332,7 @@ export default function FinanceCash() {
                   <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Akun</TH><TH>Masuk ke</TH><TH numeric>Nominal</TH></TR>
                 </THead>
                 <TBody>
-                  {incomes.map((i) => (
+                  {pemasukanTampil.map((i) => (
                     <TR key={i.id}>
                       <TD sticky className="font-mono text-[12px]">{i.incomeNumber}</TD>
                       <TD>{tanggalPendek(i.date)}</TD>
@@ -275,6 +347,7 @@ export default function FinanceCash() {
             </TableWrap>
           )}
         </Card>
+        </>
       )}
 
       <ModalRekening

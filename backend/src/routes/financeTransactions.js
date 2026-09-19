@@ -117,6 +117,34 @@ function resetVerifikasiBukti(perubahan) {
     : {};
 }
 
+/**
+ * Klausa pencarian teks bebas untuk daftar pengeluaran/pembelian. Tiap KATA di
+ * `q` harus cocok di salah satu kolom (AND antar kata, OR antar kolom), jadi
+ * "kain oscar sep" menyempit dengan wajar. Kata berupa angka (mis. "150000"
+ * atau "150.000") juga dicocokkan ke NOMINAL persis.
+ */
+function klausaCari(q, kolomTeks) {
+  const kata = String(q || "").trim().split(/\s+/).filter(Boolean).slice(0, 6);
+  return kata.map((k) => {
+    const atau = kolomTeks.map((path) => {
+      const bagian = path.split(".");
+      return bagian.reduceRight((isi, kunci, i) => (i === bagian.length - 1 ? { [kunci]: { contains: k, mode: "insensitive" } } : { [kunci]: isi }), null);
+    });
+    const angka = k.replace(/\./g, "");
+    if (/^\d{3,}$/.test(angka)) atau.push({ amount: Number(angka) });
+    return { OR: atau };
+  });
+}
+
+/** Filter status bukti: ada | tanpa | terverifikasi | belum. */
+function klausaBukti(bukti) {
+  if (bukti === "ada") return { receiptUrl: { not: null } };
+  if (bukti === "tanpa") return { receiptUrl: null };
+  if (bukti === "terverifikasi") return { receiptVerifiedAt: { not: null } };
+  if (bukti === "belum") return { receiptUrl: { not: null }, receiptVerifiedAt: null };
+  return {};
+}
+
 /** Suffix idempotencyKey BARU untuk jurnal pengganti sebuah koreksi. */
 function suffixKoreksi() {
   return `:KOREKSI:${randomUUID()}`;
@@ -146,7 +174,7 @@ financeTxRouter.get("/expenses",
   async (req, res) => {
     try {
       const { from, to } = rentangDariQuery(req.query);
-      const { status, division, categoryId, mode } = req.query;
+      const { status, division, categoryId, mode, q, bukti } = req.query;
 
       // Pemegang finance:expense:submit TANPA finance:read hanya boleh
       // melihat pengajuannya SENDIRI. Pembatasan barisnya di query, persis
@@ -160,9 +188,11 @@ financeTxRouter.get("/expenses",
           ...(division && { division }),
           ...(categoryId && { categoryId }),
           ...(mode && { mode }),
-          ...(hanyaMilikSendiri && {
-            OR: [{ createdById: req.user.id }, { reimburseToId: req.user.id }],
-          }),
+          ...klausaBukti(bukti),
+          AND: [
+            ...(hanyaMilikSendiri ? [{ OR: [{ createdById: req.user.id }, { reimburseToId: req.user.id }] }] : []),
+            ...klausaCari(q, ["expenseNumber", "description", "payeeName", "notes", "category.name", "supplier.name", "reimburseTo.name"]),
+          ],
         },
         orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         take: 300,
@@ -174,6 +204,7 @@ financeTxRouter.get("/expenses",
         expenses: expenses.map(bentukExpense),
         total: moneyToNumber(total),
         hanyaMilikSendiri,
+        terpotong: expenses.length === 300,
       });
     } catch (e) {
       handleFinanceError(e, res);
@@ -594,7 +625,7 @@ financeTxRouter.get("/purchases",
   async (req, res) => {
     try {
       const { from, to } = rentangDariQuery(req.query);
-      const { status, division, categoryId, mode } = req.query;
+      const { status, division, categoryId, mode, q, bukti } = req.query;
 
       const hanyaMilikSendiri = !hasPermission(req.user, P.FINANCE_READ);
 
@@ -605,9 +636,11 @@ financeTxRouter.get("/purchases",
           ...(division && { division }),
           ...(categoryId && { categoryId }),
           ...(mode && { mode }),
-          ...(hanyaMilikSendiri && {
-            OR: [{ createdById: req.user.id }, { reimburseToId: req.user.id }],
-          }),
+          ...klausaBukti(bukti),
+          AND: [
+            ...(hanyaMilikSendiri ? [{ OR: [{ createdById: req.user.id }, { reimburseToId: req.user.id }] }] : []),
+            ...klausaCari(q, ["purchaseNumber", "description", "payeeName", "notes", "category.name", "supplier.name", "reimburseTo.name"]),
+          ],
         },
         orderBy: [{ date: "desc" }, { createdAt: "desc" }],
         take: 300,
@@ -619,6 +652,7 @@ financeTxRouter.get("/purchases",
         purchases: purchases.map(bentukPurchase),
         total: moneyToNumber(total),
         hanyaMilikSendiri,
+        terpotong: purchases.length === 300,
       });
     } catch (e) {
       handleFinanceError(e, res);

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { BookOpen } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -9,6 +9,7 @@ import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Pilihan,
   PeriodePicker, periodeDefault, tanggalPendek, LABEL_SUMBER_JURNAL, LABEL_TIPE_AKUN,
 } from "@/features/finance/shared.jsx";
+import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 
 // BUKU BESAR — semua mutasi satu akun, berurut, dengan saldo berjalan.
 //
@@ -53,6 +54,37 @@ export default function FinanceLedger() {
   }, [accountId, periode]);
 
   useEffect(() => { muat(); }, [muat]);
+
+  // Pencarian & filter di sisi klien atas baris yang sudah termuat.
+  const [q, setQ] = useState("");
+  const [fSumber, setFSumber] = useState("");
+  const [fJenis, setFJenis] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  const semuaBaris = data?.baris || [];
+
+  const opsiSumber = useMemo(
+    () => [...new Set(semuaBaris.map((b) => b.source))].filter(Boolean).map((s) => [s, LABEL_SUMBER_JURNAL[s] || s]),
+    [semuaBaris],
+  );
+
+  const baris = useMemo(() => semuaBaris.filter((b) => {
+    if (fSumber && b.source !== fSumber) return false;
+    if (fJenis === "debit" && !(b.debit > 0)) return false;
+    if (fJenis === "kredit" && !(b.kredit > 0)) return false;
+    if (fStatus && b.status !== fStatus) return false;
+    // Nominal dicocokkan sebagai digit saja, jadi "1500000" cocok dengan Rp 1.500.000.
+    return cocok(
+      q, b.keterangan, b.entryNumber, b.orderNumber, b.customerName, b.supplierName, b.cashAccountName,
+      LABEL_SUMBER_JURNAL[b.source] || b.source,
+      String(Math.round(Number(b.debit) || 0)), String(Math.round(Number(b.kredit) || 0)),
+    );
+  }), [semuaBaris, q, fSumber, fJenis, fStatus]);
+
+  const adaFilter = !!q.trim() || !!fSumber || !!fJenis || !!fStatus;
+
+  function aturUlangFilter() {
+    setQ(""); setFSumber(""); setFJenis(""); setFStatus("");
+  }
 
   return (
     <HalamanFinance
@@ -103,6 +135,18 @@ export default function FinanceLedger() {
             />
           </div>
 
+          <FilterBar
+            q={q} onQ={setQ}
+            placeholder="Cari jurnal, keterangan, nominal…"
+            filters={[
+              { key: "sumber", label: "Sumber", value: fSumber, onChange: setFSumber, options: opsiSumber },
+              { key: "jenis", label: "Jenis", value: fJenis, onChange: setFJenis, options: [["debit", "Debit saja"], ["kredit", "Kredit saja"]] },
+              { key: "status", label: "Status", value: fStatus, onChange: setFStatus, options: [["POSTED", "Terposting"], ["REVERSED", "Dibalik"]] },
+            ]}
+            ringkasan={`${baris.length} dari ${semuaBaris.length} mutasi${adaFilter ? " · kolom Saldo = saldo berjalan seluruh periode" : ""}`}
+            onReset={aturUlangFilter}
+          />
+
           <Card className="overflow-hidden">
             <JudulKartu
               title={<>
@@ -116,8 +160,8 @@ export default function FinanceLedger() {
               </>}
               info="Buku besar ini menjawab pertanyaan 'kenapa saldo akun ini segini' — setiap baris membawa dokumen sumbernya (order/pelanggan/supplier/rekening) supaya bisa ditelusuri balik ke transaksi aslinya, bukan cuma daftar angka."
             />
-            {data.baris.length === 0 ? (
-              <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada mutasi di periode ini.</p></CardContent>
+            {baris.length === 0 ? (
+              <CardContent><p className="py-6 text-center text-[13px] text-ink3">{semuaBaris.length === 0 ? "Tidak ada mutasi di periode ini." : "Tidak ada mutasi yang cocok dengan filter ini."}</p></CardContent>
             ) : (
               <TableWrap className="dh-table">
                 <Table>
@@ -128,7 +172,7 @@ export default function FinanceLedger() {
                     </TR>
                   </THead>
                   <TBody>
-                    {data.baris.map((b) => (
+                    {baris.map((b) => (
                       <TR key={b.lineId} className={b.status === "REVERSED" ? "opacity-60" : undefined}>
                         <TD sticky className="whitespace-nowrap">{tanggalPendek(b.tanggal)}</TD>
                         <TD className="font-mono text-[12px]">{b.entryNumber}</TD>

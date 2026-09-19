@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Link2, Unlink, EyeOff, CheckCircle2, Scale } from "lucide-react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -12,8 +12,16 @@ import { api } from "@/api.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek,
+  StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
 } from "@/features/finance/shared.jsx";
+import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+
+// Nominal bisa dicari sebagai "150000" maupun "150.000" (tanda minus diabaikan).
+function teksNominal(x) {
+  const n = Math.abs(Math.round(Number(x)));
+  if (!Number.isFinite(n)) return "";
+  return `${n} ${n.toLocaleString("id-ID")}`;
+}
 
 // REKONSILIASI BANK — mencocokkan mutasi menurut KORAN BANK dengan mutasi
 // menurut BUKU BESAR, lalu menjelaskan selisihnya.
@@ -34,6 +42,36 @@ export default function FinanceReconciliation() {
   const [modalBaru, setModalBaru] = useState(false);
   const [modalBaris, setModalBaris] = useState(false);
   const [cocokkan, setCocokkan] = useState(null);
+
+  const [qPeriode, setQPeriode] = useState("");
+  const [fStatusP, setFStatusP] = useState("");
+  const [fRekening, setFRekening] = useState("");
+  const [fBelum, setFBelum] = useState("");
+  const [qBaris, setQBaris] = useState("");
+  const [fStatusB, setFStatusB] = useState("");
+  const [fArah, setFArah] = useState("");
+
+  const namaRekening = useMemo(
+    () => [...new Set(statements.map((s) => s.cashAccount?.name).filter(Boolean))],
+    [statements],
+  );
+  const periodeTampil = useMemo(() => statements.filter((s) =>
+    (!fStatusP || (s.status === "SELESAI" ? "SELESAI" : "DRAFT") === fStatusP)
+    && (!fRekening || s.cashAccount?.name === fRekening)
+    && (!fBelum || (fBelum === "ada" ? s.belumCocok > 0 : !(s.belumCocok > 0)))
+    && cocok(qPeriode, s.cashAccount?.name, tanggalPendek(s.periodStart), tanggalPendek(s.periodEnd), s.periodStart, s.periodEnd, s.note),
+  ), [statements, qPeriode, fStatusP, fRekening, fBelum]);
+
+  const semuaBaris = detail?.statement?.lines;
+  const statusBaris = useMemo(
+    () => [...new Set((semuaBaris || []).map((l) => l.status).filter(Boolean))],
+    [semuaBaris],
+  );
+  const barisTampil = useMemo(() => (semuaBaris || []).filter((l) =>
+    (!fStatusB || l.status === fStatusB)
+    && (!fArah || (fArah === "masuk" ? Number(l.amount) > 0 : Number(l.amount) < 0))
+    && cocok(qBaris, l.description, l.reference, teksNominal(l.amount), l.matchedLine?.entry?.entryNumber, l.matchedLine?.description, l.matchedLine?.entry?.description),
+  ), [semuaBaris, qBaris, fStatusB, fArah]);
 
   const muat = useCallback(async () => {
     setLoading(true);
@@ -92,6 +130,18 @@ export default function FinanceReconciliation() {
         rekonsiliasi dikerjakan.
       </Penjelasan>
 
+      <FilterBar
+        q={qPeriode} onQ={setQPeriode}
+        placeholder="Cari rekening, periode, catatan…"
+        filters={[
+          { key: "status", label: "Status", value: fStatusP, onChange: setFStatusP, options: [["DRAFT", LABEL_STATUS.DRAFT || "Draft"], ["SELESAI", LABEL_STATUS.SELESAI || "Selesai"]] },
+          { key: "rek", label: "Rekening", value: fRekening, onChange: setFRekening, options: namaRekening.map((n) => [n, n]) },
+          { key: "belum", label: "Belum cocok", value: fBelum, onChange: setFBelum, options: [["ada", "Ada"], ["nol", "Semua cocok"]] },
+        ]}
+        ringkasan={`${periodeTampil.length} periode${periodeTampil.length !== statements.length ? ` dari ${statements.length}` : ""}`}
+        onReset={() => { setQPeriode(""); setFStatusP(""); setFRekening(""); setFBelum(""); }}
+      />
+
       <Card className="overflow-hidden">
         <JudulKartu
           title="Periode Rekonsiliasi"
@@ -107,6 +157,8 @@ export default function FinanceReconciliation() {
               action={<Button size="sm" onClick={() => setModalBaru(true)}>Buat Periode</Button>}
             />
           </CardContent>
+        ) : periodeTampil.length === 0 ? (
+          <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada periode yang cocok dengan pencarian/filter.</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
             <Table>
@@ -118,7 +170,7 @@ export default function FinanceReconciliation() {
                 </TR>
               </THead>
               <TBody>
-                {statements.map((s) => (
+                {periodeTampil.map((s) => (
                   <TR key={s.id} clickable selected={aktif === s.id} onClick={() => setAktif(s.id)}>
                     <TD sticky className="font-medium">{s.cashAccount?.name}</TD>
                     <TD className="whitespace-nowrap">{tanggalPendek(s.periodStart)} – {tanggalPendek(s.periodEnd)}</TD>
@@ -162,6 +214,17 @@ export default function FinanceReconciliation() {
             />
           </div>
 
+          <FilterBar
+            q={qBaris} onQ={setQBaris}
+            placeholder="Cari keterangan, referensi, nominal…"
+            filters={[
+              { key: "status", label: "Status", value: fStatusB, onChange: setFStatusB, options: statusBaris.map((s) => [s, LABEL_STATUS[s] || s]) },
+              { key: "arah", label: "Arah", value: fArah, onChange: setFArah, options: [["masuk", "Masuk"], ["keluar", "Keluar"]] },
+            ]}
+            ringkasan={`${barisTampil.length} baris${barisTampil.length !== detail.statement.lines.length ? ` dari ${detail.statement.lines.length}` : ""}`}
+            onReset={() => { setQBaris(""); setFStatusB(""); setFArah(""); }}
+          />
+
           <Card className="overflow-hidden">
             <JudulKartu
               title={`${detail.statement.cashAccount?.name} · ${tanggalPendek(detail.statement.periodStart)} – ${tanggalPendek(detail.statement.periodEnd)}`}
@@ -191,6 +254,8 @@ export default function FinanceReconciliation() {
             </CardHeader>
             {detail.statement.lines.length === 0 ? (
               <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada baris koran bank.</p></CardContent>
+            ) : barisTampil.length === 0 ? (
+              <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada baris yang cocok dengan pencarian/filter.</p></CardContent>
             ) : (
               <TableWrap className="dh-table">
                 <Table>
@@ -201,7 +266,7 @@ export default function FinanceReconciliation() {
                     </TR>
                   </THead>
                   <TBody>
-                    {detail.statement.lines.map((l) => (
+                    {barisTampil.map((l) => (
                       <TR key={l.id}>
                         <TD sticky className="whitespace-nowrap">{tanggalPendek(l.date)}</TD>
                         <TD className="max-w-[260px] truncate">{l.description}</TD>

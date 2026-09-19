@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Undo2, ChevronRight } from "lucide-react";
-import { Card, CardHeader, CardContent } from "@/components/ui/card.jsx";
+import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -14,6 +14,7 @@ import {
   Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
   LABEL_SUMBER_JURNAL,
 } from "@/features/finance/shared.jsx";
+import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 
 // JURNAL UMUM — seluruh pencatatan buku besar, dari mana pun asalnya.
 //
@@ -29,7 +30,11 @@ import {
 
 export default function FinanceJournal() {
   const [periode, setPeriode] = useState(periodeDefault);
-  const [filter, setFilter] = useState({ source: "", status: "", search: "" });
+  const [filter, setFilter] = useState({ source: "", status: "" });
+  // Pencarian tetap dikirim ke server; ketikan ditunda supaya API tidak ditembak tiap huruf.
+  const [q, setQ] = useState("");
+  const qTunda = useTertunda(q);
+  const pernahMuat = useRef(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -38,31 +43,45 @@ export default function FinanceJournal() {
   const [modalBaru, setModalBaru] = useState(false);
   const [akun, setAkun] = useState([]);
 
-  const muat = useCallback(async () => {
-    setLoading(true);
+  // { diam: true } = muat ulang di latar belakang (tanpa layar "memuat").
+  // Argumen lain (mis. event klik dari onRetry) diabaikan.
+  const muat = useCallback(async (opsi) => {
+    const diam = opsi?.diam === true;
+    if (!diam) setLoading(true);
     setError(null);
     try {
       const [j, a] = await Promise.all([
-        api.getFinanceJournal({ ...periode, ...filter }),
+        api.getFinanceJournal({ ...periode, ...filter, search: qTunda.trim() }),
         api.getFinanceAccounts(),
       ]);
       setData(j);
       setAkun(a.accounts.filter((x) => x.isPostable && x.active));
     } catch (e) {
-      setError(e.message || "Gagal memuat jurnal");
+      if (diam) setPesan(e.message || "Gagal menyegarkan daftar");
+      else setError(e.message || "Gagal memuat jurnal");
     } finally {
-      setLoading(false);
+      if (!diam) setLoading(false);
     }
-  }, [periode, filter]);
+  }, [periode, filter, qTunda]);
 
-  useEffect(() => { muat(); }, [muat]);
+  // Muat pertama menampilkan layar "memuat"; sesudahnya (ketik/ganti filter)
+  // disegarkan diam-diam supaya kolom cari tidak hilang dan fokus tidak lepas.
+  useEffect(() => {
+    muat({ diam: pernahMuat.current });
+    pernahMuat.current = true;
+  }, [muat]);
+
+  function aturUlangFilter() {
+    setQ("");
+    setFilter({ source: "", status: "" });
+  }
 
   async function aksi(fn) {
     try {
       await fn();
       setModalBaru(false);
       setDetail(null);
-      await muat();
+      await muat({ diam: true });
     } catch (e) {
       setPesan(e.message);
     }
@@ -99,31 +118,23 @@ export default function FinanceJournal() {
         berubah angkanya secara retroaktif — dan baris aslinya tetap utuh untuk diaudit.
       </Penjelasan>
 
+      <FilterBar
+        q={q} onQ={setQ}
+        placeholder="Cari nomor jurnal, keterangan…"
+        filters={[
+          { key: "source", label: "Sumber", value: filter.source, onChange: (v) => setFilter((f) => ({ ...f, source: v })), options: Object.entries(LABEL_SUMBER_JURNAL) },
+          { key: "status", label: "Status", value: filter.status, onChange: (v) => setFilter((f) => ({ ...f, status: v })), options: [["POSTED", "Terposting"], ["DRAFT", "Draft"], ["REVERSED", "Dibalik"]] },
+        ]}
+        ringkasan={`${data?.total ?? entries.length} jurnal`}
+        onReset={aturUlangFilter}
+      />
+
       <Card className="overflow-hidden">
         <JudulKartu
           title={`${data?.total ?? 0} jurnal di periode ini`}
           description="Menampilkan maksimal 100 terbaru."
           info="Setiap baris di sini adalah SATU peristiwa keuangan yang sudah tercatat lengkap dengan pasangan debit-kreditnya (double-entry) — klik baris mana pun untuk melihat rinciannya."
         />
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              value={filter.search}
-              onChange={(e) => setFilter((f) => ({ ...f, search: e.target.value }))}
-              placeholder="Cari nomor atau keterangan…" className="max-w-[240px]"
-            />
-            <Pilihan value={filter.source} onChange={(v) => setFilter((f) => ({ ...f, source: v }))} className="max-w-[200px]">
-              <option value="">Semua sumber</option>
-              {Object.entries(LABEL_SUMBER_JURNAL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </Pilihan>
-            <Pilihan value={filter.status} onChange={(v) => setFilter((f) => ({ ...f, status: v }))} className="max-w-[160px]">
-              <option value="">Semua status</option>
-              <option value="POSTED">Terposting</option>
-              <option value="DRAFT">Draft</option>
-              <option value="REVERSED">Dibalik</option>
-            </Pilihan>
-          </div>
-        </CardHeader>
         {entries.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada jurnal di filter ini.</p></CardContent>
         ) : (

@@ -14,6 +14,17 @@ import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
+import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+
+// Nominal dicari sebagai angka polos maupun berformat titik ("1500000" / "1.500.000").
+const angka = (x) => `${Math.round(Number(x) || 0)} ${(Number(x) || 0).toLocaleString("id-ID")}`;
+const unik = (arr) => [...new Set(arr.filter(Boolean))].sort().map((v) => [v, v]);
+
+// Lewat jatuh tempo hanya berarti kalau tagihannya masih punya sisa.
+function statusTempo(b, awalHariIni) {
+  if (!b.dueDate) return "tanpa";
+  return Number(b.sisa) > 0 && new Date(b.dueDate) < awalHariIni ? "lewat" : "belum";
+}
 
 // SUPPLIER & UTANG USAHA — master supplier, tagihan masuk, dan pembayaran.
 //
@@ -43,6 +54,18 @@ export default function FinanceSuppliers() {
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
   const [modal, setModal] = useState(null);
+  // Pencarian & filter per tab (sisi-klien) — state tiap tab terpisah.
+  const [qB, setQB] = useState("");
+  const [fSupB, setFSupB] = useState("");
+  const [fStatusB, setFStatusB] = useState("");
+  const [fTempo, setFTempo] = useState("");
+  const [qP, setQP] = useState("");
+  const [fSupP, setFSupP] = useState("");
+  const [fRek, setFRek] = useState("");
+  const [fStatusP, setFStatusP] = useState("");
+  const [qS, setQS] = useState("");
+  const [fStatusS, setFStatusS] = useState("");
+  const [fUtang, setFUtang] = useState("");
 
   const muat = useCallback(async () => {
     setLoading(true);
@@ -85,6 +108,27 @@ export default function FinanceSuppliers() {
 
   const menunggu = bills.filter((b) => b.status === "MENUNGGU_APPROVAL");
   const lewatTempo = (aging?.baris || []).filter((b) => b.hariLewat > 0);
+
+  const billsTampil = useMemo(() => {
+    const hariIni = new Date(); hariIni.setHours(0, 0, 0, 0);
+    return bills.filter((b) =>
+      (!fSupB || b.supplier?.name === fSupB) &&
+      (!fStatusB || b.status === fStatusB) &&
+      (!fTempo || statusTempo(b, hariIni) === fTempo) &&
+      cocok(qB, b.billNumber, b.supplierRef, b.supplier?.name, b.description, b.goodsReceipt?.receiptNumber, b.billDate, tanggalPendek(b.billDate), b.dueDate, b.dueDate ? tanggalPendek(b.dueDate) : "", angka(b.amount), angka(b.terbayar), angka(b.sisa), b.status)
+    );
+  }, [bills, qB, fSupB, fStatusB, fTempo]);
+  const paymentsTampil = useMemo(() => payments.filter((p) =>
+    (!fSupP || p.supplier?.name === fSupP) &&
+    (!fRek || p.cashAccount?.name === fRek) &&
+    (!fStatusP || (fStatusP === "batal") === !!p.cancelledAt) &&
+    cocok(qP, p.paymentNumber, p.date, tanggalPendek(p.date), p.supplier?.name, p.cashAccount?.name, (p.allocations || []).map((a) => a.bill?.billNumber).join(" "), angka(p.amount), p.cancelledAt ? "dibatalkan" : "terposting")
+  ), [payments, qP, fSupP, fRek, fStatusP]);
+  const suppliersTampil = useMemo(() => suppliers.filter((s) =>
+    (!fStatusS || (fStatusS === "aktif") === !!s.active) &&
+    (!fUtang || (fUtang === "ada") === (Number(s.sisaUtang) > 0)) &&
+    cocok(qS, s.code, s.name, s.phone, s.email, s.paymentTermDays, s.bankName, s.bankAccount, angka(s.sisaUtang), s.active ? "aktif" : "nonaktif")
+  ), [suppliers, qS, fStatusS, fUtang]);
 
   return (
     <HalamanFinance
@@ -149,6 +193,18 @@ export default function FinanceSuppliers() {
       </p>
 
       {tab === "tagihan" && (
+        <>
+        <FilterBar
+          q={qB} onQ={setQB}
+          placeholder="Cari nomor, supplier, nominal…"
+          filters={[
+            { key: "sup", label: "Supplier", value: fSupB, onChange: setFSupB, options: unik(bills.map((b) => b.supplier?.name)) },
+            { key: "status", label: "Status", value: fStatusB, onChange: setFStatusB, options: unik(bills.map((b) => b.status)) },
+            { key: "tempo", label: "Jatuh tempo", value: fTempo, onChange: setFTempo, options: [["lewat", "Lewat jatuh tempo"], ["belum", "Belum jatuh tempo"], ["tanpa", "Tanpa tanggal"]] },
+          ]}
+          ringkasan={billsTampil.length === bills.length ? `${bills.length} tagihan` : `${billsTampil.length} dari ${bills.length} tagihan`}
+          onReset={() => { setQB(""); setFSupB(""); setFStatusB(""); setFTempo(""); }}
+        />
         <Card className="overflow-hidden">
           <JudulKartu
             title="Tagihan Supplier"
@@ -159,6 +215,8 @@ export default function FinanceSuppliers() {
             <CardContent>
               <EmptyState icon={FileText} title="Belum ada tagihan" description="Catat tagihan yang datang dari supplier di sini." />
             </CardContent>
+          ) : billsTampil.length === 0 ? (
+            <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada tagihan yang cocok dengan pencarian ini.</p></CardContent>
           ) : (
             <TableWrap className="dh-table">
               <Table>
@@ -171,7 +229,7 @@ export default function FinanceSuppliers() {
                   </TR>
                 </THead>
                 <TBody>
-                  {bills.map((b) => (
+                  {billsTampil.map((b) => (
                     <TR key={b.id}>
                       <TD sticky className="font-mono text-[12px]">{b.billNumber}</TD>
                       <TD className="text-[12px] text-ink2">{b.supplierRef || "—"}</TD>
@@ -217,17 +275,30 @@ export default function FinanceSuppliers() {
             </TableWrap>
           )}
         </Card>
+        </>
       )}
 
       {tab === "pembayaran" && (
+        <>
+        <FilterBar
+          q={qP} onQ={setQP}
+          placeholder="Cari nomor, supplier, tagihan, nominal…"
+          filters={[
+            { key: "sup", label: "Supplier", value: fSupP, onChange: setFSupP, options: unik(payments.map((p) => p.supplier?.name)) },
+            { key: "rek", label: "Dari rekening", value: fRek, onChange: setFRek, options: unik(payments.map((p) => p.cashAccount?.name)) },
+            { key: "status", label: "Status", value: fStatusP, onChange: setFStatusP, options: [["posting", "Terposting"], ["batal", "Dibatalkan"]] },
+          ]}
+          ringkasan={paymentsTampil.length === payments.length ? `${payments.length} pembayaran` : `${paymentsTampil.length} dari ${payments.length} pembayaran`}
+          onReset={() => { setQP(""); setFSupP(""); setFRek(""); setFStatusP(""); }}
+        />
         <Card className="overflow-hidden">
           <JudulKartu
             title="Pembayaran ke Supplier"
             description="Satu pembayaran bisa melunasi beberapa tagihan sekaligus."
             info="Cocok untuk transfer gabungan akhir bulan — satu kali transfer ke supplier, dialokasikan ke beberapa tagihan yang jatuh tempo bersamaan."
           />
-          {payments.length === 0 ? (
-            <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada pembayaran.</p></CardContent>
+          {paymentsTampil.length === 0 ? (
+            <CardContent><p className="py-6 text-center text-[13px] text-ink3">{payments.length === 0 ? "Belum ada pembayaran." : "Tidak ada pembayaran yang cocok dengan pencarian ini."}</p></CardContent>
           ) : (
             <TableWrap className="dh-table">
               <Table>
@@ -235,7 +306,7 @@ export default function FinanceSuppliers() {
                   <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Supplier</TH><TH>Dari Rekening</TH><TH>Tagihan</TH><TH numeric>Nominal</TH><TH>Status</TH></TR>
                 </THead>
                 <TBody>
-                  {payments.map((p) => (
+                  {paymentsTampil.map((p) => (
                     <TR key={p.id}>
                       <TD sticky className="font-mono text-[12px]">{p.paymentNumber}</TD>
                       <TD>{tanggalPendek(p.date)}</TD>
@@ -251,9 +322,21 @@ export default function FinanceSuppliers() {
             </TableWrap>
           )}
         </Card>
+        </>
       )}
 
       {tab === "supplier" && (
+        <>
+        <FilterBar
+          q={qS} onQ={setQS}
+          placeholder="Cari kode, nama, kontak, bank…"
+          filters={[
+            { key: "status", label: "Status", value: fStatusS, onChange: setFStatusS, options: [["aktif", "Aktif"], ["nonaktif", "Nonaktif"]] },
+            { key: "utang", label: "Utang", value: fUtang, onChange: setFUtang, options: [["ada", "Ada sisa utang"], ["lunas", "Lunas"]] },
+          ]}
+          ringkasan={suppliersTampil.length === suppliers.length ? `${suppliers.length} supplier` : `${suppliersTampil.length} dari ${suppliers.length} supplier`}
+          onReset={() => { setQS(""); setFStatusS(""); setFUtang(""); }}
+        />
         <Card className="overflow-hidden">
           <JudulKartu
             title="Master Supplier"
@@ -265,6 +348,8 @@ export default function FinanceSuppliers() {
             <CardContent>
               <EmptyState icon={Building2} title="Belum ada supplier" description="Daftarkan supplier yang tagihannya perlu dilacak." />
             </CardContent>
+          ) : suppliersTampil.length === 0 ? (
+            <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada supplier yang cocok dengan pencarian ini.</p></CardContent>
           ) : (
             <TableWrap className="dh-table">
               <Table>
@@ -272,7 +357,7 @@ export default function FinanceSuppliers() {
                   <TR><TH sticky>Kode</TH><TH>Nama</TH><TH>Kontak</TH><TH>Termin</TH><TH>Rekening</TH><TH numeric>Sisa Utang</TH><TH>Status</TH></TR>
                 </THead>
                 <TBody>
-                  {suppliers.map((s) => (
+                  {suppliersTampil.map((s) => (
                     <TR key={s.id}>
                       <TD sticky className="font-mono text-[12px]">{s.code}</TD>
                       <TD className="font-medium">{s.name}</TD>
@@ -290,6 +375,7 @@ export default function FinanceSuppliers() {
             </TableWrap>
           )}
         </Card>
+        </>
       )}
 
       <ModalSupplier open={modal === "supplier"} onClose={() => setModal(null)} onSubmit={(d) => aksi(() => api.createFinanceSupplier(d))} />

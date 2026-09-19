@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Undo2, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -12,8 +12,23 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek,
+  StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
 } from "@/features/finance/shared.jsx";
+import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+
+// Nominal bisa dicari sebagai "150000" maupun "150.000".
+function teksNominal(x) {
+  const n = Math.round(Number(x));
+  if (!Number.isFinite(n)) return "";
+  return `${n} ${n.toLocaleString("id-ID")}`;
+}
+
+function bucketUmur(hari) {
+  if (!(hari > 0)) return "belum";
+  if (hari <= 30) return "1_30";
+  if (hari <= 60) return "31_60";
+  return "60_plus";
+}
 
 // PIUTANG — siapa berutang ke kita, berapa, dan sudah lewat berapa lama.
 //
@@ -66,8 +81,32 @@ export default function FinanceReceivables() {
     }
   }
 
-  const baris = (data?.baris || []).filter((b) => !filterEmber || b.ember === filterEmber);
+  const barisEmber = (data?.baris || []).filter((b) => !filterEmber || b.ember === filterEmber);
   const refundMenunggu = refunds.filter((r) => r.status === "MENUNGGU_APPROVAL");
+
+  const [q, setQ] = useState("");
+  const [fSales, setFSales] = useState("");
+  const [fUmur, setFUmur] = useState("");
+  const [fAcuan, setFAcuan] = useState("");
+  const [qRefund, setQRefund] = useState("");
+  const [fStatusRefund, setFStatusRefund] = useState("");
+
+  const daftarSales = useMemo(
+    () => [...new Set((data?.baris || []).map((b) => b.salesName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id")),
+    [data],
+  );
+  const baris = useMemo(() => barisEmber.filter((b) =>
+    (!fSales || b.salesName === fSales)
+    && (!fUmur || bucketUmur(b.hariLewat) === fUmur)
+    && (!fAcuan || (b.sumberJatuhTempo === "invoice" ? "invoice" : "order") === fAcuan)
+    && cocok(q, b.orderNumber, b.invoiceNumber, b.customerName, b.salesName, teksNominal(b.sisaTagihan), teksNominal(b.nilaiOrder), b.dueDate ? tanggalPendek(b.dueDate) : "", b.dueDate),
+  ), [barisEmber, q, fSales, fUmur, fAcuan]);
+
+  const statusRefund = useMemo(() => [...new Set(refunds.map((r) => r.status).filter(Boolean))], [refunds]);
+  const refundTampil = useMemo(() => refunds.filter((r) =>
+    (!fStatusRefund || r.status === fStatusRefund)
+    && cocok(qRefund, r.refundNumber, r.order?.orderNumber, r.order?.customer?.name, r.reason, teksNominal(r.amount)),
+  ), [refunds, qRefund, fStatusRefund]);
 
   return (
     <HalamanFinance
@@ -122,6 +161,18 @@ export default function FinanceReceivables() {
         })}
       </div>
 
+      <FilterBar
+        q={q} onQ={setQ}
+        placeholder="Cari order, invoice, pelanggan, nominal…"
+        filters={[
+          { key: "sales", label: "Sales", value: fSales, onChange: setFSales, options: daftarSales.map((s) => [s, s]) },
+          { key: "umur", label: "Umur", value: fUmur, onChange: setFUmur, options: [["belum", "Belum jatuh tempo"], ["1_30", "1–30 hari"], ["31_60", "31–60 hari"], ["60_plus", "> 60 hari"]] },
+          { key: "acuan", label: "Acuan", value: fAcuan, onChange: setFAcuan, options: [["invoice", "Invoice"], ["order", "Tanggal order"]] },
+        ]}
+        ringkasan={`${baris.length} piutang${baris.length !== barisEmber.length ? ` dari ${barisEmber.length}` : ""}`}
+        onReset={() => { setQ(""); setFSales(""); setFUmur(""); setFAcuan(""); }}
+      />
+
       <Card className="overflow-hidden">
         <JudulKartu
           title={<>
@@ -133,7 +184,7 @@ export default function FinanceReceivables() {
           info="Order dengan umur piutang lebih dari 60 hari (badge oranye/merah) sebaiknya segera ditindaklanjuti — semakin lama menunggak, semakin kecil peluang tertagih penuh."
         />
         {baris.length === 0 ? (
-          <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada piutang terbuka.</p></CardContent>
+          <CardContent><p className="py-6 text-center text-[13px] text-ink3">{barisEmber.length > 0 ? "Tidak ada piutang yang cocok dengan pencarian/filter." : "Tidak ada piutang terbuka."}</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
             <Table>
@@ -171,6 +222,16 @@ export default function FinanceReceivables() {
       </Card>
 
       {/* ── Refund ── */}
+      <FilterBar
+        q={qRefund} onQ={setQRefund}
+        placeholder="Cari nomor, order, pelanggan…"
+        filters={[
+          { key: "status", label: "Status", value: fStatusRefund, onChange: setFStatusRefund, options: statusRefund.map((s) => [s, LABEL_STATUS[s] || s]) },
+        ]}
+        ringkasan={`${refundTampil.length} refund${refundTampil.length !== refunds.length ? ` dari ${refunds.length}` : ""}`}
+        onReset={() => { setQRefund(""); setFStatusRefund(""); }}
+      />
+
       <Card className="overflow-hidden">
         <JudulKartu
           title="Refund ke Pelanggan"
@@ -181,8 +242,8 @@ export default function FinanceReceivables() {
           </>}
           info="Sistem otomatis menolak refund yang nilainya melebihi uang yang pernah benar-benar diterima untuk order itu — jadi tidak mungkin 'mengeluarkan' uang yang sebenarnya belum pernah masuk."
         />
-        {refunds.length === 0 ? (
-          <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada refund.</p></CardContent>
+        {refundTampil.length === 0 ? (
+          <CardContent><p className="py-6 text-center text-[13px] text-ink3">{refunds.length > 0 ? "Tidak ada refund yang cocok dengan pencarian/filter." : "Belum ada refund."}</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
             <Table>
@@ -190,7 +251,7 @@ export default function FinanceReceivables() {
                 <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Alasan</TH><TH numeric>Nominal</TH><TH>Status</TH><TH /></TR>
               </THead>
               <TBody>
-                {refunds.map((r) => (
+                {refundTampil.map((r) => (
                   <TR key={r.id}>
                     <TD sticky className="font-mono text-[12px]">{r.refundNumber}</TD>
                     <TD>{tanggalPendek(r.date)}</TD>

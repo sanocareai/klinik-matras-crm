@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ShieldCheck, Image as ImageIcon, Split } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -13,6 +13,7 @@ import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   PeriodePicker, periodeDefault, tanggalJam, InputUang,
 } from "@/features/finance/shared.jsx";
+import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 
 // PEMBAYARAN PELANGGAN & VERIFIKASI.
 //
@@ -42,6 +43,11 @@ export default function FinancePayments() {
   const [pesan, setPesan] = useState(null);
   const [alokasiUntuk, setAlokasiUntuk] = useState(null);
   const [fotoBukti, setFotoBukti] = useState(null);
+  const [q, setQ] = useState("");
+  const [fMetode, setFMetode] = useState("");
+  const [fVerif, setFVerif] = useState("");
+  const [fAlokasi, setFAlokasi] = useState("");
+  const [fBukti, setFBukti] = useState("");
 
   const muat = useCallback(async () => {
     setLoading(true);
@@ -69,6 +75,36 @@ export default function FinancePayments() {
   const payments = data?.payments || [];
   const total = payments.reduce((s, p) => s + (p.amount || 0), 0);
   const belum = payments.filter((p) => !p.terverifikasi && !p.cancelledAt).length;
+
+  const opsiMetode = useMemo(
+    () => [...new Set(payments.map((p) => p.method).filter(Boolean))].sort().map((m) => [m, m]),
+    [payments]
+  );
+  const tampil = useMemo(() => {
+    // "150.000" harus cocok dengan nominal 150000: titik pemisah ribuan dibuang
+    // dari kata yang murni angka.
+    const qNorm = String(q || "").split(/\s+/).map((k) => (/^[\d.]+$/.test(k) ? k.replace(/\./g, "") : k)).join(" ");
+    return payments.filter((p) => {
+      if (fMetode && p.method !== fMetode) return false;
+      if (fVerif === "terverifikasi" && !(p.terverifikasi && !p.cancelledAt)) return false;
+      if (fVerif === "belum" && (p.terverifikasi || p.cancelledAt)) return false;
+      if (fVerif === "dibatalkan" && !p.cancelledAt) return false;
+      const adaAlokasi = (p.finAllocations || []).length > 0;
+      if (fAlokasi === "ada" && !adaAlokasi) return false;
+      if (fAlokasi === "tanpa" && adaAlokasi) return false;
+      if (fBukti === "ada" && !p.proofPhotoUrl) return false;
+      if (fBukti === "tanpa" && p.proofPhotoUrl) return false;
+      return cocok(
+        qNorm, p.order?.orderNumber, p.order?.customer?.name, p.recordedBy?.name,
+        p.method, p.amount, p.notes
+      );
+    });
+  }, [payments, q, fMetode, fVerif, fAlokasi, fBukti]);
+  const disaring = !!q || !!fMetode || !!fVerif || !!fAlokasi || !!fBukti;
+
+  function aturUlangFilter() {
+    setQ(""); setFMetode(""); setFVerif(""); setFAlokasi(""); setFBukti("");
+  }
 
   return (
     <HalamanFinance
@@ -134,6 +170,19 @@ export default function FinancePayments() {
         Prioritaskan yang "Belum Diverifikasi" — itu pekerjaan finance yang sebenarnya di halaman ini.
       </p>
 
+      <FilterBar
+        q={q} onQ={setQ}
+        placeholder="Cari order, pelanggan, nominal…"
+        filters={[
+          { key: "metode", label: "Metode", value: fMetode, onChange: setFMetode, options: opsiMetode },
+          { key: "verif", label: "Verifikasi", value: fVerif, onChange: setFVerif, options: [["terverifikasi", "Terverifikasi"], ["belum", "Belum diverifikasi"], ["dibatalkan", "Dibatalkan"]] },
+          { key: "alokasi", label: "Alokasi", value: fAlokasi, onChange: setFAlokasi, options: [["ada", "Ada alokasi"], ["tanpa", "Tanpa alokasi"]] },
+          { key: "bukti", label: "Bukti", value: fBukti, onChange: setFBukti, options: [["ada", "Ada bukti"], ["tanpa", "Tanpa bukti"]] },
+        ]}
+        ringkasan={disaring ? `${tampil.length} pembayaran dari ${payments.length}` : `${payments.length} pembayaran`}
+        onReset={aturUlangFilter}
+      />
+
       <Card className="overflow-hidden">
         <JudulKartu
           title="Daftar Pembayaran"
@@ -141,7 +190,7 @@ export default function FinancePayments() {
             Order, bukan dengan menghapus baris."
           info="'Append-only' artinya baris pembayaran tidak pernah diedit atau dihapus diam-diam — kalau ada yang salah, dibatalkan lewat halaman Order (bukan di sini) supaya tetap ada jejak siapa membatalkan dan kenapa."
         />
-        {payments.length === 0 ? (
+        {tampil.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada pembayaran di filter ini.</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
@@ -153,7 +202,7 @@ export default function FinancePayments() {
                 </TR>
               </THead>
               <TBody>
-                {payments.map((p) => (
+                {tampil.map((p) => (
                   <TR key={p.id}>
                     <TD sticky className="whitespace-nowrap">{tanggalJam(p.createdAt)}</TD>
                     <TD className="font-medium">{p.order?.orderNumber || "—"}</TD>
