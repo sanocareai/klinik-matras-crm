@@ -62,59 +62,64 @@ function monthRangeStrings() {
   return { from: `${year}-${p2(month)}-01`, to: `${year}-${p2(month)}-${p2(day)}` };
 }
 
+// Cache di memori (bertahan selama app hidup): kembali ke tab Beranda langsung menampilkan data terakhir,
+// lalu menyegarkan diam-diam — tanpa layar "memuat" tiap pindah tab.
+let homeCache = null;
+const patchHomeCache = (k, v) => { homeCache = { ...(homeCache || {}), [k]: v }; };
+
 export default function HomeScreen({ navigation }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!homeCache);
   const lastLoadAt = useRef(0);
   const loadedOnce = useRef(false); // fokus ulang tab = muat diam-diam, jangan ganti layar dengan spinner
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [perf, setPerf] = useState([]); // sales-performance rows (target/achieved), semua sales
-  const [csPerf, setCsPerf] = useState([]); // sales-report .rows (chat/orderConversionRate), semua sales
-  const [csTotal, setCsTotal] = useState(null); // sales-report .total (Lunas tim = 8 sales biasa, tanpa Team Lead)
+  const [perf, setPerf] = useState(homeCache?.perf || []); // sales-performance rows (target/achieved), semua sales
+  const [csPerf, setCsPerf] = useState(homeCache?.csPerf || []); // sales-report .rows (chat/orderConversionRate), semua sales
+  const [csTotal, setCsTotal] = useState(homeCache?.csTotal || null); // sales-report .total (Lunas tim = 8 sales biasa, tanpa Team Lead)
   const [csSortAsc, setCsSortAsc] = useState(false); // default: conversion tertinggi dulu
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [myConvCount, setMyConvCount] = useState(0);
-  const [needsAction, setNeedsAction] = useState([]);
-  const [sessionDist, setSessionDist] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(homeCache?.unreadCount || 0);
+  const [myConvCount, setMyConvCount] = useState(homeCache?.myConvCount || 0);
+  const [needsAction, setNeedsAction] = useState(homeCache?.needsAction || []);
+  const [sessionDist, setSessionDist] = useState(homeCache?.sessionDist || []);
 
+  // Muat PROGRESIF: tiap request mengisi kartunya sendiri begitu selesai (bukan menunggu semuanya lewat
+  // Promise.all). Layar hanya diblokir sampai target (request paling ringan) tiba, dan TIDAK diblokir sama
+  // sekali kalau sudah ada cache. sales-report (query analitik berat) tidak lagi menahan seluruh Beranda.
   const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+    if (!silent && !homeCache) setLoading(true);
     setErrorMsg(null);
-    try {
-      const { year, month } = wibNow();
-      const { from, to } = monthRangeStrings();
-      const [perfRows, salesReport, unread, counts, convRes, sessionRows] = await Promise.all([
-        api.getSalesPerformance(year, month).catch(() => []),
-        api.getSalesReport(from, to).catch(() => null),
-        api.getUnreadCount().catch(() => ({ count: 0 })),
-        api.getConversationCounts().catch(() => ({})),
-        api.getConversations({}).catch(() => ({ data: [] })),
-        api.getSessionDistribution("today").catch(() => []),
-      ]);
-      setPerf(perfRows || []);
-      setCsTotal(salesReport?.total || null);
-      setCsPerf(salesReport?.rows || []); // sales-report balikin { rows, total }, bukan array langsung
-      setUnreadCount(unread?.count || 0);
-      setMyConvCount(counts?.milikSaya || 0);
-      setSessionDist(sessionRows || []);
-
-      const top = (convRes?.data || [])
-        .filter((c) => c.isUnanswered)
-        .sort((a, b) => (b.unansweredMinutes || 0) - (a.unansweredMinutes || 0))
-        .slice(0, 5);
-      setNeedsAction(top);
-    } catch (err) {
-      setErrorMsg(err.message);
-    } finally {
-      loadedOnce.current = true;
-      lastLoadAt.current = Date.now();
-      setLoading(false);
-      setRefreshing(false);
-    }
+    const { year, month } = wibNow();
+    const { from, to } = monthRangeStrings();
+    const run = (promise, apply) => promise.then(apply).catch(() => {});
+    await Promise.all([
+      run(api.getSalesPerformance(year, month), (rows) => {
+        setPerf(rows || []); patchHomeCache("perf", rows || []); setLoading(false);
+      }),
+      run(api.getSalesReport(from, to), (r) => {
+        // sales-report balikin { rows, total }, bukan array langsung
+        setCsTotal(r?.total || null); setCsPerf(r?.rows || []);
+        patchHomeCache("csTotal", r?.total || null); patchHomeCache("csPerf", r?.rows || []);
+      }),
+      run(api.getUnreadCount(), (u) => { setUnreadCount(u?.count || 0); patchHomeCache("unreadCount", u?.count || 0); }),
+      run(api.getConversationCounts(), (c) => { setMyConvCount(c?.milikSaya || 0); patchHomeCache("myConvCount", c?.milikSaya || 0); }),
+      // Hanya percakapan belum dibalas (bukan 100 percakapan terbaru lengkap dengan pesannya) — payload jauh lebih kecil.
+      run(api.getConversations({ unanswered: "true", limit: 20 }), (res) => {
+        const top = (res?.data || [])
+          .filter((c) => c.isUnanswered)
+          .sort((x, y) => (y.unansweredMinutes || 0) - (x.unansweredMinutes || 0))
+          .slice(0, 5);
+        setNeedsAction(top); patchHomeCache("needsAction", top);
+      }),
+      run(api.getSessionDistribution("today"), (rows) => { setSessionDist(rows || []); patchHomeCache("sessionDist", rows || []); }),
+    ]);
+    loadedOnce.current = true;
+    lastLoadAt.current = Date.now();
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
   // BUG (fix): dulu cuma useEffect biasa (load() sekali pas mount) — tab
