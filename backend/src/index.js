@@ -136,7 +136,9 @@ process.on("uncaughtException", (err) => {
 });
 
 const app = express();
-app.use(cors());
+// exposedHeaders: APK Capacitor memanggil API lintas-origin, header custom
+// tidak terbaca JS tanpa ini (sesi geser, lihat middleware/auth.js).
+app.use(cors({ exposedHeaders: ["X-Refreshed-Token"] }));
 app.use(express.json({ limit: "10mb" }));
 
 // Sajikan file media yang diupload

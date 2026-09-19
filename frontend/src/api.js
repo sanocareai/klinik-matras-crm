@@ -8,6 +8,16 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// Sesi geser: backend menyertakan token baru di header X-Refreshed-Token
+// begitu sisa umur token menipis (middleware/auth.js). Disimpan diam-diam —
+// user aktif tidak pernah kena kadaluarsa 7 hari di tengah kerja.
+function adoptRefreshedToken(res) {
+  const baru = res.headers.get("X-Refreshed-Token");
+  if (baru) {
+    try { localStorage.setItem("token", baru); } catch {}
+  }
+}
+
 // Dipanggil saat server balas 401 — tampilkan modal "sesi berakhir" di App.jsx
 // tanpa hard reload (tidak kehilangan state UI, sales tidak kaget)
 function handleUnauthorized() {
@@ -15,12 +25,35 @@ function handleUnauthorized() {
   window.dispatchEvent(new CustomEvent("auth-error"));
 }
 
+// Saat backend di-restart (deploy/maintenance) nginx membalas 502/503/504 atau
+// koneksi putus selama beberapa detik. GET itu aman diulang, jadi coba lagi
+// beberapa kali dulu — tim yang sedang kerja tidak melihat error/layar kosong
+// hanya karena restart 10 detik. Hanya GET: POST/PATCH bisa dobel kalau
+// respons pertama sebenarnya sampai tapi balasannya yang hilang.
+const JEDA_ULANG_MS = [1000, 2000, 4000];
+async function fetchDenganUlang(url, init) {
+  const aman = !init.method || init.method === "GET";
+  for (let i = 0; ; i++) {
+    try {
+      const res = await fetch(url, init);
+      if (aman && [502, 503, 504].includes(res.status) && i < JEDA_ULANG_MS.length) {
+        await new Promise((r) => setTimeout(r, JEDA_ULANG_MS[i]));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (err.name === "AbortError" || !aman || i >= JEDA_ULANG_MS.length) throw err;
+      await new Promise((r) => setTimeout(r, JEDA_ULANG_MS[i]));
+    }
+  }
+}
+
 async function request(path, options = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await fetchDenganUlang(`${BASE}${path}`, {
       ...options,
       signal: controller.signal,
       headers: {
@@ -29,6 +62,7 @@ async function request(path, options = {}) {
         ...options.headers,
       },
     });
+    adoptRefreshedToken(res);
     if (res.status === 401) {
       handleUnauthorized();
       throw new Error("Sesi berakhir, silakan login kembali");
@@ -75,6 +109,7 @@ async function requestFormData(path, formData, method = "POST") {
       headers: authHeaders(),
       body: formData,
     });
+    adoptRefreshedToken(res);
     if (res.status === 401) {
       handleUnauthorized();
       throw new Error("Sesi berakhir, silakan login kembali");
