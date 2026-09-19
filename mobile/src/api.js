@@ -225,8 +225,9 @@ export const api = {
     }),
   getConversationCounts: () => request("/conversations/counts"),
   getUnreadCount: () => request("/conversations/unread-count"),
-  getMessages: (conversationId) =>
-    request(`/conversations/${conversationId}/messages`),
+  // opts.limit: hanya N pesan terbaru (lihat backend GET /:id/messages). Tanpa opts = seluruh riwayat.
+  getMessages: (conversationId, opts = {}) =>
+    request(`/conversations/${conversationId}/messages${opts.limit ? `?limit=${opts.limit}` : ""}`),
   // Preview N pesan terakhir TANPA efek samping — BEDA dari getMessages di
   // atas (yang mark-as-read sebagai side-effect). Dipakai fitur Peek Preview
   // (long-press percakapan di Inbox), lihat backend/src/routes/conversations.js.

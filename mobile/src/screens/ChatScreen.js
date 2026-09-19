@@ -61,6 +61,7 @@ import { useSocketStatusStore } from "../store/socketStatusStore";
 
 const POLL_MS = 5000;
 const PAGE_SIZE = 50;
+const INITIAL_LOAD = 150; // pesan terbaru yang diunduh saat chat dibuka; riwayat penuh baru bila diperlukan
 
 // Lokasi/kontak/poll simpan JSON mentah di content (lihat MessageBubble.js)
 // — jangan ditampilkan apa adanya di preview reply-bar, tampilkan label saja.
@@ -309,8 +310,11 @@ export default function ChatScreen({ route, navigation }) {
 
   const load = useCallback(async (silent = false) => {
     try {
-      const data = await api.getMessages(conversationId);
-      useMessageStore.getState().setMessages(conversationId, data);
+      // Sudah pernah menarik riwayat penuh (>INITIAL_LOAD pesan di memori)? Muat ulang penuh supaya
+      // pesan lama tidak "terpotong" oleh muat ulang diam-diam (polling saat socket putus).
+      const sudahPenuh = (useMessageStore.getState().messagesByConvId[conversationId] || []).length > INITIAL_LOAD;
+      const data = await api.getMessages(conversationId, sudahPenuh ? {} : { limit: INITIAL_LOAD });
+      useMessageStore.getState().setMessages(conversationId, data, !sudahPenuh && data.length >= INITIAL_LOAD);
       // Cerminkan efek samping backend (isRead=true, unread=false) supaya
       // badge unread di Inbox hilang seketika, tidak perlu nunggu refetch list.
       useConversationStore.getState().upsertConversation({ id: conversationId, unread: false, isRead: true });
@@ -454,9 +458,34 @@ export default function ChatScreen({ route, navigation }) {
   // memang perlu "dimuat lebih banyak" hanyalah WINDOW LOKAL (visibleCount,
   // demi performa render, bukan demi data) — itu yang diperlebar di bawah,
   // tidak perlu prependMessages/fetch jaringan tambahan.
+  // Tarik riwayat PENUH (sekali, dibagi ke pemanggil serentak). Dipakai saat: menggulir mentok ke atas,
+  // lompat ke pesan lama yang belum termuat, dan membuka pencarian dalam chat. App hanya mengunduh
+  // INITIAL_LOAD pesan terakhir saat chat dibuka (lihat load()).
+  const fullHistoryRef = useRef(null);
+  const ensureFullHistory = useCallback(() => {
+    if (!useMessageStore.getState().hasMoreByConvId[conversationId]) return Promise.resolve(false);
+    if (!fullHistoryRef.current) {
+      fullHistoryRef.current = api.getMessages(conversationId)
+        .then((d) => { useMessageStore.getState().setMessages(conversationId, d, false); return true; })
+        .catch(() => false)
+        .finally(() => { fullHistoryRef.current = null; });
+    }
+    return fullHistoryRef.current;
+  }, [conversationId]);
+
+  useEffect(() => { if (showSearch) ensureFullHistory(); }, [showSearch, ensureFullHistory]);
+
+  const jumpAfterFullRef = useRef(null);
   const scrollToMessage = useCallback((id) => {
     const rawIndex = allMessages.findIndex((m) => m.id === id);
-    if (rawIndex === -1) return; // id tidak ditemukan sama sekali di riwayat percakapan ini
+    if (rawIndex === -1) {
+      // Belum termuat (hanya INITIAL_LOAD terakhir yang diunduh): tarik riwayat penuh, lompat menyusul.
+      if (useMessageStore.getState().hasMoreByConvId[conversationId]) {
+        jumpAfterFullRef.current = id;
+        ensureFullHistory();
+      }
+      return;
+    }
     const needed = allMessages.length - rawIndex + 5;
     if (needed > visibleCount) {
       pendingScrollIdRef.current = id;
@@ -466,7 +495,16 @@ export default function ChatScreen({ route, navigation }) {
     const target = items.find((it) => it._type === "message" && it.message.id === id);
     if (!target) return;
     scrollThenReveal(id, target);
-  }, [allMessages, visibleCount, items, scrollThenReveal]);
+  }, [allMessages, visibleCount, items, scrollThenReveal, conversationId, ensureFullHistory]);
+
+  // Setelah riwayat penuh tiba, lanjutkan lompatan yang tertunda.
+  useEffect(() => {
+    const id = jumpAfterFullRef.current;
+    if (id && allMessages.some((m) => m.id === id)) {
+      jumpAfterFullRef.current = null;
+      scrollToMessage(id);
+    }
+  }, [allMessages, scrollToMessage]);
 
   // Urutan lama→baru (sama seperti allMessages) — teks pesan biasa
   // (`content`) saja yang dicari, konten terstruktur (lokasi/kontak/poll,
@@ -502,9 +540,13 @@ export default function ChatScreen({ route, navigation }) {
   }
 
   const handleStartReached = useCallback(() => {
-    if (visibleCount >= allMessages.length) return;
+    if (visibleCount >= allMessages.length) {
+      // Sudah di ujung yang termuat: kalau masih ada riwayat di server, tarik lalu perlebar jendela.
+      ensureFullHistory().then((ok) => { if (ok) setVisibleCount((v) => v + PAGE_SIZE); });
+      return;
+    }
     setVisibleCount((v) => Math.min(v + PAGE_SIZE, allMessages.length));
-  }, [visibleCount, allMessages.length]);
+  }, [visibleCount, allMessages.length, ensureFullHistory]);
 
   function handleChangeText(t) {
     setText(t);

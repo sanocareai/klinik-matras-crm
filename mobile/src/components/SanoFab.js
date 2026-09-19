@@ -5,12 +5,14 @@ import React, { useEffect, useMemo } from "react";
 import { Pressable, StyleSheet } from "react-native";
 import { Sparkles } from "lucide-react-native";
 import Animated, {
-  useAnimatedStyle, useSharedValue, withTiming, withRepeat, withSequence, Easing,
+  useAnimatedStyle, useSharedValue, withTiming, withRepeat, withSequence, Easing, cancelAnimation,
 } from "react-native-reanimated";
 import { useTokens } from "../constants/theme";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const FAB_SIZE = 52;
+import { useIsFocused } from "@react-navigation/native";
+
 const PRESS_SCALE = 0.95;
 
 export default function SanoFab({ onPress, bottomOffset = 16 }) {
@@ -19,7 +21,10 @@ export default function SanoFab({ onPress, bottomOffset = 16 }) {
   const pulse = useSharedValue(1);
   const press = useSharedValue(1);
 
+  const focused = useIsFocused();
   useEffect(() => {
+    // Layar tidak aktif: hentikan denyut (animasi UI thread tak berhenti sendiri saat layar dibekukan).
+    if (!focused) { cancelAnimation(pulse); pulse.value = 1; return; }
     // Idle: pulse scale 1 → 1.06, loop 2 detik, bolak-balik (reverse: true)
     pulse.value = withRepeat(
       withSequence(
@@ -29,7 +34,7 @@ export default function SanoFab({ onPress, bottomOffset = 16 }) {
       -1,
       false
     );
-  }, [pulse]);
+  }, [pulse, focused]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value * press.value }],

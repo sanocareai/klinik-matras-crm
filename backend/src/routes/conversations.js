@@ -677,15 +677,22 @@ conversationRouter.get("/:id", async (req, res) => {
 // + kirim read receipt ke WhatsApp dengan debounce 30 detik
 conversationRouter.get("/:id/messages", async (req, res) => {
   const convId = req.params.id;
-  const messages = await prisma.message.findMany({
-    where:   { conversationId: convId },
-    orderBy: { createdAt: "asc" },
-    include: {
-      replyTo: {
-        select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true },
-      },
+  // ?limit=N → hanya N pesan TERBARU (tetap urut lama→baru). Tanpa limit = seluruh riwayat seperti
+  // sebelumnya, jadi web & app versi lama tidak terpengaruh. Percakapan terbesar di produksi
+  // 2,29 MB per respons — app baru memuat 150 terakhir dulu, sisanya hanya bila diminta.
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 0, 0), 1000);
+  const include = {
+    replyTo: {
+      select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true },
     },
-  });
+  };
+  const messages = limit
+    ? (await prisma.message.findMany({
+        where: { conversationId: convId }, orderBy: { createdAt: "desc" }, take: limit, include,
+      })).reverse()
+    : await prisma.message.findMany({
+        where: { conversationId: convId }, orderBy: { createdAt: "asc" }, include,
+      });
   res.json(messages);
 
   // Mark as read — jalankan setelah response dikirim (tidak blokir respons)

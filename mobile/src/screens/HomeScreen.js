@@ -68,6 +68,7 @@ export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const [loading, setLoading] = useState(true);
+  const lastLoadAt = useRef(0);
   const loadedOnce = useRef(false); // fokus ulang tab = muat diam-diam, jangan ganti layar dengan spinner
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -110,6 +111,7 @@ export default function HomeScreen({ navigation }) {
       setErrorMsg(err.message);
     } finally {
       loadedOnce.current = true;
+      lastLoadAt.current = Date.now();
       setLoading(false);
       setRefreshing(false);
     }
@@ -127,7 +129,11 @@ export default function HomeScreen({ navigation }) {
   // (pola sama dengan ChatListScreen.js) bikin load() jalan ulang tiap kali
   // tab Home ini di-fokus (termasuk balik dari tab lain), bukan cuma sekali.
   useFocusEffect(
-    useCallback(() => { load(loadedOnce.current); }, [load])
+    // Fokus ulang dalam 20 dtk setelah muat terakhir tidak memicu 6 request lagi (hemat jaringan & CPU).
+    useCallback(() => {
+      if (loadedOnce.current && Date.now() - lastLoadAt.current < 20000) return;
+      load(loadedOnce.current);
+    }, [load])
   );
 
   function handleRefresh() {

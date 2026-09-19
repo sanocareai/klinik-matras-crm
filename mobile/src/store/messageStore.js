@@ -21,14 +21,30 @@ function ensureKey(m) {
   return m._key ? m : { ...m, _key: m.id };
 }
 
+// Batas percakapan yang riwayat pesannya ditahan di memori. Tanpa batas, tiap chat yang pernah dibuka
+// (sampai 2 MB JSON per percakapan besar) menetap di RAM sampai app ditutup. Yang paling lama tidak
+// disentuh dibuang; percakapan dengan pesan yang belum terkirim (sending/failed) TIDAK pernah dibuang.
+const MAX_CACHED_CONVS = 8;
+
 export const useMessageStore = create((set) => ({
+  touched: {},          // { [convId]: waktu terakhir dimuat } — dasar pembuangan
   messagesByConvId: {}, // { [convId]: Message[] }
   hasMoreByConvId: {},  // { [convId]: boolean } — masih ada pesan lama untuk di-load
 
-  setMessages: (convId, msgs, hasMore = false) => set((state) => ({
-    messagesByConvId: { ...state.messagesByConvId, [convId]: msgs.map(ensureKey) },
-    hasMoreByConvId: { ...state.hasMoreByConvId, [convId]: hasMore },
-  })),
+  setMessages: (convId, msgs, hasMore = false) => set((state) => {
+    const messagesByConvId = { ...state.messagesByConvId, [convId]: msgs.map(ensureKey) };
+    const hasMoreByConvId = { ...state.hasMoreByConvId, [convId]: hasMore };
+    const touched = { ...state.touched, [convId]: Date.now() };
+    const ids = Object.keys(messagesByConvId);
+    if (ids.length > MAX_CACHED_CONVS) {
+      ids
+        .filter((id) => id !== convId && !(messagesByConvId[id] || []).some((m) => m.status === "sending" || m.status === "failed"))
+        .sort((a, b) => (touched[a] || 0) - (touched[b] || 0))
+        .slice(0, ids.length - MAX_CACHED_CONVS)
+        .forEach((id) => { delete messagesByConvId[id]; delete hasMoreByConvId[id]; delete touched[id]; });
+    }
+    return { messagesByConvId, hasMoreByConvId, touched };
+  }),
 
   // BUG (fix) — DOUBLE-APPEND: pesan yang KITA kirim sendiri dari HP ini
   // datang balik lewat DUA jalur yang keduanya berakhir manggil appendMessage
