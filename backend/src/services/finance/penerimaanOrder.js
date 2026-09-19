@@ -23,6 +23,11 @@
 //    penyesuaian SALDO_AWAL (lawannya Laba Ditahan). Menjurnalnya ke rekening
 //    lagi akan menggandakan kas, jadi piutangnya diselesaikan LANGSUNG ke Laba
 //    Ditahan: Dr Laba Ditahan, Cr Piutang/Uang Muka. Kas tidak berubah.
+//    KHUSUS order yang SUDAH diserahkan tapi pendapatannya TIDAK PERNAH diakui
+//    di buku (riwayat sebelum pembukuan dimulai — 329 order, Rp824 juta per 19
+//    Sep 2026): tidak ada piutang yang perlu ditutup dan menjurnalnya ke Uang
+//    Muka akan menciptakan kewajiban palsu. Pembayarannya tetap dicatat &
+//    terverifikasi, TANPA jurnal.
 
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
 import { paidForOrder } from "./allocation.js";
@@ -31,7 +36,7 @@ import { bukukanPembayaran } from "./hooks.js";
 import { postJournal, findEntryByKey, toBookDate } from "./journal.js";
 import { resolveAccount, SYSTEM_KEYS } from "./accounts.js";
 import { toMoney, moneyToNumber, ZERO } from "./money.js";
-import { KEY as KEY_ORDER } from "./posting/orderRevenue.js";
+import { KEY as KEY_ORDER, STATUS_PENGAKUAN } from "./posting/orderRevenue.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 
 function err(message, statusCode = 400) {
@@ -126,7 +131,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: {
-      id: true, orderNumber: true, value: true, paymentStatus: true, paidAt: true, customerId: true,
+      id: true, orderNumber: true, value: true, paymentStatus: true, paidAt: true, customerId: true, status: true,
       customer: { select: { name: true, assignedSalesId: true } },
     },
   });
@@ -166,6 +171,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   });
   await tx.paymentVerification.create({ data: { paymentId: payment.id, verifiedById: verifierId } });
   await recomputeOrderPaymentStatus(tx, orderId);
+  let jurnalDilewati = false;
 
   if (mode === "REKENING") {
     const hasil = await bukukanPembayaran(tx, { paymentId: payment.id, userId: verifierId });
@@ -173,12 +179,16 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
       throw err("Pembayaran belum bisa dibukukan (cek Data Belum Lengkap di Pengaturan Finance) — tidak ada yang disimpan", 422);
     }
   } else {
+    const diakui = await pendapatanSudahDiakui(tx, orderId);
+    const praPembukuan = !diakui && STATUS_PENGAKUAN.includes(order.status);
+    if (praPembukuan) {
+      jurnalDilewati = true;
+    } else {
     const [laba, piutang, uangMuka] = await Promise.all([
       resolveAccount(tx, SYSTEM_KEYS.LABA_DITAHAN),
       resolveAccount(tx, SYSTEM_KEYS.PIUTANG_USAHA),
       resolveAccount(tx, SYSTEM_KEYS.UANG_MUKA_PELANGGAN),
     ]);
-    const diakui = await pendapatanSudahDiakui(tx, orderId);
     await postJournal(tx, {
       date: tanggal,
       description: `Pelunasan order ${order.orderNumber} — ${order.customer?.name || ""} (diterima sebelum saldo awal)`.trim(),
@@ -196,6 +206,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
         },
       ],
     });
+    }
   }
 
   await recordActivity(tx, {
@@ -203,9 +214,10 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
     metadata: {
       aksi: "verifikasi_penerimaan", mode, orderNumber: order.orderNumber, amount: String(nominal),
       method, cashAccount: rekening?.name || null, paymentId: payment.id,
+      ...(jurnalDilewati && { tanpaJurnal: "pendapatan order ini tidak pernah diakui di buku (pra-pembukuan)" }),
     },
   });
-  return { paymentId: payment.id, orderNumber: order.orderNumber, amount: moneyToNumber(nominal) };
+  return { paymentId: payment.id, orderNumber: order.orderNumber, amount: moneyToNumber(nominal), tanpaJurnal: jurnalDilewati };
 }
 
 /**

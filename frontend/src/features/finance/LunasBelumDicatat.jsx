@@ -123,7 +123,7 @@ export default function LunasBelumDicatat({ onBerubah }) {
         />
         <KartuAngka
           label="Lunas Sebelum Saldo Awal" value={data.lama.jumlah} sub={formatUang(data.lama.total)}
-          info={`Ditandai lunas sebelum ${tanggalPendek(data.cutoff)}: saldo bank asli pada tanggal itu sudah memuat uangnya (saldo sistem disamakan lewat penyesuaian saldo awal). Cukup ditandai selesai — TIDAK dijurnal ke rekening lagi supaya kas tidak dobel.`}
+          info={`Ditandai lunas sebelum ${tanggalPendek(data.cutoff)}: saldo bank asli pada tanggal itu sudah memuat uangnya (saldo sistem disamakan lewat penyesuaian saldo awal). Cukup ditandai selesai — TIDAK dijurnal ke rekening lagi supaya kas tidak dobel. Order lama yang pendapatannya memang tidak pernah masuk buku dicatat tanpa jurnal sama sekali.`}
         />
         <KartuAngka label="Total Belum Tercatat" value={formatUang(data.semua.total)} sub={`${data.semua.jumlah} order`} />
       </div>
@@ -271,8 +271,9 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, cutoff, onSubmit 
 
         {f.mode === "SEBELUM_SALDO_AWAL" ? (
           <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
-            Untuk uang yang diterima sebelum {tanggalPendek(cutoff)}: saldo bank asli sudah memuatnya, jadi piutang
-            ditutup tanpa menambah saldo rekening (kas tidak dobel). Tetap tercatat sebagai pembayaran terverifikasi.
+            Untuk uang yang diterima sebelum {tanggalPendek(cutoff)}: saldo bank asli sudah memuatnya, jadi saldo rekening
+            tidak ditambah (kas tidak dobel). Kalau order itu masih tercatat sebagai piutang, piutangnya ditutup; kalau
+            pendapatannya memang tidak pernah masuk buku, tidak ada jurnal. Tetap tercatat sebagai pembayaran terverifikasi.
           </p>
         ) : (
           <>

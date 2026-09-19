@@ -151,3 +151,38 @@ test("Verifikasi massal: rekening sama untuk banyak order; satu yang gagal tidak
   assert.equal(r.body.gagal, 1);
   assert.equal(await saldo(SYSTEM_KEYS.BANK), "1200000.00");
 });
+
+test("Order lama yang sudah diserahkan tapi pendapatannya TIDAK PERNAH diakui di buku: pembayaran terverifikasi tanpa jurnal (tidak ada kewajiban palsu)", async () => {
+  await siapkan();
+  const customer = await testPrisma.customer.create({ data: { name: "Pelanggan Riwayat" } });
+  const order = await testPrisma.order.create({
+    data: { customerId: customer.id, value: 3_000_000, category: "LAYANAN", orderNumber: "RES-LAMA-1", status: "DELIVERED", paymentStatus: "LUNAS", paidAt: new Date("2026-06-10T03:00:00Z") },
+  });
+  const c = await ADMIN();
+  const jurnalAwal = await testPrisma.finJournalEntry.count();
+
+  const r = await c.post("/api/finance/penerimaan/verifikasi", { orderId: order.id, mode: "SEBELUM_SALDO_AWAL" });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.tanpaJurnal, true);
+  assert.equal(await testPrisma.finJournalEntry.count(), jurnalAwal, "tidak ada jurnal baru");
+  assert.equal(await saldo(SYSTEM_KEYS.UANG_MUKA_PELANGGAN), "0.00", "tidak ada uang muka palsu");
+  assert.equal(await saldo(SYSTEM_KEYS.LABA_DITAHAN), "0.00");
+  const p = await testPrisma.payment.findUnique({ where: { id: r.body.paymentId }, include: { verifications: true } });
+  assert.equal(p.amount, 3_000_000);
+  assert.equal(p.verifications.length, 1);
+  assert.equal((await c.get("/api/finance/penerimaan/lunas-belum-dicatat")).body.semua.jumlah, 0);
+});
+
+test("Order belum diserahkan yang lunas sebelum saldo awal: uang muka pelanggan diakui (lawannya Laba Ditahan)", async () => {
+  await siapkan();
+  const customer = await testPrisma.customer.create({ data: { name: "Pelanggan Dalam Proses" } });
+  const order = await testPrisma.order.create({
+    data: { customerId: customer.id, value: 1_200_000, category: "LAYANAN", orderNumber: "RES-PROSES-1", status: "PROCESSING", paymentStatus: "LUNAS", paidAt: new Date("2026-09-10T03:00:00Z") },
+  });
+  const c = await ADMIN();
+  const r = await c.post("/api/finance/penerimaan/verifikasi", { orderId: order.id, mode: "SEBELUM_SALDO_AWAL" });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.tanpaJurnal, false);
+  assert.equal(await saldo(SYSTEM_KEYS.UANG_MUKA_PELANGGAN), "-1200000.00", "kewajiban (kredit) uang muka");
+  assert.equal(await saldo(SYSTEM_KEYS.LABA_DITAHAN), "1200000.00");
+});
