@@ -1,6 +1,6 @@
 // Entry point aplikasi mobile Klinik Matras CRM.
 // Navigasi: Login → Daftar Percakapan → Chat → Info Pelanggan
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -9,7 +9,7 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { House, MessageCircle, Users, UserRound, ClipboardList } from "lucide-react-native";
 import { setAudioModeAsync } from "expo-audio";
 import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
@@ -104,19 +104,38 @@ function TabBarButton({ children, style, ...rest }) {
 // gradien agar menyatu dengan latar layar.
 const PILL = 46; // diameter lingkaran aktif di tab bar
 
-// Satu tab: DUA ikon ditumpuk (aktif putih + non-aktif abu) yang saling memudar mengikuti posisi
-// pil. Warna stroke lucide tidak bisa dianimasikan di UI thread, tapi opacity bisa — jadi crossfade
-// ini berjalan penuh di UI thread dan tidak ikut tersendat walau thread JS sedang sibuk.
-function GlassTabItem({ route, index, focused, progress, slot, onPress, mutedColor }) {
+// Kurva gerak tunggal untuk seluruh perpindahan tab (pil + isi layar), meniru ease-out iOS:
+// berangkat cepat, mendarat pelan. Timing, BUKAN pegas — pegas punya ekor panjang yang terbaca
+// sebagai "delay" walau gerakannya sendiri halus.
+const TAB_SPEC = { duration: 220, easing: Easing.bezier(0.33, 0, 0.2, 1) };
+
+// Perpindahan ISI LAYAR antar tab: geser murni (transform), TANPA opacity.
+//
+// Kedua preset bawaan React Navigation ("fade" dan "shift") sama-sama menganimasikan OPACITY satu
+// layar penuh. Di Android itu memaksa lapisan seukuran layar digambar ulang ke buffer terpisah tiap
+// frame — itulah "cross dissolve yang tidak halus" yang terlihat. Transform cuma memindahkan lapisan
+// yang SUDAH jadi, jauh lebih murah, dan karena tiap layar punya latar sendiri yang menutup penuh,
+// hasilnya terbaca sebagai geser bersih tanpa saling menembus.
+function forSlide({ current }) {
+  return {
+    sceneStyle: {
+      transform: [{
+        translateX: current.progress.interpolate({
+          inputRange: [-1, 0, 1],
+          outputRange: [-28, 0, 28],
+        }),
+      }],
+    },
+  };
+}
+
+// Satu tab: SATU ikon saja.
+// Percobaan sebelumnya (19 Sep 2026) menumpuk dua ikon dan memudarkan opacity-nya. Itu terasa berat
+// karena ikon lucide adalah SVG: menganimasikan opacity view berisi SVG memaksa Android menggambar
+// ulang lapisan itu TIAP FRAME, dan jumlahnya jadi 10 SVG (2 × 5 tab). Warna sekarang berganti
+// seketika — mata tidak menangkapnya karena perhatian mengikuti pil yang meluncur.
+function GlassTabItem({ route, focused, slot, onPress, mutedColor }) {
   const Icon = TAB_ICONS[route.name];
-  const dekat = useAnimatedStyle(() => {
-    const d = Math.min(1, Math.abs(progress.value - index));
-    return { opacity: 1 - d, transform: [{ scale: 0.88 + 0.12 * (1 - d) }] };
-  });
-  const jauh = useAnimatedStyle(() => {
-    const d = Math.min(1, Math.abs(progress.value - index));
-    return { opacity: d };
-  });
   return (
     <Pressable
       onPress={onPress}
@@ -125,12 +144,7 @@ function GlassTabItem({ route, index, focused, progress, slot, onPress, mutedCol
       accessibilityState={focused ? { selected: true } : {}}
       style={{ width: slot || PILL, height: PILL, alignItems: "center", justifyContent: "center" }}
     >
-      <Animated.View style={[StyleSheet.absoluteFill, jauh, { alignItems: "center", justifyContent: "center" }]}>
-        <Icon size={22} color={mutedColor} strokeWidth={2} />
-      </Animated.View>
-      <Animated.View style={[StyleSheet.absoluteFill, dekat, { alignItems: "center", justifyContent: "center" }]}>
-        <Icon size={22} color="#fff" strokeWidth={2.4} />
-      </Animated.View>
+      <Icon size={22} color={focused ? "#fff" : mutedColor} strokeWidth={focused ? 2.4 : 2} />
     </Pressable>
   );
 }
@@ -149,10 +163,14 @@ function GlassTabBar({ state, navigation }) {
   const jumlah = state.routes.length;
   const slot = lebar ? lebar / jumlah : 0;
   const progress = useSharedValue(state.index);
+  const terakhir = useRef(state.index);
 
+  // Jaring pengaman untuk perpindahan tab yang BUKAN dari tekan tombol (mis. dari notifikasi).
+  // Perpindahan normal sudah digerakkan langsung di onPress di bawah.
   useEffect(() => {
-    // Pegas tanpa pantulan berlebih — terasa "meluncur dan berhenti", bukan memantul.
-    progress.value = withSpring(state.index, { damping: 20, stiffness: 190, mass: 0.7 });
+    if (terakhir.current === state.index) return;
+    terakhir.current = state.index;
+    progress.value = withTiming(state.index, TAB_SPEC);
   }, [state.index, progress]);
 
   const pilStyle = useAnimatedStyle(() => ({
@@ -179,14 +197,18 @@ function GlassTabBar({ state, navigation }) {
             <GlassTabItem
               key={route.key}
               route={route}
-              index={index}
               focused={focused}
-              progress={progress}
               slot={slot}
               mutedColor={tokens.color.textMuted}
               onPress={() => {
                 const e = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
-                if (!focused && !e.defaultPrevented) navigation.navigate(route.name, route.params);
+                if (focused || e.defaultPrevented) return;
+                // Pil bergerak SEKARANG, di frame yang sama dengan sentuhan — tidak menunggu React
+                // selesai memproses perpindahan. Inilah yang menghilangkan kesan "delay"; versi
+                // sebelumnya baru mulai bergerak setelah state navigasi berubah (±1-2 frame telat).
+                terakhir.current = index;
+                progress.value = withTiming(index, TAB_SPEC);
+                navigation.navigate(route.name, route.params);
               }}
             />
           );
@@ -218,13 +240,12 @@ function MainTabs() {
         // Perpindahan tab: silang-pudar 160 ms. Durasi default (±250 ms) terasa menggantung karena
         // layar tujuan baru selesai dirender di awal animasi; 160 ms + easing keluar membuat
         // perpindahan terbaca "langsung" tapi tetap halus, dan dua layar tumpang tindih lebih singkat.
-        animation: "fade",
-        transitionSpec: {
-          animation: "timing",
-          // Kurva standar iOS (ease-in-out halus), 220 ms — cukup panjang untuk terbaca sebagai
-          // gerakan, cukup pendek untuk tetap terasa responsif.
-          config: { duration: 220, easing: Easing.bezier(0.25, 0.1, 0.25, 1) },
-        },
+        // "shift" hanya dipakai untuk MENGAKTIFKAN animasi; gerakannya sendiri diambil alih
+        // forSlide di atas (lihat alasannya di sana), dengan kurva & durasi yang sama persis
+        // dengan pil di tab bar supaya keduanya bergerak sebagai satu kesatuan.
+        animation: "shift",
+        sceneStyleInterpolator: forSlide,
+        transitionSpec: { animation: "timing", config: TAB_SPEC },
         // freezeOnBlur SENGAJA TIDAK dipakai di tab (dicoba & dicabut 19 Sep 2026): membekukan layar
         // berarti React harus merender ULANG SELURUH pohon layar tujuan tepat saat animasi mulai —
         // thread JS sibuk di 2-3 frame pertama dan perpindahan terlihat patah, justru gejala yang
