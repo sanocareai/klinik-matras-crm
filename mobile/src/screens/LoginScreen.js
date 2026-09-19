@@ -1,6 +1,6 @@
 // Layar Login — email + password, sama dengan akun CRM web.
 // Ada opsi "Alamat server" tersembunyi untuk testing dengan server lokal.
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
@@ -9,6 +9,9 @@ import { Image } from "expo-image";
 import { useAuth } from "../context/AuthContext";
 import { useColors } from "../theme";
 import { DEFAULT_SERVER } from "../api";
+import {
+  biometricAvailable, hasSavedLogin, saveLogin, readSavedLogin, clearSavedLogin,
+} from "../lib/savedLogin";
 
 export default function LoginScreen() {
   const colors = useColors();
@@ -20,6 +23,42 @@ export default function LoginScreen() {
   const [showServer, setShowServer] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const [hasSaved, setHasSaved] = useState(false);
+  const autoTried = useRef(false);
+
+  // Kalau sudah pernah mengaktifkan login sidik jari, langsung tawarkan prompt
+  // sekali saat layar dibuka (tanpa mengetik apa pun).
+  useEffect(() => {
+    (async () => {
+      const saved = await hasSavedLogin();
+      setHasSaved(saved);
+      if (saved && !autoTried.current) {
+        autoTried.current = true;
+        handleBiometric();
+      }
+    })();
+  }, []);
+
+  async function handleBiometric() {
+    const cred = await readSavedLogin();
+    if (!cred) return; // dibatalkan / sidik jari berubah — tetap bisa ketik manual
+    setBusy(true);
+    try {
+      await login(cred.email, cred.password, cred.server);
+    } catch (err) {
+      // Hanya hapus data tersimpan kalau server MENOLAK kredensial (bukan saat offline/maintenance).
+      if (/salah|tidak valid|nonaktif|401|403/i.test(err.message)) {
+        await clearSavedLogin();
+        setHasSaved(false);
+        Alert.alert("Login gagal", `${err.message}\nLogin sidik jari dinonaktifkan, silakan login manual.`);
+      } else {
+        Alert.alert("Login gagal", err.message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleLogin() {
     if (!email.trim() || !password) {
       Alert.alert("Login", "Email dan password wajib diisi");
@@ -30,8 +69,21 @@ export default function LoginScreen() {
       await login(email, password, serverUrl);
     } catch (err) {
       Alert.alert("Login gagal", err.message);
-    } finally {
       setBusy(false);
+      return;
+    }
+    setBusy(false);
+    // Login berhasil — tawarkan simpan untuk login sidik jari berikutnya.
+    if (!hasSaved && (await biometricAvailable())) {
+      const cred = { email: email.trim(), password, server: (serverUrl || DEFAULT_SERVER).replace(/\/+$/, "") };
+      Alert.alert(
+        "Login pakai sidik jari?",
+        "Lain kali masuk cukup dengan sidik jari, tanpa mengetik email dan password.",
+        [
+          { text: "Nanti saja", style: "cancel" },
+          { text: "Aktifkan", onPress: () => saveLogin(cred).catch(() => {}) },
+        ],
+      );
     }
   }
 
@@ -89,6 +141,19 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
+        {hasSaved && (
+          <>
+            <TouchableOpacity style={styles.bioButton} onPress={handleBiometric} disabled={busy}>
+              <Text style={styles.bioText}>Masuk dengan sidik jari</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => { await clearSavedLogin(); setHasSaved(false); }}
+            >
+              <Text style={styles.serverToggle}>Hapus login tersimpan</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
         <TouchableOpacity onPress={() => setShowServer((v) => !v)}>
           <Text style={styles.serverToggle}>
             {showServer ? "Sembunyikan alamat server" : "Ubah alamat server"}
@@ -118,6 +183,11 @@ function createStyles(colors) {
       paddingVertical: 14, alignItems: "center", marginTop: 4,
     },
     buttonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+    bioButton: {
+      width: "100%", borderWidth: 1, borderColor: colors.header, borderRadius: 10,
+      paddingVertical: 13, alignItems: "center", marginTop: 10,
+    },
+    bioText: { color: colors.header, fontWeight: "700", fontSize: 15 },
     serverToggle: { marginTop: 16, fontSize: 12, color: colors.textMuted },
   });
 }

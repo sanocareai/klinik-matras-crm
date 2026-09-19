@@ -2,7 +2,7 @@
   "expo": {
     "name": "SANO Messenger",
     "slug": "klinik-matras-crm",
-    "version": "3.1.1",
+    "version": "3.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -12,7 +12,7 @@
     "jsEngine": "hermes",
     "android": {
       "package": "com.sanomatrassehat.salesapp",
-      "versionCode": 18,
+      "versionCode": 19,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
@@ -83,7 +83,12 @@
       ],
       "expo-image",
       "expo-asset",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        { "faceIDPermission": "Gunakan biometrik untuk masuk ke SANO Messenger" }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"

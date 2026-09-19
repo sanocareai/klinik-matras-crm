@@ -64,7 +64,9 @@ async function request(path, options = {}) {
       token = refreshed;
       AsyncStorage.setItem("token", refreshed).catch(() => {});
     }
-    if (res.status === 401) {
+    // Login sendiri yang 401 = kredensial salah, BUKAN sesi berakhir — biarkan
+    // pesan asli server ("Email atau password salah") sampai ke layar.
+    if (res.status === 401 && path !== "/auth/login") {
       token = null;
       await AsyncStorage.removeItem("token");
       if (onUnauthorized) onUnauthorized();
