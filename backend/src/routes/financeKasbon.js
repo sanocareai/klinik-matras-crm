@@ -8,8 +8,9 @@
 //  • Kasbon baru WAJIB punya urgensi, dan (kalau batas diatur di Pengaturan)
 //    total kasbon aktif karyawan tidak boleh melewati batas — kecuali admin
 //    sengaja mengizinkan.
-//  • Pelunasan tidak boleh melebihi sisa. Potong gaji tidak menyentuh kas;
-//    tunai memasukkan uang ke rekening yang dipilih.
+//  • Kasbon = gaji yang dicairkan lebih awal: TIDAK dikembalikan, hanya
+//    dipotong dari gaji (kas tidak tersentuh). Pemotongan tidak boleh
+//    melebihi yang belum dipotong. Pinjaman karyawan bukan kasbon.
 //  • Pembatalan (kasbon maupun pelunasan) lewat reversal jurnal + alasan.
 //  • Kasbon hasil impor histori (historis=true, LUNAS) tidak punya jurnal.
 
@@ -39,7 +40,7 @@ export function rapikanNama(nama) {
     .toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
 }
 
-const METODE = ["POTONG_GAJI", "TUNAI"];
+const METODE = ["POTONG_GAJI"];
 
 const kasbonInclude = {
   repayments: {
@@ -227,7 +228,7 @@ financeKasbonRouter.post("/kasbon", requirePermission(P.FINANCE_POST), async (re
 
 // ─── PELUNASAN ───────────────────────────────────────────────────────────
 /** Catat SATU pelunasan atas satu kasbon (dipakai jalur per-kasbon dan potong-karyawan). */
-async function catatPelunasan(tx, kasbonId, { date, amount, method, cashAccountId, notes, userId }) {
+async function catatPelunasan(tx, kasbonId, { date, amount, method, notes, userId }) {
   const k = await tx.finKasbon.findUnique({ where: { id: kasbonId }, include: { repayments: { where: { cancelledAt: null } } } });
   if (!k) throw err("Kasbon tidak ditemukan", 404);
   if (k.status !== "AKTIF") throw err(`Kasbon ${k.kasbonNumber} sudah ${k.status === "LUNAS" ? "lunas" : "dibatalkan"}`, 409);
@@ -236,20 +237,13 @@ async function catatPelunasan(tx, kasbonId, { date, amount, method, cashAccountI
   const sisa = toMoney(k.amount).minus(bayar);
   const nominal = toMoney(amount, { field: "Nominal pelunasan" });
   if (nominal.lessThanOrEqualTo(0)) throw err("Nominal pelunasan harus lebih dari 0");
-  if (nominal.greaterThan(sisa)) throw err(`Nominal melebihi kasbon yang belum dikembalikan pada ${k.kasbonNumber} (Rp${Number(sisa).toLocaleString("id-ID")})`);
-
-  let rekening = null;
-  if (method === "TUNAI") {
-    if (!cashAccountId) throw err("Pelunasan tunai wajib memilih rekening kas/bank tujuan");
-    rekening = await tx.finCashAccount.findUnique({ where: { id: cashAccountId }, select: { id: true, name: true, accountId: true, active: true } });
-    if (!rekening || !rekening.active) throw err("Rekening tujuan tidak ditemukan atau nonaktif", 404);
-  }
+  if (nominal.greaterThan(sisa)) throw err(`Nominal melebihi kasbon yang belum dipotong pada ${k.kasbonNumber} (Rp${Number(sisa).toLocaleString("id-ID")})`);
 
   const tanggal = date ? toBookDate(date) : todayBookDateWIB();
   const rep = await tx.finKasbonRepayment.create({
-    data: { kasbonId, date: tanggal, amount: nominal, method, cashAccountId: rekening?.id || null, notes: notes?.trim() || null, createdById: userId },
+    data: { kasbonId, date: tanggal, amount: nominal, method, notes: notes?.trim() || null, createdById: userId },
   });
-  await postKasbonPelunasan(tx, { repaymentId: rep.id, date: tanggal, amount: nominal, karyawanNama: k.employeeName, method, cashAccount: rekening, userId });
+  await postKasbonPelunasan(tx, { repaymentId: rep.id, date: tanggal, amount: nominal, karyawanNama: k.employeeName, method, userId });
   if (sisa.minus(nominal).lessThanOrEqualTo(0)) await tx.finKasbon.update({ where: { id: kasbonId }, data: { status: "LUNAS" } });
 
   await recordActivity(tx, {
@@ -260,14 +254,14 @@ async function catatPelunasan(tx, kasbonId, { date, amount, method, cashAccountI
 }
 
 function cekMetode(method) {
-  if (!METODE.includes(method)) throw err("Cara pelunasan tidak dikenal (Potong Gaji atau Tunai)");
+  if (!METODE.includes(method)) throw err("Kasbon hanya bisa dilunasi dengan potong gaji");
 }
 
 // Potong/kembalikan untuk SATU karyawan lintas kasbon: dialokasikan ke kasbon
 // TERTUA dulu (FIFO) — cara orang gajian memang memotong.
 financeKasbonRouter.post("/kasbon/pelunasan-karyawan", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    const { employeeName, amount, date, method, cashAccountId, notes } = req.body;
+    const { employeeName, amount, date, method, notes } = req.body;
     cekMetode(method);
     if (!employeeName?.trim()) throw err("Nama karyawan wajib diisi");
     const total = toMoney(amount, { field: "Nominal pelunasan" });
@@ -281,7 +275,7 @@ financeKasbonRouter.post("/kasbon/pelunasan-karyawan", requirePermission(P.FINAN
       });
       if (daftar.length === 0) throw err(`${employeeName} tidak punya kasbon aktif`, 404);
       const sisaTotal = daftar.reduce((acc, k) => acc.plus(toMoney(k.amount).minus(k.repayments.length ? sumMoney(k.repayments.map((r) => r.amount)) : ZERO)), ZERO);
-      if (total.greaterThan(sisaTotal)) throw err(`Nominal melebihi total kasbon yang belum dikembalikan (Rp${Number(sisaTotal).toLocaleString("id-ID")})`);
+      if (total.greaterThan(sisaTotal)) throw err(`Nominal melebihi total kasbon yang belum dipotong (Rp${Number(sisaTotal).toLocaleString("id-ID")})`);
 
       let sisaUang = total;
       const dialokasikan = [];
@@ -290,7 +284,7 @@ financeKasbonRouter.post("/kasbon/pelunasan-karyawan", requirePermission(P.FINAN
         const bayar = k.repayments.length ? sumMoney(k.repayments.map((r) => r.amount)) : ZERO;
         const sisaKasbon = toMoney(k.amount).minus(bayar);
         const bagian = sisaUang.lessThan(sisaKasbon) ? sisaUang : sisaKasbon;
-        dialokasikan.push(await catatPelunasan(tx, k.id, { date, amount: bagian, method, cashAccountId, notes, userId: req.user.id }));
+        dialokasikan.push(await catatPelunasan(tx, k.id, { date, amount: bagian, method, notes, userId: req.user.id }));
         sisaUang = sisaUang.minus(bagian);
       }
       return dialokasikan;

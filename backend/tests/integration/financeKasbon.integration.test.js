@@ -59,7 +59,7 @@ test("Kasbon diberikan: Dr Piutang Karyawan (aset) / Cr Kas, bukan beban; urgens
   assert.equal(await saldo("6-1100"), "0.00", "kasbon bukan beban gaji");
 });
 
-test("Pelunasan POTONG GAJI: Dr Beban Gaji / Cr Piutang, kas tidak tersentuh; lunas penuh jadi LUNAS; melebihi sisa ditolak", async () => {
+test("Potong gaji: Dr Beban Gaji / Cr Piutang, kas tidak tersentuh; lunas penuh jadi LUNAS; melebihi yang belum dipotong ditolak", async () => {
   const { rekening } = await siapkan();
   const { token } = await createTestUser({ roles: ["ADMIN"] });
   const c = makeClient(server.baseUrl, token);
@@ -81,19 +81,15 @@ test("Pelunasan POTONG GAJI: Dr Beban Gaji / Cr Piutang, kas tidak tersentuh; lu
   assert.equal(await saldo("1-1350"), "0.00");
 });
 
-test("Pelunasan TUNAI: Dr Kas / Cr Piutang; wajib rekening tujuan", async () => {
+test("Kasbon tidak bisa dilunasi dengan cara lain: hanya potong gaji (kasbon bukan pinjaman)", async () => {
   const { rekening } = await siapkan();
   const { token } = await createTestUser({ roles: ["ADMIN"] });
   const c = makeClient(server.baseUrl, token);
   const k = (await c.post("/api/finance/kasbon", baru(rekening))).body;
 
-  const tanpaRek = await c.post(`/api/finance/kasbon/${k.id}/pelunasan`, { method: "TUNAI", amount: 100_000 });
-  assert.equal(tanpaRek.status, 400);
-  const ok = await c.post(`/api/finance/kasbon/${k.id}/pelunasan`, { method: "TUNAI", amount: 100_000, cashAccountId: rekening.id });
-  assert.equal(ok.status, 201, JSON.stringify(ok.body));
-  assert.equal(await saldo("1-1100"), "-400000.00", "uang kembali ke kas");
-  assert.equal(await saldo("1-1350"), "400000.00");
-  assert.equal(await saldo("6-1100"), "0.00");
+  const tunai = await c.post(`/api/finance/kasbon/${k.id}/pelunasan`, { method: "TUNAI", amount: 100_000, cashAccountId: rekening.id });
+  assert.equal(tunai.status, 400);
+  assert.equal(await saldo("1-1350"), "500000.00", "tidak ada yang berubah");
 });
 
 test("Potong per karyawan dialokasikan FIFO ke kasbon tertua; nama beda huruf besar tetap satu orang", async () => {

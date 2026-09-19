@@ -20,7 +20,9 @@ import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 //
 // Manfaat perusahaan: karyawan boleh mencairkan gaji lebih awal, dengan batas
 // dan harus ada urgensinya. Di buku besar ia PIUTANG KARYAWAN (aset), bukan
-// beban: uang keluar dulu, lalu kembali lewat potongan gaji atau setoran tunai.
+// beban: uang keluar dulu, lalu berkurang lewat potongan gaji saat gajian.
+// Kasbon = pencairan gaji lebih awal, jadi TIDAK dikembalikan — hanya dipotong
+// dari gaji. Pinjaman karyawan adalah hal lain dan tidak dicatat di sini.
 // Jurnal & alasannya: backend services/finance/posting/kasbon.js.
 
 const STATUS_TAB = [
@@ -28,11 +30,6 @@ const STATUS_TAB = [
   { key: "LUNAS", label: "Lunas" },
   { key: "DIBATALKAN", label: "Dibatalkan" },
   { key: "", label: "Semua" },
-];
-
-const CARA = [
-  ["POTONG_GAJI", "Potong dari gaji"],
-  ["TUNAI", "Dikembalikan tunai / transfer"],
 ];
 
 function hariIniISO() {
@@ -101,7 +98,7 @@ export default function FinanceKasbon() {
   return (
     <HalamanFinance
       title="Kasbon Karyawan"
-      subtitle="Uang muka gaji: siapa yang masih punya kasbon, dan cara mengembalikannya (potong gaji atau tunai)."
+      subtitle="Pencairan gaji lebih awal: siapa yang kasbonnya belum dipotong dari gaji, dan berapa."
       loading={loading}
       error={error}
       onRetry={muat}
@@ -117,34 +114,34 @@ export default function FinanceKasbon() {
       )}
 
       <Penjelasan>
-        Kasbon <strong>bukan beban</strong> — uangnya keluar dulu, lalu kembali. Di neraca ia tercatat sebagai
-        <strong> Piutang Karyawan</strong>. Saat gajian, catat gaji <strong>bersih</strong> yang dibayarkan di
+        Kasbon adalah gaji yang dicairkan lebih awal, jadi <strong>bukan beban</strong> — nanti dipotong dari gaji.
+        Selama belum dipotong, di neraca ia tercatat sebagai <strong>Piutang Karyawan</strong>. Saat gajian, catat gaji <strong>bersih</strong> yang dibayarkan di
         Pengeluaran (Gaji &amp; Tunjangan), lalu catat bagian yang dipotong di sini lewat <strong>Potong dari gaji</strong> —
         sistem otomatis menambahkannya ke beban gaji sehingga totalnya menjadi gaji kotor.
       </Penjelasan>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KartuAngka
-          label="Belum Dikembalikan" value={formatUang(data?.totalSisa ?? 0)}
-          tone={(data?.totalSisa ?? 0) > 0 ? "orange" : "default"} sub="total kasbon yang belum lunas"
-          info="Uang yang sudah diberikan ke karyawan sebagai kasbon tapi belum dipotong dari gaji atau dikembalikan. Angka ini sama dengan saldo akun Piutang Karyawan di neraca."
+          label="Belum Dipotong dari Gaji" value={formatUang(data?.totalSisa ?? 0)}
+          tone={(data?.totalSisa ?? 0) > 0 ? "orange" : "default"} sub="total kasbon yang masih menunggu dipotong"
+          info="Gaji yang sudah dicairkan lebih awal (kasbon) tapi belum dipotong dari gaji karyawan. Angka ini sama dengan saldo akun Piutang Karyawan di neraca."
         />
         <KartuAngka label="Karyawan yang Masih Punya Kasbon" value={perKaryawan.length} sub="orang, kasbonnya belum lunas" />
         <KartuAngka label="Diberikan Bulan Ini" value={formatUang(data?.bulanIni?.diberikan ?? 0)} sub="kasbon baru yang diberikan bulan ini" />
-        <KartuAngka label="Sudah Dikembalikan Bulan Ini" value={formatUang(data?.bulanIni?.terpotong ?? 0)} sub="dipotong gaji atau dikembalikan tunai" />
+        <KartuAngka label="Sudah Dipotong Bulan Ini" value={formatUang(data?.bulanIni?.terpotong ?? 0)} sub="kasbon yang dipotong dari gaji bulan ini" />
       </div>
 
       {perKaryawan.length > 0 && (
         <Card className="overflow-hidden">
           <JudulKartu
-            title="Kasbon yang Belum Dikembalikan, per Karyawan"
-            description="Siapa yang masih punya kasbon dan berapa yang belum dikembalikan. Saat gajian, tekan Potong — otomatis mengurangi kasbon yang paling lama dulu."
+            title="Kasbon yang Belum Dipotong, per Karyawan"
+            description="Siapa yang kasbonnya belum dipotong dari gaji dan berapa. Saat gajian, tekan Potong — otomatis mengurangi kasbon yang paling lama dulu."
             info="Angka di sini dihitung dari SEMUA kasbon yang belum lunas, jadi tidak berubah walau Anda sedang mencari atau memfilter daftar di bawah."
           />
           <TableWrap className="dh-table">
             <Table>
               <THead>
-                <TR><TH sticky>Karyawan</TH><TH numeric>Berapa Kali Kasbon</TH><TH>Kasbon Tertua</TH><TH numeric>Belum Dikembalikan</TH><TH /></TR>
+                <TR><TH sticky>Karyawan</TH><TH numeric>Berapa Kali Kasbon</TH><TH>Kasbon Tertua</TH><TH numeric>Belum Dipotong</TH><TH /></TR>
               </THead>
               <TBody>
                 {perKaryawan.map((p) => (
@@ -205,7 +202,7 @@ export default function FinanceKasbon() {
               <THead>
                 <TR>
                   <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Karyawan</TH><TH>Urgensi</TH>
-                  <TH numeric>Kasbon</TH><TH numeric>Sudah Dikembalikan</TH><TH numeric>Belum Dikembalikan</TH><TH>Status</TH><TH />
+                  <TH numeric>Kasbon</TH><TH numeric>Sudah Dipotong</TH><TH numeric>Belum Dipotong</TH><TH>Status</TH><TH />
                 </TR>
               </THead>
               <TBody>
@@ -231,10 +228,10 @@ export default function FinanceKasbon() {
                     <TD>
                       <div className="flex justify-end gap-1">
                         {k.status === "AKTIF" && (
-                          <Button size="sm" variant="secondary" onClick={() => setLunasiUntuk({ kasbon: k })}>Catat Pengembalian</Button>
+                          <Button size="sm" variant="secondary" onClick={() => setLunasiUntuk({ kasbon: k })}>Potong dari Gaji</Button>
                         )}
                         {k.repayments.length > 0 && (
-                          <Button size="sm" variant="neutral" onClick={() => setRiwayatId(k.id)} title="Riwayat pengembalian">
+                          <Button size="sm" variant="neutral" onClick={() => setRiwayatId(k.id)} title="Riwayat pemotongan">
                             <History size={13} /> {k.repayments.filter((r) => !r.cancelledAt).length}
                           </Button>
                         )}
@@ -279,7 +276,7 @@ export default function FinanceKasbon() {
       />
 
       <ModalLunasi
-        target={lunasiUntuk} onClose={() => setLunasiUntuk(null)} rekening={rekening}
+        target={lunasiUntuk} onClose={() => setLunasiUntuk(null)}
         onSubmit={(d) => aksi(() => (lunasiUntuk.kasbon
           ? api.catatPelunasanKasbon(lunasiUntuk.kasbon.id, d)
           : api.potongKasbonKaryawan({ ...d, employeeName: lunasiUntuk.karyawan })))}
@@ -288,7 +285,7 @@ export default function FinanceKasbon() {
       <ModalRiwayat
         kasbon={riwayat} onClose={() => setRiwayatId(null)}
         onBatal={(rep) => {
-          const alasan = window.prompt("Alasan membatalkan pengembalian ini? Catatannya akan dibalik:");
+          const alasan = window.prompt("Alasan membatalkan pemotongan ini? Catatannya akan dibalik:");
           if (alasan?.trim()) return aksi(() => api.batalPelunasanKasbon(riwayat.id, rep.id, alasan.trim()));
         }}
       />
@@ -318,7 +315,7 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
       title="Kasbon Baru"
-      description="Uang keluar dari kas/bank, tercatat sebagai piutang karyawan — bukan beban."
+      description="Gaji dicairkan lebih awal dari kas/bank, nanti dipotong dari gaji — bukan beban."
       className="w-[520px]"
       footer={
         <>
@@ -360,55 +357,41 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
   );
 }
 
-function ModalLunasi({ target, onClose, rekening, onSubmit }) {
-  const [f, setF] = useState({ method: "POTONG_GAJI", date: "", amount: "", cashAccountId: "", notes: "" });
+function ModalLunasi({ target, onClose, onSubmit }) {
+  const [f, setF] = useState({ date: "", amount: "", notes: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const sisa = target?.kasbon ? target.kasbon.sisa : target?.sisa || 0;
 
   useEffect(() => {
-    if (target) setF({ method: "POTONG_GAJI", date: hariIniISO(), amount: sisa, cashAccountId: "", notes: "" });
+    if (target) setF({ date: hariIniISO(), amount: sisa, notes: "" });
   }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!target) return null;
 
-  const valid = Number(f.amount) > 0 && Number(f.amount) <= sisa && (f.method !== "TUNAI" || f.cashAccountId);
+  const valid = Number(f.amount) > 0 && Number(f.amount) <= sisa;
   const nama = target.kasbon ? target.kasbon.employeeName : target.karyawan;
 
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()}
-      title={target.kasbon ? `Catat pengembalian ${target.kasbon.kasbonNumber}` : `Potong kasbon ${nama}`}
-      description={`Belum dikembalikan: ${formatUang(sisa)}${target.kasbon ? "" : " — otomatis mengurangi kasbon yang paling lama dulu"}`}
+      title={target.kasbon ? `Potong gaji untuk ${target.kasbon.kasbonNumber}` : `Potong kasbon ${nama}`}
+      description={`Belum dipotong: ${formatUang(sisa)}${target.kasbon ? "" : " — otomatis mengurangi kasbon yang paling lama dulu"}`}
       className="w-[480px]"
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit({ ...f, amount: Number(f.amount) })} disabled={!valid}>Simpan</TombolAksi>
+          <TombolAksi onClick={() => onSubmit({ ...f, method: "POTONG_GAJI", amount: Number(f.amount) })} disabled={!valid}>Simpan Potongan</TombolAksi>
         </>
       }
     >
       <div className="space-y-3">
-        <Field label="Dikembalikan lewat">
-          <Pilihan value={f.method} onChange={(v) => set("method", v)}>
-            {CARA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </Pilihan>
-        </Field>
         <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
-          {f.method === "POTONG_GAJI"
-            ? "Kas tidak tersentuh. Pastikan gaji BERSIH yang dibayarkan sudah dicatat di Pengeluaran — bagian yang dipotong ini otomatis ditambahkan ke beban gaji (gaji kotor = bersih + potongan)."
-            : "Uang masuk ke rekening yang dipilih, dan kasbon karyawan berkurang."}
+          Kas tidak tersentuh. Pastikan gaji <strong>bersih</strong> yang dibayarkan sudah dicatat di Pengeluaran — bagian
+          yang dipotong ini otomatis ditambahkan ke beban gaji (gaji kotor = bersih + potongan).
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
-          <Field label="Nominal" required hint={Number(f.amount) > sisa ? "Melebihi kasbon yang belum dikembalikan" : undefined}><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
+          <Field label="Nominal" required hint={Number(f.amount) > sisa ? "Melebihi kasbon yang belum dipotong" : undefined}><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
         </div>
-        {f.method === "TUNAI" && (
-          <Field label="Masuk ke rekening" required>
-            <Pilihan value={f.cashAccountId} onChange={(v) => set("cashAccountId", v)}>
-              <option value="">— pilih —</option>
-              {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </Pilihan>
-          </Field>
-        )}
         <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="mis. gaji September" /></Field>
       </div>
     </Modal>
@@ -420,18 +403,18 @@ function ModalRiwayat({ kasbon, onClose, onBatal }) {
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()}
-      title={`Riwayat pengembalian ${kasbon.kasbonNumber}`}
-      description={`${kasbon.employeeName} · kasbon ${formatUang(kasbon.amount)} · belum dikembalikan ${formatUang(kasbon.sisa)}`}
+      title={`Riwayat pemotongan ${kasbon.kasbonNumber}`}
+      description={`${kasbon.employeeName} · kasbon ${formatUang(kasbon.amount)} · belum dipotong ${formatUang(kasbon.sisa)}`}
       className="w-[520px]"
       footer={<Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Tutup</Button>}
     >
       <div className="space-y-2">
-        {kasbon.repayments.length === 0 && <p className="text-[13px] text-ink3">Belum ada pengembalian.</p>}
+        {kasbon.repayments.length === 0 && <p className="text-[13px] text-ink3">Belum ada pemotongan.</p>}
         {kasbon.repayments.map((r) => (
           <div key={r.id} className="flex items-center justify-between gap-3 rounded-lg bg-inset px-3 py-2.5">
             <div className="min-w-0 text-[13px]">
               <p className="font-medium text-ink">
-                <Uang value={r.amount} /> · {r.method === "TUNAI" ? "Tunai/transfer" : "Potong gaji"}
+                <Uang value={r.amount} /> · dipotong dari gaji
                 {r.cancelledAt && <Badge variant="neutral" className="ml-2">Dibatalkan</Badge>}
               </p>
               <p className="text-[12px] text-ink3">
