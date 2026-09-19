@@ -54,9 +54,28 @@ export function mediaUrl(pathOrUrl) {
   return serverUrl + pathOrUrl;
 }
 
+// Server menjawab 401 — apakah sesi tersimpan benar-benar sudah tidak berlaku?
+//
+// BUG (20 Sep 2026, "setiap app ditutup harus login ulang"): dulu SETIAP 401 langsung menghapus token
+// dari AsyncStorage. Padahal permintaan yang berangkat TANPA token (mis. getMe() yang terpicu saat app
+// baru dibuka, sebelum sesi selesai dipulihkan dari storage — server menjawab "Belum login") juga
+// dijawab 401. Akibatnya token yang sah dihapus oleh permintaan yang tidak pernah membawanya, dan
+// pembukaan app berikutnya mendarat di layar Login. Terbukti dari log server: 8.446 respons 401
+// berukuran 23 byte ("Belum login") = seluruhnya permintaan tanpa header Authorization.
+//
+// Aturan sekarang: sesi hanya dibuang kalau permintaan yang ditolak MEMBAWA token DAN token itu masih
+// yang aktif (bukan sudah diganti token baru hasil refresh/login sementara permintaan berjalan).
+async function tanganiSesiDitolak(tokenDipakai) {
+  if (!tokenDipakai || tokenDipakai !== token) return;
+  token = null;
+  await AsyncStorage.removeItem("token");
+  if (onUnauthorized) onUnauthorized();
+}
+
 async function request(path, options = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const tokenDipakai = token; // token yang benar-benar dikirim permintaan INI (lihat penanganan 401 di bawah)
 
   try {
     const res = await fetch(`${serverUrl}/api${path}`, {
@@ -80,9 +99,7 @@ async function request(path, options = {}) {
     // Login sendiri yang 401 = kredensial salah, BUKAN sesi berakhir — biarkan
     // pesan asli server ("Email atau password salah") sampai ke layar.
     if (res.status === 401 && path !== "/auth/login") {
-      token = null;
-      await AsyncStorage.removeItem("token");
-      if (onUnauthorized) onUnauthorized();
+      await tanganiSesiDitolak(tokenDipakai);
       throw new Error("Sesi berakhir, silakan login kembali");
     }
     if (!res.ok) {
@@ -136,6 +153,7 @@ async function request(path, options = {}) {
 async function uploadFile(path, file, fields, fieldName = "file") {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000); // media bisa besar — 2 menit
+  const tokenDipakai = token;
 
   try {
     const fileRef = new File(file.uri);
@@ -149,9 +167,7 @@ async function uploadFile(path, file, fields, fieldName = "file") {
       signal: controller.signal,
     });
     if (result.status === 401) {
-      token = null;
-      await AsyncStorage.removeItem("token");
-      if (onUnauthorized) onUnauthorized();
+      await tanganiSesiDitolak(tokenDipakai);
       throw new Error("Sesi berakhir, silakan login kembali");
     }
     if (result.status < 200 || result.status >= 300) {

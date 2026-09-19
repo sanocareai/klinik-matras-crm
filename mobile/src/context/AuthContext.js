@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { api, configureApi, DEFAULT_SERVER } from "../api";
+import { api, configureApi, getToken, DEFAULT_SERVER } from "../api";
 import { registerForPush, unregisterPush } from "../push";
 import { refreshSocketAuth, disconnectSocket } from "../lib/socket";
 
@@ -53,6 +53,9 @@ export function AuthProvider({ children }) {
   // JANGAN biarkan dua implementasi ini diam-diam menyimpang, keduanya
   // menyelesaikan masalah yang identik (profil user diubah admin dari web).
   async function refreshUser() {
+    // Belum ada sesi yang dipulihkan (app baru dibuka, restore dari storage belum selesai): jangan kirim
+    // permintaan tanpa token — tidak ada gunanya, dan dulu justru memicu 401 yang menghapus sesi.
+    if (!getToken()) return;
     try {
       const fresh = await api.getMe();
       if (!fresh) return;

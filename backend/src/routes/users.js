@@ -280,12 +280,27 @@ userRouter.post("/:id/avatar", adminOnly, avatarUpload.single("file"), async (re
 
 // POST /me/push-token — daftarkan Expo Push Token dari aplikasi mobile
 // Upsert: token sama didaftar ulang tidak apa-apa, pindah user pun ditimpa
+// Peredam pendaftaran berulang (20 Sep 2026): klien app lama bisa masuk lingkaran registerForPush →
+// event token → registerForPush dan mengirim POST ini 10–50 kali PER DETIK dari satu HP (log nginx: 74.800
+// permintaan dalam ±2 jam dari satu IP). Pasangan (user, token) yang sama dalam 60 detik dijawab OK tanpa
+// menyentuh database — hasilnya identik, karena upsert atas token yang sama memang tidak mengubah apa pun.
+const pushTokenTerakhir = new Map();
+const JEDA_PUSH_TOKEN_MS = 60_000;
+setInterval(() => {
+  const batas = Date.now() - JEDA_PUSH_TOKEN_MS;
+  for (const [k, t] of pushTokenTerakhir) if (t < batas) pushTokenTerakhir.delete(k);
+}, JEDA_PUSH_TOKEN_MS).unref();
+
 userRouter.post("/me/push-token", async (req, res) => {
   try {
     const { token } = req.body;
     if (!token?.startsWith("ExponentPushToken")) {
       return res.status(400).json({ error: "Token push tidak valid" });
     }
+    const kunci = `${req.user.id}|${token}`;
+    const sebelumnya = pushTokenTerakhir.get(kunci);
+    if (sebelumnya && Date.now() - sebelumnya < JEDA_PUSH_TOKEN_MS) return res.json({ ok: true });
+    pushTokenTerakhir.set(kunci, Date.now());
     await prisma.pushToken.upsert({
       where:  { token },
       update: { userId: req.user.id },
