@@ -79,6 +79,8 @@ const ENDPOINTS = [
   "/dashboard",
   "/expenses",
   "/purchases",
+  "/kasbon",
+  "/kasbon/karyawan-nama",
   "/suppliers",
   "/bills",
   "/bills/unbilled-receipts",

@@ -245,6 +245,23 @@ export default function FinanceSettings() {
         </CardContent>
       </Card>
 
+      {/* ── KASBON ── */}
+      <Card>
+        <JudulKartu
+          title="Kasbon Karyawan"
+          description="Batas total kasbon aktif per karyawan."
+          info="Kalau diisi, kasbon baru yang membuat total kasbon aktif seorang karyawan melewati batas ini akan ditolak — kecuali admin sengaja mengizinkan saat mencatat. Isi 0 untuk tidak membatasi."
+        />
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <PengaturanAngka
+            label="Batas kasbon aktif per karyawan (Rp)"
+            hint="0 = tidak dibatasi"
+            nilai={S[K.KASBON_BATAS_AKTIF]}
+            onSimpan={(v) => ubahSetting(K.KASBON_BATAS_AKTIF, v)}
+          />
+        </CardContent>
+      </Card>
+
       {/* ── 4. SINKRONISASI SUMBER LAMA ── */}
       <Card>
         <JudulKartu

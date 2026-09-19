@@ -509,6 +509,9 @@ model User {
   finPurchasesReimbursed    FinPurchase[]          @relation("FinPurchaseReimburseTo")
   finExpensesReceiptVerified  FinExpense[]         @relation("FinExpenseReceiptVerifier")
   finPurchasesReceiptVerified FinPurchase[]        @relation("FinPurchaseReceiptVerifier")
+  finKasbonEmployee           FinKasbon[]          @relation("FinKasbonEmployee")
+  finKasbonCreated            FinKasbon[]          @relation("FinKasbonCreator")
+  finKasbonRepaymentCreated   FinKasbonRepayment[] @relation("FinKasbonRepaymentCreator")
   finOtherIncomesCreated    FinOtherIncome[]       @relation("FinOtherIncomeCreator")
   finOtherIncomesVoided     FinOtherIncome[]       @relation("FinOtherIncomeCanceller")
   finCashTransfersCreated   FinCashTransfer[]      @relation("FinCashTransferCreator")
@@ -5570,6 +5573,8 @@ model FinCashAccount {
   bankStatements   FinBankStatement[]
   expenses         FinExpense[]
   purchases        FinPurchase[]
+  kasbon           FinKasbon[]
+  kasbonRepayments FinKasbonRepayment[]
   otherIncomes     FinOtherIncome[]
   transfersFrom    FinCashTransfer[]    @relation("FinTransferFrom")
   transfersTo      FinCashTransfer[]    @relation("FinTransferTo")
@@ -6457,4 +6462,94 @@ model FinBankStatementLine {
   @@index([statementId, status])
   @@index([matchedLineId])
   @@map("fin_bank_statement_lines")
+}
+
+// ── KASBON (uang muka gaji karyawan) ─────────────────────────────────────
+// Manfaat perusahaan: karyawan boleh mencairkan gaji lebih awal dengan batas
+// tertentu dan harus ada urgensinya. BUKAN beban dan BUKAN reimbursement —
+// uangnya keluar dulu lalu kembali lewat potongan gaji, jadi di neraca ia
+// PIUTANG KARYAWAN (1-1350). Jurnal: services/finance/posting/kasbon.js.
+//
+// Kasbon hasil impor histori Notion sebelum September 2026 (historis=true,
+// status LUNAS) TIDAK punya jurnal — kas bank-nya sudah dinetralkan oleh
+// penyesuaian saldo 18 Sep 2026, jadi memposting ulang akan menggandakan.
+enum FinKasbonStatus {
+  AKTIF
+  LUNAS
+  DIBATALKAN
+}
+
+enum FinKasbonRepayMethod {
+  POTONG_GAJI // dipotong saat gajian - tidak menyentuh kas (Dr Beban Gaji / Cr Piutang Karyawan)
+  TUNAI // karyawan mengembalikan uang ke kas/bank perusahaan (Dr Kas / Cr Piutang Karyawan)
+}
+
+model FinKasbon {
+  id            String @id @default(uuid()) @db.Uuid
+  kasbonNumber  String @unique @map("kasbon_number") // KSB-DDMMYYYY-NNN
+
+  date   DateTime @db.Date
+  amount Decimal  @db.Decimal(18, 2)
+
+  // Nama TEKS karena banyak penerima (tukang, helper) bukan user sistem;
+  // employeeId hanya terisi kalau namanya cocok dengan satu user.
+  employeeName String  @map("employee_name")
+  employeeId   String? @map("employee_id")
+  employee     User?   @relation("FinKasbonEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
+
+  urgency String? // alasan/urgensi pengajuan
+  notes   String?
+
+  cashAccountId String?         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+  receiptUrl    String?         @map("receipt_url") // bukti transfer
+
+  status FinKasbonStatus @default(AKTIF)
+
+  // true = impor histori Notion tanpa jurnal sendiri (lihat catatan atas).
+  historis Boolean @default(false)
+  // Id yang dipakai di idempotencyKey jurnal KASBON:<ref>. Kasbon baru: id-nya
+  // sendiri. Kasbon September hasil impor lama: kunci impor lamanya.
+  journalRef String? @map("journal_ref")
+
+  cancelledAt  DateTime? @map("cancelled_at")
+  cancelReason String?   @map("cancel_reason")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinKasbonCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  repayments FinKasbonRepayment[]
+
+  @@index([status, date])
+  @@index([employeeName, status])
+  @@map("fin_kasbon")
+}
+
+model FinKasbonRepayment {
+  id String @id @default(uuid()) @db.Uuid
+
+  kasbonId String    @map("kasbon_id") @db.Uuid
+  kasbon   FinKasbon @relation(fields: [kasbonId], references: [id], onDelete: Restrict)
+
+  date   DateTime             @db.Date
+  amount Decimal              @db.Decimal(18, 2)
+  method FinKasbonRepayMethod
+
+  // Wajib untuk TUNAI (uang masuk ke rekening mana), kosong untuk POTONG_GAJI.
+  cashAccountId String?         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  notes String?
+
+  cancelledAt  DateTime? @map("cancelled_at")
+  cancelReason String?   @map("cancel_reason")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinKasbonRepaymentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([kasbonId])
+  @@map("fin_kasbon_repayments")
 }

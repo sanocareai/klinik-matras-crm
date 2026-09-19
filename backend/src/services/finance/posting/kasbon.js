@@ -25,6 +25,7 @@ import { toMoney } from "../money.js";
 export const KEY = {
   kasbonDiberikan: (id, suffix = "") => `KASBON:${id}${suffix}`,
   kasbonDipotong: (id, suffix = "") => `KASBON_POTONG:${id}${suffix}`,
+  kasbonPelunasan: (id, suffix = "") => `KASBON_PELUNASAN:${id}${suffix}`,
 };
 
 /**
@@ -94,6 +95,55 @@ export async function postKasbonDipotong(tx, { kasbonId, date, amount, karyawanN
     lines: [
       { accountId: utangGaji.id, debit: nominal, description: `Potongan kasbon — ${karyawanNama || "karyawan"}` },
       { accountId: piutangKaryawan.id, credit: nominal, description: `Pelunasan kasbon — ${karyawanNama || "karyawan"}` },
+    ],
+  });
+  return { posted: true, entry, created };
+}
+
+/**
+ * Pelunasan kasbon lewat modul Kasbon (FinKasbonRepayment). Dua jalur:
+ *
+ *   POTONG_GAJI  Dr Beban Gaji (6-1100)   Cr Piutang Karyawan (1-1350)
+ *   TUNAI        Dr Kas/Bank              Cr Piutang Karyawan (1-1350)
+ *
+ * Kenapa potong gaji memakai BEBAN GAJI, bukan Utang Gaji seperti
+ * postKasbonDipotong di atas: sistem ini belum punya modul gaji, dan gaji
+ * dicatat Finance di Pengeluaran sebesar uang BERSIH yang benar-benar dibayar
+ * (Dr Beban Gaji / Cr Kas). Bagian yang dipotong untuk kasbon dicatat di sini
+ * sebagai Dr Beban Gaji, sehingga beban gaji = bersih + potongan = gaji
+ * kotor, dan Piutang Karyawan turun. Memakai Utang Gaji akan meninggalkan
+ * saldo debit yatim di kewajiban karena tidak ada jurnal gaji yang
+ * mengkreditnya.
+ */
+export async function postKasbonPelunasan(tx, { repaymentId, date, amount, karyawanNama, method, cashAccount = null, userId = null }) {
+  const key = KEY.kasbonPelunasan(repaymentId);
+  const sudahAda = await findEntryByKey(tx, key);
+  if (sudahAda) return { posted: true, entry: sudahAda, created: false };
+
+  const piutangKaryawan = await resolveAccount(tx, SYSTEM_KEYS.PIUTANG_KARYAWAN);
+  const nominal = toMoney(amount);
+  const nama = karyawanNama || "karyawan";
+
+  let barisDebit;
+  if (method === "TUNAI") {
+    if (!cashAccount) throw new Error("Pelunasan tunai wajib punya rekening kas/bank tujuan");
+    barisDebit = { accountId: cashAccount.accountId, debit: nominal, description: `Uang masuk — ${cashAccount.name}`, cashAccountId: cashAccount.id };
+  } else {
+    const bebanGaji = await tx.finAccount.findFirst({ where: { code: "6-1100" }, select: { id: true } });
+    if (!bebanGaji) throw new Error("Akun 6-1100 Beban Gaji belum terpasang — jalankan Pasang Akun Bawaan.");
+    barisDebit = { accountId: bebanGaji.id, debit: nominal, description: `Potongan kasbon dari gaji — ${nama}` };
+  }
+
+  const { entry, created } = await postJournal(tx, {
+    date,
+    description: `Pelunasan kasbon (${method === "TUNAI" ? "tunai" : "potong gaji"}) — ${nama}`,
+    source: "KASBON",
+    sourceId: repaymentId,
+    idempotencyKey: key,
+    userId,
+    lines: [
+      barisDebit,
+      { accountId: piutangKaryawan.id, credit: nominal, description: `Pelunasan kasbon — ${nama}` },
     ],
   });
   return { posted: true, entry, created };

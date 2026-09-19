@@ -2,7 +2,7 @@ import {
   Users, Wrench, Truck, Gauge, Package,
   MessageSquare, GitBranch, ClipboardList, BarChart3,
   Boxes, ScanLine, Route, CalendarClock, TrendingUp, HeartPulse,
-  Landmark, Banknote, Receipt, BookOpen, Building2, Wallet, ShoppingCart,
+  Landmark, Banknote, Receipt, BookOpen, Building2, Wallet, ShoppingCart, HandCoins,
 } from "lucide-react";
 
 // Konten halaman command center per divisi (`.division-page` di file desain
@@ -155,6 +155,7 @@ export const DIVISION_CONTENT = {
       { title: "Kas & Bank",           description: "Saldo tiap rekening, mutasi antar rekening, pemasukan lain.", icon: Wallet, path: "/finance/cash" },
       { title: "Pengeluaran",          description: "Biaya operasional, upah produksi, dan reimbursement karyawan.", icon: Receipt, path: "/finance/expenses" },
       { title: "Pembelian",            description: "Bahan baku, aset tetap, aset tak berwujud, dan uang muka ke supplier.", icon: ShoppingCart, path: "/finance/purchases" },
+      { title: "Kasbon",               description: "Uang muka gaji karyawan: sisa per orang, potong gaji, pelunasan.", icon: HandCoins, path: "/finance/kasbon" },
       { title: "Invoice & Jatuh Tempo", description: "Tagihan ke pelanggan, umurnya, dan yang belum punya tempo.", icon: Receipt, path: "/finance/invoices" },
       { title: "Supplier & Utang",     description: "Tagihan masuk, pembayaran supplier, dan sisa utang.", icon: Building2, path: "/finance/suppliers" },
       { title: "Laporan Keuangan",     description: "Laba rugi, neraca, arus kas, dan neraca saldo.", icon: BarChart3, path: "/finance/reports" },

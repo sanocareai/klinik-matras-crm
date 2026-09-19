@@ -83,6 +83,7 @@ export function Penjelasan({ children, className }) {
 
 // ─── STATUS ──────────────────────────────────────────────────────────────
 const VARIAN_STATUS = {
+  AKTIF: "orange",
   DRAFT: "neutral",
   MENUNGGU_APPROVAL: "orange",
   DISETUJUI: "accent",
@@ -102,6 +103,7 @@ const VARIAN_STATUS = {
 };
 
 export const LABEL_STATUS = {
+  AKTIF: "Aktif",
   DRAFT: "Draft",
   MENUNGGU_APPROVAL: "Menunggu Persetujuan",
   DISETUJUI: "Disetujui",

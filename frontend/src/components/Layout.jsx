@@ -9,6 +9,7 @@ import {
   Boxes, ScanLine, Award, ArrowUpDown, Check, Handshake,
   Landmark, BookOpen, FileSpreadsheet, Banknote, Receipt, Building2, Scale as ScaleIcon, ListTree,
   ShoppingCart,
+  HandCoins,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
@@ -429,6 +430,7 @@ const DIVISIONS = {
           { to: "/finance/cash",      label: "Kas & Bank",             Icon: Wallet },
           { to: "/finance/expenses",  label: "Pengeluaran",            Icon: Receipt },
           { to: "/finance/purchases", label: "Pembelian",              Icon: ShoppingCart },
+          { to: "/finance/kasbon",    label: "Kasbon",                 Icon: HandCoins },
         ],
       },
       {

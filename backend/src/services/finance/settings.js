@@ -30,6 +30,9 @@ export const SETTING_KEYS = Object.freeze({
   // yang dibuat SEBELUM tanggal ini (data impor historis) tidak pernah masuk
   // antrean "tanpa bukti".
   RECEIPT_POLICY_SINCE: "receipt_policy_since",
+  // Batas total kasbon AKTIF per karyawan (Rp). 0 = tidak dibatasi. Kasbon
+  // yang melewati batas ditolak kecuali admin sengaja mengizinkan.
+  KASBON_BATAS_AKTIF: "kasbon_batas_aktif",
 
   // ── Pemetaan metode pembayaran → rekening kas/bank ──────────────────────
   // Payment.method (CASH/TRANSFER/QRIS) sudah ada sejak lama dan TIDAK
@@ -70,6 +73,7 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.EXPENSE_APPROVAL_THRESHOLD]: "1000000",
   [SETTING_KEYS.RECEIPT_REQUIRED_THRESHOLD]: "500000",
   [SETTING_KEYS.RECEIPT_POLICY_SINCE]: "2026-09-19",
+  [SETTING_KEYS.KASBON_BATAS_AKTIF]: "0",
   [SETTING_KEYS.CASH_ACCOUNT_CASH]: "",
   [SETTING_KEYS.CASH_ACCOUNT_TRANSFER]: "",
   [SETTING_KEYS.CASH_ACCOUNT_QRIS]: "",

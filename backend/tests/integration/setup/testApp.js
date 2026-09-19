@@ -23,6 +23,7 @@ const { warehouseReportsRouter } = await import("../../../src/routes/warehouseRe
 const { unitRouter } = await import("../../../src/routes/units.js");
 const { financeRouter } = await import("../../../src/routes/finance.js");
 const { financeTxRouter } = await import("../../../src/routes/financeTransactions.js");
+const { financeKasbonRouter } = await import("../../../src/routes/financeKasbon.js");
 
 export function buildTestApp() {
   const app = express();
@@ -47,6 +48,7 @@ export function buildTestApp() {
   // additive di path yang SAMA (lihat komentar di index.js).
   app.use("/api/finance", financeRouter);
   app.use("/api/finance", financeTxRouter);
+  app.use("/api/finance", financeKasbonRouter);
 
   return app;
 }
