@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, Pilihan, InputUang,
-  TombolAksi, PeriodePicker, periodeDefault, tanggalPendek, DateChip,
+  TombolAksi, PeriodePicker, periodeDefault, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 
 // KAS & BANK — rekening yang benar-benar dipegang perusahaan, mutasi antar
@@ -395,7 +396,7 @@ function ModalTransfer({ open, onClose, rekening, onSubmit }) {
     >
       <div className="space-y-3">
         <Field label="Tanggal">
-          <DateChip className="w-full" value={f.date} onChange={(v) => set("date", v)} ariaLabel="Tanggal" />
+          <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} />
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Dari rekening" required>
@@ -448,7 +449,7 @@ function ModalPemasukan({ open, onClose, rekening, akunPendapatan, onSubmit }) {
       }
     >
       <div className="space-y-3">
-        <Field label="Tanggal"><DateChip className="w-full" value={f.date} onChange={(v) => set("date", v)} ariaLabel="Tanggal" /></Field>
+        <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
         <Field label="Keterangan" required>
           <Input value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Penjualan mesin jahit bekas" />
         </Field>

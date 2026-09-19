@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek, DateChip,
+  StatusBadge, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 
 // REKONSILIASI BANK — mencocokkan mutasi menurut KORAN BANK dengan mutasi
@@ -290,8 +291,8 @@ function ModalPeriodeBaru({ open, onClose, rekening, onSubmit }) {
           </Pilihan>
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Dari tanggal" required><DateChip className="w-full" value={f.periodStart} onChange={(v) => set("periodStart", v)} ariaLabel="Dari tanggal" /></Field>
-          <Field label="Sampai tanggal" required><DateChip className="w-full" value={f.periodEnd} onChange={(v) => set("periodEnd", v)} ariaLabel="Sampai tanggal" /></Field>
+          <Field label="Dari tanggal" required><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.periodStart} onChange={(v) => set("periodStart", v)} /></Field>
+          <Field label="Sampai tanggal" required><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.periodEnd} onChange={(v) => set("periodEnd", v)} /></Field>
         </div>
         <Field label="Saldo awal menurut koran bank"><InputUang value={f.openingBalance} onChange={(v) => set("openingBalance", v)} /></Field>
         <Field label="Saldo akhir menurut koran bank"><InputUang value={f.closingBalance} onChange={(v) => set("closingBalance", v)} /></Field>
@@ -312,7 +313,7 @@ function ModalBarisBaru({ open, onClose, onSubmit }) {
       footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!f.description.trim() || !f.amount}>Simpan</TombolAksi></>}
     >
       <div className="space-y-3">
-        <Field label="Tanggal"><DateChip className="w-full" value={f.date} onChange={(v) => set("date", v)} ariaLabel="Tanggal" /></Field>
+        <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
         <Field label="Keterangan di koran bank" required>
           <Input value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="TRSF E-BANKING CR 1709/FTSCY/WS95051" />
         </Field>

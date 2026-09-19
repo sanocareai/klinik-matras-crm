@@ -105,6 +105,12 @@ export const DATE_PRESETS = [
     resolve: () => { const t = todayWIB(); return { from: fmt(t.subtract(3, "month")), to: fmt(t) }; },
   },
   {
+    // Laporan keuangan (Neraca, Laba Rugi tahun berjalan) hampir selalu
+    // dibaca dari 1 Januari — 3 bulan terakhir bukan padanannya.
+    id: "this_year", label: "Tahun ini", step: null,
+    resolve: () => { const t = todayWIB(); return { from: fmt(t.startOf("year")), to: fmt(t) }; },
+  },
+  {
     // from/to null = TANPA filter tanggal. buildDateWhere() di backend
     // mengembalikan {} kalau salah satu kosong, jadi ini otomatis "semua data".
     id: "all_time", label: "Semua", step: null,

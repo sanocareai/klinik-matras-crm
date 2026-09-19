@@ -8,10 +8,11 @@ import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek, DateChip,
+  StatusBadge, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 
 // PIUTANG — siapa berutang ke kita, berapa, dan sudah lewat berapa lama.
@@ -278,7 +279,7 @@ function ModalRefund({ open, onClose, rekening, piutang, onSubmit }) {
             saranLabel="Piutang terbuka"
           />
         </Field>
-        <Field label="Tanggal"><DateChip className="w-full" value={f.date} onChange={(v) => set("date", v)} ariaLabel="Tanggal" /></Field>
+        <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
         <Field
           label="Nominal" required
           hint="Tidak boleh melebihi uang yang pernah benar-benar diterima untuk order itu"

@@ -8,10 +8,11 @@ import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, JudulKartu, Penjelasan, TombolAksi, StatusBadge,
   Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
-  LABEL_SUMBER_JURNAL, DateChip,
+  LABEL_SUMBER_JURNAL,
 } from "@/features/finance/shared.jsx";
 
 // JURNAL UMUM — seluruh pencatatan buku besar, dari mana pun asalnya.
@@ -320,7 +321,7 @@ function ModalJurnalManual({ open, onClose, akun, onSubmit }) {
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tanggal buku">
-            <DateChip className="w-full" value={f.date} onChange={(v) => setF((s) => ({ ...s, date: v }))} ariaLabel="Tanggal buku" />
+            <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => setF((s) => ({ ...s, date: v }))} />
           </Field>
           <Field label="Jenis" hint="Saldo awal ditandai terpisah supaya laporan tahu neraca sudah lengkap">
             <label className="flex h-9 items-center gap-2 text-[13px] text-ink2">

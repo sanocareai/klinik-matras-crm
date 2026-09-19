@@ -9,11 +9,12 @@ import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
-  LABEL_DIVISI, DateChip,
+  LABEL_DIVISI,
 } from "@/features/finance/shared.jsx";
 
 // PENGELUARAN & REIMBURSEMENT.
@@ -272,7 +273,7 @@ function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
           <Input value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Upah harian tukang minggu ke-3" />
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Tanggal"><DateChip className="w-full" value={f.date} onChange={(v) => set("date", v)} ariaLabel="Tanggal" /></Field>
+          <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
           <Field label="Nominal" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
         </div>
         <Field label="Kategori biaya" required hint="Menentukan akun beban di buku besar">
@@ -351,7 +352,7 @@ function ModalBayar({ expense, onClose, rekening, onSubmit }) {
           </Pilihan>
         </Field>
         <Field label="Tanggal bayar">
-          <DateChip className="w-full" value={f.paidAt} onChange={(v) => setF((s) => ({ ...s, paidAt: v }))} ariaLabel="Tanggal bayar" />
+          <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.paidAt} onChange={(v) => setF((s) => ({ ...s, paidAt: v }))} />
         </Field>
       </div>
     </Modal>

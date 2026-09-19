@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, Info, Loader2, CalendarDays } from "lucide-react";
+import { AlertTriangle, Info, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -7,6 +7,8 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
+import DateRangePicker from "@/components/DateRangePicker.jsx";
+import { SIMPLE_PRESETS, makeRange, makeCustomRange, todayWIB } from "@/lib/dateRange.js";
 
 // Potongan UI yang dipakai berulang di SELURUH workspace Finance.
 // Dikumpulkan di satu file karena semuanya kecil dan selalu berpasangan —
@@ -157,82 +159,33 @@ export const LABEL_TIPE_AKUN = {
 };
 
 // ─── PEMILIH PERIODE ────────────────────────────────────────────────────
-// Dua input tanggal polos, BUKAN DateRangePicker CRM. Laporan keuangan
-// hampir selalu dibaca per BULAN KALENDER, dan tombol cepat di bawah yang
-// mengerjakan 95% kasusnya; memaksa kalender rentang bebas di sini justru
-// menambah klik untuk pekerjaan yang paling sering dilakukan.
+// Memakai DateRangePicker CRM (preset + kalender 2 bulan, gaya Google Ads) —
+// sebelumnya dua input tanggal polos + 3 tombol, dan owner minta seragam
+// dengan Dashboard/Laporan Sales CRM (19 Sep 2026). Kontrak ke halaman
+// finance TIDAK berubah: from/to "YYYY-MM-DD" + onChange({from,to}).
+//
+// Beda dengan CRM: TANPA "Bandingkan" (endpoint finance tidak punya periode
+// pembanding), TANPA preset "Semua" (from/to kosong dibuang qsFinance jadi
+// request tanpa rentang), dan tanggal masa depan boleh dipilih (jatuh tempo,
+// jadwal) — batas atas 1 tahun ke depan, bukan hari ini.
 export function PeriodePicker({ from, to, onChange, className }) {
-  const preset = useMemo(() => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const fmt = (d) => d.toISOString().slice(0, 10);
-    const bulan = (offset) => {
-      const awal = new Date(Date.UTC(y, m + offset, 1));
-      const akhir = new Date(Date.UTC(y, m + offset + 1, 0));
-      return { from: fmt(awal), to: fmt(akhir) };
-    };
-    return {
-      bulanIni: bulan(0),
-      bulanLalu: bulan(-1),
-      tahunIni: { from: `${y}-01-01`, to: fmt(new Date(Date.UTC(y, 11, 31))) },
-    };
-  }, []);
+  const value = useMemo(() => {
+    for (const p of SIMPLE_PRESETS) {
+      if (p.id === "all_time") continue;
+      const r = p.resolve();
+      if (r.from === from && r.to === to) return makeRange(p.id);
+    }
+    return makeCustomRange(from, to);
+  }, [from, to]);
+  const maxDate = useMemo(() => todayWIB().add(1, "year").format("YYYY-MM-DD"), []);
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
-      <DateChip value={from} ariaLabel="Tanggal mulai" onChange={(v) => onChange({ from: v, to })} />
-      <span className="text-ink3">—</span>
-      <DateChip value={to} ariaLabel="Tanggal akhir" onChange={(v) => onChange({ from, to: v })} />
-      <Button size="sm" variant="neutral" onClick={() => onChange(preset.bulanIni)}>Bulan Ini</Button>
-      <Button size="sm" variant="neutral" onClick={() => onChange(preset.bulanLalu)}>Bulan Lalu</Button>
-      <Button size="sm" variant="neutral" onClick={() => onChange(preset.tahunIni)}>Tahun Ini</Button>
-    </div>
-  );
-}
-
-/**
- * Tampilan pill untuk <input type="date"> — TETAP input native di baliknya
- * supaya date-picker bawaan OS/browser tetap yang dipakai, tidak menulis
- * widget kalender sendiri. Yang TERLIHAT cuma ikon + teks terformat
- * ("17 Sep 2026"), bukan "mm/dd/yyyy" bawaan browser saat kosong.
- *
- * ⚠️ BUKAN `opacity-0` pada input (versi pertama, D-182) — laporan owner:
- * di web klik jadi "stuck" (input dapat fokus, kalender TIDAK PERNAH
- * terbuka), padahal di HP normal. Root cause: Chromium SENGAJA menolak
- * memunculkan popup native (date/color/file picker) untuk elemen yang
- * `opacity`-nya nyaris 0 — proteksi anti-clickjacking bawaan browser,
- * berlaku untuk desktop (popup dropdown in-page) tapi tidak menyentuh
- * date-picker Android (sheet level-OS terpisah), itu sebabnya cuma
- * "stuck di web, di HP bisa". Perbaikan: input TETAP `opacity` 1 (jadi
- * lolos proteksi itu) — yang disembunyikan cuma isinya (`text-transparent`
- * + ikon kalender bawaan browser via ::-webkit-calendar-picker-indicator
- * di index.css), ikon+teks kita jadi OVERLAY `pointer-events-none` di
- * atasnya supaya klik tetap tembus ke input asli di baliknya.
- *
- * Diekspor (bukan cuma dipakai PeriodePicker) — 15 titik lain di halaman
- * finance pakai <Input type="date"> mentah untuk SATU tanggal (Tanggal
- * pengeluaran, Tanggal bayar, dst), bukan rentang. Pemanggil form tunggal
- * pakai `className="w-full"` supaya lebar sama dengan field lain di form.
- */
-export function DateChip({ value, onChange, ariaLabel, className }) {
-  return (
-    <span className={cn("relative inline-flex h-9 items-center", className)}>
-      <input
-        type="date" value={value || ""} aria-label={ariaLabel}
-        onChange={(e) => onChange(e.target.value)}
-        // Klik di mana pun pada pill (bukan cuma ikon kalender bawaan yang
-        // sudah disembunyikan) WAJIB membuka popup — mengandalkan area klik
-        // bawaan browser tidak konsisten begitu ikonnya disembunyikan lewat
-        // CSS. showPicker() API standar untuk kasus persis ini.
-        onClick={(e) => e.currentTarget.showPicker?.()}
-        className="date-chip-input h-9 w-full cursor-pointer rounded-full bg-accentbg px-3 text-[13px] text-transparent outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+    <div className={className}>
+      <DateRangePicker
+        value={value} maxDate={maxDate} showCompare={false} allowAll={false}
+        onChange={(r) => r?.from && r?.to && onChange({ from: r.from, to: r.to })}
       />
-      <span className="pointer-events-none absolute inset-0 flex items-center gap-1.5 px-3 text-[13px] font-medium text-ink">
-        <CalendarDays size={14} className="shrink-0 text-accent" aria-hidden="true" />
-        <span className="tabular-nums">{value ? tanggalPendek(value) : "Pilih tanggal"}</span>
-      </span>
-    </span>
+    </div>
   );
 }
 

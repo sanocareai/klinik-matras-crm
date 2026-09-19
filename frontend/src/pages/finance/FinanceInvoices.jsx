@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  Pilihan, tanggalPendek, DateChip,
+  Pilihan, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 
 // INVOICE & JATUH TEMPO — sisi FINANCE dari invoice yang sudah ada.
@@ -290,7 +291,7 @@ function ModalJatuhTempo({ invoice, onClose, onSubmit }) {
           label="Tanggal jatuh tempo"
           hint="Kosongkan untuk melepas tempo — umur tagihan lalu dihitung dari tanggal order, dan laporan menyebutkan acuannya apa adanya."
         >
-          <DateChip className="w-full" value={tanggal} onChange={setTanggal} ariaLabel="Tanggal jatuh tempo" />
+          <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={tanggal} onChange={setTanggal} />
         </Field>
         <div className="flex flex-wrap gap-2">
           {[7, 14, 30].map((n) => (

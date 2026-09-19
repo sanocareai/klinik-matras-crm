@@ -48,8 +48,18 @@ const MAKS_TANPA_BATAS = todayWIB().add(2, "year").format("YYYY-MM-DD");
 // terpisah di sana) supaya ketiga filter terasa satu tempo yang sama.
 const DELAY_MS = 150;
 
-export default function DatePicker({ value, onChange, placeholder = "Semua tanggal", className, allowFuture = true }) {
+// block / clearLabel (19 Sep 2026, form Finance): mode FIELD FORM — pemicu selebar
+// kolom & setinggi input (h-9), bukan pill filter kecil; clearLabel mengganti
+// "Hapus filter" (salah kata untuk field form).
+export default function DatePicker({ value, onChange, placeholder = "Semua tanggal", className, allowFuture = true, block = false, clearLabel = "Hapus filter" }) {
   const [open, setOpen] = useState(false);
+  // Posisi popover saat pemicu ada DI DALAM dialog/modal. Body modal
+  // overflow-y-auto akan memotong popover `absolute` (kalender terpotong di
+  // field yang dekat dasar modal). Solusi: `fixed` — dialog punya transform
+  // (translate pusat), jadi containing block-nya ADALAH dialog, bukan viewport
+  // — dan elemen yang containing block-nya leluhur dari container overflow
+  // TIDAK ikut terpotong olehnya. Koordinat dihitung relatif kotak dialog.
+  const [pos, setPos] = useState(null);
   const [mounted, setMounted] = useState(false);
   const [anchor, setAnchor] = useState(() => (value ? dayjs(value) : todayWIB()).startOf("month"));
   const rootRef = useRef(null);
@@ -67,6 +77,20 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
   useEffect(() => {
     if (open) setAnchor((value ? dayjs(value) : todayWIB()).startOf("month"));
   }, [open, value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const dlg = rootRef.current?.closest('[role="dialog"]');
+    if (!dlg) { setPos(null); return; }
+    const r = rootRef.current.getBoundingClientRect();
+    const d = dlg.getBoundingClientRect();
+    const TINGGI = 330, LEBAR = 264;
+    const naik = r.bottom + 4 + TINGGI > window.innerHeight && r.top - TINGGI - 4 > 0;
+    setPos({
+      top: (naik ? r.top - TINGGI - 4 : r.bottom + 4) - d.top,
+      left: Math.max(4, Math.min(r.left - d.left, d.width - LEBAR - 4)),
+    });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -93,7 +117,8 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
         aria-expanded={open}
         aria-haspopup="dialog"
         className={cn(
-          "flex h-8 max-w-[220px] items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors duration-150",
+          "flex items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors duration-150",
+          block ? "h-9 w-full" : "h-8 max-w-[220px]",
           "border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
           active
             ? "border-accent/40 bg-accentbg text-accent"
@@ -110,8 +135,14 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
           role="dialog"
           aria-label="Pilih tanggal"
           aria-hidden={!open}
+          style={pos ? { top: pos.top, left: pos.left } : undefined}
           className={cn(
-            "absolute left-0 top-9 z-[1100] w-[264px] origin-top-left rounded-xl bg-surface p-3 shadow-popover",
+            // rounded-[12px], BUKAN rounded-xl: kombinasi `.rounded-xl.bg-surface` kena
+            // aturan kaca (delivery-dark/-light.css, D-089) yang memaksa
+            // `position: relative` (CSS tanpa @layer menang lawan utility fixed/
+            // absolute) — popover jadi tidak lagi melayang di atas konten.
+            "z-[1100] w-[264px] origin-top-left rounded-[12px] bg-surface p-3 shadow-popover",
+            pos ? "fixed" : "absolute left-0 top-9",
             "duration-150 ease-out",
             open
               ? "animate-in fade-in-0 zoom-in-95"
@@ -152,7 +183,7 @@ export default function DatePicker({ value, onChange, placeholder = "Semua tangg
                 type="button" onClick={() => pilih("")}
                 className="text-[12px] text-ink3 hover:text-ink2 hover:underline"
               >
-                Hapus filter
+                {clearLabel}
               </button>
             )}
           </div>

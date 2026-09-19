@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek, DateChip,
+  StatusBadge, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 
 // SUPPLIER & UTANG USAHA — master supplier, tagihan masuk, dan pembayaran.
@@ -369,9 +370,9 @@ function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, onSubmit }
           <Field label="Nominal tagihan" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Tanggal tagihan"><DateChip className="w-full" value={f.billDate} onChange={(v) => set("billDate", v)} ariaLabel="Tanggal tagihan" /></Field>
+          <Field label="Tanggal tagihan"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.billDate} onChange={(v) => set("billDate", v)} /></Field>
           <Field label="Jatuh tempo" hint="Kosongkan untuk ikut termin supplier">
-            <DateChip className="w-full" value={f.dueDate} onChange={(v) => set("dueDate", v)} ariaLabel="Jatuh tempo" />
+            <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.dueDate} onChange={(v) => set("dueDate", v)} />
           </Field>
         </div>
 
@@ -462,7 +463,7 @@ function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmi
           </Pilihan>
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Tanggal"><DateChip className="w-full" value={f.date} onChange={(v) => set("date", v)} ariaLabel="Tanggal" /></Field>
+          <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
           <Field label="Dibayar dari" required>
             <Pilihan value={f.cashAccountId} onChange={(v) => set("cashAccountId", v)}>
               <option value="">— pilih —</option>

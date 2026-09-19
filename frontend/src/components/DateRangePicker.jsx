@@ -31,7 +31,11 @@ import {
 // LAMA persis (batas hari ini WIB) — TIDAK mengubah pemanggil manapun yang
 // belum di-update. Pemanggil yang butuh masa depan kirim tanggal jauh ke
 // depan (lihat ArmadaRoutes.jsx).
-export default function DateRangePicker({ value, onChange, maxDate }) {
+// showCompare/allowAll (19 Sep 2026, Finance): toggle "Bandingkan" hanya bermakna
+// untuk halaman CRM (growth % dari backend analytics); endpoint Finance tidak
+// punya periode pembanding, dan preset "Semua" (from/to null) akan dibuang
+// qsFinance jadi request TANPA rentang. Default true = CRM tidak berubah.
+export default function DateRangePicker({ value, onChange, maxDate, showCompare = true, allowAll = true }) {
   const batasAtas = maxDate || todayWIB().format("YYYY-MM-DD");
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -201,7 +205,7 @@ export default function DateRangePicker({ value, onChange, maxDate }) {
             </button>
             <div className="my-1 border-t border-line" />
 
-            {SIMPLE_PRESETS.map((p) => (
+            {SIMPLE_PRESETS.filter((p) => allowAll || p.id !== "all_time").map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -243,7 +247,7 @@ export default function DateRangePicker({ value, onChange, maxDate }) {
             {/* Bandingkan — mengontrol TAMPILAN pembanding periode sebelumnya
                 yang backend memang sudah hitung (growth %), bukan mengirim
                 rentang kedua. Lihat catatan di lib/dateRange.js. */}
-            <label className="mt-auto flex cursor-pointer items-center justify-between gap-2 border-t border-line px-4 py-3">
+            {showCompare && <label className="mt-auto flex cursor-pointer items-center justify-between gap-2 border-t border-line px-4 py-3">
               <span className="text-[13px] text-ink2">Bandingkan</span>
               <span className="relative inline-flex">
                 <input
@@ -254,7 +258,7 @@ export default function DateRangePicker({ value, onChange, maxDate }) {
                 <span className="h-5 w-9 rounded-full bg-line transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40" />
                 <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-transform peer-checked:translate-x-4" />
               </span>
-            </label>
+            </label>}
           </div>
 
           {/* ── KANAN: input + kalender ── */}
