@@ -67,6 +67,20 @@ const ROLE_COLORS = {
 };
 const ALL_ROLES = Object.keys(ROLE_LABELS);
 
+// Filter divisi (D-169, 20 September 2026, laporan owner: "tolong filter
+// karyawan setiap divisi"). Pengelompokan peran -> divisi SAMA dengan
+// pembagian workspace di Layout.jsx (Growth/Production/Warehouse/Delivery/
+// Finance). User multi-peran (mis. Natasha, Imam) sengaja muncul di SETIAP
+// divisi yang perannya ia pegang — bukan dipaksa ke satu divisi.
+const DIVISIONS = [
+  { key: "growth",    label: "Growth",     roles: ["SALES"] },
+  { key: "production", label: "Production", roles: ["PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"] },
+  { key: "warehouse", label: "Warehouse",  roles: ["WAREHOUSE"] },
+  { key: "delivery",  label: "Delivery",   roles: ["DISPATCHER", "DRIVER", "HELPER", "LEADER_DRIVER"] },
+  { key: "finance",   label: "Finance",    roles: ["FINANCE", "ACCOUNTANT", "APPROVER"] },
+  { key: "admin",     label: "Owner & Admin", roles: ["ADMIN", "OWNER"] },
+];
+
 // Redesain 22 Agustus 2026 — versi lama tiap chip punya BLOK warna pastel
 // penuh sendiri (7 warna berbeda sekaligus untuk user multi-peran seperti
 // Natasha terlihat seperti "permen rainbow", ramai tanpa menambah info).
@@ -133,6 +147,7 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
   const [users, setUsers]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [feedback, setFeedback]     = useState(null);
+  const [divisionFilter, setDivisionFilter] = useState("all"); // "all" | key DIVISIONS
 
   // Modal states
   const [showAdd, setShowAdd]           = useState(false);
@@ -399,6 +414,10 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
     );
   }
 
+  const inDivision = (u, d) => effectiveRoles(u).some((r) => d.roles.includes(r));
+  const activeDivision = DIVISIONS.find((d) => d.key === divisionFilter);
+  const shownUsers = activeDivision ? users.filter((u) => inDivision(u, activeDivision)) : users;
+
   const roleStats = ALL_ROLES.map((role) => ({
     role, label: ROLE_LABELS[role], count: users.filter((u) => effectiveRoles(u).includes(role)).length,
   })).filter((s) => s.count > 0);
@@ -464,6 +483,26 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
         })}
       </div>
 
+      {/* Filter divisi */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        {[{ key: "all", label: "Semua", count: users.length }, ...DIVISIONS.map((d) => ({ key: d.key, label: d.label, count: users.filter((u) => inDivision(u, d)).length }))].map((c) => {
+          const aktif = divisionFilter === c.key;
+          return (
+            <button
+              key={c.key} type="button" onClick={() => setDivisionFilter(c.key)}
+              style={{
+                padding: "6px 14px", borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                border: `1px solid ${aktif ? "var(--accent)" : "var(--border)"}`,
+                background: aktif ? "var(--accent-bg)" : "var(--bg-surface)",
+                color: aktif ? "var(--accent)" : "var(--text-secondary)",
+              }}
+            >
+              {c.label} <span style={{ opacity: 0.7, marginLeft: 4 }}>{c.count}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Loading */}
       {loading && (
         <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-muted)" }}>
@@ -486,7 +525,7 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => {
+              {shownUsers.map((u) => {
                 const isMe = u.id === currentUser?.id;
                 const nonaktif = u.active === false;
                 return (
@@ -546,10 +585,10 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
                   </tr>
                 );
               })}
-              {users.length === 0 && (
+              {shownUsers.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
-                    Belum ada pengguna terdaftar.
+                    {users.length === 0 ? "Belum ada pengguna terdaftar." : "Tidak ada pengguna di divisi ini."}
                   </td>
                 </tr>
               )}
@@ -561,7 +600,7 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
       {/* Card list — mobile */}
       {!loading && (
         <div className="user-card-list">
-          {users.map((u) => {
+          {shownUsers.map((u) => {
             const isMe = u.id === currentUser?.id;
             const nonaktif = u.active === false;
             return (
@@ -597,9 +636,9 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
               </div>
             );
           })}
-          {users.length === 0 && (
+          {shownUsers.length === 0 && (
             <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "32px 0" }}>
-              Belum ada pengguna terdaftar.
+              {users.length === 0 ? "Belum ada pengguna terdaftar." : "Tidak ada pengguna di divisi ini."}
             </p>
           )}
         </div>
