@@ -686,14 +686,26 @@ conversationRouter.get("/:id/messages", async (req, res) => {
       select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true },
     },
   };
+  // ?before=<messageId> → halaman pesan LEBIH LAMA dari pesan itu (cursor scroll-ke-atas di web).
+  // Tanpa side effect mark-as-read: ini bukan "membuka" percakapan, cuma memuat riwayat.
+  const beforeId = typeof req.query.before === "string" ? req.query.before : "";
+  let beforeWhere = {};
+  if (beforeId && limit) {
+    const ref = await prisma.message.findUnique({ where: { id: beforeId }, select: { createdAt: true } });
+    if (ref) {
+      beforeWhere = { OR: [{ createdAt: { lt: ref.createdAt } }, { createdAt: ref.createdAt, id: { lt: beforeId } }] };
+    }
+  }
   const messages = limit
     ? (await prisma.message.findMany({
-        where: { conversationId: convId }, orderBy: { createdAt: "desc" }, take: limit, include,
+        where: { conversationId: convId, ...beforeWhere },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: limit, include,
       })).reverse()
     : await prisma.message.findMany({
         where: { conversationId: convId }, orderBy: { createdAt: "asc" }, include,
       });
   res.json(messages);
+  if (beforeId && limit) return; // halaman riwayat lama: bukan "membuka" chat, tanpa mark-as-read
 
   // Mark as read — jalankan setelah response dikirim (tidak blokir respons)
   setImmediate(async () => {

@@ -1,5 +1,6 @@
 import express from "express";
 import jwt from "jsonwebtoken";
+import { getIO } from "../socket.js";
 
 export const sseRouter = express.Router();
 
@@ -9,6 +10,9 @@ let clientCounter = 0;
 
 // Kirim event ke semua client yang terkoneksi
 export function broadcast(eventType, data) {
+  // Web cuma membuka SATU koneksi realtime (Socket.IO); SSE jadi fallback (app
+  // lama/mobile, socket putus). Event yang sama di-emit juga ke semua socket.
+  try { getIO()?.emit(eventType, data); } catch {}
   const payload = `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const [, client] of clients) {
     try {

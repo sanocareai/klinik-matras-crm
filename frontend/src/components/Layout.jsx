@@ -933,7 +933,8 @@ export default function Layout({ user, onLogout }) {
     fetchUnreadRef.current = fetchUnread; // update ref supaya SSE callback pakai versi terbaru
     fetchUnread();
     // SSE sebagai trigger utama — polling 60s hanya sebagai fallback
-    const interval = setInterval(fetchUnread, 60000);
+    // Tab tersembunyi: lewati (hemat baterai/jaringan); "app-visible" memicu fetch saat kembali.
+    const interval = setInterval(() => { if (!document.hidden) fetchUnread(); }, 60000);
     return () => clearInterval(interval);
   }, []);
 

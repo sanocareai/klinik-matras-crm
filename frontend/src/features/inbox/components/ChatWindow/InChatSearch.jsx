@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
-import { useMessagesForConv } from "../../stores/messageStore.js";
+import { useMessagesForConv, useMessageStore } from "../../stores/messageStore.js";
+import { loadOlderMessages } from "../../hooks/useMessages.js";
 
 // Search lokal atas pesan yang SUDAH ter-load di messageStore — backend
 // tidak punya endpoint search pesan khusus (lihat useMessages.js), jadi ini
@@ -18,6 +19,19 @@ export default function InChatSearch({ conversationId, onJumpTo, onClose }) {
   }, [messages, query]);
 
   useEffect(() => { setIndex(0); }, [query]);
+
+  // Riwayat dimuat bertahap (pagination) — saat user mengetik pencarian, muat
+  // halaman lama (debounce 400ms, maks 10 halaman) supaya pesan lama ikut tercari.
+  useEffect(() => {
+    if (!query.trim()) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      for (let i = 0; i < 10 && !cancelled && useMessageStore.getState().hasMoreByConvId[conversationId]; i++) {
+        if (!(await loadOlderMessages(conversationId))) break;
+      }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [query, conversationId]);
 
   useEffect(() => {
     if (matches.length) onJumpTo?.(matches[index]?.id);

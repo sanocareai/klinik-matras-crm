@@ -665,8 +665,10 @@ export const api = {
   getParticipants: (conversationId) => request(`/conversations/${conversationId}/participants`),
   getUnreadCount: () => request("/conversations/unread-count"),
   getLatestUnread: (since) => request(`/conversations/latest-unread?since=${encodeURIComponent(since)}`),
-  getMessages: (conversationId) =>
-    request(`/conversations/${conversationId}/messages`),
+  // { limit, before }: limit = N pesan TERBARU; before = id pesan → halaman yang
+  // LEBIH LAMA dari pesan itu (tanpa mark-as-read). Tanpa opsi = seluruh riwayat.
+  getMessages: (conversationId, { limit, before } = {}) =>
+    request(`/conversations/${conversationId}/messages${buildQuery({ limit, before })}`),
   // Tandai percakapan sudah dibaca (unreadCount=0) tanpa fetch seluruh riwayat
   // pesan — endpoint baru Fase F, terpisah dari side-effect GET .../messages.
   markConversationRead: (conversationId) =>

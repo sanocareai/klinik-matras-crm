@@ -39,6 +39,18 @@ function findMatchIndex(list, msg) {
   });
 }
 
+// Batas percakapan yang riwayatnya ditahan di memori (RAM HP lama). Yang
+// dibuang paling lama masuk store & bukan yang aktif; dimuat ulang saat dibuka lagi.
+const MAX_CACHED_CONVERSATIONS = 8;
+function evictOld(messagesByConvId, hasMoreByConvId, keepId) {
+  const ids = Object.keys(messagesByConvId);
+  if (ids.length <= MAX_CACHED_CONVERSATIONS) return { messagesByConvId, hasMoreByConvId };
+  const drop = ids.filter((id) => id !== keepId).slice(0, ids.length - MAX_CACHED_CONVERSATIONS);
+  const m = { ...messagesByConvId }; const h = { ...hasMoreByConvId };
+  for (const id of drop) { delete m[id]; delete h[id]; }
+  return { messagesByConvId: m, hasMoreByConvId: h };
+}
+
 export const useMessageStore = create((set) => ({
   messagesByConvId: {},   // { [convId]: Message[] }
   hasMoreByConvId: {},    // { [convId]: boolean } — masih ada pesan lama untuk di-load
@@ -47,6 +59,35 @@ export const useMessageStore = create((set) => ({
     messagesByConvId: { ...state.messagesByConvId, [convId]: msgs.map(ensureKey) },
     hasMoreByConvId: { ...state.hasMoreByConvId, [convId]: hasMore },
   })),
+
+  // Hasil fetch halaman TERBARU (initial load / refetch fallback). Beda dari
+  // setMessages: pesan LEBIH LAMA yang sudah dimuat user (scroll ke atas) dan
+  // entry optimistic yang belum terekonsiliasi TIDAK dibuang. Dedupe by
+  // id/externalId/clientId (jalur yang sama dengan upsertMessage).
+  mergeLatest: (convId, latest, hasMoreIfFirstLoad = false) => set((state) => {
+    const existing = state.messagesByConvId[convId];
+    if (!existing || existing.length === 0) {
+      return evictOld(
+        { ...state.messagesByConvId, [convId]: latest.map(ensureKey) },
+        { ...state.hasMoreByConvId, [convId]: hasMoreIfFirstLoad },
+        convId,
+      );
+    }
+    const keyById = new Map(existing.map((m) => [m.id, m._key]));
+    const fetched = latest.map((m) => (keyById.has(m.id) ? { ...m, _key: keyById.get(m.id) } : ensureKey(m)));
+    const firstTs = fetched.length ? new Date(fetched[0].createdAt).getTime() : Infinity;
+    const isSame = (a, b) => a.id === b.id
+      || (b.externalId && a.externalId === b.externalId)
+      || (b.clientId && a.clientId === b.clientId);
+    // Lebih lama dari halaman terbaru → pertahankan; yang lebih baru & sudah ada di server → diganti fetched.
+    const older = existing.filter((m) => !m.status && new Date(m.createdAt).getTime() < firstTs && !fetched.some((f) => isSame(m, f)));
+    // Datang lewat socket SETELAH snapshot fetch diambil (lebih baru dari pesan terakhir fetch) → jangan hilang.
+    const lastTs = fetched.length ? new Date(fetched[fetched.length - 1].createdAt).getTime() : -Infinity;
+    const newer = existing.filter((m) => !m.status && new Date(m.createdAt).getTime() > lastTs && !fetched.some((f) => isSame(m, f)));
+    // Optimistic (sending/failed) yang belum punya padanan di server → pertahankan di ujung.
+    const pending = existing.filter((m) => m.status && !fetched.some((f) => isSame(m, f)));
+    return { messagesByConvId: { ...state.messagesByConvId, [convId]: [...older, ...fetched, ...newer, ...pending] } };
+  }),
 
   upsertMessage: (convId, msg) => set((state) => {
     const list = state.messagesByConvId[convId] || [];

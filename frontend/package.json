@@ -8,6 +8,7 @@
     "build:capacitor": "vite build --mode capacitor",
     "build:capacitor:driver": "vite build --mode capacitor-driver --config vite.config.driver.js",
     "preview": "vite preview",
+    "test": "node --test \"tests/*.test.js\"",
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android"
   },

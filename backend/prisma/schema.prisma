@@ -895,6 +895,7 @@ model Message {
   clientId String? @unique
 
   @@index([conversationId])
+  @@index([conversationId, createdAt(sort: Desc)])
 }
 
 // Log SETIAP kali percakapan berpindah tangan (takeover ATAU transfer manual

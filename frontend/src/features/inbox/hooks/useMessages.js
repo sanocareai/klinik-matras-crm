@@ -1,41 +1,68 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../../api.js";
+import { getSocket } from "../../../lib/socket.js";
 import { useSSE } from "../../../hooks/useSSE.js";
 import { useMessageStore } from "../stores/messageStore.js";
 import { useConversationStore } from "../stores/conversationStore.js";
 
-// ⚠️ CATATAN PENTING (lihat juga useConversations.js untuk pola serupa):
-// GET /conversations/:id/messages di backend TIDAK mendukung pagination
-// apapun (tanpa limit/cursor/skip — lihat backend/src/routes/conversations.js)
-// dan SELALU balikin SELURUH riwayat pesan percakapan itu sekaligus, tidak
-// ada hard cap. Jadi hook ini fetch semua sekali per percakapan; "muat
-// pesan lebih lama saat scroll ke atas" di MessageList.jsx murni WINDOWING
-// di sisi client (reveal makin banyak dari array yang sudah lengkap di
-// store), BUKAN pemanggilan API baru — tidak ada "page 2" sungguhan untuk
-// diminta ke server.
-//
-// Endpoint ini JUGA otomatis menandai conversation "sudah dibuka" di
-// backend sebagai side effect bawaan (tidak ada endpoint mark-read
-// terpisah — lihat CLAUDE.md/hasil investigasi Fase C). Jadi setiap kali
-// hook ini fetch (termasuk saat SSE memicu refetch), backend akan
-// menandai isRead=true. Ini SAMA PERSIS dengan perilaku ChatWindow lama.
+// Pagination pesan (cursor): hanya INITIAL_LIMIT pesan TERBARU yang dimuat saat
+// percakapan dibuka (percakapan terbesar di produksi 2,29 MB per respons kalau
+// dimuat penuh); pesan lebih lama diminta per OLDER_LIMIT lewat loadOlderMessages
+// (?before=<id pesan tertua yang sudah dimuat>) saat user scroll ke atas.
+export const INITIAL_LIMIT = 100;
+export const OLDER_LIMIT = 100;
+
+const loadingOlder = new Set(); // convId yang sedang fetch halaman lama (cegah request ganda)
+
+// Muat satu halaman pesan lebih lama. Return jumlah pesan yang benar-benar ditambahkan.
+export async function loadOlderMessages(conversationId) {
+  const st = useMessageStore.getState();
+  if (!conversationId || loadingOlder.has(conversationId) || !st.hasMoreByConvId[conversationId]) return 0;
+  const list = st.messagesByConvId[conversationId] || [];
+  // Pesan tertua yang SUDAH punya id server (bukan temp optimistic).
+  const oldest = list.find((m) => m.id && !String(m.id).startsWith("temp-"));
+  if (!oldest) return 0;
+  loadingOlder.add(conversationId);
+  try {
+    const older = await api.getMessages(conversationId, { limit: OLDER_LIMIT, before: oldest.id });
+    const before = (useMessageStore.getState().messagesByConvId[conversationId] || []).length;
+    useMessageStore.getState().prependMessages(conversationId, older, older.length >= OLDER_LIMIT);
+    return (useMessageStore.getState().messagesByConvId[conversationId] || []).length - before;
+  } catch {
+    return 0;
+  } finally {
+    loadingOlder.delete(conversationId);
+  }
+}
+
+// GET /conversations/:id/messages?limit= juga menandai percakapan "sudah dibuka" di
+// backend (isRead=true, unread=false, read receipt WA). Halaman `before` tidak.
 export function useMessages(conversationId) {
   const query = useQuery({
     queryKey: ["messages", conversationId],
-    queryFn: () => api.getMessages(conversationId),
+    queryFn: () => api.getMessages(conversationId, { limit: INITIAL_LIMIT }),
     enabled: !!conversationId,
   });
 
-  // Realtime: SSE lama (proven) — payload cuma { conversationId, customerId },
-  // tidak bawa isi pesan, jadi kita refetch daftar pesan penuh saat match.
+  // Pesan baru di percakapan aktif sudah diantar Socket.IO (message:new →
+  // upsertMessage), jadi TIDAK perlu refetch. Yang dulu ditumpangkan pada
+  // refetch adalah efek samping mark-as-read: sekarang dipanggil eksplisit
+  // (endpoint ringan, tanpa muat riwayat). Refetch halaman terbaru hanya bila
+  // socket sedang putus (jalur fallback SSE) supaya tidak ada pesan terlewat.
   useSSE("new_message", (data) => {
-    if (data?.conversationId === conversationId) query.refetch();
+    if (!conversationId || data?.conversationId !== conversationId) return;
+    if (getSocket().connected) {
+      api.markConversationRead(conversationId).catch(() => {});
+      useConversationStore.getState().upsertConversation({ id: conversationId, unread: false, isRead: true, unreadCount: 0 });
+    } else {
+      query.refetch();
+    }
   });
 
   useEffect(() => {
     if (!conversationId || !query.data) return;
-    useMessageStore.getState().setMessages(conversationId, query.data, false);
+    useMessageStore.getState().mergeLatest(conversationId, query.data, query.data.length >= INITIAL_LIMIT);
     // Cerminkan efek samping backend (isRead=true, unread=false) di store
     // secara optimistik supaya badge unread di ConversationItem hilang
     // seketika, tidak perlu nunggu refetch daftar percakapan.

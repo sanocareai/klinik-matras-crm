@@ -166,11 +166,27 @@ export default function Inbox({ user }) {
   // Realtime SSE tetap dipertahankan berjalan paralel sebagai fallback kalau
   // koneksi Socket.IO putus (keduanya idempotent — appendMessage/upsertConversation
   // aman dipanggil dobel).
-  useSSE("new_message", () => {
-    api.getConversations().then(({ data }) => {
-      useConversationStore.getState().upsertConversations(data);
-    }).catch(() => {});
-  });
+  // Digabung (debounce 1,5 dtk): rentetan pesan masuk = 1 fetch, bukan 1 per pesan.
+  // Saat tab tersembunyi ditunda; 1 fetch saat tab kembali terlihat.
+  const listRefreshTimer = useRef(null);
+  const listRefreshPending = useRef(false);
+  const refreshList = useCallback(() => {
+    if (document.hidden) { listRefreshPending.current = true; return; }
+    clearTimeout(listRefreshTimer.current);
+    listRefreshTimer.current = setTimeout(() => {
+      api.getConversations().then(({ data }) => {
+        useConversationStore.getState().upsertConversations(data);
+      }).catch(() => {});
+    }, 1500);
+  }, []);
+  useSSE("new_message", refreshList);
+  useEffect(() => {
+    const onVisible = () => {
+      if (!document.hidden && listRefreshPending.current) { listRefreshPending.current = false; refreshList(); }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { document.removeEventListener("visibilitychange", onVisible); clearTimeout(listRefreshTimer.current); };
+  }, [refreshList]);
 
   // Fetch awal + buka otomatis dari ?conv=ID (deep link dari toast notifikasi,
   // Hot Leads, Needs Action). List awal cuma 100 percakapan teraktif — kalau

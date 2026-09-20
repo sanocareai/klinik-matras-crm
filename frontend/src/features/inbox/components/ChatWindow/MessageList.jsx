@@ -9,7 +9,8 @@ const Lightbox = lazy(() => import("yet-another-react-lightbox"));
 import dayjs from "dayjs";
 import MessageBubble from "./MessageBubble.jsx";
 import { MessageListSkeleton } from "../Skeletons.jsx";
-import { useMessagesForConv } from "../../stores/messageStore.js";
+import { useMessageStore, useMessagesForConv, useHasMoreForConv } from "../../stores/messageStore.js";
+import { loadOlderMessages } from "../../hooks/useMessages.js";
 import { dateDividerLabel } from "../../utils/formatTime.js";
 
 const START_INDEX = 1_000_000;
@@ -98,6 +99,7 @@ const MessageList = forwardRef(function MessageList(
   const conversationId = conversation?.id;
   const isGroup = conversation?.type === "GROUP";
   const allMessages = useMessagesForConv(conversationId);
+  const hasMore = useHasMoreForConv(conversationId);
 
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [firstItemIndex, setFirstItemIndex] = useState(START_INDEX);
@@ -123,6 +125,7 @@ const MessageList = forwardRef(function MessageList(
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const prevMessageCountRef = useRef(0);
+  const prevLastKeyRef = useRef(null);
 
   // Reset window setiap ganti percakapan
   useEffect(() => {
@@ -146,10 +149,14 @@ const MessageList = forwardRef(function MessageList(
   useEffect(() => {
     const prevCount = prevMessageCountRef.current;
     const newCount = allMessages.length;
-    if (newCount > prevCount && !isAtBottom) {
+    // Hanya hitung kalau pesan TERAKHIR berubah — memuat halaman riwayat lama
+    // (prepend) menambah panjang array tapi bukan "pesan baru".
+    const lastKey = allMessages[newCount - 1]?._key ?? null;
+    if (newCount > prevCount && !isAtBottom && lastKey !== prevLastKeyRef.current) {
       setNewMessageCount((c) => c + (newCount - prevCount));
     }
     prevMessageCountRef.current = newCount;
+    prevLastKeyRef.current = lastKey;
   }, [allMessages.length, isAtBottom]);
 
   function handleAtBottomStateChange(atBottom) {
@@ -204,9 +211,24 @@ const MessageList = forwardRef(function MessageList(
     highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 1600);
   }
 
-  function scrollToMessage(id) {
-    const rawIndex = allMessages.findIndex((m) => m.id === id);
+  async function scrollToMessage(id) {
+    let rawIndex = allMessages.findIndex((m) => m.id === id);
+    // Pesan (mis. yang dikutip reply) mungkin lebih lama dari yang sudah dimuat —
+    // muat halaman lama bertahap (maks 10 halaman) sampai ketemu.
+    for (let i = 0; rawIndex === -1 && i < 10 && useMessageStore.getState().hasMoreByConvId[conversationId]; i++) {
+      const added = await loadOlderMessages(conversationId);
+      if (!added) break;
+      rawIndex = (useMessageStore.getState().messagesByConvId[conversationId] || []).findIndex((m) => m.id === id);
+    }
     if (rawIndex === -1) return; // pesan tidak ada di percakapan ini sama sekali
+    const total = (useMessageStore.getState().messagesByConvId[conversationId] || []).length;
+    if (total !== allMessages.length) {
+      // Riwayat baru dimuat: perlebar window supaya target masuk, scroll setelah render
+      prependingRef.current = true;
+      pendingScrollIdRef.current = id;
+      setVisibleCount(Math.min(total - rawIndex + 5, total));
+      return;
+    }
     const needed = allMessages.length - rawIndex + 5; // buffer kecil
     if (needed > visibleCount) {
       prependingRef.current = true;
@@ -221,10 +243,19 @@ const MessageList = forwardRef(function MessageList(
   // pesan hasil pencarian lewat ref, tanpa perlu prop-drilling tambahan.
   useImperativeHandle(ref, () => ({ scrollToMessage }));
 
-  function handleStartReached() {
-    if (visibleCount >= allMessages.length) return;
-    prependingRef.current = true;
-    setVisibleCount((v) => Math.min(v + PAGE_SIZE, allMessages.length));
+  async function handleStartReached() {
+    if (visibleCount < allMessages.length) {
+      prependingRef.current = true;
+      setVisibleCount((v) => Math.min(v + PAGE_SIZE, allMessages.length));
+      return;
+    }
+    // Semua yang sudah di memori sudah tampil → minta halaman lebih lama ke server.
+    if (!hasMore) return;
+    const added = await loadOlderMessages(conversationId);
+    if (added > 0) {
+      prependingRef.current = true;
+      setVisibleCount((v) => v + added);
+    }
   }
 
   function handleRetry(m) {

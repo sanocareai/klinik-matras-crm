@@ -591,3 +591,25 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   background: var(--accent) !important;
   color: #fff;
 }
+
+/* ── PERF LITE (lib/perfMode.js) ────────────────────────────────────────────
+   Aktif otomatis di HP RAM <=4GB / CPU <=4 core / mode Hemat Data (atau paksa
+   lewat localStorage "perf-mode"="lite"). Tampilan dasar & tata letak sama;
+   yang dimatikan hanya efek yang mahal di GPU/CPU HP lama:
+   - backdrop-filter (blur/glass) → paling berat saat scroll. Permukaan kaca
+     dinaikkan opasitasnya lewat color-mix supaya tetap terbaca tanpa blur.
+   - transisi lebar/posisi panjang & bayangan besar tidak disentuh (risiko
+     layout bergeser); animasi non-esensial dipendekkan. */
+[data-perf="lite"] *,
+[data-perf="lite"] *::before,
+[data-perf="lite"] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+[data-perf="lite"] .fin-glass {
+  background: var(--bg-surface);
+}
+[data-perf="lite"] .message-virtuoso,
+[data-perf="lite"] .conversation-virtuoso {
+  scroll-behavior: auto;
+}
