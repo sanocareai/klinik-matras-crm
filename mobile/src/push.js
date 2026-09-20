@@ -23,6 +23,19 @@ export const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.
 // docs addPushTokenListener), tanpa perlu user login ulang.
 let lastRegisteredUser = null;
 
+// PERF/BUG (20 Sep 2026): registerForPush() dulu bisa berputar tanpa henti. getExpoPushTokenAsync()
+// sendiri memancarkan event token ke addPushTokenListener di bawah, yang memanggil registerForPush()
+// lagi, yang memanggil getExpoPushTokenAsync() lagi… Log server mencatat POST /users/me/push-token
+// 10–50 kali PER DETIK dari satu HP (74.800 permintaan dalam ±2 jam), menyumbang panas/baterai boros,
+// beban server, dan memperbesar peluang sesi terhapus. Tiga pengaman:
+//  1. satu pendaftaran berjalan sekali (permintaan susulan berbagi hasil yang sama),
+//  2. token yang sama untuk user yang sama tidak didaftarkan ulang dalam 10 menit,
+//  3. listener hanya bereaksi bila token NATIVE benar-benar berbeda dari yang terakhir dilihat.
+let registerInflight = null;
+let terakhirBerhasil = { at: 0, userId: null, token: null };
+let tokenNativeTerakhir = null;
+const JEDA_DAFTAR_ULANG_MS = 10 * 60 * 1000;
+
 // Import dinamis — jangan import statis expo-notifications di file ini,
 // supaya modulnya tidak ikut dievaluasi (dan error) saat masih di Expo Go.
 let Notifications = null;
@@ -73,8 +86,14 @@ if (!isExpoGo) {
   // yang dilakukan adalah panggil ulang registerForPush() supaya ambil Expo
   // Push Token yang sudah fresh & simpan ulang ke backend — tanpa user perlu
   // login ulang.
-  Notifications.addPushTokenListener(() => {
-    if (lastRegisteredUser) registerForPush(lastRegisteredUser).catch(() => {});
+  Notifications.addPushTokenListener((nativeToken) => {
+    const nilai = nativeToken?.data ?? null;
+    if (!nilai || nilai === tokenNativeTerakhir) return; // event yang sama (termasuk gema dari getExpoPushTokenAsync sendiri)
+    const pertama = tokenNativeTerakhir === null;
+    tokenNativeTerakhir = nilai;
+    // Pengamatan pertama = token yang baru saja kita ambil sendiri, bukan perubahan sungguhan.
+    if (pertama || !lastRegisteredUser) return;
+    registerForPush(lastRegisteredUser, { paksa: true }).catch(() => {});
   });
 }
 
@@ -115,8 +134,19 @@ async function ensureChannels() {
 // user: { id, ... } — dipakai isi field userId saat register token & disimpan
 // utk re-register otomatis kalau native token berubah (lihat addPushTokenListener
 // di atas). Dipanggil dari AuthContext saat login sukses & restore sesi.
-export async function registerForPush(user) {
-  if (isExpoGo) return null; // lihat catatan isExpoGo di atas
+export function registerForPush(user, { paksa = false } = {}) {
+  if (isExpoGo) return Promise.resolve(null); // lihat catatan isExpoGo di atas
+  if (user) lastRegisteredUser = user;
+  if (registerInflight) return registerInflight;
+  const sama = terakhirBerhasil.token
+    && terakhirBerhasil.userId === (lastRegisteredUser?.id ?? null)
+    && Date.now() - terakhirBerhasil.at < JEDA_DAFTAR_ULANG_MS;
+  if (sama && !paksa) return Promise.resolve(terakhirBerhasil.token);
+  registerInflight = daftarPush().finally(() => { registerInflight = null; });
+  return registerInflight;
+}
+
+async function daftarPush() {
   try {
     if (!Device.isDevice) return null; // emulator tanpa Google Play tidak bisa
     if (user) lastRegisteredUser = user;
@@ -143,6 +173,7 @@ export async function registerForPush(user) {
     // menyimpan/pakai field ini — lihat ringkasan tugas).
     await api.savePushToken(token, { userId: lastRegisteredUser?.id, platform: Platform.OS });
     await AsyncStorage.setItem("pushToken", token); // untuk dihapus saat logout
+    terakhirBerhasil = { at: Date.now(), userId: lastRegisteredUser?.id ?? null, token };
     return token;
   } catch (err) {
     // Push gagal (misal jalan di Expo Go) — jangan ganggu pemakaian app
@@ -160,6 +191,7 @@ export async function unregisterPush() {
     }
   } catch {}
   lastRegisteredUser = null;
+  terakhirBerhasil = { at: 0, userId: null, token: null };
 }
 
 // Badge angka di ikon app — dipanggil dari useBadgeSync.js (data unread
