@@ -121,6 +121,17 @@ Kode: `services/finance/pembayaran.js`, `routes/financePembayaran.js`, bukti di 
 - Perbaikan lintas modul: `tolakLunas` menolak (409) bila order sudah lunas penuh oleh pembayaran terverifikasi; `verifikasiPenerimaan/tolakLunas` mengunci baris Order; `/armada/payments/:id/verify` memakai `verifikasiPembayaran`.
 - Tes: `tests/integration/financePembayaran.integration.test.js` (18).
 
+### Transaksi S6–S8 (21 Sep 2026)
+
+Kode: `services/finance/transaksi.js`, `routes/financeTransaksi.js`. **Read-model saja** — tanpa tabel, ledger, status, atau command baru; perintah tetap ke endpoint dokumen (`routes/financeTransactions.js`, `financeKasbon.js`). Semua butuh `FINANCE_READ`; uang berupa string desimal.
+- `GET /api/finance/transaksi/ringkasan` (jumlah per modul), `/opsi` (kategori, rekening + saldo, supplier, karyawan aktif, akun Pemasukan Lain, mode, ambang nota), `/opsi/order?q=` (cari order untuk refund + `sisaBisaDirefund` dari server).
+- `GET /api/finance/transaksi/:modul?tab&q&from&to&page&limit[&supplierId&jatuhTempo=lewat]` → `{items, tab, page, total, adaLagi, hitung, ringkasan, diperbaruiPada}`; `GET .../:modul/:id` → detail (`bagian`, `lampiran` bertanda-tangan, `riwayat` dari audit trail, `pembayaran` untuk piutang). Modul: `pengeluaran | pembelian | kasbon | pemasukan | piutang | refund | supplier | tagihan | pembayaran-supplier`.
+- Setiap item membawa `aksi` (`{boleh, alasan, path, metode, perlu, tetap}`) dan `persetujuan` (tautan ke Inbox S4 bila pengguna boleh memutuskan). Klien tidak menyalin aturan izin/status.
+- Perintah yang dipakai: `POST /expenses|/purchases|/kasbon|/other-income|/refunds|/bills|/suppliers` (buat), `/expenses|purchases/:id/submit|pay|cancel|bukti`, `PATCH /expenses|purchases|suppliers/:id`, `/kasbon/:id/pelunasan|batal`, `/other-income/:id/cancel`, `/supplier-payments` (+ `/:id/cancel`), `/customer-payments/:id/allocations`, `/receipts/upload`. Semua: `Idempotency-Key` (428 untuk token mobile bila hilang).
+- **Penguatan backend:** `lockRowForUpdate` pada bayar/batal pengeluaran & pembelian, pelunasan/batal kasbon (dua pemotongan paralel tidak bisa melampaui kasbon), pembayaran & batal pembayaran supplier (kunci baris tagihan urut id — dua pembayaran paralel tidak bisa melebihi sisa utang; satu tagihan tak boleh muncul dua kali dalam satu pembayaran), batal pemasukan lain.
+- **Aturan Pemasukan Lain:** `POST/koreksi /other-income` menolak akun pendapatan penjualan/layanan/sewa/ongkir dan akun kontra Retur & Potongan Penjualan (400: uang pelanggan dicatat di Pembayaran & Verifikasi); `/transaksi/opsi` tidak menawarkannya.
+- Tes: `tests/integration/financeTransaksi.integration.test.js` (9; `DUMP_TRANSAKSI=1` menulis fixture respons nyata untuk uji kontrak mobile `src/__tests__/transaksi.kontrak.test.ts`).
+
 ## 8. Tes
 
 ```bash

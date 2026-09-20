@@ -1383,37 +1383,55 @@ Layar H1, K1, K2 (baca); `GET /finance/dashboard`, `/cash-accounts`, `/reports/l
 
 ### Fase C — Mencatat transaksi
 
-#### S6 — Pengeluaran, pembelian, kasbon, pemasukan, transfer + lampiran + audit (L) — G-05, G-07, G-16 (opsional)
-| AC | Kriteria |
-|---|---|
-| S6-1 | Buat pengeluaran dari foto nota (kamera / galeri / **Share dari WhatsApp**) ≤ 60 dtk median; foto terkompres ≤ 1600 px & < 400 KB sebelum unggah |
-| S6-2 | Dobel-tap **Simpan** atau koneksi putus setelah kirim ⇒ **satu** dokumen (Idempotency-Key); UI menampilkan hasil pasti atau "Status belum pasti" tanpa kirim ulang buta |
-| S6-3 | Mode Langsung tanpa rekening tidak bisa disimpan; kategori/rekening/divisi hanya dari server |
-| S6-4 | Foto yang sudah dipakai dokumen lain ⇒ peringatan `dipakaiDi`, boleh lanjut |
-| S6-5 | Koreksi/Batalkan/Ganti foto tanpa alasan tidak bisa dikirim; dengan alasan ⇒ muncul di linimasa audit (T17) |
-| S6-6 | Kasbon: urgensi wajib; melewati batas ⇒ dialog hanya untuk `FINANCE_ADMIN`, selain itu penolakan; potong gaji > sisa ditolak; teks bantuan sesuai §7.5 (tanpa "dikembalikan"/tunai) |
-| S6-7 | Transfer: asal ≠ tujuan; setelah sukses saldo kedua rekening di K1 berubah sesuai server |
-| S6-8 | Akun tanpa `financePost` tidak melihat tombol catat; akun Approver tidak melihat FAB |
-| S6-9 | Draft offline (form + foto) tersimpan terenkripsi, hilang setelah 7 hari/logout; tidak pernah terkirim otomatis |
-| S6-10 | Filter glass + pencarian bekerja pada Pengeluaran/Pembelian/Kasbon; `150.000` cocok nominal 150000; ringkasan "N dari M" |
-| S6-11 | Linimasa audit per dokumen menampilkan aktor, aksi, alasan, waktu WIB |
+#### S6 — Pengeluaran, pembelian, kasbon, pemasukan lain + lampiran + audit (L) — G-05, G-07, G-16 (opsional)
 
-#### S7 — Piutang, invoice, refund (M)
-| AC | Kriteria |
-|---|---|
-| S7-1 | Piutang **tidak** memuat order berstatus Lunas; banner "N order menunggu verifikasi" membuka P1 |
-| S7-2 | Umur piutang (ember) identik dengan web |
-| S7-3 | Invoice: daftar + filter jatuh tempo; PDF terunduh via Bearer, tampil & bisa dibagikan; berkas hilang dari cache saat logout |
-| S7-4 | Refund > uang diterima ⇒ pesan server tampil; refund sah ⇒ masuk inbox approval |
-| S7-5 | Refund oleh pembuat tidak bisa disetujui dirinya sendiri (kecuali `FINANCE_ADMIN`) |
+**Status: SELESAI (21 Sep 2026; Wave 1 bersama S7 dan S8; diuji di atas server contoh, kontrak respons backend nyata, dan tes integrasi backend; belum ada build EAS).** Cakupan: Pengeluaran, Pembelian, Kasbon, dan Pemasukan Lain — daftar (tab status, ringkasan, cari, periode, paginasi), detail (rincian, lampiran bertanda-tangan, riwayat audit), buat/ajukan/simpan draf, lampirkan nota, bayar reimbursement/utang, potong gaji kasbon, batalkan (admin), ubah draf (admin). **Transfer kas tidak termasuk** (di luar Wave 1). Semua data, status, dan izin per dokumen (`aksi`) dihitung server lewat read-model `GET /finance/transaksi/:modul` (lihat `docs/FINANCE-MOBILE-BACKEND.md`); perintah memakai endpoint milik tiap dokumen (Idempotency-Key, step-up PIN/biometrik, tanpa antrean offline). Dokumen yang menunggu approval otomatis tampil di Inbox S4 dan memuat tautan "Buka di Persetujuan".
 
-#### S8 — Supplier & utang (M)
-| AC | Kriteria |
-|---|---|
-| S8-1 | Umur utang & daftar supplier identik dengan web |
-| S8-2 | Tagihan wajib memilih penerimaan barang **atau** kategori biaya (pesan server dipertahankan) |
-| S8-3 | Bayar tagihan: alokasi ≤ sisa; melebihi ⇒ pesan server per baris; sukses ⇒ status tagihan (DIBAYAR_SEBAGIAN/LUNAS) dari server |
-| S8-4 | Tagihan `MENUNGGU_APPROVAL` muncul di inbox S4 dan bisa diputuskan |
+| AC | Status | Kriteria & realisasi |
+|---|---|---|
+| S6-1 | ◐ | Buat pengeluaran dari foto nota (kamera / galeri / **Share dari WhatsApp** / tempel). Foto diunggah ke `/finance/receipts/upload`; **pengecilan dilakukan server** (klien memakai kualitas picker 0,7, tidak memaksa ≤ 1600 px / < 400 KB di HP) |
+| S6-2 | ✔ | Dobel-tap **Simpan** ⇒ satu perintah (kunci ulang-tap sinkron + Idempotency-Key); koneksi putus setelah kirim ⇒ "hasilnya belum pasti", kunci dipakai ulang, tanpa kirim ulang buta. Diuji di UI & backend (kunci sama = respons diputar ulang) |
+| S6-3 | ✔ | Mode Langsung tanpa rekening tidak bisa dikirim; kategori, rekening (dengan saldo), karyawan hanya dari server. Pengaju tanpa `financePost` otomatis reimbursement (aturan server) |
+| S6-4 | ✔ | Foto yang sama dengan dokumen lain ⇒ peringatan `dipakaiDi`, boleh lanjut |
+| S6-5 | ◐ | Batalkan (admin) dan ubah draf (admin; keterangan & nominal) wajib alasan dan muncul di riwayat. **Belum di mobile:** Koreksi pasca-posting dan mengganti/melepas foto yang sudah terpasang (tetap di web) |
+| S6-6 | ◐ | Kasbon: alasan wajib; karyawan hanya akun aktif (server); potong gaji > sisa ditolak (klien & server, row lock menahan dua pemotongan paralel). **Belum:** dialog "lewati batas kasbon" untuk admin (pesan server ditampilkan apa adanya) |
+| S6-7 | — | Transfer kas: di luar cakupan Wave 1 |
+| S6-8 | ✔ | Tombol tambah hanya untuk pemegang izin mencatat; akun penyetuju tidak melihat tombol tambah maupun formulir (capability, bukan nama peran) |
+| S6-9 | ◐ | Draf lokal: hanya isian teks (tanpa foto) di penyimpanan aman perangkat, tidak pernah terkirim otomatis, dilanjutkan/dibuang manual. **Belum:** kedaluwarsa 7 hari dan penghapusan saat logout; draf server (`langsungAjukan=false`) tersedia untuk pengeluaran/pembelian |
+| S6-10 | ✔ | Pencarian & tab pada semua modul; `150.000` cocok nominal 150000; penutup "N … · sudah semua" |
+| S6-11 | ✔ | Riwayat per dokumen dari audit trail server: aktor, aksi, alasan, waktu WIB |
+| S6-12 | ✔ | **Pemasukan Lain bukan pembayaran order.** Server menolak akun pendapatan penjualan/layanan/sewa/ongkir dan akun kontra Retur & Potongan Penjualan; UI tidak menawarkannya dan menautkan ke Pembayaran & Verifikasi |
+
+**Gap jujur S6.** Kasbon dan Pemasukan Lain langsung dibukukan di backend (tidak ada workflow approval), sehingga **tidak** masuk Inbox S4; hanya Pengeluaran, Pembelian, Tagihan, dan Refund yang punya approval. Mengubah draf adalah hak `FINANCE_ADMIN` (aturan server); pengguna biasa memakai draf lokal/draf server lalu mengajukan. Perbaikan backend yang menyertai: row lock pada bayar/batal pengeluaran & pembelian, pelunasan/batal kasbon, batal pemasukan lain.
+
+#### S7 — Piutang, jatuh tempo, alokasi pembayaran, refund (M)
+
+**Status: SELESAI (21 Sep 2026).** Piutang dibaca dari buku besar (`umurPiutang`, sumber yang sama dengan web): invoice, jatuh tempo, umur (ember), sisa, pembayaran resmi, alokasi. Status verifikasi pembayaran dan status order tetap milik **S5** (tautan ke detail pembayaran). Refund mengikuti sumber pembayaran, approval, jurnal, dan reversal yang sudah ada — tidak ada aturan baru.
+
+| AC | Status | Kriteria & realisasi |
+|---|---|---|
+| S7-1 | ◐ | Piutang **tidak** memuat order berstatus Lunas di CRM; jumlah/total "menunggu verifikasi" ditampilkan di ringkasan (server). **Belum:** kartu itu belum dapat diketuk ke daftar pembayaran |
+| S7-2 | ✔ | Umur piutang (ember) dan sisa identik dengan web (fungsi server yang sama); acuan jatuh tempo dinyatakan (invoice atau tanggal order) |
+| S7-3 | ✗ | Daftar invoice dan PDF invoice **belum** dikerjakan (gap terdokumentasi); nomor, status, jatuh tempo invoice tampil di detail piutang |
+| S7-4 | ✔ | Refund melebihi uang diterima ⇒ ditahan di klien (server menghitung `sisaBisaDirefund`) dan pesan server dipertahankan; refund sah ⇒ status Menunggu dan masuk Inbox S4 |
+| S7-5 | n/a | Backend tidak punya pemisahan tugas untuk Refund (hanya Pengeluaran/Pembelian); tidak dikarang di klien |
+| S7-6 | ✔ | Alokasi pembayaran ke beberapa order pelanggan: total wajib persis sama dengan nominal pembayaran (indikator "belum teralokasi" memakai BigInt); server membalik & memposting ulang jurnal penerimaan dan menghitung ulang status bayar order |
+
+**Gap jujur S7.** Reversal pembayaran pelanggan, kelebihan bayar, dan pembayaran tanpa invoice tetap di luar mobile dan tidak dikarang aturannya. Refund yang sudah disetujui tidak bisa dibatalkan dari mobile (reversal tetap di web).
+
+#### S8 — Supplier, tagihan, utang usaha, pembayaran tagihan (M)
+
+**Status: SELESAI (21 Sep 2026).** Supplier (data, termin, rekening bank, sisa utang, tagihan terbuka, pembayaran terakhir), Tagihan supplier (umur, jatuh tempo, terbayar/sisa, pembayaran per tagihan), dan Pembayaran supplier (histori, batal admin). Pembayaran tagihan parsial/penuh dari rekening yang dipilih; status DIBAYAR_SEBAGIAN/LUNAS dari server.
+
+| AC | Status | Kriteria & realisasi |
+|---|---|---|
+| S8-1 | ✔ | Umur utang, sisa, dan daftar supplier identik dengan web (fungsi server yang sama) |
+| S8-2 | ◐ | Tagihan wajib memilih kategori biaya (pesan server dipertahankan). **Belum:** memilih dokumen penerimaan barang Gudang (tetap di web) |
+| S8-3 | ✔ | Bayar tagihan: nominal ≤ sisa (klien & server); dua pembayaran paralel tidak bisa melebihi sisa (row lock pada tagihan) — yang kedua ditolak 409; sukses ⇒ status dari server. Pembayaran per satu tagihan (gabungan banyak tagihan tetap di web) |
+| S8-4 | ✔ | Tagihan `MENUNGGU_APPROVAL` muncul di Inbox S4 dan bisa diputuskan; detail memuat tautan |
+| S8-5 | ✔ | Pembatalan pembayaran (admin) membalik jurnal dan mengembalikan status tagihan; dua pembatalan paralel hanya sekali |
+
+**Penutupan Wave 1 (21 Sep 2026).** Kualitas: backend integrasi 9 tes baru (read-model 9 modul, izin, paginasi, konkurensi bayar/batal/kasbon/pembayaran supplier, Idempotency-Key, Neraca seimbang, uji kontrak 9 modul); mobile 15 tes API, 39 tes UI, 15 tes kontrak dengan respons backend nyata. Di luar cakupan dan tidak disentuh: SANO Messenger, driver-mobile, EAS, Firebase, push, deep link, tutup buku, jurnal manual, reversal pembayaran pelanggan, saldo kalibrasi, JV-19092026-372, akun 2-1600, kebijakan akurasi, S4, S5.
 
 ### Fase D — Akuntansi & laporan
 

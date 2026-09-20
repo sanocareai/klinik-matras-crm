@@ -155,6 +155,10 @@ Keyboard nyata di emulator: set `hw.keyboard=no` pada AVD (Gboard tampil). Perha
 | 8 | Sembunyikan nominal | Nominal, keterangan, vendor, lampiran tersamarkan |
 | 9 | 360×640dp + font 1.5, gelap | Tidak ada teks terpotong, tidak ada overlap |
 
+## Transaksi S6–S8 — QA
+
+Tab Transaksi = pintu ke Pengeluaran, Pembelian, Kasbon, Pemasukan Lain, Piutang, Refund, Tagihan supplier, Supplier, Pembayaran supplier (+ Pembayaran pelanggan S5). Tombol "+" pada kartu / FAB membuka formulir; tombol hanya ada bila capability mengizinkan. Aksi di detail (ajukan, bayar, potong gaji, lampirkan nota, ubah, batalkan, atur alokasi) muncul sesuai `aksi` dari server; yang tidak tersedia menampilkan alasannya. Mode contoh: peran lewat email (`finance@`, `owner@` = admin, `akuntan@`, `approver@`), skenario `+konflik`, `+izin`, `+putus`, `+offline`, `+galat`, `+kosong`, `+panjang`, `+negatif`, `+lambat`. Draf "di HP" hanya isian teks dan tidak pernah terkirim otomatis. Dokumen yang menunggu approval juga ada di tab Persetujuan (S4).
+
 ## Pembayaran pelanggan (S5) — QA
 
 Buka dari tab Transaksi → chip "Pembayaran", menu Lainnya → "Pembayaran pelanggan", atau kartu "Pembayaran belum diverifikasi" di Beranda. Lencana tab Transaksi = jumlah menunggu dari server. Mode contoh: 22 menunggu (8 kasus khusus: DP, cicilan, pelunasan tunai saat pengiriman, tanpa bukti, kelebihan bayar, kemungkinan ganda, alokasi dua order, nominal & nama sangat panjang), 3 terverifikasi, 2 ditolak. Skenario `+konflik`, `+izin`, `+putus`, `+offline`, `+galat`, `+sesi`, `+basi`, `+kosong`, `+lambat` berlaku juga di sini.
