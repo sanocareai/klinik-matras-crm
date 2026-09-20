@@ -8,41 +8,52 @@
       "developmentClient": true,
       "distribution": "internal",
       "channel": "development",
-      "android": { "buildType": "apk" },
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "APP_VARIANT": "development",
         "EXPO_PUBLIC_APP_ENV": "development",
         "EXPO_PUBLIC_API_URL": "http://10.0.2.2:4000/api",
-        "EXPO_PUBLIC_USE_MOCKS": "true"
+        "EXPO_PUBLIC_USE_MOCKS": "true",
+        "EAS_PROJECT_ID": "ac46e42b-2ac5-4fb3-a515-ebaf40c4c3e2"
       }
     },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
       "autoIncrement": true,
-      "android": { "buildType": "apk" },
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "APP_VARIANT": "preview",
         "EXPO_PUBLIC_APP_ENV": "preview",
         "EXPO_PUBLIC_API_URL": "https://app.sanomatrassehat.com/api",
-        "EXPO_PUBLIC_USE_MOCKS": "false"
+        "EXPO_PUBLIC_USE_MOCKS": "false",
+        "EAS_PROJECT_ID": "ac46e42b-2ac5-4fb3-a515-ebaf40c4c3e2"
       }
     },
     "production": {
       "channel": "production",
       "autoIncrement": true,
-      "android": { "buildType": "app-bundle" },
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "APP_VARIANT": "production",
         "EXPO_PUBLIC_APP_ENV": "production",
         "EXPO_PUBLIC_API_URL": "https://app.sanomatrassehat.com/api",
-        "EXPO_PUBLIC_USE_MOCKS": "false"
+        "EXPO_PUBLIC_USE_MOCKS": "false",
+        "EAS_PROJECT_ID": "ac46e42b-2ac5-4fb3-a515-ebaf40c4c3e2"
       }
     },
     "production-apk": {
       "extends": "production",
       "distribution": "internal",
-      "android": { "buildType": "apk" }
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {
