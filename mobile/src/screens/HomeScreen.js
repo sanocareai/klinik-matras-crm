@@ -28,7 +28,7 @@ import GlassBackdrop, { HeroGradient } from "../components/GlassBackdrop";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusAfterInteractions } from "../lib/tabHooks";
 import { Bell, CheckCircle2, ArrowUpDown } from "lucide-react-native";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
@@ -133,7 +133,9 @@ export default function HomeScreen({ navigation }) {
   // /analytics/sales-performance (endpoint tunggal, sudah benar). useFocusEffect
   // (pola sama dengan ChatListScreen.js) bikin load() jalan ulang tiap kali
   // tab Home ini di-fokus (termasuk balik dari tab lain), bukan cuma sekali.
-  useFocusEffect(
+  // Dijalankan SETELAH animasi pindah tab selesai (useFocusAfterInteractions): 6 request + setState besar tidak lagi
+  // bertabrakan dengan frame animasi; data lama tetap tampil sementara.
+  useFocusAfterInteractions(
     // Fokus ulang dalam 20 dtk setelah muat terakhir tidak memicu 6 request lagi (hemat jaringan & CPU).
     useCallback(() => {
       if (loadedOnce.current && Date.now() - lastLoadAt.current < 20000) return;

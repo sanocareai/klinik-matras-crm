@@ -11,7 +11,8 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { FlashList } from "@shopify/flash-list";
-import { useFocusEffect } from "@react-navigation/native";
+import { LIST_RECYCLE_POOL } from "../lib/tabNav";
+import { useFocusAfterInteractions, useHiddenSafeList } from "../lib/tabHooks";
 import {
   Search, LogOut, Inbox, MessageCircle, MailWarning, Clock, CheckCircle2, User, X, RefreshCw,
   Pin, PinOff, Check, Circle, MessageSquarePlus, MessageCircleWarning, Users, UserX, Timer, Megaphone,
@@ -277,7 +278,7 @@ export default function ChatListScreen({ navigation }) {
 
   // Badge jumlah per tab — dipisah dari list utama (fitur pelengkap, kalau
   // gagal list tetap tampil normal).
-  useFocusEffect(
+  useFocusAfterInteractions(
     useCallback(() => {
       let alive = true;
       api.getConversationCounts().then((d) => { if (alive) setCounts(d); }).catch(() => {});
@@ -289,6 +290,8 @@ export default function ChatListScreen({ navigation }) {
     const q = search.trim().toLowerCase();
     return orderedIds.filter((id) => matches(conversationsById[id], filter, user?.id, q, searchMatchedIds, salesFilter));
   }, [orderedIds, conversationsById, filter, user?.id, search, searchMatchedIds, salesFilter]);
+
+  const listIds = useHiddenSafeList(navigation, visibleIds);
 
   function handleSearchChange(v) {
     setSearchInput(v);
@@ -551,7 +554,7 @@ export default function ChatListScreen({ navigation }) {
       ) : (
         <FlashList
           ref={listRef}
-          data={visibleIds}
+          data={listIds}
           keyExtractor={(id) => id}
           renderItem={renderItem}
           // BUG (fix): estimatedItemSize dulu diset di sini — prop ini SUDAH
@@ -559,6 +562,9 @@ export default function ChatListScreen({ navigation }) {
           // RecyclerView baru arsitektur yang mengukur cell otomatis/real,
           // lihat audit yang sama di ChatScreen.js), jadi selama ini
           // diam-diam diabaikan, dihapus supaya tidak menyesatkan pembaca.
+          // Kolam daur-ulang dibatasi: default FlashList v2 TANPA batas, sel yang keluar layar tetap ter-mount (terukur: 590 sel
+          // tersembunyi ≈ 8,7 rb view native, 1,4 dtk beban thread JS/UI tiap pindah tab).
+          maxItemsInRecyclePool={LIST_RECYCLE_POOL}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.4}
           refreshControl={

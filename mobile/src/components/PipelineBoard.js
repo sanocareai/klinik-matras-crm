@@ -9,6 +9,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, ActivityIndicator, Modal,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
+import { LIST_RECYCLE_POOL } from "../lib/tabNav";
 import { Check } from "lucide-react-native";
 import Avatar from "./Avatar";
 import { useTokens } from "../constants/theme";
@@ -98,6 +99,9 @@ function StageColumn({ stageKey, label, color, customers, onCardPress, onLongPre
           data={visible}
           keyExtractor={(c) => c.id}
           renderItem={renderItem}
+          // Kolam daur-ulang dibatasi: default FlashList v2 TANPA batas, sel yang keluar layar tetap ter-mount (terukur: 590 sel
+          // tersembunyi ≈ 8,7 rb view native, 1,4 dtk beban thread JS/UI tiap pindah tab).
+          maxItemsInRecyclePool={LIST_RECYCLE_POOL}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.4}
           ListFooterComponent={

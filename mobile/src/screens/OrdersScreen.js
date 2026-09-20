@@ -17,6 +17,8 @@ import {
   View, Text, TextInput, StyleSheet, ActivityIndicator, RefreshControl,
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
+import { LIST_RECYCLE_POOL } from "../lib/tabNav";
+import { useHiddenSafeList } from "../lib/tabHooks";
 import { Search, Package, AlertTriangle, MessageCircle, ChevronDown, Users, X } from "lucide-react-native";
 import { ScrollView } from "react-native";
 import { api } from "../api";
@@ -132,7 +134,7 @@ function OrderRow({ order, tokens, styles, onRefresh, onDeleted, onEdit, onExpan
   );
 }
 
-export default function OrdersScreen() {
+export default function OrdersScreen({ navigation }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
 
@@ -224,6 +226,7 @@ export default function OrdersScreen() {
   );
   const mandekCount = useMemo(() => orders.filter(isMandek).length, [orders]);
   const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+  const listVisible = useHiddenSafeList(navigation, visible);
 
   // GAP (fix): card yang di-expand dekat bawah layar dulu kepotong, harus
   // scroll manual. double rAF: tunggu 1 frame render `expanded` commit +
@@ -382,9 +385,12 @@ export default function OrdersScreen() {
       ) : (
         <FlashList
           ref={listRef}
-          data={visible}
+          data={listVisible}
           keyExtractor={(o) => o.id}
           renderItem={renderItem}
+          // Kolam daur-ulang dibatasi: default FlashList v2 TANPA batas, sel yang keluar layar tetap ter-mount (terukur: 590 sel
+          // tersembunyi ≈ 8,7 rb view native, 1,4 dtk beban thread JS/UI tiap pindah tab).
+          maxItemsInRecyclePool={LIST_RECYCLE_POOL}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.4}
           refreshControl={

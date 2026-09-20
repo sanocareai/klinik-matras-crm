@@ -23,7 +23,7 @@ import { isExpoGo, getLaunchNotificationResponse } from "./src/push";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { ActivityIndicator, View, Text, TextInput, StyleSheet, Pressable, Easing } from "react-native";
+import { ActivityIndicator, AppState, View, Text, TextInput, StyleSheet, Pressable, Easing } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import LoginScreen from "./src/screens/LoginScreen";
@@ -46,6 +46,11 @@ import { useBadgeSync } from "./src/hooks/useBadgeSync";
 import { initOutboxFlush } from "./src/lib/outboxFlush";
 import { checkForUpdateOnLaunch } from "./src/lib/autoUpdate";
 import { navigationRef, navigateToChat } from "./src/lib/navigationRef";
+import { markTap, markTransitionEnd, withTabProfiler, count, markNavCall, perfNow } from "./src/lib/tabPerf";
+import {
+  TAB_DUR, TAB_SHIFT_DP, TAB_BEZIER, tabTransition, tabA11y, createTabRequestGuard, createIdlePreloader,
+} from "./src/lib/tabNav";
+import { deferTabScreen, useReducedMotion } from "./src/lib/tabHooks";
 
 // BUG (fix, audit startup): sebelum ini TIDAK ADA preventAutoHideAsync() sama
 // sekali — splash native otomatis hilang begitu frame JS pertama di-render
@@ -59,6 +64,17 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+// Profiler per layar tab (hanya build dev; no-op di rilis) — untuk mengukur waktu sampai layar stabil setelah pindah tab.
+// Layar tab BERAT (Inbox/Pelanggan/Order/Profil) dipasang SETELAH animasi geser selesai: kunjungan pertama menampilkan
+// kerangka ringan, jadi mount + render list besar tidak menahan animasi. Home = layar pertama, tanpa kerangka.
+// Setelah terpasang layar tidak pernah dilepas (detachInactiveScreens=false) → state & posisi scroll terjaga.
+const HomeTab = withTabProfiler(deferTabScreen(HomeScreen, { immediate: true }), "Home");
+const ChatsTab = withTabProfiler(deferTabScreen(ChatListScreen), "Chats");
+const PelangganTab = withTabProfiler(deferTabScreen(PelangganScreen), "Pelanggan");
+const OrderTab = withTabProfiler(deferTabScreen(OrdersScreen), "Order");
+const ProfilTab = withTabProfiler(deferTabScreen(ProfileScreen), "Profil");
+const tabListeners = (name) => ({ transitionEnd: () => markTransitionEnd(name) });
 
 // 4 tab bawah — gaya flat full-width ala Instagram (review Gilang: buang
 // konsep floating/rounded/pill sebelumnya). Ikon lucide polos TANPA
@@ -114,8 +130,8 @@ const PILL = 46; // diameter lingkaran aktif di tab bar
 // Kurva gerak tunggal untuk seluruh perpindahan tab (pil + isi layar), meniru ease-out iOS:
 // berangkat cepat, mendarat pelan. Timing, BUKAN pegas — pegas punya ekor panjang yang terbaca
 // sebagai "delay" walau gerakannya sendiri halus.
-const TAB_DUR = 220;
-const TAB_BEZ = [0.33, 0, 0.2, 1];
+// (TAB_DUR = 200 ms, TAB_SHIFT_DP = 20 dp, TAB_BEZIER: lihat src/lib/tabNav.js — satu sumber, diuji.)
+const TAB_BEZ = TAB_BEZIER;
 // Untuk RN Animated (isi layar, lewat transitionSpec React Navigation).
 const TAB_SPEC = { duration: TAB_DUR, easing: Easing.bezier(...TAB_BEZ) };
 // Untuk Reanimated (pil di tab bar, berjalan di UI thread). Kurva & durasi identik dengan di atas
@@ -135,9 +151,17 @@ function forSlide({ current }) {
       transform: [{
         translateX: current.progress.interpolate({
           inputRange: [-1, 0, 1],
-          outputRange: [-28, 0, 28],
+          outputRange: [-TAB_SHIFT_DP, 0, TAB_SHIFT_DP],
         }),
       }],
+      // Layar yang TIDAK tampil (progress tepat ±1) di-alpha-0-kan: HWUI melewati penggambarannya sama sekali. Tanpa ini
+      // keempat layar tersembunyi (masing-masing latar SVG/gradient layar penuh + daftar) tetap digambar di bawah layar
+      // aktif pada setiap frame. Fungsi anak-tangga: nilai HANYA 0 atau 1 (tidak pernah alpha parsial → tanpa layer
+      // offscreen); selama transisi kedua layar tetap terlihat. Native driver.
+      opacity: current.progress.interpolate({
+        inputRange: [-1, -0.999, 0, 0.999, 1],
+        outputRange: [0, 1, 1, 1, 0],
+      }),
     },
   };
 }
@@ -151,10 +175,14 @@ function GlassTabItem({ route, focused, slot, onPress, mutedColor }) {
   const Icon = TAB_ICONS[route.name];
   return (
     <Pressable
-      onPress={onPress}
+      // Respons SENTUHAN langsung: dipicu saat jari menyentuh (bukan menunggu jari diangkat) — tab aktif & pil bergerak
+      // di frame yang sama; tidak menunggu API/render layar tujuan. Aksi "activate" untuk pembaca layar (TalkBack).
+      onPressIn={onPress}
+      accessibilityActions={[{ name: "activate" }]}
+      onAccessibilityAction={onPress}
       android_ripple={null}
-      accessibilityRole="button"
-      accessibilityState={focused ? { selected: true } : {}}
+      hitSlop={{ top: 6, bottom: 6 }}
+      {...tabA11y(route.name, focused)}
       style={{ width: slot || PILL, height: PILL, alignItems: "center", justifyContent: "center" }}
     >
       <Icon size={22} color={focused ? "#fff" : mutedColor} strokeWidth={focused ? 2.4 : 2} />
@@ -168,8 +196,13 @@ function GlassTabItem({ route, focused, slot, onPress, mutedColor }) {
 //
 // Pil biru TIDAK lagi muncul-hilang di tab yang berbeda (dulu potong mendadak) — satu pil yang sama
 // MELUNCUR ke tab tujuan dengan pegas lembut, dijalankan Reanimated di UI thread.
-function GlassTabBar({ state, navigation }) {
+function GlassTabBar({ state, navigation, reduceMotion = false }) {
+  count("TabBar");
   const insets = useSafeAreaInsets();
+  // Ketukan beruntun: satu tujuan = satu navigasi (lihat createTabRequestGuard). Ketukan ke tab LAIN menginterupsi
+  // animasi yang sedang berjalan dengan aman; ketukan ke tab yang sudah menjadi tujuan diabaikan.
+  const guard = useRef(createTabRequestGuard()).current;
+  const pillSpec = reduceMotion ? { duration: 0 } : PILL_SPEC;
   const tokens = useTokens();
   const g = tokens.glass;
   const [lebar, setLebar] = useState(0);
@@ -181,10 +214,25 @@ function GlassTabBar({ state, navigation }) {
   // Jaring pengaman untuk perpindahan tab yang BUKAN dari tekan tombol (mis. dari notifikasi).
   // Perpindahan normal sudah digerakkan langsung di onPress di bawah.
   useEffect(() => {
+    guard.settle(state.routes[state.index]?.name);
     if (terakhir.current === state.index) return;
     terakhir.current = state.index;
-    progress.value = withTiming(state.index, PILL_SPEC);
-  }, [state.index, progress]);
+    progress.value = withTiming(state.index, pillSpec);
+  }, [state.index, state.routes, progress, guard, pillSpec]);
+
+  // Preload Inbox di belakang layar SETELAH Home stabil (bukan saat startup kritis): tunda 2,5 dtk, tidak jalan bila app
+  // di background atau user sedang berpindah tab; user menyentuh tab bar → ditunda lagi.
+  const preloader = useRef(null);
+  useEffect(() => {
+    const p = createIdlePreloader({
+      order: ["Chats"],
+      preload: (name) => navigation.preload?.(name),
+      isBusy: () => AppState.currentState !== "active" || guard.pending !== null,
+    });
+    preloader.current = p;
+    p.start();
+    return () => p.stop();
+  }, [navigation, guard]);
 
   const pilStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: progress.value * slot + (slot - PILL) / 2 }],
@@ -194,6 +242,7 @@ function GlassTabBar({ state, navigation }) {
     <View style={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: Math.max(insets.bottom, 10), backgroundColor: g.tabBarBg }}>
       <View
         onLayout={(e) => setLebar(e.nativeEvent.layout.width - 12)} // 12 = paddingHorizontal kiri+kanan
+        accessibilityRole="tablist"
         style={[g.surface, g.shadow, { flexDirection: "row", alignItems: "center", height: 58, borderRadius: 30, paddingHorizontal: 6 }]}
       >
         {slot > 0 && (
@@ -214,14 +263,20 @@ function GlassTabBar({ state, navigation }) {
               slot={slot}
               mutedColor={tokens.color.textMuted}
               onPress={() => {
+                preloader.current?.interrupt();
+                const aktif = state.routes[state.index]?.name;
+                if (!guard.request(route.name, aktif)) return; // sudah di sana / sedang menuju ke sana
                 const e = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
-                if (focused || e.defaultPrevented) return;
+                if (e.defaultPrevented) { guard.settle(route.name); return; }
                 // Pil bergerak SEKARANG, di frame yang sama dengan sentuhan — tidak menunggu React
                 // selesai memproses perpindahan. Inilah yang menghilangkan kesan "delay"; versi
                 // sebelumnya baru mulai bergerak setelah state navigasi berubah (±1-2 frame telat).
                 terakhir.current = index;
-                progress.value = withTiming(index, PILL_SPEC);
+                markTap(state.routes[state.index]?.name, route.name);
+                progress.value = withTiming(index, pillSpec);
+                const tNav = perfNow();
                 navigation.navigate(route.name, route.params);
+                markNavCall(perfNow() - tNav);
               }}
             />
           );
@@ -232,7 +287,10 @@ function GlassTabBar({ state, navigation }) {
 }
 
 function MainTabs() {
+  count("MainTabs");
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
+  const trans = tabTransition({ reduceMotion });
   const tokens = useTokens();
   const tabBarBase = useMemo(() => createTabBarStyle(tokens), [tokens]);
   // SATU sumber kebenaran untuk padding bawah — dipakai PERSIS SEKALI di
@@ -243,7 +301,7 @@ function MainTabs() {
   const bottomPad = Math.max(insets.bottom, 6);
   return (
     <Tab.Navigator
-      tabBar={(props) => <GlassTabBar {...props} />}
+      tabBar={(props) => <GlassTabBar {...props} reduceMotion={reduceMotion} />}
       // Layar tab tetap TERPASANG di hierarki native (default-nya dilepas & dipasang ulang tiap
       // pindah). Melepas-pasang itu pekerjaan native tepat saat animasi berjalan — sumber patah
       // yang tidak kelihatan dari sisi JS.
@@ -256,7 +314,9 @@ function MainTabs() {
         // "shift" hanya dipakai untuk MENGAKTIFKAN animasi; gerakannya sendiri diambil alih
         // forSlide di atas (lihat alasannya di sana), dengan kurva & durasi yang sama persis
         // dengan pil di tab bar supaya keduanya bergerak sebagai satu kesatuan.
-        animation: "shift",
+        // "none" bila pengaturan sistem mengurangi gerakan; selain itu geser 20 dp / 200 ms (transform saja, native driver;
+        // nilai di src/lib/tabNav.js).
+        animation: trans.animation,
         sceneStyleInterpolator: forSlide,
         transitionSpec: { animation: "timing", config: TAB_SPEC },
         // freezeOnBlur SENGAJA TIDAK dipakai di tab (dicoba & dicabut 19 Sep 2026): membekukan layar
@@ -274,11 +334,11 @@ function MainTabs() {
         tabBarInactiveTintColor: tokens.color.textMuted,
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Chats" component={ChatListScreen} options={{ lazy: false }} />
-      <Tab.Screen name="Pelanggan" component={PelangganScreen} />
-      <Tab.Screen name="Order" component={OrdersScreen} />
-      <Tab.Screen name="Profil" component={ProfileScreen} />
+      <Tab.Screen name="Home" component={HomeTab} listeners={tabListeners("Home")} />
+      <Tab.Screen name="Chats" component={ChatsTab} listeners={tabListeners("Chats")} />
+      <Tab.Screen name="Pelanggan" component={PelangganTab} listeners={tabListeners("Pelanggan")} />
+      <Tab.Screen name="Order" component={OrderTab} listeners={tabListeners("Order")} />
+      <Tab.Screen name="Profil" component={ProfilTab} listeners={tabListeners("Profil")} />
     </Tab.Navigator>
   );
 }
@@ -356,6 +416,7 @@ function respondToNotification(response) {
 }
 
 function Root() {
+  count("Root");
   const { user, loading } = useAuth();
   const colors = useColors();
 
@@ -470,7 +531,17 @@ function applyInterGlobally() {
 // lama yang skema layarnya sudah beda.
 const NAV_PERSISTENCE_KEY = "navState_v1";
 
+let persistTimer = null;
+function persistNavState(state) {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    const s = state ?? navigationRef.getRootState?.();
+    if (s) AsyncStorage.setItem(NAV_PERSISTENCE_KEY, JSON.stringify(navigationRef.getRootState?.() ?? s)).catch(() => {});
+  }, 600);
+}
+
 export default function App() {
+  count("App");
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
   const [routeName, setRouteName] = useState();
   const [navReady, setNavReady] = useState(false);
@@ -506,10 +577,14 @@ export default function App() {
   // berubah (onStateChange, misal push/pop/back). Sekalian simpan state
   // TERBARU ke AsyncStorage di sini (fire-and-forget — gagal simpan sekali
   // bukan hal fatal, cuma berarti restore berikutnya jatuh ke state sebelumnya).
+  //
+  // Perpindahan antar tab TIDAK boleh merender ulang App/Root (terukur: satu render ulang seluruh pohon provider ≈ 200 ms di
+  // thread JS tepat saat animasi mulai): state hanya berubah bila kategori tampilan (terang/gelap header) berganti.
+  // Penyimpanan state ke AsyncStorage ditunda (debounce) supaya JSON.stringify + I/O tidak jatuh di frame animasi.
   function syncRouteName(state) {
-    setRouteName(navigationRef.getCurrentRoute()?.name);
-    const s = state ?? navigationRef.getRootState?.();
-    if (s) AsyncStorage.setItem(NAV_PERSISTENCE_KEY, JSON.stringify(s)).catch(() => {});
+    const next = navigationRef.getCurrentRoute()?.name;
+    setRouteName((prev) => (prev !== undefined && LIGHT_SCREENS.includes(prev) === LIGHT_SCREENS.includes(next) ? prev : next));
+    persistNavState(state);
   }
 
   // ⚠️ URUTAN PROVIDER DI BAWAH PENTING, JANGAN DIBOLAK-BALIK.
