@@ -228,9 +228,10 @@ export default function FinanceExpenses() {
                     <TD className="whitespace-nowrap">{tanggalPendek(e.date)}</TD>
                     <TD className="max-w-[260px]">
                       <span className="block truncate">{e.description}</span>
-                      {e.reimburseTo && <span className="text-[11px] text-ink3">ditalangi {e.reimburseTo.name}</span>}
-                      {e.supplier && <span className="text-[11px] text-ink3">ke {e.supplier.name}</span>}
-                      {!e.reimburseTo && !e.supplier && e.payeeName && <span className="text-[11px] text-ink3">ke {e.payeeName}</span>}
+                      {/* Penalang (reimburseTo) & penerima bayaran (payeeName) adalah dua hal berbeda — tampilkan keduanya. */}
+                      {e.reimburseTo && <span className="block text-[11px] text-ink3">ditalangi {e.reimburseTo.name}</span>}
+                      {e.supplier && <span className="block text-[11px] text-ink3">ke {e.supplier.name}</span>}
+                      {!e.supplier && e.payeeName && <span className="block text-[11px] text-ink3">ke {e.payeeName}</span>}
                     </TD>
                     <TD className="text-[12px]">{e.category?.name}</TD>
                     <TD><Badge variant="neutral">{LABEL_DIVISI[e.division] || e.division}</Badge></TD>
