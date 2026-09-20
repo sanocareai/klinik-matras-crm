@@ -5,6 +5,7 @@ import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
+import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
 import {
   Pilihan, InputUang, TombolAksi, PemilihBukti, LABEL_DIVISI, formatUang,
 } from "@/features/finance/shared.jsx";
@@ -22,7 +23,7 @@ import {
 
 export const STATUS_BISA_DIEDIT = ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI", "DIBAYAR"];
 const STATUS_SUDAH_POSTING = ["DISETUJUI", "DIBAYAR"];
-const FIELD_JURNAL = ["date", "amount", "description", "categoryId", "division", "cashAccountId", "payeeName"];
+const FIELD_JURNAL = ["date", "amount", "description", "categoryId", "division", "cashAccountId", "payeeName", "reimburseToId"];
 
 function awal(doc) {
   return {
@@ -33,6 +34,7 @@ function awal(doc) {
     division: doc.division || "UMUM",
     cashAccountId: doc.cashAccountId || "",
     payeeName: doc.payeeName || "",
+    reimburseToId: doc.reimburseToId || "",
     notes: doc.notes || "",
     receiptUrl: doc.receiptUrl || "",
   };
@@ -124,6 +126,13 @@ export default function EditDokumen({ doc, jenis, kategori, rekening, onClose, o
             </Field>
           )}
         </div>
+        {doc.mode === "REIMBURSEMENT" && (
+          <PilihPenalang
+            value={f.reimburseToId} onChange={(v) => set("reimburseToId", v)}
+            saatIni={doc.reimburseTo ? { id: doc.reimburseTo.id || doc.reimburseToId, name: doc.reimburseTo.name } : null}
+            kosongLabel="— pilih —"
+          />
+        )}
         <Field label="Dibayarkan kepada"><Input value={f.payeeName} onChange={(e) => set("payeeName", e.target.value)} /></Field>
         <Field label="Foto nota / bukti" hint="Salah foto? Ganti di sini — verifikasi lama gugur, perlu diperiksa ulang">
           <PemilihBukti url={f.receiptUrl} onChange={(v) => set("receiptUrl", v)} />

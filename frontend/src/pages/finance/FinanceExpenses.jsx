@@ -18,6 +18,7 @@ import {
 } from "@/features/finance/shared.jsx";
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
 
 // PENGELUARAN & REIMBURSEMENT.
 //
@@ -327,7 +328,7 @@ export default function FinanceExpenses() {
 function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
   const [f, setF] = useState({
     date: "", amount: "", description: "", categoryId: "", division: "",
-    mode: "LANGSUNG", cashAccountId: "", payeeName: "", orderId: "", notes: "", receiptUrl: "",
+    mode: "LANGSUNG", cashAccountId: "", reimburseToId: "", payeeName: "", orderId: "", notes: "", receiptUrl: "",
   });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.description.trim() && f.categoryId && Number(f.amount) > 0 &&
@@ -389,6 +390,7 @@ function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
             </Pilihan>
           </Field>
         )}
+        {f.mode === "REIMBURSEMENT" && <PilihPenalang value={f.reimburseToId} onChange={(v) => set("reimburseToId", v)} />}
         <Field label="Dibayarkan kepada" hint="Nama toko/tukang — opsional">
           <Input value={f.payeeName} onChange={(e) => set("payeeName", e.target.value)} />
         </Field>

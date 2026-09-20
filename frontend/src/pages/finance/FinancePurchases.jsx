@@ -17,6 +17,7 @@ import {
 } from "@/features/finance/shared.jsx";
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
 
 // PEMBELIAN — barang/aset yang DIBELI dari luar, tanpa tagihan resmi supplier:
 // bahan baku (manual, sebelum Gudang dipakai penuh), aset tetap (kendaraan,
@@ -336,7 +337,7 @@ export default function FinancePurchases() {
 function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit }) {
   const [f, setF] = useState({
     date: "", amount: "", description: "", categoryId: "", division: "",
-    mode: "LANGSUNG", cashAccountId: "", supplierId: "", payeeName: "", notes: "", receiptUrl: "",
+    mode: "LANGSUNG", cashAccountId: "", supplierId: "", reimburseToId: "", payeeName: "", notes: "", receiptUrl: "",
   });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.description.trim() && f.categoryId && Number(f.amount) > 0 &&
@@ -404,6 +405,7 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
             </Pilihan>
           </Field>
         )}
+        {f.mode === "REIMBURSEMENT" && <PilihPenalang value={f.reimburseToId} onChange={(v) => set("reimburseToId", v)} />}
         <Field label="Supplier" hint="Opsional — pilih kalau pemasoknya sudah terdaftar">
           <Pilihan value={f.supplierId} onChange={(v) => set("supplierId", v)}>
             <option value="">— tidak dipilih —</option>
