@@ -610,7 +610,8 @@ export async function detailTransaksi(db, user, modul, id) {
 }
 
 // ── OPSI FORM ───────────────────────────────────────────────────────────────────────────────────────────────────
-const AKUN_PENDAPATAN_ORDER = new Set(["PENDAPATAN_LAYANAN", "PENDAPATAN_PRODUK", "PENDAPATAN_SEWA", "PENDAPATAN_ONGKIR"]);
+// Termasuk akun kontra RETUR_PENJUALAN: dipakai refund; menaruh pemasukan di sana sama saja membatalkan refund lewat jalan pintas.
+const AKUN_PENDAPATAN_ORDER = new Set(["PENDAPATAN_LAYANAN", "PENDAPATAN_PRODUK", "PENDAPATAN_SEWA", "PENDAPATAN_ONGKIR", "RETUR_PENJUALAN"]);
 
 /** Pilihan untuk formulir (kategori, rekening + saldo, supplier, karyawan, akun pendapatan lain). Semua dari server; tidak ada daftar buatan klien. */
 export async function opsiForm(db, user) {

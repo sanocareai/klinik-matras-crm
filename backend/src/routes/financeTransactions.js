@@ -1577,7 +1577,7 @@ financeTxRouter.post("/transfers/:id/koreksi", requirePermission(P.FINANCE_ADMIN
 
 // Akun pendapatan yang HANYA boleh diisi oleh alur order/pembayaran pelanggan (posting/orderRevenue.js). Pemasukan lain-lain tidak boleh
 // dipakai sebagai jalan pintas mencatat uang pelanggan: itu melewati verifikasi pembayaran, invoice, dan status bayar order.
-const AKUN_PENDAPATAN_ORDER = new Set(["PENDAPATAN_LAYANAN", "PENDAPATAN_PRODUK", "PENDAPATAN_SEWA", "PENDAPATAN_ONGKIR"]);
+const AKUN_PENDAPATAN_ORDER = new Set(["PENDAPATAN_LAYANAN", "PENDAPATAN_PRODUK", "PENDAPATAN_SEWA", "PENDAPATAN_ONGKIR", "RETUR_PENJUALAN"]);
 function tolakAkunPendapatanOrder(akun) {
   if (AKUN_PENDAPATAN_ORDER.has(akun.systemKey)) {
     throw err("Akun pendapatan penjualan/layanan hanya diisi lewat pembayaran order. Uang dari pelanggan dicatat di Pembayaran & Verifikasi, bukan sebagai Pemasukan Lain.");

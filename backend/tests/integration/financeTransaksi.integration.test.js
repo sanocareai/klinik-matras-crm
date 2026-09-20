@@ -142,6 +142,9 @@ test("Pemasukan Lain: akun pendapatan penjualan/layanan DITOLAK (bukan pembayara
   const produk = await testPrisma.finAccount.findUnique({ where: { systemKey: "PENDAPATAN_PRODUK" } });
   assert.ok(opsi.akunPemasukanLain.some((a) => a.id === lain.id));
   assert.equal(opsi.akunPemasukanLain.some((a) => a.id === produk.id), false, "akun penjualan tidak ditawarkan");
+  const retur = await testPrisma.finAccount.findUnique({ where: { systemKey: "RETUR_PENJUALAN" } });
+  assert.equal(opsi.akunPemasukanLain.some((a) => a.id === retur.id), false, "akun kontra retur (dipakai refund) tidak ditawarkan");
+  assert.equal((await post(fin, "/other-income", { description: "Coba retur", amount: "1000", accountId: retur.id, cashAccountId: bank.id })).status, 400);
   assert.ok(opsi.rekening.some((r) => r.id === bank.id && /^-?\d+\.\d{2}$/.test(r.saldo)));
 
   const ditolak = await post(fin, "/other-income", { description: "Pelanggan bayar", amount: "500000", accountId: produk.id, cashAccountId: bank.id });
@@ -345,4 +348,52 @@ test("Idempotency-Key pada perintah uang: kunci sama = respons diputar ulang (ti
   assert.equal(await testPrisma.finOtherIncome.count(), 1);
   const tanpa = await raw("POST", "/api/finance/other-income", { token: fin.token, body: badan });
   assert.equal(tanpa.status, 428);
+});
+
+test("Semua modul: daftar & detail menjawab 200 dengan bentuk yang sama (uji asap kontrak); DUMP_TRANSAKSI=1 menyimpan respons sebagai fixture klien mobile", async () => {
+  const { bank, kat } = await siapkan();
+  const fin = await masuk(["ADMIN", "FINANCE"]);
+  await testPrisma.user.create({ data: { name: "Agung", email: "agung@klinikmatras.com", passwordHash: bcrypt.hashSync("x", 4), role: "DRIVER", active: true } });
+  const lain = await testPrisma.finAccount.findUnique({ where: { systemKey: "PENDAPATAN_LAIN" } });
+  const katBeli = await testPrisma.finPurchaseCategory.findFirst();
+
+  await post(fin, "/expenses", { description: "Servis truk", amount: "900000", categoryId: kat.id, mode: "LANGSUNG", cashAccountId: bank.id });
+  await post(fin, "/purchases", { description: "Kain oscar", amount: "12000", categoryId: katBeli.id, mode: "LANGSUNG", cashAccountId: bank.id });
+  await post(fin, "/kasbon", { employeeName: "Agung", amount: "1000000", urgency: "keperluan keluarga", cashAccountId: bank.id, date: "2026-09-10" });
+  await post(fin, "/other-income", { description: "Bunga bank", amount: "75000.50", accountId: lain.id, cashAccountId: bank.id });
+  const sup = await post(fin, "/suppliers", { name: "CV Busa Jaya", paymentTermDays: 14, bankName: "BCA", bankAccount: "1234567" });
+  const bill = await post(fin, "/bills", { supplierId: sup.body.id, billDate: "2026-08-01", dueDate: "2026-08-15", amount: "1000000", description: "Busa", expenseCategoryId: kat.id });
+  await post(fin, `/bills/${bill.body.id}/approve`);
+  await post(fin, "/supplier-payments", { supplierId: sup.body.id, cashAccountId: bank.id, date: "2026-09-20", allocations: [{ billId: bill.body.id, amount: "400000" }] });
+  const order = await buatOrder({ value: 2_000_000 });
+  await testPrisma.invoice.create({ data: { invoiceNumber: `INV-S6-${Date.now()}`, orderId: order.id, dueDate: new Date("2026-09-01T00:00:00Z"), lifecycleStatus: "SENT" } });
+  const pay = await testPrisma.payment.create({ data: { orderId: order.id, amount: 500_000, method: "TRANSFER", cashAccountId: bank.id, recordedById: fin.user.id } });
+  await testPrisma.$transaction(async (tx) => {
+    await bukukanPengakuanPendapatan(tx, { orderId: order.id, status: "DELIVERED", userId: fin.user.id });
+    await bukukanPembayaran(tx, { paymentId: pay.id, userId: fin.user.id });
+  });
+  await post(fin, "/refunds", { orderId: order.id, amount: "200000", reason: "kasur cacat", cashAccountId: bank.id });
+
+  resetRateLimits(); // banyak permintaan berurutan pada satu token
+  const hasil = { generatedBy: "financeTransaksi.integration.test.js (DUMP_TRANSAKSI=1)", opsi: (await get(fin, "/transaksi/opsi")).body, ringkasan: (await get(fin, "/transaksi/ringkasan")).body, modul: {} };
+  for (const m of ["pengeluaran", "pembelian", "kasbon", "pemasukan", "piutang", "refund", "supplier", "tagihan", "pembayaran-supplier"]) {
+    const tab = { tagihan: "SEMUA", supplier: "SEMUA", "pembayaran-supplier": "SEMUA", piutang: "SEMUA", kasbon: "SEMUA", pemasukan: "SEMUA", refund: "SEMUA", pengeluaran: "SEMUA", pembelian: "SEMUA" }[m];
+    resetRateLimits();
+    const l = await get(fin, `/transaksi/${m}?tab=${tab}`);
+    assert.equal(l.status, 200, `${m}: ${JSON.stringify(l.body)}`);
+    assert.ok(l.body.items.length >= 1, `${m} harus punya data`);
+    const d = await get(fin, `/transaksi/${m}/${l.body.items[0].id}`);
+    assert.equal(d.status, 200, `${m} detail: ${JSON.stringify(d.body)}`);
+    assert.ok(Array.isArray(d.body.bagian) && d.body.bagian.length > 0, `${m} punya bagian`);
+    hasil.modul[m] = { daftar: l.body, detail: d.body };
+  }
+  if (process.env.DUMP_TRANSAKSI) {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const target = fileURLToPath(new URL("../../../finance-mobile/src/__tests__/fixtures/transaksi-real.json", import.meta.url));
+    mkdirSync(fileURLToPath(new URL("../../../finance-mobile/src/__tests__/fixtures/", import.meta.url)), { recursive: true });
+    // Buang pengenal & waktu yang berubah tiap eksekusi supaya fixture stabil dan tidak membawa data nyata.
+    const stabil = JSON.stringify(hasil, (k, v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v) ? "2026-09-21T00:00:00.000Z" : v), 1);
+    writeFileSync(target, stabil);
+  }
 });
