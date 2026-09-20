@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { Eye, EyeOff, Lock } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -8,6 +8,7 @@ import { StatusBarScrim } from "@/design/Screen";
 import { GlassCard } from "@/design/GlassCard";
 import { Button, MockBanner, OfflineBanner, PressableScale } from "@/design/ui";
 import { useOnline } from "@/hooks/useOnline";
+import { useTinggiKeyboard } from "@/hooks/useKeyboard";
 import { font, radius, GUTTER } from "@/design/tokens";
 import { haptic } from "@/design/haptics";
 import { useSession } from "@/auth/session";
@@ -18,6 +19,13 @@ import { S } from "@/lib/strings";
 export default function Login() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboard = useTinggiKeyboard();
+  const gulir = useRef<ScrollView>(null);
+  // Keyboard muncul → beri ruang di bawah lalu gulir ke bawah agar kolom sandi dan tombol Masuk tetap terlihat.
+  useEffect(() => {
+    if (keyboard > 0) { const t = setTimeout(() => gulir.current?.scrollToEnd({ animated: true }), 60); return () => clearTimeout(t); }
+    return undefined;
+  }, [keyboard]);
   const login = useSession((s) => s.login);
   const sesiHilang = useSession((s) => s.sesiHilang);
   const online = useOnline();
@@ -51,7 +59,7 @@ export default function Login() {
     <View style={{ flex: 1, backgroundColor: colors.bgBottom }}>
       <LinearGradient colors={[colors.bgTop, colors.bgBottom]} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: GUTTER, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={gulir} contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: GUTTER, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 + keyboard }} keyboardShouldPersistTaps="handled">
           <View style={{ alignItems: "center", marginBottom: 28 }}>
             <View style={{ width: 72, height: 72, borderRadius: 22, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" }}>
               <Lock size={32} color={colors.onPrimary} strokeWidth={1.75} />

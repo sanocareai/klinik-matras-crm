@@ -101,6 +101,17 @@ Enum `Role` bertambah `ACCOUNTANT` dan `APPROVER` (migration `20260920100000_rol
 
 `GET /api/finance/dashboard?from=&to=` (FINANCE_READ; FINANCE/ACCOUNTANT/APPROVER/OWNER 200, SALES 403). Uang berupa angka JSON; `kasBank`, `totalKas`, `piutang`, `utang` adalah posisi saat ini, hanya `labaRugi` mengikuti periode. Perbaikan: saat belum ada piutang (`umurPiutang` kosong) respons sebelumnya tidak memuat `total`/`perTanggal` dan `ringkasan` berupa Decimal bertipe string — sekarang bentuknya sama dengan saat berisi (angka). Perubahan aditif, aman untuk web. Tes kontrak: `tests/integration/financeDashboardContract.integration.test.js`.
 
+### Inbox persetujuan gabungan (S4, 20 Sep 2026)
+
+Read-model `services/finance/approvals.js`, router `routes/financeApprovals.js` (semua `requireAuth` + `FINANCE_READ`):
+- `GET /api/finance/approvals?tab=MENUNGGU|DIPROSES|DISETUJUI|DITOLAK&jenis=expense,purchase,bill,refund&from&to&pemohonId&q&page&limit` → `{items, tab, page, limit, total, adaLagi, hitung}`.
+- `GET /api/finance/approvals/ringkasan` → `{menunggu, perJenis}` (lencana). `GET /approvals/pemohon` (filter). `GET /approvals/:jenis/:id` → item + `rincian`, `lampiran` (signed URL), `riwayat` (ActivityEvent).
+- Tiap item: `aksi.{setujui,tolak} = {boleh, alasan, path, alasanWajib?}` dihitung server. Keputusan tetap ke endpoint per jenis: `POST /finance/{expenses|purchases|bills|refunds}/:id/{approve|reject}` (`FINANCE_APPROVE`; `Idempotency-Key` wajib untuk token mobile; tolak wajib `reason`).
+- Pemisahan tugas hanya expense & purchase. `lockRowForUpdate` di 8 handler approve/reject ⇒ balapan menghasilkan satu 200 dan satu 409.
+- Peran token mobile dibaca dari DB tiap request (`sesiMobileTerkini` di `services/mobileSession.js`), jadi izin yang dicabut langsung berlaku (sebelumnya membeku 15 menit di JWT).
+- Perbaikan WIB: `umurPiutang/umurUtang/saldoKasBank` memakai tanggal buku WIB (`todayBookDateWIB`), bukan `new Date()` UTC.
+- Tes: `tests/integration/financeApprovals.integration.test.js` (15) + regresi WIB di `financePenerimaan.integration.test.js`.
+
 ## 8. Tes
 
 ```bash

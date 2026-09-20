@@ -4,7 +4,7 @@
 
 import { toMoney } from "@/lib/money";
 import type {
-  ApprovalItem, DashboardData, JenisLaporan, LaporanRingkas, TransaksiItem, TrenBulan,
+  DashboardData, JenisLaporan, LaporanRingkas, TransaksiItem, TrenBulan,
 } from "@/api/types";
 
 const m = toMoney;
@@ -47,10 +47,10 @@ export const dashboardContoh: DashboardData = {
   antrean: {
     jumlahPembayaranBelumVerifikasi: 4,
     lunasBelumDicatat: { jumlah: 12, total: m("38600000.00"), baru: { jumlah: 5, total: m("21400000.00") }, lama: { jumlah: 7, total: m("17200000.00") } },
-    pengeluaranMenunggu: 3,
-    pembelianMenunggu: 2,
-    tagihanMenunggu: 1,
-    refundMenunggu: 1,
+    pengeluaranMenunggu: 8, // sama dengan server persetujuan contoh (mocks/approvals.ts): 29 menunggu
+    pembelianMenunggu: 7,
+    tagihanMenunggu: 7,
+    refundMenunggu: 7,
   },
   gate: { aktif: true, sejak: "2026-09-01T00:00:00.000Z" },
   jurnalTerakhir: [
@@ -80,15 +80,6 @@ export const trenContoh: TrenBulan[] = [
   { bulan: "2026-07", pendapatanBersih: m("368800000.00"), beban: m("301200000.00") },
   { bulan: "2026-08", pendapatanBersih: m("397200000.00"), beban: m("346800000.00") },
   { bulan: "2026-09", pendapatanBersih: m("415400000.00"), beban: m("373650000.00") },
-];
-
-export const approvalContoh: ApprovalItem[] = [
-  { id: "ap1", jenis: "expense", nomor: "EXP-19092026-006", tanggal: "2026-09-19", diajukanOleh: "Natasha", keterangan: "Sewa forklift bongkar kain (2 hari)", kategori: "Sewa alat", divisi: "GUDANG", mode: "LANGSUNG", amount: m("2500000.00"), adaBukti: true, bolehDisetujuiSaya: true },
-  { id: "ap2", jenis: "purchase", nomor: "PUR-19092026-003", tanggal: "2026-09-19", diajukanOleh: "Natasha", keterangan: "Busa HD density 26 — 40 lembar", kategori: "Bahan Baku (input manual)", divisi: "PRODUKSI", mode: "LANGSUNG", amount: m("14800000.00"), adaBukti: true, bolehDisetujuiSaya: true },
-  { id: "ap3", jenis: "expense", nomor: "EXP-18092026-011", tanggal: "2026-09-18", diajukanOleh: "Imam", keterangan: "Upah lembur tukang finishing", kategori: "Upah produksi", divisi: "PRODUKSI", mode: "REIMBURSEMENT", amount: m("1250000.00"), adaBukti: false, bolehDisetujuiSaya: true },
-  { id: "ap4", jenis: "bill", nomor: "BILL-17092026-002", tanggal: "2026-09-17", diajukanOleh: "Natasha", keterangan: "Tagihan CV Tekstil Jaya — kain Sept minggu 3", kategori: null, divisi: null, mode: null, amount: m("18450000.00"), adaBukti: true, bolehDisetujuiSaya: true },
-  { id: "ap5", jenis: "refund", nomor: "RFD-17092026-001", tanggal: "2026-09-17", diajukanOleh: "Natasha", keterangan: "Refund order RES-02092026-014 (batal servis)", kategori: null, divisi: null, mode: null, amount: m("1750000.00"), adaBukti: true, bolehDisetujuiSaya: true },
-  { id: "ap6", jenis: "expense", nomor: "EXP-16092026-009", tanggal: "2026-09-16", diajukanOleh: "Gilang", keterangan: "Meeting survey supplier kain (bensin & makan)", kategori: "Meeting & survey", divisi: "MANAGEMENT", mode: "REIMBURSEMENT", amount: m("640000.00"), adaBukti: true, bolehDisetujuiSaya: false },
 ];
 
 export const transaksiContoh: TransaksiItem[] = [

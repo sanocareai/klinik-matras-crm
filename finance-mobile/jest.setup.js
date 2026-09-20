@@ -17,7 +17,11 @@ jest.mock("expo-haptics", () => ({
   ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" },
 }));
 jest.mock("expo-crypto", () => ({
-  randomUUID: jest.fn(() => "00000000-0000-4000-8000-000000000000"),
+  // UUID unik per panggilan (kunci idempotensi harus berbeda antar niat).
+  randomUUID: jest.fn(() => {
+    globalThis.__uuidN = (globalThis.__uuidN || 0) + 1;
+    return `00000000-0000-4000-8000-${String(globalThis.__uuidN).padStart(12, "0")}`;
+  }),
   getRandomBytes: jest.fn((n) => new Uint8Array(n).map((_, i) => (i * 37 + 11) % 256)),
 }));
 // Biometrik: perangkat dengan sensor & sidik jari terdaftar; tes mengubah perilaku per kasus.
@@ -37,7 +41,12 @@ jest.mock("@react-native-community/netinfo", () => ({
 // Router: hanya push/back yang dipakai layar.
 jest.mock("expo-router", () => {
   const push = jest.fn();
-  return { useRouter: () => ({ push, back: jest.fn(), replace: jest.fn() }), __push: push, Stack: () => null, useLocalSearchParams: () => ({}) };
+  const back = jest.fn();
+  let params = {};
+  return {
+    useRouter: () => ({ push, back, replace: jest.fn() }), __push: push, __back: back, __setParams: (p) => { params = p; },
+    Stack: () => null, Redirect: () => null, useLocalSearchParams: () => params,
+  };
 });
 // Ikon: komponen kosong per nama (paket ESM tidak diproses Jest).
 jest.mock("lucide-react-native", () => new Proxy({}, { get: (_t, nama) => (nama === "__esModule" ? true : () => null) }));

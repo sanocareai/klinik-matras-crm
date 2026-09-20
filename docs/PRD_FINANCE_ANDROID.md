@@ -1309,6 +1309,29 @@ Layar H1, K1, K2 (baca); `GET /finance/dashboard`, `/cash-accounts`, `/reports/l
 | S3-7 | Chip delta hanya muncul bila server menyediakan pembanding (tidak dihitung klien) |
 
 #### S4 — Persetujuan (M) — G-06 (atau penyiasatan 4 panggilan)
+
+**Status: SELESAI (20 Sep 2026, diuji di emulator Android dengan keyboard nyata; belum ada build EAS).** G-06 ditutup dengan read-model gabungan `GET /finance/approvals` (tanpa menduplikasi transaksi; komando tetap ke endpoint per jenis). Diaudit dari kode, bukan ditebak: hanya 4 dokumen yang punya approval (Pengeluaran, Pembelian, Tagihan supplier, Refund).
+
+**Keputusan workflow (server yang memutuskan, klien hanya memetakan):**
+- Tab **Menunggu** = `MENUNGGU_APPROVAL` (DRAFT tidak masuk inbox), terlama dahulu. **Diproses** = disetujui tetapi belum selesai (expense/purchase `DISETUJUI`; tagihan `DISETUJUI`/`DIBAYAR_SEBAGIAN`). **Disetujui** = selesai (`DIBAYAR`/`LUNAS`; refund `DISETUJUI`). **Ditolak** = `DITOLAK`. `DIBATALKAN` tidak ditampilkan.
+- Setiap item membawa `aksi.{setujui,tolak}` = `{boleh, alasan, path}` yang dihitung server (izin, pemisahan tugas, syarat nota). Tombol tetap tampil **nonaktif dengan alasan dari server** (deviasi S4-6: tidak disembunyikan). Klien fail-closed: `path` harus berawalan `/finance/`.
+- Pemisahan tugas hanya ada pada Pengeluaran & Pembelian (pembuat tak boleh menyetujui sendiri kecuali `FINANCE_ADMIN`). Tagihan & refund **tidak** punya aturan itu di backend dan tidak dikarang.
+- Keputusan: step-up PIN/biometrik + `Idempotency-Key` (wajib 428 untuk token mobile) + transaksi atomik + `ActivityEvent` (`DOCUMENT_APPROVED/REJECTED`). Baris dokumen dikunci (`SELECT … FOR UPDATE`) di 8 handler ⇒ balapan setujui×setujui / setujui×tolak menghasilkan satu 200 dan satu 409, satu jurnal. Setelah aksi klien memuat ulang status resmi; kunci idempotensi dipakai ulang bila hasil tidak pasti.
+- **Verifikasi pembayaran (`PAYMENT_WRITE`) tetap khusus Finance**; Owner/Accountant/Approver tidak diberi izin itu.
+
+**Capability matrix (`FINANCE_READ` untuk baca inbox; `FINANCE_APPROVE` untuk keputusan):**
+| Peran | Lihat inbox | Setujui/Tolak | Catatan |
+|---|---|---|---|
+| FINANCE | ya | ya | pengaju tak boleh menyetujui miliknya (expense/purchase) kecuali `FINANCE_ADMIN` |
+| APPROVER | ya | ya | tab awal |
+| OWNER | ya | ya | |
+| ACCOUNTANT | ya (baca) | tidak | `aksi.boleh=false` + alasan |
+| SALES / tanpa akses | tidak (403) | tidak | app menolak login: tidak punya akses Finance |
+
+**Temuan keamanan yang diperbaiki di S4:** JWT mobile membekukan peran 15 menit sehingga izin yang dicabut masih berlaku sampai token habis. Kini `requireAuth`/`authenticateBearer` untuk token mobile membaca peran terkini dari DB per request (`sesiMobileTerkini`). Token web masih membawa peran dari JWT 7 hari (risiko tersisa).
+**Perbaikan bug produksi (prasyarat S4):** `umurPiutang/umurUtang/saldoKasBank` memakai `new Date()` (UTC) sehingga jurnal bertanggal buku WIB hari ini dikecualikan pukul 00:00–07:00 WIB; kini memakai `todayBookDateWIB()`. Ini penyebab 2 kegagalan `financePenerimaan` (bug, bukan fixture/aturan); assertion tidak diubah, ditambah tes regresi.
+**Lampiran:** foto nota lewat signed URL (`/media/…?exp&sig`, TTL 10 mnt); URL di luar `/media/` dibuang klien. **Privasi:** "Sembunyikan nominal" menyamarkan nominal, keterangan, nama vendor/pelanggan, dan lampiran pada daftar, detail, dan jurnal Beranda. **Deviasi:** S4-7 (deep link push) menunggu S11.
+
 | AC | Kriteria |
 |---|---|
 | S4-1 | Inbox menampilkan 4 jenis, urut terlama dahulu, badge tab = jumlah server |

@@ -296,6 +296,8 @@ financeTxRouter.post("/expenses/:id/submit",
 financeTxRouter.post("/expenses/:id/approve", requirePermission(P.FINANCE_APPROVE), async (req, res) => {
   try {
     const hasil = await prisma.$transaction(async (tx) => {
+      // Kunci baris dokumen: dua keputusan serempak (double-tap / dua penyetuju) diserialkan — yang kedua melihat status baru dan ditolak 409.
+      await lockRowForUpdate(tx, '"fin_expenses"', req.params.id);
       const e = await tx.finExpense.findUnique({ where: { id: req.params.id } });
       if (!e) throw err("Pengeluaran tidak ditemukan", 404);
       if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status)) {
@@ -356,6 +358,8 @@ financeTxRouter.post("/expenses/:id/reject", requirePermission(P.FINANCE_APPROVE
     const reason = req.body?.reason?.trim();
     if (!reason) throw err("Alasan penolakan wajib diisi");
     const hasil = await prisma.$transaction(async (tx) => {
+      // Kunci baris dokumen: dua keputusan serempak (double-tap / dua penyetuju) diserialkan — yang kedua melihat status baru dan ditolak 409.
+      await lockRowForUpdate(tx, '"fin_expenses"', req.params.id);
       const e = await tx.finExpense.findUnique({ where: { id: req.params.id } });
       if (!e) throw err("Pengeluaran tidak ditemukan", 404);
       if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status)) {
@@ -742,6 +746,8 @@ financeTxRouter.post("/purchases/:id/submit",
 financeTxRouter.post("/purchases/:id/approve", requirePermission(P.FINANCE_APPROVE), async (req, res) => {
   try {
     const hasil = await prisma.$transaction(async (tx) => {
+      // Kunci baris dokumen: dua keputusan serempak (double-tap / dua penyetuju) diserialkan — yang kedua melihat status baru dan ditolak 409.
+      await lockRowForUpdate(tx, '"fin_purchases"', req.params.id);
       const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
       if (!p) throw err("Pembelian tidak ditemukan", 404);
       if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status)) {
@@ -794,6 +800,8 @@ financeTxRouter.post("/purchases/:id/reject", requirePermission(P.FINANCE_APPROV
     const reason = req.body?.reason?.trim();
     if (!reason) throw err("Alasan penolakan wajib diisi");
     const hasil = await prisma.$transaction(async (tx) => {
+      // Kunci baris dokumen: dua keputusan serempak (double-tap / dua penyetuju) diserialkan — yang kedua melihat status baru dan ditolak 409.
+      await lockRowForUpdate(tx, '"fin_purchases"', req.params.id);
       const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
       if (!p) throw err("Pembelian tidak ditemukan", 404);
       if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status)) {
@@ -1197,6 +1205,8 @@ financeTxRouter.post("/bills", requirePermission(P.FINANCE_POST), async (req, re
 financeTxRouter.post("/bills/:id/approve", requirePermission(P.FINANCE_APPROVE), async (req, res) => {
   try {
     const hasil = await prisma.$transaction(async (tx) => {
+      // Kunci baris dokumen: dua keputusan serempak (double-tap / dua penyetuju) diserialkan — yang kedua melihat status baru dan ditolak 409.
+      await lockRowForUpdate(tx, '"fin_supplier_bills"', req.params.id);
       const b = await tx.finSupplierBill.findUnique({ where: { id: req.params.id } });
       if (!b) throw err("Tagihan tidak ditemukan", 404);
       if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) {
@@ -1226,6 +1236,8 @@ financeTxRouter.post("/bills/:id/reject", requirePermission(P.FINANCE_APPROVE), 
     const reason = req.body?.reason?.trim();
     if (!reason) throw err("Alasan penolakan wajib diisi");
     const hasil = await prisma.$transaction(async (tx) => {
+      // Kunci baris dokumen: dua keputusan serempak (double-tap / dua penyetuju) diserialkan — yang kedua melihat status baru dan ditolak 409.
+      await lockRowForUpdate(tx, '"fin_supplier_bills"', req.params.id);
       const b = await tx.finSupplierBill.findUnique({ where: { id: req.params.id } });
       if (!b) throw err("Tagihan tidak ditemukan", 404);
       if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) {
@@ -1858,6 +1870,8 @@ financeTxRouter.post("/refunds", requirePermission(P.FINANCE_POST), async (req, 
 financeTxRouter.post("/refunds/:id/approve", requirePermission(P.FINANCE_APPROVE), async (req, res) => {
   try {
     const hasil = await prisma.$transaction(async (tx) => {
+      // Kunci baris dokumen: dua keputusan serempak (double-tap / dua penyetuju) diserialkan — yang kedua melihat status baru dan ditolak 409.
+      await lockRowForUpdate(tx, '"fin_refunds"', req.params.id);
       const r = await tx.finRefund.findUnique({ where: { id: req.params.id } });
       if (!r) throw err("Refund tidak ditemukan", 404);
       if (r.status !== "MENUNGGU_APPROVAL") throw err(`Refund ini sudah berstatus ${r.status}`, 409);
@@ -1920,6 +1934,8 @@ financeTxRouter.post("/refunds/:id/reject", requirePermission(P.FINANCE_APPROVE)
     const reason = req.body?.reason?.trim();
     if (!reason) throw err("Alasan penolakan wajib diisi");
     const hasil = await prisma.$transaction(async (tx) => {
+      // Kunci baris dokumen: dua keputusan serempak (double-tap / dua penyetuju) diserialkan — yang kedua melihat status baru dan ditolak 409.
+      await lockRowForUpdate(tx, '"fin_refunds"', req.params.id);
       const r = await tx.finRefund.findUnique({ where: { id: req.params.id } });
       if (!r) throw err("Refund tidak ditemukan", 404);
       if (r.status !== "MENUNGGU_APPROVAL") throw err(`Refund ini sudah berstatus ${r.status}`, 409);

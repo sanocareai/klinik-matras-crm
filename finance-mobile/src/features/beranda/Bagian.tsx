@@ -6,6 +6,7 @@ import {
 import { GlassCard } from "@/design/GlassCard";
 import { WARNA_EMBER as warnaEmber } from "@/design/charts";
 import { MoneyText } from "@/design/MoneyText";
+import { TeksSensitif, useSamarkan } from "@/design/Samarkan";
 import { IconCircle, PressableScale } from "@/design/ui";
 import { font } from "@/design/tokens";
 import { useTheme } from "@/design/theme";
@@ -264,6 +265,7 @@ export function KesehatanPembukuan({ catatan, gate }: { catatan: NonNullable<Das
 // ─── Jurnal terakhir ───────────────────────────────────────────────────────────────────────
 export function JurnalTerakhir({ daftar }: { daftar: DashboardData["jurnalTerakhir"] }) {
   const { colors } = useTheme();
+  const samar = useSamarkan();
   if (daftar.length === 0) {
     return (
       <GlassCard>
@@ -277,11 +279,11 @@ export function JurnalTerakhir({ daftar }: { daftar: DashboardData["jurnalTerakh
         <View
           key={j.id}
           accessible
-          accessibilityLabel={`${j.description}, ${j.entryNumber}, ${tanggalPendek(j.date)}, ${formatRupiah(j.total)}`}
+          accessibilityLabel={`${samar ? "Disamarkan" : j.description}, ${j.entryNumber}, ${tanggalPendek(j.date)}, ${samar ? "nominal disembunyikan" : formatRupiah(j.total)}`}
           style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.hairline }}
         >
           <View style={{ flex: 1 }}>
-            <Text maxFontSizeMultiplier={1.4} numberOfLines={2} style={{ color: colors.text, fontFamily: font.medium, fontSize: 14, lineHeight: 19 }}>{j.description}</Text>
+            <TeksSensitif maxFontSizeMultiplier={1.4} numberOfLines={2} style={{ color: colors.text, fontFamily: font.medium, fontSize: 14, lineHeight: 19 }}>{j.description}</TeksSensitif>
             <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 2 }}>{j.entryNumber} · {tanggalPendek(j.date)}</Text>
           </View>
           <View style={{ flexShrink: 0, maxWidth: "42%", alignItems: "flex-end" }}><MoneyText value={j.total} size="md" /></View>

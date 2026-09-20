@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import { prisma } from "../db.js";
 import { rolesOf } from "./authorize.js";
-import { isMobileSessionActive } from "../services/mobileSession.js";
+import { sesiMobileTerkini } from "../services/mobileSession.js";
 import { createLimiter } from "../lib/rateLimit.js";
 
 // BUG (QA 1 Agustus 2026): SEBELUMNYA `req.user?.role !== "ADMIN"` — field
@@ -112,7 +112,11 @@ export async function authenticateBearer(req) {
   if (!token) return null;
   const payload = verifyAccessJwt(token);
   if (!payload) return null;
-  if (payload.typ === "mobile" && !(await isMobileSessionActive(prisma, payload.sid))) return null;
+  if (payload.typ === "mobile") {
+    const sesi = await sesiMobileTerkini(prisma, payload.sid);
+    if (!sesi.aktif) return null;
+    return { ...payload, role: sesi.role, roles: sesi.roles };
+  }
   return payload;
 }
 
@@ -134,16 +138,18 @@ export async function requireAuth(req, res, next) {
     if (!jalurMobileBoleh(req.originalUrl)) {
       return res.status(403).json({ error: "Token aplikasi mobile tidak berlaku untuk alamat ini" });
     }
-    let aktif = false;
+    let sesi = { aktif: false };
     try {
-      aktif = await isMobileSessionActive(prisma, payload.sid);
+      sesi = await sesiMobileTerkini(prisma, payload.sid);
     } catch (err) {
       console.error("[auth] cek sesi mobile gagal:", err.message);
       return res.status(503).json({ error: "Server sedang sibuk, coba lagi sebentar" });
     }
-    if (!aktif) {
+    if (!sesi.aktif) {
       return res.status(401).json({ error: "Sesi sudah dicabut atau berakhir, silakan login ulang", code: "SESSION_REVOKED" });
     }
+    // Peran dari DB (bukan JWT): pencabutan izin berlaku seketika.
+    req.user = { ...payload, role: sesi.role, roles: sesi.roles };
     let lolos = false;
     mobileApiLimiter(req, res, () => { lolos = true; });
     if (!lolos) return; // 429 sudah dikirim limiter

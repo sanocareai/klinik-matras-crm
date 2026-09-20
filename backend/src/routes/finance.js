@@ -247,7 +247,7 @@ financeRouter.patch("/accounts/:id", requirePermission(P.FINANCE_ADMIN), async (
 
 financeRouter.get("/cash-accounts", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
-    const saldo = await saldoKasBank(prisma, { to: new Date() });
+    const saldo = await saldoKasBank(prisma);
     const semua = await prisma.finCashAccount.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],
       include: { account: { select: { id: true, code: true, name: true } } },
@@ -1091,7 +1091,8 @@ financeRouter.get("/reports/payables", requirePermission(P.FINANCE_READ), async 
 financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const { from, to, fromStr, toStr } = rentangDariQuery(req.query);
-    const sekarang = new Date();
+    // Posisi "saat ini" = tanggal buku hari ini WIB (bukan instant UTC) — lihat komentar di reports.js.
+    const sekarang = todayBookDateWIB();
 
     const [
       kasBank, lr, piutang, utang, gate, catatan,

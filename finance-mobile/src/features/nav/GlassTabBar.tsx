@@ -7,8 +7,7 @@ import { useTheme } from "@/design/theme";
 import { PressableScale } from "@/design/ui";
 import { font } from "@/design/tokens";
 import { haptic } from "@/design/haptics";
-import { useDashboard } from "@/hooks/data";
-import { usePeriodeAktif } from "@/features/beranda/usePeriodeAktif";
+import { useApprovalBadge } from "@/hooks/approvals";
 import { NEED_TAB, bisaMencatatAtauVerifikasi, has } from "@/auth/capabilities";
 import { useSession } from "@/auth/session";
 import { S } from "@/lib/strings";
@@ -36,11 +35,9 @@ export function GlassTabBar({ state, navigation }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { data } = useDashboard(usePeriodeAktif());
   const caps = useSession((s) => s.capabilities);
-  // Lencana Persetujuan = angka dari server (bukan dihitung ulang): jumlah pengajuan yang menunggu.
-  const a = data?.antrean;
-  const menunggu = a ? a.pengeluaranMenunggu + a.pembelianMenunggu + a.tagihanMenunggu + a.refundMenunggu : 0;
+  // Lencana Persetujuan = jumlah menunggu dari server (GET /finance/approvals/ringkasan), bukan dihitung klien.
+  const menunggu = useApprovalBadge().data ?? 0;
   const aktifNama = state.routes[state.index]?.name;
   // FAB hanya untuk yang boleh mencatat atau memverifikasi pembayaran (Approver/Accountant-baca tidak melihatnya).
   const tampilFab = (aktifNama === "index" || aktifNama === "transaksi") && bisaMencatatAtauVerifikasi(caps);

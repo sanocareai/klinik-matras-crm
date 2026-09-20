@@ -47,6 +47,7 @@ import { financeRouter }    from "./routes/finance.js";
 import { financeTxRouter }  from "./routes/financeTransactions.js";
 import { financeKasbonRouter } from "./routes/financeKasbon.js";
 import { financePenerimaanRouter } from "./routes/financePenerimaan.js";
+import { financeApprovalsRouter } from "./routes/financeApprovals.js";
 import { financeMediaRouter, financeReceiptsLegacyPathRouter } from "./routes/financeMedia.js";
 import { mobileRouter } from "./routes/mobileAuth.js";
 import { inventoryRouter }  from "./routes/inventory.js";
@@ -199,6 +200,7 @@ app.use("/api/finance",      financeRouter);
 app.use("/api/finance",      financeTxRouter); // additive, tidak mengubah financeRouter
 app.use("/api/finance",      financeKasbonRouter);
 app.use("/api/finance",      financePenerimaanRouter);
+app.use("/api/finance",      financeApprovalsRouter); // read-model inbox persetujuan (S4)
 app.use("/api/finance",      financeMediaRouter);
 // Aplikasi mobile Finance: sesi 15 menit + refresh rotasi, token push perangkat, config.
 app.use("/api/mobile",       mobileRouter);

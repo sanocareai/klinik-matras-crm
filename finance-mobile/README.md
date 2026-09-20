@@ -137,10 +137,28 @@ Menjalankan di emulator dengan API dev: `EXPO_PUBLIC_USE_MOCKS=false EXPO_PUBLIC
 | 6 | Latar belakang < 2 mnt / > 2 mnt | Langsung terbuka / layar kunci |
 | 7 | Peran approver / akuntan / owner | Tanpa FAB & aksi cepat / tanpa tab Persetujuan & Verifikasi / tanpa aksi cepat tulis |
 
+## Persetujuan (S4) — skenario uji & QA
+
+Tambahan skenario mode contoh: `+konflik` (dokumen sudah diputuskan orang lain ⇒ 409), `+izin` (izin dicabut ⇒ 403), `+putus` (jaringan putus tepat saat mengirim ⇒ hasil tidak pasti, kunci idempotensi dipakai ulang). Persona: `approver@` (tab awal), `finance@`, `owner@`, `akuntan@` (baca saja), `tanpaakses@`. Data contoh: 29 menunggu, 2 diproses, 2 disetujui, 1 ditolak.
+
+Keyboard nyata di emulator: set `hw.keyboard=no` pada AVD (Gboard tampil). Perhatikan: mengubah `wm size/density` atau `font_scale` saat app berjalan membuat teks terpotong sementara — **selalu force-stop dan buka ulang app** sebelum menilai tata letak.
+
+| # | Skenario | Hasil yang benar |
+|---|---|---|
+| 1 | Daftar, 4 tab, badge | Menunggu terlama dahulu; badge tab = jumlah server |
+| 2 | Cari (keyboard nyata), filter jenis/periode/pemohon | Debounce 400 ms; sheet filter; jumlah filter aktif tampil |
+| 3 | Detail | Rincian, lampiran (kosong/foto), riwayat; tombol dari `aksi` server |
+| 4 | Tolak: alasan kosong / < 3 huruf | Tombol nonaktif, petunjuk tampil |
+| 5 | Tolak dengan keyboard | Sheet naik di atas keyboard; sheet menutup sebelum layar PIN; status "Ditolak" + alasan dimuat ulang dari server |
+| 6 | Setujui | Sheet konfirmasi ⇒ PIN ⇒ status resmi dari server |
+| 7 | Double-tap / request paralel | Satu kiriman; yang kedua 409 ⇒ "Sudah diputuskan oleh …" |
+| 8 | Sembunyikan nominal | Nominal, keterangan, vendor, lampiran tersamarkan |
+| 9 | 360×640dp + font 1.5, gelap | Tidak ada teks terpotong, tidak ada overlap |
+
 ## Blocker yang tersisa (butuh tindakan manusia / akun)
 
 1. **Proyek EAS belum dibuat** — jalankan `eas login` + `eas init`, isi `EAS_PROJECT_ID`. Tanpa itu OTA (`expo-updates`) nonaktif dan `eas build` belum bisa.
 2. **Push Android** — buat/daftarkan aplikasi Android (`com.sanomatrassehat.finance*`) di Firebase, simpan `google-services.json` (di-gitignore; di EAS pakai secret file `GOOGLE_SERVICES_JSON`), lalu unggah kunci **FCM V1** ke EAS (`eas credentials`). Server: `FINANCE_PUSH_ENABLED=true` (lihat `docs/FINANCE-MOBILE-BACKEND.md`).
 3. **Belum dijalankan di perangkat/emulator** — scaffold divalidasi lewat `tsc`, ESLint, Jest, `expo-doctor`, bundling Metro (`expo export`) dan `expo prebuild` (manifest, izin, share-target). Uji visual pertama butuh development build.
-4. **Fitur belum dikerjakan** (slice PRD): cache snapshot terenkripsi, formulir transaksi + kompres/unggah foto (S6), keputusan approval nyata (S4), notifikasi & pemicunya (S11), pelaporan galat (Sentry, keputusan S12).
-5. **Gap backend** yang masih terbuka (PRD §17): inbox approval gabungan (G-06), tren bulanan (G-09), audit trail (G-05), cursor pagination (G-16).
+4. **Fitur belum dikerjakan** (slice PRD): cache snapshot terenkripsi, formulir transaksi + kompres/unggah foto (S6), notifikasi & pemicunya (S11), pelaporan galat (Sentry, keputusan S12).
+5. **Gap backend** yang masih terbuka (PRD §17): tren bulanan (G-09), audit trail (G-05), cursor pagination (G-16).

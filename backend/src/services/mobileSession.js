@@ -158,6 +158,22 @@ export async function rotateSession(db, presentedToken, { appVersion = null } = 
   return { ok: true, session, refreshToken, user: session.user };
 }
 
+
+/**
+ * Sesi + peran TERKINI pengguna, dibaca dari DB pada setiap request bertoken mobile. Izin TIDAK dipercaya dari JWT (yang membeku selama
+ * 15 menit): mencabut peran/menonaktifkan akun harus langsung berlaku pada keputusan keuangan berikutnya, bukan menunggu token kedaluwarsa.
+ */
+export async function sesiMobileTerkini(db, sessionId) {
+  const tak = { aktif: false, role: null, roles: [] };
+  if (!sessionId) return tak;
+  const s = await db.mobileSession.findUnique({
+    where: { id: sessionId },
+    select: { revokedAt: true, absoluteExpiresAt: true, user: { select: { active: true, role: true, roles: { select: { role: true } } } } },
+  });
+  if (!s || s.revokedAt || s.absoluteExpiresAt <= new Date() || !s.user || s.user.active === false) return tak;
+  const roles = s.user.roles.map((r) => r.role);
+  return { aktif: true, role: s.user.role, roles: roles.length > 0 ? roles : [s.user.role] };
+}
 /** Dipakai requireAuth pada setiap request bertoken mobile: sesi masih sah? */
 export async function isMobileSessionActive(db, sessionId) {
   if (!sessionId) return false;

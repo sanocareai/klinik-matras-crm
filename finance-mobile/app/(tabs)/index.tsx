@@ -1,11 +1,11 @@
 import React from "react";
 import { Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { CloudOff, Eye, EyeOff, LogOut, ShieldOff, TriangleAlert, WifiOff, type LucideIcon } from "lucide-react-native";
+import { Eye, EyeOff } from "lucide-react-native";
 import { Screen } from "@/design/Screen";
 import { GlassCard } from "@/design/GlassCard";
 import { BarTren } from "@/design/charts";
-import { EmptyState, ErrorState, IconCircle, MockBanner, OfflineBanner, PressableScale, SectionHeader, Skeleton } from "@/design/ui";
+import { EmptyState, IconCircle, MockBanner, OfflineBanner, PressableScale, SectionHeader, Skeleton } from "@/design/ui";
 import { font, radius } from "@/design/tokens";
 import { useTheme } from "@/design/theme";
 import { usePrefs } from "@/design/prefs";
@@ -22,12 +22,10 @@ import { S } from "@/lib/strings";
 import { PeriodeBar } from "@/features/beranda/PeriodeBar";
 import { usePeriode } from "@/features/beranda/periodeStore";
 import { usePeriodeAktif } from "@/features/beranda/usePeriodeAktif";
-import { klasifikasiGalat, type JenisGalat } from "@/features/beranda/galat";
+import { BannerBasi, GalatPenuh } from "@/features/umum/StatusData";
 import {
   BagianBelumTersedia, DaftarRekening, HeroKas, JurnalTerakhir, KartuLabaRugi, KartuUmur, KesehatanPembukuan, PekerjaanTertunda, daftarTindakan,
 } from "@/features/beranda/Bagian";
-
-const IKON_GALAT: Record<JenisGalat, LucideIcon> = { offline: WifiOff, sesi: LogOut, izin: ShieldOff, server: CloudOff, batas: TriangleAlert, lain: TriangleAlert };
 
 function Beranda() {
   const { colors } = useTheme();
@@ -75,7 +73,7 @@ function Beranda() {
       {isLoading && !data ? (
         <BerandaMemuat />
       ) : !data ? (
-        <GalatPenuh error={error} online={online} onCoba={muatUlang} />
+        <GalatPenuh error={error} online={online} onCoba={muatUlang} nama="Beranda" />
       ) : (
         <View style={{ opacity: gerakPeriode ? 0.55 : 1 }}>
           {isError ? <BannerBasi error={error} online={online} onCoba={muatUlang} /> : null}
@@ -173,38 +171,6 @@ function IsiBeranda({
 
 function tanggalPeriode(p: { from: string; to: string }): string {
   return p.from && p.to ? `${p.from.split("-").reverse().join("/")} – ${p.to.split("-").reverse().join("/")}` : "";
-}
-
-function GalatPenuh({ error, online, onCoba }: { error: unknown; online: boolean; onCoba: () => void }) {
-  const info = klasifikasiGalat(error, online);
-  const sesi = info.jenis === "sesi";
-  return (
-    <ErrorState
-      icon={IKON_GALAT[info.jenis]}
-      tone={info.jenis === "offline" || info.jenis === "batas" ? "warning" : "danger"}
-      judul={info.judul}
-      isi={info.isi}
-      onCoba={sesi ? undefined : onCoba}
-    />
-  );
-}
-
-/** Penyegaran gagal tetapi data terakhir masih ada: tetap tampilkan data, beri tahu, dan tawarkan coba lagi. */
-function BannerBasi({ error, online, onCoba }: { error: unknown; online: boolean; onCoba: () => void }) {
-  const { colors } = useTheme();
-  const info = klasifikasiGalat(error, online);
-  return (
-    <View accessibilityRole="alert" style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderRadius: radius.small, backgroundColor: colors.warningSoft, marginBottom: 12 }}>
-      <TriangleAlert size={18} color={colors.warning} strokeWidth={1.75} />
-      <View style={{ flex: 1 }}>
-        <Text maxFontSizeMultiplier={1.3} style={{ color: colors.text, fontFamily: font.medium, fontSize: 13 }}>Gagal memperbarui</Text>
-        <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12 }}>{info.judul}. Menampilkan data terakhir yang berhasil dimuat.</Text>
-      </View>
-      <PressableScale onPress={onCoba} accessibilityLabel="Coba muat ulang" style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 6 }}>
-        <Text style={{ color: colors.primary, fontFamily: font.semibold, fontSize: 13 }}>Coba lagi</Text>
-      </PressableScale>
-    </View>
-  );
 }
 
 function BerandaMemuat() {

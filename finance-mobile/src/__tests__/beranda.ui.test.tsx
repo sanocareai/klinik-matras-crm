@@ -111,7 +111,7 @@ describe("komponen bagian Beranda", () => {
     const onBuka = jest.fn();
     const d = daftarTindakan(dashboardContoh.antrean, 2, useSession.getState().capabilities);
     const { unmount } = tampil(<PekerjaanTertunda daftar={d} onBuka={onBuka} />);
-    fireEvent.press(screen.getByLabelText(/^Menunggu persetujuan: 7/));
+    fireEvent.press(screen.getByLabelText(/^Menunggu persetujuan: 29/));
     expect(onBuka).toHaveBeenCalledWith("/persetujuan");
     unmount();
     tampil(<PekerjaanTertunda daftar={[]} onBuka={onBuka} />);
@@ -241,8 +241,8 @@ describe("layar Beranda: state & role", () => {
 
   it("tap pekerjaan tertunda mengarahkan ke layar terkait", async () => {
     bukaBeranda();
-    await waitFor(() => expect(screen.getByLabelText(/^Menunggu persetujuan: 7/)).toBeTruthy());
-    fireEvent.press(screen.getByLabelText(/^Menunggu persetujuan: 7/));
+    await waitFor(() => expect(screen.getByLabelText(/^Menunggu persetujuan: 29/)).toBeTruthy());
+    fireEvent.press(screen.getByLabelText(/^Menunggu persetujuan: 29/));
     expect(router.__push).toHaveBeenCalledWith("/persetujuan");
   });
 });

@@ -20,7 +20,7 @@
 // ia butuh data penyusutan & perubahan modal kerja yang belum ada di sistem
 // ini, jadi hasilnya akan lebih banyak asumsi daripada fakta.
 
-import { STATUS_DIHITUNG } from "./journal.js";
+import { STATUS_DIHITUNG, todayBookDateWIB } from "./journal.js";
 import { toMoney, sumMoney, ZERO, moneyToNumber } from "./money.js";
 import { SETTING_KEYS, getSettingRaw } from "./settings.js";
 
@@ -511,7 +511,8 @@ function emberUmur(hariLewat) {
  * sekali (uangnya masih uang muka), dan order yang sudah dilunasi saldonya
  * nol tanpa perlu membandingkan dua angka dari sumber berbeda.
  */
-export async function umurPiutang(db, { to = new Date() } = {}) {
+export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
+  const to = tanggalBukuPosisi(batas);
   const akunPiutang = await db.finAccount.findUnique({
     where: { systemKey: "PIUTANG_USAHA" },
     select: { id: true },
@@ -602,7 +603,8 @@ function ringkasanKosong() {
 }
 
 /** UMUR UTANG per tagihan supplier — dari dokumen tagihan + alokasi bayarnya. */
-export async function umurUtang(db, { to = new Date() } = {}) {
+export async function umurUtang(db, { to: batas = todayBookDateWIB() } = {}) {
+  const to = tanggalBukuPosisi(batas);
   const bills = await db.finSupplierBill.findMany({
     where: { status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN"] }, billDate: { lte: to } },
     select: {
@@ -648,8 +650,17 @@ export async function umurUtang(db, { to = new Date() } = {}) {
   };
 }
 
+/** Instant (mis. new Date()) → tanggal buku WIB-nya; tanggal polos midnight-UTC tetap sama (idempoten). */
+function tanggalBukuPosisi(to) {
+  return todayBookDateWIB(to instanceof Date ? to : new Date(to));
+}
+
+// PENTING (bug jam 00:00–07:00 WIB): kolom fin_journal_entries.date bertipe DATE dan diisi tanggal buku WIB. Default "sekarang"
+// HARUS tanggal buku WIB hari ini, bukan new Date() (UTC) — kalau tidak, jurnal hari ini WIB dikecualikan dari posisi kas/piutang/utang
+// selama server masih di hari kemarin menurut UTC.
 /** Saldo tiap rekening kas/bank menurut BUKU (bukan menurut koran bank). */
-export async function saldoKasBank(db, { to = new Date() } = {}) {
+export async function saldoKasBank(db, { to: batas = todayBookDateWIB() } = {}) {
+  const to = tanggalBukuPosisi(batas);
   const rekening = await db.finCashAccount.findMany({
     where: { active: true },
     orderBy: { name: "asc" },

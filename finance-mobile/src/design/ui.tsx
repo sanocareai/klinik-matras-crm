@@ -204,8 +204,8 @@ export function OfflineBanner() {
 export function MockBanner() {
   const { colors } = useTheme();
   return (
-    <View accessibilityRole="alert" style={{ padding: 8, borderRadius: radius.small, backgroundColor: colors.infoSoft, marginBottom: 12 }}>
-      <Text style={{ color: colors.info, fontFamily: font.medium, fontSize: 12, textAlign: "center" }}>{S.umum.modeContoh}</Text>
+    <View accessibilityRole="alert" style={{ flexShrink: 0, padding: 8, borderRadius: radius.small, backgroundColor: colors.infoSoft, marginBottom: 12 }}>
+      <Text maxFontSizeMultiplier={1.3} style={{ color: colors.info, fontFamily: font.medium, fontSize: 12, lineHeight: 17, textAlign: "center" }}>{S.umum.modeContoh}</Text>
     </View>
   );
 }

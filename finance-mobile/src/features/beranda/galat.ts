@@ -4,7 +4,7 @@ import { ApiError } from "@/api/errors";
 export type JenisGalat = "offline" | "sesi" | "izin" | "server" | "batas" | "lain";
 export type InfoGalat = { jenis: JenisGalat; judul: string; isi: string };
 
-export function klasifikasiGalat(e: unknown, online: boolean): InfoGalat {
+export function klasifikasiGalat(e: unknown, online: boolean, nama = "Beranda"): InfoGalat {
   if (e instanceof ApiError) {
     if (e.isAuthLost || e.status === 401) {
       return { jenis: "sesi", judul: "Sesi Anda berakhir", isi: "Demi keamanan, silakan masuk lagi. Data keuangan Anda aman di server." };
@@ -29,5 +29,5 @@ export function klasifikasiGalat(e: unknown, online: boolean): InfoGalat {
   if (!online) {
     return { jenis: "offline", judul: "Tidak ada koneksi", isi: "Periksa internet Anda, lalu coba lagi." };
   }
-  return { jenis: "lain", judul: "Beranda belum bisa dimuat", isi: "Terjadi kesalahan. Coba lagi." };
+  return { jenis: "lain", judul: `${nama} belum bisa dimuat`, isi: "Terjadi kesalahan. Coba lagi." };
 }

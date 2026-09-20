@@ -186,3 +186,18 @@ test("Order belum diserahkan yang lunas sebelum saldo awal: uang muka pelanggan 
   assert.equal(await saldo(SYSTEM_KEYS.UANG_MUKA_PELANGGAN), "-1200000.00", "kewajiban (kredit) uang muka");
   assert.equal(await saldo(SYSTEM_KEYS.LABA_DITAHAN), "1200000.00");
 });
+
+// REGRESI (jendela 00:00–07:00 WIB): jurnal bertanggal buku WIB "hari ini" tidak boleh hilang dari posisi piutang/kas hanya karena
+// `to` berupa instant UTC yang masih "kemarin". Di sini `to` sengaja dibuat 1 jam SEBELUM tengah malam UTC tanggal buku — hari UTC-nya
+// kemarin, hari WIB-nya hari ini — sehingga tes ini gagal pada jam berapa pun bila bug kembali (bukan hanya saat dijalankan dini hari).
+test("Posisi piutang memakai tanggal buku WIB: instant UTC 'kemarin' yang sudah 'hari ini' di WIB tetap memuat jurnal hari ini", async () => {
+  const { todayBookDateWIB } = await import("../../src/services/finance/journal.js");
+  await siapkan();
+  await orderLunasTanpaPayment({ value: 1_250_000 });
+  const tglBuku = todayBookDateWIB();
+  const instantKemarinUtc = new Date(tglBuku.getTime() - 60 * 60 * 1000);
+
+  const p = await umurPiutang(testPrisma, { to: instantKemarinUtc });
+  assert.equal(p.menungguVerifikasi.jumlah, 1, "jurnal bertanggal buku hari ini harus ikut terhitung");
+  assert.equal(p.menungguVerifikasi.total, 1_250_000);
+});

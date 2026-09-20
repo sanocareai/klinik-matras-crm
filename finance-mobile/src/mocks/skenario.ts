@@ -10,9 +10,12 @@ import { dashboardContoh } from "./data";
 //   negatif  kas & laba negatif       lambat   loading lama (5 dtk)
 //   galat    server error 500         offline  tidak ada koneksi
 //   sesi     sesi berakhir (401)      basi     muat pertama sukses, penyegaran berikutnya gagal
+//   konflik  keputusan persetujuan ditolak 409 (sudah diputuskan orang lain)
+//   izin     keputusan persetujuan ditolak 403 (izin dicabut di tengah sesi)
+//   putus    bacaan normal, tetapi koneksi putus SETELAH keputusan terkirim (hasil tidak pasti)
 
-export type Skenario = "normal" | "kosong" | "parsial" | "panjang" | "negatif" | "lambat" | "galat" | "offline" | "sesi" | "basi";
-const DAFTAR: Skenario[] = ["normal", "kosong", "parsial", "panjang", "negatif", "lambat", "galat", "offline", "sesi", "basi"];
+export type Skenario = "normal" | "kosong" | "parsial" | "panjang" | "negatif" | "lambat" | "galat" | "offline" | "sesi" | "basi" | "konflik" | "izin" | "putus";
+const DAFTAR: Skenario[] = ["normal", "kosong", "parsial", "panjang", "negatif", "lambat", "galat", "offline", "sesi", "basi", "konflik", "izin", "putus"];
 
 let aktif: Skenario = "normal";
 let pemanggilan = 0;
@@ -22,7 +25,10 @@ export function skenarioDariEmail(email: string): Skenario {
   const nama = cocok?.[1]?.toLowerCase() as Skenario | undefined;
   return nama && DAFTAR.includes(nama) ? nama : "normal";
 }
-export function setSkenario(s: Skenario) { aktif = s; pemanggilan = 0; }
+let versi = 0;
+/** Naik setiap login contoh — data contoh lain (mis. persetujuan) dimuat ulang dari awal saat versi berubah. */
+export function versiSkenario(): number { return versi; }
+export function setSkenario(s: Skenario) { aktif = s; pemanggilan = 0; hitungBaca.clear(); versi += 1; }
 export function getSkenario(): Skenario { return aktif; }
 
 const m = toMoney;
@@ -94,3 +100,19 @@ export async function dashboardSkenario(): Promise<DashboardData> {
     default: return dashboardContoh;
   }
 }
+
+/** Skenario galat untuk BACAAN selain dashboard (persetujuan): melempar sesuai skenario, atau lolos. `nama` memisahkan hitungan "basi". */
+const hitungBaca = new Map<string, number>();
+export async function simulasiBaca(nama: string): Promise<void> {
+  const n = (hitungBaca.get(nama) ?? 0) + 1;
+  hitungBaca.set(nama, n);
+  await tunda(aktif === "lambat" ? 5000 : 300);
+  switch (aktif) {
+    case "galat": throw new ApiError({ status: 500, code: "INTERNAL", message: "boom" });
+    case "offline": throw GALAT_JARINGAN();
+    case "sesi": throw new ApiError({ status: 401, code: "SESSION_EXPIRED", message: "Sesi berakhir" });
+    case "basi": if (n > 2) throw GALAT_JARINGAN(); return;
+    default: return;
+  }
+}
+export function resetHitunganBaca() { hitungBaca.clear(); }

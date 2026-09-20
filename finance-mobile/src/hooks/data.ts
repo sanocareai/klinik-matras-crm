@@ -1,10 +1,10 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ENV } from "@/lib/env";
 import { fetchDashboard } from "@/api/finance";
-import { approvalContoh, laporanContoh, transaksiContoh, trenContoh } from "@/mocks/data";
+import { laporanContoh, transaksiContoh, trenContoh } from "@/mocks/data";
 import { dashboardSkenario, getSkenario } from "@/mocks/skenario";
 import { ApiError } from "@/api/errors";
-import type { ApprovalItem, DashboardData, JenisLaporan, LaporanRingkas, TransaksiItem, TrenBulan } from "@/api/types";
+import type { DashboardData, JenisLaporan, LaporanRingkas, TransaksiItem, TrenBulan } from "@/api/types";
 
 // HOOK DATA — satu tempat yang memilih sumber: data contoh (dev) atau server.
 // Endpoint yang belum disambungkan menghasilkan galat "Segera hadir" di build non-contoh
@@ -38,14 +38,6 @@ export function useTren() {
     queryKey: ["tren", ENV.useMocks],
     queryFn: () => (ENV.useMocks ? tunda(trenContoh) : Promise.resolve(null)),
     staleTime: 5 * 60_000,
-  });
-}
-
-export function useApprovals() {
-  return useQuery<ApprovalItem[]>({
-    queryKey: ["approvals", ENV.useMocks],
-    queryFn: () => (ENV.useMocks ? tunda(approvalContoh) : Promise.reject(new BelumTersedia("Daftar persetujuan"))),
-    retry: false,
   });
 }
 

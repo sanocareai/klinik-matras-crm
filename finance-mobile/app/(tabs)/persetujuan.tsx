@@ -1,97 +1,144 @@
-import React, { useMemo, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, FlatList, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Paperclip, TriangleAlert } from "lucide-react-native";
+import { ListFilter, Search, X } from "lucide-react-native";
 import { Screen } from "@/design/Screen";
-import { GlassCard } from "@/design/GlassCard";
-import { MoneyText } from "@/design/MoneyText";
-import { StatusBadge } from "@/design/StatusBadge";
-import { Chip, EmptyState, ErrorState, MockBanner, OfflineBanner, PressableScale, Skeleton } from "@/design/ui";
+import { Chip, EmptyState, MockBanner, OfflineBanner, PressableScale, Skeleton } from "@/design/ui";
 import { font, radius } from "@/design/tokens";
 import { useTheme } from "@/design/theme";
-import { useApprovals, BelumTersedia } from "@/hooks/data";
-import { useOnline } from "@/hooks/useOnline";
 import { haptic } from "@/design/haptics";
+import { useApprovalList, usePemohon } from "@/hooks/approvals";
+import { useOnline } from "@/hooks/useOnline";
 import { ENV } from "@/lib/env";
-import { tanggalPendek } from "@/lib/dates";
 import { S } from "@/lib/strings";
-import type { JenisApproval } from "@/api/types";
 import { denganAkses } from "@/features/guard/RequireCapability";
+import { BannerBasi, GalatPenuh } from "@/features/umum/StatusData";
+import { KartuItem } from "@/features/persetujuan/KartuItem";
+import { FilterSheet, jumlahFilterAktif, periodeKeRentang, type DraftFilter } from "@/features/persetujuan/Sheets";
+import type { ApprovalItem, FilterApproval, TahapApproval } from "@/api/types";
 
-const JENIS: (JenisApproval | "semua")[] = ["semua", "expense", "purchase", "bill", "refund"];
+const TAB: { id: TahapApproval; label: string }[] = [
+  { id: "MENUNGGU", label: "Menunggu" }, { id: "DIPROSES", label: "Diproses" }, { id: "DISETUJUI", label: "Disetujui" }, { id: "DITOLAK", label: "Ditolak" },
+];
+
+const KOSONG: Record<TahapApproval, { judul: string; isi: string }> = {
+  MENUNGGU: { judul: S.persetujuan.kosongJudul, isi: S.persetujuan.kosongIsi },
+  DIPROSES: { judul: "Belum ada yang diproses", isi: "Pengajuan yang sudah disetujui tetapi belum dibayar atau lunas muncul di sini." },
+  DISETUJUI: { judul: "Belum ada yang disetujui", isi: "Pengajuan yang sudah disetujui dan selesai muncul di sini." },
+  DITOLAK: { judul: "Belum ada yang ditolak", isi: "Pengajuan yang ditolak beserta alasannya muncul di sini." },
+};
+
+function useDebounce<T>(nilai: T, ms: number): T {
+  const [v, setV] = useState(nilai);
+  useEffect(() => { const t = setTimeout(() => setV(nilai), ms); return () => clearTimeout(t); }, [nilai, ms]);
+  return v;
+}
 
 function Persetujuan() {
   const { colors } = useTheme();
   const router = useRouter();
   const online = useOnline();
-  const [jenis, setJenis] = useState<JenisApproval | "semua">("semua");
-  const { data, isLoading, isError, error, refetch, isRefetching } = useApprovals();
 
-  // Terlama dulu (yang paling lama menunggu diputuskan lebih dulu).
-  const tampil = useMemo(
-    () => [...(data ?? [])].filter((a) => jenis === "semua" || a.jenis === jenis).sort((a, b) => a.tanggal.localeCompare(b.tanggal)),
-    [data, jenis],
-  );
-  const hitung = (j: JenisApproval | "semua") => (data ?? []).filter((a) => j === "semua" || a.jenis === j).length;
+  const [tab, setTab] = useState<TahapApproval>("MENUNGGU");
+  const [cari, setCari] = useState("");
+  const q = useDebounce(cari, 400);
+  const [draft, setDraft] = useState<DraftFilter>({ jenis: [], periodeId: null, pemohonId: null });
+  const [filterBuka, setFilterBuka] = useState(false);
+
+  const filter = useMemo<FilterApproval>(() => {
+    const r = periodeKeRentang(draft.periodeId);
+    return { tab, jenis: draft.jenis, from: r.from, to: r.to, pemohonId: draft.pemohonId, q };
+  }, [tab, draft, q]);
+
+  const daftar = useApprovalList(filter);
+  const pemohon = usePemohon(filterBuka);
+  const halaman = daftar.data?.pages ?? [];
+  const items: ApprovalItem[] = halaman.flatMap((h) => h.items);
+  const hitung = halaman[0]?.hitung;
+  const aktif = jumlahFilterAktif(filter) + (q.trim() ? 1 : 0);
+  const gerak = daftar.isPlaceholderData;
+  const muatUlang = () => void daftar.refetch();
 
   return (
-    <Screen refreshing={isRefetching} onRefresh={() => void refetch()}>
-      {ENV.useMocks ? <MockBanner /> : null}
-      {!online ? <OfflineBanner /> : null}
-      <Text accessibilityRole="header" style={{ color: colors.text, fontFamily: font.semibold, fontSize: 26, marginBottom: 4 }}>{S.persetujuan.judul}</Text>
-      <Text style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 13, marginBottom: 8 }}>Yang paling lama menunggu ada di atas.</Text>
+    <Screen scroll={false}>
+      <View style={{ flex: 1 }}>
+        {ENV.useMocks ? <MockBanner /> : null}
+        {!online ? <OfflineBanner /> : null}
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
-        {JENIS.map((j) => (
-          <Chip key={j} label={j === "semua" ? S.persetujuan.semua : (S.persetujuan.jenis[j] ?? j)} aktif={jenis === j} jumlah={hitung(j)} onPress={() => setJenis(j)} />
-        ))}
-      </ScrollView>
-
-      {isLoading ? (
-        <View style={{ gap: 10, marginTop: 8 }}>{[0, 1, 2].map((i) => <Skeleton key={i} tinggi={112} style={{ borderRadius: radius.card }} />)}</View>
-      ) : isError ? (
-        <ErrorState
-          judul={error instanceof BelumTersedia ? S.segera : "Persetujuan belum bisa dimuat"}
-          isi={error instanceof BelumTersedia ? S.segeraIsi : error instanceof Error ? error.message : undefined}
-          onCoba={error instanceof BelumTersedia ? undefined : () => void refetch()}
-        />
-      ) : tampil.length === 0 ? (
-        <EmptyState judul={S.persetujuan.kosongJudul} isi={S.persetujuan.kosongIsi} />
-      ) : (
-        <View style={{ gap: 10, marginTop: 8 }}>
-          {tampil.map((a) => (
-            <PressableScale key={a.id} onPress={() => { haptic.tick(); router.push(`/persetujuan/${a.id}`); }} accessibilityLabel={`${a.nomor}, ${a.keterangan}`}>
-              <GlassCard padding={14}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <View style={{ flex: 1, paddingRight: 10 }}>
-                    <Text style={{ color: colors.primary, fontFamily: font.semibold, fontSize: 12 }}>{S.persetujuan.jenis[a.jenis] ?? a.jenis} · {a.nomor}</Text>
-                    <Text numberOfLines={2} style={{ color: colors.text, fontFamily: font.semibold, fontSize: 15, lineHeight: 20, marginTop: 4 }}>{a.keterangan}</Text>
-                    <Text style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 4 }}>
-                      Diajukan {a.diajukanOleh} · {tanggalPendek(a.tanggal)}
-                    </Text>
-                  </View>
-                  <MoneyText value={a.amount} size="md" />
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 }}>
-                  <StatusBadge status="MENUNGGU_APPROVAL" />
-                  {a.adaBukti ? (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                      <Paperclip size={14} color={colors.textMuted} strokeWidth={1.75} />
-                      <Text style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12 }}>Ada bukti</Text>
-                    </View>
-                  ) : (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                      <TriangleAlert size={14} color={colors.warning} strokeWidth={1.75} />
-                      <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12 }}>Belum ada bukti</Text>
-                    </View>
-                  )}
-                  {!a.bolehDisetujuiSaya ? <StatusBadge label="Pengajuan Anda" tone="neutral" /> : null}
-                </View>
-              </GlassCard>
-            </PressableScale>
-          ))}
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <Text accessibilityRole="header" maxFontSizeMultiplier={1.3} style={{ color: colors.text, fontFamily: font.semibold, fontSize: 24 }}>{S.persetujuan.judul}</Text>
+          {gerak || (daftar.isFetching && !daftar.isLoading) ? <ActivityIndicator size="small" color={colors.primary} accessibilityLabel="Memuat" /> : null}
         </View>
-      )}
+
+        <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
+          <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8, minHeight: 46, paddingHorizontal: 12, borderRadius: radius.button, backgroundColor: colors.glassFillStrong, borderWidth: 1, borderColor: colors.glassStroke }}>
+            <Search size={18} color={colors.textMuted} strokeWidth={1.75} />
+            <TextInput
+              value={cari} onChangeText={setCari} placeholder="Cari nomor, vendor, nominal…" placeholderTextColor={colors.textFaint}
+              accessibilityLabel="Cari pengajuan" returnKeyType="search" autoCorrect={false} autoCapitalize="none"
+              style={{ flex: 1, color: colors.text, fontFamily: font.regular, fontSize: 15, paddingVertical: 8 }}
+            />
+            {cari.length > 0 ? (
+              <PressableScale onPress={() => setCari("")} accessibilityLabel="Hapus pencarian" style={{ width: 32, height: 32, alignItems: "center", justifyContent: "center" }}>
+                <X size={18} color={colors.textMuted} strokeWidth={1.75} />
+              </PressableScale>
+            ) : null}
+          </View>
+          <PressableScale
+            onPress={() => { haptic.tick(); setFilterBuka(true); }}
+            accessibilityLabel={jumlahFilterAktif(filter) > 0 ? `Filter, ${jumlahFilterAktif(filter)} aktif` : "Filter"}
+            style={{ width: 46, height: 46, borderRadius: radius.button, alignItems: "center", justifyContent: "center", backgroundColor: jumlahFilterAktif(filter) > 0 ? colors.primary : colors.glassFillStrong, borderWidth: 1, borderColor: jumlahFilterAktif(filter) > 0 ? colors.primary : colors.glassStroke }}
+          >
+            <ListFilter size={20} color={jumlahFilterAktif(filter) > 0 ? colors.onPrimary : colors.text} strokeWidth={1.75} />
+          </PressableScale>
+        </View>
+
+        {/* Satu baris yang bisa digeser: empat tab + jumlah tidak muat di layar sempit / font besar tanpa membungkus. */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, marginBottom: 12 }} contentContainerStyle={{ gap: 8, paddingRight: 8 }} accessibilityRole="tablist">
+          {TAB.map((t) => (
+            <Chip key={t.id} label={t.label} aktif={tab === t.id} jumlah={hitung?.[t.id]} onPress={() => setTab(t.id)} />
+          ))}
+        </ScrollView>
+
+        {daftar.isLoading && !daftar.data ? (
+          <View style={{ gap: 12 }} accessibilityLabel="Memuat daftar persetujuan" accessibilityLiveRegion="polite">
+            {[0, 1, 2].map((i) => <Skeleton key={i} tinggi={128} style={{ borderRadius: 24 }} />)}
+          </View>
+        ) : !daftar.data ? (
+          <GalatPenuh error={daftar.error} online={online} onCoba={muatUlang} nama="Daftar persetujuan" />
+        ) : (
+          <FlatList
+            data={items}
+            keyExtractor={(i) => i.kunci}
+            renderItem={({ item }) => <KartuItem item={item} onPress={() => router.push({ pathname: "/persetujuan/[jenis]/[id]", params: { jenis: item.jenis, id: item.id } })} />}
+            contentContainerStyle={{ paddingBottom: 130, opacity: gerak ? 0.55 : 1 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            refreshControl={<RefreshControl refreshing={daftar.isRefetching && !daftar.isFetchingNextPage && !gerak} onRefresh={muatUlang} tintColor={colors.primary} colors={[colors.primary]} />}
+            onEndReachedThreshold={0.4}
+            onEndReached={() => { if (daftar.hasNextPage && !daftar.isFetchingNextPage) void daftar.fetchNextPage(); }}
+            ListHeaderComponent={daftar.isError ? <BannerBasi error={daftar.error} online={online} onCoba={muatUlang} /> : null}
+            ListEmptyComponent={
+              aktif > 0
+                ? <EmptyState judul="Tidak ada yang cocok" isi="Ubah kata kunci atau atur ulang filter." aksi="Atur ulang" onAksi={() => { setCari(""); setDraft({ jenis: [], periodeId: null, pemohonId: null }); }} />
+                : <EmptyState judul={KOSONG[tab].judul} isi={KOSONG[tab].isi} />
+            }
+            ListFooterComponent={
+              daftar.isFetchingNextPage ? <ActivityIndicator style={{ marginVertical: 16 }} color={colors.primary} accessibilityLabel="Memuat halaman berikutnya" />
+              : daftar.hasNextPage ? (
+                <PressableScale onPress={() => void daftar.fetchNextPage()} accessibilityLabel="Muat lebih banyak" style={{ alignSelf: "center", minHeight: 44, justifyContent: "center", paddingHorizontal: 16 }}>
+                  <Text style={{ color: colors.primary, fontFamily: font.medium, fontSize: 14 }}>Muat lebih banyak</Text>
+                </PressableScale>
+              ) : items.length > 0 ? <Text style={{ textAlign: "center", color: colors.textFaint, fontFamily: font.regular, fontSize: 12, marginVertical: 14 }}>{daftar.data.pages[0]?.total ?? items.length} pengajuan · sudah semua</Text> : null
+            }
+          />
+        )}
+      </View>
+      <FilterSheet
+        visible={filterBuka} awal={draft} pemohon={pemohon.data ?? []} onTutup={() => setFilterBuka(false)}
+        onTerapkan={(d) => { setDraft(d); setFilterBuka(false); }}
+      />
     </Screen>
   );
 }

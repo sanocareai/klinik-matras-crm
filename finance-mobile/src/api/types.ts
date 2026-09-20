@@ -106,23 +106,53 @@ export type DashboardData = {
 
 export type TrenBulan = { bulan: string; pendapatanBersih: Money; beban: Money };
 
+// ─── Inbox Persetujuan (S4) — bentuk read-model server: GET /api/finance/approvals ───────────────────────
 export type JenisApproval = "expense" | "purchase" | "bill" | "refund";
+export type TahapApproval = "MENUNGGU" | "DIPROSES" | "DISETUJUI" | "DITOLAK";
+
+/** Keputusan yang boleh diambil pengguna ini — dihitung SERVER (izin + pemisahan tugas + syarat bukti). Klien tidak menghitung ulang. */
+export type AksiKeputusan = { boleh: boolean; alasan: string | null; path: string; alasanWajib?: boolean };
 
 export type ApprovalItem = {
+  kunci: string;
   id: string;
   jenis: JenisApproval;
+  jenisLabel: string;
   nomor: string;
   tanggal: string;
-  diajukanOleh: string;
+  diajukanPada: string;
+  umurHari: number;
+  pemohon: { id: string; name: string } | null;
+  nominal: Money;
   keterangan: string;
   kategori: string | null;
-  divisi: string | null;
+  rekening: string | null;
+  pihak: string | null;
+  nomorOrder: string | null;
   mode: string | null;
-  amount: Money;
-  adaBukti: boolean;
-  /** Pengaju tidak boleh menyetujui pengajuannya sendiri (kecuali FINANCE_ADMIN). */
-  bolehDisetujuiSaya: boolean;
+  status: string;
+  statusLabel: string;
+  tahap: TahapApproval;
+  adaLampiran: boolean;
+  alasanTolak: string | null;
+  diputuskanOleh: { id: string; name: string } | null;
+  diputuskanPada: string | null;
+  syarat: { terpenuhi: false; pesan: string } | null;
+  aksi: { setujui: AksiKeputusan; tolak: AksiKeputusan };
 };
+
+export type LampiranApproval = { id: string; jenis: "foto" | "tautan"; url: string | null; thumbUrl: string | null; kedaluwarsa: string | null };
+export type RiwayatApproval = { waktu: string; peristiwa: string; label: string; oleh: string | null; catatan: string | null };
+
+export type ApprovalDetail = ApprovalItem & {
+  rincian: Record<string, string | boolean | null>;
+  lampiran: LampiranApproval[];
+  riwayat: RiwayatApproval[];
+};
+
+export type HitungTab = Record<TahapApproval, number>;
+export type ApprovalHalaman = { items: ApprovalItem[]; tab: TahapApproval; page: number; limit: number; total: number; adaLagi: boolean; hitung: HitungTab };
+export type FilterApproval = { tab: TahapApproval; jenis: JenisApproval[]; from: string | null; to: string | null; pemohonId: string | null; q: string };
 
 export type TransaksiItem = {
   id: string;
