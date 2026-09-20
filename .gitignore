@@ -29,3 +29,6 @@ driver-app/android/release.keystore
 
 backups/
 backend/scripts/data/warehouse-import/
+
+# Kredensial akses server (plaintext) — JANGAN pernah di-commit; simpan di password manager
+/docs/SANO_Hub_ssh ubuntu@43.133.152.6.txt
