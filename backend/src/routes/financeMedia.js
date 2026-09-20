@@ -21,6 +21,7 @@ import { prisma } from "../db.js";
 import { requireAuth, authenticateBearer } from "../middleware/auth.js";
 import { hasPermission } from "../middleware/authorize.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
+import { fileURLToPath } from "node:url";
 import { RECEIPTS_DIR, RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { FILE_PATTERN, MEDIA_SIGN_TTL_SECONDS, signFile, verifyFileSignature } from "../lib/mediaSigning.js";
 import { createLimiter } from "../lib/rateLimit.js";
@@ -90,8 +91,58 @@ const handler = (req, res) => {
 export const financeReceiptsLegacyPathRouter = express.Router();
 financeReceiptsLegacyPathRouter.get("/:file", handler);
 
+// ── Bukti pembayaran pelanggan (/media/payment-proofs, diunggah sales/driver) ─────────────────────────────
+// File statis publik /media/payment-proofs DIPERTAHANKAN untuk web CRM (belum dimigrasi). Untuk klien native tersedia jalur
+// terlindungi: Bearer + izin FINANCE_READ ATAU URL bertanda-tangan (exp/sig, 10 menit).
+const PAYMENT_PROOFS_DIR = process.env.PAYMENT_PROOFS_DIR
+  || path.join(path.dirname(fileURLToPath(import.meta.url)), "../../data/payment-proofs");
+const NAMA_BUKTI = /^[A-Za-z0-9._-]{3,200}$/;
+const TIPE_BUKTI = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".pdf": "application/pdf" };
+
+async function kirimBuktiPembayaran(req, res) {
+  const file = req.params.file;
+  const tipe = TIPE_BUKTI[path.extname(file).toLowerCase()];
+  if (!NAMA_BUKTI.test(file) || file.includes("..") || !tipe) return res.status(404).json({ error: "Bukti tidak ditemukan" });
+
+  if (req.query.sig) {
+    if (!verifyFileSignature(file, req.query.exp, req.query.sig)) {
+      return res.status(403).json({ error: "Tautan bukti tidak valid atau sudah kedaluwarsa" });
+    }
+  } else {
+    const user = await authenticateBearer(req);
+    if (!user) return res.status(401).json({ error: "Belum login" });
+    // FINANCE_READ, bukan PAYMENT_READ: SALES memegang PAYMENT_READ tetapi bukan tim Finance.
+    if (!hasPermission(user, P.FINANCE_READ)) {
+      return res.status(403).json({ error: "Anda tidak punya akses untuk melihat bukti ini" });
+    }
+  }
+  const abs = path.join(PAYMENT_PROOFS_DIR, file);
+  if (!abs.startsWith(path.resolve(PAYMENT_PROOFS_DIR)) || !fs.existsSync(abs)) return res.status(404).json({ error: "Bukti tidak ditemukan" });
+  res.setHeader("Content-Type", tipe);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cache-Control", "private, max-age=300");
+  fs.createReadStream(abs).on("error", () => res.destroy()).pipe(res);
+}
+
+// Jalur publik bertanda-tangan (di luar /api, seperti /media/finance-receipts): router-router finance memasang requireAuth
+// global pada /api/finance sehingga URL bertanda-tangan tanpa Bearer TIDAK bisa hidup di bawah prefix itu.
+export const financePaymentProofsPathRouter = express.Router();
+financePaymentProofsPathRouter.get("/:file", (req, res) => {
+  kirimBuktiPembayaran(req, res).catch((err) => {
+    console.error("[financeMedia] bukti-pembayaran:", err);
+    if (!res.headersSent) res.status(500).json({ error: "Terjadi kesalahan di server" });
+  });
+});
+
 // Router di bawah /api/finance.
 export const financeMediaRouter = express.Router();
+
+financeMediaRouter.get("/media/payment-proofs/:file", (req, res) => {
+  kirimBuktiPembayaran(req, res).catch((err) => {
+    console.error("[financeMedia] payment-proofs:", err);
+    if (!res.headersSent) res.status(500).json({ error: "Terjadi kesalahan di server" });
+  });
+});
 
 financeMediaRouter.get("/media/receipts/:file", handler);
 

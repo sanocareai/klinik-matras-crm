@@ -8,6 +8,7 @@ import { PressableScale } from "@/design/ui";
 import { font } from "@/design/tokens";
 import { haptic } from "@/design/haptics";
 import { useApprovalBadge } from "@/hooks/approvals";
+import { usePembayaranLencana } from "@/hooks/pembayaran";
 import { NEED_TAB, bisaMencatatAtauVerifikasi, has } from "@/auth/capabilities";
 import { useSession } from "@/auth/session";
 import { S } from "@/lib/strings";
@@ -38,6 +39,8 @@ export function GlassTabBar({ state, navigation }: Props) {
   const caps = useSession((s) => s.capabilities);
   // Lencana Persetujuan = jumlah menunggu dari server (GET /finance/approvals/ringkasan), bukan dihitung klien.
   const menunggu = useApprovalBadge().data ?? 0;
+  // Lencana Transaksi = pembayaran pelanggan menunggu verifikasi (GET /finance/pembayaran/ringkasan), juga dari server.
+  const bayarMenunggu = usePembayaranLencana().data ?? 0;
   const aktifNama = state.routes[state.index]?.name;
   // FAB hanya untuk yang boleh mencatat atau memverifikasi pembayaran (Approver/Accountant-baca tidak melihatnya).
   const tampilFab = (aktifNama === "index" || aktifNama === "transaksi") && bisaMencatatAtauVerifikasi(caps);
@@ -71,7 +74,7 @@ export function GlassTabBar({ state, navigation }: Props) {
           if (butuh && !has(caps, butuh)) return null;
           const fokus = state.index === i;
           const warna = fokus ? colors.primary : colors.textMuted;
-          const badge = r.name === "persetujuan" ? menunggu : 0;
+          const badge = r.name === "persetujuan" ? menunggu : r.name === "transaksi" ? bayarMenunggu : 0;
           return (
             <PressableScale
               key={r.key}

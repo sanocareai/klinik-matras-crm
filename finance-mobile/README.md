@@ -155,6 +155,24 @@ Keyboard nyata di emulator: set `hw.keyboard=no` pada AVD (Gboard tampil). Perha
 | 8 | Sembunyikan nominal | Nominal, keterangan, vendor, lampiran tersamarkan |
 | 9 | 360×640dp + font 1.5, gelap | Tidak ada teks terpotong, tidak ada overlap |
 
+## Pembayaran pelanggan (S5) — QA
+
+Buka dari tab Transaksi → chip "Pembayaran", menu Lainnya → "Pembayaran pelanggan", atau kartu "Pembayaran belum diverifikasi" di Beranda. Lencana tab Transaksi = jumlah menunggu dari server. Mode contoh: 22 menunggu (8 kasus khusus: DP, cicilan, pelunasan tunai saat pengiriman, tanpa bukti, kelebihan bayar, kemungkinan ganda, alokasi dua order, nominal & nama sangat panjang), 3 terverifikasi, 2 ditolak. Skenario `+konflik`, `+izin`, `+putus`, `+offline`, `+galat`, `+sesi`, `+basi`, `+kosong`, `+lambat` berlaku juga di sini.
+
+API development nyata (tanpa mencemari DB dev): buat DB uji (`klinik_matras_test`, di-truncate oleh tes integrasi), isi user berlabel per peran + pembayaran lewat `POST /orders/:id/payments` (jalur produksi), jalankan backend kedua `DATABASE_URL=…klinik_matras_test PORT=4100 node --env-file=.env src/index.js`, lalu `EXPO_PUBLIC_USE_MOCKS=false EXPO_PUBLIC_API_URL=http://10.0.2.2:4100/api npx expo start --dev-client --clear`. **Jangan menjalankan tes backend saat QA nyata berjalan** (tes membersihkan DB uji dan mencabut sesi).
+
+| # | Skenario | Hasil yang benar |
+|---|---|---|
+| 1 | Daftar 3 tab + ringkasan periode | Jumlah & nominal dari server; ringkasan tidak berubah saat pindah tab |
+| 2 | Cari (keyboard nyata), filter cara bayar/rekening/periode, muat lebih banyak | Debounce 400 ms; kursor tanpa duplikat |
+| 3 | Detail | Order, invoice, pelanggan, jenis, cara bayar, rekening, pencatat, "Tidak tercatat di sistem" (referensi/pengirim/catatan), tagihan, alokasi, jurnal, bukti (gambar dalam app; PDF dibuka di penampil perangkat), riwayat |
+| 4 | Verifikasi | Konfirmasi ⇒ PIN ⇒ status resmi dari server; tombol hilang |
+| 5 | Tolak: alasan kosong/pendek | Tombol nonaktif; alasan yang sudah ditulis tidak hilang bila PIN dibatalkan |
+| 6 | Diverifikasi Finance lain saat layar terbuka | 409: "sudah diverifikasi oleh …" + status dimuat ulang, tanpa retry otomatis |
+| 7 | Owner/Approver/Akuntan | Bisa membaca; tombol nonaktif + alasan server |
+| 8 | Offline | Tombol nonaktif; tidak ada perintah dikirim/diantre |
+| 9 | 360×640dp, font 1.5, gelap | Tidak ada teks terpotong; label & rekening membungkus |
+
 ## Blocker yang tersisa (butuh tindakan manusia / akun)
 
 1. **Proyek EAS belum dibuat** — jalankan `eas login` + `eas init`, isi `EAS_PROJECT_ID`. Tanpa itu OTA (`expo-updates`) nonaktif dan `eas build` belum bisa.

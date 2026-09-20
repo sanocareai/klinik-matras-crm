@@ -26,7 +26,8 @@ const { financeTxRouter } = await import("../../../src/routes/financeTransaction
 const { financeKasbonRouter } = await import("../../../src/routes/financeKasbon.js");
 const { financePenerimaanRouter } = await import("../../../src/routes/financePenerimaan.js");
 const { financeApprovalsRouter } = await import("../../../src/routes/financeApprovals.js");
-const { financeMediaRouter, financeReceiptsLegacyPathRouter } = await import("../../../src/routes/financeMedia.js");
+const { financePembayaranRouter } = await import("../../../src/routes/financePembayaran.js");
+const { financeMediaRouter, financeReceiptsLegacyPathRouter, financePaymentProofsPathRouter } = await import("../../../src/routes/financeMedia.js");
 const { mobileRouter } = await import("../../../src/routes/mobileAuth.js");
 const { authRouter } = await import("../../../src/routes/auth.js");
 
@@ -56,8 +57,10 @@ export function buildTestApp() {
   app.use("/api/finance", financeKasbonRouter);
   app.use("/api/finance", financePenerimaanRouter);
   app.use("/api/finance", financeApprovalsRouter);
+  app.use("/api/finance", financePembayaranRouter);
   app.use("/api/finance", financeMediaRouter);
   app.use("/media/finance-receipts", financeReceiptsLegacyPathRouter);
+  app.use("/media/bukti-pembayaran", financePaymentProofsPathRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/mobile", mobileRouter);
 

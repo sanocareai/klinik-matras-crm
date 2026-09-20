@@ -168,7 +168,7 @@ export function daftarTindakan(antrean: AntreanRingkas | null, gap: number, caps
   }
   if (antrean && has(caps, "paymentRead")) {
     if (antrean.jumlahPembayaranBelumVerifikasi > 0) {
-      hasil.push({ id: "verifikasi", ikon: BadgeCheck, tone: "info", judul: "Pembayaran belum diverifikasi", ringkas: "Bukti pembayaran pelanggan menunggu dicek", jumlah: antrean.jumlahPembayaranBelumVerifikasi, tujuan: "/transaksi" });
+      hasil.push({ id: "verifikasi", ikon: BadgeCheck, tone: "info", judul: "Pembayaran belum diverifikasi", ringkas: "Bukti pembayaran pelanggan menunggu dicek", jumlah: antrean.jumlahPembayaranBelumVerifikasi, tujuan: "/pembayaran" });
     }
     const l = antrean.lunasBelumDicatat;
     if (l.jumlah > 0) {

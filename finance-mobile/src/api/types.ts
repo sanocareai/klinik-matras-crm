@@ -154,6 +154,70 @@ export type HitungTab = Record<TahapApproval, number>;
 export type ApprovalHalaman = { items: ApprovalItem[]; tab: TahapApproval; page: number; limit: number; total: number; adaLagi: boolean; hitung: HitungTab };
 export type FilterApproval = { tab: TahapApproval; jenis: JenisApproval[]; from: string | null; to: string | null; pemohonId: string | null; q: string };
 
+// ─── Pembayaran pelanggan (S5) — read-model server: GET /api/finance/pembayaran ──────────────────────────
+// Status, jenis (DP/cicilan/pelunasan), peringatan, tagihan, dan `aksi` semuanya dihitung SERVER. Klien hanya memetakan.
+export type StatusBayar = "MENUNGGU" | "TERVERIFIKASI" | "DITOLAK" | "DIBATALKAN";
+export type TabBayar = "MENUNGGU" | "TERVERIFIKASI" | "DITOLAK";
+export type MetodeBayar = "CASH" | "TRANSFER" | "QRIS" | "CARD";
+export type JenisBayar = "DP" | "CICILAN" | "PELUNASAN";
+export type Orang = { id: string; name: string };
+export type AksiPembayaran = { boleh: boolean; alasan: string | null; path: string; alasanWajib?: boolean };
+
+export type PembayaranItem = {
+  id: string;
+  status: StatusBayar;
+  statusLabel: string;
+  nominal: Money;
+  metode: MetodeBayar | string;
+  metodeLabel: string;
+  jenis: JenisBayar | null;
+  dicatatPada: string;
+  tanggal: string;
+  order: { id: string; nomor: string; nilai: Money; statusBayar: string } | null;
+  pelanggan: Orang | null;
+  rekening: Orang | null;
+  pencatat: Orang | null;
+  sumber: "PENGIRIMAN" | "CRM";
+  adaBukti: boolean;
+  adaAlokasi: boolean;
+  verifikasi: { oleh: Orang | null; pada: string | null } | null;
+  pembatalan: { oleh: Orang | null; pada: string | null; alasan: string | null } | null;
+  aksi: { verifikasi: AksiPembayaran; tolak: AksiPembayaran };
+};
+
+export type BuktiBayar = { jenis: "gambar" | "pdf" | "tautan"; url: string | null; thumbUrl: string | null; kedaluwarsa: string | null };
+export type PeringatanBayar = { kode: string; pesan: string };
+export type PembayaranDetail = PembayaranItem & {
+  tagihan: { nilaiOrder: Money; terbayarTerhitung: Money; sisa: Money; sisaSetelahIni: Money; gerbangVerifikasi: boolean; terhitungSebelumVerifikasi: boolean } | null;
+  invoice: { nomor: string; status: string; jatuhTempo: string | null } | null;
+  statusOrder: string | null;
+  alokasi: { orderId: string; nomor: string | null; nominal: Money; catatan: string | null }[];
+  jurnal: { nomor: string | null; status: string; tanggal: string | null } | null;
+  belumDibukukan: { pesan: string } | null;
+  bukti: BuktiBayar | null;
+  /** Field yang memang TIDAK ada di model Payment (mis. referensi, pengirim, catatan) — dinyatakan jujur, bukan dikosongkan diam-diam. */
+  tidakTercatat: string[];
+  peringatan: PeringatanBayar[];
+  riwayat: RiwayatApproval[];
+};
+
+export type RingkasanBayar = {
+  menunggu: { jumlah: number; nominal: Money };
+  terverifikasi: { jumlah: number; nominal: Money };
+  ditolak: { jumlah: number; nominal: Money };
+  dibatalkan: { jumlah: number; nominal: Money };
+  totalMasuk: Money;
+};
+export type PembayaranHalaman = {
+  items: PembayaranItem[];
+  nextCursor: string | null;
+  hitung: Record<StatusBayar, number>;
+  ringkasan: RingkasanBayar;
+  diperbaruiPada: string | null;
+};
+export type FilterPembayaran = { tab: TabBayar; metode: MetodeBayar | null; rekeningId: string | null; from: string | null; to: string | null; q: string };
+export type OpsiBayar = { rekening: { id: string; name: string; kind: string }[]; metode: { id: string; label: string }[] };
+
 export type TransaksiItem = {
   id: string;
   jenis: "pengeluaran" | "pembelian" | "kasbon" | "pembayaran" | "jurnal";

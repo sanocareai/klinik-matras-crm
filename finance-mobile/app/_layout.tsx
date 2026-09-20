@@ -84,6 +84,8 @@ function Gerbang() {
           <Stack.Screen name="(tabs)" options={{ animation: "none" }} />
           <Stack.Screen name="aksi-cepat" options={{ presentation: "transparentModal", animation: "fade" }} />
           <Stack.Screen name="persetujuan/[jenis]/[id]" />
+          <Stack.Screen name="pembayaran/index" />
+          <Stack.Screen name="pembayaran/[id]" />
           <Stack.Screen name="laporan/[jenis]" />
           <Stack.Screen name="approval/[jenis]/[id]" />
           <Stack.Screen name="keamanan" />

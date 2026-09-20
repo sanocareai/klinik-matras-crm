@@ -35,6 +35,7 @@ import { notifySalesJobCompleted, notifySalesUnpaidAfterDelivery } from "../serv
 import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { bukukanPembayaran } from "../services/finance/hooks.js";
+import { verifikasiPembayaran } from "../services/finance/pembayaran.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, routePath, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
@@ -4772,19 +4773,16 @@ armadaRouter.post("/payments/:id/verify", requirePermission(P.PAYMENT_WRITE), as
     // mengubah status bayar order — dan dua hal itu tidak boleh terpisah:
     // kalau recompute gagal, verifikasinya ikut batal, bukan meninggalkan
     // order yang statusnya tertinggal di belakang faktanya.
-    await prisma.$transaction(async (tx) => {
-      const v = await tx.paymentVerification.create({
-        data: { paymentId: req.params.id, verifiedById: req.user.id },
-      });
-      const p = await tx.payment.findUnique({ where: { id: req.params.id }, select: { orderId: true } });
-      if (p) await recomputeOrderPaymentStatus(tx, p.orderId);
-      return v;
-    });
+    // S5 (20 Sep 2026): logika dipindah ke services/finance/pembayaran.js#verifikasiPembayaran — baris payment
+    // DIKUNCI (FOR UPDATE), pembayaran yang sudah dibatalkan ditolak (409; sebelumnya lolos), dan status bayar
+    // SEMUA order terdampak alokasi dihitung ulang (sebelumnya hanya order induk). Kontrak respons tetap sama.
+    await prisma.$transaction((tx) => verifikasiPembayaran(tx, { paymentId: req.params.id, userId: req.user.id }));
     const payment = await prisma.payment.findUnique({ where: { id: req.params.id }, include: paymentInclude });
     res.json(payment);
   } catch (err) {
     if (err.code === "P2002") return res.status(409).json({ error: "Pembayaran ini sudah diverifikasi" });
     if (err.code === "P2003") return res.status(404).json({ error: "Pembayaran tidak ditemukan" });
+    if (err?.statusCode) return res.status(err.statusCode).json({ error: err.message });
     handleErr(err, res);
   }
 });

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
 import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Search, X, type LucideIcon } from "lucide-react-native";
 import { Screen } from "@/design/Screen";
 import { GlassCard } from "@/design/GlassCard";
@@ -9,6 +10,7 @@ import { Chip, EmptyState, ErrorState, IconCircle, MockBanner, OfflineBanner, Pr
 import { font, radius } from "@/design/tokens";
 import { useTheme } from "@/design/theme";
 import { useTransaksi, BelumTersedia } from "@/hooks/data";
+import { usePembayaranLencana } from "@/hooks/pembayaran";
 import { useOnline } from "@/hooks/useOnline";
 import { ENV } from "@/lib/env";
 import { tanggalPendek } from "@/lib/dates";
@@ -42,7 +44,9 @@ function cocok(q: string, ...isi: string[]): boolean {
 function Transaksi() {
   const { colors } = useTheme();
   const online = useOnline();
+  const router = useRouter();
   const [segmen, setSegmen] = useState<Segmen>("pengeluaran");
+  const bayarMenunggu = usePembayaranLencana().data ?? 0;
   const [q, setQ] = useState("");
   const { data, isLoading, isError, error, refetch, isRefetching } = useTransaksi();
 
@@ -50,7 +54,7 @@ function Transaksi() {
     () => (data ?? []).filter((t) => t.jenis === JENIS_DARI_SEGMEN[segmen]).filter((t) => cocok(q, t.nomor, t.judul, t.sub, t.amount.replace(/\.\d+$/, ""))),
     [data, segmen, q],
   );
-  const jumlahPerSegmen = (id: Segmen) => (data ?? []).filter((t) => t.jenis === JENIS_DARI_SEGMEN[id]).length;
+  const jumlahPerSegmen = (id: Segmen) => (id === "pembayaran" ? bayarMenunggu : (data ?? []).filter((t) => t.jenis === JENIS_DARI_SEGMEN[id]).length);
 
   return (
     <Screen refreshing={isRefetching} onRefresh={() => void refetch()}>
@@ -73,7 +77,7 @@ function Transaksi() {
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 12 }}>
         {SEGMEN.map((s) => (
-          <Chip key={s.id} label={s.label} aktif={segmen === s.id} onPress={() => setSegmen(s.id)} jumlah={jumlahPerSegmen(s.id)} />
+          <Chip key={s.id} label={s.label} aktif={segmen === s.id && s.id !== "pembayaran"} onPress={() => (s.id === "pembayaran" ? router.push("/pembayaran") : setSegmen(s.id))} jumlah={jumlahPerSegmen(s.id)} />
         ))}
       </ScrollView>
 

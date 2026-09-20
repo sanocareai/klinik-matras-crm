@@ -112,6 +112,15 @@ Read-model `services/finance/approvals.js`, router `routes/financeApprovals.js` 
 - Perbaikan WIB: `umurPiutang/umurUtang/saldoKasBank` memakai tanggal buku WIB (`todayBookDateWIB`), bukan `new Date()` UTC.
 - Tes: `tests/integration/financeApprovals.integration.test.js` (15) + regresi WIB di `financePenerimaan.integration.test.js`.
 
+### Pembayaran pelanggan (S5, 20 Sep 2026)
+
+Kode: `services/finance/pembayaran.js`, `routes/financePembayaran.js`, bukti di `routes/financeMedia.js`. Tidak ada tabel/kolom baru. Endpoint & aturan lengkap: PRD §S5. Ringkas:
+- `GET /api/finance/pembayaran[?status=MENUNGGU|TERVERIFIKASI|DITOLAK|DIBATALKAN&q&metode&rekeningId&from&to&limit&cursor]` → `{items, nextCursor, hitung, ringkasan, diperbaruiPada}` (cursor keyset `createdAt|id`); `/pembayaran/ringkasan`, `/pembayaran/opsi`, `/pembayaran/:id` (detail: `tagihan{nilaiOrder, terbayarTerhitung, sisa, sisaSetelahIni, gerbangVerifikasi, terhitungSebelumVerifikasi}`, invoice, alokasi, jurnal, `bukti`, `tidakTercatat`, `peringatan`, `riwayat`).
+- Command `POST /pembayaran/:id/verifikasi` (201) dan `/tolak {reason}` (200) — `PAYMENT_WRITE`, `Idempotency-Key`, row lock, transaksi atomik, audit; respons memuat detail resmi terbaru.
+- Bukti: `/media/bukti-pembayaran/:file` di luar `/api` (router-router finance memasang `requireAuth` global di `/api/finance`, jadi URL bertanda-tangan tanpa Bearer tidak bisa di bawah prefix itu — pola sama dengan `/media/finance-receipts`).
+- Perbaikan lintas modul: `tolakLunas` menolak (409) bila order sudah lunas penuh oleh pembayaran terverifikasi; `verifikasiPenerimaan/tolakLunas` mengunci baris Order; `/armada/payments/:id/verify` memakai `verifikasiPembayaran`.
+- Tes: `tests/integration/financePembayaran.integration.test.js` (18).
+
 ## 8. Tes
 
 ```bash

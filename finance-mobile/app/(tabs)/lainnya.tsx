@@ -2,7 +2,7 @@ import React from "react";
 import { Alert, Switch, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
-  BadgeCheck, BookOpen, ChevronRight, FileSpreadsheet, FileText, Info, Landmark, LogOut, Palette, Scale, ShieldCheck, Smartphone,
+  BadgeCheck, Banknote, BookOpen, ChevronRight, FileSpreadsheet, FileText, Info, Landmark, LogOut, Palette, Scale, ShieldCheck, Smartphone,
   TriangleAlert, Users, Wallet, type LucideIcon,
 } from "lucide-react-native";
 import { Screen } from "@/design/Screen";
@@ -17,10 +17,11 @@ import { has, type Need } from "@/auth/capabilities";
 import { ENV } from "@/lib/env";
 import { S } from "@/lib/strings";
 
-type Menu = { label: string; Icon: LucideIcon; need?: Need; href?: "/keamanan" };
+type Menu = { label: string; Icon: LucideIcon; need?: Need; href?: "/keamanan" | "/pembayaran" };
 
 // Setiap menu punya izin yang dibutuhkan (capability-driven). Menu tanpa izin tidak ditampilkan.
 const KEUANGAN: Menu[] = [
+  { label: "Pembayaran pelanggan", Icon: Banknote, need: "financeRead", href: "/pembayaran" },
   { label: S.lainnya.kasBank, Icon: Wallet, need: "financeRead" },
   { label: S.lainnya.piutangRefund, Icon: Users, need: "financeRead" },
   { label: S.lainnya.invoice, Icon: FileText, need: "financeRead" },

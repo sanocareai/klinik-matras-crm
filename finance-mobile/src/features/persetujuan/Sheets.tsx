@@ -91,24 +91,28 @@ function PilihanPemohon({ label, aktif, onPress }: { label: string; aktif: boole
 export const ALASAN_MIN = 3;
 
 export function AlasanSheet({
-  visible, sibuk, nomor, alasan, onUbah, onTutup, onKirim,
-}: { visible: boolean; sibuk: boolean; nomor: string; alasan: string; onUbah: (t: string) => void; onTutup: () => void; onKirim: () => void }) {
+  visible, sibuk, nomor, alasan, onUbah, onTutup, onKirim, judul = "Tolak pengajuan", sub, tombol = "Tolak pengajuan", placeholder = "Contoh: nota tidak terbaca, mohon unggah ulang",
+}: {
+  visible: boolean; sibuk: boolean; nomor: string; alasan: string; onUbah: (t: string) => void; onTutup: () => void; onKirim: () => void;
+  /** Teks khusus (mis. penolakan pembayaran). Bawaan = penolakan pengajuan (S4). */
+  judul?: string; sub?: string; tombol?: string; placeholder?: string;
+}) {
   const { colors } = useTheme();
   const keyboard = useTinggiKeyboard();
   const cukup = alasan.trim().length >= ALASAN_MIN;
   return (
-    <Sheet visible={visible} onClose={() => { if (!sibuk) onTutup(); }} judul="Tolak pengajuan" sub={`Tulis alasan penolakan untuk ${nomor}. Pemohon akan melihat alasan ini.`}>
+    <Sheet visible={visible} onClose={() => { if (!sibuk) onTutup(); }} judul={judul} sub={sub ?? `Tulis alasan penolakan untuk ${nomor}. Pemohon akan melihat alasan ini.`}>
       <View style={{ paddingBottom: keyboard > 0 ? keyboard - 8 : 0 }}>
         <TextInput
           value={alasan} onChangeText={onUbah} multiline maxLength={300} editable={!sibuk}
-          placeholder="Contoh: nota tidak terbaca, mohon unggah ulang" placeholderTextColor={colors.textFaint}
+          placeholder={placeholder} placeholderTextColor={colors.textFaint}
           accessibilityLabel="Alasan penolakan"
           style={{ minHeight: 96, textAlignVertical: "top", color: colors.text, fontFamily: font.regular, fontSize: 15, padding: 12, borderRadius: radius.button, backgroundColor: colors.solidAlt, borderWidth: 1, borderColor: colors.hairline }}
         />
         <Text accessibilityLiveRegion="polite" style={{ color: cukup || alasan.length === 0 ? colors.textMuted : colors.warning, fontFamily: font.regular, fontSize: 12, marginTop: 6 }}>
           {alasan.length === 0 ? `Alasan wajib diisi (minimal ${ALASAN_MIN} huruf).` : cukup ? `${alasan.trim().length}/300` : `Tulis minimal ${ALASAN_MIN} huruf.`}
         </Text>
-        <Button label="Tolak pengajuan" variant="danger" loading={sibuk} disabled={!cukup || sibuk} style={{ marginTop: 14 }} onPress={onKirim} />
+        <Button label={tombol} variant="danger" loading={sibuk} disabled={!cukup || sibuk} style={{ marginTop: 14 }} onPress={onKirim} />
       </View>
     </Sheet>
   );

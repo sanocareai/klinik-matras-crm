@@ -45,6 +45,8 @@ export const ENTITY_TYPES = Object.freeze({
   FIN_EXPENSE: "fin_expense",
   FIN_PURCHASE: "fin_purchase",
   FIN_KASBON: "fin_kasbon",
+  // Pembayaran pelanggan (Finance Mobile S5): verifikasi & penolakan Payment.
+  PAYMENT: "payment",
   FIN_SUPPLIER_BILL: "fin_supplier_bill",
   FIN_REFUND: "fin_refund",
   FIN_PERIOD: "fin_period",

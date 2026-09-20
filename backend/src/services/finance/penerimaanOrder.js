@@ -30,6 +30,7 @@
 //    terverifikasi, TANPA jurnal.
 
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
+import { lockRowForUpdate } from "../inventoryLedger.js";
 import { paidForOrder } from "./allocation.js";
 import { getVerificationGate, getSettingRaw, SETTING_KEYS } from "./settings.js";
 import { bukukanPembayaran } from "./hooks.js";
@@ -128,6 +129,9 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   if (!["REKENING", "SEBELUM_SALDO_AWAL"].includes(mode)) throw err("Pilihan \"uangnya masuk ke mana\" tidak dikenali");
   if (!["CASH", "TRANSFER", "QRIS", "CARD"].includes(method)) throw err("Cara bayar tidak dikenali");
 
+  // S5: kunci baris order SEBELUM membaca sisa. Tanpa ini dua verifikasi paralel (dua tap / dua perangkat / kunci
+  // idempotensi berbeda) sama-sama melihat sisa penuh dan membuat DUA Payment untuk satu order lunas.
+  await lockRowForUpdate(tx, '"Order"', orderId, { cast: null });
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: {
@@ -227,12 +231,18 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
  */
 export async function tolakLunas(tx, { orderId, reason, userId }) {
   if (!reason?.trim()) throw err("Alasan wajib diisi");
+  await lockRowForUpdate(tx, '"Order"', orderId, { cast: null }); // S5: serialkan dengan verifikasi paralel
   const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, orderNumber: true, paymentStatus: true, value: true } });
   if (!order) throw err("Order tidak ditemukan", 404);
   if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM`, 409);
 
   const gate = await getVerificationGate(tx);
   const dibayar = await paidForOrder(tx, orderId, gate);
+  // S5: kalau buku sudah mencatat pembayaran yang melunasi order (mis. baru saja diverifikasi Finance lain), menandainya
+  // "belum lunas" membuat status CRM bertentangan dengan ledger. Yang salah dibatalkan/ditolak adalah Payment-nya.
+  if (toMoney(order.value).greaterThan(0) && dibayar.greaterThanOrEqualTo(toMoney(order.value))) {
+    throw err(`Order ${order.orderNumber} sudah tercatat lunas penuh oleh pembayaran yang terverifikasi. Untuk membatalkan, tolak pembayarannya.`, 409);
+  }
   const baru = dibayar.greaterThan(0) ? "DP" : "BELUM_BAYAR";
   await tx.order.update({ where: { id: orderId }, data: { paymentStatus: baru, paidAt: null } });
   await recordActivity(tx, {

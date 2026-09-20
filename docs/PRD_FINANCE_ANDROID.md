@@ -1343,6 +1343,30 @@ Layar H1, K1, K2 (baca); `GET /finance/dashboard`, `/cash-accounts`, `/reports/l
 | S4-7 | Deep link dari push membuka AP2 setelah unlock |
 
 #### S5 — Pembayaran & verifikasi (L) — G-08 (foto), G-13 (kartu) atau penyiasatan
+
+**Status: SELESAI (20 Sep 2026; diuji di emulator Android dengan API development nyata + data contoh; belum ada build EAS).** Cakupan S5 yang dikerjakan = **daftar & keputusan atas Pembayaran pelanggan** (`Payment`): tab Menunggu Verifikasi / Terverifikasi / Ditolak, ringkasan periode, pencarian, filter (cara bayar, rekening, periode), pagination cursor, refresh, detail lengkap, verifikasi dan penolakan. Tab **"Lunas di CRM"** (AC S5-1…S5-6 di bawah, `/finance/penerimaan/*`) **tidak dibuat di mobile pada S5 ini**; endpoint-nya tetap ada di backend dan ikut diperkuat (row lock, lihat di bawah).
+
+**Endpoint (semua di `/api/finance`; `FINANCE_READ` untuk baca, `PAYMENT_WRITE` untuk keputusan):**
+`GET /pembayaran` (status, q, metode, rekeningId, from, to, limit, cursor) · `GET /pembayaran/ringkasan` (lencana) · `GET /pembayaran/opsi` (filter) · `GET /pembayaran/:id` · `POST /pembayaran/:id/verifikasi` · `POST /pembayaran/:id/tolak {reason}`. Bukti: URL bertanda-tangan `/media/bukti-pembayaran/:file?exp&sig` (10 mnt; Bearer+`FINANCE_READ` juga diterima; juga `/api/finance/media/payment-proofs/:file` khusus Bearer).
+
+**Schema: tidak ada tabel/kolom baru.** Dipakai apa adanya: `Payment` (+`cancelledAt/cancelReason`), `PaymentVerification` (unik per payment), `FinPaymentAllocation`, jurnal `PEMBAYARAN_ORDER:<paymentId>`, `ActivityEvent` (entity `payment`).
+
+**Workflow (server yang memutuskan):** status turunan — MENUNGGU (belum dibatalkan, belum ada `PaymentVerification`), TERVERIFIKASI, DITOLAK (dibatalkan lewat penolakan Finance), DIBATALKAN (dibatalkan admin di CRM; tidak punya tab, hanya masuk ringkasan). Jenis DP/Cicilan/Pelunasan diturunkan server dari urutan pembayaran per order. **Verifikasi** = baris `PaymentVerification` + hitung ulang status bayar semua order terdampak (termasuk tujuan alokasi); jurnal penerimaan sudah terposting saat pembayaran dicatat, tidak dijurnal ulang. **Penolakan** = pembatalan Payment (append-only) + pembalikan jurnal + hitung ulang status, **hanya** untuk yang belum diverifikasi (yang sudah diverifikasi → 409; koreksinya tetap admin di CRM — kebijakan reversal tidak dikarang). Status order/CRM hanya berubah dari pembayaran terverifikasi bila gerbang verifikasi berlaku untuk pembayaran itu (`isPaymentCounted`). Command: `Idempotency-Key` (428 bila tiada, token mobile), `SELECT … FOR UPDATE` pada payment (dan order terdampak), transaksi atomik, `ActivityEvent`; kunci sama diputar ulang, kunci beda paralel ⇒ tepat satu menang, yang lain 409.
+
+**Capability matrix:**
+| Peran | Lihat daftar/detail/bukti | Verifikasi / Tolak |
+|---|---|---|
+| FINANCE | ya | ya (`PAYMENT_WRITE`) |
+| OWNER, APPROVER, ACCOUNTANT | ya (`FINANCE_READ`) | tidak — `aksi.boleh=false` + alasan server; perintah langsung 403 |
+| SALES / tanpa akses Finance | tidak (403; login mobile ditolak `NOT_FINANCE_TEAM`) | tidak |
+`PAYMENT_WRITE` tetap khusus Finance; verifikasi pembayaran terpisah dari approval dokumen (S4).
+
+**Gap yang dinyatakan jujur (mengikuti backend, tidak dikarang):** (1) **Pencatatan pembayaran masuk dari mobile tidak dibuat** — workflow backend mencatat pembayaran lewat sales/driver/CRM (`POST /orders/:id/payments`, tanpa izin granular) atau lahir dari "Lunas di CRM". (2) `Payment` **tidak menyimpan referensi, nama pengirim, maupun catatan** — detail menuliskan "Tidak tercatat di sistem" (bukan kosong diam-diam); tidak ada deteksi referensi duplikat selain peringatan `KEMUNGKINAN_GANDA` (order+nominal+cara bayar sama dalam 24 jam). (3) Kelebihan bayar, pembayaran melebihi nilai order, tanpa bukti, dan tanpa order hanya **peringatan informatif**; server tidak memblokir verifikasi. (4) Pembayaran tanpa alokasi eksplisit dianggap milik `Payment.orderId`; tidak ada kebijakan pembayaran tanpa invoice/order. (5) `Order.value`/`Payment.amount` bertipe INT32 (Rupiah utuh, maks ±2,1 miliar). (6) `/media/payment-proofs` statis publik untuk web CRM **dipertahankan** (belum dimigrasi); mobile hanya memakai jalur bertanda-tangan.
+
+**Temuan & perbaikan selama S5:** router pembayaran memasang `requireAuth` global sehingga URL bertanda-tangan di bawah `/api/finance` diblokir (401) → dibatasi ke `/pembayaran` dan URL bukti dipindah ke `/media/bukti-pembayaran`; `tolakLunas` bisa menurunkan order yang baru saja dilunasi verifikasi ke "DP" (kini 409); verifikasi/penolakan "Lunas di CRM" paralel bisa membuat dua Payment (kini row lock order); "sisa jika ikut dihitung" mengurangi nominal dua kali saat gerbang menyala tanpa tanggal mulai (kini memakai `isPaymentCounted` + bagian alokasi, field `tagihan.terhitungSebelumVerifikasi`); `/armada/payments/:id/verify` (web) kini memakai fungsi verifikasi yang sama (row lock, pembayaran batal ditolak 409, semua order alokasi dihitung ulang).
+
+**QA:** backend serial 18 tes S5 (izin per peran, 428, status/filter/cursor, ringkasan tab-independen, detail, bukti, verifikasi, 409, double-tap, paralel ×6, verifikasi×tolak, alokasi, penolakan + jurnal dibalik, tagihan) + regresi "Lunas di CRM". Mobile 62 tes baru (pemetaan, jalur API asli, hook keputusan, UI). Emulator, **API nyata**: login Finance, daftar/pencarian/ringkasan, detail beralokasi dengan foto bukti bertanda-tangan, verifikasi (409 saat diverifikasi Finance lain — pesan server + status dimuat ulang), penolakan dengan keyboard nyata (status bayar order kembali "Belum bayar" dari server), sesi dicabut server → pesan Indonesia; Owner/Approver/Akuntan hanya membaca (aksi nonaktif, perintah 403), Sales ditolak masuk; PDF bertanda-tangan 200 `application/pdf`; 360×640dp + font 1.5 + gelap (2 cacat tata letak ditemukan & diperbaiki: ringkasan/rekening terpotong, label "Invoice" pecah).
+
 | AC | Kriteria |
 |---|---|
 | S5-1 | Tab **Lunas di CRM** = `lunas-belum-dicatat`; kartu memisahkan "Perlu dicek" dan "Lunas sebelum 18 Sep 2026" dengan bahasa §7.4 (tanpa istilah "saldo awal"/"pemetaan metode") |
