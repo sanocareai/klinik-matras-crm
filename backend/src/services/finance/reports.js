@@ -244,8 +244,14 @@ export async function labaRugi(db, { from, to }) {
  * 1 Januari tahun itu — TIDAK diambil dari akun Laba Ditahan. Alasannya:
  * kalau neraca bergantung pada proses tutup buku tahunan, maka neraca akan
  * salah sepanjang tahun sampai tutup buku dijalankan, dan akan salah
- * SELAMANYA kalau tutup buku lupa dijalankan. Dengan cara ini neraca selalu
- * seimbang tanpa proses apa pun.
+ * SELAMANYA kalau tutup buku lupa dijalankan.
+ *
+ * LABA/RUGI TAHUN-TAHUN SEBELUMNYA (sebelum 1 Januari tahun ini) dihitung dengan cara yang sama dan dimasukkan ke ekuitas sebagai
+ * baris terpisah "Laba/rugi tahun-tahun sebelumnya (belum ditutup ke Laba Ditahan)". Tanpa baris ini neraca TIDAK seimbang begitu
+ * pembukuan melewati pergantian tahun tanpa tutup buku (sistem ini tidak punya tutup buku otomatis): saldo akun pendapatan/beban
+ * tahun lalu tidak muncul di aset/kewajiban/ekuitas maupun di laba berjalan. Bug ini nyata di produksi: jurnal Des 2025 (net beban
+ * Rp45.834.231) membuat Neraca selisih −Rp45.834.231 sejak akhir Agustus 2026 sampai diperbaiki. Bila suatu hari tutup buku dibuat
+ * (Dr pendapatan/Cr beban ke Laba Ditahan), nilai baris ini otomatis jadi 0 — tidak ada hitungan ganda.
  */
 export async function neraca(db, { to }) {
   const akun = await ambilAkun(db);
@@ -253,18 +259,22 @@ export async function neraca(db, { to }) {
 
   const awalTahun = new Date(Date.UTC(to.getUTCFullYear(), 0, 1));
   const saldoTahunIni = await saldoPerAkun(db, { from: awalTahun, to });
+  // Kumulatif seluruh tahun SEBELUM tahun ini (sejak awal pembukuan s/d 31 Des tahun lalu).
+  const akhirTahunLalu = new Date(awalTahun.getTime() - 86_400_000);
+  const saldoTahunLalu = await saldoPerAkun(db, { to: akhirTahunLalu });
+  const tambahLaba = (laba, a, nilai) => {
+    if (a.type === "PENDAPATAN") return a.normalBalance === "KREDIT" ? laba.plus(nilai) : laba.minus(nilai);
+    return laba.minus(nilai);
+  };
 
   const kelompok = { ASET: [], KEWAJIBAN: [], EKUITAS: [] };
   let labaBerjalan = ZERO;
+  let labaSebelumnya = ZERO;
 
   for (const a of akun) {
     if (TIPE_LABA_RUGI.includes(a.type)) {
-      const nilai = saldoNormal(a, saldoTahunIni.get(a.id));
-      if (a.type === "PENDAPATAN") {
-        labaBerjalan = a.normalBalance === "KREDIT" ? labaBerjalan.plus(nilai) : labaBerjalan.minus(nilai);
-      } else {
-        labaBerjalan = labaBerjalan.minus(nilai);
-      }
+      labaBerjalan = tambahLaba(labaBerjalan, a, saldoNormal(a, saldoTahunIni.get(a.id)));
+      labaSebelumnya = tambahLaba(labaSebelumnya, a, saldoNormal(a, saldoTahunLalu.get(a.id)));
       continue;
     }
     const nilai = saldoNormal(a, saldo.get(a.id));
@@ -279,14 +289,23 @@ export async function neraca(db, { to }) {
   const totalAset = sumMoney(kelompok.ASET.map((r) => r.nilai));
   const totalKewajiban = sumMoney(kelompok.KEWAJIBAN.map((r) => r.nilai));
   const ekuitasTercatat = sumMoney(kelompok.EKUITAS.map((r) => r.nilai));
-  const totalEkuitas = ekuitasTercatat.plus(labaBerjalan);
+  const totalEkuitas = ekuitasTercatat.plus(labaSebelumnya).plus(labaBerjalan);
   const totalPasiva = totalKewajiban.plus(totalEkuitas);
+  // Baris tersendiri (bukan disembunyikan di total) supaya penyaji laporan yang hanya menjumlah daftar `ekuitas` tetap cocok.
+  // Nilai boleh NEGATIF (rugi) — tidak di-clip.
+  const ekuitasTampil = labaSebelumnya.isZero()
+    ? kelompok.EKUITAS
+    : [...kelompok.EKUITAS, {
+      accountId: "laba-tahun-sebelumnya", code: "—", name: "Laba/rugi tahun-tahun sebelumnya (belum ditutup ke Laba Ditahan)",
+      normalBalance: "KREDIT", nilai: moneyToNumber(labaSebelumnya),
+    }];
 
   return {
     perTanggal: to,
     aset: kelompok.ASET,
     kewajiban: kelompok.KEWAJIBAN,
-    ekuitas: kelompok.EKUITAS,
+    ekuitas: ekuitasTampil,
+    labaTahunSebelumnya: moneyToNumber(labaSebelumnya),
     labaTahunBerjalan: moneyToNumber(labaBerjalan),
     ringkasan: {
       totalAset: moneyToNumber(totalAset),
