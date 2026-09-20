@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
-import { Eye, EyeOff, Lock } from "lucide-react-native";
+import { Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { Eye, EyeOff } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/design/theme";
@@ -61,9 +61,7 @@ export default function Login() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView ref={gulir} contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: GUTTER, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 + keyboard }} keyboardShouldPersistTaps="handled">
           <View style={{ alignItems: "center", marginBottom: 28 }}>
-            <View style={{ width: 72, height: 72, borderRadius: 22, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" }}>
-              <Lock size={32} color={colors.onPrimary} strokeWidth={1.75} />
-            </View>
+            <Image source={require("../assets/splash-icon.png")} accessibilityLabel="Logo SANO Finance" style={{ width: 88, height: 88 }} resizeMode="contain" />
             <Text style={{ color: colors.text, fontFamily: font.semibold, fontSize: 24, marginTop: 16 }}>{S.login.judul}</Text>
             <Text style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 14, marginTop: 6, textAlign: "center" }}>{S.login.sub}</Text>
           </View>

@@ -51,7 +51,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...(googleServices ? { googleServicesFile: googleServices } : {}),
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
-      backgroundColor: "#123655",
+      // Ikon penuh seperti aplikasi toko: latar gradien selebar kanvas + foreground yang menyatu (dibuat dari sano_logo_financeapp.png).
+      backgroundColor: "#2EB4DE",
+      backgroundImage: "./assets/adaptive-bg.png",
       monochromeImage: "./assets/adaptive-icon-mono.png",
     },
     // Aplikasi keuangan tidak butuh mikrofon/lokasi: blokir yang mungkin masuk lewat dependensi.
