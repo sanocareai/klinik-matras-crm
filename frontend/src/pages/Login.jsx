@@ -74,7 +74,7 @@ export default function Login({ onLogin }) {
 
         {/* Isi tengah */}
         <div className="relative my-auto max-w-lg py-10">
-          <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3.5 py-1.5 text-[11px] font-semibold backdrop-blur">
+          <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3.5 py-1.5 text-[11px] font-semibold">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
             Connected operations workspace
           </span>
@@ -94,7 +94,7 @@ export default function Login({ onLogin }) {
 
           <div className="mt-9 grid grid-cols-3 gap-3">
             {HIGHLIGHTS.map((h) => (
-              <div key={h.title} className="rounded-xl bg-white/10 p-4 backdrop-blur-sm ring-1 ring-white/15">
+              <div key={h.title} className="rounded-xl bg-white/10 p-4 ring-1 ring-white/15">
                 <div className="text-[13px] font-semibold">{h.title}</div>
                 <div className="mt-1.5 text-[11px] leading-snug text-white/65">{h.body}</div>
               </div>

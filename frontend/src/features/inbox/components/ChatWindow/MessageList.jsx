@@ -1,4 +1,4 @@
-import React, { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import React, { forwardRef, lazy, Suspense, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { X, ArrowDown } from "lucide-react";
 import "yet-another-react-lightbox/styles.css";
@@ -47,7 +47,10 @@ function buildItems(messages, isGroup) {
   let lastDateKey = null;
   let prevMsg = null;
   for (const m of messages) {
-    const dateKey = dayjs(m.createdAt).format("YYYY-MM-DD");
+    // Kunci hari (kalender device, sama dengan dayjs lokal) tanpa dayjs: dihitung untuk SETIAP
+    // pesan tiap kali daftar dibangun ulang (ratusan pesan per pesan baru).
+    const dt = new Date(m.createdAt);
+    const dateKey = dt.getFullYear() * 10000 + (dt.getMonth() + 1) * 100 + dt.getDate();
     if (dateKey !== lastDateKey) {
       items.push({ type: "divider", key: `divider-${dateKey}`, label: dateDividerLabel(m.createdAt) });
       lastDateKey = dateKey;
@@ -105,6 +108,24 @@ const MessageList = forwardRef(function MessageList(
   const [firstItemIndex, setFirstItemIndex] = useState(START_INDEX);
   const [highlightedId, setHighlightedId] = useState(null);
   const [lightbox, setLightbox] = useState(null); // { type: 'image'|'video', url }
+
+  // Callback dari ChatWindow dibuat ulang tiap render ChatWindow (inline). Kalau diteruskan
+  // langsung ke MessageBubble, React.memo-nya percuma: SETIAP pesan baru/ketikan me-render
+  // semua bubble yang tampil. Pembungkus stabil di bawah membaca versi terbaru lewat ref.
+  const cbRef = useRef({});
+  cbRef.current = { onReply, onForward, onEdit, onRetry, onDeleteLocal, onDeleteEveryone, onEnterSelection, onToggleSelect, scrollToMessage };
+  const stable = useMemo(() => ({
+    onReply: (...a) => cbRef.current.onReply?.(...a),
+    onForward: (...a) => cbRef.current.onForward?.(...a),
+    onEdit: (...a) => cbRef.current.onEdit?.(...a),
+    onRetry: (...a) => cbRef.current.onRetry?.(...a),
+    onDeleteLocal: (...a) => cbRef.current.onDeleteLocal?.(...a),
+    onDeleteEveryone: (...a) => cbRef.current.onDeleteEveryone?.(...a),
+    onEnterSelection: (...a) => cbRef.current.onEnterSelection?.(...a),
+    onToggleSelect: (...a) => cbRef.current.onToggleSelect?.(...a),
+    onJumpToReply: (...a) => cbRef.current.scrollToMessage?.(...a),
+    onOpenMedia: (type, url) => setLightbox({ type, url }),
+  }), []);
 
   const virtuosoRef = useRef(null);
   const isNewConvRef = useRef(true);
@@ -262,6 +283,43 @@ const MessageList = forwardRef(function MessageList(
     onRetry?.(m);
   }
 
+  // itemContent STABIL: Virtuoso me-render ulang semua baris tampil kalau identitas fungsi ini
+  // berubah. Deps hanya nilai yang memang mengubah tampilan bubble.
+  const hasEdit = !!onEdit, hasDelLocal = !!onDeleteLocal, hasDelAll = !!onDeleteEveryone;
+  const renderItem = useCallback((_, item) => {
+    if (item.type === "divider") {
+      return (
+        <div className="date-divider-row">
+          <span className="date-divider-pill">{item.label}</span>
+        </div>
+      );
+    }
+    const m = item.message;
+    return (
+      <MessageBubble
+        message={m}
+        conversationId={conversationId}
+        isGroup={isGroup}
+        isFirstInGroup={item.isFirstInGroup}
+        isLastInGroup={item.isLastInGroup}
+        mentionMap={mentionMap}
+        onReply={stable.onReply}
+        onForward={stable.onForward}
+        onEdit={hasEdit ? stable.onEdit : undefined}
+        onJumpToReply={stable.onJumpToReply}
+        highlighted={highlightedId === m.id}
+        onRetry={stable.onRetry}
+        onOpenMedia={stable.onOpenMedia}
+        onDeleteLocal={hasDelLocal ? stable.onDeleteLocal : undefined}
+        onDeleteEveryone={hasDelAll ? stable.onDeleteEveryone : undefined}
+        onEnterSelection={stable.onEnterSelection}
+        selectionMode={selectionMode}
+        selected={selectedIds?.has(m.id)}
+        onToggleSelect={stable.onToggleSelect}
+      />
+    );
+  }, [conversationId, isGroup, mentionMap, highlightedId, selectionMode, selectedIds, stable, hasEdit, hasDelLocal, hasDelAll]);
+
   if (!conversationId) return null;
 
   return (
@@ -306,39 +364,7 @@ const MessageList = forwardRef(function MessageList(
           followOutput={(atBottom) => (atBottom ? "smooth" : false)}
           atBottomStateChange={handleAtBottomStateChange}
           computeItemKey={(_, item) => item.key}
-          itemContent={(_, item) => {
-            if (item.type === "divider") {
-              return (
-                <div className="date-divider-row">
-                  <span className="date-divider-pill">{item.label}</span>
-                </div>
-              );
-            }
-            const m = item.message;
-            return (
-              <MessageBubble
-                message={m}
-                conversationId={conversationId}
-                isGroup={isGroup}
-                isFirstInGroup={item.isFirstInGroup}
-                isLastInGroup={item.isLastInGroup}
-                mentionMap={mentionMap}
-                onReply={onReply}
-                onForward={onForward}
-                onEdit={onEdit}
-                onJumpToReply={scrollToMessage}
-                highlighted={highlightedId === m.id}
-                onRetry={handleRetry}
-                onOpenMedia={(type, url) => setLightbox({ type, url })}
-                onDeleteLocal={onDeleteLocal}
-                onDeleteEveryone={onDeleteEveryone}
-                onEnterSelection={onEnterSelection}
-                selectionMode={selectionMode}
-                selected={selectedIds?.has(m.id)}
-                onToggleSelect={onToggleSelect}
-              />
-            );
-          }}
+          itemContent={renderItem}
         />
       )}
 

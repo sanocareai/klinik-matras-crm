@@ -872,7 +872,13 @@ export default function Layout({ user, onLogout }) {
   const isAdmin = isAdminUser(user);
 
   // SSE: saat ada pesan baru, refresh badge unread & notifikasi langsung tanpa tunggu interval
-  useSSE("new_message", () => { fetchUnreadRef.current?.(); });
+  // Digabung (debounce 1 dtk): rentetan pesan masuk = 1 fetch unread, bukan 1 per pesan.
+  const unreadTimer = useRef(null);
+  useSSE("new_message", () => {
+    clearTimeout(unreadTimer.current);
+    unreadTimer.current = setTimeout(() => { fetchUnreadRef.current?.(); }, 1000);
+  });
+  useEffect(() => () => clearTimeout(unreadTimer.current), []);
 
   // Refresh badge saat app kembali ke foreground (dari App.jsx visibilitychange)
   useEffect(() => {

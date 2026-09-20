@@ -109,7 +109,7 @@ export default function ArmadaRingkasan() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, POLL_MS);
+    const t = setInterval(() => { if (!document.hidden) load(); }, POLL_MS); // tab background: lewati
     return () => clearInterval(t);
   }, [load]);
 

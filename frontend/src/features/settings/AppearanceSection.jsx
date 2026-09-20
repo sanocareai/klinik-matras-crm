@@ -1,5 +1,6 @@
-import React from "react";
-import { Sun, Moon, Monitor } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Sun, Moon, Monitor, Gauge, Zap, Sparkles } from "lucide-react";
+import { getPref, setPref, getResolvedMode, PERF_EVENT } from "@/lib/perfMode.js";
 import { useTheme } from "@/lib/ThemeProvider.jsx";
 import { cn } from "@/lib/utils.js";
 import { Card, CardTitle, CardDescription } from "@/components/ui/card.jsx";
@@ -30,12 +31,65 @@ function Pratinjau() {
   );
 }
 
+const PERF_OPSI = [
+  { key: "auto", label: "Otomatis", Icon: Gauge,    ket: "Menyesuaikan perangkat: efek dikurangi di Android/PWA, hemat data, baterai lemah, atau saat scroll terukur berat." },
+  { key: "lite", label: "Ringan",   Icon: Zap,      ket: "Tanpa blur/kaca, bayangan dan animasi dihemat. Paling ringan untuk HP lama & baterai." },
+  { key: "full", label: "Penuh",    Icon: Sparkles, ket: "Tampilan lengkap dengan efek kaca. Disarankan hanya untuk perangkat yang kuat." },
+];
+
+// Settings → Performa. Preferensi per-perangkat (localStorage), efek langsung tanpa reload.
+function PerformaCard() {
+  const [pref, setPrefState] = useState(getPref);
+  const [resolved, setResolved] = useState(getResolvedMode);
+  useEffect(() => {
+    const sync = () => { setPrefState(getPref()); setResolved(getResolvedMode()); };
+    window.addEventListener(PERF_EVENT, sync);
+    return () => window.removeEventListener(PERF_EVENT, sync);
+  }, []);
+  return (
+    <Card className="mt-4">
+      <CardTitle>Performa</CardTitle>
+      <CardDescription className="mb-5 mt-1">
+        Atur seberapa banyak efek visual yang dipakai. Tampilan tetap rapi di semua mode.
+        Tersimpan di perangkat ini saja.
+      </CardDescription>
+      <div role="radiogroup" aria-label="Mode performa" className="flex max-w-[420px] gap-1 rounded-btn bg-inset p-1">
+        {PERF_OPSI.map(({ key, label, Icon }) => {
+          const aktif = pref === key;
+          return (
+            <button
+              key={key}
+              role="radio"
+              aria-checked={aktif}
+              onClick={() => setPref(key)}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1.5 rounded-chip px-3 py-2",
+                "text-[13px] font-medium transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                aktif ? "bg-surface text-ink shadow-card" : "bg-transparent text-ink2 hover:text-ink",
+              )}
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="t-secondary mt-3">
+        {PERF_OPSI.find((o) => o.key === pref)?.ket}
+        {pref === "auto" ? " Sekarang: " + (resolved === "lite" ? "Ringan" : "Penuh") + "." : ""}
+      </p>
+    </Card>
+  );
+}
+
 // Settings → Tampilan. Menulis ke localStorage lewat ThemeProvider; tidak ada
 // panggilan API — preferensi tema murni per-perangkat, bukan per-akun.
 export default function AppearanceSection() {
   const { theme, resolved, setTheme } = useTheme();
 
   return (
+    <>
     <Card>
       <CardTitle>Tampilan</CardTitle>
       <CardDescription className="mb-5 mt-1">
@@ -84,5 +138,7 @@ export default function AppearanceSection() {
         <Pratinjau />
       </div>
     </Card>
+    <PerformaCard />
+    </>
   );
 }

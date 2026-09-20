@@ -45,6 +45,17 @@ function readStoredWidth(key, fallback, min, max) {
   return Number.isFinite(raw) && raw > 0 ? clamp(raw, min, max) : fallback;
 }
 
+// Judul tab browser = total unread; komponen terpisah supaya hanya ini yang re-render saat unread berubah.
+function UnreadTitle() {
+  const totalUnread = useTotalUnreadCount();
+  useEffect(() => {
+    const base = "Inbox — Klinik Matras";
+    document.title = totalUnread > 0 ? `(${totalUnread > 99 ? "99+" : totalUnread}) ${base}` : base;
+    return () => { document.title = base; };
+  }, [totalUnread]);
+  return null;
+}
+
 export default function Inbox({ user }) {
   const [panelCollapsed, setPanelCollapsedState] = useState(
     () => localStorage.getItem(PANEL_COLLAPSED_KEY) === "true",
@@ -70,7 +81,6 @@ export default function Inbox({ user }) {
   const activeSelectionSeq = useActiveSelectionSeq();
   const active   = useConversation(activeId);
   const socketConnected = useSocketStatus();
-  const totalUnread = useTotalUnreadCount();
   const isMobile = useIsMobile();
 
   function setPanelCollapsed(value) {
@@ -254,11 +264,8 @@ export default function Inbox({ user }) {
   // Judul tab browser mencerminkan total unread — supaya kelihatan dari
   // tab lain tanpa perlu buka CRM. Dikembalikan ke judul default saat
   // Inbox di-unmount (pindah halaman).
-  useEffect(() => {
-    const base = "Inbox — Klinik Matras";
-    document.title = totalUnread > 0 ? `(${totalUnread > 99 ? "99+" : totalUnread}) ${base}` : base;
-    return () => { document.title = base; };
-  }, [totalUnread]);
+  // Dipindah ke <UnreadTitle/> (komponen tanpa UI): sebelumnya Inbox subscribe total unread,
+  // jadi SETIAP pesan masuk di chat manapun me-render ulang Inbox → ChatWindow → semua bubble.
 
   // BUG FIX — sebelumnya ConversationList & ChatWindow SELALU mount
   // berdua, disembunyikan lewat class CSS ".mobile-chat-active" saja.
@@ -273,6 +280,7 @@ export default function Inbox({ user }) {
   if (isMobile) {
     return (
       <div className="inbox-body mobile-single-column">
+        <UnreadTitle />
         {!socketConnected && (
           <div className="offline-banner">
             <span className="offline-banner-dot" /> Menyambung ulang...
@@ -302,6 +310,7 @@ export default function Inbox({ user }) {
       className={`inbox-body${panelCollapsed ? " panel-collapsed" : ""}${listCollapsed ? " list-collapsed" : ""}${isResizing ? " is-resizing" : ""}`}
       style={{ gridTemplateColumns }}
     >
+      <UnreadTitle />
       {!socketConnected && (
         <div className="offline-banner">
           <span className="offline-banner-dot" /> Menyambung ulang...

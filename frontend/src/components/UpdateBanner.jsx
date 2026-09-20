@@ -35,6 +35,7 @@ const UPDATE_CHECK_INTERVAL_MS = 20 * 60 * 1000;
 
 export default function UpdateBanner() {
   const registrationRef = useRef(null);
+  const updateTimerRef = useRef(null);
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
@@ -47,11 +48,14 @@ export default function UpdateBanner() {
       // sales/admin yang biasa buka CRM ini di 1 tab terus-menerus SEHARIAN
       // tanpa pernah reload manual TIDAK AKAN pernah lihat banner update
       // sampai mereka kebetulan reload sendiri.
-      setInterval(() => {
+      clearInterval(updateTimerRef.current); // tidak menumpuk kalau callback terpanggil ulang
+      updateTimerRef.current = setInterval(() => {
+        if (document.hidden) return; // tab di background: tidak perlu cek (dicek saat kembali terlihat)
         registration.update().catch(() => {});
       }, UPDATE_CHECK_INTERVAL_MS);
     },
   });
+  useEffect(() => () => clearInterval(updateTimerRef.current), []);
 
   // Begitu app kembali TERLIHAT, paksa cek SW baru sekali (jangan nunggu tick
   // interval berikutnya) — momen paling sering user "baru buka lagi setelah

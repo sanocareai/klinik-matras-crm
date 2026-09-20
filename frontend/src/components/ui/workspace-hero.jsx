@@ -61,7 +61,7 @@ export function WorkspaceHero({ title, subtitle, tone = "blue", health, stats = 
         </div>
 
         {health && (
-          <div className="rounded-xl bg-white/12 px-4 py-3 backdrop-blur ring-1 ring-white/15">
+          <div className="rounded-xl bg-white/12 px-4 py-3 ring-1 ring-white/15">
             <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/55">
               Current workspace health
             </div>
@@ -83,7 +83,7 @@ export function WorkspaceHero({ title, subtitle, tone = "blue", health, stats = 
           {stats.map((s) => (
             <div
               key={s.label}
-              className="rounded-xl bg-white/10 px-4 py-3.5 backdrop-blur-sm ring-1 ring-white/15"
+              className="rounded-xl bg-white/10 px-4 py-3.5 ring-1 ring-white/15"
             >
               <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-white/55">
                 {s.label}

@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import http from "http";
 import cors from "cors";
+import compression from "compression";
+import { thumbnailMiddleware } from "./middleware/thumbnails.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import { initSocket } from "./socket.js";
@@ -145,9 +147,13 @@ const app = express();
 // exposedHeaders: APK Capacitor memanggil API lintas-origin, header custom
 // tidak terbaca JS tanpa ini (sesi geser, lihat middleware/auth.js).
 app.use(cors({ exposedHeaders: ["X-Refreshed-Token"] }));
+// Kompresi gzip untuk JSON/JS/CSS (nginx produksi hanya mengompres text/html). SSE TIDAK boleh
+// dikompres (buffering merusak stream realtime); gambar/video sudah terkompresi → dilewati filter bawaan.
+app.use(compression({ filter: (req, res) => (req.path.startsWith("/api/events") ? false : compression.filter(req, res)) }));
 app.use(express.json({ limit: "10mb" }));
 
 // Sajikan file media yang diupload
+app.use("/uploads",           thumbnailMiddleware(uploadsDir));
 app.use("/uploads",           express.static(uploadsDir));
 app.use("/media/unit-photos", express.static(unitPhotosDir));
 app.use("/media/job-photos",  express.static(jobPhotosDir));
@@ -252,7 +258,15 @@ app.use("/r", trackingRedirectRouter);
 // Di production, sajikan build React dari sini juga (1 server untuk API + frontend)
 import fs from "fs";
 const frontendDist = path.join(__dirname, "../../frontend/dist");
-app.use(express.static(frontendDist));
+app.use(express.static(frontendDist, {
+  // Nama file /assets/* memuat hash isi → aman di-cache 1 tahun (tanpa revalidasi tiap buka).
+  // index.html & sw.js TIDAK: harus selalu dicek ulang supaya deploy baru langsung terlihat.
+  setHeaders(res, filePath) {
+    const p = filePath.split(path.sep).join("/");
+    if (p.includes("/assets/")) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    else if (/\/(index\.html|sw\.js|registerSW\.js)$/.test(p)) res.setHeader("Cache-Control", "no-cache");
+  },
+}));
 // File statis yang TIDAK ADA harus dijawab 404 — JANGAN index.html (BUG
 // NYATA, 14 September 2026, laporan owner: "buka tracking delivery glitch
 // ... memuat versi baru terus"). Tiap deploy mengganti nama file chunk

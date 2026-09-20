@@ -42,7 +42,7 @@ export function THead({ className, ...props }) {
   // sticky + z-10: header tetap terlihat saat body tabel di-scroll vertikal.
   return (
     <thead
-      className={cn("sticky top-0 z-10 bg-inset/95 backdrop-blur-sm", className)}
+      className={cn("sticky top-0 z-10 bg-inset/95", className)}
       {...props}
     />
   );
@@ -101,7 +101,7 @@ export function TH({
       className={cn(
         "whitespace-nowrap border-b border-line px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide text-ink3",
         numeric ? "text-right" : "text-left",
-        sticky && "sticky left-0 z-20 bg-inset/95 backdrop-blur-sm",
+        sticky && "sticky left-0 z-20 bg-inset/95",
         className
       )}
       {...props}

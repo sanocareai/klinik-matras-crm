@@ -6,7 +6,7 @@
 // langsung ikut benar. Untuk komponen BARU, impor langsung dari formatDate.js.
 import {
   formatTanggalLengkap, formatJam, formatRelatif, formatTanggalPendek,
-  formatRentangTanggal, formatLabelBulan, hariSejak, toWIB,
+  formatRentangTanggal, formatLabelBulan, hariSejak, toWIB, wibParts,
 } from "./formatDate.js";
 import { makeRange } from "../lib/dateRange.js";
 
@@ -69,12 +69,11 @@ export function formatTanggalWaktu(dateString) {
 const HARI_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 export function formatConvTimestamp(dateString) {
   if (!dateString) return "";
-  const d = toWIB(dateString);
   const diffHari = hariSejak(dateString);
 
   if (diffHari <= 0) return formatJam(dateString);
   if (diffHari === 1) return "Kemarin";
-  if (diffHari < 7) return HARI_ID[d.day()];
+  if (diffHari < 7) return HARI_ID[(wibParts(dateString) || { dow: toWIB(dateString).day() }).dow];
   return formatTanggalPendek(dateString);
 }
 

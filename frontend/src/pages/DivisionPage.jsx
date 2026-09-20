@@ -127,7 +127,7 @@ export default function DivisionPage({ user }) {
               {kpis.map((k) => (
                 <div
                   key={k.label}
-                  className="rounded-2xl border border-white/[0.13] bg-white/[0.08] px-4 py-3.5 backdrop-blur"
+                  className="rounded-2xl border border-white/[0.13] bg-white/[0.08] px-4 py-3.5"
                 >
                   <strong className="block text-[26px] leading-none tracking-[-.03em]">{k.value}</strong>
                   <span className="mt-2 block text-[9px] font-extrabold uppercase tracking-[.08em] text-white/[0.58]">

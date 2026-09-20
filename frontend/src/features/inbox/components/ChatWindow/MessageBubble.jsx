@@ -1,3 +1,4 @@
+import { thumbUrl } from "../../../../lib/mediaThumb.js";
 import React, { memo, useEffect, useRef, useState } from "react";
 import {
   Reply, Forward, Pencil, Trash2, CheckSquare, FileText, Image as ImageIcon, Video, Mic, Smile,
@@ -12,7 +13,9 @@ import { useMessageStore } from "../../stores/messageStore.js";
 
 // Cek apakah string adalah JSON error (dari bug lama download media)
 function isJsonError(str) {
-  if (!str) return false;
+  // Hanya objek JSON ({...}) yang bisa punya message/error. Tanpa prasyarat ini JSON.parse
+  // MELEMPAR exception untuk hampir setiap pesan teks biasa (mahal, dipanggil per bubble).
+  if (!str || !/^\s*\{/.test(str)) return false;
   try { const p = JSON.parse(str); return !!p.message || !!p.error; } catch { return false; }
 }
 
@@ -489,7 +492,7 @@ function MessageBubbleBase({
                     sejak render pertama). Video/stiker juga TIDAK kena
                     (.bubble-video-thumb & .bubble-sticker sudah punya
                     width/height TETAP di index.css, jadi tidak kolaps). */}
-                <img src={m.mediaUrl} alt="Foto" className="bubble-img" decoding="async" onError={(e) => { e.target.closest("button").style.display = "none"; }} />
+                <img src={thumbUrl(m.mediaUrl, 480)} alt="Foto" className="bubble-img" decoding="async" onError={(e) => { e.target.closest("button").style.display = "none"; }} />
               </button>
             )}
             {m.mediaType === "video" && m.mediaUrl && (

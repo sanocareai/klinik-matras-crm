@@ -140,7 +140,7 @@ export default function Broadcast() {
   // tetap perlu terlihat bergerak tanpa harus refresh manual.
   useEffect(() => {
     if (!campaigns.some((c) => c.status === "BERJALAN")) return;
-    const t = setInterval(muatCampaigns, 20_000);
+    const t = setInterval(() => { if (!document.hidden) muatCampaigns(); }, 20_000); // tab background: lewati
     return () => clearInterval(t);
   }, [campaigns, muatCampaigns]);
 

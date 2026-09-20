@@ -4,7 +4,7 @@ import { Pin, Users, Eye, CheckCheck, Check, AlertTriangle } from "lucide-react"
 import Avatar from "../../../../components/Avatar.jsx";
 import { formatPhoneDisplay } from "../../../../utils/format.js";
 import { smartTimestamp } from "../../utils/formatTime.js";
-import { useConversation, useActiveId, useConversationStore, useConvSearchQuery } from "../../stores/conversationStore.js";
+import { useConversation, useConversationStore, useConvSearchQuery } from "../../stores/conversationStore.js";
 import { api } from "../../../../api.js";
 import TransferPickerPopover from "./TransferPickerPopover.jsx";
 import PeekPreview from "./PeekPreview.jsx";
@@ -57,7 +57,8 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
   // Subscribe GRANULAR — hanya re-render item ini kalau conversation dengan
   // id ini berubah, bukan seluruh list (itu poin utama pola "pass id saja").
   const c = useConversation(id);
-  const activeId = useActiveId();
+  // Boolean, bukan id aktif: pindah chat cuma me-render 2 item (yang aktif lama & baru), bukan seluruh daftar.
+  const isActive = useConversationStore((s) => s.activeConversationId === id);
   const searchQuery = useConvSearchQuery();
   const [contextMenu, setContextMenu] = useState(null); // { x, y }
   const [transferPicker, setTransferPicker] = useState(null); // { x, y }
@@ -68,7 +69,6 @@ function ConversationItemBase({ id, selectionMode, selected, onToggleSelect, onE
 
   if (!c) return null;
 
-  const isActive   = activeId === id;
   const isGroup    = c.type === "GROUP";
   const rawPhone   = c.customer?.phone;
   const name       = isGroup

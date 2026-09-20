@@ -1,0 +1,20 @@
+const puppeteer = require("puppeteer-core"); const { spawn } = require("child_process");
+(async () => {
+  const PORT = 5720; const srv = spawn("node", ["mock-server.cjs", process.argv[2], String(PORT)], { cwd: __dirname, stdio: ["ignore", "pipe", "inherit"] });
+  await new Promise((r) => srv.stdout.on("data", (d) => String(d).includes("ready") && r()));
+  const b = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: "new", args: ["--no-sandbox"] });
+  const p = await b.newPage(); await p.setViewport({ width: 412, height: 915, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  await p.evaluateOnNewDocument(`localStorage.setItem("token","t");localStorage.setItem("user",JSON.stringify({id:"u1",name:"T",role:"SALES",roles:["SALES"]}))`);
+  const cdp = await p.createCDPSession(); await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+  await p.goto(`http://localhost:${PORT}/inbox`); await p.waitForSelector(".conversation-item");
+  await new Promise((r) => setTimeout(r, 1500)); await p.waitForSelector(".conversation-item"); await p.evaluate(() => document.querySelector(".conversation-item").click()); await new Promise((r) => setTimeout(r, 1500));
+  await cdp.send("Profiler.enable"); await cdp.send("Profiler.setSamplingInterval", { interval: 200 }); await cdp.send("Profiler.start");
+  await p.evaluate(async () => { const el = document.querySelector(".message-virtuoso"); for (let i = 0; i < 120; i++) { el.scrollTop -= 400; await new Promise((r) => requestAnimationFrame(r)); } });
+  const { profile } = await cdp.send("Profiler.stop");
+  const self = new Map(); const byId = new Map(profile.nodes.map((n) => [n.id, n]));
+  const dt = profile.timeDeltas; let total = 0;
+  profile.samples.forEach((id, i) => { const n = byId.get(id); const k = `${n.callFrame.functionName || "(anon)"} ${n.callFrame.url.split("/").pop()}:${n.callFrame.lineNumber}`; self.set(k, (self.get(k) || 0) + dt[i]); total += dt[i]; });
+  console.log("total ms", Math.round(total / 1000));
+  [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 22).forEach(([k, v]) => console.log(String(Math.round(v / 1000)).padStart(5), "ms", k));
+  await b.close(); srv.kill();
+})();

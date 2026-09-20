@@ -335,7 +335,7 @@ export default function ArmadaTracking() {
         <Card className="overflow-hidden p-0">
           <div className="relative h-[560px] w-full">
             {items != null && (
-              <div className="absolute left-3 top-3 z-10 flex items-center gap-2.5 rounded-full bg-surface/95 py-2 pl-2.5 pr-3.5 shadow-popover backdrop-blur-sm">
+              <div className="absolute left-3 top-3 z-10 flex items-center gap-2.5 rounded-full bg-surface/95 py-2 pl-2.5 pr-3.5 shadow-popover">
                 <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accentbg">
                   <Truck size={14} className="text-accent" aria-hidden />
                   {jumlahJalan > 0 && (

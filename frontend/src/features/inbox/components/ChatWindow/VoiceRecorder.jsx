@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Mic, X, Send, Play, Pause } from "lucide-react";
 import { api } from "../../../../api.js";
 import { useMessageStore } from "../../stores/messageStore.js";
@@ -53,6 +53,18 @@ export default function VoiceRecorder({ conversationId }) {
   // render saat closure dibuat, bukan detik terakhir saat user lepas mic).
   // Pakai ref supaya onstop selalu baca durasi TERKINI.
   const recSecondsRef = useRef(0);
+
+  // Unmount (pindah chat/tutup) saat merekam: hentikan timer + MATIKAN mikrofon + lepas object URL.
+  // Sebelumnya tidak ada cleanup: indikator mikrofon tetap menyala & interval terus jalan.
+  const previewUrlRef = useRef(null);
+  previewUrlRef.current = preview?.url || null;
+  useEffect(() => () => {
+    clearInterval(timerRef.current);
+    const rec = recorderRef.current;
+    if (rec) { rec.ondataavailable = null; rec.onstop = null; if (rec.state === "recording") { try { rec.stop(); } catch { /* sudah berhenti */ } } }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
 
   async function startRecording() {
     if (recording) return;

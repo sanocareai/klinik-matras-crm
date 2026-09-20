@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
 import { api } from "../../../../api.js";
@@ -13,7 +13,8 @@ import NextBestActionCard from "./NextBestActionCard.jsx";
 import AssignmentSection from "./AssignmentSection.jsx";
 import ActiveOrderCard from "./ActiveOrderCard.jsx";
 import OrderHistoryList from "./OrderHistoryList.jsx";
-import OrderEditDrawer from "./OrderEditDrawer.jsx";
+// Lazy: drawer + OrderSection (±69 kB) baru diunduh & di-mount saat order pertama kali dibuka.
+const OrderEditDrawer = lazy(() => import("./OrderEditDrawer.jsx"));
 import { CustomerPanelSkeleton } from "../Skeletons.jsx";
 
 // Panel kanan Inbox (Fase E). type=GROUP → GroupPanel (tanpa pipeline/order/
@@ -33,6 +34,9 @@ export default function CustomerPanel({ conversation, onClose }) {
   // drawer-nya harus tetap terbuka), jadi butuh boolean sendiri, bukan
   // "order ada isinya = terbuka" seperti alur edit.
   const [creatingOrder, setCreatingOrder] = useState(false);
+  // Sekali dibuka tetap ter-mount (animasi tutup jalan); sebelum dibuka tidak di-mount sama sekali.
+  const drawerMounted = useRef(false);
+  if (orderDrawerOrder || creatingOrder) drawerMounted.current = true;
   // Tab dikontrol (bukan defaultValue) supaya bisa dipindah dari dalam
   // konten — dipakai tautan "+N order lain — lihat semua" di ActiveOrderCard
   // (D-115) untuk melompat ke tab Order.
@@ -180,13 +184,17 @@ export default function CustomerPanel({ conversation, onClose }) {
         </Tabs>
       </div>
 
-      <OrderEditDrawer
-        open={!!orderDrawerOrder || creatingOrder}
-        order={orderDrawerOrder}
-        customer={customer}
-        onClose={() => { setOrderDrawerOrder(null); setCreatingOrder(false); }}
-        onUpdate={setCustomer}
-      />
+      {(!!orderDrawerOrder || creatingOrder || drawerMounted.current) && (
+        <Suspense fallback={null}>
+          <OrderEditDrawer
+            open={!!orderDrawerOrder || creatingOrder}
+            order={orderDrawerOrder}
+            customer={customer}
+            onClose={() => { setOrderDrawerOrder(null); setCreatingOrder(false); }}
+            onUpdate={setCustomer}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

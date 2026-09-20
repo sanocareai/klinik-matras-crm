@@ -97,6 +97,10 @@ export default defineConfig({
           "vendor-react":   ["react", "react-dom", "react-router-dom"],
           "vendor-virtuoso": ["react-virtuoso"],
           "vendor-query":   ["@tanstack/react-query"],
+          // clsx/tailwind-merge/cva dipakai SEMUA komponen — kalau dibiarkan, Rollup
+          // menaruh clsx di chunk recharts (dependensi recharts) dan entry app jadi
+          // mengunduh 434 kB chart di startup. Chunk terpisah menghentikan itu.
+          "vendor-utils":   ["clsx", "tailwind-merge", "class-variance-authority"],
           "vendor-charts":  ["recharts"],
           "vendor-motion":  ["framer-motion"],
           "vendor-socket":  ["socket.io-client"],

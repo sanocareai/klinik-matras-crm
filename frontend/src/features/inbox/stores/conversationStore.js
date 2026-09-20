@@ -15,6 +15,23 @@ function sortOrder(conversationsById, order) {
   });
 }
 
+// Bandingkan nilai (rekursif, dibatasi kedalaman) — payload API/socket sering membawa objek
+// baru dengan isi sama; tanpa ini setiap refresh me-render ulang semua item daftar.
+export function sameValue(a, b, depth = 4) {
+  if (a === b) return true;
+  if (depth === 0 || a == null || b == null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) if (!sameValue(a[k], b[k], depth - 1)) return false;
+  return true;
+}
+// Gabung patch ke entri lama; kembalikan entri LAMA (identitas sama) bila tidak ada yang berubah.
+function mergeConv(prev, patch) {
+  if (prev && Object.keys(patch).every((k) => sameValue(prev[k], patch[k]))) return prev;
+  return { ...prev, ...patch };
+}
+
 export const useConversationStore = create((set) => ({
   activeConversationId: null,
   // Counter naik tiap kali setActive dipanggil, TERMASUK kalau id-nya SAMA
@@ -44,9 +61,12 @@ export const useConversationStore = create((set) => ({
 
   // Insert/update 1 percakapan (dari fetch detail, event socket, dll) + re-sort.
   upsertConversation: (conv) => set((state) => {
+    const prev = state.conversationsById[conv.id];
+    const merged = mergeConv(prev, conv);
+    if (merged === prev && state.conversationOrder.includes(conv.id)) return state; // tidak ada perubahan → tanpa notifikasi
     const conversationsById = {
       ...state.conversationsById,
-      [conv.id]: { ...state.conversationsById[conv.id], ...conv },
+      [conv.id]: merged,
     };
     const order = state.conversationOrder.includes(conv.id)
       ? state.conversationOrder
@@ -58,10 +78,15 @@ export const useConversationStore = create((set) => ({
   upsertConversations: (list) => set((state) => {
     const conversationsById = { ...state.conversationsById };
     const orderSet = new Set(state.conversationOrder);
+    let changed = false;
     for (const conv of list) {
-      conversationsById[conv.id] = { ...conversationsById[conv.id], ...conv };
+      const prev = conversationsById[conv.id];
+      const merged = mergeConv(prev, conv);
+      if (merged !== prev || !orderSet.has(conv.id)) changed = true;
+      conversationsById[conv.id] = merged;
       orderSet.add(conv.id);
     }
+    if (!changed) return state;
     const order = Array.from(orderSet);
     return { conversationsById, conversationOrder: sortOrder(conversationsById, order) };
   }),

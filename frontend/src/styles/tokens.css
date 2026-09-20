@@ -613,3 +613,40 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 [data-perf="lite"] .conversation-virtuoso {
   scroll-behavior: auto;
 }
+
+/* ── KEBIJAKAN MOTION & PAINT ───────────────────────────────────────────────
+   - Animasi interaksi 150–220 ms, hanya transform/opacity (aturan penulisan;
+     lihat tests/motionPolicy.test.js yang menjaga index.css tetap patuh).
+   - Tidak ada animasi idle terus-menerus. Satu-satunya yang berulang: spinner
+     (.spin/.animate-spin), titik rekam suara, dan skeleton/shimmer AI — semuanya
+     hanya selagi ada proses berjalan, dan mati di Ringan/reduced-motion.
+   - backdrop-filter dibatasi pada layer utama (overlay/drawer); kartu, item
+     daftar, header tabel & topbar memakai warna semi-solid. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.spin):not(.animate-spin),
+  *:not(.spin):not(.animate-spin)::before,
+  *:not(.spin):not(.animate-spin)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Ringan: buang juga efek dekoratif yang tersisa. Layout & warna dasar tetap. */
+[data-perf="lite"] .skeleton,
+[data-perf="lite"] .animate-pulse,
+[data-perf="lite"] .ai-shimmer,
+[data-perf="lite"] .category-card::after {
+  animation: none !important;
+}
+[data-perf="lite"] .category-card::after { display: none; }
+[data-perf="lite"] {
+  /* bayangan bertumpuk → satu lapis tipis (repaint & compositing lebih murah) */
+  --shadow-card:    0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-popover: 0 4px 12px rgba(0, 0, 0, 0.16);
+}
+[data-perf="lite"] .bubble-flash { animation-duration: 0.01ms !important; }
+/* Item daftar & bubble tidak pakai transisi apa pun di Ringan (hover/press instan). */
+[data-perf="lite"] .conversation-item,
+[data-perf="lite"] .bubble { transition: none !important; }

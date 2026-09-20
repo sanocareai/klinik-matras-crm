@@ -46,6 +46,18 @@ const STATUS_LABEL = {
 
 // ── Kapsul foto (dipakai form Selesai & Gagal & Pembayaran) — foto disimpan
 // LOKAL (File, sudah dikompres), belum diupload. Preview pakai object URL.
+// Preview foto: object URL dibuat SEKALI per file & dilepas saat file diganti/unmount
+// (sebelumnya createObjectURL dipanggil di setiap render dan tidak pernah dilepas).
+function PhotoThumb({ file }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+  return url ? <img src={url} alt="" className="h-14 w-14 rounded-md object-cover" /> : null;
+}
+
 function PhotoCapture({ photos, setPhotos }) {
   const [busy, setBusy] = useState(false);
   async function handleFiles(e) {
@@ -76,7 +88,7 @@ function PhotoCapture({ photos, setPhotos }) {
       {photos.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {photos.map((f, i) => (
-            <img key={i} src={URL.createObjectURL(f)} alt="" className="h-14 w-14 rounded-md object-cover" />
+            <PhotoThumb key={i} file={f} />
           ))}
         </div>
       )}

@@ -1,3 +1,4 @@
+import { thumbUrl } from "../../../../lib/mediaThumb.js";
 import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { FileText, Play, X } from "lucide-react";
 import "yet-another-react-lightbox/styles.css";
@@ -69,7 +70,7 @@ export default function MediaGallery({ conversationId }) {
         <div className="media-gallery-grid">
           {visibleItems.map((m) => (
             <button key={m.id} className="media-gallery-item" onClick={() => handleClickItem(m)}>
-              {m.mediaType === "image" && <img src={m.mediaUrl} alt="" loading="lazy" />}
+              {m.mediaType === "image" && <img src={thumbUrl(m.mediaUrl, 320)} alt="" loading="lazy" decoding="async" />}
               {m.mediaType === "video" && (
                 // BUG YANG DIPERBAIKI (laporan owner, 7 Sep 2026): sebelumnya
                 // sel video cuma ikon polos di atas latar (bukan cuma "kurang

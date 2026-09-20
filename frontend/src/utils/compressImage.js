@@ -4,7 +4,9 @@
 export async function compressImage(file, maxWidth = 1600, quality = 0.8) {
   return new Promise((resolve) => {
     const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
+      URL.revokeObjectURL(objectUrl); // dilepas begitu gambar ter-decode (sebelumnya bocor tiap upload)
       const scale = Math.min(1, maxWidth / img.width);
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(img.width * scale);
@@ -16,6 +18,7 @@ export async function compressImage(file, maxWidth = 1600, quality = 0.8) {
         quality
       );
     };
-    img.src = URL.createObjectURL(file);
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); }; // gagal decode → kirim file asli
+    img.src = objectUrl;
   });
 }

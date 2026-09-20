@@ -19,7 +19,7 @@
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
 import timezone from "dayjs/plugin/timezone.js";
-import "dayjs/locale/id.js";
+import idLocale from "dayjs/locale/id.js";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -33,11 +33,33 @@ export function toWIB(value) {
   return dayjs(value).tz(WIB);
 }
 
+// ── JALUR CEPAT WIB ─────────────────────────────────────────────────────────
+// dayjs().tz() membangun ulang objek zona di SETIAP panggilan — profiler mencatat
+// ±600 ms self-time untuk 120 frame scroll chat (1 panggilan per bubble). WIB = UTC+7
+// TETAP (Indonesia tanpa DST), jadi cukup aritmetika UTC. Hanya dipakai untuk string ISO
+// berzona / Date / epoch; input lain jatuh ke jalur dayjs lama (hasil identik, ada tes
+// ekuivalensi di tests/formatDateFast.test.js).
+const WIB_OFFSET_MS = 7 * 3600 * 1000;
+const ISO_ZONED = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/;
+const BULAN_DAYJS = idLocale.monthsShort;
+export function wibParts(value) {
+  let ms;
+  if (typeof value === "string") { if (!ISO_ZONED.test(value)) return null; ms = Date.parse(value); }
+  else if (value instanceof Date) ms = value.getTime();
+  else if (typeof value === "number") ms = value;
+  else return null;
+  if (Number.isNaN(ms)) return null;
+  const d = new Date(ms + WIB_OFFSET_MS);
+  return { y: d.getUTCFullYear(), mo: d.getUTCMonth(), d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), dow: d.getUTCDay(), epochDay: Math.floor((ms + WIB_OFFSET_MS) / 86400000) };
+}
+const pad2 = (n) => (n < 10 ? "0" + n : "" + n);
+
 // Apakah nilai tanggalnya bisa dipakai? Backend banyak field nullable
 // (complaintDate, lastMessageAt, readAt) — semua helper di bawah memakai ini
 // dan mengembalikan EM-DASH, supaya UI tidak pernah menampilkan
 // "Invalid Date" atau blank.
 function invalid(value) {
+  if (wibParts(value)) return false; // jalur cepat: ISO/Date/epoch valid
   return value === null || value === undefined || value === "" || !dayjs(value).isValid();
 }
 
@@ -46,6 +68,8 @@ const KOSONG = "—";
 // "25 Jul 2026" — default untuk tabel & daftar (ruang terbatas).
 export function formatTanggal(value) {
   if (invalid(value)) return KOSONG;
+  const p = wibParts(value);
+  if (p) return `${p.d} ${BULAN_DAYJS[p.mo]} ${p.y}`;
   return toWIB(value).format("D MMM YYYY");
 }
 
@@ -64,18 +88,24 @@ export function formatTanggalLengkap(value) {
 // "25 Jul" — konvensi CLAUDE.md §11 "tanggal pendek" (chart, chip).
 export function formatTanggalPendek(value) {
   if (invalid(value)) return KOSONG;
+  const p = wibParts(value);
+  if (p) return `${p.d} ${BULAN_DAYJS[p.mo]}`;
   return toWIB(value).format("D MMM");
 }
 
 // "14.30" — jam saja, WIB.
 export function formatJam(value) {
   if (invalid(value)) return KOSONG;
+  const p = wibParts(value);
+  if (p) return `${pad2(p.h)}.${pad2(p.mi)}`;
   return toWIB(value).format("HH.mm");
 }
 
 // "25 Jul 2026, 14.30" — tanggal + jam untuk audit trail / riwayat.
 export function formatTanggalJam(value) {
   if (invalid(value)) return KOSONG;
+  const p = wibParts(value);
+  if (p) return `${p.d} ${BULAN_DAYJS[p.mo]} ${p.y}, ${pad2(p.h)}.${pad2(p.mi)}`;
   return toWIB(value).format("D MMM YYYY, HH.mm");
 }
 
@@ -135,6 +165,8 @@ export function formatRelatif(value) {
 // chat), supaya lolos filter "paling lama tidak aktif".
 export function hariSejak(value) {
   if (invalid(value)) return Infinity;
+  const p = wibParts(value), n = wibParts(Date.now());
+  if (p) return n.epochDay - p.epochDay; // selisih hari kalender WIB
   return dayjs().tz(WIB).startOf("day").diff(toWIB(value).startOf("day"), "day");
 }
 

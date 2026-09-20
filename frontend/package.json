@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "node --test \"tests/*.test.js\"",
     "cap:sync": "npx cap sync android",
-    "cap:open": "npx cap open android"
+    "cap:open": "npx cap open android",
+    "perf:profile": "node perf-harness/profile.cjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
@@ -69,6 +70,7 @@
     "sharp": "^0.35.2",
     "tailwindcss": "^4.3.2",
     "vite": "^5.4.0",
-    "vite-plugin-pwa": "^1.3.0"
+    "vite-plugin-pwa": "^1.3.0",
+    "puppeteer-core": "^25.11.0"
   }
 }

@@ -94,7 +94,7 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
       }));
 
   return (
-    <header className="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-line bg-surface/95 px-4 backdrop-blur md:px-6">
+    <header className="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-line bg-surface/95 px-4 md:px-6">
       {/* Kiri: hamburger (mobile) + breadcrumb */}
       <div className="flex min-w-0 items-center gap-2">
         {showMobileMenu && (

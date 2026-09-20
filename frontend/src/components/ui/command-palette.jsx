@@ -24,7 +24,7 @@ export function CommandPalette({ open, onOpenChange }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[200] bg-ink/40 backdrop-blur-[1px] data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <Dialog.Overlay className="fixed inset-0 z-[200] bg-ink/40 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <Dialog.Content
           className="fixed left-1/2 top-[15vh] z-[201] w-[560px] max-w-[94vw] -translate-x-1/2 overflow-hidden rounded-2xl bg-surface shadow-popover outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
           aria-label="Pencarian & perintah cepat"

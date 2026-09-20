@@ -2,7 +2,8 @@ import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Send, LayoutTemplate, X, Smile, Paperclip, Mic, Pencil, CheckCircle2, Bold, Italic, Strikethrough, Sparkles } from "lucide-react";
 import { api } from "../../../../api.js";
 import { ProductPicker } from "../../../../components/ProductPicker.jsx";
-import OrderEditDrawer from "../CustomerPanel/OrderEditDrawer.jsx";
+// Lazy: OrderEditDrawer menarik OrderSection (±69 kB) — cuma dimuat saat "Buat Order" pertama kali dibuka.
+const OrderEditDrawer = lazy(() => import("../CustomerPanel/OrderEditDrawer.jsx"));
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore } from "../../stores/messageStore.js";
 import { useDraft, useReplyTarget, useEditingMessage, useComposerStore } from "../../stores/composerStore.js";
@@ -11,7 +12,8 @@ import { WA_MARKERS, toggleWaFormat, parseWaFormatting } from "../../../../utils
 // Fase G: MediaUploader & VoiceRecorder jadi chunk terpisah, di-load begitu
 // ChatWindow pertama kali dibuka — bukan ikut initial bundle app/login/Dashboard.
 const MediaUploader = lazy(() => import("./MediaUploader.jsx"));
-const VoiceRecorder  = lazy(() => import("./VoiceRecorder.jsx"));
+// memo: Composer render tiap ketikan; VoiceRecorder hanya butuh conversationId.
+const VoiceRecorder  = lazy(() => import("./VoiceRecorder.jsx").then((m) => ({ default: React.memo(m.default) })));
 
 // Fallback tombol saat chunk MediaUploader/VoiceRecorder masih di-download —
 // tampil disabled sebentar, bukan area kosong (hindari layout shift).
@@ -241,6 +243,9 @@ export default function Composer({ conversation, mediaUploaderRef }) {
   // Wave 13 (redesign Inbox) — "Buat Order" di menu lampiran. Order milik
   // Customer, jadi tidak relevan untuk percakapan grup (isGroup).
   const [showCreateOrder, setShowCreateOrder] = useState(false);
+  // Sekali dibuka tetap ter-mount supaya animasi tutup (AnimatePresence) jalan; sebelum dibuka TIDAK di-mount.
+  const createOrderMounted = useRef(false);
+  if (showCreateOrder) createOrderMounted.current = true;
   // Wave 5 (redesign Inbox) — "Suggest Reply". Tidak relevan untuk grup
   // (endpoint butuh customerId tunggal, sama seperti Buat Order di atas).
   const [showSuggestReply, setShowSuggestReply] = useState(false);
@@ -401,13 +406,17 @@ export default function Composer({ conversation, mediaUploaderRef }) {
           (lihat OrderEditDrawer.jsx). `onUpdate` tidak perlu berbuat apa-apa
           di sini: Composer tidak menyimpan state customer sendiri untuk
           disegarkan (beda dari CustomerPanel, yang memang menyimpannya). */}
-      <OrderEditDrawer
-        open={showCreateOrder}
-        order={null}
-        customerId={conversation.customer?.id}
-        onClose={() => setShowCreateOrder(false)}
-        onUpdate={() => {}}
-      />
+      {(showCreateOrder || createOrderMounted.current) && (
+        <Suspense fallback={null}>
+          <OrderEditDrawer
+            open={showCreateOrder}
+            order={null}
+            customerId={conversation.customer?.id}
+            onClose={() => setShowCreateOrder(false)}
+            onUpdate={() => {}}
+          />
+        </Suspense>
+      )}
 
       {editingMessage ? (
         // Mode edit menggantikan reply-strip total — tidak masuk akal
