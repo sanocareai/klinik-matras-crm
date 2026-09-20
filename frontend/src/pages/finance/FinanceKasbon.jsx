@@ -300,6 +300,7 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
   const [f, setF] = useState({ employeeName: "", date: "", amount: "", urgency: "", cashAccountId: "", notes: "", receiptUrl: "" });
   const [nama, setNama] = useState([]);
   const [namaGalat, setNamaGalat] = useState(null);
+  const [namaMemuat, setNamaMemuat] = useState(false);
   const [rek, setRek] = useState(rekening);
   const [rekState, setRekState] = useState({ memuat: false, galat: null });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -313,15 +314,21 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
       .catch((e) => setRekState({ memuat: false, galat: e.message || "Gagal memuat daftar rekening" }));
   }, []);
 
+  const muatNama = useCallback(() => {
+    setNamaGalat(null); setNamaMemuat(true);
+    // Daftar resmi karyawan Sano (akun aktif; tanpa akun owner bersama, kurir eksternal, dan akun nonaktif).
+    api.getFinanceKasbonNama()
+      .then((r) => { setNama(r.nama || []); setNamaMemuat(false); })
+      .catch((e) => { setNamaGalat(e.message || "Gagal memuat daftar karyawan"); setNamaMemuat(false); });
+  }, []);
+
   useEffect(() => {
     if (open) {
       setF({ employeeName: "", date: hariIniISO(), amount: "", urgency: "", cashAccountId: "", notes: "", receiptUrl: "" });
-      setNamaGalat(null);
-      // Daftar resmi karyawan Sano (akun aktif; tanpa akun owner bersama, kurir eksternal, dan akun nonaktif).
-      api.getFinanceKasbonNama().then((r) => setNama(r.nama || [])).catch((e) => setNamaGalat(e.message || "Gagal memuat daftar karyawan"));
+      muatNama();
       muatRekening();
     }
-  }, [open, muatRekening]);
+  }, [open, muatNama, muatRekening]);
 
   const sudah = perKaryawan.find((p) => p.nama.toLowerCase() === f.employeeName.trim().toLowerCase());
   const setelah = (sudah?.sisa || 0) + (Number(f.amount) || 0);
@@ -343,10 +350,15 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
       <div className="space-y-3">
         <Field label="Karyawan" required hint={namaGalat ? undefined : "Hanya karyawan Sano yang akunnya aktif"}>
           <Pilihan value={f.employeeName} onChange={(v) => set("employeeName", v)}>
-            <option value="">— pilih karyawan —</option>
+            <option value="">{namaMemuat ? "memuat karyawan…" : "— pilih karyawan —"}</option>
             {nama.map((n) => <option key={n} value={n}>{n}</option>)}
           </Pilihan>
-          {namaGalat && <p className="mt-1 text-[12px] text-red">{namaGalat}. Tutup lalu buka lagi formulir ini.</p>}
+          {namaGalat && (
+            <p className="mt-1 text-[12px] text-red">
+              {namaGalat}.{" "}
+              <button type="button" className="font-semibold underline" onClick={muatNama}>Coba lagi</button>
+            </p>
+          )}
         </Field>
         {sudah && (
           <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2">

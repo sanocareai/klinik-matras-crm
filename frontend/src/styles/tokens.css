@@ -19,7 +19,9 @@
 
 /* Kolom identitas tabel yang menempel saat scroll horizontal (TH/TD sticky). Latar SOLID + tidak boleh membungkus: kalau tembus pandang,
    teks kolom lain yang di-scroll di baliknya ikut terlihat dan nomor dokumen terpotong jadi 3 baris. */
-.tbl-sticky-th { position: sticky; left: 0; z-index: 20; background: var(--bg-inset); white-space: nowrap; }
+/* !important: tema kaca (.glass-division thead th di delivery-light/dark.css) memberi header latar semi-transparan (82%) dengan spesifisitas
+   lebih tinggi. Untuk sel yang menempel di kiri itu harus SOLID, kalau tidak teks kolom yang di-scroll di bawahnya tembus ke header. */
+.tbl-sticky-th { position: sticky; left: 0; z-index: 20; background: var(--bg-inset) !important; white-space: nowrap; }
 .tbl-sticky-td { position: sticky; left: 0; z-index: 1; background: var(--bg-surface); white-space: nowrap; box-shadow: 1px 0 0 var(--border); }
 
 :root {
