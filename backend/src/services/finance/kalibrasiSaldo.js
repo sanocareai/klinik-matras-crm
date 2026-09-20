@@ -11,7 +11,10 @@
 //   • tanggal buku  < tanggal cutoff  → SEBELUM cutoff (kejadiannya bertanggal lebih awal, walau baru dicatat belakangan);
 //   • tanggal buku  > tanggal cutoff  → SESUDAH cutoff (mis. seluruh transaksi 20 Sep);
 //   • tanggal buku == tanggal cutoff  → dipilah dengan WAKTU POSTING (`postedAt` ?? `createdAt`): ≤ cutoff = sebelum, > = sesudah;
-//   • jurnal kalibrasi itu sendiri (idempotencyKey-nya) = SEBELUM cutoff, karena ia MENDEFINISIKAN saldo pada cutoff.
+//   • jurnal kalibrasi itu sendiri (idempotencyKey-nya) = SEBELUM cutoff, karena ia MENDEFINISIKAN saldo pada cutoff;
+//   • `sebelumDikonfirmasi`: nomor jurnal yang PEMILIK nyatakan terjadi sebelum cutoff walau baru diposting sesudahnya (pengecualian
+//     eksplisit & terdaftar — bukan tebakan). Dipakai untuk kejadian nyata yang dicatat mundur; JANGAN dipakai untuk jurnal ganda
+//     yang kemudian dibalik (pasangan asli+balikannya harus jatuh di sisi yang sama agar netral).
 // Konsekuensi yang harus dilaporkan jujur: jurnal bertanggal buku = tanggal cutoff yang baru diposting SETELAH cutoff (dicatat mundur)
 // diperlakukan sebagai transaksi sesudah cutoff; laporan `saldoKasBank({ to: <tanggal cutoff> })` (berbasis tanggal) karena itu bisa
 // berbeda dari saldo riil sebesar jurnal-jurnal tersebut. `posisi.catatMundurTanggalCutoff` mendaftarkannya.
@@ -31,6 +34,8 @@ export const KALIBRASI_20260919 = Object.freeze({
   tanggalBuku: "2026-09-19",
   keterangan: "Kalibrasi saldo riil per 19 September 2026 pukul 20.00 WIB",
   idempotencyKey: "KALIBRASI_SALDO_RIIL:2026-09-19T20:00+07:00",
+  // Dikonfirmasi pemilik (20 Sep 2026): dibayar SEBELUM 19 Sep 20.00 WIB, baru diinput 20 Sep siang → sudah tercermin di saldo riil.
+  sebelumDikonfirmasi: Object.freeze(["JV-19092026-368" /* Servis mobil ZAE Rp2.515.000 */, "JV-19092026-362" /* Etoll alwan tambahan Rp50.000 */]),
   // Nama rekening di Finance > Rekening Kas & Bank → saldo riil pada cutoff.
   target: Object.freeze({
     "KEM - Sano Bank": "766507.00", // "Kemal Sano"
@@ -50,6 +55,7 @@ const tanggalIso = (d) => new Date(d).toISOString().slice(0, 10);
 /** Apakah jurnal ini dihitung SEBELUM (atau tepat pada) cutoff? Lihat aturan di kepala file. */
 export function sebelumCutoff(e, konfig = KALIBRASI_20260919) {
   if (e.idempotencyKey && e.idempotencyKey === konfig.idempotencyKey) return true;
+  if (e.entryNumber && konfig.sebelumDikonfirmasi?.includes(e.entryNumber)) return true;
   const tgl = tanggalIso(e.date);
   if (tgl < konfig.tanggalBuku) return true;
   if (tgl > konfig.tanggalBuku) return false;

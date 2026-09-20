@@ -52,7 +52,7 @@ async function skenario(ctx) {
   await jurnal(ctx, { tanggal: "2026-09-19", dibuat: "2026-09-19T12:30:00Z", gerak: { "KEM - Sano Bank": "-500000" } }); // C 19:30 WIB → sebelum
   await jurnal(ctx, { tanggal: "2026-09-19", dibuat: "2026-09-19T13:00:00.000Z", gerak: { "PT Sano": "-300000" } }); // D tepat 20:00:00.000 WIB → sebelum (inklusif)
   await jurnal(ctx, { tanggal: "2026-09-19", dibuat: "2026-09-19T13:00:00.001Z", gerak: { "KEM - Sano Bank": "-40000" } }); // E 1 ms sesudah → SESUDAH
-  await jurnal(ctx, { tanggal: "2026-09-19", dibuat: "2026-09-20T08:00:00Z", gerak: { "Uang Kas Sano": "-5000" } }); // F bertanggal 19, dicatat 20 → SESUDAH (tidak diasumsikan akhir hari)
+  const f = await jurnal(ctx, { tanggal: "2026-09-19", dibuat: "2026-09-20T08:00:00Z", gerak: { "Uang Kas Sano": "-5000" } }); // F bertanggal 19, dicatat 20 → SESUDAH (tidak diasumsikan akhir hari)
   await jurnal(ctx, { tanggal: "2026-09-20", dibuat: "2026-09-20T01:00:00Z", gerak: { "KEM - Sano Bank": "7000000", "PT Sano": "-7000000" } }); // G transfer 20 Sep
   await jurnal(ctx, { tanggal: "2026-09-20", dibuat: "2026-09-20T05:00:00Z", gerak: { "Uang Kas Sano": "50000" } }); // H
   // I: jurnal 19 Sep (sebelum) yang DIBALIK pada 20 Sep (sesudah) — status REVERSED tetap dihitung, balikannya jatuh sesudah cutoff.
@@ -60,6 +60,7 @@ async function skenario(ctx) {
   const balik = await testPrisma.$transaction((tx) => reverseJournal(tx, { entryId: i.id, date: "2026-09-20", reason: "uji pembalikan", userId: ctx.admin.id }));
   const idBalik = balik.reversal?.id ?? balik.entry?.id ?? balik.id;
   await testPrisma.finJournalEntry.update({ where: { id: idBalik }, data: { createdAt: UTC("2026-09-20T02:00:00Z"), postedAt: UTC("2026-09-20T02:00:00Z") } });
+  return { f };
 }
 
 const per = (posisi, nama) => posisi.rekening.find((r) => r.nama === nama);
@@ -76,6 +77,11 @@ test("Klasifikasi cutoff: tanggal < cutoff sebelum (walau dicatat mundur); tangg
   assert.equal(sebelumCutoff(e("2026-09-20", "2026-09-19T01:00:00Z")), false, "20 Sep selalu sesudah");
   assert.equal(sebelumCutoff(e("2026-09-19", "2026-12-01T00:00:00Z", { idempotencyKey: K.idempotencyKey })), true, "jurnal kalibrasi mendefinisikan saldo pada cutoff");
   assert.equal(K.cutoff.toISOString(), "2026-09-19T13:00:00.000Z");
+  // Pengecualian terkonfirmasi pemilik: hanya nomor yang terdaftar yang berpindah ke sisi SEBELUM.
+  const dicatatMundur = e("2026-09-19", "2026-09-20T08:08:03Z", { entryNumber: "JV-19092026-368" });
+  assert.equal(sebelumCutoff(dicatatMundur), true, "terdaftar di sebelumDikonfirmasi");
+  assert.equal(sebelumCutoff({ ...dicatatMundur, entryNumber: "JV-19092026-999" }), false, "nomor lain tetap mengikuti aturan waktu posting");
+  assert.deepEqual([...K.sebelumDikonfirmasi].sort(), ["JV-19092026-362", "JV-19092026-368"]);
 });
 
 test("Posisi pada cutoff dihitung dari ledger (bukan saldo current); net movement sesudah cutoff terpisah; jurnal 'dicatat mundur pada tanggal cutoff' dilaporkan", async () => {
@@ -187,4 +193,19 @@ test("Akun Koreksi Saldo Awal: satu akun saja walau Pasang Akun Bawaan dijalanka
   assert.equal(await testPrisma.finAccount.count({ where: { name: "Koreksi Saldo Awal" } }), 1);
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx)); // "Pasang Akun Bawaan" dijalankan ulang tidak menggandakan
   assert.equal(await testPrisma.finAccount.count({ where: { systemKey: SYSTEM_KEYS.KOREKSI_SALDO_AWAL } }), 1);
+});
+
+test("Pengecualian terkonfirmasi pemilik: jurnal bertanggal cutoff yang diposting sesudahnya berpindah ke SEBELUM; saldo pada cutoff tetap = riil dan current = riil + mutasi sesudah", async () => {
+  const ctx = await siapkan(); const { f } = await skenario(ctx);
+  const konfig = { ...K, sebelumDikonfirmasi: [f.entryNumber] };
+  const p = await hitungPosisi(testPrisma, konfig);
+  assert.equal(per(p, "Uang Kas Sano").saldoCutoff, "995000.00"); // 1jt −5rb (F kini sebelum)
+  assert.equal(per(p, "Uang Kas Sano").mutasiSesudah, "50000.00"); // hanya H
+  assert.deepEqual(p.catatMundurTanggalCutoff.map((c) => c.rekening).sort(), ["KEM - Sano Bank"], "F tidak lagi dilaporkan sebagai sesudah cutoff");
+  const r = await testPrisma.$transaction((tx) => postKalibrasi(tx, { konfig, userId: ctx.admin.id }), { timeout: 60_000, maxWait: 60_000 });
+  assert.equal(r.created, true);
+  const p2 = await hitungPosisi(testPrisma, konfig);
+  for (const [nama, target] of Object.entries(K.target)) assert.equal(per(p2, nama).saldoCutoff, toMoney(target).toFixed(2));
+  const cur = await saldoKasBank(testPrisma, { to: "2026-09-30" });
+  for (const x of p2.rekening) assert.equal(toMoney(cur.find((c) => c.id === x.id).saldo).toFixed(2), toMoney(K.target[x.nama]).plus(toMoney(x.mutasiSesudah)).toFixed(2));
 });
