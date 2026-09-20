@@ -30,6 +30,7 @@ const { financePembayaranRouter } = await import("../../../src/routes/financePem
 const { financeMediaRouter, financeReceiptsLegacyPathRouter, financePaymentProofsPathRouter } = await import("../../../src/routes/financeMedia.js");
 const { mobileRouter } = await import("../../../src/routes/mobileAuth.js");
 const { authRouter } = await import("../../../src/routes/auth.js");
+const { userRouter } = await import("../../../src/routes/users.js");
 
 export function buildTestApp() {
   const app = express();
@@ -62,6 +63,7 @@ export function buildTestApp() {
   app.use("/media/finance-receipts", financeReceiptsLegacyPathRouter);
   app.use("/media/bukti-pembayaran", financePaymentProofsPathRouter);
   app.use("/api/auth", authRouter);
+  app.use("/api/users", userRouter);
   app.use("/api/mobile", mobileRouter);
 
   return app;

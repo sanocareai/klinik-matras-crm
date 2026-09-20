@@ -117,3 +117,26 @@ test("Kasbon baru/edit ke akun nonaktif, owner bersama, atau kurir eksternal dit
   assert.equal(ubah.status, 400);
   assert.match(ubah.body.error, /Kasbon tidak bisa diberikan/);
 });
+
+test("Terintegrasi: akun baru lewat Pengguna & Peran otomatis jadi pilihan karyawan kasbon; dinonaktifkan/diaktifkan ulang ikut berubah", async () => {
+  await siapkan();
+  const admin = await createTestUser({ roles: ["ADMIN", "FINANCE"] });
+  const c = makeClient(server.baseUrl, admin.token);
+  const daftar = async () => (await c.get("/api/finance/kasbon/karyawan-nama")).body.nama;
+
+  assert.equal((await daftar()).includes("Karyawan Baru Uji"), false);
+  const buat = await c.post("/api/users", { name: "Karyawan Baru Uji", email: "baru.uji@klinikmatras.com", password: "rahasia123", role: "DRIVER" });
+  assert.equal(buat.status, 201, JSON.stringify(buat.body));
+  assert.ok((await daftar()).includes("Karyawan Baru Uji"), "akun baru langsung jadi pilihan tanpa langkah tambahan");
+
+  const off = await c.patch(`/api/users/${buat.body.id}`, { active: false });
+  assert.equal(off.status, 200, JSON.stringify(off.body));
+  assert.equal((await daftar()).includes("Karyawan Baru Uji"), false, "dinonaktifkan → hilang dari pilihan");
+  await c.patch(`/api/users/${buat.body.id}`, { active: true });
+  assert.ok((await daftar()).includes("Karyawan Baru Uji"), "diaktifkan lagi → muncul lagi");
+
+  const ganti = await c.patch(`/api/users/${buat.body.id}`, { name: "Nama Sudah Diganti" });
+  assert.equal(ganti.status, 200);
+  const d = await daftar();
+  assert.ok(d.includes("Nama Sudah Diganti") && !d.includes("Karyawan Baru Uji"), "ganti nama ikut");
+});
