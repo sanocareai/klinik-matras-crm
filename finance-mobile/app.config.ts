@@ -10,9 +10,8 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
 //   production  → paket utama,                      kanal "production"
 // Paketnya berbeda supaya ketiganya bisa terpasang BERSAMAAN di satu HP.
 //
-// runtimeVersion memakai kebijakan "fingerprint": OTA (EAS Update) hanya sampai
-// ke build yang native-nya identik — jauh lebih aman daripada "appVersion"
-// (dipakai app lain di repo) yang bisa lupa dinaikkan.
+// runtimeVersion memakai kebijakan "appVersion" (fingerprint gagal di build cloud, lihat catatan di bawah): OTA hanya sampai ke build dengan versi sama —
+// naikkan `version` setiap kode native berubah.
 
 type Variant = "development" | "preview" | "production";
 const raw = process.env.APP_VARIANT;
@@ -119,7 +118,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
   ],
-  runtimeVersion: { policy: "fingerprint" },
+  // Kebijakan "appVersion": runtimeVersion = versi aplikasi. Kebijakan "fingerprint" GAGAL di build cloud (hash lokal Windows ≠ hash builder pada monorepo:
+  // "Runtime version calculated on local machine not equal to ... during build", 20 Sep 2026). WAJIB menaikkan `version` bila kode native berubah.
+  runtimeVersion: { policy: "appVersion" },
   updates: EAS_PROJECT_ID
     ? {
         url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
