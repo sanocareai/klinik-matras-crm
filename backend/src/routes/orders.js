@@ -28,6 +28,7 @@ import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClie
 import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SESSION_UNKNOWN_ERROR } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
+import { maskAccountNumber } from "../utils/maskAccount.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
@@ -783,10 +784,12 @@ orderRouter.get("/payment-accounts", async (_req, res) => {
       // Kas tunai TIDAK ikut: pembayaran Tunai tidak memilih rekening, jurnalnya
       // mengikuti pemetaan Tunai di Finance > Pengaturan (keputusan owner 19 Sep 2026).
       where: { active: true, kind: { in: ["BANK", "EWALLET"] } },
-      select: { id: true, name: true, kind: true, bankName: true, accountHolder: true },
+      select: { id: true, name: true, kind: true, bankName: true, accountHolder: true, accountNumber: true },
       orderBy: [{ kind: "asc" }, { name: "asc" }],
     });
-    res.json(rows);
+    // Tambahan aditif (20 Sep 2026): accountNumberMasked ("••••7890") supaya kartu rekening di mobile bisa dikenali
+    // tanpa membuka nomor lengkap. accountNumber mentah TIDAK ikut respons.
+    res.json(rows.map(({ accountNumber, ...r }) => ({ ...r, accountNumberMasked: maskAccountNumber(accountNumber) })));
   } catch (err) {
     res.status(500).json({ error: "Server error: " + err.message });
   }

@@ -10,17 +10,17 @@
 // Scope: upload bukti bayar (foto) BELUM ada di sini. Kirim dokumentasi ke
 // customer (checkbox + WAHA), simpan ke galeri, dan bagikan SUDAH ada
 // (19 Sep 2026). Foto dibuka lewat viewer eksternal.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import GlassBackdrop from "../components/GlassBackdrop";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  TextInput, Alert, Linking, Image,
+  TextInput, Alert, Linking, Image, Pressable, useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ChevronLeft, Clock, Camera, Wallet, Timer, ImageOff, PackageCheck, Wrench, Truck,
   CheckCircle2, Hash, Send, MapPin, Link2, Bed, Weight, HeartPulse, Banknote,
-  CalendarClock, Tag, MessageSquareText, Download, Share2, Square, CheckSquare, FileText, ShieldCheck, AlertTriangle,
+  CalendarClock, Tag, MessageSquareText, Download, Share2, Square, CheckSquare, FileText, ShieldCheck, AlertTriangle, Landmark, Check,
 } from "lucide-react-native";
 import { api, mediaUrl } from "../api";
 import * as ImagePicker from "expo-image-picker";
@@ -31,11 +31,14 @@ import OrderWarrantyTab from "../components/order/OrderWarrantyTab";
 import OrderComplaintTab from "../components/order/OrderComplaintTab";
 import { useTokens } from "../constants/theme";
 import {
+  METHODS, METHOD_LABEL, METHOD_USES_ACCOUNT, normalizeAccounts, initialDraft, draftReducer, selectedAccountId, buildPaymentPayload,
+} from "../lib/paymentDraft";
+import {
   formatRupiah, shortDate, shortDateWithYear, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes, promoLabel,
 } from "../utils/format";
 
-const PAYMENT_METHOD_LABEL = { CASH: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS", CARD: "Kartu" };
+const PAYMENT_METHOD_LABEL = METHOD_LABEL;
 const TABS = [
   { key: "status", label: "Status", Icon: Clock },
   { key: "dokumentasi", label: "Dokumentasi", Icon: Camera },
@@ -504,22 +507,91 @@ function DokumentasiTab({ orderId, conversationId, customerNameLabel, tokens, st
   );
 }
 
-function PembayaranTab({ order, tokens, styles }) {
+// Kartu rekening tujuan: SELURUH kartu bisa ditekan (Pressable), lebar penuh, tinggi mengikuti isi/font.
+function AccountCard({ account, selected, onPress, tokens, styles }) {
+  const detail = [account.bankName, account.holder ? `a.n. ${account.holder}` : null].filter(Boolean).join(" · ");
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ selected, checked: selected }}
+      accessibilityLabel={`${account.name}${detail ? `, ${detail}` : ""}${account.masked ? `, nomor ${account.masked}` : ""}${selected ? ", terpilih" : ""}`}
+      android_ripple={{ color: tokens.color.accentSoft }}
+      style={({ pressed }) => [
+        styles.accountCard,
+        selected && { borderColor: tokens.color.accent, backgroundColor: tokens.color.accentSoft },
+        pressed && { opacity: 0.85 },
+      ]}
+    >
+      <View style={[styles.accountIcon, selected && { backgroundColor: tokens.color.accent }]}>
+        <Landmark size={18} color={selected ? "#fff" : tokens.color.textSecondary} strokeWidth={2.1} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.accountName}>{account.name}</Text>
+        {detail ? <Text style={styles.accountMeta}>{detail}</Text> : null}
+        <Text style={[styles.accountMeta, styles.accountNumber]}>
+          {account.masked ? `No. rek ${account.masked}` : "Nomor rekening belum diisi"}
+        </Text>
+      </View>
+      <View style={[styles.radio, selected && { borderColor: tokens.color.accent, backgroundColor: tokens.color.accent }]}>
+        {selected ? <Check size={13} color="#fff" strokeWidth={3} /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+// Pilihan rekening: loading / error (bisa coba lagi) / kosong / 1 / 2+ — tidak pernah menampilkan kotak kosong.
+function AccountPicker({ state, selectedId, onPick, onRetry, methodLabel, tokens, styles }) {
+  return (
+    <View style={{ marginTop: 14 }}>
+      <Text style={styles.fieldLabel}>Rekening tujuan {methodLabel}</Text>
+      {state.status === "loading" && (
+        <View style={styles.accountState}><ActivityIndicator color={tokens.color.accent} /><Text style={styles.stateText}>Memuat rekening…</Text></View>
+      )}
+      {state.status === "error" && (
+        <View style={styles.accountState}>
+          <Text style={[styles.stateText, { color: tokens.color.danger }]}>Rekening gagal dimuat. {state.error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={onRetry} accessibilityRole="button">
+            <Text style={styles.retryBtnText}>Coba lagi</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {state.status === "ready" && state.items.length === 0 && (
+        <View style={styles.accountState}>
+          <Text style={styles.emptyTitle}>Belum ada rekening tujuan aktif</Text>
+          <Text style={styles.stateText}>Pembayaran tetap bisa dicatat; tim Finance akan mencocokkan rekeningnya saat verifikasi.</Text>
+        </View>
+      )}
+      {state.status === "ready" && state.items.length > 0 && (
+        <View accessibilityRole="radiogroup" style={{ gap: 8, marginTop: 6 }}>
+          {state.items.map((a) => (
+            <AccountCard key={a.id} account={a} selected={selectedId === a.id} onPress={() => onPick(a.id)} tokens={tokens} styles={styles} />
+          ))}
+          {!selectedId && <Text style={styles.hintText}>Belum memilih rekening — dibukukan ke rekening bawaan metode ini.</Text>}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// Lebar minimum kartu angka mengikuti skala font sistem: di font besar / layar 360dp kartu turun baris (bahkan satu per baris)
+// alih-alih memotong kata di tengah ("Diprose/s", "Rp3.50/0.000").
+function useCardSizes() {
+  const { fontScale } = useWindowDimensions();
+  const k = Math.max(1, fontScale || 1);
+  const summary = Math.round(112 * k);
+  const mini = Math.round(142 * k);
+  return {
+    summaryCardSize: { minWidth: summary, flexBasis: summary },
+    miniCardSize: { minWidth: mini, flexBasis: mini },
+  };
+}
+
+function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, tokens, styles }) {
+  const { miniCardSize } = useCardSizes();
   const [payments, setPayments] = useState(null);
   const [error, setError] = useState("");
-  const [form, setForm] = useState(false);
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("TRANSFER");
-  const [accounts, setAccounts] = useState([]);
-  const [cashAccountId, setCashAccountId] = useState(null);
-  const [photo, setPhoto] = useState(null); // { uri, name, type } foto bukti
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => { api.getPaymentAccounts().then(setAccounts).catch(() => {}); }, []);
-
-  function resetForm() {
-    setForm(false); setAmount(""); setMethod("TRANSFER"); setCashAccountId(null); setPhoto(null);
-  }
 
   function toFile(asset) {
     return { uri: asset.uri, name: asset.fileName || "bukti-bayar.jpg", type: asset.mimeType || "image/jpeg" };
@@ -533,14 +605,14 @@ function PembayaranTab({ order, tokens, styles }) {
           const perm = await ImagePicker.requestCameraPermissionsAsync();
           if (!perm.granted) { Alert.alert("Kamera", "Izin kamera diperlukan untuk ambil foto"); return; }
           const r = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.7 });
-          if (!r.canceled && r.assets?.length) setPhoto(toFile(r.assets[0]));
+          if (!r.canceled && r.assets?.length) dispatch({ type: "photo", value: toFile(r.assets[0]) });
         },
       },
       {
         text: "Galeri",
         onPress: async () => {
           const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7 });
-          if (!r.canceled && r.assets?.length) setPhoto(toFile(r.assets[0]));
+          if (!r.canceled && r.assets?.length) dispatch({ type: "photo", value: toFile(r.assets[0]) });
         },
       },
       { text: "Batal", style: "cancel" },
@@ -554,18 +626,16 @@ function PembayaranTab({ order, tokens, styles }) {
   useEffect(() => { setPayments(null); load(); }, [load]);
 
   async function save() {
-    const amountInt = parseInt(amount, 10);
-    if (!amountInt || amountInt <= 0) { Alert.alert("Jumlah wajib diisi"); return; }
+    const payload = buildPaymentPayload(draft, accounts.items, null);
+    if (!payload.amount || payload.amount <= 0) { Alert.alert("Jumlah wajib diisi", "Isi jumlah pembayaran yang valid (angka, lebih dari 0)."); return; }
     setBusy(true);
     try {
       // Foto diunggah dulu; kalau upload gagal, pencatatan dibatalkan (bukan
       // dicatat tanpa bukti diam-diam) supaya sales bisa coba lagi.
       let proofPhotoUrl;
-      if (photo) ({ url: proofPhotoUrl } = await api.uploadPaymentProof(order.id, photo));
-      await api.recordOrderPayment(order.id, {
-        amount: amountInt, method, proofPhotoUrl, cashAccountId: cashAccountId || undefined,
-      });
-      resetForm();
+      if (draft.photo) ({ url: proofPhotoUrl } = await api.uploadPaymentProof(order.id, draft.photo));
+      await api.recordOrderPayment(order.id, buildPaymentPayload(draft, accounts.items, proofPhotoUrl));
+      dispatch({ type: "reset" });
       load();
     } catch (err) {
       Alert.alert("Gagal catat pembayaran", err.message);
@@ -574,17 +644,18 @@ function PembayaranTab({ order, tokens, styles }) {
     }
   }
 
-  const paid = (payments || []).reduce((n, p) => n + p.amount, 0);
+  const paid = (payments || []).filter((p) => !p.cancelledAt).reduce((n, p) => n + p.amount, 0);
   const outstanding = Math.max((order.value || 0) - paid, 0);
+  const usesAccount = METHOD_USES_ACCOUNT[draft.method];
 
   return (
     <View style={{ paddingTop: 4 }}>
-      <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-        <View style={styles.miniCard}>
+      <View style={styles.miniRow}>
+        <View style={[styles.miniCard, miniCardSize]}>
           <Text style={styles.miniCardLabel}>Sudah Dibayar</Text>
           <Text style={[styles.miniCardValue, { color: tokens.color.success }]}>{formatRupiah(paid)}</Text>
         </View>
-        <View style={styles.miniCard}>
+        <View style={[styles.miniCard, miniCardSize]}>
           <Text style={styles.miniCardLabel}>Sisa Tagihan</Text>
           <Text style={[styles.miniCardValue, { color: outstanding > 0 ? tokens.color.danger : tokens.color.textPrimary }]}>
             {formatRupiah(outstanding)}
@@ -596,9 +667,9 @@ function PembayaranTab({ order, tokens, styles }) {
       {!payments && !error && <ActivityIndicator color={tokens.color.accent} />}
       {payments?.length === 0 && <Text style={styles.emptyText}>Belum ada pembayaran tercatat.</Text>}
       {payments?.map((p) => (
-        <View key={p.id} style={styles.paymentRow}>
-          <View>
-            <Text style={styles.paymentAmount}>{formatRupiah(p.amount)}</Text>
+        <View key={p.id} style={[styles.paymentRow, p.cancelledAt && { opacity: 0.55 }]}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.paymentAmount}>{formatRupiah(p.amount)}{p.cancelledAt ? " · dibatalkan" : ""}</Text>
             <Text style={styles.paymentMeta}>
               {PAYMENT_METHOD_LABEL[p.method] || p.method}{p.cashAccount?.name ? ` → ${p.cashAccount.name}` : ""} · {p.recordedBy?.name || "—"} · {shortDate(p.createdAt)}
             </Text>
@@ -607,66 +678,67 @@ function PembayaranTab({ order, tokens, styles }) {
         </View>
       ))}
 
-      {!form ? (
-        <TouchableOpacity style={styles.recordBtn} onPress={() => setForm(true)}>
+      {!draft.open ? (
+        <TouchableOpacity style={styles.recordBtn} onPress={() => dispatch({ type: "open" })}>
           <Wallet size={14} color={tokens.color.accent} strokeWidth={2.2} />
           <Text style={styles.recordBtnText}>Catat Pembayaran</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.paymentForm}>
+          <Text style={styles.fieldLabel}>Jumlah diterima</Text>
           <TextInput
             style={styles.input}
-            placeholder="Jumlah diterima (Rp)"
+            placeholder="Rp 0"
             placeholderTextColor={tokens.color.textMuted}
             keyboardType="numeric"
-            value={amount}
-            onChangeText={setAmount}
+            value={draft.amount}
+            onChangeText={(v) => dispatch({ type: "amount", value: v })}
+            maxFontSizeMultiplier={1.5}
           />
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-            {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => {
-              const active = method === value;
+
+          <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Metode</Text>
+          <View style={styles.methodGrid} accessibilityRole="radiogroup">
+            {METHODS.map((value) => {
+              const active = draft.method === value;
               return (
                 <TouchableOpacity
                   key={value}
                   style={[styles.methodChip, active && { borderColor: tokens.color.accent, backgroundColor: tokens.color.accentSoft }]}
-                  onPress={() => setMethod(value)}
+                  onPress={() => dispatch({ type: "method", value })}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active, checked: active }}
                 >
-                  <Text style={[styles.methodChipText, active && { color: tokens.color.accent }]}>{label}</Text>
+                  <Text style={[styles.methodChipText, active && { color: tokens.color.accent }]}>{METHOD_LABEL[value]}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
-          {accounts.length > 0 && (
-            <>
-              <Text style={[styles.miniCardLabel, { marginTop: 12 }]}>Dibayar ke rekening</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-                {accounts.map((a) => {
-                  const active = cashAccountId === a.id;
-                  return (
-                    <TouchableOpacity
-                      key={a.id}
-                      style={[styles.methodChip, { flexGrow: 0, paddingHorizontal: 12 }, active && { borderColor: tokens.color.accent, backgroundColor: tokens.color.accentSoft }]}
-                      onPress={() => setCashAccountId(active ? null : a.id)}
-                    >
-                      <Text style={[styles.methodChipText, active && { color: tokens.color.accent }]}>{a.name}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </>
+
+          {usesAccount && (
+            <AccountPicker
+              state={accounts}
+              selectedId={selectedAccountId(draft, accounts.items)}
+              onPick={(id) => dispatch({ type: "pickAccount", id })}
+              onRetry={reloadAccounts}
+              methodLabel={METHOD_LABEL[draft.method]}
+              tokens={tokens}
+              styles={styles}
+            />
           )}
-          <TouchableOpacity style={[styles.methodChip, { flex: 0, marginTop: 12, flexDirection: "row", gap: 6, justifyContent: "center" }]} onPress={pickProof} disabled={busy}>
-            <Camera size={14} color={photo ? tokens.color.success : tokens.color.textSecondary} strokeWidth={2.2} />
-            <Text style={[styles.methodChipText, photo && { color: tokens.color.success }]}>
-              {photo ? "Foto bukti siap (ketuk untuk ganti)" : "Foto bukti bayar (opsional)"}
+          {!usesAccount && <Text style={styles.hintText}>Pembayaran tunai tidak memilih rekening.</Text>}
+
+          <TouchableOpacity style={styles.proofBtn} onPress={pickProof} disabled={busy}>
+            <Camera size={15} color={draft.photo ? tokens.color.success : tokens.color.textSecondary} strokeWidth={2.2} />
+            <Text style={[styles.methodChipText, { flexShrink: 1 }, draft.photo && { color: tokens.color.success }]}>
+              {draft.photo ? "Foto bukti siap (ketuk untuk ganti)" : "Foto bukti bayar (opsional)"}
             </Text>
           </TouchableOpacity>
-          {photo ? <Image source={{ uri: photo.uri }} style={{ width: 96, height: 96, borderRadius: 10, marginTop: 8 }} /> : null}
-          <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={resetForm} disabled={busy}>
+          {draft.photo ? <Image source={{ uri: draft.photo.uri }} style={styles.proofPreview} /> : null}
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 14 }}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => dispatch({ type: "reset" })} disabled={busy}>
               <Text style={styles.cancelBtnText}>Batal</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.saveBtn} onPress={save} disabled={busy}>
+            <TouchableOpacity style={[styles.saveBtn, busy && { opacity: 0.6 }]} onPress={save} disabled={busy}>
               <Text style={styles.saveBtnText}>{busy ? "Menyimpan…" : "Simpan"}</Text>
             </TouchableOpacity>
           </View>
@@ -681,6 +753,7 @@ export default function OrderTimelineScreen({ route, navigation }) {
   const tokens = useTokens();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const { summaryCardSize } = useCardSizes();
   const [tab, setTab] = useState("status");
   // Ringkasan order (status/pembayaran/nilai) — dipakai kartu atas DAN
   // PembayaranTab (butuh order.value untuk hitung sisa tagihan). Diambil
@@ -689,6 +762,24 @@ export default function OrderTimelineScreen({ route, navigation }) {
   // endpoint /timeline) — pola sama dengan bukaTimeline() web
   // (OrderSection.jsx) yang punya masalah serupa.
   const [order, setOrder] = useState(null);
+
+  // Draft "Catat Pembayaran" DIANGKAT ke layar (bukan di dalam tab): tab di-unmount saat berpindah, jadi state di dalam
+  // tab hilang. Di sini jumlah, metode, rekening per-metode, dan foto bertahan selama form belum disimpan/dibatalkan.
+  const [draft, dispatch] = useReducer(draftReducer, undefined, initialDraft);
+  const [accounts, setAccounts] = useState({ status: "idle", items: [], error: "" });
+  const loadAccounts = useCallback(() => {
+    setAccounts((s) => ({ ...s, status: "loading", error: "" }));
+    api.getPaymentAccounts()
+      .then((raw) => setAccounts({ status: "ready", items: normalizeAccounts(raw), error: "" }))
+      .catch((e) => {
+        const msg = String(e?.message || "");
+        // Pesan teknis (fetch/IOException) tidak ramah untuk sales — ganti dengan petunjuk yang bisa ditindaklanjuti.
+        const teknis = /fetch|network|IOException|timeout|abort|failed/i.test(msg);
+        setAccounts({ status: "error", items: [], error: teknis || !msg ? "Periksa koneksi internet lalu coba lagi." : msg });
+      });
+  }, []);
+  // Rekening dimuat sekali, saat form pembayaran pertama kali dibuka (bukan tiap pindah tab).
+  useEffect(() => { if (draft.open && accounts.status === "idle") loadAccounts(); }, [draft.open, accounts.status, loadAccounts]);
 
   useEffect(() => {
     let alive = true;
@@ -701,64 +792,110 @@ export default function OrderTimelineScreen({ route, navigation }) {
     return () => { alive = false; };
   }, [orderId, orderNumber]);
 
+  // Tab bar horizontal: geser otomatis supaya tab aktif selalu terlihat penuh (tab terakhir tidak terpotong).
+  const tabScrollRef = useRef(null);
+  const tabLayouts = useRef({});
+  const [tabBarWidth, setTabBarWidth] = useState(0);
+  function selectTab(key) {
+    setTab(key);
+    const l = tabLayouts.current[key];
+    if (l && tabScrollRef.current) tabScrollRef.current.scrollTo({ x: Math.max(0, l.x - (tabBarWidth - l.width) / 2), animated: true });
+  }
+
+  const bottomPad = Math.max(insets.bottom, 12) + 32; // ruang di atas navigation bar/gesture bar
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <GlassBackdrop />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <ChevronLeft size={22} color={tokens.color.textPrimary} strokeWidth={2.2} />
-        </TouchableOpacity>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.headerTitle} numberOfLines={1}>{customerName || "Rincian Pesanan"}</Text>
-          <View style={styles.orderNumberChip}>
-            <Hash size={10} color={tokens.color.success} strokeWidth={2.4} />
-            <Text style={styles.orderNumberText}>{orderNumber || "—"}</Text>
+      {/* SATU ScrollView vertikal untuk seluruh halaman: header, ringkasan, kartu alamat & info order ikut naik saat
+          di-scroll. Hanya bilah tab (child ke-4) yang menempel di atas setelah mencapai puncak. Tidak ada tinggi tetap /
+          flex:1 pada isi tab, jadi isi mengikuti tinggi alaminya dan bisa digulir sampai paling bawah. */}
+      <ScrollView
+        style={styles.pageScroll}
+        contentContainerStyle={{ paddingBottom: bottomPad }}
+        stickyHeaderIndices={[3]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator
+      >
+        {/* 0 — header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Kembali" hitSlop={8}>
+            <ChevronLeft size={24} color={tokens.color.textPrimary} strokeWidth={2.2} />
+          </TouchableOpacity>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.headerTitle} maxFontSizeMultiplier={1.5}>{customerName || "Rincian Pesanan"}</Text>
+            <View style={styles.orderNumberChip}>
+              <Hash size={10} color={tokens.color.success} strokeWidth={2.4} />
+              <Text style={styles.orderNumberText}>{orderNumber || "—"}</Text>
+            </View>
           </View>
         </View>
-      </View>
 
-      {order && (
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Status</Text>
-            <Text style={styles.summaryValue}>{ORDER_STATUS_LABELS[order.status] || order.status || "—"}</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Pembayaran</Text>
-            <Text style={styles.summaryValue}>{PAYMENT_STATUS_LABELS[order.paymentStatus] || order.paymentStatus || "—"}</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Nilai</Text>
-            <Text style={styles.summaryValue}>{formatRupiah(order.value || 0)}</Text>
-          </View>
+        {/* 1 — ringkasan (wrapper selalu ada agar indeks sticky stabil) */}
+        <View>
+          {order && (
+            <View style={styles.summaryRow}>
+              <View style={[styles.summaryCard, summaryCardSize]}>
+                <Text style={styles.summaryLabel}>Status</Text>
+                <Text style={styles.summaryValue}>{ORDER_STATUS_LABELS[order.status] || order.status || "—"}</Text>
+              </View>
+              <View style={[styles.summaryCard, summaryCardSize]}>
+                <Text style={styles.summaryLabel}>Pembayaran</Text>
+                <Text style={styles.summaryValue}>{PAYMENT_STATUS_LABELS[order.paymentStatus] || order.paymentStatus || "—"}</Text>
+              </View>
+              <View style={[styles.summaryCard, summaryCardSize]}>
+                <Text style={styles.summaryLabel}>Nilai</Text>
+                <Text style={styles.summaryValue}>{formatRupiah(order.value || 0)}</Text>
+              </View>
+            </View>
+          )}
         </View>
-      )}
 
-      {/* Detail Pesanan — paritas penuh dengan DetailPesananSection di web
-          (OrderTimelineDrawer.jsx). Semua field ini SUDAH ikut terbawa di
-          GET /orders (bukan field baru di endpoint, cuma belum pernah
-          dirender di layar mobile ini) — jadi tidak perlu fetch tambahan. */}
-      {order && <DetailPesananSection order={order} tokens={tokens} styles={styles} />}
+        {/* 2 — Detail Pesanan (alamat & info order): paritas penuh dengan DetailPesananSection di web
+            (OrderTimelineDrawer.jsx). Semua field SUDAH ikut di GET /orders — tidak ada fetch tambahan. */}
+        <View>{order && <DetailPesananSection order={order} tokens={tokens} styles={styles} />}</View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={{ gap: 2 }}>
-        {TABS.map(({ key, label, Icon }) => {
-          const active = tab === key;
-          return (
-            <TouchableOpacity key={key} style={[styles.tabBtn, active && styles.tabBtnActive]} onPress={() => setTab(key)}>
-              <Icon size={13} color={active ? tokens.color.textPrimary : tokens.color.textMuted} strokeWidth={2.2} />
-              <Text style={[styles.tabBtnText, active && styles.tabBtnTextActive]}>{label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+        {/* 3 — bilah tab (sticky). Latar solid = warna dasar gradien agar isi yang lewat di bawahnya tidak tembus. */}
+        <View style={styles.tabBarSticky} onLayout={(e) => setTabBarWidth(e.nativeEvent.layout.width)}>
+          <ScrollView
+            ref={tabScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabBarContent}
+            accessibilityRole="tablist"
+          >
+            {TABS.map(({ key, label, Icon }) => {
+              const active = tab === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.tabBtn, active && styles.tabBtnActive]}
+                  onPress={() => selectTab(key)}
+                  onLayout={(e) => { tabLayouts.current[key] = e.nativeEvent.layout; }}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={label}
+                >
+                  <Icon size={16} color={active ? tokens.color.accent : tokens.color.textMuted} strokeWidth={2.2} />
+                  <Text style={[styles.tabBtnText, active && styles.tabBtnTextActive]} maxFontSizeMultiplier={1.5}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
-        {tab === "status" && <StatusTab orderId={orderId} tokens={tokens} styles={styles} />}
-        {tab === "dokumentasi" && <DokumentasiTab orderId={orderId} conversationId={order?.conversationId || null} customerNameLabel={customerName} tokens={tokens} styles={styles} />}
-        {tab === "pembayaran" && order && <PembayaranTab order={order} tokens={tokens} styles={styles} />}
-        {tab === "invoice" && <OrderInvoiceTab orderId={orderId} />}
-        {tab === "garansi" && <OrderWarrantyTab orderId={orderId} order={order} />}
-        {tab === "komplain" && <OrderComplaintTab orderId={orderId} />}
+        {/* 4 — isi tab: tinggi natural, tanpa ScrollView bersarang */}
+        <View style={styles.tabContent}>
+          {tab === "status" && <StatusTab orderId={orderId} tokens={tokens} styles={styles} />}
+          {tab === "dokumentasi" && <DokumentasiTab orderId={orderId} conversationId={order?.conversationId || null} customerNameLabel={customerName} tokens={tokens} styles={styles} />}
+          {tab === "pembayaran" && order && (
+            <PembayaranTab order={order} draft={draft} dispatch={dispatch} accounts={accounts} reloadAccounts={loadAccounts} tokens={tokens} styles={styles} />
+          )}
+          {tab === "invoice" && <OrderInvoiceTab orderId={orderId} />}
+          {tab === "garansi" && <OrderWarrantyTab orderId={orderId} order={order} />}
+          {tab === "komplain" && <OrderComplaintTab orderId={orderId} />}
+        </View>
       </ScrollView>
     </View>
   );
@@ -767,21 +904,24 @@ export default function OrderTimelineScreen({ route, navigation }) {
 function createStyles(tokens) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: "transparent" },
-    header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10, gap: 8 },
-    backBtn: { padding: 6 },
-    headerTitle: { fontSize: 16, fontWeight: "700", color: tokens.color.textPrimary },
+    pageScroll: { flex: 1 },
+    header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 10, paddingBottom: 12, gap: 8 },
+    backBtn: { padding: 8, minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
+    headerTitle: { fontSize: 18, fontWeight: "700", color: tokens.color.textPrimary, lineHeight: 24 },
     orderNumberChip: {
       flexDirection: "row", alignItems: "center", gap: 3, alignSelf: "flex-start",
       backgroundColor: tokens.color.success + "1f", borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2, marginTop: 3,
     },
     orderNumberText: { fontSize: 11, fontWeight: "700", color: tokens.color.success, fontFamily: "monospace" },
-    summaryRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 10 },
-    summaryCard: { flex: 1, ...tokens.glass.surface, borderRadius: 12, padding: 10 },
-    summaryLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
-    summaryValue: { fontSize: 13, fontWeight: "700", color: tokens.color.textPrimary, marginTop: 2 },
+    // Kartu ringkasan membungkus (tidak dipaksa 1 baris): di font besar / layar 360dp nilai panjang turun ke baris berikutnya
+    // alih-alih terpotong.
+    summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16, marginBottom: 12 },
+    summaryCard: { flexGrow: 1, flexBasis: 96, minWidth: 96, ...tokens.glass.surface, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11 },
+    summaryLabel: { fontSize: 10.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
+    summaryValue: { fontSize: 14, fontWeight: "700", color: tokens.color.textPrimary, marginTop: 3, lineHeight: 19 },
     detailBox: {
-      ...tokens.glass.surface, borderRadius: 12, padding: 12,
-      marginHorizontal: 16, marginBottom: 10, gap: 10,
+      ...tokens.glass.surface, borderRadius: 14, padding: 14,
+      marginHorizontal: 16, marginBottom: 12, gap: 12,
     },
     detailRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
     detailIconWrap: {
@@ -791,11 +931,22 @@ function createStyles(tokens) {
     detailLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
     detailText: { fontSize: 12.5, color: tokens.color.textPrimary, lineHeight: 18 },
     detailMuted: { fontSize: 12.5, color: tokens.color.textMuted },
-    tabBar: { flexGrow: 0, flexShrink: 0, marginHorizontal: 16, backgroundColor: tokens.color.subtle, borderRadius: 12, padding: 3, marginBottom: 4 },
-    tabBtn: { paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 8, borderRadius: 9 },
-    tabBtnActive: { ...tokens.glass.surface },
-    tabBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.textMuted },
-    tabBtnTextActive: { color: tokens.color.textPrimary },
+    // Bilah tab: menempel di atas saat halaman digulir (child sticky). Latar solid = warna dasar gradien.
+    tabBarSticky: {
+      backgroundColor: tokens.glass.tabBarBg, paddingTop: 6, paddingBottom: 8,
+      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.border,
+    },
+    // minWidth 100% + item flexShrink 0: tab tidak pernah dikecilkan sampai label hilang; kalau ruang kurang, digeser mendatar.
+    tabBarContent: { paddingHorizontal: 16, gap: 6, minWidth: "100%" },
+    tabBtn: {
+      flexShrink: 0, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+      minHeight: 44, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 22,
+      backgroundColor: tokens.color.subtle, borderWidth: 1, borderColor: "transparent",
+    },
+    tabBtnActive: { ...tokens.glass.surface, borderColor: tokens.color.accent, backgroundColor: tokens.color.accentSoft },
+    tabBtnText: { fontSize: 13.5, fontWeight: "600", color: tokens.color.textMuted },
+    tabBtnTextActive: { color: tokens.color.accent, fontWeight: "700" },
+    tabContent: { paddingHorizontal: 16, paddingTop: 16 },
 
     errorText: { fontSize: 12.5, color: tokens.color.danger, marginTop: 12 },
     emptyWrap: { alignItems: "center", paddingVertical: 32, paddingHorizontal: 20, gap: 6 },
@@ -837,21 +988,43 @@ function createStyles(tokens) {
     signatureBox: { backgroundColor: tokens.color.success + "14", borderRadius: 12, padding: 10, marginTop: 4 },
     signatureImg: { width: "100%", height: 100, backgroundColor: "#fff", borderRadius: 8, marginBottom: 6 },
 
-    miniCard: { flex: 1, ...tokens.glass.surface, borderRadius: 12, padding: 10 },
-    miniCardLabel: { fontSize: 9.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase" },
-    miniCardValue: { fontSize: 14, fontWeight: "700", marginTop: 2 },
+    miniRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+    miniCard: { flexGrow: 1, flexBasis: 130, minWidth: 130, ...tokens.glass.surface, borderRadius: 14, padding: 12 },
+    miniCardLabel: { fontSize: 10.5, fontWeight: "600", color: tokens.color.textMuted, textTransform: "uppercase" },
+    miniCardValue: { fontSize: 16, fontWeight: "700", marginTop: 3 },
     paymentRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", ...tokens.glass.surface, borderRadius: 12, padding: 10, marginBottom: 8 },
     paymentAmount: { fontSize: 13, fontWeight: "700", color: tokens.color.textPrimary },
     paymentMeta: { fontSize: 11, color: tokens.color.textMuted, marginTop: 2 },
     recordBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: tokens.color.accentSoft, borderRadius: 12, paddingVertical: 11, marginTop: 4 },
     recordBtnText: { fontSize: 13, fontWeight: "700", color: tokens.color.accent },
-    paymentForm: { ...tokens.glass.surface, borderRadius: 12, padding: 12, marginTop: 4 },
-    input: { backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: tokens.color.textPrimary },
-    methodChip: { flex: 1, alignItems: "center", paddingVertical: 8, borderRadius: 9, borderWidth: 1.5, borderColor: tokens.color.border },
-    methodChipText: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary },
-    cancelBtn: { flex: 1, alignItems: "center", paddingVertical: 10 },
+    paymentForm: { ...tokens.glass.surface, borderRadius: 14, padding: 14, marginTop: 6 },
+    fieldLabel: { fontSize: 12, fontWeight: "700", color: tokens.color.textSecondary, marginBottom: 6 },
+    input: { backgroundColor: tokens.color.subtle, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: tokens.color.textPrimary, minHeight: 48 },
+    // Grid 2 kolom yang membungkus: flexBasis "47%" (BUKAN flex:1 → basis 0 yang meruntuhkan chip jadi kotak sempit).
+    methodGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    methodChip: { flexGrow: 1, flexBasis: "47%", minHeight: 46, alignItems: "center", justifyContent: "center", paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1.5, borderColor: tokens.color.border },
+    methodChipText: { fontSize: 13.5, fontWeight: "600", color: tokens.color.textSecondary },
+    // Kartu rekening: lebar penuh, tumpuk vertikal, seluruh area bisa ditekan.
+    accountCard: {
+      flexDirection: "row", alignItems: "center", gap: 12, alignSelf: "stretch", minHeight: 68,
+      paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, borderWidth: 1.5, borderColor: tokens.color.border,
+      backgroundColor: tokens.color.card,
+    },
+    accountIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: tokens.color.subtle },
+    accountName: { fontSize: 14.5, fontWeight: "700", color: tokens.color.textPrimary, lineHeight: 20 },
+    accountMeta: { fontSize: 12, color: tokens.color.textSecondary, marginTop: 2, lineHeight: 17 },
+    accountNumber: { fontFamily: "monospace", color: tokens.color.textMuted },
+    radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: tokens.color.border, alignItems: "center", justifyContent: "center" },
+    accountState: { marginTop: 6, padding: 14, borderRadius: 14, borderWidth: 1, borderStyle: "dashed", borderColor: tokens.color.border, gap: 6, alignItems: "flex-start" },
+    stateText: { fontSize: 12.5, color: tokens.color.textSecondary, lineHeight: 18 },
+    hintText: { fontSize: 12, color: tokens.color.textMuted, marginTop: 8, lineHeight: 17 },
+    retryBtn: { minHeight: 40, paddingHorizontal: 16, borderRadius: 10, backgroundColor: tokens.color.accentSoft, alignItems: "center", justifyContent: "center" },
+    retryBtnText: { fontSize: 13, fontWeight: "700", color: tokens.color.accent },
+    proofBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 46, marginTop: 14, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: tokens.color.border },
+    proofPreview: { width: 96, height: 96, borderRadius: 12, marginTop: 10 },
+    cancelBtn: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 46 },
     cancelBtnText: { fontSize: 12.5, fontWeight: "600", color: tokens.color.textSecondary },
-    saveBtn: { flex: 1, alignItems: "center", paddingVertical: 10, backgroundColor: tokens.color.accent, borderRadius: 10 },
+    saveBtn: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 46, backgroundColor: tokens.color.accent, borderRadius: 12 },
     saveBtnText: { fontSize: 12.5, fontWeight: "700", color: "#fff" },
   });
 }
