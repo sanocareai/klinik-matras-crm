@@ -48,7 +48,7 @@ import { checkForUpdateOnLaunch } from "./src/lib/autoUpdate";
 import { navigationRef, navigateToChat } from "./src/lib/navigationRef";
 import { markTap, markTransitionEnd, withTabProfiler, count, markNavCall, perfNow } from "./src/lib/tabPerf";
 import {
-  TAB_DUR, TAB_SHIFT_DP, TAB_BEZIER, tabTransition, tabA11y, createTabRequestGuard, createIdlePreloader,
+  TAB_DUR, TAB_FADE_MS, TAB_BEZIER, tabTransition, indicatorTiming, tabA11y, createTabRequestGuard, createIdlePreloader,
 } from "./src/lib/tabNav";
 import { deferTabScreen, useReducedMotion } from "./src/lib/tabHooks";
 
@@ -127,52 +127,40 @@ function TabBarButton({ children, style, ...rest }) {
 // gradien agar menyatu dengan latar layar.
 const PILL = 46; // diameter lingkaran aktif di tab bar
 
-// Kurva gerak tunggal untuk seluruh perpindahan tab (pil + isi layar), meniru ease-out iOS:
-// berangkat cepat, mendarat pelan. Timing, BUKAN pegas — pegas punya ekor panjang yang terbaca
-// sebagai "delay" walau gerakannya sendiri halus.
-// (TAB_DUR = 200 ms, TAB_SHIFT_DP = 20 dp, TAB_BEZIER: lihat src/lib/tabNav.js — satu sumber, diuji.)
+// Kurva gerak indikator tab (pil + pop ikon): ease-out, berangkat cepat, mendarat pelan. Timing, BUKAN pegas — pegas punya
+// ekor panjang yang terbaca sebagai "delay". Nilai di src/lib/tabNav.js (satu sumber, diuji).
 const TAB_BEZ = TAB_BEZIER;
-// Untuk RN Animated (isi layar, lewat transitionSpec React Navigation).
-const TAB_SPEC = { duration: TAB_DUR, easing: Easing.bezier(...TAB_BEZ) };
-// Untuk Reanimated (pil di tab bar, berjalan di UI thread). Kurva & durasi identik dengan di atas
-// supaya pil dan isi layar bergerak sebagai satu kesatuan — hanya mesin animasinya yang beda.
-const PILL_SPEC = { duration: TAB_DUR, easing: EasingReanimated.bezier(...TAB_BEZ) };
+const PILL_EASING = EasingReanimated.bezier(...TAB_BEZ);
 
-// Perpindahan ISI LAYAR antar tab: geser murni (transform), TANPA opacity.
-//
-// Kedua preset bawaan React Navigation ("fade" dan "shift") sama-sama menganimasikan OPACITY satu
-// layar penuh. Di Android itu memaksa lapisan seukuran layar digambar ulang ke buffer terpisah tiap
-// frame — itulah "cross dissolve yang tidak halus" yang terlihat. Transform cuma memindahkan lapisan
-// yang SUDAH jadi, jauh lebih murah, dan karena tiap layar punya latar sendiri yang menutup penuh,
-// hasilnya terbaca sebagai geser bersih tanpa saling menembus.
-function forSlide({ current }) {
+// Isi layar antar tab: PINDAH LANGSUNG (animation "none") — tanpa translateX, tanpa fade layar penuh (keduanya memaksa
+// lapisan layar penuh digambar ulang per frame). Hanya bila varian "fade" (pembanding QA) dipakai: opacity saja, 100 ms,
+// native driver; layar yang tidak tampil di-alpha-0-kan (anak-tangga, tanpa alpha parsial).
+function forFade({ current }) {
   return {
     sceneStyle: {
-      transform: [{
-        translateX: current.progress.interpolate({
-          inputRange: [-1, 0, 1],
-          outputRange: [-TAB_SHIFT_DP, 0, TAB_SHIFT_DP],
-        }),
-      }],
-      // Layar yang TIDAK tampil (progress tepat ±1) di-alpha-0-kan: HWUI melewati penggambarannya sama sekali. Tanpa ini
-      // keempat layar tersembunyi (masing-masing latar SVG/gradient layar penuh + daftar) tetap digambar di bawah layar
-      // aktif pada setiap frame. Fungsi anak-tangga: nilai HANYA 0 atau 1 (tidak pernah alpha parsial → tanpa layer
-      // offscreen); selama transisi kedua layar tetap terlihat. Native driver.
-      opacity: current.progress.interpolate({
-        inputRange: [-1, -0.999, 0, 0.999, 1],
-        outputRange: [0, 1, 1, 1, 0],
-      }),
+      opacity: current.progress.interpolate({ inputRange: [-1, -0.999, 0, 0.999, 1], outputRange: [0, 1, 1, 1, 0] }),
     },
   };
 }
+const FADE_SPEC = { duration: TAB_FADE_MS, easing: Easing.bezier(...TAB_BEZ) };
 
-// Satu tab: SATU ikon saja.
-// Percobaan sebelumnya (19 Sep 2026) menumpuk dua ikon dan memudarkan opacity-nya. Itu terasa berat
-// karena ikon lucide adalah SVG: menganimasikan opacity view berisi SVG memaksa Android menggambar
-// ulang lapisan itu TIAP FRAME, dan jumlahnya jadi 10 SVG (2 × 5 tab). Warna sekarang berganti
-// seketika — mata tidak menangkapnya karena perhatian mengikuti pil yang meluncur.
-function GlassTabItem({ route, focused, slot, onPress, mutedColor }) {
+// Satu tab: SATU ikon saja (tidak ditumpuk dua ikon: 10 SVG yang di-fade terlalu berat, dicoba & dicabut 19 Sep 2026).
+// Ikon yang BARU dipilih "mendarat": skala 0.94 → 1 dan opacity 0.6 → 1 selama 180 ms (View kecil 22 dp, transform +
+// opacity di UI thread — bukan layar penuh). Ikon lain tidak dianimasikan. Reduce-motion: tanpa animasi.
+function GlassTabItem({ route, focused, slot, onPress, mutedColor, timing }) {
   const Icon = TAB_ICONS[route.name];
+  const pop = useSharedValue(1);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    if (!focused || timing.icon === 0) { pop.value = 1; return; }
+    pop.value = 0;
+    pop.value = withTiming(1, { duration: timing.icon, easing: PILL_EASING });
+  }, [focused, timing.icon, pop]);
+  const iconStyle = useAnimatedStyle(() => ({
+    opacity: timing.iconDim + (1 - timing.iconDim) * pop.value,
+    transform: [{ scale: timing.popScale + (1 - timing.popScale) * pop.value }],
+  }), [timing.iconDim, timing.popScale]);
   return (
     <Pressable
       // Respons SENTUHAN langsung: dipicu saat jari menyentuh (bukan menunggu jari diangkat) — tab aktif & pil bergerak
@@ -185,7 +173,9 @@ function GlassTabItem({ route, focused, slot, onPress, mutedColor }) {
       {...tabA11y(route.name, focused)}
       style={{ width: slot || PILL, height: PILL, alignItems: "center", justifyContent: "center" }}
     >
-      <Icon size={22} color={focused ? "#fff" : mutedColor} strokeWidth={focused ? 2.4 : 2} />
+      <Animated.View style={iconStyle}>
+        <Icon size={22} color={focused ? "#fff" : mutedColor} strokeWidth={focused ? 2.4 : 2} />
+      </Animated.View>
     </Pressable>
   );
 }
@@ -202,7 +192,15 @@ function GlassTabBar({ state, navigation, reduceMotion = false }) {
   // Ketukan beruntun: satu tujuan = satu navigasi (lihat createTabRequestGuard). Ketukan ke tab LAIN menginterupsi
   // animasi yang sedang berjalan dengan aman; ketukan ke tab yang sudah menjadi tujuan diabaikan.
   const guard = useRef(createTabRequestGuard()).current;
-  const pillSpec = reduceMotion ? { duration: 0 } : PILL_SPEC;
+  const timing = indicatorTiming({ reduceMotion });
+  const pillSpec = useMemo(() => ({ duration: timing.pill, easing: PILL_EASING }), [timing.pill]);
+  // Pop indikator: skala 0.94 → 1 + opacity, dipicu SEKETIKA saat sentuhan (worklet UI thread, transform/opacity saja).
+  const pillPop = useSharedValue(1);
+  const popPill = () => {
+    if (timing.icon === 0) { pillPop.value = 1; return; }
+    pillPop.value = 0;
+    pillPop.value = withTiming(1, { duration: timing.icon, easing: PILL_EASING });
+  };
   const tokens = useTokens();
   const g = tokens.glass;
   const [lebar, setLebar] = useState(0);
@@ -235,8 +233,12 @@ function GlassTabBar({ state, navigation, reduceMotion = false }) {
   }, [navigation, guard]);
 
   const pilStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: progress.value * slot + (slot - PILL) / 2 }],
-  }), [slot]);
+    opacity: timing.iconDim + (1 - timing.iconDim) * pillPop.value,
+    transform: [
+      { translateX: progress.value * slot + (slot - PILL) / 2 },
+      { scale: timing.popScale + (1 - timing.popScale) * pillPop.value },
+    ],
+  }), [slot, timing.iconDim, timing.popScale]);
 
   return (
     <View style={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: Math.max(insets.bottom, 10), backgroundColor: g.tabBarBg }}>
@@ -262,6 +264,7 @@ function GlassTabBar({ state, navigation, reduceMotion = false }) {
               focused={focused}
               slot={slot}
               mutedColor={tokens.color.textMuted}
+              timing={timing}
               onPress={() => {
                 preloader.current?.interrupt();
                 const aktif = state.routes[state.index]?.name;
@@ -274,6 +277,7 @@ function GlassTabBar({ state, navigation, reduceMotion = false }) {
                 terakhir.current = index;
                 markTap(state.routes[state.index]?.name, route.name);
                 progress.value = withTiming(index, pillSpec);
+                popPill();
                 const tNav = perfNow();
                 navigation.navigate(route.name, route.params);
                 markNavCall(perfNow() - tNav);
@@ -308,17 +312,11 @@ function MainTabs() {
       detachInactiveScreens={false}
       screenOptions={({ route }) => ({
         headerShown: false,
-        // Perpindahan tab: silang-pudar 160 ms. Durasi default (±250 ms) terasa menggantung karena
-        // layar tujuan baru selesai dirender di awal animasi; 160 ms + easing keluar membuat
-        // perpindahan terbaca "langsung" tapi tetap halus, dan dua layar tumpang tindih lebih singkat.
-        // "shift" hanya dipakai untuk MENGAKTIFKAN animasi; gerakannya sendiri diambil alih
-        // forSlide di atas (lihat alasannya di sana), dengan kurva & durasi yang sama persis
-        // dengan pil di tab bar supaya keduanya bergerak sebagai satu kesatuan.
-        // "none" bila pengaturan sistem mengurangi gerakan; selain itu geser 20 dp / 200 ms (transform saja, native driver;
-        // nilai di src/lib/tabNav.js).
+        // Isi layar pindah LANGSUNG ("none"); indikator tab yang bergerak (lihat GlassTabBar). "fade" 100 ms hanya
+        // varian pembanding QA (TAB_VARIANT di src/lib/tabNav.js).
         animation: trans.animation,
-        sceneStyleInterpolator: forSlide,
-        transitionSpec: { animation: "timing", config: TAB_SPEC },
+        sceneStyleInterpolator: forFade,
+        transitionSpec: { animation: "timing", config: FADE_SPEC },
         // freezeOnBlur SENGAJA TIDAK dipakai di tab (dicoba & dicabut 19 Sep 2026): membekukan layar
         // berarti React harus merender ULANG SELURUH pohon layar tujuan tepat saat animasi mulai —
         // thread JS sibuk di 2-3 frame pertama dan perpindahan terlihat patah, justru gejala yang

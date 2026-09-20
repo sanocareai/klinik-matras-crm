@@ -2,34 +2,39 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  TAB_DUR, TAB_SHIFT_DP, tabTransition, tabA11y, TAB_LABEL, createTabRequestGuard, createIdlePreloader, LIST_RECYCLE_POOL, holdListData, HIDDEN_LIST_SAMPLE,
+  TAB_DUR, TAB_ICON_MS, TAB_FADE_MS, TAB_POP_SCALE, TAB_VARIANT, tabTransition, indicatorTiming, tabA11y, TAB_LABEL, createTabRequestGuard, createIdlePreloader, LIST_RECYCLE_POOL, holdListData, HIDDEN_LIST_SAMPLE,
 } from "../src/lib/tabNav.js";
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 
 // ── Animasi ────────────────────────────────────────────────────────────────────────────────────
-test("animasi tab: 180–220 ms, geser 12–24 dp (bukan satu layar penuh)", () => {
-  const t = tabTransition();
-  assert.equal(t.animation, "shift");
-  assert.ok(TAB_DUR >= 180 && TAB_DUR <= 220, `TAB_DUR=${TAB_DUR}`);
-  assert.ok(TAB_SHIFT_DP >= 12 && TAB_SHIFT_DP <= 24, `TAB_SHIFT_DP=${TAB_SHIFT_DP}`);
-  assert.equal(t.duration, TAB_DUR);
-});
-
-test("reduced motion: tanpa animasi sama sekali (durasi 0, tanpa geser)", () => {
-  assert.deepEqual(tabTransition({ reduceMotion: true }), { animation: "none", duration: 0, shift: 0 });
-});
-
-test("interpolator hanya memakai transform translateX (tanpa properti layout / opacity / blur)", () => {
+test("isi layar pindah INSTAN: tanpa slide/translateX, tanpa animasi layar penuh (varian terpilih dari hasil ukur)", () => {
+  assert.equal(TAB_VARIANT, "instant");
+  assert.deepEqual(tabTransition(), { animation: "none", duration: 0 });
+  assert.deepEqual(tabTransition({ reduceMotion: true, variant: "fade" }), { animation: "none", duration: 0 });
+  const fade = tabTransition({ variant: "fade" });
+  assert.equal(fade.animation, "shift");
+  assert.ok(TAB_FADE_MS >= 80 && TAB_FADE_MS <= 120, `TAB_FADE_MS=${TAB_FADE_MS}`);
   const src = read("App.js");
-  const fn = src.slice(src.indexOf("function forSlide"), src.indexOf("// Satu tab: SATU ikon saja"));
-  assert.match(fn, /translateX/);
-  // opacity BOLEH hanya sebagai fungsi anak-tangga 0/1 (menyembunyikan layar tak tampil tanpa layer alpha parsial)
-  assert.match(fn, /outputRange: \[0, 1, 1, 1, 0\]/);
-  for (const bad of ["width", "left", "right", "margin", "padding", "height", "top:", "blur", "shadow"]) {
-    assert.ok(!fn.includes(bad), `forSlide tidak boleh memuat "${bad}"`);
-  }
-  assert.match(src, /outputRange: \[-TAB_SHIFT_DP, 0, TAB_SHIFT_DP\]/);
+  assert.ok(!/forSlide|translateX: current|TAB_SHIFT_DP/.test(src), "slide layar penuh sudah dihapus");
+  const fn = src.slice(src.indexOf("function forFade"), src.indexOf("const FADE_SPEC"));
+  assert.ok(!/translateX|width|left|margin|padding|height|blur|shadow/.test(fn), "forFade hanya opacity");
+});
+
+test("indikator tab: pil/ikon skala 0.94 → 1 + opacity, 160–200 ms; reduced motion mematikan semuanya", () => {
+  const t = indicatorTiming();
+  assert.equal(TAB_POP_SCALE, 0.94);
+  assert.equal(t.popScale, 0.94);
+  assert.ok(t.pill >= 160 && t.pill <= 200 && TAB_DUR === t.pill, `pill=${t.pill}`);
+  assert.ok(TAB_ICON_MS >= 160 && TAB_ICON_MS <= 200 && t.icon === TAB_ICON_MS);
+  assert.deepEqual(indicatorTiming({ reduceMotion: true }), { pill: 0, icon: 0, popScale: 1, iconDim: 1 });
+  const src = read("App.js");
+  // pop dipicu langsung di sentuhan (onPress via onPressIn), bukan menunggu navigasi/data
+  assert.ok(src.replace(/\s+/g, " ").includes("progress.value = withTiming(index, pillSpec); popPill(); const tNav"), "pop dipicu langsung di sentuhan");
+  const pill = src.slice(src.indexOf("const pilStyle"), src.indexOf("return (", src.indexOf("const pilStyle")));
+  assert.match(pill, /scale:/);
+  assert.match(pill, /opacity:/);
+  for (const bad of ["width", "height", "left", "margin", "shadow", "blur"]) assert.ok(!pill.includes(bad), `pil tidak boleh menganimasikan ${bad}`);
 });
 
 // ── Aksesibilitas ──────────────────────────────────────────────────────────────────────────────
@@ -182,11 +187,12 @@ test("fetch berat dipisah dari animasi: Home & Inbox memakai useFocusAfterIntera
   assert.match(h, /task\.cancel\?\.\(\)/, "dibatalkan bila kehilangan fokus (tanpa kebocoran)");
 });
 
-test("reduced motion terhubung ke navigator & pil tab", () => {
+test("reduced motion terhubung ke navigator, pil & ikon tab", () => {
   const src = read("App.js");
   assert.match(src, /useReducedMotion\(\)/);
   assert.match(src, /animation: trans\.animation/);
-  assert.match(src, /reduceMotion \? \{ duration: 0 \} : PILL_SPEC/);
+  assert.match(src, /indicatorTiming\(\{ reduceMotion \}\)/);
+  assert.match(src, /timing\.icon === 0/, "pop dilewati saat reduced motion");
   const h = read("src/lib/tabHooks.js");
   assert.match(h, /isReduceMotionEnabled/);
   assert.match(h, /reduceMotionChanged/);
@@ -229,4 +235,20 @@ test("daftar di layar tersembunyi dibekukan (tanpa ini FlashList me-render SEMUA
   const h = read("src/lib/tabHooks.js");
   assert.match(h, /addListener\("focus"/);
   assert.match(h, /addListener\("blur"/);
+});
+
+test("cold tab: skeleton/shell tergambar dulu (2 rAF) baru isi berat; daftar penuh dilepas setelah interaksi", () => {
+  const h = read("src/lib/tabHooks.js");
+  assert.ok(h.replace(/\s+/g, " ").includes("requestAnimationFrame(() => { raf2 = requestAnimationFrame"), "skeleton tergambar (2 rAF) dulu");
+  assert.ok(h.replace(/\s+/g, " ").includes("InteractionManager.runAfterInteractions(() => setReady(true))"), "InteractionManager.runAfterInteractions(() => setReady(true))");
+  assert.ok(h.replace(/\s+/g, " ").includes("InteractionManager.runAfterInteractions(() => { if (focusedRef.current) bump(); })"), "daftar penuh tidak dilepas sinkron di ketukan");
+  assert.match(h, /cancelAnimationFrame/);
+});
+
+test("regresi optimasi 1a945dcf tetap utuh", () => {
+  const src = read("App.js");
+  assert.ok(src.replace(/\s+/g, " ").includes("detachInactiveScreens={false}"), "detachInactiveScreens={false}");
+  assert.ok(src.replace(/\s+/g, " ").includes("createTabRequestGuard()"), "createTabRequestGuard()");
+  assert.match(src, /createIdlePreloader/);
+  for (const f of ["src/screens/ChatListScreen.js", "src/screens/PelangganScreen.js", "src/screens/OrdersScreen.js"]) assert.ok(read(f).includes("useHiddenSafeList(navigation, "), f);
 });

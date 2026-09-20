@@ -1,16 +1,29 @@
 // Logika MURNI navigasi bottom tab (tanpa React/RN supaya bisa dites dengan node --test).
 
 // ── Animasi ─────────────────────────────────────────────────────────────────────────────────────
-// Kurva & durasi SATU sumber untuk isi layar (RN Animated, native driver) dan pil tab bar (Reanimated, UI thread).
-export const TAB_DUR = 200;                 // ms — di dalam jendela 180–220
-export const TAB_SHIFT_DP = 20;             // dp — geser pendek (12–24), bukan satu layar penuh
+// Isi layar TIDAK dianimasikan: layar tujuan langsung tampil (tanpa translateX / fade layar penuh). Yang bergerak hanya
+// indikator tab (pil meluncur + pop skala kecil + ikon), di UI thread (Reanimated), transform/opacity saja.
+// Varian dipilih dari hasil ukur (docs/qa/tab-transition-perf-2026-09.md): "instant" = pindah langsung; "fade" = fade
+// isi 100 ms (hanya untuk pembanding QA — tidak dipakai bila menambah jank).
+export const TAB_VARIANT = "instant";
+export const TAB_DUR = 200;                  // ms — pil meluncur (jendela 160–200)
+export const TAB_ICON_MS = 180;              // ms — pop skala + opacity indikator/ikon (160–200)
+export const TAB_FADE_MS = 100;              // ms — fade isi (80–120), varian "fade" saja
+export const TAB_POP_SCALE = 0.94;           // skala awal indikator saat tab dipilih → 1
+export const TAB_ICON_DIM = 0.6;             // opacity awal ikon yang baru dipilih → 1
 export const TAB_BEZIER = [0.33, 0, 0.2, 1]; // ease-out: berangkat cepat, mendarat pelan
 
-/** Konfigurasi transisi tab. Reduce-motion → tanpa animasi sama sekali (pil pindah seketika). */
-export function tabTransition({ reduceMotion = false } = {}) {
+/** Konfigurasi transisi ISI layar. Reduce-motion / "instant" → tanpa animasi apa pun pada isi layar. */
+export function tabTransition({ reduceMotion = false, variant = TAB_VARIANT } = {}) {
+  if (reduceMotion || variant !== "fade") return { animation: "none", duration: 0 };
+  return { animation: "shift", duration: TAB_FADE_MS };
+}
+
+/** Durasi animasi indikator (pil/ikon). Reduce-motion → 0: pil pindah seketika, tanpa pop/opacity. */
+export function indicatorTiming({ reduceMotion = false } = {}) {
   return reduceMotion
-    ? { animation: "none", duration: 0, shift: 0 }
-    : { animation: "shift", duration: TAB_DUR, shift: TAB_SHIFT_DP };
+    ? { pill: 0, icon: 0, popScale: 1, iconDim: 1 }
+    : { pill: TAB_DUR, icon: TAB_ICON_MS, popScale: TAB_POP_SCALE, iconDim: TAB_ICON_DIM };
 }
 
 // ── Daftar ───────────────────────────────────────────────────────────────────────────────────────

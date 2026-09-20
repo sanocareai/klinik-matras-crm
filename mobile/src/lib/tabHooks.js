@@ -48,9 +48,16 @@ export function deferTabScreen(Screen, { immediate = false, maxWaitMs = 500 } = 
     const [ready, setReady] = useState(false);
     useEffect(() => {
       if (ready) return undefined;
-      const task = InteractionManager.runAfterInteractions(() => setReady(true));
+      // Perpindahan tab kini INSTAN (tanpa animasi → tanpa interaction handle), jadi runAfterInteractions saja bisa langsung
+      // menyala dan memasang layar berat di frame yang sama dengan sentuhan. Dua rAF memastikan skeleton/shell SUDAH tergambar
+      // (tab langsung terlihat berganti) sebelum isi berat dipasang.
+      let raf2;
+      let task;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => { task = InteractionManager.runAfterInteractions(() => setReady(true)); });
+      });
       const t = setTimeout(() => setReady(true), maxWaitMs);
-      return () => { task.cancel?.(); clearTimeout(t); };
+      return () => { cancelAnimationFrame(raf1); if (raf2) cancelAnimationFrame(raf2); task?.cancel?.(); clearTimeout(t); };
     }, [ready]);
     return ready ? <Screen {...props} /> : <TabSkeleton />;
   }
@@ -67,9 +74,16 @@ export function useHiddenSafeList(navigation, data) {
   const heldRef = useRef(undefined);
   const [, bump] = useReducer((n) => n + 1, 0);
   useEffect(() => {
-    const onFocus = navigation.addListener("focus", () => { focusedRef.current = true; bump(); });
+    // Rilis data penuh SETELAH pergantian tab tergambar (bukan sinkron di ketukan): layar langsung tampil dengan data
+    // terakhir/contoh kecil, daftar penuh menyusul di frame berikutnya tanpa menahan sentuhan.
+    let task;
+    const onFocus = navigation.addListener("focus", () => {
+      focusedRef.current = true;
+      task?.cancel?.();
+      task = InteractionManager.runAfterInteractions(() => { if (focusedRef.current) bump(); });
+    });
     const onBlur = navigation.addListener("blur", () => { focusedRef.current = false; });
-    return () => { onFocus(); onBlur(); };
+    return () => { onFocus(); onBlur(); task?.cancel?.(); };
   }, [navigation]);
   const out = holdListData({ focused: focusedRef.current, data, held: heldRef.current });
   heldRef.current = out;
