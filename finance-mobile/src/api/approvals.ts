@@ -93,7 +93,7 @@ export function mapHalaman(raw: unknown): ApprovalHalaman {
   return { items, tab, page: angka(o.page, 1), limit: angka(o.limit, 20), total: angka(o.total), adaLagi: o.adaLagi === true, hitung: petaHitung(o.hitung) };
 }
 
-function petaLampiran(v: unknown): LampiranApproval[] {
+export function petaLampiran(v: unknown): LampiranApproval[] {
   return (Array.isArray(v) ? v : []).flatMap((x) => {
     const o = obj(x);
     if (!o || typeof o.id !== "string") return [];
@@ -107,7 +107,7 @@ function petaLampiran(v: unknown): LampiranApproval[] {
   });
 }
 
-function petaRiwayat(v: unknown): RiwayatApproval[] {
+export function petaRiwayat(v: unknown): RiwayatApproval[] {
   return (Array.isArray(v) ? v : []).flatMap((x) => {
     const o = obj(x);
     return o && typeof o.waktu === "string" ? [{ waktu: o.waktu, peristiwa: teks(o.peristiwa) ?? "", label: teks(o.label) ?? "Aktivitas", oleh: teks(o.oleh), catatan: teks(o.catatan) }] : [];

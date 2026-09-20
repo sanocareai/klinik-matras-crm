@@ -86,6 +86,9 @@ function Gerbang() {
           <Stack.Screen name="persetujuan/[jenis]/[id]" />
           <Stack.Screen name="pembayaran/index" />
           <Stack.Screen name="pembayaran/[id]" />
+          <Stack.Screen name="tx/[modul]/index" />
+          <Stack.Screen name="tx/[modul]/[id]" />
+          <Stack.Screen name="tx/[modul]/baru" />
           <Stack.Screen name="laporan/[jenis]" />
           <Stack.Screen name="approval/[jenis]/[id]" />
           <Stack.Screen name="keamanan" />

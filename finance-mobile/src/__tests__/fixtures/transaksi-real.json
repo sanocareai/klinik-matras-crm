@@ -1,0 +1,2006 @@
+{
+ "generatedBy": "financeTransaksi.integration.test.js (DUMP_TRANSAKSI=1)",
+ "opsi": {
+  "kategoriPengeluaran": [
+   {
+    "id": "473f36ba-c028-4b02-8e57-9d1c3cec6cd1",
+    "code": "BBM",
+    "name": "BBM / Bensin",
+    "division": "DELIVERY"
+   },
+   {
+    "id": "94b92f8d-7afc-4dce-9190-324b4a3c7d2b",
+    "code": "IKLAN",
+    "name": "Belanja Iklan",
+    "division": "DIGITAL_TECHNOLOGY"
+   },
+   {
+    "id": "a5c33440-1383-4ee3-aa28-e68577237e33",
+    "code": "ADMIN_BANK",
+    "name": "Biaya Administrasi Bank",
+    "division": "UMUM"
+   },
+   {
+    "id": "54ae7f33-92ae-4e68-a2cd-6c90fbb84cab",
+    "code": "BIAYA_KENDARAAN_LAIN",
+    "name": "Biaya Kendaraan Lainnya",
+    "division": "DELIVERY"
+   },
+   {
+    "id": "ca45109b-eaa9-4866-ad6a-6bf7f29aaed5",
+    "code": "CUCI_KENDARAAN",
+    "name": "Cuci Kendaraan",
+    "division": "DELIVERY"
+   },
+   {
+    "id": "efd87d4c-83ea-4e88-80b9-59c31cca1c1d",
+    "code": "DENDA_TILANG",
+    "name": "Denda / Tilang",
+    "division": "DELIVERY"
+   },
+   {
+    "id": "2b3fe4e3-2649-4442-baac-8e01cccb7108",
+    "code": "GAJI_KARYAWAN",
+    "name": "Gaji & Tunjangan",
+    "division": "UMUM"
+   },
+   {
+    "id": "1910b917-4690-4320-b2c6-b962e1ddc3d8",
+    "code": "KURIR_EKSTERNAL",
+    "name": "Kurir Eksternal",
+    "division": "DELIVERY"
+   },
+   {
+    "id": "3142f57c-ac5f-4ae8-a0db-2405986fc89e",
+    "code": "LAIN_LAIN",
+    "name": "Lain-lain",
+    "division": "UMUM"
+   },
+   {
+    "id": "f9db8b41-9e93-457e-8f7c-617aab495a0a",
+    "code": "LANGGANAN_APLIKASI",
+    "name": "Langganan Aplikasi",
+    "division": "UMUM"
+   },
+   {
+    "id": "0852ec80-56a4-4bd1-a017-e55656ff1da0",
+    "code": "UTILITAS",
+    "name": "Listrik, Air & Internet",
+    "division": "UMUM"
+   },
+   {
+    "id": "c325995e-cc1f-4026-b845-2a4335d6532f",
+    "code": "OPS_MEETING",
+    "name": "Operasional Meeting & Perjalanan Dinas",
+    "division": "UMUM"
+   },
+   {
+    "id": "35cba14b-cf82-4501-a1d7-70ba891d2141",
+    "code": "OVERHEAD_PRODUKSI",
+    "name": "Overhead Produksi",
+    "division": "PRODUKSI"
+   },
+   {
+    "id": "6896ab78-e556-48c5-ba2f-ac9e92959005",
+    "code": "PARKIR",
+    "name": "Parkir",
+    "division": "DELIVERY"
+   },
+   {
+    "id": "a93dcdf6-434b-4781-849b-cd38d6806601",
+    "code": "MAINT_MESIN",
+    "name": "Pemeliharaan Mesin & Peralatan",
+    "division": "PRODUKSI"
+   },
+   {
+    "id": "5998b614-4af2-4764-bfe1-8019236aae4f",
+    "code": "PERLENGKAPAN",
+    "name": "Perlengkapan Kantor",
+    "division": "UMUM"
+   },
+   {
+    "id": "01c495ee-a597-4b0d-a0fd-074427f63621",
+    "code": "SERVIS_KENDARAAN",
+    "name": "Servis & Perawatan Kendaraan",
+    "division": "DELIVERY"
+   },
+   {
+    "id": "2253b3e7-7401-47e7-ba77-64a3fa54f9e1",
+    "code": "SEWA_TEMPAT",
+    "name": "Sewa Tempat",
+    "division": "UMUM"
+   },
+   {
+    "id": "bea4a551-b030-470f-84f9-94e8d5d98b67",
+    "code": "TOL",
+    "name": "Tol",
+    "division": "DELIVERY"
+   },
+   {
+    "id": "ca8796f8-35c1-4569-96d0-e3cc440f8a6f",
+    "code": "UPAH_PRODUKSI",
+    "name": "Upah Produksi / Tukang",
+    "division": "PRODUKSI"
+   }
+  ],
+  "kategoriPembelian": [
+   {
+    "id": "2dc9b368-8bff-47cf-a1e3-76d68edcdaaf",
+    "code": "ASET_TAK_BERWUJUD",
+    "name": "Aset Tak Berwujud"
+   },
+   {
+    "id": "0e4d3cf8-c373-4fdd-ad86-0270b3ee84b6",
+    "code": "ASET_KENDARAAN",
+    "name": "Aset Tetap — Kendaraan"
+   },
+   {
+    "id": "96ed4598-1e02-4fc5-ad13-0725d01a3d87",
+    "code": "ASET_PERALATAN",
+    "name": "Aset Tetap — Peralatan & Mesin"
+   },
+   {
+    "id": "de3ff78a-d3fb-410b-91a3-8db3a02d06e5",
+    "code": "BAHAN_BAKU_MANUAL",
+    "name": "Bahan Baku (Manual)"
+   },
+   {
+    "id": "881c920a-98d9-407e-9d69-eea9b6bd000f",
+    "code": "UANG_MUKA_PEMBELIAN",
+    "name": "Uang Muka Pembelian (DP)"
+   }
+  ],
+  "rekening": [
+   {
+    "id": "445b7c94-a1bc-4170-8747-b344d7959623",
+    "name": "KEM Bank",
+    "kind": "BANK",
+    "saldo": "49175000.50"
+   },
+   {
+    "id": "93db2894-1508-4965-91f1-8c5bd4485202",
+    "name": "Kas Kantor",
+    "kind": "KAS",
+    "saldo": "5000000.00"
+   }
+  ],
+  "supplier": [
+   {
+    "id": "dabbd22d-abb0-44ef-9da8-d2cba868e750",
+    "code": "SUP-001",
+    "name": "CV Busa Jaya",
+    "paymentTermDays": 14
+   }
+  ],
+  "akunPemasukanLain": [
+   {
+    "id": "deeff4e8-d724-4056-8c0f-19f0b51f7b6a",
+    "code": "4-9100",
+    "name": "Pendapatan Lain-lain"
+   }
+  ],
+  "karyawan": [
+   {
+    "id": "cmua6xlna0031c4kd5f1tbe5f",
+    "name": "Admin Seed"
+   },
+   {
+    "id": "cmua6xlpl0035c4kdhx984swi",
+    "name": "Agung"
+   },
+   {
+    "id": "cmua6xloi0034c4kd1o48n1u2",
+    "name": "Login Test 17"
+   }
+  ],
+  "mode": [
+   {
+    "id": "LANGSUNG",
+    "label": "Bayar langsung"
+   },
+   {
+    "id": "REIMBURSEMENT",
+    "label": "Reimbursement"
+   },
+   {
+    "id": "UTANG",
+    "label": "Utang"
+   }
+  ],
+  "hanyaReimbursement": false,
+  "ambangNotaRupiah": "500000.00"
+ },
+ "ringkasan": {
+  "pengeluaran": {
+   "menunggu": 1
+  },
+  "pembelian": {
+   "menunggu": 1
+  },
+  "kasbon": {
+   "aktif": 1
+  },
+  "pemasukan": {
+   "aktif": 1
+  },
+  "refund": {
+   "menunggu": 1
+  },
+  "tagihan": {
+   "menunggu": 0,
+   "terbuka": 1
+  },
+  "supplier": {
+   "aktif": 1
+  },
+  "pembayaran-supplier": {
+   "aktif": 1
+  }
+ },
+ "modul": {
+  "pengeluaran": {
+   "daftar": {
+    "modul": "pengeluaran",
+    "tab": "SEMUA",
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "adaLagi": false,
+    "hitung": {
+     "SEMUA": 1,
+     "DRAF": 0,
+     "MENUNGGU": 1,
+     "DIPROSES": 0,
+     "SELESAI": 0,
+     "DITOLAK": 0
+    },
+    "items": [
+     {
+      "kunci": "pengeluaran:8973149b-2281-4f82-92fe-8679c73784eb",
+      "id": "8973149b-2281-4f82-92fe-8679c73784eb",
+      "modul": "pengeluaran",
+      "nomor": "EXP-21092026-001",
+      "tanggal": "2026-09-21",
+      "nominal": "900000.00",
+      "judul": "Servis truk",
+      "sub": "Servis & Perawatan Kendaraan · Bayar langsung",
+      "pihak": null,
+      "rekening": "KEM Bank",
+      "status": "MENUNGGU_APPROVAL",
+      "statusLabel": "Menunggu persetujuan",
+      "nada": "warning",
+      "jatuhTempo": null,
+      "umurHari": null,
+      "sisa": null,
+      "terbayar": null,
+      "adaLampiran": false,
+      "notaWajib": true,
+      "dibuatOleh": {
+       "id": "cmua6xloi0034c4kd1o48n1u2",
+       "name": "Login Test 17"
+      },
+      "aksi": {
+       "ajukan": {
+        "boleh": false,
+        "alasan": "Hanya draf yang bisa diajukan.",
+        "path": "/finance/expenses/8973149b-2281-4f82-92fe-8679c73784eb/submit",
+        "metode": "POST",
+        "perlu": []
+       },
+       "bayar": {
+        "boleh": false,
+        "alasan": "Hanya dokumen berstatus Disetujui yang bisa dibayar.",
+        "path": "/finance/expenses/8973149b-2281-4f82-92fe-8679c73784eb/pay",
+        "metode": "POST",
+        "perlu": [
+         "rekening",
+         "tanggal"
+        ]
+       },
+       "batalkan": {
+        "boleh": false,
+        "alasan": "Hanya dokumen yang sudah dibukukan yang bisa dibatalkan.",
+        "path": "/finance/expenses/8973149b-2281-4f82-92fe-8679c73784eb/cancel",
+        "metode": "POST",
+        "perlu": [
+         "alasan"
+        ]
+       },
+       "ubah": {
+        "boleh": true,
+        "alasan": null,
+        "path": "/finance/expenses/8973149b-2281-4f82-92fe-8679c73784eb",
+        "metode": "PATCH",
+        "perlu": [
+         "form",
+         "alasan"
+        ]
+       },
+       "lampiran": {
+        "boleh": true,
+        "alasan": null,
+        "path": "/finance/expenses/8973149b-2281-4f82-92fe-8679c73784eb/bukti",
+        "metode": "POST",
+        "perlu": [
+         "foto"
+        ]
+       }
+      },
+      "persetujuan": {
+       "jenis": "expense",
+       "id": "8973149b-2281-4f82-92fe-8679c73784eb"
+      }
+     }
+    ],
+    "ringkasan": {
+     "total": "900000.00"
+    },
+    "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+   },
+   "detail": {
+    "kunci": "pengeluaran:8973149b-2281-4f82-92fe-8679c73784eb",
+    "id": "8973149b-2281-4f82-92fe-8679c73784eb",
+    "modul": "pengeluaran",
+    "nomor": "EXP-21092026-001",
+    "tanggal": "2026-09-21",
+    "nominal": "900000.00",
+    "judul": "Servis truk",
+    "sub": "Servis & Perawatan Kendaraan · Bayar langsung",
+    "pihak": null,
+    "rekening": "KEM Bank",
+    "status": "MENUNGGU_APPROVAL",
+    "statusLabel": "Menunggu persetujuan",
+    "nada": "warning",
+    "jatuhTempo": null,
+    "umurHari": null,
+    "sisa": null,
+    "terbayar": null,
+    "adaLampiran": false,
+    "notaWajib": true,
+    "dibuatOleh": {
+     "id": "cmua6xloi0034c4kd1o48n1u2",
+     "name": "Login Test 17"
+    },
+    "aksi": {
+     "ajukan": {
+      "boleh": false,
+      "alasan": "Hanya draf yang bisa diajukan.",
+      "path": "/finance/expenses/8973149b-2281-4f82-92fe-8679c73784eb/submit",
+      "metode": "POST",
+      "perlu": []
+     },
+     "bayar": {
+      "boleh": false,
+      "alasan": "Hanya dokumen berstatus Disetujui yang bisa dibayar.",
+      "path": "/finance/expenses/8973149b-2281-4f82-92fe-8679c73784eb/pay",
+      "metode": "POST",
+      "perlu": [
+       "rekening",
+       "tanggal"
+      ]
+     },
+     "batalkan": {
+      "boleh": false,
+      "alasan": "Hanya dokumen yang sudah dibukukan yang bisa dibatalkan.",
+      "path": "/finance/expenses/8973149b-2281-4f82-92fe-8679c73784eb/cancel",
+      "metode": "POST",
+      "perlu": [
+       "alasan"
+      ]
+     },
+     "ubah": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/expenses/8973149b-2281-4f82-92fe-8679c73784eb",
+      "metode": "PATCH",
+      "perlu": [
+       "form",
+       "alasan"
+      ]
+     },
+     "lampiran": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/expenses/8973149b-2281-4f82-92fe-8679c73784eb/bukti",
+      "metode": "POST",
+      "perlu": [
+       "foto"
+      ]
+     }
+    },
+    "persetujuan": {
+     "jenis": "expense",
+     "id": "8973149b-2281-4f82-92fe-8679c73784eb"
+    },
+    "bagian": [
+     {
+      "judul": "Dokumen",
+      "baris": [
+       {
+        "label": "Nomor",
+        "nilai": "EXP-21092026-001",
+        "jenis": "teks"
+       },
+       {
+        "label": "Tanggal",
+        "nilai": "2026-09-21",
+        "jenis": "tanggal"
+       },
+       {
+        "label": "Kategori",
+        "nilai": "Servis & Perawatan Kendaraan",
+        "jenis": "teks"
+       },
+       {
+        "label": "Akun",
+        "nilai": "6-1320 Beban Servis & Perawatan Kendaraan",
+        "jenis": "teks"
+       },
+       {
+        "label": "Divisi",
+        "nilai": "DELIVERY",
+        "jenis": "teks"
+       },
+       {
+        "label": "Cara bayar",
+        "nilai": "Bayar langsung",
+        "jenis": "teks"
+       },
+       {
+        "label": "Status",
+        "nilai": "Menunggu persetujuan",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Dana",
+      "baris": [
+       {
+        "label": "Nominal",
+        "nilai": "900000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Rekening sumber",
+        "nilai": "KEM Bank",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Catatan",
+      "baris": [
+       {
+        "label": "Keterangan",
+        "nilai": "Servis truk",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Proses",
+      "baris": [
+       {
+        "label": "Dibuat oleh",
+        "nilai": "Login Test 17",
+        "jenis": "teks"
+       }
+      ]
+     }
+    ],
+    "lampiran": [],
+    "riwayat": [
+     {
+      "waktu": "2026-09-21T00:00:00.000Z",
+      "peristiwa": "DIAJUKAN",
+      "label": "Diajukan",
+      "oleh": "Login Test 17",
+      "catatan": null
+     }
+    ],
+    "syarat": "Nota wajib sebelum disetujui."
+   }
+  },
+  "pembelian": {
+   "daftar": {
+    "modul": "pembelian",
+    "tab": "SEMUA",
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "adaLagi": false,
+    "hitung": {
+     "SEMUA": 1,
+     "DRAF": 0,
+     "MENUNGGU": 1,
+     "DIPROSES": 0,
+     "SELESAI": 0,
+     "DITOLAK": 0
+    },
+    "items": [
+     {
+      "kunci": "pembelian:28981be3-bf7d-457f-aa63-b115c172d14b",
+      "id": "28981be3-bf7d-457f-aa63-b115c172d14b",
+      "modul": "pembelian",
+      "nomor": "PUR-21092026-001",
+      "tanggal": "2026-09-21",
+      "nominal": "12000.00",
+      "judul": "Kain oscar",
+      "sub": "Bahan Baku (Manual) · Bayar langsung",
+      "pihak": null,
+      "rekening": "KEM Bank",
+      "status": "MENUNGGU_APPROVAL",
+      "statusLabel": "Menunggu persetujuan",
+      "nada": "warning",
+      "jatuhTempo": null,
+      "umurHari": null,
+      "sisa": null,
+      "terbayar": null,
+      "adaLampiran": false,
+      "notaWajib": true,
+      "dibuatOleh": {
+       "id": "cmua6xloi0034c4kd1o48n1u2",
+       "name": "Login Test 17"
+      },
+      "aksi": {
+       "ajukan": {
+        "boleh": false,
+        "alasan": "Hanya draf yang bisa diajukan.",
+        "path": "/finance/purchases/28981be3-bf7d-457f-aa63-b115c172d14b/submit",
+        "metode": "POST",
+        "perlu": []
+       },
+       "bayar": {
+        "boleh": false,
+        "alasan": "Hanya dokumen berstatus Disetujui yang bisa dibayar.",
+        "path": "/finance/purchases/28981be3-bf7d-457f-aa63-b115c172d14b/pay",
+        "metode": "POST",
+        "perlu": [
+         "rekening",
+         "tanggal"
+        ]
+       },
+       "batalkan": {
+        "boleh": false,
+        "alasan": "Hanya dokumen yang sudah dibukukan yang bisa dibatalkan.",
+        "path": "/finance/purchases/28981be3-bf7d-457f-aa63-b115c172d14b/cancel",
+        "metode": "POST",
+        "perlu": [
+         "alasan"
+        ]
+       },
+       "ubah": {
+        "boleh": true,
+        "alasan": null,
+        "path": "/finance/purchases/28981be3-bf7d-457f-aa63-b115c172d14b",
+        "metode": "PATCH",
+        "perlu": [
+         "form",
+         "alasan"
+        ]
+       },
+       "lampiran": {
+        "boleh": true,
+        "alasan": null,
+        "path": "/finance/purchases/28981be3-bf7d-457f-aa63-b115c172d14b/bukti",
+        "metode": "POST",
+        "perlu": [
+         "foto"
+        ]
+       }
+      },
+      "persetujuan": {
+       "jenis": "purchase",
+       "id": "28981be3-bf7d-457f-aa63-b115c172d14b"
+      }
+     }
+    ],
+    "ringkasan": {
+     "total": "12000.00"
+    },
+    "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+   },
+   "detail": {
+    "kunci": "pembelian:28981be3-bf7d-457f-aa63-b115c172d14b",
+    "id": "28981be3-bf7d-457f-aa63-b115c172d14b",
+    "modul": "pembelian",
+    "nomor": "PUR-21092026-001",
+    "tanggal": "2026-09-21",
+    "nominal": "12000.00",
+    "judul": "Kain oscar",
+    "sub": "Bahan Baku (Manual) · Bayar langsung",
+    "pihak": null,
+    "rekening": "KEM Bank",
+    "status": "MENUNGGU_APPROVAL",
+    "statusLabel": "Menunggu persetujuan",
+    "nada": "warning",
+    "jatuhTempo": null,
+    "umurHari": null,
+    "sisa": null,
+    "terbayar": null,
+    "adaLampiran": false,
+    "notaWajib": true,
+    "dibuatOleh": {
+     "id": "cmua6xloi0034c4kd1o48n1u2",
+     "name": "Login Test 17"
+    },
+    "aksi": {
+     "ajukan": {
+      "boleh": false,
+      "alasan": "Hanya draf yang bisa diajukan.",
+      "path": "/finance/purchases/28981be3-bf7d-457f-aa63-b115c172d14b/submit",
+      "metode": "POST",
+      "perlu": []
+     },
+     "bayar": {
+      "boleh": false,
+      "alasan": "Hanya dokumen berstatus Disetujui yang bisa dibayar.",
+      "path": "/finance/purchases/28981be3-bf7d-457f-aa63-b115c172d14b/pay",
+      "metode": "POST",
+      "perlu": [
+       "rekening",
+       "tanggal"
+      ]
+     },
+     "batalkan": {
+      "boleh": false,
+      "alasan": "Hanya dokumen yang sudah dibukukan yang bisa dibatalkan.",
+      "path": "/finance/purchases/28981be3-bf7d-457f-aa63-b115c172d14b/cancel",
+      "metode": "POST",
+      "perlu": [
+       "alasan"
+      ]
+     },
+     "ubah": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/purchases/28981be3-bf7d-457f-aa63-b115c172d14b",
+      "metode": "PATCH",
+      "perlu": [
+       "form",
+       "alasan"
+      ]
+     },
+     "lampiran": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/purchases/28981be3-bf7d-457f-aa63-b115c172d14b/bukti",
+      "metode": "POST",
+      "perlu": [
+       "foto"
+      ]
+     }
+    },
+    "persetujuan": {
+     "jenis": "purchase",
+     "id": "28981be3-bf7d-457f-aa63-b115c172d14b"
+    },
+    "bagian": [
+     {
+      "judul": "Dokumen",
+      "baris": [
+       {
+        "label": "Nomor",
+        "nilai": "PUR-21092026-001",
+        "jenis": "teks"
+       },
+       {
+        "label": "Tanggal",
+        "nilai": "2026-09-21",
+        "jenis": "tanggal"
+       },
+       {
+        "label": "Kategori",
+        "nilai": "Bahan Baku (Manual)",
+        "jenis": "teks"
+       },
+       {
+        "label": "Akun",
+        "nilai": "5-1150 Pembelian Bahan Baku (Input Manual)",
+        "jenis": "teks"
+       },
+       {
+        "label": "Divisi",
+        "nilai": "UMUM",
+        "jenis": "teks"
+       },
+       {
+        "label": "Cara bayar",
+        "nilai": "Bayar langsung",
+        "jenis": "teks"
+       },
+       {
+        "label": "Status",
+        "nilai": "Menunggu persetujuan",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Dana",
+      "baris": [
+       {
+        "label": "Nominal",
+        "nilai": "12000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Rekening sumber",
+        "nilai": "KEM Bank",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Catatan",
+      "baris": [
+       {
+        "label": "Keterangan",
+        "nilai": "Kain oscar",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Proses",
+      "baris": [
+       {
+        "label": "Dibuat oleh",
+        "nilai": "Login Test 17",
+        "jenis": "teks"
+       }
+      ]
+     }
+    ],
+    "lampiran": [],
+    "riwayat": [
+     {
+      "waktu": "2026-09-21T00:00:00.000Z",
+      "peristiwa": "DIAJUKAN",
+      "label": "Diajukan",
+      "oleh": "Login Test 17",
+      "catatan": null
+     }
+    ],
+    "syarat": "Nota wajib sebelum disetujui."
+   }
+  },
+  "kasbon": {
+   "daftar": {
+    "modul": "kasbon",
+    "tab": "SEMUA",
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "adaLagi": false,
+    "hitung": {
+     "AKTIF": 1,
+     "LUNAS": 0,
+     "DIBATALKAN": 0,
+     "SEMUA": 1
+    },
+    "items": [
+     {
+      "kunci": "kasbon:ffea0795-d514-4f11-ae29-919fffe048ce",
+      "id": "ffea0795-d514-4f11-ae29-919fffe048ce",
+      "modul": "kasbon",
+      "nomor": "KSB-10092026-001",
+      "tanggal": "2026-09-10",
+      "nominal": "1000000.00",
+      "judul": "Agung",
+      "sub": "keperluan keluarga",
+      "pihak": "Agung",
+      "rekening": "KEM Bank",
+      "status": "AKTIF",
+      "statusLabel": "Aktif",
+      "nada": "info",
+      "jatuhTempo": null,
+      "umurHari": null,
+      "sisa": "1000000.00",
+      "terbayar": "0.00",
+      "adaLampiran": false,
+      "notaWajib": false,
+      "dibuatOleh": {
+       "id": "cmua6xloi0034c4kd1o48n1u2",
+       "name": "Login Test 17"
+      },
+      "persetujuan": null,
+      "aksi": {
+       "potongGaji": {
+        "boleh": true,
+        "alasan": null,
+        "path": "/finance/kasbon/ffea0795-d514-4f11-ae29-919fffe048ce/pelunasan",
+        "metode": "POST",
+        "perlu": [
+         "nominal",
+         "tanggal"
+        ],
+        "tetap": {
+         "method": "POTONG_GAJI"
+        }
+       },
+       "batalkan": {
+        "boleh": true,
+        "alasan": null,
+        "path": "/finance/kasbon/ffea0795-d514-4f11-ae29-919fffe048ce/batal",
+        "metode": "POST",
+        "perlu": [
+         "alasan"
+        ]
+       }
+      }
+     }
+    ],
+    "ringkasan": {
+     "sisaAktif": "1000000.00",
+     "total": "1000000.00"
+    },
+    "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+   },
+   "detail": {
+    "kunci": "kasbon:ffea0795-d514-4f11-ae29-919fffe048ce",
+    "id": "ffea0795-d514-4f11-ae29-919fffe048ce",
+    "modul": "kasbon",
+    "nomor": "KSB-10092026-001",
+    "tanggal": "2026-09-10",
+    "nominal": "1000000.00",
+    "judul": "Agung",
+    "sub": "keperluan keluarga",
+    "pihak": "Agung",
+    "rekening": "KEM Bank",
+    "status": "AKTIF",
+    "statusLabel": "Aktif",
+    "nada": "info",
+    "jatuhTempo": null,
+    "umurHari": null,
+    "sisa": "1000000.00",
+    "terbayar": "0.00",
+    "adaLampiran": false,
+    "notaWajib": false,
+    "dibuatOleh": {
+     "id": "cmua6xloi0034c4kd1o48n1u2",
+     "name": "Login Test 17"
+    },
+    "persetujuan": null,
+    "aksi": {
+     "potongGaji": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/kasbon/ffea0795-d514-4f11-ae29-919fffe048ce/pelunasan",
+      "metode": "POST",
+      "perlu": [
+       "nominal",
+       "tanggal"
+      ],
+      "tetap": {
+       "method": "POTONG_GAJI"
+      }
+     },
+     "batalkan": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/kasbon/ffea0795-d514-4f11-ae29-919fffe048ce/batal",
+      "metode": "POST",
+      "perlu": [
+       "alasan"
+      ]
+     }
+    },
+    "bagian": [
+     {
+      "judul": "Kasbon",
+      "baris": [
+       {
+        "label": "Nomor",
+        "nilai": "KSB-10092026-001",
+        "jenis": "teks"
+       },
+       {
+        "label": "Tanggal",
+        "nilai": "2026-09-10",
+        "jenis": "tanggal"
+       },
+       {
+        "label": "Karyawan",
+        "nilai": "Agung",
+        "jenis": "teks"
+       },
+       {
+        "label": "Alasan",
+        "nilai": "keperluan keluarga",
+        "jenis": "teks"
+       },
+       {
+        "label": "Nominal",
+        "nilai": "1000000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Sudah dipotong",
+        "nilai": "0.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Sisa",
+        "nilai": "1000000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Uang keluar dari",
+        "nilai": "KEM Bank",
+        "jenis": "teks"
+       },
+       {
+        "label": "Status",
+        "nilai": "Aktif",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Pemotongan gaji",
+      "baris": []
+     }
+    ],
+    "lampiran": [],
+    "riwayat": [
+     {
+      "waktu": "2026-09-21T00:00:00.000Z",
+      "peristiwa": "DIAJUKAN",
+      "label": "Diajukan",
+      "oleh": "Login Test 17",
+      "catatan": null
+     },
+     {
+      "waktu": "2026-09-21T00:00:00.000Z",
+      "peristiwa": "DOCUMENT_POSTED",
+      "label": "Dibukukan",
+      "oleh": "Login Test 17",
+      "catatan": null
+     }
+    ]
+   }
+  },
+  "pemasukan": {
+   "daftar": {
+    "modul": "pemasukan",
+    "tab": "SEMUA",
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "adaLagi": false,
+    "hitung": {
+     "AKTIF": 1,
+     "DIBATALKAN": 0,
+     "SEMUA": 1
+    },
+    "items": [
+     {
+      "kunci": "pemasukan:06f89c50-f9e7-473d-9ff7-6b12ba3df906",
+      "id": "06f89c50-f9e7-473d-9ff7-6b12ba3df906",
+      "modul": "pemasukan",
+      "nomor": "INC-21092026-001",
+      "tanggal": "2026-09-21",
+      "nominal": "75000.50",
+      "judul": "Bunga bank",
+      "sub": "4-9100 Pendapatan Lain-lain",
+      "pihak": null,
+      "rekening": "KEM Bank",
+      "status": "AKTIF",
+      "statusLabel": "Aktif",
+      "nada": "info",
+      "jatuhTempo": null,
+      "umurHari": null,
+      "sisa": null,
+      "terbayar": null,
+      "adaLampiran": false,
+      "notaWajib": false,
+      "dibuatOleh": {
+       "id": "cmua6xloi0034c4kd1o48n1u2",
+       "name": "Login Test 17"
+      },
+      "persetujuan": null,
+      "aksi": {
+       "batalkan": {
+        "boleh": true,
+        "alasan": null,
+        "path": "/finance/other-income/06f89c50-f9e7-473d-9ff7-6b12ba3df906/cancel",
+        "metode": "POST",
+        "perlu": [
+         "alasan"
+        ]
+       }
+      }
+     }
+    ],
+    "ringkasan": {
+     "total": "75000.50"
+    },
+    "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+   },
+   "detail": {
+    "kunci": "pemasukan:06f89c50-f9e7-473d-9ff7-6b12ba3df906",
+    "id": "06f89c50-f9e7-473d-9ff7-6b12ba3df906",
+    "modul": "pemasukan",
+    "nomor": "INC-21092026-001",
+    "tanggal": "2026-09-21",
+    "nominal": "75000.50",
+    "judul": "Bunga bank",
+    "sub": "4-9100 Pendapatan Lain-lain",
+    "pihak": null,
+    "rekening": "KEM Bank",
+    "status": "AKTIF",
+    "statusLabel": "Aktif",
+    "nada": "info",
+    "jatuhTempo": null,
+    "umurHari": null,
+    "sisa": null,
+    "terbayar": null,
+    "adaLampiran": false,
+    "notaWajib": false,
+    "dibuatOleh": {
+     "id": "cmua6xloi0034c4kd1o48n1u2",
+     "name": "Login Test 17"
+    },
+    "persetujuan": null,
+    "aksi": {
+     "batalkan": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/other-income/06f89c50-f9e7-473d-9ff7-6b12ba3df906/cancel",
+      "metode": "POST",
+      "perlu": [
+       "alasan"
+      ]
+     }
+    },
+    "bagian": [
+     {
+      "judul": "Pemasukan",
+      "baris": [
+       {
+        "label": "Nomor",
+        "nilai": "INC-21092026-001",
+        "jenis": "teks"
+       },
+       {
+        "label": "Tanggal",
+        "nilai": "2026-09-21",
+        "jenis": "tanggal"
+       },
+       {
+        "label": "Nominal",
+        "nilai": "75000.50",
+        "jenis": "uang"
+       },
+       {
+        "label": "Akun pendapatan",
+        "nilai": "4-9100 Pendapatan Lain-lain",
+        "jenis": "teks"
+       },
+       {
+        "label": "Masuk ke rekening",
+        "nilai": "KEM Bank",
+        "jenis": "teks"
+       },
+       {
+        "label": "Keterangan",
+        "nilai": "Bunga bank",
+        "jenis": "teks"
+       },
+       {
+        "label": "Dibuat oleh",
+        "nilai": "Login Test 17",
+        "jenis": "teks"
+       }
+      ]
+     }
+    ],
+    "catatan": "Pemasukan Lain bukan pembayaran order. Uang dari pelanggan dicatat di Pembayaran & Verifikasi.",
+    "lampiran": [],
+    "riwayat": [
+     {
+      "waktu": "2026-09-21T00:00:00.000Z",
+      "peristiwa": "DIAJUKAN",
+      "label": "Diajukan",
+      "oleh": "Login Test 17",
+      "catatan": null
+     }
+    ]
+   }
+  },
+  "piutang": {
+   "daftar": {
+    "modul": "piutang",
+    "tab": "SEMUA",
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "adaLagi": false,
+    "hitung": {
+     "SEMUA": 1,
+     "LEWAT": 1,
+     "BERJALAN": 0
+    },
+    "items": [
+     {
+      "kunci": "piutang:cmua6xm8y003pc4kdyc8p1u09",
+      "id": "cmua6xm8y003pc4kdyc8p1u09",
+      "modul": "piutang",
+      "nomor": "INV-S6-1789931388136",
+      "tanggal": "2026-09-01",
+      "nominal": "2000000.00",
+      "judul": "Ibu Sari",
+      "sub": "Order SAN-S6-0002",
+      "pihak": null,
+      "rekening": null,
+      "status": "LEWAT_TEMPO",
+      "statusLabel": "Lewat tempo",
+      "nada": "danger",
+      "jatuhTempo": "2026-09-01",
+      "umurHari": 20,
+      "ember": "1_30",
+      "sumberJatuhTempo": "invoice",
+      "sisa": "1500000.00",
+      "terbayar": null,
+      "adaLampiran": false,
+      "notaWajib": false,
+      "dibuatOleh": null,
+      "persetujuan": null,
+      "aksi": {}
+     }
+    ],
+    "ringkasan": {
+     "total": "1500000.00",
+     "totalSemua": "1500000.00",
+     "umur": {
+      "belum_jatuh_tempo": "0.00",
+      "1_30": "1500000.00",
+      "31_60": "0.00",
+      "61_90": "0.00",
+      "90_plus": "0.00"
+     },
+     "menungguVerifikasi": {
+      "jumlah": 0,
+      "total": "0.00"
+     }
+    },
+    "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+   },
+   "detail": {
+    "kunci": "piutang:cmua6xm8y003pc4kdyc8p1u09",
+    "id": "cmua6xm8y003pc4kdyc8p1u09",
+    "modul": "piutang",
+    "nomor": "INV-S6-1789931388136",
+    "judul": "Ibu Sari",
+    "nominal": "2000000.00",
+    "sisa": "1500000.00",
+    "umurHari": 20,
+    "jatuhTempo": "2026-09-01",
+    "ember": "1_30",
+    "status": "LEWAT_TEMPO",
+    "statusLabel": "Lewat tempo",
+    "nada": "danger",
+    "aksi": {},
+    "persetujuan": null,
+    "bagian": [
+     {
+      "judul": "Tagihan",
+      "baris": [
+       {
+        "label": "Order",
+        "nilai": "SAN-S6-0002",
+        "jenis": "teks"
+       },
+       {
+        "label": "Status order",
+        "nilai": "DELIVERED",
+        "jenis": "teks"
+       },
+       {
+        "label": "Status bayar di CRM",
+        "nilai": "BELUM_BAYAR",
+        "jenis": "teks"
+       },
+       {
+        "label": "Nilai order",
+        "nilai": "2000000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Uang diterima (menurut server)",
+        "nilai": "500000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Sisa piutang (buku besar)",
+        "nilai": "1500000.00",
+        "jenis": "uang"
+       }
+      ]
+     },
+     {
+      "judul": "Jatuh tempo",
+      "baris": [
+       {
+        "label": "Invoice",
+        "nilai": "INV-S6-1789931388136",
+        "jenis": "teks"
+       },
+       {
+        "label": "Status invoice",
+        "nilai": "SENT",
+        "jenis": "teks"
+       },
+       {
+        "label": "Jatuh tempo",
+        "nilai": "2026-09-01",
+        "jenis": "tanggal"
+       },
+       {
+        "label": "Acuan umur",
+        "nilai": "Jatuh tempo invoice",
+        "jenis": "teks"
+       },
+       {
+        "label": "Umur",
+        "nilai": "20 hari lewat tempo",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Pelanggan",
+      "baris": [
+       {
+        "label": "Nama",
+        "nilai": "Ibu Sari",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Refund",
+      "baris": [
+       {
+        "label": "RFD-21092026-001 · Menunggu persetujuan",
+        "nilai": "200000.00",
+        "jenis": "uang",
+        "tautan": {
+         "modul": "refund",
+         "id": "2de1c5d9-6de9-43e5-af00-64b7411f15a1"
+        }
+       }
+      ]
+     }
+    ],
+    "pembayaran": [
+     {
+      "id": "ae891322-1e52-4e32-8929-57365e40dfd4",
+      "nominal": "500000.00",
+      "metode": "TRANSFER",
+      "tanggal": "2026-09-20",
+      "status": "MENUNGGU",
+      "statusLabel": "Menunggu verifikasi",
+      "asalOrderId": "cmua6xm8y003pc4kdyc8p1u09",
+      "alokasi": [],
+      "aksiAlokasi": {
+       "boleh": true,
+       "alasan": null,
+       "path": "/finance/customer-payments/ae891322-1e52-4e32-8929-57365e40dfd4/allocations",
+       "metode": "POST",
+       "perlu": [
+        "alokasi"
+       ]
+      }
+     }
+    ],
+    "refund": 1,
+    "orderPelanggan": [
+     {
+      "id": "cmua6xm8y003pc4kdyc8p1u09",
+      "nomor": "SAN-S6-0002"
+     }
+    ],
+    "catatan": null,
+    "lampiran": [],
+    "riwayat": []
+   }
+  },
+  "refund": {
+   "daftar": {
+    "modul": "refund",
+    "tab": "SEMUA",
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "adaLagi": false,
+    "hitung": {
+     "MENUNGGU": 1,
+     "DISETUJUI": 0,
+     "DITOLAK": 0,
+     "SEMUA": 1
+    },
+    "items": [
+     {
+      "kunci": "refund:2de1c5d9-6de9-43e5-af00-64b7411f15a1",
+      "id": "2de1c5d9-6de9-43e5-af00-64b7411f15a1",
+      "modul": "refund",
+      "nomor": "RFD-21092026-001",
+      "tanggal": "2026-09-21",
+      "nominal": "200000.00",
+      "judul": "kasur cacat",
+      "sub": "Order SAN-S6-0002",
+      "pihak": "Ibu Sari",
+      "rekening": "KEM Bank",
+      "status": "MENUNGGU_APPROVAL",
+      "statusLabel": "Menunggu persetujuan",
+      "nada": "warning",
+      "jatuhTempo": null,
+      "umurHari": null,
+      "sisa": null,
+      "terbayar": null,
+      "adaLampiran": false,
+      "notaWajib": false,
+      "dibuatOleh": {
+       "id": "cmua6xloi0034c4kd1o48n1u2",
+       "name": "Login Test 17"
+      },
+      "persetujuan": {
+       "jenis": "refund",
+       "id": "2de1c5d9-6de9-43e5-af00-64b7411f15a1"
+      },
+      "aksi": {}
+     }
+    ],
+    "ringkasan": {
+     "total": "200000.00"
+    },
+    "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+   },
+   "detail": {
+    "kunci": "refund:2de1c5d9-6de9-43e5-af00-64b7411f15a1",
+    "id": "2de1c5d9-6de9-43e5-af00-64b7411f15a1",
+    "modul": "refund",
+    "nomor": "RFD-21092026-001",
+    "tanggal": "2026-09-21",
+    "nominal": "200000.00",
+    "judul": "kasur cacat",
+    "sub": "Order SAN-S6-0002",
+    "pihak": "Ibu Sari",
+    "rekening": "KEM Bank",
+    "status": "MENUNGGU_APPROVAL",
+    "statusLabel": "Menunggu persetujuan",
+    "nada": "warning",
+    "jatuhTempo": null,
+    "umurHari": null,
+    "sisa": null,
+    "terbayar": null,
+    "adaLampiran": false,
+    "notaWajib": false,
+    "dibuatOleh": {
+     "id": "cmua6xloi0034c4kd1o48n1u2",
+     "name": "Login Test 17"
+    },
+    "persetujuan": {
+     "jenis": "refund",
+     "id": "2de1c5d9-6de9-43e5-af00-64b7411f15a1"
+    },
+    "aksi": {},
+    "bagian": [
+     {
+      "judul": "Refund",
+      "baris": [
+       {
+        "label": "Nomor",
+        "nilai": "RFD-21092026-001",
+        "jenis": "teks"
+       },
+       {
+        "label": "Tanggal",
+        "nilai": "2026-09-21",
+        "jenis": "tanggal"
+       },
+       {
+        "label": "Nominal",
+        "nilai": "200000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Alasan",
+        "nilai": "kasur cacat",
+        "jenis": "teks"
+       },
+       {
+        "label": "Order",
+        "nilai": "SAN-S6-0002",
+        "jenis": "teks"
+       },
+       {
+        "label": "Pelanggan",
+        "nilai": "Ibu Sari",
+        "jenis": "teks"
+       },
+       {
+        "label": "Dikembalikan dari rekening",
+        "nilai": "KEM Bank",
+        "jenis": "teks"
+       },
+       {
+        "label": "Status",
+        "nilai": "Menunggu persetujuan",
+        "jenis": "teks"
+       },
+       {
+        "label": "Dibuat oleh",
+        "nilai": "Login Test 17",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Sumber pembayaran",
+      "baris": [
+       {
+        "label": "Nilai order",
+        "nilai": "2000000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Uang yang masih bisa dikembalikan (server)",
+        "nilai": "500000.00",
+        "jenis": "uang",
+        "tautan": {
+         "modul": "piutang",
+         "id": "cmua6xm8y003pc4kdyc8p1u09"
+        }
+       }
+      ]
+     }
+    ],
+    "lampiran": [],
+    "riwayat": [
+     {
+      "waktu": "2026-09-21T00:00:00.000Z",
+      "peristiwa": "DIAJUKAN",
+      "label": "Diajukan",
+      "oleh": "Login Test 17",
+      "catatan": null
+     }
+    ]
+   }
+  },
+  "supplier": {
+   "daftar": {
+    "modul": "supplier",
+    "tab": "SEMUA",
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "adaLagi": false,
+    "hitung": {
+     "AKTIF": 1,
+     "NONAKTIF": 0,
+     "SEMUA": 1
+    },
+    "items": [
+     {
+      "kunci": "supplier:dabbd22d-abb0-44ef-9da8-d2cba868e750",
+      "id": "dabbd22d-abb0-44ef-9da8-d2cba868e750",
+      "modul": "supplier",
+      "nomor": "SUP-001",
+      "tanggal": "2026-09-20",
+      "nominal": "600000.00",
+      "judul": "CV Busa Jaya",
+      "sub": "Termin 14 hari",
+      "pihak": "CV Busa Jaya",
+      "rekening": null,
+      "status": "AKTIF",
+      "statusLabel": "Aktif",
+      "nada": "info",
+      "jatuhTempo": null,
+      "umurHari": null,
+      "sisa": "600000.00",
+      "terbayar": null,
+      "jumlahTagihanTerbuka": 1,
+      "adaLampiran": false,
+      "notaWajib": false,
+      "dibuatOleh": null,
+      "persetujuan": null,
+      "aksi": {
+       "ubah": {
+        "boleh": true,
+        "alasan": null,
+        "path": "/finance/suppliers/dabbd22d-abb0-44ef-9da8-d2cba868e750",
+        "metode": "PATCH",
+        "perlu": [
+         "form"
+        ]
+       }
+      }
+     }
+    ],
+    "ringkasan": {
+     "utangTerbuka": "600000.00"
+    },
+    "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+   },
+   "detail": {
+    "kunci": "supplier:dabbd22d-abb0-44ef-9da8-d2cba868e750",
+    "id": "dabbd22d-abb0-44ef-9da8-d2cba868e750",
+    "modul": "supplier",
+    "nomor": "SUP-001",
+    "tanggal": "2026-09-20",
+    "nominal": "600000.00",
+    "judul": "CV Busa Jaya",
+    "sub": "Termin 14 hari",
+    "pihak": "CV Busa Jaya",
+    "rekening": null,
+    "status": "AKTIF",
+    "statusLabel": "Aktif",
+    "nada": "info",
+    "jatuhTempo": null,
+    "umurHari": null,
+    "sisa": "600000.00",
+    "terbayar": null,
+    "jumlahTagihanTerbuka": 1,
+    "adaLampiran": false,
+    "notaWajib": false,
+    "dibuatOleh": null,
+    "persetujuan": null,
+    "aksi": {
+     "ubah": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/suppliers/dabbd22d-abb0-44ef-9da8-d2cba868e750",
+      "metode": "PATCH",
+      "perlu": [
+       "form"
+      ]
+     }
+    },
+    "supplier": {
+     "telepon": null,
+     "email": null,
+     "alamat": null,
+     "terminHari": 14,
+     "bank": "BCA",
+     "rekeningBank": "1234567",
+     "atasNama": null,
+     "catatan": null,
+     "aktif": true
+    },
+    "bagian": [
+     {
+      "judul": "Supplier",
+      "baris": [
+       {
+        "label": "Kode",
+        "nilai": "SUP-001",
+        "jenis": "teks"
+       },
+       {
+        "label": "Nama",
+        "nilai": "CV Busa Jaya",
+        "jenis": "teks"
+       },
+       {
+        "label": "Termin pembayaran",
+        "nilai": "14 hari",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Rekening supplier",
+      "baris": [
+       {
+        "label": "Bank",
+        "nilai": "BCA",
+        "jenis": "teks"
+       },
+       {
+        "label": "Nomor rekening",
+        "nilai": "1234567",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Utang terbuka",
+      "baris": [
+       {
+        "label": "BILL-01082026-001 · jatuh tempo 2026-08-15",
+        "nilai": "600000.00",
+        "jenis": "uang",
+        "tautan": {
+         "modul": "tagihan",
+         "id": "c25d56bb-24d2-4caf-b6c9-824dc3f06fe4"
+        }
+       }
+      ]
+     },
+     {
+      "judul": "Pembayaran terakhir",
+      "baris": [
+       {
+        "label": "PAYOUT-20092026-001 · 2026-09-20",
+        "nilai": "400000.00",
+        "jenis": "uang",
+        "tautan": {
+         "modul": "pembayaran-supplier",
+         "id": "89a0d051-3fb4-4a59-bf92-61ac74e52e66"
+        }
+       }
+      ]
+     }
+    ],
+    "lampiran": [],
+    "riwayat": []
+   }
+  },
+  "tagihan": {
+   "daftar": {
+    "modul": "tagihan",
+    "tab": "SEMUA",
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "adaLagi": false,
+    "hitung": {
+     "MENUNGGU": 0,
+     "TERBUKA": 1,
+     "LUNAS": 0,
+     "DITOLAK": 0,
+     "SEMUA": 1
+    },
+    "items": [
+     {
+      "kunci": "tagihan:c25d56bb-24d2-4caf-b6c9-824dc3f06fe4",
+      "id": "c25d56bb-24d2-4caf-b6c9-824dc3f06fe4",
+      "modul": "tagihan",
+      "nomor": "BILL-01082026-001",
+      "tanggal": "2026-08-01",
+      "nominal": "1000000.00",
+      "judul": "CV Busa Jaya",
+      "sub": "Busa",
+      "pihak": "CV Busa Jaya",
+      "rekening": null,
+      "status": "DIBAYAR_SEBAGIAN",
+      "statusLabel": "Dibayar sebagian",
+      "nada": "info",
+      "jatuhTempo": "2026-08-15",
+      "umurHari": 37,
+      "sisa": "600000.00",
+      "terbayar": "400000.00",
+      "adaLampiran": false,
+      "notaWajib": false,
+      "dibuatOleh": {
+       "id": "cmua6xloi0034c4kd1o48n1u2",
+       "name": "Login Test 17"
+      },
+      "persetujuan": null,
+      "aksi": {
+       "bayar": {
+        "boleh": true,
+        "alasan": null,
+        "path": "/finance/supplier-payments",
+        "metode": "POST",
+        "perlu": [
+         "rekening",
+         "nominal",
+         "tanggal"
+        ],
+        "tetap": {
+         "supplierId": "dabbd22d-abb0-44ef-9da8-d2cba868e750",
+         "billId": "c25d56bb-24d2-4caf-b6c9-824dc3f06fe4"
+        }
+       }
+      }
+     }
+    ],
+    "ringkasan": {
+     "utangTerbuka": "600000.00",
+     "lewatTempo": {
+      "jumlah": 1,
+      "total": "600000.00"
+     }
+    },
+    "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+   },
+   "detail": {
+    "kunci": "tagihan:c25d56bb-24d2-4caf-b6c9-824dc3f06fe4",
+    "id": "c25d56bb-24d2-4caf-b6c9-824dc3f06fe4",
+    "modul": "tagihan",
+    "nomor": "BILL-01082026-001",
+    "tanggal": "2026-08-01",
+    "nominal": "1000000.00",
+    "judul": "CV Busa Jaya",
+    "sub": "Busa",
+    "pihak": "CV Busa Jaya",
+    "rekening": null,
+    "status": "DIBAYAR_SEBAGIAN",
+    "statusLabel": "Dibayar sebagian",
+    "nada": "info",
+    "jatuhTempo": "2026-08-15",
+    "umurHari": 37,
+    "sisa": "600000.00",
+    "terbayar": "400000.00",
+    "adaLampiran": false,
+    "notaWajib": false,
+    "dibuatOleh": {
+     "id": "cmua6xloi0034c4kd1o48n1u2",
+     "name": "Login Test 17"
+    },
+    "persetujuan": null,
+    "aksi": {
+     "bayar": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/supplier-payments",
+      "metode": "POST",
+      "perlu": [
+       "rekening",
+       "nominal",
+       "tanggal"
+      ],
+      "tetap": {
+       "supplierId": "dabbd22d-abb0-44ef-9da8-d2cba868e750",
+       "billId": "c25d56bb-24d2-4caf-b6c9-824dc3f06fe4"
+      }
+     }
+    },
+    "bagian": [
+     {
+      "judul": "Tagihan",
+      "baris": [
+       {
+        "label": "Nomor internal",
+        "nilai": "BILL-01082026-001",
+        "jenis": "teks"
+       },
+       {
+        "label": "Supplier",
+        "nilai": "CV Busa Jaya",
+        "jenis": "teks",
+        "tautan": {
+         "modul": "supplier",
+         "id": "dabbd22d-abb0-44ef-9da8-d2cba868e750"
+        }
+       },
+       {
+        "label": "Tanggal tagihan",
+        "nilai": "2026-08-01",
+        "jenis": "tanggal"
+       },
+       {
+        "label": "Jatuh tempo",
+        "nilai": "2026-08-15",
+        "jenis": "tanggal"
+       },
+       {
+        "label": "Keterangan",
+        "nilai": "Busa",
+        "jenis": "teks"
+       },
+       {
+        "label": "Status",
+        "nilai": "Dibayar sebagian",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Utang",
+      "baris": [
+       {
+        "label": "Nominal tagihan",
+        "nilai": "1000000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Sudah dibayar",
+        "nilai": "400000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Sisa utang",
+        "nilai": "600000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Umur",
+        "nilai": "37 hari lewat jatuh tempo",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Pembayaran",
+      "baris": [
+       {
+        "label": "PAYOUT-20092026-001 · 2026-09-20",
+        "nilai": "400000.00",
+        "jenis": "uang",
+        "tautan": {
+         "modul": "pembayaran-supplier",
+         "id": "89a0d051-3fb4-4a59-bf92-61ac74e52e66"
+        }
+       }
+      ]
+     }
+    ],
+    "lampiran": [],
+    "riwayat": [
+     {
+      "waktu": "2026-09-21T00:00:00.000Z",
+      "peristiwa": "DIAJUKAN",
+      "label": "Diajukan",
+      "oleh": "Login Test 17",
+      "catatan": null
+     },
+     {
+      "waktu": "2026-09-21T00:00:00.000Z",
+      "peristiwa": "DOCUMENT_APPROVED",
+      "label": "Disetujui",
+      "oleh": "Login Test 17",
+      "catatan": null
+     }
+    ]
+   }
+  },
+  "pembayaran-supplier": {
+   "daftar": {
+    "modul": "pembayaran-supplier",
+    "tab": "SEMUA",
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "adaLagi": false,
+    "hitung": {
+     "AKTIF": 1,
+     "DIBATALKAN": 0,
+     "SEMUA": 1
+    },
+    "items": [
+     {
+      "kunci": "pembayaran-supplier:89a0d051-3fb4-4a59-bf92-61ac74e52e66",
+      "id": "89a0d051-3fb4-4a59-bf92-61ac74e52e66",
+      "modul": "pembayaran-supplier",
+      "nomor": "PAYOUT-20092026-001",
+      "tanggal": "2026-09-20",
+      "nominal": "400000.00",
+      "judul": "CV Busa Jaya",
+      "sub": "BILL-01082026-001",
+      "pihak": "CV Busa Jaya",
+      "rekening": "KEM Bank",
+      "status": "AKTIF",
+      "statusLabel": "Aktif",
+      "nada": "info",
+      "jatuhTempo": null,
+      "umurHari": null,
+      "sisa": null,
+      "terbayar": null,
+      "adaLampiran": false,
+      "notaWajib": false,
+      "dibuatOleh": {
+       "id": "cmua6xloi0034c4kd1o48n1u2",
+       "name": "Login Test 17"
+      },
+      "persetujuan": null,
+      "aksi": {
+       "batalkan": {
+        "boleh": true,
+        "alasan": null,
+        "path": "/finance/supplier-payments/89a0d051-3fb4-4a59-bf92-61ac74e52e66/cancel",
+        "metode": "POST",
+        "perlu": [
+         "alasan"
+        ]
+       }
+      }
+     }
+    ],
+    "ringkasan": {
+     "total": "400000.00"
+    },
+    "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+   },
+   "detail": {
+    "kunci": "pembayaran-supplier:89a0d051-3fb4-4a59-bf92-61ac74e52e66",
+    "id": "89a0d051-3fb4-4a59-bf92-61ac74e52e66",
+    "modul": "pembayaran-supplier",
+    "nomor": "PAYOUT-20092026-001",
+    "tanggal": "2026-09-20",
+    "nominal": "400000.00",
+    "judul": "CV Busa Jaya",
+    "sub": "BILL-01082026-001",
+    "pihak": "CV Busa Jaya",
+    "rekening": "KEM Bank",
+    "status": "AKTIF",
+    "statusLabel": "Aktif",
+    "nada": "info",
+    "jatuhTempo": null,
+    "umurHari": null,
+    "sisa": null,
+    "terbayar": null,
+    "adaLampiran": false,
+    "notaWajib": false,
+    "dibuatOleh": {
+     "id": "cmua6xloi0034c4kd1o48n1u2",
+     "name": "Login Test 17"
+    },
+    "persetujuan": null,
+    "aksi": {
+     "batalkan": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/supplier-payments/89a0d051-3fb4-4a59-bf92-61ac74e52e66/cancel",
+      "metode": "POST",
+      "perlu": [
+       "alasan"
+      ]
+     }
+    },
+    "bagian": [
+     {
+      "judul": "Pembayaran",
+      "baris": [
+       {
+        "label": "Nomor",
+        "nilai": "PAYOUT-20092026-001",
+        "jenis": "teks"
+       },
+       {
+        "label": "Tanggal",
+        "nilai": "2026-09-20",
+        "jenis": "tanggal"
+       },
+       {
+        "label": "Supplier",
+        "nilai": "CV Busa Jaya",
+        "jenis": "teks",
+        "tautan": {
+         "modul": "supplier",
+         "id": "dabbd22d-abb0-44ef-9da8-d2cba868e750"
+        }
+       },
+       {
+        "label": "Nominal",
+        "nilai": "400000.00",
+        "jenis": "uang"
+       },
+       {
+        "label": "Dari rekening",
+        "nilai": "KEM Bank",
+        "jenis": "teks"
+       },
+       {
+        "label": "Dibuat oleh",
+        "nilai": "Login Test 17",
+        "jenis": "teks"
+       }
+      ]
+     },
+     {
+      "judul": "Tagihan yang dibayar",
+      "baris": [
+       {
+        "label": "BILL-01082026-001",
+        "nilai": "400000.00",
+        "jenis": "uang",
+        "tautan": {
+         "modul": "tagihan",
+         "id": "c25d56bb-24d2-4caf-b6c9-824dc3f06fe4"
+        }
+       }
+      ]
+     }
+    ],
+    "lampiran": [],
+    "riwayat": []
+   }
+  }
+ }
+}

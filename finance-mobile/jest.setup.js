@@ -42,11 +42,22 @@ jest.mock("@react-native-community/netinfo", () => ({
 jest.mock("expo-router", () => {
   const push = jest.fn();
   const back = jest.fn();
+  const replace = jest.fn();
   let params = {};
   return {
-    useRouter: () => ({ push, back, replace: jest.fn() }), __push: push, __back: back, __setParams: (p) => { params = p; },
+    useRouter: () => ({ push, back, replace }), __push: push, __back: back, __replace: replace, __setParams: (p) => { params = p; },
     Stack: () => null, Redirect: () => null, useLocalSearchParams: () => params,
   };
 });
 // Ikon: komponen kosong per nama (paket ESM tidak diproses Jest).
 jest.mock("lucide-react-native", () => new Proxy({}, { get: (_t, nama) => (nama === "__esModule" ? true : () => null) }));
+
+// Pemilih foto & tampilan gambar native: tidak tersedia di Jest. Foto contoh dikembalikan agar alur unggah nota bisa diuji.
+jest.mock("expo-image-picker", () => ({
+  __esModule: true,
+  requestCameraPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  launchCameraAsync: jest.fn(async () => ({ canceled: false, assets: [{ uri: "file:///nota.jpg", fileName: "nota.jpg" }] })),
+  launchImageLibraryAsync: jest.fn(async () => ({ canceled: false, assets: [{ uri: "file:///galeri.jpg", fileName: "galeri.jpg" }] })),
+}));
+jest.mock("expo-image", () => ({ __esModule: true, Image: "Image" }));

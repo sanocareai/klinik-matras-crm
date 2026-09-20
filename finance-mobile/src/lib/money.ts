@@ -145,3 +145,28 @@ export function terbesar(daftar: (Money | string)[]): Money {
   }
   return maks as Money;
 }
+
+// ── Aritmetika desimal aman untuk FORMULIR (bukan laporan) ─────────────────────────────────────────────────
+// Server tetap satu-satunya yang menghitung uang resmi. Fungsi di bawah hanya membantu layar isian (mis. "sisa belum teralokasi" pada alokasi
+// pembayaran) tanpa JavaScript Number: nilai dibaca sebagai BigInt "sen" (2 desimal), dihitung, lalu ditulis kembali sebagai string desimal.
+function sen(m: Money | string): bigint {
+  const n = normalisasi(String(m));
+  const neg = n.startsWith("-");
+  const [w = "0", f = "00"] = (neg ? n.slice(1) : n).split(".");
+  const nilai = BigInt(w) * 100n + BigInt(f.padEnd(2, "0").slice(0, 2));
+  return neg ? -nilai : nilai;
+}
+
+function daripadaSen(v: bigint): Money {
+  const neg = v < 0n;
+  const abs = neg ? -v : v;
+  const w = abs / 100n;
+  const f = (abs % 100n).toString().padStart(2, "0");
+  return normalisasi(`${neg ? "-" : ""}${w.toString()}.${f}`) as Money;
+}
+
+export const tambahMoney = (a: Money | string, b: Money | string): Money => daripadaSen(sen(a) + sen(b));
+export const kurangMoney = (a: Money | string, b: Money | string): Money => daripadaSen(sen(a) - sen(b));
+/** -1 bila a < b, 0 bila sama, 1 bila a > b. */
+export const bandingMoney = (a: Money | string, b: Money | string): -1 | 0 | 1 => { const x = sen(a); const y = sen(b); return x < y ? -1 : x > y ? 1 : 0; };
+export function jumlahMoney(daftar: (Money | string)[]): Money { return daripadaSen(daftar.reduce((s, v) => s + sen(v), 0n)); }

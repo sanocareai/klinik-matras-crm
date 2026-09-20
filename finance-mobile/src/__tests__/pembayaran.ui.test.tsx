@@ -195,11 +195,11 @@ describe("Pembayaran: daftar", () => {
 });
 
 describe("Pembayaran: titik masuk", () => {
-  it("chip 'Pembayaran' di tab Transaksi membuka layar pembayaran (bukan segmen lokal)", async () => {
+  it("kartu 'Pembayaran pelanggan' di tab Transaksi membuka layar pembayaran (bukan segmen lokal)", async () => {
     buka();
     tampil(<Transaksi />);
-    await waitFor(() => expect(screen.getByLabelText("Pembayaran")).toBeTruthy(), T);
-    tekan("Pembayaran");
+    await waitFor(() => expect(screen.getByLabelText(/^Pembayaran pelanggan/)).toBeTruthy(), T);
+    fireEvent.press(screen.getByLabelText(/^Pembayaran pelanggan/));
     expect(router.__push).toHaveBeenCalledWith("/pembayaran");
   });
 });

@@ -1,117 +1,93 @@
-import React, { useMemo, useState } from "react";
-import { ScrollView, Text, TextInput, View } from "react-native";
+import React from "react";
+import { Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Search, X, type LucideIcon } from "lucide-react-native";
+import { ChevronRight, Plus, ReceiptText } from "lucide-react-native";
 import { Screen } from "@/design/Screen";
 import { GlassCard } from "@/design/GlassCard";
-import { MoneyText } from "@/design/MoneyText";
-import { StatusBadge } from "@/design/StatusBadge";
-import { Chip, EmptyState, ErrorState, IconCircle, MockBanner, OfflineBanner, PressableScale, Skeleton } from "@/design/ui";
-import { font, radius } from "@/design/tokens";
+import { ErrorState, IconCircle, MockBanner, OfflineBanner, PressableScale } from "@/design/ui";
+import { font } from "@/design/tokens";
 import { useTheme } from "@/design/theme";
-import { useTransaksi, BelumTersedia } from "@/hooks/data";
 import { usePembayaranLencana } from "@/hooks/pembayaran";
+import { useRingkasanModul } from "@/hooks/transaksi";
 import { useOnline } from "@/hooks/useOnline";
+import { useSession } from "@/auth/session";
 import { ENV } from "@/lib/env";
-import { tanggalPendek } from "@/lib/dates";
 import { S } from "@/lib/strings";
-import type { TransaksiItem } from "@/api/types";
 import { denganAkses } from "@/features/guard/RequireCapability";
+import { KONFIG, URUTAN_MODUL, bisaBuat } from "@/features/transaksi/modul";
+import type { ModulTx, RingkasanModul } from "@/api/types";
 
-type Segmen = "terbukukan" | "pengeluaran" | "pembelian" | "kasbon" | "pembayaran";
-const SEGMEN: { id: Segmen; label: string }[] = [
-  { id: "terbukukan", label: S.transaksi.segmen.terbukukan },
-  { id: "pengeluaran", label: S.transaksi.segmen.pengeluaran },
-  { id: "pembelian", label: S.transaksi.segmen.pembelian },
-  { id: "kasbon", label: S.transaksi.segmen.kasbon },
-  { id: "pembayaran", label: S.transaksi.segmen.pembayaran },
-];
+// TRANSAKSI — pintu ke semua modul S6–S8 (Pengeluaran, Pembelian, Kasbon, Pemasukan Lain, Piutang, Refund, Tagihan, Supplier, Pembayaran supplier)
+// dan ke Pembayaran pelanggan (S5). Angka lencana dari server; tidak ada data tandingan di klien.
 
-const JENIS_DARI_SEGMEN: Record<Segmen, TransaksiItem["jenis"]> = {
-  terbukukan: "jurnal", pengeluaran: "pengeluaran", pembelian: "pembelian", kasbon: "kasbon", pembayaran: "pembayaran",
-};
-
-const IKON: Record<TransaksiItem["arah"], LucideIcon> = { keluar: ArrowUpRight, masuk: ArrowDownLeft, netral: ArrowLeftRight };
-
-/** Normalisasi pencarian: "150.000" cocok dengan 150000 (perilaku web `cocok()`), tak sensitif huruf besar-kecil. */
-function cocok(q: string, ...isi: string[]): boolean {
-  const kata = q.trim().toLowerCase().split(/\s+/).filter(Boolean).map((k) => (/^[\d.]+$/.test(k) ? k.replace(/\./g, "") : k));
-  if (kata.length === 0) return true;
-  const gudang = isi.join(" ").toLowerCase();
-  return kata.every((k) => gudang.includes(k));
+function lencana(r: RingkasanModul | undefined, m: ModulTx): { n: number; teks: string } | null {
+  const x = r?.[m];
+  if (!x) return null;
+  const n = x.menunggu ?? x.aktif ?? 0;
+  if (!n) return null;
+  return { n, teks: x.menunggu != null ? `${n} menunggu` : `${n} aktif` };
 }
 
 function Transaksi() {
   const { colors } = useTheme();
   const online = useOnline();
   const router = useRouter();
-  const [segmen, setSegmen] = useState<Segmen>("pengeluaran");
+  const caps = useSession((s) => s.capabilities);
   const bayarMenunggu = usePembayaranLencana().data ?? 0;
-  const [q, setQ] = useState("");
-  const { data, isLoading, isError, error, refetch, isRefetching } = useTransaksi();
-
-  const tampil = useMemo(
-    () => (data ?? []).filter((t) => t.jenis === JENIS_DARI_SEGMEN[segmen]).filter((t) => cocok(q, t.nomor, t.judul, t.sub, t.amount.replace(/\.\d+$/, ""))),
-    [data, segmen, q],
-  );
-  const jumlahPerSegmen = (id: Segmen) => (id === "pembayaran" ? bayarMenunggu : (data ?? []).filter((t) => t.jenis === JENIS_DARI_SEGMEN[id]).length);
+  const ringkasan = useRingkasanModul();
 
   return (
-    <Screen refreshing={isRefetching} onRefresh={() => void refetch()}>
+    <Screen refreshing={ringkasan.isRefetching} onRefresh={() => void ringkasan.refetch()}>
       {ENV.useMocks ? <MockBanner /> : null}
       {!online ? <OfflineBanner /> : null}
-      <Text accessibilityRole="header" style={{ color: colors.text, fontFamily: font.semibold, fontSize: 26, marginBottom: 12 }}>{S.transaksi.judul}</Text>
+      <Text accessibilityRole="header" style={{ color: colors.text, fontFamily: font.semibold, fontSize: 26, marginBottom: 4 }}>{S.transaksi.judul}</Text>
+      <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 13, marginBottom: 14 }}>Semua data dan status resmi datang dari server.</Text>
 
-      <View style={{ flexDirection: "row", alignItems: "center", minHeight: 48, borderRadius: radius.button, paddingHorizontal: 14, gap: 8, backgroundColor: colors.glassFillStrong, borderWidth: 1, borderColor: colors.glassStroke }}>
-        <Search size={18} color={colors.textMuted} strokeWidth={1.75} />
-        <TextInput
-          value={q} onChangeText={setQ} placeholder={S.transaksi.cariPlaceholder} placeholderTextColor={colors.textFaint}
-          style={{ flex: 1, color: colors.text, fontFamily: font.regular, fontSize: 15, minHeight: 44 }} accessibilityLabel={S.umum.cari} returnKeyType="search"
-        />
-        {q ? (
-          <PressableScale onPress={() => setQ("")} accessibilityLabel="Hapus pencarian" hitSlop={10}>
-            <X size={18} color={colors.textMuted} strokeWidth={1.75} />
-          </PressableScale>
-        ) : null}
-      </View>
+      <PressableScale onPress={() => router.push("/pembayaran")} accessibilityLabel={`Pembayaran pelanggan${bayarMenunggu > 0 ? `, ${bayarMenunggu} menunggu verifikasi` : ""}`} style={{ marginBottom: 10 }}>
+        <GlassCard padding={14}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <IconCircle icon={ReceiptText} tone="info" size={40} />
+            <View style={{ flex: 1 }}>
+              <Text maxFontSizeMultiplier={1.3} style={{ color: colors.text, fontFamily: font.semibold, fontSize: 15 }}>Pembayaran pelanggan</Text>
+              <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 2 }}>{bayarMenunggu > 0 ? `${bayarMenunggu} menunggu verifikasi` : "Verifikasi & status order"}</Text>
+            </View>
+            <ChevronRight size={18} color={colors.textMuted} strokeWidth={1.75} />
+          </View>
+        </GlassCard>
+      </PressableScale>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 12 }}>
-        {SEGMEN.map((s) => (
-          <Chip key={s.id} label={s.label} aktif={segmen === s.id && s.id !== "pembayaran"} onPress={() => (s.id === "pembayaran" ? router.push("/pembayaran") : setSegmen(s.id))} jumlah={jumlahPerSegmen(s.id)} />
-        ))}
-      </ScrollView>
+      {ringkasan.isError && !ringkasan.data ? (
+        <ErrorState judul="Ringkasan belum bisa dimuat" isi="Daftar di bawah tetap bisa dibuka." onCoba={() => void ringkasan.refetch()} />
+      ) : null}
 
-      {isLoading ? (
-        <View style={{ gap: 10 }}>{[0, 1, 2, 3].map((i) => <Skeleton key={i} tinggi={72} style={{ borderRadius: radius.card }} />)}</View>
-      ) : isError ? (
-        <ErrorState
-          judul={error instanceof BelumTersedia ? S.segera : "Transaksi belum bisa dimuat"}
-          isi={error instanceof BelumTersedia ? S.segeraIsi : error instanceof Error ? error.message : undefined}
-          onCoba={error instanceof BelumTersedia ? undefined : () => void refetch()}
-        />
-      ) : tampil.length === 0 ? (
-        <EmptyState judul={S.transaksi.kosongJudul} isi={S.transaksi.kosongIsi} aksi={q ? S.umum.aturUlang : undefined} onAksi={() => setQ("")} />
-      ) : (
-        <View style={{ gap: 10 }}>
-          <Text style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12 }}>{tampil.length} dari {jumlahPerSegmen(segmen)} transaksi</Text>
-          {tampil.map((t) => (
-            <GlassCard key={t.id} padding={14}>
+      {URUTAN_MODUL.map((m) => {
+        const k = KONFIG[m];
+        const badge = lencana(ringkasan.data, m);
+        const buat = bisaBuat(caps, m);
+        return (
+          <View key={m} style={{ marginBottom: 10 }}>
+            <GlassCard padding={14}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                <IconCircle icon={IKON[t.arah]} tone={t.arah === "masuk" ? "success" : t.arah === "keluar" ? "warning" : "info"} size={40} />
-                <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={{ color: colors.text, fontFamily: font.semibold, fontSize: 14 }}>{t.judul}</Text>
-                  <Text numberOfLines={1} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 2 }}>{t.sub}</Text>
-                  <Text style={{ color: colors.textFaint, fontFamily: font.regular, fontSize: 11, marginTop: 2 }}>{t.nomor} · {tanggalPendek(t.tanggal)}</Text>
-                </View>
-                <View style={{ alignItems: "flex-end", gap: 6 }}>
-                  <MoneyText value={t.amount} size="md" color={t.arah === "masuk" ? colors.success : colors.text} />
-                  <StatusBadge status={t.status} />
-                </View>
+                <PressableScale onPress={() => router.push({ pathname: "/tx/[modul]", params: { modul: m } })} accessibilityLabel={`${k.label}${badge ? `, ${badge.teks}` : ""}`} style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    <IconCircle icon={k.ikon} tone="info" size={40} />
+                    <View style={{ flex: 1 }}>
+                      <Text maxFontSizeMultiplier={1.3} numberOfLines={2} style={{ color: colors.text, fontFamily: font.semibold, fontSize: 15 }}>{k.label}</Text>
+                      <Text maxFontSizeMultiplier={1.3} numberOfLines={2} style={{ color: badge ? colors.warning : colors.textMuted, fontFamily: badge ? font.medium : font.regular, fontSize: 12, marginTop: 2 }}>{badge ? badge.teks : k.deskripsi}</Text>
+                    </View>
+                    <ChevronRight size={18} color={colors.textMuted} strokeWidth={1.75} />
+                  </View>
+                </PressableScale>
+                {buat ? (
+                  <PressableScale onPress={() => router.push({ pathname: "/tx/[modul]/baru", params: { modul: m } })} accessibilityLabel={`Tambah ${k.tunggal}`} style={{ width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.primarySoft }}>
+                    <Plus size={20} color={colors.primary} strokeWidth={2} />
+                  </PressableScale>
+                ) : null}
               </View>
             </GlassCard>
-          ))}
-        </View>
-      )}
+          </View>
+        );
+      })}
     </Screen>
   );
 }

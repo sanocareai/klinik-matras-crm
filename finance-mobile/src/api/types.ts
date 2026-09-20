@@ -242,3 +242,44 @@ export type LaporanRingkas = {
 };
 
 export type JenisLaporan = "laba-rugi" | "neraca" | "arus-kas" | "neraca-saldo" | "umur-piutang" | "umur-utang";
+
+// ── S6–S8: transaksi (Pengeluaran, Pembelian, Kasbon, Pemasukan Lain, Piutang, Refund, Supplier, Tagihan, Pembayaran supplier) ──────
+export type ModulTx = "pengeluaran" | "pembelian" | "kasbon" | "pemasukan" | "piutang" | "refund" | "supplier" | "tagihan" | "pembayaran-supplier";
+export type NadaTx = "success" | "warning" | "danger" | "info" | "neutral";
+/** Tindakan pada satu dokumen — boleh/tidaknya, alasan, alamat perintah, dan isian yang dibutuhkan dihitung SERVER. */
+export type AksiTx = { boleh: boolean; alasan: string | null; path: string; metode: "POST" | "PATCH"; perlu: string[]; tetap: Record<string, string> | null };
+export type TautanTx = { modul: ModulTx; id: string };
+export type ItemTx = {
+  kunci: string; id: string; modul: ModulTx; nomor: string; tanggal: string | null; nominal: Money; judul: string; sub: string; pihak: string | null; rekening: string | null;
+  status: string; statusLabel: string; nada: NadaTx; jatuhTempo: string | null; umurHari: number | null; sisa: Money | null; terbayar: Money | null;
+  adaLampiran: boolean; notaWajib: boolean; jumlahTagihanTerbuka: number | null; ember: string | null;
+  /** Dokumen menunggu yang boleh diputuskan pengguna ini → dibuka di Inbox Persetujuan (S4). */
+  persetujuan: { jenis: JenisApproval; id: string } | null;
+  aksi: Record<string, AksiTx>;
+};
+export type BarisTx = { label: string; nilai: string; jenis: "teks" | "uang" | "tanggal" | "waktu"; tautan: TautanTx | null };
+export type BagianTx = { judul: string; baris: BarisTx[] };
+export type PembayaranPiutang = {
+  id: string; nominal: Money; metode: string; tanggal: string; status: string; statusLabel: string; asalOrderId: string;
+  alokasi: { orderId: string; nomor: string | null; nominal: Money }[]; aksiAlokasi: AksiTx;
+};
+export type SupplierInfo = { telepon: string | null; email: string | null; alamat: string | null; terminHari: number | null; bank: string | null; rekeningBank: string | null; atasNama: string | null; catatan: string | null; aktif: boolean };
+export type DetailTx = ItemTx & {
+  bagian: BagianTx[]; lampiran: LampiranApproval[]; riwayat: RiwayatApproval[]; catatan: string | null; syarat: string | null;
+  pembayaran: PembayaranPiutang[]; orderPelanggan: { id: string; nomor: string | null }[]; supplier: SupplierInfo | null;
+};
+export type RingkasanTx = {
+  total: Money | null; totalSemua: Money | null; sisaAktif: Money | null; utangTerbuka: Money | null;
+  lewatTempo: { jumlah: number; total: Money } | null; umur: Record<string, Money> | null; menungguVerifikasi: { jumlah: number; total: Money } | null;
+};
+export type HalamanTx = { items: ItemTx[]; tab: string; page: number; total: number; adaLagi: boolean; hitung: Record<string, number>; ringkasan: RingkasanTx; diperbaruiPada: string | null };
+export type FilterTx = { modul: ModulTx; tab: string; q: string; from: string | null; to: string | null; supplierId?: string | null; jatuhTempoLewat?: boolean };
+export type KategoriTx = { id: string; code: string; name: string; division?: string | null };
+export type OpsiForm = {
+  kategoriPengeluaran: KategoriTx[]; kategoriPembelian: KategoriTx[]; rekening: { id: string; name: string; kind: string; saldo: Money }[];
+  supplier: { id: string; code: string; name: string; paymentTermDays: number | null }[]; akunPemasukanLain: { id: string; code: string; name: string }[];
+  karyawan: { id: string; name: string }[]; mode: { id: string; label: string }[]; hanyaReimbursement: boolean; ambangNotaRupiah: Money;
+};
+export type OrderRefund = { id: string; nomor: string; pelanggan: string; nilai: Money; sisaBisaDirefund: Money };
+export type RingkasanModul = Record<string, Record<string, number>>;
+export type HasilUnggah = { url: string; dipakaiDi: string[] };
