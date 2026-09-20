@@ -177,7 +177,7 @@ financeTxRouter.get("/expenses",
   async (req, res) => {
     try {
       const { from, to } = rentangDariQuery(req.query);
-      const { status, division, categoryId, mode, q, bukti } = req.query;
+      const { status, division, categoryId, mode, q, bukti, cashAccountId } = req.query;
 
       // Pemegang finance:expense:submit TANPA finance:read hanya boleh
       // melihat pengajuannya SENDIRI. Pembatasan barisnya di query, persis
@@ -191,6 +191,7 @@ financeTxRouter.get("/expenses",
           ...(division && { division }),
           ...(categoryId && { categoryId }),
           ...(mode && { mode }),
+          ...(cashAccountId && { cashAccountId }),
           ...klausaBukti(bukti),
           AND: [
             ...(hanyaMilikSendiri ? [{ OR: [{ createdById: req.user.id }, { reimburseToId: req.user.id }] }] : []),
@@ -639,7 +640,7 @@ financeTxRouter.get("/purchases",
   async (req, res) => {
     try {
       const { from, to } = rentangDariQuery(req.query);
-      const { status, division, categoryId, mode, q, bukti } = req.query;
+      const { status, division, categoryId, mode, q, bukti, cashAccountId } = req.query;
 
       const hanyaMilikSendiri = !hasPermission(req.user, P.FINANCE_READ);
 
@@ -650,6 +651,7 @@ financeTxRouter.get("/purchases",
           ...(division && { division }),
           ...(categoryId && { categoryId }),
           ...(mode && { mode }),
+          ...(cashAccountId && { cashAccountId }),
           ...klausaBukti(bukti),
           AND: [
             ...(hanyaMilikSendiri ? [{ OR: [{ createdById: req.user.id }, { reimburseToId: req.user.id }] }] : []),

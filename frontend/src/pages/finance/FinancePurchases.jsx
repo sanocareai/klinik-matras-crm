@@ -57,6 +57,7 @@ export default function FinancePurchases() {
   const [fKategori, setFKategori] = useState("");
   const [fDivisi, setFDivisi] = useState("");
   const [fMode, setFMode] = useState("");
+  const [fRekening, setFRekening] = useState("");
   const [fBukti, setFBukti] = useState("");
   const qTunda = useTertunda(q);
   const pernahMuat = useRef(false);
@@ -82,7 +83,7 @@ export default function FinancePurchases() {
       const [p, k, r, s] = await Promise.all([
         api.getFinancePurchases({
           ...periode, status, q: qTunda.trim(),
-          categoryId: fKategori, division: fDivisi, mode: fMode, bukti: fBukti,
+          categoryId: fKategori, division: fDivisi, mode: fMode, cashAccountId: fRekening, bukti: fBukti,
         }),
         api.getFinancePurchaseCategories(),
         api.getFinanceCashAccounts().catch(() => ({ accounts: [] })),
@@ -98,7 +99,7 @@ export default function FinancePurchases() {
     } finally {
       if (!diam) setLoading(false);
     }
-  }, [periode, status, qTunda, fKategori, fDivisi, fMode, fBukti]);
+  }, [periode, status, qTunda, fKategori, fDivisi, fMode, fRekening, fBukti]);
 
   // Pemuatan pertama menampilkan layar "memuat"; setelah itu (ganti filter,
   // ketik pencarian) daftar disegarkan diam-diam supaya kolom cari tidak
@@ -109,7 +110,7 @@ export default function FinancePurchases() {
   }, [muat]);
 
   function aturUlangFilter() {
-    setQ(""); setFKategori(""); setFDivisi(""); setFMode(""); setFBukti("");
+    setQ(""); setFKategori(""); setFDivisi(""); setFMode(""); setFRekening(""); setFBukti("");
   }
 
   async function aksi(fn) {
@@ -201,6 +202,7 @@ export default function FinancePurchases() {
           { key: "kat", label: "Jenis", value: fKategori, onChange: setFKategori, options: kategori.map((k) => [k.id, k.name]) },
           { key: "div", label: "Divisi", value: fDivisi, onChange: setFDivisi, options: Object.entries(LABEL_DIVISI) },
           { key: "mode", label: "Cara bayar", value: fMode, onChange: setFMode, options: [["LANGSUNG", "Bayar langsung"], ["REIMBURSEMENT", "Reimbursement"], ["UTANG", "Utang"]] },
+          { key: "rekening", label: "Rekening / bank", value: fRekening, onChange: setFRekening, options: rekening.map((r) => [r.id, r.name]) },
           { key: "bukti", label: "Bukti", value: fBukti, onChange: setFBukti, options: [["ada", "Ada nota"], ["tanpa", "Tanpa nota"], ["terverifikasi", "Terverifikasi"], ["belum", "Belum diverifikasi"]] },
         ]}
         ringkasan={`${purchases.length} pembelian${data?.terpotong ? " · baru 300 teratas tampil — persempit pencarian atau periode" : ""}`}
