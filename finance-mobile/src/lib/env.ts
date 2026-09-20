@@ -12,4 +12,6 @@ export const ENV = {
   useMocks: appEnv !== "production" && flagMocks,
   variant: (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? appEnv,
   version: Constants.expoConfig?.version ?? "0.0.0",
+  // Build preview ke API produksi: perintah uang dinonaktifkan (lihat lib/bacaSaja.ts). Tidak berlaku bila data contoh aktif.
+  readOnly: process.env.EXPO_PUBLIC_READ_ONLY === "true",
 } as const;

@@ -1,6 +1,7 @@
 import { ApiError } from "@/api/errors";
 import { AksesDitolak } from "@/auth/capabilities";
 import { StepUpDibatalkan } from "@/api/command";
+import { ModeBacaSaja, PESAN_BACA_SAJA } from "@/lib/bacaSaja";
 
 // Galat KEPUTUSAN (setujui/tolak) → jenis + kalimat Bahasa Indonesia. Pesan teknis server tidak ditampilkan, kecuali pesan aturan
 // bisnis (422/400) yang memang ditujukan ke pengguna.
@@ -9,6 +10,7 @@ export type InfoGalatKeputusan = { jenis: JenisGalatKeputusan; pesan: string; mu
 
 export function klasifikasiKeputusan(e: unknown): InfoGalatKeputusan {
   if (e instanceof StepUpDibatalkan) return { jenis: "batal", pesan: "", muatUlang: false, segarkanIzin: false, simpanKunci: false };
+  if (e instanceof ModeBacaSaja) return { jenis: "validasi", pesan: PESAN_BACA_SAJA, muatUlang: false, segarkanIzin: false, simpanKunci: false };
   if (e instanceof AksesDitolak) return { jenis: "izin", pesan: e.message, muatUlang: false, segarkanIzin: true, simpanKunci: false };
   if (e instanceof ApiError) {
     if (e.tidakPasti) {

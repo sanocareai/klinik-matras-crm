@@ -18,6 +18,7 @@ import { ENV } from "@/lib/env";
 import { formatRupiah, isMoneyString, parseInputRupiah, type Money } from "@/lib/money";
 import { tanggalPendek, waktuLengkap } from "@/lib/dates";
 import { S } from "@/lib/strings";
+import { PESAN_BACA_SAJA, bacaSaja } from "@/lib/bacaSaja";
 import { BannerBasi, GalatPenuh } from "@/features/umum/StatusData";
 import { AlasanSheet } from "@/features/persetujuan/Sheets";
 import { GaleriLampiran, LinimasaRiwayat } from "@/features/persetujuan/LampiranRiwayat";
@@ -91,7 +92,7 @@ function BarisPembayaran({ p, onBuka, onAlokasi }: { p: PembayaranPiutang; onBuk
           <MoneyText value={a.nominal} size="sm" />
         </View>
       )) : null}
-      {p.aksiAlokasi.boleh ? <Button label="Atur alokasi" variant="ghost" onPress={onAlokasi} style={{ marginTop: 8 }} /> : null}
+      {p.aksiAlokasi.boleh ? <Button label="Atur alokasi" variant="ghost" disabled={bacaSaja()} onPress={onAlokasi} style={{ marginTop: 8 }} /> : null}
     </View>
   );
 }
@@ -249,9 +250,9 @@ export function DetailTxScreen() {
 
           {bisaAksi.length > 0 || tidakBisa.length > 0 ? (
             <View style={{ marginTop: 22, gap: 10 }}>
-              {!online && bisaAksi.length > 0 ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12 }}>{S.offline.aksiNonaktif}</Text> : null}
+              {bisaAksi.length > 0 ? (bacaSaja() ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12 }}>{PESAN_BACA_SAJA}</Text> : !online ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12 }}>{S.offline.aksiNonaktif}</Text> : null) : null}
               {bisaAksi.map((kode) => (
-                <Button key={kode} label={LABEL_AKSI[kode]?.label ?? kode} variant={LABEL_AKSI[kode]?.variant ?? "primary"} disabled={sibuk || !online} loading={sibuk && sheet === kode} onPress={() => setSheet(kode)} />
+                <Button key={kode} label={LABEL_AKSI[kode]?.label ?? kode} variant={LABEL_AKSI[kode]?.variant ?? "primary"} disabled={sibuk || !online || bacaSaja()} loading={sibuk && sheet === kode} onPress={() => setSheet(kode)} />
               ))}
               {tidakBisa.length > 0 ? (
                 <GlassCard variant="flat">

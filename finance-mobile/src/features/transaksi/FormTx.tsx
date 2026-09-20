@@ -15,6 +15,7 @@ import { ENV } from "@/lib/env";
 import { hariIniWIB, waktuLengkap } from "@/lib/dates";
 import { bandingMoney, formatRupiah, isZero, parseInputRupiah } from "@/lib/money";
 import { S } from "@/lib/strings";
+import { PESAN_BACA_SAJA, bacaSaja } from "@/lib/bacaSaja";
 import { bikinKunciTx, type FormDokumen } from "@/api/transaksi";
 import type { ModulTx, OpsiForm } from "@/api/types";
 import { GalatPenuh } from "@/features/umum/StatusData";
@@ -159,7 +160,7 @@ export function FormTxScreen() {
   const rekOpsi = (opsi?.rekening ?? []).map((r) => ({ id: r.id, label: r.name, sub: `Saldo ${formatRupiah(r.saldo)}` }));
   const opsiLabel = (d: { id: string; name: string }[] | undefined) => (d ?? []).map((x) => ({ id: x.id, label: x.name }));
   const judulTombol = modul === "pengeluaran" || modul === "pembelian" ? "Ajukan" : modul === "refund" ? "Ajukan refund" : modul === "tagihan" ? "Ajukan tagihan" : modul === "supplier" ? "Simpan supplier" : "Catat";
-  const boleh = !sibuk && !fotoSibuk && online;
+  const boleh = !sibuk && !fotoSibuk && online && !bacaSaja();
   const dokBiasa = modul === "pengeluaran" || modul === "pembelian";
   const pengingatNota = dokBiasa
     ? modul === "pembelian" ? "Pembelian wajib punya foto nota sebelum disetujui."
@@ -280,7 +281,7 @@ export function FormTxScreen() {
           )}
 
           <View style={{ marginTop: 6, gap: 10 }}>
-            {!online ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12 }}>{S.offline.aksiNonaktif} untuk mengirim. Draf di HP tetap bisa disimpan.</Text> : null}
+            {bacaSaja() ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12 }}>{PESAN_BACA_SAJA}. Draf di HP tetap bisa disimpan.</Text> : !online ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12 }}>{S.offline.aksiNonaktif} untuk mengirim. Draf di HP tetap bisa disimpan.</Text> : null}
             {dicoba && adaGalat ? <Text accessibilityLiveRegion="polite" style={{ color: colors.danger, fontFamily: font.regular, fontSize: 12 }}>Lengkapi isian yang ditandai merah.</Text> : null}
             <Button label={judulTombol} loading={sibuk} disabled={!boleh} onPress={() => { void kirim(true); }} />
             {dokBiasa ? <Button label="Simpan sebagai draf di server" variant="secondary" disabled={!boleh} onPress={() => { void kirim(false); }} /> : null}

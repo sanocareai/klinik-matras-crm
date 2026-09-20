@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useRef } from "react";
-import { RefreshControl, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurTargetView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "./theme";
-import { GUTTER } from "./tokens";
+import { GUTTER, font } from "./tokens";
+import { PESAN_BACA_SAJA, bacaSaja } from "@/lib/bacaSaja";
 
 // Konteks lapisan latar yang di-blur (tier FULL, Android). Tiap <Screen> punya
 // targetnya sendiri sehingga banyak layar (tab) tidak berebut satu ref.
@@ -43,6 +44,16 @@ type Props = {
   contentStyle?: StyleProp<ViewStyle>;
 };
 
+/** Penanda tetap di semua layar pada build preview baca-saja. */
+function BannerBacaSaja() {
+  const { colors } = useTheme();
+  return (
+    <View accessibilityRole="alert" accessibilityLabel={PESAN_BACA_SAJA} style={{ padding: 8, borderRadius: 12, backgroundColor: colors.warningSoft, marginBottom: 12 }}>
+      <Text maxFontSizeMultiplier={1.3} style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12, lineHeight: 17, textAlign: "center" }}>{PESAN_BACA_SAJA}</Text>
+    </View>
+  );
+}
+
 export function Screen({ children, scroll = true, refreshing = false, onRefresh, bawah = 120, contentStyle }: Props) {
   const { colors, glassTier } = useTheme();
   const insets = useSafeAreaInsets();
@@ -55,10 +66,11 @@ export function Screen({ children, scroll = true, refreshing = false, onRefresh,
       showsVerticalScrollIndicator={false}
       refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined}
     >
+      {bacaSaja() ? <BannerBacaSaja /> : null}
       {children}
     </ScrollView>
   ) : (
-    <View style={[{ flex: 1, paddingTop: insets.top + 8, paddingHorizontal: GUTTER }, contentStyle]}>{children}</View>
+    <View style={[{ flex: 1, paddingTop: insets.top + 8, paddingHorizontal: GUTTER }, contentStyle]}>{bacaSaja() ? <BannerBacaSaja /> : null}{children}</View>
   );
 
   return (

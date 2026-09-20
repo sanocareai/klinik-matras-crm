@@ -18,6 +18,7 @@ import { ENV } from "@/lib/env";
 import { formatRupiah } from "@/lib/money";
 import { tanggalPendek, waktuLengkap } from "@/lib/dates";
 import { S } from "@/lib/strings";
+import { PESAN_BACA_SAJA, bacaSaja } from "@/lib/bacaSaja";
 import { denganAkses } from "@/features/guard/RequireCapability";
 import { BannerBasi, GalatPenuh } from "@/features/umum/StatusData";
 import { AlasanSheet } from "@/features/persetujuan/Sheets";
@@ -171,10 +172,10 @@ function DetailPersetujuan() {
                   <Text maxFontSizeMultiplier={1.3} style={{ flex: 1, color: colors.textMuted, fontFamily: font.regular, fontSize: 12, lineHeight: 17 }}>{d.aksi.setujui.alasan}</Text>
                 </View>
               ) : null}
-              {!online ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12, marginBottom: 10 }}>{S.offline.aksiNonaktif}</Text> : null}
+              {bacaSaja() ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12, marginBottom: 10 }}>{PESAN_BACA_SAJA}</Text> : !online ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12, marginBottom: 10 }}>{S.offline.aksiNonaktif}</Text> : null}
               <View style={{ flexDirection: "row", gap: 12 }}>
-                <Button label={S.persetujuan.tolak} variant="danger" disabled={!d.aksi.tolak.boleh || sibuk || !online} onPress={() => setTolakBuka(true)} style={{ flex: 1 }} />
-                <Button label={S.persetujuan.setujui} disabled={!d.aksi.setujui.boleh || sibuk || !online} loading={sibuk && setujuBuka} onPress={() => setSetujuBuka(true)} style={{ flex: 1 }} />
+                <Button label={S.persetujuan.tolak} variant="danger" disabled={!d.aksi.tolak.boleh || sibuk || !online || bacaSaja()} onPress={() => setTolakBuka(true)} style={{ flex: 1 }} />
+                <Button label={S.persetujuan.setujui} disabled={!d.aksi.setujui.boleh || sibuk || !online || bacaSaja()} loading={sibuk && setujuBuka} onPress={() => setSetujuBuka(true)} style={{ flex: 1 }} />
               </View>
             </View>
           ) : null}

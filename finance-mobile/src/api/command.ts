@@ -2,6 +2,7 @@ import { randomUUID } from "expo-crypto";
 import { assertCan, type Need, type NeedMode } from "@/auth/capabilities";
 import { useLock } from "@/auth/lock";
 import { useSession } from "@/auth/session";
+import { ModeBacaSaja, bacaSaja } from "@/lib/bacaSaja";
 
 // PENJALAN PERINTAH KEUANGAN — satu-satunya jalur yang dipakai layar untuk mengubah data.
 //   1. Capability guard: pengguna harus punya izin yang dibutuhkan (server tetap memeriksa ulang).
@@ -28,6 +29,8 @@ export type OpsiPerintah<T> = {
 };
 
 export async function jalankanPerintah<T>(opsi: OpsiPerintah<T>): Promise<T> {
+  // Build preview baca-saja: tidak ada perintah yang keluar dari aplikasi (lapisan kedua di atas tombol yang sudah dinonaktifkan).
+  if (bacaSaja()) throw new ModeBacaSaja();
   assertCan(useSession.getState().capabilities, opsi.need, opsi.mode);
   if (opsi.stepUp) {
     const ok = await useLock.getState().requireStepUp();
