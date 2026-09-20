@@ -982,7 +982,13 @@ webhookRouter.post("/waha", async (req, res) => {
 
   try {
     const { event, payload } = req.body;
-    console.log("[WAHA webhook]", event, JSON.stringify(payload));
+    // Ringkas: payload penuh (_data, media) bisa berKB-KB per event → JSON.stringify + tulis
+    // log di SETIAP webhook membebani CPU/disk. Set WEBHOOK_DEBUG=1 untuk payload penuh.
+    if (process.env.WEBHOOK_DEBUG === "1") {
+      console.log("[WAHA webhook]", event, JSON.stringify(payload));
+    } else {
+      console.log("[WAHA webhook]", event, payload?.id || "", payload?.fromMe ? "out" : "in", payload?.ack ?? "");
+    }
 
     // Handle event status sesi — WAHA kirim ini saat WA connect/disconnect
     if (event === "session.status") {
