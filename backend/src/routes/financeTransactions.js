@@ -2173,11 +2173,17 @@ financeTxRouter.post("/bank-lines/:id/match", requirePermission(P.FINANCE_POST),
     if (!journalLineId) throw err("Baris jurnal pasangannya wajib dipilih");
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Kunci baris koran & baris jurnal: dua pencocokan serempak tidak bisa memakai baris jurnal yang sama, dan double-tap tidak mencocokkan dua kali.
+      await lockRowForUpdate(tx, '"fin_bank_statement_lines"', req.params.id);
+      await lockRowForUpdate(tx, '"fin_journal_lines"', journalLineId);
       const baris = await tx.finBankStatementLine.findUnique({
         where: { id: req.params.id },
         include: { statement: { select: { cashAccountId: true, status: true } } },
       });
       if (!baris) throw err("Baris koran bank tidak ditemukan", 404);
+      if (baris.status === "COCOK") throw err("Baris koran ini sudah dicocokkan", 409);
+      const dipakai = await tx.finBankStatementLine.findFirst({ where: { matchedLineId: journalLineId, id: { not: baris.id } }, select: { id: true } });
+      if (dipakai) throw err("Baris jurnal ini sudah dicocokkan dengan baris koran lain", 409);
       if (baris.statement.status === "SELESAI") {
         throw err("Rekonsiliasi periode ini sudah ditutup — buka kembali kalau memang perlu diubah", 409);
       }
@@ -2202,10 +2208,15 @@ financeTxRouter.post("/bank-lines/:id/match", requirePermission(P.FINANCE_POST),
         );
       }
 
-      return tx.finBankStatementLine.update({
+      const hasilCocok = await tx.finBankStatementLine.update({
         where: { id: baris.id },
         data: { status: "COCOK", matchedLineId: journalLineId, matchedAt: new Date(), matchedById: req.user.id },
       });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_BANK_STATEMENT, entityId: baris.statementId, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: { label: "Baris koran dicocokkan", catatan: `${baris.description} · ${toMoney(baris.amount).toFixed(2)}`, aksi: "cocokkan", barisId: baris.id, journalLineId },
+      });
+      return hasilCocok;
     });
     res.json({ ...updated, amount: moneyToNumber(updated.amount) });
   } catch (e) {
@@ -2233,11 +2244,19 @@ async function guardStatementBelumSelesai(tx, lineId) {
 financeTxRouter.post("/bank-lines/:id/unmatch", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
     const updated = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_bank_statement_lines"', req.params.id);
       await guardStatementBelumSelesai(tx, req.params.id);
-      return tx.finBankStatementLine.update({
+      const sebelum = await tx.finBankStatementLine.findUnique({ where: { id: req.params.id }, select: { status: true, statementId: true, description: true, amount: true } });
+      if (sebelum.status !== "COCOK") throw err("Baris koran ini tidak sedang dicocokkan", 409);
+      const hasilLepas = await tx.finBankStatementLine.update({
         where: { id: req.params.id },
         data: { status: "BELUM_COCOK", matchedLineId: null, matchedAt: null, matchedById: null },
       });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_BANK_STATEMENT, entityId: sebelum.statementId, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: { label: "Pencocokan baris koran dilepas", catatan: `${sebelum.description} · ${toMoney(sebelum.amount).toFixed(2)}`, aksi: "lepas", barisId: req.params.id },
+      });
+      return hasilLepas;
     });
     res.json({ ...updated, amount: moneyToNumber(updated.amount) });
   } catch (e) {

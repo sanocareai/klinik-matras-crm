@@ -60,6 +60,8 @@ export const ENTITY_TYPES = Object.freeze({
   // lain langsung posting tanpa approval, beda dari expense/bill/refund).
   FIN_CASH_TRANSFER: "fin_cash_transfer",
   FIN_OTHER_INCOME: "fin_other_income",
+  // Rekonsiliasi bank: pencocokan/pelepasan baris koran dengan mutasi buku (S9).
+  FIN_BANK_STATEMENT: "fin_bank_statement",
 });
 
 export const EVENT_TYPES = Object.freeze({

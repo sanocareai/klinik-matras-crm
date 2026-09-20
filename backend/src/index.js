@@ -52,6 +52,7 @@ import { financePenerimaanRouter } from "./routes/financePenerimaan.js";
 import { financeApprovalsRouter } from "./routes/financeApprovals.js";
 import { financePembayaranRouter } from "./routes/financePembayaran.js";
 import { financeTransaksiRouter } from "./routes/financeTransaksi.js";
+import { financeBukuRouter } from "./routes/financeBuku.js";
 import { financeMediaRouter, financeReceiptsLegacyPathRouter, financePaymentProofsPathRouter } from "./routes/financeMedia.js";
 import { mobileRouter } from "./routes/mobileAuth.js";
 import { inventoryRouter }  from "./routes/inventory.js";
@@ -211,6 +212,7 @@ app.use("/api/finance",      financeKasbonRouter);
 app.use("/api/finance",      financePenerimaanRouter);
 app.use("/api/finance",      financeApprovalsRouter); // read-model inbox persetujuan (S4)
 app.use("/api/finance",      financePembayaranRouter); // pembayaran pelanggan: daftar/detail/verifikasi/tolak (S5)
+app.use("/api/finance",      financeBukuRouter);       // read-model jurnal, buku besar, rekonsiliasi (S9)
 app.use("/api/finance",      financeTransaksiRouter);  // read-model transaksi: pengeluaran, pembelian, kasbon, piutang, supplier, ... (S6–S8)
 app.use("/api/finance",      financeMediaRouter);
 // Aplikasi mobile Finance: sesi 15 menit + refresh rotasi, token push perangkat, config.
