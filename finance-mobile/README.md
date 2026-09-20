@@ -53,6 +53,30 @@ npm run check        # typecheck + lint + test
 
 `runtimeVersion` = kebijakan **`fingerprint`**: OTA hanya sampai ke build yang native-nya identik (aman dari ketidakcocokan native).
 
+## APK preview (checkpoint 21 Sep 2026)
+
+Profil `preview` menghasilkan **APK internal** dengan paket `com.sanomatrassehat.finance.preview` (nama "SANO Finance (Preview)"): terpasang **berdampingan** dengan build produksi, tidak menyentuh kanal `production`, tidak memakai ID aplikasi lain (`com.sanomatrassehat.salesapp`, `com.klinikmatras.drivermobile`). HTTPS wajib (tanpa cleartext), mode contoh mati, izin mikrofon/lokasi diblokir, Firebase/push dan deep link **tidak diaktifkan** (`google-services.json` tidak ada; pendaftaran push gagal diam-diam).
+
+> **Peringatan data:** APK preview memakai API **produksi** (`https://app.sanomatrassehat.com/api`) — tidak ada staging. Perintah uang dari APK ini membuat jurnal SUNGGUHAN. Lakukan QA baca-saja dulu; untuk uji tulis pakai dokumen kecil bertanda "UJI QA" (lihat `docs/FINANCE-MOBILE-QA-HP.md`).
+
+Langkah owner (butuh login Expo — tidak bisa dilakukan otomatis):
+
+```bash
+cd finance-mobile
+npm i -g eas-cli           # sudah ada versi 24.x? cukup: eas --version
+eas login
+eas init                   # proyek EAS BARU "sano-finance"; catat projectId yang tampil
+# Pastikan pemilik proyek = akun/organisasi Expo Anda. app.config.ts memakai EAS_OWNER (bawaan "sanocare"); ganti bila nama akun Expo berbeda.
+```
+
+Setelah `projectId` tersedia, kirim ke saya (atau isi sendiri) di `eas.json` → `build.*.env.EAS_PROJECT_ID` (bukan rahasia), commit hanya berkas konfigurasi itu, lalu:
+
+```bash
+eas build --platform android --profile preview
+```
+
+Hasilnya tautan unduh APK (± 15–25 menit di cloud). Lakukan cek lokal sebelum build: `npm run check`, `npx expo-doctor`, `npx expo export --platform android`.
+
 ## EAS Build & Update
 
 Butuh akun Expo (organisasi `sanocare`). Sekali saja:

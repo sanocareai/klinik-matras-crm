@@ -37,7 +37,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: `SANO Finance${LABEL[VARIANT]}`,
   slug: "sano-finance",
   scheme: "sanofinance",
-  version: "0.1.0",
+  version: "0.2.0", // Wave 1 (S6–S8). versionCode dikelola EAS.
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "automatic",
