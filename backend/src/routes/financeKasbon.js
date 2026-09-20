@@ -28,6 +28,7 @@ import { getSettingRaw, parseIntOr, SETTING_KEYS } from "../services/finance/set
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { daftarKaryawanKasbon, pastikanBolehMenerimaKasbon } from "../services/finance/karyawan.js";
 import { handleFinanceError } from "./finance.js";
+import { lockRowForUpdate } from "../services/inventoryLedger.js";
 
 export const financeKasbonRouter = express.Router();
 financeKasbonRouter.use(requireAuth);
@@ -227,6 +228,8 @@ financeKasbonRouter.post("/kasbon", requirePermission(P.FINANCE_POST), async (re
 // ─── PELUNASAN ───────────────────────────────────────────────────────────
 /** Catat SATU pelunasan atas satu kasbon (dipakai jalur per-kasbon dan potong-karyawan). */
 async function catatPelunasan(tx, kasbonId, { date, amount, method, notes, userId }) {
+  // Kunci baris kasbon: dua pelunasan paralel yang dihitung terhadap sisa yang sama akan lolos keduanya dan melampaui kasbon.
+  await lockRowForUpdate(tx, '"fin_kasbon"', kasbonId);
   const k = await tx.finKasbon.findUnique({ where: { id: kasbonId }, include: { repayments: { where: { cancelledAt: null } } } });
   if (!k) throw err("Kasbon tidak ditemukan", 404);
   if (k.status !== "AKTIF") throw err(`Kasbon ${k.kasbonNumber} sudah ${k.status === "LUNAS" ? "lunas" : "dibatalkan"}`, 409);
@@ -310,6 +313,7 @@ financeKasbonRouter.post("/kasbon/:id/pelunasan/:rid/batal", requirePermission(P
     const reason = req.body?.reason?.trim();
     if (!reason) throw err("Alasan pembatalan wajib diisi");
     await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_kasbon"', req.params.id);
       const rep = await tx.finKasbonRepayment.findUnique({ where: { id: req.params.rid }, include: { kasbon: true } });
       if (!rep || rep.kasbonId !== req.params.id) throw err("Pelunasan tidak ditemukan", 404);
       if (rep.cancelledAt) throw err("Pelunasan ini sudah dibatalkan", 409);
@@ -338,6 +342,7 @@ financeKasbonRouter.post("/kasbon/:id/batal", requirePermission(P.FINANCE_ADMIN)
     const reason = req.body?.reason?.trim();
     if (!reason) throw err("Alasan pembatalan wajib diisi");
     await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_kasbon"', req.params.id);
       const k = await tx.finKasbon.findUnique({ where: { id: req.params.id }, include: { repayments: { where: { cancelledAt: null } } } });
       if (!k) throw err("Kasbon tidak ditemukan", 404);
       if (k.status === "DIBATALKAN") throw err("Kasbon ini sudah dibatalkan", 409);

@@ -311,9 +311,10 @@ export function bangunLampiran(doc) {
   }];
 }
 
-async function bangunRiwayat(db, jenis, doc) {
+/** Riwayat dokumen (diajukan → keputusan → dibayar) dari audit trail. `entityType` bisa diberikan untuk dokumen di luar 4 jenis inbox (dipakai read-model transaksi). */
+export async function bangunRiwayat(db, jenis, doc, entityType = ENTITY[jenis]) {
   const events = await db.activityEvent.findMany({
-    where: { entityType: ENTITY[jenis], entityId: doc.id }, orderBy: { createdAt: "asc" }, take: 100,
+    where: { entityType, entityId: doc.id }, orderBy: { createdAt: "asc" }, take: 100,
   });
   const idPelaku = [...new Set(events.map((e) => e.actorId).filter(Boolean))];
   const pelaku = idPelaku.length ? await db.user.findMany({ where: { id: { in: idPelaku } }, select: { id: true, name: true } }) : [];

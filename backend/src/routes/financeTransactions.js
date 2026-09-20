@@ -260,7 +260,7 @@ financeTxRouter.post("/expenses",
           mode: modeEfektif,
           cashAccountId: modeEfektif === "LANGSUNG" ? cashAccountId : (cashAccountId || null),
           supplierId: supplierId || null,
-          // Yang hanya boleh mengajukan selalu menalangi dirinya sendiri; penalang lain hanya boleh dipilih yang punya hak posting.
+          // Yang hanya boleh mengajukan selalu menalangi dirinya sendiri; penalang orang lain hanya boleh dipilih yang punya hak posting.
           reimburseToId: modeEfektif === "REIMBURSEMENT" ? ((bolehPosting && reimburseToId) || req.user.id) : null,
           payeeName: payeeName?.trim() || null,
           orderId: orderId || null,
@@ -394,6 +394,8 @@ financeTxRouter.post("/expenses/:id/pay", requirePermission(P.FINANCE_POST), asy
     if (!cashAccountId) throw err("Rekening sumber pembayaran wajib dipilih");
 
     const hasil = await prisma.$transaction(async (tx) => {
+      // Kunci baris dokumen: dua perintah serempak (double-tap / dua perangkat) diserialkan — yang kedua melihat status baru dan ditolak 409.
+      await lockRowForUpdate(tx, '"fin_expenses"', req.params.id);
       const e = await tx.finExpense.findUnique({ where: { id: req.params.id } });
       if (!e) throw err("Pengeluaran tidak ditemukan", 404);
       if (e.status !== "DISETUJUI") {
@@ -431,6 +433,7 @@ financeTxRouter.post("/expenses/:id/cancel", requirePermission(P.FINANCE_ADMIN),
     if (!reason) throw err("Alasan pembatalan wajib diisi");
 
     const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_expenses"', req.params.id);
       const e = await tx.finExpense.findUnique({ where: { id: req.params.id } });
       if (!e) throw err("Pengeluaran tidak ditemukan", 404);
       if (e.status === "DIBATALKAN") throw err("Pengeluaran ini sudah dibatalkan", 409);
@@ -713,7 +716,6 @@ financeTxRouter.post("/purchases",
           mode: modeEfektif,
           cashAccountId: modeEfektif === "LANGSUNG" ? cashAccountId : (cashAccountId || null),
           supplierId: supplierId || null,
-          // Yang hanya boleh mengajukan selalu menalangi dirinya sendiri; penalang lain hanya boleh dipilih yang punya hak posting.
           reimburseToId: modeEfektif === "REIMBURSEMENT" ? ((bolehPosting && reimburseToId) || req.user.id) : null,
           payeeName: payeeName?.trim() || null,
           receiptUrl: receiptUrl || null,
@@ -837,6 +839,7 @@ financeTxRouter.post("/purchases/:id/pay", requirePermission(P.FINANCE_POST), as
     if (!cashAccountId) throw err("Rekening sumber pembayaran wajib dipilih");
 
     const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_purchases"', req.params.id);
       const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
       if (!p) throw err("Pembelian tidak ditemukan", 404);
       if (p.status !== "DISETUJUI") {
@@ -874,6 +877,7 @@ financeTxRouter.post("/purchases/:id/cancel", requirePermission(P.FINANCE_ADMIN)
     if (!reason) throw err("Alasan pembatalan wajib diisi");
 
     const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_purchases"', req.params.id);
       const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
       if (!p) throw err("Pembelian tidak ditemukan", 404);
       if (p.status === "DIBATALKAN") throw err("Pembelian ini sudah dibatalkan", 409);
@@ -1341,6 +1345,11 @@ financeTxRouter.post("/supplier-payments", requirePermission(P.FINANCE_POST), as
         return { billId: a.billId, amount: nominal };
       });
       const total = sumMoney(bersih.map((b) => b.amount));
+      const idTagihan = bersih.map((b) => b.billId);
+      if (new Set(idTagihan).size !== idTagihan.length) throw err("Satu tagihan hanya boleh muncul sekali dalam satu pembayaran");
+      // Kunci baris tagihan (urut id supaya tidak saling menunggu): dua pembayaran paralel untuk tagihan yang sama diserialkan, sehingga
+      // yang kedua melihat sisa utang yang SUDAH berkurang — tanpa ini keduanya lolos dan Utang Usaha bersaldo debit.
+      for (const id of [...idTagihan].sort()) await lockRowForUpdate(tx, '"fin_supplier_bills"', id);
 
       // Tiap alokasi TIDAK BOLEH melebihi sisa tagihannya. Tanpa cek ini,
       // Utang Usaha bisa jadi bersaldo debit (kita "berutang minus") yang
@@ -1400,6 +1409,7 @@ financeTxRouter.post("/supplier-payments/:id/cancel", requirePermission(P.FINANC
     const reason = req.body?.reason?.trim();
     if (!reason) throw err("Alasan pembatalan wajib diisi");
     const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_supplier_payments"', req.params.id);
       const p = await tx.finSupplierPayment.findUnique({
         where: { id: req.params.id },
         include: { allocations: { select: { billId: true } } },
@@ -1563,6 +1573,15 @@ financeTxRouter.post("/transfers/:id/koreksi", requirePermission(P.FINANCE_ADMIN
   }
 });
 
+// Akun pendapatan yang HANYA boleh diisi oleh alur order/pembayaran pelanggan (posting/orderRevenue.js). Pemasukan lain-lain tidak boleh
+// dipakai sebagai jalan pintas mencatat uang pelanggan: itu melewati verifikasi pembayaran, invoice, dan status bayar order.
+const AKUN_PENDAPATAN_ORDER = new Set(["PENDAPATAN_LAYANAN", "PENDAPATAN_PRODUK", "PENDAPATAN_SEWA", "PENDAPATAN_ONGKIR"]);
+function tolakAkunPendapatanOrder(akun) {
+  if (AKUN_PENDAPATAN_ORDER.has(akun.systemKey)) {
+    throw err("Akun pendapatan penjualan/layanan hanya diisi lewat pembayaran order. Uang dari pelanggan dicatat di Pembayaran & Verifikasi, bukan sebagai Pemasukan Lain.");
+  }
+}
+
 financeTxRouter.get("/other-income", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const { from, to } = rentangDariQuery(req.query);
@@ -1594,11 +1613,12 @@ financeTxRouter.post("/other-income", requirePermission(P.FINANCE_POST), async (
     const nominal = toMoney(amount, { field: "Nominal pemasukan" });
     if (nominal.lessThanOrEqualTo(0)) throw err("Nominal pemasukan harus lebih dari 0");
 
-    const akun = await prisma.finAccount.findUnique({ where: { id: accountId }, select: { type: true, isPostable: true } });
+    const akun = await prisma.finAccount.findUnique({ where: { id: accountId }, select: { type: true, isPostable: true, systemKey: true } });
     if (!akun) throw err("Akun pendapatan tidak ditemukan", 404);
     if (akun.type !== "PENDAPATAN") {
       throw err("Pemasukan lain-lain harus menunjuk akun bertipe Pendapatan — memilih akun lain akan merusak laba rugi");
     }
+    tolakAkunPendapatanOrder(akun);
 
     const hasil = await prisma.$transaction(async (tx) => {
       const tgl = parseTanggal(date);
@@ -1626,6 +1646,7 @@ financeTxRouter.post("/other-income/:id/cancel", requirePermission(P.FINANCE_ADM
     const reason = req.body?.reason?.trim();
     if (!reason) throw err("Alasan pembatalan wajib diisi");
     const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_other_incomes"', req.params.id);
       const inc = await tx.finOtherIncome.findUnique({ where: { id: req.params.id } });
       if (!inc) throw err("Pemasukan tidak ditemukan", 404);
       if (inc.cancelledAt) throw err("Pemasukan ini sudah dibatalkan", 409);
@@ -1679,11 +1700,12 @@ financeTxRouter.post("/other-income/:id/koreksi", requirePermission(P.FINANCE_AD
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
 
       if (perubahan.accountId) {
-        const akun = await tx.finAccount.findUnique({ where: { id: perubahan.accountId }, select: { type: true } });
+        const akun = await tx.finAccount.findUnique({ where: { id: perubahan.accountId }, select: { type: true, systemKey: true } });
         if (!akun) throw err("Akun pendapatan tidak ditemukan", 404);
         if (akun.type !== "PENDAPATAN") {
           throw err("Pemasukan lain-lain harus menunjuk akun bertipe Pendapatan — memilih akun lain akan merusak laba rugi");
         }
+        tolakAkunPendapatanOrder(akun);
       }
 
       const alasanKoreksi = `Koreksi ${inc.incomeNumber} — ${reason}`;
