@@ -241,7 +241,7 @@ export default function FinancePurchases() {
                       {/* Penalang (reimburseTo) & penjual (payeeName) adalah dua hal berbeda — tampilkan keduanya. */}
                       {p.reimburseTo && <span className="block text-[11px] text-ink3">ditalangi {p.reimburseTo.name}</span>}
                       {p.supplier && <span className="block text-[11px] text-ink3">dari {p.supplier.name}</span>}
-                      {!p.supplier && p.payeeName && <span className="block text-[11px] text-ink3">dari {p.payeeName}</span>}
+                      {!p.supplier && p.payeeName && p.payeeName.trim().toLowerCase() !== (p.reimburseTo?.name || "").trim().toLowerCase() && <span className="block text-[11px] text-ink3">dari {p.payeeName}</span>}
                     </TD>
                     <TD className="text-[12px]">{p.category?.name}</TD>
                     <TD><Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge></TD>

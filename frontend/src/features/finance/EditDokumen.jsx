@@ -133,7 +133,7 @@ export default function EditDokumen({ doc, jenis, kategori, rekening, onClose, o
             kosongLabel="— pilih —"
           />
         )}
-        <Field label="Dibayarkan kepada"><Input value={f.payeeName} onChange={(e) => set("payeeName", e.target.value)} /></Field>
+        <Field label={doc.mode === "REIMBURSEMENT" ? "Toko / pihak yang dibayar" : "Dibayarkan kepada"} hint={doc.mode === "REIMBURSEMENT" ? "Opsional — bukan penalang" : undefined}><Input value={f.payeeName} onChange={(e) => set("payeeName", e.target.value)} /></Field>
         <Field label="Foto nota / bukti" hint="Salah foto? Ganti di sini — verifikasi lama gugur, perlu diperiksa ulang">
           <PemilihBukti url={f.receiptUrl} onChange={(v) => set("receiptUrl", v)} />
         </Field>

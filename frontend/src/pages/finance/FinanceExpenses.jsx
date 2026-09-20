@@ -232,7 +232,7 @@ export default function FinanceExpenses() {
                       {/* Penalang (reimburseTo) & penerima bayaran (payeeName) adalah dua hal berbeda — tampilkan keduanya. */}
                       {e.reimburseTo && <span className="block text-[11px] text-ink3">ditalangi {e.reimburseTo.name}</span>}
                       {e.supplier && <span className="block text-[11px] text-ink3">ke {e.supplier.name}</span>}
-                      {!e.supplier && e.payeeName && <span className="block text-[11px] text-ink3">ke {e.payeeName}</span>}
+                      {!e.supplier && e.payeeName && e.payeeName.trim().toLowerCase() !== (e.reimburseTo?.name || "").trim().toLowerCase() && <span className="block text-[11px] text-ink3">ke {e.payeeName}</span>}
                     </TD>
                     <TD className="text-[12px]">{e.category?.name}</TD>
                     <TD><Badge variant="neutral">{LABEL_DIVISI[e.division] || e.division}</Badge></TD>
@@ -391,7 +391,7 @@ function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
           </Field>
         )}
         {f.mode === "REIMBURSEMENT" && <PilihPenalang value={f.reimburseToId} onChange={(v) => set("reimburseToId", v)} />}
-        <Field label="Dibayarkan kepada" hint="Nama toko/tukang — opsional">
+        <Field label={f.mode === "REIMBURSEMENT" ? "Toko / pihak yang dibayar" : "Dibayarkan kepada"} hint={f.mode === "REIMBURSEMENT" ? "Opsional — bukan penalang (penalang dipilih di atas)" : "Nama toko/tukang — opsional"}>
           <Input value={f.payeeName} onChange={(e) => set("payeeName", e.target.value)} />
         </Field>
         <Field label="Order terkait" hint="Opsional — untuk membebankan biaya ke order tertentu">
