@@ -416,7 +416,21 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
 
   const inDivision = (u, d) => effectiveRoles(u).some((r) => d.roles.includes(r));
   const activeDivision = DIVISIONS.find((d) => d.key === divisionFilter);
-  const shownUsers = activeDivision ? users.filter((u) => inDivision(u, activeDivision)) : users;
+  // Urutan tampil (D-170, 20 September 2026): akun NONAKTIF selalu paling
+  // bawah; di antara akun aktif, Owner/Admin paling atas, lalu per divisi
+  // mengikuti urutan DIVISIONS (Growth, Production, Warehouse, Delivery,
+  // Finance), lalu nama A-Z. User multi-peran memakai divisi dengan
+  // peringkat terkecil (paling atas).
+  const rankDivisi = (u) => {
+    const idx = DIVISIONS.findIndex((d) => inDivision(u, d));
+    if (DIVISIONS[DIVISIONS.length - 1] && inDivision(u, DIVISIONS[DIVISIONS.length - 1])) return -1; // Owner & Admin
+    return idx === -1 ? DIVISIONS.length : idx;
+  };
+  const shownUsers = (activeDivision ? users.filter((u) => inDivision(u, activeDivision)) : [...users])
+    .sort((a, b) =>
+      (a.active === false) - (b.active === false) ||
+      rankDivisi(a) - rankDivisi(b) ||
+      (a.name || "").localeCompare(b.name || "", "id"));
 
   const roleStats = ALL_ROLES.map((role) => ({
     role, label: ROLE_LABELS[role], count: users.filter((u) => effectiveRoles(u).includes(role)).length,
