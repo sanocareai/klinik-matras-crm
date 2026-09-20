@@ -84,12 +84,20 @@ export async function simpanFotoBukti(buffer, { dir = RECEIPTS_DIR } = {}) {
  *  - Pengeluaran lain: nominal >= ambang (default Rp500rb), kecuali kategori
  *    yang buktinya bukan nota (gaji, upah, admin bank).
  */
-export async function notaWajib(db, { jenis, mode, amount, categoryCode }) {
+export async function ambangNota(db) {
+  return parseIntOr(await getSettingRaw(db, SETTING_KEYS.RECEIPT_REQUIRED_THRESHOLD), 500000);
+}
+
+/** Aturan yang SAMA dengan notaWajib(), tanpa akses DB — untuk menandai banyak baris daftar sekaligus (ambang dibaca sekali). */
+export function notaWajibDenganAmbang({ jenis, mode, amount, categoryCode }, ambang) {
   if (jenis === "purchase") return true;
   if (categoryCode && KATEGORI_TANPA_NOTA.has(categoryCode)) return false;
   if (mode === "REIMBURSEMENT") return true;
-  const ambang = parseIntOr(await getSettingRaw(db, SETTING_KEYS.RECEIPT_REQUIRED_THRESHOLD), 500000);
   return Number(amount) >= ambang;
+}
+
+export async function notaWajib(db, { jenis, mode, amount, categoryCode }) {
+  return notaWajibDenganAmbang({ jenis, mode, amount, categoryCode }, await ambangNota(db));
 }
 
 /** Lempar error kalau nota wajib tapi belum diunggah. */

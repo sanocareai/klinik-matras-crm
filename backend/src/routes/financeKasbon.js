@@ -26,6 +26,7 @@ import { toMoney, sumMoney, moneyToNumber, ZERO } from "../services/finance/mone
 import { postKasbonDiberikan, postKasbonPelunasan, KEY as KASBON_KEY } from "../services/finance/posting/kasbon.js";
 import { getSettingRaw, parseIntOr, SETTING_KEYS } from "../services/finance/settings.js";
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
+import { daftarKaryawanKasbon, pastikanBolehMenerimaKasbon } from "../services/finance/karyawan.js";
 import { handleFinanceError } from "./finance.js";
 
 export const financeKasbonRouter = express.Router();
@@ -154,19 +155,12 @@ financeKasbonRouter.get("/kasbon", requirePermission(P.FINANCE_READ), async (req
   }
 });
 
-// Nama untuk saran isian form: pernah dapat kasbon + seluruh user sistem.
+// Pilihan karyawan untuk form kasbon: HANYA karyawan Sano (akun aktif, tanpa akun owner bersama / kurir eksternal / akun nonaktif).
+// Sebelumnya menggabungkan SEMUA user + seluruh nama yang pernah dicatat di kasbon, sehingga nama lama & akun non-karyawan ikut tampil.
 financeKasbonRouter.get("/kasbon/karyawan-nama", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    const [a, b] = await Promise.all([
-      prisma.finKasbon.findMany({ distinct: ["employeeName"], select: { employeeName: true } }),
-      prisma.user.findMany({ select: { name: true } }),
-    ]);
-    const unik = new Map();
-    for (const n of [...a.map((x) => x.employeeName), ...b.map((x) => x.name)]) {
-      const rapi = rapikanNama(n);
-      if (rapi && !unik.has(rapi.toLowerCase())) unik.set(rapi.toLowerCase(), rapi);
-    }
-    res.json({ nama: [...unik.values()].sort((x, y) => x.localeCompare(y, "id")) });
+    const karyawan = await daftarKaryawanKasbon(prisma);
+    res.json({ nama: karyawan.map((k) => k.name), karyawan });
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -182,6 +176,7 @@ financeKasbonRouter.post("/kasbon", requirePermission(P.FINANCE_POST), async (re
     const nominal = toMoney(amount, { field: "Nominal kasbon" });
     if (nominal.lessThanOrEqualTo(0)) throw err("Nominal kasbon harus lebih dari 0");
     if (!cashAccountId) throw err("Rekening sumber uang wajib dipilih");
+    await pastikanBolehMenerimaKasbon(prisma, nama, err);
     if (receiptUrl && !String(receiptUrl).startsWith(`${RECEIPTS_URL_PREFIX}/`)) throw err("Bukti harus diunggah lewat fitur upload");
 
     const hasil = await prisma.$transaction(async (tx) => {
@@ -383,6 +378,7 @@ financeKasbonRouter.patch("/kasbon/:id", requirePermission(P.FINANCE_ADMIN), asy
       if (req.body.employeeName !== undefined) {
         const nama = rapikanNama(req.body.employeeName);
         if (!nama) throw err("Nama karyawan wajib diisi");
+        if (nama.toLowerCase() !== String(k.employeeName || "").toLowerCase()) await pastikanBolehMenerimaKasbon(tx, nama, err);
         usul.employeeName = nama;
       }
       if (req.body.urgency !== undefined) usul.urgency = req.body.urgency?.trim() || null;

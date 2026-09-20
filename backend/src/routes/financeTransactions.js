@@ -48,7 +48,7 @@ import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { handleFinanceError, rentangDariQuery } from "./finance.js";
 import multer from "multer";
 import {
-  pastikanNotaLengkap, notaWajib, simpanFotoBukti, cariPemakaiBukti,
+  pastikanNotaLengkap, notaWajib, ambangNota, notaWajibDenganAmbang, simpanFotoBukti, cariPemakaiBukti,
   tanggalMulaiKebijakan, RECEIPTS_URL_PREFIX,
 } from "../services/finance/receipts.js";
 
@@ -203,8 +203,11 @@ financeTxRouter.get("/expenses",
       });
 
       const total = expenses.length === 0 ? ZERO : sumMoney(expenses.map((e) => e.amount));
+      // `notaWajib`: aturan yang sama dengan yang dipakai saat Setujui — supaya UI bisa memberi tahu SEBELUM tombol ditekan
+      // (tanpa ini tombol tampak aktif tetapi server menolak 422 "wajib punya foto nota").
+      const ambang = await ambangNota(prisma);
       res.json({
-        expenses: expenses.map(bentukExpense),
+        expenses: expenses.map((e) => ({ ...bentukExpense(e), notaWajib: notaWajibDenganAmbang({ jenis: "expense", mode: e.mode, amount: e.amount, categoryCode: e.category?.code }, ambang) })),
         total: moneyToNumber(total),
         hanyaMilikSendiri,
         terpotong: expenses.length === 300,
@@ -656,7 +659,7 @@ financeTxRouter.get("/purchases",
 
       const total = purchases.length === 0 ? ZERO : sumMoney(purchases.map((p) => p.amount));
       res.json({
-        purchases: purchases.map(bentukPurchase),
+        purchases: purchases.map((p) => ({ ...bentukPurchase(p), notaWajib: true })), // pembelian SELALU wajib nota (aturan notaWajib)
         total: moneyToNumber(total),
         hanyaMilikSendiri,
         terpotong: purchases.length === 300,

@@ -202,7 +202,7 @@ export default function FinanceKasbon() {
             <Table>
               <THead>
                 <TR>
-                  <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Karyawan</TH><TH>Urgensi</TH>
+                  <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Karyawan</TH><TH>Urgensi</TH><TH>Sumber Dana</TH>
                   <TH numeric>Kasbon</TH><TH numeric>Sudah Dipotong</TH><TH numeric>Belum Dipotong</TH><TH>Status</TH><TH />
                 </TR>
               </THead>
@@ -214,11 +214,11 @@ export default function FinanceKasbon() {
                     <TD className="font-medium">{k.employeeName}</TD>
                     <TD className="max-w-[220px]">
                       <span className="block truncate">{k.urgency || "—"}</span>
-                      {k.cashAccount && <span className="text-[11px] text-ink3">dari {k.cashAccount.name}</span>}
                       {k.receiptUrl && (
-                        <LinkBukti url={k.receiptUrl} className="ml-1 text-[11px] text-accent hover:underline">bukti</LinkBukti>
+                        <LinkBukti url={k.receiptUrl} className="text-[11px] text-accent hover:underline">bukti</LinkBukti>
                       )}
                     </TD>
+                    <TD className="whitespace-nowrap text-[12px]">{k.cashAccount ? k.cashAccount.name : <span className="text-ink3">—</span>}</TD>
                     <TD numeric><Uang value={k.amount} /></TD>
                     <TD numeric><Uang value={k.terlunasi} nolSebagaiStrip /></TD>
                     <TD numeric><Uang value={k.sisa} className="font-bold" nolSebagaiStrip /></TD>
@@ -299,14 +299,29 @@ export default function FinanceKasbon() {
 function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit, aksi }) {
   const [f, setF] = useState({ employeeName: "", date: "", amount: "", urgency: "", cashAccountId: "", notes: "", receiptUrl: "" });
   const [nama, setNama] = useState([]);
+  const [namaGalat, setNamaGalat] = useState(null);
+  const [rek, setRek] = useState(rekening);
+  const [rekState, setRekState] = useState({ memuat: false, galat: null });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+
+  // Rekening dimuat di sini (bukan hanya dari layar induk yang menelan galat jadi daftar kosong): kalau gagal, pengguna melihat
+  // pesan + tombol coba lagi, bukan pilihan kosong yang membuat kasbon tak bisa dicatat tanpa penjelasan.
+  const muatRekening = useCallback(() => {
+    setRekState({ memuat: true, galat: null });
+    api.getFinanceCashAccounts()
+      .then((r) => { setRek((r.accounts || []).filter((a) => a.active)); setRekState({ memuat: false, galat: null }); })
+      .catch((e) => setRekState({ memuat: false, galat: e.message || "Gagal memuat daftar rekening" }));
+  }, []);
 
   useEffect(() => {
     if (open) {
       setF({ employeeName: "", date: hariIniISO(), amount: "", urgency: "", cashAccountId: "", notes: "", receiptUrl: "" });
-      api.getFinanceKasbonNama().then((r) => setNama(r.nama || [])).catch(() => {});
+      setNamaGalat(null);
+      // Daftar resmi karyawan Sano (akun aktif; tanpa akun owner bersama, kurir eksternal, dan akun nonaktif).
+      api.getFinanceKasbonNama().then((r) => setNama(r.nama || [])).catch((e) => setNamaGalat(e.message || "Gagal memuat daftar karyawan"));
+      muatRekening();
     }
-  }, [open]);
+  }, [open, muatRekening]);
 
   const sudah = perKaryawan.find((p) => p.nama.toLowerCase() === f.employeeName.trim().toLowerCase());
   const setelah = (sudah?.sisa || 0) + (Number(f.amount) || 0);
@@ -326,9 +341,12 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
       }
     >
       <div className="space-y-3">
-        <Field label="Karyawan" required>
-          <Input list="daftar-karyawan-kasbon" value={f.employeeName} onChange={(e) => set("employeeName", e.target.value)} placeholder="Nama karyawan" autoComplete="off" />
-          <datalist id="daftar-karyawan-kasbon">{nama.map((n) => <option key={n} value={n} />)}</datalist>
+        <Field label="Karyawan" required hint={namaGalat ? undefined : "Hanya karyawan Sano yang akunnya aktif"}>
+          <Pilihan value={f.employeeName} onChange={(v) => set("employeeName", v)}>
+            <option value="">— pilih karyawan —</option>
+            {nama.map((n) => <option key={n} value={n}>{n}</option>)}
+          </Pilihan>
+          {namaGalat && <p className="mt-1 text-[12px] text-red">{namaGalat}. Tutup lalu buka lagi formulir ini.</p>}
         </Field>
         {sudah && (
           <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2">
@@ -345,9 +363,18 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
         </Field>
         <Field label="Uang keluar dari" required>
           <Pilihan value={f.cashAccountId} onChange={(v) => set("cashAccountId", v)}>
-            <option value="">— pilih —</option>
-            {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            <option value="">{rekState.memuat ? "memuat rekening…" : "— pilih bank / kas —"}</option>
+            {rek.map((r) => <option key={r.id} value={r.id}>{r.name} · saldo {formatUang(r.saldo)}</option>)}
           </Pilihan>
+          {rekState.galat && (
+            <p className="mt-1 text-[12px] text-red">
+              {rekState.galat}.{" "}
+              <button type="button" className="font-semibold underline" onClick={muatRekening}>Coba lagi</button>
+            </p>
+          )}
+          {!rekState.memuat && !rekState.galat && rek.length === 0 && (
+            <p className="mt-1 text-[12px] text-red">Belum ada rekening kas/bank yang aktif. Tambahkan dulu di menu Kas &amp; Bank.</p>
+          )}
         </Field>
         <Field label="Bukti transfer" hint="Opsional">
           <PemilihBukti url={f.receiptUrl} onChange={(v) => set("receiptUrl", v)} />

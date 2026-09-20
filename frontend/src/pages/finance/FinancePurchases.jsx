@@ -227,7 +227,7 @@ export default function FinancePurchases() {
               <THead>
                 <TR>
                   <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Jenis</TH>
-                  <TH>Divisi</TH><TH>Mode</TH><TH numeric>Nominal</TH><TH>Status</TH><TH>Bukti</TH><TH />
+                  <TH>Divisi</TH><TH>Mode</TH><TH>Sumber Dana</TH><TH numeric>Nominal</TH><TH>Status</TH><TH>Bukti</TH><TH />
                 </TR>
               </THead>
               <TBody>
@@ -246,9 +246,19 @@ export default function FinancePurchases() {
                     <TD className="text-[12px] text-ink2">
                       {p.mode === "LANGSUNG" ? "Bayar langsung" : p.mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang"}
                     </TD>
+                    <TD className="text-[12px]">
+                      {p.cashAccount ? <span className="whitespace-nowrap">{p.cashAccount.name}</span> : (
+                        <span className="text-ink3">{["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI"].includes(p.status) && p.mode !== "LANGSUNG" ? "belum dibayar" : "—"}</span>
+                      )}
+                    </TD>
                     <TD numeric><Uang value={p.amount} /></TD>
                     <TD><StatusBadge status={p.status} /></TD>
-                    <TD><SelBukti doc={p} jenis="purchases" aksi={aksi} /></TD>
+                    <TD>
+                      <SelBukti doc={p} jenis="purchases" aksi={aksi} />
+                      {p.notaWajib && !p.receiptUrl && ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) && (
+                        <span className="mt-1 block text-[11px] font-semibold text-red">Nota wajib sebelum disetujui</span>
+                      )}
+                    </TD>
                     <TD>
                       <div className="flex justify-end gap-1">
                         {STATUS_BISA_DIEDIT.includes(p.status) && (
@@ -271,6 +281,8 @@ export default function FinancePurchases() {
                           <>
                             <TombolAksi
                               size="sm" variant="secondary"
+                              disabled={!!p.notaWajib && !p.receiptUrl}
+                              title={p.notaWajib && !p.receiptUrl ? "Nota wajib: unggah foto nota di kolom Bukti dulu, baru bisa disetujui." : undefined}
                               confirmText={`Setujui ${p.purchaseNumber} sebesar ${formatUang(p.amount)}? Nilainya akan langsung masuk buku besar.`}
                               onClick={() => aksi(() => api.approveFinancePurchase(p.id))}
                             >

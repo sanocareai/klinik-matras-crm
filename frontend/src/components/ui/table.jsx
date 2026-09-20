@@ -101,7 +101,7 @@ export function TH({
       className={cn(
         "whitespace-nowrap border-b border-line px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide text-ink3",
         numeric ? "text-right" : "text-left",
-        sticky && "sticky left-0 z-20 bg-inset/95",
+        sticky && "tbl-sticky-th",
         className
       )}
       {...props}
@@ -136,7 +136,7 @@ export function TD({ className, numeric, truncate, sticky, ...props }) {
         "px-3 py-2.5 align-middle text-[13px] text-ink2",
         numeric && "text-right tabular-nums",
         truncate && "truncate",
-        sticky && "sticky left-0 z-[1] bg-surface",
+        sticky && "tbl-sticky-td",
         className
       )}
       {...props}

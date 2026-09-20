@@ -17,6 +17,11 @@
    Dark mode = TUKAR TOKEN, bukan desain ulang. Light mode adalah referensi.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Kolom identitas tabel yang menempel saat scroll horizontal (TH/TD sticky). Latar SOLID + tidak boleh membungkus: kalau tembus pandang,
+   teks kolom lain yang di-scroll di baliknya ikut terlihat dan nomor dokumen terpotong jadi 3 baris. */
+.tbl-sticky-th { position: sticky; left: 0; z-index: 20; background: var(--bg-inset); white-space: nowrap; }
+.tbl-sticky-td { position: sticky; left: 0; z-index: 1; background: var(--bg-surface); white-space: nowrap; box-shadow: 1px 0 0 var(--border); }
+
 :root {
   color-scheme: light;
 
