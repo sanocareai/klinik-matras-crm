@@ -61,3 +61,22 @@ test("parseOrderNotesForInvoice tidak melempar untuk notes rusak/kosong", () => 
   assert.deepEqual(parseOrderNotesForInvoice(null), { merkKasur: "", ukuranKasur: "" });
   assert.deepEqual(parseOrderNotesForInvoice("teks polos lawas"), { merkKasur: "", ukuranKasur: "" });
 });
+
+// ─── Jatuh tempo dihitung per HARI KALENDER WIB ───────────────────────────
+import { hariLewatTempo, statusEfektif } from "../src/services/invoice.js";
+
+test("hariLewatTempo — hari jatuh tempo itu sendiri BELUM telat, sehari sesudahnya baru 1", () => {
+  const due = new Date("2026-09-21T00:00:00.000Z"); // kolom DATE: 21 Sep
+  assert.equal(hariLewatTempo(due, new Date("2026-09-21T20:00:00Z")), 1); // 22 Sep 03:00 WIB
+  assert.equal(hariLewatTempo(due, new Date("2026-09-21T02:00:00Z")), 0); // 21 Sep 09:00 WIB
+  assert.equal(hariLewatTempo(due, new Date("2026-09-20T18:00:00Z")), 0); // 21 Sep 01:00 WIB
+  assert.equal(hariLewatTempo(due, new Date("2026-09-22T02:00:00Z")), 1);
+  assert.equal(hariLewatTempo(null), null);
+});
+
+test("statusEfektif — OVERDUE hanya mulai sehari setelah jatuh tempo, sejalan dengan hariLewatTempo", () => {
+  const invoice = { lifecycleStatus: "SENT", dueDate: new Date("2026-09-21T00:00:00.000Z") };
+  const nominal = { lunas: false, dibayar: 0, dibayarTidakRinci: false };
+  assert.equal(statusEfektif({ invoice, nominal, now: new Date("2026-09-21T10:00:00Z") }), "SENT"); // 17:00 WIB hari jatuh tempo
+  assert.equal(statusEfektif({ invoice, nominal, now: new Date("2026-09-22T02:00:00Z") }), "OVERDUE");
+});

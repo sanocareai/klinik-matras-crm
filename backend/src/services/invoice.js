@@ -268,6 +268,17 @@ export function hitungNominal(order, payments = []) {
 // Status yang DITAMPILKAN = gabungan tahap manual + kebenaran uang + jatuh
 // tempo. Urutan pengecekan di bawah adalah aturannya, dibaca dari atas:
 // pembatalan mengalahkan segalanya, lalu lunas, lalu jatuh tempo, dst.
+// Berapa HARI kalender (WIB) hari ini melewati tanggal jatuh tempo; null kalau tak ada jatuh tempo,
+// 0 pada hari jatuh tempo itu sendiri (belum telat), positif setelahnya. dueDate bertipe DATE
+// (tanggal kalender, disimpan sebagai 00:00 UTC), jadi dibandingkan sebagai tanggal — BUKAN instant,
+// supaya lencana "Lewat Tempo" & penghitung/filter di halaman Finance selalu sepakat.
+export function hariLewatTempo(dueDate, now = new Date()) {
+  if (!dueDate) return null;
+  const due = new Date(dueDate).toISOString().slice(0, 10);
+  const hariIni = new Date(new Date(now).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  return Math.round((Date.parse(hariIni) - Date.parse(due)) / 86400000);
+}
+
 export function statusEfektif({ invoice, nominal, now = new Date() }) {
   if (invoice.lifecycleStatus === "CANCELLED") return "CANCELLED";
 
@@ -279,7 +290,7 @@ export function statusEfektif({ invoice, nominal, now = new Date() }) {
   // Jatuh tempo lewat & belum lunas. Dicek SEBELUM PARTIALLY_PAID supaya
   // tagihan yang baru dibayar separuh tapi sudah telat tetap kelihatan
   // sebagai masalah, bukan "sedang berjalan normal".
-  if (invoice.dueDate && new Date(invoice.dueDate) < now) return "OVERDUE";
+  if (invoice.dueDate && hariLewatTempo(invoice.dueDate, now) > 0) return "OVERDUE";
 
   // `dibayarTidakRinci` = status order bilang DP tapi nominalnya tidak
   // pernah tercatat — tetap PARTIALLY_PAID (kenyataannya memang sudah ada

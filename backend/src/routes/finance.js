@@ -45,7 +45,7 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 // menampilkan angka yang SAMA PERSIS dengan yang sudah dikirim sales ke
 // customer lewat WA/PDF. Menyalin rumusnya ke sini = dua dokumen ke
 // customer yang sama saling bertentangan begitu salah satunya diubah.
-import { hitungNominal, statusEfektif } from "../services/invoice.js";
+import { hitungNominal, statusEfektif, hariLewatTempo } from "../services/invoice.js";
 
 export const financeRouter = express.Router();
 financeRouter.use(requireAuth);
@@ -771,7 +771,7 @@ financeRouter.post("/journal/:id/reverse", requirePermission(P.FINANCE_ADMIN), a
 financeRouter.get("/invoices", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const { status, jatuhTempo, search } = req.query;
-    const take = Math.min(Number(req.query.limit) || 200, 500);
+    const take = Math.min(Number(req.query.limit) || 500, 1000);
 
     const invoices = await prisma.invoice.findMany({
       where: {
@@ -819,15 +819,23 @@ financeRouter.get("/invoices", requirePermission(P.FINANCE_READ), async (req, re
 
     const sekarang = new Date();
     const baris = invoices.map((inv) => {
-      const semuaOrder = [inv.order, ...inv.bundledInvoices.map((b) => b.order)].filter(Boolean);
-      const nominalPerOrder = semuaOrder.map((o) => hitungNominal(o, o.payments));
+      // Order yang DIBATALKAN tidak menagih apa pun (sama seperti buildInvoiceView): kalau semua order di invoice ini batal,
+      // invoicenya tampil "Dibatalkan" dan tidak ikut hitungan belum lunas / lewat tempo.
+      const semuaOrder = [inv.order, ...inv.bundledInvoices.map((b) => b.order)].filter((o) => o && o.status !== "CANCELLED");
+      const dibatalkan = semuaOrder.length === 0;
+      const nominalPerOrder = semuaOrder.map((o) => {
+        const n = hitungNominal(o, o.payments);
+        // Order LUNAS yang tidak punya harga (nilai 0, mis. sewa/layanan tanpa item) tetap LUNAS di invoice — jangan
+        // tampil "Draft" dan memicu peringatan "belum ada jatuh tempo" untuk tagihan yang memang sudah selesai.
+        return n.totalTagihan === 0 && o.paymentStatus === "LUNAS" ? { ...n, lunas: true } : n;
+      });
 
       const gabung = (kunci) => nominalPerOrder.reduce((s, n) => s + (n[kunci] || 0), 0);
       const nominal = {
         totalTagihan: gabung("totalTagihan"),
         dibayar: gabung("dibayar"),
         sisa: gabung("sisa"),
-        lunas: nominalPerOrder.every((n) => n.lunas),
+        lunas: !dibatalkan && nominalPerOrder.every((n) => n.lunas),
         // Kalau SALAH SATU order memakai jalur status manual (ledger
         // kosong), seluruh baris ditandai begitu — angkanya memang tidak
         // punya rincian pembayaran, dan UI wajib jujur soal itu.
@@ -835,10 +843,8 @@ financeRouter.get("/invoices", requirePermission(P.FINANCE_READ), async (req, re
         dibayarTidakRinci: nominalPerOrder.some((n) => n.dibayarTidakRinci),
       };
 
-      const statusTampil = statusEfektif({ invoice: inv, nominal, now: sekarang });
-      const hariLewat = inv.dueDate
-        ? Math.floor((sekarang - new Date(inv.dueDate)) / 86400000)
-        : null;
+      const statusTampil = dibatalkan ? "CANCELLED" : statusEfektif({ invoice: inv, nominal, now: sekarang });
+      const hariLewat = dibatalkan ? null : hariLewatTempo(inv.dueDate, sekarang);
 
       return {
         id: inv.id,
@@ -855,24 +861,26 @@ financeRouter.get("/invoices", requirePermission(P.FINANCE_READ), async (req, re
         sentAt: inv.sentAt,
         createdAt: inv.createdAt,
         jumlahOrder: semuaOrder.length,
+        dibatalkan,
         hariLewat,
         ...nominal,
       };
     });
 
     const tersaring = jatuhTempo === "lewat"
-      ? baris.filter((b) => b.hariLewat != null && b.hariLewat > 0 && !b.lunas)
+      ? baris.filter((b) => b.hariLewat != null && b.hariLewat > 0 && !b.lunas && !b.dibatalkan)
       : jatuhTempo === "belum_diatur"
-        ? baris.filter((b) => !b.dueDate && !b.lunas && b.lifecycleStatus !== "CANCELLED")
+        ? baris.filter((b) => !b.dueDate && !b.lunas && !b.dibatalkan && b.lifecycleStatus !== "CANCELLED")
         : baris;
 
     res.json({
       invoices: tersaring,
+      terpotong: invoices.length === take,
       ringkasan: {
         total: tersaring.length,
-        tanpaJatuhTempo: baris.filter((b) => !b.dueDate && !b.lunas && b.lifecycleStatus !== "CANCELLED").length,
-        lewatTempo: baris.filter((b) => b.hariLewat != null && b.hariLewat > 0 && !b.lunas).length,
-        nilaiBelumLunas: baris.filter((b) => !b.lunas).reduce((s, b) => s + b.sisa, 0),
+        tanpaJatuhTempo: baris.filter((b) => !b.dueDate && !b.lunas && !b.dibatalkan && b.lifecycleStatus !== "CANCELLED").length,
+        lewatTempo: baris.filter((b) => b.hariLewat != null && b.hariLewat > 0 && !b.lunas && !b.dibatalkan).length,
+        nilaiBelumLunas: baris.filter((b) => !b.lunas && !b.dibatalkan).reduce((s, b) => s + b.sisa, 0),
         // JUJUR: berapa baris yang angkanya TIDAK berasal dari ledger
         // pembayaran, melainkan dari dropdown status bayar manual.
         dariStatusManual: baris.filter((b) => b.sumber === "statusManual").length,
