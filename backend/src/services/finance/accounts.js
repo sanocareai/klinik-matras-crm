@@ -51,6 +51,8 @@ export const SYSTEM_KEYS = Object.freeze({
   UANG_MUKA_PELANGGAN: "UANG_MUKA_PELANGGAN",
   UTANG_REIMBURSEMENT: "UTANG_REIMBURSEMENT",
   LABA_DITAHAN: "LABA_DITAHAN",
+  // Lawan jurnal kalibrasi saldo kas/bank ke saldo riil (services/finance/kalibrasiSaldo.js). Ekuitas, BUKAN pendapatan/biaya.
+  KOREKSI_SALDO_AWAL: "KOREKSI_SALDO_AWAL",
   PENDAPATAN_LAYANAN: "PENDAPATAN_LAYANAN",
   PENDAPATAN_PRODUK: "PENDAPATAN_PRODUK",
   PENDAPATAN_SEWA: "PENDAPATAN_SEWA",
@@ -138,6 +140,9 @@ export const DEFAULT_COA = Object.freeze([
   { code: "3-2100", name: "Prive (Pengambilan Pemilik)", type: E, normalBalance: D, parent: "3-0000", cashFlowCategory: "PENDANAAN" },
   { code: "3-3100", name: "Laba Ditahan", type: E, normalBalance: C, parent: "3-0000", systemKey: SYSTEM_KEYS.LABA_DITAHAN,
     description: "Akumulasi laba tahun-tahun sebelumnya. Laba tahun BERJALAN TIDAK disimpan di sini — dihitung langsung dari akun pendapatan & beban (lihat services/finance/reports.js), supaya neraca tidak pernah bergantung pada proses tutup buku yang lupa dijalankan." },
+
+  { code: "3-4100", name: "Koreksi Saldo Awal", type: E, normalBalance: C, parent: "3-0000", systemKey: SYSTEM_KEYS.KOREKSI_SALDO_AWAL,
+    description: "Lawan jurnal kalibrasi saldo kas/bank ke saldo riil (mis. 19 Sep 2026 20.00 WIB). Akun sistem: bukan pendapatan dan bukan biaya. Jangan dipakai untuk transaksi biasa." },
 
   // ── 4 PENDAPATAN ──────────────────────────────────────────────────────
   { code: "4-0000", name: "PENDAPATAN", type: P, normalBalance: C, isPostable: false },
