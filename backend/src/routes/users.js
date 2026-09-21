@@ -25,7 +25,7 @@ if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 // disimpan sebagai jpg. Beda dari pola upload.diskStorage di products.js
 // karena di sini kita SELALU re-encode filenya (butuh buffer di memori utk
 // diproses sharp), tidak sekadar menyimpan file asli apa adanya.
-const avatarUpload = multer({
+export const avatarUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB
   fileFilter: (req, file, cb) => {
@@ -227,7 +227,7 @@ userRouter.patch("/me", async (req, res) => {
 // tetap membungkus dgn View/CSS bulat yang UKURANNYA SAMA PERSIS, jadi
 // cuma dobel-crop yang tidak kelihatan (foto sudah bulat, dibungkus bulat
 // lagi = tetap bulat, bukan berubah bentuk).
-async function processAvatarUpload(userId, buffer) {
+export async function processAvatarUpload(userId, buffer) {
   const filename = `${userId}-${Date.now()}.png`;
   const filePath = path.join(avatarsDir, filename);
   const png = await bulatkanFoto(buffer, 256, 10);

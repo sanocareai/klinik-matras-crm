@@ -33,6 +33,8 @@ type SessionState = {
   logout: (opsi?: { alasan?: string }) => Promise<void>;
   /** Muat ulang role & capabilities dari server (GET /auth/me). */
   refreshMe: () => Promise<void>;
+  /** Foto profil berubah (dari layar Lainnya): perbarui pengguna di memori dan sesi tersimpan. */
+  setAvatar: (avatarUrl: string | null) => Promise<void>;
 };
 
 let tokens: Tokens | null = null;
@@ -109,6 +111,14 @@ export const useSession = create<SessionState>((set, get) => ({
       // capabilities tersimpan tetap dipakai sampai koneksi pulih.
       if (!(e instanceof ApiError)) log.warn("refreshMe gagal");
     }
+  },
+
+  setAvatar: async (avatarUrl) => {
+    const u = get().user;
+    if (!u) return;
+    const user = { ...u, avatarUrl };
+    set({ user });
+    if (!ENV.useMocks && tokens) { const caps = get().capabilities; if (caps) await saveSession({ tokens, user, capabilities: caps }); }
   },
 
   logout: async (opsi) => {

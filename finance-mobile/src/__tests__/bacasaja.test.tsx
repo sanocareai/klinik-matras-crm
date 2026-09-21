@@ -17,6 +17,7 @@ import * as mockTx from "@/mocks/transaksi";
 import { PESAN_BACA_SAJA } from "@/lib/bacaSaja";
 import DetailRute from "../../app/tx/[modul]/[id]";
 import BaruRute from "../../app/tx/[modul]/baru";
+import { FotoProfil } from "@/features/profil/FotoProfil";
 
 const router = jest.requireMock("expo-router") as { __setParams: (p: object) => void };
 const T = { timeout: 5000 };
@@ -73,5 +74,13 @@ describe("Mode baca-saja", () => {
     expect(screen.getByLabelText("Simpan draf di HP").props.accessibilityState.disabled).toBe(false);
     fireEvent.press(screen.getByLabelText("Ajukan"));
     expect(kirim).not.toHaveBeenCalled();
+  });
+
+  it("foto profil: tidak bisa diganti dari build preview (penjelasan tampil, tidak ada sheet)", async () => {
+    masuk("finance@x");
+    tampil(<FotoProfil />);
+    expect(screen.getByText(PESAN_BACA_SAJA)).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("Ganti foto profil"));
+    expect(screen.queryByLabelText("Pilih dari galeri")).toBeNull();
   });
 });

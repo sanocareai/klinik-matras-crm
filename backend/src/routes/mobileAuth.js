@@ -10,6 +10,7 @@
 //   POST   /api/mobile/auth/sessions/revoke-user   (USER_MANAGE) cabut semua sesi satu pengguna
 //   POST   /api/mobile/devices               daftar token push (FCM/Expo) perangkat ini
 //   DELETE /api/mobile/devices/:deviceId     hapus token push perangkat
+//   POST   /api/mobile/me/avatar             ganti foto profil sendiri (sama dengan SANSS Hub; multipart field "file")
 //   GET|PUT /api/mobile/notification-prefs   preferensi notifikasi per kategori (S11)
 //   GET    /api/mobile/config                versi minimum/maintenance (publik)
 //
@@ -23,6 +24,7 @@ import { hasPermission, portalsFor } from "../middleware/authorize.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
 import { capabilitiesFor } from "../services/capabilities.js";
 import { loadRoles, gerbangLogin } from "./auth.js";
+import { avatarUpload, processAvatarUpload } from "./users.js";
 import { createLimiter, clientIp } from "../lib/rateLimit.js";
 import { fcmConfigured } from "../services/fcmTransport.js";
 import { KATEGORI_NOTIF, bacaPreferensi, financePushEnabled } from "../services/financeNotifications.js";
@@ -255,6 +257,32 @@ mobileRouter.delete("/devices/:deviceId", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("[mobileAuth] unregister device:", err);
     fail(res, 500, "Terjadi kesalahan di server");
+  }
+});
+
+// ─── FOTO PROFIL ──────────────────────────────────────────────────────────
+// Foto = kolom User.avatarUrl yang SAMA dengan SANSS Hub (web/app lain), jadi mengganti di sini otomatis berlaku di sana dan sebaliknya.
+// Token mobile tidak boleh menjangkau /api/users/* (hak akses minimum), maka jalurnya lewat /api/mobile. Hanya foto DIRI SENDIRI.
+const avatarLimiter = createLimiter({
+  windowMs: 60_000,
+  max: 10,
+  keyFn: (req) => (req.user?.id ? `mobile-avatar:${req.user.id}` : null),
+  message: "Terlalu banyak penggantian foto. Coba lagi sebentar lagi.",
+});
+mobileRouter.post("/me/avatar", requireAuth, avatarLimiter, (req, res, next) => {
+  avatarUpload.single("file")(req, res, (err) => {
+    if (err) return fail(res, 400, err.code === "LIMIT_FILE_SIZE" ? "Foto terlalu besar (maksimal 8 MB)" : "Hanya file gambar yang diperbolehkan");
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.mobileSessionId) return fail(res, 403, "Hanya sesi aplikasi mobile yang bisa mengganti foto dari sini");
+    if (!req.file) return fail(res, 400, "File foto wajib diisi");
+    const u = await processAvatarUpload(req.user.id, req.file.buffer);
+    res.json({ ok: true, avatarUrl: u.avatarUrl });
+  } catch (err) {
+    console.error("[mobileAuth] avatar:", err.message);
+    fail(res, 500, "Foto tidak bisa diproses. Coba foto lain.");
   }
 });
 

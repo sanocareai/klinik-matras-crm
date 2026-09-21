@@ -15,6 +15,7 @@ import { useOnline } from "@/hooks/useOnline";
 import { useSession } from "@/auth/session";
 import { aksiUntuk } from "@/features/aksi";
 import { denganAkses } from "@/features/guard/RequireCapability";
+import { Avatar } from "@/design/Avatar";
 import { ENV } from "@/lib/env";
 import { hariIniWIB, sapaan, tanggalPanjang } from "@/lib/dates";
 import { isZero } from "@/lib/money";
@@ -53,6 +54,7 @@ function Beranda() {
       {!online ? <OfflineBanner /> : null}
 
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 12 }}>
+        <Avatar nama={user?.name} avatarUrl={user?.avatarUrl} ukuran={44} />
         <View style={{ flex: 1 }}>
           <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 13 }}>{tanggalPanjang(hari)}</Text>
           <Text accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={1.3} style={{ color: colors.text, fontFamily: font.semibold, fontSize: 22 }}>

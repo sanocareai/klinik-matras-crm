@@ -13,6 +13,7 @@ import { usePrefs, type ThemePref } from "@/design/prefs";
 import { haptic } from "@/design/haptics";
 import { useSession } from "@/auth/session";
 import { has, type Need } from "@/auth/capabilities";
+import { FotoProfil } from "@/features/profil/FotoProfil";
 import { ENV } from "@/lib/env";
 import { S } from "@/lib/strings";
 
@@ -89,17 +90,10 @@ export default function Lainnya() {
       <Text accessibilityRole="header" style={{ color: colors.text, fontFamily: font.semibold, fontSize: 26, marginBottom: 12 }}>{S.lainnya.judul}</Text>
 
       <GlassCard>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ color: colors.onPrimary, fontFamily: font.semibold, fontSize: 18 }}>{(user?.name ?? "?").slice(0, 1).toUpperCase()}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.text, fontFamily: font.semibold, fontSize: 16 }}>{user?.name}</Text>
-            <Text style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 2 }}>
-              {user?.roles.join(" · ")}{caps ? ` · tata letak ${caps.preset}` : ""}
-            </Text>
-          </View>
-        </View>
+        <FotoProfil />
+        <Text style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 8 }}>
+          {user?.roles.join(" · ")}{caps ? ` · tata letak ${caps.preset}` : ""}
+        </Text>
       </GlassCard>
 
       {KEUANGAN.some((m) => bolehLihat(caps, m)) ? <SectionHeader judul={S.lainnya.keuangan} /> : null}
