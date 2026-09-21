@@ -32,3 +32,14 @@ backend/scripts/data/warehouse-import/
 
 # Kredensial akses server (plaintext) — JANGAN pernah di-commit; simpan di password manager
 /docs/SANO_Hub_ssh ubuntu@43.133.152.6.txt
+
+# Data finansial mentah rekonsiliasi 2026 — JANGAN di-commit (keputusan Owner 22 Sep 2026). Bukti mentah disimpan di luar Git (C:\Users\rudya\SANO-PRIVATE\).
+/docs/private/
+/docs/pilot/mutasi-buku-*.json
+/docs/pilot/proposal-backfill-*.json
+/docs/pilot/proposal-koreksi-*.json
+/docs/pilot/proposal-legacy-*.json
+/docs/pilot/rekonsiliasi-pendapatan-*-laporan-*.json
+/docs/pilot/matching-*.json
+/docs/pilot/rekening-koran-*
+/docs/FINANCE-REKONSILIASI-*-RAW.md

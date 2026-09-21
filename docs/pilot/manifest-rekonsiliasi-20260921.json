@@ -1,0 +1,125 @@
+{
+ "dibuat": "2026-09-22",
+ "catatan": "Manifest artefak PRIVAT (di luar Git; C:Users\rudyaSANO-PRIVATE\finance-2026-09-21). Hanya nama, ukuran, jumlah baris/rekord, SHA-256.",
+ "artefak": [
+  {
+   "artefak": "FINANCE-REKONSILIASI-PENDAPATAN-2026.md",
+   "bytes": 10921,
+   "baris": 113,
+   "rekord": null,
+   "sha256": "1b01456829acfc409e42ca679ae321c52557d04f979bf47a10dc1edbfeea2426"
+  },
+  {
+   "artefak": "FINANCE-REKONSILIASI-REKENING-20260921.md",
+   "bytes": 13261,
+   "baris": 113,
+   "rekord": null,
+   "sha256": "9abf2088b5fae064ba2cb9795ac2c0fee1236c3e128cadc2e578b0c3799c3f0e"
+  },
+  {
+   "artefak": "bank.out.txt",
+   "bytes": 10987,
+   "baris": 88,
+   "rekord": null,
+   "sha256": "a6e7d505ec95580813f392d8f817b0bd7c1e800fc19576953bafd501ecd9e120"
+  },
+  {
+   "artefak": "dump-match.out.txt",
+   "bytes": 118504,
+   "baris": 10,
+   "rekord": null,
+   "sha256": "80fbf239790f65eed9561785fcffebc126ca902c44e391815d02587035924046"
+  },
+  {
+   "artefak": "impor.out.txt",
+   "bytes": 244415,
+   "baris": 19,
+   "rekord": null,
+   "sha256": "c559cb30816cc9218e87a04887ef446b46d6c823167cb57370474d8c87c9dd80"
+  },
+  {
+   "artefak": "matching-agregat.json",
+   "bytes": 1095,
+   "baris": 76,
+   "rekord": null,
+   "sha256": "326449c4c18fdc2b05701fdc223cf2eea00874678807b0b3055d864f0a5cbae5"
+  },
+  {
+   "artefak": "matching-notion-order-detail.json",
+   "bytes": 134293,
+   "baris": 6480,
+   "rekord": 305,
+   "sha256": "f54defc8087aeac93d9d62305444e9a5e18c6121a5d576ea2066d2c8f6c8decb"
+  },
+  {
+   "artefak": "matching-prasistem-agregat.json",
+   "bytes": 868,
+   "baris": 64,
+   "rekord": null,
+   "sha256": "63b8b8e1cfc3ea5ca2e18e9bde7d70ca6dd850e42ecd865564f011fe7eb18adf"
+  },
+  {
+   "artefak": "matching-prasistem-detail.json",
+   "bytes": 68724,
+   "baris": 3422,
+   "rekord": 212,
+   "sha256": "0ba5e0314a57f87a54730c6c7656b02baad514fdfe71641740c570584274b9ba"
+  },
+  {
+   "artefak": "mutasi-buku-sejak-cutoff-20260921.json",
+   "bytes": 26156,
+   "baris": 882,
+   "rekord": 80,
+   "sha256": "588db7592ee718d69b11233b205f656e5137ef8aecabfb4143fb895258e81103"
+  },
+  {
+   "artefak": "ord458.out.txt",
+   "bytes": 103301,
+   "baris": 567,
+   "rekord": null,
+   "sha256": "7de089c45924df12fd0945596f5e43429e89a327345899c2eef9e3de370101ee"
+  },
+  {
+   "artefak": "pay2.out.txt",
+   "bytes": 3398,
+   "baris": 27,
+   "rekord": null,
+   "sha256": "492fc23bf6238f4daffc93bf7cbee1cc44b45c7ab86df84691951f733c56b077"
+  },
+  {
+   "artefak": "proposal-backfill-pendapatan-20260921.json",
+   "bytes": 258877,
+   "baris": 8058,
+   "rekord": 298,
+   "sha256": "14d46144181dd398c31bf90d351ba63969f714a974d482ddeaccabbaf0a9326d"
+  },
+  {
+   "artefak": "proposal-koreksi-rekening-20260921.json",
+   "bytes": 11662,
+   "baris": 317,
+   "rekord": 24,
+   "sha256": "c8473e83359243df66b832132974088c0ea8704d5f821b152cc7e36daa416c80"
+  },
+  {
+   "artefak": "proposal-legacy-notion-20260921.json",
+   "bytes": 4786,
+   "baris": 162,
+   "rekord": 7,
+   "sha256": "118d9fd9790aef740230a0c59769a2b20b406a933cb7a6dc2f10e6a2dbc780cd"
+  },
+  {
+   "artefak": "rekon-out.json",
+   "bytes": 301849,
+   "baris": 9387,
+   "rekord": null,
+   "sha256": "76a6555fa3729fbe44f3927d685c5c3e145aac693adb9ca2430a868baa6d750c"
+  },
+  {
+   "artefak": "rekonsiliasi-pendapatan-2026-laporan-20260921.json",
+   "bytes": 16791,
+   "baris": 769,
+   "rekord": null,
+   "sha256": "65096f156ad5f34ab10ebdfd109296a9383edb9abede476676677ebc164f1805"
+  }
+ ]
+}

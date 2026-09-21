@@ -72,3 +72,10 @@ Backend: 11 tes integrasi `financePemasukan` + 9 `financeLegacyPendapatan` (seri
 - **Web/backend:** `git revert` commit fitur → `git pull` + `docker compose up -d --build backend` (web dari `frontend/dist`: build ulang). Migrasi `20260921180000_fin_legacy_revenue` **aditif** (2 tabel baru); aman dibiarkan. Tidak ada data produksi yang diubah.
 - **Data Sebelum Sistem:** batalkan batch (`POST …/batal`) — baris berhenti dihitung seketika; tidak ada jurnal yang perlu dibalik karena belum ada posting.
 - **Mobile:** v1.1.0 belum dirilis; bila dirilis, rollback = `eas update:rollback` / pasang build 1.0.0.
+
+## 9. Koreksi & lanjutan (21 Sep 2026, malam)
+
+- **Koreksi angka celah pengakuan:** "458 order Rp1.051.563.000 belum diakui" di §4–§6 ternyata mencakup **30 order (Rp65,1 jt) yang sudah diakui** pada 17–21 Sep (dibuat sebelum 17 Sep, diserahkan sesudahnya). Yang belum diakui = 428 order. `celahPengakuan` kini mengeluarkan order yang sudah diakui dan memuat `sudahDiakuiDalamJendela`.
+- **Arsip Notion sudah diimpor** (batch `e6e156d7…`, non-posting): lihat `docs/FINANCE-REKONSILIASI-PENDAPATAN-2026.md`.
+- **Pemetaan akun proposal legacy:** tidak lagi default 4-1200; akun menurut jenis transaksi pada keterangan, yang tak terpetakan tidak dijurnal.
+- Rekonsiliasi rekening (terpisah): `docs/FINANCE-REKONSILIASI-REKENING-20260921.md`.
