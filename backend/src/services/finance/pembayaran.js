@@ -67,7 +67,7 @@ export function statusDari(p, ditolakIds) {
   return p.verifications?.length ? "TERVERIFIKASI" : "MENUNGGU";
 }
 
-async function idDitolak(db, ids = null) {
+export async function idDitolak(db, ids = null) {
   const baris = await db.activityEvent.findMany({
     where: { entityType: ENTITY_TYPES.PAYMENT, eventType: EVENT_TYPES.DOCUMENT_REJECTED, ...(ids ? { entityId: { in: ids } } : {}) },
     select: { entityId: true },
@@ -128,7 +128,7 @@ function whereStatus(status, ditolakIds) {
   }
 }
 
-const INCLUDE_LIST = {
+export const INCLUDE_LIST = {
   cashAccount: { select: { id: true, name: true } },
   recordedBy: { select: { id: true, name: true } },
   cancelledBy: { select: { id: true, name: true } },

@@ -60,7 +60,9 @@ const TABLES_TO_TRUNCATE = [
   // dicatat di sini supaya tidak terulang.
   "units", "Order", "Customer",
   // Finance Android S0: sesi mobile, token push perangkat, kunci idempotency.
-  "api_idempotency_keys", "mobile_device_tokens", "mobile_sessions",
+  "api_idempotency_keys", "mobile_device_tokens", "mobile_sessions", "mobile_notification_prefs",
+  // Pemasukan terpadu: register pendapatan historis (Data Sebelum Sistem).
+  "fin_legacy_revenues", "fin_legacy_batches",
   "user_roles", "User",
 ];
 

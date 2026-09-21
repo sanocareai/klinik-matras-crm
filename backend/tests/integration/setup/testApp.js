@@ -26,6 +26,7 @@ const { financeTxRouter } = await import("../../../src/routes/financeTransaction
 const { financeKasbonRouter } = await import("../../../src/routes/financeKasbon.js");
 const { financePenerimaanRouter } = await import("../../../src/routes/financePenerimaan.js");
 const { financePushHooks } = await import("../../../src/middleware/financePushHooks.js");
+const { financePemasukanRouter } = await import("../../../src/routes/financePemasukan.js");
 const { financeApprovalsRouter } = await import("../../../src/routes/financeApprovals.js");
 const { financePembayaranRouter } = await import("../../../src/routes/financePembayaran.js");
 const { financeTransaksiRouter } = await import("../../../src/routes/financeTransaksi.js");
@@ -62,6 +63,7 @@ export function buildTestApp() {
   app.use("/api/finance", financeKasbonRouter);
   app.use("/api/finance", financePenerimaanRouter);
   app.use("/api/finance", financeApprovalsRouter);
+  app.use("/api/finance", financePemasukanRouter);
   app.use("/api/finance", financePembayaranRouter);
   app.use("/api/finance", financeTransaksiRouter);
   app.use("/api/finance", financeBukuRouter);

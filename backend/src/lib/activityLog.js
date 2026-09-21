@@ -62,6 +62,7 @@ export const ENTITY_TYPES = Object.freeze({
   FIN_OTHER_INCOME: "fin_other_income",
   // Rekonsiliasi bank: pencocokan/pelepasan baris koran dengan mutasi buku (S9).
   FIN_BANK_STATEMENT: "fin_bank_statement",
+  FIN_LEGACY_BATCH: "fin_legacy_batch", // Data Sebelum Sistem (register pendapatan historis non-posting)
 });
 
 export const EVENT_TYPES = Object.freeze({

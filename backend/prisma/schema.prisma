@@ -6641,6 +6641,90 @@ model MobileNotificationPref {
   @@map("mobile_notification_prefs")
 }
 
+// ── DATA SEBELUM SISTEM (Pemasukan terpadu, 21 Sep 2026) ────────────────────────────────────────────────────────────
+// REGISTER PENDAPATAN HISTORIS NON-POSTING: arsip lama (ekspor Notion) sebelum tanggal cutoff sistem. TIDAK punya jurnal, TIDAK menyentuh Kas & Bank,
+// invoice, piutang, atau saldo awal. Hanya tampil di halaman Pemasukan sampai proses rekonsiliasi & posting disetujui Owner (tahap terpisah).
+enum FinLegacyBatchStatus {
+  PREVIEW // diunggah & divalidasi, belum dimasukkan ke register
+  IMPORTED // masuk register (non-posting); masih bisa dibatalkan
+  CANCELLED // dibatalkan sebelum posting; baris tidak dihitung
+  POSTED // dicadangkan untuk tahap posting berikutnya (persetujuan Owner); belum dipakai
+}
+
+enum FinLegacyRowStatus {
+  SIAP // lolos validasi & deduplikasi → dihitung
+  PERLU_DITINJAU // meragukan (mis. mirip order sistem / data kurang) → TIDAK dihitung sampai diputuskan
+  DUPLIKAT // sama dengan baris legacy lain atau order sistem → tidak dihitung
+  DI_LUAR_PERIODE // bertanggal pada/setelah cutoff → periode sistem, tidak dihitung dari arsip
+  TIDAK_VALID // tanggal/nominal tidak terbaca → tidak dihitung
+}
+
+enum FinLegacyPayStatus {
+  LUNAS
+  SEBAGIAN
+  BELUM_BAYAR
+  TIDAK_DIKETAHUI
+}
+
+model FinLegacyBatch {
+  id            String               @id @default(uuid()) @db.Uuid
+  fileName      String               @map("file_name")
+  fileHash      String               @map("file_hash") // sha256 isi berkas → unggah ulang berkas yang sama tidak membuat batch baru
+  sumberData    String?              @map("sumber_data")
+  cutoffDate    DateTime             @map("cutoff_date") @db.Date // cutoff yang dipakai saat validasi (diturunkan dari data produksi)
+  status        FinLegacyBatchStatus @default(PREVIEW)
+  totalRows     Int                  @default(0) @map("total_rows")
+  importedById  String?              @map("imported_by")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  committedAt   DateTime?            @map("committed_at")
+  cancelledAt   DateTime?            @map("cancelled_at")
+  cancelledById String?              @map("cancelled_by")
+  cancelReason  String?              @map("cancel_reason")
+  postedAt      DateTime?            @map("posted_at") // cadangan tahap posting; selama kosong batch boleh dibatalkan
+
+  rows FinLegacyRevenue[]
+
+  @@index([status])
+  @@index([fileHash])
+  @@map("fin_legacy_batches")
+}
+
+model FinLegacyRevenue {
+  id       String         @id @default(uuid()) @db.Uuid
+  batchId  String         @map("batch_id") @db.Uuid
+  batch    FinLegacyBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNo    Int            @map("row_no")
+  legacyId String         @map("legacy_id") // nomor lama bila ada; bila kosong = LEG- + hash stabil (tanggal|pelanggan|nominal|keterangan)
+
+  nomorLama       String?            @map("nomor_lama")
+  trxDate         DateTime?          @map("trx_date") @db.Date
+  customerName    String?            @map("customer_name")
+  description     String?
+  amount          Decimal?           @db.Decimal(18, 2)
+  payStatus       FinLegacyPayStatus @default(TIDAK_DIKETAHUI) @map("pay_status")
+  paidAmount      Decimal?           @map("paid_amount") @db.Decimal(18, 2)
+  paidDate        DateTime?          @map("paid_date") @db.Date
+  payMethod       String?            @map("pay_method")
+  cashAccountName String?            @map("cash_account_name") // rekening penerima BILA diketahui dari arsip (tidak dipetakan otomatis)
+  sourceLabel     String?            @map("source_label")
+
+  status          FinLegacyRowStatus @default(SIAP)
+  reviewReason    String?            @map("review_reason")
+  matchedOrderId  String?            @map("matched_order_id")
+  matchedLegacyId String?            @map("matched_legacy_id")
+  decision        String? // TERIMA | ABAIKAN — keputusan manusia atas baris PERLU_DITINJAU
+  decidedById     String?            @map("decided_by")
+  decidedAt       DateTime?          @map("decided_at")
+  raw             Json               @default("{}")
+  createdAt       DateTime           @default(now()) @map("created_at")
+
+  @@unique([batchId, legacyId])
+  @@index([status])
+  @@index([trxDate])
+  @@index([legacyId])
+  @@map("fin_legacy_revenues")
+}
+
 // Idempotency-Key untuk command uang di /api/finance/*. Permintaan kembar
 // (kunci sama, isi sama) dijawab dengan respons pertama, bukan mengeksekusi
 // ulang. Lihat middleware/idempotency.js.
