@@ -2,7 +2,7 @@ import React from "react";
 import { Alert, Switch, Text, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import {
-  Banknote, Bell, BookOpen, ChevronRight, FileSpreadsheet, FileText, Landmark, LogOut, Palette, Scale, ShieldCheck, Users, Wallet, type LucideIcon,
+  Banknote, Bell, TrendingUp, BookOpen, ChevronRight, FileSpreadsheet, FileText, Landmark, LogOut, Palette, Scale, ShieldCheck, Users, Wallet, type LucideIcon,
 } from "lucide-react-native";
 import { Screen } from "@/design/Screen";
 import { GlassCard } from "@/design/GlassCard";
@@ -22,6 +22,7 @@ type Menu = { label: string; Icon: LucideIcon; need?: Need; href: Href; aktif?: 
 // Setiap menu punya izin yang dibutuhkan (capability-driven). Menu tanpa izin tidak ditampilkan; fitur yang tidak ada di aplikasi TIDAK ditampilkan sebagai menu
 // (lihat kartu "Hanya di web" di bawah).
 const KEUANGAN: Menu[] = [
+  { label: "Pemasukan", Icon: TrendingUp, need: "financeRead", href: "/pemasukan" as Href },
   { label: "Pembayaran pelanggan", Icon: Banknote, need: "financeRead", href: "/pembayaran" },
   { label: "Piutang", Icon: Users, need: "financeRead", href: "/tx/piutang" },
   { label: "Refund", Icon: Wallet, need: "financeRead", href: "/tx/refund" },

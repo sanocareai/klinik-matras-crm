@@ -1,0 +1,446 @@
+{
+ "generatedBy": "financePemasukan.integration.test.js (DUMP_PEMASUKAN=1)",
+ "ringkasan": {
+  "periode": {
+   "from": "2026-09-01",
+   "to": "2026-09-30"
+  },
+  "cutoff": {
+   "tanggal": "2026-09-05",
+   "dasar": "Order sistem paling awal: SAN-PM-0009 (2026-09-05). Transaksi SEBELUM tanggal ini = Data Sebelum Sistem; pada/sesudahnya harus berasal dari order/invoice sistem.",
+   "orderPertama": {
+    "nomor": "SAN-PM-0009",
+    "tanggal": "2026-09-05"
+   },
+   "pengakuanPertama": "2026-09-12",
+   "celahPengakuan": {
+    "dari": "2026-09-05",
+    "sampai": "2026-09-12",
+    "jumlahOrder": 1,
+    "nilaiOrder": "1000000.00",
+    "perBulan": [
+     {
+      "bulan": "2026-09",
+      "jumlah": 1,
+      "nilai": "1000000.00"
+     }
+    ],
+    "catatan": "Order sistem pada rentang ini belum memiliki pengakuan pendapatan di buku besar. Ini bukan bagian Data Sebelum Sistem dan TIDAK dijumlahkan ke pendapatan gabungan."
+   }
+  },
+  "terpotong": false,
+  "labelHistoris": "Data sebelum sistem berasal dari arsip lama dan belum memengaruhi buku besar sampai proses rekonsiliasi dan posting disetujui.",
+  "pendapatanSistem": {
+   "jumlah": 2,
+   "nilai": "879999.45",
+   "bruto": "1000000.00",
+   "retur": "-120000.55"
+  },
+  "pendapatanHistoris": {
+   "jumlah": 0,
+   "nilai": "0.00",
+   "lunas": "0.00",
+   "belumBayar": "0.00",
+   "perluDitinjau": {
+    "jumlah": 0,
+    "nilai": "0.00"
+   }
+  },
+  "pendapatanGabungan": {
+   "nilai": "879999.45",
+   "catatan": "Pendapatan sistem + pendapatan historis (setelah deduplikasi). TIDAK ditambah lagi dengan pembayaran masuk."
+  },
+  "pembayaranMasuk": {
+   "terverifikasi": {
+    "jumlah": 2,
+    "nilai": "2380000.00"
+   },
+   "menunggu": {
+    "jumlah": 1,
+    "nilai": "600000.00"
+   },
+   "tidakDihitung": {
+    "jumlah": 0,
+    "nilai": "0.00"
+   },
+   "belumDibukukan": {
+    "jumlah": 1,
+    "nilai": "1980000.00"
+   }
+  },
+  "piutangTersisa": {
+   "nilai": "0.00",
+   "jumlahOrder": 0,
+   "menungguVerifikasi": {
+    "nilai": "0.00",
+    "jumlahOrder": 0
+   },
+   "perTanggal": "2026-09-30"
+  },
+  "pemasukanLain": {
+   "jumlah": 1,
+   "nilai": "75000.50"
+  },
+  "danaMasukBukanPendapatan": {
+   "jumlah": 1,
+   "nilai": "5000000.00",
+   "rincian": [
+    {
+     "sub": "SETORAN_MODAL",
+     "label": "Setoran modal pemilik",
+     "nilai": "5000000.00",
+     "jumlah": 1
+    }
+   ]
+  },
+  "perluDitinjau": {
+   "jumlah": 2,
+   "nilai": "2280000.00"
+  },
+  "dikecualikan": {
+   "transfer": {
+    "jumlah": 1,
+    "nilai": "2000000.00"
+   },
+   "saldoAwal": {
+    "jumlah": 0,
+    "nilai": "0.00"
+   },
+   "pembalikanBiaya": {
+    "jumlah": 0,
+    "nilai": "0.00"
+   }
+  },
+  "penjelasan": [
+   "Pendapatan adalah penjualan yang sudah diakui. Uang masuk adalah pembayaran yang benar-benar diterima. Keduanya berbeda: order bisa diakui sebagai pendapatan sebelum dibayar (menjadi piutang), dan DP diterima sebelum pendapatan diakui.",
+   "Pendapatan dan pembayaran tidak dijumlahkan menjadi satu total, karena akan menghitung penjualan yang sama dua kali.",
+   "Dana masuk bukan pendapatan (modal, pinjaman/pendanaan pihak ketiga) dan transfer antar-rekening tidak dihitung sebagai pendapatan."
+  ]
+ },
+ "daftar": {
+  "periode": {
+   "from": "2026-09-01",
+   "to": "2026-09-30"
+  },
+  "kategori": null,
+  "items": [
+   {
+    "key": "p:406a1567-d5b9-4dcb-b69c-7cccc37739ef",
+    "jenis": "pembayaran",
+    "id": "406a1567-d5b9-4dcb-b69c-7cccc37739ef",
+    "tanggal": "2026-09-21",
+    "nomor": "SAN-PM-0009",
+    "sumber": "PEMBAYARAN_ORDER",
+    "sumberLabel": "Pembayaran pelanggan (TRANSFER)",
+    "pihak": "Ibu Erni",
+    "keterangan": "Pembayaran TRANSFER untuk order SAN-PM-0009",
+    "rekening": null,
+    "nilai": "1980000.00",
+    "status": "TERVERIFIKASI",
+    "statusLabel": "Terverifikasi",
+    "nada": "success",
+    "kategori": "PEMBAYARAN",
+    "kategoriLabel": "Pembayaran Masuk",
+    "sub": "PEMBAYARAN_BELUM_DIBUKUKAN",
+    "subLabel": "Terverifikasi, belum masuk buku besar",
+    "perluTinjau": true,
+    "catatan": "Terverifikasi tetapi tidak ada jurnal penerimaan",
+    "tautan": {
+     "jurnal": null,
+     "pembayaran": {
+      "id": "406a1567-d5b9-4dcb-b69c-7cccc37739ef"
+     },
+     "invoice": null,
+     "order": {
+      "id": "cmub9r0r8003d12ufgb9y7kff",
+      "nomor": "SAN-PM-0009"
+     },
+     "dokumen": null
+    }
+   },
+   {
+    "key": "p:e7c0dd7a-1bd0-4ee3-b0c0-a88940ffc3fa",
+    "jenis": "pembayaran",
+    "id": "e7c0dd7a-1bd0-4ee3-b0c0-a88940ffc3fa",
+    "tanggal": "2026-09-20",
+    "nomor": "SAN-PM-0009",
+    "sumber": "PEMBAYARAN_ORDER",
+    "sumberLabel": "Pembayaran pelanggan (TRANSFER)",
+    "pihak": "Ibu Erni",
+    "keterangan": "Pembayaran TRANSFER untuk order SAN-PM-0009",
+    "rekening": "PT Sano",
+    "nilai": "600000.00",
+    "status": "MENUNGGU",
+    "statusLabel": "Menunggu verifikasi",
+    "nada": "warning",
+    "kategori": "PEMBAYARAN",
+    "kategoriLabel": "Pembayaran Masuk",
+    "sub": "PEMBAYARAN_MENUNGGU",
+    "subLabel": "Uang masuk menunggu verifikasi",
+    "perluTinjau": false,
+    "catatan": null,
+    "tautan": {
+     "jurnal": {
+      "id": "91cde4ed-d7b7-4f8e-ae3d-07197e5f8d5a",
+      "nomor": "JV-20092026-003"
+     },
+     "pembayaran": {
+      "id": "e7c0dd7a-1bd0-4ee3-b0c0-a88940ffc3fa"
+     },
+     "invoice": null,
+     "order": {
+      "id": "cmub9r0r8003d12ufgb9y7kff",
+      "nomor": "SAN-PM-0009"
+     },
+     "dokumen": null
+    }
+   },
+   {
+    "key": "j:778b9f77-0a12-4e12-a086-3bedfd2dc0f8:PENDAPATAN:RETUR",
+    "jenis": "jurnal",
+    "id": "778b9f77-0a12-4e12-a086-3bedfd2dc0f8",
+    "tanggal": "2026-09-14",
+    "nomor": "JV-14092026-006",
+    "sumber": "REFUND",
+    "sumberLabel": "Refund",
+    "pihak": null,
+    "keterangan": "uji",
+    "rekening": "SANOBANK Kemal",
+    "nilai": "-120000.55",
+    "bruto": "0.00",
+    "retur": "-120000.55",
+    "status": "POSTED",
+    "statusLabel": "Terposting",
+    "nada": "success",
+    "kategori": "PENDAPATAN",
+    "kategoriLabel": "Pendapatan Penjualan",
+    "sub": "RETUR",
+    "subLabel": "Retur/potongan penjualan",
+    "perluTinjau": false,
+    "catatan": null,
+    "tautan": {
+     "jurnal": {
+      "id": "778b9f77-0a12-4e12-a086-3bedfd2dc0f8",
+      "nomor": "JV-14092026-006"
+     },
+     "pembayaran": null,
+     "invoice": null,
+     "order": null,
+     "dokumen": null
+    }
+   },
+   {
+    "key": "j:0263b6b9-f32c-4a38-be05-4d901f2027ee:PENDAPATAN:PENJUALAN",
+    "jenis": "jurnal",
+    "id": "0263b6b9-f32c-4a38-be05-4d901f2027ee",
+    "tanggal": "2026-09-12",
+    "nomor": "JV-12092026-002",
+    "sumber": "PENGAKUAN_PENDAPATAN",
+    "sumberLabel": "Pengakuan pendapatan",
+    "pihak": "Ibu Erni",
+    "keterangan": "Pengakuan pendapatan order SAN-PM-0009 — Ibu Erni",
+    "rekening": null,
+    "nilai": "1000000.00",
+    "bruto": "1000000.00",
+    "retur": "0.00",
+    "status": "POSTED",
+    "statusLabel": "Terposting",
+    "nada": "success",
+    "kategori": "PENDAPATAN",
+    "kategoriLabel": "Pendapatan Penjualan",
+    "sub": "PENJUALAN",
+    "subLabel": "Pengakuan pendapatan",
+    "perluTinjau": false,
+    "catatan": null,
+    "tautan": {
+     "jurnal": {
+      "id": "0263b6b9-f32c-4a38-be05-4d901f2027ee",
+      "nomor": "JV-12092026-002"
+     },
+     "pembayaran": null,
+     "invoice": null,
+     "order": {
+      "id": "cmub9r0r8003d12ufgb9y7kff",
+      "nomor": "SAN-PM-0009"
+     },
+     "dokumen": null
+    }
+   },
+   {
+    "key": "j:c862615e-0f46-4838-9b0d-b932de8329c4:LAIN:PENDAPATAN_LAIN",
+    "jenis": "jurnal",
+    "id": "c862615e-0f46-4838-9b0d-b932de8329c4",
+    "tanggal": "2026-09-11",
+    "nomor": "JV-11092026-004",
+    "sumber": "PEMASUKAN_LAIN",
+    "sumberLabel": "Pemasukan lain",
+    "pihak": null,
+    "keterangan": "INC-11092026-001 — Bunga bank",
+    "rekening": "SANOBANK Kemal",
+    "nilai": "75000.50",
+    "status": "POSTED",
+    "statusLabel": "Terposting",
+    "nada": "success",
+    "kategori": "LAIN",
+    "kategoriLabel": "Pemasukan Lain",
+    "sub": "PENDAPATAN_LAIN",
+    "subLabel": "Pendapatan lain-lain",
+    "perluTinjau": false,
+    "catatan": null,
+    "tautan": {
+     "jurnal": {
+      "id": "c862615e-0f46-4838-9b0d-b932de8329c4",
+      "nomor": "JV-11092026-004"
+     },
+     "pembayaran": null,
+     "invoice": null,
+     "order": null,
+     "dokumen": {
+      "modul": "pemasukan",
+      "id": "65099d29-d025-4fdf-8d19-0ffc49c2f8c8"
+     }
+    }
+   },
+   {
+    "key": "p:fc3bd4e6-7a03-4b67-99ff-28121d7f5aab",
+    "jenis": "pembayaran",
+    "id": "fc3bd4e6-7a03-4b67-99ff-28121d7f5aab",
+    "tanggal": "2026-09-10",
+    "nomor": "SAN-PM-0009",
+    "sumber": "PEMBAYARAN_ORDER",
+    "sumberLabel": "Pembayaran pelanggan (TRANSFER)",
+    "pihak": "Ibu Erni",
+    "keterangan": "Pembayaran TRANSFER untuk order SAN-PM-0009",
+    "rekening": "SANOBANK Kemal",
+    "nilai": "400000.00",
+    "status": "TERVERIFIKASI",
+    "statusLabel": "Terverifikasi",
+    "nada": "success",
+    "kategori": "PEMBAYARAN",
+    "kategoriLabel": "Pembayaran Masuk",
+    "sub": "PEMBAYARAN_TERVERIFIKASI",
+    "subLabel": "Uang masuk terverifikasi",
+    "perluTinjau": false,
+    "catatan": null,
+    "tautan": {
+     "jurnal": {
+      "id": "60e8e884-ddb8-4739-8a61-d5f0c2775ee7",
+      "nomor": "JV-10092026-001"
+     },
+     "pembayaran": {
+      "id": "fc3bd4e6-7a03-4b67-99ff-28121d7f5aab"
+     },
+     "invoice": null,
+     "order": {
+      "id": "cmub9r0r8003d12ufgb9y7kff",
+      "nomor": "SAN-PM-0009"
+     },
+     "dokumen": null
+    }
+   },
+   {
+    "key": "j:63062c5f-c6fe-4dd3-a3b4-b2da6d628134:DITINJAU:TIDAK_JELAS",
+    "jenis": "jurnal",
+    "id": "63062c5f-c6fe-4dd3-a3b4-b2da6d628134",
+    "tanggal": "2026-09-10",
+    "nomor": "JV-10092026-008",
+    "sumber": "MANUAL",
+    "sumberLabel": "Jurnal manual",
+    "pihak": null,
+    "keterangan": "uji",
+    "rekening": "SANOBANK Kemal",
+    "nilai": "300000.00",
+    "status": "POSTED",
+    "statusLabel": "Terposting",
+    "nada": "success",
+    "kategori": "DITINJAU",
+    "kategoriLabel": "Perlu Ditinjau",
+    "sub": "TIDAK_JELAS",
+    "subLabel": "Akun lawan tidak menentukan jenis dana",
+    "perluTinjau": true,
+    "catatan": "Uang masuk dari sumber MANUAL: akun lawan (1-1300) tidak menentukan jenis dana",
+    "tautan": {
+     "jurnal": {
+      "id": "63062c5f-c6fe-4dd3-a3b4-b2da6d628134",
+      "nomor": "JV-10092026-008"
+     },
+     "pembayaran": null,
+     "invoice": null,
+     "order": null,
+     "dokumen": null
+    }
+   },
+   {
+    "key": "j:6df06398-7d3b-4667-87c4-c092798667a8:DIKECUALIKAN:TRANSFER",
+    "jenis": "jurnal",
+    "id": "6df06398-7d3b-4667-87c4-c092798667a8",
+    "tanggal": "2026-09-10",
+    "nomor": "JV-10092026-007",
+    "sumber": "TRANSFER_KAS",
+    "sumberLabel": "Transfer kas",
+    "pihak": null,
+    "keterangan": "uji",
+    "rekening": "PT Sano, SANOBANK Kemal",
+    "nilai": "2000000.00",
+    "status": "POSTED",
+    "statusLabel": "Terposting",
+    "nada": "success",
+    "kategori": "DIKECUALIKAN",
+    "kategoriLabel": "Dikecualikan",
+    "sub": "TRANSFER",
+    "subLabel": "Transfer antar-rekening",
+    "perluTinjau": false,
+    "catatan": null,
+    "tautan": {
+     "jurnal": {
+      "id": "6df06398-7d3b-4667-87c4-c092798667a8",
+      "nomor": "JV-10092026-007"
+     },
+     "pembayaran": null,
+     "invoice": null,
+     "order": null,
+     "dokumen": null
+    }
+   },
+   {
+    "key": "j:4a611207-43bb-4421-a4a3-a904c1215367:DANA:SETORAN_MODAL",
+    "jenis": "jurnal",
+    "id": "4a611207-43bb-4421-a4a3-a904c1215367",
+    "tanggal": "2026-09-10",
+    "nomor": "JV-10092026-005",
+    "sumber": "MANUAL",
+    "sumberLabel": "Jurnal manual",
+    "pihak": null,
+    "keterangan": "uji",
+    "rekening": "SANOBANK Kemal",
+    "nilai": "5000000.00",
+    "status": "POSTED",
+    "statusLabel": "Terposting",
+    "nada": "success",
+    "kategori": "DANA",
+    "kategoriLabel": "Dana Masuk Bukan Pendapatan",
+    "sub": "SETORAN_MODAL",
+    "subLabel": "Setoran modal pemilik",
+    "perluTinjau": false,
+    "catatan": null,
+    "tautan": {
+     "jurnal": {
+      "id": "4a611207-43bb-4421-a4a3-a904c1215367",
+      "nomor": "JV-10092026-005"
+     },
+     "pembayaran": null,
+     "invoice": null,
+     "order": null,
+     "dokumen": null
+    }
+   }
+  ],
+  "page": 1,
+  "limit": 100,
+  "total": 9,
+  "totalNilai": "9234999.95",
+  "adaLagi": false,
+  "terpotong": false,
+  "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+ }
+}

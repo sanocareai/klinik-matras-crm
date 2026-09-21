@@ -38,7 +38,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: `SANO Finance${LABEL[VARIANT]}`,
   slug: "sano-finance",
   scheme: "sanofinance",
-  version: "1.0.0", // Rilis 1.0 (S12). Naikkan bila kode/dependensi native berubah (runtimeVersion = appVersion). versionCode dikelola EAS.
+  version: "1.1.0", // Rilis 1.0 (S12). Naikkan bila kode/dependensi native berubah (runtimeVersion = appVersion). versionCode dikelola EAS.
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "automatic",
