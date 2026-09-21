@@ -17,6 +17,20 @@
    "sha256": "9abf2088b5fae064ba2cb9795ac2c0fee1236c3e128cadc2e578b0c3799c3f0e"
   },
   {
+   "artefak": "FINANCE-SIMULASI-LAPORAN-2026-RAW.md",
+   "bytes": 11662,
+   "baris": 104,
+   "rekord": null,
+   "sha256": "921ecd71a612bfe2fb359802d1c4f89d86c0f35d14420a0c55befe0f676ce1ae"
+  },
+  {
+   "artefak": "audit-NEW-30082026-023-PRIVAT.md",
+   "bytes": 4373,
+   "baris": 38,
+   "rekord": null,
+   "sha256": "9c772fde15876318fcc6198f6641730d304479cf02c3f3d67f3839041181fead"
+  },
+  {
    "artefak": "bank.out.txt",
    "bytes": 10987,
    "baris": 88,
@@ -50,6 +64,13 @@
    "baris": 19,
    "rekord": null,
    "sha256": "c559cb30816cc9218e87a04887ef446b46d6c823167cb57370474d8c87c9dd80"
+  },
+  {
+   "artefak": "koreksi-kas-ganda-DISETUJUI.json",
+   "bytes": 3302,
+   "baris": 166,
+   "rekord": 23,
+   "sha256": "4e98a7ecd6fd48ebe63bda9fe6fe9ecbd218898bd6c1b1c830249b5b6a85a17a"
   },
   {
    "artefak": "laporan-rekonsiliasi-menyeluruh.html",
@@ -148,6 +169,27 @@
    "baris": 769,
    "rekord": null,
    "sha256": "65096f156ad5f34ab10ebdfd109296a9383edb9abede476676677ebc164f1805"
+  },
+  {
+   "artefak": "simulasi-data.out.txt",
+   "bytes": 49970,
+   "baris": 4,
+   "rekord": null,
+   "sha256": "a044a3b4019b56fb1b4417f38e7be11c3ddd70ef9a5d80694305e6bbb8bf0ec8"
+  },
+  {
+   "artefak": "simulasi-hasil.json",
+   "bytes": 12934,
+   "baris": 700,
+   "rekord": null,
+   "sha256": "203996db1d103bd1aab460be28b322343fee1c0622df4f7a6820c8988cdf0537"
+  },
+  {
+   "artefak": "simulasi-order-rincian.json",
+   "bytes": 58027,
+   "baris": 2530,
+   "rekord": null,
+   "sha256": "bb5ba75d91c0f30e5ae2be80f06a22fe1505373adac8263d475c72b57bbe9b07"
   }
  ]
 }

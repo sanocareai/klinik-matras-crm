@@ -115,3 +115,14 @@ Owner menyetujui koreksi bagian yang **sudah terjelaskan** (Rp32.738.030). Dieks
 - **Item Kas (Rp12.000) tidak diposting**: di luar angka Rp32.738.030 dan saldo Kas akhir belum dikonfirmasi (24 usulan → 23 diposting).
 - **Verifikasi pasca-posting:** jumlah jurnal 2.863 → 2.886 (+23); saldo per rekening sama dengan harapan; buku besar seimbang; JV-372 dan JV-391 utuh; baris akun 2-1600 tidak berubah (68); posting ulang ditolak (idempoten).
 - Backup sebelum posting: `klinik_matras_backup_2026-09-22_01-48-38.sql.gz` (server + Google Drive).
+
+## 10. Modul Rekonsiliasi Bank — periode sementara (22 Sep 2026)
+
+Hasil rekonsiliasi sementara kini tampil di UI Rekonsiliasi Bank sebagai dua periode produksi 19–21 Sep 2026 (PT Sano dan KEM Sano) berstatus **DRAF_MENUNGGU_MUTASI**. Tidak ada jurnal, saldo, atau baris mutasi bank yang dibuat.
+
+- **Schema (aditif, kompatibel):** nilai enum `DRAF_MENUNGGU_MUTASI` pada `FinReconStatus`; kolom `cutoff_start_at`, `cutoff_end_at`, `source_key` (unik → idempotensi) pada `fin_bank_statements`. Migrasi `20260922090000_fin_bank_recon_draft`. Periode lama tidak berubah.
+- **Aturan penyelesaian diperketat (satu tempat: `services/finance/rekonBank.js`):** periode hanya SELESAI bila statusnya DRAFT, ada mutasi bank asli, semua baris dicocokkan/dijelaskan, dan selisih nol. Sebelumnya endpoint boleh menutup periode tanpa mutasi atau dengan selisih hanya dengan catatan.
+- **Penyesuaian Buku:** jurnal bersumber SALDO_AWAL (kalibrasi JV-372/391 dan 23 koreksi kas ganda JV-21092026-436…458) ditampilkan terpisah, bukan transaksi bank; tidak menjadi kandidat pencocokan dan ditolak bila dicoba dipasangkan dengan mutasi koran.
+- **Transisi:** begitu mutasi bank asli pertama dimasukkan, periode berubah dari DRAF_MENUNGGU_MUTASI menjadi DRAFT (sedang dicocokkan).
+- **Ringkasan:** butir "Selisih KEM" menaut langsung ke periode KEM (`/finance/reconciliation?periode=<id>`).
+- Belum ada impor massal rekening koran (CSV/tempel); baris dimasukkan satu per satu lewat UI yang ada.
