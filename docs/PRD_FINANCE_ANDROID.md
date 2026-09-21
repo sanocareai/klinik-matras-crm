@@ -1481,7 +1481,7 @@ Read-model server: `GET /api/finance/buku/{jurnal,jurnal/:id,akun,akun/:id/mutas
 **Ditunda (v1.1):** pusat notifikasi dengan status baca dan badge, pencarian global, push berkelompok (digest 30 menit).
 
 #### S12 — Hardening, performa, QA, dan rilis (L)
-**Status: SELESAI untuk 1.0 internal (21 Sep 2026)** — lihat `docs/FINANCE-MOBILE-HARDENING-S12.md` (audit S0–S10, hasil QA, temuan) dan `docs/FINANCE-MOBILE-RELEASE-1.0.md` (catatan rilis, rilis, rollback). Publikasi publik menunggu persetujuan owner atas build final.
+**Status: `APPROVED FOR INTERNAL USE — OWNER ACCEPTANCE` (21 Sep 2026).** Ditutup atas persetujuan langsung Owner; rincian pengujian Owner tidak disampaikan dan tidak dicatat. Tag `finance-mobile-v1.0.0` → `8a9a4248`. **Terbuka (validasi pasca-release, bukan blocker internal):** uji Android lama (wajib sebelum distribusi ke seluruh tim), tiga hari operasional, TalkBack, sesi panjang, pilot 2 minggu. AAB dan EAS Update production tidak dipublikasikan; push OFF. **Sebelumnya: SELESAI untuk 1.0 internal (21 Sep 2026)** — lihat `docs/FINANCE-MOBILE-HARDENING-S12.md` (audit S0–S10, hasil QA, temuan) dan `docs/FINANCE-MOBILE-RELEASE-1.0.md` (catatan rilis, rilis, rollback). Publikasi publik menunggu persetujuan owner atas build final.
 | AC | Status | Realisasi |
 |---|---|---|
 | S12-1 | ◐ | Diukur di emulator Pixel 8 (bukan HP fisik): cold start 2,6–3,2 dtk (emulator perangkat lunak), warm 0,1–2,4 dtk, memori ±90 MB PSS pada APK release. **Belum:** uji HP fisik kelas menengah-bawah dan sesi 30 menit di lapangan |
@@ -1490,7 +1490,7 @@ Read-model server: `GET /api/finance/buku/{jurnal,jurnal/:id,akun,akun/:id/mutas
 | S12-4 | ✔ | Backend: unit + seluruh integrasi serial hijau; mobile `npm run check`, `expo-doctor`, bundle Android hijau |
 | S12-5 | ◐ | Profil `development/preview/production/production-apk` terpisah (paket & kanal berbeda). APK internal dan AAB dibuat setelah versi 1.0.0; keystore production butuh sesi interaktif pemilik EAS. OTA belum dipublikasikan (menunggu persetujuan owner) |
 | S12-6 | ✔ | Catatan rilis + rencana rollback: `docs/FINANCE-MOBILE-RELEASE-1.0.md` |
-| S12-7 | ✘ | Pilot 2 minggu dengan pengguna nyata — setelah persetujuan owner |
+| S12-7 | ✘ | Pilot 2 minggu dengan pengguna nyata — **pasca-release** (persetujuan Owner sudah diberikan untuk rollout internal; pilot menjadi validasi berjalan) |
 **Placeholder:** seluruh "Segera hadir" dihapus; fitur yang belum ada tidak dijadikan menu dan dijelaskan di kartu "Hanya di web" (Lainnya). **Ditunda ke v1.1:** perbandingan periode, ekspor CSV/PDF dari server, chart, Abaikan baris koran & Selesaikan rekonsiliasi (tetap di web), data belum lengkap, tinjau bukti, pusat notifikasi.
 
 ### 19.1 Ringkasan fase & ketergantungan

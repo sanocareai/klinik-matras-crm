@@ -1,6 +1,10 @@
 # Finance Mobile — Audit Hardening S12 (21 Sep 2026)
 
-Cakupan: seluruh S0–S11. Bukti = tes otomatis yang menjalankan perilaku itu (nama berkas), pemeriksaan artefak build, atau pengamatan di emulator. **Tidak ada transaksi QA di produksi; tidak ada tebak-kredensial produksi.** Pemeriksaan produksi hanya baca (Neraca, saldo, JV-19092026-372, akun 2-1600).
+Status rilis: **`APPROVED FOR INTERNAL USE — OWNER ACCEPTANCE`** (21 Sep 2026). Dasar penerimaan: persetujuan langsung Owner (21 Sep 2026). **Fakta pengujian yang disampaikan Owner: tidak ada yang diperinci** — Owner tidak menyampaikan model perangkat, role, durasi, transaksi, atau hasil TalkBack, sehingga dokumen ini **tidak mencatatnya**. Bukti pengujian yang tercatat hanyalah yang dilakukan pengembang (tes otomatis, smoke test emulator, pemeriksaan produksi baca-saja) sebagaimana ditulis di `FINANCE-MOBILE-HARDENING-S12.md`.
+
+**Validasi pasca-rilis yang MASIH TERBUKA (bukan blocker rollout internal):** (1) uji Android lama (mis. RAM rendah) — **wajib selesai sebelum distribusi diperluas ke seluruh tim**; (2) penggunaan operasional tiga hari kerja; (3) audit TalkBack; (4) sesi pemakaian panjang (30 menit+) di perangkat fisik; (5) uji HP fisik lain di luar yang dipakai Owner (tidak dirinci); (6) jaringan lambat pada API nyata; (7) pilot 2 minggu.
+
+Cakupan audit: seluruh S0–S11. Bukti = tes otomatis yang menjalankan perilaku itu (nama berkas), pemeriksaan artefak build, atau pengamatan di emulator. **Tidak ada transaksi QA di produksi; tidak ada tebak-kredensial produksi.** Pemeriksaan produksi hanya baca (Neraca, saldo, JV-19092026-372, akun 2-1600).
 
 ## 1. Matriks audit
 
@@ -57,7 +61,7 @@ Catatan temuan: di font 1,5× tombol gear alat-dev Expo menutupi banner "Mode co
 | 4 | Izin manifest berlebih (READ_APP_BADGE, POST_NOTIFICATIONS/BOOT saat push off) | P2 | **Diperbaiki** — diblokir (terverifikasi pada APK 1.0.0); ACCESS_LOCAL_NETWORK tetap ada, dicatat |
 | 5 | Deep link putusan memakai skema yang tidak punya rute (`sanofinance://{jenis}/{id}`) | P2 | **Diperbaiki** — `data.path` + daftar putih |
 | 6 | `runtimeVersion` fingerprint tidak dipakai (gagal di build cloud) | — | Dicatat: memakai `appVersion`; OTA terbatas ke `version` sama. Kebijakan setara dan lebih ketat |
-| 7 | Uji HP fisik, TalkBack, 30 menit, jaringan lambat pada API nyata, pilot | P2 | **Belum** — tercatat sebagai syarat sebelum publikasi publik, bukan blocker rilis internal |
+| 7 | Uji Android lama, tiga hari operasional, TalkBack, sesi panjang, HP fisik lain, jaringan lambat pada API nyata, pilot 2 minggu | P2 | **Terbuka — validasi pasca-release**, bukan blocker rollout internal. Uji Android lama wajib sebelum distribusi diperluas ke seluruh tim; sisanya sebelum publikasi publik |
 
 Tidak ada P0/P1 terbuka. Tidak ada tes gagal.
 

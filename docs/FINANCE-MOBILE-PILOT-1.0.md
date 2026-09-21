@@ -1,6 +1,10 @@
 # Finance Mobile 1.0.0 — Protokol Pilot Internal dan Release Acceptance
 
-**Status: pilot BELUM DIMULAI.** Pilot butuh perangkat fisik, pengguna Finance/Owner sungguhan, dan minimal 3 hari kerja transaksi nyata; itu tidak bisa dikerjakan dari sisi pengembang/otomasi. Dokumen ini adalah protokol, lembar catat, dan alat verifikasi server. **1.0.0 tetap "kandidat rilis internal" — bukan APPROVED — sampai kriteria §6 terpenuhi dan penanggung jawab menandatangani §8.** Tidak ada fitur baru selama pilot; hanya perbaikan P0/P1.
+**Status: `APPROVED FOR INTERNAL USE — OWNER ACCEPTANCE`** — 1.0.0 ditutup berdasarkan persetujuan langsung Owner (21 Sep 2026), bukan berdasarkan pilot tiga hari yang dirancang di bawah.
+
+Dasar: persetujuan langsung Owner (21 Sep 2026). **Fakta pengujian yang disampaikan Owner: tidak ada yang diperinci** — Owner tidak menyampaikan model perangkat, role, durasi, transaksi, atau hasil TalkBack, sehingga dokumen ini **tidak mencatatnya**. Bukti pengujian yang tercatat hanyalah yang dilakukan pengembang (tes otomatis, smoke test emulator, pemeriksaan produksi baca-saja) sebagaimana ditulis di `FINANCE-MOBILE-HARDENING-S12.md`.
+
+Protokol di bawah **tetap berlaku sebagai validasi pasca-release**, bukan sebagai gerbang rilis. **Validasi pasca-rilis yang MASIH TERBUKA (bukan blocker rollout internal):** (1) uji Android lama (mis. RAM rendah) — **wajib selesai sebelum distribusi diperluas ke seluruh tim**; (2) penggunaan operasional tiga hari kerja; (3) audit TalkBack; (4) sesi pemakaian panjang (30 menit+) di perangkat fisik; (5) uji HP fisik lain di luar yang dipakai Owner (tidak dirinci); (6) jaringan lambat pada API nyata; (7) pilot 2 minggu. Tidak ada fitur baru; perbaikan hanya P0/P1 (versi 1.0.1).
 
 ## 1. Artefak yang diuji
 
@@ -21,7 +25,7 @@ Di aplikasi: Lainnya → baris bawah harus "SANO Finance 1.0.0 · production" da
 
 Cabut/hapus build preview/dev dari perangkat pilot agar tidak tertukar.
 
-## 2. Perangkat dan peran
+## 2. Perangkat dan peran (RENCANA validasi — bukan catatan pengujian yang sudah terjadi)
 
 | Perangkat | Wajib | Catatan |
 |---|---|---|
@@ -129,7 +133,11 @@ Keputusan:  FIX v1.0.0 (P0/P1) | DEFER v1.0.1 | DEFER v1.1 | TIDAK MASALAH      
 ```
 Lembar hasil per uji Tahap 1 (R1–R20) dan Tahap 2 (O1–O8): kolom `#`, perangkat, peran, lulus/gagal, ID temuan, catatan.
 
-## 8. Keputusan rilis (diisi setelah pilot)
+## 8. Keputusan rilis
+
+**Diputuskan 21 Sep 2026: `APPROVED FOR INTERNAL USE — OWNER ACCEPTANCE`.** Tag `finance-mobile-v1.0.0` → `8a9a4248` (checksum di `FINANCE-MOBILE-RELEASE-1.0.md` §1a). Distribusi hanya ke pengguna internal Finance/Owner yang berwenang; AAB tidak dipublikasikan; EAS Update production tidak dipublikasikan; push OFF. **Distribusi diperluas ke seluruh tim hanya setelah uji Android lama lulus.** Kriteria §6 diperlakukan sebagai target validasi pasca-release; bagian di bawah dipertahankan sebagai templat.
+
+### Templat keputusan (untuk validasi pasca-release / 1.0.1)
 
 - [ ] Kriteria §6 terpenuhi. Penanggung jawab: __________ Tanggal: __________
 - **Jika lulus:** tandai `1.0.0 APPROVED FOR INTERNAL USE`; buat tag Git (`git tag -a finance-mobile-v1.0.0 -m "…" <commit>` lalu `git push origin finance-mobile-v1.0.0`); distribusikan APK **hanya** ke tim Finance/Owner terkait; AAB **tidak** dipublikasikan ke publik; EAS Update production **tidak** dipublikasikan bila tidak ada perubahan JS; push tetap OFF sampai Firebase/FCM siap.

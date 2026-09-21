@@ -1,6 +1,12 @@
 # SANO Finance Mobile 1.0.0 — Catatan Rilis, Rencana Rilis, dan Rollback
 
-Status: **kandidat rilis internal** — menunggu persetujuan owner atas build final. Tidak ada publikasi publik (Play Store) sebelum persetujuan itu.
+Status: **`APPROVED FOR INTERNAL USE — OWNER ACCEPTANCE`** (1.0.0, 21 Sep 2026).
+
+Dasar: persetujuan langsung Owner (21 Sep 2026). **Fakta pengujian yang disampaikan Owner: tidak ada yang diperinci** — Owner tidak menyampaikan model perangkat, role, durasi, transaksi, atau hasil TalkBack, sehingga dokumen ini **tidak mencatatnya**. Bukti pengujian yang tercatat hanyalah yang dilakukan pengembang (tes otomatis, smoke test emulator, pemeriksaan produksi baca-saja) sebagaimana ditulis di `FINANCE-MOBILE-HARDENING-S12.md`.
+
+Batas rilis: distribusi **hanya** ke pengguna internal Finance/Owner yang berwenang. **AAB tidak dipublikasikan ke publik. EAS Update production tidak dipublikasikan** (tidak ada perubahan JS setelah build). **Push notification tetap OFF.**
+
+**Validasi pasca-rilis yang MASIH TERBUKA (bukan blocker rollout internal):** (1) uji Android lama (mis. RAM rendah) — **wajib selesai sebelum distribusi diperluas ke seluruh tim**; (2) penggunaan operasional tiga hari kerja; (3) audit TalkBack; (4) sesi pemakaian panjang (30 menit+) di perangkat fisik; (5) uji HP fisik lain di luar yang dipakai Owner (tidak dirinci); (6) jaringan lambat pada API nyata; (7) pilot 2 minggu.
 
 ## 1. Catatan rilis (untuk tim)
 
@@ -22,11 +28,23 @@ Status: **kandidat rilis internal** — menunggu persetujuan owner atas build fi
 
 ## 1a. Artefak 1.0.0 (dibuat 21 Sep 2026, commit 8a9a4248)
 
+**Tag rilis:** `finance-mobile-v1.0.0` (annotated) → commit `8a9a4248ca244767e98a1546af0275623ee2f7bc` — commit persis yang dibangun EAS untuk APK (build 2) dan AAB (build 3) (`gitCommitHash` kedua build diverifikasi sama). Commit sesudahnya (`1eb9773b`, `6c619e30`, dan commit penutupan ini) hanya dokumen/skrip; tidak ada perubahan pada `finance-mobile/` atau `backend/src` setelah source build.
+
+**Checksum SHA-256** (dihitung dari berkas yang diunduh dari tautan di bawah; APK identik byte-per-byte dengan yang dipasang di emulator):
+
+| Berkas | Ukuran | SHA-256 |
+|---|---|---|
+| APK build 2 | 96.774.692 B | `265a2ccb9178d845377ff96bdab686be1a2a8b648e9fb4a4d5ec19953d14e03f` |
+| AAB build 3 | 69.293.033 B | `bb79865335f5b555e961abdae337225236dd0561e399533b1b951c3151d8c320` |
+
+Verifikasi sebelum memasang: `sha256sum finance-1.0.0-b2.apk` (Windows: `certutil -hashfile <berkas> SHA256`) harus sama dengan nilai di atas.
+
+
 | Artefak | Build ID | Versi / build | Tautan |
 |---|---|---|---|
 | APK internal tim (`production-apk`, channel production) | `b66adce0-97cc-4da8-91ad-5dba59af7f4b` | 1.0.0 / 2 | https://expo.dev/artifacts/eas/Ke0Wcmvk7_lQ7DgXYN4H59fYDMwuOAxzMF-nkUSdc0Y.apk |
 | AAB Play Store (`production`, channel production) | `90cabfce-8746-4c6b-92f7-a22be1f8bb53` | 1.0.0 / 3 | https://expo.dev/artifacts/eas/5_3JlktBkpHFqHqRmGTnJH7SBSh5KtDUKjaiu3Jtj5g.aab |
-| EAS Update channel production | — | runtime 1.0.0 | **siap, belum dipublikasikan** (menunggu persetujuan owner) |
+| EAS Update channel production | — | runtime 1.0.0 | **TIDAK dipublikasikan** (tidak ada perubahan JS setelah build; keputusan penutupan rilis) |
 
 Smoke test APK 1.0.0 di emulator Pixel 8: terpasang, terbuka (4,0 dtk cold, emulator), layar masuk "SANO Finance 1.0.0 · production", tanpa crash, tanpa flag ALLOW_BACKUP, izin: INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, CAMERA, USE_BIOMETRIC, USE_FINGERPRINT, VIBRATE, WAKE_LOCK, DETECT_SCREEN_CAPTURE, ACCESS_LOCAL_NETWORK (tetap ada meski diblokir di konfigurasi — datang dari pustaka jaringan; tidak berbahaya, dicatat). Belum diuji di HP fisik.
 
@@ -70,5 +88,11 @@ Keystore production dibuat/disimpan oleh EAS (`eas credentials`) — pembuatan p
 | Push bermasalah/berisik | Hapus/kosongkan `FINANCE_PUSH_ENABLED` di server dan restart backend — seluruh pengiriman berhenti tanpa mengubah aplikasi | menit |
 | Perangkat hilang/dicuri | Pengguna dicabut sesinya: `POST /api/mobile/auth/sessions/revoke-user` (admin) atau Keamanan → keluar dari perangkat lain; token push perangkat itu ikut terhapus | menit |
 | Kesalahan pencatatan uang | Bukan rollback aplikasi: koreksi hanya lewat jurnal resmi/pembatalan admin (kebijakan akurasi Finance). Aplikasi tidak punya jalur koreksi saldo | — |
+
+## 6. Monitoring pasca-rilis (tiga hari kerja pertama)
+
+Jalankan `backend/scripts/pilot-snapshot.mjs` (read-only) **sebelum distribusi** dan **setiap akhir hari** selama tiga hari kerja pertama (cara: `docs/FINANCE-MOBILE-PILOT-1.0.md` §5). Baseline sebelum distribusi: `docs/pilot/baseline-distribusi-20260921.json` (21 Sep 2026 02:09 UTC; pembandingan terhadap baseline awal = LULUS, nol jurnal baru, selisih saldo nol).
+
+**Hentikan penggunaan dan rollback (§5)** bila: Neraca tidak seimbang; jurnal ganda; saldo berubah tanpa jurnal; JV-19092026-372 berubah; atau akun 2-1600 tersentuh tanpa keputusan bisnis. **Catat**: crash, error login, gagal posting, duplicate command, masalah lampiran, izin, dan ketidaksesuaian mobile vs web. **P0/P1 → versi 1.0.1 dengan build baru; P2/P3 → backlog v1.1.**
 
 Pemeriksaan pasca-rilis (read-only): Neraca seimbang di tanggal uji, saldo Kas & Bank tidak berubah tanpa transaksi, tidak ada jurnal tak terencana sejak deploy.
