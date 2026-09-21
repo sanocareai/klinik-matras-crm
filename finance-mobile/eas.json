@@ -31,6 +31,7 @@
         "EXPO_PUBLIC_APP_ENV": "preview",
         "EXPO_PUBLIC_API_URL": "https://app.sanomatrassehat.com/api",
         "EXPO_PUBLIC_USE_MOCKS": "false",
+        "EXPO_PUBLIC_PUSH_ENABLED": "false",
         "EAS_PROJECT_ID": "ac46e42b-2ac5-4fb3-a515-ebaf40c4c3e2",
         "EXPO_PUBLIC_READ_ONLY": "true"
       }
@@ -46,6 +47,7 @@
         "EXPO_PUBLIC_APP_ENV": "production",
         "EXPO_PUBLIC_API_URL": "https://app.sanomatrassehat.com/api",
         "EXPO_PUBLIC_USE_MOCKS": "false",
+        "EXPO_PUBLIC_PUSH_ENABLED": "false",
         "EAS_PROJECT_ID": "ac46e42b-2ac5-4fb3-a515-ebaf40c4c3e2"
       }
     },

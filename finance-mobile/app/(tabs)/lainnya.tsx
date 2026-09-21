@@ -1,9 +1,8 @@
 import React from "react";
 import { Alert, Switch, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import {
-  BadgeCheck, Banknote, BookOpen, ChevronRight, FileSpreadsheet, FileText, Info, Landmark, LogOut, Palette, Scale, ShieldCheck, Smartphone,
-  TriangleAlert, Users, Wallet, type LucideIcon,
+  Banknote, Bell, BookOpen, ChevronRight, FileSpreadsheet, FileText, Landmark, LogOut, Palette, Scale, ShieldCheck, Users, Wallet, type LucideIcon,
 } from "lucide-react-native";
 import { Screen } from "@/design/Screen";
 import { GlassCard } from "@/design/GlassCard";
@@ -17,31 +16,29 @@ import { has, type Need } from "@/auth/capabilities";
 import { ENV } from "@/lib/env";
 import { S } from "@/lib/strings";
 
-type Menu = { label: string; Icon: LucideIcon; need?: Need; href?: "/keamanan" | "/pembayaran" | "/buku/jurnal" | "/buku/akun" | "/buku/rekon" };
+type Menu = { label: string; Icon: LucideIcon; need?: Need; href: Href; aktif?: boolean };
 
-// Setiap menu punya izin yang dibutuhkan (capability-driven). Menu tanpa izin tidak ditampilkan.
+// Setiap menu punya izin yang dibutuhkan (capability-driven). Menu tanpa izin tidak ditampilkan; fitur yang tidak ada di aplikasi TIDAK ditampilkan sebagai menu
+// (lihat kartu "Hanya di web" di bawah).
 const KEUANGAN: Menu[] = [
   { label: "Pembayaran pelanggan", Icon: Banknote, need: "financeRead", href: "/pembayaran" },
-  { label: S.lainnya.kasBank, Icon: Wallet, need: "financeRead" },
-  { label: S.lainnya.piutangRefund, Icon: Users, need: "financeRead" },
-  { label: S.lainnya.invoice, Icon: FileText, need: "financeRead" },
-  { label: S.lainnya.supplierUtang, Icon: Landmark, need: "financeRead" },
+  { label: "Piutang", Icon: Users, need: "financeRead", href: "/tx/piutang" },
+  { label: "Refund", Icon: Wallet, need: "financeRead", href: "/tx/refund" },
+  { label: "Supplier", Icon: Landmark, need: "financeRead", href: "/tx/supplier" },
+  { label: "Tagihan supplier", Icon: FileText, need: "financeRead", href: "/tx/tagihan" },
 ];
 const AKUNTANSI: Menu[] = [
   { label: S.lainnya.jurnal, Icon: FileSpreadsheet, need: "financeRead", href: "/buku/jurnal" },
   { label: S.lainnya.bukuBesar, Icon: BookOpen, need: "financeRead", href: "/buku/akun" },
   { label: S.lainnya.rekonsiliasi, Icon: Scale, need: "financeRead", href: "/buku/rekon" },
-  { label: S.lainnya.dataBelumLengkap, Icon: TriangleAlert, need: "financeRead" },
-  { label: S.lainnya.tinjauBukti, Icon: BadgeCheck, need: "financeAdmin" },
 ];
 const PENGATURAN: Menu[] = [
   { label: S.lainnya.keamanan, Icon: ShieldCheck, href: "/keamanan" },
-  { label: S.lainnya.perangkat, Icon: Smartphone, href: "/keamanan" },
-  { label: S.lainnya.tentang, Icon: Info },
+  { label: "Notifikasi", Icon: Bell, href: "/notifikasi", aktif: ENV.pushEnabled },
 ];
 
 function bolehLihat(caps: ReturnType<typeof useSession.getState>["capabilities"], m: Menu) {
-  return !m.need || has(caps, m.need);
+  return m.aktif !== false && (!m.need || has(caps, m.need));
 }
 
 function DaftarMenu({ items, ikon = "info" }: { items: Menu[]; ikon?: "info" | "neutral" }) {
@@ -57,8 +54,7 @@ function DaftarMenu({ items, ikon = "info" }: { items: Menu[]; ikon?: "info" | "
           key={m.label} accessibilityLabel={m.label}
           onPress={() => {
             haptic.tick();
-            if (m.href) router.push(m.href);
-            else Alert.alert(m.label, `${S.segera}. ${S.segeraIsi}`);
+            router.push(m.href);
           }}
           style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.hairline }}
         >
@@ -110,6 +106,13 @@ export default function Lainnya() {
       <DaftarMenu items={KEUANGAN} />
       {AKUNTANSI.some((m) => bolehLihat(caps, m)) ? <SectionHeader judul={S.lainnya.akuntansi} /> : null}
       <DaftarMenu items={AKUNTANSI} />
+
+      <SectionHeader judul="Hanya di web" />
+      <GlassCard>
+        <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, lineHeight: 18 }}>
+          Jurnal manual, pembalikan dan koreksi jurnal, tutup/buka periode, koreksi saldo, impor statement bank, abaikan baris koran dan selesaikan rekonsiliasi, data belum lengkap, tinjau bukti, invoice, ekspor CSV/PDF, dan perbandingan periode dikerjakan di web SANSS.
+        </Text>
+      </GlassCard>
 
       <SectionHeader judul={S.lainnya.tampilan} />
       <GlassCard>

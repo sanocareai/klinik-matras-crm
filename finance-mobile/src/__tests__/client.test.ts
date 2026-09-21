@@ -37,6 +37,13 @@ function buat(handler: (url: string, init: RequestInit) => Balasan | Promise<Bal
 }
 
 describe("ApiClient", () => {
+  it("wajibHttps: baseUrl HTTP polos diblokir SEBELUM ada permintaan (preview/production)", async () => {
+    const fetchImpl = jest.fn();
+    const klien = new ApiClient({ baseUrl: "http://x.test/api", wajibHttps: true, getTokens: () => TOKEN_A, saveTokens: async () => undefined, onSessionLost: () => undefined, newId: () => "id", device: () => ({ id: "d", appVersion: "1" }), fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(klien.get("/finance/x")).rejects.toMatchObject({ code: "HTTPS_WAJIB" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("GET: Bearer + X-Request-Id; uang di respons menjadi string desimal", async () => {
     const { klien, panggilan } = buat(() => ({ status: 200, body: { totalKas: 1250000.5 } }));
     const r = await klien.get<{ totalKas: string }>("/finance/dashboard", { query: { from: "2026-09-01", to: "2026-09-30" } });

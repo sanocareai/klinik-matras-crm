@@ -142,6 +142,16 @@ Kode: `services/finance/buku.js`, `routes/financeBuku.js`. **Read-model saja**; 
 - `GET /reports/arus-kas`: tiap baris kini membawa `accountId` (aditif) untuk drill-down.
 - Tes: `tests/integration/financeBuku.integration.test.js` (jurnal termasuk fixture tidak seimbang; buku besar identik dengan laporan lama, negatif, lintas tahun; rekonsiliasi dengan double-tap, paralel, pasangan ganda, periode terkunci, izin; uji kontrak — `DUMP_BUKU=1` menulis fixture untuk `src/__tests__/buku.kontrak.test.ts`).
 
+### Notifikasi S11 (21 Sep 2026)
+
+- Fondasi (S0, sudah ada): `mobile_device_tokens` (unik per pengguna+perangkat, token unik global), `POST/DELETE /mobile/devices`, `services/financeNotifications.js` (dispatch aman-by-default), `fcmTransport.js`. Revoke sesi/logout menghapus token perangkat itu.
+- Baru: tabel `mobile_notification_prefs` (migrasi `20260921120000`, aditif) + `GET/PUT /api/mobile/notification-prefs` (kategori `approval|pembayaran|piutang|supplier|sensitif`; baris tidak ada = semua aktif).
+- `middleware/financePushHooks.js` (dipasang di `/api/finance`, sebelum semua router finance): mengamati respons POST sukses dan memicu push fire-and-forget; tidak mengubah status/isi respons; berhenti seketika bila `FINANCE_PUSH_ENABLED` tidak `true`.
+- `services/financeReminderJob.js` (cron 08:00 Asia/Jakarta, dorman bila push off): piutang/tagihan jatuh tempo hari ini-besok, pembayaran menunggu.
+- Data push: `{type, jenis?, id, path, url}`; `path` = rute layar aplikasi (divalidasi klien terhadap daftar putih). Teks umum tanpa nominal/nama.
+- Menyalakan: set `FINANCE_PUSH_ENABLED=true` (+ kredensial FCM bila token provider `fcm`; token `expo` tidak butuh kredensial server) lalu restart backend.
+- Tes: `tests/integration/financePush.integration.test.js` (5) + `financeNotifications.integration.test.js` (6).
+
 ## 8. Tes
 
 ```bash

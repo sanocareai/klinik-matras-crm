@@ -16,6 +16,8 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
 type Variant = "development" | "preview" | "production";
 const raw = process.env.APP_VARIANT;
 const VARIANT: Variant = raw === "preview" || raw === "production" ? raw : "development";
+// Push (S11) MATI kecuali EXPO_PUBLIC_PUSH_ENABLED=true saat build. Bila mati, izin notifikasi/boot/badge dibuang dari manifest (izin minimum).
+const PUSH_ON = process.env.EXPO_PUBLIC_PUSH_ENABLED === "true";
 
 const BASE_PACKAGE = "com.sanomatrassehat.finance";
 const SUFFIX: Record<Variant, string> = { development: ".dev", preview: ".preview", production: "" };
@@ -36,7 +38,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: `SANO Finance${LABEL[VARIANT]}`,
   slug: "sano-finance",
   scheme: "sanofinance",
-  version: "0.2.0", // Wave 1 (S6–S8). versionCode dikelola EAS.
+  version: "1.0.0", // Rilis 1.0 (S12). Naikkan bila kode/dependensi native berubah (runtimeVersion = appVersion). versionCode dikelola EAS.
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "automatic",
@@ -62,6 +64,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "android.permission.ACCESS_FINE_LOCATION",
       "android.permission.ACCESS_COARSE_LOCATION",
       "android.permission.WRITE_EXTERNAL_STORAGE",
+      "android.permission.READ_APP_BADGE",
+      "android.permission.ACCESS_LOCAL_NETWORK",
+      ...(PUSH_ON ? [] : ["android.permission.POST_NOTIFICATIONS", "android.permission.RECEIVE_BOOT_COMPLETED"]),
       ...(VARIANT === "development" ? [] : ["android.permission.SYSTEM_ALERT_WINDOW"]),
     ],
   },

@@ -42,6 +42,7 @@ const PESAN_TIDAK_BERIZIN = "Aplikasi ini untuk tim Finance. Akun Anda tidak pun
 
 export const api = new ApiClient({
   baseUrl: ENV.apiUrl,
+  wajibHttps: ENV.appEnv !== "development",
   getTokens: () => tokens,
   saveTokens: async (t) => { tokens = t; await saveTokens(t); },
   onSessionLost: (alasan) => { void useSession.getState().logout({ alasan }); },

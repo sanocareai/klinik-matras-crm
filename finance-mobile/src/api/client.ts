@@ -24,6 +24,8 @@ export type ClientDeps = {
   onSessionLost: (reason: string) => void;
   newId: () => string;
   device: () => { id: string; appVersion: string };
+  /** true di preview/production: menolak baseUrl bukan HTTPS (token & data keuangan tidak boleh lewat HTTP polos). */
+  wajibHttps?: boolean;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 };
@@ -78,6 +80,7 @@ export class ApiClient {
   private async kirim<T>(
     metode: Metode, path: string, opts: RequestOptions, idempotencyKey: string | null, form?: FormData, sudahRefresh = false,
   ): Promise<T> {
+    if (this.deps.wajibHttps && !/^https:\/\//i.test(this.deps.baseUrl)) throw new ApiError({ status: 0, code: "HTTPS_WAJIB", message: "Koneksi tidak aman diblokir. Hubungi admin." });
     const requestId = this.deps.newId();
     const auth = opts.auth !== false;
     const tokens = this.deps.getTokens();

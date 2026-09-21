@@ -1466,27 +1466,32 @@ Read-model server: `GET /api/finance/buku/{jurnal,jurnal/:id,akun,akun/:id/mutas
 
 ### Fase E — Notifikasi, pencarian, rilis
 
-#### S11 — Notifikasi push & pencarian (M) — G-10, G-18 (opsional)
-| AC | Kriteria |
-|---|---|
-| S11-1 | Pengajuan baru ⇒ approver menerima push ≤ 30 dtk; **pengaju tidak** menerimanya; layar terkunci tidak menampilkan nominal |
-| S11-2 | Putusan ⇒ pengaju menerima push berisi hasil/alasan |
-| S11-3 | Pembayaran/order Lunas menunggu verifikasi ⇒ digest maks 1 push/30 mnt ke pemegang `PAYMENT_WRITE`; pengingat harian 09:00 WIB |
-| S11-4 | Tap push ⇒ (unlock) ⇒ layar tujuan yang benar (deep link); app tertutup/background/foreground semua lolos |
-| S11-5 | Pusat notifikasi menyinkronkan status baca; badge tab konsisten |
-| S11-6 | Token FCM tidak valid dibersihkan server; logout/cabut sesi menghapus token perangkat |
-| S11-7 | Pencarian global menemukan nomor dokumen (`EXP-…`, `INV-…`, no. order) dari daftar terkait |
+#### S11 — Notifikasi (M)
+**Status: SIAP, FEATURE FLAG OFF (21 Sep 2026).** Backend, pemicu, preferensi, deep link, dan tes selesai; tidak ada push yang keluar sampai dua flag dinyalakan (`FINANCE_PUSH_ENABLED` di server, `EXPO_PUBLIC_PUSH_ENABLED` saat build) dan kredensial Firebase/FCM dipasang. **Blocker kredensial:** `google-services.json` (proyek Firebase untuk paket `com.sanomatrassehat.finance`) dan kunci FCM V1 di EAS — belum ada. Kekurangan ini **tidak** memblokir rilis 1.0 (lihat `docs/FINANCE-MOBILE-RELEASE-1.0.md` §4).
+| AC | Status | Kriteria & realisasi |
+|---|---|---|
+| S11-1 | ✔ (flag off) | Pengajuan baru (dokumen dibuat langsung diajukan / `submit`) ⇒ pemegang `FINANCE_APPROVE` selain pengaju. Teks umum tanpa nominal/nama/isi dokumen (diuji). Pemicu = middleware `financePushHooks` yang hanya mengamati respons sukses; respons endpoint tidak berubah |
+| S11-2 | ✔ | Putusan setuju/tolak ⇒ pengaju; pembayaran ditolak ⇒ pencatat; pembatalan admin (pengeluaran, pembelian, tagihan, refund, kasbon, pemasukan lain, pembayaran supplier) ⇒ pemegang `FINANCE_ADMIN` selain pelaku (kategori *sensitif*) |
+| S11-3 | ✔ | Job harian 08:00 WIB (`financeReminderJob`): piutang & tagihan supplier jatuh tempo hari ini/besok (fungsi laporan yang sama dengan web), pembayaran menunggu verifikasi; dorman bila push nonaktif |
+| S11-4 | ✔ | Ketukan notifikasi ⇒ `data.path` divalidasi daftar putih ketat (`lib/tautan.ts`; path/host asing, traversal, id berlebihan ditolak); tautan **ditahan** sampai sudah masuk **dan** kunci aplikasi terbuka, lalu dibuka sekali. App tertutup (`getLastNotificationResponse`), background, dan foreground tercakup |
+| S11-5 | ✔ | Token: daftar/rotasi per pengguna+perangkat (`POST /mobile/devices`; token baru menggantikan; token yang sama tidak bisa dimiliki dua pengguna); dipulihkan diam-diam saat masuk/kembali ke aplikasi (rotasi, pasang ulang). Token tidak valid (`DeviceNotRegistered`/FCM UNREGISTERED) dihapus server; logout/cabut sesi menghapus token perangkat itu (diuji) |
+| S11-6 | ✔ | Preferensi per kategori (`approval, pembayaran, piutang, supplier, sensitif`): `GET/PUT /mobile/notification-prefs`; server memfilter penerima; layar Notifikasi hanya menampilkan kategori yang relevan dengan capability |
+| S11-7 | ✔ | Izin sistem diminta **kontekstual** (tombol "Aktifkan notifikasi" di layar Notifikasi), tidak pernah saat startup (diuji). Flag off ⇒ tanpa izin, token, kanal, listener, dan tanpa izin `POST_NOTIFICATIONS` di manifest |
+| S11-8 | ✔ | Layar kunci: kanal Android `lockscreenVisibility=PRIVATE` untuk semua kanal; isi umum tanpa nominal/pelanggan/supplier |
+**Ditunda (v1.1):** pusat notifikasi dengan status baca dan badge, pencarian global, push berkelompok (digest 30 menit).
 
 #### S12 — Hardening, performa, QA, dan rilis (L)
-| AC | Kriteria |
-|---|---|
-| S12-1 | Semua target §10.5 tercapai pada perangkat acuan (cold start, ukuran APK, memori, fps) pada build rilis Hermes |
-| S12-2 | Checklist MASVS-L1 (+ butir L2 yang dipilih) lulus dan terdokumentasi; uji MITM/root/backup/screenshot tercatat |
-| S12-3 | TalkBack menavigasi alur §7.2–§7.5 dari awal sampai akhir; kontras AA di kedua tema |
-| S12-4 | Regresi lengkap: suite backend finance hijau + tes klien + E2E dengan 4 persona |
-| S12-5 | APK `production-apk` (EAS) didistribusikan ke 4 pengguna; OTA `eas update --channel production` dan `eas update:rollback` diuji; paksa-update diuji (naikkan `minVersionCode`) |
-| S12-6 | `docs/RUNBOOK_FINANCE_MOBILE.md` selesai (build, kredensial EAS, OTA & rollback, pencabutan sesi, HP hilang) |
-| S12-7 | Pilot 2 minggu dengan pengguna nyata; metrik G1–G5 diukur; daftar temuan diprioritaskan |
+**Status: SELESAI untuk 1.0 internal (21 Sep 2026)** — lihat `docs/FINANCE-MOBILE-HARDENING-S12.md` (audit S0–S10, hasil QA, temuan) dan `docs/FINANCE-MOBILE-RELEASE-1.0.md` (catatan rilis, rilis, rollback). Publikasi publik menunggu persetujuan owner atas build final.
+| AC | Status | Realisasi |
+|---|---|---|
+| S12-1 | ◐ | Diukur di emulator Pixel 8 (bukan HP fisik): cold start 2,6–3,2 dtk (emulator perangkat lunak), warm 0,1–2,4 dtk, memori ±90 MB PSS pada APK release. **Belum:** uji HP fisik kelas menengah-bawah dan sesi 30 menit di lapangan |
+| S12-2 | ✔ | Tanpa secret di bundle (dipindai), HTTPS wajib di preview/production (`wajibHttps` + `usesCleartextTraffic=false`), `allowBackup=false` (terverifikasi pada APK), Proguard/shrink aktif, `console.*` dibuang di produksi, FLAG_SECURE, izin dipangkas (READ_APP_BADGE, ACCESS_LOCAL_NETWORK, dan — saat push off — POST_NOTIFICATIONS/RECEIVE_BOOT_COMPLETED) |
+| S12-3 | ◐ | Font 1,5× dan mode gelap dicek di emulator; audit TalkBack penuh belum |
+| S12-4 | ✔ | Backend: unit + seluruh integrasi serial hijau; mobile `npm run check`, `expo-doctor`, bundle Android hijau |
+| S12-5 | ◐ | Profil `development/preview/production/production-apk` terpisah (paket & kanal berbeda). APK internal dan AAB dibuat setelah versi 1.0.0; keystore production butuh sesi interaktif pemilik EAS. OTA belum dipublikasikan (menunggu persetujuan owner) |
+| S12-6 | ✔ | Catatan rilis + rencana rollback: `docs/FINANCE-MOBILE-RELEASE-1.0.md` |
+| S12-7 | ✘ | Pilot 2 minggu dengan pengguna nyata — setelah persetujuan owner |
+**Placeholder:** seluruh "Segera hadir" dihapus; fitur yang belum ada tidak dijadikan menu dan dijelaskan di kartu "Hanya di web" (Lainnya). **Ditunda ke v1.1:** perbandingan periode, ekspor CSV/PDF dari server, chart, Abaikan baris koran & Selesaikan rekonsiliasi (tetap di web), data belum lengkap, tinjau bukti, pusat notifikasi.
 
 ### 19.1 Ringkasan fase & ketergantungan
 

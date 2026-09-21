@@ -95,19 +95,11 @@ export const S = {
     keuangan: "Keuangan",
     akuntansi: "Akuntansi",
     pengaturan: "Pengaturan",
-    kasBank: "Kas & Bank",
-    piutangRefund: "Piutang & Refund",
-    invoice: "Invoice & Jatuh Tempo",
-    supplierUtang: "Supplier & Utang",
     jurnal: "Jurnal Umum",
     bukuBesar: "Buku Besar",
     rekonsiliasi: "Rekonsiliasi Bank",
-    dataBelumLengkap: "Data Belum Lengkap",
-    tinjauBukti: "Tinjau Bukti",
     keamanan: "Keamanan",
     tampilan: "Tampilan",
-    perangkat: "Perangkat & sesi",
-    tentang: "Tentang & bantuan",
   },
   tampilan: {
     tema: "Tema",
@@ -119,8 +111,6 @@ export const S = {
     sembunyikan: "Sembunyikan angka",
     sembunyikanInfo: "Nominal ditampilkan sebagai titik-titik.",
   },
-  segera: "Segera hadir",
-  segeraIsi: "Layar ini sedang dikerjakan. Data di aplikasi selalu diambil dari server.",
 } as const;
 
 export const STATUS: Record<string, { label: string; tone: Tone }> = {

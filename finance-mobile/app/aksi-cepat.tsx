@@ -90,7 +90,7 @@ function AksiCepat() {
           const bisa = a.id === "verifikasi" || (!!modul && bisaBuat(caps, modul));
           return (
             <Button
-              key={a.id} label={bisa ? a.label : `${a.label} (segera hadir)`} variant="secondary" icon={a.Icon} disabled={!bisa}
+              key={a.id} label={bisa ? a.label : `${a.label} (di web)`} variant="secondary" icon={a.Icon} disabled={!bisa}
               onPress={() => { haptic.ringan(); if (a.id === "verifikasi") router.replace("/pembayaran"); else if (modul) jadikan(modul); }}
             />
           );
