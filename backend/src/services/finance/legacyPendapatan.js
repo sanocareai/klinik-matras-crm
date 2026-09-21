@@ -59,13 +59,14 @@ const ALIAS = {
   tanggal: ["tanggal", "tanggaltransaksi", "tgl", "tgltransaksi", "date", "tanggalorder", "tanggalpenjualan"],
   nomor: ["nomor", "noresi", "resi", "nomorresi", "noorder", "nomororder", "noinvoice", "nomorinvoice", "invoice", "nomorlama", "noresilama", "id", "ordernumber"],
   pelanggan: ["pelanggan", "customer", "namapelanggan", "namacustomer", "nama", "konsumen", "namakonsumen"],
-  keterangan: ["keterangan", "deskripsi", "produk", "item", "layanan", "catatan", "description", "barang"],
+  keterangan: ["keterangan", "deskripsi", "produk", "item", "layanan", "catatan", "description", "barang", "income"],
+  kategori: ["kategori", "category", "jenis", "jenistransaksi"],
   nominal: ["nominal", "jumlah", "total", "nilai", "amount", "harga", "omzet", "pendapatan", "totaltagihan", "totalharga"],
   status: ["statuspembayaran", "statusbayar", "status", "pembayaran", "paymentstatus"],
   tglbayar: ["tanggalpembayaran", "tanggalbayar", "tglbayar", "tglpembayaran", "paiddate", "tanggallunas"],
   metode: ["metodepembayaran", "metodebayar", "metode", "caraBayar".toLowerCase(), "paymentmethod", "carabayar"],
   sumber: ["sumberdata", "sumber", "source", "asaldata"],
-  rekening: ["rekening", "rekeningpenerima", "rekeningtujuan", "bank", "banktujuan"],
+  rekening: ["rekening", "rekeningpenerima", "rekeningtujuan", "bank", "banktujuan", "accounts", "account", "akun"],
   dibayar: ["dibayar", "jumlahdibayar", "terbayar", "paidamount", "nominaldibayar"],
 };
 const BULAN = { januari: 1, jan: 1, january: 1, februari: 2, feb: 2, february: 2, maret: 3, mar: 3, march: 3, april: 4, apr: 4, mei: 5, may: 5, juni: 6, jun: 6, june: 6, juli: 7, jul: 7, july: 7, agustus: 8, agu: 8, agt: 8, aug: 8, august: 8, september: 9, sep: 9, sept: 9, oktober: 10, okt: 10, oct: 10, october: 10, november: 11, nov: 11, desember: 12, des: 12, dec: 12, december: 12 };
@@ -92,7 +93,7 @@ function cek(y, mo, d) {
 export function parseNominal(v) {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? toMoney(String(v)).toFixed(2) : null;
-  let s = String(v).trim().replace(/rp\.?/gi, "").replace(/\s/g, "");
+  let s = String(v).trim().replace(/rp\.?|idr/gi, "").replace(/\s/g, "");
   if (!s || s === "-") return null;
   let neg = false;
   if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
@@ -157,6 +158,14 @@ async function parseXLSX(buffer) {
   return hasil;
 }
 
+/** Ekspor Notion menulis relasi sebagai "Nama (https://…notion…)" — buang tautan, sisakan nama (beberapa relasi dipisah koma). */
+function bersihRekening(v) {
+  if (!v) return v;
+  return v.replace(/\s*\(https?:\/\/[^)]*\)/g, "").replace(/\s+/g, " ").trim() || null;
+}
+/** Kategori arsip yang BUKAN pendapatan (modal, pinjaman, saldo/penyesuaian) — dicatat tetapi tidak dihitung. */
+const KATEGORI_PENDAPATAN = /(pendapatan|penjualan|omzet|revenue|sales|income)/i;
+
 /** Berkas → baris terpetakan. Kolom dipetakan dari NAMA HEADER (alias Indonesia/Inggris); kolom wajib: tanggal & nominal. */
 export async function bacaBerkas(fileName, buffer) {
   if (!buffer?.length) throw new LegacyError("Berkas kosong");
@@ -179,8 +188,8 @@ export async function bacaBerkas(fileName, buffer) {
   return {
     kolom: Object.fromEntries(Object.entries(peta).map(([k, i]) => [k, String(tabel[0][i] ?? "")])),
     baris: tabel.slice(1).map((r, i) => ({
-      rowNo: i + 2, tanggalMentah: ambil(r, "tanggal"), nominalMentah: ambil(r, "nominal"), nomor: teks(ambil(r, "nomor")), pelanggan: teks(ambil(r, "pelanggan")), keterangan: teks(ambil(r, "keterangan")),
-      statusMentah: ambil(r, "status"), tglBayarMentah: ambil(r, "tglbayar"), metode: teks(ambil(r, "metode")), sumber: teks(ambil(r, "sumber")), rekening: teks(ambil(r, "rekening")), dibayarMentah: ambil(r, "dibayar"),
+      rowNo: i + 2, tanggalMentah: ambil(r, "tanggal"), nominalMentah: ambil(r, "nominal"), nomor: teks(ambil(r, "nomor")), pelanggan: teks(ambil(r, "pelanggan")), keterangan: teks(ambil(r, "keterangan")), kategori: teks(ambil(r, "kategori")),
+      statusMentah: ambil(r, "status"), tglBayarMentah: ambil(r, "tglbayar"), metode: teks(ambil(r, "metode")), sumber: teks(ambil(r, "sumber")), rekening: bersihRekening(teks(ambil(r, "rekening"))), dibayarMentah: ambil(r, "dibayar"),
     })),
   };
 }
@@ -209,6 +218,7 @@ export function validasiBaris(bariBaris, { cutoff, awalArsip, hariIni, ada = new
     let status = "SIAP";
     const tandai = (s, teksAlasan) => { if (!(status === "TIDAK_VALID")) { const rank = { SIAP: 0, DI_LUAR_PERIODE: 1, PERLU_DITINJAU: 2, DUPLIKAT: 3, TIDAK_VALID: 4 }; if (rank[s] > rank[status]) status = s; } alasan.push(teksAlasan); };
 
+    if (b.kategori && !KATEGORI_PENDAPATAN.test(b.kategori)) tandai("TIDAK_VALID", `Bukan pendapatan: kategori arsip "${b.kategori}" (modal/pinjaman/penyesuaian) — dicatat, tidak dihitung`);
     if (!tanggal) tandai("TIDAK_VALID", "Tanggal transaksi kosong atau tidak terbaca");
     if (nominal === null) tandai("TIDAK_VALID", "Nominal kosong atau tidak terbaca");
     else if (toMoney(nominal).isZero()) tandai("TIDAK_VALID", "Nominal nol");
@@ -464,24 +474,49 @@ export async function rekonsiliasiLegacy(db) {
   };
 }
 
-/** PROPOSAL jurnal migrasi — hanya usulan JSON, TIDAK diposting. Menunggu persetujuan Owner. */
+/**
+ * Akun pendapatan untuk baris arsip — dari JENIS TRANSAKSI yang tertulis di keterangan, BUKAN satu akun default.
+ * Hanya kata kunci yang tegas; keterangan campuran/ambigu ("New+Servis") atau tanpa jenis ("Pembayaran Budi") → null = BELUM DIPETAKAN (tidak dijurnal, tidak ditebak).
+ */
+export function petaAkunPendapatanLegacy(keterangan) {
+  const s = String(keterangan ?? "").toLowerCase();
+  const sewa = /\b(sewa|rental|kasur sewa)\b/.test(s);
+  const layanan = /\b(servis|service|upgrade|ganti kain|restorasi|refoam|ganti busa|perbaikan|cuci|laundry)\b/.test(s);
+  const baru = /\b(kasur baru|beli baru|new|pembelian)\b/.test(s);
+  const cocok = [sewa && "4-1300", layanan && "4-1100", baru && "4-1200"].filter(Boolean);
+  return cocok.length === 1 ? cocok[0] : null;
+}
+
+/** PROPOSAL jurnal migrasi — hanya usulan JSON, TIDAK diposting. Menunggu persetujuan Owner. Akun pendapatan menurut jenis transaksi; yang tak bisa dipetakan TIDAK dijurnal. */
 export async function proposalJurnal(db) {
-  const r = await rekonsiliasiLegacy(db);
-  const akun = await db.finAccount.findMany({ where: { code: { in: ["1-1300", "3-4100", "4-1200"] } }, select: { code: true, name: true } });
+  const c = await hitungCutoff(db);
+  if (!c.tanggal) throw new LegacyError("Cutoff belum bisa ditentukan", 409);
+  const rows = (await db.finLegacyRevenue.findMany({ where: { batch: { status: { in: ["IMPORTED", "POSTED"] } } }, include: { batch: { select: { status: true } } } })).filter((r) => dihitung(r) && r.decision !== "ABAIKAN" && r.trxDate);
+  const akun = await db.finAccount.findMany({ where: { code: { in: ["1-1300", "3-4100", "4-1100", "4-1200", "4-1300"] } }, select: { code: true, name: true } });
   const nama = Object.fromEntries(akun.map((a) => [a.code, a.name]));
-  const baris = r.perBulan.filter((b) => toMoney(b.pendapatan).greaterThan(ZERO)).map((b) => {
-    const belum = toMoney(b.belumBayar);
-    const sisa = toMoney(b.pendapatan).minus(belum); // lunas + sebagian + tidak diketahui: diimbangi ekuitas non-kas
-    return { bulan: b.bulan, tanggalBuku: `${b.bulan}-28`, lines: [
-      ...(belum.greaterThan(ZERO) ? [{ akun: "1-1300", nama: nama["1-1300"] ?? "Piutang Usaha", debit: uang(belum), kredit: "0.00" }] : []),
-      ...(sisa.greaterThan(ZERO) ? [{ akun: "3-4100", nama: nama["3-4100"] ?? "Koreksi Saldo Awal", debit: uang(sisa), kredit: "0.00", catatan: "Bagian sudah dibayar/tidak diketahui: lawan ekuitas NON-KAS (kas sudah dikalibrasi ke saldo riil)" }] : []),
-      { akun: "4-1200", nama: nama["4-1200"] ?? "Pendapatan Penjualan Produk", debit: "0.00", kredit: uang(b.pendapatan), catatan: "Akun pendapatan ASUMSI — Owner menentukan pemetaan produk/jasa" },
-    ] };
-  });
+  const perBulan = new Map();
+  for (const r of rows) {
+    const b = tgl(r.trxDate).slice(0, 7);
+    const m = perBulan.get(b) ?? perBulan.set(b, { kredit: {}, drBelum: ZERO, drEkuitas: ZERO, belumDipetakan: { jumlah: 0, nilai: ZERO } }).get(b);
+    const kode = petaAkunPendapatanLegacy(r.description);
+    const nilai = toMoney(r.amount ?? 0);
+    if (!kode) { m.belumDipetakan.jumlah++; m.belumDipetakan.nilai = m.belumDipetakan.nilai.plus(nilai); continue; }
+    m.kredit[kode] = (m.kredit[kode] ?? ZERO).plus(nilai);
+    if (r.payStatus === "BELUM_BAYAR") m.drBelum = m.drBelum.plus(nilai); else m.drEkuitas = m.drEkuitas.plus(nilai); // lunas/sebagian/tidak diketahui: ekuitas non-kas
+  }
+  const jurnal = [...perBulan.entries()].sort().map(([bulan, m]) => ({
+    bulan, tanggalBuku: `${bulan}-28`, idempotencyKey: `MIGRASI_PENDAPATAN_LEGACY:${bulan}`,
+    lines: [
+      ...(m.drBelum.greaterThan(ZERO) ? [{ akun: "1-1300", nama: nama["1-1300"] ?? "Piutang Usaha", debit: uang(m.drBelum), kredit: "0.00" }] : []),
+      ...(m.drEkuitas.greaterThan(ZERO) ? [{ akun: "3-4100", nama: nama["3-4100"] ?? "Koreksi Saldo Awal", debit: uang(m.drEkuitas), kredit: "0.00", catatan: "Bagian sudah dibayar/tidak diketahui: lawan ekuitas NON-KAS (kas sudah dikalibrasi ke saldo riil)" }] : []),
+      ...Object.entries(m.kredit).sort().map(([kode, n]) => ({ akun: kode, nama: nama[kode] ?? kode, debit: "0.00", kredit: uang(n), catatan: "Dipetakan dari jenis transaksi pada keterangan arsip" })),
+    ],
+    belumDipetakan: { jumlah: m.belumDipetakan.jumlah, nilai: uang(m.belumDipetakan.nilai), catatan: "Jenis transaksi tidak tertulis/ambigu → TIDAK dijurnal sampai Owner memetakan" },
+  })).filter((j) => j.lines.length > 0 || j.belumDipetakan.jumlah > 0);
   return {
     status: "PROPOSAL — BELUM DIPOSTING",
     persetujuan: "Butuh persetujuan eksplisit Owner sebelum apa pun diposting ke buku besar produksi. Tidak ada posting/kalibrasi otomatis.",
-    prinsip: ["Tidak menambah saldo Kas & Bank.", "Tidak mengubah JV-19092026-372 atau akun koreksi saldo awal secara langsung (memakai jurnal baru terpisah).", "Tidak membuat invoice aktif; piutang hanya untuk yang jelas belum dibayar."],
-    jurnal: baris, rekonsiliasi: { total: r.total, periodeArsip: r.periodeArsip },
+    prinsip: ["Tidak menambah saldo Kas & Bank.", "Tidak mengubah JV-19092026-372 / JV-21092026-391 / akun 2-1600 (memakai jurnal baru terpisah bila disetujui).", "Tidak membuat invoice aktif; piutang hanya untuk yang jelas belum dibayar.", "Akun pendapatan menurut jenis transaksi (bukan default); yang tak terpetakan tidak dijurnal."],
+    periodeArsip: { from: `${c.tanggal.slice(0, 4)}-01-01`, to: c.tanggal }, jurnal,
   };
 }

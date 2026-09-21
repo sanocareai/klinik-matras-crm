@@ -78,6 +78,7 @@ test("Parser: tanggal (ISO, dd/mm/yyyy, 'January 12, 2026', serial Excel) dan no
   assert.equal(parseNominal("(2.000)"), "-2000.00");
   assert.equal(parseNominal("-300000"), "-300000.00");
   assert.equal(parseNominal("12345678901234.55"), "12345678901234.55");
+  assert.equal(parseNominal("IDR 33,000,000"), "33000000.00", "format ekspor Notion");
   assert.equal(parseNominal("abc"), null);
   assert.equal(parseNominal(""), null);
 });

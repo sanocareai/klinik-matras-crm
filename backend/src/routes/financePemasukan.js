@@ -9,6 +9,7 @@
 //   GET  /pemasukan/legacy/batch · POST /pemasukan/legacy/batch (multipart "file": CSV/XLSX → pratinjau) · GET /pemasukan/legacy/batch/:id
 //   POST /pemasukan/legacy/batch/:id/impor · POST /pemasukan/legacy/batch/:id/batal · POST /pemasukan/legacy/baris/:id/keputusan
 //   GET  /pemasukan/legacy/rekonsiliasi · GET /pemasukan/legacy/proposal   (proposal jurnal migrasi: JSON saja, TIDAK diposting)
+//   GET  /pemasukan/rekonsiliasi/{laporan,backfill,proposal}      rekonsiliasi pendapatan 2026: audit order sistem, laporan bulanan, proposal jurnal (JSON saja, TIDAK diposting)
 // Baca: FINANCE_READ. Tulis (unggah/impor/batal/keputusan): FINANCE_POST. Tidak ada endpoint yang membuat jurnal.
 
 import express from "express";
@@ -18,6 +19,7 @@ import { requirePermission, hasPermission, PERMISSIONS as P } from "../middlewar
 import { prisma } from "../db.js";
 import { daftarPemasukan, detailPemasukan, opsiPemasukan, ringkasanPemasukan } from "../services/finance/pemasukan.js";
 import { batalkanBatch, buatPratinjau, daftarBatch, detailBatch, hitungCutoff, komitBatch, proposalJurnal, putuskanBaris, rekonsiliasiLegacy } from "../services/finance/legacyPendapatan.js";
+import { auditBackfill, laporanBackfill, laporanBulanan, proposalBackfill } from "../services/finance/rekonsiliasi2026.js";
 import { handleFinanceError } from "./finance.js";
 
 export const financePemasukanRouter = express.Router();
@@ -44,6 +46,10 @@ financePemasukanRouter.get("/pemasukan/legacy/batch", jalur(() => daftarBatch(pr
 financePemasukanRouter.get("/pemasukan/legacy/batch/:id", jalur((req) => detailBatch(prisma, req.params.id, req.query)));
 financePemasukanRouter.get("/pemasukan/legacy/rekonsiliasi", jalur(() => rekonsiliasiLegacy(prisma)));
 financePemasukanRouter.get("/pemasukan/legacy/proposal", jalur(() => proposalJurnal(prisma)));
+// Rekonsiliasi pendapatan 2026 (BACA-SAJA; semua keluaran = laporan/usulan, tidak ada posting)
+financePemasukanRouter.get("/pemasukan/rekonsiliasi/laporan", jalur(() => laporanBulanan(prisma)));
+financePemasukanRouter.get("/pemasukan/rekonsiliasi/backfill", jalur((req) => (req.query.detail === "1" ? auditBackfill(prisma) : laporanBackfill(prisma))));
+financePemasukanRouter.get("/pemasukan/rekonsiliasi/proposal", jalur((req) => proposalBackfill(prisma, { bulan: /^\d{4}-\d{2}$/.test(String(req.query.bulan ?? "")) ? String(req.query.bulan) : null })));
 
 financePemasukanRouter.post("/pemasukan/legacy/batch", tulis, (req, res, next) => {
   unggah.single("file")(req, res, (err) => {
