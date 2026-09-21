@@ -30,6 +30,7 @@ import {
 } from "../services/finance/accounts.js";
 import { MoneyError, moneyToNumber, toMoney, sumMoney } from "../services/finance/money.js";
 import { ringkasLunasBelumDicatat } from "../services/finance/penerimaanOrder.js";
+import { SALDO_RIIL_TERKONFIRMASI, bandingkanSaldoRiil } from "../services/finance/saldoRiil.js";
 import {
   SETTING_KEYS, getAllSettings, setSetting, getVerificationGate, parseBool,
 } from "../services/finance/settings.js";
@@ -1095,6 +1096,17 @@ financeRouter.get("/reports/payables", requirePermission(P.FINANCE_READ), async 
 // ═════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═════════════════════════════════════════════════════════════════════════
+
+// Saldo buku vs saldo riil terkonfirmasi owner pada tanggal buku YANG SAMA (read-only; tidak mengubah jurnal/saldo).
+financeRouter.get("/saldo-riil", requirePermission(P.FINANCE_READ), async (_req, res) => {
+  try {
+    const k = SALDO_RIIL_TERKONFIRMASI;
+    const buku = await saldoKasBank(prisma, { to: new Date(`${k.tanggalBuku}T12:00:00+07:00`) });
+    res.json({ cutoffLabel: k.cutoffLabel, tanggalBuku: k.tanggalBuku, sumber: k.sumber, catatan: k.catatan, rekening: bandingkanSaldoRiil(buku, k) });
+  } catch (err) {
+    handleFinanceError(err, res);
+  }
+});
 
 financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
