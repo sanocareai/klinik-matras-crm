@@ -27,3 +27,18 @@ Laporan **Neraca** menampilkan `seimbang=false` dengan selisih tetap **−Rp45.8
 
 ## Menjalankan ulang
 `node scripts/kalibrasiSaldoRiil20260919.js` = pratinjau. `KALIBRASI_BACKUP_OK=1 … --apply` menolak jalan tanpa penegasan backup; aman diulang (idempoten). Kalibrasi berikutnya = konfigurasi baru (`KALIBRASI_<tanggal>`), bukan mengubah yang ini.
+
+## Kalibrasi ke-2 — 21 Sep 2026 10.09 WIB (atas permintaan Owner, "skip solving dulu")
+Owner memberi saldo riil bank pukul 10.09 WIB dan meminta buku disamakan dulu agar operasional Finance jalan hari ini, sementara penyebab selisih ditelusuri. Konfigurasi baru `KALIBRASI_20260921` (JV-19092026-372 **tidak diubah**), skrip `backend/scripts/kalibrasiSaldoRiil20260921.js`. Backup sebelum posting: `~/klinik-matras/backups/pre-kalibrasi-saldo-20260921_11-20-36.sql.gz` (di VPS, 21,7 MB, integritas gz diverifikasi).
+
+Jurnal **JV-21092026-391** (id `a85ec506-1046-4e92-9d89-04204349f77e`), source SALDO_AWAL, tanggal buku 2026-09-21, kunci `KALIBRASI_SALDO_RIIL:2026-09-21T10:09+07:00`, lawan 3-4100 Koreksi Saldo Awal, Σ debit = Σ kredit = Rp23.004.042.
+
+| Rekening | Buku sebelum | Saldo riil (Owner) | Koreksi | Buku sesudah |
+|---|---:|---:|---:|---:|
+| KEM - Sano Bank | −12.351.254 | 4.172.788 | +16.524.042 | 4.172.788 |
+| PT Sano | 29.870.615 | 36.350.615 | +6.480.000 | 36.350.615 |
+| Uang Kas Sano | 104.500 | (tidak diberikan) | tidak disentuh | 104.500 |
+
+Pembuktian (pilot-snapshot baca-saja, `docs/pilot/baseline-pasca-kalibrasi-20260921.json`): Neraca seimbang di 31 Agu dan 17–21 Sep; JV-372 utuh (status, updatedAt, sidik jari); 2-1600 tidak tersentuh; rekonsiliasi saldo = saldo awal + mutasi jurnal, selisih 0 di semua rekening; posting ulang idempoten.
+
+**PENTING — penyelesaian selisih ini ditunda, bukan selesai.** Kandidat penyebab yang HARUS dibukukan berikutnya secara resmi *tanpa menghitung ganda* dengan JV-391: (1) pembayaran NEW-19092026-036 Rp1.980.000 (gap `REKENING_BELUM_DIPETAKAN`; bila dipetakan ke rekening, saldo bank bertambah lagi Rp1.980.000 padahal JV-391 sudah memasukkannya → koreksi lawannya perlu jurnal penyesuaian); (2) JV-380/381 (Rp14.882.761) bila terbukti dibayar sebelum 19 Sep 20.00; (3) uang masuk nyata yang belum tercatat (sisa ber-sen `…281` pada KEM). Tiap penemuan → jurnal resmi + penyesuaian terhadap 3-4100, dengan mutasi bank sebagai dasar.
