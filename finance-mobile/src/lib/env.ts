@@ -14,4 +14,6 @@ export const ENV = {
   version: Constants.expoConfig?.version ?? "0.0.0",
   // Build preview ke API produksi: perintah uang dinonaktifkan (lihat lib/bacaSaja.ts). Tidak berlaku bila data contoh aktif.
   readOnly: process.env.EXPO_PUBLIC_READ_ONLY === "true",
+  // Notifikasi push (S11): MATI kecuali dinyalakan eksplisit saat build (butuh google-services.json / FCM). Saat mati: tanpa izin, tanpa token, tanpa listener.
+  pushEnabled: process.env.EXPO_PUBLIC_PUSH_ENABLED === "true",
 } as const;

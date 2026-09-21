@@ -403,6 +403,7 @@ model User {
   pushTokens                 PushToken[]
   mobileSessions             MobileSession[]
   mobileDeviceTokens         MobileDeviceToken[]
+  mobileNotificationPref     MobileNotificationPref?
   sentMessages               Message[]                @relation("MessageSender")
   firstResponderFor          Conversation[]           @relation("FirstResponder")
   handoverEventsFrom         HandoverEvent[]          @relation("HandoverFrom")
@@ -6628,6 +6629,16 @@ model MobileDeviceToken {
   @@unique([userId, deviceId])
   @@index([sessionId])
   @@map("mobile_device_tokens")
+}
+
+// Preferensi notifikasi push per kategori (S11). Baris tidak ada = semua kategori aktif (default).
+model MobileNotificationPref {
+  userId     String   @id @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories Json     @default("{}")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("mobile_notification_prefs")
 }
 
 // Idempotency-Key untuk command uang di /api/finance/*. Permintaan kembar

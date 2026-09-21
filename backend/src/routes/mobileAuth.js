@@ -10,6 +10,7 @@
 //   POST   /api/mobile/auth/sessions/revoke-user   (USER_MANAGE) cabut semua sesi satu pengguna
 //   POST   /api/mobile/devices               daftar token push (FCM/Expo) perangkat ini
 //   DELETE /api/mobile/devices/:deviceId     hapus token push perangkat
+//   GET|PUT /api/mobile/notification-prefs   preferensi notifikasi per kategori (S11)
 //   GET    /api/mobile/config                versi minimum/maintenance (publik)
 //
 // Detail desain & keputusan: docs/FINANCE-MOBILE-BACKEND.md, PRD §11 & §17.
@@ -24,6 +25,7 @@ import { capabilitiesFor } from "../services/capabilities.js";
 import { loadRoles, gerbangLogin } from "./auth.js";
 import { createLimiter, clientIp } from "../lib/rateLimit.js";
 import { fcmConfigured } from "../services/fcmTransport.js";
+import { KATEGORI_NOTIF, bacaPreferensi, financePushEnabled } from "../services/financeNotifications.js";
 import {
   ACCESS_TTL_SECONDS, createSession, rotateSession, revokeSession, revokeAllForUser,
   signAccessToken, hashToken, parseDevice,
@@ -252,6 +254,36 @@ mobileRouter.delete("/devices/:deviceId", requireAuth, async (req, res) => {
     res.json({ ok: true, dihapus: r.count });
   } catch (err) {
     console.error("[mobileAuth] unregister device:", err);
+    fail(res, 500, "Terjadi kesalahan di server");
+  }
+});
+
+// ─── PREFERENSI NOTIFIKASI (S11) ─────────────────────────────────────────
+mobileRouter.get("/notification-prefs", requireAuth, async (req, res) => {
+  try {
+    res.json({ categories: await bacaPreferensi(prisma, req.user.id), pushEnabled: financePushEnabled(), fcmConfigured: fcmConfigured() });
+  } catch (err) {
+    console.error("[mobileAuth] prefs get:", err);
+    fail(res, 500, "Terjadi kesalahan di server");
+  }
+});
+
+mobileRouter.put("/notification-prefs", requireAuth, async (req, res) => {
+  try {
+    const masuk = req.body?.categories;
+    if (!masuk || typeof masuk !== "object" || Array.isArray(masuk)) return fail(res, 400, "categories wajib berupa objek");
+    const bersih = {};
+    for (const [k, v] of Object.entries(masuk)) {
+      if (!KATEGORI_NOTIF.includes(k)) return fail(res, 400, `Kategori tidak dikenal: ${String(k).slice(0, 30)}`);
+      if (typeof v !== "boolean") return fail(res, 400, "Nilai kategori harus true/false");
+      bersih[k] = v;
+    }
+    const sekarang = await bacaPreferensi(prisma, req.user.id);
+    const categories = { ...sekarang, ...bersih };
+    await prisma.mobileNotificationPref.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, categories }, update: { categories } });
+    res.json({ categories, pushEnabled: financePushEnabled(), fcmConfigured: fcmConfigured() });
+  } catch (err) {
+    console.error("[mobileAuth] prefs put:", err);
     fail(res, 500, "Terjadi kesalahan di server");
   }
 });

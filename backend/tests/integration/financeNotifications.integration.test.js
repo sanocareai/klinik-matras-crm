@@ -127,7 +127,8 @@ test("Isi push aman di layar terkunci: tanpa nominal/nama; detail hanya di data;
   assert.equal(pesan.length, 1);
   assert.equal(pesan[0].to, "ExponentPushToken[pengaju]");
   assert.doesNotMatch(`${pesan[0].title} ${pesan[0].body}`, /Rp|\d{3}/, "tanpa nominal di teks yang tampil");
-  assert.equal(pesan[0].data.url, "sanofinance://expense/id-1");
+  assert.equal(pesan[0].data.path, "/tx/pengeluaran/id-1");
+  assert.equal(pesan[0].data.url, "sanofinance://approval/expense/id-1");
   assert.equal(pesan[0].data.decision, "approved");
 });
 

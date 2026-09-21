@@ -77,6 +77,8 @@ import { startSlaAlertJob } from "./services/slaAlertJob.js";
 import { startStaleLeadAlertJob } from "./services/staleLeadAlertJob.js";
 import { startSalesReminderDigestJob } from "./services/salesReminderDigestJob.js";
 import { startLeaderRecapJob } from "./services/leaderRecapJob.js";
+import { startFinanceReminderJob } from "./services/financeReminderJob.js";
+import { financePushHooks } from "./middleware/financePushHooks.js";
 import { startStaffBroadcastWorker } from "./services/staffBroadcastWorker.js";
 import { startQualityScorerJob } from "./services/qualityScorer/job.js";
 import { startSalesRiskIntentClassificationJob } from "./services/salesRisk/intentClassificationJob.js";
@@ -206,6 +208,7 @@ app.use("/api/activity",     activityRouter);
 app.use("/api/complaints",   complaintsRouter);
 app.use("/api/armada",       armadaRouter);
 app.use("/api/kendali",      kendaliRouter);
+app.use("/api/finance",      financePushHooks); // S11: pemicu push (mengamati respons; tidak mengubah endpoint)
 app.use("/api/finance",      financeRouter);
 app.use("/api/finance",      financeTxRouter); // additive, tidak mengubah financeRouter
 app.use("/api/finance",      financeKasbonRouter);
@@ -335,6 +338,7 @@ server.listen(PORT, () => {
   // Rekap tim harian ke leader (Novi) — juga DORMAN, sama pola (lihat
   // scripts/preview-leader-recap.js + data/settings.json > leaderRecap.enabled).
   startLeaderRecapJob();
+  startFinanceReminderJob(); // S11: dorman sampai FINANCE_PUSH_ENABLED=true
   startQualityScorerJob();
   startWeeklyNarrativeJob();
   // DINYALAKAN LAGI (29 Agustus 2026) — sempat dipause krn owner menemukan

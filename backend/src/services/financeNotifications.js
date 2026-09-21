@@ -24,6 +24,16 @@ let expoFetch = (...a) => globalThis.fetch(...a);
 /** Ganti fetch Expo — hanya untuk tes. */
 export function setExpoFetchForTests(fn) { expoFetch = fn || ((...a) => globalThis.fetch(...a)); }
 
+// Kategori yang bisa diatur pengguna (S11). Baris preferensi tidak ada / kunci tidak ada = aktif.
+export const KATEGORI_NOTIF = ["approval", "pembayaran", "piutang", "supplier", "sensitif"];
+const CHANNEL_KATEGORI = { approval: "approval", pembayaran: "pembayaran", piutang: "pengingat", supplier: "pengingat", sensitif: "sensitif" };
+
+export async function bacaPreferensi(db, userId) {
+  const row = await db.mobileNotificationPref.findUnique({ where: { userId } });
+  const c = row?.categories && typeof row.categories === "object" ? row.categories : {};
+  return Object.fromEntries(KATEGORI_NOTIF.map((k) => [k, c[k] !== false]));
+}
+
 export function financePushEnabled() {
   return process.env.FINANCE_PUSH_ENABLED === "true";
 }
@@ -65,7 +75,7 @@ async function kirimExpo(tokens, { title, body, data, channelId }) {
  * Hasil: ringkasan angka (tidak pernah melempar).
  */
 export async function dispatchFinanceNotification({
-  title, body, data = {}, channelId = "approval",
+  title, body, data = {}, channelId = null, category = "approval",
   permission = null, userIds = null, excludeUserId = null, db = prisma,
 }) {
   const ringkasan = { penerima: 0, terkirim: 0, dihapus: 0, dilewati: null };
@@ -76,6 +86,14 @@ export async function dispatchFinanceNotification({
     if (excludeUserId) target = target.filter((id) => id !== excludeUserId);
     ringkasan.penerima = target.length;
     if (!target.length) return ringkasan;
+
+    // Preferensi per kategori: pengguna yang mematikan kategori ini tidak dikirimi.
+    const mati = await db.mobileNotificationPref.findMany({ where: { userId: { in: target } }, select: { userId: true, categories: true } });
+    const nonaktif = new Set(mati.filter((p) => p.categories && typeof p.categories === "object" && p.categories[category] === false).map((p) => p.userId));
+    target = target.filter((id) => !nonaktif.has(id));
+    ringkasan.penerima = target.length;
+    if (!target.length) return ringkasan;
+    channelId = channelId || CHANNEL_KATEGORI[category] || "approval";
 
     const tokens = await db.mobileDeviceToken.findMany({ where: { userId: { in: target } } });
     if (!tokens.length) return ringkasan;
@@ -114,14 +132,19 @@ export async function dispatchFinanceNotification({
 }
 
 const JENIS_LABEL = { expense: "pengeluaran", purchase: "pembelian", bill: "tagihan supplier", refund: "refund" };
+const jenisApproval = (jenis) => (["expense", "purchase", "bill", "refund"].includes(jenis) ? jenis : null);
+
+// `path` = rute layar di aplikasi (divalidasi ulang oleh klien terhadap daftar putih). `url` dipertahankan untuk kompatibilitas.
+const pathApproval = (jenis, id) => `/persetujuan/${jenis}/${id}`;
 
 /** Pengajuan baru menunggu persetujuan → pemegang FINANCE_APPROVE selain pengaju. */
 export function notifyApprovalRequested({ jenis, id, nomor, actorId }) {
+  if (!jenisApproval(jenis) || !id) return Promise.resolve({ dilewati: "jenis_tidak_dikenal" });
   return dispatchFinanceNotification({
     title: "Ada pengajuan menunggu persetujuan",
     body: "Buka aplikasi untuk memeriksa dan memutuskan.",
-    data: { type: "approval_requested", jenis, id, nomor: nomor || "", url: `sanofinance://approval/${jenis}/${id}` },
-    channelId: "approval",
+    data: { type: "approval_requested", jenis, id, nomor: nomor || "", path: pathApproval(jenis, id), url: `sanofinance://approval/${jenis}/${id}` },
+    category: "approval",
     permission: P.FINANCE_APPROVE,
     excludeUserId: actorId || null,
   });
@@ -129,23 +152,62 @@ export function notifyApprovalRequested({ jenis, id, nomor, actorId }) {
 
 /** Putusan (setuju/tolak) → pengaju dokumen. */
 export function notifyApprovalDecided({ jenis, id, nomor, decision, submitterId }) {
+  if (!jenisApproval(jenis) || !id || !submitterId) return Promise.resolve({ dilewati: "tanpa_penerima" });
   const label = JENIS_LABEL[jenis] || "pengajuan";
   return dispatchFinanceNotification({
     title: decision === "approved" ? "Pengajuan disetujui" : "Pengajuan ditolak",
     body: `Ada putusan untuk ${label} Anda. Buka aplikasi untuk melihat.`,
-    data: { type: "approval_decided", decision, jenis, id, nomor: nomor || "", url: `sanofinance://${jenis}/${id}` },
-    channelId: "approval",
-    userIds: submitterId ? [submitterId] : [],
+    data: { type: "approval_decided", decision, jenis, id, nomor: nomor || "", path: `/tx/${MODUL_DARI_JENIS[jenis]}/${id}`, url: `sanofinance://approval/${jenis}/${id}` },
+    category: "approval",
+    userIds: [submitterId],
   });
 }
+const MODUL_DARI_JENIS = { expense: "pengeluaran", purchase: "pembelian", bill: "tagihan", refund: "refund" };
 
-/** Ada pembayaran/order lunas menunggu verifikasi → pemegang PAYMENT_WRITE. */
+/** Ada pembayaran menunggu verifikasi → pemegang PAYMENT_WRITE. */
 export function notifyPaymentsPending({ count }) {
   return dispatchFinanceNotification({
     title: "Pembayaran menunggu verifikasi",
     body: "Ada pembayaran yang perlu dicek uang masuknya.",
-    data: { type: "payments_pending", count: String(count ?? ""), url: "sanofinance://payments" },
-    channelId: "pembayaran",
+    data: { type: "payments_pending", count: String(count ?? ""), path: "/pembayaran", url: "sanofinance://payments" },
+    category: "pembayaran",
     permission: P.PAYMENT_WRITE,
+  });
+}
+
+/** Pembayaran ditolak verifikator → pencatat pembayaran (bila pengguna aplikasi). */
+export function notifyPaymentRejected({ id, recordedById, actorId }) {
+  if (!id || !recordedById || recordedById === actorId) return Promise.resolve({ dilewati: "tanpa_penerima" });
+  return dispatchFinanceNotification({
+    title: "Pembayaran ditolak",
+    body: "Ada pembayaran yang ditolak. Buka aplikasi untuk melihat alasannya.",
+    data: { type: "payment_rejected", id, path: `/pembayaran/${id}`, url: `sanofinance://payments/${id}` },
+    category: "pembayaran",
+    userIds: [recordedById],
+  });
+}
+
+/** Pengingat jatuh tempo (piutang / tagihan supplier) → pemegang FINANCE_READ. Tanpa nominal/nama; jumlah hanya di data. */
+export function notifyDueReminder({ kind, count }) {
+  const piutang = kind === "piutang";
+  return dispatchFinanceNotification({
+    title: piutang ? "Piutang jatuh tempo" : "Tagihan supplier jatuh tempo",
+    body: piutang ? "Ada piutang pelanggan yang jatuh tempo hari ini atau besok." : "Ada tagihan supplier yang jatuh tempo hari ini atau besok.",
+    data: { type: piutang ? "receivable_due" : "bill_due", count: String(count ?? ""), path: piutang ? "/tx/piutang" : "/tx/tagihan" },
+    category: piutang ? "piutang" : "supplier",
+    permission: P.FINANCE_READ,
+  });
+}
+
+/** Transaksi sensitif (pembatalan/pembalikan jurnal oleh admin) → pemegang FINANCE_ADMIN selain pelaku. */
+export function notifySensitive({ modul, id, actorId }) {
+  if (!id) return Promise.resolve({ dilewati: "tanpa_penerima" });
+  return dispatchFinanceNotification({
+    title: "Transaksi sensitif dicatat",
+    body: "Ada pembatalan transaksi yang perlu Anda ketahui. Buka aplikasi untuk melihat.",
+    data: { type: "sensitive_action", modul: modul || "", id, path: modul ? `/tx/${modul}/${id}` : "/" },
+    category: "sensitif",
+    permission: P.FINANCE_ADMIN,
+    excludeUserId: actorId || null,
   });
 }

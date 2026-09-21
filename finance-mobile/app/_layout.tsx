@@ -20,7 +20,8 @@ import { usePrefs } from "@/design/prefs";
 import { useSession } from "@/auth/session";
 import { useLock } from "@/auth/lock";
 import { AppLockGate } from "@/features/lock/AppLockGate";
-import { daftarkanPush } from "@/auth/push";
+import { pasangPendengarTautan, segarkanTokenPush } from "@/auth/push";
+import { ambilTautanTertunda, adaTautanTertunda, langgananTautan } from "@/lib/tautan";
 import { ENV } from "@/lib/env";
 
 void SplashScreen.preventAutoHideAsync();
@@ -63,10 +64,24 @@ function Gerbang() {
     }
   }, [status, hasShareIntent, shareIntent, router]);
 
-  // Daftarkan token push setelah masuk (gagal tidak mengganggu).
+  // Push (S11; hanya bila flag hidup): segarkan token diam-diam setelah masuk dan saat kembali ke aplikasi (rotasi token/pasang ulang) — TANPA dialog izin.
   useEffect(() => {
-    if (status === "signedIn") void daftarkanPush();
+    if (status !== "signedIn") return undefined;
+    void segarkanTokenPush();
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") void segarkanTokenPush(); });
+    return () => sub.remove();
   }, [status]);
+  useEffect(() => pasangPendengarTautan(), []);
+
+  // Tautan dari notifikasi dibuka HANYA setelah masuk DAN kunci aplikasi terbuka (tidak melompati PIN/biometrik).
+  const kunciSiap = useLock((s) => s.ready && !s.locked && !s.cover);
+  const [tautanBaru, setTautanBaru] = React.useState(0);
+  useEffect(() => langgananTautan(() => setTautanBaru((n) => n + 1)), []);
+  useEffect(() => {
+    if (status !== "signedIn" || !kunciSiap || !adaTautanTertunda()) return;
+    const rute = ambilTautanTertunda();
+    if (rute) router.push(rute);
+  }, [status, kunciSiap, router, tautanBaru]);
 
   // Anti tangkapan layar di seluruh aplikasi (FLAG_SECURE). Dimatikan di varian development supaya
   // bisa mengambil tangkapan untuk pengujian visual.
@@ -98,6 +113,7 @@ function Gerbang() {
           <Stack.Screen name="buku/rekon/[id]" />
           <Stack.Screen name="approval/[jenis]/[id]" />
           <Stack.Screen name="keamanan" />
+          <Stack.Screen name="notifikasi" />
           <Stack.Screen name="ubah-pin" />
         </Stack.Protected>
         <Stack.Protected guard={status === "signedOut"}>
