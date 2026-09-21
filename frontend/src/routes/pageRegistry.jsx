@@ -58,6 +58,7 @@ const FinanceAccounts       = lazy(() => import("../pages/finance/FinanceAccount
 const FinanceCash           = lazy(() => import("../pages/finance/FinanceCash.jsx"));
 const FinancePayments       = lazy(() => import("../pages/finance/FinancePayments.jsx"));
 const FinanceReceivables    = lazy(() => import("../pages/finance/FinanceReceivables.jsx"));
+const FinancePemasukan      = lazy(() => import("../pages/finance/FinancePemasukan.jsx"));
 const FinanceInvoices       = lazy(() => import("../pages/finance/FinanceInvoices.jsx"));
 const FinanceExpenses       = lazy(() => import("../pages/finance/FinanceExpenses.jsx"));
 const FinancePurchases      = lazy(() => import("../pages/finance/FinancePurchases.jsx"));
@@ -156,6 +157,7 @@ export const PAGES = [
   { path: "/finance/payments",       render: () => <FinancePayments /> },
   { path: "/finance/invoices",       render: () => <FinanceInvoices /> },
   { path: "/finance/receivables",    render: () => <FinanceReceivables /> },
+  { path: "/finance/pemasukan",      render: () => <FinancePemasukan /> },
   { path: "/finance/cash",           render: () => <FinanceCash /> },
   { path: "/finance/expenses",       render: () => <FinanceExpenses /> },
   { path: "/finance/purchases",      render: () => <FinancePurchases /> },

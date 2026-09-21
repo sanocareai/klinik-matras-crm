@@ -255,3 +255,28 @@ test("Kunci: setiap jurnal masuk paling banyak satu kelas uang-masuk (tidak ada 
   for (const [, kat] of perJurnal) assert.equal(new Set(kat).size, kat.length, `kelas ganda pada satu jurnal: ${kat}`);
   assert.equal(new Set(baris.map((b) => b.key)).size, baris.length, "kunci baris unik");
 });
+
+test("Kontrak klien: respons ringkasan & daftar lengkap (semua kelas) — DUMP_PEMASUKAN=1 menyimpan fixture untuk uji kontrak mobile", async () => {
+  const c = await siapkan();
+  const fin = await masuk(["FINANCE"]);
+  const o = await buatOrder({ value: 1_000_000, nama: "Ibu Erni" });
+  await bayar(c, o, { amount: 400_000, cashAccountId: c.bank.id, verif: true });
+  await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: o.id, userId: c.admin.id, date: "2026-09-12" }));
+  await bayar(c, o, { amount: 600_000, cashAccountId: c.bank2.id, verif: false, tanggal: new Date("2026-09-20T03:00:00Z") });
+  await bayar(c, o, { amount: 1_980_000, cashAccountId: null, verif: true, tanggal: new Date("2026-09-21T03:00:00Z"), jurnalKan: false });
+  await post(fin, "/other-income", { description: "Bunga bank", amount: "75000.50", accountId: c.lain.id, cashAccountId: c.bank.id, date: "2026-09-11" });
+  await jurnal(c, { source: "MANUAL", baris: [{ accountId: c.bankA.id, cashAccountId: c.bank.id, debit: toMoney(5_000_000) }, { accountId: c.modal.id, credit: toMoney(5_000_000) }] });
+  await jurnal(c, { source: "REFUND", tanggal: "2026-09-14", baris: [{ accountId: c.retur.id, debit: toMoney(120_000.55) }, { accountId: c.bankA.id, cashAccountId: c.bank.id, credit: toMoney(120_000.55) }] });
+  await jurnal(c, { source: "TRANSFER_KAS", baris: [{ accountId: c.bankA.id, cashAccountId: c.bank2.id, debit: toMoney(2_000_000) }, { accountId: c.bankA.id, cashAccountId: c.bank.id, credit: toMoney(2_000_000) }] });
+  await jurnal(c, { source: "MANUAL", baris: [{ accountId: c.bankA.id, cashAccountId: c.bank.id, debit: toMoney(300_000) }, { accountId: c.piutang.id, credit: toMoney(300_000) }] }); // pelunasan manual di luar alur → Perlu ditinjau
+  const hasil = { generatedBy: "financePemasukan.integration.test.js (DUMP_PEMASUKAN=1)", ringkasan: (await get(fin, `/pemasukan/ringkasan?${PER}`)).body, daftar: (await get(fin, `/pemasukan?${PER}&limit=100`)).body };
+  assert.ok(hasil.daftar.items.length >= 8);
+  for (const b of hasil.daftar.items) assert.match(b.nilai, /^-?\d+\.\d{2}$/, "uang selalu string desimal 2 digit");
+  if (process.env.DUMP_PEMASUKAN) {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    mkdirSync(fileURLToPath(new URL("../../../finance-mobile/src/__tests__/fixtures/", import.meta.url)), { recursive: true });
+    const stabil = JSON.stringify(hasil, (k, v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v) ? "2026-09-21T00:00:00.000Z" : v), 1);
+    writeFileSync(fileURLToPath(new URL("../../../finance-mobile/src/__tests__/fixtures/pemasukan-real.json", import.meta.url)), stabil);
+  }
+});

@@ -426,6 +426,7 @@ const DIVISIONS = {
         section: "OPERASIONAL",
         items: [
           { to: "/finance/dashboard", label: "Ringkasan",              Icon: LayoutDashboard },
+          { to: "/finance/pemasukan", label: "Pemasukan",              Icon: TrendingUp },
           { to: "/finance/payments",  label: "Pembayaran & Verifikasi", Icon: Banknote },
           { to: "/finance/cash",      label: "Kas & Bank",             Icon: Wallet },
           { to: "/finance/expenses",  label: "Pengeluaran",            Icon: Receipt },
