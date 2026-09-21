@@ -132,6 +132,118 @@ export async function selesaikanJobBelumJalan(tx, orderId) {
   for (const routeId of routeIds) await syncRouteCompletionStatus(tx, routeId);
 }
 
+// ─── TARIK BALIK DARI DELIVERED (21 September 2026) ──────────────────────
+// Laporan owner: order NEW-30082026-023 job Pengirimannya tampil "SELESAI"
+// padahal status order masih Pengiriman/belum terkirim. Urutannya (dari
+// order_status_transitions): admin set order READY 09:27 → set DELIVERED
+// 09:45:50 → set SHIPPING 09:45:52 (koreksi salah klik, 2 detik kemudian).
+//
+// DELIVERED menyalakan kaskade MAJU di PATCH /orders/:id (unit → DELIVERED,
+// selesaikanJobBelumJalan → job COMPLETED tanpa foto/driver, pengakuan
+// pendapatan) — tapi TIDAK ADA kaskade MUNDUR: menarik order kembali cuma
+// menulis Order.status, job & unit tetap "selesai". Akibatnya order bilang
+// "sedang dikirim" sementara jobnya bilang "sudah terkirim", dan driver/
+// dispatcher tidak lagi melihat job itu sebagai pekerjaan yang harus
+// dilakukan. Komentar lama di cabang READY (routes/orders.js) menyebut
+// kasus ini "dibetulkan manual per-kasus" — ini kejadian kedua, jadi
+// dibuat jalur resmi.
+//
+// SANGAT SEMPIT SENGAJA — cuma membuka job yang JELAS artefak kaskade
+// (bukan job yang benar-benar selesai di lapangan). Tanda artefak, semuanya
+// harus terpenuhi (lihat adalahJobHasilKaskadeDelivered):
+//   - COMPLETED, tipe DELIVERY
+//   - TANPA satu pun jejak kerja lapangan: foto bukti, foto mulai/tiba,
+//     tanda tangan, waktu tiba
+//   - completedAt jatuh dalam jendela singkat dari transisi DELIVERED
+//     terakhir (kaskade & transisi ditulis di transaksi yang sama, selisih
+//     milidetik)
+// Job yang benar-benar diselesaikan driver (punya foto/waktu tiba) TIDAK
+// PERNAH dibuka lewat sini, sekalipun status order ditarik mundur.
+const JENDELA_KASKADE_MS = 2 * 60 * 1000;
+
+export function adalahJobHasilKaskadeDelivered(job, waktuTransisiDelivered) {
+  if (job.type !== "DELIVERY" || job.status !== "COMPLETED" || !job.completedAt) return false;
+  const adaJejakLapangan =
+    (job.proofPhotoUrls || []).length > 0 ||
+    (job.startPhotoUrls || []).length > 0 ||
+    (job.arrivalPhotoUrls || []).length > 0 ||
+    !!job.signatureUrl ||
+    !!job.arrivedAt;
+  if (adaJejakLapangan) return false;
+  const selisih = Math.abs(new Date(job.completedAt).getTime() - new Date(waktuTransisiDelivered).getTime());
+  return selisih <= JENDELA_KASKADE_MS;
+}
+
+// Kaskade maju MENIMPA status asli job (ASSIGNED/SCHEDULED/UNSCHEDULED →
+// COMPLETED) dan tidak menyimpan yang lama, jadi dipulihkan dari data yang
+// MASIH ada: punya driver → ASSIGNED; punya tanggal → SCHEDULED; sisanya
+// UNSCHEDULED (persis bentuk job hasil suggestDeliveryJob()).
+export function tentukanStatusJobSemula(job) {
+  if (job.driverId) return "ASSIGNED";
+  if (job.scheduledDate) return "SCHEDULED";
+  return "UNSCHEDULED";
+}
+
+export async function bukaKembaliJobHasilKaskadeDelivered(tx, orderId) {
+  const hasil = { transisiDelivered: null, jobDibuka: [], unitDipulihkan: [], ruteDipulihkan: [] };
+
+  const transisi = await tx.orderStatusTransition.findFirst({
+    where: { orderId, toStatus: "DELIVERED" },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  if (!transisi) return hasil;
+  hasil.transisiDelivered = transisi.createdAt;
+
+  const kandidat = await tx.job.findMany({
+    where: { orderId, type: "DELIVERY", status: "COMPLETED" },
+    select: {
+      id: true, type: true, status: true, completedAt: true, driverId: true, scheduledDate: true, routeId: true,
+      proofPhotoUrls: true, startPhotoUrls: true, arrivalPhotoUrls: true, signatureUrl: true, arrivedAt: true,
+    },
+  });
+  const artefak = kandidat.filter((j) => adalahJobHasilKaskadeDelivered(j, transisi.createdAt));
+  if (artefak.length === 0) return hasil;
+
+  for (const j of artefak) {
+    const statusSemula = tentukanStatusJobSemula(j);
+    await tx.job.update({ where: { id: j.id }, data: { status: statusSemula, completedAt: null } });
+    hasil.jobDibuka.push({ id: j.id, status: statusSemula });
+  }
+
+  // Unit yang terikat ke job pengiriman yang dibuka: job itu ADA karena unit-
+  // nya sudah READY_FOR_DELIVERY (suggestDeliveryJob cuma jalan untuk status
+  // itu), dan kaskade maju memblokir kalau ada job EN_ROUTE/ARRIVED — jadi
+  // READY_FOR_DELIVERY adalah satu-satunya keadaan sebelumnya yang masuk
+  // akal. Unit yang statusnya BUKAN DELIVERED tidak disentuh.
+  const jobUnits = await tx.jobUnit.findMany({
+    where: { jobId: { in: artefak.map((j) => j.id) } },
+    select: { unitId: true },
+  });
+  const unitIds = [...new Set(jobUnits.map((ju) => ju.unitId))];
+  if (unitIds.length > 0) {
+    const units = await tx.unit.findMany({ where: { id: { in: unitIds }, status: "DELIVERED" }, select: { id: true, unitCode: true } });
+    if (units.length > 0) {
+      await tx.unit.updateMany({ where: { id: { in: units.map((u) => u.id) } }, data: { status: "READY_FOR_DELIVERY" } });
+      hasil.unitDipulihkan = units.map((u) => u.unitCode);
+    }
+  }
+
+  // Rute yang sempat otomatis COMPLETED gara-gara job-jobnya ikut tuntas
+  // (syncRouteCompletionStatus) kembali PUBLISHED, karena sekarang ada job
+  // aktif lagi di dalamnya.
+  const routeIds = [...new Set(artefak.map((j) => j.routeId).filter(Boolean))];
+  for (const routeId of routeIds) {
+    const rute = await tx.route.findUnique({ where: { id: routeId }, select: { status: true } });
+    if (rute?.status === "COMPLETED") {
+      await tx.route.update({ where: { id: routeId }, data: { status: "PUBLISHED" } });
+      hasil.ruteDipulihkan.push(routeId);
+    }
+  }
+
+  return hasil;
+}
+
 // Job Pengambilan yang NYANGKUT ditutup begitu Order-nya kadung READY
 // (D-064 lanjutan lagi, 6 September 2026 — laporan owner, contoh nyata Cst
 // VERA/RES-31082026-217: admin dorong Order.status manual ke READY jam

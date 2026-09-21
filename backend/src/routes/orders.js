@@ -20,7 +20,7 @@ import { renderInvoicePdf } from "../services/invoicePdf.js";
 import { buildWarrantyView, markWarrantySent, WARRANTY_YEARS_VALID } from "../services/warranty.js";
 import { renderWarrantyPdf } from "../services/warrantyPdf.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
-import { syncOrderStatus, selesaikanJobBelumJalan, selesaikanJobPengambilanTertinggal } from "../services/orderStatusSync.js";
+import { syncOrderStatus, selesaikanJobBelumJalan, selesaikanJobPengambilanTertinggal, bukaKembaliJobHasilKaskadeDelivered } from "../services/orderStatusSync.js";
 import { suggestDeliveryJob } from "../services/deliveryHandoff.js";
 import { ensurePickupJobForOrder } from "../services/armadaAutoJob.js";
 import { ACTIVE_JOB_STATUSES } from "../services/jobStatus.js";
@@ -367,6 +367,16 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
             changedById: req.user?.id || null,
           },
         });
+
+        // Tarik balik dari DELIVERED (21 September 2026) — kaskade MUNDUR
+        // yang selama ini tidak ada: lihat catatan panjang di
+        // orderStatusSync.js#bukaKembaliJobHasilKaskadeDelivered. CANCELLED
+        // dan status SEWA_* sengaja tidak masuk (punya jalurnya sendiri).
+        // Dijalankan SEBELUM cabang per-status di bawah supaya cabang READY
+        // melihat unit yang sudah dipulihkan.
+        if (sebelum.status === "DELIVERED" && ["PENDING", "PICKUP", "PROCESSING", "READY", "SHIPPING"].includes(status)) {
+          await bukaKembaliJobHasilKaskadeDelivered(tx, updated.id);
+        }
 
         // Kaskade Order -> Unit untuk DUA status terminal (24 Agustus 2026).
         // CANCELLED sudah lolos checkCancelBlockers di atas (tidak ada unit
