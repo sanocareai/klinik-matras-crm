@@ -399,7 +399,7 @@ export async function arusKas(db, { from, to }) {
       const map = bucket[kategori] || bucket.LAIN;
       const key = l.account.id;
       if (!map.has(key)) {
-        map.set(key, { code: l.account.code, name: l.account.name, nilai: ZERO });
+        map.set(key, { accountId: key, code: l.account.code, name: l.account.name, nilai: ZERO });
       }
       const row = map.get(key);
       row.nilai = row.nilai.plus(porsi);
@@ -408,7 +408,7 @@ export async function arusKas(db, { from, to }) {
 
   const bentuk = (map) =>
     [...map.values()]
-      .map((r) => ({ code: r.code, name: r.name, nilai: moneyToNumber(r.nilai) }))
+      .map((r) => ({ accountId: r.accountId, code: r.code, name: r.name, nilai: moneyToNumber(r.nilai) }))
       .filter((r) => r.nilai !== 0)
       .sort((a, b) => a.code.localeCompare(b.code));
 

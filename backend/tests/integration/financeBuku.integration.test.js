@@ -279,3 +279,33 @@ test("Rekonsiliasi: saldo buku/koran/selisih, kandidat nominal sama, cocokkan/le
   if (login.body?.token) assert.equal((await raw("GET", "/api/finance/buku/jurnal", { token: login.body.token })).status, 403);
   assert.equal((await raw("GET", "/api/finance/buku/jurnal")).status, 401);
 });
+
+test("Kontrak klien: /buku/* dan /reports/* menjawab 200 dengan bentuk yang dipetakan mobile; DUMP_BUKU=1 menyimpan fixture", async () => {
+  const s = await siapkan();
+  const fin = await masuk(["FINANCE"]);
+  const approver = await masuk(["APPROVER"]);
+  await bayarPengeluaran(fin, approver, s, "200000", "2026-09-10", "Servis truk");
+  const stx = await post(fin, "/bank-statements", { cashAccountId: s.bank.id, periodStart: "2026-09-01", periodEnd: "2026-09-30", openingBalance: "20000000", closingBalance: "49800000", lines: [{ date: "2026-09-10", description: "TRF servis truk", amount: "-200000" }] });
+  assert.equal(stx.status, 201, JSON.stringify(stx.body));
+  const akunResp = (await get(fin, "/buku/akun")).body;
+  const akun = akunResp.akun;
+  const bankAkun = akun.find((a) => a.id === s.akunBank.id) ?? akun[0];
+  const hasil = { generatedBy: "financeBuku.integration.test.js (DUMP_BUKU=1)", akunId: s.akunBank.id, jurnal: (await get(fin, "/buku/jurnal?from=2026-09-01&to=2026-09-30")).body, akun: akunResp, mutasi: (await get(fin, `/buku/akun/${bankAkun.id}/mutasi?from=2026-09-01&to=2026-09-30`)).body, rekon: (await get(fin, "/buku/rekon")).body, laporan: {} };
+  assert.ok(hasil.rekon.items.length >= 1);
+  hasil.rekonDetail = (await get(fin, `/buku/rekon/${hasil.rekon.items[0].id}`)).body;
+  hasil.jurnalDetail = (await get(fin, `/buku/jurnal/${hasil.jurnal.items[0].id}`)).body;
+  for (const [nama, q] of [["income-statement", "?from=2026-09-01&to=2026-09-30"], ["balance-sheet", "?to=2026-09-30"], ["cash-flow", "?from=2026-09-01&to=2026-09-30"], ["trial-balance", "?from=2026-09-01&to=2026-09-30"], ["receivables", "?to=2026-09-30"], ["payables", "?to=2026-09-30"]]) {
+    resetRateLimits();
+    const r = await get(fin, `/reports/${nama}${q}`);
+    assert.equal(r.status, 200, `${nama}: ${JSON.stringify(r.body)}`);
+    hasil.laporan[nama] = r.body;
+  }
+  assert.equal(hasil.laporan["balance-sheet"].ringkasan.seimbang, true);
+  if (process.env.DUMP_BUKU) {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    mkdirSync(fileURLToPath(new URL("../../../finance-mobile/src/__tests__/fixtures/", import.meta.url)), { recursive: true });
+    const stabil = JSON.stringify(hasil, (k, v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v) ? "2026-09-21T00:00:00.000Z" : v), 1);
+    writeFileSync(fileURLToPath(new URL("../../../finance-mobile/src/__tests__/fixtures/buku-real.json", import.meta.url)), stabil);
+  }
+});

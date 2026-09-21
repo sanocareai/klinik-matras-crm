@@ -117,6 +117,22 @@ Perangkat minimal: 1 HP Android modern + 1 HP lama/layar kecil bila ada. Catat t
 | 61 | Tombol Kembali sistem & navigasi antar tab | Tidak keluar aplikasi tak sengaja; tidak ada layar kosong |
 | 62 | Bagikan foto dari WhatsApp/galeri → SANO Finance | Sheet transaksi cepat terbuka; "Jadikan Pengeluaran/Pembelian" mengisi foto ke form |
 
+### Wave 2 — Jurnal, Buku Besar, Rekonsiliasi, Laporan (baca-saja pada APK preview)
+
+| # | Langkah | Hasil yang benar |
+|---|---|---|
+| 63 | Lainnya → **Jurnal**; ganti periode/status/sumber, cari nomor | Daftar mengikuti filter; jurnal tidak seimbang (bila ada) ditandai merah + banner |
+| 64 | Buka satu jurnal → ketuk baris akun | Detail memuat debit/kredit, dokumen terkait, riwayat; ketukan baris membuka buku besar akun bulan itu |
+| 65 | Lainnya → **Buku Besar** → pilih periode dan akun | Saldo awal, total, saldo akhir dan saldo berjalan sama dengan halaman Buku Besar di web untuk periode yang sama |
+| 66 | Akun tanpa mutasi / periode "Tahun lalu" | Keadaan kosong yang jelas, bukan galat |
+| 67 | Lainnya → **Rekonsiliasi** → buka satu | Saldo buku, saldo statement, selisih, jumlah belum cocok sama dengan web |
+| 68 | **APK preview (baca-saja):** buka baris belum cocok | Tombol cocokkan/lepas nonaktif dengan teks "Build preview hanya untuk pengujian baca" |
+| 69 | Tab **Laporan** → enam laporan, ganti periode | Angka sama dengan halaman laporan di web (periode sama); Neraca menampilkan laba/rugi tahun berjalan dan status seimbang/selisih |
+| 70 | Ketuk baris akun di Neraca Saldo / piutang di Umur Piutang | Terbuka buku besar akun / detail piutang |
+| 71 | **Bagikan ringkasan** | Sheet berbagi sistem berisi ringkasan angka yang sedang tampil |
+| 72 | Mode pesawat lalu tarik untuk segarkan | Banner offline; data terakhir tetap tampil dengan penanda basi; tidak ada tombol yang mengirim |
+| 73 | Font 1,5×, layar 360×640, gelap/terang | Tidak ada teks terpotong; nominal panjang dan negatif tampil utuh |
+
 ## Setelah QA — verifikasi di sisi server (oleh saya, read-only)
 
 - Jurnal baru dari sesi QA (nomor, sumber, pembuat) sesuai daftar dokumen UJI QA Anda.

@@ -132,6 +132,16 @@ Kode: `services/finance/transaksi.js`, `routes/financeTransaksi.js`. **Read-mode
 - **Aturan Pemasukan Lain:** `POST/koreksi /other-income` menolak akun pendapatan penjualan/layanan/sewa/ongkir dan akun kontra Retur & Potongan Penjualan (400: uang pelanggan dicatat di Pembayaran & Verifikasi); `/transaksi/opsi` tidak menawarkannya.
 - Tes: `tests/integration/financeTransaksi.integration.test.js` (9; `DUMP_TRANSAKSI=1` menulis fixture respons nyata untuk uji kontrak mobile `src/__tests__/transaksi.kontrak.test.ts`).
 
+### Buku & laporan S9–S10 (21 Sep 2026)
+
+Kode: `services/finance/buku.js`, `routes/financeBuku.js`. **Read-model saja**; semua butuh `FINANCE_READ`, uang = string desimal (`.toFixed(2)`), hanya jurnal `POSTED`/`REVERSED` (`STATUS_DIHITUNG`).
+- `GET /api/finance/buku/jurnal?from&to&q&source&status&akunId&page&limit` → `{items, page, total, adaLagi, hitung, tidakSeimbang, diperbaruiPada}`; item memuat `totalDebit/totalKredit/seimbang/selisih`, `dokumen` (modul + id), jurnal pembalik. `GET .../jurnal/:id` → baris, riwayat audit, catatan bila tidak seimbang.
+- `GET /buku/akun?q`, `GET /buku/akun/:id/mutasi?from&to&page` → saldo awal, mutasi, **saldo berjalan (Decimal di server)**; identik dengan `/reports/ledger` (diuji); batas 20.000 baris.
+- `GET /buku/rekon`, `GET /buku/rekon/:id` → saldo buku/koran/selisih, kandidat (nominal & arah sama), `aksi.cocokkan/lepas` per baris, riwayat (`activityEvent` `FIN_BANK_STATEMENT`).
+- Perintah (endpoint lama, diperkuat): `POST /bank-lines/:id/match` (kunci baris koran & baris jurnal; 409 bila baris koran sudah COCOK atau baris jurnal dipakai baris koran lain) dan `/unmatch` (409 bila tidak COCOK); audit trail keduanya.
+- `GET /reports/arus-kas`: tiap baris kini membawa `accountId` (aditif) untuk drill-down.
+- Tes: `tests/integration/financeBuku.integration.test.js` (jurnal termasuk fixture tidak seimbang; buku besar identik dengan laporan lama, negatif, lintas tahun; rekonsiliasi dengan double-tap, paralel, pasangan ganda, periode terkunci, izin; uji kontrak — `DUMP_BUKU=1` menulis fixture untuk `src/__tests__/buku.kontrak.test.ts`).
+
 ## 8. Tes
 
 ```bash

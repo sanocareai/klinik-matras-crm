@@ -1435,23 +1435,34 @@ Layar H1, K1, K2 (baca); `GET /finance/dashboard`, `/cash-accounts`, `/reports/l
 
 ### Fase D — Akuntansi & laporan
 
-#### S9 — Jurnal, buku besar, rekonsiliasi, data belum lengkap, tinjau bukti (L)
-| AC | Kriteria |
-|---|---|
-| S9-1 | Jurnal: filter sumber/status/cari; detail memperlihatkan baris debit/kredit dan tautan reversal; total debit = total kredit tampil dari server |
-| S9-2 | Buku besar per akun: saldo berjalan dari server, periode dapat diubah |
-| S9-3 | Rekonsiliasi: cocokkan/batal cocok/abaikan (alasan) bekerja; **Selesaikan** hanya untuk pemegang `FINANCE_APPROVE` dan butuh step-up |
-| S9-4 | Data belum lengkap: daftar + coba lagi (`FINANCE_POST`); Accountant melihat badge di Lainnya |
-| S9-5 | Tinjau bukti: verifikasi bukti oleh **bukan** pembuat; pembuat mendapat pesan server "tidak boleh memverifikasi sendiri" |
-| S9-6 | Status periode tampil (baca); tidak ada tombol tutup/buka di mobile |
+#### S9 — Jurnal, buku besar, rekonsiliasi (L)
+**Status: SELESAI untuk cakupan Wave 2 (21 Sep 2026; bersama S10; diuji di atas server contoh, kontrak respons backend nyata, dan tes integrasi backend).** *Data belum lengkap* dan *Tinjau bukti* **tidak** dikerjakan di Wave 2 (menu tetap "Segera hadir").
+Read-model server: `GET /api/finance/buku/{jurnal,jurnal/:id,akun,akun/:id/mutasi,rekon,rekon/:id}` (kode: `services/finance/buku.js`, `routes/financeBuku.js`; butuh `FINANCE_READ`). Perintah hanya pencocokan baris koran: `POST /finance/bank-lines/:id/match|unmatch` (`FINANCE_POST`, step-up, Idempotency-Key, row lock, audit `FIN_BANK_STATEMENT`).
+| AC | Status | Kriteria & realisasi |
+|---|---|---|
+| S9-1 | ✔ | Daftar jurnal: periode (termasuk tahun lalu), cari, sumber, status, akun; paginasi. Kartu memuat total debit/kredit, indikator seimbang, dokumen terkait. Jurnal tidak seimbang ditandai merah dan dihitung di banner (seimbang/selisih dari server; klien tidak membandingkan) |
+| S9-2 | ✔ | Detail jurnal: baris debit/kredit per akun, dokumen sumber (tautan ke S5/S6–S8), jurnal pembalik dua arah + alasan, pencatat, riwayat audit |
+| S9-3 | ✔ | Buku besar per akun: saldo awal, total D/K, saldo akhir, saldo berjalan per baris — semuanya dari server (identik dengan `/reports/ledger`, diuji); saldo negatif tampil utuh; akun tanpa mutasi ⇒ status kosong; periode lintas tahun; drill-down dari baris jurnal dan dari laporan |
+| S9-4 | ✔ | Rekonsiliasi bank: saldo buku, saldo statement, selisih, jumlah belum cocok/cocok, status, riwayat; baris koran dengan kandidat mutasi buku bernominal & arah sama |
+| S9-5 | ✔ | Cocokkan/lepas: hanya bila `aksi.boleh` dari server (capability `FINANCE_POST`, periode belum selesai); konfirmasi + step-up; Idempotency-Key satu per niat; double-tap satu kiriman; 409 (baris/jurnal sudah dipakai, periode ditutup) memuat ulang status; 403 memuat ulang izin; hasil tidak pasti tidak menggandakan; tidak ada antrean offline. Backend: kunci baris koran & baris jurnal, satu baris jurnal tak bisa dipakai dua baris koran |
+| S9-6 | ✔ | Tidak ada jurnal manual, reversal, edit jurnal terposting, tutup/buka periode, impor statement, atau koreksi saldo di mobile — tetap hanya di web (teks penjelas di layar) |
+**Gap S9:** *Abaikan baris koran* dan *Selesaikan rekonsiliasi* tidak ada di mobile (tetap di web). Buku besar dibatasi 20.000 baris per permintaan (dipotong server, ditandai). Daftar baris rekonsiliasi dipotong server bila sangat besar (ditandai "tampil sebagian").
 
-#### S10 — Laporan & ekspor (M)
-| AC | Kriteria |
-|---|---|
-| S10-1 | Enam laporan menampilkan struktur & angka identik respons server; `catatan` selalu tampil |
-| S10-2 | `seimbang=false` (neraca/neraca saldo) ⇒ peringatan darurat merah + selisih dari server |
-| S10-3 | Ekspor CSV berisi **persis** baris yang tampil; PDF invoice bisa dibagikan; peringatan data keuangan muncul sebelum berbagi |
-| S10-4 | Ganti periode memuat ulang; kosong ⇒ "Belum ada transaksi di periode ini" + catatan |
+#### S10 — Laporan (M)
+**Status: SELESAI untuk cakupan Wave 2 (21 Sep 2026).** Enam laporan di `/api/finance/reports/*` (laba-rugi, neraca, arus-kas, neraca-saldo, umur-piutang, umur-utang). Klien hanya memetakan dan menata; **tidak ada laba, margin, saldo, atau arus kas yang dihitung di klien**.
+| AC | Status | Kriteria & realisasi |
+|---|---|---|
+| S10-1 | ✔ | Struktur & angka identik respons server (uang string desimal, negatif utuh); `catatan` server selalu tampil; waktu "Diperbarui … · dihitung server" |
+| S10-2 | ✔ | Neraca menampilkan Laba/rugi tahun berjalan dan laba tahun sebelumnya (baris server) dan **selalu** selisih + status Seimbang/Tidak seimbang. Neraca saldo memakai `seimbang`/`selisih` server; tidak seimbang ⇒ peringatan merah + selisih |
+| S10-3 | ✔ | Pilihan periode (bulan ini/lalu, kuartal, tahun ini, tahun lalu); neraca & umur per tanggal memakai akhir periode (dinyatakan di layar); ganti periode memuat ulang |
+| S10-4 | ✔ | Drill-down: akun ⇒ buku besar (periode dibawa); umur piutang ⇒ detail piutang order; umur utang ⇒ detail tagihan. Arus kas: backend kini menyertakan `accountId` per baris (aditif) |
+| S10-5 | ✔ | Loading/kosong/parsial ("Data belum lengkap: …")/error/offline/coba lagi/tarik-untuk-segarkan; refresh otomatis saat kembali ke aplikasi |
+| S10-6 | ◐ | Bagikan = ringkasan teks dari hasil server yang sedang tampil (Share sistem). **Belum:** ekspor CSV/PDF dari server dan perbandingan periode — backend belum menyediakan endpoint-nya (tidak dihitung di klien); tersedia di web |
+| S10-7 | ◐ | Chart tidak dibuat: angka adalah sumber utama dan tidak ada data seri waktu dari server; ditunda tanpa dampak |
+
+**Mode baca-saja APK preview.** `EXPO_PUBLIC_READ_ONLY=true` (profil EAS `preview`, API produksi): semua tombol perintah uang nonaktif dengan teks "Build preview hanya untuk pengujian baca" dan jalur perintah menolak sebelum step-up. Ini pengaman salah-ketuk, **bukan keamanan** — backend dan izin server tidak diubah.
+
+**Penutupan Wave 2 (21 Sep 2026).** Di luar cakupan dan tidak disentuh: saldo produksi, JV-19092026-372, akun 2-1600, audit KEM, SANO Messenger, driver-mobile, aplikasi lain.
 
 ### Fase E — Notifikasi, pencarian, rilis
 
