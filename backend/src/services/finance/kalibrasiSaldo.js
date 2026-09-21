@@ -44,6 +44,25 @@ export const KALIBRASI_20260919 = Object.freeze({
   }),
 });
 
+/**
+ * Kalibrasi 21 Sep 2026 10.09 WIB — angka dari Owner (saldo riil bank). SENGAJA hanya dua rekening bank: saldo Kas fisik tidak diberikan, jadi
+ * "Uang Kas Sano" TIDAK disentuh. Diminta Owner agar operasional Finance jalan hari ini sambil penyebab selisih ditelusuri (Rp16.524.042 KEM,
+ * Rp6.480.000 PT Sano; kandidat penyebab: pembayaran NEW-19092026-036 Rp1.980.000 belum dipetakan ke rekening, JV-380/381 kemungkinan hitung
+ * ganda, uang masuk yang belum tercatat). Bila penyebab kelak dibukukan resmi, jurnal itu HARUS disertai penyesuaian agar tidak menghitung ganda.
+ */
+export const KALIBRASI_20260921 = Object.freeze({
+  kode: "2026-09-21T10:09+07:00",
+  cutoff: new Date("2026-09-21T10:09:00+07:00"),
+  tanggalBuku: "2026-09-21",
+  keterangan: "Kalibrasi saldo riil per 21 September 2026 pukul 10.09 WIB (penyebab selisih masih ditelusuri)",
+  idempotencyKey: "KALIBRASI_SALDO_RIIL:2026-09-21T10:09+07:00",
+  sebelumDikonfirmasi: Object.freeze([]),
+  target: Object.freeze({
+    "KEM - Sano Bank": "4172788.00",
+    "PT Sano": "36350615.00",
+  }),
+});
+
 export const AKUN_KOREKSI = Object.freeze({
   code: "3-4100",
   name: "Koreksi Saldo Awal",

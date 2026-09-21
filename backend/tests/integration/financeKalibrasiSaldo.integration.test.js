@@ -11,7 +11,7 @@ import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/fi
 import { postJournal, reverseJournal } from "../../src/services/finance/journal.js";
 import { saldoKasBank } from "../../src/services/finance/reports.js";
 import { toMoney } from "../../src/services/finance/money.js";
-import { KALIBRASI_20260919 as K, hitungKoreksi, hitungPosisi, postKalibrasi, sebelumCutoff } from "../../src/services/finance/kalibrasiSaldo.js";
+import { KALIBRASI_20260919 as K, KALIBRASI_20260921 as K2, hitungKoreksi, hitungPosisi, postKalibrasi, sebelumCutoff } from "../../src/services/finance/kalibrasiSaldo.js";
 
 test.before(async () => { await truncateAll(); });
 test.afterEach(async () => { await truncateAll(); });
@@ -208,4 +208,38 @@ test("Pengecualian terkonfirmasi pemilik: jurnal bertanggal cutoff yang dipostin
   for (const [nama, target] of Object.entries(K.target)) assert.equal(per(p2, nama).saldoCutoff, toMoney(target).toFixed(2));
   const cur = await saldoKasBank(testPrisma, { to: "2026-09-30" });
   for (const x of p2.rekening) assert.equal(toMoney(cur.find((c) => c.id === x.id).saldo).toFixed(2), toMoney(K.target[x.nama]).plus(toMoney(x.mutasiSesudah)).toFixed(2));
+});
+
+test("Kalibrasi ke-2 (21 Sep 10.09): hanya KEM & PT Sano, kas fisik TIDAK disentuh, jurnal kalibrasi pertama utuh, jurnal seimbang, idempoten, saldo = riil", async () => {
+  const ctx = await siapkan();
+  await skenario(ctx);
+  const admin = ctx.admin;
+  const pertama = await testPrisma.$transaction((tx) => postKalibrasi(tx, { userId: admin.id }), { timeout: 60_000, maxWait: 60_000 });
+  assert.equal(pertama.created, true);
+  // jurnal sesudah kalibrasi pertama tapi SEBELUM cutoff kedua (mis. pengeluaran 21 Sep pagi), dan satu SESUDAH cutoff kedua
+  await jurnal(ctx, { tanggal: "2026-09-21", dibuat: "2026-09-21T01:00:00Z", gerak: { "KEM - Sano Bank": "-2000000" } });
+  await jurnal(ctx, { tanggal: "2026-09-21", dibuat: "2026-09-21T04:00:00Z", gerak: { "PT Sano": "-100000" } }); // 11.00 WIB, sesudah 10.09
+  const sebelum = await saldoKasBank(testPrisma, {});
+  const saldoKas = sebelum.find((r) => r.name === "Uang Kas Sano").saldo;
+  const kedua = await testPrisma.$transaction((tx) => postKalibrasi(tx, { konfig: K2, userId: admin.id }), { timeout: 60_000, maxWait: 60_000 });
+  assert.equal(kedua.created, true, JSON.stringify(kedua.alasan));
+  const e = await testPrisma.finJournalEntry.findUnique({ where: { id: kedua.entry.id }, include: { lines: true } });
+  const D = e.lines.reduce((a, l) => a + Number(l.debit), 0); const Kr = e.lines.reduce((a, l) => a + Number(l.credit), 0);
+  assert.equal(D, Kr, "seimbang");
+  assert.equal(e.lines.filter((l) => l.cashAccountId).length, 2, "hanya dua rekening bank");
+  assert.ok(!e.lines.some((l) => l.cashAccountId === ctx.rek["Uang Kas Sano"].id), "kas fisik tidak disentuh");
+  const p = await hitungPosisi(testPrisma, K2);
+  assert.equal(per(p, "KEM - Sano Bank").saldoCutoff, "4172788.00");
+  assert.equal(per(p, "PT Sano").saldoCutoff, "36350615.00");
+  assert.equal(per(p, "PT Sano").mutasiSesudah, "-100000.00", "jurnal sesudah cutoff kedua tetap sesudah");
+  const sesudah = await saldoKasBank(testPrisma, {});
+  assert.equal(sesudah.find((r) => r.name === "Uang Kas Sano").saldo, saldoKas, "saldo kas tak berubah");
+  assert.equal(Number(sesudah.find((r) => r.name === "KEM - Sano Bank").saldo), 4172788);
+  assert.equal(Number(sesudah.find((r) => r.name === "PT Sano").saldo), 36350615 - 100000);
+  // jurnal kalibrasi pertama tak berubah
+  assert.equal((await testPrisma.finJournalEntry.findUnique({ where: { id: pertama.entry.id } })).status, "POSTED");
+  // idempoten
+  const ulang = await testPrisma.$transaction((tx) => postKalibrasi(tx, { konfig: K2, userId: admin.id }));
+  assert.equal(ulang.created, false);
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { idempotencyKey: K2.idempotencyKey } }), 1);
 });
