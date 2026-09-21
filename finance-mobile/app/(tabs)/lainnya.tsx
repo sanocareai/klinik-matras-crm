@@ -17,7 +17,7 @@ import { has, type Need } from "@/auth/capabilities";
 import { ENV } from "@/lib/env";
 import { S } from "@/lib/strings";
 
-type Menu = { label: string; Icon: LucideIcon; need?: Need; href?: "/keamanan" | "/pembayaran" };
+type Menu = { label: string; Icon: LucideIcon; need?: Need; href?: "/keamanan" | "/pembayaran" | "/buku/jurnal" | "/buku/akun" | "/buku/rekon" };
 
 // Setiap menu punya izin yang dibutuhkan (capability-driven). Menu tanpa izin tidak ditampilkan.
 const KEUANGAN: Menu[] = [
@@ -28,9 +28,9 @@ const KEUANGAN: Menu[] = [
   { label: S.lainnya.supplierUtang, Icon: Landmark, need: "financeRead" },
 ];
 const AKUNTANSI: Menu[] = [
-  { label: S.lainnya.jurnal, Icon: FileSpreadsheet, need: "financeRead" },
-  { label: S.lainnya.bukuBesar, Icon: BookOpen, need: "financeRead" },
-  { label: S.lainnya.rekonsiliasi, Icon: Scale, need: "financeRead" },
+  { label: S.lainnya.jurnal, Icon: FileSpreadsheet, need: "financeRead", href: "/buku/jurnal" },
+  { label: S.lainnya.bukuBesar, Icon: BookOpen, need: "financeRead", href: "/buku/akun" },
+  { label: S.lainnya.rekonsiliasi, Icon: Scale, need: "financeRead", href: "/buku/rekon" },
   { label: S.lainnya.dataBelumLengkap, Icon: TriangleAlert, need: "financeRead" },
   { label: S.lainnya.tinjauBukti, Icon: BadgeCheck, need: "financeAdmin" },
 ];

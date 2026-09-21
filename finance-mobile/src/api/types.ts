@@ -283,3 +283,56 @@ export type OpsiForm = {
 export type OrderRefund = { id: string; nomor: string; pelanggan: string; nilai: Money; sisaBisaDirefund: Money };
 export type RingkasanModul = Record<string, Record<string, number>>;
 export type HasilUnggah = { url: string; dipakaiDi: string[] };
+
+// ── S9: Jurnal, Buku Besar, Rekonsiliasi Bank ─────────────────────────────────────────────────────────────────
+export type DokumenJurnal = { modul: ModulTx | "pembayaran"; id: string; nomor: string };
+export type JurnalItem = {
+  id: string; nomor: string; tanggal: string; keterangan: string; sumber: string; sumberLabel: string; status: string; statusLabel: string; nada: NadaTx;
+  totalDebit: Money; totalKredit: Money; seimbang: boolean; selisih: Money; jumlahBaris: number;
+  membalik: { id: string; nomor: string } | null; dibalikOleh: { id: string; nomor: string } | null; dokumen: DokumenJurnal | null; dibuatOleh: Orang | null;
+};
+export type FilterJurnal = { from: string | null; to: string | null; q: string; source: string | null; status: string | null; akunId: string | null };
+export type HalamanJurnal = { items: JurnalItem[]; page: number; total: number; adaLagi: boolean; hitung: Record<string, number>; tidakSeimbang: number; diperbaruiPada: string | null };
+export type BarisJurnal = {
+  no: number; akunId: string; kodeAkun: string; namaAkun: string; debit: Money; kredit: Money; keterangan: string | null;
+  order: { id: string; nomor: string | null } | null; pelanggan: string | null; supplier: string | null; rekening: string | null;
+};
+export type DetailJurnal = JurnalItem & {
+  baris: BarisJurnal[]; diposting: { pada: string | null; oleh: Orang | null }; alasanBalik: string | null; riwayat: RiwayatApproval[]; catatan: string | null;
+};
+export type AkunPilihan = { id: string; code: string; name: string; type: string; normalBalance: string; active: boolean };
+export type BarisBuku = {
+  lineId: string; jurnalId: string; nomor: string; tanggal: string; keterangan: string; sumber: string; sumberLabel: string; status: string;
+  debit: Money; kredit: Money; saldo: Money; penanda: string | null;
+};
+export type BukuBesarHalaman = {
+  akun: { id: string; kode: string; nama: string; tipe: string; saldoNormal: string }; periode: { from: string; to: string };
+  saldoAwal: Money; totalDebit: Money; totalKredit: Money; saldoAkhir: Money; total: number; page: number; adaLagi: boolean; baris: BarisBuku[]; diperbaruiPada: string | null;
+};
+export type RekonItem = {
+  id: string; rekening: { id: string; name: string }; periode: { from: string; to: string }; status: string; statusLabel: string; nada: NadaTx;
+  saldoKoran: Money; saldoBuku: Money; selisih: Money; cocok: boolean; jumlahBaris: number; belumCocok: number; cocokBaris: number; diabaikan: number;
+};
+export type KandidatRekon = { lineId: string; jurnalId: string; nomor: string; tanggal: string; keterangan: string; sumber: string; nilai: Money };
+export type BarisRekon = {
+  id: string; tanggal: string; keterangan: string; referensi: string | null; nominal: Money; status: string; statusLabel: string; nada: NadaTx; catatan: string | null;
+  cocokDengan: { lineId: string; jurnalId: string; nomor: string; tanggal: string; keterangan: string; nilai: Money } | null;
+  dicocokkan: { oleh: Orang | null; pada: string | null } | null; kandidat: KandidatRekon[]; aksi: { cocokkan: AksiTx; lepas: AksiTx };
+};
+export type RekonDetail = {
+  id: string; rekening: { id: string; name: string }; periode: { from: string; to: string }; status: string; statusLabel: string; nada: NadaTx; catatan: string | null;
+  saldoAwalKoran: Money; saldoKoran: Money; saldoBuku: Money; selisih: Money; cocok: boolean;
+  ringkasan: { jumlahBaris: number; belumCocok: number; cocokBaris: number; diabaikan: number; mutasiBukuBelumDipasangkan: number };
+  baris: BarisRekon[]; terpotong: boolean; riwayat: RiwayatApproval[]; diperbaruiPada: string | null; penutup: { pada: string | null; oleh: Orang | null } | null;
+};
+
+// ── S10: Laporan (hasil server; klien hanya menata) ───────────────────────────────────────────────────────────
+export type JenisLaporanNyata = "laba-rugi" | "neraca" | "arus-kas" | "neraca-saldo" | "umur-piutang" | "umur-utang";
+export type DrillLaporan = { tipe: "akun"; id: string } | { tipe: "piutang"; id: string } | { tipe: "tagihan"; id: string };
+export type BarisLaporanNyata = { kunci: string; kode: string | null; nama: string; nilai: Money; sub: string | null; drill: DrillLaporan | null };
+export type BagianLaporan = { judul: string; baris: BarisLaporanNyata[] };
+export type RingkasanLaporan = { label: string; nilai: Money | null; teks: string | null; tebal: boolean; nada: NadaTx | null };
+export type LaporanNyata = {
+  jenis: JenisLaporanNyata; judul: string; periode: string; tanggalAcuan: string; ringkasan: RingkasanLaporan[]; bagian: BagianLaporan[];
+  seimbang: boolean | null; selisih: Money | null; catatan: string[]; bagianKosong: string[]; diperbaruiPada: string;
+};

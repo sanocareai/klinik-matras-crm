@@ -90,6 +90,12 @@ function Gerbang() {
           <Stack.Screen name="tx/[modul]/[id]" />
           <Stack.Screen name="tx/[modul]/baru" />
           <Stack.Screen name="laporan/[jenis]" />
+          <Stack.Screen name="buku/jurnal/index" />
+          <Stack.Screen name="buku/jurnal/[id]" />
+          <Stack.Screen name="buku/akun/index" />
+          <Stack.Screen name="buku/akun/[id]" />
+          <Stack.Screen name="buku/rekon/index" />
+          <Stack.Screen name="buku/rekon/[id]" />
           <Stack.Screen name="approval/[jenis]/[id]" />
           <Stack.Screen name="keamanan" />
           <Stack.Screen name="ubah-pin" />

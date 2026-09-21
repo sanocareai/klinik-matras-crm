@@ -1,0 +1,978 @@
+{
+ "generatedBy": "financeBuku.integration.test.js (DUMP_BUKU=1)",
+ "akunId": "a7510944-4029-496e-82fa-2f94898052d8",
+ "jurnal": {
+  "items": [
+   {
+    "id": "8b497c2d-c509-4999-8289-b6026d8cbea4",
+    "nomor": "JV-10092026-002",
+    "tanggal": "2026-09-10",
+    "keterangan": "EXP-10092026-001 — Servis truk",
+    "sumber": "PENGELUARAN",
+    "sumberLabel": "Pengeluaran",
+    "status": "POSTED",
+    "statusLabel": "Terposting",
+    "nada": "success",
+    "totalDebit": "200000.00",
+    "totalKredit": "200000.00",
+    "seimbang": true,
+    "selisih": "0.00",
+    "jumlahBaris": 2,
+    "membalik": null,
+    "dibalikOleh": null,
+    "dokumen": {
+     "modul": "pengeluaran",
+     "id": "6c63755b-620c-4dbb-a7a7-6227fab56404",
+     "nomor": "EXP-10092026-001"
+    },
+    "dibuatOleh": {
+     "id": "cmuaij5c9001yemq4ian6g0a1",
+     "name": "Login Test 9"
+    }
+   },
+   {
+    "id": "9c553a7a-161b-4da8-9438-a3322eb1612b",
+    "nomor": "JV-01092026-001",
+    "tanggal": "2026-09-01",
+    "keterangan": "Seed modal-2026",
+    "sumber": "SALDO_AWAL",
+    "sumberLabel": "Saldo awal",
+    "status": "POSTED",
+    "statusLabel": "Terposting",
+    "nada": "success",
+    "totalDebit": "30000000.00",
+    "totalKredit": "30000000.00",
+    "seimbang": true,
+    "selisih": "0.00",
+    "jumlahBaris": 2,
+    "membalik": null,
+    "dibalikOleh": null,
+    "dokumen": null,
+    "dibuatOleh": {
+     "id": "cmuaij58n001semq4sovrrnh7",
+     "name": "Admin Seed"
+    }
+   }
+  ],
+  "page": 1,
+  "limit": 20,
+  "total": 2,
+  "adaLagi": false,
+  "hitung": {
+   "POSTED": 2
+  },
+  "tidakSeimbang": 0,
+  "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+ },
+ "akun": {
+  "akun": [
+   {
+    "id": "6726846b-7b01-4185-89c3-984af1f90bf6",
+    "code": "1-1100",
+    "name": "Kas",
+    "type": "ASET",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "a7510944-4029-496e-82fa-2f94898052d8",
+    "code": "1-1200",
+    "name": "Bank",
+    "type": "ASET",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "3f8436b6-3393-4020-8811-a92e5dae7e67",
+    "code": "1-1300",
+    "name": "Piutang Usaha",
+    "type": "ASET",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "42376431-64e4-464c-8ee3-3c3240db2e81",
+    "code": "1-1350",
+    "name": "Piutang Karyawan (Kasbon)",
+    "type": "ASET",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "4c1b98dd-6f7c-404c-8a4a-9fde30a40f69",
+    "code": "1-1400",
+    "name": "Persediaan Bahan Baku",
+    "type": "ASET",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "d7a26c85-65f4-421d-8e6b-ef7572cacb0b",
+    "code": "1-1500",
+    "name": "Uang Muka Pembelian",
+    "type": "ASET",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "44b28a8f-f0d8-4583-8035-9286b0ee4b1b",
+    "code": "1-2100",
+    "name": "Kendaraan",
+    "type": "ASET",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "3054f8dc-676b-4d4a-987c-f1df894d7ffa",
+    "code": "1-2200",
+    "name": "Peralatan & Mesin",
+    "type": "ASET",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "8851ac86-30c0-4629-a4e6-7a71b85457d0",
+    "code": "1-2300",
+    "name": "Aset Tak Berwujud",
+    "type": "ASET",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "781a7ec4-67b4-4112-9a0d-afd63115c853",
+    "code": "1-2900",
+    "name": "Akumulasi Penyusutan",
+    "type": "ASET",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "89f16be2-0f59-4a45-ac06-5580e7a52649",
+    "code": "2-1100",
+    "name": "Utang Usaha",
+    "type": "KEWAJIBAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "cb86e8e8-24f8-4ee6-80e4-e06100fc48ab",
+    "code": "2-1150",
+    "name": "Utang Barang Belum Ditagih",
+    "type": "KEWAJIBAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "1208e9e9-848a-42d9-9c4d-8fb85785bf73",
+    "code": "2-1200",
+    "name": "Uang Muka Pelanggan (DP)",
+    "type": "KEWAJIBAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "ce1ceaba-c014-4085-9cbb-e70788453b93",
+    "code": "2-1300",
+    "name": "Utang Reimbursement Karyawan",
+    "type": "KEWAJIBAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "dc60a07e-48da-4b54-87af-582b48e0595a",
+    "code": "2-1400",
+    "name": "Utang Pajak",
+    "type": "KEWAJIBAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "ff65f419-ff39-48ca-9d51-8a2c8559de17",
+    "code": "2-1500",
+    "name": "Utang Gaji",
+    "type": "KEWAJIBAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "cc35d306-5d70-40bd-9ce2-8ae2ddcb03bc",
+    "code": "2-1600",
+    "name": "Utang Pihak Ketiga (Investor/Mitra)",
+    "type": "KEWAJIBAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "5ef61c94-c87c-4cb4-8da9-240604f00a20",
+    "code": "2-2100",
+    "name": "Utang Bank",
+    "type": "KEWAJIBAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "1040be30-3f21-415a-8cc1-95e710f15797",
+    "code": "3-1100",
+    "name": "Modal Pemilik",
+    "type": "EKUITAS",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "17b8276f-11af-434e-a2d1-9e3506cd2813",
+    "code": "3-2100",
+    "name": "Prive (Pengambilan Pemilik)",
+    "type": "EKUITAS",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "31beecf2-e5bf-4592-9511-b3aff6cb7443",
+    "code": "3-3100",
+    "name": "Laba Ditahan",
+    "type": "EKUITAS",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "07ba4c2b-ca9c-4e4e-9c3c-6cf42ae2f179",
+    "code": "3-4100",
+    "name": "Koreksi Saldo Awal",
+    "type": "EKUITAS",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "31be0613-5274-4e11-8011-e755e52c0406",
+    "code": "4-1100",
+    "name": "Pendapatan Jasa Layanan",
+    "type": "PENDAPATAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "a091f947-69eb-461f-8f8a-d07eee7c1ec1",
+    "code": "4-1200",
+    "name": "Pendapatan Penjualan Produk",
+    "type": "PENDAPATAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "6be97226-d1be-4ec2-8bc2-e98576d455aa",
+    "code": "4-1300",
+    "name": "Pendapatan Sewa",
+    "type": "PENDAPATAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "53f006c0-2ce8-4302-b08e-f9f13925cdf9",
+    "code": "4-1900",
+    "name": "Pendapatan Ongkos Kirim",
+    "type": "PENDAPATAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "55f0302f-5de4-4729-9940-a14b85653515",
+    "code": "4-2100",
+    "name": "Retur & Potongan Penjualan",
+    "type": "PENDAPATAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "63735385-b70f-4fe8-8201-9fbbe625b215",
+    "code": "4-9100",
+    "name": "Pendapatan Lain-lain",
+    "type": "PENDAPATAN",
+    "normalBalance": "KREDIT",
+    "active": true
+   },
+   {
+    "id": "a287de71-28d3-4c79-bc89-2d66bf5e5601",
+    "code": "5-1100",
+    "name": "Beban Pokok Bahan Baku",
+    "type": "BEBAN_POKOK",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "be46190b-4ddc-41fb-a240-1a50c6b39a49",
+    "code": "5-1150",
+    "name": "Pembelian Bahan Baku (Input Manual)",
+    "type": "BEBAN_POKOK",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "ca7691fe-5ad9-4961-8389-12b7226cbfa3",
+    "code": "5-1200",
+    "name": "Beban Upah Produksi",
+    "type": "BEBAN_POKOK",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "3ce2933c-a8c3-41e5-9c2a-3b15061986c7",
+    "code": "5-1300",
+    "name": "Beban Overhead Produksi",
+    "type": "BEBAN_POKOK",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "0d50a720-6a65-42e1-97e4-c14db6be73b5",
+    "code": "5-1900",
+    "name": "Beban Susut & Bahan Rusak",
+    "type": "BEBAN_POKOK",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "ebbb590e-f2ca-4db0-ae03-973e40776654",
+    "code": "5-1950",
+    "name": "Selisih Harga Pembelian",
+    "type": "BEBAN_POKOK",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "57195123-ad3a-404d-bba5-90a383732304",
+    "code": "5-1960",
+    "name": "Selisih Stok Opname",
+    "type": "BEBAN_POKOK",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "d2673287-694f-4ec5-a716-bd8b952ef4f8",
+    "code": "6-1100",
+    "name": "Beban Gaji & Tunjangan",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "241e7934-4bd7-4c68-83fb-8a494960df2c",
+    "code": "6-1150",
+    "name": "Beban Pemeliharaan Mesin & Peralatan",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "d83b483c-ec40-4a1c-85fd-698f090658a2",
+    "code": "6-1160",
+    "name": "Beban Langganan Aplikasi",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "0ebe4dc2-d248-441d-927b-9ab6b0a3458f",
+    "code": "6-1170",
+    "name": "Beban Operasional & Perjalanan Dinas",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "d4456520-9490-47e8-a44b-16a65e04f858",
+    "code": "6-1200",
+    "name": "Beban Iklan & Pemasaran",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "caf71c7b-a54a-4efc-9b58-9be599500354",
+    "code": "6-1300",
+    "name": "Beban BBM",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "df62b512-711d-451e-bbcd-6cb2ee37c23e",
+    "code": "6-1310",
+    "name": "Beban Tol & Parkir",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "81720b68-8465-4a22-a4af-1de8ba8331ab",
+    "code": "6-1320",
+    "name": "Beban Servis & Perawatan Kendaraan",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "494a35de-65d9-4785-b1ae-cf8acce9f220",
+    "code": "6-1330",
+    "name": "Beban Denda & Tilang",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "9c1130a3-d594-4e7e-90ad-d50cd2da3163",
+    "code": "6-1340",
+    "name": "Beban Kurir Eksternal",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "2c6725c7-9b8e-43dd-b7f0-7341a29cc7f3",
+    "code": "6-1400",
+    "name": "Beban Sewa Tempat",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "b8cecd2e-1d58-4031-aaa6-e8951a957de0",
+    "code": "6-1500",
+    "name": "Beban Listrik, Air & Internet",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "deb233b7-acb9-4b44-855b-3d8f3db1a381",
+    "code": "6-1600",
+    "name": "Beban Perlengkapan Kantor",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "11d77853-862c-4654-a713-a429008c9faf",
+    "code": "6-1700",
+    "name": "Beban Administrasi Bank",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   },
+   {
+    "id": "a7ea2fa1-2c13-466d-98a2-07a9956ee939",
+    "code": "6-1800",
+    "name": "Beban Penyusutan",
+    "type": "BEBAN",
+    "normalBalance": "DEBIT",
+    "active": true
+   }
+  ]
+ },
+ "mutasi": {
+  "akun": {
+   "id": "a7510944-4029-496e-82fa-2f94898052d8",
+   "kode": "1-1200",
+   "nama": "Bank",
+   "tipe": "ASET",
+   "saldoNormal": "DEBIT"
+  },
+  "periode": {
+   "from": "2026-09-01",
+   "to": "2026-09-30"
+  },
+  "saldoAwal": "20000000.00",
+  "totalDebit": "30000000.00",
+  "totalKredit": "200000.00",
+  "saldoAkhir": "49800000.00",
+  "total": 2,
+  "page": 1,
+  "limit": 30,
+  "adaLagi": false,
+  "baris": [
+   {
+    "lineId": "bb754b73-2954-43d3-a05f-0a133d7cc003",
+    "jurnalId": "9c553a7a-161b-4da8-9438-a3322eb1612b",
+    "nomor": "JV-01092026-001",
+    "tanggal": "2026-09-01",
+    "keterangan": "Seed modal-2026",
+    "sumber": "SALDO_AWAL",
+    "sumberLabel": "Saldo awal",
+    "status": "POSTED",
+    "debit": "30000000.00",
+    "kredit": "0.00",
+    "saldo": "50000000.00",
+    "penanda": "KEM Bank"
+   },
+   {
+    "lineId": "3c25f8af-a464-4360-98ab-461f826fb430",
+    "jurnalId": "8b497c2d-c509-4999-8289-b6026d8cbea4",
+    "nomor": "JV-10092026-002",
+    "tanggal": "2026-09-10",
+    "keterangan": "Uang keluar — KEM Bank",
+    "sumber": "PENGELUARAN",
+    "sumberLabel": "Pengeluaran",
+    "status": "POSTED",
+    "debit": "0.00",
+    "kredit": "200000.00",
+    "saldo": "49800000.00",
+    "penanda": "KEM Bank"
+   }
+  ],
+  "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+ },
+ "rekon": {
+  "items": [
+   {
+    "id": "63a3fe76-996d-4b53-8d08-efe3bd6940a2",
+    "rekening": {
+     "id": "7b5df5a5-179c-4a3c-90db-9be18489c4e9",
+     "name": "KEM Bank"
+    },
+    "periode": {
+     "from": "2026-09-01",
+     "to": "2026-09-30"
+    },
+    "status": "DRAFT",
+    "statusLabel": "Berjalan",
+    "nada": "warning",
+    "saldoKoran": "49800000.00",
+    "saldoBuku": "49800000.00",
+    "selisih": "0.00",
+    "cocok": true,
+    "jumlahBaris": 1,
+    "belumCocok": 1,
+    "cocokBaris": 0,
+    "diabaikan": 0
+   }
+  ],
+  "total": 1,
+  "diperbaruiPada": "2026-09-21T00:00:00.000Z"
+ },
+ "laporan": {
+  "income-statement": {
+   "periode": {
+    "from": "2026-09-21T00:00:00.000Z",
+    "to": "2026-09-21T00:00:00.000Z"
+   },
+   "pendapatan": [],
+   "retur": [],
+   "bebanPokok": [],
+   "bebanOperasional": [
+    {
+     "accountId": "81720b68-8465-4a22-a4af-1de8ba8331ab",
+     "code": "6-1320",
+     "name": "Beban Servis & Perawatan Kendaraan",
+     "normalBalance": "DEBIT",
+     "nilai": 200000
+    }
+   ],
+   "ringkasan": {
+    "pendapatanBruto": 0,
+    "retur": 0,
+    "pendapatanBersih": 0,
+    "bebanPokok": 0,
+    "labaKotor": 0,
+    "marginKotor": null,
+    "bebanOperasional": 200000,
+    "labaBersih": -200000,
+    "marginBersih": null
+   },
+   "catatan": {
+    "gapTerbuka": 0,
+    "saldoAwalTerisi": true,
+    "mulaiPembukuan": null,
+    "periodeTerbuka": 2,
+    "pesan": []
+   }
+  },
+  "balance-sheet": {
+   "perTanggal": "2026-09-21T00:00:00.000Z",
+   "aset": [
+    {
+     "accountId": "a7510944-4029-496e-82fa-2f94898052d8",
+     "code": "1-1200",
+     "name": "Bank",
+     "normalBalance": "DEBIT",
+     "nilai": 49800000
+    }
+   ],
+   "kewajiban": [],
+   "ekuitas": [
+    {
+     "accountId": "1040be30-3f21-415a-8cc1-95e710f15797",
+     "code": "3-1100",
+     "name": "Modal Pemilik",
+     "normalBalance": "KREDIT",
+     "nilai": 50000000
+    }
+   ],
+   "labaTahunSebelumnya": 0,
+   "labaTahunBerjalan": -200000,
+   "ringkasan": {
+    "totalAset": 49800000,
+    "totalKewajiban": 0,
+    "totalEkuitas": 49800000,
+    "totalPasiva": 49800000,
+    "seimbang": true,
+    "selisih": 0
+   },
+   "catatan": {
+    "gapTerbuka": 0,
+    "saldoAwalTerisi": true,
+    "mulaiPembukuan": null,
+    "periodeTerbuka": 2,
+    "pesan": []
+   }
+  },
+  "cash-flow": {
+   "periode": {
+    "from": "2026-09-21T00:00:00.000Z",
+    "to": "2026-09-21T00:00:00.000Z"
+   },
+   "operasi": [
+    {
+     "accountId": "81720b68-8465-4a22-a4af-1de8ba8331ab",
+     "code": "6-1320",
+     "name": "Beban Servis & Perawatan Kendaraan",
+     "nilai": -200000
+    }
+   ],
+   "investasi": [],
+   "pendanaan": [
+    {
+     "accountId": "1040be30-3f21-415a-8cc1-95e710f15797",
+     "code": "3-1100",
+     "name": "Modal Pemilik",
+     "nilai": 30000000
+    }
+   ],
+   "takTerkategori": [],
+   "ringkasan": {
+    "saldoAwal": 20000000,
+    "masuk": 30000000,
+    "keluar": 200000,
+    "arusBersih": 29800000,
+    "saldoAkhir": 49800000
+   },
+   "catatan": {
+    "gapTerbuka": 0,
+    "saldoAwalTerisi": true,
+    "mulaiPembukuan": null,
+    "periodeTerbuka": 2,
+    "pesan": []
+   }
+  },
+  "trial-balance": {
+   "periode": {
+    "from": "2026-09-21T00:00:00.000Z",
+    "to": "2026-09-21T00:00:00.000Z"
+   },
+   "baris": [
+    {
+     "accountId": "a7510944-4029-496e-82fa-2f94898052d8",
+     "code": "1-1200",
+     "name": "Bank",
+     "type": "ASET",
+     "normalBalance": "DEBIT",
+     "mutasiDebit": 30000000,
+     "mutasiKredit": 200000,
+     "saldoDebit": 49800000,
+     "saldoKredit": 0,
+     "saldo": 49800000
+    },
+    {
+     "accountId": "1040be30-3f21-415a-8cc1-95e710f15797",
+     "code": "3-1100",
+     "name": "Modal Pemilik",
+     "type": "EKUITAS",
+     "normalBalance": "KREDIT",
+     "mutasiDebit": 0,
+     "mutasiKredit": 30000000,
+     "saldoDebit": 0,
+     "saldoKredit": 50000000,
+     "saldo": 50000000
+    },
+    {
+     "accountId": "81720b68-8465-4a22-a4af-1de8ba8331ab",
+     "code": "6-1320",
+     "name": "Beban Servis & Perawatan Kendaraan",
+     "type": "BEBAN",
+     "normalBalance": "DEBIT",
+     "mutasiDebit": 200000,
+     "mutasiKredit": 0,
+     "saldoDebit": 200000,
+     "saldoKredit": 0,
+     "saldo": 200000
+    }
+   ],
+   "total": {
+    "mutasiDebit": 30200000,
+    "mutasiKredit": 30200000,
+    "seimbang": true,
+    "selisih": 0
+   },
+   "catatan": {
+    "gapTerbuka": 0,
+    "saldoAwalTerisi": true,
+    "mulaiPembukuan": null,
+    "periodeTerbuka": 2,
+    "pesan": []
+   }
+  },
+  "receivables": {
+   "perTanggal": "2026-09-21T00:00:00.000Z",
+   "baris": [],
+   "ringkasan": {
+    "belum_jatuh_tempo": 0,
+    "1_30": 0,
+    "31_60": 0,
+    "61_90": 0,
+    "90_plus": 0
+   },
+   "total": 0,
+   "ember": [
+    {
+     "key": "belum_jatuh_tempo",
+     "label": "Belum jatuh tempo",
+     "max": 0
+    },
+    {
+     "key": "1_30",
+     "label": "1–30 hari",
+     "max": 30
+    },
+    {
+     "key": "31_60",
+     "label": "31–60 hari",
+     "max": 60
+    },
+    {
+     "key": "61_90",
+     "label": "61–90 hari",
+     "max": 90
+    },
+    {
+     "key": "90_plus",
+     "label": "> 90 hari",
+     "max": null
+    }
+   ],
+   "menungguVerifikasi": {
+    "jumlah": 0,
+    "total": 0
+   },
+   "catatan": {
+    "gapTerbuka": 0,
+    "saldoAwalTerisi": true,
+    "mulaiPembukuan": null,
+    "periodeTerbuka": 2,
+    "pesan": []
+   }
+  },
+  "payables": {
+   "perTanggal": "2026-09-21T00:00:00.000Z",
+   "baris": [],
+   "ringkasan": {
+    "belum_jatuh_tempo": 0,
+    "1_30": 0,
+    "31_60": 0,
+    "61_90": 0,
+    "90_plus": 0
+   },
+   "total": 0,
+   "ember": [
+    {
+     "key": "belum_jatuh_tempo",
+     "label": "Belum jatuh tempo",
+     "max": 0
+    },
+    {
+     "key": "1_30",
+     "label": "1–30 hari",
+     "max": 30
+    },
+    {
+     "key": "31_60",
+     "label": "31–60 hari",
+     "max": 60
+    },
+    {
+     "key": "61_90",
+     "label": "61–90 hari",
+     "max": 90
+    },
+    {
+     "key": "90_plus",
+     "label": "> 90 hari",
+     "max": null
+    }
+   ],
+   "catatan": {
+    "gapTerbuka": 0,
+    "saldoAwalTerisi": true,
+    "mulaiPembukuan": null,
+    "periodeTerbuka": 2,
+    "pesan": []
+   }
+  }
+ },
+ "rekonDetail": {
+  "id": "63a3fe76-996d-4b53-8d08-efe3bd6940a2",
+  "rekening": {
+   "id": "7b5df5a5-179c-4a3c-90db-9be18489c4e9",
+   "name": "KEM Bank"
+  },
+  "periode": {
+   "from": "2026-09-01",
+   "to": "2026-09-30"
+  },
+  "status": "DRAFT",
+  "statusLabel": "Berjalan",
+  "nada": "warning",
+  "catatan": null,
+  "saldoAwalKoran": "20000000.00",
+  "saldoKoran": "49800000.00",
+  "saldoBuku": "49800000.00",
+  "selisih": "0.00",
+  "cocok": true,
+  "ringkasan": {
+   "jumlahBaris": 1,
+   "belumCocok": 1,
+   "cocokBaris": 0,
+   "diabaikan": 0,
+   "mutasiBukuBelumDipasangkan": 2
+  },
+  "baris": [
+   {
+    "id": "8387a32e-71e9-40fe-8e6f-1dcf7cfe2a10",
+    "tanggal": "2026-09-10",
+    "keterangan": "TRF servis truk",
+    "referensi": null,
+    "nominal": "-200000.00",
+    "status": "BELUM_COCOK",
+    "statusLabel": "Belum cocok",
+    "nada": "warning",
+    "catatan": null,
+    "cocokDengan": null,
+    "dicocokkan": null,
+    "kandidat": [
+     {
+      "lineId": "3c25f8af-a464-4360-98ab-461f826fb430",
+      "jurnalId": "8b497c2d-c509-4999-8289-b6026d8cbea4",
+      "nomor": "JV-10092026-002",
+      "tanggal": "2026-09-10",
+      "keterangan": "Uang keluar — KEM Bank",
+      "sumber": "Pengeluaran",
+      "nilai": "-200000.00"
+     }
+    ],
+    "aksi": {
+     "cocokkan": {
+      "boleh": true,
+      "alasan": null,
+      "path": "/finance/bank-lines/8387a32e-71e9-40fe-8e6f-1dcf7cfe2a10/match",
+      "metode": "POST"
+     },
+     "lepas": {
+      "boleh": false,
+      "alasan": "Baris ini belum dicocokkan.",
+      "path": "/finance/bank-lines/8387a32e-71e9-40fe-8e6f-1dcf7cfe2a10/unmatch",
+      "metode": "POST"
+     }
+    }
+   }
+  ],
+  "terpotong": false,
+  "riwayat": [
+   {
+    "waktu": "2026-09-21T00:00:00.000Z",
+    "peristiwa": "DIBUAT",
+    "label": "Koran bank dicatat",
+    "oleh": "Login Test 8",
+    "catatan": null
+   }
+  ],
+  "diperbaruiPada": "2026-09-21T00:00:00.000Z",
+  "penutup": null
+ },
+ "jurnalDetail": {
+  "id": "8b497c2d-c509-4999-8289-b6026d8cbea4",
+  "nomor": "JV-10092026-002",
+  "tanggal": "2026-09-10",
+  "keterangan": "EXP-10092026-001 — Servis truk",
+  "sumber": "PENGELUARAN",
+  "sumberLabel": "Pengeluaran",
+  "status": "POSTED",
+  "statusLabel": "Terposting",
+  "nada": "success",
+  "totalDebit": "200000.00",
+  "totalKredit": "200000.00",
+  "seimbang": true,
+  "selisih": "0.00",
+  "jumlahBaris": 2,
+  "membalik": null,
+  "dibalikOleh": null,
+  "dokumen": {
+   "modul": "pengeluaran",
+   "id": "6c63755b-620c-4dbb-a7a7-6227fab56404",
+   "nomor": "EXP-10092026-001"
+  },
+  "dibuatOleh": {
+   "id": "cmuaij5c9001yemq4ian6g0a1",
+   "name": "Login Test 9"
+  },
+  "baris": [
+   {
+    "no": 1,
+    "akunId": "81720b68-8465-4a22-a4af-1de8ba8331ab",
+    "kodeAkun": "6-1320",
+    "namaAkun": "Beban Servis & Perawatan Kendaraan",
+    "debit": "200000.00",
+    "kredit": "0.00",
+    "keterangan": "Servis & Perawatan Kendaraan (DELIVERY)",
+    "order": null,
+    "pelanggan": null,
+    "supplier": null,
+    "rekening": null
+   },
+   {
+    "no": 2,
+    "akunId": "a7510944-4029-496e-82fa-2f94898052d8",
+    "kodeAkun": "1-1200",
+    "namaAkun": "Bank",
+    "debit": "0.00",
+    "kredit": "200000.00",
+    "keterangan": "Uang keluar — KEM Bank",
+    "order": null,
+    "pelanggan": null,
+    "supplier": null,
+    "rekening": "KEM Bank"
+   }
+  ],
+  "diposting": {
+   "pada": "2026-09-21T00:00:00.000Z",
+   "oleh": {
+    "id": "cmuaij5c9001yemq4ian6g0a1",
+    "name": "Login Test 9"
+   }
+  },
+  "alasanBalik": null,
+  "riwayat": [
+   {
+    "waktu": "2026-09-21T00:00:00.000Z",
+    "peristiwa": "DIPOSTING",
+    "label": "Diposting",
+    "oleh": "Login Test 9",
+    "catatan": null
+   },
+   {
+    "waktu": "2026-09-21T00:00:00.000Z",
+    "peristiwa": "DIBUAT",
+    "label": "Dibuat",
+    "oleh": "Login Test 9",
+    "catatan": null
+   }
+  ],
+  "catatan": null
+ }
+}
