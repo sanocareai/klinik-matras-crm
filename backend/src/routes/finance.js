@@ -1102,7 +1102,18 @@ financeRouter.get("/saldo-riil", requirePermission(P.FINANCE_READ), async (_req,
   try {
     const k = SALDO_RIIL_TERKONFIRMASI;
     const buku = await saldoKasBank(prisma, { to: new Date(`${k.tanggalBuku}T12:00:00+07:00`) });
-    res.json({ cutoffLabel: k.cutoffLabel, tanggalBuku: k.tanggalBuku, sumber: k.sumber, catatan: k.catatan, rekening: bandingkanSaldoRiil(buku, k) });
+    const tgl = new Date(`${k.tanggalBuku}T00:00:00.000Z`);
+    // Periode rekonsiliasi yang belum selesai & mencakup tanggal cutoff → tautan langsung dari Ringkasan.
+    const periode = await prisma.finBankStatement.findMany({
+      where: { cashAccountId: { in: buku.map((b) => b.id) }, status: { in: ["DRAF_MENUNGGU_MUTASI", "DRAFT"] }, periodStart: { lte: tgl }, periodEnd: { gte: tgl } },
+      orderBy: { periodEnd: "desc" }, select: { id: true, cashAccountId: true, status: true },
+    });
+    const petaPeriode = new Map();
+    for (const x of periode) if (!petaPeriode.has(x.cashAccountId)) petaPeriode.set(x.cashAccountId, x);
+    res.json({
+      cutoffLabel: k.cutoffLabel, tanggalBuku: k.tanggalBuku, sumber: k.sumber, catatan: k.catatan,
+      rekening: bandingkanSaldoRiil(buku, k).map((r) => ({ ...r, periodeId: petaPeriode.get(r.id)?.id ?? null, periodeStatus: petaPeriode.get(r.id)?.status ?? null })),
+    });
   } catch (err) {
     handleFinanceError(err, res);
   }

@@ -6410,6 +6410,9 @@ model FinCashTransfer {
 enum FinReconStatus {
   DRAFT // baris koran bank sedang dicocokkan
   SELESAI // sudah dicocokkan & disetujui, selisihnya nol atau dijelaskan
+  // Periode SEMENTARA: saldo akhir bank dikonfirmasi (mis. oleh owner) tetapi mutasi individual / rekening koran BELUM ada. Tidak punya baris
+  // mutasi (tidak ada mutasi fiktif) dan TIDAK boleh diselesaikan; berubah jadi DRAFT begitu baris koran asli pertama dimasukkan.
+  DRAF_MENUNGGU_MUTASI
 }
 
 model FinBankStatement {
@@ -6427,6 +6430,11 @@ model FinBankStatement {
   closingBalance Decimal @map("closing_balance") @db.Decimal(18, 2)
 
   status FinReconStatus @default(DRAFT)
+
+  // Batas waktu (instan) saldo bank dikonfirmasi — periode berbasis tanggal, cutoff berbasis jam. source_key = kunci idempotensi pembuatan otomatis.
+  cutoffStartAt DateTime? @map("cutoff_start_at")
+  cutoffEndAt   DateTime? @map("cutoff_end_at")
+  sourceKey     String?   @unique @map("source_key")
 
   completedAt   DateTime? @map("completed_at")
   completedById String?   @map("completed_by")

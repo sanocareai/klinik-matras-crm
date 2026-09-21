@@ -46,6 +46,7 @@ import { setAllocations, AllocationError } from "../services/finance/allocation.
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { handleFinanceError, rentangDariQuery } from "./finance.js";
+import { evaluasiSelesai, penyesuaianBukuPeriode, saldoBukuSampai, LABEL_STATUS_REKON, LABEL_REKON_SEMENTARA, STATUS_DRAF_MENUNGGU } from "../services/finance/rekonBank.js";
 import multer from "multer";
 import {
   pastikanNotaLengkap, notaWajib, ambangNota, notaWajibDenganAmbang, simpanFotoBukti, cariPemakaiBukti,
@@ -2003,16 +2004,25 @@ financeTxRouter.get("/bank-statements", requirePermission(P.FINANCE_READ), async
         lines: { select: { id: true, status: true, amount: true } },
       },
     });
-    res.json({
-      statements: statements.map((s) => ({
+    const hasil = [];
+    for (const s of statements) {
+      const buku = await saldoBukuSampai(prisma, s.cashAccountId, s.periodEnd);
+      const selisih = toMoney(s.closingBalance).minus(buku); // bank − buku
+      hasil.push({
         ...s,
         openingBalance: moneyToNumber(s.openingBalance),
         closingBalance: moneyToNumber(s.closingBalance),
+        statusLabel: LABEL_STATUS_REKON[s.status] ?? s.status,
+        sementara: s.status === STATUS_DRAF_MENUNGGU,
+        saldoBuku: moneyToNumber(buku),
+        selisih: moneyToNumber(selisih),
+        bukuLebihTinggi: moneyToNumber(buku.minus(toMoney(s.closingBalance))),
         jumlahBaris: s.lines.length,
         belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length,
         lines: undefined,
-      })),
-    });
+      });
+    }
+    res.json({ statements: hasil });
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -2088,7 +2098,8 @@ financeTxRouter.get("/bank-statements/:id", requirePermission(P.FINANCE_READ), a
     const kandidat = await prisma.finJournalLine.findMany({
       where: {
         cashAccountId: s.cashAccountId,
-        entry: { status: { in: STATUS_DIHITUNG }, date: { gte: s.periodStart, lte: s.periodEnd } },
+        // Penyesuaian buku (kalibrasi saldo riil & koreksi kas ganda, sumber SALDO_AWAL) BUKAN transaksi bank → tidak jadi kandidat pencocokan.
+        entry: { status: { in: STATUS_DIHITUNG }, date: { gte: s.periodStart, lte: s.periodEnd }, source: { not: "SALDO_AWAL" } },
       },
       orderBy: [{ entry: { date: "asc" } }],
       select: {
@@ -2097,6 +2108,7 @@ financeTxRouter.get("/bank-statements/:id", requirePermission(P.FINANCE_READ), a
         bankStatementLines: { select: { id: true } },
       },
     });
+    const penyesuaianBuku = await penyesuaianBukuPeriode(prisma, { cashAccountId: s.cashAccountId, periodStart: s.periodStart, periodEnd: s.periodEnd });
 
     // Saldo menurut BUKU pada akhir periode (seluruh mutasi rekening ini
     // sampai periodEnd) vs saldo menurut KORAN BANK.
@@ -2139,9 +2151,16 @@ financeTxRouter.get("/bank-statements/:id", requirePermission(P.FINANCE_READ), a
         saldoBuku: moneyToNumber(saldoBuku),
         saldoKoran: moneyToNumber(s.closingBalance),
         selisih: moneyToNumber(selisih),
+        bukuLebihTinggi: moneyToNumber(saldoBuku.minus(toMoney(s.closingBalance))),
         cocok: selisih.isZero(),
         belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length,
+        sementara: s.status === STATUS_DRAF_MENUNGGU,
+        statusLabel: LABEL_STATUS_REKON[s.status] ?? s.status,
+        labelSementara: s.status === STATUS_DRAF_MENUNGGU ? LABEL_REKON_SEMENTARA : null,
+        cutoff: { mulai: s.cutoffStartAt, selesai: s.cutoffEndAt },
+        penyelesaian: evaluasiSelesai({ status: s.status, jumlahBaris: s.lines.length, belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length, selisih }),
       },
+      penyesuaianBuku,
     });
   } catch (e) {
     handleFinanceError(e, res);
@@ -2152,14 +2171,22 @@ financeTxRouter.post("/bank-statements/:id/lines", requirePermission(P.FINANCE_P
   try {
     const { date, description, reference, amount } = req.body;
     if (!description?.trim()) throw err("Keterangan baris wajib diisi");
-    const created = await prisma.finBankStatementLine.create({
-      data: {
-        statementId: req.params.id,
-        date: parseTanggal(date),
-        description: description.trim(),
-        reference: reference?.trim() || null,
-        amount: toMoney(amount, { field: "Nominal baris" }),
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const st = await tx.finBankStatement.findUnique({ where: { id: req.params.id }, select: { id: true, status: true } });
+      if (!st) throw err("Koran bank tidak ditemukan", 404);
+      if (st.status === "SELESAI") throw err("Rekonsiliasi periode ini sudah ditutup — buka kembali kalau memang perlu diubah", 409);
+      const baris = await tx.finBankStatementLine.create({
+        data: {
+          statementId: req.params.id,
+          date: parseTanggal(date),
+          description: description.trim(),
+          reference: reference?.trim() || null,
+          amount: toMoney(amount, { field: "Nominal baris" }),
+        },
+      });
+      // Mutasi bank asli pertama masuk → periode sementara berubah jadi "sedang dicocokkan".
+      if (st.status === STATUS_DRAF_MENUNGGU) await tx.finBankStatement.update({ where: { id: st.id }, data: { status: "DRAFT" } });
+      return baris;
     });
     res.status(201).json({ ...created, amount: moneyToNumber(created.amount) });
   } catch (e) {
@@ -2190,9 +2217,10 @@ financeTxRouter.post("/bank-lines/:id/match", requirePermission(P.FINANCE_POST),
 
       const jurnal = await tx.finJournalLine.findUnique({
         where: { id: journalLineId },
-        select: { id: true, debit: true, credit: true, cashAccountId: true },
+        select: { id: true, debit: true, credit: true, cashAccountId: true, entry: { select: { source: true } } },
       });
       if (!jurnal) throw err("Baris jurnal tidak ditemukan", 404);
+      if (jurnal.entry?.source === "SALDO_AWAL") throw err("Itu Penyesuaian Buku (kalibrasi/koreksi saldo), bukan transaksi bank — tidak dicocokkan dengan mutasi koran", 400);
       if (jurnal.cashAccountId !== baris.statement.cashAccountId) {
         throw err("Baris jurnal itu bukan mutasi rekening yang sedang direkonsiliasi", 400);
       }
@@ -2291,12 +2319,10 @@ financeTxRouter.post("/bank-statements/:id/complete", requirePermission(P.FINANC
       });
       if (!s) throw err("Koran bank tidak ditemukan", 404);
       const belumCocok = s.lines.filter((l) => l.status === "BELUM_COCOK").length;
-      if (belumCocok > 0 && !note) {
-        throw err(
-          `Masih ada ${belumCocok} baris yang belum dicocokkan. Selesaikan dulu, atau isi catatan penjelasan ` +
-          "kenapa rekonsiliasi ditutup dengan selisih."
-        );
-      }
+      // Aturan tunggal (services/finance/rekonBank.js): mutasi bank asli ada, semua baris dicocokkan/dijelaskan, selisih nol, status DRAFT.
+      const saldoBuku = await saldoBukuSampai(tx, s.cashAccountId, s.periodEnd);
+      const ev = evaluasiSelesai({ status: s.status, jumlahBaris: s.lines.length, belumCocok, selisih: toMoney(s.closingBalance).minus(saldoBuku) });
+      if (!ev.bisa) throw err(`Periode belum bisa diselesaikan: ${ev.alasan.join("; ")}.`, 409);
       return tx.finBankStatement.update({
         where: { id: s.id },
         data: { status: "SELESAI", completedAt: new Date(), completedById: req.user.id, note },

@@ -247,7 +247,7 @@ export async function mutasiAkun(db, { accountId, from, to, page, limit }) {
 }
 
 // ── REKONSILIASI BANK ───────────────────────────────────────────────────────────────────────────────────────────
-const STATUS_REKON = { DRAFT: ["Berjalan", "warning"], SELESAI: ["Selesai", "success"] };
+const STATUS_REKON = { DRAFT: ["Berjalan", "warning"], SELESAI: ["Selesai", "success"], DRAF_MENUNGGU_MUTASI: ["Draf — menunggu mutasi bank", "warning"] };
 const STATUS_BARIS = { BELUM_COCOK: ["Belum cocok", "warning"], COCOK: ["Cocok", "success"], DIABAIKAN: ["Diabaikan", "neutral"] };
 
 async function saldoBukuSampai(db, cashAccountId, sampai) {
