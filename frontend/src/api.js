@@ -1224,6 +1224,8 @@ export const api = {
   // getGoodsReceipts dkk di atas): tanpa itu, "?status=" terkirim sebagai
   // filter status string kosong dan mengembalikan nol baris.
   getFinanceDashboard: (params = {}) => request(`/finance/dashboard${qsFinance(params)}`),
+  getFinanceSaldoRiil: () => request("/finance/saldo-riil"),
+  getFinanceRekonBackfill: () => request("/finance/pemasukan/rekonsiliasi/backfill"),
 
   // Bagan akun & master data
   getFinanceAccounts: (params = {}) => request(`/finance/accounts${qsFinance(params)}`),
