@@ -1493,6 +1493,17 @@ Read-model server: `GET /api/finance/buku/{jurnal,jurnal/:id,akun,akun/:id/mutas
 | S12-7 | ✘ | Pilot 2 minggu dengan pengguna nyata — **pasca-release** (persetujuan Owner sudah diberikan untuk rollout internal; pilot menjadi validasi berjalan) |
 **Placeholder:** seluruh "Segera hadir" dihapus; fitur yang belum ada tidak dijadikan menu dan dijelaskan di kartu "Hanya di web" (Lainnya). **Ditunda ke v1.1:** perbandingan periode, ekspor CSV/PDF dari server, chart, Abaikan baris koran & Selesaikan rekonsiliasi (tetap di web), data belum lengkap, tinjau bukti, pusat notifikasi.
 
+#### S13 — Pemasukan terpadu + Data Sebelum Sistem (v1.1.0)
+**Status: KODE SELESAI; backend & web ter-deploy (21 Sep 2026); mobile v1.1.0 siap, belum ada build/OTA (menunggu persetujuan Owner).** Dokumen lengkap (sumber data, klasifikasi, pencegahan hitung ganda, endpoint, temuan data lama, gap, rollback): `docs/FINANCE-PEMASUKAN-TERPADU.md`.
+| AC | Status | Realisasi |
+|---|---|---|
+| S13-1 | ✔ | Agregator READ-ONLY `/finance/pemasukan/{ringkasan,opsi,:jenis/:id}` + daftar terklasifikasi server: pendapatan penjualan, pembayaran masuk (dari Payment), piutang, pemasukan lain, dana bukan pendapatan, dikecualikan (transfer/saldo awal/pembalikan), Perlu Ditinjau. Tanpa jurnal baru, tanpa efek ke Kas & Bank |
+| S13-2 | ✔ | Tidak ada hitung ganda: pembayaran dari tabel Payment (jurnal pembayaran tidak dihitung ulang); gabungan = sistem + historis, tanpa pembayaran; tiap jurnal ≤ 1 kelas uang-masuk |
+| S13-3 | ✔ | Web (menu Finance → Pemasukan, 6 tab) dan Mobile (Lainnya → Pemasukan, baca-saja) |
+| S13-4 | ✔ | Data Sebelum Sistem: impor CSV/XLSX, pratinjau/validasi, idempoten, deteksi duplikat (arsip & order sistem), Perlu Ditinjau, batal, rekonsiliasi per bulan, simulasi, proposal jurnal (tidak diposting). Cutoff dari data produksi: 12 Jul 2026 |
+| S13-5 | ◐ | Posting migrasi = tahap terpisah menunggu persetujuan Owner. **Temuan:** 458 order sistem (Rp1,05 miliar, 12 Jul–16 Sep) belum punya pengakuan pendapatan di buku — keputusan Owner |
+| S13-6 | ✘ | Impor/rekonsiliasi/posting di mobile — tetap di web |
+
 ### 19.1 Ringkasan fase & ketergantungan
 
 | Fase | Slice | Bisa dirilis internal? | Bergantung pada |
