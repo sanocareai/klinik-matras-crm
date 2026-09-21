@@ -62,3 +62,46 @@ Cutoff baru dan rekening koran belum tersedia; **selisih PT Sano dan KEM pada cu
 ## 7. Manifest artefak privat
 
 Lihat `docs/pilot/manifest-rekonsiliasi-20260921.json` (nama artefak, ukuran, jumlah baris/rekord, SHA-256). Artefak sendiri **tidak** ada di Git.
+
+## 8. Rekonsiliasi menyeluruh Notion → Order/Payment → Jurnal → saldo riil (22 Sep 2026; cutoff 19 Sep 20.00 → 21 Sep 20.00 WIB)
+
+> **Rekonsiliasi sementara tanpa rekening koran. Saldo akhir telah dikonfirmasi owner, tetapi mutasi individual belum seluruhnya diverifikasi.**
+> Baca-saja. Tidak ada jurnal, saldo, backfill pendapatan, pembalikan JV-429, atau pembersihan akun sementara. Laporan rinci (HTML, per jurnal/dokumen) disimpan privat di luar Git.
+
+**Jembatan buku (saldo awal buku pada cutoff + mutasi buku = saldo akhir buku; cocok dengan database):** PT Sano 115.994.380 − 49.418.765 = **66.575.615**; KEM 18.116.768 − 5.334.669 = **12.782.099**; Kas 66.500 + 26.000 = **92.500**. Mutasi mencakup kalibrasi JV-372 dan JV-391.
+
+**Jembatan riil (dua titik konfirmasi owner):** PT Sano 36.870.615 → 36.350.615 (21 Sep 10.09; −520.000) → 39.180.615 (+2.830.000). KEM 766.507 → 4.172.788 (+3.406.281) → 4.912.088 (+739.300). Kas riil awal 54.500; akhir belum dikonfirmasi (Rp120.000 tidak dipakai) → Kas tidak direkonsiliasi dan tidak termasuk selisih.
+
+**Selisih buku − bank Rp35.265.011:**
+
+| Rekening | Selisih | Terjelaskan (perbedaan waktu pencatatan) | Belum terjelaskan |
+|---|---:|---:|---:|
+| PT Sano | 27.395.000 | 27.395.000 (13 jurnal pembayaran; 22.895.000 tercermin JV-372, 4.500.000 tercermin JV-391) | 0 |
+| KEM Sano | 7.870.011 | 5.343.030 (4 pembayaran +10.828.030; 6 pengeluaran/pembelian −5.485.000) | **2.526.981** |
+| **Total** | **35.265.011** | **32.738.030** | **2.526.981** |
+
+Duplikat murni, salah rekening, dan transfer antar-rekening: tidak terbukti (Rp0). Selisih **bukan** biaya dan **bukan** pendapatan. Pada interval 21 Sep 10.09 → 20.00: PT Sano 4 pembayaran bertanggal 21 Sep (9.830.000) − transfer keluar 7.000.000 = 2.830.000 = pergerakan riil (cocok tepat); KEM transfer masuk 7.000.000 − pengeluaran 21 Sep 3.733.719 = 3.266.281 vs pergerakan riil 739.300 (beda 2.526.981).
+
+**Penerimaan Notion 618 baris sebelum sistem (Rp1.622.376.331) — penerimaan historis, bukan otomatis pendapatan:** penerimaan pelanggan eksplisit ("Pembayaran/Pelunasan") 587 baris Rp1.559.137.330; penjualan barang lain 2 baris Rp2.600.000; uang muka "DP" 23 baris Rp53.214.001; transfer/penarikan 1 baris Rp900.000 (**tercatat SIAP karena kategori kosong — bukan pendapatan**); tak terklasifikasi 5 baris Rp6.525.000. Di luar 618 (sudah dikeluarkan): pinjaman 8 (Rp17.950.000), suntikan modal 1 (Rp5.000.000), balance/penyesuaian 3 (Rp41.257.845), invalid 2. Tidak ada baris refund. **Estimasi pendapatan hanya dari baris berbukti cukup (penerimaan pelanggan eksplisit + penjualan barang): 589 baris, Rp1.561.737.330 — batas atas berbasis penerimaan kas**, bukan pengakuan pada serah-terima.
+
+**Laporan bulanan (agregat):**
+
+| Bulan | Penerimaan Notion | Pendapatan order layak diakui | Pembayaran sistem | Pendapatan sudah di jurnal | Pembayaran di jurnal |
+|---|---:|---:|---:|---:|---:|
+| Jan | 58.859.500 | 0 | 0 | 0 | 0 |
+| Feb | 116.976.500 | 0 | 0 | 0 | 0 |
+| Mar | 133.046.080 | 0 | 0 | 0 | 0 |
+| Apr | 243.573.000 | 0 | 0 | 0 | 0 |
+| Mei | 374.575.251 | 0 | 0 | 0 | 0 |
+| Jun | 483.792.000 | 0 | 0 | 0 | 0 |
+| Jul | 445.843.000 (1–11: 211.554.000; 12–31: 234.289.000) | 69 order · 178.240.500 | 0 | 0 | 0 |
+| Agu | 462.005.500 | 173 order · 425.709.000 | 0 | 0 | 0 |
+| Sep (≤16 Notion) | 227.531.000 | 56 order · 140.666.000 | 23 · 50.883.030 | 64.696.000 (30 pengakuan, sejak 17 Sep) | 48.053.030 |
+
+Belum masuk jurnal: seluruh penerimaan historis Jan–11 Jul (non-posting), pendapatan layak Jul–Sep (Rp744.615.500), dan 2 pembayaran Rp2.830.000. Potensi double counting: baris Notion ≥12 Jul tidak dihitung sebagai pendapatan (aman); 16 baris arsip Jun–Jul (Rp38.490.000) mirip order sistem → Perlu Ditinjau. Perlu Ditinjau lain: 50 order tanpa bukti tanggal (Rp102.294.500), 178 baris Notion overlap Sedang/Rendah/Tanpa kandidat.
+
+**Notion lama vs Finance Workspace:** Notion mencatat penerimaan Rp2.546.201.831 (1 Jan–16 Sep); Finance Workspace mengakui pendapatan hanya Rp64.696.000 (sejak 17 Sep), pembayaran Rp50.883.030 (sejak 1 Sep), pemasukan lain Rp40.437.937, dana modal/pinjaman Rp22.950.000 — **modal+pinjaman Notion 2026 (Rp22.950.000) sama persis dengan dana masuk di buku**. Rp40.422.000 dari pemasukan lain di buku berasal dari kategori Notion "Balance" ("pelunasan piutang" Jan–Jun): bukan pendapatan usaha → Perlu Ditinjau. Angka kedua sistem tidak boleh dijumlahkan.
+
+**NEW-30082026-023:** diperlakukan sebagai order sistem; JV-429 tidak dibalik. Proposal pembalikan hanya setelah status penyelesaian/serah-terima dikonfirmasi.
+
+**Proposal koreksi (24 baris, non-kas, lawan 3-4100)** tetap **ditangguhkan** dan tidak diposting; menunggu rekening koran + persetujuan Owner. Sisa Rp2.526.981 tidak diberi entri.

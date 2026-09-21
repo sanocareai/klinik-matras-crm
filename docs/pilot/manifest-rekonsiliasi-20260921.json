@@ -24,6 +24,13 @@
    "sha256": "a6e7d505ec95580813f392d8f817b0bd7c1e800fc19576953bafd501ecd9e120"
   },
   {
+   "artefak": "bulanan.out.txt",
+   "bytes": 7306,
+   "baris": 4,
+   "rekord": null,
+   "sha256": "30e63d8577c04eaf282c61234c2c54678f0e4eb5c2c7ea732aa1c811851d3ad1"
+  },
+  {
    "artefak": "dump-match.out.txt",
    "bytes": 118504,
    "baris": 10,
@@ -31,11 +38,25 @@
    "sha256": "80fbf239790f65eed9561785fcffebc126ca902c44e391815d02587035924046"
   },
   {
+   "artefak": "hasil-rekon-menyeluruh.json",
+   "bytes": 18861,
+   "baris": 893,
+   "rekord": null,
+   "sha256": "88fbd65ca999ecde34306bdb03dd82fd4238d22018db5c88b8da1c116840c0cb"
+  },
+  {
    "artefak": "impor.out.txt",
    "bytes": 244415,
    "baris": 19,
    "rekord": null,
    "sha256": "c559cb30816cc9218e87a04887ef446b46d6c823167cb57370474d8c87c9dd80"
+  },
+  {
+   "artefak": "laporan-rekonsiliasi-menyeluruh.html",
+   "bytes": 35427,
+   "baris": 18,
+   "rekord": null,
+   "sha256": "e329e39d8160513e56702e5f9e01976b57df6d4c40d40f393160e165bbf7af8b"
   },
   {
    "artefak": "matching-agregat.json",
@@ -99,6 +120,13 @@
    "baris": 317,
    "rekord": 24,
    "sha256": "c8473e83359243df66b832132974088c0ea8704d5f821b152cc7e36daa416c80"
+  },
+  {
+   "artefak": "proposal-koreksi-rekening-v2-DITANGGUHKAN.json",
+   "bytes": 8217,
+   "baris": 276,
+   "rekord": 24,
+   "sha256": "111f27f8e4501170e5e78866dca1f2916cbb86c53f812f1700a370e946595363"
   },
   {
    "artefak": "proposal-legacy-notion-20260921.json",
