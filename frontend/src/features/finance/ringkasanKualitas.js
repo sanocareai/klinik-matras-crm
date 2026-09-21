@@ -36,7 +36,7 @@ export function hitungKualitasData({ antrean, catatan, backfill, riil }) {
       for (const r of selisihRek) {
         butir.push({
           id: `selisih_${r.id}`, label: `Selisih ${r.name.replace(/\s*-\s*Sano Bank/i, "").trim()}`, jumlah: Math.abs(angka(r.selisih)), nilai: angka(r.selisih), satuan: "rupiah",
-          hint: `Saldo buku ${angka(r.selisih) > 0 ? "lebih tinggi" : "lebih rendah"} dari saldo riil terkonfirmasi (cutoff ${riil.cutoffLabel}). Menunggu rekening koran.`, tujuan: "/finance/reconciliation",
+          hint: `Saldo buku ${angka(r.selisih) > 0 ? "lebih tinggi" : "lebih rendah"} dari saldo riil terkonfirmasi (cutoff ${riil.cutoffLabel}). Menunggu rekening koran.`, tujuan: r.periodeId ? `/finance/reconciliation?periode=${r.periodeId}` : "/finance/reconciliation",
         });
       }
     }

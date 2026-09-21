@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Link2, Unlink, EyeOff, CheckCircle2, Scale } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Plus, Link2, Unlink, EyeOff, CheckCircle2, Scale, AlertTriangle, Check, X } from "lucide-react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -23,6 +24,17 @@ function teksNominal(x) {
   return `${n} ${n.toLocaleString("id-ID")}`;
 }
 
+const LABEL_STATUS_PERIODE = { DRAF_MENUNGGU_MUTASI: "Draf — menunggu mutasi bank", DRAFT: "Sedang dicocokkan", SELESAI: "Selesai" };
+const VARIAN_STATUS_PERIODE = { DRAF_MENUNGGU_MUTASI: "orange", DRAFT: "neutral", SELESAI: "green" };
+function BadgeStatusPeriode({ status }) {
+  return <Badge className="whitespace-nowrap" variant={VARIAN_STATUS_PERIODE[status] || "neutral"}>{LABEL_STATUS_PERIODE[status] || status}</Badge>;
+}
+function teksCutoff(c) {
+  if (!c?.mulai || !c?.selesai) return null;
+  const f = (d) => new Date(d).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  return `${f(c.mulai)} WIB sampai ${f(c.selesai)} WIB`;
+}
+
 // REKONSILIASI BANK — mencocokkan mutasi menurut KORAN BANK dengan mutasi
 // menurut BUKU BESAR, lalu menjelaskan selisihnya.
 //
@@ -32,9 +44,12 @@ function teksNominal(x) {
 // jujur manual — orang akan berhenti memeriksa.
 
 export default function FinanceReconciliation() {
+  const [searchParams] = useSearchParams();
+  // Halaman dibuka di dalam sistem tab — sebagian tab tidak meneruskan search string ke router, jadi window.location jadi cadangan.
+  const periodeDariUrl = searchParams.get("periode") || new URLSearchParams(window.location.search).get("periode");
   const [statements, setStatements] = useState([]);
   const [rekening, setRekening] = useState([]);
-  const [aktif, setAktif] = useState(null);
+  const [aktif, setAktif] = useState(periodeDariUrl);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -56,7 +71,7 @@ export default function FinanceReconciliation() {
     [statements],
   );
   const periodeTampil = useMemo(() => statements.filter((s) =>
-    (!fStatusP || (s.status === "SELESAI" ? "SELESAI" : "DRAFT") === fStatusP)
+    (!fStatusP || s.status === fStatusP)
     && (!fRekening || s.cashAccount?.name === fRekening)
     && (!fBelum || (fBelum === "ada" ? s.belumCocok > 0 : !(s.belumCocok > 0)))
     && cocok(qPeriode, s.cashAccount?.name, tanggalPendek(s.periodStart), tanggalPendek(s.periodEnd), s.periodStart, s.periodEnd, s.note),
@@ -134,7 +149,7 @@ export default function FinanceReconciliation() {
         q={qPeriode} onQ={setQPeriode}
         placeholder="Cari rekening, periode, catatan…"
         filters={[
-          { key: "status", label: "Status", value: fStatusP, onChange: setFStatusP, options: [["DRAFT", LABEL_STATUS.DRAFT || "Draft"], ["SELESAI", LABEL_STATUS.SELESAI || "Selesai"]] },
+          { key: "status", label: "Status", value: fStatusP, onChange: setFStatusP, options: [["DRAF_MENUNGGU_MUTASI", LABEL_STATUS_PERIODE.DRAF_MENUNGGU_MUTASI], ["DRAFT", LABEL_STATUS_PERIODE.DRAFT], ["SELESAI", LABEL_STATUS_PERIODE.SELESAI]] },
           { key: "rek", label: "Rekening", value: fRekening, onChange: setFRekening, options: namaRekening.map((n) => [n, n]) },
           { key: "belum", label: "Belum cocok", value: fBelum, onChange: setFBelum, options: [["ada", "Ada"], ["nol", "Semua cocok"]] },
         ]}
@@ -165,8 +180,8 @@ export default function FinanceReconciliation() {
               <THead>
                 <TR>
                   <TH sticky>Rekening</TH><TH>Periode</TH>
-                  <TH numeric>Saldo Awal</TH><TH numeric>Saldo Akhir (Bank)</TH>
-                  <TH numeric>Baris</TH><TH numeric>Belum Cocok</TH><TH>Status</TH><TH />
+                  <TH numeric>Saldo Awal (Bank)</TH><TH numeric>Saldo Akhir (Bank)</TH><TH numeric>Saldo Buku Akhir</TH><TH numeric>Selisih Terbuka</TH>
+                  <TH numeric>Mutasi</TH><TH numeric>Belum Cocok</TH><TH>Status</TH><TH />
                 </TR>
               </THead>
               <TBody>
@@ -176,11 +191,17 @@ export default function FinanceReconciliation() {
                     <TD className="whitespace-nowrap">{tanggalPendek(s.periodStart)} – {tanggalPendek(s.periodEnd)}</TD>
                     <TD numeric><Uang value={s.openingBalance} /></TD>
                     <TD numeric><Uang value={s.closingBalance} /></TD>
-                    <TD numeric>{s.jumlahBaris}</TD>
+                    <TD numeric><Uang value={s.saldoBuku} /></TD>
                     <TD numeric>
-                      {s.belumCocok > 0 ? <Badge variant="orange">{s.belumCocok}</Badge> : <Badge variant="green">0</Badge>}
+                      {Math.abs(s.selisih) < 0.005
+                        ? <Badge variant="green">Rp0 · cocok</Badge>
+                        : <span className="text-orange"><Uang value={Math.abs(s.selisih)} className="font-bold" /><span className="block text-[11px] text-ink3">{s.selisih < 0 ? "buku lebih tinggi" : "bank lebih tinggi"}</span></span>}
                     </TD>
-                    <TD><StatusBadge status={s.status === "SELESAI" ? "SELESAI" : "DRAFT"} /></TD>
+                    <TD numeric>{s.jumlahBaris > 0 ? s.jumlahBaris : <span className="text-[12px] text-ink3">belum ada</span>}</TD>
+                    <TD numeric>
+                      {s.jumlahBaris === 0 ? <span className="text-ink3">—</span> : s.belumCocok > 0 ? <Badge variant="orange">{s.belumCocok}</Badge> : <Badge variant="green">0</Badge>}
+                    </TD>
+                    <TD className="whitespace-nowrap"><BadgeStatusPeriode status={s.status} /></TD>
                     <TD><Button size="sm" variant="tertiary">Buka</Button></TD>
                   </TR>
                 ))}
@@ -192,6 +213,19 @@ export default function FinanceReconciliation() {
 
       {detail && (
         <>
+          {detail.rekonsiliasi.sementara && (
+            <Card className="bg-orangebg" role="status" data-testid="banner-rekon-sementara">
+              <CardContent className="flex gap-3 py-4">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-orange" />
+                <div className="min-w-0 space-y-1">
+                  <p className="text-[13px] font-bold text-ink">{detail.rekonsiliasi.labelSementara}</p>
+                  {teksCutoff(detail.rekonsiliasi.cutoff) && <p className="text-[12px] text-ink2">Cutoff: {teksCutoff(detail.rekonsiliasi.cutoff)}.</p>}
+                  {detail.statement.note && <p className="text-[12px] text-ink2">{detail.statement.note}</p>}
+                  <p className="text-[12px] text-ink2">Tidak ada mutasi bank di periode ini — sengaja tidak dibuatkan mutasi perkiraan. Periode tidak dapat diselesaikan sebelum mutasi bank asli dimasukkan.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
             <KartuAngka
               label="Saldo Menurut Buku" value={formatUang(detail.rekonsiliasi.saldoBuku)}
@@ -202,17 +236,21 @@ export default function FinanceReconciliation() {
               info="Saldo akhir yang tertulis di koran bank asli untuk periode ini — diisi manual saat membuat periode rekonsiliasi."
             />
             <KartuAngka
-              label="Selisih" value={formatUang(detail.rekonsiliasi.selisih)}
-              tone={detail.rekonsiliasi.cocok ? "green" : "red"}
-              sub={detail.rekonsiliasi.cocok ? "Cocok" : "Perlu dijelaskan"}
+              label="Selisih Terbuka" value={formatUang(Math.abs(detail.rekonsiliasi.selisih))}
+              tone={detail.rekonsiliasi.cocok ? "green" : "orange"}
+              sub={detail.rekonsiliasi.cocok ? "Saldo akhir cocok" : detail.rekonsiliasi.selisih < 0 ? "Saldo buku lebih tinggi dari saldo bank" : "Saldo bank lebih tinggi dari saldo buku"}
               info="Selisih antara saldo buku dan saldo bank. Kalau tidak nol, biasanya ada mutasi yang belum tercatat di salah satu sisi — telusuri lewat baris yang masih 'Belum Cocok'."
             />
             <KartuAngka
-              label="Baris Belum Cocok" value={detail.rekonsiliasi.belumCocok}
-              tone={detail.rekonsiliasi.belumCocok > 0 ? "orange" : "green"}
+              label="Baris Belum Cocok" value={detail.statement.lines.length === 0 ? "Belum ada mutasi" : detail.rekonsiliasi.belumCocok}
+              tone={detail.statement.lines.length === 0 ? "default" : detail.rekonsiliasi.belumCocok > 0 ? "orange" : "green"}
               info="Baris mutasi dari koran bank yang belum ditemukan pasangannya di buku besar. Cocokkan satu per satu, atau tandai 'Abaikan' dengan alasan kalau memang tidak ada pasangannya (mis. biaya admin kecil yang belum dicatat)."
             />
           </div>
+
+          <PenyesuaianBuku data={detail.penyesuaianBuku} />
+
+          <SyaratSelesai p={detail.rekonsiliasi.penyelesaian} status={detail.statement.status} />
 
           <FilterBar
             q={qBaris} onQ={setQBaris}
@@ -234,26 +272,29 @@ export default function FinanceReconciliation() {
             <CardHeader>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setModalBaris(true)}>
-                  <Plus size={14} /> Tambah Baris Koran Bank
+                  <Plus size={14} /> {detail.rekonsiliasi.sementara ? "Masukkan Mutasi Bank Asli" : "Tambah Baris Koran Bank"}
                 </Button>
                 {detail.statement.status !== "SELESAI" && (
-                  <TombolAksi
-                    size="sm"
-                    onClick={() => {
-                      const catatan = detail.rekonsiliasi.belumCocok > 0
-                        ? window.prompt("Masih ada baris belum cocok. Isi catatan penjelasan untuk menutup rekonsiliasi:")
-                        : window.prompt("Catatan penutup (opsional):") || "";
-                      if (detail.rekonsiliasi.belumCocok > 0 && !catatan?.trim()) return;
-                      return aksi(() => api.completeFinanceBankStatement(detail.statement.id, catatan?.trim() || null));
-                    }}
-                  >
-                    <CheckCircle2 size={14} /> Tandai Selesai
-                  </TombolAksi>
+                  detail.rekonsiliasi.penyelesaian.bisa ? (
+                    <TombolAksi
+                      size="sm"
+                      onClick={() => {
+                        const catatan = window.prompt("Catatan penutup (opsional):") || "";
+                        return aksi(() => api.completeFinanceBankStatement(detail.statement.id, catatan.trim() || null));
+                      }}
+                    >
+                      <CheckCircle2 size={14} /> Tandai Selesai
+                    </TombolAksi>
+                  ) : (
+                    <Button size="sm" variant="neutral" disabled title={detail.rekonsiliasi.penyelesaian.alasan.join("; ")}>
+                      <CheckCircle2 size={14} /> Tandai Selesai (belum memenuhi syarat)
+                    </Button>
+                  )
                 )}
               </div>
             </CardHeader>
             {detail.statement.lines.length === 0 ? (
-              <CardContent><p className="py-6 text-center text-[13px] text-ink3">Belum ada baris koran bank.</p></CardContent>
+              <CardContent><p className="py-6 text-center text-[13px] text-ink3">{detail.rekonsiliasi.sementara ? "Belum ada mutasi bank asli. Rekening koran belum dimasukkan — tidak ada mutasi perkiraan yang dibuat." : "Belum ada baris koran bank."}</p></CardContent>
             ) : barisTampil.length === 0 ? (
               <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada baris yang cocok dengan pencarian/filter.</p></CardContent>
             ) : (
@@ -444,5 +485,61 @@ function ModalCocokkan({ baris, kandidat, onClose, onSubmit }) {
         )}
       </div>
     </Modal>
+  );
+}
+
+function PenyesuaianBuku({ data }) {
+  if (!data || data.items.length === 0) return null;
+  const k = data.ringkasan.koreksiKasGanda;
+  return (
+    <Card className="overflow-hidden" data-testid="penyesuaian-buku">
+      <JudulKartu
+        title="Penyesuaian Buku"
+        description="Bukan transaksi bank — kalibrasi saldo riil dan koreksi kas ganda."
+        info="Jurnal ini menyesuaikan saldo buku agar sesuai saldo riil (lawan Koreksi Saldo Awal). Tidak dicocokkan dengan mutasi koran dan tidak masuk daftar kandidat pencocokan."
+      />
+      <CardContent className="space-y-2">
+        <p className="text-[13px] text-ink2">
+          {data.ringkasan.jumlah} jurnal · bersih <Uang value={data.ringkasan.bersih} />
+          {k.jumlah > 0 && <> · termasuk {k.jumlah} koreksi kas ganda ({k.dari} s.d. {k.sampai}) senilai <Uang value={k.bersih} /></>}
+        </p>
+        <p className="text-[12px] text-ink3">{data.catatan}</p>
+      </CardContent>
+      <TableWrap className="dh-table max-h-[420px] overflow-y-auto">
+        <Table>
+          <THead><TR><TH sticky>Jurnal</TH><TH>Tanggal</TH><TH>Jenis</TH><TH>Keterangan</TH><TH numeric>Pengaruh ke saldo buku</TH></TR></THead>
+          <TBody>
+            {data.items.map((x) => (
+              <TR key={x.jurnalId}>
+                <TD sticky className="font-mono text-[12px]">{x.nomor}</TD>
+                <TD className="whitespace-nowrap">{tanggalPendek(x.tanggal)}</TD>
+                <TD><Badge variant="neutral">{x.jenisLabel}</Badge></TD>
+                <TD className="max-w-[320px] truncate text-[12px]">{x.keterangan}</TD>
+                <TD numeric><Uang value={x.nilai} /></TD>
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+      </TableWrap>
+    </Card>
+  );
+}
+
+function SyaratSelesai({ p, status }) {
+  if (!p || status === "SELESAI") return null;
+  return (
+    <Card data-testid="syarat-selesai">
+      <JudulKartu title="Syarat Menyelesaikan Periode" description="Periode hanya bisa diselesaikan bila semua syarat terpenuhi." />
+      <CardContent>
+        <ul className="space-y-1.5">
+          {p.syarat.map((x) => (
+            <li key={x.kode} className="flex items-start gap-2 text-[13px]">
+              {x.ok ? <Check size={15} className="mt-0.5 shrink-0 text-green" /> : <X size={15} className="mt-0.5 shrink-0 text-orange" />}
+              <span className={x.ok ? "text-ink2" : "text-ink"}>{x.kode === "STATUS" && !x.ok ? x.teks : x.teks}</span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }

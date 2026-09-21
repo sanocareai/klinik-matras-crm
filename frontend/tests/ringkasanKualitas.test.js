@@ -61,3 +61,10 @@ test("Aging: belum jatuh tempo, lewat jatuh tempo (rincian), tertua dari baris t
   assert.equal(kosong.total, 0); assert.equal(kosong.tertua, null); assert.ok(kosong.bagian.every((x) => x.persen === 0));
   assert.equal(ringkasAging({ ringkasan: { belum_jatuh_tempo: 50 }, teratas: [{ hariLewat: 0, orderNumber: "Z" }] }).tertua, null, "belum jatuh tempo bukan 'tertua'");
 });
+
+test("Butir selisih rekening menaut langsung ke periode rekonsiliasi bila ada periodeId", () => {
+  const r = { cutoffLabel: "x", rekening: [{ id: "b", name: "KEM - Sano Bank", status: "SELISIH", selisih: 2526981, periodeId: "abc-123" }, { id: "a", name: "PT Sano", status: "SELISIH", selisih: 5 }] };
+  const k = hitungKualitasData({ antrean, catatan: { gapTerbuka: 0 }, backfill, riil: r });
+  assert.equal(k.butir.find((b) => b.id === "selisih_b").tujuan, "/finance/reconciliation?periode=abc-123");
+  assert.equal(k.butir.find((b) => b.id === "selisih_a").tujuan, "/finance/reconciliation", "tanpa periode → halaman daftar");
+});
