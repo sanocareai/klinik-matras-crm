@@ -243,6 +243,8 @@ test("Rekonsiliasi per bulan + simulasi + proposal jurnal: hanya laporan; TIDAK 
   assert.equal(rk.total.pendapatan, "1800000.00");
   assert.equal(rk.simulasi.kas.berubah, "0.00");
   assert.equal(rk.simulasi.piutang.bertambah, "500000.00");
+  assert.equal(rk.simulasi.ekuitas.berubah, "500000.00", "total ekuitas naik hanya sebesar piutang");
+  assert.equal(rk.simulasi.ekuitas.koreksiSaldoAwalBerkurang, "1300000.00");
   const pr = (await get(fin, "/pemasukan/legacy/proposal")).body;
   assert.match(pr.status, /BELUM DIPOSTING/);
   assert.match(pr.persetujuan, /Owner/);

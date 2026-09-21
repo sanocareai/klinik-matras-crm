@@ -40,14 +40,18 @@ export async function hitungCutoff(db) {
   if (pengakuanTgl && pengakuanTgl > tanggal) {
     const orders = await db.order.findMany({
       where: { createdAt: { gte: new Date(`${tanggal}T00:00:00+07:00`), lt: new Date(`${pengakuanTgl}T00:00:00+07:00`) }, status: { not: "CANCELLED" } },
-      select: { createdAt: true, value: true },
+      select: { id: true, createdAt: true, value: true },
     });
+    // Order yang dibuat sebelum pengakuan pertama tetapi SUDAH diakui (diserahkan sesudahnya) bukan celah — dikeluarkan.
+    const diakui = new Set((await db.finJournalEntry.findMany({ where: { source: "PENGAKUAN_PENDAPATAN", status: { in: STATUS_DIHITUNG }, sourceId: { in: orders.map((x) => x.id) } }, select: { sourceId: true } })).map((e) => e.sourceId));
+    const sudahDiakuiDalamJendela = orders.filter((x) => diakui.has(x.id)).length;
+    orders.splice(0, orders.length, ...orders.filter((x) => !diakui.has(x.id)));
     const perBulan = {};
     for (const x of orders) { const b = wibTanggal(x.createdAt).slice(0, 7); perBulan[b] ??= { jumlah: 0, nilai: ZERO }; perBulan[b].jumlah++; perBulan[b].nilai = perBulan[b].nilai.plus(toMoney(x.value ?? 0)); }
     celah = {
-      dari: tanggal, sampai: pengakuanTgl, jumlahOrder: orders.length, nilaiOrder: uang(orders.length ? sumMoney(orders.map((x) => x.value ?? 0)) : ZERO),
+      dari: tanggal, sampai: pengakuanTgl, jumlahOrder: orders.length, sudahDiakuiDalamJendela, nilaiOrder: uang(orders.length ? sumMoney(orders.map((x) => x.value ?? 0)) : ZERO),
       perBulan: Object.entries(perBulan).sort().map(([bulan, v]) => ({ bulan, jumlah: v.jumlah, nilai: uang(v.nilai) })),
-      catatan: "Order sistem pada rentang ini belum memiliki pengakuan pendapatan di buku besar. Ini bukan bagian Data Sebelum Sistem dan TIDAK dijumlahkan ke pendapatan gabungan.",
+      catatan: "Order sistem (non-batal) yang dibuat pada rentang ini dan BELUM memiliki pengakuan pendapatan di buku besar — mencakup order berjalan/batal-belum-selesai; bukan otomatis layak diakui (lihat rekonsiliasi backfill). Ini bukan bagian Data Sebelum Sistem dan TIDAK dijumlahkan ke pendapatan gabungan.",
     };
   }
   return { tanggal, dasar: `Order sistem paling awal: ${o.orderNumber} (${tanggal}). Transaksi SEBELUM tanggal ini = Data Sebelum Sistem; pada/sesudahnya harus berasal dari order/invoice sistem.`, orderPertama: { nomor: o.orderNumber, tanggal }, pengakuanPertama: pengakuanTgl, celahPengakuan: celah };
@@ -467,7 +471,7 @@ export async function rekonsiliasiLegacy(db) {
       catatan: "SIMULASI — tidak ada yang diposting. Saldo Kas & Bank sudah dikalibrasi ke saldo riil; penerimaan lama TIDAK boleh diposting ke rekening kas/bank (akan terhitung dua kali).",
       labaRugi: { pendapatanBertambah: uang(totalPend) }, piutang: { bertambah: uang(totalBelum), catatan: "Hanya yang berstatus belum dibayar; 'tidak diketahui' dan 'sebagian' TIDAK dianggap piutang tanpa keputusan." },
       kas: { berubah: "0.00", catatan: "Tidak berubah. Bagian yang sudah dibayar tidak menyentuh kas/bank." },
-      ekuitas: { berubah: uang(totalBelum.plus(S(perBulan.map((x) => x.tidakDiketahui))).plus(S(perBulan.map((x) => x.sebagian)))), catatan: "Laba bertambah sebesar pendapatan; bagian yang sudah dibayar diimbangi koreksi ekuitas non-kas." },
+      ekuitas: { berubah: uang(totalBelum), labaBertambah: uang(totalPend), koreksiSaldoAwalBerkurang: uang(totalPend.minus(totalBelum)), catatan: "Total ekuitas hanya naik sebesar bagian piutang (belum dibayar). Bagian sudah dibayar/tidak diketahui memindahkan ekuitas dari Koreksi Saldo Awal (3-4100) ke laba: total ekuitas tidak berubah." },
     },
     labelHistoris: "Data sebelum sistem berasal dari arsip lama dan belum memengaruhi buku besar sampai proses rekonsiliasi dan posting disetujui.",
     batasan: `Yang dihitung hanya baris SIAP (atau Perlu Ditinjau yang diputuskan TERIMA). Lunas Rp${uang(totalLunas)}.`,

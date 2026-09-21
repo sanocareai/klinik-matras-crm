@@ -286,7 +286,7 @@ function DataSebelumSistem({ periode, opsi, onBuka }) {
                   ))}
                   <TR className="font-semibold"><TD>Total</TD><TD className="text-right"><Rp v={rekon.total.pendapatan} /></TD><TD className="text-right"><Rp v={rekon.total.lunas} /></TD><TD className="text-right"><Rp v={rekon.total.belumBayar} /></TD><TD className="text-right"><Rp v={rekon.total.tidakDiketahui} /></TD><TD /><TD /><TD className="text-right"><Rp v={rekon.total.jurnalSaatIni} /></TD><TD className="text-right"><Rp v={rekon.total.selisihTerhadapJurnal} /></TD></TR>
                 </TBody></Table></TableWrap>
-              <Penjelasan>{rekon.simulasi.catatan} Dampak simulasi: laba/pendapatan +{teksRp(rekon.simulasi.labaRugi.pendapatanBertambah)}, piutang +{teksRp(rekon.simulasi.piutang.bertambah)}, kas {teksRp(rekon.simulasi.kas.berubah)} (tidak berubah), ekuitas +{teksRp(rekon.simulasi.ekuitas.berubah)}.</Penjelasan>
+              <Penjelasan>{rekon.simulasi.catatan} Dampak simulasi: laba/pendapatan +{teksRp(rekon.simulasi.labaRugi.pendapatanBertambah)}, piutang +{teksRp(rekon.simulasi.piutang.bertambah)}, kas {teksRp(rekon.simulasi.kas.berubah)} (tidak berubah), total ekuitas +{teksRp(rekon.simulasi.ekuitas.berubah)} (laba +{teksRp(rekon.simulasi.ekuitas.labaBertambah)}, Koreksi Saldo Awal −{teksRp(rekon.simulasi.ekuitas.koreksiSaldoAwalBerkurang)}).</Penjelasan>
               {proposal && (
                 <details className="text-[13px]"><summary className="cursor-pointer font-semibold">{proposal.status} — proposal jurnal migrasi</summary>
                   <p className="mt-2 text-ink2">{proposal.persetujuan}</p>
