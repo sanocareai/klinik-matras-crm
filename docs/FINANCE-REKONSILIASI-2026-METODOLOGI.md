@@ -105,3 +105,13 @@ Belum masuk jurnal: seluruh penerimaan historis Jan–11 Jul (non-posting), pend
 **NEW-30082026-023:** diperlakukan sebagai order sistem; JV-429 tidak dibalik. Proposal pembalikan hanya setelah status penyelesaian/serah-terima dikonfirmasi.
 
 **Proposal koreksi (24 baris, non-kas, lawan 3-4100)** tetap **ditangguhkan** dan tidak diposting; menunggu rekening koran + persetujuan Owner. Sisa Rp2.526.981 tidak diberi entri.
+
+## 9. Posting koreksi kas ganda (persetujuan Owner 22 Sep 2026)
+
+Owner menyetujui koreksi bagian yang **sudah terjelaskan** (Rp32.738.030). Dieksekusi dengan `backend/scripts/koreksiKasGanda20260922.js` (daftar transaksi PRIVAT, tidak di Git): backup database lebih dulu, pratinjau, lalu `--apply` dalam satu transaksi DB (semua-atau-tidak-sama-sekali), idempoten (`KOREKSI_KAS_GANDA:<id jurnal asli>`).
+
+- **23 jurnal** `JV-21092026-436 … JV-21092026-458` (sumber SALDO_AWAL, tanggal buku 21 Sep 2026), satu per transaksi, **non-kas** dengan lawan 3-4100: pembayaran ganda → Dr 3-4100 / Cr rekening; pengeluaran ganda → Dr rekening / Cr 3-4100. Jurnal asli tidak diubah.
+- **Hasil:** PT Sano Rp66.575.615 → **Rp39.180.615** (= saldo bank akhir; selisih 0). KEM Rp12.782.099 → **Rp7.439.069** (bank Rp4.912.088; **sisa Rp2.526.981 tidak dikoreksi** — menunggu rekening koran).
+- **Item Kas (Rp12.000) tidak diposting**: di luar angka Rp32.738.030 dan saldo Kas akhir belum dikonfirmasi (24 usulan → 23 diposting).
+- **Verifikasi pasca-posting:** jumlah jurnal 2.863 → 2.886 (+23); saldo per rekening sama dengan harapan; buku besar seimbang; JV-372 dan JV-391 utuh; baris akun 2-1600 tidak berubah (68); posting ulang ditolak (idempoten).
+- Backup sebelum posting: `klinik_matras_backup_2026-09-22_01-48-38.sql.gz` (server + Google Drive).
