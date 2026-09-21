@@ -22,7 +22,7 @@ Cakupan: seluruh S0–S11. Bukti = tes otomatis yang menjalankan perilaku itu (n
 | Read-only preview | ✔ Profil `preview` (API produksi) `EXPO_PUBLIC_READ_ONLY=true`: semua tombol uang nonaktif + jalur command menolak sebelum step-up. Pengaman salah-ketuk, **bukan** keamanan backend | `bacasaja.test.tsx` |
 | Production mengikuti server | ✔ Tanpa flag read-only; command resmi jalan sesuai `aksi.boleh`/capability | seluruh tes UI (ENV tanpa readOnly) |
 | Log | ✔ Hanya `log.warn` tanpa payload; `redact()` untuk kunci sensitif; `console.*` dibuang di build produksi (bundle: 0 `console.log`); backend pemicu push hanya mencatat `err.message` | pindai bundle, `log.ts` |
-| Izin Android | ✔ Dipangkas: READ_APP_BADGE, ACCESS_LOCAL_NETWORK, SYSTEM_ALERT_WINDOW (non-dev), RECORD_AUDIO, lokasi, WRITE_EXTERNAL_STORAGE diblokir; POST_NOTIFICATIONS & RECEIVE_BOOT_COMPLETED diblokir selama push off. Tersisa: INTERNET, ACCESS_NETWORK_STATE, CAMERA (foto nota), USE_BIOMETRIC/USE_FINGERPRINT, VIBRATE, WAKE_LOCK, DETECT_SCREEN_CAPTURE, ACCESS_WIFI_STATE | `dumpsys package` pada APK #4, `app.config.ts` |
+| Izin Android | ✔ Dipangkas: READ_APP_BADGE, SYSTEM_ALERT_WINDOW (non-dev), RECORD_AUDIO, lokasi, WRITE_EXTERNAL_STORAGE diblokir; POST_NOTIFICATIONS & RECEIVE_BOOT_COMPLETED diblokir selama push off. Tersisa: ACCESS_LOCAL_NETWORK (dibawa pustaka jaringan, tidak bisa dihapus lewat blockedPermissions), INTERNET, ACCESS_NETWORK_STATE, CAMERA (foto nota), USE_BIOMETRIC/USE_FINGERPRINT, VIBRATE, WAKE_LOCK, DETECT_SCREEN_CAPTURE, ACCESS_WIFI_STATE | `dumpsys package` pada APK #4, `app.config.ts` |
 | allowBackup | ✔ `false` (flag ALLOW_BACKUP tidak ada pada APK) | `dumpsys package` |
 | HTTPS | ✔ Preview/production: `usesCleartextTraffic=false` + klien menolak baseUrl non-HTTPS (`HTTPS_WAJIB`) sebelum ada permintaan | `client.test.ts` |
 | Signing | ◐ Keystore dikelola EAS (tidak di repo). Keystore production dibuat pemilik EAS pada build production pertama | eas.json, `.gitignore` |
@@ -54,7 +54,7 @@ Catatan temuan: di font 1,5× tombol gear alat-dev Expo menutupi banner "Mode co
 | 1 | Push diminta izin saat startup (tidak kontekstual) | P1 | **Diperbaiki** — izin hanya dari layar Notifikasi; flag off ⇒ tidak ada |
 | 2 | Menu "Segera hadir" (7 item) dan "(segera hadir)" di aksi cepat | P1 | **Diperbaiki** — dihapus / diarahkan ke layar nyata atau kartu "Hanya di web" |
 | 3 | Klien tidak memaksa HTTPS di kode (hanya manifest) | P2 | **Diperbaiki** — `wajibHttps` |
-| 4 | Izin manifest berlebih (READ_APP_BADGE, ACCESS_LOCAL_NETWORK, POST_NOTIFICATIONS/BOOT saat push off) | P2 | **Diperbaiki** — diblokir |
+| 4 | Izin manifest berlebih (READ_APP_BADGE, POST_NOTIFICATIONS/BOOT saat push off) | P2 | **Diperbaiki** — diblokir (terverifikasi pada APK 1.0.0); ACCESS_LOCAL_NETWORK tetap ada, dicatat |
 | 5 | Deep link putusan memakai skema yang tidak punya rute (`sanofinance://{jenis}/{id}`) | P2 | **Diperbaiki** — `data.path` + daftar putih |
 | 6 | `runtimeVersion` fingerprint tidak dipakai (gagal di build cloud) | — | Dicatat: memakai `appVersion`; OTA terbatas ke `version` sama. Kebijakan setara dan lebih ketat |
 | 7 | Uji HP fisik, TalkBack, 30 menit, jaringan lambat pada API nyata, pilot | P2 | **Belum** — tercatat sebagai syarat sebelum publikasi publik, bukan blocker rilis internal |

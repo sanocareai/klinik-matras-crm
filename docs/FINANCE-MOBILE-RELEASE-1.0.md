@@ -20,6 +20,16 @@ Status: **kandidat rilis internal** — menunggu persetujuan owner atas build fi
 
 **Catatan penting:** tidak ada antrean offline — perintah keuangan butuh koneksi dan tidak pernah dikirim otomatis saat sambungan pulih. Build **preview** selalu **baca-saja** ("Build preview hanya untuk pengujian baca"); build **production** mengikuti izin dari server.
 
+## 1a. Artefak 1.0.0 (dibuat 21 Sep 2026, commit 8a9a4248)
+
+| Artefak | Build ID | Versi / build | Tautan |
+|---|---|---|---|
+| APK internal tim (`production-apk`, channel production) | `b66adce0-97cc-4da8-91ad-5dba59af7f4b` | 1.0.0 / 2 | https://expo.dev/artifacts/eas/Ke0Wcmvk7_lQ7DgXYN4H59fYDMwuOAxzMF-nkUSdc0Y.apk |
+| AAB Play Store (`production`, channel production) | `90cabfce-8746-4c6b-92f7-a22be1f8bb53` | 1.0.0 / 3 | https://expo.dev/artifacts/eas/5_3JlktBkpHFqHqRmGTnJH7SBSh5KtDUKjaiu3Jtj5g.aab |
+| EAS Update channel production | — | runtime 1.0.0 | **siap, belum dipublikasikan** (menunggu persetujuan owner) |
+
+Smoke test APK 1.0.0 di emulator Pixel 8: terpasang, terbuka (4,0 dtk cold, emulator), layar masuk "SANO Finance 1.0.0 · production", tanpa crash, tanpa flag ALLOW_BACKUP, izin: INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, CAMERA, USE_BIOMETRIC, USE_FINGERPRINT, VIBRATE, WAKE_LOCK, DETECT_SCREEN_CAPTURE, ACCESS_LOCAL_NETWORK (tetap ada meski diblokir di konfigurasi — datang dari pustaka jaringan; tidak berbahaya, dicatat). Belum diuji di HP fisik.
+
 ## 2. Varian build
 
 | Profil EAS | Paket | Kanal | Data | Perintah uang |
