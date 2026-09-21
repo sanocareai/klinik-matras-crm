@@ -13,6 +13,8 @@ export type KategoriPemasukan = "PENDAPATAN" | "PEMBAYARAN" | "LAIN" | "DANA" | 
 export type NadaP = "success" | "warning" | "danger" | "info" | "neutral";
 const KATEGORI: KategoriPemasukan[] = ["PENDAPATAN", "PEMBAYARAN", "LAIN", "DANA", "HISTORIS", "DITINJAU", "DIKECUALIKAN"];
 const NADA: NadaP[] = ["success", "warning", "danger", "info", "neutral"];
+export const PERINGATAN_PENDAPATAN_2026 = "Pendapatan 2026 masih dalam proses rekonsiliasi data sebelum sistem dan backfill order. Angka belum final.";
+
 export const LABEL_KATEGORI: Record<KategoriPemasukan, string> = {
   PENDAPATAN: "Pendapatan Penjualan", PEMBAYARAN: "Pembayaran Masuk", LAIN: "Pemasukan Lain", DANA: "Dana Masuk Bukan Pendapatan", HISTORIS: "Data Sebelum Sistem", DITINJAU: "Perlu Ditinjau", DIKECUALIKAN: "Dikecualikan",
 };

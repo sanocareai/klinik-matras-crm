@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+const PERINGATAN_PENDAPATAN_2026 = "Pendapatan 2026 masih dalam proses rekonsiliasi data sebelum sistem dan backfill order. Angka belum final.";
 import { HalamanFinance, KartuAngka, JudulKartu, Penjelasan, PeriodePicker, periodeDefault, tanggalPendek } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 
@@ -362,6 +363,7 @@ export default function FinancePemasukan() {
       actions={<div className="flex items-center gap-2"><PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />{opsi?.aksiCatat?.boleh && <Button size="sm" variant="outline" onClick={() => nav("/finance/other-income")}>Catat Pemasukan Lain</Button>}</div>}
       loading={false} error={error} onRetry={() => window.location.reload()}
     >
+      <div role="status" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[13px] text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"><strong>Angka belum final.</strong> {PERINGATAN_PENDAPATAN_2026}</div>
       <div role="tablist" aria-label="Kategori pemasukan" className="mb-4 flex flex-wrap gap-2">
         {TAB.map((t) => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`rounded-full border px-3 py-1.5 text-[13px] ${tab === t.id ? "border-blue bg-blue text-white" : "text-ink2 hover:bg-inset"}`}>{t.label}</button>

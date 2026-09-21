@@ -18,7 +18,7 @@ import { jam, tanggalPendek } from "@/lib/dates";
 import { denganAkses } from "@/features/guard/RequireCapability";
 import { BannerBasi, GalatPenuh } from "@/features/umum/StatusData";
 import { BarisTeks, KartuPeringatan, periodeBuku } from "@/features/buku/Bagian";
-import { LABEL_KATEGORI, type BarisPemasukan, type KategoriPemasukan, type RingkasanPemasukan } from "@/api/pemasukan";
+import { LABEL_KATEGORI, PERINGATAN_PENDAPATAN_2026, type BarisPemasukan, type KategoriPemasukan, type RingkasanPemasukan } from "@/api/pemasukan";
 
 // PEMASUKAN (v1.1.0) — agregator BACA-SAJA. Klasifikasi & total dari server; klien tidak menghitung uang. Impor "Data Sebelum Sistem", rekonsiliasi, dan posting hanya di web.
 
@@ -134,6 +134,7 @@ function Pemasukan() {
         <Text style={{ color: colors.primary, fontFamily: font.medium, fontSize: 15 }}>Kembali</Text>
       </PressableScale>
       {ENV.useMocks ? <MockBanner /> : null}
+      <KartuPeringatan nada="warning" judul="Angka belum final" isi={PERINGATAN_PENDAPATAN_2026} />
       {!online ? <OfflineBanner /> : null}
       <Text accessibilityRole="header" maxFontSizeMultiplier={1.3} style={{ color: colors.text, fontFamily: font.semibold, fontSize: 24, marginBottom: 4 }}>Pemasukan</Text>
       <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginBottom: 10 }}>Hanya baca. Dihitung server; tidak membuat transaksi atau jurnal.</Text>

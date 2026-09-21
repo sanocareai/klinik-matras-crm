@@ -79,6 +79,7 @@ describe("layar Pemasukan", () => {
   it("ringkasan: pembeda Pendapatan ≠ Uang masuk, kartu terpisah, label data sebelum sistem, dan drill-down ke daftar", async () => {
     buka(); tampil(<PemasukanRute />);
     await tungguTeks("Pendapatan ≠ uang masuk");
+    await tungguTeks(/Pendapatan 2026 masih dalam proses rekonsiliasi data sebelum sistem dan backfill order. Angka belum final./);
     await tunggu(/^Pendapatan dari sistem/);
     await tunggu(/^Pembayaran masuk terverifikasi/);
     await tungguTeks(/Data sebelum sistem berasal dari arsip lama dan belum memengaruhi buku besar/);
