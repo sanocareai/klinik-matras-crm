@@ -58,24 +58,33 @@ export function FotoProfil() {
     }
   }
 
+  function ketuk() {
+    if (sibuk) return;
+    if (nonaktifAlasan) { Alert.alert("Foto profil", nonaktifAlasan); return; }
+    haptic.tick();
+    setBuka(true);
+  }
+
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-      <PressableScale
-        onPress={() => { if (!sibuk && !nonaktifAlasan) { haptic.tick(); setBuka(true); } }} disabled={sibuk || !!nonaktifAlasan}
-        accessibilityLabel={sibuk ? "Mengunggah foto profil" : "Ganti foto profil"}
-      >
-        <View style={{ opacity: sibuk ? 0.5 : 1 }}><Avatar nama={user?.name} avatarUrl={user?.avatarUrl} ukuran={56} /></View>
+    <View>
+      <PressableScale onPress={ketuk} accessibilityLabel={sibuk ? "Mengunggah foto profil" : "Ganti foto profil"} style={{ flexDirection: "row", alignItems: "center", gap: 12, minHeight: 56 }}>
+        <View style={{ opacity: sibuk ? 0.5 : 1 }}>
+          <Avatar nama={user?.name} avatarUrl={user?.avatarUrl} ukuran={56} />
+          <View style={{ position: "absolute", right: -2, bottom: -2, width: 22, height: 22, borderRadius: 11, backgroundColor: colors.solid, borderWidth: 1, borderColor: colors.glassStroke, alignItems: "center", justifyContent: "center" }}>
+            <Camera size={12} color={colors.primary} strokeWidth={2} />
+          </View>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.text, fontFamily: font.semibold, fontSize: 16 }}>{user?.name}</Text>
+          {pesan ? (
+            <Text accessibilityRole="alert" accessibilityLiveRegion="polite" maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 2 }}>{pesan}</Text>
+          ) : (
+            <Text maxFontSizeMultiplier={1.3} style={{ color: nonaktifAlasan ? colors.warning : colors.primary, fontFamily: font.medium, fontSize: 12, marginTop: 2 }}>
+              {sibuk ? "Mengunggah…" : (nonaktifAlasan ?? "Ketuk untuk mengganti foto")}
+            </Text>
+          )}
+        </View>
       </PressableScale>
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: colors.text, fontFamily: font.semibold, fontSize: 16 }}>{user?.name}</Text>
-        {pesan ? (
-          <Text accessibilityRole="alert" accessibilityLiveRegion="polite" maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 2 }}>{pesan}</Text>
-        ) : (
-          <Text maxFontSizeMultiplier={1.3} style={{ color: nonaktifAlasan ? colors.warning : colors.primary, fontFamily: font.medium, fontSize: 12, marginTop: 2 }}>
-            {sibuk ? "Mengunggah…" : (nonaktifAlasan ?? "Ketuk foto untuk mengganti")}
-          </Text>
-        )}
-      </View>
       <Sheet visible={buka} onClose={() => setBuka(false)} judul="Foto profil" sub="Foto yang sama dipakai di SANSS Hub.">
         <View style={{ gap: 10 }}>
           <Button label="Ambil foto" variant="secondary" icon={Camera} onPress={() => void pilih("kamera")} />
