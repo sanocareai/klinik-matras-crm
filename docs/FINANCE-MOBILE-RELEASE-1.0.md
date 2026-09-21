@@ -48,6 +48,12 @@ Verifikasi sebelum memasang: `sha256sum finance-1.0.0-b2.apk` (Windows: `certuti
 
 Smoke test APK 1.0.0 di emulator Pixel 8: terpasang, terbuka (4,0 dtk cold, emulator), layar masuk "SANO Finance 1.0.0 · production", tanpa crash, tanpa flag ALLOW_BACKUP, izin: INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, CAMERA, USE_BIOMETRIC, USE_FINGERPRINT, VIBRATE, WAKE_LOCK, DETECT_SCREEN_CAPTURE, ACCESS_LOCAL_NETWORK (tetap ada meski diblokir di konfigurasi — datang dari pustaka jaringan; tidak berbahaya, dicatat). Belum diuji di HP fisik.
 
+### Pembaruan OTA 1.0.0 (21 Sep 2026): foto profil
+
+Dipublikasikan ke channel `production`, runtime `1.0.0`, Android, atas permintaan Owner (tanpa build APK baru). Update ID `01a0c1d0-b7c9-7b11-b389-ea20a6089b84`, grup `12dcc074-4bff-43ce-a9e4-8f266fc2dd51`, sumber commit `28834169` (JS saja; tag `finance-mobile-v1.0.0` tetap di `8a9a4248`). Isi: foto profil tampil di Beranda/Lainnya dan bisa diganti, foto sama dengan SANSS Hub (backend `POST /api/mobile/me/avatar`, sudah di-deploy). Dibuat dengan env production (API produksi, mock off, push off); bundel setara diperiksa: tanpa URL dev, tanpa secret, tanpa "Segera hadir". Manifest dari channel production terverifikasi (runtime 1.0.0, ID di atas).
+
+Penerapan di HP: aplikasi mengunduh saat dibuka dan menerapkan pada pembukaan berikutnya (buka, tutup total, buka lagi). Rollback: `EAS_PROJECT_ID=ac46e42b-2ac5-4fb3-a515-ebaf40c4c3e2 eas update:rollback --channel production` (kembali ke bundel di APK 1.0.0). Backend endpoint bersifat aditif dan aman dibiarkan.
+
 ## 2. Varian build
 
 | Profil EAS | Paket | Kanal | Data | Perintah uang |
