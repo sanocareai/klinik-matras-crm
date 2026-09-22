@@ -21,12 +21,40 @@ const HIDE_BELOW_CLASS = Object.freeze({
   1280: "hidden min-[1280px]:table-cell",
   1366: "hidden min-[1366px]:table-cell",
   1536: "hidden min-[1536px]:table-cell",
+  1600: "hidden min-[1600px]:table-cell",
 });
 
 // Nama breakpoint → px. "tablet"/"wide" dipetakan presisi ke lebar yang diminta desain (kolom sekunder BOLEH
 // sembunyi di 1024–1365, WAJIB terlihat mulai 1366) — bukan dipaksa ke breakpoint bawaan Tailwind yang terdekat
 // tapi tidak pas (lg=1024 terlalu awal, xl=1280 masih di tengah 1024–1365).
-export const HIDE_BELOW_BREAKPOINTS = Object.freeze({ sm: 640, md: 768, lg: 1024, tablet: 1024, xl: 1280, wide: 1366, "2xl": 1536 });
+// "uw" (ultra-wide, 1600) — D-XXX (perbaikan lanjutan 22 Sep 2026): kolom detail (Kategori/Divisi/Mode/Sumber
+// Dana, dst) yang SEBELUMNYA muncul dari "wide" (1366) TERBUKTI membuat tombol aksi & kolom lain bertumpuk di
+// 1366–1599 begitu Aksi/Bukti diberi ruang yang cukup untuk tidak overlap — didorong ke 1600 supaya kolom detail
+// hanya muncul saat benar-benar ada ruang, bukan dipaksa muat.
+export const HIDE_BELOW_BREAKPOINTS = Object.freeze({ sm: 640, md: 768, lg: 1024, tablet: 1024, xl: 1280, wide: 1366, "2xl": 1536, uw: 1600 });
+
+// Kolom GABUNGAN (mis. "Klasifikasi" = Kategori+Divisi, "Pembayaran" = Mode+Sumber Dana) yang HANYA muncul di
+// rentang 1280–1599px — di bawahnya (<1280) disembunyikan total (isinya pindah ke baris detail yang bisa dibuka,
+// lihat DetailRow di table.jsx), di atasnya (>=1600) kolom aslinya yang terpisah yang tampil (hideBelow="uw"),
+// bukan versi gabungan ini. SATU literal statis (bukan hasil interpolasi px min/max) — alasan sama seperti
+// HIDE_BELOW_CLASS di atas.
+const MID_ONLY_CLASS = "hidden min-[1280px]:table-cell min-[1600px]:hidden";
+
+/** Kelas kolom gabungan yang HANYA tampil di 1280–1599px (lihat MID_ONLY_CLASS). */
+export function midOnlyClass() {
+  return MID_ONLY_CLASS;
+}
+
+// Tombol/ikon pembuka baris detail (expand) — HANYA relevan di 768–1279px, saat kolom sekunder disembunyikan
+// dari tabel. Tabel itu sendiri sudah tidak dirender sama sekali di bawah 768px (lihat TABLE_VIEW_CLASS/
+// CARD_VIEW_CLASS — dipakai Card List sebagai gantinya), jadi cukup disembunyikan dari 1280px ke atas.
+// "md"/"1280" pakai token Tailwind bawaan (bukan arbitrary value) — 768 & 1280 kebetulan cocok breakpoint bawaan.
+export const EXPAND_TOGGLE_HIDE_CLASS = "min-[1280px]:hidden";
+
+/** Wrapper <table> — dirender penuh mulai 768px ke atas; di bawahnya diganti Card List (md = breakpoint bawaan Tailwind, persis 768px). */
+export const TABLE_VIEW_CLASS = "hidden md:block";
+/** Wrapper Card List — HANYA di bawah 768px; berbalikan dari TABLE_VIEW_CLASS. */
+export const CARD_VIEW_CLASS = "md:hidden";
 
 /**
  * `hideBelow` → nama class Tailwind (lookup literal, lihat catatan di atas — TIDAK menginterpolasi angka ke

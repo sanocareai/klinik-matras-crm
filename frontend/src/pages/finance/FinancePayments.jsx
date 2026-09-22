@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
+import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS } from "@/components/ui/table.jsx";
+import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
@@ -15,6 +16,22 @@ import {
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
+import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
+import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
+import { CardList, RowCard } from "@/features/finance/cards.jsx";
+
+// Aksi PALING RELEVAN jadi tombol utama; "Bagi pembayaran" masuk menu
+// titik-tiga — foto bukti PISAH ke kolomnya sendiri (BuktiThumb), bukan
+// ikut jadi tombol di kolom Aksi.
+function aksiPembayaran(p, { verifikasi, setAlokasiUntuk }) {
+  const items = [
+    !p.cancelledAt && { key: "alokasi", label: "Bagi ke beberapa order", icon: Split, onClick: () => setAlokasiUntuk(p) },
+  ].filter(Boolean);
+  if (!p.cancelledAt && !p.terverifikasi) {
+    return { primary: { label: "Verifikasi", variant: "secondary", onClick: () => verifikasi(p) }, items };
+  }
+  return { primary: null, items };
+}
 
 // PEMBAYARAN PELANGGAN & VERIFIKASI.
 //
@@ -217,28 +234,33 @@ export default function FinancePayments() {
         {tampil.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada uang masuk yang cocok dengan pencarian ini.</p></CardContent>
         ) : (
-          <TableWrap className="dh-table">
+          <>
+          <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
             <Table fixed>
               <THead>
                 <TR>
                   <TH sticky width={128}>Tanggal</TH><TH width={140}>Order</TH><TH>Pelanggan</TH>
-                  <TH width={110} hideBelow="wide">Dicatat oleh</TH>
-                  <TH width={92} hideBelow="wide">Cara Bayar</TH>
-                  <TH width={128} hideBelow="wide">Masuk ke Rekening</TH>
+                  <TH width={110} hideBelow="2xl">Dicatat oleh</TH>
+                  <TH width={92} hideBelow="2xl">Cara Bayar</TH>
+                  <TH width={128} hideBelow="2xl">Masuk ke Rekening</TH>
                   <TH numeric width={112}>Nominal</TH>
-                  <TH width={150} hideBelow="wide">Untuk Order</TH>
-                  <TH width={116}>Status</TH><TH width={104} />
+                  <TH width={150} hideBelow="2xl">Untuk Order</TH>
+                  <TH width={116}>Status</TH>
+                  <TH width={56}>Bukti</TH>
+                  <TH width={AKSI_COL_WIDTH}>Aksi</TH>
                 </TR>
               </THead>
               <TBody>
-                {tampil.map((p) => (
+                {tampil.map((p) => {
+                  const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk });
+                  return (
                   <TR key={p.id}>
                     <TD sticky className="whitespace-nowrap text-[12px]">{tanggalJam(p.createdAt)}</TD>
                     <TD className="truncate font-medium" title={p.order?.orderNumber || "—"}>{p.order?.orderNumber || "—"}</TD>
                     <TD truncate>{p.order?.customer?.name || "—"}</TD>
-                    <TD hideBelow="wide" truncate>{p.recordedBy?.name || "—"}</TD>
-                    <TD hideBelow="wide"><Badge variant="neutral">{LABEL_CARA_BAYAR[p.method] || p.method}</Badge></TD>
-                    <TD hideBelow="wide" truncate className="text-[12px]">
+                    <TD hideBelow="2xl" truncate>{p.recordedBy?.name || "—"}</TD>
+                    <TD hideBelow="2xl"><Badge variant="neutral">{LABEL_CARA_BAYAR[p.method] || p.method}</Badge></TD>
+                    <TD hideBelow="2xl" truncate className="text-[12px]">
                       {p.cashAccount?.name || (
                         <span className="text-ink3" title="Rekening tidak dipilih saat pembayaran dicatat, jadi sistem memakai rekening standar untuk cara bayar ini.">
                           belum dipilih
@@ -246,12 +268,12 @@ export default function FinancePayments() {
                       )}
                     </TD>
                     <TD numeric><Uang value={p.amount} /></TD>
-                    <TD hideBelow="wide" className="truncate text-[12px] text-ink2">
+                    <TD hideBelow="2xl" className="min-w-0">
                       {p.finAllocations.length === 0
                         ? <span className="text-ink3">order ini saja</span>
-                        : p.finAllocations.map((a) => (
-                            <span key={a.id} className="block truncate" title={`${a.order?.orderNumber || "—"}: ${formatUang(a.amount)}`}>
-                              {a.order?.orderNumber || "—"}: {formatUang(a.amount)}
+                        : p.finAllocations.map((al) => (
+                            <span key={al.id} className="block truncate text-[12px]" title={`${al.order?.orderNumber || "—"}: ${formatUang(al.amount)}`}>
+                              {al.order?.orderNumber || "—"}: {formatUang(al.amount)}
                             </span>
                           ))}
                     </TD>
@@ -262,35 +284,52 @@ export default function FinancePayments() {
                           ? <Badge variant="green">Sudah diverifikasi</Badge>
                           : <Badge variant="orange">Menunggu</Badge>}
                       {p.terverifikasi && (
-                        <span className="mt-0.5 block text-[11px] text-ink3">
+                        <span className="mt-0.5 block truncate text-[11px] text-ink3">
                           oleh {p.verifications[0]?.verifiedBy?.name || "—"}
                         </span>
                       )}
                     </TD>
+                    <TD><BuktiThumb url={p.proofPhotoUrl} onView={() => setFotoBukti(p.proofPhotoUrl)} label="Lihat foto bukti" /></TD>
                     <TD>
-                      <div className="flex items-center justify-end gap-1">
-                        {p.proofPhotoUrl && (
-                          <Button size="sm" variant="tertiary" onClick={() => setFotoBukti(p.proofPhotoUrl)} title="Lihat foto bukti">
-                            <ImageIcon size={14} />
-                          </Button>
-                        )}
-                        {!p.cancelledAt && (
-                          <Button size="sm" variant="tertiary" onClick={() => setAlokasiUntuk(p)} title="Bagi pembayaran ke beberapa order">
-                            <Split size={14} />
-                          </Button>
-                        )}
-                        {!p.cancelledAt && !p.terverifikasi && (
-                          <TombolAksi size="sm" variant="secondary" onClick={() => verifikasi(p)}>
-                            Verifikasi
-                          </TombolAksi>
-                        )}
-                      </div>
+                      <RowActions primary={a.primary} items={a.items} />
                     </TD>
                   </TR>
-                ))}
+                  );
+                })}
               </TBody>
             </Table>
           </TableWrap>
+
+          <CardList>
+            {tampil.map((p) => {
+              const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk });
+              return (
+                <RowCard
+                  key={p.id}
+                  title={tanggalJam(p.createdAt)}
+                  status={
+                    p.cancelledAt ? <Badge variant="red">Dibatalkan</Badge>
+                      : p.terverifikasi ? <Badge variant="green">Sudah diverifikasi</Badge>
+                      : <Badge variant="orange">Menunggu</Badge>
+                  }
+                  subtitle={`${p.order?.orderNumber || "—"} · ${p.order?.customer?.name || "—"}`}
+                  fields={[
+                    { label: "Nominal", value: formatUang(p.amount) },
+                    { label: "Cara Bayar", value: LABEL_CARA_BAYAR[p.method] || p.method },
+                    { label: "Dicatat oleh", value: p.recordedBy?.name },
+                    { label: "Masuk ke Rekening", value: p.cashAccount?.name || "belum dipilih" },
+                    {
+                      label: "Untuk Order", span: true,
+                      value: p.finAllocations.length === 0 ? "order ini saja" : p.finAllocations.map((al) => `${al.order?.orderNumber || "—"}: ${formatUang(al.amount)}`).join(", "),
+                    },
+                    { label: "Bukti", value: <BuktiThumb url={p.proofPhotoUrl} onView={() => setFotoBukti(p.proofPhotoUrl)} label="Lihat foto bukti" /> },
+                  ]}
+                  actions={<RowActions primary={a.primary} items={a.items} />}
+                />
+              );
+            })}
+          </CardList>
+          </>
         )}
       </Card>
 

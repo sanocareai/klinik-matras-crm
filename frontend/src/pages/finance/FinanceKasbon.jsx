@@ -7,15 +7,43 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
+import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS } from "@/components/ui/table.jsx";
+import { cn } from "@/lib/utils.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
 import { LinkBukti } from "@/features/finance/receiptMedia.jsx";
+import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, PeriodePicker, tanggalPendek, PemilihBukti,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
+import { CardList, RowCard } from "@/features/finance/cards.jsx";
+
+// Aksi PALING RELEVAN jadi tombol utama; sisanya masuk menu titik-tiga —
+// sama seperti FinanceExpenses.jsx (lihat komentar di sana).
+function aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, aksi }) {
+  const bisaUbah = k.status !== "DIBATALKAN";
+  const jumlahRiwayat = k.repayments.filter((r) => !r.cancelledAt).length;
+
+  const items = [
+    k.repayments.length > 0 && { key: "riwayat", label: `Riwayat pemotongan (${jumlahRiwayat})`, icon: History, onClick: () => setRiwayatId(k.id) },
+    bisaUbah && { key: "edit", label: "Edit data kasbon", icon: Pencil, onClick: () => setEditUntuk(k) },
+    bisaUbah && {
+      key: "batalkan", label: "Batalkan", destructive: true,
+      onClick: () => {
+        const alasan = window.prompt(`Alasan membatalkan ${k.kasbonNumber} (salah input)? Jurnalnya akan dibalik:`);
+        if (alasan?.trim()) return aksi(() => api.batalKasbon(k.id, alasan.trim()));
+      },
+    },
+  ].filter(Boolean);
+
+  if (k.status === "AKTIF") {
+    return { primary: { label: "Potong", variant: "secondary", title: "Potong dari gaji", onClick: () => setLunasiUntuk({ kasbon: k }) }, items };
+  }
+  return { primary: null, items };
+}
 
 // KASBON — uang muka gaji karyawan.
 //
@@ -198,69 +226,74 @@ export default function FinanceKasbon() {
             />
           </CardContent>
         ) : (
-          <TableWrap className="dh-table">
+          <>
+          <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
             <Table fixed>
               <THead>
                 <TR>
                   <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH><TH width={140}>Karyawan</TH>
-                  <TH hideBelow="wide">Urgensi</TH>
-                  <TH width={128} hideBelow="wide">Sumber Dana</TH>
-                  <TH numeric width={100} hideBelow="wide">Kasbon</TH>
-                  <TH numeric width={112} hideBelow="wide">Sudah Dipotong</TH>
-                  <TH numeric width={112}>Belum Dipotong</TH><TH width={100}>Status</TH><TH width={140} />
+                  <TH hideBelow="2xl">Urgensi</TH>
+                  <TH width={128} hideBelow="2xl">Sumber Dana</TH>
+                  <TH numeric width={100} hideBelow="2xl">Kasbon</TH>
+                  <TH numeric width={112} hideBelow="2xl">Sudah Dipotong</TH>
+                  <TH numeric width={112}>Belum Dipotong</TH>
+                  <TH width={100}>Status</TH>
+                  <TH width={56}>Bukti</TH>
+                  <TH width={AKSI_COL_WIDTH}>Aksi</TH>
                 </TR>
               </THead>
               <TBody>
-                {kasbon.map((k) => (
+                {kasbon.map((k) => {
+                  const a = aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, aksi });
+                  return (
                   <TR key={k.id}>
                     <TD sticky className="font-mono text-[12px]">{k.kasbonNumber}</TD>
                     <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(k.date)}</TD>
                     <TD truncate className="font-medium">{k.employeeName}</TD>
-                    <TD hideBelow="wide">
-                      <span className="block truncate" title={k.urgency || "—"}>{k.urgency || "—"}</span>
-                      {k.receiptUrl && (
-                        <LinkBukti url={k.receiptUrl} className="text-[11px] text-accent hover:underline">bukti</LinkBukti>
-                      )}
-                    </TD>
-                    <TD hideBelow="wide" truncate className="text-[12px]">{k.cashAccount ? k.cashAccount.name : <span className="text-ink3">—</span>}</TD>
-                    <TD hideBelow="wide" numeric><Uang value={k.amount} /></TD>
-                    <TD hideBelow="wide" numeric><Uang value={k.terlunasi} nolSebagaiStrip /></TD>
+                    <TD hideBelow="2xl" truncate>{k.urgency || <span className="text-ink3">—</span>}</TD>
+                    <TD hideBelow="2xl" truncate className="text-[12px]">{k.cashAccount ? k.cashAccount.name : <span className="text-ink3">—</span>}</TD>
+                    <TD hideBelow="2xl" numeric><Uang value={k.amount} /></TD>
+                    <TD hideBelow="2xl" numeric><Uang value={k.terlunasi} nolSebagaiStrip /></TD>
                     <TD numeric><Uang value={k.sisa} className="font-bold" nolSebagaiStrip /></TD>
                     <TD>
                       <StatusBadge status={k.status} />
                       {k.historis && <span className="ml-1 text-[11px] text-ink3">impor</span>}
                     </TD>
+                    <TD><BuktiThumb url={k.receiptUrl} label="Lihat bukti kasbon" /></TD>
                     <TD>
-                      <div className="flex justify-end gap-1">
-                        {k.status === "AKTIF" && (
-                          <Button size="sm" variant="secondary" onClick={() => setLunasiUntuk({ kasbon: k })}>Potong dari Gaji</Button>
-                        )}
-                        {k.repayments.length > 0 && (
-                          <Button size="sm" variant="neutral" onClick={() => setRiwayatId(k.id)} title="Riwayat pemotongan">
-                            <History size={13} /> {k.repayments.filter((r) => !r.cancelledAt).length}
-                          </Button>
-                        )}
-                        {k.status !== "DIBATALKAN" && (
-                          <Button size="sm" variant="neutral" onClick={() => setEditUntuk(k)} title="Edit data kasbon"><Pencil size={13} /></Button>
-                        )}
-                        {k.status !== "DIBATALKAN" && (
-                          <TombolAksi
-                            size="sm" variant="neutral"
-                            onClick={() => {
-                              const alasan = window.prompt(`Alasan membatalkan ${k.kasbonNumber} (salah input)? Jurnalnya akan dibalik:`);
-                              if (alasan?.trim()) return aksi(() => api.batalKasbon(k.id, alasan.trim()));
-                            }}
-                          >
-                            Batalkan
-                          </TombolAksi>
-                        )}
-                      </div>
+                      <RowActions primary={a.primary} items={a.items} />
                     </TD>
                   </TR>
-                ))}
+                  );
+                })}
               </TBody>
             </Table>
           </TableWrap>
+
+          <CardList>
+            {kasbon.map((k) => {
+              const a = aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, aksi });
+              return (
+                <RowCard
+                  key={k.id}
+                  title={k.kasbonNumber}
+                  status={<StatusBadge status={k.status} />}
+                  subtitle={k.employeeName}
+                  fields={[
+                    { label: "Tanggal", value: tanggalPendek(k.date) },
+                    { label: "Belum Dipotong", value: formatUang(k.sisa) },
+                    { label: "Kasbon", value: formatUang(k.amount) },
+                    { label: "Sudah Dipotong", value: formatUang(k.terlunasi) },
+                    { label: "Urgensi", value: k.urgency, span: true },
+                    { label: "Sumber Dana", value: k.cashAccount?.name },
+                    { label: "Bukti", value: <BuktiThumb url={k.receiptUrl} label="Lihat bukti kasbon" /> },
+                  ]}
+                  actions={<RowActions primary={a.primary} items={a.items} />}
+                />
+              );
+            })}
+          </CardList>
+          </>
         )}
       </Card>
 

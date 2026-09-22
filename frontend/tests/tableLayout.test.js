@@ -2,7 +2,10 @@
 // table-layout fixed/auto, width style, title otomatis untuk TD truncate. Lihat src/components/ui/table.jsx.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { hideBelowClass, tableLayoutClass, widthStyle, autoTitle, HIDE_BELOW_BREAKPOINTS } from "../src/lib/tableLayout.js";
+import {
+  hideBelowClass, tableLayoutClass, widthStyle, autoTitle, HIDE_BELOW_BREAKPOINTS,
+  midOnlyClass, EXPAND_TOGGLE_HIDE_CLASS, TABLE_VIEW_CLASS, CARD_VIEW_CLASS,
+} from "../src/lib/tableLayout.js";
 
 test("hideBelowClass: preset bernama → breakpoint px yang benar (1024–1365 boleh sembunyi, wajib tampil dari 1366)", () => {
   assert.equal(hideBelowClass("tablet"), "hidden min-[1024px]:table-cell");
@@ -50,6 +53,24 @@ test("widthStyle: angka → px, string CSS dipakai apa adanya, kosong → undefi
   assert.equal(widthStyle(null), undefined);
   assert.equal(widthStyle(""), undefined);
   assert.equal(widthStyle(0), undefined, "lebar 0 dianggap 'tidak diberi', bukan kolom selebar 0px");
+});
+
+test("hideBelowClass: preset 'uw' (ultra-wide, 1600) untuk kolom detail yang sebelumnya bertumpuk di 1366-1599", () => {
+  assert.equal(hideBelowClass("uw"), "hidden min-[1600px]:table-cell");
+  assert.equal(HIDE_BELOW_BREAKPOINTS.uw, 1600);
+});
+
+test("midOnlyClass: kolom gabungan (Klasifikasi/Pembayaran) HANYA tampil 1280–1599 — literal lengkap, bukan interpolasi min/max", () => {
+  assert.equal(midOnlyClass(), "hidden min-[1280px]:table-cell min-[1600px]:hidden");
+});
+
+test("EXPAND_TOGGLE_HIDE_CLASS / TABLE_VIEW_CLASS / CARD_VIEW_CLASS: token breakpoint bawaan Tailwind (md=768), bukan arbitrary value — selalu ter-generate", () => {
+  assert.equal(EXPAND_TOGGLE_HIDE_CLASS, "min-[1280px]:hidden");
+  assert.equal(TABLE_VIEW_CLASS, "hidden md:block");
+  assert.equal(CARD_VIEW_CLASS, "md:hidden");
+  // Tabel & Card List harus berbalikan persis (satu terlihat, satu tidak, tidak pernah dua-duanya sekaligus).
+  assert.equal(TABLE_VIEW_CLASS.includes("md:block"), true);
+  assert.equal(CARD_VIEW_CLASS.includes("md:hidden"), true);
 });
 
 test("autoTitle: title eksplisit menang; truncate+string children → title = children; elemen JSX kompleks TIDAK ditebak", () => {

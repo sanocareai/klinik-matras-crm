@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
+import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS } from "@/components/ui/table.jsx";
+import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
@@ -16,6 +17,28 @@ import {
   StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
+import { CardList, RowCard } from "@/features/finance/cards.jsx";
+
+function aksiRefund(r, { aksi }) {
+  if (r.status !== "MENUNGGU_APPROVAL") return { primary: null, items: [] };
+  return {
+    primary: {
+      label: "Setujui", variant: "secondary",
+      confirmText: `Setujui refund ${formatUang(r.amount)} untuk order ${r.order?.orderNumber}? Uang akan keluar dari ${r.cashAccount?.name}.`,
+      onClick: () => aksi(() => api.approveFinanceRefund(r.id)),
+    },
+    items: [
+      {
+        key: "tolak", label: "Tolak", destructive: true,
+        onClick: () => {
+          const alasan = window.prompt("Alasan penolakan refund:");
+          if (alasan?.trim()) return aksi(() => api.rejectFinanceRefund(r.id, alasan.trim()));
+        },
+      },
+    ],
+  };
+}
 
 // Nominal bisa dicari sebagai "150000" maupun "150.000".
 function teksNominal(x) {
@@ -266,52 +289,59 @@ export default function FinanceReceivables() {
         {refundTampil.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">{refunds.length > 0 ? "Tidak ada refund yang cocok dengan pencarian/filter." : "Belum ada refund."}</p></CardContent>
         ) : (
-          <TableWrap className="dh-table">
+          <>
+          <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
             <Table fixed>
               <THead>
                 <TR>
                   <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH>
-                  <TH width={128} hideBelow="wide">Order</TH><TH width={140}>Pelanggan</TH><TH>Alasan</TH>
-                  <TH numeric width={108}>Nominal</TH><TH width={100}>Status</TH><TH width={172} />
+                  <TH width={128} hideBelow="2xl">Order</TH><TH width={140}>Pelanggan</TH><TH>Alasan</TH>
+                  <TH numeric width={108}>Nominal</TH><TH width={116}>Status</TH><TH width={AKSI_COL_WIDTH}>Aksi</TH>
                 </TR>
               </THead>
               <TBody>
-                {refundTampil.map((r) => (
+                {refundTampil.map((r) => {
+                  const a = aksiRefund(r, { aksi });
+                  return (
                   <TR key={r.id}>
                     <TD sticky className="font-mono text-[12px]">{r.refundNumber}</TD>
                     <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(r.date)}</TD>
-                    <TD hideBelow="wide" truncate className="font-medium">{r.order?.orderNumber || "—"}</TD>
+                    <TD hideBelow="2xl" truncate className="font-medium">{r.order?.orderNumber || "—"}</TD>
                     <TD truncate>{r.order?.customer?.name || "—"}</TD>
                     <TD truncate>{r.reason}</TD>
                     <TD numeric><Uang value={r.amount} /></TD>
                     <TD><StatusBadge status={r.status} /></TD>
                     <TD>
-                      {r.status === "MENUNGGU_APPROVAL" && (
-                        <div className="flex justify-end gap-1">
-                          <TombolAksi
-                            size="sm" variant="secondary"
-                            confirmText={`Setujui refund ${formatUang(r.amount)} untuk order ${r.order?.orderNumber}? Uang akan keluar dari ${r.cashAccount?.name}.`}
-                            onClick={() => aksi(() => api.approveFinanceRefund(r.id))}
-                          >
-                            Setujui
-                          </TombolAksi>
-                          <TombolAksi
-                            size="sm" variant="neutral"
-                            onClick={() => {
-                              const alasan = window.prompt("Alasan penolakan refund:");
-                              if (alasan?.trim()) return aksi(() => api.rejectFinanceRefund(r.id, alasan.trim()));
-                            }}
-                          >
-                            Tolak
-                          </TombolAksi>
-                        </div>
-                      )}
+                      <RowActions primary={a.primary} items={a.items} />
                     </TD>
                   </TR>
-                ))}
+                  );
+                })}
               </TBody>
             </Table>
           </TableWrap>
+
+          <CardList>
+            {refundTampil.map((r) => {
+              const a = aksiRefund(r, { aksi });
+              return (
+                <RowCard
+                  key={r.id}
+                  title={r.refundNumber}
+                  status={<StatusBadge status={r.status} />}
+                  subtitle={r.order?.customer?.name || "—"}
+                  fields={[
+                    { label: "Tanggal", value: tanggalPendek(r.date) },
+                    { label: "Nominal", value: formatUang(r.amount) },
+                    { label: "Order", value: r.order?.orderNumber },
+                    { label: "Alasan", value: r.reason, span: true },
+                  ]}
+                  actions={<RowActions primary={a.primary} items={a.items} />}
+                />
+              );
+            })}
+          </CardList>
+          </>
         )}
       </Card>
 

@@ -7,7 +7,9 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
+import { TableWrap, Table, THead, TBody, TR, TH, TD, ExpandToggle, DetailRow, TABLE_VIEW_CLASS } from "@/components/ui/table.jsx";
+import { cn } from "@/lib/utils.js";
+import { useBreakpointTier } from "@/hooks/useBreakpointTier.js";
 import { api } from "@/api.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
@@ -18,6 +20,62 @@ import {
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
+import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
+import { CardList, RowCard } from "@/features/finance/cards.jsx";
+
+function teksModePembelian(mode) {
+  return mode === "LANGSUNG" ? "Bayar langsung" : mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang";
+}
+function teksSumberDanaPembelian(p) {
+  if (p.cashAccount) return p.cashAccount.name;
+  const belumDibayar = ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI"].includes(p.status) && p.mode !== "LANGSUNG";
+  return belumDibayar ? "belum dibayar" : "—";
+}
+
+// Aksi PALING RELEVAN per status jadi tombol utama; sisanya masuk menu
+// titik-tiga — sama persis dengan pola FinanceExpenses.jsx (lihat komentar
+// di sana untuk alasannya).
+function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk }) {
+  const bisaEdit = STATUS_BISA_DIEDIT.includes(p.status);
+  const bisaBatal = ["DISETUJUI", "DIBAYAR"].includes(p.status);
+  const menungguKeputusan = ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status);
+  const notaBelumAda = !!p.notaWajib && !p.receiptUrl;
+
+  const items = [
+    bisaEdit && { key: "edit", label: "Edit / koreksi", icon: Pencil, onClick: () => setEditUntuk(p) },
+    menungguKeputusan && {
+      key: "tolak", label: "Tolak", destructive: true,
+      onClick: () => {
+        const alasan = window.prompt("Alasan penolakan:");
+        if (alasan?.trim()) return aksi(() => api.rejectFinancePurchase(p.id, alasan.trim()));
+      },
+    },
+    bisaBatal && {
+      key: "batalkan", label: "Batalkan", destructive: true,
+      onClick: () => {
+        const alasan = window.prompt("Alasan membatalkan pembelian ini (salah input total)? Jurnalnya akan dibalik, riwayat tetap tersimpan:");
+        if (alasan?.trim()) return aksi(() => api.cancelFinancePurchase(p.id, alasan.trim()));
+      },
+    },
+  ].filter(Boolean);
+
+  if (menungguKeputusan) {
+    return {
+      primary: {
+        label: "Setujui", variant: "secondary",
+        disabled: notaBelumAda,
+        title: notaBelumAda ? "Nota wajib: unggah foto nota di kolom Bukti dulu, baru bisa disetujui." : undefined,
+        confirmText: `Setujui ${p.purchaseNumber} sebesar ${formatUang(p.amount)}? Nilainya akan langsung masuk buku besar.`,
+        onClick: () => aksi(() => api.approveFinancePurchase(p.id)),
+      },
+      items,
+    };
+  }
+  if (p.status === "DISETUJUI") {
+    return { primary: { label: "Bayar", variant: "secondary", onClick: () => setBayarUntuk(p) }, items };
+  }
+  return { primary: null, items };
+}
 
 // PEMBELIAN — barang/aset yang DIBELI dari luar, tanpa tagihan resmi supplier:
 // bahan baku (manual, sebelum Gudang dipakai penuh), aset tetap (kendaraan,
@@ -71,6 +129,9 @@ export default function FinancePurchases() {
   const [modalBaru, setModalBaru] = useState(false);
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
+  const tier = useBreakpointTier();
+  const [terbuka, setTerbuka] = useState(() => new Set());
+  const balikTerbuka = (id) => setTerbuka((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   // { diam: true } = muat ulang di latar belakang: layar TIDAK berubah jadi
   // "memuat" dan posisi scroll tetap (dipakai setelah upload foto/aksi baris).
@@ -225,98 +286,130 @@ export default function FinancePurchases() {
             />
           </CardContent>
         ) : (
-          <TableWrap className="dh-table">
-            <Table fixed>
-              <THead>
-                <TR>
-                  <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH><TH>Keterangan</TH>
-                  <TH width={116} hideBelow="2xl">Jenis</TH>
-                  <TH width={100} hideBelow="2xl">Divisi</TH>
-                  <TH width={108} hideBelow="2xl">Mode</TH>
-                  <TH width={124} hideBelow="2xl">Sumber Dana</TH>
-                  <TH numeric width={104}>Nominal</TH><TH width={100}>Status</TH><TH width={76}>Bukti</TH><TH width={196} />
-                </TR>
-              </THead>
-              <TBody>
-                {purchases.map((p) => (
-                  <TR key={p.id}>
-                    <TD sticky className="font-mono text-[12px]">{p.purchaseNumber}</TD>
-                    <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(p.date)}</TD>
-                    <TD className="min-w-0">
-                      <span className="block truncate" title={p.description}>{p.description}</span>
-                      {/* Penalang (reimburseTo) & penjual (payeeName) adalah dua hal berbeda — tampilkan keduanya. */}
-                      {p.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${p.reimburseTo.name}`}>ditalangi {p.reimburseTo.name}</span>}
-                      {p.supplier && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.supplier.name}`}>dari {p.supplier.name}</span>}
-                      {!p.supplier && p.payeeName && p.payeeName.trim().toLowerCase() !== (p.reimburseTo?.name || "").trim().toLowerCase() && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.payeeName}`}>dari {p.payeeName}</span>}
-                    </TD>
-                    <TD hideBelow="2xl" truncate className="text-[12px]">{p.category?.name}</TD>
-                    <TD hideBelow="2xl"><Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge></TD>
-                    <TD hideBelow="2xl" truncate className="text-[12px] text-ink2">
-                      {p.mode === "LANGSUNG" ? "Bayar langsung" : p.mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang"}
-                    </TD>
-                    <TD hideBelow="2xl" truncate className="text-[12px]">
-                      {p.cashAccount ? p.cashAccount.name : (
-                        <span className="text-ink3">{["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI"].includes(p.status) && p.mode !== "LANGSUNG" ? "belum dibayar" : "—"}</span>
-                      )}
-                    </TD>
-                    <TD numeric><Uang value={p.amount} /></TD>
-                    <TD><StatusBadge status={p.status} /></TD>
-                    <TD>
-                      <SelBukti doc={p} jenis="purchases" aksi={aksi} />
-                      {p.notaWajib && !p.receiptUrl && ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) && (
-                        <span className="mt-1 block text-[11px] font-semibold text-red">Nota wajib sebelum disetujui</span>
-                      )}
-                    </TD>
-                    <TD>
-                      <div className="flex justify-end gap-1">
-                        {STATUS_BISA_DIEDIT.includes(p.status) && (
-                          <Button size="sm" variant="neutral" onClick={() => setEditUntuk(p)} title="Edit / koreksi">
-                            <Pencil size={13} /> Edit
-                          </Button>
-                        )}
-                        {["DISETUJUI", "DIBAYAR"].includes(p.status) && (
-                          <TombolAksi
-                            size="sm" variant="neutral"
-                            onClick={() => {
-                              const alasan = window.prompt("Alasan membatalkan pembelian ini (salah input total)? Jurnalnya akan dibalik, riwayat tetap tersimpan:");
-                              if (alasan?.trim()) return aksi(() => api.cancelFinancePurchase(p.id, alasan.trim()));
-                            }}
-                          >
-                            Batalkan
-                          </TombolAksi>
-                        )}
-                        {["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) && (
-                          <>
-                            <TombolAksi
-                              size="sm" variant="secondary"
-                              disabled={!!p.notaWajib && !p.receiptUrl}
-                              title={p.notaWajib && !p.receiptUrl ? "Nota wajib: unggah foto nota di kolom Bukti dulu, baru bisa disetujui." : undefined}
-                              confirmText={`Setujui ${p.purchaseNumber} sebesar ${formatUang(p.amount)}? Nilainya akan langsung masuk buku besar.`}
-                              onClick={() => aksi(() => api.approveFinancePurchase(p.id))}
-                            >
-                              Setujui
-                            </TombolAksi>
-                            <TombolAksi
-                              size="sm" variant="neutral"
-                              onClick={() => {
-                                const alasan = window.prompt("Alasan penolakan:");
-                                if (alasan?.trim()) return aksi(() => api.rejectFinancePurchase(p.id, alasan.trim()));
-                              }}
-                            >
-                              Tolak
-                            </TombolAksi>
-                          </>
-                        )}
-                        {p.status === "DISETUJUI" && (
-                          <Button size="sm" variant="secondary" onClick={() => setBayarUntuk(p)}>Bayar</Button>
-                        )}
-                      </div>
-                    </TD>
+          <>
+            <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
+              <Table fixed>
+                <THead>
+                  <TR>
+                    <TH sticky width={140}>Nomor</TH>
+                    <TH width={64}>Tanggal</TH>
+                    <TH>Keterangan</TH>
+                    {tier === "uw" && (
+                      <>
+                        <TH width={132}>Jenis</TH>
+                        <TH width={104}>Divisi</TH>
+                        <TH width={116}>Mode</TH>
+                        <TH width={132}>Sumber Dana</TH>
+                      </>
+                    )}
+                    {tier === "mid" && (
+                      <>
+                        <TH width={130}>Klasifikasi</TH>
+                        <TH width={118}>Pembayaran</TH>
+                      </>
+                    )}
+                    <TH numeric width={104}>Nominal</TH>
+                    <TH width={92}>Status</TH>
+                    <TH width={72}>Bukti</TH>
+                    {tier === "compact" && <TH width={36} />}
+                    <TH width={AKSI_COL_WIDTH}>Aksi</TH>
                   </TR>
-                ))}
-              </TBody>
-            </Table>
-          </TableWrap>
+                </THead>
+                <TBody>
+                  {purchases.map((p) => {
+                    const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk });
+                    return (
+                      <React.Fragment key={p.id}>
+                        <TR>
+                          <TD sticky className="font-mono text-[12px]">{p.purchaseNumber}</TD>
+                          <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(p.date)}</TD>
+                          <TD className="max-w-0 w-full">
+                            <span className="line-clamp-2 break-words" title={p.description}>{p.description}</span>
+                            {/* Penalang (reimburseTo) & penjual (payeeName) adalah dua hal berbeda — tampilkan keduanya. */}
+                            {p.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${p.reimburseTo.name}`}>ditalangi {p.reimburseTo.name}</span>}
+                            {p.supplier && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.supplier.name}`}>dari {p.supplier.name}</span>}
+                            {!p.supplier && p.payeeName && p.payeeName.trim().toLowerCase() !== (p.reimburseTo?.name || "").trim().toLowerCase() && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.payeeName}`}>dari {p.payeeName}</span>}
+                          </TD>
+                          {tier === "uw" && (
+                            <>
+                              <TD truncate className="text-[12px]">{p.category?.name}</TD>
+                              <TD><Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge></TD>
+                              <TD truncate className="text-[12px] text-ink2">{teksModePembelian(p.mode)}</TD>
+                              <TD truncate className="text-[12px]">{teksSumberDanaPembelian(p)}</TD>
+                            </>
+                          )}
+                          {tier === "mid" && (
+                            <>
+                              <TD className="min-w-0">
+                                <span className="block truncate text-[12px]" title={p.category?.name}>{p.category?.name}</span>
+                                <span className="block truncate text-[11px] text-ink3">{LABEL_DIVISI[p.division] || p.division}</span>
+                              </TD>
+                              <TD className="min-w-0">
+                                <span className="block truncate text-[12px] text-ink2">{teksModePembelian(p.mode)}</span>
+                                <span className="block truncate text-[11px] text-ink3" title={teksSumberDanaPembelian(p)}>{teksSumberDanaPembelian(p)}</span>
+                              </TD>
+                            </>
+                          )}
+                          <TD numeric><Uang value={p.amount} /></TD>
+                          <TD><StatusBadge status={p.status} /></TD>
+                          <TD>
+                            <SelBukti doc={p} jenis="purchases" aksi={aksi} compact />
+                            {p.notaWajib && !p.receiptUrl && ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) && (
+                              <span className="mt-1 block text-[11px] font-semibold text-red">Nota wajib</span>
+                            )}
+                          </TD>
+                          {tier === "compact" && (
+                            <TD>
+                              <ExpandToggle open={terbuka.has(p.id)} onClick={() => balikTerbuka(p.id)} label="Rincian" />
+                            </TD>
+                          )}
+                          <TD>
+                            <RowActions primary={a.primary} items={a.items} />
+                          </TD>
+                        </TR>
+                        {tier === "compact" && (
+                          <DetailRow
+                            open={terbuka.has(p.id)}
+                            colSpan={8}
+                            fields={[
+                              { label: "Jenis", value: p.category?.name },
+                              { label: "Divisi", value: <Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge> },
+                              { label: "Mode", value: teksModePembelian(p.mode) },
+                              { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
+                            ]}
+                          />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </TBody>
+              </Table>
+            </TableWrap>
+
+            <CardList>
+              {purchases.map((p) => {
+                const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk });
+                return (
+                  <RowCard
+                    key={p.id}
+                    title={p.purchaseNumber}
+                    status={<StatusBadge status={p.status} />}
+                    subtitle={p.description}
+                    fields={[
+                      { label: "Tanggal", value: tanggalPendek(p.date) },
+                      { label: "Nominal", value: formatUang(p.amount) },
+                      { label: "Jenis", value: p.category?.name },
+                      { label: "Divisi", value: LABEL_DIVISI[p.division] || p.division },
+                      { label: "Mode", value: teksModePembelian(p.mode) },
+                      { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
+                      { label: "Bukti", span: true, value: <SelBukti doc={p} jenis="purchases" aksi={aksi} /> },
+                    ]}
+                    actions={<RowActions primary={a.primary} items={a.items} />}
+                  />
+                );
+              })}
+            </CardList>
+          </>
         )}
       </Card>
 

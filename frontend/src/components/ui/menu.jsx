@@ -57,6 +57,7 @@ export function MenuItem({ className, destructive, icon: Icon, children, ...prop
       className={cn(
         "flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] font-medium outline-none",
         "data-[highlighted]:bg-inset",
+        "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
         destructive
           ? "text-red data-[highlighted]:bg-redbg"
           : "text-ink2",

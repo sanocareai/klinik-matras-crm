@@ -7,7 +7,8 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
+import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS } from "@/components/ui/table.jsx";
+import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
@@ -15,6 +16,28 @@ import {
   StatusBadge, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
+import { CardList, RowCard } from "@/features/finance/cards.jsx";
+
+function aksiTagihan(b, { aksi }) {
+  if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) return { primary: null, items: [] };
+  return {
+    primary: {
+      label: "Setujui", variant: "secondary",
+      confirmText: `Setujui tagihan ${b.billNumber} sebesar ${formatUang(b.amount)}? Utang akan masuk buku besar.`,
+      onClick: () => aksi(() => api.approveFinanceBill(b.id)),
+    },
+    items: [
+      {
+        key: "tolak", label: "Tolak", destructive: true,
+        onClick: () => {
+          const alasan = window.prompt("Alasan penolakan tagihan:");
+          if (alasan?.trim()) return aksi(() => api.rejectFinanceBill(b.id, alasan.trim()));
+        },
+      },
+    ],
+  };
+}
 
 // Nominal dicari sebagai angka polos maupun berformat titik ("1500000" / "1.500.000").
 const angka = (x) => `${Math.round(Number(x) || 0)} ${(Number(x) || 0).toLocaleString("id-ID")}`;
@@ -218,7 +241,8 @@ export default function FinanceSuppliers() {
           ) : billsTampil.length === 0 ? (
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada tagihan yang cocok dengan pencarian ini.</p></CardContent>
           ) : (
-            <TableWrap className="dh-table">
+            <>
+            <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
               <Table fixed>
                 <THead>
                   <TR>
@@ -229,11 +253,14 @@ export default function FinanceSuppliers() {
                     <TH numeric width={108} hideBelow="2xl">Nilai</TH>
                     <TH numeric width={108} hideBelow="2xl">Terbayar</TH>
                     <TH numeric width={112}>Sisa</TH>
-                    <TH width={100}>Status</TH><TH width={144} />
+                    <TH width={100}>Status</TH>
+                    <TH width={AKSI_COL_WIDTH}>Aksi</TH>
                   </TR>
                 </THead>
                 <TBody>
-                  {billsTampil.map((b) => (
+                  {billsTampil.map((b) => {
+                    const a = aksiTagihan(b, { aksi });
+                    return (
                     <TR key={b.id}>
                       <TD sticky className="font-mono text-[12px]">{b.billNumber}</TD>
                       <TD hideBelow="2xl" truncate className="text-[12px] text-ink2">{b.supplierRef || "—"}</TD>
@@ -251,32 +278,39 @@ export default function FinanceSuppliers() {
                       <TD numeric><Uang value={b.sisa} className="font-bold" /></TD>
                       <TD><StatusBadge status={b.status} /></TD>
                       <TD>
-                        {["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status) && (
-                          <div className="flex justify-end gap-1">
-                            <TombolAksi
-                              size="sm" variant="secondary"
-                              confirmText={`Setujui tagihan ${b.billNumber} sebesar ${formatUang(b.amount)}? Utang akan masuk buku besar.`}
-                              onClick={() => aksi(() => api.approveFinanceBill(b.id))}
-                            >
-                              Setujui
-                            </TombolAksi>
-                            <TombolAksi
-                              size="sm" variant="neutral"
-                              onClick={() => {
-                                const alasan = window.prompt("Alasan penolakan tagihan:");
-                                if (alasan?.trim()) return aksi(() => api.rejectFinanceBill(b.id, alasan.trim()));
-                              }}
-                            >
-                              Tolak
-                            </TombolAksi>
-                          </div>
-                        )}
+                        <RowActions primary={a.primary} items={a.items} />
                       </TD>
                     </TR>
-                  ))}
+                    );
+                  })}
                 </TBody>
               </Table>
             </TableWrap>
+
+            <CardList>
+              {billsTampil.map((b) => {
+                const a = aksiTagihan(b, { aksi });
+                return (
+                  <RowCard
+                    key={b.id}
+                    title={b.billNumber}
+                    status={<StatusBadge status={b.status} />}
+                    subtitle={b.supplier?.name}
+                    fields={[
+                      { label: "Sisa", value: formatUang(b.sisa) },
+                      { label: "Nilai", value: formatUang(b.amount) },
+                      { label: "Terbayar", value: formatUang(b.terbayar) },
+                      { label: "Jatuh Tempo", value: b.dueDate ? tanggalPendek(b.dueDate) : "—" },
+                      { label: "Tanggal", value: tanggalPendek(b.billDate) },
+                      { label: "Ref Supplier", value: b.supplierRef },
+                      { label: "Keterangan", value: b.description, span: true },
+                    ]}
+                    actions={<RowActions primary={a.primary} items={a.items} />}
+                  />
+                );
+              })}
+            </CardList>
+            </>
           )}
         </Card>
         </>

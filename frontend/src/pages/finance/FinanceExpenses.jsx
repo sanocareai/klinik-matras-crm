@@ -7,7 +7,12 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
+import {
+  TableWrap, Table, THead, TBody, TR, TH, TD, ExpandToggle, DetailRow,
+  TABLE_VIEW_CLASS,
+} from "@/components/ui/table.jsx";
+import { cn } from "@/lib/utils.js";
+import { useBreakpointTier } from "@/hooks/useBreakpointTier.js";
 import { api } from "@/api.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
@@ -19,6 +24,64 @@ import {
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
+import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
+import { CardList, RowCard } from "@/features/finance/cards.jsx";
+
+function teksMode(mode) {
+  return mode === "LANGSUNG" ? "Bayar langsung" : mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang";
+}
+
+function teksSumberDana(e) {
+  if (e.cashAccount) return e.cashAccount.name;
+  const belumDibayar = ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI"].includes(e.status) && e.mode !== "LANGSUNG";
+  return belumDibayar ? "belum dibayar" : "—";
+}
+
+// Aksi PALING RELEVAN per status jadi tombol utama; sisanya masuk menu
+// titik-tiga — perilaku & permission SAMA PERSIS dengan sebelumnya (tidak
+// ada aksi yang dihapus), cuma tata letaknya yang berubah supaya tidak
+// bertumpuk di kolom Aksi yang lebarnya tetap.
+function aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk }) {
+  const bisaEdit = STATUS_BISA_DIEDIT.includes(e.status);
+  const bisaBatal = ["DISETUJUI", "DIBAYAR"].includes(e.status);
+  const menungguKeputusan = ["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status);
+  const notaBelumAda = !!e.notaWajib && !e.receiptUrl;
+
+  const items = [
+    bisaEdit && { key: "edit", label: "Edit / koreksi", icon: Pencil, onClick: () => setEditUntuk(e) },
+    menungguKeputusan && {
+      key: "tolak", label: "Tolak", destructive: true,
+      onClick: () => {
+        const alasan = window.prompt("Alasan penolakan:");
+        if (alasan?.trim()) return aksi(() => api.rejectFinanceExpense(e.id, alasan.trim()));
+      },
+    },
+    bisaBatal && {
+      key: "batalkan", label: "Batalkan", destructive: true,
+      onClick: () => {
+        const alasan = window.prompt("Alasan membatalkan pengeluaran ini (salah input total)? Jurnalnya akan dibalik, riwayat tetap tersimpan:");
+        if (alasan?.trim()) return aksi(() => api.cancelFinanceExpense(e.id, alasan.trim()));
+      },
+    },
+  ].filter(Boolean);
+
+  if (menungguKeputusan) {
+    return {
+      primary: {
+        label: "Setujui", variant: "secondary",
+        disabled: notaBelumAda,
+        title: notaBelumAda ? "Nota wajib: unggah foto nota di kolom Bukti dulu, baru bisa disetujui." : undefined,
+        confirmText: `Setujui ${e.expenseNumber} sebesar ${formatUang(e.amount)}? Beban akan langsung masuk buku besar.`,
+        onClick: () => aksi(() => api.approveFinanceExpense(e.id)),
+      },
+      items,
+    };
+  }
+  if (e.status === "DISETUJUI") {
+    return { primary: { label: "Bayar", variant: "secondary", onClick: () => setBayarUntuk(e) }, items };
+  }
+  return { primary: null, items };
+}
 
 // PENGELUARAN & REIMBURSEMENT.
 //
@@ -66,6 +129,13 @@ export default function FinanceExpenses() {
   const [modalBaru, setModalBaru] = useState(false);
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
+  // Tier lebar layar untuk kolom Kategori/Divisi/Mode/SumberDana (terpisah
+  // ≥1600, digabung Klasifikasi+Pembayaran 1280–1599, disembunyikan+expand
+  // <1280) — lihat src/hooks/useBreakpointTier.js untuk alasannya JS, bukan CSS.
+  const tier = useBreakpointTier();
+  // Baris detail terbuka (768–1279px) — lihat ExpandToggle/DetailRow di table.jsx.
+  const [terbuka, setTerbuka] = useState(() => new Set());
+  const balikTerbuka = (id) => setTerbuka((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   // { diam: true } = muat ulang di latar belakang: layar TIDAK berubah jadi
   // "memuat" dan posisi scroll tetap (dipakai setelah upload foto/aksi baris).
@@ -216,98 +286,134 @@ export default function FinanceExpenses() {
             />
           </CardContent>
         ) : (
-          <TableWrap className="dh-table">
-            <Table fixed>
-              <THead>
-                <TR>
-                  <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH><TH>Keterangan</TH>
-                  <TH width={116} hideBelow="2xl">Kategori</TH>
-                  <TH width={100} hideBelow="2xl">Divisi</TH>
-                  <TH width={108} hideBelow="2xl">Mode</TH>
-                  <TH width={124} hideBelow="2xl">Sumber Dana</TH>
-                  <TH numeric width={104}>Nominal</TH><TH width={100}>Status</TH><TH width={76}>Bukti</TH><TH width={196} />
-                </TR>
-              </THead>
-              <TBody>
-                {expenses.map((e) => (
-                  <TR key={e.id}>
-                    <TD sticky className="font-mono text-[12px]">{e.expenseNumber}</TD>
-                    <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(e.date)}</TD>
-                    <TD className="min-w-0">
-                      <span className="block truncate" title={e.description}>{e.description}</span>
-                      {/* Penalang (reimburseTo) & penerima bayaran (payeeName) adalah dua hal berbeda — tampilkan keduanya. */}
-                      {e.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${e.reimburseTo.name}`}>ditalangi {e.reimburseTo.name}</span>}
-                      {e.supplier && <span className="block truncate text-[11px] text-ink3" title={`ke ${e.supplier.name}`}>ke {e.supplier.name}</span>}
-                      {!e.supplier && e.payeeName && e.payeeName.trim().toLowerCase() !== (e.reimburseTo?.name || "").trim().toLowerCase() && <span className="block truncate text-[11px] text-ink3" title={`ke ${e.payeeName}`}>ke {e.payeeName}</span>}
-                    </TD>
-                    <TD hideBelow="2xl" truncate className="text-[12px]">{e.category?.name}</TD>
-                    <TD hideBelow="2xl"><Badge variant="neutral">{LABEL_DIVISI[e.division] || e.division}</Badge></TD>
-                    <TD hideBelow="2xl" truncate className="text-[12px] text-ink2">
-                      {e.mode === "LANGSUNG" ? "Bayar langsung" : e.mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang"}
-                    </TD>
-                    <TD hideBelow="2xl" truncate className="text-[12px]">
-                      {e.cashAccount ? e.cashAccount.name : (
-                        <span className="text-ink3">{["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI"].includes(e.status) && e.mode !== "LANGSUNG" ? "belum dibayar" : "—"}</span>
-                      )}
-                    </TD>
-                    <TD numeric><Uang value={e.amount} /></TD>
-                    <TD><StatusBadge status={e.status} /></TD>
-                    <TD>
-                      <SelBukti doc={e} jenis="expenses" aksi={aksi} />
-                      {e.notaWajib && !e.receiptUrl && ["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status) && (
-                        <span className="mt-1 block text-[11px] font-semibold text-red">Nota wajib sebelum disetujui</span>
-                      )}
-                    </TD>
-                    <TD>
-                      <div className="flex justify-end gap-1">
-                        {STATUS_BISA_DIEDIT.includes(e.status) && (
-                          <Button size="sm" variant="neutral" onClick={() => setEditUntuk(e)} title="Edit / koreksi">
-                            <Pencil size={13} /> Edit
-                          </Button>
-                        )}
-                        {["DISETUJUI", "DIBAYAR"].includes(e.status) && (
-                          <TombolAksi
-                            size="sm" variant="neutral"
-                            onClick={() => {
-                              const alasan = window.prompt("Alasan membatalkan pengeluaran ini (salah input total)? Jurnalnya akan dibalik, riwayat tetap tersimpan:");
-                              if (alasan?.trim()) return aksi(() => api.cancelFinanceExpense(e.id, alasan.trim()));
-                            }}
-                          >
-                            Batalkan
-                          </TombolAksi>
-                        )}
-                        {["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status) && (
-                          <>
-                            <TombolAksi
-                              size="sm" variant="secondary"
-                              disabled={!!e.notaWajib && !e.receiptUrl}
-                              title={e.notaWajib && !e.receiptUrl ? "Nota wajib: unggah foto nota di kolom Bukti dulu, baru bisa disetujui." : undefined}
-                              confirmText={`Setujui ${e.expenseNumber} sebesar ${formatUang(e.amount)}? Beban akan langsung masuk buku besar.`}
-                              onClick={() => aksi(() => api.approveFinanceExpense(e.id))}
-                            >
-                              Setujui
-                            </TombolAksi>
-                            <TombolAksi
-                              size="sm" variant="neutral"
-                              onClick={() => {
-                                const alasan = window.prompt("Alasan penolakan:");
-                                if (alasan?.trim()) return aksi(() => api.rejectFinanceExpense(e.id, alasan.trim()));
-                              }}
-                            >
-                              Tolak
-                            </TombolAksi>
-                          </>
-                        )}
-                        {e.status === "DISETUJUI" && (
-                          <Button size="sm" variant="secondary" onClick={() => setBayarUntuk(e)}>Bayar</Button>
-                        )}
-                      </div>
-                    </TD>
+          <>
+            <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
+              <Table fixed>
+                <THead>
+                  <TR>
+                    <TH sticky width={140}>Nomor</TH>
+                    <TH width={64}>Tanggal</TH>
+                    <TH>Keterangan</TH>
+                    {tier === "uw" && (
+                      <>
+                        <TH width={132}>Kategori</TH>
+                        <TH width={104}>Divisi</TH>
+                        <TH width={116}>Mode</TH>
+                        <TH width={132}>Sumber Dana</TH>
+                      </>
+                    )}
+                    {tier === "mid" && (
+                      <>
+                        <TH width={130}>Klasifikasi</TH>
+                        <TH width={118}>Pembayaran</TH>
+                      </>
+                    )}
+                    <TH numeric width={104}>Nominal</TH>
+                    <TH width={92}>Status</TH>
+                    <TH width={72}>Bukti</TH>
+                    {tier === "compact" && <TH width={36} />}
+                    <TH width={AKSI_COL_WIDTH}>Aksi</TH>
                   </TR>
-                ))}
-              </TBody>
-            </Table>
-          </TableWrap>
+                </THead>
+                <TBody>
+                  {expenses.map((e) => {
+                    const a = aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk });
+                    return (
+                      <React.Fragment key={e.id}>
+                        <TR>
+                          <TD sticky className="font-mono text-[12px]">{e.expenseNumber}</TD>
+                          <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(e.date)}</TD>
+                          <TD className="max-w-0 w-full">
+                            {/* line-clamp-2 di SPAN dalam, bukan di <td> — lihat catatan clamp2 di table.jsx (line-clamp memaksa display:-webkit-box, yang mematahkan table-layout:fixed kalau dipasang langsung di <td>). */}
+                            <span className="line-clamp-2 break-words" title={e.description}>{e.description}</span>
+                            {/* Penalang (reimburseTo) & penerima bayaran (payeeName) adalah dua hal berbeda — tampilkan keduanya. */}
+                            {e.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${e.reimburseTo.name}`}>ditalangi {e.reimburseTo.name}</span>}
+                            {e.supplier && <span className="block truncate text-[11px] text-ink3" title={`ke ${e.supplier.name}`}>ke {e.supplier.name}</span>}
+                            {!e.supplier && e.payeeName && e.payeeName.trim().toLowerCase() !== (e.reimburseTo?.name || "").trim().toLowerCase() && <span className="block truncate text-[11px] text-ink3" title={`ke ${e.payeeName}`}>ke {e.payeeName}</span>}
+                          </TD>
+                          {tier === "uw" && (
+                            <>
+                              <TD truncate className="text-[12px]">{e.category?.name}</TD>
+                              <TD><Badge variant="neutral">{LABEL_DIVISI[e.division] || e.division}</Badge></TD>
+                              <TD truncate className="text-[12px] text-ink2">{teksMode(e.mode)}</TD>
+                              <TD truncate className="text-[12px]">{teksSumberDana(e)}</TD>
+                            </>
+                          )}
+                          {tier === "mid" && (
+                            <>
+                              <TD className="min-w-0">
+                                <span className="block truncate text-[12px]" title={e.category?.name}>{e.category?.name}</span>
+                                <span className="block truncate text-[11px] text-ink3">{LABEL_DIVISI[e.division] || e.division}</span>
+                              </TD>
+                              <TD className="min-w-0">
+                                <span className="block truncate text-[12px] text-ink2">{teksMode(e.mode)}</span>
+                                <span className="block truncate text-[11px] text-ink3" title={teksSumberDana(e)}>{teksSumberDana(e)}</span>
+                              </TD>
+                            </>
+                          )}
+                          <TD numeric><Uang value={e.amount} /></TD>
+                          <TD><StatusBadge status={e.status} /></TD>
+                          <TD>
+                            <SelBukti doc={e} jenis="expenses" aksi={aksi} compact />
+                            {e.notaWajib && !e.receiptUrl && ["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status) && (
+                              <span className="mt-1 block text-[11px] font-semibold text-red">Nota wajib</span>
+                            )}
+                          </TD>
+                          {tier === "compact" && (
+                            <TD>
+                              <ExpandToggle open={terbuka.has(e.id)} onClick={() => balikTerbuka(e.id)} label="Rincian" />
+                            </TD>
+                          )}
+                          <TD>
+                            <RowActions primary={a.primary} items={a.items} />
+                          </TD>
+                        </TR>
+                        {tier === "compact" && (
+                          <DetailRow
+                            open={terbuka.has(e.id)}
+                            colSpan={8}
+                            fields={[
+                              { label: "Kategori", value: e.category?.name },
+                              { label: "Divisi", value: <Badge variant="neutral">{LABEL_DIVISI[e.division] || e.division}</Badge> },
+                              { label: "Mode", value: teksMode(e.mode) },
+                              { label: "Sumber Dana", value: teksSumberDana(e) },
+                            ]}
+                          />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </TBody>
+              </Table>
+            </TableWrap>
+
+            <CardList>
+              {expenses.map((e) => {
+                const a = aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk });
+                return (
+                  <RowCard
+                    key={e.id}
+                    title={e.expenseNumber}
+                    status={<StatusBadge status={e.status} />}
+                    subtitle={e.description}
+                    fields={[
+                      { label: "Tanggal", value: tanggalPendek(e.date) },
+                      { label: "Nominal", value: formatUang(e.amount) },
+                      { label: "Kategori", value: e.category?.name },
+                      { label: "Divisi", value: LABEL_DIVISI[e.division] || e.division },
+                      { label: "Mode", value: teksMode(e.mode) },
+                      { label: "Sumber Dana", value: teksSumberDana(e) },
+                      {
+                        label: "Bukti", span: true,
+                        value: <SelBukti doc={e} jenis="expenses" aksi={aksi} />,
+                      },
+                    ]}
+                    actions={<RowActions primary={a.primary} items={a.items} />}
+                  />
+                );
+              })}
+            </CardList>
+          </>
         )}
       </Card>
 

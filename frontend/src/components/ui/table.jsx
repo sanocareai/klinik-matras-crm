@@ -1,9 +1,12 @@
 import React from "react";
-import { ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUp, ArrowDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils.js";
-import { hideBelowClass, tableLayoutClass, widthStyle, autoTitle, HIDE_BELOW_BREAKPOINTS } from "@/lib/tableLayout.js";
+import {
+  hideBelowClass, tableLayoutClass, widthStyle, autoTitle, HIDE_BELOW_BREAKPOINTS,
+  midOnlyClass, EXPAND_TOGGLE_HIDE_CLASS, TABLE_VIEW_CLASS, CARD_VIEW_CLASS,
+} from "@/lib/tableLayout.js";
 
-export { HIDE_BELOW_BREAKPOINTS };
+export { HIDE_BELOW_BREAKPOINTS, TABLE_VIEW_CLASS, CARD_VIEW_CLASS };
 
 // ─── TABLE (Attio-inspired) — primitive tabel padat ──────────────────────────
 // Spec: docs/design-system/sano-components.md §B.3 "Tables (Attio-inspired)".
@@ -95,8 +98,13 @@ export function TR({ className, clickable, selected, ...props }) {
 // `hideBelow`: lihat `hideBelowClass` di atas — kolom sekunder yang boleh
 //   hilang di layar sedang (1024–1365px), fallback ke scroll tabel di layar
 //   sempit (bukan halaman ikut geser).
+// `mid`: OPT-IN — kolom ini HANYA tampil 1280–1599px (lihat `midOnlyClass`
+//   di tableLayout.js). Dipakai untuk kolom GABUNGAN (mis. "Klasifikasi" =
+//   Kategori+Divisi) yang menggantikan beberapa kolom detail terpisah
+//   (ber-`hideBelow="uw"`) selama lebar itu belum cukup untuk menampilkan
+//   semuanya terpisah tanpa membuat kolom lain (Aksi/Bukti) bertumpuk.
 export function TH({
-  className, children, numeric, sortable, sortDir, onSort, sticky, width, hideBelow, style, ...props
+  className, children, numeric, sortable, sortDir, onSort, sticky, width, hideBelow, mid, style, ...props
 }) {
   const isi = (
     <>
@@ -121,6 +129,7 @@ export function TH({
         numeric ? "text-right" : "text-left",
         sticky && "tbl-sticky-th",
         hideBelowClass(hideBelow),
+        mid && midOnlyClass(),
         className
       )}
       style={{ ...widthStyle(width), ...style }}
@@ -154,25 +163,45 @@ export function TH({
 //     (elemen JSX kompleks, mis. dua baris teks, tetap butuh `title` manual).
 //   hideBelow: lihat catatan di TH — HARUS sama dengan TH pasangannya di
 //     kolom yang sama, kalau tidak header & isi kolom tidak lagi sejajar.
+//   mid     : lihat catatan di TH — HARUS sama dengan TH pasangannya.
+//   clamp2  : dua baris + ellipsis (bukan satu) — dipakai kolom fleksibel
+//     "Keterangan" supaya isi panjang tetap terbaca sebagian alih-alih
+//     terpotong jadi satu baris pendek. Beda dari `truncate` (1 baris):
+//     ⚠️ `line-clamp-2` (Tailwind) HARUS dipasang di SPAN PEMBUNGKUS DI
+//     DALAM `<td>`, BUKAN di elemen `<td>` itu sendiri — `line-clamp`
+//     memaksa `display: -webkit-box`, dan begitu computed display sebuah
+//     `<td>` bukan lagi `table-cell`, algoritma `table-layout: fixed`
+//     TIDAK LAGI menganggapnya kolom yang sah: kolom itu KOLAPS ke ~lebar
+//     padding saja (terbukti lewat pengukuran nyata: Keterangan yang
+//     seharusnya dapat ratusan px sisa ruang cuma dapat 24px, computed
+//     display `flow-root`) — bug yang PERSIS terlihat seperti "kolom lain
+//     bertumpuk di atasnya" walau sebenarnya cuma kolom ini kolaps. `<td>`
+//     WAJIB tetap `table-cell` murni; `max-w-0 w-full` (trik yang sama
+//     dengan `truncate`) tetap dipasang di `<td>` supaya lebarnya
+//     dipatok kolom, sedangkan `-webkit-line-clamp`-nya sendiri pindah
+//     ke `<span>` di dalamnya yang boleh berdisplay apa saja tanpa
+//     mempengaruhi table layout.
 //   sticky  : pasangan TH sticky — lihat catatan di TH. Latar solid
 //     (bukan transparan) supaya konten yang di-scroll di baliknya benar-
 //     benar tertutup, bukan cuma dijaga anggapan.
-export function TD({ className, numeric, truncate, sticky, hideBelow, title, children, ...props }) {
-  const judul = autoTitle({ title, truncate, children });
+export function TD({ className, numeric, truncate, clamp2, sticky, hideBelow, mid, title, children, ...props }) {
+  const judul = autoTitle({ title, truncate: truncate || clamp2, children });
   return (
     <td
       className={cn(
         "px-3 py-2.5 align-middle text-[13px] text-ink2",
         numeric && "text-right tabular-nums",
         truncate && "truncate max-w-0 w-full",
+        clamp2 && "max-w-0 w-full",
         sticky && "tbl-sticky-td",
         hideBelowClass(hideBelow),
+        mid && midOnlyClass(),
         className
       )}
       title={judul}
       {...props}
     >
-      {children}
+      {clamp2 ? <span className="line-clamp-2 break-words">{children}</span> : children}
     </td>
   );
 }
@@ -205,6 +234,64 @@ export function TableEmptyRow({ colSpan, children }) {
     <tr>
       <td colSpan={colSpan} className="px-4 py-10 text-center text-[13px] text-ink3">
         {children}
+      </td>
+    </tr>
+  );
+}
+
+// ─── EXPAND TOGGLE + DETAIL ROW (768–1279px) ─────────────────────────────────
+// Di 1280px ke atas kolom detail tampil sendiri (hideBelow="uw") atau
+// digabung (mid). Di bawah 768px tabel diganti Card List sama sekali. Di
+// antara keduanya (768–1279px) kolom detail disembunyikan TOTAL dari tabel
+// (bukan dipaksa muat) — pasangan tombol ini yang membukanya per baris,
+// supaya datanya tetap bisa dibaca tanpa membuat kolom Aksi/Bukti/Status
+// yang WAJIB selalu terlihat jadi sempit.
+
+/** Tombol buka/tutup baris detail. Pemanggil menyimpan state `open` sendiri (per baris) — komponen ini murni tampilan. */
+export function ExpandToggle({ open, onClick, label = "Detail" }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      aria-label={open ? `Tutup ${label.toLowerCase()}` : `Buka ${label.toLowerCase()}`}
+      className={cn(
+        EXPAND_TOGGLE_HIDE_CLASS,
+        "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink3 transition-colors duration-100",
+        "hover:bg-hovertint hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      )}
+    >
+      <ChevronRight size={14} className={cn("transition-transform duration-150", open && "rotate-90")} />
+    </button>
+  );
+}
+
+/**
+ * Baris detail (colSpan penuh) berisi field yang disembunyikan dari tabel
+ * di 768–1279px. `fields`: [{ label, value }] — `value` boleh string atau
+ * elemen JSX (mis. Badge); title hover hanya dipasang otomatis untuk string.
+ * Ber-`EXPAND_TOGGLE_HIDE_CLASS` sendiri (bukan cuma mengandalkan `open`
+ * dari state JS) — kalau layar melebar ke >=1280 saat baris ini terbuka,
+ * baris tetap hilang lewat CSS walau state `open` belum sempat direset.
+ */
+export function DetailRow({ open, colSpan, fields = [] }) {
+  if (!open) return null;
+  return (
+    <tr className={cn(EXPAND_TOGGLE_HIDE_CLASS, "border-b border-line bg-inset/60")}>
+      <td colSpan={colSpan} className="px-4 py-3">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3">
+          {fields.map((f, i) => (
+            <div key={f.label ?? i} className="min-w-0">
+              <dt className="text-[10px] font-semibold uppercase tracking-wide text-ink3">{f.label}</dt>
+              <dd
+                className="mt-0.5 truncate text-[13px] text-ink"
+                title={typeof f.value === "string" ? f.value : undefined}
+              >
+                {f.value ?? <span className="text-ink3">—</span>}
+              </dd>
+            </div>
+          ))}
+        </dl>
       </td>
     </tr>
   );

@@ -431,7 +431,7 @@ async function siapkanFoto(file) {
 // Thumbnail kecil (~20 KB) dibuat server berdampingan dengan foto utama
 // (<hash>.jpg → <hash>_t.jpg) supaya tabel tidak memuat foto penuh. Foto lama
 // tanpa thumbnail otomatis jatuh balik ke foto utama.
-function Foto({ url, className, alt = "Nota" }) {
+export function Foto({ url, className, alt = "Nota" }) {
   const [pakaiAsli, setPakaiAsli] = useState(false);
   // Foto nota finance butuh URL bertanda-tangan (tidak lagi publik).
   const h = useUrlBukti(url);
@@ -570,8 +570,18 @@ export function PemilihBukti({ url, onChange }) {
  * thumbnail + status verifikasi, atau — kalau belum ada nota — tombol Unggah,
  * tombol Tempel (dari clipboard), dan kotak yang menerima Ctrl+V saat difokus.
  * `aksi(fn)` = pembungkus halaman (jalankan → muat ulang → tampilkan galat).
+ *
+ * `compact` (D-XXX, 22 Sep 2026) — OPT-IN, ikon saja + tooltip (bukan
+ * ikon+teks). Kolom "Bukti" di tabel Finance SENGAJA sempit (kompak,
+ * terpisah dari kolom Aksi) — versi ikon+teks penuh ("Unggah"/"Tempel"/
+ * "Verifikasi" berdampingan, ~180px) MELUBERI batas kolom itu dan
+ * bertumpuk dengan kolom sebelahnya (terbukti lewat QA visual: teks tombol
+ * saling tindih, bukan cuma "agak sempit"). Semua fungsi (upload, tempel
+ * dari clipboard, drag context lewat fokus+Ctrl+V, verifikasi) SAMA PERSIS
+ * — cuma tombolnya jadi ikon 32×32 dengan label lewat `title`/`aria-label`,
+ * bukan dihapus. Pemanggil lama (`compact` tidak diisi) tidak berubah.
  */
-export function SelBukti({ doc, jenis, aksi }) {
+export function SelBukti({ doc, jenis, aksi, compact = false }) {
   const tertutup = ["DIBATALKAN", "DITOLAK"].includes(doc.status);
 
   async function kirim(file) {
@@ -586,6 +596,40 @@ export function SelBukti({ doc, jenis, aksi }) {
 
   if (!doc.receiptUrl) {
     if (tertutup) return <span className="text-ink3">—</span>;
+    // Mode compact: SATU tombol ringkas (Unggah) — sesuai permintaan "tombol
+    // ringkas Unggah/Lihat" di kolom Bukti yang sempit. Tempel-dari-clipboard
+    // TIDAK hilang: div pembungkus tetap fokusable + `onPaste`, jadi Ctrl+V
+    // masih bekerja persis seperti sebelumnya (disebut di title-nya) — cuma
+    // tombol KEDUA yang eksplisit ("Tempel") tidak digambar lagi di mode ini,
+    // supaya tidak meluber ke kolom Aksi di sebelahnya (mode non-compact,
+    // dipakai BuktiReview.jsx, tidak berubah sama sekali).
+    if (compact) {
+      return (
+        <div
+          tabIndex={0}
+          title="Tempel foto yang baru disalin: fokuskan kotak ini lalu Ctrl+V"
+          onPaste={(e) => {
+            const file = gambarDariEvent(e);
+            if (!file) return;
+            e.preventDefault();
+            kirim(file);
+          }}
+          className="inline-flex rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        >
+          <label
+            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-dashed border-line text-ink2 hover:border-accent hover:text-accent"
+            title="Unggah foto nota (atau fokuskan lalu Ctrl+V untuk tempel)"
+            aria-label="Unggah foto nota"
+          >
+            <Camera size={13} />
+            <input
+              type="file" accept="image/*" className="hidden"
+              onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) kirim(file); }}
+            />
+          </label>
+        </div>
+      );
+    }
     return (
       <div
         tabIndex={0}
@@ -623,8 +667,19 @@ export function SelBukti({ doc, jenis, aksi }) {
         <Foto url={doc.receiptUrl} className="h-full w-full object-cover" />
       </LinkBukti>
       {doc.receiptVerifiedAt ? (
-        <span className="inline-flex items-center gap-1 text-[12px] font-medium text-green"><ShieldCheck size={13} /> Terverifikasi</span>
-      ) : tertutup ? null : (
+        compact
+          ? <ShieldCheck size={15} className="shrink-0 text-green" aria-label="Terverifikasi" />
+          : <span className="inline-flex items-center gap-1 text-[12px] font-medium text-green"><ShieldCheck size={13} /> Terverifikasi</span>
+      ) : tertutup ? null : compact ? (
+        <button
+          type="button"
+          onClick={() => aksi(() => api.verifyFinanceReceipt(jenis, doc.id))}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink2 hover:bg-hovertint hover:text-ink"
+          title="Verifikasi bukti" aria-label="Verifikasi bukti"
+        >
+          <ShieldCheck size={15} />
+        </button>
+      ) : (
         <TombolAksi size="sm" variant="neutral" onClick={() => aksi(() => api.verifyFinanceReceipt(jenis, doc.id))}>
           Verifikasi
         </TombolAksi>
