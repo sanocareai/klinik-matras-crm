@@ -8,8 +8,9 @@ import assert from "node:assert/strict";
 
 import { deriveJobList } from "./jobListDerive.js";
 
-test("job ASSIGNED/EN_ROUTE/ARRIVED masuk Aktif, COMPLETED/FAILED masuk Riwayat — tidak ada yang hilang atau dobel", () => {
+test("job SCHEDULED/ASSIGNED/EN_ROUTE/ARRIVED masuk Aktif, COMPLETED/FAILED masuk Riwayat — tidak ada yang hilang atau dobel", () => {
   const jobs = [
+    { id: "0", status: "SCHEDULED", route: null },
     { id: "1", status: "ASSIGNED", route: null },
     { id: "2", status: "EN_ROUTE", route: null },
     { id: "3", status: "ARRIVED", route: null },
@@ -20,10 +21,25 @@ test("job ASSIGNED/EN_ROUTE/ARRIVED masuk Aktif, COMPLETED/FAILED masuk Riwayat 
   const aktif = deriveJobList(jobs, { showHistory: false });
   const riwayat = deriveJobList(jobs, { showHistory: true });
 
-  assert.deepEqual(aktif.listData.map((j) => j.id), ["1", "2", "3"]);
+  assert.deepEqual(aktif.listData.map((j) => j.id), ["0", "1", "2", "3"]);
   assert.deepEqual(riwayat.listData.map((j) => j.id), ["4", "5"]);
   // UNSCHEDULED tidak muncul di keduanya — bukan hilang diam-diam, itu
   // memang belum layak tampil ke driver (belum resmi ditugaskan rute).
+});
+
+test("REGRESI RTE-220926-01/02 (Agung/Apriansyah): stop berstatus SCHEDULED (sudah masuk rute published, belum ditap driver) TIDAK hilang dari tab Aktif", () => {
+  // AKAR MASALAH 22 September 2026: ACTIVE_STATUSES SEBELUMNYA cuma
+  // ["ASSIGNED","EN_ROUTE","ARRIVED"] — 3 dari 8 stop RTE-220926-01
+  // berstatus SCHEDULED (job.driverId sudah terisi cascade publish, tapi
+  // statusnya nyangkut SCHEDULED, bug backend terpisah yang JUGA sudah
+  // diperbaiki) langsung lenyap dari Aktif walau server sudah balas benar.
+  const jobs = [
+    { id: "a", status: "SCHEDULED", route: { id: "r1", code: "RTE-220926-01" } },
+    { id: "b", status: "SCHEDULED", route: { id: "r1", code: "RTE-220926-01" } },
+    { id: "c", status: "ASSIGNED", route: { id: "r1", code: "RTE-220926-01" } },
+  ];
+  const { listData } = deriveJobList(jobs, { showHistory: false });
+  assert.equal(listData.length, 3, "ketiga stop harus tampil di Aktif, bukan cuma yang ASSIGNED");
 });
 
 test("array jobs kosong/null tidak melempar — listData & rutes kosong, bukan crash", () => {

@@ -35,6 +35,12 @@ const { financeMediaRouter, financeReceiptsLegacyPathRouter, financePaymentProof
 const { mobileRouter } = await import("../../../src/routes/mobileAuth.js");
 const { authRouter } = await import("../../../src/routes/auth.js");
 const { userRouter } = await import("../../../src/routes/users.js");
+// armadaRouter (22 September 2026) — ditambahkan supaya GET /armada/my-jobs
+// bisa dites integrasi sungguhan (bug RTE-220926-01/02, lihat
+// myJobsRouteCentric.integration.test.js). Kode ASLI yang sama persis
+// dipakai produksi, bukan tiruan — sama filosofi dengan router lain di file
+// ini.
+const { armadaRouter } = await import("../../../src/routes/armada.js");
 
 export function buildTestApp() {
   const app = express();
@@ -73,6 +79,7 @@ export function buildTestApp() {
   app.use("/api/auth", authRouter);
   app.use("/api/users", userRouter);
   app.use("/api/mobile", mobileRouter);
+  app.use("/api/armada", armadaRouter);
 
   return app;
 }

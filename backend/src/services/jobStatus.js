@@ -112,19 +112,32 @@ export const VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP = ["PUBLISHED", "IN_PROGRESS"
 // perlu ingat mengubah file ini lagi.
 export const JOB_STATUS_SETTLED_FOR_DRIVER_APP = ["COMPLETED", "FAILED", "RESCHEDULED"];
 
-// Job tanpa Route (routeId null — ditugaskan langsung lewat Jadwal &
-// Penugasan, ATAU baru saja dilepas dari rute lewat PATCH /routes/:id/jobs)
-// TIDAK disaring status Route sama sekali di sini — driverId/helperId pada
-// Job itu sendiri SUDAH jadi gerbang kepemilikan (WHERE clause di GET
-// /my-jobs), jadi ini penugasan yang sah walau tidak lewat Route Planner.
-// Ini juga jalur aman untuk status Job yang TIDAK DIKENAL/rusak (bukan 8
-// nilai JobStatus yang ada) — daripada diam-diam menyembunyikan pekerjaan
-// yang MEMANG ditugaskan ke driver ini (gagal ke arah "job hilang dari
-// app" jauh lebih berbahaya buat operasional daripada "job tampil dengan
-// status aneh"), job apa pun yang sudah lolos gerbang driverId/helperId
-// TETAP tampil kalau tidak terikat rute yang secara eksplisit disembunyikan.
+// Job tanpa Route (routeId null) — KEBIJAKAN DIBALIK 22 September 2026
+// (audit lanjutan RTE-220926-01/02, temuan job orphan Arman: EN_ROUTE sejak
+// 16 September TANPA rute, tetap "menempel" aktif di app-nya SENDIRI dan di
+// app Agung — helper di rute Arman hari itu — karena job ini pernah punya
+// helperId=Agung dari rute lama yang sudah dilepas). Versi PERTAMA (masih
+// ditandai di git history) sengaja MENAMPILKAN job tanpa rute ("penugasan
+// individual yang sah") — ternyata di lapangan pola yang jauh lebih sering
+// terjadi adalah job YATIM (dilepas dari rute lewat PATCH /routes/:id/jobs
+// atau /routes/:id/cancel, driverId/helperId lama TIDAK ikut dibersihkan)
+// bukan penugasan ad-hoc yang sengaja. Redesain Route Planner (D-077) sudah
+// menjadikan Route SATU-SATUNYA jalur resmi penugasan sehari-hari — job
+// tanpa rute yang MASIH AKTIF sekarang dianggap ANOMALI sampai terbukti
+// sebaliknya, BUKAN default yang wajar.
+//
+// Job YANG SUDAH TUNTAS (COMPLETED/FAILED/RESCHEDULED) TETAP tampil apa pun
+// status rutenya (termasuk tanpa rute) — itu riwayat nyata yang benar-benar
+// terjadi, aturan itu TIDAK berubah.
+//
+// Kalau nanti ada kebutuhan penugasan ad-hoc yang SAH tanpa rute (mis.
+// kurir pengganti darurat satu stop tanpa sempat dibuatkan rute), itu harus
+// jadi PENANDA EKSPLISIT baru di skema (mis. Job.isAdHocAssignment), BUKAN
+// diam-diam disimpulkan dari "routeId kosong" seperti sebelumnya — kolom
+// itu TIDAK ADA sampai hari ini, jadi untuk saat ini job tanpa rute yang
+// belum tuntas SELALU disembunyikan.
 export function isJobVisibleToDriverApp(job) {
   if (JOB_STATUS_SETTLED_FOR_DRIVER_APP.includes(job.status)) return true;
-  if (!job.route) return true;
+  if (!job.route) return false;
   return VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP.includes(job.route.status);
 }

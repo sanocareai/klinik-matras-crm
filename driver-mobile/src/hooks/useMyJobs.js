@@ -17,14 +17,29 @@
 // (useAdminToday.js) — bukan angka baru yang dikarang.
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
+import { useAuth } from "../context/AuthContext";
 
+// Query key DIBUBUHI userId (22 September 2026, audit "cache user A tidak
+// boleh muncul di user B") — SEBELUM INI key-nya cuma ["armada","my-jobs"],
+// SAMA untuk siapa pun yang login. Kalau HP dipakai bergantian 2 driver
+// tanpa restart app penuh di antaranya (logout lalu login akun lain), react
+// query BISA menampilkan cache job driver LAMA sepersekian detik sebelum
+// refetch selesai — key per-user menghapus kemungkinan itu sama sekali
+// (ganti user = ganti key = query dianggap "belum pernah ada", bukan stale
+// data user lain). Dipasangkan dengan queryClient.clear() di
+// AuthContext.js logout()/login() sebagai lapis pertahanan kedua.
 export function useMyJobs() {
+  const { user } = useAuth();
   return useQuery({
-    queryKey: ["armada", "my-jobs"],
-    // Backend GET /armada/my-jobs balikin { jobs: [...] } (objek), BUKAN
-    // array langsung — unwrap .jobs, sama dengan hook web
-    // (frontend/src/features/armada/hooks/useMyJobs.js).
-    queryFn: async () => (await api.getMyJobs()).jobs,
+    queryKey: ["armada", "my-jobs", user?.id],
+    // Backend GET /armada/my-jobs balikin { jobs: [...], routes: [...] }
+    // (22 September 2026, `routes` = snapshot per rute: stopCount,
+    // revision, dst — dipakai diagnostics Akun & kartu "Mulai Perjalanan"
+    // supaya SEMUA angka berasal dari array `jobs` yang sama, bukan
+    // dihitung ulang terpisah). Kembalikan objek UTUH (bukan unwrap .jobs
+    // seperti sebelumnya) — JobListScreen yang memilah.
+    queryFn: () => api.getMyJobs(),
+    enabled: !!user?.id,
     refetchInterval: 30_000,
   });
 }

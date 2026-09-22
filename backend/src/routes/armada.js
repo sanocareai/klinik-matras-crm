@@ -37,7 +37,7 @@ import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { bukukanPembayaran } from "../services/finance/hooks.js";
 import { verifikasiPembayaran } from "../services/finance/pembayaran.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
-import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB, isJobVisibleToDriverApp } from "../services/jobStatus.js";
+import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB, isJobVisibleToDriverApp, VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, routePath, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 import { produkLineLabel, parseOrderNotesForInvoice } from "../services/invoice.js";
@@ -686,7 +686,10 @@ const jobInclude = {
   // route (D-077) — supaya frontend Penjadwalan bisa menampilkan "diatur
   // di rute RTE-XXX" begitu job.routeId terisi, TANPA panggilan API kedua
   // ke GET /routes/:id cuma untuk kode & status rutenya.
-  route: { select: { id: true, code: true, status: true } },
+  // driverId/helperId/date/updatedAt (22 September 2026) — dipakai GET
+  // /armada/my-jobs menyusun snapshot rute per driver (lihat catatan
+  // panjang di sana) tanpa query terpisah lagi.
+  route: { select: { id: true, code: true, status: true, driverId: true, helperId: true, date: true, updatedAt: true } },
   // revisionLinks (10 September 2026, kasus Richard RES-30082026-201) —
   // laporan owner: "di rute delivery, jadwal dan penugasan bisa tambah
   // badge ... sebagai penanda" — job pengambilan/pengiriman ULANG hasil
@@ -2425,8 +2428,12 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
           where: { routeId: route.id, status: { notIn: STATUS_TUNTAS } },
           data: { driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId },
         });
+        // BUG NYATA diperbaiki 22 September 2026 — lihat catatan panjang di
+        // POST /routes/:id/publish (deriveStatus, "SCHEDULED" TIDAK ikut
+        // naik ke ASSIGNED padahal baris di atas barusan memberinya
+        // driverId). Sama guard, sama alasan, cabang cascade yang berbeda.
         await tx.job.updateMany({
-          where: { routeId: route.id, status: "UNSCHEDULED" },
+          where: { routeId: route.id, status: { in: ["UNSCHEDULED", "SCHEDULED"] } },
           data: { status: "ASSIGNED" },
         });
       } else if (!editingPublished) {
@@ -2454,8 +2461,10 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
             where: { routeId: route.id, status: { notIn: STATUS_TUNTAS } },
             data: { driverId: sumberDriver.driverId, helperId: sumberDriver.helperId || null },
           });
+          // Sama fix 22 September 2026 (deriveStatus) dengan 2 cabang lain
+          // di file ini — lihat catatan panjang di POST /routes/:id/publish.
           await tx.job.updateMany({
-            where: { routeId: route.id, status: "UNSCHEDULED" },
+            where: { routeId: route.id, status: { in: ["UNSCHEDULED", "SCHEDULED"] } },
             data: { status: "ASSIGNED" },
           });
         }
@@ -2595,10 +2604,29 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
       if (klaim.count === 0) {
         throw new ArmadaError("Rute ini baru saja diterbitkan (mungkin dari klik ganda) — muat ulang halaman untuk lihat status terbaru.");
       }
-      // Salin rencana → penugasan berlaku. deriveStatus: job yang sebelumnya
-      // UNSCHEDULED (belum py tanggal/driver) naik ke ASSIGNED sekarang juga
-      // punya driver+kendaraan; job yang sudah lebih maju (mis. sudah
-      // dijadwalkan manual sebelum masuk rute) status-nya TIDAK dimundurkan.
+      // Salin rencana → penugasan berlaku. deriveStatus(hasDriver, hasDate)
+      // di atas (baris ~876): job yang sebelumnya UNSCHEDULED (belum py
+      // tanggal/driver) ATAU SCHEDULED (py tanggal, BELUM py driver — itu
+      // ARTI SCHEDULED per deriveStatus, bukan "sudah lebih maju dari
+      // ASSIGNED") naik ke ASSIGNED begitu baris cascade di atas
+      // memberinya driver+kendaraan; job yang SUDAH py driver sebelum ini
+      // (ASSIGNED/EN_ROUTE/ARRIVED/COMPLETED/FAILED) status-nya TIDAK
+      // dimundurkan.
+      //
+      // BUG NYATA diperbaiki 22 September 2026 (audit RTE-220926-01, 3 dari
+      // 8 stop nyangkut SCHEDULED selamanya) — SEBELUM INI baris di bawah
+      // cuma menyaring status "UNSCHEDULED", TIDAK ikut "SCHEDULED". Job
+      // yang sudah py TANGGAL tapi BELUM py driver sebelum masuk rute (mis.
+      // dispatcher isi tanggal duluan di Jadwal & Penugasan sebelum job
+      // digrup ke rute) jadi TERTINGGAL SELAMANYA di status SCHEDULED
+      // walau baris cascade DI ATAS SINI sudah memberinya driverId —
+      // status.status jadi TIDAK KONSISTEN dengan deriveStatus(true, true)
+      // = ASSIGNED yang seharusnya. Akibat nyata: POST /jobs/:id/start
+      // (mulai SATU stop) MENOLAK job berstatus SCHEDULED ("Job berstatus
+      // SCHEDULED, tidak bisa dimulai") — driver terjebak, tidak bisa
+      // memulai stop yang Route Planner sudah tampilkan sebagai bagian
+      // rute aktif. Ini SATU KELAS BUG yang sama dengan Alwan/Agung: Route
+      // Planner dan Driver App tidak identik.
       await tx.job.updateMany({
         where: { routeId: route.id },
         // helperId ikut disalin (D-077) — DULU cuma driverId/vehicleId,
@@ -2615,7 +2643,7 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
         data: { driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId, scheduledDate: route.date },
       });
       await tx.job.updateMany({
-        where: { routeId: route.id, status: "UNSCHEDULED" },
+        where: { routeId: route.id, status: { in: ["UNSCHEDULED", "SCHEDULED"] } },
         data: { status: "ASSIGNED" },
       });
       return tx.route.findUnique({ where: { id: route.id }, include: routeInclude });
@@ -3516,32 +3544,134 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
   res.set("Cache-Control", "no-store");
   try {
     const centerDateStr = req.query.date || new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-    const from = startOfDayWIB(centerDateStr);
-    const to = endOfDayExclusiveWIB(centerDateStr);
+    // BUG NYATA ditemukan 22 September 2026 (audit produksi RTE-220926-01/02,
+    // laporan Agung/Apriansyah "stop hilang") — scheduledDate adalah kolom
+    // `@db.Date` (tanggal MURNI, tanpa jam/zona, lihat schema.prisma), TAPI
+    // baris di bawah SEBELUMNYA membandingkannya dengan RANGE WIB
+    // (`gte: startOfDayWIB(...), lt: endOfDayExclusiveWIB(...)`) — pola yang
+    // benar untuk kolom TIMESTAMP, BUKAN untuk DATE (persis peringatan yang
+    // SUDAH tertulis di utils/wib.js baris 174-177, ternyata berlaku juga di
+    // jalur BACA, bukan cuma jalur TULIS yang sudah diberi komentar itu).
+    // DIBUKTIKAN empiris di produksi: job COMPLETED hari ini dengan
+    // scheduledDate="2026-09-22" (tersimpan sbg 2026-09-22T00:00:00.000Z)
+    // seharusnya jelas berada di dalam window [2026-09-21T17:00Z,
+    // 2026-09-22T17:00Z) secara perhitungan JS biasa — TAPI Postgres
+    // membandingkan kolom DATE vs boundary TIMESTAMPTZ dengan aturan cast
+    // implisit yang TIDAK sama dengan itu, hasilnya query mengembalikan NOL
+    // baris untuk kondisi itu (dicek langsung lewat script di produksi).
+    // FIX: exact match ke tanggal kalender (toDateOnly, pola SAMA yang
+    // SUDAH dipakai GET /armada/routes untuk kolom Route.date yang juga
+    // @db.Date) — kolom DATE cuma bisa berisi SATU tanggal, jadi exact match
+    // sudah cukup & benar, tidak perlu range sama sekali.
+    const tanggalHariIni = toDateOnly(centerDateStr);
 
     // D-037 (31 Agustus 2026) — helper melihat job yang sama dengan driver
     // TERPISAH: OR driverId/helperId, bukan cuma driverId. Helper accompany
     // driver di lapangan, wajar kalau dia juga mau lihat "Job Saya" hari itu.
-    const jobsMentah = await prisma.job.findMany({
+    //
+    // (a) Job yang SECARA INDIVIDUAL nempel ke saya — assignment yang scoped
+    // ke job itu sendiri (driverId/helperId), dipakai untuk 2 kasus: (i) job
+    // hari ini apa pun rutenya (termasuk kalau saya di-assign ulang ke SATU
+    // stop di luar rute utama saya, mis. kurir pengganti darurat), dan (ii)
+    // job BELUM TUNTAS dari hari-hari sebelumnya (carryover — supaya tidak
+    // ada laporan/foto kececer, lihat catatan D-17-Sep di atas fungsi ini).
+    const jobsIndividual = await prisma.job.findMany({
       where: {
         OR: [{ driverId: req.user.id }, { helperId: req.user.id }],
         AND: {
           OR: [
-            { scheduledDate: { gte: from, lt: to } },
+            { scheduledDate: tanggalHariIni },
             { status: { notIn: ["COMPLETED", "FAILED"] } },
           ],
         },
       },
       include: jobInclude,
-      orderBy: [{ scheduledDate: "asc" }, { sequence: "asc" }, { createdAt: "asc" }],
     });
+
+    // (b) SEMUA job dari rute yang saya jadi CREW-nya (Route.driverId ATAU
+    // Route.helperId = saya) untuk TANGGAL INI (22 September 2026, audit
+    // produksi — laporan Agung "8 stop di Route Planner, app cuma tunjukkan
+    // 1"). AKAR MASALAH KEDUA (di luar bug tanggal di atas): (a) tidak
+    // semua job di dalam sebuah rute berstatus non-selesai, dan (b) kalau
+    // ADA reassignment darurat sebagian-tuntas (PATCH /routes/:id, guard
+    // STATUS_TUNTAS), job.driverId/helperId BISA berbeda dari
+    // Route.driverId/helperId untuk stop yang sudah selesai — jadi
+    // menyaring PURELY dari job.driverId/helperId (seperti (a) di atas)
+    // tidak selalu menangkap SELURUH rute yang sedang saya jalani sebagai
+    // crew. Query terpisah ini menjamin: siapa pun yang terdaftar sebagai
+    // driver ATAU helper di level RUTE melihat SELURUH stop rute itu hari
+    // ini, apa pun job.driverId/helperi-nya masing-masing per stop.
+    // routeInclude Route.status sudah dibatasi lewat isJobVisibleToDriverApp
+    // di bawah (union ini bisa saja mengembalikan status DRAFT kalau query
+    // ini sendiri tidak menyaring — makanya filter status di WHERE juga,
+    // bukan cuma mengandalkan filter JS di bawah).
+    const jobsRuteCrew = await prisma.job.findMany({
+      where: {
+        route: {
+          date: tanggalHariIni,
+          status: { in: VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP },
+          OR: [{ driverId: req.user.id }, { helperId: req.user.id }],
+        },
+      },
+      include: jobInclude,
+    });
+
+    // Gabung + dedupe by id (job yang match KEDUA query, kasus paling umum:
+    // saya driver/helper INDIVIDUAL job itu DAN itu bagian rute saya juga —
+    // Map.set kedua kali dgn value yang identik, aman).
+    const byId = new Map();
+    for (const j of [...jobsIndividual, ...jobsRuteCrew]) byId.set(j.id, j);
+    const jobsMentah = [...byId.values()].sort((a, b) => {
+      const da = a.scheduledDate ? a.scheduledDate.getTime() : Infinity;
+      const db = b.scheduledDate ? b.scheduledDate.getTime() : Infinity;
+      if (da !== db) return da - db;
+      const sa = a.sequence ?? Infinity;
+      const sb = b.sequence ?? Infinity;
+      if (sa !== sb) return sa - sb;
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    });
+
     // Saring rute hantu (bug Alwan) — lihat isJobVisibleToDriverApp di
     // services/jobStatus.js untuk akar masalah lengkapnya. Difilter di JS
     // (bukan di WHERE Prisma) supaya aturannya jadi fungsi murni yang bisa
     // dites tanpa database, sama pola dengan STALE_UNSCHEDULED_JOB di file
-    // yang sama.
+    // yang sama. (jobsRuteCrew sudah disaring status rute di WHERE di atas —
+    // filter ini tetap dijalankan ke SEMUA union supaya satu aturan yang
+    // sama berlaku konsisten, bukan 2 jalur logic yang bisa diam-diam beda.)
     const jobs = jobsMentah.filter(isJobVisibleToDriverApp);
-    res.json({ jobs });
+
+    // Snapshot rute (22 September 2026, permintaan: "backend mengembalikan
+    // satu snapshot: route, drivers, ordered stops, status, revision, dan
+    // updatedAt" — supaya header jumlah stop & kartu "Mulai Perjalanan" di
+    // app SELALU menghitung dari array yang SAMA PERSIS dengan yang
+    // dirender, bukan dihitung ulang terpisah dari asumsi yang bisa
+    // menyimpang). revision = waktu paling baru di antara Route.updatedAt
+    // dan updatedAt SEMUA job anggotanya (Route.updatedAt sendiri TIDAK
+    // bertambah kalau cuma job anaknya yang berubah, jadi tidak cukup
+    // sendirian sebagai penanda "ada yang berubah").
+    const routeMap = new Map();
+    for (const j of jobs) {
+      if (!j.route) continue;
+      if (!routeMap.has(j.route.id)) {
+        routeMap.set(j.route.id, {
+          id: j.route.id, code: j.route.code, status: j.route.status,
+          date: j.route.date, driverId: j.route.driverId, helperId: j.route.helperId,
+          updatedAt: j.route.updatedAt, stopIds: [],
+        });
+      }
+      const r = routeMap.get(j.route.id);
+      r.stopIds.push(j.id);
+      if (j.updatedAt.getTime() > r.updatedAt.getTime()) r.updatedAt = j.updatedAt;
+    }
+    const routes = [...routeMap.values()].map((r) => ({
+      id: r.id, code: r.code, status: r.status, date: r.date,
+      driverId: r.driverId, helperId: r.helperId,
+      stopCount: r.stopIds.length,
+      revision: r.updatedAt.getTime(),
+      updatedAt: r.updatedAt,
+    }));
+
+    res.json({ jobs, routes });
     // User.lastAppSyncAt (22 September 2026, bug Agung) — best-effort,
     // SETELAH res.json (tidak boleh menunda/menggagalkan respons ke app).
     // Endpoint ini dipanggil app tiap 30 detik + tiap kembali ke foreground

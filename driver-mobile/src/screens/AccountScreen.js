@@ -10,12 +10,24 @@ import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Platform, Activit
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Constants from "expo-constants";
+import { useQueryClient } from "@tanstack/react-query";
 import { Camera, ChevronRight, Award } from "lucide-react-native";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
-import { api } from "../api";
+import { api, getServerUrl } from "../api";
+import { useMyJobs } from "../hooks/useMyJobs";
 import Avatar from "../components/Avatar";
 import { relatifWaktu } from "../lib/jobHelpers";
+
+// Samarkan ID (22 September 2026, diagnostics Akun) — CUID/UUID penuh
+// (mis. "cmt2ynjxeaqhk7ywbnb7axcww") tetap CUKUP UNIK utk dicocokkan visual
+// dgn database lewat 6 karakter depan + 4 belakang, tanpa menampilkan
+// seluruh ID mentah di layar (permintaan eksplisit: "tersamarkan").
+function samarkanId(id) {
+  if (!id) return "-";
+  if (id.length <= 12) return id;
+  return `${id.slice(0, 6)}…${id.slice(-4)}`;
+}
 
 // Sama alasan dengan lib/autoUpdate.js/mobile ProfileScreen.js — require()
 // dibungkus try/catch (bukan import statis) supaya evaluasi file ini tidak
@@ -42,6 +54,14 @@ export default function AccountScreen({ navigation }) {
   const { user, logout, updateUser } = useAuth();
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const queryClient = useQueryClient();
+  // Diagnostics (22 September 2026) — pakai CACHE useMyJobs yang SAMA
+  // dengan JobListScreen (query key sama persis, lihat hooks/useMyJobs.js),
+  // BUKAN fetch baru — buka layar Akun tidak boleh menambah trafik/baterai
+  // di luar polling normal.
+  const { data: myJobsData, dataUpdatedAt, refetch: refetchMyJobs, isFetching: myJobsFetching } = useMyJobs();
+  const routesSnapshot = myJobsData?.routes || [];
+  const jobsSnapshot = myJobsData?.jobs || [];
 
   // Tap avatar → pilih dari galeri → upload → backend kompres ke ~256px,
   // balikin avatarUrl terbaru → sinkron ke AuthContext supaya langsung
@@ -129,6 +149,31 @@ export default function AccountScreen({ navigation }) {
     } finally {
       setCheckingUpdate(false);
     }
+  }
+
+  // Hapus cache rute (22 September 2026, diagnostics — permintaan eksplisit
+  // "tombol refresh serta hapus cache rute dengan konfirmasi") — beda dari
+  // pull-to-refresh biasa (yang cuma refetch, data LAMA tetap tampil
+  // sampai yang baru datang): ini BUANG dulu snapshot yang tersimpan di
+  // memori (removeQueries), BARU refetch — kalau ada kecurigaan app
+  // "nyangkut" nampilkan campuran data lama+baru yang aneh (harusnya
+  // tidak pernah terjadi lagi setelah fix 22 Sep, tapi tombol ini jaring
+  // pengaman manual buat driver/tim teknis tanpa perlu uninstall app).
+  function handleClearRouteCache() {
+    Alert.alert(
+      "Hapus Cache Rute?",
+      "Data rute & job yang tersimpan di HP ini akan dihapus, lalu diambil ulang dari server. Tidak menghapus akun/login Anda.",
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Hapus & Ambil Ulang",
+          onPress: async () => {
+            queryClient.removeQueries({ queryKey: ["armada", "my-jobs"] });
+            await refetchMyJobs();
+          },
+        },
+      ]
+    );
   }
 
   function handleLogout() {
@@ -264,6 +309,68 @@ export default function AccountScreen({ navigation }) {
           )}
         </View>
 
+        {/* Diagnostics (22 September 2026, audit QA "Route Planner dan app
+            harus identik") — supaya dispatcher/tim teknis bisa minta driver
+            screenshot layar ini dan langsung cocokkan angka dengan Route
+            Planner/database, tanpa perlu akses device driver sama sekali. */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Diagnostik</Text>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>User ID</Text>
+            <Text style={styles.rowValue} selectable>{samarkanId(user?.id)}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Server</Text>
+            <Text style={styles.rowValue} selectable>{getServerUrl()}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Terakhir ambil data</Text>
+            {/* "Terakhir ambil data", BUKAN "tersinkron"/"diterima" — lihat
+                catatan panjang di frontend/src/features/armada/components/
+                RouteCard.jsx soal koreksi copy yang SAMA: field ini cuma
+                bukti fetch API berhasil, bukan bukti driver sudah lihat. */}
+            <Text style={styles.rowValue}>{dataUpdatedAt ? relatifWaktu(dataUpdatedAt) : "belum pernah"}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Total job aktif</Text>
+            <Text style={styles.rowValue}>{jobsSnapshot.length}</Text>
+          </View>
+          {routesSnapshot.map((r) => {
+            // Jumlah stop SERVER (r.stopCount, dihitung backend) vs jumlah
+            // yang BENAR-BENAR ada di array jobs sisi app untuk rute ini —
+            // dua angka ini SEHARUSNYA selalu sama (satu sumber snapshot).
+            // Kalau beda, itu sinyal jelas ada bug baru, bukan cuma dugaan.
+            const dirender = jobsSnapshot.filter((j) => j.route?.id === r.id).length;
+            const cocok = dirender === r.stopCount;
+            return (
+              <View key={r.id} style={styles.routeDiagBlock}>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Rute</Text>
+                  <Text style={styles.rowValue} selectable>{r.code}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Stop (server / app)</Text>
+                  <Text style={[styles.rowValue, !cocok && { color: theme.RED }]}>
+                    {r.stopCount} / {dirender}{!cocok ? " ⚠" : ""}
+                  </Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Revision</Text>
+                  <Text style={styles.rowValue} selectable>{r.revision}</Text>
+                </View>
+              </View>
+            );
+          })}
+          <View style={styles.diagBtnRow}>
+            <Pressable style={[styles.diagBtn, { flex: 1 }]} onPress={() => refetchMyJobs()} disabled={myJobsFetching}>
+              <Text style={styles.diagBtnText}>{myJobsFetching ? "Memuat…" : "Refresh"}</Text>
+            </Pressable>
+            <Pressable style={[styles.diagBtn, styles.diagBtnDanger, { flex: 1 }]} onPress={handleClearRouteCache}>
+              <Text style={[styles.diagBtnText, styles.diagBtnDangerText]}>Hapus Cache Rute</Text>
+            </Pressable>
+          </View>
+        </View>
+
         <Pressable style={styles.logoutBtn} onPress={handleLogout}>
           <Text style={styles.logoutBtnText}>Keluar</Text>
         </Pressable>
@@ -350,6 +457,17 @@ function makeStyles(t) {
     updateBtnDisabled: { backgroundColor: t.TRACK_BG },
     updateBtnTextDisabled: { color: t.INK3 },
     updateUnavailableNote: { alignSelf: "center", fontSize: 11, color: t.INK3, marginTop: 6 },
+    routeDiagBlock: {
+      alignSelf: "stretch", marginTop: 4, paddingTop: 6,
+      borderTopWidth: 1, borderTopColor: t.BORDER,
+    },
+    diagBtnRow: { flexDirection: "row", gap: 8, marginTop: 8, alignSelf: "stretch" },
+    diagBtn: {
+      backgroundColor: t.ACCENT_BG, borderRadius: 12, paddingVertical: 10, alignItems: "center",
+    },
+    diagBtnText: { color: t.ACCENT, fontWeight: "700", fontSize: 12.5 },
+    diagBtnDanger: { backgroundColor: t.RED + "1A" },
+    diagBtnDangerText: { color: t.RED },
     logoutBtn: {
       backgroundColor: t.RED, borderRadius: 12,
       paddingVertical: 14, alignItems: "center",

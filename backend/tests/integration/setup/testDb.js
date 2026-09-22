@@ -63,6 +63,14 @@ const TABLES_TO_TRUNCATE = [
   "api_idempotency_keys", "mobile_device_tokens", "mobile_sessions", "mobile_notification_prefs",
   // Pemasukan terpadu: register pendapatan historis (Data Sebelum Sistem).
   "fin_legacy_revenues", "fin_legacy_batches",
+  // Delivery Hub (22 September 2026, myJobsRouteCentric.integration.test.js)
+  // — "jobs" WAJIB di-truncate eksplisit: Job.orderId/driverId FK ke
+  // Order/User dgn Restrict/SetNull (BUKAN Cascade), jadi truncate Order/
+  // User TIDAK otomatis membersihkan jobs peninggalannya. "routes" ikut
+  // (Job.routeId -> Route juga SetNull, sama alasan). CASCADE dari baris
+  // ini otomatis membersihkan job_units/job_position_pings/job_issue_logs/
+  // vehicle_expenses (semua FK ke jobs/routes), tidak perlu disebut sendiri.
+  "jobs", "routes",
   "user_roles", "User",
 ];
 

@@ -5,6 +5,7 @@ import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api, configureApi, DEFAULT_SERVER } from "../api";
 import { registerForPush, unregisterPush } from "../push";
+import { queryClient } from "../lib/queryClient";
 
 const AuthContext = createContext(null);
 
@@ -126,6 +127,12 @@ export function AuthProvider({ children }) {
     configureApi({ server: srv });
     const res = await api.login(email.trim(), password);
     configureApi({ jwt: res.token });
+    // Buang cache react-query SEBELUM set user baru (22 September 2026,
+    // pertahanan kedua utk "cache user A tidak boleh muncul di user B" —
+    // pertahanan PERTAMA sudah di query key ["armada","my-jobs",userId]
+    // per hook, ini cuma jaga-jaga tambahan + higienis memori kalau HP
+    // dipakai bergantian tanpa uninstall di antaranya).
+    queryClient.clear();
     await Promise.all([
       AsyncStorage.setItem("token", res.token),
       AsyncStorage.setItem("user", JSON.stringify(res.user)),
@@ -148,6 +155,7 @@ export function AuthProvider({ children }) {
     await unregisterPush();
     await AsyncStorage.multiRemove(["token", "user"]);
     configureApi({ jwt: null });
+    queryClient.clear(); // lihat catatan di login() — sisi lain pasangan yang sama
     setUser(null);
     setIsOnline(false);
   }

@@ -44,7 +44,14 @@ export default function JobListScreen({ navigation }) {
   const { user, logout, isOnline, setOnline } = useAuth();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const { data: jobs, isLoading, error, refetch, isRefetching, dataUpdatedAt, isFetching } = useMyJobs();
+  // useMyJobs sekarang mengembalikan objek UTUH { jobs, routes } (22
+  // September 2026, snapshot rute per driver — lihat catatan panjang di
+  // hooks/useMyJobs.js & backend GET /armada/my-jobs). `jobs` di bawah
+  // TETAP nama yang dipakai di seluruh file ini (minim diff), `routesSnapshot`
+  // dipakai diagnostics Akun (jumlah stop server vs dirender).
+  const { data: myJobsData, isLoading, error, refetch, isRefetching, dataUpdatedAt, isFetching } = useMyJobs();
+  const jobs = myJobsData?.jobs;
+  const routesSnapshot = myJobsData?.routes || [];
   const { data: issues, isLoading: issuesLoading, error: issuesError, refetch: refetchIssues, isRefetching: issuesRefetching } = useIssues();
   // Nama SENGAJA beda dari `isOnline` (status toggle Online/Offline driver,
   // dari useAuth di bawah) — dua konsep beda: ini status KONEKSI HP (NetInfo),

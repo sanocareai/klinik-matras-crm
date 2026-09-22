@@ -48,9 +48,17 @@ for (const jobStatus of JOB_STATUS_SETTLED_FOR_DRIVER_APP) {
   }
 }
 
-// ── Job tanpa Route sama sekali — tampil terlepas dari job.status apa pun ──
-for (const jobStatus of [...JOB_STATUS_AKTIF, ...JOB_STATUS_SETTLED_FOR_DRIVER_APP]) {
-  test(`job ${jobStatus} tanpa rute (routeId null) tetap TAMPIL`, () => {
+// ── Job tanpa Route — KEBIJAKAN DIBALIK 22 September 2026 (audit RTE-220926,
+// job orphan Arman) — sekarang DISEMBUNYIKAN kalau belum tuntas, TETAP
+// tampil kalau sudah tuntas (riwayat nyata). Lihat catatan panjang di
+// jobStatus.js#isJobVisibleToDriverApp.
+for (const jobStatus of JOB_STATUS_AKTIF) {
+  test(`REGRESI Arman: job ${jobStatus} tanpa rute (routeId null) → DISEMBUNYIKAN (job orphan, bukan penugasan sah)`, () => {
+    assert.equal(isJobVisibleToDriverApp(job({ status: jobStatus, route: null })), false);
+  });
+}
+for (const jobStatus of JOB_STATUS_SETTLED_FOR_DRIVER_APP) {
+  test(`job ${jobStatus} (settled) tanpa rute tetap TAMPIL — riwayat nyata`, () => {
     assert.equal(isJobVisibleToDriverApp(job({ status: jobStatus, route: null })), true);
   });
 }
@@ -64,8 +72,8 @@ test("job.status STRING SEMBARANG + rute DRAFT → DISEMBUNYIKAN (rute belum com
   assert.equal(isJobVisibleToDriverApp(job({ status: "STATUS_BARU_DARI_MASA_DEPAN", route: { id: "r", status: "DRAFT" } })), false);
 });
 
-test("job.status STRING SEMBARANG tanpa rute → tetap TAMPIL (driverId sudah jadi gerbang kepemilikan di WHERE clause)", () => {
-  assert.equal(isJobVisibleToDriverApp(job({ status: "STATUS_BARU_DARI_MASA_DEPAN", route: null })), true);
+test("job.status STRING SEMBARANG tanpa rute → DISEMBUNYIKAN (bukan status settled dikenal, dan tanpa rute = anomali sekarang)", () => {
+  assert.equal(isJobVisibleToDriverApp(job({ status: "STATUS_BARU_DARI_MASA_DEPAN", route: null })), false);
 });
 
 test("route.status STRING SEMBARANG (bukan enum, mis. migrasi data rusak) + job aktif → DISEMBUNYIKAN (allowlist default-deny)", () => {
