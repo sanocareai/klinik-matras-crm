@@ -53,7 +53,8 @@ export default function AccountScreen({ navigation }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { user, logout, updateUser } = useAuth();
-  const { pendingCount } = useExecutionSync();
+  const { pendingCount, blockedCount, clearBlocked } = useExecutionSync();
+  const [clearingBlocked, setClearingBlocked] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const queryClient = useQueryClient();
@@ -172,6 +173,35 @@ export default function AccountScreen({ navigation }) {
           onPress: async () => {
             queryClient.removeQueries({ queryKey: ["armada", "my-jobs"] });
             await refetchMyJobs();
+          },
+        },
+      ]
+    );
+  }
+
+  // Bersihkan HANYA antrean bermasalah (audit Slice 2, 23 September 2026,
+  // temuan HIGH: sebelumnya item blocked tidak punya jalan keluar sama
+  // sekali di Akun — "Hapus Cache Rute" di atas cuma menyentuh cache
+  // react-query, tidak pernah antrean offline). SENGAJA terpisah dari
+  // "Hapus Cache Rute" dan TIDAK membuang item pending yang masih sah
+  // (menunggu sinyal/token/5xx server) — cuma yang sudah dipastikan
+  // blocked lewat reconciliation.
+  async function handleClearBlockedQueue() {
+    Alert.alert(
+      "Bersihkan Antrean Bermasalah?",
+      `${blockedCount} aksi ditolak server dan tidak bisa disinkron otomatis akan dibatalkan. Aksi lain yang masih menunggu TIDAK ikut terhapus.`,
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Bersihkan",
+          style: "destructive",
+          onPress: async () => {
+            setClearingBlocked(true);
+            try {
+              await clearBlocked();
+            } finally {
+              setClearingBlocked(false);
+            }
           },
         },
       ]
@@ -376,6 +406,19 @@ export default function AccountScreen({ navigation }) {
               <Text style={[styles.diagBtnText, styles.diagBtnDangerText]}>Hapus Cache Rute</Text>
             </Pressable>
           </View>
+          {blockedCount > 0 && (
+            <View style={styles.diagBtnRow}>
+              <Pressable
+                style={[styles.diagBtn, styles.diagBtnDanger, { flex: 1 }]}
+                onPress={handleClearBlockedQueue}
+                disabled={clearingBlocked}
+              >
+                <Text style={[styles.diagBtnText, styles.diagBtnDangerText]}>
+                  {clearingBlocked ? "Membersihkan…" : `Bersihkan ${blockedCount} Antrean Bermasalah`}
+                </Text>
+              </Pressable>
+            </View>
+          )}
         </View>
 
         <Pressable style={styles.logoutBtn} onPress={handleLogout}>

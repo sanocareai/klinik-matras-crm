@@ -1,10 +1,17 @@
-// Port dari frontend/src/utils/submitJobAction.js — kontrak endpoint SAMA
-// PERSIS (start/arrive butuh proofPhotoUrls, complete butuh proofPhotoUrls+
-// signatureUrl+note opsional, fail butuh failureReason+failurePhotoUrls+
-// note opsional). Offline queue (enqueueAction/isNetworkError di versi web)
-// BELUM diport di sini — menyusul milestone berikutnya (lihat plan), untuk
-// sekarang performSubmit() dipanggil LANGSUNG, gagal jaringan = error apa
-// adanya ke UI, bukan diam-diam hilang.
+// Port dari frontend/src/utils/submitJobAction.js. SISA SATU jalur di sini
+// sekarang: "Lapor Revisi di Lokasi" (18 September 2026), lihat catatan
+// panjang di backend routes/armada.js POST /jobs/:id/report-revision.
+//
+// REFAKTOR (audit Slice 2, 23 September 2026) — cabang start/arrive/
+// complete/fail yang dulu ada di sini sudah DIHAPUS: sejak antrean offline
+// (context/ExecutionSyncContext.js + lib/executionQueue.js) dipasang,
+// JobCard.js/RouteStartCard.js memanggil keempat aksi itu lewat
+// useExecutionSync().submit() — cabang di file ini tidak pernah tereksekusi
+// lagi (dead code), dan membiarkannya berarti dua implementasi paralel
+// yang bisa diam-diam menyimpang (cuma satu yang tersambung ke antrean
+// offline/idempotency-key/checkpoint upload). report-revision TIDAK
+// dipindah ke antrean offline (belum ada kebutuhan retry-nya) — jalur ini
+// tetap dipanggil LANGSUNG seperti sebelumnya, tidak berubah.
 import { api } from "../api";
 
 export async function uploadPhotos(jobId, files) {
@@ -13,33 +20,10 @@ export async function uploadPhotos(jobId, files) {
   return urls;
 }
 
-export async function performSubmit(jobId, action, payload, photoFiles = [], idempotencyKey = payload?.idempotencyKey) {
-  if (action === "start") {
-    const startPhotoUrls = await uploadPhotos(jobId, photoFiles);
-    return api.startArmadaJob(jobId, { proofPhotoUrls: startPhotoUrls }, idempotencyKey);
+export async function performSubmit(jobId, action, payload, photoFiles = []) {
+  if (action !== "report-revision") {
+    throw new Error(`Aksi tidak dikenal: ${action}`);
   }
-  if (action === "arrive") {
-    const arrivalPhotoUrls = await uploadPhotos(jobId, photoFiles);
-    return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls, location: payload.location }, idempotencyKey);
-  }
-
   const proofPhotoUrls = await uploadPhotos(jobId, photoFiles);
-
-  if (action === "complete") {
-    return api.completeArmadaJob(jobId, {
-      proofPhotoUrls, recipientName: payload.recipientName, note: payload.note, location: payload.location,
-    }, idempotencyKey);
-  }
-  if (action === "fail") {
-    return api.failArmadaJob(jobId, {
-      failureReason: payload.failureReason, failurePhotoUrls: proofPhotoUrls, note: payload.note, location: payload.location,
-    }, idempotencyKey);
-  }
-  // Lapor revisi di lokasi (18 September 2026) — port dari
-  // frontend/src/utils/submitJobAction.js, lihat catatan panjang di backend
-  // routes/armada.js POST /jobs/:id/report-revision.
-  if (action === "report-revision") {
-    return api.reportRevision(jobId, { complaint: payload.complaint, photoUrls: proofPhotoUrls, unitId: payload.unitId });
-  }
-  throw new Error(`Aksi tidak dikenal: ${action}`);
+  return api.reportRevision(jobId, { complaint: payload.complaint, photoUrls: proofPhotoUrls, unitId: payload.unitId });
 }

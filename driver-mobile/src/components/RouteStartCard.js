@@ -20,13 +20,14 @@ import { useExecutionSync } from "../context/ExecutionSyncContext";
 export default function RouteStartCard({ route, assignedCount, sampleJobId, onChanged }) {
   const theme = useTheme();
   const { markOnlineLocally } = useAuth();
-  const { submit, queue } = useExecutionSync();
+  const { submit, queue, checkStatus, discard } = useExecutionSync();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [mode, setMode] = useState("idle"); // idle | starting
   const [photos, setPhotos] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [mapBusy, setMapBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
   const pending = queue.find((item) => item.routeId === route.id && item.action === "route-start");
 
   async function bukaMaps() {
@@ -80,9 +81,37 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
       </Pressable>
 
       {pending ? (
-        <Text style={styles.pendingText}>
-          {pending.blocked ? `Mulai rute ditolak: ${pending.lastError}` : "Mulai rute tersimpan — menunggu konfirmasi server"}
-        </Text>
+        <>
+          <Text style={styles.pendingText}>
+            {pending.blocked ? `Mulai rute ditolak: ${pending.lastError}` : "Mulai rute tersimpan — menunggu konfirmasi server"}
+          </Text>
+          {pending.blocked && (
+            <View style={styles.btnRow}>
+              <Pressable
+                style={[styles.secondaryBtn, { flex: 1 }]}
+                disabled={checking}
+                onPress={async () => {
+                  setChecking(true);
+                  try {
+                    await checkStatus(pending.idempotencyKey);
+                    onChanged();
+                  } finally {
+                    setChecking(false);
+                  }
+                }}
+              >
+                <Text style={styles.secondaryBtnText}>{checking ? "Memeriksa…" : "Periksa Status Terbaru"}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.startBtn, { flex: 1, backgroundColor: theme.RED }]}
+                disabled={checking}
+                onPress={() => discard(pending.idempotencyKey)}
+              >
+                <Text style={styles.startBtnText}>Batalkan</Text>
+              </Pressable>
+            </View>
+          )}
+        </>
       ) : null}
 
       {route.status === "PUBLISHED" && assignedCount > 0 && mode === "idle" && !pending && (

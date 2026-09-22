@@ -4534,10 +4534,18 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
 // 2026, laporan owner: "misal ada 7 jalur di 1 mobil yang sama, apakah
 // harus foto mulai perjalanan satu per satu?"). Satu mobil = satu kali
 // berangkat dari bengkel; foto muatan diambil SEKALI lalu menempel ke
-// semua job ASSIGNED di rute ini. Efeknya PERSIS sama dengan memanggil
-// POST /jobs/:id/start satu-satu (status EN_ROUTE, unit DELIVERY jadi
-// IN_TRANSIT_OUT + sync status order, notif "driver menuju lokasi" ke
-// tiap customer) — cuma dikerjakan sekali jalan.
+// semua job ASSIGNED di rute ini (Job.startPhotoUrls).
+//
+// KOREKSI (audit Slice 2, 23 September 2026) — endpoint ini TIDAK mengubah
+// status job maupun status unit/order. Job tetap ASSIGNED sampai driver
+// memilih stop itu satu per satu dan menekan "Menuju Lokasi" (POST
+// /jobs/:id/start, yang baru di titik itu mengubah status jadi EN_ROUTE +
+// IN_TRANSIT_OUT + notif customer) — lihat integration test
+// driverExecutionPod.integration.test.js yang menegaskan job tetap
+// ["ASSIGNED","ASSIGNED"] persis setelah route-start. Endpoint ini HANYA
+// menempelkan foto muatan ke semua job siap berangkat + menandai
+// Route.status jadi IN_PROGRESS, supaya foto tidak perlu diambil ulang per
+// stop.
 //
 // Job yang BUKAN ASSIGNED (mis. sudah EN_ROUTE karena driver start manual,
 // atau masih SCHEDULED) dilewati diam-diam — bukan error, batch cuma

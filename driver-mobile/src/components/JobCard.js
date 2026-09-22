@@ -37,7 +37,8 @@ const FAIL_REASONS_DELIVERY = [
 export default function JobCard({ job, onChanged }) {
   const theme = useTheme();
   const { markOnlineLocally } = useAuth();
-  const { submit, pendingForJob } = useExecutionSync();
+  const { submit, pendingForJob, checkStatus, discard } = useExecutionSync();
+  const [checking, setChecking] = useState(false);
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const STATUS_TONE = useMemo(() => ({
     ASSIGNED: theme.ACCENT, EN_ROUTE: theme.ACCENT, ARRIVED: theme.ACCENT,
@@ -200,6 +201,36 @@ export default function JobCard({ job, onChanged }) {
           <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>
             {pending.blocked ? `Sinkronisasi perlu tindakan: ${pending.lastError}` : "Aksi tersimpan — menunggu konfirmasi server"}
           </Text>
+          {/* Item blocked TIDAK BOLEH mengunci job ini selamanya (audit
+              Slice 2, 23 September 2026, temuan HIGH) — dua jalan keluar
+              selalu tersedia di sini: cek ulang ke server, atau batalkan
+              dan mulai aksi baru dari awal. */}
+          {pending.blocked && (
+            <View style={styles.btnRow}>
+              <Pressable
+                style={[styles.secondaryBtn, { flex: 1, marginTop: 8 }]}
+                disabled={checking}
+                onPress={async () => {
+                  setChecking(true);
+                  try {
+                    await checkStatus(pending.idempotencyKey);
+                    onChanged();
+                  } finally {
+                    setChecking(false);
+                  }
+                }}
+              >
+                <Text style={styles.secondaryBtnText}>{checking ? "Memeriksa…" : "Periksa Status Terbaru"}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.dangerBtn, { flex: 1, marginTop: 8 }]}
+                disabled={checking}
+                onPress={() => discard(pending.idempotencyKey)}
+              >
+                <Text style={styles.primaryBtnText}>Batalkan Antrean Ini</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
       ) : null}
 

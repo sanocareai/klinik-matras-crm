@@ -1,17 +1,28 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { AppState } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system/legacy";
 import { useAuth } from "./AuthContext";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
-import {
-  enqueueExecution,
-  flushExecutionQueue,
-  readExecutionQueue,
-  removeExecution,
-  subscribeExecutionQueue,
-} from "../lib/executionQueue";
+import { createExecutionQueue } from "../lib/executionQueue";
 import { pendingForJob, retryDelay } from "../lib/executionCore";
 import { queryClient } from "../lib/queryClient";
 import { api } from "../api";
+
+// SATU-SATUNYA titik instansiasi antrean eksekusi produksi (audit Slice 2,
+// 23 September 2026) — createExecutionQueue() sendiri (lib/executionQueue.js)
+// SENGAJA tidak mengimpor AsyncStorage/expo-file-system/api asli supaya
+// bisa diuji `node --test` biasa; wiring runtime RN sungguhan hidup DI
+// SINI, satu-satunya pemanggil di luar file test.
+const {
+  subscribeExecutionQueue,
+  readExecutionQueue,
+  enqueueExecution,
+  flushExecutionQueue,
+  removeExecution,
+  reconcileOne,
+  clearBlocked: clearBlockedQueue,
+} = createExecutionQueue({ storage: AsyncStorage, fs: FileSystem, api });
 
 const ExecutionSyncContext = createContext(null);
 
@@ -68,17 +79,45 @@ export function ExecutionSyncProvider({ children }) {
   const discard = useCallback(async (idempotencyKey) => {
     if (!userId) return;
     await removeExecution(userId, idempotencyKey);
+    const latest = await readExecutionQueue(userId);
+    setQueue(latest);
+  }, [userId]);
+
+  // "Periksa status terbaru" (audit Slice 2, item blocked) — verifikasi
+  // SATU item ke server tanpa mengirim ulang mutasinya. Kalau ternyata
+  // sudah tercapai, item hilang dari antrean dan my-jobs di-invalidate
+  // supaya kartu job langsung menampilkan status terbaru.
+  const checkStatus = useCallback(async (idempotencyKey) => {
+    if (!userId) return { resolved: false, verified: false };
+    const outcome = await reconcileOne(userId, idempotencyKey);
+    const latest = await readExecutionQueue(userId);
+    setQueue(latest);
+    if (outcome.resolved) queryClient.invalidateQueries({ queryKey: ["armada", "my-jobs", userId] });
+    return outcome;
+  }, [userId]);
+
+  // "Bersihkan antrean bermasalah" (Akun) — buang HANYA item blocked, item
+  // pending yang masih sah tidak disentuh.
+  const clearBlocked = useCallback(async () => {
+    if (!userId) return { removed: 0 };
+    const result = await clearBlockedQueue(userId);
+    const latest = await readExecutionQueue(userId);
+    setQueue(latest);
+    return result;
   }, [userId]);
 
   const value = useMemo(() => ({
     queue,
     pendingCount: queue.length,
+    blockedCount: queue.filter((item) => item.blocked).length,
     pendingForJob: (jobId) => pendingForJob(queue, jobId),
     submit,
     retry: flush,
     discard,
+    checkStatus,
+    clearBlocked,
     connected,
-  }), [queue, submit, flush, discard, connected]);
+  }), [queue, submit, flush, discard, checkStatus, clearBlocked, connected]);
 
   return <ExecutionSyncContext.Provider value={value}>{children}</ExecutionSyncContext.Provider>;
 }
