@@ -5725,6 +5725,11 @@ enum FinJournalSource {
   PENERIMAAN_BAHAN // nilai persediaan dari goods receipt (putaway)
   KASBON // uang muka gaji karyawan - Piutang Karyawan (1-1350), lihat posting/kasbon.js
   TERAPKAN_UANG_MUKA // FinPurchaseAdvanceApplication — DP pembelian (FinPurchase kategori UANG_MUKA_PEMBELIAN) diterapkan mengurangi Utang Usaha pembelian mode UTANG lain, dari supplier yang sama. Lihat posting/purchaseAdvance.js.
+  // Penyesuaian SEMENTARA rekonsiliasi bank — saldo riil bank terkonfirmasi
+  // lebih tinggi dari buku, sumber dananya belum teridentifikasi (butuh
+  // rekening koran). Lawan akun 2-1700 "Dana Masuk Belum Teridentifikasi",
+  // BUKAN pendapatan. Lihat posting/rekonsiliasiSementara.js.
+  REKONSILIASI_SEMENTARA
   REVERSAL // jurnal balik dari pembatalan jurnal lain
 }
 

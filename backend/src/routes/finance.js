@@ -31,6 +31,7 @@ import {
 import { MoneyError, moneyToNumber, toMoney, sumMoney } from "../services/finance/money.js";
 import { ringkasLunasBelumDicatat } from "../services/finance/penerimaanOrder.js";
 import { SALDO_RIIL_TERKONFIRMASI, bandingkanSaldoRiil } from "../services/finance/saldoRiil.js";
+import { saldoBelumTeridentifikasi } from "../services/finance/rekonBank.js";
 import {
   SETTING_KEYS, getAllSettings, setSetting, getVerificationGate, parseBool,
 } from "../services/finance/settings.js";
@@ -1110,9 +1111,24 @@ financeRouter.get("/saldo-riil", requirePermission(P.FINANCE_READ), async (_req,
     });
     const petaPeriode = new Map();
     for (const x of periode) if (!petaPeriode.has(x.cashAccountId)) petaPeriode.set(x.cashAccountId, x);
+    // Penyesuaian sementara (akun 2-1700) per rekening — tampil MENEMPEL ke
+    // baris rekening yang bersangkutan supaya tidak bisa terlewat, dan
+    // TOTAL terpisah di atas supaya "sudah cocok" tidak pernah menyamarkan
+    // saldo yang sebenarnya masih menunggu identifikasi sumber dana.
+    const belumTeridentifikasi = await saldoBelumTeridentifikasi(prisma);
+    const belumTeridentifikasiPerRekening = new Map();
+    for (const it of belumTeridentifikasi.items) {
+      const dulu = belumTeridentifikasiPerRekening.get(it.rekening) ?? 0;
+      belumTeridentifikasiPerRekening.set(it.rekening, dulu + it.nilai);
+    }
     res.json({
       cutoffLabel: k.cutoffLabel, tanggalBuku: k.tanggalBuku, sumber: k.sumber, catatan: k.catatan,
-      rekening: bandingkanSaldoRiil(buku, k).map((r) => ({ ...r, periodeId: petaPeriode.get(r.id)?.id ?? null, periodeStatus: petaPeriode.get(r.id)?.status ?? null })),
+      rekening: bandingkanSaldoRiil(buku, k).map((r) => ({
+        ...r,
+        periodeId: petaPeriode.get(r.id)?.id ?? null, periodeStatus: petaPeriode.get(r.id)?.status ?? null,
+        danaBelumTeridentifikasi: belumTeridentifikasiPerRekening.get(r.name) ?? 0,
+      })),
+      danaBelumTeridentifikasi: belumTeridentifikasi,
     });
   } catch (err) {
     handleFinanceError(err, res);

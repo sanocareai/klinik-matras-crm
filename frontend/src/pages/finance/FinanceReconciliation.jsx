@@ -255,6 +255,21 @@ export default function FinanceReconciliation() {
             />
           </div>
 
+          {!!detail.danaBelumTeridentifikasi?.total && (
+            <Card className="bg-orangebg" role="status" data-testid="banner-dana-belum-teridentifikasi">
+              <CardContent className="flex gap-3 py-4">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-orange" />
+                <div className="min-w-0 space-y-1">
+                  <p className="text-[13px] font-bold text-ink">⚠ {detail.danaBelumTeridentifikasi.peringatan}</p>
+                  <p className="text-[12px] text-ink2">
+                    Tercatat di akun sementara "Dana Masuk Belum Teridentifikasi" (2-1700) — BUKAN pendapatan, dan periode ini
+                    TIDAK BISA ditandai Selesai sampai sumber dananya terbukti (rekening koran) dan direklasifikasi ke akun yang benar.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <PenyesuaianBuku data={detail.penyesuaianBuku} />
 
           <SyaratSelesai p={detail.rekonsiliasi.penyelesaian} status={detail.statement.status} />

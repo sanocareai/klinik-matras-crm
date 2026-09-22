@@ -47,7 +47,7 @@ import { setAllocations, AllocationError } from "../services/finance/allocation.
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { handleFinanceError, rentangDariQuery } from "./finance.js";
-import { evaluasiSelesai, penyesuaianBukuPeriode, saldoBukuSampai, LABEL_STATUS_REKON, LABEL_REKON_SEMENTARA, STATUS_DRAF_MENUNGGU } from "../services/finance/rekonBank.js";
+import { evaluasiSelesai, penyesuaianBukuPeriode, saldoBukuSampai, saldoBelumTeridentifikasi, LABEL_STATUS_REKON, LABEL_REKON_SEMENTARA, STATUS_DRAF_MENUNGGU } from "../services/finance/rekonBank.js";
 import multer from "multer";
 import {
   pastikanNotaLengkap, notaWajib, ambangNota, notaWajibDenganAmbang, simpanFotoBukti, cariPemakaiBukti,
@@ -2500,8 +2500,11 @@ financeTxRouter.get("/bank-statements/:id", requirePermission(P.FINANCE_READ), a
     const kandidat = await prisma.finJournalLine.findMany({
       where: {
         cashAccountId: s.cashAccountId,
-        // Penyesuaian buku (kalibrasi saldo riil & koreksi kas ganda, sumber SALDO_AWAL) BUKAN transaksi bank → tidak jadi kandidat pencocokan.
-        entry: { status: { in: STATUS_DIHITUNG }, date: { gte: s.periodStart, lte: s.periodEnd }, source: { not: "SALDO_AWAL" } },
+        // Penyesuaian buku (kalibrasi saldo riil & koreksi kas ganda, sumber
+        // SALDO_AWAL) dan penyesuaian sementara rekonsiliasi (sumber
+        // REKONSILIASI_SEMENTARA, akun 2-1700) BUKAN transaksi bank → tidak
+        // pernah jadi kandidat pencocokan mutasi koran.
+        entry: { status: { in: STATUS_DIHITUNG }, date: { gte: s.periodStart, lte: s.periodEnd }, source: { notIn: ["SALDO_AWAL", "REKONSILIASI_SEMENTARA"] } },
       },
       orderBy: [{ entry: { date: "asc" } }],
       select: {
@@ -2511,6 +2514,7 @@ financeTxRouter.get("/bank-statements/:id", requirePermission(P.FINANCE_READ), a
       },
     });
     const penyesuaianBuku = await penyesuaianBukuPeriode(prisma, { cashAccountId: s.cashAccountId, periodStart: s.periodStart, periodEnd: s.periodEnd });
+    const danaBelumTeridentifikasi = await saldoBelumTeridentifikasi(prisma, { cashAccountId: s.cashAccountId });
 
     // Saldo menurut BUKU pada akhir periode (seluruh mutasi rekening ini
     // sampai periodEnd) vs saldo menurut KORAN BANK.
@@ -2560,9 +2564,13 @@ financeTxRouter.get("/bank-statements/:id", requirePermission(P.FINANCE_READ), a
         statusLabel: LABEL_STATUS_REKON[s.status] ?? s.status,
         labelSementara: s.status === STATUS_DRAF_MENUNGGU ? LABEL_REKON_SEMENTARA : null,
         cutoff: { mulai: s.cutoffStartAt, selesai: s.cutoffEndAt },
-        penyelesaian: evaluasiSelesai({ status: s.status, jumlahBaris: s.lines.length, belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length, selisih }),
+        penyelesaian: evaluasiSelesai({
+          status: s.status, jumlahBaris: s.lines.length, belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length,
+          selisih, danaBelumTeridentifikasi: danaBelumTeridentifikasi.total,
+        }),
       },
       penyesuaianBuku,
+      danaBelumTeridentifikasi,
     });
   } catch (e) {
     handleFinanceError(e, res);
@@ -2721,9 +2729,13 @@ financeTxRouter.post("/bank-statements/:id/complete", requirePermission(P.FINANC
       });
       if (!s) throw err("Koran bank tidak ditemukan", 404);
       const belumCocok = s.lines.filter((l) => l.status === "BELUM_COCOK").length;
-      // Aturan tunggal (services/finance/rekonBank.js): mutasi bank asli ada, semua baris dicocokkan/dijelaskan, selisih nol, status DRAFT.
+      // Aturan tunggal (services/finance/rekonBank.js): mutasi bank asli ada, semua baris dicocokkan/dijelaskan, selisih nol, status DRAFT, TIDAK ADA dana suspense (2-1700) yang masih menunggu identifikasi untuk rekening ini.
       const saldoBuku = await saldoBukuSampai(tx, s.cashAccountId, s.periodEnd);
-      const ev = evaluasiSelesai({ status: s.status, jumlahBaris: s.lines.length, belumCocok, selisih: toMoney(s.closingBalance).minus(saldoBuku) });
+      const suspense = await saldoBelumTeridentifikasi(tx, { cashAccountId: s.cashAccountId });
+      const ev = evaluasiSelesai({
+        status: s.status, jumlahBaris: s.lines.length, belumCocok,
+        selisih: toMoney(s.closingBalance).minus(saldoBuku), danaBelumTeridentifikasi: suspense.total,
+      });
       if (!ev.bisa) throw err(`Periode belum bisa diselesaikan: ${ev.alasan.join("; ")}.`, 409);
       return tx.finBankStatement.update({
         where: { id: s.id },

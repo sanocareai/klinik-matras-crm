@@ -71,6 +71,13 @@ export const SYSTEM_KEYS = Object.freeze({
   BEBAN_OPERASIONAL_TRIP: "BEBAN_OPERASIONAL_TRIP",
   BEBAN_POKOK_BAHAN_MANUAL: "BEBAN_POKOK_BAHAN_MANUAL",
   UANG_MUKA_PEMBELIAN: "UANG_MUKA_PEMBELIAN",
+  // Lawan jurnal penyesuaian SEMENTARA rekonsiliasi bank (services/finance/
+  // posting/rekonsiliasiSementara.js) — dipakai saat saldo riil bank sudah
+  // terkonfirmasi lebih tinggi dari buku tapi SUMBER dana belum bisa
+  // diidentifikasi dari dokumen internal (butuh rekening koran). Kewajiban
+  // lancar (suspense), BUKAN pendapatan/ekuitas — uang ini belum tentu milik
+  // perusahaan sampai sumbernya terbukti.
+  DANA_MASUK_BELUM_TERIDENTIFIKASI: "DANA_MASUK_BELUM_TERIDENTIFIKASI",
 });
 
 const A = "ASET";
@@ -131,6 +138,9 @@ export const DEFAULT_COA = Object.freeze([
   { code: "2-1600", name: "Utang Pihak Ketiga (Investor/Mitra)", type: K, normalBalance: C, parent: "2-1000",
     systemKey: SYSTEM_KEYS.UTANG_PIHAK_KETIGA, cashFlowCategory: "PENDANAAN",
     description: "Pinjaman/suntikan dari investor & mitra non-bank yang diharapkan dikembalikan (mis. Pasamebel, MUF, investor perorangan) — pencairannya PENDANAAN masuk, pelunasannya PENDANAAN keluar, bukan beban. Fee/bagi hasil yang dibayarkan ke pemberi pinjaman dicatat terpisah sebagai beban di 6-1900 atau akun beban yang sesuai." },
+  { code: "2-1700", name: "Dana Masuk Belum Teridentifikasi", type: K, normalBalance: C, parent: "2-1000",
+    systemKey: SYSTEM_KEYS.DANA_MASUK_BELUM_TERIDENTIFIKASI,
+    description: "Suspense rekonsiliasi bank: saldo bank riil terkonfirmasi lebih tinggi dari buku, tapi sumber dananya BELUM bisa diidentifikasi dari dokumen internal (butuh rekening koran). SELALU sementara — begitu sumbernya terbukti, saldo di akun ini direklasifikasi (jurnal baru) ke akun yang benar, TIDAK PERNAH diedit/dihapus di sini. Bukan pendapatan, bukan ekuitas, bukan akun 3-4100 (itu khusus kalibrasi saldo awal yang SUMBERNYA sudah jelas)." },
   { code: "2-2000", name: "Kewajiban Jangka Panjang", type: K, normalBalance: C, isPostable: false, parent: "2-0000" },
   { code: "2-2100", name: "Utang Bank", type: K, normalBalance: C, parent: "2-2000", cashFlowCategory: "PENDANAAN" },
 

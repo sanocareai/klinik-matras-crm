@@ -7,7 +7,7 @@
 //   1) statusnya DRAFT (bukan DRAF_MENUNGGU_MUTASI), 2) sudah ada baris mutasi bank asli, 3) tidak ada baris BELUM_COCOK (semua dicocokkan/dijelaskan),
 //   4) selisih saldo bank vs saldo buku = 0.
 
-import { toMoney, moneyToNumber } from "./money.js";
+import { toMoney, moneyToNumber, formatRupiah } from "./money.js";
 import { STATUS_DIHITUNG } from "./journal.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 
@@ -34,18 +34,24 @@ export const PERIODE_SEMENTARA_20260919 = Object.freeze([
 ]);
 
 /** Murni: apakah periode boleh diselesaikan? Mengembalikan syarat satu per satu (untuk UI) + alasan yang belum terpenuhi. */
-export function evaluasiSelesai({ status, jumlahBaris, belumCocok, selisih }) {
+export function evaluasiSelesai({ status, jumlahBaris, belumCocok, selisih, danaBelumTeridentifikasi }) {
   const sel = toMoney(selisih ?? 0);
+  const suspense = toMoney(danaBelumTeridentifikasi ?? 0);
   const syarat = [
     { kode: "STATUS", ok: status === "DRAFT", teks: status === "SELESAI" ? "Periode sudah selesai" : status === STATUS_DRAF_MENUNGGU ? "Periode masih draf — belum ada mutasi bank asli" : "Periode berstatus sedang dicocokkan" },
     { kode: "MUTASI_ASLI", ok: Number(jumlahBaris) > 0, teks: "Mutasi bank asli (rekening koran) sudah dimasukkan" },
     { kode: "SEMUA_DICOCOKKAN", ok: Number(jumlahBaris) > 0 && Number(belumCocok) === 0, teks: "Seluruh baris mutasi sudah dicocokkan atau dijelaskan" },
     { kode: "SELISIH_NOL", ok: sel.isZero(), teks: "Selisih saldo bank dan saldo buku nol" },
+    // Suspense (2-1700) menutup selisih ANGKA-nya, tapi SUMBER dananya belum
+    // terbukti — periode TIDAK BOLEH "Selesai" selama saldo ini masih ada,
+    // supaya tidak pernah tersamar seolah rekonsiliasi benar-benar tuntas.
+    { kode: "DANA_TERIDENTIFIKASI", ok: suspense.isZero(), teks: "Tidak ada dana masuk yang masih menunggu identifikasi sumber" },
   ];
   const alasan = syarat.filter((s) => !s.ok).map((s) => {
     if (s.kode === "STATUS") return s.teks;
     if (s.kode === "MUTASI_ASLI") return "Belum ada mutasi bank asli — impor rekening koran dulu";
     if (s.kode === "SEMUA_DICOCOKKAN") return `Masih ada ${belumCocok} baris mutasi yang belum dicocokkan atau dijelaskan`;
+    if (s.kode === "DANA_TERIDENTIFIKASI") return `${formatRupiah(suspense)} masih menunggu identifikasi sumber (lihat Dana Masuk Belum Teridentifikasi) — reklasifikasi dulu setelah sumbernya terbukti`;
     return `Selisih saldo bank dan buku belum nol (${sel.toFixed(2)})`;
   });
   return { bisa: alasan.length === 0, syarat, alasan };
@@ -83,6 +89,39 @@ export async function penyesuaianBukuPeriode(db, { cashAccountId, periodStart, p
       koreksiKasGanda: { jumlah: koreksi.length, bersih: moneyToNumber(koreksi.reduce((t, r) => t.plus(toMoney(r.nilai)), toMoney(0))), dari: koreksi[0]?.nomor ?? null, sampai: koreksi.at(-1)?.nomor ?? null },
     },
     catatan: "Penyesuaian Buku bukan transaksi bank: kalibrasi ke saldo riil dan koreksi kas ganda (lawan Koreksi Saldo Awal). Tidak dicocokkan dengan mutasi koran.",
+  };
+}
+
+/**
+ * Saldo akun "Dana Masuk Belum Teridentifikasi" (2-1700, suspense — lihat
+ * posting/rekonsiliasiSementara.js), OPSIONAL disaring per rekening kas.
+ * Dipakai Ringkasan (GET /finance/saldo-riil) dan detail Rekonsiliasi Bank
+ * supaya penyesuaian sementara SELALU tampil jelas, tidak pernah tersamar
+ * sebagai "periode selesai" atau pendapatan. Baca-saja.
+ */
+export async function saldoBelumTeridentifikasi(db, { cashAccountId } = {}) {
+  const lines = await db.finJournalLine.findMany({
+    where: {
+      ...(cashAccountId ? { cashAccountId } : { cashAccountId: { not: null } }),
+      entry: { source: "REKONSILIASI_SEMENTARA", status: { in: STATUS_DIHITUNG } },
+    },
+    orderBy: { entry: { date: "asc" } },
+    select: {
+      debit: true, credit: true,
+      entry: { select: { id: true, entryNumber: true, date: true, description: true } },
+      cashAccount: { select: { id: true, name: true } },
+    },
+  });
+  const items = lines.map((l) => ({
+    jurnalId: l.entry.id, nomor: l.entry.entryNumber, tanggal: l.entry.date, keterangan: l.entry.description,
+    rekening: l.cashAccount?.name ?? null,
+    nilai: moneyToNumber(toMoney(l.debit).minus(toMoney(l.credit))),
+  }));
+  const total = items.reduce((t, r) => t.plus(toMoney(r.nilai)), toMoney(0));
+  return {
+    total: moneyToNumber(total),
+    items,
+    peringatan: total.isZero() ? null : `${formatRupiah(total)} masih menunggu identifikasi`,
   };
 }
 

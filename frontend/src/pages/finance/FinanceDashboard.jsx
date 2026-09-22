@@ -396,11 +396,25 @@ function KasBank({ data, riil, navigate, className }) {
                           {st && <Badge variant={st.variant}>{st.label}</Badge>}
                         </span>
                       ) : st ? <Badge variant={st.variant}>{st.label}</Badge> : <span className="text-[12px] text-ink3">—</span>}
+                      {!!x?.danaBelumTeridentifikasi && (
+                        <span className="mt-0.5 block text-[11px] font-medium text-orange">
+                          Termasuk {formatUang(x.danaBelumTeridentifikasi)} menunggu identifikasi
+                        </span>
+                      )}
                     </Sel>
                   </li>
                 );
               })}
             </ul>
+            {!!riil?.danaBelumTeridentifikasi?.total && (
+              <div className="mt-3 rounded-lg border border-orange/40 bg-orangebg px-3 py-2.5 text-[12px] leading-relaxed text-ink">
+                <p className="font-semibold text-orange">⚠ {riil.danaBelumTeridentifikasi.peringatan}</p>
+                <p className="mt-1 text-ink2">
+                  Dana ini masuk akun sementara "Dana Masuk Belum Teridentifikasi" (2-1700) — BUKAN pendapatan, BUKAN periode rekonsiliasi selesai.
+                  Sumbernya wajib dibuktikan (rekening koran) sebelum direklasifikasi ke akun yang benar.
+                </p>
+              </div>
+            )}
             <div className="mt-3 space-y-1 rounded-lg bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2">
               <p className="font-medium text-ink">{LABEL_REKONSILIASI}</p>
               {riil && <p>Cutoff: {riil.cutoffLabel} (tanggal buku {tanggalPendek(riil.tanggalBuku)}). Selisih positif = saldo buku lebih tinggi dari saldo riil. Sumber saldo riil: {riil.sumber.toLowerCase()}.</p>}
