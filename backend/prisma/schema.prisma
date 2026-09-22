@@ -349,6 +349,24 @@ model User {
   isOnline    Boolean   @default(false) @map("is_online")
   onlineSince DateTime? @map("online_since")
 
+  // Terakhir app driver sinkron (22 September 2026, audit bug Agung "rute
+  // sudah dipublish tapi tidak muncul di app") — SEBELUM ini tidak ada
+  // sinyal APA PUN di sisi server soal "app driver ini terakhir benar-benar
+  // menarik data kapan". Dispatcher tidak pernah tahu apakah rute yang baru
+  // diterbitkan SUDAH kebaca app driver atau belum (device mati, sinyal
+  // hilang, app di-uninstall, dst) — cuma bisa menebak/nelepon manual.
+  // Ditulis best-effort (fire-and-forget, tidak boleh menggagalkan request)
+  // tiap kali GET /armada/my-jobs dipanggil (armada.js) — endpoint yang
+  // SAMA dipanggil app tiap 30 detik + tiap kembali ke foreground (lihat
+  // useMyJobs.js/App.js driver-mobile), jadi timestamp ini pada dasarnya
+  // "kapan app ini terakhir hidup & berhasil connect ke server". Dipakai
+  // Route Planner (RouteCard.jsx) membandingkan dengan Route.publishedAt —
+  // kalau driver belum pernah sinkron SEJAK rute diterbitkan, tampilkan
+  // peringatan jujur "belum tentu sudah dilihat driver", BUKAN klaim pasti
+  // "sudah diterima" (tidak ada read-receipt sungguhan, ini cuma proxy
+  // terbaik yang ada datanya).
+  lastAppSyncAt DateTime? @map("last_app_sync_at")
+
   // Kurir pihak ketiga (Lalamove/dst) — 13 September 2026 (D-161). Akun ini
   // TIDAK PERNAH login sendiri (dispatcher yang operasikan atas nama akun,
   // lihat scripts/add-external-courier.js, keputusan owner 6 September

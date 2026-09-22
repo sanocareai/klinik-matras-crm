@@ -37,7 +37,7 @@ import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { bukukanPembayaran } from "../services/finance/hooks.js";
 import { verifikasiPembayaran } from "../services/finance/pembayaran.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
-import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB } from "../services/jobStatus.js";
+import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB, isJobVisibleToDriverApp } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, routePath, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 import { produkLineLabel, parseOrderNotesForInvoice } from "../services/invoice.js";
@@ -1916,10 +1916,13 @@ function generateRouteCode(date) {
 }
 
 const routeInclude = {
-  driver: { select: { id: true, name: true } },
+  // lastAppSyncAt (22 September 2026, bug Agung) — dipakai RouteCard.jsx
+  // membandingkan dengan publishedAt, lihat catatan panjang di
+  // schema.prisma pada field User.lastAppSyncAt.
+  driver: { select: { id: true, name: true, lastAppSyncAt: true } },
   // helper (D-077) — pasangan driver, lihat catatan panjang di schema.prisma
   // pada field Route.helperId untuk kenapa field ini ditambahkan.
-  helper: { select: { id: true, name: true } },
+  helper: { select: { id: true, name: true, lastAppSyncAt: true } },
   vehicle: { select: { id: true, plateNumber: true, type: true, capacitySlots: true } },
   // lastEditedBy (redesain Sep 2026) — siapa terakhir mengedit rute PUBLISHED
   // ini, dipasangkan dengan Route.lastEditReason/lastEditedAt (kolom biasa,
@@ -3486,7 +3489,7 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
     // D-037 (31 Agustus 2026) — helper melihat job yang sama dengan driver
     // TERPISAH: OR driverId/helperId, bukan cuma driverId. Helper accompany
     // driver di lapangan, wajar kalau dia juga mau lihat "Job Saya" hari itu.
-    const jobs = await prisma.job.findMany({
+    const jobsMentah = await prisma.job.findMany({
       where: {
         OR: [{ driverId: req.user.id }, { helperId: req.user.id }],
         AND: {
@@ -3499,7 +3502,23 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
       include: jobInclude,
       orderBy: [{ scheduledDate: "asc" }, { sequence: "asc" }, { createdAt: "asc" }],
     });
+    // Saring rute hantu (bug Alwan) — lihat isJobVisibleToDriverApp di
+    // services/jobStatus.js untuk akar masalah lengkapnya. Difilter di JS
+    // (bukan di WHERE Prisma) supaya aturannya jadi fungsi murni yang bisa
+    // dites tanpa database, sama pola dengan STALE_UNSCHEDULED_JOB di file
+    // yang sama.
+    const jobs = jobsMentah.filter(isJobVisibleToDriverApp);
     res.json({ jobs });
+    // User.lastAppSyncAt (22 September 2026, bug Agung) — best-effort,
+    // SETELAH res.json (tidak boleh menunda/menggagalkan respons ke app).
+    // Endpoint ini dipanggil app tiap 30 detik + tiap kembali ke foreground
+    // (lihat useMyJobs.js/App.js driver-mobile) — timestamp ini jadi proxy
+    // "kapan app driver ini terakhir benar-benar hidup & connect", dipakai
+    // Route Planner memperingatkan dispatcher kalau driver belum sinkron
+    // sejak rute diterbitkan. Diam-diam gagal (device offline saat ini pun
+    // tidak relevan — request ini sendiri baru saja BERHASIL sampai sini).
+    prisma.user.update({ where: { id: req.user.id }, data: { lastAppSyncAt: new Date() } })
+      .catch((err) => console.error("[my-jobs] Gagal update lastAppSyncAt:", err.message));
   } catch (err) {
     handleErr(err, res);
   }

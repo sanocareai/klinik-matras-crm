@@ -237,8 +237,20 @@ export default function ArmadaRoutes() {
   }
 
   async function ubahPenugasan(route, patch, reason) {
-    await api.updateRoute(route.id, reason ? { ...patch, reason } : patch);
-    await load();
+    // try/catch ditambahkan 22 September 2026 (audit QA Route Planner) —
+    // SEBELUM ini kalau PATCH gagal (network/4xx/5xx), error-nya lolos tak
+    // tertangani dari handler async: dispatcher tidak dapat kabar apa pun,
+    // dropdown driver/helper/kendaraan di UI TETAP terlihat seolah sudah
+    // tersimpan (React state tidak pernah di-rollback) padahal backend-nya
+    // gagal — persis pola "sukses palsu" yang sudah lebih dulu diwaspadai
+    // di terbitkan() di bawah, cuma belum ditutup di sini.
+    try {
+      await api.updateRoute(route.id, reason ? { ...patch, reason } : patch);
+      await load();
+    } catch (e) {
+      alert("Gagal menyimpan perubahan rute: " + e.message);
+      await load(); // muat ulang state ASLI dari server, buang asumsi UI yang mungkin sudah menyimpang
+    }
   }
 
   async function terbitkan(route) {
@@ -252,8 +264,14 @@ export default function ArmadaRoutes() {
 
   async function batalkan(route) {
     if (!confirm(`Batalkan rute ${route.code}? Job di dalamnya tetap tercatat pernah direncanakan di sini.`)) return;
-    await api.cancelRoute(route.id);
-    await load();
+    // try/catch ditambahkan 22 September 2026 — lihat catatan di
+    // ubahPenugasan() di atas, gap yang sama persis persis di sini.
+    try {
+      await api.cancelRoute(route.id);
+      await load();
+    } catch (e) {
+      alert("Gagal membatalkan rute: " + e.message);
+    }
   }
 
   // Hapus permanen (D-059, 4 September 2026) — laporan owner: rute draft

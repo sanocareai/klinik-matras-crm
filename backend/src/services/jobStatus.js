@@ -65,3 +65,33 @@ export const STALE_UNSCHEDULED_JOB = {
   revisionLinks: { none: {} },
   complaintCaseId: null,
 };
+
+// Rute "hantu" di Driver App (bug Alwan, 22 September 2026, laporan owner:
+// "rute yang tidak ada di Route Planner muncul di Driver App"). AKAR
+// MASALAH: GET /armada/my-jobs cuma pernah menyaring dari sisi Job
+// (driverId/helperId + tanggal/status) — TIDAK PERNAH ikut memeriksa status
+// Route induknya. Dua jalur nyata yang membuat itu jadi celah:
+//   (1) PATCH /routes/:id/cancel SENGAJA tidak melepas job dari rute yang
+//       dibatalkan (demi riwayat "rute ini pernah direncanakan" tetap
+//       terbaca dispatcher) — tapi driver TIDAK PERNAH diberi tahu, job-nya
+//       tetap "menempel" aktif di app walau rutenya sudah dicoret dari papan
+//       Route Planner (CANCELLED disembunyikan dari papan utama).
+//   (2) Rute DRAFT yang sudah kebagian driver (cascade D-077 di PATCH
+//       /routes/:id/jobs, ATAU prefill) bisa saja job anggotanya sudah
+//       berstatus ASSIGNED walau dispatcher BELUM klik "Terbitkan" — rute
+//       itu belum pernah "ada" secara resmi buat driver, tapi my-jobs sudah
+//       menampilkannya lebih dulu.
+// FIX: job yang SUDAH tuntas (COMPLETED/FAILED) TETAP tampil apa pun nasib
+// rutenya sekarang (riwayat nyata, bukan rencana) — cuma job yang MASIH
+// aktif/belum tuntas yang disaring ulang di sini: rute DRAFT/CANCELLED
+// disembunyikan dari Driver App, PUBLISHED/IN_PROGRESS/COMPLETED tetap
+// tampil. Job tanpa rute sama sekali (routeId null, ditugaskan langsung
+// lewat Jadwal & Penugasan) TIDAK terdampak — itu penugasan sah yang
+// memang tidak lewat Route Planner.
+export const HIDDEN_DRIVER_APP_ROUTE_STATUSES = ["DRAFT", "CANCELLED"];
+
+export function isJobVisibleToDriverApp(job) {
+  if (job.status === "COMPLETED" || job.status === "FAILED") return true;
+  if (!job.route) return true;
+  return !HIDDEN_DRIVER_APP_ROUTE_STATUSES.includes(job.route.status);
+}

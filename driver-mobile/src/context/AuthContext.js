@@ -35,7 +35,27 @@ export function AuthProvider({ children }) {
           unauthorizedHandler: () => setUser(null),
         });
         if (savedToken && savedUser) {
-          const parsedUser = JSON.parse(savedUser);
+          // Cache rusak (22 September 2026, bug Difa "app tidak bisa
+          // dibuka") — AKAR MASALAH: `JSON.parse(savedUser)` di sini
+          // SEBELUMNYA tidak pernah dibungkus try/catch tersendiri. Kalau
+          // isi AsyncStorage "user" korup (penyimpanan HP penuh/ditutup
+          // paksa di tengah tulis, dst — nyata terjadi di RN, bukan cuma
+          // teori), parse ini melempar SEBELUM `setLoading(false)` di
+          // `finally` bawah sempat jalan lewat jalur normal — exception-nya
+          // lolos sebagai unhandled rejection dari IIFE async ini, DAN
+          // (sebelum perbaikan ini) sesi lama yang rusak tetap tersangkut
+          // di AsyncStorage selamanya, jadi app mencoba parse ulang data
+          // yang SAMA rusaknya tiap kali dibuka lagi. FIX: tangkap khusus
+          // di sini, buang sesi yang rusak, jatuh ke layar Login bersih —
+          // driver tinggal login ulang, bukan macet permanen.
+          let parsedUser;
+          try {
+            parsedUser = JSON.parse(savedUser);
+          } catch {
+            await AsyncStorage.multiRemove(["token", "user"]);
+            configureApi({ jwt: null });
+            return;
+          }
           setUser(parsedUser);
           setIsOnline(!!parsedUser.isOnline);
           registerForPush(parsedUser);
@@ -49,6 +69,15 @@ export function AuthProvider({ children }) {
           // logout lalu login lagi. Best-effort, tidak memblokir loading.
           refreshUser();
         }
+      } catch {
+        // Jaring pengaman terluar (22 September 2026, bug Difa) — AsyncStorage
+        // sendiri bisa gagal baca (storage HP korup/penuh). SEBELUM ini tidak
+        // ada catch sama sekali di blok terluar (cuma `finally`), jadi
+        // kegagalan di sini jadi unhandled rejection dan splash screen bisa
+        // tidak pernah ditutup (lihat App.js: SplashScreen.hideAsync() cuma
+        // dipanggil setelah `loading` false, yang di-set di `finally` — itu
+        // TETAP jalan, tapi tanpa catch ini exception-nya bisa membawa state
+        // tidak konsisten). Diam-diam jatuh ke Login, bukan macet.
       } finally {
         setLoading(false);
       }

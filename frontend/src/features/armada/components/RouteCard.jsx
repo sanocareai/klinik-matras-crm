@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils.js";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
-import { ROUTE_STATUS_REAL } from "../vehicleStatus.js";
+import { ROUTE_STATUS_REAL, effectiveRouteStatus } from "../vehicleStatus.js";
 import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf, salesPersonOf } from "../jobStatus.js";
 import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
 import ExternalCourierBadge from "./ExternalCourierBadge.jsx";
@@ -397,7 +397,7 @@ export default function RouteCard({
               {tollBusy ? <Loader2 size={11} className="animate-spin" /> : "🛣️"} Estimasi Tol
             </button>
           )}
-          <StatusBadge map={ROUTE_STATUS_REAL} value={route.status} className="ml-auto shrink-0" />
+          <StatusBadge map={ROUTE_STATUS_REAL} value={effectiveRouteStatus(route)} className="ml-auto shrink-0" />
         </div>
         {/* Tanggal rute (D-063, 4 September 2026) — Route Planner sekarang
             defaultnya menampilkan SEMUA tanggal sekaligus (bukan terkunci
@@ -611,6 +611,40 @@ export default function RouteCard({
             Diedit {route.lastEditedBy?.name ? `oleh ${route.lastEditedBy.name} ` : ""}
             {route.lastEditedAt ? `(${formatTanggal(route.lastEditedAt)}) ` : ""}
             — {route.lastEditReason}
+          </p>
+        )}
+
+        {/* Peringatan assignment tidak lengkap (22 September 2026, audit QA
+            Route Planner) — SEBELUM ini satu-satunya petunjuk "belum bisa
+            diterbitkan" cuma tooltip di tombol Terbitkan (disabled + title,
+            gampang terlewat kalau dispatcher tidak hover). Ditampilkan
+            sebagai baris persisten supaya kelihatan tanpa perlu coba klik
+            tombolnya dulu. */}
+        {route.status === "DRAFT" && (!route.driverId || jobs.length === 0) && (
+          <p className="rounded-btn bg-orangebg px-2 py-1 text-[10px] font-semibold text-orange">
+            ⚠ Belum bisa diterbitkan — {!route.driverId && jobs.length === 0
+              ? "pilih driver & tambahkan stop dulu"
+              : !route.driverId
+              ? "pilih driver dulu"
+              : "tambahkan stop dulu"}
+          </p>
+        )}
+
+        {/* Peringatan sinkron ke app driver (22 September 2026, bug Agung
+            "rute sudah dipublish tapi tidak muncul di app") — pakai
+            User.lastAppSyncAt (proxy "app ini terakhir hidup & connect ke
+            server", lihat catatan panjang di schema.prisma) dibanding
+            Route.publishedAt. JUJUR: ini BUKAN read-receipt sungguhan
+            (tidak ada konfirmasi "driver sudah lihat rute INI spesifik"),
+            cuma sinyal terbaik yang ada datanya — kalau app driver belum
+            pernah connect SEJAK rute diterbitkan, kemungkinan besar dia
+            belum lihat, patut dicek manual (telepon/WA). */}
+        {route.status === "PUBLISHED" && route.driver && (
+          !route.driver.lastAppSyncAt ||
+          new Date(route.driver.lastAppSyncAt) < new Date(route.publishedAt)
+        ) && (
+          <p className="rounded-btn bg-redbg px-2 py-1 text-[10px] font-semibold text-red">
+            ⚠ {route.driver.name} belum sinkron ke app sejak rute ini diterbitkan — belum tentu sudah dilihat, cek manual kalau perlu.
           </p>
         )}
 

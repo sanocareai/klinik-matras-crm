@@ -31,12 +31,59 @@ export function mediaUrl(pathOrUrl) {
   return serverUrl + pathOrUrl;
 }
 
+// Sesi geser (22 September 2026) — PORT dari frontend/src/api.js
+// adoptRefreshedToken(). AKAR MASALAH ditemukan saat audit bug Agung/Difa:
+// backend/src/middleware/auth.js MENYAMARATAKAN driver-mobile dengan token
+// web biasa (bukan `typ: "mobile"`, itu punya Finance Android sendiri) —
+// begitu sisa umur token < 1 hari (dari 7 hari), backend diam-diam
+// menyertakan token BARU di header X-Refreshed-Token supaya sesi tidak
+// putus di tengah kerja. frontend/src/api.js SUDAH menyimpannya sejak
+// lama; driver-mobile TIDAK PERNAH — jadi token driver diam-diam kedaluwarsa
+// tanpa peringatan begitu app dibiarkan terpasang lebih dari ~6 hari tanpa
+// login ulang (driver lapangan wajar tidak pernah logout manual), lalu
+// mendadak 401 di suatu request acak dan app menendang balik ke Login tanpa
+// penjelasan — persis gejala "app tidak bisa dipakai"/rute baru "tidak
+// muncul" karena sesi sudah mati diam-diam sebelum sempat fetch data baru.
+async function adoptRefreshedToken(res) {
+  const baru = res.headers.get("X-Refreshed-Token");
+  if (baru) {
+    token = baru;
+    try { await AsyncStorage.setItem("token", baru); } catch {}
+  }
+}
+
+// Tahan-banting saat restart backend (22 September 2026) — PORT dari
+// frontend/src/api.js fetchDenganUlang(). Deploy/restart backend bikin
+// nginx balas 502/503/504 atau koneksi putus beberapa detik; tanpa ini
+// driver yang kebetulan buka app persis saat itu langsung lihat error
+// "Gagal memuat" instead of app transparan mencoba lagi. Cuma GET yang
+// diulang (aman diulang berkali-kali) — POST/PATCH/DELETE TIDAK, supaya
+// tidak ada aksi dobel kalau respons pertama sebenarnya sampai tapi
+// balasannya yang hilang.
+const JEDA_ULANG_MS = [1000, 2000, 4000];
+async function fetchDenganUlang(url, init) {
+  const aman = !init.method || init.method === "GET";
+  for (let i = 0; ; i++) {
+    try {
+      const res = await fetch(url, init);
+      if (aman && [502, 503, 504].includes(res.status) && i < JEDA_ULANG_MS.length) {
+        await new Promise((r) => setTimeout(r, JEDA_ULANG_MS[i]));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (err.name === "AbortError" || !aman || i >= JEDA_ULANG_MS.length) throw err;
+      await new Promise((r) => setTimeout(r, JEDA_ULANG_MS[i]));
+    }
+  }
+}
+
 async function request(path, options = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${serverUrl}/api${path}`, {
+    const res = await fetchDenganUlang(`${serverUrl}/api${path}`, {
       ...options,
       signal: controller.signal,
       headers: {
@@ -45,6 +92,7 @@ async function request(path, options = {}) {
         ...options.headers,
       },
     });
+    await adoptRefreshedToken(res);
     if (res.status === 401) {
       token = null;
       await AsyncStorage.removeItem("token");

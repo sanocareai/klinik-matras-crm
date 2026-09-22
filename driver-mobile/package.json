@@ -38,7 +38,8 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "test": "node --test \"src/**/*.test.js\""
   },
   "devDependencies": {
     "babel-plugin-transform-remove-console": "^6.9.4",

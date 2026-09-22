@@ -17,14 +17,14 @@ import { useTheme } from "../hooks/useTheme";
 import { useMyJobs } from "../hooks/useMyJobs";
 import { useIssues } from "../hooks/useIssues";
 import { useDriverTracking } from "../hooks/useDriverTracking";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import JobCard from "../components/JobCard";
 import RouteStartCard from "../components/RouteStartCard";
 import BottomNavBar from "../components/BottomNavBar";
 import GradientCard from "../components/GradientCard";
 import Avatar from "../components/Avatar";
 import { customerOf, orderNumberOf, relatifWaktu, ISSUE_STATUS } from "../lib/jobHelpers";
-
-const ACTIVE_STATUSES = ["ASSIGNED", "EN_ROUTE", "ARRIVED"];
+import { deriveJobList } from "../lib/jobListDerive";
 
 // Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
 // dulu di atas konten, lihat BottomNavBar.js. Tab "Masalah" (17 September
@@ -44,8 +44,13 @@ export default function JobListScreen({ navigation }) {
   const { user, logout, isOnline, setOnline } = useAuth();
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const { data: jobs, isLoading, error, refetch, isRefetching } = useMyJobs();
+  const { data: jobs, isLoading, error, refetch, isRefetching, dataUpdatedAt, isFetching } = useMyJobs();
   const { data: issues, isLoading: issuesLoading, error: issuesError, refetch: refetchIssues, isRefetching: issuesRefetching } = useIssues();
+  // Nama SENGAJA beda dari `isOnline` (status toggle Online/Offline driver,
+  // dari useAuth di bawah) — dua konsep beda: ini status KONEKSI HP (NetInfo),
+  // itu status KERJA driver (manual toggle). Ketimpa nama yang sama akan
+  // membisukan salah satunya tanpa error (JS shadowing diam-diam).
+  const hasConnection = useNetworkStatus();
   const [tab, setTab] = useState("aktif"); // "aktif" | "riwayat" | "masalah"
   const showHistory = tab === "riwayat";
   const [togglingOnline, setTogglingOnline] = useState(false);
@@ -89,30 +94,7 @@ export default function JobListScreen({ navigation }) {
     }
   }
 
-  const activeJobs = (jobs || []).filter((j) => ACTIVE_STATUSES.includes(j.status));
-  const doneJobs = (jobs || []).filter((j) => j.status === "COMPLETED" || j.status === "FAILED");
-  const listData = showHistory ? doneJobs : activeJobs;
-
-  // Rute hari ini — kartu "Mulai Perjalanan sekali" + "Buka Rute di Maps"
-  // di atas daftar (tab Aktif saja). Satu kartu per rute yang masih punya
-  // job belum selesai.
-  const rutes = [];
-  if (!showHistory) {
-    const byId = new Map();
-    for (const j of jobs || []) {
-      if (!j.route || j.status === "COMPLETED" || j.status === "FAILED") continue;
-      let r = byId.get(j.route.id);
-      if (!r) {
-        r = { route: j.route, assignedCount: 0, sampleJobId: null };
-        byId.set(j.route.id, r);
-      }
-      if (j.status === "ASSIGNED") {
-        r.assignedCount += 1;
-        if (!r.sampleJobId) r.sampleJobId = j.id;
-      }
-    }
-    rutes.push(...byId.values());
-  }
+  const { activeJobs, listData, rutes } = deriveJobList(jobs, { showHistory });
 
   return (
     <SafeAreaView style={styles.root}>
@@ -154,6 +136,28 @@ export default function JobListScreen({ navigation }) {
         </View>
       </GradientCard>
 
+      {/* Strip status sinkron (22 September 2026, bug Agung/Difa — QA minta
+          "indikator jika data berasal dari cache/offline") — SEBELUM ini
+          tidak ada petunjuk sama sekali kenapa daftar job tidak
+          berubah-ubah kalau sinyal HP hilang di lapangan, driver cuma bisa
+          menebak. Ditampilkan di SEMUA tab (bukan cuma Aktif) supaya juga
+          kelihatan saat driver sedang lihat Riwayat/Masalah. */}
+      {tab !== "masalah" && (!hasConnection || (error && jobs)) ? (
+        <View style={[styles.syncBar, { backgroundColor: (hasConnection ? theme.ORANGE : theme.RED) + "26" }]}>
+          <Text style={[styles.syncBarText, { color: hasConnection ? theme.ORANGE : theme.RED }]}>
+            {!hasConnection
+              ? "Offline — menampilkan data tersimpan terakhir"
+              : "Gagal sinkron data terbaru — mungkin belum terkini"}
+            {dataUpdatedAt ? ` · diperbarui ${relatifWaktu(dataUpdatedAt)}` : ""}
+          </Text>
+          <Pressable onPress={() => refetch()} disabled={isFetching}>
+            <Text style={[styles.syncBarRetry, { color: hasConnection ? theme.ORANGE : theme.RED }]}>
+              {isFetching ? "Mencoba…" : "Coba Lagi"}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {tab === "masalah" ? (
         <MasalahView
           issues={issues} isLoading={issuesLoading} error={issuesError}
@@ -164,9 +168,19 @@ export default function JobListScreen({ navigation }) {
         <View style={styles.center}>
           <ActivityIndicator color={theme.ACCENT} />
         </View>
-      ) : error ? (
+      ) : error && !jobs ? (
+        // Belum PERNAH berhasil memuat sama sekali (gagal di percobaan
+        // pertama, tidak ada cache apa pun untuk ditampilkan) — satu-satunya
+        // kondisi yang layak layar error PENUH (kalau sudah pernah ada data,
+        // kegagalan refetch berikutnya cukup lewat syncBar di atas, daftar
+        // lama TETAP tampil, lihat cabang FlashList di bawah).
         <View style={styles.center}>
-          <Text style={styles.errorText}>Gagal memuat: {error.message}</Text>
+          <Text style={styles.errorText}>
+            {!hasConnection ? "Anda sedang offline. Sambungkan internet lalu coba lagi." : `Gagal memuat: ${error.message}`}
+          </Text>
+          <Pressable style={styles.retryBtn} onPress={() => refetch()}>
+            <Text style={styles.retryBtnText}>Coba Lagi</Text>
+          </Pressable>
         </View>
       ) : listData.length === 0 ? (
         <View style={styles.center}>
@@ -299,6 +313,21 @@ function makeStyles(t) {
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingBottom: 80 },
     errorText: { color: t.RED, fontSize: 13, textAlign: "center" },
     emptyText: { color: t.INK2, fontSize: 13, textAlign: "center" },
+    // Strip status sinkron (22 September 2026) — pita tipis, BUKAN modal/
+    // alert (tidak boleh menghalangi driver kerja), cuma info pasif +
+    // satu tombol retry kecil.
+    syncBar: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+      marginHorizontal: 16, marginBottom: 10, paddingHorizontal: 12, paddingVertical: 8,
+      borderRadius: 10,
+    },
+    syncBarText: { flex: 1, fontSize: 11.5, fontWeight: "600" },
+    syncBarRetry: { fontSize: 11.5, fontWeight: "800", marginLeft: 10 },
+    retryBtn: {
+      marginTop: 14, backgroundColor: t.ACCENT, borderRadius: 12,
+      paddingVertical: 11, paddingHorizontal: 22,
+    },
+    retryBtnText: { color: "#fff", fontWeight: "700", fontSize: 13.5 },
     // Kartu tab Masalah (17 September 2026) — pola sama dengan styles.card
     // AdminHomeScreen.js (bg SURFACE, border tipis), warna border merah
     // muda konsisten dgn MasalahView versi admin.
