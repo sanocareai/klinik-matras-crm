@@ -38,7 +38,15 @@ const TABLES_TO_TRUNCATE = [
   // di financeLedger.integration.test.js akan melihat sisa test lain.
   "fin_bank_statement_lines", "fin_bank_statements",
   "fin_supplier_payment_allocations", "fin_supplier_payments", "fin_supplier_bills",
-  "fin_payment_allocations", "fin_refunds", "fin_expenses", "fin_purchases", "fin_kasbon_repayments", "fin_kasbon", "fin_other_incomes",
+  "fin_payment_allocations", "fin_refunds", "fin_expenses",
+  // "Terapkan Uang Muka" (D-XXX, 22 September 2026) — WAJIB sebelum
+  // fin_purchases: FK advance_purchase_id/target_purchase_id menunjuk ke
+  // fin_purchases dengan onDelete Restrict (bukan Cascade — jurnalnya tidak
+  // boleh yatim diam-diam), jadi kalau ini luput, TRUNCATE fin_purchases
+  // akan gagal FK constraint begitu ada baris penerapan DP tersisa dari test
+  // sebelumnya (urutan di sini tidak masalah karena TRUNCATE...CASCADE satu
+  // statement, tapi baris ini TETAP wajib ADA, lihat komentar di kepala file).
+  "fin_purchase_advance_applications", "fin_purchases", "fin_kasbon_repayments", "fin_kasbon", "fin_other_incomes",
   "fin_cash_transfers",
   "fin_journal_lines", "fin_journal_entries",
   "fin_posting_gaps", "fin_periods", "fin_settings",

@@ -4,23 +4,27 @@
 // ada di dependencies, dan fetch bawaan Node 18+ sudah cukup untuk pola
 // request/response sederhana yang dipakai di sini).
 export function makeClient(baseUrl, token) {
-  async function call(method, path, body) {
+  async function call(method, path, body, extraHeaders) {
     const res = await fetch(`${baseUrl}${path}`, {
       method,
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...extraHeaders,
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     let json = null;
     try { json = await res.json(); } catch { /* respons kosong, biarkan null */ }
-    return { status: res.status, body: json };
+    return { status: res.status, body: json, headers: res.headers };
   }
   return {
     get: (path) => call("GET", path),
-    post: (path, body) => call("POST", path, body),
-    patch: (path, body) => call("PATCH", path, body),
+    // `headers` opsional — dipakai test yang perlu mengirim Idempotency-Key
+    // (mis. financePurchaseAdvance.integration.test.js), tidak mengubah
+    // pemanggilan lama yang cuma kirim (path, body).
+    post: (path, body, headers) => call("POST", path, body, headers),
+    patch: (path, body, headers) => call("PATCH", path, body, headers),
     delete: (path) => call("DELETE", path),
   };
 }

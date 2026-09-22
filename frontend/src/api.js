@@ -1312,6 +1312,18 @@ export const api = {
   rejectFinancePurchase: (id, reason) => request(`/finance/purchases/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
   payFinancePurchase: (id, data) => request(`/finance/purchases/${id}/pay`, { method: "POST", body: JSON.stringify(data) }),
   cancelFinancePurchase: (id, reason) => request(`/finance/purchases/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  // Terapkan Uang Muka — DP (kategori Uang Muka Pembelian) mengurangi Utang
+  // Usaha pembelian mode Utang lain dari supplier yang sama. `idemKey` WAJIB
+  // (server menolak tanpanya) — dibangkitkan sekali per percobaan penerapan
+  // oleh pemanggil (lihat ModalTerapkanDp di FinancePurchases.jsx), BUKAN di
+  // sini, supaya retry logis (klik ulang setelah error) memakai kunci yang
+  // SAMA alih-alih membuat percobaan baru yang tidak lagi idempoten.
+  getPurchaseAdvanceEligible: (purchaseId) => request(`/finance/purchases/${purchaseId}/advance-eligible`),
+  getPurchaseAdvanceSummary: (purchaseId) => request(`/finance/purchases/${purchaseId}/advance-summary`),
+  applyPurchaseAdvance: (data, idemKey) => request("/finance/purchases/advance-applications", {
+    method: "POST", body: JSON.stringify(data), headers: { "Idempotency-Key": idemKey },
+  }),
+  cancelPurchaseAdvanceApplication: (id, reason) => request(`/finance/purchases/advance-applications/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
 
   // Supplier, tagihan, pembayaran supplier
   getFinanceSuppliers: (params = {}) => request(`/finance/suppliers${qsFinance(params)}`),

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, ShoppingCart, Pencil } from "lucide-react";
+import { Plus, ShoppingCart, Pencil, Wallet, History, Ban } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -31,18 +31,41 @@ function teksSumberDanaPembelian(p) {
   const belumDibayar = ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI"].includes(p.status) && p.mode !== "LANGSUNG";
   return belumDibayar ? "belum dibayar" : "—";
 }
+// Indikator ringkas "DP Rp…/Sisa Rp…" (target) atau "Terpakai/Tersedia"
+// (sumber DP) — dp*/sisaUtang HANYA ada di respons list untuk baris yang
+// relevan (lihat GET /purchases di financeTransactions.js), jadi baris lain
+// tidak dapat badge apa pun (tabel tidak makin sesak). Detail lengkap +
+// histori ada di aksi "Riwayat Uang Muka".
+function teksDpBadge(p) {
+  if (p.dpDiterapkan != null) return `DP ${formatUang(p.dpDiterapkan)} · Sisa ${formatUang(p.sisaUtang)}`;
+  if (p.dpDigunakan != null) return `Terpakai ${formatUang(p.dpDigunakan)} · Tersedia ${formatUang(p.dpTersedia)}`;
+  return null;
+}
 
 // Aksi PALING RELEVAN per status jadi tombol utama; sisanya masuk menu
 // titik-tiga — sama persis dengan pola FinanceExpenses.jsx (lihat komentar
 // di sana untuk alasannya).
-function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk }) {
+function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk }) {
   const bisaEdit = STATUS_BISA_DIEDIT.includes(p.status);
   const bisaBatal = ["DISETUJUI", "DIBAYAR"].includes(p.status);
   const menungguKeputusan = ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status);
   const notaBelumAda = !!p.notaWajib && !p.receiptUrl;
 
+  // "Terapkan Uang Muka" HANYA untuk pembelian mode Utang yang sudah
+  // Disetujui (Utang Usaha-nya sudah lahir, belum dibayar) dan BUKAN DP itu
+  // sendiri — pola eligibilitas persis yang ditegakkan ulang di server
+  // (routes/purchases/advance-applications), jadi tombol ini murni
+  // shortcut; server tetap sumber kebenaran terakhir.
+  const bisaTerapkanDp = p.mode === "UTANG" && p.status === "DISETUJUI" && p.category?.code !== "UANG_MUKA_PEMBELIAN";
+  // Riwayat DP relevan untuk kedua sisi: pembelian mode Utang (mungkin
+  // menerima DP) dan pembelian kategori Uang Muka (mungkin sudah dipakai).
+  const punyaRiwayatDp = ["DISETUJUI", "DIBAYAR", "DIBATALKAN"].includes(p.status)
+    && (p.mode === "UTANG" || p.category?.code === "UANG_MUKA_PEMBELIAN");
+
   const items = [
     bisaEdit && { key: "edit", label: "Edit / koreksi", icon: Pencil, onClick: () => setEditUntuk(p) },
+    bisaTerapkanDp && { key: "terapkan-dp", label: "Terapkan Uang Muka", icon: Wallet, onClick: () => setTerapkanUntuk(p) },
+    punyaRiwayatDp && { key: "riwayat-dp", label: "Riwayat Uang Muka", icon: History, onClick: () => setRiwayatUntuk(p) },
     menungguKeputusan && {
       key: "tolak", label: "Tolak", destructive: true,
       onClick: () => {
@@ -89,11 +112,12 @@ function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk }) {
 // Tab ini untuk pembelian yang TIDAK lewat proses tagihan formal itu —
 // dibayar tunai/transfer langsung, atau ditalangi dulu oleh karyawan.
 //
-// ⚠️ UANG MUKA (DP) tidak selesai sendiri: jenis "Uang Muka Pembelian"
-// mencatat DP sebagai ASET (akun 1-1500), bukan beban. Saat barang/jasanya
-// akhirnya diterima, saldo itu dipindahkan ke akun tujuan sebenarnya lewat
-// Jurnal Umum manual — sengaja tidak diotomasi, lihat catatan di
-// services/finance/posting/purchase.js.
+// ⚠️ UANG MUKA (DP): jenis "Uang Muka Pembelian" mencatat DP sebagai ASET
+// (akun 1-1500), bukan beban. Begitu pembelian mode Utang dari supplier yang
+// SAMA sudah Disetujui, saldo DP itu bisa DITERAPKAN lewat aksi "Terapkan
+// Uang Muka" (menu titik-tiga baris pembelian mode Utang) — mengotomasi
+// langkah yang sebelumnya harus manual lewat Jurnal Umum. Lihat
+// services/finance/posting/purchaseAdvance.js untuk jurnalnya.
 
 const STATUS_TAB = [
   { key: "MENUNGGU_APPROVAL", label: "Menunggu Persetujuan" },
@@ -129,6 +153,8 @@ export default function FinancePurchases() {
   const [modalBaru, setModalBaru] = useState(false);
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
+  const [terapkanUntuk, setTerapkanUntuk] = useState(null);
+  const [riwayatUntuk, setRiwayatUntuk] = useState(null);
   const [tableRef, tier] = useContainerTier();
   const [terbuka, setTerbuka] = useState(() => new Set());
   const balikTerbuka = (id) => setTerbuka((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -179,8 +205,14 @@ export default function FinancePurchases() {
       await fn();
       setModalBaru(false);
       setBayarUntuk(null);
+      setTerapkanUntuk(null);
       await muat({ diam: true });
     } catch (e) {
+      // 409 = data sudah berubah di server sejak layar ini terakhir dimuat
+      // (mis. DP/pembelian sudah dipakai/dibatalkan orang lain barusan) —
+      // muat ulang supaya layar tidak menampilkan pilihan yang sudah basi,
+      // BUKAN cuma menunjukkan error di atas data lama.
+      if (e.status === 409) await muat({ diam: true });
       setPesan(e.message);
     }
   }
@@ -290,7 +322,7 @@ export default function FinancePurchases() {
             {tier === "card" ? (
               <CardList>
                 {purchases.map((p) => {
-                  const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk });
+                  const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk });
                   return (
                     <RowCard
                       key={p.id}
@@ -300,6 +332,7 @@ export default function FinancePurchases() {
                       fields={[
                         { label: "Tanggal", value: tanggalPendek(p.date) },
                         { label: "Nominal", value: formatUang(p.amount) },
+                        ...(teksDpBadge(p) ? [{ label: "Uang Muka", value: teksDpBadge(p) }] : []),
                         { label: "Jenis", value: p.category?.name },
                         { label: "Divisi", value: LABEL_DIVISI[p.division] || p.division },
                         { label: "Mode", value: teksModePembelian(p.mode) },
@@ -336,7 +369,7 @@ export default function FinancePurchases() {
                   </THead>
                   <TBody>
                     {purchases.map((p) => {
-                      const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk });
+                      const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk });
                       const klasifikasi = (
                         <>
                           <span className="block truncate text-[12px]" title={p.category?.name}>{p.category?.name}</span>
@@ -370,7 +403,10 @@ export default function FinancePurchases() {
                             </TD>
                             {(tier === "full" || tier === "reduced") && <TD className="min-w-0">{klasifikasi}</TD>}
                             {tier === "full" && <TD className="min-w-0">{pembayaran}</TD>}
-                            <TD numeric><Uang value={p.amount} /></TD>
+                            <TD numeric>
+                              <Uang value={p.amount} />
+                              {teksDpBadge(p) && <span className="block truncate text-[11px] text-ink3" title={teksDpBadge(p)}>{teksDpBadge(p)}</span>}
+                            </TD>
                             <TD><StatusBadge status={p.status} /></TD>
                             {tier === "full" && <TD>{bukti}</TD>}
                             {tier !== "full" && (
@@ -389,6 +425,7 @@ export default function FinancePurchases() {
                               fields={[
                                 { label: "Mode", value: teksModePembelian(p.mode) },
                                 { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
+                                ...(teksDpBadge(p) ? [{ label: "Uang Muka", value: teksDpBadge(p) }] : []),
                                 { label: "Bukti", value: bukti },
                               ]}
                             />
@@ -403,6 +440,7 @@ export default function FinancePurchases() {
                                 { label: "Divisi", value: <Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge> },
                                 { label: "Mode", value: teksModePembelian(p.mode) },
                                 { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
+                                ...(teksDpBadge(p) ? [{ label: "Uang Muka", value: teksDpBadge(p) }] : []),
                                 { label: "Bukti", value: bukti },
                               ]}
                             />
@@ -433,6 +471,14 @@ export default function FinancePurchases() {
         doc={editUntuk} jenis="purchases" kategori={kategori} rekening={rekening}
         onClose={() => setEditUntuk(null)}
         onSaved={() => { setEditUntuk(null); muat({ diam: true }); }}
+      />
+      <ModalTerapkanDp
+        purchase={terapkanUntuk} onClose={() => setTerapkanUntuk(null)}
+        onSubmit={(d, idemKey) => aksi(() => api.applyPurchaseAdvance(d, idemKey))}
+      />
+      <ModalRiwayatDp
+        purchase={riwayatUntuk} onClose={() => setRiwayatUntuk(null)}
+        onChanged={() => muat({ diam: true })}
       />
     </HalamanFinance>
   );
@@ -481,9 +527,9 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
         </Field>
         {isUangMuka && (
           <Penjelasan>
-            Uang muka dicatat sebagai <strong>aset</strong> (Uang Muka Pembelian), bukan beban. Saat barang/jasanya
-            diterima, pindahkan saldonya ke akun tujuan sebenarnya lewat <strong>Jurnal Umum</strong> — langkah itu
-            tidak otomatis.
+            Uang muka dicatat sebagai <strong>aset</strong> (Uang Muka Pembelian), bukan beban. Begitu pembelian
+            finalnya (mode Utang, supplier yang sama) sudah Disetujui, terapkan saldo DP ini lewat aksi{" "}
+            <strong>Terapkan Uang Muka</strong> di baris pembelian tersebut — tidak perlu lagi lewat Jurnal Umum manual.
           </Penjelasan>
         )}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -533,6 +579,14 @@ function ModalBayar({ purchase, onClose, rekening, onSubmit }) {
   useEffect(() => { setF({ cashAccountId: purchase?.cashAccountId || "", paidAt: "" }); }, [purchase]);
   if (!purchase) return null;
 
+  // `sisaUtang` datang dari GET /purchases (dihitung server, lihat
+  // financeTransactions.js) untuk baris mode Utang yang sudah menerima
+  // penerapan DP — kalau DP sudah menutupi SELURUH utangnya, tidak ada uang
+  // tunai yang keluar lagi, jadi rekening kas TIDAK wajib diisi (server pun
+  // sudah menerapkan aturan yang sama, lihat postPurchasePaid).
+  const sisaTunai = purchase.sisaUtang != null ? purchase.sisaUtang : purchase.amount;
+  const lunasViaDp = sisaTunai <= 0;
+
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()}
@@ -541,26 +595,271 @@ function ModalBayar({ purchase, onClose, rekening, onSubmit }) {
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit(f)} disabled={!f.cashAccountId}>Catat Pembayaran</TombolAksi>
+          <TombolAksi onClick={() => onSubmit(f)} disabled={!lunasViaDp && !f.cashAccountId}>
+            {lunasViaDp ? "Tandai Lunas" : "Catat Pembayaran"}
+          </TombolAksi>
         </>
       }
     >
       <div className="space-y-3">
+        {purchase.dpDiterapkan > 0 && (
+          <Penjelasan>
+            Uang Muka {formatUang(purchase.dpDiterapkan)} sudah diterapkan ke pembelian ini
+            {lunasViaDp
+              ? " — seluruh utangnya sudah lunas dari DP, tidak ada uang tunai yang keluar lagi."
+              : `, sisa yang dibayar tunai ${formatUang(sisaTunai)}.`}
+          </Penjelasan>
+        )}
         <p className="text-[13px] text-ink2">
           Barang/asetnya sudah tercatat di buku besar saat pembelian ini disetujui. Langkah ini mencatat{" "}
           <strong>keluarnya uang</strong> dan melunasi{" "}
           {purchase.mode === "REIMBURSEMENT" ? "utang reimbursement ke karyawan" : "utang ke pihak ketiga"}.
         </p>
-        <Field label="Uang keluar dari" required>
-          <Pilihan value={f.cashAccountId} onChange={(v) => setF((s) => ({ ...s, cashAccountId: v }))}>
-            <option value="">— pilih —</option>
-            {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </Pilihan>
-        </Field>
+        {!lunasViaDp && (
+          <Field label="Uang keluar dari" required>
+            <Pilihan value={f.cashAccountId} onChange={(v) => setF((s) => ({ ...s, cashAccountId: v }))}>
+              <option value="">— pilih —</option>
+              {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </Pilihan>
+          </Field>
+        )}
         <Field label="Tanggal bayar">
           <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.paidAt} onChange={(v) => setF((s) => ({ ...s, paidAt: v }))} />
         </Field>
       </div>
     </Modal>
+  );
+}
+
+// Kunci per PERCOBAAN penerapan (dibangkitkan sekali saat modal dibuka,
+// dipakai ulang kalau user klik "Terapkan" lagi setelah error — BUKAN
+// dibangkitkan ulang tiap klik, supaya retry logis tetap idempoten alih-alih
+// jadi percobaan baru yang tidak lagi dikenali server sebagai hal yang sama).
+function idemKeyBaru() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function ModalTerapkanDp({ purchase, onClose, onSubmit }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [dpId, setDpId] = useState("");
+  const [amount, setAmount] = useState("");
+  const idemKeyRef = useRef(null);
+
+  useEffect(() => {
+    if (!purchase) { setData(null); setDpId(""); setAmount(""); idemKeyRef.current = null; return; }
+    idemKeyRef.current = idemKeyBaru();
+    setLoading(true); setError(null);
+    api.getPurchaseAdvanceEligible(purchase.id)
+      .then((r) => setData(r))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [purchase]);
+
+  if (!purchase) return null;
+
+  const dpTerpilih = data?.eligible?.find((k) => k.id === dpId);
+  const sisaUtang = data?.sisaUtang ?? 0;
+  const nominal = Number(amount) || 0;
+  const batasNominal = dpTerpilih ? Math.min(dpTerpilih.saldoTersedia, sisaUtang) : 0;
+  const valid = !!dpTerpilih && nominal > 0 && nominal <= batasNominal;
+  const sisaSetelah = Math.max(0, sisaUtang - nominal);
+
+  function pilihDp(id) {
+    setDpId(id);
+    const k = data.eligible.find((x) => x.id === id);
+    if (k) setAmount(String(Math.min(k.saldoTersedia, sisaUtang)));
+  }
+
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()}
+      title={`Terapkan Uang Muka — ${purchase.purchaseNumber}`}
+      description={purchase.description}
+      className="w-[560px]"
+      footer={
+        <>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
+          <TombolAksi
+            disabled={!valid}
+            confirmText={dpTerpilih ? `Terapkan ${formatUang(nominal)} dari ${dpTerpilih.purchaseNumber} ke ${purchase.purchaseNumber}?` : undefined}
+            onClick={() => onSubmit(
+              { advancePurchaseId: dpId, targetPurchaseId: purchase.id, amount: nominal },
+              idemKeyRef.current
+            )}
+          >
+            Terapkan
+          </TombolAksi>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {loading && <p className="text-[13px] text-ink3">Memuat daftar uang muka…</p>}
+        {error && <p className="text-[13px] text-red">{error}</p>}
+        {data && !data.bisaMenerapkan && (
+          <Penjelasan>
+            {(data.alasan || []).map((a, i) => <span key={i} className="block">{a}</span>)}
+          </Penjelasan>
+        )}
+        {data?.bisaMenerapkan && data.eligible.length === 0 && (
+          <p className="text-[13px] text-ink3">Tidak ada uang muka (DP) dari supplier yang sama dengan saldo tersedia.</p>
+        )}
+        {data?.bisaMenerapkan && data.eligible.length > 0 && (
+          <>
+            <Field label="Pilih uang muka (DP)" required>
+              <div className="space-y-1.5">
+                {data.eligible.map((k) => (
+                  <label
+                    key={k.id}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-[13px]",
+                      dpId === k.id ? "border-accent bg-accentbg" : "border-line"
+                    )}
+                  >
+                    <input type="radio" name="dp-terapkan" checked={dpId === k.id} onChange={() => pilihDp(k.id)} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{k.purchaseNumber} · {tanggalPendek(k.date)}</span>
+                      <span className="block truncate text-[11px] text-ink3">Tersedia {formatUang(k.saldoTersedia)} dari {formatUang(k.nilaiAwal)}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </Field>
+            <Field
+              label="Nominal diterapkan" required
+              hint={dpTerpilih ? `Maksimal ${formatUang(batasNominal)}` : "Pilih uang muka dulu"}
+            >
+              <InputUang value={amount} onChange={setAmount} />
+            </Field>
+            <div className="space-y-1 rounded-md bg-inset px-3 py-2 text-[13px]">
+              <p className="flex justify-between"><span className="text-ink3">Total Pembelian</span><span className="font-medium">{formatUang(purchase.amount)}</span></p>
+              <p className="flex justify-between"><span className="text-ink3">Uang Muka Diterapkan</span><span className="font-medium">{formatUang(nominal)}</span></p>
+              <p className="flex justify-between"><span className="text-ink3">Sisa Pembayaran</span><span className="font-medium">{formatUang(sisaSetelah)}</span></p>
+              <p className="flex justify-between"><span className="text-ink3">Rekening Pembayaran Sisa</span><span className="font-medium">{purchase.cashAccount?.name || "belum dipilih — diminta saat membayar sisa"}</span></p>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function ModalRiwayatDp({ purchase, onClose, onChanged }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [pesan, setPesan] = useState(null);
+
+  const muat = useCallback(async () => {
+    if (!purchase) return;
+    setLoading(true); setError(null);
+    try {
+      const r = await api.getPurchaseAdvanceSummary(purchase.id);
+      setData(r);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [purchase]);
+
+  useEffect(() => { muat(); }, [muat]);
+
+  if (!purchase) return null;
+
+  async function batalkan(app) {
+    const alasan = window.prompt(
+      `Batalkan penerapan DP ${formatUang(app.amount)}? Saldo DP akan tersedia lagi, dan Utang Usaha pembelian tujuan akan naik kembali.`
+    );
+    if (!alasan?.trim()) return;
+    try {
+      await api.cancelPurchaseAdvanceApplication(app.id, alasan.trim());
+      await muat();
+      onChanged?.();
+    } catch (e) {
+      if (e.status === 409) await muat();
+      setPesan(e.message);
+    }
+  }
+
+  const sumber = data?.sebagaiSumberUangMuka;
+  const tujuan = data?.sebagaiTujuanPembelian;
+
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()}
+      title={`Riwayat Uang Muka — ${purchase.purchaseNumber}`}
+      description={purchase.description}
+      className="w-[560px]"
+      footer={<Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Tutup</Button>}
+    >
+      <div className="space-y-4">
+        {pesan && <p className="text-[13px] text-red">{pesan}</p>}
+        {loading && <p className="text-[13px] text-ink3">Memuat…</p>}
+        {error && <p className="text-[13px] text-red">{error}</p>}
+
+        {data?.kategoriUangMuka && sumber && (
+          <div className="space-y-2">
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-ink3">Sebagai Sumber Uang Muka</p>
+            <div className="grid grid-cols-3 gap-2 text-[13px]">
+              <div><p className="text-ink3">Nilai Awal</p><p className="font-semibold">{formatUang(sumber.nilaiAwal)}</p></div>
+              <div><p className="text-ink3">Sudah Digunakan</p><p className="font-semibold">{formatUang(sumber.sudahDigunakan)}</p></div>
+              <div><p className="text-ink3">Saldo Tersedia</p><p className="font-semibold">{formatUang(sumber.saldoTersedia)}</p></div>
+            </div>
+            <RiwayatDpList items={sumber.histori} arah="ke" onBatalkan={batalkan} />
+          </div>
+        )}
+
+        {tujuan && purchase.mode === "UTANG" && (
+          <div className="space-y-2">
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-ink3">Sebagai Penerima Uang Muka</p>
+            <div className="grid grid-cols-3 gap-2 text-[13px]">
+              <div><p className="text-ink3">Total Pembelian</p><p className="font-semibold">{formatUang(tujuan.totalPembelian)}</p></div>
+              <div><p className="text-ink3">DP Diterapkan</p><p className="font-semibold">{formatUang(tujuan.dpDiterapkan)}</p></div>
+              <div><p className="text-ink3">Sisa Utang</p><p className="font-semibold">{formatUang(tujuan.sisaUtang)}</p></div>
+            </div>
+            <RiwayatDpList items={tujuan.histori} arah="dari" onBatalkan={batalkan} />
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function RiwayatDpList({ items, arah, onBatalkan }) {
+  if (!items || items.length === 0) return <p className="text-[13px] text-ink3">Belum ada penerapan.</p>;
+  return (
+    <div className="space-y-2">
+      {items.map((it) => {
+        const lain = arah === "ke" ? it.targetPurchase : it.advancePurchase;
+        return (
+          <div key={it.id} className="flex items-center justify-between gap-2 rounded-md border border-line px-3 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-medium">{formatUang(it.amount)} {arah} {lain?.purchaseNumber || "—"}</p>
+              <p className="truncate text-[11px] text-ink3">
+                {tanggalPendek(it.createdAt)} · {it.createdBy || "—"} · jurnal {it.journal?.entryNumber || "—"}
+              </p>
+              {it.status === "REVERSED" && (
+                <p className="truncate text-[11px] text-red">
+                  Dibatalkan {tanggalPendek(it.reversedAt)} oleh {it.reversedBy || "—"} — {it.reverseReason}
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Badge variant={it.status === "ACTIVE" ? "accent" : "neutral"}>
+                {it.status === "ACTIVE" ? "Aktif" : "Dibatalkan"}
+              </Badge>
+              {it.status === "ACTIVE" && (
+                <Button size="sm" variant="neutral" onClick={() => onBatalkan(it)} title="Batalkan penerapan ini">
+                  <Ban size={14} />
+                </Button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

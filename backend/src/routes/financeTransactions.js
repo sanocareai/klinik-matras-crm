@@ -34,7 +34,8 @@ import { toMoney, sumMoney, moneyToNumber, ZERO, MoneyError } from "../services/
 import { AccountError } from "../services/finance/accounts.js";
 import { SETTING_KEYS, getSettingRaw, parseIntOr, getVerificationGate } from "../services/finance/settings.js";
 import { postExpenseApproved, postExpensePaid, KEY as EXPENSE_KEY } from "../services/finance/posting/expense.js";
-import { postPurchaseApproved, postPurchasePaid, KEY as PURCHASE_KEY } from "../services/finance/posting/purchase.js";
+import { postPurchaseApproved, postPurchasePaid, totalDpDiterapkan, KEY as PURCHASE_KEY } from "../services/finance/posting/purchase.js";
+import { postAdvanceApplied } from "../services/finance/posting/purchaseAdvance.js";
 import {
   postSupplierBill, postSupplierPayment, recomputeBillStatus, KEY as SUPPLIER_KEY,
 } from "../services/finance/posting/supplier.js";
@@ -665,8 +666,43 @@ financeTxRouter.get("/purchases",
       });
 
       const total = purchases.length === 0 ? ZERO : sumMoney(purchases.map((p) => p.amount));
+
+      // Indikator "DP Rp…"/"Sisa Rp…" untuk daftar — dua agregat sekali
+      // jalan (bukan N+1 per baris). Sisi TUJUAN: pembelian mode UTANG
+      // menerima DP → dpDiterapkan/sisaUtang. Sisi SUMBER: pembelian
+      // kategori Uang Muka Pembelian yang sudah dipakai → dpDigunakan/
+      // dpTersedia. Baris yang tidak masuk salah satu golongan ini tidak
+      // dapat field tambahan sama sekali (tabel tidak makin sesak).
+      const idTujuan = purchases.filter((p) => p.mode === "UTANG" && p.category?.code !== "UANG_MUKA_PEMBELIAN").map((p) => p.id);
+      const idSumber = purchases.filter((p) => p.category?.code === "UANG_MUKA_PEMBELIAN").map((p) => p.id);
+      const [grupTujuan, grupSumber] = await Promise.all([
+        idTujuan.length === 0 ? [] : prisma.finPurchaseAdvanceApplication.groupBy({
+          by: ["targetPurchaseId"], where: { targetPurchaseId: { in: idTujuan }, status: "ACTIVE" }, _sum: { amount: true },
+        }),
+        idSumber.length === 0 ? [] : prisma.finPurchaseAdvanceApplication.groupBy({
+          by: ["advancePurchaseId"], where: { advancePurchaseId: { in: idSumber }, status: "ACTIVE" }, _sum: { amount: true },
+        }),
+      ]);
+      const dpTujuanMap = new Map(grupTujuan.map((g) => [g.targetPurchaseId, g._sum.amount]));
+      const dpSumberMap = new Map(grupSumber.map((g) => [g.advancePurchaseId, g._sum.amount]));
+
       res.json({
-        purchases: purchases.map((p) => ({ ...bentukPurchase(p), notaWajib: true })), // pembelian SELALU wajib nota (aturan notaWajib)
+        purchases: purchases.map((p) => {
+          const hasil = { ...bentukPurchase(p), notaWajib: true }; // pembelian SELALU wajib nota (aturan notaWajib)
+          const dpKeTujuan = dpTujuanMap.get(p.id);
+          if (dpKeTujuan != null) {
+            const dp = toMoney(dpKeTujuan);
+            hasil.dpDiterapkan = moneyToNumber(dp);
+            hasil.sisaUtang = moneyToNumber(toMoney(p.amount).minus(dp));
+          }
+          const dpDipakai = dpSumberMap.get(p.id);
+          if (dpDipakai != null) {
+            const dp = toMoney(dpDipakai);
+            hasil.dpDigunakan = moneyToNumber(dp);
+            hasil.dpTersedia = moneyToNumber(toMoney(p.amount).minus(dp));
+          }
+          return hasil;
+        }),
         total: moneyToNumber(total),
         hanyaMilikSendiri,
         terpotong: purchases.length === 300,
@@ -839,7 +875,6 @@ financeTxRouter.post("/purchases/:id/reject", requirePermission(P.FINANCE_APPROV
 financeTxRouter.post("/purchases/:id/pay", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
     const { cashAccountId, paidAt } = req.body;
-    if (!cashAccountId) throw err("Rekening sumber pembayaran wajib dipilih");
 
     const hasil = await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, '"fin_purchases"', req.params.id);
@@ -848,11 +883,23 @@ financeTxRouter.post("/purchases/:id/pay", requirePermission(P.FINANCE_POST), as
       if (p.status !== "DISETUJUI") {
         throw err(`Hanya pembelian berstatus Disetujui yang bisa dibayar (status sekarang: ${p.status})`, 409);
       }
+
+      // Rekening kas HANYA wajib kalau masih ada sisa yang benar-benar
+      // dibayar tunai setelah DP aktif yang sudah diterapkan (lihat
+      // postPurchasePaid) — kalau DP sudah menutupi seluruh utangnya, tidak
+      // ada uang yang keluar sama sekali, jadi tidak ada rekening untuk
+      // dipilih.
+      const totalDp = await totalDpDiterapkan(tx, p.id);
+      const sisaTunai = toMoney(p.amount).minus(totalDp);
+      if (sisaTunai.greaterThan(0) && !cashAccountId) {
+        throw err("Rekening sumber pembayaran wajib dipilih");
+      }
+
       await tx.finPurchase.update({
         where: { id: p.id },
         data: {
           status: "DIBAYAR",
-          cashAccountId,
+          ...(sisaTunai.greaterThan(0) && { cashAccountId }),
           paidAt: paidAt ? parseTanggal(paidAt) : new Date(),
           paidById: req.user.id,
         },
@@ -861,7 +908,10 @@ financeTxRouter.post("/purchases/:id/pay", requirePermission(P.FINANCE_POST), as
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: p.id,
         eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
-        metadata: { purchaseNumber: p.purchaseNumber, aksi: "dibayar", amount: String(p.amount) },
+        metadata: {
+          purchaseNumber: p.purchaseNumber, aksi: "dibayar", amount: String(p.amount),
+          ...(totalDp.greaterThan(0) && { dpDiterapkan: totalDp.toFixed(2), sisaTunai: sisaTunai.toFixed(2) }),
+        },
       });
       return p;
     });
@@ -884,6 +934,21 @@ financeTxRouter.post("/purchases/:id/cancel", requirePermission(P.FINANCE_ADMIN)
       const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
       if (!p) throw err("Pembelian tidak ditemukan", 404);
       if (p.status === "DIBATALKAN") throw err("Pembelian ini sudah dibatalkan", 409);
+
+      // Pembelian ini tidak boleh masih terkait penerapan DP AKTIF (sebagai
+      // sumber DP ATAU sebagai penerima DP) — membatalkan salah satunya akan
+      // meninggalkan baris FinPurchaseAdvanceApplication yang menunjuk ke
+      // jurnal pengakuan/pelunasan yang sudah dibalik, tidak lagi masuk akal
+      // secara akuntansi. Batalkan/reversal penerapan DP-nya dulu.
+      const aplikasiAktif = await tx.finPurchaseAdvanceApplication.count({
+        where: { status: "ACTIVE", OR: [{ advancePurchaseId: p.id }, { targetPurchaseId: p.id }] },
+      });
+      if (aplikasiAktif > 0) {
+        throw err(
+          `Pembelian ini masih terkait ${aplikasiAktif} penerapan uang muka yang aktif — batalkan penerapannya dulu (lihat Riwayat Penerapan DP) sebelum membatalkan pembelian ini`,
+          409
+        );
+      }
 
       const alasanBatal = `Pembelian ${p.purchaseNumber} dibatalkan — ${reason}`;
       await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchasePaid(p.id), alasan: alasanBatal, userId: req.user.id });
@@ -994,6 +1059,24 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
       const menyentuhJurnal = Object.keys(perubahan).some((k) => FIELD_JURNAL.has(k));
 
+      if (menyentuhJurnal) {
+        // Koreksi yang menyentuh jurnal membalik lalu memposting ULANG
+        // jurnal pengakuan/pelunasan pembelian ini — kalau ada penerapan DP
+        // AKTIF yang menempel (sebagai sumber ATAU tujuan), saldo DP/sisa
+        // utang yang sudah dihitung berdasarkan nominal LAMA akan salah
+        // begitu nominal barunya terposting. Batalkan/reversal penerapan
+        // DP-nya dulu sebelum koreksi field yang mempengaruhi jurnal.
+        const aplikasiAktif = await tx.finPurchaseAdvanceApplication.count({
+          where: { status: "ACTIVE", OR: [{ advancePurchaseId: p.id }, { targetPurchaseId: p.id }] },
+        });
+        if (aplikasiAktif > 0) {
+          throw err(
+            `Pembelian ini masih terkait ${aplikasiAktif} penerapan uang muka yang aktif — batalkan penerapannya dulu sebelum koreksi yang mengubah nominal/kategori/dll`,
+            409
+          );
+        }
+      }
+
       const alasanKoreksi = `Koreksi ${p.purchaseNumber} — ${reason}`;
       if (menyentuhJurnal) {
         await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchasePaid(p.id), alasan: alasanKoreksi, userId: req.user.id });
@@ -1023,6 +1106,325 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
     });
     const lengkap = await prisma.finPurchase.findUnique({ where: { id: hasil.id }, include: purchaseInclude });
     res.json(bentukPurchase(lengkap));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// TERAPKAN UANG MUKA — FinPurchaseAdvanceApplication
+//
+// Otomatisasi dari langkah yang sebelumnya manual lewat Jurnal Umum: DP
+// (FinPurchase kategori UANG_MUKA_PEMBELIAN, sudah DIBAYAR) diterapkan
+// mengurangi Utang Usaha pembelian TARGET (FinPurchase mode UTANG, status
+// DISETUJUI, supplier yang SAMA). Lihat posting/purchaseAdvance.js untuk
+// jurnalnya, dan komentar model FinPurchaseAdvanceApplication di schema.
+// ═════════════════════════════════════════════════════════════════════════
+
+function saldoDariAplikasi(list) {
+  return list.length === 0 ? ZERO : sumMoney(list.map((a) => a.amount));
+}
+
+function bentukAplikasiDp(a) {
+  return {
+    id: a.id,
+    amount: moneyToNumber(a.amount),
+    status: a.status,
+    createdAt: a.createdAt,
+    createdBy: a.createdBy?.name || null,
+    journal: a.journal ? { id: a.journal.id, entryNumber: a.journal.entryNumber } : null,
+    reversalJournal: a.reversalJournal ? { id: a.reversalJournal.id, entryNumber: a.reversalJournal.entryNumber } : null,
+    reversedAt: a.reversedAt,
+    reversedBy: a.reversedBy?.name || null,
+    reverseReason: a.reverseReason,
+    ...(a.advancePurchase && { advancePurchase: a.advancePurchase }),
+    ...(a.targetPurchase && { targetPurchase: a.targetPurchase }),
+  };
+}
+
+/** Daftar DP eligible untuk diterapkan ke SATU pembelian tujuan (dipakai picker UI). */
+financeTxRouter.get("/purchases/:id/advance-eligible",
+  requireAnyPermission(P.FINANCE_READ, P.FINANCE_POST),
+  async (req, res) => {
+    try {
+      const target = await prisma.finPurchase.findUnique({
+        where: { id: req.params.id },
+        include: { category: { select: { code: true } } },
+      });
+      if (!target) throw err("Pembelian tidak ditemukan", 404);
+
+      const alasan = [];
+      if (target.category.code === "UANG_MUKA_PEMBELIAN") alasan.push("Pembelian ini sendiri berkategori Uang Muka Pembelian — tidak bisa menerima penerapan DP lain");
+      if (target.mode !== "UTANG") alasan.push("Hanya pembelian mode Utang yang punya Utang Usaha untuk dikurangi DP");
+      if (target.status !== "DISETUJUI") alasan.push(`Status pembelian ini ${target.status} — hanya status Disetujui (belum dibayar) yang bisa menerima penerapan DP`);
+      if (!target.supplierId) alasan.push("Pembelian ini belum punya supplier — DP hanya bisa diterapkan antar dokumen supplier yang sama");
+
+      if (alasan.length > 0) {
+        return res.json({ eligible: [], bisaMenerapkan: false, alasan });
+      }
+
+      const kandidat = await prisma.finPurchase.findMany({
+        where: { supplierId: target.supplierId, status: "DIBAYAR", category: { code: "UANG_MUKA_PEMBELIAN" } },
+        include: { advanceApplicationsAsSource: { where: { status: "ACTIVE" }, select: { amount: true } } },
+        orderBy: { date: "asc" },
+      });
+
+      const aplikasiTarget = await prisma.finPurchaseAdvanceApplication.findMany({
+        where: { targetPurchaseId: target.id, status: "ACTIVE" }, select: { amount: true },
+      });
+      const sisaUtang = toMoney(target.amount).minus(saldoDariAplikasi(aplikasiTarget));
+
+      const eligible = kandidat
+        .map((k) => {
+          const dipakai = saldoDariAplikasi(k.advanceApplicationsAsSource);
+          const tersedia = toMoney(k.amount).minus(dipakai);
+          return {
+            id: k.id, purchaseNumber: k.purchaseNumber, date: k.date,
+            nilaiAwal: moneyToNumber(k.amount), sudahDigunakan: moneyToNumber(dipakai), saldoTersedia: moneyToNumber(tersedia),
+          };
+        })
+        .filter((k) => k.saldoTersedia > 0);
+
+      res.json({ eligible, bisaMenerapkan: true, sisaUtang: moneyToNumber(sisaUtang), totalPembelian: moneyToNumber(target.amount) });
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
+
+/** Ringkasan + histori penerapan DP untuk SATU pembelian (sisi sumber DP maupun sisi penerima). */
+financeTxRouter.get("/purchases/:id/advance-summary",
+  requireAnyPermission(P.FINANCE_READ, P.FINANCE_EXPENSE_SUBMIT),
+  async (req, res) => {
+    try {
+      const p = await prisma.finPurchase.findUnique({
+        where: { id: req.params.id },
+        include: { category: { select: { code: true } } },
+      });
+      if (!p) throw err("Pembelian tidak ditemukan", 404);
+
+      const aplikasiInclude = {
+        journal: { select: { id: true, entryNumber: true } },
+        reversalJournal: { select: { id: true, entryNumber: true } },
+        createdBy: { select: { name: true } },
+        reversedBy: { select: { name: true } },
+      };
+      const [sebagaiSumber, sebagaiTujuan] = await Promise.all([
+        prisma.finPurchaseAdvanceApplication.findMany({
+          where: { advancePurchaseId: p.id },
+          include: { ...aplikasiInclude, targetPurchase: { select: { id: true, purchaseNumber: true, description: true } } },
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.finPurchaseAdvanceApplication.findMany({
+          where: { targetPurchaseId: p.id },
+          include: { ...aplikasiInclude, advancePurchase: { select: { id: true, purchaseNumber: true, description: true } } },
+          orderBy: { createdAt: "desc" },
+        }),
+      ]);
+
+      const dipakaiDariSumber = saldoDariAplikasi(sebagaiSumber.filter((a) => a.status === "ACTIVE"));
+      const dpDiterapkanKeTujuan = saldoDariAplikasi(sebagaiTujuan.filter((a) => a.status === "ACTIVE"));
+      const sisaUtang = toMoney(p.amount).minus(dpDiterapkanKeTujuan);
+
+      res.json({
+        purchaseId: p.id, purchaseNumber: p.purchaseNumber, kategoriUangMuka: p.category.code === "UANG_MUKA_PEMBELIAN",
+        sebagaiSumberUangMuka: {
+          nilaiAwal: moneyToNumber(p.amount),
+          sudahDigunakan: moneyToNumber(dipakaiDariSumber),
+          saldoTersedia: moneyToNumber(toMoney(p.amount).minus(dipakaiDariSumber)),
+          histori: sebagaiSumber.map(bentukAplikasiDp),
+        },
+        sebagaiTujuanPembelian: {
+          totalPembelian: moneyToNumber(p.amount),
+          dpDiterapkan: moneyToNumber(dpDiterapkanKeTujuan),
+          sisaUtang: moneyToNumber(sisaUtang),
+          sisaDibayarTunai: p.status === "DIBAYAR" ? 0 : moneyToNumber(sisaUtang),
+          histori: sebagaiTujuan.map(bentukAplikasiDp),
+        },
+      });
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
+
+/** Terapkan sebagian/seluruh saldo DP ke satu pembelian tujuan. */
+financeTxRouter.post("/purchases/advance-applications", requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const idemKey = req.headers["idempotency-key"];
+    if (!idemKey) {
+      throw err(
+        "Header Idempotency-Key wajib untuk menerapkan uang muka — mencegah penerapan ganda akibat double-click atau permintaan yang diulang",
+        400
+      );
+    }
+
+    const { advancePurchaseId, targetPurchaseId, amount } = req.body;
+    if (!advancePurchaseId) throw err("Pembelian sumber (uang muka) wajib dipilih");
+    if (!targetPurchaseId) throw err("Pembelian tujuan wajib dipilih");
+    if (advancePurchaseId === targetPurchaseId) throw err("Sumber dan tujuan tidak boleh pembelian yang sama");
+    const nominal = toMoney(amount, { field: "Nominal penerapan" });
+    if (nominal.lessThanOrEqualTo(0)) throw err("Nominal penerapan harus lebih dari 0");
+
+    const hasil = await prisma.$transaction(async (tx) => {
+      // Kunci kedua baris pembelian TERURUT (id) — dua penerapan paralel yang
+      // menyentuh pembelian yang sama (sebagai sumber ATAU tujuan) diserialkan,
+      // pola persis lock tagihan supplier di /supplier-payments di atas.
+      for (const id of [advancePurchaseId, targetPurchaseId].sort()) {
+        await lockRowForUpdate(tx, '"fin_purchases"', id);
+      }
+
+      const [advance, target] = await Promise.all([
+        tx.finPurchase.findUnique({ where: { id: advancePurchaseId }, include: { category: { select: { code: true } } } }),
+        tx.finPurchase.findUnique({ where: { id: targetPurchaseId }, include: { category: { select: { code: true } } } }),
+      ]);
+      if (!advance) throw err("Pembelian sumber (uang muka) tidak ditemukan", 404);
+      if (!target) throw err("Pembelian tujuan tidak ditemukan", 404);
+
+      if (advance.category.code !== "UANG_MUKA_PEMBELIAN") {
+        throw err(`${advance.purchaseNumber} bukan pembelian berkategori Uang Muka Pembelian`, 400);
+      }
+      if (advance.status !== "DIBAYAR") {
+        throw err(`Uang muka ${advance.purchaseNumber} berstatus ${advance.status} — hanya uang muka yang sudah Dibayar yang bisa diterapkan`, 409);
+      }
+      if (target.category.code === "UANG_MUKA_PEMBELIAN") {
+        throw err("Tidak bisa menerapkan uang muka ke pembelian uang muka lain", 400);
+      }
+      if (target.mode !== "UTANG") {
+        throw err(`${target.purchaseNumber} bukan pembelian mode Utang — tidak ada Utang Usaha yang bisa dikurangi`, 400);
+      }
+      if (target.status !== "DISETUJUI") {
+        throw err(`${target.purchaseNumber} berstatus ${target.status} — hanya pembelian Disetujui (belum dibayar) yang bisa menerima penerapan DP`, 409);
+      }
+      if (!advance.supplierId || !target.supplierId || advance.supplierId !== target.supplierId) {
+        throw err("Uang muka dan pembelian tujuan harus dari supplier yang sama", 400);
+      }
+
+      const [aplikasiSumber, aplikasiTujuan] = await Promise.all([
+        tx.finPurchaseAdvanceApplication.findMany({ where: { advancePurchaseId, status: "ACTIVE" }, select: { amount: true } }),
+        tx.finPurchaseAdvanceApplication.findMany({ where: { targetPurchaseId, status: "ACTIVE" }, select: { amount: true } }),
+      ]);
+      const saldoTersedia = toMoney(advance.amount).minus(saldoDariAplikasi(aplikasiSumber));
+      const sisaUtang = toMoney(target.amount).minus(saldoDariAplikasi(aplikasiTujuan));
+
+      if (nominal.greaterThan(saldoTersedia)) {
+        throw err(`Nominal (${nominal.toFixed(2)}) melebihi saldo uang muka tersedia (${saldoTersedia.toFixed(2)})`, 400);
+      }
+      if (nominal.greaterThan(sisaUtang)) {
+        throw err(`Nominal (${nominal.toFixed(2)}) melebihi sisa utang pembelian tujuan (${sisaUtang.toFixed(2)})`, 400);
+      }
+
+      // Jurnal DULU (idempoten lewat kunci berbasis header, lihat komentar
+      // panjang di purchaseAdvance.js soal kenapa BUKAN berbasis id baris
+      // aplikasi) — baru baris aplikasinya, SAVEPOINT-guarded terhadap race
+      // idempotencyKey. Kalau baris aplikasi ternyata sudah ada (request
+      // kembar yang lolos ke sini), kembalikan baris yang MENANG race —
+      // jangan buat baris/jurnal kedua.
+      const applicationId = randomUUID();
+      const { entry: journalEntry } = await postAdvanceApplied(tx, {
+        idemKey: String(idemKey), sourceId: applicationId,
+        advancePurchase: advance, targetPurchase: target, amount: nominal, userId: req.user.id,
+      });
+
+      await tx.$executeRawUnsafe("SAVEPOINT sp_advance_apply");
+      let application;
+      try {
+        application = await tx.finPurchaseAdvanceApplication.create({
+          data: {
+            id: applicationId, advancePurchaseId, targetPurchaseId, amount: nominal,
+            journalId: journalEntry.id, idempotencyKey: String(idemKey),
+            status: "ACTIVE", createdById: req.user.id,
+          },
+        });
+      } catch (e) {
+        await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT sp_advance_apply");
+        if (e.code === "P2002") {
+          const existing = await tx.finPurchaseAdvanceApplication.findUnique({ where: { idempotencyKey: String(idemKey) } });
+          if (existing) { application = existing; }
+          else throw e;
+        } else {
+          throw e;
+        }
+      }
+
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: targetPurchaseId,
+        eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
+        metadata: {
+          aksi: "terapkan_dp", advancePurchaseNumber: advance.purchaseNumber, targetPurchaseNumber: target.purchaseNumber,
+          amount: nominal.toFixed(2),
+        },
+      });
+
+      return application;
+    });
+
+    res.status(201).json(bentukAplikasiDp({
+      ...hasil,
+      journal: await prisma.finJournalEntry.findUnique({ where: { id: hasil.journalId }, select: { id: true, entryNumber: true } }),
+    }));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+/** Batalkan (reversal) satu penerapan DP — mengembalikan saldo DP tersedia & sisa utang target. */
+financeTxRouter.post("/purchases/advance-applications/:id/cancel", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim();
+    if (!reason) throw err("Alasan pembatalan wajib diisi");
+
+    const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_purchase_advance_applications"', req.params.id);
+      const application = await tx.finPurchaseAdvanceApplication.findUnique({
+        where: { id: req.params.id },
+        include: {
+          advancePurchase: { select: { purchaseNumber: true } },
+          targetPurchase: { select: { id: true, purchaseNumber: true, status: true } },
+        },
+      });
+      if (!application) throw err("Penerapan uang muka tidak ditemukan", 404);
+      if (application.status === "REVERSED") throw err("Penerapan ini sudah dibatalkan sebelumnya", 409);
+
+      // Kalau pembelian tujuan sudah DIBAYAR, pelunasan sisanya SUDAH
+      // diposting berdasarkan sisa utang yang memperhitungkan DP ini —
+      // membatalkan DP di titik ini akan membuat jurnal pelunasan lama
+      // salah hitung secara retroaktif. Tolak; user koreksi/batalkan
+      // pelunasannya dulu.
+      if (application.targetPurchase.status === "DIBAYAR") {
+        throw err(
+          `${application.targetPurchase.purchaseNumber} sudah lunas — batalkan/koreksi pelunasannya dulu sebelum membatalkan penerapan DP ini`,
+          409
+        );
+      }
+
+      const reversal = await reverseJournal(tx, {
+        entryId: application.journalId,
+        reason: `Penerapan DP ${application.advancePurchase.purchaseNumber} → ${application.targetPurchase.purchaseNumber} dibatalkan — ${reason}`,
+        userId: req.user.id,
+      });
+
+      const updated = await tx.finPurchaseAdvanceApplication.update({
+        where: { id: application.id },
+        data: {
+          status: "REVERSED", reversalJournalId: reversal.id,
+          reversedById: req.user.id, reversedAt: new Date(), reverseReason: reason,
+        },
+      });
+
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: application.targetPurchase.id,
+        eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: req.user.id,
+        metadata: {
+          aksi: "batalkan_penerapan_dp",
+          advancePurchaseNumber: application.advancePurchase.purchaseNumber,
+          targetPurchaseNumber: application.targetPurchase.purchaseNumber,
+          amount: String(application.amount), reason,
+        },
+      });
+
+      return updated;
+    });
+
+    res.json({ ...hasil, amount: moneyToNumber(hasil.amount) });
   } catch (e) {
     handleFinanceError(e, res);
   }

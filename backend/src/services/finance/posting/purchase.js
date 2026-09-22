@@ -27,7 +27,7 @@
 
 import { postJournal, findEntryByKey } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
-import { toMoney } from "../money.js";
+import { toMoney, sumMoney, ZERO } from "../money.js";
 
 export const KEY = {
   // `suffix` (opsional) — dipakai SATU-SATUNYA oleh alur Koreksi, pola
@@ -36,6 +36,20 @@ export const KEY = {
   purchase: (id, suffix = "") => `PEMBELIAN:${id}${suffix}`,
   purchasePaid: (id, suffix = "") => `PEMBELIAN_DIBAYAR:${id}${suffix}`,
 };
+
+/**
+ * Total DP AKTIF (status ACTIVE, belum dibatalkan) yang sudah diterapkan ke
+ * SATU pembelian target. Diekspor supaya route /purchases/:id/pay bisa
+ * memutuskan APAKAH rekening kas masih wajib diisi (tidak wajib kalau DP
+ * sudah menutupi seluruh utangnya) TANPA menduplikasi query ini.
+ */
+export async function totalDpDiterapkan(tx, targetPurchaseId) {
+  const aktif = await tx.finPurchaseAdvanceApplication.findMany({
+    where: { targetPurchaseId, status: "ACTIVE" },
+    select: { amount: true },
+  });
+  return aktif.length === 0 ? ZERO : sumMoney(aktif.map((a) => a.amount));
+}
 
 /**
  * Jurnal PENGAKUAN sebuah FinPurchase — dipanggil saat pembelian DISETUJUI,
@@ -115,6 +129,18 @@ export async function postPurchaseApproved(tx, { purchaseId, userId = null, keyS
 /**
  * Jurnal PELUNASAN pembelian mode REIMBURSEMENT/UTANG — saat uangnya benar-
  * benar keluar. Mode LANGSUNG tidak pernah melewati fungsi ini.
+ *
+ * ⚠️ Sejak "Terapkan Uang Muka" (D-XXX, 22 September 2026): untuk mode UTANG,
+ * nominal yang benar-benar dibayar TUNAI adalah `amount - Σ DP aktif yang
+ * sudah diterapkan` (lihat FinPurchaseAdvanceApplication), BUKAN `amount`
+ * mentah — DP yang sudah diterapkan sudah mengurangi Utang Usaha lewat
+ * jurnalnya sendiri (posting/purchaseAdvance.js), jadi membayar tunai
+ * sejumlah `amount` penuh di sini akan MENGHITUNG DUA KALI pengurangan utang
+ * yang sama. Kalau DP menutupi SELURUH utang (sisa <= 0), TIDAK ADA jurnal
+ * kas yang perlu diposting sama sekali — dokumen tetap boleh pindah status
+ * DIBAYAR (lihat route), tapi fungsi ini mengembalikan `posted:false`. Baris
+ * lama (dibuat sebelum fitur ini ada, jadi totalDp selalu 0) TIDAK berubah
+ * perilakunya sama sekali — `amount - 0 = amount`, persis seperti semula.
  */
 export async function postPurchasePaid(tx, { purchaseId, userId = null, keySuffix = "" }) {
   const p = await tx.finPurchase.findUnique({
@@ -131,6 +157,14 @@ export async function postPurchasePaid(tx, { purchaseId, userId = null, keySuffi
   const sudahAda = await findEntryByKey(tx, KEY.purchasePaid(purchaseId, keySuffix));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
+  const totalDp = await totalDpDiterapkan(tx, purchaseId);
+  const amount = toMoney(p.amount).minus(totalDp);
+
+  if (amount.lessThanOrEqualTo(0)) {
+    // Uang Muka sudah menutupi SELURUH utangnya — tidak ada kas yang keluar.
+    return { posted: false, reason: "lunas_via_dp" };
+  }
+
   if (!p.cashAccount) {
     throw new AccountError("Pilih rekening kas/bank sumber pembayaran sebelum menandai pembelian ini dibayar", 400);
   }
@@ -139,7 +173,6 @@ export async function postPurchasePaid(tx, { purchaseId, userId = null, keySuffi
     tx,
     p.mode === "REIMBURSEMENT" ? SYSTEM_KEYS.UTANG_REIMBURSEMENT : SYSTEM_KEYS.UTANG_USAHA
   );
-  const amount = toMoney(p.amount);
 
   const { entry, created } = await postJournal(tx, {
     date: p.paidAt || p.date,

@@ -513,38 +513,40 @@ model User {
   // MENERIMA uang tunai dari customer, jejak yang wajib permanen), seluruh
   // relasi di bawah adalah pembuat/penyetuju DOKUMEN yang isinya sendiri
   // sudah tersimpan lengkap dan tidak kehilangan arti kalau aktornya null.
-  finJournalsCreated        FinJournalEntry[]      @relation("FinJournalCreator")
-  finJournalsPosted         FinJournalEntry[]      @relation("FinJournalPoster")
-  finPeriodsClosed          FinPeriod[]            @relation("FinPeriodCloser")
-  finSettingsUpdated        FinSetting[]           @relation("FinSettingUpdater")
-  finSuppliersCreated       FinSupplier[]          @relation("FinSupplierCreator")
-  finBillsCreated           FinSupplierBill[]      @relation("FinBillCreator")
-  finBillsApproved          FinSupplierBill[]      @relation("FinBillApprover")
-  finSupplierPaymentsMade   FinSupplierPayment[]   @relation("FinSupplierPaymentCreator")
-  finSupplierPaymentsVoided FinSupplierPayment[]   @relation("FinSupplierPaymentCanceller")
-  finPaymentAllocations     FinPaymentAllocation[] @relation("FinPaymentAllocationCreator")
-  finRefundsCreated         FinRefund[]            @relation("FinRefundCreator")
-  finRefundsApproved        FinRefund[]            @relation("FinRefundApprover")
-  finExpensesCreated        FinExpense[]           @relation("FinExpenseCreator")
-  finExpensesApproved       FinExpense[]           @relation("FinExpenseApprover")
-  finExpensesPaid           FinExpense[]           @relation("FinExpensePayer")
-  finExpensesReimbursed     FinExpense[]           @relation("FinExpenseReimburseTo")
-  finPurchasesCreated       FinPurchase[]          @relation("FinPurchaseCreator")
-  finPurchasesApproved      FinPurchase[]          @relation("FinPurchaseApprover")
-  finPurchasesPaid          FinPurchase[]          @relation("FinPurchasePayer")
-  finPurchasesReimbursed    FinPurchase[]          @relation("FinPurchaseReimburseTo")
-  finExpensesReceiptVerified  FinExpense[]         @relation("FinExpenseReceiptVerifier")
-  finPurchasesReceiptVerified FinPurchase[]        @relation("FinPurchaseReceiptVerifier")
-  finKasbonEmployee           FinKasbon[]          @relation("FinKasbonEmployee")
-  finKasbonCreated            FinKasbon[]          @relation("FinKasbonCreator")
-  finKasbonRepaymentCreated   FinKasbonRepayment[] @relation("FinKasbonRepaymentCreator")
-  finOtherIncomesCreated    FinOtherIncome[]       @relation("FinOtherIncomeCreator")
-  finOtherIncomesVoided     FinOtherIncome[]       @relation("FinOtherIncomeCanceller")
-  finCashTransfersCreated   FinCashTransfer[]      @relation("FinCashTransferCreator")
-  finCashTransfersVoided    FinCashTransfer[]      @relation("FinCashTransferCanceller")
-  finBankStatementsCreated  FinBankStatement[]     @relation("FinBankStatementCreator")
-  finBankStatementsDone     FinBankStatement[]     @relation("FinReconCompleter")
-  finBankLinesMatched       FinBankStatementLine[] @relation("FinBankLineMatcher")
+  finJournalsCreated                     FinJournalEntry[]               @relation("FinJournalCreator")
+  finJournalsPosted                      FinJournalEntry[]               @relation("FinJournalPoster")
+  finPeriodsClosed                       FinPeriod[]                     @relation("FinPeriodCloser")
+  finSettingsUpdated                     FinSetting[]                    @relation("FinSettingUpdater")
+  finSuppliersCreated                    FinSupplier[]                   @relation("FinSupplierCreator")
+  finBillsCreated                        FinSupplierBill[]               @relation("FinBillCreator")
+  finBillsApproved                       FinSupplierBill[]               @relation("FinBillApprover")
+  finSupplierPaymentsMade                FinSupplierPayment[]            @relation("FinSupplierPaymentCreator")
+  finSupplierPaymentsVoided              FinSupplierPayment[]            @relation("FinSupplierPaymentCanceller")
+  finPaymentAllocations                  FinPaymentAllocation[]          @relation("FinPaymentAllocationCreator")
+  finRefundsCreated                      FinRefund[]                     @relation("FinRefundCreator")
+  finRefundsApproved                     FinRefund[]                     @relation("FinRefundApprover")
+  finExpensesCreated                     FinExpense[]                    @relation("FinExpenseCreator")
+  finExpensesApproved                    FinExpense[]                    @relation("FinExpenseApprover")
+  finExpensesPaid                        FinExpense[]                    @relation("FinExpensePayer")
+  finExpensesReimbursed                  FinExpense[]                    @relation("FinExpenseReimburseTo")
+  finPurchasesCreated                    FinPurchase[]                   @relation("FinPurchaseCreator")
+  finPurchasesApproved                   FinPurchase[]                   @relation("FinPurchaseApprover")
+  finPurchasesPaid                       FinPurchase[]                   @relation("FinPurchasePayer")
+  finPurchasesReimbursed                 FinPurchase[]                   @relation("FinPurchaseReimburseTo")
+  finExpensesReceiptVerified             FinExpense[]                    @relation("FinExpenseReceiptVerifier")
+  finPurchasesReceiptVerified            FinPurchase[]                   @relation("FinPurchaseReceiptVerifier")
+  finPurchaseAdvanceApplicationsCreated  FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationCreator")
+  finPurchaseAdvanceApplicationsReversed FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationReverser")
+  finKasbonEmployee                      FinKasbon[]                     @relation("FinKasbonEmployee")
+  finKasbonCreated                       FinKasbon[]                     @relation("FinKasbonCreator")
+  finKasbonRepaymentCreated              FinKasbonRepayment[]            @relation("FinKasbonRepaymentCreator")
+  finOtherIncomesCreated                 FinOtherIncome[]                @relation("FinOtherIncomeCreator")
+  finOtherIncomesVoided                  FinOtherIncome[]                @relation("FinOtherIncomeCanceller")
+  finCashTransfersCreated                FinCashTransfer[]               @relation("FinCashTransferCreator")
+  finCashTransfersVoided                 FinCashTransfer[]               @relation("FinCashTransferCanceller")
+  finBankStatementsCreated               FinBankStatement[]              @relation("FinBankStatementCreator")
+  finBankStatementsDone                  FinBankStatement[]              @relation("FinReconCompleter")
+  finBankLinesMatched                    FinBankStatementLine[]          @relation("FinBankLineMatcher")
 }
 
 // Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
@@ -5680,6 +5682,7 @@ enum FinJournalSource {
   PEMAKAIAN_BAHAN // HPP dari stock ledger (ISSUE/WASTE) - TIDAK menggandakan pergerakan stok
   PENERIMAAN_BAHAN // nilai persediaan dari goods receipt (putaway)
   KASBON // uang muka gaji karyawan - Piutang Karyawan (1-1350), lihat posting/kasbon.js
+  TERAPKAN_UANG_MUKA // FinPurchaseAdvanceApplication — DP pembelian (FinPurchase kategori UANG_MUKA_PEMBELIAN) diterapkan mengurangi Utang Usaha pembelian mode UTANG lain, dari supplier yang sama. Lihat posting/purchaseAdvance.js.
   REVERSAL // jurnal balik dari pembatalan jurnal lain
 }
 
@@ -5732,6 +5735,9 @@ model FinJournalEntry {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   lines FinJournalLine[]
+
+  advanceApplication         FinPurchaseAdvanceApplication? @relation("FinPurchaseAdvanceApplicationJournal")
+  advanceApplicationReversal FinPurchaseAdvanceApplication? @relation("FinPurchaseAdvanceApplicationReversalJournal")
 
   @@index([date, status]) // laporan per periode
   @@index([source, sourceId]) // "jurnal dari transaksi ini mana"
@@ -6341,12 +6347,87 @@ model FinPurchase {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  // "Terapkan Uang Muka" (D-XXX, 22 September 2026) — lihat model
+  // FinPurchaseAdvanceApplication di bawah. Sisi SUMBER: baris ini adalah DP
+  // (kategori UANG_MUKA_PEMBELIAN) yang saldonya dipakai. Sisi TUJUAN: baris
+  // ini adalah pembelian mode UTANG yang Utang Usaha-nya dikurangi DP.
+  advanceApplicationsAsSource FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationSource")
+  advanceApplicationsAsTarget FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationTarget")
+
   @@index([status, date])
   @@index([categoryId, date])
   @@index([division, date])
   @@index([reimburseToId, status])
   @@index([receiptUrl])
   @@map("fin_purchases")
+}
+
+enum FinAdvanceApplicationStatus {
+  ACTIVE
+  REVERSED
+}
+
+// "Terapkan Uang Muka" (D-XXX, 22 September 2026) — otomatisasi dari langkah
+// yang SEBELUMNYA harus manual lewat Jurnal Umum (lihat komentar lama di
+// model FinPurchase di atas: "penyelesaian saldo 1-1500 dilakukan lewat
+// Jurnal Umum manual"). SATU baris = SATU penerapan sebagian/penuh dari
+// SATU DP ke SATU pembelian bertarget. Sengaja tabel APLIKASI terpisah
+// (bukan field skalar "dpApplied" di FinPurchase): satu DP bisa dipakai
+// ke banyak pembelian berbeda sampai habis, DAN satu pembelian bisa
+// menerima dari banyak DP berbeda — hubungan many-to-many yang butuh
+// baris sendiri per pasangan, dengan jejak audit per baris.
+//
+// Jurnal yang dihasilkan (posting/purchaseAdvance.js):
+//   Dr Utang Usaha (mengurangi utang TARGET)
+//   Cr Uang Muka Pembelian 1-1500 (mengurangi saldo DP SUMBER)
+//
+// Baris ini TIDAK PERNAH diedit/dihapus setelah dibuat — pembatalan lewat
+// reverseJournal() (kolom reversalJournalId + status REVERSED), pola sama
+// dengan seluruh dokumen finance lain di sistem ini.
+model FinPurchaseAdvanceApplication {
+  id String @id @default(uuid()) @db.Uuid
+
+  advancePurchaseId String      @map("advance_purchase_id") @db.Uuid
+  advancePurchase   FinPurchase @relation("FinPurchaseAdvanceApplicationSource", fields: [advancePurchaseId], references: [id], onDelete: Restrict)
+
+  targetPurchaseId String      @map("target_purchase_id") @db.Uuid
+  targetPurchase   FinPurchase @relation("FinPurchaseAdvanceApplicationTarget", fields: [targetPurchaseId], references: [id], onDelete: Restrict)
+
+  amount Decimal @db.Decimal(18, 2)
+
+  // Jurnal Dr Utang Usaha / Cr Uang Muka Pembelian yang mewujudkan penerapan
+  // ini di buku besar. onDelete Restrict: jurnal tidak pernah dihapus, dan
+  // baris ini tidak boleh sampai kehilangan jurnalnya.
+  journalId String          @unique @map("journal_id") @db.Uuid
+  journal   FinJournalEntry @relation("FinPurchaseAdvanceApplicationJournal", fields: [journalId], references: [id], onDelete: Restrict)
+
+  // Diisi HANYA saat status=REVERSED — jurnal balik (dari reverseJournal(),
+  // BUKAN jurnal baru yang dikarang manual) yang meniadakan journalId di atas.
+  reversalJournalId String?          @unique @map("reversal_journal_id") @db.Uuid
+  reversalJournal   FinJournalEntry? @relation("FinPurchaseAdvanceApplicationReversalJournal", fields: [reversalJournalId], references: [id], onDelete: SetNull)
+
+  status FinAdvanceApplicationStatus @default(ACTIVE)
+
+  // Header Idempotency-Key dari request yang menciptakan baris ini — WAJIB
+  // (endpoint menolak request tanpa header ini). @unique adalah pertahanan
+  // KEDUA di level DATABASE, di atas cache replay HTTP yang sudah ada
+  // (middleware/idempotency.js, TTL 24 jam): double-click/request paralel
+  // dengan Idempotency-Key yang sama mustahil menghasilkan dua baris/dua
+  // jurnal, bahkan kalau cache HTTP-nya sudah kedaluwarsa atau terlewati.
+  idempotencyKey String @unique @map("idempotency_key")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinPurchaseAdvanceApplicationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  reversedById  String?   @map("reversed_by")
+  reversedBy    User?     @relation("FinPurchaseAdvanceApplicationReverser", fields: [reversedById], references: [id], onDelete: SetNull)
+  reversedAt    DateTime? @map("reversed_at")
+  reverseReason String?   @map("reverse_reason")
+
+  @@index([advancePurchaseId, status])
+  @@index([targetPurchaseId, status])
+  @@map("fin_purchase_advance_applications")
 }
 
 // Pemasukan NON-ORDER (penjualan aset bekas, bunga bank, klaim asuransi,
@@ -6531,8 +6612,8 @@ enum FinKasbonRepayMethod {
 }
 
 model FinKasbon {
-  id            String @id @default(uuid()) @db.Uuid
-  kasbonNumber  String @unique @map("kasbon_number") // KSB-DDMMYYYY-NNN
+  id           String @id @default(uuid()) @db.Uuid
+  kasbonNumber String @unique @map("kasbon_number") // KSB-DDMMYYYY-NNN
 
   date   DateTime @db.Date
   amount Decimal  @db.Decimal(18, 2)
@@ -6553,7 +6634,7 @@ model FinKasbon {
   status FinKasbonStatus @default(AKTIF)
 
   // true = impor histori Notion tanpa jurnal sendiri (lihat catatan atas).
-  historis Boolean @default(false)
+  historis   Boolean @default(false)
   // Id yang dipakai di idempotencyKey jurnal KASBON:<ref>. Kasbon baru: id-nya
   // sendiri. Kasbon September hasil impor lama: kunci impor lamanya.
   journalRef String? @map("journal_ref")
@@ -6620,12 +6701,12 @@ model MobileSession {
   refreshTokenHash     String  @unique @map("refresh_token_hash")
   prevRefreshTokenHash String? @map("prev_refresh_token_hash")
 
-  createdAt          DateTime  @default(now()) @map("created_at")
-  lastSeenAt         DateTime  @default(now()) @map("last_seen_at")
-  refreshExpiresAt   DateTime  @map("refresh_expires_at") // batas diam (idle), digeser tiap rotasi
-  absoluteExpiresAt  DateTime  @map("absolute_expires_at") // batas mutlak sejak login
-  revokedAt          DateTime? @map("revoked_at")
-  revokedReason      String?   @map("revoked_reason")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  lastSeenAt        DateTime  @default(now()) @map("last_seen_at")
+  refreshExpiresAt  DateTime  @map("refresh_expires_at") // batas diam (idle), digeser tiap rotasi
+  absoluteExpiresAt DateTime  @map("absolute_expires_at") // batas mutlak sejak login
+  revokedAt         DateTime? @map("revoked_at")
+  revokedReason     String?   @map("revoked_reason")
 
   deviceTokens MobileDeviceToken[]
 
