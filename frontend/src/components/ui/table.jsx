@@ -51,6 +51,22 @@ export function Table({ className, fixed, ...props }) {
   return <table className={cn("w-full border-collapse text-sm", tableLayoutClass(fixed), className)} {...props} />;
 }
 
+// `<colgroup>` — cara EKSPLISIT & kanonik menetapkan lebar kolom di
+// `table-layout: fixed` (dibanding cuma `width` per-TH, yang juga masih
+// dipakai/didukung TH/TD di bawah). Taruh SEBAGAI ANAK PERTAMA `<Table>`,
+// sebelum `<THead>`. `widths`: array sepanjang jumlah kolom — number (px),
+// string CSS, atau `undefined`/`null` untuk kolom fleksibel (dibiarkan
+// tanpa `width` eksplisit, mengambil sisa ruang — biasanya "Keterangan").
+export function ColGroup({ widths = [] }) {
+  return (
+    <colgroup>
+      {widths.map((w, i) => (
+        <col key={i} style={w ? widthStyle(w) : undefined} />
+      ))}
+    </colgroup>
+  );
+}
+
 export function THead({ className, ...props }) {
   // sticky + z-10: header tetap terlihat saat body tabel di-scroll vertikal.
   // Latar SOLID (bukan tembus pandang) — baris yang lewat di baliknya saat
@@ -68,13 +84,23 @@ export function TBody({ className, ...props }) {
 }
 
 // clickable: baris jadi tombol (buka drawer). selected: state terpilih.
+// `data-selected` (bukan cuma className `bg-accentbg/60`) — dibaca CSS
+// `tr[data-selected="true"] .tbl-sticky-td` di tokens.css supaya kolom
+// sticky (mis. "Nomor") ikut berubah warna saat baris terpilih, bukan
+// tetap warna normalnya sendiri (lihat komentar di tokens.css).
+//
+// Hover SEKARANG selalu aktif untuk SEMUA baris (bukan cuma `clickable`)
+// — "hover row halus" (D-XXX, 22 Sep 2026): tabel data biasa (bukan cuma
+// yang barisnya bisa diklik) tetap dapat highlight lembut saat kursor
+// lewat, konsisten dengan tabel lain yang lebih interaktif.
 export function TR({ className, clickable, selected, ...props }) {
   return (
     <tr
+      data-selected={selected ? "true" : undefined}
       className={cn(
         "border-b border-line last:border-0 transition-colors duration-100",
         clickable && "cursor-pointer",
-        selected ? "bg-accentbg/60" : clickable && "hover:bg-hovertint",
+        selected ? "bg-accentbg/60" : "hover:bg-hovertint/70",
         className
       )}
       {...props}
@@ -125,7 +151,7 @@ export function TH({
       scope="col"
       aria-sort={sortable ? (sortDir === "asc" ? "ascending" : sortDir === "desc" ? "descending" : "none") : undefined}
       className={cn(
-        "whitespace-nowrap border-b border-line px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide text-ink3",
+        "whitespace-nowrap border-b border-line px-3 py-3.5 text-[11px] font-bold uppercase tracking-wide text-ink3",
         numeric ? "text-right" : "text-left",
         sticky && "tbl-sticky-th",
         hideBelowClass(hideBelow),
@@ -189,7 +215,13 @@ export function TD({ className, numeric, truncate, clamp2, sticky, hideBelow, mi
   return (
     <td
       className={cn(
-        "px-3 py-2.5 align-middle text-[13px] text-ink2",
+        // py-4 (16px atas+bawah) + tinggi baris teks (~20px pada text-[13px])
+        // ≈ 52px, dan `min-h-[58px]` (literal lengkap, lihat catatan
+        // tableLayout.js soal Tailwind tidak bisa scan class dinamis)
+        // memaksa sisanya — beberapa browser tidak konsisten menghormati
+        // min-height murni di <td>, jadi py-4 tetap jadi jaring pengaman
+        // utama, min-h cuma penambal untuk baris yang isinya sangat pendek.
+        "min-h-[58px] px-3 py-4 align-middle text-[13px] text-ink2",
         numeric && "text-right tabular-nums",
         truncate && "truncate max-w-0 w-full",
         clamp2 && "max-w-0 w-full",

@@ -45,23 +45,29 @@ const HARUS_2XL = [
   "FinanceSuppliers.jsx",
 ];
 
-// Halaman dengan kolom GABUNGAN (Klasifikasi/Pembayaran) — WAJIB pakai
-// `useBreakpointTier`, TIDAK BOLEH kembali ke `hideBelow`/`mid` CSS untuk
-// kolom-kolom itu (lihat penjelasan di atas — kolaps Keterangan, bukan
-// cuma overflow, jadi lebih berbahaya dan lebih sering luput dari
-// pengecekan scrollWidth/clientWidth polos).
+// ⚠️ DIPERBARUI 22 Sep 2026, putaran ketiga (polish tabel produksi) —
+// `useBreakpointTier` (window.matchMedia/viewport) DIGANTI `useContainerTier`
+// (ResizeObserver/lebar container asli — lihat src/hooks/useContainerTier.js
+// untuk bug nyata yang memotivasi ini: viewport lebar ≠ ruang nyata yang
+// tabel punya, karena sidebar & tab dalam-app ikut memakan lebar window).
+// Susunan kolom Klasifikasi/Pembayaran sekarang PERMANEN digabung di semua
+// tier (bukan lagi terpisah di tier "uw") — lihat spesifikasi polish 22 Sep
+// 2026 putaran ketiga. Inti perlindungan test ini TIDAK BERUBAH: kolom
+// gabungan itu WAJIB didorong oleh hook JS yang mengukur container asli,
+// BUKAN kembali ke `hideBelow`/`mid` CSS (viewport-based) — itu pola LAMA
+// yang terbukti mengolapskan kolom Keterangan.
 const HARUS_PAKAI_TIER_HOOK = ["FinanceExpenses.jsx", "FinancePurchases.jsx"];
 
-test("D-193b: halaman kolom-gabungan (Klasifikasi/Pembayaran) pakai useBreakpointTier, bukan hideBelow/mid CSS untuk kolom itu", () => {
+test("D-193b: halaman kolom-gabungan (Klasifikasi/Pembayaran) pakai useContainerTier, bukan hideBelow/mid CSS untuk kolom itu", () => {
   for (const nama of HARUS_PAKAI_TIER_HOOK) {
     const src = bacaSumber(nama);
     assert.ok(
-      src.includes('from "@/hooks/useBreakpointTier.js"') && src.includes("useBreakpointTier()"),
-      `${nama} diharapkan mengimpor & memanggil useBreakpointTier() untuk kolom Kategori/Divisi/Mode/SumberDana ↔ Klasifikasi/Pembayaran.`
+      src.includes('from "@/hooks/useContainerTier.js"') && src.includes("useContainerTier()"),
+      `${nama} diharapkan mengimpor & memanggil useContainerTier() (bukan useBreakpointTier — lihat komentar di atas test ini) untuk kolom Klasifikasi/Pembayaran.`
     );
     assert.ok(
       !src.includes('hideBelow="uw"') && !src.includes('hideBelow="2xl"') && !/<T[HD]\s[^>]*\bmid\b/.test(src),
-      `${nama}: kolom Kategori/Divisi/Mode/SumberDana/Klasifikasi/Pembayaran TIDAK BOLEH pakai hideBelow="uw"/"2xl" atau prop "mid" lagi — itu pola LAMA (3 representasi kolom sekaligus di DOM) yang terbukti mengolapskan kolom Keterangan ke ~24px (lihat komentar panjang di atas test ini & di useBreakpointTier.js). Gunakan cabang tier === "uw"/"mid"/"compact" seperti sekarang.`
+      `${nama}: kolom Klasifikasi/Pembayaran TIDAK BOLEH pakai hideBelow="uw"/"2xl" atau prop "mid" lagi — itu pola LAMA (viewport-based, 3 representasi kolom sekaligus di DOM) yang terbukti mengolapskan kolom Keterangan ke ~24px. Gunakan cabang tier === "full"/"reduced"/"minimal"/"card" seperti sekarang.`
     );
   }
 });

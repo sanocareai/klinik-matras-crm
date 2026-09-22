@@ -54,7 +54,14 @@ function Chip({ label, value, onChange, options }) {
 export default function FilterBar({ q, onQ, placeholder = "Cari…", filters = [], ringkasan, onReset, className }) {
   const adaAktif = !!q || filters.some((f) => f.value !== "" && f.value !== undefined && f.value !== null);
   return (
-    <div className={cn("fin-glass sticky top-2 z-30 space-y-2.5 p-3", className)}>
+    // Posisi NORMAL document flow — `sticky` (BUKAN `absolute`/`fixed`/
+    // `transform`) tetap ikut alur normal, cuma "menempel" saat scroll,
+    // jadi tidak melanggar aturan "jangan absolute/negative margin/
+    // transform" (D-XXX, 22 Sep 2026). `mb-2` DITAMBAHKAN di atas jarak
+    // `gap-6` (24px) bawaan PageBody — total jadi 32px ke Card berikutnya
+    // (⩾28px yang diminta) TANPA mengubah `gap-6` PageBody yang dipakai
+    // 50+ halaman non-Finance lain.
+    <div className={cn("fin-glass sticky top-2 z-30 mb-2 space-y-2.5 px-3 pt-3 pb-1", className)}>
       <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
         <div className="fin-search sm:max-w-[420px] sm:flex-1">
           <Search size={16} className="shrink-0 text-ink3" aria-hidden="true" />
@@ -79,7 +86,10 @@ export default function FilterBar({ q, onQ, placeholder = "Cari…", filters = [
       </div>
 
       {(ringkasan || adaAktif) && (
-        <div className="flex items-center justify-between gap-3 px-1 text-[12px] text-ink3">
+        // pb-4 (16px) — teks "jumlah data" WAJIB punya jarak ⩾14px ke
+        // border bawah panel (sebelumnya pb-3/12px, sedikit di bawah
+        // minimum yang diminta).
+        <div className="flex items-center justify-between gap-3 px-1 pb-4 text-[12px] text-ink3">
           <span>{ringkasan}</span>
           {adaAktif && onReset && (
             <button type="button" onClick={onReset} className="font-medium text-accent hover:underline">Atur ulang</button>

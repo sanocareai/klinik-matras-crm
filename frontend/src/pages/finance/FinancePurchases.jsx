@@ -7,9 +7,9 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD, ExpandToggle, DetailRow, TABLE_VIEW_CLASS } from "@/components/ui/table.jsx";
+import { TableWrap, Table, THead, TBody, TR, TH, TD, ExpandToggle, DetailRow, ColGroup } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
-import { useBreakpointTier } from "@/hooks/useBreakpointTier.js";
+import { useContainerTier } from "@/hooks/useContainerTier.js";
 import { api } from "@/api.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
@@ -129,7 +129,7 @@ export default function FinancePurchases() {
   const [modalBaru, setModalBaru] = useState(false);
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
-  const tier = useBreakpointTier();
+  const [tableRef, tier] = useContainerTier();
   const [terbuka, setTerbuka] = useState(() => new Set());
   const balikTerbuka = (id) => setTerbuka((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -286,130 +286,135 @@ export default function FinancePurchases() {
             />
           </CardContent>
         ) : (
-          <>
-            <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
-              <Table fixed>
-                <THead>
-                  <TR>
-                    <TH sticky width={140}>Nomor</TH>
-                    <TH width={64}>Tanggal</TH>
-                    <TH>Keterangan</TH>
-                    {tier === "uw" && (
-                      <>
-                        <TH width={132}>Jenis</TH>
-                        <TH width={104}>Divisi</TH>
-                        <TH width={116}>Mode</TH>
-                        <TH width={132}>Sumber Dana</TH>
-                      </>
-                    )}
-                    {tier === "mid" && (
-                      <>
-                        <TH width={130}>Klasifikasi</TH>
-                        <TH width={118}>Pembayaran</TH>
-                      </>
-                    )}
-                    <TH numeric width={104}>Nominal</TH>
-                    <TH width={92}>Status</TH>
-                    <TH width={72}>Bukti</TH>
-                    {tier === "compact" && <TH width={36} />}
-                    <TH width={AKSI_COL_WIDTH}>Aksi</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {purchases.map((p) => {
-                    const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk });
-                    return (
-                      <React.Fragment key={p.id}>
-                        <TR>
-                          <TD sticky className="font-mono text-[12px]">{p.purchaseNumber}</TD>
-                          <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(p.date)}</TD>
-                          <TD className="max-w-0 w-full">
-                            <span className="line-clamp-2 break-words" title={p.description}>{p.description}</span>
-                            {/* Penalang (reimburseTo) & penjual (payeeName) adalah dua hal berbeda — tampilkan keduanya. */}
-                            {p.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${p.reimburseTo.name}`}>ditalangi {p.reimburseTo.name}</span>}
-                            {p.supplier && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.supplier.name}`}>dari {p.supplier.name}</span>}
-                            {!p.supplier && p.payeeName && p.payeeName.trim().toLowerCase() !== (p.reimburseTo?.name || "").trim().toLowerCase() && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.payeeName}`}>dari {p.payeeName}</span>}
-                          </TD>
-                          {tier === "uw" && (
-                            <>
-                              <TD truncate className="text-[12px]">{p.category?.name}</TD>
-                              <TD><Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge></TD>
-                              <TD truncate className="text-[12px] text-ink2">{teksModePembelian(p.mode)}</TD>
-                              <TD truncate className="text-[12px]">{teksSumberDanaPembelian(p)}</TD>
-                            </>
+          <div ref={tableRef} data-tier={tier}>
+            {tier === "card" ? (
+              <CardList>
+                {purchases.map((p) => {
+                  const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk });
+                  return (
+                    <RowCard
+                      key={p.id}
+                      title={p.purchaseNumber}
+                      status={<StatusBadge status={p.status} />}
+                      subtitle={p.description}
+                      fields={[
+                        { label: "Tanggal", value: tanggalPendek(p.date) },
+                        { label: "Nominal", value: formatUang(p.amount) },
+                        { label: "Jenis", value: p.category?.name },
+                        { label: "Divisi", value: LABEL_DIVISI[p.division] || p.division },
+                        { label: "Mode", value: teksModePembelian(p.mode) },
+                        { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
+                        { label: "Bukti", span: true, value: <SelBukti doc={p} jenis="purchases" aksi={aksi} /> },
+                      ]}
+                      actions={<RowActions primary={a.primary} items={a.items} />}
+                    />
+                  );
+                })}
+              </CardList>
+            ) : (
+              <TableWrap className="dh-table">
+                <Table fixed>
+                  {/* Susunan desktop PERMANEN: Klasifikasi (Jenis+Divisi) &
+                      Pembayaran (Mode+Sumber Dana) SELALU digabung. */}
+                  {tier === "full" && <ColGroup widths={[140, 104, null, 180, 160, 112, 110, 72, AKSI_COL_WIDTH]} />}
+                  {tier === "reduced" && <ColGroup widths={[140, 104, null, 140, 112, 110, 36, AKSI_COL_WIDTH]} />}
+                  {tier === "minimal" && <ColGroup widths={[140, null, 104, 100, 36, AKSI_COL_WIDTH]} />}
+                  <THead>
+                    <TR>
+                      <TH sticky width={140}>Nomor</TH>
+                      {tier !== "minimal" && <TH width={104} className="whitespace-nowrap">Tanggal</TH>}
+                      <TH className="pl-4">Keterangan</TH>
+                      {tier === "full" && <TH width={180}>Klasifikasi</TH>}
+                      {tier === "reduced" && <TH width={140}>Klasifikasi</TH>}
+                      {tier === "full" && <TH width={160}>Pembayaran</TH>}
+                      <TH numeric width={tier === "minimal" ? 104 : 112}>Nominal</TH>
+                      <TH width={tier === "minimal" ? 100 : 110}>Status</TH>
+                      {tier === "full" && <TH width={72}>Bukti</TH>}
+                      {tier !== "full" && <TH width={36} />}
+                      <TH width={AKSI_COL_WIDTH}>Aksi</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {purchases.map((p) => {
+                      const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk });
+                      const klasifikasi = (
+                        <>
+                          <span className="block truncate text-[12px]" title={p.category?.name}>{p.category?.name}</span>
+                          <span className="block truncate text-[11px] text-ink3">{LABEL_DIVISI[p.division] || p.division}</span>
+                        </>
+                      );
+                      const pembayaran = (
+                        <>
+                          <span className="block truncate text-[12px] text-ink2">{teksModePembelian(p.mode)}</span>
+                          <span className="block truncate text-[11px] text-ink3" title={teksSumberDanaPembelian(p)}>{teksSumberDanaPembelian(p)}</span>
+                        </>
+                      );
+                      const bukti = (
+                        <>
+                          <SelBukti doc={p} jenis="purchases" aksi={aksi} compact />
+                          {p.notaWajib && !p.receiptUrl && ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) && (
+                            <span className="mt-1 block text-[11px] font-semibold text-red">Nota wajib</span>
                           )}
-                          {tier === "mid" && (
-                            <>
-                              <TD className="min-w-0">
-                                <span className="block truncate text-[12px]" title={p.category?.name}>{p.category?.name}</span>
-                                <span className="block truncate text-[11px] text-ink3">{LABEL_DIVISI[p.division] || p.division}</span>
-                              </TD>
-                              <TD className="min-w-0">
-                                <span className="block truncate text-[12px] text-ink2">{teksModePembelian(p.mode)}</span>
-                                <span className="block truncate text-[11px] text-ink3" title={teksSumberDanaPembelian(p)}>{teksSumberDanaPembelian(p)}</span>
-                              </TD>
-                            </>
-                          )}
-                          <TD numeric><Uang value={p.amount} /></TD>
-                          <TD><StatusBadge status={p.status} /></TD>
-                          <TD>
-                            <SelBukti doc={p} jenis="purchases" aksi={aksi} compact />
-                            {p.notaWajib && !p.receiptUrl && ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) && (
-                              <span className="mt-1 block text-[11px] font-semibold text-red">Nota wajib</span>
-                            )}
-                          </TD>
-                          {tier === "compact" && (
-                            <TD>
-                              <ExpandToggle open={terbuka.has(p.id)} onClick={() => balikTerbuka(p.id)} label="Rincian" />
+                        </>
+                      );
+                      return (
+                        <React.Fragment key={p.id}>
+                          <TR>
+                            <TD sticky className="font-mono text-[12px]">{p.purchaseNumber}</TD>
+                            {tier !== "minimal" && <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(p.date)}</TD>}
+                            <TD className="max-w-0 w-full pl-4">
+                              <span className="line-clamp-2 break-words" title={p.description}>{p.description}</span>
+                              {p.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${p.reimburseTo.name}`}>ditalangi {p.reimburseTo.name}</span>}
+                              {p.supplier && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.supplier.name}`}>dari {p.supplier.name}</span>}
+                              {!p.supplier && p.payeeName && p.payeeName.trim().toLowerCase() !== (p.reimburseTo?.name || "").trim().toLowerCase() && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.payeeName}`}>dari {p.payeeName}</span>}
                             </TD>
+                            {(tier === "full" || tier === "reduced") && <TD className="min-w-0">{klasifikasi}</TD>}
+                            {tier === "full" && <TD className="min-w-0">{pembayaran}</TD>}
+                            <TD numeric><Uang value={p.amount} /></TD>
+                            <TD><StatusBadge status={p.status} /></TD>
+                            {tier === "full" && <TD>{bukti}</TD>}
+                            {tier !== "full" && (
+                              <TD>
+                                <ExpandToggle open={terbuka.has(p.id)} onClick={() => balikTerbuka(p.id)} label="Rincian" />
+                              </TD>
+                            )}
+                            <TD>
+                              <RowActions primary={a.primary} items={a.items} />
+                            </TD>
+                          </TR>
+                          {tier === "reduced" && (
+                            <DetailRow
+                              open={terbuka.has(p.id)}
+                              colSpan={8}
+                              fields={[
+                                { label: "Mode", value: teksModePembelian(p.mode) },
+                                { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
+                                { label: "Bukti", value: bukti },
+                              ]}
+                            />
                           )}
-                          <TD>
-                            <RowActions primary={a.primary} items={a.items} />
-                          </TD>
-                        </TR>
-                        {tier === "compact" && (
-                          <DetailRow
-                            open={terbuka.has(p.id)}
-                            colSpan={8}
-                            fields={[
-                              { label: "Jenis", value: p.category?.name },
-                              { label: "Divisi", value: <Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge> },
-                              { label: "Mode", value: teksModePembelian(p.mode) },
-                              { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
-                            ]}
-                          />
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </TBody>
-              </Table>
-            </TableWrap>
-
-            <CardList>
-              {purchases.map((p) => {
-                const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk });
-                return (
-                  <RowCard
-                    key={p.id}
-                    title={p.purchaseNumber}
-                    status={<StatusBadge status={p.status} />}
-                    subtitle={p.description}
-                    fields={[
-                      { label: "Tanggal", value: tanggalPendek(p.date) },
-                      { label: "Nominal", value: formatUang(p.amount) },
-                      { label: "Jenis", value: p.category?.name },
-                      { label: "Divisi", value: LABEL_DIVISI[p.division] || p.division },
-                      { label: "Mode", value: teksModePembelian(p.mode) },
-                      { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
-                      { label: "Bukti", span: true, value: <SelBukti doc={p} jenis="purchases" aksi={aksi} /> },
-                    ]}
-                    actions={<RowActions primary={a.primary} items={a.items} />}
-                  />
-                );
-              })}
-            </CardList>
-          </>
+                          {tier === "minimal" && (
+                            <DetailRow
+                              open={terbuka.has(p.id)}
+                              colSpan={6}
+                              fields={[
+                                { label: "Tanggal", value: tanggalPendek(p.date) },
+                                { label: "Jenis", value: p.category?.name },
+                                { label: "Divisi", value: <Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge> },
+                                { label: "Mode", value: teksModePembelian(p.mode) },
+                                { label: "Sumber Dana", value: teksSumberDanaPembelian(p) },
+                                { label: "Bukti", value: bukti },
+                              ]}
+                            />
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </TBody>
+                </Table>
+              </TableWrap>
+            )}
+          </div>
         )}
       </Card>
 

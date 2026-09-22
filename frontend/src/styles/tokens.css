@@ -22,7 +22,15 @@
 /* !important: tema kaca (.glass-division thead th di delivery-light/dark.css) memberi header latar semi-transparan (82%) dengan spesifisitas
    lebih tinggi. Untuk sel yang menempel di kiri itu harus SOLID, kalau tidak teks kolom yang di-scroll di bawahnya tembus ke header. */
 .tbl-sticky-th { position: sticky; left: 0; z-index: 20; background: var(--bg-inset) !important; white-space: nowrap; }
-.tbl-sticky-td { position: sticky; left: 0; z-index: 1; background: var(--bg-surface); white-space: nowrap; box-shadow: 1px 0 0 var(--border); }
+.tbl-sticky-td { position: sticky; left: 0; z-index: 1; background: var(--bg-surface); white-space: nowrap; }
+/* Baris (D-XXX, polish 22 Sep 2026): kolom sticky (biasanya "Nomor") SEBELUMNYA
+   punya box-shadow 1px sebagai pemisah + TIDAK ikut menyala saat baris di-hover
+   (backgroundnya sendiri, TR:hover tidak menembusnya) — bikin kolom itu terlihat
+   "kotak sendiri" yang beda warna dari baris, walau nilai --bg-surface-nya sama.
+   Sinkronkan manual lewat selector ini (bukan lewat prop React) supaya baris
+   terasa menyatu, bukan kolom Nomor yang berdiri sendiri. */
+tr:hover .tbl-sticky-td { background: var(--bg-hover); }
+tr[data-selected="true"] .tbl-sticky-td { background: var(--accent-bg); }
 
 :root {
   color-scheme: light;
