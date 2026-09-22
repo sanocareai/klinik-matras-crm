@@ -15,6 +15,7 @@ import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
 import Avatar from "../components/Avatar";
+import { relatifWaktu } from "../lib/jobHelpers";
 
 // Sama alasan dengan lib/autoUpdate.js/mobile ProfileScreen.js — require()
 // dibungkus try/catch (bukan import statis) supaya evaluasi file ini tidak
@@ -143,6 +144,33 @@ export default function AccountScreen({ navigation }) {
     : Constants.expoConfig?.ios?.buildNumber;
   const roleLabel = rolesOf(user).map((r) => ROLE_LABEL[r] || r).join(" / ") || "-";
 
+  // Info runtime/OTA (22 September 2026, audit QA produksi — permintaan
+  // eksplisit: "tambahkan tampilan versi app, runtime, dan update ID di
+  // halaman Profil/Tentang agar mudah dicek"). AKAR MASALAHNYA yang mau
+  // dijawab: dispatcher/tim teknis sebelum ini TIDAK PUNYA cara memastikan
+  // dari HP driver sendiri apakah JS bundle yang berjalan itu sungguhan
+  // update TERBARU (OTA) atau masih bundel LAMA yang dibundel ke APK saat
+  // build (mis. kalau OTA gagal diterapkan diam-diam) — cuma bisa menebak
+  // dari gejala di lapangan. Field-field ini API bawaan expo-updates,
+  // BUKAN dari server kami:
+  //   - isEmbeddedLaunch: true = jalan dari bundel BAWAAN APK (belum pernah
+  //     ambil OTA sejak install/App baru dibuka pertama kali sesi ini),
+  //     false = jalan dari update OTA yang sudah pernah berhasil diambil.
+  //   - updateId/createdAt: identitas OTA yang SEDANG berjalan (null kalau
+  //     isEmbeddedLaunch true).
+  //   - channel/runtimeVersion: HARUS "preview"/"1.0.0" untuk build yang
+  //     sekarang aktif di HP pilot (lihat catatan eas.json) — kalau beda,
+  //     berarti HP ini pasang APK dari channel/runtime lain.
+  const updateInfo = Updates
+    ? {
+        channel: Updates.channel || "-",
+        runtimeVersion: Updates.runtimeVersion || "-",
+        isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+        updateId: Updates.updateId || null,
+        createdAt: Updates.createdAt || null,
+      }
+    : null;
+
   return (
     <SafeAreaView style={styles.root}>
       <View style={styles.header}>
@@ -189,6 +217,39 @@ export default function AccountScreen({ navigation }) {
             <Text style={styles.rowLabel}>Versi</Text>
             <Text style={styles.rowValue}>{appVersion}{buildNumber ? ` (${buildNumber})` : ""}</Text>
           </View>
+          {updateInfo && (
+            <>
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Channel</Text>
+                <Text style={styles.rowValue} selectable>{updateInfo.channel}</Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Runtime</Text>
+                <Text style={styles.rowValue} selectable>{updateInfo.runtimeVersion}</Text>
+              </View>
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Sumber JS</Text>
+                <Text style={styles.rowValue}>{updateInfo.isEmbeddedLaunch ? "Bawaan APK (belum ambil OTA)" : "Update OTA"}</Text>
+              </View>
+              {!updateInfo.isEmbeddedLaunch && (
+                <>
+                  <View style={styles.row}>
+                    <Text style={styles.rowLabel}>Update ID</Text>
+                    {/* selectable — supaya bisa di-copy-paste ke chat tim
+                        teknis kalau perlu cocokkan dengan `eas update:list`,
+                        bukan cuma dibaca sekilas. Dipotong ke 8 karakter
+                        pertama (cukup unik utk dicocokkan visual, ID penuh
+                        tetap ada via selectable+long-press). */}
+                    <Text style={styles.rowValue} selectable>{updateInfo.updateId?.slice(0, 8) || "-"}</Text>
+                  </View>
+                  <View style={styles.row}>
+                    <Text style={styles.rowLabel}>Update diambil</Text>
+                    <Text style={styles.rowValue}>{updateInfo.createdAt ? relatifWaktu(updateInfo.createdAt) : "-"}</Text>
+                  </View>
+                </>
+              )}
+            </>
+          )}
           <Pressable
             style={[styles.updateBtn, !Updates && styles.updateBtnDisabled]}
             onPress={handleCheckUpdate}

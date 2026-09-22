@@ -3,44 +3,89 @@
 // masalah lengkap di services/jobStatus.js#isJobVisibleToDriverApp. Fungsi
 // murni, tanpa database, sama pola dengan tes STALE_UNSCHEDULED_JOB lain di
 // folder ini.
+//
+// DIPERLUAS 22 September 2026 (audit QA produksi, permintaan eksplisit:
+// "test seluruh kombinasi status, termasuk status selesai dan status
+// baru/tidak dikenal") — matriks penuh JobStatus × (RouteStatus | tanpa
+// rute), termasuk nilai enum yang ADA tapi tidak pernah ditulis kode
+// (RESCHEDULED) dan string sembarang yang MENIRU status masa depan/data
+// rusak (bukan bagian enum Prisma sama sekali).
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { isJobVisibleToDriverApp } from "../src/services/jobStatus.js";
+import {
+  isJobVisibleToDriverApp,
+  VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP,
+  JOB_STATUS_SETTLED_FOR_DRIVER_APP,
+} from "../src/services/jobStatus.js";
 
 function job(overrides = {}) {
   return { status: "ASSIGNED", route: { id: "route1", status: "PUBLISHED" }, ...overrides };
 }
 
-test("job aktif di rute PUBLISHED tetap tampil", () => {
-  assert.equal(isJobVisibleToDriverApp(job()), true);
+// ── Kombinasi RouteStatus (5 nilai Prisma) × job status AKTIF (belum tuntas) ──
+const SEMUA_ROUTE_STATUS = ["DRAFT", "PUBLISHED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+const JOB_STATUS_AKTIF = ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
+
+for (const routeStatus of SEMUA_ROUTE_STATUS) {
+  const seharusnyaTampil = VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP.includes(routeStatus);
+  for (const jobStatus of JOB_STATUS_AKTIF) {
+    test(`job ${jobStatus} di rute ${routeStatus} → ${seharusnyaTampil ? "TAMPIL" : "DISEMBUNYIKAN"}`, () => {
+      const hasil = isJobVisibleToDriverApp(job({ status: jobStatus, route: { id: "r", status: routeStatus } }));
+      assert.equal(hasil, seharusnyaTampil);
+    });
+  }
+}
+
+// ── Job status SETTLED (COMPLETED/FAILED/RESCHEDULED) — tampil apa pun rutenya ──
+for (const jobStatus of JOB_STATUS_SETTLED_FOR_DRIVER_APP) {
+  for (const routeStatus of [...SEMUA_ROUTE_STATUS, null]) {
+    test(`job ${jobStatus} (settled) di rute ${routeStatus ?? "(tanpa rute)"} tetap TAMPIL`, () => {
+      const route = routeStatus ? { id: "r", status: routeStatus } : null;
+      assert.equal(isJobVisibleToDriverApp(job({ status: jobStatus, route })), true);
+    });
+  }
+}
+
+// ── Job tanpa Route sama sekali — tampil terlepas dari job.status apa pun ──
+for (const jobStatus of [...JOB_STATUS_AKTIF, ...JOB_STATUS_SETTLED_FOR_DRIVER_APP]) {
+  test(`job ${jobStatus} tanpa rute (routeId null) tetap TAMPIL`, () => {
+    assert.equal(isJobVisibleToDriverApp(job({ status: jobStatus, route: null })), true);
+  });
+}
+
+// ── Status TIDAK DIKENAL (bukan bagian enum Prisma sama sekali) — jaring pengaman ──
+test("job.status STRING SEMBARANG (bukan enum) + rute PUBLISHED → tetap TAMPIL (gerbang driverId sudah cukup)", () => {
+  assert.equal(isJobVisibleToDriverApp(job({ status: "STATUS_BARU_DARI_MASA_DEPAN", route: { id: "r", status: "PUBLISHED" } })), true);
 });
 
-test("job aktif di rute IN_PROGRESS tetap tampil", () => {
-  assert.equal(isJobVisibleToDriverApp(job({ route: { id: "r", status: "IN_PROGRESS" } })), true);
+test("job.status STRING SEMBARANG + rute DRAFT → DISEMBUNYIKAN (rute belum committed tetap menang)", () => {
+  assert.equal(isJobVisibleToDriverApp(job({ status: "STATUS_BARU_DARI_MASA_DEPAN", route: { id: "r", status: "DRAFT" } })), false);
 });
 
-test("job aktif di rute COMPLETED tetap tampil (rute selesai lewat sisi lain)", () => {
-  assert.equal(isJobVisibleToDriverApp(job({ route: { id: "r", status: "COMPLETED" } })), true);
+test("job.status STRING SEMBARANG tanpa rute → tetap TAMPIL (driverId sudah jadi gerbang kepemilikan di WHERE clause)", () => {
+  assert.equal(isJobVisibleToDriverApp(job({ status: "STATUS_BARU_DARI_MASA_DEPAN", route: null })), true);
 });
 
-test("job aktif di rute CANCELLED DISEMBUNYIKAN — akar bug Alwan", () => {
-  assert.equal(isJobVisibleToDriverApp(job({ route: { id: "r", status: "CANCELLED" } })), false);
+test("route.status STRING SEMBARANG (bukan enum, mis. migrasi data rusak) + job aktif → DISEMBUNYIKAN (allowlist default-deny)", () => {
+  assert.equal(isJobVisibleToDriverApp(job({ status: "ASSIGNED", route: { id: "r", status: "ENTAH_APA" } })), false);
 });
 
-test("job aktif di rute DRAFT (belum diterbitkan) DISEMBUNYIKAN", () => {
-  assert.equal(isJobVisibleToDriverApp(job({ route: { id: "r", status: "DRAFT" } })), false);
+test("route.status null/undefined (data cacat) + job aktif → DISEMBUNYIKAN, bukan crash", () => {
+  assert.equal(isJobVisibleToDriverApp(job({ status: "ASSIGNED", route: { id: "r", status: null } })), false);
+  assert.equal(isJobVisibleToDriverApp(job({ status: "ASSIGNED", route: { id: "r", status: undefined } })), false);
 });
 
-test("job tanpa rute sama sekali (ditugaskan langsung, bukan lewat Route Planner) tetap tampil", () => {
-  assert.equal(isJobVisibleToDriverApp(job({ route: null })), true);
+// ── Regresi eksplisit: skenario nyata bug Alwan & audit produksi 22 Sep 2026 ──
+test("REGRESI Alwan: job ASSIGNED di rute CANCELLED (job SENGAJA tidak dilepas backend) → DISEMBUNYIKAN", () => {
+  assert.equal(isJobVisibleToDriverApp(job({ status: "ASSIGNED", route: { id: "r", status: "CANCELLED" } })), false);
+});
+
+test("REGRESI Alwan: job ASSIGNED di rute DRAFT (kebagian driver sebelum diterbitkan) → DISEMBUNYIKAN", () => {
+  assert.equal(isJobVisibleToDriverApp(job({ status: "ASSIGNED", route: { id: "r", status: "DRAFT" } })), false);
 });
 
 test("job COMPLETED tetap tampil walau rutenya sekarang CANCELLED — riwayat nyata bukan rencana batal", () => {
   assert.equal(isJobVisibleToDriverApp(job({ status: "COMPLETED", route: { id: "r", status: "CANCELLED" } })), true);
-});
-
-test("job FAILED tetap tampil walau rutenya sekarang DRAFT (mis. dilepas rute lalu rute lamanya dibuat ulang jadi draft)", () => {
-  assert.equal(isJobVisibleToDriverApp(job({ status: "FAILED", route: { id: "r", status: "DRAFT" } })), true);
 });

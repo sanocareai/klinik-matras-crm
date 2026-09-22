@@ -2916,6 +2916,13 @@ function deriveIssueStatus(job) {
 // masih JOB_WRITE murni, dispatcher-only, sengaja tidak diubah) — ini
 // cuma membuka JALUR LIHAT, bukan jalur tindak.
 armadaRouter.get("/issues", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), async (req, res) => {
+  // Cache-Control: no-store (22 September 2026) — endpoint ini JUGA
+  // di-poll driver-mobile (tab Masalah, useIssues.js), sama alasan dengan
+  // GET /my-jobs di atas (lihat catatan panjang di sana soal temuan 304 di
+  // log nginx produksi).
+  delete req.headers["if-none-match"];
+  delete req.headers["if-modified-since"];
+  res.set("Cache-Control", "no-store");
   try {
     const { status } = req.query; // OPEN | RESCHEDULED
     // Driver TANPA JOB_READ (dispatcher penuh) hanya boleh lihat job
@@ -3481,6 +3488,32 @@ armadaRouter.get("/route/summary", requirePermission(P.JOB_READ), async (req, re
 // menyimpang dari kalimat literal PRD §9.3 "today ±1" — perubahan
 // disetujui langsung oleh owner, bukan reinterpretasi diam-diam.
 armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res) => {
+  // Cache-Control: no-store (22 September 2026, audit QA produksi) —
+  // TEMUAN dari log akses nginx produksi: banyak respons 304 untuk endpoint
+  // ini, artinya Express default ETag (aktif app-wide, tidak pernah
+  // dimatikan) + HTTP cache OkHttp bawaan Android SEDANG melakukan
+  // revalidasi bersyarat untuk endpoint yang di-poll app driver tiap 30
+  // detik. Kalau ETag itu kebetulan cocok, klien BISA menerima body kosong
+  // 304 — Response.ok Fetch API (dipakai driver-mobile/src/api.js) FALSE
+  // untuk status 304, jadi kalau lapisan cache OkHttp TIDAK transparan
+  // menyerap 304 itu (implementasi bervariasi antar versi Android/Expo,
+  // tidak bisa dipastikan dari server), request yang seharusnya sukses bisa
+  // salah dianggap error oleh app. Endpoint ini data driver SELALU harus
+  // fresh (baru saja jadi gerbang utama Alwan/Agung/Difa) — no-store
+  // menghilangkan ambiguitas itu sepenuhnya, tidak bergantung pada asumsi
+  // soal perilaku cache HTTP klien yang tidak bisa diverifikasi dari sini.
+  // Buang header conditional-GET yang mungkin dikirim klien (If-None-Match/
+  // If-Modified-Since) SEBELUM diproses — cuma set Cache-Control TIDAK
+  // cukup untuk request yang SEDANG berjalan ini (itu cuma pengaruh ke
+  // caching klien ke DEPAN, request yang sudah terlanjur bawa If-None-Match
+  // dari cache LAMA tetap dicek `fresh()` Express terlepas dari
+  // Cache-Control yang baru saja saya set). Menghapusnya di sini menjamin
+  // res.json() DI BAWAH tidak akan pernah membalas 304 (Express hanya
+  // membalas 304 kalau ada header ini di request DAN cocok ETag), berapa
+  // pun tuanya cache klien.
+  delete req.headers["if-none-match"];
+  delete req.headers["if-modified-since"];
+  res.set("Cache-Control", "no-store");
   try {
     const centerDateStr = req.query.date || new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
     const from = startOfDayWIB(centerDateStr);

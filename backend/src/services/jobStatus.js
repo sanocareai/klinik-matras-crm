@@ -81,17 +81,50 @@ export const STALE_UNSCHEDULED_JOB = {
 //       berstatus ASSIGNED walau dispatcher BELUM klik "Terbitkan" — rute
 //       itu belum pernah "ada" secara resmi buat driver, tapi my-jobs sudah
 //       menampilkannya lebih dulu.
-// FIX: job yang SUDAH tuntas (COMPLETED/FAILED) TETAP tampil apa pun nasib
-// rutenya sekarang (riwayat nyata, bukan rencana) — cuma job yang MASIH
-// aktif/belum tuntas yang disaring ulang di sini: rute DRAFT/CANCELLED
-// disembunyikan dari Driver App, PUBLISHED/IN_PROGRESS/COMPLETED tetap
-// tampil. Job tanpa rute sama sekali (routeId null, ditugaskan langsung
-// lewat Jadwal & Penugasan) TIDAK terdampak — itu penugasan sah yang
-// memang tidak lewat Route Planner.
-export const HIDDEN_DRIVER_APP_ROUTE_STATUSES = ["DRAFT", "CANCELLED"];
+//
+// ALLOWLIST, bukan denylist (dikoreksi 22 September 2026, audit QA
+// produksi) — versi pertama menulis "sembunyikan DRAFT/CANCELLED, tampilkan
+// sisanya". Itu BENAR untuk 5 nilai RouteStatus yang ada SEKARANG (schema.
+// prisma), tapi kalau suatu hari ada nilai BARU (mis. "ON_HOLD") yang lupa
+// diputuskan di sini, denylist otomatis MENAMPILKANNYA diam-diam — persis
+// arah kesalahan yang sama dengan bug Alwan (job tampil padahal seharusnya
+// tidak). Allowlist default-nya SEBALIKNYA: nilai baru yang belum eksplisit
+// terdaftar otomatis DISEMBUNYIKAN sampai ditinjau — gagal ke arah yang
+// lebih aman untuk kasus ini (driver tidak lihat rute yang belum committed,
+// bukan driver lihat rute yang seharusnya belum boleh dilihat).
+export const VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP = ["PUBLISHED", "IN_PROGRESS", "COMPLETED"];
 
+// Status Job yang dianggap TUNTAS/settled buat Driver App — job ini
+// representasi kerja yang SUDAH terjadi (atau sudah dipindah jalur
+// penanganan lain), harus TETAP tampil ke driver apa pun nasib rutenya
+// sekarang (riwayat nyata, bukan rencana yang batal/belum committed).
+// RESCHEDULED disertakan (bukan cuma COMPLETED/FAILED seperti versi
+// pertama) — SATU definisi dengan STATUS_STOP_TUNTAS di routes/armada.js
+// (Live Tracking): job RESCHEDULED sudah dipindah alur (lihat D-160,
+// routeId-nya SENGAJA di-null-kan saat reschedule), bukan lagi pekerjaan
+// yang sedang berjalan, jadi diperlakukan sama seperti COMPLETED/FAILED di
+// sini — bukan disaring lewat status Route (yang sudah null/tidak relevan).
+// ⚠️ Prisma enum JobStatus PUNYA nilai ini tapi TIDAK ADA kode yang
+// benar-benar menulis job.status="RESCHEDULED" per audit 22 September 2026
+// (grep penuh routes/armada.js) — dicantumkan di sini SENGAJA untuk jaga-
+// jaga (enum-nya ADA, jadi bukan "status tidak dikenal") supaya kalau nanti
+// ada jalur yang mulai menulisnya, perilakunya sudah benar dari awal tanpa
+// perlu ingat mengubah file ini lagi.
+export const JOB_STATUS_SETTLED_FOR_DRIVER_APP = ["COMPLETED", "FAILED", "RESCHEDULED"];
+
+// Job tanpa Route (routeId null — ditugaskan langsung lewat Jadwal &
+// Penugasan, ATAU baru saja dilepas dari rute lewat PATCH /routes/:id/jobs)
+// TIDAK disaring status Route sama sekali di sini — driverId/helperId pada
+// Job itu sendiri SUDAH jadi gerbang kepemilikan (WHERE clause di GET
+// /my-jobs), jadi ini penugasan yang sah walau tidak lewat Route Planner.
+// Ini juga jalur aman untuk status Job yang TIDAK DIKENAL/rusak (bukan 8
+// nilai JobStatus yang ada) — daripada diam-diam menyembunyikan pekerjaan
+// yang MEMANG ditugaskan ke driver ini (gagal ke arah "job hilang dari
+// app" jauh lebih berbahaya buat operasional daripada "job tampil dengan
+// status aneh"), job apa pun yang sudah lolos gerbang driverId/helperId
+// TETAP tampil kalau tidak terikat rute yang secara eksplisit disembunyikan.
 export function isJobVisibleToDriverApp(job) {
-  if (job.status === "COMPLETED" || job.status === "FAILED") return true;
+  if (JOB_STATUS_SETTLED_FOR_DRIVER_APP.includes(job.status)) return true;
   if (!job.route) return true;
-  return !HIDDEN_DRIVER_APP_ROUTE_STATUSES.includes(job.route.status);
+  return VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP.includes(job.route.status);
 }

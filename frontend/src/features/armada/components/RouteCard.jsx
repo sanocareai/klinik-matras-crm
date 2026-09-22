@@ -630,21 +630,36 @@ export default function RouteCard({
           </p>
         )}
 
-        {/* Peringatan sinkron ke app driver (22 September 2026, bug Agung
-            "rute sudah dipublish tapi tidak muncul di app") — pakai
-            User.lastAppSyncAt (proxy "app ini terakhir hidup & connect ke
-            server", lihat catatan panjang di schema.prisma) dibanding
-            Route.publishedAt. JUJUR: ini BUKAN read-receipt sungguhan
-            (tidak ada konfirmasi "driver sudah lihat rute INI spesifik"),
-            cuma sinyal terbaik yang ada datanya — kalau app driver belum
-            pernah connect SEJAK rute diterbitkan, kemungkinan besar dia
-            belum lihat, patut dicek manual (telepon/WA). */}
+        {/* Peringatan pengambilan data app driver (22 September 2026, bug
+            Agung "rute sudah dipublish tapi tidak muncul di app"; copy
+            DIKOREKSI 22 September 2026 audit QA produksi — versi pertama
+            memakai kata "sinkron", terlalu kuat kesannya seolah ada
+            konfirmasi dua arah). User.lastAppSyncAt HANYA membuktikan SATU
+            hal: kapan server terakhir kali berhasil membalas permintaan GET
+            /armada/my-jobs dari akun ini (ditulis backend SETELAH res.json
+            terkirim, lihat armada.js) — BUKAN bukti data itu benar-benar
+            di-render di layar HP driver, apalagi dibaca. Karena itu label
+            di sini SENGAJA "terakhir mengambil data", BUKAN "diterima" atau
+            "sinkron", dan dibanding Route.publishedAt cuma sebagai sinyal
+            KECURIGAAN awal — bukan pembuktian rute belum sampai. */}
         {route.status === "PUBLISHED" && route.driver && (
-          !route.driver.lastAppSyncAt ||
-          new Date(route.driver.lastAppSyncAt) < new Date(route.publishedAt)
-        ) && (
-          <p className="rounded-btn bg-redbg px-2 py-1 text-[10px] font-semibold text-red">
-            ⚠ {route.driver.name} belum sinkron ke app sejak rute ini diterbitkan — belum tentu sudah dilihat, cek manual kalau perlu.
+          <p
+            className={cn(
+              "rounded-btn px-2 py-1 text-[10px] font-semibold",
+              !route.driver.lastAppSyncAt || new Date(route.driver.lastAppSyncAt) < new Date(route.publishedAt)
+                ? "bg-redbg text-red"
+                : "bg-elevated text-ink3"
+            )}
+          >
+            {route.driver.lastAppSyncAt ? (
+              new Date(route.driver.lastAppSyncAt) < new Date(route.publishedAt) ? (
+                <>⚠ {route.driver.name} terakhir mengambil data app SEBELUM rute ini diterbitkan ({formatTanggal(route.driver.lastAppSyncAt)}) — bukan bukti belum diterima, cek manual (telepon/WA) kalau ragu.</>
+              ) : (
+                <>{route.driver.name} terakhir mengambil data app: {formatTanggal(route.driver.lastAppSyncAt)}</>
+              )
+            ) : (
+              <>⚠ {route.driver.name} belum pernah tercatat mengambil data dari app sama sekali — bukan bukti belum diterima (mis. install baru/belum pernah buka), cek manual kalau ragu.</>
+            )}
           </p>
         )}
 
