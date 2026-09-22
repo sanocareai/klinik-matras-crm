@@ -19,6 +19,7 @@ import { bangunLampiran, bangunRiwayat } from "./approvals.js";
 import { daftarKaryawanKasbon } from "./karyawan.js";
 import { getVerificationGate } from "./settings.js";
 import { paidForOrder } from "./allocation.js";
+import { ringkasanDp, daftarDpEligible, alasanTidakEligible } from "./purchaseAdvanceRead.js";
 
 export const MODUL_LIST = ["pengeluaran", "pembelian", "kasbon", "pemasukan", "piutang", "refund", "supplier", "tagihan", "pembayaran-supplier"];
 
@@ -186,6 +187,39 @@ function aksiDokumen(modul, d, user, notaWajib) {
     ubah: aksi(admin && ["DRAFT", "MENUNGGU_APPROVAL"].includes(d.status), !admin ? "Mengubah dokumen hanya untuk admin keuangan. Buat dokumen baru bila perlu." : "Dokumen yang sudah dibukukan hanya bisa dikoreksi di web.", base, { metode: "PATCH", perlu: ["form", "alasan"] }),
     lampiran: aksi(d.status !== "DIBATALKAN" && catat && (post || d.createdById === user.id), d.status === "DIBATALKAN" ? "Dokumen yang dibatalkan tidak bisa diubah buktinya." : "Anda hanya bisa mengubah bukti pengajuan Anda sendiri.", `${base}/bukti`, { perlu: ["foto"] }),
     ...(notaWajib && !punyaNota && d.status === "MENUNGGU_APPROVAL" && { _catatan: "Nota wajib sebelum disetujui." }),
+  };
+}
+
+/** aksi.terapkanDp — dokumen-level, hanya untuk pembelian (target penerima DP). Alasan tidak-eligible sama persis dengan web (satu sumber kebenaran, lihat purchaseAdvanceRead.js). */
+function aksiTerapkanDp(doc, user) {
+  const path = "/finance/purchases/advance-applications";
+  if (!boleh(user, P.FINANCE_POST)) return aksi(false, "Akun Anda tidak boleh menerapkan uang muka.", path, { tetap: { targetPurchaseId: doc.id } });
+  const alasanTidak = alasanTidakEligible(doc);
+  if (alasanTidak.length > 0) return aksi(false, alasanTidak[0], path, { tetap: { targetPurchaseId: doc.id } });
+  return aksi(true, null, path, { perlu: ["advancePurchaseId", "nominal"], tetap: { targetPurchaseId: doc.id } });
+}
+
+/** Satu baris riwayat penerapan DP, dari sisi sumber (DP ini dipakai ke pembelian lain) atau tujuan (DP dari pembelian lain diterapkan ke sini). */
+function bentukRiwayatDp(h, sisi, doc, admin) {
+  const dasar = {
+    id: h.id, sisi, nominal: uang(h.amount), status: h.status, statusLabel: h.status === "REVERSED" ? "Dibatalkan" : "Aktif",
+    tanggal: waktu(h.createdAt), dibuatOleh: h.createdBy ?? null,
+    jurnal: h.journal?.entryNumber ?? null, jurnalPembalik: h.reversalJournal?.entryNumber ?? null,
+    dibatalkanPada: waktu(h.reversedAt), dibatalkanOleh: h.reversedBy ?? null, alasanBatal: h.reverseReason ?? null,
+    pasangan: sisi === "sumber"
+      ? (h.targetPurchase ? { id: h.targetPurchase.id, nomor: h.targetPurchase.purchaseNumber } : null)
+      : (h.advancePurchase ? { id: h.advancePurchase.id, nomor: h.advancePurchase.purchaseNumber } : null),
+  };
+  if (sisi !== "tujuan") return { ...dasar, aksiBatalkan: null };
+  const bolehBatal = admin && h.status === "ACTIVE" && doc.status !== "DIBAYAR";
+  return {
+    ...dasar,
+    aksiBatalkan: aksi(
+      bolehBatal,
+      !admin ? "Pembatalan penerapan DP hanya untuk admin keuangan." : h.status !== "ACTIVE" ? "Penerapan ini sudah dibatalkan sebelumnya." : "Pembelian ini sudah lunas — batalkan/koreksi pelunasannya dulu sebelum membatalkan penerapan DP ini.",
+      `/finance/purchases/advance-applications/${h.id}/cancel`,
+      { perlu: ["alasan"] }
+    ),
   };
 }
 
@@ -504,6 +538,20 @@ async function detailPiutang(db, user, orderId) {
   };
 }
 
+/** Daftar DP eligible untuk diterapkan ke satu pembelian (dipakai picker mobile "Terapkan Uang Muka"). */
+export async function daftarDpEligibleUntuk(db, id) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(id))) return null;
+  const target = await db.finPurchase.findUnique({ where: { id }, include: { category: { select: { code: true } } } });
+  if (!target) return null;
+  const hasil = await daftarDpEligible(db, target);
+  return {
+    ...hasil,
+    eligible: hasil.eligible.map((e) => ({ ...e, nilaiAwal: uang(e.nilaiAwal), sudahDigunakan: uang(e.sudahDigunakan), saldoTersedia: uang(e.saldoTersedia) })),
+    ...(hasil.sisaUtang != null && { sisaUtang: uang(hasil.sisaUtang) }),
+    ...(hasil.totalPembelian != null && { totalPembelian: uang(hasil.totalPembelian) }),
+  };
+}
+
 export async function detailTransaksi(db, user, modul, id) {
   const cfg = CFG[modul];
   if (!cfg) throw new TransaksiError("Modul tidak dikenal", 404);
@@ -514,9 +562,37 @@ export async function detailTransaksi(db, user, modul, id) {
   const lampiran = bangunLampiran(doc);
   const riwayatDari = (entity) => bangunRiwayat(db, null, doc, entity);
 
-  if (modul === "pengeluaran" || modul === "pembelian") {
+  if (modul === "pengeluaran") {
     const item = normalDokumen(modul, doc, user, await ambangNota(db));
     return { ...item, bagian: bagianDokumen(modul, doc), lampiran, riwayat: await riwayatDari(cfg.entity), syarat: item.notaWajib ? "Nota wajib sebelum disetujui." : null };
+  }
+  if (modul === "pembelian") {
+    const item = normalDokumen(modul, doc, user, await ambangNota(db));
+    const ringkasan = await ringkasanDp(db, doc);
+    const { sebagaiSumberUangMuka: sumber, sebagaiTujuanPembelian: tujuan } = ringkasan;
+    const admin = boleh(user, P.FINANCE_ADMIN);
+
+    if (!ringkasan.kategoriUangMuka && doc.mode === "UTANG" && doc.status !== "DIBAYAR") {
+      item.sisa = uang(tujuan.sisaDibayarTunai);
+      item.terbayar = uang(tujuan.dpDiterapkan);
+      if (tujuan.sisaDibayarTunai === 0 && item.aksi.bayar) {
+        item.aksi.bayar = { ...item.aksi.bayar, perlu: item.aksi.bayar.perlu.filter((p) => p !== "rekening") };
+      }
+    }
+    item.aksi.terapkanDp = aksiTerapkanDp(doc, user);
+
+    const riwayatDp = [
+      ...sumber.histori.map((h) => bentukRiwayatDp(h, "sumber", doc, admin)),
+      ...tujuan.histori.map((h) => bentukRiwayatDp(h, "tujuan", doc, admin)),
+    ];
+    const bagianUangMuka = ringkasan.kategoriUangMuka
+      ? bagian("Sebagai Uang Muka", [B("Nilai awal", uang(sumber.nilaiAwal), "uang"), B("Sudah digunakan", uang(sumber.sudahDigunakan), "uang"), B("Saldo tersedia", uang(sumber.saldoTersedia), "uang")])
+      : bagian("Uang Muka", [B("Total pembelian", uang(tujuan.totalPembelian), "uang"), B("DP diterapkan", uang(tujuan.dpDiterapkan), "uang"), B("Sisa pembayaran", uang(tujuan.sisaDibayarTunai), "uang")]);
+
+    return {
+      ...item, bagian: [...bagianDokumen(modul, doc), bagianUangMuka], lampiran, riwayat: await riwayatDari(cfg.entity), riwayatDp,
+      syarat: item.notaWajib ? "Nota wajib sebelum disetujui." : null,
+    };
   }
   if (modul === "kasbon") {
     const item = normalKasbon(doc, user);

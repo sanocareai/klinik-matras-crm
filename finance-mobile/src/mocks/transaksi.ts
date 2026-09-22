@@ -4,11 +4,11 @@
 
 import { ApiError } from "@/api/errors";
 import { LIMIT_TX } from "@/api/transaksi";
-import { toMoney, type Money } from "@/lib/money";
+import { bandingMoney, jumlahMoney, kurangMoney, toMoney, type Money } from "@/lib/money";
 import { useSession } from "@/auth/session";
 import { has } from "@/auth/capabilities";
 import { getSkenario, simulasiBaca, versiSkenario } from "./skenario";
-import type { AksiTx, DetailTx, FilterTx, HalamanTx, HasilUnggah, ItemTx, JenisApproval, ModulTx, NadaTx, OpsiForm, OrderRefund, RingkasanModul, RingkasanTx } from "@/api/types";
+import type { AksiTx, DetailTx, DpEligible, FilterTx, HalamanTx, HasilUnggah, ItemTx, JenisApproval, ModulTx, NadaTx, OpsiForm, OrderRefund, RingkasanModul, RingkasanTx, RiwayatDp } from "@/api/types";
 
 const m = toMoney;
 const NOL = m("0.00");
@@ -24,7 +24,17 @@ type Doc = {
   bagian?: { judul: string; baris: { label: string; nilai: string; jenis?: "teks" | "uang" | "tanggal" | "waktu"; tautan?: { modul: ModulTx; id: string } }[] }[];
   riwayat: Riwayat[]; pembayaran?: { id: string; nominal: string; status: string; alokasi: { orderId: string; nomor: string | null; nominal: string }[]; asalOrderId: string }[];
   catatan?: string | null;
+  supplierId?: string; kategoriKode?: string;
 };
+
+type DpApp = {
+  id: string; advanceId: string; targetId: string; amount: Money; status: "ACTIVE" | "REVERSED";
+  journal: string; reversalJournal: string | null; createdAt: string; createdBy: string;
+  reversedAt: string | null; reversedBy: string | null; reverseReason: string | null;
+};
+let dpApps: DpApp[] = [];
+const dpDiterapkanUntuk = (id: string): Money => jumlahMoney(dpApps.filter((a) => a.targetId === id && a.status === "ACTIVE").map((a) => a.amount));
+const dpDipakaiDari = (id: string): Money => jumlahMoney(dpApps.filter((a) => a.advanceId === id && a.status === "ACTIVE").map((a) => a.amount));
 
 const STATUS: Record<string, [string, NadaTx]> = {
   DRAFT: ["Draf", "neutral"], MENUNGGU_APPROVAL: ["Menunggu persetujuan", "warning"], DISETUJUI: ["Disetujui", "info"], DIBAYAR: ["Dibayar", "success"],
@@ -52,6 +62,7 @@ let versiDb = -1;
 let urut = 100;
 
 function seed(): Doc[] {
+  dpApps = [];
   const k = getSkenario();
   if (k === "kosong") return [];
   const panjang = k === "panjang";
@@ -66,6 +77,9 @@ function seed(): Doc[] {
   for (let i = 0; i < 22; i++) add({ modul: "pengeluaran", id: `ex${i}`, nomor: `EXP-1409${2026}-${300 + i}`, tanggal: tanggalLalu(7 + i), nominal: `${(10 + i) * 1000}.00`, judul: `Operasional ${i + 1}`, sub: "Operasional · Bayar langsung", pihak: null, rekening: "Uang Kas Sano", status: "DIBAYAR", mode: "LANGSUNG" });
   add({ modul: "pembelian", id: "p1", nomor: "PUR-18092026-026", tanggal: tanggalLalu(3), nominal: "1250000.00", judul: "Kain oscar 20 meter", sub: "Bahan Baku · Bayar langsung", pihak: "Toko Kain", rekening: "PT Sano", status: "MENUNGGU_APPROVAL", mode: "LANGSUNG", notaWajib: true });
   add({ modul: "pembelian", id: "p2", nomor: "PUR-17092026-027", tanggal: tanggalLalu(4), nominal: "12000.00", judul: "Lem kasur", sub: "Bahan Baku · Reimbursement", pihak: "Agung", rekening: null, status: "DISETUJUI", mode: "REIMBURSEMENT", lampiran: true });
+  add({ modul: "pembelian", id: "p3", nomor: "PUR-15092026-028", tanggal: tanggalLalu(6), nominal: "2100000.00", judul: "Rangka kayu jati 10 unit", sub: "Bahan Baku · Utang", pihak: "Toko Kain", rekening: null, status: "DISETUJUI", mode: "UTANG", supplierId: "sup-dp", kategoriKode: "BAHAN_BAKU_MANUAL" });
+  add({ modul: "pembelian", id: "p4", nomor: "PUR-01092026-020", tanggal: tanggalLalu(20), nominal: "600000.00", judul: "DP ke Toko Kain", sub: "Uang Muka Pembelian · Bayar langsung", pihak: "Toko Kain", rekening: "PT Sano", status: "DIBAYAR", mode: "LANGSUNG", supplierId: "sup-dp", kategoriKode: "UANG_MUKA_PEMBELIAN" });
+  add({ modul: "pembelian", id: "p5", nomor: "PUR-28082026-018", tanggal: tanggalLalu(24), nominal: "300000.00", judul: "DP kedua ke Toko Kain", sub: "Uang Muka Pembelian · Bayar langsung", pihak: "Toko Kain", rekening: "PT Sano", status: "DIBAYAR", mode: "LANGSUNG", supplierId: "sup-dp", kategoriKode: "UANG_MUKA_PEMBELIAN" });
   add({ modul: "kasbon", id: "k1", nomor: "KSB-19092026-001", tanggal: tanggalLalu(2), nominal: "1000000.00", judul: "Agung", sub: "Keperluan keluarga mendesak", pihak: "Agung", rekening: "KEM - Sano Bank", status: "AKTIF", terbayar: "400000.00", riwayat: [rw("Dibukukan")] });
   add({ modul: "kasbon", id: "k2", nomor: "KSB-10092026-002", tanggal: tanggalLalu(11), nominal: "500000.00", judul: "Imam", sub: "Biaya berobat anak", pihak: "Imam", rekening: "Uang Kas Sano", status: "LUNAS", terbayar: "500000.00", riwayat: [rw("Dibukukan")] });
   add({ modul: "pemasukan", id: "i1", nomor: "INC-19092026-001", tanggal: tanggalLalu(2), nominal: "75000.50", judul: "Bunga bank", sub: "4-9000 Pendapatan Lain-lain", pihak: null, rekening: "KEM - Sano Bank", status: "AKTIF", riwayat: [rw("Dibukukan")], catatan: "Pemasukan Lain bukan pembayaran order. Uang dari pelanggan dicatat di Pembayaran & Verifikasi." });
@@ -101,6 +115,9 @@ function sisaDari(d: Doc): Money | null {
     return m(`${s / 100n}.${(s % 100n).toString().padStart(2, "0")}`);
   }
   if (d.modul === "supplier") return m(d.nominal);
+  if (d.modul === "pembelian" && d.mode === "UTANG" && d.status !== "DIBAYAR" && d.kategoriKode !== "UANG_MUKA_PEMBELIAN") {
+    return kurangMoney(m(d.nominal), dpDiterapkanUntuk(d.id));
+  }
   return null;
 }
 
@@ -117,6 +134,18 @@ function aksiUntuk(d: Doc): Record<string, AksiTx> {
     a.batalkan = ok(admin && ["DISETUJUI", "DIBAYAR"].includes(d.status), admin ? "Hanya dokumen yang sudah dibukukan yang bisa dibatalkan." : "Pembatalan hanya untuk admin keuangan.", `${base}/cancel`, { perlu: ["alasan"] });
     a.ubah = ok(admin && ["DRAFT", "MENUNGGU_APPROVAL"].includes(d.status), admin ? "Dokumen yang sudah dibukukan hanya bisa dikoreksi di web." : "Mengubah dokumen hanya untuk admin keuangan. Buat dokumen baru bila perlu.", base, { metode: "PATCH", perlu: ["form", "alasan"] });
     a.lampiran = ok(d.status !== "DIBATALKAN" && catat, "Dokumen yang dibatalkan tidak bisa diubah buktinya.", `${base}/bukti`, { perlu: ["foto"] });
+    if (d.modul === "pembelian") {
+      const alasanTidak =
+        d.kategoriKode === "UANG_MUKA_PEMBELIAN" ? "Pembelian ini sendiri berkategori Uang Muka Pembelian — tidak bisa menerima penerapan DP lain"
+        : d.mode !== "UTANG" ? "Hanya pembelian mode Utang yang punya Utang Usaha untuk dikurangi DP"
+        : d.status !== "DISETUJUI" ? `Status pembelian ini ${d.status} — hanya status Disetujui (belum dibayar) yang bisa menerima penerapan DP`
+        : !d.supplierId ? "Pembelian ini belum punya supplier — DP hanya bisa diterapkan antar dokumen supplier yang sama"
+        : null;
+      a.terapkanDp = ok(post && !alasanTidak, !post ? "Akun Anda tidak boleh menerapkan uang muka." : alasanTidak ?? "", "/finance/purchases/advance-applications", { perlu: ["advancePurchaseId", "nominal"], tetap: { targetPurchaseId: d.id } });
+      if (d.mode === "UTANG" && d.status === "DISETUJUI" && d.kategoriKode !== "UANG_MUKA_PEMBELIAN" && bandingMoney(kurangMoney(m(d.nominal), dpDiterapkanUntuk(d.id)), "0.00") <= 0) {
+        a.bayar = { ...a.bayar, perlu: a.bayar.perlu.filter((p) => p !== "rekening") };
+      }
+    }
   } else if (d.modul === "kasbon") {
     const s = sisaDari(d);
     a.potongGaji = ok(post && d.status === "AKTIF" && !!s && s !== NOL && s !== "0.00", "Kasbon ini sudah tidak punya sisa yang bisa dipotong.", `/finance/kasbon/${d.id}/pelunasan`, { perlu: ["nominal", "tanggal"], tetap: { method: "POTONG_GAJI" } });
@@ -142,7 +171,9 @@ function keItem(d: Doc): ItemTx {
   return {
     kunci: `${d.modul}:${d.id}`, id: d.id, modul: d.modul, nomor: d.nomor, tanggal: d.tanggal, nominal: m(d.nominal), judul: d.judul, sub: d.sub, pihak: d.pihak, rekening: d.rekening,
     status: d.status, statusLabel, nada, jatuhTempo: d.jatuhTempo ?? null, umurHari: d.modul === "tagihan" && !["DISETUJUI", "DIBAYAR_SEBAGIAN"].includes(d.status) ? null : umur,
-    sisa: sisaDari(d), terbayar: d.terbayar ? m(d.terbayar) : null, adaLampiran: !!d.lampiran, notaWajib: !!d.notaWajib && !d.lampiran && menunggu,
+    sisa: sisaDari(d),
+    terbayar: d.modul === "pembelian" && d.mode === "UTANG" && d.status !== "DIBAYAR" && d.kategoriKode !== "UANG_MUKA_PEMBELIAN" ? dpDiterapkanUntuk(d.id) : d.terbayar ? m(d.terbayar) : null,
+    adaLampiran: !!d.lampiran, notaWajib: !!d.notaWajib && !d.lampiran && menunggu,
     jumlahTagihanTerbuka: d.modul === "supplier" ? 1 : null, ember: d.ember ?? null,
     persetujuan: putus && menunggu && has(caps(), "financeApprove") ? { jenis: putus, id: d.id } : null, aksi: aksiUntuk(d),
   };
@@ -177,19 +208,67 @@ export async function mockDaftarTx(f: FilterTx, page: number): Promise<HalamanTx
   return { items, tab, page, total: pilih.length, adaLagi: awal + items.length < pilih.length, hitung, ringkasan: ringkasan(f.modul, pilih), diperbaruiPada: new Date().toISOString() };
 }
 
+function riwayatDpUntuk(d: Doc): RiwayatDp[] {
+  const admin = has(caps(), "financeAdmin");
+  const baris = (app: DpApp, sisi: "sumber" | "tujuan"): RiwayatDp => {
+    const lawan = db.find((x) => x.id === (sisi === "sumber" ? app.targetId : app.advanceId));
+    const bolehBatal = sisi === "tujuan" && admin && app.status === "ACTIVE" && d.status !== "DIBAYAR";
+    return {
+      id: app.id, sisi, nominal: m(app.amount), status: app.status, statusLabel: app.status === "REVERSED" ? "Dibatalkan" : "Aktif",
+      tanggal: app.createdAt, dibuatOleh: { id: "u", name: app.createdBy }, jurnal: app.journal, jurnalPembalik: app.reversalJournal,
+      dibatalkanPada: app.reversedAt, dibatalkanOleh: app.reversedBy ? { id: "u", name: app.reversedBy } : null, alasanBatal: app.reverseReason,
+      pasangan: lawan ? { id: lawan.id, nomor: lawan.nomor } : null,
+      aksiBatalkan: sisi !== "tujuan" ? null : ok(
+        bolehBatal,
+        !admin ? "Pembatalan penerapan DP hanya untuk admin keuangan." : app.status !== "ACTIVE" ? "Penerapan ini sudah dibatalkan sebelumnya." : "Pembelian ini sudah lunas — batalkan/koreksi pelunasannya dulu sebelum membatalkan penerapan DP ini.",
+        `/finance/purchases/advance-applications/${app.id}/cancel`, { perlu: ["alasan"] }
+      ),
+    };
+  };
+  return [
+    ...dpApps.filter((a) => a.advanceId === d.id).map((a) => baris(a, "sumber")),
+    ...dpApps.filter((a) => a.targetId === d.id).map((a) => baris(a, "tujuan")),
+  ];
+}
+
+export async function mockDpEligible(id: string): Promise<DpEligible> {
+  await simulasiBaca(`tx:dp-eligible:${id}`);
+  pastikanDb();
+  const target = db.find((x) => x.modul === "pembelian" && x.id === id);
+  if (!target) throw new ApiError({ status: 404, code: "NOT_FOUND", message: "Pembelian tidak ditemukan" });
+  const alasan: string[] = [];
+  if (target.kategoriKode === "UANG_MUKA_PEMBELIAN") alasan.push("Pembelian ini sendiri berkategori Uang Muka Pembelian — tidak bisa menerima penerapan DP lain");
+  if (target.mode !== "UTANG") alasan.push("Hanya pembelian mode Utang yang punya Utang Usaha untuk dikurangi DP");
+  if (target.status !== "DISETUJUI") alasan.push(`Status pembelian ini ${target.status} — hanya status Disetujui (belum dibayar) yang bisa menerima penerapan DP`);
+  if (!target.supplierId) alasan.push("Pembelian ini belum punya supplier — DP hanya bisa diterapkan antar dokumen supplier yang sama");
+  if (alasan.length > 0) return { eligible: [], bisaMenerapkan: false, alasan };
+  const kandidat = db.filter((x) => x.modul === "pembelian" && x.kategoriKode === "UANG_MUKA_PEMBELIAN" && x.status === "DIBAYAR" && x.supplierId === target.supplierId);
+  const eligible = kandidat
+    .map((k) => ({ id: k.id, purchaseNumber: k.nomor, date: k.tanggal, nilaiAwal: m(k.nominal), sudahDigunakan: dpDipakaiDari(k.id), saldoTersedia: kurangMoney(m(k.nominal), dpDipakaiDari(k.id)) }))
+    .filter((k) => bandingMoney(k.saldoTersedia, "0.00") > 0);
+  return { eligible, bisaMenerapkan: true, sisaUtang: kurangMoney(m(target.nominal), dpDiterapkanUntuk(target.id)), totalPembelian: m(target.nominal) };
+}
+
 export async function mockDetailTx(modul: ModulTx, id: string): Promise<DetailTx> {
   await simulasiBaca(`tx:${modul}:${id}`);
   pastikanDb();
   const d = db.find((x) => x.modul === modul && x.id === id);
   if (!d) throw new ApiError({ status: 404, code: "NOT_FOUND", message: "Data tidak ditemukan" });
   const item = keItem(d);
+  const bagianDp: { judul: string; baris: { label: string; nilai: string; jenis?: "teks" | "uang" | "tanggal" | "waktu" }[] }[] =
+    d.modul === "pembelian"
+      ? [d.kategoriKode === "UANG_MUKA_PEMBELIAN"
+          ? { judul: "Sebagai Uang Muka", baris: [R("Nilai awal", d.nominal, "uang"), R("Sudah digunakan", dpDipakaiDari(d.id), "uang"), R("Saldo tersedia", kurangMoney(m(d.nominal), dpDipakaiDari(d.id)), "uang")] }
+          : { judul: "Uang Muka", baris: [R("Total pembelian", d.nominal, "uang"), R("DP diterapkan", dpDiterapkanUntuk(d.id), "uang"), R("Sisa pembayaran", kurangMoney(m(d.nominal), dpDiterapkanUntuk(d.id)), "uang")] }]
+      : [];
   const bagian = d.bagian ?? [
     { judul: "Dokumen", baris: [R("Nomor", d.nomor), R("Tanggal", d.tanggal, "tanggal"), R("Status", item.statusLabel)] },
     { judul: "Dana", baris: [R("Nominal", d.nominal, "uang"), ...(d.rekening ? [R("Rekening", d.rekening)] : []), ...(d.pihak ? [R("Pihak", d.pihak)] : [])] },
     ...(item.sisa ? [{ judul: "Sisa", baris: [R("Sisa", item.sisa, "uang")] }] : []),
+    ...bagianDp,
   ];
   return {
-    ...item, bagian: bagian.map((b) => ({ judul: b.judul, baris: b.baris.map((r) => ({ label: r.label, nilai: r.nilai, jenis: r.jenis ?? "teks", tautan: r.tautan ?? null })) })),
+    ...item, bagian: bagian.map((b) => ({ judul: b.judul, baris: b.baris.map((r) => ({ label: r.label, nilai: r.nilai, jenis: r.jenis ?? "teks", tautan: (r as { tautan?: { modul: ModulTx; id: string } }).tautan ?? null })) })),
     lampiran: [], riwayat: d.riwayat, catatan: d.catatan ?? null, syarat: item.notaWajib ? "Nota wajib sebelum disetujui." : null,
     pembayaran: (d.pembayaran ?? []).map((p) => ({
       id: p.id, nominal: m(p.nominal), metode: "TRANSFER", tanggal: tanggalLalu(10), status: p.status, statusLabel: p.status === "TERVERIFIKASI" ? "Terverifikasi" : "Menunggu verifikasi", asalOrderId: p.asalOrderId,
@@ -197,6 +276,7 @@ export async function mockDetailTx(modul: ModulTx, id: string): Promise<DetailTx
       aksiAlokasi: ok(has(caps(), "financePost"), "Akun Anda tidak boleh mengatur alokasi pembayaran.", `/finance/customer-payments/${p.id}/allocations`, { perlu: ["alokasi"] }),
     })),
     orderPelanggan: d.modul === "piutang" ? [{ id: "o1", nomor: "SAN-0001" }, { id: "o2", nomor: "SAN-0002" }] : [], supplier: null,
+    ...(d.modul === "pembelian" ? { riwayatDp: riwayatDpUntuk(d) } : {}),
   };
 }
 
@@ -301,6 +381,38 @@ export async function mockKirimTx(path: string, metode: string, body: unknown): 
       d.status = "DIBATALKAN"; d.riwayat.push({ waktu, peristiwa: "DOCUMENT_CANCELLED", label: "Dibatalkan", oleh, catatan: alasan });
     }
     void jalur;
+    return { ok: true };
+  }
+
+  if (path === "/finance/purchases/advance-applications" && metode === "POST") {
+    const advanceId = String(b.advancePurchaseId ?? "");
+    const targetId = String(b.targetPurchaseId ?? "");
+    const nominal = String(b.amount ?? "");
+    const advance = db.find((x) => x.id === advanceId);
+    const target = db.find((x) => x.id === targetId);
+    if (!advance) throw galat("NOT_FOUND", 404, "Pembelian sumber (uang muka) tidak ditemukan");
+    if (!target) throw galat("NOT_FOUND", 404, "Pembelian tujuan tidak ditemukan");
+    if (!/^\d+(\.\d+)?$/.test(nominal) || bandingMoney(m(nominal), "0.00") <= 0) throw galat("VALIDASI", 400, "Nominal penerapan harus lebih dari 0");
+    const tersedia = kurangMoney(m(advance.nominal), dpDipakaiDari(advanceId));
+    if (bandingMoney(m(nominal), tersedia) > 0) throw galat("VALIDASI", 400, `Nominal (${nominal}) melebihi saldo uang muka tersedia (${tersedia})`);
+    const sisaUtang = kurangMoney(m(target.nominal), dpDiterapkanUntuk(targetId));
+    if (bandingMoney(m(nominal), sisaUtang) > 0) throw galat("VALIDASI", 400, `Nominal (${nominal}) melebihi sisa utang pembelian tujuan (${sisaUtang})`);
+    urut += 1;
+    const appId = `dp${urut}`;
+    dpApps.push({ id: appId, advanceId, targetId, amount: m(nominal), status: "ACTIVE", journal: `JV-${urut}`, reversalJournal: null, createdAt: waktu, createdBy: oleh, reversedAt: null, reversedBy: null, reverseReason: null });
+    return { id: appId };
+  }
+
+  const batalDp = /^\/finance\/purchases\/advance-applications\/([^/]+)\/cancel$/.exec(path);
+  if (batalDp) {
+    const app = dpApps.find((a) => a.id === batalDp[1]);
+    if (!app) throw galat("NOT_FOUND", 404, "Penerapan uang muka tidak ditemukan");
+    if (app.status === "REVERSED") throw galat("KONFLIK", 409, "Penerapan ini sudah dibatalkan sebelumnya");
+    const target = db.find((x) => x.id === app.targetId);
+    if (target?.status === "DIBAYAR") throw galat("KONFLIK", 409, `${target.nomor} sudah lunas — batalkan/koreksi pelunasannya dulu sebelum membatalkan penerapan DP ini`);
+    const alasan = String(b.reason ?? "").trim();
+    if (!alasan) throw galat("VALIDASI", 400, "Alasan pembatalan wajib diisi");
+    app.status = "REVERSED"; app.reversalJournal = `JV-${++urut}`; app.reversedAt = waktu; app.reversedBy = oleh; app.reverseReason = alasan;
     return { ok: true };
   }
 

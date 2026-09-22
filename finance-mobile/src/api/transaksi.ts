@@ -7,11 +7,11 @@ import type { Need, NeedMode } from "@/auth/capabilities";
 import { isMoneyString, toMoney, type Money } from "@/lib/money";
 import { ENV } from "@/lib/env";
 import {
-  mockCariOrderRefund, mockDaftarTx, mockDetailTx, mockKirimTx, mockOpsiForm, mockRingkasanModul, mockUnggahFoto,
+  mockCariOrderRefund, mockDaftarTx, mockDetailTx, mockDpEligible, mockKirimTx, mockOpsiForm, mockRingkasanModul, mockUnggahFoto,
 } from "@/mocks/transaksi";
 import type {
-  AksiTx, BagianTx, BarisTx, DetailTx, FilterTx, HalamanTx, HasilUnggah, ItemTx, JenisApproval, KategoriTx, ModulTx, NadaTx, OpsiForm, OrderRefund,
-  PembayaranPiutang, RingkasanModul, RingkasanTx, SupplierInfo,
+  AksiTx, BagianTx, BarisTx, DetailTx, DpEligible, DpEligibleItem, FilterTx, HalamanTx, HasilUnggah, ItemTx, JenisApproval, KategoriTx, ModulTx, NadaTx, OpsiForm,
+  OrderRefund, PembayaranPiutang, RingkasanModul, RingkasanTx, RiwayatDp, SupplierInfo,
 } from "./types";
 
 // TRANSAKSI (S6–S8) — HANYA memetakan bentuk dari server. Status, izin/aksi, jatuh tempo, umur, sisa utang/piutang, dan uang yang boleh direfund
@@ -147,6 +147,26 @@ function petaSupplier(v: unknown): SupplierInfo | null {
   };
 }
 
+function petaOrang(v: unknown): { id: string; name: string } | null {
+  const o = obj(v);
+  return o && typeof o.id === "string" ? { id: o.id, name: teks(o.name) ?? "—" } : null;
+}
+
+function petaRiwayatDp(v: unknown): RiwayatDp[] {
+  return (Array.isArray(v) ? v : []).flatMap((r): RiwayatDp[] => {
+    const o = obj(r);
+    const nominal = uang(o?.nominal);
+    if (!o || typeof o.id !== "string" || !nominal || (o.sisi !== "sumber" && o.sisi !== "tujuan")) return [];
+    const pas = obj(o.pasangan);
+    return [{
+      id: o.id, sisi: o.sisi, nominal, status: teks(o.status) ?? "", statusLabel: teks(o.statusLabel) ?? "—", tanggal: teks(o.tanggal), dibuatOleh: petaOrang(o.dibuatOleh),
+      jurnal: teks(o.jurnal), jurnalPembalik: teks(o.jurnalPembalik), dibatalkanPada: teks(o.dibatalkanPada), dibatalkanOleh: petaOrang(o.dibatalkanOleh), alasanBatal: teks(o.alasanBatal),
+      pasangan: pas && typeof pas.id === "string" ? { id: pas.id, nomor: teks(pas.nomor) ?? "—" } : null,
+      aksiBatalkan: o.aksiBatalkan ? petaAksiTx(o.aksiBatalkan) : null,
+    }];
+  });
+}
+
 export function mapDetailTx(raw: unknown): DetailTx | null {
   const item = mapItemTx(raw);
   const o = obj(raw);
@@ -156,6 +176,25 @@ export function mapDetailTx(raw: unknown): DetailTx | null {
     pembayaran: petaPembayaran(o.pembayaran),
     orderPelanggan: (Array.isArray(o.orderPelanggan) ? o.orderPelanggan : []).flatMap((x) => { const y = obj(x); return y && typeof y.id === "string" ? [{ id: y.id, nomor: teks(y.nomor) }] : []; }),
     supplier: petaSupplier(o.supplier),
+    ...(o.riwayatDp !== undefined ? { riwayatDp: petaRiwayatDp(o.riwayatDp) } : {}),
+  };
+}
+
+export function mapDpEligible(raw: unknown): DpEligible {
+  const o = obj(raw) ?? {};
+  const eligible = (Array.isArray(o.eligible) ? o.eligible : []).flatMap((x): DpEligibleItem[] => {
+    const y = obj(x);
+    const nilaiAwal = uang(y?.nilaiAwal);
+    const sudahDigunakan = uang(y?.sudahDigunakan);
+    const saldoTersedia = uang(y?.saldoTersedia);
+    return y && typeof y.id === "string" && nilaiAwal && sudahDigunakan && saldoTersedia
+      ? [{ id: y.id, purchaseNumber: teks(y.purchaseNumber) ?? "—", date: teks(y.date) ?? "", nilaiAwal, sudahDigunakan, saldoTersedia }]
+      : [];
+  });
+  return {
+    eligible, bisaMenerapkan: o.bisaMenerapkan === true,
+    alasan: Array.isArray(o.alasan) ? o.alasan.filter((x): x is string => typeof x === "string") : undefined,
+    sisaUtang: uang(o.sisaUtang) ?? undefined, totalPembelian: uang(o.totalPembelian) ?? undefined,
   };
 }
 
@@ -209,6 +248,11 @@ export async function fetchOpsiForm(): Promise<OpsiForm> {
   return mapOpsiForm(await api.get<unknown>("/finance/transaksi/opsi", { normalisasi: NORMALISASI_TX }));
 }
 
+export async function fetchDpEligible(purchaseId: string): Promise<DpEligible> {
+  if (ENV.useMocks) return mockDpEligible(purchaseId);
+  return mapDpEligible(await api.get<unknown>(`/finance/transaksi/pembelian/${encodeURIComponent(purchaseId)}/advance-eligible`, { normalisasi: NORMALISASI_TX }));
+}
+
 export async function cariOrderRefund(q: string): Promise<OrderRefund[]> {
   if (ENV.useMocks) return mockCariOrderRefund(q);
   const o = obj(await api.get<unknown>("/finance/transaksi/opsi/order", { query: { q } })) ?? {};
@@ -223,7 +267,7 @@ export async function cariOrderRefund(q: string): Promise<OrderRefund[]> {
 // ── Perintah ────────────────────────────────────────────────────────────────────────────────────────────────
 export type IsianAksi = {
   alasan?: string; rekeningId?: string; tanggal?: string; nominal?: Money; receiptUrl?: string | null;
-  alokasi?: { orderId: string; amount: Money }[]; perubahan?: Record<string, unknown>;
+  alokasi?: { orderId: string; amount: Money }[]; perubahan?: Record<string, unknown>; advancePurchaseId?: string;
 };
 
 export const bikinKunciTx = () => randomUUID();
@@ -245,6 +289,7 @@ async function kirimTx(p: Perintah): Promise<unknown> {
 const NEED_AKSI: Record<string, { need: Need | Need[]; mode?: NeedMode }> = {
   ajukan: { need: ["financePost", "expenseSubmit"], mode: "any" }, bayar: { need: "financePost" }, potongGaji: { need: "financePost" }, alokasi: { need: "financePost" },
   batalkan: { need: "financeAdmin" }, ubah: { need: "financeAdmin" }, lampiran: { need: ["financePost", "expenseSubmit"], mode: "any" },
+  terapkanDp: { need: "financePost" }, batalkanDp: { need: "financeAdmin" },
 };
 
 /** Susun isi permintaan dari `aksi` (alamat & nilai tetap dari server) + isian pengguna. Uang selalu string desimal. */
@@ -262,6 +307,8 @@ export function bodyAksi(kode: string, aksi: AksiTx, i: IsianAksi): unknown {
     case "ubah": return { ...(i.perubahan ?? {}), reason: alasan };
     case "lampiran": return { receiptUrl: i.receiptUrl ?? null, ...(alasan ? { reason: alasan } : {}) };
     case "alokasi": return { allocations: (i.alokasi ?? []).map((a) => ({ orderId: a.orderId, amount: a.amount })) };
+    case "terapkanDp": return { advancePurchaseId: i.advancePurchaseId, targetPurchaseId: aksi.tetap?.targetPurchaseId, amount: i.nominal };
+    case "batalkanDp": return { reason: alasan };
     default: return {};
   }
 }

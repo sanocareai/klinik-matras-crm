@@ -264,9 +264,18 @@ export type PembayaranPiutang = {
   alokasi: { orderId: string; nomor: string | null; nominal: Money }[]; aksiAlokasi: AksiTx;
 };
 export type SupplierInfo = { telepon: string | null; email: string | null; alamat: string | null; terminHari: number | null; bank: string | null; rekeningBank: string | null; atasNama: string | null; catatan: string | null; aktif: boolean };
+/** Satu baris riwayat penerapan Uang Muka — sisi "tujuan" (DP diterapkan ke pembelian ini) punya aksiBatalkan; sisi "sumber" tidak (batalkan dari detail pembelian tujuannya). */
+export type RiwayatDp = {
+  id: string; sisi: "sumber" | "tujuan"; nominal: Money; status: string; statusLabel: string; tanggal: string | null; dibuatOleh: Orang | null;
+  jurnal: string | null; jurnalPembalik: string | null; dibatalkanPada: string | null; dibatalkanOleh: Orang | null; alasanBatal: string | null;
+  pasangan: { id: string; nomor: string } | null; aksiBatalkan: AksiTx | null;
+};
+export type DpEligibleItem = { id: string; purchaseNumber: string; date: string; nilaiAwal: Money; sudahDigunakan: Money; saldoTersedia: Money };
+export type DpEligible = { eligible: DpEligibleItem[]; bisaMenerapkan: boolean; alasan?: string[]; sisaUtang?: Money; totalPembelian?: Money };
 export type DetailTx = ItemTx & {
   bagian: BagianTx[]; lampiran: LampiranApproval[]; riwayat: RiwayatApproval[]; catatan: string | null; syarat: string | null;
   pembayaran: PembayaranPiutang[]; orderPelanggan: { id: string; nomor: string | null }[]; supplier: SupplierInfo | null;
+  riwayatDp?: RiwayatDp[];
 };
 export type RingkasanTx = {
   total: Money | null; totalSemua: Money | null; sisaAktif: Money | null; utangTerbuka: Money | null;

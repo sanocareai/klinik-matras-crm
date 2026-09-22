@@ -5,6 +5,7 @@
 //   GET /api/finance/transaksi/opsi                      pilihan formulir (kategori, rekening + saldo, supplier, karyawan, akun pemasukan lain)
 //   GET /api/finance/transaksi/opsi/order?q=             cari order untuk refund (+ sisa yang boleh dikembalikan)
 //   GET /api/finance/transaksi/:modul?tab=&q=&from=&to=&page=&limit=[&supplierId=&jatuhTempo=lewat]
+//   GET /api/finance/transaksi/pembelian/:id/advance-eligible   daftar DP eligible untuk sheet "Terapkan Uang Muka"
 //   GET /api/finance/transaksi/:modul/:id                detail + lampiran bertanda-tangan + riwayat
 //   modul: pengeluaran | pembelian | kasbon | pemasukan | piutang | refund | supplier | tagihan | pembayaran-supplier
 // Semua butuh FINANCE_READ.
@@ -13,7 +14,7 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { cariOrderRefund, daftarTransaksi, detailTransaksi, opsiForm, ringkasanTransaksi } from "../services/finance/transaksi.js";
+import { cariOrderRefund, daftarDpEligibleUntuk, daftarTransaksi, detailTransaksi, opsiForm, ringkasanTransaksi } from "../services/finance/transaksi.js";
 import { handleFinanceError } from "./finance.js";
 
 export const financeTransaksiRouter = express.Router();
@@ -48,6 +49,16 @@ financeTransaksiRouter.get("/transaksi/:modul", async (req, res) => {
   try {
     const { tab, q, from, to, page, limit, supplierId, jatuhTempo } = req.query;
     res.json(await daftarTransaksi(prisma, req.user, req.params.modul, { tab, q, from, to, page, limit, supplierId, jatuhTempo }));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+financeTransaksiRouter.get("/transaksi/pembelian/:id/advance-eligible", async (req, res) => {
+  try {
+    const hasil = await daftarDpEligibleUntuk(prisma, req.params.id);
+    if (!hasil) return res.status(404).json({ error: "Pembelian tidak ditemukan" });
+    res.json(hasil);
   } catch (e) {
     handleFinanceError(e, res);
   }
