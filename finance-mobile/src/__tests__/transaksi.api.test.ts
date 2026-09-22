@@ -5,7 +5,7 @@
 jest.mock("@/lib/env", () => ({ ENV: { useMocks: false, apiUrl: "http://x/api" } }));
 
 import { ApiError } from "@/api/errors";
-import { bodyAksi, bodyBuat, jalankanAksiTx, mapDetailTx, mapHalamanTx, mapItemTx, mapOpsiForm, needBuat, petaAksiTx } from "@/api/transaksi";
+import { bodyAksi, bodyBuat, jalankanAksiTx, mapDetailTx, mapDpEligible, mapHalamanTx, mapItemTx, mapOpsiForm, needBuat, petaAksiTx } from "@/api/transaksi";
 import { useSession } from "@/auth/session";
 import { useLock } from "@/auth/lock";
 import { bandingMoney, jumlahMoney, kurangMoney, parseInputRupiah, tambahMoney, type Money } from "@/lib/money";
@@ -75,6 +75,37 @@ describe("pemetaan respons", () => {
     expect(d?.riwayat).toHaveLength(1);
   });
 
+  it("Terapkan Uang Muka: detail pembelian membawa riwayatDp + aksiBatalkan per baris; total 2.100.000 + DP 600.000 = sisa 1.500.000", () => {
+    const d = mapDetailTx({
+      ...item({ modul: "pembelian", kunci: "pembelian:p3", id: "p3", nominal: "2100000.00", sisa: "1500000.00", terbayar: "600000.00", aksi: { bayar: aksi(), terapkanDp: aksi({ path: "/finance/purchases/advance-applications", perlu: ["advancePurchaseId", "nominal"], tetap: { targetPurchaseId: "p3" } }) } }),
+      bagian: [], lampiran: [], pembayaran: [], orderPelanggan: [], riwayat: [],
+      riwayatDp: [
+        { id: "dp1", sisi: "tujuan", nominal: "600000.00", status: "ACTIVE", statusLabel: "Aktif", tanggal: "2026-09-20T00:00:00Z", dibuatOleh: { id: "u1", name: "Kemal" }, jurnal: "JV-1", jurnalPembalik: null, dibatalkanPada: null, dibatalkanOleh: null, alasanBatal: null, pasangan: { id: "p4", nomor: "PUR-01092026-020" }, aksiBatalkan: aksi({ path: "/finance/purchases/advance-applications/dp1/cancel", perlu: ["alasan"] }) },
+      ],
+    });
+    expect(d?.sisa).toBe("1500000.00");
+    expect(d?.terbayar).toBe("600000.00");
+    expect(d?.aksi.terapkanDp?.boleh).toBe(true);
+    expect(d?.aksi.terapkanDp?.tetap).toEqual({ targetPurchaseId: "p3" });
+    expect(d?.riwayatDp).toHaveLength(1);
+    expect(d?.riwayatDp?.[0]?.sisi).toBe("tujuan");
+    expect(d?.riwayatDp?.[0]?.aksiBatalkan?.boleh).toBe(true);
+    expect(d?.riwayatDp?.[0]?.pasangan).toEqual({ id: "p4", nomor: "PUR-01092026-020" });
+  });
+
+  it("daftar DP eligible: alasan tidak-eligible dari server dipertahankan; daftar eligible dengan saldo tersedia uang string", () => {
+    expect(mapDpEligible({ eligible: [], bisaMenerapkan: false, alasan: ["Hanya pembelian mode Utang yang punya Utang Usaha untuk dikurangi DP"] })).toEqual({
+      eligible: [], bisaMenerapkan: false, alasan: ["Hanya pembelian mode Utang yang punya Utang Usaha untuk dikurangi DP"], sisaUtang: undefined, totalPembelian: undefined,
+    });
+    const e = mapDpEligible({
+      eligible: [{ id: "p4", purchaseNumber: "PUR-01092026-020", date: "2026-09-01", nilaiAwal: "600000.00", sudahDigunakan: "0.00", saldoTersedia: "600000.00" }],
+      bisaMenerapkan: true, sisaUtang: "2100000.00", totalPembelian: "2100000.00",
+    });
+    expect(e.eligible).toHaveLength(1);
+    expect(e.eligible[0]?.saldoTersedia).toBe("600000.00");
+    expect(e.sisaUtang).toBe("2100000.00");
+  });
+
   it("opsi formulir: saldo rekening string (boleh negatif), akun pemasukan lain, karyawan", () => {
     const o = mapOpsiForm({
       kategoriPengeluaran: [{ id: "k1", code: "BBM", name: "BBM" }], kategoriPembelian: [], rekening: [{ id: "r1", name: "KEM", kind: "BANK", saldo: "-175967591.00" }],
@@ -108,6 +139,13 @@ describe("isi permintaan perintah", () => {
     expect(bodyAksi("lampiran", petaAksiTx(aksi()), { receiptUrl: "/media/finance-receipts/a.jpg" })).toEqual({ receiptUrl: "/media/finance-receipts/a.jpg" });
   });
 
+  it("terapkanDp: advancePurchaseId dari isian, targetPurchaseId dari tetap server (bukan klien), nominal string; batalkanDp: alasan terpangkas", () => {
+    const terapkan = petaAksiTx(aksi({ path: "/finance/purchases/advance-applications", perlu: ["advancePurchaseId", "nominal"], tetap: { targetPurchaseId: "p3" } }));
+    expect(bodyAksi("terapkanDp", terapkan, { advancePurchaseId: "p4", nominal: "600000.00" as Money })).toEqual({ advancePurchaseId: "p4", targetPurchaseId: "p3", amount: "600000.00" });
+    const batalkanDp = petaAksiTx(aksi({ path: "/finance/purchases/advance-applications/dp1/cancel", perlu: ["alasan"] }));
+    expect(bodyAksi("batalkanDp", batalkanDp, { alasan: "  salah pilih DP  " })).toEqual({ reason: "salah pilih DP" });
+  });
+
   it("buat dokumen: pengeluaran (draf server bila ajukan=false), kasbon, pemasukan, refund, tagihan, supplier — uang selalu string", () => {
     expect(bodyBuat({ modul: "pengeluaran", tanggal: "2026-09-21", nominal: nom, keterangan: " Servis ", kategoriId: "k1", mode: "LANGSUNG", rekeningId: "r1", ajukan: false })).toMatchObject({
       amount: "1500000.00", description: "Servis", categoryId: "k1", cashAccountId: "r1", langsungAjukan: false,
@@ -137,6 +175,13 @@ describe("guard perintah", () => {
 
   it("tanpa capability yang dibutuhkan perintah tidak jalan (penyetuju tidak boleh membayar)", async () => {
     await expect(jalankanAksiTx("bayar", petaAksiTx(aksi()), { rekeningId: "r1" }, "k1")).rejects.toThrow(/tidak punya izin/);
+  });
+
+  it("terapkanDp butuh financePost (penyetuju tanpa financePost tidak boleh); batalkanDp butuh financeAdmin (bukan financeApprove)", async () => {
+    const terapkan = petaAksiTx(aksi({ path: "/finance/purchases/advance-applications", perlu: ["advancePurchaseId", "nominal"], tetap: { targetPurchaseId: "p3" } }));
+    await expect(jalankanAksiTx("terapkanDp", terapkan, { advancePurchaseId: "p4", nominal: "600000.00" as Money }, "k1")).rejects.toThrow(/tidak punya izin/);
+    const batalkanDp = petaAksiTx(aksi({ path: "/finance/purchases/advance-applications/dp1/cancel", perlu: ["alasan"] }));
+    await expect(jalankanAksiTx("batalkanDp", batalkanDp, { alasan: "x" }, "k1")).rejects.toThrow(/tidak punya izin/);
   });
 
   it("alamat asing ditolak walau server bilang boleh", async () => {

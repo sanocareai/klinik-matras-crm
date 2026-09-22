@@ -31,6 +31,7 @@ import {
   findEntryByKey, JournalError,
 } from "../services/finance/journal.js";
 import { toMoney, sumMoney, moneyToNumber, ZERO, MoneyError } from "../services/finance/money.js";
+import { saldoDariAplikasi, bentukAplikasiDp, daftarDpEligible, ringkasanDp } from "../services/finance/purchaseAdvanceRead.js";
 import { AccountError } from "../services/finance/accounts.js";
 import { SETTING_KEYS, getSettingRaw, parseIntOr, getVerificationGate } from "../services/finance/settings.js";
 import { postExpenseApproved, postExpensePaid, KEY as EXPENSE_KEY } from "../services/finance/posting/expense.js";
@@ -1121,27 +1122,6 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
 // jurnalnya, dan komentar model FinPurchaseAdvanceApplication di schema.
 // ═════════════════════════════════════════════════════════════════════════
 
-function saldoDariAplikasi(list) {
-  return list.length === 0 ? ZERO : sumMoney(list.map((a) => a.amount));
-}
-
-function bentukAplikasiDp(a) {
-  return {
-    id: a.id,
-    amount: moneyToNumber(a.amount),
-    status: a.status,
-    createdAt: a.createdAt,
-    createdBy: a.createdBy?.name || null,
-    journal: a.journal ? { id: a.journal.id, entryNumber: a.journal.entryNumber } : null,
-    reversalJournal: a.reversalJournal ? { id: a.reversalJournal.id, entryNumber: a.reversalJournal.entryNumber } : null,
-    reversedAt: a.reversedAt,
-    reversedBy: a.reversedBy?.name || null,
-    reverseReason: a.reverseReason,
-    ...(a.advancePurchase && { advancePurchase: a.advancePurchase }),
-    ...(a.targetPurchase && { targetPurchase: a.targetPurchase }),
-  };
-}
-
 /** Daftar DP eligible untuk diterapkan ke SATU pembelian tujuan (dipakai picker UI). */
 financeTxRouter.get("/purchases/:id/advance-eligible",
   requireAnyPermission(P.FINANCE_READ, P.FINANCE_POST),
@@ -1153,39 +1133,7 @@ financeTxRouter.get("/purchases/:id/advance-eligible",
       });
       if (!target) throw err("Pembelian tidak ditemukan", 404);
 
-      const alasan = [];
-      if (target.category.code === "UANG_MUKA_PEMBELIAN") alasan.push("Pembelian ini sendiri berkategori Uang Muka Pembelian — tidak bisa menerima penerapan DP lain");
-      if (target.mode !== "UTANG") alasan.push("Hanya pembelian mode Utang yang punya Utang Usaha untuk dikurangi DP");
-      if (target.status !== "DISETUJUI") alasan.push(`Status pembelian ini ${target.status} — hanya status Disetujui (belum dibayar) yang bisa menerima penerapan DP`);
-      if (!target.supplierId) alasan.push("Pembelian ini belum punya supplier — DP hanya bisa diterapkan antar dokumen supplier yang sama");
-
-      if (alasan.length > 0) {
-        return res.json({ eligible: [], bisaMenerapkan: false, alasan });
-      }
-
-      const kandidat = await prisma.finPurchase.findMany({
-        where: { supplierId: target.supplierId, status: "DIBAYAR", category: { code: "UANG_MUKA_PEMBELIAN" } },
-        include: { advanceApplicationsAsSource: { where: { status: "ACTIVE" }, select: { amount: true } } },
-        orderBy: { date: "asc" },
-      });
-
-      const aplikasiTarget = await prisma.finPurchaseAdvanceApplication.findMany({
-        where: { targetPurchaseId: target.id, status: "ACTIVE" }, select: { amount: true },
-      });
-      const sisaUtang = toMoney(target.amount).minus(saldoDariAplikasi(aplikasiTarget));
-
-      const eligible = kandidat
-        .map((k) => {
-          const dipakai = saldoDariAplikasi(k.advanceApplicationsAsSource);
-          const tersedia = toMoney(k.amount).minus(dipakai);
-          return {
-            id: k.id, purchaseNumber: k.purchaseNumber, date: k.date,
-            nilaiAwal: moneyToNumber(k.amount), sudahDigunakan: moneyToNumber(dipakai), saldoTersedia: moneyToNumber(tersedia),
-          };
-        })
-        .filter((k) => k.saldoTersedia > 0);
-
-      res.json({ eligible, bisaMenerapkan: true, sisaUtang: moneyToNumber(sisaUtang), totalPembelian: moneyToNumber(target.amount) });
+      res.json(await daftarDpEligible(prisma, target));
     } catch (e) {
       handleFinanceError(e, res);
     }
@@ -1202,45 +1150,7 @@ financeTxRouter.get("/purchases/:id/advance-summary",
       });
       if (!p) throw err("Pembelian tidak ditemukan", 404);
 
-      const aplikasiInclude = {
-        journal: { select: { id: true, entryNumber: true } },
-        reversalJournal: { select: { id: true, entryNumber: true } },
-        createdBy: { select: { name: true } },
-        reversedBy: { select: { name: true } },
-      };
-      const [sebagaiSumber, sebagaiTujuan] = await Promise.all([
-        prisma.finPurchaseAdvanceApplication.findMany({
-          where: { advancePurchaseId: p.id },
-          include: { ...aplikasiInclude, targetPurchase: { select: { id: true, purchaseNumber: true, description: true } } },
-          orderBy: { createdAt: "desc" },
-        }),
-        prisma.finPurchaseAdvanceApplication.findMany({
-          where: { targetPurchaseId: p.id },
-          include: { ...aplikasiInclude, advancePurchase: { select: { id: true, purchaseNumber: true, description: true } } },
-          orderBy: { createdAt: "desc" },
-        }),
-      ]);
-
-      const dipakaiDariSumber = saldoDariAplikasi(sebagaiSumber.filter((a) => a.status === "ACTIVE"));
-      const dpDiterapkanKeTujuan = saldoDariAplikasi(sebagaiTujuan.filter((a) => a.status === "ACTIVE"));
-      const sisaUtang = toMoney(p.amount).minus(dpDiterapkanKeTujuan);
-
-      res.json({
-        purchaseId: p.id, purchaseNumber: p.purchaseNumber, kategoriUangMuka: p.category.code === "UANG_MUKA_PEMBELIAN",
-        sebagaiSumberUangMuka: {
-          nilaiAwal: moneyToNumber(p.amount),
-          sudahDigunakan: moneyToNumber(dipakaiDariSumber),
-          saldoTersedia: moneyToNumber(toMoney(p.amount).minus(dipakaiDariSumber)),
-          histori: sebagaiSumber.map(bentukAplikasiDp),
-        },
-        sebagaiTujuanPembelian: {
-          totalPembelian: moneyToNumber(p.amount),
-          dpDiterapkan: moneyToNumber(dpDiterapkanKeTujuan),
-          sisaUtang: moneyToNumber(sisaUtang),
-          sisaDibayarTunai: p.status === "DIBAYAR" ? 0 : moneyToNumber(sisaUtang),
-          histori: sebagaiTujuan.map(bentukAplikasiDp),
-        },
-      });
+      res.json(await ringkasanDp(prisma, p));
     } catch (e) {
       handleFinanceError(e, res);
     }

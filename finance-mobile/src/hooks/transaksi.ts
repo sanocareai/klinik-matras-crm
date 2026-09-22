@@ -1,11 +1,11 @@
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ENV } from "@/lib/env";
 import { ApiError } from "@/api/errors";
-import { fetchDaftarTx, fetchDetailTx, fetchOpsiForm, fetchRingkasanModul, cariOrderRefund } from "@/api/transaksi";
+import { fetchDaftarTx, fetchDetailTx, fetchDpEligible, fetchOpsiForm, fetchRingkasanModul, cariOrderRefund } from "@/api/transaksi";
 import { getSkenario } from "@/mocks/skenario";
 import { useSession } from "@/auth/session";
 import { has } from "@/auth/capabilities";
-import type { DetailTx, FilterTx, HalamanTx, ModulTx, OpsiForm, OrderRefund, RingkasanModul } from "@/api/types";
+import type { DetailTx, DpEligible, FilterTx, HalamanTx, ModulTx, OpsiForm, OrderRefund, RingkasanModul } from "@/api/types";
 
 // HOOK DATA TRANSAKSI (S6–S8) — sumber: server (atau server contoh di mode contoh). Setelah perintah, semua data yang bergantung (daftar, detail,
 // Inbox Persetujuan S4, pembayaran S5, dashboard) diambil ulang dari server: status resmi, bukan tebakan klien.
@@ -54,6 +54,16 @@ export function useOpsiForm(aktif = true) {
     queryFn: fetchOpsiForm,
     enabled: aktif,
     staleTime: 60_000,
+    retry: tanpaUlang4xx,
+  });
+}
+
+export function useDpEligible(purchaseId: string, aktif: boolean) {
+  return useQuery<DpEligible>({
+    queryKey: ["tx", "dp-eligible", purchaseId, ENV.useMocks, skenario()],
+    queryFn: () => fetchDpEligible(purchaseId),
+    enabled: aktif,
+    staleTime: 5_000,
     retry: tanpaUlang4xx,
   });
 }

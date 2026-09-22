@@ -11,7 +11,7 @@ import { TeksSensitif } from "@/design/Samarkan";
 import { Button, EmptyState, MockBanner, OfflineBanner, PressableScale, SectionHeader, Skeleton } from "@/design/ui";
 import { font, radius } from "@/design/tokens";
 import { useTheme } from "@/design/theme";
-import { useOpsiForm, useTxDetail } from "@/hooks/transaksi";
+import { useDpEligible, useOpsiForm, useTxDetail } from "@/hooks/transaksi";
 import { useOnline } from "@/hooks/useOnline";
 import { ApiError } from "@/api/errors";
 import { ENV } from "@/lib/env";
@@ -22,25 +22,27 @@ import { PESAN_BACA_SAJA, bacaSaja } from "@/lib/bacaSaja";
 import { BannerBasi, GalatPenuh } from "@/features/umum/StatusData";
 import { AlasanSheet } from "@/features/persetujuan/Sheets";
 import { GaleriLampiran, LinimasaRiwayat } from "@/features/persetujuan/LampiranRiwayat";
-import type { AksiTx, BarisTx, DetailTx, ModulTx, PembayaranPiutang } from "@/api/types";
+import type { AksiTx, BarisTx, DetailTx, ModulTx, PembayaranPiutang, RiwayatDp } from "@/api/types";
 import { KONFIG, modulValid } from "./modul";
 import { teksJatuhTempo, utamaTx } from "./KartuTx";
-import { AlokasiSheet, BayarSheet } from "./SheetAksiTx";
+import { AlokasiSheet, BayarSheet, TerapkanDpSheet } from "./SheetAksiTx";
 import { LampiranField } from "./LampiranField";
 import { IsianTeks, IsianUang } from "./Isian";
 import { useAksiTx, type HasilTx } from "./useAksiTx";
 
 type Pesan = { tone: "sukses" | "galat" | "info"; teks: string };
-type Sheetnya = null | "ajukan" | "bayar" | "potongGaji" | "batalkan" | "ubah" | "lampiran" | "alokasi";
+type Sheetnya = null | "ajukan" | "bayar" | "potongGaji" | "batalkan" | "ubah" | "lampiran" | "alokasi" | "terapkanDp" | "batalkanDp";
 
-const URUTAN_AKSI = ["ajukan", "bayar", "potongGaji", "lampiran", "ubah", "batalkan"] as const;
+const URUTAN_AKSI = ["ajukan", "bayar", "terapkanDp", "potongGaji", "lampiran", "ubah", "batalkan"] as const;
 const LABEL_AKSI: Record<string, { label: string; variant: "primary" | "secondary" | "danger" | "ghost"; sukses: string }> = {
   ajukan: { label: "Ajukan untuk persetujuan", variant: "primary", sukses: "Diajukan. Dokumen kini ada di Persetujuan." },
   bayar: { label: "Bayar", variant: "primary", sukses: "Pembayaran dicatat. Status resmi dimuat dari server." },
+  terapkanDp: { label: "Terapkan Uang Muka", variant: "secondary", sukses: "Uang muka diterapkan. Sisa pembayaran dihitung ulang server." },
   potongGaji: { label: "Potong dari gaji", variant: "primary", sukses: "Pemotongan gaji dicatat. Sisa kasbon dimuat dari server." },
   lampiran: { label: "Lampirkan nota", variant: "secondary", sukses: "Foto nota terpasang." },
   ubah: { label: "Ubah", variant: "secondary", sukses: "Perubahan disimpan." },
   batalkan: { label: "Batalkan", variant: "danger", sukses: "Dibatalkan. Jurnal dibalik dan alasan tercatat." },
+  batalkanDp: { label: "Batalkan penerapan DP", variant: "danger", sukses: "Penerapan DP dibatalkan. Saldo & sisa utang dihitung ulang server." },
 };
 
 function BannerPesan({ pesan }: { pesan: Pesan }) {
@@ -142,8 +144,10 @@ export function DetailTxScreen() {
   const [foto, setFoto] = useState<string | null>(null);
   const [fotoSibuk, setFotoSibuk] = useState(false);
   const [alokasiPilih, setAlokasiPilih] = useState<PembayaranPiutang | null>(null);
+  const [dpBatalPilih, setDpBatalPilih] = useState<RiwayatDp | null>(null);
   const opsi = useOpsiForm(sheet === "bayar");
   const d = q.data;
+  const dpEligible = useDpEligible(String(id), modul === "pembelian" && sheet === "terapkanDp");
   const muatUlang = () => void q.refetch();
 
   function tampilkan(h: HasilTx, sukses: string, bukaLagi?: () => void) {
@@ -248,6 +252,33 @@ export function DetailTxScreen() {
 
           {d.riwayat.length > 0 ? (<><SectionHeader judul="Riwayat" /><LinimasaRiwayat riwayat={d.riwayat} /></>) : null}
 
+          {modul === "pembelian" && d.riwayatDp && d.riwayatDp.length > 0 ? (
+            <>
+              <SectionHeader judul="Riwayat Uang Muka" />
+              <GlassCard>
+                {d.riwayatDp.map((r) => (
+                  <View key={r.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.hairline }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                      <View style={{ flex: 1 }}>
+                        <StatusBadge label={r.statusLabel} tone={r.status === "REVERSED" ? "neutral" : "success"} />
+                        <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textFaint, fontFamily: font.regular, fontSize: 11, marginTop: 4 }}>
+                          {r.sisi === "sumber" ? "Diterapkan ke" : "Dari"} {r.pasangan?.nomor ?? "—"} · {r.tanggal ? tanggalPendek(r.tanggal) : "—"}
+                        </Text>
+                      </View>
+                      <View style={{ flexShrink: 0, maxWidth: "45%" }}><MoneyText value={r.nominal} size="sm" /></View>
+                    </View>
+                    {r.status === "REVERSED" && r.alasanBatal ? (
+                      <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 12, marginTop: 4 }}>Dibatalkan: {r.alasanBatal}</Text>
+                    ) : null}
+                    {r.aksiBatalkan?.boleh ? (
+                      <Button label="Batalkan" variant="ghost" disabled={sibuk || !online || bacaSaja()} onPress={() => { setDpBatalPilih(r); setSheet("batalkanDp"); }} style={{ marginTop: 8 }} />
+                    ) : null}
+                  </View>
+                ))}
+              </GlassCard>
+            </>
+          ) : null}
+
           {bisaAksi.length > 0 || tidakBisa.length > 0 ? (
             <View style={{ marginTop: 22, gap: 10 }}>
               {bisaAksi.length > 0 ? (bacaSaja() ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12 }}>{PESAN_BACA_SAJA}</Text> : !online ? <Text style={{ color: colors.warning, fontFamily: font.medium, fontSize: 12 }}>{S.offline.aksiNonaktif}</Text> : null) : null}
@@ -288,6 +319,28 @@ export function DetailTxScreen() {
             judul={`Batalkan ${k.tunggal}`} sub={`Tulis alasan pembatalan ${d.nomor}. Jurnal dibalik dan alasan tercatat di riwayat.`} tombol="Batalkan" placeholder="Contoh: salah nominal, dicatat dobel"
             onKirim={() => { void kirim("batalkan", { alasan }, "batalkan"); }}
           />
+
+          {modul === "pembelian" ? (
+            <TerapkanDpSheet
+              visible={sheet === "terapkanDp"} totalPembelian={d.nominal} sisaSaatIni={d.sisa ?? d.nominal}
+              data={dpEligible.data} memuat={dpEligible.isLoading} galatMuat={dpEligible.isError} onCobaMuat={() => void dpEligible.refetch()}
+              sibuk={sibuk} onTutup={() => setSheet(null)}
+              onKirim={(i) => { void kirim("terapkanDp", { advancePurchaseId: i.advancePurchaseId, nominal: i.nominal }, "terapkanDp"); }}
+            />
+          ) : null}
+
+          {dpBatalPilih ? (
+            <AlasanSheet
+              key={dpBatalPilih.id} visible={sheet === "batalkanDp"} sibuk={sibuk} nomor={d.nomor} alasan={alasan} onUbah={setAlasan} onTutup={() => setSheet(null)}
+              judul="Batalkan penerapan DP" sub="Tulis alasan pembatalan. Jurnal dibalik dan saldo DP serta sisa utang dihitung ulang server." tombol="Batalkan" placeholder="Contoh: salah pilih DP, salah nominal"
+              onKirim={() => {
+                const a = dpBatalPilih.aksiBatalkan;
+                if (!a) return;
+                setSheet(null);
+                void aksi(`${d.kunci}:${dpBatalPilih.id}`, "batalkanDp", a, { alasan }).then((h) => { if (h.ok) setAlasan(""); tampilkan(h, LABEL_AKSI.batalkanDp?.sukses ?? "Berhasil.", () => setSheet("batalkanDp")); });
+              }}
+            />
+          ) : null}
 
           <Sheet visible={sheet === "lampiran"} onClose={() => { if (!sibuk && !fotoSibuk) setSheet(null); }} judul="Lampirkan nota" sub="Foto nota diunggah dulu, lalu dipasang ke dokumen ini.">
             <LampiranField onUrl={setFoto} onSibuk={setFotoSibuk} />
