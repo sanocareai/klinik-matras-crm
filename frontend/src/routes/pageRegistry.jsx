@@ -44,6 +44,7 @@ const ArmadaRingkasan   = lazy(() => import("../pages/armada/ArmadaRingkasan.jsx
 const ArmadaJobs        = lazy(() => import("../pages/armada/ArmadaJobs.jsx"));
 const ArmadaOrders      = lazy(() => import("../pages/armada/ArmadaOrders.jsx"));
 const ArmadaRoutes      = lazy(() => import("../pages/armada/ArmadaRoutes.jsx"));
+const ArmadaKendaliRute = lazy(() => import("../pages/armada/ArmadaKendaliRute.jsx"));
 const ArmadaPengaturan  = lazy(() => import("../pages/armada/ArmadaPengaturan.jsx"));
 const ArmadaPod         = lazy(() => import("../pages/armada/ArmadaPod.jsx"));
 const ArmadaTracking    = lazy(() => import("../pages/armada/ArmadaTracking.jsx"));
@@ -145,6 +146,7 @@ export const PAGES = [
   { path: "/armada/jobs",      render: () => <ArmadaJobs /> },
   { path: "/armada/orders",    render: () => <ArmadaOrders /> },
   { path: "/armada/routes", render: () => <ArmadaRoutes /> },
+  { path: "/armada/kendali-rute", render: () => <ArmadaKendaliRute /> },
   { path: "/armada/tracking", render: () => <ArmadaTracking /> },
   { path: "/armada/pengaturan", render: () => <ArmadaPengaturan /> },
   { path: "/armada/biaya", render: () => <ArmadaBiaya /> },

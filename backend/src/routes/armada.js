@@ -1919,13 +1919,21 @@ function generateRouteCode(date) {
 }
 
 const routeInclude = {
+  // createdBy dibutuhkan jejak audit read-only di Delivery Control Tower.
+  // Tetap select minimal dan ikut query route yang sama (bukan lookup per rute).
+  createdBy: { select: { id: true, name: true } },
   // lastAppSyncAt (22 September 2026, bug Agung) — dipakai RouteCard.jsx
   // membandingkan dengan publishedAt, lihat catatan panjang di
   // schema.prisma pada field User.lastAppSyncAt.
-  driver: { select: { id: true, name: true, lastAppSyncAt: true } },
+  // isOnline/onlineSince (22 September 2026, Delivery Control Tower) —
+  // routeInclude SEBELUM ini tidak menyertakan status Online/Offline
+  // driver/helper sama sekali (cuma jobInclude yang punya, dipakai Live
+  // Tracking) — Control Tower butuh status ini di level RUTE tanpa
+  // panggilan API kedua, sumber SAMA yang sudah dipakai di tempat lain.
+  driver: { select: { id: true, name: true, lastAppSyncAt: true, isOnline: true, onlineSince: true } },
   // helper (D-077) — pasangan driver, lihat catatan panjang di schema.prisma
   // pada field Route.helperId untuk kenapa field ini ditambahkan.
-  helper: { select: { id: true, name: true, lastAppSyncAt: true } },
+  helper: { select: { id: true, name: true, lastAppSyncAt: true, isOnline: true, onlineSince: true } },
   vehicle: { select: { id: true, plateNumber: true, type: true, capacitySlots: true } },
   // lastEditedBy (redesain Sep 2026) — siapa terakhir mengedit rute PUBLISHED
   // ini, dipasangkan dengan Route.lastEditReason/lastEditedAt (kolom biasa,

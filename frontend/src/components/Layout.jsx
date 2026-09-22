@@ -337,6 +337,7 @@ const DIVISIONS = {
           // terlihat tapi gagal saat diklik.
           { to: "/armada/orders",    label: "Semua Order",         Icon: ClipboardList, hideForLeaderDriver: true },
           { to: "/armada/routes",    label: "Route Planner",       Icon: Route },
+          { to: "/armada/kendali-rute", label: "Kendali Rute",     Icon: Gauge },
           { to: "/armada/tracking",  label: "Live Tracking",       Icon: MapPin },
           // Biaya Armada (D-167, 14 September 2026, laporan owner: "input
           // rincian biaya pengeluaran per kendaraan, servis dan lainnya...

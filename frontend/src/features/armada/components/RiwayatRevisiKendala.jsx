@@ -3,7 +3,7 @@ import { Undo2, AlertTriangle, Plus } from "lucide-react";
 import StatusBadge from "./StatusBadge.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { REVISION_STATUS, REVISION_TRIGGER } from "../revisionStatus.js";
-import { ISSUE_STATUS } from "../issueStatus.js";
+import { ISSUE_STATUS, issueStatusOf } from "../issueStatus.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import {
   CATEGORY_LABEL, STATUS_LABEL, STATUS_TONE, OWNER_LABEL,
@@ -23,19 +23,11 @@ import NewComplaintCaseForm from "@/features/complaints/NewComplaintCaseForm.jsx
 // cukup lempar hasil fetch itu apa adanya sebagai props, bukan meracik
 // bentuk data sendiri-sendiri yang bisa diam-diam menyimpang.
 //
-// Derive status ringkas job kendala/reschedule — SAMA logika dengan
-// deriveIssueStatus() di backend/src/routes/armada.js, disalin ringkas di
-// sini alih-alih backend mengirim field turunan lagi.
-// rescheduleCaseId (D-160, 13 September 2026) — OR tambahan, sama alasan
-// dengan backend deriveIssueStatus (armada.js): jalur PROACTIVE sekarang
-// ikut menulis rescheduleReason juga, tapi job LAMA (sebelum perbaikan
-// ini) cuma punya rescheduleCase.
-export function issueStatusOf(j) {
-  const pernahDireschedule = !!(j.rescheduleReason || j.rescheduleCase);
-  if (j.status === "FAILED") return pernahDireschedule ? "RESCHEDULED" : "OPEN";
-  if (pernahDireschedule) return "RESCHEDULED";
-  return null;
-}
+// issueStatusOf() DIPINDAH ke ../issueStatus.js (22 September 2026, Delivery
+// Control Tower) — sekarang diimpor, bukan didefinisikan di sini. Lihat
+// catatan panjang di file itu untuk kenapa (controlTowerRules.js, logika
+// murni tanpa React, butuh fungsi yang sama tanpa ikut menyeret file .jsx
+// ini).
 
 export default function RiwayatRevisiKendala({
   revisions = [], issueJobs = [], complaintCases = [], hasComplaint = false, complaintDetail = null, complaintDate = null,

@@ -39,6 +39,7 @@ const ROUTE_LABELS = {
   "/armada/jobs":      ["Delivery", "Jadwal & Penugasan"],
   "/armada/orders":    ["Delivery", "Semua Order"],
   "/armada/routes":    ["Delivery", "Route Planner"],
+  "/armada/kendali-rute": ["Delivery", "Kendali Rute"],
   "/armada/tracking":  ["Delivery", "Live Tracking"],
   "/armada/pod":       ["Delivery", "Proof of Delivery"],
   "/armada/issues":    ["Delivery", "Kendala & Reschedule"],
