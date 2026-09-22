@@ -1,0 +1,1 @@
+const n={OPEN:{label:"Belum Dijadwalkan Ulang",tone:"red"},RESCHEDULED:{label:"Sudah Dijadwalkan Ulang",tone:"orange"}};function l(e){const a=!!(e.rescheduleReason||e.rescheduleCase);return e.status==="FAILED"?a?"RESCHEDULED":"OPEN":a?"RESCHEDULED":null}export{n as I,l as i};
