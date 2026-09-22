@@ -14,6 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Camera, ChevronRight, Award } from "lucide-react-native";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
+import { useExecutionSync } from "../context/ExecutionSyncContext";
 import { api, getServerUrl } from "../api";
 import { useMyJobs } from "../hooks/useMyJobs";
 import Avatar from "../components/Avatar";
@@ -52,6 +53,7 @@ export default function AccountScreen({ navigation }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const { user, logout, updateUser } = useAuth();
+  const { pendingCount } = useExecutionSync();
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const queryClient = useQueryClient();
@@ -280,12 +282,11 @@ export default function AccountScreen({ navigation }) {
                 <>
                   <View style={styles.row}>
                     <Text style={styles.rowLabel}>Update ID</Text>
-                    {/* selectable — supaya bisa di-copy-paste ke chat tim
-                        teknis kalau perlu cocokkan dengan `eas update:list`,
-                        bukan cuma dibaca sekilas. Dipotong ke 8 karakter
-                        pertama (cukup unik utk dicocokkan visual, ID penuh
-                        tetap ada via selectable+long-press). */}
-                    <Text style={styles.rowValue} selectable>{updateInfo.updateId?.slice(0, 8) || "-"}</Text>
+                    {/* ID lengkap dan selectable supaya screenshot/copy dapat
+                        dicocokkan persis dengan EAS, tanpa menebak prefix. */}
+                    <Text style={[styles.rowValue, styles.rowValueLong]} selectable>
+                      {updateInfo.updateId || "-"}
+                    </Text>
                   </View>
                   <View style={styles.row}>
                     <Text style={styles.rowLabel}>Update diambil</Text>
@@ -334,6 +335,12 @@ export default function AccountScreen({ navigation }) {
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Total job aktif</Text>
             <Text style={styles.rowValue}>{jobsSnapshot.length}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Antrean belum terkirim</Text>
+            <Text style={[styles.rowValue, pendingCount > 0 && { color: theme.ORANGE }]}>
+              {pendingCount}
+            </Text>
           </View>
           {routesSnapshot.map((r) => {
             // Jumlah stop SERVER (r.stopCount, dihitung backend) vs jumlah
@@ -449,6 +456,7 @@ function makeStyles(t) {
     },
     rowLabel: { fontSize: 14, color: t.INK, fontWeight: "600" },
     rowValue: { fontSize: 14, color: t.INK2 },
+    rowValueLong: { flexShrink: 1, maxWidth: "62%", textAlign: "right" },
     updateBtn: {
       marginTop: 4, alignSelf: "stretch", backgroundColor: t.ACCENT_BG,
       borderRadius: 12, paddingVertical: 10, alignItems: "center",
