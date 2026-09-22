@@ -32,6 +32,24 @@ const PING_INTERVAL_MS = 2 * 60 * 1000; // jalur cadangan — sama dengan PRD FR
 export function useDriverTracking(jobs, isOnline) {
   const timerRef = useRef(null);
 
+  // Jaring pengaman unmount (audit performa "HP panas", 23 September 2026)
+  // — BUG DITEMUKAN: cleanup function effect utama di bawah (yang deps-nya
+  // [isOnline, status job] dan cuma jalan lagi kalau salah satu dari itu
+  // BERUBAH) hanya membersihkan timer cadangan JS, TIDAK PERNAH memanggil
+  // hentikanBackgroundTracking(). Kalau JobListScreen UNMOUNT SAAT
+  // background tracking native (foreground service GPS) sedang aktif —
+  // kasus nyata: driver logout tanpa Offline-kan diri dulu, atau navigasi
+  // keluar layar ini saat masih EN_ROUTE — effect utama tidak pernah
+  // sempat menjalankan cabang "offline, hentikan" di atas, dan service GPS
+  // native TERUS JALAN tanpa batas walau React tree-nya sudah lenyap.
+  // Effect TERPISAH dengan deps kosong ini HANYA jalan sekali saat true
+  // unmount, sebagai jaring pengaman terakhir — TIDAK mengganggu logika
+  // start/stop normal effect utama (hentikanBackgroundTracking() aman
+  // dipanggil berulang, sudah idempoten lewat cek hasStartedLocationUpdatesAsync).
+  useEffect(() => {
+    return () => { hentikanBackgroundTracking(); };
+  }, []);
+
   useEffect(() => {
     const activeJobIds = (jobs || []).filter((j) => j.status === "EN_ROUTE").map((j) => j.id);
 
