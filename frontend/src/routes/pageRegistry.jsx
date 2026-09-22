@@ -146,7 +146,7 @@ export const PAGES = [
   { path: "/armada/jobs",      render: () => <ArmadaJobs /> },
   { path: "/armada/orders",    render: () => <ArmadaOrders /> },
   { path: "/armada/routes", render: () => <ArmadaRoutes /> },
-  { path: "/armada/kendali-rute", render: () => <ArmadaKendaliRute /> },
+  { path: "/armada/kendali-rute", render: (ctx) => <ArmadaKendaliRute user={ctx.user} /> },
   { path: "/armada/tracking", render: () => <ArmadaTracking /> },
   { path: "/armada/pengaturan", render: () => <ArmadaPengaturan /> },
   { path: "/armada/biaya", render: () => <ArmadaBiaya /> },

@@ -316,3 +316,14 @@ export function distinctVehicles(routes) {
   }
   return [...map.entries()].map(([id, plateNumber]) => ({ id, plateNumber })).sort((a, b) => a.plateNumber.localeCompare(b.plateNumber));
 }
+
+// UI gate mengikuti permission backend GET /armada/routes (job:read).
+// `capabilities` adalah sumber utama dari /auth/login dan /auth/me; fallback
+// role menjaga sesi lama yang tersimpan sebelum field itu tersedia.
+export function canAccessControlTower(user) {
+  if (Array.isArray(user?.capabilities)) return user.capabilities.includes("job:read");
+  const roles = Array.isArray(user?.roles) && user.roles.length > 0
+    ? user.roles
+    : (user?.role ? [user.role] : []);
+  return roles.some((role) => ["ADMIN", "OWNER", "DISPATCHER", "LEADER_DRIVER"].includes(role));
+}

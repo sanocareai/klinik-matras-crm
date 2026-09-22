@@ -18,7 +18,7 @@ import { ROUTE_STATUS_REAL, effectiveRouteStatus } from "@/features/armada/vehic
 import { useControlTower } from "@/features/armada/hooks/useControlTower.js";
 import {
   summarizeRoutes, rankRouteExceptions, filterRoutes, distinctCities, distinctDrivers, distinctVehicles,
-  deriveRouteProgress, deriveRouteExceptions, deriveRouteCity,
+  deriveRouteProgress, deriveRouteExceptions, deriveRouteCity, canAccessControlTower,
 } from "@/features/armada/controlTowerRules.js";
 import { cn } from "@/lib/utils.js";
 
@@ -37,7 +37,28 @@ const RINGKASAN_TILES = [
 // catatan panjang di sana dan di controlTowerRules.js. Halaman ini MURNI
 // baca — tindakan sungguhan (assign driver, publish, dst) tetap lewat
 // Route Planner, tombol "Buka di Route Planner" di drawer cuma navigasi.
-export default function ArmadaKendaliRute() {
+export default function ArmadaKendaliRute({ user }) {
+  if (!canAccessControlTower(user)) {
+    return (
+      <PageContainer>
+        <PageHeader title="Menara Kendali Rute" subtitle="Akses halaman ini dibatasi untuk tim operasional Delivery." />
+        <PageBody>
+          <Card className="p-6">
+            <EmptyState
+              icon={ShieldCheck}
+              title="Anda tidak memiliki akses"
+              description="Kendali Rute memerlukan izin membaca seluruh job Delivery."
+            />
+          </Card>
+        </PageBody>
+      </PageContainer>
+    );
+  }
+
+  return <ControlTowerContent />;
+}
+
+function ControlTowerContent() {
   const [range, setRange] = useState(() => makeRange("today"));
   const [status, setStatus] = useState("");
   const [driverId, setDriverId] = useState("");
@@ -49,8 +70,9 @@ export default function ArmadaKendaliRute() {
 
   const { data: routes, isLoading, isError, error, isFetching, refetch, dataUpdatedAt } = useControlTower(range, toApiParams);
 
-  // Timer lokal hanya memperbarui usia data dan aturan berbasis waktu.
-  // Tidak ada request jaringan periodik di sini.
+  // Timer lokal hanya memperbarui usia respons sukses terakhir dan aturan
+  // berbasis waktu. Polling jaringan dikelola useControlTower dan berhenti
+  // saat tab internal/browser tidak terlihat.
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(id);
@@ -102,8 +124,8 @@ export default function ArmadaKendaliRute() {
         {/* Stale-data indicator (22 September 2026, permintaan eksplisit
             "stale-data state") — data TERAKHIR berhasil diambil, supaya
             dispatcher yang membiarkan tab ini terbuka lama tahu kapan
-            terakhir refresh, bukan diam-diam menganggap selalu real-time
-            (halaman ini SENGAJA tidak polling agresif, lihat useControlTower.js). */}
+            terakhir refresh, bukan diam-diam menganggap selalu real-time.
+            Umur berasal dari dataUpdatedAt (respons sukses terakhir). */}
         {dataUpdatedAt && !isLoading && (
           <p className="mt-1 text-[11px] text-ink3">
             Data diambil pukul {formatJam(dataUpdatedAt)} WIB

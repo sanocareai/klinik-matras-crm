@@ -1,22 +1,50 @@
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api.js";
+import { useTabVisibility } from "@/lib/TabsContext.jsx";
+import { controlTowerRefreshOptions } from "@/features/armada/controlTowerRefresh.js";
 
-// Delivery Control Tower (22 September 2026) — SATU sumber data: GET
-// /armada/routes (routeInclude backend), endpoint YANG SAMA sudah dipakai
-// Route Planner (useArmadaRoutesBoard.js). TIDAK ADA panggilan API kedua,
-// TIDAK ADA polling agresif — SENGAJA tanpa `refetchInterval` (beda dari
-// useMyJobs.js/useArmadaRoutesBoard.js yang polling 30 detik untuk papan
-// kerja LANGSUNG dipakai dispatcher men-drag job) — Control Tower adalah
-// layar PANTAU, react-query default (refetch saat tab kembali fokus +
-// tombol Refresh manual di UI) sudah cukup, dan menghindari beban server
-// tambahan untuk halaman yang biasanya dibuka lama (dashboard, bukan alat
-// kerja aktif per detik).
+function subscribeDocumentVisibility(onChange) {
+  if (typeof document === "undefined") return () => {};
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
+}
+
+function documentIsVisible() {
+  return typeof document === "undefined" || document.visibilityState === "visible";
+}
+
+// SATU sumber data: GET /armada/routes. Refresh 90 detik hanya berjalan
+// ketika tab SANSS dan tab browser terlihat. Mount, aktivasi tab internal,
+// dan browser focus memicu refetch; retry memakai exponential backoff.
 export function useControlTower(range, toApiParams) {
-  return useQuery({
+  const isAppTabVisible = useTabVisibility();
+  const isBrowserVisible = useSyncExternalStore(
+    subscribeDocumentVisibility,
+    documentIsVisible,
+    () => true
+  );
+  const isVisible = isAppTabVisible && isBrowserVisible;
+  const wasAppTabVisible = useRef(isAppTabVisible);
+
+  const query = useQuery({
     queryKey: ["armada", "control-tower", toApiParams(range)],
     queryFn: async () => {
       const res = await api.getRoutes(toApiParams(range));
       return res.routes || [];
     },
+    ...controlTowerRefreshOptions(isVisible),
   });
+
+  // Tab internal SANSS tetap mounted lewat keep-alive. TanStack menangani
+  // browser focus; transisi tab internal background -> aktif perlu refetch
+  // eksplisit. Mount awal sudah ditangani refetchOnMount.
+  useEffect(() => {
+    if (isAppTabVisible && !wasAppTabVisible.current && isBrowserVisible) {
+      query.refetch();
+    }
+    wasAppTabVisible.current = isAppTabVisible;
+  }, [isAppTabVisible, isBrowserVisible, query.refetch]);
+
+  return query;
 }
