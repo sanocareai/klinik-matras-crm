@@ -15,16 +15,19 @@ import PhotoCapture from "./PhotoCapture";
 import { api } from "../api";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
+import { useExecutionSync } from "../context/ExecutionSyncContext";
 
 export default function RouteStartCard({ route, assignedCount, sampleJobId, onChanged }) {
   const theme = useTheme();
   const { markOnlineLocally } = useAuth();
+  const { submit, queue } = useExecutionSync();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [mode, setMode] = useState("idle"); // idle | starting
   const [photos, setPhotos] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [mapBusy, setMapBusy] = useState(false);
+  const pending = queue.find((item) => item.routeId === route.id && item.action === "route-start");
 
   async function bukaMaps() {
     setMapBusy(true);
@@ -46,9 +49,8 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
     setBusy(true);
     setErr("");
     try {
-      const { urls } = await api.uploadJobPhotos(sampleJobId, photos);
-      await api.startRoute(route.id, { proofPhotoUrls: urls });
-      markOnlineLocally(); // backend auto-online-kan driver — lihat catatan di JobCard.js
+      const result = await submit({ jobId: sampleJobId, routeId: route.id, action: "route-start", photos });
+      if (!result.pending) markOnlineLocally();
       setMode("idle");
       setPhotos([]);
       onChanged();
@@ -64,10 +66,10 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
           <Text style={styles.code}>Rute {route.code}</Text>
-          {assignedCount > 0 ? (
+          {route.status === "PUBLISHED" && assignedCount > 0 ? (
             <Text style={styles.sub}>{assignedCount} stop siap berangkat</Text>
           ) : (
-            <Text style={styles.sub}>Perjalanan sudah dimulai</Text>
+            <Text style={styles.sub}>Rute berjalan · pilih stop berikutnya</Text>
           )}
         </View>
       </View>
@@ -77,7 +79,13 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
         <Text style={styles.mapsBtnText}>Buka Rute di Google Maps</Text>
       </Pressable>
 
-      {assignedCount > 0 && mode === "idle" && (
+      {pending ? (
+        <Text style={styles.pendingText}>
+          {pending.blocked ? `Mulai rute ditolak: ${pending.lastError}` : "Mulai rute tersimpan — menunggu konfirmasi server"}
+        </Text>
+      ) : null}
+
+      {route.status === "PUBLISHED" && assignedCount > 0 && mode === "idle" && !pending && (
         <Pressable style={styles.startBtn} onPress={() => setMode("starting")}>
           <Navigation size={15} color="#FFFFFF" />
           <Text style={styles.startBtnText}>Mulai Perjalanan ({assignedCount} stop)</Text>
@@ -138,6 +146,7 @@ function makeStyles(t) {
     form: { marginTop: 10, gap: 10 },
     btnRow: { flexDirection: "row", gap: 8 },
     err: { color: t.RED, fontSize: 12 },
+    pendingText: { color: t.ORANGE, fontSize: 11.5, fontWeight: "700", marginTop: 10 },
     disabled: { opacity: 0.4 },
   });
 }

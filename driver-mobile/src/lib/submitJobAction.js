@@ -13,25 +13,27 @@ export async function uploadPhotos(jobId, files) {
   return urls;
 }
 
-export async function performSubmit(jobId, action, payload, photoFiles = []) {
+export async function performSubmit(jobId, action, payload, photoFiles = [], idempotencyKey = payload?.idempotencyKey) {
   if (action === "start") {
     const startPhotoUrls = await uploadPhotos(jobId, photoFiles);
-    return api.startArmadaJob(jobId, { proofPhotoUrls: startPhotoUrls });
+    return api.startArmadaJob(jobId, { proofPhotoUrls: startPhotoUrls }, idempotencyKey);
   }
   if (action === "arrive") {
     const arrivalPhotoUrls = await uploadPhotos(jobId, photoFiles);
-    return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls });
+    return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls, location: payload.location }, idempotencyKey);
   }
 
   const proofPhotoUrls = await uploadPhotos(jobId, photoFiles);
 
   if (action === "complete") {
-    return api.completeArmadaJob(jobId, { proofPhotoUrls, note: payload.note });
+    return api.completeArmadaJob(jobId, {
+      proofPhotoUrls, recipientName: payload.recipientName, note: payload.note, location: payload.location,
+    }, idempotencyKey);
   }
   if (action === "fail") {
     return api.failArmadaJob(jobId, {
-      failureReason: payload.failureReason, failurePhotoUrls: proofPhotoUrls, note: payload.note,
-    });
+      failureReason: payload.failureReason, failurePhotoUrls: proofPhotoUrls, note: payload.note, location: payload.location,
+    }, idempotencyKey);
   }
   // Lapor revisi di lokasi (18 September 2026) — port dari
   // frontend/src/utils/submitJobAction.js, lihat catatan panjang di backend

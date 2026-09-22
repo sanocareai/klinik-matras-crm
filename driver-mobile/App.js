@@ -24,6 +24,7 @@ import { queryClient } from "./src/lib/queryClient";
 import { checkForUpdateOnLaunch } from "./src/lib/autoUpdate";
 import { isAdminView } from "./src/lib/roles";
 import { useTheme } from "./src/hooks/useTheme";
+import { ExecutionSyncProvider } from "./src/context/ExecutionSyncContext";
 
 // Tahan splash sampai sesi (AsyncStorage) selesai dibaca — dipanggil di
 // MODULE LEVEL (bukan di dalam komponen) supaya terjadi SEBELUM render
@@ -113,8 +114,10 @@ export default function App() {
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
             <AuthProvider>
-              <ThemedStatusBar />
-              <Root />
+              <ExecutionSyncProvider>
+                <ThemedStatusBar />
+                <Root />
+              </ExecutionSyncProvider>
             </AuthProvider>
           </QueryClientProvider>
         </SafeAreaProvider>

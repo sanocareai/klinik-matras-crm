@@ -3,6 +3,11 @@
 const BASE = (import.meta.env.VITE_API_BASE || "") + "/api";
 const TIMEOUT_MS = 30000; // 30 detik — cegah request hang selamanya
 
+function mutationKey(prefix = "web") {
+  if (globalThis.crypto?.randomUUID) return `${prefix}-${globalThis.crypto.randomUUID()}`;
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 function authHeaders() {
   const token = localStorage.getItem("token");
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -287,7 +292,7 @@ export const api = {
   getRouteMap: (id) => request(`/armada/routes/${id}/map`),
   // Mulai SATU rute sekaligus — foto muatan sekali, semua job ASSIGNED di
   // rute jadi EN_ROUTE (POST /armada/routes/:id/start).
-  startRoute: (id, data = {}) => request(`/armada/routes/${id}/start`, { method: "POST", body: JSON.stringify(data) }),
+  startRoute: (id, data = {}, idempotencyKey = mutationKey("route")) => request(`/armada/routes/${id}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   cancelRoute: (id) => request(`/armada/routes/${id}/cancel`, { method: "PATCH" }),
   // Hapus permanen — untuk rute DRAFT atau CANCELLED (D-059, diperluas
   // D-061). Beda dari cancelRoute (soft, riwayatnya tetap ada) — ini
@@ -377,7 +382,7 @@ export const api = {
   // proofPhotoUrls WAJIB sejak 8 September 2026 (dokumentasi tiap tahap) —
   // data opsional untuk kompatibilitas pemanggil lama, backend yang
   // menegakkan validasi wajibnya.
-  startArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", body: JSON.stringify(data) }),
+  startArmadaJob: (jobId, data = {}, idempotencyKey = mutationKey("start")) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // D-034 — ping GPS driver (Live Tracking nyata). pings: array {lat,lng,
   // accuracy,recordedAt} — lihat utils/positionQueue.js untuk pengelompokan
   // per job sebelum dikirim.
@@ -396,8 +401,8 @@ export const api = {
   // — lihat services/routeTracking.js. SEMUA angka di sini ESTIMASI, bukan
   // tagihan pasti — label UI WAJIB menyebutnya begitu.
   getRouteTrace: (routeId) => request(`/armada/routes/${routeId}/route-trace`),
-  arriveArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", body: JSON.stringify(data) }),
-  completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),
+  arriveArmadaJob: (jobId, data = {}, idempotencyKey = mutationKey("arrive")) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  completeArmadaJob: (jobId, data, idempotencyKey = mutationKey("complete")) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // Tambah bukti SETELAH job sudah Selesai (8 September 2026) — lihat
   // catatan panjang di routes/armada.js PATCH /jobs/:id/proof-photos.
   addJobProofPhotos: (jobId, data) => request(`/armada/jobs/${jobId}/proof-photos`, { method: "PATCH", body: JSON.stringify(data) }),
@@ -548,7 +553,7 @@ export const api = {
     return request(`/inventory/reports/summary${qs ? `?${qs}` : ""}`);
   },
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
-  failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
+  failArmadaJob: (jobId, data, idempotencyKey = mutationKey("fail")) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
 
   // Unit — detail & aksi tahap (Production Tahap 2)
   getUnitStatus: (unitId) => request(`/units/${unitId}`),

@@ -25,6 +25,7 @@ import GradientCard from "../components/GradientCard";
 import Avatar from "../components/Avatar";
 import { customerOf, orderNumberOf, relatifWaktu, ISSUE_STATUS } from "../lib/jobHelpers";
 import { deriveJobList } from "../lib/jobListDerive";
+import { useExecutionSync } from "../context/ExecutionSyncContext";
 
 // Nav bawah (12 Sep 2026, fase 2 redesign) — menggantikan tab pill yang
 // dulu di atas konten, lihat BottomNavBar.js. Tab "Masalah" (17 September
@@ -58,6 +59,7 @@ export default function JobListScreen({ navigation }) {
   // itu status KERJA driver (manual toggle). Ketimpa nama yang sama akan
   // membisukan salah satunya tanpa error (JS shadowing diam-diam).
   const hasConnection = useNetworkStatus();
+  const { pendingCount, retry: retryPending } = useExecutionSync();
   const [tab, setTab] = useState("aktif"); // "aktif" | "riwayat" | "masalah"
   const showHistory = tab === "riwayat";
   const [togglingOnline, setTogglingOnline] = useState(false);
@@ -161,6 +163,17 @@ export default function JobListScreen({ navigation }) {
             <Text style={[styles.syncBarRetry, { color: hasConnection ? theme.ORANGE : theme.RED }]}>
               {isFetching ? "Mencoba…" : "Coba Lagi"}
             </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {pendingCount > 0 ? (
+        <View style={[styles.syncBar, { backgroundColor: theme.ORANGE + "26" }]}>
+          <Text style={[styles.syncBarText, { color: theme.ORANGE }]}>
+            {pendingCount} aksi menunggu konfirmasi server
+          </Text>
+          <Pressable onPress={retryPending} disabled={!hasConnection}>
+            <Text style={[styles.syncBarRetry, { color: theme.ORANGE }]}>Kirim Ulang</Text>
           </Pressable>
         </View>
       ) : null}

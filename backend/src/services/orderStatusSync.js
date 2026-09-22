@@ -21,6 +21,7 @@ import { ACTIVE_JOB_STATUSES } from "./jobStatus.js";
 // pendapatannya tidak pernah masuk buku". Fungsi ini sendiri yang memutuskan
 // status mana yang layak diakui (STATUS_PENGAKUAN) & idempoten per order.
 import { bukukanPengakuanPendapatan } from "./finance/hooks.js";
+import { SETTLED_JOB_STATUSES } from "./deliveryExecution.js";
 
 // SHIPPING ditambahkan 5 September 2026 (permintaan owner: penanda "sedang
 // di jalan diantar", sebelumnya loncat langsung READY->DELIVERED).
@@ -95,12 +96,12 @@ export function computeOrderStatus(units) {
 export async function syncRouteCompletionStatus(tx, routeId) {
   if (!routeId) return;
   const route = await tx.route.findUnique({ where: { id: routeId }, select: { status: true } });
-  if (!route || route.status !== "PUBLISHED") return;
+  if (!route || !["PUBLISHED", "IN_PROGRESS"].includes(route.status)) return;
   const jobs = await tx.job.findMany({ where: { routeId }, select: { status: true } });
   if (jobs.length === 0) return;
-  const semuaTuntas = jobs.every((j) => ["COMPLETED", "FAILED"].includes(j.status));
+  const semuaTuntas = jobs.every((j) => SETTLED_JOB_STATUSES.includes(j.status));
   if (semuaTuntas) {
-    await tx.route.update({ where: { id: routeId }, data: { status: "COMPLETED" } });
+    await tx.route.update({ where: { id: routeId }, data: { status: "COMPLETED", completedAt: new Date() } });
   }
 }
 

@@ -8,6 +8,12 @@
 import { api } from "../api.js";
 import { enqueueAction, isNetworkError } from "./offlineQueue.js";
 
+function createIdempotencyKey() {
+  return globalThis.crypto?.randomUUID
+    ? `driver-web-${globalThis.crypto.randomUUID()}`
+    : `driver-web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export async function uploadBlobs(jobId, blobs) {
   if (!blobs || blobs.length === 0) return [];
   const fd = new FormData();
@@ -20,17 +26,18 @@ export async function uploadBlobs(jobId, blobs) {
 // itu tanggung jawab pemanggil (submitOrQueue di bawah, atau syncQueue.js
 // yang sudah tahu ini lagi memproses antrean).
 export async function performSubmit(jobId, action, payload, photoFiles = [], signatureBlob = null) {
+  const idempotencyKey = payload.idempotencyKey || createIdempotencyKey();
   // Foto wajib di start/arrive juga (8 September 2026, dokumentasi tiap
   // tahap) — upload dulu (pola SAMA dengan complete/fail di bawah), baru
   // kirim URL-nya ke server. Validasi "wajib minimal 1" ada di backend
   // (& di UI lewat disabled tombol) — di sini murni upload+kirim.
   if (action === "start") {
     const startPhotoUrls = await uploadBlobs(jobId, photoFiles);
-    return api.startArmadaJob(jobId, { proofPhotoUrls: startPhotoUrls });
+    return api.startArmadaJob(jobId, { proofPhotoUrls: startPhotoUrls }, idempotencyKey);
   }
   if (action === "arrive") {
     const arrivalPhotoUrls = await uploadBlobs(jobId, photoFiles);
-    return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls });
+    return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls, location: payload.location }, idempotencyKey);
   }
 
   const proofPhotoUrls = await uploadBlobs(jobId, photoFiles);
@@ -41,12 +48,14 @@ export async function performSubmit(jobId, action, payload, photoFiles = [], sig
   }
 
   if (action === "complete") {
-    return api.completeArmadaJob(jobId, { proofPhotoUrls, signatureUrl, note: payload.note });
+    return api.completeArmadaJob(jobId, {
+      proofPhotoUrls, signatureUrl, recipientName: payload.recipientName, note: payload.note, location: payload.location,
+    }, idempotencyKey);
   }
   if (action === "fail") {
     return api.failArmadaJob(jobId, {
-      failureReason: payload.failureReason, failurePhotoUrls: proofPhotoUrls, note: payload.note,
-    });
+      failureReason: payload.failureReason, failurePhotoUrls: proofPhotoUrls, note: payload.note, location: payload.location,
+    }, idempotencyKey);
   }
   if (action === "payment") {
     return api.recordJobPayment(jobId, {
@@ -67,12 +76,13 @@ export async function performSubmit(jobId, action, payload, photoFiles = [], sig
 // ulang otomatis begitu online lagi, supaya driver tetap bisa lanjut
 // bekerja tanpa menunggu sinyal.
 export async function submitOrQueue(jobId, action, payload, photoFiles = [], signatureBlob = null) {
+  const durablePayload = { ...payload, idempotencyKey: payload.idempotencyKey || createIdempotencyKey() };
   try {
-    const result = await performSubmit(jobId, action, payload, photoFiles, signatureBlob);
+    const result = await performSubmit(jobId, action, durablePayload, photoFiles, signatureBlob);
     return { queued: false, result };
   } catch (err) {
     if (isNetworkError(err)) {
-      await enqueueAction({ jobId, action, payload, photoBlobs: photoFiles, signatureBlob });
+      await enqueueAction({ jobId, action, payload: durablePayload, photoBlobs: photoFiles, signatureBlob });
       return { queued: true };
     }
     throw err;

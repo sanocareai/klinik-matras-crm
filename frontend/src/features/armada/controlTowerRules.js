@@ -81,7 +81,7 @@ function wibDateKey(value) {
 export function deriveRouteProgress(route) {
   const jobs = route?.jobs || [];
   const total = jobs.length;
-  const done = jobs.filter((j) => j.status === "COMPLETED" || j.status === "FAILED").length;
+  const done = jobs.filter((j) => ["COMPLETED", "FAILED", "RESCHEDULED"].includes(j.status)).length;
   const activeJob = jobs.find((j) => j.status === "EN_ROUTE" || j.status === "ARRIVED") || null;
   // "Update terakhir" rute — waktu PALING BARU di antara Route.updatedAt
   // dan updatedAt SEMUA job anggotanya (Route.updatedAt sendiri TIDAK
@@ -210,6 +210,16 @@ export function deriveRouteExceptions(route, { now = new Date() } = {}) {
       severity: masalahAktif.some((j) => ["TINGGI", "KRITIS"].includes(j.complaintCase?.severity)) ? "critical" : "warning",
       label: `${masalahAktif.length} masalah aktif terkait stop`,
       detail: masalahAktif.map((j) => j.complaintCase?.caseNumber).filter(Boolean).slice(0, 3).join(", "),
+    });
+  }
+
+  const pendingSync = Math.max(route?.driver?.driverPendingSyncCount || 0, route?.helper?.driverPendingSyncCount || 0);
+  if (pendingSync > 0) {
+    out.push({
+      type: "PENDING_SYNC",
+      severity: "warning",
+      label: `${pendingSync} aksi driver menunggu sinkronisasi`,
+      detail: "Status server belum berubah sampai perangkat menerima konfirmasi",
     });
   }
 

@@ -16,6 +16,8 @@ import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, waLink
 import { Package, User as UserIcon } from "lucide-react-native";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
+import { useExecutionSync } from "../context/ExecutionSyncContext";
+import { getProofLocation } from "../lib/proofLocation";
 
 const FAIL_REASONS_PICKUP = [
   { value: "Customer tidak ada di rumah", label: "Customer Tidak Ada" },
@@ -35,6 +37,7 @@ const FAIL_REASONS_DELIVERY = [
 export default function JobCard({ job, onChanged }) {
   const theme = useTheme();
   const { markOnlineLocally } = useAuth();
+  const { submit, pendingForJob } = useExecutionSync();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const STATUS_TONE = useMemo(() => ({
     ASSIGNED: theme.ACCENT, EN_ROUTE: theme.ACCENT, ARRIVED: theme.ACCENT,
@@ -45,6 +48,7 @@ export default function JobCard({ job, onChanged }) {
   const [photos, setPhotos] = useState([]);
   const [note, setNote] = useState("");
   const [failReason, setFailReason] = useState("");
+  const [recipientName, setRecipientName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // Lapor Revisi (18 September 2026) — lihat catatan panjang di web
@@ -64,6 +68,7 @@ export default function JobCard({ job, onChanged }) {
     setPhotos([]);
     setNote("");
     setFailReason("");
+    setRecipientName("");
     setBusy(false);
     setErr("");
     setRevisionSubmitted(false);
@@ -83,12 +88,15 @@ export default function JobCard({ job, onChanged }) {
   const sales = salesPersonOf(job);
   const failReasons = job.type === "PICKUP" ? FAIL_REASONS_PICKUP : FAIL_REASONS_DELIVERY;
   const statusInfo = JOB_STATUS_REAL[job.status] || { label: job.status };
+  const pending = pendingForJob(job.id);
+  const kota = job.order?.deliveryCity || job.order?.customer?.city || "";
 
   function resetForm() {
     setMode("idle");
     setPhotos([]);
     setNote("");
     setFailReason("");
+    setRecipientName("");
     setErr("");
   }
 
@@ -96,7 +104,13 @@ export default function JobCard({ job, onChanged }) {
     setBusy(true);
     setErr("");
     try {
-      await performSubmit(job.id, action, payload, photos);
+      if (action === "report-revision") {
+        await performSubmit(job.id, action, payload, photos);
+      } else {
+        const location = ["arrive", "complete", "fail"].includes(action) ? await getProofLocation() : null;
+        const result = await submit({ jobId: job.id, action, payload: { ...payload, location }, photos });
+        if (result.pending) setErr("Menunggu sinkronisasi — aksi belum dikonfirmasi server.");
+      }
       // Sinkron lokal (12 Sep 2026) — backend auto-online-kan driver saat
       // job dimulai (POST /jobs/:id/start), refleksikan efek samping itu
       // di switch Beranda TANPA driver perlu toggle manual juga.
@@ -177,6 +191,17 @@ export default function JobCard({ job, onChanged }) {
 
       {estJam && <Text style={styles.detailLine}>🕗 {estJam}</Text>}
       {job.addressText ? <Text style={styles.detailLine} numberOfLines={2}>📍 {job.addressText}</Text> : null}
+      {kota ? <Text style={styles.detailLine}>Kota: {kota}</Text> : null}
+      <Text style={styles.detailLine}>PIC: {nama}{phone ? ` · ${phone}` : ""}</Text>
+      {job.accessNotes ? <Text style={styles.detailLine}>Catatan lokasi: {job.accessNotes}</Text> : null}
+
+      {pending ? (
+        <View style={[styles.complaintBanner, { backgroundColor: theme.ORANGE + "1A" }]}>
+          <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>
+            {pending.blocked ? `Sinkronisasi perlu tindakan: ${pending.lastError}` : "Aksi tersimpan — menunggu konfirmasi server"}
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.quickActions}>
         {maps && (
@@ -199,17 +224,17 @@ export default function JobCard({ job, onChanged }) {
           dokumentasi cuma di "mulai perjalanan rute" & "serah terima
           berhasil"). "Mulai" per-job ini untuk job lepas / belum
           di-start lewat kartu rute. */}
-      {mode === "idle" && job.status === "ASSIGNED" && (
+      {mode === "idle" && job.status === "ASSIGNED" && !pending && (
         <Pressable
           style={[styles.primaryBtn, busy && styles.disabled]}
           disabled={busy}
           onPress={() => run("start", {})}
         >
-          {busy ? <Loader2 size={14} color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Mulai Perjalanan</Text>}
+          {busy ? <Loader2 size={14} color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Menuju Lokasi</Text>}
         </Pressable>
       )}
 
-      {mode === "idle" && job.status === "EN_ROUTE" && (
+      {mode === "idle" && job.status === "EN_ROUTE" && !pending && (
         <View style={styles.btnRow}>
           <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => setMode("failing")} disabled={busy}>
             <Text style={styles.secondaryBtnText}>Gagal</Text>
@@ -224,7 +249,7 @@ export default function JobCard({ job, onChanged }) {
         </View>
       )}
 
-      {mode === "idle" && job.status === "ARRIVED" && (
+      {mode === "idle" && job.status === "ARRIVED" && !pending && (
         <View style={styles.btnRow}>
           <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => setMode("failing")}>
             <Text style={styles.secondaryBtnText}>Gagal</Text>
@@ -239,6 +264,13 @@ export default function JobCard({ job, onChanged }) {
         <View style={styles.form}>
           <PhotoCapture photos={photos} onChange={setPhotos} label="Foto bukti (wajib)" />
           <TextInput
+            style={styles.singleInput}
+            placeholder={job.type === "PICKUP" ? "Nama pemberi barang (wajib)" : "Nama penerima (wajib)"}
+            placeholderTextColor={theme.INK3}
+            value={recipientName}
+            onChangeText={setRecipientName}
+          />
+          <TextInput
             style={styles.noteInput}
             placeholder="Catatan (opsional)"
             placeholderTextColor={theme.INK3}
@@ -251,9 +283,9 @@ export default function JobCard({ job, onChanged }) {
               <Text style={styles.secondaryBtnText}>Batal</Text>
             </Pressable>
             <Pressable
-              style={[styles.primaryBtn, { flex: 1.4 }, (busy || photos.length === 0) && styles.disabled]}
-              disabled={busy || photos.length === 0}
-              onPress={() => run("complete", { note })}
+              style={[styles.primaryBtn, { flex: 1.4 }, (busy || photos.length === 0 || !recipientName.trim()) && styles.disabled]}
+              disabled={busy || photos.length === 0 || !recipientName.trim()}
+              onPress={() => run("complete", { note, recipientName: recipientName.trim() })}
             >
               {busy ? <Loader2 size={14} color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Tandai Selesai</Text>}
             </Pressable>
@@ -405,6 +437,10 @@ function makeStyles(t) {
     noteInput: {
       backgroundColor: t.FIELD_BG, borderRadius: 10, padding: 10,
       color: t.INK, fontSize: 13, minHeight: 60, textAlignVertical: "top",
+    },
+    singleInput: {
+      backgroundColor: t.FIELD_BG, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 11,
+      color: t.INK, fontSize: 13,
     },
   });
 }

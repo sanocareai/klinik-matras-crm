@@ -365,7 +365,9 @@ model User {
   // peringatan jujur "belum tentu sudah dilihat driver", BUKAN klaim pasti
   // "sudah diterima" (tidak ada read-receipt sungguhan, ini cuma proxy
   // terbaik yang ada datanya).
-  lastAppSyncAt DateTime? @map("last_app_sync_at")
+  lastAppSyncAt          DateTime? @map("last_app_sync_at")
+  driverPendingSyncCount Int       @default(0) @map("driver_pending_sync_count")
+  driverPendingSyncAt    DateTime? @map("driver_pending_sync_at")
 
   // Kurir pihak ketiga (Lalamove/dst) — 13 September 2026 (D-161). Akun ini
   // TIDAK PERNAH login sendiri (dispatcher yang operasikan atas nama akun,
@@ -435,6 +437,8 @@ model User {
   messageTemplates           MessageTemplate[]
   unitStageLogs              UnitStageLog[]           @relation("UnitStageLogActor")
   jobsAsDriver               Job[]                    @relation("JobDriver")
+  jobsCompleted              Job[]                    @relation("JobCompletedBy")
+  deliveryExecutionEvents    DeliveryExecutionEvent[] @relation("DeliveryExecutionActor")
   jobsAsHelper               Job[]                    @relation("JobHelper")
   jobPositionPings           JobPositionPing[]        @relation("JobPositionPingDriver")
   jobIssueLogsCreated        JobIssueLog[]            @relation("JobIssueLogCreator")
@@ -2147,6 +2151,17 @@ model Job {
   arrivedAt   DateTime? @map("arrived_at")
   completedAt DateTime? @map("completed_at")
 
+  // Proof of Delivery/Pickup terstruktur. `completedAt` tetap timestamp
+  // server dan status Job tetap sumber kebenaran; field ini hanya bukti
+  // dari transisi COMPLETED yang sama, bukan state bisnis kedua.
+  proofRecipientName String? @map("proof_recipient_name")
+  proofNote          String? @map("proof_note")
+  proofLat           Float?  @map("proof_lat")
+  proofLng           Float?  @map("proof_lng")
+  proofAccuracy      Float?  @map("proof_accuracy")
+  completedById      String? @map("completed_by")
+  completedBy        User?   @relation("JobCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+
   // Verifikasi Proof of Delivery (2 Agustus 2026, Tahap 4 Delivery). NULL =
   // belum direview (turunan "Belum Lengkap" vs "Menunggu Verifikasi" dihitung
   // di frontend dari ADA-TIDAKNYA proofPhotoUrls — tidak disimpan sebagai
@@ -2252,7 +2267,8 @@ model Job {
   revisionLinks   UnitRevision[]
   positionPings   JobPositionPing[]
   issueLogs       JobIssueLog[]
-  rescheduleCases RescheduleCase[]  @relation("RescheduleCaseOriginJob")
+  rescheduleCases RescheduleCase[]         @relation("RescheduleCaseOriginJob")
+  executionEvents DeliveryExecutionEvent[]
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
@@ -3047,6 +3063,8 @@ model Route {
   plannedDurationMin Int?     @map("planned_duration_min")
 
   publishedAt DateTime? @map("published_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
   notes       String?
 
   // manualMapsUrl (6 September 2026) — laporan owner: link Maps auto-generate
@@ -3082,12 +3100,36 @@ model Route {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  jobs     Job[]
-  expenses VehicleExpense[]
+  jobs            Job[]
+  expenses        VehicleExpense[]
+  executionEvents DeliveryExecutionEvent[]
 
   @@index([date, status]) // papan Route Planner per tanggal
   @@index([driverId, date])
   @@map("routes")
+}
+
+// Ledger teknis untuk audit + idempotency aksi lapangan. Status terakhir
+// tetap dibaca dari Job/Route; tabel ini menyimpan siapa melakukan apa,
+// timestamp server, dan key retry agar double tap/replay tidak menggandakan
+// transisi maupun bukti.
+model DeliveryExecutionEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  idempotencyKey String   @unique @map("idempotency_key")
+  action         String
+  actorId        String?  @map("actor_id")
+  actor          User?    @relation("DeliveryExecutionActor", fields: [actorId], references: [id], onDelete: SetNull)
+  jobId          String?  @map("job_id") @db.Uuid
+  job            Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  routeId        String?  @map("route_id") @db.Uuid
+  route          Route?   @relation(fields: [routeId], references: [id], onDelete: SetNull)
+  payload        Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([jobId, createdAt])
+  @@index([routeId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("delivery_execution_events")
 }
 
 // Job membawa SEBAGIAN unit sebuah order, bukan selalu semuanya (D-006:

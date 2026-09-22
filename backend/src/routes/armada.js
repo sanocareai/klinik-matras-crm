@@ -42,6 +42,18 @@ import { geocodeAddress, routeLegs, routePath, DEPOT, buildRouteMapsUrl } from "
 import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 import { produkLineLabel, parseOrderNotesForInvoice } from "../services/invoice.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import {
+  SETTLED_JOB_STATUSES,
+  createExecutionEvent,
+  findExecutionReplay,
+  lockJob,
+  lockRoute,
+  normalizeProofLocation,
+  requireIdempotencyKey,
+  validateFailureInput,
+  validateJobTransition,
+  validatePodInput,
+} from "../services/deliveryExecution.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -97,6 +109,10 @@ class ArmadaError extends Error {
 }
 function handleErr(err, res) {
   if (err instanceof ArmadaError) return res.status(err.statusCode).json({ error: err.message });
+  if (Number.isInteger(err?.statusCode)) return res.status(err.statusCode).json({ error: err.message });
+  if (err?.code === "P2028" || (err?.code === "P2010" && err?.meta?.code === "55P03")) {
+    return res.status(409).json({ error: "Aksi sedang diproses di perangkat lain. Muat ulang status lalu coba lagi." });
+  }
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Armada error:", err);
   return res.status(500).json({ error: "Server error: " + err.message });
@@ -682,6 +698,11 @@ const jobInclude = {
   // job ini muncul.
   driver: { select: { id: true, name: true, avatarUrl: true, isOnline: true, onlineSince: true, isExternalCourier: true } },
   helper: { select: { id: true, name: true, avatarUrl: true, isOnline: true, onlineSince: true, isExternalCourier: true } },
+  completedBy: { select: { id: true, name: true } },
+  executionEvents: {
+    select: { id: true, action: true, actorId: true, payload: true, createdAt: true, actor: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "asc" },
+  },
   vehicle: { select: { id: true, plateNumber: true } },
   // route (D-077) — supaya frontend Penjadwalan bisa menampilkan "diatur
   // di rute RTE-XXX" begitu job.routeId terisi, TANPA panggilan API kedua
@@ -1930,16 +1951,20 @@ const routeInclude = {
   // driver/helper sama sekali (cuma jobInclude yang punya, dipakai Live
   // Tracking) — Control Tower butuh status ini di level RUTE tanpa
   // panggilan API kedua, sumber SAMA yang sudah dipakai di tempat lain.
-  driver: { select: { id: true, name: true, lastAppSyncAt: true, isOnline: true, onlineSince: true } },
+  driver: { select: { id: true, name: true, lastAppSyncAt: true, isOnline: true, onlineSince: true, driverPendingSyncCount: true, driverPendingSyncAt: true } },
   // helper (D-077) — pasangan driver, lihat catatan panjang di schema.prisma
   // pada field Route.helperId untuk kenapa field ini ditambahkan.
-  helper: { select: { id: true, name: true, lastAppSyncAt: true, isOnline: true, onlineSince: true } },
+  helper: { select: { id: true, name: true, lastAppSyncAt: true, isOnline: true, onlineSince: true, driverPendingSyncCount: true, driverPendingSyncAt: true } },
   vehicle: { select: { id: true, plateNumber: true, type: true, capacitySlots: true } },
   // lastEditedBy (redesain Sep 2026) — siapa terakhir mengedit rute PUBLISHED
   // ini, dipasangkan dengan Route.lastEditReason/lastEditedAt (kolom biasa,
   // lihat catatan panjang di schema.prisma) supaya UI bisa menampilkan
   // "diedit oleh X, <alasan>" pada rute yang sudah diterbitkan tapi diubah.
   lastEditedBy: { select: { id: true, name: true } },
+  executionEvents: {
+    select: { id: true, action: true, actorId: true, payload: true, createdAt: true, actor: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "asc" },
+  },
   jobs: {
     include: jobInclude,
     orderBy: { sequence: "asc" },
@@ -3718,6 +3743,24 @@ armadaRouter.post("/me/online-status", requireAuth, async (req, res) => {
   }
 });
 
+// Telemetri ringan antrean lokal. Ini bukan status bisnis dan tidak pernah
+// mengubah Job/Route; hanya memberi dispatcher sinyal bahwa perangkat sudah
+// kembali online tetapi masih mempunyai aksi yang belum dikonfirmasi server.
+armadaRouter.post("/me/pending-sync", requirePermission(P.JOB_OWN_READ), async (req, res) => {
+  try {
+    const count = Number(req.body?.count);
+    if (!Number.isInteger(count) || count < 0 || count > 1000) throw new ArmadaError("Jumlah pending sync tidak valid");
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { driverPendingSyncCount: count, driverPendingSyncAt: new Date() },
+      select: { driverPendingSyncCount: true, driverPendingSyncAt: true },
+    });
+    res.json(user);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
 // ─── Web Push (8 September 2026) — subscribe/unsubscribe device driver ─────
 // requireAuth polos (BUKAN requirePermission JOB_OWN_READ) — SIAPA PUN yang
 // login boleh subscribe device-nya sendiri (dispatcher/admin juga masuk akal
@@ -4126,11 +4169,15 @@ armadaRouter.post("/jobs/:id/void-backfill-completion", requirePermission(P.JOB_
 // JOB_OWN_WRITE.
 async function loadOwnedJob(req) {
   const job = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id } });
+  assertCanOperateJob(req, job);
+  return job;
+}
+
+function assertCanOperateJob(req, job) {
   const milikSaya = job.driverId === req.user.id || job.helperId === req.user.id;
   if (!hasPermission(req.user, P.JOB_WRITE) && !milikSaya) {
     throw new ArmadaError("Bukan job Anda", 403);
   }
-  return job;
 }
 
 // POST /api/armada/jobs/:id/photos — upload multipart, kembalikan URL.
@@ -4419,8 +4466,8 @@ armadaRouter.get("/routes/:id/route-trace", requirePermission(P.JOB_READ), async
 // dari upload dir job-photos), disimpan ke Job.startPhotoUrls.
 armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
-    const job = await loadOwnedJob(req);
-    if (job.status !== "ASSIGNED") throw new ArmadaError(`Job berstatus ${job.status}, tidak bisa dimulai`);
+    const owned = await loadOwnedJob(req);
+    const idempotencyKey = requireIdempotencyKey(req);
 
     // Foto TIDAK lagi wajib di start per-job (10 Sep 2026, keputusan owner:
     // "hanya driver memulai perjalanan RUTE" yang perlu dokumentasi — lihat
@@ -4430,8 +4477,17 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!startPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
 
-    await prisma.$transaction(async (tx) => {
-      await tx.job.update({ where: { id: job.id }, data: { status: "EN_ROUTE", startPhotoUrls } });
+    const result = await prisma.$transaction(async (tx) => {
+      if (owned.routeId) await lockRoute(tx, owned.routeId);
+      const job = await lockJob(tx, owned.id);
+      assertCanOperateJob(req, job);
+      const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "JOB_STARTED", { jobId: job.id });
+      if (replay) return { replayed: true, job };
+      validateJobTransition("START", job.status);
+      await tx.job.update({
+        where: { id: job.id },
+        data: { status: "EN_ROUTE", ...(startPhotoUrls.length > 0 && { startPhotoUrls }) },
+      });
       // DELIVERY EN_ROUTE = driver SUDAH membawa kasur dari bengkel — unit
       // resmi "dalam perjalanan keluar". PICKUP EN_ROUTE tidak mengubah
       // status unit (kasur masih di rumah customer, belum dipegang driver).
@@ -4453,17 +4509,22 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
       if (pelakuId.length > 0) {
         await tx.user.updateMany({ where: { id: { in: pelakuId }, isOnline: false }, data: { isOnline: true, onlineSince: new Date() } });
       }
+      await createExecutionEvent(tx, {
+        idempotencyKey, action: "JOB_STARTED", actorId: req.user.id, jobId: job.id, routeId: job.routeId,
+        payload: { status: "EN_ROUTE" },
+      });
+      return { replayed: false, job };
     });
-    const full = await prisma.job.findUnique({ where: { id: job.id }, include: jobInclude });
+    const full = await prisma.job.findUnique({ where: { id: owned.id }, include: jobInclude });
 
     // FR-N trigger 1/4: "Driver menuju lokasi" — GANTI "Pickup dijadwalkan"
     // (31 Agustus 2026, keputusan owner) supaya tetap PERSIS 4 notifikasi.
     // Berlaku utk PICKUP MAUPUN DELIVERY (lama cuma PICKUP) — customer tahu
     // PERSIS kapan harus siap-siap, bukan cuma "suatu hari nanti".
     const customer = full.units[0]?.unit?.order?.customer;
-    if (customer) notifyDriverEnRoute(full, customer.id, customer.name);
+    if (!result.replayed && customer) notifyDriverEnRoute(full, customer.id, customer.name);
 
-    res.json(full);
+    res.set("Idempotency-Replayed", result.replayed ? "true" : "false").json(full);
   } catch (err) {
     handleErr(err, res);
   }
@@ -4483,30 +4544,31 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
 // mengurus yang memang siap.
 armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
-    const route = await prisma.route.findUniqueOrThrow({ where: { id: req.params.id } });
+    const idempotencyKey = requireIdempotencyKey(req);
 
     const startPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
     if (startPhotoUrls.length === 0) throw new ArmadaError("Foto bukti wajib diisi sebelum mulai perjalanan");
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!startPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
 
-    const semuaJob = await prisma.job.findMany({ where: { routeId: route.id } });
-    const bolehSemua = hasPermission(req.user, P.JOB_WRITE);
-    const target = semuaJob.filter(
-      (j) => j.status === "ASSIGNED" &&
-        (bolehSemua || j.driverId === req.user.id || j.helperId === req.user.id)
-    );
-    if (target.length === 0) throw new ArmadaError("Tidak ada job 'Siap Dimulai' di rute ini");
-
-    await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
+      const route = await lockRoute(tx, req.params.id);
+      if (!route) throw new ArmadaError("Rute tidak ditemukan", 404);
+      const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "ROUTE_STARTED", { routeId: route.id });
+      const semuaJob = await tx.job.findMany({ where: { routeId: route.id } });
+      if (replay) return { replayed: true, targetIds: semuaJob.map((j) => j.id) };
+      if (route.status !== "PUBLISHED") {
+        throw new ArmadaError(`Rute berstatus ${route.status}, tidak bisa dimulai`, 409);
+      }
+      const bolehSemua = hasPermission(req.user, P.JOB_WRITE);
+      const milikCrew = route.driverId === req.user.id || route.helperId === req.user.id;
+      if (!bolehSemua && !milikCrew) throw new ArmadaError("Bukan rute Anda", 403);
+      const target = semuaJob.filter((j) => j.status === "ASSIGNED");
+      if (target.length === 0) throw new ArmadaError("Tidak ada job 'Siap Dimulai' di rute ini", 409);
       for (const job of target) {
-        await tx.job.update({ where: { id: job.id }, data: { status: "EN_ROUTE", startPhotoUrls } });
-        if (job.type === "DELIVERY") {
-          const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
-          const unitIds = jobUnits.map((ju) => ju.unitId);
-          await tx.unit.updateMany({ where: { id: { in: unitIds } }, data: { status: "IN_TRANSIT_OUT" } });
-          await syncOrderStatusForUnits(tx, unitIds);
-        }
+        // Foto muatan menempel ke semua stop, tetapi status stop tetap
+        // ASSIGNED sampai driver memilih stop lalu menekan Menuju Lokasi.
+        await tx.job.update({ where: { id: job.id }, data: { startPhotoUrls } });
       }
       // Auto-Online (12 September 2026) — sama alasan dgn POST
       // /jobs/:id/start, dikumpulkan dari SELURUH job yang dimulai batch
@@ -4516,15 +4578,19 @@ armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_O
       if (pelakuId.length > 0) {
         await tx.user.updateMany({ where: { id: { in: pelakuId }, isOnline: false }, data: { isOnline: true, onlineSince: new Date() } });
       }
+      await tx.route.update({
+        where: { id: route.id },
+        data: { status: "IN_PROGRESS", startedAt: route.startedAt || new Date() },
+      });
+      await createExecutionEvent(tx, {
+        idempotencyKey, action: "ROUTE_STARTED", actorId: req.user.id, routeId: route.id,
+        payload: { preparedJobs: target.map((j) => j.id), status: "IN_PROGRESS" },
+      });
+      return { replayed: false, targetIds: target.map((j) => j.id) };
     });
 
-    const full = await prisma.job.findMany({ where: { id: { in: target.map((j) => j.id) } }, include: jobInclude });
-    for (const j of full) {
-      const customer = j.units[0]?.unit?.order?.customer;
-      if (customer) notifyDriverEnRoute(j, customer.id, customer.name);
-    }
-
-    res.json({ started: full.length, jobs: full });
+    const full = await prisma.job.findMany({ where: { id: { in: result.targetIds } }, include: jobInclude });
+    res.set("Idempotency-Replayed", result.replayed ? "true" : "false").json({ started: full.length, jobs: full });
   } catch (err) {
     handleErr(err, res);
   }
@@ -4539,17 +4605,29 @@ armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_O
 // driver tetap kirim foto opsional saat tiba, tetap disimpan.
 armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
-    const job = await loadOwnedJob(req);
-    if (job.status !== "EN_ROUTE") throw new ArmadaError(`Job berstatus ${job.status}, belum bisa ditandai tiba`);
+    const owned = await loadOwnedJob(req);
+    const idempotencyKey = requireIdempotencyKey(req);
 
     const arrivalPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!arrivalPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
 
-    const updated = await prisma.job.update({
-      where: { id: job.id }, data: { status: "ARRIVED", arrivedAt: new Date(), arrivalPhotoUrls }, include: jobInclude,
+    const result = await prisma.$transaction(async (tx) => {
+      if (owned.routeId) await lockRoute(tx, owned.routeId);
+      const job = await lockJob(tx, owned.id);
+      assertCanOperateJob(req, job);
+      const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "JOB_ARRIVED", { jobId: job.id });
+      if (replay) return { replayed: true };
+      validateJobTransition("ARRIVE", job.status);
+      await tx.job.update({ where: { id: job.id }, data: { status: "ARRIVED", arrivedAt: new Date(), arrivalPhotoUrls } });
+      await createExecutionEvent(tx, {
+        idempotencyKey, action: "JOB_ARRIVED", actorId: req.user.id, jobId: job.id, routeId: job.routeId,
+        payload: { status: "ARRIVED", location: normalizeProofLocation(req.body.location) },
+      });
+      return { replayed: false };
     });
-    res.json(updated);
+    const updated = await prisma.job.findUnique({ where: { id: owned.id }, include: jobInclude });
+    res.set("Idempotency-Replayed", result.replayed ? "true" : "false").json(updated);
   } catch (err) {
     handleErr(err, res);
   }
@@ -4581,29 +4659,41 @@ armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OW
 // bukan "sekarang, entah siapa".
 armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
-    const job = await loadOwnedJob(req);
-    if (!["SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"].includes(job.status)) {
-      throw new ArmadaError(`Job berstatus ${job.status}, belum bisa diselesaikan`);
-    }
-    const proofPhotoUrls = Array.isArray(req.body.proofPhotoUrls) ? req.body.proofPhotoUrls : [];
-    if (proofPhotoUrls.length === 0) throw new ArmadaError("Foto bukti wajib diisi sebelum menyelesaikan job");
+    const owned = await loadOwnedJob(req);
+    const idempotencyKey = requireIdempotencyKey(req);
+    const pod = validatePodInput({
+      ...req.body,
+      // Form input POD manual admin lama belum memiliki field penerima.
+      // Pertahankan kompatibilitas secara eksplisit/jujur; jalur driver
+      // (JOB_OWN_WRITE) tetap wajib mengirim nama nyata.
+      recipientName: req.body.recipientName || (hasPermission(req.user, P.JOB_WRITE) ? "Tidak disebutkan (input admin)" : ""),
+    });
+    const proofPhotoUrls = pod.proofPhotoUrls;
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
-    if (!proofPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
-    const { signatureUrl, completedAt, driverId, helperId } = req.body;
+    const { signatureUrl, driverId, helperId } = req.body;
     if (signatureUrl != null && !isValidUrl(signatureUrl)) throw new ArmadaError("URL tanda tangan tidak valid");
 
-    let waktuSelesai = new Date();
-    if (completedAt !== undefined) {
-      const parsed = new Date(completedAt);
-      if (Number.isNaN(parsed.getTime())) throw new ArmadaError("Waktu selesai tidak valid");
-      waktuSelesai = parsed;
-    }
+    // Eksekusi lapangan selalu memakai waktu server; koreksi historis admin
+    // tetap tersedia melalui endpoint edit POD yang terpisah dan teraudit.
+    const waktuSelesai = new Date();
 
-    const { job: updated, advancedRevisions, advancedComplaintCaseId } = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
+      if (owned.routeId) await lockRoute(tx, owned.routeId);
+      const job = await lockJob(tx, owned.id);
+      assertCanOperateJob(req, job);
+      const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "JOB_COMPLETED", { jobId: job.id });
+      if (replay) return { replayed: true, job, advancedRevisions: [], advancedComplaintCaseId: null };
+      validateJobTransition("COMPLETE", job.status, { privileged: hasPermission(req.user, P.JOB_WRITE) });
       const j = await tx.job.update({
         where: { id: job.id },
         data: {
           status: "COMPLETED", completedAt: waktuSelesai, proofPhotoUrls, signatureUrl: signatureUrl || null,
+          proofRecipientName: pod.recipientName,
+          proofNote: pod.note,
+          proofLat: pod.location?.lat ?? null,
+          proofLng: pod.location?.lng ?? null,
+          proofAccuracy: pod.location?.accuracy ?? null,
+          completedById: req.user.id,
           ...(driverId !== undefined && { driverId: driverId || null }),
           ...(helperId !== undefined && { helperId: helperId || null }),
         },
@@ -4681,14 +4771,23 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
         }
       }
 
-      return { job: j, advancedRevisions: job.type === "PICKUP" ? revisiUntukDiajukan : [], advancedComplaintCaseId };
+      await createExecutionEvent(tx, {
+        idempotencyKey, action: "JOB_COMPLETED", actorId: req.user.id, jobId: job.id, routeId: job.routeId,
+        payload: {
+          status: "COMPLETED", recipientName: pod.recipientName, note: pod.note,
+          location: pod.location, proofPhotoUrls,
+        },
+      });
+
+      return { replayed: false, job: j, advancedRevisions: job.type === "PICKUP" ? revisiUntukDiajukan : [], advancedComplaintCaseId };
     });
+    const { job: updated, advancedRevisions, advancedComplaintCaseId, replayed } = result;
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
 
     // Best-effort, TIDAK PERNAH menggagalkan response job yang sudah beres —
     // lihat komentar notifyDriverGroup di atas.
-    const headline = job.type === "PICKUP" ? "✅ Pengambilan selesai" : "✅ Pengiriman selesai";
-    notifyDriverGroup(full, proofPhotoUrls, headline).catch((err) =>
+    const headline = owned.type === "PICKUP" ? "✅ Pengambilan selesai" : "✅ Pengiriman selesai";
+    if (!replayed) notifyDriverGroup(full, proofPhotoUrls, headline).catch((err) =>
       console.error("[jobs/:id/complete] notifyDriverGroup gagal:", err.message)
     );
 
@@ -4697,17 +4796,17 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
     // lihat catatan header services/deliveryCompletionNotify.js. Dua
     // notifier TERPISAH (pesan & topic StaffBroadcast beda) — kegagalan
     // salah satu tidak menggagalkan yang lain.
-    notifySalesJobCompleted(updated).catch((err) =>
+    if (!replayed) notifySalesJobCompleted(updated).catch((err) =>
       console.error("[jobs/:id/complete] notifySalesJobCompleted gagal:", err.message)
     );
-    notifySalesUnpaidAfterDelivery(updated).catch((err) =>
+    if (!replayed) notifySalesUnpaidAfterDelivery(updated).catch((err) =>
       console.error("[jobs/:id/complete] notifySalesUnpaidAfterDelivery gagal:", err.message)
     );
 
     // Push ke Produksi (D-109) — cuma untuk PICKUP yang barusan membawa unit
     // revisi pulang (IN_REWORK); job DELIVERY biasa/redelivery tidak relevan
     // untuk mereka. Lihat komentar panjang di notifyProductionRevisionReady.
-    advancedRevisions.forEach((r) =>
+    if (!replayed) advancedRevisions.forEach((r) =>
       notifyProductionRevisionReady(r).catch((err) =>
         console.error("[jobs/:id/complete] notifyProductionRevisionReady gagal:", err.message)
       )
@@ -4716,7 +4815,7 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
     // Complaint Case auto-advance (D-116) — divisi yang BARU pegang bola
     // (Produksi setelah pickup, Sales setelah redelivery) diberi tahu
     // SEKARANG, pola sama dengan notifyProductionRevisionReady di atas.
-    if (advancedComplaintCaseId) {
+    if (!replayed && advancedComplaintCaseId) {
       prisma.complaintCase.findUnique({ where: { id: advancedComplaintCaseId } })
         .then((kase) => kase && notifyComplaintCaseOwnerChanged(kase))
         .catch((err) => console.error("[jobs/:id/complete] notifyComplaintCaseOwnerChanged gagal:", err.message));
@@ -4727,12 +4826,12 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
     // ke grup ops internal.
     const customer = full.units[0]?.unit?.order?.customer;
     const orderNumber = full.units[0]?.unit?.order?.orderNumber;
-    if (customer) {
-      if (job.type === "PICKUP") notifyUnitReceived(orderNumber, customer.id, customer.name);
+    if (!replayed && customer) {
+      if (owned.type === "PICKUP") notifyUnitReceived(orderNumber, customer.id, customer.name);
       else notifyDelivered(orderNumber, customer.id, customer.name);
     }
 
-    res.json(full);
+    res.set("Idempotency-Replayed", replayed ? "true" : "false").json(full);
   } catch (err) {
     handleErr(err, res);
   }
@@ -4779,18 +4878,18 @@ armadaRouter.patch("/jobs/:id/proof-photos", requireAnyPermission(P.JOB_WRITE, P
 // FR-D-07: "every failure requires a reason code and a photo. No exceptions."
 armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
-    const job = await loadOwnedJob(req);
-    if (["COMPLETED", "FAILED"].includes(job.status)) {
-      throw new ArmadaError(`Job berstatus ${job.status}, tidak bisa ditandai gagal lagi`);
-    }
-    const { failureReason } = req.body;
-    const failurePhotoUrls = Array.isArray(req.body.failurePhotoUrls) ? req.body.failurePhotoUrls : [];
-    if (!failureReason) throw new ArmadaError("Alasan kegagalan wajib diisi");
-    if (failurePhotoUrls.length === 0) throw new ArmadaError("Foto wajib diisi saat menandai gagal (FR-D-07, tanpa kecuali)");
-    const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
-    if (!failurePhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
+    const owned = await loadOwnedJob(req);
+    const idempotencyKey = requireIdempotencyKey(req);
+    const failure = validateFailureInput(req.body);
+    const { failureReason, failurePhotoUrls } = failure;
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
+      if (owned.routeId) await lockRoute(tx, owned.routeId);
+      const job = await lockJob(tx, owned.id);
+      assertCanOperateJob(req, job);
+      const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "JOB_FAILED", { jobId: job.id });
+      if (replay) return { replayed: true, job };
+      validateJobTransition("FAIL", job.status);
       const j = await tx.job.update({
         where: { id: job.id },
         data: { status: "FAILED", failureReason, failurePhotoUrls },
@@ -4849,11 +4948,19 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
           customerConfirmed: false, userId: req.user.id,
         });
       }
-      return j;
+      await createExecutionEvent(tx, {
+        idempotencyKey, action: "JOB_FAILED", actorId: req.user.id, jobId: job.id, routeId: job.routeId,
+        payload: {
+          status: "FAILED", failureReason, note: failure.note,
+          location: failure.location, failurePhotoUrls,
+          rescheduleRequested: failureReason.trim() === "Customer minta reschedule",
+        },
+      });
+      return { replayed: false, job: j };
     });
-    const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
+    const full = await prisma.job.findUnique({ where: { id: result.job.id }, include: jobInclude });
 
-    notifyDriverGroup(full, failurePhotoUrls, `❌ Gagal: ${failureReason}`).catch((err) =>
+    if (!result.replayed) notifyDriverGroup(full, failurePhotoUrls, `❌ Gagal: ${failureReason}`).catch((err) =>
       console.error("[jobs/:id/fail] notifyDriverGroup gagal:", err.message)
     );
 
@@ -4862,11 +4969,11 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
     // Semua Order dan lihat badge merah "Gagal" (persis pola silo yang sama
     // dengan komplain sebelum diperbaiki). Best-effort, tidak boleh
     // menggagalkan response job yang sudah beres ditandai gagal.
-    notifySalesJobFailed(full).catch((err) =>
+    if (!result.replayed) notifySalesJobFailed(full).catch((err) =>
       console.error("[jobs/:id/fail] notifySalesJobFailed gagal:", err.message)
     );
 
-    res.json(full);
+    res.set("Idempotency-Replayed", result.replayed ? "true" : "false").json(full);
   } catch (err) {
     handleErr(err, res);
   }

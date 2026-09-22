@@ -322,6 +322,15 @@ const FAIL_REASONS_DELIVERY = [
   { value: "Customer minta reschedule", label: "Minta Reschedule" },
 ];
 
+function ambilLokasiBestEffort() {
+  if (!navigator.geolocation) return Promise.resolve(null);
+  return new Promise((resolve) => navigator.geolocation.getCurrentPosition(
+    ({ coords }) => resolve({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy ?? null }),
+    () => resolve(null),
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 },
+  ));
+}
+
 // ── Kartu satu job ────────────────────────────────────────────────────────
 function JobCard({ job, onChanged, onQueued, pending }) {
   const [mode, setMode] = useState("idle"); // idle | completing | failing | revising
@@ -329,6 +338,7 @@ function JobCard({ job, onChanged, onQueued, pending }) {
   const [signatureBlob, setSignatureBlob] = useState(null);
   const [note, setNote] = useState("");
   const [failReason, setFailReason] = useState("");
+  const [recipientName, setRecipientName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // Lapor Revisi (18 September 2026) — lihat catatan panjang di backend
@@ -351,13 +361,15 @@ function JobCard({ job, onChanged, onQueued, pending }) {
     setSignatureBlob(null);
     setNote("");
     setFailReason("");
+    setRecipientName("");
   }
 
   async function run(action, payload, files, sig) {
     setBusy(true);
     setErr("");
     try {
-      const { queued } = await submitOrQueue(job.id, action, payload, files, sig);
+      const location = ["arrive", "complete", "fail"].includes(action) ? await ambilLokasiBestEffort() : null;
+      const { queued } = await submitOrQueue(job.id, action, { ...payload, location }, files, sig);
       if (action === "report-revision") setRevisionSubmitted(true);
       resetForm();
       if (queued) onQueued(); else onChanged();
@@ -529,6 +541,12 @@ function JobCard({ job, onChanged, onQueued, pending }) {
         <div className="mt-3 space-y-2">
           <PhotoCapture photos={photos} setPhotos={setPhotos} />
           <SignaturePad signatureBlob={signatureBlob} setSignatureBlob={setSignatureBlob} />
+          <input
+            value={recipientName}
+            onChange={(e) => setRecipientName(e.target.value)}
+            placeholder={job.type === "PICKUP" ? "Nama pemberi barang (wajib)" : "Nama penerima (wajib)"}
+            className="h-11 w-full rounded-lg border border-border px-3 text-xs outline-none focus:border-accent"
+          />
           <textarea
             value={note} onChange={(e) => setNote(e.target.value)} placeholder="Catatan (opsional)"
             className="h-14 w-full rounded-lg border border-border p-2 text-xs outline-none focus:border-accent"
@@ -536,8 +554,8 @@ function JobCard({ job, onChanged, onQueued, pending }) {
           <div className="flex gap-2">
             <Button variant="neutral" className="h-11 flex-1 text-xs" onClick={() => setMode("idle")}>Batal</Button>
             <Button
-              className="h-11 flex-1 text-xs" disabled={busy || photos.length === 0}
-              onClick={() => run("complete", { note }, photos, signatureBlob)}
+              className="h-11 flex-1 text-xs" disabled={busy || photos.length === 0 || !recipientName.trim()}
+              onClick={() => run("complete", { note, recipientName: recipientName.trim() }, photos, signatureBlob)}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Simpan"}
             </Button>

@@ -97,7 +97,7 @@ async function request(path, options = {}) {
       token = null;
       await AsyncStorage.removeItem("token");
       if (onUnauthorized) onUnauthorized();
-      throw new Error("Sesi berakhir, silakan login kembali");
+      throw Object.assign(new Error("Sesi berakhir, silakan login kembali"), { status: 401 });
     }
     if (!res.ok) {
       const text = await res.text();
@@ -141,13 +141,13 @@ async function uploadFile(path, file, fields, fieldName = "photos") {
       token = null;
       await AsyncStorage.removeItem("token");
       if (onUnauthorized) onUnauthorized();
-      throw new Error("Sesi berakhir, silakan login kembali");
+      throw Object.assign(new Error("Sesi berakhir, silakan login kembali"), { status: 401 });
     }
     if (result.status < 200 || result.status >= 300) {
       let msg;
       try { msg = JSON.parse(result.body).error; } catch {}
       if (!msg) msg = result.body ? `${result.status}: ${result.body.slice(0, 300)}` : `Upload gagal (status ${result.status})`;
-      throw new Error(msg);
+      throw Object.assign(new Error(msg), { status: result.status });
     }
     return JSON.parse(result.body);
   } catch (err) {
@@ -171,6 +171,10 @@ async function uploadJobPhotosMulti(jobId, files) {
     else if (res.url) urls.push(res.url);
   }
   return { urls };
+}
+
+async function uploadJobPhoto(jobId, file) {
+  return uploadFile(`/armada/jobs/${jobId}/photos`, file, {}, "photos");
 }
 
 function buildQuery(params) {
@@ -211,10 +215,11 @@ export const api = {
   // tidak ada endpoint reschedule di sini, itu tetap dispatcher-only.
   getIssues: () => request("/armada/issues"),
   uploadJobPhotos: uploadJobPhotosMulti,
+  uploadJobPhoto,
   // Mulai SATU rute sekaligus — foto muatan sekali, semua job ASSIGNED di
   // rute jadi EN_ROUTE (lihat POST /armada/routes/:id/start).
-  startRoute: (routeId, data = {}) =>
-    request(`/armada/routes/${routeId}/start`, { method: "POST", body: JSON.stringify(data) }),
+  startRoute: (routeId, data = {}, idempotencyKey) =>
+    request(`/armada/routes/${routeId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // Link Google Maps rute (sumber = manualMapsUrl admin, fallback auto
   // multi-stop) — sama presedennya dengan broadcast WA.
   getRouteMap: (routeId) => request(`/armada/routes/${routeId}/map`),
@@ -240,10 +245,10 @@ export const api = {
   getRoutePath: (points) =>
     request(`/armada/route-path${buildQuery({ points: points.map(([lat, lng]) => `${lat},${lng}`).join(";") })}`),
   getArmadaIssues: (params = {}) => request(`/armada/issues${buildQuery(params)}`),
-  startArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", body: JSON.stringify(data) }),
-  arriveArmadaJob: (jobId, data = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", body: JSON.stringify(data) }),
-  completeArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", body: JSON.stringify(data) }),
-  failArmadaJob: (jobId, data) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", body: JSON.stringify(data) }),
+  startArmadaJob: (jobId, data = {}, idempotencyKey) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  arriveArmadaJob: (jobId, data = {}, idempotencyKey) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  completeArmadaJob: (jobId, data, idempotencyKey) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  failArmadaJob: (jobId, data, idempotencyKey) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
   // Lapor revisi di lokasi (18 September 2026) — port dari frontend/src/api.js,
   // lihat catatan panjang di backend routes/armada.js POST /jobs/:id/report-revision.
@@ -261,6 +266,8 @@ export const api = {
   // meng-auto-online-kan (lihat pemanggilan di AuthContext setelah start job).
   setOnlineStatus: (online) =>
     request("/armada/me/online-status", { method: "POST", body: JSON.stringify({ online }) }),
+  setPendingSync: (count) =>
+    request("/armada/me/pending-sync", { method: "POST", body: JSON.stringify({ count }) }),
 
   // Insentif per ALAMAT selesai per driver/helper — AdminHomeScreen tab
   // Performa (D-162, 13 September 2026, GANTI dari versi "per jalur" —

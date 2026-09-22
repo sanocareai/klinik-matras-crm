@@ -135,6 +135,33 @@ export default function RouteControlDrawer({ route, onClose }) {
                         <p className="mt-0.5 truncate text-[11px] text-ink3">
                           {orderNumberOf(j) || "—"}{j.addressText ? ` · ${j.addressText}` : ""}
                         </p>
+                        {j.status === "COMPLETED" && (
+                          <div className="mt-2 rounded-btn border border-line bg-surface p-2">
+                            <p className="text-[11px] font-semibold text-ink">
+                              {j.type === "PICKUP" ? "Pemberi barang" : "Penerima"}: {j.proofRecipientName || "Belum dicatat"}
+                            </p>
+                            <p className="mt-0.5 text-[10.5px] text-ink3">
+                              {j.completedBy?.name ? `Dilakukan ${j.completedBy.name}` : "Pelaksana belum tercatat"}
+                              {j.completedAt ? ` · ${formatTanggalJam(j.completedAt)}` : ""}
+                            </p>
+                            {j.proofNote && <p className="mt-1 text-[11px] text-ink2">{j.proofNote}</p>}
+                            {j.proofLat != null && j.proofLng != null && (
+                              <p className="mt-1 text-[10.5px] text-ink3">
+                                GPS {Number(j.proofLat).toFixed(5)}, {Number(j.proofLng).toFixed(5)}
+                                {j.proofAccuracy != null ? ` · akurasi ±${Math.round(j.proofAccuracy)} m` : ""}
+                              </p>
+                            )}
+                            {j.proofPhotoUrls?.length > 0 && (
+                              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                                {j.proofPhotoUrls.map((src) => (
+                                  <a key={src} href={src} target="_blank" rel="noreferrer" className="shrink-0">
+                                    <img src={src} alt="Bukti serah terima" loading="lazy" className="h-16 w-16 rounded-btn object-cover" />
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </li>
                   ))}
@@ -240,10 +267,33 @@ function RouteTimeline({ route }) {
   if (route.createdAt) events.push({ at: route.createdAt, label: "Rute dibuat" });
   if (route.publishedAt) events.push({ at: route.publishedAt, label: "Diterbitkan ke driver" });
   if (route.lastEditedAt) events.push({ at: route.lastEditedAt, label: `Diedit${route.lastEditedBy?.name ? ` oleh ${route.lastEditedBy.name}` : ""}` });
+  if (route.startedAt && !(route.executionEvents || []).some((event) => event.action === "ROUTE_STARTED")) {
+    events.push({ at: route.startedAt, label: "Rute dimulai" });
+  }
+  if (route.completedAt) events.push({ at: route.completedAt, label: "Rute selesai", done: true });
+  for (const event of route.executionEvents || []) {
+    if (event.action === "ROUTE_STARTED") {
+      events.push({ at: event.createdAt, label: `Rute dimulai${event.actor?.name ? ` oleh ${event.actor.name}` : ""}` });
+    }
+  }
   for (const j of route.jobs || []) {
     const nama = customerOf(j) || "Stop";
-    if (j.arrivedAt) events.push({ at: j.arrivedAt, label: `Tiba di ${nama}` });
-    if (j.completedAt) events.push({ at: j.completedAt, label: `Selesai — ${nama}`, done: true });
+    const execution = j.executionEvents || [];
+    if (execution.length > 0) {
+      for (const event of execution) {
+        const actor = event.actor?.name ? ` oleh ${event.actor.name}` : "";
+        const label = {
+          JOB_STARTED: `Menuju ${nama}${actor}`,
+          JOB_ARRIVED: `Tiba di ${nama}${actor}`,
+          JOB_COMPLETED: `Selesai — ${nama}${actor}`,
+          JOB_FAILED: `Gagal — ${nama}${actor}`,
+        }[event.action];
+        if (label) events.push({ at: event.createdAt, label, done: event.action === "JOB_COMPLETED", problem: event.action === "JOB_FAILED" });
+      }
+    } else {
+      if (j.arrivedAt) events.push({ at: j.arrivedAt, label: `Tiba di ${nama}` });
+      if (j.completedAt) events.push({ at: j.completedAt, label: `Selesai — ${nama}`, done: true });
+    }
     for (const log of j.issueLogs || []) {
       events.push({
         at: log.createdAt,
