@@ -218,22 +218,27 @@ export default function FinancePayments() {
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada uang masuk yang cocok dengan pencarian ini.</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
+            <Table fixed>
               <THead>
                 <TR>
-                  <TH sticky>Tanggal</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Dicatat oleh</TH>
-                  <TH>Cara Bayar</TH><TH>Masuk ke Rekening</TH><TH numeric>Nominal</TH><TH>Untuk Order</TH><TH>Status</TH><TH />
+                  <TH sticky width={128}>Tanggal</TH><TH width={140}>Order</TH><TH>Pelanggan</TH>
+                  <TH width={110} hideBelow="wide">Dicatat oleh</TH>
+                  <TH width={92} hideBelow="wide">Cara Bayar</TH>
+                  <TH width={128} hideBelow="wide">Masuk ke Rekening</TH>
+                  <TH numeric width={112}>Nominal</TH>
+                  <TH width={150} hideBelow="wide">Untuk Order</TH>
+                  <TH width={116}>Status</TH><TH width={104} />
                 </TR>
               </THead>
               <TBody>
                 {tampil.map((p) => (
                   <TR key={p.id}>
-                    <TD sticky className="whitespace-nowrap">{tanggalJam(p.createdAt)}</TD>
-                    <TD className="font-medium">{p.order?.orderNumber || "—"}</TD>
-                    <TD className="max-w-[160px] truncate">{p.order?.customer?.name || "—"}</TD>
-                    <TD>{p.recordedBy?.name || "—"}</TD>
-                    <TD><Badge variant="neutral">{LABEL_CARA_BAYAR[p.method] || p.method}</Badge></TD>
-                    <TD className="text-[12px]">
+                    <TD sticky className="whitespace-nowrap text-[12px]">{tanggalJam(p.createdAt)}</TD>
+                    <TD className="truncate font-medium" title={p.order?.orderNumber || "—"}>{p.order?.orderNumber || "—"}</TD>
+                    <TD truncate>{p.order?.customer?.name || "—"}</TD>
+                    <TD hideBelow="wide" truncate>{p.recordedBy?.name || "—"}</TD>
+                    <TD hideBelow="wide"><Badge variant="neutral">{LABEL_CARA_BAYAR[p.method] || p.method}</Badge></TD>
+                    <TD hideBelow="wide" truncate className="text-[12px]">
                       {p.cashAccount?.name || (
                         <span className="text-ink3" title="Rekening tidak dipilih saat pembayaran dicatat, jadi sistem memakai rekening standar untuk cara bayar ini.">
                           belum dipilih
@@ -241,11 +246,11 @@ export default function FinancePayments() {
                       )}
                     </TD>
                     <TD numeric><Uang value={p.amount} /></TD>
-                    <TD className="text-[12px] text-ink2">
+                    <TD hideBelow="wide" className="truncate text-[12px] text-ink2">
                       {p.finAllocations.length === 0
                         ? <span className="text-ink3">order ini saja</span>
                         : p.finAllocations.map((a) => (
-                            <span key={a.id} className="block">
+                            <span key={a.id} className="block truncate" title={`${a.order?.orderNumber || "—"}: ${formatUang(a.amount)}`}>
                               {a.order?.orderNumber || "—"}: {formatUang(a.amount)}
                             </span>
                           ))}

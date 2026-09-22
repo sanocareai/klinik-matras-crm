@@ -216,20 +216,28 @@ export default function FinanceCash() {
               <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada rekening yang cocok dengan pencarian ini.</p></CardContent>
             ) : (
               <TableWrap className="dh-table">
-                <Table>
+                <Table fixed>
                   <THead>
-                    <TR><TH sticky>Nama</TH><TH>Jenis</TH><TH>Nomor</TH><TH>Akun COA</TH><TH numeric>Saldo Buku</TH><TH>Status</TH><TH>Aksi</TH></TR>
+                    <TR>
+                      <TH sticky width={160}>Nama</TH>
+                      <TH width={100}>Jenis</TH>
+                      <TH width={170} hideBelow="wide">Nomor</TH>
+                      <TH width={170} hideBelow="wide">Akun COA</TH>
+                      <TH numeric width={140}>Saldo Buku</TH>
+                      <TH width={100}>Status</TH>
+                      <TH width={92}>Aksi</TH>
+                    </TR>
                   </THead>
                   <TBody>
                     {rekeningTampil.map((a) => (
                       <TR key={a.id}>
-                        <TD sticky className="font-medium">{a.name}</TD>
+                        <TD sticky truncate className="font-medium">{a.name}</TD>
                         <TD><Badge variant="neutral">{a.kind}</Badge></TD>
-                        <TD className="text-[12px] text-ink2">
+                        <TD hideBelow="wide" truncate className="text-[12px] text-ink2">
                           {a.accountNumber ? `${a.bankName || ""} ${a.accountNumber}`.trim() : "—"}
-                          {a.accountHolder && <span className="block text-ink3">a.n. {a.accountHolder}</span>}
+                          {a.accountHolder && <span className="block truncate text-ink3">a.n. {a.accountHolder}</span>}
                         </TD>
-                        <TD className="font-mono text-[12px]">{a.account?.code} · {a.account?.name}</TD>
+                        <TD hideBelow="wide" truncate className="font-mono text-[12px]">{a.account?.code} · {a.account?.name}</TD>
                         <TD numeric><Uang value={a.saldo} className="font-bold" /></TD>
                         <TD>{a.active ? <Badge variant="green">Aktif</Badge> : <Badge variant="neutral">Nonaktif</Badge>}</TD>
                         <TD>
@@ -276,19 +284,27 @@ export default function FinanceCash() {
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">{transfers.length === 0 ? "Belum ada mutasi di periode ini." : "Tidak ada mutasi yang cocok dengan pencarian ini."}</p></CardContent>
           ) : (
             <TableWrap className="dh-table">
-              <Table>
+              <Table fixed>
                 <THead>
-                  <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Dari</TH><TH>Ke</TH><TH numeric>Nominal</TH><TH numeric>Biaya Admin</TH><TH>Status</TH></TR>
+                  <TR>
+                    <TH sticky width={124}>Nomor</TH>
+                    <TH width={92} className="whitespace-nowrap">Tanggal</TH>
+                    <TH>Dari</TH>
+                    <TH>Ke</TH>
+                    <TH numeric width={128}>Nominal</TH>
+                    <TH numeric width={112} hideBelow="wide">Biaya Admin</TH>
+                    <TH width={116}>Status</TH>
+                  </TR>
                 </THead>
                 <TBody>
                   {transferTampil.map((t) => (
                     <TR key={t.id}>
                       <TD sticky className="font-mono text-[12px]">{t.transferNumber}</TD>
-                      <TD>{tanggalPendek(t.date)}</TD>
-                      <TD>{t.fromAccount?.name}</TD>
-                      <TD>{t.toAccount?.name}</TD>
+                      <TD className="whitespace-nowrap">{tanggalPendek(t.date)}</TD>
+                      <TD truncate>{t.fromAccount?.name}</TD>
+                      <TD truncate>{t.toAccount?.name}</TD>
                       <TD numeric><Uang value={t.amount} /></TD>
-                      <TD numeric><Uang value={t.feeAmount} nolSebagaiStrip /></TD>
+                      <TD hideBelow="wide" numeric><Uang value={t.feeAmount} nolSebagaiStrip /></TD>
                       <TD>
                         {t.cancelledAt
                           ? <Badge variant="red">Dibatalkan</Badge>
@@ -327,18 +343,25 @@ export default function FinanceCash() {
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">{incomes.length === 0 ? "Belum ada pemasukan lain di periode ini." : "Tidak ada pemasukan yang cocok dengan pencarian ini."}</p></CardContent>
           ) : (
             <TableWrap className="dh-table">
-              <Table>
+              <Table fixed>
                 <THead>
-                  <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Akun</TH><TH>Masuk ke</TH><TH numeric>Nominal</TH></TR>
+                  <TR>
+                    <TH sticky width={124}>Nomor</TH>
+                    <TH width={92} className="whitespace-nowrap">Tanggal</TH>
+                    <TH>Keterangan</TH>
+                    <TH width={190} hideBelow="wide">Akun</TH>
+                    <TH width={150}>Masuk ke</TH>
+                    <TH numeric width={128}>Nominal</TH>
+                  </TR>
                 </THead>
                 <TBody>
                   {pemasukanTampil.map((i) => (
                     <TR key={i.id}>
                       <TD sticky className="font-mono text-[12px]">{i.incomeNumber}</TD>
-                      <TD>{tanggalPendek(i.date)}</TD>
-                      <TD className="max-w-[280px] truncate">{i.description}</TD>
-                      <TD className="text-[12px]">{i.account ? `${i.account.code} · ${i.account.name}` : "—"}</TD>
-                      <TD>{i.cashAccount?.name}</TD>
+                      <TD className="whitespace-nowrap">{tanggalPendek(i.date)}</TD>
+                      <TD truncate>{i.description}</TD>
+                      <TD hideBelow="wide" truncate className="text-[12px]">{i.account ? `${i.account.code} · ${i.account.name}` : "—"}</TD>
+                      <TD truncate>{i.cashAccount?.name}</TD>
                       <TD numeric><Uang value={i.amount} /></TD>
                     </TR>
                   ))}

@@ -139,17 +139,25 @@ export default function FinanceJournal() {
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada jurnal di filter ini.</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
+            <Table fixed>
               <THead>
-                <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Sumber</TH><TH numeric>Nilai</TH><TH>Status</TH><TH /></TR>
+                <TR>
+                  <TH sticky width={132}>Nomor</TH>
+                  <TH width={92} className="whitespace-nowrap">Tanggal</TH>
+                  <TH>Keterangan</TH>
+                  <TH width={140} hideBelow="wide">Sumber</TH>
+                  <TH numeric width={132}>Nilai</TH>
+                  <TH width={110}>Status</TH>
+                  <TH width={40} />
+                </TR>
               </THead>
               <TBody>
                 {entries.map((e) => (
                   <TR key={e.id} clickable onClick={() => setDetail(e.id)}>
                     <TD sticky className="font-mono text-[12px]">{e.entryNumber}</TD>
                     <TD className="whitespace-nowrap">{tanggalPendek(e.date)}</TD>
-                    <TD className="max-w-[320px] truncate">{e.description}</TD>
-                    <TD><Badge variant={e.source === "MANUAL" || e.source === "SALDO_AWAL" ? "accent" : "neutral"}>
+                    <TD truncate>{e.description}</TD>
+                    <TD hideBelow="wide"><Badge variant={e.source === "MANUAL" || e.source === "SALDO_AWAL" ? "accent" : "neutral"}>
                       {LABEL_SUMBER_JURNAL[e.source] || e.source}
                     </Badge></TD>
                     <TD numeric><Uang value={e.totalDebit} /></TD>

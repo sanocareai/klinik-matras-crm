@@ -202,25 +202,31 @@ export default function FinanceReceivables() {
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">{barisEmber.length > 0 ? "Tidak ada piutang yang cocok dengan pencarian/filter." : "Tidak ada piutang terbuka."}</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
+            <Table fixed>
               <THead>
                 <TR>
-                  <TH sticky>Order</TH><TH>Invoice</TH><TH>Pelanggan</TH><TH>Sales</TH>
-                  <TH numeric>Nilai Order</TH><TH numeric>Sisa Tagihan</TH>
-                  <TH>Jatuh Tempo</TH><TH>Acuan</TH><TH numeric>Umur</TH>
+                  <TH sticky width={132}>Order</TH>
+                  <TH width={120} hideBelow="wide">Invoice</TH>
+                  <TH>Pelanggan</TH>
+                  <TH width={110} hideBelow="wide">Sales</TH>
+                  <TH numeric width={116} hideBelow="wide">Nilai Order</TH>
+                  <TH numeric width={124}>Sisa Tagihan</TH>
+                  <TH width={100}>Jatuh Tempo</TH>
+                  <TH width={100} hideBelow="wide">Acuan</TH>
+                  <TH numeric width={92}>Umur</TH>
                 </TR>
               </THead>
               <TBody>
                 {baris.map((b) => (
                   <TR key={b.orderId}>
                     <TD sticky className="font-medium">{b.orderNumber || "—"}</TD>
-                    <TD className="font-mono text-[12px]">{b.invoiceNumber || "—"}</TD>
-                    <TD className="max-w-[180px] truncate">{b.customerName}</TD>
-                    <TD className="text-[12px] text-ink2">{b.salesName || "—"}</TD>
-                    <TD numeric><Uang value={b.nilaiOrder} /></TD>
+                    <TD hideBelow="wide" className="font-mono text-[12px]">{b.invoiceNumber || "—"}</TD>
+                    <TD truncate>{b.customerName}</TD>
+                    <TD hideBelow="wide" truncate className="text-[12px] text-ink2">{b.salesName || "—"}</TD>
+                    <TD hideBelow="wide" numeric><Uang value={b.nilaiOrder} /></TD>
                     <TD numeric><Uang value={b.sisaTagihan} className="font-bold" /></TD>
-                    <TD>{tanggalPendek(b.dueDate)}</TD>
-                    <TD className="text-[12px] text-ink3">
+                    <TD className="whitespace-nowrap">{tanggalPendek(b.dueDate)}</TD>
+                    <TD hideBelow="wide" className="text-[12px] text-ink3">
                       {b.sumberJatuhTempo === "invoice" ? "invoice" : "tanggal order"}
                     </TD>
                     <TD numeric>
@@ -261,18 +267,22 @@ export default function FinanceReceivables() {
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">{refunds.length > 0 ? "Tidak ada refund yang cocok dengan pencarian/filter." : "Belum ada refund."}</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
+            <Table fixed>
               <THead>
-                <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Alasan</TH><TH numeric>Nominal</TH><TH>Status</TH><TH /></TR>
+                <TR>
+                  <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH>
+                  <TH width={128} hideBelow="wide">Order</TH><TH width={140}>Pelanggan</TH><TH>Alasan</TH>
+                  <TH numeric width={108}>Nominal</TH><TH width={100}>Status</TH><TH width={172} />
+                </TR>
               </THead>
               <TBody>
                 {refundTampil.map((r) => (
                   <TR key={r.id}>
                     <TD sticky className="font-mono text-[12px]">{r.refundNumber}</TD>
-                    <TD>{tanggalPendek(r.date)}</TD>
-                    <TD className="font-medium">{r.order?.orderNumber || "—"}</TD>
-                    <TD className="max-w-[160px] truncate">{r.order?.customer?.name || "—"}</TD>
-                    <TD className="max-w-[220px] truncate">{r.reason}</TD>
+                    <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(r.date)}</TD>
+                    <TD hideBelow="wide" truncate className="font-medium">{r.order?.orderNumber || "—"}</TD>
+                    <TD truncate>{r.order?.customer?.name || "—"}</TD>
+                    <TD truncate>{r.reason}</TD>
                     <TD numeric><Uang value={r.amount} /></TD>
                     <TD><StatusBadge status={r.status} /></TD>
                     <TD>

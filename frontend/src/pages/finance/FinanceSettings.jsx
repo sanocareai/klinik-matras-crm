@@ -122,17 +122,23 @@ export default function FinanceSettings() {
           </CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
+            <Table fixed>
               <THead>
-                <TR><TH sticky>Waktu</TH><TH>Sumber</TH><TH>Masalah</TH><TH>Penjelasan</TH><TH /></TR>
+                <TR>
+                  <TH sticky width={140} className="whitespace-nowrap">Waktu</TH>
+                  <TH width={160} hideBelow="wide">Sumber</TH>
+                  <TH width={200}>Masalah</TH>
+                  <TH>Penjelasan</TH>
+                  <TH width={140} />
+                </TR>
               </THead>
               <TBody>
                 {gapTerbuka.map((g) => (
                   <TR key={g.id}>
                     <TD sticky className="whitespace-nowrap">{tanggalJam(g.createdAt)}</TD>
-                    <TD><Badge variant="neutral">{g.source}</Badge></TD>
-                    <TD className="text-[12px] text-ink2">{g.reason}</TD>
-                    <TD className="max-w-[420px] text-[12px] leading-relaxed">{g.detail}</TD>
+                    <TD hideBelow="wide"><Badge variant="neutral">{g.source}</Badge></TD>
+                    <TD truncate className="text-[12px] text-ink2" title={g.reason}>{g.reason}</TD>
+                    <TD truncate className="text-[12px] leading-relaxed" title={g.detail}>{g.detail}</TD>
                     <TD>
                       <TombolAksi size="sm" variant="secondary" onClick={() => aksi(() => api.retryFinanceGap(g.id))}>
                         <RefreshCw size={13} /> Coba Lagi
@@ -305,17 +311,25 @@ export default function FinanceSettings() {
           <CardContent><p className="py-4 text-[13px] text-ink3">Belum ada periode — periode dibuat otomatis saat jurnal pertama bulan itu diposting.</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
-              <THead><TR><TH sticky>Periode</TH><TH>Status</TH><TH>Ditutup</TH><TH>Catatan</TH><TH /></TR></THead>
+            <Table fixed>
+              <THead>
+                <TR>
+                  <TH sticky width={110}>Periode</TH>
+                  <TH width={120}>Status</TH>
+                  <TH width={220} hideBelow="wide">Ditutup</TH>
+                  <TH>Catatan</TH>
+                  <TH width={110} />
+                </TR>
+              </THead>
               <TBody>
                 {periods.map((p) => (
                   <TR key={p.id}>
                     <TD sticky className="font-medium">{String(p.month).padStart(2, "0")}/{p.year}</TD>
                     <TD><StatusBadge status={p.status} /></TD>
-                    <TD className="text-[12px] text-ink2">
+                    <TD hideBelow="wide" truncate className="text-[12px] text-ink2">
                       {p.closedAt ? `${tanggalPendek(p.closedAt)} · ${p.closedBy?.name || "—"}` : "—"}
                     </TD>
-                    <TD className="max-w-[260px] truncate text-[12px]">{p.closeNote || "—"}</TD>
+                    <TD truncate className="text-[12px]" title={p.closeNote || "—"}>{p.closeNote || "—"}</TD>
                     <TD>
                       {p.status === "OPEN" ? (
                         <TombolAksi
@@ -370,16 +384,25 @@ export default function FinanceSettings() {
           </Button>
         </CardHeader>
         <TableWrap className="dh-table">
-          <Table>
-            <THead><TR><TH sticky>Kode</TH><TH>Nama</TH><TH>Akun Tujuan</TH><TH>Divisi</TH><TH>Otomatis Dari</TH><TH>Status</TH></TR></THead>
+          <Table fixed>
+            <THead>
+              <TR>
+                <TH sticky width={140}>Kode</TH>
+                <TH width={200}>Nama</TH>
+                <TH width={220} hideBelow="wide">Akun Tujuan</TH>
+                <TH width={130}>Divisi</TH>
+                <TH hideBelow="wide">Otomatis Dari</TH>
+                <TH width={100}>Status</TH>
+              </TR>
+            </THead>
             <TBody>
               {kategori.map((k) => (
                 <TR key={k.id}>
-                  <TD sticky className="font-mono text-[12px]">{k.code}</TD>
-                  <TD>{k.name}</TD>
-                  <TD className="text-[12px]">{k.account?.code} · {k.account?.name}</TD>
+                  <TD sticky truncate className="font-mono text-[12px]">{k.code}</TD>
+                  <TD truncate>{k.name}</TD>
+                  <TD hideBelow="wide" truncate className="text-[12px]">{k.account?.code} · {k.account?.name}</TD>
                   <TD><Badge variant="neutral">{LABEL_DIVISI[k.division] || k.division}</Badge></TD>
-                  <TD className="text-[12px] text-ink3">{k.autoMapKey || "—"}</TD>
+                  <TD hideBelow="wide" truncate className="text-[12px] text-ink3">{k.autoMapKey || "—"}</TD>
                   <TD>{k.active ? <Badge variant="green">Aktif</Badge> : <Badge variant="neutral">Nonaktif</Badge>}</TD>
                 </TR>
               ))}

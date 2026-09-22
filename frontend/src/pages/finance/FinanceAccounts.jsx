@@ -153,29 +153,34 @@ export default function FinanceAccounts() {
               </div>
             </CardHeader>
             <TableWrap className="dh-table">
-              <Table>
+              <Table fixed>
                 <THead>
                   <TR>
-                    <TH sticky>Kode</TH><TH>Nama Akun</TH><TH>Tipe</TH>
-                    <TH>Saldo Normal</TH><TH>Arus Kas</TH><TH>Status</TH><TH />
+                    <TH sticky width={100}>Kode</TH>
+                    <TH>Nama Akun</TH>
+                    <TH width={160} hideBelow="wide">Tipe</TH>
+                    <TH width={110} hideBelow="wide">Saldo Normal</TH>
+                    <TH width={110} hideBelow="wide">Arus Kas</TH>
+                    <TH width={100}>Status</TH>
+                    <TH width={124} />
                   </TR>
                 </THead>
                 <TBody>
                   {terlihat.map((a) => (
                     <TR key={a.id} className={!a.isPostable ? "bg-inset/50" : undefined}>
                       <TD sticky className="font-mono text-[12px] tabular-nums">{a.code}</TD>
-                      <TD>
+                      <TD className="min-w-0">
                         <span className={a.isPostable ? "" : "font-bold uppercase tracking-wide text-ink2"}>
                           {a.name}
                         </span>
                         {a.systemKey && <Lock size={11} className="ml-1.5 inline align-[-1px] text-ink3" />}
                         {a.description && (
-                          <p className="mt-0.5 max-w-[420px] text-[12px] leading-snug text-ink3">{a.description}</p>
+                          <p className="mt-0.5 truncate text-[12px] leading-snug text-ink3" title={a.description}>{a.description}</p>
                         )}
                       </TD>
-                      <TD><Badge variant="neutral">{LABEL_TIPE_AKUN[a.type] || a.type}</Badge></TD>
-                      <TD className="text-[12px] text-ink2">{a.normalBalance === "DEBIT" ? "Debit" : "Kredit"}</TD>
-                      <TD className="text-[12px] text-ink2">{a.cashFlowCategory ? a.cashFlowCategory.toLowerCase() : "—"}</TD>
+                      <TD hideBelow="wide"><Badge variant="neutral">{LABEL_TIPE_AKUN[a.type] || a.type}</Badge></TD>
+                      <TD hideBelow="wide" className="text-[12px] text-ink2">{a.normalBalance === "DEBIT" ? "Debit" : "Kredit"}</TD>
+                      <TD hideBelow="wide" className="text-[12px] text-ink2">{a.cashFlowCategory ? a.cashFlowCategory.toLowerCase() : "—"}</TD>
                       <TD>
                         {!a.isPostable
                           ? <Badge variant="neutral">Kelompok</Badge>

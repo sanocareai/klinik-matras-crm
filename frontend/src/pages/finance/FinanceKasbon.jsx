@@ -199,28 +199,32 @@ export default function FinanceKasbon() {
           </CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
+            <Table fixed>
               <THead>
                 <TR>
-                  <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Karyawan</TH><TH>Urgensi</TH><TH>Sumber Dana</TH>
-                  <TH numeric>Kasbon</TH><TH numeric>Sudah Dipotong</TH><TH numeric>Belum Dipotong</TH><TH>Status</TH><TH />
+                  <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH><TH width={140}>Karyawan</TH>
+                  <TH hideBelow="wide">Urgensi</TH>
+                  <TH width={128} hideBelow="wide">Sumber Dana</TH>
+                  <TH numeric width={100} hideBelow="wide">Kasbon</TH>
+                  <TH numeric width={112} hideBelow="wide">Sudah Dipotong</TH>
+                  <TH numeric width={112}>Belum Dipotong</TH><TH width={100}>Status</TH><TH width={140} />
                 </TR>
               </THead>
               <TBody>
                 {kasbon.map((k) => (
                   <TR key={k.id}>
                     <TD sticky className="font-mono text-[12px]">{k.kasbonNumber}</TD>
-                    <TD className="whitespace-nowrap">{tanggalPendek(k.date)}</TD>
-                    <TD className="font-medium">{k.employeeName}</TD>
-                    <TD className="max-w-[220px]">
-                      <span className="block truncate">{k.urgency || "—"}</span>
+                    <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(k.date)}</TD>
+                    <TD truncate className="font-medium">{k.employeeName}</TD>
+                    <TD hideBelow="wide">
+                      <span className="block truncate" title={k.urgency || "—"}>{k.urgency || "—"}</span>
                       {k.receiptUrl && (
                         <LinkBukti url={k.receiptUrl} className="text-[11px] text-accent hover:underline">bukti</LinkBukti>
                       )}
                     </TD>
-                    <TD className="whitespace-nowrap text-[12px]">{k.cashAccount ? k.cashAccount.name : <span className="text-ink3">—</span>}</TD>
-                    <TD numeric><Uang value={k.amount} /></TD>
-                    <TD numeric><Uang value={k.terlunasi} nolSebagaiStrip /></TD>
+                    <TD hideBelow="wide" truncate className="text-[12px]">{k.cashAccount ? k.cashAccount.name : <span className="text-ink3">—</span>}</TD>
+                    <TD hideBelow="wide" numeric><Uang value={k.amount} /></TD>
+                    <TD hideBelow="wide" numeric><Uang value={k.terlunasi} nolSebagaiStrip /></TD>
                     <TD numeric><Uang value={k.sisa} className="font-bold" nolSebagaiStrip /></TD>
                     <TD>
                       <StatusBadge status={k.status} />

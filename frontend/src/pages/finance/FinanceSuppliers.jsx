@@ -219,31 +219,35 @@ export default function FinanceSuppliers() {
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada tagihan yang cocok dengan pencarian ini.</p></CardContent>
           ) : (
             <TableWrap className="dh-table">
-              <Table>
+              <Table fixed>
                 <THead>
                   <TR>
-                    <TH sticky>Nomor</TH><TH>Ref Supplier</TH><TH>Supplier</TH><TH>Keterangan</TH>
-                    <TH>Tanggal</TH><TH>Jatuh Tempo</TH>
-                    <TH numeric>Nilai</TH><TH numeric>Terbayar</TH><TH numeric>Sisa</TH>
-                    <TH>Status</TH><TH />
+                    <TH sticky width={124}>Nomor</TH>
+                    <TH width={104} hideBelow="2xl">Ref Supplier</TH>
+                    <TH width={150}>Supplier</TH><TH>Keterangan</TH>
+                    <TH width={92} hideBelow="2xl">Tanggal</TH><TH width={96}>Jatuh Tempo</TH>
+                    <TH numeric width={108} hideBelow="2xl">Nilai</TH>
+                    <TH numeric width={108} hideBelow="2xl">Terbayar</TH>
+                    <TH numeric width={112}>Sisa</TH>
+                    <TH width={100}>Status</TH><TH width={144} />
                   </TR>
                 </THead>
                 <TBody>
                   {billsTampil.map((b) => (
                     <TR key={b.id}>
                       <TD sticky className="font-mono text-[12px]">{b.billNumber}</TD>
-                      <TD className="text-[12px] text-ink2">{b.supplierRef || "—"}</TD>
-                      <TD>{b.supplier?.name}</TD>
-                      <TD className="max-w-[220px]">
-                        <span className="block truncate">{b.description}</span>
+                      <TD hideBelow="2xl" truncate className="text-[12px] text-ink2">{b.supplierRef || "—"}</TD>
+                      <TD truncate>{b.supplier?.name}</TD>
+                      <TD className="min-w-0">
+                        <span className="block truncate" title={b.description}>{b.description}</span>
                         {b.goodsReceipt && (
-                          <span className="text-[11px] text-ink3">dari penerimaan {b.goodsReceipt.receiptNumber}</span>
+                          <span className="block truncate text-[11px] text-ink3" title={`dari penerimaan ${b.goodsReceipt.receiptNumber}`}>dari penerimaan {b.goodsReceipt.receiptNumber}</span>
                         )}
                       </TD>
-                      <TD>{tanggalPendek(b.billDate)}</TD>
-                      <TD>{b.dueDate ? tanggalPendek(b.dueDate) : <span className="text-ink3">—</span>}</TD>
-                      <TD numeric><Uang value={b.amount} /></TD>
-                      <TD numeric><Uang value={b.terbayar} nolSebagaiStrip /></TD>
+                      <TD hideBelow="2xl" className="whitespace-nowrap text-[12px]">{tanggalPendek(b.billDate)}</TD>
+                      <TD className="whitespace-nowrap text-[12px]">{b.dueDate ? tanggalPendek(b.dueDate) : <span className="text-ink3">—</span>}</TD>
+                      <TD hideBelow="2xl" numeric><Uang value={b.amount} /></TD>
+                      <TD hideBelow="2xl" numeric><Uang value={b.terbayar} nolSebagaiStrip /></TD>
                       <TD numeric><Uang value={b.sisa} className="font-bold" /></TD>
                       <TD><StatusBadge status={b.status} /></TD>
                       <TD>
@@ -301,18 +305,28 @@ export default function FinanceSuppliers() {
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">{payments.length === 0 ? "Belum ada pembayaran." : "Tidak ada pembayaran yang cocok dengan pencarian ini."}</p></CardContent>
           ) : (
             <TableWrap className="dh-table">
-              <Table>
+              <Table fixed>
                 <THead>
-                  <TR><TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Supplier</TH><TH>Dari Rekening</TH><TH>Tagihan</TH><TH numeric>Nominal</TH><TH>Status</TH></TR>
+                  <TR>
+                    <TH sticky width={124}>Nomor</TH>
+                    <TH width={92} className="whitespace-nowrap">Tanggal</TH>
+                    <TH width={160}>Supplier</TH>
+                    <TH width={150}>Dari Rekening</TH>
+                    <TH>Tagihan</TH>
+                    <TH numeric width={128}>Nominal</TH>
+                    <TH width={116}>Status</TH>
+                  </TR>
                 </THead>
                 <TBody>
                   {paymentsTampil.map((p) => (
                     <TR key={p.id}>
                       <TD sticky className="font-mono text-[12px]">{p.paymentNumber}</TD>
-                      <TD>{tanggalPendek(p.date)}</TD>
-                      <TD>{p.supplier?.name}</TD>
-                      <TD>{p.cashAccount?.name}</TD>
-                      <TD className="text-[12px]">{p.allocations.map((a) => a.bill?.billNumber).join(", ") || "—"}</TD>
+                      <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(p.date)}</TD>
+                      <TD truncate>{p.supplier?.name}</TD>
+                      <TD truncate>{p.cashAccount?.name}</TD>
+                      <TD truncate className="text-[12px]" title={p.allocations.map((a) => a.bill?.billNumber).join(", ") || "—"}>
+                        {p.allocations.map((a) => a.bill?.billNumber).join(", ") || "—"}
+                      </TD>
                       <TD numeric><Uang value={p.amount} /></TD>
                       <TD>{p.cancelledAt ? <Badge variant="red">Dibatalkan</Badge> : <Badge variant="green">Terposting</Badge>}</TD>
                     </TR>
@@ -352,18 +366,26 @@ export default function FinanceSuppliers() {
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada supplier yang cocok dengan pencarian ini.</p></CardContent>
           ) : (
             <TableWrap className="dh-table">
-              <Table>
+              <Table fixed>
                 <THead>
-                  <TR><TH sticky>Kode</TH><TH>Nama</TH><TH>Kontak</TH><TH>Termin</TH><TH>Rekening</TH><TH numeric>Sisa Utang</TH><TH>Status</TH></TR>
+                  <TR>
+                    <TH sticky width={100}>Kode</TH>
+                    <TH width={180}>Nama</TH>
+                    <TH width={150}>Kontak</TH>
+                    <TH width={100}>Termin</TH>
+                    <TH>Rekening</TH>
+                    <TH numeric width={140}>Sisa Utang</TH>
+                    <TH width={100}>Status</TH>
+                  </TR>
                 </THead>
                 <TBody>
                   {suppliersTampil.map((s) => (
                     <TR key={s.id}>
                       <TD sticky className="font-mono text-[12px]">{s.code}</TD>
-                      <TD className="font-medium">{s.name}</TD>
-                      <TD className="text-[12px] text-ink2">{s.phone || s.email || "—"}</TD>
-                      <TD className="text-[12px]">{s.paymentTermDays ? `${s.paymentTermDays} hari` : "—"}</TD>
-                      <TD className="text-[12px] text-ink2">
+                      <TD truncate className="font-medium">{s.name}</TD>
+                      <TD truncate className="text-[12px] text-ink2">{s.phone || s.email || "—"}</TD>
+                      <TD className="whitespace-nowrap text-[12px]">{s.paymentTermDays ? `${s.paymentTermDays} hari` : "—"}</TD>
+                      <TD truncate className="text-[12px] text-ink2">
                         {s.bankAccount ? `${s.bankName || ""} ${s.bankAccount}`.trim() : "—"}
                       </TD>
                       <TD numeric><Uang value={s.sisaUtang} nolSebagaiStrip /></TD>

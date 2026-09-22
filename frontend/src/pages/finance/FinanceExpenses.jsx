@@ -217,32 +217,36 @@ export default function FinanceExpenses() {
           </CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
+            <Table fixed>
               <THead>
                 <TR>
-                  <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Kategori</TH>
-                  <TH>Divisi</TH><TH>Mode</TH><TH>Sumber Dana</TH><TH numeric>Nominal</TH><TH>Status</TH><TH>Bukti</TH><TH />
+                  <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH><TH>Keterangan</TH>
+                  <TH width={116} hideBelow="2xl">Kategori</TH>
+                  <TH width={100} hideBelow="2xl">Divisi</TH>
+                  <TH width={108} hideBelow="2xl">Mode</TH>
+                  <TH width={124} hideBelow="2xl">Sumber Dana</TH>
+                  <TH numeric width={104}>Nominal</TH><TH width={100}>Status</TH><TH width={76}>Bukti</TH><TH width={196} />
                 </TR>
               </THead>
               <TBody>
                 {expenses.map((e) => (
                   <TR key={e.id}>
                     <TD sticky className="font-mono text-[12px]">{e.expenseNumber}</TD>
-                    <TD className="whitespace-nowrap">{tanggalPendek(e.date)}</TD>
-                    <TD className="max-w-[260px]">
-                      <span className="block truncate">{e.description}</span>
+                    <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(e.date)}</TD>
+                    <TD className="min-w-0">
+                      <span className="block truncate" title={e.description}>{e.description}</span>
                       {/* Penalang (reimburseTo) & penerima bayaran (payeeName) adalah dua hal berbeda — tampilkan keduanya. */}
-                      {e.reimburseTo && <span className="block text-[11px] text-ink3">ditalangi {e.reimburseTo.name}</span>}
-                      {e.supplier && <span className="block text-[11px] text-ink3">ke {e.supplier.name}</span>}
-                      {!e.supplier && e.payeeName && e.payeeName.trim().toLowerCase() !== (e.reimburseTo?.name || "").trim().toLowerCase() && <span className="block text-[11px] text-ink3">ke {e.payeeName}</span>}
+                      {e.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${e.reimburseTo.name}`}>ditalangi {e.reimburseTo.name}</span>}
+                      {e.supplier && <span className="block truncate text-[11px] text-ink3" title={`ke ${e.supplier.name}`}>ke {e.supplier.name}</span>}
+                      {!e.supplier && e.payeeName && e.payeeName.trim().toLowerCase() !== (e.reimburseTo?.name || "").trim().toLowerCase() && <span className="block truncate text-[11px] text-ink3" title={`ke ${e.payeeName}`}>ke {e.payeeName}</span>}
                     </TD>
-                    <TD className="text-[12px]">{e.category?.name}</TD>
-                    <TD><Badge variant="neutral">{LABEL_DIVISI[e.division] || e.division}</Badge></TD>
-                    <TD className="text-[12px] text-ink2">
+                    <TD hideBelow="2xl" truncate className="text-[12px]">{e.category?.name}</TD>
+                    <TD hideBelow="2xl"><Badge variant="neutral">{LABEL_DIVISI[e.division] || e.division}</Badge></TD>
+                    <TD hideBelow="2xl" truncate className="text-[12px] text-ink2">
                       {e.mode === "LANGSUNG" ? "Bayar langsung" : e.mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang"}
                     </TD>
-                    <TD className="text-[12px]">
-                      {e.cashAccount ? <span className="whitespace-nowrap">{e.cashAccount.name}</span> : (
+                    <TD hideBelow="2xl" truncate className="text-[12px]">
+                      {e.cashAccount ? e.cashAccount.name : (
                         <span className="text-ink3">{["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI"].includes(e.status) && e.mode !== "LANGSUNG" ? "belum dibayar" : "—"}</span>
                       )}
                     </TD>

@@ -466,30 +466,34 @@ function NeracaSaldo({ d }) {
           info="Total Mutasi Debit dan Mutasi Kredit di baris paling bawah WAJIB sama persis — kalau tidak, berarti ada jurnal yang tidak seimbang masuk lewat jalur di luar aplikasi normal, dan itu bug yang harus segera dilaporkan."
         />
         <TableWrap className="dh-table">
-          <Table>
+          <Table fixed>
             <THead>
               <TR>
-                <TH sticky>Kode</TH><TH>Nama Akun</TH><TH>Tipe</TH>
-                <TH numeric>Mutasi Debit</TH><TH numeric>Mutasi Kredit</TH>
-                <TH numeric>Saldo Debit</TH><TH numeric>Saldo Kredit</TH>
+                <TH sticky width={100}>Kode</TH>
+                <TH>Nama Akun</TH>
+                <TH width={130}>Tipe</TH>
+                <TH numeric width={120} hideBelow="wide">Mutasi Debit</TH>
+                <TH numeric width={120} hideBelow="wide">Mutasi Kredit</TH>
+                <TH numeric width={132}>Saldo Debit</TH>
+                <TH numeric width={132}>Saldo Kredit</TH>
               </TR>
             </THead>
             <TBody>
               {d.baris.map((b) => (
                 <TR key={b.accountId}>
                   <TD sticky className="font-mono text-[12px]">{b.code}</TD>
-                  <TD>{b.name}</TD>
+                  <TD truncate>{b.name}</TD>
                   <TD><Badge variant="neutral">{LABEL_TIPE_AKUN[b.type] || b.type}</Badge></TD>
-                  <TD numeric><Uang value={b.mutasiDebit} nolSebagaiStrip sen /></TD>
-                  <TD numeric><Uang value={b.mutasiKredit} nolSebagaiStrip sen /></TD>
+                  <TD hideBelow="wide" numeric><Uang value={b.mutasiDebit} nolSebagaiStrip sen /></TD>
+                  <TD hideBelow="wide" numeric><Uang value={b.mutasiKredit} nolSebagaiStrip sen /></TD>
                   <TD numeric><Uang value={b.saldoDebit} nolSebagaiStrip /></TD>
                   <TD numeric><Uang value={b.saldoKredit} nolSebagaiStrip /></TD>
                 </TR>
               ))}
               <TR className="bg-inset/70">
                 <TD className="font-bold" colSpan={3}>TOTAL MUTASI</TD>
-                <TD numeric className="font-bold"><Uang value={d.total.mutasiDebit} sen /></TD>
-                <TD numeric className="font-bold"><Uang value={d.total.mutasiKredit} sen /></TD>
+                <TD hideBelow="wide" numeric className="font-bold"><Uang value={d.total.mutasiDebit} sen /></TD>
+                <TD hideBelow="wide" numeric className="font-bold"><Uang value={d.total.mutasiKredit} sen /></TD>
                 <TD colSpan={2} className="text-right">
                   {d.total.seimbang
                     ? <Badge variant="green">Seimbang</Badge>

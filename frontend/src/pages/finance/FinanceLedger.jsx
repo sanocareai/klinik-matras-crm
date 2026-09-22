@@ -164,32 +164,40 @@ export default function FinanceLedger() {
               <CardContent><p className="py-6 text-center text-[13px] text-ink3">{semuaBaris.length === 0 ? "Tidak ada mutasi di periode ini." : "Tidak ada mutasi yang cocok dengan filter ini."}</p></CardContent>
             ) : (
               <TableWrap className="dh-table">
-                <Table>
+                <Table fixed>
                   <THead>
                     <TR>
-                      <TH sticky>Tanggal</TH><TH>Jurnal</TH><TH>Keterangan</TH><TH>Sumber</TH>
-                      <TH numeric>Debit</TH><TH numeric>Kredit</TH><TH numeric>Saldo</TH>
+                      <TH sticky width={92} className="whitespace-nowrap">Tanggal</TH>
+                      <TH width={128}>Jurnal</TH>
+                      <TH>Keterangan</TH>
+                      <TH width={132} hideBelow="wide">Sumber</TH>
+                      <TH numeric width={120} hideBelow="wide">Debit</TH>
+                      <TH numeric width={120} hideBelow="wide">Kredit</TH>
+                      <TH numeric width={132}>Saldo</TH>
                     </TR>
                   </THead>
                   <TBody>
                     {baris.map((b) => (
                       <TR key={b.lineId} className={b.status === "REVERSED" ? "opacity-60" : undefined}>
                         <TD sticky className="whitespace-nowrap">{tanggalPendek(b.tanggal)}</TD>
-                        <TD className="font-mono text-[12px]">{b.entryNumber}</TD>
-                        <TD className="max-w-[300px]">
-                          <span className="block truncate">{b.keterangan}</span>
+                        <TD truncate className="font-mono text-[12px]">{b.entryNumber}</TD>
+                        <TD className="min-w-0">
+                          <span className="block truncate" title={b.keterangan}>{b.keterangan}</span>
                           {(b.orderNumber || b.customerName || b.supplierName || b.cashAccountName) && (
-                            <span className="text-[11px] text-ink3">
+                            <span
+                              className="block truncate text-[11px] text-ink3"
+                              title={[b.orderNumber, b.customerName, b.supplierName, b.cashAccountName].filter(Boolean).join(" · ")}
+                            >
                               {[b.orderNumber, b.customerName, b.supplierName, b.cashAccountName].filter(Boolean).join(" · ")}
                             </span>
                           )}
                         </TD>
-                        <TD>
+                        <TD hideBelow="wide">
                           <Badge variant="neutral">{LABEL_SUMBER_JURNAL[b.source] || b.source}</Badge>
                           {b.status === "REVERSED" && <Badge variant="red" className="ml-1">dibalik</Badge>}
                         </TD>
-                        <TD numeric><Uang value={b.debit} nolSebagaiStrip sen /></TD>
-                        <TD numeric><Uang value={b.kredit} nolSebagaiStrip sen /></TD>
+                        <TD hideBelow="wide" numeric><Uang value={b.debit} nolSebagaiStrip sen /></TD>
+                        <TD hideBelow="wide" numeric><Uang value={b.kredit} nolSebagaiStrip sen /></TD>
                         <TD numeric><Uang value={b.saldo} className="font-medium" /></TD>
                       </TR>
                     ))}

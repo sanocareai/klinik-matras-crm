@@ -226,32 +226,36 @@ export default function FinancePurchases() {
           </CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
+            <Table fixed>
               <THead>
                 <TR>
-                  <TH sticky>Nomor</TH><TH>Tanggal</TH><TH>Keterangan</TH><TH>Jenis</TH>
-                  <TH>Divisi</TH><TH>Mode</TH><TH>Sumber Dana</TH><TH numeric>Nominal</TH><TH>Status</TH><TH>Bukti</TH><TH />
+                  <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH><TH>Keterangan</TH>
+                  <TH width={116} hideBelow="2xl">Jenis</TH>
+                  <TH width={100} hideBelow="2xl">Divisi</TH>
+                  <TH width={108} hideBelow="2xl">Mode</TH>
+                  <TH width={124} hideBelow="2xl">Sumber Dana</TH>
+                  <TH numeric width={104}>Nominal</TH><TH width={100}>Status</TH><TH width={76}>Bukti</TH><TH width={196} />
                 </TR>
               </THead>
               <TBody>
                 {purchases.map((p) => (
                   <TR key={p.id}>
                     <TD sticky className="font-mono text-[12px]">{p.purchaseNumber}</TD>
-                    <TD className="whitespace-nowrap">{tanggalPendek(p.date)}</TD>
-                    <TD className="max-w-[260px]">
-                      <span className="block truncate">{p.description}</span>
+                    <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(p.date)}</TD>
+                    <TD className="min-w-0">
+                      <span className="block truncate" title={p.description}>{p.description}</span>
                       {/* Penalang (reimburseTo) & penjual (payeeName) adalah dua hal berbeda — tampilkan keduanya. */}
-                      {p.reimburseTo && <span className="block text-[11px] text-ink3">ditalangi {p.reimburseTo.name}</span>}
-                      {p.supplier && <span className="block text-[11px] text-ink3">dari {p.supplier.name}</span>}
-                      {!p.supplier && p.payeeName && p.payeeName.trim().toLowerCase() !== (p.reimburseTo?.name || "").trim().toLowerCase() && <span className="block text-[11px] text-ink3">dari {p.payeeName}</span>}
+                      {p.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${p.reimburseTo.name}`}>ditalangi {p.reimburseTo.name}</span>}
+                      {p.supplier && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.supplier.name}`}>dari {p.supplier.name}</span>}
+                      {!p.supplier && p.payeeName && p.payeeName.trim().toLowerCase() !== (p.reimburseTo?.name || "").trim().toLowerCase() && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.payeeName}`}>dari {p.payeeName}</span>}
                     </TD>
-                    <TD className="text-[12px]">{p.category?.name}</TD>
-                    <TD><Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge></TD>
-                    <TD className="text-[12px] text-ink2">
+                    <TD hideBelow="2xl" truncate className="text-[12px]">{p.category?.name}</TD>
+                    <TD hideBelow="2xl"><Badge variant="neutral">{LABEL_DIVISI[p.division] || p.division}</Badge></TD>
+                    <TD hideBelow="2xl" truncate className="text-[12px] text-ink2">
                       {p.mode === "LANGSUNG" ? "Bayar langsung" : p.mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang"}
                     </TD>
-                    <TD className="text-[12px]">
-                      {p.cashAccount ? <span className="whitespace-nowrap">{p.cashAccount.name}</span> : (
+                    <TD hideBelow="2xl" truncate className="text-[12px]">
+                      {p.cashAccount ? p.cashAccount.name : (
                         <span className="text-ink3">{["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI"].includes(p.status) && p.mode !== "LANGSUNG" ? "belum dibayar" : "—"}</span>
                       )}
                     </TD>

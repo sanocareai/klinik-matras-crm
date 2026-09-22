@@ -208,9 +208,12 @@ export function periodeDefault() {
 // ─── KERANGKA HALAMAN ───────────────────────────────────────────────────
 // Bungkus seragam untuk loading/error supaya 12 halaman finance tidak
 // masing-masing menulis ulang tiga cabang yang sama.
-export function HalamanFinance({ title, subtitle, actions, loading, error, onRetry, children }) {
+// `fluid` (D-193) default TRUE di sini — HAMPIR SEMUA halaman Finance adalah
+// halaman daftar/tabel padat (lihat audit lebar layar 22 Sep 2026). Halaman
+// yang justru butuh lebar baca terbatas (kalau ada) mengirim `fluid={false}`.
+export function HalamanFinance({ title, subtitle, actions, loading, error, onRetry, fluid = true, children }) {
   return (
-    <PageContainer>
+    <PageContainer fluid={fluid}>
       <PageHeader title={title} subtitle={subtitle} actions={actions} />
       <PageBody>
         {error ? (

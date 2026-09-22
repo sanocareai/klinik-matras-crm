@@ -267,15 +267,24 @@ export default function FinanceDashboard() {
               <JudulKartu title="Pembayaran Menunggu Verifikasi" description="Uang yang tercatat diterima sales/driver dan perlu dicocokkan dengan setoran nyata."
                 info="Belum ada yang mengonfirmasi bahwa setoran itu sudah masuk ke rekening perusahaan. Klik salah satu baris untuk memverifikasi." />
               <TableWrap className="dh-table">
-                <Table>
-                  <THead><TR><TH sticky>Waktu</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Dicatat oleh</TH><TH>Metode</TH><TH numeric>Nominal</TH></TR></THead>
+                <Table fixed>
+                  <THead>
+                    <TR>
+                      <TH sticky width={140} className="whitespace-nowrap">Waktu</TH>
+                      <TH width={140}>Order</TH>
+                      <TH>Pelanggan</TH>
+                      <TH width={140} hideBelow="wide">Dicatat oleh</TH>
+                      <TH width={110}>Metode</TH>
+                      <TH numeric width={130}>Nominal</TH>
+                    </TR>
+                  </THead>
                   <TBody>
                     {antrean.pembayaranBelumVerifikasi.slice(0, 10).map((p) => (
                       <TR key={p.id} clickable onClick={() => navigate("/finance/payments")}>
                         <TD sticky className="whitespace-nowrap">{tanggalJam(p.createdAt)}</TD>
-                        <TD className="font-medium">{p.orderNumber || "—"}</TD>
-                        <TD className="max-w-[160px] truncate">{p.customerName || "—"}</TD>
-                        <TD>{p.recordedBy?.name || "—"}</TD>
+                        <TD truncate className="font-medium">{p.orderNumber || "—"}</TD>
+                        <TD truncate>{p.customerName || "—"}</TD>
+                        <TD hideBelow="wide" truncate>{p.recordedBy?.name || "—"}</TD>
                         <TD><Badge variant="neutral">{p.method}</Badge></TD>
                         <TD numeric><Uang value={p.amount} /></TD>
                       </TR>

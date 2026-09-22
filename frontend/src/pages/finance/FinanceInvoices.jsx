@@ -222,12 +222,18 @@ export default function FinanceInvoices() {
           </CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
+            <Table fixed>
               <THead>
                 <TR>
-                  <TH sticky>Invoice</TH><TH>Order</TH><TH>Pelanggan</TH><TH>Sales</TH>
-                  <TH numeric>Tagihan</TH><TH numeric>Dibayar</TH><TH numeric>Sisa</TH>
-                  <TH>Sumber</TH><TH>Jatuh Tempo</TH><TH>Status</TH><TH />
+                  <TH sticky width={132}>Invoice</TH>
+                  <TH width={128} hideBelow="2xl">Order</TH>
+                  <TH>Pelanggan</TH>
+                  <TH width={110} hideBelow="2xl">Sales</TH>
+                  <TH numeric width={112} hideBelow="2xl">Tagihan</TH>
+                  <TH numeric width={112} hideBelow="2xl">Dibayar</TH>
+                  <TH numeric width={112}>Sisa</TH>
+                  <TH width={100} hideBelow="2xl">Sumber</TH>
+                  <TH width={110}>Jatuh Tempo</TH><TH width={100}>Status</TH><TH width={56} />
                 </TR>
               </THead>
               <TBody>
@@ -241,18 +247,18 @@ export default function FinanceInvoices() {
                           <Badge variant="accent" className="ml-1.5">{inv.jumlahOrder} order</Badge>
                         )}
                       </TD>
-                      <TD className="font-medium">{inv.orderNumber || "—"}</TD>
-                      <TD className="max-w-[170px] truncate">{inv.customerName || "—"}</TD>
-                      <TD className="text-[12px] text-ink2">{inv.salesName || "—"}</TD>
-                      <TD numeric><Uang value={inv.totalTagihan} /></TD>
-                      <TD numeric>
+                      <TD hideBelow="2xl" truncate className="font-medium">{inv.orderNumber || "—"}</TD>
+                      <TD truncate>{inv.customerName || "—"}</TD>
+                      <TD hideBelow="2xl" truncate className="text-[12px] text-ink2">{inv.salesName || "—"}</TD>
+                      <TD hideBelow="2xl" numeric><Uang value={inv.totalTagihan} /></TD>
+                      <TD hideBelow="2xl" numeric>
                         <Uang value={inv.dibayar} nolSebagaiStrip />
                         {inv.dibayarTidakRinci && (
                           <span className="block text-[11px] text-orange">nominal tidak tercatat</span>
                         )}
                       </TD>
                       <TD numeric><Uang value={inv.sisa} className="font-bold" nolSebagaiStrip /></TD>
-                      <TD>
+                      <TD hideBelow="2xl">
                         <Badge variant={inv.sumber === "ledger" ? "green" : "orange"}>
                           {inv.sumber === "ledger" ? "Ledger" : "Status manual"}
                         </Badge>

@@ -80,25 +80,37 @@ function Daftar({ periode, kategori, opsi, onBuka, judulKosong }) {
       {data?.terpotong && <Penjelasan>Data sangat besar; daftar dipotong server. Persempit periode.</Penjelasan>}
       {error && <Card><CardContent className="py-6 text-red">Gagal memuat: {error} <Button size="sm" onClick={muat}>Coba lagi</Button></CardContent></Card>}
       <Card>
-        <TableWrap>
-          <Table>
-            <THead><TR><TH>Tanggal</TH><TH>Nomor</TH><TH>Sumber</TH><TH>Pelanggan/Pembayar</TH><TH>Keterangan</TH><TH>Rekening</TH><TH className="text-right">Nilai</TH><TH>Status</TH><TH>Klasifikasi</TH></TR></THead>
+        <TableWrap className="dh-table">
+          <Table fixed>
+            <THead>
+              <TR>
+                <TH sticky width={92} className="whitespace-nowrap">Tanggal</TH>
+                <TH width={132}>Nomor</TH>
+                <TH width={120} hideBelow="2xl">Sumber</TH>
+                <TH width={160}>Pelanggan/Pembayar</TH>
+                <TH>Keterangan</TH>
+                <TH width={130} hideBelow="2xl">Rekening</TH>
+                <TH numeric width={128}>Nilai</TH>
+                <TH width={130}>Status</TH>
+                <TH width={170} hideBelow="2xl">Klasifikasi</TH>
+              </TR>
+            </THead>
             <TBody>
               {loading && !data ? <TR><TD colSpan={9} className="py-8 text-center text-ink3">Memuat…</TD></TR> : null}
               {data && data.items.length === 0 ? <TR><TD colSpan={9} className="py-8 text-center text-ink3">{judulKosong ?? "Tidak ada data pada periode ini."}</TD></TR> : null}
               {(data?.items ?? []).map((b) => (
                 <TR key={b.key} className="cursor-pointer hover:bg-inset" onClick={() => onBuka(b)}>
-                  <TD className="whitespace-nowrap">{tanggalPendek(b.tanggal)}</TD>
-                  <TD className="whitespace-nowrap font-medium">{b.nomor}</TD>
-                  <TD>{b.sumberLabel}</TD>
-                  <TD>{b.pihak ?? "—"}</TD>
-                  <TD className="max-w-[260px] truncate" title={b.keterangan}>{b.keterangan}</TD>
-                  <TD>{b.rekening ?? "—"}</TD>
-                  <TD className="text-right"><Rp v={b.nilai} /></TD>
+                  <TD sticky className="whitespace-nowrap">{tanggalPendek(b.tanggal)}</TD>
+                  <TD truncate className="font-medium">{b.nomor}</TD>
+                  <TD hideBelow="2xl" truncate>{b.sumberLabel}</TD>
+                  <TD truncate>{b.pihak ?? "—"}</TD>
+                  <TD truncate title={b.keterangan}>{b.keterangan}</TD>
+                  <TD hideBelow="2xl" truncate>{b.rekening ?? "—"}</TD>
+                  <TD numeric><Rp v={b.nilai} /></TD>
                   <TD><BadgeStatus label={b.statusLabel} nada={b.nada} /></TD>
-                  <TD>
-                    <div className="text-[12px]">{b.kategoriLabel}</div>
-                    <div className="text-[11px] text-ink3">{b.subLabel}</div>
+                  <TD hideBelow="2xl" className="min-w-0">
+                    <div className="truncate text-[12px]" title={b.kategoriLabel}>{b.kategoriLabel}</div>
+                    <div className="truncate text-[11px] text-ink3" title={b.subLabel}>{b.subLabel}</div>
                     {b.perluTinjau && <Badge variant="orange">Perlu ditinjau</Badge>}
                   </TD>
                 </TR>
@@ -252,18 +264,36 @@ function DataSebelumSistem({ periode, opsi, onBuka }) {
         </CardContent>
       </Card>
 
-      <Card><JudulKartu title="Batch impor" /><TableWrap><Table>
-        <THead><TR><TH>Berkas</TH><TH>Waktu</TH><TH>Status</TH><TH className="text-right">Baris</TH><TH>Siap</TH><TH>Tinjau</TH><TH>Duplikat</TH><TH>Di luar</TH><TH>Tidak valid</TH><TH className="text-right">Nilai siap</TH><TH /></TR></THead>
+      <Card><JudulKartu title="Batch impor" /><TableWrap className="dh-table"><Table fixed>
+        <THead>
+          <TR>
+            <TH>Berkas</TH>
+            <TH width={100} hideBelow="2xl" className="whitespace-nowrap">Waktu</TH>
+            <TH width={112}>Status</TH>
+            <TH numeric width={68} hideBelow="2xl">Baris</TH>
+            <TH numeric width={60} hideBelow="2xl">Siap</TH>
+            <TH numeric width={70} hideBelow="2xl">Tinjau</TH>
+            <TH numeric width={80} hideBelow="2xl">Duplikat</TH>
+            <TH numeric width={70} hideBelow="2xl">Di luar</TH>
+            <TH numeric width={90} hideBelow="2xl">Tidak valid</TH>
+            <TH numeric width={130}>Nilai siap</TH>
+            <TH width={240} />
+          </TR>
+        </THead>
         <TBody>
           {(batches ?? []).length === 0 && <TR><TD colSpan={11} className="py-6 text-center text-ink3">Belum ada impor.</TD></TR>}
           {(batches ?? []).map((b) => (
             <TR key={b.id}>
-              <TD className="font-medium">{b.fileName}<div className="text-[11px] text-ink3">{b.sumberData}</div></TD>
-              <TD className="whitespace-nowrap">{tanggalPendek(b.dibuatPada)}</TD>
+              <TD truncate className="font-medium">{b.fileName}<div className="truncate text-[11px] text-ink3">{b.sumberData}</div></TD>
+              <TD hideBelow="2xl" className="whitespace-nowrap">{tanggalPendek(b.dibuatPada)}</TD>
               <TD><Badge variant={b.status === "IMPORTED" ? "green" : b.status === "CANCELLED" ? "gray" : "orange"}>{{ PREVIEW: "Pratinjau", IMPORTED: "Diimpor", CANCELLED: "Dibatalkan", POSTED: "Diposting" }[b.status]}</Badge></TD>
-              <TD className="text-right">{b.totalRows}</TD>
-              <TD>{b.perStatus.SIAP ?? 0}</TD><TD>{b.perStatus.PERLU_DITINJAU ?? 0}</TD><TD>{b.perStatus.DUPLIKAT ?? 0}</TD><TD>{b.perStatus.DI_LUAR_PERIODE ?? 0}</TD><TD>{b.perStatus.TIDAK_VALID ?? 0}</TD>
-              <TD className="text-right"><Rp v={b.nilaiSiap} /></TD>
+              <TD hideBelow="2xl" numeric>{b.totalRows}</TD>
+              <TD hideBelow="2xl" numeric>{b.perStatus.SIAP ?? 0}</TD>
+              <TD hideBelow="2xl" numeric>{b.perStatus.PERLU_DITINJAU ?? 0}</TD>
+              <TD hideBelow="2xl" numeric>{b.perStatus.DUPLIKAT ?? 0}</TD>
+              <TD hideBelow="2xl" numeric>{b.perStatus.DI_LUAR_PERIODE ?? 0}</TD>
+              <TD hideBelow="2xl" numeric>{b.perStatus.TIDAK_VALID ?? 0}</TD>
+              <TD numeric><Rp v={b.nilaiSiap} /></TD>
               <TD className="whitespace-nowrap">
                 <Button size="sm" variant="outline" onClick={() => bukaBatch(b.id)}>Lihat</Button>{" "}
                 {boleh && b.status === "PREVIEW" && <Button size="sm" disabled={sibuk} onClick={() => jalan(() => api.imporLegacyBatch(b.id), "Batch diimpor ke register (non-posting).")}>Impor</Button>}{" "}
@@ -278,13 +308,44 @@ function DataSebelumSistem({ periode, opsi, onBuka }) {
           <Button size="sm" variant="outline" onClick={bukaRekon}>Tampilkan rekonsiliasi</Button>
           {rekon && (
             <>
-              <TableWrap><Table>
-                <THead><TR><TH>Bulan</TH><TH className="text-right">Pendapatan</TH><TH className="text-right">Lunas</TH><TH className="text-right">Belum dibayar</TH><TH className="text-right">Tidak diketahui</TH><TH>Tinjau</TH><TH>Duplikat</TH><TH className="text-right">Jurnal saat ini</TH><TH className="text-right">Selisih</TH></TR></THead>
+              <TableWrap className="dh-table"><Table fixed>
+                <THead>
+                  <TR>
+                    <TH width={100}>Bulan</TH>
+                    <TH numeric width={120}>Pendapatan</TH>
+                    <TH numeric width={110} hideBelow="2xl">Lunas</TH>
+                    <TH numeric width={120} hideBelow="2xl">Belum dibayar</TH>
+                    <TH numeric width={120} hideBelow="2xl">Tidak diketahui</TH>
+                    <TH width={70} hideBelow="2xl">Tinjau</TH>
+                    <TH width={150} hideBelow="2xl">Duplikat</TH>
+                    <TH numeric width={120}>Jurnal saat ini</TH>
+                    <TH numeric width={110}>Selisih</TH>
+                  </TR>
+                </THead>
                 <TBody>
                   {rekon.perBulan.map((b) => (
-                    <TR key={b.bulan}><TD>{b.bulan}</TD><TD className="text-right"><Rp v={b.pendapatan} /></TD><TD className="text-right"><Rp v={b.lunas} /></TD><TD className="text-right"><Rp v={b.belumBayar} /></TD><TD className="text-right"><Rp v={b.tidakDiketahui} /></TD><TD>{b.perluDitinjau.jumlah}</TD><TD>{b.duplikat.jumlah}{b.duplikat.kemungkinanCocokOrderSistem ? ` (${b.duplikat.kemungkinanCocokOrderSistem} mirip order)` : ""}</TD><TD className="text-right"><Rp v={b.jurnalSaatIni} /></TD><TD className="text-right"><Rp v={b.selisihTerhadapJurnal} /></TD></TR>
+                    <TR key={b.bulan}>
+                      <TD className="whitespace-nowrap">{b.bulan}</TD>
+                      <TD numeric><Rp v={b.pendapatan} /></TD>
+                      <TD hideBelow="2xl" numeric><Rp v={b.lunas} /></TD>
+                      <TD hideBelow="2xl" numeric><Rp v={b.belumBayar} /></TD>
+                      <TD hideBelow="2xl" numeric><Rp v={b.tidakDiketahui} /></TD>
+                      <TD hideBelow="2xl">{b.perluDitinjau.jumlah}</TD>
+                      <TD hideBelow="2xl" truncate>{b.duplikat.jumlah}{b.duplikat.kemungkinanCocokOrderSistem ? ` (${b.duplikat.kemungkinanCocokOrderSistem} mirip order)` : ""}</TD>
+                      <TD numeric><Rp v={b.jurnalSaatIni} /></TD>
+                      <TD numeric><Rp v={b.selisihTerhadapJurnal} /></TD>
+                    </TR>
                   ))}
-                  <TR className="font-semibold"><TD>Total</TD><TD className="text-right"><Rp v={rekon.total.pendapatan} /></TD><TD className="text-right"><Rp v={rekon.total.lunas} /></TD><TD className="text-right"><Rp v={rekon.total.belumBayar} /></TD><TD className="text-right"><Rp v={rekon.total.tidakDiketahui} /></TD><TD /><TD /><TD className="text-right"><Rp v={rekon.total.jurnalSaatIni} /></TD><TD className="text-right"><Rp v={rekon.total.selisihTerhadapJurnal} /></TD></TR>
+                  <TR className="font-semibold">
+                    <TD>Total</TD>
+                    <TD numeric><Rp v={rekon.total.pendapatan} /></TD>
+                    <TD hideBelow="2xl" numeric><Rp v={rekon.total.lunas} /></TD>
+                    <TD hideBelow="2xl" numeric><Rp v={rekon.total.belumBayar} /></TD>
+                    <TD hideBelow="2xl" numeric><Rp v={rekon.total.tidakDiketahui} /></TD>
+                    <TD hideBelow="2xl" /><TD hideBelow="2xl" />
+                    <TD numeric><Rp v={rekon.total.jurnalSaatIni} /></TD>
+                    <TD numeric><Rp v={rekon.total.selisihTerhadapJurnal} /></TD>
+                  </TR>
                 </TBody></Table></TableWrap>
               <Penjelasan>{rekon.simulasi.catatan} Dampak simulasi: laba/pendapatan +{teksRp(rekon.simulasi.labaRugi.pendapatanBertambah)}, piutang +{teksRp(rekon.simulasi.piutang.bertambah)}, kas {teksRp(rekon.simulasi.kas.berubah)} (tidak berubah), total ekuitas +{teksRp(rekon.simulasi.ekuitas.berubah)} (laba +{teksRp(rekon.simulasi.ekuitas.labaBertambah)}, Koreksi Saldo Awal −{teksRp(rekon.simulasi.ekuitas.koreksiSaldoAwalBerkurang)}).</Penjelasan>
               {proposal && (

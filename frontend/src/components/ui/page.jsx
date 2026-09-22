@@ -6,9 +6,27 @@ import { cn } from "@/lib/utils.js";
 // supaya SEMUA halaman punya padding & perilaku responsif identik (memperbaiki
 // bug "halaman kepotong di mobile" di Pengaturan/Laporan/Pengguna).
 // Lihat sano-components.md Part A & §B.1.
-export function PageContainer({ className, children, ...props }) {
+//
+// `fluid` (D-193, 22 September 2026) — OPT-IN, default `false` supaya SEMUA
+// pemanggil lain di seluruh app (Pelanggan, Pipeline, Armada, Bengkel, Gudang,
+// dst — 50+ halaman) tetap identik persis seperti sekarang. Halaman DAFTAR
+// (tabel padat, banyak kolom) mengaktifkannya untuk memakai seluruh lebar
+// layar di sebelah sidebar (`width: 100%`, `max-width: none`) — di layar lebar
+// (1920/2048px) `max-w-[1400px]` lama menyisakan ratusan px kosong di kanan-kiri
+// SEKALIGUS memaksa tabel padat scroll horizontal karena kontennya diperas ke
+// 1400px walau layarnya jauh lebih lebar. Halaman FORM/DETAIL yang memang
+// butuh lebar baca terbatas (Pengaturan, editor satu dokumen, dst) TIDAK
+// memakai `fluid` — teks panjang tanpa batas lebar sulit dibaca.
+export function PageContainer({ className, fluid, children, ...props }) {
   return (
-    <div className={cn("mx-auto w-full max-w-[1400px] p-4 md:p-8", className)} {...props}>
+    <div
+      className={cn(
+        "mx-auto w-full p-4 md:p-8",
+        fluid ? "max-w-none" : "max-w-[1400px]",
+        className
+      )}
+      {...props}
+    >
       {children}
     </div>
   );

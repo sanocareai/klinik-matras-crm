@@ -176,29 +176,36 @@ export default function FinanceReconciliation() {
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada periode yang cocok dengan pencarian/filter.</p></CardContent>
         ) : (
           <TableWrap className="dh-table">
-            <Table>
+            <Table fixed>
               <THead>
                 <TR>
-                  <TH sticky>Rekening</TH><TH>Periode</TH>
-                  <TH numeric>Saldo Awal (Bank)</TH><TH numeric>Saldo Akhir (Bank)</TH><TH numeric>Saldo Buku Akhir</TH><TH numeric>Selisih Terbuka</TH>
-                  <TH numeric>Mutasi</TH><TH numeric>Belum Cocok</TH><TH>Status</TH><TH />
+                  <TH sticky width={144}>Rekening</TH>
+                  <TH width={172}>Periode</TH>
+                  <TH numeric width={124} hideBelow="wide">Saldo Awal (Bank)</TH>
+                  <TH numeric width={124} hideBelow="wide">Saldo Akhir (Bank)</TH>
+                  <TH numeric width={124} hideBelow="wide">Saldo Buku Akhir</TH>
+                  <TH numeric width={160}>Selisih Terbuka</TH>
+                  <TH numeric width={88} hideBelow="wide">Mutasi</TH>
+                  <TH numeric width={104} hideBelow="wide">Belum Cocok</TH>
+                  <TH width={168}>Status</TH>
+                  <TH width={84} />
                 </TR>
               </THead>
               <TBody>
                 {periodeTampil.map((s) => (
                   <TR key={s.id} clickable selected={aktif === s.id} onClick={() => setAktif(s.id)}>
-                    <TD sticky className="font-medium">{s.cashAccount?.name}</TD>
-                    <TD className="whitespace-nowrap">{tanggalPendek(s.periodStart)} – {tanggalPendek(s.periodEnd)}</TD>
-                    <TD numeric><Uang value={s.openingBalance} /></TD>
-                    <TD numeric><Uang value={s.closingBalance} /></TD>
-                    <TD numeric><Uang value={s.saldoBuku} /></TD>
+                    <TD sticky truncate className="font-medium">{s.cashAccount?.name}</TD>
+                    <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(s.periodStart)} – {tanggalPendek(s.periodEnd)}</TD>
+                    <TD hideBelow="wide" numeric><Uang value={s.openingBalance} /></TD>
+                    <TD hideBelow="wide" numeric><Uang value={s.closingBalance} /></TD>
+                    <TD hideBelow="wide" numeric><Uang value={s.saldoBuku} /></TD>
                     <TD numeric>
                       {Math.abs(s.selisih) < 0.005
                         ? <Badge variant="green">Rp0 · cocok</Badge>
                         : <span className="text-orange"><Uang value={Math.abs(s.selisih)} className="font-bold" /><span className="block text-[11px] text-ink3">{s.selisih < 0 ? "buku lebih tinggi" : "bank lebih tinggi"}</span></span>}
                     </TD>
-                    <TD numeric>{s.jumlahBaris > 0 ? s.jumlahBaris : <span className="text-[12px] text-ink3">belum ada</span>}</TD>
-                    <TD numeric>
+                    <TD hideBelow="wide" numeric>{s.jumlahBaris > 0 ? s.jumlahBaris : <span className="text-[12px] text-ink3">belum ada</span>}</TD>
+                    <TD hideBelow="wide" numeric>
                       {s.jumlahBaris === 0 ? <span className="text-ink3">—</span> : s.belumCocok > 0 ? <Badge variant="orange">{s.belumCocok}</Badge> : <Badge variant="green">0</Badge>}
                     </TD>
                     <TD className="whitespace-nowrap"><BadgeStatusPeriode status={s.status} /></TD>
@@ -299,25 +306,30 @@ export default function FinanceReconciliation() {
               <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada baris yang cocok dengan pencarian/filter.</p></CardContent>
             ) : (
               <TableWrap className="dh-table">
-                <Table>
+                <Table fixed>
                   <THead>
                     <TR>
-                      <TH sticky>Tanggal</TH><TH>Keterangan Bank</TH><TH>Referensi</TH>
-                      <TH numeric>Nominal</TH><TH>Pasangan di Buku</TH><TH>Status</TH><TH />
+                      <TH sticky width={92} className="whitespace-nowrap">Tanggal</TH>
+                      <TH>Keterangan Bank</TH>
+                      <TH width={130} hideBelow="wide">Referensi</TH>
+                      <TH numeric width={128}>Nominal</TH>
+                      <TH width={200} hideBelow="wide">Pasangan di Buku</TH>
+                      <TH width={128}>Status</TH>
+                      <TH width={92} />
                     </TR>
                   </THead>
                   <TBody>
                     {barisTampil.map((l) => (
                       <TR key={l.id}>
                         <TD sticky className="whitespace-nowrap">{tanggalPendek(l.date)}</TD>
-                        <TD className="max-w-[260px] truncate">{l.description}</TD>
-                        <TD className="text-[12px] text-ink2">{l.reference || "—"}</TD>
+                        <TD truncate title={l.description}>{l.description}</TD>
+                        <TD hideBelow="wide" truncate className="text-[12px] text-ink2">{l.reference || "—"}</TD>
                         <TD numeric><Uang value={l.amount} /></TD>
-                        <TD className="text-[12px]">
+                        <TD hideBelow="wide" className="min-w-0 text-[12px]">
                           {l.matchedLine
                             ? <>
-                                <span className="block font-mono">{l.matchedLine.entry?.entryNumber}</span>
-                                <span className="text-ink3">{l.matchedLine.description || l.matchedLine.entry?.description}</span>
+                                <span className="block truncate font-mono" title={l.matchedLine.entry?.entryNumber}>{l.matchedLine.entry?.entryNumber}</span>
+                                <span className="block truncate text-ink3" title={l.matchedLine.description || l.matchedLine.entry?.description}>{l.matchedLine.description || l.matchedLine.entry?.description}</span>
                               </>
                             : <span className="text-ink3">—</span>}
                         </TD>
@@ -506,15 +518,23 @@ function PenyesuaianBuku({ data }) {
         <p className="text-[12px] text-ink3">{data.catatan}</p>
       </CardContent>
       <TableWrap className="dh-table max-h-[420px] overflow-y-auto">
-        <Table>
-          <THead><TR><TH sticky>Jurnal</TH><TH>Tanggal</TH><TH>Jenis</TH><TH>Keterangan</TH><TH numeric>Pengaruh ke saldo buku</TH></TR></THead>
+        <Table fixed>
+          <THead>
+            <TR>
+              <TH sticky width={128}>Jurnal</TH>
+              <TH width={92} className="whitespace-nowrap">Tanggal</TH>
+              <TH width={160}>Jenis</TH>
+              <TH>Keterangan</TH>
+              <TH numeric width={160}>Pengaruh ke saldo buku</TH>
+            </TR>
+          </THead>
           <TBody>
             {data.items.map((x) => (
               <TR key={x.jurnalId}>
-                <TD sticky className="font-mono text-[12px]">{x.nomor}</TD>
+                <TD sticky truncate className="font-mono text-[12px]">{x.nomor}</TD>
                 <TD className="whitespace-nowrap">{tanggalPendek(x.tanggal)}</TD>
                 <TD><Badge variant="neutral">{x.jenisLabel}</Badge></TD>
-                <TD className="max-w-[320px] truncate text-[12px]">{x.keterangan}</TD>
+                <TD truncate className="text-[12px]" title={x.keterangan}>{x.keterangan}</TD>
                 <TD numeric><Uang value={x.nilai} /></TD>
               </TR>
             ))}

@@ -1,6 +1,9 @@
 import React from "react";
 import { ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils.js";
+import { hideBelowClass, tableLayoutClass, widthStyle, autoTitle, HIDE_BELOW_BREAKPOINTS } from "@/lib/tableLayout.js";
+
+export { HIDE_BELOW_BREAKPOINTS };
 
 // ─── TABLE (Attio-inspired) — primitive tabel padat ──────────────────────────
 // Spec: docs/design-system/sano-components.md §B.3 "Tables (Attio-inspired)".
@@ -34,15 +37,24 @@ export function TableWrap({ className, children, ...props }) {
   );
 }
 
-export function Table({ className, ...props }) {
-  return <table className={cn("w-full border-collapse text-sm", className)} {...props} />;
+// `fixed` (D-193, lebar layar) — OPT-IN `table-layout: fixed`. Tabel dengan
+// banyak kolom (8+) memakai ini SUPAYA lebar kolom mengikuti `width` yang
+// diberi ke `TH` (bukan lebar konten terlebar di kolom itu) — itu yang
+// membuat kolom "Keterangan" bisa memakai sisa ruang (tanpa width, atau
+// `w-full`) sementara kolom sempit (Nomor/Tanggal/Nominal/Status) tetap
+// ringkas, dan `truncate` di TD punya batas nyata untuk memotong teks.
+// Tabel sederhana (≤5 kolom) TIDAK perlu ini — lebar otomatis sudah cukup.
+export function Table({ className, fixed, ...props }) {
+  return <table className={cn("w-full border-collapse text-sm", tableLayoutClass(fixed), className)} {...props} />;
 }
 
 export function THead({ className, ...props }) {
   // sticky + z-10: header tetap terlihat saat body tabel di-scroll vertikal.
+  // Latar SOLID (bukan tembus pandang) — baris yang lewat di baliknya saat
+  // scroll vertikal harus benar-benar tertutup, bukan cuma diredam opacity.
   return (
     <thead
-      className={cn("sticky top-0 z-10 bg-inset/95", className)}
+      className={cn("sticky top-0 z-10 bg-inset", className)}
       {...props}
     />
   );
@@ -77,8 +89,14 @@ export function TR({ className, clickable, selected, ...props }) {
 //     nominal/status di tabel lebar pada layar sempit). TIDAK PERNAH
 //     nyala default — halaman lama yang tidak memakainya tidak berubah
 //     sama sekali.
+// `width`   : lebar kolom TETAP — number (px) atau string CSS ("8rem", "12%").
+//   Dipasang lewat `style`, bukan Tailwind arbitrary class, supaya bisa
+//   angka dinamis tanpa perlu masuk safelist. Hanya berarti pada `<Table fixed>`.
+// `hideBelow`: lihat `hideBelowClass` di atas — kolom sekunder yang boleh
+//   hilang di layar sedang (1024–1365px), fallback ke scroll tabel di layar
+//   sempit (bukan halaman ikut geser).
 export function TH({
-  className, children, numeric, sortable, sortDir, onSort, sticky, ...props
+  className, children, numeric, sortable, sortDir, onSort, sticky, width, hideBelow, style, ...props
 }) {
   const isi = (
     <>
@@ -102,8 +120,10 @@ export function TH({
         "whitespace-nowrap border-b border-line px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide text-ink3",
         numeric ? "text-right" : "text-left",
         sticky && "tbl-sticky-th",
+        hideBelowClass(hideBelow),
         className
       )}
+      style={{ ...widthStyle(width), ...style }}
       {...props}
     >
       {sortable ? (
@@ -125,22 +145,35 @@ export function TH({
 
 // TD — sel data.
 //   numeric : rata kanan + tabular-nums (angka sejajar antar baris)
-//   truncate: batasi 1 baris + ellipsis (butuh `max-w-*` dari pemanggil)
+//   truncate: batasi 1 baris + ellipsis. `max-w-0 w-full` memaksa cell
+//     menghormati lebar KOLOM (dari `TH width`, pada `<Table fixed>`) alih-
+//     alih melebar mengikuti teksnya sendiri — tanpa ini `truncate` tidak
+//     bekerja di dalam tabel (sel selalu tumbuh muat teksnya). Teks penuh
+//     tetap terbaca lewat `title` — diisi OTOMATIS dari `children` kalau
+//     berupa string polos dan pemanggil belum memberi `title` sendiri
+//     (elemen JSX kompleks, mis. dua baris teks, tetap butuh `title` manual).
+//   hideBelow: lihat catatan di TH — HARUS sama dengan TH pasangannya di
+//     kolom yang sama, kalau tidak header & isi kolom tidak lagi sejajar.
 //   sticky  : pasangan TH sticky — lihat catatan di TH. Latar solid
 //     (bukan transparan) supaya konten yang di-scroll di baliknya benar-
 //     benar tertutup, bukan cuma dijaga anggapan.
-export function TD({ className, numeric, truncate, sticky, ...props }) {
+export function TD({ className, numeric, truncate, sticky, hideBelow, title, children, ...props }) {
+  const judul = autoTitle({ title, truncate, children });
   return (
     <td
       className={cn(
         "px-3 py-2.5 align-middle text-[13px] text-ink2",
         numeric && "text-right tabular-nums",
-        truncate && "truncate",
+        truncate && "truncate max-w-0 w-full",
         sticky && "tbl-sticky-td",
+        hideBelowClass(hideBelow),
         className
       )}
+      title={judul}
       {...props}
-    />
+    >
+      {children}
+    </td>
   );
 }
 
