@@ -75,7 +75,7 @@ test("route start -> pilih stop -> tiba -> POD; double tap idempoten dan dua cre
 
   const completeBody = {
     proofPhotoUrls: ["/media/job-photos/pod.jpg"], recipientName: "Budi Penerima",
-    note: "Diterima baik", location: null,
+    note: "Diterima baik", location: null, driverId: f.outsider.user.id, helperId: null,
   };
   const first = await f.driver.api.post(`/api/armada/jobs/${f.jobs[0].id}/complete`, completeBody, key("complete"));
   const replay = await f.driver.api.post(`/api/armada/jobs/${f.jobs[0].id}/complete`, completeBody, key("complete"));
@@ -85,6 +85,8 @@ test("route start -> pilih stop -> tiba -> POD; double tap idempoten dan dua cre
   const completed = await testPrisma.job.findUnique({ where: { id: f.jobs[0].id } });
   assert.equal(completed.proofRecipientName, "Budi Penerima");
   assert.equal(completed.completedById, f.driver.user.id);
+  assert.equal(completed.driverId, f.driver.user.id);
+  assert.equal(completed.helperId, f.helper.user.id);
   assert.equal(await testPrisma.deliveryExecutionEvent.count({ where: { idempotencyKey: "driver-test-complete-123456" } }), 1);
 
   const reusedForOtherStop = await f.driver.api.post(`/api/armada/jobs/${f.jobs[1].id}/start`, {}, key("toward"));

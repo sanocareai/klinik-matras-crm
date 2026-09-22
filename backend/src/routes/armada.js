@@ -4555,8 +4555,8 @@ armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_O
       const route = await lockRoute(tx, req.params.id);
       if (!route) throw new ArmadaError("Rute tidak ditemukan", 404);
       const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "ROUTE_STARTED", { routeId: route.id });
+      if (replay) return { replayed: true, targetIds: replay.payload?.preparedJobs || [] };
       const semuaJob = await tx.job.findMany({ where: { routeId: route.id } });
-      if (replay) return { replayed: true, targetIds: semuaJob.map((j) => j.id) };
       if (route.status !== "PUBLISHED") {
         throw new ArmadaError(`Rute berstatus ${route.status}, tidak bisa dimulai`, 409);
       }
@@ -4694,8 +4694,8 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
           proofLng: pod.location?.lng ?? null,
           proofAccuracy: pod.location?.accuracy ?? null,
           completedById: req.user.id,
-          ...(driverId !== undefined && { driverId: driverId || null }),
-          ...(helperId !== undefined && { helperId: helperId || null }),
+          ...(hasPermission(req.user, P.JOB_WRITE) && driverId !== undefined && { driverId: driverId || null }),
+          ...(hasPermission(req.user, P.JOB_WRITE) && helperId !== undefined && { helperId: helperId || null }),
         },
       });
       const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
