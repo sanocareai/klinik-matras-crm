@@ -212,9 +212,16 @@ export async function postVehicleExpense(tx, { vehicleExpenseId, userId = null }
     include: {
       vehicle: { select: { plateNumber: true } },
       driver: { select: { name: true } },
+      expenseSubmission: { select: { id: true } },
     },
   });
   if (!ve) throw new Error(`Biaya kendaraan ${vehicleExpenseId} tidak ditemukan`);
+
+  // Baris ini ditaut ke Pengajuan Biaya Lintas Divisi (ExpenseSubmission) —
+  // VehicleExpense di sini cuma konteks operasional (odometer/liter), FinExpense
+  // dari pengajuan itu yang jadi SATU-SATUNYA sumber approval/pembayaran/jurnal.
+  // Memposting di sini juga akan membukukan biaya yang sama dua kali.
+  if (ve.expenseSubmission) return { posted: false, skipped: true, reason: "tertaut_pengajuan_biaya" };
 
   const sudahAda = await findEntryByKey(tx, KEY.vehicleExpense(vehicleExpenseId));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };

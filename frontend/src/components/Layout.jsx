@@ -10,6 +10,7 @@ import {
   Landmark, BookOpen, FileSpreadsheet, Banknote, Receipt, Building2, Scale as ScaleIcon, ListTree,
   ShoppingCart,
   HandCoins,
+  FileCheck,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
@@ -349,6 +350,16 @@ const DIVISIONS = {
           // Penugasan di atas), bukan lagi disembunyikan di balik modal
           // pengaturan. Ringkasan agregatnya tetap di Laporan (di bawah).
           { to: "/armada/biaya",     label: "Biaya Armada",        Icon: Wallet },
+          // Pengajuan Biaya (Pengajuan Biaya Lintas Divisi, pilot Delivery,
+          // 24 September 2026) — TERPISAH dari "Biaya Armada" di atas
+          // (VehicleExpense, catatan operasional harian TANPA approval).
+          // Menu ini untuk biaya yang BUTUH persetujuan Finance (servis
+          // besar, sewa, denda, dll) — mengajukan di sini membuat satu
+          // FinExpense lewat service bersama, bukan jurnal/tabel paralel.
+          // hideForLeaderDriver: LEADER_DRIVER tidak dapat
+          // FINANCE_EXPENSE_SUBMIT (lihat constants/permissions.js) — pola
+          // sama dengan "Semua Order" di atas.
+          { to: "/armada/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, hideForLeaderDriver: true },
         ],
       },
       {
@@ -371,6 +382,14 @@ const DIVISIONS = {
         section: "LAPORAN",
         items: [
           { to: "/armada/reports",   label: "Laporan",             Icon: BarChart3 },
+          // Snapshot Insentif Driver (24 September 2026) — pembekuan untuk
+          // pembayaran (Finance review -> Owner approval), TERPISAH dari
+          // Laporan di atas (yang tetap estimasi live). Backend menolak
+          // 403 untuk yang tidak punya incentive:snapshot:read — menu ini
+          // TIDAK disembunyikan per-role di sini (pola sama dengan menu
+          // lain di section ini), halaman sendiri yang menampilkan pesan
+          // kalau ditolak server.
+          { to: "/armada/insentif-snapshot", label: "Snapshot Insentif", Icon: FileCheck },
         ],
       },
       // Section "ARMADA" (cuma 1 item, "Driver & Armada") DIGANTI section ini

@@ -54,6 +54,12 @@ import {
   pastikanNotaLengkap, notaWajib, ambangNota, notaWajibDenganAmbang, simpanFotoBukti, cariPemakaiBukti,
   tanggalMulaiKebijakan, RECEIPTS_URL_PREFIX,
 } from "../services/finance/receipts.js";
+import { buatFinExpense, tarikFinExpense, expenseInclude, bentukExpense, ExpenseInputError } from "../services/finance/expenses.js";
+// Sinkron dua arah FinExpense → ExpenseSubmission (Pengajuan Biaya Lintas
+// Divisi) — no-op kalau FinExpense ini tidak berasal dari pengajuan divisi.
+// Dipanggil di SETIAP transisi status FinExpense, DI DALAM transaksi yang
+// sama dengan perubahan status itu (lihat services/expenseSubmission/service.js).
+import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/service.js";
 
 export const financeTxRouter = express.Router();
 financeTxRouter.use(requireAuth);
@@ -160,21 +166,6 @@ function suffixKoreksi() {
 // PENGELUARAN & REIMBURSEMENT
 // ═════════════════════════════════════════════════════════════════════════
 
-const expenseInclude = {
-  category: { select: { id: true, code: true, name: true, division: true, account: { select: { code: true, name: true } } } },
-  cashAccount: { select: { id: true, name: true, kind: true } },
-  supplier: { select: { id: true, name: true } },
-  reimburseTo: { select: { id: true, name: true } },
-  approvedBy: { select: { id: true, name: true } },
-  createdBy: { select: { id: true, name: true } },
-  paidBy: { select: { id: true, name: true } },
-  order: { select: { id: true, orderNumber: true } },
-};
-
-function bentukExpense(e) {
-  return { ...e, amount: moneyToNumber(e.amount) };
-}
-
 financeTxRouter.get("/expenses",
   requireAnyPermission(P.FINANCE_READ, P.FINANCE_EXPENSE_SUBMIT),
   async (req, res) => {
@@ -225,58 +216,7 @@ financeTxRouter.post("/expenses",
   requireAnyPermission(P.FINANCE_POST, P.FINANCE_EXPENSE_SUBMIT),
   async (req, res) => {
     try {
-      const {
-        date, amount, description, categoryId, division, mode,
-        cashAccountId, supplierId, reimburseToId, payeeName, orderId, unitId, receiptUrl, notes,
-        langsungAjukan,
-      } = req.body;
-
-      if (!description?.trim()) throw err("Keterangan pengeluaran wajib diisi");
-      if (!categoryId) throw err("Kategori biaya wajib dipilih");
-      const nominal = toMoney(amount, { field: "Nominal pengeluaran" });
-      if (nominal.lessThanOrEqualTo(0)) throw err("Nominal pengeluaran harus lebih dari 0");
-
-      const kategori = await prisma.finExpenseCategory.findUnique({
-        where: { id: categoryId }, select: { id: true, active: true, division: true },
-      });
-      if (!kategori || !kategori.active) throw err("Kategori biaya tidak ditemukan atau sudah nonaktif", 404);
-
-      const modeFinal = ["LANGSUNG", "REIMBURSEMENT", "UTANG"].includes(mode) ? mode : "LANGSUNG";
-
-      // Orang divisi (yang cuma punya finance:expense:submit) SELALU
-      // mengajukan, tidak pernah membuat pengeluaran yang langsung dibayar
-      // dari kas perusahaan — mereka menalangi lalu minta diganti.
-      const bolehPosting = hasPermission(req.user, P.FINANCE_POST);
-      const modeEfektif = bolehPosting ? modeFinal : "REIMBURSEMENT";
-
-      if (modeEfektif === "LANGSUNG" && !cashAccountId) {
-        throw err("Pengeluaran yang dibayar langsung wajib memilih rekening kas/bank sumber dananya");
-      }
-
-      const created = await prisma.finExpense.create({
-        data: {
-          expenseNumber: await prisma.$transaction((tx) => generateDocumentNumber(tx, "EXP", parseTanggal(date))),
-          date: parseTanggal(date),
-          amount: nominal,
-          description: description.trim(),
-          categoryId,
-          division: division || kategori.division,
-          mode: modeEfektif,
-          cashAccountId: modeEfektif === "LANGSUNG" ? cashAccountId : (cashAccountId || null),
-          supplierId: supplierId || null,
-          // Yang hanya boleh mengajukan selalu menalangi dirinya sendiri; penalang orang lain hanya boleh dipilih yang punya hak posting.
-          reimburseToId: modeEfektif === "REIMBURSEMENT" ? ((bolehPosting && reimburseToId) || req.user.id) : null,
-          payeeName: payeeName?.trim() || null,
-          orderId: orderId || null,
-          unitId: unitId || null,
-          receiptUrl: receiptUrl || null,
-          notes: notes?.trim() || null,
-          status: langsungAjukan === false ? "DRAFT" : "MENUNGGU_APPROVAL",
-          submittedAt: langsungAjukan === false ? null : new Date(),
-          createdById: req.user.id,
-        },
-        include: expenseInclude,
-      });
+      const created = await prisma.$transaction((tx) => buatFinExpense(tx, { ...req.body, user: req.user }));
       res.status(201).json(bentukExpense(created));
     } catch (e) {
       handleFinanceError(e, res);
@@ -295,6 +235,20 @@ financeTxRouter.post("/expenses/:id/submit",
         data: { status: "MENUNGGU_APPROVAL", submittedAt: new Date() },
         include: expenseInclude,
       });
+      res.json(bentukExpense(updated));
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
+
+// Tarik kembali pengajuan (MENUNGGU_APPROVAL → DRAFT) — kebalikan dari /submit. Dipakai
+// baik oleh Finance langsung maupun oleh Pengajuan Biaya Lintas Divisi (services/expenseSubmission)
+// sebelum keputusan disetujui/ditolak jatuh, lewat service bersama tarikFinExpense().
+financeTxRouter.post("/expenses/:id/tarik",
+  requireAnyPermission(P.FINANCE_POST, P.FINANCE_EXPENSE_SUBMIT),
+  async (req, res) => {
+    try {
+      const updated = await tarikFinExpense(prisma, { id: req.params.id, user: req.user });
       res.json(bentukExpense(updated));
     } catch (e) {
       handleFinanceError(e, res);
@@ -351,6 +305,7 @@ financeTxRouter.post("/expenses/:id/approve", requirePermission(P.FINANCE_APPROV
           ...(menyetujuiSendiri && { menyetujuiPengajuanSendiri: true }),
         },
       });
+      await sinkronStatusDariFinExpense(tx, e.id);
       return updated;
     });
 
@@ -382,6 +337,7 @@ financeTxRouter.post("/expenses/:id/reject", requirePermission(P.FINANCE_APPROVE
         eventType: EVENT_TYPES.DOCUMENT_REJECTED, actorId: req.user.id,
         metadata: { expenseNumber: e.expenseNumber, reason },
       });
+      await sinkronStatusDariFinExpense(tx, e.id);
       return updated;
     });
     const lengkap = await prisma.finExpense.findUnique({ where: { id: hasil.id }, include: expenseInclude });
@@ -420,6 +376,7 @@ financeTxRouter.post("/expenses/:id/pay", requirePermission(P.FINANCE_POST), asy
         eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
         metadata: { expenseNumber: e.expenseNumber, aksi: "dibayar", amount: String(e.amount) },
       });
+      await sinkronStatusDariFinExpense(tx, e.id);
       return e;
     });
 
@@ -462,6 +419,7 @@ financeTxRouter.post("/expenses/:id/cancel", requirePermission(P.FINANCE_ADMIN),
         eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: req.user.id,
         metadata: { expenseNumber: e.expenseNumber, reason },
       });
+      await sinkronStatusDariFinExpense(tx, e.id);
       return updated;
     });
     res.json(bentukExpense(hasil));
@@ -605,6 +563,7 @@ financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN)
           before, after: perubahan,
         },
       });
+      await sinkronStatusDariFinExpense(tx, e.id);
       return updated;
     });
     const lengkap = await prisma.finExpense.findUnique({ where: { id: hasil.id }, include: expenseInclude });

@@ -41,6 +41,7 @@ import { unitRouter }     from "./routes/units.js";
 import { productionRouter } from "./routes/production.js";
 import { activityRouter } from "./routes/activity.js";
 import { armadaRouter }     from "./routes/armada.js";
+import { incentiveSnapshotRouter } from "./routes/incentiveSnapshot.js";
 import { kendaliRouter }    from "./routes/kendali.js";
 // Finance Workspace (D-180) — DUA router, SATU prefix /api/finance.
 // Pemisahannya semata soal panjang file (lihat catatan di kepala
@@ -52,6 +53,7 @@ import { financePenerimaanRouter } from "./routes/financePenerimaan.js";
 import { financeApprovalsRouter } from "./routes/financeApprovals.js";
 import { financePembayaranRouter } from "./routes/financePembayaran.js";
 import { financeTransaksiRouter } from "./routes/financeTransaksi.js";
+import { expenseSubmissionRouter } from "./routes/expenseSubmissions.js";
 import { financeBukuRouter } from "./routes/financeBuku.js";
 import { financePemasukanRouter } from "./routes/financePemasukan.js";
 import { financeMediaRouter, financeReceiptsLegacyPathRouter, financePaymentProofsPathRouter } from "./routes/financeMedia.js";
@@ -208,6 +210,7 @@ app.use("/api/production",   productionRouter);
 app.use("/api/activity",     activityRouter);
 app.use("/api/complaints",   complaintsRouter);
 app.use("/api/armada",       armadaRouter);
+app.use("/api/armada",       incentiveSnapshotRouter); // additive, tidak mengubah armadaRouter — lihat routes/incentiveSnapshot.js
 app.use("/api/kendali",      kendaliRouter);
 app.use("/api/finance",      financePushHooks); // S11: pemicu push (mengamati respons; tidak mengubah endpoint)
 app.use("/api/finance",      financeRouter);
@@ -219,6 +222,7 @@ app.use("/api/finance",      financePembayaranRouter); // pembayaran pelanggan: 
 app.use("/api/finance",      financePemasukanRouter); // read-model Pemasukan terpadu + Data Sebelum Sistem (non-posting)
 app.use("/api/finance",      financeBukuRouter);       // read-model jurnal, buku besar, rekonsiliasi (S9)
 app.use("/api/finance",      financeTransaksiRouter);  // read-model transaksi: pengeluaran, pembelian, kasbon, piutang, supplier, ... (S6–S8)
+app.use("/api/finance",      expenseSubmissionRouter); // Pengajuan Biaya Lintas Divisi — pilot Delivery (menghasilkan FinExpense lewat services/expenseSubmission/)
 app.use("/api/finance",      financeMediaRouter);
 // Aplikasi mobile Finance: sesi 15 menit + refresh rotasi, token push perangkat, config.
 app.use("/api/mobile",       mobileRouter);

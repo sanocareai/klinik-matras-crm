@@ -325,6 +325,24 @@ export const api = {
   updateDriverIncentiveFlags: (driverId, patch) =>
     request(`/armada/drivers/${driverId}`, { method: "PATCH", body: JSON.stringify(patch) }),
 
+  // Snapshot Insentif Driver (24 September 2026) — pembekuan untuk alur
+  // Finance review -> Owner approval, TERPISAH dari getIncentiveSummary
+  // di atas (yang tetap live/estimasi, tidak berubah). Lihat catatan
+  // panjang di backend/src/routes/incentiveSnapshot.js.
+  previewIncentiveSnapshot: (body) => request("/armada/incentive-snapshots/preview", { method: "POST", body: JSON.stringify(body) }),
+  createIncentiveSnapshot: (body, idempotencyKey = mutationKey("snapshot")) =>
+    request("/armada/incentive-snapshots", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  adjustIncentiveSnapshot: (id, body, idempotencyKey = mutationKey("snapshot-adjust")) =>
+    request(`/armada/incentive-snapshots/${id}/adjust`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  listIncentiveSnapshots: (params = {}) => request(`/armada/incentive-snapshots${buildQuery(params)}`),
+  getIncentiveSnapshot: (id) => request(`/armada/incentive-snapshots/${id}`),
+  reviewIncentiveSnapshot: (id, idempotencyKey = mutationKey("snapshot-review")) =>
+    request(`/armada/incentive-snapshots/${id}/review`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
+  approveIncentiveSnapshot: (id, idempotencyKey = mutationKey("snapshot-approve")) =>
+    request(`/armada/incentive-snapshots/${id}/approve`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
+  rejectIncentiveSnapshot: (id, reason, idempotencyKey = mutationKey("snapshot-reject")) =>
+    request(`/armada/incentive-snapshots/${id}/reject`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ reason }) }),
+
   // Kendala & Reschedule (Delivery Tahap 5)
   getIssues: (status) => request(`/armada/issues${status ? `?status=${status}` : ""}`),
   rescheduleIssue: (jobId, data) => request(`/armada/issues/${jobId}/reschedule`, { method: "POST", body: JSON.stringify(data) }),
@@ -1329,6 +1347,30 @@ export const api = {
     method: "POST", body: JSON.stringify(data), headers: { "Idempotency-Key": idemKey },
   }),
   cancelPurchaseAdvanceApplication: (id, reason) => request(`/finance/purchases/advance-applications/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+
+  // Pengajuan Biaya Lintas Divisi (ExpenseSubmission) — workspace divisi
+  // (Delivery pilot) MEMBUAT/MELENGKAPI/MEMANTAU di sini; approve/tolak/bayar/
+  // koreksi finansial tetap lewat endpoint FinExpense di atas. Backend:
+  // routes/expenseSubmissions.js. `idemKey` pada ajukanPengajuanBiaya WAJIB
+  // dibangkitkan SEKALI oleh pemanggil (bukan di sini) — retry logis (klik
+  // ulang setelah gagal/timeout) harus memakai kunci yang SAMA, sama seperti
+  // applyPurchaseAdvance di atas.
+  getExpenseSubmissionConfig: (workspace) => request(`/finance/expense-submissions/config?workspace=${encodeURIComponent(workspace)}`),
+  getExpenseSubmissions: (params = {}) => request(`/finance/expense-submissions${qsFinance(params)}`),
+  getExpenseSubmission: (id) => request(`/finance/expense-submissions/${id}`),
+  createExpenseSubmission: (data) => request("/finance/expense-submissions", { method: "POST", body: JSON.stringify(data) }),
+  updateExpenseSubmissionDraft: (id, data) => request(`/finance/expense-submissions/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  ajukanPengajuanBiaya: (id, idemKey = mutationKey("pengajuan")) =>
+    request(`/finance/expense-submissions/${id}/ajukan`, { method: "POST", headers: { "Idempotency-Key": idemKey } }),
+  tarikPengajuanBiaya: (id) => request(`/finance/expense-submissions/${id}/tarik`, { method: "POST" }),
+  batalkanPengajuanBiaya: (id, reason) => request(`/finance/expense-submissions/${id}/batalkan`, { method: "POST", body: JSON.stringify({ reason }) }),
+  koreksiMetadataPengajuan: (id, reason, changes) => request(`/finance/expense-submissions/${id}/metadata`, { method: "POST", body: JSON.stringify({ reason, changes }) }),
+  cekDuplikatPengajuan: (params) => request(`/finance/expense-submissions/duplicate-check${qsFinance(params)}`),
+  getPengajuanTemplates: () => request("/finance/expense-submissions/templates"),
+  createPengajuanTemplate: (data) => request("/finance/expense-submissions/templates", { method: "POST", body: JSON.stringify(data) }),
+  deletePengajuanTemplate: (id) => request(`/finance/expense-submissions/templates/${id}`, { method: "DELETE" }),
+  getPengajuanRecent: (division) => request(`/finance/expense-submissions/recent${qsFinance({ division })}`),
+  uploadPengajuanBukti: (id, formData) => requestFormData(`/finance/expense-submissions/${id}/bukti`, formData),
 
   // Supplier, tagihan, pembayaran supplier
   getFinanceSuppliers: (params = {}) => request(`/finance/suppliers${qsFinance(params)}`),

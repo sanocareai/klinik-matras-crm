@@ -540,6 +540,14 @@ model User {
   finExpensesReceiptVerified             FinExpense[]                    @relation("FinExpenseReceiptVerifier")
   finPurchasesReceiptVerified            FinPurchase[]                   @relation("FinPurchaseReceiptVerifier")
   finPurchaseAdvanceApplicationsCreated  FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationCreator")
+  expenseSubmissionsRequested            ExpenseSubmission[]             @relation("ExpenseSubmissionRequester")
+  expenseSubmissionsPic                  ExpenseSubmission[]             @relation("ExpenseSubmissionPic")
+  expenseSubmissionsAsDriver             ExpenseSubmission[]             @relation("ExpenseSubmissionDriver")
+  expenseSubmissionsAsHelper             ExpenseSubmission[]             @relation("ExpenseSubmissionHelper")
+  expenseSubmissionsCreated              ExpenseSubmission[]             @relation("ExpenseSubmissionCreator")
+  expenseSubmissionProofsUploaded        ExpenseSubmissionProof[]        @relation("ExpenseSubmissionProofUploader")
+  expenseSubmissionAuditsActed           ExpenseSubmissionAudit[]        @relation("ExpenseSubmissionAuditActor")
+  expenseSubmissionTemplatesOwned        ExpenseSubmissionTemplate[]     @relation("ExpenseSubmissionTemplateOwner")
   finPurchaseAdvanceApplicationsReversed FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationReverser")
   finKasbonEmployee                      FinKasbon[]                     @relation("FinKasbonEmployee")
   finKasbonCreated                       FinKasbon[]                     @relation("FinKasbonCreator")
@@ -1253,6 +1261,7 @@ model Order {
   finPaymentAllocations FinPaymentAllocation[]
   finRefunds            FinRefund[]
   finExpenses           FinExpense[]           @relation("FinExpenseOrder")
+  expenseSubmissions    ExpenseSubmission[]
 
   @@index([customerId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
@@ -2276,6 +2285,8 @@ model Job {
   rescheduleCases RescheduleCase[]         @relation("RescheduleCaseOriginJob")
   executionEvents DeliveryExecutionEvent[]
 
+  expenseSubmissions ExpenseSubmission[]
+
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
   @@index([helperId])
@@ -2875,11 +2886,12 @@ model Vehicle {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  jobs      Job[]
-  routes    Route[]
-  expenses  VehicleExpense[]
-  services  VehicleService[]
-  incidents VehicleIncident[]
+  jobs               Job[]
+  routes             Route[]
+  expenses           VehicleExpense[]
+  services           VehicleService[]
+  incidents          VehicleIncident[]
+  expenseSubmissions ExpenseSubmission[]
 
   @@index([status])
   @@index([picDriverId])
@@ -2930,6 +2942,11 @@ model VehicleExpense {
   recordedById String?  @map("recorded_by_id")
   recordedBy   User?    @relation("VehicleExpenseRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
   createdAt    DateTime @default(now()) @map("created_at")
+
+  // Pengajuan Biaya Lintas Divisi yang menaut baris ini sebagai KONTEKS OPERASIONAL
+  // (lihat banner ExpenseSubmission) — kalau ada. Tidak mengubah perilaku
+  // postVehicleExpense() untuk baris TANPA tautan ini.
+  expenseSubmission ExpenseSubmission?
 
   @@index([vehicleId, date])
   @@index([driverId, date])
@@ -3020,6 +3037,193 @@ model VehicleIncident {
   @@index([vehicleId, date])
   @@index([driverId, date])
   @@map("vehicle_incidents")
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// PENGAJUAN BIAYA LINTAS DIVISI (ExpenseSubmission) — pilot Delivery, fondasi
+// reusable untuk divisi lain (Produksi/Warehouse/Marketing/Management/HR-GA).
+//
+// PRINSIP (jangan dilanggar saat menambah divisi baru):
+//   1. SATU sumber transaksi, SATU ledger Finance — model ini TIDAK PERNAH
+//      memposting jurnal sendiri. Uang hanya bergerak lewat FinExpense +
+//      postJournal() seperti biasa (services/finance/posting/expense.js).
+//   2. Workspace divisi (mis. Armada/Delivery) hanya MEMBUAT, MELENGKAPI, dan
+//      MEMANTAU baris di sini — approve/bayar/koreksi tetap 100% wewenang
+//      Finance lewat endpoint FinExpense yang SUDAH ADA (lihat
+//      services/finance/expenses.js, financeTransactions.js).
+//   3. SATU pengajuan → PALING BANYAK SATU FinExpense — ditegakkan oleh
+//      finExpenseId @unique DI SINI (bukan di FinExpense), diisi lewat
+//      services/expenseSubmission/service.js#ajukanPengajuan() yang
+//      idempoten (SAVEPOINT + idempotencyKey, sama pola dengan
+//      FinPurchaseAdvanceApplication).
+//   4. RELASI DENGAN VehicleExpense/VehicleService (Armada, D-035) — SENGAJA
+//      COEXIST, bukan digabung/dimigrasikan: VehicleExpense/VehicleService
+//      TETAP jalur cepat tanpa-approval untuk driver mencatat konteks
+//      operasional (odometer, liter, kategori) dan TETAP posting langsung
+//      via BIAYA_KENDARAAN seperti sekarang — WhatsApp/lisan yang sebelumnya
+//      jadi jalur informal TIDAK berubah jadi pencatatan resmi di sini.
+//      ExpenseSubmission adalah jalur BARU, terpisah, untuk biaya yang perlu
+//      APPROVAL Finance sebelum dibayar (servis besar, sewa, denda, biaya
+//      non-rutin) — begitu lewat jalur ini, FinExpense (bukan
+//      VehicleExpense) menjadi SATU-SATUNYA sumber persetujuan, pembayaran,
+//      dan jurnal untuk baris itu. `vehicleExpenseId` opsional di bawah
+//      hanya menaut KONTEKS OPERASIONAL (odometer/liter) kalau relevan —
+//      TIDAK membuat VehicleExpense itu ikut posting sendiri.
+//   5. Field cross-divisi SEMUANYA OPSIONAL (nullable) — divisi lain mengisi
+//      subset yang relevan saja (lihat services/expenseSubmission/config.js
+//      untuk field mana yang aktif per sourceWorkspace/division).
+
+enum ExpenseSubmissionStatus {
+  DRAFT // seluruh field bebas diedit, belum ada FinExpense
+  DIAJUKAN // terkirim, menunggu review internal divisi (HANYA kalau config workspace mewajibkan — lihat WorkspaceConfig.requiresLeaderReview); kalau tidak, transisi ke MENUNGGU_PERSETUJUAN langsung terjadi dalam aksi "ajukan" yang sama
+  MENUNGGU_PERSETUJUAN // FinExpense sudah dibuat & MENUNGGU_APPROVAL — cermin status FinExpense, disinkronkan lewat services/expenseSubmission/service.js#sinkronStatusDariFinExpense()
+  DISETUJUI // cermin FinExpense DISETUJUI
+  DIBAYAR // cermin FinExpense DIBAYAR
+  DITOLAK // cermin FinExpense DITOLAK
+  DIBATALKAN // cermin FinExpense DIBATALKAN, ATAU dibatalkan sebelum FinExpense ada
+}
+
+// SATU pengajuan biaya dari sebuah workspace divisi. Menjadi FinExpense
+// (lewat services/expenseSubmission/service.js) begitu diajukan — lihat
+// banner di atas untuk aturan yang tidak boleh dilanggar.
+model ExpenseSubmission {
+  id               String @id @default(uuid()) @db.Uuid
+  submissionNumber String @unique @map("submission_number") // PB-DDMMYYYY-NNN
+
+  division   FinDivision @map("division") // divisi pemohon — reuse enum yang sama dipakai FinExpense, BUKAN taksonomi baru
+  costCenter String?     @map("cost_center") // teks bebas untuk sekarang; jadi FK kalau master Cost Center kelak ada
+
+  requestedById   String  @map("requested_by")
+  requestedBy     User    @relation("ExpenseSubmissionRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  picUserId       String? @map("pic_user_id")
+  picUser         User?   @relation("ExpenseSubmissionPic", fields: [picUserId], references: [id], onDelete: SetNull)
+  picNameSnapshot String? @map("pic_name_snapshot") // snapshot nama PIC saat pengajuan dibuat — riwayat tetap terbaca kalau akunnya kelak berubah/nonaktif
+
+  expenseType String   @map("expense_type") @db.VarChar(40) // BBM/TOL/PARKIR/SERVIS/BAN/CUCI/DENDA/SEWA/LAINNYA dll — divalidasi server terhadap daftar per workspace (config.js), BUKAN enum DB supaya divisi baru tidak perlu migrasi tiap nambah jenis
+  date        DateTime @db.Date
+  amount      Decimal  @db.Decimal(18, 2) // nominal USULAN pemohon — nominal yang benar-benar diposting selalu dari FinExpense.amount begitu ada, dua-duanya harus sama persis saat dibuat (lihat service)
+  description String // keterangan otomatis dari field terstruktur, admin boleh perbaiki
+  notes       String?
+
+  // ── Relasi opsional lintas domain — SEMUA nullable, isi sesuai sourceWorkspace ──
+  jobId            String?         @map("job_id") @db.Uuid
+  job              Job?            @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  routeId          String?         @map("route_id") @db.Uuid
+  route            Route?          @relation(fields: [routeId], references: [id], onDelete: SetNull)
+  vehicleId        String?         @map("vehicle_id") @db.Uuid
+  vehicle          Vehicle?        @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  driverId         String?         @map("driver_id")
+  driver           User?           @relation("ExpenseSubmissionDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  helperId         String?         @map("helper_id")
+  helper           User?           @relation("ExpenseSubmissionHelper", fields: [helperId], references: [id], onDelete: SetNull)
+  orderId          String?         @map("order_id")
+  order            Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  // Konteks operasional VehicleExpense yang SUDAH ADA (D-035) — TIDAK dibuat baru di
+  // sini, cuma ditaut kalau pemohon memilih odometer/liter dari catatan yang sudah
+  // dicatat. TIDAK memicu postVehicleExpense() — lihat banner prinsip #4 di atas.
+  vehicleExpenseId String?         @unique @map("vehicle_expense_id") @db.Uuid
+  vehicleExpense   VehicleExpense? @relation(fields: [vehicleExpenseId], references: [id], onDelete: SetNull)
+
+  // Aset/campaign/unit produksi — divisi lain (HR-GA/Marketing/Produksi) belum punya
+  // master data FK di sistem ini; disimpan di metadata JSON sampai master-nya ada
+  // (lihat prinsip "jangan mengarang FK ke tabel yang belum ada").
+
+  // Snapshot tampilan — bertahan walau master data berubah/dihapus nanti.
+  vehiclePlateSnapshot String? @map("vehicle_plate_snapshot")
+  driverNameSnapshot   String? @map("driver_name_snapshot")
+  helperNameSnapshot   String? @map("helper_name_snapshot")
+  routeNameSnapshot    String? @map("route_name_snapshot")
+
+  // Metadata operasional terstruktur, bentuk beda-beda per expenseType/division —
+  // lihat services/expenseSubmission/config.js untuk skema field per kombinasi.
+  // Contoh isi utk expenseType=BBM: { odometerKm, liters, pricePerLiter, vendorOrLocation }.
+  metadata Json? @map("metadata")
+
+  paymentMethod String? @map("payment_method") // usulan rekening/metode bayar dari pemohon — Finance yang menentukan cashAccount FINAL di FinExpense
+  vendorName    String? @map("vendor_name")
+
+  status ExpenseSubmissionStatus @default(DRAFT)
+
+  submittedAt DateTime? @map("submitted_at")
+  withdrawnAt DateTime? @map("withdrawn_at")
+
+  // SATU FinExpense per pengajuan — unique di sisi ini menegakkan aturan itu di
+  // level database, bukan cuma di level aplikasi.
+  finExpenseId String?     @unique @map("fin_expense_id") @db.Uuid
+  finExpense   FinExpense? @relation(fields: [finExpenseId], references: [id], onDelete: SetNull)
+
+  // Kunci idempotensi aksi "ajukan" — client mengirim Idempotency-Key yang sama
+  // dipakai ulang di sini kalau ada retry/double-click (lihat middleware/idempotency.js
+  // untuk lapisan HTTP-nya; ini lapisan tambahan di level domain).
+  idempotencyKey String? @unique @map("idempotency_key")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("ExpenseSubmissionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  proofs     ExpenseSubmissionProof[]
+  auditTrail ExpenseSubmissionAudit[]
+
+  @@index([division, status])
+  @@index([division, date])
+  @@index([status, date])
+  @@index([jobId])
+  @@index([routeId])
+  @@index([vehicleId])
+  @@index([requestedById])
+  @@map("expense_submissions")
+}
+
+// Bukti/nota — VERSI baru tiap unggah, tidak pernah overwrite (beda dari FinExpense.receiptUrl). supersededAt null = versi berlaku sekarang.
+model ExpenseSubmissionProof {
+  id           String            @id @default(uuid()) @db.Uuid
+  submissionId String            @map("submission_id") @db.Uuid
+  submission   ExpenseSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  url          String
+  version      Int       @default(1)
+  uploadedById String?   @map("uploaded_by")
+  uploadedBy   User?     @relation("ExpenseSubmissionProofUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  supersededAt DateTime? @map("superseded_at")
+
+  @@index([submissionId, supersededAt])
+  @@map("expense_submission_proofs")
+}
+
+// Jejak audit before/after untuk koreksi metadata NON-finansial (keterangan, vendor, penautan rute/kendaraan, dll). Koreksi FINANSIAL (nominal/akun/rekening/tanggal/pihak) tetap lewat workflow koreksi FinExpense yang sudah ada — TIDAK dicatat di sini.
+model ExpenseSubmissionAudit {
+  id           String            @id @default(uuid()) @db.Uuid
+  submissionId String            @map("submission_id") @db.Uuid
+  submission   ExpenseSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  field   String // nama field yang berubah, mis. "description", "metadata.vendorOrLocation"
+  before  String?
+  after   String?
+  reason  String?
+  actorId String? @map("actor_id")
+  actor   User?   @relation("ExpenseSubmissionAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([submissionId, createdAt])
+  @@map("expense_submission_audits")
+}
+
+// Template favorit untuk kecepatan input (S7) — isian form yang sering dipakai ulang, milik satu pengguna.
+model ExpenseSubmissionTemplate {
+  id       String      @id @default(uuid()) @db.Uuid
+  ownerId  String      @map("owner_id")
+  owner    User        @relation("ExpenseSubmissionTemplateOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  label    String
+  division FinDivision @map("division")
+  payload  Json // field form yang sudah diisi sebelumnya, bentuknya sama dengan POST /expense-submissions
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([ownerId, division])
+  @@map("expense_submission_templates")
 }
 
 enum ExpenseCategory {
@@ -3160,9 +3364,10 @@ model Route {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  jobs            Job[]
-  expenses        VehicleExpense[]
-  executionEvents DeliveryExecutionEvent[]
+  jobs               Job[]
+  expenses           VehicleExpense[]
+  executionEvents    DeliveryExecutionEvent[]
+  expenseSubmissions ExpenseSubmission[]
 
   @@index([date, status]) // papan Route Planner per tanggal
   @@index([driverId, date])
@@ -5967,6 +6172,10 @@ enum FinDivision {
   OFFICE // Leader/kepala tiap divisi — meeting, survey, dan biaya lintas-divisi yang mereka ajukan sendiri, bukan biaya operasional harian divisinya
   MANAGEMENT // Owner — meeting, survey, dan biaya level manajemen
   UMUM // biaya kantor/administrasi yang tidak spesifik divisi
+  // Ditambahkan untuk Pengajuan Biaya Lintas Divisi (rollout Delivery lalu divisi lain,
+  // lihat model ExpenseSubmission) — dua sumbu yang belum punya wadah di atas.
+  MARKETING
+  HR_GA
 }
 
 // Kategori pengeluaran yang DAPAT DIKELOLA ADMIN — jembatan antara bahasa
@@ -6377,6 +6586,12 @@ model FinExpense {
   createdBy   User?    @relation("FinExpenseCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Pengajuan Biaya Lintas Divisi (ExpenseSubmission) yang menghasilkan baris ini — kalau
+  // ada. FK-nya (finExpenseId, @unique) ada di SISI ExpenseSubmission, bukan di sini: field
+  // relasi ini murni supaya Prisma bisa menelusuri dua arah, TIDAK menambah kolom baru di
+  // tabel fin_expenses (data lama tidak tersentuh sama sekali). Lihat services/expenseSubmission/.
+  submission ExpenseSubmission?
 
   @@index([status, date])
   @@index([categoryId, date])

@@ -23,6 +23,10 @@ const { warehouseReportsRouter } = await import("../../../src/routes/warehouseRe
 const { unitRouter } = await import("../../../src/routes/units.js");
 const { financeRouter } = await import("../../../src/routes/finance.js");
 const { financeTxRouter } = await import("../../../src/routes/financeTransactions.js");
+// expenseSubmissionRouter (24 September 2026) — Pengajuan Biaya Lintas
+// Divisi, pilot Delivery. Kode ASLI produksi, sama pola dengan router lain
+// di file ini, additive di prefix /api/finance yang sama.
+const { expenseSubmissionRouter } = await import("../../../src/routes/expenseSubmissions.js");
 const { financeKasbonRouter } = await import("../../../src/routes/financeKasbon.js");
 const { financePenerimaanRouter } = await import("../../../src/routes/financePenerimaan.js");
 const { financePushHooks } = await import("../../../src/middleware/financePushHooks.js");
@@ -41,6 +45,9 @@ const { userRouter } = await import("../../../src/routes/users.js");
 // dipakai produksi, bukan tiruan — sama filosofi dengan router lain di file
 // ini.
 const { armadaRouter } = await import("../../../src/routes/armada.js");
+// incentiveSnapshotRouter (24 September 2026) — sama pola dengan armadaRouter
+// di atas: kode ASLI produksi, additive di prefix /api/armada yang sama.
+const { incentiveSnapshotRouter } = await import("../../../src/routes/incentiveSnapshot.js");
 
 export function buildTestApp() {
   const app = express();
@@ -66,6 +73,7 @@ export function buildTestApp() {
   app.use("/api/finance", financePushHooks);
   app.use("/api/finance", financeRouter);
   app.use("/api/finance", financeTxRouter);
+  app.use("/api/finance", expenseSubmissionRouter);
   app.use("/api/finance", financeKasbonRouter);
   app.use("/api/finance", financePenerimaanRouter);
   app.use("/api/finance", financeApprovalsRouter);
@@ -80,6 +88,7 @@ export function buildTestApp() {
   app.use("/api/users", userRouter);
   app.use("/api/mobile", mobileRouter);
   app.use("/api/armada", armadaRouter);
+  app.use("/api/armada", incentiveSnapshotRouter);
 
   return app;
 }
