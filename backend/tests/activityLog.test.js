@@ -152,6 +152,47 @@ test("HAS_SIM_CHANGED menyebut arah perubahan dan tarif baru", () => {
   assert.notEqual(jadiPunya, jadiTanpa);
 });
 
+// Snapshot Insentif Driver (24 September 2026).
+test("INCENTIVE_SNAPSHOT_CREATED menyebut periode dan total; menandai kalau ini adjustment", () => {
+  const biasa = formatActivitySentence({
+    eventType: EVENT_TYPES.INCENTIVE_SNAPSHOT_CREATED,
+    metadata: { periodFrom: "2026-09-01", periodTo: "2026-09-30", totalAlamat: 12, totalRupiah: 84000 },
+  });
+  assert.match(biasa, /2026-09-01/); assert.match(biasa, /2026-09-30/);
+  assert.match(biasa, /12 alamat/); assert.match(biasa, /84.000|84000/);
+  assert.doesNotMatch(biasa, /koreksi/);
+
+  const adjustment = formatActivitySentence({
+    eventType: EVENT_TYPES.INCENTIVE_SNAPSHOT_CREATED,
+    metadata: { periodFrom: "2026-09-01", periodTo: "2026-09-30", totalAlamat: 1, totalRupiah: 7000, adjustsSnapshotId: "snap-lama" },
+  });
+  assert.match(adjustment, /koreksi/i);
+});
+
+test("INCENTIVE_SNAPSHOT_APPROVED dan INCENTIVE_SNAPSHOT_REJECTED menyebut isi yang berbeda", () => {
+  const disetujui = formatActivitySentence({
+    eventType: EVENT_TYPES.INCENTIVE_SNAPSHOT_APPROVED,
+    metadata: { periodFrom: "2026-09-01", periodTo: "2026-09-30", totalRupiah: 84000 },
+  });
+  assert.match(disetujui, /disetujui/i);
+
+  const ditolak = formatActivitySentence({
+    eventType: EVENT_TYPES.INCENTIVE_SNAPSHOT_REJECTED,
+    metadata: { periodFrom: "2026-09-01", periodTo: "2026-09-30", reason: "Data POD masih dikoreksi" },
+  });
+  assert.match(ditolak, /ditolak/i);
+  assert.match(ditolak, /Data POD masih dikoreksi/);
+});
+
+test("INCENTIVE_SNAPSHOT_ADJUSTED (di snapshot ASAL) menyebut id snapshot koreksi dan alasan", () => {
+  const kalimat = formatActivitySentence({
+    eventType: EVENT_TYPES.INCENTIVE_SNAPSHOT_ADJUSTED,
+    metadata: { adjustmentSnapshotId: "snap-baru-123", reason: "Driver salah tercatat" },
+  });
+  assert.match(kalimat, /snap-baru-123/);
+  assert.match(kalimat, /Driver salah tercatat/);
+});
+
 test("eventType yang tidak dikenal tidak pernah melempar error — linimasa tidak boleh gagal render", () => {
   assert.doesNotThrow(() => formatActivitySentence({ eventType: "SESUATU_YANG_BARU", metadata: {} }));
   assert.equal(formatActivitySentence({ eventType: "SESUATU_YANG_BARU", metadata: {} }), "SESUATU_YANG_BARU");

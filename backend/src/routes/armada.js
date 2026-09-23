@@ -20,7 +20,8 @@ import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, hasPermission, rolesOf, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { startOfDayWIB, startOfMonthWIB, endOfDayExclusiveWIB, WIB_TZ } from "../utils/wib.js";
+import { startOfDayWIB, endOfDayExclusiveWIB, WIB_TZ } from "../utils/wib.js";
+import { computeIncentiveSummary } from "../services/incentiveEngine.js";
 import { sendMedia, sendText } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
@@ -2071,8 +2072,6 @@ armadaRouter.get("/routes", requirePermission(P.JOB_READ), async (req, res) => {
 // adalah GABUNGAN unik lintas peran (1 orang, 1 tanggal, 1 order —
 // tetap 1 alamat, walau kebetulan jadi driver di 1 job & helper di job
 // lain untuk order yang sama).
-const RATE_PER_ALAMAT = { withSim: 7000, withoutSim: 3000 };
-
 // requireAnyPermission JOB_READ ATAU JOB_OWN_READ (18 September 2026,
 // laporan owner: driver app dapat tab "Performa Saya" — sebelumnya cuma
 // dispatcher/admin [JOB_READ] yang bisa lihat, driver sendiri tidak pernah
@@ -2080,179 +2079,25 @@ const RATE_PER_ALAMAT = { withSim: 7000, withoutSim: 3000 };
 // untuk SEMUA orang seperti biasa (dedup lintas driver/helper butuh data
 // penuh) — pembatasan cuma di RESPONS: driver tanpa JOB_READ cuma
 // menerima barisnya sendiri, sama pola dengan GET /issues.
+//
+// Logika perhitungan (rumus, dedup, exclude) DIPINDAH ke
+// services/incentiveEngine.js (24 September 2026, slice Snapshot) — SATU
+// SUMBER KEBENARAN yang sama-sama dipanggil endpoint LIVE ini dan alur
+// Snapshot (routes/incentiveSnapshot.js), bukan logika yang disalin dua
+// kali. Endpoint ini sekarang murni: panggil mesin, terapkan pembatasan
+// akses, kembalikan JSON — tidak ada perubahan PERILAKU dari sebelumnya.
 armadaRouter.get("/incentive-summary", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), async (req, res) => {
   try {
     const hanyaMilikSendiri = !hasPermission(req.user, P.JOB_READ);
     const { from, to } = req.query;
-    // Default "bulan ini" (WIB) kalau tidak dikirim — insentif lazimnya
-    // dihitung per periode berjalan, bukan akumulasi dari awal selamanya.
-    //
-    // BUG DIPERBAIKI (audit insentif, 23 September 2026) — batas AWAL
-    // periode SEBELUMNYA pakai toDateOnly(from)/Date.UTC(...) (UTC
-    // midnight), BUKAN startOfDayWIB/startOfMonthWIB seperti seharusnya
-    // (lihat aturan di utils/wib.js: "TEPI MASUK ... WAJIB lewat helper di
-    // file ini"). Akibatnya job yang selesai jam 00:00–06:59 WIB di
-    // tanggal AWAL rentang (custom `from`, atau tanggal 1 tiap bulan untuk
-    // default "Bulan Ini") hilang DIAM-DIAM dari hitungan — completedAt-nya
-    // (UTC) jatuh SEBELUM batas UTC-midnight yang salah itu. Batas AKHIR
-    // (`to`) sudah benar pakai endOfDayExclusiveWIB sejak awal, cuma batas
-    // AWAL yang keliru — sekarang keduanya konsisten pakai helper WIB yang
-    // sama.
-    const nowWIB = new Date(Date.now() + 7 * 3600_000);
-    const completedAtWhere = {
-      gte: from ? startOfDayWIB(from) : startOfMonthWIB(nowWIB.getUTCFullYear(), nowWIB.getUTCMonth() + 1),
-      // endOfDayExclusiveWIB, bukan toDateOnly(to) polos — completedAt
-      // adalah TIMESTAMP (jam berapa pun di hari itu), toDateOnly(to)
-      // sendirian berarti "sebelum jam 00:00 WIB tanggal `to`" — buang
-      // seluruh job yang selesai di HARI `to` itu sendiri.
-      ...(to && { lt: endOfDayExclusiveWIB(to) }),
-    };
-
-    // order.orderNumber/customer.name/addressText (13 September 2026,
-    // laporan owner: "ketika diklik bisa kasih detail alamat/resi order
-    // mana aja dari masing-masing driver?") — dipakai BUKAN untuk hitung
-    // (itu tetap orderId+tanggal, lihat catatan di atas), murni supaya
-    // tiap "alamat" di daftar bisa ditelusuri balik ke resi/customer/
-    // alamat aslinya tanpa panggilan API kedua per baris.
-    const jobs = await prisma.job.findMany({
-      where: {
-        status: "COMPLETED",
-        completedAt: completedAtWhere,
-        // Redelivery/rework dari ComplaintCase tidak dihitung ulang (audit
-        // insentif, 23 September 2026) — job ini LAHIR dari POST
-        // /complaints/:id/delivery-task (lihat services/complaintCase.js
-        // createDeliveryTask), memakai orderId yang SAMA dengan order asal
-        // tapi tuntas di TANGGAL BERBEDA. Tanpa exclude ini, dedup
-        // (orderId,tanggalWIB) melihatnya sebagai "alamat baru" — driver
-        // dibayar 2x untuk 1 alamat yang sama gara-gara pekerjaan ulang
-        // akibat komplain, bukan penjualan baru. complaintCaseId HANYA
-        // pernah diisi saat pembuatan (tidak pernah ditempel retroaktif ke
-        // job normal yang sudah ada) — exclude ini tidak pernah menyentuh
-        // job pengiriman/pengambilan pertama yang sah.
-        complaintCaseId: null,
-        // Rework/redelivery dari UnitRevision ("Lapor Revisi") tidak
-        // dihitung ulang (audit insentif, 24 September 2026, keputusan
-        // owner: "job dari UnitRevision TIDAK dapat insentif, perlakukan
-        // sebagai rework sama seperti ComplaintCase"). Job PICKUP/DELIVERY
-        // yang lahir dari POST /revisions/:id/create-pickup-job atau
-        // create-delivery-job (lihat kedua endpoint itu) memakai orderId
-        // SAMA dengan order asal tapi tuntas di TANGGAL BERBEDA — tanpa
-        // exclude ini, dedup (orderId,tanggalWIB) melihatnya sebagai
-        // "alamat baru", persis celah yang sama dengan ComplaintCase.
-        //
-        // Provenance UnitRevision->Job dari tabel RIWAYAT append-only
-        // UnitRevisionJobLink (24 September 2026), BUKAN lagi dari
-        // UnitRevision.jobId/revisionLinks (FK tunggal yang DITIMPA saat
-        // revisi naik dari PICKUP ke DELIVERY — lihat catatan panjang di
-        // schema.prisma model UnitRevisionJobLink). `revisionJobLink: null`
-        // berarti "TIDAK ADA baris unit_revision_job_links yang job_id-nya
-        // menunjuk job ini" — job_id UNIQUE di tabel itu, jadi ini relasi
-        // one-to-one, satu query (NOT EXISTS/LEFT JOIN dari Prisma), bukan
-        // N+1. SENGAJA TIDAK memakai heuristic nama/tanggal/tipe/urutan
-        // job — hanya baris riwayat yang ditulis SAAT job itu dibuat.
-        // Dengan tabel riwayat ini, job PICKUP yang revisinya sudah naik ke
-        // tahap DELIVERY TETAP tertangkap (baris link-nya tidak pernah
-        // hilang/ditimpa) — menutup celah yang sebelumnya jujur didokumentasikan
-        // sebagai risiko tersisa di revisi fix sebelumnya.
-        revisionJobLink: null,
-        // Order yang dibatalkan SETELAH job-nya selesai tidak dihitung
-        // (audit insentif) — OrderStatus.CANCELLED adalah satu-satunya
-        // status "batal" yang ada di schema (tidak ada REFUNDED terpisah,
-        // dicek eksplisit — lihat prisma/schema.prisma enum OrderStatus).
-        order: { status: { not: "CANCELLED" } },
-      },
-      select: {
-        orderId: true, completedAt: true, driverId: true, helperId: true, type: true, addressText: true,
-        order: { select: { orderNumber: true, customer: { select: { name: true } } } },
-      },
-    });
-
-    // dedup per orang: 3 Map terpisah (asDriver/asHelper/gabungan),
-    // key = "orderId|tanggalWIB" -> { orderNumber, customerName,
-    // addressText, date, types: Set } — Map (bukan Set polos lagi)
-    // supaya detailnya ikut terbawa, BUKAN cuma dihitung. `types`
-    // mengumpulkan PICKUP/DELIVERY yang tuntas di alamat+tanggal itu
-    // (biasanya 1, bisa 2 kalau ambil&kirim tuntas di hari yang sama —
-    // itulah situasi "= dihitung 1" yang dimaksud, terlihat eksplisit di
-    // detailnya, bukan cuma angka tunggal).
-    const perOrang = new Map();
-    function baris(userId) {
-      let b = perOrang.get(userId);
-      if (!b) { b = { asDriverMap: new Map(), asHelperMap: new Map(), allMap: new Map() }; perOrang.set(userId, b); }
-      return b;
-    }
-    function catat(map, key, j, tanggalWIB) {
-      let entri = map.get(key);
-      if (!entri) {
-        entri = {
-          orderId: j.orderId, orderNumber: j.order?.orderNumber || "-",
-          customerName: j.order?.customer?.name || "Tanpa nama",
-          addressText: j.addressText?.trim() || "-", date: tanggalWIB, types: new Set(),
-        };
-        map.set(key, entri);
-      }
-      entri.types.add(j.type);
-    }
-    for (const j of jobs) {
-      const tanggalWIB = new Date(j.completedAt.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
-      const key = `${j.orderId}|${tanggalWIB}`;
-      if (j.driverId) { const b = baris(j.driverId); catat(b.asDriverMap, key, j, tanggalWIB); catat(b.allMap, key, j, tanggalWIB); }
-      if (j.helperId) { const b = baris(j.helperId); catat(b.asHelperMap, key, j, tanggalWIB); catat(b.allMap, key, j, tanggalWIB); }
-    }
-
-    // Set -> array biasa (JSON tidak bisa serialize Set), diurutkan
-    // tanggal terbaru dulu — paling relevan buat ditelusuri.
-    const ringkasDetail = (map) => [...map.values()]
-      .map((e) => ({ ...e, types: [...e.types] }))
-      .sort((a, b) => b.date.localeCompare(a.date));
-
-    // isFreelance: false (13 September 2026, laporan owner: "arman, ujang
-    // sigit, dan sulaiman jangan dimasukkan ke insentif driver & helper
-    // karna mereka part time/freelance") — MURNI menyaring MEREKA dari
-    // daftar hasil, job yang sudah dihitung di atas (perOrang) TIDAK
-    // disentuh sama sekali, jadi driver/helper LAIN yang bertugas
-    // bersama mereka di job yang sama tetap dapat kredit penuh.
-    //
-    // isExternalCourier: false (14 September 2026, koreksi owner: "di apps
-    // dan web, kurir eksternal ada insentifnya seharusnya tidak perlu") —
-    // akun placeholder "Kurir Eksternal (Lalamove/dst)" SEBELUMNYA ikut
-    // dihitung (komentar lama di atas const RATE_PER_ALAMAT sengaja
-    // menyertakan "job lepas ... mis. Kurir Eksternal ikut terhitung" —
-    // itu keputusan D-162 yang SEKARANG dikoreksi owner: kurir eksternal
-    // sudah dibayar lewat externalCourierCost per job [D-161], bukan
-    // insentif per-alamat karyawan internal. Sama pola penyaringan dengan
-    // isFreelance — job yang sudah dihitung TIDAK disentuh, driver/helper
-    // LAIN yang kebetulan satu job dengan kurir eksternal (jarang terjadi
-    // dalam praktik, tapi tidak mustahil) tetap dapat kredit penuh.
-    const userIds = [...perOrang.keys()];
-    const users = userIds.length
-      ? await prisma.user.findMany({ where: { id: { in: userIds }, isFreelance: false, isExternalCourier: false }, select: { id: true, name: true, avatarUrl: true, hasSim: true } })
-      : [];
-
-    let orang = users
-      .map((u) => {
-        const b = perOrang.get(u.id);
-        const totalAlamat = b.allMap.size;
-        const ratePerAlamat = u.hasSim ? RATE_PER_ALAMAT.withSim : RATE_PER_ALAMAT.withoutSim;
-        return {
-          id: u.id, name: u.name, avatarUrl: u.avatarUrl, hasSim: u.hasSim,
-          asDriver: b.asDriverMap.size, asHelper: b.asHelperMap.size,
-          totalAlamat, ratePerAlamat, totalInsentif: totalAlamat * ratePerAlamat,
-          detail: ringkasDetail(b.allMap),
-        };
-      })
-      .sort((a, b) => b.totalAlamat - a.totalAlamat);
+    const hasil = await computeIncentiveSummary(prisma, { from, to });
+    let orang = hasil.orang;
     // Driver tanpa JOB_READ (lihat guard di atas) cuma boleh lihat barisnya
     // sendiri — dihitung LEBIH DULU untuk semua orang (dedup butuh data
     // penuh), baru disaring di respons.
     if (hanyaMilikSendiri) orang = orang.filter((o) => o.id === req.user.id);
 
-    res.json({
-      from: completedAtWhere.gte.toISOString().slice(0, 10),
-      to: to || null,
-      ratePerAlamat: RATE_PER_ALAMAT,
-      orang,
-    });
+    res.json({ from: hasil.fromLabel, to: hasil.toLabel, ratePerAlamat: hasil.ratePerAlamat, orang });
   } catch (err) {
     handleErr(err, res);
   }

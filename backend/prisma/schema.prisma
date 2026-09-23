@@ -559,6 +559,18 @@ model User {
   finBankStatementsCreated               FinBankStatement[]              @relation("FinBankStatementCreator")
   finBankStatementsDone                  FinBankStatement[]              @relation("FinReconCompleter")
   finBankLinesMatched                    FinBankStatementLine[]          @relation("FinBankLineMatcher")
+
+  // Snapshot Insentif Driver (24 September 2026) — lihat model
+  // IncentiveSnapshot untuk penjelasan lengkap alur DRAFT->REVIEWED->
+  // APPROVED. SetNull di semua: staf resign, jejak siapa yang menghitung/
+  // review/approve/tolak TETAP ada di baris Snapshot-nya sendiri.
+  incentiveSnapshotsComputed  IncentiveSnapshot[] @relation("IncentiveSnapshotComputer")
+  incentiveSnapshotsReviewed  IncentiveSnapshot[] @relation("IncentiveSnapshotReviewer")
+  incentiveSnapshotsApproved  IncentiveSnapshot[] @relation("IncentiveSnapshotApprover")
+  incentiveSnapshotsRejected  IncentiveSnapshot[] @relation("IncentiveSnapshotRejecter")
+  // Baris total per orang di Snapshot Insentif (relasi biasa, bukan
+  // named — beda dari 4 relasi aktor di atas yang masing-masing peran).
+  incentiveSnapshotLines      IncentiveSnapshotLine[]
 }
 
 // Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
@@ -2611,7 +2623,7 @@ model UnitRevisionJobLink {
   // revisinya "terhapus" (belum ada endpoint delete UnitRevision hari ini,
   // tapi kalau nanti ada, ini WAJIB gagal keras dulu, bukan menghapus
   // jejak siapa yang pernah dibayar/tidak dibayar insentifnya).
-  unitRevision UnitRevision @relation(fields: [unitRevisionId], references: [id], onDelete: Restrict)
+  unitRevision   UnitRevision @relation(fields: [unitRevisionId], references: [id], onDelete: Restrict)
 
   jobId String @unique @map("job_id") @db.Uuid
   // Restrict, alasan sama dengan unitRevisionId di atas — job yang sudah
@@ -2627,6 +2639,190 @@ model UnitRevisionJobLink {
   @@unique([unitRevisionId, jobId])
   @@index([unitRevisionId])
   @@map("unit_revision_job_links")
+}
+
+// ─── SNAPSHOT INSENTIF DRIVER — pembekuan untuk pembayaran (24 September
+// 2026) ───────────────────────────────────────────────────────────────────
+//
+// GET /armada/incentive-summary (services/incentiveEngine.js) adalah
+// ESTIMASI LIVE — recompute tiap kali dipanggil, ikut berubah kalau POD
+// dikoreksi atau status SIM berubah (SENGAJA, lihat catatan panjang di
+// engine itu). Estimasi live itu TIDAK PERNAH dihapus/diganti oleh model
+// di bawah — tetap jalan apa adanya untuk "Performa Saya" & tab Performa
+// admin. Model di bawah adalah lapisan TERPISAH: pembekuan satu titik
+// waktu untuk KEPUTUSAN PEMBAYARAN, lewat alur Finance review -> Owner
+// approval — SLICE INI TIDAK memposting transaksi/pembayaran apa pun ke
+// Finance, murni membekukan ANGKA & BUKTI-nya.
+//
+// ALUR: DRAFT (dihitung, boleh dihapus/ditolak) -> REVIEWED (Finance sudah
+// periksa) -> APPROVED (Owner setuju, IMMUTABLE — tidak bisa dihitung
+// ulang/diedit/dihapus lagi). DRAFT/REVIEWED bisa DITOLAK (rejectionReason
+// wajib) kapan pun sebelum APPROVED. Koreksi atas Snapshot yang SUDAH
+// APPROVED HANYA lewat Snapshot ADJUSTMENT baru yang mereferensikan
+// (adjustsSnapshotId) snapshot asalnya — TIDAK PERNAH edit langsung,
+// supaya baris APPROVED manapun bisa dipercaya tidak pernah berubah sejak
+// disetujui (properti yang justru jadi ALASAN fitur ini ada).
+enum IncentiveSnapshotStatus {
+  DRAFT
+  REVIEWED
+  APPROVED
+  REJECTED
+}
+
+model IncentiveSnapshot {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Periode WIB, string tanggal kalender "YYYY-MM-DD" INKLUSIF di kedua
+  // ujung (bukan instant UTC) — sengaja string, bukan DateTime: overlap
+  // check (proteksi #1) & tampilan cukup pakai perbandingan string
+  // leksikografis (YYYY-MM-DD terurut sama dengan kronologis), tidak perlu
+  // konversi zona waktu bolak-balik. Batas SEBENARNYA (instant UTC utk
+  // query completedAt) dihitung ulang dari string ini lewat
+  // batasPeriodeWIB() di incentiveEngine.js — SATU sumber kebenaran yang
+  // sama dengan estimasi live, bukan logika kalender kedua yang terpisah.
+  periodFrom String @map("period_from")
+  periodTo   String @map("period_to")
+
+  status IncentiveSnapshotStatus @default(DRAFT)
+
+  // Dibekukan SEKALI saat snapshot dibuat — lihat incentiveEngine.js
+  // INCENTIVE_FORMULA_VERSION. Naik tiap kali rumus/dedup/exclude di
+  // engine berubah substantif, supaya Snapshot lama tetap bisa
+  // ditelusuri balik memakai rumus versi berapa saat dibuat.
+  formulaVersion String @map("formula_version")
+
+  totalAlamat Int @map("total_alamat")
+  totalRupiah Int @map("total_rupiah")
+
+  computedAt   DateTime @default(now()) @map("computed_at")
+  computedById String?  @map("computed_by")
+  computedBy   User?    @relation("IncentiveSnapshotComputer", fields: [computedById], references: [id], onDelete: SetNull)
+
+  reviewedAt   DateTime? @map("reviewed_at")
+  reviewedById String?   @map("reviewed_by")
+  reviewedBy   User?     @relation("IncentiveSnapshotReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  approvedAt   DateTime? @map("approved_at")
+  approvedById String?   @map("approved_by")
+  approvedBy   User?     @relation("IncentiveSnapshotApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  rejectedAt      DateTime? @map("rejected_at")
+  rejectedById    String?   @map("rejected_by")
+  rejectedBy      User?     @relation("IncentiveSnapshotRejecter", fields: [rejectedById], references: [id], onDelete: SetNull)
+  rejectionReason String?   @map("rejection_reason")
+
+  // Adjustment/koreksi (proteksi #7) — Snapshot BARU yang mengoreksi
+  // Snapshot ASAL yang SUDAH APPROVED, TANPA mengedit baris asalnya sama
+  // sekali. Restrict: snapshot asal yang punya adjustment tidak boleh
+  // "hilang" rujukannya.
+  adjustsSnapshotId String?             @map("adjusts_snapshot_id") @db.Uuid
+  adjustsSnapshot   IncentiveSnapshot?  @relation("SnapshotAdjustment", fields: [adjustsSnapshotId], references: [id], onDelete: Restrict)
+  adjustments       IncentiveSnapshot[] @relation("SnapshotAdjustment")
+
+  lines   IncentiveSnapshotLine[]
+  details IncentiveSnapshotDetail[]
+  claims  IncentiveSourceClaim[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([periodFrom, periodTo])
+  @@map("incentive_snapshots")
+}
+
+// Total per orang, DIBEKUKAN (proteksi #6) — userName/hasSim/ratePerAlamat
+// adalah NILAI SAAT SNAPSHOT DIBUAT, sengaja didenormalisasi (bukan hanya
+// baca User.hasSim live) supaya perubahan hasSim SETELAHNYA (mis. driver
+// ganti SIM bulan depan) TIDAK PERNAH mengubah angka yang sudah dibekukan
+// di sini — beda total dengan estimasi live yang justru SENGAJA ikut
+// berubah (lihat incentiveEngine.js).
+model IncentiveSnapshotLine {
+  id String @id @default(uuid()) @db.Uuid
+
+  snapshotId String            @map("snapshot_id") @db.Uuid
+  snapshot   IncentiveSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  userName      String  @map("user_name")
+  hasSim        Boolean @map("has_sim")
+  ratePerAlamat Int     @map("rate_per_alamat")
+
+  totalAlamat Int @map("total_alamat")
+  totalRupiah Int @map("total_rupiah")
+  asDriver    Int @map("as_driver")
+  asHelper    Int @map("as_helper")
+
+  details IncentiveSnapshotDetail[]
+
+  @@unique([snapshotId, userId])
+  @@index([snapshotId])
+  @@index([userId])
+  @@map("incentive_snapshot_lines")
+}
+
+// Satu baris PER ALAMAT yang dibekukan — permanen, TIDAK PERNAH dihapus
+// (termasuk kalau snapshotnya REJECTED — histori tetap ada untuk audit,
+// yang dilepas cuma klaim di IncentiveSourceClaim, lihat model itu).
+// userId didenormalisasi dari line (bukan cuma lewat lineId) supaya query
+// "cari semua baris historis untuk 1 orang" tidak perlu join balik.
+model IncentiveSnapshotDetail {
+  id String @id @default(uuid()) @db.Uuid
+
+  snapshotId String            @map("snapshot_id") @db.Uuid
+  snapshot   IncentiveSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  lineId     String                @map("line_id") @db.Uuid
+  line       IncentiveSnapshotLine @relation(fields: [lineId], references: [id], onDelete: Restrict)
+
+  userId     String @map("user_id")
+  orderId    String @map("order_id")
+  tanggalWIB String @map("tanggal_wib")
+
+  asDriver Boolean  @map("as_driver")
+  asHelper Boolean  @map("as_helper")
+  jobIds   String[] @map("job_ids")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Satu (snapshot, orang, order, tanggal) cuma boleh 1 baris DI DALAM
+  // snapshot yang sama (mesin sudah dedup sebelum ditulis ke sini — ini
+  // jaring pengaman kedua di level database).
+  @@unique([snapshotId, userId, orderId, tanggalWIB])
+  @@index([snapshotId])
+  @@index([userId, orderId, tanggalWIB])
+  @@map("incentive_snapshot_details")
+}
+
+// Proteksi #1+#2: cegah SATU alamat (userId+orderId+tanggalWIB) diklaim
+// lebih dari satu Snapshot AKTIF (DRAFT/REVIEWED/APPROVED) sekaligus —
+// itulah "unit insentif dibayar dua kali" yang harus dicegah. UNIQUE
+// constraint di sini adalah PENJAGA SEBENARNYA (level database, aman dari
+// race dua request paralel — lihat proteksi #3), bukan cuma pengecekan
+// aplikasi yang bisa lolos kalau dua transaksi berjalan bersamaan.
+//
+// Baris di sini DIHAPUS (bukan diupdate) saat Snapshot-nya DITOLAK —
+// "melepas" alamat itu supaya bisa di-snapshot ulang di periode
+// berikutnya setelah datanya diperbaiki. Baris TETAP SELAMANYA begitu
+// Snapshot-nya APPROVED (tidak pernah dihapus lagi) — cocok dengan sifat
+// APPROVED yang immutable. IncentiveSnapshotDetail (di atas) TIDAK PERNAH
+// ikut terhapus — tabel itu histori permanen, tabel INI murni klaim aktif.
+model IncentiveSourceClaim {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId     String @map("user_id")
+  orderId    String @map("order_id")
+  tanggalWIB String @map("tanggal_wib")
+
+  snapshotId String            @map("snapshot_id") @db.Uuid
+  snapshot   IncentiveSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, orderId, tanggalWIB])
+  @@index([snapshotId])
+  @@map("incentive_source_claims")
 }
 
 // ─── COMPLAINT CASE — After-Sales lintas divisi (D-116, 11 September 2026) ─

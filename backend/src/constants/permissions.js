@@ -141,6 +141,18 @@ export const PERMISSIONS = {
   // tidak pernah menyentuh buku besar sampai disetujui pemegang
   // FINANCE_APPROVE.
   FINANCE_EXPENSE_SUBMIT: "finance:expense:submit",
+
+  // --- Snapshot Insentif Driver (24 September 2026) ------------------------
+  // EMPAT permission granular (bukan satu "incentive:write"), pola PERSIS
+  // sama alasannya dengan Finance Workspace di atas: "Finance review, Owner
+  // approval" adalah pemisahan tugas yang harus bisa ditegakkan lewat
+  // permission, bukan cuma konvensi nama role — orang yang MEMBUAT draft
+  // Snapshot tidak otomatis boleh MENYETUJUI-nya sendiri kalau timnya nanti
+  // lebih dari satu orang finance.
+  INCENTIVE_SNAPSHOT_CREATE: "incentive:snapshot:create",
+  INCENTIVE_SNAPSHOT_REVIEW: "incentive:snapshot:review",
+  INCENTIVE_SNAPSHOT_APPROVE: "incentive:snapshot:approve",
+  INCENTIVE_SNAPSHOT_READ: "incentive:snapshot:read",
 };
 
 const P = PERMISSIONS;
@@ -190,6 +202,11 @@ const ADMIN_PERMS = [
   // atau membuat role FINANCE_LEAD baru — BUKAN melebarkan FINANCE.
   P.FINANCE_READ, P.FINANCE_POST, P.FINANCE_APPROVE, P.FINANCE_ADMIN,
   P.FINANCE_EXPENSE_SUBMIT,
+  // Snapshot Insentif — ADMIN/OWNER penuh (create+review+approve+read),
+  // konsisten dengan pola FINANCE_ADMIN di atas ("ADMIN memegang SELURUH
+  // permission finance").
+  P.INCENTIVE_SNAPSHOT_CREATE, P.INCENTIVE_SNAPSHOT_REVIEW,
+  P.INCENTIVE_SNAPSHOT_APPROVE, P.INCENTIVE_SNAPSHOT_READ,
 ];
 
 export const ROLE_PERMISSIONS = {
@@ -356,6 +373,12 @@ export const ROLE_PERMISSIONS = {
     // Melihat nilai persediaan & dokumen gudang yang jadi dasar tagihan
     // supplier — BACA SAJA, finance tidak pernah menulis pergerakan stok.
     P.INVENTORY_READ,
+    // Snapshot Insentif (24 September 2026) — Finance MEMBUAT draft &
+    // MEREVIEW ("Finance review, Owner approval" — spec eksplisit), TAPI
+    // SENGAJA TIDAK dapat INCENTIVE_SNAPSHOT_APPROVE — persetujuan akhir
+    // tetap di tangan ADMIN/OWNER/APPROVER, pemisahan tugas yang sama
+    // dengan FINANCE tidak dapat FINANCE_ADMIN di atas.
+    P.INCENTIVE_SNAPSHOT_CREATE, P.INCENTIVE_SNAPSHOT_REVIEW, P.INCENTIVE_SNAPSHOT_READ,
   ],
 
   // ACCOUNTANT (Finance Mobile S2, 19 Sep 2026) — akuntan: membaca seluruh pembukuan dan
@@ -366,6 +389,9 @@ export const ROLE_PERMISSIONS = {
     P.FINANCE_READ, P.FINANCE_POST,
     P.PAYMENT_READ,
     P.DASHBOARD_READ,
+    // Baca saja — akuntan tidak membuat/menyetujui Snapshot, cuma perlu
+    // melihatnya sebagai bagian pembukuan.
+    P.INCENTIVE_SNAPSHOT_READ,
   ],
 
   // APPROVER — penyetuju: membaca dan MEMUTUSKAN (setuju/tolak) pengajuan, tidak
@@ -374,6 +400,10 @@ export const ROLE_PERMISSIONS = {
     P.FINANCE_READ, P.FINANCE_APPROVE,
     P.PAYMENT_READ,
     P.DASHBOARD_READ,
+    // Snapshot Insentif — ini persis peran "Owner approval" yang dimaksud
+    // spec: APPROVER memutuskan setuju/tolak, TIDAK membuat/mereview draft
+    // sendiri (tanpa INCENTIVE_SNAPSHOT_CREATE/REVIEW).
+    P.INCENTIVE_SNAPSHOT_APPROVE, P.INCENTIVE_SNAPSHOT_READ,
   ],
 };
 

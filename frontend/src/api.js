@@ -325,6 +325,24 @@ export const api = {
   updateDriverIncentiveFlags: (driverId, patch) =>
     request(`/armada/drivers/${driverId}`, { method: "PATCH", body: JSON.stringify(patch) }),
 
+  // Snapshot Insentif Driver (24 September 2026) — pembekuan untuk alur
+  // Finance review -> Owner approval, TERPISAH dari getIncentiveSummary
+  // di atas (yang tetap live/estimasi, tidak berubah). Lihat catatan
+  // panjang di backend/src/routes/incentiveSnapshot.js.
+  previewIncentiveSnapshot: (body) => request("/armada/incentive-snapshots/preview", { method: "POST", body: JSON.stringify(body) }),
+  createIncentiveSnapshot: (body, idempotencyKey = mutationKey("snapshot")) =>
+    request("/armada/incentive-snapshots", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  adjustIncentiveSnapshot: (id, body, idempotencyKey = mutationKey("snapshot-adjust")) =>
+    request(`/armada/incentive-snapshots/${id}/adjust`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  listIncentiveSnapshots: (params = {}) => request(`/armada/incentive-snapshots${buildQuery(params)}`),
+  getIncentiveSnapshot: (id) => request(`/armada/incentive-snapshots/${id}`),
+  reviewIncentiveSnapshot: (id, idempotencyKey = mutationKey("snapshot-review")) =>
+    request(`/armada/incentive-snapshots/${id}/review`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
+  approveIncentiveSnapshot: (id, idempotencyKey = mutationKey("snapshot-approve")) =>
+    request(`/armada/incentive-snapshots/${id}/approve`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
+  rejectIncentiveSnapshot: (id, reason, idempotencyKey = mutationKey("snapshot-reject")) =>
+    request(`/armada/incentive-snapshots/${id}/reject`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ reason }) }),
+
   // Kendala & Reschedule (Delivery Tahap 5)
   getIssues: (status) => request(`/armada/issues${status ? `?status=${status}` : ""}`),
   rescheduleIssue: (jobId, data) => request(`/armada/issues/${jobId}/reschedule`, { method: "POST", body: JSON.stringify(data) }),

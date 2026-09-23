@@ -98,6 +98,12 @@ const TABLES_TO_TRUNCATE = [
   // "unit_revisions" (keduanya sudah di daftar ini), sama alasan dokumentasi
   // dengan baris di atas.
   "unit_revision_job_links",
+  // Snapshot Insentif Driver (24 September 2026,
+  // incentiveSnapshot.integration.test.js) — incentive_source_claims dan
+  // incentive_snapshot_details/lines adalah child dari incentive_snapshots
+  // (sudah otomatis ikut ter-CASCADE), disebut eksplisit demi konsistensi
+  // dokumentasi sama seperti baris-baris di atas.
+  "incentive_source_claims", "incentive_snapshot_details", "incentive_snapshot_lines", "incentive_snapshots",
   "user_roles", "User",
 ];
 

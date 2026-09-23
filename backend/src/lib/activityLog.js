@@ -77,6 +77,8 @@ export const ENTITY_TYPES = Object.freeze({
   // Rp3.000/alamat, live recompute — lihat GET /armada/incentive-summary).
   // entityId = user yang statusnya berubah (bukan pelaku — itu actorId).
   USER: "user",
+  // Snapshot Insentif Driver (24 September 2026) — entityId = id Snapshot.
+  INCENTIVE_SNAPSHOT: "incentive_snapshot",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -172,6 +174,20 @@ export const EVENT_TYPES = Object.freeze({
   // (mis. bulk-import), linimasa tetap bisa membedakan asalnya tanpa
   // menambah eventType baru per jalur.
   HAS_SIM_CHANGED: "HAS_SIM_CHANGED",
+
+  // Snapshot Insentif Driver (24 September 2026) — satu event generik per
+  // titik keputusan (pola sama dengan DOCUMENT_APPROVED/dst), detail di
+  // metadata (periode, totalRupiah, alasan, dsb).
+  INCENTIVE_SNAPSHOT_CREATED: "INCENTIVE_SNAPSHOT_CREATED",
+  INCENTIVE_SNAPSHOT_REVIEWED: "INCENTIVE_SNAPSHOT_REVIEWED",
+  INCENTIVE_SNAPSHOT_APPROVED: "INCENTIVE_SNAPSHOT_APPROVED",
+  INCENTIVE_SNAPSHOT_REJECTED: "INCENTIVE_SNAPSHOT_REJECTED",
+  // Adjustment TERCATAT di Snapshot BARU-nya sendiri lewat
+  // INCENTIVE_SNAPSHOT_CREATED (metadata.adjustsSnapshotId terisi) — event
+  // ini KHUSUS ditulis di Snapshot ASAL yang dikoreksi, supaya linimasa
+  // Snapshot asal ikut menunjukkan "pernah dikoreksi oleh Snapshot X",
+  // walau baris asalnya sendiri TIDAK PERNAH diedit.
+  INCENTIVE_SNAPSHOT_ADJUSTED: "INCENTIVE_SNAPSHOT_ADJUSTED",
 });
 
 /**
@@ -358,6 +374,16 @@ export function formatActivitySentence(event) {
     }
     case EVENT_TYPES.HAS_SIM_CHANGED:
       return `Status SIM diubah: ${metadata.from ? "punya SIM" : "tanpa SIM"} → ${metadata.to ? "punya SIM" : "tanpa SIM"} (tarif insentif ${metadata.to ? "Rp7.000" : "Rp3.000"}/alamat)`;
+    case EVENT_TYPES.INCENTIVE_SNAPSHOT_CREATED:
+      return `Snapshot Insentif ${metadata.periodFrom || "?"} s/d ${metadata.periodTo || "?"} dibuat (${metadata.totalAlamat ?? 0} alamat, Rp${(metadata.totalRupiah ?? 0).toLocaleString("id-ID")})${metadata.adjustsSnapshotId ? " — koreksi atas snapshot sebelumnya" : ""}`;
+    case EVENT_TYPES.INCENTIVE_SNAPSHOT_REVIEWED:
+      return `Snapshot Insentif ${metadata.periodFrom || "?"} s/d ${metadata.periodTo || "?"} direview Finance`;
+    case EVENT_TYPES.INCENTIVE_SNAPSHOT_APPROVED:
+      return `Snapshot Insentif ${metadata.periodFrom || "?"} s/d ${metadata.periodTo || "?"} disetujui Owner — Rp${(metadata.totalRupiah ?? 0).toLocaleString("id-ID")}`;
+    case EVENT_TYPES.INCENTIVE_SNAPSHOT_REJECTED:
+      return `Snapshot Insentif ${metadata.periodFrom || "?"} s/d ${metadata.periodTo || "?"} ditolak — ${metadata.reason || "tanpa keterangan"}`;
+    case EVENT_TYPES.INCENTIVE_SNAPSHOT_ADJUSTED:
+      return `Snapshot ini dikoreksi oleh Snapshot baru (${metadata.adjustmentSnapshotId || "—"}) — ${metadata.reason || "tanpa keterangan"}`;
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya
