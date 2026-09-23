@@ -32,6 +32,7 @@
 
 import { ACTIVE_JOB_STATUSES } from "./jobStatus.js";
 import { suggestDeliveryJob } from "./deliveryHandoff.js";
+import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryCommandService.js";
 
 /**
  * Pastikan setiap unit AWAITING_PICKUP milik `orderId` yang belum terikat
@@ -99,36 +100,46 @@ export async function ensurePickupJobForOrder(tx, order, { unitStatus = "AWAITIN
 
   const existing = await tx.job.findFirst({
     where: { orderId, type: "PICKUP", status: "UNSCHEDULED" },
-    select: { id: true, addressText: true },
+    select: { id: true, addressText: true, routeId: true },
   });
 
   if (existing) {
-    await tx.jobUnit.createMany({
-      data: freeUnits.map((u) => ({ jobId: existing.id, unitId: u.id })),
-      skipDuplicates: true,
+    return executeDeliveryCrossBoundaryCommand(tx, {
+      commandType: "AUTO_PICKUP_JOB_EXTEND",
+      aggregateHint: existing.id,
+      request: { orderId, unitStatus, unitIds: freeUnits.map((unit) => unit.id) },
+      mutate: async (commandTx) => {
+        await commandTx.jobUnit.createMany({
+          data: freeUnits.map((u) => ({ jobId: existing.id, unitId: u.id })),
+          skipDuplicates: true,
+        });
+        if (!existing.addressText) {
+          const alamat = alamatDariOrder(order);
+          if (alamat) await commandTx.job.update({ where: { id: existing.id }, data: { addressText: alamat } });
+        }
+        return { value: existing.id, jobIds: [existing.id], routeIds: [existing.routeId] };
+      },
     });
-    // Job existing yang belum sempat punya alamat (dibuat sebelum fix ini,
-    // atau dispatcher belum sempat isi manual) — lengkapi juga, konsisten
-    // dengan job baru di bawah. Job yang SUDAH punya alamat (manual/
-    // otomatis sebelumnya) TIDAK ditimpa.
-    if (!existing.addressText) {
-      const alamat = alamatDariOrder(order);
-      if (alamat) await tx.job.update({ where: { id: existing.id }, data: { addressText: alamat } });
-    }
-    return existing.id;
   }
 
-  const job = await tx.job.create({
-    data: {
-      type: "PICKUP",
-      orderId,
-      status: "UNSCHEDULED",
-      addressText: alamatDariOrder(order),
-      units: { create: freeUnits.map((u) => ({ unitId: u.id })) },
+  return executeDeliveryCrossBoundaryCommand(tx, {
+    commandType: "AUTO_PICKUP_JOB_CREATE",
+    aggregateHint: orderId,
+    request: { orderId, unitStatus, unitIds: freeUnits.map((unit) => unit.id) },
+    mutate: async (commandTx) => {
+      const job = await commandTx.job.create({
+        data: {
+          type: "PICKUP",
+          orderId,
+          status: "UNSCHEDULED",
+          addressText: alamatDariOrder(order),
+          units: { create: freeUnits.map((u) => ({ unitId: u.id })) },
+        },
+        select: { id: true },
+      });
+      return { value: job.id, jobIds: [job.id] };
     },
-    select: { id: true },
   });
-  return job.id;
 }
 
 // D-168 (14 September 2026, laporan owner — gambar Tabel Rute menampilkan

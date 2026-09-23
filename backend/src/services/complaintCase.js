@@ -9,6 +9,7 @@
 // INVENTORY_WRITE/QC_WRITE) yang menjaga, bukan COMPLAINT_WRITE generik.
 
 import { prisma } from "../db.js";
+import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryCommandService.js";
 import { generateComplaintCaseNumber } from "./orderNumberGenerator.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { notifyComplaintCaseOwnerChanged, notifyComplaintCaseHighSeverity } from "./pushNotifications.js";
@@ -333,25 +334,32 @@ export async function createDeliveryTask(caseId, { jobType, accessNotes }, userI
     ? `Pengiriman ulang setelah komplain ${kase.caseNumber} — ${kase.description}`
     : `Pengambilan/inspeksi untuk komplain ${kase.caseNumber} — ${kase.description}`;
 
-  await prisma.$transaction(async (tx) => {
-    const job = await tx.job.create({
-      data: {
-        type, orderId: kase.orderId, complaintCaseId: kase.id,
-        accessNotes: accessNotes?.trim() || defaultNote,
-      },
-    });
-    if (kase.unitId) {
-      await tx.jobUnit.create({ data: { jobId: job.id, unitId: kase.unitId } });
-    }
-    await tx.complaintCase.update({
-      where: { id: kase.id },
-      data: { status: nextStatus, currentOwner: "DELIVERY" },
-    });
-    await recordActivity(tx, {
-      entityType: ENTITY_TYPES.COMPLAINT, entityId: kase.id, eventType: EVENT_TYPES.COMPLAINT_DELIVERY_TASK_CREATED,
-      actorId: userId, metadata: { jobType: type, jobId: job.id },
-    });
-  });
+  await prisma.$transaction((tx) => executeDeliveryCrossBoundaryCommand(tx, {
+    actorId: userId,
+    commandType: "COMPLAINT_DELIVERY_TASK_CREATE",
+    aggregateHint: kase.id,
+    request: { caseId: kase.id, type },
+    mutate: async (commandTx) => {
+      const job = await commandTx.job.create({
+        data: {
+          type, orderId: kase.orderId, complaintCaseId: kase.id,
+          accessNotes: accessNotes?.trim() || defaultNote,
+        },
+      });
+      if (kase.unitId) {
+        await commandTx.jobUnit.create({ data: { jobId: job.id, unitId: kase.unitId } });
+      }
+      await commandTx.complaintCase.update({
+        where: { id: kase.id },
+        data: { status: nextStatus, currentOwner: "DELIVERY" },
+      });
+      await recordActivity(commandTx, {
+        entityType: ENTITY_TYPES.COMPLAINT, entityId: kase.id, eventType: EVENT_TYPES.COMPLAINT_DELIVERY_TASK_CREATED,
+        actorId: userId, metadata: { jobType: type, jobId: job.id },
+      });
+      return { value: job.id, jobIds: [job.id] };
+    },
+  }));
 
   const full = await prisma.complaintCase.findUnique({ where: { id: caseId }, include: complaintCaseInclude });
   beritahuBestEffort(notifyComplaintCaseOwnerChanged, full);

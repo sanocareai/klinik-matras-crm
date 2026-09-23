@@ -109,6 +109,13 @@ const TABLES_TO_TRUNCATE = [
   // incentive_snapshots DAN incentive_snapshot_lines (keduanya di daftar
   // ini), sama alasan dokumentasi dengan baris-baris di atas.
   "incentive_payouts", "incentive_snapshots",
+  // Production + Delivery V2 command/read model. These tables are not all
+  // FK-cascaded from jobs/routes (notably command/outbox/feed), so test
+  // isolation must clear them explicitly.
+  "driver_devices_v2", "driver_sync_events_v2", "driver_feed_states_v2",
+  "route_stop_assignments_v2", "route_publications_v2",
+  "delivery_job_states_v2", "delivery_route_states_v2",
+  "domain_outbox", "v2_commands",
   "user_roles", "User",
 ];
 

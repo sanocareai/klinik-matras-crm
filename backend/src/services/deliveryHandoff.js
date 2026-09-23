@@ -1,3 +1,5 @@
+import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryCommandService.js";
+
 // Integrasi Fase 1 (lanjutan D-006) — jembatan Produksi -> Armada.
 //
 // Sebelum ini: unit yang READY_FOR_DELIVERY cuma memicu WhatsApp ke
@@ -55,28 +57,41 @@ export async function suggestDeliveryJob(tx, unitId) {
 
   const existing = await tx.job.findFirst({
     where: { orderId: unit.orderId, type: "DELIVERY", status: "UNSCHEDULED" },
-    select: { id: true, addressText: true },
+    select: { id: true, addressText: true, routeId: true },
   });
 
   if (existing) {
-    await tx.jobUnit.create({ data: { jobId: existing.id, unitId } });
-    // Job existing yang belum sempat punya alamat (dibuat sebelum fix ini)
-    // — lengkapi juga, konsisten dengan job baru di bawah. Job yang SUDAH
-    // punya alamat TIDAK ditimpa.
-    if (!existing.addressText) {
-      const alamat = alamatDariOrder(unit.order);
-      if (alamat) await tx.job.update({ where: { id: existing.id }, data: { addressText: alamat } });
-    }
-    return;
+    return executeDeliveryCrossBoundaryCommand(tx, {
+      commandType: "PRODUCTION_DELIVERY_HANDOFF_EXTEND",
+      aggregateHint: existing.id,
+      request: { unitId, orderId: unit.orderId },
+      mutate: async (commandTx) => {
+        await commandTx.jobUnit.create({ data: { jobId: existing.id, unitId } });
+        if (!existing.addressText) {
+          const alamat = alamatDariOrder(unit.order);
+          if (alamat) await commandTx.job.update({ where: { id: existing.id }, data: { addressText: alamat } });
+        }
+        return { value: undefined, jobIds: [existing.id], routeIds: [existing.routeId] };
+      },
+    });
   }
 
-  await tx.job.create({
-    data: {
-      type: "DELIVERY",
-      orderId: unit.orderId,
-      status: "UNSCHEDULED",
-      addressText: alamatDariOrder(unit.order),
-      units: { create: [{ unitId }] },
+  return executeDeliveryCrossBoundaryCommand(tx, {
+    commandType: "PRODUCTION_DELIVERY_HANDOFF_CREATE",
+    aggregateHint: unit.orderId,
+    request: { unitId, orderId: unit.orderId },
+    mutate: async (commandTx) => {
+      const job = await commandTx.job.create({
+        data: {
+          type: "DELIVERY",
+          orderId: unit.orderId,
+          status: "UNSCHEDULED",
+          addressText: alamatDariOrder(unit.order),
+          units: { create: [{ unitId }] },
+        },
+        select: { id: true },
+      });
+      return { value: undefined, jobIds: [job.id] };
     },
   });
 }

@@ -43,6 +43,7 @@
 //   docker compose exec backend node scripts/correct-orphan-job-arman-16sep.js --apply
 
 import { prisma } from "../src/db.js";
+import { assertLegacyDeliveryRepairAllowed } from "../src/services/deliveryCrossBoundaryCommandService.js";
 
 const APPLY = process.argv.includes("--apply");
 const JOB_ID = "07c49dcc-cc1c-4034-b57b-901e10f33277";
@@ -59,6 +60,7 @@ const ALASAN_KOREKSI =
   "sungguhan. Baris tidak dihapus — tetap tersedia sebagai riwayat/audit.";
 
 async function main() {
+  if (APPLY) await assertLegacyDeliveryRepairAllowed(prisma, "correct-orphan-job-arman-16sep.js");
   console.log(`Mode: ${APPLY ? "APPLY (menulis ke database)" : "DRY-RUN (cuma pratinjau)"}\n`);
 
   // 1) Pemindaian LUAS (read-only) — job orphan AKTIF company-wide, supaya

@@ -22,6 +22,7 @@
 //   node scripts/backfill-richard-revision-201.js --apply
 
 import { prisma } from "../src/db.js";
+import { assertLegacyDeliveryRepairAllowed } from "../src/services/deliveryCrossBoundaryCommandService.js";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -31,6 +32,7 @@ const COMPLAINT_TEXT =
   "Ada 2 kasur, yang satu perlu dibalikin untuk dipendekkan (dipotong) sesuai permintaan customer — sudah dikonfirmasi sales.";
 
 async function main() {
+  if (APPLY) await assertLegacyDeliveryRepairAllowed(prisma, "backfill-richard-revision-201.js");
   const unit = await prisma.unit.findFirst({
     where: { order: { orderNumber: ORDER_NUMBER } },
     include: { order: { select: { id: true, orderNumber: true, status: true } } },

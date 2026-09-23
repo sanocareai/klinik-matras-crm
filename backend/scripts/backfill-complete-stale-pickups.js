@@ -62,6 +62,7 @@
 
 import { prisma } from "../src/db.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../src/services/orderStatusSync.js";
+import { assertLegacyDeliveryRepairAllowed } from "../src/services/deliveryCrossBoundaryCommandService.js";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -83,6 +84,7 @@ const CUTOFF_ORDER_CREATED = new Date("2026-09-06T00:00:00+07:00"); // order dib
 const HARI_INI = new Date("2026-09-08T00:00:00.000Z"); // scheduledDate < ini = sudah lewat
 
 async function main() {
+  if (APPLY) await assertLegacyDeliveryRepairAllowed(prisma, "backfill-complete-stale-pickups.js");
   console.log(`Mode: ${APPLY ? "APPLY (menulis ke database)" : "DRY-RUN (cuma pratinjau)"}\n`);
 
   const jobs = await prisma.job.findMany({

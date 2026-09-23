@@ -31,10 +31,12 @@
 
 import { prisma } from "../src/db.js";
 import { generateRescheduleCaseNumber } from "../src/services/orderNumberGenerator.js";
+import { assertLegacyDeliveryRepairAllowed } from "../src/services/deliveryCrossBoundaryCommandService.js";
 
 const APPLY = process.argv.includes("--apply");
 
 async function main() {
+  if (APPLY) await assertLegacyDeliveryRepairAllowed(prisma, "backfill-reschedule-cases.js");
   console.log(`Mode: ${APPLY ? "APPLY (menulis ke database)" : "DRY-RUN (cuma pratinjau, tidak menulis apa pun)"}`);
 
   const jobs = await prisma.job.findMany({

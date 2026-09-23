@@ -34,10 +34,12 @@
 //   node scripts/fix-stale-jobs-order-closed.js --apply     (terapkan)
 
 import { prisma } from "../src/db.js";
+import { assertLegacyDeliveryRepairAllowed } from "../src/services/deliveryCrossBoundaryCommandService.js";
 
 const APPLY = process.argv.includes("--apply");
 
 async function main() {
+  if (APPLY) await assertLegacyDeliveryRepairAllowed(prisma, "fix-stale-jobs-order-closed.js");
   const orders = await prisma.order.findMany({
     where: {
       status: { in: ["DELIVERED", "CANCELLED"] },

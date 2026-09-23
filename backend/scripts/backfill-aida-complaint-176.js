@@ -23,6 +23,7 @@
 import { prisma } from "../src/db.js";
 import { transitionStatus, createDeliveryTask, STATUS_LABEL } from "../src/services/complaintCase.js";
 import { syncOrderStatusForUnits } from "../src/services/orderStatusSync.js";
+import { assertLegacyDeliveryRepairAllowed } from "../src/services/deliveryCrossBoundaryCommandService.js";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -31,6 +32,7 @@ const PICKUP_COMPLETED_AT = new Date("2026-09-11T17:00:00+07:00"); // "kemarin s
 const ACTOR_NOTE = "Backfill retroaktif — dikonfirmasi owner: kasur sudah diambil, direvisi produksi 11 Sep sore, siap kirim 12 Sep.";
 
 async function main() {
+  if (APPLY) await assertLegacyDeliveryRepairAllowed(prisma, "backfill-aida-complaint-176.js");
   const kase = await prisma.complaintCase.findUnique({
     where: { caseNumber: CASE_NUMBER },
     include: {

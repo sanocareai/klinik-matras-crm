@@ -22,6 +22,8 @@ import { ACTIVE_JOB_STATUSES } from "./jobStatus.js";
 // status mana yang layak diakui (STATUS_PENGAKUAN) & idempoten per order.
 import { bukukanPengakuanPendapatan } from "./finance/hooks.js";
 import { SETTLED_JOB_STATUSES } from "./deliveryExecution.js";
+import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryCommandService.js";
+import { V2_FLAGS } from "./v2FeatureFlags.js";
 
 // SHIPPING ditambahkan 5 September 2026 (permintaan owner: penanda "sedang
 // di jalan diantar", sebelumnya loncat langsung READY->DELIVERED).
@@ -125,12 +127,21 @@ export async function selesaikanJobBelumJalan(tx, orderId) {
     select: { id: true, routeId: true },
   });
   if (jobs.length === 0) return;
-  await tx.job.updateMany({
-    where: { id: { in: jobs.map((j) => j.id) } },
-    data: { status: "COMPLETED", completedAt: new Date() },
-  });
   const routeIds = [...new Set(jobs.map((j) => j.routeId).filter(Boolean))];
-  for (const routeId of routeIds) await syncRouteCompletionStatus(tx, routeId);
+  return executeDeliveryCrossBoundaryCommand(tx, {
+    flagKey: V2_FLAGS.DELIVERY_EXECUTION_WRITER,
+    commandType: "ORDER_COMPLETE_OPEN_DELIVERY_JOBS",
+    aggregateHint: orderId,
+    request: { orderId, jobIds: jobs.map((job) => job.id) },
+    mutate: async (commandTx) => {
+      await commandTx.job.updateMany({
+        where: { id: { in: jobs.map((j) => j.id) } },
+        data: { status: "COMPLETED", completedAt: new Date() },
+      });
+      for (const routeId of routeIds) await syncRouteCompletionStatus(commandTx, routeId);
+      return { value: undefined, jobIds: jobs.map((job) => job.id), routeIds };
+    },
+  });
 }
 
 // ─── TARIK BALIK DARI DELIVERED (21 September 2026) ──────────────────────
@@ -206,6 +217,12 @@ export async function bukaKembaliJobHasilKaskadeDelivered(tx, orderId) {
   const artefak = kandidat.filter((j) => adalahJobHasilKaskadeDelivered(j, transisi.createdAt));
   if (artefak.length === 0) return hasil;
 
+  return executeDeliveryCrossBoundaryCommand(tx, {
+    flagKey: V2_FLAGS.DELIVERY_EXECUTION_WRITER,
+    commandType: "ORDER_REOPEN_CASCADE_DELIVERY_JOBS",
+    aggregateHint: orderId,
+    request: { orderId, jobIds: artefak.map((job) => job.id) },
+    mutate: async (tx) => {
   for (const j of artefak) {
     const statusSemula = tentukanStatusJobSemula(j);
     await tx.job.update({ where: { id: j.id }, data: { status: statusSemula, completedAt: null } });
@@ -242,7 +259,13 @@ export async function bukaKembaliJobHasilKaskadeDelivered(tx, orderId) {
     }
   }
 
-  return hasil;
+      return {
+        value: hasil,
+        jobIds: artefak.map((job) => job.id),
+        routeIds,
+      };
+    },
+  });
 }
 
 // Job Pengambilan yang NYANGKUT ditutup begitu Order-nya kadung READY
@@ -270,12 +293,21 @@ export async function selesaikanJobPengambilanTertinggal(tx, orderId) {
     select: { id: true, routeId: true },
   });
   if (jobs.length === 0) return;
-  await tx.job.updateMany({
-    where: { id: { in: jobs.map((j) => j.id) } },
-    data: { status: "COMPLETED", completedAt: new Date() },
-  });
   const routeIds = [...new Set(jobs.map((j) => j.routeId).filter(Boolean))];
-  for (const routeId of routeIds) await syncRouteCompletionStatus(tx, routeId);
+  return executeDeliveryCrossBoundaryCommand(tx, {
+    flagKey: V2_FLAGS.DELIVERY_EXECUTION_WRITER,
+    commandType: "ORDER_COMPLETE_STALE_PICKUP_JOBS",
+    aggregateHint: orderId,
+    request: { orderId, jobIds: jobs.map((job) => job.id) },
+    mutate: async (commandTx) => {
+      await commandTx.job.updateMany({
+        where: { id: { in: jobs.map((j) => j.id) } },
+        data: { status: "COMPLETED", completedAt: new Date() },
+      });
+      for (const routeId of routeIds) await syncRouteCompletionStatus(commandTx, routeId);
+      return { value: undefined, jobIds: jobs.map((job) => job.id), routeIds };
+    },
+  });
 }
 
 /** Hitung ulang satu Order dan tulis Order.status kalau berubah + berhak. */

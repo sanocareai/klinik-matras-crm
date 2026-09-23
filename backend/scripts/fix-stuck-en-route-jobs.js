@@ -26,10 +26,12 @@
 //   node scripts/fix-stuck-en-route-jobs.js --apply     (terapkan)
 
 import { prisma } from "../src/db.js";
+import { assertLegacyDeliveryRepairAllowed } from "../src/services/deliveryCrossBoundaryCommandService.js";
 
 const APPLY = process.argv.includes("--apply");
 
 async function main() {
+  if (APPLY) await assertLegacyDeliveryRepairAllowed(prisma, "fix-stuck-en-route-jobs.js");
   const jobs = await prisma.job.findMany({
     where: { status: { in: ["EN_ROUTE", "ARRIVED"] } },
     include: {

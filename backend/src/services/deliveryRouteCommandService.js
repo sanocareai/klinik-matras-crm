@@ -36,7 +36,7 @@ async function lockRoute(tx, routeId) {
   await tx.$queryRaw`SELECT id FROM routes WHERE id = ${routeId}::uuid FOR UPDATE`;
 }
 
-async function syncAffectedJobStates(tx, jobIds) {
+export async function syncAffectedJobStates(tx, jobIds) {
   if (!jobIds.length) return;
   const jobs = await tx.job.findMany({ where: { id: { in: [...new Set(jobIds)] } } });
   for (const job of jobs) {
@@ -72,18 +72,47 @@ function assignmentStatus(routeStatus, stopStatus) {
 export async function synchronizeDeliveryRouteLifecycle(tx, { routeId, actorId = null, reason = "Execution lifecycle sync" }) {
   if (!routeId) return null;
   const [route, state] = await Promise.all([
-    tx.route.findUnique({ where: { id: routeId }, include: DELIVERY_V2_ROUTE_INCLUDE }),
+    tx.route.findUnique({ where: { id: routeId }, select: { status: true } }),
     tx.deliveryRouteState.findUnique({ where: { routeId } }),
   ]);
   if (!route || !state || state.lifecycleStatus === route.status) return null;
+  return projectDeliveryRouteAfterExternalMutation(tx, {
+    routeId,
+    actorId,
+    reason,
+    eventType: "delivery.route.lifecycle.changed",
+  });
+}
+
+/**
+ * Rebuild the immutable publication/draft projection after a mutation owned
+ * by another in-process bounded context. The caller already owns `tx`; this
+ * function deliberately does not open a nested transaction.
+ */
+export async function projectDeliveryRouteAfterExternalMutation(tx, {
+  routeId,
+  actorId = null,
+  reason = "Cross-boundary Delivery mutation",
+  dedupeKey = null,
+  eventType = null,
+}) {
+  if (!routeId) return null;
+  await tx.$queryRaw`SELECT id FROM delivery_route_states_v2 WHERE route_id = ${routeId}::uuid FOR UPDATE`;
+  const [route, state] = await Promise.all([
+    tx.route.findUnique({ where: { id: routeId }, include: DELIVERY_V2_ROUTE_INCLUDE }),
+    tx.deliveryRouteState.findUnique({ where: { routeId } }),
+  ]);
+  if (!route) return null;
+  if (!state) throw conflict("Route belum memiliki baseline V2; jalankan catch-up dahulu", "V2_BASELINE_MISSING");
   const previousPublication = state.currentPublicationVersion == null ? null : await tx.routePublication.findUnique({
     where: { routeId_publicationVersion: { routeId, publicationVersion: state.currentPublicationVersion } },
   });
   const nextRevision = state.routeRevision + 1;
-  const nextPublicationVersion = (state.currentPublicationVersion || 0) + 1;
+  const shouldPublish = route.status !== "DRAFT" || state.currentPublicationVersion != null;
+  const nextPublicationVersion = shouldPublish ? (state.currentPublicationVersion || 0) + 1 : null;
   const snapshot = buildDeliveryRouteSnapshot(route, { routeRevision: nextRevision, publicationVersion: nextPublicationVersion });
   const checksum = deliveryV2Checksum(snapshot);
-  if (previousPublication?.status === "ACTIVE") {
+  if (shouldPublish && previousPublication?.status === "ACTIVE") {
     await tx.routePublication.update({
       where: { id: previousPublication.id },
       data: { status: route.status === "CANCELLED" ? "REVOKED" : "SUPERSEDED", supersededAt: new Date() },
@@ -93,42 +122,45 @@ export async function synchronizeDeliveryRouteLifecycle(tx, { routeId, actorId =
       data: { status: "REVOKED", revokedAt: new Date() },
     });
   }
-  const publication = await tx.routePublication.create({
-    data: {
-      routeId,
-      publicationVersion: nextPublicationVersion,
-      routeRevision: nextRevision,
-      status: publicationStatus(route.status),
-      snapshot,
-      checksum,
-      reason,
-      publishedById: actorId,
-      assignments: {
-        create: snapshot.stops.map((stop) => ({
-          jobId: stop.jobId,
-          sequence: stop.sequence,
-          driverId: snapshot.driverId,
-          helperId: snapshot.helperId,
-          vehicleId: snapshot.vehicleId,
-          status: assignmentStatus(route.status, stop.status),
-          revokedAt: route.status === "CANCELLED" ? new Date() : null,
-          completedAt: stop.status === "COMPLETED" ? new Date() : null,
-          sourceChecksum: deliveryV2Checksum(stop),
-        })),
+  let publication = null;
+  if (shouldPublish) {
+    publication = await tx.routePublication.create({
+      data: {
+        routeId,
+        publicationVersion: nextPublicationVersion,
+        routeRevision: nextRevision,
+        status: publicationStatus(route.status),
+        snapshot,
+        checksum,
+        reason,
+        publishedById: actorId,
+        assignments: {
+          create: snapshot.stops.map((stop) => ({
+            jobId: stop.jobId,
+            sequence: stop.sequence,
+            driverId: snapshot.driverId,
+            helperId: snapshot.helperId,
+            vehicleId: snapshot.vehicleId,
+            status: assignmentStatus(route.status, stop.status),
+            revokedAt: route.status === "CANCELLED" ? new Date() : null,
+            completedAt: stop.status === "COMPLETED" ? new Date() : null,
+            sourceChecksum: deliveryV2Checksum(stop),
+          })),
+        },
       },
-    },
-  });
-  const oldRecipients = previousPublication ? routeRecipients(previousPublication.snapshot) : [];
-  const newRecipients = visibleRecipients(route.status, snapshot);
-  await appendRouteFeedChanges(tx, {
-    oldRecipients, newRecipients, routeId, routeRevision: nextRevision,
-    publicationVersion: nextPublicationVersion, checksum,
-  });
+    });
+    const oldRecipients = previousPublication ? routeRecipients(previousPublication.snapshot) : [];
+    const newRecipients = visibleRecipients(route.status, snapshot);
+    await appendRouteFeedChanges(tx, {
+      oldRecipients, newRecipients, routeId, routeRevision: nextRevision,
+      publicationVersion: nextPublicationVersion, checksum,
+    });
+  }
   await tx.deliveryRouteState.update({
     where: { routeId },
     data: {
       routeRevision: nextRevision,
-      currentPublicationVersion: nextPublicationVersion,
+      currentPublicationVersion: nextPublicationVersion ?? state.currentPublicationVersion,
       lifecycleStatus: route.status,
       draftSnapshot: snapshot,
       draftChecksum: checksum,
@@ -137,10 +169,17 @@ export async function synchronizeDeliveryRouteLifecycle(tx, { routeId, actorId =
   });
   await tx.domainOutbox.create({
     data: {
-      domain: "DELIVERY", eventType: "delivery.route.lifecycle.changed",
+      domain: "DELIVERY",
+      eventType: eventType || (shouldPublish ? "delivery.route.publication.changed" : "delivery.route.draft.changed"),
       aggregateType: "Route", aggregateId: routeId, aggregateRevision: nextRevision,
-      dedupeKey: `delivery-route-lifecycle:${routeId}:${nextRevision}`,
-      payload: { routeId, routeRevision: nextRevision, publicationVersion: nextPublicationVersion, status: route.status, checksum },
+      dedupeKey: dedupeKey || `delivery-route-external:${routeId}:${nextRevision}`,
+      payload: {
+        routeId,
+        routeRevision: nextRevision,
+        publicationVersion: nextPublicationVersion,
+        status: route.status,
+        checksum,
+      },
     },
   });
   return { routeRevision: nextRevision, publicationVersion: nextPublicationVersion, publication };

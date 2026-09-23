@@ -40,10 +40,12 @@
 import { prisma } from "../src/db.js";
 import { geocodeAddress } from "../src/services/maps.js";
 import { ACTIVE_JOB_STATUSES } from "../src/services/jobStatus.js";
+import { assertLegacyDeliveryRepairAllowed } from "../src/services/deliveryCrossBoundaryCommandService.js";
 
 const APPLY = process.argv.includes("--apply");
 
 async function main() {
+  if (APPLY) await assertLegacyDeliveryRepairAllowed(prisma, "backfill-job-geocode-from-order-link.js");
   console.log(`Mode: ${APPLY ? "APPLY (menulis ke database)" : "DRY-RUN (cuma pratinjau)"}\n`);
 
   const jobs = await prisma.job.findMany({

@@ -55,10 +55,12 @@
 
 import { prisma } from "../src/db.js";
 import { syncOrderStatus } from "../src/services/orderStatusSync.js";
+import { assertLegacyDeliveryRepairAllowed } from "../src/services/deliveryCrossBoundaryCommandService.js";
 
 const APPLY = process.argv.includes("--apply");
 
 async function main() {
+  if (APPLY) await assertLegacyDeliveryRepairAllowed(prisma, "fix-baru-order-units.js");
   console.log(APPLY ? "=== MODE APPLY — akan menulis ke database ===" : "=== DRY-RUN — tidak ada yang diubah ===");
   console.log("");
 

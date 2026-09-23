@@ -23,6 +23,11 @@ import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus, selesaikanJobBelumJalan, selesaikanJobPengambilanTertinggal, bukaKembaliJobHasilKaskadeDelivered } from "../services/orderStatusSync.js";
 import { suggestDeliveryJob } from "../services/deliveryHandoff.js";
 import { ensurePickupJobForOrder } from "../services/armadaAutoJob.js";
+import {
+  assertLegacyDeliveryJobDeleteAllowed,
+  executeDeliveryCrossBoundaryCommand,
+} from "../services/deliveryCrossBoundaryCommandService.js";
+import { V2_FLAGS } from "../services/v2FeatureFlags.js";
 import { ACTIVE_JOB_STATUSES } from "../services/jobStatus.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SESSION_UNKNOWN_ERROR } from "./conversations.js";
@@ -559,10 +564,28 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
       // PATCH order (dipakai Sales CRM, tidak selalu berurusan dengan
       // Armada) tetap cepat & tidak bergantung layanan geocoding eksternal.
       if (locationUrl !== undefined && locationUrl !== sebelum.locationUrl) {
-        await tx.job.updateMany({
+        const jobsWithCachedLocation = await tx.job.findMany({
           where: { orderId: updated.id, lat: { not: null } },
-          data: { lat: null, lng: null },
+          select: { id: true, routeId: true },
         });
+        if (jobsWithCachedLocation.length > 0) {
+          await executeDeliveryCrossBoundaryCommand(tx, {
+            commandType: "ORDER_LOCATION_CACHE_INVALIDATE",
+            aggregateHint: updated.id,
+            request: { orderId: updated.id },
+            mutate: async (commandTx) => {
+              await commandTx.job.updateMany({
+                where: { id: { in: jobsWithCachedLocation.map((job) => job.id) } },
+                data: { lat: null, lng: null },
+              });
+              return {
+                value: undefined,
+                jobIds: jobsWithCachedLocation.map((job) => job.id),
+                routeIds: jobsWithCachedLocation.map((job) => job.routeId),
+              };
+            },
+          });
+        }
       }
 
       // Lepas override -> langsung hitung ulang di transaksi yang sama,
@@ -738,16 +761,36 @@ orderRouter.post("/:id/reopen-for-pickup", requirePermission(P.ORDER_WRITE), asy
       });
       await ensurePickupJobForOrder(tx, order);
 
-      await tx.job.updateMany({
+      const stalePickupJobs = await tx.job.findMany({
         where: {
           orderId: order.id, type: "PICKUP", status: "COMPLETED",
           completedAt: null, proofPhotoUrls: { equals: [] },
         },
-        data: {
-          status: "FAILED",
-          failureReason: "Ditutup otomatis oleh pembersihan data 8 September 2026 (backfill-complete-stale-pickups.js) — BUKAN pengambilan yang benar-benar terjadi. Order dibuka kembali untuk pengambilan sungguhan, lihat job Pengambilan baru.",
-        },
+        select: { id: true, routeId: true },
       });
+      if (stalePickupJobs.length > 0) {
+        await executeDeliveryCrossBoundaryCommand(tx, {
+          flagKey: V2_FLAGS.DELIVERY_EXECUTION_WRITER,
+          actorId: req.user?.id || null,
+          commandType: "ORDER_REOPEN_STALE_PICKUP_JOBS",
+          aggregateHint: order.id,
+          request: { orderId: order.id, jobIds: stalePickupJobs.map((job) => job.id) },
+          mutate: async (commandTx) => {
+            await commandTx.job.updateMany({
+              where: { id: { in: stalePickupJobs.map((job) => job.id) } },
+              data: {
+                status: "FAILED",
+                failureReason: "Ditutup otomatis oleh pembersihan data 8 September 2026 (backfill-complete-stale-pickups.js) — BUKAN pengambilan yang benar-benar terjadi. Order dibuka kembali untuk pengambilan sungguhan, lihat job Pengambilan baru.",
+              },
+            });
+            return {
+              value: undefined,
+              jobIds: stalePickupJobs.map((job) => job.id),
+              routeIds: stalePickupJobs.map((job) => job.routeId),
+            };
+          },
+        });
+      }
 
       sebelum = order.status;
       await tx.order.update({
@@ -2065,10 +2108,29 @@ async function checkCancelBlockers(orderId) {
 // COMPLETED SENGAJA tidak disentuh sama sekali — itu riwayat asli yang
 // sudah benar, tidak ada yang perlu "digagalkan".
 async function gagalkanJobAktif(tx, orderId) {
-  await tx.job.updateMany({
+  const jobs = await tx.job.findMany({
     where: { orderId, status: { in: ["EN_ROUTE", "ARRIVED"] } },
-    data: { status: "FAILED", failureReason: "Order dibatalkan sales — dihentikan otomatis, bukan kegagalan driver di lapangan." },
+    select: { id: true, routeId: true },
   });
+  if (jobs.length > 0) {
+    await executeDeliveryCrossBoundaryCommand(tx, {
+      flagKey: V2_FLAGS.DELIVERY_EXECUTION_WRITER,
+      commandType: "ORDER_CANCEL_ACTIVE_DELIVERY_JOBS",
+      aggregateHint: orderId,
+      request: { orderId, jobIds: jobs.map((job) => job.id) },
+      mutate: async (commandTx) => {
+        await commandTx.job.updateMany({
+          where: { id: { in: jobs.map((job) => job.id) } },
+          data: { status: "FAILED", failureReason: "Order dibatalkan sales — dihentikan otomatis, bukan kegagalan driver di lapangan." },
+        });
+        return {
+          value: undefined,
+          jobIds: jobs.map((job) => job.id),
+          routeIds: jobs.map((job) => job.routeId),
+        };
+      },
+    });
+  }
   // Kasus reschedule AKTIF ikut ditutup (13 September 2026, D-160 lanjutan,
   // kasus nyata Mizroza/RES-10092026-050) — job.status FAILED TETAP apa
   // adanya (itu benar, delivery-nya memang gagal), TAPI kalau job ini
@@ -2091,8 +2153,17 @@ async function gagalkanJobAktif(tx, orderId) {
 // yang SAMA persis, lihat armada.js). Job EN_ROUTE/ARRIVED/COMPLETED tidak
 // akan pernah sampai sini — checkCancelBlockers sudah menolak lebih dulu.
 async function hapusJobBelumJalan(tx, orderId) {
-  await tx.job.deleteMany({
+  const jobs = await tx.job.findMany({
     where: { orderId, status: { in: ["UNSCHEDULED", "SCHEDULED", "ASSIGNED"] } },
+    select: { id: true },
+  });
+  if (jobs.length === 0) return;
+  await assertLegacyDeliveryJobDeleteAllowed(tx, {
+    operation: "ORDER_CANCEL_DELETE_UNSTARTED_JOBS",
+    jobIds: jobs.map((job) => job.id),
+  });
+  await tx.job.deleteMany({
+    where: { id: { in: jobs.map((job) => job.id) } },
   });
 }
 
@@ -2160,7 +2231,7 @@ orderRouter.post("/:id/cancel", async (req, res) => {
     res.json(updated);
   } catch (err) {
     console.error("cancel order error:", err);
-    res.status(500).json({ error: "Gagal membatalkan order" });
+    res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : "Gagal membatalkan order" });
   }
 });
 

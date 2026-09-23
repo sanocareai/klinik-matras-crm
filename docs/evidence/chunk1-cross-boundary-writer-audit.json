@@ -1,0 +1,723 @@
+{
+  "findings": [
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 1052,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2236,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2242,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2294,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2330,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2458,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2489,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2519,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2527,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2544,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2552,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2558,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2571,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2711,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2741,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2756,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2967,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 2973,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 3027,
+      "ok": true,
+      "operation": "delete"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 3174,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 3275,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 3420,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 3451,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 3535,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 3676,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 3682,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4120,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4126,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4244,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4343,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4369,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4396,
+      "ok": true,
+      "operation": "delete"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4435,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4780,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4883,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4893,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 4954,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 5030,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 5234,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 5238,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 5263,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 5716,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 5781,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ROUTER_GATED_COMMAND_OWNER",
+      "file": "src/routes/armada.js",
+      "line": 5885,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/routes/orders.js",
+      "line": 577,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/routes/orders.js",
+      "line": 779,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/routes/orders.js",
+      "line": 2122,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/routes/orders.js",
+      "line": 2165,
+      "ok": true,
+      "operation": "deleteMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/services/armadaAutoJob.js",
+      "line": 118,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/services/armadaAutoJob.js",
+      "line": 130,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/services/complaintCase.js",
+      "line": 343,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/services/deliveryHandoff.js",
+      "line": 72,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/services/deliveryHandoff.js",
+      "line": 84,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "V2_COMMAND_OWNER",
+      "file": "src/services/deliveryJobCommandService.js",
+      "line": 163,
+      "ok": true,
+      "operation": "delete"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_COMMAND_OWNER",
+      "file": "src/services/deliveryRouteCommandService.js",
+      "line": 433,
+      "ok": true,
+      "operation": "delete"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/services/orderStatusSync.js",
+      "line": 106,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/services/orderStatusSync.js",
+      "line": 137,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/services/orderStatusSync.js",
+      "line": 228,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/services/orderStatusSync.js",
+      "line": 257,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "CROSS_BOUNDARY_ADAPTER",
+      "file": "src/services/orderStatusSync.js",
+      "line": 303,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "ARMADA_COMMAND_CALLBACK",
+      "file": "src/services/rescheduleCase.js",
+      "line": 82,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/backfill-aida-complaint-176.js",
+      "line": 67,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/backfill-complete-stale-pickups.js",
+      "line": 119,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/backfill-job-geocode-from-order-link.js",
+      "line": 89,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/backfill-reschedule-cases.js",
+      "line": 109,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/backfill-richard-revision-201.js",
+      "line": 104,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/backfill-route-completion.js",
+      "line": null,
+      "ok": true,
+      "operation": "indirect mutation"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/clear-non-link-job-geocode.js",
+      "line": 65,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/correct-orphan-job-arman-16sep.js",
+      "line": 108,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/fix-baru-order-units.js",
+      "line": 154,
+      "ok": true,
+      "operation": "delete"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/fix-stale-jobs-order-closed.js",
+      "line": 76,
+      "ok": true,
+      "operation": "updateMany"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "LEGACY_REPAIR_APPLY_GUARDED",
+      "file": "scripts/fix-stuck-en-route-jobs.js",
+      "line": 59,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/catchup-rehearsal.js",
+      "line": 33,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/catchup-rehearsal.js",
+      "line": 38,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 33,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 43,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 59,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 60,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 91,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 92,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 142,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 161,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 179,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 189,
+      "ok": true,
+      "operation": "create"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 203,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 204,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "job",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 220,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 221,
+      "ok": true,
+      "operation": "update"
+    },
+    {
+      "aggregate": "route",
+      "disposition": "V2_MIGRATION_OR_REHEARSAL_HARNESS",
+      "file": "scripts/production-delivery-v2/delivery-writer-rehearsal.js",
+      "line": 241,
+      "ok": true,
+      "operation": "update"
+    }
+  ],
+  "generatedAt": "2026-09-23T17:40:34.079Z",
+  "reportType": "delivery-v2-writer-ownership-audit",
+  "totals": {
+    "mutationSites": 89,
+    "ownedOrGuarded": 89,
+    "unowned": 0
+  }
+}

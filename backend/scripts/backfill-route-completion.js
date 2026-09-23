@@ -12,10 +12,12 @@
 
 import { prisma } from "../src/db.js";
 import { syncRouteCompletionStatus } from "../src/services/orderStatusSync.js";
+import { assertLegacyDeliveryRepairAllowed } from "../src/services/deliveryCrossBoundaryCommandService.js";
 
 const APPLY = process.argv.includes("--apply");
 
 async function main() {
+  if (APPLY) await assertLegacyDeliveryRepairAllowed(prisma, "backfill-route-completion.js");
   console.log(`Mode: ${APPLY ? "APPLY (menulis ke database)" : "DRY-RUN (cuma pratinjau)"}\n`);
 
   const routes = await prisma.route.findMany({
