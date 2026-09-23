@@ -103,8 +103,19 @@ export default function PerformaScreen({ navigation }) {
               <Text style={styles.driverStat}>Sebagai driver: <Text style={{ color: theme.ACCENT }}>{me.asDriver}</Text></Text>
               <Text style={styles.driverStat}>Sebagai helper: <Text style={{ color: theme.ACCENT }}>{me.asHelper}</Text></Text>
             </View>
+            {/* Label "Estimasi Insentif" + catatan bisa berubah (audit
+                insentif, 23 September 2026) — angka ini live recompute
+                dari data SEKARANG (lihat catatan panjang di backend
+                GET /armada/incentive-summary): bisa berubah kalau admin
+                mengoreksi POD job lampau atau status SIM berubah, dan
+                BUKAN status "sudah dibayar" — sistem ini tidak melacak
+                pembayaran sama sekali, murni estimasi hitung-hitungan. */}
+            <Text style={styles.estimasiLabel}>Estimasi Insentif</Text>
             <Text style={styles.totalInsentif}>
               {formatRupiah(me.totalInsentif)} <Text style={{ color: theme.INK3, fontWeight: "600" }}>({formatRupiah(me.ratePerAlamat)}/alamat)</Text>
+            </Text>
+            <Text style={styles.disclaimerText}>
+              Estimasi berdasarkan data terbaru — bisa berubah, bukan status sudah/akan dibayar.
             </Text>
 
             <Pressable style={styles.detailToggle} onPress={() => setExpanded((v) => !v)}>
@@ -166,7 +177,9 @@ function makeStyles(t) {
     simBadgeText: { fontSize: 10, fontWeight: "700" },
     driverStatsRow: { flexDirection: "row", gap: 14, marginTop: 10 },
     driverStat: { color: t.INK2, fontSize: 12, fontWeight: "600" },
-    totalInsentif: { marginTop: 8, fontSize: 15, fontWeight: "700", color: t.ACCENT },
+    estimasiLabel: { marginTop: 10, fontSize: 10, fontWeight: "700", color: t.INK3, textTransform: "uppercase", letterSpacing: 0.4 },
+    totalInsentif: { marginTop: 2, fontSize: 15, fontWeight: "700", color: t.ACCENT },
+    disclaimerText: { marginTop: 4, fontSize: 10.5, color: t.INK3, lineHeight: 14 },
     detailToggle: { marginTop: 12, alignSelf: "stretch", alignItems: "center", paddingVertical: 8 },
     detailToggleText: { color: t.ACCENT, fontSize: 12.5, fontWeight: "700" },
     detailRow: { backgroundColor: t.TRACK_BG, borderRadius: 10, padding: 8 },

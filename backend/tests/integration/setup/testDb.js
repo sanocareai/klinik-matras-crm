@@ -79,6 +79,12 @@ const TABLES_TO_TRUNCATE = [
   // ini otomatis membersihkan job_units/job_position_pings/job_issue_logs/
   // vehicle_expenses (semua FK ke jobs/routes), tidak perlu disebut sendiri.
   "jobs", "routes",
+  // Audit insentif driver (23 September 2026,
+  // incentiveSummary.integration.test.js) — Job.complaintCaseId FK ke
+  // ComplaintCase (SetNull), jadi baris uji yang membuat ComplaintCase
+  // untuk menguji exclude "redelivery dari komplain" perlu ditruncate
+  // eksplisit juga, sama alasan dengan "jobs"/"routes" di atas.
+  "complaint_cases",
   "user_roles", "User",
 ];
 

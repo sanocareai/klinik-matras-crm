@@ -63,6 +63,13 @@ export const ENTITY_TYPES = Object.freeze({
   // Rekonsiliasi bank: pencocokan/pelepasan baris koran dengan mutasi buku (S9).
   FIN_BANK_STATEMENT: "fin_bank_statement",
   FIN_LEGACY_BATCH: "fin_legacy_batch", // Data Sebelum Sistem (register pendapatan historis non-posting)
+  // Hardening insentif driver (23 September 2026) — koreksi admin atas
+  // driver/helper/completedAt POD (PATCH /armada/pod/:jobId/edit) LANGSUNG
+  // mengubah angka insentif periode lampau (live recompute dari field ini,
+  // lihat GET /armada/incentive-summary), tapi sebelumnya cuma tercatat
+  // sebagai teks bebas podEditReason — tidak ada nilai LAMA yang bisa
+  // ditelusuri. JOB baru di sini, pola sama dengan MATERIAL/ORDER dst.
+  JOB: "job",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -145,6 +152,13 @@ export const EVENT_TYPES = Object.freeze({
   // buku besar sama sekali — edit langsung, tidak perlu reversal).
   DOCUMENT_CORRECTED: "DOCUMENT_CORRECTED",
   DOCUMENT_EDITED: "DOCUMENT_EDITED",
+
+  // Hardening insentif driver (23 September 2026) — pola sama dengan
+  // MATERIAL_UPDATED: satu event generik, nilai LAMA dan BARU per field
+  // yang berubah (driverId/helperId/completedAt) di metadata. Cuma dicatat
+  // kalau salah satu dari 3 field itu BENAR-BENAR berubah — edit yang
+  // hanya mengganti foto/alasan tidak memicu event ini (lihat pemanggil).
+  POD_EDITED: "POD_EDITED",
 });
 
 /**
@@ -321,6 +335,13 @@ export function formatActivitySentence(event) {
       return fields.length
         ? `Dokumen ${nomor} diubah (masih ${metadata.status || "draft"}): ${fields.join(", ")}`
         : `Dokumen ${nomor} diubah (masih ${metadata.status || "draft"})`;
+    }
+    case EVENT_TYPES.POD_EDITED: {
+      const label = { driverId: "driver", helperId: "helper", completedAt: "waktu selesai" };
+      const fields = Object.keys(metadata.changes || {}).map((f) => label[f] || f);
+      return fields.length
+        ? `POD job ${metadata.orderNumber || "—"} dikoreksi admin (${fields.join(", ")} berubah) — ${metadata.reason || "tanpa keterangan"}`
+        : `POD job ${metadata.orderNumber || "—"} dikoreksi admin — ${metadata.reason || "tanpa keterangan"}`;
     }
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice

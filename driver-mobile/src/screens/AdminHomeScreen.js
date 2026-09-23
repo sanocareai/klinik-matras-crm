@@ -1505,6 +1505,15 @@ function PerformaView({ performa, periode, setPeriode, theme: t, styles }) {
         ))}
       </View>
 
+      {/* Disclaimer Estimasi (audit insentif, 23 September 2026) — angka di
+          tab ini LIVE RECOMPUTE dari data sekarang (lihat catatan panjang
+          di backend GET /armada/incentive-summary), bukan status "sudah
+          dibayar" — sistem ini tidak melacak pembayaran sama sekali. Satu
+          banner untuk seluruh tab, bukan diulang per kartu driver. */}
+      <Text style={styles.disclaimerText}>
+        Estimasi Insentif berdasarkan data terbaru — bisa berubah kalau ada koreksi POD atau status SIM, bukan status sudah/akan dibayar.
+      </Text>
+
       {isLoading ? (
         <View style={styles.center}><ActivityIndicator color={t.ACCENT} /></View>
       ) : error ? (
@@ -1535,7 +1544,7 @@ function PerformaView({ performa, periode, setPeriode, theme: t, styles }) {
                   <Text style={styles.driverStat}>Sebagai helper: <Text style={{ color: t.ACCENT }}>{o.asHelper}</Text></Text>
                 </View>
                 <Text style={[styles.driverStat, { marginTop: 4, fontWeight: "700", color: t.ACCENT }]}>
-                  {formatRupiah(o.totalInsentif)} <Text style={{ color: t.INK3, fontWeight: "600" }}>({formatRupiah(o.ratePerAlamat)}/alamat)</Text>
+                  Estimasi Insentif: {formatRupiah(o.totalInsentif)} <Text style={{ color: t.INK3, fontWeight: "600" }}>({formatRupiah(o.ratePerAlamat)}/alamat)</Text>
                 </Text>
 
                 {expanded && (
@@ -1586,6 +1595,7 @@ function makeStyles(t) {
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: 40, paddingBottom: 80 },
     errorText: { color: t.RED, fontSize: 13, textAlign: "center" },
     emptyText: { color: t.INK2, fontSize: 13, textAlign: "center" },
+    disclaimerText: { color: t.INK3, fontSize: 10.5, lineHeight: 14, marginBottom: 10 },
     // paddingBottom 96 (bukan 24) — ruang buat BottomNavBar melayang
     // (fase 2 redesign, lihat BottomNavBar.js) supaya card terakhir tidak
     // ketutupan bar.

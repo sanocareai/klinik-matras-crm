@@ -20,7 +20,7 @@ import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, hasPermission, rolesOf, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { startOfDayWIB, endOfDayExclusiveWIB, WIB_TZ } from "../utils/wib.js";
+import { startOfDayWIB, startOfMonthWIB, endOfDayExclusiveWIB, WIB_TZ } from "../utils/wib.js";
 import { sendMedia, sendText } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
@@ -2067,10 +2067,21 @@ armadaRouter.get("/incentive-summary", requireAnyPermission(P.JOB_READ, P.JOB_OW
     const { from, to } = req.query;
     // Default "bulan ini" (WIB) kalau tidak dikirim — insentif lazimnya
     // dihitung per periode berjalan, bukan akumulasi dari awal selamanya.
-    const now = new Date(Date.now() + 7 * 3600_000);
-    const defaultFrom = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    //
+    // BUG DIPERBAIKI (audit insentif, 23 September 2026) — batas AWAL
+    // periode SEBELUMNYA pakai toDateOnly(from)/Date.UTC(...) (UTC
+    // midnight), BUKAN startOfDayWIB/startOfMonthWIB seperti seharusnya
+    // (lihat aturan di utils/wib.js: "TEPI MASUK ... WAJIB lewat helper di
+    // file ini"). Akibatnya job yang selesai jam 00:00–06:59 WIB di
+    // tanggal AWAL rentang (custom `from`, atau tanggal 1 tiap bulan untuk
+    // default "Bulan Ini") hilang DIAM-DIAM dari hitungan — completedAt-nya
+    // (UTC) jatuh SEBELUM batas UTC-midnight yang salah itu. Batas AKHIR
+    // (`to`) sudah benar pakai endOfDayExclusiveWIB sejak awal, cuma batas
+    // AWAL yang keliru — sekarang keduanya konsisten pakai helper WIB yang
+    // sama.
+    const nowWIB = new Date(Date.now() + 7 * 3600_000);
     const completedAtWhere = {
-      gte: from ? toDateOnly(from) : defaultFrom,
+      gte: from ? startOfDayWIB(from) : startOfMonthWIB(nowWIB.getUTCFullYear(), nowWIB.getUTCMonth() + 1),
       // endOfDayExclusiveWIB, bukan toDateOnly(to) polos — completedAt
       // adalah TIMESTAMP (jam berapa pun di hari itu), toDateOnly(to)
       // sendirian berarti "sebelum jam 00:00 WIB tanggal `to`" — buang
@@ -2085,7 +2096,35 @@ armadaRouter.get("/incentive-summary", requireAnyPermission(P.JOB_READ, P.JOB_OW
     // tiap "alamat" di daftar bisa ditelusuri balik ke resi/customer/
     // alamat aslinya tanpa panggilan API kedua per baris.
     const jobs = await prisma.job.findMany({
-      where: { status: "COMPLETED", completedAt: completedAtWhere },
+      where: {
+        status: "COMPLETED",
+        completedAt: completedAtWhere,
+        // Redelivery/rework dari ComplaintCase tidak dihitung ulang (audit
+        // insentif, 23 September 2026) — job ini LAHIR dari POST
+        // /complaints/:id/delivery-task (lihat services/complaintCase.js
+        // createDeliveryTask), memakai orderId yang SAMA dengan order asal
+        // tapi tuntas di TANGGAL BERBEDA. Tanpa exclude ini, dedup
+        // (orderId,tanggalWIB) melihatnya sebagai "alamat baru" — driver
+        // dibayar 2x untuk 1 alamat yang sama gara-gara pekerjaan ulang
+        // akibat komplain, bukan penjualan baru. complaintCaseId HANYA
+        // pernah diisi saat pembuatan (tidak pernah ditempel retroaktif ke
+        // job normal yang sudah ada) — exclude ini tidak pernah menyentuh
+        // job pengiriman/pengambilan pertama yang sah.
+        //
+        // CATATAN BATAS: ini HANYA menutup jalur ComplaintCase. Jalur
+        // "Lapor Revisi"/UnitRevision (POST /revisions/:id/create-pickup-job,
+        // create-delivery-job, /jobs/:id/report-revision) adalah mekanisme
+        // TERPISAH yang TIDAK mengisi Job.complaintCaseId sama sekali —
+        // celah dedup yang sama secara teknis BISA terjadi di jalur itu,
+        // tapi belum diaudit/diminta eksplisit di slice ini. Dicatat
+        // sebagai risiko tersisa, bukan ditebak/ditutup diam-diam di sini.
+        complaintCaseId: null,
+        // Order yang dibatalkan SETELAH job-nya selesai tidak dihitung
+        // (audit insentif) — OrderStatus.CANCELLED adalah satu-satunya
+        // status "batal" yang ada di schema (tidak ada REFUNDED terpisah,
+        // dicek eksplisit — lihat prisma/schema.prisma enum OrderStatus).
+        order: { status: { not: "CANCELLED" } },
+      },
       select: {
         orderId: true, completedAt: true, driverId: true, helperId: true, type: true, addressText: true,
         order: { select: { orderNumber: true, customer: { select: { name: true } } } },
@@ -3351,21 +3390,55 @@ armadaRouter.patch("/pod/:jobId/edit", requirePermission(P.JOB_WRITE), async (re
       if (!proofPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
     }
 
-    const updated = await prisma.job.update({
-      where: { id: job.id },
-      data: {
-        ...(proofPhotoUrls !== undefined && {
-          proofPhotoUrls,
-          podStatus: null, podVerifiedById: null, podVerifiedAt: null, podRejectionNote: null,
-        }),
-        ...(completedAt && { completedAt: new Date(completedAt) }),
-        ...(driverId !== undefined && { driverId: driverId || null }),
-        ...(helperId !== undefined && { helperId: helperId || null }),
-        podEditedById: req.user.id,
-        podEditedAt: new Date(),
-        podEditReason: reason.trim(),
-      },
-      include: PIC_INCLUDE_FOR_POD,
+    // Audit trail nilai lama→baru (audit insentif, 23 September 2026) —
+    // driverId/helperId/completedAt adalah TEPAT 3 field yang dipakai live
+    // recompute GET /armada/incentive-summary (lihat catatan di sana).
+    // Sebelum ini, koreksi field-field itu cuma tercatat sebagai teks bebas
+    // podEditReason — tidak ada nilai LAMA yang bisa ditelusuri kalau
+    // insentif seorang driver berubah gara-gara koreksi admin. Dibungkus
+    // transaksi (pola sama dgn DOCUMENT_CORRECTED/MATERIAL_UPDATED di
+    // lib/activityLog.js) — cuma dicatat kalau salah satu dari 3 field itu
+    // BENAR-BENAR berubah nilainya, bukan tiap kali endpoint ini dipanggil
+    // (edit yang hanya mengganti foto tidak memicu event ini).
+    const newCompletedAt = completedAt ? new Date(completedAt) : undefined;
+    const newDriverId = driverId !== undefined ? (driverId || null) : undefined;
+    const newHelperId = helperId !== undefined ? (helperId || null) : undefined;
+    const changes = {};
+    if (newDriverId !== undefined && newDriverId !== job.driverId) {
+      changes.driverId = { from: job.driverId, to: newDriverId };
+    }
+    if (newHelperId !== undefined && newHelperId !== job.helperId) {
+      changes.helperId = { from: job.helperId, to: newHelperId };
+    }
+    if (newCompletedAt !== undefined && newCompletedAt.getTime() !== job.completedAt?.getTime()) {
+      changes.completedAt = { from: job.completedAt?.toISOString() || null, to: newCompletedAt.toISOString() };
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const hasil = await tx.job.update({
+        where: { id: job.id },
+        data: {
+          ...(proofPhotoUrls !== undefined && {
+            proofPhotoUrls,
+            podStatus: null, podVerifiedById: null, podVerifiedAt: null, podRejectionNote: null,
+          }),
+          ...(newCompletedAt !== undefined && { completedAt: newCompletedAt }),
+          ...(newDriverId !== undefined && { driverId: newDriverId }),
+          ...(newHelperId !== undefined && { helperId: newHelperId }),
+          podEditedById: req.user.id,
+          podEditedAt: new Date(),
+          podEditReason: reason.trim(),
+        },
+        include: PIC_INCLUDE_FOR_POD,
+      });
+      if (Object.keys(changes).length > 0) {
+        const orderNumber = hasil.order?.orderNumber || null;
+        await recordActivity(tx, {
+          entityType: ENTITY_TYPES.JOB, entityId: job.id, eventType: EVENT_TYPES.POD_EDITED,
+          actorId: req.user.id, metadata: { orderNumber, reason: reason.trim(), changes },
+        });
+      }
+      return hasil;
     });
     res.json({ ...updated, derivedPodStatus: derivePodStatus(updated) });
   } catch (err) {

@@ -380,9 +380,14 @@ export default function ArmadaDeliveryReport() {
                 dihitung 1 alamat, bukan 2. */}
             {insentif?.orang?.length > 0 && (
               <div>
-                <h2 className="mb-1 text-[15px] font-bold text-ink">Insentif Driver &amp; Helper</h2>
+                <h2 className="mb-1 text-[15px] font-bold text-ink">Estimasi Insentif Driver &amp; Helper</h2>
+                {/* Disclaimer "estimasi, bisa berubah" (audit insentif, 23
+                    September 2026) — angka LIVE RECOMPUTE dari data
+                    sekarang (lihat GET /armada/incentive-summary), bukan
+                    status "sudah dibayar" — sistem ini tidak melacak
+                    pembayaran sama sekali. */}
                 <p className="mb-3 text-[12px] text-ink3">
-                  Per alamat selesai, dalam rentang tanggal yang sama di atas — Rp{insentif.ratePerAlamat.withSim.toLocaleString("id-ID")}/alamat (punya SIM) · Rp{insentif.ratePerAlamat.withoutSim.toLocaleString("id-ID")}/alamat (tidak punya SIM).
+                  Per alamat selesai, dalam rentang tanggal yang sama di atas — Rp{insentif.ratePerAlamat.withSim.toLocaleString("id-ID")}/alamat (punya SIM) · Rp{insentif.ratePerAlamat.withoutSim.toLocaleString("id-ID")}/alamat (tidak punya SIM). Estimasi berdasarkan data terbaru — bisa berubah kalau ada koreksi POD atau status SIM, bukan status sudah/akan dibayar.
                 </p>
                 <Card className="overflow-hidden p-0">
                   <TableWrap>
@@ -391,7 +396,7 @@ export default function ArmadaDeliveryReport() {
                         <TR>
                           <TH>Nama</TH><TH>Punya SIM</TH>
                           <TH numeric>Sebagai Driver</TH><TH numeric>Sebagai Helper</TH>
-                          <TH numeric>Total Alamat</TH><TH numeric>Insentif</TH>
+                          <TH numeric>Total Alamat</TH><TH numeric>Estimasi Insentif</TH>
                         </TR>
                       </THead>
                       <TBody>

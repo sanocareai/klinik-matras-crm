@@ -113,6 +113,28 @@ test("STAGE_COMPLETED -> menyebut Touch time kalau timing diketahui; polos kalau
   assert.match(tanpaTouch, /completed/);
 });
 
+// Hardening insentif driver (23 September 2026) — kalimat linimasa untuk
+// koreksi POD admin harus menyebut field yang BERUBAH (bukti nilai
+// lama→baru ada di metadata.changes, lihat test integrasi POD edit yang
+// memverifikasi tx.activityEvent.create menerima from/to sesungguhnya).
+test("POD_EDITED menyebut field yang berubah dan alasan koreksi", () => {
+  const kalimat = formatActivitySentence({
+    eventType: EVENT_TYPES.POD_EDITED,
+    metadata: {
+      orderNumber: "ORD-001",
+      reason: "Driver salah dipilih",
+      changes: {
+        driverId: { from: "user-lama", to: "user-baru" },
+        completedAt: { from: "2026-09-01T03:00:00.000Z", to: "2026-09-01T10:00:00.000Z" },
+      },
+    },
+  });
+  assert.match(kalimat, /ORD-001/);
+  assert.match(kalimat, /driver/);
+  assert.match(kalimat, /waktu selesai/);
+  assert.match(kalimat, /Driver salah dipilih/);
+});
+
 test("eventType yang tidak dikenal tidak pernah melempar error — linimasa tidak boleh gagal render", () => {
   assert.doesNotThrow(() => formatActivitySentence({ eventType: "SESUATU_YANG_BARU", metadata: {} }));
   assert.equal(formatActivitySentence({ eventType: "SESUATU_YANG_BARU", metadata: {} }), "SESUATU_YANG_BARU");
