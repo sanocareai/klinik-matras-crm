@@ -3077,6 +3077,7 @@ enum ExpenseSubmissionStatus {
   DRAFT // seluruh field bebas diedit, belum ada FinExpense
   DIAJUKAN // terkirim, menunggu review internal divisi (HANYA kalau config workspace mewajibkan — lihat WorkspaceConfig.requiresLeaderReview); kalau tidak, transisi ke MENUNGGU_PERSETUJUAN langsung terjadi dalam aksi "ajukan" yang sama
   MENUNGGU_PERSETUJUAN // FinExpense sudah dibuat & MENUNGGU_APPROVAL — cermin status FinExpense, disinkronkan lewat services/expenseSubmission/service.js#sinkronStatusDariFinExpense()
+  OTOMATIS_DISETUJUI // jenis biaya rutin (lihat WorkspaceConfig.autoApprove) — FinExpense LANGSUNG dibuat DISETUJUI/DIBAYAR dalam satu transaksi yang sama dengan "ajukan", TANPA menunggu manusia. Tetap audit-able lewat ExpenseSubmissionAudit (baris otomatis, actorId null) + FinExpense.approvedById null. Begitu FinExpense-nya kelak dibayar/ditolak/dibatalkan oleh manusia, baris ini ikut bertransisi normal seperti DISETUJUI biasa.
   DISETUJUI // cermin FinExpense DISETUJUI
   DIBAYAR // cermin FinExpense DIBAYAR
   DITOLAK // cermin FinExpense DITOLAK
@@ -3098,6 +3099,19 @@ model ExpenseSubmission {
   picUserId       String? @map("pic_user_id")
   picUser         User?   @relation("ExpenseSubmissionPic", fields: [picUserId], references: [id], onDelete: SetNull)
   picNameSnapshot String? @map("pic_name_snapshot") // snapshot nama PIC saat pengajuan dibuat — riwayat tetap terbaca kalau akunnya kelak berubah/nonaktif
+
+  // ── Catat atas nama pengaju (Finance/Dispatcher mencatat untuk driver lain, D-181) ──
+  // requestedById di atas TETAP "pemohon asli" (bisa diisi ORANG LAIN oleh Finance/
+  // Dispatcher — lihat guard di service.js#buatPengajuan). createdById di bawah TETAP
+  // "siapa yang login & mengetik" (tidak pernah berubah maknanya). Field di bawah ini
+  // KHUSUS melengkapi kasus "dicatat atas nama": kapan permintaan itu SEBENARNYA terjadi
+  // (beda dari createdAt kalau dicatat belakangan), kenapa mendesak, dan referensi
+  // percakapan sumbernya. WhatsApp/lisan TETAP cuma komunikasi, BUKAN sumber pencatatan
+  // resmi — field ini cuma jejak/referensi manusia, bukan API/webhook yang menyerap data
+  // otomatis dari WA.
+  requestedAt  DateTime? @map("requested_at") // null = sama dengan createdAt (dicatat real-time oleh pemohon sendiri)
+  urgentReason String?   @map("urgent_reason")
+  sourceNote   String?   @map("source_note") // mis. "Chat WA Agung 23/9 14:20" — referensi teks bebas, bukan link WA tersimpan otomatis
 
   expenseType String   @map("expense_type") @db.VarChar(40) // BBM/TOL/PARKIR/SERVIS/BAN/CUCI/DENDA/SEWA/LAINNYA dll — divalidasi server terhadap daftar per workspace (config.js), BUKAN enum DB supaya divisi baru tidak perlu migrasi tiap nambah jenis
   date        DateTime @db.Date
@@ -3140,6 +3154,14 @@ model ExpenseSubmission {
   metadata Json? @map("metadata")
 
   paymentMethod String? @map("payment_method") // usulan rekening/metode bayar dari pemohon — Finance yang menentukan cashAccount FINAL di FinExpense
+  // Klasifikasi sumber dana USULAN dari pemohon (REKENING_PERUSAHAAN/UANG_MUKA_OPERASIONAL/
+  // TALANGAN_PRIBADI/BELUM_DIBAYAR — divalidasi di app, bukan enum DB, sama alasan dengan
+  // expenseType). Cuma USULAN: mode FinExpense final (LANGSUNG/REIMBURSEMENT/UTANG) tetap
+  // ditentukan buatFinExpense() dari kapabilitas user + field ini sebagai hint (lihat
+  // service.js#modeDariSumberDana). Prinsip "dokumen dulu, jurnal belakangan" TIDAK berubah:
+  // rekening/bank TIDAK PERNAH berkurang saat baru diajukan, dan TALANGAN_PRIBADI/
+  // BELUM_DIBAYAR tidak pernah menyentuh kas/bank sebelum FinExpense-nya benar-benar /pay.
+  sumberDana    String? @map("sumber_dana")
   vendorName    String? @map("vendor_name")
 
   status ExpenseSubmissionStatus @default(DRAFT)

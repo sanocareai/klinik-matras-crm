@@ -213,6 +213,11 @@ export const DEFAULT_COA = Object.freeze([
   { code: "6-1320", name: "Beban Servis & Perawatan Kendaraan", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI" },
   { code: "6-1330", name: "Beban Denda & Tilang", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI" },
   { code: "6-1340", name: "Beban Kurir Eksternal", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI" },
+  // 6-1345 (24 September 2026, Pengajuan Biaya Lintas Divisi) — sewa
+  // KENDARAAN, beda dari 6-1400 yang khusus sewa TEMPAT. Sebelumnya "SEWA"
+  // di Delivery tidak punya akun sendiri dan jatuh ke kategori fallback —
+  // sekarang dipetakan eksplisit, lihat DEFAULT_EXPENSE_CATEGORIES di bawah.
+  { code: "6-1345", name: "Beban Sewa Kendaraan", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI" },
   { code: "6-1400", name: "Beban Sewa Tempat", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI" },
   { code: "6-1500", name: "Beban Listrik, Air & Internet", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI" },
   { code: "6-1600", name: "Beban Perlengkapan Kantor", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI" },
@@ -234,6 +239,19 @@ export const DEFAULT_EXPENSE_CATEGORIES = Object.freeze([
   { code: "DENDA_TILANG", name: "Denda / Tilang", accountCode: "6-1330", division: "DELIVERY", autoMapKey: "VEHICLE:DENDA" },
   { code: "BIAYA_KENDARAAN_LAIN", name: "Biaya Kendaraan Lainnya", accountCode: "6-1900", division: "DELIVERY", autoMapKey: "VEHICLE:LAINNYA" },
   { code: "SERVIS_KENDARAAN", name: "Servis & Perawatan Kendaraan", accountCode: "6-1320", division: "DELIVERY", autoMapKey: "VEHICLE_SERVICE" },
+  // BAN_KENDARAAN & SEWA_KENDARAAN (24 September 2026, Pengajuan Biaya
+  // Lintas Divisi) — sebelumnya jenis biaya "BAN"/"SEWA" di Delivery tidak
+  // punya kategori spesifik dan jatuh ke kategori fallback (kategori aktif
+  // pertama secara alfabetis) saat diajukan. Sekarang dipetakan eksplisit
+  // lewat WORKSPACES.DELIVERY.categoryMapping (services/expenseSubmission/
+  // config.js) — kategoriUntuk() di service.js TIDAK PERNAH fallback lagi,
+  // memblokir submit dengan pesan jelas kalau kategori belum terpasang.
+  // Tanpa autoMapKey (beda dari baris VEHICLE:* di atas) — BAN dan SEWA
+  // TIDAK ADA di enum ExpenseCategory VehicleExpense lama, jadi tidak ada
+  // mesin auto-posting lama yang perlu dipetakan; kategori ini HANYA
+  // dipakai lewat categoryMapping ExpenseSubmission.
+  { code: "BAN_KENDARAAN", name: "Ban Kendaraan", accountCode: "6-1320", division: "DELIVERY" },
+  { code: "SEWA_KENDARAAN", name: "Sewa Kendaraan", accountCode: "6-1345", division: "DELIVERY" },
   { code: "IKLAN", name: "Belanja Iklan", accountCode: "6-1200", division: "DIGITAL_TECHNOLOGY", autoMapKey: "ADSPEND" },
   { code: "KURIR_EKSTERNAL", name: "Kurir Eksternal", accountCode: "6-1340", division: "DELIVERY" },
   { code: "GAJI_KARYAWAN", name: "Gaji & Tunjangan", accountCode: "6-1100", division: "UMUM" },

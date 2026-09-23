@@ -33,8 +33,14 @@ async function buatVehicle(overrides = {}) {
   });
 }
 
+// Nominal SENGAJA di atas ambang auto-approve Delivery (Rp300.000, lihat
+// config.js#WORKSPACES.DELIVERY.autoApprove) — supaya test yang memakai
+// helper ini tetap menguji jalur MANUAL (MENUNGGU_PERSETUJUAN) seperti
+// sebelum auto-approve ada, tidak diam-diam ikut ter-auto-approve dan
+// gagal karena belum ada nota. Test khusus auto-approve pakai nominal
+// & fixture nota sendiri (lihat describe blok "Auto-approve").
 const pengajuanBadan = (extra = {}) => ({
-  workspace: "DELIVERY", expenseType: "BBM", date: "2026-09-20", amount: 150_000,
+  workspace: "DELIVERY", expenseType: "BBM", date: "2026-09-20", amount: 500_000,
   vendorName: "SPBU Uji", metadata: { liters: 10 }, ...extra,
 });
 
@@ -115,13 +121,16 @@ test("Aturan edit: draf bebas diedit; setelah diajukan terkunci sampai ditarik k
   const created = await raw("POST", "/api/finance/expense-submissions", { token, body: pengajuanBadan() });
   const id = created.body.id;
 
-  const edit1 = await raw("PATCH", `/api/finance/expense-submissions/${id}`, { token, body: { amount: 200_000 } });
+  // Nominal edit SENGAJA tetap di atas ambang auto-approve (lihat catatan di
+  // pengajuanBadan()) supaya test ini murni menguji aturan KUNCI-EDIT-PER-
+  // STATUS, tidak tercampur perilaku auto-approve.
+  const edit1 = await raw("PATCH", `/api/finance/expense-submissions/${id}`, { token, body: { amount: 350_000 } });
   assert.equal(edit1.status, 200);
-  assert.equal(edit1.body.amount, 200_000);
+  assert.equal(edit1.body.amount, 350_000);
 
   await raw("POST", `/api/finance/expense-submissions/${id}/ajukan`, { token, headers: { "Idempotency-Key": "pb-uji-edit" } });
 
-  const edit2 = await raw("PATCH", `/api/finance/expense-submissions/${id}`, { token, body: { amount: 300_000 } });
+  const edit2 = await raw("PATCH", `/api/finance/expense-submissions/${id}`, { token, body: { amount: 400_000 } });
   assert.equal(edit2.status, 409, "tidak boleh mengedit pengajuan yang sudah menunggu persetujuan");
 
   const tarik = await raw("POST", `/api/finance/expense-submissions/${id}/tarik`, { token });
@@ -129,9 +138,9 @@ test("Aturan edit: draf bebas diedit; setelah diajukan terkunci sampai ditarik k
   assert.equal(tarik.body.status, "DRAFT");
   assert.equal(tarik.body.finExpenseId, null);
 
-  const edit3 = await raw("PATCH", `/api/finance/expense-submissions/${id}`, { token, body: { amount: 300_000 } });
+  const edit3 = await raw("PATCH", `/api/finance/expense-submissions/${id}`, { token, body: { amount: 400_000 } });
   assert.equal(edit3.status, 200, "setelah ditarik, draf harus bisa diedit lagi");
-  assert.equal(edit3.body.amount, 300_000);
+  assert.equal(edit3.body.amount, 400_000);
 });
 
 test("Status sinkron DUA ARAH: approve & pay FinExpense mengubah status pengajuan otomatis", async () => {
@@ -183,4 +192,190 @@ test("VehicleExpense yang tertaut ke pengajuan TIDAK diposting ganda oleh sinkro
 
   const jurnalLama = await testPrisma.finJournalEntry.findFirst({ where: { idempotencyKey: `BIAYA_KENDARAAN:${ve.id}` } });
   assert.equal(jurnalLama, null, "VehicleExpense yang tertaut pengajuan tidak boleh dibukukan lewat jalur lama");
+});
+
+// ── D-181: rapat ulang arsitektur pilot Delivery (24 September 2026) ────────
+
+async function lampirkanBuktiLangsung(submissionId) {
+  // Bypass upload multipart sungguhan (di luar cakupan test ini) — cukup
+  // baris ExpenseSubmissionProof aktif, sama seperti yang dihasilkan
+  // POST .../bukti, supaya ajukanPengajuan() menemukannya dan meneruskan
+  // ke FinExpense.receiptUrl.
+  return testPrisma.expenseSubmissionProof.create({
+    data: { submissionId, url: "https://example.test/nota-otomatis.jpg", version: 1 },
+  });
+}
+
+test("Auto-approve: BBM rutin bernilai kecil (≤ ambang) menghasilkan TEPAT SATU FinExpense langsung DISETUJUI, tetap audit-able", async () => {
+  const { token } = await createTestUser({ roles: ["DISPATCHER"] });
+  const created = await raw("POST", "/api/finance/expense-submissions", { token, body: pengajuanBadan({ amount: 100_000 }) });
+  await lampirkanBuktiLangsung(created.body.id);
+  const sebelum = await testPrisma.finExpense.count();
+
+  const diajukan = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, {
+    token, headers: { "Idempotency-Key": "pb-uji-otomatis" },
+  });
+  assert.equal(diajukan.status, 200, JSON.stringify(diajukan.body));
+  assert.equal(diajukan.body.status, "OTOMATIS_DISETUJUI");
+  assert.ok(diajukan.body.finExpenseId);
+  assert.equal(diajukan.body.finExpense.status, "DISETUJUI");
+
+  const sesudah = await testPrisma.finExpense.count();
+  assert.equal(sesudah, sebelum + 1, "auto-approve tetap cuma boleh melahirkan SATU FinExpense");
+
+  const fe = await testPrisma.finExpense.findUnique({ where: { id: diajukan.body.finExpenseId } });
+  assert.equal(fe.approvedById, null, "tidak ada manusia yang menyetujui — approvedById harus null");
+  assert.equal(fe.status, "DISETUJUI");
+
+  // Audit-able (req #3): jejak SubmissionAudit eksplisit + ActivityEvent bertanda SYSTEM.
+  const audit = await testPrisma.expenseSubmissionAudit.findFirst({ where: { submissionId: created.body.id, field: "status", after: "OTOMATIS_DISETUJUI" } });
+  assert.ok(audit, "auto-approve wajib meninggalkan jejak audit eksplisit");
+  assert.equal(audit.actorId, null);
+  assert.match(audit.reason, /Auto-approve/);
+
+  const aktivitas = await testPrisma.activityEvent.findFirst({ where: { entityType: "fin_expense", entityId: fe.id, eventType: "DOCUMENT_APPROVED" } });
+  assert.ok(aktivitas, "persetujuan otomatis tetap tercatat di linimasa aktivitas");
+  assert.equal(aktivitas.actorType, "SYSTEM");
+  assert.equal(aktivitas.metadata?.otomatis, true);
+});
+
+test("Auto-approve TETAP memblokir tanpa nota — kebijakan otomatis tidak mengecualikan syarat bukti", async () => {
+  const { token } = await createTestUser({ roles: ["DISPATCHER"] });
+  const created = await raw("POST", "/api/finance/expense-submissions", { token, body: pengajuanBadan({ amount: 100_000 }) });
+  // TIDAK melampirkan bukti — REIMBURSEMENT selalu wajib nota, termasuk jalur otomatis.
+  const res = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, {
+    token, headers: { "Idempotency-Key": "pb-uji-otomatis-tanpa-nota" },
+  });
+  assert.equal(res.status, 422, JSON.stringify(res.body));
+
+  const ulang = await raw("GET", `/api/finance/expense-submissions/${created.body.id}`, { token });
+  assert.equal(ulang.body.status, "DRAFT", "gagal auto-approve harus membatalkan SELURUH pengajuan (rollback), bukan setengah jalan");
+  assert.equal(ulang.body.finExpenseId, null);
+});
+
+test("Auto-approve: double-click paralel tetap SATU FinExpense (jaminan idempotensi berlaku juga di jalur otomatis)", async () => {
+  const { token } = await createTestUser({ roles: ["DISPATCHER"] });
+  const created = await raw("POST", "/api/finance/expense-submissions", { token, body: pengajuanBadan({ amount: 100_000 }) });
+  await lampirkanBuktiLangsung(created.body.id);
+  const sebelum = await testPrisma.finExpense.count();
+
+  const kunci = { "Idempotency-Key": "pb-uji-otomatis-paralel" };
+  const [a, b] = await Promise.all([
+    raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, { token, headers: kunci }),
+    raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, { token, headers: kunci }),
+  ]);
+  const sukses = [a, b].find((r) => r.status === 200);
+  assert.ok(sukses, `salah satu wajib berhasil — ${JSON.stringify([a.status, b.status])}`);
+  assert.equal(sukses.body.status, "OTOMATIS_DISETUJUI");
+
+  const sesudah = await testPrisma.finExpense.count();
+  assert.equal(sesudah, sebelum + 1);
+});
+
+test("Reimbursement TIDAK mengurangi kas/bank saat diajukan atau saat disetujui — cuma saat benar-benar dibayar", async () => {
+  const { token: tokenDispatcher } = await createTestUser({ roles: ["DISPATCHER"] });
+  const { token: tokenFinance } = await createTestUser({ roles: ["FINANCE"] });
+  const kas = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.KAS } });
+  const rekening = await testPrisma.finCashAccount.create({ data: { name: "Kas Uji Reimburse", kind: "KAS", accountId: kas.id } });
+
+  const jumlahJurnalKasSebelum = async () => testPrisma.finJournalLine.count({ where: { cashAccountId: rekening.id } });
+  const sebelumSemua = await jumlahJurnalKasSebelum();
+
+  const created = await raw("POST", "/api/finance/expense-submissions", { token: tokenDispatcher, body: pengajuanBadan({ sumberDana: "TALANGAN_PRIBADI" }) });
+  assert.equal(await jumlahJurnalKasSebelum(), sebelumSemua, "membuat draf tidak pernah menyentuh kas/bank");
+
+  const diajukan = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, {
+    token: tokenDispatcher, headers: { "Idempotency-Key": "pb-uji-reimburse-kas" },
+  });
+  assert.equal(diajukan.status, 200, JSON.stringify(diajukan.body));
+  const finExpenseId = diajukan.body.finExpenseId;
+  const feSetelahAjukan = await testPrisma.finExpense.findUnique({ where: { id: finExpenseId } });
+  assert.equal(feSetelahAjukan.mode, "REIMBURSEMENT", "sumberDana TALANGAN_PRIBADI wajib jadi mode REIMBURSEMENT");
+  assert.equal(await jumlahJurnalKasSebelum(), sebelumSemua, "diajukan (MENUNGGU_APPROVAL) tidak pernah menyentuh kas/bank");
+
+  await testPrisma.finExpense.update({ where: { id: finExpenseId }, data: { receiptUrl: "https://example.test/nota-reimburse.jpg" } });
+  const approve = await raw("POST", `/api/finance/expenses/${finExpenseId}/approve`, { token: tokenFinance });
+  assert.equal(approve.status, 200, JSON.stringify(approve.body));
+  assert.equal(await jumlahJurnalKasSebelum(), sebelumSemua, "DISETUJUI (beban diakui) masih belum boleh menyentuh kas/bank — REIMBURSEMENT baru jadi utang");
+
+  const pay = await raw("POST", `/api/finance/expenses/${finExpenseId}/pay`, { token: tokenFinance, body: { cashAccountId: rekening.id } });
+  assert.equal(pay.status, 200, JSON.stringify(pay.body));
+  assert.equal(await jumlahJurnalKasSebelum(), sebelumSemua + 1, "baru SAAT /pay kas/bank boleh berkurang");
+});
+
+test("BAN & SEWA: kategori terpasang -> sukses diajukan dengan akun yang benar; kategori BELUM terpasang -> diblokir (BUKAN fallback ke kategori lain)", async () => {
+  const { token } = await createTestUser({ roles: ["DISPATCHER"] });
+
+  const ban = await raw("POST", "/api/finance/expense-submissions", { token, body: pengajuanBadan({ expenseType: "BAN" }) });
+  const diajukanBan = await raw("POST", `/api/finance/expense-submissions/${ban.body.id}/ajukan`, { token, headers: { "Idempotency-Key": "pb-uji-ban" } });
+  assert.equal(diajukanBan.status, 200, JSON.stringify(diajukanBan.body));
+  const feBan = await testPrisma.finExpense.findUnique({ where: { id: diajukanBan.body.finExpenseId }, include: { category: true } });
+  assert.equal(feBan.category.code, "BAN_KENDARAAN");
+
+  const sewa = await raw("POST", "/api/finance/expense-submissions", { token, body: pengajuanBadan({ expenseType: "SEWA" }) });
+  const diajukanSewa = await raw("POST", `/api/finance/expense-submissions/${sewa.body.id}/ajukan`, { token, headers: { "Idempotency-Key": "pb-uji-sewa" } });
+  assert.equal(diajukanSewa.status, 200, JSON.stringify(diajukanSewa.body));
+  const feSewa = await testPrisma.finExpense.findUnique({ where: { id: diajukanSewa.body.finExpenseId }, include: { category: true } });
+  assert.equal(feSewa.category.code, "SEWA_KENDARAAN");
+
+  // Nonaktifkan kategori BAN (simulasi "belum dipasang Finance") — submit berikutnya HARUS diblokir, bukan jatuh ke kategori lain.
+  await testPrisma.finExpenseCategory.update({ where: { code: "BAN_KENDARAAN" }, data: { active: false } });
+  const banKedua = await raw("POST", "/api/finance/expense-submissions", { token, body: pengajuanBadan({ expenseType: "BAN" }) });
+  const gagalBan = await raw("POST", `/api/finance/expense-submissions/${banKedua.body.id}/ajukan`, { token, headers: { "Idempotency-Key": "pb-uji-ban-blokir" } });
+  assert.equal(gagalBan.status, 422, JSON.stringify(gagalBan.body));
+  const banKeduaUlang = await raw("GET", `/api/finance/expense-submissions/${banKedua.body.id}`, { token });
+  assert.equal(banKeduaUlang.body.finExpenseId, null, "diblokir berarti TIDAK ADA FinExpense sama sekali, bukan nyasar ke kategori lain");
+});
+
+test("Catat atas nama: Dispatcher boleh mengajukan untuk driver lain; reimbursement kembali ke driver, bukan ke Dispatcher; role tanpa izin ditolak", async () => {
+  const { token: tokenDispatcher } = await createTestUser({ roles: ["DISPATCHER"] });
+  const { user: driver } = await createTestUser({ roles: ["DRIVER"] });
+  const { token: tokenDriverLain } = await createTestUser({ roles: ["DRIVER"] });
+
+  const created = await raw("POST", "/api/finance/expense-submissions", {
+    token: tokenDispatcher,
+    body: pengajuanBadan({ requestedById: driver.id, urgentReason: "Ban pecah di jalan", sourceNote: "Chat WA Agung 23/9 14:20" }),
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.requestedBy.id, driver.id, "pemohon asli harus driver, bukan dispatcher yang mengetik");
+
+  const diajukan = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, {
+    token: tokenDispatcher, headers: { "Idempotency-Key": "pb-uji-atas-nama" },
+  });
+  assert.equal(diajukan.status, 200, JSON.stringify(diajukan.body));
+  const fe = await testPrisma.finExpense.findUnique({ where: { id: diajukan.body.finExpenseId } });
+  assert.equal(fe.reimburseToId, driver.id, "uang reimbursement harus kembali ke driver yang sebenarnya mengeluarkan, bukan ke dispatcher");
+
+  // Role driver biasa (bukan Finance/Dispatcher) TIDAK boleh mencatat atas nama orang lain.
+  const ditolak = await raw("POST", "/api/finance/expense-submissions", {
+    token: tokenDriverLain, body: pengajuanBadan({ requestedById: driver.id }),
+  });
+  assert.equal(ditolak.status, 403, JSON.stringify(ditolak.body));
+});
+
+test("Cutover: VehicleExpense BARU (lahir setelah cutover) tanpa tautan pengajuan TIDAK bisa diposting lewat jalur lama — harus lewat ExpenseSubmission", async () => {
+  const vehicle = await buatVehicle();
+  const veBaru = await testPrisma.vehicleExpense.create({
+    data: {
+      vehicleId: vehicle.id, date: new Date("2026-09-25"), category: "BBM", amount: 50_000,
+      createdAt: new Date("2026-09-25T08:00:00+07:00"), // SETELAH cutover (posting/expense.js#CUTOVER_PENGAJUAN_BIAYA)
+    },
+  });
+  const hasil = await testPrisma.$transaction((tx) => postVehicleExpense(tx, { vehicleExpenseId: veBaru.id }));
+  assert.equal(hasil.posted, false);
+  assert.equal(hasil.skipped, true);
+  assert.equal(hasil.reason, "wajib_lewat_pengajuan_biaya");
+});
+
+test("Cutover TIDAK meregresi data lama: VehicleExpense yang lahir SEBELUM cutover tetap bisa diposting seperti biasa", async () => {
+  const vehicle = await buatVehicle();
+  const veLama = await testPrisma.vehicleExpense.create({
+    data: {
+      vehicleId: vehicle.id, date: new Date("2026-08-01"), category: "TOL", amount: 20_000,
+      createdAt: new Date("2026-08-01T08:00:00+07:00"), // SEBELUM cutover
+    },
+  });
+  const hasil = await testPrisma.$transaction((tx) => postVehicleExpense(tx, { vehicleExpenseId: veLama.id }));
+  assert.equal(hasil.posted, true, "data lama (sebelum cutover) tidak boleh ikut terblokir — tidak ada regresi");
+  assert.ok(hasil.entry);
 });

@@ -3,12 +3,15 @@
 // prinsip di schema.prisma#ExpenseSubmission sebelum mengubah file ini.
 
 import { randomUUID } from "node:crypto";
-import { buatFinExpense, tarikFinExpense as tarikFinExpenseAsli, expenseInclude as finExpenseInclude, bentukExpense } from "../finance/expenses.js";
+import {
+  buatFinExpense, tarikFinExpense as tarikFinExpenseAsli, setujuiFinExpense,
+  expenseInclude as finExpenseInclude, bentukExpense,
+} from "../finance/expenses.js";
 import { generateDocumentNumber, todayBookDateWIB, toBookDate } from "../finance/journal.js";
 import { toMoney, moneyToNumber } from "../finance/money.js";
-import { hasPermission } from "../../middleware/authorize.js";
+import { hasPermission, rolesOf } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
-import { getWorkspaceConfig } from "./config.js";
+import { getWorkspaceConfig, bolehAutoApprove, SUMBER_DANA } from "./config.js";
 
 export class SubmissionError extends Error {
   constructor(message, statusCode = 400) {
@@ -45,15 +48,38 @@ export const submissionInclude = {
 
 function bentukSubmission(s) {
   const finStatus = s.finExpense?.status;
+  // Status EFEKTIF: begitu FinExpense ada, statusnya SELALU mengikuti FinExpense (satu
+  // sumber kebenaran) — kolom `status` tersimpan tetap di-refresh oleh sinkronStatus()
+  // di titik transisi FinExpense, tapi field ini adalah jaminan tambahan di lapisan baca.
+  // Pengecualian TUNGGAL: OTOMATIS_DISETUJUI TETAP tampil beda dari DISETUJUI manual
+  // selama FinExpense-nya masih persis DISETUJUI (belum dibayar/ditolak/dibatalkan oleh
+  // manusia) — supaya "diajukan otomatis vs disetujui manusia" tidak hilang begitu saja
+  // dari tampilan (lihat req #3 audit-ability auto-approve).
+  const statusEfektif = finStatus
+    ? (finStatus === "DISETUJUI" && s.status === "OTOMATIS_DISETUJUI" ? "OTOMATIS_DISETUJUI" : (FIN_TO_SUBMISSION_STATUS[finStatus] || s.status))
+    : s.status;
   return {
     ...s,
     amount: moneyToNumber(s.amount),
     finExpense: s.finExpense ? { ...s.finExpense, amount: moneyToNumber(s.finExpense.amount) } : null,
-    // Status EFEKTIF: begitu FinExpense ada, statusnya SELALU mengikuti FinExpense (satu
-    // sumber kebenaran) — kolom `status` tersimpan tetap di-refresh oleh sinkronStatus()
-    // di titik transisi FinExpense, tapi field ini adalah jaminan tambahan di lapisan baca.
-    status: finStatus ? (FIN_TO_SUBMISSION_STATUS[finStatus] || s.status) : s.status,
+    status: statusEfektif,
   };
+}
+
+/** Finance & Dispatcher boleh "catat atas nama" (requestedById != diri sendiri) — driver/helper TIDAK, mereka cuma boleh mengajukan untuk diri sendiri. */
+function bolehCatatAtasNamaOrangLain(user) {
+  return hasPermission(user, P.FINANCE_POST) || hasPermission(user, P.FINANCE_ADMIN) || rolesOf(user).includes("DISPATCHER");
+}
+
+/** Usulan sumber dana -> hint mode FinExpense. `undefined` = biarkan buatFinExpense pilih default dari kapabilitas user (perilaku lama, tidak berubah kalau field ini kosong). */
+function modeDariSumberDana(sumberDana) {
+  switch (sumberDana) {
+    case "REKENING_PERUSAHAAN": return "LANGSUNG";
+    case "UANG_MUKA_OPERASIONAL": return "LANGSUNG";
+    case "TALANGAN_PRIBADI": return "REIMBURSEMENT";
+    case "BELUM_DIBAYAR": return "UTANG";
+    default: return undefined;
+  }
 }
 
 function validasiTipe(workspace, expenseType) {
@@ -78,6 +104,25 @@ export async function buatPengajuan(db, { workspace, user, body }) {
   const cfg = validasiTipe(workspace, body.expenseType);
   const nominal = body.amount != null ? toMoney(body.amount, { field: "Nominal pengajuan" }) : null;
   if (nominal && nominal.lessThanOrEqualTo(0)) throw new SubmissionError("Nominal harus lebih dari 0");
+  if (body.sumberDana !== undefined && body.sumberDana !== null && body.sumberDana !== "" && !SUMBER_DANA.some((s) => s.code === body.sumberDana)) {
+    throw new SubmissionError(`Sumber dana "${body.sumberDana}" tidak dikenal`, 400);
+  }
+
+  // Catat atas nama pengaju (D-181) — requestedById BOLEH orang lain, TAPI
+  // cuma untuk Finance/Dispatcher (lihat bolehCatatAtasNamaOrangLain). Diam-
+  // diam turun ke `user.id` sendiri untuk siapa pun yang tidak punya izin
+  // itu, BUKAN ditolak — supaya form pengajuan normal (pengaju mengisi
+  // untuk dirinya sendiri) tidak perlu tahu-menahu soal aturan ini sama
+  // sekali.
+  let requestedById = user.id;
+  if (body.requestedById && body.requestedById !== user.id) {
+    if (!bolehCatatAtasNamaOrangLain(user)) {
+      throw new SubmissionError("Hanya Finance atau Dispatcher yang boleh mencatat pengajuan atas nama orang lain", 403);
+    }
+    const requester = await db.user.findUnique({ where: { id: body.requestedById }, select: { id: true } });
+    if (!requester) throw new SubmissionError("Pemohon (atas nama) tidak ditemukan", 404);
+    requestedById = body.requestedById;
+  }
 
   let vehiclePlateSnapshot = null;
   if (body.vehicleId) {
@@ -103,6 +148,12 @@ export async function buatPengajuan(db, { workspace, user, body }) {
     if (!r) throw new SubmissionError("Route tidak ditemukan", 404);
     routeNameSnapshot = r.date ? new Date(r.date).toISOString().slice(0, 10) : null;
   }
+  let picNameSnapshot = null;
+  if (body.picUserId) {
+    const pic = await db.user.findUnique({ where: { id: body.picUserId }, select: { name: true } });
+    if (!pic) throw new SubmissionError("PIC tidak ditemukan", 404);
+    picNameSnapshot = pic.name;
+  }
 
   const tanggal = body.date ? toBookDate(body.date) : todayBookDateWIB();
   const description = body.description?.trim() || susunKeterangan({
@@ -116,9 +167,18 @@ export async function buatPengajuan(db, { workspace, user, body }) {
       submissionNumber,
       division: cfg.division,
       costCenter: body.costCenter?.trim() || null,
-      requestedById: user.id,
+      requestedById,
       picUserId: body.picUserId || null,
-      picNameSnapshot: null,
+      picNameSnapshot,
+      // WhatsApp/lisan cuma komunikasi, BUKAN sumber pencatatan — field di bawah
+      // ini murni jejak MANUSIA yang mencatat, tidak pernah diisi otomatis dari
+      // webhook/integrasi WA manapun.
+      // requestedAt SENGAJA `new Date()` biasa (bukan toBookDate — itu untuk
+      // kolom @db.Date tanggal buku, ini kolom timestamp lengkap jam:menit).
+      requestedAt: body.requestedAt ? new Date(body.requestedAt) : null,
+      urgentReason: body.urgentReason?.trim() || null,
+      sourceNote: body.sourceNote?.trim() || null,
+      sumberDana: body.sumberDana || null,
       expenseType: body.expenseType,
       date: tanggal,
       amount: nominal ? nominal.toFixed(2) : "0.00",
@@ -164,11 +224,29 @@ export async function ubahPengajuanDraft(db, { id, user, body }) {
   if (body.vehicleId !== undefined) data.vehicleId = body.vehicleId || null;
   if (body.driverId !== undefined) data.driverId = body.driverId || null;
   if (body.helperId !== undefined) data.helperId = body.helperId || null;
-  if (body.picUserId !== undefined) data.picUserId = body.picUserId || null;
   if (body.metadata !== undefined) data.metadata = body.metadata || {};
   if (body.paymentMethod !== undefined) data.paymentMethod = body.paymentMethod?.trim() || null;
   if (body.vendorName !== undefined) data.vendorName = body.vendorName?.trim() || null;
   if (body.costCenter !== undefined) data.costCenter = body.costCenter?.trim() || null;
+  if (body.urgentReason !== undefined) data.urgentReason = body.urgentReason?.trim() || null;
+  if (body.sourceNote !== undefined) data.sourceNote = body.sourceNote?.trim() || null;
+  if (body.requestedAt !== undefined) data.requestedAt = body.requestedAt ? new Date(body.requestedAt) : null;
+  if (body.sumberDana !== undefined) {
+    if (body.sumberDana && !SUMBER_DANA.some((x) => x.code === body.sumberDana)) throw new SubmissionError(`Sumber dana "${body.sumberDana}" tidak dikenal`, 400);
+    data.sumberDana = body.sumberDana || null;
+  }
+  if (body.requestedById !== undefined && body.requestedById !== s.requestedById) {
+    if (!bolehCatatAtasNamaOrangLain(user)) throw new SubmissionError("Hanya Finance atau Dispatcher yang boleh mencatat pengajuan atas nama orang lain", 403);
+    const requester = await db.user.findUnique({ where: { id: body.requestedById }, select: { id: true } });
+    if (!requester) throw new SubmissionError("Pemohon (atas nama) tidak ditemukan", 404);
+    data.requestedById = body.requestedById;
+  }
+  if (body.picUserId !== undefined && body.picUserId !== s.picUserId) {
+    const pic = body.picUserId ? await db.user.findUnique({ where: { id: body.picUserId }, select: { name: true } }) : null;
+    if (body.picUserId && !pic) throw new SubmissionError("PIC tidak ditemukan", 404);
+    data.picUserId = body.picUserId || null;
+    data.picNameSnapshot = pic?.name || null;
+  }
   void cfg;
   const updated = await db.expenseSubmission.update({ where: { id }, data, include: submissionInclude });
   return bentukSubmission(updated);
@@ -205,21 +283,70 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
       throw new SubmissionError("Pengajuan ini sudah diproses dengan kunci permintaan yang berbeda", 409);
     }
 
-    const finExpense = await buatFinExpense(tx, {
-      date: s.date, amount: s.amount, description: s.description, categoryId: await kategoriUntuk(tx, cfg.division, s.expenseType),
-      division: cfg.division, mode: undefined, // biarkan buatFinExpense menentukan mode efektif dari capability user (REIMBURSEMENT kalau tanpa FINANCE_POST)
-      cashAccountId: null, supplierId: null, reimburseToId: null, payeeName: s.vendorName, orderId: s.orderId, unitId: null,
-      receiptUrl: null, notes: s.notes, langsungAjukan: true, user,
+    // Bukti yang sudah diunggah ke PENGAJUAN (ExpenseSubmissionProof, lewat
+    // POST .../bukti) sebelum diajukan — dituntun jadi FinExpense.receiptUrl
+    // supaya pastikanNotaLengkap() (dipanggil setujuiFinExpense() di bawah,
+    // baik jalur manual maupun otomatis) benar-benar MELIHAT nota yang sudah
+    // ada, bukan menganggap belum ada nota sama sekali. Versi TERBARU (belum
+    // superseded) yang dipakai — sejalan dengan "bukti pakai versi, bukan
+    // overwrite" (banner prinsip #3).
+    const buktiTerakhir = await tx.expenseSubmissionProof.findFirst({
+      where: { submissionId: id, supersededAt: null }, orderBy: { createdAt: "desc" }, select: { url: true },
     });
+
+    const finExpense = await buatFinExpense(tx, {
+      date: s.date, amount: s.amount, description: s.description, categoryId: await kategoriUntuk(tx, cfg, s.expenseType),
+      division: cfg.division, mode: modeDariSumberDana(s.sumberDana), // hint dari usulan pemohon; buatFinExpense tetap memutuskan mode EFEKTIF dari kapabilitas user
+      cashAccountId: null, supplierId: null,
+      // reimburseToId = PEMOHON ASLI (s.requestedById), bukan siapa pun yang
+      // memanggil /ajukan — requestedById sudah divalidasi (izin "catat atas
+      // nama") SEKALI saat dokumen dibuat (buatPengajuan), jadi aman dipakai
+      // apa adanya di sini tanpa cek ulang. reimburseToOverrideAllowed:true
+      // supaya nilainya TIDAK diam-diam ditimpa `user.id` pemanggil ajukan
+      // kalau kebetulan pemanggilnya bukan FINANCE_POST (mis. Dispatcher yang
+      // mencatat untuk driver — uangnya harus kembali ke driver, bukan ke
+      // dispatcher).
+      reimburseToId: s.requestedById, reimburseToOverrideAllowed: true,
+      payeeName: s.vendorName, orderId: s.orderId, unitId: null,
+      receiptUrl: buktiTerakhir?.url || null, notes: s.notes, langsungAjukan: true, user,
+    });
+
+    // Auto-approve (D-181) — jenis biaya rutin bernilai kecil (lihat
+    // config.js#bolehAutoApprove) langsung disetujui dalam TRANSAKSI YANG
+    // SAMA dengan pembuatan FinExpense-nya, jadi baik dokumen maupun jurnal
+    // pengakuan bebannya lahir atomik bersama status pengajuan — TIDAK ada
+    // jendela waktu di mana satu ada tanpa yang lain.
+    const autoApproved = bolehAutoApprove(cfg, s.expenseType, s.amount);
+    let catatanOtomatis = null;
+    if (autoApproved) {
+      catatanOtomatis = `Auto-approve: jenis "${s.expenseType}" ≤ Rp${cfg.autoApprove.maxAmount.toLocaleString("id-ID")} (kebijakan ${cfg.label})`;
+      await setujuiFinExpense(tx, { id: finExpense.id, actor: user, autoApproved: true, catatanOtomatis });
+    }
 
     await tx.$executeRawUnsafe("SAVEPOINT sp_ajukan_pengajuan");
     let updated;
     try {
       updated = await tx.expenseSubmission.update({
         where: { id },
-        data: { finExpenseId: finExpense.id, status: "MENUNGGU_PERSETUJUAN", submittedAt: new Date(), idempotencyKey: idemKey || null },
+        data: {
+          finExpenseId: finExpense.id,
+          status: autoApproved ? "OTOMATIS_DISETUJUI" : "MENUNGGU_PERSETUJUAN",
+          submittedAt: new Date(), idempotencyKey: idemKey || null,
+        },
         include: submissionInclude,
       });
+      if (autoApproved) {
+        // Audit trail EKSPLISIT (req #3: "auto-approved tetap audit-able") —
+        // actorId null menandai SISTEM yang bertindak, bukan manusia; reason
+        // menyimpan kebijakan persis yang dipakai supaya bisa ditelusuri
+        // balik kalau ambang batasnya kelak berubah.
+        await tx.expenseSubmissionAudit.create({
+          data: {
+            id: randomUUID(), submissionId: id, field: "status",
+            before: "DRAFT", after: "OTOMATIS_DISETUJUI", reason: catatanOtomatis, actorId: null,
+          },
+        });
+      }
     } catch (e) {
       await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT sp_ajukan_pengajuan");
       if (e.code === "P2002") {
@@ -233,15 +360,29 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
   }, { timeout: 20_000, maxWait: 20_000 });
 }
 
-/** Cari kategori FinExpense yang cocok untuk workspace+jenis biaya — fallback ke kategori "LAINNYA" divisi itu kalau belum ada pemetaan spesifik. */
-async function kategoriUntuk(tx, division, expenseType) {
-  const kandidat = await tx.finExpenseCategory.findFirst({
-    where: { division, active: true, OR: [{ code: `${division}_${expenseType}` }, { name: { contains: expenseType, mode: "insensitive" } }] },
-  });
-  if (kandidat) return kandidat.id;
-  const umum = await tx.finExpenseCategory.findFirst({ where: { division, active: true }, orderBy: { name: "asc" } });
-  if (!umum) throw new SubmissionError(`Belum ada kategori pengeluaran aktif untuk divisi ${division} — hubungi Finance untuk memasangnya`, 422);
-  return umum.id;
+/**
+ * Kategori FinExpense untuk workspace+jenis biaya — pemetaan EKSPLISIT dari
+ * cfg.categoryMapping (config.js), TIDAK PERNAH fallback ke "kategori aktif
+ * mana pun". Jenis biaya yang belum dipetakan/kategorinya belum aktif
+ * memblokir pengajuan dengan pesan jelas — lebih baik tertahan sebentar
+ * daripada salah akun di laporan keuangan.
+ */
+async function kategoriUntuk(tx, cfg, expenseType) {
+  const code = cfg.categoryMapping?.[expenseType];
+  if (!code) {
+    throw new SubmissionError(
+      `Jenis biaya "${expenseType}" belum punya pemetaan kategori Finance untuk ${cfg.label || cfg.division} — hubungi Finance untuk memasangnya sebelum bisa diajukan`,
+      422
+    );
+  }
+  const kategori = await tx.finExpenseCategory.findUnique({ where: { code }, select: { id: true, active: true } });
+  if (!kategori || !kategori.active) {
+    throw new SubmissionError(
+      `Kategori Finance "${code}" untuk jenis biaya "${expenseType}" belum terpasang atau nonaktif — hubungi Finance untuk memasangnya sebelum bisa diajukan`,
+      422
+    );
+  }
+  return kategori.id;
 }
 
 /** Tarik kembali (MENUNGGU_PERSETUJUAN → DRAFT) — hanya sebelum diputuskan Finance. */
@@ -305,10 +446,16 @@ export async function ubahMetadataPengajuan(db, { id, user, reason, changes }) {
 
 /** Sinkronkan status pengajuan begitu FinExpense-nya bertransisi (approve/reject/pay/cancel/koreksi) — dipanggil dari financeTransactions.js di titik transisi. No-op kalau tidak ada pengajuan yang menaut. */
 export async function sinkronStatusDariFinExpense(tx, finExpenseId) {
-  const s = await tx.expenseSubmission.findUnique({ where: { finExpenseId }, select: { id: true } });
+  const s = await tx.expenseSubmission.findUnique({ where: { finExpenseId }, select: { id: true, status: true } });
   if (!s) return;
   const fe = await tx.finExpense.findUnique({ where: { id: finExpenseId }, select: { status: true } });
   if (!fe) return;
+  // Jangan turunkan OTOMATIS_DISETUJUI jadi DISETUJUI polos kalau FinExpense-nya
+  // MASIH persis DISETUJUI (mis. koreksi metadata yang tidak mengubah status) —
+  // penanda "ini lahir otomatis" cuma boleh hilang saat statusnya benar-benar
+  // berubah lebih lanjut (dibayar/ditolak/dibatalkan), bukan tertimpa diam-diam
+  // oleh sinkronisasi rutin. Lihat bentukSubmission() untuk logika baca yang sama.
+  if (s.status === "OTOMATIS_DISETUJUI" && fe.status === "DISETUJUI") return;
   await tx.expenseSubmission.update({ where: { id: s.id }, data: { status: FIN_TO_SUBMISSION_STATUS[fe.status] || "MENUNGGU_PERSETUJUAN" } });
 }
 

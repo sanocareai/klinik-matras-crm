@@ -54,7 +54,7 @@ import {
   pastikanNotaLengkap, notaWajib, ambangNota, notaWajibDenganAmbang, simpanFotoBukti, cariPemakaiBukti,
   tanggalMulaiKebijakan, RECEIPTS_URL_PREFIX,
 } from "../services/finance/receipts.js";
-import { buatFinExpense, tarikFinExpense, expenseInclude, bentukExpense, ExpenseInputError } from "../services/finance/expenses.js";
+import { buatFinExpense, tarikFinExpense, setujuiFinExpense, expenseInclude, bentukExpense, ExpenseInputError } from "../services/finance/expenses.js";
 // Sinkron dua arah FinExpense → ExpenseSubmission (Pengajuan Biaya Lintas
 // Divisi) — no-op kalau FinExpense ini tidak berasal dari pengajuan divisi.
 // Dipanggil di SETIAP transisi status FinExpense, DI DALAM transaksi yang
@@ -257,58 +257,16 @@ financeTxRouter.post("/expenses/:id/tarik",
 
 financeTxRouter.post("/expenses/:id/approve", requirePermission(P.FINANCE_APPROVE), async (req, res) => {
   try {
+    // setujuiFinExpense (services/finance/expenses.js) — SATU-SATUNYA logika
+    // persetujuan, dipakai ulang oleh jalur OTOMATIS Pengajuan Biaya Lintas
+    // Divisi (biaya rutin bernilai kecil) supaya dua jalur itu tidak pernah
+    // diam-diam berbeda (lock baris, larangan approve sendiri, nota wajib,
+    // jurnal — semuanya SATU tempat).
     const hasil = await prisma.$transaction(async (tx) => {
-      // Kunci baris dokumen: dua keputusan serempak (double-tap / dua penyetuju) diserialkan — yang kedua melihat status baru dan ditolak 409.
-      await lockRowForUpdate(tx, '"fin_expenses"', req.params.id);
-      const e = await tx.finExpense.findUnique({ where: { id: req.params.id } });
-      if (!e) throw err("Pengeluaran tidak ditemukan", 404);
-      if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status)) {
-        throw err(`Pengeluaran ini sudah berstatus ${e.status} — tidak bisa disetujui lagi`, 409);
-      }
-
-      // Pemisahan tugas: pengaju TIDAK menyetujui pengajuannya sendiri.
-      // ADMIN dikecualikan — di tim 7 orang, admin memang satu-satunya
-      // penyetuju yang tersedia, dan memblokirnya berarti pengeluaran
-      // admin sendiri mustahil diproses. Pengecualian ini TERCATAT di
-      // metadata audit, bukan disembunyikan.
-      const menyetujuiSendiri = e.createdById === req.user.id;
-      if (menyetujuiSendiri && !hasPermission(req.user, P.FINANCE_ADMIN)) {
-        throw err(
-          "Pengajuan Anda sendiri harus disetujui orang lain. Ini bukan soal kepercayaan — " +
-          "persetujuan yang diberikan sendiri tidak punya nilai kontrol apa pun saat diaudit.",
-          403
-        );
-      }
-
-      const kat = await tx.finExpenseCategory.findUnique({ where: { id: e.categoryId }, select: { code: true } });
-      await pastikanNotaLengkap(tx, { jenis: "expense", doc: e, categoryCode: kat?.code, err });
-
-      const updated = await tx.finExpense.update({
-        where: { id: e.id },
-        data: {
-          status: e.mode === "LANGSUNG" ? "DIBAYAR" : "DISETUJUI",
-          approvedAt: new Date(),
-          approvedById: req.user.id,
-          ...(e.mode === "LANGSUNG" && { paidAt: new Date(), paidById: req.user.id }),
-        },
-      });
-
-      // Beban diakui SEKARANG untuk semua mode. Untuk LANGSUNG, jurnal itu
-      // sekaligus mengeluarkan uang dari kas — tidak ada jurnal kedua.
-      await postExpenseApproved(tx, { expenseId: e.id, userId: req.user.id });
-
-      await recordActivity(tx, {
-        entityType: ENTITY_TYPES.FIN_EXPENSE, entityId: e.id,
-        eventType: EVENT_TYPES.DOCUMENT_APPROVED, actorId: req.user.id,
-        metadata: {
-          expenseNumber: e.expenseNumber, amount: String(e.amount), mode: e.mode,
-          ...(menyetujuiSendiri && { menyetujuiPengajuanSendiri: true }),
-        },
-      });
-      await sinkronStatusDariFinExpense(tx, e.id);
+      const updated = await setujuiFinExpense(tx, { id: req.params.id, actor: req.user });
+      await sinkronStatusDariFinExpense(tx, updated.id);
       return updated;
     });
-
     const lengkap = await prisma.finExpense.findUnique({ where: { id: hasil.id }, include: expenseInclude });
     res.json(bentukExpense(lengkap));
   } catch (e) {

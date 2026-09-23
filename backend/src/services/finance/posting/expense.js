@@ -27,6 +27,18 @@ import { postJournal, recordPostingGap, findEntryByKey } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { toMoney } from "../money.js";
 
+// Cutover Pengajuan Biaya Lintas Divisi (D-181, 24 September 2026) — rapat
+// ulang arsitektur pilot Delivery: VehicleExpense/VehicleService BERHENTI
+// jadi jalur posting mandiri untuk baris BARU mulai tanggal ini. Baris yang
+// SUDAH ADA sebelum cutover (dan baris manapun yang ditaut ke ExpenseSubmission
+// — lihat guard `expenseSubmission` di postVehicleExpense) tetap bisa
+// diposting lewat Sync/gap-resolution SEPERTI SEBELUMNYA, tidak ada
+// regresi/backfill data lama. Baris BARU tanpa tautan harus lewat
+// ExpenseSubmission (satu-satunya sumber transaksi Finance baru) — VehicleExpense/
+// VehicleService jadi murni konteks operasional (odometer/liter/bengkel),
+// TIDAK PERNAH membuat jurnal paralel lagi.
+const CUTOVER_PENGAJUAN_BIAYA = new Date("2026-09-24T00:00:00+07:00");
+
 export const KEY = {
   // `suffix` (opsional) — dipakai SATU-SATUNYA oleh alur Koreksi
   // (routes/financeTransactions.js, POST /expenses/:id/koreksi). Jurnal
@@ -223,6 +235,12 @@ export async function postVehicleExpense(tx, { vehicleExpenseId, userId = null }
   // Memposting di sini juga akan membukukan biaya yang sama dua kali.
   if (ve.expenseSubmission) return { posted: false, skipped: true, reason: "tertaut_pengajuan_biaya" };
 
+  // Baris BARU (lahir setelah cutover) yang TIDAK ditaut ke pengajuan mana pun —
+  // harus lewat ExpenseSubmission dulu, bukan diam-diam terposting dari sini.
+  // Baris lama (sebelum cutover) tetap jalan seperti biasa (lihat catatan cutover
+  // di atas) — TIDAK ada regresi untuk data yang sudah ada.
+  if (ve.createdAt >= CUTOVER_PENGAJUAN_BIAYA) return { posted: false, skipped: true, reason: "wajib_lewat_pengajuan_biaya" };
+
   const sudahAda = await findEntryByKey(tx, KEY.vehicleExpense(vehicleExpenseId));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
@@ -266,6 +284,11 @@ export async function postVehicleService(tx, { vehicleServiceId, userId = null }
     include: { vehicle: { select: { plateNumber: true } } },
   });
   if (!vs) throw new Error(`Servis kendaraan ${vehicleServiceId} tidak ditemukan`);
+
+  // Sama dengan VehicleExpense di atas — servis BARU (lahir setelah cutover)
+  // harus lewat ExpenseSubmission (jenis biaya SERVIS), bukan lagi posting
+  // mandiri dari sini. Baris lama tetap jalan seperti biasa.
+  if (vs.createdAt >= CUTOVER_PENGAJUAN_BIAYA) return { posted: false, skipped: true, reason: "wajib_lewat_pengajuan_biaya" };
 
   const sudahAda = await findEntryByKey(tx, KEY.vehicleService(vehicleServiceId));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };

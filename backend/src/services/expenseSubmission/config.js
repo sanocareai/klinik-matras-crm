@@ -20,6 +20,20 @@
 //                          Delivery: false (LEADER_DRIVER tidak punya izin approval
 //                          finance — lihat audit; "diajukan" langsung jadi FinExpense).
 
+// Sumber dana USULAN dari pemohon (ExpenseSubmission.sumberDana) — dipakai
+// SEMUA workspace, bukan per-divisi. Cuma klasifikasi/hint; mode FinExpense
+// final (LANGSUNG/REIMBURSEMENT/UTANG) tetap ditentukan buatFinExpense()
+// dari kapabilitas user (lihat modeDariSumberDana() di service.js) — rekening
+// TIDAK PERNAH berkurang saat baru diajukan atau saat ditanggung pribadi,
+// cuma saat FinExpense-nya benar-benar /pay (prinsip "dokumen dulu, jurnal
+// belakangan" yang sudah dipegang seluruh Finance Workspace).
+export const SUMBER_DANA = [
+  { code: "REKENING_PERUSAHAAN", label: "Dibayar langsung rekening perusahaan" },
+  { code: "UANG_MUKA_OPERASIONAL", label: "Uang muka operasional (kas yang sudah dipegang)" },
+  { code: "TALANGAN_PRIBADI", label: "Ditanggung driver/karyawan dulu (reimbursement)" },
+  { code: "BELUM_DIBAYAR", label: "Belum dibayar (utang ke pihak ketiga)" },
+];
+
 export const WORKSPACES = {
   DELIVERY: {
     division: "DELIVERY",
@@ -35,6 +49,24 @@ export const WORKSPACES = {
       { code: "SEWA", label: "Sewa kendaraan" },
       { code: "LAINNYA", label: "Lainnya" },
     ],
+    // Pemetaan WAJIB & EKSPLISIT expenseType -> FinExpenseCategory.code (lihat
+    // DEFAULT_EXPENSE_CATEGORIES di accounts.js). SENGAJA tidak ada fallback:
+    // kategoriUntuk() di service.js menolak (422) kalau kode di sini tidak
+    // ditemukan/nonaktif di FinExpenseCategory, TIDAK PERNAH diam-diam memilih
+    // kategori lain — transaksi finansial tidak boleh salah akun cuma karena
+    // Finance belum sempat memasang kategorinya.
+    categoryMapping: {
+      BBM: "BBM", TOL: "TOL", PARKIR: "PARKIR", SERVIS: "SERVIS_KENDARAAN",
+      BAN: "BAN_KENDARAAN", CUCI: "CUCI_KENDARAAN", DENDA: "DENDA_TILANG",
+      SEWA: "SEWA_KENDARAAN", LAINNYA: "BIAYA_KENDARAAN_LAIN",
+    },
+    // Auto-approve untuk jenis biaya RUTIN bernilai kecil (D-181, 24 September
+    // 2026) — BBM/tol/parkir yang setiap hari terjadi berkali-kali tidak perlu
+    // menunggu Finance klik approve satu-satu. `maxAmount` adalah pagar
+    // keamanan supaya "BBM" yang nilainya janggal besar tetap masuk antrean
+    // manusia — kedua angka ini sengaja mudah diubah di satu tempat kalau
+    // kebijakan Finance berubah, TIDAK di-hardcode di service.js.
+    autoApprove: { types: ["BBM", "TOL", "PARKIR"], maxAmount: 300_000 },
     relations: ["job", "route", "vehicle", "driver", "helper"],
     requiresLeaderReview: false,
     metadataFields(tipe) {
@@ -170,4 +202,12 @@ export function getWorkspaceConfig(workspace) {
 export function daftarWorkspaceAktif() {
   // Hanya Delivery yang punya UI nyata di rilis ini — lihat laporan rollout.
   return ["DELIVERY"];
+}
+
+/** Boleh lewat jalur OTOMATIS_DISETUJUI? Default tertutup (workspace tanpa `autoApprove` = selalu manual). */
+export function bolehAutoApprove(cfg, expenseType, amount) {
+  const policy = cfg?.autoApprove;
+  if (!policy) return false;
+  if (!policy.types.includes(expenseType)) return false;
+  return Number(amount) <= policy.maxAmount;
 }

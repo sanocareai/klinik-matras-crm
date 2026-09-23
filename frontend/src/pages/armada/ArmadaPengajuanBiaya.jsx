@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Receipt, Plus, Pencil, Send, Undo2, Ban, Camera, Loader2,
-  AlertTriangle, Copy, FileText,
+  AlertTriangle, Copy, FileText, MessageCircle, Bookmark, History, Zap,
 } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -42,6 +42,7 @@ const WORKSPACE = "DELIVERY";
 const STATUS_LABEL = {
   DRAFT: "Draf",
   MENUNGGU_PERSETUJUAN: "Menunggu Persetujuan",
+  OTOMATIS_DISETUJUI: "Disetujui Otomatis",
   DISETUJUI: "Disetujui",
   DIBAYAR: "Dibayar",
   DITOLAK: "Ditolak",
@@ -50,12 +51,13 @@ const STATUS_LABEL = {
 const STATUS_VARIANT = {
   DRAFT: "neutral",
   MENUNGGU_PERSETUJUAN: "orange",
+  OTOMATIS_DISETUJUI: "green",
   DISETUJUI: "accent",
   DIBAYAR: "green",
   DITOLAK: "red",
   DIBATALKAN: "neutral",
 };
-const STATUS_FILTERS = ["", "DRAFT", "MENUNGGU_PERSETUJUAN", "DISETUJUI", "DIBAYAR", "DITOLAK", "DIBATALKAN"];
+const STATUS_FILTERS = ["", "DRAFT", "MENUNGGU_PERSETUJUAN", "OTOMATIS_DISETUJUI", "DISETUJUI", "DIBAYAR", "DITOLAK", "DIBATALKAN"];
 
 const inputCls = "h-9 w-full rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none transition-colors focus:border-accent";
 
@@ -89,10 +91,14 @@ function MetaField({ field, value, onChange }) {
 }
 
 const KOSONG = {
-  expenseType: "", date: "", amount: "", vendorName: "", paymentMethod: "",
+  expenseType: "", date: "", amount: "", vendorName: "", paymentMethod: "", sumberDana: "",
   jobId: "", routeId: "", vehicleId: "", driverId: "", helperId: "", picUserId: "",
   description: "", notes: "", metadata: {},
+  // Catat atas nama pengaju (Finance/Dispatcher, D-181) — kosong = pengaju sendiri.
+  requestedById: "", requestedAt: "", urgentReason: "", sourceNote: "",
 };
+
+function fmtRp(n) { return "Rp" + Number(n || 0).toLocaleString("id-ID"); }
 
 // Pemilih foto nota — upload LANGSUNG saat file dipilih (dipakai di Detail,
 // setelah pengajuan sudah punya id). Versi baru tiap unggah (tidak overwrite).
@@ -160,7 +166,16 @@ export default function ArmadaPengajuanBiaya() {
   const [koreksiReason, setKoreksiReason] = useState("");
   const [showKoreksi, setShowKoreksi] = useState(false);
 
+  const [templates, setTemplates] = useState([]);
+  const [recent, setRecent] = useState(null);
+  const [showCatatAtasNama, setShowCatatAtasNama] = useState(false);
+
   const picOptions = useMemo(() => [...drivers, ...helpers], [drivers, helpers]);
+
+  function muatTemplateRecent() {
+    api.getPengajuanTemplates().then((res) => setTemplates(res.templates || [])).catch(() => {});
+    api.getPengajuanRecent(WORKSPACE).then(setRecent).catch(() => {});
+  }
 
   useEffect(() => {
     setLoadingMaster(true);
@@ -181,6 +196,7 @@ export default function ArmadaPengajuanBiaya() {
       })
       .catch(() => {})
       .finally(() => setLoadingMaster(false));
+    muatTemplateRecent();
   }, []);
 
   const load = useCallback(() => {
@@ -205,6 +221,11 @@ export default function ArmadaPengajuanBiaya() {
   const jumlahDisetujui = useMemo(() => (rowsTersaring || []).filter((r) => r.status === "DISETUJUI" || r.status === "DIBAYAR").length, [rowsTersaring]);
 
   const metaFields = config && form.expenseType ? (config.metadataFieldsByType[form.expenseType] || []) : [];
+  const akanOtomatis = !!(
+    config?.autoApprove && form.expenseType && form.amount &&
+    config.autoApprove.types.includes(form.expenseType) &&
+    Number(form.amount) > 0 && Number(form.amount) <= config.autoApprove.maxAmount
+  );
 
   function setField(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -236,10 +257,12 @@ export default function ArmadaPengajuanBiaya() {
     setEditingId(r.id);
     setForm({
       expenseType: r.expenseType, date: r.date.slice(0, 10), amount: String(r.amount),
-      vendorName: r.vendorName || "", paymentMethod: r.paymentMethod || "",
+      vendorName: r.vendorName || "", paymentMethod: r.paymentMethod || "", sumberDana: r.sumberDana || "",
       jobId: r.jobId || "", routeId: r.routeId || "", vehicleId: r.vehicleId || "",
       driverId: r.driverId || "", helperId: r.helperId || "", picUserId: r.picUserId || "",
       description: r.description || "", notes: r.notes || "", metadata: r.metadata || {},
+      requestedById: r.requestedById || "", requestedAt: r.requestedAt ? r.requestedAt.slice(0, 16) : "",
+      urgentReason: r.urgentReason || "", sourceNote: r.sourceNote || "",
     });
     setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -249,12 +272,19 @@ export default function ArmadaPengajuanBiaya() {
     setEditingId(null);
     setForm({
       expenseType: r.expenseType, date: "", amount: String(r.amount),
-      vendorName: r.vendorName || "", paymentMethod: r.paymentMethod || "",
+      vendorName: r.vendorName || "", paymentMethod: r.paymentMethod || "", sumberDana: r.sumberDana || "",
       jobId: "", routeId: "", vehicleId: r.vehicleId || "",
       driverId: r.driverId || "", helperId: r.helperId || "", picUserId: r.picUserId || "",
       description: "", notes: "", metadata: r.metadata || {},
+      requestedById: "", requestedAt: "", urgentReason: "", sourceNote: "",
     });
     setDetail(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function muatTemplate(t) {
+    setEditingId(null);
+    setForm({ ...KOSONG, ...(t.payload || {}) });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -279,10 +309,14 @@ export default function ArmadaPengajuanBiaya() {
     try {
       const payload = {
         workspace: WORKSPACE, expenseType: form.expenseType, date: form.date, amount: Number(form.amount),
-        vendorName: form.vendorName || null, paymentMethod: form.paymentMethod || null,
+        vendorName: form.vendorName || null, paymentMethod: form.paymentMethod || null, sumberDana: form.sumberDana || null,
         jobId: form.jobId || null, routeId: form.routeId || null, vehicleId: form.vehicleId || null,
         driverId: form.driverId || null, helperId: form.helperId || null, picUserId: form.picUserId || null,
         description: form.description || undefined, notes: form.notes || null, metadata: form.metadata,
+        // Catat atas nama (D-181) — kosongkan berarti "diri sendiri", backend
+        // menolak (403) kalau requestedById diisi orang lain tanpa izin.
+        requestedById: form.requestedById || undefined,
+        requestedAt: form.requestedAt || null, urgentReason: form.urgentReason || null, sourceNote: form.sourceNote || null,
       };
       if (editingId) {
         await api.updateExpenseSubmissionDraft(editingId, payload);
@@ -291,11 +325,31 @@ export default function ArmadaPengajuanBiaya() {
       }
       batalEdit();
       load();
+      muatTemplateRecent();
     } catch (err) {
       setError(err.message);
     } finally {
       setSaving(false);
     }
+  }
+
+  async function simpanTemplate() {
+    if (!form.expenseType) { setError("Isi jenis biaya dulu sebelum menyimpan sebagai template"); return; }
+    const label = prompt("Nama template? (mis. \"BBM rute harian\")");
+    if (!label?.trim()) return;
+    try {
+      const { requestedById, requestedAt, urgentReason, sourceNote, ...payloadTemplate } = form;
+      await api.createPengajuanTemplate({ label: label.trim(), division: WORKSPACE, payload: payloadTemplate });
+      muatTemplateRecent();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function hapusTemplate(id) {
+    if (!confirm("Hapus template ini?")) return;
+    await api.deletePengajuanTemplate(id);
+    muatTemplateRecent();
   }
 
   async function bukaDetail(r) {
@@ -404,6 +458,34 @@ export default function ArmadaPengajuanBiaya() {
             {editingId ? <><Pencil size={14} className="text-accent" /> Mengedit Draf</> : <><Plus size={14} className="text-accent" /> Buat Pengajuan</>}
             {editingId && <button type="button" onClick={batalEdit} className="ml-2 text-[11.5px] font-semibold text-accent underline">batal</button>}
           </div>
+
+          {!editingId && (templates.length > 0 || recent) && (
+            <div className="mb-3 flex flex-col gap-2 rounded-btn bg-inset p-2.5">
+              {templates.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-ink3"><Bookmark size={12} /> Template:</span>
+                  {templates.map((t) => (
+                    <span key={t.id} className="group inline-flex items-center gap-1 rounded-chip bg-surface px-2 py-1 text-[11.5px] text-ink2">
+                      <button type="button" className="hover:text-accent" onClick={() => muatTemplate(t)}>{t.label}</button>
+                      <button type="button" className="text-ink3 opacity-0 group-hover:opacity-100 hover:text-red" onClick={() => hapusTemplate(t.id)} title="Hapus template">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {recent && (recent.kendaraan?.length > 0 || recent.pic?.length > 0) && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-ink3"><History size={12} /> Terakhir:</span>
+                  {recent.kendaraan?.slice(0, 4).map((k) => (
+                    <button key={k.id} type="button" className="rounded-chip bg-surface px-2 py-1 text-[11.5px] text-ink2 hover:text-accent" onClick={() => setField("vehicleId", k.id)}>{k.label}</button>
+                  ))}
+                  {recent.pic?.slice(0, 4).map((p) => (
+                    <button key={p.id} type="button" className="rounded-chip bg-surface px-2 py-1 text-[11.5px] text-ink2 hover:text-accent" onClick={() => setField("picUserId", p.id)}>{p.label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <form onSubmit={submit} className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             <Field label="Jenis Biaya" required>
               <select className={inputCls} value={form.expenseType} onChange={(e) => setField("expenseType", e.target.value)}>
@@ -413,9 +495,22 @@ export default function ArmadaPengajuanBiaya() {
             </Field>
             <Field label="Tanggal" required><DatePicker value={form.date} onChange={(v) => setField("date", v)} placeholder="Pilih tanggal" allowFuture={false} /></Field>
             <Field label="Nominal (Rp)" required><Input type="number" min="0" value={form.amount} onChange={(e) => setField("amount", e.target.value)} /></Field>
+            <Field label="Sumber Dana" hint="Usulan — Finance yang menentukan rekening final">
+              <select className={inputCls} value={form.sumberDana} onChange={(e) => setField("sumberDana", e.target.value)}>
+                <option value="">— Belum ditentukan —</option>
+                {config.sumberDana?.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
+              </select>
+            </Field>
             <Field label="Metode Bayar" hint="Opsional, diisi Finance saat pembayaran kalau kosong">
               <Input value={form.paymentMethod} onChange={(e) => setField("paymentMethod", e.target.value)} placeholder="Cth. Transfer BCA" />
             </Field>
+
+            {akanOtomatis && (
+              <div className="col-span-full flex items-center gap-2 rounded-btn bg-greenbg p-2.5 text-[11.5px] text-green">
+                <Zap size={14} className="shrink-0" />
+                <span>Jenis biaya & nominal ini akan disetujui OTOMATIS begitu diajukan (kebijakan {config.label}, ≤ {fmtRp(config.autoApprove.maxAmount)}) — tetap tercatat &amp; bisa diaudit.</span>
+              </div>
+            )}
 
             {config.relations.includes("route") && (
               <Field label="Rute Terkait" className="col-span-2" hint="Mengisi kendaraan & PIC otomatis, tetap bisa diganti">
@@ -461,6 +556,44 @@ export default function ArmadaPengajuanBiaya() {
               <Input value={form.notes} onChange={(e) => setField("notes", e.target.value)} placeholder="Opsional" />
             </Field>
 
+            {config.bolehCatatAtasNama && (
+              <div className="col-span-full">
+                <button type="button" onClick={() => setShowCatatAtasNama((v) => !v)} className="text-[11.5px] font-semibold text-accent hover:underline">
+                  {showCatatAtasNama ? "− Sembunyikan" : "+ Catat atas nama pengaju lain"}
+                </button>
+                {showCatatAtasNama && (
+                  <div className="mt-2 grid grid-cols-2 gap-2.5 rounded-btn border border-line p-2.5 sm:grid-cols-4">
+                    <Field label="Pemohon Asli" hint="Kosongkan = Anda sendiri" className="col-span-2">
+                      <select className={inputCls} value={form.requestedById} onChange={(e) => setField("requestedById", e.target.value)}>
+                        <option value="">— Diri sendiri —</option>
+                        {picOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Waktu Permintaan" hint="Kapan driver sebenarnya minta (bukan waktu dicatat)">
+                      <input type="datetime-local" className={inputCls} value={form.requestedAt} onChange={(e) => setField("requestedAt", e.target.value)} />
+                    </Field>
+                    <Field label="Alasan Mendesak">
+                      <Input value={form.urgentReason} onChange={(e) => setField("urgentReason", e.target.value)} placeholder="Opsional" />
+                    </Field>
+                    <Field label="Referensi Sumber" className="col-span-2 sm:col-span-3" hint="Cth. &quot;Chat WA Agung 23/9 14:20&quot; — WhatsApp hanya komunikasi, ini cuma jejak referensi">
+                      <Input value={form.sourceNote} onChange={(e) => setField("sourceNote", e.target.value)} placeholder="Opsional" />
+                    </Field>
+                    <div className="flex items-end">
+                      <a
+                        className="flex h-9 w-full items-center justify-center gap-1.5 rounded-btn bg-greenbg text-[12.5px] font-semibold text-green hover:bg-green/20"
+                        target="_blank" rel="noreferrer"
+                        href={`https://wa.me/?text=${encodeURIComponent(
+                          `Pengajuan biaya mendesak — ${config.expenseTypes.find((t) => t.code === form.expenseType)?.label || form.expenseType || "?"}${form.amount ? `, ${fmtRp(form.amount)}` : ""}${form.urgentReason ? `. Alasan: ${form.urgentReason}` : ""}`
+                        )}`}
+                      >
+                        <MessageCircle size={14} /> Buka WhatsApp
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {dupWarning.length > 0 && (
               <div className="col-span-full flex items-start gap-2 rounded-btn bg-orangebg p-2.5 text-[11.5px] text-orange">
                 <AlertTriangle size={14} className="mt-0.5 shrink-0" />
@@ -468,7 +601,8 @@ export default function ArmadaPengajuanBiaya() {
               </div>
             )}
             {error && <p className="col-span-full text-[12px] text-red">{error}</p>}
-            <div className="col-span-full flex justify-end">
+            <div className="col-span-full flex justify-between">
+              <Button type="button" variant="neutral" size="sm" onClick={simpanTemplate}><Bookmark size={13} /> Simpan sebagai Template</Button>
               <Button type="submit" size="sm" disabled={saving}>{saving ? "Menyimpan…" : editingId ? "Simpan Perubahan" : "Simpan Draf"}</Button>
             </div>
           </form>
@@ -558,9 +692,20 @@ export default function ArmadaPengajuanBiaya() {
               <div><span className="text-ink3">Kendaraan</span><div className="font-medium text-ink">{detail.vehiclePlateSnapshot || "—"}</div></div>
               <div><span className="text-ink3">PIC</span><div className="font-medium text-ink">{detail.picNameSnapshot || detail.driverNameSnapshot || "—"}</div></div>
               <div><span className="text-ink3">Vendor/Lokasi</span><div className="font-medium text-ink">{detail.vendorName || "—"}</div></div>
+              <div><span className="text-ink3">Pemohon</span><div className="font-medium text-ink">{detail.requestedBy?.name || "—"}</div></div>
+              <div><span className="text-ink3">Sumber Dana</span><div className="font-medium text-ink">{config.sumberDana?.find((s) => s.code === detail.sumberDana)?.label || "—"}</div></div>
             </div>
             <div><span className="text-ink3">Keterangan</span><div className="font-medium text-ink">{detail.description}</div></div>
             {detail.notes && <div><span className="text-ink3">Catatan</span><div className="text-ink2">{detail.notes}</div></div>}
+
+            {detail.createdBy?.id !== detail.requestedBy?.id && (
+              <div className="rounded-btn bg-orangebg p-2.5 text-[11.5px] text-orange">
+                <div className="font-semibold">Dicatat atas nama {detail.requestedBy?.name}</div>
+                <div>oleh {detail.createdBy?.name}{detail.requestedAt ? ` · diminta ${fmtWaktu(detail.requestedAt)}` : ""}</div>
+                {detail.urgentReason && <div>Alasan mendesak: {detail.urgentReason}</div>}
+                {detail.sourceNote && <div>Referensi: {detail.sourceNote}</div>}
+              </div>
+            )}
 
             {detail.finExpense && (
               <div className="rounded-btn bg-inset p-2.5">

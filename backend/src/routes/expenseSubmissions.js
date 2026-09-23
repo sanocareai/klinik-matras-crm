@@ -6,9 +6,9 @@
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { idempotency } from "../middleware/idempotency.js";
-import { requireAnyPermission, PERMISSIONS as P, hasPermission } from "../middleware/authorize.js";
+import { requireAnyPermission, PERMISSIONS as P, hasPermission, rolesOf } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { getWorkspaceConfig, daftarWorkspaceAktif } from "../services/expenseSubmission/config.js";
+import { getWorkspaceConfig, daftarWorkspaceAktif, SUMBER_DANA } from "../services/expenseSubmission/config.js";
 import {
   buatPengajuan, ubahPengajuanDraft, ajukanPengajuan, tarikPengajuan, batalkanPengajuan,
   ubahMetadataPengajuan, cekKemungkinanDuplikat, submissionInclude, bentukSubmission, SubmissionError,
@@ -45,6 +45,13 @@ expenseSubmissionRouter.get("/expense-submissions/config", requireAnyPermission(
       relations: cfg.relations,
       requiresLeaderReview: cfg.requiresLeaderReview,
       metadataFieldsByType: Object.fromEntries(cfg.expenseTypes.map((t) => [t.code, cfg.metadataFields(t.code)])),
+      autoApprove: cfg.autoApprove || null,
+      sumberDana: SUMBER_DANA,
+      // Boleh mengisi "requestedById" beda dari diri sendiri (catat atas nama
+      // pengaju, D-181) — dihitung SERVER, frontend cuma menampilkan/menyembunyikan
+      // berdasarkan ini, keputusan sesungguhnya tetap divalidasi ulang di service.js
+      // setiap kali (tidak pernah dipercaya begitu saja dari klien).
+      bolehCatatAtasNama: hasPermission(req.user, P.FINANCE_POST) || hasPermission(req.user, P.FINANCE_ADMIN) || rolesOf(req.user).includes("DISPATCHER"),
     });
   } catch (e) { handleErr(e, res); }
 });

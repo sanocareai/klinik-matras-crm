@@ -13,6 +13,10 @@ import { generateDocumentNumber, toBookDate, todayBookDateWIB } from "./journal.
 import { toMoney, moneyToNumber } from "./money.js";
 import { hasPermission } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
+import { postExpenseApproved } from "./posting/expense.js";
+import { pastikanNotaLengkap } from "./receipts.js";
+import { lockRowForUpdate } from "../inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 
 export class ExpenseInputError extends Error {
   constructor(message, statusCode = 400) {
@@ -47,6 +51,15 @@ export async function buatFinExpense(db, {
   date, amount, description, categoryId, division, mode,
   cashAccountId, supplierId, reimburseToId, payeeName, orderId, unitId, receiptUrl, notes,
   langsungAjukan, user,
+  // Lolos guard "hanya boleh reimburse diri sendiri" di bawah TANPA butuh
+  // FINANCE_POST — dipakai KHUSUS oleh ajukanPengajuan() (Pengajuan Biaya
+  // Lintas Divisi) untuk kasus "catat atas nama": permission "boleh mencatat
+  // untuk orang lain" SUDAH divalidasi terpisah di sana (lihat
+  // service.js#buatPengajuan) SEBELUM sampai ke sini — pemanggil HTTP biasa
+  // (routes/financeTransactions.js POST /expenses) tidak pernah mengirim ini,
+  // jadi perlindungan lama (user biasa tidak bisa menaruh reimburseToId
+  // sembarang orang di body request) tetap utuh.
+  reimburseToOverrideAllowed = false,
 }) {
   if (!description?.trim()) throw new ExpenseInputError("Keterangan pengeluaran wajib diisi");
   if (!categoryId) throw new ExpenseInputError("Kategori biaya wajib dipilih");
@@ -78,7 +91,9 @@ export async function buatFinExpense(db, {
       mode: modeEfektif,
       cashAccountId: modeEfektif === "LANGSUNG" ? cashAccountId : (cashAccountId || null),
       supplierId: supplierId || null,
-      reimburseToId: modeEfektif === "REIMBURSEMENT" ? ((bolehPosting && reimburseToId) || user.id) : null,
+      reimburseToId: modeEfektif === "REIMBURSEMENT"
+        ? (((bolehPosting || reimburseToOverrideAllowed) && reimburseToId) || user.id)
+        : null,
       payeeName: payeeName?.trim() || null,
       orderId: orderId || null,
       unitId: unitId || null,
@@ -90,6 +105,75 @@ export async function buatFinExpense(db, {
     },
     include: expenseInclude,
   });
+}
+
+/**
+ * Setujui SATU FinExpense — jurnal pengakuan beban (+ pembayaran sekaligus untuk mode
+ * LANGSUNG). Diekstrak dari routes/financeTransactions.js POST /expenses/:id/approve
+ * (24 September 2026) supaya jalur OTOMATIS (Pengajuan Biaya Lintas Divisi — biaya rutin
+ * bernilai kecil, lihat config.js#bolehAutoApprove) memakai PERSIS logika yang sama dengan
+ * persetujuan manual Finance — tidak ada cabang kedua yang bisa diam-diam berbeda dari
+ * cabang pertama (pola yang sama dijaga blok PEMBELIAN vs PENGELUARAN di file itu).
+ *
+ * `autoApproved: true` — dipanggil SISTEM (bukan manusia), dari DALAM transaksi
+ * ajukanPengajuan() yang sama dengan pembuatan dokumennya:
+ *   - LEWATI guard "tidak boleh menyetujui pengajuan sendiri" (tidak relevan — tidak ada
+ *     manusia yang menyetujui apa pun di sini).
+ *   - FinExpense.approvedById TETAP null (SUNGGUHAN tidak ada manusia yang approve).
+ *   - Log aktivitas & `catatanOtomatis` (audit trail ExpenseSubmission, ditulis pemanggil)
+ *     tetap merekam SIAPA yang memicu (via `actor`) dan KEBIJAKAN yang dipakai — auto-approve
+ *     tetap tertelusuri, bukan "tidak tercatat".
+ * Nota tetap WAJIB diperiksa (pastikanNotaLengkap) — kebijakan auto-approve TIDAK
+ * mengecualikan syarat bukti, cuma mengecualikan langkah klik manusia.
+ */
+export async function setujuiFinExpense(tx, { id, actor, autoApproved = false, catatanOtomatis = null }) {
+  await lockRowForUpdate(tx, '"fin_expenses"', id);
+  const e = await tx.finExpense.findUnique({ where: { id } });
+  if (!e) throw new ExpenseInputError("Pengeluaran tidak ditemukan", 404);
+  if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status)) {
+    throw new ExpenseInputError(`Pengeluaran ini sudah berstatus ${e.status} — tidak bisa disetujui lagi`, 409);
+  }
+
+  const menyetujuiSendiri = !autoApproved && e.createdById === actor.id;
+  if (menyetujuiSendiri && !hasPermission(actor, P.FINANCE_ADMIN)) {
+    throw new ExpenseInputError(
+      "Pengajuan Anda sendiri harus disetujui orang lain. Ini bukan soal kepercayaan — " +
+      "persetujuan yang diberikan sendiri tidak punya nilai kontrol apa pun saat diaudit.",
+      403
+    );
+  }
+
+  const kat = await tx.finExpenseCategory.findUnique({ where: { id: e.categoryId }, select: { code: true } });
+  await pastikanNotaLengkap(tx, {
+    jenis: "expense", doc: e, categoryCode: kat?.code,
+    err: (m, c) => Object.assign(new ExpenseInputError(m, c)),
+  });
+
+  const updated = await tx.finExpense.update({
+    where: { id: e.id },
+    data: {
+      status: e.mode === "LANGSUNG" ? "DIBAYAR" : "DISETUJUI",
+      approvedAt: new Date(),
+      approvedById: autoApproved ? null : actor.id,
+      ...(e.mode === "LANGSUNG" && { paidAt: new Date(), paidById: autoApproved ? null : actor.id }),
+    },
+  });
+
+  await postExpenseApproved(tx, { expenseId: e.id, userId: autoApproved ? null : actor.id });
+
+  await recordActivity(tx, {
+    entityType: ENTITY_TYPES.FIN_EXPENSE, entityId: e.id,
+    eventType: EVENT_TYPES.DOCUMENT_APPROVED,
+    actorId: autoApproved ? null : actor.id,
+    actorType: autoApproved ? "SYSTEM" : "USER",
+    metadata: {
+      expenseNumber: e.expenseNumber, amount: String(e.amount), mode: e.mode,
+      ...(menyetujuiSendiri && { menyetujuiPengajuanSendiri: true }),
+      ...(autoApproved && { otomatis: true, kebijakan: catatanOtomatis }),
+    },
+  });
+
+  return updated;
 }
 
 /** Tarik kembali pengeluaran yang MENUNGGU_APPROVAL ke DRAFT — kebalikan dari submit. Hanya sebelum diputuskan (belum ada jurnal). */
