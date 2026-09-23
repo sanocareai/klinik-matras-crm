@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sanss-sales-crm": {
+      "type": "http",
+      "url": "https://app.sanomatrassehat.com/mcp-chatgpt"
+    }
+  }
+}

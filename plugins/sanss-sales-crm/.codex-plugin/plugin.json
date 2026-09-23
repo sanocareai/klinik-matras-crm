@@ -1,0 +1,27 @@
+{
+  "name": "sanss-sales-crm",
+  "version": "0.1.0",
+  "description": "Ringkasan read-only Sales CRM SANSS melalui MCP",
+  "author": {
+    "name": "Sano Care"
+  },
+  "homepage": "https://app.sanomatrassehat.com",
+  "repository": "https://github.com/sanocareai/klinik-matras-crm",
+  "keywords": ["sanss", "sales", "crm", "mcp", "read-only"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "SANSS Sales CRM",
+    "shortDescription": "Ringkasan penjualan, pipeline, lead, iklan, dan produk",
+    "longDescription": "Akses baca-saja ke agregat Sales CRM SANSS. Data pelanggan dan isi percakapan tidak diekspos pada rilis awal.",
+    "developerName": "Sano Care",
+    "category": "Productivity",
+    "capabilities": ["Read"],
+    "websiteURL": "https://app.sanomatrassehat.com",
+    "defaultPrompt": [
+      "Ringkas penjualan bulan ini.",
+      "Bandingkan pipeline dan sumber lead.",
+      "Tampilkan performa iklan dan traffic lead."
+    ],
+    "brandColor": "#2D64B6"
+  }
+}
