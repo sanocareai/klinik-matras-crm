@@ -1546,6 +1546,7 @@ model Unit {
   stageAssignments  StageAssignment[]
   materialIssues    MaterialIssue[]
   complaintCases    ComplaintCase[]
+  productionRunsV2  ProductionRun[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -2307,6 +2308,8 @@ model Job {
   executionEvents DeliveryExecutionEvent[]
 
   expenseSubmissions ExpenseSubmission[]
+  deliveryStateV2    DeliveryJobState?
+  stopAssignmentsV2  RouteStopAssignment[]
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
@@ -3704,6 +3707,8 @@ model Route {
   expenses           VehicleExpense[]
   executionEvents    DeliveryExecutionEvent[]
   expenseSubmissions ExpenseSubmission[]
+  deliveryStateV2    DeliveryRouteState?
+  publicationsV2     RoutePublication[]
 
   @@index([date, status]) // papan Route Planner per tanggal
   @@index([driverId, date])
@@ -7511,4 +7516,516 @@ model ApiIdempotencyKey {
   @@unique([userId, key])
   @@index([createdAt])
   @@map("api_idempotency_keys")
+}
+
+// =============================================================================
+// Production + Delivery V2 — additive foundation
+// =============================================================================
+// Seluruh tabel di bawah additive. V1 tetap dilayani sampai gate cutover
+// lulus. Writer V2 wajib menulis compatibility projection V1 dalam transaksi
+// yang sama; outbox BUKAN mekanisme untuk mengejar projection yang tertinggal.
+
+enum V2MigrationRunStatus {
+  PLANNED
+  RUNNING
+  VERIFIED
+  FAILED
+  ROLLED_BACK
+}
+
+enum V2MigrationExceptionStatus {
+  OPEN
+  RESOLVED
+  KEEP_V1
+  EXCLUDED_WITH_REASON
+}
+
+enum V2ShadowComparisonStatus {
+  MATCH
+  MISMATCH
+  ERROR
+}
+
+enum DomainOutboxStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  FAILED
+}
+
+enum ProductionRunKind {
+  RESTORATION
+  NEW_PRODUCT
+  FULFILLMENT_ONLY
+  REWORK
+}
+
+enum ProductionRunStatus {
+  PENDING_ARRIVAL
+  ACTIVE
+  BLOCKED
+  COMPLETED
+  CANCELLED
+  MIGRATION_REVIEW
+}
+
+enum ProductionPhaseKind {
+  INTAKE
+  DIAGNOSIS
+  PROCESS
+  QC
+  HANDOFF
+}
+
+enum ProductionPhaseRunStatus {
+  NOT_STARTED
+  ACTIVE
+  BLOCKED
+  COMPLETED
+  NOT_APPLICABLE
+  CANCELLED
+  MIGRATION_REVIEW
+}
+
+enum ProductionOperationStatus {
+  NOT_STARTED
+  ACTIVE
+  PAUSED
+  BLOCKED
+  COMPLETED
+  SKIPPED
+  FAILED
+}
+
+enum DiagnosisReportStatus {
+  DRAFT
+  RECORDED
+  APPROVED
+  SUPERSEDED
+}
+
+enum QualityInspectionResult {
+  PENDING
+  PASS
+  FAIL_REWORK
+  OVERRIDDEN
+}
+
+enum ProductionHandoffStatus {
+  DRAFT
+  OFFERED
+  ACCEPTED
+  CANCELLED
+}
+
+enum RoutePublicationStatus {
+  ACTIVE
+  SUPERSEDED
+  REVOKED
+}
+
+enum RouteStopAssignmentStatus {
+  ACTIVE
+  COMPLETED
+  REVOKED
+}
+
+enum DriverSyncChangeKind {
+  UPSERT_ROUTE
+  REMOVE_ROUTE
+  UPSERT_JOB
+  REMOVE_JOB
+  FULL_REFRESH_REQUIRED
+}
+
+enum V2CommandStatus {
+  PROCESSING
+  APPLIED
+  ALREADY_APPLIED
+  REJECTED_CONFLICT
+  REQUIRES_REVIEW
+}
+
+model V2FeatureFlag {
+  key         String   @id
+  enabled     Boolean  @default(false)
+  scope       String   @default("GLOBAL")
+  config      Json     @default("{}")
+  reason      String?
+  updatedById String?  @map("updated_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("v2_feature_flags")
+}
+
+model V2MigrationRun {
+  id                String                 @id @default(uuid()) @db.Uuid
+  kind              String
+  status            V2MigrationRunStatus   @default(PLANNED)
+  baselineWatermark BigInt?                @map("baseline_watermark")
+  catchupWatermark  BigInt?                @map("catchup_watermark")
+  sourceChecksum    String?                @map("source_checksum")
+  resultChecksum    String?                @map("result_checksum")
+  counts            Json                   @default("{}")
+  metadata          Json                   @default("{}")
+  startedAt         DateTime?              @map("started_at")
+  finishedAt        DateTime?              @map("finished_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+  exceptions        V2MigrationException[]
+
+  @@index([kind, createdAt])
+  @@index([status])
+  @@map("v2_migration_runs")
+}
+
+model V2MigrationException {
+  id            String                     @id @default(uuid()) @db.Uuid
+  runId         String                     @map("run_id") @db.Uuid
+  run           V2MigrationRun             @relation(fields: [runId], references: [id], onDelete: Restrict)
+  domain        String
+  aggregateType String                     @map("aggregate_type")
+  aggregateId   String?                    @map("aggregate_id")
+  code          String
+  severity      String
+  status        V2MigrationExceptionStatus @default(OPEN)
+  evidence      Json                       @default("{}")
+  resolution    Json?
+  resolvedById  String?                    @map("resolved_by_id")
+  resolvedAt    DateTime?                  @map("resolved_at")
+  createdAt     DateTime                   @default(now()) @map("created_at")
+  updatedAt     DateTime                   @updatedAt @map("updated_at")
+
+  @@unique([runId, domain, aggregateType, aggregateId, code])
+  @@index([status, severity])
+  @@index([aggregateType, aggregateId])
+  @@map("v2_migration_exceptions")
+}
+
+model V2ShadowComparison {
+  id            String                   @id @default(uuid()) @db.Uuid
+  domain        String
+  aggregateType String                   @map("aggregate_type")
+  aggregateId   String                   @map("aggregate_id")
+  status        V2ShadowComparisonStatus
+  v1Checksum    String?                  @map("v1_checksum")
+  v2Checksum    String?                  @map("v2_checksum")
+  differences   Json                     @default("[]")
+  comparedAt    DateTime                 @default(now()) @map("compared_at")
+
+  @@index([domain, status, comparedAt])
+  @@index([aggregateType, aggregateId, comparedAt])
+  @@map("v2_shadow_comparisons")
+}
+
+model DomainOutbox {
+  id                BigInt             @id @default(autoincrement())
+  eventId           String             @unique @default(uuid()) @map("event_id") @db.Uuid
+  domain            String
+  eventType         String             @map("event_type")
+  aggregateType     String             @map("aggregate_type")
+  aggregateId       String             @map("aggregate_id")
+  aggregateRevision Int?               @map("aggregate_revision")
+  dedupeKey         String             @unique @map("dedupe_key")
+  payload           Json
+  status            DomainOutboxStatus @default(PENDING)
+  attempts          Int                @default(0)
+  availableAt       DateTime           @default(now()) @map("available_at")
+  lockedAt          DateTime?          @map("locked_at")
+  lockedBy          String?            @map("locked_by")
+  deliveredAt       DateTime?          @map("delivered_at")
+  lastError         String?            @map("last_error")
+  createdAt         DateTime           @default(now()) @map("created_at")
+
+  @@index([status, availableAt, id])
+  @@index([aggregateType, aggregateId, id])
+  @@map("domain_outbox")
+}
+
+model V2Command {
+  id               String          @id @default(uuid()) @db.Uuid
+  domain           String
+  actorId          String?         @map("actor_id")
+  idempotencyKey   String          @map("idempotency_key")
+  commandType      String          @map("command_type")
+  aggregateType    String          @map("aggregate_type")
+  aggregateId      String          @map("aggregate_id")
+  expectedRevision Int?            @map("expected_revision")
+  appliedRevision  Int?            @map("applied_revision")
+  requestHash      String          @map("request_hash")
+  status           V2CommandStatus @default(PROCESSING)
+  response         Json?
+  createdAt        DateTime        @default(now()) @map("created_at")
+  completedAt      DateTime?       @map("completed_at")
+
+  @@unique([actorId, idempotencyKey])
+  @@index([aggregateType, aggregateId, createdAt])
+  @@map("v2_commands")
+}
+
+model ProductionRun {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  unitId               String                   @map("unit_id") @db.Uuid
+  unit                 Unit                     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  kind                 ProductionRunKind
+  status               ProductionRunStatus
+  revision             Int                      @default(1)
+  currentPhase         ProductionPhaseKind?     @map("current_phase")
+  parentRunId          String?                  @map("parent_run_id") @db.Uuid
+  parentRun            ProductionRun?           @relation("ProductionRunRework", fields: [parentRunId], references: [id], onDelete: Restrict)
+  reworkRuns           ProductionRun[]          @relation("ProductionRunRework")
+  routeSnapshot        Json?                    @map("route_snapshot")
+  routeChecksum        String?                  @map("route_checksum")
+  migrationSource      String?                  @map("migration_source")
+  migrationSourceId    String?                  @map("migration_source_id")
+  migrationRuleVersion String?                  @map("migration_rule_version")
+  migrationConfidence  String?                  @map("migration_confidence")
+  sourceChecksum       String?                  @map("source_checksum")
+  startedAt            DateTime?                @map("started_at")
+  completedAt          DateTime?                @map("completed_at")
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+  phases               ProductionPhaseRun[]
+  diagnoses            DiagnosisReport[]
+  operations           ProductionOperationRun[]
+  inspections          QualityInspection[]
+  handoff              ProductionHandoff?
+
+  @@unique([migrationSource, migrationSourceId])
+  @@index([unitId, status])
+  @@index([kind, status])
+  @@map("production_runs_v2")
+}
+
+model ProductionPhaseRun {
+  id          String                   @id @default(uuid()) @db.Uuid
+  runId       String                   @map("run_id") @db.Uuid
+  run         ProductionRun            @relation(fields: [runId], references: [id], onDelete: Restrict)
+  phase       ProductionPhaseKind
+  status      ProductionPhaseRunStatus @default(NOT_STARTED)
+  sequence    Int
+  reason      String?
+  startedAt   DateTime?                @map("started_at")
+  completedAt DateTime?                @map("completed_at")
+  createdAt   DateTime                 @default(now()) @map("created_at")
+  updatedAt   DateTime                 @updatedAt @map("updated_at")
+
+  @@unique([runId, phase])
+  @@index([phase, status])
+  @@map("production_phase_runs_v2")
+}
+
+model DiagnosisReport {
+  id                   String                @id @default(uuid()) @db.Uuid
+  runId                String                @map("run_id") @db.Uuid
+  run                  ProductionRun         @relation(fields: [runId], references: [id], onDelete: Restrict)
+  version              Int
+  status               DiagnosisReportStatus @default(DRAFT)
+  findings             Json                  @default("{}")
+  photoUrls            String[]              @default([]) @map("photo_urls")
+  recommendedServiceId String?               @map("recommended_service_id") @db.Uuid
+  diagnosedById        String?               @map("diagnosed_by_id")
+  approvedById         String?               @map("approved_by_id")
+  overrideReason       String?               @map("override_reason")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  approvedAt           DateTime?             @map("approved_at")
+
+  @@unique([runId, version])
+  @@index([runId, status])
+  @@map("diagnosis_reports_v2")
+}
+
+model ProductionOperationRun {
+  id           String                    @id @default(uuid()) @db.Uuid
+  runId        String                    @map("run_id") @db.Uuid
+  run          ProductionRun             @relation(fields: [runId], references: [id], onDelete: Restrict)
+  stageId      String?                   @map("stage_id") @db.Uuid
+  stageCode    String                    @map("stage_code")
+  stageLabel   String                    @map("stage_label")
+  sequence     Int
+  required     Boolean                   @default(true)
+  status       ProductionOperationStatus @default(NOT_STARTED)
+  planSnapshot Json                      @default("{}") @map("plan_snapshot")
+  startedAt    DateTime?                 @map("started_at")
+  completedAt  DateTime?                 @map("completed_at")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  updatedAt    DateTime                  @updatedAt @map("updated_at")
+
+  @@unique([runId, sequence])
+  @@index([runId, status])
+  @@map("production_operation_runs_v2")
+}
+
+model QualityInspection {
+  id               String                  @id @default(uuid()) @db.Uuid
+  runId            String                  @map("run_id") @db.Uuid
+  run              ProductionRun           @relation(fields: [runId], references: [id], onDelete: Restrict)
+  version          Int
+  checklistVersion String                  @map("checklist_version")
+  result           QualityInspectionResult @default(PENDING)
+  inspectorId      String?                 @map("inspector_id")
+  disposition      String?
+  overrideReason   String?                 @map("override_reason")
+  inspectedAt      DateTime?               @map("inspected_at")
+  createdAt        DateTime                @default(now()) @map("created_at")
+  items            QualityInspectionItem[]
+
+  @@unique([runId, version])
+  @@index([result, createdAt])
+  @@map("quality_inspections_v2")
+}
+
+model QualityInspectionItem {
+  id           String            @id @default(uuid()) @db.Uuid
+  inspectionId String            @map("inspection_id") @db.Uuid
+  inspection   QualityInspection @relation(fields: [inspectionId], references: [id], onDelete: Restrict)
+  itemCode     String            @map("item_code")
+  label        String
+  result       String
+  note         String?
+  photoUrls    String[]          @default([]) @map("photo_urls")
+  sortOrder    Int               @default(0) @map("sort_order")
+
+  @@unique([inspectionId, itemCode])
+  @@map("quality_inspection_items_v2")
+}
+
+model ProductionHandoff {
+  id            String                  @id @default(uuid()) @db.Uuid
+  runId         String                  @unique @map("run_id") @db.Uuid
+  run           ProductionRun           @relation(fields: [runId], references: [id], onDelete: Restrict)
+  status        ProductionHandoffStatus @default(DRAFT)
+  revision      Int                     @default(1)
+  readiness     Json                    @default("{}")
+  offeredById   String?                 @map("offered_by_id")
+  offeredAt     DateTime?               @map("offered_at")
+  acceptedById  String?                 @map("accepted_by_id")
+  acceptedAt    DateTime?               @map("accepted_at")
+  deliveryJobId String?                 @map("delivery_job_id") @db.Uuid
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @updatedAt @map("updated_at")
+
+  @@index([status, offeredAt])
+  @@map("production_handoffs_v2")
+}
+
+model DeliveryRouteState {
+  id                        String   @id @default(uuid()) @db.Uuid
+  routeId                   String   @unique @map("route_id") @db.Uuid
+  route                     Route    @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  routeRevision             Int      @default(1) @map("route_revision")
+  currentPublicationVersion Int?     @map("current_publication_version")
+  migrationSource           String?  @map("migration_source")
+  sourceChecksum            String?  @map("source_checksum")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  @@map("delivery_route_states_v2")
+}
+
+model RoutePublication {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  routeId            String                 @map("route_id") @db.Uuid
+  route              Route                  @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  publicationVersion Int                    @map("publication_version")
+  routeRevision      Int                    @map("route_revision")
+  status             RoutePublicationStatus @default(ACTIVE)
+  snapshot           Json
+  checksum           String
+  reason             String?
+  migrationBaseline  Boolean                @default(false) @map("migration_baseline")
+  publishedById      String?                @map("published_by_id")
+  publishedAt        DateTime               @default(now()) @map("published_at")
+  supersededAt       DateTime?              @map("superseded_at")
+  assignments        RouteStopAssignment[]
+
+  @@unique([routeId, publicationVersion])
+  @@index([routeId, status])
+  @@map("route_publications_v2")
+}
+
+model RouteStopAssignment {
+  id             String                    @id @default(uuid()) @db.Uuid
+  publicationId  String                    @map("publication_id") @db.Uuid
+  publication    RoutePublication          @relation(fields: [publicationId], references: [id], onDelete: Restrict)
+  jobId          String                    @map("job_id") @db.Uuid
+  job            Job                       @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  sequence       Int
+  driverId       String?                   @map("driver_id")
+  helperId       String?                   @map("helper_id")
+  vehicleId      String?                   @map("vehicle_id") @db.Uuid
+  status         RouteStopAssignmentStatus @default(ACTIVE)
+  effectiveAt    DateTime                  @default(now()) @map("effective_at")
+  revokedAt      DateTime?                 @map("revoked_at")
+  completedAt    DateTime?                 @map("completed_at")
+  sourceChecksum String?                   @map("source_checksum")
+
+  @@unique([publicationId, jobId])
+  @@index([driverId, status])
+  @@index([helperId, status])
+  @@index([jobId, status])
+  @@map("route_stop_assignments_v2")
+}
+
+model DeliveryJobState {
+  id             String   @id @default(uuid()) @db.Uuid
+  jobId          String   @unique @map("job_id") @db.Uuid
+  job            Job      @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  jobRevision    Int      @default(1) @map("job_revision")
+  currentStatus  String   @map("current_status")
+  sourceChecksum String?  @map("source_checksum")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([currentStatus])
+  @@map("delivery_job_states_v2")
+}
+
+model DriverFeedState {
+  userId         String   @id @map("user_id")
+  nextSequence   BigInt   @default(1) @map("next_sequence")
+  retentionFloor BigInt   @default(1) @map("retention_floor")
+  feedVersion    Int      @default(1) @map("feed_version")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("driver_feed_states_v2")
+}
+
+model DriverSyncEvent {
+  id                 String               @id @default(uuid()) @db.Uuid
+  userId             String               @map("user_id")
+  sequence           BigInt
+  feedVersion        Int                  @default(1) @map("feed_version")
+  kind               DriverSyncChangeKind
+  aggregateType      String               @map("aggregate_type")
+  aggregateId        String               @map("aggregate_id")
+  aggregateRevision  Int?                 @map("aggregate_revision")
+  publicationVersion Int?                 @map("publication_version")
+  payload            Json                 @default("{}")
+  createdAt          DateTime             @default(now()) @map("created_at")
+
+  @@unique([userId, sequence])
+  @@index([userId, createdAt])
+  @@map("driver_sync_events_v2")
+}
+
+model DriverDevice {
+  id                       String    @id @default(uuid()) @db.Uuid
+  userId                   String    @map("user_id")
+  deviceId                 String    @map("device_id")
+  platform                 String?
+  appVersion               String?   @map("app_version")
+  buildNumber              String?   @map("build_number")
+  runtimeVersion           String?   @map("runtime_version")
+  pushTokenRef             String?   @map("push_token_ref")
+  lastSeenAt               DateTime? @map("last_seen_at")
+  lastAppliedCursor        BigInt?   @map("last_applied_cursor")
+  lastAppliedRouteRevision Int?      @map("last_applied_route_revision")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+
+  @@unique([userId, deviceId])
+  @@index([userId, lastSeenAt])
+  @@map("driver_devices_v2")
 }

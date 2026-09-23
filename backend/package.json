@@ -13,7 +13,14 @@
     "pretest:integration": "node tests/integration/setup/bootstrapTestDb.js",
     "test:integration": "node --test --test-concurrency=1 tests/integration/*.integration.test.js",
     "test:all": "npm run test && npm run test:integration",
-    "smoke": "node scripts/smoke-test-persistence.js"
+    "smoke": "node scripts/smoke-test-persistence.js",
+    "v2:inventory": "node scripts/production-delivery-v2/inventory.js",
+    "v2:backfill": "node scripts/production-delivery-v2/backfill.js",
+    "v2:flags": "node scripts/production-delivery-v2/seed-feature-flags.js",
+    "v2:exceptions": "node scripts/production-delivery-v2/exception-report.js",
+    "v2:shadow": "node scripts/production-delivery-v2/shadow-compare.js",
+    "v2:catchup-rehearsal": "node scripts/production-delivery-v2/catchup-rehearsal.js",
+    "v2:rollback-rehearsal": "node scripts/production-delivery-v2/rollback-rehearsal.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
