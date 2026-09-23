@@ -104,6 +104,11 @@ eas update:rollback             # tarik update bermasalah
 
 Alur rilis yang disarankan: PR → `npm run check` → `eas update --channel preview` → uji Natasha/Owner → `eas update --channel production`.
 
+> **Rilis 1.1.0 lewat OTA transisi (runtimeVersion 1.0.0), bukan build native baru** — lihat
+> [`docs/OTA-RUNTIME-TRANSITION.md`](./docs/OTA-RUNTIME-TRANSITION.md). Hanya dipakai sekali untuk
+> transisi ini (kuota build EAS habis, fitur 100% JS/TS); rilis berikutnya kembali ke jalur normal
+> begitu binary native 1.1.0 sudah dibangun & didistribusikan.
+
 ## Struktur
 
 ```

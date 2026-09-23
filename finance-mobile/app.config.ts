@@ -33,6 +33,29 @@ const EAS_OWNER = process.env.EAS_OWNER || "sanocare";
 const googleServices = process.env.GOOGLE_SERVICES_JSON
   || (fs.existsSync(path.join(__dirname, "google-services.json")) ? "./google-services.json" : undefined);
 
+// ── OTA TRANSISI 1.0.0 → 1.1.0 (jalur KHUSUS — lihat docs/OTA-RUNTIME-TRANSITION.md) ──────────────
+// Konteks: commit d0ca6940 menaikkan `version` ke 1.1.0 untuk fitur Pemasukan Terpadu TANPA build
+// native baru menyusul. Karena runtimeVersion di bawah memakai kebijakan "appVersion" (terikat ke
+// `version`), OTA apa pun yang dipublikasikan sesudahnya otomatis ber-runtimeVersion 1.1.0 — TIDAK
+// PERNAH sampai ke binary produksi yang masih ber-runtimeVersion 1.0.0 (audit rilis 23 Sep 2026).
+// Semua perubahan sejak build 1.0.0 (Foto Profil, Pemasukan Terpadu, Terapkan Uang Muka) JS/TS
+// murni — dependency & fingerprint native NOL berubah (package-lock.json identik byte-untuk-byte;
+// app.config.ts sebelum perubahan ini hanya berbeda satu baris: string `version`) — jadi OTA
+// ber-runtimeVersion 1.0.0 aman dipublikasikan ke binary itu.
+//
+// `EAS_UPDATE_RUNTIME_OVERRIDE` HANYA dibaca di sini dan HANYA memengaruhi field `runtimeVersion`
+// di bawah — tidak ada cabang kode lain yang membaca variabel ini, jadi ia TIDAK BISA mengubah
+// package/channel/permission/plugin/API/flag push, apa pun nilainya. TIDAK PERNAH aktif secara
+// default: variabel ini TIDAK di-set di eas.json (baik profil build maupun update), jadi build
+// native maupun `eas update` biasa tetap memakai kebijakan "appVersion" seperti sebelumnya. Aktifkan
+// HANYA dengan tangan, HANYA untuk transisi ini, HANYA saat menjalankan `eas update`:
+//   EAS_UPDATE_RUNTIME_OVERRIDE=1.0.0 npx eas update --branch production --channel production ...
+// Format divalidasi ketat (x.y.z, angka murni) — nilai tak sah DIABAIKAN (fallback diam-diam ke
+// kebijakan appVersion, bukan dilempar sebagai error) supaya salah ketik tidak pernah diam-diam
+// membuat runtimeVersion sembarangan. Lihat src/__tests__/appConfig.runtimeOverride.test.ts.
+const RUNTIME_OVERRIDE_RAW = process.env.EAS_UPDATE_RUNTIME_OVERRIDE;
+const RUNTIME_OVERRIDE_VALID = !!RUNTIME_OVERRIDE_RAW && /^\d+\.\d+\.\d+$/.test(RUNTIME_OVERRIDE_RAW);
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: `SANO Finance${LABEL[VARIANT]}`,
@@ -125,7 +148,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ],
   // Kebijakan "appVersion": runtimeVersion = versi aplikasi. Kebijakan "fingerprint" GAGAL di build cloud (hash lokal Windows ≠ hash builder pada monorepo:
   // "Runtime version calculated on local machine not equal to ... during build", 20 Sep 2026). WAJIB menaikkan `version` bila kode native berubah.
-  runtimeVersion: { policy: "appVersion" },
+  // Override transisi (lihat blok EAS_UPDATE_RUNTIME_OVERRIDE di atas) — default TETAP kebijakan appVersion.
+  runtimeVersion: RUNTIME_OVERRIDE_VALID ? (RUNTIME_OVERRIDE_RAW as string) : { policy: "appVersion" },
   updates: EAS_PROJECT_ID
     ? {
         url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
