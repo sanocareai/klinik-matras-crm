@@ -2935,11 +2935,28 @@ model IncentivePayout {
   voidedBy   User?     @relation("IncentivePayoutVoider", fields: [voidedById], references: [id], onDelete: SetNull)
   voidReason String?   @map("void_reason")
 
+  // ── Integrasi ledger Finance (double-entry) ───────────────────────────
+  // Rekening kas/bank SUMBER DANA. Nullable HANYA agar baris lama (sebelum
+  // integrasi ini) tetap valid; endpoint POST mewajibkannya untuk baris baru.
+  cashAccountId String?         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount? @relation("IncentivePayoutCashAccount", fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  // Jurnal pengakuan (Dr Beban Insentif Driver / Cr Kas-Bank), lahir di
+  // transaksi DB yang SAMA dengan baris ini. @unique = satu payout satu
+  // jurnal, satu jurnal paling banyak milik satu payout (dijaga database).
+  journalEntryId String?          @unique @map("journal_entry_id") @db.Uuid
+  journalEntry   FinJournalEntry? @relation("IncentivePayoutJournal", fields: [journalEntryId], references: [id], onDelete: Restrict)
+
+  // Jurnal balik saat void — jurnal asli TIDAK pernah diedit/dihapus.
+  voidJournalEntryId String?          @unique @map("void_journal_entry_id") @db.Uuid
+  voidJournalEntry   FinJournalEntry? @relation("IncentivePayoutVoidJournal", fields: [voidJournalEntryId], references: [id], onDelete: Restrict)
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([snapshotId])
   @@index([snapshotLineId])
   @@index([userId])
+  @@index([cashAccountId])
   @@map("incentive_payouts")
 }
 
@@ -6232,6 +6249,7 @@ enum FinCashAccountKind {
 // dan rekonsiliasi bank butuh entitas per-rekening (nomor rekening, saldo
 // menurut koran bank) yang tidak punya tempat di bagan akun.
 model FinCashAccount {
+  incentivePayouts IncentivePayout[] @relation("IncentivePayoutCashAccount")
   id   String             @id @default(uuid()) @db.Uuid
   name String // "BCA 1234567890 - Operasional"
   kind FinCashAccountKind
@@ -6334,6 +6352,7 @@ enum FinJournalSource {
   // rekening koran). Lawan akun 2-1700 "Dana Masuk Belum Teridentifikasi",
   // BUKAN pendapatan. Lihat posting/rekonsiliasiSementara.js.
   REKONSILIASI_SEMENTARA
+  INSENTIF_DRIVER // IncentivePayout — Dr Beban Insentif Driver / Cr Kas-Bank; lihat posting/incentivePayout.js
   REVERSAL // jurnal balik dari pembatalan jurnal lain
 }
 
@@ -6345,6 +6364,8 @@ enum FinJournalSource {
 // credit>=0, tepat satu yang > 0) di migration — supaya baris cacat
 // mustahil masuk walau lewat jalur SQL langsung.
 model FinJournalEntry {
+  incentivePayout     IncentivePayout? @relation("IncentivePayoutJournal")
+  incentivePayoutVoid IncentivePayout? @relation("IncentivePayoutVoidJournal")
   id          String   @id @default(uuid()) @db.Uuid
   entryNumber String   @unique @map("entry_number") // JV-DDMMYYYY-NNN
   // DATE polos - ini "tanggal buku", bukan instant (pola sama dengan

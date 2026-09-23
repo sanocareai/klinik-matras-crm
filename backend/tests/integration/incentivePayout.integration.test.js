@@ -11,9 +11,11 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/finance/accounts.js";
 
 let server;
 let seq = 0;
+let kasId = null; // rekening kas sumber dana default untuk fixture (di-set fixtureDasar)
 const K = () => ({ "Idempotency-Key": randomUUID() });
 
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -28,6 +30,10 @@ async function buatJob({ orderId, driverId = null, completedAt }) {
 }
 
 async function fixtureDasar() {
+  await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
+  const akunKas = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.KAS } });
+  const kas = await testPrisma.finCashAccount.create({ data: { name: "Kas Tes Payout", kind: "KAS", accountId: akunKas.id } });
+  kasId = kas.id;
   const admin = await createTestUser({ roles: ["ADMIN"] });
   const finance = await createTestUser({ roles: ["FINANCE"] });
   const approver = await createTestUser({ roles: ["APPROVER"] });
@@ -66,7 +72,7 @@ async function buatSnapshotBerstatus(f, { from, to }, statusAkhir = "APPROVED") 
 }
 
 function badanPayout(lineId, amount, extra = {}) {
-  return { snapshotLineId: lineId, amount, method: "TRANSFER", paidAt: "2026-09-20T10:00:00.000Z", referenceNumber: "TRX-001", ...extra };
+  return { snapshotLineId: lineId, amount, method: "TRANSFER", paidAt: "2026-09-20T10:00:00.000Z", referenceNumber: "TRX-001", cashAccountId: kasId, ...extra };
 }
 
 // ── Aturan status snapshot ──────────────────────────────────────────────

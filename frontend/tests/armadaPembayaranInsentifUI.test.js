@@ -77,3 +77,10 @@ test("Formatter rupiah/tanggal WIB dipakai dari util BERSAMA (bukan reimplementa
   assert.match(src, /import \{ formatRupiah, formatTanggalWaktu \} from "@\/utils\/format\.js"/, "harus pakai formatRupiah/formatTanggalWaktu bersama, bukan Intl/toLocaleString ditulis ulang di halaman ini");
   assert.doesNotMatch(src, /toLocaleString/, "TIDAK boleh format Rupiah/tanggal manual — satu sumber formatter, bukan dua yang bisa beda hasil");
 });
+
+test("Sumber dana Kas/Bank wajib dipilih dan dikirim ke API; jurnal tampil di riwayat", () => {
+  assert.match(src, /getIncentivePayoutCashAccounts/);
+  assert.match(src, /Sumber Dana \(Kas\/Bank\)/);
+  assert.match(src, /cashAccountId/);
+  assert.match(src, /journalEntry/);
+});
