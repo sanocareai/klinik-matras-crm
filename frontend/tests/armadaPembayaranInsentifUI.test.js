@@ -84,3 +84,8 @@ test("Sumber dana Kas/Bank wajib dipilih dan dikirim ke API; jurnal tampil di ri
   assert.match(src, /cashAccountId/);
   assert.match(src, /journalEntry/);
 });
+
+test("Sumber dana TIDAK dipilih otomatis (aksi uang: pilihan eksplisit, walau hanya ada satu rekening)", () => {
+  assert.doesNotMatch(src, /accounts\.length === 1/);
+  assert.match(src, /setCashAccountId\(""\)/);
+});

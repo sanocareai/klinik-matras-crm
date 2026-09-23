@@ -56,7 +56,7 @@ function CatatPembayaranModal({ line, snapshotId, onOpenChange, onRecorded }) {
     if (!line) return;
     setAkunKas(null);
     api.getIncentivePayoutCashAccounts()
-      .then((r) => { setAkunKas(r.accounts); setCashAccountId(r.accounts.length === 1 ? r.accounts[0].id : ""); })
+      .then((r) => { setAkunKas(r.accounts); setCashAccountId(""); })
       .catch((e) => { setAkunKas([]); setError(e.message); });
   }, [line]);
 

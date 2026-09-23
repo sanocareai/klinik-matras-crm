@@ -212,3 +212,54 @@ test("constraint DB: satu jurnal tidak bisa dimiliki dua payout", async () => {
   const satu = await testPrisma.incentivePayout.findUnique({ where: { id: p1.body.id } });
   await assert.rejects(testPrisma.incentivePayout.update({ where: { id: p2.body.id }, data: { journalEntryId: satu.journalEntryId } }), (e) => e.code === "P2002");
 });
+
+test("kontrak void: retry kunci sama mengembalikan hasil void PERTAMA (byte-sama, header replay), tanpa reversal baru", async () => {
+  const f = await fixture();
+  const bayar = await f.finance.api.post(URL_PAYOUT, body(f, 7000), K());
+  const hdr = K();
+  const v1 = await f.admin.api.post(`${URL_PAYOUT}/${bayar.body.id}/void`, { reason: "salah" }, hdr);
+  const v2 = await f.admin.api.post(`${URL_PAYOUT}/${bayar.body.id}/void`, { reason: "salah" }, hdr);
+  assert.equal(v1.status, 200);
+  assert.equal(v2.status, 200);
+  assert.deepEqual(v2.body, v1.body, "respons replay identik dengan void pertama");
+  assert.equal(v1.body.voidJournalEntryId, v2.body.voidJournalEntryId);
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "REVERSAL" } }), 1);
+});
+
+test("kontrak void: paralel dengan kunci SAMA — satu reversal; yang lain replay atau 409 in-progress, tidak pernah reversal kedua", async () => {
+  const f = await fixture();
+  const bayar = await f.finance.api.post(URL_PAYOUT, body(f, 7000), K());
+  const hdr = K();
+  const hasil = await Promise.all([1, 2, 3, 4].map(() => f.admin.api.post(`${URL_PAYOUT}/${bayar.body.id}/void`, { reason: "paralel" }, hdr)));
+  assert.ok(hasil.some((r) => r.status === 200), JSON.stringify(hasil.map((r) => r.status)));
+  assert.ok(hasil.every((r) => [200, 409].includes(r.status)), JSON.stringify(hasil.map((r) => r.status)));
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "REVERSAL" } }), 1);
+  assert.equal(await testPrisma.incentivePayout.count({ where: { voidedAt: { not: null } } }), 1);
+});
+
+test("kontrak void: request BARU (kunci baru) pada payout yang sudah void = 409, tanpa efek samping", async () => {
+  const f = await fixture();
+  const bayar = await f.finance.api.post(URL_PAYOUT, body(f, 7000), K());
+  await f.admin.api.post(`${URL_PAYOUT}/${bayar.body.id}/void`, { reason: "pertama" }, K());
+  const antes = await testPrisma.incentivePayout.findUnique({ where: { id: bayar.body.id } });
+  const v = await f.admin.api.post(`${URL_PAYOUT}/${bayar.body.id}/void`, { reason: "kedua" }, K());
+  assert.equal(v.status, 409);
+  const sesudah = await testPrisma.incentivePayout.findUnique({ where: { id: bayar.body.id } });
+  assert.equal(sesudah.voidReason, "pertama");
+  assert.equal(sesudah.voidJournalEntryId, antes.voidJournalEntryId);
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "REVERSAL" } }), 1);
+});
+
+test("respons riwayat memuat nomor jurnal, jurnal balik, dan rekening sumber dana (siap dirender UI)", async () => {
+  const f = await fixture();
+  const bayar = await f.finance.api.post(URL_PAYOUT, body(f, 7000), K());
+  const a = await f.finance.api.get(`${URL_PAYOUT}?snapshotLineId=${f.line.id}`);
+  assert.equal(a.status, 200);
+  assert.match(a.body.payouts[0].journalEntry.entryNumber, /^JV-/);
+  assert.equal(a.body.payouts[0].cashAccount.name, "Kas Tes");
+  assert.equal(a.body.payouts[0].voidJournalEntry, null);
+  await f.admin.api.post(`${URL_PAYOUT}/${bayar.body.id}/void`, { reason: "uji" }, K());
+  const b = await f.finance.api.get(`${URL_PAYOUT}?snapshotLineId=${f.line.id}`);
+  assert.match(b.body.payouts[0].voidJournalEntry.entryNumber, /^JV-/);
+  assert.notEqual(b.body.payouts[0].voidJournalEntry.entryNumber, b.body.payouts[0].journalEntry.entryNumber);
+});
