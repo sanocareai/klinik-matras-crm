@@ -40,7 +40,13 @@ async function main() {
   console.log(`Mode: ${APPLY ? "APPLY (menulis ke database)" : "DRY-RUN (cuma pratinjau, tidak menulis apa pun)"}`);
 
   const jobs = await prisma.job.findMany({
-    where: { rescheduleReason: { not: null }, rescheduleCaseId: null },
+    where: {
+      rescheduleReason: { not: null },
+      rescheduleCaseId: null,
+      // Tombstone cancellation memakai FAILED sebagai projection V1, tetapi
+      // tidak pernah boleh dibuatkan kasus reschedule oleh repair historis.
+      cancellationV2: null,
+    },
     select: {
       id: true, status: true, completedAt: true, scheduledDate: true,
       rescheduleReason: true, rescheduledAt: true, rescheduledById: true, customerConfirmedReschedule: true,

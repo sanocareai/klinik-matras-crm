@@ -654,7 +654,7 @@ armadaRouter.post("/external-courier/notify-natasha", requirePermission(P.JOB_WR
     const todayWIB = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
     const targetDate = toDateOnly(date || todayWIB);
     const jobs = await prisma.job.findMany({
-      where: { scheduledDate: targetDate, driver: { isExternalCourier: true } },
+      where: { scheduledDate: targetDate, driver: { isExternalCourier: true }, cancellationV2: null },
       select: EXTERNAL_COURIER_JOB_SELECT,
       orderBy: { createdAt: "asc" },
     });
@@ -1292,6 +1292,7 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
 
     const jobs = await prisma.job.findMany({
       where: {
+        cancellationV2: null,
         ...(type && { type }),
         ...(status && { status }),
         // orderStatus (6 September 2026, laporan owner: "filter disini
@@ -2076,6 +2077,7 @@ const routeInclude = {
     orderBy: { createdAt: "asc" },
   },
   jobs: {
+    where: { cancellationV2: null },
     include: jobInclude,
     orderBy: { sequence: "asc" },
   },
@@ -2892,7 +2894,7 @@ armadaRouter.get("/routes/:id/maps-link", requirePermission(P.JOB_READ), async (
     // ensureJobsGeocoded/services/maps.js#geocodeAddress.
     const route = await prisma.route.findUnique({
       where: { id: req.params.id },
-      include: { jobs: { include: { order: { select: { locationUrl: true } } } } },
+      include: { jobs: { where: { cancellationV2: null }, include: { order: { select: { locationUrl: true } } } } },
     });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
     await ensureJobsGeocoded(route.jobs);
@@ -2919,7 +2921,7 @@ armadaRouter.get("/routes/:id/map", requireAnyPermission(P.JOB_READ, P.JOB_OWN_R
   try {
     const route = await prisma.route.findUnique({
       where: { id: req.params.id },
-      include: { jobs: { include: { order: { select: { locationUrl: true } } } } },
+      include: { jobs: { where: { cancellationV2: null }, include: { order: { select: { locationUrl: true } } } } },
     });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
 
@@ -3123,6 +3125,10 @@ armadaRouter.get("/issues", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), as
     const jobs = await prisma.job.findMany({
       where: {
         OR: [{ status: "FAILED" }, { rescheduleReason: { not: null } }, { rescheduleCaseId: { not: null } }],
+        // Projection V1 untuk order cancellation memakai FAILED demi
+        // kompatibilitas enum lama, tetapi tombstone bukan kegagalan
+        // operasional dan tidak boleh masuk antrean reschedule.
+        cancellationV2: null,
         // Order dibatalkan (13 September 2026, laporan owner — kasus nyata
         // Mizroza/RES-10092026-050: driver sampai rumah, customer batal
         // sepihak, sales membatalkan order lewat POST /orders/:id/cancel
@@ -3159,8 +3165,14 @@ armadaRouter.get("/issues", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), as
 // complete) tanpa perlu mengubah guard status di endpoint lain.
 armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), async (req, res) => {
   try {
-    const job = await prisma.job.findUnique({ where: { id: req.params.jobId } });
+    const job = await prisma.job.findUnique({
+      where: { id: req.params.jobId },
+      include: { cancellationV2: { select: { id: true, cancelledAt: true } } },
+    });
     if (!job) return res.status(404).json({ error: "Job tidak ditemukan" });
+    if (job.cancellationV2) {
+      throw new ArmadaError("Job dibatalkan bersama order dan tidak dapat dijadwalkan ulang", 409);
+    }
     if (job.status !== "FAILED") throw new ArmadaError("Hanya job berstatus Gagal yang bisa dijadwalkan ulang lewat sini");
 
     const { scheduledDate, timeWindow, driverId, helperId, vehicleId, reason, customerConfirmed } = req.body;
@@ -3370,6 +3382,7 @@ armadaRouter.get("/pod", requirePermission(P.JOB_READ), async (req, res) => {
     };
     const jobs = await prisma.job.findMany({
       where: {
+        cancellationV2: null,
         status: { notIn: ["UNSCHEDULED"] },
         ...(Object.keys(scheduledDateFilter).length > 0 && { scheduledDate: scheduledDateFilter }),
       },
@@ -3594,6 +3607,7 @@ armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
     // available" (yang sudah tidak lagi berlaku begitu unit itu dapat job).
     const jobs = await prisma.job.findMany({
       where: {
+        cancellationV2: null,
         type,
         ...(targetDate ? { OR: [{ scheduledDate: targetDate }, { scheduledDate: null }] } : { scheduledDate: null }),
         // Job usang (D-064, lihat catatan lengkap di services/jobStatus.js)
@@ -5948,15 +5962,16 @@ armadaRouter.get("/reports/summary", requirePermission(P.JOB_READ), async (req, 
   try {
     const { from, to } = req.query;
     const dateWhere = from && to ? { scheduledDate: { gte: toDateOnly(from), lt: new Date(toDateOnly(to).getTime() + 86_400_000) } } : {};
+    const visibleJobWhere = { ...dateWhere, cancellationV2: null };
     const routeDateWhere = from && to ? { date: { gte: toDateOnly(from), lt: new Date(toDateOnly(to).getTime() + 86_400_000) } } : {};
 
     const [byStatus, byType, jobsForPod, routeByStatus, vehicleByStatus, driverGroups, externalCourierJobs] = await Promise.all([
-      prisma.job.groupBy({ by: ["status"], where: dateWhere, _count: { _all: true } }),
-      prisma.job.groupBy({ by: ["type"], where: dateWhere, _count: { _all: true } }),
-      prisma.job.findMany({ where: { ...dateWhere, status: "COMPLETED" }, select: { status: true, podStatus: true, proofPhotoUrls: true } }),
+      prisma.job.groupBy({ by: ["status"], where: visibleJobWhere, _count: { _all: true } }),
+      prisma.job.groupBy({ by: ["type"], where: visibleJobWhere, _count: { _all: true } }),
+      prisma.job.findMany({ where: { ...visibleJobWhere, status: "COMPLETED" }, select: { status: true, podStatus: true, proofPhotoUrls: true } }),
       prisma.route.groupBy({ by: ["status"], where: routeDateWhere, _count: { _all: true } }),
       prisma.vehicle.groupBy({ by: ["status"], _count: { _all: true } }), // status ARMADA SEKARANG, sengaja tidak dibatasi rentang tanggal
-      prisma.job.groupBy({ by: ["driverId"], where: { ...dateWhere, status: "COMPLETED", driverId: { not: null } }, _count: { _all: true } }),
+      prisma.job.groupBy({ by: ["driverId"], where: { ...visibleJobWhere, status: "COMPLETED", driverId: { not: null } }, _count: { _all: true } }),
       // Kurir eksternal (D-161, 13 September 2026) — jumlah job & total
       // ongkos Lalamove/dst di rentang ini, supaya kebiasaan "customer minta
       // cepat, pilih Lalamove" kelihatan biayanya, bukan cuma dicatat per
@@ -5964,7 +5979,7 @@ armadaRouter.get("/reports/summary", requirePermission(P.JOB_READ), async (req, 
       // dari driverGroups di atas) — ongkos relevan dihitung begitu job
       // dibuat/dijalankan, bukan cuma yang sudah tuntas.
       prisma.job.findMany({
-        where: { ...dateWhere, driver: { isExternalCourier: true } },
+        where: { ...visibleJobWhere, driver: { isExternalCourier: true } },
         select: { id: true, status: true, externalCourierCost: true, driver: { select: { name: true } } },
       }),
     ]);

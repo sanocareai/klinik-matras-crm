@@ -152,6 +152,7 @@ test("order cancellation sebelum publish membuat tombstone tanpa hard-delete dan
   await enableWriters();
   const sales = await createTestUser({ roles: ["SALES"] });
   const driver = await createTestUser({ roles: ["DRIVER"] });
+  const owner = await createTestUser({ roles: ["OWNER"] });
   const fixture = await seedRoute({ driverId: driver.user.id, routeStatus: "DRAFT", jobStatus: "ASSIGNED", proofPhotoUrls: ["/media/job-photos/keep.jpg"] });
 
   const first = await postCancel(fixture.order.id, sales.token, "Customer batal sebelum berangkat");
@@ -189,6 +190,56 @@ test("order cancellation sebelum publish membuat tombstone tanpa hard-delete dan
   });
   assert.equal(myJobs.status, 200);
   assert.deepEqual((await myJobs.json()).jobs, []);
+
+  const issues = await fetch(`${server.baseUrl}/api/armada/issues`, {
+    headers: { Authorization: `Bearer ${driver.token}` },
+  });
+  assert.equal(issues.status, 200);
+  assert.deepEqual((await issues.json()).jobs, []);
+
+  const reschedule = await fetch(`${server.baseUrl}/api/armada/issues/${fixture.job.id}/reschedule`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${owner.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      scheduledDate: "2026-09-25",
+      reason: "Tidak boleh menghidupkan tombstone",
+    }),
+  });
+  assert.equal(reschedule.status, 409);
+  assert.match((await reschedule.json()).error, /dibatalkan bersama order/i);
+
+  const timeline = await fetch(`${server.baseUrl}/api/orders/${fixture.order.id}/timeline`, {
+    headers: { Authorization: `Bearer ${sales.token}` },
+  });
+  assert.equal(timeline.status, 200);
+  assert.deepEqual((await timeline.json()).issueJobs, []);
+
+  const overview = await fetch(`${server.baseUrl}/api/kendali/overview`, {
+    headers: { Authorization: `Bearer ${owner.token}` },
+  });
+  assert.equal(overview.status, 200);
+  const overviewBody = await overview.json();
+  assert.deepEqual(overviewBody.jobFailures, []);
+  assert.equal(overviewBody.driverActivity.some((row) => row.driverId === driver.user.id && row.failed > 0), false);
+
+  const [jobsList, routeDetail, podQueue, board, deliveryReport] = await Promise.all([
+    fetch(`${server.baseUrl}/api/armada/jobs?status=FAILED`, { headers: { Authorization: `Bearer ${owner.token}` } }),
+    fetch(`${server.baseUrl}/api/armada/routes/${fixture.route.id}`, { headers: { Authorization: `Bearer ${owner.token}` } }),
+    fetch(`${server.baseUrl}/api/armada/pod`, { headers: { Authorization: `Bearer ${owner.token}` } }),
+    fetch(`${server.baseUrl}/api/armada/board?date=2026-09-24&type=DELIVERY`, { headers: { Authorization: `Bearer ${owner.token}` } }),
+    fetch(`${server.baseUrl}/api/armada/reports/summary?from=2026-09-24&to=2026-09-24`, { headers: { Authorization: `Bearer ${owner.token}` } }),
+  ]);
+  for (const response of [jobsList, routeDetail, podQueue, board, deliveryReport]) assert.equal(response.status, 200);
+  assert.deepEqual((await jobsList.json()).jobs, []);
+  assert.deepEqual((await routeDetail.json()).jobs, []);
+  assert.deepEqual((await podQueue.json()).jobs, []);
+  assert.deepEqual((await board.json()).jobs, []);
+  assert.equal((await deliveryReport.json()).byStatus.some((row) => row.status === "FAILED"), false);
+
+  assert.equal(await testPrisma.jobIssueLog.count({ where: { jobId: fixture.job.id } }), 0);
+  assert.equal(await testPrisma.rescheduleCase.count({ where: { jobId: fixture.job.id } }), 0);
+  assert.equal(await testPrisma.incentivePayout.count({ where: { userId: driver.user.id } }), 0);
+  assert.equal(await testPrisma.finJournalEntry.count(), 0);
 
   const second = await postCancel(fixture.order.id, sales.token, "Retry yang tidak boleh menimpa alasan");
   assert.equal(second.response.status, 200);

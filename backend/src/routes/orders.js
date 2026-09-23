@@ -1737,6 +1737,9 @@ orderRouter.get("/:id/timeline", async (req, res) => {
     const issueJobs = await prisma.job.findMany({
       where: {
         orderId: req.params.id,
+        // Cancellation tombstone adalah riwayat pembatalan, bukan laporan
+        // kegagalan/reschedule. Audit cancellation dibaca dari ledger V2.
+        cancellationV2: null,
         // rescheduleCaseId (D-160, 13 September 2026) — OR tambahan, sama
         // alasan dengan GET /armada/issues (armada.js#deriveIssueStatus):
         // jalur PROACTIVE sekarang ikut menulis rescheduleReason juga, tapi

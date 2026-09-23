@@ -66,7 +66,7 @@ kendaliRouter.get("/overview", requirePermission(P.DASHBOARD_READ), async (req, 
     // tepat waktu".
     const jobFailures = await prisma.job.groupBy({
       by: ["type", "failureReason"],
-      where: { status: "FAILED" },
+      where: { status: "FAILED", cancellationV2: null },
       _count: true,
       orderBy: { _count: { failureReason: "desc" } },
     });
@@ -81,7 +81,12 @@ kendaliRouter.get("/overview", requirePermission(P.DASHBOARD_READ), async (req, 
     // 6. Aktivitas driver HARI INI — job selesai/gagal, per driver.
     const todayStart = new Date(`${new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)}T00:00:00.000Z`);
     const driverJobsToday = await prisma.job.findMany({
-      where: { updatedAt: { gte: todayStart }, status: { in: ["COMPLETED", "FAILED"] }, driverId: { not: null } },
+      where: {
+        updatedAt: { gte: todayStart },
+        status: { in: ["COMPLETED", "FAILED"] },
+        driverId: { not: null },
+        cancellationV2: null,
+      },
       select: { driverId: true, status: true, driver: { select: { name: true } } },
     });
     const byDriver = {};
