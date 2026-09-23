@@ -41,7 +41,6 @@ import { unitRouter }     from "./routes/units.js";
 import { productionRouter } from "./routes/production.js";
 import { activityRouter } from "./routes/activity.js";
 import { armadaRouter }     from "./routes/armada.js";
-import { incentiveSnapshotRouter } from "./routes/incentiveSnapshot.js";
 import { kendaliRouter }    from "./routes/kendali.js";
 // Finance Workspace (D-180) — DUA router, SATU prefix /api/finance.
 // Pemisahannya semata soal panjang file (lihat catatan di kepala
@@ -211,7 +210,6 @@ app.use("/api/production",   productionRouter);
 app.use("/api/activity",     activityRouter);
 app.use("/api/complaints",   complaintsRouter);
 app.use("/api/armada",       armadaRouter);
-app.use("/api/armada",       incentiveSnapshotRouter); // additive, tidak mengubah armadaRouter — lihat routes/incentiveSnapshot.js
 app.use("/api/kendali",      kendaliRouter);
 app.use("/api/finance",      financePushHooks); // S11: pemicu push (mengamati respons; tidak mengubah endpoint)
 app.use("/api/finance",      financeRouter);
