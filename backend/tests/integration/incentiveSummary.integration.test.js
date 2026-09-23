@@ -200,6 +200,125 @@ test("PATCH /pod/:jobId/edit mengubah driver mencatat ActivityEvent dengan nilai
   assert.equal(events[0].metadata.reason, "Driver salah dipilih saat input manual");
 });
 
+// ── UnitRevision ("Lapor Revisi") — hardening 24 September 2026 ────────────
+// Job pickup/delivery UnitRevision tidak dibuat lewat endpoint penuh di sini
+// (POST /revisions/:id/create-pickup-job dkk butuh banyak setup produksi yang
+// tidak relevan buat tes ini) — fixture langsung menulis baris UnitRevision
+// dengan jobId menunjuk job tes, meniru HASIL AKHIR endpoint itu (jobId
+// terisi setelah job dibuat). Pola sama dengan fixture ComplaintCase di atas.
+async function buatUnitRevisionUntukJob({ orderId, jobId, status = "IN_REWORK" }) {
+  const unit = await testPrisma.unit.create({ data: { unitCode: `UNIT-TEST-${++seq}`, orderId, seq: 1 } });
+  return testPrisma.unitRevision.create({
+    data: { unitId: unit.id, trigger: "KENYAMANAN", complaint: "Kasur kurang empuk", status, jobId },
+  });
+}
+
+test("UnitRevision PICKUP tidak dihitung", async () => {
+  const f = await fixtureDasar();
+  const order = await buatOrder(f.customer.id);
+  // Job pengiriman pertama (sah) — order sama, tanggal BEDA dari job revisi.
+  await buatJob({ orderId: order.id, driverId: f.driver.user.id, completedAt: "2026-09-01T02:00:00.000Z" });
+  const jobPickupRevisi = await buatJob({ orderId: order.id, driverId: f.driver.user.id, type: "PICKUP", completedAt: "2026-09-10T02:00:00.000Z" });
+  await buatUnitRevisionUntukJob({ orderId: order.id, jobId: jobPickupRevisi.id, status: "IN_REWORK" });
+
+  const res = await f.admin.api.get("/api/armada/incentive-summary?from=2026-09-01&to=2026-09-15");
+  const baris = res.body.orang.find((o) => o.id === f.driver.user.id);
+  assert.equal(baris.totalAlamat, 1, "job PICKUP hasil revisi TIDAK menambah alamat baru");
+});
+
+test("UnitRevision DELIVERY tidak dihitung", async () => {
+  const f = await fixtureDasar();
+  const order = await buatOrder(f.customer.id);
+  await buatJob({ orderId: order.id, driverId: f.driver.user.id, completedAt: "2026-09-01T02:00:00.000Z" });
+  const jobKirimUlang = await buatJob({ orderId: order.id, driverId: f.driver.user.id, type: "DELIVERY", completedAt: "2026-09-12T02:00:00.000Z" });
+  await buatUnitRevisionUntukJob({ orderId: order.id, jobId: jobKirimUlang.id, status: "REDELIVERED" });
+
+  const res = await f.admin.api.get("/api/armada/incentive-summary?from=2026-09-01&to=2026-09-15");
+  const baris = res.body.orang.find((o) => o.id === f.driver.user.id);
+  assert.equal(baris.totalAlamat, 1, "job DELIVERY pengiriman ulang hasil revisi TIDAK menambah alamat baru");
+});
+
+test("job normal TETAP dihitung walau ada UnitRevision lain (exclude tidak bocor ke job sah)", async () => {
+  const f = await fixtureDasar();
+  const orderNormal = await buatOrder(f.customer.id);
+  const orderRevisi = await buatOrder(f.customer.id);
+  await buatJob({ orderId: orderNormal.id, driverId: f.driver.user.id, completedAt: "2026-09-03T02:00:00.000Z" });
+  const jobAsliRevisi = await buatJob({ orderId: orderRevisi.id, driverId: f.driver.user.id, completedAt: "2026-09-01T02:00:00.000Z" });
+  const jobPickupRevisi = await buatJob({ orderId: orderRevisi.id, driverId: f.driver.user.id, type: "PICKUP", completedAt: "2026-09-10T02:00:00.000Z" });
+  await buatUnitRevisionUntukJob({ orderId: orderRevisi.id, jobId: jobPickupRevisi.id });
+
+  const res = await f.admin.api.get("/api/armada/incentive-summary?from=2026-09-01&to=2026-09-15");
+  const baris = res.body.orang.find((o) => o.id === f.driver.user.id);
+  // orderNormal (3 Sep) + jobAsliRevisi (1 Sep, PENGIRIMAN PERTAMA yang sah,
+  // BUKAN job revisinya) = 2 alamat. jobPickupRevisi (10 Sep) TIDAK ikut.
+  assert.equal(baris.totalAlamat, 2, "job normal & pengiriman pertama order revisi tetap dihitung, cuma job revisinya sendiri yang dibuang");
+});
+
+// ── Dedup — pembuktian bukan sekadar "raw job <= 2" ─────────────────────────
+test("dedup: TIGA job COMPLETED di order+tanggal WIB yang SAMA tetap 1 alamat (bukan cuma batas 2)", async () => {
+  const f = await fixtureDasar();
+  const order = await buatOrder(f.customer.id);
+  // 3 job nyata di hari yang sama: PICKUP, lalu DELIVERY, lalu DELIVERY
+  // kedua (mis. re-entry data/duplikat pencatatan) — dedup harus tetap
+  // collapse ke 1 alamat berdasar (orderId, tanggalWIB), bukan berhenti
+  // menghitung dobel di 2 job pertama saja.
+  await buatJob({ orderId: order.id, driverId: f.driver.user.id, type: "PICKUP", completedAt: "2026-09-05T01:00:00.000Z" });
+  await buatJob({ orderId: order.id, driverId: f.driver.user.id, type: "DELIVERY", completedAt: "2026-09-05T05:00:00.000Z" });
+  await buatJob({ orderId: order.id, driverId: f.driver.user.id, type: "DELIVERY", completedAt: "2026-09-05T09:00:00.000Z" });
+
+  const res = await f.admin.api.get("/api/armada/incentive-summary?from=2026-09-01&to=2026-09-10");
+  const baris = res.body.orang.find((o) => o.id === f.driver.user.id);
+  assert.equal(baris.totalAlamat, 1, "3 job hari sama, order sama -> TETAP 1 alamat");
+  assert.equal(baris.totalInsentif, 7000, "1 alamat x tarif, BUKAN 3x walau raw job-nya 3");
+});
+
+test("dedup: user berbeda (driver A vs driver B) di order+tanggal sama masing-masing punya alamat sendiri (tidak tercampur)", async () => {
+  const f = await fixtureDasar();
+  const orderA = await buatOrder(f.customer.id);
+  const orderB = await buatOrder(f.customer.id);
+  await buatJob({ orderId: orderA.id, driverId: f.driver.user.id, completedAt: "2026-09-05T02:00:00.000Z" });
+  await buatJob({ orderId: orderB.id, driverId: f.helper.user.id, completedAt: "2026-09-05T02:00:00.000Z" });
+
+  const res = await f.admin.api.get("/api/armada/incentive-summary?from=2026-09-01&to=2026-09-10");
+  const barisDriver = res.body.orang.find((o) => o.id === f.driver.user.id);
+  const barisHelper = res.body.orang.find((o) => o.id === f.helper.user.id);
+  assert.equal(barisDriver.totalAlamat, 1);
+  assert.equal(barisHelper.totalAlamat, 1);
+});
+
+// ── Audit hasSim (24 September 2026) ────────────────────────────────────────
+test("PATCH /drivers/:id mengubah hasSim mencatat TEPAT SATU ActivityEvent HAS_SIM_CHANGED", async () => {
+  const f = await fixtureDasar();
+  const res = await f.admin.api.patch(`/api/armada/drivers/${f.driver.user.id}`, { hasSim: false });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  const events = await testPrisma.activityEvent.findMany({ where: { entityType: "user", entityId: f.driver.user.id, eventType: "HAS_SIM_CHANGED" } });
+  assert.equal(events.length, 1, "harus tercatat TEPAT 1 event untuk 1 kali perubahan");
+  assert.equal(events[0].metadata.from, true, "driver fixture awalnya hasSim=true");
+  assert.equal(events[0].metadata.to, false);
+  assert.equal(events[0].actorId, f.admin.user.id, "actor = admin yang melakukan PATCH");
+  assert.equal(events[0].metadata.source, "armada.drivers.patch");
+});
+
+test("PATCH /drivers/:id dengan hasSim NILAI SAMA (tidak berubah) tidak mencatat event", async () => {
+  const f = await fixtureDasar();
+  // Driver fixture sudah hasSim=true — kirim ulang true (tidak berubah).
+  const res = await f.admin.api.patch(`/api/armada/drivers/${f.driver.user.id}`, { hasSim: true });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  const events = await testPrisma.activityEvent.findMany({ where: { entityType: "user", entityId: f.driver.user.id, eventType: "HAS_SIM_CHANGED" } });
+  assert.equal(events.length, 0, "nilai dikirim ulang sama persis -> tidak ada perubahan nyata, tidak boleh ada event palsu");
+});
+
+test("PATCH /drivers/:id mengubah HANYA isFreelance tidak memicu event HAS_SIM_CHANGED palsu", async () => {
+  const f = await fixtureDasar();
+  const res = await f.admin.api.patch(`/api/armada/drivers/${f.driver.user.id}`, { isFreelance: true });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  const events = await testPrisma.activityEvent.findMany({ where: { entityType: "user", entityId: f.driver.user.id, eventType: "HAS_SIM_CHANGED" } });
+  assert.equal(events.length, 0, "field yang berubah cuma isFreelance, hasSim tidak disentuh sama sekali -> tidak boleh ada event HAS_SIM_CHANGED");
+});
+
 test("PATCH /pod/:jobId/edit TANPA mengubah driver/helper/completedAt tidak mencatat ActivityEvent (cuma ganti foto)", async () => {
   const f = await fixtureDasar();
   const order = await buatOrder(f.customer.id);

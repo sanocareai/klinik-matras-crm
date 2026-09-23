@@ -70,6 +70,13 @@ export const ENTITY_TYPES = Object.freeze({
   // sebagai teks bebas podEditReason — tidak ada nilai LAMA yang bisa
   // ditelusuri. JOB baru di sini, pola sama dengan MATERIAL/ORDER dst.
   JOB: "job",
+  // Audit hasSim (24 September 2026) — PATCH /armada/drivers/:id adalah
+  // SATU-SATUNYA jalur tulis User.hasSim di seluruh backend (dicek lewat
+  // grep sebelum menambah ini), tapi sebelumnya tidak tercatat sama
+  // sekali walau field ini LANGSUNG mengubah tarif insentif (Rp7.000 vs
+  // Rp3.000/alamat, live recompute — lihat GET /armada/incentive-summary).
+  // entityId = user yang statusnya berubah (bukan pelaku — itu actorId).
+  USER: "user",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -159,6 +166,12 @@ export const EVENT_TYPES = Object.freeze({
   // kalau salah satu dari 3 field itu BENAR-BENAR berubah — edit yang
   // hanya mengganti foto/alasan tidak memicu event ini (lihat pemanggil).
   POD_EDITED: "POD_EDITED",
+  // Audit hasSim (24 September 2026) — lihat catatan ENTITY_TYPES.USER.
+  // metadata: { from, to, source } — source SENGAJA disimpan (bukan
+  // ditebak dari eventType) supaya kalau suatu hari ada jalur tulis kedua
+  // (mis. bulk-import), linimasa tetap bisa membedakan asalnya tanpa
+  // menambah eventType baru per jalur.
+  HAS_SIM_CHANGED: "HAS_SIM_CHANGED",
 });
 
 /**
@@ -343,6 +356,8 @@ export function formatActivitySentence(event) {
         ? `POD job ${metadata.orderNumber || "—"} dikoreksi admin (${fields.join(", ")} berubah) — ${metadata.reason || "tanpa keterangan"}`
         : `POD job ${metadata.orderNumber || "—"} dikoreksi admin — ${metadata.reason || "tanpa keterangan"}`;
     }
+    case EVENT_TYPES.HAS_SIM_CHANGED:
+      return `Status SIM diubah: ${metadata.from ? "punya SIM" : "tanpa SIM"} → ${metadata.to ? "punya SIM" : "tanpa SIM"} (tarif insentif ${metadata.to ? "Rp7.000" : "Rp3.000"}/alamat)`;
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya

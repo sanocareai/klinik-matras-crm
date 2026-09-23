@@ -1070,10 +1070,29 @@ armadaRouter.patch("/drivers/:id", requirePermission(P.JOB_WRITE), async (req, r
       if (typeof isFreelance !== "boolean") throw new ArmadaError("isFreelance wajib boolean");
       data.isFreelance = isFreelance;
     }
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
-      data,
-      select: { id: true, name: true, hasSim: true, isFreelance: true },
+    // Audit hasSim (24 September 2026) — field ini LANGSUNG mengubah tarif
+    // insentif live recompute (Rp7.000 vs Rp3.000/alamat, lihat GET
+    // /armada/incentive-summary), tapi sebelumnya tidak tercatat sama
+    // sekali. HANYA menulis event kalau hasSim BENAR-BENAR berubah nilai
+    // (bukan sekadar dikirim ulang dengan nilai sama, dan BUKAN kalau yang
+    // berubah cuma isFreelance) — dibandingkan terhadap nilai SEBELUM
+    // update, di dalam transaksi yang sama supaya mutasi & audit atomic
+    // (pola sama dgn PATCH /pod/:jobId/edit).
+    const user = await prisma.$transaction(async (tx) => {
+      const before = await tx.user.findUnique({ where: { id: req.params.id }, select: { hasSim: true } });
+      if (!before) throw new ArmadaError("Pengguna tidak ditemukan");
+      const hasil = await tx.user.update({
+        where: { id: req.params.id },
+        data,
+        select: { id: true, name: true, hasSim: true, isFreelance: true },
+      });
+      if (hasSim !== undefined && hasSim !== before.hasSim) {
+        await recordActivity(tx, {
+          entityType: ENTITY_TYPES.USER, entityId: hasil.id, eventType: EVENT_TYPES.HAS_SIM_CHANGED,
+          actorId: req.user.id, metadata: { from: before.hasSim, to: hasSim, source: "armada.drivers.patch" },
+        });
+      }
+      return hasil;
     });
     res.json(user);
   } catch (err) {
@@ -2110,15 +2129,37 @@ armadaRouter.get("/incentive-summary", requireAnyPermission(P.JOB_READ, P.JOB_OW
         // pernah diisi saat pembuatan (tidak pernah ditempel retroaktif ke
         // job normal yang sudah ada) — exclude ini tidak pernah menyentuh
         // job pengiriman/pengambilan pertama yang sah.
-        //
-        // CATATAN BATAS: ini HANYA menutup jalur ComplaintCase. Jalur
-        // "Lapor Revisi"/UnitRevision (POST /revisions/:id/create-pickup-job,
-        // create-delivery-job, /jobs/:id/report-revision) adalah mekanisme
-        // TERPISAH yang TIDAK mengisi Job.complaintCaseId sama sekali —
-        // celah dedup yang sama secara teknis BISA terjadi di jalur itu,
-        // tapi belum diaudit/diminta eksplisit di slice ini. Dicatat
-        // sebagai risiko tersisa, bukan ditebak/ditutup diam-diam di sini.
         complaintCaseId: null,
+        // Rework/redelivery dari UnitRevision ("Lapor Revisi") tidak
+        // dihitung ulang (audit insentif, 24 September 2026, keputusan
+        // owner: "job dari UnitRevision TIDAK dapat insentif, perlakukan
+        // sebagai rework sama seperti ComplaintCase"). Job PICKUP/DELIVERY
+        // yang lahir dari POST /revisions/:id/create-pickup-job atau
+        // create-delivery-job (lihat kedua endpoint itu) memakai orderId
+        // SAMA dengan order asal tapi tuntas di TANGGAL BERBEDA — tanpa
+        // exclude ini, dedup (orderId,tanggalWIB) melihatnya sebagai
+        // "alamat baru", persis celah yang sama dengan ComplaintCase.
+        //
+        // SATU-SATUNYA relasi resmi UnitRevision->Job di schema adalah
+        // UnitRevision.jobId (FK tunggal, bukan tabel riwayat) — Job.
+        // revisionLinks di bawah adalah relasi baliknya. `none: {}` berarti
+        // "TIDAK ADA baris unit_revisions yang jobId-nya menunjuk job ini
+        // SAAT QUERY DIJALANKAN". SENGAJA TIDAK memakai heuristic nama/
+        // tanggal/tipe job/urutan job — hanya field FK yang terbukti.
+        //
+        // ⚠️ KETERBATASAN JUJUR (bukan bug, konsekuensi desain schema):
+        // UnitRevision.jobId DITIMPA (bukan riwayat) saat revisi naik tahap
+        // — create-delivery-job eksplisit menimpa jobId dari job PICKUP
+        // lama ke job DELIVERY baru begitu dibuat (lihat komentar di
+        // endpoint itu: "jobId masih menunjuk job PENGAMBILAN LAMA yang
+        // sudah COMPLETED... field itu merepresentasikan fase SEKARANG,
+        // BUKAN riwayat"). Akibatnya: job PICKUP yang revisinya SUDAH naik
+        // ke tahap DELIVERY tidak lagi punya revisionLinks (jobId sudah
+        // dipindah), jadi TIDAK tertangkap exclude ini — tidak ada field
+        // lain di schema yang bisa membuktikan asalnya tanpa menebak.
+        // Dicatat sebagai risiko tersisa yang JUJUR, bukan ditutup diam-diam
+        // dengan heuristic yang dilarang eksplisit.
+        revisionLinks: { none: {} },
         // Order yang dibatalkan SETELAH job-nya selesai tidak dihitung
         // (audit insentif) — OrderStatus.CANCELLED adalah satu-satunya
         // status "batal" yang ada di schema (tidak ada REFUNDED terpisah,

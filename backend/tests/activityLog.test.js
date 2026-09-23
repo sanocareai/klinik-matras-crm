@@ -135,6 +135,23 @@ test("POD_EDITED menyebut field yang berubah dan alasan koreksi", () => {
   assert.match(kalimat, /Driver salah dipilih/);
 });
 
+// Audit hasSim (24 September 2026) — kalimat harus menyebut arah perubahan
+// (punya SIM <-> tanpa SIM) dan tarif yang berlaku SETELAH perubahan.
+test("HAS_SIM_CHANGED menyebut arah perubahan dan tarif baru", () => {
+  const jadiPunya = formatActivitySentence({
+    eventType: EVENT_TYPES.HAS_SIM_CHANGED, metadata: { from: false, to: true, source: "armada.drivers.patch" },
+  });
+  assert.match(jadiPunya, /tanpa SIM/);
+  assert.match(jadiPunya, /punya SIM/);
+  assert.match(jadiPunya, /Rp7\.000/);
+
+  const jadiTanpa = formatActivitySentence({
+    eventType: EVENT_TYPES.HAS_SIM_CHANGED, metadata: { from: true, to: false, source: "armada.drivers.patch" },
+  });
+  assert.match(jadiTanpa, /Rp3\.000/);
+  assert.notEqual(jadiPunya, jadiTanpa);
+});
+
 test("eventType yang tidak dikenal tidak pernah melempar error — linimasa tidak boleh gagal render", () => {
   assert.doesNotThrow(() => formatActivitySentence({ eventType: "SESUATU_YANG_BARU", metadata: {} }));
   assert.equal(formatActivitySentence({ eventType: "SESUATU_YANG_BARU", metadata: {} }), "SESUATU_YANG_BARU");

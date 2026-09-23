@@ -85,6 +85,14 @@ const TABLES_TO_TRUNCATE = [
   // untuk menguji exclude "redelivery dari komplain" perlu ditruncate
   // eksplisit juga, sama alasan dengan "jobs"/"routes" di atas.
   "complaint_cases",
+  // Hardening insentif driver — exclude UnitRevision (24 September 2026,
+  // incentiveSummary.integration.test.js) — unit_revisions.unit_id FK ke
+  // "units" (Restrict) SUDAH otomatis ikut ter-CASCADE saat "units"
+  // ditruncate (child dari tabel yang di-truncate), tapi disebut EKSPLISIT
+  // di sini juga demi konsistensi dokumentasi dengan complaint_cases di
+  // atas — bukan strictly wajib, tapi menghindari kebingungan kalau nanti
+  // "units" dihapus dari daftar ini tanpa disadari unit_revisions ikut lenyap.
+  "unit_revisions",
   "user_roles", "User",
 ];
 
