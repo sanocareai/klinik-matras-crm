@@ -9,6 +9,7 @@ import {
 } from "../finance/expenses.js";
 import { generateDocumentNumber, todayBookDateWIB, toBookDate } from "../finance/journal.js";
 import { toMoney, moneyToNumber } from "../finance/money.js";
+import { pastikanUangMukaBolehDipakai } from "../finance/operationalAdvance.js";
 import { hasPermission, rolesOf } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
 import { getWorkspaceConfig, bolehAutoApprove, SUMBER_DANA } from "./config.js";
@@ -40,7 +41,8 @@ export const submissionInclude = {
   job: { select: { id: true, type: true, status: true } },
   order: { select: { id: true, orderNumber: true } },
   vehicleExpense: { select: { id: true, odometerKm: true, liters: true, category: true } },
-  finExpense: { select: { id: true, expenseNumber: true, status: true, amount: true, cashAccountId: true, approvedAt: true, paidAt: true, rejectReason: true } },
+  finExpense: { select: { id: true, expenseNumber: true, status: true, amount: true, cashAccountId: true, approvedAt: true, paidAt: true, rejectReason: true, advanceAppliedAmount: true } },
+  advance: { select: { id: true, advanceNumber: true, holderId: true, purpose: true, dueDate: true, status: true } },
   createdBy: { select: { id: true, name: true } },
   proofs: { where: { supersededAt: null }, orderBy: { createdAt: "desc" } },
   auditTrail: { orderBy: { createdAt: "desc" }, take: 50 },
@@ -88,7 +90,8 @@ function bolehCatatAtasNamaOrangLain(user) {
 function modeDariSumberDana(sumberDana) {
   switch (sumberDana) {
     case "REKENING_PERUSAHAAN": return "UTANG";
-    case "UANG_MUKA_OPERASIONAL": return "UTANG";
+    // UANG_MUKA_OPERASIONAL TIDAK dipetakan ke UTANG biasa lagi (itu menyebabkan uang keluar dua kali):
+    // ajukanPengajuan() mewajibkan uang muka aktif (advanceId) dan memakai mode UANG_MUKA.
     case "TALANGAN_PRIBADI": return "REIMBURSEMENT";
     case "BELUM_DIBAYAR": return "UTANG";
     // Default "UTANG", BUKAN undefined — kalau dibiarkan undefined,
@@ -174,6 +177,13 @@ export async function buatPengajuan(db, { workspace, user, body }) {
     picNameSnapshot = pic.name;
   }
 
+  // Uang Muka Operasional: bila dipilih, wajib milik pengaju/PIC dan masih aktif (memilih WAJIB paling lambat saat diajukan).
+  let advanceId = null;
+  if (body.sumberDana === "UANG_MUKA_OPERASIONAL" && body.advanceId) {
+    await pastikanUangMukaBolehDipakai(db, { advanceId: body.advanceId, pemilikIds: [requestedById, body.picUserId] });
+    advanceId = body.advanceId;
+  }
+
   const tanggal = body.date ? toBookDate(body.date) : todayBookDateWIB();
   const description = body.description?.trim() || susunKeterangan({
     expenseType: body.expenseType, cfg, vendorOrLocation: body.vendorName, vehiclePlateSnapshot, routeNameSnapshot, metadata: body.metadata,
@@ -198,6 +208,7 @@ export async function buatPengajuan(db, { workspace, user, body }) {
       urgentReason: body.urgentReason?.trim() || null,
       sourceNote: body.sourceNote?.trim() || null,
       sumberDana: body.sumberDana || null,
+      advanceId,
       expenseType: body.expenseType,
       date: tanggal,
       amount: nominal ? nominal.toFixed(2) : "0.00",
@@ -266,6 +277,21 @@ export async function ubahPengajuanDraft(db, { id, user, body }) {
     data.picUserId = body.picUserId || null;
     data.picNameSnapshot = pic?.name || null;
   }
+  // Uang Muka Operasional: kaitan ke uang muka hanya berlaku selama sumber dananya memang itu.
+  const sumberBaru = body.sumberDana !== undefined ? (body.sumberDana || null) : s.sumberDana;
+  if (sumberBaru !== "UANG_MUKA_OPERASIONAL") {
+    if (s.advanceId) data.advanceId = null;
+  } else if (body.advanceId !== undefined) {
+    if (body.advanceId) {
+      await pastikanUangMukaBolehDipakai(db, {
+        advanceId: body.advanceId,
+        pemilikIds: [data.requestedById ?? s.requestedById, data.picUserId !== undefined ? data.picUserId : s.picUserId],
+      });
+      data.advanceId = body.advanceId;
+    } else {
+      data.advanceId = null;
+    }
+  }
   void cfg;
   const updated = await db.expenseSubmission.update({ where: { id }, data, include: submissionInclude });
   return bentukSubmission(updated);
@@ -313,7 +339,18 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
       where: { submissionId: id, supersededAt: null }, orderBy: { createdAt: "desc" }, select: { url: true },
     });
 
+    // Uang Muka Operasional: WAJIB memilih uang muka aktif milik pengaju/PIC. Tidak ada jalan pintas ke UTANG biasa.
+    let advanceId = null;
+    if (s.sumberDana === "UANG_MUKA_OPERASIONAL") {
+      if (!s.advanceId) {
+        throw new SubmissionError("Sumber dana Uang muka operasional wajib memilih uang muka aktif milik pengaju atau PIC", 422);
+      }
+      await pastikanUangMukaBolehDipakai(tx, { advanceId: s.advanceId, pemilikIds: [s.requestedById, s.picUserId] });
+      advanceId = s.advanceId;
+    }
+
     const finExpense = await buatFinExpense(tx, {
+      advanceId,
       date: s.date, amount: s.amount, description: s.description, categoryId: await kategoriUntuk(tx, cfg, s.expenseType),
       division: cfg.division, mode: modeDariSumberDana(s.sumberDana), // hint dari usulan pemohon; buatFinExpense tetap memutuskan mode EFEKTIF dari kapabilitas user
       cashAccountId: null, supplierId: null,

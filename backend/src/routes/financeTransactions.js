@@ -60,6 +60,7 @@ import { buatFinExpense, tarikFinExpense, setujuiFinExpense, expenseInclude, ben
 // Dipanggil di SETIAP transisi status FinExpense, DI DALAM transaksi yang
 // sama dengan perubahan status itu (lihat services/expenseSubmission/service.js).
 import { hitungBiayaTransfer, siapkanPerubahanBiaya, ringkasBiaya, pastikanTanpaBiayaSebelumBayar } from "../services/finance/transferFee.js";
+import { batalkanPertanggungjawabanPengeluaran } from "../services/finance/operationalAdvance.js";
 import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/service.js";
 
 export const financeTxRouter = express.Router();
@@ -217,7 +218,10 @@ financeTxRouter.post("/expenses",
   requireAnyPermission(P.FINANCE_POST, P.FINANCE_EXPENSE_SUBMIT),
   async (req, res) => {
     try {
-      const created = await prisma.$transaction((tx) => buatFinExpense(tx, { ...req.body, user: req.user }));
+      // advanceId TIDAK diterima dari body publik: memakai uang muka hanya lewat jalur berizin
+      // (POST /uang-muka/:id/pertanggungjawaban oleh Finance, atau Pengajuan Biaya yang memvalidasi pemilik).
+      const { advanceId: _tidakDiterima, ...body } = req.body || {};
+      const created = await prisma.$transaction((tx) => buatFinExpense(tx, { ...body, user: req.user }));
       res.status(201).json(bentukExpense(created));
     } catch (e) {
       handleFinanceError(e, res);
@@ -390,6 +394,8 @@ financeTxRouter.post("/expenses/:id/cancel", requirePermission(P.FINANCE_ADMIN),
       await balikkanJurnalAktif(tx, { keyPrefix: EXPENSE_KEY.expensePaid(e.id), alasan: alasanBatal, userId: req.user.id });
       await balikkanJurnalAktif(tx, { keyPrefix: EXPENSE_KEY.expense(e.id), alasan: alasanBatal, userId: req.user.id });
 
+      // Uang Muka Operasional: pertanggungjawabannya dibatalkan, saldo uang muka pulih (jurnal sudah dibalik di atas).
+      if (e.mode === "UANG_MUKA") await batalkanPertanggungjawabanPengeluaran(tx, { expense: e, reason, userId: req.user.id });
       const updated = await tx.finExpense.update({
         where: { id: e.id },
         data: { status: "DIBATALKAN", rejectReason: reason },
@@ -515,6 +521,16 @@ financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN)
       const perubahan = bedaDenganAsli(e, await siapkanPerubahanExpense(tx, req.body, e.mode, e));
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
       const menyentuhJurnal = Object.keys(perubahan).some((k) => FIELD_JURNAL.has(k));
+
+      // Pengeluaran dari Uang Muka: angka/rekening/pemegang terkunci ke saldo uang muka & pertanggungjawabannya.
+      // Yang boleh dikoreksi hanya metadata (bukti, catatan) dan biaya admin transfer selisih. Selebihnya:
+      // batalkan (jurnal dibalik, saldo pulih) lalu catat ulang.
+      if (e.mode === "UANG_MUKA") {
+        const terlarang = Object.keys(perubahan).filter((k) => FIELD_JURNAL.has(k) && k !== "transferFeeAmount");
+        if (terlarang.length > 0) {
+          throw err("Pengeluaran dari uang muka tidak bisa dikoreksi angkanya — batalkan (saldo uang muka pulih dan jurnal dibalik) lalu catat ulang.", 409);
+        }
+      }
 
       // Balikkan jurnal PEMBAYARAN dulu (kalau ada), baru jurnal pengakuan
       // beban — urutan yang sama dengan /cancel. Dua keluarga key TERPISAH

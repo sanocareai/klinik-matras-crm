@@ -90,6 +90,7 @@ const VARIAN_STATUS = {
   DISETUJUI: "accent",
   DIBAYAR: "green",
   DIBAYAR_SEBAGIAN: "orange",
+  SEBAGIAN: "accent",
   LUNAS: "green",
   DITOLAK: "red",
   DIBATALKAN: "neutral",
@@ -110,6 +111,7 @@ export const LABEL_STATUS = {
   DISETUJUI: "Disetujui",
   DIBAYAR: "Dibayar",
   DIBAYAR_SEBAGIAN: "Dibayar Sebagian",
+  SEBAGIAN: "Sebagian",
   LUNAS: "Lunas",
   DITOLAK: "Ditolak",
   DIBATALKAN: "Dibatalkan",
@@ -138,6 +140,7 @@ export const LABEL_SUMBER_JURNAL = {
   PEMBAYARAN_ORDER: "Pembayaran Order",
   PENGAKUAN_PENDAPATAN: "Pengakuan Pendapatan",
   REFUND: "Refund",
+  UANG_MUKA_OPERASIONAL: "Uang Muka Operasional",
   PENGELUARAN: "Pengeluaran",
   PEMBELIAN: "Pembelian",
   BIAYA_KENDARAAN: "Biaya Kendaraan",
@@ -376,7 +379,7 @@ export function Pilihan({ value, onChange, children, className, ...props }) {
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
-        "h-9 w-full rounded-lg bg-surface px-2.5 text-sm text-ink",
+        "h-9 w-full rounded-lg bg-surface px-2.5 text-sm leading-normal text-ink max-sm:h-11",
         "outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/40",
         className
       )}

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog, Bell,
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight, Send,
-  Wrench, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2, Wallet,
+  Wrench, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2, Wallet, PiggyBank,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
   Boxes, ScanLine, Award, ArrowUpDown, Check, Handshake,
   Landmark, BookOpen, FileSpreadsheet, Banknote, Receipt, Building2, Scale as ScaleIcon, ListTree,
@@ -456,6 +456,7 @@ const DIVISIONS = {
           { to: "/finance/expenses",  label: "Pengeluaran",            Icon: Receipt },
           { to: "/finance/purchases", label: "Pembelian",              Icon: ShoppingCart },
           { to: "/finance/kasbon",    label: "Kasbon",                 Icon: HandCoins },
+          { to: "/finance/uang-muka", label: "Uang Muka Operasional",  Icon: PiggyBank },
         ],
       },
       {

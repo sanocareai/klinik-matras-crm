@@ -10,11 +10,12 @@
 // supaya penautan finExpenseId atomik dengan pembuatan barisnya).
 
 import { generateDocumentNumber, toBookDate, todayBookDateWIB } from "./journal.js";
-import { toMoney, moneyToNumber } from "./money.js";
+import { toMoney, moneyToNumber, ZERO } from "./money.js";
 import { hasPermission } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
 import { postExpenseApproved } from "./posting/expense.js";
 import { pastikanNotaLengkap } from "./receipts.js";
+import { terapkanKePengeluaran, sinkronStatusUangMuka } from "./operationalAdvance.js";
 import { hitungBiayaTransfer, TransferFeeError, ringkasBiaya, pastikanTanpaBiayaSebelumBayar } from "./transferFee.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
@@ -36,6 +37,7 @@ export const expenseInclude = {
   createdBy: { select: { id: true, name: true } },
   paidBy: { select: { id: true, name: true } },
   order: { select: { id: true, orderNumber: true } },
+  advance: { select: { id: true, advanceNumber: true } },
 };
 
 function parseTanggal(value) {
@@ -52,6 +54,9 @@ export async function buatFinExpense(db, {
   date, amount, description, categoryId, division, mode,
   cashAccountId, supplierId, reimburseToId, payeeName, orderId, unitId, receiptUrl, notes,
   paymentMethod, transferFeeType, transferFeeAmount,
+  // Uang Muka Operasional: bila diisi, pengeluaran BERMODE UANG_MUKA (dipertanggungjawabkan dari
+  // saldo uang muka itu, tanpa /pay). Izin "boleh memakai uang muka ini" divalidasi PEMANGGIL.
+  advanceId,
   langsungAjukan, user,
   // Lolos guard "hanya boleh reimburse diri sendiri" di bawah TANPA butuh
   // FINANCE_POST — dipakai KHUSUS oleh ajukanPengajuan() (Pengajuan Biaya
@@ -73,7 +78,15 @@ export async function buatFinExpense(db, {
 
   const modeFinal = ["LANGSUNG", "REIMBURSEMENT", "UTANG"].includes(mode) ? mode : "LANGSUNG";
   const bolehPosting = hasPermission(user, P.FINANCE_POST);
-  const modeEfektif = bolehPosting ? modeFinal : "REIMBURSEMENT";
+  let uangMuka = null;
+  if (advanceId) {
+    uangMuka = await db.finOperationalAdvance.findUnique({ where: { id: advanceId }, select: { id: true, holderId: true, status: true, advanceNumber: true } });
+    if (!uangMuka) throw new ExpenseInputError("Uang muka tidak ditemukan", 404);
+    if (!["AKTIF", "SEBAGIAN"].includes(uangMuka.status)) {
+      throw new ExpenseInputError(`Uang muka ${uangMuka.advanceNumber} berstatus ${uangMuka.status} — pilih uang muka yang masih aktif`, 409);
+    }
+  }
+  const modeEfektif = uangMuka ? "UANG_MUKA" : (bolehPosting ? modeFinal : "REIMBURSEMENT");
 
   if (modeEfektif === "LANGSUNG" && !cashAccountId) {
     throw new ExpenseInputError("Pengeluaran yang dibayar langsung wajib memilih rekening kas/bank sumber dananya");
@@ -111,7 +124,8 @@ export async function buatFinExpense(db, {
       supplierId: supplierId || null,
       reimburseToId: modeEfektif === "REIMBURSEMENT"
         ? (((bolehPosting || reimburseToOverrideAllowed) && reimburseToId) || user.id)
-        : null,
+        : (uangMuka ? uangMuka.holderId : null),
+      advanceId: uangMuka ? uangMuka.id : null,
       payeeName: payeeName?.trim() || null,
       orderId: orderId || null,
       unitId: unitId || null,
@@ -170,17 +184,30 @@ export async function setujuiFinExpense(tx, { id, actor, autoApproved = false, c
     err: (m, c) => Object.assign(new ExpenseInputError(m, c)),
   });
 
+  // Uang Muka Operasional: saldo dipakai DI SINI, di bawah kunci baris uang muka. Melebihi saldo =
+  // saldo habis dulu, selisihnya jadi utang reimbursement ke pemegang (tidak pernah saldo negatif).
+  let applied = ZERO;
+  let selisih = ZERO;
+  if (e.mode === "UANG_MUKA") {
+    const r = await terapkanKePengeluaran(tx, { expense: e, userId: autoApproved ? null : actor.id });
+    applied = r.applied;
+    selisih = r.sisa;
+  }
+  const langsungLunas = e.mode === "LANGSUNG" || (e.mode === "UANG_MUKA" && selisih.isZero());
+
   const updated = await tx.finExpense.update({
     where: { id: e.id },
     data: {
-      status: e.mode === "LANGSUNG" ? "DIBAYAR" : "DISETUJUI",
+      status: langsungLunas ? "DIBAYAR" : "DISETUJUI",
       approvedAt: new Date(),
       approvedById: autoApproved ? null : actor.id,
-      ...(e.mode === "LANGSUNG" && { paidAt: new Date(), paidById: autoApproved ? null : actor.id }),
+      ...(e.mode === "UANG_MUKA" && { advanceAppliedAmount: applied }),
+      ...(langsungLunas && { paidAt: new Date(), paidById: autoApproved ? null : actor.id }),
     },
   });
 
   await postExpenseApproved(tx, { expenseId: e.id, userId: autoApproved ? null : actor.id });
+  if (e.mode === "UANG_MUKA") await sinkronStatusUangMuka(tx, e.advanceId);
 
   await recordActivity(tx, {
     entityType: ENTITY_TYPES.FIN_EXPENSE, entityId: e.id,
@@ -189,6 +216,7 @@ export async function setujuiFinExpense(tx, { id, actor, autoApproved = false, c
     actorType: autoApproved ? "SYSTEM" : "USER",
     metadata: {
       expenseNumber: e.expenseNumber, amount: String(e.amount), mode: e.mode,
+      ...(e.mode === "UANG_MUKA" && { uangMukaDipakai: String(applied), selisihJadiUtang: String(selisih) }),
       ...(menyetujuiSendiri && { menyetujuiPengajuanSendiri: true }),
       ...(autoApproved && { otomatis: true, kebijakan: catatanOtomatis }),
     },

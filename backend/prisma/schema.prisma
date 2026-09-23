@@ -314,6 +314,8 @@ enum HealthComplaintCategory {
 }
 
 model User {
+  finAdvancesHeld    FinOperationalAdvance[] @relation("FinAdvanceHolder")
+  finAdvancesCreated FinOperationalAdvance[] @relation("FinAdvanceCreator")
   id           String   @id @default(cuid())
   name         String
   email        String   @unique
@@ -3493,6 +3495,14 @@ model ExpenseSubmission {
   // rekening/bank TIDAK PERNAH berkurang saat baru diajukan, dan TALANGAN_PRIBADI/
   // BELUM_DIBAYAR tidak pernah menyentuh kas/bank sebelum FinExpense-nya benar-benar /pay.
   sumberDana    String? @map("sumber_dana")
+
+  // Uang muka operasional yang dipakai (WAJIB bila sumberDana = UANG_MUKA_OPERASIONAL,
+  // milik pengaju/PIC). needsReview = pengajuan LAMA dengan sumber ini yang lahir
+  // sebelum modul Uang Muka Operasional — TIDAK dimigrasikan otomatis, ditandai untuk ditinjau manusia.
+  advanceId    String?  @map("advance_id") @db.Uuid
+  advance      FinOperationalAdvance? @relation(fields: [advanceId], references: [id], onDelete: Restrict)
+  needsReview  Boolean  @default(false) @map("needs_review")
+  reviewNote   String?  @map("review_note")
   vendorName    String? @map("vendor_name")
 
   status ExpenseSubmissionStatus @default(DRAFT)
@@ -6275,6 +6285,8 @@ model FinCashAccount {
   journalLines     FinJournalLine[]
   bankStatements   FinBankStatement[]
   expenses         FinExpense[]
+  operationalAdvances FinOperationalAdvance[]
+  advanceReturns      FinOperationalAdvanceSettlement[] @relation("FinAdvanceReturnCash")
   purchases        FinPurchase[]
   kasbon           FinKasbon[]
   kasbonRepayments FinKasbonRepayment[]
@@ -6353,6 +6365,7 @@ enum FinJournalSource {
   // BUKAN pendapatan. Lihat posting/rekonsiliasiSementara.js.
   REKONSILIASI_SEMENTARA
   INSENTIF_DRIVER // IncentivePayout — Dr Beban Insentif Driver / Cr Kas-Bank; lihat posting/incentivePayout.js
+  UANG_MUKA_OPERASIONAL // Uang Muka Operasional: pemberian, pengembalian sisa; lihat posting/operationalAdvance.js
   REVERSAL // jurnal balik dari pembatalan jurnal lain
 }
 
@@ -6877,6 +6890,7 @@ enum FinExpenseMode {
   LANGSUNG // dibayar saat itu juga dari kas/bank perusahaan
   REIMBURSEMENT // ditalangi karyawan dulu, perusahaan berutang ke karyawan
   UTANG // belum dibayar, jadi Utang Usaha ke pihak ketiga
+  UANG_MUKA // dipertanggungjawabkan dari Uang Muka Operasional: Cr Uang Muka dulu, selisih jadi utang reimbursement ke pemegang
 }
 
 enum FinExpenseStatus {
@@ -6912,6 +6926,16 @@ model FinExpense {
   category   FinExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
   division FinDivision    @default(UMUM)
+
+  // ── Uang Muka Operasional (mode UANG_MUKA) ─────────────────────────────
+  // advanceId = uang muka yang dipertanggungjawabkan. advanceAppliedAmount =
+  // bagian yang MEMAKAI saldo uang muka (ditetapkan SAAT DISETUJUI, di bawah
+  // kunci baris uang muka); sisanya (amount - applied) jadi utang reimbursement
+  // ke pemegang dan dibayar lewat /pay biasa. Baris lama: null / 0.
+  advanceId            String?  @map("advance_id") @db.Uuid
+  advance              FinOperationalAdvance? @relation(fields: [advanceId], references: [id], onDelete: Restrict)
+  advanceAppliedAmount Decimal  @default(0) @map("advance_applied_amount") @db.Decimal(18, 2)
+  advanceSettlements   FinOperationalAdvanceSettlement[]
   mode     FinExpenseMode @default(LANGSUNG)
 
   // Wajib kalau mode LANGSUNG (atau saat REIMBURSEMENT/UTANG akhirnya
@@ -7580,4 +7604,116 @@ model ApiIdempotencyKey {
   @@unique([userId, key])
   @@index([createdAt])
   @@map("api_idempotency_keys")
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════
+// UANG MUKA OPERASIONAL (24 September 2026)
+// Kas yang DIBERIKAN perusahaan ke pemegang (driver/PIC) untuk biaya
+// operasional, lalu dipertanggungjawabkan lewat pengeluaran. Akun aset
+// 1-1360 "Uang Muka Operasional". Saldo = amount - Σ settlement ACTIVE
+// (dihitung, bukan disimpan); status disimpan untuk filter & dijaga service.
+//   Berikan   : Dr Uang Muka Operasional / Cr Kas-Bank (+ Dr Beban Admin Bank bila transfer)
+//   Pakai     : Dr Beban / Cr Uang Muka Operasional (lewat FinExpense mode UANG_MUKA, TANPA /pay)
+//   Kembalikan: Dr Kas-Bank / Cr Uang Muka Operasional
+// ═════════════════════════════════════════════════════════════════════════
+
+enum FinAdvanceStatus {
+  AKTIF
+  SEBAGIAN
+  SELESAI
+  DIBATALKAN
+}
+
+enum FinAdvanceSettlementType {
+  PERTANGGUNGJAWABAN
+  PENGEMBALIAN
+}
+
+enum FinAdvanceSettlementStatus {
+  ACTIVE
+  CANCELLED
+}
+
+model FinOperationalAdvance {
+  id            String @id @default(uuid()) @db.Uuid
+  advanceNumber String @unique @map("advance_number") // UMO-DDMMYYYY-NNN
+
+  holderId String @map("holder_id")
+  holder   User   @relation("FinAdvanceHolder", fields: [holderId], references: [id], onDelete: Restrict)
+
+  division FinDivision @default(UMUM)
+  purpose  String
+  date     DateTime    @db.Date
+  dueDate  DateTime?   @map("due_date") @db.Date
+  amount   Decimal     @db.Decimal(18, 2)
+
+  cashAccountId String         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  paymentMethod     String?  @map("payment_method")
+  transferFeeType   String?  @map("transfer_fee_type")
+  transferFeeAmount Decimal  @default(0) @map("transfer_fee_amount") @db.Decimal(18, 2)
+
+  receiptUrl String? @map("receipt_url")
+  notes      String?
+
+  status FinAdvanceStatus @default(AKTIF)
+
+  idempotencyKey String? @unique @map("idempotency_key")
+
+  createdById String @map("created_by")
+  createdBy   User   @relation("FinAdvanceCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  cancelledAt   DateTime? @map("cancelled_at")
+  cancelledById String?   @map("cancelled_by")
+  cancelReason  String?   @map("cancel_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  settlements FinOperationalAdvanceSettlement[]
+  expenses    FinExpense[]
+  submissions ExpenseSubmission[]
+
+  @@index([holderId, status])
+  @@index([status, dueDate])
+  @@map("fin_operational_advances")
+}
+
+model FinOperationalAdvanceSettlement {
+  id String @id @default(uuid()) @db.Uuid
+
+  advanceId String                @map("advance_id") @db.Uuid
+  advance   FinOperationalAdvance @relation(fields: [advanceId], references: [id], onDelete: Restrict)
+
+  type   FinAdvanceSettlementType
+  amount Decimal                  @db.Decimal(18, 2)
+  date   DateTime                 @db.Date
+
+  // PERTANGGUNGJAWABAN: pengeluaran yang memakai saldo. Dijaga unik per pengeluaran
+  // selagi ACTIVE lewat indeks parsial di migration (pemakaian ganda mustahil).
+  expenseId String?      @map("expense_id") @db.Uuid
+  expense   FinExpense?  @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+
+  // PENGEMBALIAN: rekening kas/bank yang menerima sisa uang.
+  cashAccountId String?         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount? @relation("FinAdvanceReturnCash", fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  note       String?
+  receiptUrl String? @map("receipt_url")
+
+  status FinAdvanceSettlementStatus @default(ACTIVE)
+
+  idempotencyKey String? @unique @map("idempotency_key")
+
+  createdById   String    @map("created_by")
+  cancelledAt   DateTime? @map("cancelled_at")
+  cancelledById String?   @map("cancelled_by")
+  cancelReason  String?   @map("cancel_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([advanceId, status])
+  @@map("fin_operational_advance_settlements")
 }

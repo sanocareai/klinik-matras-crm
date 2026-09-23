@@ -69,6 +69,7 @@ export async function postExpenseApproved(tx, { expenseId, userId = null, keySuf
       cashAccount: { select: { id: true, name: true, accountId: true } },
       supplier: { select: { id: true, name: true } },
       reimburseTo: { select: { id: true, name: true } },
+      advance: { select: { advanceNumber: true } },
     },
   });
   if (!e) throw new Error(`Pengeluaran ${expenseId} tidak ditemukan`);
@@ -87,6 +88,9 @@ export async function postExpenseApproved(tx, { expenseId, userId = null, keySuf
   // ini (LANGSUNG). Mode lain membayar belakangan di postExpensePaid.
   let biayaAdmin = toMoney(0);
   let barisAdmin = [];
+  // Mode UANG_MUKA: lawan beban terbagi — sebagian Cr Uang Muka Operasional (saldo yang dipakai),
+  // selisih Cr Utang Reimbursement ke pemegang. TIDAK ada baris kas sama sekali.
+  let lawanBanyak = null;
 
   if (e.mode === "LANGSUNG") {
     if (!e.cashAccount) {
@@ -100,6 +104,24 @@ export async function postExpenseApproved(tx, { expenseId, userId = null, keySuf
     cashAccountId = e.cashAccount.id;
     biayaAdmin = toMoney(e.transferFeeAmount || 0);
     barisAdmin = await barisBiayaAdmin(tx, { fee: biayaAdmin, cashAccount: e.cashAccount });
+  } else if (e.mode === "UANG_MUKA") {
+    const um = await resolveAccount(tx, SYSTEM_KEYS.UANG_MUKA_OPERASIONAL);
+    const dipakai = toMoney(e.advanceAppliedAmount || 0);
+    const selisih = amount.minus(dipakai);
+    lawanBanyak = [];
+    if (dipakai.greaterThan(0)) {
+      lawanBanyak.push({
+        accountId: um.id, credit: dipakai, orderId: e.orderId,
+        description: `Dipertanggungjawabkan dari uang muka ${e.advance?.advanceNumber || ""}`.trim(),
+      });
+    }
+    if (selisih.greaterThan(0)) {
+      const utangReimburse = await resolveAccount(tx, SYSTEM_KEYS.UTANG_REIMBURSEMENT);
+      lawanBanyak.push({
+        accountId: utangReimburse.id, credit: selisih, orderId: e.orderId,
+        description: `Melebihi saldo uang muka — utang ke ${e.reimburseTo?.name || "pemegang"}`,
+      });
+    }
   } else if (e.mode === "REIMBURSEMENT") {
     const utangReimburse = await resolveAccount(tx, SYSTEM_KEYS.UTANG_REIMBURSEMENT);
     akunLawanId = utangReimburse.id;
@@ -127,14 +149,14 @@ export async function postExpenseApproved(tx, { expenseId, userId = null, keySuf
         unitId: e.unitId,
         supplierId,
       },
-      {
+      ...(lawanBanyak || [{
         accountId: akunLawanId,
         credit: amount.plus(biayaAdmin),
         description: biayaAdmin.greaterThan(0) ? `${keteranganLawan} (termasuk biaya admin transfer)` : keteranganLawan,
         cashAccountId,
         supplierId,
         orderId: e.orderId,
-      },
+      }]),
       ...barisAdmin,
     ],
   });
@@ -167,9 +189,12 @@ export async function postExpensePaid(tx, { expenseId, userId = null, keySuffix 
 
   const akunUtang = await resolveAccount(
     tx,
-    e.mode === "REIMBURSEMENT" ? SYSTEM_KEYS.UTANG_REIMBURSEMENT : SYSTEM_KEYS.UTANG_USAHA
+    e.mode === "REIMBURSEMENT" || e.mode === "UANG_MUKA" ? SYSTEM_KEYS.UTANG_REIMBURSEMENT : SYSTEM_KEYS.UTANG_USAHA
   );
-  const amount = toMoney(e.amount);
+  // Mode UANG_MUKA: yang dibayar tunai HANYA selisih di atas saldo uang muka (bagian yang dipakai
+  // sudah lunas lewat Uang Muka — membayarnya lagi = uang keluar dua kali).
+  const amount = e.mode === "UANG_MUKA" ? toMoney(e.amount).minus(toMoney(e.advanceAppliedAmount || 0)) : toMoney(e.amount);
+  if (amount.lessThanOrEqualTo(0)) return { posted: false, reason: "lunas_via_uang_muka" };
   const biayaAdmin = toMoney(e.transferFeeAmount || 0);
   const barisAdmin = await barisBiayaAdmin(tx, { fee: biayaAdmin, cashAccount: e.cashAccount });
 
@@ -184,7 +209,7 @@ export async function postExpensePaid(tx, { expenseId, userId = null, keySuffix 
       {
         accountId: akunUtang.id,
         debit: amount,
-        description: e.mode === "REIMBURSEMENT"
+        description: e.mode === "REIMBURSEMENT" || e.mode === "UANG_MUKA"
           ? `Penggantian ke ${e.reimburseTo?.name || "karyawan"}`
           : `Pelunasan utang ke ${e.supplier?.name || e.payeeName || "pihak ketiga"}`,
         supplierId: e.supplierId,
