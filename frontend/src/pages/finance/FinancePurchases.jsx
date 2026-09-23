@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils.js";
 import { useContainerTier } from "@/hooks/useContainerTier.js";
 import { api } from "@/api.js";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
-import { BIAYA_KOSONG, bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
+import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
@@ -508,7 +508,7 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit({ ...f, ...bodyBiayaTransfer(f) })} disabled={!valid}>Ajukan</TombolAksi>
+          <TombolAksi onClick={() => onSubmit(denganBiaya(f, f.mode === "LANGSUNG"))} disabled={!valid}>Ajukan</TombolAksi>
         </>
       }
     >
@@ -600,7 +600,7 @@ function ModalBayar({ purchase, onClose, rekening, onSubmit }) {
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit({ ...f, ...bodyBiayaTransfer(f) })} disabled={!lunasViaDp && (!f.cashAccountId || !biayaTransferLengkap(rek, f))}>
+          <TombolAksi onClick={() => onSubmit(denganBiaya(f))} disabled={!lunasViaDp && (!f.cashAccountId || !biayaTransferLengkap(rek, f))}>
             {lunasViaDp ? "Tandai Lunas" : "Catat Pembayaran"}
           </TombolAksi>
         </>

@@ -1,5 +1,6 @@
-// Biaya admin transfer bank — logika pratinjau di layar + jaminan bahwa SEMUA
-// form uang keluar memakainya. Hitungan final tetap milik server
+// Biaya admin transfer bank — logika di layar + jaminan bahwa SEMUA form uang
+// keluar (termasuk dialog Koreksi) memakainya. TIDAK ada kalkulasi biaya di
+// klien: angka final dan pratinjau milik server
 // (backend/tests/integration/financeTransferFee.integration.test.js).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -7,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  BIAYA_BAWAAN, JENIS_BIAYA_TRANSFER, nilaiAwalBiaya, pratinjauBiaya, biayaTransferLengkap, bodyBiayaTransfer, presetRekening,
+  BIAYA_BAWAAN, JENIS_BIAYA_TRANSFER, nilaiAwalBiaya, biayaTransferLengkap, bodyBiayaTransfer, presetRekening, denganBiaya, tanpaBiaya,
 } from "../src/features/finance/biayaTransfer.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -34,13 +35,21 @@ test("Nilai awal: kas -> Tunai; bank -> Transfer (metode wajib dipilih); tanpa r
   assert.equal(nilaiAwalBiaya(null).paymentMethod, "");
 });
 
-test("Pratinjau: Nominal Diterima dan Total Keluar Rekening terpisah", () => {
-  const v = { paymentMethod: "TRANSFER", transferFeeType: "BI_FAST", transferFeeAmount: "" };
-  assert.deepEqual(pratinjauBiaya(bank, v, "100000"), { nominalDiterima: 100000, biayaAdmin: 2500, totalKeluarRekening: 102500 });
-  const c = { paymentMethod: "TRANSFER", transferFeeType: "LAINNYA", transferFeeAmount: "7777" };
-  assert.equal(pratinjauBiaya(bank, c, 100000).totalKeluarRekening, 107777);
-  const t = { paymentMethod: "TUNAI", transferFeeType: "", transferFeeAmount: "" };
-  assert.equal(pratinjauBiaya(bank, t, 100000).biayaAdmin, 0);
+test("TIDAK ada kalkulasi biaya di klien: pratinjau meminta angka ke endpoint server yang sama dengan penyimpanan", () => {
+  const util = baca("features/finance/biayaTransfer.js");
+  assert.ok(!/pratinjauBiaya|biayaTerpilih/.test(util), "kalkulasi biaya tidak boleh ada di util klien");
+  const komp = baca("features/finance/CaraBayarTransfer.jsx");
+  assert.match(komp, /api\.previewBiayaTransfer\(/, "pratinjau harus meminta angka ke server");
+  assert.ok(!/nominal\s*\+|\+\s*nominal|biayaAdmin\s*\+|\+\s*biayaAdmin/.test(komp), "tidak menjumlahkan nominal + biaya di klien");
+  for (const teks of ["Nominal diterima", "Biaya admin", "Total keluar rekening"]) assert.ok(komp.includes(teks), teks);
+  assert.match(baca("api.js"), /previewBiayaTransfer:[\s\S]{0,120}\/finance\/transfer-fee\/preview/);
+});
+
+test("denganBiaya: form utang/reimbursement TIDAK membawa isian biaya; form langsung membawanya", () => {
+  const f = { amount: 1, paymentMethod: "TRANSFER", transferFeeType: "BI_FAST", transferFeeAmount: "" };
+  assert.deepEqual(denganBiaya(f, false), { amount: 1 });
+  assert.deepEqual(denganBiaya(f, true), { amount: 1, paymentMethod: "TRANSFER", transferFeeType: "BI_FAST" });
+  assert.deepEqual(tanpaBiaya(f), { amount: 1 });
 });
 
 test("Kelengkapan: Transfer wajib pilih metode; Custom wajib nominal (boleh 0)", () => {
@@ -58,7 +67,7 @@ test("Body request: preset TIDAK mengirim nominal (server yang mengisi); Custom 
   assert.deepEqual(bodyBiayaTransfer({ paymentMethod: "" }), {});
 });
 
-test("SEMUA form uang keluar memakai CaraBayarTransfer dan mengirim bodyBiayaTransfer", () => {
+test("SEMUA form uang keluar memakai CaraBayarTransfer + denganBiaya + menunggu metode transfer lengkap", () => {
   const form = [
     ["pages/finance/FinanceExpenses.jsx", 2],
     ["pages/finance/FinancePurchases.jsx", 2],
@@ -69,10 +78,25 @@ test("SEMUA form uang keluar memakai CaraBayarTransfer dan mengirim bodyBiayaTra
   for (const [file, minimal] of form) {
     const src = baca(file);
     const jumlahKomponen = (src.match(/<CaraBayarTransfer\b/g) || []).length;
-    const jumlahBody = (src.match(/bodyBiayaTransfer\(/g) || []).length;
+    const jumlahBody = (src.match(/denganBiaya\(/g) || []).length;
     assert.ok(jumlahKomponen >= minimal, `${file}: <CaraBayarTransfer> ${jumlahKomponen}x, butuh >= ${minimal}`);
-    assert.ok(jumlahBody >= minimal, `${file}: bodyBiayaTransfer ${jumlahBody}x, butuh >= ${minimal}`);
+    assert.ok(jumlahBody >= minimal, `${file}: denganBiaya ${jumlahBody}x, butuh >= ${minimal}`);
     assert.ok(/biayaTransferLengkap\(/.test(src), `${file}: tombol kirim harus menunggu metode transfer lengkap`);
+  }
+});
+
+test("Dialog Koreksi (EditDokumen) memakai CaraBayarTransfer dan hanya mengirim biaya bila berubah", () => {
+  const src = baca("features/finance/EditDokumen.jsx");
+  assert.match(src, /<CaraBayarTransfer\b/);
+  assert.match(src, /biayaBisaDiedit/);
+  assert.match(src, /doc\.mode === "LANGSUNG" \|\| doc\.status === "DIBAYAR"/, "biaya hanya dikoreksi bila uang sudah keluar di jurnalnya");
+  assert.match(src, /biayaBerubah \? bodyBiayaTransfer\(f\)/);
+  assert.match(src, /langkah <strong>Bayar<\/strong>/, "dokumen belum dibayar dijelaskan: biaya dicatat saat Bayar");
+});
+
+test("Form buat utang/reimbursement tidak mengirim biaya (denganBiaya aktif hanya untuk LANGSUNG)", () => {
+  for (const file of ["pages/finance/FinanceExpenses.jsx", "pages/finance/FinancePurchases.jsx"]) {
+    assert.match(baca(file), /denganBiaya\(f, f\.mode === "LANGSUNG"\)/, file);
   }
 });
 

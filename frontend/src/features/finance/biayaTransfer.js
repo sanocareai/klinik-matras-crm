@@ -1,6 +1,7 @@
 // Logika murni biaya admin transfer bank — dipakai SEMUA form uang keluar.
-// Ini HANYA pratinjau di layar: server yang menghitung & memvalidasi ulang
-// (backend/src/services/finance/transferFee.js) dan angka server yang tersimpan.
+// TIDAK ADA kalkulasi biaya di sini: angka pratinjau datang dari server
+// (POST /finance/transfer-fee/preview) yang memakai aturan & preset yang sama
+// dengan saat menyimpan (backend/src/services/finance/transferFee.js).
 
 export const JENIS_BIAYA_TRANSFER = [
   { code: "SESAMA_BANK", label: "Sesama Bank" },
@@ -28,18 +29,6 @@ export function nilaiAwalBiaya(rek) {
     : { paymentMethod: "TUNAI", transferFeeType: "", transferFeeAmount: "" };
 }
 
-export function biayaTerpilih(rek, v) {
-  if (v?.paymentMethod !== "TRANSFER") return 0;
-  if (v.transferFeeType === "LAINNYA") return Math.max(0, Number(v.transferFeeAmount) || 0);
-  return presetRekening(rek)[v.transferFeeType] ?? 0;
-}
-
-export function pratinjauBiaya(rek, v, nominal) {
-  const diterima = Number(nominal) || 0;
-  const biayaAdmin = biayaTerpilih(rek, v);
-  return { nominalDiterima: diterima, biayaAdmin, totalKeluarRekening: diterima + biayaAdmin };
-}
-
 /** Form boleh dikirim? Transfer wajib pilih metode; Custom wajib nominal. */
 export function biayaTransferLengkap(rek, v) {
   if (!adalahRekeningBank(rek) || v?.paymentMethod !== "TRANSFER") return true;
@@ -48,6 +37,23 @@ export function biayaTransferLengkap(rek, v) {
     return v.transferFeeAmount !== "" && v.transferFeeAmount != null && Number(v.transferFeeAmount) >= 0;
   }
   return true;
+}
+
+const KUNCI_BIAYA = ["paymentMethod", "transferFeeType", "transferFeeAmount"];
+
+/** Buang isian biaya dari objek form (state form ikut menyimpan kunci-kunci ini). */
+export function tanpaBiaya(f) {
+  const b = { ...f };
+  for (const k of KUNCI_BIAYA) delete b[k];
+  return b;
+}
+
+/**
+ * Objek siap kirim: field form + isian biaya yang bersih. `aktif=false` dipakai
+ * form yang uangnya BELUM keluar (utang/reimbursement): biaya baru dicatat saat Bayar.
+ */
+export function denganBiaya(f, aktif = true) {
+  return aktif ? { ...tanpaBiaya(f), ...bodyBiayaTransfer(f) } : tanpaBiaya(f);
 }
 
 /** Bagian body request. Untuk preset, nominal TIDAK dikirim — server yang mengisi. */

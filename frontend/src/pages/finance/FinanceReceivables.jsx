@@ -11,7 +11,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
-import { BIAYA_KOSONG, bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
+import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
@@ -372,7 +372,7 @@ function ModalRefund({ open, onClose, rekening, piutang, onSubmit }) {
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit({ ...f, ...bodyBiayaTransfer(f) })} disabled={!valid}>Ajukan</TombolAksi>
+          <TombolAksi onClick={() => onSubmit(denganBiaya(f, f.mode === "LANGSUNG"))} disabled={!valid}>Ajukan</TombolAksi>
         </>
       }
     >

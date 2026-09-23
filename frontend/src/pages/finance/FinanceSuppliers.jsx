@@ -11,7 +11,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
-import { BIAYA_KOSONG, bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
+import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
@@ -589,7 +589,7 @@ function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmi
           <TombolAksi
             disabled={!valid}
             onClick={() => onSubmit({
-              ...f, ...bodyBiayaTransfer(f),
+              ...denganBiaya(f),
               allocations: Object.entries(alokasi)
                 .filter(([, v]) => Number(v) > 0)
                 .map(([billId, amount]) => ({ billId, amount: Number(amount) })),

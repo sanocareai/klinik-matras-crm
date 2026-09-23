@@ -33,6 +33,21 @@ export const JENIS_BIAYA_TRANSFER = [
 const KODE_PRESET = ["SESAMA_BANK", "BI_FAST", "TRANSFER_ONLINE"];
 export const BATAS_BIAYA_CUSTOM = 1_000_000;
 
+export const PESAN_BIAYA_SAAT_BAYAR =
+  "Biaya admin transfer untuk pengeluaran/pembelian yang belum dibayar baru dicatat saat langkah Bayar — pilih metode transfer di sana, bukan saat membuat atau menyetujui.";
+
+/**
+ * Dokumen yang uangnya belum keluar (UTANG/REIMBURSEMENT) TIDAK boleh membawa
+ * biaya admin saat dibuat: biaya ikut jurnal PEMBAYARAN (/pay), bukan jurnal
+ * pengakuan beban. Menolak eksplisit lebih baik daripada diam-diam membuang.
+ */
+export function pastikanTanpaBiayaSebelumBayar({ paymentMethod, transferFeeType, transferFeeAmount } = {}) {
+  const ada = String(paymentMethod || "").toUpperCase() === "TRANSFER"
+    || (transferFeeType != null && transferFeeType !== "")
+    || (transferFeeAmount != null && transferFeeAmount !== "" && Number(transferFeeAmount) !== 0);
+  if (ada) throw new TransferFeeError(PESAN_BIAYA_SAAT_BAYAR);
+}
+
 export function presetBawaan() {
   return Object.fromEntries(JENIS_BIAYA_TRANSFER.filter((j) => j.bawaan != null).map((j) => [j.code, j.bawaan]));
 }
@@ -154,7 +169,15 @@ export function ringkasBiaya({ amount, transferFeeAmount }) {
  * data yang siap di-merge ke `perubahan` ({} bila tidak ada yang berubah).
  */
 export async function siapkanPerubahanBiaya(db, body, asli, cashAccountIdBaru) {
-  const menyentuh = ["paymentMethod", "transferFeeType", "transferFeeAmount"].some((k) => body[k] !== undefined);
+  // Biaya admin hanya ada di dokumen yang uangnya SUDAH/AKAN keluar di jurnalnya:
+  // mode LANGSUNG, atau mode lain yang sudah DIBAYAR. UTANG/REIMBURSEMENT yang
+  // belum dibayar tidak punya biaya — dipilih saat langkah Bayar (/pay).
+  const bolehBiaya = asli.mode === "LANGSUNG" || asli.status === "DIBAYAR";
+  const menyentuh = ["paymentMethod", "transferFeeType", "transferFeeAmount"].some((k) => body[k] !== undefined && body[k] !== "" && body[k] !== null);
+  if (!bolehBiaya) {
+    if (menyentuh && String(body.paymentMethod || "").toUpperCase() !== "TUNAI") throw new TransferFeeError(PESAN_BIAYA_SAAT_BAYAR);
+    return {};
+  }
   const rekeningGanti = cashAccountIdBaru !== undefined && cashAccountIdBaru !== asli.cashAccountId;
   if (!menyentuh && !(rekeningGanti && asli.paymentMethod === "TRANSFER")) return {};
 

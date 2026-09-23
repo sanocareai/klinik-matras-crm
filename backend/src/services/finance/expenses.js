@@ -15,7 +15,7 @@ import { hasPermission } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
 import { postExpenseApproved } from "./posting/expense.js";
 import { pastikanNotaLengkap } from "./receipts.js";
-import { hitungBiayaTransfer, TransferFeeError, ringkasBiaya } from "./transferFee.js";
+import { hitungBiayaTransfer, TransferFeeError, ringkasBiaya, pastikanTanpaBiayaSebelumBayar } from "./transferFee.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 
@@ -82,9 +82,13 @@ export async function buatFinExpense(db, {
   // Biaya admin transfer hanya berlaku bila uang keluar SAAT dokumen ini diposting
   // (LANGSUNG). Mode REIMBURSEMENT/UTANG memilih cara bayar & biayanya di /pay.
   let biaya = { paymentMethod: null, transferFeeType: null, transferFeeAmount: 0 };
-  if (modeEfektif === "LANGSUNG") {
+  {
     try {
-      biaya = await hitungBiayaTransfer(db, { cashAccountId, paymentMethod, transferFeeType, transferFeeAmount });
+      if (modeEfektif === "LANGSUNG") {
+        biaya = await hitungBiayaTransfer(db, { cashAccountId, paymentMethod, transferFeeType, transferFeeAmount });
+      } else {
+        pastikanTanpaBiayaSebelumBayar({ paymentMethod, transferFeeType, transferFeeAmount });
+      }
     } catch (e) {
       if (e instanceof TransferFeeError) throw new ExpenseInputError(e.message, e.statusCode);
       throw e;

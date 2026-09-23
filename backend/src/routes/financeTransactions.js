@@ -59,7 +59,7 @@ import { buatFinExpense, tarikFinExpense, setujuiFinExpense, expenseInclude, ben
 // Divisi) — no-op kalau FinExpense ini tidak berasal dari pengajuan divisi.
 // Dipanggil di SETIAP transisi status FinExpense, DI DALAM transaksi yang
 // sama dengan perubahan status itu (lihat services/expenseSubmission/service.js).
-import { hitungBiayaTransfer, siapkanPerubahanBiaya, ringkasBiaya } from "../services/finance/transferFee.js";
+import { hitungBiayaTransfer, siapkanPerubahanBiaya, ringkasBiaya, pastikanTanpaBiayaSebelumBayar } from "../services/finance/transferFee.js";
 import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/service.js";
 
 export const financeTxRouter = express.Router();
@@ -219,6 +219,23 @@ financeTxRouter.post("/expenses",
     try {
       const created = await prisma.$transaction((tx) => buatFinExpense(tx, { ...req.body, user: req.user }));
       res.status(201).json(bentukExpense(created));
+    } catch (e) {
+      handleFinanceError(e, res);
+    }
+  });
+
+// Pratinjau biaya admin transfer — memakai aturan & preset SERVER yang sama dengan
+// saat menyimpan, supaya layar tidak menghitung sendiri. Tidak menulis apa pun.
+financeTxRouter.post("/transfer-fee/preview",
+  requireAnyPermission(P.FINANCE_READ, P.FINANCE_POST, P.FINANCE_EXPENSE_SUBMIT),
+  async (req, res) => {
+    try {
+      const nominal = toMoney(req.body?.amount ?? 0, { field: "Nominal" });
+      const biaya = await hitungBiayaTransfer(prisma, req.body || {});
+      res.json({
+        paymentMethod: biaya.paymentMethod, transferFeeType: biaya.transferFeeType,
+        ...ringkasBiaya({ amount: nominal, transferFeeAmount: biaya.transferFeeAmount }),
+      });
     } catch (e) {
       handleFinanceError(e, res);
     }
@@ -670,6 +687,7 @@ financeTxRouter.post("/purchases",
         throw err("Pembelian yang dibayar langsung wajib memilih rekening kas/bank sumber dananya");
       }
       // Biaya admin transfer hanya untuk uang yang keluar saat dokumen diposting (LANGSUNG).
+      if (modeEfektif !== "LANGSUNG") pastikanTanpaBiayaSebelumBayar(req.body);
       const biaya = modeEfektif === "LANGSUNG"
         ? await hitungBiayaTransfer(prisma, req.body)
         : { paymentMethod: null, transferFeeType: null, transferFeeAmount: 0 };

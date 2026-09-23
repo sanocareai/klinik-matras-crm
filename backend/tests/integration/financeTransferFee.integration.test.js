@@ -271,3 +271,167 @@ test("Pembatalan pengeluaran ber-biaya admin membalik SELURUH jurnal termasuk ba
   const net = beban.reduce((a, l) => a + Number(l.debit) - Number(l.credit), 0);
   assert.equal(net, 0, "biaya admin netto 0 setelah pembatalan (jurnal asli + jurnal balik)");
 });
+
+// ═════════════════════════════════════════════════════════════════════════
+// Transaksi TERTUNDA (UTANG / REIMBURSEMENT / belum dibayar): biaya admin baru
+// dijurnal saat /pay — bukan saat create/approve. Plus koreksi & pratinjau server.
+// ═════════════════════════════════════════════════════════════════════════
+
+const nota = "/media/finance-receipts/" + "b".repeat(40) + ".jpg";
+const barisAdmin = (e) => e.lines.filter((l) => l.account.code === "6-1700");
+
+async function siapkanTertunda(ctx, { mode = "UTANG", extra = {} } = {}) {
+  const body = { date: "2026-09-20", amount: 100_000, description: "Beli perlengkapan", categoryId: ctx.kat.id, mode, payeeName: "Toko Maju", receiptUrl: nota, ...extra };
+  if (mode === "REIMBURSEMENT") body.reimburseToId = ctx.user.id;
+  const r = await ctx.c.post("/api/finance/expenses", body);
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  return r.body;
+}
+
+for (const mode of ["UTANG", "REIMBURSEMENT"]) {
+  test(`${mode}: biaya dijurnal HANYA saat /pay; create ber-biaya ditolak; jurnal pengakuan tanpa baris biaya`, async () => {
+    const ctx = await siapkan();
+    const tolak = await ctx.c.post("/api/finance/expenses", {
+      date: "2026-09-20", amount: 100_000, description: "x", categoryId: ctx.kat.id, mode, reimburseToId: ctx.user.id,
+      paymentMethod: "TRANSFER", transferFeeType: "BI_FAST",
+    });
+    assert.equal(tolak.status, 400, JSON.stringify(tolak.body));
+    assert.match(tolak.body.error, /baru dicatat saat langkah Bayar/i);
+    assert.equal(await testPrisma.finExpense.count(), 0);
+
+    const e = await siapkanTertunda(ctx, { mode });
+    assert.equal(e.transferFeeAmount, 0);
+    const ap = await ctx.c.post(`/api/finance/expenses/${e.id}/approve`, {});
+    assert.equal(ap.status, 200, JSON.stringify(ap.body));
+
+    let es = await jurnal("PENGELUARAN", e.id);
+    assert.equal(es.length, 1);
+    assert.equal(barisAdmin(es[0]).length, 0, "pengakuan beban tidak boleh memuat biaya admin");
+    assert.equal(es[0].lines.filter((l) => l.cashAccountId).length, 0, "belum ada uang keluar");
+
+    const bayar = await ctx.c.post(`/api/finance/expenses/${e.id}/pay`, { cashAccountId: ctx.bank.id, paymentMethod: "TRANSFER", transferFeeType: "BI_FAST" });
+    assert.equal(bayar.status, 200, JSON.stringify(bayar.body));
+    es = await jurnal("PENGELUARAN", e.id);
+    assert.equal(es.length, 2);
+    const bayarJ = es.find((x) => x.idempotencyKey?.startsWith("PENGELUARAN_DIBAYAR"));
+    const pengakuan = es.find((x) => x !== bayarJ);
+    assert.equal(barisAdmin(pengakuan).length, 0, "jurnal pengakuan tetap tanpa biaya");
+    assert.equal(Number(barisAdmin(bayarJ)[0].debit), 2500);
+    assert.equal(totalKredit(bayarJ), 102_500);
+    assert.equal(totalDebit(bayarJ), 102_500);
+    assert.equal(await testPrisma.finExpense.count(), 1);
+  });
+}
+
+test("Belum dibayar dari Pengajuan Biaya (sumberDana BELUM_DIBAYAR): approve tanpa biaya; biaya baru saat /pay", async () => {
+  const ctx = await siapkan();
+  const c = ctx.c;
+  const created = await c.post("/api/finance/expense-submissions", {
+    workspace: "DELIVERY", expenseType: "BBM", date: "2026-09-20", amount: 500_000, vendorName: "SPBU Uji",
+    metadata: { liters: 10 }, sumberDana: "BELUM_DIBAYAR",
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const aj = await c.post(`/api/finance/expense-submissions/${created.body.id}/ajukan`, {}, { "Idempotency-Key": "fee-belum-dibayar" });
+  assert.equal(aj.status, 200, JSON.stringify(aj.body));
+  const feId = aj.body.finExpenseId;
+  const fe = await testPrisma.finExpense.findUnique({ where: { id: feId } });
+  assert.equal(fe.mode, "UTANG");
+  assert.equal(Number(fe.transferFeeAmount), 0);
+  await testPrisma.finExpense.update({ where: { id: feId }, data: { receiptUrl: nota } });
+  assert.equal((await c.post(`/api/finance/expenses/${feId}/approve`, {})).status, 200);
+  assert.equal(barisAdmin((await jurnal("PENGELUARAN", feId))[0]).length, 0);
+  const bayar = await c.post(`/api/finance/expenses/${feId}/pay`, { cashAccountId: ctx.bank.id, paymentMethod: "TRANSFER", transferFeeType: "TRANSFER_ONLINE" });
+  assert.equal(bayar.status, 200, JSON.stringify(bayar.body));
+  const semua = await jurnal("PENGELUARAN", feId);
+  assert.equal(semua.filter((j) => barisAdmin(j).length > 0).length, 1, "tepat satu jurnal (pembayaran) memuat biaya");
+  assert.equal(await testPrisma.finExpense.count(), 1);
+});
+
+test("Koreksi: UTANG yang BELUM dibayar tidak boleh membawa biaya admin; setelah DIBAYAR biaya bisa dikoreksi (hanya jurnal pembayaran diganti)", async () => {
+  const ctx = await siapkan();
+  const e = await siapkanTertunda(ctx, { mode: "UTANG" });
+  await ctx.c.post(`/api/finance/expenses/${e.id}/approve`, {});
+
+  const tolak = await ctx.c.post(`/api/finance/expenses/${e.id}/koreksi`, { reason: "coba", paymentMethod: "TRANSFER", transferFeeType: "BI_FAST" });
+  assert.equal(tolak.status, 400, JSON.stringify(tolak.body));
+  assert.match(tolak.body.error, /baru dicatat saat langkah Bayar/i);
+
+  await ctx.c.post(`/api/finance/expenses/${e.id}/pay`, { cashAccountId: ctx.bank.id, paymentMethod: "TRANSFER", transferFeeType: "BI_FAST" });
+
+  const ok = await ctx.c.post(`/api/finance/expenses/${e.id}/koreksi`, { reason: "Ternyata sesama bank", paymentMethod: "TRANSFER", transferFeeType: "SESAMA_BANK" });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.transferFeeAmount, 0);
+  const aktif = await jurnal("PENGELUARAN", e.id);
+  const bayarJ = aktif.filter((x) => x.idempotencyKey?.includes("PENGELUARAN_DIBAYAR"));
+  assert.equal(bayarJ.length, 1, "satu jurnal pembayaran aktif");
+  assert.equal(totalKredit(bayarJ[0]), 100_000);
+  assert.equal(barisAdmin(bayarJ[0]).length, 0);
+});
+
+test("Koreksi LANGSUNG: pindah ke kas tunai wajib Tunai (biaya 0); tetap Transfer ke kas ditolak; jurnal aktif tunggal", async () => {
+  const ctx = await siapkan();
+  const r = await ctx.c.post("/api/finance/expenses", badan(ctx, { paymentMethod: "TRANSFER", transferFeeType: "BI_FAST" }));
+  await ctx.c.post(`/api/finance/expenses/${r.body.id}/approve`, {});
+
+  const salah = await ctx.c.post(`/api/finance/expenses/${r.body.id}/koreksi`, { reason: "Pindah rekening", cashAccountId: ctx.kas.id });
+  assert.equal(salah.status, 400, "rekening pindah ke kas sementara masih ber-Transfer -> ditolak");
+  assert.match(salah.body.error, /kas tunai/i);
+  assert.equal((await jurnal("PENGELUARAN", r.body.id)).length, 1, "penolakan tidak mengubah jurnal");
+
+  const ok = await ctx.c.post(`/api/finance/expenses/${r.body.id}/koreksi`, { reason: "Pindah rekening", cashAccountId: ctx.kas.id, paymentMethod: "TUNAI" });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.transferFeeAmount, 0);
+  const aktif = await jurnal("PENGELUARAN", r.body.id);
+  assert.equal(aktif.length, 1);
+  assert.equal(barisAdmin(aktif[0]).length, 0);
+  assert.equal(totalKredit(aktif[0]), 100_000);
+  assert.equal(await testPrisma.finExpense.count(), 1);
+});
+
+test("Koreksi pembelian LANGSUNG: metode transfer berubah -> jurnal PEMBELIAN diganti, satu dokumen", async () => {
+  const ctx = await siapkan();
+  const r = await ctx.c.post("/api/finance/purchases", {
+    date: "2026-09-20", amount: 200_000, description: "Busa", categoryId: ctx.katBeli.id, mode: "LANGSUNG", cashAccountId: ctx.bank.id,
+    paymentMethod: "TRANSFER", transferFeeType: "TRANSFER_ONLINE", receiptUrl: nota,
+  });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal((await ctx.c.post(`/api/finance/purchases/${r.body.id}/approve`, {})).status, 200);
+  const k = await ctx.c.post(`/api/finance/purchases/${r.body.id}/koreksi`, { reason: "Salah metode", transferFeeType: "LAINNYA", paymentMethod: "TRANSFER", transferFeeAmount: 4000 });
+  assert.equal(k.status, 200, JSON.stringify(k.body));
+  assert.equal(k.body.transferFeeAmount, 4000);
+  const aktif = await jurnal("PEMBELIAN", r.body.id);
+  assert.equal(aktif.length, 1);
+  assert.equal(totalKredit(aktif[0]), 204_000);
+  assert.equal(await testPrisma.finPurchase.count(), 1);
+});
+
+test("Pembelian UTANG: create ber-biaya ditolak", async () => {
+  const ctx = await siapkan();
+  const r = await ctx.c.post("/api/finance/purchases", {
+    date: "2026-09-20", amount: 200_000, description: "Busa", categoryId: ctx.katBeli.id, mode: "UTANG",
+    paymentMethod: "TRANSFER", transferFeeType: "BI_FAST",
+  });
+  assert.equal(r.status, 400, JSON.stringify(r.body));
+  assert.equal(await testPrisma.finPurchase.count(), 0);
+});
+
+test("Pratinjau SERVER: angka & aturan sama dengan saat menyimpan (preset per rekening, custom, error)", async () => {
+  const ctx = await siapkan();
+  const p1 = await ctx.c.post("/api/finance/transfer-fee/preview", { cashAccountId: ctx.bank.id, amount: 100_000, paymentMethod: "TRANSFER", transferFeeType: "BI_FAST", transferFeeAmount: 1 });
+  assert.equal(p1.status, 200, JSON.stringify(p1.body));
+  assert.deepEqual([p1.body.nominalDiterima, p1.body.biayaAdmin, p1.body.totalKeluarRekening], [100_000, 2500, 102_500], "nominal preset dari klien diabaikan");
+
+  await ctx.c.patch(`/api/finance/cash-accounts/${ctx.bank.id}`, { transferFeePresets: { BI_FAST: 3200 } });
+  const p2 = await ctx.c.post("/api/finance/transfer-fee/preview", { cashAccountId: ctx.bank.id, amount: 100_000, paymentMethod: "TRANSFER", transferFeeType: "BI_FAST" });
+  assert.equal(p2.body.biayaAdmin, 3200);
+  const simpan = await ctx.c.post("/api/finance/expenses", badan(ctx, { paymentMethod: "TRANSFER", transferFeeType: "BI_FAST" }));
+  assert.equal(simpan.body.totalKeluarRekening, p2.body.totalKeluarRekening);
+
+  const c = await ctx.c.post("/api/finance/transfer-fee/preview", { cashAccountId: ctx.bank.id, amount: 50_000, paymentMethod: "TRANSFER", transferFeeType: "LAINNYA", transferFeeAmount: 9000 });
+  assert.equal(c.body.totalKeluarRekening, 59_000);
+  const buruk = await ctx.c.post("/api/finance/transfer-fee/preview", { cashAccountId: ctx.kas.id, amount: 50_000, paymentMethod: "TRANSFER", transferFeeType: "BI_FAST" });
+  assert.equal(buruk.status, 400);
+  const tanpaLogin = await fetch(`${server.baseUrl}/api/finance/transfer-fee/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  assert.equal(tanpaLogin.status, 401);
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "PENGELUARAN" } }), 0, "pratinjau tidak menulis apa pun");
+});

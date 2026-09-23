@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils.js";
 import { useContainerTier } from "@/hooks/useContainerTier.js";
 import { api } from "@/api.js";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
-import { BIAYA_KOSONG, bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
+import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
@@ -463,7 +463,7 @@ function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit({ ...f, ...bodyBiayaTransfer(f) })} disabled={!valid}>Ajukan</TombolAksi>
+          <TombolAksi onClick={() => onSubmit(denganBiaya(f, f.mode === "LANGSUNG"))} disabled={!valid}>Ajukan</TombolAksi>
         </>
       }
     >
@@ -541,7 +541,7 @@ function ModalBayar({ expense, onClose, rekening, onSubmit }) {
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit({ ...f, ...bodyBiayaTransfer(f) })} disabled={!f.cashAccountId || !biayaTransferLengkap(rek, f)}>Catat Pembayaran</TombolAksi>
+          <TombolAksi onClick={() => onSubmit(denganBiaya(f))} disabled={!f.cashAccountId || !biayaTransferLengkap(rek, f)}>Catat Pembayaran</TombolAksi>
         </>
       }
     >

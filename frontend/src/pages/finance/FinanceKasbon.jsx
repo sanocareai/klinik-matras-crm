@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
-import { BIAYA_KOSONG, bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
+import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import { LinkBukti } from "@/features/finance/receiptMedia.jsx";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
 import {
@@ -383,7 +383,7 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => aksi(() => onSubmit({ ...f, ...bodyBiayaTransfer(f) }))} disabled={!valid}>Catat Kasbon</TombolAksi>
+          <TombolAksi onClick={() => aksi(() => onSubmit(denganBiaya(f)))} disabled={!valid}>Catat Kasbon</TombolAksi>
         </>
       }
     >

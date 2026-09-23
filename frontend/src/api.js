@@ -1345,6 +1345,7 @@ export const api = {
   submitFinancePurchase: (id) => request(`/finance/purchases/${id}/submit`, { method: "POST" }),
   approveFinancePurchase: (id) => request(`/finance/purchases/${id}/approve`, { method: "POST" }),
   rejectFinancePurchase: (id, reason) => request(`/finance/purchases/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  previewBiayaTransfer: (data) => request("/finance/transfer-fee/preview", { method: "POST", body: JSON.stringify(data) }),
   payFinancePurchase: (id, data) => request(`/finance/purchases/${id}/pay`, { method: "POST", body: JSON.stringify(data) }),
   cancelFinancePurchase: (id, reason) => request(`/finance/purchases/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   // Terapkan Uang Muka — DP (kategori Uang Muka Pembelian) mengurangi Utang
