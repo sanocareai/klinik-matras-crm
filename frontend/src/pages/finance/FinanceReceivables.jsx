@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
+import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
+import { BIAYA_KOSONG, bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
@@ -357,9 +359,10 @@ export default function FinanceReceivables() {
 }
 
 function ModalRefund({ open, onClose, rekening, piutang, onSubmit }) {
-  const [f, setF] = useState({ orderId: "", date: "", amount: "", reason: "", cashAccountId: "" });
+  const [f, setF] = useState({ orderId: "", date: "", amount: "", reason: "", cashAccountId: "", ...BIAYA_KOSONG });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const valid = f.orderId && f.reason.trim() && f.cashAccountId && Number(f.amount) > 0;
+  const rek = rekening.find((r) => r.id === f.cashAccountId);
+  const valid = f.orderId && f.reason.trim() && f.cashAccountId && Number(f.amount) > 0 && biayaTransferLengkap(rek, f);
 
   return (
     <Modal
@@ -369,7 +372,7 @@ function ModalRefund({ open, onClose, rekening, piutang, onSubmit }) {
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Ajukan</TombolAksi>
+          <TombolAksi onClick={() => onSubmit({ ...f, ...bodyBiayaTransfer(f) })} disabled={!valid}>Ajukan</TombolAksi>
         </>
       }
     >
@@ -411,6 +414,7 @@ function ModalRefund({ open, onClose, rekening, piutang, onSubmit }) {
             {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Pilihan>
         </Field>
+        <CaraBayarTransfer rekening={rek} nominal={f.amount} value={f} onChange={(b) => setF((s) => ({ ...s, ...b }))} />
       </div>
     </Modal>
   );

@@ -15,6 +15,7 @@ import { hasPermission } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
 import { postExpenseApproved } from "./posting/expense.js";
 import { pastikanNotaLengkap } from "./receipts.js";
+import { hitungBiayaTransfer, TransferFeeError, ringkasBiaya } from "./transferFee.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 
@@ -50,6 +51,7 @@ function parseTanggal(value) {
 export async function buatFinExpense(db, {
   date, amount, description, categoryId, division, mode,
   cashAccountId, supplierId, reimburseToId, payeeName, orderId, unitId, receiptUrl, notes,
+  paymentMethod, transferFeeType, transferFeeAmount,
   langsungAjukan, user,
   // Lolos guard "hanya boleh reimburse diri sendiri" di bawah TANPA butuh
   // FINANCE_POST — dipakai KHUSUS oleh ajukanPengajuan() (Pengajuan Biaya
@@ -77,6 +79,18 @@ export async function buatFinExpense(db, {
     throw new ExpenseInputError("Pengeluaran yang dibayar langsung wajib memilih rekening kas/bank sumber dananya");
   }
 
+  // Biaya admin transfer hanya berlaku bila uang keluar SAAT dokumen ini diposting
+  // (LANGSUNG). Mode REIMBURSEMENT/UTANG memilih cara bayar & biayanya di /pay.
+  let biaya = { paymentMethod: null, transferFeeType: null, transferFeeAmount: 0 };
+  if (modeEfektif === "LANGSUNG") {
+    try {
+      biaya = await hitungBiayaTransfer(db, { cashAccountId, paymentMethod, transferFeeType, transferFeeAmount });
+    } catch (e) {
+      if (e instanceof TransferFeeError) throw new ExpenseInputError(e.message, e.statusCode);
+      throw e;
+    }
+  }
+
   const tanggal = parseTanggal(date);
   const expenseNumber = await generateDocumentNumber(db, "EXP", tanggal);
 
@@ -99,6 +113,9 @@ export async function buatFinExpense(db, {
       unitId: unitId || null,
       receiptUrl: receiptUrl || null,
       notes: notes?.trim() || null,
+      paymentMethod: biaya.paymentMethod,
+      transferFeeType: biaya.transferFeeType,
+      transferFeeAmount: biaya.transferFeeAmount,
       status: langsungAjukan === false ? "DRAFT" : "MENUNGGU_APPROVAL",
       submittedAt: langsungAjukan === false ? null : new Date(),
       createdById: user.id,
@@ -188,5 +205,5 @@ export async function tarikFinExpense(db, { id, user }) {
 }
 
 export function bentukExpense(e) {
-  return { ...e, amount: moneyToNumber(e.amount) };
+  return { ...e, amount: moneyToNumber(e.amount), transferFeeAmount: moneyToNumber(e.transferFeeAmount ?? 0), ...ringkasBiaya(e) };
 }

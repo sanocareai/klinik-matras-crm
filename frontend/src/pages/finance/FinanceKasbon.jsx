@@ -11,6 +11,8 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW
 import { cn } from "@/lib/utils.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
+import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
+import { BIAYA_KOSONG, bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import { LinkBukti } from "@/features/finance/receiptMedia.jsx";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
 import {
@@ -334,7 +336,7 @@ export default function FinanceKasbon() {
 }
 
 function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit, aksi }) {
-  const [f, setF] = useState({ employeeName: "", date: "", amount: "", urgency: "", cashAccountId: "", notes: "", receiptUrl: "" });
+  const [f, setF] = useState({ employeeName: "", date: "", amount: "", urgency: "", cashAccountId: "", notes: "", receiptUrl: "", ...BIAYA_KOSONG });
   const [nama, setNama] = useState([]);
   const [namaGalat, setNamaGalat] = useState(null);
   const [namaMemuat, setNamaMemuat] = useState(false);
@@ -361,7 +363,7 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
 
   useEffect(() => {
     if (open) {
-      setF({ employeeName: "", date: hariIniISO(), amount: "", urgency: "", cashAccountId: "", notes: "", receiptUrl: "" });
+      setF({ employeeName: "", date: hariIniISO(), amount: "", urgency: "", cashAccountId: "", notes: "", receiptUrl: "", ...BIAYA_KOSONG });
       muatNama();
       muatRekening();
     }
@@ -369,7 +371,8 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
 
   const sudah = perKaryawan.find((p) => p.nama.toLowerCase() === f.employeeName.trim().toLowerCase());
   const setelah = (sudah?.sisa || 0) + (Number(f.amount) || 0);
-  const valid = f.employeeName.trim() && f.urgency.trim().length >= 3 && Number(f.amount) > 0 && f.cashAccountId;
+  const rekDipilih = rek.find((r) => r.id === f.cashAccountId);
+  const valid = f.employeeName.trim() && f.urgency.trim().length >= 3 && Number(f.amount) > 0 && f.cashAccountId && biayaTransferLengkap(rekDipilih, f);
 
   return (
     <Modal
@@ -380,7 +383,7 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => aksi(() => onSubmit(f))} disabled={!valid}>Catat Kasbon</TombolAksi>
+          <TombolAksi onClick={() => aksi(() => onSubmit({ ...f, ...bodyBiayaTransfer(f) }))} disabled={!valid}>Catat Kasbon</TombolAksi>
         </>
       }
     >
@@ -425,6 +428,7 @@ function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit
             <p className="mt-1 text-[12px] text-red">Belum ada rekening kas/bank yang aktif. Tambahkan dulu di menu Kas &amp; Bank.</p>
           )}
         </Field>
+        <CaraBayarTransfer rekening={rekDipilih} nominal={f.amount} value={f} onChange={(b) => setF((s) => ({ ...s, ...b }))} />
         <Field label="Bukti transfer" hint="Opsional">
           <PemilihBukti url={f.receiptUrl} onChange={(v) => set("receiptUrl", v)} />
         </Field>

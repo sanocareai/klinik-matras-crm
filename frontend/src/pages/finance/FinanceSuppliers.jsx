@@ -10,6 +10,8 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
+import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
+import { BIAYA_KOSONG, bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
@@ -563,7 +565,7 @@ function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, onSubmit }
 }
 
 function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmit }) {
-  const [f, setF] = useState({ supplierId: "", date: "", cashAccountId: "", reference: "", notes: "" });
+  const [f, setF] = useState({ supplierId: "", date: "", cashAccountId: "", reference: "", notes: "", ...BIAYA_KOSONG });
   const [alokasi, setAlokasi] = useState({});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
 
@@ -573,7 +575,8 @@ function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmi
   );
 
   const total = Object.values(alokasi).reduce((s, v) => s + (Number(v) || 0), 0);
-  const valid = f.supplierId && f.cashAccountId && total > 0;
+  const rek = rekening.find((r) => r.id === f.cashAccountId);
+  const valid = f.supplierId && f.cashAccountId && total > 0 && biayaTransferLengkap(rek, f);
 
   return (
     <Modal
@@ -586,7 +589,7 @@ function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmi
           <TombolAksi
             disabled={!valid}
             onClick={() => onSubmit({
-              ...f,
+              ...f, ...bodyBiayaTransfer(f),
               allocations: Object.entries(alokasi)
                 .filter(([, v]) => Number(v) > 0)
                 .map(([billId, amount]) => ({ billId, amount: Number(amount) })),
@@ -613,6 +616,7 @@ function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmi
             </Pilihan>
           </Field>
         </div>
+        <CaraBayarTransfer rekening={rek} nominal={total} value={f} onChange={(b) => setF((s) => ({ ...s, ...b }))} />
 
         {f.supplierId && (
           <div>

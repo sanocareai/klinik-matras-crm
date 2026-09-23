@@ -6246,6 +6246,9 @@ model FinCashAccount {
   account   FinAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
   active Boolean @default(true)
+  // Preset biaya admin transfer per rekening: {"SESAMA_BANK":0,"BI_FAST":2500,"TRANSFER_ONLINE":6500}.
+  // null = pakai bawaan sistem (lihat services/finance/transferFee.js).
+  transferFeePresets Json? @map("transfer_fee_presets")
   notes  String?
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -6709,6 +6712,15 @@ model FinSupplierPayment {
   date   DateTime @db.Date
   amount Decimal  @db.Decimal(18, 2)
 
+  // ── Biaya admin transfer bank (24 Sep 2026) ──────────────────────────────
+  // paymentMethod: TRANSFER | TUNAI (null = baris lama / belum ditentukan).
+  // transferFeeType: SESAMA_BANK | BI_FAST | TRANSFER_ONLINE | LAINNYA.
+  // transferFeeAmount dihitung SERVER; ikut jurnal yang SAMA sebagai baris
+  // Dr Beban Administrasi Bank (bukan pengeluaran kedua). "Nominal diterima"
+  // = amount; "total keluar rekening" = amount + transferFeeAmount.
+  paymentMethod     String?  @map("payment_method")
+  transferFeeType   String?  @map("transfer_fee_type")
+  transferFeeAmount Decimal  @default(0) @map("transfer_fee_amount") @db.Decimal(18, 2)
   cashAccountId String         @map("cash_account_id") @db.Uuid
   cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
 
@@ -6808,6 +6820,15 @@ model FinRefund {
   amount Decimal  @db.Decimal(18, 2)
   reason String
 
+  // ── Biaya admin transfer bank (24 Sep 2026) ──────────────────────────────
+  // paymentMethod: TRANSFER | TUNAI (null = baris lama / belum ditentukan).
+  // transferFeeType: SESAMA_BANK | BI_FAST | TRANSFER_ONLINE | LAINNYA.
+  // transferFeeAmount dihitung SERVER; ikut jurnal yang SAMA sebagai baris
+  // Dr Beban Administrasi Bank (bukan pengeluaran kedua). "Nominal diterima"
+  // = amount; "total keluar rekening" = amount + transferFeeAmount.
+  paymentMethod     String?  @map("payment_method")
+  transferFeeType   String?  @map("transfer_fee_type")
+  transferFeeAmount Decimal  @default(0) @map("transfer_fee_amount") @db.Decimal(18, 2)
   cashAccountId String         @map("cash_account_id") @db.Uuid
   cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
 
@@ -6875,6 +6896,15 @@ model FinExpense {
   // Wajib kalau mode LANGSUNG (atau saat REIMBURSEMENT/UTANG akhirnya
   // dibayar) - divalidasi di service, bukan di skema, karena aturannya
   // bergantung status.
+  // ── Biaya admin transfer bank (24 Sep 2026) ──────────────────────────────
+  // paymentMethod: TRANSFER | TUNAI (null = baris lama / belum ditentukan).
+  // transferFeeType: SESAMA_BANK | BI_FAST | TRANSFER_ONLINE | LAINNYA.
+  // transferFeeAmount dihitung SERVER; ikut jurnal yang SAMA sebagai baris
+  // Dr Beban Administrasi Bank (bukan pengeluaran kedua). "Nominal diterima"
+  // = amount; "total keluar rekening" = amount + transferFeeAmount.
+  paymentMethod     String?  @map("payment_method")
+  transferFeeType   String?  @map("transfer_fee_type")
+  transferFeeAmount Decimal  @default(0) @map("transfer_fee_amount") @db.Decimal(18, 2)
   cashAccountId String?         @map("cash_account_id") @db.Uuid
   cashAccount   FinCashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
 
@@ -6970,6 +7000,15 @@ model FinPurchase {
   division FinDivision    @default(UMUM)
   mode     FinExpenseMode @default(LANGSUNG)
 
+  // ── Biaya admin transfer bank (24 Sep 2026) ──────────────────────────────
+  // paymentMethod: TRANSFER | TUNAI (null = baris lama / belum ditentukan).
+  // transferFeeType: SESAMA_BANK | BI_FAST | TRANSFER_ONLINE | LAINNYA.
+  // transferFeeAmount dihitung SERVER; ikut jurnal yang SAMA sebagai baris
+  // Dr Beban Administrasi Bank (bukan pengeluaran kedua). "Nominal diterima"
+  // = amount; "total keluar rekening" = amount + transferFeeAmount.
+  paymentMethod     String?  @map("payment_method")
+  transferFeeType   String?  @map("transfer_fee_type")
+  transferFeeAmount Decimal  @default(0) @map("transfer_fee_amount") @db.Decimal(18, 2)
   cashAccountId String?         @map("cash_account_id") @db.Uuid
   cashAccount   FinCashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
 
@@ -7285,6 +7324,15 @@ model FinKasbon {
   urgency String? // alasan/urgensi pengajuan
   notes   String?
 
+  // ── Biaya admin transfer bank (24 Sep 2026) ──────────────────────────────
+  // paymentMethod: TRANSFER | TUNAI (null = baris lama / belum ditentukan).
+  // transferFeeType: SESAMA_BANK | BI_FAST | TRANSFER_ONLINE | LAINNYA.
+  // transferFeeAmount dihitung SERVER; ikut jurnal yang SAMA sebagai baris
+  // Dr Beban Administrasi Bank (bukan pengeluaran kedua). "Nominal diterima"
+  // = amount; "total keluar rekening" = amount + transferFeeAmount.
+  paymentMethod     String?  @map("payment_method")
+  transferFeeType   String?  @map("transfer_fee_type")
+  transferFeeAmount Decimal  @default(0) @map("transfer_fee_amount") @db.Decimal(18, 2)
   cashAccountId String?         @map("cash_account_id") @db.Uuid
   cashAccount   FinCashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
   receiptUrl    String?         @map("receipt_url") // bukti transfer

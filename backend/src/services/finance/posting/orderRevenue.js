@@ -68,6 +68,7 @@ import { resolveAccount, revenueSystemKeyForOrder, SYSTEM_KEYS, AccountError } f
 import { resolveCashAccountForPayment } from "../settings.js";
 import { toMoney, sumMoney, minMoney, ZERO } from "../money.js";
 import { paidForOrder } from "../allocation.js";
+import { barisBiayaAdmin } from "../transferFee.js";
 
 export const KEY = {
   payment: (paymentId) => `PEMBAYARAN_ORDER:${paymentId}`,
@@ -409,7 +410,7 @@ export async function postRefund(tx, { refundId, userId = null }) {
     where: { id: refundId },
     select: {
       id: true, refundNumber: true, orderId: true, amount: true, date: true, reason: true,
-      cashAccountId: true,
+      cashAccountId: true, transferFeeAmount: true,
       cashAccount: { select: { id: true, name: true, accountId: true } },
       order: { select: { id: true, orderNumber: true, customerId: true } },
     },
@@ -424,6 +425,9 @@ export async function postRefund(tx, { refundId, userId = null }) {
     tx,
     diakui ? SYSTEM_KEYS.RETUR_PENJUALAN : SYSTEM_KEYS.UANG_MUKA_PELANGGAN
   );
+  // Biaya admin transfer refund = beban perusahaan, BUKAN pengurang refund ke pelanggan.
+  const biayaAdmin = toMoney(refund.transferFeeAmount || 0);
+  const barisAdmin = await barisBiayaAdmin(tx, { fee: biayaAdmin, cashAccount: refund.cashAccount });
 
   const { entry, created } = await postJournal(tx, {
     date: refund.date,
@@ -442,12 +446,13 @@ export async function postRefund(tx, { refundId, userId = null }) {
       },
       {
         accountId: refund.cashAccount.accountId,
-        credit: toMoney(refund.amount),
-        description: `Uang keluar — ${refund.cashAccount.name}`,
+        credit: toMoney(refund.amount).plus(biayaAdmin),
+        description: biayaAdmin.greaterThan(0) ? `Uang keluar — ${refund.cashAccount.name} (termasuk biaya admin transfer)` : `Uang keluar — ${refund.cashAccount.name}`,
         cashAccountId: refund.cashAccountId,
         orderId: refund.orderId,
         customerId: refund.order?.customerId || null,
       },
+      ...barisAdmin,
     ],
   });
   return { posted: true, entry, created };

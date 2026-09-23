@@ -59,6 +59,7 @@ import { buatFinExpense, tarikFinExpense, setujuiFinExpense, expenseInclude, ben
 // Divisi) — no-op kalau FinExpense ini tidak berasal dari pengajuan divisi.
 // Dipanggil di SETIAP transisi status FinExpense, DI DALAM transaksi yang
 // sama dengan perubahan status itu (lihat services/expenseSubmission/service.js).
+import { hitungBiayaTransfer, siapkanPerubahanBiaya, ringkasBiaya } from "../services/finance/transferFee.js";
 import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/service.js";
 
 export const financeTxRouter = express.Router();
@@ -105,7 +106,7 @@ async function balikkanJurnalAktif(tx, { keyPrefix, alasan, userId }) {
 // jurnal — cukup dicatat, supaya salah foto tidak menambah 3 jurnal di buku besar.
 const FIELD_JURNAL = new Set([
   "date", "amount", "description", "categoryId", "division", "cashAccountId",
-  "supplierId", "reimburseToId", "payeeName", "orderId", "unitId",
+  "supplierId", "reimburseToId", "payeeName", "orderId", "unitId", "transferFeeAmount",
 ]);
 
 /** Buang field yang nilainya SAMA dengan aslinya — form edit mengirim semua kolom. */
@@ -114,7 +115,7 @@ function bedaDenganAsli(asli, perubahan) {
   for (const [k, v] of Object.entries(perubahan)) {
     const lama = asli[k];
     let sama;
-    if (k === "amount") sama = toMoney(lama).equals(v);
+    if (k === "amount" || k === "transferFeeAmount") sama = toMoney(lama ?? 0).equals(v);
     else if (k === "date") sama = new Date(lama).toISOString().slice(0, 10) === new Date(v).toISOString().slice(0, 10);
     else sama = (lama ?? null) === (v ?? null);
     if (!sama) beda[k] = v;
@@ -312,6 +313,7 @@ financeTxRouter.post("/expenses/:id/pay", requirePermission(P.FINANCE_POST), asy
     if (!cashAccountId) throw err("Rekening sumber pembayaran wajib dipilih");
 
     const hasil = await prisma.$transaction(async (tx) => {
+      const biaya = await hitungBiayaTransfer(tx, req.body);
       // Kunci baris dokumen: dua perintah serempak (double-tap / dua perangkat) diserialkan — yang kedua melihat status baru dan ditolak 409.
       await lockRowForUpdate(tx, '"fin_expenses"', req.params.id);
       const e = await tx.finExpense.findUnique({ where: { id: req.params.id } });
@@ -324,6 +326,9 @@ financeTxRouter.post("/expenses/:id/pay", requirePermission(P.FINANCE_POST), asy
         data: {
           status: "DIBAYAR",
           cashAccountId,
+          paymentMethod: biaya.paymentMethod,
+          transferFeeType: biaya.transferFeeType,
+          transferFeeAmount: biaya.transferFeeAmount,
           paidAt: paidAt ? parseTanggal(paidAt) : new Date(),
           paidById: req.user.id,
         },
@@ -392,7 +397,7 @@ financeTxRouter.post("/expenses/:id/cancel", requirePermission(P.FINANCE_ADMIN),
  * field yang diterima SAMA dengan POST /expenses (create) MINUS `mode`
  * (lihat catatan di POST .../koreksi kenapa mode sengaja dikecualikan).
  */
-async function siapkanPerubahanExpense(tx, body, modeSaatIni) {
+async function siapkanPerubahanExpense(tx, body, modeSaatIni, asli) {
   const perubahan = {};
   if (body.date !== undefined) perubahan.date = parseTanggal(body.date);
   if (body.amount !== undefined) {
@@ -422,6 +427,9 @@ async function siapkanPerubahanExpense(tx, body, modeSaatIni) {
   if (modeSaatIni === "LANGSUNG" && perubahan.cashAccountId === null) {
     throw err("Pengeluaran mode Langsung wajib punya rekening kas/bank sumber dananya");
   }
+  if (asli) {
+    Object.assign(perubahan, await siapkanPerubahanBiaya(tx, body, asli, perubahan.cashAccountId));
+  }
   return perubahan;
 }
 
@@ -443,7 +451,7 @@ financeTxRouter.patch("/expenses/:id", requirePermission(P.FINANCE_ADMIN), async
           409
         );
       }
-      const perubahan = bedaDenganAsli(e, await siapkanPerubahanExpense(tx, req.body, e.mode));
+      const perubahan = bedaDenganAsli(e, await siapkanPerubahanExpense(tx, req.body, e.mode, e));
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
       const updated = await tx.finExpense.update({
         where: { id: e.id }, data: { ...perubahan, ...resetVerifikasiBukti(perubahan) }, include: expenseInclude,
@@ -487,7 +495,7 @@ financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN)
         );
       }
 
-      const perubahan = bedaDenganAsli(e, await siapkanPerubahanExpense(tx, req.body, e.mode));
+      const perubahan = bedaDenganAsli(e, await siapkanPerubahanExpense(tx, req.body, e.mode, e));
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
       const menyentuhJurnal = Object.keys(perubahan).some((k) => FIELD_JURNAL.has(k));
 
@@ -552,7 +560,7 @@ const purchaseInclude = {
 };
 
 function bentukPurchase(p) {
-  return { ...p, amount: moneyToNumber(p.amount) };
+  return { ...p, amount: moneyToNumber(p.amount), transferFeeAmount: moneyToNumber(p.transferFeeAmount ?? 0), ...ringkasBiaya(p) };
 }
 
 financeTxRouter.get("/purchases",
@@ -661,6 +669,10 @@ financeTxRouter.post("/purchases",
       if (modeEfektif === "LANGSUNG" && !cashAccountId) {
         throw err("Pembelian yang dibayar langsung wajib memilih rekening kas/bank sumber dananya");
       }
+      // Biaya admin transfer hanya untuk uang yang keluar saat dokumen diposting (LANGSUNG).
+      const biaya = modeEfektif === "LANGSUNG"
+        ? await hitungBiayaTransfer(prisma, req.body)
+        : { paymentMethod: null, transferFeeType: null, transferFeeAmount: 0 };
 
       const created = await prisma.finPurchase.create({
         data: {
@@ -677,6 +689,9 @@ financeTxRouter.post("/purchases",
           payeeName: payeeName?.trim() || null,
           receiptUrl: receiptUrl || null,
           notes: notes?.trim() || null,
+          paymentMethod: biaya.paymentMethod,
+          transferFeeType: biaya.transferFeeType,
+          transferFeeAmount: biaya.transferFeeAmount,
           status: langsungAjukan === false ? "DRAFT" : "MENUNGGU_APPROVAL",
           submittedAt: langsungAjukan === false ? null : new Date(),
           createdById: req.user.id,
@@ -812,12 +827,19 @@ financeTxRouter.post("/purchases/:id/pay", requirePermission(P.FINANCE_POST), as
       if (sisaTunai.greaterThan(0) && !cashAccountId) {
         throw err("Rekening sumber pembayaran wajib dipilih");
       }
+      // Biaya admin hanya bila memang ada uang yang keluar (sisa tunai > 0).
+      const biaya = sisaTunai.greaterThan(0)
+        ? await hitungBiayaTransfer(tx, req.body)
+        : { paymentMethod: null, transferFeeType: null, transferFeeAmount: 0 };
 
       await tx.finPurchase.update({
         where: { id: p.id },
         data: {
           status: "DIBAYAR",
           ...(sisaTunai.greaterThan(0) && { cashAccountId }),
+          paymentMethod: biaya.paymentMethod,
+          transferFeeType: biaya.transferFeeType,
+          transferFeeAmount: biaya.transferFeeAmount,
           paidAt: paidAt ? parseTanggal(paidAt) : new Date(),
           paidById: req.user.id,
         },
@@ -890,7 +912,7 @@ financeTxRouter.post("/purchases/:id/cancel", requirePermission(P.FINANCE_ADMIN)
 });
 
 /** Validasi & normalisasi payload edit/koreksi pembelian — pola persis siapkanPerubahanExpense. */
-async function siapkanPerubahanPurchase(tx, body, modeSaatIni) {
+async function siapkanPerubahanPurchase(tx, body, modeSaatIni, asli) {
   const perubahan = {};
   if (body.date !== undefined) perubahan.date = parseTanggal(body.date);
   if (body.amount !== undefined) {
@@ -918,6 +940,7 @@ async function siapkanPerubahanPurchase(tx, body, modeSaatIni) {
   if (modeSaatIni === "LANGSUNG" && perubahan.cashAccountId === null) {
     throw err("Pembelian mode Langsung wajib punya rekening kas/bank sumber dananya");
   }
+  if (asli) Object.assign(perubahan, await siapkanPerubahanBiaya(tx, body, asli, perubahan.cashAccountId));
   return perubahan;
 }
 
@@ -936,7 +959,7 @@ financeTxRouter.patch("/purchases/:id", requirePermission(P.FINANCE_ADMIN), asyn
           409
         );
       }
-      const perubahan = bedaDenganAsli(p, await siapkanPerubahanPurchase(tx, req.body, p.mode));
+      const perubahan = bedaDenganAsli(p, await siapkanPerubahanPurchase(tx, req.body, p.mode, p));
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
       const updated = await tx.finPurchase.update({
         where: { id: p.id }, data: { ...perubahan, ...resetVerifikasiBukti(perubahan) }, include: purchaseInclude,
@@ -973,7 +996,7 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
         );
       }
 
-      const perubahan = bedaDenganAsli(p, await siapkanPerubahanPurchase(tx, req.body, p.mode));
+      const perubahan = bedaDenganAsli(p, await siapkanPerubahanPurchase(tx, req.body, p.mode, p));
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
       const menyentuhJurnal = Object.keys(perubahan).some((k) => FIELD_JURNAL.has(k));
 
@@ -1612,10 +1635,15 @@ financeTxRouter.post("/supplier-payments", requirePermission(P.FINANCE_POST), as
       }
 
       const tgl = parseTanggal(date);
+      // Biaya admin dihitung & divalidasi SERVER; bukan bagian alokasi tagihan.
+      const biaya = await hitungBiayaTransfer(tx, req.body);
       const payment = await tx.finSupplierPayment.create({
         data: {
           paymentNumber: await generateDocumentNumber(tx, "PAYOUT", tgl),
           supplierId, date: tgl, amount: total, cashAccountId,
+          paymentMethod: biaya.paymentMethod,
+          transferFeeType: biaya.transferFeeType,
+          transferFeeAmount: biaya.transferFeeAmount,
           reference: reference?.trim() || null,
           notes: notes?.trim() || null,
           attachmentUrl: attachmentUrl || null,
@@ -1630,7 +1658,10 @@ financeTxRouter.post("/supplier-payments", requirePermission(P.FINANCE_POST), as
       return payment;
     });
 
-    res.status(201).json({ ...hasil, amount: moneyToNumber(hasil.amount) });
+    res.status(201).json({
+      ...hasil, amount: moneyToNumber(hasil.amount), transferFeeAmount: moneyToNumber(hasil.transferFeeAmount),
+      ...ringkasBiaya(hasil),
+    });
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -2109,18 +2140,25 @@ financeTxRouter.post("/refunds", requirePermission(P.FINANCE_POST), async (req, 
     }
 
     const tgl = parseTanggal(date);
+    const biaya = await hitungBiayaTransfer(prisma, req.body);
     const created = await prisma.finRefund.create({
       data: {
         refundNumber: await prisma.$transaction((tx) => generateDocumentNumber(tx, "RFD", tgl)),
         orderId, date: tgl, amount: nominal, reason: reason.trim(),
         cashAccountId,
+        paymentMethod: biaya.paymentMethod,
+        transferFeeType: biaya.transferFeeType,
+        transferFeeAmount: biaya.transferFeeAmount,
         attachmentUrl: attachmentUrl || null,
         status: "MENUNGGU_APPROVAL",
         createdById: req.user.id,
       },
       include: refundInclude,
     });
-    res.status(201).json({ ...created, amount: moneyToNumber(created.amount) });
+    res.status(201).json({
+      ...created, amount: moneyToNumber(created.amount), transferFeeAmount: moneyToNumber(created.transferFeeAmount),
+      ...ringkasBiaya(created),
+    });
   } catch (e) {
     handleFinanceError(e, res);
   }

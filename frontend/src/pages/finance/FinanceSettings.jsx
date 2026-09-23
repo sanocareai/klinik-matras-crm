@@ -8,6 +8,7 @@ import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import { BIAYA_BAWAAN, JENIS_BIAYA_TRANSFER, presetRekening } from "@/features/finance/biayaTransfer.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, tanggalPendek, tanggalJam, LABEL_DIVISI,
@@ -36,6 +37,7 @@ export default function FinanceSettings() {
   const [periods, setPeriods] = useState([]);
   const [kategori, setKategori] = useState([]);
   const [akun, setAkun] = useState([]);
+  const [rekeningBank, setRekeningBank] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
@@ -45,17 +47,19 @@ export default function FinanceSettings() {
     setLoading(true);
     setError(null);
     try {
-      const [s, g, p, k, a] = await Promise.all([
+      const [s, g, p, k, a, rk] = await Promise.all([
         api.getFinanceSettings(),
         api.getFinanceGaps(),
         api.getFinancePeriods(),
         api.getFinanceExpenseCategories({ includeInactive: "1" }),
         api.getFinanceAccounts(),
+        api.getFinanceCashAccounts(),
       ]);
       setSettings(s);
       setGaps(g.gaps);
       setPeriods(p.periods);
       setKategori(k.categories);
+      setRekeningBank((rk.accounts || []).filter((x) => x.active && x.kind !== "KAS"));
       setAkun(a.accounts.filter((x) => x.isPostable && x.active && ["BEBAN", "BEBAN_POKOK"].includes(x.type)));
     } catch (e) {
       setError(e.message || "Gagal memuat pengaturan finance");
@@ -269,6 +273,26 @@ export default function FinanceSettings() {
         </CardContent>
       </Card>
 
+      {/* ── BIAYA ADMIN TRANSFER PER REKENING ── */}
+      <Card>
+        <JudulKartu
+          title="Biaya Admin Transfer per Rekening"
+          description="Nominal yang terisi otomatis saat Cara Bayar = Transfer di semua form uang keluar."
+          info="Tiap rekening bank punya tarif sendiri. Metode Lainnya / Custom tidak punya preset — nominalnya diketik saat transaksi. Biaya admin dicatat sebagai baris beban terpisah pada transaksi yang sama (Beban Administrasi Bank), bukan pengeluaran kedua. Perubahan preset hanya berlaku untuk transaksi BARU."
+        />
+        <CardContent className="space-y-3">
+          {rekeningBank.length === 0 ? (
+            <p className="text-[13px] text-ink3">Belum ada rekening bank/e-wallet aktif. Tambahkan di menu Kas &amp; Bank.</p>
+          ) : rekeningBank.map((r) => (
+            <BarisPresetBiaya
+              key={r.id + JSON.stringify(r.transferFeePresets)}
+              rekening={r}
+              onSimpan={(presets) => aksi(() => api.updateFinanceCashAccount(r.id, { transferFeePresets: presets }), () => `Preset biaya admin ${r.name} disimpan`)}
+            />
+          ))}
+        </CardContent>
+      </Card>
+
       {/* ── 4. SINKRONISASI SUMBER LAMA ── */}
       <Card>
         <JudulKartu
@@ -460,5 +484,35 @@ function PengaturanAngka({ label, hint, nilai, onSimpan, tipe = "number" }) {
         onBlur={() => { if (String(draft) !== String(nilai ?? "") && String(draft).trim() !== "") onSimpan(String(draft).trim()); }}
       />
     </Field>
+  );
+}
+
+function BarisPresetBiaya({ rekening, onSimpan }) {
+  const efektif = presetRekening(rekening);
+  const [nilai, setNilai] = useState({ SESAMA_BANK: String(efektif.SESAMA_BANK), BI_FAST: String(efektif.BI_FAST), TRANSFER_ONLINE: String(efektif.TRANSFER_ONLINE) });
+  const berbeda = Object.keys(BIAYA_BAWAAN).some((k) => Number(nilai[k]) !== efektif[k]);
+  const validasi = Object.values(nilai).every((v) => v !== "" && Number(v) >= 0);
+  return (
+    <div className="rounded-lg bg-inset p-3">
+      <p className="mb-2 text-[13px] font-medium text-ink">
+        {rekening.name}
+        {!rekening.transferFeePresets && <span className="ml-2 text-[11px] font-normal text-ink3">memakai tarif bawaan</span>}
+      </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {JENIS_BIAYA_TRANSFER.filter((j) => j.code !== "LAINNYA").map((j) => (
+          <Field key={j.code} label={j.label}>
+            <InputUang value={nilai[j.code]} onChange={(v) => setNilai((s) => ({ ...s, [j.code]: v }))} />
+          </Field>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        {rekening.transferFeePresets && (
+          <Button size="sm" variant="neutral" onClick={() => onSimpan(null)}>Kembalikan ke bawaan</Button>
+        )}
+        <TombolAksi onClick={() => onSimpan(Object.fromEntries(Object.entries(nilai).map(([k, v]) => [k, Number(v)])))} disabled={!berbeda || !validasi}>
+          Simpan preset
+        </TombolAksi>
+      </div>
+    </div>
   );
 }

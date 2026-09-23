@@ -23,6 +23,7 @@ import { prisma } from "../db.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { reverseJournal, generateDocumentNumber, toBookDate, todayBookDateWIB, findEntryByKey } from "../services/finance/journal.js";
 import { toMoney, sumMoney, moneyToNumber, ZERO } from "../services/finance/money.js";
+import { hitungBiayaTransfer, ringkasBiaya } from "../services/finance/transferFee.js";
 import { postKasbonDiberikan, postKasbonPelunasan, KEY as KASBON_KEY } from "../services/finance/posting/kasbon.js";
 import { getSettingRaw, parseIntOr, SETTING_KEYS } from "../services/finance/settings.js";
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
@@ -65,6 +66,8 @@ function bentukKasbon(k) {
   return {
     ...k,
     amount: moneyToNumber(amount),
+    transferFeeAmount: moneyToNumber(k.transferFeeAmount ?? 0),
+    ...ringkasBiaya(k),
     terlunasi: moneyToNumber(lunas ? amount : dariBaris),
     sisa: moneyToNumber(sisa),
     repayments: k.repayments.map((r) => ({ ...r, amount: moneyToNumber(r.amount) })),
@@ -198,6 +201,7 @@ financeKasbonRouter.post("/kasbon", requirePermission(P.FINANCE_POST), async (re
         }
       }
 
+      const biaya = await hitungBiayaTransfer(tx, req.body);
       const tanggal = date ? toBookDate(date) : todayBookDateWIB();
       const id = randomUUID();
       const pengguna = await tx.user.findFirst({ where: { name: { equals: nama, mode: "insensitive" } }, select: { id: true } });
@@ -206,10 +210,11 @@ financeKasbonRouter.post("/kasbon", requirePermission(P.FINANCE_POST), async (re
           id, kasbonNumber: await generateDocumentNumber(tx, "KSB", tanggal),
           date: tanggal, amount: nominal, employeeName: nama, employeeId: pengguna?.id || null,
           urgency: urgency.trim(), notes: notes?.trim() || null, cashAccountId,
+          paymentMethod: biaya.paymentMethod, transferFeeType: biaya.transferFeeType, transferFeeAmount: biaya.transferFeeAmount,
           receiptUrl: receiptUrl || null, journalRef: id, createdById: req.user.id,
         },
       });
-      await postKasbonDiberikan(tx, { kasbonId: id, date: tanggal, amount: nominal, karyawanNama: nama, cashAccount: rekening, userId: req.user.id });
+      await postKasbonDiberikan(tx, { kasbonId: id, date: tanggal, amount: nominal, karyawanNama: nama, cashAccount: rekening, biayaAdmin: biaya.transferFeeAmount, userId: req.user.id });
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_KASBON, entityId: k.id, eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
         metadata: { kasbonNumber: k.kasbonNumber, aksi: "diberikan", employeeName: nama, amount: String(nominal), urgency: urgency.trim(), ...(lewatBatas && { lewatBatas: true }) },

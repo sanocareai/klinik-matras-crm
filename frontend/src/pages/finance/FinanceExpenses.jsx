@@ -13,6 +13,8 @@ import {
 import { cn } from "@/lib/utils.js";
 import { useContainerTier } from "@/hooks/useContainerTier.js";
 import { api } from "@/api.js";
+import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
+import { BIAYA_KOSONG, bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
@@ -445,11 +447,12 @@ export default function FinanceExpenses() {
 function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
   const [f, setF] = useState({
     date: "", amount: "", description: "", categoryId: "", division: "",
-    mode: "LANGSUNG", cashAccountId: "", reimburseToId: "", payeeName: "", orderId: "", notes: "", receiptUrl: "",
+    mode: "LANGSUNG", cashAccountId: "", reimburseToId: "", payeeName: "", orderId: "", notes: "", receiptUrl: "", ...BIAYA_KOSONG,
   });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const rek = rekening.find((r) => r.id === f.cashAccountId);
   const valid = f.description.trim() && f.categoryId && Number(f.amount) > 0 &&
-    (f.mode !== "LANGSUNG" || f.cashAccountId);
+    (f.mode !== "LANGSUNG" || (f.cashAccountId && biayaTransferLengkap(rek, f)));
 
   return (
     <Modal
@@ -460,7 +463,7 @@ function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Ajukan</TombolAksi>
+          <TombolAksi onClick={() => onSubmit({ ...f, ...bodyBiayaTransfer(f) })} disabled={!valid}>Ajukan</TombolAksi>
         </>
       }
     >
@@ -507,6 +510,7 @@ function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
             </Pilihan>
           </Field>
         )}
+        {f.mode === "LANGSUNG" && <CaraBayarTransfer rekening={rek} nominal={f.amount} value={f} onChange={(b) => setF((s) => ({ ...s, ...b }))} />}
         {f.mode === "REIMBURSEMENT" && <PilihPenalang value={f.reimburseToId} onChange={(v) => set("reimburseToId", v)} />}
         <Field label={f.mode === "REIMBURSEMENT" ? "Toko / pihak yang dibayar" : "Dibayarkan kepada"} hint={f.mode === "REIMBURSEMENT" ? "Opsional — bukan penalang (penalang dipilih di atas)" : "Nama toko/tukang — opsional"}>
           <Input value={f.payeeName} onChange={(e) => set("payeeName", e.target.value)} />
@@ -524,9 +528,10 @@ function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
 }
 
 function ModalBayar({ expense, onClose, rekening, onSubmit }) {
-  const [f, setF] = useState({ cashAccountId: "", paidAt: "" });
-  useEffect(() => { setF({ cashAccountId: expense?.cashAccountId || "", paidAt: "" }); }, [expense]);
+  const [f, setF] = useState({ cashAccountId: "", paidAt: "", ...BIAYA_KOSONG });
+  useEffect(() => { setF({ cashAccountId: expense?.cashAccountId || "", paidAt: "", ...BIAYA_KOSONG }); }, [expense]);
   if (!expense) return null;
+  const rek = rekening.find((r) => r.id === f.cashAccountId);
 
   return (
     <Modal
@@ -536,7 +541,7 @@ function ModalBayar({ expense, onClose, rekening, onSubmit }) {
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit(f)} disabled={!f.cashAccountId}>Catat Pembayaran</TombolAksi>
+          <TombolAksi onClick={() => onSubmit({ ...f, ...bodyBiayaTransfer(f) })} disabled={!f.cashAccountId || !biayaTransferLengkap(rek, f)}>Catat Pembayaran</TombolAksi>
         </>
       }
     >
@@ -551,6 +556,7 @@ function ModalBayar({ expense, onClose, rekening, onSubmit }) {
             {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Pilihan>
         </Field>
+        <CaraBayarTransfer rekening={rek} nominal={expense.amount} value={f} onChange={(b) => setF((s) => ({ ...s, ...b }))} />
         <Field label="Tanggal bayar">
           <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.paidAt} onChange={(v) => setF((s) => ({ ...s, paidAt: v }))} />
         </Field>

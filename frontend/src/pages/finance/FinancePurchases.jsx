@@ -11,6 +11,8 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, ExpandToggle, DetailRow, Co
 import { cn } from "@/lib/utils.js";
 import { useContainerTier } from "@/hooks/useContainerTier.js";
 import { api } from "@/api.js";
+import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
+import { BIAYA_KOSONG, bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
@@ -487,11 +489,12 @@ export default function FinancePurchases() {
 function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit }) {
   const [f, setF] = useState({
     date: "", amount: "", description: "", categoryId: "", division: "",
-    mode: "LANGSUNG", cashAccountId: "", supplierId: "", reimburseToId: "", payeeName: "", notes: "", receiptUrl: "",
+    mode: "LANGSUNG", cashAccountId: "", supplierId: "", reimburseToId: "", payeeName: "", notes: "", receiptUrl: "", ...BIAYA_KOSONG,
   });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const rek = rekening.find((r) => r.id === f.cashAccountId);
   const valid = f.description.trim() && f.categoryId && Number(f.amount) > 0 &&
-    (f.mode !== "LANGSUNG" || f.cashAccountId);
+    (f.mode !== "LANGSUNG" || (f.cashAccountId && biayaTransferLengkap(rek, f)));
 
   const kategoriDipilih = kategori.find((k) => k.id === f.categoryId);
   const isUangMuka = kategoriDipilih?.code === "UANG_MUKA_PEMBELIAN";
@@ -505,7 +508,7 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Ajukan</TombolAksi>
+          <TombolAksi onClick={() => onSubmit({ ...f, ...bodyBiayaTransfer(f) })} disabled={!valid}>Ajukan</TombolAksi>
         </>
       }
     >
@@ -555,6 +558,7 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
             </Pilihan>
           </Field>
         )}
+        {f.mode === "LANGSUNG" && <CaraBayarTransfer rekening={rek} nominal={f.amount} value={f} onChange={(b) => setF((s) => ({ ...s, ...b }))} />}
         {f.mode === "REIMBURSEMENT" && <PilihPenalang value={f.reimburseToId} onChange={(v) => set("reimburseToId", v)} />}
         <Field label="Supplier" hint="Opsional — pilih kalau pemasoknya sudah terdaftar">
           <Pilihan value={f.supplierId} onChange={(v) => set("supplierId", v)}>
@@ -575,9 +579,10 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
 }
 
 function ModalBayar({ purchase, onClose, rekening, onSubmit }) {
-  const [f, setF] = useState({ cashAccountId: "", paidAt: "" });
-  useEffect(() => { setF({ cashAccountId: purchase?.cashAccountId || "", paidAt: "" }); }, [purchase]);
+  const [f, setF] = useState({ cashAccountId: "", paidAt: "", ...BIAYA_KOSONG });
+  useEffect(() => { setF({ cashAccountId: purchase?.cashAccountId || "", paidAt: "", ...BIAYA_KOSONG }); }, [purchase]);
   if (!purchase) return null;
+  const rek = rekening.find((r) => r.id === f.cashAccountId);
 
   // `sisaUtang` datang dari GET /purchases (dihitung server, lihat
   // financeTransactions.js) untuk baris mode Utang yang sudah menerima
@@ -595,7 +600,7 @@ function ModalBayar({ purchase, onClose, rekening, onSubmit }) {
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit(f)} disabled={!lunasViaDp && !f.cashAccountId}>
+          <TombolAksi onClick={() => onSubmit({ ...f, ...bodyBiayaTransfer(f) })} disabled={!lunasViaDp && (!f.cashAccountId || !biayaTransferLengkap(rek, f))}>
             {lunasViaDp ? "Tandai Lunas" : "Catat Pembayaran"}
           </TombolAksi>
         </>
@@ -623,6 +628,7 @@ function ModalBayar({ purchase, onClose, rekening, onSubmit }) {
             </Pilihan>
           </Field>
         )}
+        {!lunasViaDp && <CaraBayarTransfer rekening={rek} nominal={sisaTunai} value={f} onChange={(b) => setF((s) => ({ ...s, ...b }))} />}
         <Field label="Tanggal bayar">
           <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.paidAt} onChange={(v) => setF((s) => ({ ...s, paidAt: v }))} />
         </Field>

@@ -28,6 +28,7 @@
 import { postJournal, findEntryByKey } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { toMoney, sumMoney, ZERO } from "../money.js";
+import { barisBiayaAdmin } from "../transferFee.js";
 
 export const KEY = {
   // `suffix` (opsional) — dipakai SATU-SATUNYA oleh alur Koreksi, pola
@@ -78,6 +79,9 @@ export async function postPurchaseApproved(tx, { purchaseId, userId = null, keyS
   let keteranganLawan;
   let cashAccountId = null;
   let supplierId = null;
+  // Biaya admin transfer hanya ikut jurnal ini bila uang keluar di sini (LANGSUNG).
+  let biayaAdmin = toMoney(0);
+  let barisAdmin = [];
 
   if (p.mode === "LANGSUNG") {
     if (!p.cashAccount) {
@@ -89,6 +93,8 @@ export async function postPurchaseApproved(tx, { purchaseId, userId = null, keyS
     akunLawanId = p.cashAccount.accountId;
     keteranganLawan = `Uang keluar — ${p.cashAccount.name}`;
     cashAccountId = p.cashAccount.id;
+    biayaAdmin = toMoney(p.transferFeeAmount || 0);
+    barisAdmin = await barisBiayaAdmin(tx, { fee: biayaAdmin, cashAccount: p.cashAccount });
   } else if (p.mode === "REIMBURSEMENT") {
     const utangReimburse = await resolveAccount(tx, SYSTEM_KEYS.UTANG_REIMBURSEMENT);
     akunLawanId = utangReimburse.id;
@@ -116,11 +122,12 @@ export async function postPurchaseApproved(tx, { purchaseId, userId = null, keyS
       },
       {
         accountId: akunLawanId,
-        credit: amount,
-        description: keteranganLawan,
+        credit: amount.plus(biayaAdmin),
+        description: biayaAdmin.greaterThan(0) ? `${keteranganLawan} (termasuk biaya admin transfer)` : keteranganLawan,
         cashAccountId,
         supplierId,
       },
+      ...barisAdmin,
     ],
   });
   return { posted: true, entry, created };
@@ -173,6 +180,8 @@ export async function postPurchasePaid(tx, { purchaseId, userId = null, keySuffi
     tx,
     p.mode === "REIMBURSEMENT" ? SYSTEM_KEYS.UTANG_REIMBURSEMENT : SYSTEM_KEYS.UTANG_USAHA
   );
+  const biayaAdmin = toMoney(p.transferFeeAmount || 0);
+  const barisAdmin = await barisBiayaAdmin(tx, { fee: biayaAdmin, cashAccount: p.cashAccount });
 
   const { entry, created } = await postJournal(tx, {
     date: p.paidAt || p.date,
@@ -192,10 +201,11 @@ export async function postPurchasePaid(tx, { purchaseId, userId = null, keySuffi
       },
       {
         accountId: p.cashAccount.accountId,
-        credit: amount,
-        description: `Uang keluar — ${p.cashAccount.name}`,
+        credit: amount.plus(biayaAdmin),
+        description: biayaAdmin.greaterThan(0) ? `Uang keluar — ${p.cashAccount.name} (termasuk biaya admin transfer)` : `Uang keluar — ${p.cashAccount.name}`,
         cashAccountId: p.cashAccount.id,
       },
+      ...barisAdmin,
     ],
   });
   return { posted: true, entry, created };
