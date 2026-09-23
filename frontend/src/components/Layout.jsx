@@ -390,6 +390,10 @@ const DIVISIONS = {
           // lain di section ini), halaman sendiri yang menampilkan pesan
           // kalau ditolak server.
           { to: "/armada/insentif-snapshot", label: "Snapshot Insentif", Icon: FileCheck },
+          // Pembayaran Insentif (24 September 2026) — TERPISAH dari Snapshot
+          // di atas: APPROVED = disahkan, BELUM TENTU dibayar. Halaman ini
+          // murni mencatat pembayaran SUNGGUHAN, ledger sendiri.
+          { to: "/armada/pembayaran-insentif", label: "Pembayaran Insentif", Icon: Wallet },
         ],
       },
       // Section "ARMADA" (cuma 1 item, "Driver & Armada") DIGANTI section ini

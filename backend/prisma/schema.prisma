@@ -571,6 +571,15 @@ model User {
   // Baris total per orang di Snapshot Insentif (relasi biasa, bukan
   // named — beda dari 4 relasi aktor di atas yang masing-masing peran).
   incentiveSnapshotLines      IncentiveSnapshotLine[]
+
+  // Pembayaran Insentif (24 September 2026) — lihat model IncentivePayout.
+  // incentivePayoutsReceived = relasi biasa (orang yang MENERIMA, sama pola
+  // dengan incentiveSnapshotLines di atas) — DUA relasi aktor TERPISAH
+  // (Recorder Restrict, Voider SetNull) sengaja beda onDelete, lihat
+  // alasannya di model itu sendiri.
+  incentivePayoutsReceived IncentivePayout[]
+  incentivePayoutsRecorded IncentivePayout[] @relation("IncentivePayoutRecorder")
+  incentivePayoutsVoided   IncentivePayout[] @relation("IncentivePayoutVoider")
 }
 
 // Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
@@ -2722,6 +2731,22 @@ model IncentiveSnapshot {
   lines   IncentiveSnapshotLine[]
   details IncentiveSnapshotDetail[]
   claims  IncentiveSourceClaim[]
+  payouts IncentivePayout[]
+
+  // Penanda data UJI (24 September 2026) — dibutuhkan KHUSUS untuk kasus
+  // smoke-test production: begitu Snapshot sudah APPROVED, TIDAK ADA jalur
+  // sah untuk "membatalkannya" — REJECT cuma berlaku dari DRAFT/REVIEWED
+  // (lihat endpoint reject), dan VOID di slice ini adalah operasi PAYOUT,
+  // bukan Snapshot. Field ini murni ANOTASI administratif (BUKAN status
+  // bisnis, TIDAK memengaruhi totalAlamat/totalRupiah/lines/details sama
+  // sekali) — satu-satunya efeknya: dikecualikan eksplisit dari antrean
+  // pembayaran Finance (lihat GET /incentive-payouts/queue), lapisan kedua
+  // di ATAS pengecualian totalRupiah=0 yang sudah ada. Default false untuk
+  // SEMUA Snapshot baru — TIDAK ADA endpoint publik yang menyetel field
+  // ini (sengaja, supaya tidak jadi pintu belakang menandai Snapshot nyata
+  // sebagai "cuma tes"); satu-satunya jalan menyetelnya adalah skrip
+  // administratif terisolasi + ActivityEvent, lihat riwayat commit.
+  isTestData Boolean @default(false) @map("is_test_data")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -2756,6 +2781,10 @@ model IncentiveSnapshotLine {
   asHelper    Int @map("as_helper")
 
   details IncentiveSnapshotDetail[]
+  // Pembayaran (24 September 2026) — saldo/status SELALU diturunkan dari
+  // SUM baris valid di sini, TIDAK PERNAH disimpan sebagai kolom status
+  // terpisah. Lihat model IncentivePayout untuk alasan lengkap.
+  payouts IncentivePayout[]
 
   @@unique([snapshotId, userId])
   @@index([snapshotId])
@@ -2823,6 +2852,95 @@ model IncentiveSourceClaim {
   @@unique([userId, orderId, tanggalWIB])
   @@index([snapshotId])
   @@map("incentive_source_claims")
+}
+
+enum IncentivePayoutMethod {
+  TRANSFER
+  CASH
+  OTHER
+}
+
+// Pembayaran Insentif Driver — ledger APPEND-ONLY (24 September 2026).
+// APPROVED di IncentiveSnapshot HANYA berarti "angka disahkan", BUKAN
+// "sudah dibayar" — pembayaran SUNGGUHAN (kapan, berapa, metode apa,
+// siapa yang mencatat) baru punya jejak lewat baris di tabel ini,
+// per SnapshotLine (per orang) karena waktu pembayaran driver satu bisa
+// beda dari helper di snapshot yang sama.
+//
+// SENGAJA TIDAK ada kolom status ("PAID"/"UNPAID") di sini ATAU di
+// IncentiveSnapshotLine — status itu SELALU DITURUNKAN (dihitung ulang
+// dari SUM baris valid, bukan disimpan) lewat
+// services/incentivePayoutEngine.js#saldoLine(), pola sama dengan
+// computeStockSnapshot (ledger stok) di services/inventoryLedger.js:
+// satu sumber kebenaran (jumlah baris), bukan dua yang bisa diam-diam
+// tidak sinkron (kolom status vs isi ledger).
+//
+// VOID (bukan DELETE): pembatalan pembayaran yang salah catat TETAP
+// baris ini apa adanya, cuma ditandai voidedAt/voidedById/voidReason —
+// saldo dihitung ulang otomatis begitu baris ini dikecualikan dari SUM
+// (lihat saldoLine()). Ini KONSISTEN dengan seluruh ledger lain di
+// codebase ini (Payment, StockMovement, ActivityEvent) yang TIDAK PERNAH
+// update/delete dari kode aplikasi.
+model IncentivePayout {
+  id String @id @default(uuid()) @db.Uuid
+
+  snapshotId String            @map("snapshot_id") @db.Uuid
+  snapshot   IncentiveSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  // Restrict, BUKAN Cascade dari snapshot line manapun — pembayaran yang
+  // sudah tercatat tidak boleh "hilang" gara-gara baris line-nya disentuh
+  // (yang toh SEHARUSNYA tidak pernah terjadi, IncentiveSnapshotLine milik
+  // snapshot APPROVED immutable — Restrict di sini jaring pengaman kedua).
+  snapshotLineId String                @map("snapshot_line_id") @db.Uuid
+  snapshotLine   IncentiveSnapshotLine @relation(fields: [snapshotLineId], references: [id], onDelete: Restrict)
+
+  // Didenormalisasi dari snapshotLine.userId — sama alasan dengan
+  // IncentiveSnapshotDetail.userId: query "riwayat pembayaran 1 orang"
+  // tidak perlu join balik ke line.
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  // Rupiah bulat, KONSISTEN dengan IncentiveSnapshotLine.totalRupiah (Int,
+  // bukan Decimal) — dua-duanya harus bisa dijumlah/dibandingkan langsung
+  // tanpa konversi tipe. Divalidasi > 0 dan <= saldo line di endpoint,
+  // BUKAN di skema (skema cuma menjamin bentuk, bukan aturan bisnis).
+  amount Int
+
+  method          IncentivePayoutMethod
+  paidAt          DateTime  @map("paid_at") // kapan uang SUNGGUHAN berpindah tangan — beda dari createdAt (kapan DICATAT, bisa belakangan)
+  referenceNumber String?   @map("reference_number") // nomor referensi transfer/kuitansi
+  proofUrl        String?   @map("proof_url") // bukti transfer/tanda terima — path media, pola sama dengan proofPhotoUrls Job
+  note            String?
+
+  recordedById String @map("recorded_by")
+  // Restrict (BUKAN SetNull seperti reviewedBy/approvedBy IncentiveSnapshot
+  // di atas) — sama alasan dengan Payment.recordedById: siapa yang
+  // MENCATAT uang SUNGGUHAN berpindah tangan adalah jejak yang wajib
+  // permanen, bukan sekadar keputusan administratif yang boleh kehilangan
+  // aktornya kalau staf resign.
+  recordedBy User @relation("IncentivePayoutRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  // Kunci idempotensi BISNIS (24 September 2026) — TERPISAH dari
+  // ApiIdempotencyKey (middleware HTTP generik, TTL 24 jam, baris
+  // sementara). Kolom ini PERMANEN di baris pembayaran itu sendiri: jejak
+  // "pembayaran ini lahir dari request dengan kunci X" bertahan selamanya
+  // untuk audit, bukan cuma sampai TTL cache habis. UNIQUE inilah PENJAGA
+  // SEBENARNYA retry tidak pernah menggandakan pembayaran (level database,
+  // aman dari race — lihat juga lockRowForUpdate di endpoint untuk
+  // proteksi overpayment yang TERPISAH dari proteksi duplikat ini).
+  idempotencyKey String @unique @map("idempotency_key")
+
+  voidedAt   DateTime? @map("voided_at")
+  voidedById String?   @map("voided_by")
+  voidedBy   User?     @relation("IncentivePayoutVoider", fields: [voidedById], references: [id], onDelete: SetNull)
+  voidReason String?   @map("void_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([snapshotId])
+  @@index([snapshotLineId])
+  @@index([userId])
+  @@map("incentive_payouts")
 }
 
 // ─── COMPLAINT CASE — After-Sales lintas divisi (D-116, 11 September 2026) ─

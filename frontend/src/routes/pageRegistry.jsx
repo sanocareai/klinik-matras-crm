@@ -54,6 +54,7 @@ const ArmadaDeliveryReport = lazy(() => import("../pages/armada/ArmadaDeliveryRe
 const ArmadaBiaya       = lazy(() => import("../pages/armada/ArmadaBiaya.jsx"));
 const ArmadaPengajuanBiaya = lazy(() => import("../pages/armada/ArmadaPengajuanBiaya.jsx"));
 const ArmadaInsentifSnapshot = lazy(() => import("../pages/armada/ArmadaInsentifSnapshot.jsx"));
+const ArmadaPembayaranInsentif = lazy(() => import("../pages/armada/ArmadaPembayaranInsentif.jsx"));
 const Kendali        = lazy(() => import("../pages/Kendali.jsx"));
 // Finance Workspace (D-180, 17 September 2026)
 const FinanceDashboard      = lazy(() => import("../pages/finance/FinanceDashboard.jsx"));
@@ -158,6 +159,7 @@ export const PAGES = [
   { path: "/armada/returns", render: () => <ArmadaReturns /> },
   { path: "/armada/reports", render: () => <ArmadaDeliveryReport /> },
   { path: "/armada/insentif-snapshot", render: () => <ArmadaInsentifSnapshot /> },
+  { path: "/armada/pembayaran-insentif", render: () => <ArmadaPembayaranInsentif /> },
   { path: "/kendali",     render: () => <Kendali /> },
   { path: "/finance/dashboard",      render: () => <FinanceDashboard /> },
   { path: "/finance/payments",       render: () => <FinancePayments /> },

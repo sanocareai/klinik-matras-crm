@@ -103,7 +103,12 @@ const TABLES_TO_TRUNCATE = [
   // incentive_snapshot_details/lines adalah child dari incentive_snapshots
   // (sudah otomatis ikut ter-CASCADE), disebut eksplisit demi konsistensi
   // dokumentasi sama seperti baris-baris di atas.
-  "incentive_source_claims", "incentive_snapshot_details", "incentive_snapshot_lines", "incentive_snapshots",
+  "incentive_source_claims", "incentive_snapshot_details", "incentive_snapshot_lines",
+  // Pembayaran Insentif (24 September 2026,
+  // incentivePayout.integration.test.js) — incentive_payouts child dari
+  // incentive_snapshots DAN incentive_snapshot_lines (keduanya di daftar
+  // ini), sama alasan dokumentasi dengan baris-baris di atas.
+  "incentive_payouts", "incentive_snapshots",
   "user_roles", "User",
 ];
 

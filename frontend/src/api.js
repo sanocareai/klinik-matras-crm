@@ -343,6 +343,17 @@ export const api = {
   rejectIncentiveSnapshot: (id, reason, idempotencyKey = mutationKey("snapshot-reject")) =>
     request(`/armada/incentive-snapshots/${id}/reject`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ reason }) }),
 
+  // Pembayaran Insentif (24 September 2026) — TERPISAH dari Snapshot di
+  // atas: APPROVED = angka disahkan, BUKAN sudah dibayar. Idempotency-Key
+  // WAJIB dikirim untuk createIncentivePayout (server menolak 428 tanpa
+  // itu, beda dari default opsional di endpoint lain).
+  getIncentivePayoutQueue: () => request("/armada/incentive-payouts/queue"),
+  getIncentivePayouts: (snapshotLineId) => request(`/armada/incentive-payouts${buildQuery({ snapshotLineId })}`),
+  createIncentivePayout: (body, idempotencyKey = mutationKey("payout")) =>
+    request("/armada/incentive-payouts", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  voidIncentivePayout: (id, reason, idempotencyKey = mutationKey("payout-void")) =>
+    request(`/armada/incentive-payouts/${id}/void`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ reason }) }),
+
   // Kendala & Reschedule (Delivery Tahap 5)
   getIssues: (status) => request(`/armada/issues${status ? `?status=${status}` : ""}`),
   rescheduleIssue: (jobId, data) => request(`/armada/issues/${jobId}/reschedule`, { method: "POST", body: JSON.stringify(data) }),

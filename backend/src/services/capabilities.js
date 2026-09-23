@@ -23,6 +23,11 @@ export function capabilitiesFor(user) {
   const incentiveSnapshotReview = hasPermission(user, P.INCENTIVE_SNAPSHOT_REVIEW);
   const incentiveSnapshotApprove = hasPermission(user, P.INCENTIVE_SNAPSHOT_APPROVE);
   const incentiveSnapshotRead = hasPermission(user, P.INCENTIVE_SNAPSHOT_READ);
+  // Pembayaran Insentif (24 September 2026) — dipakai Admin UI Pembayaran
+  // utk menampilkan/menyembunyikan tombol Catat Pembayaran/Batalkan.
+  const incentivePayoutRead = hasPermission(user, P.INCENTIVE_PAYOUT_READ);
+  const incentivePayoutCreate = hasPermission(user, P.INCENTIVE_PAYOUT_CREATE);
+  const incentivePayoutVoid = hasPermission(user, P.INCENTIVE_PAYOUT_VOID);
 
   // Preset = petunjuk TATA LETAK awal aplikasi (bukan izin).
   let preset = "NONE";
@@ -43,6 +48,7 @@ export function capabilitiesFor(user) {
     paymentWrite,
     expenseSubmit,
     incentiveSnapshotCreate, incentiveSnapshotReview, incentiveSnapshotApprove, incentiveSnapshotRead,
+    incentivePayoutRead, incentivePayoutCreate, incentivePayoutVoid,
     // Boleh memakai aplikasi Finance? (dipakai login mobile). SENGAJA tidak
     // memakai paymentRead: SALES juga memegangnya (lihat riwayat pembayaran order
     // sendiri) tetapi bukan tim Finance.

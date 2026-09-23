@@ -193,6 +193,26 @@ test("INCENTIVE_SNAPSHOT_ADJUSTED (di snapshot ASAL) menyebut id snapshot koreks
   assert.match(kalimat, /Driver salah tercatat/);
 });
 
+// Pembayaran Insentif (24 September 2026).
+test("INCENTIVE_PAYOUT_CREATED menyebut nominal, metode, referensi, dan sisa", () => {
+  const kalimat = formatActivitySentence({
+    eventType: EVENT_TYPES.INCENTIVE_PAYOUT_CREATED,
+    metadata: { amount: 21000, method: "TRANSFER", referenceNumber: "TRX-001", sisaSebelum: 21000, sisaSesudah: 0 },
+  });
+  assert.match(kalimat, /21\.000|21000/);
+  assert.match(kalimat, /TRANSFER/);
+  assert.match(kalimat, /TRX-001/);
+});
+
+test("INCENTIVE_PAYOUT_VOIDED menyebut alasan dan sisa setelah dibatalkan", () => {
+  const kalimat = formatActivitySentence({
+    eventType: EVENT_TYPES.INCENTIVE_PAYOUT_VOIDED,
+    metadata: { amount: 21000, method: "TRANSFER", reason: "Salah nominal", sisaSebelum: 0, sisaSesudah: 21000 },
+  });
+  assert.match(kalimat, /dibatalkan/i);
+  assert.match(kalimat, /Salah nominal/);
+});
+
 test("eventType yang tidak dikenal tidak pernah melempar error — linimasa tidak boleh gagal render", () => {
   assert.doesNotThrow(() => formatActivitySentence({ eventType: "SESUATU_YANG_BARU", metadata: {} }));
   assert.equal(formatActivitySentence({ eventType: "SESUATU_YANG_BARU", metadata: {} }), "SESUATU_YANG_BARU");

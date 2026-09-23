@@ -15,6 +15,7 @@ import { idempotency } from "../middleware/idempotency.js";
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { computeIncentiveSummary, INCENTIVE_FORMULA_VERSION } from "../services/incentiveEngine.js";
+import { saldoLine } from "../services/incentivePayoutEngine.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
 
 export const incentiveSnapshotRouter = express.Router();
@@ -354,16 +355,33 @@ async function muatSnapshotLengkap(id) {
       rejectedBy: { select: { id: true, name: true } },
       adjustsSnapshot: { select: { id: true, periodFrom: true, periodTo: true, status: true } },
       adjustments: { select: { id: true, status: true, createdAt: true } },
-      lines: { orderBy: { totalAlamat: "desc" }, include: { details: { orderBy: { tanggalWIB: "desc" } } } },
+      lines: {
+        orderBy: { totalAlamat: "desc" },
+        include: {
+          details: { orderBy: { tanggalWIB: "desc" } },
+          // Riwayat pembayaran (24 September 2026) — TERMASUK yang voided,
+          // supaya detail Snapshot juga bisa menunjukkan "pernah dibayar,
+          // lalu dibatalkan" secara transparan, bukan cuma angka akhir.
+          payouts: { orderBy: { createdAt: "desc" }, include: { recordedBy: { select: { id: true, name: true } }, voidedBy: { select: { id: true, name: true } } } },
+        },
+      },
     },
   });
   if (!s) return null;
   return {
     ...s,
-    lines: s.lines.map((l) => ({
-      ...l,
-      details: l.details.map((d) => ({ ...d, kandidatBelumTerverifikasi: tandaiKandidatBelumTerverifikasi(d.jobIds) })),
-    })),
+    lines: s.lines.map((l) => {
+      const { dibayar, sisa, status } = saldoLine(l.totalRupiah, l.payouts);
+      return {
+        ...l,
+        // Pembayaran DITURUNKAN dari ledger, BUKAN kolom status — lihat
+        // incentivePayoutEngine.js. SENGAJA field terpisah dari totalRupiah
+        // (angka DISAHKAN) supaya UI tidak pernah bisa keliru menyamakan
+        // "APPROVED" dengan "sudah dibayar" (spec eksplisit).
+        dibayar, sisa, statusPembayaran: status,
+        details: l.details.map((d) => ({ ...d, kandidatBelumTerverifikasi: tandaiKandidatBelumTerverifikasi(d.jobIds) })),
+      };
+    }),
   };
 }
 

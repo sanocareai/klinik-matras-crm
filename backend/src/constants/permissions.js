@@ -153,6 +153,18 @@ export const PERMISSIONS = {
   INCENTIVE_SNAPSHOT_REVIEW: "incentive:snapshot:review",
   INCENTIVE_SNAPSHOT_APPROVE: "incentive:snapshot:approve",
   INCENTIVE_SNAPSHOT_READ: "incentive:snapshot:read",
+
+  // Pembayaran Insentif (24 September 2026) — TIGA permission granular,
+  // TERPISAH dari empat di atas: APPROVED (snapshot) dan PAID (payout)
+  // adalah dua keputusan berbeda oleh pihak berbeda ("APPROVED berarti
+  // angka disahkan, BUKAN sudah dibayar" — spec eksplisit). Finance
+  // mencatat (READ+CREATE), TAPI SENGAJA TIDAK dapat VOID sendiri —
+  // pembatalan pembayaran yang salah catat perlu mata kedua
+  // (ADMIN/OWNER), sama pola pemisahan tugas dengan FINANCE_ADMIN/
+  // INCENTIVE_SNAPSHOT_APPROVE.
+  INCENTIVE_PAYOUT_READ: "incentive:payout:read",
+  INCENTIVE_PAYOUT_CREATE: "incentive:payout:create",
+  INCENTIVE_PAYOUT_VOID: "incentive:payout:void",
 };
 
 const P = PERMISSIONS;
@@ -207,6 +219,10 @@ const ADMIN_PERMS = [
   // permission finance").
   P.INCENTIVE_SNAPSHOT_CREATE, P.INCENTIVE_SNAPSHOT_REVIEW,
   P.INCENTIVE_SNAPSHOT_APPROVE, P.INCENTIVE_SNAPSHOT_READ,
+  // Pembayaran Insentif — ADMIN/OWNER penuh TERMASUK void (satu-satunya
+  // role selain permission eksplisit yang boleh membatalkan pembayaran
+  // salah catat — spec eksplisit "Void hanya ADMIN/OWNER").
+  P.INCENTIVE_PAYOUT_READ, P.INCENTIVE_PAYOUT_CREATE, P.INCENTIVE_PAYOUT_VOID,
 ];
 
 export const ROLE_PERMISSIONS = {
@@ -379,6 +395,11 @@ export const ROLE_PERMISSIONS = {
     // tetap di tangan ADMIN/OWNER/APPROVER, pemisahan tugas yang sama
     // dengan FINANCE tidak dapat FINANCE_ADMIN di atas.
     P.INCENTIVE_SNAPSHOT_CREATE, P.INCENTIVE_SNAPSHOT_REVIEW, P.INCENTIVE_SNAPSHOT_READ,
+    // Pembayaran Insentif — Finance MENCATAT pembayaran (spec eksplisit:
+    // "Finance boleh read/create"), TAPI SENGAJA TIDAK dapat
+    // INCENTIVE_PAYOUT_VOID — pembatalan pembayaran yang salah catat perlu
+    // mata kedua (ADMIN/OWNER), pola sama dengan tidak dapat APPROVE snapshot.
+    P.INCENTIVE_PAYOUT_READ, P.INCENTIVE_PAYOUT_CREATE,
   ],
 
   // ACCOUNTANT (Finance Mobile S2, 19 Sep 2026) — akuntan: membaca seluruh pembukuan dan
@@ -390,8 +411,10 @@ export const ROLE_PERMISSIONS = {
     P.PAYMENT_READ,
     P.DASHBOARD_READ,
     // Baca saja — akuntan tidak membuat/menyetujui Snapshot, cuma perlu
-    // melihatnya sebagai bagian pembukuan.
-    P.INCENTIVE_SNAPSHOT_READ,
+    // melihatnya sebagai bagian pembukuan. Sama alasan untuk pembayarannya
+    // (INCENTIVE_PAYOUT_READ) — akuntan perlu lihat pembayaran nyata untuk
+    // rekonsiliasi, tapi tidak mencatat/membatalkan.
+    P.INCENTIVE_SNAPSHOT_READ, P.INCENTIVE_PAYOUT_READ,
   ],
 
   // APPROVER — penyetuju: membaca dan MEMUTUSKAN (setuju/tolak) pengajuan, tidak

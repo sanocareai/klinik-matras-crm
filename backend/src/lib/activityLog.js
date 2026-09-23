@@ -79,6 +79,8 @@ export const ENTITY_TYPES = Object.freeze({
   USER: "user",
   // Snapshot Insentif Driver (24 September 2026) — entityId = id Snapshot.
   INCENTIVE_SNAPSHOT: "incentive_snapshot",
+  // Pembayaran Insentif (24 September 2026) — entityId = id IncentivePayout.
+  INCENTIVE_PAYOUT: "incentive_payout",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -188,6 +190,12 @@ export const EVENT_TYPES = Object.freeze({
   // Snapshot asal ikut menunjukkan "pernah dikoreksi oleh Snapshot X",
   // walau baris asalnya sendiri TIDAK PERNAH diedit.
   INCENTIVE_SNAPSHOT_ADJUSTED: "INCENTIVE_SNAPSHOT_ADJUSTED",
+
+  // Pembayaran Insentif (24 September 2026) — metadata: { snapshotId,
+  // snapshotLineId, userId, amount, method, referenceNumber, sisaSebelum,
+  // sisaSesudah, reason (khusus VOID) }.
+  INCENTIVE_PAYOUT_CREATED: "INCENTIVE_PAYOUT_CREATED",
+  INCENTIVE_PAYOUT_VOIDED: "INCENTIVE_PAYOUT_VOIDED",
 });
 
 /**
@@ -384,6 +392,10 @@ export function formatActivitySentence(event) {
       return `Snapshot Insentif ${metadata.periodFrom || "?"} s/d ${metadata.periodTo || "?"} ditolak — ${metadata.reason || "tanpa keterangan"}`;
     case EVENT_TYPES.INCENTIVE_SNAPSHOT_ADJUSTED:
       return `Snapshot ini dikoreksi oleh Snapshot baru (${metadata.adjustmentSnapshotId || "—"}) — ${metadata.reason || "tanpa keterangan"}`;
+    case EVENT_TYPES.INCENTIVE_PAYOUT_CREATED:
+      return `Pembayaran insentif Rp${(metadata.amount ?? 0).toLocaleString("id-ID")} dicatat (${metadata.method || "?"}${metadata.referenceNumber ? `, ref ${metadata.referenceNumber}` : ""}) — sisa Rp${(metadata.sisaSesudah ?? 0).toLocaleString("id-ID")}`;
+    case EVENT_TYPES.INCENTIVE_PAYOUT_VOIDED:
+      return `Pembayaran insentif Rp${(metadata.amount ?? 0).toLocaleString("id-ID")} dibatalkan (void) — ${metadata.reason || "tanpa keterangan"} (sisa jadi Rp${(metadata.sisaSesudah ?? 0).toLocaleString("id-ID")})`;
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya
