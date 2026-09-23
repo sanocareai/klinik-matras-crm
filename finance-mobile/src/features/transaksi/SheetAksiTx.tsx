@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View, useWindowDimensions } from "react-native";
 import { Plus, Trash2 } from "lucide-react-native";
 import { Sheet } from "@/design/Sheet";
 import { MoneyText } from "@/design/MoneyText";
@@ -75,6 +75,12 @@ export function TerapkanDpSheet({ visible, totalPembelian, sisaSaatIni, data, me
 }) {
   const { colors } = useTheme();
   const keyboard = useTinggiKeyboard();
+  // Seluruh isi (header ringkasan + tombol) ada DI DALAM satu ScrollView dengan batas tinggi mengikuti layar —
+  // di layar pendek atau font besar, judul/label bisa membungkus 2 baris dan mendorong tombol "Terapkan" keluar
+  // dari layar kalau tombolnya di luar area scroll. Batas dihitung dari tinggi layar, bukan angka tetap, supaya
+  // tombol selalu bisa dicapai dengan scroll apa pun ukuran fontnya.
+  const tinggiLayar = useWindowDimensions().height;
+  const maxScroll = Math.max(240, tinggiLayar - 300);
   const eligible = data?.eligible ?? [];
   const [dpId, setDpId] = useState("");
   const [teksNominal, setTeksNominal] = useState("");
@@ -95,15 +101,15 @@ export function TerapkanDpSheet({ visible, totalPembelian, sisaSaatIni, data, me
   return (
     <Sheet visible={visible} onClose={() => { if (!sibuk) onTutup(); }} judul="Terapkan Uang Muka" sub="Kurangi sisa pembayaran pembelian ini dengan saldo DP supplier yang sama.">
       <View style={{ paddingBottom: keyboard > 0 ? keyboard - 8 : 0 }}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-          <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 13 }}>Total pembelian</Text>
-          <MoneyText value={totalPembelian} size="sm" />
-        </View>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 12 }}>
-          <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 13 }}>Sisa pembayaran saat ini</Text>
-          <MoneyText value={sisaSaatIni} size="sm" />
-        </View>
-        <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ maxHeight: maxScroll }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+            <Text maxFontSizeMultiplier={1.3} style={{ flexShrink: 1, color: colors.textMuted, fontFamily: font.regular, fontSize: 13 }}>Total pembelian</Text>
+            <View style={{ flexShrink: 0 }}><MoneyText value={totalPembelian} size="sm" /></View>
+          </View>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8, marginBottom: 12 }}>
+            <Text maxFontSizeMultiplier={1.3} style={{ flexShrink: 1, color: colors.textMuted, fontFamily: font.regular, fontSize: 13 }}>Sisa pembayaran saat ini</Text>
+            <View style={{ flexShrink: 0 }}><MoneyText value={sisaSaatIni} size="sm" /></View>
+          </View>
           {galatMuat ? (
             <View style={{ marginBottom: 12 }}>
               <Text style={{ color: colors.danger, fontFamily: font.regular, fontSize: 13, marginBottom: 8 }}>Daftar uang muka gagal dimuat.</Text>
@@ -131,23 +137,24 @@ export function TerapkanDpSheet({ visible, totalPembelian, sisaSaatIni, data, me
               ) : null}
               <IsianUang nilai={teksNominal} onUbah={setTeksNominal} galat={dicoba ? galatNominal : null} petunjuk={dp ? `Maksimal ${formatRupiah(dp.saldoTersedia)}` : null} />
               {sisaSetelah ? (
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8, padding: 10, borderRadius: 10, backgroundColor: colors.primarySoft }}>
-                  <Text style={{ color: colors.text, fontFamily: font.medium, fontSize: 13 }}>Dr Utang Usaha / Cr Uang Muka Pembelian</Text>
-                  <MoneyText value={sisaSetelah} size="sm" />
+                <View style={{ marginTop: 8, padding: 10, borderRadius: 10, backgroundColor: colors.primarySoft }}>
+                  <Text maxFontSizeMultiplier={1.5} style={{ color: colors.text, fontFamily: font.medium, fontSize: 13 }}>Dr Utang Usaha / Cr Uang Muka Pembelian</Text>
+                  <Text maxFontSizeMultiplier={1.3} style={{ color: colors.textMuted, fontFamily: font.regular, fontSize: 11, marginTop: 2 }}>Sisa pembayaran setelah diterapkan</Text>
+                  <View style={{ marginTop: 4 }}><MoneyText value={sisaSetelah} size="sm" /></View>
                 </View>
               ) : null}
             </>
           )}
+          <Button
+            label="Terapkan" loading={sibuk} disabled={sibuk || memuat || galatMuat || (data ? !data.bisaMenerapkan : false) || eligible.length === 0} style={{ marginTop: 12 }}
+            onPress={() => {
+              setDicoba(true);
+              if (!valid || !nominal) return;
+              onKirim({ advancePurchaseId: dpId, nominal });
+            }}
+          />
+          <Text style={{ color: colors.textFaint, fontFamily: font.regular, fontSize: 11, marginTop: 8 }}>Anda mungkin diminta PIN atau biometrik. Perintah tidak diantre saat offline.</Text>
         </ScrollView>
-        <Button
-          label="Terapkan" loading={sibuk} disabled={sibuk || memuat || galatMuat || (data ? !data.bisaMenerapkan : false) || eligible.length === 0} style={{ marginTop: 12 }}
-          onPress={() => {
-            setDicoba(true);
-            if (!valid || !nominal) return;
-            onKirim({ advancePurchaseId: dpId, nominal });
-          }}
-        />
-        <Text style={{ color: colors.textFaint, fontFamily: font.regular, fontSize: 11, marginTop: 8 }}>Anda mungkin diminta PIN atau biometrik. Perintah tidak diantre saat offline.</Text>
       </View>
     </Sheet>
   );
