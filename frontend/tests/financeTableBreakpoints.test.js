@@ -129,3 +129,68 @@ test("D-193: 'hideBelow' hanya memakai preset yang didukung tableLayout.js (buka
     }
   }
 });
+
+// ─── BUG PRODUKSI NYATA (24 September 2026) — "Daftar Pengeluaran kosong" ──
+//
+// Akar masalah: <CardList> (features/finance/cards.jsx) DULU membawa
+// `CARD_VIEW_CLASS` ("md:hidden", viewport-based) SEBAGAI DEFAULT BAKU.
+// Itu benar untuk pola CSS (TableWrap+CardList SELALU dua-duanya di DOM,
+// breakpoint viewport yang memilih) tapi SALAH untuk pola JS
+// (`tier === "card" ? <CardList> : <TableWrap>` — ternary, cuma SALAH SATU
+// yang pernah mounting). Begitu kontainer sempit (sidebar+tab dalam-app)
+// TAPI viewport tetap lebar desktop, `tier` jadi "card" (JS memilih render
+// CardList) — tapi class bawaan itu menyembunyikannya LAGI karena viewport
+// masih lebar, dan TableWrap SAMA SEKALI TIDAK PERNAH mounting. Hasilnya:
+// tabel kosong TOTAL walau API mengembalikan 300 baris penuh.
+//
+// Perbaikan: `CardList` sekarang NETRAL (tidak membawa class tampil/
+// sembunyi apa pun). Pemanggil pola CSS WAJIB menambahkannya sendiri lewat
+// className (persis seperti `<TableWrap className={cn("dh-table",
+// TABLE_VIEW_CLASS)}>` di pasangannya) — pemanggil pola JS TIDAK BOLEH
+// menambahkannya sama sekali (JS ternary sudah cukup, class viewport cuma
+// akan membatalkannya lagi seperti bug di atas).
+
+// Halaman pola CSS (TableWrap+CardList SELALU dua-duanya di DOM,
+// breakpoint viewport yang memilih) — `<CardList>`-nya WAJIB eksplisit
+// `className={CARD_VIEW_CLASS}`, kalau tidak dua-duanya akan tampil
+// bersamaan di SEMUA lebar layar (bug berbeda, sama-sama nyata).
+const HARUS_CSS_TOGGLE_CARDLIST = ["FinanceKasbon.jsx", "FinancePayments.jsx", "FinanceReceivables.jsx", "FinanceSuppliers.jsx"];
+
+test("D-XXX (regresi 'Daftar Pengeluaran kosong'): <CardList> netral di cards.jsx — TIDAK membawa CARD_VIEW_CLASS/md:hidden bawaan", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "src", "features", "finance", "cards.jsx"), "latin1");
+  const fnMatch = src.match(/export function CardList\([^)]*\)\s*\{[\s\S]*?\n\}/);
+  assert.ok(fnMatch, "Tidak menemukan definisi export function CardList(...) di cards.jsx — struktur file berubah, perbarui test ini setelah verifikasi ulang.");
+  assert.ok(
+    !fnMatch[0].includes("CARD_VIEW_CLASS") && !fnMatch[0].includes("md:hidden"),
+    "CardList TIDAK BOLEH membawa CARD_VIEW_CLASS/\"md:hidden\" bawaan lagi — itu akar bug produksi 24 Sep 2026 (lihat komentar panjang di cards.jsx). Pemanggil pola CSS (lihat HARUS_CSS_TOGGLE_CARDLIST di test ini) yang menambahkannya sendiri lewat className."
+  );
+});
+
+test("D-XXX (regresi): halaman pola JS (tier hook) TIDAK menambahkan class tampil/sembunyi viewport ke <CardList>-nya", () => {
+  for (const nama of HARUS_PAKAI_TIER_HOOK) {
+    const src = bacaSumber(nama);
+    // Cari SEMUA pemanggilan <CardList ...> (dengan/tanpa prop) dan pastikan tidak satu pun membawa CARD_VIEW_CLASS/md:hidden.
+    const panggilan = src.match(/<CardList[^>]*>/g) || [];
+    assert.ok(panggilan.length > 0, `${nama}: tidak menemukan <CardList> sama sekali — struktur berubah, perbarui test ini.`);
+    for (const p of panggilan) {
+      assert.ok(
+        !p.includes("CARD_VIEW_CLASS") && !p.includes("md:hidden"),
+        `${nama}: "${p}" — halaman pola JS (useContainerTier) TIDAK BOLEH memberi CardList class viewport apa pun, JS ternary sudah menggerbanginya sepenuhnya. Menambahkannya lagi PERSIS mengulang bug produksi 24 Sep 2026 (tabel kosong walau data penuh).`
+      );
+    }
+  }
+});
+
+test("D-XXX (regresi): halaman pola CSS (dual-render) memberi <CardList> CARD_VIEW_CLASS eksplisit — supaya tidak tampil dobel dengan TableWrap", () => {
+  for (const nama of HARUS_CSS_TOGGLE_CARDLIST) {
+    const src = bacaSumber(nama);
+    assert.ok(
+      src.includes('from "@/components/ui/table.jsx"') && /\bCARD_VIEW_CLASS\b/.test(src.match(/import \{[^}]*\} from "@\/components\/ui\/table\.jsx"/)?.[0] || ""),
+      `${nama} diharapkan mengimpor CARD_VIEW_CLASS dari table.jsx (dipakai eksplisit di className CardList-nya).`
+    );
+    assert.ok(
+      /<CardList[^>]*className=\{?CARD_VIEW_CLASS\}?[^>]*>/.test(src),
+      `${nama}: <CardList> di sini WAJIB className={CARD_VIEW_CLASS} — halaman ini merender TableWrap DAN CardList SEKALIGUS (dua-duanya selalu di DOM), tanpa class viewport eksplisit ini keduanya akan tampil bersamaan alih-alih saling eksklusif.`
+    );
+  }
+});

@@ -1,17 +1,43 @@
 import React from "react";
 import { Card } from "@/components/ui/card.jsx";
-import { CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 
-// CARD LIST (<768px) — pengganti TABEL di layar sempit, bukan tabel yang
-// dipaksa scroll horizontal. `<TableWrap>` (yang membungkus `<Table>`) sudah
-// disembunyikan di bawah 768px lewat `TABLE_VIEW_CLASS` (halaman yang
-// memakai kartu ini juga memakai class itu di pembungkus tabelnya) — jadi
-// TIDAK PERNAH dua-duanya terlihat sekaligus.
+// CARD LIST — pengganti TABEL di layar/kontainer sempit, bukan tabel yang
+// dipaksa scroll horizontal. DUA pola pemakaian hidup berdampingan di
+// halaman Finance, dan `CardList` SENGAJA netral (TIDAK membawa class
+// tampil/sembunyi bawaan) supaya cocok untuk keduanya:
+//
+//   1. Pola CSS (viewport) — `<TableWrap>` DAN `<CardList>` dirender
+//      BERSAMAAN, breakpoint CSS (`TABLE_VIEW_CLASS`/`CARD_VIEW_CLASS`,
+//      dari table.jsx) yang memilih salah satu SESUAI LEBAR VIEWPORT.
+//      Dipakai FinanceKasbon/FinancePayments/FinanceReceivables/
+//      FinanceSuppliers — caller WAJIB mengirim
+//      `<CardList className={CARD_VIEW_CLASS}>` sendiri (persis seperti
+//      `<TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>` di
+//      pasangannya) supaya keduanya tetap saling eksklusif.
+//
+//   2. Pola JS (kontainer) — HANYA salah satu dari `<CardList>`/`<TableWrap>`
+//      yang dirender sama sekali (ternary `tier === "card" ? <CardList> :
+//      <TableWrap>`, lihat useContainerTier.js), TIDAK PERNAH dua-duanya
+//      sekaligus di DOM. Dipakai FinanceExpenses/FinancePurchases.
+//
+// ⚠️ BUG PRODUKSI NYATA (24 Sep 2026) — `CardList` DULU membawa
+// `CARD_VIEW_CLASS` ("md:hidden", viewport>=768px) SEBAGAI DEFAULT BAKU.
+// FinanceExpenses/FinancePurchases (pola 2) TIDAK PERNAH menambahkannya
+// sendiri — mengandalkan default itu apa adanya. Begitu KONTAINER sempit
+// (sidebar+tab dalam-app memotong ruang, viewport tetap lebar desktop)
+// `tier` jadi "card" dan JS memilih render `<CardList>` — tapi class
+// bawaan itu MENYEMBUNYIKANNYA LAGI lewat CSS karena VIEWPORT (bukan
+// kontainer) masih >=768px. `<TableWrap>` di cabang lain ternary itu SAMA
+// SEKALI TIDAK PERNAH mounting (bukan cuma disembunyikan CSS) — hasilnya
+// tabel "Daftar Pengeluaran" kosong TOTAL walau responsnya 300 baris penuh.
+// Sekarang caller pola 1 yang WAJIB eksplisit menambah class-nya sendiri
+// (sama seperti TableWrap sudah begitu) — pola 2 otomatis aman karena
+// tidak ada lagi class tersembunyi bawaan yang bisa membatalkan pilihan JS.
 
-/** Pembungkus daftar kartu — HANYA terlihat <768px (kebalikan `TABLE_VIEW_CLASS`). */
+/** Pembungkus daftar kartu — TANPA class tampil/sembunyi bawaan, lihat catatan di atas. */
 export function CardList({ className, children }) {
-  return <div className={cn(CARD_VIEW_CLASS, "space-y-2", className)}>{children}</div>;
+  return <div className={cn("space-y-2", className)}>{children}</div>;
 }
 
 /**

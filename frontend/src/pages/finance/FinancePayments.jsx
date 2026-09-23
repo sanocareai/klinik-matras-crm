@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS } from "@/components/ui/table.jsx";
+import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
@@ -300,7 +300,7 @@ export default function FinancePayments() {
             </Table>
           </TableWrap>
 
-          <CardList>
+          <CardList className={CARD_VIEW_CLASS}>
             {tampil.map((p) => {
               const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk });
               return (

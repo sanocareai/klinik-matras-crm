@@ -7,7 +7,7 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS } from "@/components/ui/table.jsx";
+import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
@@ -287,7 +287,7 @@ export default function FinanceSuppliers() {
               </Table>
             </TableWrap>
 
-            <CardList>
+            <CardList className={CARD_VIEW_CLASS}>
               {billsTampil.map((b) => {
                 const a = aksiTagihan(b, { aksi });
                 return (
