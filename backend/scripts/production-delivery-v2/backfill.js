@@ -4,13 +4,13 @@ import { PrismaClient } from "@prisma/client";
 import {
   checksum, dateOnly, jsonForOutput, parseArgs, requireApplyConfirmation, stableValue, writeReport,
 } from "./common.js";
+import { legacyProductionPhaseToV2 } from "../../src/services/productionV2BackfillMapping.js";
 
 const prisma = new PrismaClient();
 const args = parseArgs();
 const apply = requireApplyConfirmation(args);
 const RULE_VERSION = "production-delivery-v2-backfill-v1";
 const SETTLED_JOB = new Set(["COMPLETED", "FAILED", "RESCHEDULED"]);
-
 function productionKind(unit) {
   if (unit.order.category === "SEWA") return "FULFILLMENT_ONLY";
   if (unit.order.category === "BARU") return unit.stageLogs.length ? "NEW_PRODUCT" : "FULFILLMENT_ONLY";
@@ -38,15 +38,24 @@ function phasePlan(unit, kind, runStatus) {
     byPhase.QC.status = "NOT_APPLICABLE";
     byPhase.QC.reason = "Readiness diperiksa pada handoff";
   }
-  const seen = new Set(unit.stageLogs.map((log) => log.stage.phase));
+  const seen = new Set(unit.stageLogs.map((log) => legacyProductionPhaseToV2(log.stage.phase)).filter(Boolean));
   for (const phase of seen) byPhase[phase] && (byPhase[phase].status = "COMPLETED");
   if (["RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"].includes(unit.status)) {
     byPhase.INTAKE.status = "COMPLETED";
   }
   if (unit.currentStage?.phase && !["COMPLETED", "CANCELLED"].includes(runStatus)) {
-    byPhase[unit.currentStage.phase].status = unit.blockers.some((b) => !b.resolvedAt) ? "BLOCKED" : "ACTIVE";
+    const currentPhase = legacyProductionPhaseToV2(unit.currentStage.phase);
+    if (currentPhase) byPhase[currentPhase].status = unit.blockers.some((b) => !b.resolvedAt) ? "BLOCKED" : "ACTIVE";
   }
   if (runStatus === "COMPLETED") {
+    if (kind !== "FULFILLMENT_ONLY") {
+      for (const phase of ["DIAGNOSIS", "PROCESS", "QC"]) {
+        if (byPhase[phase].status === "NOT_STARTED") {
+          byPhase[phase].status = "MIGRATION_REVIEW";
+          byPhase[phase].reason = "Status akhir V1 tersedia, tetapi bukti fase historis tidak lengkap";
+        }
+      }
+    }
     byPhase.HANDOFF.status = ["IN_TRANSIT_OUT", "DELIVERED"].includes(unit.status) ? "COMPLETED" : "ACTIVE";
   }
   if (runStatus === "CANCELLED") {
@@ -95,7 +104,11 @@ function unitPlan(unit) {
   });
   return {
     unitId: unit.id, kind, status,
-    currentPhase: unit.currentStage?.phase || (status === "PENDING_ARRIVAL" ? null : status === "COMPLETED" ? "HANDOFF" : "INTAKE"),
+    currentPhase: status === "PENDING_ARRIVAL"
+      ? null
+      : status === "COMPLETED"
+        ? "HANDOFF"
+        : legacyProductionPhaseToV2(unit.currentStage?.phase) || "INTAKE",
     routeSnapshot, routeChecksum: routeSnapshot ? checksum(routeSnapshot) : null,
     sourceChecksum: checksum(source), phases: phasePlan(unit, kind, status), operations,
   };
@@ -219,21 +232,49 @@ async function applyPlan(source, productionPlans, exceptions) {
     }
     for (const route of source.routes) {
       const snapshot = routeSnapshot(route);
-      await tx.deliveryRouteState.upsert({
-        where: { routeId: route.id },
-        create: { routeId: route.id, routeRevision: 1, currentPublicationVersion: route.status === "DRAFT" ? null : 1, migrationSource: "ROUTE_V1", sourceChecksum: checksum(snapshot) },
-        update: { migrationSource: "ROUTE_V1", sourceChecksum: checksum(snapshot) },
-      });
-      if (route.status !== "DRAFT") {
+      const snapshotChecksum = checksum(snapshot);
+      const existingRouteState = await tx.deliveryRouteState.findUnique({ where: { routeId: route.id } });
+      const baselineIsStillCanonical = !existingRouteState || (
+        existingRouteState.migrationSource === "ROUTE_V1"
+        && existingRouteState.routeRevision === 1
+        && (existingRouteState.currentPublicationVersion == null || existingRouteState.currentPublicationVersion === 1)
+      );
+      if (!existingRouteState) {
+        await tx.deliveryRouteState.create({
+          data: {
+            routeId: route.id,
+            routeRevision: 1,
+            currentPublicationVersion: route.status === "DRAFT" ? null : 1,
+            lifecycleStatus: route.status,
+            draftSnapshot: snapshot,
+            draftChecksum: snapshotChecksum,
+            migrationSource: "ROUTE_V1",
+            sourceChecksum: snapshotChecksum,
+          },
+        });
+      } else if (baselineIsStillCanonical) {
+        await tx.deliveryRouteState.update({
+          where: { routeId: route.id },
+          data: {
+            currentPublicationVersion: route.status === "DRAFT" ? null : 1,
+            lifecycleStatus: route.status,
+            draftSnapshot: snapshot,
+            draftChecksum: snapshotChecksum,
+            migrationSource: "ROUTE_V1",
+            sourceChecksum: snapshotChecksum,
+          },
+        });
+      }
+      if (route.status !== "DRAFT" && baselineIsStillCanonical) {
         const publication = await tx.routePublication.upsert({
           where: { routeId_publicationVersion: { routeId: route.id, publicationVersion: 1 } },
           create: {
             routeId: route.id, publicationVersion: 1, routeRevision: 1,
             status: route.status === "CANCELLED" ? "REVOKED" : "ACTIVE",
-            snapshot, checksum: checksum(snapshot), reason: "Baseline migrasi V1", migrationBaseline: true,
+            snapshot, checksum: snapshotChecksum, reason: "Baseline migrasi V1", migrationBaseline: true,
             publishedAt: route.publishedAt || route.createdAt,
           },
-          update: { snapshot, checksum: checksum(snapshot) },
+          update: { snapshot, checksum: snapshotChecksum },
         });
         for (let index = 0; index < route.jobs.length; index += 1) {
           const job = route.jobs[index];
@@ -252,11 +293,20 @@ async function applyPlan(source, productionPlans, exceptions) {
       }
     }
     for (const job of source.jobs) {
-      await tx.deliveryJobState.upsert({
-        where: { jobId: job.id },
-        create: { jobId: job.id, jobRevision: 1, currentStatus: job.status, sourceChecksum: checksum(stableValue(job)) },
-        update: { currentStatus: job.status, sourceChecksum: checksum(stableValue(job)) },
-      });
+      const existingJobState = await tx.deliveryJobState.findUnique({ where: { jobId: job.id } });
+      const hasV2Command = existingJobState?.migrationSource == null
+        ? await tx.v2Command.count({ where: { domain: "DELIVERY", aggregateType: "Job", aggregateId: job.id, status: "APPLIED" } }) > 0
+        : false;
+      if (!existingJobState) {
+        await tx.deliveryJobState.create({
+          data: { jobId: job.id, jobRevision: 1, currentStatus: job.status, sourceChecksum: checksum(stableValue(job)), migrationSource: "JOB_V1" },
+        });
+      } else if (existingJobState.migrationSource === "JOB_V1" || !hasV2Command) {
+        await tx.deliveryJobState.update({
+          where: { jobId: job.id },
+          data: { currentStatus: job.status, sourceChecksum: checksum(stableValue(job)), migrationSource: "JOB_V1" },
+        });
+      }
     }
     for (const exception of exceptions) {
       await tx.v2MigrationException.create({ data: { runId: run.id, ...exception } });

@@ -1,0 +1,71 @@
+{
+  "counts": {
+    "exceptions": 5,
+    "jobs": 827,
+    "routes": 32,
+    "units": 541
+  },
+  "exceptions": [
+    {
+      "aggregateId": "34d3d6d6-cca8-4c66-b397-e597b607a412",
+      "aggregateType": "Unit",
+      "code": "CURRENT_STAGE_WITHOUT_SERVICE",
+      "domain": "PRODUCTION",
+      "evidence": {
+        "currentStageId": "8fac530c-1bc5-472e-b372-a6c769809958"
+      },
+      "severity": "HIGH",
+      "status": "KEEP_V1"
+    },
+    {
+      "aggregateId": "8052716f-d30a-4421-a265-c7a6061bdb75",
+      "aggregateType": "Unit",
+      "code": "CURRENT_STAGE_WITHOUT_SERVICE",
+      "domain": "PRODUCTION",
+      "evidence": {
+        "currentStageId": "8fac530c-1bc5-472e-b372-a6c769809958"
+      },
+      "severity": "HIGH",
+      "status": "KEEP_V1"
+    },
+    {
+      "aggregateId": "97dd6710-0f4a-4872-9deb-c7440a0f73a8",
+      "aggregateType": "Unit",
+      "code": "CURRENT_STAGE_WITHOUT_SERVICE",
+      "domain": "PRODUCTION",
+      "evidence": {
+        "currentStageId": "8fac530c-1bc5-472e-b372-a6c769809958"
+      },
+      "severity": "HIGH",
+      "status": "KEEP_V1"
+    },
+    {
+      "aggregateId": "c54c7a5b-6149-479e-91b1-0c86b62753e7",
+      "aggregateType": "Unit",
+      "code": "CURRENT_STAGE_WITHOUT_SERVICE",
+      "domain": "PRODUCTION",
+      "evidence": {
+        "currentStageId": "8fac530c-1bc5-472e-b372-a6c769809958"
+      },
+      "severity": "HIGH",
+      "status": "KEEP_V1"
+    },
+    {
+      "aggregateId": "d4e4f0ae-a008-4913-ad68-3da6e1839a55",
+      "aggregateType": "Unit",
+      "code": "CURRENT_STAGE_WITHOUT_SERVICE",
+      "domain": "PRODUCTION",
+      "evidence": {
+        "currentStageId": "8fac530c-1bc5-472e-b372-a6c769809958"
+      },
+      "severity": "HIGH",
+      "status": "KEEP_V1"
+    }
+  ],
+  "generatedAt": "2026-09-23T15:35:24.903Z",
+  "mode": "DRY_RUN",
+  "planChecksum": "08cb0345e26032f03807bbbfface7cdfb7121d17b72162f987c6941f7fee299e",
+  "reportType": "production-delivery-v2-backfill",
+  "ruleVersion": "production-delivery-v2-backfill-v1",
+  "sourceChecksum": "2ecaa225c72dfd580b5e7b595c2fcd74ede4caf7175c02036470ee7edce97948"
+}

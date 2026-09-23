@@ -7916,6 +7916,9 @@ model DeliveryRouteState {
   route                     Route    @relation(fields: [routeId], references: [id], onDelete: Restrict)
   routeRevision             Int      @default(1) @map("route_revision")
   currentPublicationVersion Int?     @map("current_publication_version")
+  lifecycleStatus           String   @default("DRAFT") @map("lifecycle_status")
+  draftSnapshot             Json     @default("{}") @map("draft_snapshot")
+  draftChecksum             String?  @map("draft_checksum")
   migrationSource           String?  @map("migration_source")
   sourceChecksum            String?  @map("source_checksum")
   createdAt                 DateTime @default(now()) @map("created_at")
@@ -7975,6 +7978,7 @@ model DeliveryJobState {
   jobRevision    Int      @default(1) @map("job_revision")
   currentStatus  String   @map("current_status")
   sourceChecksum String?  @map("source_checksum")
+  migrationSource String? @map("migration_source")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 

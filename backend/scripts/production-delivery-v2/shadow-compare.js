@@ -19,13 +19,37 @@ function currentRouteSnapshot(route) {
   });
 }
 
+function comparableRouteSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  return stableValue({
+    routeId: snapshot.routeId,
+    code: snapshot.code,
+    date: dateOnly(snapshot.date),
+    status: snapshot.status,
+    driverId: snapshot.driverId ?? null,
+    helperId: snapshot.helperId ?? null,
+    vehicleId: snapshot.vehicleId ?? null,
+    notes: snapshot.notes ?? null,
+    manualMapsUrl: snapshot.manualMapsUrl ?? null,
+    stops: (snapshot.stops || []).map((job, index) => ({
+      jobId: job.jobId,
+      sequence: job.sequence ?? index + 1,
+      status: job.status,
+      scheduledDate: dateOnly(job.scheduledDate),
+      driverId: job.driverId ?? null,
+      helperId: job.helperId ?? null,
+      vehicleId: job.vehicleId ?? null,
+    })),
+  });
+}
+
 async function main() {
   const [routes, jobs, productionRuns] = await Promise.all([
     prisma.route.findMany({
       include: {
         jobs: { orderBy: [{ sequence: "asc" }, { createdAt: "asc" }] },
         deliveryStateV2: true,
-        publicationsV2: { where: { migrationBaseline: true }, orderBy: { publicationVersion: "desc" }, take: 1 },
+        publicationsV2: { orderBy: { publicationVersion: "desc" }, take: 1 },
       },
       orderBy: { id: "asc" },
     }),
@@ -36,14 +60,17 @@ async function main() {
   for (const route of routes) {
     const snapshot = currentRouteSnapshot(route);
     const publication = route.publicationsV2[0] || null;
+    const canonicalSnapshot = publication?.snapshot || route.deliveryStateV2?.draftSnapshot || null;
+    const comparableV2 = comparableRouteSnapshot(canonicalSnapshot);
     const differences = [];
     if (!route.deliveryStateV2) differences.push("MISSING_ROUTE_STATE_V2");
-    if (route.status !== "DRAFT" && !publication) differences.push("MISSING_BASELINE_PUBLICATION");
-    if (publication && publication.checksum !== checksum(snapshot)) differences.push("ROUTE_SNAPSHOT_CHECKSUM_MISMATCH");
+    if (route.status !== "DRAFT" && !publication) differences.push("MISSING_CURRENT_PUBLICATION");
+    if (comparableV2 && checksum(comparableV2) !== checksum(snapshot)) differences.push("ROUTE_PROJECTION_MISMATCH");
+    if (route.deliveryStateV2 && route.deliveryStateV2.lifecycleStatus !== route.status) differences.push("ROUTE_LIFECYCLE_STATUS_MISMATCH");
     comparisons.push({
       domain: "DELIVERY", aggregateType: "Route", aggregateId: route.id,
       status: differences.length ? "MISMATCH" : "MATCH",
-      v1Checksum: checksum(snapshot), v2Checksum: publication?.checksum || route.deliveryStateV2?.sourceChecksum || null, differences,
+      v1Checksum: checksum(snapshot), v2Checksum: comparableV2 ? checksum(comparableV2) : null, differences,
     });
   }
   for (const job of jobs) {

@@ -41,6 +41,7 @@ import { unitRouter }     from "./routes/units.js";
 import { productionRouter } from "./routes/production.js";
 import { activityRouter } from "./routes/activity.js";
 import { armadaRouter }     from "./routes/armada.js";
+import { deliveryV2Router } from "./routes/deliveryV2.js";
 import { incentiveSnapshotRouter } from "./routes/incentiveSnapshot.js";
 import { incentivePayoutRouter } from "./routes/incentivePayout.js";
 import { kendaliRouter }    from "./routes/kendali.js";
@@ -212,6 +213,7 @@ app.use("/api/production",   productionRouter);
 app.use("/api/activity",     activityRouter);
 app.use("/api/complaints",   complaintsRouter);
 app.use("/api/armada",       armadaRouter);
+app.use("/api/armada",       deliveryV2Router); // gated V2 snapshot/delta; reader cannot precede both writers
 app.use("/api/armada",       incentiveSnapshotRouter); // additive, tidak mengubah armadaRouter — lihat routes/incentiveSnapshot.js
 app.use("/api/armada",       incentivePayoutRouter); // additive, lihat routes/incentivePayout.js
 app.use("/api/kendali",      kendaliRouter);

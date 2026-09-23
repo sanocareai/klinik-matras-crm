@@ -13,6 +13,7 @@
 // jadi dua langkah.
 
 import express from "express";
+import { randomUUID } from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -55,9 +56,92 @@ import {
   validateJobTransition,
   validatePodInput,
 } from "../services/deliveryExecution.js";
+import { discardDeliveryRouteDraft, executeDeliveryRouteCommand } from "../services/deliveryRouteCommandService.js";
+import { discardDeliveryJobDraft, executeDeliveryJobCommand } from "../services/deliveryJobCommandService.js";
+import { executeDeliveryExecutionCommand } from "../services/deliveryExecutionCommandService.js";
+import { executeDeliveryJobBatchCommand } from "../services/deliveryJobBatchCommandService.js";
+import { V2_FLAGS, isFlagEnabled, loadV2Flags } from "../services/v2FeatureFlags.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
+
+function deliveryV2IdempotencyKey(req, prefix) {
+  return String(req.get("Idempotency-Key") || req.body?.idempotencyKey || `${prefix}:${randomUUID()}`);
+}
+
+function expectedV2Revision(req, field = "expectedRouteRevision") {
+  const raw = req.body?.[field] ?? req.get("If-Match-Revision");
+  return raw == null || raw === "" ? null : Number(raw);
+}
+
+function expectedV2JobRevision(req) {
+  return expectedV2Revision(req, "expectedJobRevision");
+}
+
+async function deliveryWriterMode(flagKey) {
+  const flags = await loadV2Flags(prisma);
+  const fence = flags[V2_FLAGS.DELIVERY_V1_WRITER_FENCE]?.enabled === true;
+  const enabled = isFlagEnabled(flags, flagKey);
+  if (fence && !enabled) {
+    throw Object.assign(new Error("Mutation Delivery V1 sedang dipagari untuk final catch-up"), { statusCode: 503 });
+  }
+  return enabled;
+}
+
+async function executeDeliveryPlanningJobMutation(req, existingJob, {
+  commandType,
+  request,
+  reason = null,
+  projectV1,
+}) {
+  const enabled = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
+  if (!enabled) return prisma.$transaction((tx) => projectV1(tx, { before: existingJob }));
+  const idempotencyKey = deliveryV2IdempotencyKey(req, commandType.toLowerCase());
+  if (existingJob.routeId) {
+    return executeDeliveryRouteCommand(prisma, {
+      routeId: existingJob.routeId,
+      actorId: req.user.id,
+      idempotencyKey,
+      commandType,
+      expectedRevision: expectedV2Revision(req),
+      reason,
+      request,
+      forcePublication: true,
+      projectV1: async (tx) => {
+        await projectV1(tx, { before: existingJob });
+        return { routeId: existingJob.routeId };
+      },
+    });
+  }
+  return executeDeliveryJobCommand(prisma, {
+    jobId: existingJob.id,
+    actorId: req.user.id,
+    idempotencyKey,
+    commandType,
+    expectedJobRevision: expectedV2JobRevision(req),
+    request,
+    projectV1,
+  });
+}
+
+async function executeDeliveryExecutionMutation(req, existingJob, {
+  commandType,
+  request,
+  projectV1,
+}) {
+  if (!await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)) {
+    return prisma.$transaction((tx) => projectV1(tx, { before: existingJob }));
+  }
+  return executeDeliveryExecutionCommand(prisma, {
+    jobId: existingJob.id,
+    actorId: req.user.id,
+    idempotencyKey: deliveryV2IdempotencyKey(req, commandType.toLowerCase()),
+    commandType,
+    expectedJobRevision: expectedV2JobRevision(req),
+    request,
+    projectV1,
+  });
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const jobPhotosDir = path.join(__dirname, "../../data/job-photos");
@@ -955,12 +1039,18 @@ async function bestEffortGeocode(addressText, locationUrlHint) {
 async function ensureJobsGeocoded(jobs) {
   const perluDiisi = jobs.filter((j) => j.lat == null && (j.order?.locationUrl || j.addressText?.trim()));
   if (perluDiisi.length === 0) return;
+  const v2WriterEnabled = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
 
   await Promise.allSettled(perluDiisi.map(async (j) => {
     try {
       const geo = await geocodeAddress(j.addressText, j.order?.locationUrl);
       if (!geo) return;
-      await prisma.job.update({ where: { id: j.id }, data: { lat: geo.lat, lng: geo.lng } });
+      // Di mode V2, GET pembuat peta tidak boleh menjadi hidden writer yang
+      // melewati route publication. Koordinat tetap dipakai untuk response
+      // ini, tetapi persistensi harus lewat command edit planner eksplisit.
+      if (!v2WriterEnabled) {
+        await prisma.job.update({ where: { id: j.id }, data: { lat: geo.lat, lng: geo.lng } });
+      }
       // Ikut diperbarui di array in-memory supaya buildRouteMapsUrl() yang
       // dipanggil SETELAH ini langsung memakai koordinat baru, tanpa perlu
       // fetch ulang route dari database.
@@ -2126,18 +2216,31 @@ armadaRouter.post("/routes", requirePermission(P.ROUTE_WRITE), async (req, res) 
     const existing = await prisma.route.count({ where: { date: targetDate } });
     const code = `${generateRouteCode(targetDate)}-${String(existing + 1).padStart(2, "0")}`;
 
-    const route = await prisma.route.create({
-      data: {
-        code,
-        date: targetDate,
-        driverId: driverId || null,
-        helperId: helperId || null,
-        vehicleId: vehicleId || null,
-        notes: notes?.trim() || null,
-        createdById: req.user.id,
-      },
-      include: routeInclude,
-    });
+    const createData = {
+      code,
+      date: targetDate,
+      driverId: driverId || null,
+      helperId: helperId || null,
+      vehicleId: vehicleId || null,
+      notes: notes?.trim() || null,
+      createdById: req.user.id,
+    };
+    let route;
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+      const result = await executeDeliveryRouteCommand(prisma, {
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "route-create"),
+        commandType: "CREATE_ROUTE_DRAFT",
+        request: createData,
+        projectV1: async (tx) => {
+          const created = await tx.route.create({ data: createData });
+          return { routeId: created.id };
+        },
+      });
+      route = await prisma.route.findUnique({ where: { id: result.routeId }, include: routeInclude });
+    } else {
+      route = await prisma.route.create({ data: createData, include: routeInclude });
+    }
     res.status(201).json(route);
   } catch (err) {
     handleErr(err, res);
@@ -2187,7 +2290,7 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
     // sama-sama "rute terkunci, butuh alasan tercatat", diringkas satu flag.
     const editingLocked = editingPublished || editingCompleted;
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const projectEditRouteV1 = async (tx) => {
       const r = await tx.route.update({
         where: { id: req.params.id },
         data: {
@@ -2229,8 +2332,30 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
           data: { driverId: r.driverId, helperId: r.helperId, vehicleId: r.vehicleId },
         });
       }
-      return r;
-    });
+      return { routeId: r.id };
+    };
+    let replayed = false;
+    let updated;
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+      const result = await executeDeliveryRouteCommand(prisma, {
+        routeId: route.id,
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "route-edit"),
+        commandType: editingLocked ? "REVISE_PUBLISHED_ROUTE" : "EDIT_ROUTE_DRAFT",
+        expectedRevision: expectedV2Revision(req),
+        reason: reason?.trim() || null,
+        request: { driverId, helperId, vehicleId, notes, manualMapsUrl },
+        forcePublication: editingLocked,
+        projectV1: projectEditRouteV1,
+      });
+      replayed = result.replayed;
+      updated = await prisma.route.findUnique({ where: { id: route.id }, include: routeInclude });
+    } else {
+      updated = await prisma.$transaction(async (tx) => {
+        await projectEditRouteV1(tx);
+        return tx.route.findUnique({ where: { id: route.id }, include: routeInclude });
+      });
+    }
     // Broadcast otomatis DICABUT dari sini (8 September 2026 — laporan
     // owner: "ada pengeditan jalur, ketika proses pengeditan itu tiba-tiba
     // auto broadcast beberapa kali padahal pengeditan rute belum selesai
@@ -2250,7 +2375,7 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
     // darurat mid-route (kecelakaan dst, lihat catatan cascade di atas).
     // HANYA saat driverId benar-benar berganti, bukan tiap PATCH lain di
     // sesi edit darurat yang sama (catatan/link Maps manual).
-    if (editingLocked && driverId !== undefined && driverId && driverId !== route.driverId) {
+    if (!replayed && editingLocked && driverId !== undefined && driverId && driverId !== route.driverId) {
       for (const j of updated.jobs.filter((j) => j.driverId === driverId && j.status !== "COMPLETED" && j.status !== "FAILED")) {
         notifyDriverJobAssigned(j).catch((err) =>
           console.error("[PATCH /routes/:id] Gagal kirim push ke driver:", err.message)
@@ -2313,8 +2438,22 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     }
 
     const jobIds = Array.isArray(req.body.jobIds) ? req.body.jobIds : [];
+    const useV2RouteWriter = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
+    if (useV2RouteWriter && jobIds.length > 0) {
+      const selectedMembership = await prisma.job.findMany({
+        where: { id: { in: jobIds } },
+        select: { id: true, routeId: true },
+      });
+      const foreignRouteIds = [...new Set(selectedMembership.map((job) => job.routeId).filter((id) => id && id !== route.id))];
+      if (foreignRouteIds.length > 0) {
+        throw Object.assign(new Error("Pemindahan stop lintas rute wajib melepasnya dari publication asal lebih dahulu"), {
+          statusCode: 409,
+          code: "SOURCE_ROUTE_REVISION_REQUIRED",
+        });
+      }
+    }
 
-    await prisma.$transaction(async (tx) => {
+    const projectRouteMembershipV1 = async (tx) => {
       // Lepas dulu job lama milik rute ini yang TIDAK ada di daftar baru.
       await tx.job.updateMany({
         where: { routeId: route.id, id: { notIn: jobIds } },
@@ -2434,7 +2573,26 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
           data: { lastEditReason: reason.trim(), lastEditedAt: new Date(), lastEditedById: req.user.id },
         });
       }
-    });
+      return { routeId: route.id };
+    };
+
+    let replayed = false;
+    if (useV2RouteWriter) {
+      const result = await executeDeliveryRouteCommand(prisma, {
+        routeId: route.id,
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "route-stops"),
+        commandType: (editingPublished || editingCompleted) ? "REVISE_ROUTE_STOPS" : "REPLACE_ROUTE_DRAFT_STOPS",
+        expectedRevision: expectedV2Revision(req),
+        reason: reason?.trim() || null,
+        request: { jobIds },
+        forcePublication: editingPublished || editingCompleted,
+        projectV1: projectRouteMembershipV1,
+      });
+      replayed = result.replayed;
+    } else {
+      await prisma.$transaction(projectRouteMembershipV1);
+    }
 
     const updated = await prisma.route.findUnique({ where: { id: route.id }, include: routeInclude });
     // Broadcast otomatis DICABUT dari sini (8 September 2026) — lihat
@@ -2451,7 +2609,7 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     // "job baru" bisa terjadi DI SINI, bukan cuma saat publish. Best-effort,
     // sedikit redundan dengan notifikasi publish untuk job yang sama itu
     // tidak masalah (lebih baik driver dapat 2x alert daripada 0x).
-    if (updated.driverId) {
+    if (!replayed && updated.driverId) {
       for (const j of updated.jobs) {
         notifyDriverJobAssigned(j).catch((err) =>
           console.error("[PATCH /routes/:id/jobs] Gagal kirim push ke driver:", err.message)
@@ -2465,7 +2623,7 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     // transaksi) DAN anggotanya benar-benar berubah (bukan sekadar
     // susun-ulang urutan job yang sama — itu tidak butuh alert terpisah,
     // job list driver otomatis ikut urut baru).
-    if (ruteSudahJalan) {
+    if (!replayed && ruteSudahJalan) {
       const anggotaLamaIds = new Set(anggotaLama.map((j) => j.id));
       const anggotaBaruIds = new Set(jobIds);
       const addedCount = jobIds.filter((id) => !anggotaLamaIds.has(id)).length;
@@ -2549,7 +2707,7 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
     // yang KALAH berhenti DI SINI (throw), tidak pernah sampai ke transaksi
     // job/kirim WA di bawahnya — jaminan SATU publish = SATU broadcast, apa
     // pun kecepatan klik dispatcher.
-    const updatedRoute = await prisma.$transaction(async (tx) => {
+    const projectPublishV1 = async (tx) => {
       const klaim = await tx.route.updateMany({
         where: { id: route.id, status: "DRAFT" },
         data: { status: "PUBLISHED", publishedAt: new Date(), plannedDistanceKm, plannedDurationMin },
@@ -2599,8 +2757,30 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
         where: { routeId: route.id, status: { in: ["UNSCHEDULED", "SCHEDULED"] } },
         data: { status: "ASSIGNED" },
       });
-      return tx.route.findUnique({ where: { id: route.id }, include: routeInclude });
-    });
+      return { routeId: route.id };
+    };
+    const useV2Writer = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
+    let replayed = false;
+    let updatedRoute;
+    if (useV2Writer) {
+      const result = await executeDeliveryRouteCommand(prisma, {
+        routeId: route.id,
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "route-publish"),
+        commandType: "PUBLISH_ROUTE",
+        expectedRevision: expectedV2Revision(req),
+        request: { plannedDistanceKm, plannedDurationMin },
+        forcePublication: true,
+        projectV1: projectPublishV1,
+      });
+      replayed = result.replayed;
+      updatedRoute = await prisma.route.findUnique({ where: { id: route.id }, include: routeInclude });
+    } else {
+      updatedRoute = await prisma.$transaction(async (tx) => {
+        await projectPublishV1(tx);
+        return tx.route.findUnique({ where: { id: route.id }, include: routeInclude });
+      });
+    }
 
     // Kirim ringkasan rute + link Maps OTOMATIS (redesain Route Planner, Sep
     // 2026) — MENGGANTIKAN langkah manual "dispatcher susun rute sendiri di
@@ -2612,6 +2792,7 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
     // Target SEMENTARA chat pribadi Natasha, BUKAN grup driver — lihat
     // catatan lengkap di notifyNatashaText di atas.
     try {
+      if (replayed) return res.json(updatedRoute);
       await ensureJobsGeocoded(updatedRoute.jobs);
       const { url } = buildRouteMapsUrl(updatedRoute.jobs);
       await kirimRingkasanRuteKeNatasha(updatedRoute, url);
@@ -2771,9 +2952,28 @@ armadaRouter.patch("/routes/:id/cancel", requirePermission(P.ROUTE_WRITE), async
     // rute yang dibatalkan) — riwayat "rute ini pernah direncanakan lalu
     // dibatalkan" tetap terbaca. Dispatcher yang menyusun ulang secara manual
     // lewat rute baru, bukan sistem yang diam-diam melepaskannya.
-    const updated = await prisma.route.update({
-      where: { id: req.params.id }, data: { status: "CANCELLED" }, include: routeInclude,
-    });
+    let updated;
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+      await executeDeliveryRouteCommand(prisma, {
+        routeId: route.id,
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "route-cancel"),
+        commandType: "CANCEL_ROUTE",
+        expectedRevision: expectedV2Revision(req),
+        reason: req.body?.reason?.trim() || "Route cancelled",
+        request: { reason: req.body?.reason || null },
+        forcePublication: true,
+        projectV1: async (tx) => {
+          await tx.route.update({ where: { id: route.id }, data: { status: "CANCELLED" } });
+          return { routeId: route.id };
+        },
+      });
+      updated = await prisma.route.findUnique({ where: { id: route.id }, include: routeInclude });
+    } else {
+      updated = await prisma.route.update({
+        where: { id: req.params.id }, data: { status: "CANCELLED" }, include: routeInclude,
+      });
+    }
     res.json(updated);
   } catch (err) {
     handleErr(err, res);
@@ -2816,7 +3016,16 @@ armadaRouter.delete("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req,
       // untuk kasus tepi (data lama/manual), bukan alur biasa.
       throw new ArmadaError("Rute ini sudah punya catatan biaya kendaraan — tidak bisa dihapus permanen, pakai \"Batalkan\"");
     }
-    await prisma.route.delete({ where: { id: req.params.id } });
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+      await discardDeliveryRouteDraft(prisma, {
+        routeId: route.id,
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "route-discard"),
+        expectedRevision: expectedV2Revision(req),
+      });
+    } else {
+      await prisma.route.delete({ where: { id: req.params.id } });
+    }
     res.json({ ok: true });
   } catch (err) {
     handleErr(err, res);
@@ -2961,7 +3170,7 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
     const nextDate = toDateOnly(scheduledDate);
     const nextDriverId = driverId || null;
 
-    const { job: updated, kase } = await prisma.$transaction(async (tx) => {
+    const projectRescheduleV1 = async (tx) => {
       const j = await tx.job.update({
         where: { id: job.id },
         data: {
@@ -3009,8 +3218,17 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
         customerConfirmed, userId: req.user.id,
       });
       return { job: j, kase: k };
+    };
+    const commandResult = await executeDeliveryPlanningJobMutation(req, job, {
+      commandType: "RESCHEDULE_FAILED_JOB",
+      reason: reason.trim(),
+      request: { scheduledDate, timeWindow, driverId, helperId, vehicleId, reason, customerConfirmed },
+      projectV1: projectRescheduleV1,
     });
-    notifySalesJobRescheduled(updated, kase).catch((err) =>
+    const projected = commandResult.projectionResult || commandResult;
+    const updated = await prisma.job.findUniqueOrThrow({ where: { id: job.id }, include: jobInclude });
+    const kase = projected.kase || await prisma.rescheduleCase.findFirst({ where: { jobId: job.id }, orderBy: { createdAt: "desc" } });
+    if (!commandResult.replayed) notifySalesJobRescheduled(updated, kase).catch((err) =>
       console.error("[POST /issues/:jobId/reschedule] Gagal kirim push ke sales:", err.message)
     );
     res.json({ ...updated, issueStatus: deriveIssueStatus(updated), rescheduleCase: kase });
@@ -3050,16 +3268,22 @@ armadaRouter.post("/jobs/:id/reschedule-note", requirePermission(P.JOB_WRITE), a
     const { reason, customerConfirmed } = req.body;
     if (!reason?.trim()) throw new ArmadaError("Alasan reschedule wajib diisi");
 
-    const updated = await prisma.job.update({
-      where: { id: job.id },
-      data: {
-        rescheduleReason: reason.trim(),
-        rescheduledById: req.user.id,
-        rescheduledAt: new Date(),
-        customerConfirmedReschedule: !!customerConfirmed,
+    await executeDeliveryExecutionMutation(req, job, {
+      commandType: "RESCHEDULE_NOTE_ADDED",
+      request: { reason: reason.trim(), customerConfirmed: !!customerConfirmed },
+      projectV1: async (tx) => {
+        await tx.job.update({
+          where: { id: job.id },
+          data: {
+            rescheduleReason: reason.trim(),
+            rescheduledById: req.user.id,
+            rescheduledAt: new Date(),
+            customerConfirmedReschedule: !!customerConfirmed,
+          },
+        });
       },
-      include: jobInclude,
     });
+    const updated = await prisma.job.findUniqueOrThrow({ where: { id: job.id }, include: jobInclude });
     res.json({ ...updated, issueStatus: deriveIssueStatus(updated) });
   } catch (err) {
     handleErr(err, res);
@@ -3189,16 +3413,22 @@ armadaRouter.patch("/pod/:jobId/verify", requirePermission(P.JOB_WRITE), async (
     if (job.status !== "COMPLETED") throw new ArmadaError("Job belum selesai — belum ada bukti untuk diverifikasi");
     if (job.proofPhotoUrls.length === 0) throw new ArmadaError("Job ini belum punya foto bukti");
 
-    const updated = await prisma.job.update({
-      where: { id: job.id },
-      data: {
-        podStatus: "VERIFIED",
-        podVerifiedById: req.user.id,
-        podVerifiedAt: new Date(),
-        podRejectionNote: null, // verifikasi baru membersihkan catatan penolakan lama
+    await executeDeliveryExecutionMutation(req, job, {
+      commandType: "POD_VERIFIED",
+      request: {},
+      projectV1: async (tx) => {
+        await tx.job.update({
+          where: { id: job.id },
+          data: {
+            podStatus: "VERIFIED",
+            podVerifiedById: req.user.id,
+            podVerifiedAt: new Date(),
+            podRejectionNote: null,
+          },
+        });
       },
-      include: PIC_INCLUDE_FOR_POD,
     });
+    const updated = await prisma.job.findUniqueOrThrow({ where: { id: job.id }, include: PIC_INCLUDE_FOR_POD });
     res.json({ ...updated, derivedPodStatus: derivePodStatus(updated) });
   } catch (err) {
     handleErr(err, res);
@@ -3214,11 +3444,17 @@ armadaRouter.patch("/pod/:jobId/reject", requirePermission(P.JOB_WRITE), async (
     if (!job) return res.status(404).json({ error: "Job tidak ditemukan" });
     if (job.status !== "COMPLETED") throw new ArmadaError("Job belum selesai — belum ada bukti untuk ditinjau");
 
-    const updated = await prisma.job.update({
-      where: { id: job.id },
-      data: { podStatus: "REJECTED", podVerifiedById: req.user.id, podVerifiedAt: new Date(), podRejectionNote: note.trim() },
-      include: PIC_INCLUDE_FOR_POD,
+    await executeDeliveryExecutionMutation(req, job, {
+      commandType: "POD_REJECTED",
+      request: { note: note.trim() },
+      projectV1: async (tx) => {
+        await tx.job.update({
+          where: { id: job.id },
+          data: { podStatus: "REJECTED", podVerifiedById: req.user.id, podVerifiedAt: new Date(), podRejectionNote: note.trim() },
+        });
+      },
     });
+    const updated = await prisma.job.findUniqueOrThrow({ where: { id: job.id }, include: PIC_INCLUDE_FOR_POD });
     res.json({ ...updated, derivedPodStatus: derivePodStatus(updated) });
   } catch (err) {
     handleErr(err, res);
@@ -3295,7 +3531,7 @@ armadaRouter.patch("/pod/:jobId/edit", requirePermission(P.JOB_WRITE), async (re
       changes.completedAt = { from: job.completedAt?.toISOString() || null, to: newCompletedAt.toISOString() };
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const projectPodEditV1 = async (tx) => {
       const hasil = await tx.job.update({
         where: { id: job.id },
         data: {
@@ -3320,7 +3556,19 @@ armadaRouter.patch("/pod/:jobId/edit", requirePermission(P.JOB_WRITE), async (re
         });
       }
       return hasil;
+    };
+    await executeDeliveryExecutionMutation(req, job, {
+      commandType: "POD_CORRECTED",
+      request: {
+        proofPhotoUrls,
+        completedAt: newCompletedAt?.toISOString(),
+        driverId: newDriverId,
+        helperId: newHelperId,
+        reason: reason.trim(),
+      },
+      projectV1: projectPodEditV1,
     });
+    const updated = await prisma.job.findUniqueOrThrow({ where: { id: job.id }, include: PIC_INCLUDE_FOR_POD });
     res.json({ ...updated, derivedPodStatus: derivePodStatus(updated) });
   } catch (err) {
     handleErr(err, res);
@@ -3416,9 +3664,24 @@ armadaRouter.patch("/route/reorder", requirePermission(P.JOB_WRITE), async (req,
       throw new ArmadaError("jobIds harus mencakup persis semua job aktif driver ini di tanggal itu");
     }
 
-    await prisma.$transaction(
-      jobIds.map((id, index) => prisma.job.update({ where: { id }, data: { sequence: index } }))
-    );
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+      await executeDeliveryJobBatchCommand(prisma, {
+        jobIds,
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "job-reorder"),
+        commandType: "REORDER_UNROUTED_JOBS",
+        request: { driverId, date, type, jobIds },
+        projectV1: async (tx) => {
+          for (let index = 0; index < jobIds.length; index += 1) {
+            await tx.job.update({ where: { id: jobIds[index] }, data: { sequence: index } });
+          }
+        },
+      });
+    } else {
+      await prisma.$transaction(
+        jobIds.map((id, index) => prisma.job.update({ where: { id }, data: { sequence: index } }))
+      );
+    }
     res.json({ ok: true });
   } catch (err) {
     handleErr(err, res);
@@ -3831,24 +4094,37 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
 
     const geo = addressText ? await bestEffortGeocode(addressText, units[0]?.order?.locationUrl) : null;
 
-    const job = await prisma.job.create({
-      data: {
-        type,
-        orderId: [...orderIds][0],
-        scheduledDate: toDateOnly(scheduledDate),
-        driverId: driverId || null,
-        helperId: helperId || null,
-        vehicleId: vehicleId || null,
-        timeWindow: timeWindow || null,
-        addressText: addressText || null,
-        lat: geo?.lat ?? null,
-        lng: geo?.lng ?? null,
-        accessNotes: accessNotes || null,
-        status: deriveStatus(!!driverId, !!scheduledDate),
-        units: { create: unitIds.map((unitId) => ({ unitId })) },
-      },
-      include: jobInclude,
-    });
+    const createData = {
+      type,
+      orderId: [...orderIds][0],
+      scheduledDate: toDateOnly(scheduledDate),
+      driverId: driverId || null,
+      helperId: helperId || null,
+      vehicleId: vehicleId || null,
+      timeWindow: timeWindow || null,
+      addressText: addressText || null,
+      lat: geo?.lat ?? null,
+      lng: geo?.lng ?? null,
+      accessNotes: accessNotes || null,
+      status: deriveStatus(!!driverId, !!scheduledDate),
+      units: { create: unitIds.map((unitId) => ({ unitId })) },
+    };
+    let job;
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+      const result = await executeDeliveryJobCommand(prisma, {
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "job-create"),
+        commandType: "CREATE_DELIVERY_JOB",
+        request: { ...req.body, geo },
+        projectV1: async (tx) => {
+          const created = await tx.job.create({ data: createData });
+          return { jobId: created.id };
+        },
+      });
+      job = await prisma.job.findUnique({ where: { id: result.jobId }, include: jobInclude });
+    } else {
+      job = await prisma.job.create({ data: createData, include: jobInclude });
+    }
 
     // Trigger "Pickup dijadwalkan" DIHAPUS 31 Agustus 2026 (keputusan
     // owner) — digantikan notifyDriverEnRoute di POST /jobs/:id/start,
@@ -3963,9 +4239,9 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
       if (existing.routeId) { data.routeId = null; data.sequence = null; }
     }
 
-    const { job, kase } = await prisma.$transaction(async (tx) => {
+    let kase = null;
+    const projectJobEditV1 = async (tx) => {
       const j = await tx.job.update({ where: { id: req.params.id }, data, include: jobInclude });
-      let k = null;
       if (isReschedule) {
         await tx.jobIssueLog.create({
           data: {
@@ -3975,15 +4251,50 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
             createdById: req.user.id,
           },
         });
-        k = await openOrAdvanceCase(tx, {
+        kase = await openOrAdvanceCase(tx, {
           job: existing, cause: "PROACTIVE", reason: rescheduleReason.trim(),
           previousScheduledDate: existing.scheduledDate, newScheduledDate: nextDate,
           customerConfirmed, userId: req.user.id,
         });
       }
-      return { job: j, kase: k };
-    });
-    if (kase) {
+      return { jobId: j.id, routeId: existing.routeId };
+    };
+    const useV2Writer = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
+    let replayed = false;
+    let job;
+    if (useV2Writer && existing.routeId) {
+      const result = await executeDeliveryRouteCommand(prisma, {
+        routeId: existing.routeId,
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "routed-job-edit"),
+        commandType: "EDIT_ROUTED_JOB",
+        expectedRevision: expectedV2Revision(req),
+        reason: rescheduleReason?.trim() || "Edit job anggota rute",
+        request: req.body,
+        projectV1: projectJobEditV1,
+      });
+      replayed = result.replayed;
+      job = await prisma.job.findUnique({ where: { id: existing.id }, include: jobInclude });
+    } else if (useV2Writer) {
+      const result = await executeDeliveryJobCommand(prisma, {
+        jobId: existing.id,
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "job-edit"),
+        commandType: "EDIT_DELIVERY_JOB",
+        expectedJobRevision: expectedV2Revision(req, "expectedJobRevision"),
+        request: req.body,
+        projectV1: projectJobEditV1,
+      });
+      replayed = result.replayed;
+      job = await prisma.job.findUnique({ where: { id: existing.id }, include: jobInclude });
+    } else {
+      const result = await prisma.$transaction(async (tx) => {
+        await projectJobEditV1(tx);
+        return tx.job.findUnique({ where: { id: existing.id }, include: jobInclude });
+      });
+      job = result;
+    }
+    if (!replayed && kase) {
       notifySalesJobRescheduled(job, kase).catch((err) =>
         console.error("[PATCH /jobs/:id] Gagal kirim push ke sales (reschedule):", err.message)
       );
@@ -3992,7 +4303,7 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     // Push notifikasi (8 September 2026) — HANYA saat driver benar-benar
     // BARU/BERGANTI (bukan tiap PATCH lain, mis. ubah catatan/jam) supaya
     // tidak spam notifikasi untuk edit yang tidak relevan bagi driver.
-    if (driverId !== undefined && driverId && driverId !== existing.driverId) {
+    if (!replayed && driverId !== undefined && driverId && driverId !== existing.driverId) {
       notifyDriverJobAssigned(job).catch((err) =>
         console.error("[PATCH /jobs/:id] Gagal kirim push ke driver:", err.message)
       );
@@ -4024,7 +4335,16 @@ armadaRouter.patch("/jobs/:id/external-courier", requirePermission(P.JOB_WRITE),
     }
     if (Object.keys(data).length === 0) throw new ArmadaError("Tidak ada field yang diubah");
 
-    const job = await prisma.job.update({ where: { id: req.params.id }, data, include: jobInclude });
+    const existing = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id } });
+    await executeDeliveryPlanningJobMutation(req, existing, {
+      commandType: "EDIT_EXTERNAL_COURIER",
+      request: data,
+      projectV1: async (tx) => {
+        await tx.job.update({ where: { id: existing.id }, data });
+        return { jobId: existing.id };
+      },
+    });
+    const job = await prisma.job.findUniqueOrThrow({ where: { id: existing.id }, include: jobInclude });
     res.json(job);
   } catch (err) {
     handleErr(err, res);
@@ -4041,11 +4361,16 @@ armadaRouter.patch("/jobs/:id/return-to-depot", requirePermission(P.ROUTE_WRITE)
   try {
     const { returnToDepotBefore } = req.body;
     if (typeof returnToDepotBefore !== "boolean") throw new ArmadaError("returnToDepotBefore wajib boolean");
-    const job = await prisma.job.update({
-      where: { id: req.params.id },
-      data: { returnToDepotBefore },
-      include: jobInclude,
+    const existing = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id } });
+    await executeDeliveryPlanningJobMutation(req, existing, {
+      commandType: "EDIT_RETURN_TO_DEPOT",
+      request: { returnToDepotBefore },
+      projectV1: async (tx) => {
+        await tx.job.update({ where: { id: existing.id }, data: { returnToDepotBefore } });
+        return { jobId: existing.id };
+      },
     });
+    const job = await prisma.job.findUniqueOrThrow({ where: { id: existing.id }, include: jobInclude });
     res.json(job);
   } catch (err) {
     handleErr(err, res);
@@ -4060,7 +4385,16 @@ armadaRouter.delete("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res
     if (!["UNSCHEDULED", "SCHEDULED", "ASSIGNED"].includes(existing.status)) {
       throw new ArmadaError(`Job berstatus ${existing.status} tidak bisa dihapus — tandai FAILED kalau batal`);
     }
-    await prisma.job.delete({ where: { id: req.params.id } });
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+      await discardDeliveryJobDraft(prisma, {
+        jobId: existing.id,
+        actorId: req.user.id,
+        idempotencyKey: deliveryV2IdempotencyKey(req, "job-discard"),
+        expectedJobRevision: expectedV2JobRevision(req),
+      });
+    } else {
+      await prisma.job.delete({ where: { id: req.params.id } });
+    }
     res.json({ ok: true });
   } catch (err) {
     handleErr(err, res);
@@ -4093,13 +4427,18 @@ armadaRouter.post("/jobs/:id/void-backfill-completion", requirePermission(P.JOB_
     if (!cocokSignatureBackfill) {
       throw new ArmadaError("Job ini bukan artefak backfill (bukan PICKUP/COMPLETED tanpa completedAt & foto) — tidak bisa diubah lewat sini.");
     }
-    const job = await prisma.job.update({
-      where: { id: req.params.id },
-      data: {
-        status: "FAILED",
-        failureReason: "Ditutup otomatis oleh pembersihan data 8 September 2026 (backfill-complete-stale-pickups.js) — BUKAN pengambilan yang benar-benar terjadi. Order dibuka kembali untuk pengambilan sungguhan lewat job Pengambilan baru.",
+    const correctionReason = "Ditutup otomatis oleh pembersihan data 8 September 2026 (backfill-complete-stale-pickups.js) — BUKAN pengambilan yang benar-benar terjadi. Order dibuka kembali untuk pengambilan sungguhan lewat job Pengambilan baru.";
+    await executeDeliveryExecutionMutation(req, existing, {
+      commandType: "VOID_BACKFILL_COMPLETION",
+      request: { reason: correctionReason },
+      projectV1: async (tx) => {
+        await tx.job.update({
+          where: { id: existing.id },
+          data: { status: "FAILED", failureReason: correctionReason },
+        });
       },
     });
+    const job = await prisma.job.findUniqueOrThrow({ where: { id: existing.id } });
     res.json(job);
   } catch (err) {
     handleErr(err, res);
@@ -4431,9 +4770,9 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!startPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
 
-    const result = await prisma.$transaction(async (tx) => {
+    const projectJobStartV1 = async (tx, locked = {}) => {
       if (owned.routeId) await lockRoute(tx, owned.routeId);
-      const job = await lockJob(tx, owned.id);
+      const job = locked.before || await lockJob(tx, owned.id);
       assertCanOperateJob(req, job);
       const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "JOB_STARTED", { jobId: job.id });
       if (replay) return { replayed: true, job };
@@ -4468,7 +4807,18 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
         payload: { status: "EN_ROUTE" },
       });
       return { replayed: false, job };
-    });
+    };
+    const result = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)
+      ? executeDeliveryExecutionCommand(prisma, {
+          jobId: owned.id,
+          actorId: req.user.id,
+          idempotencyKey,
+          commandType: "JOB_STARTED",
+          expectedJobRevision: expectedV2JobRevision(req),
+          request: { startPhotoUrls },
+          projectV1: projectJobStartV1,
+        })
+      : prisma.$transaction(projectJobStartV1));
     const full = await prisma.job.findUnique({ where: { id: owned.id }, include: jobInclude });
 
     // FR-N trigger 1/4: "Driver menuju lokasi" — GANTI "Pickup dijadwalkan"
@@ -4513,11 +4863,11 @@ armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_O
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!startPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
 
-    const result = await prisma.$transaction(async (tx) => {
-      const route = await lockRoute(tx, req.params.id);
+    const projectRouteStartV1 = async (tx, locked = {}) => {
+      const route = locked.beforeRoute || await lockRoute(tx, req.params.id);
       if (!route) throw new ArmadaError("Rute tidak ditemukan", 404);
       const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "ROUTE_STARTED", { routeId: route.id });
-      if (replay) return { replayed: true, targetIds: replay.payload?.preparedJobs || [] };
+      if (replay) return { routeId: route.id, replayed: true, targetIds: replay.payload?.preparedJobs || [] };
       const semuaJob = await tx.job.findMany({ where: { routeId: route.id } });
       if (route.status !== "PUBLISHED") {
         throw new ArmadaError(`Rute berstatus ${route.status}, tidak bisa dimulai`, 409);
@@ -4548,11 +4898,31 @@ armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_O
         idempotencyKey, action: "ROUTE_STARTED", actorId: req.user.id, routeId: route.id,
         payload: { preparedJobs: target.map((j) => j.id), status: "IN_PROGRESS" },
       });
-      return { replayed: false, targetIds: target.map((j) => j.id) };
-    });
+      const targetIds = target.map((j) => j.id);
+      return { routeId: route.id, replayed: false, targetIds, commandResponse: { targetIds } };
+    };
+    const routeWriterV2 = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
+    const executionWriterV2 = await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER);
+    if (routeWriterV2 !== executionWriterV2) {
+      throw Object.assign(new Error("Writer route dan execution V2 harus aktif bersama untuk memulai rute"), { statusCode: 503 });
+    }
+    const commandResult = routeWriterV2
+      ? await executeDeliveryRouteCommand(prisma, {
+          routeId: req.params.id,
+          actorId: req.user.id,
+          idempotencyKey,
+          commandType: "ROUTE_STARTED",
+          expectedRevision: expectedV2Revision(req),
+          request: { startPhotoUrls },
+          forcePublication: true,
+          projectV1: projectRouteStartV1,
+        })
+      : await prisma.$transaction(projectRouteStartV1);
+    const result = commandResult.projectionResult || commandResult;
 
-    const full = await prisma.job.findMany({ where: { id: { in: result.targetIds } }, include: jobInclude });
-    res.set("Idempotency-Replayed", result.replayed ? "true" : "false").json({ started: full.length, jobs: full });
+    const targetIds = result.targetIds || [];
+    const full = await prisma.job.findMany({ where: { id: { in: targetIds } }, include: jobInclude });
+    res.set("Idempotency-Replayed", commandResult.replayed ? "true" : "false").json({ started: full.length, jobs: full });
   } catch (err) {
     handleErr(err, res);
   }
@@ -4574,9 +4944,9 @@ armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OW
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!arrivalPhotoUrls.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
 
-    const result = await prisma.$transaction(async (tx) => {
+    const projectJobArriveV1 = async (tx, locked = {}) => {
       if (owned.routeId) await lockRoute(tx, owned.routeId);
-      const job = await lockJob(tx, owned.id);
+      const job = locked.before || await lockJob(tx, owned.id);
       assertCanOperateJob(req, job);
       const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "JOB_ARRIVED", { jobId: job.id });
       if (replay) return { replayed: true };
@@ -4587,7 +4957,18 @@ armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OW
         payload: { status: "ARRIVED", location: normalizeProofLocation(req.body.location) },
       });
       return { replayed: false };
-    });
+    };
+    const result = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)
+      ? executeDeliveryExecutionCommand(prisma, {
+          jobId: owned.id,
+          actorId: req.user.id,
+          idempotencyKey,
+          commandType: "JOB_ARRIVED",
+          expectedJobRevision: expectedV2JobRevision(req),
+          request: { arrivalPhotoUrls, location: normalizeProofLocation(req.body.location) },
+          projectV1: projectJobArriveV1,
+        })
+      : prisma.$transaction(projectJobArriveV1));
     const updated = await prisma.job.findUnique({ where: { id: owned.id }, include: jobInclude });
     res.set("Idempotency-Replayed", result.replayed ? "true" : "false").json(updated);
   } catch (err) {
@@ -4639,9 +5020,9 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
     // tetap tersedia melalui endpoint edit POD yang terpisah dan teraudit.
     const waktuSelesai = new Date();
 
-    const result = await prisma.$transaction(async (tx) => {
+    const projectJobCompleteV1 = async (tx, locked = {}) => {
       if (owned.routeId) await lockRoute(tx, owned.routeId);
-      const job = await lockJob(tx, owned.id);
+      const job = locked.before || await lockJob(tx, owned.id);
       assertCanOperateJob(req, job);
       const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "JOB_COMPLETED", { jobId: job.id });
       if (replay) return { replayed: true, job, advancedRevisions: [], advancedComplaintCaseId: null };
@@ -4742,8 +5123,23 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
       });
 
       return { replayed: false, job: j, advancedRevisions: job.type === "PICKUP" ? revisiUntukDiajukan : [], advancedComplaintCaseId };
-    });
-    const { job: updated, advancedRevisions, advancedComplaintCaseId, replayed } = result;
+    };
+    const commandResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)
+      ? executeDeliveryExecutionCommand(prisma, {
+          jobId: owned.id,
+          actorId: req.user.id,
+          idempotencyKey,
+          commandType: "JOB_COMPLETED",
+          expectedJobRevision: expectedV2JobRevision(req),
+          request: { pod, signatureUrl, driverId, helperId },
+          projectV1: projectJobCompleteV1,
+        })
+      : prisma.$transaction(projectJobCompleteV1));
+    const projected = commandResult.projectionResult || commandResult;
+    const updated = projected.job || commandResult.job || owned;
+    const advancedRevisions = projected.advancedRevisions || [];
+    const advancedComplaintCaseId = projected.advancedComplaintCaseId || null;
+    const replayed = commandResult.replayed;
     const full = await prisma.job.findUnique({ where: { id: updated.id }, include: jobInclude });
 
     // Best-effort, TIDAK PERNAH menggagalkan response job yang sudah beres —
@@ -4825,11 +5221,23 @@ armadaRouter.patch("/jobs/:id/proof-photos", requireAnyPermission(P.JOB_WRITE, P
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     if (!tambahan.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
 
-    const updated = await prisma.job.update({
-      where: { id: job.id },
-      data: { proofPhotoUrls: { push: tambahan } },
-      include: jobInclude,
-    });
+    const idempotencyKey = deliveryV2IdempotencyKey(req, "job-proof-photos");
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)) {
+      await executeDeliveryExecutionCommand(prisma, {
+        jobId: job.id,
+        actorId: req.user.id,
+        idempotencyKey,
+        commandType: "JOB_PROOF_ATTACHED",
+        expectedJobRevision: expectedV2JobRevision(req),
+        request: { proofPhotoUrls: tambahan },
+        projectV1: async (tx) => {
+          await tx.job.update({ where: { id: job.id }, data: { proofPhotoUrls: { push: tambahan } } });
+        },
+      });
+    } else {
+      await prisma.job.update({ where: { id: job.id }, data: { proofPhotoUrls: { push: tambahan } } });
+    }
+    const updated = await prisma.job.findUniqueOrThrow({ where: { id: job.id }, include: jobInclude });
     res.json(updated);
   } catch (err) {
     handleErr(err, res);
@@ -4845,9 +5253,9 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
     const failure = validateFailureInput(req.body);
     const { failureReason, failurePhotoUrls } = failure;
 
-    const result = await prisma.$transaction(async (tx) => {
+    const projectJobFailV1 = async (tx, locked = {}) => {
       if (owned.routeId) await lockRoute(tx, owned.routeId);
-      const job = await lockJob(tx, owned.id);
+      const job = locked.before || await lockJob(tx, owned.id);
       assertCanOperateJob(req, job);
       const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "JOB_FAILED", { jobId: job.id });
       if (replay) return { replayed: true, job };
@@ -4919,10 +5327,22 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
         },
       });
       return { replayed: false, job: j };
-    });
-    const full = await prisma.job.findUnique({ where: { id: result.job.id }, include: jobInclude });
+    };
+    const commandResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)
+      ? executeDeliveryExecutionCommand(prisma, {
+          jobId: owned.id,
+          actorId: req.user.id,
+          idempotencyKey,
+          commandType: "JOB_FAILED",
+          expectedJobRevision: expectedV2JobRevision(req),
+          request: failure,
+          projectV1: projectJobFailV1,
+        })
+      : prisma.$transaction(projectJobFailV1));
+    const result = commandResult.projectionResult || commandResult;
+    const full = await prisma.job.findUnique({ where: { id: result.job?.id || owned.id }, include: jobInclude });
 
-    if (!result.replayed) notifyDriverGroup(full, failurePhotoUrls, `❌ Gagal: ${failureReason}`).catch((err) =>
+    if (!commandResult.replayed) notifyDriverGroup(full, failurePhotoUrls, `❌ Gagal: ${failureReason}`).catch((err) =>
       console.error("[jobs/:id/fail] notifyDriverGroup gagal:", err.message)
     );
 
@@ -4931,11 +5351,11 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
     // Semua Order dan lihat badge merah "Gagal" (persis pola silo yang sama
     // dengan komplain sebelum diperbaiki). Best-effort, tidak boleh
     // menggagalkan response job yang sudah beres ditandai gagal.
-    if (!result.replayed) notifySalesJobFailed(full).catch((err) =>
+    if (!commandResult.replayed) notifySalesJobFailed(full).catch((err) =>
       console.error("[jobs/:id/fail] notifySalesJobFailed gagal:", err.message)
     );
 
-    res.set("Idempotency-Replayed", result.replayed ? "true" : "false").json(full);
+    res.set("Idempotency-Replayed", commandResult.replayed ? "true" : "false").json(full);
   } catch (err) {
     handleErr(err, res);
   }
@@ -5292,7 +5712,7 @@ armadaRouter.post("/revisions/:id/create-delivery-job", requirePermission(P.JOB_
       throw new ArmadaError("Revisi ini sudah punya job pengiriman aktif — buka job-nya lewat Jadwal & Penugasan, jangan buat baru");
     }
 
-    const jobId = await prisma.$transaction(async (tx) => {
+    const projectRevisionDeliveryJobV1 = async (tx) => {
       const job = await tx.job.create({
         data: {
           type: "DELIVERY",
@@ -5311,8 +5731,18 @@ armadaRouter.post("/revisions/:id/create-delivery-job", requirePermission(P.JOB_
       await tx.unitRevisionJobLink.create({
         data: { unitRevisionId: revision.id, jobId: job.id, role: "DELIVERY" },
       });
-      return job.id;
-    });
+      return { jobId: job.id };
+    };
+    const createResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)
+      ? executeDeliveryJobCommand(prisma, {
+          actorId: req.user.id,
+          idempotencyKey: deliveryV2IdempotencyKey(req, "revision-delivery-job"),
+          commandType: "CREATE_REVISION_DELIVERY_JOB",
+          request: { revisionId: revision.id },
+          projectV1: projectRevisionDeliveryJobV1,
+        })
+      : prisma.$transaction(projectRevisionDeliveryJobV1));
+    const jobId = createResult.jobId;
 
     const full = await prisma.unitRevision.findUnique({ where: { id: revision.id }, include: unitRevisionInclude });
     res.status(201).json(full);
@@ -5347,7 +5777,7 @@ armadaRouter.post("/revisions/:id/create-pickup-job", requirePermission(P.JOB_WR
       throw new ArmadaError(`Revisi berstatus ${revision.status} — job pengambilan cuma relevan sebelum unit diambil`);
     }
 
-    const jobId = await prisma.$transaction(async (tx) => {
+    const projectRevisionPickupJobV1 = async (tx) => {
       const job = await tx.job.create({
         data: {
           type: "PICKUP",
@@ -5364,8 +5794,18 @@ armadaRouter.post("/revisions/:id/create-pickup-job", requirePermission(P.JOB_WR
       await tx.unitRevisionJobLink.create({
         data: { unitRevisionId: revision.id, jobId: job.id, role: "PICKUP" },
       });
-      return job.id;
-    });
+      return { jobId: job.id };
+    };
+    const createResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)
+      ? executeDeliveryJobCommand(prisma, {
+          actorId: req.user.id,
+          idempotencyKey: deliveryV2IdempotencyKey(req, "revision-pickup-job"),
+          commandType: "CREATE_REVISION_PICKUP_JOB",
+          request: { revisionId: revision.id },
+          projectV1: projectRevisionPickupJobV1,
+        })
+      : prisma.$transaction(projectRevisionPickupJobV1));
+    const jobId = createResult.jobId;
 
     const full = await prisma.unitRevision.findUnique({ where: { id: revision.id }, include: unitRevisionInclude });
     res.status(201).json(full);
@@ -5430,7 +5870,7 @@ armadaRouter.post("/jobs/:id/report-revision", requireAnyPermission(P.JOB_WRITE,
 
     const todayWib = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 
-    const { revisionId, pickupJobId } = await prisma.$transaction(async (tx) => {
+    const projectDriverRevisionV1 = async (tx) => {
       const trimmed = complaint.trim();
       const revision = await tx.unitRevision.create({
         data: { unitId: targetUnitId, trigger: "KOMPLAIN_ANTAR", complaint: trimmed, createdById: req.user.id },
@@ -5460,8 +5900,23 @@ armadaRouter.post("/jobs/:id/report-revision", requireAnyPermission(P.JOB_WRITE,
       await tx.unitRevisionJobLink.create({
         data: { unitRevisionId: revision.id, jobId: pickupJob.id, role: "PICKUP" },
       });
-      return { revisionId: revision.id, pickupJobId: pickupJob.id };
-    });
+      return {
+        jobId: pickupJob.id,
+        revisionId: revision.id,
+        pickupJobId: pickupJob.id,
+        commandResponse: { revisionId: revision.id, pickupJobId: pickupJob.id },
+      };
+    };
+    const createResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)
+      ? executeDeliveryJobCommand(prisma, {
+          actorId: req.user.id,
+          idempotencyKey: deliveryV2IdempotencyKey(req, "driver-report-revision"),
+          commandType: "CREATE_DRIVER_REVISION_PICKUP_JOB",
+          request: { sourceJobId: job.id, unitId: targetUnitId, complaint: complaint.trim(), photoUrls: fotoRevisi },
+          projectV1: projectDriverRevisionV1,
+        })
+      : prisma.$transaction(projectDriverRevisionV1));
+    const { revisionId, pickupJobId } = createResult;
 
     const [revision, pickupJob] = await Promise.all([
       prisma.unitRevision.findUnique({ where: { id: revisionId }, include: unitRevisionInclude }),
