@@ -2309,6 +2309,7 @@ model Job {
 
   expenseSubmissions ExpenseSubmission[]
   deliveryStateV2    DeliveryJobState?
+  cancellationV2     DeliveryJobCancellation?
   stopAssignmentsV2  RouteStopAssignment[]
 
   @@index([orderId])
@@ -7978,12 +7979,35 @@ model DeliveryJobState {
   jobRevision    Int      @default(1) @map("job_revision")
   currentStatus  String   @map("current_status")
   sourceChecksum String?  @map("source_checksum")
-  migrationSource String? @map("migration_source")
+  migrationSource String?  @map("migration_source")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@index([currentStatus])
   @@map("delivery_job_states_v2")
+}
+
+// Immutable cancellation tombstone. Job V1 tetap dipertahankan untuk
+// kompatibilitas dan audit; tabel ini membedakan pembatalan order dari
+// kegagalan lapangan biasa tanpa menambah nilai enum JobStatus V1.
+model DeliveryJobCancellation {
+  id                String   @id @default(uuid()) @db.Uuid
+  jobId             String   @unique @map("job_id") @db.Uuid
+  job               Job      @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  orderId           String   @map("order_id")
+  previousStatus    String   @map("previous_status")
+  previousRouteId   String?  @map("previous_route_id") @db.Uuid
+  previousDriverId  String?  @map("previous_driver_id")
+  previousHelperId  String?  @map("previous_helper_id")
+  previousVehicleId String?  @map("previous_vehicle_id") @db.Uuid
+  reason            String
+  actorId           String?  @map("actor_id")
+  cancelledAt       DateTime @map("cancelled_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([orderId, cancelledAt])
+  @@index([actorId, cancelledAt])
+  @@map("delivery_job_cancellations_v2")
 }
 
 model DriverFeedState {

@@ -23,10 +23,8 @@ import { createUnitsForOrder } from "../services/unitProvisioning.js";
 import { syncOrderStatus, selesaikanJobBelumJalan, selesaikanJobPengambilanTertinggal, bukaKembaliJobHasilKaskadeDelivered } from "../services/orderStatusSync.js";
 import { suggestDeliveryJob } from "../services/deliveryHandoff.js";
 import { ensurePickupJobForOrder } from "../services/armadaAutoJob.js";
-import {
-  assertLegacyDeliveryJobDeleteAllowed,
-  executeDeliveryCrossBoundaryCommand,
-} from "../services/deliveryCrossBoundaryCommandService.js";
+import { executeDeliveryCrossBoundaryCommand } from "../services/deliveryCrossBoundaryCommandService.js";
+import { cancelOrderDeliveryJobs } from "../services/deliveryJobCancellationService.js";
 import { V2_FLAGS } from "../services/v2FeatureFlags.js";
 import { ACTIVE_JOB_STATUSES } from "../services/jobStatus.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
@@ -398,15 +396,14 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
             where: { orderId: updated.id, status: { not: "CANCELLED" } },
             data: { status: "CANCELLED" },
           });
-          // Job yang belum jalan tidak punya alasan lagi untuk ada — lihat
-          // catatan lengkap di checkCancelBlockers/hapusJobBelumJalan di
-          // atas (31 Agustus 2026, laporan sales tidak bisa membatalkan
-          // order gara-gara job kerangka kosong).
-          await hapusJobBelumJalan(tx, updated.id);
-          // Job yang MASIH aktif (driver sungguhan EN_ROUTE/ARRIVED) ikut
-          // ditandai FAILED (5 September 2026) — lihat catatan lengkap di
-          // checkCancelBlockers/gagalkanJobAktif.
-          await gagalkanJobAktif(tx, updated.id);
+          // Semua Job aktif, termasuk draft, dipertahankan sebagai tombstone
+          // immutable. Projection V1 menjadi FAILED; publication/feed V2
+          // mencabut stop tanpa menghapus bukti atau referensi historis.
+          await cancelOrderDeliveryJobs(tx, {
+            orderId: updated.id,
+            actorId: req.user?.id || null,
+            reason: statusOverrideNote?.trim() || "Dibatalkan melalui perubahan status Sales",
+          });
         } else if (status === "DELIVERED") {
           const unitEnRoute = await tx.unit.findFirst({
             where: {
@@ -2067,12 +2064,9 @@ orderRouter.delete("/:id", async (req, res) => {
 // salah input atau order dibatalkan customer setelah driver kadung
 // jalan). Job COMPLETED dibiarkan APA ADANYA (riwayat asli, driver memang
 // benar-benar sudah kerja — TIDAK diutak-atik, itu fakta yang tidak boleh
-// hilang). Job yang MASIH aktif (EN_ROUTE/ARRIVED) ditandai FAILED lewat
-// gagalkanJobAktif() di bawah supaya tidak nyangkut selamanya kelihatan
-// "sedang jalan" di papan Armada utk order yang sudah dibatalkan — BUKAN
-// dihapus (failureReason mencatat kenapa), beda dari job yang belum
-// jalan sama sekali (UNSCHEDULED/SCHEDULED/ASSIGNED, dihapus abis lewat
-// hapusJobBelumJalan — tidak ada apa pun yang perlu diingat dari situ).
+// hilang). Semua Job aktif (termasuk draft) ditombstone secara immutable
+// oleh cancelOrderDeliveryJobs(). Projection V1 menjadi FAILED agar tidak
+// muncul sebagai pekerjaan aktif; publication/feed V2 mencabut akses stop.
 //
 // Blocker yang MASIH DIPERTAHANKAN (unit sedang dikerjakan bengkel,
 // pembayaran tercatat, revisi lingkup kerja) — beda kelas risiko dari job
@@ -2098,73 +2092,6 @@ async function checkCancelBlockers(orderId) {
   if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
   if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
   return { blockers, units };
-}
-
-// Job pickup/pengiriman yang MASIH aktif (driver sungguhan sedang di jalan
-// atau sudah tiba) saat order-nya dipaksa batal — ditandai FAILED (bukan
-// dihapus, beda dari hapusJobBelumJalan di bawah yang memang menghapus job
-// yang belum sempat jalan sama sekali). failureReason mencatat SEBABNYA
-// supaya Armada tidak salah kira ini kegagalan driver di lapangan. Job
-// COMPLETED SENGAJA tidak disentuh sama sekali — itu riwayat asli yang
-// sudah benar, tidak ada yang perlu "digagalkan".
-async function gagalkanJobAktif(tx, orderId) {
-  const jobs = await tx.job.findMany({
-    where: { orderId, status: { in: ["EN_ROUTE", "ARRIVED"] } },
-    select: { id: true, routeId: true },
-  });
-  if (jobs.length > 0) {
-    await executeDeliveryCrossBoundaryCommand(tx, {
-      flagKey: V2_FLAGS.DELIVERY_EXECUTION_WRITER,
-      commandType: "ORDER_CANCEL_ACTIVE_DELIVERY_JOBS",
-      aggregateHint: orderId,
-      request: { orderId, jobIds: jobs.map((job) => job.id) },
-      mutate: async (commandTx) => {
-        await commandTx.job.updateMany({
-          where: { id: { in: jobs.map((job) => job.id) } },
-          data: { status: "FAILED", failureReason: "Order dibatalkan sales — dihentikan otomatis, bukan kegagalan driver di lapangan." },
-        });
-        return {
-          value: undefined,
-          jobIds: jobs.map((job) => job.id),
-          routeIds: jobs.map((job) => job.routeId),
-        };
-      },
-    });
-  }
-  // Kasus reschedule AKTIF ikut ditutup (13 September 2026, D-160 lanjutan,
-  // kasus nyata Mizroza/RES-10092026-050) — job.status FAILED TETAP apa
-  // adanya (itu benar, delivery-nya memang gagal), TAPI kalau job ini
-  // KEBETULAN sudah punya RescheduleCase AKTIF dari ronde sebelumnya
-  // (mis. sempat direschedule dulu, lalu gagal lagi, order baru dibatalkan
-  // SEKARANG), kasus itu tidak boleh menggantung selamanya seolah masih
-  // menunggu jadwal ulang — order-nya sudah mati, tidak ada yang perlu
-  // dijadwalkan lagi. GET /armada/issues sendiri SUDAH menyaring order
-  // CANCELLED (lihat catatan di sana) jadi ini murni kebersihan data
-  // kasusnya, bukan yang menutup celah utamanya.
-  await tx.rescheduleCase.updateMany({
-    where: { job: { orderId }, status: "AKTIF" },
-    data: { status: "DIBATALKAN", cancelReason: "Order dibatalkan", resolvedAt: new Date() },
-  });
-}
-
-// Job yang BELUM jalan (UNSCHEDULED/SCHEDULED/ASSIGNED) tidak punya alasan
-// untuk tetap ada begitu order-nya dibatalkan — dihapus, sama seperti
-// dispatcher hapus manual lewat DELETE /armada/jobs/:id (guard status
-// yang SAMA persis, lihat armada.js). Job EN_ROUTE/ARRIVED/COMPLETED tidak
-// akan pernah sampai sini — checkCancelBlockers sudah menolak lebih dulu.
-async function hapusJobBelumJalan(tx, orderId) {
-  const jobs = await tx.job.findMany({
-    where: { orderId, status: { in: ["UNSCHEDULED", "SCHEDULED", "ASSIGNED"] } },
-    select: { id: true },
-  });
-  if (jobs.length === 0) return;
-  await assertLegacyDeliveryJobDeleteAllowed(tx, {
-    operation: "ORDER_CANCEL_DELETE_UNSTARTED_JOBS",
-    jobIds: jobs.map((job) => job.id),
-  });
-  await tx.job.deleteMany({
-    where: { id: { in: jobs.map((job) => job.id) } },
-  });
 }
 
 // selesaikanJobBelumJalan dipindah ke services/orderStatusSync.js (6 September
@@ -2207,11 +2134,11 @@ orderRouter.post("/:id/cancel", async (req, res) => {
           data: { status: "CANCELLED" },
         });
       }
-      await hapusJobBelumJalan(tx, req.params.id);
-      // Job yang MASIH aktif (driver sungguhan EN_ROUTE/ARRIVED) ikut
-      // ditandai FAILED (5 September 2026) — lihat checkCancelBlockers/
-      // gagalkanJobAktif.
-      await gagalkanJobAktif(tx, req.params.id);
+      await cancelOrderDeliveryJobs(tx, {
+        orderId: req.params.id,
+        actorId: req.user?.id || null,
+        reason: reason?.trim() || "Dibatalkan — salah input",
+      });
       const result = await tx.order.update({
         where: { id: req.params.id },
         data: {

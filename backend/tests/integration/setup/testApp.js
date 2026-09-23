@@ -45,6 +45,7 @@ const { userRouter } = await import("../../../src/routes/users.js");
 // dipakai produksi, bukan tiruan — sama filosofi dengan router lain di file
 // ini.
 const { armadaRouter } = await import("../../../src/routes/armada.js");
+const { orderRouter } = await import("../../../src/routes/orders.js");
 // incentiveSnapshotRouter (24 September 2026) — sama pola dengan armadaRouter
 // di atas: kode ASLI produksi, additive di prefix /api/armada yang sama.
 const { incentiveSnapshotRouter } = await import("../../../src/routes/incentiveSnapshot.js");
@@ -91,6 +92,7 @@ export function buildTestApp() {
   app.use("/api/armada", armadaRouter);
   app.use("/api/armada", incentiveSnapshotRouter);
   app.use("/api/armada", incentivePayoutRouter);
+  app.use("/api/orders", orderRouter);
 
   return app;
 }

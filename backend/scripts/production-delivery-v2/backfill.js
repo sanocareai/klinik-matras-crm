@@ -115,11 +115,12 @@ function unitPlan(unit) {
 }
 
 function routeSnapshot(route) {
+  const activeJobs = route.jobs.filter((job) => !job.cancellationV2);
   return stableValue({
     routeId: route.id, code: route.code, date: dateOnly(route.date), status: route.status,
     driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId,
     notes: route.notes, manualMapsUrl: route.manualMapsUrl,
-    stops: route.jobs.map((job, index) => ({
+    stops: activeJobs.map((job, index) => ({
       jobId: job.id, sequence: job.sequence ?? index + 1, status: job.status,
       scheduledDate: dateOnly(job.scheduledDate), driverId: job.driverId,
       helperId: job.helperId, vehicleId: job.vehicleId,
@@ -189,7 +190,10 @@ async function loadSource() {
       },
       orderBy: { id: "asc" },
     }),
-    prisma.route.findMany({ include: { jobs: { orderBy: [{ sequence: "asc" }, { createdAt: "asc" }] } }, orderBy: { id: "asc" } }),
+    prisma.route.findMany({
+      include: { jobs: { include: { cancellationV2: true }, orderBy: [{ sequence: "asc" }, { createdAt: "asc" }] } },
+      orderBy: { id: "asc" },
+    }),
     prisma.job.findMany({ select: { id: true, routeId: true, driverId: true, status: true, updatedAt: true }, orderBy: { id: "asc" } }),
   ]);
   return { units, routes, jobs };

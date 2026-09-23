@@ -23,6 +23,7 @@ const sourcePolicy = new Map([
   ["src/services/deliveryExecutionCommandService.js", { disposition: "V2_COMMAND_OWNER", marker: "executeDeliveryExecutionCommand" }],
   ["src/services/deliveryJobBatchCommandService.js", { disposition: "V2_COMMAND_OWNER", marker: "executeDeliveryJobBatchCommand" }],
   ["src/services/deliveryCrossBoundaryCommandService.js", { disposition: "V2_CROSS_BOUNDARY_COMMAND_OWNER", marker: "executeDeliveryCrossBoundaryCommand" }],
+  ["src/services/deliveryJobCancellationService.js", { disposition: "V2_CANCELLATION_COMMAND_OWNER", marker: "cancelOrderDeliveryJobs" }],
 ]);
 
 const indirectRepairScripts = new Set([

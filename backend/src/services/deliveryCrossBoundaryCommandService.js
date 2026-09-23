@@ -3,6 +3,7 @@ import {
   projectDeliveryRouteAfterExternalMutation,
   syncAffectedJobStates,
 } from "./deliveryRouteCommandService.js";
+import { appendDriverFeedEvent } from "./driverFeedV2.js";
 import { V2_FLAGS, isFlagEnabled, loadV2Flags } from "./v2FeatureFlags.js";
 
 function digest(value) {
@@ -97,6 +98,50 @@ export async function executeDeliveryCrossBoundaryCommand(tx, {
   const states = jobIds.length
     ? await tx.deliveryJobState.findMany({ where: { jobId: { in: jobIds } } })
     : [];
+  const stateByJobId = new Map(states.map((state) => [state.jobId, state]));
+  const routeResultById = new Map(routeIds.map((routeId, index) => [routeId, routeResults[index]]));
+
+  for (const cancellation of mutation.cancellations || []) {
+    const state = stateByJobId.get(cancellation.jobId);
+    const routeResult = cancellation.routeId ? routeResultById.get(cancellation.routeId) : null;
+    for (const userId of unique(cancellation.recipientIds)) {
+      await appendDriverFeedEvent(tx, {
+        userId,
+        kind: "REMOVE_JOB",
+        aggregateType: "Job",
+        aggregateId: cancellation.jobId,
+        aggregateRevision: state?.jobRevision ?? null,
+        publicationVersion: routeResult?.publicationVersion ?? null,
+        payload: {
+          jobId: cancellation.jobId,
+          routeId: cancellation.routeId || null,
+          revoked: true,
+          reason: cancellation.reason,
+          cancelledAt: cancellation.cancelledAt,
+        },
+      });
+    }
+    await tx.domainOutbox.create({
+      data: {
+        domain: "DELIVERY",
+        eventType: "delivery.job.cancelled",
+        aggregateType: "Job",
+        aggregateId: cancellation.jobId,
+        aggregateRevision: state?.jobRevision ?? null,
+        dedupeKey: `delivery-job-cancelled:${cancellation.tombstoneId}`,
+        payload: {
+          jobId: cancellation.jobId,
+          orderId: cancellation.orderId,
+          routeId: cancellation.routeId || null,
+          previousStatus: cancellation.previousStatus,
+          reason: cancellation.reason,
+          actorId: cancellation.actorId || null,
+          cancelledAt: cancellation.cancelledAt,
+        },
+      },
+    });
+  }
+
   for (const state of states) {
     if (routeJobIds.has(state.jobId)) continue;
     await tx.domainOutbox.create({
@@ -117,7 +162,12 @@ export async function executeDeliveryCrossBoundaryCommand(tx, {
     ...states.map((state) => state.jobRevision),
     ...routeResults.filter(Boolean).map((item) => item.routeRevision),
   );
-  const response = { jobIds, routeIds, appliedRevision };
+  const response = {
+    jobIds,
+    routeIds,
+    cancelledJobIds: (mutation.cancellations || []).map((item) => item.jobId),
+    appliedRevision,
+  };
   await tx.v2Command.update({
     where: { id: command.id },
     data: { status: "APPLIED", appliedRevision, response, completedAt: new Date() },

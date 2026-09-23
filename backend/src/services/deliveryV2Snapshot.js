@@ -24,6 +24,9 @@ export const DELIVERY_V2_ROUTE_INCLUDE = Object.freeze({
     orderBy: [{ sequence: "asc" }, { id: "asc" }],
     include: {
       deliveryStateV2: { select: { jobRevision: true } },
+      cancellationV2: {
+        select: { id: true, reason: true, actorId: true, cancelledAt: true, previousStatus: true },
+      },
       order: {
         select: {
           id: true,
@@ -62,7 +65,7 @@ export function buildDeliveryRouteSnapshot(route, { routeRevision, publicationVe
     publishedAt: normalize(route.publishedAt),
     lastEditedAt: normalize(route.lastEditedAt),
     lastEditReason: route.lastEditReason ?? null,
-    stops: (route.jobs || []).map((job, index) => ({
+    stops: (route.jobs || []).filter((job) => !job.cancellationV2).map((job, index) => ({
       jobId: job.id,
       sequence: job.sequence ?? index + 1,
       type: job.type,
@@ -91,6 +94,15 @@ export function deliveryJobSource(job) {
     driverId: job.driverId ?? null,
     status: job.status,
     updatedAt: job.updatedAt,
+    ...(job.cancellationV2 ? {
+      cancellation: {
+        id: job.cancellationV2.id,
+        reason: job.cancellationV2.reason,
+        actorId: job.cancellationV2.actorId ?? null,
+        cancelledAt: job.cancellationV2.cancelledAt,
+        previousStatus: job.cancellationV2.previousStatus,
+      },
+    } : {}),
   });
 }
 

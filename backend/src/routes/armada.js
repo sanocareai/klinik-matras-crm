@@ -3827,6 +3827,7 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
     // ada laporan/foto kececer, lihat catatan D-17-Sep di atas fungsi ini).
     const jobsIndividual = await prisma.job.findMany({
       where: {
+        cancellationV2: null,
         OR: [{ driverId: req.user.id }, { helperId: req.user.id }],
         AND: {
           OR: [
@@ -3857,6 +3858,7 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
     // bukan cuma mengandalkan filter JS di bawah).
     const jobsRuteCrew = await prisma.job.findMany({
       where: {
+        cancellationV2: null,
         route: {
           date: tanggalHariIni,
           status: { in: VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP },

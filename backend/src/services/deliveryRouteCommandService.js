@@ -38,17 +38,25 @@ async function lockRoute(tx, routeId) {
 
 export async function syncAffectedJobStates(tx, jobIds) {
   if (!jobIds.length) return;
-  const jobs = await tx.job.findMany({ where: { id: { in: [...new Set(jobIds)] } } });
+  const jobs = await tx.job.findMany({
+    where: { id: { in: [...new Set(jobIds)] } },
+    include: {
+      cancellationV2: {
+        select: { id: true, reason: true, actorId: true, cancelledAt: true, previousStatus: true },
+      },
+    },
+  });
   for (const job of jobs) {
     const source = deliveryJobSource(job);
     const checksum = deliveryV2Checksum(source);
+    const currentStatus = job.cancellationV2 ? "CANCELLED" : job.status;
     const current = await tx.deliveryJobState.findUnique({ where: { jobId: job.id } });
     await tx.deliveryJobState.upsert({
       where: { jobId: job.id },
-      create: { jobId: job.id, jobRevision: 1, currentStatus: job.status, sourceChecksum: checksum },
+      create: { jobId: job.id, jobRevision: 1, currentStatus, sourceChecksum: checksum },
       update: {
         jobRevision: current?.sourceChecksum === checksum ? current.jobRevision : { increment: 1 },
-        currentStatus: job.status,
+        currentStatus,
         sourceChecksum: checksum,
       },
     });
@@ -60,7 +68,8 @@ function publicationStatus(routeStatus) {
 }
 
 function visibleRecipients(routeStatus, snapshot) {
-  return ["PUBLISHED", "IN_PROGRESS", "COMPLETED"].includes(routeStatus) ? routeRecipients(snapshot) : [];
+  if (!["PUBLISHED", "IN_PROGRESS", "COMPLETED"].includes(routeStatus)) return [];
+  return snapshot?.stops?.length ? routeRecipients(snapshot) : [];
 }
 
 function assignmentStatus(routeStatus, stopStatus) {

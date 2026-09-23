@@ -45,16 +45,9 @@ Evidence machine-readable:
 - `docs/evidence/chunk1-shadow-after-cross-boundary-adapters.json`
 - `docs/evidence/chunk1-cross-boundary-writer-audit.md`
 
-## Risiko yang sengaja tidak ditebak
+## Keputusan cancellation
 
-Order cancellation V1 saat ini menghapus Job yang belum berjalan. Itu bertentangan dengan invariant mempertahankan seluruh data historis setelah writer V2 aktif. Implementasi mempertahankan perilaku legacy ketika flags OFF, tetapi fail-closed dengan `409 HISTORICAL_DATA_PROTECTED` ketika writer V2 ON.
-
-Sebelum aktivasi writer/cutover, owner harus memilih salah satu kebijakan:
-
-1. representasi cancellation/tombstone immutable untuk Job; atau
-2. kebijakan discard destruktif yang sangat terbatas hanya untuk draft V2-native yang belum pernah dipublish, dengan migrated/historical Job tetap dilindungi.
-
-Tidak ada risiko ke order aktif saat ini karena flags tetap OFF. Gate reader Driver V2 tetap tertutup sampai keputusan ini dibuat, seluruh writer diaktifkan, dan parity/gate dijalankan ulang.
+Owner memilih immutable cancellation/tombstone pada 24 September 2026. Implementasi dan validasinya tercatat di `docs/PRODUCTION-DELIVERY-V2-CHUNK1-CANCELLATION-TOMBSTONE-REPORT.md`. Jalur cancel order tidak lagi melakukan hard-delete Job; keputusan ini menutup blocker semantik yang dicatat pada laporan awal.
 
 ## File yang berpotensi bentrok dengan pekerjaan Claude
 
@@ -70,4 +63,4 @@ Refresh sebelum commit melihat checkout utama pada `aadcc20c` dengan perubahan k
 
 ## Gate berikutnya
 
-Tidak ada bypass writer yang tersisa menurut audit saat ini. Namun aktivasi flag dan cutover belum diizinkan. Gate berikutnya mensyaratkan keputusan semantik cancellation di atas, refresh baseline/concurrent diff, rerun parity, dan verifikasi bahwa writer route + execution aktif sebelum reader Driver V2 dapat dinyalakan.
+Tidak ada bypass writer yang tersisa menurut audit saat ini. Namun aktivasi flag dan cutover belum diizinkan. Gate berikutnya mensyaratkan refresh baseline/concurrent diff, rerun parity, dan verifikasi bahwa writer route + execution aktif sebelum reader Driver V2 dapat dinyalakan.

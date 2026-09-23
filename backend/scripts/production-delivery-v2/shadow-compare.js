@@ -7,11 +7,12 @@ const prisma = new PrismaClient();
 const args = parseArgs();
 
 function currentRouteSnapshot(route) {
+  const activeJobs = route.jobs.filter((job) => !job.cancellationV2);
   return stableValue({
     routeId: route.id, code: route.code, date: dateOnly(route.date), status: route.status,
     driverId: route.driverId, helperId: route.helperId, vehicleId: route.vehicleId,
     notes: route.notes, manualMapsUrl: route.manualMapsUrl,
-    stops: route.jobs.map((job, index) => ({
+    stops: activeJobs.map((job, index) => ({
       jobId: job.id, sequence: job.sequence ?? index + 1, status: job.status,
       scheduledDate: dateOnly(job.scheduledDate), driverId: job.driverId,
       helperId: job.helperId, vehicleId: job.vehicleId,
@@ -47,7 +48,7 @@ async function main() {
   const [routes, jobs, productionRuns] = await Promise.all([
     prisma.route.findMany({
       include: {
-        jobs: { orderBy: [{ sequence: "asc" }, { createdAt: "asc" }] },
+        jobs: { include: { cancellationV2: true }, orderBy: [{ sequence: "asc" }, { createdAt: "asc" }] },
         deliveryStateV2: true,
         publicationsV2: { orderBy: { publicationVersion: "desc" }, take: 1 },
       },
