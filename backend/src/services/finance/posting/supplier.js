@@ -37,6 +37,7 @@
 import { postJournal, recordPostingGap, findEntryByKey } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { toMoney, sumMoney, ZERO } from "../money.js";
+import { barisBiayaAdmin } from "../transferFee.js";
 
 export const KEY = {
   goodsReceipt: (id) => `PENERIMAAN_BAHAN:${id}`,
@@ -270,6 +271,10 @@ export async function postSupplierPayment(tx, { paymentId, userId = null }) {
   const utangUsaha = await resolveAccount(tx, SYSTEM_KEYS.UTANG_USAHA);
   const amount = toMoney(p.amount);
   const nomorTagihan = p.allocations.map((a) => a.bill.billNumber).join(", ");
+  // Biaya admin BUKAN bagian alokasi tagihan: utang berkurang sebesar amount,
+  // kas keluar amount + biaya, selisihnya jadi beban admin bank di jurnal yang sama.
+  const biayaAdmin = toMoney(p.transferFeeAmount || 0);
+  const barisAdmin = await barisBiayaAdmin(tx, { fee: biayaAdmin, cashAccount: p.cashAccount });
 
   const { entry, created } = await postJournal(tx, {
     date: p.date,
@@ -287,11 +292,12 @@ export async function postSupplierPayment(tx, { paymentId, userId = null }) {
       },
       {
         accountId: p.cashAccount.accountId,
-        credit: amount,
-        description: `Uang keluar — ${p.cashAccount.name}${p.reference ? ` (${p.reference})` : ""}`,
+        credit: amount.plus(biayaAdmin),
+        description: `Uang keluar — ${p.cashAccount.name}${p.reference ? ` (${p.reference})` : ""}${biayaAdmin.greaterThan(0) ? " (termasuk biaya admin transfer)" : ""}`,
         cashAccountId: p.cashAccountId,
         supplierId: p.supplierId,
       },
+      ...barisAdmin,
     ],
   });
   return { posted: true, entry, created };

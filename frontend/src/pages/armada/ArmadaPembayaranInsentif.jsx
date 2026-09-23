@@ -47,8 +47,18 @@ function CatatPembayaranModal({ line, snapshotId, onOpenChange, onRecorded }) {
   const [referenceNumber, setReferenceNumber] = useState("");
   const [proofUrl, setProofUrl] = useState("");
   const [note, setNote] = useState("");
+  const [cashAccountId, setCashAccountId] = useState("");
+  const [akunKas, setAkunKas] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!line) return;
+    setAkunKas(null);
+    api.getIncentivePayoutCashAccounts()
+      .then((r) => { setAkunKas(r.accounts); setCashAccountId(""); })
+      .catch((e) => { setAkunKas([]); setError(e.message); });
+  }, [line]);
 
   useEffect(() => { if (line) { setMethod("TRANSFER"); setPaidAt(new Date().toISOString().slice(0, 10)); setAmount(String(line.sisa)); setReferenceNumber(""); setProofUrl(""); setNote(""); setError(""); } }, [line]);
 
@@ -58,9 +68,10 @@ function CatatPembayaranModal({ line, snapshotId, onOpenChange, onRecorded }) {
     const nominal = Number(amount);
     if (!Number.isInteger(nominal) || nominal <= 0) { setError("Nominal wajib bilangan bulat lebih dari 0"); return; }
     if (nominal > line.sisa) { setError(`Nominal melebihi sisa (${formatRupiah(line.sisa)})`); return; }
+    if (!cashAccountId) { setError("Pilih akun sumber dana (Kas/Bank)"); return; }
     setBusy(true); setError("");
     api.createIncentivePayout({
-      snapshotLineId: line.id, amount: nominal, method, paidAt: new Date(paidAt).toISOString(),
+      snapshotLineId: line.id, amount: nominal, method, paidAt: new Date(paidAt).toISOString(), cashAccountId,
       referenceNumber: referenceNumber.trim() || undefined, proofUrl: proofUrl.trim() || undefined, note: note.trim() || undefined,
     })
       .then(() => { onRecorded(); onOpenChange(false); })
@@ -83,6 +94,15 @@ function CatatPembayaranModal({ line, snapshotId, onOpenChange, onRecorded }) {
             value={method} onChange={(e) => setMethod(e.target.value)}
           >
             {Object.entries(METODE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+        <Field label="Sumber Dana (Kas/Bank)" required hint="Pembayaran otomatis dijurnal: Debit Beban Insentif Driver, Kredit akun ini">
+          <select
+            className="h-9 w-full rounded-lg bg-surface px-2.5 text-sm text-ink outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/40"
+            value={cashAccountId} onChange={(e) => setCashAccountId(e.target.value)} disabled={!akunKas}
+          >
+            <option value="">{akunKas === null ? "Memuat…" : akunKas.length === 0 ? "Belum ada rekening kas/bank aktif" : "Pilih rekening…"}</option>
+            {(akunKas || []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </Field>
         <Field label="Tanggal Bayar" required><Input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} /></Field>
@@ -133,6 +153,8 @@ function RiwayatModal({ line, onOpenChange, canVoid, onChanged }) {
               <Badge variant={p.voidedAt ? "red" : "green"}>{p.voidedAt ? "Dibatalkan" : METODE_LABEL[p.method] || p.method}</Badge>
             </div>
             <p className="mt-1 text-[11.5px] text-ink2">Dibayar {formatTanggalWaktu(p.paidAt)} · dicatat oleh {p.recordedBy?.name || "—"}</p>
+            {p.cashAccount && <p className="text-[11px] text-ink3">Sumber dana: {p.cashAccount.name}</p>}
+            {p.journalEntry && <p className="text-[11px] text-ink3">Jurnal: {p.journalEntry.entryNumber}{p.voidJournalEntry ? ` · dibalik ${p.voidJournalEntry.entryNumber}` : ""}</p>}
             {p.referenceNumber && <p className="text-[11px] text-ink3">Ref: {p.referenceNumber}</p>}
             {p.note && <p className="text-[11px] text-ink3">Catatan: {p.note}</p>}
             {p.voidedAt ? (

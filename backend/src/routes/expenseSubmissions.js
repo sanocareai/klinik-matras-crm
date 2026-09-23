@@ -86,9 +86,9 @@ expenseSubmissionRouter.get("/expense-submissions", requireAnyPermission(...CAN_
 
 expenseSubmissionRouter.get("/expense-submissions/duplicate-check", requireAnyPermission(...CAN_SUBMIT), async (req, res) => {
   try {
-    const { division, vehicleId, expenseType, date, amount, excludeId } = req.query;
+    const { division, vehicleId, expenseType, date, amount, excludeId, picUserId } = req.query;
     if (!division || !expenseType || !date) return res.json({ kandidat: [] });
-    const kandidat = await cekKemungkinanDuplikat(prisma, { division, vehicleId: vehicleId || null, expenseType, date, amount, excludeId: excludeId || null });
+    const kandidat = await cekKemungkinanDuplikat(prisma, { division, vehicleId: vehicleId || null, expenseType, date, amount, excludeId: excludeId || null, picUserId: picUserId || null });
     res.json({ kandidat });
   } catch (e) { handleErr(e, res); }
 });

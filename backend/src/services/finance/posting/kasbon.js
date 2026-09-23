@@ -21,6 +21,7 @@
 import { postJournal, findEntryByKey } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS } from "../accounts.js";
 import { toMoney } from "../money.js";
+import { barisBiayaAdmin } from "../transferFee.js";
 
 export const KEY = {
   kasbonDiberikan: (id, suffix = "") => `KASBON:${id}${suffix}`,
@@ -37,12 +38,16 @@ export const KEY = {
  * — fungsi ini sengaja tidak menerima cashAccountId mentah supaya pemanggil
  * tidak bisa lolos tanpa memvalidasi rekeningnya ada.
  */
-export async function postKasbonDiberikan(tx, { kasbonId, date, amount, karyawanNama, cashAccount, userId = null, keySuffix = "" }) {
+export async function postKasbonDiberikan(tx, { kasbonId, date, amount, karyawanNama, cashAccount, biayaAdmin = 0, userId = null, keySuffix = "" }) {
   const sudahAda = await findEntryByKey(tx, KEY.kasbonDiberikan(kasbonId, keySuffix));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
   const piutangKaryawan = await resolveAccount(tx, SYSTEM_KEYS.PIUTANG_KARYAWAN);
   const nominal = toMoney(amount);
+  // Kasbon yang diterima karyawan = nominal (piutang). Biaya admin transfer
+  // ditanggung perusahaan sebagai beban, BUKAN ikut menambah piutang karyawan.
+  const fee = toMoney(biayaAdmin || 0);
+  const barisAdmin = await barisBiayaAdmin(tx, { fee, cashAccount });
 
   const { entry, created } = await postJournal(tx, {
     date,
@@ -59,10 +64,11 @@ export async function postKasbonDiberikan(tx, { kasbonId, date, amount, karyawan
       },
       {
         accountId: cashAccount.accountId,
-        credit: nominal,
-        description: `Uang keluar — ${cashAccount.name}`,
+        credit: nominal.plus(fee),
+        description: fee.greaterThan(0) ? `Uang keluar — ${cashAccount.name} (termasuk biaya admin transfer)` : `Uang keluar — ${cashAccount.name}`,
         cashAccountId: cashAccount.id,
       },
+      ...barisAdmin,
     ],
   });
   return { posted: true, entry, created };

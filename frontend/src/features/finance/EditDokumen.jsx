@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
+import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
+import { bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import {
   Pilihan, InputUang, TombolAksi, PemilihBukti, LABEL_DIVISI, formatUang,
 } from "@/features/finance/shared.jsx";
@@ -20,6 +22,10 @@ import {
 //    diposting (riwayat tetap ada). Kalau cuma foto/catatan, buku besar tidak disentuh.
 //  • Verifikasi bukti gugur otomatis kalau nominal/tanggal/foto berubah.
 //  • Cara bayar (mode) tidak bisa diubah — kalau salah, Batalkan lalu buat baru.
+//  • Biaya admin transfer: bisa dikoreksi untuk dokumen yang uangnya sudah keluar
+//    di jurnalnya (Langsung, atau Utang/Reimbursement yang sudah Dibayar). Untuk yang
+//    belum dibayar, biaya dicatat saat langkah Bayar. Pratinjau angka dari SERVER.
+const KUNCI_BIAYA = ["paymentMethod", "transferFeeType", "transferFeeAmount"];
 
 export const STATUS_BISA_DIEDIT = ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI", "DIBAYAR"];
 const STATUS_SUDAH_POSTING = ["DISETUJUI", "DIBAYAR"];
@@ -37,6 +43,10 @@ function awal(doc) {
     reimburseToId: doc.reimburseToId || "",
     notes: doc.notes || "",
     receiptUrl: doc.receiptUrl || "",
+    // Baris lama (belum punya cara bayar) = tanpa biaya -> ditampilkan sebagai Tunai/tanpa biaya transfer.
+    paymentMethod: doc.paymentMethod || "TUNAI",
+    transferFeeType: doc.transferFeeType || "",
+    transferFeeAmount: doc.transferFeeType === "LAINNYA" ? Number(doc.transferFeeAmount) || 0 : "",
   };
 }
 
@@ -53,20 +63,30 @@ export default function EditDokumen({ doc, jenis, kategori, rekening, onClose, o
   const sudahPosting = STATUS_SUDAH_POSTING.includes(doc.status);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
 
+  const biayaBisaDiedit = doc.mode === "LANGSUNG" || doc.status === "DIBAYAR";
+  const rekBiaya = rekening.find((r) => r.id === (doc.mode === "LANGSUNG" ? f.cashAccountId : doc.cashAccountId));
+  const biayaBerubah = biayaBisaDiedit && (
+    f.paymentMethod !== asli.paymentMethod || f.transferFeeType !== asli.transferFeeType
+    || String(f.transferFeeAmount) !== String(asli.transferFeeAmount)
+    || (asli.paymentMethod === "TRANSFER" && f.cashAccountId !== asli.cashAccountId)
+  );
+
   const beda = {};
   for (const k of Object.keys(asli)) {
+    if (KUNCI_BIAYA.includes(k)) continue;
     const sama = k === "amount" ? Number(f[k]) === Number(asli[k]) : (f[k] || "") === (asli[k] || "");
     if (!sama) beda[k] = k === "amount" ? Number(f[k]) : f[k];
   }
-  const adaPerubahan = Object.keys(beda).length > 0;
-  const menyentuhJurnal = Object.keys(beda).some((k) => FIELD_JURNAL.includes(k));
+  const adaPerubahan = Object.keys(beda).length > 0 || biayaBerubah;
+  const menyentuhJurnal = Object.keys(beda).some((k) => FIELD_JURNAL.includes(k)) || biayaBerubah;
   const valid = adaPerubahan && alasan.trim() && f.description.trim() && Number(f.amount) > 0 &&
-    f.categoryId && (doc.mode !== "LANGSUNG" || f.cashAccountId);
+    f.categoryId && (doc.mode !== "LANGSUNG" || f.cashAccountId) &&
+    (!biayaBisaDiedit || biayaTransferLengkap(rekBiaya, f));
 
   async function simpan() {
     setGalat("");
     try {
-      const body = { ...beda, reason: alasan.trim() };
+      const body = { ...beda, ...(biayaBerubah ? bodyBiayaTransfer(f) : {}), reason: alasan.trim() };
       await (sudahPosting
         ? api.koreksiFinanceDoc(jenis, doc.id, body)
         : api.editFinanceDoc(jenis, doc.id, body));
@@ -126,6 +146,14 @@ export default function EditDokumen({ doc, jenis, kategori, rekening, onClose, o
             </Field>
           )}
         </div>
+        {biayaBisaDiedit && (
+          <CaraBayarTransfer rekening={rekBiaya} nominal={f.amount} value={f} onChange={(b) => setF((s) => ({ ...s, ...b }))} />
+        )}
+        {!biayaBisaDiedit && (
+          <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
+            Belum dibayar: biaya admin transfer dicatat nanti saat langkah <strong>Bayar</strong>, bukan di sini.
+          </p>
+        )}
         {doc.mode === "REIMBURSEMENT" && (
           <PilihPenalang
             value={f.reimburseToId} onChange={(v) => set("reimburseToId", v)}

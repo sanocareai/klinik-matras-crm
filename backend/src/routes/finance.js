@@ -28,7 +28,9 @@ import {
 import {
   ensureDefaultChartOfAccounts, DEFAULT_COA, SYSTEM_KEYS, AccountError,
 } from "../services/finance/accounts.js";
+import { Prisma } from "@prisma/client";
 import { MoneyError, moneyToNumber, toMoney, sumMoney } from "../services/finance/money.js";
+import { presetRekening, validasiPresets, JENIS_BIAYA_TRANSFER, presetBawaan } from "../services/finance/transferFee.js";
 import { ringkasLunasBelumDicatat } from "../services/finance/penerimaanOrder.js";
 import { SALDO_RIIL_TERKONFIRMASI, bandingkanSaldoRiil } from "../services/finance/saldoRiil.js";
 import { saldoBelumTeridentifikasi } from "../services/finance/rekonBank.js";
@@ -256,7 +258,11 @@ financeRouter.get("/cash-accounts", requirePermission(P.FINANCE_READ), async (re
     });
     const petaSaldo = new Map(saldo.map((s) => [s.id, s.saldo]));
     res.json({
-      accounts: semua.map((a) => ({ ...a, saldo: petaSaldo.get(a.id) ?? 0 })),
+      // presetBiayaTransfer = preset EFEKTIF (bawaan sistem ditimpa isian rekening);
+      // transferFeePresets = isian mentah rekening (null = pakai bawaan).
+      accounts: semua.map((a) => ({ ...a, saldo: petaSaldo.get(a.id) ?? 0, presetBiayaTransfer: presetRekening(a) })),
+      jenisBiayaTransfer: JENIS_BIAYA_TRANSFER,
+      presetBawaanBiayaTransfer: presetBawaan(),
       totalSaldo: saldo.reduce((s, a) => s + a.saldo, 0),
     });
   } catch (err) {
@@ -308,10 +314,14 @@ financeRouter.post("/cash-accounts", requirePermission(P.FINANCE_ADMIN), async (
 
 financeRouter.patch("/cash-accounts/:id", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
   try {
-    const { name, bankName, accountNumber, accountHolder, active, notes } = req.body;
+    const { name, bankName, accountNumber, accountHolder, active, notes, transferFeePresets } = req.body;
     const updated = await prisma.finCashAccount.update({
       where: { id: req.params.id },
       data: {
+        // null = kembali ke bawaan sistem; objek = timpa per jenis (divalidasi server).
+        ...(transferFeePresets !== undefined && {
+          transferFeePresets: transferFeePresets === null ? Prisma.DbNull : validasiPresets(transferFeePresets),
+        }),
         ...(name !== undefined && { name: name.trim() }),
         ...(bankName !== undefined && { bankName: bankName?.trim() || null }),
         ...(accountNumber !== undefined && { accountNumber: accountNumber?.trim() || null }),

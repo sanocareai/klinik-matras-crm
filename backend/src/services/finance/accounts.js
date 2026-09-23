@@ -69,6 +69,7 @@ export const SYSTEM_KEYS = Object.freeze({
   BEBAN_PEMELIHARAAN_MESIN: "BEBAN_PEMELIHARAAN_MESIN",
   BEBAN_LANGGANAN_APLIKASI: "BEBAN_LANGGANAN_APLIKASI",
   BEBAN_OPERASIONAL_TRIP: "BEBAN_OPERASIONAL_TRIP",
+  BEBAN_INSENTIF_DRIVER: "BEBAN_INSENTIF_DRIVER",
   BEBAN_POKOK_BAHAN_MANUAL: "BEBAN_POKOK_BAHAN_MANUAL",
   UANG_MUKA_PEMBELIAN: "UANG_MUKA_PEMBELIAN",
   // Lawan jurnal penyesuaian SEMENTARA rekonsiliasi bank (services/finance/
@@ -206,6 +207,9 @@ export const DEFAULT_COA = Object.freeze([
   { code: "6-1170", name: "Beban Operasional & Perjalanan Dinas", type: B, normalBalance: D, parent: "6-0000",
     systemKey: SYSTEM_KEYS.BEBAN_OPERASIONAL_TRIP, cashFlowCategory: "OPERASI",
     description: "Meeting, perjalanan dinas, dan operasional kecil lain yang bukan bensin/tol kendaraan operasional harian." },
+  { code: "6-1180", name: "Beban Insentif Driver", type: B, normalBalance: D, parent: "6-0000",
+    systemKey: SYSTEM_KEYS.BEBAN_INSENTIF_DRIVER, cashFlowCategory: "OPERASI",
+    description: "Insentif per-alamat driver & helper delivery yang sudah dibayar (Pembayaran Insentif). Diposting otomatis dari IncentivePayout." },
   { code: "6-1200", name: "Beban Iklan & Pemasaran", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI",
     description: "Termasuk belanja iklan bulanan per platform (tabel ad_spends) yang diposting otomatis." },
   { code: "6-1300", name: "Beban BBM", type: B, normalBalance: D, parent: "6-0000", cashFlowCategory: "OPERASI" },

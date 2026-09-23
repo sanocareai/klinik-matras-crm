@@ -12,6 +12,7 @@ import { lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { saldoLine, statusSnapshotDariLines } from "../services/incentivePayoutEngine.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
+import { postIncentivePayout, reverseIncentivePayout, resolveCashAccountForPayout } from "../services/finance/posting/incentivePayout.js";
 
 export const incentivePayoutRouter = express.Router();
 incentivePayoutRouter.use(requireAuth);
@@ -74,6 +75,20 @@ incentivePayoutRouter.get("/incentive-payouts/queue", requirePermission(P.INCENT
   } catch (err) { handleErr(err, res); }
 });
 
+// GET /incentive-payouts/cash-accounts — pilihan sumber dana untuk form
+// Catat Pembayaran. Endpoint sendiri (bukan /finance/cash-accounts) karena
+// peran pencatat payout belum tentu punya FINANCE_READ; tanpa saldo.
+incentivePayoutRouter.get("/incentive-payouts/cash-accounts", requirePermission(P.INCENTIVE_PAYOUT_CREATE), async (req, res) => {
+  try {
+    const accounts = await prisma.finCashAccount.findMany({
+      where: { active: true, account: { active: true, isPostable: true } },
+      select: { id: true, name: true, kind: true, bankName: true, accountNumber: true },
+      orderBy: { name: "asc" },
+    });
+    res.json({ accounts });
+  } catch (err) { handleErr(err, res); }
+});
+
 // GET /incentive-payouts?snapshotLineId= — riwayat pembayaran (TERMASUK
 // yang voided, untuk transparansi audit) satu baris/orang.
 incentivePayoutRouter.get("/incentive-payouts", requirePermission(P.INCENTIVE_PAYOUT_READ), async (req, res) => {
@@ -85,6 +100,9 @@ incentivePayoutRouter.get("/incentive-payouts", requirePermission(P.INCENTIVE_PA
       include: {
         recordedBy: { select: { id: true, name: true } },
         voidedBy: { select: { id: true, name: true } },
+        cashAccount: { select: { id: true, name: true } },
+        journalEntry: { select: { id: true, entryNumber: true } },
+        voidJournalEntry: { select: { id: true, entryNumber: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -101,11 +119,12 @@ incentivePayoutRouter.post("/incentive-payouts", requirePermission(P.INCENTIVE_P
     const idempotencyKey = req.headers["idempotency-key"];
     if (!idempotencyKey) throw new PayoutError("Header Idempotency-Key wajib untuk mencatat pembayaran (mencegah pembayaran ganda kalau koneksi putus)", 428);
 
-    const { snapshotLineId, amount, method, paidAt, referenceNumber, proofUrl, note } = req.body || {};
+    const { snapshotLineId, amount, method, paidAt, referenceNumber, proofUrl, note, cashAccountId } = req.body || {};
     if (!snapshotLineId) throw new PayoutError("snapshotLineId wajib diisi");
     if (!Number.isInteger(amount) || amount <= 0) throw new PayoutError("Nominal wajib bilangan bulat lebih dari 0");
     if (!METODE_VALID.includes(method)) throw new PayoutError("Metode wajib TRANSFER, CASH, atau OTHER");
     if (!paidAt || Number.isNaN(new Date(paidAt).getTime())) throw new PayoutError("Tanggal bayar wajib diisi dan valid");
+    if (!cashAccountId) throw new PayoutError("Akun sumber dana (Kas/Bank) wajib dipilih");
 
     const payout = await prisma.$transaction(async (tx) => {
       // Kunci baris LINE (bukan payout individual) — serialisasi SEMUA
@@ -121,6 +140,8 @@ incentivePayoutRouter.post("/incentive-payouts", requirePermission(P.INCENTIVE_P
         throw new PayoutError(`Snapshot berstatus ${line.snapshot.status} — hanya baris dari Snapshot yang sudah APPROVED yang bisa dibayar`, 409);
       }
 
+      const cashAccount = await resolveCashAccountForPayout(tx, cashAccountId);
+
       const payoutsSebelum = await tx.incentivePayout.findMany({ where: { snapshotLineId } });
       const { sisa: sisaSebelum } = saldoLine(line.totalRupiah, payoutsSebelum);
       if (amount > sisaSebelum) {
@@ -132,8 +153,14 @@ incentivePayoutRouter.post("/incentive-payouts", requirePermission(P.INCENTIVE_P
           snapshotId: line.snapshotId, snapshotLineId, userId: line.userId, amount, method,
           paidAt: new Date(paidAt), referenceNumber: referenceNumber?.trim() || null, proofUrl: proofUrl?.trim() || null,
           note: note?.trim() || null, recordedById: req.user.id, idempotencyKey: String(idempotencyKey),
+          cashAccountId: cashAccount.id,
         },
       });
+
+      // Jurnal double-entry di transaksi YANG SAMA — gagal posting (akun
+      // beban belum ada, periode tutup, rekening nonaktif) = payout batal.
+      const { entry } = await postIncentivePayout(tx, { payout: hasil, cashAccount, personName: line.userName, userId: req.user.id });
+      const withJournal = await tx.incentivePayout.update({ where: { id: hasil.id }, data: { journalEntryId: entry.id } });
 
       const sisaSesudah = sisaSebelum - amount;
       await recordActivity(tx, {
@@ -142,9 +169,10 @@ incentivePayoutRouter.post("/incentive-payouts", requirePermission(P.INCENTIVE_P
         metadata: {
           snapshotId: line.snapshotId, snapshotLineId, userId: line.userId, amount, method,
           referenceNumber: referenceNumber?.trim() || null, sisaSebelum, sisaSesudah,
+          cashAccountId: cashAccount.id, journalEntryId: entry.id, journalEntryNumber: entry.entryNumber,
         },
       });
-      return hasil;
+      return withJournal;
     });
 
     res.status(201).json(payout);
@@ -165,8 +193,15 @@ incentivePayoutRouter.post("/incentive-payouts/:id/void", requirePermission(P.IN
       if (!payout) throw new PayoutError("Pembayaran tidak ditemukan", 404);
       if (payout.voidedAt) throw new PayoutError("Pembayaran ini sudah dibatalkan sebelumnya", 409);
 
+      // Reversal jurnal lebih dulu (payout lama tanpa jurnal — sebelum
+      // integrasi Finance — tidak punya apa-apa untuk dibalik).
+      let reversal = null;
+      if (payout.journalEntryId) {
+        reversal = await reverseIncentivePayout(tx, { journalEntryId: payout.journalEntryId, reason, userId: req.user.id });
+      }
       const updated = await tx.incentivePayout.update({
-        where: { id: payout.id }, data: { voidedAt: new Date(), voidedById: req.user.id, voidReason: reason },
+        where: { id: payout.id },
+        data: { voidedAt: new Date(), voidedById: req.user.id, voidReason: reason, voidJournalEntryId: reversal?.id ?? null },
       });
 
       const line = await tx.incentiveSnapshotLine.findUnique({ where: { id: payout.snapshotLineId } });
@@ -180,6 +215,7 @@ incentivePayoutRouter.post("/incentive-payouts/:id/void", requirePermission(P.IN
         metadata: {
           snapshotId: payout.snapshotId, snapshotLineId: payout.snapshotLineId, userId: payout.userId,
           amount: payout.amount, method: payout.method, reason, sisaSebelum, sisaSesudah,
+          journalEntryId: payout.journalEntryId, voidJournalEntryId: reversal?.id ?? null,
         },
       });
       return updated;

@@ -348,6 +348,7 @@ export const api = {
   // WAJIB dikirim untuk createIncentivePayout (server menolak 428 tanpa
   // itu, beda dari default opsional di endpoint lain).
   getIncentivePayoutQueue: () => request("/armada/incentive-payouts/queue"),
+  getIncentivePayoutCashAccounts: () => request("/armada/incentive-payouts/cash-accounts"),
   getIncentivePayouts: (snapshotLineId) => request(`/armada/incentive-payouts${buildQuery({ snapshotLineId })}`),
   createIncentivePayout: (body, idempotencyKey = mutationKey("payout")) =>
     request("/armada/incentive-payouts", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
@@ -1344,6 +1345,7 @@ export const api = {
   submitFinancePurchase: (id) => request(`/finance/purchases/${id}/submit`, { method: "POST" }),
   approveFinancePurchase: (id) => request(`/finance/purchases/${id}/approve`, { method: "POST" }),
   rejectFinancePurchase: (id, reason) => request(`/finance/purchases/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  previewBiayaTransfer: (data) => request("/finance/transfer-fee/preview", { method: "POST", body: JSON.stringify(data) }),
   payFinancePurchase: (id, data) => request(`/finance/purchases/${id}/pay`, { method: "POST", body: JSON.stringify(data) }),
   cancelFinancePurchase: (id, reason) => request(`/finance/purchases/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   // Terapkan Uang Muka — DP (kategori Uang Muka Pembelian) mengurangi Utang

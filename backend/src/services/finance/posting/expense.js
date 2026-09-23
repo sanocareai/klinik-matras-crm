@@ -26,6 +26,7 @@
 import { postJournal, recordPostingGap, findEntryByKey } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { toMoney } from "../money.js";
+import { barisBiayaAdmin } from "../transferFee.js";
 
 // Cutover Pengajuan Biaya Lintas Divisi (D-181, 24 September 2026) — rapat
 // ulang arsitektur pilot Delivery: VehicleExpense/VehicleService BERHENTI
@@ -82,6 +83,10 @@ export async function postExpenseApproved(tx, { expenseId, userId = null, keySuf
   let keteranganLawan;
   let cashAccountId = null;
   let supplierId = null;
+  // Biaya admin transfer HANYA relevan saat uang benar-benar keluar di jurnal
+  // ini (LANGSUNG). Mode lain membayar belakangan di postExpensePaid.
+  let biayaAdmin = toMoney(0);
+  let barisAdmin = [];
 
   if (e.mode === "LANGSUNG") {
     if (!e.cashAccount) {
@@ -93,6 +98,8 @@ export async function postExpenseApproved(tx, { expenseId, userId = null, keySuf
     akunLawanId = e.cashAccount.accountId;
     keteranganLawan = `Uang keluar — ${e.cashAccount.name}`;
     cashAccountId = e.cashAccount.id;
+    biayaAdmin = toMoney(e.transferFeeAmount || 0);
+    barisAdmin = await barisBiayaAdmin(tx, { fee: biayaAdmin, cashAccount: e.cashAccount });
   } else if (e.mode === "REIMBURSEMENT") {
     const utangReimburse = await resolveAccount(tx, SYSTEM_KEYS.UTANG_REIMBURSEMENT);
     akunLawanId = utangReimburse.id;
@@ -122,12 +129,13 @@ export async function postExpenseApproved(tx, { expenseId, userId = null, keySuf
       },
       {
         accountId: akunLawanId,
-        credit: amount,
-        description: keteranganLawan,
+        credit: amount.plus(biayaAdmin),
+        description: biayaAdmin.greaterThan(0) ? `${keteranganLawan} (termasuk biaya admin transfer)` : keteranganLawan,
         cashAccountId,
         supplierId,
         orderId: e.orderId,
       },
+      ...barisAdmin,
     ],
   });
   return { posted: true, entry, created };
@@ -162,6 +170,8 @@ export async function postExpensePaid(tx, { expenseId, userId = null, keySuffix 
     e.mode === "REIMBURSEMENT" ? SYSTEM_KEYS.UTANG_REIMBURSEMENT : SYSTEM_KEYS.UTANG_USAHA
   );
   const amount = toMoney(e.amount);
+  const biayaAdmin = toMoney(e.transferFeeAmount || 0);
+  const barisAdmin = await barisBiayaAdmin(tx, { fee: biayaAdmin, cashAccount: e.cashAccount });
 
   const { entry, created } = await postJournal(tx, {
     date: e.paidAt || e.date,
@@ -181,10 +191,11 @@ export async function postExpensePaid(tx, { expenseId, userId = null, keySuffix 
       },
       {
         accountId: e.cashAccount.accountId,
-        credit: amount,
-        description: `Uang keluar — ${e.cashAccount.name}`,
+        credit: amount.plus(biayaAdmin),
+        description: biayaAdmin.greaterThan(0) ? `Uang keluar — ${e.cashAccount.name} (termasuk biaya admin transfer)` : `Uang keluar — ${e.cashAccount.name}`,
         cashAccountId: e.cashAccount.id,
       },
+      ...barisAdmin,
     ],
   });
   return { posted: true, entry, created };
