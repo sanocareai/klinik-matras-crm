@@ -72,13 +72,32 @@ function bolehCatatAtasNamaOrangLain(user) {
 }
 
 /** Usulan sumber dana -> hint mode FinExpense. `undefined` = biarkan buatFinExpense pilih default dari kapabilitas user (perilaku lama, tidak berubah kalau field ini kosong). */
+// ⚠️ REKENING_PERUSAHAAN & UANG_MUKA_OPERASIONAL SENGAJA dipetakan ke UTANG,
+// BUKAN LANGSUNG — form Pengajuan Biaya TIDAK mengumpulkan cashAccountId sama
+// sekali (banner prinsip: "Finance yang menentukan cashAccount FINAL"), dan
+// buatFinExpense() MEWAJIBKAN cashAccountId untuk mode LANGSUNG di titik
+// pembuatan. Memetakan ke LANGSUNG di sini akan membuat ajukanPengajuan()
+// SELALU gagal 400 untuk dua sumberDana ini begitu pemohonnya punya
+// FINANCE_POST (mode efektif ikut hint, bukan dipaksa REIMBURSEMENT lagi).
+// UTANG punya sifat yang pas: beban diakui sekarang, rekening/kas KONKRET
+// dipilih Finance belakangan saat /pay — persis alur "sumber dananya jelas
+// TAPI rekening spesifik ditentukan nanti" yang dua sumberDana ini maksudkan.
+// sumberDana ITU SENDIRI tetap tersimpan apa adanya (lihat field di atas) —
+// pemetaan mode di sini murni teknis, tidak menghilangkan informasi yang
+// pemohon pilih.
 function modeDariSumberDana(sumberDana) {
   switch (sumberDana) {
-    case "REKENING_PERUSAHAAN": return "LANGSUNG";
-    case "UANG_MUKA_OPERASIONAL": return "LANGSUNG";
+    case "REKENING_PERUSAHAAN": return "UTANG";
+    case "UANG_MUKA_OPERASIONAL": return "UTANG";
     case "TALANGAN_PRIBADI": return "REIMBURSEMENT";
     case "BELUM_DIBAYAR": return "UTANG";
-    default: return undefined;
+    // Default "UTANG", BUKAN undefined — kalau dibiarkan undefined,
+    // buatFinExpense() sendiri jatuh balik ke LANGSUNG (default-nya untuk
+    // form Finance lama yang SELALU mengumpulkan cashAccountId), yang di
+    // sini akan gagal 400 (cashAccountId selalu null dari ajukanPengajuan)
+    // untuk SETIAP pemohon ber-FINANCE_POST yang belum memilih sumber dana
+    // sama sekali — bukan cuma yang pilih REKENING_PERUSAHAAN/UANG_MUKA.
+    default: return "UTANG";
   }
 }
 
@@ -459,8 +478,19 @@ export async function sinkronStatusDariFinExpense(tx, finExpenseId) {
   await tx.expenseSubmission.update({ where: { id: s.id }, data: { status: FIN_TO_SUBMISSION_STATUS[fe.status] || "MENUNGGU_PERSETUJUAN" } });
 }
 
-/** Heuristik deteksi kemungkinan duplikat — kendaraan/jenis/tanggal/nominal sama dalam rentang pendek. Hanya PERINGATAN, tidak pernah memblokir. */
-export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseType, date, amount, excludeId }) {
+/**
+ * Heuristik deteksi kemungkinan duplikat — kendaraan/jenis/tanggal/nominal/PIC
+ * sama dalam rentang pendek. HANYA PERINGATAN, tidak pernah memblokir — kecuali
+ * duplikat BENAR-BENAR identik (retry/double-click dengan idempotencyKey yang
+ * sama), yang dicegah di level lain (ajukanPengajuan(), SAVEPOINT+unique
+ * constraint), bukan di sini. `picUserId` OPSIONAL — kalau diisi, mempersempit
+ * kandidat ke PIC yang sama (mengurangi peringatan palsu antar-driver yang
+ * kebetulan isi BBM tanggal & nominal mirip). Kandidat yang dikembalikan
+ * membawa `adaBukti` (sudah punya foto nota versi aktif atau belum) supaya
+ * pemohon/Finance bisa menilai sendiri seberapa besar kemungkinan ini memang
+ * duplikat nyata, bukan kebetulan.
+ */
+export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseType, date, amount, excludeId, picUserId }) {
   if (!vehicleId && !expenseType) return [];
   const tgl = toBookDate(date);
   const mulai = new Date(tgl); mulai.setDate(mulai.getDate() - 2);
@@ -469,16 +499,21 @@ export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseT
     where: {
       division, expenseType, date: { gte: mulai, lte: selesai },
       ...(vehicleId && { vehicleId }),
+      ...(picUserId && { picUserId }),
       ...(excludeId && { id: { not: excludeId } }),
       status: { notIn: ["DIBATALKAN", "DITOLAK"] },
     },
-    select: { id: true, submissionNumber: true, amount: true, date: true, status: true },
+    select: {
+      id: true, submissionNumber: true, amount: true, date: true, status: true,
+      picNameSnapshot: true, vehiclePlateSnapshot: true,
+      proofs: { where: { supersededAt: null }, select: { id: true }, take: 1 },
+    },
     take: 5,
   });
   const nominal = amount != null ? toMoney(amount) : null;
   return kandidat
     .filter((k) => !nominal || Math.abs(moneyToNumber(k.amount) - Number(nominal)) < 1)
-    .map((k) => ({ ...k, amount: moneyToNumber(k.amount) }));
+    .map(({ proofs, ...k }) => ({ ...k, amount: moneyToNumber(k.amount), adaBukti: proofs.length > 0 }));
 }
 
 export { bentukSubmission, bentukExpense, finExpenseInclude };

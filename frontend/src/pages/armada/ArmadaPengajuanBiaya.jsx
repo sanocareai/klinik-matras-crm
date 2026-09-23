@@ -288,17 +288,19 @@ export default function ArmadaPengajuanBiaya() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // Deteksi kemungkinan duplikat — peringatan, tidak pernah memblokir.
+  // Deteksi kemungkinan duplikat — tanggal+nominal+kendaraan+PIC, peringatan
+  // saja, tidak pernah memblokir (duplikat yang BENAR-BENAR identik dicegah
+  // terpisah lewat idempotencyKey saat /ajukan, bukan di sini).
   useEffect(() => {
     if (!form.vehicleId || !form.expenseType || !form.date || !form.amount) { setDupWarning([]); return; }
     const t = setTimeout(() => {
       api.cekDuplikatPengajuan({
         division: WORKSPACE, vehicleId: form.vehicleId, expenseType: form.expenseType,
-        date: form.date, amount: form.amount, excludeId: editingId || undefined,
+        date: form.date, amount: form.amount, picUserId: form.picUserId || undefined, excludeId: editingId || undefined,
       }).then((res) => setDupWarning(res.kandidat || [])).catch(() => {});
     }, 500);
     return () => clearTimeout(t);
-  }, [form.vehicleId, form.expenseType, form.date, form.amount, editingId]);
+  }, [form.vehicleId, form.expenseType, form.date, form.amount, form.picUserId, editingId]);
 
   async function submit(e) {
     e.preventDefault();
@@ -597,7 +599,16 @@ export default function ArmadaPengajuanBiaya() {
             {dupWarning.length > 0 && (
               <div className="col-span-full flex items-start gap-2 rounded-btn bg-orangebg p-2.5 text-[11.5px] text-orange">
                 <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                <span>Ditemukan {dupWarning.length} pengajuan mirip (kendaraan/jenis/tanggal berdekatan) — cek dulu sebelum lanjut: {dupWarning.map((k) => k.submissionNumber).join(", ")}</span>
+                <div>
+                  <div>Ditemukan {dupWarning.length} pengajuan mirip (kendaraan/jenis/tanggal/nominal berdekatan) — cek dulu sebelum lanjut:</div>
+                  <ul className="mt-1 list-disc pl-4">
+                    {dupWarning.map((k) => (
+                      <li key={k.id}>
+                        {k.submissionNumber} · {k.vehiclePlateSnapshot || "?"} · {k.picNameSnapshot || "tanpa PIC"} · {k.adaBukti ? "sudah ada bukti" : "belum ada bukti"}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             )}
             {error && <p className="col-span-full text-[12px] text-red">{error}</p>}

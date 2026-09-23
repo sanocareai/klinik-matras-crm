@@ -379,3 +379,142 @@ test("Cutover TIDAK meregresi data lama: VehicleExpense yang lahir SEBELUM cutov
   assert.equal(hasil.posted, true, "data lama (sebelum cutover) tidak boleh ikut terblokir — tidak ada regresi");
   assert.ok(hasil.entry);
 });
+
+// ── Wave 2 (24 September 2026): input cepat + 4 sumber dana + koreksi pasca-approval ──
+
+test("Urgent via Finance: FINANCE mencatat atas nama driver, sumberDana UANG_MUKA_OPERASIONAL -> mode UTANG (bukan crash 400 minta cashAccountId)", async () => {
+  const { user: driver } = await createTestUser({ roles: ["DRIVER"] });
+  const { token: tokenFinance } = await createTestUser({ roles: ["FINANCE"] });
+
+  const created = await raw("POST", "/api/finance/expense-submissions", {
+    token: tokenFinance,
+    body: pengajuanBadan({
+      expenseType: "SERVIS", amount: 800_000, requestedById: driver.id, sumberDana: "UANG_MUKA_OPERASIONAL",
+      urgentReason: "Mobil mogok di jalan, servis darurat", sourceNote: "Telepon Agung 23/9 16:40",
+    }),
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.requestedBy.id, driver.id);
+
+  const diajukan = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, {
+    token: tokenFinance, headers: { "Idempotency-Key": "pb-uji-urgent-finance" },
+  });
+  assert.equal(diajukan.status, 200, JSON.stringify(diajukan.body), "sebelum perbaikan modeDariSumberDana ini gagal 400 (cashAccountId wajib untuk LANGSUNG)");
+  const fe = await testPrisma.finExpense.findUnique({ where: { id: diajukan.body.finExpenseId } });
+  assert.equal(fe.mode, "UTANG");
+  assert.equal(fe.cashAccountId, null, "UTANG belum butuh rekening spesifik — dipilih Finance nanti saat /pay");
+});
+
+test("Sumber dana kosong (belum ditentukan) dari pemohon ber-FINANCE_POST TETAP aman -> default UTANG, bukan crash LANGSUNG", async () => {
+  const { token: tokenFinance } = await createTestUser({ roles: ["FINANCE"] });
+  const created = await raw("POST", "/api/finance/expense-submissions", { token: tokenFinance, body: pengajuanBadan({ expenseType: "SEWA" }) });
+  const diajukan = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, {
+    token: tokenFinance, headers: { "Idempotency-Key": "pb-uji-sumberdana-kosong" },
+  });
+  assert.equal(diajukan.status, 200, JSON.stringify(diajukan.body));
+  const fe = await testPrisma.finExpense.findUnique({ where: { id: diajukan.body.finExpenseId } });
+  assert.equal(fe.mode, "UTANG");
+});
+
+test("Sumber dana BELUM_DIBAYAR -> mode UTANG utk pemohon ber-FINANCE_POST, sumberDana asli tetap tersimpan apa adanya (bukan hilang jadi murni teknis)", async () => {
+  const { token } = await createTestUser({ roles: ["FINANCE"] });
+  const created = await raw("POST", "/api/finance/expense-submissions", { token, body: pengajuanBadan({ sumberDana: "BELUM_DIBAYAR" }) });
+  assert.equal(created.body.sumberDana, "BELUM_DIBAYAR");
+  const diajukan = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, {
+    token, headers: { "Idempotency-Key": "pb-uji-belum-dibayar" },
+  });
+  assert.equal(diajukan.status, 200, JSON.stringify(diajukan.body));
+  const fe = await testPrisma.finExpense.findUnique({ where: { id: diajukan.body.finExpenseId } });
+  assert.equal(fe.mode, "UTANG");
+  const bacaUlang = await raw("GET", `/api/finance/expense-submissions/${created.body.id}`, { token });
+  assert.equal(bacaUlang.body.sumberDana, "BELUM_DIBAYAR", "field sumberDana pemohon tetap terbaca apa adanya walau mode teknisnya sama dengan REKENING_PERUSAHAAN/UANG_MUKA");
+});
+
+test("Sumber dana BELUM_DIBAYAR dari pemohon TANPA FINANCE_POST -> tetap dipaksa REIMBURSEMENT (aturan penalangan sendiri berlaku, sumberDana cuma hint)", async () => {
+  const { token } = await createTestUser({ roles: ["DISPATCHER"] });
+  const created = await raw("POST", "/api/finance/expense-submissions", { token, body: pengajuanBadan({ sumberDana: "BELUM_DIBAYAR" }) });
+  const diajukan = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, {
+    token, headers: { "Idempotency-Key": "pb-uji-belum-dibayar-nonfinance" },
+  });
+  assert.equal(diajukan.status, 200, JSON.stringify(diajukan.body));
+  const fe = await testPrisma.finExpense.findUnique({ where: { id: diajukan.body.finExpenseId } });
+  assert.equal(fe.mode, "REIMBURSEMENT", "tanpa FINANCE_POST, buatFinExpense() memaksa REIMBURSEMENT terlepas dari hint sumberDana");
+});
+
+test("Edit SETELAH disetujui (DISETUJUI, belum dibayar): koreksi metadata via /metadata TETAP bisa, nominal/akun TIDAK bisa lewat sini", async () => {
+  const { token: tokenDispatcher } = await createTestUser({ roles: ["DISPATCHER"] });
+  const { token: tokenFinance } = await createTestUser({ roles: ["FINANCE"] });
+  const created = await raw("POST", "/api/finance/expense-submissions", { token: tokenDispatcher, body: pengajuanBadan() });
+  const diajukan = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/ajukan`, {
+    token: tokenDispatcher, headers: { "Idempotency-Key": "pb-uji-koreksi-pasca-approve" },
+  });
+  await testPrisma.finExpense.update({ where: { id: diajukan.body.finExpenseId }, data: { receiptUrl: "https://example.test/nota-koreksi.jpg" } });
+  const approve = await raw("POST", `/api/finance/expenses/${diajukan.body.finExpenseId}/approve`, { token: tokenFinance });
+  assert.equal(approve.status, 200, JSON.stringify(approve.body));
+
+  // Koreksi metadata (vendorName) — SAH, disetujui bukan berarti beku total.
+  const koreksi = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/metadata`, {
+    token: tokenDispatcher, body: { reason: "Nama vendor salah ketik", changes: { vendorName: "SPBU Uji Koreksi" } },
+  });
+  assert.equal(koreksi.status, 200, JSON.stringify(koreksi.body));
+  assert.equal(koreksi.body.vendorName, "SPBU Uji Koreksi");
+  const audit = await testPrisma.expenseSubmissionAudit.findFirst({ where: { submissionId: created.body.id, field: "vendorName" } });
+  assert.ok(audit, "koreksi metadata pasca-approval wajib meninggalkan jejak audit before/after");
+  assert.equal(audit.reason, "Nama vendor salah ketik");
+
+  // Coba koreksi field FINANSIAL lewat jalur ini — WAJIB ditolak (bukan silent no-op).
+  const tolakFinansial = await raw("POST", `/api/finance/expense-submissions/${created.body.id}/metadata`, {
+    token: tokenDispatcher, body: { reason: "Coba ubah nominal", changes: { amount: 999_999 } },
+  });
+  assert.equal(tolakFinansial.status, 400, JSON.stringify(tolakFinansial.body));
+});
+
+test("Integrasi kendaraan/PIC: snapshot kendaraan+driver+helper tersimpan persis saat pengajuan dibuat (bertahan walau master datanya berubah nanti)", async () => {
+  const vehicle = await buatVehicle({ plateNumber: `B ${Math.floor(Math.random() * 9000 + 1000)} SNAP` });
+  const { user: driver } = await createTestUser({ roles: ["DRIVER"] });
+  const { user: helper } = await createTestUser({ roles: ["HELPER"] });
+  const { token } = await createTestUser({ roles: ["DISPATCHER"] });
+
+  const created = await raw("POST", "/api/finance/expense-submissions", {
+    token, body: pengajuanBadan({ vehicleId: vehicle.id, driverId: driver.id, helperId: helper.id, picUserId: driver.id }),
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.vehiclePlateSnapshot, vehicle.plateNumber);
+  assert.equal(created.body.driverNameSnapshot, driver.name);
+  assert.equal(created.body.helperNameSnapshot, helper.name);
+  assert.equal(created.body.picNameSnapshot, driver.name);
+
+  // Master berubah nanti (nama diedit) — snapshot pengajuan TIDAK ikut berubah.
+  await testPrisma.user.update({ where: { id: driver.id }, data: { name: "Nama Baru Setelah Ganti" } });
+  const bacaUlang = await raw("GET", `/api/finance/expense-submissions/${created.body.id}`, { token });
+  assert.equal(bacaUlang.body.driverNameSnapshot, driver.name, "snapshot histori tidak boleh ikut berubah walau nama master di-update belakangan");
+});
+
+test("Peringatan duplikat mempertimbangkan PIC & status bukti — tidak pernah memblokir submit", async () => {
+  const vehicle = await buatVehicle();
+  const { user: driverA } = await createTestUser({ roles: ["DRIVER"] });
+  const { user: driverB } = await createTestUser({ roles: ["DRIVER"] });
+  const { token } = await createTestUser({ roles: ["DISPATCHER"] });
+
+  const asli = await raw("POST", "/api/finance/expense-submissions", {
+    token, body: pengajuanBadan({ vehicleId: vehicle.id, picUserId: driverA.id, amount: 275_000 }),
+  });
+  assert.equal(asli.status, 201, JSON.stringify(asli.body));
+
+  // PIC SAMA -> harus muncul sebagai kandidat.
+  const cekSamaPic = await raw("GET", `/api/finance/expense-submissions/duplicate-check?division=DELIVERY&vehicleId=${vehicle.id}&expenseType=BBM&date=2026-09-20&amount=275000&picUserId=${driverA.id}`, { token });
+  assert.equal(cekSamaPic.status, 200);
+  assert.ok(cekSamaPic.body.kandidat.some((k) => k.id === asli.body.id), "PIC sama, kendaraan/tanggal/nominal sama -> wajib muncul sebagai kandidat");
+  assert.equal(cekSamaPic.body.kandidat.find((k) => k.id === asli.body.id).adaBukti, false);
+
+  // PIC BEDA -> tidak muncul (dipersempit oleh PIC, mengurangi false-positive antar-driver).
+  const cekBedaPic = await raw("GET", `/api/finance/expense-submissions/duplicate-check?division=DELIVERY&vehicleId=${vehicle.id}&expenseType=BBM&date=2026-09-20&amount=275000&picUserId=${driverB.id}`, { token });
+  assert.equal(cekBedaPic.status, 200);
+  assert.ok(!cekBedaPic.body.kandidat.some((k) => k.id === asli.body.id), "PIC beda -> tidak boleh ikut dianggap kandidat duplikat");
+
+  // Submit KEDUA (mirip persis) TETAP boleh — cuma peringatan, tidak pernah memblokir.
+  const kedua = await raw("POST", "/api/finance/expense-submissions", {
+    token, body: pengajuanBadan({ vehicleId: vehicle.id, picUserId: driverA.id, amount: 275_000 }),
+  });
+  assert.equal(kedua.status, 201, "peringatan duplikat tidak pernah memblokir pembuatan draf baru");
+});
