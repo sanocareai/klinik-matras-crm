@@ -91,7 +91,7 @@ test("GET /openapi.json — OpenAPI 3.1 valid, satu path per tool MCP, tidak ada
   assert.equal(op.operationId, "cari_pelanggan");
   const schema = op.requestBody.content["application/json"].schema;
   assert.equal(schema.type, "object");
-  assert.ok(schema.properties.unmask, "param unmask (dari toolsShared.js) harus ikut ke schema OpenAPI");
+  assert.equal(schema.properties.unmask, undefined, "model tidak boleh memilih unmask lewat OpenAPI");
 
   // REGRESI (15 September 2026): validator Custom GPT Actions milik OpenAI
   // menolak skema object TANPA `properties` sebagai "object schema missing

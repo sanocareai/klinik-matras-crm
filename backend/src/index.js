@@ -73,6 +73,7 @@ import { scopeRevisionRouter } from "./routes/scopeRevisions.js";
 import { masterDataRouter } from "./routes/masterData.js";
 import { mcpRouter, wellKnownRouter, mcpOAuthRouter, logStatusMcp } from "./mcp/index.js";
 import { gptActionsRouter, logStatusGptActions } from "./mcp/gptActions.js";
+import { chatGptMcpRouter } from "./mcp/chatgptPlugin.js";
 import { mcpHubRouter, logStatusMcpHub } from "./mcpHub/index.js";
 import { startReconciliationJob } from "./services/reconciliation.js";
 import { startVideoCompressJob } from "./services/videoCompressJob.js";
@@ -250,6 +251,9 @@ app.use("/api/master-data", masterDataRouter);
 // WAJIB di atas express.static + catch-all "*" di bawah — kalau di bawah,
 // request /mcp akan dijawab index.html React, bukan JSON-RPC.
 app.use("/mcp", mcpRouter);
+// Facade ChatGPT Plugin: handler MCP yang sama, tetapi hanya enam tool Sales
+// agregat/katalog, nama ber-prefix, OAuth wajib, dan PII selalu dimasking.
+app.use("/mcp-chatgpt", chatGptMcpRouter);
 // OAuth 2.1 untuk koneksi MCP dari claude.ai browser (src/mcp/oauth.js).
 // Root-level (BUKAN di bawah /mcp) — /.well-known/* dan /oauth/* adalah path
 // standar OAuth/RFC yang harus ada di root origin, sama seperti klien OAuth

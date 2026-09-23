@@ -10,14 +10,21 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
-// Server ini HANYA melayani Claude — bukan authorization server serba guna.
-// Dynamic Client Registration (POST /oauth/register) MENOLAK redirect_uri
-// apa pun selain persis ini (lihat docs/connectors/building/authentication
-// Anthropic: "register the following redirect URI" untuk Claude.ai web/
-// Desktop/mobile/Cowork). Ini yang membuat seluruh alur aman meski client_id
-// bisa didaftarkan siapa saja lewat DCR — tidak ada tempat lain code/token
-// bisa dikirim.
+// Callback Claude dipertahankan untuk kompatibilitas. Callback ChatGPT dapat
+// ditambahkan melalui environment dan semuanya tetap exact-match; server ini
+// bukan authorization server serba guna dan tidak menerima wildcard.
 export const ALLOWED_REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
+
+// Callback ChatGPT tidak di-hardcode: nilai tepatnya berasal dari koneksi
+// developer-mode yang dibuat oleh admin. Daftarkan URI itu di environment,
+// dipisahkan koma bila OpenAI memberi lebih dari satu. Tidak ada wildcard.
+export function allowedRedirectUris() {
+  const configured = String(process.env.MCP_CHATGPT_REDIRECT_URIS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set([ALLOWED_REDIRECT_URI, ...configured])];
+}
 
 export const OAUTH_SCOPE = "mcp:read";
 export const ACCESS_TOKEN_TTL_SEC = 60 * 60; // 1 jam
@@ -118,17 +125,18 @@ export function verifyAccessToken(token, resource) {
 
 // ─── Validasi redirect_uris saat Dynamic Client Registration ───────────────
 //
-// Kebijakan KETAT: SEMUA nilai di array harus persis ALLOWED_REDIRECT_URI.
-// Bukan "salah satu cocok" — kalau client mendaftarkan redirect_uri lain
-// SAMA SEKALI ditolak, supaya tidak ada baris client dengan campuran
-// redirect_uri sah dan tidak sah yang bisa dieksploitasi belakangan.
+// Kebijakan KETAT: SEMUA nilai di array harus ada dalam allowlist exact-match.
+// Bukan "salah satu cocok" — kalau client mendaftarkan satu redirect_uri lain,
+// seluruh registrasi ditolak supaya tidak ada client dengan campuran callback
+// sah dan tidak sah yang bisa dieksploitasi belakangan.
 export function validateRedirectUris(redirectUris) {
   if (!Array.isArray(redirectUris) || redirectUris.length === 0) {
     return { valid: false, reason: "redirect_uris wajib diisi" };
   }
-  const semuaCocok = redirectUris.every((u) => u === ALLOWED_REDIRECT_URI);
+  const allowed = allowedRedirectUris();
+  const semuaCocok = redirectUris.every((u) => allowed.includes(u));
   if (!semuaCocok) {
-    return { valid: false, reason: `redirect_uris hanya boleh berisi "${ALLOWED_REDIRECT_URI}"` };
+    return { valid: false, reason: "redirect_uris tidak terdaftar pada allowlist server" };
   }
-  return { valid: true };
+  return { valid: true, redirectUris: [...redirectUris] };
 }
