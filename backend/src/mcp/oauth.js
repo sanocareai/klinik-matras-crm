@@ -32,9 +32,9 @@ import {
   validateRedirectUris,
 } from "./oauthCrypto.js";
 
-// --- Multi-resource (RFC 8707) -- SATU authorization server, DUA connector
-// MCP yang berbeda (SANSS CRM di /mcp, SANO Hub Analytics di /mcp-hub sejak
-// 29 Agt 2026). Admin login SAMA untuk keduanya, tapi access token yang
+// --- Multi-resource (RFC 8707) -- SATU authorization server, beberapa
+// resource MCP terpisah (/mcp, /mcp-hub, dan /mcp-chatgpt). Admin login
+// SAMA untuk semuanya, tapi access token yang
 // diterbitkan untuk satu resource TIDAK BOLEH bisa dipakai ke resource lain
 // (lihat oauthCrypto.js, fungsi verifyAccessToken) -- makanya setiap
 // authorization code & refresh token MENYIMPAN resource-nya sendiri (kolom
@@ -209,9 +209,9 @@ mcpOAuthRouter.use(express.urlencoded({ extended: false }));
 // tapi memperlambat brute-force secara berarti.
 const oauthLoginLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 });
 
-// RFC 7591 — Dynamic Client Registration. Endpoint ini efektif cuma pernah
-// dipakai Claude, karena redirect_uris SELAIN callback Claude ditolak keras
-// (validateRedirectUris) — lihat komentar ALLOWED_REDIRECT_URI di oauthCrypto.js.
+// RFC 7591 — Dynamic Client Registration. Hanya callback Claude bawaan dan
+// callback ChatGPT yang dikonfigurasi eksplisit yang diterima exact-match
+// (validateRedirectUris); URI lain ditolak seluruhnya.
 mcpOAuthRouter.post("/oauth/register", express.json(), async (req, res) => {
   const { redirect_uris } = req.body || {};
   const check = validateRedirectUris(redirect_uris);

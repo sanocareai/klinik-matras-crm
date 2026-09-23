@@ -102,3 +102,57 @@ Referensi resmi:
   sampai ada permission/data-scope yang lebih granular daripada ADMIN global.
 - Jangan klaim plugin terhubung sampai OAuth dan satu tool benar-benar berhasil
   dipanggil dari ChatGPT.
+
+## Checklist release
+
+### Sebelum merge
+
+- Pastikan branch hanya berbeda pada file MCP/plugin/test/dokumentasi yang
+  tercantum di commit dan tidak membawa perubahan Finance atau worktree lokal.
+- Jalankan unit backend, test MCP/OAuth, integrasi enam tool, serta integration
+  suite ketika tidak ada runner lain yang memakai `klinik_matras_test`.
+- Review diff dan secret scan. Nilai `MCP_API_TOKEN`,
+  `MCP_OAUTH_JWT_SECRET`, access token, authorization code, dan refresh token
+  tidak boleh berada dalam commit atau log CI.
+- Merge `feat/chatgpt-mcp-sales` ke `main` melalui PR/non-force setelah branch
+  diperbarui terhadap `origin/main` dan checks lulus.
+
+### Konfigurasi dan deploy backend
+
+1. Di halaman pengelolaan koneksi MCP ChatGPT, salin redirect URI yang
+   ditampilkan. Jangan menebak URI atau memakai contoh dari dokumentasi.
+2. Di konfigurasi rahasia VPS, pertahankan `MCP_OAUTH_JWT_SECRET` yang sudah
+   ada, pastikan `MCP_PUBLIC_URL=https://app.sanomatrassehat.com`, lalu isi
+   `MCP_CHATGPT_REDIRECT_URIS` dengan URI persis tersebut. Jangan gunakan
+   wildcard dan jangan menaruh nilainya di Git atau command yang tercatat log.
+3. Di `~/klinik-matras`, tarik `main` terbaru dan jalankan
+   `docker compose up -d --build backend`. Tidak ada migration untuk rilis ini.
+4. Pastikan sertifikat HTTPS valid dan reverse proxy meneruskan POST
+   `/mcp-chatgpt`, `/.well-known/*`, dan `/oauth/*` ke backend. Jangan membuka
+   port backend langsung ke internet.
+5. Tanpa token, POST `/mcp-chatgpt` harus menjawab `401` dengan
+   `WWW-Authenticate` yang menunjuk metadata `/mcp-chatgpt`. Verifikasi metadata
+   resource/authorization server memakai URL HTTPS production.
+
+### Uji nyata dari ChatGPT
+
+1. Tambah/refresh koneksi MCP di Developer Mode dengan URL
+   `https://app.sanomatrassehat.com/mcp-chatgpt`.
+2. Selesaikan OAuth menggunakan akun ADMIN aktif. Uji bahwa akun non-ADMIN
+   ditolak dan token untuk `/mcp` tidak diterima pada `/mcp-chatgpt`.
+3. Pastikan `tools/list` hanya berisi enam tool aktif, seluruhnya read-only,
+   dan schema tidak memiliki `unmask`.
+4. Panggil `sales_daftar_produk` sebagai smoke test tanpa data pelanggan, lalu
+   satu tool agregat dengan rentang tanggal aman. Cocokkan respons dengan SANSS.
+5. Simpan bukti waktu uji dan hasil, bukan token/kode OAuth. Baru setelah OAuth
+   dan satu panggilan tool nyata lulus, tandai koneksi berhasil.
+
+### Rollback
+
+- Revert commit merge MCP di `main` (tanpa force-push), tarik commit rollback di
+  VPS, lalu jalankan kembali `docker compose up -d --build backend`.
+- Rilis ini tidak mempunyai migration atau perubahan data, sehingga rollback
+  tidak membutuhkan perubahan database.
+- Setelah backend lama sehat, hapus callback ChatGPT dari konfigurasi rahasia
+  bila koneksi harus dicabut, lalu recreate backend. Jangan mengubah atau
+  mencetak secret OAuth yang dipakai connector MCP lain.

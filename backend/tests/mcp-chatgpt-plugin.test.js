@@ -1,6 +1,7 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
+import jwt from "jsonwebtoken";
 
 const originalSecret = process.env.MCP_OAUTH_JWT_SECRET;
 const originalPublicUrl = process.env.MCP_PUBLIC_URL;
@@ -116,6 +117,18 @@ test("OAuth wajib dan role diperiksa ulang pada server", async (t) => {
 
   const wrongAudience = signAccessToken({ userId: "admin-user", clientId: "client", resource: "http://localhost:4000/mcp" });
   assert.equal((await call(url, body, wrongAudience)).status, 401);
+
+  const wrongScope = jwt.sign(
+    { clientId: "client", scope: "mcp:write" },
+    process.env.MCP_OAUTH_JWT_SECRET,
+    {
+      subject: "admin-user",
+      issuer: "http://localhost:4000",
+      audience: "http://localhost:4000/mcp-chatgpt",
+      expiresIn: 3600,
+    },
+  );
+  assert.equal((await call(url, body, wrongScope)).status, 401);
 
   const salesToken = signAccessToken({ userId: "sales-user", clientId: "client", resource: "http://localhost:4000/mcp-chatgpt" });
   assert.equal((await call(url, body, salesToken)).status, 403);

@@ -80,6 +80,11 @@ export function createRequireChatGptOAuth({ principalLoader = loadPrincipal } = 
       setAuthChallenge(res);
       return res.status(401).json({ error: "Token OAuth MCP ChatGPT tidak valid" });
     }
+    const scopes = String(payload.scope || "").split(/\s+/).filter(Boolean);
+    if (!scopes.includes(OAUTH_SCOPE)) {
+      setAuthChallenge(res);
+      return res.status(401).json({ error: "Scope OAuth MCP ChatGPT tidak valid" });
+    }
 
     const principal = await principalLoader(payload.userId);
     if (!principal?.active) return res.status(403).json({ error: "Akun tidak aktif" });
