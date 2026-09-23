@@ -705,7 +705,7 @@
       "operation": "update"
     }
   ],
-  "generatedAt": "2026-09-23T22:06:04.067Z",
+  "generatedAt": "2026-09-23T23:15:10.637Z",
   "reportType": "delivery-v2-writer-ownership-audit",
   "totals": {
     "mutationSites": 88,

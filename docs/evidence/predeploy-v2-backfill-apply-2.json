@@ -1,0 +1,75 @@
+{
+  "applyResult": {
+    "migrationRunId": "1ccc01e3-1c7b-4ed2-abd4-5e429ab5ebfb",
+    "resultChecksum": "3d23e274efff679338d62827233b968cfd5173e9f33770d816654277337bcfb1"
+  },
+  "counts": {
+    "exceptions": 5,
+    "jobs": 828,
+    "routes": 32,
+    "units": 542
+  },
+  "exceptions": [
+    {
+      "aggregateId": "34d3d6d6-cca8-4c66-b397-e597b607a412",
+      "aggregateType": "Unit",
+      "code": "CURRENT_STAGE_WITHOUT_SERVICE",
+      "domain": "PRODUCTION",
+      "evidence": {
+        "currentStageId": "8fac530c-1bc5-472e-b372-a6c769809958"
+      },
+      "severity": "HIGH",
+      "status": "KEEP_V1"
+    },
+    {
+      "aggregateId": "8052716f-d30a-4421-a265-c7a6061bdb75",
+      "aggregateType": "Unit",
+      "code": "CURRENT_STAGE_WITHOUT_SERVICE",
+      "domain": "PRODUCTION",
+      "evidence": {
+        "currentStageId": "8fac530c-1bc5-472e-b372-a6c769809958"
+      },
+      "severity": "HIGH",
+      "status": "KEEP_V1"
+    },
+    {
+      "aggregateId": "97dd6710-0f4a-4872-9deb-c7440a0f73a8",
+      "aggregateType": "Unit",
+      "code": "CURRENT_STAGE_WITHOUT_SERVICE",
+      "domain": "PRODUCTION",
+      "evidence": {
+        "currentStageId": "8fac530c-1bc5-472e-b372-a6c769809958"
+      },
+      "severity": "HIGH",
+      "status": "KEEP_V1"
+    },
+    {
+      "aggregateId": "c54c7a5b-6149-479e-91b1-0c86b62753e7",
+      "aggregateType": "Unit",
+      "code": "CURRENT_STAGE_WITHOUT_SERVICE",
+      "domain": "PRODUCTION",
+      "evidence": {
+        "currentStageId": "8fac530c-1bc5-472e-b372-a6c769809958"
+      },
+      "severity": "HIGH",
+      "status": "KEEP_V1"
+    },
+    {
+      "aggregateId": "d4e4f0ae-a008-4913-ad68-3da6e1839a55",
+      "aggregateType": "Unit",
+      "code": "CURRENT_STAGE_WITHOUT_SERVICE",
+      "domain": "PRODUCTION",
+      "evidence": {
+        "currentStageId": "8fac530c-1bc5-472e-b372-a6c769809958"
+      },
+      "severity": "HIGH",
+      "status": "KEEP_V1"
+    }
+  ],
+  "generatedAt": "2026-09-23T23:12:40.043Z",
+  "mode": "APPLY",
+  "planChecksum": "3d23e274efff679338d62827233b968cfd5173e9f33770d816654277337bcfb1",
+  "reportType": "production-delivery-v2-backfill",
+  "ruleVersion": "production-delivery-v2-backfill-v1",
+  "sourceChecksum": "15c6ee0237f56ad0da29861f129a8f7424311f6d17a4de7e22a5f99aceaa29e2"
+}

@@ -1,0 +1,75 @@
+{
+  "anomalies": {
+    "duplicateActiveJobUnits": {
+      "count": 0,
+      "sample": [],
+      "truncated": false
+    },
+    "duplicateRouteSequences": {
+      "count": 0,
+      "sample": [],
+      "truncated": false
+    },
+    "openBlockersByUnit": {
+      "count": 0,
+      "sample": [],
+      "truncated": false
+    },
+    "orphanActiveJobs": {
+      "count": 0,
+      "sample": [],
+      "truncated": false
+    },
+    "routeAssignmentMismatches": {
+      "count": 0,
+      "sample": [],
+      "truncated": false
+    },
+    "unitsWithoutRouteSnapshot": 43
+  },
+  "baseline": {
+    "activeDevices": 6,
+    "executionEvents": 48,
+    "jobCount": 832,
+    "orderCount": 543,
+    "positionPings": 665,
+    "routeCount": 36,
+    "unitCount": 542
+  },
+  "dataChecksum": "4b53f1f384043de9af04a212f9f8f4f3e9d0226b87e3a6328e21918b6b4bd69f",
+  "database": {
+    "database": "klinik_matras_v2_predeploy_restore_test",
+    "host": "localhost",
+    "port": "5432"
+  },
+  "distributions": {
+    "jobsByStatus": {
+      "ARRIVED": 1,
+      "ASSIGNED": 17,
+      "COMPLETED": 765,
+      "EN_ROUTE": 3,
+      "FAILED": 6,
+      "SCHEDULED": 13,
+      "UNSCHEDULED": 27
+    },
+    "jobsByType": {
+      "DELIVERY": 406,
+      "PICKUP": 426
+    },
+    "routesByStatus": {
+      "CANCELLED": 2,
+      "COMPLETED": 30,
+      "PUBLISHED": 4
+    },
+    "unitsByStatus": {
+      "AWAITING_PICKUP": 27,
+      "CANCELLED": 31,
+      "DELIVERED": 411,
+      "IN_TRANSIT_OUT": 1,
+      "READY_FOR_DELIVERY": 29,
+      "RECEIVED": 43
+    }
+  },
+  "generatedAt": "2026-09-23T23:15:03.615Z",
+  "reportType": "production-delivery-v2-inventory"
+}

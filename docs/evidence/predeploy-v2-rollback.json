@@ -1,0 +1,33 @@
+{
+  "after": {
+    "commands": 10,
+    "jobs": 830,
+    "orders": 543,
+    "outbox": 11,
+    "productionRuns": 542,
+    "publications": 37,
+    "routes": 34,
+    "units": 542
+  },
+  "before": {
+    "commands": 10,
+    "jobs": 830,
+    "orders": 543,
+    "outbox": 11,
+    "productionRuns": 542,
+    "publications": 37,
+    "routes": 34,
+    "units": 542
+  },
+  "database": {
+    "database": "klinik_matras_v2_predeploy_restore_test",
+    "host": "localhost",
+    "port": "5432"
+  },
+  "enabledFlags": [],
+  "generatedAt": "2026-09-23T23:14:06.639Z",
+  "passed": true,
+  "reportType": "production-delivery-v2-rollback-rehearsal",
+  "v1Unchanged": true,
+  "v2Retained": true
+}

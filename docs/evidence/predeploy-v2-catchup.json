@@ -1,0 +1,13 @@
+{
+  "changedDetected": true,
+  "database": {
+    "database": "klinik_matras_v2_predeploy_restore_test",
+    "host": "localhost",
+    "port": "5432"
+  },
+  "generatedAt": "2026-09-23T23:13:54.171Z",
+  "passed": true,
+  "reportType": "production-delivery-v2-catchup-rehearsal",
+  "restoredParity": true,
+  "routeId": "058ea81d-3265-49f0-873e-28337c4fff11"
+}

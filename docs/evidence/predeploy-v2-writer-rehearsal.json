@@ -1,0 +1,89 @@
+{
+  "checks": [
+    {
+      "evidence": {
+        "jobId": "0c3867d2-abe1-4846-8fa5-987b5ea686ea",
+        "routeId": "9e9e44f8-1b63-4c63-8684-0f08db181a7a"
+      },
+      "name": "additive-create-writers",
+      "status": "PASS"
+    },
+    {
+      "evidence": {
+        "assignmentCount": 1,
+        "publicationVersion": 1,
+        "stopCount": 1
+      },
+      "name": "publish-no-missing-stop",
+      "status": "PASS"
+    },
+    {
+      "evidence": {
+        "newPublicationVersion": 2,
+        "oldEvents": [
+          "REMOVE_ROUTE"
+        ]
+      },
+      "name": "reassignment-revokes-old-principal",
+      "status": "PASS"
+    },
+    {
+      "evidence": {
+        "publicationCount": 2
+      },
+      "name": "idempotent-replay",
+      "status": "PASS"
+    },
+    {
+      "evidence": {},
+      "name": "optimistic-concurrency-rejects-stale-route-revision",
+      "status": "PASS"
+    },
+    {
+      "evidence": {
+        "eventKinds": [
+          "UPSERT_JOB"
+        ]
+      },
+      "name": "offline-delta-replay-is-deterministic",
+      "status": "PASS"
+    },
+    {
+      "evidence": {
+        "activePublications": 0,
+        "publicationVersion": 3
+      },
+      "name": "cancel-removes-route-without-ghost",
+      "status": "PASS"
+    },
+    {
+      "evidence": {
+        "itemCount": 0
+      },
+      "name": "app-full-refresh-loads-after-cancel",
+      "status": "PASS"
+    },
+    {
+      "evidence": {
+        "publicationVersion": 2,
+        "routeRevision": 3
+      },
+      "name": "execution-auto-completion-advances-route-publication",
+      "status": "PASS"
+    },
+    {
+      "evidence": {},
+      "name": "fault-injection-rolls-back-v1-and-v2",
+      "status": "PASS"
+    }
+  ],
+  "database": "klinik_matras_v2_predeploy_restore_test",
+  "generatedAt": "2026-09-23T23:14:18.750Z",
+  "reportType": "delivery-v2-writer-rehearsal",
+  "retainedSyntheticFixture": true,
+  "runId": "1790205253741-c8a81960",
+  "totals": {
+    "checks": 10,
+    "passed": 10
+  }
+}
