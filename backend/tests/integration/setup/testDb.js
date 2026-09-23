@@ -93,6 +93,11 @@ const TABLES_TO_TRUNCATE = [
   // atas — bukan strictly wajib, tapi menghindari kebingungan kalau nanti
   // "units" dihapus dari daftar ini tanpa disadari unit_revisions ikut lenyap.
   "unit_revisions",
+  // Provenance UnitRevisionJobLink (24 September 2026,
+  // unitRevisionJobLink.integration.test.js) — child dari "jobs" DAN
+  // "unit_revisions" (keduanya sudah di daftar ini), sama alasan dokumentasi
+  // dengan baris di atas.
+  "unit_revision_job_links",
   "user_roles", "User",
 ];
 

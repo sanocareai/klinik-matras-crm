@@ -2265,6 +2265,12 @@ model Job {
   units           JobUnit[]
   payments        Payment[]
   revisionLinks   UnitRevision[]
+  // Baris provenance (append-only) kalau job ini lahir dari revisi — lihat
+  // model UnitRevisionJobLink. Beda dari revisionLinks di atas (yang cuma
+  // "UnitRevision mana yang jobId-nya SEDANG menunjuk sini"): ini TIDAK
+  // PERNAH kosong lagi setelah pernah terisi sekali, walau revisionLinks
+  // sudah kosong karena jobId dipindah ke job lain.
+  revisionJobLink UnitRevisionJobLink?
   positionPings   JobPositionPing[]
   issueLogs       JobIssueLog[]
   rescheduleCases RescheduleCase[]         @relation("RescheduleCaseOriginJob")
@@ -2529,8 +2535,20 @@ model UnitRevision {
 
   // Job pickup/delivery yang SEDANG menangani revisi ini — SetNull karena
   // job bisa dihapus/diganti tanpa menghapus riwayat revisinya.
+  //
+  // ⚠️ HANYA JOB TERAKHIR (ditimpa saat revisi naik dari PICKUP ke
+  // DELIVERY, lihat create-delivery-job di routes/armada.js) — TIDAK
+  // dihapus dari schema demi kompatibilitas API existing (slice 24
+  // September 2026), tapi jangan pakai field ini lagi untuk "job apa saja
+  // yang PERNAH lahir dari revisi ini" — itu jawaban jobLinks di bawah.
   jobId String? @map("job_id") @db.Uuid
   job   Job?    @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  // Riwayat LENGKAP append-only setiap job yang pernah dibuat untuk revisi
+  // ini (lihat model UnitRevisionJobLink) — jawaban yang benar untuk "job
+  // mana saja yang berasal dari revisi ini", menggantikan jobId tunggal
+  // di atas yang cuma menyimpan job TERAKHIR.
+  jobLinks UnitRevisionJobLink[]
 
   note        String? // catatan tim (apa yang direvisi, hasil inspeksi, dst)
   confirmedAt DateTime? @map("confirmed_at")
@@ -2556,6 +2574,48 @@ model UnitRevision {
   @@index([status])
   @@index([complaintCaseId])
   @@map("unit_revisions")
+}
+
+// Provenance UnitRevision -> Job, APPEND-ONLY (audit insentif, 24 September
+// 2026) — UnitRevision.jobId di atas cuma menyimpan job TERAKHIR: begitu
+// revisi naik dari PICKUP ke DELIVERY, create-delivery-job MENIMPA jobId ke
+// job pengiriman baru, dan job PICKUP lama kehilangan SATU-SATUNYA jejak
+// yang membuktikan asalnya. Akibatnya GET /armada/incentive-summary (yang
+// exclude job hasil revisi supaya tidak dihitung insentif 2x) tidak bisa
+// lagi mengenali job PICKUP itu tanpa menebak (nama/tanggal/tipe/urutan —
+// dilarang eksplisit) begitu tahap DELIVERY dibuat.
+//
+// Tabel ini adalah RIWAYAT LENGKAP: satu baris per job yang PERNAH dibuat
+// untuk satu revisi (bisa lebih dari satu — satu utk PICKUP, satu lagi utk
+// DELIVERY), ditulis SEKALI saat job itu dibuat dan TIDAK PERNAH
+// diupdate/dihapus dari kode aplikasi (pola sama dengan Payment/
+// ActivityEvent/StockMovement — ledger, bukan kolom status yang bisa
+// menimpa dirinya sendiri). jobId UNIQUE: satu job cuma pernah lahir dari
+// SATU revisi, tidak mungkin dipakai ulang.
+model UnitRevisionJobLink {
+  id String @id @default(uuid()) @db.Uuid
+
+  unitRevisionId String       @map("unit_revision_id") @db.Uuid
+  // Restrict: baris riwayat provenance tidak boleh yatim diam-diam kalau
+  // revisinya "terhapus" (belum ada endpoint delete UnitRevision hari ini,
+  // tapi kalau nanti ada, ini WAJIB gagal keras dulu, bukan menghapus
+  // jejak siapa yang pernah dibayar/tidak dibayar insentifnya).
+  unitRevision UnitRevision @relation(fields: [unitRevisionId], references: [id], onDelete: Restrict)
+
+  jobId String @unique @map("job_id") @db.Uuid
+  // Restrict, alasan sama dengan unitRevisionId di atas — job yang sudah
+  // tertaut riwayat provenance tidak boleh "lepas" diam-diam.
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Restrict)
+
+  // PICKUP | DELIVERY — pakai enum JobType yang sudah ada (bukan enum
+  // baru): maknanya PERSIS sama, peran job ini dalam siklus revisi.
+  role JobType
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([unitRevisionId, jobId])
+  @@index([unitRevisionId])
+  @@map("unit_revision_job_links")
 }
 
 // ─── COMPLAINT CASE — After-Sales lintas divisi (D-116, 11 September 2026) ─

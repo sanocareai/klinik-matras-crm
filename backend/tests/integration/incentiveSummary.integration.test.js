@@ -203,14 +203,19 @@ test("PATCH /pod/:jobId/edit mengubah driver mencatat ActivityEvent dengan nilai
 // ── UnitRevision ("Lapor Revisi") — hardening 24 September 2026 ────────────
 // Job pickup/delivery UnitRevision tidak dibuat lewat endpoint penuh di sini
 // (POST /revisions/:id/create-pickup-job dkk butuh banyak setup produksi yang
-// tidak relevan buat tes ini) — fixture langsung menulis baris UnitRevision
-// dengan jobId menunjuk job tes, meniru HASIL AKHIR endpoint itu (jobId
-// terisi setelah job dibuat). Pola sama dengan fixture ComplaintCase di atas.
-async function buatUnitRevisionUntukJob({ orderId, jobId, status = "IN_REWORK" }) {
+// tidak relevan buat tes ini) — fixture langsung menulis baris UnitRevision +
+// UnitRevisionJobLink, meniru HASIL AKHIR endpoint itu (jobId terisi DAN
+// baris riwayat provenance tertulis, persis yang dilakukan ketiga endpoint
+// pembuat job revisi di transaksi mereka — lihat
+// unitRevisionJobLink.integration.test.js untuk pembuktian lewat endpoint
+// SUNGGUHAN). Pola sama dengan fixture ComplaintCase di atas.
+async function buatUnitRevisionUntukJob({ orderId, jobId, status = "IN_REWORK", role = "PICKUP" }) {
   const unit = await testPrisma.unit.create({ data: { unitCode: `UNIT-TEST-${++seq}`, orderId, seq: 1 } });
-  return testPrisma.unitRevision.create({
+  const revision = await testPrisma.unitRevision.create({
     data: { unitId: unit.id, trigger: "KENYAMANAN", complaint: "Kasur kurang empuk", status, jobId },
   });
+  await testPrisma.unitRevisionJobLink.create({ data: { unitRevisionId: revision.id, jobId, role } });
+  return revision;
 }
 
 test("UnitRevision PICKUP tidak dihitung", async () => {
@@ -231,7 +236,7 @@ test("UnitRevision DELIVERY tidak dihitung", async () => {
   const order = await buatOrder(f.customer.id);
   await buatJob({ orderId: order.id, driverId: f.driver.user.id, completedAt: "2026-09-01T02:00:00.000Z" });
   const jobKirimUlang = await buatJob({ orderId: order.id, driverId: f.driver.user.id, type: "DELIVERY", completedAt: "2026-09-12T02:00:00.000Z" });
-  await buatUnitRevisionUntukJob({ orderId: order.id, jobId: jobKirimUlang.id, status: "REDELIVERED" });
+  await buatUnitRevisionUntukJob({ orderId: order.id, jobId: jobKirimUlang.id, status: "REDELIVERED", role: "DELIVERY" });
 
   const res = await f.admin.api.get("/api/armada/incentive-summary?from=2026-09-01&to=2026-09-15");
   const baris = res.body.orang.find((o) => o.id === f.driver.user.id);

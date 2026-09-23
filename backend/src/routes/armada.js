@@ -2140,26 +2140,21 @@ armadaRouter.get("/incentive-summary", requireAnyPermission(P.JOB_READ, P.JOB_OW
         // exclude ini, dedup (orderId,tanggalWIB) melihatnya sebagai
         // "alamat baru", persis celah yang sama dengan ComplaintCase.
         //
-        // SATU-SATUNYA relasi resmi UnitRevision->Job di schema adalah
-        // UnitRevision.jobId (FK tunggal, bukan tabel riwayat) — Job.
-        // revisionLinks di bawah adalah relasi baliknya. `none: {}` berarti
-        // "TIDAK ADA baris unit_revisions yang jobId-nya menunjuk job ini
-        // SAAT QUERY DIJALANKAN". SENGAJA TIDAK memakai heuristic nama/
-        // tanggal/tipe job/urutan job — hanya field FK yang terbukti.
-        //
-        // ⚠️ KETERBATASAN JUJUR (bukan bug, konsekuensi desain schema):
-        // UnitRevision.jobId DITIMPA (bukan riwayat) saat revisi naik tahap
-        // — create-delivery-job eksplisit menimpa jobId dari job PICKUP
-        // lama ke job DELIVERY baru begitu dibuat (lihat komentar di
-        // endpoint itu: "jobId masih menunjuk job PENGAMBILAN LAMA yang
-        // sudah COMPLETED... field itu merepresentasikan fase SEKARANG,
-        // BUKAN riwayat"). Akibatnya: job PICKUP yang revisinya SUDAH naik
-        // ke tahap DELIVERY tidak lagi punya revisionLinks (jobId sudah
-        // dipindah), jadi TIDAK tertangkap exclude ini — tidak ada field
-        // lain di schema yang bisa membuktikan asalnya tanpa menebak.
-        // Dicatat sebagai risiko tersisa yang JUJUR, bukan ditutup diam-diam
-        // dengan heuristic yang dilarang eksplisit.
-        revisionLinks: { none: {} },
+        // Provenance UnitRevision->Job dari tabel RIWAYAT append-only
+        // UnitRevisionJobLink (24 September 2026), BUKAN lagi dari
+        // UnitRevision.jobId/revisionLinks (FK tunggal yang DITIMPA saat
+        // revisi naik dari PICKUP ke DELIVERY — lihat catatan panjang di
+        // schema.prisma model UnitRevisionJobLink). `revisionJobLink: null`
+        // berarti "TIDAK ADA baris unit_revision_job_links yang job_id-nya
+        // menunjuk job ini" — job_id UNIQUE di tabel itu, jadi ini relasi
+        // one-to-one, satu query (NOT EXISTS/LEFT JOIN dari Prisma), bukan
+        // N+1. SENGAJA TIDAK memakai heuristic nama/tanggal/tipe/urutan
+        // job — hanya baris riwayat yang ditulis SAAT job itu dibuat.
+        // Dengan tabel riwayat ini, job PICKUP yang revisinya sudah naik ke
+        // tahap DELIVERY TETAP tertangkap (baris link-nya tidak pernah
+        // hilang/ditimpa) — menutup celah yang sebelumnya jujur didokumentasikan
+        // sebagai risiko tersisa di revisi fix sebelumnya.
+        revisionJobLink: null,
         // Order yang dibatalkan SETELAH job-nya selesai tidak dihitung
         // (audit insentif) — OrderStatus.CANCELLED adalah satu-satunya
         // status "batal" yang ada di schema (tidak ada REFUNDED terpisah,
@@ -5462,6 +5457,15 @@ armadaRouter.post("/revisions/:id/create-delivery-job", requirePermission(P.JOB_
       });
       await tx.jobUnit.create({ data: { jobId: job.id, unitId: revision.unit.id } });
       await tx.unitRevision.update({ where: { id: revision.id }, data: { jobId: job.id } });
+      // Provenance append-only (audit insentif, 24 September 2026) — DITULIS
+      // DI SAMPING unitRevision.jobId di atas, BUKAN pengganti (kompatibilitas
+      // API existing). job.id baru dibuat barusan di transaksi ini (UUID
+      // segar), jadi create biasa sudah cukup idempoten secara alami — tidak
+      // ada skenario job yang sama dibuat dua kali di sini untuk ditulis
+      // ulang linknya (lihat catatan panjang di schema.prisma).
+      await tx.unitRevisionJobLink.create({
+        data: { unitRevisionId: revision.id, jobId: job.id, role: "DELIVERY" },
+      });
       return job.id;
     });
 
@@ -5510,6 +5514,10 @@ armadaRouter.post("/revisions/:id/create-pickup-job", requirePermission(P.JOB_WR
       await tx.unitRevision.update({
         where: { id: revision.id },
         data: { jobId: job.id, status: "PICKUP_SCHEDULED" },
+      });
+      // Provenance append-only — lihat catatan di create-delivery-job di atas.
+      await tx.unitRevisionJobLink.create({
+        data: { unitRevisionId: revision.id, jobId: job.id, role: "PICKUP" },
       });
       return job.id;
     });
@@ -5600,6 +5608,12 @@ armadaRouter.post("/jobs/:id/report-revision", requireAnyPermission(P.JOB_WRITE,
       await tx.unitRevision.update({
         where: { id: revision.id },
         data: { jobId: pickupJob.id, status: "PICKUP_SCHEDULED" },
+      });
+      // Provenance append-only (audit insentif, 24 September 2026) — jalur
+      // ketiga yang membuat job revisi (driver lapor di lokasi), sama
+      // wajibnya dengan dua endpoint dispatcher di atas.
+      await tx.unitRevisionJobLink.create({
+        data: { unitRevisionId: revision.id, jobId: pickupJob.id, role: "PICKUP" },
       });
       return { revisionId: revision.id, pickupJobId: pickupJob.id };
     });
