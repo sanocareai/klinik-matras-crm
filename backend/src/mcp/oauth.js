@@ -1,4 +1,5 @@
-// OAuth 2.1 authorization server untuk MCP — HANYA melayani Claude.ai
+// OAuth 2.1 authorization server untuk MCP — melayani Claude.ai dan
+// ChatGPT Developer Mode melalui callback exact-match.
 // (custom connector browser, yang UI-nya cuma punya field OAuth Client
 // ID/Secret, tidak ada input header kustom seperti Claude Code/Desktop).
 //
@@ -18,7 +19,6 @@ import { prisma } from "../db.js";
 import { rolesOf } from "../middleware/authorize.js";
 import { createRateLimiter, rateLimitKey } from "./security.js";
 import {
-  ALLOWED_REDIRECT_URI,
   OAUTH_SCOPE,
   ACCESS_TOKEN_TTL_SEC,
   AUTH_CODE_TTL_SEC,
@@ -32,9 +32,9 @@ import {
   validateRedirectUris,
 } from "./oauthCrypto.js";
 
-// --- Multi-resource (RFC 8707) -- SATU authorization server, DUA connector
-// MCP yang berbeda (SANSS CRM di /mcp, SANO Hub Analytics di /mcp-hub sejak
-// 29 Agt 2026). Admin login SAMA untuk keduanya, tapi access token yang
+// --- Multi-resource (RFC 8707) -- SATU authorization server, beberapa
+// resource MCP terpisah (/mcp, /mcp-hub, dan /mcp-chatgpt). Admin login
+// SAMA untuk semuanya, tapi access token yang
 // diterbitkan untuk satu resource TIDAK BOLEH bisa dipakai ke resource lain
 // (lihat oauthCrypto.js, fungsi verifyAccessToken) -- makanya setiap
 // authorization code & refresh token MENYIMPAN resource-nya sendiri (kolom
@@ -43,6 +43,7 @@ import {
 const KNOWN_RESOURCES = {
   "/mcp": "SANSS CRM (data pelanggan, order, pipeline, percakapan - baca-saja)",
   "/mcp-hub": "SANO Hub Analytics (quality score, risk profile, stale lead, gold standard, narasi mingguan - baca-saja)",
+  "/mcp-chatgpt": "SANSS Sales CRM untuk ChatGPT (agregat penjualan, pipeline, lead, iklan, produk - baca-saja)",
 };
 
 // resourceParam = nilai mentah query/body resource= dari Claude (URL penuh).
@@ -117,10 +118,10 @@ function renderLoginPage({ hidden, error, resourceLabel }) {
 <body>
   <div class="card">
     <span class="badge">Klinik Matras CRM</span>
-    <h1>Izinkan akses Claude (baca-saja)</h1>
-    <p class="sub">Masuk sebagai Admin untuk mengizinkan Claude membaca:<br>
+    <h1>Izinkan akses AI internal (baca-saja)</h1>
+    <p class="sub">Masuk sebagai Admin untuk mengizinkan koneksi membaca:<br>
       <strong>${escapeHtml(resourceLabel || "data CRM")}</strong>.<br>
-      Claude TIDAK bisa mengubah data apa pun lewat koneksi ini.</p>
+      Koneksi ini TIDAK bisa mengubah data apa pun.</p>
     ${error ? `<div class="error">${escapeHtml(error)}</div>` : ""}
     <form method="POST">
       ${hiddenInputs}
@@ -170,6 +171,14 @@ wellKnownRouter.get("/.well-known/oauth-protected-resource/mcp-hub", (req, res) 
   });
 });
 
+wellKnownRouter.get("/.well-known/oauth-protected-resource/mcp-chatgpt", (_req, res) => {
+  res.json({
+    resource: `${publicUrl()}/mcp-chatgpt`,
+    authorization_servers: [publicUrl()],
+    scopes_supported: [OAUTH_SCOPE],
+  });
+});
+
 // RFC 8414 — metadata authorization server. PENTING: token_endpoint_auth_methods_supported
 // HARUS ["none"] (public client, PKCE) — kalau tidak, sesuai docs Anthropic,
 // Claude tidak akan memilih CIMD dan mencoba DCR seperti biasa, yang memang
@@ -200,9 +209,9 @@ mcpOAuthRouter.use(express.urlencoded({ extended: false }));
 // tapi memperlambat brute-force secara berarti.
 const oauthLoginLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 });
 
-// RFC 7591 — Dynamic Client Registration. Endpoint ini efektif cuma pernah
-// dipakai Claude, karena redirect_uris SELAIN callback Claude ditolak keras
-// (validateRedirectUris) — lihat komentar ALLOWED_REDIRECT_URI di oauthCrypto.js.
+// RFC 7591 — Dynamic Client Registration. Hanya callback Claude bawaan dan
+// callback ChatGPT yang dikonfigurasi eksplisit yang diterima exact-match
+// (validateRedirectUris); URI lain ditolak seluruhnya.
 mcpOAuthRouter.post("/oauth/register", express.json(), async (req, res) => {
   const { redirect_uris } = req.body || {};
   const check = validateRedirectUris(redirect_uris);
@@ -212,12 +221,12 @@ mcpOAuthRouter.post("/oauth/register", express.json(), async (req, res) => {
 
   const clientId = randomToken(16);
   await prisma.mcpOAuthClient.create({
-    data: { clientId, redirectUris: [ALLOWED_REDIRECT_URI] },
+    data: { clientId, redirectUris: check.redirectUris },
   });
 
   res.status(201).json({
     client_id: clientId,
-    redirect_uris: [ALLOWED_REDIRECT_URI],
+    redirect_uris: check.redirectUris,
     token_endpoint_auth_method: "none",
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
@@ -232,15 +241,15 @@ async function validateAuthorizeParams(q) {
   if (response_type !== "code") return { ok: false, msg: "response_type harus 'code'" };
   if (code_challenge_method !== "S256") return { ok: false, msg: "code_challenge_method harus 'S256'" };
   if (!code_challenge) return { ok: false, msg: "code_challenge wajib diisi" };
-  if (redirect_uri !== ALLOWED_REDIRECT_URI) return { ok: false, msg: "redirect_uri tidak dikenali" };
-
   // resource (RFC 8707) -- WAJIB dikenali (lihat KNOWN_RESOURCES). Absen =
   // default /mcp untuk kompatibilitas mundur (lihat resolveResource()).
   const resolvedResource = resolveResource(resource);
   if (!resolvedResource) return { ok: false, msg: "resource tidak dikenali server ini" };
 
   const client = await prisma.mcpOAuthClient.findUnique({ where: { clientId: client_id } });
-  if (!client) return { ok: false, msg: "client_id tidak dikenali — coba tambah ulang konektornya di Claude" };
+  if (!client) return { ok: false, msg: "client_id tidak dikenali — coba tambah ulang koneksi MCP" };
+
+  if (!client.redirectUris.includes(redirect_uri)) return { ok: false, msg: "redirect_uri tidak dikenali" };
 
   return { ok: true, resource: resolvedResource };
 }
@@ -296,7 +305,7 @@ mcpOAuthRouter.post("/oauth/authorize", async (req, res) => {
   if (!rolesOf({ roles }).includes("ADMIN")) {
     return res.status(403).send(renderLoginPage({
       hidden,
-      error: "Hanya Admin yang bisa mengizinkan koneksi Claude ke CRM ini.",
+      error: "Hanya Admin yang bisa mengizinkan koneksi AI ke CRM ini.",
       resourceLabel,
     }));
   }

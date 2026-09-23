@@ -14,6 +14,7 @@ import jwt from "jsonwebtoken";
 // dibersihkan. Simpan nilai lama, kembalikan setelah file ini selesai.
 const asliSecret = process.env.MCP_OAUTH_JWT_SECRET;
 const asliPublicUrl = process.env.MCP_PUBLIC_URL;
+const asliChatGptRedirectUris = process.env.MCP_CHATGPT_REDIRECT_URIS;
 process.env.MCP_OAUTH_JWT_SECRET = "rahasia-tes-oauth-mcp";
 process.env.MCP_PUBLIC_URL = "http://localhost:4000";
 after(() => {
@@ -21,10 +22,13 @@ after(() => {
   else process.env.MCP_OAUTH_JWT_SECRET = asliSecret;
   if (asliPublicUrl === undefined) delete process.env.MCP_PUBLIC_URL;
   else process.env.MCP_PUBLIC_URL = asliPublicUrl;
+  if (asliChatGptRedirectUris === undefined) delete process.env.MCP_CHATGPT_REDIRECT_URIS;
+  else process.env.MCP_CHATGPT_REDIRECT_URIS = asliChatGptRedirectUris;
 });
 
 const {
   ALLOWED_REDIRECT_URI,
+  allowedRedirectUris,
   computeCodeChallengeS256,
   verifyPkce,
   randomToken,
@@ -123,4 +127,19 @@ test("validateRedirectUris: hanya menerima persis redirect URI Claude", () => {
   assert.equal(validateRedirectUris(["https://evil.example/callback"]).valid, false);
   // Satu benar satu tidak -> DITOLAK SELURUHNYA, bukan diterima sebagian.
   assert.equal(validateRedirectUris([ALLOWED_REDIRECT_URI, "https://evil.example/callback"]).valid, false);
+});
+
+test("validateRedirectUris menerima callback ChatGPT yang dikonfigurasi tanpa wildcard", () => {
+  const chatGptCallback = "https://chatgpt.example.test/oauth/callback";
+  process.env.MCP_CHATGPT_REDIRECT_URIS = chatGptCallback;
+  try {
+    assert.deepEqual(allowedRedirectUris(), [ALLOWED_REDIRECT_URI, chatGptCallback]);
+    assert.deepEqual(validateRedirectUris([chatGptCallback]), {
+      valid: true,
+      redirectUris: [chatGptCallback],
+    });
+    assert.equal(validateRedirectUris(["https://evil.example/callback"]).valid, false);
+  } finally {
+    delete process.env.MCP_CHATGPT_REDIRECT_URIS;
+  }
 });

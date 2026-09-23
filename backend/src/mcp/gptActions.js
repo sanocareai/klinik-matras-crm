@@ -81,6 +81,18 @@ function potongDeskripsi(teks) {
   return teks.slice(0, OPENAI_BATAS_DESKRIPSI - 1) + "…";
 }
 
+function tanpaUnmask(schema) {
+  const properties = { ...(schema?.properties || {}) };
+  delete properties.unmask;
+  return {
+    ...(schema || { type: "object" }),
+    properties,
+    ...(Array.isArray(schema?.required)
+      ? { required: schema.required.filter((name) => name !== "unmask") }
+      : {}),
+  };
+}
+
 function buildOpenApiSpec(tools, baseUrl) {
   const paths = {};
   for (const tool of tools) {
@@ -91,7 +103,7 @@ function buildOpenApiSpec(tools, baseUrl) {
         description: potongDeskripsi(tool.description || tool.name),
         requestBody: {
           required: false,
-          content: { "application/json": { schema: tool.inputSchema } },
+          content: { "application/json": { schema: tanpaUnmask(tool.inputSchema) } },
         },
         responses: {
           200: {
@@ -114,8 +126,7 @@ function buildOpenApiSpec(tools, baseUrl) {
         "Akses BACA-SAJA ke data CRM Klinik Matras — cermin persis dari server MCP yang " +
         "dipakai Claude (/mcp), disajikan sebagai REST/OpenAPI untuk ChatGPT Custom GPT " +
         "Actions. Tidak ada operasi yang mengubah data atau mengirim WhatsApp. Nomor HP & " +
-        "email pelanggan disamarkan default (param unmask per tool untuk kasus yang " +
-        "memang butuh kontak lengkap).",
+        "email pelanggan selalu disamarkan; model tidak dapat meminta unmask.",
     },
     servers: [{ url: baseUrl }],
     paths,
@@ -144,7 +155,7 @@ gptActionsRouter.get("/openapi.json", async (req, res) => {
 gptActionsRouter.post("/tools/:toolName", async (req, res) => {
   try {
     const result = await withClient((client) =>
-      client.callTool({ name: req.params.toolName, arguments: req.body || {} }),
+      client.callTool({ name: req.params.toolName, arguments: { ...(req.body || {}), unmask: false } }),
     );
     const potongan = result.content?.[0];
     const teks = potongan?.type === "text" ? potongan.text : null;
