@@ -43,11 +43,19 @@ export function useDriverTracking(jobs, isOnline) {
   // sempat menjalankan cabang "offline, hentikan" di atas, dan service GPS
   // native TERUS JALAN tanpa batas walau React tree-nya sudah lenyap.
   // Effect TERPISAH dengan deps kosong ini HANYA jalan sekali saat true
-  // unmount, sebagai jaring pengaman terakhir — TIDAK mengganggu logika
-  // start/stop normal effect utama (hentikanBackgroundTracking() aman
-  // dipanggil berulang, sudah idempoten lewat cek hasStartedLocationUpdatesAsync).
+  // unmount React (logout, navigasi keluar layar ini) — SENGAJA TIDAK
+  // menangani force-close/proses dibunuh OS: itu mematikan seluruh proses
+  // tanpa menjalankan JS apa pun, cleanup React manapun tidak pernah
+  // sempat jalan, tidak ada mekanisme JS yang bisa menutup celah itu.
+  // TIDAK mengganggu logika start/stop normal effect utama di bawah
+  // (hentikanBackgroundTracking() aman dipanggil berulang, sudah idempoten
+  // lewat cek hasStartedLocationUpdatesAsync). `.catch()` di sini murni
+  // jaring tambahan di titik panggil — fungsinya sendiri SUDAH membungkus
+  // isinya dengan try/catch dan tidak pernah reject, tapi cleanup effect
+  // React yang memanggil promise tanpa `.catch()` adalah sumber unhandled
+  // rejection yang umum kalau suatu saat implementasinya berubah.
   useEffect(() => {
-    return () => { hentikanBackgroundTracking(); };
+    return () => { hentikanBackgroundTracking().catch(() => {}); };
   }, []);
 
   useEffect(() => {
