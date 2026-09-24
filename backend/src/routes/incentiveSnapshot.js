@@ -7,6 +7,7 @@
 // SLICE INI TIDAK memposting apa pun ke Finance (jurnal/pembayaran) —
 // murni membekukan angka & bukti pendukungnya untuk alur persetujuan
 // Finance review -> Owner approval.
+import { adalahGalatInfraDb, kirimGalatInfraDb } from "../lib/dbInfraError.js";
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -34,7 +35,8 @@ function handleErr(err, res) {
       code: "SNAPSHOT_OVERLAP_RACE",
     });
   }
-  if (err?.code === "P2028" || (err?.code === "P2010" && err?.meta?.code === "55P03")) {
+  if (adalahGalatInfraDb(err)) return kirimGalatInfraDb(res, err, "[incentiveSnapshot]");
+  if (err?.code === "P2010" && err?.meta?.code === "55P03") {
     return res.status(409).json({ error: "Aksi sedang diproses di perangkat lain. Muat ulang status lalu coba lagi." });
   }
   if (err?.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });

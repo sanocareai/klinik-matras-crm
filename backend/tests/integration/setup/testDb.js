@@ -5,7 +5,9 @@ import { PrismaClient } from "@prisma/client";
 // proses `node --test` (pola sama dengan src/db.js di aplikasi asli) — tapi
 // menunjuk ke DATABASE_URL tes yang sudah di-override & divalidasi oleh
 // env.js, bukan ke database dev/produksi.
-export const testPrisma = new PrismaClient();
+// Batas transaksi SAMA dengan src/db.js: fixture tes yang membuka $transaction interaktif tidak boleh gagal P2028
+// hanya karena mesin tes sedang sibuk (bawaan Prisma: maxWait 2 dtk / timeout 5 dtk). Terbukti pada run beban sedang.
+export const testPrisma = new PrismaClient({ transactionOptions: { maxWait: 15_000, timeout: 30_000 } });
 
 // Tabel inventory (urutan TIDAK penting — TRUNCATE ... CASCADE mengabaikan
 // arah FK RESTRICT/SetNull sepenuhnya, beda dari DELETE biasa) + entitas
