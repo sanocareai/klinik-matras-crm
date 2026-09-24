@@ -4,6 +4,7 @@ import { decodeDriverCursor, encodeDriverCursor } from "../src/services/driverFe
 import {
   buildDeliveryRouteSnapshot,
   deliveryV2Checksum,
+  hasDriverVisibleRouteSnapshotV2,
   isDriverActiveRouteStatusV2,
   isDriverVisibleAssignmentV2,
   routeRecipients,
@@ -44,4 +45,7 @@ test("completed stop hanya menjadi konteks pada route IN_PROGRESS", () => {
   assert.equal(isDriverVisibleAssignmentV2("PUBLISHED", "COMPLETED"), false);
   assert.equal(isDriverVisibleAssignmentV2("IN_PROGRESS", "ACTIVE"), true);
   assert.equal(isDriverVisibleAssignmentV2("IN_PROGRESS", "COMPLETED"), true);
+  assert.equal(hasDriverVisibleRouteSnapshotV2({ status: "PUBLISHED", stops: [{ status: "COMPLETED" }] }), false);
+  assert.equal(hasDriverVisibleRouteSnapshotV2({ status: "IN_PROGRESS", stops: [{ status: "COMPLETED" }] }), true);
+  assert.equal(hasDriverVisibleRouteSnapshotV2({ status: "PUBLISHED", stops: [{ status: "ASSIGNED" }] }), true);
 });

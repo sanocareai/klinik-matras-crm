@@ -30,7 +30,7 @@ function publicJob(job) {
 }
 
 export async function buildDriverV2OpsDecisionPack(prisma) {
-  const [targetRoute, pendingJob, mismatch] = await Promise.all([
+  const [targetRoute, pendingJob, mismatch, flags] = await Promise.all([
     prisma.route.findUnique({
       where: { code: TARGET_ROUTE_CODE },
       select: {
@@ -44,7 +44,20 @@ export async function buildDriverV2OpsDecisionPack(prisma) {
           where: { status: "ACTIVE" },
           select: {
             id: true, publicationVersion: true, routeRevision: true, status: true,
-            assignments: { orderBy: { sequence: "asc" }, select: { jobId: true, status: true, sequence: true, driverId: true, helperId: true, vehicleId: true } },
+            assignments: {
+              orderBy: { sequence: "asc" },
+              select: {
+                id: true, jobId: true, status: true, sequence: true,
+                driverId: true, helperId: true, vehicleId: true,
+                job: {
+                  select: {
+                    status: true, routeId: true, driverId: true, helperId: true,
+                    vehicleId: true, scheduledDate: true, completedAt: true,
+                    cancellationV2: { select: { id: true, cancelledAt: true } },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -65,6 +78,10 @@ export async function buildDriverV2OpsDecisionPack(prisma) {
       where: { code: EXCEPTION_CODE, status: { in: ["OPEN", "KEEP_V1"] } },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.v2FeatureFlag.findMany({
+      orderBy: { key: "asc" },
+      select: { key: true, enabled: true, scope: true, updatedAt: true },
+    }),
   ]);
 
   let mismatchAggregate = null;
@@ -72,7 +89,35 @@ export async function buildDriverV2OpsDecisionPack(prisma) {
     const [route, job] = await Promise.all([
       prisma.route.findUnique({
         where: { id: mismatch.aggregateId },
-        select: { id: true, code: true, status: true, date: true, driverId: true, helperId: true, vehicleId: true },
+        select: {
+          id: true, code: true, status: true, date: true,
+          driverId: true, helperId: true, vehicleId: true,
+          jobs: {
+            orderBy: [{ sequence: "asc" }, { id: "asc" }],
+            select: {
+              id: true, status: true, sequence: true, scheduledDate: true,
+              driverId: true, helperId: true, vehicleId: true,
+              cancellationV2: { select: { id: true, cancelledAt: true } },
+            },
+          },
+          deliveryStateV2: {
+            select: {
+              routeRevision: true, currentPublicationVersion: true,
+              lifecycleStatus: true, migrationSource: true, sourceChecksum: true,
+            },
+          },
+          publicationsV2: {
+            orderBy: { publicationVersion: "asc" },
+            select: {
+              id: true, publicationVersion: true, routeRevision: true,
+              status: true, checksum: true,
+              assignments: {
+                orderBy: { sequence: "asc" },
+                select: { id: true, jobId: true, status: true, sequence: true },
+              },
+            },
+          },
+        },
       }),
       mismatch.evidence?.jobId ? prisma.job.findUnique({
         where: { id: mismatch.evidence.jobId },
@@ -90,6 +135,7 @@ export async function buildDriverV2OpsDecisionPack(prisma) {
   return {
     generatedAt: new Date().toISOString(),
     readOnly: true,
+    flags,
     targetRoute,
     pendingOpsJob: publicJob(pendingJob),
     assignmentMismatch: mismatch ? {

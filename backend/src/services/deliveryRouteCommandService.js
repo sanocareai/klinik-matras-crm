@@ -4,6 +4,7 @@ import {
   buildDeliveryRouteSnapshot,
   deliveryJobSource,
   deliveryV2Checksum,
+  hasDriverVisibleRouteSnapshotV2,
   isDriverActiveRouteStatusV2,
   routeRecipients,
 } from "./deliveryV2Snapshot.js";
@@ -69,8 +70,8 @@ function publicationStatus(routeStatus) {
 }
 
 function visibleRecipients(routeStatus, snapshot) {
-  if (!isDriverActiveRouteStatusV2(routeStatus)) return [];
-  return snapshot?.stops?.length ? routeRecipients(snapshot) : [];
+  if (snapshot?.status !== routeStatus || !hasDriverVisibleRouteSnapshotV2(snapshot)) return [];
+  return routeRecipients(snapshot);
 }
 
 function assignmentStatus(routeStatus, stopStatus) {

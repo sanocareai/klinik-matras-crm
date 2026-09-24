@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 export const DRIVER_ACTIVE_ROUTE_STATUSES_V2 = Object.freeze(["PUBLISHED", "IN_PROGRESS"]);
 
 const DRIVER_ACTIVE_ROUTE_STATUS_SET_V2 = new Set(DRIVER_ACTIVE_ROUTE_STATUSES_V2);
+const DRIVER_TERMINAL_JOB_STATUS_SET_V2 = new Set(["COMPLETED", "FAILED", "RESCHEDULED", "CANCELLED"]);
 
 export function isDriverActiveRouteStatusV2(status) {
   return DRIVER_ACTIVE_ROUTE_STATUS_SET_V2.has(status);
@@ -12,6 +13,18 @@ export function isDriverVisibleAssignmentV2(routeStatus, assignmentStatus) {
   if (!isDriverActiveRouteStatusV2(routeStatus)) return false;
   if (assignmentStatus === "ACTIVE") return true;
   return routeStatus === "IN_PROGRESS" && assignmentStatus === "COMPLETED";
+}
+
+// Recipient feed harus memakai predicate yang sama dengan full snapshot.
+// Route PUBLISHED tanpa stop aktif tidak boleh menerima UPSERT_ROUTE; kalau
+// publication lama masih terlihat, transisi rekonsiliasi wajib menghasilkan
+// REMOVE_ROUTE. Pada IN_PROGRESS, stop selesai tetap boleh menjadi konteks.
+export function hasDriverVisibleRouteSnapshotV2(snapshot) {
+  if (!isDriverActiveRouteStatusV2(snapshot?.status)) return false;
+  return (snapshot?.stops || []).some((stop) => {
+    const assignmentStatus = DRIVER_TERMINAL_JOB_STATUS_SET_V2.has(stop.status) ? "COMPLETED" : "ACTIVE";
+    return isDriverVisibleAssignmentV2(snapshot.status, assignmentStatus);
+  });
 }
 
 function normalize(value) {
