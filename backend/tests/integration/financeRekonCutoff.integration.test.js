@@ -240,3 +240,28 @@ test("hitungIsiSnapshot: hash deterministik terhadap urutan dan hanya jurnal <= 
   assert.equal(b.entryCount, 1);
   assert.ok(randomUUID());
 });
+
+test("'Ditinjau' TIDAK otomatis berarti 'Selesai': status periode tetap, dan syarat lain (mutasi asli, selisih nol) tetap menahan", async () => {
+  const ctx = await siapkan();
+  const kat = await testPrisma.finExpenseCategory.findFirst({ where: { active: true } });
+  const exp = await testPrisma.finExpense.create({
+    data: { expenseNumber: "EXP-UJI-002", date: new Date("2026-09-22T00:00:00Z"), amount: 5_000, description: "uji", categoryId: kat.id, mode: "LANGSUNG", cashAccountId: ctx.rek.id, status: "DIBAYAR" },
+  });
+  const j = await jurnal(ctx, { tanggal: "2026-09-22", dibuat: "2026-09-22T09:00:00Z", nilai: -5_000, source: "PENGELUARAN", sourceId: exp.id, status: "REVERSED" });
+  await jurnal(ctx, { tanggal: "2026-09-22", dibuat: "2026-09-22T09:05:00Z", nilai: 5_000, source: "REVERSAL", reversalOfId: j.id });
+  // Periode SEMENTARA (tanpa mutasi bank asli) dan selisih tidak nol.
+  const s = await periode(ctx, { closing: 123_456 });
+  const t = await ctx.a.post("/api/finance/rekon/perlu-ditinjau/tinjau", { kode: "DOKUMEN_AKTIF_JURNAL_DIBALIK", refId: exp.id, catatan: "sudah diperiksa" });
+  assert.equal(t.status, 200);
+  const det = await ctx.f.get(`/api/finance/bank-statements/${s.id}`);
+  assert.equal(det.body.perluDitinjau.terbuka, 0, "exception tidak lagi menahan");
+  assert.equal(det.body.perluDitinjau.items[0].ditinjau.catatan, "sudah diperiksa", "tetap tercatat & tampil");
+  const syarat = Object.fromEntries(det.body.rekonsiliasi.penyelesaian.syarat.map((x) => [x.kode, x.ok]));
+  assert.equal(syarat.TANPA_EXCEPTION, true);
+  assert.equal(syarat.MUTASI_ASLI, false);
+  assert.equal(syarat.SELISIH_NOL, false);
+  assert.equal(det.body.rekonsiliasi.penyelesaian.bisa, false);
+  const r = await ctx.a.post(`/api/finance/bank-statements/${s.id}/complete`, {});
+  assert.equal(r.status, 409);
+  assert.notEqual((await testPrisma.finBankStatement.findUnique({ where: { id: s.id } })).status, "SELESAI");
+});
