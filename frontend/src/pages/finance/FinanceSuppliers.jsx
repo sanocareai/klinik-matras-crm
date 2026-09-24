@@ -18,48 +18,50 @@ import {
   StatusBadge, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
-import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
+import { RowActions, AKSI_COL_WIDTH, AKSI_COL_WIDTH_MENU_ONLY } from "@/features/finance/RowActions.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import { aksiTagihan as matriksTagihan, aksiPembayaranSupplier } from "@/features/finance/matriksAksi.js";
+import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 
 // Tagihan: belum disetujui = Edit bebas (belum ada jurnal). Sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // Batalkan (jurnal dibalik; diblokir server kalau sudah ada pembayaran aktif) lalu catat ulang.
 function aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk }) {
-  const riwayat = { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk(b) };
-  if (["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"].includes(b.status)) {
+  // Isi menu dari matriks aksi (features/finance/matriksAksi.js): tindakan yang tidak tersedia tetap tampil dengan alasannya.
+  const items = bentukItemMenu(matriksTagihan(b, { admin: adminSaatIni() }), {
+    edit: () => setEditUntuk(b),
+    versi: () => setVersiUntuk(b),
+    tolak: () => {
+      const alasan = window.prompt("Alasan penolakan tagihan:");
+      if (alasan?.trim()) return aksi(() => api.rejectFinanceBill(b.id, alasan.trim()));
+    },
+    batalkan: () => {
+      const alasan = window.prompt(`Alasan membatalkan tagihan ${b.billNumber}? Jurnal utangnya akan dibalik, lalu catat ulang tagihan dengan data yang benar:`);
+      if (alasan?.trim()) return aksi(() => api.cancelFinanceBill(b.id, alasan.trim()));
+    },
+  });
+  if (["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) {
     return {
-      primary: null,
-      items: [
-        riwayat,
-        {
-          key: "batal", label: "Batalkan", icon: Ban, destructive: true,
-          onClick: () => {
-            const alasan = window.prompt(`Alasan membatalkan tagihan ${b.billNumber}? Jurnal utangnya akan dibalik. Kalau sudah ada pembayaran, batalkan pembayarannya dulu:`);
-            if (alasan?.trim()) return aksi(() => api.cancelFinanceBill(b.id, alasan.trim()));
-          },
-        },
-      ],
+      primary: {
+        label: "Setujui", variant: "secondary",
+        confirmText: `Setujui tagihan ${b.billNumber} sebesar ${formatUang(b.amount)}? Utang akan masuk buku besar.`,
+        onClick: () => aksi(() => api.approveFinanceBill(b.id)),
+      },
+      items,
     };
   }
-  if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) return { primary: null, items: [riwayat] };
-  return {
-    primary: {
-      label: "Setujui", variant: "secondary",
-      confirmText: `Setujui tagihan ${b.billNumber} sebesar ${formatUang(b.amount)}? Utang akan masuk buku besar.`,
-      onClick: () => aksi(() => api.approveFinanceBill(b.id)),
+  return { primary: null, items };
+}
+
+// Pembayaran supplier: koreksi langsung tidak tersedia — Batalkan (jurnal dibalik, alokasi ke tagihan dilepas) lalu catat ulang.
+function aksiPembayaran(p, { aksi, setVersiPay }) {
+  return bentukItemMenu(aksiPembayaranSupplier(p, { admin: adminSaatIni() }), {
+    versi: () => setVersiPay(p),
+    batalkan: () => {
+      const alasan = window.prompt(`Alasan membatalkan pembayaran ${p.paymentNumber}? Jurnalnya dibalik dan tagihan kembali terbuka, lalu catat ulang pembayaran yang benar:`);
+      if (alasan?.trim()) return aksi(() => api.cancelFinanceSupplierPayment(p.id, alasan.trim()));
     },
-    items: [
-      { key: "edit", label: "Edit", icon: Pencil, onClick: () => setEditUntuk(b) },
-      riwayat,
-      {
-        key: "tolak", label: "Tolak", destructive: true,
-        onClick: () => {
-          const alasan = window.prompt("Alasan penolakan tagihan:");
-          if (alasan?.trim()) return aksi(() => api.rejectFinanceBill(b.id, alasan.trim()));
-        },
-      },
-    ],
-  };
+  });
 }
 
 // Nominal dicari sebagai angka polos maupun berformat titik ("1500000" / "1.500.000").
@@ -93,6 +95,7 @@ export default function FinanceSuppliers() {
   const [bills, setBills] = useState([]);
   const [editUntuk, setEditUntuk] = useState(null);
   const [versiUntuk, setVersiUntuk] = useState(null);
+  const [versiPay, setVersiPay] = useState(null);
   const [payments, setPayments] = useState([]);
   const [aging, setAging] = useState(null);
   const [unbilled, setUnbilled] = useState([]);
@@ -374,6 +377,7 @@ export default function FinanceSuppliers() {
                     <TH>Tagihan</TH>
                     <TH numeric width={128}>Nominal</TH>
                     <TH width={116}>Status</TH>
+                    <TH width={AKSI_COL_WIDTH_MENU_ONLY} />
                   </TR>
                 </THead>
                 <TBody>
@@ -388,6 +392,7 @@ export default function FinanceSuppliers() {
                       </TD>
                       <TD numeric><Uang value={p.amount} /></TD>
                       <TD>{p.cancelledAt ? <Badge variant="red">Dibatalkan</Badge> : <Badge variant="green">Terposting</Badge>}</TD>
+                      <TD><RowActions primary={null} items={aksiPembayaran(p, { aksi, setVersiPay })} /></TD>
                     </TR>
                   ))}
                 </TBody>
@@ -471,6 +476,7 @@ export default function FinanceSuppliers() {
           onSubmit={(d) => aksi(async () => { await api.editFinanceBill(editUntuk.id, d); setEditUntuk(null); })}
         />
       )}
+      {versiPay && <RiwayatVersiDialog jenis="supplier-payments" id={versiPay.id} nomor={versiPay.paymentNumber} onClose={() => setVersiPay(null)} />}
       {versiUntuk && <RiwayatVersiDialog jenis="bills" id={versiUntuk.id} nomor={versiUntuk.billNumber} onClose={() => setVersiUntuk(null)} />}
       <ModalBayarSupplier
         open={modal === "bayar"} onClose={() => setModal(null)}

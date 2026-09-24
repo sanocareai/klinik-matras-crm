@@ -51,13 +51,16 @@ export function Menu({ trigger, children, align = "end", sideOffset = 6, classNa
 }
 
 // Item menu. `destructive` → merah (aksi hapus/keluar berbahaya).
-export function MenuItem({ className, destructive, icon: Icon, children, ...props }) {
+// `hint` = keterangan kecil di bawah label. Item disabled yang membawa hint (mis. ALASAN kenapa tidak bisa) tetap terbaca jelas
+// (opacity lebih tinggi) — alasan tidak boleh redup sampai tak terbaca.
+export function MenuItem({ className, destructive, icon: Icon, hint, children, ...props }) {
   return (
     <DropdownMenu.Item
       className={cn(
         "flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] font-medium outline-none",
         "data-[highlighted]:bg-inset",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
+        hint && "data-[disabled]:opacity-80",
         destructive
           ? "text-red data-[highlighted]:bg-redbg"
           : "text-ink2",
@@ -66,7 +69,12 @@ export function MenuItem({ className, destructive, icon: Icon, children, ...prop
       {...props}
     >
       {Icon && <Icon size={15} className="shrink-0 opacity-80" />}
-      {children}
+      {hint ? (
+        <span className="flex min-w-0 max-w-[260px] flex-col">
+          <span>{children}</span>
+          <span className="whitespace-normal text-[11px] font-normal leading-snug text-ink3">{hint}</span>
+        </span>
+      ) : children}
     </DropdownMenu.Item>
   );
 }

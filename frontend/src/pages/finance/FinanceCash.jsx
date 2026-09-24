@@ -17,6 +17,8 @@ import {
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import { RowActions, AKSI_COL_WIDTH_MENU_ONLY } from "@/features/finance/RowActions.jsx";
 import { KoreksiDialog, RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import { aksiTransferAtauPemasukan } from "@/features/finance/matriksAksi.js";
+import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 
 // Nominal dicari sebagai angka polos maupun berformat titik ("1500000" / "1.500.000").
 const angka = (x) => `${Math.round(Number(x) || 0)} ${(Number(x) || 0).toLocaleString("id-ID")}`;
@@ -121,21 +123,22 @@ export default function FinanceCash() {
     if (!alasan?.trim()) return;
     return aksi(() => (jenis === "transfers" ? api.cancelFinanceTransfer(doc.id, alasan.trim()) : api.cancelFinanceOtherIncome(doc.id, alasan.trim())));
   };
+  // Isi menu dari matriks aksi: Koreksi / Riwayat / Batalkan; yang tidak tersedia (mis. sudah dibatalkan) tetap tampil dengan alasannya.
   const menuTransfer = (t) => ({
     primary: null,
-    items: [
-      !t.cancelledAt && { key: "koreksi", label: "Koreksi", icon: Pencil, onClick: () => setKoreksiUntuk({ jenis: "transfers", doc: t }) },
-      { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk({ jenis: "transfers", doc: t, nomor: t.transferNumber }) },
-      !t.cancelledAt && { key: "batal", label: "Batalkan", icon: Ban, destructive: true, onClick: () => batalkan("transfers", t, t.transferNumber) },
-    ].filter(Boolean),
+    items: bentukItemMenu(aksiTransferAtauPemasukan(t, { admin: adminSaatIni(), nama: "transfer" }), {
+      koreksi: () => setKoreksiUntuk({ jenis: "transfers", doc: t }),
+      versi: () => setVersiUntuk({ jenis: "transfers", doc: t, nomor: t.transferNumber }),
+      batal: () => batalkan("transfers", t, t.transferNumber),
+    }),
   });
   const menuPemasukan = (i) => ({
     primary: null,
-    items: [
-      !i.cancelledAt && { key: "koreksi", label: "Koreksi", icon: Pencil, onClick: () => setKoreksiUntuk({ jenis: "other-income", doc: i }) },
-      { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk({ jenis: "other-income", doc: i, nomor: i.incomeNumber }) },
-      !i.cancelledAt && { key: "batal", label: "Batalkan", icon: Ban, destructive: true, onClick: () => batalkan("other-income", i, i.incomeNumber) },
-    ].filter(Boolean),
+    items: bentukItemMenu(aksiTransferAtauPemasukan(i, { admin: adminSaatIni(), nama: "pemasukan" }), {
+      koreksi: () => setKoreksiUntuk({ jenis: "other-income", doc: i }),
+      versi: () => setVersiUntuk({ jenis: "other-income", doc: i, nomor: i.incomeNumber }),
+      batal: () => batalkan("other-income", i, i.incomeNumber),
+    }),
   });
 
   async function hapusRekening(a) {

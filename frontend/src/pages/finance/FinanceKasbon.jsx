@@ -22,24 +22,21 @@ import {
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { aksiKasbon as matriksKasbon } from "@/features/finance/matriksAksi.js";
+import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 
 // Aksi PALING RELEVAN jadi tombol utama; sisanya masuk menu titik-tiga —
 // sama seperti FinanceExpenses.jsx (lihat komentar di sana).
 function aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, aksi }) {
-  const bisaUbah = k.status !== "DIBATALKAN";
-  const jumlahRiwayat = k.repayments.filter((r) => !r.cancelledAt).length;
-
-  const items = [
-    k.repayments.length > 0 && { key: "riwayat", label: `Riwayat pemotongan (${jumlahRiwayat})`, icon: History, onClick: () => setRiwayatId(k.id) },
-    bisaUbah && { key: "edit", label: "Edit data kasbon", icon: Pencil, onClick: () => setEditUntuk(k) },
-    bisaUbah && {
-      key: "batalkan", label: "Batalkan", destructive: true,
-      onClick: () => {
-        const alasan = window.prompt(`Alasan membatalkan ${k.kasbonNumber} (salah input)? Jurnalnya akan dibalik:`);
-        if (alasan?.trim()) return aksi(() => api.batalKasbon(k.id, alasan.trim()));
-      },
+  // Isi menu dari matriks aksi: Edit Data untuk field non-uang; nominal hanya lewat Batalkan & Catat Ulang (dengan penjelasannya).
+  const items = bentukItemMenu(matriksKasbon(k, { admin: adminSaatIni() }), {
+    riwayat: () => setRiwayatId(k.id),
+    edit: () => setEditUntuk(k),
+    batalkan: () => {
+      const alasan = window.prompt(`Alasan membatalkan ${k.kasbonNumber}? Jurnalnya akan dibalik, lalu catat ulang kasbon dengan data yang benar:`);
+      if (alasan?.trim()) return aksi(() => api.batalKasbon(k.id, alasan.trim()));
     },
-  ].filter(Boolean);
+  });
 
   if (k.status === "AKTIF") {
     return { primary: { label: "Potong", variant: "secondary", title: "Potong dari gaji", onClick: () => setLunasiUntuk({ kasbon: k }) }, items };

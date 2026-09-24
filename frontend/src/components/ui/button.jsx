@@ -47,9 +47,12 @@ const buttonVariants = cva(
   }
 );
 
-export function Button({ className, variant, size, asChild, ...props }) {
+// forwardRef WAJIB: Radix (DropdownMenu/Popover/Tooltip `asChild`) memasang ref ke trigger sebagai anchor posisi. Tanpa forwardRef
+// ref hilang (React 18 memberi peringatan "Function components cannot be given refs"), popper tidak punya anchor dan menu
+// tetap di posisi awal translate(0,-200%) — di luar layar, TIDAK TERLIHAT. Terbukti pada menu aksi baris "…" (RowActions).
+export const Button = React.forwardRef(function Button({ className, variant, size, asChild, ...props }, ref) {
   const Comp = asChild ? Slot : "button";
-  return <Comp className={cn(buttonVariants({ variant, size }), className)} {...props} />;
-}
+  return <Comp ref={ref} className={cn(buttonVariants({ variant, size }), className)} {...props} />;
+});
 
 export { buttonVariants };

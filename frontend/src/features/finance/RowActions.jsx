@@ -98,6 +98,9 @@ export function RowActions({ primary, items = [], align = "end" }) {
                 icon={it.icon}
                 destructive={it.destructive}
                 disabled={it.disabled}
+                hint={it.disabled ? it.alasan : it.hint}
+                title={it.disabled ? it.alasan : undefined}
+                data-alasan={it.disabled ? "1" : undefined}
                 onSelect={() => jalankanItem(it)}
               >
                 {it.label}

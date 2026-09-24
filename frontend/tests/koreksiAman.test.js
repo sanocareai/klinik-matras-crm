@@ -45,8 +45,9 @@ test("Kode STEPUP_* dikenali sehingga PIN diminta ulang sekali bila token kedalu
 test("Label tombol: Edit untuk yang belum berjurnal, Koreksi untuk yang sudah — lewat menu aksi", () => {
   for (const f of ["pages/finance/FinanceExpenses.jsx", "pages/finance/FinancePurchases.jsx"]) {
     const s = baca(f);
-    assert.match(s, /"Koreksi"/);
-    assert.match(s, /Riwayat perubahan/);
+    // Label Edit/Koreksi kini datang dari matriks aksi bersama (features/finance/matriksAksi.js, dites di matriksAksi.test.js).
+    assert.match(s, /aksiDokumenBiaya\(/);
+    assert.match(baca("features/finance/matriksAksi.js"), /Riwayat perubahan/);
     assert.match(s, /RiwayatVersiDialog/);
   }
 });

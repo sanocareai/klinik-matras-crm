@@ -24,6 +24,8 @@ import {
 } from "@/features/finance/shared.jsx";
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import { aksiDokumenBiaya } from "@/features/finance/matriksAksi.js";
+import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
@@ -44,30 +46,23 @@ function teksSumberDana(e) {
 // ada aksi yang dihapus), cuma tata letaknya yang berubah supaya tidak
 // bertumpuk di kolom Aksi yang lebarnya tetap.
 function aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk, setVersiUntuk }) {
-  const bisaEdit = STATUS_BISA_DIEDIT.includes(e.status);
-  const bisaBatal = ["DISETUJUI", "DIBAYAR"].includes(e.status);
   const menungguKeputusan = ["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status);
   const notaBelumAda = !!e.notaWajib && !e.receiptUrl;
 
-  const items = [
-    // "Edit" = belum berjurnal (bebas ubah); "Koreksi" = sudah masuk buku besar (jurnal dibalik + pengganti, butuh PIN).
-    bisaEdit && { key: "edit", label: ["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status) ? "Edit" : "Koreksi", icon: Pencil, onClick: () => setEditUntuk(e) },
-    { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk(e) },
-    menungguKeputusan && {
-      key: "tolak", label: "Tolak", destructive: true,
-      onClick: () => {
-        const alasan = window.prompt("Alasan penolakan:");
-        if (alasan?.trim()) return aksi(() => api.rejectFinanceExpense(e.id, alasan.trim()));
-      },
+  // Isi menu datang dari matriks aksi (features/finance/matriksAksi.js): Edit (belum berjurnal) / Koreksi (sudah berjurnal);
+  // tindakan yang tidak tersedia TETAP tampil dengan alasannya.
+  const items = bentukItemMenu(aksiDokumenBiaya(e, { admin: adminSaatIni(), nama: "pengeluaran" }), {
+    edit: () => setEditUntuk(e),
+    versi: () => setVersiUntuk(e),
+    tolak: () => {
+      const alasan = window.prompt("Alasan penolakan:");
+      if (alasan?.trim()) return aksi(() => api.rejectFinanceExpense(e.id, alasan.trim()));
     },
-    bisaBatal && {
-      key: "batalkan", label: "Batalkan", destructive: true,
-      onClick: () => {
-        const alasan = window.prompt("Alasan membatalkan pengeluaran ini (salah input total)? Jurnalnya akan dibalik, riwayat tetap tersimpan:");
-        if (alasan?.trim()) return aksi(() => api.cancelFinanceExpense(e.id, alasan.trim()));
-      },
+    batalkan: () => {
+      const alasan = window.prompt("Alasan membatalkan pengeluaran ini (salah input total)? Jurnalnya akan dibalik, riwayat tetap tersimpan:");
+      if (alasan?.trim()) return aksi(() => api.cancelFinanceExpense(e.id, alasan.trim()));
     },
-  ].filter(Boolean);
+  });
 
   if (menungguKeputusan) {
     return {

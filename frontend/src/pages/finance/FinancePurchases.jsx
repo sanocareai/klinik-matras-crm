@@ -21,6 +21,8 @@ import {
 } from "@/features/finance/shared.jsx";
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import { aksiDokumenBiaya } from "@/features/finance/matriksAksi.js";
+import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
@@ -49,8 +51,6 @@ function teksDpBadge(p) {
 // titik-tiga — sama persis dengan pola FinanceExpenses.jsx (lihat komentar
 // di sana untuk alasannya).
 function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk, setVersiUntuk }) {
-  const bisaEdit = STATUS_BISA_DIEDIT.includes(p.status);
-  const bisaBatal = ["DISETUJUI", "DIBAYAR"].includes(p.status);
   const menungguKeputusan = ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status);
   const notaBelumAda = !!p.notaWajib && !p.receiptUrl;
 
@@ -65,26 +65,25 @@ function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk,
   const punyaRiwayatDp = ["DISETUJUI", "DIBAYAR", "DIBATALKAN"].includes(p.status)
     && (p.mode === "UTANG" || p.category?.code === "UANG_MUKA_PEMBELIAN");
 
-  const items = [
-    bisaEdit && { key: "edit", label: ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) ? "Edit" : "Koreksi", icon: Pencil, onClick: () => setEditUntuk(p) },
-    { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk(p) },
+  const dasar = bentukItemMenu(aksiDokumenBiaya(p, { admin: adminSaatIni(), nama: "pembelian" }), {
+    edit: () => setEditUntuk(p),
+    versi: () => setVersiUntuk(p),
+    tolak: () => {
+      const alasan = window.prompt("Alasan penolakan:");
+      if (alasan?.trim()) return aksi(() => api.rejectFinancePurchase(p.id, alasan.trim()));
+    },
+    batalkan: () => {
+      const alasan = window.prompt("Alasan membatalkan pembelian ini (salah input total)? Jurnalnya akan dibalik, riwayat tetap tersimpan:");
+      if (alasan?.trim()) return aksi(() => api.cancelFinancePurchase(p.id, alasan.trim()));
+    },
+  });
+  // Item khusus DP/uang muka pembelian disisipkan setelah Riwayat perubahan.
+  const posisiSetelahRiwayat = dasar.findIndex((i) => i.key === "versi") + 1;
+  const tambahan = [
     bisaTerapkanDp && { key: "terapkan-dp", label: "Terapkan Uang Muka", icon: Wallet, onClick: () => setTerapkanUntuk(p) },
     punyaRiwayatDp && { key: "riwayat-dp", label: "Riwayat Uang Muka", icon: History, onClick: () => setRiwayatUntuk(p) },
-    menungguKeputusan && {
-      key: "tolak", label: "Tolak", destructive: true,
-      onClick: () => {
-        const alasan = window.prompt("Alasan penolakan:");
-        if (alasan?.trim()) return aksi(() => api.rejectFinancePurchase(p.id, alasan.trim()));
-      },
-    },
-    bisaBatal && {
-      key: "batalkan", label: "Batalkan", destructive: true,
-      onClick: () => {
-        const alasan = window.prompt("Alasan membatalkan pembelian ini (salah input total)? Jurnalnya akan dibalik, riwayat tetap tersimpan:");
-        if (alasan?.trim()) return aksi(() => api.cancelFinancePurchase(p.id, alasan.trim()));
-      },
-    },
   ].filter(Boolean);
+  const items = [...dasar.slice(0, posisiSetelahRiwayat), ...tambahan, ...dasar.slice(posisiSetelahRiwayat)];
 
   if (menungguKeputusan) {
     return {

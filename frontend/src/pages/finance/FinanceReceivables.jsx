@@ -13,6 +13,8 @@ import { api } from "@/api.js";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap, bodyBiayaTransfer } from "@/features/finance/biayaTransfer.js";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import { aksiRefund as matriksRefund } from "@/features/finance/matriksAksi.js";
+import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
@@ -26,41 +28,29 @@ import { CardList, RowCard } from "@/features/finance/cards.jsx";
 // Refund: belum disetujui = Edit bebas (belum ada jurnal); sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // pilihannya Batalkan (jurnal dibalik resmi, status bayar order dihitung ulang) lalu ajukan ulang dengan data yang benar.
 function aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk }) {
-  const riwayat = { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk(r) };
-  if (r.status === "DISETUJUI") {
+  const items = bentukItemMenu(matriksRefund(r, { admin: adminSaatIni() }), {
+    edit: () => setEditUntuk(r),
+    versi: () => setVersiUntuk(r),
+    tolak: () => {
+      const alasan = window.prompt("Alasan penolakan refund:");
+      if (alasan?.trim()) return aksi(() => api.rejectFinanceRefund(r.id, alasan.trim()));
+    },
+    batalkan: () => {
+      const alasan = window.prompt(`Alasan membatalkan refund ${r.refundNumber}? Jurnalnya akan dibalik dan uang dianggap kembali ke rekening. Untuk mengoreksi, ajukan refund baru setelah ini:`);
+      if (alasan?.trim()) return aksi(() => api.cancelFinanceRefund(r.id, alasan.trim()));
+    },
+  });
+  if (r.status === "MENUNGGU_APPROVAL") {
     return {
-      primary: null,
-      items: [
-        riwayat,
-        {
-          key: "batal", label: "Batalkan", icon: Ban, destructive: true,
-          onClick: () => {
-            const alasan = window.prompt(`Alasan membatalkan refund ${r.refundNumber}? Jurnalnya akan dibalik dan uang dianggap kembali ke rekening. Untuk mengoreksi, ajukan refund baru setelah ini:`);
-            if (alasan?.trim()) return aksi(() => api.cancelFinanceRefund(r.id, alasan.trim()));
-          },
-        },
-      ],
+      primary: {
+        label: "Setujui", variant: "secondary",
+        confirmText: `Setujui refund ${formatUang(r.amount)} untuk order ${r.order?.orderNumber}? Uang akan keluar dari ${r.cashAccount?.name}.`,
+        onClick: () => aksi(() => api.approveFinanceRefund(r.id)),
+      },
+      items,
     };
   }
-  if (r.status !== "MENUNGGU_APPROVAL") return { primary: null, items: [riwayat] };
-  return {
-    primary: {
-      label: "Setujui", variant: "secondary",
-      confirmText: `Setujui refund ${formatUang(r.amount)} untuk order ${r.order?.orderNumber}? Uang akan keluar dari ${r.cashAccount?.name}.`,
-      onClick: () => aksi(() => api.approveFinanceRefund(r.id)),
-    },
-    items: [
-      { key: "edit", label: "Edit", icon: Pencil, onClick: () => setEditUntuk(r) },
-      riwayat,
-      {
-        key: "tolak", label: "Tolak", destructive: true,
-        onClick: () => {
-          const alasan = window.prompt("Alasan penolakan refund:");
-          if (alasan?.trim()) return aksi(() => api.rejectFinanceRefund(r.id, alasan.trim()));
-        },
-      },
-    ],
-  };
+  return { primary: null, items };
 }
 
 // Nominal bisa dicari sebagai "150000" maupun "150.000".

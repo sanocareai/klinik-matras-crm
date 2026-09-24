@@ -21,6 +21,8 @@ import {
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import { aksiUangMuka as matriksUangMuka } from "@/features/finance/matriksAksi.js";
+import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 
 // UANG MUKA OPERASIONAL — kas yang DIBERIKAN ke pemegang (driver/PIC) untuk biaya operasional.
 //
@@ -48,18 +50,15 @@ function hariIniISO(tambahHari = 0) {
 // catatan, bukti, divisi). Nominal/pemegang/rekening/tanggal TIDAK bisa dikoreksi — Batalkan lalu catat ulang.
 function aksiUangMuka(u, { setPakaiUntuk, setKembaliUntuk, setEditUntuk, setVersiUntuk, aksi }) {
   const bisaDipakai = ["AKTIF", "SEBAGIAN"].includes(u.status);
-  const items = [
-    u.status !== "DIBATALKAN" && { key: "edit", label: "Edit keterangan", icon: Pencil, onClick: () => setEditUntuk(u) },
-    { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk(u) },
-    bisaDipakai && u.saldo > 0 && { key: "kembali", label: "Kembalikan sisa", icon: Undo2, onClick: () => setKembaliUntuk(u) },
-    u.status !== "DIBATALKAN" && {
-      key: "batalkan", label: "Batalkan", icon: Ban, destructive: true,
-      onClick: () => {
-        const alasan = window.prompt(`Alasan membatalkan ${u.advanceNumber}? Jurnal pemberiannya akan dibalik (reversal), riwayat tetap tersimpan:`);
-        if (alasan?.trim()) return aksi(() => api.batalkanUangMuka(u.id, alasan.trim()));
-      },
+  const items = bentukItemMenu(matriksUangMuka(u, { admin: adminSaatIni() }), {
+    edit: () => setEditUntuk(u),
+    versi: () => setVersiUntuk(u),
+    kembali: () => setKembaliUntuk(u),
+    batalkan: () => {
+      const alasan = window.prompt(`Alasan membatalkan ${u.advanceNumber}? Jurnal pemberiannya akan dibalik (reversal), riwayat tetap tersimpan. Untuk mengubah nominal/rekening, catat ulang setelah ini:`);
+      if (alasan?.trim()) return aksi(() => api.batalkanUangMuka(u.id, alasan.trim()));
     },
-  ].filter(Boolean);
+  });
   if (bisaDipakai && u.saldo > 0) {
     return { primary: { label: "Pertanggungjawabkan", variant: "secondary", onClick: () => setPakaiUntuk(u) }, items };
   }

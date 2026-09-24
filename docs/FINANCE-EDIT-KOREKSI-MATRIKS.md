@@ -32,3 +32,22 @@ Izin: edit biasa mengikuti pemilik/status; **koreksi finansial minimal FINANCE_A
 
 ## Rollback
 Revert commit fitur ini. Migrasi `20260924100000_finance_stepup_pin` hanya menambah 4 kolom di `User` (aditif) — aman dibiarkan.
+
+## Menu Aksi di layar — sebelum & sesudah (B3.2, 25 September 2026)
+Sumber tunggal: `frontend/src/features/finance/matriksAksi.js` (dites di `frontend/tests/matriksAksi.test.js`). Item yang tidak tersedia **tetap tampil, nonaktif, dengan alasan berbahasa Indonesia** (terlihat langsung di menu, bukan hanya tooltip). Izin tetap divalidasi server; UI hanya mencerminkan (Koreksi/Batalkan butuh Admin Keuangan).
+
+| Transaksi / status | Sebelum | Sesudah |
+|---|---|---|
+| Pengeluaran & Pembelian — Menunggu Persetujuan | Edit / koreksi, Tolak | **Edit**, Tolak, Riwayat; Batalkan nonaktif ("Belum berjurnal — gunakan Tolak") |
+| Pengeluaran & Pembelian — Disetujui/Dibayar | Edit / koreksi, Batalkan | **Koreksi**, Batalkan, Riwayat |
+| Pengeluaran & Pembelian — Ditolak/Dibatalkan | (Edit tidak muncul, tanpa penjelasan) | Edit/Koreksi nonaktif + alasan |
+| Tagihan supplier — Menunggu | Edit, Tolak | Edit, Tolak, Riwayat |
+| Tagihan supplier — Disetujui belum dibayar | Batalkan | **Batalkan & Catat Ulang**; Edit nonaktif + alasan |
+| Tagihan supplier — Dibayar sebagian/Lunas | Batalkan (ditolak server) | **Batalkan & Catat Ulang nonaktif: "Memiliki pembayaran aktif"** |
+| Pembayaran supplier | (tidak ada menu) | Riwayat, **Batalkan & Catat Ulang**, Koreksi nonaktif ("Koreksi langsung tidak tersedia") |
+| Kasbon | Edit data, Batalkan | **Edit Data** (non-uang), **Batalkan & Catat Ulang** (dengan penjelasan nominal); nonaktif + alasan bila ada pelunasan aktif |
+| Refund | Edit (menunggu), Batalkan (disetujui) | Edit nonaktif + alasan bila disetujui; **Batalkan & Ajukan Ulang** |
+| Transfer, Pemasukan Lain | Koreksi, Batalkan bila belum batal | + alasan bila sudah dibatalkan |
+| Uang Muka Operasional | Edit keterangan, Batalkan | + **Ubah nominal/rekening** nonaktif ("Batalkan & Catat Ulang"); Batalkan nonaktif bila ada pertanggungjawaban aktif |
+
+Catatan teknis: komponen `Button` kini `forwardRef`. Sebelumnya trigger menu `…` tidak meneruskan ref ke Radix sehingga popper tidak pernah memosisikan menu (tetap `translate(0,-200%)`, di luar layar).
