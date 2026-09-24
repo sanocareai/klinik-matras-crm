@@ -51,6 +51,7 @@ const { armadaRouter } = await import("../../../src/routes/armada.js");
 // di atas: kode ASLI produksi, additive di prefix /api/armada yang sama.
 const { incentiveSnapshotRouter } = await import("../../../src/routes/incentiveSnapshot.js");
 const { incentivePayoutRouter } = await import("../../../src/routes/incentivePayout.js");
+const { deliveryControlRouter } = await import("../../../src/routes/deliveryControl.js");
 
 export function buildTestApp() {
   const app = express();
@@ -95,6 +96,7 @@ export function buildTestApp() {
   app.use("/api/armada", armadaRouter);
   app.use("/api/armada", incentiveSnapshotRouter);
   app.use("/api/armada", incentivePayoutRouter);
+  app.use("/api/delivery-control", deliveryControlRouter);
 
   return app;
 }

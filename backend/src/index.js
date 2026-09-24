@@ -43,6 +43,7 @@ import { activityRouter } from "./routes/activity.js";
 import { armadaRouter }     from "./routes/armada.js";
 import { incentiveSnapshotRouter } from "./routes/incentiveSnapshot.js";
 import { incentivePayoutRouter } from "./routes/incentivePayout.js";
+import { deliveryControlRouter } from "./routes/deliveryControl.js";
 import { kendaliRouter }    from "./routes/kendali.js";
 // Finance Workspace (D-180) — DUA router, SATU prefix /api/finance.
 // Pemisahannya semata soal panjang file (lihat catatan di kepala
@@ -216,6 +217,7 @@ app.use("/api/complaints",   complaintsRouter);
 app.use("/api/armada",       armadaRouter);
 app.use("/api/armada",       incentiveSnapshotRouter); // additive, tidak mengubah armadaRouter — lihat routes/incentiveSnapshot.js
 app.use("/api/armada",       incentivePayoutRouter); // additive, lihat routes/incentivePayout.js
+app.use("/api/delivery-control", deliveryControlRouter); // gerbang app Sano Delivery Control (izin delivery:control:access)
 app.use("/api/kendali",      kendaliRouter);
 app.use("/api/finance",      financePushHooks); // S11: pemicu push (mengamati respons; tidak mengubah endpoint)
 app.use("/api/finance",      financeRouter);

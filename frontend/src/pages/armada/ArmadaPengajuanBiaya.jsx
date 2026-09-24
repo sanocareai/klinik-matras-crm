@@ -11,6 +11,9 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import {
+  STATUS_FILTERS, statusLabel, statusVariant, bolehEditAjukan, bolehTarik, bolehBatalkan, labelAjukan, deskripsiAudit, riwayatRevisi,
+} from "@/features/armada/pengajuanBiayaStatus.js";
 import { Modal } from "@/components/ui/modal.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
@@ -39,25 +42,6 @@ import { formatRupiah } from "@/utils/format.js";
 
 const WORKSPACE = "DELIVERY";
 
-const STATUS_LABEL = {
-  DRAFT: "Draf",
-  MENUNGGU_PERSETUJUAN: "Menunggu Persetujuan",
-  OTOMATIS_DISETUJUI: "Disetujui Otomatis",
-  DISETUJUI: "Disetujui",
-  DIBAYAR: "Dibayar",
-  DITOLAK: "Ditolak",
-  DIBATALKAN: "Dibatalkan",
-};
-const STATUS_VARIANT = {
-  DRAFT: "neutral",
-  MENUNGGU_PERSETUJUAN: "orange",
-  OTOMATIS_DISETUJUI: "green",
-  DISETUJUI: "accent",
-  DIBAYAR: "green",
-  DITOLAK: "red",
-  DIBATALKAN: "neutral",
-};
-const STATUS_FILTERS = ["", "DRAFT", "MENUNGGU_PERSETUJUAN", "OTOMATIS_DISETUJUI", "DISETUJUI", "DIBAYAR", "DITOLAK", "DIBATALKAN"];
 
 const inputCls = "h-9 w-full rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none transition-colors focus:border-accent";
 
@@ -71,7 +55,7 @@ function fmtWaktu(d) {
 }
 
 function StatusBadge({ status }) {
-  return <Badge variant={STATUS_VARIANT[status] || "neutral"}>{STATUS_LABEL[status] || status}</Badge>;
+  return <Badge variant={statusVariant(status)}>{statusLabel(status)}</Badge>;
 }
 
 function MetaField({ field, value, onChange }) {
@@ -660,7 +644,7 @@ export default function ArmadaPengajuanBiaya() {
           </Field>
           <Field label="Status" className="w-48">
             <select className={inputCls} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              {STATUS_FILTERS.map((s) => <option key={s} value={s}>{s ? STATUS_LABEL[s] : "Semua Status"}</option>)}
+              {STATUS_FILTERS.map((s) => <option key={s} value={s}>{s ? statusLabel(s) : "Semua Status"}</option>)}
             </select>
           </Field>
           <div className="ml-auto"><DateRangePicker value={range} onChange={setRange} /></div>
@@ -688,7 +672,7 @@ export default function ArmadaPengajuanBiaya() {
                     <TD className="text-ink2">{r.vehiclePlateSnapshot || "—"}</TD>
                     <TD className="text-ink2">{r.picNameSnapshot || r.driverNameSnapshot || "—"}</TD>
                     <TD numeric className="font-semibold text-ink">{formatRupiah(r.amount)}</TD>
-                    <TD><StatusBadge status={r.status} />{r.needsReview && <Badge variant="orange" className="ml-1">Perlu Ditinjau</Badge>}</TD>
+                    <TD><StatusBadge status={r.status} />{r.needsReview && <Badge variant="orange" className="ml-1">Perlu Ditinjau</Badge>}{r.status === "PERLU_REVISI" && r.revisionReason && <div className="mt-0.5 max-w-[220px] truncate text-[11px] text-ink3" title={r.revisionReason}>Revisi: {r.revisionReason}</div>}</TD>
                   </TR>
                 ))}
               </TBody>
@@ -705,21 +689,21 @@ export default function ArmadaPengajuanBiaya() {
         footer={detail && (
           <div className="flex w-full flex-wrap items-center justify-between gap-2">
             <div className="flex gap-2">
+              {bolehEditAjukan(detail.status) && (
+                <Button variant="neutral" size="sm" onClick={() => { mulaiEdit(detail); setDetail(null); }}><Pencil size={13} /> {detail.status === "PERLU_REVISI" ? "Perbaiki" : "Edit"}</Button>
+              )}
               {detail.status === "DRAFT" && (
-                <>
-                  <Button variant="neutral" size="sm" onClick={() => { mulaiEdit(detail); setDetail(null); }}><Pencil size={13} /> Edit</Button>
-                  <Button variant="tertiary" size="sm" onClick={() => duplikasi(detail)}><Copy size={13} /> Duplikasi</Button>
-                </>
+                <Button variant="tertiary" size="sm" onClick={() => duplikasi(detail)}><Copy size={13} /> Duplikasi</Button>
               )}
             </div>
             <div className="flex gap-2">
-              {detail.status === "DRAFT" && (
+              {bolehEditAjukan(detail.status) && (
                 <>
-                  <Button variant="destructive" size="sm" disabled={detailBusy} onClick={batalkan}><Ban size={13} /> Batalkan</Button>
-                  <Button size="sm" disabled={detailBusy} onClick={ajukan}><Send size={13} /> {detailBusy ? "…" : "Ajukan"}</Button>
+                  {bolehBatalkan(detail.status) && <Button variant="destructive" size="sm" disabled={detailBusy} onClick={batalkan}><Ban size={13} /> Batalkan</Button>}
+                  <Button size="sm" disabled={detailBusy} onClick={ajukan}><Send size={13} /> {detailBusy ? "…" : labelAjukan(detail.status)}</Button>
                 </>
               )}
-              {detail.status === "MENUNGGU_PERSETUJUAN" && (
+              {bolehTarik(detail.status) && (
                 <Button variant="neutral" size="sm" disabled={detailBusy} onClick={tarik}><Undo2 size={13} /> Tarik Kembali</Button>
               )}
               {detail.status === "DISETUJUI" && !showKoreksi && (
@@ -762,7 +746,7 @@ export default function ArmadaPengajuanBiaya() {
             {detail.finExpense && (
               <div className="rounded-btn bg-inset p-2.5">
                 <div className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-ink2"><FileText size={13} /> Dokumen Finance</div>
-                <div className="text-[12.5px] text-ink">{detail.finExpense.expenseNumber} — {STATUS_LABEL[detail.status]}</div>
+                <div className="text-[12.5px] text-ink">{detail.finExpense.expenseNumber} — {statusLabel(detail.status)}</div>
                 {detail.finExpense.paidAt && <div className="text-[11.5px] text-ink3">Dibayar {fmtWaktu(detail.finExpense.paidAt)}</div>}
                 {detail.finExpense.rejectReason && <div className="text-[11.5px] text-red">Alasan tolak: {detail.finExpense.rejectReason}</div>}
               </div>
@@ -780,6 +764,28 @@ export default function ArmadaPengajuanBiaya() {
               </div>
             )}
 
+            {detail.status === "PERLU_REVISI" && (
+              <div className="rounded-btn bg-orangebg px-3 py-2.5 text-[12.5px] text-orange">
+                <div className="font-semibold">Perlu revisi</div>
+                <div>{detail.revisionReason || "Alasan tidak tercatat."}</div>
+                <div className="mt-0.5 text-[11.5px] opacity-80">
+                  Diminta oleh {detail.revisionRequestedBy?.name || "reviewer"} · {fmtWaktu(detail.revisionRequestedAt)}. Perbaiki data atau foto struk, lalu ajukan ulang.
+                </div>
+              </div>
+            )}
+            {riwayatRevisi(detail.auditTrail).length > 0 && (
+              <div>
+                <div className="mb-1.5 text-ink3">Riwayat Revisi</div>
+                <div className="flex flex-col gap-1.5">
+                  {riwayatRevisi(detail.auditTrail).map((h, i) => (
+                    <div key={i} className="text-[11.5px] text-ink2">
+                      {fmtWaktu(h.waktu)} · {h.oleh || "—"} — {h.jenis === "diminta" ? `meminta revisi${h.alasan ? `: ${h.alasan}` : ""}` : h.jenis === "diajukan-ulang" ? "mengajukan ulang setelah revisi" : `mengakhiri pengajuan${h.alasan ? `: ${h.alasan}` : ""}`}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <div className="mb-1.5 text-ink3">Bukti/Nota</div>
               <BuktiUploader submissionId={detail.id} proofs={detail.proofs} onUploaded={(p) => setDetail((d) => ({ ...d, proofs: [p, ...(d.proofs || [])] }))} />
@@ -791,7 +797,7 @@ export default function ArmadaPengajuanBiaya() {
                 <div className="flex flex-col gap-1.5">
                   {detail.auditTrail.map((a) => (
                     <div key={a.id} className="text-[11.5px] text-ink3">
-                      {fmtWaktu(a.createdAt)} · {a.actor?.name || "—"} mengubah <span className="font-medium text-ink2">{a.field}</span>: "{a.before || "-"}" → "{a.after || "-"}" ({a.reason})
+                      {fmtWaktu(a.createdAt)} · {a.actor?.name || "Sistem"} · <span className="text-ink2">{deskripsiAudit(a)}</span>
                     </div>
                   ))}
                 </div>
