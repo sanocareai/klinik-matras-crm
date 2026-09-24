@@ -8,6 +8,7 @@ import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import { KartuPinFinance } from "@/features/finance/KoreksiAman.jsx";
 import { BIAYA_BAWAAN, JENIS_BIAYA_TRANSFER, presetRekening } from "@/features/finance/biayaTransfer.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
@@ -433,6 +434,15 @@ export default function FinanceSettings() {
             </TBody>
           </Table>
         </TableWrap>
+      </Card>
+
+      {/* ── PIN FINANCE (step-up koreksi) ── */}
+      <Card>
+        <JudulKartu
+          title="PIN Finance"
+          description="Kunci tambahan untuk koreksi transaksi yang sudah masuk buku besar (jurnal dibalik + pengganti)."
+        />
+        <CardContent><KartuPinFinance /></CardContent>
       </Card>
 
       <ModalKategori

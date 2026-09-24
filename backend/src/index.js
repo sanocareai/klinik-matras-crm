@@ -51,6 +51,7 @@ import { financeRouter }    from "./routes/finance.js";
 import { financeTxRouter }  from "./routes/financeTransactions.js";
 import { financeKasbonRouter } from "./routes/financeKasbon.js";
 import { financeUangMukaRouter } from "./routes/financeOperationalAdvance.js";
+import { financeKoreksiRouter } from "./routes/financeKoreksi.js";
 import { financePenerimaanRouter } from "./routes/financePenerimaan.js";
 import { financeApprovalsRouter } from "./routes/financeApprovals.js";
 import { financePembayaranRouter } from "./routes/financePembayaran.js";
@@ -221,6 +222,7 @@ app.use("/api/finance",      financeRouter);
 app.use("/api/finance",      financeTxRouter); // additive, tidak mengubah financeRouter
 app.use("/api/finance",      financeKasbonRouter);
 app.use("/api/finance",      financeUangMukaRouter);
+app.use("/api/finance",      financeKoreksiRouter);
 app.use("/api/finance",      financePenerimaanRouter);
 app.use("/api/finance",      financeApprovalsRouter); // read-model inbox persetujuan (S4)
 app.use("/api/finance",      financePembayaranRouter); // pembayaran pelanggan: daftar/detail/verifikasi/tolak (S5)

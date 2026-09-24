@@ -61,6 +61,9 @@ import { buatFinExpense, tarikFinExpense, setujuiFinExpense, expenseInclude, ben
 // sama dengan perubahan status itu (lihat services/expenseSubmission/service.js).
 import { hitungBiayaTransfer, siapkanPerubahanBiaya, ringkasBiaya, pastikanTanpaBiayaSebelumBayar } from "../services/finance/transferFee.js";
 import { batalkanPertanggungjawabanPengeluaran } from "../services/finance/operationalAdvance.js";
+import {
+  pastikanStepUp, pastikanBelumDirekonsiliasi, snapshotJurnal, susunPratinjau, tautanJurnal, PratinjauKoreksi,
+} from "../services/finance/koreksiGate.js";
 import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/service.js";
 
 export const financeTxRouter = express.Router();
@@ -70,6 +73,12 @@ financeTxRouter.use(idempotency);
 
 function err(message, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
+}
+
+// Semua rute /koreksi: bila diminta pratinjau (body.preview), hasilnya dikirim dari transaksi yang di-ROLLBACK.
+function tanganiKoreksi(e, res) {
+  if (e instanceof PratinjauKoreksi) return res.json({ pratinjau: e.data });
+  return handleFinanceError(e, res);
 }
 
 function parseTanggal(value, fallback = null) {
@@ -509,6 +518,7 @@ financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN)
     if (!reason) throw err("Alasan koreksi wajib diisi");
 
     const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_expenses"', req.params.id);
       const e = await tx.finExpense.findUnique({ where: { id: req.params.id } });
       if (!e) throw err("Pengeluaran tidak ditemukan", 404);
       if (!["DISETUJUI", "DIBAYAR"].includes(e.status)) {
@@ -532,6 +542,14 @@ financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN)
         }
       }
 
+      const pratinjau = req.body?.preview === true;
+      const sumber = [{ source: "PENGELUARAN", sourceId: e.id }];
+      if (menyentuhJurnal) {
+        await pastikanBelumDirekonsiliasi(tx, sumber);
+        if (!pratinjau) await pastikanStepUp(prisma, req);
+      }
+      const sebelum = await snapshotJurnal(tx, sumber);
+
       // Balikkan jurnal PEMBAYARAN dulu (kalau ada), baru jurnal pengakuan
       // beban — urutan yang sama dengan /cancel. Dua keluarga key TERPISAH
       // (lihat komentar balikkanJurnalAktif) — tanpa ini, expense DIBAYAR
@@ -554,12 +572,14 @@ financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN)
         }
       }
 
+      if (pratinjau) throw new PratinjauKoreksi(await susunPratinjau(tx, { sebelum, sources: sumber, perubahan: { before, after: perubahan } }));
+
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_EXPENSE, entityId: e.id,
         eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: req.user.id,
         metadata: {
           expenseNumber: e.expenseNumber, reason,
-          before, after: perubahan,
+          before, after: perubahan, ...(await tautanJurnal(tx, sebelum, sumber)),
         },
       });
       await sinkronStatusDariFinExpense(tx, e.id);
@@ -568,7 +588,7 @@ financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN)
     const lengkap = await prisma.finExpense.findUnique({ where: { id: hasil.id }, include: expenseInclude });
     res.json(bentukExpense(lengkap));
   } catch (e) {
-    handleFinanceError(e, res);
+    tanganiKoreksi(e, res);
   }
 });
 
@@ -1021,6 +1041,7 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
     if (!reason) throw err("Alasan koreksi wajib diisi");
 
     const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_purchases"', req.params.id);
       const p = await tx.finPurchase.findUnique({ where: { id: req.params.id } });
       if (!p) throw err("Pembelian tidak ditemukan", 404);
       if (!["DISETUJUI", "DIBAYAR"].includes(p.status)) {
@@ -1052,6 +1073,14 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
         }
       }
 
+      const pratinjau = req.body?.preview === true;
+      const sumber = [{ source: "PEMBELIAN", sourceId: p.id }];
+      if (menyentuhJurnal) {
+        await pastikanBelumDirekonsiliasi(tx, sumber);
+        if (!pratinjau) await pastikanStepUp(prisma, req);
+      }
+      const sebelum = await snapshotJurnal(tx, sumber);
+
       const alasanKoreksi = `Koreksi ${p.purchaseNumber} — ${reason}`;
       if (menyentuhJurnal) {
         await balikkanJurnalAktif(tx, { keyPrefix: PURCHASE_KEY.purchasePaid(p.id), alasan: alasanKoreksi, userId: req.user.id });
@@ -1069,12 +1098,14 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
         }
       }
 
+      if (pratinjau) throw new PratinjauKoreksi(await susunPratinjau(tx, { sebelum, sources: sumber, perubahan: { before, after: perubahan } }));
+
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_PURCHASE, entityId: p.id,
         eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: req.user.id,
         metadata: {
           purchaseNumber: p.purchaseNumber, reason,
-          before, after: perubahan,
+          before, after: perubahan, ...(await tautanJurnal(tx, sebelum, sumber)),
         },
       });
       return updated;
@@ -1082,7 +1113,7 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
     const lengkap = await prisma.finPurchase.findUnique({ where: { id: hasil.id }, include: purchaseInclude });
     res.json(bentukPurchase(lengkap));
   } catch (e) {
-    handleFinanceError(e, res);
+    tanganiKoreksi(e, res);
   }
 });
 
@@ -1843,6 +1874,7 @@ financeTxRouter.post("/transfers/:id/koreksi", requirePermission(P.FINANCE_ADMIN
     if (!reason) throw err("Alasan koreksi wajib diisi");
 
     const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_cash_transfers"', req.params.id);
       const t = await tx.finCashTransfer.findUnique({ where: { id: req.params.id } });
       if (!t) throw err("Transfer tidak ditemukan", 404);
       if (t.cancelledAt) throw err("Transfer yang sudah dibatalkan tidak bisa dikoreksi — buat transfer baru", 409);
@@ -1850,12 +1882,20 @@ financeTxRouter.post("/transfers/:id/koreksi", requirePermission(P.FINANCE_ADMIN
       const perubahan = siapkanPerubahanTransfer(req.body);
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
 
+      const pratinjau = req.body?.preview === true;
+      const sumber = [{ source: "TRANSFER_KAS", sourceId: t.id }];
+      await pastikanBelumDirekonsiliasi(tx, sumber);
+      if (!pratinjau) await pastikanStepUp(prisma, req);
+      const sebelum = await snapshotJurnal(tx, sumber);
+
       const alasanKoreksi = `Koreksi ${t.transferNumber} — ${reason}`;
       await balikkanJurnalAktif(tx, { keyPrefix: CASH_KEY.transfer(t.id), alasan: alasanKoreksi, userId: req.user.id });
 
       const before = Object.fromEntries(Object.keys(perubahan).map((k) => [k, t[k]]));
       const updated = await tx.finCashTransfer.update({ where: { id: t.id }, data: perubahan });
       await postCashTransfer(tx, { transferId: t.id, userId: req.user.id, keySuffix: suffixKoreksi() });
+
+      if (pratinjau) throw new PratinjauKoreksi(await susunPratinjau(tx, { sebelum, sources: sumber, perubahan: { before, after: perubahan, ...(await tautanJurnal(tx, sebelum, sumber)) } }));
 
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_CASH_TRANSFER, entityId: t.id,
@@ -1866,7 +1906,7 @@ financeTxRouter.post("/transfers/:id/koreksi", requirePermission(P.FINANCE_ADMIN
     });
     res.json({ ...hasil, amount: moneyToNumber(hasil.amount), feeAmount: moneyToNumber(hasil.feeAmount) });
   } catch (e) {
-    handleFinanceError(e, res);
+    tanganiKoreksi(e, res);
   }
 });
 
@@ -1989,6 +2029,7 @@ financeTxRouter.post("/other-income/:id/koreksi", requirePermission(P.FINANCE_AD
     if (!reason) throw err("Alasan koreksi wajib diisi");
 
     const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_other_incomes"', req.params.id);
       const inc = await tx.finOtherIncome.findUnique({ where: { id: req.params.id } });
       if (!inc) throw err("Pemasukan tidak ditemukan", 404);
       if (inc.cancelledAt) throw err("Pemasukan yang sudah dibatalkan tidak bisa dikoreksi — buat pemasukan baru", 409);
@@ -2005,12 +2046,20 @@ financeTxRouter.post("/other-income/:id/koreksi", requirePermission(P.FINANCE_AD
         tolakAkunPendapatanOrder(akun);
       }
 
+      const pratinjau = req.body?.preview === true;
+      const sumber = [{ source: "PEMASUKAN_LAIN", sourceId: inc.id }];
+      await pastikanBelumDirekonsiliasi(tx, sumber);
+      if (!pratinjau) await pastikanStepUp(prisma, req);
+      const sebelum = await snapshotJurnal(tx, sumber);
+
       const alasanKoreksi = `Koreksi ${inc.incomeNumber} — ${reason}`;
       await balikkanJurnalAktif(tx, { keyPrefix: CASH_KEY.otherIncome(inc.id), alasan: alasanKoreksi, userId: req.user.id });
 
       const before = Object.fromEntries(Object.keys(perubahan).map((k) => [k, inc[k]]));
       const updated = await tx.finOtherIncome.update({ where: { id: inc.id }, data: perubahan });
       await postOtherIncome(tx, { incomeId: inc.id, userId: req.user.id, keySuffix: suffixKoreksi() });
+
+      if (pratinjau) throw new PratinjauKoreksi(await susunPratinjau(tx, { sebelum, sources: sumber, perubahan: { before, after: perubahan, ...(await tautanJurnal(tx, sebelum, sumber)) } }));
 
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_OTHER_INCOME, entityId: inc.id,
@@ -2021,7 +2070,7 @@ financeTxRouter.post("/other-income/:id/koreksi", requirePermission(P.FINANCE_AD
     });
     res.json({ ...hasil, amount: moneyToNumber(hasil.amount) });
   } catch (e) {
-    handleFinanceError(e, res);
+    tanganiKoreksi(e, res);
   }
 });
 
@@ -2799,3 +2848,228 @@ financeTxRouter.get("/bukti-review",
   });
 
 export default financeTxRouter;
+
+
+// ═════════════════════════════════════════════════════════════════════════
+// EDIT & PEMBATALAN AMAN — Refund & Tagihan Supplier (Wave "Edit & Koreksi Transaksi Aman")
+//
+//  • Belum diputuskan/diposting  -> boleh diedit penuh (semua aturan divalidasi ulang), alasan wajib, tercatat di log audit.
+//  • Sudah diposting             -> TIDAK ada edit angka. Jalan yang benar: batalkan (reversal resmi jurnal, riwayat tetap
+//                                   ada) lalu catat ulang. Tagihan/refund yang sudah punya transaksi lanjutan diblokir.
+// ═════════════════════════════════════════════════════════════════════════
+
+function daftarPerubahan(asli, baru) {
+  return Object.fromEntries(Object.keys(baru).map((k) => [k, { from: asli[k] ?? null, to: baru[k] ?? null }]));
+}
+
+// Edit refund yang MASIH MENUNGGU APPROVAL (belum ada jurnal). Alasan refund = `reason`; alasan perubahan = `alasanPerubahan`.
+financeTxRouter.patch("/refunds/:id", requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const alasanUbah = req.body?.alasanPerubahan?.trim();
+    if (!alasanUbah) throw err("Alasan perubahan wajib diisi");
+    const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_refunds"', req.params.id);
+      const r = await tx.finRefund.findUnique({ where: { id: req.params.id } });
+      if (!r) throw err("Refund tidak ditemukan", 404);
+      if (r.status !== "MENUNGGU_APPROVAL") {
+        throw err(
+          r.status === "DISETUJUI"
+            ? "Refund ini sudah masuk buku besar — tidak bisa diedit. Batalkan refund (jurnal dibalik) lalu ajukan ulang dengan data yang benar."
+            : `Refund berstatus ${r.status} — tidak bisa diedit`,
+          409
+        );
+      }
+      if (r.createdById !== req.user.id && !hasPermission(req.user, P.FINANCE_ADMIN)) {
+        throw err("Hanya pembuat refund (atau admin keuangan) yang boleh mengedit", 403);
+      }
+
+      const b = req.body || {};
+      const data = {};
+      if (b.date !== undefined) data.date = parseTanggal(b.date);
+      if (b.amount !== undefined) {
+        const nominal = toMoney(b.amount, { field: "Nominal refund" });
+        if (nominal.lessThanOrEqualTo(0)) throw err("Nominal refund harus lebih dari 0");
+        data.amount = nominal;
+      }
+      if (b.reason !== undefined) {
+        if (!b.reason?.trim()) throw err("Alasan refund wajib diisi");
+        data.reason = b.reason.trim();
+      }
+      if (b.cashAccountId !== undefined) {
+        if (!b.cashAccountId) throw err("Rekening sumber pengembalian wajib dipilih");
+        data.cashAccountId = b.cashAccountId;
+      }
+      if (b.attachmentUrl !== undefined) data.attachmentUrl = b.attachmentUrl || null;
+
+      const sentuhBiaya = ["paymentMethod", "transferFeeType", "transferFeeAmount"].some((k) => b[k] !== undefined) || (data.cashAccountId && data.cashAccountId !== r.cashAccountId);
+      if (sentuhBiaya) {
+        const metode = String(b.paymentMethod !== undefined ? b.paymentMethod : r.paymentMethod || "").toUpperCase();
+        const biaya = await hitungBiayaTransfer(tx, {
+          cashAccountId: data.cashAccountId || r.cashAccountId,
+          paymentMethod: b.paymentMethod !== undefined ? b.paymentMethod : r.paymentMethod,
+          transferFeeType: metode === "TRANSFER" ? (b.transferFeeType !== undefined ? b.transferFeeType : r.transferFeeType) : null,
+          transferFeeAmount: metode === "TRANSFER" ? (b.transferFeeAmount !== undefined ? b.transferFeeAmount : r.transferFeeAmount) : 0,
+        });
+        Object.assign(data, { paymentMethod: biaya.paymentMethod, transferFeeType: biaya.transferFeeType, transferFeeAmount: biaya.transferFeeAmount });
+      }
+
+      const beda = Object.fromEntries(Object.entries(data).filter(([k, v]) => {
+        const lama = r[k];
+        if (["amount", "transferFeeAmount"].includes(k)) return !toMoney(lama ?? 0).equals(v);
+        if (k === "date") return new Date(lama).toISOString().slice(0, 10) !== new Date(v).toISOString().slice(0, 10);
+        return (lama ?? null) !== (v ?? null);
+      }));
+      if (Object.keys(beda).length === 0) throw err("Tidak ada perubahan yang dikirim");
+
+      // Nilai baru harus tetap muat di uang yang pernah diterima untuk order ini (aturan yang sama saat dibuat/disetujui).
+      if (beda.amount !== undefined) {
+        await lockRowForUpdate(tx, '"Order"', r.orderId, { cast: null });
+        const gate = await getVerificationGate(tx);
+        const sisa = await sisaBisaDirefund(tx, r.orderId, gate);
+        if (toMoney(beda.amount).greaterThan(sisa)) {
+          throw err(`Refund ${toMoney(beda.amount).toFixed(2)} melebihi uang yang pernah diterima untuk order ini (sisa yang bisa dikembalikan: ${sisa.toFixed(2)})`);
+        }
+      }
+
+      const updated = await tx.finRefund.update({ where: { id: r.id }, data: beda });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_REFUND, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: { refundNumber: r.refundNumber, reason: alasanUbah, changes: daftarPerubahan(r, beda) },
+      });
+      return updated;
+    });
+    const lengkap = await prisma.finRefund.findUnique({ where: { id: hasil.id }, include: refundInclude });
+    res.json({ ...lengkap, amount: moneyToNumber(lengkap.amount), transferFeeAmount: moneyToNumber(lengkap.transferFeeAmount), ...ringkasBiaya(lengkap) });
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Batalkan refund yang SUDAH disetujui/diposting — reversal resmi; status bayar order dihitung ulang.
+financeTxRouter.post("/refunds/:id/cancel", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim();
+    if (!reason) throw err("Alasan pembatalan wajib diisi");
+    const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_refunds"', req.params.id);
+      const r = await tx.finRefund.findUnique({ where: { id: req.params.id } });
+      if (!r) throw err("Refund tidak ditemukan", 404);
+      if (r.status === "DIBATALKAN") throw err("Refund ini sudah dibatalkan", 409);
+      if (r.status !== "DISETUJUI") throw err(`Refund berstatus ${r.status} — belum diposting. Gunakan Tolak, bukan Batalkan.`, 409);
+      await lockRowForUpdate(tx, '"Order"', r.orderId, { cast: null });
+      await pastikanBelumDirekonsiliasi(tx, [{ source: "REFUND", sourceId: r.id }]);
+      await balikkanJurnalAktif(tx, { keyPrefix: ORDER_KEY.refund(r.id), alasan: `Refund ${r.refundNumber} dibatalkan — ${reason}`, userId: req.user.id });
+      const updated = await tx.finRefund.update({ where: { id: r.id }, data: { status: "DIBATALKAN", rejectReason: reason } });
+      await recomputeOrderPaymentStatus(tx, r.orderId);
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_REFUND, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: req.user.id,
+        metadata: { refundNumber: r.refundNumber, reason, amount: String(r.amount) },
+      });
+      return updated;
+    });
+    const lengkap = await prisma.finRefund.findUnique({ where: { id: hasil.id }, include: refundInclude });
+    res.json({ ...lengkap, amount: moneyToNumber(lengkap.amount) });
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Edit tagihan supplier yang BELUM disetujui (belum ada jurnal).
+financeTxRouter.patch("/bills/:id", requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const alasanUbah = req.body?.reason?.trim();
+    if (!alasanUbah) throw err("Alasan perubahan wajib diisi");
+    const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_supplier_bills"', req.params.id);
+      const bl = await tx.finSupplierBill.findUnique({ where: { id: req.params.id } });
+      if (!bl) throw err("Tagihan tidak ditemukan", 404);
+      if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(bl.status)) {
+        throw err(
+          ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"].includes(bl.status)
+            ? "Tagihan ini sudah masuk buku besar — tidak bisa diedit. Batalkan tagihan (jurnal dibalik, harus belum ada pembayaran) lalu catat ulang."
+            : `Tagihan berstatus ${bl.status} — tidak bisa diedit`,
+          409
+        );
+      }
+      if (bl.createdById !== req.user.id && !hasPermission(req.user, P.FINANCE_ADMIN)) {
+        throw err("Hanya pembuat tagihan (atau admin keuangan) yang boleh mengedit", 403);
+      }
+      const b = req.body || {};
+      const data = {};
+      if (b.supplierId !== undefined) {
+        const sup = await tx.finSupplier.findUnique({ where: { id: b.supplierId }, select: { active: true } });
+        if (!sup || sup.active === false) throw err("Supplier tidak ditemukan atau nonaktif", 404);
+        data.supplierId = b.supplierId;
+      }
+      if (b.supplierRef !== undefined) data.supplierRef = b.supplierRef?.trim() || null;
+      if (b.billDate !== undefined) data.billDate = parseTanggal(b.billDate);
+      if (b.dueDate !== undefined) data.dueDate = b.dueDate ? parseTanggal(b.dueDate) : null;
+      if (b.amount !== undefined) {
+        const nominal = toMoney(b.amount, { field: "Nominal tagihan" });
+        if (nominal.lessThanOrEqualTo(0)) throw err("Nominal tagihan harus lebih dari 0");
+        data.amount = nominal;
+      }
+      if (b.description !== undefined) {
+        if (!b.description?.trim()) throw err("Keterangan tagihan wajib diisi");
+        data.description = b.description.trim();
+      }
+      if (b.expenseCategoryId !== undefined) {
+        if (bl.goodsReceiptId) throw err("Tagihan yang menaut penerimaan barang tidak punya kategori biaya sendiri");
+        const kat = await tx.finExpenseCategory.findUnique({ where: { id: b.expenseCategoryId }, select: { active: true } });
+        if (!kat || !kat.active) throw err("Kategori biaya tidak ditemukan atau nonaktif", 404);
+        data.expenseCategoryId = b.expenseCategoryId;
+      }
+      if (b.attachmentUrl !== undefined) data.attachmentUrl = b.attachmentUrl || null;
+      const beda = Object.fromEntries(Object.entries(data).filter(([k, v]) => {
+        const lama = bl[k];
+        if (k === "amount") return !toMoney(lama).equals(v);
+        if (["billDate", "dueDate"].includes(k)) return (lama ? new Date(lama).toISOString().slice(0, 10) : null) !== (v ? new Date(v).toISOString().slice(0, 10) : null);
+        return (lama ?? null) !== (v ?? null);
+      }));
+      if (Object.keys(beda).length === 0) throw err("Tidak ada perubahan yang dikirim");
+      const updated = await tx.finSupplierBill.update({ where: { id: bl.id }, data: beda });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_SUPPLIER_BILL, entityId: bl.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: { billNumber: bl.billNumber, reason: alasanUbah, changes: daftarPerubahan(bl, beda) },
+      });
+      return updated;
+    });
+    const lengkap = await prisma.finSupplierBill.findUnique({ where: { id: hasil.id }, include: billInclude });
+    res.json(bentukBill(lengkap));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Batalkan tagihan supplier yang SUDAH disetujui — reversal resmi. Diblokir bila sudah ada pembayaran aktif.
+financeTxRouter.post("/bills/:id/cancel", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim();
+    if (!reason) throw err("Alasan pembatalan wajib diisi");
+    const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_supplier_bills"', req.params.id);
+      const bl = await tx.finSupplierBill.findUnique({ where: { id: req.params.id } });
+      if (!bl) throw err("Tagihan tidak ditemukan", 404);
+      if (bl.status === "DIBATALKAN") throw err("Tagihan ini sudah dibatalkan", 409);
+      if (!["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"].includes(bl.status)) {
+        throw err(`Tagihan berstatus ${bl.status} — belum diposting. Gunakan Tolak, bukan Batalkan.`, 409);
+      }
+      const pembayaran = await tx.finSupplierPaymentAllocation.count({ where: { billId: bl.id, payment: { cancelledAt: null } } });
+      if (pembayaran > 0) {
+        throw err(`Tagihan ini sudah punya ${pembayaran} pembayaran aktif — batalkan pembayarannya dulu (Supplier & Utang), baru tagihannya.`, 409);
+      }
+      await pastikanBelumDirekonsiliasi(tx, [{ source: "TAGIHAN_SUPPLIER", sourceId: bl.id }]);
+      await balikkanJurnalAktif(tx, { keyPrefix: SUPPLIER_KEY.bill(bl.id), alasan: `Tagihan ${bl.billNumber} dibatalkan — ${reason}`, userId: req.user.id });
+      const updated = await tx.finSupplierBill.update({ where: { id: bl.id }, data: { status: "DIBATALKAN", rejectReason: reason } });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_SUPPLIER_BILL, entityId: bl.id, eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: req.user.id,
+        metadata: { billNumber: bl.billNumber, reason, amount: String(bl.amount) },
+      });
+      return updated;
+    });
+    const lengkap = await prisma.finSupplierBill.findUnique({ where: { id: hasil.id }, include: billInclude });
+    res.json(bentukBill(lengkap));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});

@@ -314,6 +314,11 @@ enum HealthComplaintCategory {
 }
 
 model User {
+  // PIN step-up untuk KOREKSI FINANSIAL (24 Sep 2026): 6 digit, disimpan bcrypt. Salah 5x = terkunci 15 menit.
+  financePinHash        String?   @map("finance_pin_hash")
+  financePinFailed      Int       @default(0) @map("finance_pin_failed")
+  financePinLockedUntil DateTime? @map("finance_pin_locked_until")
+  financePinSetAt       DateTime? @map("finance_pin_set_at")
   finAdvancesHeld    FinOperationalAdvance[] @relation("FinAdvanceHolder")
   finAdvancesCreated FinOperationalAdvance[] @relation("FinAdvanceCreator")
   id           String   @id @default(cuid())
