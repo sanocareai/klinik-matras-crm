@@ -75,11 +75,12 @@ async function request(path, options = {}) {
     if (!res.ok) {
       const text = await res.text();
       let msg = "Terjadi kesalahan";
-      try { msg = JSON.parse(text).error || msg; } catch {}
+      let code;
+      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code; } catch {}
       // `.status` disertakan (bukan cuma pesan) supaya pemanggil bisa
       // membedakan "diblokir karena ada data terkait" (409) dari error lain
       // tanpa perlu cocokkan teks pesan (rapuh kalau pesannya diubah nanti).
-      throw Object.assign(new Error(msg), { status: res.status });
+      throw Object.assign(new Error(msg), { status: res.status, code });
     }
     return res.json();
   } catch (err) {
@@ -1323,7 +1324,20 @@ export const api = {
   setFinanceReceipt: (jenis, id, receiptUrl) => request(`/finance/${jenis}/${id}/bukti`, { method: "POST", body: JSON.stringify({ receiptUrl }) }),
   verifyFinanceReceipt: (jenis, id) => request(`/finance/${jenis}/${id}/verifikasi-bukti`, { method: "POST" }),
   editFinanceDoc: (jenis, id, data) => request(`/finance/${jenis}/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  koreksiFinanceDoc: (jenis, id, data) => request(`/finance/${jenis}/${id}/koreksi`, { method: "POST", body: JSON.stringify(data) }),
+  // Koreksi transaksi yang sudah berjurnal: data.preview=true -> {pratinjau} tanpa menyimpan; simpan sungguhan
+  // butuh token step-up PIN (header X-Finance-Stepup) dari verifyFinancePin.
+  koreksiFinanceDoc: (jenis, id, data, stepUp) => request(`/finance/${jenis}/${id}/koreksi`, {
+    method: "POST", body: JSON.stringify(data), ...(stepUp ? { headers: { "X-Finance-Stepup": stepUp } } : {}),
+  }),
+  getFinancePinStatus: () => request("/finance/pin/status"),
+  setFinancePin: (password, pin) => request("/finance/pin", { method: "POST", body: JSON.stringify({ password, pin }) }),
+  verifyFinancePin: (pin) => request("/finance/pin/verifikasi", { method: "POST", body: JSON.stringify({ pin }) }),
+  getFinanceRiwayatVersi: (jenis, id) => request(`/finance/riwayat-versi/${jenis}/${id}`),
+  editFinanceRefund: (id, data) => request(`/finance/refunds/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  cancelFinanceRefund: (id, reason) => request(`/finance/refunds/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  editFinanceBill: (id, data) => request(`/finance/bills/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  cancelFinanceBill: (id, reason) => request(`/finance/bills/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  editUangMuka: (id, data) => request(`/finance/uang-muka/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   // Kasbon (uang muka gaji karyawan)
   getFinanceKasbon: (params = {}) => request(`/finance/kasbon${qsFinance(params)}`),
   getFinanceKasbonNama: () => request("/finance/kasbon/karyawan-nama"),

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2 } from "lucide-react";
+import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2, History, Ban } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -15,6 +15,8 @@ import {
   TombolAksi, PeriodePicker, periodeDefault, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import { RowActions, AKSI_COL_WIDTH_MENU_ONLY } from "@/features/finance/RowActions.jsx";
+import { KoreksiDialog, RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 
 // Nominal dicari sebagai angka polos maupun berformat titik ("1500000" / "1.500.000").
 const angka = (x) => `${Math.round(Number(x) || 0)} ${(Number(x) || 0).toLocaleString("id-ID")}`;
@@ -47,6 +49,9 @@ export default function FinanceCash() {
   const [pesan, setPesan] = useState(null);
   const [modal, setModal] = useState(null); // "rekening" | "transfer" | "pemasukan"
   const [editRekening, setEditRekening] = useState(null); // akun yang sedang diedit, null = mode "tambah baru"
+  // Koreksi (dokumen sudah berjurnal) & riwayat versi: { jenis: "transfers"|"other-income", doc }
+  const [koreksiUntuk, setKoreksiUntuk] = useState(null);
+  const [versiUntuk, setVersiUntuk] = useState(null);
   // Pencarian & filter per tab (sisi-klien) — state tiap tab terpisah.
   const [qR, setQR] = useState("");
   const [fJenis, setFJenis] = useState("");
@@ -110,6 +115,28 @@ export default function FinanceCash() {
       setPesan(e.message);
     }
   }
+
+  const batalkan = (jenis, doc, nomor) => {
+    const alasan = window.prompt(`Alasan membatalkan ${nomor}? Jurnalnya akan dibalik, riwayat tetap tersimpan:`);
+    if (!alasan?.trim()) return;
+    return aksi(() => (jenis === "transfers" ? api.cancelFinanceTransfer(doc.id, alasan.trim()) : api.cancelFinanceOtherIncome(doc.id, alasan.trim())));
+  };
+  const menuTransfer = (t) => ({
+    primary: null,
+    items: [
+      !t.cancelledAt && { key: "koreksi", label: "Koreksi", icon: Pencil, onClick: () => setKoreksiUntuk({ jenis: "transfers", doc: t }) },
+      { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk({ jenis: "transfers", doc: t, nomor: t.transferNumber }) },
+      !t.cancelledAt && { key: "batal", label: "Batalkan", icon: Ban, destructive: true, onClick: () => batalkan("transfers", t, t.transferNumber) },
+    ].filter(Boolean),
+  });
+  const menuPemasukan = (i) => ({
+    primary: null,
+    items: [
+      !i.cancelledAt && { key: "koreksi", label: "Koreksi", icon: Pencil, onClick: () => setKoreksiUntuk({ jenis: "other-income", doc: i }) },
+      { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk({ jenis: "other-income", doc: i, nomor: i.incomeNumber }) },
+      !i.cancelledAt && { key: "batal", label: "Batalkan", icon: Ban, destructive: true, onClick: () => batalkan("other-income", i, i.incomeNumber) },
+    ].filter(Boolean),
+  });
 
   async function hapusRekening(a) {
     if (!confirm(`Hapus rekening "${a.name}" secara permanen? Aksi ini tidak bisa dibatalkan.`)) return;
@@ -294,6 +321,7 @@ export default function FinanceCash() {
                     <TH numeric width={128}>Nominal</TH>
                     <TH numeric width={112} hideBelow="wide">Biaya Admin</TH>
                     <TH width={116}>Status</TH>
+                    <TH width={AKSI_COL_WIDTH_MENU_ONLY} />
                   </TR>
                 </THead>
                 <TBody>
@@ -310,6 +338,7 @@ export default function FinanceCash() {
                           ? <Badge variant="red">Dibatalkan</Badge>
                           : <Badge variant="green">Terposting</Badge>}
                       </TD>
+                      <TD><RowActions {...menuTransfer(t)} /></TD>
                     </TR>
                   ))}
                 </TBody>
@@ -352,6 +381,7 @@ export default function FinanceCash() {
                     <TH width={190} hideBelow="wide">Akun</TH>
                     <TH width={150}>Masuk ke</TH>
                     <TH numeric width={128}>Nominal</TH>
+                    <TH width={AKSI_COL_WIDTH_MENU_ONLY} />
                   </TR>
                 </THead>
                 <TBody>
@@ -363,6 +393,7 @@ export default function FinanceCash() {
                       <TD hideBelow="wide" truncate className="text-[12px]">{i.account ? `${i.account.code} · ${i.account.name}` : "—"}</TD>
                       <TD truncate>{i.cashAccount?.name}</TD>
                       <TD numeric><Uang value={i.amount} /></TD>
+                      <TD><RowActions {...menuPemasukan(i)} /></TD>
                     </TR>
                   ))}
                 </TBody>
@@ -372,6 +403,54 @@ export default function FinanceCash() {
         </Card>
         </>
       )}
+
+      {koreksiUntuk?.jenis === "transfers" && (
+        <KoreksiDialog
+          jenis="transfers" doc={koreksiUntuk.doc} nomor={koreksiUntuk.doc.transferNumber}
+          judulRingkas={`${formatUang(koreksiUntuk.doc.amount)} · ${koreksiUntuk.doc.fromAccount?.name} → ${koreksiUntuk.doc.toAccount?.name}`}
+          kolom={[
+            { kunci: "date", label: "Tanggal", tipe: "tanggal" },
+            { kunci: "amount", label: "Nominal", tipe: "uang", wajib: true },
+            { kunci: "feeAmount", label: "Biaya admin", tipe: "uang" },
+            { kunci: "fromAccountId", label: "Dari rekening", tipe: "pilih", opsi: semuaRekening, wajib: true },
+            { kunci: "toAccountId", label: "Ke rekening", tipe: "pilih", opsi: semuaRekening, wajib: true },
+            { kunci: "reference", label: "Referensi", tipe: "teks" },
+            { kunci: "notes", label: "Catatan", tipe: "teks" },
+          ]}
+          awal={{
+            date: String(koreksiUntuk.doc.date || "").slice(0, 10), amount: Number(koreksiUntuk.doc.amount) || 0,
+            feeAmount: Number(koreksiUntuk.doc.feeAmount) || 0, fromAccountId: koreksiUntuk.doc.fromAccountId || "",
+            toAccountId: koreksiUntuk.doc.toAccountId || "", reference: koreksiUntuk.doc.reference || "", notes: koreksiUntuk.doc.notes || "",
+          }}
+          resolusi={(f, v) => (f === "fromAccountId" || f === "toAccountId" ? semuaRekening.find((r) => r.id === v)?.name : null)}
+          onClose={() => setKoreksiUntuk(null)}
+          onSaved={() => { setKoreksiUntuk(null); muat(); }}
+        />
+      )}
+      {koreksiUntuk?.jenis === "other-income" && (
+        <KoreksiDialog
+          jenis="other-income" doc={koreksiUntuk.doc} nomor={koreksiUntuk.doc.incomeNumber}
+          judulRingkas={`${formatUang(koreksiUntuk.doc.amount)} · ${koreksiUntuk.doc.description}`}
+          kolom={[
+            { kunci: "date", label: "Tanggal", tipe: "tanggal" },
+            { kunci: "amount", label: "Nominal", tipe: "uang", wajib: true },
+            { kunci: "description", label: "Keterangan", tipe: "teks", wajib: true },
+            { kunci: "accountId", label: "Akun pendapatan", tipe: "pilih", opsi: akunPendapatan.map((a) => ({ id: a.id, name: `${a.code} · ${a.name}` })), wajib: true },
+            { kunci: "cashAccountId", label: "Masuk ke rekening", tipe: "pilih", opsi: semuaRekening, wajib: true },
+            { kunci: "notes", label: "Catatan", tipe: "teks" },
+          ]}
+          awal={{
+            date: String(koreksiUntuk.doc.date || "").slice(0, 10), amount: Number(koreksiUntuk.doc.amount) || 0,
+            description: koreksiUntuk.doc.description || "", accountId: koreksiUntuk.doc.accountId || "",
+            cashAccountId: koreksiUntuk.doc.cashAccountId || "", notes: koreksiUntuk.doc.notes || "",
+          }}
+          resolusi={(f, v) => (f === "cashAccountId" ? semuaRekening.find((r) => r.id === v)?.name
+            : f === "accountId" ? akunPendapatan.find((a) => a.id === v)?.name : null)}
+          onClose={() => setKoreksiUntuk(null)}
+          onSaved={() => { setKoreksiUntuk(null); muat(); }}
+        />
+      )}
+      {versiUntuk && <RiwayatVersiDialog jenis={versiUntuk.jenis} id={versiUntuk.doc.id} nomor={versiUntuk.nomor} onClose={() => setVersiUntuk(null)} />}
 
       <ModalRekening
         open={modal === "rekening" || Boolean(editRekening)}

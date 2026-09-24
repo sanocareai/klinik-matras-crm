@@ -331,3 +331,59 @@ export async function pastikanUangMukaBolehDipakai(db, { advanceId, pemilikIds }
   if (b.saldo <= 0) throw new AdvanceError(`Saldo uang muka ${adv.advanceNumber} sudah habis`, 409);
   return { advance: adv, saldo: b.saldo };
 }
+
+// ─── Edit metadata (uang muka langsung menjadi jurnal saat diberikan, jadi hanya field non-finansial yang boleh diedit) ───
+const FIELD_METADATA = ["purpose", "dueDate", "notes", "receiptUrl", "division"];
+const FIELD_FINANSIAL = ["amount", "holderId", "cashAccountId", "date", "paymentMethod", "transferFeeType", "transferFeeAmount"];
+
+export async function ubahMetadataUangMuka(tx, { advanceId, body, user }) {
+  const alasan = body?.reason?.trim();
+  if (!alasan) throw new AdvanceError("Alasan perubahan wajib diisi");
+  const terlarang = FIELD_FINANSIAL.filter((k) => body[k] !== undefined);
+  if (terlarang.length > 0) {
+    throw new AdvanceError(
+      "Nominal, pemegang, tanggal, rekening, dan biaya transfer uang muka sudah masuk buku besar dan tidak bisa diedit. Batalkan uang muka (jurnal dibalik) lalu catat ulang — bila sudah ada pertanggungjawaban/pengembalian, batalkan itu dulu.",
+      409,
+    );
+  }
+  await lockUangMuka(tx, advanceId);
+  const a = await tx.finOperationalAdvance.findUnique({ where: { id: advanceId } });
+  if (!a) throw new AdvanceError("Uang muka tidak ditemukan", 404);
+  if (a.status === "DIBATALKAN") throw new AdvanceError("Uang muka yang dibatalkan tidak bisa diubah", 409);
+
+  const data = {};
+  if (body.purpose !== undefined) {
+    if (!body.purpose?.trim()) throw new AdvanceError("Tujuan uang muka wajib diisi");
+    data.purpose = body.purpose.trim();
+  }
+  if (body.dueDate !== undefined) {
+    const t = tanggalBuku(body.dueDate);
+    if (!t) throw new AdvanceError("Tenggat pertanggungjawaban wajib diisi");
+    if (t < a.date) throw new AdvanceError("Tenggat pertanggungjawaban tidak boleh lebih awal dari tanggal pemberian");
+    data.dueDate = t;
+  }
+  if (body.notes !== undefined) data.notes = body.notes?.trim() || null;
+  if (body.receiptUrl !== undefined) {
+    if (body.receiptUrl && !String(body.receiptUrl).startsWith("/media/finance-receipts/")) throw new AdvanceError("Bukti harus diunggah lewat fitur upload");
+    data.receiptUrl = body.receiptUrl || null;
+  }
+  if (body.division !== undefined) {
+    if (!DIVISI_VALID.includes(body.division)) throw new AdvanceError(`Divisi tidak dikenal: ${body.division}`);
+    data.division = body.division;
+  }
+  const beda = Object.fromEntries(Object.entries(data).filter(([k, v]) => {
+    const lama = a[k];
+    if (k === "dueDate") return new Date(lama).toISOString().slice(0, 10) !== new Date(v).toISOString().slice(0, 10);
+    return (lama ?? null) !== (v ?? null);
+  }));
+  if (Object.keys(beda).length === 0) throw new AdvanceError("Tidak ada perubahan yang dikirim");
+  const updated = await tx.finOperationalAdvance.update({ where: { id: advanceId }, data: beda });
+  await recordActivity(tx, {
+    entityType: ENTITY_TYPES.FIN_UANG_MUKA, entityId: advanceId, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: user.id,
+    metadata: {
+      advanceNumber: a.advanceNumber, reason: alasan,
+      changes: Object.fromEntries(Object.keys(beda).map((k) => [k, { from: a[k] ?? null, to: beda[k] ?? null }])),
+    },
+  });
+  return updated;
+}

@@ -342,7 +342,7 @@ test("Verifikasi ganda / pembayaran dibatalkan → 409 dengan kode; tidak ada ba
   assert.equal((await post(fin, `/pembayaran/${p.id}/verifikasi`)).status, 201);
   const dua = await post(fin2, `/pembayaran/${p.id}/verifikasi`);
   assert.equal(dua.status, 409);
-  assert.equal(dua.body.code, undefined, "handleFinanceError hanya membawa pesan");
+  assert.equal(dua.body.code, "SUDAH_DIPROSES", "handleFinanceError kini juga membawa kode galat (aditif) supaya UI bisa membedakan kasus tanpa mencocokkan teks");
   assert.match(dua.body.error, new RegExp(`sudah diverifikasi oleh ${fin.user.name}`));
   assert.equal(await testPrisma.paymentVerification.count(), 1);
 

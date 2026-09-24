@@ -64,7 +64,8 @@ export function handleFinanceError(err, res) {
   if (err instanceof MoneyError || err instanceof JournalError || err instanceof AccountError) {
     return res.status(err.statusCode || 400).json({ error: err.message });
   }
-  if (err?.statusCode) return res.status(err.statusCode).json({ error: err.message });
+  // `code` teks (mis. STEPUP_DIPERLUKAN, SUDAH_DIREKONSILIASI) ikut dikirim supaya UI bisa bereaksi; kode Prisma (P2002) bukan teks bermakna.
+  if (err?.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && /^[A-Z_]+$/.test(err.code) && !/^P\d{4}$/.test(err.code) ? { code: err.code } : {}) });
   if (err?.code === "P2002") {
     return res.status(409).json({ error: "Data dengan kunci yang sama sudah ada" });
   }

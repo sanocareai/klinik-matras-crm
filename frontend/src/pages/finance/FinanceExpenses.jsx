@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Receipt, Pencil } from "lucide-react";
+import { Plus, Receipt, Pencil, History } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -23,6 +23,7 @@ import {
   LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
+import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
@@ -42,14 +43,16 @@ function teksSumberDana(e) {
 // titik-tiga — perilaku & permission SAMA PERSIS dengan sebelumnya (tidak
 // ada aksi yang dihapus), cuma tata letaknya yang berubah supaya tidak
 // bertumpuk di kolom Aksi yang lebarnya tetap.
-function aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk }) {
+function aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk, setVersiUntuk }) {
   const bisaEdit = STATUS_BISA_DIEDIT.includes(e.status);
   const bisaBatal = ["DISETUJUI", "DIBAYAR"].includes(e.status);
   const menungguKeputusan = ["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status);
   const notaBelumAda = !!e.notaWajib && !e.receiptUrl;
 
   const items = [
-    bisaEdit && { key: "edit", label: "Edit / koreksi", icon: Pencil, onClick: () => setEditUntuk(e) },
+    // "Edit" = belum berjurnal (bebas ubah); "Koreksi" = sudah masuk buku besar (jurnal dibalik + pengganti, butuh PIN).
+    bisaEdit && { key: "edit", label: ["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status) ? "Edit" : "Koreksi", icon: Pencil, onClick: () => setEditUntuk(e) },
+    { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk(e) },
     menungguKeputusan && {
       key: "tolak", label: "Tolak", destructive: true,
       onClick: () => {
@@ -130,6 +133,7 @@ export default function FinanceExpenses() {
   const [modalBaru, setModalBaru] = useState(false);
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
+  const [versiUntuk, setVersiUntuk] = useState(null);
   // Tier lebar CONTAINER (bukan viewport) untuk kolom Klasifikasi (Kategori+
   // Divisi) / Pembayaran (Mode+Sumber Dana) — SELALU digabung, tidak pernah
   // terpisah 4 kolom lagi (polish 22 Sep 2026). ≥1250: semua kolom. 900–1249:
@@ -293,7 +297,7 @@ export default function FinanceExpenses() {
             {tier === "card" ? (
               <CardList>
                 {expenses.map((e) => {
-                  const a = aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk });
+                  const a = aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk, setVersiUntuk });
                   return (
                     <RowCard
                       key={e.id}
@@ -341,7 +345,7 @@ export default function FinanceExpenses() {
                   </THead>
                   <TBody>
                     {expenses.map((e) => {
-                      const a = aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk });
+                      const a = aksiPengeluaran(e, { aksi, setEditUntuk, setBayarUntuk, setVersiUntuk });
                       const klasifikasi = (
                         <>
                           <span className="block truncate text-[12px]" title={e.category?.name}>{e.category?.name}</span>
@@ -440,6 +444,7 @@ export default function FinanceExpenses() {
         onClose={() => setEditUntuk(null)}
         onSaved={() => { setEditUntuk(null); muat({ diam: true }); }}
       />
+      {versiUntuk && <RiwayatVersiDialog jenis="expenses" id={versiUntuk.id} nomor={versiUntuk.expenseNumber} onClose={() => setVersiUntuk(null)} />}
     </HalamanFinance>
   );
 }

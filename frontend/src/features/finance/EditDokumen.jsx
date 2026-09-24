@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { ShieldCheck } from "lucide-react";
+import { PratinjauKoreksi, usePinStepUp, kirimKoreksi, perluPin } from "@/features/finance/KoreksiAman.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
@@ -55,13 +57,23 @@ export default function EditDokumen({ doc, jenis, kategori, rekening, onClose, o
   const [f, setF] = useState(asli);
   const [alasan, setAlasan] = useState("");
   const [galat, setGalat] = useState("");
+  const [pratinjau, setPratinjau] = useState(null);
+  const [sibuk, setSibuk] = useState(false);
+  const { minta, dialogPin } = usePinStepUp();
 
-  useEffect(() => { setF(asli); setAlasan(""); setGalat(""); }, [asli]);
+  useEffect(() => { setF(asli); setAlasan(""); setGalat(""); setPratinjau(null); }, [asli]);
   if (!doc || !f) return null;
 
   const nomor = doc.expenseNumber || doc.purchaseNumber;
   const sudahPosting = STATUS_SUDAH_POSTING.includes(doc.status);
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const set = (k, v) => { setF((s) => ({ ...s, [k]: v })); setPratinjau(null); };
+  // Id -> nama supaya pratinjau terbaca manusia.
+  const resolusi = (field, v) => {
+    if (field === "categoryId") return kategori.find((k) => k.id === v)?.name;
+    if (field === "cashAccountId") return rekening.find((r) => r.id === v)?.name;
+    if (field === "division") return LABEL_DIVISI[v];
+    return null;
+  };
 
   const biayaBisaDiedit = doc.mode === "LANGSUNG" || doc.status === "DIBAYAR";
   const rekBiaya = rekening.find((r) => r.id === (doc.mode === "LANGSUNG" ? f.cashAccountId : doc.cashAccountId));
@@ -83,20 +95,47 @@ export default function EditDokumen({ doc, jenis, kategori, rekening, onClose, o
     f.categoryId && (doc.mode !== "LANGSUNG" || f.cashAccountId) &&
     (!biayaBisaDiedit || biayaTransferLengkap(rekBiaya, f));
 
-  async function simpan() {
-    setGalat("");
+  const bodyKirim = () => ({ ...beda, ...(biayaBerubah ? bodyBiayaTransfer(f) : {}), reason: alasan.trim() });
+
+  // Koreksi yang menyentuh jurnal: tampilkan PRATINJAU dari server dulu (tidak menyimpan apa pun).
+  async function tinjau() {
+    setGalat(""); setSibuk(true);
     try {
-      const body = { ...beda, ...(biayaBerubah ? bodyBiayaTransfer(f) : {}), reason: alasan.trim() };
-      await (sudahPosting
-        ? api.koreksiFinanceDoc(jenis, doc.id, body)
-        : api.editFinanceDoc(jenis, doc.id, body));
+      const r = await api.koreksiFinanceDoc(jenis, doc.id, { ...bodyKirim(), preview: true });
+      setPratinjau(r.pratinjau);
+    } catch (e) { setGalat(e.message); } finally { setSibuk(false); }
+  }
+
+  async function simpan() {
+    setGalat(""); setSibuk(true);
+    try {
+      if (!sudahPosting) {
+        await api.editFinanceDoc(jenis, doc.id, bodyKirim());
+      } else if (menyentuhJurnal) {
+        // Koreksi finansial: butuh PIN Finance (step-up). null = pengguna membatalkan dialog PIN.
+        const r = await kirimKoreksi({ minta, jenis, id: doc.id, body: bodyKirim() });
+        if (!r) return;
+      } else {
+        // Hanya foto/catatan: tanpa PIN. Kalau server tetap meminta (mis. kolom dianggap finansial), ulangi lewat PIN.
+        try { await api.koreksiFinanceDoc(jenis, doc.id, bodyKirim()); }
+        catch (e) {
+          if (!perluPin(e)) throw e;
+          const r = await kirimKoreksi({ minta, jenis, id: doc.id, body: bodyKirim() });
+          if (!r) return;
+        }
+      }
       onSaved();
     } catch (e) {
       setGalat(e.message);
+    } finally {
+      setSibuk(false);
     }
   }
 
+  const tahapTinjau = sudahPosting && menyentuhJurnal && !pratinjau;
+
   return (
+    <>
     <Modal
       open onOpenChange={(v) => !v && onClose()}
       title={`${sudahPosting ? "Koreksi" : "Edit"} ${nomor}`}
@@ -104,12 +143,24 @@ export default function EditDokumen({ doc, jenis, kategori, rekening, onClose, o
       className="w-[560px]"
       footer={
         <>
-          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={simpan} disabled={!valid}>{sudahPosting ? "Simpan Koreksi" : "Simpan Perubahan"}</TombolAksi>
+          <Button variant="neutral" onClick={pratinjau ? () => setPratinjau(null) : onClose} className="max-sm:min-h-11 max-sm:px-4">{pratinjau ? "Kembali" : "Batal"}</Button>
+          {tahapTinjau
+            ? <Button onClick={tinjau} disabled={!valid || sibuk} className="max-sm:min-h-11 max-sm:px-4">Lihat Pratinjau</Button>
+            : pratinjau
+              ? <Button onClick={simpan} disabled={sibuk || !pratinjau.seimbang} className="max-sm:min-h-11 max-sm:px-4"><ShieldCheck size={14} />Konfirmasi Koreksi</Button>
+              : <TombolAksi onClick={simpan} disabled={!valid || sibuk}>{sudahPosting ? "Simpan Koreksi" : "Simpan Perubahan"}</TombolAksi>}
         </>
       }
     >
       <div className="space-y-3">
+        {pratinjau ? (
+          <>
+            <p className="text-[12.5px] text-ink2"><strong>Alasan:</strong> {alasan}</p>
+            <PratinjauKoreksi pratinjau={pratinjau} resolusi={resolusi} />
+            <p className="text-[12px] text-ink3">Menyimpan akan meminta PIN Finance Anda.</p>
+            {galat && <p className="text-[13px] text-red">{galat}</p>}
+          </>
+        ) : (<>
         {sudahPosting && (
           <p className="rounded-lg bg-accentbg px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
             Dokumen ini sudah masuk buku besar. {menyentuhJurnal
@@ -172,7 +223,10 @@ export default function EditDokumen({ doc, jenis, kategori, rekening, onClose, o
         </Field>
         {!adaPerubahan && <p className="text-[12px] text-ink3">Ubah minimal satu kolom di atas untuk bisa menyimpan.</p>}
         {galat && <p className="text-[13px] text-red">{galat}</p>}
+        </>)}
       </div>
     </Modal>
+    {dialogPin}
+    </>
   );
 }

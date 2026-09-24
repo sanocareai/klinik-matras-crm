@@ -20,7 +20,7 @@ import { moneyToNumber, toMoney, sumMoney } from "../services/finance/money.js";
 import { buatFinExpense, bentukExpense } from "../services/finance/expenses.js";
 import {
   berikanUangMuka, kembalikanSisa, batalkanPengembalian, batalkanUangMuka,
-  uangMukaInclude, bentukUangMuka, AdvanceError,
+  uangMukaInclude, bentukUangMuka, AdvanceError, ubahMetadataUangMuka,
 } from "../services/finance/operationalAdvance.js";
 
 export const financeUangMukaRouter = express.Router();
@@ -162,6 +162,15 @@ financeUangMukaRouter.post("/uang-muka/:id/pengembalian/:sid/batal", requirePerm
 financeUangMukaRouter.post("/uang-muka/:id/batal", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
   try {
     await prisma.$transaction((tx) => batalkanUangMuka(tx, { advanceId: req.params.id, reason: req.body?.reason, user: req.user }));
+    const a = await prisma.finOperationalAdvance.findUnique({ where: { id: req.params.id }, include: uangMukaInclude });
+    res.json(bentukUangMuka(a));
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+// ─── Edit metadata (tujuan, tenggat, catatan, bukti, divisi) — angka & rekening terkunci karena sudah masuk buku besar ───
+financeUangMukaRouter.patch("/uang-muka/:id", requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    await prisma.$transaction((tx) => ubahMetadataUangMuka(tx, { advanceId: req.params.id, body: req.body || {}, user: req.user }));
     const a = await prisma.finOperationalAdvance.findUnique({ where: { id: req.params.id }, include: uangMukaInclude });
     res.json(bentukUangMuka(a));
   } catch (e) { handleFinanceError(e, res); }
