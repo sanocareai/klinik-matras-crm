@@ -12,6 +12,7 @@
 // langsung ke RECEIVED. Kalau nanti scan intake dibangun, ini perlu direvisi
 // jadi dua langkah.
 
+import { adalahGalatInfraDb, kirimGalatInfraDb } from "../lib/dbInfraError.js";
 import express from "express";
 import fs from "fs";
 import path from "path";
@@ -111,7 +112,8 @@ class ArmadaError extends Error {
 function handleErr(err, res) {
   if (err instanceof ArmadaError) return res.status(err.statusCode).json({ error: err.message });
   if (Number.isInteger(err?.statusCode)) return res.status(err.statusCode).json({ error: err.message });
-  if (err?.code === "P2028" || (err?.code === "P2010" && err?.meta?.code === "55P03")) {
+  if (adalahGalatInfraDb(err)) return kirimGalatInfraDb(res, err, "[armada]");
+  if (err?.code === "P2010" && err?.meta?.code === "55P03") {
     return res.status(409).json({ error: "Aksi sedang diproses di perangkat lain. Muat ulang status lalu coba lagi." });
   }
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
