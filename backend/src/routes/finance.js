@@ -15,6 +15,7 @@
 // Endpoint REVERSAL sengaja dijaga finance:admin, bukan finance:post —
 // membatalkan sesuatu yang sudah masuk laporan bukan pekerjaan harian.
 
+import { adalahGalatInfraDb, kirimGalatInfraDb } from "../lib/dbInfraError.js";
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { idempotency } from "../middleware/idempotency.js";
@@ -70,6 +71,7 @@ export function handleFinanceError(err, res) {
     return res.status(409).json({ error: "Data dengan kunci yang sama sudah ada" });
   }
   if (err?.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
+  if (adalahGalatInfraDb(err)) return kirimGalatInfraDb(res, err, "[finance]");
   console.error("[finance]", err);
   return res.status(500).json({ error: "Server error: " + err.message });
 }

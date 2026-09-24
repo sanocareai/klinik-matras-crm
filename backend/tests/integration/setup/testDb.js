@@ -5,7 +5,9 @@ import { PrismaClient } from "@prisma/client";
 // proses `node --test` (pola sama dengan src/db.js di aplikasi asli) — tapi
 // menunjuk ke DATABASE_URL tes yang sudah di-override & divalidasi oleh
 // env.js, bukan ke database dev/produksi.
-export const testPrisma = new PrismaClient();
+// Batas transaksi SAMA dengan src/db.js: fixture tes yang membuka $transaction interaktif tidak boleh gagal P2028
+// hanya karena mesin tes sedang sibuk (bawaan Prisma: maxWait 2 dtk / timeout 5 dtk). Terbukti pada run beban sedang.
+export const testPrisma = new PrismaClient({ transactionOptions: { maxWait: 15_000, timeout: 30_000 } });
 
 // Tabel inventory (urutan TIDAK penting — TRUNCATE ... CASCADE mengabaikan
 // arah FK RESTRICT/SetNull sepenuhnya, beda dari DELETE biasa) + entitas
@@ -36,7 +38,7 @@ const TABLES_TO_TRUNCATE = [
   // polimorfik tanpa FK sama sekali) — jadi tanpa baris ini, sampah
   // menumpuk lintas file test dan assertion "berapa gap yang terbuka"
   // di financeLedger.integration.test.js akan melihat sisa test lain.
-  "fin_bank_statement_lines", "fin_bank_statements",
+  "fin_bank_statement_lines", "fin_bank_statements", "fin_recon_snapshots", "fin_recon_exception_reviews",
   "fin_supplier_payment_allocations", "fin_supplier_payments", "fin_supplier_bills",
   "fin_payment_allocations", "fin_refunds", "fin_expenses",
   // "Terapkan Uang Muka" (D-XXX, 22 September 2026) — WAJIB sebelum
