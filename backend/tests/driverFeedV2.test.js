@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { decodeDriverCursor, encodeDriverCursor } from "../src/services/driverFeedV2.js";
-import { buildDeliveryRouteSnapshot, deliveryV2Checksum, routeRecipients } from "../src/services/deliveryV2Snapshot.js";
+import {
+  buildDeliveryRouteSnapshot,
+  deliveryV2Checksum,
+  isDriverActiveRouteStatusV2,
+  isDriverVisibleAssignmentV2,
+  routeRecipients,
+} from "../src/services/deliveryV2Snapshot.js";
 
 const SECRET = "test-secret-at-least-sixteen-characters";
 
@@ -23,3 +29,19 @@ test("snapshot deterministik dan recipient dideduplikasi", () => {
   assert.deepEqual(routeRecipients(first), ["u1"]);
 });
 
+test("predicate kanonis mengecualikan 30 route selesai dan route cancelled", () => {
+  const terminalRoutes = [
+    ...Array.from({ length: 30 }, () => ({ status: "COMPLETED" })),
+    { status: "CANCELLED" },
+  ];
+  assert.equal(terminalRoutes.filter((route) => isDriverActiveRouteStatusV2(route.status)).length, 0);
+  assert.equal(isDriverVisibleAssignmentV2("COMPLETED", "ACTIVE"), false);
+  assert.equal(isDriverVisibleAssignmentV2("CANCELLED", "ACTIVE"), false);
+});
+
+test("completed stop hanya menjadi konteks pada route IN_PROGRESS", () => {
+  assert.equal(isDriverVisibleAssignmentV2("PUBLISHED", "ACTIVE"), true);
+  assert.equal(isDriverVisibleAssignmentV2("PUBLISHED", "COMPLETED"), false);
+  assert.equal(isDriverVisibleAssignmentV2("IN_PROGRESS", "ACTIVE"), true);
+  assert.equal(isDriverVisibleAssignmentV2("IN_PROGRESS", "COMPLETED"), true);
+});

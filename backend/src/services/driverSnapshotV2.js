@@ -1,4 +1,10 @@
 import { decodeDriverCursor, encodeDriverCursor } from "./driverFeedV2.js";
+import {
+  DRIVER_ACTIVE_ROUTE_STATUSES_V2,
+  deliveryV2Checksum,
+  isDriverActiveRouteStatusV2,
+  isDriverVisibleAssignmentV2,
+} from "./deliveryV2Snapshot.js";
 
 const ACTIVE_JOB_STATUSES = ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
 
@@ -6,6 +12,49 @@ function boundedLimit(value, fallback = 50, max = 100) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) return fallback;
   return Math.min(parsed, max);
+}
+
+function projectPublicationForDriver(publication) {
+  const snapshotStops = Array.isArray(publication.snapshot?.stops) ? publication.snapshot.stops : [];
+  const snapshotJobIds = new Set(snapshotStops.map((stop) => stop.jobId));
+  const assignmentJobIds = new Set(publication.assignments.map((assignment) => assignment.jobId));
+  const missingAssignmentJobIds = [...snapshotJobIds].filter((jobId) => !assignmentJobIds.has(jobId)).sort();
+  const unexpectedAssignmentJobIds = [...assignmentJobIds].filter((jobId) => !snapshotJobIds.has(jobId)).sort();
+  if (missingAssignmentJobIds.length || unexpectedAssignmentJobIds.length) {
+    throw Object.assign(new Error("Publication V2 tidak lengkap; cohort Driver diblokir sampai data diperbaiki"), {
+      statusCode: 409,
+      code: "DRIVER_V2_SNAPSHOT_INTEGRITY_ERROR",
+      details: { routeId: publication.routeId, missingAssignmentJobIds, unexpectedAssignmentJobIds },
+    });
+  }
+  const visibleAssignments = publication.assignments.filter((assignment) => (
+    isDriverVisibleAssignmentV2(publication.route.status, assignment.status)
+  ));
+  const visibleJobIds = new Set(visibleAssignments.map((assignment) => assignment.jobId));
+  const driverSnapshot = {
+    ...publication.snapshot,
+    stops: snapshotStops.filter((stop) => visibleJobIds.has(stop.jobId)),
+  };
+  return {
+    routeId: publication.routeId,
+    publicationVersion: publication.publicationVersion,
+    routeRevision: publication.routeRevision,
+    checksum: publication.checksum,
+    driverSnapshotChecksum: deliveryV2Checksum(driverSnapshot),
+    snapshot: driverSnapshot,
+    routeStatus: publication.route.status,
+    liveStops: visibleAssignments.map((assignment) => ({
+      jobId: assignment.jobId,
+      sequence: assignment.sequence,
+      assignmentStatus: assignment.status,
+      jobRevision: assignment.job.deliveryStateV2?.jobRevision ?? null,
+      status: assignment.job.deliveryStateV2?.currentStatus ?? assignment.job.status,
+      arrivedAt: assignment.job.arrivedAt,
+      completedAt: assignment.job.completedAt,
+      failureReason: assignment.job.failureReason,
+      proofPhotoUrls: assignment.job.proofPhotoUrls,
+    })),
+  };
 }
 
 export async function driverV2Eligibility(prisma, userId) {
@@ -35,11 +84,11 @@ export async function driverV2Eligibility(prisma, userId) {
     select: { aggregateType: true, aggregateId: true, code: true, status: true },
   }) : [];
   const blockers = [];
-  const effectiveJobs = jobs.filter((job) => !job.routeId || !["DRAFT", "CANCELLED"].includes(job.route?.status));
+  const effectiveJobs = jobs.filter((job) => !job.routeId || isDriverActiveRouteStatusV2(job.route?.status));
   for (const job of effectiveJobs) {
     if (!job.routeId) blockers.push({ jobId: job.id, code: "ACTIVE_JOB_WITHOUT_ROUTE" });
     else if (!job.route?.deliveryStateV2?.currentPublicationVersion) blockers.push({ jobId: job.id, routeId: job.routeId, code: "ACTIVE_ASSIGNMENT_NOT_PUBLISHED_V2" });
-    else if (!["PUBLISHED", "IN_PROGRESS"].includes(job.route.status)) blockers.push({ jobId: job.id, routeId: job.routeId, code: "ACTIVE_JOB_ROUTE_NOT_VISIBLE" });
+    else if (!isDriverActiveRouteStatusV2(job.route.status)) blockers.push({ jobId: job.id, routeId: job.routeId, code: "ACTIVE_JOB_ROUTE_NOT_VISIBLE" });
   }
   blockers.push(...exceptions.map((item) => ({ ...item, code: `MIGRATION_${item.status}:${item.code}` })));
   return { eligible: blockers.length === 0, activeAssignmentCount: effectiveJobs.length, blockers };
@@ -74,12 +123,26 @@ export async function readDriverFullSnapshot(prisma, { userId, cursor = null, li
     where: {
       status: "ACTIVE",
       ...(afterRouteId ? { routeId: { gt: afterRouteId } } : {}),
-      assignments: {
-        some: {
-          status: { in: ["ACTIVE", "COMPLETED"] },
-          OR: [{ driverId: userId }, { helperId: userId }],
+      OR: [
+        {
+          route: { status: DRIVER_ACTIVE_ROUTE_STATUSES_V2[0] },
+          assignments: {
+            some: {
+              status: "ACTIVE",
+              OR: [{ driverId: userId }, { helperId: userId }],
+            },
+          },
         },
-      },
+        {
+          route: { status: DRIVER_ACTIVE_ROUTE_STATUSES_V2[1] },
+          assignments: {
+            some: {
+              status: { in: ["ACTIVE", "COMPLETED"] },
+              OR: [{ driverId: userId }, { helperId: userId }],
+            },
+          },
+        },
+      ],
     },
     orderBy: { routeId: "asc" },
     take: size + 1,
@@ -89,7 +152,12 @@ export async function readDriverFullSnapshot(prisma, { userId, cursor = null, li
       routeRevision: true,
       checksum: true,
       snapshot: true,
+      route: { select: { status: true } },
       assignments: {
+        where: {
+          status: { in: ["ACTIVE", "COMPLETED"] },
+          OR: [{ driverId: userId }, { helperId: userId }],
+        },
         orderBy: { sequence: "asc" },
         select: {
           jobId: true,
@@ -110,24 +178,7 @@ export async function readDriverFullSnapshot(prisma, { userId, cursor = null, li
     },
   });
   const hasMore = publications.length > size;
-  const items = publications.slice(0, size).map((publication) => ({
-    routeId: publication.routeId,
-    publicationVersion: publication.publicationVersion,
-    routeRevision: publication.routeRevision,
-    checksum: publication.checksum,
-    snapshot: publication.snapshot,
-    liveStops: publication.assignments.map((assignment) => ({
-      jobId: assignment.jobId,
-      sequence: assignment.sequence,
-      assignmentStatus: assignment.status,
-      jobRevision: assignment.job.deliveryStateV2?.jobRevision ?? null,
-      status: assignment.job.deliveryStateV2?.currentStatus ?? assignment.job.status,
-      arrivedAt: assignment.job.arrivedAt,
-      completedAt: assignment.job.completedAt,
-      failureReason: assignment.job.failureReason,
-      proofPhotoUrls: assignment.job.proofPhotoUrls,
-    })),
-  }));
+  const items = publications.slice(0, size).map(projectPublicationForDriver);
   const nextSnapshotCursor = hasMore ? encodeDriverCursor({
     mode: "SNAPSHOT",
     userId,

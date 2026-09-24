@@ -19,6 +19,8 @@
     "v2:flags": "node scripts/production-delivery-v2/seed-feature-flags.js",
     "v2:exceptions": "node scripts/production-delivery-v2/exception-report.js",
     "v2:shadow": "node scripts/production-delivery-v2/shadow-compare.js",
+    "v2:resolve-admin-bypass-history": "node scripts/production-delivery-v2/resolve-admin-bypass-history.js",
+    "v2:driver-cutover-audit": "node scripts/production-delivery-v2/driver-cutover-audit.js",
     "v2:catchup-rehearsal": "node scripts/production-delivery-v2/catchup-rehearsal.js",
     "v2:rollback-rehearsal": "node scripts/production-delivery-v2/rollback-rehearsal.js"
   },

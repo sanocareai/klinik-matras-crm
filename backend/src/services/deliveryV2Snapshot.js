@@ -1,5 +1,19 @@
 import { createHash } from "node:crypto";
 
+export const DRIVER_ACTIVE_ROUTE_STATUSES_V2 = Object.freeze(["PUBLISHED", "IN_PROGRESS"]);
+
+const DRIVER_ACTIVE_ROUTE_STATUS_SET_V2 = new Set(DRIVER_ACTIVE_ROUTE_STATUSES_V2);
+
+export function isDriverActiveRouteStatusV2(status) {
+  return DRIVER_ACTIVE_ROUTE_STATUS_SET_V2.has(status);
+}
+
+export function isDriverVisibleAssignmentV2(routeStatus, assignmentStatus) {
+  if (!isDriverActiveRouteStatusV2(routeStatus)) return false;
+  if (assignmentStatus === "ACTIVE") return true;
+  return routeStatus === "IN_PROGRESS" && assignmentStatus === "COMPLETED";
+}
+
 function normalize(value) {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "bigint") return value.toString();

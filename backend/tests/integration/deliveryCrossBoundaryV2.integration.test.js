@@ -19,7 +19,12 @@ import {
   deliveryJobSource,
   deliveryV2Checksum,
 } from "../../src/services/deliveryV2Snapshot.js";
+import { executeDeliveryExecutionCommand } from "../../src/services/deliveryExecutionCommandService.js";
+import { executeDeliveryRouteCommand } from "../../src/services/deliveryRouteCommandService.js";
+import { readDriverDelta, readDriverFullSnapshot } from "../../src/services/driverSnapshotV2.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
+
+const CURSOR_SECRET = "driver-hardening-integration-secret";
 
 async function setFlag(key, enabled) {
   await testPrisma.v2FeatureFlag.upsert({
@@ -180,8 +185,11 @@ test("order aktif yang menutup job ikut menerbitkan publication baru sebelum com
   assert.equal(route.status, "COMPLETED");
   assert.equal(state.routeRevision, 2);
   assert.equal(state.currentPublicationVersion, 2);
-  assert.deepEqual(publications.map((item) => item.status), ["SUPERSEDED", "ACTIVE"]);
+  assert.deepEqual(publications.map((item) => item.status), ["REVOKED", "REVOKED"]);
   assert.equal(publications[1].snapshot.status, "COMPLETED");
+  assert.deepEqual((await testPrisma.driverSyncEvent.findMany({
+    where: { userId: driver.user.id }, orderBy: { sequence: "asc" }, select: { kind: true },
+  })).map((item) => item.kind), ["REMOVE_ROUTE"]);
 });
 
 test("fault setelah projection V1 me-rollback V1, V2Command, dan outbox bersama", async () => {
@@ -225,4 +233,90 @@ test("repair apply dan hard-delete legacy ditolak ketika writer V2 aktif", async
     })),
     (error) => error.code === "HISTORICAL_DATA_PROTECTED" && error.statusCode === 409,
   );
+});
+
+test("terminal execution mengirim REMOVE_ROUTE sebagai event terakhir; offline reconnect tidak memunculkan route", async () => {
+  await enableWriters();
+  const driver = await createTestUser({ roles: ["DRIVER"] });
+  const fixture = await seedPublishedRoute({ driverId: driver.user.id });
+  const before = await readDriverFullSnapshot(testPrisma, {
+    userId: driver.user.id,
+    secret: CURSOR_SECRET,
+  });
+  assert.equal(before.items.length, 1);
+
+  const request = {
+    jobId: fixture.job.id,
+    actorId: driver.user.id,
+    idempotencyKey: `terminal-execution-${fixture.job.id}`,
+    commandType: "TEST_TERMINAL_EXECUTION",
+    expectedJobRevision: 1,
+    request: { status: "COMPLETED" },
+    projectV1: async (tx) => {
+      await tx.job.update({
+        where: { id: fixture.job.id },
+        data: { status: "COMPLETED", completedAt: new Date("2026-09-24T08:00:00.000Z") },
+      });
+      await tx.route.update({
+        where: { id: fixture.route.id },
+        data: { status: "COMPLETED", completedAt: new Date("2026-09-24T08:00:00.000Z") },
+      });
+      return { completed: true };
+    },
+  };
+  const first = await executeDeliveryExecutionCommand(testPrisma, request);
+  const replay = await executeDeliveryExecutionCommand(testPrisma, request);
+  assert.equal(first.replayed, false);
+  assert.equal(replay.replayed, true);
+
+  const delta = await readDriverDelta(testPrisma, {
+    userId: driver.user.id,
+    cursor: before.deltaCursor,
+    secret: CURSOR_SECRET,
+  });
+  assert.deepEqual(delta.events.map((event) => event.kind), ["REMOVE_ROUTE"]);
+  assert.equal(await testPrisma.driverSyncEvent.count({ where: { userId: driver.user.id } }), 1);
+  const after = await readDriverFullSnapshot(testPrisma, {
+    userId: driver.user.id,
+    secret: CURSOR_SECRET,
+  });
+  assert.deepEqual(after.items, []);
+});
+
+test("reassignment mencabut driver lama, memberi snapshot driver baru, dan replay idempoten", async () => {
+  await enableWriters();
+  const oldDriver = await createTestUser({ roles: ["DRIVER"] });
+  const newDriver = await createTestUser({ roles: ["DRIVER"] });
+  const fixture = await seedPublishedRoute({ driverId: oldDriver.user.id });
+  const key = `route-reassignment-${fixture.route.id}`;
+  const request = {
+    routeId: fixture.route.id,
+    actorId: "SYSTEM",
+    idempotencyKey: key,
+    commandType: "TEST_ROUTE_REASSIGNMENT",
+    expectedRevision: 1,
+    reason: "Regression reassignment",
+    request: { driverId: newDriver.user.id },
+    projectV1: async (tx) => {
+      await tx.route.update({ where: { id: fixture.route.id }, data: { driverId: newDriver.user.id } });
+      await tx.job.updateMany({ where: { routeId: fixture.route.id }, data: { driverId: newDriver.user.id } });
+      return { routeId: fixture.route.id };
+    },
+  };
+  const first = await executeDeliveryRouteCommand(testPrisma, request);
+  const replay = await executeDeliveryRouteCommand(testPrisma, request);
+  assert.equal(first.replayed, false);
+  assert.equal(replay.replayed, true);
+
+  const [oldEvents, newEvents, oldSnapshot, newSnapshot] = await Promise.all([
+    testPrisma.driverSyncEvent.findMany({ where: { userId: oldDriver.user.id }, orderBy: { sequence: "asc" } }),
+    testPrisma.driverSyncEvent.findMany({ where: { userId: newDriver.user.id }, orderBy: { sequence: "asc" } }),
+    readDriverFullSnapshot(testPrisma, { userId: oldDriver.user.id, secret: CURSOR_SECRET }),
+    readDriverFullSnapshot(testPrisma, { userId: newDriver.user.id, secret: CURSOR_SECRET }),
+  ]);
+  assert.deepEqual(oldEvents.map((event) => event.kind), ["REMOVE_ROUTE"]);
+  assert.deepEqual(newEvents.map((event) => event.kind), ["UPSERT_ROUTE"]);
+  assert.deepEqual(oldSnapshot.items, []);
+  assert.equal(newSnapshot.items.length, 1);
+  assert.equal(newSnapshot.items[0].snapshot.driverId, newDriver.user.id);
 });

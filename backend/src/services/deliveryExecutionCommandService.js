@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { appendDriverFeedEvent } from "./driverFeedV2.js";
-import { deliveryJobSource, deliveryV2Checksum } from "./deliveryV2Snapshot.js";
+import { deliveryJobSource, deliveryV2Checksum, isDriverActiveRouteStatusV2 } from "./deliveryV2Snapshot.js";
 import { synchronizeDeliveryRouteLifecycle } from "./deliveryRouteCommandService.js";
 
 function hash(value) {
@@ -71,6 +71,7 @@ export async function executeDeliveryExecutionCommand(prisma, {
 
       let publicationVersion = null;
       let routeRevision = null;
+      let routeVisibleToDriverV2 = false;
       if (job.routeId) {
         await synchronizeDeliveryRouteLifecycle(tx, {
           routeId: job.routeId,
@@ -80,8 +81,12 @@ export async function executeDeliveryExecutionCommand(prisma, {
         const routeState = await tx.deliveryRouteState.findUnique({ where: { routeId: job.routeId } });
         publicationVersion = routeState?.currentPublicationVersion ?? null;
         routeRevision = routeState?.routeRevision ?? null;
+        routeVisibleToDriverV2 = isDriverActiveRouteStatusV2(routeState?.lifecycleStatus);
       }
-      for (const userId of [...new Set([job.driverId, job.helperId].filter(Boolean))].sort()) {
+      const feedRecipients = routeVisibleToDriverV2
+        ? [...new Set([job.driverId, job.helperId].filter(Boolean))].sort()
+        : [];
+      for (const userId of feedRecipients) {
         await appendDriverFeedEvent(tx, {
           userId,
           kind: "UPSERT_JOB",

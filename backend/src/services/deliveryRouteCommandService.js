@@ -4,6 +4,7 @@ import {
   buildDeliveryRouteSnapshot,
   deliveryJobSource,
   deliveryV2Checksum,
+  isDriverActiveRouteStatusV2,
   routeRecipients,
 } from "./deliveryV2Snapshot.js";
 import { appendRouteFeedChanges } from "./driverFeedV2.js";
@@ -64,16 +65,16 @@ export async function syncAffectedJobStates(tx, jobIds) {
 }
 
 function publicationStatus(routeStatus) {
-  return routeStatus === "CANCELLED" ? "REVOKED" : "ACTIVE";
+  return isDriverActiveRouteStatusV2(routeStatus) ? "ACTIVE" : "REVOKED";
 }
 
 function visibleRecipients(routeStatus, snapshot) {
-  if (!["PUBLISHED", "IN_PROGRESS", "COMPLETED"].includes(routeStatus)) return [];
+  if (!isDriverActiveRouteStatusV2(routeStatus)) return [];
   return snapshot?.stops?.length ? routeRecipients(snapshot) : [];
 }
 
 function assignmentStatus(routeStatus, stopStatus) {
-  if (routeStatus === "CANCELLED") return "REVOKED";
+  if (!isDriverActiveRouteStatusV2(routeStatus)) return "REVOKED";
   if (["COMPLETED", "FAILED", "RESCHEDULED"].includes(stopStatus)) return "COMPLETED";
   return "ACTIVE";
 }
@@ -124,7 +125,7 @@ export async function projectDeliveryRouteAfterExternalMutation(tx, {
   if (shouldPublish && previousPublication?.status === "ACTIVE") {
     await tx.routePublication.update({
       where: { id: previousPublication.id },
-      data: { status: route.status === "CANCELLED" ? "REVOKED" : "SUPERSEDED", supersededAt: new Date() },
+      data: { status: isDriverActiveRouteStatusV2(route.status) ? "SUPERSEDED" : "REVOKED", supersededAt: new Date() },
     });
     await tx.routeStopAssignment.updateMany({
       where: { publicationId: previousPublication.id, status: "ACTIVE" },
@@ -151,7 +152,7 @@ export async function projectDeliveryRouteAfterExternalMutation(tx, {
             helperId: snapshot.helperId,
             vehicleId: snapshot.vehicleId,
             status: assignmentStatus(route.status, stop.status),
-            revokedAt: route.status === "CANCELLED" ? new Date() : null,
+            revokedAt: isDriverActiveRouteStatusV2(route.status) ? null : new Date(),
             completedAt: stop.status === "COMPLETED" ? new Date() : null,
             sourceChecksum: deliveryV2Checksum(stop),
           })),
@@ -281,7 +282,7 @@ export async function executeDeliveryRouteCommand(prisma, {
         if (previousPublication?.status === "ACTIVE") {
           await tx.routePublication.update({
             where: { id: previousPublication.id },
-            data: { status: route.status === "CANCELLED" ? "REVOKED" : "SUPERSEDED", supersededAt: new Date() },
+            data: { status: isDriverActiveRouteStatusV2(route.status) ? "SUPERSEDED" : "REVOKED", supersededAt: new Date() },
           });
           await tx.routeStopAssignment.updateMany({
             where: { publicationId: previousPublication.id, status: "ACTIVE" },
@@ -306,7 +307,7 @@ export async function executeDeliveryRouteCommand(prisma, {
                 helperId: snapshot.helperId,
                 vehicleId: snapshot.vehicleId,
                 status: assignmentStatus(route.status, stop.status),
-                revokedAt: route.status === "CANCELLED" ? new Date() : null,
+                revokedAt: isDriverActiveRouteStatusV2(route.status) ? null : new Date(),
                 sourceChecksum: deliveryV2Checksum(stop),
               })),
             },
