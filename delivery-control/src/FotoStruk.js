@@ -3,7 +3,7 @@ import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 import { biayaArmadaApi, client } from "./client";
 import { useTheme } from "./theme";
 
-// Foto struk lewat URL BERTANDA-TANGAN berumur pendek (server: POST /finance/media/sign), bukan Bearer di
+// Foto struk lewat URL BERTANDA-TANGAN berumur pendek (server: POST /finance/media/sign), bukan token login di
 // header gambar dan bukan path penyimpanan. Bila URL kedaluwarsa (gambar gagal dimuat) diminta ulang SEKALI
 // otomatis; bila tetap gagal tampil pesan + tombol "Coba lagi".
 export function FotoStruk({ url, style }) {
