@@ -17,6 +17,7 @@ import { PrismaClient } from "@prisma/client";
 import { execFileSync, spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { klasifikasiKegagalan } from "./failureClassifier.js";
 
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const POLA_AMAN = /^km_it_[a-z0-9]+_\d+_test$/;
@@ -66,13 +67,30 @@ async function main() {
   });
 
   const target = berkas.length ? berkas : ["tests/integration/*.integration.test.js"];
-  const kode = await new Promise((resolve) => {
-    anak = spawn(process.execPath, ["--test", "--test-concurrency=1", ...target], {
-      cwd: backendRoot, stdio: "inherit",
+  const jalankan = (args) => new Promise((resolve) => {
+    let keluaran = "";
+    anak = spawn(process.execPath, ["--test", "--test-concurrency=1", ...args], {
+      cwd: backendRoot, stdio: ["inherit", "pipe", "inherit"],
       env: { ...process.env, TEST_DATABASE_URL: urlDb.toString(), DATABASE_URL: urlDb.toString() },
     });
-    anak.on("exit", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
+    anak.stdout.on("data", (d) => { keluaran += d; process.stdout.write(d); });
+    anak.on("exit", (code, signal) => resolve({ kode: code ?? (signal ? 1 : 0), keluaran }));
   });
+
+  let { kode, keluaran } = await jalankan(target);
+  if (kode !== 0) {
+    // Gangguan KONEKTIVITAS infrastruktur (P1001, proxy Docker Desktop) diulang SEKALI hanya untuk berkas yang
+    // gagal karenanya, dan hanya bila TIDAK ada berkas lain yang gagal karena sebab lain. Dicatat terang-terangan.
+    const { koneksi, lain } = klasifikasiKegagalan(keluaran);
+    if (koneksi.length > 0 && lain.length === 0) {
+      console.log(`
+[runIsolated] ${koneksi.length} berkas gagal karena database tidak terjangkau (P1001, gangguan infrastruktur): ${koneksi.join(", ")}`);
+      console.log("[runIsolated] Mengulang HANYA berkas itu satu kali pada database yang sama...");
+      const ulang = await jalankan(koneksi);
+      kode = ulang.kode;
+      console.log(`[runIsolated] Hasil percobaan ulang: ${kode === 0 ? "LULUS" : "GAGAL"}`);
+    }
+  }
   await hapusDb();
   process.exit(kode);
 }
