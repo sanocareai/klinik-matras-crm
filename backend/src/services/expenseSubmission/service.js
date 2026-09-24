@@ -13,6 +13,7 @@ import { pastikanUangMukaBolehDipakai } from "../finance/operationalAdvance.js";
 import { hasPermission, rolesOf } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
 import { getWorkspaceConfig, bolehAutoApprove, SUMBER_DANA } from "./config.js";
+import { ownOnly } from "./ownPolicy.js";
 
 export class SubmissionError extends Error {
   constructor(message, statusCode = 400) {
@@ -382,7 +383,10 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
     // SAMA dengan pembuatan FinExpense-nya, jadi baik dokumen maupun jurnal
     // pengakuan bebannya lahir atomik bersama status pengajuan — TIDAK ada
     // jendela waktu di mana satu ada tanpa yang lain.
-    const autoApproved = bolehAutoApprove(cfg, s.expenseType, s.amount);
+    // Aktor own-only (Driver/Helper/Leader Driver) diturunkan dari izin server-side — TIDAK auto-approve.
+    const mandiriOwn = ownOnly(user);
+    const autoApproved = bolehAutoApprove(cfg, s.expenseType, s.amount, { mandiriOwn });
+    const seharusnyaOtomatis = mandiriOwn && bolehAutoApprove(cfg, s.expenseType, s.amount);
     let catatanOtomatis = null;
     if (autoApproved) {
       catatanOtomatis = `Auto-approve: jenis "${s.expenseType}" ≤ Rp${cfg.autoApprove.maxAmount.toLocaleString("id-ID")} (kebijakan ${cfg.label})`;
@@ -415,7 +419,9 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
       } else {
         await catatAudit(tx, {
           submissionId: id, actorId: user.id, field: "status", before: s.status, after: "MENUNGGU_PERSETUJUAN",
-          reason: s.status === "PERLU_REVISI" ? "Diajukan ulang setelah revisi" : "Diajukan",
+          reason: seharusnyaOtomatis
+            ? "Diajukan; auto-approve tidak berlaku untuk pengajuan mandiri (menunggu persetujuan Finance)"
+            : (s.status === "PERLU_REVISI" ? "Diajukan ulang setelah revisi" : "Diajukan"),
         });
       }
     } catch (e) {

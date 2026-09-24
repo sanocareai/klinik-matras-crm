@@ -5,16 +5,10 @@
 // Pengguna "own-only" = TIDAK punya jalur lama (finance:post / finance:expense:submit /
 // finance:admin). Pengguna jalur lama tidak berubah sedikit pun.
 
-import { hasPermission } from "../../middleware/authorize.js";
-import { PERMISSIONS as P } from "../../constants/permissions.js";
 import { SubmissionError } from "./service.js";
+import { ownOnly, JALUR_LAMA } from "./ownPolicy.js";
 
-export const JALUR_LAMA = [P.FINANCE_POST, P.FINANCE_EXPENSE_SUBMIT, P.FINANCE_ADMIN];
-
-export function ownOnly(user) {
-  return !JALUR_LAMA.some((p) => hasPermission(user, p))
-    && (hasPermission(user, P.DELIVERY_EXPENSE_OWN_READ) || hasPermission(user, P.DELIVERY_EXPENSE_OWN_WRITE));
-}
+export { ownOnly, JALUR_LAMA };
 
 // Status yang boleh diubah PEMILIK (own-only): draf atau diminta revisi.
 export const STATUS_EDITABLE_OWN = ["DRAFT", "PERLU_REVISI"];
