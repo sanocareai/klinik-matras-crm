@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Plus, PiggyBank, Undo2, ReceiptText, History, Ban } from "lucide-react";
+import { Plus, PiggyBank, Undo2, ReceiptText, History, Ban, Pencil } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -20,6 +20,7 @@ import {
 } from "@/features/finance/shared.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 
 // UANG MUKA OPERASIONAL — kas yang DIBERIKAN ke pemegang (driver/PIC) untuk biaya operasional.
 //
@@ -43,9 +44,13 @@ function hariIniISO(tambahHari = 0) {
   return new Date(Date.now() + 7 * 3600 * 1000 + tambahHari * 86400000).toISOString().slice(0, 10);
 }
 
-function aksiUangMuka(u, { setPakaiUntuk, setKembaliUntuk, aksi }) {
+// Uang muka SUDAH berjurnal sejak diberikan: yang boleh diedit langsung hanya keterangan operasional (tujuan, tenggat,
+// catatan, bukti, divisi). Nominal/pemegang/rekening/tanggal TIDAK bisa dikoreksi — Batalkan lalu catat ulang.
+function aksiUangMuka(u, { setPakaiUntuk, setKembaliUntuk, setEditUntuk, setVersiUntuk, aksi }) {
   const bisaDipakai = ["AKTIF", "SEBAGIAN"].includes(u.status);
   const items = [
+    u.status !== "DIBATALKAN" && { key: "edit", label: "Edit keterangan", icon: Pencil, onClick: () => setEditUntuk(u) },
+    { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk(u) },
     bisaDipakai && u.saldo > 0 && { key: "kembali", label: "Kembalikan sisa", icon: Undo2, onClick: () => setKembaliUntuk(u) },
     u.status !== "DIBATALKAN" && {
       key: "batalkan", label: "Batalkan", icon: Ban, destructive: true,
@@ -76,6 +81,8 @@ export default function FinanceUangMuka() {
   const [modalBerikan, setModalBerikan] = useState(false);
   const [pakaiUntuk, setPakaiUntuk] = useState(null);
   const [kembaliUntuk, setKembaliUntuk] = useState(null);
+  const [editUntuk, setEditUntuk] = useState(null);
+  const [versiUntuk, setVersiUntuk] = useState(null);
 
   const muat = useCallback(async (opsi) => {
     const diam = opsi?.diam === true;
@@ -217,7 +224,7 @@ export default function FinanceUangMuka() {
                     </THead>
                     <TBody>
                       {items.map((u) => {
-                        const a = aksiUangMuka(u, { setPakaiUntuk, setKembaliUntuk, aksi });
+                        const a = aksiUangMuka(u, { setPakaiUntuk, setKembaliUntuk, setEditUntuk, setVersiUntuk, aksi });
                         return (
                           <TR key={u.id}>
                             <TD sticky className="font-mono text-[12px]">{u.advanceNumber}</TD>
@@ -245,7 +252,7 @@ export default function FinanceUangMuka() {
 
                 <CardList className={CARD_VIEW_CLASS}>
                   {items.map((u) => {
-                    const a = aksiUangMuka(u, { setPakaiUntuk, setKembaliUntuk, aksi });
+                    const a = aksiUangMuka(u, { setPakaiUntuk, setKembaliUntuk, setEditUntuk, setVersiUntuk, aksi });
                     return (
                       <RowCard
                         key={u.id}
@@ -390,6 +397,13 @@ export default function FinanceUangMuka() {
 
       <ModalBerikan open={modalBerikan} onClose={() => setModalBerikan(false)} rekening={rekening} karyawan={karyawan} onSubmit={(d) => aksi(() => api.berikanUangMuka(d))} />
       <ModalPertanggungjawaban uangMuka={pakaiUntuk} kategori={kategori} onClose={() => setPakaiUntuk(null)} onSubmit={(d) => aksi(() => api.pertanggungjawabanUangMuka(pakaiUntuk.id, d))} />
+      {editUntuk && (
+        <ModalEditUangMuka
+          uangMuka={editUntuk} onClose={() => setEditUntuk(null)}
+          onSubmit={(d) => aksi(async () => { await api.editUangMuka(editUntuk.id, d); setEditUntuk(null); })}
+        />
+      )}
+      {versiUntuk && <RiwayatVersiDialog jenis="uang-muka" id={versiUntuk.id} nomor={versiUntuk.advanceNumber} onClose={() => setVersiUntuk(null)} />}
       <ModalKembalikan uangMuka={kembaliUntuk} rekening={rekening} onClose={() => setKembaliUntuk(null)} onSubmit={(d) => aksi(() => api.kembalikanUangMuka(kembaliUntuk.id, d))} />
     </HalamanFinance>
   );
@@ -529,6 +543,49 @@ function ModalKembalikan({ uangMuka, rekening, onClose, onSubmit }) {
         </Field>
         <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
         <Field label="Catatan"><Input value={f.note} onChange={(e) => set("note", e.target.value)} /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+function ModalEditUangMuka({ uangMuka, onClose, onSubmit }) {
+  const asli = {
+    purpose: uangMuka.purpose || "", dueDate: String(uangMuka.dueDate || "").slice(0, 10), notes: uangMuka.notes || "",
+    receiptUrl: uangMuka.receiptUrl || "", division: uangMuka.division || "",
+  };
+  const [f, setF] = useState(asli);
+  const [alasan, setAlasan] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const beda = {};
+  for (const k of Object.keys(asli)) if ((f[k] || "") !== (asli[k] || "")) beda[k] = f[k];
+  const valid = Object.keys(beda).length > 0 && alasan.trim() && f.purpose.trim() && f.dueDate;
+
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()}
+      title={`Edit ${uangMuka.advanceNumber}`}
+      description={`${formatUang(uangMuka.amount)} · ${uangMuka.holder?.name || ""}`}
+      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit({ ...beda, reason: alasan.trim() })} disabled={!valid}>Simpan Perubahan</TombolAksi></>}
+    >
+      <div className="space-y-3">
+        <p className="rounded-lg bg-accentbg px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
+          Uang muka ini sudah masuk buku besar. Yang bisa diubah di sini hanya keterangan operasional — buku besar dan saldo rekening tidak berubah.
+          Nominal, pemegang, rekening, dan tanggal tidak bisa dikoreksi: <strong>Batalkan lalu catat ulang</strong>.
+        </p>
+        <Field label="Tujuan" required><Input value={f.purpose} onChange={(e) => set("purpose", e.target.value)} /></Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Tenggat pertanggungjawaban" required><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.dueDate} onChange={(v) => set("dueDate", v)} /></Field>
+          <Field label="Divisi">
+            <Pilihan value={f.division} onChange={(v) => set("division", v)}>
+              {Object.entries(LABEL_DIVISI).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </Pilihan>
+          </Field>
+        </div>
+        <Field label="Bukti pemberian"><PemilihBukti url={f.receiptUrl} onChange={(v) => set("receiptUrl", v)} /></Field>
+        <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+        <Field label="Alasan perubahan" required hint="Wajib — tercatat di riwayat audit">
+          <Input value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. tujuan kurang jelas" />
+        </Field>
       </div>
     </Modal>
   );

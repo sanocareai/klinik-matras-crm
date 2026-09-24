@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Building2, FileText, Banknote } from "lucide-react";
+import { Plus, Building2, FileText, Banknote, Pencil, History, Ban } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -19,10 +19,29 @@ import {
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
+import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 
-function aksiTagihan(b, { aksi }) {
-  if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) return { primary: null, items: [] };
+// Tagihan: belum disetujui = Edit bebas (belum ada jurnal). Sudah disetujui = jurnal sudah ada, JANGAN diubah —
+// Batalkan (jurnal dibalik; diblokir server kalau sudah ada pembayaran aktif) lalu catat ulang.
+function aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk }) {
+  const riwayat = { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk(b) };
+  if (["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"].includes(b.status)) {
+    return {
+      primary: null,
+      items: [
+        riwayat,
+        {
+          key: "batal", label: "Batalkan", icon: Ban, destructive: true,
+          onClick: () => {
+            const alasan = window.prompt(`Alasan membatalkan tagihan ${b.billNumber}? Jurnal utangnya akan dibalik. Kalau sudah ada pembayaran, batalkan pembayarannya dulu:`);
+            if (alasan?.trim()) return aksi(() => api.cancelFinanceBill(b.id, alasan.trim()));
+          },
+        },
+      ],
+    };
+  }
+  if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) return { primary: null, items: [riwayat] };
   return {
     primary: {
       label: "Setujui", variant: "secondary",
@@ -30,6 +49,8 @@ function aksiTagihan(b, { aksi }) {
       onClick: () => aksi(() => api.approveFinanceBill(b.id)),
     },
     items: [
+      { key: "edit", label: "Edit", icon: Pencil, onClick: () => setEditUntuk(b) },
+      riwayat,
       {
         key: "tolak", label: "Tolak", destructive: true,
         onClick: () => {
@@ -70,6 +91,8 @@ export default function FinanceSuppliers() {
   const [tab, setTab] = useState("tagihan");
   const [suppliers, setSuppliers] = useState([]);
   const [bills, setBills] = useState([]);
+  const [editUntuk, setEditUntuk] = useState(null);
+  const [versiUntuk, setVersiUntuk] = useState(null);
   const [payments, setPayments] = useState([]);
   const [aging, setAging] = useState(null);
   const [unbilled, setUnbilled] = useState([]);
@@ -261,7 +284,7 @@ export default function FinanceSuppliers() {
                 </THead>
                 <TBody>
                   {billsTampil.map((b) => {
-                    const a = aksiTagihan(b, { aksi });
+                    const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk });
                     return (
                     <TR key={b.id}>
                       <TD sticky className="font-mono text-[12px]">{b.billNumber}</TD>
@@ -291,7 +314,7 @@ export default function FinanceSuppliers() {
 
             <CardList className={CARD_VIEW_CLASS}>
               {billsTampil.map((b) => {
-                const a = aksiTagihan(b, { aksi });
+                const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk });
                 return (
                   <RowCard
                     key={b.id}
@@ -442,6 +465,13 @@ export default function FinanceSuppliers() {
         suppliers={suppliers} unbilled={unbilled} kategori={kategori}
         onSubmit={(d) => aksi(() => api.createFinanceBill(d))}
       />
+      {editUntuk && (
+        <ModalEditTagihan
+          bill={editUntuk} suppliers={suppliers} kategori={kategori} onClose={() => setEditUntuk(null)}
+          onSubmit={(d) => aksi(async () => { await api.editFinanceBill(editUntuk.id, d); setEditUntuk(null); })}
+        />
+      )}
+      {versiUntuk && <RiwayatVersiDialog jenis="bills" id={versiUntuk.id} nomor={versiUntuk.billNumber} onClose={() => setVersiUntuk(null)} />}
       <ModalBayarSupplier
         open={modal === "bayar"} onClose={() => setModal(null)}
         suppliers={suppliers} bills={bills} rekening={rekening}
@@ -650,6 +680,69 @@ function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmi
 
         <Field label="Referensi transfer"><Input value={f.reference} onChange={(e) => set("reference", e.target.value)} /></Field>
         <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+// Edit tagihan yang BELUM disetujui (belum ada jurnal): semua isian boleh berubah; server memvalidasi ulang.
+function ModalEditTagihan({ bill, suppliers, kategori, onClose, onSubmit }) {
+  const asli = {
+    supplierId: bill.supplierId || "", supplierRef: bill.supplierRef || "", billDate: String(bill.billDate || "").slice(0, 10),
+    dueDate: bill.dueDate ? String(bill.dueDate).slice(0, 10) : "", amount: Number(bill.amount) || 0,
+    description: bill.description || "", expenseCategoryId: bill.expenseCategoryId || "",
+  };
+  const [f, setF] = useState(asli);
+  const [alasan, setAlasan] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const tautGr = Boolean(bill.goodsReceiptId || bill.goodsReceipt);
+
+  const beda = {};
+  for (const k of Object.keys(asli)) {
+    if (k === "expenseCategoryId" && tautGr) continue;
+    const sama = k === "amount" ? Number(f[k]) === Number(asli[k]) : (f[k] || "") === (asli[k] || "");
+    if (!sama) beda[k] = k === "amount" ? Number(f[k]) : f[k];
+  }
+  const valid = Object.keys(beda).length > 0 && alasan.trim() && f.supplierId && f.description.trim() && Number(f.amount) > 0 && (tautGr || f.expenseCategoryId);
+
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()}
+      title={`Edit ${bill.billNumber}`}
+      description={`${formatUang(bill.amount)} · ${bill.supplier?.name || ""}`}
+      className="w-[560px]"
+      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit({ ...beda, reason: alasan.trim() })} disabled={!valid}>Simpan Perubahan</TombolAksi></>}
+    >
+      <div className="space-y-3">
+        <p className="rounded-lg bg-accentbg px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
+          Tagihan ini belum disetujui, jadi belum ada jurnal — semua isian boleh diubah. Setelah disetujui, cara mengoreksinya adalah Batalkan lalu catat ulang.
+        </p>
+        <Field label="Supplier" required>
+          <Pilihan value={f.supplierId} onChange={(v) => set("supplierId", v)}>
+            <option value="">— pilih —</option>
+            {suppliers.map((sp) => <option key={sp.id} value={sp.id}>{sp.code} · {sp.name}</option>)}
+          </Pilihan>
+        </Field>
+        <Field label="Keterangan" required><Input value={f.description} onChange={(e) => set("description", e.target.value)} /></Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Nomor faktur supplier"><Input value={f.supplierRef} onChange={(e) => set("supplierRef", e.target.value)} /></Field>
+          <Field label="Nominal tagihan" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Tanggal tagihan"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.billDate} onChange={(v) => set("billDate", v)} /></Field>
+          <Field label="Jatuh tempo"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.dueDate} onChange={(v) => set("dueDate", v)} /></Field>
+        </div>
+        {!tautGr && (
+          <Field label="Kategori biaya" required>
+            <Pilihan value={f.expenseCategoryId} onChange={(v) => set("expenseCategoryId", v)}>
+              <option value="">— pilih —</option>
+              {kategori.map((k) => <option key={k.id} value={k.id}>{k.name} → {k.account?.code}</option>)}
+            </Pilihan>
+          </Field>
+        )}
+        <Field label="Alasan perubahan" required hint="Wajib — tercatat di riwayat audit">
+          <Input value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. salah ketik nominal" />
+        </Field>
       </div>
     </Modal>
   );

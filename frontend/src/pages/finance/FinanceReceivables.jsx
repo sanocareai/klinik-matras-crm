@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Undo2, Plus } from "lucide-react";
+import { Undo2, Plus, Pencil, History, Ban } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -11,7 +11,8 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
-import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
+import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap, bodyBiayaTransfer } from "@/features/finance/biayaTransfer.js";
+import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
@@ -22,8 +23,26 @@ import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 
-function aksiRefund(r, { aksi }) {
-  if (r.status !== "MENUNGGU_APPROVAL") return { primary: null, items: [] };
+// Refund: belum disetujui = Edit bebas (belum ada jurnal); sudah disetujui = jurnal sudah ada, JANGAN diubah —
+// pilihannya Batalkan (jurnal dibalik resmi, status bayar order dihitung ulang) lalu ajukan ulang dengan data yang benar.
+function aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk }) {
+  const riwayat = { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk(r) };
+  if (r.status === "DISETUJUI") {
+    return {
+      primary: null,
+      items: [
+        riwayat,
+        {
+          key: "batal", label: "Batalkan", icon: Ban, destructive: true,
+          onClick: () => {
+            const alasan = window.prompt(`Alasan membatalkan refund ${r.refundNumber}? Jurnalnya akan dibalik dan uang dianggap kembali ke rekening. Untuk mengoreksi, ajukan refund baru setelah ini:`);
+            if (alasan?.trim()) return aksi(() => api.cancelFinanceRefund(r.id, alasan.trim()));
+          },
+        },
+      ],
+    };
+  }
+  if (r.status !== "MENUNGGU_APPROVAL") return { primary: null, items: [riwayat] };
   return {
     primary: {
       label: "Setujui", variant: "secondary",
@@ -31,6 +50,8 @@ function aksiRefund(r, { aksi }) {
       onClick: () => aksi(() => api.approveFinanceRefund(r.id)),
     },
     items: [
+      { key: "edit", label: "Edit", icon: Pencil, onClick: () => setEditUntuk(r) },
+      riwayat,
       {
         key: "tolak", label: "Tolak", destructive: true,
         onClick: () => {
@@ -74,6 +95,8 @@ export default function FinanceReceivables() {
   const [pesan, setPesan] = useState(null);
   const [filterEmber, setFilterEmber] = useState("");
   const [modalRefund, setModalRefund] = useState(false);
+  const [editUntuk, setEditUntuk] = useState(null);
+  const [versiUntuk, setVersiUntuk] = useState(null);
   const [rekening, setRekening] = useState([]);
 
   const muat = useCallback(async () => {
@@ -303,7 +326,7 @@ export default function FinanceReceivables() {
               </THead>
               <TBody>
                 {refundTampil.map((r) => {
-                  const a = aksiRefund(r, { aksi });
+                  const a = aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk });
                   return (
                   <TR key={r.id}>
                     <TD sticky className="font-mono text-[12px]">{r.refundNumber}</TD>
@@ -325,7 +348,7 @@ export default function FinanceReceivables() {
 
           <CardList className={CARD_VIEW_CLASS}>
             {refundTampil.map((r) => {
-              const a = aksiRefund(r, { aksi });
+              const a = aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk });
               return (
                 <RowCard
                   key={r.id}
@@ -347,6 +370,13 @@ export default function FinanceReceivables() {
         )}
       </Card>
 
+      {editUntuk && (
+        <ModalEditRefund
+          refund={editUntuk} rekening={rekening} onClose={() => setEditUntuk(null)}
+          onSubmit={(d) => aksi(async () => { await api.editFinanceRefund(editUntuk.id, d); setEditUntuk(null); })}
+        />
+      )}
+      {versiUntuk && <RiwayatVersiDialog jenis="refunds" id={versiUntuk.id} nomor={versiUntuk.refundNumber} onClose={() => setVersiUntuk(null)} />}
       <ModalRefund
         open={modalRefund}
         onClose={() => setModalRefund(false)}
@@ -415,6 +445,64 @@ function ModalRefund({ open, onClose, rekening, piutang, onSubmit }) {
           </Pilihan>
         </Field>
         <CaraBayarTransfer rekening={rek} nominal={f.amount} value={f} onChange={(b) => setF((s) => ({ ...s, ...b }))} />
+      </div>
+    </Modal>
+  );
+}
+
+// Edit refund yang BELUM disetujui: semua isian boleh berubah, server memvalidasi ulang (batas uang yang pernah diterima,
+// biaya transfer). Yang dikirim hanya kolom yang berubah + alasan perubahan (tercatat di riwayat audit).
+function ModalEditRefund({ refund, rekening, onClose, onSubmit }) {
+  const asli = {
+    date: String(refund.date || "").slice(0, 10), amount: Number(refund.amount) || 0, reason: refund.reason || "",
+    cashAccountId: refund.cashAccountId || "",
+    paymentMethod: refund.paymentMethod || "TUNAI", transferFeeType: refund.transferFeeType || "",
+    transferFeeAmount: refund.transferFeeType === "LAINNYA" ? Number(refund.transferFeeAmount) || 0 : "",
+  };
+  const [f, setF] = useState(asli);
+  const [alasan, setAlasan] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const rek = rekening.find((r) => r.id === f.cashAccountId);
+
+  const beda = {};
+  for (const k of ["date", "amount", "reason", "cashAccountId"]) {
+    const sama = k === "amount" ? Number(f[k]) === Number(asli[k]) : (f[k] || "") === (asli[k] || "");
+    if (!sama) beda[k] = k === "amount" ? Number(f[k]) : f[k];
+  }
+  const biayaBerubah = f.paymentMethod !== asli.paymentMethod || f.transferFeeType !== asli.transferFeeType
+    || String(f.transferFeeAmount) !== String(asli.transferFeeAmount) || f.cashAccountId !== asli.cashAccountId;
+  const ada = Object.keys(beda).length > 0 || biayaBerubah;
+  const valid = ada && alasan.trim() && f.reason.trim() && f.cashAccountId && Number(f.amount) > 0 && biayaTransferLengkap(rek, f);
+
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()}
+      title={`Edit ${refund.refundNumber}`}
+      description={`${formatUang(refund.amount)} · order ${refund.order?.orderNumber || "—"}`}
+      footer={
+        <>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
+          <TombolAksi onClick={() => onSubmit({ ...beda, ...(biayaBerubah ? bodyBiayaTransfer(f) : {}), alasanPerubahan: alasan.trim() })} disabled={!valid}>Simpan Perubahan</TombolAksi>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="rounded-lg bg-accentbg px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
+          Refund ini belum disetujui, jadi belum ada jurnal — semua isian boleh diubah. Server memeriksa ulang batas nominal dan biaya transfer.
+        </p>
+        <Field label="Tanggal"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
+        <Field label="Nominal" required hint="Tidak boleh melebihi uang yang pernah benar-benar diterima untuk order itu"><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
+        <Field label="Alasan refund" required><Input value={f.reason} onChange={(e) => set("reason", e.target.value)} /></Field>
+        <Field label="Uang keluar dari" required>
+          <Pilihan value={f.cashAccountId} onChange={(v) => set("cashAccountId", v)}>
+            <option value="">— pilih —</option>
+            {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </Pilihan>
+        </Field>
+        <CaraBayarTransfer rekening={rek} nominal={f.amount} value={f} onChange={(b) => setF((x) => ({ ...x, ...b }))} />
+        <Field label="Alasan perubahan" required hint="Wajib — tercatat di riwayat audit">
+          <Input value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. salah ketik nominal" />
+        </Field>
       </div>
     </Modal>
   );

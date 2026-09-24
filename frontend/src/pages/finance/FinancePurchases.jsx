@@ -20,6 +20,7 @@ import {
   LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
+import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
@@ -47,7 +48,7 @@ function teksDpBadge(p) {
 // Aksi PALING RELEVAN per status jadi tombol utama; sisanya masuk menu
 // titik-tiga — sama persis dengan pola FinanceExpenses.jsx (lihat komentar
 // di sana untuk alasannya).
-function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk }) {
+function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk, setVersiUntuk }) {
   const bisaEdit = STATUS_BISA_DIEDIT.includes(p.status);
   const bisaBatal = ["DISETUJUI", "DIBAYAR"].includes(p.status);
   const menungguKeputusan = ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status);
@@ -65,7 +66,8 @@ function aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk,
     && (p.mode === "UTANG" || p.category?.code === "UANG_MUKA_PEMBELIAN");
 
   const items = [
-    bisaEdit && { key: "edit", label: "Edit / koreksi", icon: Pencil, onClick: () => setEditUntuk(p) },
+    bisaEdit && { key: "edit", label: ["DRAFT", "MENUNGGU_APPROVAL"].includes(p.status) ? "Edit" : "Koreksi", icon: Pencil, onClick: () => setEditUntuk(p) },
+    { key: "versi", label: "Riwayat perubahan", icon: History, onClick: () => setVersiUntuk(p) },
     bisaTerapkanDp && { key: "terapkan-dp", label: "Terapkan Uang Muka", icon: Wallet, onClick: () => setTerapkanUntuk(p) },
     punyaRiwayatDp && { key: "riwayat-dp", label: "Riwayat Uang Muka", icon: History, onClick: () => setRiwayatUntuk(p) },
     menungguKeputusan && {
@@ -155,6 +157,7 @@ export default function FinancePurchases() {
   const [modalBaru, setModalBaru] = useState(false);
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
+  const [versiUntuk, setVersiUntuk] = useState(null);
   const [terapkanUntuk, setTerapkanUntuk] = useState(null);
   const [riwayatUntuk, setRiwayatUntuk] = useState(null);
   const [tableRef, tier] = useContainerTier();
@@ -324,7 +327,7 @@ export default function FinancePurchases() {
             {tier === "card" ? (
               <CardList>
                 {purchases.map((p) => {
-                  const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk });
+                  const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk, setVersiUntuk });
                   return (
                     <RowCard
                       key={p.id}
@@ -371,7 +374,7 @@ export default function FinancePurchases() {
                   </THead>
                   <TBody>
                     {purchases.map((p) => {
-                      const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk });
+                      const a = aksiPembelian(p, { aksi, setEditUntuk, setBayarUntuk, setTerapkanUntuk, setRiwayatUntuk, setVersiUntuk });
                       const klasifikasi = (
                         <>
                           <span className="block truncate text-[12px]" title={p.category?.name}>{p.category?.name}</span>
@@ -474,6 +477,7 @@ export default function FinancePurchases() {
         onClose={() => setEditUntuk(null)}
         onSaved={() => { setEditUntuk(null); muat({ diam: true }); }}
       />
+      {versiUntuk && <RiwayatVersiDialog jenis="purchases" id={versiUntuk.id} nomor={versiUntuk.purchaseNumber} onClose={() => setVersiUntuk(null)} />}
       <ModalTerapkanDp
         purchase={terapkanUntuk} onClose={() => setTerapkanUntuk(null)}
         onSubmit={(d, idemKey) => aksi(() => api.applyPurchaseAdvance(d, idemKey))}
