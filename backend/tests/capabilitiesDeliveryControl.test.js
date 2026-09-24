@@ -53,3 +53,11 @@ test("field capabilities lama tidak berubah (kompatibilitas klien Finance/Sales)
   assert.equal(c.preset, "FINANCE");
   assert.equal(c.financeApp, true);
 });
+
+test("deliveryExpenseOwn: hanya Driver, Helper, Leader Driver; Driver TIDAK mendapat izin biaya Finance", () => {
+  for (const r of ["DRIVER", "HELPER", "LEADER_DRIVER"]) {
+    assert.deepEqual(cap(r).deliveryExpenseOwn, { read: true, write: true }, r);
+    assert.equal(cap(r).expenseSubmit, false, `${r} tidak boleh punya finance:expense:submit`);
+  }
+  for (const r of ["ADMIN", "OWNER", "DISPATCHER", "FINANCE", "SALES"]) assert.deepEqual(cap(r).deliveryExpenseOwn, { read: false, write: false }, r);
+});
