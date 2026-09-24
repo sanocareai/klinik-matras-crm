@@ -29,13 +29,14 @@ export function capabilitiesFor(user) {
   const incentivePayoutCreate = hasPermission(user, P.INCENTIVE_PAYOUT_CREATE);
   const incentivePayoutVoid = hasPermission(user, P.INCENTIVE_PAYOUT_VOID);
 
-  // Sano Delivery Control (aplikasi Admin/Owner armada). Diturunkan dari izin
-  // AKTUAL, bukan nama role: job:read penuh = boleh melihat SEMUA job/driver
-  // (ADMIN, OWNER, DISPATCHER, LEADER_DRIVER). DRIVER/HELPER hanya punya
-  // job:own sehingga TIDAK PERNAH lolos. Empat izin biaya armada dipisah:
-  // mengajukan (sama dengan gerbang route pengajuan), memverifikasi bukti
-  // (finance:admin, sama dengan route verifikasi-bukti), menyetujui, dan membayar.
-  const deliveryControlApp = hasPermission(user, P.JOB_READ);
+  // Sano Delivery Control (aplikasi Admin/Owner armada). Izin EKSPLISIT
+  // delivery:control:access (ADMIN, OWNER, DISPATCHER), TIDAK diturunkan dari
+  // job:read: Leader Driver, Driver, dan Helper ditolak. Penegakan sesungguhnya
+  // di server (GET /api/delivery-control/session); field ini hanya cermin untuk UI.
+  // Empat izin biaya armada dipisah: mengajukan (sama dengan gerbang route
+  // pengajuan), memverifikasi bukti (finance:admin, sama dengan route
+  // verifikasi-bukti), menyetujui, dan membayar.
+  const deliveryControlApp = hasPermission(user, P.DELIVERY_CONTROL_ACCESS);
   const deliveryExpense = {
     submit: expenseSubmit || financePost || financeAdmin,
     verify: financeAdmin,

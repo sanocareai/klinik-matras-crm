@@ -1,4 +1,4 @@
-import { assertControlAccess } from "./rbac.js";
+import { AccessDeniedError, assertControlAccess } from "./rbac.js";
 
 const USER_KEY = "session:user";
 
@@ -16,11 +16,19 @@ export function createSessionManager({ client, storage }) {
     } catch {}
   }
 
+  // Gerbang di SERVER: GET /delivery-control/session dijaga izin delivery:control:access.
+  // 403 = akun tidak berhak (mis. Driver/Helper/Leader Driver) -> AccessDeniedError.
   async function loadMe() {
-    const me = await client.request("/auth/me");
-    const capabilities = me.capabilities || me.user?.capabilities || null;
+    let me;
+    try {
+      me = await client.request("/delivery-control/session");
+    } catch (err) {
+      if (err.status === 403) throw new AccessDeniedError();
+      throw err;
+    }
+    const capabilities = me.capabilities || null;
     assertControlAccess(capabilities);
-    return { user: me.user || me, capabilities };
+    return { user: me, capabilities };
   }
 
   return {

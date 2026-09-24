@@ -4,6 +4,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { capabilitiesFor } from "../src/services/capabilities.js";
+import { hasPermission } from "../src/middleware/authorize.js";
+import { PERMISSIONS as P } from "../src/constants/permissions.js";
 
 const cap = (...roles) => capabilitiesFor({ role: roles[0], roles });
 
@@ -15,8 +17,13 @@ test("Driver dan Helper TIDAK punya akses Delivery Control", () => {
   }
 });
 
-test("Admin, Owner, Dispatcher, Leader Driver punya akses (izin job:read penuh)", () => {
-  for (const r of ["ADMIN", "OWNER", "DISPATCHER", "LEADER_DRIVER"]) assert.equal(cap(r).deliveryControlApp, true, r);
+test("hanya Admin, Owner, Dispatcher yang punya akses (izin eksplisit delivery:control:access)", () => {
+  for (const r of ["ADMIN", "OWNER", "DISPATCHER"]) assert.equal(cap(r).deliveryControlApp, true, r);
+});
+
+test("Leader Driver ditolak walau punya job:read penuh (akses TIDAK diturunkan dari job:read)", () => {
+  assert.equal(hasPermission({ role: "LEADER_DRIVER", roles: ["LEADER_DRIVER"] }, P.JOB_READ), true);
+  assert.equal(cap("LEADER_DRIVER").deliveryControlApp, false);
 });
 
 test("peran non-armada tidak punya akses (Sales, Produksi, Gudang, Finance, Akuntan, Approver)", () => {

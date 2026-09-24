@@ -33,7 +33,7 @@ test("signIn: akun tanpa akses (Driver) ditolak dan token TIDAK tersisa", async 
   const st = memStorage();
   const client = createApiClient({ serverUrl: "https://x.test", storage: st, fetchImpl: server({
     "POST /auth/login": () => json(200, { token: "TOK" }),
-    "GET /auth/me": () => json(200, { user: { id: "u1", role: "DRIVER" }, capabilities: { deliveryControlApp: false } }),
+    "GET /delivery-control/session": () => json(403, { error: "Anda tidak punya akses untuk aksi ini" }),
   }) });
   const s = createSessionManager({ client, storage: st });
   await assert.rejects(s.signIn("d@x", "pw"), (e) => e instanceof AccessDeniedError);
@@ -46,11 +46,12 @@ test("signIn: Admin berhak masuk, sesi + cache tersimpan", async () => {
   const st = memStorage();
   const client = createApiClient({ serverUrl: "https://x.test", storage: st, fetchImpl: server({
     "POST /auth/login": () => json(200, { token: "TOK" }),
-    "GET /auth/me": () => json(200, { user: { id: "a1", role: "ADMIN" }, capabilities: { deliveryControlApp: true } }),
+    "GET /delivery-control/session": () => json(200, { id: "a1", role: "ADMIN", capabilities: { deliveryControlApp: true } }),
   }) });
   const s = createSessionManager({ client, storage: st });
   const session = await s.signIn("a@x", "pw");
   assert.equal(session.user.id, "a1");
+  assert.equal(session.capabilities.deliveryControlApp, true);
   assert.equal(client.getToken(), "TOK");
   assert.ok(st._m.get("session:user"));
 });
@@ -60,7 +61,8 @@ test("restore: izin dicabut di server -> sesi dibersihkan; server mati -> pakai 
   let mode = "ok";
   const client = createApiClient({ serverUrl: "https://x.test", storage: st, sleep: async () => {}, retryDelaysMs: [], fetchImpl: async (url) => {
     if (mode === "down") throw new Error("network");
-    return json(200, { user: { id: "a1" }, capabilities: { deliveryControlApp: mode === "ok" } });
+    if (mode === "revoked") return json(403, { error: "Anda tidak punya akses" });
+    return json(200, { id: "a1", capabilities: { deliveryControlApp: true } });
   } });
   const s = createSessionManager({ client, storage: st });
   await client.setToken("TOK");

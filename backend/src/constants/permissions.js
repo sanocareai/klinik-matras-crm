@@ -165,6 +165,13 @@ export const PERMISSIONS = {
   INCENTIVE_PAYOUT_READ: "incentive:payout:read",
   INCENTIVE_PAYOUT_CREATE: "incentive:payout:create",
   INCENTIVE_PAYOUT_VOID: "incentive:payout:void",
+
+  // --- Sano Delivery Control (aplikasi Admin/Owner armada) -------------------
+  // Izin EKSPLISIT untuk memakai aplikasi Control. SENGAJA bukan turunan job:read:
+  // LEADER_DRIVER punya job:read tetapi belum tentu boleh memakai aplikasi ini,
+  // dan izin baca-job bisa saja diberikan ke peran lain untuk keperluan berbeda.
+  // Diberikan ke ADMIN, OWNER (lewat ADMIN_PERMS), dan DISPATCHER saja.
+  DELIVERY_CONTROL_ACCESS: "delivery:control:access",
 };
 
 const P = PERMISSIONS;
@@ -223,6 +230,8 @@ const ADMIN_PERMS = [
   // role selain permission eksplisit yang boleh membatalkan pembayaran
   // salah catat — spec eksplisit "Void hanya ADMIN/OWNER").
   P.INCENTIVE_PAYOUT_READ, P.INCENTIVE_PAYOUT_CREATE, P.INCENTIVE_PAYOUT_VOID,
+  // Aplikasi Sano Delivery Control — ADMIN/OWNER (OWNER mewarisi ADMIN_PERMS).
+  P.DELIVERY_CONTROL_ACCESS,
 ];
 
 export const ROLE_PERMISSIONS = {
@@ -341,6 +350,8 @@ export const ROLE_PERMISSIONS = {
     // eksternal, kuli bongkar muat). Biaya kendaraan TETAP lewat Armada >
     // Biaya (VehicleExpense) seperti sekarang — tidak ada input ganda.
     P.FINANCE_EXPENSE_SUBMIT,
+    // Aplikasi Sano Delivery Control — dispatcher adalah admin kantor armada.
+    P.DELIVERY_CONTROL_ACCESS,
   ],
 
   // Driver melihat PII hanya untuk stop miliknya sendiri — pembatasan baris
