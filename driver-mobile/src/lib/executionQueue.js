@@ -20,6 +20,7 @@ import {
 // LOGIKA yang diuji (mutex per user, dedupe, reconcile 409, checkpoint
 // upload) PERSIS SAMA dengan yang jalan di HP, bukan simulasi kasar.
 export function createExecutionQueue({ storage, fs, api: client }) {
+  const MAX_RETRY_ATTEMPTS = 5;
   const listeners = new Set();
   const userLocks = new Map();
 
@@ -92,8 +93,21 @@ export function createExecutionQueue({ storage, fs, api: client }) {
     } catch {}
   }
 
-  async function enqueueExecution({ userId, jobId = null, routeId = null, action, payload = {}, photos = [] }) {
+  async function enqueueExecution({
+    userId, deviceId, readerMode = "V1", baseRevision = null, baseRouteRevision = null,
+    jobId = null, routeId = null, action, payload = {}, photos = [],
+  }) {
     return withUserLock(userId, async () => {
+      // Entri V1 lama (dibuat build sebelum field deviceId ada) tetap dapat
+      // direplay. Semua enqueue runtime baru menyuntik deviceId dari Auth;
+      // V2 menolaknya keras bila metadata perangkat tidak tersedia.
+      if (readerMode === "V2" && !deviceId) throw new Error("Device ID wajib untuk antrean offline V2");
+      if (readerMode === "V2" && action !== "route-start" && !Number.isInteger(baseRevision)) {
+        throw Object.assign(new Error("Revision job V2 tidak tersedia; refresh data sebelum mengirim aksi"), { code: "BASE_REVISION_REQUIRED" });
+      }
+      if (readerMode === "V2" && action === "route-start" && !Number.isInteger(baseRouteRevision)) {
+        throw Object.assign(new Error("Revision route V2 tidak tersedia; refresh data sebelum memulai rute"), { code: "BASE_REVISION_REQUIRED" });
+      }
       const queue = await readExecutionQueue(userId);
       const key = dedupeKey({ action, jobId, routeId });
       const existing = queue.find((entry) => dedupeKey(entry) === key);
@@ -113,6 +127,10 @@ export function createExecutionQueue({ storage, fs, api: client }) {
         jobId,
         routeId,
         action,
+        readerMode,
+        deviceId,
+        baseRevision,
+        baseRouteRevision,
         payload,
         photos: staged,
         uploadedUrls: [],
@@ -120,6 +138,7 @@ export function createExecutionQueue({ storage, fs, api: client }) {
         attempts: 0,
         lastError: null,
         blocked: false,
+        syncState: "PENDING",
       };
       queue.push(item);
       await writeQueue(userId, queue);
@@ -139,11 +158,17 @@ export function createExecutionQueue({ storage, fs, api: client }) {
 
   async function sendItem(item) {
     const locationPayload = item.payload.location ? { location: item.payload.location } : {};
+    const meta = {
+      readerMode: item.readerMode || "V1",
+      deviceId: item.deviceId,
+      baseRevision: item.baseRevision,
+      baseRouteRevision: item.baseRouteRevision,
+    };
     if (item.action === "route-start") {
-      return client.startRoute(item.routeId, { proofPhotoUrls: item.uploadedUrls }, item.idempotencyKey);
+      return client.startRoute(item.routeId, { proofPhotoUrls: item.uploadedUrls }, item.idempotencyKey, meta);
     }
-    if (item.action === "start") return client.startArmadaJob(item.jobId, { proofPhotoUrls: item.uploadedUrls }, item.idempotencyKey);
-    if (item.action === "arrive") return client.arriveArmadaJob(item.jobId, locationPayload, item.idempotencyKey);
+    if (item.action === "start") return client.startArmadaJob(item.jobId, { proofPhotoUrls: item.uploadedUrls }, item.idempotencyKey, meta);
+    if (item.action === "arrive") return client.arriveArmadaJob(item.jobId, locationPayload, item.idempotencyKey, meta);
     if (item.action === "complete") {
       return client.completeArmadaJob(
         item.jobId,
@@ -153,7 +178,8 @@ export function createExecutionQueue({ storage, fs, api: client }) {
           note: item.payload.note,
           ...locationPayload,
         },
-        item.idempotencyKey
+        item.idempotencyKey,
+        meta
       );
     }
     if (item.action === "fail") {
@@ -165,7 +191,8 @@ export function createExecutionQueue({ storage, fs, api: client }) {
           note: item.payload.note,
           ...locationPayload,
         },
-        item.idempotencyKey
+        item.idempotencyKey,
+        meta
       );
     }
     throw Object.assign(new Error(`Aksi antrean tidak dikenal: ${item.action}`), { status: 400 });
@@ -186,7 +213,21 @@ export function createExecutionQueue({ storage, fs, api: client }) {
   async function reconcileItem(item) {
     let snapshot;
     try {
-      snapshot = await client.getMyJobs();
+      if (item.readerMode === "V2") {
+        const routes = [];
+        let cursor = null;
+        do {
+          const page = await client.getDriverV2Snapshot(cursor, 25);
+          routes.push(...(page.items || []));
+          cursor = page.hasMore ? page.nextSnapshotCursor : null;
+        } while (cursor);
+        snapshot = {
+          routes: routes.map((route) => ({ id: route.routeId, status: route.routeStatus })),
+          jobs: routes.flatMap((route) => route.jobs || []),
+        };
+      } else {
+        snapshot = await client.getMyJobs();
+      }
     } catch {
       return { resolved: false, reason: null };
     }
@@ -242,7 +283,15 @@ export function createExecutionQueue({ storage, fs, api: client }) {
         } catch (error) {
           const verdict = classifyExecutionError(error);
           if (verdict.kind === "retry") {
-            queue[index] = { ...item, attempts: item.attempts + 1, lastError: error.message || "Gagal sinkronisasi", blocked: false };
+            const attempts = item.attempts + 1;
+            const exhausted = attempts >= MAX_RETRY_ATTEMPTS;
+            queue[index] = {
+              ...item,
+              attempts,
+              lastError: exhausted ? `Percobaan otomatis dihentikan setelah ${MAX_RETRY_ATTEMPTS} kali: ${error.message || "Gagal sinkronisasi"}` : (error.message || "Gagal sinkronisasi"),
+              blocked: exhausted,
+              syncState: exhausted ? "RETRY_EXHAUSTED" : "PENDING",
+            };
             await writeQueue(userId, queue);
             // 401/token kedaluwarsa, jaringan, timeout, 5xx, atau lock
             // sementara krn perangkat lain: hentikan batch di sini,
@@ -265,11 +314,11 @@ export function createExecutionQueue({ storage, fs, api: client }) {
               // setelah respons 409 pertama) — bukan bukti aksi tidak
               // valid, perlakukan seperti retry biasa, JANGAN blocked
               // berdasarkan dugaan.
-              queue[index] = { ...item, attempts: item.attempts + 1, lastError: error.message || "Gagal sinkronisasi", blocked: false };
+              queue[index] = { ...item, attempts: item.attempts + 1, lastError: error.message || "Gagal sinkronisasi", blocked: false, syncState: "PENDING" };
               await writeQueue(userId, queue);
               break;
             }
-            queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, lastError: outcome.reason };
+            queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, syncState: "CONFLICT", lastError: outcome.reason };
             await writeQueue(userId, queue);
             // Konflik status utk item ini SUDAH final (blocked dengan
             // alasan jelas) — bukan error transien yang butuh menghentikan
@@ -280,7 +329,7 @@ export function createExecutionQueue({ storage, fs, api: client }) {
           // kind === "block" — 403 otorisasi, tabrakan idempotency key,
           // atau validasi 4xx: benar-benar tidak valid lagi, reconciliation
           // status tidak relevan.
-          queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, lastError: verdict.reason || error.message || "Gagal sinkronisasi" };
+          queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, syncState: "CONFLICT", lastError: verdict.reason || error.message || "Gagal sinkronisasi" };
           await writeQueue(userId, queue);
           index += 1;
         }
@@ -320,7 +369,7 @@ export function createExecutionQueue({ storage, fs, api: client }) {
       if (outcome.reason == null) {
         return { resolved: false, verified: false, reason: item.lastError };
       }
-      queue[idx] = { ...item, blocked: true, lastError: outcome.reason };
+      queue[idx] = { ...item, blocked: true, syncState: "CONFLICT", lastError: outcome.reason };
       await writeQueue(userId, queue);
       return { resolved: false, verified: true, reason: outcome.reason };
     });

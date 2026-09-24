@@ -50,12 +50,18 @@ test("delta berurutan dan cursor maju hanya sampai event terakhir dalam page", a
 });
 
 function assignment(jobId, status) {
+  const routeId = jobId.startsWith("p") ? "route-published" : jobId.startsWith("i") ? "route-progress" : "route-broken";
   return {
     jobId,
+    driverId: "u1",
+    helperId: null,
     sequence: Number(jobId.replace(/\D/g, "")) || 1,
     status,
     job: {
       status: status === "COMPLETED" ? "COMPLETED" : "ASSIGNED",
+      routeId,
+      driverId: "u1",
+      helperId: null,
       arrivedAt: null,
       completedAt: status === "COMPLETED" ? new Date("2026-09-24T01:00:00.000Z") : null,
       failureReason: null,
@@ -119,5 +125,26 @@ test("missing-stop pada publication memblokir snapshot alih-alih menghilangkan s
     readDriverFullSnapshot(prisma, { userId: "u1", secret: SECRET }),
     (error) => error.code === "DRIVER_V2_SNAPSHOT_INTEGRITY_ERROR"
       && error.details.missingAssignmentJobIds[0] === "j2",
+  );
+});
+
+test("ghost route/reassignment drift diblokir sebelum payload mencapai Driver", async () => {
+  const moved = assignment("p1", "ACTIVE");
+  moved.job.routeId = "route-lain";
+  const prisma = {
+    job: { findMany: async () => [] },
+    driverFeedState: { upsert: async () => ({ nextSequence: 1n, retentionFloor: 1n, feedVersion: 1 }) },
+    routePublication: {
+      findMany: async () => [{
+        routeId: "route-published", publicationVersion: 1, routeRevision: 1,
+        checksum: "drift", snapshot: { stops: [{ jobId: "p1" }] },
+        route: { status: "PUBLISHED" }, assignments: [moved],
+      }],
+    },
+  };
+  await assert.rejects(
+    readDriverFullSnapshot(prisma, { userId: "u1", secret: SECRET }),
+    (error) => error.code === "DRIVER_V2_LIVE_ASSIGNMENT_DRIFT"
+      && error.details.driftedAssignments[0].fields.routeId === false,
   );
 });

@@ -14,11 +14,13 @@ const TIMEOUT_MS = 30000;
 let serverUrl = DEFAULT_SERVER;
 let token = null;
 let onUnauthorized = null;
+let deviceId = null;
 
-export function configureApi({ server, jwt, unauthorizedHandler }) {
+export function configureApi({ server, jwt, unauthorizedHandler, driverDeviceId }) {
   if (server !== undefined) serverUrl = server || DEFAULT_SERVER;
   if (jwt !== undefined) token = jwt;
   if (unauthorizedHandler !== undefined) onUnauthorized = unauthorizedHandler;
+  if (driverDeviceId !== undefined) deviceId = driverDeviceId;
 }
 
 export function getServerUrl() {
@@ -89,6 +91,7 @@ async function request(path, options = {}) {
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
         ...options.headers,
       },
     });
@@ -102,9 +105,10 @@ async function request(path, options = {}) {
     if (!res.ok) {
       const text = await res.text();
       let msg;
-      try { msg = JSON.parse(text).error; } catch {}
+      let parsed;
+      try { parsed = JSON.parse(text); msg = parsed.error; } catch {}
       if (!msg) msg = text ? `${res.status}: ${text.slice(0, 300)}` : `Error ${res.status}`;
-      throw Object.assign(new Error(msg), { status: res.status });
+      throw Object.assign(new Error(msg), { status: res.status, code: parsed?.code, details: parsed?.details });
     }
     return res.json();
   } catch (err) {
@@ -134,7 +138,10 @@ async function uploadFile(path, file, fields, fieldName = "photos") {
       fieldName,
       mimeType: file.type,
       parameters: fields,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(deviceId ? { "X-Device-Id": deviceId } : {}),
+      },
       signal: controller.signal,
     });
     if (result.status === 401) {
@@ -185,6 +192,18 @@ function buildQuery(params) {
   return q ? "?" + q : "";
 }
 
+function executionMeta(data, meta = {}) {
+  return {
+    ...data,
+    ...(meta.readerMode === "V2" && Number.isInteger(meta.baseRevision)
+      ? { expectedJobRevision: meta.baseRevision }
+      : {}),
+    ...(meta.readerMode === "V2" && Number.isInteger(meta.baseRouteRevision)
+      ? { expectedRouteRevision: meta.baseRouteRevision }
+      : {}),
+  };
+}
+
 export const api = {
   // Auth — endpoint SAMA dengan web/Sano Messenger.
   login: (email, password) =>
@@ -208,6 +227,13 @@ export const api = {
   // Job driver — SEMUA endpoint SUDAH ADA di backend (dipakai juga oleh
   // PWA/APK Capacitor driver-app/), nol perubahan kontrak API.
   getMyJobs: (date) => request(`/armada/my-jobs${buildQuery({ date })}`),
+  getDriverReaderConfig: () => request("/armada/v2/me/config"),
+  getDriverV2Snapshot: (cursor, limit) => request(`/armada/v2/me/snapshot${buildQuery({ cursor, limit })}`),
+  getDriverV2Changes: (cursor, limit) => request(`/armada/v2/me/changes${buildQuery({ cursor, limit })}`),
+  ackDriverV2Cursor: (cursor, currentDeviceId, device = {}) => request("/armada/v2/me/cursor", {
+    method: "POST",
+    body: JSON.stringify({ cursor, deviceId: currentDeviceId, device }),
+  }),
   // Masalah (17 September 2026, laporan owner: "tab/section masalah
   // tampilkan juga untuk driver") — GET /armada/issues, SEKARANG juga
   // menerima JOB_OWN_READ (dibatasi otomatis ke job milik sendiri di
@@ -218,8 +244,8 @@ export const api = {
   uploadJobPhoto,
   // Mulai SATU rute sekaligus — foto muatan sekali, semua job ASSIGNED di
   // rute jadi EN_ROUTE (lihat POST /armada/routes/:id/start).
-  startRoute: (routeId, data = {}, idempotencyKey) =>
-    request(`/armada/routes/${routeId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  startRoute: (routeId, data = {}, idempotencyKey, meta = {}) =>
+    request(`/armada/routes/${routeId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
   // Link Google Maps rute (sumber = manualMapsUrl admin, fallback auto
   // multi-stop) — sama presedennya dengan broadcast WA.
   getRouteMap: (routeId) => request(`/armada/routes/${routeId}/map`),
@@ -245,10 +271,10 @@ export const api = {
   getRoutePath: (points) =>
     request(`/armada/route-path${buildQuery({ points: points.map(([lat, lng]) => `${lat},${lng}`).join(";") })}`),
   getArmadaIssues: (params = {}) => request(`/armada/issues${buildQuery(params)}`),
-  startArmadaJob: (jobId, data = {}, idempotencyKey) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
-  arriveArmadaJob: (jobId, data = {}, idempotencyKey) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
-  completeArmadaJob: (jobId, data, idempotencyKey) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
-  failArmadaJob: (jobId, data, idempotencyKey) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  startArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
+  arriveArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
+  completeArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
+  failArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
   recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
   // Lapor revisi di lokasi (18 September 2026) — port dari frontend/src/api.js,
   // lihat catatan panjang di backend routes/armada.js POST /jobs/:id/report-revision.

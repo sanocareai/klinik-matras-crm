@@ -54,3 +54,19 @@ export function isFlagEnabled(flags, key, { userId = null, deviceId = null } = {
   if (Array.isArray(config.deviceIds) && config.deviceIds.length > 0 && !config.deviceIds.includes(deviceId)) return false;
   return true;
 }
+
+// Satu keputusan reader untuk Driver Mobile. Endpoint konfigurasi dan test
+// memakai fungsi yang sama agar client tidak pernah menebak mode dari error
+// snapshot atau mencampur hasil V1/V2. Fail-closed ke V1 bila writer gate
+// belum lengkap, tabel flag tidak tersedia, atau cohort tidak cocok.
+export function resolveDriverReaderMode(flags, { userId = null, deviceId = null } = {}) {
+  try {
+    assertDeliveryReaderGate(flags);
+  } catch {
+    return { readerMode: "V1", reason: "DELIVERY_V2_GATE_NOT_READY" };
+  }
+  if (!isFlagEnabled(flags, V2_FLAGS.DRIVER_SNAPSHOT_READER, { userId, deviceId })) {
+    return { readerMode: "V1", reason: "COHORT_NOT_ENABLED" };
+  }
+  return { readerMode: "V2", reason: "COHORT_ENABLED" };
+}

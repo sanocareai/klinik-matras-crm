@@ -8,6 +8,35 @@ import {
 
 const ACTIVE_JOB_STATUSES = ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
 
+// Bentuk job yang dibutuhkan UI Driver. Tetap dibaca melalui endpoint V2;
+// client tidak mengambil detail dari /my-jobs V1 lalu menggabungkannya.
+const DRIVER_V2_JOB_INCLUDE = {
+  deliveryStateV2: { select: { jobRevision: true, currentStatus: true } },
+  vehicle: { select: { id: true, plateNumber: true } },
+  complaintCase: { select: { id: true, caseNumber: true, category: true, severity: true, status: true } },
+  revisionLinks: { select: { id: true, trigger: true, status: true } },
+  rescheduleCase: { select: { id: true, caseNumber: true, status: true, round: true, reason: true, newScheduledDate: true } },
+  payments: {
+    select: { id: true, amount: true, method: true, createdAt: true, verifications: { select: { id: true } } },
+  },
+  order: {
+    select: {
+      id: true, orderNumber: true, status: true, statusLocked: true, category: true,
+      pickupConfirmedDate: true, deliveryConfirmedDate: true,
+      deliveryAddress: true, deliveryCity: true, locationUrl: true,
+      productLine: true, productType: true, notes: true,
+      items: { select: { layananName: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+      customer: {
+        select: {
+          id: true, name: true, phone: true,
+          assignedSales: { select: { id: true, name: true } },
+        },
+      },
+    },
+  },
+  units: { select: { unitId: true, unit: { select: { id: true } } } },
+};
+
 function boundedLimit(value, fallback = 50, max = 100) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) return fallback;
@@ -27,6 +56,25 @@ function projectPublicationForDriver(publication) {
       details: { routeId: publication.routeId, missingAssignmentJobIds, unexpectedAssignmentJobIds },
     });
   }
+  const driftedAssignments = publication.assignments.flatMap((assignment) => {
+    const currentStatus = assignment.job.deliveryStateV2?.currentStatus ?? assignment.job.status;
+    const terminalJob = ["COMPLETED", "FAILED", "RESCHEDULED", "CANCELLED"].includes(currentStatus);
+    const invalidStatusPair = assignment.status === "ACTIVE" && terminalJob;
+    const fields = {
+      routeId: assignment.job.routeId === publication.routeId,
+      driverId: assignment.job.driverId === assignment.driverId,
+      helperId: assignment.job.helperId === assignment.helperId,
+      status: !invalidStatusPair,
+    };
+    return Object.values(fields).every(Boolean) ? [] : [{ jobId: assignment.jobId, fields }];
+  });
+  if (driftedAssignments.length) {
+    throw Object.assign(new Error("Assignment V2 berbeda dari state job aktif; cohort Driver diblokir sampai Ops memutuskan koreksi"), {
+      statusCode: 409,
+      code: "DRIVER_V2_LIVE_ASSIGNMENT_DRIFT",
+      details: { routeId: publication.routeId, driftedAssignments },
+    });
+  }
   const visibleAssignments = publication.assignments.filter((assignment) => (
     isDriverVisibleAssignmentV2(publication.route.status, assignment.status)
   ));
@@ -35,6 +83,43 @@ function projectPublicationForDriver(publication) {
     ...publication.snapshot,
     stops: snapshotStops.filter((stop) => visibleJobIds.has(stop.jobId)),
   };
+  const route = {
+    id: publication.routeId,
+    code: driverSnapshot.code,
+    status: publication.route.status,
+    date: driverSnapshot.date,
+    driverId: driverSnapshot.driverId ?? null,
+    helperId: driverSnapshot.helperId ?? null,
+    vehicleId: driverSnapshot.vehicleId ?? null,
+    manualMapsUrl: driverSnapshot.manualMapsUrl ?? null,
+    routeRevision: publication.routeRevision,
+    publicationVersion: publication.publicationVersion,
+    updatedAt: driverSnapshot.lastEditedAt || driverSnapshot.publishedAt || null,
+  };
+  const stopByJobId = new Map(snapshotStops.map((stop) => [stop.jobId, stop]));
+  const jobs = visibleAssignments.map((assignment) => {
+    const stop = stopByJobId.get(assignment.jobId) || {};
+    const { deliveryStateV2, ...liveJob } = assignment.job;
+    return {
+      ...liveJob,
+      ...stop,
+      id: assignment.jobId,
+      routeId: publication.routeId,
+      route,
+      order: liveJob.order || stop.order || null,
+      vehicle: liveJob.vehicle || driverSnapshot.vehicle || null,
+      driverId: assignment.driverId,
+      helperId: assignment.helperId,
+      sequence: assignment.sequence,
+      status: deliveryStateV2?.currentStatus ?? assignment.job.status,
+      _v2: {
+        jobRevision: deliveryStateV2?.jobRevision ?? null,
+        routeRevision: publication.routeRevision,
+        publicationVersion: publication.publicationVersion,
+        assignmentStatus: assignment.status,
+      },
+    };
+  });
   return {
     routeId: publication.routeId,
     publicationVersion: publication.publicationVersion,
@@ -43,6 +128,7 @@ function projectPublicationForDriver(publication) {
     driverSnapshotChecksum: deliveryV2Checksum(driverSnapshot),
     snapshot: driverSnapshot,
     routeStatus: publication.route.status,
+    jobs,
     liveStops: visibleAssignments.map((assignment) => ({
       jobId: assignment.jobId,
       sequence: assignment.sequence,
@@ -161,17 +247,12 @@ export async function readDriverFullSnapshot(prisma, { userId, cursor = null, li
         orderBy: { sequence: "asc" },
         select: {
           jobId: true,
+          driverId: true,
+          helperId: true,
           sequence: true,
           status: true,
           job: {
-            select: {
-              status: true,
-              arrivedAt: true,
-              completedAt: true,
-              failureReason: true,
-              proofPhotoUrls: true,
-              deliveryStateV2: { select: { jobRevision: true, currentStatus: true } },
-            },
+            include: DRIVER_V2_JOB_INCLUDE,
           },
         },
       },
@@ -194,6 +275,8 @@ export async function readDriverFullSnapshot(prisma, { userId, cursor = null, li
   }, secret) : null;
   return {
     mode: "FULL_SNAPSHOT",
+    driverId: userId,
+    cacheSchemaVersion: 2,
     items,
     hasMore,
     nextSnapshotCursor,

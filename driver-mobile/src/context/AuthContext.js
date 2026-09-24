@@ -6,6 +6,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api, configureApi, DEFAULT_SERVER } from "../api";
 import { registerForPush, unregisterPush } from "../push";
 import { queryClient } from "../lib/queryClient";
+import { getOrCreateDeviceId } from "../lib/deviceIdentity";
+import { driverV2Sync } from "../lib/driverDataRuntime";
 
 const AuthContext = createContext(null);
 
@@ -13,6 +15,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [server, setServer] = useState(DEFAULT_SERVER);
+  const [deviceId, setDeviceId] = useState(null);
   // isOnline TERPISAH dari `user` (12 Sep 2026, status Online/Offline
   // referensi Gojek/Grab) — walau nilai awalnya datang dari user.isOnline
   // (login/session restore), field ini SERING berubah (toggle manual,
@@ -23,16 +26,19 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     (async () => {
       try {
-        const [savedToken, savedUser, savedServer] = await Promise.all([
+        const [savedToken, savedUser, savedServer, savedDeviceId] = await Promise.all([
           AsyncStorage.getItem("token"),
           AsyncStorage.getItem("user"),
           AsyncStorage.getItem("server"),
+          getOrCreateDeviceId(AsyncStorage),
         ]);
         const srv = savedServer || DEFAULT_SERVER;
         setServer(srv);
+        setDeviceId(savedDeviceId);
         configureApi({
           server: srv,
           jwt: savedToken,
+          driverDeviceId: savedDeviceId,
           unauthorizedHandler: () => setUser(null),
         });
         if (savedToken && savedUser) {
@@ -124,7 +130,9 @@ export function AuthProvider({ children }) {
 
   async function login(email, password, serverUrl) {
     const srv = (serverUrl || DEFAULT_SERVER).replace(/\/+$/, "");
-    configureApi({ server: srv });
+    const currentDeviceId = deviceId || await getOrCreateDeviceId(AsyncStorage);
+    setDeviceId(currentDeviceId);
+    configureApi({ server: srv, driverDeviceId: currentDeviceId });
     const res = await api.login(email.trim(), password);
     configureApi({ jwt: res.token });
     // Buang cache react-query SEBELUM set user baru (22 September 2026,
@@ -153,6 +161,7 @@ export function AuthProvider({ children }) {
     // (mis. sudah offline internet saat menekan Keluar).
     try { await api.setOnlineStatus(false); } catch {}
     await unregisterPush();
+    await driverV2Sync.resetSession(user?.id, deviceId);
     await AsyncStorage.multiRemove(["token", "user"]);
     configureApi({ jwt: null });
     queryClient.clear(); // lihat catatan di login() — sisi lain pasangan yang sama
@@ -209,7 +218,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, server, login, logout, isOnline, setOnline, markOnlineLocally, updateUser, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, server, deviceId, login, logout, isOnline, setOnline, markOnlineLocally, updateUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

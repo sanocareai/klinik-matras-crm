@@ -50,7 +50,14 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
     setBusy(true);
     setErr("");
     try {
-      const result = await submit({ jobId: sampleJobId, routeId: route.id, action: "route-start", photos });
+      const result = await submit({
+        jobId: sampleJobId,
+        routeId: route.id,
+        action: "route-start",
+        photos,
+        readerMode: route.publicationVersion ? "V2" : "V1",
+        baseRouteRevision: route.revision ?? route.routeRevision ?? null,
+      });
       if (!result.pending) markOnlineLocally();
       setMode("idle");
       setPhotos([]);

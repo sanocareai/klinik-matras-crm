@@ -45,24 +45,24 @@ function createFakeApi(overrides = {}) {
       calls.push(["uploadJobPhoto", jobId, file.name]);
       return { url: `/media/job-photos/${file.name}` };
     },
-    async startRoute(routeId, data, key) {
-      calls.push(["startRoute", routeId, data, key]);
+    async startRoute(routeId, data, key, meta) {
+      calls.push(["startRoute", routeId, data, key, meta]);
       return { started: 1 };
     },
-    async startArmadaJob(jobId, data, key) {
-      calls.push(["startArmadaJob", jobId, data, key]);
+    async startArmadaJob(jobId, data, key, meta) {
+      calls.push(["startArmadaJob", jobId, data, key, meta]);
       return { id: jobId, status: "EN_ROUTE" };
     },
-    async arriveArmadaJob(jobId, data, key) {
-      calls.push(["arriveArmadaJob", jobId, data, key]);
+    async arriveArmadaJob(jobId, data, key, meta) {
+      calls.push(["arriveArmadaJob", jobId, data, key, meta]);
       return { id: jobId, status: "ARRIVED" };
     },
-    async completeArmadaJob(jobId, data, key) {
-      calls.push(["completeArmadaJob", jobId, data, key]);
+    async completeArmadaJob(jobId, data, key, meta) {
+      calls.push(["completeArmadaJob", jobId, data, key, meta]);
       return { id: jobId, status: "COMPLETED" };
     },
-    async failArmadaJob(jobId, data, key) {
-      calls.push(["failArmadaJob", jobId, data, key]);
+    async failArmadaJob(jobId, data, key, meta) {
+      calls.push(["failArmadaJob", jobId, data, key, meta]);
       return { id: jobId, status: "FAILED" };
     },
     async getMyJobs() {
@@ -273,4 +273,34 @@ test("clearBlocked hanya membuang item blocked, item pending valid lainnya aman"
   queue = await q.readExecutionQueue("u1");
   assert.equal(queue.length, 1);
   assert.equal(queue[0].jobId, "j2");
+});
+
+test("queue V2 menyimpan device/revision dan meneruskannya ke command", async () => {
+  const api = createFakeApi();
+  const q = createExecutionQueue({ storage: createFakeStorage(), fs: createFakeFs(), api });
+  await q.enqueueExecution({
+    userId: "u1", deviceId: "device-1", readerMode: "V2", baseRevision: 7,
+    jobId: "j1", action: "start", payload: {}, photos: [],
+  });
+  const queued = await q.readExecutionQueue("u1");
+  assert.equal(queued[0].deviceId, "device-1");
+  assert.equal(queued[0].baseRevision, 7);
+  await q.flushExecutionQueue("u1");
+  const call = api._calls.find((item) => item[0] === "startArmadaJob");
+  assert.equal(call[4].readerMode, "V2");
+  assert.equal(call[4].baseRevision, 7);
+});
+
+test("queue V2 menolak revision/device kosong dan membatasi retry otomatis", async () => {
+  const transient = Object.assign(new Error("Koneksi timeout"), {});
+  const api = createFakeApi({ async startArmadaJob() { throw transient; } });
+  const q = createExecutionQueue({ storage: createFakeStorage(), fs: createFakeFs(), api });
+  await assert.rejects(q.enqueueExecution({ userId: "u1", readerMode: "V2", baseRevision: 1, jobId: "j1", action: "start" }), /Device ID/);
+  await assert.rejects(q.enqueueExecution({ userId: "u1", deviceId: "d1", readerMode: "V2", jobId: "j1", action: "start" }), /Revision/);
+  await q.enqueueExecution({ userId: "u1", deviceId: "d1", readerMode: "V2", baseRevision: 1, jobId: "j1", action: "start" });
+  for (let i = 0; i < 5; i += 1) await q.flushExecutionQueue("u1");
+  const [item] = await q.readExecutionQueue("u1");
+  assert.equal(item.blocked, true);
+  assert.equal(item.syncState, "RETRY_EXHAUSTED");
+  assert.equal(item.attempts, 5);
 });

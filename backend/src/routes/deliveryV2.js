@@ -12,6 +12,7 @@ import {
   assertDeliveryReaderGate,
   isFlagEnabled,
   loadV2Flags,
+  resolveDriverReaderMode,
 } from "../services/v2FeatureFlags.js";
 
 export const deliveryV2Router = express.Router();
@@ -42,8 +43,27 @@ function sendError(error, res) {
   res.status(status).json(body);
 }
 
+deliveryV2Router.get("/v2/me/config", requirePermission(P.JOB_OWN_READ), async (req, res) => {
+  try {
+    const deviceId = String(req.get("X-Device-Id") || "").trim();
+    if (!deviceId) return res.status(400).json({ error: "X-Device-Id wajib diisi", code: "DEVICE_ID_REQUIRED" });
+    const flags = await loadV2Flags(prisma);
+    const selection = resolveDriverReaderMode(flags, { userId: req.user.id, deviceId });
+    res.set("Cache-Control", "no-store").json({
+      ...selection,
+      cacheSchemaVersion: 2,
+      snapshotPageSize: 25,
+      deltaPageSize: 100,
+      deltaPollMs: 30_000,
+    });
+  } catch (error) {
+    sendError(error, res);
+  }
+});
+
 deliveryV2Router.get("/v2/me/snapshot", requirePermission(P.JOB_OWN_READ), requireDriverV2Reader, async (req, res) => {
   try {
+    res.set("Cache-Control", "no-store");
     res.json(await readDriverFullSnapshot(prisma, {
       userId: req.user.id,
       cursor: req.query.cursor || null,
@@ -56,6 +76,7 @@ deliveryV2Router.get("/v2/me/snapshot", requirePermission(P.JOB_OWN_READ), requi
 
 deliveryV2Router.get("/v2/me/changes", requirePermission(P.JOB_OWN_READ), requireDriverV2Reader, async (req, res) => {
   try {
+    res.set("Cache-Control", "no-store");
     res.json(await readDriverDelta(prisma, {
       userId: req.user.id,
       cursor: req.query.cursor,
@@ -81,4 +102,3 @@ deliveryV2Router.post("/v2/me/cursor", requirePermission(P.JOB_OWN_READ), requir
     sendError(error, res);
   }
 });
-

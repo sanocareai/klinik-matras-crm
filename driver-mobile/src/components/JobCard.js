@@ -109,7 +109,14 @@ export default function JobCard({ job, onChanged }) {
         await performSubmit(job.id, action, payload, photos);
       } else {
         const location = ["arrive", "complete", "fail"].includes(action) ? await getProofLocation() : null;
-        const result = await submit({ jobId: job.id, action, payload: { ...payload, location }, photos });
+        const result = await submit({
+          jobId: job.id,
+          action,
+          payload: { ...payload, location },
+          photos,
+          readerMode: job._v2 ? "V2" : "V1",
+          baseRevision: job._v2?.jobRevision ?? null,
+        });
         if (result.pending) setErr("Menunggu sinkronisasi — aksi belum dikonfirmasi server.");
       }
       // Sinkron lokal (12 Sep 2026) — backend auto-online-kan driver saat

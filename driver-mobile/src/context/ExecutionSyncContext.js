@@ -27,7 +27,7 @@ const {
 const ExecutionSyncContext = createContext(null);
 
 export function ExecutionSyncProvider({ children }) {
-  const { user } = useAuth();
+  const { user, deviceId } = useAuth();
   const connected = useNetworkStatus();
   const [queue, setQueue] = useState([]);
   const userId = user?.id || null;
@@ -43,7 +43,7 @@ export function ExecutionSyncProvider({ children }) {
     const result = await flushExecutionQueue(userId);
     const after = await readExecutionQueue(userId);
     setQueue(after);
-    if (result.synced > 0) queryClient.invalidateQueries({ queryKey: ["armada", "my-jobs", userId] });
+    if (result.synced > 0) queryClient.invalidateQueries({ queryKey: ["armada", "my-jobs"] });
   }, [userId, connected]);
 
   useEffect(() => {
@@ -66,15 +66,15 @@ export function ExecutionSyncProvider({ children }) {
 
   const submit = useCallback(async (input) => {
     if (!userId) throw new Error("Sesi driver tidak tersedia");
-    const item = await enqueueExecution({ ...input, userId });
+    const item = await enqueueExecution({ ...input, userId, deviceId, readerMode: input.readerMode || "V1" });
     if (connected) await flushExecutionQueue(userId);
     const latest = await readExecutionQueue(userId);
     setQueue(latest);
     const pending = latest.find((entry) => entry.idempotencyKey === item.idempotencyKey);
     if (pending?.blocked) throw new Error(pending.lastError || "Aksi ditolak server");
-    if (!pending) queryClient.invalidateQueries({ queryKey: ["armada", "my-jobs", userId] });
+    if (!pending) queryClient.invalidateQueries({ queryKey: ["armada", "my-jobs"] });
     return { pending: !!pending };
-  }, [userId, connected]);
+  }, [userId, deviceId, connected]);
 
   const discard = useCallback(async (idempotencyKey) => {
     if (!userId) return;
@@ -92,7 +92,7 @@ export function ExecutionSyncProvider({ children }) {
     const outcome = await reconcileOne(userId, idempotencyKey);
     const latest = await readExecutionQueue(userId);
     setQueue(latest);
-    if (outcome.resolved) queryClient.invalidateQueries({ queryKey: ["armada", "my-jobs", userId] });
+    if (outcome.resolved) queryClient.invalidateQueries({ queryKey: ["armada", "my-jobs"] });
     return outcome;
   }, [userId]);
 

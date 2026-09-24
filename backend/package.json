@@ -21,6 +21,8 @@
     "v2:shadow": "node scripts/production-delivery-v2/shadow-compare.js",
     "v2:resolve-admin-bypass-history": "node scripts/production-delivery-v2/resolve-admin-bypass-history.js",
     "v2:driver-cutover-audit": "node scripts/production-delivery-v2/driver-cutover-audit.js",
+    "v2:driver-ops-decision-pack": "node scripts/production-delivery-v2/driver-v2-ops-decision-pack.js",
+    "v2:revoke-approved-failed-assignment": "node scripts/production-delivery-v2/revoke-failed-job-assignment-history.js",
     "v2:catchup-rehearsal": "node scripts/production-delivery-v2/catchup-rehearsal.js",
     "v2:rollback-rehearsal": "node scripts/production-delivery-v2/rollback-rehearsal.js"
   },
