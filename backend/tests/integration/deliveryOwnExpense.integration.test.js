@@ -221,3 +221,30 @@ test("paginasi opsional & aditif: tanpa limit perilaku lama; dengan limit ada ad
   assert.equal(h3.body.submissions.length, 1);
   assert.equal(h3.body.adaLagi, false);
 });
+
+test("kebocoran data: config own-only tidak memuat ambang auto-approve; daftar berpaginasi tidak membawa riwayat audit per baris", async () => {
+  const f = await fixture();
+  const cfgDriver = await raw("GET", `${P}/config?workspace=DELIVERY`, { token: f.a.token });
+  assert.equal(cfgDriver.body.autoApprove, null);
+  const cfgFin = await raw("GET", `${P}/config?workspace=DELIVERY`, { token: f.finance.token });
+  assert.ok(cfgFin.body.autoApprove, "jalur lama tetap melihat kebijakan");
+  await raw("POST", P, { token: f.a.token, headers: K(), body: body() });
+  const paged = await raw("GET", `${P}?limit=10`, { token: f.a.token });
+  assert.equal("auditTrail" in paged.body.submissions[0], false);
+  const legacy = await raw("GET", P, { token: f.a.token });
+  assert.ok(Array.isArray(legacy.body.submissions[0].auditTrail), "tanpa limit perilaku lama tetap");
+  const detail = await raw("GET", `${P}/${paged.body.submissions[0].id}`, { token: f.a.token });
+  assert.ok(detail.body.auditTrail.length >= 1);
+});
+
+test("urutan pemeriksaan: pelanggaran otorisasi (403/404) diprioritaskan di atas kunci idempotensi yang hilang (428)", async () => {
+  const f = await fixture();
+  // tanpa Idempotency-Key TAPI mencoba mencatat atas nama orang lain => 403, bukan 428
+  const atasNama = await raw("POST", P, { token: f.b.token, body: body({ requestedById: f.a.user.id }) });
+  assert.equal(atasNama.status, 403);
+  const punyaA = await raw("POST", P, { token: f.a.token, headers: K(), body: body() });
+  // orang lain tanpa kunci pada pengajuan bukan miliknya => 404, bukan 428
+  assert.equal((await raw("POST", `${P}/${punyaA.body.id}/ajukan`, { token: f.b.token })).status, 404);
+  // pemilik tanpa kunci => 428
+  assert.equal((await raw("POST", `${P}/${punyaA.body.id}/ajukan`, { token: f.a.token })).status, 428);
+});

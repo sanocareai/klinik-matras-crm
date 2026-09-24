@@ -64,7 +64,8 @@ expenseSubmissionRouter.get("/expense-submissions/config", requireAnyPermission(
       relations: cfg.relations,
       requiresLeaderReview: cfg.requiresLeaderReview,
       metadataFieldsByType: Object.fromEntries(cfg.expenseTypes.map((t) => [t.code, cfg.metadataFields(t.code)])),
-      autoApprove: cfg.autoApprove || null,
+      // Ambang auto-approve adalah kebijakan Finance — tidak dibocorkan ke akun own-only.
+      autoApprove: ownOnly(req.user) ? null : (cfg.autoApprove || null),
       sumberDana: SUMBER_DANA,
       // Boleh mengisi "requestedById" beda dari diri sendiri (catat atas nama
       // pengaju, D-181) — dihitung SERVER, frontend cuma menampilkan/menyembunyikan
@@ -100,7 +101,9 @@ expenseSubmissionRouter.get("/expense-submissions", requireAnyPermission(...BACA
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       take: paged ? ambil + 1 : ambil,
       skip: lewati,
-      include: submissionInclude,
+      // Daftar berpaginasi (klien mobile) TIDAK membawa riwayat audit per baris (hingga 50 x N baris);
+      // riwayat lengkap ada di GET /:id. Tanpa ?limit perilaku lama tidak berubah.
+      include: paged ? { ...submissionInclude, auditTrail: undefined } : submissionInclude,
     });
     const adaLagi = paged && rows.length > ambil;
     const halaman = adaLagi ? rows.slice(0, ambil) : rows;
@@ -197,12 +200,13 @@ expenseSubmissionRouter.get("/expense-submissions/:id", requireAnyPermission(...
 
 expenseSubmissionRouter.post("/expense-submissions", requireAnyPermission(...TULIS), async (req, res) => {
   try {
-    wajibKunci(req);
     let workspace = String(req.body.workspace || "DELIVERY").toUpperCase();
     let body = req.body;
+    // Urutan: otorisasi (403/404) lebih dulu, baru kelengkapan permintaan (428).
     if (ownOnly(req.user)) {
       if (workspace !== "DELIVERY") throw err("Akun ini hanya boleh mengajukan biaya Delivery", 403);
       body = sanitasiBodyOwn(body);
+      wajibKunci(req);
       await pastikanRelasiMilikSendiri(prisma, req.user, body);
     }
     const created = await buatPengajuan(prisma, { workspace, user: req.user, body });
@@ -212,11 +216,11 @@ expenseSubmissionRouter.post("/expense-submissions", requireAnyPermission(...TUL
 
 expenseSubmissionRouter.patch("/expense-submissions/:id", requireAnyPermission(...TULIS), async (req, res) => {
   try {
-    wajibKunci(req);
     let body = req.body;
     if (ownOnly(req.user)) {
       await pastikanMilikSendiri(prisma, req.params.id, req.user, { statusBoleh: STATUS_EDITABLE_OWN });
       body = sanitasiBodyOwn(body);
+      wajibKunci(req);
       await pastikanRelasiMilikSendiri(prisma, req.user, body);
     }
     const updated = await ubahPengajuanDraft(prisma, { id: req.params.id, user: req.user, body });
@@ -226,8 +230,7 @@ expenseSubmissionRouter.patch("/expense-submissions/:id", requireAnyPermission(.
 
 expenseSubmissionRouter.post("/expense-submissions/:id/ajukan", requireAnyPermission(...TULIS), async (req, res) => {
   try {
-    wajibKunci(req);
-    if (ownOnly(req.user)) await pastikanMilikSendiri(prisma, req.params.id, req.user);
+    if (ownOnly(req.user)) { await pastikanMilikSendiri(prisma, req.params.id, req.user); wajibKunci(req); }
     const idemKey = req.headers["idempotency-key"] || null;
     const result = await ajukanPengajuan(prisma, { id: req.params.id, user: req.user, idemKey });
     res.json(result);
@@ -236,8 +239,7 @@ expenseSubmissionRouter.post("/expense-submissions/:id/ajukan", requireAnyPermis
 
 expenseSubmissionRouter.post("/expense-submissions/:id/tarik", requireAnyPermission(...TULIS), async (req, res) => {
   try {
-    wajibKunci(req);
-    if (ownOnly(req.user)) await pastikanMilikSendiri(prisma, req.params.id, req.user);
+    if (ownOnly(req.user)) { await pastikanMilikSendiri(prisma, req.params.id, req.user); wajibKunci(req); }
     const result = await tarikPengajuan(prisma, { id: req.params.id, user: req.user });
     res.json(result);
   } catch (e) { handleErr(e, res); }
@@ -245,8 +247,7 @@ expenseSubmissionRouter.post("/expense-submissions/:id/tarik", requireAnyPermiss
 
 expenseSubmissionRouter.post("/expense-submissions/:id/batalkan", requireAnyPermission(...TULIS), async (req, res) => {
   try {
-    wajibKunci(req);
-    if (ownOnly(req.user)) await pastikanMilikSendiri(prisma, req.params.id, req.user);
+    if (ownOnly(req.user)) { await pastikanMilikSendiri(prisma, req.params.id, req.user); wajibKunci(req); }
     const result = await batalkanPengajuan(prisma, { id: req.params.id, user: req.user, reason: req.body?.reason });
     res.json(result);
   } catch (e) { handleErr(e, res); }
@@ -274,10 +275,9 @@ expenseSubmissionRouter.post("/expense-submissions/:id/metadata", requireAnyPerm
 const uploadBukti = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 expenseSubmissionRouter.post("/expense-submissions/:id/bukti", requireAnyPermission(...TULIS), uploadBukti.single("bukti"), async (req, res) => {
   try {
-    wajibKunci(req);
     if (!req.file) throw err("File bukti wajib disertakan");
     // Bukti foto akun own-only hanya boleh diubah pada pengajuan MILIK SENDIRI yang masih draf/perlu revisi.
-    if (ownOnly(req.user)) await pastikanMilikSendiri(prisma, req.params.id, req.user, { statusBoleh: STATUS_EDITABLE_OWN });
+    if (ownOnly(req.user)) { await pastikanMilikSendiri(prisma, req.params.id, req.user, { statusBoleh: STATUS_EDITABLE_OWN }); wajibKunci(req); }
     const s = await prisma.expenseSubmission.findUnique({ where: { id: req.params.id }, select: { id: true, requestedById: true, createdById: true } });
     if (!s) throw err("Pengajuan tidak ditemukan", 404);
     const { url } = await simpanFotoBukti(req.file.buffer);
