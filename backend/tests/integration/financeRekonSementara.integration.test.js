@@ -63,7 +63,7 @@ test("Aturan penyelesaian (murni): butuh status DRAFT, mutasi asli, semua cocok,
   // periode TIDAK boleh Selesai selama akun suspense itu masih bersaldo,
   // walau selisih bank sudah nol (lihat test khusus di
   // financeRekonsiliasiSementara.integration.test.js).
-  assert.equal(evaluasiSelesai({ status: "DRAFT", jumlahBaris: 3, belumCocok: 0, selisih: 0 }).syarat.length, 5);
+  assert.equal(evaluasiSelesai({ status: "DRAFT", jumlahBaris: 3, belumCocok: 0, selisih: 0 }).syarat.length, 7); // B3: + TANPA_EXCEPTION, SNAPSHOT_BERLAKU
   assert.equal(evaluasiSelesai({ status: "DRAFT", jumlahBaris: 3, belumCocok: 0, selisih: 0, danaBelumTeridentifikasi: 1028719 }).bisa, false, "dana suspense menahan penyelesaian walau selisih bank nol");
 });
 
