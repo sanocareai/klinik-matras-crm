@@ -548,6 +548,7 @@ model User {
   finPurchasesReceiptVerified            FinPurchase[]                   @relation("FinPurchaseReceiptVerifier")
   finPurchaseAdvanceApplicationsCreated  FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationCreator")
   expenseSubmissionsRequested            ExpenseSubmission[]             @relation("ExpenseSubmissionRequester")
+  expenseSubmissionsRevisionRequested    ExpenseSubmission[]             @relation("ExpenseSubmissionRevisionRequester")
   expenseSubmissionsPic                  ExpenseSubmission[]             @relation("ExpenseSubmissionPic")
   expenseSubmissionsAsDriver             ExpenseSubmission[]             @relation("ExpenseSubmissionDriver")
   expenseSubmissionsAsHelper             ExpenseSubmission[]             @relation("ExpenseSubmissionHelper")
@@ -3420,6 +3421,7 @@ enum ExpenseSubmissionStatus {
   DIBAYAR // cermin FinExpense DIBAYAR
   DITOLAK // cermin FinExpense DITOLAK
   DIBATALKAN // cermin FinExpense DIBATALKAN, ATAU dibatalkan sebelum FinExpense ada
+  PERLU_REVISI // reviewer meminta pemilik memperbaiki (alasan wajib) — FinExpense ditarik ke DRAFT seperti tarik; pemilik edit lalu ajukan ulang
 }
 
 // SATU pengajuan biaya dari sebuah workspace divisi. Menjadi FinExpense
@@ -3514,6 +3516,16 @@ model ExpenseSubmission {
 
   submittedAt DateTime? @map("submitted_at")
   withdrawnAt DateTime? @map("withdrawn_at")
+
+  // PERLU_REVISI (24 September 2026): reviewer (finance:approve) MEMINTA pemilik memperbaiki
+  // pengajuan yang sedang MENUNGGU_PERSETUJUAN. Beda dari tarik (dilakukan pemilik sendiri,
+  // withdrawnAt) dan batalkan (mengakhiri pengajuan). Kolom ini menyimpan permintaan TERAKHIR
+  // agar mudah tampil; riwayat lengkap (siapa, kapan, alasan, status sebelum/sesudah) ada di
+  // ExpenseSubmissionAudit.
+  revisionReason      String?   @map("revision_reason")
+  revisionRequestedById String?   @map("revision_requested_by")
+  revisionRequestedBy User?     @relation("ExpenseSubmissionRevisionRequester", fields: [revisionRequestedById], references: [id], onDelete: SetNull)
+  revisionRequestedAt DateTime? @map("revision_requested_at")
 
   // SATU FinExpense per pengajuan — unique di sisi ini menegakkan aturan itu di
   // level database, bukan cuma di level aplikasi.

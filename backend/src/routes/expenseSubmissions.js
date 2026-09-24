@@ -12,6 +12,7 @@ import { getWorkspaceConfig, daftarWorkspaceAktif, SUMBER_DANA } from "../servic
 import {
   buatPengajuan, ubahPengajuanDraft, ajukanPengajuan, tarikPengajuan, batalkanPengajuan,
   ubahMetadataPengajuan, cekKemungkinanDuplikat, submissionInclude, bentukSubmission, SubmissionError,
+  mintaRevisiPengajuan, catatAudit,
 } from "../services/expenseSubmission/service.js";
 import {
   ownOnly, sanitasiBodyOwn, pastikanMilikSendiri, pastikanRelasiMilikSendiri, STATUS_EDITABLE_OWN,
@@ -250,6 +251,16 @@ expenseSubmissionRouter.post("/expense-submissions/:id/batalkan", requireAnyPerm
   } catch (e) { handleErr(e, res); }
 });
 
+// Minta revisi — reviewer (finance:approve) mengembalikan pengajuan ke pemilik. Alasan wajib;
+// Idempotency-Key wajib untuk semua klien; tidak tersedia bagi akun own-only.
+expenseSubmissionRouter.post("/expense-submissions/:id/minta-revisi", requireAnyPermission(P.FINANCE_APPROVE), async (req, res) => {
+  try {
+    if (!req.headers["idempotency-key"]) throw err("Header Idempotency-Key wajib untuk meminta revisi", 428);
+    const result = await mintaRevisiPengajuan(prisma, { id: req.params.id, user: req.user, reason: req.body?.reason });
+    res.json(result);
+  } catch (e) { handleErr(e, res); }
+});
+
 expenseSubmissionRouter.post("/expense-submissions/:id/metadata", requireAnyPermission(...CAN_SUBMIT), async (req, res) => {
   try {
     const result = await ubahMetadataPengajuan(prisma, { id: req.params.id, user: req.user, reason: req.body?.reason, changes: req.body?.changes });
@@ -274,6 +285,7 @@ expenseSubmissionRouter.post("/expense-submissions/:id/bukti", requireAnyPermiss
       prisma.expenseSubmissionProof.updateMany({ where: { submissionId: s.id, supersededAt: null }, data: { supersededAt: new Date() } }),
       prisma.expenseSubmissionProof.create({ data: { submissionId: s.id, url, version: (versiTerakhir?.version || 0) + 1, uploadedById: req.user.id } }),
     ]);
+    await catatAudit(prisma, { submissionId: s.id, actorId: req.user.id, field: "bukti", before: versiTerakhir ? `versi ${versiTerakhir.version}` : null, after: `versi ${proof.version}`, reason: "Bukti foto diunggah" });
     res.status(201).json(proof);
   } catch (e) { handleErr(e, res); }
 });

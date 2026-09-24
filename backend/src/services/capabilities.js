@@ -47,6 +47,7 @@ export function capabilitiesFor(user) {
     submit: expenseSubmit || financePost || financeAdmin,
     verify: financeAdmin,
     approve: financeApprove,
+    requestRevision: financeApprove,
     pay: financePost,
   };
 

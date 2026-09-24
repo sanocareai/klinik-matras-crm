@@ -13,7 +13,7 @@ test("Driver dan Helper TIDAK punya akses Delivery Control", () => {
   for (const r of ["DRIVER", "HELPER"]) {
     const c = cap(r);
     assert.equal(c.deliveryControlApp, false, r);
-    assert.deepEqual(c.deliveryExpense, { submit: false, verify: false, approve: false, pay: false }, r);
+    assert.deepEqual(c.deliveryExpense, { submit: false, verify: false, approve: false, requestRevision: false, pay: false }, r);
   }
 });
 
@@ -38,11 +38,11 @@ test("akun multi-role: Driver + Admin mendapat akses lewat izin Admin (bukan lew
 });
 
 test("izin biaya armada terpisah: Dispatcher hanya mengajukan; Approver hanya menyetujui; Finance tidak memverifikasi", () => {
-  assert.deepEqual(cap("DISPATCHER").deliveryExpense, { submit: true, verify: false, approve: false, pay: false });
-  assert.deepEqual(cap("APPROVER").deliveryExpense, { submit: false, verify: false, approve: true, pay: false });
-  assert.deepEqual(cap("ACCOUNTANT").deliveryExpense, { submit: true, verify: false, approve: false, pay: true });
-  assert.deepEqual(cap("FINANCE").deliveryExpense, { submit: true, verify: false, approve: true, pay: true });
-  assert.deepEqual(cap("ADMIN").deliveryExpense, { submit: true, verify: true, approve: true, pay: true });
+  assert.deepEqual(cap("DISPATCHER").deliveryExpense, { submit: true, verify: false, approve: false, requestRevision: false, pay: false });
+  assert.deepEqual(cap("APPROVER").deliveryExpense, { submit: false, verify: false, approve: true, requestRevision: true, pay: false });
+  assert.deepEqual(cap("ACCOUNTANT").deliveryExpense, { submit: true, verify: false, approve: false, requestRevision: false, pay: true });
+  assert.deepEqual(cap("FINANCE").deliveryExpense, { submit: true, verify: false, approve: true, requestRevision: true, pay: true });
+  assert.deepEqual(cap("ADMIN").deliveryExpense, { submit: true, verify: true, approve: true, requestRevision: true, pay: true });
 });
 
 test("field capabilities lama tidak berubah (kompatibilitas klien Finance/Sales)", () => {
