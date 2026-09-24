@@ -1,6 +1,6 @@
 # Pemisahan Sano Driver dan Sano Delivery Control
 
-Status: fondasi + hardening selesai di branch `feat/delivery-control-app` (24 September 2026).
+Status: fondasi + hardening (putaran 2) selesai di branch `feat/delivery-control-app` (24 September 2026).
 Belum di-merge, belum di-deploy, belum ada build EAS, belum ada OTA. Sano Driver produksi tidak disentuh
 (`git diff origin/main -- driver-mobile` = 0 baris).
 
@@ -95,6 +95,51 @@ Revisi dibedakan dari tarik/batalkan: pelaku (reviewer vs pemilik), alasan wajib
 DIBATALKAN), kolom `revision_*` dan baris audit tersendiri. Setiap mutation menulis `ExpenseSubmissionAudit`:
 actor, waktu, alasan, status sebelum/sesudah.
 
+## 5a. Otorisasi foto struk (media)
+
+Handler media Finance yang sudah ada (`routes/financeMedia.js`, `bolehLihatBukti`) diperluas, TANPA storage atau endpoint baru dan TANPA melebarkan `finance:read`:
+
+- Pemilik (`requestedBy`/`createdBy`) Pengajuan Biaya workspace **DELIVERY** boleh membaca foto bukti pada pengajuannya sendiri, termasuk sebelum
+  pengajuan menjadi FinExpense. Syarat izin: `delivery:expense:own:read` atau izin pengajuan lama.
+- Tidak berlaku untuk: pengajuan orang lain, workspace selain DELIVERY, media Finance/FinExpense yang bukan miliknya, bukti pembayaran pelanggan,
+  atau daftar global. `finance:read` tetap satu-satunya jalan melihat semua.
+- Mekanisme: header Bearer, atau URL bertanda-tangan (`POST /finance/media/sign`) berumur maksimal 10 menit. Nama berkas = hash isi (`<sha1>.jpg`);
+  URL tidak memuat path penyimpanan. Tanda tangan kedaluwarsa, rusak, atau milik berkas lain ditolak 403.
+- Penggantian bukti = unggah versi baru (tidak ada jalur hapus). Hanya pada pengajuan MILIK SENDIRI berstatus DRAF/PERLU_REVISI untuk akun own-only dan
+  pemegang izin pengajuan lama tanpa hak Finance; staf Finance (`finance:post`/`finance:admin`) tetap boleh melampirkan kapan pun (perilaku lama).
+- Delivery Control membuka foto lewat URL bertanda-tangan (ulang otomatis sekali bila kedaluwarsa, lalu tombol "Coba lagi").
+- Catatan performa: pemeriksaan kepemilikan memakai satu query per foto pada `expense_submission_proofs` (tabel kecil; indeks `url` belum ditambahkan
+  agar putaran ini tanpa migrasi baru).
+
+## 5b. Kebijakan auto-approve (final)
+
+Aturan lama (`config.js`, workspace DELIVERY): BBM/TOL/PARKIR dengan nominal <= Rp300.000 disetujui otomatis saat ajukan (audit `actorId` null).
+
+- Pengajuan **mandiri** oleh akun own-only (Leader Driver, Driver, Helper; hanya `delivery:expense:own:*`) **tidak pernah** auto-approve: selalu
+  MENUNGGU_PERSETUJUAN dan FinExpense-nya MENUNGGU_APPROVAL. Audit mencatat alasannya.
+- Aktor diturunkan SERVER-SIDE dari izin (`ownOnly(user)`); tidak ada field klien (`source`, `autoApprove`, header) yang berpengaruh.
+- Tidak berubah: Dispatcher, Admin, Owner, Finance, Sales, dan multi-role yang memegang jalur pengajuan lama; workspace tanpa kebijakan tidak pernah auto-approve.
+- Tes: unit kebijakan + matriks integrasi 8 role x 4 kategori (BBM, TOL, PARKIR, SERVIS) x 3 nominal (250.000, 300.000, 300.001) = 96 sel.
+
+## 5c. Web: PERLU_REVISI
+
+`ArmadaPengajuanBiaya.jsx`: label/badge "Perlu Revisi" (oranye), filter status, detail dengan alasan, reviewer, waktu, dan Riwayat Revisi (permintaan dan pengajuan
+ulang); riwayat perubahan berupa kalimat Indonesia. Pemohon dapat Perbaiki/Ajukan Ulang/Batalkan saat PERLU_REVISI sesuai kontrak backend memakai API yang sudah
+ada; web tidak memanggil `minta-revisi` dan tidak menambah mutation. Status yang tidak dikenal tampil "Status tidak dikenal (X)" tanpa aksi. Logika di
+`features/armada/pengajuanBiayaStatus.js` (murni, teruji). `frontend/dist` tidak dibangun ulang di branch ini; bangun dari worktree bersih setelah merge.
+
+## 5d. Stabilitas test integrasi (akar kontensi)
+
+Diukur: `truncateAll()` men-TRUNCATE ~100 tabel SETIAP tes (12-17 detik di Postgres Docker; satu fsync per tabel) dan `testPrisma` memakai batas transaksi bawaan
+Prisma (2 dtk menunggu koneksi, 5 dtk total). Saat mesin ramai, hook setup/cleanup gagal dengan P2028 "Unable to start a transaction in the given time" dan
+menggagalkan tes berikutnya (efek berantai). Database tes bersama antar sesi memperburuk.
+
+Perbaikan (bukan sekadar menaikkan timeout): (1) `truncateAll` hanya men-TRUNCATE tabel yang berisi (sekitar 3-5x lebih cepat; hasil tetap database kosong);
+(2) `testPrisma` memakai `transactionOptions` yang sama dengan `src/db.js`; (3) `npm run test:integration` kini memakai `tests/integration/setup/runIsolated.js`:
+database unik `km_it_<waktu>_<pid>_test` per run, `migrate deploy`, jalan serial, lalu `DROP` (hanya nama berpola aman yang dibuat proses itu; `KEEP_TEST_DB=1` untuk
+investigasi). `test:integration:shared` mempertahankan cara lama. Audit statis 48 berkas: semua menutup server, memutus Prisma, memakai port efemeral; tidak
+ditemukan handle atau koneksi bocor.
+
 ## 6. Migration dan API
 
 **Migrasi (aditif, tidak destruktif):** `20260924110000_expense_submission_perlu_revisi` — 1 nilai enum
@@ -113,62 +158,60 @@ tidak membawa riwayat audit per baris; `config` untuk akun own-only tidak memuat
 
 ## 7. Test dan build
 
-Hasil terakhir (24 September 2026, PostgreSQL uji terisolasi `km_dctl2_test`):
+Hasil terakhir (24 September 2026):
 
 | Cek | Hasil |
 |---|---|
-| Backend unit | 613/613 |
+| Backend unit | 622/622 |
 | Paket shared | 29/29 |
-| Delivery Control (konfigurasi, sumber UI) | 12/12 |
+| Delivery Control (konfigurasi, sumber UI) | 13/13 |
+| Frontend web | 143/143 (termasuk 6 tes PERLU_REVISI) |
 | Sano Driver (tes existing) | 30/30 |
-| Integrasi terarah (pengajuan, biaya milik sendiri, PERLU_REVISI, gerbang Control, persetujuan, peran Finance, idempotensi, auth mobile, media, insentif) | 121/121 di run bersih + `expenseSubmission` 21/21 dijalankan ulang |
-| Bundle Android | Driver lulus (bundle identik dengan sebelum perubahan: `index-2dfd9255…`), Control lulus |
+| Integrasi penuh, run 1 (database unik, serial) | 535/535 lulus (0 gagal) |
+| Integrasi penuh, run 2 (database unik baru, serial) | 535/535 lulus (0 gagal) |
+| Bundle Android | Driver lulus (bundle identik dengan sebelum perubahan: `index-2dfd9255...`), Control lulus |
+| Build Vite web (ke folder sementara) | lulus |
+| Manifest Android (`expo prebuild`) | Control: INTERNET, penyimpanan, SYSTEM_ALERT_WINDOW, VIBRATE; izin lokasi, foreground service, RECORD_AUDIO dihapus. Driver: sama seperti sebelumnya |
 | `git diff origin/main -- driver-mobile` | 0 baris |
 
-Catatan jujur: run terarah yang bersih menampilkan 2 kegagalan di `expenseSubmission` (kegagalan satu hook
-`Unable to start a transaction in the given time` dan efek berantainya) saat 2 suite tes sesi lain berjalan di
-Postgres yang sama; file itu dijalankan ulang terpisah dan lulus 21/21 (satu run lain gagal 1 tes berbeda, lulus
-saat diulang). Ini kontensi database lokal, bukan regresi. Tidak ada satu run tunggal 142/142.
-
-Ringkasan cakupan:
-
-- Unit: matriks izin (7 role), capabilities, `ownOnly`, paket shared, konfigurasi dua app, sumber UI.
-- Integrasi (PostgreSQL nyata): gerbang Control; biaya milik sendiri (workspace, milik sendiri vs orang lain, relasi,
-  field terlarang, endpoint Finance ditolak, idempotensi, paginasi, kebocoran data); PERLU_REVISI (semua transisi,
-  pembeda tarik/batalkan, integrasi Finance setelah revisi, idempotensi paralel, audit lengkap); regresi pengajuan,
-  persetujuan, peran Finance, idempotensi, auth mobile, media, insentif.
-- Bundle Android: Driver dan Control keduanya lulus. Manifest hasil `expo prebuild`: Control tanpa izin lokasi.
+Audit: RBAC (matriks + tes izin/kepemilikan), idempotensi (semua mutation own-only 428 tanpa kunci, replay dan paralel), N+1 (daftar berpaginasi memakai satu query
+dengan include batch, tanpa audit per baris), kebocoran data (config own-only tanpa ambang auto-approve, media hanya milik sendiri, kolom internal tidak ikut di
+`/delivery-control/session`), batas migrasi (satu migrasi aditif di putaran 1; putaran 2 tanpa migrasi baru).
 
 ## 8. Rilis dan rollback
 
-Belum ada yang dirilis.
+Belum ada yang dirilis, dimigrasi di produksi, atau dibangun di EAS.
 
-**Urutan rilis backend:** merge → deploy (migrasi otomatis lewat `prisma migrate deploy` saat container start).
-Migrasi aditif; aplikasi lama tidak membaca kolom baru. Web `ArmadaPengajuanBiaya` belum punya label untuk
-`PERLU_REVISI` (tampil sebagai teks status mentah) — status ini hanya muncul bila reviewer memakai
-`minta-revisi` (hanya dari app Control), jadi aman sampai label web ditambahkan.
+**Urutan rilis backend:** merge, lalu deploy (migrasi `20260924110000` otomatis lewat `prisma migrate deploy` saat container start; aditif). Setelah merge, bangun
+`frontend/dist` dari worktree bersih di HEAD (bukan dari tree kotor) agar web memuat label PERLU_REVISI. Uji sebelum deploy: `npm run test:integration` (terisolasi).
 
-**Rollback:** `git revert` commit kode. Nilai enum Postgres tidak dihapus (tidak perlu; nilai yang tidak dipakai tidak berbahaya).
-Bila ada baris berstatus PERLU_REVISI saat rollback, pemiliknya harus mengajukan ulang atau membatalkannya lewat
-SQL; pemeriksaan: `SELECT count(*) FROM expense_submissions WHERE status='PERLU_REVISI'`.
+**Rollback:** `git revert` commit kode (backend/web). Nilai enum Postgres tidak dihapus (tidak perlu). Bila ada baris PERLU_REVISI saat rollback:
+`SELECT count(*) FROM expense_submissions WHERE status='PERLU_REVISI'`; pemiliknya mengajukan ulang atau membatalkannya. Izin baru (`delivery:*`) hilang bersama
+revert kode; tidak ada data yang bergantung padanya.
 
 **Sano Driver:** tidak berubah; jangan publish OTA dari branch ini.
 
-**Sano Delivery Control (pertama kali):** `eas init` (project BARU, jangan memakai project ID Driver) → set
-`EAS_PROJECT_ID` → `eas build -p android --profile preview` → uji akun Admin/Owner/Dispatcher (masuk) dan
-Leader Driver/Driver/Helper (ditolak) → periksa manifest APK tanpa izin lokasi → baru `production`.
-Kuota EAS saat ini habis.
+**Sano Delivery Control (pertama kali):** `eas init` (project BARU, jangan memakai project ID Driver), set `EAS_PROJECT_ID`, lalu
+`eas build -p android --profile preview`, QA perangkat (lihat bagian 9), periksa manifest APK tanpa izin lokasi, baru `production`.
 
 ## 9. Blocker dan keputusan tersisa
 
-- Build EAS Control dan preview Driver belum bisa dibuat (kuota EAS, `eas init` belum dijalankan).
-- Layar biaya **belum** dipasang di Sano Driver (sengaja, menunggu preview EAS). Izin server dan antrean draf offline
-  sudah siap.
-- Foto bukti: handler media (`financeMedia.js`) hanya mengizinkan pemilik `FinExpense`; bukti yang diunggah sebelum
-  pengajuan belum tertaut FinExpense sehingga akun tanpa `finance:read` (Dispatcher, kelak Driver) belum bisa
-  MENAMPILKAN kembali foto miliknya dari server. Perlu penyesuaian kecil di sisi media (area sesi Finance).
-- Auto-approve (kebijakan Finance: BBM/tol/parkir ≤ Rp300.000) berlaku juga untuk pengajuan Driver bila kelak
-  dipasang; bila tidak diinginkan, batasi di `config.js` (bukan di app).
-- Label `PERLU_REVISI` di web `ArmadaPengajuanBiaya` (area sesi Pengajuan Biaya).
-- `sumberDana` UANG_MUKA_OPERASIONAL belum tersedia di form Control (butuh pemilih uang muka).
-- Aksi bayar dan verifikasi bukti belum ada di UI Control (tidak diminta; API dan izin sudah siap).
+- **EAS/perangkat:** `eas init` Control belum dijalankan, kuota EAS habis, belum ada APK preview. QA perangkat yang belum bisa dilakukan: login Admin/Owner/Dispatcher
+  vs Leader Driver/Driver/Helper, kamera struk, tampilan foto struk lewat URL bertanda-tangan di HP, draf lokal, mode gelap/terang, dan build release (Proguard).
+- Layar biaya **belum** dipasang di Sano Driver (sengaja, menunggu preview EAS). Izin server, antrean draf offline, dan akses foto sudah siap.
+- `sumberDana` UANG_MUKA_OPERASIONAL belum ada di form Control (butuh pemilih uang muka); aksi bayar dan verifikasi bukti belum ada di UI Control (API dan izin siap).
+- Indeks `expense_submission_proofs(url)` bisa ditambahkan (migrasi aditif) bila tabel membesar.
+- Ditutup putaran ini: akses foto struk pemilik, kebijakan auto-approve, label web PERLU_REVISI, stabilitas test integrasi.
+
+## 10. Catatan pembersihan artefak
+
+- `C:\tmp\km-final` (worktree sisa fase insentif) dihapus pada 24 September 2026 dengan **provenance yang tidak sepenuhnya kuat**: dasar identifikasi hanya nama folder,
+  waktu pembuatan, dan konteks bahwa folder itu dibuat oleh proses ini; pemeriksaan isi (`backend/.env` dan `node_modules` hasil `npm ci`) tidak cocok dengan dugaan
+  (kemungkinan sebagian sudah terhapus oleh `git worktree remove` yang gagal). Tidak ada pekerjaan yang hilang: worktree itu tidak terdaftar dan seluruh kerja sudah ter-commit di branch.
+- Artefak sementara lain (`chk`, `chk2`, `chk3`, folder `*-export`, `fe-build-check`) dibuat dan dihapus oleh proses yang sama (junction dilepas dulu dengan `rmdir`,
+  target diverifikasi utuh). Artefak lain di `C:\tmp` tanpa marker kepemilikan yang tegas TIDAK disentuh.
+
+## 11. Temuan selama gate integrasi
+
+- **Race idempotensi (kode, diperbaiki):** retry segera dengan kunci sama bisa mendapat 409 karena baris DONE disimpan setelah respons dikirim. Kini disimpan sebelum respons; tes regresi `idempotencyPersistBeforeResponse`.
+- **P1001 "Can't reach database server" (infrastruktur):** satu run awal gagal 21 tes dalam satu berkas (proxy port Docker Desktop; Postgres tidak restart). Runner kini mengulang sekali HANYA berkas yang seluruh kegagalannya P1001; kegagalan lain tidak pernah diulang. Kedua run final lulus tanpa perlu ulang.
