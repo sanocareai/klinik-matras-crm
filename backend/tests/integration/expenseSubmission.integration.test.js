@@ -382,14 +382,14 @@ test("Cutover TIDAK meregresi data lama: VehicleExpense yang lahir SEBELUM cutov
 
 // ── Wave 2 (24 September 2026): input cepat + 4 sumber dana + koreksi pasca-approval ──
 
-test("Urgent via Finance: FINANCE mencatat atas nama driver, sumberDana UANG_MUKA_OPERASIONAL -> mode UTANG (bukan crash 400 minta cashAccountId)", async () => {
+test("Urgent via Finance: FINANCE mencatat atas nama driver, sumberDana REKENING_PERUSAHAAN -> mode UTANG (bukan crash 400 minta cashAccountId)", async () => {
   const { user: driver } = await createTestUser({ roles: ["DRIVER"] });
   const { token: tokenFinance } = await createTestUser({ roles: ["FINANCE"] });
 
   const created = await raw("POST", "/api/finance/expense-submissions", {
     token: tokenFinance,
     body: pengajuanBadan({
-      expenseType: "SERVIS", amount: 800_000, requestedById: driver.id, sumberDana: "UANG_MUKA_OPERASIONAL",
+      expenseType: "SERVIS", amount: 800_000, requestedById: driver.id, sumberDana: "REKENING_PERUSAHAAN",
       urgentReason: "Mobil mogok di jalan, servis darurat", sourceNote: "Telepon Agung 23/9 16:40",
     }),
   });

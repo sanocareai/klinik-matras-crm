@@ -1,0 +1,18 @@
+services:
+  postgres:
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    env_file:
+      - ${SANSS_PERSIST_ROOT:?set SANSS_PERSIST_ROOT to the verified persistent root}/backend/.env
+    volumes:
+      - ./frontend/dist:/frontend/dist:ro
+      - ${SANSS_PERSIST_ROOT:?set SANSS_PERSIST_ROOT to the verified persistent root}/frontend/dist-driver:/frontend/dist-driver
+      - ${SANSS_PERSIST_ROOT:?set SANSS_PERSIST_ROOT to the verified persistent root}/backend/uploads:/app/uploads
+      - ${SANSS_PERSIST_ROOT:?set SANSS_PERSIST_ROOT to the verified persistent root}/backend/data:/app/data
+
+volumes:
+  pgdata:
+    external: true
+    name: klinik-matras_pgdata

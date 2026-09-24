@@ -51,6 +51,7 @@ import { kendaliRouter }    from "./routes/kendali.js";
 import { financeRouter }    from "./routes/finance.js";
 import { financeTxRouter }  from "./routes/financeTransactions.js";
 import { financeKasbonRouter } from "./routes/financeKasbon.js";
+import { financeUangMukaRouter } from "./routes/financeOperationalAdvance.js";
 import { financePenerimaanRouter } from "./routes/financePenerimaan.js";
 import { financeApprovalsRouter } from "./routes/financeApprovals.js";
 import { financePembayaranRouter } from "./routes/financePembayaran.js";
@@ -221,6 +222,7 @@ app.use("/api/finance",      financePushHooks); // S11: pemicu push (mengamati r
 app.use("/api/finance",      financeRouter);
 app.use("/api/finance",      financeTxRouter); // additive, tidak mengubah financeRouter
 app.use("/api/finance",      financeKasbonRouter);
+app.use("/api/finance",      financeUangMukaRouter);
 app.use("/api/finance",      financePenerimaanRouter);
 app.use("/api/finance",      financeApprovalsRouter); // read-model inbox persetujuan (S4)
 app.use("/api/finance",      financePembayaranRouter); // pembayaran pelanggan: daftar/detail/verifikasi/tolak (S5)

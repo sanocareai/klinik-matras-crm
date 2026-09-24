@@ -92,7 +92,8 @@ export async function ambangNota(db) {
 export function notaWajibDenganAmbang({ jenis, mode, amount, categoryCode }, ambang) {
   if (jenis === "purchase") return true;
   if (categoryCode && KATEGORI_TANPA_NOTA.has(categoryCode)) return false;
-  if (mode === "REIMBURSEMENT") return true;
+  // Pertanggungjawaban uang muka operasional = uang yang sudah dipegang orang lain: bukti selalu wajib.
+  if (mode === "REIMBURSEMENT" || mode === "UANG_MUKA") return true;
   return Number(amount) >= ambang;
 }
 

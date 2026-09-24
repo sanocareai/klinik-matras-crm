@@ -517,8 +517,6 @@ CREATE INDEX "driver_devices_v2_user_id_last_seen_at_idx" ON "driver_devices_v2"
 CREATE UNIQUE INDEX "driver_devices_v2_user_id_device_id_key" ON "driver_devices_v2"("user_id", "device_id");
 
 -- CreateIndex
-CREATE INDEX "Conversation_customerId_channel_idx" ON "Conversation"("customerId", "channel");
-
 -- AddForeignKey
 ALTER TABLE "v2_migration_exceptions" ADD CONSTRAINT "v2_migration_exceptions_run_id_fkey" FOREIGN KEY ("run_id") REFERENCES "v2_migration_runs"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

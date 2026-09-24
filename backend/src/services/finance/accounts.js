@@ -39,6 +39,7 @@ export const SYSTEM_KEYS = Object.freeze({
   BANK: "BANK",
   PIUTANG_USAHA: "PIUTANG_USAHA",
   PIUTANG_KARYAWAN: "PIUTANG_KARYAWAN",
+  UANG_MUKA_OPERASIONAL: "UANG_MUKA_OPERASIONAL",
   PERSEDIAAN_BAHAN: "PERSEDIAAN_BAHAN",
   UTANG_USAHA: "UTANG_USAHA",
   // GR/IR — barang SUDAH diterima gudang tapi tagihan supplier BELUM
@@ -104,6 +105,11 @@ export const DEFAULT_COA = Object.freeze([
     description: "Tagihan ke customer atas order yang SUDAH diserahkan tapi belum lunas." },
   { code: "1-1350", name: "Piutang Karyawan (Kasbon)", type: A, normalBalance: D, parent: "1-1000",
     systemKey: SYSTEM_KEYS.PIUTANG_KARYAWAN, cashFlowCategory: "OPERASI" },
+  // Uang Muka Operasional (24 Sep 2026): kas yang dipegang driver/PIC untuk biaya operasional,
+  // belum jadi beban sampai dipertanggungjawabkan. Kode 1-1360 diaudit belum terpakai.
+  { code: "1-1360", name: "Uang Muka Operasional", type: A, normalBalance: D, parent: "1-1000",
+    systemKey: SYSTEM_KEYS.UANG_MUKA_OPERASIONAL, cashFlowCategory: "OPERASI",
+    description: "Uang yang diberikan ke pemegang (driver/PIC) untuk biaya operasional dan belum dipertanggungjawabkan." },
   { code: "1-1400", name: "Persediaan Bahan Baku", type: A, normalBalance: D, parent: "1-1000",
     systemKey: SYSTEM_KEYS.PERSEDIAAN_BAHAN, cashFlowCategory: "OPERASI",
     description: "Nilai bahan di gudang. Kuantitasnya TETAP milik ledger stok (stock_movements) — akun ini cuma nilai rupiahnya." },

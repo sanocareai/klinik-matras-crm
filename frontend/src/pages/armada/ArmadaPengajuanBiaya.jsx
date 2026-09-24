@@ -92,6 +92,8 @@ function MetaField({ field, value, onChange }) {
 
 const KOSONG = {
   expenseType: "", date: "", amount: "", vendorName: "", paymentMethod: "", sumberDana: "",
+  // Uang muka operasional yang dipakai (wajib bila sumberDana = UANG_MUKA_OPERASIONAL).
+  advanceId: "",
   jobId: "", routeId: "", vehicleId: "", driverId: "", helperId: "", picUserId: "",
   description: "", notes: "", metadata: {},
   // Catat atas nama pengaju (Finance/Dispatcher, D-181) — kosong = pengaju sendiri.
@@ -257,7 +259,7 @@ export default function ArmadaPengajuanBiaya() {
     setEditingId(r.id);
     setForm({
       expenseType: r.expenseType, date: r.date.slice(0, 10), amount: String(r.amount),
-      vendorName: r.vendorName || "", paymentMethod: r.paymentMethod || "", sumberDana: r.sumberDana || "",
+      vendorName: r.vendorName || "", paymentMethod: r.paymentMethod || "", sumberDana: r.sumberDana || "", advanceId: r.advanceId || "",
       jobId: r.jobId || "", routeId: r.routeId || "", vehicleId: r.vehicleId || "",
       driverId: r.driverId || "", helperId: r.helperId || "", picUserId: r.picUserId || "",
       description: r.description || "", notes: r.notes || "", metadata: r.metadata || {},
@@ -272,7 +274,7 @@ export default function ArmadaPengajuanBiaya() {
     setEditingId(null);
     setForm({
       expenseType: r.expenseType, date: "", amount: String(r.amount),
-      vendorName: r.vendorName || "", paymentMethod: r.paymentMethod || "", sumberDana: r.sumberDana || "",
+      vendorName: r.vendorName || "", paymentMethod: r.paymentMethod || "", sumberDana: r.sumberDana || "", advanceId: "",
       jobId: "", routeId: "", vehicleId: r.vehicleId || "",
       driverId: r.driverId || "", helperId: r.helperId || "", picUserId: r.picUserId || "",
       description: "", notes: "", metadata: r.metadata || {},
@@ -302,9 +304,28 @@ export default function ArmadaPengajuanBiaya() {
     return () => clearTimeout(t);
   }, [form.vehicleId, form.expenseType, form.date, form.amount, form.picUserId, editingId]);
 
+  // Uang muka aktif milik pengaju/PIC — hanya dimuat bila sumber dananya Uang muka operasional.
+  const [uangMukaAktif, setUangMukaAktif] = useState({ memuat: false, items: [] });
+  const pakaiUangMuka = form.sumberDana === "UANG_MUKA_OPERASIONAL";
+  useEffect(() => {
+    if (!pakaiUangMuka) { setUangMukaAktif({ memuat: false, items: [] }); return undefined; }
+    let batal = false;
+    setUangMukaAktif((u) => ({ ...u, memuat: true }));
+    api.getUangMukaAktifPengajuan({ requestedById: form.requestedById || undefined, picUserId: form.picUserId || undefined })
+      .then((res) => {
+        if (batal) return;
+        const items = res.items || [];
+        setUangMukaAktif({ memuat: false, items });
+        setForm((f) => (f.advanceId && !items.some((i) => i.id === f.advanceId) ? { ...f, advanceId: "" } : f));
+      })
+      .catch(() => { if (!batal) setUangMukaAktif({ memuat: false, items: [] }); });
+    return () => { batal = true; };
+  }, [pakaiUangMuka, form.requestedById, form.picUserId]);
+
   async function submit(e) {
     e.preventDefault();
     if (!form.expenseType) { setError("Jenis biaya wajib dipilih"); return; }
+    if (pakaiUangMuka && !form.advanceId) { setError("Pilih uang muka aktif milik pengaju atau PIC untuk sumber dana Uang muka operasional"); return; }
     if (!form.date || !form.amount) { setError("Tanggal dan nominal wajib diisi"); return; }
     setSaving(true);
     setError("");
@@ -312,6 +333,7 @@ export default function ArmadaPengajuanBiaya() {
       const payload = {
         workspace: WORKSPACE, expenseType: form.expenseType, date: form.date, amount: Number(form.amount),
         vendorName: form.vendorName || null, paymentMethod: form.paymentMethod || null, sumberDana: form.sumberDana || null,
+        advanceId: pakaiUangMuka ? (form.advanceId || null) : null,
         jobId: form.jobId || null, routeId: form.routeId || null, vehicleId: form.vehicleId || null,
         driverId: form.driverId || null, helperId: form.helperId || null, picUserId: form.picUserId || null,
         description: form.description || undefined, notes: form.notes || null, metadata: form.metadata,
@@ -340,7 +362,7 @@ export default function ArmadaPengajuanBiaya() {
     const label = prompt("Nama template? (mis. \"BBM rute harian\")");
     if (!label?.trim()) return;
     try {
-      const { requestedById, requestedAt, urgentReason, sourceNote, ...payloadTemplate } = form;
+      const { requestedById, requestedAt, urgentReason, sourceNote, advanceId, ...payloadTemplate } = form;
       await api.createPengajuanTemplate({ label: label.trim(), division: WORKSPACE, payload: payloadTemplate });
       muatTemplateRecent();
     } catch (err) {
@@ -503,6 +525,19 @@ export default function ArmadaPengajuanBiaya() {
                 {config.sumberDana?.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
               </select>
             </Field>
+            {pakaiUangMuka && (
+              <Field label="Uang muka yang dipakai" required hint="Uang muka aktif atas nama pengaju atau PIC — biaya ini dipertanggungjawabkan dari saldonya, tanpa pembayaran lagi">
+                <select className={inputCls} value={form.advanceId} onChange={(e) => setField("advanceId", e.target.value)}>
+                  <option value="">{uangMukaAktif.memuat ? "Memuat…" : "— pilih uang muka —"}</option>
+                  {uangMukaAktif.items.map((u) => (
+                    <option key={u.id} value={u.id}>{u.advanceNumber} · {u.holderName} · saldo {formatRupiah(u.saldo)}{u.lewatTempo ? " · lewat tenggat" : ""}</option>
+                  ))}
+                </select>
+                {!uangMukaAktif.memuat && uangMukaAktif.items.length === 0 && (
+                  <span className="mt-1 block text-[11.5px] text-red">Belum ada uang muka aktif atas nama pengaju/PIC. Minta Finance memberikan uang muka lebih dulu, atau pilih sumber dana lain.</span>
+                )}
+              </Field>
+            )}
             <Field label="Metode Bayar" hint="Opsional, diisi Finance saat pembayaran kalau kosong">
               <Input value={form.paymentMethod} onChange={(e) => setField("paymentMethod", e.target.value)} placeholder="Cth. Transfer BCA" />
             </Field>
@@ -653,7 +688,7 @@ export default function ArmadaPengajuanBiaya() {
                     <TD className="text-ink2">{r.vehiclePlateSnapshot || "—"}</TD>
                     <TD className="text-ink2">{r.picNameSnapshot || r.driverNameSnapshot || "—"}</TD>
                     <TD numeric className="font-semibold text-ink">{formatRupiah(r.amount)}</TD>
-                    <TD><StatusBadge status={r.status} /></TD>
+                    <TD><StatusBadge status={r.status} />{r.needsReview && <Badge variant="orange" className="ml-1">Perlu Ditinjau</Badge>}</TD>
                   </TR>
                 ))}
               </TBody>
@@ -705,7 +740,13 @@ export default function ArmadaPengajuanBiaya() {
               <div><span className="text-ink3">Vendor/Lokasi</span><div className="font-medium text-ink">{detail.vendorName || "—"}</div></div>
               <div><span className="text-ink3">Pemohon</span><div className="font-medium text-ink">{detail.requestedBy?.name || "—"}</div></div>
               <div><span className="text-ink3">Sumber Dana</span><div className="font-medium text-ink">{config.sumberDana?.find((s) => s.code === detail.sumberDana)?.label || "—"}</div></div>
+              {detail.advance && <div><span className="text-ink3">Uang Muka</span><div className="font-medium text-ink">{detail.advance.advanceNumber} · {detail.advance.purpose}</div></div>}
             </div>
+            {detail.needsReview && (
+              <div className="rounded-btn bg-orangebg p-2.5 text-[12px] text-orange">
+                <strong>Perlu Ditinjau.</strong> {detail.reviewNote || "Pengajuan lama bersumber uang muka operasional, dicatat sebelum modul Uang Muka Operasional ada."}
+              </div>
+            )}
             <div><span className="text-ink3">Keterangan</span><div className="font-medium text-ink">{detail.description}</div></div>
             {detail.notes && <div><span className="text-ink3">Catatan</span><div className="text-ink2">{detail.notes}</div></div>}
 

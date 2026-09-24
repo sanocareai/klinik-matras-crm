@@ -14,6 +14,7 @@ import {
   ubahMetadataPengajuan, cekKemungkinanDuplikat, submissionInclude, bentukSubmission, SubmissionError,
 } from "../services/expenseSubmission/service.js";
 import { simpanFotoBukti } from "../services/finance/receipts.js";
+import { daftarAktifUntuk } from "../services/finance/operationalAdvance.js";
 import multer from "multer";
 
 export const expenseSubmissionRouter = express.Router();
@@ -81,6 +82,17 @@ expenseSubmissionRouter.get("/expense-submissions", requireAnyPermission(...CAN_
       hanyaMilikSendiri,
       terpotong: rows.length === 300,
     });
+  } catch (e) { handleErr(e, res); }
+});
+
+// Uang muka aktif (saldo > 0) yang boleh dipilih untuk sumber dana "Uang muka operasional": milik pengaju sendiri
+// dan/atau PIC. Finance/Dispatcher yang mencatat atas nama boleh menanyakan untuk pengaju lain.
+expenseSubmissionRouter.get("/expense-submissions/uang-muka-aktif", requireAnyPermission(...CAN_SUBMIT), async (req, res) => {
+  try {
+    const bolehAtasNama = hasPermission(req.user, P.FINANCE_POST) || hasPermission(req.user, P.FINANCE_ADMIN) || rolesOf(req.user).includes("DISPATCHER");
+    const pengaju = bolehAtasNama && req.query.requestedById ? String(req.query.requestedById) : req.user.id;
+    const pic = req.query.picUserId ? String(req.query.picUserId) : null;
+    res.json({ items: await daftarAktifUntuk(prisma, [pengaju, pic]) });
   } catch (e) { handleErr(e, res); }
 });
 
