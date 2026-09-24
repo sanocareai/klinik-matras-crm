@@ -110,6 +110,7 @@ test("API biaya armada: aksi uang WAJIB Idempotency-Key & memakai endpoint exist
   await api.setujui("f1", "k-setuju-1");
   await api.mintaRevisi("s1", "Foto buram", "k-rev-0001");
   await api.uploadBukti("s1", { uri: "file://a.jpg" });
+  await api.signMedia(["/media/finance-receipts/x.jpg"]);
   assert.equal(calls[0][0], "/finance/expense-submissions/s1/ajukan");
   assert.equal(calls[0][1].headers["Idempotency-Key"], "k-ajukan-1");
   assert.equal(calls[1][0], "/finance/expenses/f1/approve");
@@ -117,4 +118,6 @@ test("API biaya armada: aksi uang WAJIB Idempotency-Key & memakai endpoint exist
   assert.deepEqual(calls[2][1].body, { reason: "Foto buram" });
   assert.equal(calls[3][0], "/finance/expense-submissions/s1/bukti");
   assert.equal(calls[3][1].fieldName, "bukti");
+  assert.equal(calls[4][0], "/finance/media/sign");
+  assert.deepEqual(calls[4][1].body, { urls: ["/media/finance-receipts/x.jpg"] });
 });

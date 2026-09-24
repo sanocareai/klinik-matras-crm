@@ -276,8 +276,15 @@ const uploadBukti = multer({ storage: multer.memoryStorage(), limits: { fileSize
 expenseSubmissionRouter.post("/expense-submissions/:id/bukti", requireAnyPermission(...TULIS), uploadBukti.single("bukti"), async (req, res) => {
   try {
     if (!req.file) throw err("File bukti wajib disertakan");
-    // Bukti foto akun own-only hanya boleh diubah pada pengajuan MILIK SENDIRI yang masih draf/perlu revisi.
-    if (ownOnly(req.user)) { await pastikanMilikSendiri(prisma, req.params.id, req.user, { statusBoleh: STATUS_EDITABLE_OWN }); wajibKunci(req); }
+    // Bukti foto hanya boleh diganti pada pengajuan MILIK SENDIRI yang masih DRAF/PERLU_REVISI — untuk akun
+    // own-only DAN pemegang izin pengajuan lama tanpa hak Finance. Staf Finance (finance:post / finance:admin)
+    // tetap boleh melampirkan bukti kapan pun (perilaku lama). Tidak ada endpoint hapus bukti: mengganti = versi baru.
+    const stafFinance = hasPermission(req.user, P.FINANCE_POST) || hasPermission(req.user, P.FINANCE_ADMIN);
+    if (ownOnly(req.user) || !stafFinance) {
+      // Akun own-only: hanya DELIVERY. Pemegang izin lama: milik sendiri di divisi manapun (perilaku multi-workspace utuh).
+      await pastikanMilikSendiri(prisma, req.params.id, req.user, { statusBoleh: STATUS_EDITABLE_OWN, semuaDivisi: !ownOnly(req.user) });
+      wajibKunci(req);
+    }
     const s = await prisma.expenseSubmission.findUnique({ where: { id: req.params.id }, select: { id: true, requestedById: true, createdById: true } });
     if (!s) throw err("Pengajuan tidak ditemukan", 404);
     const { url } = await simpanFotoBukti(req.file.buffer);

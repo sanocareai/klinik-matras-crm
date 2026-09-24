@@ -28,6 +28,9 @@ export function createBiayaArmadaApi(client) {
     // Reviewer (finance:approve) mengembalikan pengajuan ke pemilik — alasan wajib.
     mintaRevisi: (id, reason, key) => client.request(`${P}/${id}/minta-revisi`, { method: "POST", body: { reason }, headers: idem(key) }),
     ubahMetadata: (id, changes, reason, key) => client.request(`${P}/${id}/metadata`, { method: "POST", body: { changes, reason }, headers: idem(key) }),
+    // URL foto struk bertanda-tangan berumur pendek (10 menit) — untuk <Image> tanpa header. Hanya foto milik
+    // pengguna/izinnya yang diberi URL; server memutuskan (foto lain tidak muncul di `signed`).
+    signMedia: (urls) => client.request("/finance/media/sign", { method: "POST", body: { urls } }),
     uploadBukti: (id, file) => client.upload(`${P}/${id}/bukti`, file, { fieldName: "bukti" }),
     // Aksi Finance pada FinExpense yang lahir dari pengajuan.
     verifikasiBukti: (finExpenseId, key) => client.request(`/finance/expenses/${finExpenseId}/verifikasi-bukti`, { method: "POST", body: {}, headers: idem(key) }),

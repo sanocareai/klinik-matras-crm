@@ -61,3 +61,14 @@ test("Home hanya mengaktifkan modul yang benar-benar ada; sisanya diberi label B
   assert.match(src, /Berikutnya/);
   assert.match(src, /disabled=\{!m\.ready\}/);
 });
+
+test("foto struk dibuka lewat URL bertanda-tangan berumur pendek (bukan header Bearer / path penyimpanan), dengan ulang otomatis dan tombol Coba lagi", () => {
+  const foto = baca("FotoStruk.js");
+  assert.match(foto, /signMedia\(/);
+  assert.match(foto, /onError/);
+  assert.match(foto, /Coba lagi/);
+  assert.doesNotMatch(foto, /Authorization|Bearer/);
+  const detail = baca("screens/BiayaDetailScreen.js");
+  assert.match(detail, /<FotoStruk/);
+  assert.doesNotMatch(detail, /Authorization|getToken\(\)/);
+});

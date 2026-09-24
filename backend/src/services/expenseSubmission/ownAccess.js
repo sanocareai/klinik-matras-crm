@@ -40,12 +40,12 @@ export function sanitasiBodyOwn(body = {}) {
 }
 
 /** Pengajuan harus DELIVERY dan milik sendiri; selain itu 404 (tidak membocorkan keberadaan). */
-export async function pastikanMilikSendiri(db, id, user, { statusBoleh = null } = {}) {
+export async function pastikanMilikSendiri(db, id, user, { statusBoleh = null, semuaDivisi = false } = {}) {
   const s = await db.expenseSubmission.findUnique({
     where: { id },
     select: { id: true, division: true, status: true, requestedById: true, createdById: true },
   });
-  if (!s || s.division !== "DELIVERY" || (s.requestedById !== user.id && s.createdById !== user.id)) {
+  if (!s || (!semuaDivisi && s.division !== "DELIVERY") || (s.requestedById !== user.id && s.createdById !== user.id)) {
     throw new SubmissionError("Pengajuan tidak ditemukan", 404);
   }
   if (statusBoleh && !statusBoleh.includes(s.status)) {

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { allowedActions, describeAudit, formatRupiah, newIdempotencyKey, statusInfo } from "@sano/delivery-shared";
 import { biayaArmadaApi, client } from "../client";
+import { FotoStruk } from "../FotoStruk";
 import { useSession } from "../SessionContext";
 import { useTheme } from "../theme";
 import { tanggalWIB, waktuWIB } from "../format";
@@ -112,10 +113,7 @@ export default function BiayaDetailScreen({ route, navigation }) {
             <Text style={{ color: t.ink3, fontSize: 13 }}>Belum ada foto struk.</Text>
           ) : data.proofs.map((p) => (
             <View key={p.id} style={{ gap: 4 }}>
-              <Image
-                source={{ uri: client.mediaUrl(p.url), headers: client.getToken() ? { Authorization: `Bearer ${client.getToken()}` } : undefined }}
-                style={[s.foto, { backgroundColor: t.field }]} resizeMode="contain" accessibilityLabel="Foto struk"
-              />
+              <FotoStruk url={p.url} style={[s.foto, { backgroundColor: t.field }]} />
               <Text style={{ color: t.ink3, fontSize: 12 }}>Versi {p.version} · {waktuWIB(p.createdAt)}</Text>
             </View>
           ))}
