@@ -69,6 +69,6 @@ test("foto struk dibuka lewat URL bertanda-tangan berumur pendek (bukan header B
   assert.match(foto, /Coba lagi/);
   assert.doesNotMatch(foto, /Authorization|Bearer/);
   const detail = baca("screens/BiayaDetailScreen.js");
-  assert.match(detail, /<FotoStruk/);
+  assert.match(detail, /<FotoStruk /);
   assert.doesNotMatch(detail, /Authorization|getToken\(\)/);
 });
