@@ -1,0 +1,17 @@
+{
+  "name": "@sano/delivery-shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./api": "./src/api/client.js",
+    "./biaya-armada": "./src/biayaArmada/index.js",
+    "./rbac": "./src/rbac.js",
+    "./session": "./src/session.js"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  }
+}
