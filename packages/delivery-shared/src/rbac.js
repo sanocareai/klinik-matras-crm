@@ -27,6 +27,7 @@ export function deliveryExpenseAbilities(capabilities) {
     submit: e.submit === true,
     verify: e.verify === true,
     approve: e.approve === true,
+    requestRevision: e.requestRevision === true,
     pay: e.pay === true,
   };
 }

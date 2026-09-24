@@ -223,3 +223,18 @@ test("data lama tetap terbaca: pengajuan tanpa kolom revisi menampilkan null, da
   const aj = await raw("POST", `${P}/${c.body.id}/ajukan`, { token: f.finance.token, headers: K("aj") });
   assert.equal(aj.body.status, "MENUNGGU_PERSETUJUAN");
 });
+
+test("detail memuat nama pelaku di audit trail; filter status boleh daftar dipisah koma", async () => {
+  const f = await fixture();
+  const s = await diajukan(f);
+  await mintaRevisi(f.approver.token, s.id, "Cek nominal");
+  const d = await raw("GET", `${P}/${s.id}`, { token: f.driver.token });
+  const rev = d.body.auditTrail.find((x) => x.after === "PERLU_REVISI");
+  assert.equal(rev.actor.id, f.approver.user.id);
+  assert.ok(rev.actor.name);
+  await diajukan(f);
+  const gabung = await raw("GET", `${P}?status=PERLU_REVISI,MENUNGGU_PERSETUJUAN`, { token: f.driver.token });
+  assert.equal(gabung.body.submissions.length, 2);
+  const satu = await raw("GET", `${P}?status=PERLU_REVISI`, { token: f.driver.token });
+  assert.equal(satu.body.submissions.length, 1);
+});

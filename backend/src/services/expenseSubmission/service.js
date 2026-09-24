@@ -46,7 +46,7 @@ export const submissionInclude = {
   advance: { select: { id: true, advanceNumber: true, holderId: true, purpose: true, dueDate: true, status: true } },
   createdBy: { select: { id: true, name: true } },
   proofs: { where: { supersededAt: null }, orderBy: { createdAt: "desc" } },
-  auditTrail: { orderBy: { createdAt: "desc" }, take: 50 },
+  auditTrail: { orderBy: { createdAt: "desc" }, take: 50, include: { actor: { select: { id: true, name: true } } } },
 };
 
 function bentukSubmission(s) {

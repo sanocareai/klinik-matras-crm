@@ -15,6 +15,7 @@ function idem(key) {
 export function createBiayaArmadaApi(client) {
   return {
     config: () => client.request(`${P}/config${buildQuery({ workspace: WORKSPACE })}`),
+    // filters: { status: "A,B", limit, offset, q, from, to } — limit/offset = paginasi server (adaLagi).
     list: (filters = {}) => client.request(`${P}${buildQuery({ division: WORKSPACE, ...filters })}`),
     detail: (id) => client.request(`${P}/${id}`),
     duplicateCheck: (params) => client.request(`${P}/duplicate-check${buildQuery(params)}`),
@@ -24,6 +25,8 @@ export function createBiayaArmadaApi(client) {
     tarik: (id, key) => client.request(`${P}/${id}/tarik`, { method: "POST", body: {}, headers: idem(key) }),
     batalkan: (id, reason, key) => client.request(`${P}/${id}/batalkan`, { method: "POST", body: { reason }, headers: idem(key) }),
     // Koreksi field setelah diajukan — backend mewajibkan alasan dan mencatat audit.
+    // Reviewer (finance:approve) mengembalikan pengajuan ke pemilik — alasan wajib.
+    mintaRevisi: (id, reason, key) => client.request(`${P}/${id}/minta-revisi`, { method: "POST", body: { reason }, headers: idem(key) }),
     ubahMetadata: (id, changes, reason, key) => client.request(`${P}/${id}/metadata`, { method: "POST", body: { changes, reason }, headers: idem(key) }),
     uploadBukti: (id, file) => client.upload(`${P}/${id}/bukti`, file, { fieldName: "bukti" }),
     // Aksi Finance pada FinExpense yang lahir dari pengajuan.

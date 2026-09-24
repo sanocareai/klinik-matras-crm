@@ -89,7 +89,8 @@ expenseSubmissionRouter.get("/expense-submissions", requireAnyPermission(...BACA
     const rows = await prisma.expenseSubmission.findMany({
       where: {
         ...(division && { division }),
-        ...(status && { status }),
+        // status boleh satu nilai atau daftar dipisah koma (aditif): ?status=DIAJUKAN,MENUNGGU_PERSETUJUAN
+        ...(status && { status: String(status).includes(",") ? { in: String(status).split(",").map((x) => x.trim()).filter(Boolean) } : status }),
         ...(vehicleId && { vehicleId }),
         ...(jobId && { jobId }),
         ...((from || to) && { date: { ...(from && { gte: new Date(from) }), ...(to && { lte: new Date(to) }) } }),

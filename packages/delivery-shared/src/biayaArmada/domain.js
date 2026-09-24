@@ -19,14 +19,14 @@ export const BACKEND_STATUS = Object.freeze({
   DIBAYAR: "DIBAYAR",
   DITOLAK: "DITOLAK",
   DIBATALKAN: "DIBATALKAN",
+  PERLU_REVISI: "PERLU_REVISI",
 });
 
-// Alur yang diminta tim: DRAF, DIAJUKAN, PERLU_REVISI, DISETUJUI, DITOLAK, DIBAYAR.
-// PERLU_REVISI BELUM ada di backend (enum tidak punya nilai itu). Sampai backend
-// mendukungnya, "revisi" = pemohon menarik pengajuan (status MENUNGGU_PERSETUJUAN),
-// mengedit, lalu mengajukan ulang. Jangan menampilkan PERLU_REVISI sebagai status
-// nyata sebelum backend menyediakannya.
-export const PERLU_REVISI_DIDUKUNG_BACKEND = false;
+// Alur tim: DRAF, DIAJUKAN, PERLU_REVISI, DISETUJUI, DITOLAK, DIBAYAR.
+// PERLU_REVISI didukung backend (migrasi 20260924110000): reviewer meminta perbaikan
+// dengan alasan wajib; pemilik edit lalu mengajukan ulang. BEDA dari "Ditarik" (aksi
+// pemilik, kembali ke DRAF) dan "Dibatalkan" (mengakhiri).
+export const PERLU_REVISI_DIDUKUNG_BACKEND = true;
 
 const INFO = {
   DRAFT: { stage: "DRAF", label: "Draf", tone: "neutral", terminal: false },
@@ -37,6 +37,7 @@ const INFO = {
   DIBAYAR: { stage: "DIBAYAR", label: "Dibayar", tone: "green", terminal: true },
   DITOLAK: { stage: "DITOLAK", label: "Ditolak", tone: "red", terminal: true },
   DIBATALKAN: { stage: "DITOLAK", label: "Dibatalkan", tone: "neutral", terminal: true },
+  PERLU_REVISI: { stage: "PERLU_REVISI", label: "Perlu revisi", tone: "orange", terminal: false },
 };
 
 export function statusInfo(status) {
@@ -44,7 +45,13 @@ export function statusInfo(status) {
 }
 
 // Kelompok tab daftar (mengikuti alur tim).
-export const STAGES = ["DRAF", "DIAJUKAN", "DISETUJUI", "DIBAYAR", "DITOLAK"];
+export const STAGES = ["DRAF", "PERLU_REVISI", "DIAJUKAN", "DISETUJUI", "DIBAYAR", "DITOLAK"];
+export const STAGE_LABEL = { DRAF: "Draf", PERLU_REVISI: "Perlu revisi", DIAJUKAN: "Diajukan", DISETUJUI: "Disetujui", DIBAYAR: "Dibayar", DITOLAK: "Ditolak" };
+
+// Status backend per tahap — dipakai sebagai filter server (?status=A,B).
+export function statusesForStage(stage) {
+  return Object.keys(INFO).filter((k) => INFO[k].stage === stage);
+}
 
 /**
  * Aksi yang BOLEH TAMPIL untuk satu pengajuan. Aturan status mengikuti service
@@ -53,23 +60,23 @@ export const STAGES = ["DRAF", "DIAJUKAN", "DISETUJUI", "DIBAYAR", "DITOLAK"];
  * penolakan, dan pembayaran dijalankan di FinExpense terkait (izin Finance).
  */
 export function allowedActions(submission, abilities, userId) {
-  const none = { edit: false, ajukan: false, tarik: false, batalkan: false, uploadBukti: false, verifikasiBukti: false, setujui: false, tolak: false, bayar: false };
+  const none = { edit: false, ajukan: false, tarik: false, batalkan: false, uploadBukti: false, mintaRevisi: false, setujui: false, tolak: false };
   if (!submission || !abilities) return none;
   const s = submission.status;
   const mine = [submission.requestedById, submission.createdById].includes(userId);
   const canOwn = abilities.submit && mine;
-  const hasFin = !!submission.finExpenseId || !!submission.finExpense;
-  const proof = submission.finExpense?.receiptUrl || submission.proofs?.length;
+  const editable = s === "DRAFT" || s === "PERLU_REVISI";
+  const menunggu = s === "MENUNGGU_PERSETUJUAN";
   return {
-    edit: s === "DRAFT" && canOwn,
-    ajukan: s === "DRAFT" && canOwn,
-    tarik: s === "MENUNGGU_PERSETUJUAN" && canOwn,
-    batalkan: ["DRAFT", "MENUNGGU_PERSETUJUAN"].includes(s) && canOwn,
-    uploadBukti: !INFO[s]?.terminal && canOwn,
-    verifikasiBukti: abilities.verify && hasFin && !!proof && !submission.finExpense?.receiptVerifiedAt && !INFO[s]?.terminal,
-    setujui: abilities.approve && s === "MENUNGGU_PERSETUJUAN",
-    tolak: abilities.approve && s === "MENUNGGU_PERSETUJUAN",
-    bayar: abilities.pay && ["DISETUJUI", "OTOMATIS_DISETUJUI"].includes(s),
+    edit: editable && canOwn,
+    ajukan: editable && canOwn,
+    tarik: menunggu && canOwn,
+    batalkan: (editable || menunggu) && canOwn,
+    uploadBukti: editable && canOwn,
+    // Reviewer bukan pemohon: minta revisi (alasan wajib), setujui, tolak.
+    mintaRevisi: abilities.requestRevision && menunggu && !mine,
+    setujui: abilities.approve && menunggu && !mine,
+    tolak: abilities.approve && menunggu && !mine,
   };
 }
 
@@ -90,7 +97,7 @@ export function validateDraft(draft, config) {
   if (!Number.isFinite(amount) || amount <= 0) errors.amount = "Nominal harus lebih dari 0";
   else if (amount > RUPIAH_MAX) errors.amount = "Nominal terlalu besar";
   if (!draft?.date || !/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) errors.date = "Tanggal wajib diisi";
-  const fields = config?.metadataFields?.[draft?.expenseType] || [];
+  const fields = metadataFieldsFor(config, draft?.expenseType);
   for (const f of fields) {
     if (f.required && (draft?.metadata?.[f.key] === undefined || draft?.metadata?.[f.key] === "" || draft?.metadata?.[f.key] === null)) {
       errors[`metadata.${f.key}`] = `${f.label} wajib diisi`;
@@ -109,4 +116,33 @@ export function toCreateBody(draft, workspace = WORKSPACE) {
   const body = { workspace };
   for (const k of pick) if (draft?.[k] !== undefined && draft[k] !== "" && draft[k] !== null) body[k] = draft[k];
   return body;
+}
+
+/** Field metadata terstruktur untuk satu jenis biaya, dari config SERVER (metadataFieldsByType). */
+export function metadataFieldsFor(config, expenseType) {
+  return config?.metadataFieldsByType?.[expenseType] || config?.metadataFields?.[expenseType] || [];
+}
+
+export function emptyDraft(today) {
+  return { expenseType: "", amount: "", date: today, description: "", notes: "", vehicleId: "", routeId: "", jobId: "", metadata: {}, sumberDana: "" };
+}
+
+export function formatRupiah(n) {
+  return "Rp" + Math.round(Number(n) || 0).toLocaleString("id-ID");
+}
+
+/** Kalimat Indonesia untuk satu baris audit (timeline). */
+export function describeAudit(a) {
+  const alasan = a.reason ? ` — ${a.reason}` : "";
+  if (a.field === "status") {
+    if (a.after === "PERLU_REVISI") return `Diminta revisi${alasan}`;
+    if (a.after === "MENUNGGU_PERSETUJUAN") return a.before === "PERLU_REVISI" ? "Diajukan ulang setelah revisi" : "Diajukan";
+    if (a.after === "DRAFT") return a.before === null || a.before === undefined ? "Draf dibuat" : "Ditarik kembali oleh pemohon";
+    if (a.after === "DIBATALKAN") return `Dibatalkan${alasan}`;
+    if (a.after === "OTOMATIS_DISETUJUI") return `Disetujui otomatis${alasan}`;
+    return `Status menjadi ${statusInfo(a.after).label}${alasan}`;
+  }
+  if (a.field === "draft") return a.reason === "Perbaikan setelah diminta revisi" ? "Diperbaiki setelah diminta revisi" : "Draf diubah";
+  if (a.field === "bukti") return `Foto struk diunggah${a.after ? ` (${a.after})` : ""}`;
+  return `Koreksi ${a.field}${alasan}`;
 }

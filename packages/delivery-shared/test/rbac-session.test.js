@@ -24,9 +24,9 @@ test("capabilities: hanya deliveryControlApp === true yang boleh; tidak menebak 
   assert.equal(canUseControlApp({ role: "ADMIN" }), false, "role saja tidak cukup");
 });
 
-test("empat izin biaya armada terpisah dan default mati", () => {
-  assert.deepEqual(deliveryExpenseAbilities({}), { submit: false, verify: false, approve: false, pay: false });
-  assert.deepEqual(deliveryExpenseAbilities({ deliveryExpense: { submit: true, approve: true } }), { submit: true, verify: false, approve: true, pay: false });
+test("izin biaya armada terpisah dan default mati", () => {
+  assert.deepEqual(deliveryExpenseAbilities({}), { submit: false, verify: false, approve: false, requestRevision: false, pay: false });
+  assert.deepEqual(deliveryExpenseAbilities({ deliveryExpense: { submit: true, approve: true } }), { submit: true, verify: false, approve: true, requestRevision: false, pay: false });
 });
 
 test("signIn: akun tanpa akses (Driver) ditolak dan token TIDAK tersisa", async () => {

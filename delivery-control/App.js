@@ -11,6 +11,8 @@ import { useTheme } from "./src/theme";
 import LoginScreen from "./src/screens/LoginScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import BiayaArmadaScreen from "./src/screens/BiayaArmadaScreen";
+import BiayaDetailScreen from "./src/screens/BiayaDetailScreen";
+import BiayaFormScreen from "./src/screens/BiayaFormScreen";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 const Stack = createNativeStackNavigator();
@@ -30,6 +32,8 @@ function Root() {
           <>
             <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
             <Stack.Screen name="BiayaArmada" component={BiayaArmadaScreen} options={{ title: "Biaya Armada" }} />
+            <Stack.Screen name="BiayaDetail" component={BiayaDetailScreen} options={{ title: "Detail biaya" }} />
+            <Stack.Screen name="BiayaForm" component={BiayaFormScreen} options={({ route }) => ({ title: route.params?.id ? "Perbaiki biaya" : "Catat biaya" })} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
