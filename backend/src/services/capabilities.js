@@ -29,6 +29,20 @@ export function capabilitiesFor(user) {
   const incentivePayoutCreate = hasPermission(user, P.INCENTIVE_PAYOUT_CREATE);
   const incentivePayoutVoid = hasPermission(user, P.INCENTIVE_PAYOUT_VOID);
 
+  // Sano Delivery Control (aplikasi Admin/Owner armada). Diturunkan dari izin
+  // AKTUAL, bukan nama role: job:read penuh = boleh melihat SEMUA job/driver
+  // (ADMIN, OWNER, DISPATCHER, LEADER_DRIVER). DRIVER/HELPER hanya punya
+  // job:own sehingga TIDAK PERNAH lolos. Empat izin biaya armada dipisah:
+  // mengajukan (sama dengan gerbang route pengajuan), memverifikasi bukti
+  // (finance:admin, sama dengan route verifikasi-bukti), menyetujui, dan membayar.
+  const deliveryControlApp = hasPermission(user, P.JOB_READ);
+  const deliveryExpense = {
+    submit: expenseSubmit || financePost || financeAdmin,
+    verify: financeAdmin,
+    approve: financeApprove,
+    pay: financePost,
+  };
+
   // Preset = petunjuk TATA LETAK awal aplikasi (bukan izin).
   let preset = "NONE";
   if (roles.includes("FINANCE")) preset = "FINANCE";
@@ -49,6 +63,7 @@ export function capabilitiesFor(user) {
     expenseSubmit,
     incentiveSnapshotCreate, incentiveSnapshotReview, incentiveSnapshotApprove, incentiveSnapshotRead,
     incentivePayoutRead, incentivePayoutCreate, incentivePayoutVoid,
+    deliveryControlApp, deliveryExpense,
     // Boleh memakai aplikasi Finance? (dipakai login mobile). SENGAJA tidak
     // memakai paymentRead: SALES juga memegangnya (lihat riwayat pembayaran order
     // sendiri) tetapi bukan tim Finance.
