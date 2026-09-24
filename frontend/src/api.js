@@ -1459,6 +1459,20 @@ export const api = {
   // Rekonsiliasi bank
   getFinanceBankStatements: (params = {}) => request(`/finance/bank-statements${qsFinance(params)}`),
   getFinanceBankStatement: (id) => request(`/finance/bank-statements/${id}`),
+  // B3 — snapshot rekonsiliasi (immutable), Posting Setelah Cutoff, exception Perlu Ditinjau, ekspor ringkasan audit.
+  getRekonCutoff: (id) => request(`/finance/bank-statements/${id}/cutoff`),
+  buatSnapshotRekon: (id, data = {}) => request(`/finance/bank-statements/${id}/snapshot`, { method: "POST", body: JSON.stringify(data) }),
+  verifikasiSnapshotRekon: (id) => request(`/finance/bank-statements/${id}/snapshot/verifikasi`, { method: "POST", body: "{}" }),
+  getRekonPerluDitinjau: (params = {}) => request(`/finance/rekon/perlu-ditinjau${qsFinance(params)}`),
+  tinjauExceptionRekon: (data) => request("/finance/rekon/perlu-ditinjau/tinjau", { method: "POST", body: JSON.stringify(data) }),
+  getBukuJurnalDetail: (id) => request(`/finance/buku/jurnal/${id}`),
+  eksporAuditRekon: async (id) => {
+    const res = await fetch(`${BASE}/finance/bank-statements/${id}/ekspor-audit`, { headers: authHeaders() });
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) { let msg = "Gagal mengekspor ringkasan audit"; try { msg = (await res.json()).error || msg; } catch {} throw new Error(msg); }
+    const namaFile = (res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/)?.[1] || "audit-rekon.csv";
+    return { blob: await res.blob(), namaFile };
+  },
   createFinanceBankStatement: (data) => request("/finance/bank-statements", { method: "POST", body: JSON.stringify(data) }),
   addFinanceBankLine: (statementId, data) =>
     request(`/finance/bank-statements/${statementId}/lines`, { method: "POST", body: JSON.stringify(data) }),

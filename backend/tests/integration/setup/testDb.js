@@ -38,7 +38,7 @@ const TABLES_TO_TRUNCATE = [
   // polimorfik tanpa FK sama sekali) — jadi tanpa baris ini, sampah
   // menumpuk lintas file test dan assertion "berapa gap yang terbuka"
   // di financeLedger.integration.test.js akan melihat sisa test lain.
-  "fin_bank_statement_lines", "fin_bank_statements",
+  "fin_bank_statement_lines", "fin_bank_statements", "fin_recon_snapshots", "fin_recon_exception_reviews",
   "fin_supplier_payment_allocations", "fin_supplier_payments", "fin_supplier_bills",
   "fin_payment_allocations", "fin_refunds", "fin_expenses",
   // "Terapkan Uang Muka" (D-XXX, 22 September 2026) — WAJIB sebelum

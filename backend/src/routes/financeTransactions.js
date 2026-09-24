@@ -19,6 +19,7 @@
 // 3. PEMBATALAN LEWAT REVERSAL. Dokumen yang sudah diposting tidak pernah
 //    dihapus atau diubah nominalnya.
 
+import { pandanganCutoff, daftarException, buatSnapshot } from "../services/finance/rekonSnapshot.js";
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { requireAuth } from "../middleware/auth.js";
@@ -2352,8 +2353,10 @@ financeTxRouter.get("/bank-statements", requirePermission(P.FINANCE_READ), async
         createdBy: { select: { id: true, name: true } },
         completedBy: { select: { id: true, name: true } },
         lines: { select: { id: true, status: true, amount: true } },
+        snapshot: true,
       },
     });
+    const exc = await daftarException(prisma);
     const hasil = [];
     for (const s of statements) {
       const buku = await saldoBukuSampai(prisma, s.cashAccountId, s.periodEnd);
@@ -2370,6 +2373,10 @@ financeTxRouter.get("/bank-statements", requirePermission(P.FINANCE_READ), async
         jumlahBaris: s.lines.length,
         belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length,
         lines: undefined,
+        snapshot: undefined,
+        // B3 (aditif): ringkasan cutoff dari snapshot TERSIMPAN — angka snapshot tidak dihitung ulang.
+        cutoffInfo: await ringkasCutoff(s),
+        perluDitinjau: exc.items.filter((x) => !x.ditinjau && x.rekeningIds.includes(s.cashAccountId)).length,
       });
     }
     res.json({ statements: hasil });
@@ -2377,6 +2384,18 @@ financeTxRouter.get("/bank-statements", requirePermission(P.FINANCE_READ), async
     handleFinanceError(e, res);
   }
 });
+
+async function ringkasCutoff(s) {
+  if (!s.snapshot) return { adaSnapshot: false, cutoffAkhir: s.cutoffEndAt };
+  const p = await pandanganCutoff(prisma, s.snapshot, { closingBank: s.closingBalance });
+  const r = p.ringkasanSetelahSnapshot;
+  return {
+    adaSnapshot: true, cutoffAkhir: s.cutoffEndAt, snapshotAt: p.snapshot.snapshotAt, hwmAt: p.snapshot.hwmAt, hwmEntryNumber: p.snapshot.hwmEntryNumber,
+    saldoBukuSnapshot: p.snapshot.saldoBuku, selisihSnapshot: p.snapshot.selisih, valid: p.valid,
+    postingSetelahCutoff: r.POSTING_SETELAH_CUTOFF, reversalSetelahSnapshot: r.REVERSAL_SETELAH_SNAPSHOT, penyesuaianSetelahSnapshot: r.PENYESUAIAN_BUKU,
+    saldoBukuSekarang: p.saldoBukuSekarang,
+  };
+}
 
 financeTxRouter.post("/bank-statements", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
@@ -2466,14 +2485,10 @@ financeTxRouter.get("/bank-statements/:id", requirePermission(P.FINANCE_READ), a
 
     // Saldo menurut BUKU pada akhir periode (seluruh mutasi rekening ini
     // sampai periodEnd) vs saldo menurut KORAN BANK.
-    const agregat = await prisma.finJournalLine.aggregate({
-      where: {
-        cashAccountId: s.cashAccountId,
-        entry: { status: { in: STATUS_DIHITUNG }, date: { lte: s.periodEnd } },
-      },
-      _sum: { debit: true, credit: true },
-    });
-    const saldoBuku = toMoney(agregat._sum.debit || 0).minus(toMoney(agregat._sum.credit || 0));
+    const saldoBuku = await saldoBukuSampai(prisma, s.cashAccountId, s.periodEnd);
+    const snap = await prisma.finReconSnapshot.findUnique({ where: { statementId: s.id } });
+    const cutoff = snap ? await pandanganCutoff(prisma, snap, { closingBank: s.closingBalance }) : null;
+    const perluDitinjau = await daftarException(prisma, { cashAccountId: s.cashAccountId });
     const selisih = toMoney(s.closingBalance).minus(saldoBuku);
 
     res.json({
@@ -2515,8 +2530,11 @@ financeTxRouter.get("/bank-statements/:id", requirePermission(P.FINANCE_READ), a
         penyelesaian: evaluasiSelesai({
           status: s.status, jumlahBaris: s.lines.length, belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length,
           selisih, danaBelumTeridentifikasi: danaBelumTeridentifikasi.total,
+          snapshotValid: cutoff ? cutoff.valid : true, exceptionTerbuka: perluDitinjau.terbuka,
         }),
       },
+      cutoff,
+      perluDitinjau,
       penyesuaianBuku,
       danaBelumTeridentifikasi,
     });
@@ -2671,11 +2689,16 @@ financeTxRouter.post("/bank-statements/:id/complete", requirePermission(P.FINANC
   try {
     const note = req.body?.note?.trim() || null;
     const updated = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, '"fin_bank_statements"', req.params.id);
       const s = await tx.finBankStatement.findUnique({
         where: { id: req.params.id },
         include: { lines: { select: { status: true } } },
       });
       if (!s) throw err("Koran bank tidak ditemukan", 404);
+      // B3: periode selesai WAJIB punya snapshot. Kalau belum ada, snapshot dibuat SEKARANG (high-water mark = saat penyelesaian).
+      const { snapshot: snap } = await buatSnapshot(tx, { statementId: s.id, confirmedSource: `Penyelesaian periode oleh ${req.user.name || req.user.id}`, userId: req.user.id });
+      const cutoff = await pandanganCutoff(tx, snap, { closingBank: s.closingBalance });
+      const exc = await daftarException(tx, { cashAccountId: s.cashAccountId });
       const belumCocok = s.lines.filter((l) => l.status === "BELUM_COCOK").length;
       // Aturan tunggal (services/finance/rekonBank.js): mutasi bank asli ada, semua baris dicocokkan/dijelaskan, selisih nol, status DRAFT, TIDAK ADA dana suspense (2-1700) yang masih menunggu identifikasi untuk rekening ini.
       const saldoBuku = await saldoBukuSampai(tx, s.cashAccountId, s.periodEnd);
@@ -2683,6 +2706,7 @@ financeTxRouter.post("/bank-statements/:id/complete", requirePermission(P.FINANC
       const ev = evaluasiSelesai({
         status: s.status, jumlahBaris: s.lines.length, belumCocok,
         selisih: toMoney(s.closingBalance).minus(saldoBuku), danaBelumTeridentifikasi: suspense.total,
+        snapshotValid: cutoff.valid, exceptionTerbuka: exc.terbuka,
       });
       if (!ev.bisa) throw err(`Periode belum bisa diselesaikan: ${ev.alasan.join("; ")}.`, 409);
       return tx.finBankStatement.update({

@@ -10,6 +10,7 @@
 import { toMoney, moneyToNumber, formatRupiah } from "./money.js";
 import { STATUS_DIHITUNG } from "./journal.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
+import { saldoBukuRekening } from "./rekonSnapshot.js";
 
 export const STATUS_DRAF_MENUNGGU = "DRAF_MENUNGGU_MUTASI";
 export const LABEL_STATUS_REKON = { DRAFT: "Sedang dicocokkan", SELESAI: "Selesai", DRAF_MENUNGGU_MUTASI: "Draf — menunggu mutasi bank" };
@@ -34,7 +35,7 @@ export const PERIODE_SEMENTARA_20260919 = Object.freeze([
 ]);
 
 /** Murni: apakah periode boleh diselesaikan? Mengembalikan syarat satu per satu (untuk UI) + alasan yang belum terpenuhi. */
-export function evaluasiSelesai({ status, jumlahBaris, belumCocok, selisih, danaBelumTeridentifikasi }) {
+export function evaluasiSelesai({ status, jumlahBaris, belumCocok, selisih, danaBelumTeridentifikasi, snapshotValid = true, exceptionTerbuka = 0 }) {
   const sel = toMoney(selisih ?? 0);
   const suspense = toMoney(danaBelumTeridentifikasi ?? 0);
   const syarat = [
@@ -46,21 +47,29 @@ export function evaluasiSelesai({ status, jumlahBaris, belumCocok, selisih, dana
     // terbukti — periode TIDAK BOLEH "Selesai" selama saldo ini masih ada,
     // supaya tidak pernah tersamar seolah rekonsiliasi benar-benar tuntas.
     { kode: "DANA_TERIDENTIFIKASI", ok: suspense.isZero(), teks: "Tidak ada dana masuk yang masih menunggu identifikasi sumber" },
+    // B3: exception dokumen/jurnal yang belum ditinjau dan snapshot yang tidak berlaku juga menahan penyelesaian.
+    { kode: "TANPA_EXCEPTION", ok: Number(exceptionTerbuka) === 0, teks: "Tidak ada exception dokumen/jurnal yang Perlu Ditinjau" },
+    { kode: "SNAPSHOT_BERLAKU", ok: !!snapshotValid, teks: "Snapshot periode masih berlaku" },
   ];
   const alasan = syarat.filter((s) => !s.ok).map((s) => {
     if (s.kode === "STATUS") return s.teks;
     if (s.kode === "MUTASI_ASLI") return "Belum ada mutasi bank asli — impor rekening koran dulu";
     if (s.kode === "SEMUA_DICOCOKKAN") return `Masih ada ${belumCocok} baris mutasi yang belum dicocokkan atau dijelaskan`;
+    if (s.kode === "TANPA_EXCEPTION") return `Masih ada ${exceptionTerbuka} exception dokumen/jurnal Perlu Ditinjau untuk rekening ini`;
+    if (s.kode === "SNAPSHOT_BERLAKU") return "Snapshot periode tidak berlaku lagi — jurnal yang sudah termasuk snapshot berubah atau snapshot dinyatakan tidak berlaku";
     if (s.kode === "DANA_TERIDENTIFIKASI") return `${formatRupiah(suspense)} masih menunggu identifikasi sumber (lihat Dana Masuk Belum Teridentifikasi) — reklasifikasi dulu setelah sumbernya terbukti`;
     return `Selisih saldo bank dan buku belum nol (${sel.toFixed(2)})`;
   });
   return { bisa: alasan.length === 0, syarat, alasan };
 }
 
-/** Saldo buku rekening sampai tanggal buku `sampai` (jurnal yang dihitung). Baca-saja. */
+/**
+ * Saldo buku rekening sampai tanggal buku `sampai` (jurnal yang dihitung). Baca-saja.
+ * B3 (25 Sep 2026): hanya baris di AKUN buku rekening itu (definisi Kas & Bank). Dulu semua baris bertanda cash_account_id ikut
+ * dihitung, termasuk baris beban biaya admin transfer yang ikut ditandai rekening, sehingga saldo rekon meleset sebesar biaya admin.
+ */
 export async function saldoBukuSampai(db, cashAccountId, sampai) {
-  const agr = await db.finJournalLine.aggregate({ where: { cashAccountId, entry: { status: { in: STATUS_DIHITUNG }, date: { lte: sampai } } }, _sum: { debit: true, credit: true } });
-  return toMoney(agr._sum.debit || 0).minus(toMoney(agr._sum.credit || 0));
+  return saldoBukuRekening(db, cashAccountId, sampai);
 }
 
 /**
@@ -144,7 +153,7 @@ export async function buatPeriodeSementara(db, { daftar = PERIODE_SEMENTARA_2026
         data: {
           cashAccountId: rek.id, periodStart: new Date(`${d.periodStart}T00:00:00.000Z`), periodEnd: new Date(`${d.periodEnd}T00:00:00.000Z`),
           openingBalance: toMoney(d.openingBalance), closingBalance: toMoney(d.closingBalance), status: STATUS_DRAF_MENUNGGU, note: d.note,
-          cutoffStartAt: CUTOFF_AWAL, cutoffEndAt: CUTOFF_AKHIR, sourceKey: d.sourceKey, createdById: userId,
+          cutoffStartAt: d.cutoffStartAt ?? CUTOFF_AWAL, cutoffEndAt: d.cutoffEndAt ?? CUTOFF_AKHIR, sourceKey: d.sourceKey, createdById: userId,
         },
       });
       await recordActivity(tx, { entityType: ENTITY_TYPES.FIN_BANK_STATEMENT, entityId: s.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId, metadata: { label: "Periode rekonsiliasi sementara dibuat (tanpa mutasi bank)", aksi: "periode_sementara", rekening: d.rekening, sourceKey: d.sourceKey } });
