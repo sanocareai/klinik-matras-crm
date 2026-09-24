@@ -7299,9 +7299,72 @@ model FinBankStatement {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   lines FinBankStatementLine[]
+  snapshot FinReconSnapshot?
 
   @@index([cashAccountId, periodStart])
   @@map("fin_bank_statements")
+}
+
+// SNAPSHOT REKONSILIASI (B3, 25 Sep 2026) — potret IMMUTABLE angka buku pada saat saldo bank dikonfirmasi. Satu periode = satu snapshot
+// (unik statement_id). Trigger DB menolak UPDATE kolom inti & DELETE; hanya kolom invalidasi yang boleh diisi SEKALI.
+// Definisi waktu (JANGAN dicampur):
+//   periodStart/periodEnd  tanggal BUKU yang dicakup periode (date)
+//   cutoffStartAt/EndAt    batas waktu mutasi BANK (instan) — cutoff literal dari konfirmasi owner
+//   confirmedAt            kapan saldo riil bank dikonfirmasi
+//   hwmAt                  journal high-water mark: jurnal ber-created_at <= hwmAt (dan tanggal buku <= periodEnd) termasuk snapshot.
+//                          Bisa berbeda dari cutoff literal (mis. pengecekan riil efektif lebih lambat) — lihat explanation.
+//   snapshotAt             kapan record snapshot ini dibuat di sistem
+// Saldo buku snapshot TIDAK pernah dihitung ulang saat dibaca. Jurnal ber-created_at > hwmAt dengan tanggal buku <= periodEnd = Posting Setelah Cutoff.
+model FinReconSnapshot {
+  id          String           @id @default(uuid()) @db.Uuid
+  statementId String           @unique @map("statement_id") @db.Uuid
+  statement   FinBankStatement @relation(fields: [statementId], references: [id], onDelete: Restrict)
+
+  cashAccountId String   @map("cash_account_id") @db.Uuid
+  periodStart   DateTime @map("period_start") @db.Date
+  periodEnd     DateTime @map("period_end") @db.Date
+
+  openingBank Decimal @map("opening_bank") @db.Decimal(18, 2)
+  closingBank Decimal @map("closing_bank") @db.Decimal(18, 2)
+  bookBalance Decimal @map("book_balance") @db.Decimal(18, 2)
+
+  cutoffStartAt   DateTime? @map("cutoff_start_at")
+  cutoffEndAt     DateTime? @map("cutoff_end_at")
+  confirmedAt     DateTime? @map("confirmed_at")
+  confirmedSource String    @map("confirmed_source")
+  snapshotAt      DateTime  @default(now()) @map("snapshot_at")
+
+  hwmAt          DateTime @map("hwm_at")
+  hwmEntryId     String?  @map("hwm_entry_id") @db.Uuid
+  hwmEntryNumber String?  @map("hwm_entry_number")
+
+  entryCount Int    @map("entry_count")
+  entryHash  String @map("entry_hash") // sha256 dari "id:nilai" jurnal yang termasuk (tanggal buku <= periodEnd, created <= hwm)
+  summary    Json   // ringkasan: jumlah & nilai per sumber jurnal dalam periode, nomor jurnal dalam periode
+
+  explanation String?
+  createdById String? @map("created_by")
+
+  invalidatedAt    DateTime? @map("invalidated_at")
+  invalidatedById  String?   @map("invalidated_by")
+  invalidReason    String?   @map("invalid_reason")
+
+  @@index([cashAccountId, periodEnd])
+  @@map("fin_recon_snapshots")
+}
+
+// Exception "Perlu Ditinjau" yang sudah DITINJAU manusia (bukan diperbaiki otomatis). Satu baris per (kode, ref). Exception yang
+// sudah ditinjau tidak lagi memblokir penyelesaian periode; datanya tetap tidak diubah.
+model FinReconExceptionReview {
+  id         String   @id @default(uuid()) @db.Uuid
+  code       String
+  refId      String   @map("ref_id")
+  note       String
+  reviewedById String? @map("reviewed_by")
+  reviewedAt DateTime @default(now()) @map("reviewed_at")
+
+  @@unique([code, refId])
+  @@map("fin_recon_exception_reviews")
 }
 
 enum FinBankLineStatus {

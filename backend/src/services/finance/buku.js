@@ -10,6 +10,18 @@ import { PERMISSIONS as P } from "../../constants/permissions.js";
 import { ENTITY_TYPES } from "../../lib/activityLog.js";
 import { toMoney, sumMoney, ZERO } from "./money.js";
 import { STATUS_DIHITUNG } from "./journal.js";
+import { pandanganCutoff } from "./rekonSnapshot.js";
+
+// B3 (aditif, klien mobile lama mengabaikan field ini): ringkasan cutoff dari snapshot TERSIMPAN.
+async function cutoffRingkas(db, s) {
+  if (!s.snapshot) return null;
+  const p = await pandanganCutoff(db, s.snapshot, { closingBank: s.closingBalance });
+  return {
+    snapshotAt: p.snapshot.snapshotAt, hwmAt: p.snapshot.hwmAt, saldoBukuSnapshot: uang(toMoney(p.snapshot.saldoBuku)), selisihSnapshot: uang(toMoney(p.snapshot.selisih)),
+    postingSetelahCutoff: p.ringkasanSetelahSnapshot.POSTING_SETELAH_CUTOFF.jumlah, reversalSetelahSnapshot: p.ringkasanSetelahSnapshot.REVERSAL_SETELAH_SNAPSHOT.jumlah,
+    penyesuaianSetelahSnapshot: p.ringkasanSetelahSnapshot.PENYESUAIAN_BUKU.jumlah, berlaku: p.valid,
+  };
+}
 
 export class BukuError extends Error {
   constructor(message, statusCode = 400) {
@@ -258,7 +270,7 @@ async function saldoBukuSampai(db, cashAccountId, sampai) {
 export async function daftarRekon(db, { cashAccountId, status } = {}) {
   const daftar = await db.finBankStatement.findMany({
     where: { ...(cashAccountId ? { cashAccountId } : {}), ...(status ? { status } : {}) }, orderBy: { periodStart: "desc" }, take: 50,
-    include: { cashAccount: { select: { id: true, name: true } }, lines: { select: { status: true } } },
+    include: { cashAccount: { select: { id: true, name: true } }, lines: { select: { status: true } }, snapshot: true },
   });
   const items = [];
   for (const s of daftar) {
@@ -270,6 +282,7 @@ export async function daftarRekon(db, { cashAccountId, status } = {}) {
       saldoKoran: uang(s.closingBalance), saldoBuku: uang(buku), selisih: uang(selisih), cocok: selisih.isZero(),
       jumlahBaris: s.lines.length, belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length, cocokBaris: s.lines.filter((l) => l.status === "COCOK").length,
       diabaikan: s.lines.filter((l) => l.status === "DIABAIKAN").length,
+      cutoff: await cutoffRingkas(db, s),
     });
   }
   return { items, total: items.length, diperbaruiPada: new Date().toISOString() };
@@ -280,7 +293,7 @@ export async function detailRekon(db, user, id) {
   const s = await db.finBankStatement.findUnique({
     where: { id },
     include: {
-      cashAccount: { select: { id: true, name: true } }, createdBy: { select: { id: true, name: true } }, completedBy: { select: { id: true, name: true } },
+      cashAccount: { select: { id: true, name: true } }, createdBy: { select: { id: true, name: true } }, completedBy: { select: { id: true, name: true } }, snapshot: true,
       lines: {
         orderBy: [{ date: "asc" }, { createdAt: "asc" }], take: 500,
         include: {
@@ -341,7 +354,7 @@ export async function detailRekon(db, user, id) {
       jumlahBaris: s.lines.length, belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length, cocokBaris: s.lines.filter((l) => l.status === "COCOK").length,
       diabaikan: s.lines.filter((l) => l.status === "DIABAIKAN").length, mutasiBukuBelumDipasangkan: kandidatBentuk.length,
     },
-    baris, terpotong: s.lines.length >= 500, riwayat, diperbaruiPada: new Date().toISOString(),
+    baris, terpotong: s.lines.length >= 500, riwayat, diperbaruiPada: new Date().toISOString(), cutoff: await cutoffRingkas(db, s),
     penutup: s.completedAt ? { pada: waktu(s.completedAt), oleh: orang(s.completedBy) } : null,
   };
 }

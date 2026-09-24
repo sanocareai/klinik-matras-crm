@@ -13,9 +13,16 @@ import { api } from "@/api.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
+  StatusBadge, Pilihan, InputUang, tanggalPendek, tanggalJam, LABEL_STATUS,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import PanelCutoff, { PerluDitinjau } from "@/features/finance/RekonCutoff.jsx";
+import { rolesOf } from "@/lib/roles.js";
+
+// FINANCE_ADMIN (snapshot, tandai tinjau) dipegang ADMIN/OWNER — server tetap sumber kebenaran (403 bila tidak berhak).
+function bolehFinanceAdmin() {
+  try { return rolesOf(JSON.parse(localStorage.getItem("user") || "null")).some((r) => r === "ADMIN" || r === "OWNER"); } catch { return false; }
+}
 
 // Nominal bisa dicari sebagai "150000" maupun "150.000" (tanda minus diabaikan).
 function teksNominal(x) {
@@ -24,10 +31,10 @@ function teksNominal(x) {
   return `${n} ${n.toLocaleString("id-ID")}`;
 }
 
-const LABEL_STATUS_PERIODE = { DRAF_MENUNGGU_MUTASI: "Draf — menunggu mutasi bank", DRAFT: "Sedang dicocokkan", SELESAI: "Selesai" };
+const LABEL_STATUS_PERIODE = { DRAF_MENUNGGU_MUTASI: "Menunggu mutasi bank", DRAFT: "Sedang dicocokkan", SELESAI: "Selesai" };
 const VARIAN_STATUS_PERIODE = { DRAF_MENUNGGU_MUTASI: "orange", DRAFT: "neutral", SELESAI: "green" };
 function BadgeStatusPeriode({ status }) {
-  return <Badge className="whitespace-nowrap" variant={VARIAN_STATUS_PERIODE[status] || "neutral"}>{LABEL_STATUS_PERIODE[status] || status}</Badge>;
+  return <Badge className="whitespace-normal text-left leading-snug" variant={VARIAN_STATUS_PERIODE[status] || "neutral"}>{LABEL_STATUS_PERIODE[status] || status}</Badge>;
 }
 function teksCutoff(c) {
   if (!c?.mulai || !c?.selesai) return null;
@@ -62,6 +69,10 @@ export default function FinanceReconciliation() {
   const [fStatusP, setFStatusP] = useState("");
   const [fRekening, setFRekening] = useState("");
   const [fBelum, setFBelum] = useState("");
+  const [fLate, setFLate] = useState("");
+  const [fTinjau, setFTinjau] = useState("");
+  const [fokusDetail, setFokusDetail] = useState(""); // "" | "late" | "tinjau"
+  const bolehAdmin = useMemo(bolehFinanceAdmin, []);
   const [qBaris, setQBaris] = useState("");
   const [fStatusB, setFStatusB] = useState("");
   const [fArah, setFArah] = useState("");
@@ -74,8 +85,10 @@ export default function FinanceReconciliation() {
     (!fStatusP || s.status === fStatusP)
     && (!fRekening || s.cashAccount?.name === fRekening)
     && (!fBelum || (fBelum === "ada" ? s.belumCocok > 0 : !(s.belumCocok > 0)))
+    && (!fLate || (s.cutoffInfo?.postingSetelahCutoff?.jumlah > 0) === (fLate === "ada"))
+    && (!fTinjau || (s.perluDitinjau > 0) === (fTinjau === "ada"))
     && cocok(qPeriode, s.cashAccount?.name, tanggalPendek(s.periodStart), tanggalPendek(s.periodEnd), s.periodStart, s.periodEnd, s.note),
-  ), [statements, qPeriode, fStatusP, fRekening, fBelum]);
+  ), [statements, qPeriode, fStatusP, fRekening, fBelum, fLate, fTinjau]);
 
   const semuaBaris = detail?.statement?.lines;
   const statusBaris = useMemo(
@@ -152,9 +165,11 @@ export default function FinanceReconciliation() {
           { key: "status", label: "Status", value: fStatusP, onChange: setFStatusP, options: [["DRAF_MENUNGGU_MUTASI", LABEL_STATUS_PERIODE.DRAF_MENUNGGU_MUTASI], ["DRAFT", LABEL_STATUS_PERIODE.DRAFT], ["SELESAI", LABEL_STATUS_PERIODE.SELESAI]] },
           { key: "rek", label: "Rekening", value: fRekening, onChange: setFRekening, options: namaRekening.map((n) => [n, n]) },
           { key: "belum", label: "Belum cocok", value: fBelum, onChange: setFBelum, options: [["ada", "Ada"], ["nol", "Semua cocok"]] },
+          { key: "late", label: "Posting Setelah Cutoff", value: fLate, onChange: setFLate, options: [["ada", "Ada"], ["tidak", "Tidak ada"]] },
+          { key: "tinjau", label: "Perlu Ditinjau", value: fTinjau, onChange: setFTinjau, options: [["ada", "Ada"], ["tidak", "Tidak ada"]] },
         ]}
         ringkasan={`${periodeTampil.length} periode${periodeTampil.length !== statements.length ? ` dari ${statements.length}` : ""}`}
-        onReset={() => { setQPeriode(""); setFStatusP(""); setFRekening(""); setFBelum(""); }}
+        onReset={() => { setQPeriode(""); setFStatusP(""); setFRekening(""); setFBelum(""); setFLate(""); setFTinjau(""); }}
       />
 
       <Card className="overflow-hidden">
@@ -181,14 +196,17 @@ export default function FinanceReconciliation() {
                 <TR>
                   <TH sticky width={144}>Rekening</TH>
                   <TH width={172}>Periode</TH>
-                  <TH numeric width={124} hideBelow="wide">Saldo Awal (Bank)</TH>
-                  <TH numeric width={124} hideBelow="wide">Saldo Akhir (Bank)</TH>
+                  <TH numeric width={124} hideBelow="2xl">Saldo Awal (Bank)</TH>
+                  <TH numeric width={124} hideBelow="2xl">Saldo Akhir (Bank)</TH>
                   <TH numeric width={124} hideBelow="wide">Saldo Buku Akhir</TH>
                   <TH numeric width={160}>Selisih Terbuka</TH>
-                  <TH numeric width={88} hideBelow="wide">Mutasi</TH>
-                  <TH numeric width={104} hideBelow="wide">Belum Cocok</TH>
+                  <TH width={176} hideBelow="2xl">Cutoff & Snapshot</TH>
+                  <TH numeric width={144}>Selisih Snapshot</TH>
+                  <TH numeric width={120}>Setelah Cutoff</TH>
+                  <TH numeric width={88} hideBelow="2xl">Mutasi</TH>
+                  <TH numeric width={104} hideBelow="2xl">Belum Cocok</TH>
                   <TH width={168}>Status</TH>
-                  <TH width={84} />
+                  <TH width={84} hideBelow="2xl" />
                 </TR>
               </THead>
               <TBody>
@@ -196,20 +214,41 @@ export default function FinanceReconciliation() {
                   <TR key={s.id} clickable selected={aktif === s.id} onClick={() => setAktif(s.id)}>
                     <TD sticky truncate className="font-medium">{s.cashAccount?.name}</TD>
                     <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(s.periodStart)} – {tanggalPendek(s.periodEnd)}</TD>
-                    <TD hideBelow="wide" numeric><Uang value={s.openingBalance} /></TD>
-                    <TD hideBelow="wide" numeric><Uang value={s.closingBalance} /></TD>
+                    <TD hideBelow="2xl" numeric><Uang value={s.openingBalance} /></TD>
+                    <TD hideBelow="2xl" numeric><Uang value={s.closingBalance} /></TD>
                     <TD hideBelow="wide" numeric><Uang value={s.saldoBuku} /></TD>
                     <TD numeric>
                       {Math.abs(s.selisih) < 0.005
                         ? <Badge variant="green">Rp0 · cocok</Badge>
                         : <span className="text-orange"><Uang value={Math.abs(s.selisih)} className="font-bold" /><span className="block text-[11px] text-ink3">{s.selisih < 0 ? "buku lebih tinggi" : "bank lebih tinggi"}</span></span>}
                     </TD>
-                    <TD hideBelow="wide" numeric>{s.jumlahBaris > 0 ? s.jumlahBaris : <span className="text-[12px] text-ink3">belum ada</span>}</TD>
-                    <TD hideBelow="wide" numeric>
+                    <TD hideBelow="2xl" className="text-[12px]">
+                      {s.cutoffInfo?.adaSnapshot ? (
+                        <span className="block leading-snug">
+                          <span className="block">Cutoff {s.cutoffInfo.cutoffAkhir ? tanggalJam(s.cutoffInfo.cutoffAkhir) : "—"}</span>
+                          <span className="block text-ink3">Snapshot {tanggalJam(s.cutoffInfo.snapshotAt)}</span>
+                        </span>
+                      ) : <span className="text-ink3">Belum ada snapshot</span>}
+                    </TD>
+                    <TD numeric>
+                      {!s.cutoffInfo?.adaSnapshot ? <span className="text-ink3">—</span>
+                        : !s.cutoffInfo.valid ? <Badge variant="red">Tidak berlaku</Badge>
+                        : Math.abs(s.cutoffInfo.selisihSnapshot) < 0.005 ? <Badge variant="green">Rp0</Badge>
+                        : <Uang value={s.cutoffInfo.selisihSnapshot} className="text-orange" />}
+                    </TD>
+                    <TD numeric>
+                      <span className="inline-flex flex-wrap justify-end gap-1">
+                        {s.cutoffInfo?.postingSetelahCutoff?.jumlah > 0 && <Badge variant="orange" title="Posting Setelah Cutoff">{s.cutoffInfo.postingSetelahCutoff.jumlah} late</Badge>}
+                        {s.perluDitinjau > 0 && <Badge variant="red" title="Perlu Ditinjau">{s.perluDitinjau} tinjau</Badge>}
+                        {!(s.cutoffInfo?.postingSetelahCutoff?.jumlah > 0) && !(s.perluDitinjau > 0) && <span className="text-ink3">—</span>}
+                      </span>
+                    </TD>
+                    <TD hideBelow="2xl" numeric>{s.jumlahBaris > 0 ? s.jumlahBaris : <span className="text-[12px] text-ink3">belum ada</span>}</TD>
+                    <TD hideBelow="2xl" numeric>
                       {s.jumlahBaris === 0 ? <span className="text-ink3">—</span> : s.belumCocok > 0 ? <Badge variant="orange">{s.belumCocok}</Badge> : <Badge variant="green">0</Badge>}
                     </TD>
-                    <TD className="whitespace-nowrap"><BadgeStatusPeriode status={s.status} /></TD>
-                    <TD><Button size="sm" variant="tertiary">Buka</Button></TD>
+                    <TD><BadgeStatusPeriode status={s.status} /></TD>
+                    <TD hideBelow="2xl"><Button size="sm" variant="tertiary">Buka</Button></TD>
                   </TR>
                 ))}
               </TBody>
@@ -268,6 +307,19 @@ export default function FinanceReconciliation() {
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Fokus tampilan">
+            {[["", "Semua"], ["late", "Posting Setelah Cutoff"], ["tinjau", "Perlu Ditinjau"]].map(([k, l]) => (
+              <Button key={k || "semua"} size="sm" variant={fokusDetail === k ? "secondary" : "neutral"} className="max-sm:min-h-11" onClick={() => setFokusDetail(k)}>{l}</Button>
+            ))}
+          </div>
+
+          {fokusDetail !== "tinjau" && (
+            <PanelCutoff detail={detail} bolehAdmin={bolehAdmin} filter={fokusDetail || null} onUbah={muat} />
+          )}
+          {fokusDetail !== "late" && (
+            <PerluDitinjau data={detail.perluDitinjau} bolehTinjau={bolehAdmin} onTinjau={async (d) => { await api.tinjauExceptionRekon(d); await muat(); }} />
           )}
 
           <PenyesuaianBuku data={detail.penyesuaianBuku} />
