@@ -205,7 +205,11 @@ export function daftarWorkspaceAktif() {
 }
 
 /** Boleh lewat jalur OTOMATIS_DISETUJUI? Default tertutup (workspace tanpa `autoApprove` = selalu manual). */
-export function bolehAutoApprove(cfg, expenseType, amount) {
+// mandiriOwn = pengajuan diajukan oleh akun own-only (delivery:expense:own:write tanpa jalur pengajuan lama;
+// diturunkan SERVER-SIDE dari izin aktor, bukan field kiriman klien). Pengajuan mandiri Driver/Helper/Leader
+// Driver TIDAK PERNAH auto-approve: selalu menunggu persetujuan Finance. Jalur/role lama tidak berubah.
+export function bolehAutoApprove(cfg, expenseType, amount, { mandiriOwn = false } = {}) {
+  if (mandiriOwn) return false;
   const policy = cfg?.autoApprove;
   if (!policy) return false;
   if (!policy.types.includes(expenseType)) return false;

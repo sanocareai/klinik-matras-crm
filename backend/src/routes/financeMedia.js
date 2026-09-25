@@ -13,6 +13,11 @@
 //
 // Izin: FINANCE_READ melihat semua. Pemegang FINANCE_EXPENSE_SUBMIT saja hanya
 // melihat foto pada dokumen pengeluaran/pembelian milik/ajuannya sendiri.
+// Tambahan (24 Sep 2026): PEMILIK Pengajuan Biaya workspace DELIVERY (Driver/Helper/Leader Driver
+// lewat delivery:expense:own:read, atau pemegang izin pengajuan lama) boleh melihat foto bukti pada
+// pengajuan DELIVERY miliknya SENDIRI (requestedBy/createdBy) — termasuk sebelum pengajuan menjadi
+// FinExpense — TANPA finance:read. Tidak membuka media Finance, pengajuan orang lain, maupun daftar global.
+// Memakai mekanisme yang sama (Bearer atau URL bertanda-tangan 10 menit); tidak ada storage/endpoint baru.
 
 import express from "express";
 import fs from "node:fs";
@@ -31,10 +36,24 @@ function fileUtama(file) {
   return file.replace(/_t\.jpg$/, ".jpg");
 }
 
+/** Pemilik pengajuan DELIVERY milik sendiri yang memuat foto ini? (workspace lain TIDAK dihitung.) */
+async function pemilikBuktiPengajuanDelivery(user, file) {
+  const punyaIzin = hasPermission(user, P.DELIVERY_EXPENSE_OWN_READ)
+    || hasPermission(user, P.FINANCE_EXPENSE_SUBMIT) || hasPermission(user, P.FINANCE_POST) || hasPermission(user, P.FINANCE_ADMIN);
+  if (!punyaIzin) return false;
+  const url = `${RECEIPTS_URL_PREFIX}/${fileUtama(file)}`;
+  const bukti = await prisma.expenseSubmissionProof.findFirst({
+    where: { url, submission: { division: "DELIVERY", OR: [{ requestedById: user.id }, { createdById: user.id }] } },
+    select: { id: true },
+  });
+  return !!bukti;
+}
+
 /** Boleh melihat foto ini? */
 export async function bolehLihatBukti(user, file) {
   if (!user) return false;
   if (hasPermission(user, P.FINANCE_READ)) return true;
+  if (await pemilikBuktiPengajuanDelivery(user, file)) return true;
   if (hasPermission(user, P.FINANCE_EXPENSE_SUBMIT)) {
     const url = `${RECEIPTS_URL_PREFIX}/${fileUtama(file)}`;
     const milik = { receiptUrl: url, OR: [{ createdById: user.id }, { reimburseToId: user.id }] };
