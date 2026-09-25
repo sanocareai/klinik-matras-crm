@@ -23,6 +23,7 @@ import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiTagihan as matriksTagihan, aksiPembayaranSupplier } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import PilihJenisTagihan, { bodyJenis, jenisLengkap } from "@/features/finance/JenisTagihan.jsx";
 
 // Tagihan: belum disetujui = Edit bebas (belum ada jurnal). Sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // Batalkan (jurnal dibalik; diblokir server kalau sudah ada pembayaran aktif) lalu catat ulang.
@@ -44,7 +45,9 @@ function aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk }) {
     return {
       primary: {
         label: "Setujui", variant: "secondary",
-        confirmText: `Setujui tagihan ${b.billNumber} sebesar ${formatUang(b.amount)}? Utang akan masuk buku besar.`,
+        disabled: !b.billType,
+        title: !b.billType ? "Pilih Jenis Tagihan dulu lewat Edit (mis. Bahan Baku untuk kain/busa) supaya tidak salah tercatat sebagai beban" : undefined,
+        confirmText: `Setujui tagihan ${b.billNumber} sebesar ${formatUang(b.amount)} (${b.jenisTagihan?.label || "tanpa jenis"})? Utang akan masuk buku besar.`,
         onClick: () => aksi(() => api.approveFinanceBill(b.id)),
       },
       items,
@@ -100,6 +103,7 @@ export default function FinanceSuppliers() {
   const [aging, setAging] = useState(null);
   const [unbilled, setUnbilled] = useState([]);
   const [kategori, setKategori] = useState([]);
+  const [kategoriBeli, setKategoriBeli] = useState([]);
   const [rekening, setRekening] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -122,7 +126,7 @@ export default function FinanceSuppliers() {
     setLoading(true);
     setError(null);
     try {
-      const [s, b, p, ag, ub, k, r] = await Promise.all([
+      const [s, b, p, ag, ub, k, r, kb] = await Promise.all([
         api.getFinanceSuppliers(),
         api.getFinanceBills(),
         api.getFinanceSupplierPayments(),
@@ -130,6 +134,7 @@ export default function FinanceSuppliers() {
         api.getFinanceUnbilledReceipts().catch(() => ({ receipts: [] })),
         api.getFinanceExpenseCategories(),
         api.getFinanceCashAccounts().catch(() => ({ accounts: [] })),
+        api.getFinancePurchaseCategories().catch(() => ({ categories: [] })),
       ]);
       setSuppliers(s.suppliers);
       setBills(b.bills);
@@ -137,6 +142,7 @@ export default function FinanceSuppliers() {
       setAging(ag);
       setUnbilled(ub.receipts);
       setKategori(k.categories);
+      setKategoriBeli(kb.categories || []);
       setRekening((r.accounts || []).filter((a) => a.active));
     } catch (e) {
       setError(e.message || "Gagal memuat data supplier");
@@ -295,9 +301,9 @@ export default function FinanceSuppliers() {
                       <TD truncate>{b.supplier?.name}</TD>
                       <TD className="min-w-0">
                         <span className="block truncate" title={b.description}>{b.description}</span>
-                        {b.goodsReceipt && (
-                          <span className="block truncate text-[11px] text-ink3" title={`dari penerimaan ${b.goodsReceipt.receiptNumber}`}>dari penerimaan {b.goodsReceipt.receiptNumber}</span>
-                        )}
+                        <span className={cn("block truncate text-[11px]", b.jenisTagihan?.lama && ["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status) ? "text-orange" : "text-ink3")}>
+                          {b.jenisTagihan?.label}{b.goodsReceipt ? ` · penerimaan ${b.goodsReceipt.receiptNumber}` : ""}
+                        </span>
                       </TD>
                       <TD hideBelow="2xl" className="whitespace-nowrap text-[12px]">{tanggalPendek(b.billDate)}</TD>
                       <TD className="whitespace-nowrap text-[12px]">{b.dueDate ? tanggalPendek(b.dueDate) : <span className="text-ink3">—</span>}</TD>
@@ -467,12 +473,12 @@ export default function FinanceSuppliers() {
       <ModalSupplier open={modal === "supplier"} onClose={() => setModal(null)} onSubmit={(d) => aksi(() => api.createFinanceSupplier(d))} />
       <ModalTagihan
         open={modal === "tagihan"} onClose={() => setModal(null)}
-        suppliers={suppliers} unbilled={unbilled} kategori={kategori}
+        suppliers={suppliers} unbilled={unbilled} kategori={kategori} kategoriBeli={kategoriBeli}
         onSubmit={(d) => aksi(() => api.createFinanceBill(d))}
       />
       {editUntuk && (
         <ModalEditTagihan
-          bill={editUntuk} suppliers={suppliers} kategori={kategori} onClose={() => setEditUntuk(null)}
+          bill={editUntuk} suppliers={suppliers} kategori={kategori} kategoriBeli={kategoriBeli} unbilled={unbilled} onClose={() => setEditUntuk(null)}
           onSubmit={(d) => aksi(async () => { await api.editFinanceBill(editUntuk.id, d); setEditUntuk(null); })}
         />
       )}
@@ -517,15 +523,17 @@ function ModalSupplier({ open, onClose, onSubmit }) {
   );
 }
 
-function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, onSubmit }) {
+function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, kategoriBeli, onSubmit }) {
   const [f, setF] = useState({
     supplierId: "", supplierRef: "", billDate: "", dueDate: "", amount: "",
-    description: "", goodsReceiptId: "", expenseCategoryId: "",
+    description: "", billType: "", goodsReceiptId: "", expenseCategoryId: "", purchaseCategoryId: "",
   });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const grDipilih = unbilled.find((r) => r.id === f.goodsReceiptId);
-  const valid = f.supplierId && f.description.trim() && Number(f.amount) > 0 &&
-    (f.goodsReceiptId || f.expenseCategoryId);
+  const valid = f.supplierId && f.description.trim() && Number(f.amount) > 0 && jenisLengkap(f);
+  const kirim = () => {
+    const { goodsReceiptId, expenseCategoryId, purchaseCategoryId, billType, ...dasar } = f;
+    return onSubmit({ ...dasar, ...bodyJenis(f) });
+  };
 
   return (
     <Modal
@@ -533,7 +541,7 @@ function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, onSubmit }
       title="Tagihan Supplier Baru"
       description="Nominalnya diinput dari dokumen tagihan fisik/PDF supplier — ini satu-satunya sumbernya."
       className="w-[560px]"
-      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!valid}>Simpan</TombolAksi></>}
+      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={kirim} disabled={!valid}>Simpan</TombolAksi></>}
     >
       <div className="space-y-3">
         <Field label="Supplier" required>
@@ -556,45 +564,10 @@ function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, onSubmit }
           </Field>
         </div>
 
-        <Field
-          label="Menagih penerimaan barang"
-          hint="Pilih kalau tagihan ini untuk barang yang sudah masuk gudang — nilai persediaannya sudah tercatat di sana"
-        >
-          <Pilihan value={f.goodsReceiptId} onChange={(v) => { set("goodsReceiptId", v); if (v) set("expenseCategoryId", ""); }}>
-            <option value="">— bukan pembelian barang —</option>
-            {unbilled.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.receiptNumber} · {r.supplier || "tanpa supplier"} · nilai terima {formatUang(r.nilaiTerima)}
-              </option>
-            ))}
-          </Pilihan>
-        </Field>
-
-        {grDipilih && (
-          <div className="rounded-lg bg-inset px-3 py-2 text-[12px] text-ink2">
-            Nilai penerimaan menurut ledger stok: <strong>{formatUang(grDipilih.nilaiTerima)}</strong>
-            {grDipilih.barisTanpaHarga > 0 && (
-              <span className="mt-1 block text-orange">
-                {grDipilih.barisTanpaHarga} dari {grDipilih.jumlahBaris} baris belum punya harga satuan —
-                selisihnya akan masuk akun Selisih Harga Pembelian.
-              </span>
-            )}
-            {Number(f.amount) > 0 && Math.abs(Number(f.amount) - grDipilih.nilaiTerima) > 0.005 && (
-              <span className="mt-1 block">
-                Selisih tagihan vs penerimaan: <strong>{formatUang(Number(f.amount) - grDipilih.nilaiTerima)}</strong>
-              </span>
-            )}
-          </div>
-        )}
-
-        {!f.goodsReceiptId && (
-          <Field label="Kategori biaya" required hint="Untuk tagihan jasa/sewa/maklon — menentukan akun bebannya">
-            <Pilihan value={f.expenseCategoryId} onChange={(v) => set("expenseCategoryId", v)}>
-              <option value="">— pilih —</option>
-              {kategori.map((k) => <option key={k.id} value={k.id}>{k.name} → {k.account?.code}</option>)}
-            </Pilihan>
-          </Field>
-        )}
+        <PilihJenisTagihan
+          f={f} set={set} kategori={kategori} kategoriBeli={kategoriBeli} unbilled={unbilled}
+          namaSupplier={suppliers.find((x) => x.id === f.supplierId)?.name || ""}
+        />
       </div>
     </Modal>
   );
@@ -692,24 +665,29 @@ function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmi
 }
 
 // Edit tagihan yang BELUM disetujui (belum ada jurnal): semua isian boleh berubah; server memvalidasi ulang.
-function ModalEditTagihan({ bill, suppliers, kategori, onClose, onSubmit }) {
+function ModalEditTagihan({ bill, suppliers, kategori, kategoriBeli, unbilled = [], onClose, onSubmit }) {
   const asli = {
     supplierId: bill.supplierId || "", supplierRef: bill.supplierRef || "", billDate: String(bill.billDate || "").slice(0, 10),
     dueDate: bill.dueDate ? String(bill.dueDate).slice(0, 10) : "", amount: Number(bill.amount) || 0,
-    description: bill.description || "", expenseCategoryId: bill.expenseCategoryId || "",
+    description: bill.description || "", billType: bill.billType || "", goodsReceiptId: bill.goodsReceiptId || "",
+    expenseCategoryId: bill.expenseCategoryId || "", purchaseCategoryId: bill.purchaseCategoryId || "",
   };
   const [f, setF] = useState(asli);
   const [alasan, setAlasan] = useState("");
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const tautGr = Boolean(bill.goodsReceiptId || bill.goodsReceipt);
+  const grTertaut = bill.goodsReceipt ? { ...bill.goodsReceipt, nilaiTerima: bill.goodsReceipt.nilaiTerima ?? null } : null;
+  const KUNCI_JENIS = ["billType", "goodsReceiptId", "expenseCategoryId", "purchaseCategoryId"];
 
   const beda = {};
   for (const k of Object.keys(asli)) {
-    if (k === "expenseCategoryId" && tautGr) continue;
+    if (KUNCI_JENIS.includes(k)) continue;
     const sama = k === "amount" ? Number(f[k]) === Number(asli[k]) : (f[k] || "") === (asli[k] || "");
     if (!sama) beda[k] = k === "amount" ? Number(f[k]) : f[k];
   }
-  const valid = Object.keys(beda).length > 0 && alasan.trim() && f.supplierId && f.description.trim() && Number(f.amount) > 0 && (tautGr || f.expenseCategoryId);
+  // Jenis & akun tujuan dikirim sebagai satu kesatuan bila salah satunya berubah (server memvalidasi ulang kombinasinya).
+  const jenisBerubah = KUNCI_JENIS.some((k) => (f[k] || "") !== (asli[k] || ""));
+  if (jenisBerubah) Object.assign(beda, bodyJenis(f));
+  const valid = Object.keys(beda).length > 0 && alasan.trim() && f.supplierId && f.description.trim() && Number(f.amount) > 0 && jenisLengkap(f);
 
   return (
     <Modal
@@ -738,14 +716,15 @@ function ModalEditTagihan({ bill, suppliers, kategori, onClose, onSubmit }) {
           <Field label="Tanggal tagihan"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.billDate} onChange={(v) => set("billDate", v)} /></Field>
           <Field label="Jatuh tempo"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.dueDate} onChange={(v) => set("dueDate", v)} /></Field>
         </div>
-        {!tautGr && (
-          <Field label="Kategori biaya" required>
-            <Pilihan value={f.expenseCategoryId} onChange={(v) => set("expenseCategoryId", v)}>
-              <option value="">— pilih —</option>
-              {kategori.map((k) => <option key={k.id} value={k.id}>{k.name} → {k.account?.code}</option>)}
-            </Pilihan>
-          </Field>
+        {!bill.billType && (
+          <p className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">
+            Tagihan lama ini belum punya Jenis Tagihan dan belum bisa disetujui. Pilih jenisnya — kain, busa, per, dan bahan stok lain adalah <strong>Bahan Baku / Stok</strong>, bukan Overhead Produksi.
+          </p>
         )}
+        <PilihJenisTagihan
+          f={f} set={set} kategori={kategori} kategoriBeli={kategoriBeli} unbilled={unbilled} grTertaut={grTertaut}
+          namaSupplier={suppliers.find((x) => x.id === f.supplierId)?.name || ""}
+        />
         <Field label="Alasan perubahan" required hint="Wajib — tercatat di riwayat audit">
           <Input value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. salah ketik nominal" />
         </Field>

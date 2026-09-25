@@ -208,7 +208,7 @@ test("Supplier & Utang: tagihan → disetujui → pembayaran parsial/penuh; dua 
 
   const sup = await post(fin, "/suppliers", { name: "CV Busa Jaya", paymentTermDays: 14, bankName: "BCA", bankAccount: "1234567", bankHolder: "CV Busa Jaya" });
   assert.equal(sup.status, 201);
-  const tagihan = await post(fin, "/bills", { supplierId: sup.body.id, billDate: "2026-08-01", dueDate: "2026-08-15", amount: "1000000", description: "Busa 20 lembar", expenseCategoryId: kat.id });
+  const tagihan = await post(fin, "/bills", { supplierId: sup.body.id, billDate: "2026-08-01", dueDate: "2026-08-15", amount: "1000000", description: "Busa 20 lembar", billType: "JASA_OPERASIONAL", expenseCategoryId: kat.id });
   assert.equal(tagihan.status, 201, JSON.stringify(tagihan.body));
   const menunggu = (await get(approver, "/transaksi/tagihan?tab=MENUNGGU")).body.items[0];
   assert.deepEqual(menunggu.persetujuan, { jenis: "bill", id: tagihan.body.id });
@@ -362,7 +362,7 @@ test("Semua modul: daftar & detail menjawab 200 dengan bentuk yang sama (uji asa
   await post(fin, "/kasbon", { employeeName: "Agung", amount: "1000000", urgency: "keperluan keluarga", cashAccountId: bank.id, date: "2026-09-10" });
   await post(fin, "/other-income", { description: "Bunga bank", amount: "75000.50", accountId: lain.id, cashAccountId: bank.id });
   const sup = await post(fin, "/suppliers", { name: "CV Busa Jaya", paymentTermDays: 14, bankName: "BCA", bankAccount: "1234567" });
-  const bill = await post(fin, "/bills", { supplierId: sup.body.id, billDate: "2026-08-01", dueDate: "2026-08-15", amount: "1000000", description: "Busa", expenseCategoryId: kat.id });
+  const bill = await post(fin, "/bills", { supplierId: sup.body.id, billDate: "2026-08-01", dueDate: "2026-08-15", amount: "1000000", description: "Busa", billType: "JASA_OPERASIONAL", expenseCategoryId: kat.id });
   await post(fin, `/bills/${bill.body.id}/approve`);
   await post(fin, "/supplier-payments", { supplierId: sup.body.id, cashAccountId: bank.id, date: "2026-09-20", allocations: [{ billId: bill.body.id, amount: "400000" }] });
   const order = await buatOrder({ value: 2_000_000 });

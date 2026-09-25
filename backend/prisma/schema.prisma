@@ -6619,6 +6619,7 @@ model FinPurchaseCategory {
   purchases FinPurchase[]
 
   @@index([active])
+  supplierBills FinSupplierBill[]
   @@map("fin_purchase_categories")
 }
 
@@ -6722,6 +6723,13 @@ model FinSupplierBill {
   // Akun beban tujuan kalau tagihan ini BUKAN pembelian barang persediaan
   // (jasa, sewa, maklon). Diabaikan kalau goodsReceiptId terisi.
   expenseCategoryId String? @map("expense_category_id") @db.Uuid
+
+  // B3.3 (25 Sep 2026) — jenis tagihan menentukan akun debit saat disetujui (lihat posting/supplier.js):
+  //   BAHAN_BAKU (Persediaan 1-1400 / via GRNI 2-1150 bila tertaut penerimaan), JASA_OPERASIONAL & BIAYA_PRODUKSI_NON_STOK
+  //   (kategori biaya), MESIN_PERALATAN & UANG_MUKA_PEMBELIAN (kategori pembelian → akun aset). NULL = tagihan lama; tidak diubah.
+  billType           String? @map("bill_type") @db.VarChar(40)
+  purchaseCategoryId String? @map("purchase_category_id") @db.Uuid
+  purchaseCategory   FinPurchaseCategory? @relation(fields: [purchaseCategoryId], references: [id], onDelete: Restrict)
 
   status FinBillStatus @default(DRAFT)
 

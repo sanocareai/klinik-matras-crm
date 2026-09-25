@@ -70,7 +70,7 @@ async function buatPurchase(ctx, { status = "MENUNGGU_APPROVAL", by, amount = 75
 async function buatBill(ctx, { status = "MENUNGGU_APPROVAL", by, amount = 1_000_000, waktu = new Date() } = {}) {
   return testPrisma.finSupplierBill.create({
     data: {
-      billNumber: no("BILL"), supplierRef: "INV-778", supplierId: ctx.supplier.id, billDate: new Date("2026-09-10T00:00:00Z"),
+      billNumber: no("BILL"), supplierRef: no("INV"), billType: "JASA_OPERASIONAL", supplierId: ctx.supplier.id, billDate: new Date("2026-09-10T00:00:00Z"),
       amount, description: "Kain Ekstra Fleece", expenseCategoryId: ctx.kat.id, status, createdAt: waktu, createdById: by.user.id,
     },
   });

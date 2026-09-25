@@ -371,7 +371,7 @@ test("Refund: edit penuh saat menunggu (divalidasi vs uang diterima); setelah di
 test("Tagihan supplier: edit saat menunggu; setelah disetujui terkunci; batal = reversal, DIBLOKIR bila sudah ada pembayaran aktif", async () => {
   const ctx = await siapkan();
   const supplier = await testPrisma.finSupplier.create({ data: { code: "SUP-K", name: "CV Tekstil" } });
-  const b = await ctx.a.post("/api/finance/bills", { supplierId: supplier.id, billDate: "2026-09-10", amount: 1_000_000, description: "Kain", expenseCategoryId: ctx.kat.id });
+  const b = await ctx.a.post("/api/finance/bills", { supplierId: supplier.id, billDate: "2026-09-10", amount: 1_000_000, description: "Kain", billType: "JASA_OPERASIONAL", expenseCategoryId: ctx.kat.id });
   assert.equal(b.status, 201, JSON.stringify(b.body));
   const edit = await ctx.a.patch(`/api/finance/bills/${b.body.id}`, { reason: "Nominal di faktur berbeda", amount: 1_200_000, description: "Kain fleece" });
   assert.equal(edit.status, 200, JSON.stringify(edit.body));

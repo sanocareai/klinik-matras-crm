@@ -30,9 +30,10 @@
 //        Dr  Utang Usaha                    nilai bayar
 //            Cr  Kas/Bank                       nilai bayar
 //
-// Tagihan TANPA tautan goods receipt (jasa, sewa, maklon) melewati langkah 1
-// sama sekali: langkah 2 mendebet akun beban dari kategori biaya yang
-// dipilih, bukan Utang Barang Belum Ditagih.
+// Tagihan TANPA tautan goods receipt melewati langkah 1 sama sekali. Akun debitnya ditentukan JENIS TAGIHAN (B3.3,
+// services/finance/jenisTagihan.js): bahan baku → Persediaan Bahan Baku; mesin/peralatan & uang muka → akun aset kategori
+// pembelian; jasa/operasional & biaya produksi non-stok → akun beban kategori biaya. Tagihan lama tanpa jenis tetap memakai
+// kategori biaya seperti sebelumnya.
 
 import { postJournal, recordPostingGap, findEntryByKey } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
@@ -211,6 +212,17 @@ export async function postSupplierBill(tx, { billId, userId = null }) {
         supplierId: bill.supplierId,
       });
     }
+  } else if (bill.billType === "BAHAN_BAKU") {
+    // B3.3 — bahan baku TANPA penerimaan gudang: nilainya aset Persediaan Bahan Baku, BUKAN beban. Aman dari dobel karena
+    // tagihan yang menaut penerimaan mengambil cabang di atas (GRNI), dan pastikanAmanDisetujui() menolak tagihan bahan baku
+    // tanpa penerimaan bila supplier yang sama masih punya penerimaan yang sudah dibukukan tetapi belum ditagih.
+    const persediaan = await resolveAccount(tx, SYSTEM_KEYS.PERSEDIAAN_BAHAN);
+    lines.push({ accountId: persediaan.id, debit: nilaiTagihan, description: `Bahan baku — ${bill.description}`.slice(0, 250), supplierId: bill.supplierId });
+  } else if (bill.purchaseCategoryId) {
+    // B3.3 — mesin/peralatan (aset tetap) atau uang muka pembelian: akun aset dari kategori pembelian.
+    const kp = await tx.finPurchaseCategory.findUnique({ where: { id: bill.purchaseCategoryId }, select: { name: true, accountId: true, active: true } });
+    if (!kp || !kp.active) throw new AccountError("Kategori aset tagihan ini tidak ditemukan atau sudah nonaktif", 409);
+    lines.push({ accountId: kp.accountId, debit: nilaiTagihan, description: kp.name, supplierId: bill.supplierId });
   } else {
     // Tagihan jasa/sewa/maklon — langsung ke akun beban kategorinya.
     if (!bill.expenseCategoryId) {

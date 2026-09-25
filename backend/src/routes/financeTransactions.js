@@ -19,6 +19,7 @@
 // 3. PEMBATALAN LEWAT REVERSAL. Dokumen yang sudah diposting tidak pernah
 //    dihapus atau diubah nominalnya.
 
+import { siapkanJenisTagihan, pastikanAmanDisetujui, jenisTampilan } from "../services/finance/jenisTagihan.js";
 import { pandanganCutoff, daftarException, buatSnapshot } from "../services/finance/rekonSnapshot.js";
 import express from "express";
 import { randomUUID } from "node:crypto";
@@ -1441,6 +1442,7 @@ financeTxRouter.patch("/suppliers/:id", requirePermission(P.FINANCE_POST), async
 const billInclude = {
   supplier: { select: { id: true, code: true, name: true, paymentTermDays: true } },
   goodsReceipt: { select: { id: true, receiptNumber: true, supplier: true, receivedDate: true } },
+  purchaseCategory: { select: { id: true, code: true, name: true } },
   approvedBy: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },
   allocations: {
@@ -1457,6 +1459,7 @@ function bentukBill(b) {
     terbayar: moneyToNumber(terbayar),
     sisa: moneyToNumber(toMoney(b.amount).minus(terbayar)),
     allocations: b.allocations?.map((a) => ({ ...a, amount: moneyToNumber(a.amount) })),
+    jenisTagihan: jenisTampilan(b),
   };
 }
 
@@ -1485,13 +1488,22 @@ financeTxRouter.get("/bills", requirePermission(P.FINANCE_READ), async (req, res
 
 financeTxRouter.post("/bills", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    const { supplierId, supplierRef, billDate, dueDate, amount, description, goodsReceiptId, expenseCategoryId, attachmentUrl } = req.body;
+    const { supplierId, supplierRef, billDate, dueDate, amount, description, goodsReceiptId, expenseCategoryId, purchaseCategoryId, attachmentUrl, billType } = req.body;
     if (!supplierId) throw err("Supplier wajib dipilih");
     if (!description?.trim()) throw err("Keterangan tagihan wajib diisi");
     const nominal = toMoney(amount, { field: "Nominal tagihan" });
     if (nominal.lessThanOrEqualTo(0)) throw err("Nominal tagihan harus lebih dari 0");
-    if (!goodsReceiptId && !expenseCategoryId) {
-      throw err("Pilih dokumen penerimaan barang ATAU kategori biaya — tagihan harus tahu akan dibebankan ke mana");
+    // B3.3: jenis tagihan menentukan akun (Persediaan / beban / aset). Klien lama (mis. aplikasi mobile Finance) belum mengirim
+    // jenis: tetap diterima dengan aturan lama (penerimaan barang ATAU kategori biaya) dan jenis KOSONG — tagihan seperti itu tidak
+    // bisa disetujui sebelum jenisnya dipilih (pastikanAmanDisetujui), jadi tidak ada yang diam-diam tercatat sebagai beban.
+    let jenis;
+    if (billType) {
+      jenis = await siapkanJenisTagihan(prisma, { billType, goodsReceiptId, expenseCategoryId, purchaseCategoryId });
+    } else {
+      if (!goodsReceiptId && !expenseCategoryId) {
+        throw err("Pilih jenis tagihan (atau untuk format lama: dokumen penerimaan barang ATAU kategori biaya)");
+      }
+      jenis = { billType: null, goodsReceiptId: goodsReceiptId || null, expenseCategoryId: goodsReceiptId ? null : expenseCategoryId, purchaseCategoryId: null };
     }
 
     const supplier = await prisma.finSupplier.findUnique({
@@ -1518,8 +1530,10 @@ financeTxRouter.post("/bills", requirePermission(P.FINANCE_POST), async (req, re
         dueDate: tglJatuhTempo,
         amount: nominal,
         description: description.trim(),
-        goodsReceiptId: goodsReceiptId || null,
-        expenseCategoryId: goodsReceiptId ? null : expenseCategoryId,
+        billType: jenis.billType,
+        goodsReceiptId: jenis.goodsReceiptId,
+        expenseCategoryId: jenis.expenseCategoryId,
+        purchaseCategoryId: jenis.purchaseCategoryId,
         attachmentUrl: attachmentUrl || null,
         status: "MENUNGGU_APPROVAL",
         createdById: req.user.id,
@@ -1542,6 +1556,7 @@ financeTxRouter.post("/bills/:id/approve", requirePermission(P.FINANCE_APPROVE),
       if (!["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) {
         throw err(`Tagihan ini sudah berstatus ${b.status}`, 409);
       }
+      await pastikanAmanDisetujui(tx, b);
       const updated = await tx.finSupplierBill.update({
         where: { id: b.id },
         data: { status: "DISETUJUI", approvedAt: new Date(), approvedById: req.user.id },
@@ -3037,11 +3052,14 @@ financeTxRouter.patch("/bills/:id", requirePermission(P.FINANCE_POST), async (re
         if (!b.description?.trim()) throw err("Keterangan tagihan wajib diisi");
         data.description = b.description.trim();
       }
-      if (b.expenseCategoryId !== undefined) {
-        if (bl.goodsReceiptId) throw err("Tagihan yang menaut penerimaan barang tidak punya kategori biaya sendiri");
-        const kat = await tx.finExpenseCategory.findUnique({ where: { id: b.expenseCategoryId }, select: { active: true } });
-        if (!kat || !kat.active) throw err("Kategori biaya tidak ditemukan atau nonaktif", 404);
-        data.expenseCategoryId = b.expenseCategoryId;
+      // B3.3: jenis tagihan + akun tujuannya divalidasi ulang sebagai satu kesatuan (tagihan lama boleh dipilihkan jenisnya di sini).
+      if (["billType", "expenseCategoryId", "purchaseCategoryId", "goodsReceiptId"].some((k) => b[k] !== undefined)) {
+        const pakai = (k) => (b[k] !== undefined ? (b[k] || null) : bl[k]);
+        const jenis = await siapkanJenisTagihan(tx, {
+          billType: pakai("billType"), goodsReceiptId: pakai("goodsReceiptId"),
+          expenseCategoryId: pakai("expenseCategoryId"), purchaseCategoryId: pakai("purchaseCategoryId"),
+        });
+        Object.assign(data, jenis);
       }
       if (b.attachmentUrl !== undefined) data.attachmentUrl = b.attachmentUrl || null;
       const beda = Object.fromEntries(Object.entries(data).filter(([k, v]) => {
