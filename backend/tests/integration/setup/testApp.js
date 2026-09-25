@@ -32,6 +32,7 @@ const { financeUangMukaRouter } = await import("../../../src/routes/financeOpera
 const { financeKoreksiRouter } = await import("../../../src/routes/financeKoreksi.js");
 const { financeRekonCutoffRouter } = await import("../../../src/routes/financeRekonCutoff.js");
 const { financePenerimaanRouter } = await import("../../../src/routes/financePenerimaan.js");
+const { financePersediaanAwalRouter } = await import("../../../src/routes/financePersediaanAwal.js");
 const { financePushHooks } = await import("../../../src/middleware/financePushHooks.js");
 const { financePemasukanRouter } = await import("../../../src/routes/financePemasukan.js");
 const { financeApprovalsRouter } = await import("../../../src/routes/financeApprovals.js");
@@ -85,6 +86,7 @@ export function buildTestApp() {
   app.use("/api/finance", financeKoreksiRouter);
   app.use("/api/finance", financeRekonCutoffRouter);
   app.use("/api/finance", financePenerimaanRouter);
+  app.use("/api/finance", financePersediaanAwalRouter);
   app.use("/api/finance", financeApprovalsRouter);
   app.use("/api/finance", financePemasukanRouter);
   app.use("/api/finance", financePembayaranRouter);

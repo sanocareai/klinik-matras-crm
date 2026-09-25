@@ -46,7 +46,7 @@ export const LABEL_SUMBER = {
   MANUAL: "Jurnal manual", SALDO_AWAL: "Saldo awal", PEMBAYARAN_ORDER: "Pembayaran order", PENGAKUAN_PENDAPATAN: "Pengakuan pendapatan", REFUND: "Refund",
   PENGELUARAN: "Pengeluaran", PEMBELIAN: "Pembelian", BIAYA_KENDARAAN: "Biaya kendaraan", BIAYA_IKLAN: "Biaya iklan", PEMASUKAN_LAIN: "Pemasukan lain",
   TRANSFER_KAS: "Transfer kas", TAGIHAN_SUPPLIER: "Tagihan supplier", PEMBAYARAN_SUPPLIER: "Pembayaran supplier", PEMAKAIAN_BAHAN: "Pemakaian bahan",
-  PENERIMAAN_BAHAN: "Penerimaan bahan", KASBON: "Kasbon", REVERSAL: "Jurnal balik",
+  PENERIMAAN_BAHAN: "Penerimaan bahan", KASBON: "Kasbon", REVERSAL: "Jurnal balik", PERSEDIAAN_AWAL: "Persediaan awal (stok opname)",
 };
 const STATUS_JURNAL = { DRAFT: ["Draf", "neutral"], POSTED: ["Terposting", "success"], REVERSED: ["Sudah dibalik", "warning"], VOID: ["Batal", "neutral"] };
 const statusJ = (s) => ({ status: s, statusLabel: STATUS_JURNAL[s]?.[0] ?? s, nada: STATUS_JURNAL[s]?.[1] ?? "neutral" });

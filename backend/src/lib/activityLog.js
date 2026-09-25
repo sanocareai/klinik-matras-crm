@@ -53,6 +53,7 @@ export const ENTITY_TYPES = Object.freeze({
   FIN_PERIOD: "fin_period",
   FIN_ACCOUNT: "fin_account",
   FIN_SETTING: "fin_setting",
+  FIN_INVENTORY_OPENING: "fin_inventory_opening", // B3.6 snapshot stok & persediaan awal
   // Koreksi transaksi finance (17 Sept 2026, permintaan owner: sistem baru
   // mulai dipakai, wajar ada salah input, tapi tidak boleh diam-diam
   // menimpa angka yang sudah diposting) — lihat DOCUMENT_CORRECTED di
