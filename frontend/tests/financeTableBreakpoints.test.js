@@ -42,7 +42,6 @@ const FINANCE_DIR = path.join(__dirname, "..", "src", "pages", "finance");
 const HARUS_2XL = [
   "FinanceInvoices.jsx",
   "FinancePemasukan.jsx",
-  "FinanceSuppliers.jsx",
 ];
 
 // ⚠️ DIPERBARUI 22 Sep 2026, putaran ketiga (polish tabel produksi) —
@@ -56,13 +55,15 @@ const HARUS_2XL = [
 // gabungan itu WAJIB didorong oleh hook JS yang mengukur container asli,
 // BUKAN kembali ke `hideBelow`/`mid` CSS (viewport-based) — itu pola LAMA
 // yang terbukti mengolapskan kolom Keterangan.
-const HARUS_PAKAI_TIER_HOOK = ["FinanceExpenses.jsx", "FinancePurchases.jsx"];
+// FinanceSuppliers.jsx (B3.3.1, 25 Sep 2026) ikut pola ini: tier dari lebar container dengan fungsi tier sendiri
+// (useContainerTier(tierTagihan) — lihat features/finance/tierTagihan.js), colgroup per tier, tanpa hideBelow.
+const HARUS_PAKAI_TIER_HOOK = ["FinanceExpenses.jsx", "FinancePurchases.jsx", "FinanceSuppliers.jsx"];
 
 test("D-193b: halaman kolom-gabungan (Klasifikasi/Pembayaran) pakai useContainerTier, bukan hideBelow/mid CSS untuk kolom itu", () => {
   for (const nama of HARUS_PAKAI_TIER_HOOK) {
     const src = bacaSumber(nama);
     assert.ok(
-      src.includes('from "@/hooks/useContainerTier.js"') && src.includes("useContainerTier()"),
+      src.includes('from "@/hooks/useContainerTier.js"') && /useContainerTier([^)]*)/.test(src),
       `${nama} diharapkan mengimpor & memanggil useContainerTier() (bukan useBreakpointTier — lihat komentar di atas test ini) untuk kolom Klasifikasi/Pembayaran.`
     );
     assert.ok(
@@ -154,7 +155,7 @@ test("D-193: 'hideBelow' hanya memakai preset yang didukung tableLayout.js (buka
 // breakpoint viewport yang memilih) — `<CardList>`-nya WAJIB eksplisit
 // `className={CARD_VIEW_CLASS}`, kalau tidak dua-duanya akan tampil
 // bersamaan di SEMUA lebar layar (bug berbeda, sama-sama nyata).
-const HARUS_CSS_TOGGLE_CARDLIST = ["FinanceKasbon.jsx", "FinancePayments.jsx", "FinanceReceivables.jsx", "FinanceSuppliers.jsx"];
+const HARUS_CSS_TOGGLE_CARDLIST = ["FinanceKasbon.jsx", "FinancePayments.jsx", "FinanceReceivables.jsx"];
 
 test("D-XXX (regresi 'Daftar Pengeluaran kosong'): <CardList> netral di cards.jsx — TIDAK membawa CARD_VIEW_CLASS/md:hidden bawaan", () => {
   const src = fs.readFileSync(path.join(__dirname, "..", "src", "features", "finance", "cards.jsx"), "latin1");
