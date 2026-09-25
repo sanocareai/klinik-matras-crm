@@ -108,6 +108,7 @@ export default function FinanceSuppliers() {
   const [unbilled, setUnbilled] = useState([]);
   const [kategori, setKategori] = useState([]);
   const [kategoriBeli, setKategoriBeli] = useState([]);
+  const [metodeInfo, setMetodeInfo] = useState(null);
   const [rekening, setRekening] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -130,7 +131,7 @@ export default function FinanceSuppliers() {
     setLoading(true);
     setError(null);
     try {
-      const [s, b, p, ag, ub, k, r, kb] = await Promise.all([
+      const [s, b, p, ag, ub, k, r, kb, mi] = await Promise.all([
         api.getFinanceSuppliers(),
         api.getFinanceBills(),
         api.getFinanceSupplierPayments(),
@@ -139,6 +140,7 @@ export default function FinanceSuppliers() {
         api.getFinanceExpenseCategories(),
         api.getFinanceCashAccounts().catch(() => ({ accounts: [] })),
         api.getFinancePurchaseCategories().catch(() => ({ categories: [] })),
+        api.getFinanceInventoryMethod().catch(() => null),
       ]);
       setSuppliers(s.suppliers);
       setBills(b.bills);
@@ -147,6 +149,7 @@ export default function FinanceSuppliers() {
       setUnbilled(ub.receipts);
       setKategori(k.categories);
       setKategoriBeli(kb.categories || []);
+      setMetodeInfo(mi);
       setRekening((r.accounts || []).filter((a) => a.active));
     } catch (e) {
       setError(e.message || "Gagal memuat data supplier");
@@ -496,12 +499,12 @@ export default function FinanceSuppliers() {
       <ModalSupplier open={modal === "supplier"} onClose={() => setModal(null)} onSubmit={(d) => aksi(() => api.createFinanceSupplier(d))} />
       <ModalTagihan
         open={modal === "tagihan"} onClose={() => setModal(null)}
-        suppliers={suppliers} unbilled={unbilled} kategori={kategori} kategoriBeli={kategoriBeli}
+        suppliers={suppliers} unbilled={unbilled} kategori={kategori} kategoriBeli={kategoriBeli} metodeInfo={metodeInfo}
         onSubmit={(d) => aksi(() => api.createFinanceBill(d))}
       />
       {editUntuk && (
         <ModalEditTagihan
-          bill={editUntuk} suppliers={suppliers} kategori={kategori} kategoriBeli={kategoriBeli} unbilled={unbilled} onClose={() => setEditUntuk(null)}
+          bill={editUntuk} suppliers={suppliers} kategori={kategori} kategoriBeli={kategoriBeli} metodeInfo={metodeInfo} unbilled={unbilled} onClose={() => setEditUntuk(null)}
           onSubmit={(d) => aksi(async () => { await api.editFinanceBill(editUntuk.id, d); setEditUntuk(null); })}
         />
       )}
@@ -546,13 +549,13 @@ function ModalSupplier({ open, onClose, onSubmit }) {
   );
 }
 
-function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, kategoriBeli, onSubmit }) {
+function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, kategoriBeli, metodeInfo, onSubmit }) {
   const [f, setF] = useState({
     supplierId: "", supplierRef: "", billDate: "", dueDate: "", amount: "",
     description: "", billType: "", goodsReceiptId: "", expenseCategoryId: "", purchaseCategoryId: "",
   });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const valid = f.supplierId && f.description.trim() && Number(f.amount) > 0 && jenisLengkap(f);
+  const valid = f.supplierId && f.description.trim() && Number(f.amount) > 0 && jenisLengkap(f, metodeInfo);
   const kirim = () => {
     const { goodsReceiptId, expenseCategoryId, purchaseCategoryId, billType, ...dasar } = f;
     return onSubmit({ ...dasar, ...bodyJenis(f) });
@@ -588,7 +591,7 @@ function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, kategoriBe
         </div>
 
         <PilihJenisTagihan
-          f={f} set={set} kategori={kategori} kategoriBeli={kategoriBeli} unbilled={unbilled}
+          f={f} set={set} kategori={kategori} kategoriBeli={kategoriBeli} unbilled={unbilled} metodeInfo={metodeInfo}
           namaSupplier={suppliers.find((x) => x.id === f.supplierId)?.name || ""}
         />
       </div>
@@ -688,7 +691,7 @@ function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmi
 }
 
 // Edit tagihan yang BELUM disetujui (belum ada jurnal): semua isian boleh berubah; server memvalidasi ulang.
-function ModalEditTagihan({ bill, suppliers, kategori, kategoriBeli, unbilled = [], onClose, onSubmit }) {
+function ModalEditTagihan({ bill, suppliers, kategori, kategoriBeli, metodeInfo = null, unbilled = [], onClose, onSubmit }) {
   const asli = {
     supplierId: bill.supplierId || "", supplierRef: bill.supplierRef || "", billDate: String(bill.billDate || "").slice(0, 10),
     dueDate: bill.dueDate ? String(bill.dueDate).slice(0, 10) : "", amount: Number(bill.amount) || 0,
@@ -710,7 +713,7 @@ function ModalEditTagihan({ bill, suppliers, kategori, kategoriBeli, unbilled = 
   // Jenis & akun tujuan dikirim sebagai satu kesatuan bila salah satunya berubah (server memvalidasi ulang kombinasinya).
   const jenisBerubah = KUNCI_JENIS.some((k) => (f[k] || "") !== (asli[k] || ""));
   if (jenisBerubah) Object.assign(beda, bodyJenis(f));
-  const valid = Object.keys(beda).length > 0 && alasan.trim() && f.supplierId && f.description.trim() && Number(f.amount) > 0 && jenisLengkap(f);
+  const valid = Object.keys(beda).length > 0 && alasan.trim() && f.supplierId && f.description.trim() && Number(f.amount) > 0 && jenisLengkap(f, metodeInfo);
 
   return (
     <Modal
@@ -745,7 +748,7 @@ function ModalEditTagihan({ bill, suppliers, kategori, kategoriBeli, unbilled = 
           </p>
         )}
         <PilihJenisTagihan
-          f={f} set={set} kategori={kategori} kategoriBeli={kategoriBeli} unbilled={unbilled} grTertaut={grTertaut}
+          f={f} set={set} kategori={kategori} kategoriBeli={kategoriBeli} unbilled={unbilled} grTertaut={grTertaut} metodeInfo={metodeInfo}
           namaSupplier={suppliers.find((x) => x.id === f.supplierId)?.name || ""}
         />
         <Field label="Alasan perubahan" required hint="Wajib — tercatat di riwayat audit">

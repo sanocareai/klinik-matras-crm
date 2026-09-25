@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { JENIS_TAGIHAN, opsiKategori, bodyJenis, jenisLengkap } from "../src/features/finance/jenisTagihanLogika.js";
+import {
+  JENIS_TAGIHAN, opsiKategori, bodyJenis, jenisLengkap, metodeUntukTanggal, bahanBakuButuhPenerimaan, CATATAN_PERIODIK, tanggalIndonesia,
+} from "../src/features/finance/jenisTagihanLogika.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baca = (rel) => fs.readFileSync(path.join(__dirname, "..", "src", rel), "utf8");
@@ -48,4 +50,41 @@ test("Form tagihan memakai pilihan jenis; Setujui nonaktif untuk tagihan lama ta
   assert.match(s, /Pilih Jenis Tagihan dulu/);
   const k = baca("features/finance/JenisTagihan.jsx");
   for (const t of ["Nilai diterima", "Nilai ditagih", "Selisih", "Dokumen", "Supplier (penerimaan)"]) assert.ok(k.includes(t), t);
+});
+
+// ── B3.5 — metode persediaan periodik sementara & cutover ──────────────────────────────────────────────────────────────
+
+const info = { sebelumCutover: "PERIODIK", cutover: "2026-10-01", sesudahCutover: "PERPETUAL" };
+
+test("Metode per tanggal tagihan: periodik s.d. 30 Sep 2026, perpetual mulai 1 Okt 2026 (cutover kosong = periodik terus)", () => {
+  assert.equal(metodeUntukTanggal(info, "2026-09-30"), "PERIODIK");
+  assert.equal(metodeUntukTanggal(info, "2026-10-01"), "PERPETUAL");
+  assert.equal(metodeUntukTanggal(info, "2026-12-31"), "PERPETUAL");
+  assert.equal(metodeUntukTanggal({ sebelumCutover: "PERIODIK", cutover: null }, "2030-01-01"), "PERIODIK");
+  assert.equal(metodeUntukTanggal(null, "2026-10-01"), null, "info belum dimuat → server yang menegakkan");
+  assert.equal(tanggalIndonesia("2026-10-01"), "1 Okt 2026");
+});
+
+test("Bahan baku tanpa penerimaan setelah cutover tidak bisa disimpan; dengan penerimaan tetap boleh; sebelum cutover boleh", () => {
+  const dasar = { billType: "BAHAN_BAKU" };
+  assert.ok(jenisLengkap({ ...dasar, billDate: "2026-09-30" }, info));
+  assert.ok(!jenisLengkap({ ...dasar, billDate: "2026-10-01" }, info));
+  assert.ok(bahanBakuButuhPenerimaan({ ...dasar, billDate: "2026-10-05" }, info));
+  assert.ok(jenisLengkap({ ...dasar, billDate: "2026-10-05", goodsReceiptId: "gr1" }, info));
+  assert.ok(!bahanBakuButuhPenerimaan({ billType: "JASA_OPERASIONAL", billDate: "2026-10-05" }, info));
+  assert.ok(jenisLengkap({ ...dasar, billDate: "2026-10-05" }, null), "tanpa info kebijakan jangan memblokir di layar");
+});
+
+test("UI menjelaskan metode periodik & perpetual dalam Bahasa Indonesia", () => {
+  assert.equal(CATATAN_PERIODIK, "Metode periodik — nilai persediaan akhir ditentukan melalui stok opname.");
+  const k = baca("features/finance/JenisTagihan.jsx");
+  assert.match(k, /CATATAN_PERIODIK/);
+  assert.match(k, /data-testid="catatan-periodik"/);
+  assert.match(k, /data-testid="catatan-perpetual"/);
+  assert.match(k, /Dr Beban Pokok Bahan Baku \(5-1100\) \/ Cr Utang Usaha/);
+  assert.match(k, /metode perpetual/);
+  const p = baca("pages/finance/FinanceSuppliers.jsx");
+  assert.match(p, /getFinanceInventoryMethod/);
+  assert.match(p, /jenisLengkap\(f, metodeInfo\)/);
+  assert.match(p, /metodeInfo=\{metodeInfo\}/);
 });

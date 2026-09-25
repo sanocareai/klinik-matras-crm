@@ -6,7 +6,7 @@ import { Pilihan, formatUang } from "@/features/finance/shared.jsx";
 // Aturan & penjaga double-counting ditegakkan server (backend/src/services/finance/jenisTagihan.js); di sini hanya pilihan
 // yang relevan per jenis supaya staf tidak memilih akun beban untuk bahan baku.
 
-import { JENIS_TAGIHAN, opsiKategori } from "@/features/finance/jenisTagihanLogika.js";
+import { JENIS_TAGIHAN, opsiKategori, metodeUntukTanggal, tanggalIndonesia, CATATAN_PERIODIK } from "@/features/finance/jenisTagihanLogika.js";
 export { JENIS_TAGIHAN, opsiKategori, bodyJenis, jenisLengkap } from "@/features/finance/jenisTagihanLogika.js";
 
 /**
@@ -15,13 +15,14 @@ export { JENIS_TAGIHAN, opsiKategori, bodyJenis, jenisLengkap } from "@/features
  * @param unbilled penerimaan barang yang belum ditagih (GET /finance/bills/unbilled-receipts)
  * @param grTertaut penerimaan yang sudah tertaut ke tagihan ini (mode edit)
  */
-export default function PilihJenisTagihan({ f, set, kategori, kategoriBeli, unbilled = [], grTertaut = null, namaSupplier = "" }) {
+export default function PilihJenisTagihan({ f, set, kategori, kategoriBeli, unbilled = [], grTertaut = null, namaSupplier = "", metodeInfo = null }) {
   const jenis = JENIS_TAGIHAN.find((j) => j.kode === f.billType);
   const opsi = opsiKategori(f.billType, { kategori, kategoriBeli });
   const daftarGr = grTertaut && !unbilled.some((r) => r.id === grTertaut.id) ? [grTertaut, ...unbilled] : unbilled;
   const gr = daftarGr.find((r) => r.id === f.goodsReceiptId);
   const selisih = gr && Number(f.amount) > 0 ? Number(f.amount) - Number(gr.nilaiTerima || 0) : null;
   const pakaiAset = ["MESIN_PERALATAN", "UANG_MUKA_PEMBELIAN"].includes(f.billType);
+  const metode = metodeUntukTanggal(metodeInfo, f.billDate);
 
   return (
     <div className="space-y-3" data-testid="jenis-tagihan">
@@ -55,10 +56,20 @@ export default function PilihJenisTagihan({ f, set, kategori, kategoriBeli, unbi
               {gr.barisTanpaHarga > 0 && <div className="sm:col-span-2 text-orange">{gr.barisTanpaHarga} baris penerimaan belum punya harga — lengkapi di Gudang dulu, tagihan belum bisa disetujui.</div>}
             </dl>
           ) : (
-            <p className="rounded-lg bg-accentbg px-3 py-2 text-[12.5px] text-ink2">
-              Tanpa penerimaan gudang: saat disetujui dicatat <strong>Dr Persediaan Bahan Baku / Cr Utang Usaha</strong>. Kalau barangnya juga akan dicatat
-              di Gudang › Penerimaan Barang, tautkan penerimaannya — server menolak persetujuan bila berisiko tercatat dua kali.
-            </p>
+            metode === "PERPETUAL" ? (
+              <p className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="catatan-perpetual">
+                Mulai {tanggalIndonesia(metodeInfo?.cutover)} persediaan memakai <strong>metode perpetual</strong>: bahan baku wajib menaut Penerimaan Barang Gudang
+                (Gudang › Penerimaan Barang). Tagihan bahan baku tanpa penerimaan tidak bisa disimpan atau disetujui.
+              </p>
+            ) : (
+              <div className="rounded-lg bg-accentbg px-3 py-2 text-[12.5px] text-ink2" data-testid="catatan-periodik">
+                <p><strong>{CATATAN_PERIODIK}</strong></p>
+                <p className="mt-1">
+                  Tanpa penerimaan gudang: saat disetujui dicatat <strong>Dr Beban Pokok Bahan Baku (5-1100) / Cr Utang Usaha</strong>.
+                  Kalau barangnya juga akan dicatat di Gudang › Penerimaan Barang, tautkan penerimaannya — server menolak persetujuan bila berisiko tercatat dua kali.
+                </p>
+              </div>
+            )
           )}
         </>
       )}

@@ -31,12 +31,15 @@
 //            Cr  Kas/Bank                       nilai bayar
 //
 // Tagihan TANPA tautan goods receipt melewati langkah 1 sama sekali. Akun debitnya ditentukan JENIS TAGIHAN (B3.3,
-// services/finance/jenisTagihan.js): bahan baku → Persediaan Bahan Baku; mesin/peralatan & uang muka → akun aset kategori
+// services/finance/jenisTagihan.js): bahan baku → METODE PERIODIK (B3.5, tanggal tagihan sebelum cutover): Beban Pokok Bahan Baku
+// 5-1100, nilai persediaan akhir lewat stok opname; setelah cutover (perpetual) ditolak — wajib lewat penerimaan Gudang;
+// mesin/peralatan & uang muka → akun aset kategori
 // pembelian; jasa/operasional & biaya produksi non-stok → akun beban kategori biaya. Tagihan lama tanpa jenis tetap memakai
 // kategori biaya seperti sebelumnya.
 
 import { postJournal, recordPostingGap, findEntryByKey } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
+import { ambilKebijakanPersediaan, metodeUntukTanggal, METODE_PERSEDIAAN, pesanPerpetual } from "../inventoryMethod.js";
 import { toMoney, sumMoney, ZERO } from "../money.js";
 import { barisBiayaAdmin } from "../transferFee.js";
 
@@ -213,11 +216,16 @@ export async function postSupplierBill(tx, { billId, userId = null }) {
       });
     }
   } else if (bill.billType === "BAHAN_BAKU") {
-    // B3.3 — bahan baku TANPA penerimaan gudang: nilainya aset Persediaan Bahan Baku, BUKAN beban. Aman dari dobel karena
-    // tagihan yang menaut penerimaan mengambil cabang di atas (GRNI), dan pastikanAmanDisetujui() menolak tagihan bahan baku
-    // tanpa penerimaan bila supplier yang sama masih punya penerimaan yang sudah dibukukan tetapi belum ditagih.
-    const persediaan = await resolveAccount(tx, SYSTEM_KEYS.PERSEDIAAN_BAHAN);
-    lines.push({ accountId: persediaan.id, debit: nilaiTagihan, description: `Bahan baku — ${bill.description}`.slice(0, 250), supplierId: bill.supplierId });
+    // B3.5 — bahan baku TANPA penerimaan gudang, metode PERIODIK (tanggal tagihan sebelum cutover): Dr 5-1100 / Cr Utang Usaha.
+    // Persediaan akhir TIDAK dijurnal per tagihan — ditentukan lewat stok opname. Aman dari dobel karena tagihan yang menaut
+    // penerimaan mengambil cabang GRNI di atas, dan pastikanAmanDisetujui() menolak tagihan bahan baku tanpa penerimaan bila supplier
+    // yang sama masih punya penerimaan yang sudah dibukukan tetapi belum ditagih. Setelah cutover (perpetual) posting ditolak.
+    const kebijakan = await ambilKebijakanPersediaan(tx);
+    if (metodeUntukTanggal(kebijakan, bill.billDate) !== METODE_PERSEDIAAN.PERIODIK) {
+      throw new AccountError(pesanPerpetual(kebijakan), 409);
+    }
+    const bahanTerpakai = await resolveAccount(tx, SYSTEM_KEYS.BEBAN_POKOK_BAHAN);
+    lines.push({ accountId: bahanTerpakai.id, debit: nilaiTagihan, description: `Pembelian bahan baku (periodik) — ${bill.description}`.slice(0, 250), supplierId: bill.supplierId });
   } else if (bill.purchaseCategoryId) {
     // B3.3 — mesin/peralatan (aset tetap) atau uang muka pembelian: akun aset dari kategori pembelian.
     const kp = await tx.finPurchaseCategory.findUnique({ where: { id: bill.purchaseCategoryId }, select: { name: true, accountId: true, active: true } });

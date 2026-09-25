@@ -38,6 +38,10 @@ export const SETTING_KEYS = Object.freeze({
   // ini sudah tercermin di saldo itu — menjurnalnya lagi ke rekening akan
   // menggandakan kas. Lihat services/finance/penerimaanOrder.js.
   SALDO_AWAL_CUTOFF: "balance_cutover_date",
+  // Metode persediaan (B3.5, lihat services/finance/inventoryMethod.js). Sebelum tanggal cutover memakai metode ini
+  // (PERIODIK | PERPETUAL); mulai tanggal cutover SELALU PERPETUAL. Cutover kosong = tidak ada peralihan.
+  INVENTORY_METHOD_BEFORE_CUTOVER: "inventory_method_before_cutover",
+  INVENTORY_CUTOVER_DATE: "inventory_perpetual_cutover_date",
 
   // ── Pemetaan metode pembayaran → rekening kas/bank ──────────────────────
   // Payment.method (CASH/TRANSFER/QRIS) sudah ada sejak lama dan TIDAK
@@ -81,6 +85,8 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.RECEIPT_POLICY_SINCE]: "2026-09-19",
   [SETTING_KEYS.KASBON_BATAS_AKTIF]: "0",
   [SETTING_KEYS.SALDO_AWAL_CUTOFF]: "2026-09-18",
+  [SETTING_KEYS.INVENTORY_METHOD_BEFORE_CUTOVER]: "PERIODIK",
+  [SETTING_KEYS.INVENTORY_CUTOVER_DATE]: "2026-10-01",
   [SETTING_KEYS.CASH_ACCOUNT_CASH]: "",
   [SETTING_KEYS.CASH_ACCOUNT_TRANSFER]: "",
   [SETTING_KEYS.CASH_ACCOUNT_QRIS]: "",
@@ -178,6 +184,13 @@ export async function getVerificationGate(db) {
 export async function setSetting(db, key, value, userId = null) {
   if (!Object.values(SETTING_KEYS).includes(key)) {
     throw Object.assign(new Error(`Pengaturan "${key}" tidak dikenal`), { statusCode: 400 });
+  }
+  const salah = (pesan) => Object.assign(new Error(pesan), { statusCode: 400 });
+  if (key === SETTING_KEYS.INVENTORY_METHOD_BEFORE_CUTOVER && !["PERIODIK", "PERPETUAL"].includes(String(value))) {
+    throw salah("Metode persediaan sebelum cutover harus PERIODIK atau PERPETUAL");
+  }
+  if (key === SETTING_KEYS.INVENTORY_CUTOVER_DATE && String(value) !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+    throw salah("Tanggal cutover persediaan harus berformat YYYY-MM-DD (atau kosong = tanpa cutover)");
   }
   return db.finSetting.upsert({
     where: { key },

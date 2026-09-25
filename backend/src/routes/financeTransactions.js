@@ -20,6 +20,7 @@
 //    dihapus atau diubah nominalnya.
 
 import { siapkanJenisTagihan, pastikanAmanDisetujui, jenisTampilan } from "../services/finance/jenisTagihan.js";
+import { ambilKebijakanPersediaan, metodeUntukTanggal, kunciTanggal, CATATAN_PERIODIK } from "../services/finance/inventoryMethod.js";
 import { pandanganCutoff, daftarException, buatSnapshot } from "../services/finance/rekonSnapshot.js";
 import express from "express";
 import { randomUUID } from "node:crypto";
@@ -1498,7 +1499,7 @@ financeTxRouter.post("/bills", requirePermission(P.FINANCE_POST), async (req, re
     // bisa disetujui sebelum jenisnya dipilih (pastikanAmanDisetujui), jadi tidak ada yang diam-diam tercatat sebagai beban.
     let jenis;
     if (billType) {
-      jenis = await siapkanJenisTagihan(prisma, { billType, goodsReceiptId, expenseCategoryId, purchaseCategoryId });
+      jenis = await siapkanJenisTagihan(prisma, { billType, goodsReceiptId, expenseCategoryId, purchaseCategoryId, billDate: parseTanggal(billDate) });
     } else {
       if (!goodsReceiptId && !expenseCategoryId) {
         throw err("Pilih jenis tagihan (atau untuk format lama: dokumen penerimaan barang ATAU kategori biaya)");
@@ -1600,6 +1601,23 @@ financeTxRouter.post("/bills/:id/reject", requirePermission(P.FINANCE_APPROVE), 
     });
     const lengkap = await prisma.finSupplierBill.findUnique({ where: { id: hasil.id }, include: billInclude });
     res.json(bentukBill(lengkap));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Metode persediaan yang berlaku (B3.5) — dipakai UI supaya form tagihan bahan baku menjelaskan jalurnya sesuai tanggal tagihan.
+financeTxRouter.get("/inventory-method", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const kebijakan = await ambilKebijakanPersediaan(prisma);
+    const tanggal = req.query.tanggal ? kunciTanggal(String(req.query.tanggal)) : null;
+    res.json({
+      sebelumCutover: kebijakan.sebelumCutover,
+      cutover: kebijakan.cutover,
+      sesudahCutover: "PERPETUAL",
+      catatanPeriodik: CATATAN_PERIODIK,
+      ...(tanggal ? { tanggal, metode: metodeUntukTanggal(kebijakan, tanggal) } : {}),
+    });
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -3053,11 +3071,14 @@ financeTxRouter.patch("/bills/:id", requirePermission(P.FINANCE_POST), async (re
         data.description = b.description.trim();
       }
       // B3.3: jenis tagihan + akun tujuannya divalidasi ulang sebagai satu kesatuan (tagihan lama boleh dipilihkan jenisnya di sini).
-      if (["billType", "expenseCategoryId", "purchaseCategoryId", "goodsReceiptId"].some((k) => b[k] !== undefined)) {
+      // B3.5: mengubah TANGGAL tagihan bahan baku tanpa penerimaan juga menguji ulang metode persediaannya (periodik vs perpetual).
+      const tanggalMenggeser = b.billDate !== undefined && bl.billType === "BAHAN_BAKU";
+      if (["billType", "expenseCategoryId", "purchaseCategoryId", "goodsReceiptId"].some((k) => b[k] !== undefined) || tanggalMenggeser) {
         const pakai = (k) => (b[k] !== undefined ? (b[k] || null) : bl[k]);
         const jenis = await siapkanJenisTagihan(tx, {
           billType: pakai("billType"), goodsReceiptId: pakai("goodsReceiptId"),
           expenseCategoryId: pakai("expenseCategoryId"), purchaseCategoryId: pakai("purchaseCategoryId"),
+          billDate: data.billDate ?? bl.billDate,
         });
         Object.assign(data, jenis);
       }

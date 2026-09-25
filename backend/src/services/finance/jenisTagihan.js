@@ -1,7 +1,8 @@
 // JENIS TAGIHAN SUPPLIER (B3.3) — menentukan akun debit saat tagihan DISETUJUI dan menjaga persediaan tidak terjurnal dua kali.
 //
 //   BAHAN_BAKU               + penerimaan barang : Dr Utang Barang Belum Ditagih 2-1150 (GRNI) ± Selisih Harga / Cr Utang Usaha
-//                             tanpa penerimaan   : Dr Persediaan Bahan Baku 1-1400 / Cr Utang Usaha
+//                             tanpa penerimaan   : METODE PERIODIK (tanggal tagihan sebelum cutover, B3.5): Dr Beban Pokok Bahan Baku 5-1100 / Cr Utang Usaha;
+//                                                  persediaan akhir lewat stok opname. Setelah cutover (PERPETUAL): DITOLAK — wajib menaut penerimaan.
 //                             (Gudang menjurnal Dr Persediaan / Cr GRNI saat putaway — lihat posting/supplier.js.
 //                              Karena itu tagihan yang menaut penerimaan TIDAK mendebet Persediaan lagi.)
 //   JASA_OPERASIONAL         : Dr akun beban kategori biaya (tipe BEBAN) / Cr Utang Usaha
@@ -12,6 +13,7 @@
 // Tagihan lama (bill_type NULL) tidak diubah otomatis. Yang BELUM disetujui wajib dipilihkan jenisnya dulu sebelum bisa disetujui.
 
 import { findEntryByKey } from "./journal.js";
+import { ambilKebijakanPersediaan, metodeUntukTanggal, METODE_PERSEDIAAN, pesanPerpetual } from "./inventoryMethod.js";
 
 export class JenisTagihanError extends Error {
   constructor(message, statusCode = 422, code) { super(message); this.statusCode = statusCode; if (code) this.code = code; }
@@ -36,11 +38,19 @@ const STATUS_AKTIF = ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI", "DIBAYAR_SEBAGI
 
 const norm = (t) => String(t || "").trim().toLowerCase().replace(/\s+/g, " ");
 
+/** Bahan baku TANPA penerimaan hanya sah pada metode PERIODIK (tanggal tagihan sebelum cutover). Selain itu ditolak. */
+export async function pastikanPeriodikBerlaku(db, billDate) {
+  const kebijakan = await ambilKebijakanPersediaan(db);
+  if (metodeUntukTanggal(kebijakan, billDate) !== METODE_PERSEDIAAN.PERIODIK) {
+    throw new JenisTagihanError(pesanPerpetual(kebijakan), 422, "BAHAN_BAKU_TANPA_PENERIMAAN_PERPETUAL");
+  }
+}
+
 /**
  * Validasi isian & kembalikan kolom yang disimpan (billType, goodsReceiptId, expenseCategoryId, purchaseCategoryId).
  * Dipanggil saat BUAT dan UBAH (draf/menunggu). Tidak menulis apa pun.
  */
-export async function siapkanJenisTagihan(db, { billType, goodsReceiptId, expenseCategoryId, purchaseCategoryId }) {
+export async function siapkanJenisTagihan(db, { billType, goodsReceiptId, expenseCategoryId, purchaseCategoryId, billDate }) {
   if (!billType) throw new JenisTagihanError("Jenis tagihan wajib dipilih (Bahan Baku, Jasa/Operasional, Mesin/Peralatan, Uang Muka Pembelian, atau Biaya Produksi Non-Stok)");
   if (!JENIS_TAGIHAN[billType]) throw new JenisTagihanError(`Jenis tagihan "${billType}" tidak dikenal`, 400);
 
@@ -50,6 +60,7 @@ export async function siapkanJenisTagihan(db, { billType, goodsReceiptId, expens
       const gr = await db.goodsReceipt.findUnique({ where: { id: goodsReceiptId }, select: { id: true } });
       if (!gr) throw new JenisTagihanError("Dokumen penerimaan barang tidak ditemukan", 404);
     }
+    if (!goodsReceiptId && billDate) await pastikanPeriodikBerlaku(db, billDate);
     return { billType, goodsReceiptId: goodsReceiptId || null, expenseCategoryId: null, purchaseCategoryId: null };
   }
 
@@ -102,6 +113,16 @@ export async function pastikanAmanDisetujui(tx, bill) {
     if (dobel) throw new JenisTagihanError(`Faktur ${bill.supplierRef} dari supplier ini sudah tercatat di ${dobel.billNumber}`, 409, "FAKTUR_GANDA");
   }
 
+  // Tagihan yang tampak mengulang tagihan lain yang SUDAH masuk buku besar (supplier & tanggal sama, uraian sama) tidak disetujui otomatis.
+  const mirip = await cariTagihanMirip(tx, bill);
+  if (mirip) {
+    throw new JenisTagihanError(
+      `Tagihan ini tampak mengulang ${mirip.billNumber} (supplier, tanggal, dan uraian sama) yang sudah masuk buku besar — menyetujuinya akan menggandakan utang dan biaya. ` +
+      "Periksa faktur asli supplier. Bila memang duplikat, tolak/batalkan tagihan ini; bila pengiriman terpisah, isi Nomor Faktur Supplier yang berbeda.",
+      409, "TAGIHAN_DIDUGA_DUPLIKAT",
+    );
+  }
+
   if (bill.billType !== "BAHAN_BAKU") return;
 
   if (bill.goodsReceiptId) {
@@ -130,6 +151,33 @@ export async function pastikanAmanDisetujui(tx, bill) {
       throw new JenisTagihanError(`Ada penerimaan barang ${gr.receiptNumber} dari supplier ini yang sudah masuk Persediaan tetapi belum ditagih. Tautkan tagihan ke penerimaan itu supaya persediaan tidak tercatat dua kali.`, 409, "ADA_PENERIMAAN_BELUM_DITAGIH");
     }
   }
+}
+
+const STATUS_MASUK_BUKU = ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"];
+
+/**
+ * Tagihan lain (sudah masuk buku besar) dari supplier & tanggal tagihan yang sama dengan uraian yang sama/berisi satu sama lain.
+ * Bila kedua tagihan punya nomor faktur yang BERBEDA dianggap pengiriman terpisah (bukan duplikat).
+ */
+export async function cariTagihanMirip(tx, bill) {
+  const uraian = norm(bill.description);
+  if (uraian.length < 8 || !bill.billDate) return null;
+  const hari = new Date(bill.billDate);
+  const awal = new Date(Date.UTC(hari.getUTCFullYear(), hari.getUTCMonth(), hari.getUTCDate()));
+  const akhir = new Date(awal.getTime() + 86400000);
+  const kandidat = await tx.finSupplierBill.findMany({
+    where: { id: { not: bill.id }, supplierId: bill.supplierId, status: { in: STATUS_MASUK_BUKU }, billDate: { gte: awal, lt: akhir } },
+    select: { billNumber: true, description: true, supplierRef: true },
+  });
+  const refIni = norm(bill.supplierRef);
+  for (const k of kandidat) {
+    const u = norm(k.description);
+    if (u.length < 8 || !(u.includes(uraian) || uraian.includes(u))) continue;
+    const refLain = norm(k.supplierRef);
+    if (refIni && refLain && refIni !== refLain) continue;
+    return k;
+  }
+  return null;
 }
 
 /** Jenis turunan untuk tagihan lama (hanya tampilan; data tidak diubah). */

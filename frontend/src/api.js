@@ -1414,6 +1414,7 @@ export const api = {
   updateFinanceSupplier: (id, data) => request(`/finance/suppliers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   getFinanceBills: (params = {}) => request(`/finance/bills${qsFinance(params)}`),
   getFinanceUnbilledReceipts: () => request("/finance/bills/unbilled-receipts"),
+  getFinanceInventoryMethod: (tanggal) => request(`/finance/inventory-method${tanggal ? `?tanggal=${encodeURIComponent(tanggal)}` : ""}`),
   createFinanceBill: (data) => request("/finance/bills", { method: "POST", body: JSON.stringify(data) }),
   approveFinanceBill: (id) => request(`/finance/bills/${id}/approve`, { method: "POST" }),
   rejectFinanceBill: (id, reason) => request(`/finance/bills/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
