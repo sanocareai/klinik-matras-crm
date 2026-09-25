@@ -7,7 +7,9 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
+import { TableWrap, Table, ColGroup, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
+import { useContainerTier } from "@/hooks/useContainerTier.js";
+import { tierTagihan, lebarKolom, adaKolom, teksKedua, LEBAR_NOMOR } from "@/features/finance/tierTagihan.js";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
@@ -93,6 +95,8 @@ const TAB = [
 ];
 
 export default function FinanceSuppliers() {
+  // Tier tabel Tagihan dari lebar CONTAINER (bukan viewport) — lihat features/finance/tierTagihan.js.
+  const [tableRef, tier] = useContainerTier(tierTagihan);
   const [tab, setTab] = useState("tagihan");
   const [suppliers, setSuppliers] = useState([]);
   const [bills, setBills] = useState([]);
@@ -275,40 +279,53 @@ export default function FinanceSuppliers() {
           ) : billsTampil.length === 0 ? (
             <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada tagihan yang cocok dengan pencarian ini.</p></CardContent>
           ) : (
-            <>
-            <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
+            <div ref={tableRef} data-tier={tier}>
+            {tier !== "card" && (
+            <TableWrap className="dh-table">
               <Table fixed>
+                <ColGroup widths={lebarKolom(tier, AKSI_COL_WIDTH)} />
                 <THead>
                   <TR>
-                    <TH sticky width={124}>Nomor</TH>
-                    <TH width={104} hideBelow="2xl">Ref Supplier</TH>
-                    <TH width={150}>Supplier</TH><TH>Keterangan</TH>
-                    <TH width={92} hideBelow="2xl">Tanggal</TH><TH width={96}>Jatuh Tempo</TH>
-                    <TH numeric width={108} hideBelow="2xl">Nilai</TH>
-                    <TH numeric width={108} hideBelow="2xl">Terbayar</TH>
-                    <TH numeric width={112}>Sisa</TH>
-                    <TH width={100}>Status</TH>
-                    <TH width={AKSI_COL_WIDTH}>Aksi</TH>
+                    <TH sticky>Nomor</TH>
+                    {adaKolom(tier, "ref") && <TH>Ref Supplier</TH>}
+                    {adaKolom(tier, "supplier") && <TH>Supplier</TH>}
+                    <TH>Keterangan</TH>
+                    {adaKolom(tier, "tanggal") && <TH>Tanggal</TH>}
+                    {adaKolom(tier, "tempo") && <TH>Jatuh Tempo</TH>}
+                    {adaKolom(tier, "nilai") && <TH numeric>Nilai</TH>}
+                    {adaKolom(tier, "terbayar") && <TH numeric>Terbayar</TH>}
+                    <TH numeric>Sisa</TH>
+                    <TH>Status</TH>
+                    <TH>Aksi</TH>
                   </TR>
                 </THead>
                 <TBody>
                   {billsTampil.map((b) => {
                     const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk });
+                    const kedua = teksKedua(b, tier);
                     return (
                     <TR key={b.id}>
-                      <TD sticky className="font-mono text-[12px]">{b.billNumber}</TD>
-                      <TD hideBelow="2xl" truncate className="text-[12px] text-ink2">{b.supplierRef || "—"}</TD>
-                      <TD truncate>{b.supplier?.name}</TD>
-                      <TD className="min-w-0">
-                        <span className="block truncate" title={b.description}>{b.description}</span>
-                        <span className={cn("block truncate text-[11px]", b.jenisTagihan?.lama && ["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status) ? "text-orange" : "text-ink3")}>
-                          {b.jenisTagihan?.label}{b.goodsReceipt ? ` · penerimaan ${b.goodsReceipt.receiptNumber}` : ""}
+                      <TD sticky className="font-mono text-[12px]">
+                        <span className="block min-w-0 truncate overflow-hidden whitespace-nowrap" title={b.billNumber} data-sel="nomor">{b.billNumber}</span>
+                      </TD>
+                      {adaKolom(tier, "ref") && (
+                        <TD className="text-[12px] text-ink2">
+                          <span className="block min-w-0 truncate overflow-hidden whitespace-nowrap" title={b.supplierRef || undefined} data-sel="ref">{b.supplierRef || "—"}</span>
+                        </TD>
+                      )}
+                      {adaKolom(tier, "supplier") && (
+                        <TD><span className="block min-w-0 truncate overflow-hidden whitespace-nowrap" title={b.supplier?.name} data-sel="supplier">{b.supplier?.name}</span></TD>
+                      )}
+                      <TD className="min-w-0 overflow-hidden">
+                        <span className="block min-w-0 truncate overflow-hidden whitespace-nowrap" title={b.description} data-sel="keterangan">{b.description}</span>
+                        <span className={cn("block min-w-0 truncate overflow-hidden whitespace-nowrap text-[11px]", b.jenisTagihan?.lama && ["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status) ? "text-orange" : "text-ink3")} title={kedua}>
+                          {kedua}
                         </span>
                       </TD>
-                      <TD hideBelow="2xl" className="whitespace-nowrap text-[12px]">{tanggalPendek(b.billDate)}</TD>
-                      <TD className="whitespace-nowrap text-[12px]">{b.dueDate ? tanggalPendek(b.dueDate) : <span className="text-ink3">—</span>}</TD>
-                      <TD hideBelow="2xl" numeric><Uang value={b.amount} /></TD>
-                      <TD hideBelow="2xl" numeric><Uang value={b.terbayar} nolSebagaiStrip /></TD>
+                      {adaKolom(tier, "tanggal") && <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(b.billDate)}</TD>}
+                      {adaKolom(tier, "tempo") && <TD className="whitespace-nowrap text-[12px]">{b.dueDate ? tanggalPendek(b.dueDate) : <span className="text-ink3">—</span>}</TD>}
+                      {adaKolom(tier, "nilai") && <TD numeric><Uang value={b.amount} /></TD>}
+                      {adaKolom(tier, "terbayar") && <TD numeric><Uang value={b.terbayar} nolSebagaiStrip /></TD>}
                       <TD numeric><Uang value={b.sisa} className="font-bold" /></TD>
                       <TD><StatusBadge status={b.status} /></TD>
                       <TD>
@@ -320,8 +337,10 @@ export default function FinanceSuppliers() {
                 </TBody>
               </Table>
             </TableWrap>
+            )}
 
-            <CardList className={CARD_VIEW_CLASS}>
+            {tier === "card" && (
+            <CardList>
               {billsTampil.map((b) => {
                 const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk });
                 return (
@@ -344,7 +363,8 @@ export default function FinanceSuppliers() {
                 );
               })}
             </CardList>
-            </>
+            )}
+            </div>
           )}
         </Card>
         </>
@@ -374,9 +394,10 @@ export default function FinanceSuppliers() {
           ) : (
             <TableWrap className="dh-table">
               <Table fixed>
+                <ColGroup widths={[LEBAR_NOMOR, 92, 160, 150, null, 128, 116, AKSI_COL_WIDTH_MENU_ONLY]} />
                 <THead>
                   <TR>
-                    <TH sticky width={124}>Nomor</TH>
+                    <TH sticky width={LEBAR_NOMOR}>Nomor</TH>
                     <TH width={92} className="whitespace-nowrap">Tanggal</TH>
                     <TH width={160}>Supplier</TH>
                     <TH width={150}>Dari Rekening</TH>
@@ -389,7 +410,9 @@ export default function FinanceSuppliers() {
                 <TBody>
                   {paymentsTampil.map((p) => (
                     <TR key={p.id}>
-                      <TD sticky className="font-mono text-[12px]">{p.paymentNumber}</TD>
+                      <TD sticky className="font-mono text-[12px]">
+                        <span className="block min-w-0 truncate overflow-hidden whitespace-nowrap" title={p.paymentNumber} data-sel="nomor">{p.paymentNumber}</span>
+                      </TD>
                       <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(p.date)}</TD>
                       <TD truncate>{p.supplier?.name}</TD>
                       <TD truncate>{p.cashAccount?.name}</TD>

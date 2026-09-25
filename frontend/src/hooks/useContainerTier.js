@@ -44,7 +44,7 @@ export function tierFromContainerWidth(width) {
  * memanggilnya SETIAP KALI node DOM benar-benar terpasang/terlepas,
  * berapa kalipun & kapan pun itu terjadi.
  */
-export function useContainerTier() {
+export function useContainerTier(hitungTier = tierFromContainerWidth) {
   const [tier, setTier] = useState("full");
   const roRef = useRef(null);
 
@@ -56,13 +56,13 @@ export function useContainerTier() {
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect?.width;
-      if (typeof width === "number") setTier(tierFromContainerWidth(width));
+      if (typeof width === "number") setTier(hitungTier(width));
     });
     ro.observe(el);
     roRef.current = ro;
     // Ukuran AWAL langsung, jangan tunggu callback resize pertama.
-    setTier(tierFromContainerWidth(el.getBoundingClientRect().width));
-  }, []);
+    setTier(hitungTier(el.getBoundingClientRect().width));
+  }, [hitungTier]);
 
   return [ref, tier];
 }
