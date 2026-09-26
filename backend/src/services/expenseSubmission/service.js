@@ -43,7 +43,7 @@ export const submissionInclude = {
   job: { select: { id: true, type: true, status: true } },
   order: { select: { id: true, orderNumber: true } },
   vehicleExpense: { select: { id: true, odometerKm: true, liters: true, category: true } },
-  finExpense: { select: { id: true, expenseNumber: true, status: true, amount: true, cashAccountId: true, approvedAt: true, paidAt: true, rejectReason: true, advanceAppliedAmount: true } },
+  finExpense: { select: { id: true, expenseNumber: true, status: true, amount: true, cashAccountId: true, approvedAt: true, paidAt: true, rejectReason: true, advanceAppliedAmount: true, createdById: true, receiptUrl: true, receiptVerifiedAt: true } },
   advance: { select: { id: true, advanceNumber: true, holderId: true, purpose: true, dueDate: true, status: true } },
   createdBy: { select: { id: true, name: true } },
   proofs: { where: { supersededAt: null }, orderBy: { createdAt: "desc" } },
@@ -65,7 +65,8 @@ function bentukSubmission(s) {
   return {
     ...s,
     amount: moneyToNumber(s.amount),
-    finExpense: s.finExpense ? { ...s.finExpense, amount: moneyToNumber(s.finExpense.amount) } : null,
+    // Status bukti Finance (untuk tombol Verifikasi di Delivery Control): path berkas TIDAK dikirim, cukup ada/tidaknya.
+    finExpense: s.finExpense ? (({ receiptUrl, ...fe }) => ({ ...fe, amount: moneyToNumber(fe.amount), adaBukti: !!receiptUrl }))(s.finExpense) : null,
     status: statusEfektif,
   };
 }

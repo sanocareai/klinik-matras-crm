@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { emptyDraft, metadataFieldsFor, newIdempotencyKey, toCreateBody, validateDraft } from "@sano/delivery-shared";
+import { emptyDraft, formatRupiah, metadataFieldsFor, newIdempotencyKey, toCreateBody, validateDraft } from "@sano/delivery-shared";
 import { biayaArmadaApi, client } from "../client";
 import { useDraftStore } from "../draftStore";
 import { elevation, radius, useTheme } from "../theme";
@@ -10,7 +10,7 @@ import { hariIniWIB } from "../format";
 import { Icon, iconForExpense } from "../icons";
 import { Box, Btn, Field, PickerField, Section, StateView } from "../ui";
 
-const SUMBER_DANA_DIDUKUNG = ["TALANGAN_PRIBADI", "REKENING_PERUSAHAAN", "BELUM_DIBAYAR"];
+const SUMBER_DANA_DIDUKUNG = ["TALANGAN_PRIBADI", "REKENING_PERUSAHAAN", "BELUM_DIBAYAR", "UANG_MUKA_OPERASIONAL"];
 const KEYBOARD = { number: "numeric", decimal: "decimal-pad", money: "numeric" };
 
 function tanggalPlus(hari) {
@@ -26,6 +26,8 @@ export default function BiayaFormScreen({ route, navigation }) {
   const [routes, setRoutes] = useState(null);
   const [draft, setDraft] = useState(() => ({ ...emptyDraft(hariIniWIB()), sumberDana: "TALANGAN_PRIBADI" }));
   const [foto, setFoto] = useState(null);
+  const [uangMuka, setUangMuka] = useState(null); // null = belum dimuat
+  const [uangMukaGagal, setUangMukaGagal] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [errors, setErrors] = useState({});
@@ -54,7 +56,7 @@ export default function BiayaFormScreen({ route, navigation }) {
         setDraft({
           expenseType: s.expenseType, amount: String(s.amount ?? ""), date: String(s.date).slice(0, 10), description: s.description || "",
           notes: s.notes || "", vehicleId: s.vehicleId || "", routeId: s.routeId || "", jobId: s.jobId || "", vendorName: s.vendorName || "",
-          metadata: s.metadata || {}, sumberDana: s.sumberDana || "TALANGAN_PRIBADI",
+          metadata: s.metadata || {}, sumberDana: s.sumberDana || "TALANGAN_PRIBADI", advanceId: s.advanceId || "",
         });
       }
     } catch (e) { setLoadError(e.message || "Gagal memuat data formulir"); }
@@ -71,6 +73,16 @@ export default function BiayaFormScreen({ route, navigation }) {
     return (r?.jobs || []).map((j) => ({ value: j.id, label: `${j.type === "PICKUP" ? "Ambil" : "Kirim"} · ${j.order?.orderNumber || j.id.slice(0, 6)}`, sub: j.order?.customer?.name }));
   }, [routes, draft.routeId]);
   const metaFields = metadataFieldsFor(config, draft.expenseType);
+  const pakaiUangMuka = draft.sumberDana === "UANG_MUKA_OPERASIONAL";
+  // Uang muka aktif (saldo > 0) milik pengaju — dimuat hanya saat sumber dana ini dipilih.
+  useEffect(() => {
+    if (!pakaiUangMuka || uangMuka) return;
+    setUangMukaGagal("");
+    biayaArmadaApi.uangMukaAktif().then((r) => setUangMuka(r.items || [])).catch((e) => setUangMukaGagal(e.message || "Uang muka tidak dapat dimuat"));
+  }, [pakaiUangMuka, uangMuka]);
+  const pilihanUangMuka = useMemo(() => (uangMuka || []).map((a) => ({
+    value: a.id, label: `${a.advanceNumber} · sisa ${formatRupiah(a.saldo)}`, sub: [a.holderName, a.purpose, a.lewatTempo ? "lewat tempo" : null].filter(Boolean).join(" · "), icon: "wallet",
+  })), [uangMuka]);
 
   async function ambilFoto() {
     const izin = await ImagePicker.requestCameraPermissionsAsync();
@@ -86,6 +98,7 @@ export default function BiayaFormScreen({ route, navigation }) {
 
   function periksa() {
     const v = validateDraft(draft, config);
+    if (pakaiUangMuka && !draft.advanceId) { v.ok = false; v.errors = { ...v.errors, advanceId: "Pilih uang muka yang dipakai" }; }
     setErrors(v.errors);
     if (!v.ok) { setError("Lengkapi isian yang ditandai."); return false; }
     setError("");
@@ -164,7 +177,11 @@ export default function BiayaFormScreen({ route, navigation }) {
           </Section>
 
           <Section title="Sumber dana" icon="wallet">
-            <PickerField label="Dibayar dari" required icon="wallet" value={draft.sumberDana} options={sumber} onSelect={(v) => set("sumberDana", v)} />
+            <PickerField label="Dibayar dari" required icon="wallet" value={draft.sumberDana} options={sumber} onSelect={(v) => setDraft((d) => ({ ...d, sumberDana: v, advanceId: v === "UANG_MUKA_OPERASIONAL" ? d.advanceId : "" }))} />
+            {pakaiUangMuka && (
+              <PickerField label="Uang muka" required icon="hash" value={draft.advanceId} options={pilihanUangMuka} onSelect={(v) => set("advanceId", v)}
+                loading={uangMuka === null && !uangMukaGagal} error={errors.advanceId || uangMukaGagal} emptyText="Tidak ada uang muka aktif atas nama Anda" />
+            )}
             <Text style={{ color: t.ink3, fontSize: 12 }}>Rekening kas/bank final dipilih Finance saat pembayaran.</Text>
           </Section>
 

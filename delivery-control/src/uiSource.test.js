@@ -85,3 +85,16 @@ test("foto struk dibuka lewat URL bertanda-tangan berumur pendek (bukan header B
   assert.match(detail, /<FotoStruk /);
   assert.doesNotMatch(detail, /Authorization|getToken\(\)/);
 });
+
+test("Biaya Armada: verifikasi bukti dan bayar hanya lewat allowedActions, memakai kunci idempotensi, rekening dari server", () => {
+  const detail = baca("screens/BiayaDetailScreen.js");
+  for (const k of ["aksi.verifikasiBukti", "aksi.bayar"]) assert.match(detail, new RegExp(k.replace(".", "\.")), k);
+  assert.match(detail, /biayaArmadaApi\.verifikasiBukti\(finId, k\)/);
+  assert.match(detail, /biayaArmadaApi\.bayar\(finId, body, k\)/);
+  const bayar = baca("BayarModal.js");
+  assert.match(bayar, /biayaArmadaApi\.rekeningKas\(\)/);
+  assert.doesNotMatch(bayar, /accounts:\s*\[/, "tidak ada rekening statis");
+  const form = baca("screens/BiayaFormScreen.js");
+  assert.match(form, /UANG_MUKA_OPERASIONAL/);
+  assert.match(form, /biayaArmadaApi\.uangMukaAktif\(\)/);
+});
