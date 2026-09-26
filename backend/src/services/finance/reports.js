@@ -277,7 +277,13 @@ export async function neraca(db, { to }) {
       labaSebelumnya = tambahLaba(labaSebelumnya, a, saldoNormal(a, saldoTahunLalu.get(a.id)));
       continue;
     }
-    const nilai = saldoNormal(a, saldo.get(a.id));
+    // Nilai NERACA = searah dengan sisi kelompoknya (Aset: Debit; Kewajiban & Ekuitas: Kredit). Akun KONTRA (mis. Distribusi Laba 3-4200 dan
+    // Prive 3-2100: ekuitas bersaldo normal Debit; Akumulasi Penyusutan: aset bersaldo normal Kredit) harus MENGURANGI totalnya. Sebelumnya
+    // `nilai` mengikuti saldo normal akunnya sendiri, sehingga akun kontra malah MENAMBAH total dan Neraca selisih 2x nominalnya.
+    // Akun yang normalBalance-nya sesuai kelompok (semua akun lain) tidak berubah sama sekali.
+    const saldoNormalAkun = saldoNormal(a, saldo.get(a.id));
+    const sisiKelompok = a.type === "ASET" ? "DEBIT" : "KREDIT";
+    const nilai = a.normalBalance === sisiKelompok ? saldoNormalAkun : saldoNormalAkun.negated();
     if (nilai.isZero()) continue;
     kelompok[a.type].push({
       accountId: a.id, code: a.code, name: a.name,
