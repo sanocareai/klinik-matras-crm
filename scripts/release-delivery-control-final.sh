@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rilis MANUAL Delivery Control FINAL (modul operasional: Dashboard, Driver/Helper, Rute, Tracking, Masalah/jadwal ulang, Performa;
 # Biaya Armada: uang muka, verifikasi bukti, bayar) ke produksi dengan workflow RELEASE-DIRECTORY (~/releases/klinik-matras/<sha8>).
-# Baseline produksi = main 394cde4e (produksi dan main sudah sama). Target = branch release/delivery-control-final. Jalankan OPERATOR di VPS:
+# Baseline produksi = main 8d9bc722 (produksi dan main sudah sama). Target = branch release/delivery-control-final. Jalankan OPERATOR di VPS:
 #
 #   git show release/delivery-control-final:scripts/release-delivery-control-final.sh | ssh ubuntu@43.133.152.6 'cat > /tmp/rdcf.sh && bash /tmp/rdcf.sh --preflight-only'
 #   ssh ubuntu@43.133.152.6 'bash /tmp/rdcf.sh'                                # setelah GO
@@ -16,9 +16,9 @@ set -Eeuo pipefail
 umask 077
 
 # ── Konstanta rilis (dikunci saat persiapan; ubah = rilis baru) ──────────────────────────────────────────
-PROD_FULL="394cde4e2a45d2bc3b64d36e16ce3798a51f1349"     # commit produksi aktif = baseline (sama dengan main)
-MAIN_TIP="394cde4e2a45d2bc3b64d36e16ce3798a51f1349"      # origin/main yang dibekukan saat persiapan; HARUS masih ini
-DEPLOY_SHA="4d59f1fd0f642f8d8d0afd05eb12a283f22d55be"    # merge Delivery Control final di atas MAIN_TIP (diuji: full integration 1x)
+PROD_FULL="8d9bc7224ef9133551dcdab3e5d9dcf6761c9864"     # commit produksi aktif = baseline (sama dengan main)
+MAIN_TIP="8d9bc7224ef9133551dcdab3e5d9dcf6761c9864"      # origin/main yang dibekukan saat persiapan; HARUS masih ini
+DEPLOY_SHA="272392ba396ad236681c36c23c0f2cbf3cb0f836"    # merge Delivery Control final di atas MAIN_TIP (diuji: full integration 1x)
 RELEASE_BRANCH="release/delivery-control-final"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
 PUBLIC_URL="https://app.sanomatrassehat.com"
