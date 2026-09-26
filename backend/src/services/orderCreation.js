@@ -17,7 +17,10 @@ import { syncOrderStatus } from "./orderStatusSync.js";
 import { ensureInvoiceForOrder } from "./invoice.js";
 import { parseTanggalKalender } from "../utils/wib.js";
 
-export async function createOrderForCustomer(customerId, body, userId) {
+// `opts.tx` (opsional, Resi Gabungan Fase 1): jalankan di dalam transaksi PEMANGGIL (mis. N order dalam SATU transaksi). Tanpa `opts.tx` perilaku
+// PERSIS seperti sebelumnya (transaksi sendiri). Catatan: nomor order (generateOrderNumber) memakai transaksi terpisah, sehingga bila transaksi
+// pemanggil di-rollback nomornya terpakai (ada celah nomor) — tidak ada order/unit/invoice yang tersisa.
+export async function createOrderForCustomer(customerId, body, userId, opts = {}) {
   const {
     quantity, status, notes, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress,
     healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
@@ -38,7 +41,7 @@ export async function createOrderForCustomer(customerId, body, userId) {
   // Order + unit-unitnya lahir dalam SATU transaksi. Order tanpa unit
   // adalah keadaan yang tidak boleh terjadi; jangan biarkan kegagalan
   // separuh jalan membuatnya lagi.
-  const order = await prisma.$transaction(async (tx) => {
+  const jalankan = async (tx) => {
     const created = await tx.order.create({
       data: {
         customerId,
@@ -92,7 +95,8 @@ export async function createOrderForCustomer(customerId, body, userId) {
       where: { id: created.id },
       include: { items: true, units: { orderBy: { seq: "asc" } } },
     });
-  });
+  };
+  const order = opts.tx ? await jalankan(opts.tx) : await prisma.$transaction(jalankan);
 
   return order;
 }

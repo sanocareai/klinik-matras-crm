@@ -1,9 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import { AlertTriangle, Plus, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { formatRupiah, orderStatusVariant, paymentStatusVariant, PAYMENT_STATUS_LABELS } from "@/utils/format.js";
 import { statusLabel, productSummary, formatTanggalPendek } from "./orderSummary.js";
+import BuatResiModal from "@/features/resi/BuatResiModal.jsx";
+import { useResiAktif } from "@/features/resi/useResiAktif.js";
 
 // Wave 9 (redesign Inbox, plan starry-humming-knuth) — isi tab "Order" di
 // Customer Panel. OrderSection.jsx (editor penuh) TIDAK diduplikasi di
@@ -18,13 +20,24 @@ import { statusLabel, productSummary, formatTanggalPendek } from "./orderSummary
 // tanggal + ringkasan produk + status bayar + chevron (penanda "ada
 // detail di baliknya"), jadi tab ini berdiri sendiri sebagai tempat
 // melihat riwayat order — tanpa perlu menyentuh alur buat-order sama sekali.
-export default function OrderHistoryList({ customer, onOpenOrder, onCreateOrder }) {
+export default function OrderHistoryList({ customer, onOpenOrder, onCreateOrder, onResiDibuat }) {
   const orders = customer?.orders || [];
+  // Resi Gabungan Fase 1: hanya muncul bila flag server aktif (POST tetap ditolak server bila mati)
+  const resiAktif = useResiAktif();
+  const [showResi, setShowResi] = useState(false);
   return (
     <div className="flex flex-col gap-2">
       <Button type="button" variant="secondary" size="sm" className="w-full" onClick={onCreateOrder}>
         <Plus size={14} /> Buat Order
       </Button>
+      {resiAktif && (
+        <>
+          <Button type="button" variant="neutral" size="sm" className="w-full" data-testid="buat-resi" onClick={() => setShowResi(true)}>
+            <Plus size={14} /> Buat Resi (banyak item)
+          </Button>
+          <BuatResiModal open={showResi} onOpenChange={setShowResi} customer={customer} onDibuat={() => onResiDibuat?.()} />
+        </>
+      )}
 
       {orders.length === 0 && (
         <p className="text-muted" style={{ fontSize: 12.5, padding: "8px 0" }}>Belum ada order.</p>

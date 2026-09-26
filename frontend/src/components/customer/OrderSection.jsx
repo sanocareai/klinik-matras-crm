@@ -30,6 +30,8 @@ import {
 import { isAdminUser } from "../../lib/roles.js";
 import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.jsx";
 import ComplaintCaseSection from "./ComplaintCaseSection.jsx";
+import BuatResiModal from "../../features/resi/BuatResiModal.jsx";
+import { useResiAktif } from "../../features/resi/useResiAktif.js";
 
 // D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari role
 // lain. Backend (guardOrderLocked() di routes/orders.js) yang benar-benar
@@ -2293,6 +2295,10 @@ export default function OrderSection({ customer, onUpdate, initialOrderId = null
     api.getPromos({ active: true }).then(setPromos).catch(() => {});
   }, []);
 
+  // Resi Gabungan Fase 1: tombol & modal hanya muncul bila flag server aktif
+  const resiAktif = useResiAktif();
+  const [showResi, setShowResi] = useState(false);
+
   async function refresh() {
     try {
       const fresh = await api.getCustomer(customer.id);
@@ -2354,9 +2360,13 @@ export default function OrderSection({ customer, onUpdate, initialOrderId = null
           <p className="text-muted" style={{ margin: 0, fontSize: 12 }}>
             {customer.orders.length} order · Total {formatRupiah(totalValue)}
           </p>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>+ Order</button>
+          <div style={{ display: "flex", gap: 6 }}>
+            {resiAktif && <button className="btn btn-secondary btn-sm" data-testid="buat-resi" onClick={() => setShowResi(true)}>Buat Resi</button>}
+            <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>+ Order</button>
+          </div>
         </div>
       )}
+      {resiAktif && <BuatResiModal open={showResi} onOpenChange={setShowResi} customer={customer} onDibuat={() => refresh()} />}
 
       {showForm && (
         <AddOrderForm

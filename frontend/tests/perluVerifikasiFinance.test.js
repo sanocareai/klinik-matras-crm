@@ -33,7 +33,7 @@ test("Penjelasan UI: pendapatan bukan bukti uang masuk; rekening muncul di uang 
 
 test("Perlu Verifikasi Finance memuat DUA sumber: klaim Lunas dari Sales dan uang masuk menunggu verifikasi", () => {
   const s = baca("pages/finance/FinancePemasukan.jsx");
-  assert.match(s, /<LunasBelumDicatat \/>/);
+  assert.match(s, /<LunasBelumDicatat ringkas \/>/);
   assert.match(s, /kategori="PEMBAYARAN"[^>]*statusAwal="MENUNGGU"/);
   assert.match(s, /1\. Klaim Lunas dari Sales/);
   assert.match(s, /2\. Uang masuk tercatat, menunggu verifikasi/);
@@ -46,7 +46,7 @@ test("Pembayaran (Finance): tab Perlu Verifikasi Finance (default), Klaim Lunas 
   assert.match(s, /key: "terverifikasi", label: "Uang Masuk Terverifikasi"/);
   assert.match(s, /useState\("perlu"\)/);
   assert.doesNotMatch(s, /label: "Ditandai Lunas oleh Sales"|label: "Menunggu Verifikasi" \}/);
-  assert.match(s, /\(tab === "lunas_crm" \|\| tab === "perlu"\) && <LunasBelumDicatat \/>/);
+  assert.match(s, /\(tab === "lunas_crm" \|\| tab === "perlu"\) && <LunasBelumDicatat ringkas=\{tab === "perlu"\} \/>/);
   assert.match(s, /tab === "perlu" \? "belum_verifikasi" : tab/);
 });
 
