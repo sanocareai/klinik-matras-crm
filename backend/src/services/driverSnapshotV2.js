@@ -143,6 +143,26 @@ function projectPublicationForDriver(publication) {
   };
 }
 
+// Route dengan exception migrasi yang masih terbuka (OPEN/KEEP_V1) TIDAK boleh masuk snapshot V2 —
+// fail-closed. Status ditentukan oleh exception TERBARU per (route, code): exception lama yang sudah
+// digantikan run berikutnya (mis. RESOLVED) tidak lagi memblokir.
+export async function blockedRouteIdsV2(prisma) {
+  const rows = await prisma.v2MigrationException.findMany({
+    where: { aggregateType: "Route" },
+    orderBy: [{ createdAt: "desc" }],
+    select: { aggregateId: true, code: true, status: true },
+  });
+  const seen = new Set();
+  const blocked = new Set();
+  for (const row of rows) {
+    const key = `${row.aggregateId}|${row.code}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (["OPEN", "KEEP_V1"].includes(row.status) && row.aggregateId) blocked.add(row.aggregateId);
+  }
+  return [...blocked];
+}
+
 export async function driverV2Eligibility(prisma, userId) {
   const jobs = await prisma.job.findMany({
     where: {
@@ -205,10 +225,15 @@ export async function readDriverFullSnapshot(prisma, { userId, cursor = null, li
   }
   const boundarySequence = parsed?.boundarySequence ?? (state.nextSequence - 1n).toString();
   const afterRouteId = parsed?.afterRouteId || null;
+  const blockedRouteIds = await blockedRouteIdsV2(prisma);
+  const routeIdFilter = {
+    ...(afterRouteId ? { gt: afterRouteId } : {}),
+    ...(blockedRouteIds.length ? { notIn: blockedRouteIds } : {}),
+  };
   const publications = await prisma.routePublication.findMany({
     where: {
       status: "ACTIVE",
-      ...(afterRouteId ? { routeId: { gt: afterRouteId } } : {}),
+      ...(Object.keys(routeIdFilter).length ? { routeId: routeIdFilter } : {}),
       OR: [
         {
           route: { status: DRIVER_ACTIVE_ROUTE_STATUSES_V2[0] },

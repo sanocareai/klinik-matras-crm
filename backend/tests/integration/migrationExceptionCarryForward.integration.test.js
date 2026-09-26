@@ -52,9 +52,12 @@ test("catch-up membawa forward resolusi admin hanya saat evidence byte-stable se
     runId: changedRun.id,
     exception: { ...exception, evidence: { currentStageId: "changed-stage" } },
   }));
-  assert.equal(reopened.status, "KEEP_V1");
-  assert.equal(reopened.resolution, null);
+  // Evidence berubah setelah RESOLVED: dibuka lagi (OPEN, fail-closed) dengan histori resolusi lama tetap ada.
+  assert.equal(reopened.status, "OPEN");
   assert.equal(reopened.resolvedAt, null);
+  assert.equal(reopened.resolution.reopened, true);
+  assert.equal(reopened.resolution.previous.resolution.provenance, "PRODUCTION_ADMIN_BYPASS");
+  assert.equal(reopened.resolution.previous.resolvedById, "OWNER_TEST");
 });
 
 test("resolusi selain provenance owner-approved tidak dibawa forward", async () => {
