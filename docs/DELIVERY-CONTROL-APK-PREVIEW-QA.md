@@ -106,6 +106,22 @@ Jangan membuat data produksi nyata kecuali disebut "boleh"; gunakan pengajuan uj
 42. Cabut/ubah kondisi: hapus semua sidik jari di Setelan HP lalu buka app → pesan biometrik tidak lagi terdaftar dan diminta masuk dengan kata sandi (biometrik dinonaktifkan). Sesi yang kedaluwarsa/dicabut di server → pesan "Sesi Anda berakhir…" di layar login.
 43. Logout dari Akun/Pengaturan → biometrik dimatikan, login berikutnya butuh kata sandi; aktifkan lagi bila mau. Kata sandi/PIN tidak pernah tersimpan (token sesi ada di Keystore).
 
+**L. Retest blocker QA 27 September (foto driver + peta Live Tracking)**
+44. Foto asli tampil (bukan inisial) untuk driver/helper yang punya foto di web: Performa & Insentif, daftar Driver & Helper, detail orang, Rute (avatar kecil), detail rute (baris Driver/Helper), kartu tracking. Akun tanpa foto tetap inisial. Foto rusak/URL mati → inisial, tanpa crash. Ganti foto driver di web/app Driver → tampil di Control setelah tarik-muat ulang.
+45. Peta Live Tracking dengan driver yang app Driver-nya sedang mengirim posisi: marker berisi foto bulat (bila punya foto) atau inisial; opasitas foto memudar saat posisi lama (>5/>15 menit); ketuk marker → kartu dengan foto, kendaraan, rute, progres, jam update WIB. Posisi sama dengan yang tampil di Live Tracking web.
+46. Peta TIDAK hitam: basemap Google tampil. Uji tiga keadaan: (a) ada driver ber-posisi, (b) driver terdaftar tapi belum ada posisi (peta tetap tampil di area Jakarta + pesan "N armada terdaftar, tetapi belum ada yang mengirim posisi GPS yang valid"), (c) tidak ada armada (peta tampil + pesan "Belum ada armada terdaftar"). Tab menampilkan "N posisi" (peta) dan "N terdaftar" (daftar) — angkanya harus berbeda bila ada driver tanpa posisi.
+47. Bila basemap kosong/abu-abu setelah ±12 detik muncul pesan "Peta belum termuat…" dengan "Muat ulang peta" / "Buka Daftar". Bila itu terjadi = kunci Google Maps belum mengizinkan package + SHA-1 (lihat bagian Google Maps di bawah); laporkan sebagai temuan, jangan diubah dari app.
+48. Refresh otomatis ±30 detik (jam "terakhir" di banner berubah); peta tidak melompat saat Anda geser/zoom (fit ulang hanya saat himpunan driver ber-posisi berubah); tombol Pusatkan memuat semua marker (1 marker → zoom dekat). Mode gelap/terang: peta ikut tema (gaya gelap sama dengan Sano Driver).
+49. Mode pesawat → banner Offline dengan data terakhir; kembali online → pulih. Mode gelap: marker tetap terlihat.
+50. Koordinat/waktu tidak valid dari server (mis. 0,0 atau jam masa depan) tidak menjadi marker; item tetap ada di Daftar dengan keterangan "Koordinat GPS tidak valid"/"Waktu posisi GPS tidak valid".
+51. Manifest APK: tanpa izin lokasi/background/foreground location dan tanpa RECORD_AUDIO (`aapt dump badging`).
+
+**Konfigurasi Google Maps (harus dilakukan di Google Cloud Console oleh pemilik proyek; jangan melonggarkan restriction):**
+Kunci Android yang dipakai Sano Driver juga dipakai Control (nilai kunci tidak disimpan di repo; disuntikkan lewat env `GOOGLE_MAPS_ANDROID_KEY` saat build). Di API key tersebut (APIs & Services → Credentials → key → Application restrictions: Android apps) TAMBAHKAN entri:
+- Package name `com.klinikmatras.deliverycontrol` + SHA-1 keystore QA `3D:29:3F:B3:3A:A7:63:E8:27:50:86:FE:43:90:FD:11:DE:34:4A:12`
+- Nanti untuk build EAS Preview: package yang sama + SHA-1 keystore EAS project `@sanocare/sano-delivery-control` (`eas credentials`), dan SHA-1 App Signing bila dipublikasikan lewat Play.
+- API restrictions harus mencakup "Maps SDK for Android" (sudah, karena Sano Driver memakainya). Entri Sano Driver dibiarkan.
+
 **Blocker/keterbatasan yang diketahui:** Route Planner kompleks, aksi massal, master data, dan laporan tetap di web. Tracking hanya membaca posisi
 yang dikirim app Driver. Layar biaya belum ada di Sano Driver (sengaja).
 Sesi JWT stateless: belum ada 'keluar dari semua perangkat'. Biometrik tidak mendeteksi penambahan sidik jari baru (hanya hilangnya biometrik terdaftar).
