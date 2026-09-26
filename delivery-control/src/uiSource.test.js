@@ -156,3 +156,28 @@ test("Pengaturan: hanya menu yang berfungsi; tidak ada 'keluar semua perangkat' 
   for (const teks of ["Tampilan", "Tentang aplikasi", "Privasi", "Keluar"]) assert.match(src, new RegExp(teks), teks);
   assert.match(baca("PengaturanContext.js"), /AsyncStorage\.setItem\(KUNCI\.tema/);
 });
+
+test("Biometrik: token di SecureStore, tanpa password/PIN tersimpan, biometrik hanya pembuka dan sesi divalidasi server", () => {
+  const aman = baca("secureStorage.js");
+  const sesi = baca("SessionContext.js");
+  const bio = baca("biometrik.js");
+  const semua = aman + sesi + bio + baca("PengaturanContext.js") + baca("screens/LockScreen.js") + baca("screens/LoginScreen.js");
+  assert.match(aman, /SecureStore\.setItemAsync/);
+  assert.match(aman, /WHEN_UNLOCKED_THIS_DEVICE_ONLY/);
+  assert.match(baca("client.js"), /storage: storageAman/);
+  assert.match(bio, /expo-local-authentication/);
+  assert.match(bio, /disableDeviceFallback: true/, "tanpa PIN perangkat sebagai jalan pintas");
+  // tidak ada penyimpanan kata sandi/PIN
+  assert.doesNotMatch(semua, /setItem\([^)]*(password|kata ?sandi|pin)\b/i);
+  // buka kunci = biometrik lolos LALU restore() ke server; gagal -> login
+  assert.match(sesi, /const h = await konfirmasiBiometrik\(\)[\s\S]*sessionManager\.restore\(\)/);
+  assert.match(sesi, /keLogin\(PESAN_BERAKHIR\)/);
+  // buka dingin terkunci: token tidak dibaca sebelum biometrik
+  assert.match(sesi, /setTerkunci\(true\); setLoading\(false\); return;/);
+  assert.match(baca("../App.js"), /terkunci && !session\) return <LockScreen/);
+  // pengaturan: switch biometrik + auto-lock, tetap Indonesia
+  const set = baca("screens/SettingsScreen.js");
+  for (const teks of ["Keamanan", "Buka dengan biometrik", "Kunci otomatis"]) assert.match(set, new RegExp(teks), teks);
+  assert.match(set, /PILIHAN_AUTO_LOCK\.map/);
+  assert.match(baca("screens/LockScreen.js"), /Masuk dengan kata sandi/);
+});

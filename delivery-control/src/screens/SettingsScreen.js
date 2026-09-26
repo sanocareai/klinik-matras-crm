@@ -1,12 +1,14 @@
-import React, { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import * as Application from "expo-application";
 import * as Updates from "expo-updates";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { usePengaturan } from "../PengaturanContext";
 import { useSession } from "../SessionContext";
 import { DEFAULT_SERVER } from "../client";
-import { LABEL_TEMA, MODE_TEMA } from "../lib/pengaturan";
+import { LABEL_TEMA, MODE_TEMA, PILIHAN_AUTO_LOCK, labelAutoLock } from "../lib/pengaturan";
+import { PESAN_KEMAMPUAN } from "../lib/kunciApp";
+import { kemampuanBiometrik } from "../biometrik";
 import { elevation, radius, type, useTheme } from "../theme";
 import { Icon } from "../icons";
 import { ActionModal, Btn, Row, Section } from "../ui";
@@ -19,14 +21,33 @@ const PRIVASI = [
   ["camera", "Kamera hanya dipakai untuk memotret struk biaya dan foto profil. Foto dikirim ke server perusahaan, bukan disimpan di galeri."],
   ["mapPin", "Aplikasi ini TIDAK membaca lokasi HP Anda dan tidak meminta izin lokasi. Posisi armada di peta berasal dari aplikasi driver lewat server."],
   ["shield", "Aplikasi tidak mengakses mikrofon, kontak, atau pesan Anda."],
+  ["shield", "Token sesi disimpan terenkripsi di perangkat (Android Keystore). Kata sandi dan PIN tidak pernah disimpan. Biometrik hanya membuka sesi yang sudah login; server tetap memeriksa sesi Anda."],
   ["fileText", "Draf biaya yang belum dikirim tersimpan di perangkat ini sampai Anda mengirim atau menghapusnya."],
   ["info", "Data akun, biaya, dan operasional diakses dari server perusahaan (app.sanomatrassehat.com) melalui koneksi HTTPS sesuai peran dan izin akun Anda."],
 ];
 
 export default function SettingsScreen() {
   const t = useTheme();
-  const { tema, setTema } = usePengaturan();
-  const { signOut } = useSession();
+  const { tema, setTema, biometrik, setBiometrik, autoLockMenit, setAutoLock } = usePengaturan();
+  const { signOut, konfirmasiBiometrik } = useSession();
+  const [kemampuan, setKemampuan] = useState(null);
+  const [pesanBio, setPesanBio] = useState("");
+  const [bioBusy, setBioBusy] = useState(false);
+  useEffect(() => { kemampuanBiometrik().then(setKemampuan); }, []);
+
+  async function ubahBiometrik(nilai) {
+    setPesanBio("");
+    if (!nilai) { await setBiometrik(false); return; }
+    setBioBusy(true);
+    try {
+      const k = await kemampuanBiometrik();
+      setKemampuan(k);
+      if (k !== "SIAP") { setPesanBio(PESAN_KEMAMPUAN[k]); return; }
+      const h = await konfirmasiBiometrik("Aktifkan buka kunci biometrik");
+      if (h.ok) await setBiometrik(true); else setPesanBio(h.pesan || "Biometrik belum diaktifkan.");
+    } finally { setBioBusy(false); }
+  }
+
   const [keluar, setKeluar] = useState(false);
   const [privasi, setPrivasi] = useState(false);
 
@@ -47,6 +68,36 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+        </Section>
+
+        <Section title="Keamanan" icon="shield">
+          <View style={s.switchRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: t.ink, fontSize: 14, fontWeight: "700" }}>Buka dengan biometrik</Text>
+              <Text style={{ color: t.ink3, fontSize: 12, marginTop: 2 }}>
+                {kemampuan && kemampuan !== "SIAP" ? PESAN_KEMAMPUAN[kemampuan] : "Sidik jari atau wajah membuka sesi Anda. Kata sandi tidak disimpan."}
+              </Text>
+            </View>
+            <Switch value={biometrik && kemampuan === "SIAP"} onValueChange={ubahBiometrik} disabled={bioBusy || (kemampuan !== null && kemampuan !== "SIAP")}
+              accessibilityLabel="Buka dengan biometrik" trackColor={{ true: t.accent, false: t.neutralBg }} />
+          </View>
+          {!!pesanBio && <Text style={{ color: t.red || t.ink2, fontSize: 12 }}>{pesanBio}</Text>}
+          {biometrik && kemampuan === "SIAP" && (
+            <View style={{ gap: 8 }}>
+              <Text style={{ color: t.ink2, fontSize: 13 }}>Kunci otomatis setelah aplikasi di latar belakang</Text>
+              <View style={[s.seg, { backgroundColor: t.neutralBg }]}>
+                {PILIHAN_AUTO_LOCK.map((m) => {
+                  const aktif = autoLockMenit === m;
+                  return (
+                    <Pressable key={m} onPress={() => setAutoLock(m)} accessibilityRole="radio" accessibilityState={{ selected: aktif }} accessibilityLabel={`Kunci otomatis ${labelAutoLock(m)}`}
+                      style={[s.segItem, aktif && { backgroundColor: t.surface }, aktif && elevation(t, 1)]}>
+                      <Text style={{ color: aktif ? t.ink : t.ink3, fontWeight: "700", fontSize: 12 }}>{labelAutoLock(m)}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
         </Section>
 
         <Section title="Tentang aplikasi" icon="info">
@@ -89,6 +140,7 @@ const s = StyleSheet.create({
   body: { padding: 18, gap: 14, paddingBottom: 32 },
   seg: { flexDirection: "row", borderRadius: radius.pill, padding: 4 },
   segItem: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9, borderRadius: radius.pill },
+  switchRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   privasiHead: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 },
   privasiRow: { flexDirection: "row", gap: 10, paddingVertical: 6 },
 });

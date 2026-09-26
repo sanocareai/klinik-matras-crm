@@ -24,6 +24,7 @@ import MasalahDetailScreen from "./src/screens/MasalahDetailScreen";
 import PerformaScreen from "./src/screens/PerformaScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
+import LockScreen from "./src/screens/LockScreen";
 import { PengaturanProvider, usePengaturan } from "./src/PengaturanContext";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -31,14 +32,17 @@ const Stack = createNativeStackNavigator();
 
 function Root() {
   const t = useTheme();
-  const { loading, session, modules } = useSession();
+  const { loading, session, modules, terkunci } = useSession();
   const { siap } = usePengaturan();
   useEffect(() => { if (!loading) SplashScreen.hideAsync().catch(() => {}); }, [loading]);
 
   if (loading || !siap) {
     return <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.bg }}><ActivityIndicator color={t.accent} /></View>;
   }
+  // Buka dingin dalam keadaan terkunci: navigator tidak dirender (tidak ada sesi/token yang dibaca sebelum biometrik lolos).
+  if (terkunci && !session) return <LockScreen />;
   return (
+    <View style={{ flex: 1 }}>
     <NavigationContainer>
       <Stack.Navigator screenOptions={{
         headerStyle: { backgroundColor: t.bg }, headerTintColor: t.ink, headerShadowVisible: false,
@@ -68,6 +72,8 @@ function Root() {
         )}
       </Stack.Navigator>
     </NavigationContainer>
+    {terkunci && <LockScreen />}
+    </View>
   );
 }
 
