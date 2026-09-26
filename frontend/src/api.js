@@ -1333,6 +1333,7 @@ export const api = {
   // B3.6 Tutup stok periodik & persediaan awal perpetual
   getPersediaanAwal: () => request("/finance/persediaan-awal"),
   getPersediaanAwalPengecualian: () => request("/finance/persediaan-awal/pengecualian"),
+  getPersediaanAwalKesiapan: () => request("/finance/persediaan-awal/kesiapan"),
   getPersediaanAwalDetail: (id) => request(`/finance/persediaan-awal/${id}`),
   getPersediaanAwalPratinjau: (id) => request(`/finance/persediaan-awal/${id}/pratinjau`),
   createPersediaanAwal: (data) => request("/finance/persediaan-awal", { method: "POST", body: JSON.stringify(data || {}) }),

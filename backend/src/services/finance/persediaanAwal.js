@@ -43,6 +43,9 @@ export const SUMBER_HARGA = Object.freeze({
   PEMBELIAN: "Pembelian di sistem",
   LAINNYA: "Lainnya (wajib keterangan)",
 });
+// Hanya untuk baris qty 0 tanpa sumber harga (bukti "sudah dihitung, tidak ada") — bukan pilihan sumber yang dipakai pengguna.
+export const SUMBER_TANPA_STOK = "TANPA_STOK";
+export const LABEL_TANPA_STOK = "Tanpa stok (qty 0)";
 
 export const STATUS_LABEL = Object.freeze({
   DRAFT: "Draf", DIPERIKSA: "Sudah diperiksa", DIPOSTING: "Sudah diposting", DIBALIK: "Dibalik", DIBATALKAN: "Dibatalkan",
@@ -145,17 +148,19 @@ export async function validasiSnapshot(db, opening, lines) {
     if (qty.lessThan(0)) blocker.push({ ...ref, kode: "QTY_NEGATIF", pesan: `${m.code}: kuantitas fisik negatif.` });
     if (qty.greaterThan(0) && !harga.greaterThan(0)) blocker.push({ ...ref, kode: "HARGA_NOL", pesan: `${m.code}: harga per unit nol/kosong.` });
     if (m.unit && l.unit !== m.unit) blocker.push({ ...ref, kode: "SATUAN_BEDA", pesan: `${m.code}: satuan hitung ${l.unit} tidak sama dengan satuan material ${m.unit}.` });
-    if (!SUMBER_HARGA[l.priceSource]) blocker.push({ ...ref, kode: "SUMBER_HARGA_KOSONG", pesan: `${m.code}: sumber harga wajib dipilih (Faktur/Tagihan/Pembelian/Lainnya).` });
+    const nol = qty.isZero(); // B3.6.2 — qty 0 = bukti "sudah dihitung, tidak ada": tanpa harga/sumber, tidak masuk jurnal
+    if (nol) { /* harga & sumber harga tidak diwajibkan untuk qty 0 */ }
+    else if (!SUMBER_HARGA[l.priceSource]) blocker.push({ ...ref, kode: "SUMBER_HARGA_KOSONG", pesan: `${m.code}: sumber harga wajib dipilih (Faktur/Tagihan/Pembelian/Lainnya).` });
     else if (l.priceSource === "LAINNYA" ? !(l.priceNote || "").trim() : !(l.priceReference || "").trim()) {
       blocker.push({ ...ref, kode: "SUMBER_HARGA_KOSONG", pesan: l.priceSource === "LAINNYA" ? `${m.code}: sumber harga "Lainnya" wajib diberi keterangan.` : `${m.code}: nomor dokumen harga (faktur/tagihan/pembelian) wajib diisi.` });
     }
     const refCost = m.referenceUnitCost ? toMoney(m.referenceUnitCost) : null;
     const tidakWajar = [];
-    if (refCost && refCost.greaterThan(0) && harga.greaterThan(0)) {
+    if (!nol && refCost && refCost.greaterThan(0) && harga.greaterThan(0)) {
       if (harga.greaterThan(refCost.times(AMBANG.rasioReferensi))) tidakWajar.push(`lebih dari ${AMBANG.rasioReferensi}× harga referensi`);
       if (harga.times(AMBANG.rasioReferensi).lessThan(refCost)) tidakWajar.push(`kurang dari 1/${AMBANG.rasioReferensi} harga referensi`);
     }
-    if (nilai.greaterThan(AMBANG.nilaiBarisMaks)) tidakWajar.push(`nilai satu baris di atas Rp${(AMBANG.nilaiBarisMaks / 1e6).toFixed(0)} jt`);
+    if (!nol && nilai.greaterThan(AMBANG.nilaiBarisMaks)) tidakWajar.push(`nilai satu baris di atas Rp${(AMBANG.nilaiBarisMaks / 1e6).toFixed(0)} jt`);
     if (tidakWajar.length > 0) {
       const dijelaskan = (l.priceNote || "").trim().length >= AMBANG.penjelasanMin;
       (dijelaskan ? peringatan : blocker).push({
@@ -164,7 +169,7 @@ export async function validasiSnapshot(db, opening, lines) {
       });
     }
     if (m.active === false) peringatan.push({ ...ref, kode: "MATERIAL_NONAKTIF", pesan: `${m.code} berstatus nonaktif di master material.` });
-    if (qty.isZero()) peringatan.push({ ...ref, kode: "QTY_NOL", pesan: `${m.code}: kuantitas fisik 0 (tidak menambah nilai).` });
+    if (qty.isZero()) peringatan.push({ ...ref, kode: "QTY_NOL", pesan: `${m.code}: kuantitas fisik 0 — tercatat sebagai hasil hitung, tidak masuk jurnal.` });
   }
 
   // Pembanding dengan stok sistem Gudang per waktu hitung (bukan blocker: stok sistem belum tentu benar — itu gunanya opname).
@@ -253,16 +258,19 @@ export async function isiBaris(tx, { openingId, rows, mode = "ganti", userId }) 
     if (!m) return galat.push({ baris: no, kode: "KODE_TIDAK_DIKENAL", pesan: `Baris ${no}: kode material ${kode} tidak ada di master material.` });
     if (dipakai.has(m.id) || sudahAda.has(m.id)) return galat.push({ baris: no, kode: "MATERIAL_DUPLIKAT", pesan: `Baris ${no}: ${kode} sudah ada di snapshot — satu material satu baris.` });
     const qty = angka(r.qty);
+    const hargaKosong = r.harga === null || r.harga === undefined || String(r.harga).trim() === "";
     const harga = angka(r.harga);
     if (!Number.isFinite(qty)) return galat.push({ baris: no, kode: "QTY_TIDAK_VALID", pesan: `Baris ${no}: kuantitas ${kode} bukan angka.` });
     if (qty < 0) return galat.push({ baris: no, kode: "QTY_NEGATIF", pesan: `Baris ${no}: kuantitas fisik ${kode} negatif (${qty}). Stok fisik tidak mungkin negatif — hitung ulang.` });
-    if (!Number.isFinite(harga) || harga < 0) return galat.push({ baris: no, kode: "HARGA_TIDAK_VALID", pesan: `Baris ${no}: harga ${kode} bukan angka yang valid.` });
+    const qtyNol = qty === 0;
+    // qty 0 boleh tanpa harga (dicatat 0); qty > 0 wajib harga yang valid.
+    if (!(qtyNol && hargaKosong) && (!Number.isFinite(harga) || harga < 0)) return galat.push({ baris: no, kode: "HARGA_TIDAK_VALID", pesan: `Baris ${no}: harga ${kode} bukan angka yang valid.` });
     const satuan = String(r.satuan || "").trim().toUpperCase();
     if (!satuan) return galat.push({ baris: no, kode: "SATUAN_KOSONG", pesan: `Baris ${no}: satuan ${kode} wajib diisi (sesuai satuan saat menghitung).` });
-    const sumber = String(r.sumber || "").trim().toUpperCase();
+    const sumber = qtyNol && !String(r.sumber || "").trim() ? "TANPA_STOK" : String(r.sumber || "").trim().toUpperCase();
     dipakai.add(m.id);
     const q = toMoney(qty).toDecimalPlaces(4);
-    const h = toMoney(harga).toDecimalPlaces(2);
+    const h = qtyNol && hargaKosong ? toMoney(0) : toMoney(harga).toDecimalPlaces(2);
     siap.push({
       openingId, materialId: m.id, qty: q, unit: satuan, unitCost: h, value: q.times(h).toDecimalPlaces(2),
       priceSource: sumber, priceReference: String(r.referensi || "").trim() || null, priceNote: String(r.penjelasanHarga || "").trim() || null,
@@ -453,10 +461,77 @@ export async function detailSnapshot(db, openingId) {
     baris: lines.map((l) => ({
       id: l.id, materialId: l.materialId, kode: l.material.code, nama: l.material.name, satuanMaterial: l.material.unit,
       qty: toMoney(l.qty).toString(), satuan: l.unit, harga: toMoney(l.unitCost).toFixed(2), nilai: toMoney(l.value).toFixed(2),
-      sumber: l.priceSource, sumberLabel: SUMBER_HARGA[l.priceSource] || l.priceSource, referensi: l.priceReference, penjelasanHarga: l.priceNote, catatan: l.notes,
+      sumber: l.priceSource, sumberLabel: SUMBER_HARGA[l.priceSource] || (l.priceSource === SUMBER_TANPA_STOK ? LABEL_TANPA_STOK : l.priceSource), referensi: l.priceReference, penjelasanHarga: l.priceNote, catatan: l.notes,
       hargaReferensi: l.material.referenceUnitCost ?? null, qtySistem: (sistem.get(l.materialId) || ZERO).toString(),
     })),
     validasi: v,
+  };
+}
+
+// ── GATE KESIAPAN CUTOVER (B3.6.2) ─────────────────────────────────────────────────────────────────────────────────────
+// Gate = 29 Sep 2026 17.00 WIB (dua hari sebelum cutover 1 Okt, pukul 17.00 WIB). GO hanya bila SEMUA syarat terpenuhi; selain itu NO-GO dan
+// sistem menyarankan tanggal cutover baru (awal bulan berikutnya) yang HARUS diputuskan sebelum persediaan awal diposting (setelah itu terkunci).
+export const GATE_JAM_WIB = "17:00";
+export function waktuGate(cutover) {
+  if (!cutover) return null;
+  return new Date(`${hariSebelum(hariSebelum(cutover))}T${GATE_JAM_WIB}:00+07:00`);
+}
+function awalBulanBerikut(kunci) {
+  const [y, m] = kunci.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+}
+
+export async function kesiapanCutover(db, { sekarang = new Date() } = {}) {
+  const k = await ambilKebijakanPersediaan(db);
+  const cutover = k.cutover;
+  const gate = waktuGate(cutover);
+  const pengguna = await db.user.findMany({ where: { active: true }, select: { id: true, role: true, financePinHash: true, roles: { select: { role: true } } } });
+  const punya = (u, r) => u.role === r || u.roles.some((x) => x.role === r);
+  const owner = pengguna.filter((u) => punya(u, "OWNER"));
+  const gudang = pengguna.filter((u) => punya(u, "WAREHOUSE"));
+
+  const snap = cutover ? await db.finInventoryOpening.findFirst({
+    where: { cutoverDate: new Date(`${cutover}T00:00:00Z`), status: { in: ["DRAFT", "DIPERIKSA", "DIPOSTING"] } }, orderBy: { createdAt: "desc" },
+  }) : null;
+  let ringkas = { adaSnapshot: false };
+  if (snap) {
+    const lines = await barisDengan(db, snap.id);
+    const v = await validasiSnapshot(db, snap, lines);
+    const positif = lines.filter((l) => toMoney(l.qty).greaterThan(0));
+    const berdokumen = positif.filter((l) => SUMBER_HARGA[l.priceSource] && (l.priceSource === "LAINNYA" ? (l.priceNote || "").trim() : (l.priceReference || "").trim()));
+    const anomali = [...v.blocker, ...v.peringatan].filter((x) => x.kode === "HARGA_TIDAK_WAJAR");
+    const nilaiAnomali = sumMoney(lines.filter((l) => anomali.some((a) => a.pesan.startsWith(l.material.code + ":"))).map((l) => toMoney(l.value)));
+    ringkas = {
+      adaSnapshot: true, id: snap.id, nomor: snap.number, status: snap.status, statusLabel: STATUS_LABEL[snap.status],
+      jumlahBaris: lines.length, materialFisikPositif: positif.length, materialQtyNol: lines.length - positif.length,
+      positifBerdokumenHarga: berdokumen.length, blocker: v.blocker.length, masalahSatuan: v.blocker.filter((x) => x.kode === "SATUAN_BEDA").length,
+      anomali: { jumlah: anomali.length, belumDijelaskan: v.blocker.filter((x) => x.kode === "HARGA_TIDAK_WAJAR").length, nilai: nilaiAnomali.toFixed(2) },
+      totalNilai: v.ringkasan.totalNilai,
+    };
+  }
+
+  const syarat = [
+    { kode: "PIN_OWNER", label: "PIN Finance Owner terpasang", ok: owner.some((u) => !!u.financePinHash), detail: `${owner.filter((u) => !!u.financePinHash).length} dari ${owner.length} Owner aktif sudah memasang PIN` },
+    { kode: "ROLE_GUDANG", label: "Pemeriksa Gudang (peran WAREHOUSE) tersedia", ok: gudang.length > 0, detail: `${gudang.length} pengguna berperan WAREHOUSE` },
+    { kode: "SNAPSHOT_ADA", label: "Snapshot stok fisik sudah dibuat", ok: ringkas.adaSnapshot, detail: ringkas.adaSnapshot ? `${ringkas.nomor} — ${ringkas.statusLabel}` : "Belum ada snapshot" },
+    { kode: "SATUAN", label: "Tidak ada masalah satuan", ok: ringkas.adaSnapshot && ringkas.masalahSatuan === 0, detail: ringkas.adaSnapshot ? `${ringkas.masalahSatuan} baris satuan berbeda dari master` : "Menunggu snapshot" },
+    { kode: "DOKUMEN_HARGA", label: "Semua material fisik positif punya dokumen harga", ok: ringkas.adaSnapshot && ringkas.materialFisikPositif > 0 && ringkas.positifBerdokumenHarga === ringkas.materialFisikPositif,
+      detail: ringkas.adaSnapshot ? `${ringkas.positifBerdokumenHarga} dari ${ringkas.materialFisikPositif} material fisik positif` : "Menunggu snapshot" },
+    { kode: "ANOMALI", label: "Semua harga tidak wajar sudah dijelaskan", ok: ringkas.adaSnapshot && ringkas.anomali.belumDijelaskan === 0, detail: ringkas.adaSnapshot ? `${ringkas.anomali.jumlah} harga tidak wajar, ${ringkas.anomali.belumDijelaskan} belum dijelaskan` : "Menunggu snapshot" },
+    { kode: "DIPERIKSA", label: "Snapshot sudah diperiksa Finance dan Gudang", ok: !!snap && ["DIPERIKSA", "DIPOSTING"].includes(snap.status), detail: snap ? STATUS_LABEL[snap.status] : "Belum ada snapshot" },
+  ];
+  const siap = syarat.every((s) => s.ok);
+  const gateLewat = gate ? sekarang >= gate : false;
+  const keputusan = siap ? "GO" : "NO-GO";
+  return {
+    cutover, gate: gate ? gate.toISOString() : null, gateLabel: cutover ? `${tanggalIndonesia(hariSebelum(hariSebelum(cutover)))} ${GATE_JAM_WIB} WIB` : null, gateLewat,
+    keputusan, sisaSyarat: syarat.filter((s) => !s.ok).length, syarat, snapshot: ringkas,
+    rekomendasi: siap ? null : {
+      pesan: gateLewat
+        ? `NO-GO setelah gate: geser tanggal cutover ke ${tanggalIndonesia(awalBulanBerikut(cutover))} sebelum persediaan awal diposting. Tagihan bahan baku bertanggal sebelum cutover baru tetap periodik; setelah persediaan awal diposting tanggal terkunci.`
+        : `NO-GO sementara: lengkapi syarat di atas sebelum ${tanggalIndonesia(hariSebelum(hariSebelum(cutover)))} ${GATE_JAM_WIB} WIB. Jika gate terlewat masih NO-GO, geser cutover ke ${tanggalIndonesia(awalBulanBerikut(cutover))} (ubah Pengaturan Finance › tanggal cutover persediaan).`,
+      cutoverBaru: awalBulanBerikut(cutover),
+    },
   };
 }
 

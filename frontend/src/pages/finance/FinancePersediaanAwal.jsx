@@ -21,6 +21,7 @@ const angka = (v) => Number(v || 0).toLocaleString("id-ID", { maximumFractionDig
 export default function FinancePersediaanAwal() {
   const [data, setData] = useState(null);
   const [laporan, setLaporan] = useState(null);
+  const [kesiapan, setKesiapan] = useState(null);
   const [pilih, setPilih] = useState(null);
   const [detail, setDetail] = useState(null);
   const [pratinjau, setPratinjau] = useState(null);
@@ -32,8 +33,8 @@ export default function FinancePersediaanAwal() {
   const muat = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [d, l] = await Promise.all([api.getPersediaanAwal(), api.getPersediaanAwalPengecualian()]);
-      setData(d); setLaporan(l);
+      const [d, l, ks] = await Promise.all([api.getPersediaanAwal(), api.getPersediaanAwalPengecualian(), api.getPersediaanAwalKesiapan().catch(() => null)]);
+      setData(d); setLaporan(l); setKesiapan(ks);
       const aktif = d.snapshot.find((s) => ["DRAFT", "DIPERIKSA", "DIPOSTING"].includes(s.status));
       setPilih((p) => p || aktif?.id || null);
     } catch (e) { setError(e.message || "Gagal memuat"); } finally { setLoading(false); }
@@ -113,6 +114,8 @@ export default function FinancePersediaanAwal() {
         </div>
       )}
 
+      {kesiapan && <KartuKesiapan ks={kesiapan} />}
+
       {laporan && <LaporanPengecualian l={laporan} />}
 
       {data?.snapshot?.length > 0 && (
@@ -147,6 +150,33 @@ export default function FinancePersediaanAwal() {
       )}
       {dialogPin}
     </HalamanFinance>
+  );
+}
+
+function KartuKesiapan({ ks }) {
+  const go = ks.keputusan === "GO";
+  return (
+    <Card data-testid="kesiapan">
+      <JudulKartu title="Kesiapan cutover" description={`Gate ${ks.gateLabel || "—"} — semua syarat harus terpenuhi (GO); jika tidak, NO-GO.`} />
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={go ? "success" : "danger"} data-testid="keputusan">{go ? "GO" : "NO-GO"}</Badge>
+          <span className="text-[12.5px] text-ink2">{go ? "Semua syarat terpenuhi." : `${ks.sisaSyarat} syarat belum terpenuhi.`}</span>
+        </div>
+        <ul className="space-y-1.5 text-[13px]">
+          {ks.syarat.map((s) => (
+            <li key={s.kode} className="flex items-start gap-2">
+              <span className={s.ok ? "text-green" : "text-red"} aria-hidden>{s.ok ? "✓" : "✗"}</span>
+              <span className="min-w-0"><span className="font-medium text-ink">{s.label}</span><span className="block text-[12px] text-ink3">{s.detail}</span></span>
+            </li>
+          ))}
+        </ul>
+        {ks.snapshot?.adaSnapshot && (
+          <p className="text-[12px] text-ink3">Material fisik positif {ks.snapshot.materialFisikPositif} · qty 0 {ks.snapshot.materialQtyNol} (tercatat, tidak masuk jurnal) · nilai anomali {formatUang(Number(ks.snapshot.anomali.nilai))}</p>
+        )}
+        {ks.rekomendasi && <p className="rounded-xl bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="rekomendasi-cutover">{ks.rekomendasi.pesan}</p>}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -233,7 +263,7 @@ function DetailSnapshot({ detail, pratinjau, tindakan, onIsi, onHapus, onPeriksa
 
       {tindakan.includes("isi") && (
         <Card>
-          <JudulKartu title="Isi stok fisik" description="Salin dari spreadsheet lalu tempel. Satu material satu baris. Kuantitas negatif dan kode ganda ditolak." />
+          <JudulKartu title="Isi stok fisik" description="Salin dari spreadsheet lalu tempel. Satu material satu baris. Kuantitas negatif dan kode ganda ditolak. Qty 0 boleh tanpa harga dan sumber harga (tercatat sebagai hasil hitung, tidak masuk jurnal); qty di atas 0 wajib harga dan dokumen sumbernya." />
           <CardContent className="space-y-3">
             <p className="text-[12px] text-ink3">Urutan kolom: {JUDUL_KOLOM.join(" · ")}. Sumber harga: FAKTUR, TAGIHAN, PEMBELIAN, atau LAINNYA (wajib keterangan).</p>
             <textarea value={tempel} onChange={(e) => setTempel(e.target.value)} rows={6} aria-label="Tempel baris stok"

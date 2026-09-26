@@ -327,3 +327,72 @@ test("Akun 5-1100 bernama jelas tanpa mengubah kode/tipe", async () => {
   const k = await ctx.f.get("/api/finance/persediaan-awal");
   assert.equal(k.body.kebijakan.cutover, "2026-10-01"); assert.equal(k.body.kebijakan.tanggalHitung, "2026-09-30"); assert.equal(k.body.kebijakan.terkunci, false);
 });
+
+// ── B3.6.2 — qty 0 & gate kesiapan ───────────────────────────────────────────────────────────────────────────────────
+
+test("Qty 0 tanpa harga & sumber diterima, tercatat sebagai bukti hitung, tidak masuk jurnal", async () => {
+  const ctx = await siapkan();
+  const d = await ctx.f.post("/api/finance/persediaan-awal", {});
+  const r = await isi(ctx, d.body.id, [{ kode: "BUSA-A", qty: 0, satuan: "SHEET", harga: "", sumber: "" }, { kode: "KAYU-C", qty: "0", satuan: "ROD" }]);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.validasi.blocker.length, 0);
+  assert.ok(r.body.validasi.peringatan.some((x) => x.kode === "QTY_NOL"));
+  assert.equal(r.body.baris.length, 2, "material qty 0 tetap tercatat sebagai hasil opname");
+  assert.equal(r.body.baris[0].sumber, "TANPA_STOK"); assert.equal(r.body.baris[0].sumberLabel, "Tanpa stok (qty 0)"); assert.equal(r.body.baris[0].nilai, "0.00");
+  // harga kayu Rp386 jt tidak dinilai untuk qty 0 (walau referensinya anomali)
+  assert.ok(!r.body.validasi.peringatan.some((x) => x.kode === "HARGA_TIDAK_WAJAR"));
+  const pr = await ctx.f.get(`/api/finance/persediaan-awal/${d.body.id}/pratinjau`);
+  assert.deepEqual(pr.body.baris, [], "tanpa nilai fisik → tidak ada baris jurnal"); assert.equal(pr.body.seimbang, true);
+});
+
+test("Qty positif tanpa harga atau tanpa sumber harga tetap ditolak/diblokir", async () => {
+  const ctx = await siapkan();
+  const d = await ctx.f.post("/api/finance/persediaan-awal", {});
+  const tolak = await isi(ctx, d.body.id, [{ kode: "BUSA-A", qty: 3, satuan: "SHEET", harga: "", sumber: "FAKTUR", referensi: "INV" }]);
+  assert.equal(tolak.status, 422); assert.equal(tolak.body.detail[0].kode, "HARGA_TIDAK_VALID");
+  const nolHarga = await isi(ctx, d.body.id, [{ kode: "BUSA-A", qty: 3, satuan: "SHEET", harga: 0, sumber: "FAKTUR", referensi: "INV" }]);
+  assert.equal(nolHarga.status, 200);
+  assert.deepEqual(nolHarga.body.validasi.blocker.map((x) => x.kode), ["HARGA_NOL"]);
+  const tanpaSumber = await isi(ctx, d.body.id, [{ kode: "BUSA-A", qty: 3, satuan: "SHEET", harga: 10_000, sumber: "" }]);
+  assert.deepEqual(tanpaSumber.body.validasi.blocker.map((x) => x.kode), ["SUMBER_HARGA_KOSONG"]);
+  assert.equal((await ctx.f.post(`/api/finance/persediaan-awal/${d.body.id}/periksa`, { peran: "FINANCE" })).status, 422);
+});
+
+test("Snapshot campuran (qty positif berdokumen + qty 0 tanpa harga): valid, diperiksa, jurnal hanya dari qty positif", async () => {
+  const ctx = await siapkan();
+  const id = await snapshotSiap(ctx, [rowA(), { kode: "PLASTIK-B", qty: 0, satuan: "KG" }, { kode: "KAYU-C", qty: 0, satuan: "ROD", sumber: "", harga: "" }]);
+  const d = await ctx.f.get(`/api/finance/persediaan-awal/${id}`);
+  assert.equal(d.body.snapshot.lineCount, 3); assert.equal(Number(d.body.snapshot.totalValue), 100_000);
+  const pr = await ctx.f.get(`/api/finance/persediaan-awal/${id}/pratinjau`);
+  assert.deepEqual(pr.body.baris.map((b) => [b.akun.kode, b.debit, b.kredit]), [["1-1400", "100000.00", "0.00"], ["5-1100", "0.00", "100000.00"]]);
+  assert.equal((await posting(ctx, id)).status, 200);
+  assert.equal(await saldo("1-1400"), 100_000);
+  const j = await testPrisma.finJournalEntry.findFirst({ where: { source: "PERSEDIAAN_AWAL" }, include: { lines: true } });
+  assert.equal(j.lines.length, 2, "baris qty 0 tidak masuk jurnal");
+});
+
+test("Gate kesiapan: NO-GO tanpa PIN Owner/peran Gudang; GO bila semua syarat terpenuhi; rekomendasi geser cutover", async () => {
+  const ctx = await siapkan();
+  const g0 = await ctx.f.get("/api/finance/persediaan-awal/kesiapan");
+  assert.equal(g0.status, 200, JSON.stringify(g0.body));
+  assert.equal(g0.body.keputusan, "NO-GO"); assert.equal(g0.body.cutover, "2026-10-01");
+  assert.equal(g0.body.gateLabel, "29 Sep 2026 17:00 WIB"); assert.equal(g0.body.gate, "2026-09-29T10:00:00.000Z");
+  const s = Object.fromEntries(g0.body.syarat.map((x) => [x.kode, x.ok]));
+  assert.equal(s.PIN_OWNER, false); assert.equal(s.ROLE_GUDANG, true, "fixture punya pengguna WAREHOUSE"); assert.equal(s.SNAPSHOT_ADA, false);
+  assert.equal(g0.body.rekomendasi.cutoverBaru, "2026-11-01"); assert.match(g0.body.rekomendasi.pesan, /1 Nov 2026/);
+
+  await testPrisma.user.update({ where: { id: ctx.owner.user.id }, data: { financePinHash: "$2a$10$abcdefghijklmnopqrstuv" } });
+  const id = await snapshotSiap(ctx, [rowA(), rowB(), { kode: "KAYU-C", qty: 0, satuan: "ROD" }]);
+  const g1 = await ctx.f.get("/api/finance/persediaan-awal/kesiapan");
+  assert.equal(g1.body.keputusan, "GO", JSON.stringify(g1.body.syarat.filter((x) => !x.ok)));
+  assert.equal(g1.body.snapshot.materialFisikPositif, 2); assert.equal(g1.body.snapshot.materialQtyNol, 1); assert.equal(g1.body.snapshot.positifBerdokumenHarga, 2);
+  assert.equal(g1.body.rekomendasi, null);
+
+  // qty positif tanpa dokumen harga → NO-GO lagi
+  const d2 = await ctx.f.post(`/api/finance/persediaan-awal/${id}/buka-kembali`, {});
+  assert.equal(d2.status, 200);
+  await isi(ctx, id, [rowA({ referensi: "" })]);
+  const g2 = await ctx.f.get("/api/finance/persediaan-awal/kesiapan");
+  assert.equal(g2.body.keputusan, "NO-GO");
+  assert.equal(g2.body.syarat.find((x) => x.kode === "DOKUMEN_HARGA").ok, false);
+});
