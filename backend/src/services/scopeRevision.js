@@ -10,6 +10,7 @@
 // be rejected, not just hidden in the UI".
 
 import { prisma } from "../db.js";
+import { formatUkuranLabel } from "../lib/ukuranKasur.js";
 import { failStage } from "./unitStageEngine.js";
 import { syncCustomerOrderAggregate } from "./customerOrderAggregate.js";
 
@@ -248,7 +249,7 @@ export async function buildCustomerSummary(revisionId) {
     revisionId: rev.id,
     orderNumber: rev.order?.orderNumber,
     unitCode: rev.unit?.unitCode,
-    kasur: [rev.unit?.merk, rev.unit?.ukuran].filter(Boolean).join(" · ") || null,
+    kasur: [rev.unit?.merk, formatUkuranLabel(rev.unit?.ukuran)].filter(Boolean).join(" · ") || null,
     temuan: rev.reason,
     layananSebelum: rev.fromService?.labelId || null,
     layananSesudah: rev.toService?.labelId || null,

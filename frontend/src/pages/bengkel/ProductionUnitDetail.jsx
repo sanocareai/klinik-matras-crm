@@ -1,3 +1,4 @@
+import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -1173,7 +1174,7 @@ export default function ProductionUnitDetail() {
           <Card className="p-4">
             <h3 className="mb-2 text-[13px] font-bold text-ink">Info Unit</h3>
             <dl className="space-y-1.5 text-[12px]">
-              <div className="flex justify-between"><dt className="text-ink3">Kasur</dt><dd className="text-ink">{[unit.merk, unit.ukuran].filter(Boolean).join(" · ") || "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-ink3">Kasur</dt><dd className="text-ink">{[unit.merk, formatUkuranLabel(unit.ukuran)].filter(Boolean).join(" · ") || "—"}</dd></div>
               <div className="flex justify-between"><dt className="text-ink3">Lini</dt><dd className="text-ink">{unit.serviceLine ? SERVICE_LINE_REAL[unit.serviceLine]?.label : "—"}</dd></div>
               <div className="flex justify-between"><dt className="text-ink3">Lokasi Simpan</dt><dd className="text-ink">{unit.storageLocation || "—"}</dd></div>
               <div className="flex justify-between"><dt className="text-ink3">Telepon</dt><dd className="text-ink">{unit.order?.customer?.phone || "—"}</dd></div>

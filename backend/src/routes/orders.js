@@ -10,6 +10,7 @@ import { rolesOf, requirePermission, PERMISSIONS as P } from "../middleware/auth
 // Container backend jalan di UTC, jadi batas polos menggeser jendela 7 jam
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
 import { startOfDayWIB, endOfDayExclusiveWIB, parseTanggalKalender } from "../utils/wib.js";
+import { siapkanNotesUkuran, sinkronUkuranUnit, teksUkuranDariNotes } from "../lib/ukuranKasur.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 // D-180 — jembatan ke buku besar. Lihat catatan panjang di hooks.js: modul
@@ -195,6 +196,12 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
     if (!guarded) return;
   }
 
+  // Ukuran Custom: validasi (Lebar/Panjang wajib & wajar) + buang nilai custom bila kembali ke ukuran standar. 400 Bahasa Indonesia.
+  let notesSiap = notes;
+  if (notes !== undefined) {
+    try { notesSiap = siapkanNotesUkuran(notes); } catch (e) { return res.status(e.statusCode || 400).json({ error: e.message }); }
+  }
+
   // Override manual ke CANCELLED lewat dropdown ini WAJIB lolos pengaman
   // yang SAMA dengan tombol "Batalkan Order" (checkCancelBlockers di atas)
   // — dua tombol, satu aturan. Dicek DI LUAR transaksi seperti POST
@@ -261,7 +268,7 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
     const order = await prisma.$transaction(async (tx) => {
       const sebelum = await tx.order.findUnique({
         where: { id: req.params.id },
-        select: { status: true, paymentStatus: true, locationUrl: true },
+        select: { status: true, paymentStatus: true, locationUrl: true, notes: true },
       });
       if (!sebelum) {
         throw Object.assign(new Error("Order tidak ditemukan"), { statusCode: 404 });
@@ -293,7 +300,7 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           ...(paymentStatus     !== undefined && { paymentStatus }),
           ...paidAtPatch,
           ...(quantity          !== undefined && { quantity: Number(quantity) }),
-          ...(notes             !== undefined && { notes }),
+          ...(notes             !== undefined && { notes: notesSiap }),
           ...(orderNumber       !== undefined && { orderNumber: orderNumber?.trim() || null }),
           // D-026: kirim "" atau null untuk lepas promo dari order ini.
           ...(promoId           !== undefined && { promoId: promoId || null }),
@@ -357,6 +364,9 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           weightEntries: { orderBy: { sortOrder: "asc" } },
         },
       });
+
+      // Ukuran berubah → selaraskan Unit.ukuran (hanya unit order ini yang masih memuat ukuran lama; lihat sinkronUkuranUnit).
+      if (notes !== undefined) await sinkronUkuranUnit(tx, updated.id, sebelum.notes, notesSiap);
 
       // HANYA kalau status BENAR-BENAR berpindah. Form order mengirim seluruh
       // field termasuk status yang tidak berubah — tanpa cek ini riwayat penuh
@@ -1872,7 +1882,7 @@ function buildWaMessage(order, customer, actorName) {
     `Keluhan Kasur: ${info.keluhanCustomer || "-"}`,
     ``,
     `🛏️ *Spesifikasi Kasur*`,
-    `Ukuran: ${info.ukuranKasur || "-"}`,
+    `Ukuran: ${teksUkuranDariNotes(order.notes) || "-"}`,
     `Merk: ${info.merkKasur || "-"}`,
     `Layanan: ${layanan}`,
     ``,

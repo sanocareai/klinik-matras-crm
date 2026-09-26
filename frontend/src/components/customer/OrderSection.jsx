@@ -28,6 +28,8 @@ import {
   jenisProdukOptions, resolveVariantKey, UKURAN_VARIANT_KEY,
 } from "../../utils/format.js";
 import { isAdminUser } from "../../lib/roles.js";
+import UkuranCustomFields from "./UkuranCustomFields.jsx";
+import { isUkuranCustom, validasiUkuranCustom, formatUkuranKasur } from "../../utils/ukuranKasur.js";
 import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.jsx";
 import ComplaintCaseSection from "./ComplaintCaseSection.jsx";
 import BuatResiModal from "../../features/resi/BuatResiModal.jsx";
@@ -292,7 +294,7 @@ function buildWaMessage(order, customer, actorName) {
     `Keluhan Kasur: ${info.keluhanCustomer || "-"}`,
     ``,
     `🛏️ *Spesifikasi Kasur*`,
-    `Ukuran: ${info.ukuranKasur || "-"}`,
+    `Ukuran: ${formatUkuranKasur(info) || "-"}`,
     `Merk: ${info.merkKasur || "-"}`,
     `Layanan: ${layanan}`,
     ``,
@@ -352,6 +354,15 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   const [overrideBusy, setOverrideBusy]       = useState(false);
   const [merkKasur, setMerkKasur]         = useState(info.merkKasur);
   const [ukuran, setUkuran]               = useState(info.ukuranKasur);
+  // Ukuran Custom: Lebar/Panjang (cm) sebagai teks isian; dibersihkan otomatis bila pindah ke ukuran standar.
+  const angkaKeTeks = (n) => (n === null || n === undefined ? "" : String(n).replace(".", ","));
+  const [ukuranLebar, setUkuranLebar]     = useState(angkaKeTeks(info.ukuranLebarCm));
+  const [ukuranPanjang, setUkuranPanjang] = useState(angkaKeTeks(info.ukuranPanjangCm));
+  const [ukuranPaksa, setUkuranPaksa]     = useState(false);
+  function pilihUkuran(u) {
+    setUkuran(u);
+    if (!isUkuranCustom(u)) { setUkuranLebar(""); setUkuranPanjang(""); setUkuranPaksa(false); }
+  }
   const [keluhan, setKeluhan]             = useState(info.keluhanCustomer);
   const [promoId, setPromoId]             = useState(order.promoId || "");
   // D-027: kota + alamat pengiriman order ini — TERPISAH dari Customer.city
@@ -445,6 +456,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   }
 
   async function handleSave() {
+    if (isUkuranCustom(ukuran) && !validasiUkuranCustom({ lebar: ukuranLebar, panjang: ukuranPanjang }).ok) { setUkuranPaksa(true); return; }
     setSaving(true);
     try {
       // Merk otomatis "Sano" untuk BARU/SEWA
@@ -455,7 +467,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         // jenisKasurLainnya (4 Sep 2026) TIDAK punya UI edit di sini —
         // diteruskan apa adanya dari notes lama supaya tidak diam-diam
         // terhapus tiap kali order disimpan lewat form ini.
-        notes: buildOrderNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan, jenisKasurLainnya: info.jenisKasurLainnya }),
+        notes: buildOrderNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, ukuranLebarCm: ukuranLebar, ukuranPanjangCm: ukuranPanjang, keluhanCustomer: keluhan, jenisKasurLainnya: info.jenisKasurLainnya }),
         promoId: promoId || null,
         deliveryCity: deliveryCity || null,
         deliveryAddress: deliveryAddress || null,
@@ -543,6 +555,9 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
     setPaymentStatus(order.paymentStatus || "BELUM_BAYAR");
     setMerkKasur(inf.merkKasur);
     setUkuran(inf.ukuranKasur);
+    setUkuranLebar(angkaKeTeks(inf.ukuranLebarCm));
+    setUkuranPanjang(angkaKeTeks(inf.ukuranPanjangCm));
+    setUkuranPaksa(false);
     setKeluhan(inf.keluhanCustomer);
     setDeliveryCity(order.deliveryCity || "");
     setDeliveryAddress(order.deliveryAddress || "");
@@ -1049,17 +1064,22 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           <div>
             <FieldLabel tone="size" small>Ukuran</FieldLabel>
             <FilterDropdown
-              value={ukuran} onChange={setUkuran}
+              value={ukuran} onChange={pilihUkuran}
               options={orderOptions.ukuranKasur.map((u) => ({ value: u, label: u }))}
               placeholder="—" ariaLabel="Pilih ukuran kasur"
               triggerClassName="w-full max-w-none"
             />
           </div>
+          {isUkuranCustom(ukuran) && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <UkuranCustomFields lebar={ukuranLebar} panjang={ukuranPanjang} onLebar={setUkuranLebar} onPanjang={setUkuranPanjang} paksa={ukuranPaksa} idAwal={`ukuran-edit-${order.id}`} />
+            </div>
+          )}
         </div>
       ) : (info.merkKasur || info.ukuranKasur || !isLayanan) ? (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
           <span style={chipStyle}>{isLayanan ? (info.merkKasur || "—") : "Sano"}</span>
-          {(info.ukuranKasur || ukuran) && <span style={chipStyle}>{info.ukuranKasur || ukuran}</span>}
+          {(info.ukuranKasur || ukuran) && <span style={chipStyle}>{formatUkuranKasur(info) || ukuran}</span>}
         </div>
       ) : null}
 
@@ -1460,6 +1480,14 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   const usesUkuranDropdown = productLine === "KASUR" || productLine === "DIVAN";
   const [merkKasur, setMerk]          = useState("");
   const [ukuran, setUkuran]           = useState("");
+  const [ukuranLebar, setUkuranLebar]     = useState("");
+  const [ukuranPanjang, setUkuranPanjang] = useState("");
+  const [ukuranPaksa, setUkuranPaksa]     = useState(false);
+  const ukuranCustomTidakValid = usesUkuranDropdown && isUkuranCustom(ukuran) && !validasiUkuranCustom({ lebar: ukuranLebar, panjang: ukuranPanjang }).ok;
+  function pilihUkuran(u) {
+    setUkuran(u);
+    if (!isUkuranCustom(u)) { setUkuranLebar(""); setUkuranPanjang(""); setUkuranPaksa(false); }
+  }
   const [keluhan, setKeluhan]         = useState("");
   const [promoId, setPromoId]         = useState("");
   // D-027: kota + alamat pengiriman order ini.
@@ -1569,6 +1597,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
   async function handleSubmitLayanan(e) {
     e.preventDefault();
     const validItems = items.filter((it) => it.layananName?.trim());
+    if (ukuranCustomTidakValid) { setUkuranPaksa(true); setStep(3); return; }
     if (validItems.length === 0) return alert("Tambahkan minimal satu " + (isLayanan ? "layanan" : "item"));
     setSaving(true);
     try {
@@ -1579,7 +1608,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
         // Merk cuma relevan utk LAYANAN (upgrade kasur existing customer,
         // merknya bisa apa saja) — BARU/SEWA selalu produk Sano sendiri.
         notes: buildOrderNotes({
-          merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan,
+          merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, ukuranLebarCm: ukuranLebar, ukuranPanjangCm: ukuranPanjang, keluhanCustomer: keluhan,
           jenisKasurLainnya: productType === "KASUR_LAINNYA" ? jenisKasurLainnya : "",
         }),
         promoId: promoId || undefined,
@@ -1925,7 +1954,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
           <FieldLabel tone="size">{usesUkuranDropdown ? (isKasur ? "Ukuran Kasur" : `Ukuran ${lineLabel}`) : `Ukuran/Konfigurasi ${lineLabel}`}</FieldLabel>
           {usesUkuranDropdown ? (
             <FilterDropdown
-              value={ukuran} onChange={setUkuran}
+              value={ukuran} onChange={pilihUkuran}
               options={(
                 // SEWA (2 Sep 2026) — Klinik Matras cuma menyewakan ukuran
                 // 120-200 (dikonfirmasi owner + katalog RENTAL_KASUR_SEWA di
@@ -1947,6 +1976,11 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
               placeholder="cth: 3 seater, abu-abu"
               style={formSelect}
             />
+          )}
+          {usesUkuranDropdown && isUkuranCustom(ukuran) && (
+            <div style={{ marginTop: 8 }}>
+              <UkuranCustomFields lebar={ukuranLebar} panjang={ukuranPanjang} onLebar={setUkuranLebar} onPanjang={setUkuranPanjang} paksa={ukuranPaksa} idAwal="ukuran-baru" />
+            </div>
           )}
         </div>
         {/* Kota + Alamat pengiriman (D-027) — TERPISAH dari Customer.city,
@@ -2092,7 +2126,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
             yang sama, memuat katalog PRODUCT (BARU) / RENTAL (SEWA) yang
             sebelumnya tidak pernah ditampilkan sama sekali. */}
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => setStep(4)}>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { if (ukuranCustomTidakValid) { setUkuranPaksa(true); return; } setStep(4); }}>
             Lanjut ke {isLayanan ? "Layanan" : "Daftar Harga"} →
           </button>
           <button className="btn btn-ghost" onClick={onCancel}>Batal</button>

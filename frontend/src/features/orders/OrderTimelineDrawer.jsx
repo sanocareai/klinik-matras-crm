@@ -1,3 +1,4 @@
+import { formatUkuranKasur } from "@/utils/ukuranKasur.js";
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -220,7 +221,7 @@ function DetailPesananSection({ order, onChanged }) {
   // ada satu lini produk. lineLabel fallback "Kasur" utk order lama
   // (sebelum kolom productLine ada, migrasi backfill semuanya ke KASUR).
   const lineLabel = PRODUCT_LINE_LABELS[order.productLine] || "Kasur";
-  const spesifikasi = [PRODUCT_TYPE_LABELS[order.productType], info.merkKasur, info.ukuranKasur].filter(Boolean);
+  const spesifikasi = [PRODUCT_TYPE_LABELS[order.productType], info.merkKasur, formatUkuranKasur(info)].filter(Boolean);
 
   // Override lokal SETELAH simpan (5 September 2026) — `order` di sini
   // adalah prop dari drawer induk yang TIDAK otomatis ter-refresh begitu

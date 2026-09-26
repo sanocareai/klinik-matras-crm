@@ -7,6 +7,7 @@ import { dispatchLeadWon } from "../services/automationWebhook.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { createOrderForCustomer } from "../services/orderCreation.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+import { siapkanNotesUkuran, formatUkuranKasur } from "../lib/ukuranKasur.js";
 import { buatFileVCard } from "../services/vcard.js";
 
 export const customerRouter = express.Router();
@@ -310,7 +311,7 @@ customerRouter.get("/", async (req, res) => {
           const n = JSON.parse(latest.notes);
           latestKeluhan    = n.keluhanCustomer || null;
           latestMerkKasur  = n.merkKasur       || null;
-          latestUkuranKasur = n.ukuranKasur    || null;
+          latestUkuranKasur = formatUkuranKasur(n) || null;
         } catch {}
       }
 
@@ -667,7 +668,9 @@ customerRouter.post("/:id/orders", async (req, res) => {
 // membuat Customer.orderCount/orderValue basi kalau ini masih dipanggil
 // lewat integrasi lain di luar UI.)
 customerRouter.patch("/:id/orders/:orderId", async (req, res) => {
-  const { status, notes, quantity, orderNumber } = req.body;
+  const { status, quantity, orderNumber } = req.body;
+  let notes = req.body.notes;
+  try { if (notes !== undefined) notes = siapkanNotesUkuran(notes); } catch (e) { return res.status(e.statusCode || 400).json({ error: e.message }); }
   const order = await prisma.order.update({
     where: { id: req.params.orderId },
     data: {

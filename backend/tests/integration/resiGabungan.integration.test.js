@@ -26,7 +26,7 @@ async function siapkan() {
   const lain = await testPrisma.customer.create({ data: { name: "Bapak Andi" } });
   return { sales, driver, customer, lain, c: makeClient(server.baseUrl, sales.token), d: makeClient(server.baseUrl, driver.token) };
 }
-const item = (extra = {}) => ({ merk: "Sano", ukuran: "84x195x12", keluhan: "Pegal pinggang", nominal: 1_200_000, unitCount: 1, catatan: "", ...extra });
+const item = (extra = {}) => ({ merk: "Sano", ukuran: "160x200 cm (Queen)", keluhan: "Pegal pinggang", nominal: 1_200_000, unitCount: 1, catatan: "", ...extra });
 const badan = (customerId, items, extra = {}) => ({ customerId, alamat: "Jl. Kemang 1/11", kota: "Jakarta Selatan", tautanLokasi: "https://maps.example/x", ongkirTambahan: 0, items, ...extra });
 async function hitung() {
   const [order, unit, job, invoice, payment, jurnal, alokasi, item_] = await Promise.all([
@@ -60,7 +60,7 @@ test("Flag RESI_INPUT_AKTIF default MATI: status aktif=false dan POST ditolak 40
 test("Buat resi 3 item: 3 order + unit + invoice, satu transaksi; invoice tergabung ke satu anchor; Ongkir Tambahan sekali; DP 30% dari total resi", async () => {
   const { c, customer } = await siapkan();
   await nyalakan();
-  const r = await c.post(POST, badan(customer.id, [item({ nominal: 1_000_000 }), item({ nominal: 500_000, unitCount: 2 }), item({ nominal: 250_001, ukuran: "90x200x20" })], { ongkirTambahan: 50_000 }));
+  const r = await c.post(POST, badan(customer.id, [item({ nominal: 1_000_000 }), item({ nominal: 500_000, unitCount: 2 }), item({ nominal: 250_001, ukuran: "90x200 cm (Single)" })], { ongkirTambahan: 50_000 }));
   assert.equal(r.status, 201, JSON.stringify(r.body));
   assert.equal(r.body.orders.length, 3);
   assert.deepEqual(r.body.ringkasan, { subtotal: 1_750_001, ongkirTambahan: 50_000, totalResi: 1_800_001, dpPersen: 30, dp: 540_000, sisaSetelahDp: 1_260_001 });
@@ -74,7 +74,7 @@ test("Buat resi 3 item: 3 order + unit + invoice, satu transaksi; invoice tergab
   assert.equal(orders.reduce((s, o) => s + (o.dpTarget ?? 0), 0), 540_000, "Σ dpTarget = DP 30% total resi");
   assert.ok(orders.every((o) => o.deliveryAddress === "Jl. Kemang 1/11" && o.deliveryCity === "Jakarta Selatan"));
   const notes = JSON.parse(orders[0].notes);
-  assert.equal(notes.merkKasur, "Sano"); assert.equal(notes.ukuranKasur, "84x195x12"); assert.equal(notes.keluhanCustomer, "Pegal pinggang");
+  assert.equal(notes.merkKasur, "Sano"); assert.equal(notes.ukuranKasur, "160x200 cm (Queen)"); assert.equal(notes.keluhanCustomer, "Pegal pinggang");
 
   // bundle otomatis: invoice item ke-2..N menunjuk ke invoice anchor (item pertama)
   const anchor = orders[0].invoice;

@@ -16,18 +16,21 @@ import { createUnitsForOrder } from "./unitProvisioning.js";
 import { syncOrderStatus } from "./orderStatusSync.js";
 import { ensureInvoiceForOrder } from "./invoice.js";
 import { parseTanggalKalender } from "../utils/wib.js";
+import { siapkanNotesUkuran } from "../lib/ukuranKasur.js";
 
 // `opts.tx` (opsional, Resi Gabungan Fase 1): jalankan di dalam transaksi PEMANGGIL (mis. N order dalam SATU transaksi). Tanpa `opts.tx` perilaku
 // PERSIS seperti sebelumnya (transaksi sendiri). Catatan: nomor order (generateOrderNumber) memakai transaksi terpisah, sehingga bila transaksi
 // pemanggil di-rollback nomornya terpakai (ada celah nomor) — tidak ada order/unit/invoice yang tersisa.
 export async function createOrderForCustomer(customerId, body, userId, opts = {}) {
   const {
-    quantity, status, notes, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress,
+    quantity, status, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress,
     healthStatus, complaintCategory, ongkir, ongkirKlaimGaransi, pickupEstimate, pickupConfirmedDate,
     deliveryEstimate, deliveryConfirmedDate, locationUrl, productLine, productType, customerPromiseDate,
   } = body;
 
   const cat = category || "LAYANAN";
+  // Ukuran Custom: validasi/bersihkan bagian ukuran notes SEBELUM generateOrderNumber (nomor terpakai permanen). Melempar UkuranError (400).
+  const notes = siapkanNotesUkuran(body.notes);
 
   // Validasi tanggal DULU, sebelum generateOrderNumber() — generate nomor
   // menaikkan counter OrderSequence secara permanen (transaksi sendiri,

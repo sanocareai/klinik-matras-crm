@@ -1,3 +1,4 @@
+import { formatUkuranKasur } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -839,7 +840,8 @@ export default function Orders() {
         // Header dilepas dari "Kasur" (dulu satu-satunya produk) — isinya
         // sekarang bisa merk/ukuran Sofa/Divan juga, lihat OrderSection.jsx.
         "Merk/Model":            info.merkKasur || "",
-        "Ukuran/Konfigurasi":    info.ukuranKasur || "",
+        // Export WAJIB memuat ukuran AKTUAL (mis. "145 × 205 cm (Custom)"), bukan sekadar "Ukuran Custom"; custom lama tanpa angka → "Ukuran Custom (ukuran belum diisi)".
+        "Ukuran/Konfigurasi":    formatUkuranKasur(info),
         // Ringkasan katalog harga — lihat sheet "Rincian Layanan" utk
         // detail per layanan. Kosong ("") kalau order ini TIDAK PUNYA item
         // sama sekali (order lama / isian bebas semua).
@@ -1315,7 +1317,7 @@ export default function Orders() {
                         ) : <span className="text-ink3">—</span>}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink2">
-                        {info.ukuranKasur || <span className="text-ink3">—</span>}
+                        {formatUkuranKasur(info) || <span className="text-ink3">—</span>}
                         {info.merkKasur && <span className="text-ink3"> · {info.merkKasur}</span>}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
