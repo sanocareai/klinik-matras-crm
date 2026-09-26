@@ -427,6 +427,16 @@ financeRouter.post("/expense-categories", requirePermission(P.FINANCE_ADMIN), as
 financeRouter.patch("/expense-categories/:id", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
   try {
     const { name, accountId, division, active } = req.body;
+    // Sama dengan POST: kategori biaya hanya boleh menunjuk akun Beban/Beban Pokok yang bisa diposting. Mencegah, mis., 3-4200 (Bagi Hasil Investor,
+    // ekuitas) atau akun aset/kewajiban dijadikan 'biaya' lewat PATCH.
+    if (accountId !== undefined) {
+      const akun = await prisma.finAccount.findUnique({ where: { id: accountId }, select: { isPostable: true, type: true } });
+      if (!akun) return res.status(400).json({ error: "Akun tujuan tidak ditemukan" });
+      if (!akun.isPostable) return res.status(400).json({ error: "Akun tujuan adalah akun header — pilih akun rincian yang bisa diposting" });
+      if (!["BEBAN", "BEBAN_POKOK"].includes(akun.type)) {
+        return res.status(400).json({ error: "Kategori biaya harus menunjuk akun bertipe Beban atau Beban Pokok — memilih akun aset/kewajiban/ekuitas akan membuat laba rugi salah" });
+      }
+    }
     const updated = await prisma.finExpenseCategory.update({
       where: { id: req.params.id },
       data: {
