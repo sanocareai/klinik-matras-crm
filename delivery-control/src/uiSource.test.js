@@ -55,11 +55,24 @@ test("timeline audit dan status pembayaran ditampilkan; teks berbahasa Indonesia
   for (const f of layar) assert.doesNotMatch(baca(f), /\b(Loading|Submit|Cancel|Approve|Reject)\b(?!\w)/, `${f}: teks Inggris`);
 });
 
-test("Home hanya mengaktifkan modul yang benar-benar ada; sisanya diberi label Berikutnya", () => {
+test("Home hanya mengaktifkan modul yang benar-benar ada; sisanya tampil tipis dengan label Segera (tidak bisa ditekan)", () => {
   const src = baca("screens/HomeScreen.js");
   assert.match(src, /ready: true/);
-  assert.match(src, /Berikutnya/);
+  assert.match(src, /SEGERA/);
   assert.match(src, /disabled=\{!m\.ready\}/);
+  assert.doesNotMatch(src, /navigate\("(Driver|Rute|Tracking|Masalah|Performa)/, "tidak ada tujuan palsu");
+});
+
+test("navigasi bawah hanya berisi tujuan yang punya layar", () => {
+  const nav = baca("BottomNav.js");
+  const tujuan = [...nav.matchAll(/name: "(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(tujuan, ["Home", "BiayaArmada"]);
+});
+
+test("ringkasan hanya membaca endpoint daftar yang ada (tanpa mutation)", () => {
+  const src = baca("ringkasan.js");
+  assert.match(src, /biayaArmadaApi\.list\(/);
+  assert.doesNotMatch(src, /biayaArmadaApi\.(create|update|ajukan|tarik|batalkan|mintaRevisi|setujui|tolak)\(/);
 });
 
 test("foto struk dibuka lewat URL bertanda-tangan berumur pendek (bukan header Bearer / path penyimpanan), dengan ulang otomatis dan tombol Coba lagi", () => {

@@ -27,13 +27,16 @@ function Root() {
   }
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: t.bg }, headerTintColor: t.ink, headerShadowVisible: false }}>
+      <Stack.Navigator screenOptions={{
+        headerStyle: { backgroundColor: t.bg }, headerTintColor: t.ink, headerShadowVisible: false,
+        headerTitleStyle: { fontWeight: "800", fontSize: 18 }, contentStyle: { backgroundColor: t.bg }, animation: "slide_from_right",
+      }}>
         {session ? (
           <>
-            <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
-            <Stack.Screen name="BiayaArmada" component={BiayaArmadaScreen} options={{ title: "Biaya Armada" }} />
+            <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false, animation: "fade" }} />
+            <Stack.Screen name="BiayaArmada" component={BiayaArmadaScreen} options={{ title: "Biaya Armada", headerShown: false, animation: "fade" }} />
             <Stack.Screen name="BiayaDetail" component={BiayaDetailScreen} options={{ title: "Detail biaya" }} />
-            <Stack.Screen name="BiayaForm" component={BiayaFormScreen} options={({ route }) => ({ title: route.params?.id ? "Perbaiki biaya" : "Catat biaya" })} />
+            <Stack.Screen name="BiayaForm" component={BiayaFormScreen} options={({ route }) => ({ title: route.params?.id ? "Perbaiki pengajuan" : "Tambah pengajuan" })} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
