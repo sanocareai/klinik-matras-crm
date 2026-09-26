@@ -37,7 +37,6 @@ Jangan commit hasilnya (memuat data operasional production).
 ## Batasan yang diketahui
 - Route yang V2-state-nya sudah diubah command V2 (`routeRevision > 1`) tidak ditimpa backfill (sengaja).
   Sinkronisasi state lifecycle-nya memakai `reconcileDeliveryRouteFromV1` (mode terminal/catch-up), bukan backfill.
-- Eligibility Driver membaca exception dari semua run; exception lama yang sudah digantikan tetap dihitung di sana.
 
 ## Cohort writer berbasis route (canary)
 Satu keputusan bersama (`deliveryWriterDecision` di `src/services/v2FeatureFlags.js`) dipakai `armada.js` dan
