@@ -119,3 +119,15 @@ test("Biaya Armada: verifikasi bukti dan bayar hanya lewat allowedActions, memak
   assert.match(form, /UANG_MUKA_OPERASIONAL/);
   assert.match(form, /biayaArmadaApi\.uangMukaAktif\(\)/);
 });
+
+test("Live Tracking: peta hanya menampilkan posisi dari server; tanpa izin/pembacaan lokasi HP, refresh 30 detik, ada daftar fallback", () => {
+  const src = baca("screens/TrackingScreen.js");
+  assert.match(src, /showsUserLocation=\{false\}/);
+  assert.doesNotMatch(src, /showsUserLocation=\{true\}|expo-location|getCurrentPosition|watchPosition|requestForegroundPermissions/);
+  assert.match(src, /SEGARKAN_MS = 30_000/);
+  assert.match(src, /operasionalApi\.tracking\(\)/);
+  for (const teks of ["Daftar", "Offline", "Coba lagi", "Tidak ada armada berjalan", "Memuat posisi armada"]) assert.match(src, new RegExp(teks), teks);
+  const cfg = baca("../app.config.js");
+  assert.match(cfg, /react-native-maps/);
+  for (const izin of ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION"]) assert.match(cfg, new RegExp(izin), `${izin} tetap diblokir`);
+});
