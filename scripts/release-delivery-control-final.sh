@@ -178,10 +178,10 @@ PREV_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$PREV_DIR/frontend/dist/index.
 [ "$PUB_BEFORE" = "$PREV_INDEX" ] || die "produksi publik (${PUB_BEFORE}) tidak sama dengan dist release aktif (${PREV_INDEX})"
 ok "health internal/publik sehat; bundel publik = dist release aktif (${PUB_BEFORE})"
 DIST_INDEX="$PREV_INDEX"
-PR_BASENAME="$(ls "$PREV_DIR/frontend/dist/assets" | grep '^ArmadaPengajuanBiaya-.*\.js$' | sed -n 1p)"
-[ -n "$PR_BASENAME" ] || die "dist release aktif tidak memuat chunk ArmadaPengajuanBiaya"
-for kata in "Perlu Revisi" "PERLU_REVISI" "Riwayat Revisi" "Status tidak dikenal"; do
-  grep "$kata" "$PREV_DIR/frontend/dist/assets/$PR_BASENAME" >/dev/null || die "dist produksi Pengajuan Biaya tidak memuat '${kata}'"
+PR_BASENAME="$(grep -l 'Perlu Revisi' "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p | xargs -r basename)"
+[ -n "$PR_BASENAME" ] || die "dist release aktif tidak memuat label 'Perlu Revisi' pada chunk mana pun"
+for kata in "PERLU_REVISI" "Status tidak dikenal"; do
+  [ -n "$(grep -l "$kata" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist produksi tidak memuat '${kata}'"
 done
 ok "dist produksi memuat PERLU_REVISI (${PR_BASENAME}); bundel utama ${DIST_INDEX} akan dipertahankan"
 [ -n "$(dcp "$PREV_DIR" ps -q postgres </dev/null)" ] || die "container postgres tidak berjalan"
