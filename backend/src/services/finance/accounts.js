@@ -144,10 +144,12 @@ export const DEFAULT_COA = Object.freeze([
   { code: "2-1500", name: "Utang Gaji", type: K, normalBalance: C, parent: "2-1000", cashFlowCategory: "OPERASI" },
   { code: "2-1600", name: "Utang Pihak Ketiga (Investor/Mitra)", type: K, normalBalance: C, parent: "2-1000",
     systemKey: SYSTEM_KEYS.UTANG_PIHAK_KETIGA, cashFlowCategory: "PENDANAAN",
-    description: "Pinjaman/suntikan dari investor & mitra non-bank yang diharapkan dikembalikan (mis. Pasamebel, MUF, investor perorangan) — pencairannya PENDANAAN masuk, pelunasannya PENDANAAN keluar, bukan beban. Fee/bagi hasil yang dibayarkan ke pemberi pinjaman dicatat terpisah sebagai beban di 6-1900 atau akun beban yang sesuai." },
+    description: "Pinjaman/suntikan dari investor & mitra non-bank yang diharapkan dikembalikan (mis. Pasamebel, MUF, investor perorangan) — pencairannya PENDANAAN masuk, pelunasannya PENDANAAN keluar, bukan beban. Bagi hasil/profit sharing untuk investor BUKAN beban: dicatat lewat 3-4200 Distribusi Laba / Bagi Hasil Investor (dan 2-1800 bila diakui dulu sebelum dibayar). Bunga/fee pinjaman murni yang memang beban tetap dicatat di akun beban yang sesuai." },
   { code: "2-1700", name: "Dana Masuk Belum Teridentifikasi", type: K, normalBalance: C, parent: "2-1000",
     systemKey: SYSTEM_KEYS.DANA_MASUK_BELUM_TERIDENTIFIKASI,
     description: "Suspense rekonsiliasi bank: saldo bank riil terkonfirmasi lebih tinggi dari buku, tapi sumber dananya BELUM bisa diidentifikasi dari dokumen internal (butuh rekening koran). SELALU sementara — begitu sumbernya terbukti, saldo di akun ini direklasifikasi (jurnal baru) ke akun yang benar, TIDAK PERNAH diedit/dihapus di sini. Bukan pendapatan, bukan ekuitas, bukan akun 3-4100 (itu khusus kalibrasi saldo awal yang SUMBERNYA sudah jelas)." },
+  { code: "2-1800", name: "Utang Bagi Hasil Investor", type: K, normalBalance: C, parent: "2-1000", cashFlowCategory: "PENDANAAN",
+    description: "Bagi hasil investor yang sudah diakui (Dr 3-4200) tetapi belum dibayar. Saat dibayar: Dr 2-1800, Cr Bank/Kas. Bukan beban operasional. Lihat docs/FINANCE-BAGI-HASIL-INVESTOR.md." },
   { code: "2-2000", name: "Kewajiban Jangka Panjang", type: K, normalBalance: C, isPostable: false, parent: "2-0000" },
   { code: "2-2100", name: "Utang Bank", type: K, normalBalance: C, parent: "2-2000", cashFlowCategory: "PENDANAAN" },
 
@@ -155,6 +157,8 @@ export const DEFAULT_COA = Object.freeze([
   { code: "3-0000", name: "EKUITAS", type: E, normalBalance: C, isPostable: false },
   { code: "3-1100", name: "Modal Pemilik", type: E, normalBalance: C, parent: "3-0000", cashFlowCategory: "PENDANAAN" },
   { code: "3-2100", name: "Prive (Pengambilan Pemilik)", type: E, normalBalance: D, parent: "3-0000", cashFlowCategory: "PENDANAAN" },
+  { code: "3-4200", name: "Distribusi Laba / Bagi Hasil Investor", type: E, normalBalance: D, parent: "3-0000", cashFlowCategory: "PENDANAAN",
+    description: "Akun untuk mencatat pembagian laba/profit sharing kepada investor. Bukan beban operasional, bukan biaya produksi, dan bukan pengeluaran biasa: tidak masuk Laba Rugi maupun ringkasan Pengeluaran, tampil sebagai pengurang ekuitas di Neraca. Dibayar langsung: Dr 3-4200, Cr Bank/Kas. Diakui dulu: Dr 3-4200, Cr 2-1800. Lihat docs/FINANCE-BAGI-HASIL-INVESTOR.md." },
   { code: "3-3100", name: "Laba Ditahan", type: E, normalBalance: C, parent: "3-0000", systemKey: SYSTEM_KEYS.LABA_DITAHAN,
     description: "Akumulasi laba tahun-tahun sebelumnya. Laba tahun BERJALAN TIDAK disimpan di sini — dihitung langsung dari akun pendapatan & beban (lihat services/finance/reports.js), supaya neraca tidak pernah bergantung pada proses tutup buku yang lupa dijalankan." },
 
