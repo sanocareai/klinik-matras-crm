@@ -22,6 +22,7 @@ import TrackingScreen from "./src/screens/TrackingScreen";
 import MasalahScreen from "./src/screens/MasalahScreen";
 import MasalahDetailScreen from "./src/screens/MasalahDetailScreen";
 import PerformaScreen from "./src/screens/PerformaScreen";
+import ProfileScreen from "./src/screens/ProfileScreen";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 const Stack = createNativeStackNavigator();
@@ -46,6 +47,7 @@ function Root() {
             <Stack.Screen name="BiayaArmada" component={BiayaArmadaScreen} options={{ title: "Biaya Armada", headerShown: false, animation: "fade" }} />
             <Stack.Screen name="BiayaDetail" component={BiayaDetailScreen} options={{ title: "Detail biaya" }} />
             <Stack.Screen name="BiayaForm" component={BiayaFormScreen} options={({ route }) => ({ title: route.params?.id ? "Perbaiki pengajuan" : "Tambah pengajuan" })} />
+            <Stack.Screen name="Akun" component={ProfileScreen} options={{ headerShown: false, animation: "fade" }} />
             {/* Modul operasional hanya didaftarkan bila capability server mengizinkan (izin tetap ditegakkan server). */}
             {modules.dashboard && <Stack.Screen name="Dashboard" component={DashboardScreen} options={{ title: "Dashboard operasional" }} />}
             {modules.drivers && <Stack.Screen name="Kru" component={KruScreen} options={{ title: "Driver & Helper" }} />}

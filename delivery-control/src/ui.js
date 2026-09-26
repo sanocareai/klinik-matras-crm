@@ -370,3 +370,25 @@ export function Avatar({ name, size = 40, online }) {
     </View>
   );
 }
+
+/** Lembar pilihan dari bawah (daftar aksi bergambar). options: [{ label, icon, onPress, danger }]. */
+export function ActionSheet({ visible, title, options, onClose }) {
+  const t = useTheme();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={[s.sheetWrap, { backgroundColor: t.scrim }]} onPress={onClose}>
+        <Pressable style={[s.sheet, { backgroundColor: t.surface }]} onPress={() => {}}>
+          <View style={[s.grabber, { backgroundColor: t.borderStrong }]} />
+          {!!title && <Text style={[type.heading, { color: t.ink, marginBottom: 8 }]}>{title}</Text>}
+          {options.map((o) => (
+            <Pressable key={o.label} onPress={() => { onClose(); o.onPress(); }} accessibilityRole="button" style={[s.opt, { paddingVertical: 14 }]}>
+              <IconBox name={o.icon} tone={o.danger ? "red" : "accent"} size={38} />
+              <Text style={{ color: o.danger ? t.red : t.ink, fontSize: 15, fontWeight: "700", flex: 1 }}>{o.label}</Text>
+            </Pressable>
+          ))}
+          <Btn title="Batal" kind="ghost" onPress={onClose} style={{ marginTop: 6 }} />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}

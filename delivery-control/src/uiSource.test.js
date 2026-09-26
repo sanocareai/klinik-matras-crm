@@ -87,7 +87,7 @@ test("modul operasional: baca lewat operasionalApi, satu-satunya mutation (resch
 test("navigasi bawah hanya berisi tujuan yang punya layar", () => {
   const nav = baca("BottomNav.js");
   const tujuan = [...nav.matchAll(/name: "(\w+)"/g)].map((m) => m[1]);
-  assert.deepEqual(tujuan, ["Home", "BiayaArmada"]);
+  assert.deepEqual(tujuan, ["Home", "BiayaArmada", "Akun"]);
 });
 
 test("ringkasan hanya membaca endpoint daftar yang ada (tanpa mutation)", () => {
@@ -130,4 +130,19 @@ test("Live Tracking: peta hanya menampilkan posisi dari server; tanpa izin/pemba
   const cfg = baca("../app.config.js");
   assert.match(cfg, /react-native-maps/);
   for (const izin of ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION"]) assert.match(cfg, new RegExp(izin), `${izin} tetap diblokir`);
+});
+
+test("Akun: profil dari server (akun sama dengan web), field izin read-only, tanpa profil lokal palsu", () => {
+  const src = baca("screens/ProfileScreen.js");
+  const api = baca("profileApi.js");
+  assert.match(api, /"\/auth\/me"/);
+  assert.match(api, /"\/users\/me"/);
+  assert.match(api, /method: "PATCH"/);
+  assert.match(api, /\/users\/me\/avatar/);
+  assert.doesNotMatch(src + api, /AsyncStorage|setItem\(/, "tidak menyimpan profil lokal");
+  assert.match(src, /muatUlangSesi\(\)/, "sesi diselaraskan ulang dari server setelah simpan");
+  assert.match(src, /hanya bisa diubah Admin di web/);
+  // peran/divisi/izin hanya ditampilkan (Chip), tidak ada Field untuk mengubahnya
+  assert.doesNotMatch(src, /<Field[^>]*(peran|role|divisi|izin)/i);
+  for (const teks of ["Simpan", "Ubah", "Batal", "Keluar", "Coba lagi", "Memuat profil"]) assert.match(src, new RegExp(teks), teks);
 });

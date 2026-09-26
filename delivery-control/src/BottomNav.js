@@ -4,12 +4,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { elevation, radius, useTheme } from "./theme";
 import { Icon } from "./icons";
 
-// Navigasi bawah HANYA untuk tujuan yang benar-benar ada (Beranda, Biaya Armada). Modul lain belum punya layar,
+// Navigasi bawah HANYA untuk tujuan yang benar-benar ada (Beranda, Biaya Armada, Akun). Modul lain belum punya layar,
 // jadi tidak diberi tombol di sini. Tinggi yang dipakai layar untuk padding bawah: NAV_SPACE + inset bawah.
 export const NAV_SPACE = 96;
 const TUJUAN = [
   { name: "Home", label: "Beranda", icon: "home" },
   { name: "BiayaArmada", label: "Biaya Armada", icon: "wallet" },
+  { name: "Akun", label: "Akun", icon: "user" },
 ];
 
 export function BottomNav({ navigation, current }) {

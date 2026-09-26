@@ -22,14 +22,21 @@ export function SessionProvider({ children }) {
     setSession(null);
   }, []);
 
+  // Muat ulang sesi dari SERVER (nama/foto/peran/capabilities terbaru, mis. setelah profil diubah di sini atau di web).
+  const muatUlangSesi = useCallback(async () => {
+    const baru = await sessionManager.restore();
+    if (baru) setSession(baru);
+    return baru;
+  }, []);
+
   const value = useMemo(() => ({
-    loading, session, signIn, signOut,
+    loading, session, signIn, signOut, muatUlangSesi,
     user: session?.user || null,
     capabilities: session?.capabilities || null,
     abilities: deliveryExpenseAbilities(session?.capabilities),
     modules: controlModules(session?.capabilities),
     offline: !!session?.offline,
-  }), [loading, session, signIn, signOut]);
+  }), [loading, session, signIn, signOut, muatUlangSesi]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
