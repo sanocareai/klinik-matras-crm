@@ -19,7 +19,9 @@ Perintah: `cd delivery-control && eas build -p android --profile preview` (janga
 ## 2. Izin Android yang diharapkan (hasil `expo prebuild` lokal; verifikasi ulang pada APK setelah build)
 
 - Ada: `INTERNET`, `VIBRATE`, `SYSTEM_ALERT_WINDOW` (dari React Native), `CAMERA` (expo-image-picker; hanya foto struk),
-  `READ/WRITE_EXTERNAL_STORAGE` dibatasi `maxSdkVersion=32` (tidak berlaku di Android 13+ / S25 Ultra).
+  `READ/WRITE_EXTERNAL_STORAGE` dibatasi `maxSdkVersion=32` (tidak berlaku di Android 13+ / S25 Ultra),
+  `USE_BIOMETRIC` dan `USE_FINGERPRINT` (expo-local-authentication; buka kunci biometrik). Peta memakai kunci Google Maps di meta-data
+  `com.google.android.geo.API_KEY` (bukan izin lokasi).
 - **Dihapus dari manifest (`tools:node="remove"`)**: `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `ACCESS_BACKGROUND_LOCATION`,
   `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`, `RECORD_AUDIO`.
 - Verifikasi APK: `aapt dump badging app.apk | grep -E "package|uses-permission"` — tidak boleh ada izin lokasi/background location/mikrofon.
@@ -59,10 +61,12 @@ Jangan membuat data produksi nyata kecuali disebut "boleh"; gunakan pengajuan uj
 13. Detail rute: kru, kendaraan, waktu terbit/sinkron, daftar stop berurutan dengan status, jam kunjungan, alamat, alasan gagal.
 14. "Buka di peta" membuka aplikasi peta HP; app Control TIDAK meminta izin lokasi.
 
-**E. Tracking**
+**E. Tracking (Live Tracking Map)**
 15. Hanya rute terbit/berjalan hari ini dan job menuju lokasi. Kartu: fase, progres stop, "berikutnya", umur posisi GPS.
 16. Posisi > 15 menit diberi tanda sinyal lama; tanpa posisi tampil "Belum ada posisi GPS". "Buka di peta" bekerja. Diperbarui otomatis ±30 detik.
 17. Tidak ada dialog izin lokasi sama sekali di seluruh app.
+17a. Tab **Peta**: peta Google tampil dengan marker tiap driver aktif (inisial, warna sesuai kesegaran: hijau ≤5 menit, kuning ≤15, abu-abu lama). Ketuk marker → kartu driver, helper, kendaraan, rute/job, progres, jam update WIB. Titik biru posisi HP TIDAK ada. **Bila peta kosong/abu-abu**: kunci Google Maps kemungkinan belum mengizinkan package `com.klinikmatras.deliverycontrol` (catat sebagai temuan; daftar tetap berfungsi).
+17b. Tab **Daftar** menampilkan driver yang sama (fallback). Pusatkan/muat ulang bekerja; mode pesawat → banner offline; tanpa driver aktif → keadaan kosong; server gagal → pesan + Coba lagi. Refresh otomatis ±30 detik saat layar terbuka (berhenti saat pindah layar).
 
 **F. Masalah dan jadwal ulang**
 18. Tab "Perlu tindakan" (job gagal) dan "Sudah dijadwalkan ulang"; alasan gagal/jadwal ulang tampil.
@@ -92,5 +96,16 @@ Jangan membuat data produksi nyata kecuali disebut "boleh"; gunakan pengajuan uj
 34. Ganti akun (Admin → Owner) tidak menampilkan data akun sebelumnya; setelah logout tidak ada data tersisa.
 35. Tidak ada crash/ANR; catat versi Android/One UI. Tidak ada teks Inggris atau label "Segera" tersisa.
 
+**K. Akun, Pengaturan, dan biometrik**
+36. Nav bawah: Beranda / Biaya Armada / Akun. Akun menampilkan nama, email, foto/inisial, peran, divisi, tanggal bergabung — sama dengan web untuk akun yang sama. Tidak ada field HP (server belum menyimpannya).
+37. Ubah nama/email → Simpan → muncul di web setelah muat ulang (dan sebaliknya). Email tidak valid/kosong ditolak. Ganti foto (kamera/galeri) → foto tampil di web. Peran/divisi/izin tidak bisa diubah.
+38. Pengaturan → Tampilan: Ikuti sistem / Terang / Gelap langsung berlaku dan bertahan setelah app ditutup. Tentang aplikasi: versi 0.1.0, build sesuai APK, package, server benar. Tidak ada menu "keluar semua perangkat".
+39. **Biometrik** — Pengaturan → Keamanan → aktifkan "Buka dengan biometrik": muncul prompt sidik jari/wajah; setelah lolos saklar aktif dan pilihan kunci otomatis 1/2/5/15 menit muncul. Batalkan prompt → saklar tetap mati.
+40. Tutup app total lalu buka lagi → layar "Delivery Control terkunci" + prompt biometrik otomatis; lolos → masuk beranda dengan data terbaru. Gagal/batal → tombol "Buka dengan biometrik" dan "Masuk dengan kata sandi" (mengakhiri sesi, kembali ke login).
+41. Kunci otomatis: atur 1 menit, kirim app ke latar belakang >1 menit lalu kembali → terkunci; <1 menit → tidak terkunci. Layar terkunci menutup seluruh isi app (cek juga pratinjau app terbaru).
+42. Cabut/ubah kondisi: hapus semua sidik jari di Setelan HP lalu buka app → pesan biometrik tidak lagi terdaftar dan diminta masuk dengan kata sandi (biometrik dinonaktifkan). Sesi yang kedaluwarsa/dicabut di server → pesan "Sesi Anda berakhir…" di layar login.
+43. Logout dari Akun/Pengaturan → biometrik dimatikan, login berikutnya butuh kata sandi; aktifkan lagi bila mau. Kata sandi/PIN tidak pernah tersimpan (token sesi ada di Keystore).
+
 **Blocker/keterbatasan yang diketahui:** Route Planner kompleks, aksi massal, master data, dan laporan tetap di web. Tracking hanya membaca posisi
 yang dikirim app Driver. Layar biaya belum ada di Sano Driver (sengaja).
+Sesi JWT stateless: belum ada 'keluar dari semua perangkat'. Biometrik tidak mendeteksi penambahan sidik jari baru (hanya hilangnya biometrik terdaftar).
