@@ -81,6 +81,8 @@ const DIVISIONS = {
         section: "DATA",
         items: [
           { to: "/customers", label: "Pelanggan",     Icon: Users },
+          // C2 — biaya marketing (iklan di luar AdSpend, konten, event, cetak, tools). Hanya SALES/Finance/Admin/Owner; server menegakkan ulang.
+          { to: "/marketing/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["SALES", "ADMIN", "OWNER", "FINANCE", "APPROVER"] },
           { to: "/pipeline",  label: "Pipeline",      Icon: GitBranch },
           // Order = sisi PENGERJAAN (antrean produksi), terpisah dari Pipeline yang
           // sisi PENJUALAN. Sengaja bukan tab di Pelanggan: 1 baris = 1 order.
@@ -197,6 +199,8 @@ const DIVISIONS = {
           { to: "/bengkel/qc",              label: "Inspeksi QC",     Icon: ScanLine },
           { to: "/bengkel/scope-revisions", label: "Revisi Lingkup",  Icon: GitBranch },
           { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
+          // C1 — biaya operasional NON-STOK (servis mesin, jasa vendor, lembur, dll). Hanya PRODUCTION_LEAD/Finance/Admin; server menegakkan ulang.
+          { to: "/bengkel/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "PRODUCTION_LEAD"] },
           // Kasus Komplain (D-116, 11 September 2026) — halaman dibaca
           // lintas divisi, lihat catatan panjang di section armada di atas.
           { to: "/komplain",                label: "Kasus Komplain",  Icon: AlertTriangle },
@@ -266,6 +270,8 @@ const DIVISIONS = {
           { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
           { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
+          // C1 — biaya operasional NON-STOK gudang (bongkar muat, kurir, perlengkapan). Hanya WAREHOUSE/Finance/Admin; server menegakkan ulang.
+          { to: "/warehouse/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"] },
         ],
       },
       {
@@ -426,6 +432,8 @@ const DIVISIONS = {
         section: "ALL TEAMS",
         items: [
           { to: "/kendali", label: "Ringkasan",  Icon: Gauge },
+          // C2 — biaya level management (meeting, perjalanan dinas, konsultan, legal). Hanya Owner/Admin/Finance; server menegakkan ulang.
+          { to: "/kendali/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"] },
           { to: "/orders",  label: "Order",      Icon: ClipboardList },
           { to: "/laporan", label: "Laporan",    Icon: BarChart3, adminOnly: true },
         ],
@@ -455,6 +463,8 @@ const DIVISIONS = {
           { to: "/finance/payments",  label: "Pembayaran & Verifikasi", Icon: Banknote },
           { to: "/finance/cash",      label: "Kas & Bank",             Icon: Wallet },
           { to: "/finance/expenses",  label: "Pengeluaran",            Icon: Receipt },
+          // C2 — semua pengajuan divisi (Produksi, Gudang, Marketing, Management, HR-GA) dalam satu hub
+          { to: "/finance/pengajuan-divisi", label: "Pengajuan Biaya Divisi", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"] },
           { to: "/finance/purchases", label: "Pembelian",              Icon: ShoppingCart },
           { to: "/finance/kasbon",    label: "Kasbon",                 Icon: HandCoins },
           { to: "/finance/uang-muka", label: "Uang Muka Operasional",  Icon: PiggyBank },
@@ -839,6 +849,9 @@ export default function Layout({ user, onLogout }) {
     // `hideForLeaderDriver` (D-052, lihat "Semua Order" di sections armada
     // di atas). Beda dari driverOnly: LEADER_DRIVER TETAP dapat sidebar
     // penuh dispatcher, cuma satu-dua menu CRM tertentu yang disembunyikan.
+    // C1 — item bertanda `bolehPeran` hanya tampil untuk peran yang disebut (server tetap menegakkan izin sebenarnya).
+    const saringPeran = (base) => ({ ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.filter((i) => !i.bolehPeran || roles.some((r) => i.bolehPeran.includes(r))) })) });
+    if (["bengkel", "warehouse", "growth", "kendali", "finance"].includes(divisionKey)) return saringPeran(divisionBase);
     const leaderDriverOnly = roles.includes("LEADER_DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
     if (divisionKey === "armada" && leaderDriverOnly) {
       return {

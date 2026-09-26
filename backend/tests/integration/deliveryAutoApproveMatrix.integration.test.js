@@ -95,7 +95,10 @@ test("workspace: own-only tidak bisa memakai workspace lain; aktor lama di works
   const lain = await raw("POST", P, { token: driver.token, headers: K("c"), body: { workspace: "PRODUKSI", expenseType: "BBM", date: "2026-09-20", amount: 1000 } });
   assert.equal(lain.status, 403);
   const dispatcher = await createTestUser({ roles: ["DISPATCHER"] });
-  const cfg = await raw("GET", `${P}/config?workspace=PRODUKSI`, { token: dispatcher.token });
+  // C1: workspace PRODUKSI kini khusus PRODUCTION_LEAD/Finance — Dispatcher (jalur Delivery) tidak lagi boleh membukanya.
+  assert.equal((await raw("GET", `${P}/config?workspace=PRODUKSI`, { token: dispatcher.token })).status, 403);
+  const finance = await createTestUser({ roles: ["FINANCE"] });
+  const cfg = await raw("GET", `${P}/config?workspace=PRODUKSI`, { token: finance.token });
   assert.equal(cfg.status, 200);
   assert.equal(cfg.body.autoApprove, null, "PRODUKSI tidak punya kebijakan auto-approve");
 });

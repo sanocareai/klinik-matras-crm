@@ -1567,6 +1567,7 @@ model Unit {
   @@index([productionDueAt])
   @@index([priority])
   @@index([productionRouteId])
+  expenseSubmissions ExpenseSubmission[]
   @@map("units")
 }
 
@@ -1916,6 +1917,7 @@ model WorkCenter {
   operatorsPrimary ProductionOperator[]
   stageAssignments StageAssignment[]
 
+  expenseSubmissions ExpenseSubmission[]
   @@map("work_centers")
 }
 
@@ -3482,6 +3484,18 @@ model ExpenseSubmission {
   vehicleExpenseId String?         @unique @map("vehicle_expense_id") @db.Uuid
   vehicleExpense   VehicleExpense? @relation(fields: [vehicleExpenseId], references: [id], onDelete: SetNull)
 
+  // C1 (25 Sep 2026) — tautan Produksi & Warehouse (aditif, semua opsional). Unit selalu ikut order-nya; mesin = WorkCenter.
+  // documentRef = nomor dokumen gudang/pembelian yang MENJADI ALASAN biaya (bukan dokumen yang dicatat ulang) — dijaga anti double-counting.
+  unitId       String?     @map("unit_id") @db.Uuid
+  unit         Unit?       @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  workCenterId String?     @map("work_center_id") @db.Uuid
+  workCenter   WorkCenter? @relation(fields: [workCenterId], references: [id], onDelete: SetNull)
+  warehouseId  String?     @map("warehouse_id") @db.Uuid
+  warehouse    Warehouse?  @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  materialId   String?     @map("material_id") @db.Uuid
+  material     Material?   @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  documentRef  String?     @map("document_ref")
+
   // Aset/campaign/unit produksi — divisi lain (HR-GA/Marketing/Produksi) belum punya
   // master data FK di sistem ini; disimpan di metadata JSON sampai master-nya ada
   // (lihat prinsip "jangan mengarang FK ke tabel yang belum ada").
@@ -3556,6 +3570,10 @@ model ExpenseSubmission {
   @@index([routeId])
   @@index([vehicleId])
   @@index([requestedById])
+  @@index([unitId])
+  @@index([workCenterId])
+  @@index([warehouseId])
+  @@index([documentRef])
   @@map("expense_submissions")
 }
 
@@ -4793,6 +4811,7 @@ model Material {
   replenishmentRequests   ReplenishmentRequest[]
 
   @@index([active])
+  expenseSubmissions ExpenseSubmission[]
   @@map("materials")
 }
 
@@ -5180,6 +5199,7 @@ model Warehouse {
 
   locations StorageLocation[]
 
+  expenseSubmissions ExpenseSubmission[]
   @@map("warehouses")
 }
 

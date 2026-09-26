@@ -41,6 +41,12 @@ test("Teks penyesuaian & tanggal Indonesia", () => {
   assert.equal(CATATAN_PERIODIK, "Metode periodik — nilai persediaan akhir ditentukan melalui stok opname.");
 });
 
+test("Kartu kesiapan cutover: GO/NO-GO, syarat, dan rekomendasi geser tanggal ditampilkan dalam Bahasa Indonesia", () => {
+  const p = baca("pages/finance/FinancePersediaanAwal.jsx");
+  for (const s of ["getPersediaanAwalKesiapan", "Kesiapan cutover", "NO-GO", "rekomendasi-cutover", "qty 0", "nilai anomali"]) assert.ok(p.includes(s), s);
+  assert.match(p, /Qty 0 boleh tanpa harga dan sumber harga/);
+});
+
 test("Halaman memakai PIN step-up, pratinjau, alasan wajib, dan terdaftar di menu Finance & Gudang", () => {
   const p = baca("pages/finance/FinancePersediaanAwal.jsx");
   for (const s of ["usePinStepUp", "getPersediaanAwalPratinjau", "Pratinjau saja — belum ada jurnal yang dibuat", "Alasan posting (wajib)", "Periksa sebagai Finance", "Periksa sebagai Gudang", "Laporan pengecualian"]) assert.ok(p.includes(s), s);

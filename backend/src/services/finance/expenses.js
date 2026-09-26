@@ -67,6 +67,9 @@ export async function buatFinExpense(db, {
   // jadi perlindungan lama (user biasa tidak bisa menaruh reimburseToId
   // sembarang orang di body request) tetap utuh.
   reimburseToOverrideAllowed = false,
+  // C1 — Pengajuan Biaya Produksi/Gudang: pengaju non-Finance tidak dipaksa jadi REIMBURSEMENT; mode usulan (UTANG/REIMBURSEMENT) dihormati.
+  // LANGSUNG tetap tidak pernah dari jalur ini (butuh rekening & hak FINANCE_POST).
+  ikutiModeUsulan = false,
 }) {
   if (!description?.trim()) throw new ExpenseInputError("Keterangan pengeluaran wajib diisi");
   if (!categoryId) throw new ExpenseInputError("Kategori biaya wajib dipilih");
@@ -86,7 +89,7 @@ export async function buatFinExpense(db, {
       throw new ExpenseInputError(`Uang muka ${uangMuka.advanceNumber} berstatus ${uangMuka.status} — pilih uang muka yang masih aktif`, 409);
     }
   }
-  const modeEfektif = uangMuka ? "UANG_MUKA" : (bolehPosting ? modeFinal : "REIMBURSEMENT");
+  const modeEfektif = uangMuka ? "UANG_MUKA" : (bolehPosting ? modeFinal : (ikutiModeUsulan && modeFinal !== "LANGSUNG" ? modeFinal : "REIMBURSEMENT"));
 
   if (modeEfektif === "LANGSUNG" && !cashAccountId) {
     throw new ExpenseInputError("Pengeluaran yang dibayar langsung wajib memilih rekening kas/bank sumber dananya");

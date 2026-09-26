@@ -276,6 +276,22 @@ export const DEFAULT_EXPENSE_CATEGORIES = Object.freeze([
   { code: "LANGGANAN_APLIKASI", name: "Langganan Aplikasi", accountCode: "6-1160", division: "UMUM" },
   { code: "OPS_MEETING", name: "Operasional Meeting & Perjalanan Dinas", accountCode: "6-1170", division: "UMUM" },
   { code: "BAHAN_BAKU_MANUAL", name: "Pembelian Bahan Baku (Manual)", accountCode: "5-1150", division: "PRODUKSI" },
+  // C1 (26 Sep 2026) — Pengajuan Biaya Gudang; memakai akun resmi 6-1900 (Beban Lain-lain) yang sudah ada, bukan akun baru.
+  { code: "BONGKAR_MUAT_GUDANG", name: "Bongkar Muat Gudang", accountCode: "6-1900", division: "GUDANG" },
+  { code: "PERAWATAN_FASILITAS_GUDANG", name: "Perawatan Fasilitas Gudang", accountCode: "6-1900", division: "GUDANG" },
+  { code: "BIAYA_GUDANG_MENDESAK", name: "Biaya Operasional Gudang Mendesak", accountCode: "6-1900", division: "GUDANG" },
+  // C2 (26 Sep 2026) — Pengajuan Biaya Marketing / Management / HR-GA; SEMUA memakai akun resmi yang sudah ada (6-1200 / 6-1900), tanpa akun baru.
+  { code: "MKT_PROMOSI", name: "Iklan & Promosi (di luar AdSpend)", accountCode: "6-1200", division: "MARKETING" },
+  { code: "MKT_KONTEN", name: "Produksi Konten Marketing", accountCode: "6-1200", division: "MARKETING" },
+  { code: "MKT_EVENT", name: "Event & Aktivasi Marketing", accountCode: "6-1200", division: "MARKETING" },
+  { code: "MKT_CETAK", name: "Cetak Materi Promosi", accountCode: "6-1200", division: "MARKETING" },
+  { code: "MGT_KONSULTAN", name: "Konsultan & Jasa Profesional", accountCode: "6-1900", division: "MANAGEMENT" },
+  { code: "MGT_LEGAL", name: "Legal & Perizinan Management", accountCode: "6-1900", division: "MANAGEMENT" },
+  { code: "HRGA_REKRUTMEN", name: "Rekrutmen", accountCode: "6-1900", division: "HR_GA" },
+  { code: "HRGA_PELATIHAN", name: "Pelatihan Karyawan", accountCode: "6-1900", division: "HR_GA" },
+  { code: "HRGA_KESEJAHTERAAN", name: "Kesejahteraan Karyawan", accountCode: "6-1900", division: "HR_GA" },
+  { code: "HRGA_PERAWATAN_FASILITAS", name: "Perawatan Fasilitas Kantor", accountCode: "6-1900", division: "HR_GA" },
+  { code: "HRGA_PERIZINAN", name: "Perizinan & Administrasi", accountCode: "6-1900", division: "HR_GA" },
 ]);
 
 // Kode kategori pengeluaran yang DIPENSIUNKAN — masih dipakai histori

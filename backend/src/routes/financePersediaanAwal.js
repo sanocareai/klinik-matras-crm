@@ -22,7 +22,7 @@ import { pastikanStepUp } from "../services/finance/koreksiGate.js";
 import { ambilKebijakanPersediaan, CATATAN_PERIODIK } from "../services/finance/inventoryMethod.js";
 import {
   PersediaanError, SUMBER_HARGA, STATUS_LABEL, AMBANG, buatDraf, isiBaris, hapusBaris, periksa, bukaKembali, batalkanDraf,
-  pratinjauJurnal, postingPembuka, balikPembuka, detailSnapshot, laporanPengecualian, pembukaAktif, hariSebelum,
+  pratinjauJurnal, postingPembuka, balikPembuka, detailSnapshot, laporanPengecualian, pembukaAktif, hariSebelum, kesiapanCutover,
 } from "../services/finance/persediaanAwal.js";
 
 export const financePersediaanAwalRouter = express.Router();
@@ -71,6 +71,10 @@ financePersediaanAwalRouter.get("/persediaan-awal", ...baca, async (req, res) =>
       },
     });
   } catch (e) { kirimGalat(e, res); }
+});
+
+financePersediaanAwalRouter.get("/persediaan-awal/kesiapan", ...baca, async (req, res) => {
+  try { res.json(await kesiapanCutover(prisma)); } catch (e) { kirimGalat(e, res); }
 });
 
 financePersediaanAwalRouter.get("/persediaan-awal/pengecualian", ...baca, async (req, res) => {
