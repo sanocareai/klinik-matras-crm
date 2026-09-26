@@ -548,6 +548,7 @@ model User {
   finPurchasesReceiptVerified            FinPurchase[]                   @relation("FinPurchaseReceiptVerifier")
   finPurchaseAdvanceApplicationsCreated  FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationCreator")
   expenseSubmissionsRequested            ExpenseSubmission[]             @relation("ExpenseSubmissionRequester")
+  expenseSubmissionsRevisionRequested    ExpenseSubmission[]             @relation("ExpenseSubmissionRevisionRequester")
   expenseSubmissionsPic                  ExpenseSubmission[]             @relation("ExpenseSubmissionPic")
   expenseSubmissionsAsDriver             ExpenseSubmission[]             @relation("ExpenseSubmissionDriver")
   expenseSubmissionsAsHelper             ExpenseSubmission[]             @relation("ExpenseSubmissionHelper")
@@ -3424,6 +3425,7 @@ enum ExpenseSubmissionStatus {
   DIBAYAR // cermin FinExpense DIBAYAR
   DITOLAK // cermin FinExpense DITOLAK
   DIBATALKAN // cermin FinExpense DIBATALKAN, ATAU dibatalkan sebelum FinExpense ada
+  PERLU_REVISI // reviewer meminta pemilik memperbaiki (alasan wajib) — FinExpense ditarik ke DRAFT seperti tarik; pemilik edit lalu ajukan ulang
 }
 
 // SATU pengajuan biaya dari sebuah workspace divisi. Menjadi FinExpense
@@ -3518,6 +3520,16 @@ model ExpenseSubmission {
 
   submittedAt DateTime? @map("submitted_at")
   withdrawnAt DateTime? @map("withdrawn_at")
+
+  // PERLU_REVISI (24 September 2026): reviewer (finance:approve) MEMINTA pemilik memperbaiki
+  // pengajuan yang sedang MENUNGGU_PERSETUJUAN. Beda dari tarik (dilakukan pemilik sendiri,
+  // withdrawnAt) dan batalkan (mengakhiri pengajuan). Kolom ini menyimpan permintaan TERAKHIR
+  // agar mudah tampil; riwayat lengkap (siapa, kapan, alasan, status sebelum/sesudah) ada di
+  // ExpenseSubmissionAudit.
+  revisionReason      String?   @map("revision_reason")
+  revisionRequestedById String?   @map("revision_requested_by")
+  revisionRequestedBy User?     @relation("ExpenseSubmissionRevisionRequester", fields: [revisionRequestedById], references: [id], onDelete: SetNull)
+  revisionRequestedAt DateTime? @map("revision_requested_at")
 
   // SATU FinExpense per pengajuan — unique di sisi ini menegakkan aturan itu di
   // level database, bukan cuma di level aplikasi.
@@ -4770,6 +4782,7 @@ model Material {
   createdAt DateTime @default(now()) @map("created_at")
 
   movements               StockMovement[]
+  finInventoryOpeningLines FinInventoryOpeningLine[]
   goodsReceiptLines       GoodsReceiptLine[]
   materialIssueLines      MaterialIssueLine[]
   stockTransferLines      StockTransferLine[]
@@ -6378,6 +6391,7 @@ enum FinJournalSource {
   INSENTIF_DRIVER // IncentivePayout — Dr Beban Insentif Driver / Cr Kas-Bank; lihat posting/incentivePayout.js
   UANG_MUKA_OPERASIONAL // Uang Muka Operasional: pemberian, pengembalian sisa; lihat posting/operationalAdvance.js
   REVERSAL // jurnal balik dari pembatalan jurnal lain
+  PERSEDIAAN_AWAL // B3.6 — penutupan stok periodik → persediaan awal perpetual dari stok opname fisik (FinInventoryOpening)
 }
 
 // ── JURNAL UMUM (header) ──────────────────────────────────────────────────
@@ -6520,6 +6534,70 @@ model FinPostingGap {
   @@unique([source, sourceId])
   @@index([resolvedAt])
   @@map("fin_posting_gaps")
+}
+
+// ── PENUTUPAN STOK PERIODIK & PERSEDIAAN AWAL PERPETUAL (B3.6) ─────────────
+// Snapshot stok FISIK per akhir hari sebelum tanggal cutover (mis. 30 Sep 2026 23:59 WIB), diisi manual per
+// material dengan harga dari faktur/tagihan (TIDAK PERNAH diisi otomatis dari Material.referenceUnitCost).
+// Alur: DRAFT (isi & perbaiki) → DIPERIKSA (Finance + Gudang, orang berbeda; isi dikunci + hash) → DIPOSTING
+// (Owner + PIN + alasan; satu jurnal PERSEDIAAN_AWAL) → DIBALIK (reversal resmi). DIBATALKAN = draf dibuang.
+// Isi snapshot immutable di luar DRAFT — dijaga trigger DB, bukan cuma aplikasi. Lihat services/finance/persediaanAwal.js.
+model FinInventoryOpening {
+  id              String   @id @default(uuid()) @db.Uuid
+  number          String   @unique
+  cutoverDate     DateTime @map("cutover_date") @db.Date // hari PERTAMA metode perpetual
+  countedAt       DateTime @map("counted_at") // saat hitung fisik (akhir hari sebelum cutover, WIB)
+  status          String   @default("DRAFT") @db.VarChar(20)
+  notes           String?
+
+  createdById     String?   @map("created_by")
+  financeCheckedById String? @map("finance_checked_by")
+  financeCheckedAt   DateTime? @map("finance_checked_at")
+  warehouseCheckedById String? @map("warehouse_checked_by")
+  warehouseCheckedAt   DateTime? @map("warehouse_checked_at")
+  contentHash     String?  @map("content_hash")
+  lineCount       Int?     @map("line_count")
+  totalValue      Decimal? @map("total_value") @db.Decimal(18, 2)
+
+  postedById      String?   @map("posted_by")
+  postedAt        DateTime? @map("posted_at")
+  postReason      String?   @map("post_reason")
+  bookValueBefore Decimal?  @map("book_value_before") @db.Decimal(18, 2) // saldo 1-1400 s.d. hari sebelum cutover, sebelum jurnal ini
+  adjustment      Decimal?  @db.Decimal(18, 2) // total_value - book_value_before (positif = Dr Persediaan)
+  journalEntryId  String?   @map("journal_entry_id") @db.Uuid
+  reversedById    String?   @map("reversed_by")
+  reversedAt      DateTime? @map("reversed_at")
+  reverseReason   String?   @map("reverse_reason")
+  reversalEntryId String?   @map("reversal_entry_id") @db.Uuid
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  lines           FinInventoryOpeningLine[]
+
+  @@index([cutoverDate, status])
+  @@map("fin_inventory_openings")
+}
+
+model FinInventoryOpeningLine {
+  id             String   @id @default(uuid()) @db.Uuid
+  openingId      String   @map("opening_id") @db.Uuid
+  opening        FinInventoryOpening @relation(fields: [openingId], references: [id], onDelete: Restrict)
+  materialId     String   @map("material_id") @db.Uuid
+  material       Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  qty            Decimal  @db.Decimal(18, 4) // kuantitas FISIK hasil hitung
+  unit           String   @db.VarChar(20)    // satuan saat dihitung — wajib sama dengan satuan material
+  unitCost       Decimal  @map("unit_cost") @db.Decimal(18, 2)
+  value          Decimal  @db.Decimal(18, 2) // qty × unitCost, dihitung server
+  priceSource    String   @map("price_source") @db.VarChar(20) // FAKTUR | TAGIHAN | PEMBELIAN | LAINNYA
+  priceReference String?  @map("price_reference") // no. faktur/tagihan/pembelian
+  priceNote      String?  @map("price_note")      // wajib bila harga tampak tidak wajar
+  notes          String?
+  createdById    String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([openingId, materialId])
+  @@map("fin_inventory_opening_lines")
 }
 
 // Pengaturan Finance - key/value, bukan kolom-kolom di tabel singleton.

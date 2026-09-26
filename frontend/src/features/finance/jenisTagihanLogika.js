@@ -29,7 +29,7 @@ export function bahanBakuButuhPenerimaan(f, info) {
 }
 
 export const JENIS_TAGIHAN = [
-  { kode: "BAHAN_BAKU", label: "Bahan Baku / Stok", ket: "Kain, busa, per, dan bahan lain yang disimpan sebagai stok. Sebelum tanggal cutover (metode periodik) tanpa penerimaan Gudang dicatat ke Beban Pokok Bahan Baku (5-1100); mulai cutover (perpetual) wajib menaut Penerimaan Barang Gudang." },
+  { kode: "BAHAN_BAKU", label: "Bahan Baku / Stok", ket: "Kain, busa, per, dan bahan lain yang disimpan sebagai stok. Sebelum tanggal cutover (metode periodik) tanpa penerimaan Gudang dicatat ke Beban Bahan Baku / Pemakaian Bahan (5-1100); mulai cutover (perpetual) wajib menaut Penerimaan Barang Gudang." },
   { kode: "JASA_OPERASIONAL", label: "Jasa / Operasional", ket: "Jasa, sewa, perlengkapan, dan biaya operasional kantor — masuk akun beban operasional." },
   { kode: "BIAYA_PRODUKSI_NON_STOK", label: "Biaya Produksi Non-Stok", ket: "Maklon, perawatan mesin, overhead produksi yang bukan bahan stok — masuk beban pokok produksi." },
   { kode: "MESIN_PERALATAN", label: "Mesin / Peralatan", ket: "Pembelian mesin, peralatan, atau kendaraan — dicatat sebagai aset tetap." },

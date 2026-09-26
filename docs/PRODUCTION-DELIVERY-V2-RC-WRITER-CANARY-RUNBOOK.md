@@ -1,12 +1,28 @@
 # Production–Delivery V2 RC Writer Canary and Rollback Runbook
 
-Frozen baseline: `cf3e4124bbc16c28f112eec22c608eb468098735` (`origin/main` at RC start).
+Original RC baseline: `cf3e4124bbc16c28f112eec22c608eb468098735` (`origin/main` at RC start).
 
-Production observed before RC: `aecef10d`.
+Approved V2 RC source: `fc80887de1b3027eca5761175c2167d07aa34154`.
 
-RC identity: the commit containing this runbook; record `git rev-parse HEAD` in the execution ticket before any canary.
+Production source integrated into the combined RC: `a8ca7c6f` (Delivery Control production release).
+
+Frozen main for the combined RC: `00efc4685873103ac60fe22ee266bfb0eba6fa83` (includes production `a8ca7c6f` plus the latest Finance/main changes at freeze time).
+
+Combined RC identity: the merge commit containing this runbook. Record `git rev-parse HEAD`, `git rev-parse HEAD^1`, `git rev-parse HEAD^2`, and `git rev-parse HEAD^{tree}` in the execution ticket before any release or canary.
 
 This document prepares—but does not authorize—the writer canary. No V2 flag may be changed without a separate owner decision after the RC gate passes.
+
+## Combined RC gate evidence (26 September 2026)
+
+- Latest production backup used for rehearsal: 24,565,161 bytes, SHA-256 `DD59F64CDFB35DBE66B075FEDDEBB6AF971A8A21DEE7860C94811B3C960E2423`; local and remote checksums matched.
+- Restore migration status: 185/185 candidate migrations already applied; `prisma migrate deploy` applied zero pending migrations. A clean database applied all 185 migrations successfully.
+- Historical provenance note: `20260707130141_add_lid_mapping` has a pre-existing checksum difference between production Prisma history and all three source baselines. Its production checksum matches original commit `279dda7f`; the current file has been unchanged by this integration and was not rewritten or resolved manually.
+- Latest catch-up run retained all five owner-approved `PRODUCTION_ADMIN_BYPASS` exceptions as `RESOLVED` because their canonical evidence was unchanged. Changed evidence remains fail-closed as `KEEP_V1`.
+- `RTE-250926-01` terminal rehearsal on the restored database preserved six `COMPLETED` and two `FAILED` Jobs, revoked the publication and all eight assignments, emitted route removal feed events, and replayed idempotently.
+- Shadow comparison after canonical catch-up and terminal reconciliation: 1,442 match, 0 mismatch.
+- Writer audit: 88 mutation sites, 88 owned/guarded, 0 bypass.
+- Outbox competition/replay rehearsal: pending events drained exactly once with no duplicate terminal delivery.
+- All eight V2 feature flags remained OFF throughout; no production data, deployment, reader, writer, fence, or OTA state changed.
 
 ## Invariants
 

@@ -76,11 +76,12 @@ async function request(path, options = {}) {
       const text = await res.text();
       let msg = "Terjadi kesalahan";
       let code;
-      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code; } catch {}
+      let detail;
+      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code; detail = j.detail; } catch {}
       // `.status` disertakan (bukan cuma pesan) supaya pemanggil bisa
       // membedakan "diblokir karena ada data terkait" (409) dari error lain
       // tanpa perlu cocokkan teks pesan (rapuh kalau pesannya diubah nanti).
-      throw Object.assign(new Error(msg), { status: res.status, code });
+      throw Object.assign(new Error(msg), { status: res.status, code, ...(detail ? { detail } : {}) });
     }
     return res.json();
   } catch (err) {
@@ -1329,6 +1330,19 @@ export const api = {
   koreksiFinanceDoc: (jenis, id, data, stepUp) => request(`/finance/${jenis}/${id}/koreksi`, {
     method: "POST", body: JSON.stringify(data), ...(stepUp ? { headers: { "X-Finance-Stepup": stepUp } } : {}),
   }),
+  // B3.6 Tutup stok periodik & persediaan awal perpetual
+  getPersediaanAwal: () => request("/finance/persediaan-awal"),
+  getPersediaanAwalPengecualian: () => request("/finance/persediaan-awal/pengecualian"),
+  getPersediaanAwalDetail: (id) => request(`/finance/persediaan-awal/${id}`),
+  getPersediaanAwalPratinjau: (id) => request(`/finance/persediaan-awal/${id}/pratinjau`),
+  createPersediaanAwal: (data) => request("/finance/persediaan-awal", { method: "POST", body: JSON.stringify(data || {}) }),
+  isiPersediaanAwal: (id, baris, mode) => request(`/finance/persediaan-awal/${id}/baris`, { method: "PUT", body: JSON.stringify({ baris, mode }) }),
+  hapusBarisPersediaanAwal: (id, lineId) => request(`/finance/persediaan-awal/${id}/baris/${lineId}`, { method: "DELETE" }),
+  periksaPersediaanAwal: (id, peran) => request(`/finance/persediaan-awal/${id}/periksa`, { method: "POST", body: JSON.stringify({ peran }) }),
+  bukaKembaliPersediaanAwal: (id) => request(`/finance/persediaan-awal/${id}/buka-kembali`, { method: "POST", body: "{}" }),
+  batalPersediaanAwal: (id) => request(`/finance/persediaan-awal/${id}/batal`, { method: "POST", body: "{}" }),
+  postingPersediaanAwal: (id, alasan, stepUp) => request(`/finance/persediaan-awal/${id}/posting`, { method: "POST", body: JSON.stringify({ alasan }), headers: { "X-Finance-Stepup": stepUp } }),
+  balikPersediaanAwal: (id, alasan, stepUp) => request(`/finance/persediaan-awal/${id}/balik`, { method: "POST", body: JSON.stringify({ alasan }), headers: { "X-Finance-Stepup": stepUp } }),
   getFinancePinStatus: () => request("/finance/pin/status"),
   setFinancePin: (password, pin) => request("/finance/pin", { method: "POST", body: JSON.stringify({ password, pin }) }),
   verifyFinancePin: (pin) => request("/finance/pin/verifikasi", { method: "POST", body: JSON.stringify({ pin }) }),

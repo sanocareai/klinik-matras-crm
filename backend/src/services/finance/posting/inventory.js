@@ -28,7 +28,9 @@
 // pengeluaran — memaksa FIFO berarti mengarang pasangan "keluar ini dari
 // lot yang mana", yang justru melanggar aturan 2.
 
-import { postJournal, recordPostingGap, findEntryByKey } from "../journal.js";
+import { postJournal, recordPostingGap, resolvePostingGap, findEntryByKey } from "../journal.js";
+import { statusCutoverUntuk, pembukaAktif, awalCutover } from "../persediaanAwal.js";
+import { ambilKebijakanPersediaan } from "../inventoryMethod.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { toMoney, sumMoney, ZERO } from "../money.js";
 
@@ -55,14 +57,23 @@ export const KEY = {
  * tercampur penerimaan tanggal 15 yang belum ada saat pemakaian itu terjadi.
  */
 export async function hargaRataRata(tx, materialId, { asOf } = {}) {
+  // B3.6 — mulai cutover perpetual (setelah persediaan awal diposting) basis harga = baris stok opname material itu +
+  // penerimaan SEJAK cutover. Penerimaan sebelum cutover sudah tercakup nilai stok opname, jadi tidak ikut dirata-rata.
+  const k = await ambilKebijakanPersediaan(tx);
+  const mulai = k.cutover ? awalCutover(k.cutover) : null;
+  const aktif = mulai && (!asOf || asOf >= mulai) ? await pembukaAktif(tx, k.cutover) : null;
   const receipts = await tx.stockMovement.findMany({
     where: {
       materialId, type: "RECEIPT", unitCost: { not: null },
-      ...(asOf && { createdAt: { lte: asOf } }),
+      ...((asOf || aktif) && { createdAt: { ...(asOf && { lte: asOf }), ...(aktif && { gte: mulai }) } }),
     },
     select: { qty: true, unitCost: true },
   });
-  const berharga = receipts.filter((r) => Number(r.qty) > 0 && r.unitCost > 0);
+  if (aktif) {
+    const awal = await tx.finInventoryOpeningLine.findUnique({ where: { openingId_materialId: { openingId: aktif.id, materialId } }, select: { qty: true, unitCost: true } });
+    if (awal) receipts.push({ qty: awal.qty, unitCost: awal.unitCost });
+  }
+  const berharga = receipts.filter((r) => Number(r.qty) > 0 && Number(r.unitCost) > 0);
   if (berharga.length === 0) return null;
 
   const totalNilai = sumMoney(berharga.map((r) => toMoney(r.qty).times(toMoney(r.unitCost))));
@@ -97,6 +108,22 @@ async function bukukanPergerakan(tx, {
 }) {
   const sudahAda = await findEntryByKey(tx, idempotencyKey);
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
+
+  // B3.6 — metode persediaan menurut tanggal dokumen.
+  const cut = await statusCutoverUntuk(tx, date);
+  if (cut.status === "tertutup") {
+    // Sebelum cutover & persediaan awal sudah diposting: nilainya sudah tercakup stok opname — menjurnalnya lagi = ganda.
+    await resolvePostingGap(tx, { source, sourceId });
+    return { posted: false, reason: "tertutup_stok_opname" };
+  }
+  if (cut.status === "tunggu_pembuka") {
+    await recordPostingGap(tx, {
+      source, sourceId, reason: "PERSEDIAAN_AWAL_BELUM_DIPOSTING",
+      detail: `${gapLabel} bertanggal mulai cutover perpetual, tetapi persediaan awal (stok opname) belum diposting — kalau dijurnal sekarang saldo Persediaan Bahan Baku menjadi negatif. Posting ulang setelah persediaan awal diposting.`,
+      metadata: { sourceId },
+    });
+    return { posted: false, gap: true, reason: "tunggu_persediaan_awal" };
+  }
 
   const movements = await tx.stockMovement.findMany({
     where: movementWhere,

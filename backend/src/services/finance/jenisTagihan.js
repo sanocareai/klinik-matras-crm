@@ -14,6 +14,7 @@
 
 import { findEntryByKey } from "./journal.js";
 import { ambilKebijakanPersediaan, metodeUntukTanggal, METODE_PERSEDIAAN, pesanPerpetual } from "./inventoryMethod.js";
+import { penerimaanTertutupPeriodik } from "./persediaanAwal.js";
 
 export class JenisTagihanError extends Error {
   constructor(message, statusCode = 422, code) { super(message); this.statusCode = statusCode; if (code) this.code = code; }
@@ -128,7 +129,8 @@ export async function pastikanAmanDisetujui(tx, bill) {
   if (bill.goodsReceiptId) {
     // Penerimaan harus SUDAH dibukukan ke Persediaan (Dr Persediaan / Cr GRNI); kalau belum, mendebet GRNI akan membuat saldo GRNI terbalik.
     const jurnalGr = await findEntryByKey(tx, KEY_GR(bill.goodsReceiptId));
-    if (!jurnalGr || jurnalGr.status !== "POSTED") {
+    const tertutup = !jurnalGr && (await penerimaanTertutupPeriodik(tx, bill.goodsReceiptId));
+    if (!tertutup && (!jurnalGr || jurnalGr.status !== "POSTED")) {
       throw new JenisTagihanError("Penerimaan barang ini belum dibukukan ke Persediaan. Lengkapi harga di Gudang dan posting ulang Penerimaan Barang (Finance › Data Belum Lengkap) sebelum menyetujui tagihan.", 409, "PENERIMAAN_BELUM_DIBUKUKAN");
     }
     const lain = await tx.finSupplierBill.findFirst({

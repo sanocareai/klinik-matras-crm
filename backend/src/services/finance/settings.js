@@ -186,6 +186,13 @@ export async function setSetting(db, key, value, userId = null) {
     throw Object.assign(new Error(`Pengaturan "${key}" tidak dikenal`), { statusCode: 400 });
   }
   const salah = (pesan) => Object.assign(new Error(pesan), { statusCode: 400 });
+  if ([SETTING_KEYS.INVENTORY_METHOD_BEFORE_CUTOVER, SETTING_KEYS.INVENTORY_CUTOVER_DATE].includes(key)) {
+    // B3.6 — setelah persediaan awal diposting, tanggal & metode cutover terkunci (hanya bisa dibuka lewat pembalikan resmi).
+    const terkunci = await db.finInventoryOpening.count({ where: { status: "DIPOSTING" } });
+    if (terkunci > 0) {
+      throw Object.assign(new Error("Tanggal & metode cutover persediaan terkunci karena persediaan awal sudah diposting. Balik jurnal persediaan awal dulu bila memang harus diubah."), { statusCode: 409, code: "CUTOVER_TERKUNCI" });
+    }
+  }
   if (key === SETTING_KEYS.INVENTORY_METHOD_BEFORE_CUTOVER && !["PERIODIK", "PERPETUAL"].includes(String(value))) {
     throw salah("Metode persediaan sebelum cutover harus PERIODIK atau PERPETUAL");
   }

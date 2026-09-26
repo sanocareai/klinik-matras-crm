@@ -165,6 +165,28 @@ export const PERMISSIONS = {
   INCENTIVE_PAYOUT_READ: "incentive:payout:read",
   INCENTIVE_PAYOUT_CREATE: "incentive:payout:create",
   INCENTIVE_PAYOUT_VOID: "incentive:payout:void",
+
+  // --- Sano Delivery Control (aplikasi Admin/Owner armada) -------------------
+  // Izin EKSPLISIT untuk memakai aplikasi Control. SENGAJA bukan turunan job:read:
+  // LEADER_DRIVER punya job:read tetapi belum tentu boleh memakai aplikasi ini,
+  // dan izin baca-job bisa saja diberikan ke peran lain untuk keperluan berbeda.
+  // Diberikan ke ADMIN, OWNER (lewat ADMIN_PERMS), dan DISPATCHER saja.
+  DELIVERY_CONTROL_ACCESS: "delivery:control:access",
+
+  // --- Biaya Delivery MILIK SENDIRI (Driver/Helper/Leader Driver) ------------
+  // Pola sama dengan JOB_OWN_READ/JOB_OWN_WRITE: izin "own", TERPISAH dari izin
+  // Finance. SENGAJA bukan finance:expense:submit (itu membuka seluruh workspace
+  // pengajuan dan endpoint pendukungnya). Semantik dipaksa di SERVER
+  // (routes/expenseSubmissions.js + services/expenseSubmission/ownAccess.js):
+  //   own:read  = membaca config Delivery, daftar & detail pengajuan MILIK SENDIRI
+  //               pada workspace DELIVERY saja.
+  //   own:write = membuat, mengubah (saat DRAF/PERLU_REVISI), mengajukan, menarik,
+  //               membatalkan pengajuan milik sendiri, dan mengunggah bukti foto
+  //               miliknya. Semua mutation WAJIB Idempotency-Key.
+  // Tidak memberi: melihat pengajuan orang lain, verifikasi, setujui, tolak, bayar,
+  // koreksi metadata, uang muka, template, atau workspace lain.
+  DELIVERY_EXPENSE_OWN_READ: "delivery:expense:own:read",
+  DELIVERY_EXPENSE_OWN_WRITE: "delivery:expense:own:write",
 };
 
 const P = PERMISSIONS;
@@ -223,6 +245,8 @@ const ADMIN_PERMS = [
   // role selain permission eksplisit yang boleh membatalkan pembayaran
   // salah catat — spec eksplisit "Void hanya ADMIN/OWNER").
   P.INCENTIVE_PAYOUT_READ, P.INCENTIVE_PAYOUT_CREATE, P.INCENTIVE_PAYOUT_VOID,
+  // Aplikasi Sano Delivery Control — ADMIN/OWNER (OWNER mewarisi ADMIN_PERMS).
+  P.DELIVERY_CONTROL_ACCESS,
 ];
 
 export const ROLE_PERMISSIONS = {
@@ -341,12 +365,15 @@ export const ROLE_PERMISSIONS = {
     // eksternal, kuli bongkar muat). Biaya kendaraan TETAP lewat Armada >
     // Biaya (VehicleExpense) seperti sekarang — tidak ada input ganda.
     P.FINANCE_EXPENSE_SUBMIT,
+    // Aplikasi Sano Delivery Control — dispatcher adalah admin kantor armada.
+    P.DELIVERY_CONTROL_ACCESS,
   ],
 
   // Driver melihat PII hanya untuk stop miliknya sendiri — pembatasan baris
   // dilakukan di query, bukan di sini.
   DRIVER: [
     P.JOB_OWN_READ, P.JOB_OWN_WRITE, P.CUSTOMER_PII_READ,
+    P.DELIVERY_EXPENSE_OWN_READ, P.DELIVERY_EXPENSE_OWN_WRITE,
   ],
 
   // Helper (pendamping driver, D-037, 31 Agustus 2026) — permission SAMA
@@ -355,6 +382,7 @@ export const ROLE_PERMISSIONS = {
   // (GET /armada/drivers cuma query role DRIVER, lihat armada.js).
   HELPER: [
     P.JOB_OWN_READ, P.JOB_OWN_WRITE, P.CUSTOMER_PII_READ,
+    P.DELIVERY_EXPENSE_OWN_READ, P.DELIVERY_EXPENSE_OWN_WRITE,
   ],
 
   // Leader Driver (D-042, 2 September 2026, permintaan owner) — supervisor
@@ -366,6 +394,7 @@ export const ROLE_PERMISSIONS = {
   LEADER_DRIVER: [
     P.JOB_OWN_READ, P.JOB_OWN_WRITE, P.CUSTOMER_PII_READ,
     P.JOB_READ, P.JOB_WRITE, P.ROUTE_WRITE,
+    P.DELIVERY_EXPENSE_OWN_READ, P.DELIVERY_EXPENSE_OWN_WRITE,
   ],
 
   FINANCE: [

@@ -183,12 +183,12 @@ export const DEFAULT_COA = Object.freeze([
 
   // ── 5 BEBAN POKOK ─────────────────────────────────────────────────────
   { code: "5-0000", name: "BEBAN POKOK", type: BP, normalBalance: D, isPostable: false },
-  { code: "5-1100", name: "Beban Pokok Bahan Baku", type: BP, normalBalance: D, parent: "5-0000",
+  { code: "5-1100", name: "Beban Bahan Baku / Pemakaian Bahan", type: BP, normalBalance: D, parent: "5-0000",
     systemKey: SYSTEM_KEYS.BEBAN_POKOK_BAHAN, cashFlowCategory: "OPERASI",
-    description: "Nilai bahan yang benar-benar dikeluarkan gudang ke produksi (stock_movements ISSUE). Tidak pernah ditulis manual." },
+    description: "Periodik (sebelum tanggal cutover persediaan): pembelian bahan baku tanpa penerimaan Gudang. Perpetual (mulai cutover): pemakaian bahan dari Gudang (Dr 5-1100 / Cr 1-1400). Selisih persediaan akhir periodik dibukukan lewat jurnal Persediaan Awal." },
   { code: "5-1150", name: "Pembelian Bahan Baku (Input Manual)", type: BP, normalBalance: D, parent: "5-0000",
     systemKey: SYSTEM_KEYS.BEBAN_POKOK_BAHAN_MANUAL, cashFlowCategory: "OPERASI",
-    description: "Pembelian bahan baku yang dicatat manual SEBELUM modul Gudang dipakai — sengaja dipisah dari 5-1100 supaya akun itu tetap murni otomatis dari stock_movements begitu Gudang mulai jalan, tanpa perlu memilah mana baris manual mana baris otomatis di kemudian hari." },
+    description: "Pembelian bahan baku yang dicatat manual lewat modul Pembelian SEBELUM Gudang dipakai. Sejak B3.5, tagihan supplier bahan baku periodik memakai 5-1100 (Beban Bahan Baku / Pemakaian Bahan), bukan akun ini." },
   { code: "5-1200", name: "Beban Upah Produksi", type: BP, normalBalance: D, parent: "5-0000", cashFlowCategory: "OPERASI" },
   { code: "5-1300", name: "Beban Overhead Produksi", type: BP, normalBalance: D, parent: "5-0000", cashFlowCategory: "OPERASI" },
   { code: "5-1900", name: "Beban Susut & Bahan Rusak", type: BP, normalBalance: D, parent: "5-0000",

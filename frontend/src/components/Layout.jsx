@@ -272,6 +272,7 @@ const DIVISIONS = {
         section: "KONTROL STOK",
         items: [
           { to: "/warehouse/stock-count",   label: "Stock Opname",       Icon: Scale },
+          { to: "/finance/persediaan-awal", label: "Opname Cutover Persediaan", Icon: ClipboardCheck },
           { to: "/warehouse/replenishment", label: "Restok",             Icon: TrendingUp },
           { to: "/warehouse/adjustments",   label: "Barang Rusak & Retur", Icon: AlertTriangle },
           // Kasus Komplain (D-116, 11 September 2026) — Warehouse melihat
@@ -473,6 +474,7 @@ const DIVISIONS = {
           { to: "/finance/journal",        label: "Jurnal Umum",       Icon: FileSpreadsheet },
           { to: "/finance/ledger",         label: "Buku Besar",        Icon: BookOpen },
           { to: "/finance/reconciliation", label: "Rekonsiliasi Bank", Icon: ScaleIcon },
+          { to: "/finance/persediaan-awal", label: "Tutup Stok & Persediaan Awal", Icon: ClipboardCheck },
         ],
       },
       {

@@ -5,6 +5,7 @@ import {
   checksum, dateOnly, jsonForOutput, parseArgs, requireApplyConfirmation, stableValue, writeReport,
 } from "./common.js";
 import { legacyProductionPhaseToV2 } from "../../src/services/productionV2BackfillMapping.js";
+import { createMigrationExceptionWithResolutionCarryForward } from "./migration-exception-persistence.js";
 
 const prisma = new PrismaClient();
 const args = parseArgs();
@@ -313,7 +314,7 @@ async function applyPlan(source, productionPlans, exceptions) {
       }
     }
     for (const exception of exceptions) {
-      await tx.v2MigrationException.create({ data: { runId: run.id, ...exception } });
+      await createMigrationExceptionWithResolutionCarryForward(tx, { runId: run.id, exception });
     }
     const resultChecksum = checksum({ productionPlans, routes: source.routes.map(routeSnapshot), jobs: source.jobs, exceptions });
     await tx.v2MigrationRun.update({

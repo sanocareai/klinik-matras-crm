@@ -32,6 +32,7 @@ const { financeUangMukaRouter } = await import("../../../src/routes/financeOpera
 const { financeKoreksiRouter } = await import("../../../src/routes/financeKoreksi.js");
 const { financeRekonCutoffRouter } = await import("../../../src/routes/financeRekonCutoff.js");
 const { financePenerimaanRouter } = await import("../../../src/routes/financePenerimaan.js");
+const { financePersediaanAwalRouter } = await import("../../../src/routes/financePersediaanAwal.js");
 const { financePushHooks } = await import("../../../src/middleware/financePushHooks.js");
 const { financePemasukanRouter } = await import("../../../src/routes/financePemasukan.js");
 const { financeApprovalsRouter } = await import("../../../src/routes/financeApprovals.js");
@@ -54,6 +55,7 @@ const { kendaliRouter } = await import("../../../src/routes/kendali.js");
 // di atas: kode ASLI produksi, additive di prefix /api/armada yang sama.
 const { incentiveSnapshotRouter } = await import("../../../src/routes/incentiveSnapshot.js");
 const { incentivePayoutRouter } = await import("../../../src/routes/incentivePayout.js");
+const { deliveryControlRouter } = await import("../../../src/routes/deliveryControl.js");
 
 export function buildTestApp() {
   const app = express();
@@ -85,6 +87,7 @@ export function buildTestApp() {
   app.use("/api/finance", financeKoreksiRouter);
   app.use("/api/finance", financeRekonCutoffRouter);
   app.use("/api/finance", financePenerimaanRouter);
+  app.use("/api/finance", financePersediaanAwalRouter);
   app.use("/api/finance", financeApprovalsRouter);
   app.use("/api/finance", financePemasukanRouter);
   app.use("/api/finance", financePembayaranRouter);
@@ -101,6 +104,7 @@ export function buildTestApp() {
   app.use("/api/armada", incentivePayoutRouter);
   app.use("/api/orders", orderRouter);
   app.use("/api/kendali", kendaliRouter);
+  app.use("/api/delivery-control", deliveryControlRouter);
 
   return app;
 }

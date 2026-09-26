@@ -65,7 +65,7 @@ export default function PilihJenisTagihan({ f, set, kategori, kategoriBeli, unbi
               <div className="rounded-lg bg-accentbg px-3 py-2 text-[12.5px] text-ink2" data-testid="catatan-periodik">
                 <p><strong>{CATATAN_PERIODIK}</strong></p>
                 <p className="mt-1">
-                  Tanpa penerimaan gudang: saat disetujui dicatat <strong>Dr Beban Pokok Bahan Baku (5-1100) / Cr Utang Usaha</strong>.
+                  Tanpa penerimaan gudang: saat disetujui dicatat <strong>Dr Beban Bahan Baku / Pemakaian Bahan (5-1100) / Cr Utang Usaha</strong>.
                   Kalau barangnya juga akan dicatat di Gudang › Penerimaan Barang, tautkan penerimaannya — server menolak persetujuan bila berisiko tercatat dua kali.
                 </p>
               </div>

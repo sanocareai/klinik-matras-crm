@@ -44,6 +44,7 @@ import { armadaRouter }     from "./routes/armada.js";
 import { deliveryV2Router } from "./routes/deliveryV2.js";
 import { incentiveSnapshotRouter } from "./routes/incentiveSnapshot.js";
 import { incentivePayoutRouter } from "./routes/incentivePayout.js";
+import { deliveryControlRouter } from "./routes/deliveryControl.js";
 import { kendaliRouter }    from "./routes/kendali.js";
 // Finance Workspace (D-180) — DUA router, SATU prefix /api/finance.
 // Pemisahannya semata soal panjang file (lihat catatan di kepala
@@ -55,6 +56,7 @@ import { financeUangMukaRouter } from "./routes/financeOperationalAdvance.js";
 import { financeKoreksiRouter } from "./routes/financeKoreksi.js";
 import { financeRekonCutoffRouter } from "./routes/financeRekonCutoff.js";
 import { financePenerimaanRouter } from "./routes/financePenerimaan.js";
+import { financePersediaanAwalRouter } from "./routes/financePersediaanAwal.js";
 import { financeApprovalsRouter } from "./routes/financeApprovals.js";
 import { financePembayaranRouter } from "./routes/financePembayaran.js";
 import { financeTransaksiRouter } from "./routes/financeTransaksi.js";
@@ -219,6 +221,7 @@ app.use("/api/armada",       armadaRouter);
 app.use("/api/armada",       deliveryV2Router); // gated V2 snapshot/delta; reader cannot precede both writers
 app.use("/api/armada",       incentiveSnapshotRouter); // additive, tidak mengubah armadaRouter — lihat routes/incentiveSnapshot.js
 app.use("/api/armada",       incentivePayoutRouter); // additive, lihat routes/incentivePayout.js
+app.use("/api/delivery-control", deliveryControlRouter); // gerbang app Sano Delivery Control (izin delivery:control:access)
 app.use("/api/kendali",      kendaliRouter);
 app.use("/api/finance",      financePushHooks); // S11: pemicu push (mengamati respons; tidak mengubah endpoint)
 app.use("/api/finance",      financeRouter);
@@ -228,6 +231,7 @@ app.use("/api/finance",      financeUangMukaRouter);
 app.use("/api/finance",      financeKoreksiRouter);
 app.use("/api/finance",      financeRekonCutoffRouter); // B3 snapshot rekonsiliasi & Perlu Ditinjau
 app.use("/api/finance",      financePenerimaanRouter);
+app.use("/api/finance",      financePersediaanAwalRouter); // B3.6 tutup stok periodik & persediaan awal perpetual
 app.use("/api/finance",      financeApprovalsRouter); // read-model inbox persetujuan (S4)
 app.use("/api/finance",      financePembayaranRouter); // pembayaran pelanggan: daftar/detail/verifikasi/tolak (S5)
 app.use("/api/finance",      financePemasukanRouter); // read-model Pemasukan terpadu + Data Sebelum Sistem (non-posting)

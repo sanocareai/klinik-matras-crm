@@ -81,7 +81,7 @@ test("UI menjelaskan metode periodik & perpetual dalam Bahasa Indonesia", () => 
   assert.match(k, /CATATAN_PERIODIK/);
   assert.match(k, /data-testid="catatan-periodik"/);
   assert.match(k, /data-testid="catatan-perpetual"/);
-  assert.match(k, /Dr Beban Pokok Bahan Baku \(5-1100\) \/ Cr Utang Usaha/);
+  assert.match(k, /Dr Beban Bahan Baku \/ Pemakaian Bahan \(5-1100\) \/ Cr Utang Usaha/);
   assert.match(k, /metode perpetual/);
   const p = baca("pages/finance/FinanceSuppliers.jsx");
   assert.match(p, /getFinanceInventoryMethod/);

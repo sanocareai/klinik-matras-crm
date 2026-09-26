@@ -40,6 +40,8 @@
 import { postJournal, recordPostingGap, findEntryByKey } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { ambilKebijakanPersediaan, metodeUntukTanggal, METODE_PERSEDIAAN, pesanPerpetual } from "../inventoryMethod.js";
+import { statusCutoverUntuk, penerimaanTertutupPeriodik } from "../persediaanAwal.js";
+import { resolvePostingGap } from "../journal.js";
 import { toMoney, sumMoney, ZERO } from "../money.js";
 import { barisBiayaAdmin } from "../transferFee.js";
 
@@ -92,6 +94,12 @@ export async function postGoodsReceiptValue(tx, { goodsReceiptId, userId = null 
 
   const sudahAda = await findEntryByKey(tx, KEY.goodsReceipt(goodsReceiptId));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
+
+  // B3.6 — penerimaan sebelum cutover setelah persediaan awal diposting: barangnya sudah tercakup stok opname.
+  if ((await statusCutoverUntuk(tx, gr.receivedDate || gr.createdAt)).status === "tertutup") {
+    await resolvePostingGap(tx, { source: "PENERIMAAN_BAHAN", sourceId: goodsReceiptId });
+    return { posted: false, reason: "tertutup_stok_opname" };
+  }
 
   const { total, jumlahBaris, tanpaHarga } = await nilaiPenerimaan(tx, goodsReceiptId);
 
@@ -166,7 +174,11 @@ export async function postSupplierBill(tx, { billId, userId = null }) {
   const utangUsaha = await resolveAccount(tx, SYSTEM_KEYS.UTANG_USAHA);
   const lines = [];
 
-  if (bill.goodsReceiptId) {
+  if (bill.goodsReceiptId && (await penerimaanTertutupPeriodik(tx, bill.goodsReceiptId))) {
+    // B3.6 — penerimaan sebelum cutover yang tidak dijurnal ke Persediaan (tercakup stok opname): tagihannya periodik, Dr 5-1100.
+    const bahanTerpakai = await resolveAccount(tx, SYSTEM_KEYS.BEBAN_POKOK_BAHAN);
+    lines.push({ accountId: bahanTerpakai.id, debit: nilaiTagihan, description: `Pembelian bahan baku (periodik, penerimaan ${bill.goodsReceipt?.receiptNumber || ""} tercakup stok opname)`.slice(0, 250), supplierId: bill.supplierId });
+  } else if (bill.goodsReceiptId) {
     // Tagihan atas barang yang penerimaannya SUDAH tercatat di ledger stok.
     const grir = await resolveAccount(tx, SYSTEM_KEYS.UTANG_BELUM_DITAGIH);
     const { total: nilaiTerima, jumlahBaris, tanpaHarga } = await nilaiPenerimaan(tx, bill.goodsReceiptId);

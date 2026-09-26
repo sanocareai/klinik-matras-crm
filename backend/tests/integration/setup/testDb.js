@@ -5,8 +5,12 @@ import { PrismaClient } from "@prisma/client";
 // proses `node --test` (pola sama dengan src/db.js di aplikasi asli) — tapi
 // menunjuk ke DATABASE_URL tes yang sudah di-override & divalidasi oleh
 // env.js, bukan ke database dev/produksi.
-// Batas transaksi SAMA dengan src/db.js: fixture tes yang membuka $transaction interaktif tidak boleh gagal P2028
-// hanya karena mesin tes sedang sibuk (bawaan Prisma: maxWait 2 dtk / timeout 5 dtk). Terbukti pada run beban sedang.
+//
+// transactionOptions SAMA dengan src/db.js: batas bawaan Prisma ($transaction interaktif: 2 dtk menunggu
+// koneksi, 5 dtk total) terlalu ketat untuk hook setup/cleanup di Docker Desktop yang fsync-nya lambat, dan
+// terbukti memunculkan P2028 "Unable to start a transaction in the given time" di hook afterEach
+// (24 Sep 2026). Bukan sekadar menaikkan timeout: penyebab utamanya (TRUNCATE 100 tabel per tes) diperbaiki
+// di truncateAll() di bawah.
 export const testPrisma = new PrismaClient({ transactionOptions: { maxWait: 15_000, timeout: 30_000 } });
 
 // Tabel inventory (urutan TIDAK penting — TRUNCATE ... CASCADE mengabaikan
@@ -39,6 +43,7 @@ const TABLES_TO_TRUNCATE = [
   // menumpuk lintas file test dan assertion "berapa gap yang terbuka"
   // di financeLedger.integration.test.js akan melihat sisa test lain.
   "fin_bank_statement_lines", "fin_bank_statements", "fin_recon_snapshots", "fin_recon_exception_reviews",
+  "fin_inventory_opening_lines", "fin_inventory_openings",
   "fin_supplier_payment_allocations", "fin_supplier_payments", "fin_supplier_bills",
   "fin_payment_allocations", "fin_refunds", "fin_expenses",
   // "Terapkan Uang Muka" (D-XXX, 22 September 2026) — WAJIB sebelum
@@ -130,6 +135,18 @@ const TABLES_TO_TRUNCATE = [
  * env.js sudah memvalidasi database ini adalah database tes khusus.
  */
 export async function truncateAll() {
-  const list = TABLES_TO_TRUNCATE.map((t) => `"${t}"`).join(", ");
+  // PENYEBAB KONTENSI (diukur 24 Sep 2026): TRUNCATE ~100 tabel SETIAP tes memakan 12-17 detik di Postgres
+  // Docker (tiap TRUNCATE membuat relfilenode baru + fsync; 100 tabel = 100 fsync), padahal mayoritas tabel
+  // kosong. Itu mendominasi durasi tes, memperpanjang jendela kunci ACCESS EXCLUSIVE, dan memicu P2028 saat
+  // mesin ramai. Sekarang hanya tabel yang BERISI baris yang di-TRUNCATE (pemeriksaan EXISTS per tabel
+  // murah, satu round-trip). CASCADE tetap menjangkau tabel anak yang berisi. Hasil akhirnya sama: database
+  // kosong.
+  const berisi = await testPrisma.$queryRawUnsafe(
+    `SELECT t AS nama FROM unnest($1::text[]) AS t
+     WHERE (xpath('/row/c/text()', query_to_xml(format('select exists(select 1 from %I) as c', t), false, true, '')))[1]::text::boolean`,
+    TABLES_TO_TRUNCATE,
+  );
+  if (berisi.length === 0) return;
+  const list = berisi.map((r) => `"${String(r.nama).replace(/"/g, '""')}"`).join(", ");
   await testPrisma.$executeRawUnsafe(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`);
 }
