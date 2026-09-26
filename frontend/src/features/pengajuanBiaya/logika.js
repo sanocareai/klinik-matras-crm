@@ -24,7 +24,7 @@ export const WORKSPACES_UI = {
     tautan: [],
   },
   HR_GA: {
-    judul: "Pengajuan Biaya HR & GA", division: "HR_GA", jalur: "/finance/pengajuan-divisi", singkat: "HR & GA",
+    judul: "Pengajuan Biaya HR & GA", division: "HR_GA", jalur: "/kendali/pengajuan-hrga", singkat: "HR & GA",
     ringkas: "Rekrutmen, pelatihan, kesejahteraan karyawan, ATK dan kebutuhan kantor non-stok, perawatan fasilitas, serta perizinan dan administrasi.",
     tautan: [],
   },

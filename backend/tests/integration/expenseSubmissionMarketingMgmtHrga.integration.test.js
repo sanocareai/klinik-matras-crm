@@ -24,6 +24,8 @@ async function siapkan() {
   const bank = await testPrisma.finCashAccount.create({ data: { name: "Bank Uji", kind: "BANK", accountId: akunBank.id } });
   const u = {};
   for (const [k, roles] of Object.entries({ sales: ["SALES"], sales2: ["SALES"], pl: ["PRODUCTION_LEAD"], wh: ["WAREHOUSE"], disp: ["DISPATCHER"], fin: ["FINANCE"], adm: ["ADMIN"], owner: ["OWNER"] })) u[k] = await createTestUser({ roles });
+  // C2.1 — SALES BUKAN otomatis Marketing: dua Sales di sini diberi keanggotaan divisi MARKETING secara eksplisit.
+  for (const k of ["sales", "sales2"]) await testPrisma.userDivision.create({ data: { userId: u[k].user.id, division: "MARKETING" } });
   const c = Object.fromEntries(Object.entries(u).map(([k, v]) => [k, makeClient(server.baseUrl, v.token)]));
   return { u, c, bank };
 }

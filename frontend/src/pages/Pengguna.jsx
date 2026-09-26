@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   UserPlus, Trash2, Key, Shield, ShieldCheck, Lock, X, Eye, EyeOff,
-  MessageSquare, Users, FileText, Check, UserX, UserCheck, MoreVertical, Pencil, Camera,
+  MessageSquare, Users, FileText, Check, UserX, UserCheck, MoreVertical, Pencil, Camera, Building2,
 } from "lucide-react";
 import { api } from "../api.js";
 import Avatar from "../components/Avatar.jsx";
@@ -87,6 +87,31 @@ const DIVISIONS = [
 // Sekarang satu gaya chip netral (bg-inset/text-ink2, konsisten di kedua
 // tema) + titik kecil warna peran — warna tetap membantu bedakan sekilas,
 // tapi tidak lagi mendominasi baris saat satu user punya banyak peran.
+// KEANGGOTAAN DIVISI (C2.1) — konsep TERPISAH dari peran. Peran = izin keamanan; divisi = tempat kerja (workspace Pengajuan Biaya yang boleh dibuka).
+// Sengaja diberi gaya garis (outline) agar tidak tertukar dengan chip peran. Urutan & label cermin dari backend (services/expenseSubmission/access.js).
+export const DIVISI_AKSES = [
+  { key: "MARKETING", label: "Marketing" },
+  { key: "MANAGEMENT", label: "Management" },
+  { key: "HR_GA", label: "HR & GA" },
+  { key: "PRODUCTION", label: "Produksi" },
+  { key: "WAREHOUSE", label: "Gudang" },
+  { key: "DELIVERY", label: "Delivery" },
+];
+
+function DivisiChips({ divisions }) {
+  const daftar = DIVISI_AKSES.filter((d) => (divisions || []).includes(d.key));
+  if (daftar.length === 0) return <span className="text-[11px] text-ink3" data-testid="divisi-kosong">Belum diatur</span>;
+  return (
+    <>
+      {daftar.map((d) => (
+        <span key={d.key} data-testid="chip-divisi" className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-line px-2 py-[3px] text-[11px] font-semibold text-ink2">
+          <Building2 size={11} aria-hidden /> {d.label}
+        </span>
+      ))}
+    </>
+  );
+}
+
 function RoleChip({ role }) {
   const { color } = ROLE_COLORS[role] || { color: "var(--text-secondary)" };
   return (
@@ -102,7 +127,7 @@ function RoleChip({ role }) {
 // terpisah yang gampang saling menyimpang). Mengganti 3-4 tombol berjejer
 // (kadang ikon polos tanpa label, kadang teks — tidak konsisten) dengan
 // SATU kebab, pola yang sama dengan menu profil di sidebar (Layout.jsx).
-function UserRowActions({ u, isMe, onEditProfile, onEditRole, onResetPw, onToggleActive, onDelete }) {
+function UserRowActions({ u, isMe, onEditProfile, onEditRole, onEditDivision, onResetPw, onToggleActive, onDelete }) {
   const nonaktif = u.active === false;
   return (
     <Menu
@@ -119,6 +144,7 @@ function UserRowActions({ u, isMe, onEditProfile, onEditRole, onResetPw, onToggl
     >
       <MenuItem icon={Pencil} onSelect={onEditProfile}>Ubah Profil</MenuItem>
       {!isMe && <MenuItem icon={Shield} onSelect={onEditRole}>Ubah Peran</MenuItem>}
+      <MenuItem icon={Building2} onSelect={onEditDivision}>Atur Divisi</MenuItem>
       <MenuItem icon={Key} onSelect={onResetPw}>Reset Password</MenuItem>
       {!isMe && (
         <MenuItem icon={nonaktif ? UserCheck : UserX} onSelect={onToggleActive}>
@@ -154,6 +180,9 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
   const [showReset, setShowReset]       = useState(null); // user object
   const [showDelete, setShowDelete]     = useState(null); // user object
   const [showRoleEdit, setShowRoleEdit] = useState(null); // user object
+  const [showDivEdit, setShowDivEdit]   = useState(null); // user object — keanggotaan divisi (C2.1)
+  const [divBusy, setDivBusy]           = useState(null);
+  const [divError, setDivError]         = useState("");
   const [showEditUser, setShowEditUser] = useState(null); // user object
 
   // Ubah Profil (nama/email) — D-163, 12 September 2026, laporan owner:
@@ -288,6 +317,25 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
       setRoleEditError(err.message);
     } finally {
       setRoleBusy(null);
+    }
+  }
+
+  // Atur keanggotaan divisi (C2.1): centang = tambah divisi, hapus centang = cabut. Terpisah dari peran; tidak pernah diisi otomatis.
+  async function handleToggleDivisi(key) {
+    const target = showDivEdit;
+    if (!target) return;
+    const sekarang = target.divisions || [];
+    const baru = sekarang.includes(key) ? sekarang.filter((d) => d !== key) : [...sekarang, key];
+    setDivError("");
+    setDivBusy(key);
+    try {
+      const { divisions } = await api.setUserDivisions(target.id, baru);
+      setUsers((prev) => prev.map((u) => (u.id === target.id ? { ...u, divisions } : u)));
+      setShowDivEdit((prev) => (prev ? { ...prev, divisions } : prev));
+    } catch (err) {
+      setDivError(err.message);
+    } finally {
+      setDivBusy(null);
     }
   }
 
@@ -532,6 +580,7 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
               <tr>
                 <th>Pengguna</th>
                 <th>Peran</th>
+                <th>Divisi</th>
                 <th style={{ textAlign: "center" }}>Pelanggan</th>
                 <th style={{ textAlign: "center" }}>Percakapan</th>
                 <th style={{ textAlign: "center" }}>Catatan</th>
@@ -562,6 +611,9 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
                         {effectiveRoles(u).map((role) => <RoleChip key={role} role={role} />)}
                       </div>
                     </td>
+                    <td>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 200 }}><DivisiChips divisions={u.divisions} /></div>
+                    </td>
                     <td style={{ textAlign: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5, justifyContent: "center" }}>
                         <Users size={13} color="var(--text-muted)" />
@@ -591,6 +643,7 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
                         u={u} isMe={isMe}
                         onEditProfile={() => openEditUser(u)}
                         onEditRole={() => { setShowRoleEdit(u); setRoleEditError(""); }}
+                        onEditDivision={() => { setShowDivEdit(u); setDivError(""); }}
                         onResetPw={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}
                         onToggleActive={() => handleToggleActive(u)}
                         onDelete={() => setShowDelete(u)}
@@ -635,6 +688,7 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
                   <UserRowActions
                     u={u} isMe={isMe}
                     onEditRole={() => { setShowRoleEdit(u); setRoleEditError(""); }}
+                    onEditDivision={() => { setShowDivEdit(u); setDivError(""); }}
                     onResetPw={() => { setShowReset(u); setResetPw(""); setShowResetPw(false); }}
                     onToggleActive={() => handleToggleActive(u)}
                     onDelete={() => setShowDelete(u)}
@@ -642,6 +696,9 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4, margin: "8px 0" }}>
                   {effectiveRoles(u).map((role) => <RoleChip key={role} role={role} />)}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4, margin: "0 0 8px" }}>
+                  <span className="text-[11px] text-ink3">Divisi:</span> <DivisiChips divisions={u.divisions} />
                 </div>
                 <div className="user-card-stats">
                   <span><Users size={12} /> {u._count?.assignedCustomers || 0} pelanggan</span>
@@ -758,6 +815,54 @@ export default function Pengguna({ user: currentUser, onUserUpdate }) {
             </div>
             <div className="modal-footer">
               <button className="btn btn-primary" onClick={() => setShowRoleEdit(null)}>Selesai</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL ATUR DIVISI (C2.1) ── */}
+      {showDivEdit && (
+        <div className="modal-overlay" onClick={() => setShowDivEdit(null)}>
+          <div className="modal-box" style={{ maxWidth: 420 }} data-testid="modal-divisi" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Divisi {showDivEdit.name}</h3>
+              <button className="modal-close" onClick={() => setShowDivEdit(null)} aria-label="Tutup"><X size={18} /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--text-muted)" }}>
+                Divisi menentukan workspace Pengajuan Biaya yang boleh dibuka pengguna ini — terpisah dari peran (izin keamanan) dan tidak menambah izin Finance.
+                Satu orang boleh berada di lebih dari satu divisi. Pengguna hanya melihat dan mengelola pengajuan miliknya sendiri.
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {DIVISI_AKSES.map(({ key, label }) => {
+                  const checked = (showDivEdit.divisions || []).includes(key);
+                  const busy = divBusy === key;
+                  return (
+                    <button key={key} type="button" disabled={busy} role="checkbox" aria-checked={checked} data-testid={`divisi-${key}`}
+                      onClick={() => handleToggleDivisi(key)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", minHeight: 44,
+                        borderRadius: 8, border: `1px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+                        background: checked ? "var(--accent-bg)" : "var(--bg-surface)", cursor: busy ? "wait" : "pointer",
+                        textAlign: "left", opacity: busy ? 0.6 : 1,
+                      }}>
+                      <span style={{
+                        width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                        border: `1.5px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+                        background: checked ? "var(--accent)" : "transparent",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        {checked && <Check size={13} color="#fff" />}
+                      </span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-main)" }}>{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {divError && <p style={{ color: "var(--color-danger)", fontSize: 13, margin: "12px 0 0" }}>{divError}</p>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setShowDivEdit(null)}>Selesai</button>
             </div>
           </div>
         </div>

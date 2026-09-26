@@ -114,7 +114,7 @@ test("C2: form data-driven — tipe tanggal/pilihan, jenis belum siap dinonaktif
 
 test("C2: menu — Marketing di Growth (SALES), Management di All Teams, hub semua divisi di Finance; gerbang peran tidak memberi akses silang", () => {
   const layout = baca("components/Layout.jsx");
-  assert.match(layout, /to: "\/marketing\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["SALES", "ADMIN", "OWNER", "FINANCE", "APPROVER"\]/);
+  assert.match(layout, /to: "\/marketing\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER"\], bolehDivisi: \["MARKETING"\]/); // C2.1: SALES bukan otomatis Marketing
   assert.match(layout, /to: "\/kendali\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER"\]/);
   assert.match(layout, /to: "\/finance\/pengajuan-divisi", label: "Pengajuan Biaya Divisi"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER"\]/);
   assert.doesNotMatch(layout, /\/marketing\/pengajuan-biaya[^}]*"PRODUCTION_LEAD"/);

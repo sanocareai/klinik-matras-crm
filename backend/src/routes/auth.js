@@ -5,6 +5,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { portalsFor } from "../middleware/authorize.js";
 import { capabilitiesFor } from "../services/capabilities.js";
+import { divisiEfektif, muatDivisiPengguna } from "../services/expenseSubmission/access.js";
 import { createFailureLimiter, clientIp, tooMany } from "../lib/rateLimit.js";
 
 export const authRouter = express.Router();
@@ -54,6 +55,16 @@ export function gerbangLogin(req, res, email) {
   };
 }
 
+// C2.1 — divisi EFEKTIF untuk menu klien (keanggotaan eksplisit + adapter peran lama). Hanya tampilan; server menegakkan ulang setiap permintaan.
+async function divisiUntukKlien(userId, roles) {
+  try {
+    return [...divisiEfektif({ roles, divisi: await muatDivisiPengguna(prisma, userId) })];
+  } catch (err) {
+    console.error("[auth] muat divisi gagal:", err.message);
+    return [];
+  }
+}
+
 authRouter.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -95,6 +106,7 @@ authRouter.post("/login", async (req, res) => {
         name: user.name,
         role: user.role,
         roles,
+        divisions: await divisiUntukKlien(user.id, roles),
         avatarUrl: user.avatarUrl,
         portals: portalsFor({ roles }),
         capabilities: capabilitiesFor({ roles, role: user.role }),
@@ -127,7 +139,7 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     const roles = await loadRoles(user);
     // capabilities (19 Sep 2026): daftar kemampuan dari role/permission AKTUAL,
     // supaya klien tidak menyalin peta role→izin. Additive — field lama utuh.
-    res.json({ ...user, roles, portals: portalsFor({ roles }), capabilities: capabilitiesFor({ roles, role: user.role }) });
+    res.json({ ...user, roles, divisions: await divisiUntukKlien(user.id, roles), portals: portalsFor({ roles }), capabilities: capabilitiesFor({ roles, role: user.role }) });
   } catch (err) {
     console.error("Auth me error:", err.message);
     res.status(500).json({ error: "Server error: " + err.message });

@@ -10,6 +10,7 @@ import { ROLE_PERMISSIONS } from "../constants/permissions.js";
 import { rolesOf } from "../middleware/authorize.js";
 import { bulatkanFoto } from "../services/avatarImage.js";
 import { revokeAllForUser } from "../services/mobileSession.js";
+import { DIVISI_KEANGGOTAAN } from "../services/expenseSubmission/access.js";
 
 // Peran valid — sumber kebenaran TUNGGAL adalah kunci ROLE_PERMISSIONS
 // (constants/permissions.js), supaya daftar ini tidak pernah drift dari
@@ -69,8 +70,9 @@ function adminOnly(req, res, next) {
 userRouter.get("/", async (req, res) => {
   try {
     const isAdmin = rolesOf(req.user).includes("ADMIN");
+    const bolehLihatDivisi = isAdmin || rolesOf(req.user).includes("OWNER");
     const includeInactive = req.query.includeInactive === "true";
-    const [users, roleRows] = await Promise.all([
+    const [users, roleRows, divisionRows] = await Promise.all([
       prisma.user.findMany({
         where: includeInactive ? {} : { active: true },
         select: {
@@ -92,14 +94,19 @@ userRouter.get("/", async (req, res) => {
         orderBy: { name: "asc" },
       }),
       prisma.userRole.findMany({ select: { userId: true, role: true } }),
+      // C2.1 — keanggotaan divisi hanya dibuka untuk Admin/Owner (halaman Pengguna); picker lain tidak menerimanya.
+      bolehLihatDivisi ? prisma.userDivision.findMany({ select: { userId: true, division: true } }) : Promise.resolve([]),
     ]);
 
     const rolesByUser = {};
     for (const r of roleRows) (rolesByUser[r.userId] ??= []).push(r.role);
+    const divisionsByUser = {};
+    for (const d of divisionRows) (divisionsByUser[d.userId] ??= []).push(d.division);
 
     const withRoles = users.map((u) => ({
       ...u,
       roles: rolesByUser[u.id]?.length ? rolesByUser[u.id] : [u.role],
+      ...(bolehLihatDivisi && { divisions: divisionsByUser[u.id] || [] }),
     }));
     res.json(withRoles);
   } catch (err) {
@@ -468,6 +475,30 @@ userRouter.delete("/:id/roles/:role", adminOnly, async (req, res) => {
     await prisma.userRole.deleteMany({ where: { userId: req.params.id, role: req.params.role } });
     const rows = await prisma.userRole.findMany({ where: { userId: req.params.id }, select: { role: true } });
     res.json({ roles: rows.map((r) => r.role) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /:id/divisions — atur KEANGGOTAAN DIVISI (C2.1). Konsep terpisah dari peran: hanya menentukan workspace Pengajuan Biaya yang boleh
+// dibuka, tidak menambah izin. Menggantikan seluruh set (idempoten). Admin/Owner saja. Tidak pernah dipanggil otomatis oleh sistem.
+userRouter.put("/:id/divisions", async (req, res) => {
+  try {
+    const peran = rolesOf(req.user);
+    if (!peran.includes("ADMIN") && !peran.includes("OWNER")) return res.status(403).json({ error: "Hanya Admin atau Owner yang bisa mengatur divisi pengguna" });
+    const { divisions } = req.body || {};
+    if (!Array.isArray(divisions) || divisions.some((d) => !DIVISI_KEANGGOTAAN.includes(d))) {
+      return res.status(400).json({ error: "Divisi tidak valid" });
+    }
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!target) return res.status(404).json({ error: "User tidak ditemukan" });
+    const baru = [...new Set(divisions)];
+    await prisma.$transaction([
+      prisma.userDivision.deleteMany({ where: { userId: target.id, division: { notIn: baru } } }),
+      prisma.userDivision.createMany({ data: baru.map((division) => ({ userId: target.id, division, grantedById: req.user.id })), skipDuplicates: true }),
+    ]);
+    const rows = await prisma.userDivision.findMany({ where: { userId: target.id }, select: { division: true } });
+    res.json({ divisions: rows.map((r) => r.division) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

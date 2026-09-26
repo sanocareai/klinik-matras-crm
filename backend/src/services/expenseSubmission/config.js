@@ -37,6 +37,7 @@ export const SUMBER_DANA = [
 export const WORKSPACES = {
   DELIVERY: {
     division: "DELIVERY",
+    keanggotaan: "DELIVERY",
     label: "Delivery",
     expenseTypes: [
       { code: "BBM", label: "BBM" },
@@ -114,6 +115,7 @@ export const WORKSPACES = {
   // Jenis biaya tanpa entri di sini (nilai null di `tanpaAkun`) TAMPIL tetapi tidak bisa dipilih: tidak ada akun tebakan.
   PRODUKSI: {
     division: "PRODUKSI",
+    keanggotaan: "PRODUCTION",
     label: "Produksi",
     expenseTypes: [
       { code: "SERVIS_MESIN", label: "Servis / perawatan mesin" },
@@ -132,7 +134,7 @@ export const WORKSPACES = {
       BIAYA_OPERASIONAL: "OVERHEAD_PRODUKSI", // 5-1300
     },
     tanpaAkun: {},
-    strict: true, peranPengaju: ["PRODUCTION_LEAD"], peranPic: ["PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"],
+    strict: true, peranPic: ["PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"],
     ringkas: "Servis mesin, alat kerja kecil, jasa vendor/tukang, lembur, dan kebutuhan produksi mendesak yang bukan stok.",
     konteksMetadata: [],
     catatanJenis: {},
@@ -157,6 +159,7 @@ export const WORKSPACES = {
   },
   WAREHOUSE: {
     division: "GUDANG",
+    keanggotaan: "WAREHOUSE",
     label: "Warehouse",
     expenseTypes: [
       { code: "KURIR_LOGISTIK", label: "Kurir / logistik" },
@@ -174,7 +177,7 @@ export const WORKSPACES = {
       BIAYA_MENDESAK: "BIAYA_GUDANG_MENDESAK",
     },
     tanpaAkun: {}, // semua jenis biaya Gudang kini punya kategori resmi
-    strict: true, peranPengaju: ["WAREHOUSE"], peranPic: ["WAREHOUSE", "PRODUCTION_LEAD"],
+    strict: true, peranPic: ["WAREHOUSE", "PRODUCTION_LEAD"],
     ringkas: "Bongkar muat, kurir/logistik, perlengkapan gudang non-stok, perawatan fasilitas, dan biaya operasional mendesak.",
     konteksMetadata: [],
     catatanJenis: {},
@@ -196,8 +199,9 @@ export const WORKSPACES = {
   // Peran pengaju: sistem BELUM punya peran khusus Marketing/HR-GA/Management. Marketing memakai peran SALES (tim growth); Management &
   // HR-GA hanya dapat diajukan/dicatat oleh Finance/Admin/Owner sampai peran divisinya dibuat (lihat access.js). Tidak ada akses lintas divisi implisit.
   MARKETING: {
-    division: "MARKETING", label: "Marketing", strict: true,
-    peranPengaju: ["SALES"], peranPic: ["SALES"],
+    division: "MARKETING", keanggotaan: "MARKETING", label: "Marketing", strict: true,
+    // C2.1: SALES BUKAN otomatis Marketing — akses lewat keanggotaan divisi MARKETING (Admin/Owner yang mengatur), tanpa adapter peran.
+    peranPic: null,
     ringkas: "Iklan & promosi, produksi konten, event/aktivasi, cetak materi promosi, tools/langganan marketing, dan transportasi/representasi kegiatan marketing.",
     expenseTypes: [
       { code: "IKLAN_PROMOSI", label: "Iklan & promosi (di luar belanja iklan platform)" },
@@ -228,8 +232,8 @@ export const WORKSPACES = {
     },
   },
   MANAGEMENT: {
-    division: "MANAGEMENT", label: "Management", strict: true,
-    peranPengaju: [], peranPic: null,
+    division: "MANAGEMENT", keanggotaan: "MANAGEMENT", label: "Management", strict: true,
+    peranPic: null,
     ringkas: "Meeting dan representasi, perjalanan dinas, konsultan/jasa profesional, legal/perizinan, langganan manajemen, dan kebutuhan operasional khusus.",
     expenseTypes: [
       { code: "MEETING_REPRESENTASI", label: "Meeting & representasi" },
@@ -257,8 +261,8 @@ export const WORKSPACES = {
     },
   },
   HR_GA: {
-    division: "HR_GA", label: "HR & GA", strict: true,
-    peranPengaju: [], peranPic: null,
+    division: "HR_GA", keanggotaan: "HR_GA", label: "HR & GA", strict: true,
+    peranPic: null,
     ringkas: "Rekrutmen, pelatihan, kesejahteraan karyawan, ATK dan kebutuhan kantor non-stok, perawatan fasilitas, serta perizinan dan administrasi.",
     expenseTypes: [
       { code: "REKRUTMEN", label: "Rekrutmen" },

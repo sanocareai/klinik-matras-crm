@@ -1059,6 +1059,9 @@ export const api = {
     request(`/users/${id}/roles`, { method: "POST", body: JSON.stringify({ role }) }),
   removeUserRole: (id, role) =>
     request(`/users/${id}/roles/${role}`, { method: "DELETE" }),
+  // C2.1 — keanggotaan divisi (konsep terpisah dari peran); menggantikan seluruh set, Admin/Owner saja
+  setUserDivisions: (id, divisions) =>
+    request(`/users/${id}/divisions`, { method: "PUT", body: JSON.stringify({ divisions }) }),
 
   // Settings
   getSettings: () => request("/settings"),

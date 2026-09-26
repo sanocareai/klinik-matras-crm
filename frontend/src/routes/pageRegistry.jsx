@@ -185,6 +185,7 @@ export const PAGES = [
   // C2 — Marketing, Management, HR-GA: komponen yang SAMA (konfigurasi dari server); hub Finance untuk melihat semua divisi
   { path: "/marketing/pengajuan-biaya", render: () => <PengajuanBiayaWorkspace workspace="MARKETING" /> },
   { path: "/kendali/pengajuan-biaya", render: () => <PengajuanBiayaWorkspace workspace="MANAGEMENT" /> },
+  { path: "/kendali/pengajuan-hrga", render: () => <PengajuanBiayaWorkspace workspace="HR_GA" /> },
   { path: "/finance/pengajuan-divisi", render: () => <PengajuanBiayaHub /> },
   { path: "/finance/ledger",         render: () => <FinanceLedger /> },
   { path: "/finance/reports",        render: () => <FinanceReports /> },
