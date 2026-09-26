@@ -38,3 +38,23 @@ Jangan commit hasilnya (memuat data operasional production).
 - Route yang V2-state-nya sudah diubah command V2 (`routeRevision > 1`) tidak ditimpa backfill (sengaja).
   Sinkronisasi state lifecycle-nya memakai `reconcileDeliveryRouteFromV1` (mode terminal/catch-up), bukan backfill.
 - Eligibility Driver membaca exception dari semua run; exception lama yang sudah digantikan tetap dihitung di sana.
+
+## Cohort writer berbasis route (canary)
+Satu keputusan bersama (`deliveryWriterDecision` di `src/services/v2FeatureFlags.js`) dipakai `armada.js` dan
+cross-boundary service.
+
+| Flag route / execution | Hasil |
+|---|---|
+| keduanya OFF | OFF |
+| hanya satu ON | OFF (`WRITER_PAIR_INCOMPLETE`) |
+| keduanya ON, tanpa `routeIds` | GLOBAL (legacy; bukan untuk canary) |
+| keduanya ON, `routeIds` identik | COHORT |
+| `routeIds` berbeda / hanya di satu flag | OFF (`WRITER_COHORT_MISMATCH`) |
+| `userIds` tanpa `routeIds` | OFF (`WRITER_USER_COHORT_UNSUPPORTED`) |
+
+Mode COHORT: route authoritative (job di-resolve ke route dari database); cocok -> V2, tidak cocok atau tanpa route
+(route/job baru, command system tanpa route) -> V1-only; command yang menyentuh route di dalam dan di luar cohort
+sekaligus -> 409 `WRITER_COHORT_BOUNDARY`. `userIds` tidak disyaratkan untuk command berbasis route, sehingga
+dispatcher dan driver yang berbeda sama-sama tercakup. Cross-boundary (Sales/sistem) menjalankan mutation V1 lalu
+memproyeksikan V2 hanya untuk route cohort, dalam transaksi yang sama. Diagnostic hanya berisi kode.
+Rollback: set kedua flag `enabled=false`; projection/command/outbox V2 tidak dihapus.

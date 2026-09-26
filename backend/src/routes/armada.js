@@ -62,7 +62,7 @@ import { discardDeliveryRouteDraft, executeDeliveryRouteCommand } from "../servi
 import { discardDeliveryJobDraft, executeDeliveryJobCommand } from "../services/deliveryJobCommandService.js";
 import { executeDeliveryExecutionCommand } from "../services/deliveryExecutionCommandService.js";
 import { executeDeliveryJobBatchCommand } from "../services/deliveryJobBatchCommandService.js";
-import { V2_FLAGS, isFlagEnabled, loadV2Flags } from "../services/v2FeatureFlags.js";
+import { V2_FLAGS, deliveryWriterDecision, loadV2Flags } from "../services/v2FeatureFlags.js";
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
@@ -80,10 +80,14 @@ function expectedV2JobRevision(req) {
   return expectedV2Revision(req, "expectedJobRevision");
 }
 
-async function deliveryWriterMode(flagKey) {
+// context: { routeId, routeIds, jobId, jobIds } — route authoritative yang disentuh command. Job di-resolve
+// ke route dari database. Keputusan diambil oleh deliveryWriterDecision (dipakai bersama cross-boundary).
+// flagKey dipertahankan untuk keterbacaan pemanggil; writer route dan execution adalah satu unit.
+// eslint-disable-next-line no-unused-vars
+async function deliveryWriterMode(flagKey, context = {}) {
   const flags = await loadV2Flags(prisma);
   const fence = flags[V2_FLAGS.DELIVERY_V1_WRITER_FENCE]?.enabled === true;
-  const enabled = isFlagEnabled(flags, flagKey);
+  const { enabled } = await deliveryWriterDecision(prisma, flags, context);
   if (fence && !enabled) {
     throw Object.assign(new Error("Mutation Delivery V1 sedang dipagari untuk final catch-up"), { statusCode: 503 });
   }
@@ -96,7 +100,7 @@ async function executeDeliveryPlanningJobMutation(req, existingJob, {
   reason = null,
   projectV1,
 }) {
-  const enabled = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
+  const enabled = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { jobId: existingJob.id });
   if (!enabled) return prisma.$transaction((tx) => projectV1(tx, { before: existingJob }));
   const idempotencyKey = deliveryV2IdempotencyKey(req, commandType.toLowerCase());
   if (existingJob.routeId) {
@@ -131,7 +135,7 @@ async function executeDeliveryExecutionMutation(req, existingJob, {
   request,
   projectV1,
 }) {
-  if (!await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)) {
+  if (!await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER, { jobId: existingJob.id })) {
     return prisma.$transaction((tx) => projectV1(tx, { before: existingJob }));
   }
   return executeDeliveryExecutionCommand(prisma, {
@@ -1042,7 +1046,7 @@ async function bestEffortGeocode(addressText, locationUrlHint) {
 async function ensureJobsGeocoded(jobs) {
   const perluDiisi = jobs.filter((j) => j.lat == null && (j.order?.locationUrl || j.addressText?.trim()));
   if (perluDiisi.length === 0) return;
-  const v2WriterEnabled = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
+  const writerFlags = await loadV2Flags(prisma);
 
   await Promise.allSettled(perluDiisi.map(async (j) => {
     try {
@@ -1051,6 +1055,7 @@ async function ensureJobsGeocoded(jobs) {
       // Di mode V2, GET pembuat peta tidak boleh menjadi hidden writer yang
       // melewati route publication. Koordinat tetap dipakai untuk response
       // ini, tetapi persistensi harus lewat command edit planner eksplisit.
+      const { enabled: v2WriterEnabled } = await deliveryWriterDecision(prisma, writerFlags, { jobId: j.id });
       if (!v2WriterEnabled) {
         await prisma.job.update({ where: { id: j.id }, data: { lat: geo.lat, lng: geo.lng } });
       }
@@ -2231,7 +2236,7 @@ armadaRouter.post("/routes", requirePermission(P.ROUTE_WRITE), async (req, res) 
       createdById: req.user.id,
     };
     let route;
-    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, {})) {
       const result = await executeDeliveryRouteCommand(prisma, {
         actorId: req.user.id,
         idempotencyKey: deliveryV2IdempotencyKey(req, "route-create"),
@@ -2341,7 +2346,7 @@ armadaRouter.patch("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req, 
     };
     let replayed = false;
     let updated;
-    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { routeId: route.id })) {
       const result = await executeDeliveryRouteCommand(prisma, {
         routeId: route.id,
         actorId: req.user.id,
@@ -2443,7 +2448,8 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     }
 
     const jobIds = Array.isArray(req.body.jobIds) ? req.body.jobIds : [];
-    const useV2RouteWriter = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
+    // Job yang ditarik dari route lain ikut dihitung: route asal di luar cohort -> 409 (bukan drift diam-diam).
+    const useV2RouteWriter = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { routeId: route.id, jobIds: Array.isArray(req.body.jobIds) ? req.body.jobIds : [] });
     if (useV2RouteWriter && jobIds.length > 0) {
       const selectedMembership = await prisma.job.findMany({
         where: { id: { in: jobIds } },
@@ -2773,7 +2779,7 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
       assertRouteAssignmentConsistentForPublish(headerSetelahPublish, jobSetelahPublish);
       return { routeId: route.id };
     };
-    const useV2Writer = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
+    const useV2Writer = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { routeId: route.id });
     let replayed = false;
     let updatedRoute;
     if (useV2Writer) {
@@ -2967,7 +2973,7 @@ armadaRouter.patch("/routes/:id/cancel", requirePermission(P.ROUTE_WRITE), async
     // dibatalkan" tetap terbaca. Dispatcher yang menyusun ulang secara manual
     // lewat rute baru, bukan sistem yang diam-diam melepaskannya.
     let updated;
-    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { routeId: route.id })) {
       await executeDeliveryRouteCommand(prisma, {
         routeId: route.id,
         actorId: req.user.id,
@@ -3030,7 +3036,7 @@ armadaRouter.delete("/routes/:id", requirePermission(P.ROUTE_WRITE), async (req,
       // untuk kasus tepi (data lama/manual), bukan alur biasa.
       throw new ArmadaError("Rute ini sudah punya catatan biaya kendaraan — tidak bisa dihapus permanen, pakai \"Batalkan\"");
     }
-    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { routeId: route.id })) {
       await discardDeliveryRouteDraft(prisma, {
         routeId: route.id,
         actorId: req.user.id,
@@ -3690,7 +3696,7 @@ armadaRouter.patch("/route/reorder", requirePermission(P.JOB_WRITE), async (req,
       throw new ArmadaError("jobIds harus mencakup persis semua job aktif driver ini di tanggal itu");
     }
 
-    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { jobIds })) {
       await executeDeliveryJobBatchCommand(prisma, {
         jobIds,
         actorId: req.user.id,
@@ -4138,7 +4144,7 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
       units: { create: unitIds.map((unitId) => ({ unitId })) },
     };
     let job;
-    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, {})) {
       const result = await executeDeliveryJobCommand(prisma, {
         actorId: req.user.id,
         idempotencyKey: deliveryV2IdempotencyKey(req, "job-create"),
@@ -4287,7 +4293,7 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
       }
       return { jobId: j.id, routeId: existing.routeId };
     };
-    const useV2Writer = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
+    const useV2Writer = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { jobId: existing.id });
     let replayed = false;
     let job;
     if (useV2Writer && existing.routeId) {
@@ -4413,7 +4419,7 @@ armadaRouter.delete("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res
     if (!["UNSCHEDULED", "SCHEDULED", "ASSIGNED"].includes(existing.status)) {
       throw new ArmadaError(`Job berstatus ${existing.status} tidak bisa dihapus — tandai FAILED kalau batal`);
     }
-    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)) {
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { jobId: existing.id })) {
       await discardDeliveryJobDraft(prisma, {
         jobId: existing.id,
         actorId: req.user.id,
@@ -4836,7 +4842,7 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
       });
       return { replayed: false, job };
     };
-    const result = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)
+    const result = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER, { jobId: owned.id })
       ? executeDeliveryExecutionCommand(prisma, {
           jobId: owned.id,
           actorId: req.user.id,
@@ -4929,8 +4935,8 @@ armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_O
       const targetIds = target.map((j) => j.id);
       return { routeId: route.id, replayed: false, targetIds, commandResponse: { targetIds } };
     };
-    const routeWriterV2 = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);
-    const executionWriterV2 = await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER);
+    const routeWriterV2 = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { routeId: req.params.id });
+    const executionWriterV2 = await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER, { routeId: req.params.id });
     if (routeWriterV2 !== executionWriterV2) {
       throw Object.assign(new Error("Writer route dan execution V2 harus aktif bersama untuk memulai rute"), { statusCode: 503 });
     }
@@ -4986,7 +4992,7 @@ armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OW
       });
       return { replayed: false };
     };
-    const result = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)
+    const result = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER, { jobId: owned.id })
       ? executeDeliveryExecutionCommand(prisma, {
           jobId: owned.id,
           actorId: req.user.id,
@@ -5152,7 +5158,7 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
 
       return { replayed: false, job: j, advancedRevisions: job.type === "PICKUP" ? revisiUntukDiajukan : [], advancedComplaintCaseId };
     };
-    const commandResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)
+    const commandResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER, { jobId: owned.id })
       ? executeDeliveryExecutionCommand(prisma, {
           jobId: owned.id,
           actorId: req.user.id,
@@ -5250,7 +5256,7 @@ armadaRouter.patch("/jobs/:id/proof-photos", requireAnyPermission(P.JOB_WRITE, P
     if (!tambahan.every(isValidUrl)) throw new ArmadaError("URL foto tidak valid");
 
     const idempotencyKey = deliveryV2IdempotencyKey(req, "job-proof-photos");
-    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)) {
+    if (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER, { jobId: job.id })) {
       await executeDeliveryExecutionCommand(prisma, {
         jobId: job.id,
         actorId: req.user.id,
@@ -5356,7 +5362,7 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
       });
       return { replayed: false, job: j };
     };
-    const commandResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER)
+    const commandResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER, { jobId: owned.id })
       ? executeDeliveryExecutionCommand(prisma, {
           jobId: owned.id,
           actorId: req.user.id,
@@ -5761,7 +5767,7 @@ armadaRouter.post("/revisions/:id/create-delivery-job", requirePermission(P.JOB_
       });
       return { jobId: job.id };
     };
-    const createResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)
+    const createResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, {})
       ? executeDeliveryJobCommand(prisma, {
           actorId: req.user.id,
           idempotencyKey: deliveryV2IdempotencyKey(req, "revision-delivery-job"),
@@ -5824,7 +5830,7 @@ armadaRouter.post("/revisions/:id/create-pickup-job", requirePermission(P.JOB_WR
       });
       return { jobId: job.id };
     };
-    const createResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)
+    const createResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, {})
       ? executeDeliveryJobCommand(prisma, {
           actorId: req.user.id,
           idempotencyKey: deliveryV2IdempotencyKey(req, "revision-pickup-job"),
@@ -5935,7 +5941,7 @@ armadaRouter.post("/jobs/:id/report-revision", requireAnyPermission(P.JOB_WRITE,
         commandResponse: { revisionId: revision.id, pickupJobId: pickupJob.id },
       };
     };
-    const createResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER)
+    const createResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { jobId: job.id })
       ? executeDeliveryJobCommand(prisma, {
           actorId: req.user.id,
           idempotencyKey: deliveryV2IdempotencyKey(req, "driver-report-revision"),

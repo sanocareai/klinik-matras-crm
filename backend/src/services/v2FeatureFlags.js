@@ -70,3 +70,81 @@ export function resolveDriverReaderMode(flags, { userId = null, deviceId = null 
   }
   return { readerMode: "V2", reason: "COHORT_ENABLED" };
 }
+
+// ---------------------------------------------------------------------------
+// Writer Delivery V2: SATU keputusan bersama untuk armada.js dan cross-boundary service.
+//
+// - delivery_v2_writer_route dan delivery_v2_writer_execution adalah satu unit: keduanya wajib ON.
+//   Hanya satu ON -> keduanya dianggap OFF (WRITER_PAIR_INCOMPLETE).
+// - Tanpa config.routeIds di kedua flag -> mode GLOBAL (perilaku legacy; bukan untuk canary).
+// - config.routeIds terisi -> mode COHORT; daftar kedua flag WAJIB identik, bila tidak -> OFF
+//   (WRITER_COHORT_MISMATCH). config.userIds pada flag writer tidak dipakai untuk command berbasis
+//   route; bila diisi tanpa routeIds -> OFF (WRITER_USER_COHORT_UNSUPPORTED), sama dengan efek legacy.
+// - Mode COHORT: command tanpa route (termasuk system/background) -> V1-only; command yang
+//   menyentuh route di dalam DAN di luar cohort sekaligus -> ditolak 409 (WRITER_COHORT_BOUNDARY)
+//   agar projection route cohort tidak pernah tertinggal diam-diam.
+// Diagnostic hanya berisi kode, tanpa ID atau data sensitif.
+// ---------------------------------------------------------------------------
+export const DELIVERY_WRITER_MODE = Object.freeze({ OFF: "OFF", GLOBAL: "GLOBAL", COHORT: "COHORT" });
+
+const nonEmptyList = (value) => (Array.isArray(value) ? [...new Set(value.filter((item) => typeof item === "string" && item))].sort() : []);
+let lastDiagnostic = null;
+function diagnostic(code) {
+  if (code && code !== lastDiagnostic) console.warn(`[delivery-v2-writer] ${code}: writer V2 dianggap OFF (fail-closed ke V1)`);
+  lastDiagnostic = code;
+}
+
+export function resolveDeliveryWriterState(flags) {
+  const route = flags[V2_FLAGS.DELIVERY_ROUTE_WRITER];
+  const execution = flags[V2_FLAGS.DELIVERY_EXECUTION_WRITER];
+  const off = (code) => { diagnostic(code); return { mode: DELIVERY_WRITER_MODE.OFF, routeIds: new Set(), diagnostic: code }; };
+  const routeOn = route?.enabled === true;
+  const executionOn = execution?.enabled === true;
+  if (!routeOn && !executionOn) return off(null);
+  if (routeOn !== executionOn) return off("WRITER_PAIR_INCOMPLETE");
+  const routeCohort = nonEmptyList(route.config?.routeIds);
+  const executionCohort = nonEmptyList(execution.config?.routeIds);
+  if (routeCohort.join("|") !== executionCohort.join("|")) return off("WRITER_COHORT_MISMATCH");
+  if (routeCohort.length === 0) {
+    if (nonEmptyList(route.config?.userIds).length || nonEmptyList(execution.config?.userIds).length) return off("WRITER_USER_COHORT_UNSUPPORTED");
+    diagnostic(null);
+    return { mode: DELIVERY_WRITER_MODE.GLOBAL, routeIds: new Set(), diagnostic: null };
+  }
+  diagnostic(null);
+  return { mode: DELIVERY_WRITER_MODE.COHORT, routeIds: new Set(routeCohort), diagnostic: null };
+}
+
+// routeIds = route authoritative yang disentuh command (sudah di-resolve dari database oleh pemanggil).
+export function isDeliveryWriterEnabledFor(state, routeIds = []) {
+  if (state.mode === DELIVERY_WRITER_MODE.OFF) return false;
+  if (state.mode === DELIVERY_WRITER_MODE.GLOBAL) return true;
+  const touched = [...new Set((routeIds || []).filter(Boolean))];
+  if (touched.length === 0) return false;
+  const inside = touched.filter((routeId) => state.routeIds.has(routeId)).length;
+  if (inside === 0) return false;
+  if (inside === touched.length) return true;
+  throw Object.assign(new Error("Command menyentuh route di dalam dan di luar cohort writer V2 sekaligus; pisahkan operasinya"), {
+    statusCode: 409, code: "WRITER_COHORT_BOUNDARY",
+  });
+}
+
+// Resolusi route authoritative dari database untuk command berbasis job.
+export async function resolveJobRouteIds(client, jobIds = []) {
+  const ids = [...new Set((jobIds || []).filter(Boolean))];
+  if (!ids.length) return [];
+  const rows = await client.job.findMany({ where: { id: { in: ids } }, select: { routeId: true } });
+  return [...new Set(rows.map((row) => row.routeId).filter(Boolean))];
+}
+
+// Satu pintu untuk semua pemanggil: context { routeId, routeIds, jobId, jobIds }.
+// Job di-resolve ke route dari database; route context yang diberikan pemanggil ikut dihitung.
+export async function deliveryWriterDecision(client, flags, context = {}) {
+  const state = resolveDeliveryWriterState(flags);
+  if (state.mode !== DELIVERY_WRITER_MODE.COHORT) return { state, enabled: state.mode === DELIVERY_WRITER_MODE.GLOBAL };
+  const routeIds = [
+    ...(context.routeId ? [context.routeId] : []),
+    ...(context.routeIds || []),
+    ...await resolveJobRouteIds(client, [...(context.jobId ? [context.jobId] : []), ...(context.jobIds || [])]),
+  ];
+  return { state, enabled: isDeliveryWriterEnabledFor(state, routeIds) };
+}
