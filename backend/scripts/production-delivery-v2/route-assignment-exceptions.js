@@ -1,35 +1,16 @@
 import { dateOnly, stableValue } from "./common.js";
+import {
+  ROUTE_JOB_ASSIGNMENT_MISMATCH, SETTLED_JOB_STATUSES, routeJobAssignmentMismatches,
+} from "../../src/services/deliveryRouteAssignmentConsistency.js";
 
-export const ROUTE_JOB_ASSIGNMENT_MISMATCH = "ROUTE_JOB_ASSIGNMENT_MISMATCH";
-export const SETTLED_JOB_STATUSES = new Set(["COMPLETED", "FAILED", "RESCHEDULED"]);
-
-// Field yang dibandingkan antara header Route dan setiap Job aktif-nya.
-const FIELDS = [
-  ["driverId", (holder) => holder.driverId ?? null],
-  ["helperId", (holder) => holder.helperId ?? null],
-  ["vehicleId", (holder) => holder.vehicleId ?? null],
-];
-
-function jobDifferences(route, job) {
-  const differences = [];
-  for (const [field, read] of FIELDS) {
-    if (read(job) !== read(route)) differences.push({ field, route: read(route), job: read(job) });
-  }
-  const routeDate = dateOnly(route.date);
-  const jobDate = dateOnly(job.scheduledDate);
-  if (routeDate !== jobDate) differences.push({ field: "scheduledDate", route: routeDate ?? null, job: jobDate ?? null });
-  return differences;
-}
+export { ROUTE_JOB_ASSIGNMENT_MISMATCH, SETTLED_JOB_STATUSES };
 
 // TEPAT SATU exception per route: seluruh Job yang menyimpang digabung ke evidence.mismatchedJobs,
 // diurutkan deterministik berdasarkan jobId sehingga fingerprint evidence stabil antar-run.
-// Job berstatus settled (COMPLETED/FAILED/RESCHEDULED) tidak dihitung, sama seperti aturan sebelumnya.
+// Route DRAFT TIDAK menghasilkan exception (crew header hanyalah rencana; job menerima crew saat publish).
 export function buildRouteAssignmentMismatchException(route) {
-  const mismatchedJobs = route.jobs
-    .filter((job) => !SETTLED_JOB_STATUSES.has(job.status))
-    .map((job) => ({ jobId: job.id, differences: jobDifferences(route, job) }))
-    .filter((item) => item.differences.length > 0)
-    .sort((a, b) => (a.jobId < b.jobId ? -1 : a.jobId > b.jobId ? 1 : 0));
+  if (route.status === "DRAFT") return null;
+  const mismatchedJobs = routeJobAssignmentMismatches(route);
   if (!mismatchedJobs.length) return null;
   return {
     domain: "DELIVERY",

@@ -13,6 +13,7 @@
 // jadi dua langkah.
 
 import { adalahGalatInfraDb, kirimGalatInfraDb } from "../lib/dbInfraError.js";
+import { assertRouteAssignmentConsistentForPublish } from "../services/deliveryRouteAssignmentConsistency.js";
 import express from "express";
 import { randomUUID } from "node:crypto";
 import fs from "fs";
@@ -2761,6 +2762,15 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
         where: { routeId: route.id, status: { in: ["UNSCHEDULED", "SCHEDULED"] } },
         data: { status: "ASSIGNED" },
       });
+      // Guard fail-closed: setelah header disalin ke job, SEMUA job aktif harus konsisten dengan header.
+      // Bila tidak (penulisan bersamaan/regresi), transaksi dibatalkan dan route tetap DRAFT.
+      const headerSetelahPublish = await tx.route.findUnique({
+        where: { id: route.id }, select: { id: true, date: true, driverId: true, helperId: true, vehicleId: true },
+      });
+      const jobSetelahPublish = await tx.job.findMany({
+        where: { routeId: route.id }, select: { id: true, status: true, driverId: true, helperId: true, vehicleId: true, scheduledDate: true },
+      });
+      assertRouteAssignmentConsistentForPublish(headerSetelahPublish, jobSetelahPublish);
       return { routeId: route.id };
     };
     const useV2Writer = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER);

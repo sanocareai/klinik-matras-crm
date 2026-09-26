@@ -20,10 +20,19 @@ export const RECONCILIATION_TARGETS = Object.freeze({
     exceptionId: "a0d121fb-3d52-44b3-856d-db54c54dfc76",
     expected: { v1JobCount: 8 },
   },
+  // 27 Sep 2026: route yang sama sudah COMPLETED di V1 (6 COMPLETED + 2 FAILED) tetapi V2 masih PUBLISHED revisi 2.
+  terminalCompleted: {
+    id: "24ac2eb4-293c-40f4-b25e-2ee1e0d40a56",
+    code: "RTE-250926-01",
+    expected: { v1JobCount: 8, v2AssignmentCount: 8 },
+  },
 });
 
 const ACTOR_ID = "OWNER_DECISION_20260925";
 const CONFIRMATION = "RECONCILE-RTE-240926-02-AND-RTE-250926-01";
+const TERMINAL_ACTOR_ID = "OWNER_DECISION_20260927";
+const TERMINAL_CONFIRMATION = "RECONCILE-TERMINAL-RTE-250926-01";
+const TERMINAL_IDEMPOTENCY_KEY = "owner-20260927-terminal-rte-250926-01";
 
 async function readTarget(prisma, target) {
   return prisma.route.findUnique({
@@ -90,13 +99,33 @@ export async function runApprovedRouteReconciliation(prisma, { apply = false } =
   return { mode: "APPLY", terminal, catchUp };
 }
 
+// Command owner tunggal: V1 tetap (tidak diubah); V2 PUBLISHED -> COMPLETED lewat publication pengganti yang
+// mencabut assignment, dengan feed/outbox tepat sekali dan idempoten terhadap idempotencyKey yang sama.
+export async function runTerminalCompletedRouteReconciliation(prisma, { apply = false } = {}) {
+  const target = RECONCILIATION_TARGETS.terminalCompleted;
+  if (!apply) return { mode: "DRY_RUN", target: await readTarget(prisma, target) };
+  const terminal = await reconcileDeliveryRouteFromV1(prisma, {
+    routeId: target.id,
+    actorId: TERMINAL_ACTOR_ID,
+    idempotencyKey: TERMINAL_IDEMPOTENCY_KEY,
+    mode: DELIVERY_ROUTE_RECONCILIATION_MODE.TERMINAL_ASSIGNMENTS,
+    reason: "Reconcile terminal: V1 COMPLETED (6 COMPLETED, 2 FAILED); V2 PUBLISHED -> COMPLETED via superseding publication",
+    expected: target.expected,
+  });
+  return { mode: "APPLY", terminal };
+}
+
 async function main() {
   const args = parseArgs();
   const apply = Boolean(args.apply);
-  if (apply && args.confirm !== CONFIRMATION) throw new Error(`Mode apply memerlukan --confirm=${CONFIRMATION}`);
+  const terminalOnly = args.target === "rte-250926-01-terminal";
+  const requiredConfirmation = terminalOnly ? TERMINAL_CONFIRMATION : CONFIRMATION;
+  if (apply && args.confirm !== requiredConfirmation) throw new Error(`Mode apply memerlukan --confirm=${requiredConfirmation}`);
   const prisma = new PrismaClient();
   try {
-    const report = await runApprovedRouteReconciliation(prisma, { apply });
+    const report = terminalOnly
+      ? await runTerminalCompletedRouteReconciliation(prisma, { apply })
+      : await runApprovedRouteReconciliation(prisma, { apply });
     writeReport(args.output, report);
     console.log(jsonForOutput(report));
   } finally {

@@ -143,24 +143,35 @@ function projectPublicationForDriver(publication) {
   };
 }
 
-// Route dengan exception migrasi yang masih terbuka (OPEN/KEEP_V1) TIDAK boleh masuk snapshot V2 —
-// fail-closed. Status ditentukan oleh exception TERBARU per (route, code): exception lama yang sudah
-// digantikan run berikutnya (mis. RESOLVED) tidak lagi memblokir.
-export async function blockedRouteIdsV2(prisma) {
+// Exception migrasi V2 dinilai per (aggregateType, aggregateId, code) dari baris TERBARU saja (createdAt).
+// Baris lama yang sudah digantikan run berikutnya diabaikan: OPEN/KEEP_V1 terbaru memblokir, RESOLVED
+// (atau EXCLUDED_WITH_REASON) terbaru tidak. Dipakai SAMA oleh eligibility Driver dan filter snapshot.
+export const BLOCKING_EXCEPTION_STATUSES_V2 = Object.freeze(["OPEN", "KEEP_V1"]);
+
+export async function latestBlockingExceptionsV2(prisma, { aggregateIds = null, aggregateType = null } = {}) {
   const rows = await prisma.v2MigrationException.findMany({
-    where: { aggregateType: "Route" },
+    where: {
+      ...(aggregateType ? { aggregateType } : {}),
+      ...(aggregateIds ? { aggregateId: { in: aggregateIds } } : {}),
+    },
     orderBy: [{ createdAt: "desc" }],
-    select: { aggregateId: true, code: true, status: true },
+    select: { aggregateType: true, aggregateId: true, code: true, status: true },
   });
   const seen = new Set();
-  const blocked = new Set();
+  const blocking = [];
   for (const row of rows) {
-    const key = `${row.aggregateId}|${row.code}`;
+    const key = `${row.aggregateType}|${row.aggregateId}|${row.code}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    if (["OPEN", "KEEP_V1"].includes(row.status) && row.aggregateId) blocked.add(row.aggregateId);
+    if (BLOCKING_EXCEPTION_STATUSES_V2.includes(row.status)) blocking.push(row);
   }
-  return [...blocked];
+  return blocking;
+}
+
+// Route dengan exception migrasi terbaru yang masih terbuka TIDAK boleh masuk snapshot V2 (fail-closed).
+export async function blockedRouteIdsV2(prisma) {
+  const blocking = await latestBlockingExceptionsV2(prisma, { aggregateType: "Route" });
+  return [...new Set(blocking.map((row) => row.aggregateId).filter(Boolean))];
 }
 
 export async function driverV2Eligibility(prisma, userId) {
@@ -182,13 +193,7 @@ export async function driverV2Eligibility(prisma, userId) {
     },
   });
   const aggregateIds = [...new Set(jobs.flatMap((job) => [job.id, job.routeId]).filter(Boolean))];
-  const exceptions = aggregateIds.length ? await prisma.v2MigrationException.findMany({
-    where: {
-      aggregateId: { in: aggregateIds },
-      status: { in: ["OPEN", "KEEP_V1"] },
-    },
-    select: { aggregateType: true, aggregateId: true, code: true, status: true },
-  }) : [];
+  const exceptions = aggregateIds.length ? await latestBlockingExceptionsV2(prisma, { aggregateIds }) : [];
   const blockers = [];
   const effectiveJobs = jobs.filter((job) => !job.routeId || isDriverActiveRouteStatusV2(job.route?.status));
   for (const job of effectiveJobs) {

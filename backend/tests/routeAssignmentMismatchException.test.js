@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { checksum } from "../scripts/production-delivery-v2/common.js";
 import { buildRouteAssignmentMismatchException } from "../scripts/production-delivery-v2/route-assignment-exceptions.js";
+import { assertRouteAssignmentConsistentForPublish, routeJobAssignmentMismatches } from "../src/services/deliveryRouteAssignmentConsistency.js";
 
 const DATE = new Date("2026-09-25T00:00:00.000Z");
 const route = (jobs, extra = {}) => ({
@@ -47,4 +48,28 @@ test("fingerprint evidence identik walau urutan job masukan berbeda; berubah bil
   assert.equal(checksum(one.evidence), checksum(two.evidence));
   const more = buildRouteAssignmentMismatchException(route([...jobs, job("d", { driverId: "q" })]));
   assert.notEqual(checksum(one.evidence), checksum(more.evidence));
+});
+
+test("route DRAFT tidak pernah menghasilkan exception (crew header hanyalah rencana)", () => {
+  const drafts = [job("a", { driverId: null, helperId: null, vehicleId: null }), job("b", { driverId: "x" })];
+  assert.equal(buildRouteAssignmentMismatchException(route(drafts, { status: "DRAFT" })), null);
+});
+
+test("route PUBLISHED dan IN_PROGRESS yang menyimpang menghasilkan exception", () => {
+  for (const status of ["PUBLISHED", "IN_PROGRESS"]) {
+    const result = buildRouteAssignmentMismatchException(route([job("a", { driverId: null })], { status }));
+    assert.equal(result.code, "ROUTE_JOB_ASSIGNMENT_MISMATCH", status);
+  }
+});
+
+test("guard publish: konsisten lolos; menyimpang ditolak 409 dengan detail job (fail-closed)", () => {
+  assert.doesNotThrow(() => assertRouteAssignmentConsistentForPublish(route([job("a"), job("b")]), [job("a"), job("b")]));
+  const jobs = [job("b", { helperId: "y" }), job("a", { driverId: null })];
+  assert.throws(() => assertRouteAssignmentConsistentForPublish(route(jobs), jobs), (error) => {
+    assert.equal(error.statusCode, 409);
+    assert.equal(error.code, "ROUTE_PUBLISH_ASSIGNMENT_INCONSISTENT");
+    assert.deepEqual(error.details.mismatchedJobs.map((item) => item.jobId), ["a", "b"]);
+    return true;
+  });
+  assert.equal(routeJobAssignmentMismatches(route([job("s", { status: "COMPLETED", driverId: "z" })])).length, 0);
 });
