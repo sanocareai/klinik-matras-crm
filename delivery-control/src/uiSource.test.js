@@ -146,3 +146,13 @@ test("Akun: profil dari server (akun sama dengan web), field izin read-only, tan
   assert.doesNotMatch(src, /<Field[^>]*(peran|role|divisi|izin)/i);
   for (const teks of ["Simpan", "Ubah", "Batal", "Keluar", "Coba lagi", "Memuat profil"]) assert.match(src, new RegExp(teks), teks);
 });
+
+test("Pengaturan: hanya menu yang berfungsi; tidak ada 'keluar semua perangkat' palsu; tema disimpan lokal; info versi dari expo-application", () => {
+  const src = baca("screens/SettingsScreen.js");
+  assert.doesNotMatch(src, /title="[^"]*semua perangkat/i, "tanpa tombol logout semua perangkat (server belum mendukung)");
+  assert.match(src, /setTema\(m\)/);
+  assert.match(src, /Application\.nativeApplicationVersion/);
+  assert.match(src, /Application\.nativeBuildVersion/);
+  for (const teks of ["Tampilan", "Tentang aplikasi", "Privasi", "Keluar"]) assert.match(src, new RegExp(teks), teks);
+  assert.match(baca("PengaturanContext.js"), /AsyncStorage\.setItem\(KUNCI\.tema/);
+});

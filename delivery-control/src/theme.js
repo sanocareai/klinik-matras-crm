@@ -1,4 +1,6 @@
+import React, { createContext, useContext } from "react";
 import { Platform, useColorScheme } from "react-native";
+import { temaEfektif } from "./lib/pengaturan";
 
 // DESIGN TOKENS Sano Delivery Control (redesign 26 Sep 2026).
 // Palet: navy (teks & hero), royal blue (aksi utama), cyan (aksen), putih, dan hijau untuk status positif.
@@ -47,8 +49,16 @@ export const type = {
   amount: { fontSize: 17, fontWeight: "800", letterSpacing: -0.3, fontVariant: ["tabular-nums"] },
 };
 
+// Mode tema pilihan pengguna (Pengaturan): "system" | "light" | "dark". Tanpa provider = ikut sistem.
+const ModeTemaCtx = createContext("system");
+export function ThemeModeProvider({ mode, children }) {
+  return React.createElement(ModeTemaCtx.Provider, { value: mode }, children);
+}
+
 export function useTheme() {
-  return useColorScheme() === "dark" ? dark : light;
+  const mode = useContext(ModeTemaCtx);
+  const sistem = useColorScheme();
+  return temaEfektif(mode, sistem) === "dark" ? dark : light;
 }
 
 /** Bayangan lembut yang sama di seluruh aplikasi (lebih rendah di mode gelap; dibantu border). */

@@ -139,6 +139,7 @@ export default function ProfileScreen({ navigation }) {
             </Section>
 
             <View style={{ gap: 10 }}>
+              <Btn title="Pengaturan" icon="gauge" kind="secondary" onPress={() => navigation.navigate("Pengaturan")} />
               <Btn title="Keluar" icon="logout" kind="danger" onPress={() => setKeluar(true)} />
             </View>
           </ScrollView>
