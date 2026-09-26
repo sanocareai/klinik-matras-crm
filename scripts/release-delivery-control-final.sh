@@ -153,19 +153,9 @@ ok "tidak ada migration baru; schema.prisma tidak berubah"
 sg show "${DEPLOY_SHA}:docs/DELIVERY-CONTROL-APK-PREVIEW-QA.md" | grep 'Uang Muka' >/dev/null || die "checklist QA modul tidak ada"
 ok "checklist QA final ada"
 
-say "1c. Artefak frontend/dist (tidak diubah oleh rilis ini; harus sama dengan main)"
-DIST_INDEX="$(sg show "${DEPLOY_SHA}:frontend/dist/index.html" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)"
-MAIN_INDEX="$(sg show "${MAIN_TIP}:frontend/dist/index.html" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)"
-[ -n "$DIST_INDEX" ] && [ "$DIST_INDEX" = "$MAIN_INDEX" ] || die "bundel utama dist rilis (${DIST_INDEX:-kosong}) tidak sama dengan main (${MAIN_INDEX:-kosong})"
-sg cat-file -e "${DEPLOY_SHA}:frontend/dist/assets/${DIST_INDEX}" || die "bundel ${DIST_INDEX} tidak ada di dist"
-PR_FILE="$(sg ls-tree --name-only "$DEPLOY_SHA" frontend/dist/assets/ | grep 'ArmadaPengajuanBiaya-.*\.js$' | sed -n 1p)"
-[ -n "$PR_FILE" ] || die "chunk ArmadaPengajuanBiaya tidak ada di dist"
-PR_BASENAME="$(basename "$PR_FILE")"
-PR_SRC="$(sg show "${DEPLOY_SHA}:${PR_FILE}")"
-for kata in "Perlu Revisi" "PERLU_REVISI" "Riwayat Revisi" "Status tidak dikenal"; do
-  printf '%s' "$PR_SRC" | grep "$kata" >/dev/null || die "dist Pengajuan Biaya tidak memuat '${kata}'"
-done
-ok "dist = artefak main (bundel ${DIST_INDEX}); memuat PERLU_REVISI (${PR_BASENAME}). Aplikasi mobile Control TIDAK dilayani dari dist"
+say "1c. Frontend: tidak berubah oleh rilis ini -> dist release produksi aktif dipakai ulang APA ADANYA"
+[ -z "$(sg diff --name-only "$MAIN_TIP" "$DEPLOY_SHA" -- frontend)" ] || die "frontend berubah pada rilis ini (di luar scope)"
+ok "frontend/ identik dengan main; dist tidak dibangun ulang. Catatan: dist ter-commit di git dapat berbeda dari build produksi, karena itu dist produksi yang disalin"
 
 # ── 2. Audit produksi (baca-saja) ────────────────────────────────────────────────────────────────────────
 PHASE="2-audit-produksi"
@@ -187,6 +177,13 @@ PUB_BEFORE="$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0
 PREV_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$PREV_DIR/frontend/dist/index.html" | sed -n 1p)"
 [ "$PUB_BEFORE" = "$PREV_INDEX" ] || die "produksi publik (${PUB_BEFORE}) tidak sama dengan dist release aktif (${PREV_INDEX})"
 ok "health internal/publik sehat; bundel publik = dist release aktif (${PUB_BEFORE})"
+DIST_INDEX="$PREV_INDEX"
+PR_BASENAME="$(ls "$PREV_DIR/frontend/dist/assets" | grep '^ArmadaPengajuanBiaya-.*\.js$' | sed -n 1p)"
+[ -n "$PR_BASENAME" ] || die "dist release aktif tidak memuat chunk ArmadaPengajuanBiaya"
+for kata in "Perlu Revisi" "PERLU_REVISI" "Riwayat Revisi" "Status tidak dikenal"; do
+  grep "$kata" "$PREV_DIR/frontend/dist/assets/$PR_BASENAME" >/dev/null || die "dist produksi Pengajuan Biaya tidak memuat '${kata}'"
+done
+ok "dist produksi memuat PERLU_REVISI (${PR_BASENAME}); bundel utama ${DIST_INDEX} akan dipertahankan"
 [ -n "$(dcp "$PREV_DIR" ps -q postgres </dev/null)" ] || die "container postgres tidak berjalan"
 IDS_BEFORE="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" | sort | tr '\n' ' ')"
 
@@ -262,7 +259,8 @@ say "4. Release dir ${NEW_DIR} (export git SHA rilis; release aktif tidak disent
 [ "$(sg ls-remote origin refs/heads/main | cut -f1)" = "$DEPLOY_SHA" ] || die "origin/main berubah selama backup; hentikan dan laporkan"
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah selama backup"
 mkdir "$NEW_DIR" || die "gagal membuat ${NEW_DIR}"
-sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR" || die "git archive gagal"
+sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR" --exclude='frontend/dist' || die "git archive gagal"
+cp -a "$PREV_DIR/frontend/dist" "$NEW_DIR/frontend/dist" || die "gagal menyalin dist produksi"
 for f in docker-compose.yml docker-compose.release.yml backend/Dockerfile backend/package.json frontend/dist/index.html; do [ -f "$NEW_DIR/$f" ] || die "release dir tidak lengkap: $f"; done
 [ ! -e "$NEW_DIR/backend/.env" ] || die "backend/.env tidak boleh ada di arsip"
 printf '%s\n' "$DEPLOY_SHORT" > "$NEW_DIR/.release-commit"
@@ -271,7 +269,7 @@ ln -s "$PERSIST/backend/.env" "$NEW_DIR/backend/.env"
 grep "$DIST_INDEX" "$NEW_DIR/frontend/dist/index.html" >/dev/null || die "dist di release dir tidak merujuk ${DIST_INDEX}"
 [ -f "$NEW_DIR/frontend/dist/assets/${PR_BASENAME}" ] || die "chunk PERLU_REVISI tidak ada di release dir"
 if grep -l $'\r' "$NEW_DIR/backend/Dockerfile" "$NEW_DIR/docker-compose.yml" "$NEW_DIR/docker-compose.release.yml" >/dev/null 2>&1; then die "berkas Docker/compose mengandung CRLF"; fi
-ok "release dir dibuat; backend/.env -> ${PERSIST}/backend/.env; dist = artefak ter-commit (${DIST_INDEX})"
+ok "release dir dibuat; backend/.env -> ${PERSIST}/backend/.env; dist = salinan dist produksi aktif (${DIST_INDEX})"
 diff -q <(tr -d '\r' < "$PREV_DIR/docker-compose.release.yml") <(tr -d '\r' < "$NEW_DIR/docker-compose.release.yml") >/dev/null || die "docker-compose.release.yml berbeda dari release aktif; tinjau manual"
 ok "docker-compose.release.yml identik dengan release aktif"
 
