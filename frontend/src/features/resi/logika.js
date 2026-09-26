@@ -1,6 +1,8 @@
 // Logika murni "Buat Resi" (Resi Gabungan Fase 1). Cermin dari backend/src/services/resi.js — server TETAP menghitung ulang dan menegakkan aturan;
 // angka di sini hanya pratinjau supaya Sales melihat Total Resi & DP sebelum menyimpan.
 
+import { isUkuranCustom, validasiUkuranCustom } from "../../utils/ukuranKasur.js";
+
 export const DP_PERSEN = 30;
 export const MAKS_ITEM = 20;
 
@@ -27,7 +29,7 @@ export function hitungRingkasan(form) {
   return { subtotal, ongkirTambahan, totalResi, dpPersen: DP_PERSEN, dp, sisaSetelahDp: totalResi - dp };
 }
 
-export const itemKosong = () => ({ merk: "", ukuran: "", keluhan: "", nominal: "", unitCount: 1, catatan: "" });
+export const itemKosong = () => ({ merk: "", ukuran: "", ukuranLebar: "", ukuranPanjang: "", keluhan: "", nominal: "", unitCount: 1, catatan: "" });
 export const formKosong = () => ({ alamat: "", kota: "", tautanLokasi: "", tanggalKirim: "", ongkirTambahan: "0", items: [itemKosong(), itemKosong()] });
 
 /** Galat yang pasti ditolak server — teks Indonesia, atau null bila form layak dikirim. */
@@ -40,6 +42,11 @@ export function galatForm(form) {
     if (!(angka(it.nominal) > 0)) return "Item " + (i + 1) + ": nominal harus lebih dari 0";
     const u = Number(it.unitCount);
     if (!Number.isInteger(u) || u < 1 || u > 10) return "Item " + (i + 1) + ": jumlah unit harus 1 sampai 10";
+    // Ukuran Custom: Lebar & Panjang (cm) wajib, positif, batas wajar — sama dengan server.
+    if (isUkuranCustom(it.ukuran)) {
+      const v = validasiUkuranCustom({ lebar: it.ukuranLebar, panjang: it.ukuranPanjang });
+      if (!v.ok) return "Item " + (i + 1) + ": " + [v.galat.lebar, v.galat.panjang].filter(Boolean).join(" ");
+    }
   }
   if (String(form.ongkirTambahan ?? "").trim() !== "" && !(Number.isInteger(Number(form.ongkirTambahan)) && Number(form.ongkirTambahan) >= 0)) return "Ongkir Tambahan harus bilangan bulat 0 atau lebih";
   return null;
@@ -50,6 +57,6 @@ export function payloadResi(customerId, form) {
     customerId,
     alamat: form.alamat || undefined, kota: form.kota || undefined, tautanLokasi: form.tautanLokasi || undefined, tanggalKirim: form.tanggalKirim || undefined,
     ongkirTambahan: String(form.ongkirTambahan ?? "").trim() === "" ? 0 : Number(form.ongkirTambahan),
-    items: form.items.map((it) => ({ merk: it.merk, ukuran: it.ukuran, keluhan: it.keluhan, catatan: it.catatan, nominal: angka(it.nominal), unitCount: Number(it.unitCount) || 1 })),
+    items: form.items.map((it) => ({ merk: it.merk, ukuran: it.ukuran, ...(isUkuranCustom(it.ukuran) && { ukuranLebar: it.ukuranLebar, ukuranPanjang: it.ukuranPanjang }), keluhan: it.keluhan, catatan: it.catatan, nominal: angka(it.nominal), unitCount: Number(it.unitCount) || 1 })),
   };
 }

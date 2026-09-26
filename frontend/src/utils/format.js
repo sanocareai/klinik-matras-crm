@@ -9,6 +9,7 @@ import {
   formatRentangTanggal, formatLabelBulan, hariSejak, toWIB, wibParts,
 } from "./formatDate.js";
 import { makeRange } from "../lib/dateRange.js";
+import { parseAngkaCm, isUkuranCustom } from "./ukuranKasur.js";
 
 export function formatRupiah(n) {
   return "Rp" + (n || 0).toLocaleString("id-ID");
@@ -597,24 +598,32 @@ export const PRICE_ITEM_KIND_LABELS = {
 // saat itu). Dipindah ke sini dari OrderSection.jsx (sebelumnya lokal, tidak
 // bisa dipakai export Excel di Orders.jsx).
 export function parseOrderNotes(notes) {
-  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "", jenisKasurLainnya: "" };
+  if (!notes) return { merkKasur: "", ukuranKasur: "", ukuranLebarCm: null, ukuranPanjangCm: null, keluhanCustomer: "", jenisKasurLainnya: "" };
   try {
     const p = JSON.parse(notes);
     return {
       merkKasur:       p.merkKasur || "",
       ukuranKasur:     p.ukuranKasur || "",
+      // Ukuran Custom (Lebar × Panjang, cm) — null bila bukan custom / data lama tanpa angka (JANGAN ditebak). Lihat utils/ukuranKasur.js.
+      ukuranLebarCm:   parseAngkaCm(p.ukuranLebarCm),
+      ukuranPanjangCm: parseAngkaCm(p.ukuranPanjangCm),
       keluhanCustomer: p.keluhanCustomer || "",
       // Jenis Kasur "Lainnya" (4 Sep 2026, kategori BARU) — lihat OrderSection.jsx.
       jenisKasurLainnya: p.jenisKasurLainnya || "",
     };
   } catch {
-    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, jenisKasurLainnya: "" };
+    return { merkKasur: "", ukuranKasur: "", ukuranLebarCm: null, ukuranPanjangCm: null, keluhanCustomer: notes, jenisKasurLainnya: "" };
   }
 }
 export function buildOrderNotes(info) {
+  // Angka custom HANYA ditulis bila ukurannya "Ukuran Custom" DAN keduanya valid — pindah ke ukuran standar = nilai custom tidak ikut tersimpan.
+  const custom = isUkuranCustom(info.ukuranKasur);
+  const lebar = custom ? parseAngkaCm(info.ukuranLebarCm) : null;
+  const panjang = custom ? parseAngkaCm(info.ukuranPanjangCm) : null;
   return JSON.stringify({
     merkKasur:       info.merkKasur || "",
     ukuranKasur:     info.ukuranKasur || "",
+    ...(lebar !== null && panjang !== null && { ukuranLebarCm: lebar, ukuranPanjangCm: panjang }),
     keluhanCustomer: info.keluhanCustomer || "",
     jenisKasurLainnya: info.jenisKasurLainnya || "",
   });

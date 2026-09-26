@@ -1,3 +1,4 @@
+import { formatUkuranKasur } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Plus, X, Loader2, Handshake, Package, Building2, Trash2 } from "lucide-react";
@@ -426,7 +427,7 @@ export default function B2BOrders() {
                         ) : <span className="text-ink3">—</span>}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink2">
-                        {info.ukuranKasur || <span className="text-ink3">—</span>}
+                        {formatUkuranKasur(info) || <span className="text-ink3">—</span>}
                         {info.merkKasur && <span className="text-ink3"> · {info.merkKasur}</span>}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5" onClick={(e) => e.stopPropagation()}>

@@ -1,3 +1,4 @@
+import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, Loader2, Save, Truck } from "lucide-react";
@@ -106,7 +107,7 @@ export default function RevisionDetailDrawer({ revision, onClose, onChanged }) {
             <div>
               <p className="text-[13px] font-semibold text-ink">{revision.unit?.unitCode}</p>
               <p className="text-[11.5px] text-ink2">{customerOfUnit(revision.unit) || "—"} · {revision.unit?.order?.orderNumber}</p>
-              <p className="text-[11.5px] text-ink2">{revision.unit?.merk} · {revision.unit?.ukuran}</p>
+              <p className="text-[11.5px] text-ink2">{revision.unit?.merk} · {formatUkuranLabel(revision.unit?.ukuran)}</p>
             </div>
 
             <div className="flex items-center gap-2">

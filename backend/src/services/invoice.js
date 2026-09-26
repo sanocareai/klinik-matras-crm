@@ -29,6 +29,7 @@
 //    saling bertentangan.
 
 import { prisma } from "../db.js";
+import { formatUkuranKasur } from "../lib/ukuranKasur.js";
 
 // ─── Merk/Ukuran kasur + label Lini/Jenis Produk (6 September 2026) ────────
 // BUG NYATA ditemukan hari ini (laporan owner: caption invoice WA kurang
@@ -57,7 +58,8 @@ export function parseOrderNotesForInvoice(notes) {
   if (!notes) return { merkKasur: "", ukuranKasur: "" };
   try {
     const p = JSON.parse(notes);
-    return { merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "" };
+    // ukuranKasur = TEKS TAMPIL bersama (Ukuran Custom: "145 × 205 cm (Custom)"; custom lama tanpa angka: "Ukuran Custom (ukuran belum diisi)").
+    return { merkKasur: p.merkKasur || "", ukuranKasur: formatUkuranKasur(p) };
   } catch {
     return { merkKasur: "", ukuranKasur: "" };
   }

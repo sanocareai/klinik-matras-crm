@@ -24,6 +24,7 @@
 // mengirim apa-apa tetap benar untuk 94% kasus.
 
 import { prisma } from "../db.js";
+import { ukuranUntukUnit } from "../lib/ukuranKasur.js";
 import { ensurePickupJobForOrder, ensureDeliveryJobForOrder } from "./armadaAutoJob.js";
 
 // Peta status Order → status Unit. SENGAJA sama persis dengan CASE di migrasi
@@ -88,7 +89,8 @@ export async function createUnitsForOrder(tx, { order, count = 1, statusOverride
 
   const info = parseOrderNotes(order.notes);
   const merk = cleanString(info.merkKasur);
-  const ukuran = cleanString(info.ukuranKasur);
+  // Ukuran Custom: unit baru memuat ukuran AKTUAL ("145 × 205 cm (Custom)") agar Produksi/Delivery tidak hanya melihat "Ukuran Custom".
+  const ukuran = cleanString(ukuranUntukUnit(info));
   // D-051 (4 September 2026) — laporan owner: "layanan baru itu bikin
   // produk/kasur baru, prosesnya beda dari service/upgrade, jangan status
   // pengambilan". unitStatusFromOrderStatus() SELALU menghasilkan

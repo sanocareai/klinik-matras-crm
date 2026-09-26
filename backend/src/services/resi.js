@@ -22,6 +22,8 @@ import { createOrderForCustomer } from "./orderCreation.js";
 import { attachOrderToInvoice } from "./invoice.js";
 import { syncCustomerOrderAggregate } from "./customerOrderAggregate.js";
 import { getSettingRaw, parseBool, SETTING_KEYS } from "./finance/settings.js";
+import { UKURAN_KASUR } from "../constants/orderOptions.js";
+import { isUkuranCustom, validasiUkuranCustom, formatUkuranKasur } from "../lib/ukuranKasur.js";
 
 export const DP_PERSEN = 30;
 export const MAKS_ITEM_RESI = 20;
@@ -76,8 +78,18 @@ function bersihkanItem(raw, i) {
   const unitCount = raw?.unitCount === undefined || raw?.unitCount === "" ? 1 : Number(raw.unitCount);
   if (!Number.isInteger(unitCount) || unitCount < 1 || unitCount > 10) throw new ResiError(`${label}: jumlah unit harus 1 sampai 10`);
   const teks = (v, maks) => String(v ?? "").trim().slice(0, maks);
+  // Ukuran: dipilih dari daftar resmi; "Ukuran Custom" WAJIB Lebar & Panjang (cm) — nilai custom dibuang bila ukuran standar.
+  const ukuran = teks(raw?.ukuran, 60);
+  if (ukuran && !UKURAN_KASUR.includes(ukuran)) throw new ResiError(`${label}: ukuran tidak dikenal, pilih dari daftar ukuran`);
+  let ukuranLebarCm = null; let ukuranPanjangCm = null;
+  if (isUkuranCustom(ukuran)) {
+    const v = validasiUkuranCustom({ lebar: raw?.ukuranLebar, panjang: raw?.ukuranPanjang });
+    if (!v.ok) throw new ResiError(`${label}: ${[v.galat.lebar, v.galat.panjang].filter(Boolean).join(" ")}`);
+    ukuranLebarCm = v.lebarCm; ukuranPanjangCm = v.panjangCm;
+  }
   return {
-    merk: teks(raw?.merk, 120), ukuran: teks(raw?.ukuran, 60), keluhan: teks(raw?.keluhan, 500), catatan: teks(raw?.catatan, 500),
+    ukuranLebarCm, ukuranPanjangCm,
+    merk: teks(raw?.merk, 120), ukuran, keluhan: teks(raw?.keluhan, 500), catatan: teks(raw?.catatan, 500),
     namaLayanan: teks(raw?.namaLayanan, 160), harga, unitCount, customerId: raw?.customerId ?? null,
   };
 }
@@ -123,14 +135,14 @@ export async function buatResi(customerId, body, userId) {
     const dibuat = [];
     for (let i = 0; i < items.length; i += 1) {
       const it = items[i];
-      const notes = JSON.stringify({ merkKasur: it.merk, ukuranKasur: it.ukuran, keluhanCustomer: it.keluhan, ...(it.catatan && { catatan: it.catatan }) });
+      const notes = JSON.stringify({ merkKasur: it.merk, ukuranKasur: it.ukuran, ...(it.ukuranLebarCm !== null && { ukuranLebarCm: it.ukuranLebarCm, ukuranPanjangCm: it.ukuranPanjangCm }), keluhanCustomer: it.keluhan, ...(it.catatan && { catatan: it.catatan }) });
       const order = await createOrderForCustomer(customerId, {
         notes, unitCount: it.unitCount, deliveryAddress: alamat, deliveryCity: kota, locationUrl: tautan, deliveryConfirmedDate: tanggalKirim,
         // Ongkir Tambahan SEKALI di anchor (item pertama); item lain dibiarkan kosong (tidak tertagih ganda).
         ...(i === 0 && { ongkir: ongkirTambahan }),
       }, userId, { tx });
 
-      const nama = it.namaLayanan || [`Kasur`, it.merk, it.ukuran].filter(Boolean).join(" ") || `Item resi ${i + 1}`;
+      const nama = it.namaLayanan || [`Kasur`, it.merk, formatUkuranKasur({ ukuranKasur: it.ukuran, ukuranLebarCm: it.ukuranLebarCm, ukuranPanjangCm: it.ukuranPanjangCm })].filter(Boolean).join(" ") || `Item resi ${i + 1}`;
       await tx.orderItem.create({ data: { orderId: order.id, layananName: nama, harga: it.harga, sortOrder: 0 } });
       const dp = ringkasan.dpPerItem[i];
       await tx.order.update({ where: { id: order.id }, data: { value: it.harga, groupId: grup.id, ...(dp > 0 && { dpTarget: dp }) } });

@@ -20,7 +20,7 @@ test.afterEach(async () => { await truncateAll(); });
 test.after(async () => { await truncateAll(); await server.close(); await testPrisma.$disconnect(); });
 
 const nyalakan = (v = "true") => setSetting(testPrisma, SETTING_KEYS.RESI_INPUT_AKTIF, v);
-const item = (extra = {}) => ({ merk: "Sano", ukuran: "84x195x12", keluhan: "Pegal", nominal: 1_000_000, unitCount: 1, catatan: "", ...extra });
+const item = (extra = {}) => ({ merk: "Sano", ukuran: "160x200 cm (Queen)", keluhan: "Pegal", nominal: 1_000_000, unitCount: 1, catatan: "", ...extra });
 const badan = (customerId, items, extra = {}) => ({ customerId, alamat: "Jl. Kemang 1/11", kota: "Jakarta Selatan", tautanLokasi: "https://maps.example/x", tanggalKirim: "2026-10-05", ongkirTambahan: 0, items, ...extra });
 
 // Sidik jari isi tabel (tanpa group_id pada Order) — bukti bahwa backfill/resi tidak mengubah data lain.

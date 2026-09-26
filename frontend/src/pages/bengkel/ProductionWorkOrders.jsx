@@ -1,3 +1,4 @@
+import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ClipboardList, RefreshCw } from "lucide-react";
@@ -176,7 +177,7 @@ export default function ProductionWorkOrders() {
                         <TD className="text-ink2">{u.order?.orderNumber || "—"}</TD>
                         <TD truncate>{u.order?.customer?.name || "—"}</TD>
                         <TD truncate className="text-ink2">
-                          {[u.merk, u.ukuran].filter(Boolean).join(" · ") || "—"}
+                          {[u.merk, formatUkuranLabel(u.ukuran)].filter(Boolean).join(" · ") || "—"}
                         </TD>
                         <TD>
                           {u.serviceLine
@@ -268,7 +269,7 @@ export default function ProductionWorkOrders() {
                       <div className="mt-0.5 truncate text-[13px] text-ink">{u.order?.customer?.name || "—"}</div>
                       <div className="mt-0.5 truncate text-[11px] text-ink2">
                         {u.order?.orderNumber || "—"}
-                        {(u.merk || u.ukuran) && ` · ${[u.merk, u.ukuran].filter(Boolean).join(" ")}`}
+                        {(u.merk || u.ukuran) && ` · ${[u.merk, formatUkuranLabel(u.ukuran)].filter(Boolean).join(" ")}`}
                         {u.currentStage?.labelId && ` · ${u.currentStage.labelId}`}
                         {u.executionState === "PAUSED" && " · Dijeda"}
                         {u.currentSegmentStartedAt && ` · Berjalan ${formatDurasiDetik(elapsedSejak(u.currentSegmentStartedAt))}`}
