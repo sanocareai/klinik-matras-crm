@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Rilis MANUAL Delivery Control FINAL (modul operasional: Dashboard, Driver/Helper, Rute, Tracking, Masalah/jadwal ulang, Performa;
 # Biaya Armada: uang muka, verifikasi bukti, bayar) ke produksi dengan workflow RELEASE-DIRECTORY (~/releases/klinik-matras/<sha8>).
-# Baseline produksi = bba56a91 (C2.1). Target = branch release/delivery-control-final (merge ke main 394cde4e). Jalankan OPERATOR di VPS:
+# Baseline produksi = main 394cde4e (produksi dan main sudah sama). Target = branch release/delivery-control-final. Jalankan OPERATOR di VPS:
 #
 #   git show release/delivery-control-final:scripts/release-delivery-control-final.sh | ssh ubuntu@43.133.152.6 'cat > /tmp/rdcf.sh && bash /tmp/rdcf.sh --preflight-only'
-#   ssh ubuntu@43.133.152.6 'bash /tmp/rdcf.sh --accept-finance-migration'     # setelah GO
+#   ssh ubuntu@43.133.152.6 'bash /tmp/rdcf.sh'                                # setelah GO
 #
-# Rilis ini membawa SATU migration milik main (bukan milik Delivery Control): 20260927170000_coa_bagi_hasil_investor (dua akun COA baru,
-# INSERT idempoten). Karena menyentuh bagan akun Finance, rilis penuh WAJIB memakai --accept-finance-migration (persetujuan eksplisit).
-# Delivery Control sendiri TIDAK menambah migration, tidak mengubah schema/ledger/route Job-Route, dan tidak menyentuh driver-mobile.
+# Rilis ini TIDAK punya migration (pending harus kosong), tidak mengubah schema/ledger/route Job-Route, dan tidak menyentuh driver-mobile
+# maupun frontend/dist. Yang berubah hanya backend/src/services/capabilities.js (izin modul, aditif) dan
+# backend/src/services/expenseSubmission/service.js (finExpense.adaBukti/createdById/receiptVerifiedAt; path bukti TIDAK dikirim).
 # TIDAK memakai dan TIDAK mengubah checkout ~/klinik-matras. Release aktif sebelumnya tidak ditimpa. Smoke HANYA MEMBACA.
 # Prinsip: fail-fast; tanpa reset/stash/force; tanpa rollback otomatis (hanya instruksi); tanpa secret di layar; satu-satunya DROP
 # adalah DB sementara verifikasi restore milik skrip ini.
@@ -16,12 +16,10 @@ set -Eeuo pipefail
 umask 077
 
 # ── Konstanta rilis (dikunci saat persiapan; ubah = rilis baru) ──────────────────────────────────────────
-PROD_FULL="bba56a9165b541f5e745faef646e7aa85def3c26"     # commit produksi aktif (C2.1) = baseline
+PROD_FULL="394cde4e2a45d2bc3b64d36e16ce3798a51f1349"     # commit produksi aktif = baseline (sama dengan main)
 MAIN_TIP="394cde4e2a45d2bc3b64d36e16ce3798a51f1349"      # origin/main yang dibekukan saat persiapan; HARUS masih ini
 DEPLOY_SHA="4d59f1fd0f642f8d8d0afd05eb12a283f22d55be"    # merge Delivery Control final di atas MAIN_TIP (diuji: full integration 1x)
 RELEASE_BRANCH="release/delivery-control-final"
-MIGRATION="20260927170000_coa_bagi_hasil_investor"       # SATU-SATUNYA migration yang boleh pending (milik main/Finance)
-ACCEPT=0; for a in "$@"; do [ "$a" = "--accept-finance-migration" ] && ACCEPT=1; done
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
@@ -70,14 +68,13 @@ Image sebelumnya   : ${ROLLBACK_TAG:-<belum ditandai>}
 Backup + checksum  : ${BACKUP_FILE:-<belum dibuat>}  (+ .sha256)
 
 A. Berhenti SEBELUM 'Switch backend' -> backend lama tidak pernah dimatikan; produksi tetap di release sebelumnya.
-   Bila migration sudah diterapkan: aditif (enum, 2 tabel baru kosong, trigger, dan penggantian nama/deskripsi akun 5-1100/5-1150);
-   kompatibel dengan backend lama, tidak perlu tindakan.
+   Rilis ini tanpa migration; tidak ada perubahan skema yang perlu dipikirkan.
    Perbaiki penyebab lalu jalankan ulang (skrip menolak bila ${NEW_DIR} sudah ada; pindahkan/hapus manual setelah dicek).
 
 B. Setelah switch, backend bermasalah -> kembali ke release + image sebelumnya (tanpa build ulang):
    1) Periksa dulu (informasi):
       docker compose -p ${PROJECT} exec -T postgres psql -U ${DB_USER} -d ${DB_NAME} -c "select count(*) from expense_submissions where status='PERLU_REVISI'"
-      (tidak menghalangi rollback: baris PERLU_REVISI dikenali backend produksi lama; migration COA hanya menambah 2 akun).
+      (informasi saja: rilis ini tanpa migration, jadi rollback image tidak menyentuh skema).
    2) cd ${PREV_DIR:-<release-sebelumnya>}
       docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
       SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps backend
@@ -137,10 +134,8 @@ sg merge-base --is-ancestor "$MAIN_TIP" "$DEPLOY_SHA" || die "main ${MAIN_TIP:0:
 ok "ancestry aman: produksi ${PROD_FULL:0:8} -> main ${MAIN_TIP:0:8} -> rilis ${DEPLOY_SHORT}"
 
 say "1b. Batas perubahan: main sejak produksi (harus persis yang diaudit) dan tambahan Delivery Control"
-MAIN_DIFF="$(sg diff --name-only "$PROD_FULL" "$MAIN_TIP" | grep -v '^frontend/dist/' | LC_ALL=C sort | tr '\n' ' ')"
-MAIN_EXPECT="backend/prisma/migrations/20260927170000_coa_bagi_hasil_investor/migration.sql backend/src/routes/finance.js backend/src/services/finance/accounts.js backend/src/services/finance/reports.js backend/tests/integration/financeBagiHasilInvestor.integration.test.js docs/FINANCE-BAGI-HASIL-INVESTOR.md "
-[ "$MAIN_DIFF" = "$MAIN_EXPECT" ] || die "perubahan main sejak produksi TIDAK sama dengan yang diaudit: ${MAIN_DIFF}"
-ok "main sejak produksi = Bagi Hasil Investor (1 migration COA + finance routes/accounts/reports + tes/dokumen); frontend/dist: $(sg diff --name-only "$PROD_FULL" "$MAIN_TIP" | grep -c '^frontend/dist/') berkas"
+[ "$PROD_FULL" = "$MAIN_TIP" ] || die "baseline produksi (${PROD_FULL:0:8}) tidak sama dengan main dibekukan (${MAIN_TIP:0:8}): rilis ini dirancang untuk produksi = main"
+ok "produksi = main ${MAIN_TIP:0:8}; rilis hanya menambah Delivery Control di atasnya"
 [ -z "$(sg diff --name-only "$MAIN_TIP" "$DEPLOY_SHA" -- driver-mobile frontend backend/prisma backend/src/routes backend/src/constants backend/src/index.js backend/src/services/finance backend/Dockerfile docker-compose.yml docker-compose.release.yml)" ] \
   || die "rilis mengubah area di luar scope (driver-mobile/frontend/schema+migration/routes/permissions/index/finance/Docker)"
 ok "Delivery Control TIDAK menyentuh driver-mobile, frontend, schema/migration, route (Job/Route), permissions, ledger/finance, Docker"
@@ -152,15 +147,9 @@ ok "backend/src hanya: services/capabilities.js (izin modul, aditif) dan service
 OUT_SCOPE="$(sg diff --name-only "$MAIN_TIP" "$DEPLOY_SHA" | grep -Ev '^(delivery-control/|packages/delivery-shared/|docs/|backend/tests/|backend/src/services/(capabilities\.js|expenseSubmission/service\.js)$)' || true)"
 [ -z "$OUT_SCOPE" ] || die "berkas di luar scope Delivery Control: ${OUT_SCOPE}"
 ok "seluruh perubahan Delivery Control berada di delivery-control/, packages/delivery-shared/, docs/, tests, dan dua berkas backend di atas"
-NEWMIG="$(sg diff --name-only --diff-filter=A "$PROD_FULL" "$DEPLOY_SHA" -- backend/prisma/migrations | sed 's#backend/prisma/migrations/##; s#/.*##' | sort -u)"
-[ "$NEWMIG" = "$MIGRATION" ] || die "migration baru tidak sesuai. Diharapkan tepat ${MIGRATION}; ditemukan: ${NEWMIG:-<kosong>}"
-[ -z "$(sg diff --name-only --diff-filter=MDR "$PROD_FULL" "$DEPLOY_SHA" -- backend/prisma/migrations)" ] || die "migration lama diubah/dihapus"
-MIGSQL="$(sg show "${DEPLOY_SHA}:backend/prisma/migrations/${MIGRATION}/migration.sql")"
-MIGCODE="$(printf '%s\n' "$MIGSQL" | grep -v '^[[:space:]]*--')"
-if printf '%s\n' "$MIGCODE" | grep -Ei '\b(DROP|TRUNCATE|RENAME|DELETE|UPDATE|ALTER)\b' >/dev/null; then die "migration mengandung DROP/TRUNCATE/RENAME/DELETE/UPDATE/ALTER"; fi
-[ "$(printf '%s\n' "$MIGCODE" | grep -Ec '^INSERT INTO "fin_accounts"')" = "2" ] || die "migration harus tepat dua INSERT ke fin_accounts"
-[ "$(printf '%s\n' "$MIGCODE" | grep -Ec 'WHERE NOT EXISTS')" = "2" ] || die "INSERT migration wajib idempoten (WHERE NOT EXISTS)"
-ok "migration ${MIGRATION}: hanya 2 INSERT idempoten akun COA baru (3-4200, 2-1800); tanpa DROP/TRUNCATE/RENAME/DELETE/UPDATE/ALTER"
+NEWMIG="$(sg diff --name-only "$MAIN_TIP" "$DEPLOY_SHA" -- backend/prisma/migrations)"
+[ -z "$NEWMIG" ] || die "rilis ini TIDAK boleh menambah/mengubah migration: ${NEWMIG}"
+ok "tidak ada migration baru; schema.prisma tidak berubah"
 sg show "${DEPLOY_SHA}:docs/DELIVERY-CONTROL-APK-PREVIEW-QA.md" | grep 'Uang Muka' >/dev/null || die "checklist QA modul tidak ada"
 ok "checklist QA final ada"
 
@@ -208,14 +197,13 @@ sg ls-tree --name-only "$DEPLOY_SHA" backend/prisma/migrations/ | sed 's#backend
 PENDING="$(LC_ALL=C comm -13 "$BK_DIR/applied.txt" "$BK_DIR/tree.txt")"
 AHEAD="$(LC_ALL=C comm -23 "$BK_DIR/applied.txt" "$BK_DIR/tree.txt")"
 [ -z "$AHEAD" ] || die "DB memuat migration yang tidak ada di kode rilis: $(printf '%s' "$AHEAD" | tr '\n' ' ')"
-[ "$PENDING" = "$MIGRATION" ] || die "migration pending tidak sesuai audit. Diharapkan tepat: ${MIGRATION}. Ditemukan: $(printf '%s' "${PENDING:-<kosong>}" | tr '\n' ' ')"
-for m in 20260924110000_expense_submission_perlu_revisi 20260926090000_persediaan_awal_cutover 20260927150000_user_divisions; do
+[ -z "$PENDING" ] || die "ada migration pending padahal rilis ini tidak punya migration: $(printf '%s' "$PENDING" | tr '\n' ' ')"
+for m in 20260924110000_expense_submission_perlu_revisi 20260926090000_persediaan_awal_cutover 20260927150000_user_divisions 20260927170000_coa_bagi_hasil_investor; do
   grep -Fx "$m" "$BK_DIR/applied.txt" >/dev/null || die "migration ${m} belum applied di produksi (baseline tidak sesuai)"
 done
-ok "applied $(wc -l < "$BK_DIR/applied.txt") migration (termasuk PERLU_REVISI, persediaan awal, user_divisions); pending TEPAT satu: ${MIGRATION}"
+ok "applied $(wc -l < "$BK_DIR/applied.txt") migration (termasuk PERLU_REVISI, persediaan awal, user_divisions, COA bagi hasil); pending: TIDAK ADA"
 [ "$(psql_live -At -c "select count(*) from expense_submissions where status='PERLU_REVISI'")" -ge 0 ] || die "kolom PERLU_REVISI tidak terbaca"
 ok "skema Delivery Control (PERLU_REVISI) terbaca di produksi"
-if [ "$PREFLIGHT_ONLY" != "1" ] && [ "$ACCEPT" != "1" ]; then die "rilis penuh membawa migration Finance milik main (${MIGRATION}); tambahkan --accept-finance-migration bila pemilik sudah menyetujui"; fi
 
 say "2c. Sumber daya"
 DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"
@@ -301,14 +289,12 @@ ok "image baru ${NEW_IMG_ID:7:12}; container aktif masih ${PREV_IMG_ID:7:12}"
 
 # ── 6. Migration sebelum switch ──────────────────────────────────────────────────────────────────────────
 PHASE="6-migrate"
-say "6. prisma migrate deploy (image baru; backend lama masih melayani; migration aditif kompatibel)"
+say "6. prisma migrate deploy (image baru; harus no-op karena tidak ada migration pending)"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null || true
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy </dev/null || die "migrate deploy GAGAL; backend baru TIDAK dinyalakan"
-[ "$(psql_live -At -c "select count(*) from _prisma_migrations where migration_name='${MIGRATION}' and finished_at is not null and rolled_back_at is null")" = "1" ] || die "migration ${MIGRATION} tidak tercatat selesai"
-[ "$(psql_live -At -c "select count(*) from fin_accounts where code in ('3-4200','2-1800')")" = "2" ] || die "akun COA 3-4200/2-1800 tidak lengkap setelah migrate"
 [ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = "0" ] || die "ada migration setengah jalan; JANGAN switch"
-[ "$(psql_live -At -c 'select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null')" = "$(( $(wc -l < "$BK_DIR/applied.txt") + 1 ))" ] || die "jumlah migration applied setelah migrate bukan +1"
-ok "migration sukses (tepat +1); akun COA 3-4200 dan 2-1800 ada; tidak ada migration menggantung"
+[ "$(psql_live -At -c 'select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null')" = "$(wc -l < "$BK_DIR/applied.txt")" ] || die "jumlah migration applied berubah setelah migrate deploy (seharusnya no-op)"
+ok "migrate deploy = no-op (jumlah applied tetap $(wc -l < "$BK_DIR/applied.txt")); tidak ada migration menggantung"
 
 # ── 7. Switch backend ────────────────────────────────────────────────────────────────────────────────────
 PHASE="7-switch"
@@ -554,7 +540,7 @@ RILIS DELIVERY CONTROL FINAL SELESAI.
   backup        : ${BACKUP_FILE}
   sha256        : ${SHA256}
   log           : ${LOG}
-  Schema/ledger/route Job-Route, OTA/EAS/APK, Driver App : TIDAK disentuh (satu-satunya data baru: 2 akun COA dari migration main)
+  Schema, migration, ledger, route Job/Route, frontend web, OTA/EAS/APK, Driver App : TIDAK disentuh
 Kirim kembali ke pemilik: isi ${LOG} (tanpa secret) + hasil 'docker compose -p ${PROJECT} ps'.
 EOF
 trap - EXIT
