@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as be from "../src/lib/ukuranKasur.js";
 import * as fe from "../../frontend/src/utils/ukuranKasur.js";
+import * as mo from "../../mobile/src/utils/ukuranKasur.js";
 import { parseOrderNotesForInvoice } from "../src/services/invoice.js";
 
 const { formatUkuranKasur, formatUkuranLabel, validasiUkuranCustom, siapkanNotesUkuran, ukuranUntukUnit, parseAngkaCm, isUkuranCustom, UKURAN_CUSTOM_BELUM_DIISI } = be;
@@ -99,4 +100,42 @@ test("PARITAS: salinan frontend menghasilkan keluaran identik dengan backend (fo
   for (const k of ["UKURAN_CUSTOM_LABEL", "UKURAN_CUSTOM_MIN_CM", "UKURAN_CUSTOM_MAX_CM", "UKURAN_CUSTOM_BELUM_DIISI"]) assert.equal(fe[k], be[k], k);
   assert.equal(fe.isUkuranCustom("ukuran custom"), isUkuranCustom("ukuran custom"));
   for (const n of ["", null, "{", JSON.stringify({ ukuranKasur: "Ukuran Custom", ukuranLebarCm: 145, ukuranPanjangCm: 205 })]) assert.equal(fe.teksUkuranDariNotes(n), be.teksUkuranDariNotes(n));
+});
+
+test("PARITAS MOBILE: salinan mobile identik dengan backend dan web (formatter & validasi)", () => {
+  const labels = ["", "Ukuran Custom", "160x200 cm (Queen)", "100 x 200", "145 × 205 cm (Custom)", "3 seater", "200x200 cm (King Besar)"];
+  const angka = [undefined, null, "", "145", "145,5", 145, 145.5, 29, 401, "abc", "12,34", 0, -1];
+  for (const l of labels) {
+    assert.equal(mo.formatUkuranLabel(l), be.formatUkuranLabel(l), `label "${l}"`);
+    for (const w of angka) for (const p of [undefined, 205, "205,5"]) {
+      const info = { ukuranKasur: l, ukuranLebarCm: w, ukuranPanjangCm: p };
+      assert.equal(mo.formatUkuranKasur(info), be.formatUkuranKasur(info), JSON.stringify(info));
+    }
+  }
+  for (const w of angka) for (const p of angka) assert.deepEqual(mo.validasiUkuranCustom({ lebar: w, panjang: p }), be.validasiUkuranCustom({ lebar: w, panjang: p }));
+  for (const k of ["UKURAN_CUSTOM_LABEL", "UKURAN_CUSTOM_MIN_CM", "UKURAN_CUSTOM_MAX_CM", "UKURAN_CUSTOM_BELUM_DIISI"]) assert.equal(mo[k], be[k], k);
+  assert.equal(be.UKURAN_CUSTOM_MIN_CM, 30); assert.equal(be.UKURAN_CUSTOM_MAX_CM, 400);
+});
+
+test("siapkanNotesUkuran dengan penegakan: custom tanpa angka ditolak; legacy tak berubah lolos; standar→custom / pilih ulang wajib angka", () => {
+  const n = (o) => JSON.stringify(o);
+  const legacy = n({ ukuranKasur: "Ukuran Custom", keluhanCustomer: "a" });
+  // MATI (default): klien lama tetap diterima
+  assert.equal(siapkanNotesUkuran(legacy), legacy);
+  assert.equal(siapkanNotesUkuran(legacy, { wajib: false }), legacy);
+  // AKTIF — create (tanpa notesLama): ditolak, pesan Indonesia
+  assert.throws(() => siapkanNotesUkuran(legacy, { wajib: true }), (e) => e.statusCode === 400 && /Lebar \(cm\) wajib diisi/.test(e.message) && /Panjang \(cm\) wajib diisi/.test(e.message));
+  // AKTIF — edit order legacy (lama = custom tanpa angka): ukuran tidak berubah → boleh
+  assert.equal(siapkanNotesUkuran(legacy, { wajib: true, notesLama: n({ ukuranKasur: "Ukuran Custom" }) }), legacy);
+  // AKTIF — lama berangka lalu dikirim tanpa angka: ditolak
+  assert.throws(() => siapkanNotesUkuran(legacy, { wajib: true, notesLama: n({ ukuranKasur: "Ukuran Custom", ukuranLebarCm: 145, ukuranPanjangCm: 205 }) }), /Lebar/);
+  // AKTIF — lama standar → custom tanpa angka: ditolak
+  assert.throws(() => siapkanNotesUkuran(legacy, { wajib: true, notesLama: n({ ukuranKasur: "160x200 cm (Queen)" }) }), /Lebar/);
+  // AKTIF — custom berangka valid dan standar selalu lolos
+  const ok = siapkanNotesUkuran(n({ ukuranKasur: "Ukuran Custom", ukuranLebarCm: "145", ukuranPanjangCm: "205" }), { wajib: true });
+  assert.equal(JSON.parse(ok).ukuranLebarCm, 145);
+  const std = n({ ukuranKasur: "160x200 cm (Queen)" });
+  assert.equal(siapkanNotesUkuran(std, { wajib: true }), std);
+  // AKTIF — notes bukan JSON/teks polos tidak terpengaruh
+  assert.equal(siapkanNotesUkuran("catatan bebas", { wajib: true }), "catatan bebas");
 });

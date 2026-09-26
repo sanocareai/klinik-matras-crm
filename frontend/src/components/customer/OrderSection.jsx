@@ -359,8 +359,12 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   const [ukuranLebar, setUkuranLebar]     = useState(angkaKeTeks(info.ukuranLebarCm));
   const [ukuranPanjang, setUkuranPanjang] = useState(angkaKeTeks(info.ukuranPanjangCm));
   const [ukuranPaksa, setUkuranPaksa]     = useState(false);
+  // Order LEGACY (custom tanpa angka) yang ukurannya tidak dipilih ulang boleh disimpan tanpa angka — data lama tidak ditebak.
+  const ukuranLegacyTanpaAngka = isUkuranCustom(info.ukuranKasur) && info.ukuranLebarCm === null && info.ukuranPanjangCm === null;
+  const [ukuranDisentuh, setUkuranDisentuh] = useState(false);
+  const ukuranBolehKosong = ukuranLegacyTanpaAngka && !ukuranDisentuh;
   function pilihUkuran(u) {
-    setUkuran(u);
+    setUkuran(u); setUkuranDisentuh(true);
     if (!isUkuranCustom(u)) { setUkuranLebar(""); setUkuranPanjang(""); setUkuranPaksa(false); }
   }
   const [keluhan, setKeluhan]             = useState(info.keluhanCustomer);
@@ -456,7 +460,8 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   }
 
   async function handleSave() {
-    if (isUkuranCustom(ukuran) && !validasiUkuranCustom({ lebar: ukuranLebar, panjang: ukuranPanjang }).ok) { setUkuranPaksa(true); return; }
+    const ukuranKosongSemua = String(ukuranLebar).trim() === "" && String(ukuranPanjang).trim() === "";
+    if (isUkuranCustom(ukuran) && !(ukuranBolehKosong && ukuranKosongSemua) && !validasiUkuranCustom({ lebar: ukuranLebar, panjang: ukuranPanjang }).ok) { setUkuranPaksa(true); return; }
     setSaving(true);
     try {
       // Merk otomatis "Sano" untuk BARU/SEWA
@@ -558,6 +563,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
     setUkuranLebar(angkaKeTeks(inf.ukuranLebarCm));
     setUkuranPanjang(angkaKeTeks(inf.ukuranPanjangCm));
     setUkuranPaksa(false);
+    setUkuranDisentuh(false);
     setKeluhan(inf.keluhanCustomer);
     setDeliveryCity(order.deliveryCity || "");
     setDeliveryAddress(order.deliveryAddress || "");
@@ -1072,7 +1078,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           </div>
           {isUkuranCustom(ukuran) && (
             <div style={{ gridColumn: "1 / -1" }}>
-              <UkuranCustomFields lebar={ukuranLebar} panjang={ukuranPanjang} onLebar={setUkuranLebar} onPanjang={setUkuranPanjang} paksa={ukuranPaksa} idAwal={`ukuran-edit-${order.id}`} />
+              <UkuranCustomFields lebar={ukuranLebar} panjang={ukuranPanjang} onLebar={setUkuranLebar} onPanjang={setUkuranPanjang} paksa={ukuranPaksa} bolehKosong={ukuranBolehKosong} idAwal={`ukuran-edit-${order.id}`} />
             </div>
           )}
         </div>

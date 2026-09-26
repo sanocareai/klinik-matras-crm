@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { CheckCircle2, Ban, MessageSquare, UserRound } from "lucide-react";
 import { evaluateReadiness, READINESS } from "@/utils/orderReadiness.js";
+import { useUkuranCustomWajibSejak } from "./useUkuranCustomWajib.js";
 import { cn } from "@/lib/utils.js";
 
 // Panel "kenapa order ini belum siap diserahkan ke Delivery & Fulfillment" —
@@ -19,7 +20,8 @@ import { cn } from "@/lib/utils.js";
 // duplikat kolom Status Pembayaran yang sudah ada sendiri).
 export default function ReadinessPanel({ order, onOpenChat }) {
   const navigate = useNavigate();
-  const hasil = evaluateReadiness(order);
+  const ukuranCustomWajibSejak = useUkuranCustomWajibSejak();
+  const hasil = evaluateReadiness(order, { ukuranCustomWajibSejak });
   if (!hasil) return null; // CANCELLED — tidak relevan dinilai
 
   if (hasil.state === READINESS.READY) {

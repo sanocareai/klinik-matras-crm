@@ -2,6 +2,7 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { JENIS_LAYANAN, MERK_KASUR, UKURAN_KASUR } from "../constants/orderOptions.js";
 import { prisma } from "../db.js";
+import { ukuranCustomWajibSejak } from "../services/ukuranWajib.js";
 
 export const masterDataRouter = express.Router();
 masterDataRouter.use(requireAuth);
@@ -9,8 +10,11 @@ masterDataRouter.use(requireAuth);
 // Opsi dropdown form order (Jenis Layanan, Merk Kasur, Ukuran Kasur) — satu
 // sumber dipakai frontend web (OrderSection.jsx) & mobile (OrderFormModal.js),
 // supaya rename/tambah opsi tidak perlu duplikasi kode di 2 platform.
-masterDataRouter.get("/order-options", (req, res) => {
-  res.json({ jenisLayanan: JENIS_LAYANAN, merkKasur: MERK_KASUR, ukuranKasur: UKURAN_KASUR });
+// ukuranCustomWajibSejak: ISO tanggal mulai penegakan Lebar/Panjang custom, atau null (MATI). Dipakai web/mobile untuk kesiapan order BARU.
+masterDataRouter.get("/order-options", async (req, res) => {
+  let ukuranCustomWajibSejakIso = null;
+  try { ukuranCustomWajibSejakIso = await ukuranCustomWajibSejak(); } catch { /* pengaturan tak terbaca → anggap MATI */ }
+  res.json({ jenisLayanan: JENIS_LAYANAN, merkKasur: MERK_KASUR, ukuranKasur: UKURAN_KASUR, ukuranCustomWajibSejak: ukuranCustomWajibSejakIso });
 });
 
 // GET /api/master-data/service-catalog — katalog layanan aktif (Production

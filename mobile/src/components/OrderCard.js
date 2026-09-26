@@ -23,17 +23,21 @@ import {
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE,
   CATEGORY_LABELS, CATEGORY_BADGE, PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS,
 } from "../utils/format";
+import { formatUkuranKasur } from "../utils/ukuranKasur";
 
 function parseNotes(notes) {
-  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "", jenisKasurLainnya: "" };
+  if (!notes) return { merkKasur: "", ukuranKasur: "", ukuranLebarCm: null, ukuranPanjangCm: null, keluhanCustomer: "", jenisKasurLainnya: "" };
   try {
     const p = JSON.parse(notes);
     return {
-      merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "", keluhanCustomer: p.keluhanCustomer || "",
+      merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "",
+      // Ukuran Custom (Lebar × Panjang, cm) — null bila bukan custom / data lama tanpa angka (TIDAK ditebak).
+      ukuranLebarCm: p.ukuranLebarCm ?? null, ukuranPanjangCm: p.ukuranPanjangCm ?? null,
+      keluhanCustomer: p.keluhanCustomer || "",
       jenisKasurLainnya: p.jenisKasurLainnya || "",
     };
   } catch {
-    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, jenisKasurLainnya: "" };
+    return { merkKasur: "", ukuranKasur: "", ukuranLebarCm: null, ukuranPanjangCm: null, keluhanCustomer: notes, jenisKasurLainnya: "" };
   }
 }
 
@@ -288,7 +292,7 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
           {(info.merkKasur || info.ukuranKasur || !isLayanan) ? (
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
               <Text style={styles.chipStatic}>{isLayanan ? (info.merkKasur || "—") : "Sano"}</Text>
-              {info.ukuranKasur ? <Text style={styles.chipStatic}>{info.ukuranKasur}</Text> : null}
+              {info.ukuranKasur ? <Text style={styles.chipStatic}>{formatUkuranKasur(info)}</Text> : null}
             </View>
           ) : null}
 
