@@ -126,7 +126,7 @@ test("Live Tracking: peta hanya menampilkan posisi dari server; tanpa izin/pemba
   assert.doesNotMatch(src, /showsUserLocation=\{true\}|expo-location|getCurrentPosition|watchPosition|requestForegroundPermissions/);
   assert.match(src, /SEGARKAN_MS = 30_000/);
   assert.match(src, /operasionalApi\.tracking\(\)/);
-  for (const teks of ["Daftar", "Offline", "Coba lagi", "Tidak ada armada berjalan", "Memuat posisi armada"]) assert.match(src, new RegExp(teks), teks);
+  for (const teks of ["Daftar", "Offline", "Coba lagi", "Belum ada armada terdaftar", "Tidak ada armada terdaftar", "Memuat posisi armada", "armada terdaftar, tetapi belum ada yang mengirim posisi GPS yang valid"]) assert.match(src, new RegExp(teks), teks);
   const cfg = baca("../app.config.js");
   assert.match(cfg, /react-native-maps/);
   for (const izin of ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION"]) assert.match(cfg, new RegExp(izin), `${izin} tetap diblokir`);
@@ -180,4 +180,40 @@ test("Biometrik: token di SecureStore, tanpa password/PIN tersimpan, biometrik h
   for (const teks of ["Keamanan", "Buka dengan biometrik", "Kunci otomatis"]) assert.match(set, new RegExp(teks), teks);
   assert.match(set, /PILIHAN_AUTO_LOCK\.map/);
   assert.match(baca("screens/LockScreen.js"), /Masuk dengan kata sandi/);
+});
+
+test("Peta Control mengikuti konfigurasi driver-mobile: provider Google, basemap selalu dirender, style gelap, remount tema, fit, tanpa kunci di repo", () => {
+  const src = baca("screens/TrackingScreen.js");
+  const ada = (teks, pesan) => assert.ok(src.includes(teks), pesan || teks);
+  ada('provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}');
+  ada("initialRegion={wilayah || JAKARTA}", "wilayah bawaan saat marker 0");
+  ada("customMapStyle={gelap ? MAP_STYLE_DARK : undefined}");
+  ada('key={`${gelap ? "gelap" : "terang"}-${petaKey}`}', "remount saat tema berganti");
+  ada("onMapLoaded");
+  ada("fitToCoordinates");
+  ada("kunciMarker(armada)", "fit hanya saat himpunan marker berubah");
+  assert.equal(src.includes("kosong ? <StateView"), false, "peta tidak diganti StateView saat kosong");
+  // style gelap identik dengan driver-mobile (salinan); driver-mobile tidak disentuh
+  assert.equal(baca("lib/googleMapStyle.js"), readFileSync(path.join(dir, "../../driver-mobile/src/lib/googleMapStyle.js"), "utf8"));
+  // kunci Google Maps TIDAK ada di source Control; disuntikkan lewat env
+  const cfg = baca("../app.config.js");
+  assert.ok(cfg.includes("process.env.GOOGLE_MAPS_ANDROID_KEY"));
+  assert.doesNotMatch(cfg + src + baca("ikonFoto.js"), /AIza[0-9A-Za-z_-]{20,}/, "tidak ada kunci API di repo");
+  for (const izin of ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION"]) assert.ok(cfg.includes(izin), izin);
+});
+
+test("Foto driver: Avatar memakai foto server dengan inisial hanya fallback; layar memakai URL dari respons agregat (tanpa fetch per pengguna)", () => {
+  const ui = baca("ui.js");
+  assert.ok(ui.includes("export function Avatar({ name, size = 40, online, uri })"));
+  assert.ok(ui.includes("onError={() => setGagal(true)}"));
+  assert.ok(ui.includes("client.mediaUrl(uri)"));
+  const per = { "screens/PerformaScreen.js": "o.avatarUrl", "screens/KruScreen.js": "k.avatarUrl", "screens/RuteScreen.js": "r.driver?.avatarUrl", "screens/TrackingScreen.js": "a.fotoDriver", "screens/RuteDetailScreen.js": "o?.avatarUrl" };
+  for (const [f, ekspresi] of Object.entries(per)) assert.ok(baca(f).includes("uri={" + ekspresi + "}"), f);
+  assert.ok(baca("screens/KruDetailScreen.js").includes("uri={avatarUrl ||"));
+  assert.ok(baca("screens/KruScreen.js").includes("avatarUrl: k.avatarUrl || null"));
+  // marker peta: ikon foto native (PNG agar bulat tetap transparan), bukan <Image> jaringan di dalam Marker
+  assert.ok(baca("ikonFoto.js").includes("SaveFormat.PNG"));
+  assert.ok(baca("screens/TrackingScreen.js").includes("icon={{ uri }}"));
+  // tanpa permintaan foto per pengguna
+  for (const f of ["ui.js", "screens/KruScreen.js", "screens/PerformaScreen.js", "screens/TrackingScreen.js"]) assert.doesNotMatch(baca(f), /users\/\$\{|\/users\/[^"]*avatar/, f);
 });

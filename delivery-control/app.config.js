@@ -41,10 +41,10 @@ module.exports = ({ config }) => ({
       },
     ],
     // Peta Live Tracking (react-native-maps): HANYA menampilkan posisi dari server. showsUserLocation TIDAK dipakai dan
-    // izin lokasi tetap diblokir di bawah; Control tidak pernah membaca lokasi HP. Kunci Google Maps Android: env
-    // GOOGLE_MAPS_ANDROID_KEY, bawaan = kunci yang sama dengan Sano Driver (harus mengizinkan package com.klinikmatras.deliverycontrol
-    // + SHA-1 keystore QA/EAS di Google Cloud Console, kalau tidak peta tampil kosong).
-    ["react-native-maps", { androidGoogleMapsApiKey: process.env.GOOGLE_MAPS_ANDROID_KEY || "AIzaSyAWW-49tH6lCpjnDELCxetaiFv73ADDl_s" }],
+    // izin lokasi tetap diblokir di bawah; Control tidak pernah membaca lokasi HP. Kunci Google Maps Android TIDAK ada di repo:
+    // disuntikkan lewat env GOOGLE_MAPS_ANDROID_KEY saat prebuild/EAS (secret). Kunci itu harus mengizinkan package
+    // com.klinikmatras.deliverycontrol + SHA-1 keystore build (QA/EAS) di Google Cloud Console; tanpa itu peta tampil kosong.
+    ["react-native-maps", { androidGoogleMapsApiKey: process.env.GOOGLE_MAPS_ANDROID_KEY || "" }],
     // Biometrik hanya membuka sesi lokal setelah login normal; token disimpan terenkripsi di Android Keystore (expo-secure-store).
     ["expo-local-authentication", { faceIDPermission: "Sano Delivery Control memakai Face ID untuk membuka sesi Anda" }],
     "expo-secure-store",

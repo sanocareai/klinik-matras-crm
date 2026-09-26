@@ -43,7 +43,7 @@ export default function RuteScreen({ route, navigation }) {
                 <Chip label={info.label} tone={info.tone} size="sm" />
               </View>
               <View style={s.row}>
-                <Avatar name={r.driver?.name} size={30} online={r.driver ? !!r.driver.isOnline : undefined} />
+                <Avatar name={r.driver?.name} uri={r.driver?.avatarUrl} size={30} online={r.driver ? !!r.driver.isOnline : undefined} />
                 <Text style={{ color: t.ink2, fontSize: 13, flex: 1 }} numberOfLines={1}>{r.driver?.name || "Belum ada driver"}{r.helper?.name ? ` + ${r.helper.name}` : ""}</Text>
                 {!!r.vehicle?.plateNumber && <Text style={{ color: t.ink3, fontSize: 12 }}>{r.vehicle.plateNumber}</Text>}
               </View>

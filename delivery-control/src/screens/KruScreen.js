@@ -50,9 +50,9 @@ export default function KruScreen({ navigation }) {
           <StateView icon="alert" tone="red" title="Daftar kru belum dapat dimuat" message={q.error} action={<Btn title="Coba lagi" icon="refresh" kind="secondary" onPress={() => q.muat()} />} />
         ) : <StateView icon="users" title={cari ? "Tidak ada yang cocok" : "Belum ada driver/helper"} />}
         renderItem={({ item: k }) => (
-          <Pressable onPress={() => navigation.navigate("KruDetail", { id: k.id, name: k.name })} accessibilityRole="button" accessibilityLabel={k.name}
+          <Pressable onPress={() => navigation.navigate("KruDetail", { id: k.id, name: k.name, avatarUrl: k.avatarUrl || null })} accessibilityRole="button" accessibilityLabel={k.name}
             style={({ pressed }) => [s.item, { backgroundColor: t.surface, borderColor: t.border, opacity: pressed ? 0.9 : 1 }, elevation(t, 1)]}>
-            <Avatar name={k.name} size={44} online={k.tugas ? !!k.tugas.online : undefined} />
+            <Avatar name={k.name} uri={k.avatarUrl} size={44} online={k.tugas ? !!k.tugas.online : undefined} />
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={[type.label, { color: t.ink, fontSize: 15 }]} numberOfLines={1}>{k.name}</Text>
               <View style={s.badges}>

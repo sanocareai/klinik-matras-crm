@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { elevation, radius, toneColors, type, useTheme } from "./theme";
 import { Icon } from "./icons";
+import { client } from "./client";
 
 // Komponen dasar design system Delivery Control. Semua warna dari theme.js; tidak ada warna literal per layar.
 
@@ -358,14 +359,26 @@ export function StatTile({ icon, tone = "accent", value, label, onPress, style }
 }
 
 /** Avatar inisial dengan titik online opsional. */
-export function Avatar({ name, size = 40, online }) {
+/**
+ * Foto profil dari server (`uri` = avatarUrl akun, sama dengan web) — inisial HANYA fallback bila foto kosong atau gagal dimuat.
+ * URL diubah lewat client.mediaUrl (host server); tidak ada permintaan per pengguna: uri datang dari respons agregat.
+ */
+export function Avatar({ name, size = 40, online, uri }) {
   const t = useTheme();
-  const ini = String(name || "?").trim().split(/\s+/).slice(0, 2).map((x) => x[0]?.toUpperCase() || "").join("") || "?";
+  const [gagal, setGagal] = useState(false);
+  useEffect(() => { setGagal(false); }, [uri]);
+  const foto = uri && !gagal ? client.mediaUrl(uri) : null;
+  const ini = String(name || "?").trim().split(/s+/).slice(0, 2).map((x) => x[0]?.toUpperCase() || "").join("") || "?";
   return (
     <View style={{ width: size, height: size }}>
-      <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: t.accentSoft, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ color: t.accent, fontWeight: "800", fontSize: size * 0.36 }}>{ini}</Text>
-      </View>
+      {foto ? (
+        <Image source={{ uri: foto }} onError={() => setGagal(true)} accessibilityLabel={`Foto ${name || "pengguna"}`} fadeDuration={0}
+          style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: t.accentSoft }} />
+      ) : (
+        <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: t.accentSoft, alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ color: t.accent, fontWeight: "800", fontSize: size * 0.36 }}>{ini}</Text>
+        </View>
+      )}
       {online !== undefined && <View style={{ position: "absolute", right: 0, bottom: 0, width: size * 0.3, height: size * 0.3, borderRadius: size, borderWidth: 2, borderColor: t.surface, backgroundColor: online ? t.green : t.ink3 }} />}
     </View>
   );

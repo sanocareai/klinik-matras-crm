@@ -28,24 +28,44 @@ export function umurLabel(menit) {
 }
 
 const koordinatValid = (lat, lng) => lat != null && lng != null && lat !== "" && lng !== ""
-  && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng)) && Math.abs(Number(lat)) <= 90 && Math.abs(Number(lng)) <= 180;
+  && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng)) && Math.abs(Number(lat)) <= 90 && Math.abs(Number(lng)) <= 180
+  && !(Number(lat) === 0 && Number(lng) === 0); // (0,0) = "null island": nilai bawaan GPS yang belum fix, bukan lokasi driver
+
+export const TOLERANSI_JAM_MAJU_MENIT = 5; // selisih jam HP driver vs server yang masih wajar
+export const ALASAN_POSISI = {
+  BELUM_ADA: "Belum ada posisi GPS",
+  KOORDINAT_TIDAK_VALID: "Koordinat GPS tidak valid",
+  WAKTU_TIDAK_VALID: "Waktu posisi GPS tidak valid",
+  WAKTU_MASA_DEPAN: "Waktu posisi GPS tidak wajar (di masa depan)",
+};
+
+/** Periksa posisi terakhir dari server: koordinat dan timestamp harus valid sebelum boleh jadi marker. */
+export function periksaPosisi(lp, now = Date.now()) {
+  if (!lp) return { valid: false, alasan: "BELUM_ADA", menit: null };
+  if (!koordinatValid(lp.lat, lp.lng)) return { valid: false, alasan: "KOORDINAT_TIDAK_VALID", menit: null };
+  const t = lp.recordedAt ? new Date(lp.recordedAt).getTime() : NaN;
+  if (!Number.isFinite(t)) return { valid: false, alasan: "WAKTU_TIDAK_VALID", menit: null };
+  if (t - now > TOLERANSI_JAM_MAJU_MENIT * 60000) return { valid: false, alasan: "WAKTU_MASA_DEPAN", menit: null };
+  return { valid: true, alasan: null, menit: umurMenit(lp.recordedAt, now) };
+}
 
 /**
  * Ubah respons /armada/tracking (+ rute hari ini) menjadi satu daftar armada seragam.
- * Setiap item punya `marker` (koordinat GPS asli) atau null bila belum pernah mengirim GPS — posisi depot
- * TIDAK dijadikan marker karena itu bukan lokasi driver.
+ * "Terdaftar" = setiap item di daftar (rute terbit/berjalan atau job menuju lokasi). "Punya posisi" = item yang `marker`-nya
+ * bukan null: koordinat DAN waktu GPS valid. Posisi depot TIDAK dijadikan marker karena itu bukan lokasi driver.
  */
 export function bentukArmada(tracking, rute = [], now = Date.now()) {
   const petaRute = new Map((rute || []).map((r) => [r.id, r]));
   const hasil = [];
   for (const x of Array.isArray(tracking) ? tracking : []) {
     const lp = x.lastPosition;
-    const ada = lp && koordinatValid(lp.lat, lp.lng);
-    const menit = ada ? umurMenit(lp.recordedAt, now) : null;
+    const cek = periksaPosisi(lp, now);
+    const menit = cek.menit;
     const rt = x.kind === "route" ? petaRute.get(x.routeId) : null;
     const stops = x.stops || [];
     const selesai = stops.filter((s) => s.status === "COMPLETED").length;
     const aktif = x.kind === "route" ? stops.find((s) => s.jobId === x.activeJobId) : null;
+    const segar = kesegaran(menit);
     hasil.push({
       key: x.routeId || x.jobId,
       kind: x.kind,
@@ -54,6 +74,8 @@ export function bentukArmada(tracking, rute = [], now = Date.now()) {
       jobId: x.kind === "route" ? x.activeJobId || null : x.jobId,
       driver: x.driverName || null,
       helper: x.helperName || null,
+      fotoDriver: x.driverAvatarUrl || null,
+      fotoHelper: x.helperAvatarUrl || null,
       online: !!x.driverOnline,
       kendaraan: rt?.vehicle?.plateNumber || null,
       kodeRute: x.routeCode || null,
@@ -63,14 +85,31 @@ export function bentukArmada(tracking, rute = [], now = Date.now()) {
       berikutnya: aktif ? (aktif.customerName || aktif.orderNumber || null) : (x.kind === "loose" ? (x.customerName || x.orderNumber || null) : null),
       order: x.kind === "loose" ? x.orderNumber || null : aktif?.orderNumber || null,
       menit,
-      dataTerakhir: ada ? lp.recordedAt : null,
-      segar: kesegaran(menit),
-      marker: ada ? { lat: Number(lp.lat), lng: Number(lp.lng), akurasi: lp.accuracy ?? null } : null,
+      dataTerakhir: cek.valid ? lp.recordedAt : null,
+      adaPosisi: cek.valid,
+      alasanTanpaPosisi: cek.valid ? null : cek.alasan,
+      segar: cek.valid ? segar : { ...segar, label: ALASAN_POSISI[cek.alasan] },
+      marker: cek.valid ? { lat: Number(lp.lat), lng: Number(lp.lng), akurasi: lp.accuracy ?? null } : null,
     });
   }
   // Marker tersegar dulu; yang tanpa GPS paling akhir.
   return hasil.sort((a, b) => (a.menit ?? 1e9) - (b.menit ?? 1e9));
 }
+
+/** Hitungan untuk header: terdaftar (ada di daftar) vs punya posisi (marker valid), dan berapa yang posisinya lama. */
+export function ringkasArmada(armada) {
+  const list = armada || [];
+  const denganPosisi = list.filter((a) => a.adaPosisi);
+  return {
+    terdaftar: list.length,
+    denganPosisi: denganPosisi.length,
+    tanpaPosisi: list.length - denganPosisi.length,
+    posisiLama: denganPosisi.filter((a) => a.segar.kode === "LAMA").length,
+  };
+}
+
+/** Kunci himpunan marker (perubahan himpunan → fit ulang peta; pergeseran GPS biasa tidak). */
+export const kunciMarker = (armada) => (armada || []).filter((a) => a.adaPosisi).map((a) => a.key).sort().join("|");
 
 /** Wilayah peta yang memuat semua marker (dengan sedikit ruang). Null bila tidak ada marker. */
 export function batasPeta(armada) {

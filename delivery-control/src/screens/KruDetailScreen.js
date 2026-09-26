@@ -14,7 +14,7 @@ const PER = 30;
 
 export default function KruDetailScreen({ route, navigation }) {
   const t = useTheme();
-  const { id, name } = route.params;
+  const { id, name, avatarUrl } = route.params;
   const { modules } = useSession();
   const q = useMuat(() => operasionalApi.rute({ driverId: id, take: PER }), [id], navigation);
   const rute = q.data?.routes || [];
@@ -29,7 +29,7 @@ export default function KruDetailScreen({ route, navigation }) {
         refreshControl={<RefreshControl refreshing={q.segar} onRefresh={q.segarkan} tintColor={t.accent} colors={[t.accent]} />}
         ListHeaderComponent={
           <View style={[s.head, { backgroundColor: t.surface, borderColor: t.border }, elevation(t, 1)]}>
-            <Avatar name={name} size={56} />
+            <Avatar name={name} uri={avatarUrl || rute.map((r) => (r.driverId === id ? r.driver : r.helper)?.avatarUrl).find(Boolean)} size={56} />
             <View style={{ flex: 1 }}>
               <Text style={[type.title, { color: t.ink }]} numberOfLines={1}>{name}</Text>
               <Text style={{ color: t.ink2, fontSize: 13 }}>{q.status === "siap" ? `${rute.length} rute terakhir · ${selesai} selesai` : "Memuat riwayat…"}</Text>
