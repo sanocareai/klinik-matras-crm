@@ -43,7 +43,7 @@ build rilis dari blob git / worktree LF.
   Prisma sendiri — verifier inilah satu-satunya penjaga. Jangan menonaktifkan pemeriksaan apa pun secara global.
 - `backend/Dockerfile` menjalankan `npx prisma migrate deploy` saat start; `scripts/release-delivery-control-production.sh`
   hanya memeriksa daftar migration baru/pending dan tidak memeriksa checksum. Tidak diubah di sini (spesifik rilis lain).
-  Untuk rilis gabungan Delivery V2: jalankan `node scripts/verify-migration-history.js` terhadap DB produksi SEBELUM `migrate deploy`.
+  Untuk setiap rilis berikutnya: jalankan `node scripts/verify-migration-history.js` terhadap DB produksi SEBELUM `migrate deploy`.
 
 ## Bukti rehearsal (2026-09-26, dengan migration normalisasi)
 Restore `pre-c1-20260926-135457.sql.gz` ke Postgres 16 terisolasi; checkout LF dari HEAD `d1ea493a` + migration normalisasi; Prisma 5.22.0.

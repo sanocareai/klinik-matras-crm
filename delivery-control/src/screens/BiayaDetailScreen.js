@@ -4,6 +4,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { allowedActions, describeAudit, formatRupiah, newIdempotencyKey, statusInfo } from "@sano/delivery-shared";
 import { biayaArmadaApi, client } from "../client";
 import { FotoStruk } from "../FotoStruk";
+import { BayarModal } from "../BayarModal";
+
+const SUMBER_LABEL = {
+  TALANGAN_PRIBADI: "Ditalangi pribadi (reimburse)", REKENING_PERUSAHAAN: "Rekening perusahaan",
+  BELUM_DIBAYAR: "Belum dibayar", UANG_MUKA_OPERASIONAL: "Uang muka operasional",
+};
 import { useSession } from "../SessionContext";
 import { elevation, radius, type, useTheme } from "../theme";
 import { tanggalWIB, waktuWIB } from "../format";
@@ -122,7 +128,12 @@ export default function BiayaDetailScreen({ route, navigation }) {
               {!!bayar.info && <Text style={{ color: t.ink2, fontSize: 13 }}>{bayar.info}</Text>}
             </View>
           </View>
-          {!!data.finExpense?.expenseNumber && <Row icon="hash" label="Dokumen Finance" value={data.finExpense.expenseNumber} last />}
+          <View>
+            {!!data.sumberDana && <Row icon="wallet" label="Sumber dana" value={SUMBER_LABEL[data.sumberDana] || data.sumberDana} />}
+            {!!data.advance && <Row icon="hash" label="Uang muka" value={data.advance.advanceNumber} />}
+            {!!data.finExpense && <Row icon="shield" label="Bukti Finance" value={!data.finExpense.adaBukti ? "Belum ada" : data.finExpense.receiptVerifiedAt ? `Terverifikasi ${waktuWIB(data.finExpense.receiptVerifiedAt)}` : "Belum diverifikasi"} />}
+            {!!data.finExpense?.expenseNumber && <Row icon="hash" label="Dokumen Finance" value={data.finExpense.expenseNumber} last />}
+          </View>
         </Section>
 
         <Section title="Foto struk" icon="camera">
@@ -176,6 +187,8 @@ export default function BiayaDetailScreen({ route, navigation }) {
           {aksi.mintaRevisi && <Btn title="Minta revisi" kind="secondary" icon="edit" onPress={() => { setAksiError(""); setModal({ aksi: "revisi" }); }} style={s.act} />}
           {aksi.setujui && <Btn title="Setujui" icon="checkCircle" onPress={() => { setAksiError(""); setModal({ aksi: "setujui" }); }} style={s.act} />}
           {aksi.tolak && <Btn title="Tolak" kind="danger" icon="x" onPress={() => { setAksiError(""); setModal({ aksi: "tolak" }); }} style={s.act} />}
+          {aksi.verifikasiBukti && <Btn title="Verifikasi bukti" kind="secondary" icon="shield" onPress={() => { setAksiError(""); setModal({ aksi: "verifikasi" }); }} style={s.act} />}
+          {aksi.bayar && <Btn title="Bayar" icon="wallet" onPress={() => { setAksiError(""); setModal({ aksi: "bayar" }); }} style={s.act} />}
         </View>
       )}
 
@@ -209,6 +222,16 @@ export default function BiayaDetailScreen({ route, navigation }) {
         visible={modal?.aksi === "tolak"} title="Tolak pengajuan?" danger reason reasonLabel="Alasan penolakan"
         confirmLabel="Tolak" busy={busy} error={aksiError} onCancel={() => setModal(null)}
         onConfirm={(alasan) => jalankan("tolak", (k) => biayaArmadaApi.tolak(finId, alasan, k))}
+      />
+      <ActionModal
+        visible={modal?.aksi === "verifikasi"} title="Verifikasi bukti?" icon="shield"
+        message="Tandai bukti pembayaran/nota pada dokumen Finance ini sudah diperiksa dan sesuai. Verifikasi dicatat atas nama Anda."
+        confirmLabel="Verifikasi" busy={busy} error={aksiError} onCancel={() => setModal(null)}
+        onConfirm={() => jalankan("verifikasi", (k) => biayaArmadaApi.verifikasiBukti(finId, k))}
+      />
+      <BayarModal
+        visible={modal?.aksi === "bayar"} amount={data.amount} busy={busy} error={aksiError} onCancel={() => setModal(null)}
+        onConfirm={(body) => jalankan("bayar", (k) => biayaArmadaApi.bayar(finId, body, k))}
       />
     </SafeAreaView>
   );

@@ -823,6 +823,9 @@ export const api = {
     request(`/customers/notes/${noteId}`, { method: "PATCH", body: JSON.stringify({ content }) }),
   deleteNote: (noteId) =>
     request(`/customers/notes/${noteId}`, { method: "DELETE" }),
+  // Resi Gabungan Fase 1 — flag server-side RESI_INPUT_AKTIF; POST menolak 403 bila mati
+  getResiStatus: () => request("/resi/status"),
+  buatResi: (data) => request("/resi", { method: "POST", body: JSON.stringify(data) }),
   addOrder: (customerId, data) =>
     request(`/customers/${customerId}/orders`, { method: "POST", body: JSON.stringify(data) }),
   updateCustomerOrder: (customerId, orderId, data) =>

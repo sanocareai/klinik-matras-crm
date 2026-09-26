@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File, UploadType } from "expo-file-system";
-import { createApiClient, createSessionManager, createBiayaArmadaApi } from "@sano/delivery-shared";
+import { createApiClient, createSessionManager, createBiayaArmadaApi, createOperasionalApi } from "@sano/delivery-shared";
 
 export const DEFAULT_SERVER = "https://app.sanomatrassehat.com";
 
@@ -33,3 +33,4 @@ export const client = createApiClient({
 
 export const sessionManager = createSessionManager({ client, storage: AsyncStorage });
 export const biayaArmadaApi = createBiayaArmadaApi(client);
+export const operasionalApi = createOperasionalApi(client);

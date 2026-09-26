@@ -60,13 +60,14 @@ export function statusesForStage(stage) {
  * penolakan, dan pembayaran dijalankan di FinExpense terkait (izin Finance).
  */
 export function allowedActions(submission, abilities, userId) {
-  const none = { edit: false, ajukan: false, tarik: false, batalkan: false, uploadBukti: false, mintaRevisi: false, setujui: false, tolak: false };
+  const none = { edit: false, ajukan: false, tarik: false, batalkan: false, uploadBukti: false, mintaRevisi: false, setujui: false, tolak: false, verifikasiBukti: false, bayar: false };
   if (!submission || !abilities) return none;
   const s = submission.status;
   const mine = [submission.requestedById, submission.createdById].includes(userId);
   const canOwn = abilities.submit && mine;
   const editable = s === "DRAFT" || s === "PERLU_REVISI";
   const menunggu = s === "MENUNGGU_PERSETUJUAN";
+  const fe = submission.finExpense;
   return {
     edit: editable && canOwn,
     ajukan: editable && canOwn,
@@ -77,6 +78,12 @@ export function allowedActions(submission, abilities, userId) {
     mintaRevisi: abilities.requestRevision && menunggu && !mine,
     setujui: abilities.approve && menunggu && !mine,
     tolak: abilities.approve && menunggu && !mine,
+    // Verifikasi bukti (finance:admin): ada bukti di FinExpense, belum diverifikasi, dan BUKAN pembuat FinExpense-nya
+    // (server menolak verifikasi sendiri — tombol disembunyikan agar tidak menjanjikan aksi yang pasti gagal).
+    verifikasiBukti: !!(abilities.verify && fe && fe.adaBukti && !fe.receiptVerifiedAt && fe.createdById !== userId
+      && !["DITOLAK", "DIBATALKAN"].includes(s)),
+    // Bayar (finance:post): hanya FinExpense berstatus DISETUJUI (server mengunci baris & menolak status lain).
+    bayar: !!(abilities.pay && fe && fe.status === "DISETUJUI"),
   };
 }
 
@@ -112,7 +119,7 @@ export function validateDraft(draft, config) {
 
 // Body POST /expense-submissions dari draf (hanya field yang dikenal backend).
 export function toCreateBody(draft, workspace = WORKSPACE) {
-  const pick = ["expenseType", "amount", "date", "description", "notes", "vendorName", "vehicleId", "routeId", "jobId", "driverId", "helperId", "sumberDana", "metadata", "sourceNote", "urgentReason"];
+  const pick = ["expenseType", "amount", "date", "description", "notes", "vendorName", "vehicleId", "routeId", "jobId", "driverId", "helperId", "sumberDana", "advanceId", "metadata", "sourceNote", "urgentReason"];
   const body = { workspace };
   for (const k of pick) if (draft?.[k] !== undefined && draft[k] !== "" && draft[k] !== null) body[k] = draft[k];
   return body;

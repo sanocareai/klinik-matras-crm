@@ -26,7 +26,9 @@ const P = "/api/finance/expense-submissions";
 let n = 0;
 const K = (p = "aa") => ({ "Idempotency-Key": `${p}-${Date.now()}-${++n}-abcdef` });
 const OWN_ONLY = ["DRIVER", "HELPER", "LEADER_DRIVER"];
-const LAMA = ["DISPATCHER", "ADMIN", "OWNER", "FINANCE", "SALES"];
+// SALES dikeluarkan dari matriks: sejak C2.1 (keanggotaan divisi) workspace DELIVERY hanya untuk staf Finance atau anggota divisi
+// Delivery; SALES tanpa keanggotaan itu ditolak 403 (dijaga tes terpisah di bawah).
+const LAMA = ["DISPATCHER", "ADMIN", "OWNER", "FINANCE"];
 const KATEGORI = ["BBM", "TOL", "PARKIR", "SERVIS"];
 const NOMINAL = [250_000, 300_000, 300_001];
 const OTOMATIS_KATEGORI = ["BBM", "TOL", "PARKIR"];
@@ -58,8 +60,18 @@ test("MATRIKS role x kategori x nominal: own-only selalu MENUNGGU_PERSETUJUAN; a
       }
     }
   }
-  assert.equal(diperiksa, [...OWN_ONLY, ...LAMA].length * KATEGORI.length * NOMINAL.length, "seluruh sel matriks diperiksa (8 role x 4 kategori x 3 nominal = 96)");
+  assert.equal(diperiksa, [...OWN_ONLY, ...LAMA].length * KATEGORI.length * NOMINAL.length, "seluruh sel matriks diperiksa (7 role x 4 kategori x 3 nominal = 84)");
   assert.deepEqual(salah, [], salah.join("\n"));
+});
+
+test("SALES tanpa keanggotaan divisi Delivery ditolak 403 mengajukan biaya Delivery (kebijakan C2.1), tanpa dokumen terbentuk", async () => {
+  const sales = await createTestUser({ roles: ["SALES"] });
+  const res = await raw("POST", P, {
+    token: sales.token, headers: K("s"),
+    body: { workspace: "DELIVERY", expenseType: "BBM", date: "2026-09-20", amount: 100_000, sumberDana: "TALANGAN_PRIBADI", metadata: { liters: 10, odometerKm: 1000 } },
+  });
+  assert.equal(res.status, 403, JSON.stringify(res.body));
+  assert.equal(await testPrisma.expenseSubmission.count({ where: { requestedById: sales.user.id } }), 0);
 });
 
 test("pengajuan mandiri yang memenuhi aturan otomatis tetap tercatat jelas di audit dan FinExpense-nya MENUNGGU_APPROVAL (tanpa persetujuan otomatis)", async () => {

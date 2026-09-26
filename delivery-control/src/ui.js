@@ -293,4 +293,80 @@ const s = StyleSheet.create({
   dialog: { borderRadius: radius.xl, padding: 22, gap: 12 },
   state: { alignItems: "center", justifyContent: "center", gap: 12, paddingVertical: 48, paddingHorizontal: 24 },
   skel: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14 },
+  dateNav: { flexDirection: "row", alignItems: "center", borderRadius: radius.lg, borderWidth: 1, paddingVertical: 8, paddingHorizontal: 6 },
+  dateBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  stat: { flexBasis: "47%", flexGrow: 1, flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderRadius: radius.lg, borderWidth: 1 },
 });
+
+/** Navigasi tanggal (sebelumnya / hari ini / berikutnya). value "YYYY-MM-DD". */
+export function DateNav({ value, onChange, today, max }) {
+  const t = useTheme();
+  const geser = (n) => {
+    const d = new Date(`${value}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    const baru = d.toISOString().slice(0, 10);
+    if (max && baru > max) return;
+    onChange(baru);
+  };
+  const [y, m, dd] = String(value).split("-");
+  const HARI = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+  const hari = HARI[new Date(`${value}T00:00:00Z`).getUTCDay()];
+  const bolehMaju = !max || value < max;
+  return (
+    <View style={[s.dateNav, { backgroundColor: t.surface, borderColor: t.border }, elevation(t, 1)]}>
+      <Pressable onPress={() => geser(-1)} accessibilityRole="button" accessibilityLabel="Hari sebelumnya" hitSlop={8} style={s.dateBtn}>
+        <View style={{ transform: [{ rotate: "180deg" }] }}><Icon name="chevronRight" size={20} color={t.ink} /></View>
+      </Pressable>
+      <Pressable onPress={() => today && onChange(today)} accessibilityRole="button" accessibilityLabel="Kembali ke hari ini" style={{ flex: 1, alignItems: "center" }}>
+        <Text style={[type.label, { color: t.ink, fontSize: 15 }]}>{hari}, {dd}/{m}/{y}</Text>
+        <Text style={{ color: value === today ? t.accent : t.ink3, fontSize: 11, fontWeight: "700" }}>{value === today ? "HARI INI" : "Ketuk untuk hari ini"}</Text>
+      </Pressable>
+      <Pressable onPress={() => geser(1)} disabled={!bolehMaju} accessibilityRole="button" accessibilityLabel="Hari berikutnya" hitSlop={8} style={[s.dateBtn, { opacity: bolehMaju ? 1 : 0.3 }]}>
+        <Icon name="chevronRight" size={20} color={t.ink} />
+      </Pressable>
+    </View>
+  );
+}
+
+export function ProgressBar({ value, tone = "green", height = 8 }) {
+  const t = useTheme();
+  const c = toneColors(t, tone);
+  const v = Math.max(0, Math.min(100, Number(value) || 0));
+  return (
+    <View style={{ height, borderRadius: height / 2, backgroundColor: t.neutralBg, overflow: "hidden" }}>
+      <View style={{ width: `${v}%`, height, borderRadius: height / 2, backgroundColor: c.fg }} />
+    </View>
+  );
+}
+
+/** Kotak statistik kecil (angka + label + ikon). onPress opsional. */
+export function StatTile({ icon, tone = "accent", value, label, onPress, style }) {
+  const t = useTheme();
+  const isi = (
+    <>
+      <IconBox name={icon} tone={tone} size={34} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: t.ink, fontSize: 20, fontWeight: "800", fontVariant: ["tabular-nums"] }}>{value}</Text>
+        <Text style={{ color: t.ink2, fontSize: 12, fontWeight: "600" }} numberOfLines={1}>{label}</Text>
+      </View>
+    </>
+  );
+  const base = [s.stat, { backgroundColor: t.surface, borderColor: t.border }, elevation(t, 1), style];
+  return onPress
+    ? <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}: ${value}`} style={({ pressed }) => [...base, pressed && { opacity: 0.88 }]}>{isi}</Pressable>
+    : <View style={base}>{isi}</View>;
+}
+
+/** Avatar inisial dengan titik online opsional. */
+export function Avatar({ name, size = 40, online }) {
+  const t = useTheme();
+  const ini = String(name || "?").trim().split(/\s+/).slice(0, 2).map((x) => x[0]?.toUpperCase() || "").join("") || "?";
+  return (
+    <View style={{ width: size, height: size }}>
+      <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: t.accentSoft, alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ color: t.accent, fontWeight: "800", fontSize: size * 0.36 }}>{ini}</Text>
+      </View>
+      {online !== undefined && <View style={{ position: "absolute", right: 0, bottom: 0, width: size * 0.3, height: size * 0.3, borderRadius: size, borderWidth: 2, borderColor: t.surface, backgroundColor: online ? t.green : t.ink3 }} />}
+    </View>
+  );
+}

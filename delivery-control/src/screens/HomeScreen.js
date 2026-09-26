@@ -8,16 +8,17 @@ import { ActionModal, Box, Gradient, IconBox, IconButton } from "../ui";
 import { BottomNav, NAV_SPACE } from "../BottomNav";
 import { labelJumlah, useRingkasanBiaya } from "../ringkasan";
 
-// Modul Delivery Control. Hanya Biaya Armada yang aktif; sisanya tampil tipis dengan label "Segera"
-// (tidak bisa ditekan, tidak ada layar palsu). Route Planner kompleks, aksi massal, master data,
-// pengaturan, rekonsiliasi, laporan, dan ekspor besar SENGAJA tetap di web.
+// Modul Delivery Control. Setiap modul punya layar nyata dan hanya tampil bila capability server
+// (session.capabilities.deliveryControl) mengizinkan — tidak ada tombol tanpa tujuan. Route Planner
+// kompleks, aksi massal, master data, pengaturan, rekonsiliasi, laporan, dan ekspor besar tetap di web.
 const MODULES = [
-  { key: "biaya", title: "Biaya Armada", icon: "wallet", ready: true },
-  { key: "driver", title: "Driver", icon: "users", ready: false },
-  { key: "rute", title: "Rute", icon: "route", ready: false },
-  { key: "tracking", title: "Tracking", icon: "mapPin", ready: false },
-  { key: "masalah", title: "Masalah", icon: "alert", ready: false },
-  { key: "performa", title: "Performa", icon: "chart", ready: false },
+  { key: "biaya", title: "Biaya Armada", icon: "wallet", ready: true, screen: "BiayaArmada" },
+  { key: "dashboard", title: "Dashboard", desc: "Papan job hari ini", icon: "chart", cap: "dashboard", screen: "Dashboard", tone: "accent" },
+  { key: "driver", title: "Driver", desc: "Kru & riwayat", icon: "users", cap: "drivers", screen: "Kru", tone: "cyan" },
+  { key: "rute", title: "Rute", desc: "Per tanggal", icon: "route", cap: "routes", screen: "Rute", tone: "accent" },
+  { key: "tracking", title: "Tracking", desc: "Posisi armada", icon: "mapPin", cap: "tracking", screen: "Tracking", tone: "cyan" },
+  { key: "masalah", title: "Masalah", desc: "Gagal & jadwal ulang", icon: "alert", cap: "issues", screen: "Masalah", tone: "orange" },
+  { key: "performa", title: "Performa", desc: "Estimasi insentif", icon: "gauge", cap: "performance", screen: "Performa", tone: "green" },
 ];
 
 const ROLE_LABEL = { OWNER: "Owner", ADMIN: "Admin", DISPATCHER: "Dispatcher", FINANCE: "Finance", ACCOUNTANT: "Akuntan", APPROVER: "Approver" };
@@ -36,7 +37,7 @@ function inisial(nama) {
 
 export default function HomeScreen({ navigation }) {
   const t = useTheme();
-  const { user, signOut, offline } = useSession();
+  const { user, signOut, offline, modules } = useSession();
   const ringkasan = useRingkasanBiaya(navigation);
   const [keluar, setKeluar] = useState(false);
   const [segar, setSegar] = useState(false);
@@ -46,7 +47,7 @@ export default function HomeScreen({ navigation }) {
   const revisi = ringkasan.data.PERLU_REVISI;
   const perluTindakan = revisi?.n || 0;
   const bukaBiaya = (stage) => navigation.navigate("BiayaArmada", stage ? { stage } : undefined);
-  const lainnya = MODULES.filter((m) => !m.ready);
+  const lainnya = MODULES.filter((m) => m.cap).map((m) => ({ ...m, ready: !!modules[m.cap] })).filter((m) => m.ready);
 
   return (
     <SafeAreaView style={[s.root, { backgroundColor: t.bg }]} edges={["top"]}>
@@ -135,21 +136,18 @@ export default function HomeScreen({ navigation }) {
           </Pressable>
         ))}
 
-        <View style={[s.soonCard, { backgroundColor: t.surface, borderColor: t.border }]}>
-          <View style={s.soonHead}>
-            <Text style={[type.label, { color: t.ink2, flex: 1 }]}>Segera hadir di aplikasi</Text>
-            <Text style={[type.caption, { color: t.ink3 }]}>Saat ini tersedia di web</Text>
-          </View>
-          <View style={s.soonGrid}>
+        {lainnya.length > 0 && (
+          <View style={s.grid}>
             {lainnya.map((m) => (
-              <Pressable key={m.key} disabled={!m.ready} accessibilityState={{ disabled: true }} accessibilityLabel={`${m.title}, segera`} style={s.soonItem}>
-                <View style={[s.soonIcon, { backgroundColor: t.neutralBg }]}><Icon name={m.icon} size={20} color={t.ink3} /></View>
-                <Text style={{ color: t.ink2, fontSize: 12, fontWeight: "600" }} numberOfLines={1}>{m.title}</Text>
-                <Text style={{ color: t.ink3, fontSize: 10, fontWeight: "700", letterSpacing: 0.4 }}>SEGERA</Text>
+              <Pressable key={m.key} disabled={!m.ready} onPress={() => navigation.navigate(m.screen)} accessibilityRole="button" accessibilityLabel={m.title}
+                style={({ pressed }) => [s.tile, { backgroundColor: t.surface, borderColor: t.border, opacity: pressed ? 0.88 : 1 }, elevation(t, 1)]}>
+                <IconBox name={m.icon} tone={m.tone} size={40} />
+                <Text style={[type.label, { color: t.ink, fontSize: 14 }]} numberOfLines={1}>{m.title}</Text>
+                <Text style={{ color: t.ink3, fontSize: 11 }} numberOfLines={1}>{m.desc}</Text>
               </Pressable>
             ))}
           </View>
-        </View>
+        )}
 
         <View style={s.webNote}>
           <Icon name="info" size={14} color={t.ink3} />
@@ -189,10 +187,7 @@ const s = StyleSheet.create({
   feature: { flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: radius.lg, borderWidth: 1, overflow: "hidden" },
   aktif: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
   arrow: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
-  soonCard: { borderRadius: radius.lg, borderWidth: 1, padding: 14, gap: 12 },
-  soonHead: { flexDirection: "row", alignItems: "center", gap: 8 },
-  soonGrid: { flexDirection: "row", justifyContent: "space-between" },
-  soonItem: { alignItems: "center", gap: 4, flex: 1, opacity: 0.85 },
-  soonIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  tile: { flexBasis: "30%", flexGrow: 1, gap: 6, padding: 12, borderRadius: radius.lg, borderWidth: 1 },
   webNote: { flexDirection: "row", alignItems: "center", gap: 6, justifyContent: "center", paddingHorizontal: 8 },
 });

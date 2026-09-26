@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { deliveryExpenseAbilities } from "@sano/delivery-shared";
+import { controlModules, deliveryExpenseAbilities } from "@sano/delivery-shared";
 import { sessionManager, setUnauthorizedHandler } from "./client";
 
 const Ctx = createContext(null);
@@ -27,6 +27,7 @@ export function SessionProvider({ children }) {
     user: session?.user || null,
     capabilities: session?.capabilities || null,
     abilities: deliveryExpenseAbilities(session?.capabilities),
+    modules: controlModules(session?.capabilities),
     offline: !!session?.offline,
   }), [loading, session, signIn, signOut]);
 

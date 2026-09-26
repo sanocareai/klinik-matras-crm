@@ -1,6 +1,6 @@
 # Sano Delivery Control — APK Preview & Checklist QA (Samsung S25 Ultra)
 
-Status: konfigurasi siap; build EAS **tertahan kuota** (lihat bagian 3). Dibuat 26 September 2026.
+Status: seluruh modul aktif; APK QA lokal tersedia; build EAS **tertahan kuota** dan menunggu GO (lihat bagian 3). Diperbarui 27 September 2026.
 
 ## 1. Identitas aplikasi (terpisah dari Sano Driver)
 
@@ -33,31 +33,64 @@ lalu jalankan perintah di atas (project, channel, dan keystore Android cloud sud
 
 ## 4. Checklist QA Samsung S25 Ultra (isi PASS/FAIL + catatan)
 
-Prasyarat: APK preview terpasang; akun uji Admin, Owner, Dispatcher (bila ada), Driver, Helper, Leader Driver (bila ada); koneksi Wi-Fi/seluler.
+Prasyarat: APK QA final terpasang (`adb install -r`); server produksi sudah memuat rilis Delivery Control ini (tanpa itu modul operasional
+tidak muncul dan tombol Verifikasi bukti tidak ada). Akun uji: Admin, Owner, Dispatcher (bila ada), Driver, Helper, Leader Driver (bila ada).
+Jangan membuat data produksi nyata kecuali disebut "boleh"; gunakan pengajuan uji kecil yang bisa dibatalkan.
 
-**A. Login dan RBAC**
-1. Login Admin → masuk beranda Control. 2. Logout → login Owner → masuk. 3. Dispatcher (bila ada) → masuk.
-4. Driver → ditolak (tidak masuk beranda, pesan jelas). 5. Helper → ditolak. 6. Leader Driver (bila ada) → ditolak.
-7. Salah password → pesan galat, tidak crash. 8. Tutup app total lalu buka → sesi tetap (Admin/Owner) atau kembali ke login (bila sesi habis).
+**A. Login, RBAC, dan Beranda**
+1. Login Admin → Beranda: hero ringkasan, kartu Biaya Armada, grid modul (Dashboard, Driver, Rute, Tracking, Masalah, Performa); TIDAK ada label "Segera".
+2. Owner dan Dispatcher (bila ada) → masuk; modul mengikuti izin. Driver/Helper/Leader Driver → ditolak dengan pesan jelas.
+3. Salah password → pesan galat; tutup app lalu buka → sesi Admin/Owner tetap. Logout memakai konfirmasi; login ulang normal.
+4. Lonceng: membuka Biaya Armada (tab Perlu revisi bila ada). Angka Menunggu/Perlu revisi/Draf di hero cocok dengan daftar.
 
-**B. Biaya Armada**
-9. Daftar: memuat, tarik-untuk-refresh, pagination, filter status termasuk PERLU_REVISI. 10. Detail: nominal, kategori, rute/kendaraan, timeline, alasan revisi (bila ada).
-11. Buat pengajuan: nominal, kategori, rute, kendaraan, tanggal; validasi nominal kosong/negatif ditolak. 12. Nominal besar (>Rp300.000) tetap menunggu persetujuan.
-13. Aksi sesuai capability (tombol hanya muncul bila diizinkan): ajukan, tarik, batalkan, minta revisi (finance:approve); alasan wajib untuk minta revisi/batalkan.
-14. Status tak dikenal (bila ada) tampil aman tanpa aksi.
+**B. Dashboard operasional**
+5. Tanggal hari ini: total job, persen selesai, Selesai/Berjalan/Menunggu/Gagal masuk akal dibanding Route Planner web.
+6. Navigasi tanggal (sebelumnya/berikutnya; berikutnya tidak bisa melewati hari ini bila dibatasi); ketuk tanggal → kembali ke hari ini.
+7. Peringatan "job aktif belum punya driver" dan "job gagal menunggu dijadwalkan ulang" hanya muncul bila ada; ketuk membuka Masalah.
+8. Daftar rute tanggal itu; ketuk membuka detail rute. Tarik untuk segarkan; offline → pesan galat + tombol Coba lagi.
 
-**C. Foto struk**
-15. Kamera terbuka hanya untuk foto struk; izin kamera diminta saat pertama; tolak izin → pesan jelas, app tidak crash. 16. Tidak ada permintaan izin lokasi/mikrofon.
-17. Foto tampil di detail lewat signed URL; buka ulang setelah >10 menit → dimuat ulang otomatis (atau tombol "Coba lagi"). 18. Foto pengajuan milik orang lain tidak dapat dibuka.
+**C. Driver/Helper**
+9. Daftar kru (driver dan helper digabung; orang dengan dua peran tampil sekali). Pencarian nama bekerja.
+10. Badge SIM/Freelance/Kurir eksternal sesuai data; status "bertugas hari ini" dan titik online sesuai rute hari ini.
+11. Detail orang: riwayat rute (driver ATAU helper), progres stop per rute; ketuk membuka detail rute.
 
-**D. Draf lokal dan offline**
-19. Isi form lalu tutup app → draf tersimpan dan dapat dilanjutkan. 20. Mode pesawat: buat draf, ajukan → antre lokal, tidak hilang.
-21. Sambungkan kembali → terkirim tepat sekali (tidak ganda; kunci idempotensi). 22. Bersihkan draf setelah terkirim.
+**D. Rute dan histori**
+12. Rute per tanggal: kode, status (Draf/Terbit/Berjalan/Selesai/Dibatalkan), driver+helper, kendaraan, progres stop.
+13. Detail rute: kru, kendaraan, waktu terbit/sinkron, daftar stop berurutan dengan status, jam kunjungan, alamat, alasan gagal.
+14. "Buka di peta" membuka aplikasi peta HP; app Control TIDAK meminta izin lokasi.
 
-**E. Tampilan dan sesi**
-23. Mode gelap dan terang mengikuti sistem; kontras terbaca di keduanya. 24. Rotasi tidak dipakai (potret); keyboard tidak menutup field. 25. Logout → data sesi hilang; login ulang normal.
+**E. Tracking**
+15. Hanya rute terbit/berjalan hari ini dan job menuju lokasi. Kartu: fase, progres stop, "berikutnya", umur posisi GPS.
+16. Posisi > 15 menit diberi tanda sinyal lama; tanpa posisi tampil "Belum ada posisi GPS". "Buka di peta" bekerja. Diperbarui otomatis ±30 detik.
+17. Tidak ada dialog izin lokasi sama sekali di seluruh app.
 
-**F. Keamanan data**
-26. Setelah logout, tidak ada data biaya/role sebelumnya terlihat. 27. Ganti akun (Admin → Owner) tidak menampilkan data akun sebelumnya. 28. Tidak ada crash/ANR selama seluruh skenario; catat versi Android dan One UI.
+**F. Masalah dan jadwal ulang**
+18. Tab "Perlu tindakan" (job gagal) dan "Sudah dijadwalkan ulang"; alasan gagal/jadwal ulang tampil.
+19. Detail job gagal → form Jadwalkan ulang: tanggal baru (tidak boleh sebelum hari ini), jam, driver/helper/kendaraan (terisi dari penugasan lama), alasan wajib, konfirmasi pelanggan.
+20. **Boleh uji satu kasus nyata bila ada job gagal yang memang perlu dijadwal ulang**; kirim dua kali cepat (double tap) → hanya satu jadwal ulang (Idempotency-Key). Job non-gagal: form tidak muncul.
+21. Setelah sukses kembali ke daftar; job pindah ke tab jadwal ulang. Dispatcher/Admin/Owner saja yang melihat tombol.
 
-Blocker QA yang diketahui: layar biaya belum dipasang di Sano Driver (sengaja); sumber dana uang muka/bayar/verifikasi belum ada di UI Control.
+**G. Performa dan insentif**
+22. Periode Bulan ini / 7 hari / Bulan lalu; total estimasi, jumlah alamat, tarif ber-SIM/tanpa SIM; peringkat kru.
+23. Bandingkan 2–3 orang dengan Insentif Driver & Helper di web (angka harus sama; app tidak menghitung sendiri). Freelance dan kurir eksternal tidak muncul.
+
+**H. Biaya Armada — lifecycle penuh**
+24. Ringkasan (Draf/Menunggu/Perlu Revisi/Disetujui) dan tab tahap; daftar padat, badge status, "Tambah Pengajuan".
+25. Form: jenis biaya, nominal, tanggal, vendor, metadata BBM (liter/odometer), kendaraan/rute/job, catatan; validasi nominal kosong/negatif ditolak.
+26. **Uang Muka**: pilih sumber dana "Uang muka operasional" → muncul pemilih uang muka aktif (saldo, pemilik). Tanpa uang muka aktif → pesan kosong; kirim tanpa memilih → galat "Pilih uang muka".
+27. Foto struk: kamera hanya untuk struk; tolak izin kamera → pesan jelas, tidak crash. Foto tampil lewat signed URL; buka ulang setelah >10 menit → dimuat ulang/Coba lagi; foto milik orang lain tidak muncul.
+28. Ajukan/tarik/batalkan/minta revisi (alasan wajib) sesuai capability; aksi hanya muncul sesuai izin & status.
+29. **Verifikasi bukti** (finance:admin): tombol muncul hanya bila ada bukti belum diverifikasi dan Anda BUKAN pembuat dokumen Finance; setelah verifikasi, baris "Bukti Finance" berubah Terverifikasi dan tombol hilang.
+30. **Bayar** (finance:post): tombol hanya untuk biaya berstatus Disetujui. Dialog: pilih rekening (saldo tampil), cara bayar Tunai/Transfer; Transfer wajib rekening bank + jenis biaya admin (Lainnya = isi nominal). Setelah bayar status Dibayar; klik dua kali cepat → tidak dobel.
+31. Status pembayaran & timeline audit; baris Sumber dana, Uang muka, Bukti Finance, Dokumen Finance benar.
+
+**I. Draf lokal dan offline**
+32. Simpan draf lokal, tutup app, buka lagi → draf ada. Mode pesawat: buat draf/ajukan → antre; sambung kembali → terkirim tepat sekali.
+
+**J. Tampilan, sesi, dan keamanan data**
+33. Mode terang dan gelap konsisten di semua modul; layar kecil/rotasi tidak memotong konten; nav bawah tidak menutup isi.
+34. Ganti akun (Admin → Owner) tidak menampilkan data akun sebelumnya; setelah logout tidak ada data tersisa.
+35. Tidak ada crash/ANR; catat versi Android/One UI. Tidak ada teks Inggris atau label "Segera" tersisa.
+
+**Blocker/keterbatasan yang diketahui:** Route Planner kompleks, aksi massal, master data, dan laporan tetap di web. Tracking hanya membaca posisi
+yang dikirim app Driver. Layar biaya belum ada di Sano Driver (sengaja).
