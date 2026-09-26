@@ -197,6 +197,8 @@ const DIVISIONS = {
           { to: "/bengkel/qc",              label: "Inspeksi QC",     Icon: ScanLine },
           { to: "/bengkel/scope-revisions", label: "Revisi Lingkup",  Icon: GitBranch },
           { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
+          // C1 — biaya operasional NON-STOK (servis mesin, jasa vendor, lembur, dll). Hanya PRODUCTION_LEAD/Finance/Admin; server menegakkan ulang.
+          { to: "/bengkel/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "PRODUCTION_LEAD"] },
           // Kasus Komplain (D-116, 11 September 2026) — halaman dibaca
           // lintas divisi, lihat catatan panjang di section armada di atas.
           { to: "/komplain",                label: "Kasus Komplain",  Icon: AlertTriangle },
@@ -266,6 +268,8 @@ const DIVISIONS = {
           { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
           { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
+          // C1 — biaya operasional NON-STOK gudang (bongkar muat, kurir, perlengkapan). Hanya WAREHOUSE/Finance/Admin; server menegakkan ulang.
+          { to: "/warehouse/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"] },
         ],
       },
       {
@@ -839,6 +843,9 @@ export default function Layout({ user, onLogout }) {
     // `hideForLeaderDriver` (D-052, lihat "Semua Order" di sections armada
     // di atas). Beda dari driverOnly: LEADER_DRIVER TETAP dapat sidebar
     // penuh dispatcher, cuma satu-dua menu CRM tertentu yang disembunyikan.
+    // C1 — item bertanda `bolehPeran` hanya tampil untuk peran yang disebut (server tetap menegakkan izin sebenarnya).
+    const saringPeran = (base) => ({ ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.filter((i) => !i.bolehPeran || roles.some((r) => i.bolehPeran.includes(r))) })) });
+    if (divisionKey === "bengkel" || divisionKey === "warehouse") return saringPeran(divisionBase);
     const leaderDriverOnly = roles.includes("LEADER_DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
     if (divisionKey === "armada" && leaderDriverOnly) {
       return {

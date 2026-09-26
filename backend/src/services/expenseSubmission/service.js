@@ -12,16 +12,14 @@ import { toMoney, moneyToNumber } from "../finance/money.js";
 import { pastikanUangMukaBolehDipakai } from "../finance/operationalAdvance.js";
 import { hasPermission, rolesOf } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
-import { getWorkspaceConfig, bolehAutoApprove, SUMBER_DANA } from "./config.js";
+import { getWorkspaceConfig, bolehAutoApprove, SUMBER_DANA, ARAHAN_MODUL_LAIN, JENIS_TERLARANG_STOK } from "./config.js";
 import { ownOnly } from "./ownPolicy.js";
 
-export class SubmissionError extends Error {
-  constructor(message, statusCode = 400) {
-    super(message);
-    this.name = "SubmissionError";
-    this.statusCode = statusCode;
-  }
-}
+import { SubmissionError } from "./errors.js";
+import { pastikanBukanDokumenInventory } from "./guard.js";
+import { workspaceUntukDivisi, bolehCatatAtasNama } from "./access.js";
+
+export { SubmissionError };
 
 const FIN_TO_SUBMISSION_STATUS = {
   DRAFT: "MENUNGGU_PERSETUJUAN", // FinExpense DRAFT hanya sesaat (langsungAjukan selalu true dari jalur ini) — dipetakan aman kalau suatu saat berubah
@@ -42,6 +40,10 @@ export const submissionInclude = {
   route: { select: { id: true, date: true } },
   job: { select: { id: true, type: true, status: true } },
   order: { select: { id: true, orderNumber: true } },
+  unit: { select: { id: true, unitCode: true } },
+  workCenter: { select: { id: true, code: true, name: true } },
+  warehouse: { select: { id: true, code: true, name: true } },
+  material: { select: { id: true, code: true, name: true, unit: true } },
   vehicleExpense: { select: { id: true, odometerKm: true, liters: true, category: true } },
   finExpense: { select: { id: true, expenseNumber: true, status: true, amount: true, cashAccountId: true, approvedAt: true, paidAt: true, rejectReason: true, advanceAppliedAmount: true } },
   advance: { select: { id: true, advanceNumber: true, holderId: true, purpose: true, dueDate: true, status: true } },
@@ -70,9 +72,9 @@ function bentukSubmission(s) {
   };
 }
 
-/** Finance & Dispatcher boleh "catat atas nama" (requestedById != diri sendiri) — driver/helper TIDAK, mereka cuma boleh mengajukan untuk diri sendiri. */
-function bolehCatatAtasNamaOrangLain(user) {
-  return hasPermission(user, P.FINANCE_POST) || hasPermission(user, P.FINANCE_ADMIN) || rolesOf(user).includes("DISPATCHER");
+/** Finance/Admin boleh "catat atas nama" (requestedById != diri sendiri) di semua workspace; Dispatcher hanya di Delivery; lainnya TIDAK. */
+function bolehCatatAtasNamaOrangLain(user, workspace = "DELIVERY") {
+  return bolehCatatAtasNama(user, workspace);
 }
 
 /** Usulan sumber dana -> hint mode FinExpense. `undefined` = biarkan buatFinExpense pilih default dari kapabilitas user (perilaku lama, tidak berubah kalau field ini kosong). */
@@ -109,6 +111,12 @@ function modeDariSumberDana(sumberDana) {
 function validasiTipe(workspace, expenseType) {
   const cfg = getWorkspaceConfig(workspace);
   if (!cfg) throw new SubmissionError(`Workspace "${workspace}" tidak dikenal`, 400);
+  if (JENIS_TERLARANG_STOK.includes(String(expenseType || "").toUpperCase())) {
+    throw new SubmissionError(
+      `Jenis biaya "${expenseType}" adalah urusan stok/pembelian — bukan Pengajuan Biaya (akan terhitung dua kali). ` +
+      `Gunakan: ${ARAHAN_MODUL_LAIN.map((a) => `${a.kebutuhan} → ${a.ke}`).join("; ")}.`, 422);
+  }
+  if (cfg.tanpaAkun?.[expenseType]) throw new SubmissionError(cfg.tanpaAkun[expenseType], 422);
   const valid = cfg.expenseTypes.some((t) => t.code === expenseType);
   if (!valid) throw new SubmissionError(`Jenis biaya "${expenseType}" tidak berlaku untuk ${cfg.label}`, 400);
   return cfg;
@@ -140,13 +148,16 @@ export async function buatPengajuan(db, { workspace, user, body }) {
   // sekali.
   let requestedById = user.id;
   if (body.requestedById && body.requestedById !== user.id) {
-    if (!bolehCatatAtasNamaOrangLain(user)) {
-      throw new SubmissionError("Hanya Finance atau Dispatcher yang boleh mencatat pengajuan atas nama orang lain", 403);
+    if (!bolehCatatAtasNamaOrangLain(user, workspace)) {
+      throw new SubmissionError(workspace === "DELIVERY" ? "Hanya Finance atau Dispatcher yang boleh mencatat pengajuan atas nama orang lain" : "Hanya Finance yang boleh mencatat pengajuan atas nama orang lain", 403);
     }
     const requester = await db.user.findUnique({ where: { id: body.requestedById }, select: { id: true } });
     if (!requester) throw new SubmissionError("Pemohon (atas nama) tidak ditemukan", 404);
     requestedById = body.requestedById;
   }
+
+  // C1 — relasi Produksi/Gudang, kebijakan jenis biaya, dan guard anti double-counting (hanya workspace baru; Delivery tidak berubah).
+  const konteks = await validasiKonteks(db, { workspace, cfg, body, excludeId: null, tahap: "draf" });
 
   let vehiclePlateSnapshot = null;
   if (body.vehicleId) {
@@ -223,6 +234,7 @@ export async function buatPengajuan(db, { workspace, user, body }) {
       helperId: body.helperId || null,
       orderId: body.orderId || null,
       vehicleExpenseId: body.vehicleExpenseId || null,
+      ...konteks.data,
       vehiclePlateSnapshot, driverNameSnapshot, helperNameSnapshot, routeNameSnapshot,
       metadata: body.metadata || {},
       paymentMethod: body.paymentMethod?.trim() || null,
@@ -251,9 +263,12 @@ export async function ubahPengajuanDraft(db, { id, user, body }) {
   if (s.requestedById !== user.id && s.createdById !== user.id && !hasPermission(user, P.FINANCE_ADMIN)) {
     throw new SubmissionError("Hanya pemohon sendiri (atau admin keuangan) yang boleh mengedit draf ini", 403);
   }
-  const cfg = validasiTipe(s.division === "DELIVERY" ? "DELIVERY" : s.division, body.expenseType ?? s.expenseType);
+  const wsKey = workspaceUntukDivisi(s.division);
+  const cfg = validasiTipe(wsKey, body.expenseType ?? s.expenseType);
   const nominal = body.amount != null ? toMoney(body.amount, { field: "Nominal pengajuan" }) : null;
   const data = {};
+  const konteksBaru = await validasiKonteks(db, { workspace: wsKey, cfg, body: { ...s, ...body, expenseType: body.expenseType ?? s.expenseType, metadata: body.metadata ?? s.metadata }, excludeId: id, tahap: "draf", punyaBodyRelasi: body });
+  Object.assign(data, konteksBaru.data);
   if (body.expenseType !== undefined) data.expenseType = body.expenseType;
   if (body.date !== undefined) data.date = toBookDate(body.date);
   if (nominal) data.amount = nominal.toFixed(2);
@@ -276,7 +291,7 @@ export async function ubahPengajuanDraft(db, { id, user, body }) {
     data.sumberDana = body.sumberDana || null;
   }
   if (body.requestedById !== undefined && body.requestedById !== s.requestedById) {
-    if (!bolehCatatAtasNamaOrangLain(user)) throw new SubmissionError("Hanya Finance atau Dispatcher yang boleh mencatat pengajuan atas nama orang lain", 403);
+    if (!bolehCatatAtasNamaOrangLain(user, wsKey)) throw new SubmissionError(wsKey === "DELIVERY" ? "Hanya Finance atau Dispatcher yang boleh mencatat pengajuan atas nama orang lain" : "Hanya Finance yang boleh mencatat pengajuan atas nama orang lain", 403);
     const requester = await db.user.findUnique({ where: { id: body.requestedById }, select: { id: true } });
     if (!requester) throw new SubmissionError("Pemohon (atas nama) tidak ditemukan", 404);
     data.requestedById = body.requestedById;
@@ -330,7 +345,10 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
       throw new SubmissionError("Hanya pemohon sendiri (atau admin keuangan) yang boleh mengajukan", 403);
     }
 
-    const cfg = getWorkspaceConfig(s.division === "DELIVERY" ? "DELIVERY" : s.division) || { division: s.division };
+    const wsKey = workspaceUntukDivisi(s.division);
+    const cfg = getWorkspaceConfig(wsKey) || { division: s.division };
+    // C1 — validasi ULANG saat diajukan (draf bisa diubah lewat jalur lain): jenis biaya, relasi wajib, alasan mendesak, metadata wajib, guard dokumen.
+    if (wsKey === "PRODUKSI" || wsKey === "WAREHOUSE") await validasiKonteks(tx, { workspace: wsKey, cfg, body: s, excludeId: id, tahap: "ajukan" });
 
     // Kunci idempotensi domain — kalau baris sudah punya idempotencyKey lain (mustahil di
     // jalur normal, hanya bisa lewat retry dengan header berbeda pada baris yg sama),
@@ -374,7 +392,9 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
       // mencatat untuk driver — uangnya harus kembali ke driver, bukan ke
       // dispatcher).
       reimburseToId: s.requestedById, reimburseToOverrideAllowed: true,
-      payeeName: s.vendorName, orderId: s.orderId, unitId: null,
+      payeeName: s.vendorName, orderId: s.orderId, unitId: s.unitId || null,
+      // Produksi/Gudang: pengaju non-Finance TIDAK dipaksa jadi reimbursement — sumber dana usulan dihormati (UTANG/REIMBURSEMENT; Finance tetap memutuskan bayar).
+      ikutiModeUsulan: wsKey === "PRODUKSI" || wsKey === "WAREHOUSE",
       receiptUrl: buktiTerakhir?.url || null, notes: s.notes, langsungAjukan: true, user,
     });
 
@@ -585,7 +605,7 @@ export async function sinkronStatusDariFinExpense(tx, finExpenseId) {
  * pemohon/Finance bisa menilai sendiri seberapa besar kemungkinan ini memang
  * duplikat nyata, bukan kebetulan.
  */
-export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseType, date, amount, excludeId, picUserId }) {
+export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseType, date, amount, excludeId, picUserId, workCenterId, warehouseId, unitId, documentRef }) {
   if (!vehicleId && !expenseType) return [];
   const tgl = toBookDate(date);
   const mulai = new Date(tgl); mulai.setDate(mulai.getDate() - 2);
@@ -594,13 +614,18 @@ export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseT
     where: {
       division, expenseType, date: { gte: mulai, lte: selesai },
       ...(vehicleId && { vehicleId }),
+      ...(workCenterId && { workCenterId }),
+      ...(warehouseId && { warehouseId }),
+      ...(unitId && { unitId }),
       ...(picUserId && { picUserId }),
       ...(excludeId && { id: { not: excludeId } }),
       status: { notIn: ["DIBATALKAN", "DITOLAK"] },
     },
     select: {
       id: true, submissionNumber: true, amount: true, date: true, status: true,
-      picNameSnapshot: true, vehiclePlateSnapshot: true,
+      picNameSnapshot: true, vehiclePlateSnapshot: true, expenseType: true, description: true, documentRef: true,
+      requestedBy: { select: { name: true } },
+      workCenter: { select: { name: true } }, warehouse: { select: { name: true } }, unit: { select: { unitCode: true } }, material: { select: { code: true } },
       proofs: { where: { supersededAt: null }, select: { id: true }, take: 1 },
     },
     take: 5,
@@ -608,7 +633,95 @@ export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseT
   const nominal = amount != null ? toMoney(amount) : null;
   return kandidat
     .filter((k) => !nominal || Math.abs(moneyToNumber(k.amount) - Number(nominal)) < 1)
-    .map(({ proofs, ...k }) => ({ ...k, amount: moneyToNumber(k.amount), adaBukti: proofs.length > 0 }));
+    .map(({ proofs, workCenter, warehouse, unit, material, requestedBy, ...k }) => ({
+      ...k, amount: moneyToNumber(k.amount), adaBukti: proofs.length > 0, pemohon: requestedBy?.name || null,
+      konteks: [unit && `unit ${unit.unitCode}`, workCenter && `mesin ${workCenter.name}`, warehouse && `gudang ${warehouse.name}`, material && `material ${material.code}`].filter(Boolean).join(" · ") || null,
+    }));
+}
+
+/**
+ * Validasi relasi & kebijakan workspace PRODUKSI/WAREHOUSE (C1). Mengembalikan `data` kolom relasi untuk disimpan.
+ *  - relasi hanya yang diizinkan workspace (kendaraan/rute/job/driver/helper ditolak di sini)
+ *  - unit ikut order-nya; mesin (WorkCenter), gudang, material harus ada & aktif
+ *  - tahap "ajukan": relasi wajib per jenis, alasan mendesak, metadata wajib
+ *  - guard anti double-counting: dokumen Inventory/Pembelian/Tagihan/Pengeluaran tidak boleh dicatat lagi
+ */
+async function validasiKonteks(db, { workspace, cfg, body, excludeId, tahap, punyaBodyRelasi = null }) {
+  const baru = workspace === "PRODUKSI" || workspace === "WAREHOUSE";
+  if (!baru) return { data: {} };
+  const tipe = body.expenseType;
+  const lain = ["vehicleId", "routeId", "jobId", "driverId", "helperId"].filter((k) => (punyaBodyRelasi ?? body)[k]);
+  if (lain.length > 0) throw new SubmissionError(`Kendaraan, rute, job, driver, dan helper tidak berlaku untuk pengajuan ${cfg.label}`, 422);
+  const izin = new Set(cfg.relations || []);
+  const peta = { order: "orderId", unit: "unitId", machine: "workCenterId", warehouse: "warehouseId", material: "materialId", document: "documentRef" };
+  const diisi = (punyaBodyRelasi ?? body);
+  for (const [nama, kolom] of Object.entries(peta)) {
+    if (!izin.has(nama) && diisi[kolom]) throw new SubmissionError(`Tautan ${nama === "machine" ? "mesin" : nama} tidak berlaku untuk pengajuan ${cfg.label}`, 422);
+  }
+  const data = {};
+  const nilai = (k) => (body[k] === undefined ? undefined : (body[k] || null));
+  let unit = null;
+  if (izin.has("unit") && nilai("unitId")) {
+    unit = await db.unit.findUnique({ where: { id: body.unitId }, select: { id: true, orderId: true, unitCode: true } });
+    if (!unit) throw new SubmissionError("Unit produksi tidak ditemukan", 404);
+    if (body.orderId && body.orderId !== unit.orderId) throw new SubmissionError("Unit itu bukan bagian dari order yang dipilih — unit selalu ikut order-nya", 422);
+    data.unitId = unit.id; data.orderId = unit.orderId;
+  } else if (punyaBodyRelasi && "unitId" in punyaBodyRelasi && !punyaBodyRelasi.unitId) data.unitId = null;
+  const oid = punyaBodyRelasi ? punyaBodyRelasi.orderId : body.orderId;
+  if (izin.has("order") && !unit && oid) {
+    const o = await db.order.findUnique({ where: { id: oid }, select: { id: true } });
+    if (!o) throw new SubmissionError("Order tidak ditemukan", 404);
+  }
+  if (punyaBodyRelasi && "orderId" in punyaBodyRelasi && !unit) data.orderId = punyaBodyRelasi.orderId || null;
+  if (izin.has("machine") && nilai("workCenterId")) {
+    const w = await db.workCenter.findUnique({ where: { id: body.workCenterId }, select: { id: true, active: true } });
+    if (!w || !w.active) throw new SubmissionError("Mesin/area kerja tidak ditemukan atau nonaktif", 404);
+  }
+  if (punyaBodyRelasi && "workCenterId" in punyaBodyRelasi) data.workCenterId = punyaBodyRelasi.workCenterId || null;
+  if (izin.has("warehouse") && nilai("warehouseId")) {
+    const g = await db.warehouse.findUnique({ where: { id: body.warehouseId }, select: { id: true, active: true } });
+    if (!g || !g.active) throw new SubmissionError("Gudang tidak ditemukan atau nonaktif", 404);
+  }
+  if (punyaBodyRelasi && "warehouseId" in punyaBodyRelasi) data.warehouseId = punyaBodyRelasi.warehouseId || null;
+  if (izin.has("material") && nilai("materialId")) {
+    const m = await db.material.findUnique({ where: { id: body.materialId }, select: { id: true } });
+    if (!m) throw new SubmissionError("Material tidak ditemukan", 404);
+  }
+  if (punyaBodyRelasi && "materialId" in punyaBodyRelasi) data.materialId = punyaBodyRelasi.materialId || null;
+  if (punyaBodyRelasi && "documentRef" in punyaBodyRelasi) data.documentRef = punyaBodyRelasi.documentRef ? String(punyaBodyRelasi.documentRef).trim().toUpperCase() : null;
+  if (!punyaBodyRelasi) {
+    // buat baru: semua relasi dari body apa adanya
+    for (const [nama, kolom] of Object.entries(peta)) {
+      if (kolom === "unitId" || !izin.has(nama)) continue;
+      if (body[kolom]) data[kolom] = kolom === "documentRef" ? String(body[kolom]).trim().toUpperCase() : body[kolom];
+    }
+  }
+
+  const efektif = { ...body, ...data };
+  // Guard anti double-counting (di setiap tahap, jadi draf tidak bisa menyelundupkan dokumen stok/pembelian).
+  await pastikanBukanDokumenInventory(db, {
+    expenseType: tipe, documentRef: efektif.documentRef,
+    teks: [body.description, body.notes, body.vendorName, body.sourceNote, body.urgentReason, body.metadata],
+    excludeId,
+  });
+
+  if (tahap === "ajukan") {
+    for (const rel of (cfg.relasiWajib?.[tipe] || [])) {
+      const kolom = peta[rel];
+      if (!efektif[kolom]) throw new SubmissionError(`Untuk ${cfg.expenseTypes.find((t) => t.code === tipe)?.label || tipe} wajib memilih ${rel === "machine" ? "mesin" : rel} yang dikerjakan`, 422);
+    }
+    if ((cfg.wajibAlasanMendesak || []).includes(tipe) && String(efektif.urgentReason || "").trim().length < 5) {
+      throw new SubmissionError("Alasan mendesak wajib diisi (minimal 5 karakter) untuk jenis biaya ini", 422);
+    }
+    const meta = efektif.metadata && typeof efektif.metadata === "object" ? efektif.metadata : {};
+    for (const f of cfg.metadataFields(tipe)) {
+      if (f.required && (meta[f.key] === undefined || meta[f.key] === null || String(meta[f.key]).trim() === "")) {
+        throw new SubmissionError(`${f.label} wajib diisi`, 422);
+      }
+    }
+    if (!(Number(efektif.amount) > 0)) throw new SubmissionError("Nominal harus lebih dari 0 sebelum diajukan", 422);
+  }
+  return { data };
 }
 
 export { bentukSubmission, bentukExpense, finExpenseInclude };

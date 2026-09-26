@@ -276,6 +276,10 @@ export const DEFAULT_EXPENSE_CATEGORIES = Object.freeze([
   { code: "LANGGANAN_APLIKASI", name: "Langganan Aplikasi", accountCode: "6-1160", division: "UMUM" },
   { code: "OPS_MEETING", name: "Operasional Meeting & Perjalanan Dinas", accountCode: "6-1170", division: "UMUM" },
   { code: "BAHAN_BAKU_MANUAL", name: "Pembelian Bahan Baku (Manual)", accountCode: "5-1150", division: "PRODUKSI" },
+  // C1 (26 Sep 2026) — Pengajuan Biaya Gudang; memakai akun resmi 6-1900 (Beban Lain-lain) yang sudah ada, bukan akun baru.
+  { code: "BONGKAR_MUAT_GUDANG", name: "Bongkar Muat Gudang", accountCode: "6-1900", division: "GUDANG" },
+  { code: "PERAWATAN_FASILITAS_GUDANG", name: "Perawatan Fasilitas Gudang", accountCode: "6-1900", division: "GUDANG" },
+  { code: "BIAYA_GUDANG_MENDESAK", name: "Biaya Operasional Gudang Mendesak", accountCode: "6-1900", division: "GUDANG" },
 ]);
 
 // Kode kategori pengeluaran yang DIPENSIUNKAN — masih dipakai histori

@@ -1420,6 +1420,7 @@ export const api = {
   getPengajuanTemplates: () => request("/finance/expense-submissions/templates"),
   createPengajuanTemplate: (data) => request("/finance/expense-submissions/templates", { method: "POST", body: JSON.stringify(data) }),
   deletePengajuanTemplate: (id) => request(`/finance/expense-submissions/templates/${id}`, { method: "DELETE" }),
+  getPengajuanOpsi: (params = {}) => request(`/finance/expense-submissions/opsi${qsFinance(params)}`),
   getPengajuanRecent: (division) => request(`/finance/expense-submissions/recent${qsFinance({ division })}`),
   uploadPengajuanBukti: (id, formData) => requestFormData(`/finance/expense-submissions/${id}/bukti`, formData),
 
