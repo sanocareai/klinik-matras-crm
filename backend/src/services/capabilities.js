@@ -29,6 +29,28 @@ export function capabilitiesFor(user) {
   const incentivePayoutCreate = hasPermission(user, P.INCENTIVE_PAYOUT_CREATE);
   const incentivePayoutVoid = hasPermission(user, P.INCENTIVE_PAYOUT_VOID);
 
+  // Sano Delivery Control (aplikasi Admin/Owner armada). Izin EKSPLISIT
+  // delivery:control:access (ADMIN, OWNER, DISPATCHER), TIDAK diturunkan dari
+  // job:read: Leader Driver, Driver, dan Helper ditolak. Penegakan sesungguhnya
+  // di server (GET /api/delivery-control/session); field ini hanya cermin untuk UI.
+  // Empat izin biaya armada dipisah: mengajukan (sama dengan gerbang route
+  // pengajuan), memverifikasi bukti (finance:admin, sama dengan route
+  // verifikasi-bukti), menyetujui, dan membayar.
+  const deliveryControlApp = hasPermission(user, P.DELIVERY_CONTROL_ACCESS);
+  // Biaya Delivery MILIK SENDIRI (Driver/Helper/Leader Driver) — izin sempit,
+  // bukan finance:expense:submit. Dipakai klien Driver kelak; server tetap penentu.
+  const deliveryExpenseOwn = {
+    read: hasPermission(user, P.DELIVERY_EXPENSE_OWN_READ),
+    write: hasPermission(user, P.DELIVERY_EXPENSE_OWN_WRITE),
+  };
+  const deliveryExpense = {
+    submit: expenseSubmit || financePost || financeAdmin,
+    verify: financeAdmin,
+    approve: financeApprove,
+    requestRevision: financeApprove,
+    pay: financePost,
+  };
+
   // Preset = petunjuk TATA LETAK awal aplikasi (bukan izin).
   let preset = "NONE";
   if (roles.includes("FINANCE")) preset = "FINANCE";
@@ -49,6 +71,7 @@ export function capabilitiesFor(user) {
     expenseSubmit,
     incentiveSnapshotCreate, incentiveSnapshotReview, incentiveSnapshotApprove, incentiveSnapshotRead,
     incentivePayoutRead, incentivePayoutCreate, incentivePayoutVoid,
+    deliveryControlApp, deliveryExpense, deliveryExpenseOwn,
     // Boleh memakai aplikasi Finance? (dipakai login mobile). SENGAJA tidak
     // memakai paymentRead: SALES juga memegangnya (lihat riwayat pembayaran order
     // sendiri) tetapi bukan tim Finance.

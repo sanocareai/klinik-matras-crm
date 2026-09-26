@@ -123,11 +123,18 @@ export async function idempotency(req, res, next) {
     if (!baris) return next();
 
     // Tangkap respons untuk disimpan.
+    //
+    // URUTAN PENTING (diperbaiki 24 Sep 2026): hasil DONE harus TERSIMPAN SEBELUM byte respons dikirim ke
+    // klien. Sebelumnya disimpan asinkron di res.on("finish") — SESUDAH respons terkirim — sehingga retry
+    // cepat dengan kunci yang sama (klien menerima respons lalu langsung mengulang) bisa membaca baris masih
+    // PROCESSING dan mendapat 409 IDEMPOTENCY_IN_PROGRESS alih-alih hasil pertama (terlihat sebagai tes void
+    // yang gagal acak di bawah beban). Kini res.json menunggu penyimpanan selesai; 'finish' hanya cadangan
+    // untuk handler yang tidak memakai res.json (send/end).
     let tertangkap;
-    const jsonAsli = res.json.bind(res);
-    res.json = (body) => { tertangkap = body; return jsonAsli(body); };
-
-    res.on("finish", () => {
+    let tersimpan = false;
+    const simpanHasil = () => {
+      if (tersimpan) return Promise.resolve();
+      tersimpan = true;
       const sukses = res.statusCode >= 200 && res.statusCode < 300;
       const tugas = sukses
         ? prisma.apiIdempotencyKey.update({
@@ -140,8 +147,15 @@ export async function idempotency(req, res, next) {
             },
           })
         : prisma.apiIdempotencyKey.deleteMany({ where: { id: baris.id } });
-      tugas.catch((err) => console.error("[idempotency] gagal menyimpan hasil:", err.message));
-    });
+      return tugas.catch((err) => console.error("[idempotency] gagal menyimpan hasil:", err.message));
+    };
+    const jsonAsli = res.json.bind(res);
+    res.json = (body) => {
+      tertangkap = body;
+      simpanHasil().finally(() => { if (!res.writableEnded && !res.destroyed) jsonAsli(body); });
+      return res;
+    };
+    res.on("finish", () => { simpanHasil(); });
     res.on("close", () => {
       // Koneksi putus sebelum respons selesai: lepas kunci bila belum DONE.
       if (!res.writableEnded) prisma.apiIdempotencyKey.deleteMany({ where: { id: baris.id, state: "PROCESSING" } }).catch(() => {});

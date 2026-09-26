@@ -13,6 +13,7 @@ import { pastikanUangMukaBolehDipakai } from "../finance/operationalAdvance.js";
 import { hasPermission, rolesOf } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
 import { getWorkspaceConfig, bolehAutoApprove, SUMBER_DANA } from "./config.js";
+import { ownOnly } from "./ownPolicy.js";
 
 export class SubmissionError extends Error {
   constructor(message, statusCode = 400) {
@@ -33,6 +34,7 @@ const FIN_TO_SUBMISSION_STATUS = {
 
 export const submissionInclude = {
   requestedBy: { select: { id: true, name: true } },
+  revisionRequestedBy: { select: { id: true, name: true } },
   picUser: { select: { id: true, name: true } },
   driver: { select: { id: true, name: true } },
   helper: { select: { id: true, name: true } },
@@ -45,7 +47,7 @@ export const submissionInclude = {
   advance: { select: { id: true, advanceNumber: true, holderId: true, purpose: true, dueDate: true, status: true } },
   createdBy: { select: { id: true, name: true } },
   proofs: { where: { supersededAt: null }, orderBy: { createdAt: "desc" } },
-  auditTrail: { orderBy: { createdAt: "desc" }, take: 50 },
+  auditTrail: { orderBy: { createdAt: "desc" }, take: 50, include: { actor: { select: { id: true, name: true } } } },
 };
 
 function bentukSubmission(s) {
@@ -230,14 +232,22 @@ export async function buatPengajuan(db, { workspace, user, body }) {
     },
     include: submissionInclude,
   });
+  await catatAudit(db, { submissionId: created.id, actorId: user.id, field: "status", before: null, after: "DRAFT", reason: "Pengajuan dibuat" });
   return bentukSubmission(created);
 }
 
-/** Edit pengajuan — HANYA sah selama DRAFT (seluruh field boleh diubah, tanpa jejak audit khusus karena belum "resmi"). */
+/** Satu baris jejak audit (siapa, kapan, apa, sebelum/sesudah, alasan). Dipakai SEMUA mutation pengajuan. */
+export function catatAudit(db, { submissionId, actorId, field, before = null, after = null, reason = null }) {
+  return db.expenseSubmissionAudit.create({
+    data: { id: randomUUID(), submissionId, field, before: before == null ? null : String(before), after: after == null ? null : String(after), reason, actorId },
+  });
+}
+
+/** Edit pengajuan — sah selama DRAFT atau PERLU_REVISI (seluruh field boleh diubah). Perubahan tetap dicatat di audit (field yang berubah). */
 export async function ubahPengajuanDraft(db, { id, user, body }) {
   const s = await db.expenseSubmission.findUnique({ where: { id } });
   if (!s) throw new SubmissionError("Pengajuan tidak ditemukan", 404);
-  if (s.status !== "DRAFT") throw new SubmissionError(`Pengajuan berstatus ${s.status} — hanya draf yang bebas diedit penuh`, 409);
+  if (!["DRAFT", "PERLU_REVISI"].includes(s.status)) throw new SubmissionError(`Pengajuan berstatus ${s.status} — hanya draf atau yang diminta revisi yang bisa diedit`, 409);
   if (s.requestedById !== user.id && s.createdById !== user.id && !hasPermission(user, P.FINANCE_ADMIN)) {
     throw new SubmissionError("Hanya pemohon sendiri (atau admin keuangan) yang boleh mengedit draf ini", 403);
   }
@@ -294,6 +304,7 @@ export async function ubahPengajuanDraft(db, { id, user, body }) {
   }
   void cfg;
   const updated = await db.expenseSubmission.update({ where: { id }, data, include: submissionInclude });
+  await catatAudit(db, { submissionId: id, actorId: user.id, field: "draft", before: null, after: Object.keys(data).sort().join(", ") || "-", reason: s.status === "PERLU_REVISI" ? "Perbaikan setelah diminta revisi" : "Edit draf" });
   return bentukSubmission(updated);
 }
 
@@ -314,7 +325,7 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
       const existing = await tx.expenseSubmission.findUnique({ where: { id }, include: submissionInclude });
       return bentukSubmission(existing);
     }
-    if (s.status !== "DRAFT") throw new SubmissionError(`Pengajuan berstatus ${s.status} — hanya draf yang bisa diajukan`, 409);
+    if (!["DRAFT", "PERLU_REVISI"].includes(s.status)) throw new SubmissionError(`Pengajuan berstatus ${s.status} — hanya draf atau yang diminta revisi yang bisa diajukan`, 409);
     if (s.requestedById !== user.id && s.createdById !== user.id && !hasPermission(user, P.FINANCE_ADMIN)) {
       throw new SubmissionError("Hanya pemohon sendiri (atau admin keuangan) yang boleh mengajukan", 403);
     }
@@ -372,7 +383,10 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
     // SAMA dengan pembuatan FinExpense-nya, jadi baik dokumen maupun jurnal
     // pengakuan bebannya lahir atomik bersama status pengajuan — TIDAK ada
     // jendela waktu di mana satu ada tanpa yang lain.
-    const autoApproved = bolehAutoApprove(cfg, s.expenseType, s.amount);
+    // Aktor own-only (Driver/Helper/Leader Driver) diturunkan dari izin server-side — TIDAK auto-approve.
+    const mandiriOwn = ownOnly(user);
+    const autoApproved = bolehAutoApprove(cfg, s.expenseType, s.amount, { mandiriOwn });
+    const seharusnyaOtomatis = mandiriOwn && bolehAutoApprove(cfg, s.expenseType, s.amount);
     let catatanOtomatis = null;
     if (autoApproved) {
       catatanOtomatis = `Auto-approve: jenis "${s.expenseType}" ≤ Rp${cfg.autoApprove.maxAmount.toLocaleString("id-ID")} (kebijakan ${cfg.label})`;
@@ -401,6 +415,13 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
             id: randomUUID(), submissionId: id, field: "status",
             before: "DRAFT", after: "OTOMATIS_DISETUJUI", reason: catatanOtomatis, actorId: null,
           },
+        });
+      } else {
+        await catatAudit(tx, {
+          submissionId: id, actorId: user.id, field: "status", before: s.status, after: "MENUNGGU_PERSETUJUAN",
+          reason: seharusnyaOtomatis
+            ? "Diajukan; auto-approve tidak berlaku untuk pengajuan mandiri (menunggu persetujuan Finance)"
+            : (s.status === "PERLU_REVISI" ? "Diajukan ulang setelah revisi" : "Diajukan"),
         });
       }
     } catch (e) {
@@ -456,7 +477,43 @@ export async function tarikPengajuan(db, { id, user }) {
     where: { id }, data: { status: "DRAFT", finExpenseId: null, submittedAt: null, withdrawnAt: new Date(), idempotencyKey: null },
     include: submissionInclude,
   });
+  await catatAudit(db, { submissionId: id, actorId: user.id, field: "status", before: "MENUNGGU_PERSETUJUAN", after: "DRAFT", reason: "Ditarik kembali oleh pemohon" });
   return bentukSubmission(updated);
+}
+
+/**
+ * MINTA REVISI — reviewer (finance:approve) mengembalikan pengajuan yang MENUNGGU_PERSETUJUAN
+ * ke pemilik untuk diperbaiki. BEDA dari tarik (aksi pemilik) dan batalkan (mengakhiri).
+ * Alasan WAJIB. FinExpense ditarik ke DRAFT persis seperti tarik (tidak menyentuh buku besar:
+ * FinExpense MENUNGGU_APPROVAL belum pernah diposting), pengajuan lepas dari FinExpense dan
+ * berstatus PERLU_REVISI; pemilik mengedit lalu mengajukan ulang (FinExpense baru).
+ * Atomik dengan kunci baris; retry tidak mengubah apa pun (status sudah bukan MENUNGGU_PERSETUJUAN -> 409).
+ */
+export async function mintaRevisiPengajuan(prismaClient, { id, user, reason }) {
+  const alasan = String(reason || "").trim();
+  if (alasan.length < 3) throw new SubmissionError("Alasan revisi wajib diisi (minimal 3 karakter)", 400);
+  return prismaClient.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe('SELECT id FROM "expense_submissions" WHERE id = $1::uuid FOR UPDATE', id);
+    const s = await tx.expenseSubmission.findUnique({ where: { id }, include: { finExpense: { select: { id: true, status: true } } } });
+    if (!s) throw new SubmissionError("Pengajuan tidak ditemukan", 404);
+    if (s.status !== "MENUNGGU_PERSETUJUAN" || !s.finExpenseId || s.finExpense?.status !== "MENUNGGU_APPROVAL") {
+      throw new SubmissionError(`Pengajuan berstatus ${s.status} — revisi hanya bisa diminta saat masih menunggu persetujuan`, 409);
+    }
+    if (s.requestedById === user.id || s.createdById === user.id) {
+      throw new SubmissionError("Anda tidak bisa meminta revisi untuk pengajuan Anda sendiri — gunakan Tarik", 403);
+    }
+    await tx.finExpense.update({ where: { id: s.finExpenseId }, data: { status: "DRAFT", submittedAt: null } });
+    const updated = await tx.expenseSubmission.update({
+      where: { id },
+      data: {
+        status: "PERLU_REVISI", finExpenseId: null, submittedAt: null, idempotencyKey: null,
+        revisionReason: alasan, revisionRequestedById: user.id, revisionRequestedAt: new Date(),
+      },
+      include: submissionInclude,
+    });
+    await catatAudit(tx, { submissionId: id, actorId: user.id, field: "status", before: "MENUNGGU_PERSETUJUAN", after: "PERLU_REVISI", reason: alasan });
+    return bentukSubmission(updated);
+  }, { timeout: 20_000, maxWait: 20_000 });
 }
 
 /** Batalkan — sebelum FinExpense ada (langsung), atau sesudahnya (delegasi ke /expenses/:id/cancel yang sudah ada, FINANCE_ADMIN). */
@@ -464,8 +521,9 @@ export async function batalkanPengajuan(db, { id, user, reason }) {
   const s = await db.expenseSubmission.findUnique({ where: { id } });
   if (!s) throw new SubmissionError("Pengajuan tidak ditemukan", 404);
   if (!s.finExpenseId) {
-    if (!["DRAFT", "MENUNGGU_PERSETUJUAN"].includes(s.status)) throw new SubmissionError(`Pengajuan berstatus ${s.status} — tidak bisa dibatalkan`, 409);
+    if (!["DRAFT", "PERLU_REVISI", "MENUNGGU_PERSETUJUAN"].includes(s.status)) throw new SubmissionError(`Pengajuan berstatus ${s.status} — tidak bisa dibatalkan`, 409);
     const updated = await db.expenseSubmission.update({ where: { id }, data: { status: "DIBATALKAN" }, include: submissionInclude });
+    await catatAudit(db, { submissionId: id, actorId: user.id, field: "status", before: s.status, after: "DIBATALKAN", reason: reason?.trim() || "Dibatalkan oleh pemohon" });
     return bentukSubmission(updated);
   }
   throw new SubmissionError("Pengajuan ini sudah punya FinExpense — batalkan lewat aksi Batalkan pada dokumen Finance-nya (butuh FINANCE_ADMIN)", 409);
