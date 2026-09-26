@@ -7,7 +7,7 @@
 #
 # Baseline produksi = main cb0c6c2e. DEPLOY_SHA harus HEAD origin/main (main di-fast-forward lebih dulu) dan keturunan baseline.
 # TIDAK ada migration (pending harus kosong; migrate deploy = no-op). Frontend BERUBAH: dist dibangun di release dir baru memakai node_modules dari
-# release aktif (package.json/lock frontend tidak berubah). RESI_INPUT_AKTIF wajib tetap false. Tidak ada backfill/penulisan data; smoke HANYA MEMBACA.
+# release mana pun dengan package-lock identik (package.json/lock frontend tidak berubah). RESI_INPUT_AKTIF wajib tetap false. Tidak ada backfill/penulisan data; smoke HANYA MEMBACA.
 # Prinsip: fail-fast; tanpa reset/stash/force; tanpa rollback otomatis (hanya instruksi); tanpa secret di layar; DROP hanya DB sementara verifikasi restore.
 set -Eeuo pipefail
 umask 077
@@ -201,6 +201,19 @@ DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"; AVAIL_KB
 [ "$AVAIL_KB" -ge $(( DB_BYTES / 1024 * 3 + 6 * 1024 * 1024 )) ] || die "ruang disk kurang"
 ok "ruang disk cukup"
 
+say "2d. Sumber node_modules frontend untuk build (release mana pun di ~/releases dengan package-lock IDENTIK)"
+NM_SRC=""
+LOCK_NEW="$BK_DIR/lock-baru.json"; sg show "${DEPLOY_SHA}:frontend/package-lock.json" > "$LOCK_NEW" || die "gagal membaca package-lock rilis"
+for d in "$PREV_DIR" "$RELEASES"/*/; do
+  d="${d%/}"
+  if [ -d "$d/frontend/node_modules" ] && [ -f "$d/frontend/package-lock.json" ] && cmp -s <(tr -d '\r' < "$d/frontend/package-lock.json") <(tr -d '\r' < "$LOCK_NEW"); then NM_SRC="$d/frontend/node_modules"; break; fi
+done
+[ -n "$NM_SRC" ] || die "tidak ada release dengan frontend/node_modules dan package-lock identik (build tidak bisa dilakukan tanpa npm ci)"
+ok "node_modules build dari ${NM_SRC}"
+NM_KB="$(du -sk "$NM_SRC" | cut -f1)"; AVAIL_KB="$(df -Pk "$HOME" | awk 'NR==2{print $4}')"
+[ "$AVAIL_KB" -ge $(( NM_KB * 2 + 3 * 1024 * 1024 )) ] || die "ruang disk kurang untuk menyalin node_modules (${NM_KB} KB)"
+ok "ruang disk cukup untuk salinan node_modules"
+
 if [ "$PREFLIGHT_ONLY" = "1" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; exit 0; fi
 
 # ── 3. Backup + verifikasi restore ───────────────────────────────────────────────────────────────────────
@@ -236,9 +249,8 @@ PHASE="4-release-dir"; say "4. Release dir ${NEW_DIR} (git archive SHA rilis; re
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah selama backup"
 mkdir "$NEW_DIR" || die "gagal membuat ${NEW_DIR}"
 sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR" --exclude='frontend/dist' || die "git archive gagal"
-test -d "$PREV_DIR/frontend/node_modules" || die "release aktif tidak punya frontend/node_modules untuk dipakai build"
 cmp -s <(sg show "${PROD_FULL}:frontend/package-lock.json") <(sg show "${DEPLOY_SHA}:frontend/package-lock.json") || die "package-lock frontend berubah"
-cp -a "$PREV_DIR/frontend/node_modules" "$NEW_DIR/frontend/node_modules" || die "gagal menyalin node_modules frontend"
+cp -a "$NM_SRC" "$NEW_DIR/frontend/node_modules" || die "gagal menyalin node_modules frontend"
 for f in docker-compose.yml docker-compose.release.yml backend/Dockerfile backend/package.json frontend/package.json; do [ -f "$NEW_DIR/$f" ] || die "release dir tidak lengkap: $f"; done
 [ ! -e "$NEW_DIR/backend/.env" ] || die "backend/.env tidak boleh ada di arsip"
 printf '%s\n' "$DEPLOY_SHORT" > "$NEW_DIR/.release-commit"
