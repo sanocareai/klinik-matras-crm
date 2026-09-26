@@ -12,7 +12,7 @@ import { toMoney, moneyToNumber } from "../finance/money.js";
 import { pastikanUangMukaBolehDipakai } from "../finance/operationalAdvance.js";
 import { hasPermission, rolesOf } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
-import { getWorkspaceConfig, bolehAutoApprove, SUMBER_DANA, ARAHAN_MODUL_LAIN, JENIS_TERLARANG_STOK } from "./config.js";
+import { getWorkspaceConfig, bolehAutoApprove, SUMBER_DANA, ARAHAN_MODUL_LAIN, JENIS_TERLARANG_STOK, ARAHAN_JENIS, ringkasKonteksMetadata } from "./config.js";
 import { ownOnly } from "./ownPolicy.js";
 
 import { SubmissionError } from "./errors.js";
@@ -111,7 +111,12 @@ function modeDariSumberDana(sumberDana) {
 function validasiTipe(workspace, expenseType) {
   const cfg = getWorkspaceConfig(workspace);
   if (!cfg) throw new SubmissionError(`Workspace "${workspace}" tidak dikenal`, 400);
-  if (JENIS_TERLARANG_STOK.includes(String(expenseType || "").toUpperCase())) {
+  const kodeJenis = String(expenseType || "").toUpperCase();
+  if (cfg.strict && ARAHAN_JENIS[kodeJenis]) {
+    const a = ARAHAN_JENIS[kodeJenis];
+    throw new SubmissionError(`Jenis biaya "${expenseType}" (${a.label}) tidak diproses lewat Pengajuan Biaya — gunakan ${a.ke}.`, 422);
+  }
+  if (JENIS_TERLARANG_STOK.includes(kodeJenis)) {
     throw new SubmissionError(
       `Jenis biaya "${expenseType}" adalah urusan stok/pembelian — bukan Pengajuan Biaya (akan terhitung dua kali). ` +
       `Gunakan: ${ARAHAN_MODUL_LAIN.map((a) => `${a.kebutuhan} → ${a.ke}`).join("; ")}.`, 422);
@@ -129,6 +134,28 @@ function susunKeterangan({ expenseType, cfg, vendorOrLocation, vehiclePlateSnaps
   if (metadata?.vendorOrLocation || vendorOrLocation) bagian.push(`di ${metadata?.vendorOrLocation || vendorOrLocation}`);
   if (routeNameSnapshot) bagian.push(`— rute ${routeNameSnapshot}`);
   return bagian.join(" ");
+}
+
+/**
+ * C1/C2 — pada workspace ketat, membatalkan pengajuan hanya boleh oleh pemohon/pembuat atau admin keuangan (sama dengan tarik/ajukan/ubah).
+ * Workspace lama (Delivery) TIDAK diubah di sini.
+ */
+function pastikanMilikAtauAdmin(s, user, aksi) {
+  const cfg = getWorkspaceConfig(workspaceUntukDivisi(s.division));
+  if (!cfg?.strict) return;
+  if (s.requestedById !== user.id && s.createdById !== user.id && !hasPermission(user, P.FINANCE_ADMIN)) {
+    throw new SubmissionError(`Hanya pemohon sendiri (atau admin keuangan) yang boleh ${aksi} pengajuan ini`, 403);
+  }
+}
+
+/** Koreksi metadata pada workspace ketat: pemilik pengajuan atau staf Finance (finance:post / finance:admin). */
+function pastikanMilikAtauStaf(s, user) {
+  const cfg = getWorkspaceConfig(workspaceUntukDivisi(s.division));
+  if (!cfg?.strict) return;
+  const staf = hasPermission(user, P.FINANCE_POST) || hasPermission(user, P.FINANCE_ADMIN);
+  if (!staf && s.requestedById !== user.id && s.createdById !== user.id) {
+    throw new SubmissionError("Hanya pemohon sendiri atau staf Finance yang boleh mengoreksi data pengajuan ini", 403);
+  }
 }
 
 /** Buat pengajuan baru berstatus DRAFT — bebas diedit selama masih di sini. */
@@ -348,7 +375,7 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
     const wsKey = workspaceUntukDivisi(s.division);
     const cfg = getWorkspaceConfig(wsKey) || { division: s.division };
     // C1 — validasi ULANG saat diajukan (draf bisa diubah lewat jalur lain): jenis biaya, relasi wajib, alasan mendesak, metadata wajib, guard dokumen.
-    if (wsKey === "PRODUKSI" || wsKey === "WAREHOUSE") await validasiKonteks(tx, { workspace: wsKey, cfg, body: s, excludeId: id, tahap: "ajukan" });
+    if (cfg.strict) await validasiKonteks(tx, { workspace: wsKey, cfg, body: s, excludeId: id, tahap: "ajukan" });
 
     // Kunci idempotensi domain — kalau baris sudah punya idempotencyKey lain (mustahil di
     // jalur normal, hanya bisa lewat retry dengan header berbeda pada baris yg sama),
@@ -394,7 +421,7 @@ export async function ajukanPengajuan(prismaClient, { id, user, idemKey }) {
       reimburseToId: s.requestedById, reimburseToOverrideAllowed: true,
       payeeName: s.vendorName, orderId: s.orderId, unitId: s.unitId || null,
       // Produksi/Gudang: pengaju non-Finance TIDAK dipaksa jadi reimbursement — sumber dana usulan dihormati (UTANG/REIMBURSEMENT; Finance tetap memutuskan bayar).
-      ikutiModeUsulan: wsKey === "PRODUKSI" || wsKey === "WAREHOUSE",
+      ikutiModeUsulan: !!cfg.strict,
       receiptUrl: buktiTerakhir?.url || null, notes: s.notes, langsungAjukan: true, user,
     });
 
@@ -540,6 +567,7 @@ export async function mintaRevisiPengajuan(prismaClient, { id, user, reason }) {
 export async function batalkanPengajuan(db, { id, user, reason }) {
   const s = await db.expenseSubmission.findUnique({ where: { id } });
   if (!s) throw new SubmissionError("Pengajuan tidak ditemukan", 404);
+  pastikanMilikAtauAdmin(s, user, "membatalkan");
   if (!s.finExpenseId) {
     if (!["DRAFT", "PERLU_REVISI", "MENUNGGU_PERSETUJUAN"].includes(s.status)) throw new SubmissionError(`Pengajuan berstatus ${s.status} — tidak bisa dibatalkan`, 409);
     const updated = await db.expenseSubmission.update({ where: { id }, data: { status: "DIBATALKAN" }, include: submissionInclude });
@@ -554,6 +582,7 @@ export async function ubahMetadataPengajuan(db, { id, user, reason, changes }) {
   if (!reason?.trim()) throw new SubmissionError("Alasan perubahan wajib diisi");
   const s = await db.expenseSubmission.findUnique({ where: { id }, include: { finExpense: { select: { status: true } } } });
   if (!s) throw new SubmissionError("Pengajuan tidak ditemukan", 404);
+  pastikanMilikAtauStaf(s, user);
   const statusEfektif = s.finExpense ? (FIN_TO_SUBMISSION_STATUS[s.finExpense.status] || s.status) : s.status;
   if (statusEfektif === "DIBAYAR" || statusEfektif === "DIBATALKAN" || statusEfektif === "DITOLAK") {
     throw new SubmissionError(`Pengajuan berstatus ${statusEfektif} — metadata tidak bisa dikoreksi lagi lewat sini`, 409);
@@ -623,7 +652,7 @@ export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseT
     },
     select: {
       id: true, submissionNumber: true, amount: true, date: true, status: true,
-      picNameSnapshot: true, vehiclePlateSnapshot: true, expenseType: true, description: true, documentRef: true,
+      picNameSnapshot: true, vehiclePlateSnapshot: true, expenseType: true, description: true, documentRef: true, metadata: true,
       requestedBy: { select: { name: true } },
       workCenter: { select: { name: true } }, warehouse: { select: { name: true } }, unit: { select: { unitCode: true } }, material: { select: { code: true } },
       proofs: { where: { supersededAt: null }, select: { id: true }, take: 1 },
@@ -633,23 +662,42 @@ export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseT
   const nominal = amount != null ? toMoney(amount) : null;
   return kandidat
     .filter((k) => !nominal || Math.abs(moneyToNumber(k.amount) - Number(nominal)) < 1)
-    .map(({ proofs, workCenter, warehouse, unit, material, requestedBy, ...k }) => ({
+    .map(({ proofs, workCenter, warehouse, unit, material, requestedBy, metadata, ...k }) => ({
       ...k, amount: moneyToNumber(k.amount), adaBukti: proofs.length > 0, pemohon: requestedBy?.name || null,
-      konteks: [unit && `unit ${unit.unitCode}`, workCenter && `mesin ${workCenter.name}`, warehouse && `gudang ${warehouse.name}`, material && `material ${material.code}`].filter(Boolean).join(" · ") || null,
+      konteks: [unit && `unit ${unit.unitCode}`, workCenter && `mesin ${workCenter.name}`, warehouse && `gudang ${warehouse.name}`, material && `material ${material.code}`, ringkasKonteksMetadata(getWorkspaceConfig(workspaceUntukDivisi(division)), metadata)].filter(Boolean).join(" · ") || null,
     }));
 }
 
 /**
- * Validasi relasi & kebijakan workspace PRODUKSI/WAREHOUSE (C1). Mengembalikan `data` kolom relasi untuk disimpan.
+ * Pemetaan jenis biaya → kategori Finance harus terpasang & aktif. Kalau belum, pengajuan DIBLOKIR dengan penjelasan konfigurasi yang kurang
+ * (lebih baik tertahan daripada salah akun). Dipakai juga oleh GET /config untuk menandai jenis yang belum siap.
+ */
+export async function statusKategori(db, cfg, tipe) {
+  const kode = cfg.categoryMapping?.[tipe];
+  if (!kode) return { siap: false, kode: null, alasan: `Jenis biaya "${tipe}" belum punya pemetaan kategori Finance untuk ${cfg.label} — Finance perlu memetakannya dulu` };
+  const k = await db.finExpenseCategory.findUnique({ where: { code: kode }, select: { active: true } });
+  if (!k) return { siap: false, kode, alasan: `Kategori Finance "${kode}" belum terpasang — Finance perlu memasangnya (Finance › Pengaturan › Pasang Akun Bawaan) sebelum jenis biaya ini bisa diajukan` };
+  if (!k.active) return { siap: false, kode, alasan: `Kategori Finance "${kode}" nonaktif — Finance perlu mengaktifkannya kembali sebelum jenis biaya ini bisa diajukan` };
+  return { siap: true, kode, alasan: null };
+}
+
+async function pastikanKategoriSiap(db, cfg, tipe) {
+  const s = await statusKategori(db, cfg, tipe);
+  if (!s.siap) throw new SubmissionError(s.alasan, 422);
+}
+
+/**
+ * Validasi relasi & kebijakan workspace ketat (C1/C2). Mengembalikan `data` kolom relasi untuk disimpan.
  *  - relasi hanya yang diizinkan workspace (kendaraan/rute/job/driver/helper ditolak di sini)
  *  - unit ikut order-nya; mesin (WorkCenter), gudang, material harus ada & aktif
  *  - tahap "ajukan": relasi wajib per jenis, alasan mendesak, metadata wajib
  *  - guard anti double-counting: dokumen Inventory/Pembelian/Tagihan/Pengeluaran tidak boleh dicatat lagi
  */
 async function validasiKonteks(db, { workspace, cfg, body, excludeId, tahap, punyaBodyRelasi = null }) {
-  const baru = workspace === "PRODUKSI" || workspace === "WAREHOUSE";
-  if (!baru) return { data: {} };
+  if (!cfg.strict) return { data: {} };
   const tipe = body.expenseType;
+  // C2 — pemetaan kategori Finance wajib SIAP (ada & aktif) sebelum draf/pengajuan diterima; tidak ada fallback diam-diam.
+  await pastikanKategoriSiap(db, cfg, tipe);
   const lain = ["vehicleId", "routeId", "jobId", "driverId", "helperId"].filter((k) => (punyaBodyRelasi ?? body)[k]);
   if (lain.length > 0) throw new SubmissionError(`Kendaraan, rute, job, driver, dan helper tidak berlaku untuk pengajuan ${cfg.label}`, 422);
   const izin = new Set(cfg.relations || []);

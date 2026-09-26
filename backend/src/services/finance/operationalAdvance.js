@@ -28,7 +28,8 @@ export class AdvanceError extends Error {
 }
 
 const STATUS_BISA_DIPAKAI = ["AKTIF", "SEBAGIAN"];
-const DIVISI_VALID = ["SALES", "PRODUKSI", "GUDANG", "DELIVERY", "DIGITAL_TECHNOLOGY", "OFFICE", "MANAGEMENT", "UMUM"];
+// MARKETING & HR_GA ditambahkan (C2) supaya uang muka untuk kegiatan divisi itu bisa dicatat dan dipilih di Pengajuan Biaya.
+const DIVISI_VALID = ["SALES", "PRODUKSI", "GUDANG", "DELIVERY", "DIGITAL_TECHNOLOGY", "OFFICE", "MANAGEMENT", "MARKETING", "HR_GA", "UMUM"];
 
 export const lockUangMuka = (tx, id) => lockRowForUpdate(tx, '"fin_operational_advances"', id);
 

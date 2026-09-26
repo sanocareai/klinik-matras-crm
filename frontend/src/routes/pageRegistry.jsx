@@ -72,6 +72,7 @@ const FinanceSuppliers      = lazy(() => import("../pages/finance/FinanceSupplie
 const FinanceJournal        = lazy(() => import("../pages/finance/FinanceJournal.jsx"));
 const FinancePersediaanAwal = lazy(() => import("../pages/finance/FinancePersediaanAwal.jsx"));
 const PengajuanBiayaWorkspace = lazy(() => import("../pages/pengajuanBiaya/PengajuanBiayaWorkspace.jsx"));
+const PengajuanBiayaHub = lazy(() => import("../pages/pengajuanBiaya/PengajuanBiayaHub.jsx"));
 const FinanceLedger         = lazy(() => import("../pages/finance/FinanceLedger.jsx"));
 const FinanceReports        = lazy(() => import("../pages/finance/FinanceReports.jsx"));
 const FinanceReconciliation = lazy(() => import("../pages/finance/FinanceReconciliation.jsx"));
@@ -181,6 +182,10 @@ export const PAGES = [
   // C1 — Pengajuan Biaya Produksi & Gudang (halaman generik; jenis biaya & tautan dari konfigurasi server)
   { path: "/bengkel/pengajuan-biaya", render: () => <PengajuanBiayaWorkspace workspace="PRODUKSI" /> },
   { path: "/warehouse/pengajuan-biaya", render: () => <PengajuanBiayaWorkspace workspace="WAREHOUSE" /> },
+  // C2 — Marketing, Management, HR-GA: komponen yang SAMA (konfigurasi dari server); hub Finance untuk melihat semua divisi
+  { path: "/marketing/pengajuan-biaya", render: () => <PengajuanBiayaWorkspace workspace="MARKETING" /> },
+  { path: "/kendali/pengajuan-biaya", render: () => <PengajuanBiayaWorkspace workspace="MANAGEMENT" /> },
+  { path: "/finance/pengajuan-divisi", render: () => <PengajuanBiayaHub /> },
   { path: "/finance/ledger",         render: () => <FinanceLedger /> },
   { path: "/finance/reports",        render: () => <FinanceReports /> },
   { path: "/finance/accounts",       render: () => <FinanceAccounts /> },

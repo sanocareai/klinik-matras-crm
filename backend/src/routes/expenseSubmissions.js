@@ -8,12 +8,12 @@ import { requireAuth } from "../middleware/auth.js";
 import { idempotency } from "../middleware/idempotency.js";
 import { requireAnyPermission, PERMISSIONS as P, hasPermission, rolesOf } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { getWorkspaceConfig, daftarWorkspaceAktif, SUMBER_DANA, ARAHAN_MODUL_LAIN } from "../services/expenseSubmission/config.js";
+import { getWorkspaceConfig, daftarWorkspaceAktif, SUMBER_DANA, ARAHAN_MODUL_LAIN, ARAHAN_MODUL_UMUM } from "../services/expenseSubmission/config.js";
 import { bolehWorkspace, divisiTerlarang, bolehCatatAtasNama, workspaceUntukDivisi } from "../services/expenseSubmission/access.js";
 import {
   buatPengajuan, ubahPengajuanDraft, ajukanPengajuan, tarikPengajuan, batalkanPengajuan,
   ubahMetadataPengajuan, cekKemungkinanDuplikat, submissionInclude, bentukSubmission, SubmissionError,
-  mintaRevisiPengajuan, catatAudit,
+  mintaRevisiPengajuan, catatAudit, statusKategori,
 } from "../services/expenseSubmission/service.js";
 import {
   ownOnly, sanitasiBodyOwn, pastikanMilikSendiri, pastikanRelasiMilikSendiri, STATUS_EDITABLE_OWN,
@@ -67,13 +67,18 @@ expenseSubmissionRouter.get("/expense-submissions/config", requireAnyPermission(
     const cfg = getWorkspaceConfig(workspace);
     if (!cfg) return res.status(404).json({ error: "Workspace tidak dikenal", tersedia: daftarWorkspaceAktif() });
     if (!bolehWorkspace(req.user, workspace)) throw err(`Anda tidak punya akses ke Pengajuan Biaya ${cfg.label}`, 403);
+    // C2 — tandai jenis biaya yang pemetaan kategori Finance-nya belum siap (UI menonaktifkannya & menjelaskan konfigurasi yang kurang).
+    const jenis = cfg.strict
+      ? await Promise.all(cfg.expenseTypes.map(async (t) => { const s = await statusKategori(prisma, cfg, t.code); return { ...t, siap: s.siap, alasanTidakSiap: s.alasan, catatan: cfg.catatanJenis?.[t.code] || null }; }))
+      : cfg.expenseTypes;
     res.json({
-      workspace, division: cfg.division, label: cfg.label,
-      expenseTypes: cfg.expenseTypes,
+      workspace, division: cfg.division, label: cfg.label, ringkas: cfg.ringkas || null, strict: !!cfg.strict,
+      konteksMetadata: cfg.konteksMetadata || [],
+      expenseTypes: jenis,
       relations: cfg.relations,
       relasiWajib: cfg.relasiWajib || {},
       wajibAlasanMendesak: cfg.wajibAlasanMendesak || [],
-      arahanModulLain: cfg.division === "PRODUKSI" || cfg.division === "GUDANG" ? ARAHAN_MODUL_LAIN : [],
+      arahanModulLain: !cfg.strict ? [] : (cfg.division === "PRODUKSI" || cfg.division === "GUDANG" ? ARAHAN_MODUL_LAIN : ARAHAN_MODUL_UMUM),
       requiresLeaderReview: cfg.requiresLeaderReview,
       metadataFieldsByType: Object.fromEntries(cfg.expenseTypes.map((t) => [t.code, cfg.metadataFields(t.code)])),
       // Ambang auto-approve adalah kebijakan Finance — tidak dibocorkan ke akun own-only.
@@ -218,7 +223,8 @@ expenseSubmissionRouter.get("/expense-submissions/recent", requireAnyPermission(
 expenseSubmissionRouter.get("/expense-submissions/opsi", requireAnyPermission(...CAN_SUBMIT), async (req, res) => {
   try {
     const workspace = String(req.query.workspace || "").toUpperCase();
-    if (!["PRODUKSI", "WAREHOUSE"].includes(workspace)) throw err("Workspace tidak punya pilihan tautan", 400);
+    const cfgOpsi = getWorkspaceConfig(workspace);
+    if (!cfgOpsi?.strict) throw err("Workspace tidak punya pilihan tautan", 400);
     if (!bolehWorkspace(req.user, workspace)) throw err("Anda tidak punya akses ke workspace ini", 403);
     const q = String(req.query.q || "").trim();
     const cari = q.length >= 2;
@@ -230,8 +236,12 @@ expenseSubmissionRouter.get("/expense-submissions/opsi", requireAnyPermission(..
       workspace === "PRODUKSI" && cari ? prisma.order.findMany({ where: { orderNumber: { contains: q, mode: "insensitive" } }, select: { id: true, orderNumber: true }, orderBy: { createdAt: "desc" }, take: 20 }) : [],
     ]);
     // Pengguna workspace (pemohon/PIC): peran yang relevan saja, hanya id & nama.
-    const peran = workspace === "PRODUKSI" ? ["PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"] : ["WAREHOUSE", "PRODUCTION_LEAD"];
-    const pengguna = await prisma.user.findMany({ where: { active: true, OR: [{ role: { in: peran } }, { roles: { some: { role: { in: peran } } } }] }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 100 });
+    // peranPic null = semua pengguna aktif (Management & HR-GA hanya dibuka untuk staf Finance/Admin/Owner, jadi daftar nama tidak bocor lintas divisi).
+    const peran = cfgOpsi.peranPic;
+    const pengguna = await prisma.user.findMany({
+      where: { active: true, ...(peran ? { OR: [{ role: { in: peran } }, { roles: { some: { role: { in: peran } } } }] } : {}) },
+      select: { id: true, name: true }, orderBy: { name: "asc" }, take: peran ? 100 : 300,
+    });
     res.json({ mesin, gudang, material, unit, order, pengguna });
   } catch (e) { handleErr(e, res); }
 });

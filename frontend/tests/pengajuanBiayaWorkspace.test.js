@@ -75,3 +75,48 @@ test("Menu Pengajuan Biaya muncul di workspace Produksi & Gudang dengan gerbang 
   assert.match(reg, /\/bengkel\/pengajuan-biaya[^\n]*workspace="PRODUKSI"/); assert.match(reg, /\/warehouse\/pengajuan-biaya[^\n]*workspace="WAREHOUSE"/);
   assert.match(baca("api.js"), /getPengajuanOpsi/);
 });
+
+// ── C2 — Marketing / Management / HR-GA ───────────────────────────────────────────────────────────────────────────────
+import { ringkasKonteksMetadata, pesanBukan, PESAN_BUKAN_ASET_PAYROLL, URUTAN_WORKSPACE } from "../src/features/pengajuanBiaya/logika.js";
+
+test("C2: lima workspace memakai satu komponen; konfigurasi divisi baru terdaftar (judul, divisi, jalur) tanpa halaman salinan", () => {
+  assert.deepEqual(URUTAN_WORKSPACE, ["PRODUKSI", "WAREHOUSE", "MARKETING", "MANAGEMENT", "HR_GA"]);
+  assert.equal(WORKSPACES_UI.MARKETING.division, "MARKETING"); assert.equal(WORKSPACES_UI.MANAGEMENT.division, "MANAGEMENT"); assert.equal(WORKSPACES_UI.HR_GA.division, "HR_GA");
+  for (const ws of URUTAN_WORKSPACE) assert.ok(WORKSPACES_UI[ws].judul.startsWith("Pengajuan Biaya") && WORKSPACES_UI[ws].singkat, ws);
+  const reg = baca("routes/pageRegistry.jsx");
+  for (const [ws, jalur] of [["MARKETING", "/marketing/pengajuan-biaya"], ["MANAGEMENT", "/kendali/pengajuan-biaya"], ["PRODUKSI", "/bengkel/pengajuan-biaya"], ["WAREHOUSE", "/warehouse/pengajuan-biaya"]]) {
+    assert.match(reg, new RegExp(`${jalur.replace(/\//g, "\/")}[^\n]*<PengajuanBiayaWorkspace workspace="${ws}"`));
+  }
+  assert.match(reg, /\/finance\/pengajuan-divisi[^\n]*<PengajuanBiayaHub/);
+  const berkas = fs.readdirSync(path.join(__dirname, "..", "src", "pages", "pengajuanBiaya"));
+  assert.deepEqual(berkas.sort(), ["PengajuanBiayaHub.jsx", "PengajuanBiayaWorkspace.jsx"], "tidak ada halaman hasil copy-paste per divisi");
+  const hub = baca("pages/pengajuanBiaya/PengajuanBiayaHub.jsx");
+  assert.match(hub, /<PengajuanBiayaWorkspace key=\{aktif\} workspace=\{aktif\} embedded/); assert.match(hub, /hub-kosong/);
+});
+
+test("C2: konteks khusus divisi (campaign/channel/periode, tujuan, kegiatan/lokasi/peserta) tampil di daftar & detail", () => {
+  const cfgM = { konteksMetadata: [{ key: "campaign", label: "Campaign" }, { key: "channel", label: "Channel" }, { key: "periodStart", label: "Mulai", tanggal: true }] };
+  assert.equal(ringkasKonteksMetadata(cfgM, { campaign: "Promo Oktober", channel: "TikTok", periodStart: "2026-10-01T00:00:00Z", keperluan: "x" }), "Campaign Promo Oktober · Channel TikTok · Mulai 2026-10-01");
+  assert.equal(ringkasKonteksMetadata(cfgM, {}), ""); assert.equal(ringkasKonteksMetadata(null, { a: 1 }), "");
+  const cfgH = { konteksMetadata: [{ key: "lokasi", label: "Lokasi" }, { key: "jumlahOrang", label: "Peserta", satuan: "orang" }] };
+  assert.equal(konteksLabel({ metadata: { lokasi: "Bekasi", jumlahOrang: 12 } }, cfgH), "Lokasi Bekasi · Peserta 12 orang");
+  assert.equal(konteksLabel({ unit: { unitCode: "U-1" } }), "Unit U-1", "tanpa cfg perilaku C1 tidak berubah");
+  const p = baca("pages/pengajuanBiaya/PengajuanBiayaWorkspace.jsx");
+  assert.ok((p.match(/konteksLabel\((r|detail), cfg\)/g) || []).length >= 4, "daftar, kartu, pencarian, dan detail memakai konteks divisi");
+});
+
+test("C2: form data-driven — tipe tanggal/pilihan, jenis belum siap dinonaktifkan dengan penjelasan konfigurasi, catatan jenis, dan arahan aset/payroll", () => {
+  const p = baca("pages/pengajuanBiaya/PengajuanBiayaWorkspace.jsx");
+  for (const s of ["f.type === \"date\"", "f.type === \"select\"", "disabled={t.siap === false}", "(belum siap)", "jenis-belum-siap", "catatan-jenis", "alasanTidakSiap", "embedded"]) assert.ok(p.includes(s), s);
+  assert.match(pesanBukan("MARKETING"), /aset tetap/); assert.match(pesanBukan("HR_GA"), /payroll/); assert.match(pesanBukan("MANAGEMENT"), /antarbank/); assert.match(pesanBukan("MANAGEMENT"), /dua kali/);
+  assert.equal(pesanBukan("PRODUKSI"), PESAN_BUKAN_STOK); assert.equal(pesanBukan("MARKETING"), PESAN_BUKAN_ASET_PAYROLL);
+});
+
+test("C2: menu — Marketing di Growth (SALES), Management di All Teams, hub semua divisi di Finance; gerbang peran tidak memberi akses silang", () => {
+  const layout = baca("components/Layout.jsx");
+  assert.match(layout, /to: "\/marketing\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["SALES", "ADMIN", "OWNER", "FINANCE", "APPROVER"\]/);
+  assert.match(layout, /to: "\/kendali\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER"\]/);
+  assert.match(layout, /to: "\/finance\/pengajuan-divisi", label: "Pengajuan Biaya Divisi"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER"\]/);
+  assert.doesNotMatch(layout, /\/marketing\/pengajuan-biaya[^}]*"PRODUCTION_LEAD"/);
+  assert.match(layout, /\["bengkel", "warehouse", "growth", "kendali", "finance"\]\.includes\(divisionKey\)/);
+});

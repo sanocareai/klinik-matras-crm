@@ -12,7 +12,7 @@
 
 import { SubmissionError } from "./errors.js";
 
-const POLA = /\b(GR|MI|TRF|DMG|ADJ|CC|PUR|BILL|EXP)-\d{6,8}-\d{2,3}\b/gi;
+const POLA = /\b(GR|MI|TRF|DMG|ADJ|CC|PUR|BILL|EXP|KSB|UMO)-\d{6,8}-\d{2,3}\b/gi;
 
 // Jenis biaya yang boleh merujuk dokumen inventory sebagai konteks (biaya pendamping, nilainya BUKAN nilai barang).
 const REFERENSI_INVENTORY_BOLEH = { KURIR_LOGISTIK: ["GR", "TRF"] };
@@ -27,6 +27,8 @@ const MODUL = {
   PUR: { label: "Pembelian", ke: "Finance › Pembelian" },
   BILL: { label: "Tagihan Supplier", ke: "Finance › Supplier & Utang" },
   EXP: { label: "Pengeluaran", ke: "Finance › Pengeluaran (koreksi lewat Edit & Koreksi Aman)" },
+  KSB: { label: "Kasbon", ke: "Finance › Kasbon" },
+  UMO: { label: "Uang Muka Operasional", ke: "pilihan Sumber dana \"Uang muka operasional\" pada pengajuan (bukan sebagai nomor dokumen)" },
   TRFKAS: { label: "Transfer Kas", ke: "Finance › Kas & Bank" },
 };
 
@@ -54,6 +56,8 @@ async function cariDokumen(db, nomor) {
     case "PUR": return cek("PUR", () => db.finPurchase.findFirst({ where: { purchaseNumber: nomor }, select: { id: true } }));
     case "BILL": return cek("BILL", () => db.finSupplierBill.findFirst({ where: { billNumber: nomor }, select: { id: true } }));
     case "EXP": return cek("EXP", () => db.finExpense.findFirst({ where: { expenseNumber: nomor }, select: { id: true } }));
+    case "KSB": return cek("KSB", () => db.finKasbon.findFirst({ where: { kasbonNumber: nomor }, select: { id: true } }));
+    case "UMO": return cek("UMO", () => db.finOperationalAdvance.findFirst({ where: { advanceNumber: nomor }, select: { id: true } }));
     case "TRF":
       return (await cek("TRF", () => db.stockTransfer.findFirst({ where: { transferNumber: nomor }, select: { id: true } })))
         || (await cek("TRFKAS", () => db.finCashTransfer.findFirst({ where: { transferNumber: nomor }, select: { id: true } })));

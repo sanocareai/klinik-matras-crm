@@ -16,7 +16,7 @@ import {
 } from "@/features/armada/pengajuanBiayaStatus.js";
 import {
   WORKSPACES_UI, FORM_KOSONG, bentukPayload, galatForm, kekuranganAjukan, konteksLabel, payloadTemplate, terapkanTemplate,
-  terapkanPilihanTerakhir, teksDuplikat, LABEL_SUMBER_DANA, PESAN_BUKAN_STOK,
+  terapkanPilihanTerakhir, teksDuplikat, LABEL_SUMBER_DANA, pesanBukan,
 } from "@/features/pengajuanBiaya/logika.js";
 
 // PENGAJUAN BIAYA PRODUKSI & GUDANG (C1). Halaman generik berbasis konfigurasi server (GET /expense-submissions/config):
@@ -61,7 +61,7 @@ function BuktiUploader({ id, proofs, onSaved, bisa }) {
   );
 }
 
-export default function PengajuanBiayaWorkspace({ workspace }) {
+export default function PengajuanBiayaWorkspace({ workspace, embedded = false }) {
   const ui = WORKSPACES_UI[workspace];
   const [cfg, setCfg] = useState(null);
   const [opsi, setOpsi] = useState({ mesin: [], gudang: [], material: [], unit: [], order: [], pengguna: [] });
@@ -137,6 +137,7 @@ export default function PengajuanBiayaWorkspace({ workspace }) {
   const setMeta = (k, v) => setForm((f) => ({ ...f, metadata: { ...f.metadata, [k]: v } }));
   const metaFields = cfg && form.expenseType ? (cfg.metadataFieldsByType[form.expenseType] || []) : [];
   const wajibMendesak = !!cfg?.wajibAlasanMendesak?.includes(form.expenseType);
+  const jenisDipilih = cfg?.expenseTypes?.find((t) => t.code === form.expenseType);
   const tautan = new Set(cfg?.relations || []);
 
   function buka(awal = FORM_KOSONG, id = null) {
@@ -185,21 +186,21 @@ export default function PengajuanBiayaWorkspace({ workspace }) {
     const kw = q.trim().toLowerCase();
     if (!rows) return rows;
     if (!kw) return rows;
-    return rows.filter((r) => [r.submissionNumber, r.description, r.vendorName, konteksLabel(r), r.picNameSnapshot].filter(Boolean).some((s) => String(s).toLowerCase().includes(kw)));
+    return rows.filter((r) => [r.submissionNumber, r.description, r.vendorName, konteksLabel(r, cfg), r.picNameSnapshot].filter(Boolean).some((s) => String(s).toLowerCase().includes(kw)));
   }, [rows, q]);
   const jenisLabel = (kode) => cfg?.expenseTypes.find((t) => t.code === kode)?.label || kode;
   const menunggu = (tampil || []).filter((r) => r.status === "MENUNGGU_PERSETUJUAN").length;
   const perluRevisi = (tampil || []).filter((r) => r.status === "PERLU_REVISI").length;
 
   return (
-    <HalamanFinance
-      title={ui.judul} subtitle={ui.ringkas} loading={loading} error={error} onRetry={muat}
+    <Bingkai
+      embedded={embedded} title={ui.judul} subtitle={cfg?.ringkas || ui.ringkas} loading={loading} error={error} onRetry={muat}
       actions={<TombolAksi onClick={() => buka()}><Plus size={14} /> Ajukan biaya</TombolAksi>}
     >
       <div className="flex items-start gap-2 rounded-xl bg-accentbg px-3.5 py-2.5 text-[12.5px] text-ink2" data-testid="bukan-stok">
         <Info size={15} className="mt-0.5 shrink-0 text-accent" />
         <div>
-          <p>{PESAN_BUKAN_STOK}</p>
+          <p>{pesanBukan(workspace)}</p>
           {(cfg?.arahanModulLain || []).length > 0 && (
             <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
               {cfg.arahanModulLain.map((a) => <Link key={a.path} to={a.path} className="underline decoration-dotted underline-offset-2 hover:text-accent">{a.ke}</Link>)}
@@ -252,7 +253,7 @@ export default function PengajuanBiayaWorkspace({ workspace }) {
                     <span className="min-w-0"><span className="block font-mono text-[11.5px] text-ink3">{r.submissionNumber}</span><span className="block break-words text-[13px] font-medium text-ink">{jenisLabel(r.expenseType)}</span></span>
                     <Badge variant={statusVariant(r.status)}>{statusLabel(r.status)}</Badge>
                   </div>
-                  <p className="mt-1 text-[12px] text-ink2 break-words">{konteksLabel(r) || r.description}</p>
+                  <p className="mt-1 text-[12px] text-ink2 break-words">{konteksLabel(r, cfg) || r.description}</p>
                   <div className="mt-1 flex items-center justify-between text-[12px] text-ink3"><span>{tanggalPendek(r.date)}</span><Uang value={r.amount} className="font-semibold text-ink" /></div>
                 </button>
               ))}
@@ -272,8 +273,8 @@ export default function PengajuanBiayaWorkspace({ workspace }) {
                       {tier === "full" && <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(r.date)}</TD>}
                       {tier === "full" && <TD><span className="block truncate" title={jenisLabel(r.expenseType)}>{jenisLabel(r.expenseType)}</span></TD>}
                       <TD className="min-w-0 overflow-hidden">
-                        <span className="block truncate" title={r.description}>{tier === "full" ? (konteksLabel(r) || "—") : jenisLabel(r.expenseType)}</span>
-                        <span className="block truncate text-[11px] text-ink3">{tier === "full" ? r.vendorName || "" : (konteksLabel(r) || r.vendorName || "")}</span>
+                        <span className="block truncate" title={r.description}>{tier === "full" ? (konteksLabel(r, cfg) || "—") : jenisLabel(r.expenseType)}</span>
+                        <span className="block truncate text-[11px] text-ink3">{tier === "full" ? r.vendorName || "" : (konteksLabel(r, cfg) || r.vendorName || "")}</span>
                       </TD>
                       <TD numeric><Uang value={r.amount} /></TD>
                       <TD><Badge variant={statusVariant(r.status)}>{statusLabel(r.status)}</Badge></TD>
@@ -311,8 +312,10 @@ export default function PengajuanBiayaWorkspace({ workspace }) {
           <Field label="Jenis biaya" required>
             <Pilihan value={form.expenseType} onChange={(v) => setForm((f) => ({ ...f, expenseType: v, metadata: {} }))}>
               <option value="">— pilih jenis biaya —</option>
-              {(cfg?.expenseTypes || []).map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
+              {(cfg?.expenseTypes || []).map((t) => <option key={t.code} value={t.code} disabled={t.siap === false} title={t.alasanTidakSiap || undefined}>{t.label}{t.siap === false ? " (belum siap)" : ""}</option>)}
             </Pilihan>
+            {jenisDipilih?.catatan && <p className="mt-1 text-[12px] text-orange" data-testid="catatan-jenis">{jenisDipilih.catatan}</p>}
+            {jenisDipilih?.siap === false && <p className="mt-1 text-[12px] text-red" data-testid="jenis-belum-siap">{jenisDipilih.alasanTidakSiap}</p>}
           </Field>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Tanggal" required><DatePicker value={form.date} onChange={(v) => set("date", v)} placeholder="Pilih tanggal" block /></Field>
@@ -349,7 +352,13 @@ export default function PengajuanBiayaWorkspace({ workspace }) {
 
           {metaFields.map((f) => (
             <Field key={f.key} label={f.label} required={f.required}>
-              <Input type={f.type === "number" || f.type === "decimal" ? "number" : "text"} value={form.metadata?.[f.key] ?? ""} onChange={(e) => setMeta(f.key, e.target.value)} />
+              {f.type === "date" ? (
+                <DatePicker value={form.metadata?.[f.key] || ""} onChange={(v) => setMeta(f.key, v)} placeholder="Opsional" block />
+              ) : f.type === "select" ? (
+                <Pilihan value={form.metadata?.[f.key] ?? ""} onChange={(v) => setMeta(f.key, v)}><option value="">— pilih —</option>{(f.options || []).map((o) => <option key={o} value={o}>{o}</option>)}</Pilihan>
+              ) : (
+                <Input type={f.type === "number" || f.type === "decimal" ? "number" : "text"} value={form.metadata?.[f.key] ?? ""} onChange={(e) => setMeta(f.key, e.target.value)} />
+              )}
             </Field>
           ))}
           <Field label="Vendor / tukang / toko"><Input value={form.vendorName} onChange={(e) => set("vendorName", e.target.value)} /></Field>
@@ -411,7 +420,7 @@ export default function PengajuanBiayaWorkspace({ workspace }) {
               <div><dt className="text-ink3">Nominal</dt><dd className="font-semibold"><Uang value={detail.amount} /></dd></div>
               <div><dt className="text-ink3">Pemohon</dt><dd>{detail.requestedBy?.name || "—"}{detail.createdBy && detail.createdBy.id !== detail.requestedBy?.id ? <span className="text-ink3"> · dicatat {detail.createdBy.name}</span> : null}</dd></div>
               <div><dt className="text-ink3">PIC</dt><dd>{detail.picUser?.name || detail.picNameSnapshot || "—"}</dd></div>
-              <div className="sm:col-span-2"><dt className="text-ink3">Konteks</dt><dd className="break-words">{konteksLabel(detail) || "—"}</dd></div>
+              <div className="sm:col-span-2"><dt className="text-ink3">Konteks</dt><dd className="break-words">{konteksLabel(detail, cfg) || "—"}</dd></div>
               <div><dt className="text-ink3">Sumber dana</dt><dd>{LABEL_SUMBER_DANA[detail.sumberDana] || "—"}{detail.advance ? ` · ${detail.advance.advanceNumber}` : ""}</dd></div>
               <div><dt className="text-ink3">Vendor</dt><dd className="break-words">{detail.vendorName || "—"}</dd></div>
               {detail.urgentReason && <div className="sm:col-span-2"><dt className="text-ink3">Alasan mendesak</dt><dd className="break-words">{detail.urgentReason}</dd></div>}
@@ -435,6 +444,19 @@ export default function PengajuanBiayaWorkspace({ workspace }) {
           </div>
         )}
       </Modal>
-    </HalamanFinance>
+    </Bingkai>
+  );
+}
+
+/** Bingkai halaman: penuh (HalamanFinance) atau tertanam di hub Finance (tanpa judul halaman ganda). */
+function Bingkai({ embedded, title, subtitle, actions, loading, error, onRetry, children }) {
+  if (!embedded) return <HalamanFinance title={title} subtitle={subtitle} actions={actions} loading={loading} error={error} onRetry={onRetry}>{children}</HalamanFinance>;
+  if (error) return <div role="alert" className="rounded-xl bg-redbg px-4 py-3 text-[13px] text-red">{error} <button type="button" className="underline" onClick={onRetry}>Coba lagi</button></div>;
+  if (loading) return <div className="flex items-center justify-center gap-2 py-10 text-ink2"><Loader2 size={16} className="animate-spin" /> Memuat…</div>;
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-[16px] font-semibold text-ink">{title}</h2><p className="text-[12.5px] text-ink3">{subtitle}</p></div>{actions}</div>
+      {children}
+    </div>
   );
 }

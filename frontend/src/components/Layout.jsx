@@ -81,6 +81,8 @@ const DIVISIONS = {
         section: "DATA",
         items: [
           { to: "/customers", label: "Pelanggan",     Icon: Users },
+          // C2 — biaya marketing (iklan di luar AdSpend, konten, event, cetak, tools). Hanya SALES/Finance/Admin/Owner; server menegakkan ulang.
+          { to: "/marketing/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["SALES", "ADMIN", "OWNER", "FINANCE", "APPROVER"] },
           { to: "/pipeline",  label: "Pipeline",      Icon: GitBranch },
           // Order = sisi PENGERJAAN (antrean produksi), terpisah dari Pipeline yang
           // sisi PENJUALAN. Sengaja bukan tab di Pelanggan: 1 baris = 1 order.
@@ -430,6 +432,8 @@ const DIVISIONS = {
         section: "ALL TEAMS",
         items: [
           { to: "/kendali", label: "Ringkasan",  Icon: Gauge },
+          // C2 — biaya level management (meeting, perjalanan dinas, konsultan, legal). Hanya Owner/Admin/Finance; server menegakkan ulang.
+          { to: "/kendali/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"] },
           { to: "/orders",  label: "Order",      Icon: ClipboardList },
           { to: "/laporan", label: "Laporan",    Icon: BarChart3, adminOnly: true },
         ],
@@ -459,6 +463,8 @@ const DIVISIONS = {
           { to: "/finance/payments",  label: "Pembayaran & Verifikasi", Icon: Banknote },
           { to: "/finance/cash",      label: "Kas & Bank",             Icon: Wallet },
           { to: "/finance/expenses",  label: "Pengeluaran",            Icon: Receipt },
+          // C2 — semua pengajuan divisi (Produksi, Gudang, Marketing, Management, HR-GA) dalam satu hub
+          { to: "/finance/pengajuan-divisi", label: "Pengajuan Biaya Divisi", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"] },
           { to: "/finance/purchases", label: "Pembelian",              Icon: ShoppingCart },
           { to: "/finance/kasbon",    label: "Kasbon",                 Icon: HandCoins },
           { to: "/finance/uang-muka", label: "Uang Muka Operasional",  Icon: PiggyBank },
@@ -845,7 +851,7 @@ export default function Layout({ user, onLogout }) {
     // penuh dispatcher, cuma satu-dua menu CRM tertentu yang disembunyikan.
     // C1 — item bertanda `bolehPeran` hanya tampil untuk peran yang disebut (server tetap menegakkan izin sebenarnya).
     const saringPeran = (base) => ({ ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.filter((i) => !i.bolehPeran || roles.some((r) => i.bolehPeran.includes(r))) })) });
-    if (divisionKey === "bengkel" || divisionKey === "warehouse") return saringPeran(divisionBase);
+    if (["bengkel", "warehouse", "growth", "kendali", "finance"].includes(divisionKey)) return saringPeran(divisionBase);
     const leaderDriverOnly = roles.includes("LEADER_DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
     if (divisionKey === "armada" && leaderDriverOnly) {
       return {

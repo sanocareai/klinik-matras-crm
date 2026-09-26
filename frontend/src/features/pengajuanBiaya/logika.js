@@ -4,16 +4,35 @@
 
 export const WORKSPACES_UI = {
   PRODUKSI: {
-    judul: "Pengajuan Biaya Produksi", division: "PRODUKSI", jalur: "/bengkel/pengajuan-biaya",
+    judul: "Pengajuan Biaya Produksi", division: "PRODUKSI", jalur: "/bengkel/pengajuan-biaya", singkat: "Produksi",
     ringkas: "Servis mesin, alat kerja kecil, jasa vendor/tukang, lembur, dan kebutuhan produksi mendesak yang bukan stok.",
     tautan: ["order", "unit", "machine"],
   },
   WAREHOUSE: {
-    judul: "Pengajuan Biaya Gudang", division: "GUDANG", jalur: "/warehouse/pengajuan-biaya",
+    judul: "Pengajuan Biaya Gudang", division: "GUDANG", jalur: "/warehouse/pengajuan-biaya", singkat: "Gudang",
     ringkas: "Bongkar muat, kurir/logistik, perlengkapan gudang non-stok, perawatan fasilitas, dan biaya operasional mendesak.",
     tautan: ["warehouse", "material", "document"],
   },
+  MARKETING: {
+    judul: "Pengajuan Biaya Marketing", division: "MARKETING", jalur: "/marketing/pengajuan-biaya", singkat: "Marketing",
+    ringkas: "Iklan & promosi, produksi konten, event/aktivasi, cetak materi promosi, tools/langganan marketing, dan transportasi/representasi kegiatan marketing.",
+    tautan: [],
+  },
+  MANAGEMENT: {
+    judul: "Pengajuan Biaya Management", division: "MANAGEMENT", jalur: "/kendali/pengajuan-biaya", singkat: "Management",
+    ringkas: "Meeting dan representasi, perjalanan dinas, konsultan/jasa profesional, legal/perizinan, langganan manajemen, dan kebutuhan operasional khusus.",
+    tautan: [],
+  },
+  HR_GA: {
+    judul: "Pengajuan Biaya HR & GA", division: "HR_GA", jalur: "/finance/pengajuan-divisi", singkat: "HR & GA",
+    ringkas: "Rekrutmen, pelatihan, kesejahteraan karyawan, ATK dan kebutuhan kantor non-stok, perawatan fasilitas, serta perizinan dan administrasi.",
+    tautan: [],
+  },
 };
+
+/** Daftar kunci workspace untuk hub Finance (urutan tampil). */
+export const URUTAN_WORKSPACE = ["PRODUKSI", "WAREHOUSE", "MARKETING", "MANAGEMENT", "HR_GA"];
+
 
 export const FORM_KOSONG = {
   expenseType: "", date: "", amount: "", vendorName: "", sumberDana: "", advanceId: "",
@@ -71,11 +90,22 @@ export function kekuranganAjukan(row, cfg) {
   return k;
 }
 
-/** Teks konteks satu pengajuan: unit/mesin/gudang/material/dokumen. */
-export function konteksLabel(r) {
+/** Ringkasan konteks khusus divisi dari metadata (campaign, channel, tujuan, kegiatan, lokasi, peserta) — cerminan server (config.konteksMetadata). */
+export function ringkasKonteksMetadata(cfg, metadata) {
+  const m = metadata && typeof metadata === "object" ? metadata : {};
+  return (cfg?.konteksMetadata || []).map((f) => {
+    const v = m[f.key];
+    if (v === undefined || v === null || String(v).trim() === "") return null;
+    return `${f.label} ${f.tanggal ? String(v).slice(0, 10) : v}${f.satuan ? ` ${f.satuan}` : ""}`;
+  }).filter(Boolean).join(" · ");
+}
+
+/** Teks konteks satu pengajuan: unit/mesin/gudang/material/dokumen + konteks divisi dari metadata (bila `cfg` diberikan). */
+export function konteksLabel(r, cfg = null) {
   return [
     r.unit && `Unit ${r.unit.unitCode}`, r.order && !r.unit && `Order ${r.order.orderNumber}`, r.workCenter && `Mesin ${r.workCenter.name}`,
     r.warehouse && `Gudang ${r.warehouse.name}`, r.material && `Material ${r.material.code}`, r.documentRef && `Dokumen ${r.documentRef}`,
+    cfg && ringkasKonteksMetadata(cfg, r.metadata),
   ].filter(Boolean).join(" · ");
 }
 
@@ -112,5 +142,12 @@ export const LABEL_SUMBER_DANA = {
   TALANGAN_PRIBADI: "Talangan pribadi (diganti Finance)",
   BELUM_DIBAYAR: "Belum dibayar (utang ke vendor)",
 };
+
+export const PESAN_BUKAN_ASET_PAYROLL = "Bukan untuk pembelian aset tetap, tagihan supplier/persediaan, gaji/THR/bonus (payroll), pinjaman/kasbon karyawan, atau transaksi antarbank — itu tetap lewat modulnya masing-masing agar tidak terhitung dua kali.";
+
+/** Pesan pengecualian sesuai workspace (Produksi/Gudang: stok; divisi lain: aset/payroll/kasbon/antarbank). */
+export function pesanBukan(workspace) {
+  return workspace === "PRODUKSI" || workspace === "WAREHOUSE" ? PESAN_BUKAN_STOK : PESAN_BUKAN_ASET_PAYROLL;
+}
 
 export const PESAN_BUKAN_STOK = "Bukan untuk pembelian bahan/stok, penerimaan barang, pemakaian bahan, transfer stok, atau penyesuaian stok — itu tetap lewat modul Gudang, Pembelian, dan Tagihan Supplier agar tidak terhitung dua kali.";
