@@ -114,12 +114,12 @@ test("migration normalisasi wajib ada dan checksum-nya normal saat pengecualian 
   assert.equal(verifyMigrationHistory(changed, rows, IDX).ok, false);
 });
 
-test("normalisasi berurutan setelah pembuat index (160000), LID, dan migration terbaru; tanpa pemilik lain", () => {
+test("normalisasi berurutan setelah pembuat index (160000), LID, dan migration terbaru saat dibuat; tanpa pemilik lain", () => {
   const names = [...repo().keys()].sort();
   const n = names.indexOf(EXCEPTION.normalization.migration);
   assert.ok(n > names.indexOf("20260707160000_add_order_weight_entries"));
   assert.ok(n > names.indexOf(EXCEPTION.migration));
-  assert.equal(n, names.length - 1);
+  assert.ok(n > names.indexOf("20260926090000_persediaan_awal_cutover")); // migration terbaru saat dibuat; yang lebih baru boleh menyusul
   const owners = names.filter((x) => /CREATE INDEX "OrderWeightEntry_orderId_idx"/.test(repo().get(x).toString()));
   assert.deepEqual(owners, ["20260707160000_add_order_weight_entries"]);
 });
