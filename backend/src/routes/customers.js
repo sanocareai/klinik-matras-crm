@@ -8,6 +8,7 @@ import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.j
 import { createOrderForCustomer } from "../services/orderCreation.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { siapkanNotesUkuran, formatUkuranKasur } from "../lib/ukuranKasur.js";
+import { ukuranCustomWajibSejak } from "../services/ukuranWajib.js";
 import { buatFileVCard } from "../services/vcard.js";
 
 export const customerRouter = express.Router();
@@ -670,7 +671,13 @@ customerRouter.post("/:id/orders", async (req, res) => {
 customerRouter.patch("/:id/orders/:orderId", async (req, res) => {
   const { status, quantity, orderNumber } = req.body;
   let notes = req.body.notes;
-  try { if (notes !== undefined) notes = siapkanNotesUkuran(notes); } catch (e) { return res.status(e.statusCode || 400).json({ error: e.message }); }
+  try {
+    if (notes !== undefined) {
+      const wajib = Boolean(await ukuranCustomWajibSejak());
+      const notesLama = wajib ? ((await prisma.order.findUnique({ where: { id: req.params.orderId }, select: { notes: true } }))?.notes ?? null) : null;
+      notes = siapkanNotesUkuran(notes, { wajib, notesLama });
+    }
+  } catch (e) { return res.status(e.statusCode || 400).json({ error: e.message }); }
   const order = await prisma.order.update({
     where: { id: req.params.orderId },
     data: {

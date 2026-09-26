@@ -64,6 +64,10 @@ export const SETTING_KEYS = Object.freeze({
   // Resi Gabungan Fase 1 ("Buat Resi"): true = Sales boleh membuat banyak order/item dalam satu resi. DEFAULT MATI; ditegakkan di SERVER
   // (POST /api/resi menolak bila mati). Diatur admin lewat Finance > Pengaturan (PATCH /api/finance/settings).
   RESI_INPUT_AKTIF: "resi_input_aktif",
+  // Ukuran Kasur Custom — penegakan di SERVER (DEFAULT MATI). true = order BARU dengan "Ukuran Custom" wajib Lebar & Panjang; edit order legacy
+  // (custom tanpa angka) yang tidak mengubah ukuran tetap boleh. SEJAK diisi otomatis saat dinyalakan (order yang dibuat sebelum itu = legacy).
+  UKURAN_CUSTOM_WAJIB: "ukuran_custom_wajib",
+  UKURAN_CUSTOM_WAJIB_SEJAK: "ukuran_custom_wajib_sejak",
 });
 
 const DEFAULTS = Object.freeze({
@@ -96,6 +100,8 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.CASH_ACCOUNT_QRIS]: "",
   [SETTING_KEYS.CASH_ACCOUNT_CARD]: "",
   [SETTING_KEYS.RESI_INPUT_AKTIF]: "false",
+  [SETTING_KEYS.UKURAN_CUSTOM_WAJIB]: "false",
+  [SETTING_KEYS.UKURAN_CUSTOM_WAJIB_SEJAK]: "",
 });
 
 // Payment.method → kunci pengaturan rekening tujuannya. SATU tempat, supaya

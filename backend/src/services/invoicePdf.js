@@ -421,6 +421,11 @@ export function renderInvoicePdf(view) {
     const items = itemsGabungan || order.items || [];
     const banyakOrder = orders.length > 1;
     const TINGGI_BARIS_ITEM_MIN = 34;
+    // Ukuran kasur (teks tampil bersama: "160 × 200 cm" / "145 × 205 cm (Custom)" / "Ukuran Custom (ukuran belum diisi)") — SATU baris per order,
+    // di bawah item pertama order itu (invoice gabungan bisa berisi ukuran berbeda per order). Tinggi baris menyesuaikan sehingga layout tidak bergeser.
+    const kunciOrder = (o) => o?.orderNumber || "_";
+    const ukuranPerOrder = new Map((orders && orders.length ? orders : [order]).map((o) => [kunciOrder(o), o?.ukuranKasur || ""]));
+    const sudahTampilUkuran = new Set();
     if (items.length === 0) {
       doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU)
         .text("Belum ada item layanan pada order ini.", kolDeskX, y + 8);
@@ -435,7 +440,14 @@ export function renderInvoicePdf(view) {
       const tinggiNama = doc.heightOfString(it.nama, { width: kolDeskW });
       // Label kecil asal order (cuma kalau invoice ini gabungan >1 order)
       // butuh sedikit ruang tambahan di bawah nama item.
-      const tinggiBarisIni = Math.max(TINGGI_BARIS_ITEM_MIN, tinggiNama + (banyakOrder ? 26 : 16));
+      const kunci = kunciOrder(it);
+      const teksUkuran = !sudahTampilUkuran.has(kunci) ? (ukuranPerOrder.get(kunci) || "") : "";
+      sudahTampilUkuran.add(kunci);
+      const barisUkuran = teksUkuran ? `Ukuran: ${teksUkuran}` : "";
+      doc.fontSize(8).font(FONT_TEKS);
+      const tinggiUkuran = barisUkuran ? doc.heightOfString(barisUkuran, { width: kolDeskW }) + 2 : 0;
+      doc.fontSize(10).font(FONT_TEKS_MED);
+      const tinggiBarisIni = Math.max(TINGGI_BARIS_ITEM_MIN, tinggiNama + (banyakOrder ? 26 : 16) + tinggiUkuran);
 
       // Pindah halaman kalau baris ini tidak muat lagi — dicek SEBELUM
       // digambar (bukan sesudah), supaya tidak ada baris yang badannya
@@ -452,6 +464,10 @@ export function renderInvoicePdf(view) {
       if (banyakOrder && it.orderNumber) {
         doc.fontSize(7.5).font(FONT_TEKS).fillColor(ABU)
           .text(`· ${it.orderNumber}`, kolDeskX, y + 6 + tinggiNama + 2, { width: kolDeskW });
+      }
+      if (barisUkuran) {
+        doc.fontSize(8).font(FONT_TEKS).fillColor(ABU)
+          .text(barisUkuran, kolDeskX, y + 6 + tinggiNama + (banyakOrder && it.orderNumber ? 13 : 3), { width: kolDeskW });
       }
       doc.fontSize(9.5).font(FONT_TEKS).fillColor(ABU).text("1", kolQtyX, y + 6, { width: kolQtyW, align: "center" });
       doc.font(FONT_TEKS_MED).fillColor(GELAP).text(formatRupiah(it.harga), kolHargaX, y + 6, { width: kolHargaW, align: "right" });

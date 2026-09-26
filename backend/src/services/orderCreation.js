@@ -17,6 +17,7 @@ import { syncOrderStatus } from "./orderStatusSync.js";
 import { ensureInvoiceForOrder } from "./invoice.js";
 import { parseTanggalKalender } from "../utils/wib.js";
 import { siapkanNotesUkuran } from "../lib/ukuranKasur.js";
+import { ukuranCustomWajibSejak } from "./ukuranWajib.js";
 
 // `opts.tx` (opsional, Resi Gabungan Fase 1): jalankan di dalam transaksi PEMANGGIL (mis. N order dalam SATU transaksi). Tanpa `opts.tx` perilaku
 // PERSIS seperti sebelumnya (transaksi sendiri). Catatan: nomor order (generateOrderNumber) memakai transaksi terpisah, sehingga bila transaksi
@@ -30,7 +31,7 @@ export async function createOrderForCustomer(customerId, body, userId, opts = {}
 
   const cat = category || "LAYANAN";
   // Ukuran Custom: validasi/bersihkan bagian ukuran notes SEBELUM generateOrderNumber (nomor terpakai permanen). Melempar UkuranError (400).
-  const notes = siapkanNotesUkuran(body.notes);
+  const notes = siapkanNotesUkuran(body.notes, { wajib: Boolean(await ukuranCustomWajibSejak()) });
 
   // Validasi tanggal DULU, sebelum generateOrderNumber() — generate nomor
   // menaikkan counter OrderSequence secara permanen (transaksi sendiri,

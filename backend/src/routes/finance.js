@@ -1033,6 +1033,11 @@ financeRouter.patch("/settings", requirePermission(P.FINANCE_ADMIN), async (req,
           }
         }
 
+        // Ukuran Custom wajib: menyalakan MENGUNCI tanggal mulai ke SAAT INI (order sebelumnya tetap dianggap legacy, tidak berubah surut).
+        if (key === SETTING_KEYS.UKURAN_CUSTOM_WAJIB && parseBool(String(value))) {
+          await setSetting(tx, SETTING_KEYS.UKURAN_CUSTOM_WAJIB_SEJAK, new Date().toISOString(), req.user.id);
+        }
+
         await setSetting(tx, key, value, req.user.id);
         await recordActivity(tx, {
           entityType: ENTITY_TYPES.FIN_SETTING, entityId: key,

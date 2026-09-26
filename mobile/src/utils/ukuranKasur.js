@@ -1,12 +1,11 @@
-// UKURAN KASUR CUSTOM — satu sumber kebenaran di backend (formatter + validasi + pembersihan notes).
+// UKURAN KASUR CUSTOM — SALINAN mobile (formatter + validasi). Sumber utama: backend/src/lib/ukuranKasur.js; salinan web: frontend/src/utils/ukuranKasur.js.
 //
 // PENYIMPANAN (tanpa perubahan skema, mengikuti arsitektur yang sudah ada): ukuran kasur hidup di JSON Order.notes
 //   { ukuranKasur: "Ukuran Custom" | "160x200 cm (Queen)" | ..., ukuranLebarCm: 145, ukuranPanjangCm: 205, ... }
 // `ukuranKasur` tetap label dropdown (kunci katalog harga tidak berubah). Jenis CUSTOM = ukuranKasur "Ukuran Custom"; angkanya di
 // ukuranLebarCm/ukuranPanjangCm (hanya ada bila custom). Unit.ukuran (salinan untuk Produksi/Delivery) memakai teks terformat untuk unit BARU.
 //
-// ⚠️ DUA SALINAN: frontend/src/utils/ukuranKasur.js memuat logika yang SAMA (dua runtime). Tes paritas
-// (backend/tests/ukuranKasur.test.js) memastikan keduanya menghasilkan keluaran identik — ubah keduanya bersama.
+// ⚠️ TIGA SALINAN (backend, web, mobile). Tes paritas backend/tests/ukuranKasur.test.js menjaga keluaran identik — ubah SEMUANYA bersama.
 //
 // DATA LAMA TIDAK DITEBAK: record "Ukuran Custom" tanpa angka tampil "Ukuran Custom (ukuran belum diisi)"; tidak ada migrasi otomatis.
 
@@ -14,14 +13,6 @@ export const UKURAN_CUSTOM_LABEL = "Ukuran Custom";
 export const UKURAN_CUSTOM_MIN_CM = 30;
 export const UKURAN_CUSTOM_MAX_CM = 400;
 export const UKURAN_CUSTOM_BELUM_DIISI = "Ukuran Custom (ukuran belum diisi)";
-
-export class UkuranError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "UkuranError";
-    this.statusCode = 400;
-  }
-}
 
 export function isUkuranCustom(label) {
   return typeof label === "string" && label.trim().toLowerCase() === UKURAN_CUSTOM_LABEL.toLowerCase();
@@ -105,68 +96,4 @@ export function ukuranDariNotes(notes) {
 /** Teks siap tampil dari string Order.notes ("" bila tidak ada ukuran). */
 export function teksUkuranDariNotes(notes) {
   return formatUkuranKasur(ukuranDariNotes(notes));
-}
-
-/**
- * Validasi + bersihkan bagian ukuran pada string notes yang MASUK (create/PATCH). Mengembalikan string notes (tidak berubah bila tidak perlu).
- *  - Bukan JSON objek / tidak ada ukuran → apa adanya.
- *  - Ukuran standar → ukuranLebarCm/ukuranPanjangCm DIBUANG (nilai custom tidak ikut tersimpan).
- *  - Custom + klien baru (mengirim ukuranLebarCm/ukuranPanjangCm) → keduanya wajib & valid, disimpan sebagai angka; lainnya melempar UkuranError (400).
- *  - Custom TANPA kunci angka sama sekali (klien lama, mis. aplikasi mobile yang belum diperbarui, atau edit keluhan pada order legacy) → diteruskan apa
- *    adanya sebagai "belum diisi"; TIDAK ditebak. (Keputusan kompatibilitas: klien lama tidak boleh terkunci dari membuat order.)
- *  - PENEGAKAN (`opsi.wajib`, default MATI; dinyalakan lewat pengaturan setelah aplikasi mobile terbaru terverifikasi): custom tanpa angka DITOLAK (400),
- *    KECUALI edit order legacy yang TIDAK mengubah ukuran (`opsi.notesLama` sudah custom tanpa angka). Memilih ulang/mengubah menjadi custom → angka wajib.
- */
-export function siapkanNotesUkuran(notes, opsi = {}) {
-  const { wajib = false, notesLama = null } = opsi;
-  if (typeof notes !== "string" || !notes.trim().startsWith("{")) return notes;
-  let obj;
-  try { obj = JSON.parse(notes); } catch { return notes; }
-  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return notes;
-
-  const punyaAngka = "ukuranLebarCm" in obj || "ukuranPanjangCm" in obj;
-  if (!isUkuranCustom(obj.ukuranKasur)) {
-    if (!punyaAngka) return notes;
-    delete obj.ukuranLebarCm; delete obj.ukuranPanjangCm;
-    return JSON.stringify(obj);
-  }
-  if (!punyaAngka) {
-    if (!wajib) return notes;
-    // Penegakan aktif: hanya edit order legacy (sudah custom TANPA angka) yang tidak mengubah ukuran yang boleh lolos.
-    const lama = ukuranDariNotes(notesLama);
-    const legacyTakBerubah = notesLama !== null && isUkuranCustom(lama.ukuranKasur) && lama.ukuranLebarCm === null && lama.ukuranPanjangCm === null;
-    if (legacyTakBerubah) return notes;
-    throw new UkuranError("Ukuran Custom tidak valid: Lebar (cm) wajib diisi. Panjang (cm) wajib diisi.");
-  }
-  const v = validasiUkuranCustom({ lebar: obj.ukuranLebarCm, panjang: obj.ukuranPanjangCm });
-  if (!v.ok) throw new UkuranError(["Ukuran Custom tidak valid:", v.galat.lebar, v.galat.panjang].filter(Boolean).join(" "));
-  obj.ukuranLebarCm = v.lebarCm; obj.ukuranPanjangCm = v.panjangCm;
-  return JSON.stringify(obj);
-}
-
-/** Nilai yang disalin ke Unit.ukuran saat unit BARU dibuat: custom berangka → teks terformat; selain itu label apa adanya (null bila kosong). */
-export function ukuranUntukUnit(info) {
-  const label = typeof info?.ukuranKasur === "string" ? info.ukuranKasur.trim() : "";
-  if (!label) return null;
-  if (isUkuranCustom(label)) {
-    const teks = formatUkuranKasur(info);
-    return teks === UKURAN_CUSTOM_BELUM_DIISI ? label : teks;
-  }
-  return label;
-}
-
-/**
- * Setelah notes order berubah (Edit Order), selaraskan Unit.ukuran HANYA untuk unit order itu yang masih memuat ukuran LAMA order
- * (label lama, teks terformat lama, atau kosong). Unit yang ukurannya sudah berbeda (diubah manual) dan order lain tidak disentuh.
- */
-export async function sinkronUkuranUnit(tx, orderId, notesLama, notesBaru) {
-  const lama = ukuranDariNotes(notesLama);
-  const baru = ukuranDariNotes(notesBaru);
-  const sama = lama.ukuranKasur.trim() === baru.ukuranKasur.trim() && lama.ukuranLebarCm === baru.ukuranLebarCm && lama.ukuranPanjangCm === baru.ukuranPanjangCm;
-  if (sama) return 0;
-  const nilaiLama = [lama.ukuranKasur.trim(), formatUkuranKasur(lama)].filter(Boolean);
-  const cocok = [...new Set(nilaiLama)].map((u) => ({ ukuran: u }));
-  cocok.push({ ukuran: null });
-  const r = await tx.unit.updateMany({ where: { orderId, OR: cocok }, data: { ukuran: ukuranUntukUnit(baru) } });
-  return r.count;
 }

@@ -54,7 +54,11 @@ test("Buat Order & Edit Order: field Lebar/Panjang muncul HANYA untuk 'Ukuran Cu
   assert.match(s, /\{isUkuranCustom\(ukuran\) && \(/, "form edit: tampil hanya bila custom");
   assert.match(s, /\{usesUkuranDropdown && isUkuranCustom\(ukuran\) && \(/, "form baru: tampil hanya bila custom");
   // validasi sebelum simpan (edit) dan sebelum lanjut/simpan (baru)
-  assert.match(s, /async function handleSave\(\) \{\n\s+if \(isUkuranCustom\(ukuran\) && !validasiUkuranCustom\(\{ lebar: ukuranLebar, panjang: ukuranPanjang \}\)\.ok\) \{ setUkuranPaksa\(true\); return; \}/);
+  assert.match(s, /async function handleSave\(\) \{\n\s+const ukuranKosongSemua = [^\n]+\n\s+if \(isUkuranCustom\(ukuran\) && !\(ukuranBolehKosong && ukuranKosongSemua\) && !validasiUkuranCustom\(\{ lebar: ukuranLebar, panjang: ukuranPanjang \}\)\.ok\) \{ setUkuranPaksa\(true\); return; \}/);
+  // legacy (custom tanpa angka) yang ukurannya tidak dipilih ulang boleh disimpan tanpa angka; memilih ulang → angka wajib
+  assert.match(s, /const ukuranBolehKosong = ukuranLegacyTanpaAngka && !ukuranDisentuh;/);
+  assert.match(s, /setUkuran\(u\); setUkuranDisentuh\(true\);/);
+  assert.match(s, /bolehKosong=\{ukuranBolehKosong\}/);
   assert.match(s, /if \(ukuranCustomTidakValid\) \{ setUkuranPaksa\(true\); return; \} setStep\(4\)/);
   assert.match(s, /if \(ukuranCustomTidakValid\) \{ setUkuranPaksa\(true\); setStep\(3\); return; \}/);
   // angka ikut ke notes di kedua jalur
@@ -67,7 +71,8 @@ test("Buat Order & Edit Order: field Lebar/Panjang muncul HANYA untuk 'Ukuran Cu
 test("Komponen UkuranCustomFields: label 'Lebar (cm)'/'Panjang (cm)', wajib, galat role=alert, tanpa teks Inggris", () => {
   const s = baca("components/customer/UkuranCustomFields.jsx");
   assert.match(s, /Lebar \(cm\)/); assert.match(s, /Panjang \(cm\)/);
-  assert.match(s, /aria-required="true"/); assert.match(s, /role="alert"/);
+  assert.match(s, /aria-required=\{bolehKosong \? undefined : "true"\}/); assert.match(s, /role="alert"/);
+  assert.match(s, /bolehKosong/, "mode edit legacy: boleh kosong bila ukuran tidak diubah");
   assert.match(s, /validasiUkuranCustom/);
   assert.doesNotMatch(s, /\b(Width|Length|Required|Invalid|Submit)\b/);
 });
@@ -109,4 +114,27 @@ test("Formatter bersama dipakai di detail/daftar order, Produksi, Delivery, unit
   const os = baca("features/inbox/components/CustomerPanel/orderSummary.js");
   assert.match(os, /const ukuranKasur = formatUkuranKasur\(notesInfo\)/);
   assert.equal(formatUkuranLabel("Ukuran Custom"), "Ukuran Custom (ukuran belum diisi)");
+});
+
+test("Kesiapan order: Ukuran Custom tanpa angka hanya menahan order BARU setelah penegakan aktif (legacy TIDAK PERNAH ditahan)", () => {
+  const src = baca("utils/orderReadiness.js");
+  const potong = src.slice(src.indexOf("function ukuranCustomDitahan"), src.indexOf("export const READINESS"));
+  const ditahan = new Function("parseOrderNotes", "isUkuranCustom", potong + "\nreturn ukuranCustomDitahan;")(parseOrderNotes, isUkuranCustom);
+  const order = (dibuat, notes) => ({ createdAt: dibuat, notes: JSON.stringify(notes) });
+  const legacyCustom = { ukuranKasur: "Ukuran Custom" };
+  const sejak = "2026-10-01T00:00:00.000Z";
+  assert.equal(ditahan(order("2026-10-02T00:00:00Z", legacyCustom), sejak), true, "order baru custom tanpa angka setelah penegakan → ditahan");
+  assert.equal(ditahan(order("2026-09-20T00:00:00Z", legacyCustom), sejak), false, "order legacy (dibuat sebelum penegakan) → TIDAK ditahan");
+  assert.equal(ditahan(order("2026-10-02T00:00:00Z", legacyCustom), null), false, "penegakan MATI → tidak ada yang ditahan");
+  assert.equal(ditahan(order("2026-10-02T00:00:00Z", { ukuranKasur: "Ukuran Custom", ukuranLebarCm: 145, ukuranPanjangCm: 205 }), sejak), false, "custom berangka → tidak ditahan");
+  assert.equal(ditahan(order("2026-10-02T00:00:00Z", { ukuranKasur: "160x200 cm (Queen)" }), sejak), false, "ukuran standar → tidak ditahan");
+  assert.equal(ditahan({ notes: JSON.stringify(legacyCustom) }, sejak), false, "tanpa createdAt → tidak ditahan (gagal-aman)");
+  assert.equal(ditahan(order("2026-10-02T00:00:00Z", legacyCustom), "bukan-tanggal"), false);
+  // aturan terpasang: relevan hanya untuk kasur, memakai opsi penegakan; aturan lama 'Ukuran kasur belum diisi' tidak berubah
+  assert.match(src, /key: "ukuranCustomAngka", label: "Lebar dan Panjang ukuran custom belum diisi"/);
+  assert.match(src, /export function evaluateReadiness\(order, opsi = \{\}\)/);
+  assert.match(src, /key: "ukuranKasur", label: "Ukuran kasur belum diisi"/);
+  assert.match(baca("features/orders/ReadinessBadge.jsx"), /useUkuranCustomWajibSejak\(\)/);
+  assert.match(baca("features/orders/ReadinessPanel.jsx"), /useUkuranCustomWajibSejak\(\)/);
+  assert.match(baca("features/orders/useUkuranCustomWajib.js"), /ukuranCustomWajibSejak \?\? null/);
 });
