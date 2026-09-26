@@ -256,7 +256,7 @@ fi
 # ── 4. Release dir baru ──────────────────────────────────────────────────────────────────────────────────
 PHASE="4-release-dir"
 say "4. Release dir ${NEW_DIR} (export git SHA rilis; release aktif tidak disentuh)"
-[ "$(sg ls-remote origin refs/heads/main | cut -f1)" = "$DEPLOY_SHA" ] || die "origin/main berubah selama backup; hentikan dan laporkan"
+[ "$(sg ls-remote origin refs/heads/main | cut -f1)" = "$MAIN_TIP" ] || die "origin/main berubah selama backup; hentikan dan laporkan"
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah selama backup"
 mkdir "$NEW_DIR" || die "gagal membuat ${NEW_DIR}"
 sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR" --exclude='frontend/dist' || die "git archive gagal"
