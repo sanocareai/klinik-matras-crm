@@ -5,10 +5,9 @@
 // lokasi/foreground-service juga DIBLOKIR eksplisit di bawah sebagai sabuk kedua,
 // supaya library lain tidak bisa menyelundupkannya lewat manifest merge.
 //
-// EAS project TIDAK boleh memakai project ID Sano Driver. Isi EAS_PROJECT_ID
-// setelah `eas init` di folder ini (lihat docs/DELIVERY-APP-SPLIT.md). Selama
-// kosong, build lokal/`expo export` tetap jalan, tetapi OTA (expo-updates) belum aktif.
-const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID || undefined;
+// EAS project TIDAK boleh memakai project ID Sano Driver. EAS_PROJECT_ID (env) hanya untuk menimpa saat pengembangan.
+// Project EAS KHUSUS Sano Delivery Control (dibuat 26 Sep 2026 lewat `eas init`; BUKAN project Sano Driver 0fd04b96-...).
+const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID || "6a490ec2-167a-43e0-a964-e9797322ed4e";
 
 module.exports = ({ config }) => ({
   ...config,
@@ -45,9 +44,10 @@ module.exports = ({ config }) => ({
     ["expo-build-properties", { android: { enableProguardInReleaseBuilds: true, enableShrinkResourcesInReleaseBuilds: true, enableMinifyInReleaseBuilds: true } }],
   ],
   runtimeVersion: { policy: "appVersion" },
+  // Owner EXPLISIT (akun EAS punya banyak organisasi; `eas init` menolak tanpa ini). Sama dengan Sano Driver, tetapi PROJECT terpisah.
+  owner: "sanocare",
   ...(EAS_PROJECT_ID && {
     extra: { eas: { projectId: EAS_PROJECT_ID } },
-    owner: "sanocare",
     updates: { url: `https://u.expo.dev/${EAS_PROJECT_ID}` },
   }),
 });
