@@ -6,10 +6,12 @@
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { idempotency } from "../middleware/idempotency.js";
-import { requireAnyPermission, PERMISSIONS as P, hasPermission, rolesOf } from "../middleware/authorize.js";
+import { hasAnyPermission, PERMISSIONS as P, hasPermission, rolesOf } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { getWorkspaceConfig, daftarWorkspaceAktif, SUMBER_DANA, ARAHAN_MODUL_LAIN, ARAHAN_MODUL_UMUM } from "../services/expenseSubmission/config.js";
-import { bolehWorkspace, divisiTerlarang, bolehCatatAtasNama, workspaceUntukDivisi } from "../services/expenseSubmission/access.js";
+import {
+  bolehWorkspace, divisiTerlarang, bolehCatatAtasNama, pastikanAksesBaris, muatDivisiPengguna, punyaKeanggotaan, stafFinance, bolehLihatSemua,
+} from "../services/expenseSubmission/access.js";
 import {
   buatPengajuan, ubahPengajuanDraft, ajukanPengajuan, tarikPengajuan, batalkanPengajuan,
   ubahMetadataPengajuan, cekKemungkinanDuplikat, submissionInclude, bentukSubmission, SubmissionError,
@@ -23,7 +25,31 @@ import { daftarAktifUntuk } from "../services/finance/operationalAdvance.js";
 import multer from "multer";
 
 export const expenseSubmissionRouter = express.Router();
-expenseSubmissionRouter.use("/expense-submissions", requireAuth, idempotency);
+// C2.1 — keanggotaan divisi dimuat dari DATABASE tiap permintaan (bukan dari JWT yang bisa basi): pencabutan/penambahan berlaku seketika.
+async function muatKeanggotaan(req, res, next) {
+  try {
+    req.user = { ...req.user, divisi: await muatDivisiPengguna(prisma, req.user.id) };
+    next();
+  } catch (e) {
+    console.error("[expense-submission] muat keanggotaan gagal:", e.message);
+    res.status(503).json({ error: "Server sedang sibuk, coba lagi sebentar" });
+  }
+}
+expenseSubmissionRouter.use("/expense-submissions", requireAuth, muatKeanggotaan, idempotency);
+
+// Gerbang izin: punya SALAH SATU izin rute, ATAU anggota divisi (keanggotaan eksplisit). Keanggotaan hanya membuka fitur Pengajuan Biaya
+// untuk pengajuan MILIKNYA di divisinya — tidak menambah izin Finance apa pun; kepemilikan & workspace ditegakkan ulang per endpoint.
+function izinAtauAnggota(...izin) {
+  return (req, res, next) => {
+    if (hasAnyPermission(req.user, izin) || punyaKeanggotaan(req.user)) return next();
+    return res.status(403).json({ error: "Anda tidak punya akses untuk aksi ini" });
+  };
+}
+// Hanya untuk izin (tanpa jalur keanggotaan) — minta-revisi.
+function izinSaja(...izin) {
+  return (req, res, next) => (hasAnyPermission(req.user, izin) ? next() : res.status(403).json({ error: "Anda tidak punya akses untuk aksi ini" }));
+}
+const requireAnyPermission = izinAtauAnggota;
 
 function err(message, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
@@ -38,11 +64,12 @@ function handleErr(e, res) {
   return res.status(500).json({ error: "Server error: " + e.message });
 }
 
-/** C1 — pengajuan Produksi/Gudang hanya untuk pemegang workspace-nya (atau staf Finance). Selain itu 404 (tidak membocorkan keberadaan). */
-async function aksesBaris(req, id) {
-  if (!/^[0-9a-f-]{36}$/i.test(String(id))) return;
-  const row = await prisma.expenseSubmission.findUnique({ where: { id }, select: { division: true } });
-  if (row && !bolehWorkspace(req.user, workspaceUntukDivisi(row.division))) throw err("Pengajuan tidak ditemukan", 404);
+/** Kebijakan bersama semua workspace (access.js#pastikanAksesBaris): workspace bukan haknya / id tidak ada = 404; non-pemilik non-Finance = 403. */
+async function aksesBaris(req, id, { tulis = true, sembunyikan = false } = {}) {
+  const row = /^[0-9a-f-]{36}$/i.test(String(id))
+    ? await prisma.expenseSubmission.findUnique({ where: { id }, select: { division: true, requestedById: true, createdById: true } })
+    : null;
+  pastikanAksesBaris(req.user, row, { tulis, sembunyikan });
 }
 
 const CAN_SUBMIT = [P.FINANCE_POST, P.FINANCE_EXPENSE_SUBMIT, P.FINANCE_ADMIN];
@@ -101,7 +128,7 @@ expenseSubmissionRouter.get("/expense-submissions", requireAnyPermission(...BACA
     const division = hanyaOwn ? "DELIVERY" : req.query.division;
     const terlarang = divisiTerlarang(req.user);
     if (division && terlarang.includes(division)) throw err("Anda tidak punya akses ke pengajuan biaya divisi ini", 403);
-    const hanyaMilikSendiri = hanyaOwn || (!hasPermission(req.user, P.FINANCE_READ) && !hasPermission(req.user, P.FINANCE_ADMIN));
+    const hanyaMilikSendiri = hanyaOwn || !bolehLihatSemua(req.user);
     // Paginasi OPSIONAL & aditif: tanpa ?limit perilaku lama (maks 300) tidak berubah.
     const paged = limit !== undefined;
     const ambil = paged ? Math.min(Math.max(parseInt(limit, 10) || 30, 1), 100) : 300;
@@ -114,8 +141,12 @@ expenseSubmissionRouter.get("/expense-submissions", requireAnyPermission(...BACA
         ...(vehicleId && { vehicleId }),
         ...(jobId && { jobId }),
         ...((from || to) && { date: { ...(from && { gte: new Date(from) }), ...(to && { lte: new Date(to) }) } }),
-        ...(hanyaMilikSendiri && { OR: [{ requestedById: req.user.id }, { createdById: req.user.id }] }),
-        ...(q && { OR: [{ submissionNumber: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }, { vendorName: { contains: q, mode: "insensitive" } }] }),
+        // C2.1 — dua syarat OR (kepemilikan & pencarian) HARUS digabung dengan AND; sebelumnya key `OR` kedua menimpa yang pertama sehingga
+        // pencarian (?q=) membuang filter kepemilikan dan non-Finance bisa melihat pengajuan orang lain.
+        AND: [
+          ...(hanyaMilikSendiri ? [{ OR: [{ requestedById: req.user.id }, { createdById: req.user.id }] }] : []),
+          ...(q ? [{ OR: [{ submissionNumber: { contains: q, mode: "insensitive" } }, { description: { contains: q, mode: "insensitive" } }, { vendorName: { contains: q, mode: "insensitive" } }] }] : []),
+        ],
       },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       take: paged ? ambil + 1 : ambil,
@@ -143,7 +174,9 @@ expenseSubmissionRouter.get("/expense-submissions/uang-muka-aktif", requireAnyPe
   try {
     const bolehAtasNama = hasPermission(req.user, P.FINANCE_POST) || hasPermission(req.user, P.FINANCE_ADMIN) || rolesOf(req.user).includes("DISPATCHER");
     const pengaju = bolehAtasNama && req.query.requestedById ? String(req.query.requestedById) : req.user.id;
-    const pic = req.query.picUserId ? String(req.query.picUserId) : null;
+    // C2.1 — non-Finance hanya boleh menanyakan uang muka MILIKNYA (PIC lain tidak dibuka): saldo uang muka orang lain bukan haknya.
+    const picDiminta = req.query.picUserId ? String(req.query.picUserId) : null;
+    const pic = stafFinance(req.user) || picDiminta === req.user.id ? picDiminta : null;
     res.json({ items: await daftarAktifUntuk(prisma, [pengaju, pic]) });
   } catch (e) { handleErr(e, res); }
 });
@@ -154,6 +187,7 @@ expenseSubmissionRouter.get("/expense-submissions/duplicate-check", requireAnyPe
     if (!division || !expenseType || !date) return res.json({ kandidat: [] });
     if (divisiTerlarang(req.user).includes(division)) throw err("Anda tidak punya akses ke pengajuan biaya divisi ini", 403);
     const kandidat = await cekKemungkinanDuplikat(prisma, {
+      hanyaMilikId: bolehLihatSemua(req.user) ? null : req.user.id,
       division, vehicleId: vehicleId || null, expenseType, date, amount, excludeId: excludeId || null, picUserId: picUserId || null,
       workCenterId: workCenterId || null, warehouseId: warehouseId || null, unitId: unitId || null,
     });
@@ -237,9 +271,13 @@ expenseSubmissionRouter.get("/expense-submissions/opsi", requireAnyPermission(..
     ]);
     // Pengguna workspace (pemohon/PIC): peran yang relevan saja, hanya id & nama.
     // peranPic null = semua pengguna aktif (Management & HR-GA hanya dibuka untuk staf Finance/Admin/Owner, jadi daftar nama tidak bocor lintas divisi).
+    // C2.1: staf Finance melihat semua yang relevan; anggota divisi hanya melihat rekan sekeanggotaan divisi itu + dirinya (daftar nama tidak bocor lintas divisi).
     const peran = cfgOpsi.peranPic;
+    const stafOpsi = stafFinance(req.user);
+    const atasPeran = peran ? [{ role: { in: peran } }, { roles: { some: { role: { in: peran } } } }] : [];
+    const rekanDivisi = [{ id: req.user.id }, { divisions: { some: { division: cfgOpsi.keanggotaan } } }];
     const pengguna = await prisma.user.findMany({
-      where: { active: true, ...(peran ? { OR: [{ role: { in: peran } }, { roles: { some: { role: { in: peran } } } }] } : {}) },
+      where: { active: true, ...(stafOpsi ? (peran ? { OR: [...atasPeran, ...rekanDivisi] } : {}) : { OR: [...atasPeran, ...rekanDivisi] }) },
       select: { id: true, name: true }, orderBy: { name: "asc" }, take: peran ? 100 : 300,
     });
     res.json({ mesin, gudang, material, unit, order, pengguna });
@@ -248,14 +286,11 @@ expenseSubmissionRouter.get("/expense-submissions/opsi", requireAnyPermission(..
 
 expenseSubmissionRouter.get("/expense-submissions/:id", requireAnyPermission(...BACA), async (req, res) => {
   try {
+    if (!/^[0-9a-f-]{36}$/i.test(String(req.params.id))) throw err("Pengajuan tidak ditemukan", 404);
     const row = await prisma.expenseSubmission.findUnique({ where: { id: req.params.id }, include: submissionInclude });
     if (!row) throw err("Pengajuan tidak ditemukan", 404);
     if (ownOnly(req.user) && row.division !== "DELIVERY") throw err("Pengajuan tidak ditemukan", 404);
-    if (!bolehWorkspace(req.user, workspaceUntukDivisi(row.division))) throw err("Pengajuan tidak ditemukan", 404);
-    const hanyaMilikSendiri = !hasPermission(req.user, P.FINANCE_READ) && !hasPermission(req.user, P.FINANCE_ADMIN);
-    if (hanyaMilikSendiri && row.requestedById !== req.user.id && row.createdById !== req.user.id) {
-      throw err("Anda tidak punya akses ke pengajuan ini", 403);
-    }
+    pastikanAksesBaris(req.user, row, { tulis: false });
     res.json(bentukSubmission(row));
   } catch (e) { handleErr(e, res); }
 });
@@ -322,7 +357,7 @@ expenseSubmissionRouter.post("/expense-submissions/:id/batalkan", requireAnyPerm
 
 // Minta revisi — reviewer (finance:approve) mengembalikan pengajuan ke pemilik. Alasan wajib;
 // Idempotency-Key wajib untuk semua klien; tidak tersedia bagi akun own-only.
-expenseSubmissionRouter.post("/expense-submissions/:id/minta-revisi", requireAnyPermission(P.FINANCE_APPROVE), async (req, res) => {
+expenseSubmissionRouter.post("/expense-submissions/:id/minta-revisi", izinSaja(P.FINANCE_APPROVE), async (req, res) => {
   try {
     if (!req.headers["idempotency-key"]) throw err("Header Idempotency-Key wajib untuk meminta revisi", 428);
     const result = await mintaRevisiPengajuan(prisma, { id: req.params.id, user: req.user, reason: req.body?.reason });
@@ -343,7 +378,7 @@ expenseSubmissionRouter.post("/expense-submissions/:id/metadata", requireAnyPerm
 const uploadBukti = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 expenseSubmissionRouter.post("/expense-submissions/:id/bukti", requireAnyPermission(...TULIS), uploadBukti.single("bukti"), async (req, res) => {
   try {
-    await aksesBaris(req, req.params.id);
+    await aksesBaris(req, req.params.id, { sembunyikan: true });
     if (!req.file) throw err("File bukti wajib disertakan");
     // Bukti foto hanya boleh diganti pada pengajuan MILIK SENDIRI yang masih DRAF/PERLU_REVISI — untuk akun
     // own-only DAN pemegang izin pengajuan lama tanpa hak Finance. Staf Finance (finance:post / finance:admin)

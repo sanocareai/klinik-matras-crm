@@ -137,21 +137,16 @@ function susunKeterangan({ expenseType, cfg, vendorOrLocation, vehiclePlateSnaps
 }
 
 /**
- * C1/C2 — pada workspace ketat, membatalkan pengajuan hanya boleh oleh pemohon/pembuat atau admin keuangan (sama dengan tarik/ajukan/ubah).
- * Workspace lama (Delivery) TIDAK diubah di sini.
+ * C2.1 — SEMUA workspace (termasuk Delivery): membatalkan pengajuan hanya oleh pemohon/pembuat atau admin keuangan (sama dengan tarik/ajukan/ubah).
  */
 function pastikanMilikAtauAdmin(s, user, aksi) {
-  const cfg = getWorkspaceConfig(workspaceUntukDivisi(s.division));
-  if (!cfg?.strict) return;
   if (s.requestedById !== user.id && s.createdById !== user.id && !hasPermission(user, P.FINANCE_ADMIN)) {
     throw new SubmissionError(`Hanya pemohon sendiri (atau admin keuangan) yang boleh ${aksi} pengajuan ini`, 403);
   }
 }
 
-/** Koreksi metadata pada workspace ketat: pemilik pengajuan atau staf Finance (finance:post / finance:admin). */
+/** C2.1 — koreksi metadata di SEMUA workspace: pemilik pengajuan atau staf Finance (finance:post / finance:admin). */
 function pastikanMilikAtauStaf(s, user) {
-  const cfg = getWorkspaceConfig(workspaceUntukDivisi(s.division));
-  if (!cfg?.strict) return;
   const staf = hasPermission(user, P.FINANCE_POST) || hasPermission(user, P.FINANCE_ADMIN);
   if (!staf && s.requestedById !== user.id && s.createdById !== user.id) {
     throw new SubmissionError("Hanya pemohon sendiri atau staf Finance yang boleh mengoreksi data pengajuan ini", 403);
@@ -634,7 +629,7 @@ export async function sinkronStatusDariFinExpense(tx, finExpenseId) {
  * pemohon/Finance bisa menilai sendiri seberapa besar kemungkinan ini memang
  * duplikat nyata, bukan kebetulan.
  */
-export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseType, date, amount, excludeId, picUserId, workCenterId, warehouseId, unitId, documentRef }) {
+export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseType, date, amount, excludeId, picUserId, workCenterId, warehouseId, unitId, documentRef, hanyaMilikId = null }) {
   if (!vehicleId && !expenseType) return [];
   const tgl = toBookDate(date);
   const mulai = new Date(tgl); mulai.setDate(mulai.getDate() - 2);
@@ -649,6 +644,8 @@ export async function cekKemungkinanDuplikat(db, { division, vehicleId, expenseT
       ...(picUserId && { picUserId }),
       ...(excludeId && { id: { not: excludeId } }),
       status: { notIn: ["DIBATALKAN", "DITOLAK"] },
+      // C2.1 — pengguna non-Finance hanya diperingatkan soal pengajuan MILIKNYA (tidak membocorkan pengajuan orang lain).
+      ...(hanyaMilikId && { OR: [{ requestedById: hanyaMilikId }, { createdById: hanyaMilikId }] }),
     },
     select: {
       id: true, submissionNumber: true, amount: true, date: true, status: true,

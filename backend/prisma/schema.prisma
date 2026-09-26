@@ -508,6 +508,10 @@ model User {
   roles        UserRole[] @relation("UserRoleHolder")
   rolesGranted UserRole[] @relation("UserRoleGrantor")
 
+  // Keanggotaan DIVISI (C2.1) — konsep terpisah dari peran keamanan (`roles`). Aditif; pengguna lama tanpa baris tetap utuh.
+  divisions        UserDivision[] @relation("UserDivisionHolder")
+  divisionsGranted UserDivision[] @relation("UserDivisionGrantor")
+
   // OAuth MCP (koneksi claude.ai) — Cascade SENGAJA berbeda dari relasi User
   // lain di atas yang pakai RESTRICT/SetNull (itu soal riwayat BISNIS yang
   // tidak boleh hilang). Ini cuma kredensial ephemeral: kalau user dihapus,
@@ -601,6 +605,36 @@ model User {
 //
 // TIDAK ADA "super admin bisa segalanya" sebagai default — itu menghancurkan
 // jejak audit yang justru jadi alasan sistem ini dibangun (PRD §3).
+// KEANGGOTAAN DIVISI (C2.1, 27 Sep 2026) — "orang ini bekerja di divisi apa", BUKAN "boleh melakukan apa".
+// Peran (UserRole/Role) tetap satu-satunya sumber izin keamanan; keanggotaan hanya menentukan workspace Pengajuan Biaya
+// yang boleh dibuka dan tidak pernah menambah izin Finance. Satu pengguna boleh di banyak divisi. Aditif: tanpa baris = perilaku lama
+// (adapter peran lama di services/expenseSubmission/access.js). Tidak pernah diisi otomatis dari peran.
+enum DivisiKeanggotaan {
+  MARKETING
+  MANAGEMENT
+  HR_GA
+  PRODUCTION
+  WAREHOUSE
+  DELIVERY
+}
+
+model UserDivision {
+  id       String            @id @default(uuid()) @db.Uuid
+  userId   String            @map("user_id")
+  user     User              @relation("UserDivisionHolder", fields: [userId], references: [id], onDelete: Cascade)
+  division DivisiKeanggotaan
+
+  // SetNull: pemberi resign tidak mencabut keanggotaan; hanya jejak pemberinya yang hilang.
+  grantedById String? @map("granted_by")
+  grantedBy   User?   @relation("UserDivisionGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, division])
+  @@index([division])
+  @@map("user_divisions")
+}
+
 model UserRole {
   id     String @id @default(uuid()) @db.Uuid
   userId String @map("user_id")

@@ -82,7 +82,7 @@ const DIVISIONS = {
         items: [
           { to: "/customers", label: "Pelanggan",     Icon: Users },
           // C2 — biaya marketing (iklan di luar AdSpend, konten, event, cetak, tools). Hanya SALES/Finance/Admin/Owner; server menegakkan ulang.
-          { to: "/marketing/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["SALES", "ADMIN", "OWNER", "FINANCE", "APPROVER"] },
+          { to: "/marketing/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"], bolehDivisi: ["MARKETING"] },
           { to: "/pipeline",  label: "Pipeline",      Icon: GitBranch },
           // Order = sisi PENGERJAAN (antrean produksi), terpisah dari Pipeline yang
           // sisi PENJUALAN. Sengaja bukan tab di Pelanggan: 1 baris = 1 order.
@@ -200,7 +200,7 @@ const DIVISIONS = {
           { to: "/bengkel/scope-revisions", label: "Revisi Lingkup",  Icon: GitBranch },
           { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
           // C1 — biaya operasional NON-STOK (servis mesin, jasa vendor, lembur, dll). Hanya PRODUCTION_LEAD/Finance/Admin; server menegakkan ulang.
-          { to: "/bengkel/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "PRODUCTION_LEAD"] },
+          { to: "/bengkel/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "PRODUCTION_LEAD"], bolehDivisi: ["PRODUCTION"] },
           // Kasus Komplain (D-116, 11 September 2026) — halaman dibaca
           // lintas divisi, lihat catatan panjang di section armada di atas.
           { to: "/komplain",                label: "Kasus Komplain",  Icon: AlertTriangle },
@@ -271,7 +271,7 @@ const DIVISIONS = {
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
           { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
           // C1 — biaya operasional NON-STOK gudang (bongkar muat, kurir, perlengkapan). Hanya WAREHOUSE/Finance/Admin; server menegakkan ulang.
-          { to: "/warehouse/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"] },
+          { to: "/warehouse/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"], bolehDivisi: ["WAREHOUSE"] },
         ],
       },
       {
@@ -433,7 +433,9 @@ const DIVISIONS = {
         items: [
           { to: "/kendali", label: "Ringkasan",  Icon: Gauge },
           // C2 — biaya level management (meeting, perjalanan dinas, konsultan, legal). Hanya Owner/Admin/Finance; server menegakkan ulang.
-          { to: "/kendali/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"] },
+          { to: "/kendali/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"], bolehDivisi: ["MANAGEMENT"] },
+          // C2.1 — HR & GA punya menu sendiri untuk anggota divisinya (sebelumnya hanya lewat hub Finance).
+          { to: "/kendali/pengajuan-hrga", label: "Pengajuan Biaya HR & GA", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"], bolehDivisi: ["HR_GA"] },
           { to: "/orders",  label: "Order",      Icon: ClipboardList },
           { to: "/laporan", label: "Laporan",    Icon: BarChart3, adminOnly: true },
         ],
@@ -649,6 +651,15 @@ const IS_DRIVER_APP = import.meta.env.VITE_APP_TARGET === "driver";
 export default function Layout({ user, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
+  // C2.1 — keanggotaan divisi (konsep terpisah dari peran). Dimuat dari server (bukan dari token/localStorage yang bisa basi); hanya untuk
+  // menampilkan menu — server menegakkan akses sebenarnya di setiap permintaan.
+  const [divisiSaya, setDivisiSaya] = React.useState(() => (Array.isArray(user?.divisions) ? user.divisions : []));
+  React.useEffect(() => {
+    if (!user?.id) return undefined;
+    let batal = false;
+    api.getMyPortals().then((me) => { if (!batal && Array.isArray(me?.divisions)) setDivisiSaya(me.divisions); }).catch(() => {});
+    return () => { batal = true; };
+  }, [user?.id]);
   // Ikut "hub" untuk keperluan sidebar/switcher: /portal SUNGGUHAN, ATAU
   // salah satu halaman lintas-divisi yang cuma tertaut dari sana (lihat
   // HUB_ONLY_PATHS) — keduanya sama-sama "bukan milik divisi mana pun".
@@ -850,7 +861,8 @@ export default function Layout({ user, onLogout }) {
     // di atas). Beda dari driverOnly: LEADER_DRIVER TETAP dapat sidebar
     // penuh dispatcher, cuma satu-dua menu CRM tertentu yang disembunyikan.
     // C1 — item bertanda `bolehPeran` hanya tampil untuk peran yang disebut (server tetap menegakkan izin sebenarnya).
-    const saringPeran = (base) => ({ ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.filter((i) => !i.bolehPeran || roles.some((r) => i.bolehPeran.includes(r))) })) });
+    // C2.1 — `bolehDivisi`: anggota divisi itu juga melihat menunya (peran ATAU divisi).
+    const saringPeran = (base) => ({ ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.filter((i) => !i.bolehPeran || roles.some((r) => i.bolehPeran.includes(r)) || (i.bolehDivisi || []).some((d) => divisiSaya.includes(d))) })) });
     if (["bengkel", "warehouse", "growth", "kendali", "finance"].includes(divisionKey)) return saringPeran(divisionBase);
     const leaderDriverOnly = roles.includes("LEADER_DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
     if (divisionKey === "armada" && leaderDriverOnly) {
@@ -876,7 +888,7 @@ export default function Layout({ user, onLogout }) {
           .map((i) => ({ ...i, label: "Job Saya" })),
       }],
     };
-  }, [divisionBase, divisionKey, user, driverOnly]);
+  }, [divisionBase, divisionKey, user, driverOnly, divisiSaya]);
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }

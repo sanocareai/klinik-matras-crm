@@ -39,6 +39,7 @@ export function makeClient(baseUrl, token, { tanpaStepUp = false } = {}) {
     // pemanggilan lama yang cuma kirim (path, body).
     post: (path, body, headers) => call("POST", path, body, headers),
     patch: (path, body, headers) => call("PATCH", path, body, headers),
+    put: (path, body, headers) => call("PUT", path, body, headers),
     delete: (path) => call("DELETE", path),
   };
 }
