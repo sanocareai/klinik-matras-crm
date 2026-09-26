@@ -119,7 +119,7 @@ Aturan lama (`config.js`, workspace DELIVERY): BBM/TOL/PARKIR dengan nominal <= 
   MENUNGGU_PERSETUJUAN dan FinExpense-nya MENUNGGU_APPROVAL. Audit mencatat alasannya.
 - Aktor diturunkan SERVER-SIDE dari izin (`ownOnly(user)`); tidak ada field klien (`source`, `autoApprove`, header) yang berpengaruh.
 - Tidak berubah: Dispatcher, Admin, Owner, Finance, Sales, dan multi-role yang memegang jalur pengajuan lama; workspace tanpa kebijakan tidak pernah auto-approve.
-- Tes: unit kebijakan + matriks integrasi 8 role x 4 kategori (BBM, TOL, PARKIR, SERVIS) x 3 nominal (250.000, 300.000, 300.001) = 96 sel.
+- Tes: unit kebijakan + matriks integrasi 7 role x 4 kategori (BBM, TOL, PARKIR, SERVIS) x 3 nominal (250.000, 300.000, 300.001) = 84 sel (SALES ditolak 403 sejak C2.1, dites terpisah).
 
 ## 5c. Web: PERLU_REVISI
 
