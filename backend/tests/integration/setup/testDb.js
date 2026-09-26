@@ -73,7 +73,7 @@ const TABLES_TO_TRUNCATE = [
   // model lain di daftar ini yang semuanya snake_case lewat @@map. Gotcha
   // ini sudah pernah bikin query gagal sebelumnya di sesi kerja lain —
   // dicatat di sini supaya tidak terulang.
-  "units", "Order", "Customer",
+  "units", "order_groups", "Order", "Customer",
   // Finance Android S0: sesi mobile, token push perangkat, kunci idempotency.
   "api_idempotency_keys", "mobile_device_tokens", "mobile_sessions", "mobile_notification_prefs",
   // Pemasukan terpadu: register pendapatan historis (Data Sebelum Sistem).
