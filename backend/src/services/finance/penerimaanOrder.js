@@ -81,6 +81,16 @@ export async function daftarLunasBelumDicatat(db) {
       .map((a) => a.orderId)
   );
 
+  // Permintaan bukti terbaru dari Finance per order (event BUKTI_DIMINTA). Hanya yang lebih baru dari saat order ditandai lunas yang berlaku.
+  const eventBukti = ids.length
+    ? await db.activityEvent.findMany({
+      where: { entityType: ENTITY_TYPES.ORDER, eventType: EVENT_TYPES.BUKTI_DIMINTA, entityId: { in: ids } },
+      orderBy: { createdAt: "desc" }, select: { entityId: true, createdAt: true, metadata: true, actorId: true },
+    })
+    : [];
+  const buktiTerbaru = new Map();
+  for (const ev of eventBukti) if (!buktiTerbaru.has(ev.entityId)) buktiTerbaru.set(ev.entityId, ev);
+
   const items = [];
   for (const o of orders) {
     let dibayar = ZERO;
@@ -99,6 +109,11 @@ export async function daftarLunasBelumDicatat(db) {
       // Tanpa paidAt (order lama sebelum 30 Agt 2026) tidak ada bukti kapan
       // uangnya masuk — perlakukan sebagai lama.
       kelompok: !tglLunas || tglLunas < cutoff ? "LAMA" : "BARU",
+      buktiDiminta: (() => {
+        const ev = buktiTerbaru.get(o.id);
+        if (!ev || (o.paidAt && ev.createdAt < o.paidAt)) return null; // sales menandai lunas lagi setelah permintaan → permintaan lama tidak berlaku
+        return { pada: ev.createdAt.toISOString(), catatan: ev.metadata?.catatan ?? null };
+      })(),
     });
   }
 
@@ -110,6 +125,28 @@ export async function daftarLunasBelumDicatat(db) {
     baru: ringkas(items.filter((i) => i.kelompok === "BARU")),
     lama: ringkas(items.filter((i) => i.kelompok === "LAMA")),
   };
+}
+
+/**
+ * FINANCE MEMINTA BUKTI atas klaim "Lunas" dari Sales. Hanya penanda + jejak audit (event BUKTI_DIMINTA); TIDAK mengubah status order,
+ * tidak membuat Payment, tidak menyentuh jurnal/saldo. Klaim tetap ada di Perlu Verifikasi Finance dengan penanda "Bukti diminta".
+ */
+export async function mintaBukti(tx, { orderId, catatan = null, userId }) {
+  await lockRowForUpdate(tx, '"Order"', orderId, { cast: null });
+  const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, orderNumber: true, paymentStatus: true, value: true } });
+  if (!order) throw err("Order tidak ditemukan", 404);
+  if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} tidak lagi berstatus Lunas di CRM — tidak ada klaim yang perlu bukti`, 409);
+  const gate = await getVerificationGate(tx);
+  const dibayar = await paidForOrder(tx, orderId, gate);
+  if (toMoney(order.value).greaterThan(0) && dibayar.greaterThanOrEqualTo(toMoney(order.value))) {
+    throw err(`Order ${order.orderNumber} sudah tercatat lunas oleh pembayaran terverifikasi — tidak perlu meminta bukti`, 409);
+  }
+  const teks = String(catatan ?? "").trim().slice(0, 300) || null;
+  await recordActivity(tx, {
+    entityType: ENTITY_TYPES.ORDER, entityId: orderId, eventType: EVENT_TYPES.BUKTI_DIMINTA, actorId: userId,
+    metadata: { aksi: "minta_bukti", orderNumber: order.orderNumber, catatan: teks },
+  });
+  return { orderNumber: order.orderNumber, catatan: teks };
 }
 
 async function pendapatanSudahDiakui(tx, orderId) {

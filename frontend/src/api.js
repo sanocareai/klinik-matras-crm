@@ -1369,6 +1369,7 @@ export const api = {
   getFinanceLunasBelumDicatat: () => request("/finance/penerimaan/lunas-belum-dicatat"),
   verifikasiPenerimaan: (data) => request("/finance/penerimaan/verifikasi", { method: "POST", body: JSON.stringify(data) }),
   verifikasiPenerimaanMassal: (data) => request("/finance/penerimaan/verifikasi-massal", { method: "POST", body: JSON.stringify(data) }),
+  mintaBuktiPenerimaan: (orderId, catatan) => request("/finance/penerimaan/minta-bukti", { method: "POST", body: JSON.stringify({ orderId, catatan }) }),
   tolakLunas: (orderId, reason) => request("/finance/penerimaan/tolak", { method: "POST", body: JSON.stringify({ orderId, reason }) }),
   getFinanceReceiptReview: () => request("/finance/bukti-review"),
   getFinancePurchaseCategories: (params = {}) => request(`/finance/purchase-categories${qsFinance(params)}`),

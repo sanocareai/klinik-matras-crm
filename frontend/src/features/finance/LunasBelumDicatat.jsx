@@ -34,7 +34,7 @@ function hariIniISO() {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-export default function LunasBelumDicatat({ onBerubah }) {
+export default function LunasBelumDicatat({ onBerubah, ringkas = false }) {
   const [data, setData] = useState(null);
   const [rekening, setRekening] = useState([]);
   const [galat, setGalat] = useState(null);
@@ -109,12 +109,12 @@ export default function LunasBelumDicatat({ onBerubah }) {
         </Card>
       )}
 
-      <Penjelasan>
-        Order di bawah sudah ditandai <strong>Lunas</strong> oleh sales di CRM, tapi belum ada catatan uang masuknya.
-        Tugas Anda: cek uangnya benar-benar sudah masuk, lalu tekan <strong>Verifikasi</strong> — pilih rekening
-        tempat uangnya masuk dan lampirkan foto bukti. Kalau ternyata uangnya belum masuk, tekan
-        <strong> Belum Lunas</strong> — status order dikembalikan.
-      </Penjelasan>
+      {!ringkas && <Penjelasan>
+        <strong>Klaim Lunas dari Sales</strong>: order di bawah ditandai <strong>Lunas</strong> oleh sales di CRM, tapi belum ada catatan uang masuknya
+        (jadi belum ada pembayaran yang bisa diverifikasi, dan tidak muncul di daftar pembayaran). Tugas Anda: cek uangnya benar-benar masuk, lalu tekan
+        <strong> Verifikasi Pembayaran</strong> — pilih rekening dan lampirkan foto bukti. Belum ada bukti? Tekan <strong>Minta Bukti</strong>.
+        Kalau uangnya ternyata belum masuk, tekan <strong>Tolak Klaim</strong> — status order dikembalikan.
+      </Penjelasan>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KartuAngka
@@ -152,13 +152,13 @@ export default function LunasBelumDicatat({ onBerubah }) {
 
       <Card className="overflow-hidden">
         <JudulKartu
-          title="Order yang Ditandai Lunas oleh Sales"
+          title="Klaim Lunas dari Sales"
           description="Yang paling baru ditandai lunas ada di atas."
           info="Daftar ini otomatis dari status order di CRM dan pembayaran yang sudah dicatat, jadi langsung berkurang begitu sebuah order diverifikasi."
         />
         {tampil.length === 0 ? (
           <CardContent>
-            <EmptyState icon={CheckCircle2} title="Tidak ada yang menunggu" description="Semua order yang ditandai lunas sudah dicek uang masuknya." />
+            <EmptyState icon={CheckCircle2} title="Tidak ada klaim yang menunggu" description="Semua order yang ditandai lunas oleh Sales sudah dicek uang masuknya." />
           </CardContent>
         ) : (
           <TableWrap className="dh-table">
@@ -185,18 +185,34 @@ export default function LunasBelumDicatat({ onBerubah }) {
                     <TD className="whitespace-nowrap">{i.lunasSejak ? tanggalPendek(i.lunasSejak) : <span className="text-ink3">tanggal tidak diketahui</span>}</TD>
                     <TD numeric><Uang value={i.nilaiOrder} /></TD>
                     <TD numeric><Uang value={i.sisa} className="font-bold" /></TD>
-                    <TD><Badge variant={i.kelompok === "BARU" ? "orange" : "neutral"}>{i.kelompok === "BARU" ? "Perlu dicek" : `Sebelum ${tgl}`}</Badge></TD>
                     <TD>
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="secondary" onClick={() => setModal({ item: i })}>Verifikasi</Button>
+                      <Badge variant={i.kelompok === "BARU" ? "orange" : "neutral"}>{i.kelompok === "BARU" ? "Perlu dicek" : `Sebelum ${tgl}`}</Badge>
+                      {i.buktiDiminta && (
+                        <div className="mt-1" data-testid="bukti-diminta" title={i.buktiDiminta.catatan || undefined}>
+                          <Badge variant="accent">{"Bukti diminta " + tanggalPendek(String(i.buktiDiminta.pada).slice(0, 10))}</Badge>
+                        </div>
+                      )}
+                    </TD>
+                    <TD>
+                      <div className="flex flex-wrap justify-end gap-1">
+                        <Button size="sm" variant="secondary" onClick={() => setModal({ item: i })}>Verifikasi Pembayaran</Button>
                         <TombolAksi
-                          size="sm" variant="neutral" title="Uangnya ternyata belum masuk"
+                          size="sm" variant="neutral" title="Minta Sales melampirkan bukti pembayaran (hanya penanda, tidak mengubah status)"
                           onClick={() => {
-                            const alasan = window.prompt(`Kenapa ${i.orderNumber} belum lunas (uangnya belum masuk)? Status order akan dikembalikan ke belum lunas:`);
+                            const catatan = window.prompt("Minta bukti pembayaran untuk " + i.orderNumber + ". Catatan untuk Sales (boleh dikosongkan):", "Mohon kirim bukti transfer/pembayaran");
+                            if (catatan !== null) return aksi(() => api.mintaBuktiPenerimaan(i.orderId, catatan.trim()));
+                          }}
+                        >
+                          Minta Bukti
+                        </TombolAksi>
+                        <TombolAksi
+                          size="sm" variant="neutral" title="Tolak klaim: uangnya ternyata belum masuk"
+                          onClick={() => {
+                            const alasan = window.prompt("Tolak klaim lunas " + i.orderNumber + ". Alasan (uangnya belum masuk)? Status order akan dikembalikan ke belum lunas:");
                             if (alasan?.trim()) return aksi(() => api.tolakLunas(i.orderId, alasan.trim()));
                           }}
                         >
-                          <XCircle size={13} /> Belum Lunas
+                          <XCircle size={13} /> Tolak Klaim
                         </TombolAksi>
                       </div>
                     </TD>
