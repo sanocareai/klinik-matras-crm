@@ -171,7 +171,7 @@ export default function CustomerPanel({ conversation, onClose }) {
           </TabsContent>
 
           <TabsContent value="order" className="panel-body">
-            <OrderHistoryList customer={customer} onOpenOrder={setOrderDrawerOrder} onCreateOrder={() => setCreatingOrder(true)} />
+            <OrderHistoryList customer={customer} onOpenOrder={setOrderDrawerOrder} onCreateOrder={() => setCreatingOrder(true)} onResiDibuat={async () => { try { setCustomer(await api.getCustomer(customer.id)); } catch { /* daftar diperbarui pada muat berikutnya */ } }} />
           </TabsContent>
 
           <TabsContent value="media" className="panel-body">

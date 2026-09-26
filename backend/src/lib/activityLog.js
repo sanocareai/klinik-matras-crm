@@ -132,6 +132,8 @@ export const EVENT_TYPES = Object.freeze({
   // dengan STAGE_STARTED/dst yang generik lintas tahap produksi).
   DOCUMENT_APPROVED: "DOCUMENT_APPROVED",
   DOCUMENT_REJECTED: "DOCUMENT_REJECTED",
+  // Finance meminta bukti pembayaran atas order yang ditandai Lunas oleh Sales (Perlu Verifikasi Finance). Tidak mengubah status/keuangan apa pun.
+  BUKTI_DIMINTA: "BUKTI_DIMINTA",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -317,6 +319,8 @@ export function formatActivitySentence(event) {
       return metadata.reason
         ? `Dokumen ${metadata.receiptNumber || metadata.recordNumber || "—"} ditolak — ${metadata.reason}`
         : `Dokumen ${metadata.receiptNumber || metadata.recordNumber || "—"} ditolak`;
+    case EVENT_TYPES.BUKTI_DIMINTA:
+      return metadata.catatan ? `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"} — ${metadata.catatan}` : `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"}`;
     case EVENT_TYPES.DOCUMENT_CANCELLED:
       return metadata.reason
         ? `Dokumen ${metadata.issueNumber || metadata.transferNumber || "—"} dibatalkan — ${metadata.reason}`

@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
+import { useResiAktif } from "@/features/resi/useResiAktif.js";
+import { DP_PERSEN } from "@/features/resi/logika.js";
 
 // ─── PANEL INVOICE (31 Agustus 2026) ────────────────────────────────────────
 // Komponen ini SENGAJA tidak menghitung apa pun. Seluruh nominal & status
@@ -111,6 +113,7 @@ function buatTeksInvoice(v) {
 
 export default function InvoicePanel({ orderId, onChanged }) {
   const navigate = useNavigate();
+  const resiAktif = useResiAktif(); // Resi Gabungan Fase 1 (flag server-side)
   const [view, setView]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [aksi, setAksi]       = useState(null); // nama aksi yang sedang jalan
@@ -289,6 +292,9 @@ export default function InvoicePanel({ orderId, onChanged }) {
 
   const { invoice, order, orders = [order], items: itemsGabungan, customer, nominal, payments } = view;
   const items = itemsGabungan || order.items;
+  // Resi Gabungan Fase 1: invoice gabungan (>1 order) tampil sebagai "Resi Gabungan" hanya bila flag server aktif
+  const resiTampil = resiAktif && orders.length > 1;
+  const dpResi = Math.round((nominal.totalTagihan * DP_PERSEN) / 100);
   const dibatalkan = invoice.status === "CANCELLED";
   const primaryOrderId = orders[0]?.id;
 
@@ -332,7 +338,7 @@ export default function InvoicePanel({ orderId, onChanged }) {
       {orders.length > 1 && (
         <div className="rounded-xl bg-surface p-3.5 shadow-card">
           <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">
-            Gabungan {orders.length} Order
+            {resiTampil ? <>Resi Gabungan · <span className="font-mono normal-case">{invoice.invoiceNumber}</span> · Item dalam Resi ({orders.length})</> : <>Gabungan {orders.length} Order</>}
           </p>
           <div className="flex flex-wrap gap-1.5">
             {orders.map((o) => (
@@ -435,7 +441,7 @@ export default function InvoicePanel({ orderId, onChanged }) {
             />
           </>
         ) : null}
-        {nominal.ongkir > 0 && <BarisUang label="Ongkir" value={formatRupiah(nominal.ongkir)} />}
+        {nominal.ongkir > 0 && <BarisUang label={resiTampil ? "Ongkir Tambahan" : "Ongkir"} value={formatRupiah(nominal.ongkir)} />}
 
         {/* modeDP (16 Sep 2026, laporan owner: "customer kadang mau
             invoice DP dulu") — SEBELUMNYA headline SELALU total order
@@ -461,7 +467,8 @@ export default function InvoicePanel({ orderId, onChanged }) {
           </>
         ) : (
           <>
-            <BarisUang label="Total tagihan" value={formatRupiah(nominal.totalTagihan)} strong />
+            <BarisUang label={resiTampil ? "Total Resi" : "Total tagihan"} value={formatRupiah(nominal.totalTagihan)} strong />
+            {resiTampil && <BarisUang label={"DP " + DP_PERSEN + "%"} value={formatRupiah(dpResi)} tone="green" />}
 
             <div className="my-2 border-t border-line" />
             <BarisUang

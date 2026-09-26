@@ -7,7 +7,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { idempotency } from "../middleware/idempotency.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { daftarLunasBelumDicatat, verifikasiPenerimaan, tolakLunas } from "../services/finance/penerimaanOrder.js";
+import { daftarLunasBelumDicatat, verifikasiPenerimaan, tolakLunas, mintaBukti } from "../services/finance/penerimaanOrder.js";
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { handleFinanceError } from "./finance.js";
 
@@ -75,7 +75,18 @@ financePenerimaanRouter.post("/penerimaan/verifikasi-massal", requirePermission(
   }
 });
 
-// Uang ternyata belum masuk — kembalikan status order.
+// Minta bukti pembayaran ke Sales atas klaim Lunas: hanya penanda + audit, tidak mengubah status order maupun keuangan.
+financePenerimaanRouter.post("/penerimaan/minta-bukti", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
+  try {
+    const { orderId, catatan } = req.body;
+    if (!orderId) throw err("Order wajib dipilih");
+    res.status(201).json(await prisma.$transaction((tx) => mintaBukti(tx, { orderId, catatan, userId: req.user.id })));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Uang ternyata belum masuk (Tolak Klaim) — kembalikan status order.
 financePenerimaanRouter.post("/penerimaan/tolak", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
   try {
     const { orderId, reason } = req.body;

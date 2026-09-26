@@ -60,6 +60,10 @@ export const SETTING_KEYS = Object.freeze({
   CASH_ACCOUNT_TRANSFER: "cash_account_transfer",
   CASH_ACCOUNT_QRIS: "cash_account_qris",
   CASH_ACCOUNT_CARD: "cash_account_card",
+
+  // Resi Gabungan Fase 1 ("Buat Resi"): true = Sales boleh membuat banyak order/item dalam satu resi. DEFAULT MATI; ditegakkan di SERVER
+  // (POST /api/resi menolak bila mati). Diatur admin lewat Finance > Pengaturan (PATCH /api/finance/settings).
+  RESI_INPUT_AKTIF: "resi_input_aktif",
 });
 
 const DEFAULTS = Object.freeze({
@@ -91,6 +95,7 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.CASH_ACCOUNT_TRANSFER]: "",
   [SETTING_KEYS.CASH_ACCOUNT_QRIS]: "",
   [SETTING_KEYS.CASH_ACCOUNT_CARD]: "",
+  [SETTING_KEYS.RESI_INPUT_AKTIF]: "false",
 });
 
 // Payment.method → kunci pengaturan rekening tujuannya. SATU tempat, supaya

@@ -45,10 +45,12 @@ function aksiPembayaran(p, { verifikasi, setAlokasiUntuk }) {
 // sudah dipakai sejak D-011 — tidak dibuatkan jalur kedua, supaya tidak ada
 // dua cara memverifikasi hal yang sama.
 
+// "Perlu Verifikasi Finance" = klaim Lunas dari Sales (flag order di CRM, BELUM ada Payment) + pembayaran tercatat yang belum diverifikasi.
+// Dulu "Ditandai Lunas oleh Sales" dan "Menunggu Verifikasi" terpisah dan membaca sumber berbeda, sehingga tab kedua bisa kosong padahal ada yang harus dicek.
 const TAB = [
-  { key: "lunas_crm", label: "Ditandai Lunas oleh Sales" },
-  { key: "belum_verifikasi", label: "Menunggu Verifikasi" },
-  { key: "terverifikasi", label: "Sudah Diverifikasi" },
+  { key: "perlu", label: "Perlu Verifikasi Finance" },
+  { key: "lunas_crm", label: "Klaim Lunas dari Sales" },
+  { key: "terverifikasi", label: "Uang Masuk Terverifikasi" },
   { key: "dibatalkan", label: "Dibatalkan" },
   { key: "", label: "Semua" },
 ];
@@ -56,7 +58,7 @@ const TAB = [
 const LABEL_CARA_BAYAR = { TRANSFER: "Transfer", CASH: "Tunai", QRIS: "QRIS", CARD: "Kartu" };
 
 export default function FinancePayments() {
-  const [tab, setTab] = useState("lunas_crm");
+  const [tab, setTab] = useState("perlu");
   const [periode, setPeriode] = useState(periodeDefault);
   const [data, setData] = useState(null);
   const [semuaPeriode, setSemuaPeriode] = useState([]);
@@ -83,7 +85,7 @@ export default function FinancePayments() {
     try {
       // Kartu angka di atas selalu menghitung SEMUA pembayaran periode ini, apa pun tab yang dibuka.
       const [tabData, semua] = await Promise.all([
-        api.getFinanceCustomerPayments({ ...periode, status: tab }),
+        api.getFinanceCustomerPayments({ ...periode, status: tab === "perlu" ? "belum_verifikasi" : tab }),
         tab === "" ? null : api.getFinanceCustomerPayments({ ...periode, status: "" }),
       ]);
       setData(tabData);
@@ -204,12 +206,16 @@ export default function FinancePayments() {
         ))}
       </div>
       <p className="text-[13px] leading-relaxed text-ink3">
-        {tab === "lunas_crm"
-          ? "Order yang sudah ditandai Lunas oleh sales, tapi belum ada catatan uang masuknya. Cek uangnya, pilih rekening, lalu verifikasi."
-          : "Pembayaran yang sudah dicatat sales atau driver — tinggal dicek apakah uangnya benar-benar masuk."}
+        {tab === "perlu"
+          ? "Semua yang perlu dicek Finance: (1) klaim Lunas dari Sales yang belum punya catatan uang masuk, dan (2) pembayaran yang sudah tercatat tapi belum diverifikasi."
+          : tab === "lunas_crm"
+            ? "Order yang ditandai Lunas oleh Sales, tapi belum ada catatan uang masuknya. Verifikasi Pembayaran, Tolak Klaim, atau Minta Bukti."
+            : "Pembayaran yang sudah dicatat sales atau driver — tinggal dicek apakah uangnya benar-benar masuk."}
       </p>
 
-      {tab === "lunas_crm" && <LunasBelumDicatat />}
+      {tab === "perlu" && <h3 className="mt-1 text-[14px] font-semibold text-ink">1. Klaim Lunas dari Sales</h3>}
+      {(tab === "lunas_crm" || tab === "perlu") && <LunasBelumDicatat ringkas={tab === "perlu"} />}
+      {tab === "perlu" && <h3 className="mt-3 text-[14px] font-semibold text-ink">2. Pembayaran tercatat, menunggu verifikasi</h3>}
 
       <FilterBar
         className={tab === "lunas_crm" ? "hidden" : undefined}

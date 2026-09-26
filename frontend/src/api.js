@@ -823,6 +823,9 @@ export const api = {
     request(`/customers/notes/${noteId}`, { method: "PATCH", body: JSON.stringify({ content }) }),
   deleteNote: (noteId) =>
     request(`/customers/notes/${noteId}`, { method: "DELETE" }),
+  // Resi Gabungan Fase 1 — flag server-side RESI_INPUT_AKTIF; POST menolak 403 bila mati
+  getResiStatus: () => request("/resi/status"),
+  buatResi: (data) => request("/resi", { method: "POST", body: JSON.stringify(data) }),
   addOrder: (customerId, data) =>
     request(`/customers/${customerId}/orders`, { method: "POST", body: JSON.stringify(data) }),
   updateCustomerOrder: (customerId, orderId, data) =>
@@ -1369,6 +1372,7 @@ export const api = {
   getFinanceLunasBelumDicatat: () => request("/finance/penerimaan/lunas-belum-dicatat"),
   verifikasiPenerimaan: (data) => request("/finance/penerimaan/verifikasi", { method: "POST", body: JSON.stringify(data) }),
   verifikasiPenerimaanMassal: (data) => request("/finance/penerimaan/verifikasi-massal", { method: "POST", body: JSON.stringify(data) }),
+  mintaBuktiPenerimaan: (orderId, catatan) => request("/finance/penerimaan/minta-bukti", { method: "POST", body: JSON.stringify({ orderId, catatan }) }),
   tolakLunas: (orderId, reason) => request("/finance/penerimaan/tolak", { method: "POST", body: JSON.stringify({ orderId, reason }) }),
   getFinanceReceiptReview: () => request("/finance/bukti-review"),
   getFinancePurchaseCategories: (params = {}) => request(`/finance/purchase-categories${qsFinance(params)}`),
