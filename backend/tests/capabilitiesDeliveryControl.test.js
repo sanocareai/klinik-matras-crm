@@ -61,3 +61,14 @@ test("deliveryExpenseOwn: hanya Driver, Helper, Leader Driver; Driver TIDAK mend
   }
   for (const r of ["ADMIN", "OWNER", "DISPATCHER", "FINANCE", "SALES"]) assert.deepEqual(cap(r).deliveryExpenseOwn, { read: false, write: false }, r);
 });
+
+test("modul operasional Control mengikuti izin route yang menjaga endpoint-nya; peran tanpa akses Control semuanya false", () => {
+  for (const r of ["ADMIN", "OWNER", "DISPATCHER"]) {
+    const m = cap(r).deliveryControl;
+    for (const k of ["dashboard", "drivers", "routes", "tracking", "issues", "reschedule", "performance"]) assert.equal(m[k], true, `${r}.${k}`);
+  }
+  for (const r of ["DRIVER", "HELPER", "LEADER_DRIVER", "FINANCE", "SALES"]) {
+    const m = cap(r).deliveryControl;
+    assert.ok(Object.values(m).every((v) => v === false), r);
+  }
+});

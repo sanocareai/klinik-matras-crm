@@ -37,6 +37,20 @@ export function capabilitiesFor(user) {
   // pengajuan), memverifikasi bukti (finance:admin, sama dengan route
   // verifikasi-bukti), menyetujui, dan membayar.
   const deliveryControlApp = hasPermission(user, P.DELIVERY_CONTROL_ACCESS);
+  // Modul operasional Delivery Control — cermin izin ROUTE yang sudah menjaga endpoint masing-masing
+  // (GET /armada/board|routes|tracking|issues|incentive-summary = job:read, GET /armada/drivers|helpers dan
+  // POST /armada/issues/:jobId/reschedule = job:write). Hanya berlaku di dalam aplikasi Control.
+  const jobRead = hasPermission(user, P.JOB_READ);
+  const jobWrite = hasPermission(user, P.JOB_WRITE);
+  const deliveryControl = {
+    dashboard: deliveryControlApp && jobRead,
+    drivers: deliveryControlApp && jobWrite,
+    routes: deliveryControlApp && jobRead,
+    tracking: deliveryControlApp && jobRead,
+    issues: deliveryControlApp && jobRead,
+    reschedule: deliveryControlApp && jobWrite,
+    performance: deliveryControlApp && jobRead,
+  };
   // Biaya Delivery MILIK SENDIRI (Driver/Helper/Leader Driver) — izin sempit,
   // bukan finance:expense:submit. Dipakai klien Driver kelak; server tetap penentu.
   const deliveryExpenseOwn = {
@@ -71,7 +85,7 @@ export function capabilitiesFor(user) {
     expenseSubmit,
     incentiveSnapshotCreate, incentiveSnapshotReview, incentiveSnapshotApprove, incentiveSnapshotRead,
     incentivePayoutRead, incentivePayoutCreate, incentivePayoutVoid,
-    deliveryControlApp, deliveryExpense, deliveryExpenseOwn,
+    deliveryControlApp, deliveryExpense, deliveryExpenseOwn, deliveryControl,
     // Boleh memakai aplikasi Finance? (dipakai login mobile). SENGAJA tidak
     // memakai paymentRead: SALES juga memegangnya (lihat riwayat pembayaran order
     // sendiri) tetapi bukan tim Finance.

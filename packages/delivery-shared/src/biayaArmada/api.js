@@ -36,6 +36,10 @@ export function createBiayaArmadaApi(client) {
     verifikasiBukti: (finExpenseId, key) => client.request(`/finance/expenses/${finExpenseId}/verifikasi-bukti`, { method: "POST", body: {}, headers: idem(key) }),
     setujui: (finExpenseId, key) => client.request(`/finance/expenses/${finExpenseId}/approve`, { method: "POST", body: {}, headers: idem(key) }),
     tolak: (finExpenseId, reason, key) => client.request(`/finance/expenses/${finExpenseId}/reject`, { method: "POST", body: { reason }, headers: idem(key) }),
+    // Rekening kas/bank untuk pembayaran (finance:read; server menolak bila tidak berizin).
+    rekeningKas: () => client.request("/finance/cash-accounts"),
+    // Uang muka operasional aktif milik pengaju/PIC (sumber dana "Uang muka operasional").
+    uangMukaAktif: (params = {}) => client.request(`${P}/uang-muka-aktif${buildQuery(params)}`),
     bayar: (finExpenseId, body, key) => client.request(`/finance/expenses/${finExpenseId}/pay`, { method: "POST", body, headers: idem(key) }),
   };
 }

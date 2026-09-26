@@ -31,3 +31,10 @@ export function deliveryExpenseAbilities(capabilities) {
     pay: e.pay === true,
   };
 }
+
+// Modul operasional Control (cermin capabilities.deliveryControl dari server; default semua false).
+const MODUL = ["dashboard", "drivers", "routes", "tracking", "issues", "reschedule", "performance"];
+export function controlModules(capabilities) {
+  const m = capabilities?.deliveryControl || {};
+  return Object.fromEntries(MODUL.map((k) => [k, m[k] === true]));
+}

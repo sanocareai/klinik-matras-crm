@@ -55,12 +55,33 @@ test("timeline audit dan status pembayaran ditampilkan; teks berbahasa Indonesia
   for (const f of layar) assert.doesNotMatch(baca(f), /\b(Loading|Submit|Cancel|Approve|Reject)\b(?!\w)/, `${f}: teks Inggris`);
 });
 
-test("Home hanya mengaktifkan modul yang benar-benar ada; sisanya tampil tipis dengan label Segera (tidak bisa ditekan)", () => {
+test("Home: setiap modul punya layar terdaftar dan digerbang capability server; tidak ada label Segera", () => {
   const src = baca("screens/HomeScreen.js");
-  assert.match(src, /ready: true/);
-  assert.match(src, /SEGERA/);
+  const app = readFileSync(path.join(dir, "../App.js"), "utf8");
+  assert.doesNotMatch(src, /SEGERA|Segera/);
   assert.match(src, /disabled=\{!m\.ready\}/);
-  assert.doesNotMatch(src, /navigate\("(Driver|Rute|Tracking|Masalah|Performa)/, "tidak ada tujuan palsu");
+  assert.match(src, /ready: !!modules\[m\.cap\]/);
+  const layarModul = [...src.matchAll(/screen: "(\w+)"/g)].map((m) => m[1]);
+  assert.ok(layarModul.length >= 7);
+  for (const nama of layarModul) assert.match(app, new RegExp(`name="${nama}"`), `layar ${nama} terdaftar`);
+  for (const [nama, cap] of [["Dashboard", "dashboard"], ["Kru", "drivers"], ["Rute", "routes"], ["Tracking", "tracking"], ["Masalah", "issues"], ["Performa", "performance"]]) {
+    assert.match(app, new RegExp(`modules\\.${cap} && <Stack\\.Screen name="${nama}"`), `${nama} digerbang ${cap}`);
+  }
+});
+
+test("modul operasional: baca lewat operasionalApi, satu-satunya mutation (reschedule) memakai kunci idempotensi, tanpa izin lokasi", () => {
+  const ops = ["DashboardScreen", "KruScreen", "KruDetailScreen", "RuteScreen", "RuteDetailScreen", "TrackingScreen", "MasalahScreen", "MasalahDetailScreen", "PerformaScreen"];
+  for (const f of ops) {
+    const src = baca(`screens/${f}.js`);
+    assert.match(src, /operasionalApi\./, f);
+    assert.doesNotMatch(src, /expo-location|getCurrentPosition|requestForegroundPermissions/, `${f}: tanpa lokasi HP`);
+    assert.doesNotMatch(src, /client\.request\(/, `${f}: tanpa endpoint ad-hoc`);
+  }
+  const detail = baca("screens/MasalahDetailScreen.js");
+  assert.match(detail, /operasionalApi\.reschedule\(job\.id, body, kunci\.current\)/);
+  assert.match(detail, /newIdempotencyKey/);
+  assert.match(detail, /modules\.reschedule && job\.status === "FAILED"/);
+  for (const f of ops) assert.doesNotMatch(baca(`screens/${f}.js`), /\b(Loading|Submit|Cancel|Retry|Error)\b(?!\w)/, `${f}: teks Inggris`);
 });
 
 test("navigasi bawah hanya berisi tujuan yang punya layar", () => {
@@ -84,4 +105,17 @@ test("foto struk dibuka lewat URL bertanda-tangan berumur pendek (bukan header B
   const detail = baca("screens/BiayaDetailScreen.js");
   assert.match(detail, /<FotoStruk /);
   assert.doesNotMatch(detail, /Authorization|getToken\(\)/);
+});
+
+test("Biaya Armada: verifikasi bukti dan bayar hanya lewat allowedActions, memakai kunci idempotensi, rekening dari server", () => {
+  const detail = baca("screens/BiayaDetailScreen.js");
+  for (const k of ["aksi.verifikasiBukti", "aksi.bayar"]) assert.match(detail, new RegExp(k.replace(".", "\.")), k);
+  assert.match(detail, /biayaArmadaApi\.verifikasiBukti\(finId, k\)/);
+  assert.match(detail, /biayaArmadaApi\.bayar\(finId, body, k\)/);
+  const bayar = baca("BayarModal.js");
+  assert.match(bayar, /biayaArmadaApi\.rekeningKas\(\)/);
+  assert.doesNotMatch(bayar, /accounts:\s*\[/, "tidak ada rekening statis");
+  const form = baca("screens/BiayaFormScreen.js");
+  assert.match(form, /UANG_MUKA_OPERASIONAL/);
+  assert.match(form, /biayaArmadaApi\.uangMukaAktif\(\)/);
 });
