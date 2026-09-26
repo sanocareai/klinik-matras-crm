@@ -25,6 +25,7 @@ import { detailJurnal, LABEL_SUMBER } from "./buku.js";
 import { detailPembayaran } from "./pembayaran.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../../utils/wib.js";
 import { legacyItems, ringkasLegacy, hitungCutoff, detailLegacy } from "./legacyPendapatan.js";
+import { ringkasLunasBelumDicatat } from "./penerimaanOrder.js";
 
 export class PemasukanError extends Error {
   constructor(message, statusCode = 400) { super(message); this.name = "PemasukanError"; this.statusCode = statusCode; }
@@ -36,8 +37,8 @@ const BATAS_JURNAL = 20000;
 const TOLERANSI = toMoney("0.005");
 
 export const KATEGORI = {
-  PENDAPATAN: { label: "Pendapatan Penjualan", tab: "pendapatan", penjelasan: "Penjualan yang sudah DIAKUI sebagai pendapatan (order diserahkan). Belum tentu sudah dibayar." },
-  PEMBAYARAN: { label: "Pembayaran Masuk", tab: "pembayaran", penjelasan: "Uang dari pelanggan yang diterima. Pembayaran pada order yang sama dengan pendapatan BUKAN pemasukan tambahan." },
+  PENDAPATAN: { label: "Pendapatan Diakui", tab: "pendapatan", penjelasan: "Pendapatan adalah omzet yang diakui, bukan bukti uang masuk. Order diakui saat diserahkan dan belum tentu sudah dibayar, jadi tidak selalu punya rekening — rekening muncul di Uang Masuk." },
+  PEMBAYARAN: { label: "Uang Masuk", tab: "pembayaran", penjelasan: "Uang dari pelanggan yang diterima (catatan pembayaran). Rekening muncul di sini, bukan selalu di pendapatan. Pembayaran pada order yang sama dengan pendapatan BUKAN pemasukan tambahan." },
   LAIN: { label: "Pemasukan Lain", tab: "lain", penjelasan: "Pendapatan di luar penjualan order, dicatat lewat Pemasukan Lain (mis. bunga bank)." },
   DANA: { label: "Dana Masuk Bukan Pendapatan", tab: "dana", penjelasan: "Uang masuk yang bukan hasil penjualan: setoran modal dan pinjaman/pendanaan pihak ketiga. Tidak masuk laba." },
   HISTORIS: { label: "Data Sebelum Sistem", tab: "historis", penjelasan: "Arsip pendapatan sebelum sistem dipakai. Belum memengaruhi buku besar sampai rekonsiliasi dan posting disetujui." },
@@ -203,8 +204,53 @@ async function itemPembayaran(db, { from, to }) {
 }
 
 /** Semua item pemasukan pada periode (jurnal + pembayaran + arsip historis), sudah diklasifikasi. */
+// STATUS PEMBAYARAN per baris Pendapatan Diakui. Pendapatan berasal dari JURNAL pengakuan (tidak punya rekening); status bayar dibaca dari catatan
+// Payment order yang sama + klaim "Lunas" dari Sales. Hanya penjelasan tampilan — tidak menghitung ulang angka pendapatan.
+//   Perlu verifikasi  : ada pembayaran tercatat yang belum diverifikasi ATAU Sales menandai order Lunas tetapi yang tercatat kurang dari nilai order
+//   Lunas / Sebagian  : dari pembayaran TERVERIFIKASI terhadap nilai order
+//   Belum dibayar     : belum ada pembayaran terverifikasi dan tidak ada klaim
+//   rekeningBelumDiketahui: ada pembayaran terverifikasi tanpa rekening (mis. lunas sebelum saldo awal / legacy)
+export const STATUS_BAYAR = {
+  BELUM_DIBAYAR: ["Belum dibayar", "neutral"], SEBAGIAN: ["Sebagian", "info"], LUNAS: ["Lunas", "success"], PERLU_VERIFIKASI: ["Perlu verifikasi", "warning"],
+};
+export function tentukanStatusBayar(order) {
+  const aktif = (order.payments ?? []).filter((x) => !x.cancelledAt);
+  const verif = aktif.filter((x) => (x.verifications?.length ?? 0) > 0);
+  const tanpaVerif = aktif.filter((x) => !(x.verifications?.length ?? 0));
+  const sum = (arr) => arr.reduce((s, x) => s + (x.amount ?? 0), 0);
+  const nilai = order.value ?? 0;
+  const dicatat = sum(aktif);
+  const klaimSales = order.paymentStatus === "LUNAS" && nilai > 0 && dicatat < nilai;
+  const dibayar = sum(verif);
+  let kode;
+  let alasan = null;
+  if (tanpaVerif.length > 0 || klaimSales) {
+    kode = "PERLU_VERIFIKASI";
+    alasan = klaimSales && tanpaVerif.length === 0 ? "Sales menandai order Lunas, tetapi belum ada catatan pembayaran yang cukup" : "Ada pembayaran tercatat yang belum diverifikasi Finance";
+  } else if (nilai > 0 && dibayar >= nilai) kode = "LUNAS";
+  else if (dibayar > 0) kode = "SEBAGIAN";
+  else kode = "BELUM_DIBAYAR";
+  return { kode, label: STATUS_BAYAR[kode][0], nada: STATUS_BAYAR[kode][1], alasan, dibayar, nilaiOrder: nilai, rekeningBelumDiketahui: verif.some((x) => !x.cashAccountId) };
+}
+
+async function tambahStatusBayar(db, baris) {
+  const target = baris.filter((b) => b.kategori === "PENDAPATAN" && b.tautan?.order?.id);
+  const ids = [...new Set(target.map((b) => b.tautan.order.id))];
+  if (!ids.length) return;
+  const orders = await db.order.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, value: true, paymentStatus: true, payments: { select: { amount: true, cancelledAt: true, cashAccountId: true, verifications: { select: { id: true } } } } },
+  });
+  const peta = new Map(orders.map((o) => [o.id, o]));
+  for (const b of target) {
+    const o = peta.get(b.tautan.order.id);
+    b.statusBayar = o ? tentukanStatusBayar(o) : null;
+  }
+}
+
 async function kumpulkan(db, p, { termasukHistoris = true } = {}) {
   const [j, pay, his] = await Promise.all([itemJurnal(db, p), itemPembayaran(db, p), termasukHistoris ? legacyItems(db, p) : []]);
+  await tambahStatusBayar(db, j.baris);
   return { baris: [...j.baris, ...pay, ...his], terpotong: j.terpotong };
 }
 
@@ -213,6 +259,7 @@ function cocok(b, f) {
   if (f.status && b.status !== f.status) return false;
   if (f.rekening && !(b.rekeningIds ?? []).includes(f.rekening) && !(b.rekening ?? "").toLowerCase().includes(String(f.rekening).toLowerCase())) return false;
   if (f.sumber && b.sumber !== f.sumber) return false;
+  if (f.statusBayar && b.statusBayar?.kode !== f.statusBayar && !(f.statusBayar === "REKENING_BELUM_DIKETAHUI" && b.statusBayar?.rekeningBelumDiketahui)) return false;
   if (f.pihak && !(b.pihak ?? "").toLowerCase().includes(String(f.pihak).toLowerCase())) return false;
   if (f.q) {
     const hay = `${b.nomor} ${b.pihak ?? ""} ${b.keterangan ?? ""} ${b.rekening ?? ""} ${b.nilai}`.toLowerCase();
@@ -242,6 +289,7 @@ export async function ringkasanPemasukan(db, q = {}) {
   const belumBuku = bayar.filter((b) => b.sub === "PEMBAYARAN_BELUM_DIBUKUKAN");
   const ditinjauSemua = baris.filter((b) => b.perluTinjau);
   const cutoff = await hitungCutoff(db);
+  const perluVerifikasiFinance = await ringkasPerluVerifikasi(db);
 
   return {
     periode: { from: p.from, to: p.to }, cutoff, terpotong, labelHistoris: LABEL_HISTORIS,
@@ -250,6 +298,7 @@ export async function ringkasanPemasukan(db, q = {}) {
     pendapatanGabungan: { nilai: uang(pendSistem.plus(pendHis)), catatan: "Pendapatan sistem + pendapatan historis (setelah deduplikasi). TIDAK ditambah lagi dengan pembayaran masuk." },
     pembayaranMasuk: { terverifikasi: jumlah(hitung("TERVERIFIKASI")), menunggu: jumlah(hitung("MENUNGGU")), tidakDihitung: jumlah(bayar.filter((b) => b.status === "DITOLAK" || b.status === "DIBATALKAN")), belumDibukukan: jumlah(belumBuku) },
     piutangTersisa: await piutangTersisa(db, p.sampai),
+    perluVerifikasiFinance,
     pemasukanLain: jumlah(cat("LAIN")),
     danaMasukBukanPendapatan: { ...jumlah(dana), rincian: Object.entries(subDana).map(([sub, n]) => ({ sub, label: SUB_LABEL[sub] ?? sub, nilai: uang(n), jumlah: dana.filter((b) => b.sub === sub).length })) },
     perluDitinjau: jumlah(ditinjauSemua),
@@ -259,6 +308,27 @@ export async function ringkasanPemasukan(db, q = {}) {
       "Pendapatan dan pembayaran tidak dijumlahkan menjadi satu total, karena akan menghitung penjualan yang sama dua kali.",
       "Dana masuk bukan pendapatan (modal, pinjaman/pendanaan pihak ketiga) dan transfer antar-rekening tidak dihitung sebagai pendapatan.",
     ],
+  };
+}
+
+/**
+ * PERLU VERIFIKASI FINANCE = semua yang secara bisnis perlu dicek Finance, dari DUA sumber berbeda yang dulu terpisah dan membingungkan:
+ *   1. klaim "Lunas" dari Sales  → flag status order (Order.paymentStatus=LUNAS) tanpa/kurang catatan Payment; BELUM ada Payment yang bisa diverifikasi
+ *   2. pembayaran tercatat (tabel Payment) yang belum diverifikasi
+ * Tidak dibatasi periode (backlog nyata). Read-only.
+ */
+export async function ringkasPerluVerifikasi(db) {
+  const [klaim, menunggu] = await Promise.all([
+    ringkasLunasBelumDicatat(db),
+    db.payment.aggregate({ where: { cancelledAt: null, verifications: { none: {} } }, _count: { _all: true }, _sum: { amount: true } }),
+  ]);
+  const klaimJumlah = klaim.jumlah;
+  const menungguJumlah = menunggu._count._all;
+  return {
+    klaimSales: { jumlah: klaimJumlah, nilai: uang(klaim.total) },
+    pembayaranMenunggu: { jumlah: menungguJumlah, nilai: uang(menunggu._sum.amount ?? 0) },
+    totalJumlah: klaimJumlah + menungguJumlah,
+    penjelasan: "Klaim Lunas dari Sales adalah status order di CRM (belum ada catatan uang masuk). Pembayaran menunggu adalah catatan pembayaran yang belum diverifikasi. Keduanya perlu dicek Finance.",
   };
 }
 
@@ -283,7 +353,7 @@ export async function daftarPemasukan(db, q = {}) {
   const { baris, terpotong } = await kumpulkan(db, p);
   let rekeningNama = null;
   if (q.rekening && /^[0-9a-f-]{36}$/i.test(String(q.rekening))) rekeningNama = (await db.finCashAccount.findUnique({ where: { id: q.rekening }, select: { name: true } }))?.name ?? null;
-  const filter = { kategori, status: q.status || null, rekening: rekeningNama ?? (q.rekening && !/^[0-9a-f-]{36}$/i.test(String(q.rekening)) ? q.rekening : null), sumber: q.sumber || null, pihak: q.pihak || null, q: q.q ? String(q.q).slice(0, 80) : null };
+  const filter = { kategori, status: q.status || null, rekening: rekeningNama ?? (q.rekening && !/^[0-9a-f-]{36}$/i.test(String(q.rekening)) ? q.rekening : null), sumber: q.sumber || null, statusBayar: q.statusBayar || null, pihak: q.pihak || null, q: q.q ? String(q.q).slice(0, 80) : null };
   const tampil = baris.filter((b) => cocok(b, filter)).sort((a, b) => (b.tanggal ?? "").localeCompare(a.tanggal ?? "") || String(b.nomor).localeCompare(String(a.nomor)));
   const limit = Math.min(Math.max(parseInt(q.limit, 10) || 20, 1), 100);
   const page = Math.max(parseInt(q.page, 10) || 1, 1);
@@ -297,11 +367,13 @@ export async function opsiPemasukan(db, user, hasPermission, P) {
   const rekening = await db.finCashAccount.findMany({ where: { active: true }, select: { id: true, name: true, kind: true }, orderBy: { name: "asc" } });
   return {
     kategori: Object.entries(KATEGORI).map(([id, k]) => ({ id, label: k.label, tab: k.tab, penjelasan: k.penjelasan })),
-    tab: ["ringkasan", "pendapatan", "pembayaran", "lain", "dana", "historis"],
+    tab: ["ringkasan", "pendapatan", "pembayaran", "verifikasi", "lain", "dana", "historis"],
     status: [
       { id: "POSTED", label: "Terposting" }, { id: "REVERSED", label: "Sudah dibalik" }, { id: "MENUNGGU", label: "Menunggu verifikasi" },
       { id: "TERVERIFIKASI", label: "Terverifikasi" }, { id: "DITOLAK", label: "Ditolak" }, { id: "DIBATALKAN", label: "Dibatalkan" },
     ],
+    // Filter status pembayaran untuk Pendapatan Diakui (kode server; label ditampilkan klien dari sini)
+    statusBayar: [...Object.entries(STATUS_BAYAR).map(([id, [label]]) => ({ id, label })), { id: "REKENING_BELUM_DIKETAHUI", label: "Rekening belum diketahui" }],
     rekening,
     sumber: Object.entries(LABEL_SUMBER).map(([id, label]) => ({ id, label })),
     cutoff: await hitungCutoff(db),
