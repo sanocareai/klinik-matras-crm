@@ -15,7 +15,7 @@ import { ukuranCustomWajibSejak } from "../services/ukuranWajib.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { kunciKanonis, kunciUntukPayment } from "../services/finance/urutanKunci.js";
-import { pastikanBukanAnakResiAktif } from "../services/resiPembayaran.js";
+import { pastikanBukanAnakResiAktif, pastikanBukanAnakResiWajibBayarLewatResi } from "../services/resiPembayaran.js";
 import { paidForOrder } from "../services/finance/allocation.js";
 import { moneyToNumber } from "../services/finance/money.js";
 import { resiBaru, dasarStatusBayar, PILIH_TAGIHAN } from "../services/finance/tagihanOrder.js";
@@ -907,9 +907,13 @@ orderRouter.post("/:id/payments", async (req, res) => {
     if (proofPhotoUrl != null && !String(proofPhotoUrl).startsWith("/media/payment-proofs/")) {
       return res.status(400).json({ error: "URL foto bukti tidak valid" });
     }
+    // Pemeriksaan awal (di luar transaksi) hanya UX — cegah kerja sia-sia sebelum mengunci. Keputusan akhir selalu pemeriksaan ULANG
+    // di bawah row lock (di dalam transaksi, setelah kunciKanonis) — order bisa saja baru masuk grup Resi tepat di antara dua pemeriksaan.
+    await pastikanBukanAnakResiWajibBayarLewatResi(prisma, req.params.id);
 
     const result = await prisma.$transaction(async (tx) => {
       await kunciKanonis(tx, { orderIds: [req.params.id] }); // urutan kunci kanonis: grup → order, lalu tulis + posting
+      await pastikanBukanAnakResiWajibBayarLewatResi(tx, req.params.id); // cek ULANG di bawah kunci — menutup celah balapan
       const payment = await tx.payment.create({
         data: {
           orderId: req.params.id, amount: amountInt, method,
@@ -928,6 +932,7 @@ orderRouter.post("/:id/payments", async (req, res) => {
 
     res.status(201).json(result);
   } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && /^[A-Z_]+$/.test(err.code) && { code: err.code }) });
     res.status(500).json({ error: "Server error: " + err.message });
   }
 });

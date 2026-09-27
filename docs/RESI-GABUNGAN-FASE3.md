@@ -1,6 +1,6 @@
 # Resi Gabungan — Fase 3A (pembayaran/DP) dan rancangan Fase 3B (batal/refund)
 
-Status: **kode selesai + hardening (28 Sep 2026) di branch `feat/resi-fase3a`, belum dimerge/dideploy.** Semua fitur di balik flag `resi_pembayaran_aktif` (default MATI).
+Status: **kode selesai + dua putaran hardening (28 Sep 2026) di branch `feat/resi-fase3a`, belum dimerge/dideploy.** Semua fitur di balik flag `resi_pembayaran_aktif` (default MATI).
 
 ## Fase 3A — apa yang ada
 
@@ -15,8 +15,10 @@ Status: **kode selesai + hardening (28 Sep 2026) di branch `feat/resi-fase3a`, b
 | Idempotensi | Header `Idempotency-Key` **wajib** (428 bila hilang; 8–128 karakter) pada catat pembayaran, klaim Lunas, dan verifikasi. |
 | Konkurensi & urutan kunci | **Kanonis di SEMUA jalur yang menyentuh Payment/Order/OrderGroup** (`services/finance/urutanKunci.js`): grup → order (id naik) → payment → posting jurnal. Dipakai ulang oleh alur Resi, `verifikasiPembayaran`/`tolakPembayaran` lama, batal Payment admin, PATCH/`cancel` order, dan koreksi alokasi manual — menutup deadlock sporadis dari urutan yang dulu terbalik antar jalur. |
 | Guard pembatalan | Child ber-`groupId` yang sudah punya alokasi AKTIF tidak bisa dibatalkan (409, tanpa syarat flag). **Anchor** dengan klaim Lunas yang masih menunggu (grup atau per-order lama) juga tidak bisa dibatalkan sampai Finance menolak/memverifikasi klaimnya — mencegah klaim tercecer permanen (`ANCHOR_DIBATALKAN` mengunci seluruh grup). Semua pemeriksaan dicek ULANG di bawah kunci (cancel-vs-verify race tertutup). |
-| Guard per order | Saat flag ON, child Resi BARU tidak bisa diverifikasi/ditolak/diminta buktinya/dibayar sendiri per order (409 `ANAK_RESI`/`KLAIM_LUNAS_AKTIF`); saat OFF perilaku lama utuh. |
-| Metode & mode | Semua `PaymentMethod` yang valid (CASH/TRANSFER/QRIS/CARD) diterima — tidak dipersempit. Verifikasi Finance mendukung **REKENING** dan **SEBELUM_SALDO_AWAL** (sama seperti alur per-order lama), bukan hanya rekening. |
+| Guard per order | Saat flag ON, child Resi BARU tidak bisa diverifikasi/ditolak/diminta buktinya per order (409 `ANAK_RESI`), atau dibayar lewat `POST /orders/:id/payments` generik (409 `ANAK_RESI_WAJIB_BAYAR_LEWAT_RESI`, dicek ulang di bawah row lock); saat OFF perilaku lama utuh untuk order tunggal & group legacy. |
+| Metode & mode | Semua `PaymentMethod` yang valid (CASH/TRANSFER/QRIS/CARD) diterima — tidak dipersempit. Verifikasi Finance mendukung mode **REKENING** dan (hanya untuk Resi **historis**, lihat di bawah) **SEBELUM_SALDO_AWAL** lewat API; UI Finance hanya menawarkan REKENING. |
+| Exactly-once verifikasi | `versi` opsional (angka `updatedAt` grup, dikembalikan di pratinjau/antrean/respons verifikasi) dicocokkan ULANG di bawah kunci grup. Setiap verifikasi (penuh ATAU sebagian) menulis ulang baris grup, jadi request kedua yang balapan dengan `versi` basi (Idempotency-Key beda, dua klik) ditolak 409 `VERSI_BERUBAH` — tanpa Payment/alokasi/jurnal/paidAt tambahan. `versi` yang tidak dikirim melewati pemeriksaan ini (kompatibel mundur). |
+| SEBELUM_SALDO_AWAL vs cutoff | Diblokir (409 `SEBELUM_SALDO_AWAL_TIDAK_BERLAKU`) untuk Resi yang **dibuat pada/setelah** tanggal saldo awal (`fin_settings.balance_cutover_date`, default 18 Sep 2026) — dalam praktiknya berarti SEMUA Resi baru, karena fitur ini sendiri baru ada setelah cutoff. Tetap berfungsi (Dr Laba Ditahan, Cr per child, tanpa kas) untuk Resi historis (`OrderGroup.createdAt` sebelum cutoff, mis. hasil migrasi masa depan). |
 
 ## Aturan angka (helper kanonis: `services/finance/tagihanOrder.js`)
 
@@ -41,7 +43,7 @@ Status: **kode selesai + hardening (28 Sep 2026) di branch `feat/resi-fase3a`, b
 - **Sales** (`features/resi/PembayaranResiPelanggan.jsx`, dipasang di `OrderSection.jsx`): kartu per Resi di profil pelanggan — total, ongkir tambahan, rincian child (bisa dibuka ke drawer order), sisa, tombol "Klaim Lunas Resi" sekali. Dropdown status bayar per order dikunci (dengan keterangan) untuk anak Resi. Tab Pembayaran di drawer order menampilkan angka sadar-alokasi + penjelasan untuk anak Resi.
 - **Finance** (`features/finance/KlaimLunasResi.jsx`, dipasang di `LunasBelumDicatat.jsx`/halaman Pembayaran & Pemasukan): satu baris per Resi, rincian child + pembayaran tercatat (rekening, bukti bertanda tangan) bisa dibuka; pratinjau alokasi server sebelum verifikasi; Verifikasi/Minta Bukti/Tolak.
 - Semua bagian di atas **disembunyikan total** bila `RESI_PEMBAYARAN_AKTIF` mati (server tidak mengirim data `resi`/`aktif:false`) — fail-closed. Order tunggal tidak berubah.
-- **QA yang dilakukan**: review kode/desain (token warna, breakpoint `max-sm:`, target sentuh 44px, dark-mode via CSS var yang sama dengan komponen Finance lain) dan `vite build` produksi (lulus, seluruh modul ter-bundle tanpa error). **Belum** ada QA visual langsung di browser pada 1440px/390px/terang-gelap — worktree ini dipakai bersama sesi lain dan tidak ada `.env` lokal siap pakai untuk menjalankan backend+frontend dengan aman tanpa mengganggu sesi tersebut. Rekomendasi: QA visual manual sebelum menyalakan flag di production.
+- **QA visual (28 Sep 2026, putaran 3)**: dijalankan NYATA di browser (Playwright + Chromium) memakai worktree ini tapi **backend+DB+frontend TERISOLASI** — database sekali-pakai `klinik_matras_qa_resi` (bukan `.env`/DB produksi ataupun DB tes), backend & frontend dijalankan di port default (4000/5173, keduanya kosong sebelum dipakai) lalu **dimatikan dan database DIHAPUS setelah selesai** — tidak menyentuh produksi maupun sesi lain. Dicek: Sales klaim Resi (kartu profil + modal konfirmasi), Finance pratinjau + verifikasi (antrean, rincian, modal dengan pembagian otomatis dari server), pada 1440px & 390px, terang & gelap (8 kombinasi + 2 tambahan), dan flag OFF menyembunyikan seluruh UI (dicek eksplisit: 0 elemen). Semua lulus. Satu temuan KODE (bukan Resi) tercatat terpisah: ikon status di baris order bawaan tampil kosong/putih di dark-mode — pra-ada, di luar cakupan Fase 3A, tidak diperbaiki di sini.
 
 ## Hasil audit invariants (dua putaran sub-agent Opus) dan tindak lanjut
 
@@ -49,12 +51,16 @@ Status: **kode selesai + hardening (28 Sep 2026) di branch `feat/resi-fase3a`, b
 
 **Putaran 2 (lock order & jurnal, setelah hardening) — diperbaiki, ada tesnya:** (4) anchor dengan klaim Lunas (grup atau per-order lama) menunggu tidak bisa dibatalkan sampai Finance menolak/memverifikasi — sebelumnya `ANCHOR_DIBATALKAN` membuat klaim tercecer permanen (tidak bisa ditolak maupun diverifikasi); (5) daftar unit yang ikut dibatalkan di `POST /:id/cancel` dibaca ULANG di bawah kunci (bukan hasil pemeriksaan di luar transaksi) — unit yang berubah di antara dua pemeriksaan tidak lagi tertinggal; (6) guard `pastikanPaymentBukanResi` dicek ULANG di dalam transaksi setelah kunci payment, bukan hanya sekali di luar transaksi.
 
-**Dicatat, sengaja tidak diubah (risiko rendah/menengah, keputusan desain untuk Fase 3B atau di luar cakupan hardening ini):**
+**Putaran 3 (tiga blocker terakhir, 28 Sep 2026) — diperbaiki, ada tesnya:**
+1. `POST /orders/:id/payments` (pencatatan manual generik) sekarang menolak (409 `ANAK_RESI_WAJIB_BAYAR_LEWAT_RESI`) untuk child Resi BARU saat flag ON, dicek ulang di bawah row lock. Order tunggal dan group `BACKFILL_BUNDLE` identik dengan sebelumnya (tetap 201).
+2. Verifikasi Resi sekarang **exactly-once** walau dua request paralel memakai Idempotency-Key berbeda: `versi` optimistik (angka `updatedAt` grup) dicocokkan ulang di bawah kunci; setiap verifikasi (penuh ATAU sebagian) menulis ulang baris grup, jadi request kedua yang balapan dengan `versi` basi ditolak 409 `VERSI_BERUBAH` — tanpa Payment/alokasi/jurnal/paidAt tambahan. Verifikasi sebagian yang genuinely berurutan (bukan balapan) tetap berjalan selama klien memakai `versi` terbaru dari respons sebelumnya (dipakai UI Finance).
+3. `SEBELUM_SALDO_AWAL` sekarang diblokir (409 `SEBELUM_SALDO_AWAL_TIDAK_BERLAKU`) untuk `OrderGroup` yang dibuat pada/setelah cutoff saldo awal — dicek terhadap `grup.createdAt`, bukan dipercaya dari input Finance seperti alur lama. Tetap berfungsi untuk Resi historis (`createdAt` sebelum cutoff). UI Finance tidak lagi menawarkan mode ini sama sekali (selalu REKENING) untuk Resi.
+
+QA visual (Playwright, DB terisolasi) mengonfirmasi ketiga hal ini secara nyata di browser: lihat bagian **UI** di atas.
+
+**Dicatat, sengaja tidak diubah (risiko rendah, keputusan desain untuk Fase 3B atau di luar cakupan hardening ini):**
 - Klaim per-order lama pada child Resi bisa "hilang" dari antrean bila verifikasi Resi **sebagian** menurunkan status child itu dari LUNAS ke DP (ledger menang atas klaim manual — dianggap benar: uang yang belum cukup memang belum lunas).
-- `POST /orders/:id/payments` (pencatatan manual generik) tidak dijaga `ANAK_RESI`/`KLAIM_LUNAS_AKTIF` — mencatat Payment langsung ke anchor lewat jalur ini tetap mungkin dan tidak melalui alokasi. Tidak menciptakan uang ganda (Payment tanpa alokasi tetap 100% ke `Payment.orderId`), tapi menyimpang dari alur Resi yang dimaksud; perlu diplester di 3B atau dilatih ke pengguna.
-- Double-submit verifikasi **sebagian** dengan dua kunci idempotensi berbeda bisa membuat dua Payment berurutan (sama seperti keterbatasan alur per-order lama — bukan regresi).
-- Verifikasi hanya mode REKENING dan SEBELUM_SALDO_AWAL (Resi baru tidak relevan dengan riwayat sebelum 18 Sep 2026, tapi jalurnya tersedia untuk konsistensi).
-- Frontend belum di-uji visual di browser sungguhan (lihat bagian UI di atas).
+- Ikon status di tabel order bawaan (di bawah kartu Resi, bukan bagian Fase 3A) tampil kosong di dark-mode — ditemukan saat QA visual putaran 3, pra-ada, di luar cakupan.
 
 ## Kontrak Fase 3B (belum diimplementasikan — jangan dikerjakan diam-diam)
 
@@ -67,7 +73,7 @@ Status: **kode selesai + hardening (28 Sep 2026) di branch `feat/resi-fase3a`, b
 3. **Ongkir Tambahan** (di anchor): bila anchor dibatalkan, ongkir dipindahkan/dihapus lewat koreksi eksplisit; anchor tidak boleh dibatalkan selama ada child aktif tanpa penetapan anchor baru (`OrderGroup.anchorOrderId` diganti dalam transaksi + audit). Hardening 28 Sep sudah memblokir pembatalan anchor selama ada KLAIM menunggu; 3B perlu memperluas ke child aktif secara umum.
 4. **DP**: `OrderGroup.dpTarget` dan `Order.dpTarget` child dihitung ulang proporsional atas sisa child aktif (snapshot lama tersimpan di `metadata`), tanpa mengubah Payment yang sudah ada.
 5. **Jurnal**: pembatalan child yang sudah menerima uang memakai jurnal koreksi berseri (pola `bukukanUlangAlokasi`: balik jurnal lama, posting pengganti dengan kunci `…:REALOKASI:<n>`); tidak pernah menimpa jurnal.
-6. **Manual generik**: `POST /orders/:id/payments` perlu diberi guard `ANAK_RESI`/`KLAIM_LUNAS_AKTIF` yang sama dengan alur verifikasi, supaya SATU jalur saja yang bisa mencatat uang untuk child Resi.
+6. ~~**Manual generik**: `POST /orders/:id/payments` perlu diberi guard...~~ **SELESAI di hardening putaran 3** (409 `ANAK_RESI_WAJIB_BAYAR_LEWAT_RESI`).
 7. **Tes wajib 3B**: batal child sebelum/sesudah DP, refund sebagian, realokasi, anchor dibatalkan, kunci konkurensi (sama pola 3A), rollback jurnal, dan Σ invarian (Σ alokasi = Payment, Σ dibayar child + refund = uang masuk bersih).
 8. **Feature flag terpisah** (`RESI_PEMBATALAN_AKTIF`, default MATI) dan hanya group `BARU`.
 

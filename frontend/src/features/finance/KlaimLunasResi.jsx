@@ -28,6 +28,9 @@ function pesanGalat(e) {
   if (e?.status === 403) return "Fitur pembayaran Resi sedang tidak aktif, atau Anda tidak punya akses.";
   if (e?.code === "TIDAK_ADA_KLAIM") return "Klaim Resi ini sudah diproses di tempat lain (diverifikasi atau ditolak). Daftar dimuat ulang.";
   if (e?.code === "TIDAK_ADA_SISA") return "Resi ini sudah lunas tercatat. Daftar dimuat ulang.";
+  // VERSI_BERUBAH (exactly-once, hardening 2): request lain sudah lebih dulu memverifikasi/menolak Resi ini sejak form ini dibuka.
+  if (e?.code === "VERSI_BERUBAH") return "Resi ini baru saja diproses dari tempat lain (mis. dua klik hampir bersamaan) — angkanya dimuat ulang, silakan periksa lalu kirim lagi kalau masih perlu.";
+  if (e?.code === "SEBELUM_SALDO_AWAL_TIDAK_BERLAKU") return e.message;
   if (e?.code === "OVER_ALOKASI") return e.message;
   return e?.message || "Terjadi kesalahan. Coba lagi.";
 }
@@ -154,23 +157,26 @@ function BarisResi({ r, onVerifikasi, onAksi, onBukaOrder }) {
   );
 }
 
-function ModalVerifikasiResi({ resi, rekening, tgl, onClose, onSelesai }) {
-  const [f, setF] = useState({ mode: "REKENING", method: "TRANSFER", cashAccountId: "", date: "", amount: "", proofPhotoUrl: "" });
+function ModalVerifikasiResi({ resi, rekening, onClose, onSelesai }) {
+  // Mode uang masuk SELALU "Rekening" untuk Resi — Resi baru tidak pernah relevan dengan uang yang diterima sebelum tanggal saldo awal
+  // (server juga menolaknya: kode SEBELUM_SALDO_AWAL_TIDAK_BERLAKU). Beda dari verifikasi per-order lama yang masih menawarkan dua mode.
+  const [f, setF] = useState({ method: "TRANSFER", cashAccountId: "", date: "", amount: "", proofPhotoUrl: "" });
   const [pratinjau, setPratinjau] = useState(null);
   const [galatPratinjau, setGalatPratinjau] = useState(null);
   const [galat, setGalat] = useState(null);
   const [sibuk, setSibuk] = useState(false);
+  const [pemicuMuatUlang, setPemicuMuatUlang] = useState(0);
   const kunci = useRef(null); // SATU kunci per dialog → klik ganda / kirim ulang tidak memverifikasi dua kali
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
 
   useEffect(() => {
     if (!resi) return;
     kunci.current = kunciBaru("resi-verif");
-    setF({ mode: "REKENING", method: "TRANSFER", cashAccountId: "", date: resi.lunasSejak || hariIniISO(), amount: resi.sisa, proofPhotoUrl: "" });
-    setGalat(null); setSibuk(false); setPratinjau(null);
+    setF({ method: "TRANSFER", cashAccountId: "", date: resi.lunasSejak || hariIniISO(), amount: resi.sisa, proofPhotoUrl: "" });
+    setGalat(null); setSibuk(false); setPratinjau(null); setPemicuMuatUlang(0);
   }, [resi]);
 
-  // Pratinjau pembagian dari SERVER (baca-saja), dimuat ulang saat nominal berubah.
+  // Pratinjau pembagian + `versi` (exactly-once) dari SERVER (baca-saja), dimuat ulang saat nominal berubah atau setelah VERSI_BERUBAH.
   useEffect(() => {
     if (!resi) return undefined;
     let batal = false;
@@ -180,18 +186,19 @@ function ModalVerifikasiResi({ resi, rekening, tgl, onClose, onSelesai }) {
         .catch((e) => { if (!batal) { setPratinjau(null); setGalatPratinjau(pesanGalat(e)); } });
     }, 350);
     return () => { batal = true; clearTimeout(t); };
-  }, [resi, f.amount]);
+  }, [resi, f.amount, pemicuMuatUlang]);
 
   if (!resi) return null;
-  const valid = Number(f.amount) > 0 && (f.mode === "SEBELUM_SALDO_AWAL" || f.cashAccountId) && !galatPratinjau;
+  const valid = Number(f.amount) > 0 && f.cashAccountId && !galatPratinjau && !!pratinjau?.versi;
 
   async function kirim() {
     if (sibuk) return;
     setSibuk(true); setGalat(null);
     try {
       const hasil = await api.verifikasiPenerimaanResi(resi.groupId, {
-        mode: f.mode, method: f.method, cashAccountId: f.mode === "REKENING" ? f.cashAccountId : undefined,
+        mode: "REKENING", method: f.method, cashAccountId: f.cashAccountId,
         date: f.date || undefined, amount: Number(f.amount), proofPhotoUrl: f.proofPhotoUrl || undefined,
+        versi: pratinjau?.versi, // exactly-once: dicocokkan ulang server di bawah row lock — lihat services/finance/penerimaanResi.js
       }, kunci.current);
       onSelesai(hasil.lunasPenuh ? "Resi terverifikasi lunas. Status tiap order diperbarui." : `Terverifikasi ${formatUang(hasil.amount)}. Sisanya tetap menunggu dicek.`);
     } catch (e) {
@@ -200,7 +207,12 @@ function ModalVerifikasiResi({ resi, rekening, tgl, onClose, onSelesai }) {
       // Ditolak server (4xx) = keputusan final untuk kunci ini; percobaan berikutnya adalah niat baru → kunci baru. Galat jaringan/5xx:
       // kunci DIPERTAHANKAN supaya kirim ulang diputar ulang bila server sebenarnya sudah memproses.
       if (e?.status >= 400 && e?.status < 500) kunci.current = kunciBaru("resi-verif");
-      if (e?.status === 409) onSelesai(null, { tetapBuka: true });
+      if (e?.status === 409) {
+        // VERSI_BERUBAH atau TIDAK_ADA_KLAIM: sesuatu sudah berubah sejak form dibuka — muat ulang pratinjau (versi baru) SEBELUM
+        // membiarkan pengguna mencoba lagi, supaya percobaan berikutnya tidak balapan melawan data yang sama-sama sudah basi.
+        setPemicuMuatUlang((n) => n + 1);
+        onSelesai(null, { tetapBuka: true });
+      }
     }
   }
 
@@ -218,31 +230,19 @@ function ModalVerifikasiResi({ resi, rekening, tgl, onClose, onSelesai }) {
       }
     >
       <div className="space-y-3">
-        <Field label="Uangnya masuk ke mana?">
-          <Pilihan value={f.mode} onChange={(v) => set("mode", v)}>
-            <option value="REKENING">Masuk ke rekening perusahaan</option>
-            <option value="SEBELUM_SALDO_AWAL">{`Sudah lunas sebelum ${tgl} (tidak menambah saldo)`}</option>
-          </Pilihan>
+        <Field label="Masuk ke rekening mana?" required>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {rekening.map((r) => (
+              <button
+                key={r.id} type="button" onClick={() => set("cashAccountId", r.id)}
+                className={cn("flex min-h-11 items-center rounded-xl border px-3 text-left text-[13px] transition-colors",
+                  f.cashAccountId === r.id ? "border-accent bg-accentbg font-semibold text-accent" : "border-line bg-surface text-ink2 hover:border-accent")}
+              >
+                {r.name}
+              </button>
+            ))}
+          </div>
         </Field>
-        {f.mode === "REKENING" ? (
-          <Field label="Masuk ke rekening mana?" required>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {rekening.map((r) => (
-                <button
-                  key={r.id} type="button" onClick={() => set("cashAccountId", r.id)}
-                  className={cn("flex min-h-11 items-center rounded-xl border px-3 text-left text-[13px] transition-colors",
-                    f.cashAccountId === r.id ? "border-accent bg-accentbg font-semibold text-accent" : "border-line bg-surface text-ink2 hover:border-accent")}
-                >
-                  {r.name}
-                </button>
-              ))}
-            </div>
-          </Field>
-        ) : (
-          <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
-            Uang Resi ini sudah termasuk di saldo bank asli per {tgl}, jadi saldo rekening tidak ditambah lagi. Tetap tercatat sebagai pembayaran terverifikasi.
-          </p>
-        )}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Cara bayar">
             <Pilihan value={f.method} onChange={(v) => set("method", v)}>
@@ -287,7 +287,7 @@ function ModalVerifikasiResi({ resi, rekening, tgl, onClose, onSelesai }) {
 }
 
 /** Bagian antrean Resi di halaman Klaim Lunas. `items` = data.resi dari server (tidak ada bila flag mati → komponen tidak dirender). */
-export default function KlaimLunasResi({ items, ringkas, rekening, tgl, onBerubah }) {
+export default function KlaimLunasResi({ items, ringkas, rekening, onBerubah }) {
   const [modal, setModal] = useState(null);
   const [pesan, setPesan] = useState(null);
   const [timelineOrder, setTimelineOrder] = useState(null);
@@ -342,7 +342,7 @@ export default function KlaimLunasResi({ items, ringkas, rekening, tgl, onBeruba
         )}
       </Card>
       <ModalVerifikasiResi
-        resi={modal} rekening={rekening} tgl={tgl} onClose={() => setModal(null)}
+        resi={modal} rekening={rekening} onClose={() => setModal(null)}
         onSelesai={async (teks, opsi) => {
           if (!opsi?.tetapBuka) { setModal(null); setPesan({ ok: true, teks }); }
           await onBerubah?.();

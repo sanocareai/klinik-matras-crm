@@ -119,10 +119,17 @@ export function hitungAlokasiResi({ anak, dibayar, tipe = TIPE_BAYAR.TAGIHAN, no
 
 const PILIH_ANAK = { id: true, orderNumber: true, customerId: true, groupId: true, status: true, value: true, ongkir: true, dpTarget: true, paymentStatus: true, paidAt: true };
 const PILIH_GRUP = {
-  id: true, source: true, customerId: true, anchorOrderId: true, dpPersen: true, dpTarget: true, ongkirTambahan: true,
+  id: true, source: true, customerId: true, anchorOrderId: true, dpPersen: true, dpTarget: true, ongkirTambahan: true, createdAt: true,
   lunasDiklaimPada: true, lunasDiklaimOlehId: true, lunasDiklaimOleh: { select: { name: true } },
+  // updatedAt (hardening 2: exactly-once verifikasi) — dipakai sebagai "versi" optimistik: setiap verifikasi (penuh ATAU sebagian) menulis
+  // ulang baris grup sehingga updatedAt selalu berubah; request kedua yang balapan dengan versi LAMA (dibaca sebelum request pertama commit)
+  // ditolak 409 alih-alih diam-diam membuat Payment kedua untuk aksi yang sama. Lihat services/finance/penerimaanResi.js.
+  updatedAt: true,
   customer: { select: { name: true, assignedSalesId: true } },
 };
+
+/** Versi optimistik grup (angka, ms epoch) untuk dikirim balik ke klien dan dicocokkan ulang saat verifikasi (hardening 2). */
+export const versiGrup = (grup) => grup.updatedAt.getTime();
 
 /**
  * Muat group + seluruh child. Dengan `kunci` = true (WAJIB di dalam transaksi tulis): kunci baris group lalu SEMUA child secara URUT (id naik) —
@@ -341,11 +348,30 @@ export async function klaimLunasResi(db, { groupId, userId }) {
 }
 
 /** Guard untuk alur per-order lama: child Resi (group BARU) pada saat flag ON harus diproses lewat alur Resi, bukan per order. */
-export async function pastikanBukanAnakResiAktif(db, orderId) {
-  if (!(await resiPembayaranAktif(db))) return;
+async function anakResiBaru(db, orderId) {
+  if (!(await resiPembayaranAktif(db))) return false;
   const o = await db.order.findUnique({ where: { id: orderId }, select: { groupId: true, group: { select: { source: true } } } });
-  if (o?.groupId && o.group?.source === "BARU") {
+  return !!(o?.groupId && o.group?.source === "BARU");
+}
+
+export async function pastikanBukanAnakResiAktif(db, orderId) {
+  if (await anakResiBaru(db, orderId)) {
     throw new ResiBayarError("Order ini bagian dari Resi Gabungan — status dan pembayarannya diproses sekali di level Resi (Klaim Lunas Resi / antrean Resi Finance), bukan per order", 409, "ANAK_RESI");
+  }
+}
+
+/**
+ * Guard untuk POST /orders/:id/payments (pencatatan pembayaran manual GENERIK, dipakai Sales/admin untuk semua order): child Resi BARU wajib
+ * dibayar lewat alur Resi (services/resiPembayaran.js#catatPembayaranResi), bukan endpoint per-order ini — supaya SATU jalur saja yang bisa
+ * mencatat uang untuk child Resi (uangnya harus melalui alokasi ke seluruh child, bukan 100% ke satu order). Order tunggal (groupId NULL) dan
+ * group BACKFILL_BUNDLE (legacy) TIDAK terpengaruh — identik dengan perilaku sebelum guard ini ada. Flag mati → tidak ada perubahan.
+ */
+export async function pastikanBukanAnakResiWajibBayarLewatResi(db, orderId) {
+  if (await anakResiBaru(db, orderId)) {
+    throw new ResiBayarError(
+      "Order ini bagian dari Resi Gabungan — pembayarannya wajib dicatat lewat alur Resi (Klaim Lunas Resi / catat pembayaran Resi), bukan endpoint pembayaran per order ini",
+      409, "ANAK_RESI_WAJIB_BAYAR_LEWAT_RESI",
+    );
   }
 }
 

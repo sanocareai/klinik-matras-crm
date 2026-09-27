@@ -647,17 +647,26 @@ test("Tagihan kanonis: Ongkir Tambahan dihitung TEPAT sekali (anchor); status CR
   assert.equal(salah.status, 409, JSON.stringify(salah.body));
   assert.match(salah.body.error, /hanya boleh diisi di order pertama/);
   assert.equal((await w.s.patch(`/api/orders/${w.anchorId}`, { ongkir: ONGKIR })).status, 200);
-  // status CRM anchor: bayar sebesar value saja = DP (ongkir anchor belum), + ongkir = LUNAS
-  const b1 = await w.s.post(`/api/orders/${w.anchorId}/payments`, { amount: HARGA[0], method: "TRANSFER", cashAccountId: w.bank.id });
-  assert.equal(b1.status, 201, JSON.stringify(b1.body));
+  // Endpoint pembayaran manual GENERIK tidak boleh dipakai untuk child Resi BARU — uang wajib lewat alur Resi (blocker #1, hardening 2).
+  const generik = await w.s.post(`/api/orders/${w.anchorId}/payments`, { amount: HARGA[0], method: "TRANSFER", cashAccountId: w.bank.id });
+  assert.equal(generik.status, 409, JSON.stringify(generik.body));
+  assert.equal(generik.body.code, "ANAK_RESI_WAJIB_BAYAR_LEWAT_RESI");
+  assert.equal(await testPrisma.payment.count(), 0, "percobaan yang ditolak tidak menulis apa pun");
+  // status CRM anchor (dasarStatusBayar): bayar sebesar value saja = DP (ongkir anchor belum), + ongkir = LUNAS — diverifikasi lewat ledger
+  // langsung (endpoint generik yang biasa dipakai untuk ini sekarang diblokir untuk child Resi; recomputeOrderPaymentStatus adalah fungsi
+  // yang SAMA dipakai semua jalur pencatatan uang, termasuk alur Resi).
+  await testPrisma.payment.create({ data: { orderId: w.anchorId, amount: HARGA[0], method: "TRANSFER", cashAccountId: w.bank.id, recordedById: w.sales.user.id } });
+  await testPrisma.$transaction((tx) => recomputeOrderPaymentStatus(tx, w.anchorId));
   assert.equal((await testPrisma.order.findUnique({ where: { id: w.anchorId } })).paymentStatus, "DP");
-  await w.s.post(`/api/orders/${w.anchorId}/payments`, { amount: ONGKIR, method: "TRANSFER", cashAccountId: w.bank.id });
+  await testPrisma.payment.create({ data: { orderId: w.anchorId, amount: ONGKIR, method: "TRANSFER", cashAccountId: w.bank.id, recordedById: w.sales.user.id } });
+  await testPrisma.$transaction((tx) => recomputeOrderPaymentStatus(tx, w.anchorId));
   const anchor = await testPrisma.order.findUnique({ where: { id: w.anchorId } });
   assert.equal(anchor.paymentStatus, "LUNAS"); assert.ok(anchor.paidAt);
-  // order tunggal dengan ongkir: bayar value = LUNAS (aturan lama, TIDAK berubah)
+  // order tunggal (groupId NULL) dengan ongkir: endpoint generik TETAP berfungsi (guard baru tidak menyentuhnya); bayar value = LUNAS (lama)
   const tunggal = await createOrderForCustomer(w.customer.id, { notes: "{}", unitCount: 1, ongkir: 30_000 }, w.sales.user.id);
   await testPrisma.order.update({ where: { id: tunggal.id }, data: { value: 400_000 } });
-  await w.s.post(`/api/orders/${tunggal.id}/payments`, { amount: 400_000, method: "CASH" });
+  const bayarTunggal = await w.s.post(`/api/orders/${tunggal.id}/payments`, { amount: 400_000, method: "CASH" });
+  assert.equal(bayarTunggal.status, 201, JSON.stringify(bayarTunggal.body));
   assert.equal((await testPrisma.order.findUnique({ where: { id: tunggal.id } })).paymentStatus, "LUNAS", "order tunggal: pembanding tetap value");
 });
 
@@ -821,12 +830,33 @@ test("Metode & mode pembayaran: CASH/TRANSFER/QRIS/CARD diterima di catat & veri
   assert.equal(metodeAsing.status, 400);
   const tanpaRek = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", method: "CARD" }, kunci());
   assert.equal(tanpaRek.status, 400); assert.equal(tanpaRek.body.code, "REKENING_WAJIB");
-  // verifikasi sebagian dengan kartu (REKENING), sisanya SEBELUM_SALDO_AWAL
+  // verifikasi sebagian dengan kartu (REKENING), sisanya juga REKENING (SEBELUM_SALDO_AWAL untuk Resi ini diblokir — lihat tes tersendiri di bawah)
   const kartu = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", method: "CARD", cashAccountId: w.bank.id, amount: 60_000 }, kunci());
   assert.equal(kartu.status, 201, JSON.stringify(kartu.body));
+  const sisaAn = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", method: "TRANSFER", cashAccountId: w.bank.id, versi: kartu.body.versi }, kunci());
+  assert.equal(sisaAn.status, 201, JSON.stringify(sisaAn.body));
+  assert.equal(sisaAn.body.amount, TOTAL - 40_000 - 60_000);
+  assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "LUNAS"));
+  assert.equal((await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } })).lunasDiklaimPada, null);
+});
+
+// ── hardening 2 (blocker terakhir): guard pembayaran manual generik, exactly-once verifikasi, SEBELUM_SALDO_AWAL hanya historis ──────────────
+
+test("SEBELUM_SALDO_AWAL: diblokir untuk Resi BARU yang dibuat pada/setelah cutoff saldo awal; tetap berfungsi (Dr Laba Ditahan, Cr per child, tanpa kas) untuk Resi historis SEBELUM cutoff", async () => {
+  const w = await dunia();
+  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  // Resi ini dibuat "hari ini" (jauh setelah cutoff 18 Sep 2026) — SEBELUM_SALDO_AWAL wajib ditolak, apa pun tanggal `date` yang dikirim.
+  const ditolak = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "SEBELUM_SALDO_AWAL", method: "TRANSFER", date: "2026-09-10" }, kunci());
+  assert.equal(ditolak.status, 409, JSON.stringify(ditolak.body));
+  assert.equal(ditolak.body.code, "SEBELUM_SALDO_AWAL_TIDAK_BERLAKU");
+  assert.equal(await testPrisma.payment.count(), 0, "percobaan yang ditolak tidak menulis apa pun");
+  assert.ok(await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } }).then((g) => g.lunasDiklaimPada), "klaim tetap aktif, tidak tersentuh");
+
+  // Resi HISTORIS (dibuat sebelum cutoff, mis. hasil migrasi/backfill masa depan) — mode ini tetap berfungsi persis seperti alur per-order lama.
+  await testPrisma.orderGroup.update({ where: { id: w.groupId }, data: { createdAt: new Date("2026-09-01T00:00:00Z") } });
   const lama = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "SEBELUM_SALDO_AWAL", method: "TRANSFER", date: "2026-09-10" }, kunci());
   assert.equal(lama.status, 201, JSON.stringify(lama.body));
-  assert.equal(lama.body.amount, TOTAL - 40_000 - 60_000);
+  assert.equal(lama.body.amount, TOTAL);
   const p = await testPrisma.payment.findUnique({ where: { id: lama.body.paymentId }, include: { finAllocations: true } });
   assert.equal(p.cashAccountId, null, "tanpa rekening: kas tidak berubah");
   const [e] = (await jurnalBayar()).filter((x) => x.sourceId === p.id);
@@ -841,6 +871,79 @@ test("Metode & mode pembayaran: CASH/TRANSFER/QRIS/CARD diterima di catat & veri
   assert.ok(!e.lines.some((l) => l.accountId === w.bank.accountId), "tidak ada baris kas/bank");
   assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "LUNAS"));
   assert.equal((await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } })).lunasDiklaimPada, null);
+});
+
+test("POST /orders/:id/payments generik: ditolak (409 ANAK_RESI_WAJIB_BAYAR_LEWAT_RESI) untuk child Resi BARU saat flag ON, dicek ulang di bawah row lock; order tunggal & group BACKFILL_BUNDLE identik (tetap 201)", async () => {
+  const w = await dunia();
+  for (const id of w.anak) {
+    const r = await w.s.post(`/api/orders/${id}/payments`, { amount: 10_000, method: "CASH" });
+    assert.equal(r.status, 409, JSON.stringify(r.body));
+    assert.equal(r.body.code, "ANAK_RESI_WAJIB_BAYAR_LEWAT_RESI");
+  }
+  assert.equal(await testPrisma.payment.count(), 0);
+  // flag OFF: endpoint generik kembali identik dengan perilaku lama untuk order yang SAMA
+  await setSetting(testPrisma, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF, "false");
+  const off = await w.s.post(`/api/orders/${w.anak[0]}/payments`, { amount: 10_000, method: "CASH" });
+  assert.equal(off.status, 201, JSON.stringify(off.body));
+  await setSetting(testPrisma, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF, "true");
+
+  // order tunggal (groupId NULL) — tidak terpengaruh sama sekali
+  const tunggal = await createOrderForCustomer(w.customer.id, { notes: "{}", unitCount: 1 }, w.sales.user.id);
+  const okTunggal = await w.s.post(`/api/orders/${tunggal.id}/payments`, { amount: 10_000, method: "CASH" });
+  assert.equal(okTunggal.status, 201, JSON.stringify(okTunggal.body));
+
+  // group legacy (BACKFILL_BUNDLE) — identik dengan perilaku lama, tidak diblokir
+  await truncateAll();
+  const w2 = await dunia();
+  await testPrisma.orderGroup.update({ where: { id: w2.groupId }, data: { source: "BACKFILL_BUNDLE" } });
+  const okLegacy = await w2.s.post(`/api/orders/${w2.anak[0]}/payments`, { amount: 10_000, method: "CASH" });
+  assert.equal(okLegacy.status, 201, JSON.stringify(okLegacy.body));
+});
+
+test("Verifikasi Resi exactly-once: dua request paralel dengan Idempotency-Key BERBEDA (versi SAMA) — tepat satu Payment/jurnal, yang kalah 409 VERSI_BERUBAH tanpa alokasi/jurnal/paidAt tambahan; sequential dengan versi baru tetap berjalan", async () => {
+  const w = await dunia();
+  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  const pra = await w.a.get(`/api/finance/penerimaan/resi/${w.groupId}/pratinjau`);
+  assert.equal(pra.status, 200);
+  const versi = pra.body.versi;
+  assert.ok(versi);
+
+  const paidAtSebelum = (await ambilAnak(w.groupId)).map((o) => [o.id, o.paidAt]);
+  const [a, b] = await Promise.all([
+    w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id, versi }, kunci()),
+    w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id, versi }, kunci()),
+  ]);
+  const hasil = [a, b];
+  assert.equal(hasil.filter((r) => r.status === 201).length, 1, `tepat satu berhasil: ${hasil.map((r) => r.status).join(",")}`);
+  const kalah = hasil.find((r) => r.status !== 201);
+  assert.equal(kalah.status, 409, JSON.stringify(kalah.body));
+  assert.equal(kalah.body.code, "VERSI_BERUBAH");
+  assert.equal(await testPrisma.payment.count(), 1, "tepat satu Payment");
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "PEMBAYARAN_ORDER" } }), 1, "tepat satu jurnal");
+  const p = (await semuaPayment(w.anak))[0];
+  assert.equal(p.finAllocations.reduce((s, x) => s + angka(x.amount), 0), p.amount, "Σ alokasi = Payment (tidak ada sisa yang hilang/dobel)");
+  const paidAtSesudah = (await ambilAnak(w.groupId)).map((o) => [o.id, o.paidAt]);
+  for (const [id, sebelum] of paidAtSebelum) {
+    const sesudah = paidAtSesudah.find(([x]) => x === id)[1];
+    if (sebelum) assert.equal(sesudah?.getTime(), sebelum.getTime(), `paidAt ${id} tidak berubah dua kali`);
+  }
+  assert.equal((await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } })).lunasDiklaimPada, null);
+
+  // sequential (bukan balapan) dengan versi BARU tetap berjalan normal: DP baru + klaim baru, verifikasi pertama lalu verifikasi kedua
+  // memakai `versi` dari RESPONS verifikasi pertama (bukan dari pratinjau basi) — pola yang sama dipakai UI.
+  await truncateAll();
+  const w2 = await dunia();
+  assert.equal((await bayarResi(w2, { tipe: "DP" })).status, 201);
+  assert.equal((await w2.s.post(`/api/resi/${w2.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  const v1 = await w2.a.post(`/api/finance/penerimaan/resi/${w2.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w2.bank.id, amount: 60_000 }, kunci());
+  assert.equal(v1.status, 201, JSON.stringify(v1.body));
+  assert.ok(v1.body.versi);
+  const v2 = await w2.a.post(`/api/finance/penerimaan/resi/${w2.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w2.bank.id, versi: v1.body.versi }, kunci());
+  assert.equal(v2.status, 201, JSON.stringify(v2.body));
+  assert.equal(v2.body.lunasPenuh, true);
+  // Resi sudah lunas penuh (klaim dilepas) — verifikasi lagi (bahkan tanpa versi) ditolak TIDAK_ADA_KLAIM, membuktikan tidak ada verifikasi ganda yang lolos.
+  const v3 = await w2.a.post(`/api/finance/penerimaan/resi/${w2.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w2.bank.id }, kunci());
+  assert.equal(v3.status, 409, JSON.stringify(v3.body));
 });
 
 test("Contoh angka 3 child (untuk laporan): DP → sisa → jurnal per child", async (t) => {

@@ -132,7 +132,7 @@ export default function LunasBelumDicatat({ onBerubah, ringkas = false }) {
 
       {/* Resi Gabungan Fase 3A: SATU baris per Resi (klaim sekali di level Resi). Server hanya mengirim `resi` bila flag pembayaran Resi aktif. */}
       {Array.isArray(data.resi) && (
-        <KlaimLunasResi items={data.resi} ringkas={ringkas} rekening={rekening} tgl={tgl} onBerubah={async () => { await muat(); onBerubah?.(); }} />
+        <KlaimLunasResi items={data.resi} ringkas={ringkas} rekening={rekening} onBerubah={async () => { await muat(); onBerubah?.(); }} />
       )}
 
       <FilterBar

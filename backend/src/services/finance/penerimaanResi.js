@@ -23,9 +23,10 @@ import { KEY as KEY_ORDER, STATUS_PENGAKUAN } from "./posting/orderRevenue.js";
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
 import { bangunBukti } from "./pembayaran.js";
 import { dasarStatusBayar } from "./tagihanOrder.js";
+import { tanggalCutoff } from "./penerimaanOrder.js";
 import {
   ResiBayarError, resiPembayaranAktif, pastikanAktif, muatGrupResi, pastikanGrupLayak, hitungAlokasiResi, tulisPembayaranResi, muatDibayar,
-  rincianAnak, METODE_BAYAR, TIPE_BAYAR,
+  rincianAnak, METODE_BAYAR, TIPE_BAYAR, versiGrup,
 } from "../resiPembayaran.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 
@@ -75,7 +76,7 @@ async function bentukItem(db, grup, anak, { denganPembayaran = true } = {}) {
   const sudah = rinci.reduce((s, r) => s + r.dibayar, 0);
   const anchor = aktif.find((o) => o.id === grup.anchorOrderId);
   return {
-    tipe: "RESI", groupId: grup.id, anchorOrderId: grup.anchorOrderId, anchorOrderNumber: anchor?.orderNumber ?? null,
+    tipe: "RESI", groupId: grup.id, versi: versiGrup(grup), anchorOrderId: grup.anchorOrderId, anchorOrderNumber: anchor?.orderNumber ?? null,
     customerId: grup.customerId, customerName: grup.customer?.name ?? "—", salesName: grup.salesName ?? null,
     sumberKlaim: grup.lunasDiklaimPada ? "RESI" : perOrder.length ? "PER_ORDER" : null,
     klaim: grup.lunasDiklaimPada ? { pada: grup.lunasDiklaimPada.toISOString(), oleh: grup.lunasDiklaimOleh?.name ?? null } : null,
@@ -131,7 +132,7 @@ export async function pratinjauVerifikasiResi(db, { groupId, amount = null }) {
   const { aktif } = pastikanGrupLayak(grup, anak);
   const hitung = hitungAlokasiResi({ anak: aktif, dibayar: await muatDibayar(db, aktif), tipe: TIPE_BAYAR.TAGIHAN, nominal: amount, grup });
   return {
-    groupId: grup.id, customerName: grup.customer?.name ?? null, nominal: hitung.nominal,
+    groupId: grup.id, versi: versiGrup(grup), customerName: grup.customer?.name ?? null, nominal: hitung.nominal,
     ringkasan: { totalTagihan: hitung.totalTagihan, dibayarSebelum: hitung.totalDibayarSebelum, sisa: hitung.totalSisa },
     alokasi: hitung.alokasi.map((a) => ({ orderId: a.orderId, orderNumber: a.orderNumber, tagihan: a.tagihan, dibayar: a.dibayar, sisa: a.sisa, alokasi: a.alokasi, sisaSesudah: a.sisa - a.alokasi })),
     dibaca: "pratinjau",
@@ -182,8 +183,15 @@ async function jurnalSebelumSaldoAwalResi(tx, { payment, alokasi, aktif, grup, t
  * Verifikasi penerimaan uang Resi: SATU transaksi, kunci group + child urut, hitung ulang di bawah kunci. Alokasi dari klien TIDAK dipakai.
  * Setelah terverifikasi, status + paidAt child dihitung ulang dari ledger. Klaim dilepas bila Resi lunas penuh; verifikasi sebagian
  * membiarkan klaim tetap menunggu sisanya.
+ *
+ * EXACTLY-ONCE (hardening 2, 28 Sep 2026): `versi` opsional = angka `updatedAt` grup yang dibaca klien dari pratinjau/antrean SEBELUM
+ * mengirim verifikasi. Dicocokkan ULANG di bawah kunci — request kedua yang balapan (Idempotency-Key BERBEDA, dua klik/dua perangkat) dengan
+ * `versi` yang sama tapi terlambat mendapat kunci akan melihat grup SUDAH berubah (baris grup selalu ditulis ulang di akhir fungsi ini, baik
+ * verifikasi penuh MAUPUN sebagian) dan ditolak 409 `VERSI_BERUBAH` — TANPA Payment/alokasi/jurnal/perubahan paidAt tambahan. Dua verifikasi
+ * SEBAGIAN yang genuinely berurutan (bukan balapan) tetap berjalan normal selama klien memakai `versi` terbaru (dikembalikan di setiap respons).
+ * `versi` yang tidak dikirim (null/undefined) melewati pemeriksaan ini — kompatibel dengan pemanggil lama.
  */
-export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING", method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, verifierId }) {
+export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING", method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, versi = null, verifierId }) {
   await pastikanAktif(tx);
   if (!MODE_UANG_MASUK.includes(mode)) throw new ResiBayarError("Pilihan \"uangnya masuk ke mana\" tidak dikenali", 400, "MODE_TIDAK_VALID");
   if (!METODE_BAYAR.includes(method)) throw new ResiBayarError("Cara bayar tidak dikenali", 400, "METODE_TIDAK_VALID");
@@ -195,6 +203,22 @@ export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING",
   }
 
   const { grup, anak } = await muatGrupResi(tx, groupId, { kunci: true });
+  // Pemeriksaan versi DI BAWAH KUNCI, sebelum apa pun ditulis — request yang balapan dan kalah tidak pernah menyentuh Payment/alokasi/jurnal.
+  if (versi != null && String(versi) !== String(versiGrup(grup))) {
+    throw new ResiBayarError("Resi ini baru saja diverifikasi/ditolak dari tempat lain — muat ulang antrean lalu coba lagi.", 409, "VERSI_BERUBAH");
+  }
+  // SEBELUM_SALDO_AWAL hanya untuk uang yang BENAR-BENAR diterima sebelum tanggal saldo awal (data historis) — dicek terhadap tanggal Resi
+  // ini DIBUAT (grup.createdAt), bukan ditebak/dipercaya begitu saja seperti alur per-order lama. Resi yang dibuat pada/setelah cutoff (dalam
+  // praktiknya SEMUA Resi — fitur ini baru ada setelah cutoff) tidak relevan dengan riwayat sebelum saldo awal.
+  if (mode === "SEBELUM_SALDO_AWAL") {
+    const cutoff = await tanggalCutoff(tx);
+    if (tanggalWIB(grup.createdAt) >= cutoff) {
+      throw new ResiBayarError(
+        `Resi ini dibuat pada atau setelah tanggal saldo awal (${cutoff}) — mode "sudah lunas sebelum saldo awal" hanya untuk data historis sebelum tanggal itu. Pilih mode Rekening.`,
+        409, "SEBELUM_SALDO_AWAL_TIDAK_BERLAKU",
+      );
+    }
+  }
   const { anchor, aktif } = pastikanGrupLayak(grup, anak);
   const dibayar = await muatDibayar(tx, aktif);
   if (!grup.lunasDiklaimPada && klaimPerOrder(aktif, dibayar, grup).length === 0) {
@@ -221,7 +245,13 @@ export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING",
   }
 
   const lunasPenuh = hitung.totalSisa - hitung.nominal <= 0;
-  if (lunasPenuh && grup.lunasDiklaimPada) await tx.orderGroup.update({ where: { id: grup.id }, data: { lunasDiklaimPada: null, lunasDiklaimOlehId: null } });
+  // SELALU menulis ulang baris grup (penuh ATAU sebagian) — bukan cuma saat melepas klaim. Ini yang membuat `versi` berguna: request lain
+  // yang balapan dan membawa `versi` LAMA akan gagal cocok begitu verifikasi INI selesai, walau klaimnya masih aktif menunggu sisa.
+  const grupBaru = await tx.orderGroup.update({
+    where: { id: grup.id },
+    data: lunasPenuh && grup.lunasDiklaimPada ? { lunasDiklaimPada: null, lunasDiklaimOlehId: null } : { lunasDiklaimPada: grup.lunasDiklaimPada },
+    select: { updatedAt: true },
+  });
   await recordActivity(tx, {
     entityType: ENTITY_TYPES.ORDER, entityId: anchor.id, eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: verifierId,
     metadata: {
@@ -231,7 +261,7 @@ export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING",
     },
   });
   return {
-    paymentId: tulis.payment.id, groupId: grup.id, amount: hitung.nominal, mode, lunasPenuh, klaimDilepas: lunasPenuh,
+    paymentId: tulis.payment.id, groupId: grup.id, versi: versiGrup(grupBaru), amount: hitung.nominal, mode, lunasPenuh, klaimDilepas: lunasPenuh,
     alokasi: hitung.tulis.map((a) => ({ orderId: a.orderId, orderNumber: a.orderNumber, jumlah: a.alokasi })),
     status: tulis.status, tanpaJurnal: !!jurnal?.tanpaJurnal,
   };

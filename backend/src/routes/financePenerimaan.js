@@ -123,10 +123,10 @@ financePenerimaanRouter.get("/penerimaan/resi/:groupId/pratinjau", requirePermis
 // Verifikasi SATU Resi: satu Payment anchor + alokasi otomatis ke child + jurnal per child. Idempotency-Key WAJIB. Field `alokasi` dari klien DIABAIKAN.
 financePenerimaanRouter.post("/penerimaan/resi/:groupId/verifikasi", requirePermission(P.PAYMENT_WRITE), wajibIdempotencyKey, async (req, res) => {
   try {
-    const { mode, method, cashAccountId, date, amount, proofPhotoUrl } = req.body || {};
+    const { mode, method, cashAccountId, date, amount, proofPhotoUrl, versi } = req.body || {};
     cekBukti(proofPhotoUrl);
     const hasil = await prisma.$transaction(
-      (tx) => verifikasiPenerimaanResi(tx, { groupId: req.params.groupId, mode, method, cashAccountId, date, amount, proofPhotoUrl, verifierId: req.user.id }),
+      (tx) => verifikasiPenerimaanResi(tx, { groupId: req.params.groupId, mode, method, cashAccountId, date, amount, proofPhotoUrl, versi, verifierId: req.user.id }),
       { maxWait: 15_000, timeout: 60_000 },
     );
     res.status(201).json(hasil);
