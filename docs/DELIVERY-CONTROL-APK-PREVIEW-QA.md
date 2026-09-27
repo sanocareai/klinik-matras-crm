@@ -19,7 +19,9 @@ Perintah: `cd delivery-control && eas build -p android --profile preview` (janga
 ## 2. Izin Android yang diharapkan (hasil `expo prebuild` lokal; verifikasi ulang pada APK setelah build)
 
 - Ada: `INTERNET`, `VIBRATE`, `SYSTEM_ALERT_WINDOW` (dari React Native), `CAMERA` (expo-image-picker; hanya foto struk),
-  `READ/WRITE_EXTERNAL_STORAGE` dibatasi `maxSdkVersion=32` (tidak berlaku di Android 13+ / S25 Ultra).
+  `READ/WRITE_EXTERNAL_STORAGE` dibatasi `maxSdkVersion=32` (tidak berlaku di Android 13+ / S25 Ultra),
+  `USE_BIOMETRIC` dan `USE_FINGERPRINT` (expo-local-authentication; buka kunci biometrik). Peta memakai kunci Google Maps di meta-data
+  `com.google.android.geo.API_KEY` (bukan izin lokasi).
 - **Dihapus dari manifest (`tools:node="remove"`)**: `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `ACCESS_BACKGROUND_LOCATION`,
   `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`, `RECORD_AUDIO`.
 - Verifikasi APK: `aapt dump badging app.apk | grep -E "package|uses-permission"` — tidak boleh ada izin lokasi/background location/mikrofon.
@@ -59,10 +61,12 @@ Jangan membuat data produksi nyata kecuali disebut "boleh"; gunakan pengajuan uj
 13. Detail rute: kru, kendaraan, waktu terbit/sinkron, daftar stop berurutan dengan status, jam kunjungan, alamat, alasan gagal.
 14. "Buka di peta" membuka aplikasi peta HP; app Control TIDAK meminta izin lokasi.
 
-**E. Tracking**
+**E. Tracking (Live Tracking Map)**
 15. Hanya rute terbit/berjalan hari ini dan job menuju lokasi. Kartu: fase, progres stop, "berikutnya", umur posisi GPS.
 16. Posisi > 15 menit diberi tanda sinyal lama; tanpa posisi tampil "Belum ada posisi GPS". "Buka di peta" bekerja. Diperbarui otomatis ±30 detik.
 17. Tidak ada dialog izin lokasi sama sekali di seluruh app.
+17a. Tab **Peta**: peta Google tampil dengan marker tiap driver aktif (inisial, warna sesuai kesegaran: hijau ≤5 menit, kuning ≤15, abu-abu lama). Ketuk marker → kartu driver, helper, kendaraan, rute/job, progres, jam update WIB. Titik biru posisi HP TIDAK ada. **Bila peta kosong/abu-abu**: kunci Google Maps kemungkinan belum mengizinkan package `com.klinikmatras.deliverycontrol` (catat sebagai temuan; daftar tetap berfungsi).
+17b. Tab **Daftar** menampilkan driver yang sama (fallback). Pusatkan/muat ulang bekerja; mode pesawat → banner offline; tanpa driver aktif → keadaan kosong; server gagal → pesan + Coba lagi. Refresh otomatis ±30 detik saat layar terbuka (berhenti saat pindah layar).
 
 **F. Masalah dan jadwal ulang**
 18. Tab "Perlu tindakan" (job gagal) dan "Sudah dijadwalkan ulang"; alasan gagal/jadwal ulang tampil.
@@ -92,5 +96,32 @@ Jangan membuat data produksi nyata kecuali disebut "boleh"; gunakan pengajuan uj
 34. Ganti akun (Admin → Owner) tidak menampilkan data akun sebelumnya; setelah logout tidak ada data tersisa.
 35. Tidak ada crash/ANR; catat versi Android/One UI. Tidak ada teks Inggris atau label "Segera" tersisa.
 
+**K. Akun, Pengaturan, dan biometrik**
+36. Nav bawah: Beranda / Biaya Armada / Akun. Akun menampilkan nama, email, foto/inisial, peran, divisi, tanggal bergabung — sama dengan web untuk akun yang sama. Tidak ada field HP (server belum menyimpannya).
+37. Ubah nama/email → Simpan → muncul di web setelah muat ulang (dan sebaliknya). Email tidak valid/kosong ditolak. Ganti foto (kamera/galeri) → foto tampil di web. Peran/divisi/izin tidak bisa diubah.
+38. Pengaturan → Tampilan: Ikuti sistem / Terang / Gelap langsung berlaku dan bertahan setelah app ditutup. Tentang aplikasi: versi 0.1.0, build sesuai APK, package, server benar. Tidak ada menu "keluar semua perangkat".
+39. **Biometrik** — Pengaturan → Keamanan → aktifkan "Buka dengan biometrik": muncul prompt sidik jari/wajah; setelah lolos saklar aktif dan pilihan kunci otomatis 1/2/5/15 menit muncul. Batalkan prompt → saklar tetap mati.
+40. Tutup app total lalu buka lagi → layar "Delivery Control terkunci" + prompt biometrik otomatis; lolos → masuk beranda dengan data terbaru. Gagal/batal → tombol "Buka dengan biometrik" dan "Masuk dengan kata sandi" (mengakhiri sesi, kembali ke login).
+41. Kunci otomatis: atur 1 menit, kirim app ke latar belakang >1 menit lalu kembali → terkunci; <1 menit → tidak terkunci. Layar terkunci menutup seluruh isi app (cek juga pratinjau app terbaru).
+42. Cabut/ubah kondisi: hapus semua sidik jari di Setelan HP lalu buka app → pesan biometrik tidak lagi terdaftar dan diminta masuk dengan kata sandi (biometrik dinonaktifkan). Sesi yang kedaluwarsa/dicabut di server → pesan "Sesi Anda berakhir…" di layar login.
+43. Logout dari Akun/Pengaturan → biometrik dimatikan, login berikutnya butuh kata sandi; aktifkan lagi bila mau. Kata sandi/PIN tidak pernah tersimpan (token sesi ada di Keystore).
+
+**L. Retest blocker QA 27 September (foto driver + peta Live Tracking)**
+44. Foto asli tampil (bukan inisial) untuk driver/helper yang punya foto di web: Performa & Insentif, daftar Driver & Helper, detail orang, Rute (avatar kecil), detail rute (baris Driver/Helper), kartu tracking. Akun tanpa foto tetap inisial. Foto rusak/URL mati → inisial, tanpa crash. Ganti foto driver di web/app Driver → tampil di Control setelah tarik-muat ulang.
+45. Peta Live Tracking dengan driver yang app Driver-nya sedang mengirim posisi: marker berisi foto bulat (bila punya foto) atau inisial; opasitas foto memudar saat posisi lama (>5/>15 menit); ketuk marker → kartu dengan foto, kendaraan, rute, progres, jam update WIB. Posisi sama dengan yang tampil di Live Tracking web.
+46. Peta TIDAK hitam: basemap Google tampil. Uji tiga keadaan: (a) ada driver ber-posisi, (b) driver terdaftar tapi belum ada posisi (peta tetap tampil di area Jakarta + pesan "N armada terdaftar, tetapi belum ada yang mengirim posisi GPS yang valid"), (c) tidak ada armada (peta tampil + pesan "Belum ada armada terdaftar"). Tab menampilkan "N posisi" (peta) dan "N terdaftar" (daftar) — angkanya harus berbeda bila ada driver tanpa posisi.
+47. Bila basemap kosong/abu-abu setelah ±12 detik muncul pesan "Peta belum termuat…" dengan "Muat ulang peta" / "Buka Daftar". Bila itu terjadi = kunci Google Maps belum mengizinkan package + SHA-1 (lihat bagian Google Maps di bawah); laporkan sebagai temuan, jangan diubah dari app.
+48. Refresh otomatis ±30 detik (jam "terakhir" di banner berubah); peta tidak melompat saat Anda geser/zoom (fit ulang hanya saat himpunan driver ber-posisi berubah); tombol Pusatkan memuat semua marker (1 marker → zoom dekat). Mode gelap/terang: peta ikut tema (gaya gelap sama dengan Sano Driver).
+49. Mode pesawat → banner Offline dengan data terakhir; kembali online → pulih. Mode gelap: marker tetap terlihat.
+50. Koordinat/waktu tidak valid dari server (mis. 0,0 atau jam masa depan) tidak menjadi marker; item tetap ada di Daftar dengan keterangan "Koordinat GPS tidak valid"/"Waktu posisi GPS tidak valid".
+51. Manifest APK: tanpa izin lokasi/background/foreground location dan tanpa RECORD_AUDIO (`aapt dump badging`).
+
+**Konfigurasi Google Maps (harus dilakukan di Google Cloud Console oleh pemilik proyek; jangan melonggarkan restriction):**
+Kunci Android yang dipakai Sano Driver juga dipakai Control (nilai kunci tidak disimpan di repo; disuntikkan lewat env `GOOGLE_MAPS_ANDROID_KEY` saat build). Di API key tersebut (APIs & Services → Credentials → key → Application restrictions: Android apps) TAMBAHKAN entri:
+- Package name `com.klinikmatras.deliverycontrol` + SHA-1 keystore QA `3D:29:3F:B3:3A:A7:63:E8:27:50:86:FE:43:90:FD:11:DE:34:4A:12`
+- Nanti untuk build EAS Preview: package yang sama + SHA-1 keystore EAS project `@sanocare/sano-delivery-control` (`eas credentials`), dan SHA-1 App Signing bila dipublikasikan lewat Play.
+- API restrictions harus mencakup "Maps SDK for Android" (sudah, karena Sano Driver memakainya). Entri Sano Driver dibiarkan.
+
 **Blocker/keterbatasan yang diketahui:** Route Planner kompleks, aksi massal, master data, dan laporan tetap di web. Tracking hanya membaca posisi
 yang dikirim app Driver. Layar biaya belum ada di Sano Driver (sengaja).
+Sesi JWT stateless: belum ada 'keluar dari semua perangkat'. Biometrik tidak mendeteksi penambahan sidik jari baru (hanya hilangnya biometrik terdaftar).

@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { storageAman } from "./secureStorage";
 import { File, UploadType } from "expo-file-system";
 import { createApiClient, createSessionManager, createBiayaArmadaApi, createOperasionalApi } from "@sano/delivery-shared";
 
@@ -25,12 +26,12 @@ export function setUnauthorizedHandler(fn) { onUnauthorized = fn; }
 
 export const client = createApiClient({
   serverUrl: DEFAULT_SERVER,
-  storage: AsyncStorage,
+  storage: storageAman, // token terenkripsi (SecureStore); kunci lain tetap AsyncStorage
   uploadImpl,
   tokenKey: "control:token",
   onUnauthorized: () => onUnauthorized && onUnauthorized(),
 });
 
-export const sessionManager = createSessionManager({ client, storage: AsyncStorage });
+export const sessionManager = createSessionManager({ client, storage: storageAman });
 export const biayaArmadaApi = createBiayaArmadaApi(client);
 export const operasionalApi = createOperasionalApi(client);

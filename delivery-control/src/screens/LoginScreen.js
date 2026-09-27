@@ -9,7 +9,7 @@ import { Box, Btn, Field, Gradient } from "../ui";
 
 export default function LoginScreen() {
   const t = useTheme();
-  const { signIn } = useSession();
+  const { signIn, pesanMasuk } = useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,6 +48,7 @@ export default function LoginScreen() {
           <View style={[s.card, { backgroundColor: t.surface, borderColor: t.border }, elevation(t, 2)]}>
             <Text style={[type.heading, { color: t.ink, fontSize: 20 }]}>Masuk</Text>
             <Text style={{ color: t.ink2, fontSize: 13, marginTop: -6 }}>Untuk Admin dan Owner. Masuk dengan akun Sano Anda.</Text>
+            {!!pesanMasuk && !error && <Box tone="accent" icon="info">{pesanMasuk}</Box>}
             {!!error && <Box>{error}</Box>}
             <Field
               label="Email" icon="user" value={email} onChangeText={setEmail} placeholder="nama@perusahaan.com"

@@ -43,8 +43,13 @@ export default function RuteDetailScreen({ route, navigation }) {
 
         <Section title="Kru & kendaraan" icon="users">
           <View>
-            <Row icon="user" label="Driver" value={r.driver?.name || "Belum ada"} />
-            <Row icon="users" label="Helper" value={r.helper?.name || "-"} />
+            {[["Driver", r.driver], ["Helper", r.helper]].map(([peran, o]) => (
+              <View key={peran} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: t.border }}>
+                <Avatar name={o?.name} uri={o?.avatarUrl} size={36} online={o ? !!o.isOnline : undefined} />
+                <Text style={{ color: t.ink2, fontSize: 13, width: 56 }}>{peran}</Text>
+                <Text style={{ color: t.ink, fontSize: 14, fontWeight: "600", flex: 1, textAlign: "right" }} numberOfLines={1}>{o?.name || (peran === "Driver" ? "Belum ada" : "-")}</Text>
+              </View>
+            ))}
             <Row icon="truck" label="Kendaraan" value={r.vehicle?.plateNumber || "-"} />
             <Row icon="clock" label="Terbit" value={r.publishedAt ? waktuWIB(r.publishedAt) : "-"} />
             <Row icon="refresh" label="Sinkron app driver" value={r.driver?.lastAppSyncAt ? waktuWIB(r.driver.lastAppSyncAt) : "-"} last />

@@ -1138,7 +1138,7 @@ armadaRouter.get("/drivers", requirePermission(P.JOB_WRITE), async (req, res) =>
       // toggle status SIM per orang (tarif insentif per alamat beda).
       // isFreelance (D-162 lanjutan) — sama, toggle "part time/freelance"
       // yang menyaring orang itu dari daftar Insentif Driver & Helper.
-      include: { user: { select: { id: true, name: true, isExternalCourier: true, hasSim: true, isFreelance: true } } },
+      include: { user: { select: { id: true, name: true, avatarUrl: true, isExternalCourier: true, hasSim: true, isFreelance: true } } },
       orderBy: { user: { name: "asc" } },
     });
     res.json(rows.map((r) => r.user));
@@ -1207,7 +1207,7 @@ armadaRouter.get("/helpers", requirePermission(P.JOB_WRITE), async (req, res) =>
   try {
     const rows = await prisma.userRole.findMany({
       where: { role: "HELPER" },
-      include: { user: { select: { id: true, name: true } } },
+      include: { user: { select: { id: true, name: true, avatarUrl: true } } },
       orderBy: { user: { name: "asc" } },
     });
     res.json(rows.map((r) => r.user));
@@ -2070,10 +2070,12 @@ const routeInclude = {
   // driver/helper sama sekali (cuma jobInclude yang punya, dipakai Live
   // Tracking) — Control Tower butuh status ini di level RUTE tanpa
   // panggilan API kedua, sumber SAMA yang sudah dipakai di tempat lain.
-  driver: { select: { id: true, name: true, lastAppSyncAt: true, isOnline: true, onlineSince: true, driverPendingSyncCount: true, driverPendingSyncAt: true } },
+  // avatarUrl (27 September 2026, Delivery Control) — URL media publik /uploads/avatars/<file> (sama dengan web), ditambah aditif
+  // supaya daftar/rute/kartu bisa menampilkan foto asli TANPA fetch per pengguna.
+  driver: { select: { id: true, name: true, avatarUrl: true, lastAppSyncAt: true, isOnline: true, onlineSince: true, driverPendingSyncCount: true, driverPendingSyncAt: true } },
   // helper (D-077) — pasangan driver, lihat catatan panjang di schema.prisma
   // pada field Route.helperId untuk kenapa field ini ditambahkan.
-  helper: { select: { id: true, name: true, lastAppSyncAt: true, isOnline: true, onlineSince: true, driverPendingSyncCount: true, driverPendingSyncAt: true } },
+  helper: { select: { id: true, name: true, avatarUrl: true, lastAppSyncAt: true, isOnline: true, onlineSince: true, driverPendingSyncCount: true, driverPendingSyncAt: true } },
   vehicle: { select: { id: true, plateNumber: true, type: true, capacitySlots: true } },
   // lastEditedBy (redesain Sep 2026) — siapa terakhir mengedit rute PUBLISHED
   // ini, dipasangkan dengan Route.lastEditReason/lastEditedAt (kolom biasa,

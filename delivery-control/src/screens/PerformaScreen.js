@@ -74,7 +74,7 @@ export default function PerformaScreen({ navigation }) {
         renderItem={({ item: o, index }) => (
           <View style={[s.item, { backgroundColor: t.surface, borderColor: t.border }, elevation(t, 1)]}>
             <Text style={{ color: index < 3 ? t.accent : t.ink3, fontWeight: "800", width: 22 }}>{index + 1}</Text>
-            <Avatar name={o.name} size={40} />
+            <Avatar name={o.name} uri={o.avatarUrl} size={40} />
             <View style={{ flex: 1, gap: 4 }}>
               <View style={s.row}>
                 <Text style={[type.label, { color: t.ink, fontSize: 15, flex: 1 }]} numberOfLines={1}>{o.name}</Text>

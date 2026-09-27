@@ -18,3 +18,11 @@ export function tanggalWIB(isoOrDate) {
 export function hariIniWIB() {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 }
+
+/** Jam WIB "HH.MM" dari ISO/Date/epoch; "-" bila tidak valid. */
+export function jamWIB(v) {
+  if (!v) return "-";
+  const d = new Date(new Date(v).getTime() + 7 * 3600_000);
+  if (Number.isNaN(d.getTime())) return "-";
+  return `${pad(d.getUTCHours())}.${pad(d.getUTCMinutes())}`;
+}
