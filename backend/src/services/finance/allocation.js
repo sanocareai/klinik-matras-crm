@@ -142,6 +142,41 @@ export async function paidForOrder(db, orderId, gate = { enabled: false }) {
 }
 
 /**
+ * KONTRIBUSI tiap Payment (tidak dibatalkan) ke tiap order — versi SADAR-ALOKASI dari "payments milik order ini", untuk tampilan rincian
+ * (invoice, status bayar Pemasukan, ringkasan pembayaran order). Payment tanpa alokasi = penuh ke Payment.orderId (aturan lama, identik untuk
+ * order tunggal); Payment beralokasi (mis. pembayaran Resi di anchor) = hanya bagian yang dialokasikan ke order itu. Tanpa gerbang & refund —
+ * status/saldo tetap memakai paidForOrder. `select` tambahan diteruskan ke query Payment.
+ * Mengembalikan Map orderId → [{ ...payment, amountPenuh, amount (bagian untuk order itu) }] terurut createdAt.
+ */
+export async function kontribusiPembayaranOrders(db, orderIds, { select = {} } = {}) {
+  const ids = [...new Set(orderIds.filter(Boolean))];
+  const hasil = new Map(ids.map((id) => [id, []]));
+  if (ids.length === 0) return hasil;
+  const ps = await db.payment.findMany({
+    where: { cancelledAt: null, OR: [{ orderId: { in: ids } }, { finAllocations: { some: { orderId: { in: ids } } } }] },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, orderId: true, amount: true, method: true, createdAt: true, ...select, finAllocations: { select: { orderId: true, amount: true } } },
+  });
+  for (const p of ps) {
+    const { finAllocations, ...isi } = p;
+    if (finAllocations.length === 0) {
+      if (hasil.has(p.orderId)) hasil.get(p.orderId).push({ ...isi, amountPenuh: p.amount, amount: p.amount });
+      continue;
+    }
+    for (const a of finAllocations) {
+      if (!hasil.has(a.orderId)) continue;
+      const bagian = Number(toMoney(a.amount).toFixed(0));
+      if (bagian > 0) hasil.get(a.orderId).push({ ...isi, amountPenuh: p.amount, amount: bagian, dariPaymentLain: p.orderId !== a.orderId });
+    }
+  }
+  return hasil;
+}
+
+export async function kontribusiPembayaranOrder(db, orderId, opsi = {}) {
+  return (await kontribusiPembayaranOrders(db, [orderId], opsi)).get(orderId) ?? [];
+}
+
+/**
  * Nominal payment yang BELUM dialokasikan ke order mana pun — dipakai UI
  * "sisa yang bisa dialokasikan" dan divalidasi ulang di sini supaya alokasi
  * tidak pernah melebihi uang yang benar-benar diterima.

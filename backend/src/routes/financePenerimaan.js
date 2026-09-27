@@ -8,6 +8,8 @@ import { idempotency } from "../middleware/idempotency.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { daftarLunasBelumDicatat, verifikasiPenerimaan, tolakLunas, mintaBukti } from "../services/finance/penerimaanOrder.js";
+import { daftarKlaimLunasResi, detailKlaimResi, pratinjauVerifikasiResi, verifikasiPenerimaanResi, tolakLunasResi, mintaBuktiResi } from "../services/finance/penerimaanResi.js";
+import { wajibIdempotencyKey } from "../middleware/idempotency.js";
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { handleFinanceError } from "./finance.js";
 
@@ -28,7 +30,9 @@ function cekBukti(url) {
 
 financePenerimaanRouter.get("/penerimaan/lunas-belum-dicatat", requirePermission(P.PAYMENT_READ), async (req, res) => {
   try {
-    res.json(await daftarLunasBelumDicatat(prisma));
+    const daftar = await daftarLunasBelumDicatat(prisma);
+    const resi = await daftarKlaimLunasResi(prisma); // Fase 3A: kosong bila RESI_PEMBAYARAN_AKTIF mati
+    res.json(resi.aktif ? { ...daftar, resi: resi.items, ringkasResi: { jumlah: resi.jumlah, total: resi.total } } : daftar);
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -92,6 +96,56 @@ financePenerimaanRouter.post("/penerimaan/tolak", requirePermission(P.PAYMENT_WR
     const { orderId, reason } = req.body;
     if (!orderId) throw err("Order wajib dipilih");
     res.json(await prisma.$transaction((tx) => tolakLunas(tx, { orderId, reason, userId: req.user.id })));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// ── Resi Gabungan Fase 3A (flag RESI_PEMBAYARAN_AKTIF; 403 bila mati) ─────────────────────────────────────────────────────────────────────────────
+// Pratinjau alokasi SEBELUM verifikasi (BACA-SAJA). Server menghitung; verifikasi menghitung ULANG di bawah kunci dan tidak memakai angka klien.
+// Detail satu Resi (BACA-SAJA): total, ongkir tambahan, child, sisa, klaim, pembayaran tercatat (rekening + bukti bertanda tangan).
+financePenerimaanRouter.get("/penerimaan/resi/:groupId", requirePermission(P.PAYMENT_READ), async (req, res) => {
+  try {
+    res.json(await detailKlaimResi(prisma, { groupId: req.params.groupId }));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+financePenerimaanRouter.get("/penerimaan/resi/:groupId/pratinjau", requirePermission(P.PAYMENT_READ), async (req, res) => {
+  try {
+    res.json(await pratinjauVerifikasiResi(prisma, { groupId: req.params.groupId, amount: req.query.amount ?? null }));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+// Verifikasi SATU Resi: satu Payment anchor + alokasi otomatis ke child + jurnal per child. Idempotency-Key WAJIB. Field `alokasi` dari klien DIABAIKAN.
+financePenerimaanRouter.post("/penerimaan/resi/:groupId/verifikasi", requirePermission(P.PAYMENT_WRITE), wajibIdempotencyKey, async (req, res) => {
+  try {
+    const { mode, method, cashAccountId, date, amount, proofPhotoUrl, versi } = req.body || {};
+    cekBukti(proofPhotoUrl);
+    const hasil = await prisma.$transaction(
+      (tx) => verifikasiPenerimaanResi(tx, { groupId: req.params.groupId, mode, method, cashAccountId, date, amount, proofPhotoUrl, versi, verifierId: req.user.id }),
+      { maxWait: 15_000, timeout: 60_000 },
+    );
+    res.status(201).json(hasil);
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+financePenerimaanRouter.post("/penerimaan/resi/:groupId/minta-bukti", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
+  try {
+    res.status(201).json(await prisma.$transaction((tx) => mintaBuktiResi(tx, { groupId: req.params.groupId, catatan: req.body?.catatan, userId: req.user.id })));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
+financePenerimaanRouter.post("/penerimaan/resi/:groupId/tolak", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
+  try {
+    res.json(await prisma.$transaction((tx) => tolakLunasResi(tx, { groupId: req.params.groupId, reason: req.body?.reason, userId: req.user.id })));
   } catch (e) {
     handleFinanceError(e, res);
   }

@@ -34,6 +34,7 @@ import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.
 import ComplaintCaseSection from "./ComplaintCaseSection.jsx";
 import BuatResiModal from "../../features/resi/BuatResiModal.jsx";
 import { useResiAktif } from "../../features/resi/useResiAktif.js";
+import PembayaranResiPelanggan from "../../features/resi/PembayaranResiPelanggan.jsx";
 
 // D-025 (revisi 19 Agustus 2026): order yang sudah LUNAS dikunci dari role
 // lain. Backend (guardOrderLocked() di routes/orders.js) yang benar-benar
@@ -315,7 +316,7 @@ function buildWaMessage(order, customer, actorName) {
 }
 
 // ─── Detail order yang bisa di-expand ────────────────────────────────────────
-function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOptions, promos }) {
+function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOptions, promos, statusBayarDiResi = false }) {
   const info = parseOrderNotes(order.notes);
   const isLayanan = !order.category || order.category === "LAYANAN";
 
@@ -804,7 +805,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...ORDER_STATUS_BADGE[order.status] }}>
             {statusBadgeLabel(order.status)}
           </span>
-          {editing ? (
+          {editing && !statusBayarDiResi ? (
             <BadgeDropdown
               value={paymentStatus}
               onChange={setPaymentStatus}
@@ -815,6 +816,11 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           ) : (
             <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...PAYMENT_STATUS_BADGE[order.paymentStatus || "BELUM_BAYAR"] }}>
               {PAYMENT_STATUS_LABELS[order.paymentStatus || "BELUM_BAYAR"]}
+            </span>
+          )}
+          {editing && statusBayarDiResi && (
+            <span style={{ fontSize: 10.5, color: "var(--text-secondary)" }} data-testid="status-bayar-di-resi">
+              Status bayar order Resi diatur lewat Klaim Lunas Resi
             </span>
           )}
           {order.statusLocked ? (
@@ -2338,6 +2344,8 @@ export default function OrderSection({ customer, onUpdate, initialOrderId = null
   // Resi Gabungan Fase 1: tombol & modal hanya muncul bila flag server aktif
   const resiAktif = useResiAktif();
   const [showResi, setShowResi] = useState(false);
+  // Resi Fase 3A: order yang status bayarnya diatur di level Resi (flag server pembayaran Resi aktif). Kosong = perilaku lama.
+  const [anakResi, setAnakResi] = useState(() => new Set());
 
   async function refresh() {
     try {
@@ -2407,6 +2415,15 @@ export default function OrderSection({ customer, onUpdate, initialOrderId = null
         </div>
       )}
       {resiAktif && <BuatResiModal open={showResi} onOpenChange={setShowResi} customer={customer} onDibuat={() => refresh()} />}
+
+      {!showForm && (
+        <PembayaranResiPelanggan
+          customerId={customer.id} versi={customer}
+          onAnakResi={setAnakResi}
+          onBerubah={refresh}
+          onBukaOrder={(id) => { const o = customer.orders.find((x) => x.id === id); if (o) bukaTimeline(o); }}
+        />
+      )}
 
       {showForm && (
         <AddOrderForm
@@ -2484,6 +2501,7 @@ export default function OrderSection({ customer, onUpdate, initialOrderId = null
                             onDelete={handleDelete}
                             orderOptions={orderOptions}
                             promos={promos}
+                            statusBayarDiResi={anakResi.has(o.id)}
                           />
                         </td>
                       </tr>

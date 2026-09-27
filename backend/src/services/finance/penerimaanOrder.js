@@ -30,7 +30,8 @@
 //    terverifikasi, TANPA jurnal.
 
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
-import { lockRowForUpdate } from "../inventoryLedger.js";
+import { kunciKanonis } from "./urutanKunci.js";
+import { PILIH_TAGIHAN, dasarStatusBayar } from "./tagihanOrder.js";
 import { paidForOrder } from "./allocation.js";
 import { getVerificationGate, getSettingRaw, SETTING_KEYS } from "./settings.js";
 import { bukukanPembayaran } from "./hooks.js";
@@ -39,6 +40,7 @@ import { resolveAccount, SYSTEM_KEYS } from "./accounts.js";
 import { toMoney, moneyToNumber, ZERO } from "./money.js";
 import { KEY as KEY_ORDER, STATUS_PENGAKUAN } from "./posting/orderRevenue.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
+import { resiPembayaranAktif, pastikanBukanAnakResiAktif } from "../resiPembayaran.js";
 
 function err(message, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
@@ -60,10 +62,14 @@ export async function tanggalCutoff(db) {
  * status bayar di CRM: paidForOrder — alokasi, gerbang, dan refund ikut).
  */
 export async function daftarLunasBelumDicatat(db) {
+  // Resi Gabungan Fase 3A: saat pembayaran Resi AKTIF, child dari Resi BARU tampil sebagai SATU antrean Resi (penerimaanResi.js), bukan baris per order.
+  // Flag MATI / groupId NULL / group BACKFILL_BUNDLE: daftar ini IDENTIK dengan perilaku lama.
+  const resiOn = await resiPembayaranAktif(db);
   const [orders, gate, cutoff] = await Promise.all([
     db.order.findMany({
-      where: { paymentStatus: "LUNAS", value: { gt: 0 }, status: { not: "CANCELLED" } },
+      where: { paymentStatus: "LUNAS", value: { gt: 0 }, status: { not: "CANCELLED" }, ...(resiOn && { OR: [{ groupId: null }, { group: { source: { not: "BARU" } } }] }) },
       select: {
+        ...PILIH_TAGIHAN,
         id: true, orderNumber: true, value: true, paidAt: true, status: true, createdAt: true,
         customer: { select: { id: true, name: true, assignedSales: { select: { id: true, name: true } } } },
         _count: { select: { payments: true } },
@@ -96,7 +102,8 @@ export async function daftarLunasBelumDicatat(db) {
     let dibayar = ZERO;
     // Order tanpa Payment & tanpa alokasi pasti Rp0 — lewati query per-order.
     if (o._count.payments > 0 || adaAlokasi.has(o.id)) dibayar = await paidForOrder(db, o.id, gate);
-    const sisa = toMoney(o.value).minus(dibayar);
+    // Pembanding KANONIS (services/finance/tagihanOrder.js): order tunggal = value (tidak berubah); child Resi BARU = value + ongkir anchor.
+    const sisa = toMoney(dasarStatusBayar(o)).minus(dibayar);
     if (sisa.lessThanOrEqualTo(0)) continue;
 
     const tglLunas = o.paidAt ? tanggalWIB(o.paidAt) : null;
@@ -104,7 +111,7 @@ export async function daftarLunasBelumDicatat(db) {
       orderId: o.id, orderNumber: o.orderNumber, orderStatus: o.status,
       customerId: o.customer?.id || null, customerName: o.customer?.name || "—",
       salesName: o.customer?.assignedSales?.name || null,
-      nilaiOrder: o.value, sudahDicatat: moneyToNumber(dibayar), sisa: moneyToNumber(sisa),
+      nilaiOrder: dasarStatusBayar(o), sudahDicatat: moneyToNumber(dibayar), sisa: moneyToNumber(sisa),
       lunasSejak: tglLunas,
       // Tanpa paidAt (order lama sebelum 30 Agt 2026) tidak ada bukti kapan
       // uangnya masuk — perlakukan sebagai lama.
@@ -132,13 +139,14 @@ export async function daftarLunasBelumDicatat(db) {
  * tidak membuat Payment, tidak menyentuh jurnal/saldo. Klaim tetap ada di Perlu Verifikasi Finance dengan penanda "Bukti diminta".
  */
 export async function mintaBukti(tx, { orderId, catatan = null, userId }) {
-  await lockRowForUpdate(tx, '"Order"', orderId, { cast: null });
-  const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, orderNumber: true, paymentStatus: true, value: true } });
+  await pastikanBukanAnakResiAktif(tx, orderId); // child Resi (flag aktif) diproses lewat alur Resi
+  await kunciKanonis(tx, { orderIds: [orderId] }); // urutan kunci kanonis: grup → order
+  const order = await tx.order.findUnique({ where: { id: orderId }, select: { ...PILIH_TAGIHAN, orderNumber: true, paymentStatus: true } });
   if (!order) throw err("Order tidak ditemukan", 404);
   if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} tidak lagi berstatus Lunas di CRM — tidak ada klaim yang perlu bukti`, 409);
   const gate = await getVerificationGate(tx);
   const dibayar = await paidForOrder(tx, orderId, gate);
-  if (toMoney(order.value).greaterThan(0) && dibayar.greaterThanOrEqualTo(toMoney(order.value))) {
+  if (toMoney(order.value).greaterThan(0) && dibayar.greaterThanOrEqualTo(toMoney(dasarStatusBayar(order)))) {
     throw err(`Order ${order.orderNumber} sudah tercatat lunas oleh pembayaran terverifikasi — tidak perlu meminta bukti`, 409);
   }
   const teks = String(catatan ?? "").trim().slice(0, 300) || null;
@@ -165,13 +173,15 @@ async function pendapatanSudahDiakui(tx, orderId) {
 export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, verifierId }) {
   if (!["REKENING", "SEBELUM_SALDO_AWAL"].includes(mode)) throw err("Pilihan \"uangnya masuk ke mana\" tidak dikenali");
   if (!["CASH", "TRANSFER", "QRIS", "CARD"].includes(method)) throw err("Cara bayar tidak dikenali");
+  await pastikanBukanAnakResiAktif(tx, orderId); // child Resi (flag aktif) diproses lewat alur Resi
 
   // S5: kunci baris order SEBELUM membaca sisa. Tanpa ini dua verifikasi paralel (dua tap / dua perangkat / kunci
   // idempotensi berbeda) sama-sama melihat sisa penuh dan membuat DUA Payment untuk satu order lunas.
-  await lockRowForUpdate(tx, '"Order"', orderId, { cast: null });
+  await kunciKanonis(tx, { orderIds: [orderId] }); // urutan kunci kanonis: grup → order (payment baru dibuat sesudahnya)
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: {
+      ...PILIH_TAGIHAN,
       id: true, orderNumber: true, value: true, paymentStatus: true, paidAt: true, customerId: true, status: true,
       customer: { select: { name: true, assignedSalesId: true } },
     },
@@ -180,7 +190,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM (mungkin baru diubah sales). Muat ulang halaman ini.`, 409);
 
   const gate = await getVerificationGate(tx);
-  const sisa = toMoney(order.value).minus(await paidForOrder(tx, orderId, gate));
+  const sisa = toMoney(dasarStatusBayar(order)).minus(await paidForOrder(tx, orderId, gate));
   if (sisa.lessThanOrEqualTo(0)) throw err(`Order ${order.orderNumber} sudah tercatat lunas penuh, tidak ada yang perlu diverifikasi lagi`, 409);
   const nominal = amount === null || amount === "" || amount === undefined ? sisa : toMoney(amount, { field: "Nominal" });
   if (nominal.lessThanOrEqualTo(0)) throw err("Nominal harus lebih dari 0");
@@ -268,8 +278,9 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
  */
 export async function tolakLunas(tx, { orderId, reason, userId }) {
   if (!reason?.trim()) throw err("Alasan wajib diisi");
-  await lockRowForUpdate(tx, '"Order"', orderId, { cast: null }); // S5: serialkan dengan verifikasi paralel
-  const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, orderNumber: true, paymentStatus: true, value: true } });
+  await pastikanBukanAnakResiAktif(tx, orderId); // child Resi (flag aktif) diproses lewat alur Resi
+  await kunciKanonis(tx, { orderIds: [orderId] }); // S5: serialkan dengan verifikasi paralel — urutan kunci kanonis grup → order
+  const order = await tx.order.findUnique({ where: { id: orderId }, select: { ...PILIH_TAGIHAN, orderNumber: true, paymentStatus: true } });
   if (!order) throw err("Order tidak ditemukan", 404);
   if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM`, 409);
 
@@ -277,7 +288,7 @@ export async function tolakLunas(tx, { orderId, reason, userId }) {
   const dibayar = await paidForOrder(tx, orderId, gate);
   // S5: kalau buku sudah mencatat pembayaran yang melunasi order (mis. baru saja diverifikasi Finance lain), menandainya
   // "belum lunas" membuat status CRM bertentangan dengan ledger. Yang salah dibatalkan/ditolak adalah Payment-nya.
-  if (toMoney(order.value).greaterThan(0) && dibayar.greaterThanOrEqualTo(toMoney(order.value))) {
+  if (toMoney(order.value).greaterThan(0) && dibayar.greaterThanOrEqualTo(toMoney(dasarStatusBayar(order)))) {
     throw err(`Order ${order.orderNumber} sudah tercatat lunas penuh oleh pembayaran yang terverifikasi. Untuk membatalkan, tolak pembayarannya.`, 409);
   }
   const baru = dibayar.greaterThan(0) ? "DP" : "BELUM_BAYAR";

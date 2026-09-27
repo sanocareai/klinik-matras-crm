@@ -23,7 +23,7 @@
 
 import { hasPermission } from "../../middleware/authorize.js";
 import { PERMISSIONS as P } from "../../constants/permissions.js";
-import { lockRowForUpdate } from "../inventoryLedger.js";
+import { kunciUntukPayment } from "./urutanKunci.js";
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
 import { isPaymentCounted, paidForOrder } from "./allocation.js";
 import { getVerificationGate } from "./settings.js";
@@ -440,9 +440,11 @@ async function orderTerdampak(tx, p) {
   return [...new Set([p.orderId, ...alokasi.map((a) => a.orderId)])];
 }
 
+// Urutan kunci KANONIS (services/finance/urutanKunci.js): grup → order terdampak (id naik) → payment. Sama dengan alur Resi, pembatalan, dan
+// klaim/tolak — sebelumnya payment dikunci DULU lalu order satu per satu (urutan terbalik dari alur Resi → deadlock sporadis).
 async function kunciPayment(tx, id) {
   if (!UUID.test(String(id))) throw err("Pembayaran tidak ditemukan", 404);
-  await lockRowForUpdate(tx, "payments", id);
+  if (!(await kunciUntukPayment(tx, id))) throw err("Pembayaran tidak ditemukan", 404);
   const p = await tx.payment.findUnique({
     where: { id },
     select: {
@@ -469,7 +471,6 @@ export async function verifikasiPembayaran(tx, { paymentId, userId }) {
   await tx.paymentVerification.create({ data: { paymentId: p.id, verifiedById: userId } });
   const orderIds = await orderTerdampak(tx, p);
   for (const oid of orderIds) {
-    await lockRowForUpdate(tx, '"Order"', oid, { cast: null });
     await recomputeOrderPaymentStatus(tx, oid);
   }
   await recordActivity(tx, {
@@ -498,7 +499,6 @@ export async function tolakPembayaran(tx, { paymentId, reason, userId }) {
   const orderIds = await orderTerdampak(tx, p);
   const status = [];
   for (const oid of orderIds) {
-    await lockRowForUpdate(tx, '"Order"', oid, { cast: null });
     status.push({ orderId: oid, ...(await recomputeOrderPaymentStatus(tx, oid)) });
   }
   await recordActivity(tx, {

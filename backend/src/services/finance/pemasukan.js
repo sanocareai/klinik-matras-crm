@@ -18,6 +18,8 @@
 // KLASIFIKASI berdasarkan AKUN & SUMBER jurnal (systemKey/kode/tipe), BUKAN nama atau deskripsi.
 
 import { toMoney, sumMoney, ZERO } from "./money.js";
+import { kontribusiPembayaranOrders } from "./allocation.js";
+import { PILIH_TAGIHAN, dasarStatusBayar } from "./tagihanOrder.js";
 import { STATUS_DIHITUNG } from "./journal.js";
 import { KEY as KEY_ORDER } from "./posting/orderRevenue.js";
 import { statusDari, LABEL_STATUS, INCLUDE_LIST, idDitolak } from "./pembayaran.js";
@@ -218,7 +220,8 @@ export function tentukanStatusBayar(order) {
   const verif = aktif.filter((x) => (x.verifications?.length ?? 0) > 0);
   const tanpaVerif = aktif.filter((x) => !(x.verifications?.length ?? 0));
   const sum = (arr) => arr.reduce((s, x) => s + (x.amount ?? 0), 0);
-  const nilai = order.value ?? 0;
+  // Pembanding kanonis: order tunggal = value (tidak berubah); child Resi BARU = value + ongkir anchor (services/finance/tagihanOrder.js).
+  const nilai = dasarStatusBayar(order);
   const dicatat = sum(aktif);
   const klaimSales = order.paymentStatus === "LUNAS" && nilai > 0 && dicatat < nilai;
   const dibayar = sum(verif);
@@ -237,11 +240,12 @@ async function tambahStatusBayar(db, baris) {
   const target = baris.filter((b) => b.kategori === "PENDAPATAN" && b.tautan?.order?.id);
   const ids = [...new Set(target.map((b) => b.tautan.order.id))];
   if (!ids.length) return;
-  const orders = await db.order.findMany({
-    where: { id: { in: ids } },
-    select: { id: true, value: true, paymentStatus: true, payments: { select: { amount: true, cancelledAt: true, cashAccountId: true, verifications: { select: { id: true } } } } },
-  });
-  const peta = new Map(orders.map((o) => [o.id, o]));
+  // Pembayaran SADAR-ALOKASI: Payment Resi di anchor hanya dihitung sebesar bagian tiap child (sebelumnya penuh di anchor, 0 di child lain).
+  const [orders, kontribusi] = await Promise.all([
+    db.order.findMany({ where: { id: { in: ids } }, select: { ...PILIH_TAGIHAN, paymentStatus: true } }),
+    kontribusiPembayaranOrders(db, ids, { select: { cancelledAt: true, cashAccountId: true, verifications: { select: { id: true } } } }),
+  ]);
+  const peta = new Map(orders.map((o) => [o.id, { ...o, payments: kontribusi.get(o.id) ?? [] }]));
   for (const b of target) {
     const o = peta.get(b.tautan.order.id);
     b.statusBayar = o ? tentukanStatusBayar(o) : null;

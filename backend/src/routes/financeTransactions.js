@@ -37,6 +37,8 @@ import { toMoney, sumMoney, moneyToNumber, ZERO, MoneyError } from "../services/
 import { saldoDariAplikasi, bentukAplikasiDp, daftarDpEligible, ringkasanDp } from "../services/finance/purchaseAdvanceRead.js";
 import { AccountError } from "../services/finance/accounts.js";
 import { SETTING_KEYS, getSettingRaw, parseIntOr, getVerificationGate } from "../services/finance/settings.js";
+import { pastikanPaymentBukanResi } from "../services/resiPembayaran.js";
+import { kunciUntukPayment } from "../services/finance/urutanKunci.js";
 import { postExpenseApproved, postExpensePaid, KEY as EXPENSE_KEY } from "../services/finance/posting/expense.js";
 import { postPurchaseApproved, postPurchasePaid, totalDpDiterapkan, KEY as PURCHASE_KEY } from "../services/finance/posting/purchase.js";
 import { postAdvanceApplied } from "../services/finance/posting/purchaseAdvance.js";
@@ -2173,7 +2175,15 @@ financeTxRouter.get("/customer-payments", requirePermission(P.FINANCE_READ), asy
 financeTxRouter.post("/customer-payments/:id/allocations", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
     const { allocations } = req.body;
+    // Pemeriksaan awal (di luar transaksi) hanya UX — cegah kerja sia-sia sebelum mengunci. Keputusan akhir selalu pemeriksaan ULANG
+    // di bawah kunci payment (audit invariants: guard yang hanya dicek di luar transaksi punya celah balapan sempit).
+    await pastikanPaymentBukanResi(prisma, req.params.id);
     const hasil = await prisma.$transaction(async (tx) => {
+      // Urutan kunci kanonis: grup → order lama+baru → payment, SEBELUM setAllocations (yang juga mengunci payment) dan recompute.
+      if (/^[0-9a-f-]{36}$/i.test(String(req.params.id))) {
+        await kunciUntukPayment(tx, req.params.id, { orderTambahan: (Array.isArray(allocations) ? allocations : []).map((a) => a?.orderId).filter((x) => typeof x === "string") });
+      }
+      await pastikanPaymentBukanResi(tx, req.params.id); // cek ULANG di bawah kunci — menutup celah balapan (audit invariants)
       const orderIds = await setAllocations(tx, {
         paymentId: req.params.id, allocations, userId: req.user.id,
       });
