@@ -138,6 +138,7 @@ export const EVENT_TYPES = Object.freeze({
   CUSTODY_OFFERED: "CUSTODY_OFFERED",
   CUSTODY_ACCEPTED: "CUSTODY_ACCEPTED",
   CUSTODY_REJECTED: "CUSTODY_REJECTED",
+  CUSTODY_ROLLED_BACK: "CUSTODY_ROLLED_BACK",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -329,6 +330,8 @@ export function formatActivitySentence(event) {
       return `Gudang menerima unit ${metadata.unitCode || "—"}${metadata.locationCode ? ` di lokasi ${metadata.locationCode}` : ""}`;
     case EVENT_TYPES.CUSTODY_REJECTED:
       return `Gudang menolak unit ${metadata.unitCode || "—"}${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.CUSTODY_ROLLED_BACK:
+      return `Penawaran custody unit ${metadata.unitCode || "—"} dibatalkan (rollback writer)${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.BUKTI_DIMINTA:
       return metadata.catatan ? `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"} — ${metadata.catatan}` : `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"}`;
     case EVENT_TYPES.DOCUMENT_CANCELLED:

@@ -1,5 +1,7 @@
 // Custody unit Gudang V2 (P1–P2): antrean inbound/return, terima, tolak. Semua pesan berbahasa Indonesia.
 // Penulisan HANYA lewat unitCustodyCommandService (command owner). Read/write memakai permission inventori.
+// Visibilitas antrean (GET) memakai flag production_v2_reader — fail-closed dan berdiri sendiri dari writer,
+// sehingga UI ini bisa diperlihatkan ke Gudang tanpa ikut mengaktifkan writer atau surface Production V2 lain.
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
@@ -7,11 +9,12 @@ import { prisma } from "../db.js";
 import {
   acceptUnitCustody, listCustodyHandoffs, rejectUnitCustody,
 } from "../services/unitCustodyCommandService.js";
+import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 
 export const unitCustodyRouter = express.Router();
 unitCustodyRouter.use(requireAuth);
 
-const STATUSES = ["OFFERED", "ACCEPTED", "REJECTED", "CANCELLED", "SUPERSEDED"];
+const STATUSES = ["OFFERED", "ACCEPTED", "REJECTED", "CANCELLED", "SUPERSEDED", "HISTORY"];
 const DIRECTIONS = ["INBOUND", "RETURN"];
 
 function handleErr(err, res) {
@@ -23,14 +26,25 @@ function handleErr(err, res) {
   return res.status(500).json({ error: "Server error: " + err.message });
 }
 
-// GET /api/inventory/unit-custody?status=OFFERED&direction=INBOUND — antrean Gudang (status=REJECTED = antrean exception).
+// GET /api/inventory/unit-custody?status=OFFERED&direction=INBOUND — antrean Gudang.
+// status=REJECTED = antrean exception; status=HISTORY = seluruh handoff yang sudah selesai.
 unitCustodyRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res) => {
   try {
     const status = req.query.status ? String(req.query.status) : "OFFERED";
     const direction = req.query.direction ? String(req.query.direction) : null;
     if (!STATUSES.includes(status)) return res.status(400).json({ error: "Status tidak valid", code: "CUSTODY_STATUS_INVALID" });
     if (direction && !DIRECTIONS.includes(direction)) return res.status(400).json({ error: "Arah serah-terima tidak valid", code: "CUSTODY_DIRECTION_INVALID" });
-    res.json({ items: await listCustodyHandoffs(prisma, { status, direction, limit: req.query.limit }) });
+
+    const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
+    if (readerState.mode === PRODUCTION_READER_MODE.OFF) {
+      return res.json({ items: [], readerMode: "OFF" });
+    }
+    const unitIds = readerState.mode === PRODUCTION_READER_MODE.COHORT ? [...readerState.unitIds] : null;
+    if (unitIds && unitIds.length === 0) return res.json({ items: [], readerMode: "COHORT" });
+    res.json({
+      items: await listCustodyHandoffs(prisma, { status, direction, limit: req.query.limit, unitIds }),
+      readerMode: readerState.mode,
+    });
   } catch (err) { handleErr(err, res); }
 });
 

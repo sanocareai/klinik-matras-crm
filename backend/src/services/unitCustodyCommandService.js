@@ -253,6 +253,10 @@ export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotenc
         where: { id: handoff.id },
         data: { status: "ACCEPTED", revision, acceptedById: actor || null, acceptedAt: now, locationId, productionRunId: run?.id ?? null },
       });
+      // Proyeksi legacy V1 (ProductionUnitDetail.jsx "Lokasi Simpan") dari StorageLocation kanonis — locationId tetap
+      // source of truth; kolom teks bebas ini HANYA disalin di sini, tidak pernah diterima langsung dari client.
+      // Berjalan sekali per command (idempotency di atas mencegah replay memanggil apply() lagi).
+      await tx.unit.update({ where: { id: handoff.unitId }, data: { storageLocation: location.code } });
       await outbox(tx, {
         eventType: "warehouse.custody.accepted", aggregateId: handoff.id, revision, dedupeKey: `warehouse-custody-accepted:${handoff.id}:${revision}`,
         payload: { handoffId: handoff.id, unitId: handoff.unitId, orderId: handoff.unit.orderId, direction: handoff.direction, locationId, productionRunId: run?.id ?? null, revision, occurredAt: now.toISOString(), actorId: actor || null },
@@ -291,11 +295,69 @@ export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotenc
   });
 }
 
+// ---------------------------------------------------------------------------
+// Rollback writer: membatalkan penawaran OFFERED milik cohort saat writer dimatikan (dokumentasi lengkap di
+// docs/PRODUCTION-WAREHOUSE-V2-P1P2-INBOUND-CUSTODY.md § Rollback). Owner command, idempoten per (actorId, idempotencyKey)
+// DAN aman diulang dengan key berbeda — hanya menyentuh baris yang MASIH OFFERED (no-op untuk sisanya).
+// Tidak menghapus histori: transisi ke CANCELLED, offeredById/At tetap ada. Setelah rollback, handoff tidak lagi
+// muncul di antrean OFFERED — reaktivasi writer tidak menampilkannya sebagai pekerjaan baru.
+export async function rollbackUnitCustodyOffers(prisma, { unitIds, actorId, idempotencyKey, reason }) {
+  assertIdempotencyKey(idempotencyKey);
+  const ids = [...new Set((unitIds || []).filter(Boolean))].sort();
+  if (!ids.length) throw custodyError("unitIds wajib diisi", 400, "CUSTODY_ROLLBACK_UNITS_REQUIRED");
+  const cleaned = String(reason ?? "").trim();
+  if (cleaned.length < 3) throw custodyError("Alasan rollback wajib diisi (minimal 3 karakter)", 400, "CUSTODY_ROLLBACK_REASON_REQUIRED");
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "ROLLBACK_CUSTODY_OFFERS", unitIds: ids, reason: cleaned });
+
+  return prisma.$transaction(async (tx) => {
+    const replay = await tx.v2Command.findUnique({ where: { actorId_idempotencyKey: { actorId: actor, idempotencyKey } } });
+    if (replay) {
+      if (replay.requestHash !== requestHash) throw custodyError("Idempotency-Key dipakai untuk payload berbeda", 409, "IDEMPOTENCY_CONFLICT");
+      if (replay.status !== "APPLIED") throw custodyError("Command masih diproses", 409, "COMMAND_IN_PROGRESS");
+      return { replayed: true, ...replay.response };
+    }
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "ROLLBACK_CUSTODY_OFFERS", aggregateId: idempotencyKey, requestHash });
+
+    const cancelled = [];
+    for (const unitId of ids) {
+      // Kunci baris Unit dulu supaya tidak berebut dengan offerUnitCustody/accept/reject yang sedang berjalan untuk unit ini.
+      await lockRowForUpdate(tx, "units", unitId);
+      const open = await tx.unitCustodyHandoff.findMany({ where: { unitId, status: "OFFERED" }, include: { unit: { select: { unitCode: true } } } });
+      for (const handoff of open) {
+        const revision = handoff.revision + 1;
+        const now = new Date();
+        await tx.unitCustodyHandoff.update({
+          where: { id: handoff.id },
+          data: { status: "CANCELLED", revision, cancelledById: actor, cancelledAt: now, reason: cleaned },
+        });
+        await outbox(tx, {
+          eventType: "warehouse.custody.cancelled", aggregateId: handoff.id, revision, dedupeKey: `warehouse-custody-cancelled:${handoff.id}:${revision}`,
+          payload: { handoffId: handoff.id, unitId, direction: handoff.direction, revision, reason: cleaned, occurredAt: now.toISOString(), actorId: actor },
+        });
+        await recordActivity(tx, {
+          entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.CUSTODY_ROLLED_BACK, actorId: actor,
+          metadata: { unitCode: handoff.unit.unitCode, direction: handoff.direction, handoffId: handoff.id, reason: cleaned },
+        });
+        cancelled.push({ handoffId: handoff.id, unitId, direction: handoff.direction, revision });
+      }
+    }
+    const response = { cancelledCount: cancelled.length, cancelled };
+    await finishCommand(tx, command, cancelled.length, response);
+    return { replayed: false, ...response };
+  });
+}
+
+const HISTORY_STATUSES = ["ACCEPTED", "REJECTED", "CANCELLED", "SUPERSEDED"];
+
 // Antrean Gudang. status=REJECTED berfungsi sebagai antrean exception (riwayat penolakan yang belum ditindaklanjuti).
-export async function listCustodyHandoffs(prisma, { status = "OFFERED", direction = null, limit = 100 } = {}) {
+// status="HISTORY" (tab Riwayat) = seluruh handoff yang sudah selesai, terbaru dulu.
+export async function listCustodyHandoffs(prisma, { status = "OFFERED", direction = null, limit = 100, unitIds = null } = {}) {
+  const isHistory = status === "HISTORY";
+  const statuses = isHistory ? HISTORY_STATUSES : [status];
   const rows = await prisma.unitCustodyHandoff.findMany({
-    where: { status, ...(direction ? { direction } : {}) },
-    orderBy: [{ offeredAt: "asc" }, { id: "asc" }],
+    where: { status: { in: statuses }, ...(direction ? { direction } : {}), ...(unitIds ? { unitId: { in: unitIds } } : {}) },
+    orderBy: isHistory ? [{ updatedAt: "desc" }, { id: "desc" }] : [{ offeredAt: "asc" }, { id: "asc" }],
     take: Math.min(Math.max(Number(limit) || 100, 1), 200),
     include: {
       unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, order: { select: { orderNumber: true } } } },
@@ -305,7 +367,7 @@ export async function listCustodyHandoffs(prisma, { status = "OFFERED", directio
   });
   return rows.map((row) => ({
     id: row.id, revision: row.revision, status: row.status, direction: row.direction, offeredAt: row.offeredAt,
-    acceptedAt: row.acceptedAt, rejectedAt: row.rejectedAt, reason: row.reason,
+    acceptedAt: row.acceptedAt, rejectedAt: row.rejectedAt, cancelledAt: row.cancelledAt, reason: row.reason,
     unit: { id: row.unit.id, unitCode: row.unit.unitCode, merk: row.unit.merk, ukuran: row.unit.ukuran, orderNumber: row.unit.order?.orderNumber ?? null },
     location: row.location, deliveryJob: row.deliveryJob, productionRunId: row.productionRunId,
   }));

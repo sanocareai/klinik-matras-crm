@@ -22,6 +22,12 @@ async function setWriter({ enabled, unitIds }) {
   await testPrisma.v2FeatureFlag.upsert({ where: { key: V2_FLAGS.PRODUCTION_WRITER }, create: { key: V2_FLAGS.PRODUCTION_WRITER, ...data }, update: data });
 }
 
+// Reader (visibilitas antrean) berdiri sendiri dari writer — dipanggil eksplisit di tes yang membaca GET queue.
+async function setReader({ enabled, unitIds }) {
+  const data = { enabled, scope: "GLOBAL", config: unitIds ? { unitIds } : {}, reason: "custody test reader" };
+  await testPrisma.v2FeatureFlag.upsert({ where: { key: V2_FLAGS.PRODUCTION_READER }, create: { key: V2_FLAGS.PRODUCTION_READER, ...data }, update: data });
+}
+
 async function world() {
   const [driver, wh1, wh2] = await Promise.all([
     createTestUser({ roles: ["DRIVER"] }), createTestUser({ roles: ["WAREHOUSE"] }), createTestUser({ roles: ["WAREHOUSE"] }),
@@ -79,6 +85,7 @@ const counts = async () => ({
 async function offered(w, options) {
   const f = await unitWithJob(w, options);
   await setWriter({ enabled: true, unitIds: [f.unit.id] });
+  await setReader({ enabled: true, unitIds: [f.unit.id] });
   const done = await completePickup(w, f);
   assert.equal(done.status, 200, JSON.stringify(done.body));
   const handoff = await testPrisma.unitCustodyHandoff.findFirstOrThrow({ where: { unitId: f.unit.id } });

@@ -35,6 +35,14 @@ test("migration custody menegakkan unique (job, unit) dan satu handoff aktif per
   assert.equal(sql.includes("\r"), false, "migration harus LF (checksum stabil)");
 });
 
+test("migration custody menegakkan satu run produksi AKTIF per unit (backstop DB untuk lock aplikasi); kolom rollback (cancelled_by_id/at) additive", () => {
+  assert.match(executable, /CREATE UNIQUE INDEX "production_runs_v2_active_unit_key"\s+ON "production_runs_v2"\("unit_id"\)\s+WHERE "status" NOT IN \('COMPLETED', 'CANCELLED'\)/);
+  assert.match(executable, /"cancelled_by_id" TEXT/);
+  assert.match(executable, /"cancelled_at" TIMESTAMP\(3\)/);
+  // Index baru ini TIDAK boleh berbentuk ALTER TABLE pada production_runs_v2 (tabel lama) — hanya CREATE INDEX.
+  assert.equal(executable.includes('ALTER TABLE "production_runs_v2"'), false, "tabel lama hanya diberi index tambahan, tidak diubah kolomnya");
+});
+
 test("writer audit custody pada source aktual: 0 pelanggaran, dua jalur armada ter-hook, penulis handoff hanya command owner", () => {
   const report = runCustodyWriterAudit(backendRoot);
   assert.equal(report.totals.violations, 0, JSON.stringify(report.findings.filter((f) => !f.ok)));

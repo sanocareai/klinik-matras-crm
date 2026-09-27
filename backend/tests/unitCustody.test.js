@@ -4,10 +4,12 @@ import {
   ALLOWED_LOCATION_TYPES, assertCanDecide, assertExpectedRevision, assertIdempotencyKey, assertLocationAllowed,
 } from "../src/services/unitCustodyCommandService.js";
 import {
-  PRODUCTION_WRITER_MODE, V2_FLAGS, isProductionWriterEnabledFor, resolveProductionWriterState,
+  PRODUCTION_READER_MODE, PRODUCTION_WRITER_MODE, V2_FLAGS,
+  isProductionReaderEnabledFor, isProductionWriterEnabledFor, resolveProductionReaderState, resolveProductionWriterState,
 } from "../src/services/v2FeatureFlags.js";
 
 const flags = (enabled, config = {}) => ({ [V2_FLAGS.PRODUCTION_WRITER]: { key: V2_FLAGS.PRODUCTION_WRITER, enabled, config } });
+const readerFlags = (enabled, config = {}) => ({ [V2_FLAGS.PRODUCTION_READER]: { key: V2_FLAGS.PRODUCTION_READER, enabled, config } });
 const failsWith = (fn, code, status) => assert.throws(fn, (error) => error.code === code && error.statusCode === status, `harus gagal ${code}`);
 
 test("writer produksi: flag OFF -> OFF; ON tanpa unitIds -> GLOBAL legacy; ON dengan unitIds -> COHORT fail-closed", () => {
@@ -30,6 +32,28 @@ test("writer produksi: flag OFF -> OFF; ON tanpa unitIds -> GLOBAL legacy; ON de
 test("writer produksi: flag hilang / tabel tidak tersedia -> OFF", () => {
   assert.equal(resolveProductionWriterState({}).mode, PRODUCTION_WRITER_MODE.OFF);
   assert.equal(resolveProductionWriterState({ [V2_FLAGS.PRODUCTION_WRITER]: { enabled: true, config: { unitIds: [] } } }).mode, PRODUCTION_WRITER_MODE.GLOBAL);
+});
+
+test("reader produksi (visibilitas antrean): flag berdiri sendiri dari writer, sama pola OFF/GLOBAL/COHORT fail-closed", () => {
+  const off = resolveProductionReaderState(readerFlags(false, { unitIds: ["u1"] }));
+  assert.equal(off.mode, PRODUCTION_READER_MODE.OFF);
+  assert.equal(isProductionReaderEnabledFor(off, "u1"), false);
+
+  const global = resolveProductionReaderState(readerFlags(true));
+  assert.equal(global.mode, PRODUCTION_READER_MODE.GLOBAL);
+  assert.equal(isProductionReaderEnabledFor(global, "apa-saja"), true);
+
+  const cohort = resolveProductionReaderState(readerFlags(true, { unitIds: ["u1"] }));
+  assert.equal(cohort.mode, PRODUCTION_READER_MODE.COHORT);
+  assert.equal(isProductionReaderEnabledFor(cohort, "u1"), true);
+  assert.equal(isProductionReaderEnabledFor(cohort, "u2"), false, "unit di luar cohort reader -> disembunyikan");
+  assert.equal(isProductionReaderEnabledFor(cohort, null), false, "fail-closed tanpa unitId");
+
+  assert.equal(resolveProductionReaderState({}).mode, PRODUCTION_READER_MODE.OFF, "flag hilang -> OFF, bukan error");
+
+  // Reader dan writer adalah flag TERPISAH: mengaktifkan satu tidak ikut mengaktifkan yang lain.
+  const both = { ...flags(true, { unitIds: ["u1"] }), ...readerFlags(false) };
+  assert.equal(resolveProductionReaderState(both).mode, PRODUCTION_READER_MODE.OFF);
 });
 
 test("hanya handoff OFFERED yang dapat diputuskan; double accept/reject dan revisi basi ditolak", () => {

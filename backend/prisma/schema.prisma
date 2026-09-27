@@ -8564,6 +8564,8 @@ model UnitCustodyHandoff {
   acceptedAt      DateTime?                @map("accepted_at")
   rejectedById    String?                  @map("rejected_by_id")
   rejectedAt      DateTime?                @map("rejected_at")
+  cancelledById   String?                  @map("cancelled_by_id")
+  cancelledAt     DateTime?                @map("cancelled_at")
   reason          String?
   revision        Int                      @default(1)
   commandId       String?                  @map("command_id") @db.Uuid
