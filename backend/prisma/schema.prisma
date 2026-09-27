@@ -2006,6 +2006,7 @@ model WorkCenter {
   routeStages      ProductionRouteStage[]
   operatorsPrimary ProductionOperator[]
   stageAssignments StageAssignment[]
+  productionPlans  ProductionRunPlan[]
 
   expenseSubmissions ExpenseSubmission[]
   @@map("work_centers")
@@ -2109,6 +2110,7 @@ model ProductionOperator {
 
   skills           OperatorSkill[]
   stageAssignments StageAssignment[]
+  productionPlans  ProductionRunPlan[]
 
   @@map("production_operators")
 }
@@ -4891,6 +4893,8 @@ model Material {
   createdAt DateTime @default(now()) @map("created_at")
 
   movements               StockMovement[]
+  plannedBomLines         PlannedBOMLine[]
+  reservations            MaterialReservation[]
   finInventoryOpeningLines FinInventoryOpeningLine[]
   goodsReceiptLines       GoodsReceiptLine[]
   materialIssueLines      MaterialIssueLine[]
@@ -8152,6 +8156,7 @@ model ProductionRun {
   inspections          QualityInspection[]
   handoff              ProductionHandoff?
   custodyHandoffs      UnitCustodyHandoff[]
+  plan                 ProductionRunPlan?
 
   @@unique([migrationSource, migrationSourceId])
   @@index([unitId, status])
@@ -8578,4 +8583,135 @@ model UnitCustodyHandoff {
   @@index([status, direction, offeredAt])
   @@index([unitId, direction, status])
   @@map("unit_custody_handoffs_v2")
+}
+
+// ─── PRODUCTION V2 P3: Planning H-1, assignment, Planned BOM, reservasi bahan (Gudang) ─────────────────────
+// Additive. Writer/reader di balik flag production_v2_writer / production_v2_reader — SAMA flag dengan P1-P2
+// custody (cohort config.unitIds, fail-closed; lihat services/v2FeatureFlags.js) — TIDAK ada flag baru.
+// Ditulis HANYA oleh productionPlanningCommandService.js (ditegakkan
+// scripts/production-delivery-v2/audit-planning-writers.js).
+// "Satu Production Run aktif per Unit" sudah ditegakkan P1-P2 (production_runs_v2_active_unit_key); Plan 1:1
+// terhadap Run otomatis ikut batasan itu — tidak perlu index tambahan di level Unit.
+// Slice ini BERHENTI di reservasi: tidak ada penulisan stock_movements di sini (stok fisik baru berkurang
+// lewat Material Issue/PICKED, slice berikutnya). "Reserved" untuk keputusan availability HARUS menghitung
+// gabungan V1 (MaterialIssueLine, lihat inventoryLedger.RESERVED_STATUSES) DAN V2 (MaterialReservation aktif
+// di sini) — kalau tidak, dua jalur bisa reservasi bahan yang sama tanpa saling tahu.
+enum ProductionPlanStatus {
+  DRAFT
+  PLANNED
+  MATERIAL_RESERVED
+  CANCELLED
+}
+
+enum PlannedBOMLineStatus {
+  ACTIVE
+  SUPERSEDED
+  CANCELLED
+}
+
+enum MaterialReservationStatus {
+  ACTIVE
+  RELEASED
+  CONSUMED
+  CANCELLED
+}
+
+model ProductionRunPlan {
+  id    String        @id @default(uuid()) @db.Uuid
+  runId String        @unique @map("run_id") @db.Uuid
+  run   ProductionRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+
+  status   ProductionPlanStatus @default(DRAFT)
+  revision Int                  @default(1)
+
+  // Penetapan workshop/operator memakai ID kanonis (bukan teks bebas) — "team"/"workshop" di bahasa tugas
+  // dipetakan ke WorkCenter yang sudah ada (Production Core Slice 4E), bukan entitas baru.
+  workCenterId String?             @map("work_center_id") @db.Uuid
+  workCenter   WorkCenter?         @relation(fields: [workCenterId], references: [id], onDelete: SetNull)
+  operatorId   String?             @map("operator_id") @db.Uuid
+  operator     ProductionOperator? @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+
+  targetStartAt    DateTime? @map("target_start_at")
+  targetCompleteAt DateTime? @map("target_complete_at")
+
+  plannedById          String?   @map("planned_by_id")
+  plannedAt            DateTime? @map("planned_at")
+  materialReservedById String?   @map("material_reserved_by_id")
+  materialReservedAt   DateTime? @map("material_reserved_at")
+  cancelledById        String?   @map("cancelled_by_id")
+  cancelledAt          DateTime? @map("cancelled_at")
+  cancelReason         String?   @map("cancel_reason")
+
+  commandId String?  @map("command_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  bomLines     PlannedBOMLine[]
+  reservations MaterialReservation[]
+
+  @@index([status, updatedAt])
+  @@map("production_run_plans_v2")
+}
+
+model PlannedBOMLine {
+  id     String            @id @default(uuid()) @db.Uuid
+  planId String            @map("plan_id") @db.Uuid
+  plan   ProductionRunPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  // Snapshot: qty/unit dibekukan saat baris dibuat. Material.unit bisa berubah di masa depan tanpa
+  // mengubah histori BOM yang sudah dibuat — sama prinsipnya dengan snapshot lain di V2 (routeSnapshot dst).
+  qty      Decimal              @db.Decimal(12, 4)
+  unit     MaterialUnit
+  status   PlannedBOMLineStatus @default(ACTIVE)
+  revision Int                  @default(1)
+
+  createdById    String?   @map("created_by_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  supersededById String?   @map("superseded_by_id")
+  supersededAt   DateTime? @map("superseded_at")
+
+  reservations MaterialReservation[]
+
+  // "Planned BOM aktif ganda untuk material yang sama dalam satu run" -> partial unique (plan_id, material_id)
+  // WHERE status='ACTIVE' di migration (Prisma tidak bisa mengekspresikan partial index secara deklaratif).
+  @@index([planId, status])
+  @@index([materialId])
+  @@map("planned_bom_lines_v2")
+}
+
+model MaterialReservation {
+  id        String         @id @default(uuid()) @db.Uuid
+  bomLineId String         @map("bom_line_id") @db.Uuid
+  bomLine   PlannedBOMLine @relation(fields: [bomLineId], references: [id], onDelete: Restrict)
+
+  // Denormalisasi planId/materialId (selain lewat bomLine) — dipakai query "urutan lock deterministik per
+  // material" dan antrean per plan tanpa join berlapis; bukan sumber kebenaran baru (bomLine tetap induk).
+  planId String            @map("plan_id") @db.Uuid
+  plan   ProductionRunPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  qty      Decimal                   @db.Decimal(12, 4)
+  status   MaterialReservationStatus @default(ACTIVE)
+  revision Int                       @default(1)
+
+  reservedById  String?   @map("reserved_by_id")
+  reservedAt    DateTime  @default(now()) @map("reserved_at")
+  releasedById  String?   @map("released_by_id")
+  releasedAt    DateTime? @map("released_at")
+  releaseReason String?   @map("release_reason")
+
+  commandId String?  @map("command_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // "Reservasi aktif ganda untuk sumber yang sama" -> partial unique (bom_line_id) WHERE status='ACTIVE'
+  // di migration. Histori (RELEASED/CONSUMED/CANCELLED) tetap boleh banyak per bomLineId (tidak dihapus).
+  @@index([planId, status])
+  @@index([materialId, status])
+  @@map("material_reservations_v2")
 }

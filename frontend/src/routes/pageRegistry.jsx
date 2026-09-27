@@ -84,6 +84,7 @@ const WarehouseDashboard   = lazy(() => import("../pages/warehouse/WarehouseDash
 const WarehouseInventory   = lazy(() => import("../pages/warehouse/WarehouseInventory.jsx"));
 const WarehouseGoodsReceipt = lazy(() => import("../pages/warehouse/WarehouseGoodsReceipt.jsx"));
 const WarehouseUnitCustody = lazy(() => import("../pages/warehouse/WarehouseUnitCustody.jsx"));
+const ProductionPlanning = lazy(() => import("../pages/bengkel/ProductionPlanning.jsx"));
 const WarehouseMaterialIssue = lazy(() => import("../pages/warehouse/WarehouseMaterialIssue.jsx"));
 const WarehouseTransfers = lazy(() => import("../pages/warehouse/WarehouseTransfers.jsx"));
 const WarehouseStockCount = lazy(() => import("../pages/warehouse/WarehouseStockCount.jsx"));
@@ -199,6 +200,7 @@ export const PAGES = [
   { path: "/warehouse/inventory", render: () => <WarehouseInventory /> },
   { path: "/warehouse/goods-receipt", render: () => <WarehouseGoodsReceipt /> },
   { path: "/warehouse/unit-custody", render: () => <WarehouseUnitCustody /> },
+  { path: "/bengkel/planning", render: () => <ProductionPlanning /> },
   { path: "/warehouse/material-issue", render: () => <WarehouseMaterialIssue /> },
   { path: "/warehouse/transfers", render: () => <WarehouseTransfers /> },
   { path: "/warehouse/stock-count", render: () => <WarehouseStockCount /> },

@@ -139,6 +139,13 @@ export const EVENT_TYPES = Object.freeze({
   CUSTODY_ACCEPTED: "CUSTODY_ACCEPTED",
   CUSTODY_REJECTED: "CUSTODY_REJECTED",
   CUSTODY_ROLLED_BACK: "CUSTODY_ROLLED_BACK",
+  // Planning Produksi H-1 V2 (P3): rencana kerja per Unit, assignment workshop/operator, Planned BOM, reservasi
+  // bahan Gudang. Detail (planId, workshop, material, dll) ada di metadata.
+  PRODUCTION_PLAN_CREATED: "PRODUCTION_PLAN_CREATED",
+  PRODUCTION_PLAN_ASSIGNED: "PRODUCTION_PLAN_ASSIGNED",
+  PRODUCTION_PLAN_BOM_SET: "PRODUCTION_PLAN_BOM_SET",
+  PRODUCTION_PLAN_MATERIAL_RESERVED: "PRODUCTION_PLAN_MATERIAL_RESERVED",
+  PRODUCTION_PLAN_CANCELLED: "PRODUCTION_PLAN_CANCELLED",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -332,6 +339,16 @@ export function formatActivitySentence(event) {
       return `Gudang menolak unit ${metadata.unitCode || "—"}${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.CUSTODY_ROLLED_BACK:
       return `Penawaran custody unit ${metadata.unitCode || "—"} dibatalkan (rollback writer)${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_PLAN_CREATED:
+      return `Rencana produksi dibuat untuk unit ${metadata.unitCode || "—"}`;
+    case EVENT_TYPES.PRODUCTION_PLAN_ASSIGNED:
+      return `Rencana unit ${metadata.unitCode || "—"} ditetapkan ke workshop ${metadata.workCenterCode || "—"}`;
+    case EVENT_TYPES.PRODUCTION_PLAN_BOM_SET:
+      return `Planned BOM unit ${metadata.unitCode || "—"} disusun ulang (${metadata.lineCount ?? 0} bahan)${metadata.releasedReservations ? `, ${metadata.releasedReservations} reservasi dilepas` : ""}`;
+    case EVENT_TYPES.PRODUCTION_PLAN_MATERIAL_RESERVED:
+      return `Bahan direservasi untuk unit ${metadata.unitCode || "—"} (${metadata.reservationCount ?? 0} baris)`;
+    case EVENT_TYPES.PRODUCTION_PLAN_CANCELLED:
+      return `Rencana produksi unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.BUKTI_DIMINTA:
       return metadata.catatan ? `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"} — ${metadata.catatan}` : `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"}`;
     case EVENT_TYPES.DOCUMENT_CANCELLED:

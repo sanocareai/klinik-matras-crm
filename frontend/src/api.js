@@ -77,7 +77,9 @@ async function request(path, options = {}) {
       let msg = "Terjadi kesalahan";
       let code;
       let detail;
-      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code; detail = j.detail; } catch {}
+      // Backend mengirim `details` (jamak) — lihat routes/*.js handleErr(). `j.detail` (tunggal) dipertahankan
+      // sebagai fallback bila kelak ada endpoint lama yang memakai ejaan itu; tidak ada yang mengirimnya saat ini.
+      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code; detail = j.details ?? j.detail; } catch {}
       // `.status` disertakan (bukan cuma pesan) supaya pemanggil bisa
       // membedakan "diblokir karena ada data terkait" (409) dari error lain
       // tanpa perlu cocokkan teks pesan (rapuh kalau pesannya diubah nanti).
@@ -515,6 +517,30 @@ export const api = {
     request(`/inventory/unit-custody/${id}/accept`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   rejectUnitCustody: (id, data, idempotencyKey = mutationKey("custody-reject")) =>
     request(`/inventory/unit-custody/${id}/reject`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+
+  // Planning Produksi H-1 V2 (P3) — rencana per Unit, assignment workshop/operator, Planned BOM, reservasi
+  // bahan Gudang. Reader/writer diputuskan server (flag production_v2_reader/writer, SAMA dengan custody P1-P2).
+  getEligibleUnitsForPlanning: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production-planning/eligible-units${qs ? `?${qs}` : ""}`);
+  },
+  getProductionPlans: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production-planning/plans${qs ? `?${qs}` : ""}`);
+  },
+  getProductionPlan: (id) => request(`/production-planning/plans/${id}`),
+  createProductionPlan: (data, idempotencyKey = mutationKey("plan-create")) =>
+    request("/production-planning/plans", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  assignProductionPlan: (id, data, idempotencyKey = mutationKey("plan-assign")) =>
+    request(`/production-planning/plans/${id}/assign`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  setPlannedBOM: (id, data, idempotencyKey = mutationKey("plan-bom")) =>
+    request(`/production-planning/plans/${id}/bom`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  reserveMaterialForPlan: (id, data, idempotencyKey = mutationKey("plan-reserve")) =>
+    request(`/production-planning/plans/${id}/reserve`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  releasePlanReservations: (id, data, idempotencyKey = mutationKey("plan-release")) =>
+    request(`/production-planning/plans/${id}/release`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  cancelProductionPlan: (id, data, idempotencyKey = mutationKey("plan-cancel")) =>
+    request(`/production-planning/plans/${id}/cancel`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
 
   // Stock Transfer (Warehouse Tahap 4)
   getStorageLocations: () => request("/inventory/transfers/locations"),
