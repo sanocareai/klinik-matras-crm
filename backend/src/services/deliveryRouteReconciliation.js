@@ -35,7 +35,7 @@ function assertUniqueSequences(jobs) {
   }
 }
 
-async function loadRouteEvidence(tx, routeId) {
+async function loadRouteEvidence(tx, routeId, mode) {
   const route = await tx.route.findUnique({
     where: { id: routeId },
     include: {
@@ -47,7 +47,10 @@ async function loadRouteEvidence(tx, routeId) {
     },
   });
   if (!route) throw Object.assign(new Error("Rute tidak ditemukan"), { statusCode: 404 });
-  if (!["PUBLISHED", "IN_PROGRESS"].includes(route.status)) {
+  const allowedStatuses = mode === DELIVERY_ROUTE_RECONCILIATION_MODE.TERMINAL_ASSIGNMENTS
+    ? ["PUBLISHED", "IN_PROGRESS", "COMPLETED"]
+    : ["PUBLISHED", "IN_PROGRESS"];
+  if (!allowedStatuses.includes(route.status)) {
     throw conflict(`Route berstatus ${route.status}; rekonsiliasi publication tidak aman`, "ROUTE_RECONCILIATION_UNSAFE_STATUS");
   }
   if (!route.driverId) {
@@ -60,9 +63,9 @@ async function loadRouteEvidence(tx, routeId) {
 }
 
 async function validateTerminalAssignments(tx, route, jobs, expected) {
-  if (jobs.some((job) => job.status !== "COMPLETED")) {
-    throw conflict("Mode terminal hanya aman bila seluruh Job V1 terbukti COMPLETED", "ROUTE_RECONCILIATION_NON_TERMINAL_JOB", {
-      jobs: jobs.filter((job) => job.status !== "COMPLETED").map((job) => ({ id: job.id, status: job.status })),
+  if (jobs.some((job) => !TERMINAL_JOB_STATUSES.has(job.status))) {
+    throw conflict("Mode terminal hanya aman bila seluruh Job V1 terbukti terminal", "ROUTE_RECONCILIATION_NON_TERMINAL_JOB", {
+      jobs: jobs.filter((job) => !TERMINAL_JOB_STATUSES.has(job.status)).map((job) => ({ id: job.id, status: job.status })),
     });
   }
   if (expected?.v1JobCount != null && jobs.length !== expected.v1JobCount) {
@@ -193,7 +196,7 @@ export async function reconcileDeliveryRouteFromV1(prisma, {
     request: { mode, exceptionId, expected },
     forcePublication: true,
     projectV1: async (tx) => {
-      const { route, jobs } = await loadRouteEvidence(tx, routeId);
+      const { route, jobs } = await loadRouteEvidence(tx, routeId, mode);
       const evidence = mode === DELIVERY_ROUTE_RECONCILIATION_MODE.TERMINAL_ASSIGNMENTS
         ? await validateTerminalAssignments(tx, route, jobs, expected)
         : await validatePublishedCatchUp(tx, route, jobs, exceptionId, expected);

@@ -101,6 +101,58 @@ test("RTE-240926-02: enam completed dipetakan, lima active dan dua extra direvok
   assert.deepEqual(feed.map((item) => item.kind), ["REMOVE_ROUTE", "REMOVE_ROUTE"]);
 });
 
+test("route V1 yang sudah COMPLETED dengan Job terminal direkonsiliasi menjadi publication revoked dan REMOVE_ROUTE", async () => {
+  const fixture = await base({ code: "RTE-TERMINAL-CATCHUP", status: "COMPLETED" });
+  const completed = await job(fixture, { status: "COMPLETED", sequence: 1 });
+  const failed = await job(fixture, { status: "FAILED", sequence: 2 });
+  const staleSnapshot = {
+    schemaVersion: 1, routeId: fixture.route.id, code: fixture.route.code,
+    status: "PUBLISHED", driverId: fixture.driver.id, helperId: fixture.helper.id,
+    stops: [completed, failed].map((item) => ({ jobId: item.id, status: item.status, sequence: item.sequence })),
+  };
+  await testPrisma.deliveryRouteState.create({
+    data: {
+      routeId: fixture.route.id, routeRevision: 1, currentPublicationVersion: 1,
+      lifecycleStatus: "PUBLISHED", draftSnapshot: staleSnapshot,
+    },
+  });
+  await testPrisma.routePublication.create({
+    data: {
+      routeId: fixture.route.id, publicationVersion: 1, routeRevision: 1,
+      status: "ACTIVE", snapshot: staleSnapshot, checksum: deliveryV2Checksum(staleSnapshot),
+      assignments: {
+        create: [completed, failed].map((item) => ({
+          jobId: item.id, sequence: item.sequence, driverId: fixture.driver.id,
+          helperId: fixture.helper.id, status: "ACTIVE",
+        })),
+      },
+    },
+  });
+  const input = {
+    routeId: fixture.route.id,
+    actorId: "OWNER_TEST",
+    idempotencyKey: "reconcile-terminal-completed-test",
+    mode: DELIVERY_ROUTE_RECONCILIATION_MODE.TERMINAL_ASSIGNMENTS,
+    reason: "catch up terminal lifecycle from canonical V1",
+    expected: { v1JobCount: 2, v2AssignmentCount: 2 },
+  };
+
+  const first = await reconcileDeliveryRouteFromV1(testPrisma, input);
+  const replay = await reconcileDeliveryRouteFromV1(testPrisma, input);
+  assert.equal(first.publication.status, "REVOKED");
+  assert.equal(replay.replayed, true);
+  const state = await testPrisma.deliveryRouteState.findUnique({ where: { routeId: fixture.route.id } });
+  assert.equal(state.lifecycleStatus, "COMPLETED");
+  const latest = await testPrisma.routePublication.findUnique({
+    where: { routeId_publicationVersion: { routeId: fixture.route.id, publicationVersion: 2 } },
+    include: { assignments: true },
+  });
+  assert.equal(latest.status, "REVOKED");
+  assert.equal(latest.assignments.every((item) => item.status === "REVOKED"), true);
+  const feed = await testPrisma.driverSyncEvent.findMany({ orderBy: [{ userId: "asc" }, { sequence: "asc" }] });
+  assert.deepEqual(feed.map((item) => item.kind), ["REMOVE_ROUTE", "REMOVE_ROUTE"]);
+});
+
 async function seedCatchUp({ ambiguous = false } = {}) {
   const fixture = await base({ code: ambiguous ? "RTE-CATCHUP-BLOCK" : "RTE-250926-01" });
   const jobs = [];

@@ -18,6 +18,17 @@
 // "belum siap", itu memang tidak akan pernah maju ke Delivery.
 
 import { parseOrderNotes } from "./format.js";
+import { isUkuranCustom } from "./ukuranKasur.js";
+
+// Ukuran Custom tanpa Lebar/Panjang HANYA menahan order BARU (dibuat sejak penegakan server dinyalakan). Order legacy TIDAK PERNAH ditahan karenanya.
+function ukuranCustomDitahan(o, sejak) {
+  if (!sejak || !o?.createdAt) return false;
+  const dibuat = new Date(o.createdAt).getTime();
+  const mulai = new Date(sejak).getTime();
+  if (Number.isNaN(dibuat) || Number.isNaN(mulai) || dibuat < mulai) return false;
+  const n = parseOrderNotes(o.notes);
+  return isUkuranCustom(n.ukuranKasur) && (n.ukuranLebarCm === null || n.ukuranPanjangCm === null);
+}
 
 export const READINESS = {
   READY: "READY",
@@ -51,6 +62,11 @@ const BLOCKER_RULES = [
     relevan: (o) => (o.productLine || "KASUR") === "KASUR",
     check: (o) => !!parseOrderNotes(o.notes).ukuranKasur,
   },
+  {
+    key: "ukuranCustomAngka", label: "Lebar dan Panjang ukuran custom belum diisi",
+    relevan: (o, opsi = {}) => (o.productLine || "KASUR") === "KASUR" && ukuranCustomDitahan(o, opsi.ukuranCustomWajibSejak),
+    check: () => false,
+  },
   // Cuma relevan utk kategori LAYANAN — itu satu-satunya yang punya tahap
   // pickup (jemput barang LAMA dari customer). BARU (beli baru) & SEWA
   // tidak pernah menjemput apa pun dari customer, jadi tidak butuh jadwal
@@ -74,12 +90,12 @@ const BLOCKER_RULES = [
  * @returns {null|{state, missingBlockers}} `null` untuk order CANCELLED
  * (readiness tidak berlaku).
  */
-export function evaluateReadiness(order) {
+export function evaluateReadiness(order, opsi = {}) {
   if (!order || order.status === "CANCELLED") return null;
 
   const missingBlockers = BLOCKER_RULES
-    .filter((r) => (r.relevan ? r.relevan(order) : true))
-    .filter((r) => !r.check(order));
+    .filter((r) => (r.relevan ? r.relevan(order, opsi) : true))
+    .filter((r) => !r.check(order, opsi));
 
   const state = missingBlockers.length > 0 ? READINESS.BLOCKED : READINESS.READY;
 

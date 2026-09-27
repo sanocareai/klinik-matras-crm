@@ -1,3 +1,4 @@
+import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -104,7 +105,7 @@ function TargetCard({ target, onChanged }) {
             {stage?.labelId || "Belum masuk produksi"}
           </h3>
           <p className="truncate text-xs text-ink2">
-            {unit.order?.customer?.name || "—"} · {unit.merk || "—"} {unit.ukuran || ""}
+            {unit.order?.customer?.name || "—"} · {unit.merk || "—"} {formatUkuranLabel(unit.ukuran)}
           </p>
         </div>
       </div>

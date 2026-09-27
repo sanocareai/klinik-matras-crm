@@ -7,6 +7,10 @@ import { Field } from "@/components/ui/field.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
 import { formatRupiah } from "@/utils/format.js";
+import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
+import UkuranCustomFields from "@/components/customer/UkuranCustomFields.jsx";
+import { isUkuranCustom } from "@/utils/ukuranKasur.js";
+import { UKURAN_VARIANT_KEY } from "@/utils/format.js";
 import { DP_PERSEN, MAKS_ITEM, formKosong, itemKosong, hitungRingkasan, galatForm, payloadResi } from "./logika.js";
 
 // RESI GABUNGAN — Fase 1. Satu form membuat N order/item untuk customer yang sama dalam SATU transaksi (semua atau tidak sama sekali).
@@ -29,18 +33,21 @@ export default function BuatResiModal({ open, onOpenChange, customer, onDibuat }
   const [galat, setGalat] = useState("");
   const [sibuk, setSibuk] = useState(false);
   const [hasil, setHasil] = useState(null);
+  const [dicoba, setDicoba] = useState(false); // sudah mencoba menyimpan → galat Ukuran Custom tampil di semua item
 
-  useEffect(() => { if (open) { setForm(formKosong()); setGalat(""); setHasil(null); setSibuk(false); } }, [open]);
+  useEffect(() => { if (open) { setForm(formKosong()); setGalat(""); setHasil(null); setSibuk(false); setDicoba(false); } }, [open]);
 
   const ringkasan = useMemo(() => hitungRingkasan(form), [form]);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const setItem = (i, k, v) => setForm((f) => ({ ...f, items: f.items.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)) }));
   const tambah = () => setForm((f) => (f.items.length >= MAKS_ITEM ? f : { ...f, items: [...f.items, itemKosong()] }));
+  // Pilih ukuran: pindah ke ukuran standar membersihkan Lebar/Panjang custom item itu.
+  const pilihUkuran = (i, u) => setForm((f) => ({ ...f, items: f.items.map((it, idx) => (idx === i ? { ...it, ukuran: u, ...(isUkuranCustom(u) ? {} : { ukuranLebar: "", ukuranPanjang: "" }) } : it)) }));
   const hapus = (i) => setForm((f) => (f.items.length <= 1 ? f : { ...f, items: f.items.filter((_, idx) => idx !== i) }));
 
   async function simpan() {
     const g = galatForm(form);
-    if (g) { setGalat(g); return; }
+    if (g) { setGalat(g); setDicoba(true); return; }
     setSibuk(true); setGalat("");
     try {
       const r = await api.buatResi(payloadResi(customer.id, form));
@@ -120,7 +127,14 @@ export default function BuatResiModal({ open, onOpenChange, customer, onDibuat }
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <Field label="Merk"><Input value={it.merk} onChange={(e) => setItem(i, "merk", e.target.value)} placeholder="mis. Sano" /></Field>
-                    <Field label="Ukuran"><Input value={it.ukuran} onChange={(e) => setItem(i, "ukuran", e.target.value)} placeholder="mis. 84x195x12" /></Field>
+                    <Field label="Ukuran">
+                      <FilterDropdown value={it.ukuran} onChange={(u) => pilihUkuran(i, u)} options={Object.keys(UKURAN_VARIANT_KEY).map((u) => ({ value: u, label: u }))} placeholder="— Pilih Ukuran —" ariaLabel={"Pilih ukuran item " + (i + 1)} triggerClassName="w-full max-w-none" />
+                    </Field>
+                    {isUkuranCustom(it.ukuran) && (
+                      <div className="sm:col-span-2">
+                        <UkuranCustomFields lebar={it.ukuranLebar} panjang={it.ukuranPanjang} onLebar={(v) => setItem(i, "ukuranLebar", v)} onPanjang={(v) => setItem(i, "ukuranPanjang", v)} paksa={dicoba} idAwal={"ukuran-resi-" + i} />
+                      </div>
+                    )}
                     <Field label="Keluhan" className="sm:col-span-2"><Input value={it.keluhan} onChange={(e) => setItem(i, "keluhan", e.target.value)} placeholder="Keluhan customer" /></Field>
                     <Field label="Nominal (Rp)" required>
                       <input type="number" inputMode="numeric" min="0" step="1" value={it.nominal} onChange={(e) => setItem(i, "nominal", e.target.value)} className={inputAngka} aria-label={"Nominal item " + (i + 1)} />

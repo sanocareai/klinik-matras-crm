@@ -4,7 +4,9 @@ import {
   syncAffectedJobStates,
 } from "./deliveryRouteCommandService.js";
 import { appendDriverFeedEvent } from "./driverFeedV2.js";
-import { V2_FLAGS, isFlagEnabled, loadV2Flags } from "./v2FeatureFlags.js";
+import {
+  DELIVERY_WRITER_MODE, V2_FLAGS, isDeliveryWriterEnabledFor, loadV2Flags, resolveDeliveryWriterState, resolveJobRouteIds,
+} from "./v2FeatureFlags.js";
 
 function digest(value) {
   return createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
@@ -14,14 +16,36 @@ function guarded(message, code) {
   return Object.assign(new Error(message), { statusCode: 503, code });
 }
 
-async function writerMode(tx, flagKey) {
+// Keputusan writer bersama (lihat resolveDeliveryWriterState). flagKey dipertahankan untuk kompatibilitas
+// pemanggil; writer route dan execution adalah satu unit.
+// eslint-disable-next-line no-unused-vars
+async function writerState(tx, flagKey) {
   const flags = await loadV2Flags(tx);
-  const fence = flags[V2_FLAGS.DELIVERY_V1_WRITER_FENCE]?.enabled === true;
-  const enabled = isFlagEnabled(flags, flagKey);
+  return { state: resolveDeliveryWriterState(flags), fence: flags[V2_FLAGS.DELIVERY_V1_WRITER_FENCE]?.enabled === true };
+}
+
+function assertNotFenced(fence, enabled) {
   if (fence && !enabled) {
     throw guarded("Mutation Delivery V1 sedang dipagari untuk final catch-up", "DELIVERY_V1_WRITER_FENCED");
   }
-  return { enabled, flags };
+}
+
+// Mode COHORT: batasi hasil mutation ke route cohort. Mengembalikan null bila tidak ada route cohort yang
+// tersentuh (command tetap V1-only). Job tanpa route dan job di route non-cohort tidak diproyeksikan.
+async function scopeMutationToCohort(tx, state, mutation) {
+  const jobIds = unique(mutation.jobIds);
+  const jobs = jobIds.length ? await tx.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, routeId: true } }) : [];
+  const touchedRouteIds = unique([...(mutation.routeIds || []), ...jobs.map((job) => job.routeId)]);
+  const cohortRouteIds = touchedRouteIds.filter((routeId) => state.routeIds.has(routeId));
+  if (!cohortRouteIds.length) return null;
+  const inCohort = new Set(cohortRouteIds);
+  return {
+    ...mutation,
+    jobIds: jobs.filter((job) => inCohort.has(job.routeId)).map((job) => job.id),
+    routeIds: cohortRouteIds,
+    cancellations: (mutation.cancellations || []).filter((item) => item.routeId && inCohort.has(item.routeId)),
+    deletedJobIds: mutation.deletedJobIds, // tetap diperiksa: penghapusan saat route cohort tersentuh ditolak
+  };
 }
 
 function unique(values) {
@@ -44,15 +68,31 @@ export async function executeDeliveryCrossBoundaryCommand(tx, {
   mutate,
 }) {
   if (typeof mutate !== "function") throw new TypeError("mutate wajib berupa function");
-  const { enabled } = await writerMode(tx, flagKey);
-  if (!enabled) {
+  const { state, fence } = await writerState(tx, flagKey);
+  if (state.mode === DELIVERY_WRITER_MODE.OFF) {
+    assertNotFenced(fence, false);
     const legacy = await mutate(tx);
     return legacy?.value;
   }
+  if (state.mode === DELIVERY_WRITER_MODE.COHORT) {
+    // Route yang disentuh baru diketahui setelah mutation; mutation dan projection tetap satu transaksi.
+    const mutation = (await mutate(tx)) || {};
+    const scoped = await scopeMutationToCohort(tx, state, mutation);
+    assertNotFenced(fence, Boolean(scoped));
+    if (!scoped) return mutation.value;
+    const command = await createCrossBoundaryCommand(tx, { actorId, commandType, aggregateHint, request });
+    return projectCrossBoundaryMutation(tx, { command, mutation: scoped, actorId, commandType, reason });
+  }
 
+  const command = await createCrossBoundaryCommand(tx, { actorId, commandType, aggregateHint, request });
+  const mutation = (await mutate(tx)) || {};
+  return projectCrossBoundaryMutation(tx, { command, mutation, actorId, commandType, reason });
+}
+
+async function createCrossBoundaryCommand(tx, { actorId, commandType, aggregateHint, request }) {
   const idempotencyKey = `internal:${commandType}:${randomUUID()}`;
   const requestHash = digest({ commandType, aggregateHint, request });
-  const command = await tx.v2Command.create({
+  return tx.v2Command.create({
     data: {
       domain: "DELIVERY",
       actorId: actorId || "SYSTEM",
@@ -63,8 +103,9 @@ export async function executeDeliveryCrossBoundaryCommand(tx, {
       requestHash,
     },
   });
+}
 
-  const mutation = (await mutate(tx)) || {};
+async function projectCrossBoundaryMutation(tx, { command, mutation, actorId, commandType, reason }) {
   const deletedJobIds = unique(mutation.deletedJobIds);
   if (deletedJobIds.length > 0) {
     throw Object.assign(new Error(
@@ -176,7 +217,11 @@ export async function executeDeliveryCrossBoundaryCommand(tx, {
 }
 
 export async function assertLegacyDeliveryJobDeleteAllowed(tx, { operation, jobIds = [] } = {}) {
-  const { enabled } = await writerMode(tx, V2_FLAGS.DELIVERY_ROUTE_WRITER);
+  const { state, fence } = await writerState(tx, V2_FLAGS.DELIVERY_ROUTE_WRITER);
+  const enabled = state.mode === DELIVERY_WRITER_MODE.COHORT
+    ? isDeliveryWriterEnabledFor(state, (await resolveJobRouteIds(tx, jobIds)).filter((routeId) => state.routeIds.has(routeId)))
+    : state.mode === DELIVERY_WRITER_MODE.GLOBAL;
+  assertNotFenced(fence, enabled);
   if (!enabled) return true;
   throw Object.assign(new Error(
     `Operasi ${operation || "legacy job delete"} dihentikan: writer V2 mempertahankan histori dan belum memiliki keputusan tombstone yang disetujui`

@@ -1,3 +1,4 @@
+import { formatUkuranKasur } from "@/utils/ukuranKasur.js";
 import {
   ORDER_STATUS_LABELS, ORDER_STATUS_BUCKET_LABELS, orderStatusBucket,
   PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS, parseOrderNotes,
@@ -17,7 +18,9 @@ export function statusLabel(status) {
 }
 
 export function productSummary(order) {
-  const { ukuranKasur, merkKasur } = parseOrderNotes(order.notes);
+  const notesInfo = parseOrderNotes(order.notes);
+  const merkKasur = notesInfo.merkKasur;
+  const ukuranKasur = formatUkuranKasur(notesInfo); // Ukuran Custom → "145 × 205 cm (Custom)"
 
   // SEWA (15 September 2026, D-170, laporan owner: kartu Route Planner
   // menampilkan "Kasur Spring" untuk order kasur SEWA — "karna kasur kita

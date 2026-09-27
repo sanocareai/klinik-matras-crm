@@ -1,3 +1,4 @@
+import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, MapPin, Package, Truck, User, Clock, Camera, Loader2, Navigation, Lock, UploadCloud } from "lucide-react";
@@ -1276,7 +1277,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                         <li key={u.id} className="px-3 py-2">
                           <div className="text-[12.5px] font-semibold text-ink">{u.unitCode}</div>
                           <div className="text-[11.5px] text-ink2">
-                            {[u.merk, u.ukuran].filter(Boolean).join(" · ") || "Tanpa keterangan merk/ukuran"}
+                            {[u.merk, formatUkuranLabel(u.ukuran)].filter(Boolean).join(" · ") || "Tanpa keterangan merk/ukuran"}
                           </div>
                         </li>
                       ))}

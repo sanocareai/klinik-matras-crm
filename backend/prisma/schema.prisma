@@ -440,6 +440,7 @@ model User {
   orderStatusOverrides       Order[]                  @relation("OrderStatusOverrider")
   orderComplaintResolutions  Order[]                  @relation("OrderComplaintResolver")
   orderRevisionEdits         OrderRevisionLog[]       @relation("OrderRevisionEditor")
+  orderGroupsCreated         OrderGroup[]             @relation("OrderGroupCreator")
   promosCreated              Promo[]                  @relation("PromoCreator")
   messageTemplates           MessageTemplate[]
   unitStageLogs              UnitStageLog[]           @relation("UnitStageLogActor")
@@ -786,6 +787,7 @@ model Customer {
   conversations Conversation[]
   notes         Note[]
   orders        Order[]
+  orderGroups   OrderGroup[]
 
   pipelineTransitions           PipelineTransition[]
   broadcastTargets              BroadcastTarget[]
@@ -1326,7 +1328,14 @@ model Order {
   finExpenses           FinExpense[]           @relation("FinExpenseOrder")
   expenseSubmissions    ExpenseSubmission[]
 
+  // Resi Gabungan Fase 2 (27 Sep 2026) — keanggotaan grup resi. NULL = order biasa / order lama (tidak berubah sama sekali).
+  // Murni metadata pengelompokan: TIDAK memengaruhi harga, invoice, pembayaran, jurnal, produksi, delivery, atau insentif.
+  groupId       String?     @map("group_id")
+  group         OrderGroup? @relation("OrderGroupMembers", fields: [groupId], references: [id], onDelete: SetNull)
+  anchorOfGroup OrderGroup? @relation("OrderGroupAnchor")
+
   @@index([customerId])
+  @@index([groupId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
   @@index([promoId])
 }
@@ -1347,6 +1356,52 @@ model Order {
 // "dibekukan" saat dikirim ke customer (harga berubah setelah terkirim),
 // itu keputusan terpisah: tambahkan kolom snapshot BARU, JANGAN ubah arti
 // kolom yang ada.
+// ── Resi Gabungan Fase 2 ────────────────────────────────────────────────────────────────────────────────────────────────
+// OrderGroup = pengelompokan METADATA untuk satu resi (N order milik SATU customer). Bukan dokumen keuangan: Payment, jurnal, Invoice,
+// Produksi, Delivery, dan insentif tetap bekerja per order seperti sebelumnya. Tampilan invoice gabungan tetap memakai Invoice.combinedIntoId.
+//  BARU            = dibuat oleh alur Buat Resi (Fase 1+) dalam satu transaksi dengan order-ordernya.
+//  BACKFILL_BUNDLE = dibuat belakangan dari invoice bundle lama, HANYA metadata (idempoten lewat anchorOrderId unik).
+// Nilai keuangan pada grup (ongkirTambahan, dpPersen, dpTarget) adalah SNAPSHOT kesepakatan saat resi dibuat; NULL berarti tidak ada
+// kesepakatan tercatat (mis. backfill) — jangan ditebak.
+enum OrderGroupSource {
+  BARU
+  BACKFILL_BUNDLE
+}
+
+model OrderGroup {
+  id         String           @id @default(cuid())
+  customerId String           @map("customer_id")
+  customer   Customer         @relation(fields: [customerId], references: [id])
+  source     OrderGroupSource
+
+  anchorOrderId String? @unique @map("anchor_order_id")
+  anchorOrder   Order?  @relation("OrderGroupAnchor", fields: [anchorOrderId], references: [id], onDelete: SetNull)
+
+  // Snapshot alamat & jadwal saat resi dibuat (order boleh berubah sesudahnya; snapshot ini tidak).
+  alamatKirim  String?   @map("alamat_kirim")
+  kotaKirim    String?   @map("kota_kirim")
+  tautanLokasi String?   @map("tautan_lokasi")
+  tanggalKirim DateTime? @map("tanggal_kirim") @db.Date
+
+  ongkirTambahan Int? @map("ongkir_tambahan")
+  dpPersen       Int? @map("dp_persen")
+  dpTarget       Int? @map("dp_target")
+
+  // Catatan tambahan yang tidak perlu kolom sendiri (mis. hasil klasifikasi backfill). Tanpa data pribadi customer.
+  metadata Json?
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("OrderGroupCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  orders Order[] @relation("OrderGroupMembers")
+
+  @@index([customerId])
+  @@index([source])
+  @@map("order_groups")
+}
+
 enum InvoiceStatus {
   DRAFT // baru dibuat otomatis, belum dikirim ke customer
   SENT // sudah dikirim ke customer (WA/PDF)

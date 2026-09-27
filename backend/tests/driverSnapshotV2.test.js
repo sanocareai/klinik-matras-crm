@@ -79,6 +79,7 @@ test("dua route aktif menghasilkan 12 stop aktif dan 3 stop selesai yang relevan
     ...Array.from({ length: 3 }, (_, index) => assignment(`i${index + 7}`, "COMPLETED")),
   ];
   const prisma = {
+    v2MigrationException: { findMany: async () => [] }, // Reader menyaring route ber-exception terbuka
     job: { findMany: async () => [] },
     driverFeedState: { upsert: async () => ({ nextSequence: 1n, retentionFloor: 1n, feedVersion: 1 }) },
     routePublication: {
@@ -111,6 +112,7 @@ test("dua route aktif menghasilkan 12 stop aktif dan 3 stop selesai yang relevan
 
 test("missing-stop pada publication memblokir snapshot alih-alih menghilangkan stop diam-diam", async () => {
   const prisma = {
+    v2MigrationException: { findMany: async () => [] }, // Reader menyaring route ber-exception terbuka
     job: { findMany: async () => [] },
     driverFeedState: { upsert: async () => ({ nextSequence: 1n, retentionFloor: 1n, feedVersion: 1 }) },
     routePublication: {
@@ -132,6 +134,7 @@ test("ghost route/reassignment drift diblokir sebelum payload mencapai Driver", 
   const moved = assignment("p1", "ACTIVE");
   moved.job.routeId = "route-lain";
   const prisma = {
+    v2MigrationException: { findMany: async () => [] }, // Reader menyaring route ber-exception terbuka
     job: { findMany: async () => [] },
     driverFeedState: { upsert: async () => ({ nextSequence: 1n, retentionFloor: 1n, feedVersion: 1 }) },
     routePublication: {

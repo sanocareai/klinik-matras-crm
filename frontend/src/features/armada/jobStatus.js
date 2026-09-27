@@ -1,3 +1,4 @@
+import { formatUkuranKasur } from "@/utils/ukuranKasur.js";
 import { titleCaseNama, parseOrderNotes, PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS } from "@/utils/format.js";
 import { hariSejak } from "@/utils/formatDate.js";
 
@@ -180,7 +181,9 @@ export function serviceLabelOf(job) {
 export function produkLabelOf(job) {
   const order = job?.order || job?.units?.[0]?.unit?.order;
   if (!order) return null;
-  const { ukuranKasur, merkKasur } = parseOrderNotes(order.notes);
+  const notesInfo = parseOrderNotes(order.notes);
+  const merkKasur = notesInfo.merkKasur;
+  const ukuranKasur = formatUkuranKasur(notesInfo); // Ukuran Custom → "145 × 205 cm (Custom)"
   if (order.category === "SEWA") {
     return [merkKasur || "Sano", ukuranKasur].filter(Boolean).join(" · ") || null;
   }

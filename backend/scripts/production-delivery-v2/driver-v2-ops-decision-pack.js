@@ -119,8 +119,8 @@ export async function buildDriverV2OpsDecisionPack(prisma) {
           },
         },
       }),
-      mismatch.evidence?.jobId ? prisma.job.findUnique({
-        where: { id: mismatch.evidence.jobId },
+      (mismatch.evidence?.jobId ?? mismatch.evidence?.mismatchedJobs?.[0]?.jobId) ? prisma.job.findUnique({
+        where: { id: mismatch.evidence?.jobId ?? mismatch.evidence.mismatchedJobs[0].jobId },
         select: {
           id: true, status: true, routeId: true, scheduledDate: true, driverId: true, helperId: true, vehicleId: true,
           order: { select: { id: true, orderNumber: true, status: true } },

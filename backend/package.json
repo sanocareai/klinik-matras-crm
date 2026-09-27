@@ -23,6 +23,7 @@
     "v2:resolve-admin-bypass-history": "node scripts/production-delivery-v2/resolve-admin-bypass-history.js",
     "v2:driver-cutover-audit": "node scripts/production-delivery-v2/driver-cutover-audit.js",
     "v2:driver-ops-decision-pack": "node scripts/production-delivery-v2/driver-v2-ops-decision-pack.js",
+    "v2:outbox-drain-rehearsal": "node scripts/production-delivery-v2/outbox-drain-rehearsal.js",
     "v2:revoke-approved-failed-assignment": "node scripts/production-delivery-v2/revoke-failed-job-assignment-history.js",
     "v2:reconcile-driver-routes": "node scripts/production-delivery-v2/reconcile-driver-route-exceptions.js",
     "v2:revoke-confirmed-reschedule": "node scripts/production-delivery-v2/revoke-confirmed-reschedule-7d34e05d.js",
