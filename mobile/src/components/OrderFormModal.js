@@ -47,6 +47,7 @@ import {
 import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import DateField from "./DateField";
 import { stageLabels, stageColors } from "../theme";
+import { isUkuranCustom, validasiUkuranCustom, parseAngkaCm } from "../utils/ukuranKasur";
 
 // FITUR (tambahan): Tahap Pipeline (New/Qualified/.../Paid) SEBELUMNYA cuma
 // bisa diubah dari web CRM (Orders.jsx) atau dari tab Pelanggan mobile —
@@ -142,22 +143,30 @@ function SectionHead({ icon: Icon, title, tokens, styles }) {
     </View>
   );
 }
-function buildNotes({ merkKasur, ukuranKasur, keluhanCustomer, jenisKasurLainnya }) {
+function buildNotes({ merkKasur, ukuranKasur, ukuranLebarCm, ukuranPanjangCm, keluhanCustomer, jenisKasurLainnya }) {
+  // Ukuran Custom (paritas web): angka HANYA ditulis bila ukurannya "Ukuran Custom" DAN keduanya valid — pindah ke ukuran standar membersihkan nilai custom.
+  const custom = isUkuranCustom(ukuranKasur);
+  const lebar = custom ? parseAngkaCm(ukuranLebarCm) : null;
+  const panjang = custom ? parseAngkaCm(ukuranPanjangCm) : null;
   return JSON.stringify({
-    merkKasur: merkKasur || "", ukuranKasur: ukuranKasur || "", keluhanCustomer: keluhanCustomer || "",
+    merkKasur: merkKasur || "", ukuranKasur: ukuranKasur || "",
+    ...(lebar !== null && panjang !== null && { ukuranLebarCm: lebar, ukuranPanjangCm: panjang }),
+    keluhanCustomer: keluhanCustomer || "",
     jenisKasurLainnya: jenisKasurLainnya || "",
   });
 }
 function parseNotes(notes) {
-  if (!notes) return { merkKasur: "", ukuranKasur: "", keluhanCustomer: "", jenisKasurLainnya: "" };
+  if (!notes) return { merkKasur: "", ukuranKasur: "", ukuranLebarCm: null, ukuranPanjangCm: null, keluhanCustomer: "", jenisKasurLainnya: "" };
   try {
     const p = JSON.parse(notes);
     return {
-      merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "", keluhanCustomer: p.keluhanCustomer || "",
+      merkKasur: p.merkKasur || "", ukuranKasur: p.ukuranKasur || "",
+      ukuranLebarCm: parseAngkaCm(p.ukuranLebarCm), ukuranPanjangCm: parseAngkaCm(p.ukuranPanjangCm),
+      keluhanCustomer: p.keluhanCustomer || "",
       jenisKasurLainnya: p.jenisKasurLainnya || "",
     };
   } catch {
-    return { merkKasur: "", ukuranKasur: "", keluhanCustomer: notes, jenisKasurLainnya: "" };
+    return { merkKasur: "", ukuranKasur: "", ukuranLebarCm: null, ukuranPanjangCm: null, keluhanCustomer: notes, jenisKasurLainnya: "" };
   }
 }
 
@@ -168,6 +177,42 @@ function parseNotes(notes) {
 // SELALU ditaruh duluan (paling menonjol) karena itu satu-satunya pembeda.
 function promoLabel(p) {
   return `${p.code} — ${p.name}`;
+}
+
+// Ukuran Custom — Lebar & Panjang (cm), paritas dengan web (components/customer/UkuranCustomFields.jsx). Galat tampil setelah field disentuh
+// atau setelah mencoba menyimpan (`paksa`); pesan Bahasa Indonesia dari validasiUkuranCustom.
+function UkuranCustomFields({ styles, tokens, lebar, panjang, onLebar, onPanjang, paksa, bolehKosong }) {
+  const [sentuh, setSentuh] = useState({ lebar: false, panjang: false });
+  const v = validasiUkuranCustom({ lebar, panjang });
+  const kosongSemua = String(lebar).trim() === "" && String(panjang).trim() === "";
+  const galat = (k) => ((paksa || sentuh[k]) && !(bolehKosong && kosongSemua) && v.galat[k]) || "";
+  const kolom = [
+    { k: "lebar", label: "Lebar (cm)", nilai: lebar, ubah: onLebar, contoh: "mis. 145" },
+    { k: "panjang", label: "Panjang (cm)", nilai: panjang, ubah: onPanjang, contoh: "mis. 205" },
+  ];
+  return (
+    <View>
+      <View style={styles.ukuranRow}>
+        {kolom.map((b) => (
+          <View key={b.k} style={styles.ukuranCol}>
+            <Text style={styles.ukuranLabel}>{b.label}{bolehKosong ? "" : " *"}</Text>
+            <TextInput
+              style={[styles.input, galat(b.k) ? { borderWidth: 1.5, borderColor: tokens.color.danger } : null]}
+              placeholder={b.contoh} placeholderTextColor={tokens.color.textMuted}
+              keyboardType="decimal-pad" value={b.nilai}
+              onChangeText={b.ubah} onBlur={() => setSentuh((s) => ({ ...s, [b.k]: true }))}
+              accessibilityLabel={b.label}
+            />
+            {galat(b.k) ? <Text style={styles.ukuranGalat} accessibilityRole="alert">{galat(b.k)}</Text> : null}
+          </View>
+        ))}
+      </View>
+      <Text style={styles.ukuranHint}>
+        {bolehKosong ? "Data lama belum memiliki ukuran. Boleh dikosongkan bila ukuran tidak diubah; bila diisi, Lebar dan Panjang wajib keduanya. " : "Wajib diisi. "}
+        Antara 30 dan 400 cm; boleh satu angka di belakang koma (mis. 145,5).
+      </Text>
+    </View>
+  );
 }
 
 // Bottom-sheet pilih 1 opsi — dipakai Merk Kasur, Ukuran Kasur, pilihan
@@ -289,6 +334,22 @@ export default function OrderFormModal({
   // PATCH hanya menyentuh field yang dikirim.
   const [merkKasur, setMerkKasur] = useState("");
   const [ukuran, setUkuran] = useState("");
+  // Ukuran Custom: Lebar/Panjang (cm) sebagai teks isian; dibersihkan otomatis bila pindah ke ukuran standar. Validasi = sama dengan web (30–400 cm, maks. satu desimal).
+  const [ukuranLebar, setUkuranLebar] = useState("");
+  const [ukuranPanjang, setUkuranPanjang] = useState("");
+  const [ukuranPaksa, setUkuranPaksa] = useState(false);
+  const [ukuranDisentuh, setUkuranDisentuh] = useState(false);
+  const angkaKeTeks = (n) => (n === null || n === undefined ? "" : String(n).replace(".", ","));
+  function pilihUkuran(u) {
+    setUkuran(u); setUkuranDisentuh(true);
+    if (!isUkuranCustom(u)) { setUkuranLebar(""); setUkuranPanjang(""); setUkuranPaksa(false); }
+  }
+  // Order LEGACY (custom tanpa angka) yang ukurannya tidak dipilih ulang boleh disimpan tanpa angka — data lama tidak ditebak.
+  const ukuranBolehKosong = useMemo(() => {
+    if (!order || ukuranDisentuh) return false;
+    const awal = parseNotes(order.notes);
+    return isUkuranCustom(awal.ukuranKasur) && awal.ukuranLebarCm === null && awal.ukuranPanjangCm === null;
+  }, [order, ukuranDisentuh]);
   // D-027: kota + alamat pengiriman order ini — TERPISAH dari Customer.city
   // (1 customer bisa order untuk alamat berbeda-beda), sama seperti web.
   const [deliveryCity, setDeliveryCity] = useState("");
@@ -379,6 +440,10 @@ export default function OrderFormModal({
       setPipelineStage(order.pipelineStage ?? null);
       setMerkKasur(info.merkKasur);
       setUkuran(info.ukuranKasur);
+      setUkuranLebar(angkaKeTeks(info.ukuranLebarCm));
+      setUkuranPanjang(angkaKeTeks(info.ukuranPanjangCm));
+      setUkuranPaksa(false);
+      setUkuranDisentuh(false);
       setDeliveryCity(order.deliveryCity || "");
       setDeliveryAddress(order.deliveryAddress || "");
       setHealthStatus(order.healthStatus || "");
@@ -413,6 +478,10 @@ export default function OrderFormModal({
       setPipelineStage(null);
       setMerkKasur("");
       setUkuran("");
+      setUkuranLebar("");
+      setUkuranPanjang("");
+      setUkuranPaksa(false);
+      setUkuranDisentuh(false);
       setDeliveryCity("");
       setDeliveryAddress("");
       setHealthStatus("");
@@ -503,7 +572,7 @@ export default function OrderFormModal({
       productLine,
       productType: productType || undefined,
       notes: buildNotes({
-        merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, keluhanCustomer: keluhan,
+        merkKasur: isLayanan ? merkKasur : "Sano", ukuranKasur: ukuran, ukuranLebarCm: ukuranLebar, ukuranPanjangCm: ukuranPanjang, keluhanCustomer: keluhan,
         jenisKasurLainnya: productType === "KASUR_LAINNYA" ? jenisKasurLainnya : "",
       }),
       promoId: promoId || undefined,
@@ -562,7 +631,7 @@ export default function OrderFormModal({
     await api.updateOrder(order.id, {
       status,
       paymentStatus,
-      notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, keluhanCustomer: keluhan, jenisKasurLainnya }),
+      notes: buildNotes({ merkKasur: finalMerk, ukuranKasur: ukuran, ukuranLebarCm: ukuranLebar, ukuranPanjangCm: ukuranPanjang, keluhanCustomer: keluhan, jenisKasurLainnya }),
       promoId: promoId || null,
       deliveryCity: deliveryCity || null,
       deliveryAddress: deliveryAddress || null,
@@ -647,6 +716,16 @@ export default function OrderFormModal({
 
   async function handleSubmit() {
     if (saving) return;
+    // Ukuran Custom: Lebar & Panjang wajib (kecuali edit order legacy yang ukurannya tidak diubah dan keduanya dibiarkan kosong).
+    if (usesUkuranDropdown && isUkuranCustom(ukuran)) {
+      const kosongSemua = ukuranLebar.trim() === "" && ukuranPanjang.trim() === "";
+      const v = validasiUkuranCustom({ lebar: ukuranLebar, panjang: ukuranPanjang });
+      if (!v.ok && !(ukuranBolehKosong && kosongSemua)) {
+        setUkuranPaksa(true);
+        Alert.alert("Ukuran Custom belum lengkap", [v.galat.lebar, v.galat.panjang].filter(Boolean).join("\n"));
+        return;
+      }
+    }
     setSaving(true);
     try {
       if (isEdit) {
@@ -1002,6 +1081,13 @@ export default function OrderFormModal({
                     onChangeText={setUkuran}
                   />
                 )}
+                {usesUkuranDropdown && isUkuranCustom(ukuran) ? (
+                  <UkuranCustomFields
+                    styles={styles} tokens={tokens}
+                    lebar={ukuranLebar} panjang={ukuranPanjang} onLebar={setUkuranLebar} onPanjang={setUkuranPanjang}
+                    paksa={ukuranPaksa} bolehKosong={ukuranBolehKosong}
+                  />
+                ) : null}
 
                 {/* ── Katalog harga ───────────────────────────────────────
                     Muncul begitu Lini Produk + varian diketahui. Kalau
@@ -1414,7 +1500,7 @@ export default function OrderFormModal({
         visible={showUkuranPicker}
         title="Pilih Ukuran Kasur"
         options={orderOptions.ukuranKasur}
-        onSelect={setUkuran}
+        onSelect={pilihUkuran}
         onClose={() => setShowUkuranPicker(false)}
       />
       <PickerSheet
@@ -1514,6 +1600,11 @@ function createStyles(tokens) {
     backgroundColor: tokens.color.subtle, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
   },
   selectBoxText: { fontSize: 14, color: tokens.color.textPrimary },
+  ukuranRow: { flexDirection: "row", gap: 10, marginTop: 10 },
+  ukuranCol: { flex: 1 },
+  ukuranLabel: { fontSize: 12, fontWeight: "600", color: tokens.color.textSecondary, marginBottom: 6 },
+  ukuranGalat: { fontSize: 11.5, lineHeight: 15, color: tokens.color.danger, marginTop: 4 },
+  ukuranHint: { fontSize: 11.5, lineHeight: 16, color: tokens.color.textMuted, marginTop: 6 },
   forcedSano: { fontSize: 14, fontWeight: "700", color: tokens.color.success, paddingVertical: 6 },
   weightRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   itemBlock: { marginBottom: 10 },

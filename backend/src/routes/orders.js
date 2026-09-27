@@ -11,6 +11,7 @@ import { rolesOf, requirePermission, PERMISSIONS as P } from "../middleware/auth
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
 import { startOfDayWIB, endOfDayExclusiveWIB, parseTanggalKalender } from "../utils/wib.js";
 import { siapkanNotesUkuran, sinkronUkuranUnit, teksUkuranDariNotes } from "../lib/ukuranKasur.js";
+import { ukuranCustomWajibSejak } from "../services/ukuranWajib.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 // D-180 — jembatan ke buku besar. Lihat catatan panjang di hooks.js: modul
@@ -199,7 +200,11 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
   // Ukuran Custom: validasi (Lebar/Panjang wajib & wajar) + buang nilai custom bila kembali ke ukuran standar. 400 Bahasa Indonesia.
   let notesSiap = notes;
   if (notes !== undefined) {
-    try { notesSiap = siapkanNotesUkuran(notes); } catch (e) { return res.status(e.statusCode || 400).json({ error: e.message }); }
+    try {
+      const wajib = Boolean(await ukuranCustomWajibSejak());
+      const notesLama = wajib ? ((await prisma.order.findUnique({ where: { id: req.params.id }, select: { notes: true } }))?.notes ?? null) : null;
+      notesSiap = siapkanNotesUkuran(notes, { wajib, notesLama });
+    } catch (e) { return res.status(e.statusCode || 400).json({ error: e.message }); }
   }
 
   // Override manual ke CANCELLED lewat dropdown ini WAJIB lolos pengaman

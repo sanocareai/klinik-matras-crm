@@ -2,6 +2,7 @@ import React from "react";
 import { CheckCircle2, Ban } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { evaluateReadiness, READINESS, READINESS_META } from "@/utils/orderReadiness.js";
+import { useUkuranCustomWajibSejak } from "./useUkuranCustomWajib.js";
 
 const ICON = {
   [READINESS.READY]: CheckCircle2,
@@ -12,7 +13,8 @@ const ICON = {
 // sama aturan dengan StatusInvoiceBadge di InvoicePanel.jsx. `null` (order
 // CANCELLED) sengaja tidak render apa pun — readiness tidak berlaku untuknya.
 export default function ReadinessBadge({ order, className }) {
-  const hasil = evaluateReadiness(order);
+  const ukuranCustomWajibSejak = useUkuranCustomWajibSejak();
+  const hasil = evaluateReadiness(order, { ukuranCustomWajibSejak });
   if (!hasil) return null;
 
   const meta = READINESS_META[hasil.state];
