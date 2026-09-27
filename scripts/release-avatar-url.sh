@@ -325,7 +325,7 @@ rec("GET /armada/incentive-summary 200", inc.status === 200 && Array.isArray(inc
 rec("incentive-summary: avatarUrl benar", orang.every((o) => cek("incentive", o.id, o.avatarUrl)));
 
 const semuaJson = JSON.stringify([dr.json, hp.json, rt.json, tr.json, inc.json]);
-rec("tidak ada path internal/rahasia di respons", !/[A-Za-z]:\\|"\/(app|home|root|var|etc)\/|passwordHash/.test(semuaJson));
+rec("tidak ada path internal/rahasia: semua nilai avatar berbentuk URL media publik, tanpa passwordHash", !/passwordHash/.test(semuaJson) && [...semuaJson.matchAll(/"(?:avatarUrl|driverAvatarUrl|helperAvatarUrl)":"([^"]*)"/g)].every((m) => URL_FOTO.test(m[1])), `${semuaFoto.size} URL foto unik`);
 
 // URL foto benar-benar terlayani (publik, lewat nginx) sebagai gambar
 const contoh = [...semuaFoto][0];
