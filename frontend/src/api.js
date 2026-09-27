@@ -505,6 +505,17 @@ export const api = {
   issueMaterialIssue: (id, data = {}) => request(`/inventory/material-issues/${id}/issue`, { method: "POST", body: JSON.stringify(data) }),
   cancelMaterialIssue: (id, reason) => request(`/inventory/material-issues/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
 
+  // Custody unit V2 (Production Workshop + Warehouse V2, P1–P2) — antrean serah-terima Delivery <-> Gudang.
+  // Reader/writer diputuskan server (flag production_v2_reader/writer, fail-closed); items kosong bila belum aktif.
+  getUnitCustodyHandoffs: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/inventory/unit-custody${qs ? `?${qs}` : ""}`);
+  },
+  acceptUnitCustody: (id, data, idempotencyKey = mutationKey("custody-accept")) =>
+    request(`/inventory/unit-custody/${id}/accept`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  rejectUnitCustody: (id, data, idempotencyKey = mutationKey("custody-reject")) =>
+    request(`/inventory/unit-custody/${id}/reject`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+
   // Stock Transfer (Warehouse Tahap 4)
   getStorageLocations: () => request("/inventory/transfers/locations"),
   getStockTransfers: (params = {}) => {

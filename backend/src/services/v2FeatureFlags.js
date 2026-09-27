@@ -148,3 +148,54 @@ export async function deliveryWriterDecision(client, flags, context = {}) {
   ];
   return { state, enabled: isDeliveryWriterEnabledFor(state, routeIds) };
 }
+
+// ---------------------------------------------------------------------------
+// Writer Production/Warehouse V2 (custody unit) — memakai flag production_v2_writer yang sudah ada.
+// - flag OFF -> OFF (perilaku V1 murni).
+// - ON tanpa config.unitIds -> GLOBAL (legacy; bukan untuk canary).
+// - ON dengan config.unitIds -> COHORT: unitId wajib ada dan cocok; selain itu V1-only (fail-closed).
+// Tidak ada userIds: aktor berbeda (driver, petugas gudang) semuanya tercakup oleh cohort unit.
+// ---------------------------------------------------------------------------
+export const PRODUCTION_WRITER_MODE = Object.freeze({ OFF: "OFF", GLOBAL: "GLOBAL", COHORT: "COHORT" });
+
+export function resolveProductionWriterState(flags) {
+  const flag = flags[V2_FLAGS.PRODUCTION_WRITER];
+  if (flag?.enabled !== true) return { mode: PRODUCTION_WRITER_MODE.OFF, unitIds: new Set() };
+  const unitIds = nonEmptyList(flag.config?.unitIds);
+  if (unitIds.length === 0) return { mode: PRODUCTION_WRITER_MODE.GLOBAL, unitIds: new Set() };
+  return { mode: PRODUCTION_WRITER_MODE.COHORT, unitIds: new Set(unitIds) };
+}
+
+export function isProductionWriterEnabledFor(state, unitId) {
+  if (state.mode === PRODUCTION_WRITER_MODE.OFF) return false;
+  if (state.mode === PRODUCTION_WRITER_MODE.GLOBAL) return true;
+  return Boolean(unitId) && state.unitIds.has(unitId);
+}
+
+export async function productionWriterEnabledForUnit(client, unitId) {
+  const flags = await loadV2Flags(client);
+  return isProductionWriterEnabledFor(resolveProductionWriterState(flags), unitId);
+}
+
+// ---------------------------------------------------------------------------
+// Reader Production/Warehouse V2 (antrean custody Gudang). Simetris dengan writer, flag terpisah
+// (production_v2_reader) sehingga UI dapat diperlihatkan ke Gudang tanpa ikut mengaktifkan writer/surface
+// Production V2 lain. Fail-closed: flag OFF -> antrean kosong (bukan error); ON tanpa unitIds -> GLOBAL
+// (semua unit, cocok untuk rilis penuh nanti); ON dengan unitIds -> COHORT, hanya unit itu yang tampil.
+// ---------------------------------------------------------------------------
+export const PRODUCTION_READER_MODE = Object.freeze({ OFF: "OFF", GLOBAL: "GLOBAL", COHORT: "COHORT" });
+
+export function resolveProductionReaderState(flags) {
+  const flag = flags[V2_FLAGS.PRODUCTION_READER];
+  if (flag?.enabled !== true) return { mode: PRODUCTION_READER_MODE.OFF, unitIds: new Set() };
+  const unitIds = nonEmptyList(flag.config?.unitIds);
+  if (unitIds.length === 0) return { mode: PRODUCTION_READER_MODE.GLOBAL, unitIds: new Set() };
+  return { mode: PRODUCTION_READER_MODE.COHORT, unitIds: new Set(unitIds) };
+}
+
+// unitIds=null pada mode COHORT berarti "daftar unitId yang boleh dilihat" (dipakai memfilter query list).
+export function isProductionReaderEnabledFor(state, unitId) {
+  if (state.mode === PRODUCTION_READER_MODE.OFF) return false;
+  if (state.mode === PRODUCTION_READER_MODE.GLOBAL) return true;
+  return Boolean(unitId) && state.unitIds.has(unitId);
+}

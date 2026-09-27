@@ -1653,6 +1653,7 @@ model Unit {
   materialIssues    MaterialIssue[]
   complaintCases    ComplaintCase[]
   productionRunsV2  ProductionRun[]
+  custodyHandoffs   UnitCustodyHandoff[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -2402,6 +2403,7 @@ model Job {
   rescheduleCase   RescheduleCase? @relation("JobCurrentRescheduleCase", fields: [rescheduleCaseId], references: [id], onDelete: SetNull)
 
   units           JobUnit[]
+  custodyHandoffs UnitCustodyHandoff[]
   payments        Payment[]
   revisionLinks   UnitRevision[]
   // Baris provenance (append-only) kalau job ini lahir dari revisi — lihat
@@ -5324,6 +5326,7 @@ model StorageLocation {
   transfersFrom       StockTransfer[]      @relation("TransferSource")
   transfersTo         StockTransfer[]      @relation("TransferDestination")
   damagedStockRecords DamagedStockRecord[]
+  custodyHandoffs     UnitCustodyHandoff[]
 
   @@index([warehouseId])
   @@map("storage_locations")
@@ -8157,6 +8160,7 @@ model ProductionRun {
   operations           ProductionOperationRun[]
   inspections          QualityInspection[]
   handoff              ProductionHandoff?
+  custodyHandoffs      UnitCustodyHandoff[]
 
   @@unique([migrationSource, migrationSourceId])
   @@index([unitId, status])
@@ -8532,4 +8536,55 @@ model FinOperationalAdvanceSettlement {
 
   @@index([advanceId, status])
   @@map("fin_operational_advance_settlements")
+}
+
+// Serah-terima custody unit fisik antara Delivery dan Gudang (Production Workshop + Warehouse V2, slice P1–P2).
+// Ditulis HANYA oleh unitCustodyCommandService (command owner). INBOUND = unit tiba dari pickup;
+// RETURN = unit kembali ke gudang setelah pengiriman gagal. Additive; seluruh writer di balik flag production_v2_writer
+// (cohort config.unitIds). Lokasi wajib valid saat ACCEPTED; riwayat tidak pernah dihapus.
+enum UnitCustodyDirection {
+  INBOUND
+  RETURN
+}
+
+enum UnitCustodyHandoffStatus {
+  OFFERED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  SUPERSEDED
+}
+
+model UnitCustodyHandoff {
+  id              String                   @id @default(uuid()) @db.Uuid
+  unitId          String                   @map("unit_id") @db.Uuid
+  unit            Unit                     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  deliveryJobId   String                   @map("delivery_job_id") @db.Uuid
+  deliveryJob     Job                      @relation(fields: [deliveryJobId], references: [id], onDelete: Restrict)
+  direction       UnitCustodyDirection
+  status          UnitCustodyHandoffStatus @default(OFFERED)
+  locationId      String?                  @map("location_id") @db.Uuid
+  location        StorageLocation?         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  productionRunId String?                  @map("production_run_id") @db.Uuid
+  productionRun   ProductionRun?           @relation(fields: [productionRunId], references: [id], onDelete: Restrict)
+  offeredById     String?                  @map("offered_by_id")
+  offeredAt       DateTime                 @default(now()) @map("offered_at")
+  acceptedById    String?                  @map("accepted_by_id")
+  acceptedAt      DateTime?                @map("accepted_at")
+  rejectedById    String?                  @map("rejected_by_id")
+  rejectedAt      DateTime?                @map("rejected_at")
+  cancelledById   String?                  @map("cancelled_by_id")
+  cancelledAt     DateTime?                @map("cancelled_at")
+  reason          String?
+  revision        Int                      @default(1)
+  commandId       String?                  @map("command_id") @db.Uuid
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  updatedAt       DateTime                 @updatedAt @map("updated_at")
+
+  // Satu handoff per (job, unit): satu Job boleh membawa beberapa unit, tetapi tidak pernah menghasilkan handoff ganda.
+  // "Satu handoff aktif per unit dan direction" ditegakkan partial unique index di migration (Prisma tidak bisa mengekspresikannya).
+  @@unique([deliveryJobId, unitId])
+  @@index([status, direction, offeredAt])
+  @@index([unitId, direction, status])
+  @@map("unit_custody_handoffs_v2")
 }
