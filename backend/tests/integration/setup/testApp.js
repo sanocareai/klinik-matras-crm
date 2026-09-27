@@ -17,6 +17,7 @@ const { stockTransferRouter } = await import("../../../src/routes/stockTransfer.
 const { stockCountRouter } = await import("../../../src/routes/stockCount.js");
 const { damagedStockRouter } = await import("../../../src/routes/damagedStock.js");
 const { returnRecordRouter } = await import("../../../src/routes/returnRecord.js");
+const { unitCustodyRouter } = await import("../../../src/routes/unitCustody.js");
 const { stockAdjustmentRouter } = await import("../../../src/routes/stockAdjustment.js");
 const { replenishmentRouter } = await import("../../../src/routes/replenishment.js");
 const { warehouseReportsRouter } = await import("../../../src/routes/warehouseReports.js");
@@ -74,6 +75,7 @@ export function buildTestApp() {
   app.use("/api/inventory/stock-counts", stockCountRouter);
   app.use("/api/inventory/damaged-stock", damagedStockRouter);
   app.use("/api/inventory/returns", returnRecordRouter);
+  app.use("/api/inventory/unit-custody", unitCustodyRouter);
   app.use("/api/inventory/adjustments", stockAdjustmentRouter);
   app.use("/api/inventory/replenishment", replenishmentRouter);
   app.use("/api/inventory/reports", warehouseReportsRouter);

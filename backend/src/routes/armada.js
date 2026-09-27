@@ -13,6 +13,7 @@
 // jadi dua langkah.
 
 import { adalahGalatInfraDb, kirimGalatInfraDb } from "../lib/dbInfraError.js";
+import { offerUnitCustody } from "../services/unitCustodyCommandService.js";
 import { assertRouteAssignmentConsistentForPublish } from "../services/deliveryRouteAssignmentConsistency.js";
 import express from "express";
 import { randomUUID } from "node:crypto";
@@ -5085,6 +5086,11 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
         where: { id: { in: jobUnits.map((ju) => ju.unitId) } },
         data: { status: job.type === "PICKUP" ? "RECEIVED" : "DELIVERED" },
       });
+      // Custody Gudang V2 (P1–P2): pickup selesai menawarkan unit ke Gudang. V1 tetap RECEIVED; tanpa writer V2 (flag OFF /
+      // unit di luar cohort) tidak ada yang dibuat. Satu transaksi dengan mutasi V1 -> atomik.
+      if (job.type === "PICKUP") {
+        await offerUnitCustody(tx, { direction: "INBOUND", unitIds: jobUnits.map((ju) => ju.unitId), jobId: job.id, actorId: req.user.id });
+      }
       await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       await syncRouteCompletionStatus(tx, job.routeId);
       // Tutup kasus reschedule (D-160, 13 September 2026) — job yang PERNAH
@@ -5311,10 +5317,13 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
       // muncul lagi di available begitu job ini bukan lagi "aktif".
       if (job.type === "DELIVERY") {
         const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
+        // Unit yang benar-benar dibawa driver (IN_TRANSIT_OUT) kembali ke Gudang: tawarkan handoff RETURN TANPA menetapkan lokasi.
+        const unitsDibawa = await tx.unit.findMany({ where: { id: { in: jobUnits.map((ju) => ju.unitId) }, status: "IN_TRANSIT_OUT" }, select: { id: true } });
         await tx.unit.updateMany({
           where: { id: { in: jobUnits.map((ju) => ju.unitId) }, status: "IN_TRANSIT_OUT" },
           data: { status: "READY_FOR_DELIVERY" },
         });
+        await offerUnitCustody(tx, { direction: "RETURN", unitIds: unitsDibawa.map((unit) => unit.id), jobId: job.id, actorId: req.user.id });
         await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       }
       await syncRouteCompletionStatus(tx, job.routeId);

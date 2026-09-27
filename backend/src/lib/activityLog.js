@@ -134,6 +134,10 @@ export const EVENT_TYPES = Object.freeze({
   DOCUMENT_REJECTED: "DOCUMENT_REJECTED",
   // Finance meminta bukti pembayaran atas order yang ditandai Lunas oleh Sales (Perlu Verifikasi Finance). Tidak mengubah status/keuangan apa pun.
   BUKTI_DIMINTA: "BUKTI_DIMINTA",
+  // Custody unit Gudang V2 (P1–P2): serah-terima Delivery <-> Gudang. Detail (unit, arah, lokasi, alasan) ada di metadata.
+  CUSTODY_OFFERED: "CUSTODY_OFFERED",
+  CUSTODY_ACCEPTED: "CUSTODY_ACCEPTED",
+  CUSTODY_REJECTED: "CUSTODY_REJECTED",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -319,6 +323,12 @@ export function formatActivitySentence(event) {
       return metadata.reason
         ? `Dokumen ${metadata.receiptNumber || metadata.recordNumber || "—"} ditolak — ${metadata.reason}`
         : `Dokumen ${metadata.receiptNumber || metadata.recordNumber || "—"} ditolak`;
+    case EVENT_TYPES.CUSTODY_OFFERED:
+      return `Unit ${metadata.unitCode || "—"} ditawarkan ke Gudang (${metadata.direction === "RETURN" ? "kembali dari pengiriman gagal" : "tiba dari pickup"})`;
+    case EVENT_TYPES.CUSTODY_ACCEPTED:
+      return `Gudang menerima unit ${metadata.unitCode || "—"}${metadata.locationCode ? ` di lokasi ${metadata.locationCode}` : ""}`;
+    case EVENT_TYPES.CUSTODY_REJECTED:
+      return `Gudang menolak unit ${metadata.unitCode || "—"}${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.BUKTI_DIMINTA:
       return metadata.catatan ? `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"} — ${metadata.catatan}` : `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"}`;
     case EVENT_TYPES.DOCUMENT_CANCELLED:
