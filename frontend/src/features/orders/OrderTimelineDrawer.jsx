@@ -446,11 +446,15 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
   const [savingDpTarget, setSavingDpTarget] = useState(false);
   const [dpTargetErr, setDpTargetErr] = useState("");
 
+  // Resi Fase 3A: order anggota Resi dibayar lewat SATU pembayaran Resi (Payment di order pertama + alokasi otomatis ke tiap order). Angka
+  // "Sudah Dibayar/Sisa" untuk order seperti itu diambil dari server (sadar alokasi). Order tanpa Resi: tidak ada permintaan tambahan.
+  const [resi, setResi] = useState(null);
   function load() {
     setError("");
     api.getOrderPayments(order.id).then(setPayments).catch((e) => setError(e.message));
+    if (order.groupId) api.getResiPembayaranOrder(order.id).then((r) => setResi(r?.aktif && r.layak && r.untukOrder ? r : null)).catch(() => setResi(null));
   }
-  useEffect(() => { setPayments(null); load(); }, [order.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPayments(null); setResi(null); load(); }, [order.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { api.getPaymentAccounts().then(setAccounts).catch(() => {}); }, []);
 
   async function handlePhoto(e) {
@@ -521,8 +525,9 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
 
   // Entri yang dibatalkan TETAP tampil (jejak audit), tapi TIDAK ikut
   // dihitung — konsisten dengan recomputeOrderPaymentStatus() di backend.
-  const paid = (payments || []).filter((p) => !p.cancelledAt).reduce((n, p) => n + p.amount, 0);
-  const outstanding = Math.max((order.value || 0) - paid, 0);
+  const paidLokal = (payments || []).filter((p) => !p.cancelledAt).reduce((n, p) => n + p.amount, 0);
+  const paid = resi ? resi.untukOrder.dibayar : paidLokal;
+  const outstanding = resi ? resi.untukOrder.sisa : Math.max((order.value || 0) - paidLokal, 0);
   const dpKurang = order.dpTarget ? Math.max(order.dpTarget - paid, 0) : 0;
 
   return (
@@ -539,6 +544,14 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
           </p>
         </div>
       </div>
+
+      {resi && (
+        <p className="rounded-xl bg-accentbg px-3 py-2 text-[11.5px] leading-relaxed text-accent" data-testid="info-resi-bayar">
+          Order ini bagian dari Resi {resi.anak.find((a) => a.anchor)?.orderNumber || ""} ({resi.anak.length} order). Pembayaran Resi dicatat sekali dan
+          dibagi otomatis ke tiap order; tagihan order ini {formatRupiah(resi.untukOrder.tagihan)}{resi.untukOrder.ongkir > 0 ? " (termasuk ongkir tambahan)" : ""}.
+          Klaim Lunas dilakukan sekali dari kartu Resi di profil pelanggan.
+        </p>
+      )}
 
       {/* DP disepakati (2 Sep 2026) — MURNI pembanding terhadap kesepakatan
           awal, terpisah dari Sisa Tagihan di atas (itu tetap terhadap harga

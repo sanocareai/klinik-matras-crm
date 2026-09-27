@@ -441,6 +441,7 @@ model User {
   orderComplaintResolutions  Order[]                  @relation("OrderComplaintResolver")
   orderRevisionEdits         OrderRevisionLog[]       @relation("OrderRevisionEditor")
   orderGroupsCreated         OrderGroup[]             @relation("OrderGroupCreator")
+  orderGroupsKlaimLunas      OrderGroup[]             @relation("OrderGroupKlaimLunas")
   promosCreated              Promo[]                  @relation("PromoCreator")
   messageTemplates           MessageTemplate[]
   unitStageLogs              UnitStageLog[]           @relation("UnitStageLogActor")
@@ -1390,6 +1391,13 @@ model OrderGroup {
   // Catatan tambahan yang tidak perlu kolom sendiri (mis. hasil klasifikasi backfill). Tanpa data pribadi customer.
   metadata Json?
 
+  // Fase 3A: klaim "Lunas" Sales SEKALI di level Resi yang MENUNGGU verifikasi Finance. Klaim TIDAK mengubah paymentStatus/paidAt child —
+  // keduanya hanya bergerak lewat ledger (Payment + alokasi) setelah Finance memverifikasi. NULL = tidak ada klaim yang menunggu.
+  // Riwayat klaim/tolak/verifikasi ada di activity log (kolom ini hanya status terkini).
+  lunasDiklaimPada   DateTime? @map("lunas_diklaim_pada")
+  lunasDiklaimOlehId String?   @map("lunas_diklaim_oleh")
+  lunasDiklaimOleh   User?     @relation("OrderGroupKlaimLunas", fields: [lunasDiklaimOlehId], references: [id], onDelete: SetNull)
+
   createdById String?  @map("created_by")
   createdBy   User?    @relation("OrderGroupCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now()) @map("created_at")
@@ -1399,6 +1407,7 @@ model OrderGroup {
 
   @@index([customerId])
   @@index([source])
+  @@index([lunasDiklaimPada])
   @@map("order_groups")
 }
 

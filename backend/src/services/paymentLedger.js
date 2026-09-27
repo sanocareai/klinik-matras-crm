@@ -37,10 +37,11 @@
 
 import { paidForOrder } from "./finance/allocation.js";
 import { getVerificationGate } from "./finance/settings.js";
+import { PILIH_TAGIHAN, dasarStatusBayar } from "./finance/tagihanOrder.js";
 
 export async function recomputeOrderPaymentStatus(tx, orderId) {
   const [order, gate] = await Promise.all([
-    tx.order.findUnique({ where: { id: orderId }, select: { value: true, paymentStatus: true } }),
+    tx.order.findUnique({ where: { id: orderId }, select: { ...PILIH_TAGIHAN, paymentStatus: true } }),
     getVerificationGate(tx),
   ]);
   if (!order) return null;
@@ -58,8 +59,11 @@ export async function recomputeOrderPaymentStatus(tx, orderId) {
 
   // order.value bisa 0 (belum ada OrderItem sama sekali) — jangan pernah
   // anggap LUNAS hanya karena 0 >= 0, itu "belum dihargai", bukan "lunas".
+  // Pembanding dari helper KANONIS (services/finance/tagihanOrder.js): order tunggal / BACKFILL = Order.value (aturan lama, tidak berubah);
+  // child Resi BARU = value + Ongkir Tambahan (hanya di anchor) — "Lunas" berarti seluruh Total Resi bagian order itu terbayar.
+  const dasar = dasarStatusBayar(order);
   const paymentStatus =
-    paid <= 0 ? "BELUM_BAYAR" : order.value > 0 && paid >= order.value ? "LUNAS" : "DP";
+    paid <= 0 ? "BELUM_BAYAR" : order.value > 0 && paid >= dasar ? "LUNAS" : "DP";
 
   // paidAt (30 Agustus 2026) — basis komisi sales, lihat komentar panjang
   // di schema.prisma. Cuma diset saat TRANSISI masuk ke LUNAS (bukan tiap
@@ -76,5 +80,5 @@ export async function recomputeOrderPaymentStatus(tx, orderId) {
     where: { id: orderId },
     data: paidAt === undefined ? { paymentStatus } : { paymentStatus, paidAt },
   });
-  return { paid, outstanding: Math.max(order.value - paid, 0), paymentStatus };
+  return { paid, outstanding: Math.max(dasar - paid, 0), paymentStatus };
 }

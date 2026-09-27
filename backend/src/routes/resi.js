@@ -5,7 +5,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { idempotency, wajibIdempotencyKey } from "../middleware/idempotency.js";
 import { resiAktif, buatResi, ResiError, DP_PERSEN, MAKS_ITEM_RESI } from "../services/resi.js";
-import { resiPembayaranAktif, pratinjauPembayaranResi, catatPembayaranResi, klaimLunasResi, ResiBayarError } from "../services/resiPembayaran.js";
+import { resiPembayaranAktif, pratinjauPembayaranResi, catatPembayaranResi, klaimLunasResi, ringkasanPembayaranResi, ResiBayarError } from "../services/resiPembayaran.js";
 
 export const resiRouter = express.Router();
 resiRouter.use(requireAuth);
@@ -66,5 +66,40 @@ resiRouter.post("/:groupId/klaim-lunas", requirePermission(P.ORDER_WRITE), wajib
     res.status(201).json(await klaimLunasResi(prisma, { groupId: req.params.groupId, userId: req.user.id }));
   } catch (err) {
     galatBayar(res, err, "klaim lunas");
+  }
+});
+
+// Ringkasan pembayaran SEMUA Resi BARU milik satu customer (kartu Resi di profil — BACA-SAJA): total, ongkir tambahan, child, sisa, klaim.
+// Flag mati → { aktif: false } dan UI menyembunyikan seluruh fitur. Group BACKFILL_BUNDLE tidak ikut.
+resiRouter.get("/pelanggan/:customerId/pembayaran", requireAnyPermission(P.ORDER_READ, P.PAYMENT_READ), async (req, res) => {
+  try {
+    if (!(await resiPembayaranAktif())) return res.json({ aktif: false, resi: [] });
+    const grup = await prisma.orderGroup.findMany({ where: { customerId: req.params.customerId, source: "BARU" }, orderBy: { createdAt: "desc" }, select: { id: true }, take: 50 });
+    const resi = [];
+    for (const g of grup) {
+      try {
+        resi.push(await ringkasanPembayaranResi(prisma, { groupId: g.id }));
+      } catch (e) {
+        if (!(e instanceof ResiBayarError)) throw e;
+        resi.push({ aktif: true, layak: false, groupId: g.id, alasan: e.message, code: e.code ?? null });
+      }
+    }
+    res.json({ aktif: true, resi });
+  } catch (err) {
+    galatBayar(res, err, "ringkasan pembayaran pelanggan");
+  }
+});
+
+// Ringkasan pembayaran Resi untuk SATU order (tab Pembayaran di detail order child Resi — BACA-SAJA). Order tanpa Resi BARU / flag mati → aktif:false
+// atau layak:false, dan UI menampilkan tab lama apa adanya.
+resiRouter.get("/order/:orderId/pembayaran", requireAnyPermission(P.ORDER_READ, P.PAYMENT_READ), async (req, res) => {
+  try {
+    if (!(await resiPembayaranAktif())) return res.json({ aktif: false });
+    const o = await prisma.order.findUnique({ where: { id: req.params.orderId }, select: { groupId: true, group: { select: { source: true } } } });
+    if (!o?.groupId || o.group?.source !== "BARU") return res.json({ aktif: true, layak: false });
+    const r = await ringkasanPembayaranResi(prisma, { groupId: o.groupId });
+    res.json({ ...r, untukOrder: r.anak?.find((a) => a.orderId === req.params.orderId) ?? null });
+  } catch (err) {
+    galatBayar(res, err, "ringkasan pembayaran order");
   }
 });

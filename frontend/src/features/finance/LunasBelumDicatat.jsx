@@ -15,6 +15,7 @@ import {
 } from "@/features/finance/shared.jsx";
 import { cn } from "@/lib/utils.js";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import KlaimLunasResi from "@/features/finance/KlaimLunasResi.jsx";
 
 // ORDER YANG DITANDAI LUNAS OLEH SALES, UANG MASUKNYA BELUM DICEK.
 //
@@ -128,6 +129,11 @@ export default function LunasBelumDicatat({ onBerubah, ringkas = false }) {
         />
         <KartuAngka label="Total Belum Dicek" value={formatUang(data.semua.total)} sub={`${data.semua.jumlah} order`} />
       </div>
+
+      {/* Resi Gabungan Fase 3A: SATU baris per Resi (klaim sekali di level Resi). Server hanya mengirim `resi` bila flag pembayaran Resi aktif. */}
+      {Array.isArray(data.resi) && (
+        <KlaimLunasResi items={data.resi} ringkas={ringkas} rekening={rekening} tgl={tgl} onBerubah={async () => { await muat(); onBerubah?.(); }} />
+      )}
 
       <FilterBar
         q={q} onQ={setQ}

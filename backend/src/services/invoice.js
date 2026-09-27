@@ -29,6 +29,7 @@
 //    saling bertentangan.
 
 import { prisma } from "../db.js";
+import { kontribusiPembayaranOrder } from "./finance/allocation.js";
 import { formatUkuranKasur } from "../lib/ukuranKasur.js";
 
 // ─── Merk/Ukuran kasur + label Lini/Jenis Produk (6 September 2026) ────────
@@ -318,11 +319,10 @@ async function buildSingleOrderView(orderId, { userId = null, autoCreate = true 
     include: {
       items: { orderBy: { sortOrder: "asc" } },
       promo: { select: { code: true, name: true, discountPercent: true } },
-      // cancelledAt: null — entri yang dibatalkan (koreksi salah input,
-      // lihat orders.js POST /:id/payments/:paymentId/cancel) TIDAK ikut
-      // dihitung ATAU ditampilkan di invoice; tetap ada di DB (audit),
-      // cuma bukan urusan dokumen yang dilihat customer.
-      payments: { where: { cancelledAt: null }, orderBy: { createdAt: "asc" } },
+      // payments dimuat TERPISAH di bawah (kontribusiPembayaranOrder, sadar
+      // alokasi). Entri yang dibatalkan (koreksi salah input, lihat orders.js
+      // POST /:id/payments/:paymentId/cancel) tetap TIDAK ikut dihitung ATAU
+      // ditampilkan di invoice; tetap ada di DB (audit).
       customer: {
         select: {
           id: true, name: true, phone: true, city: true,
@@ -340,6 +340,10 @@ async function buildSingleOrderView(orderId, { userId = null, autoCreate = true 
   }
   if (!invoice) return null;
 
+  // Pembayaran SADAR-ALOKASI (28 Sep 2026): Payment tanpa alokasi = penuh ke order induknya (identik dengan sebelumnya); Payment beralokasi
+  // (pembayaran Resi di anchor, transfer gabungan) = hanya bagian untuk order ini — sebelumnya anchor menagih lunas seluruh DP Resi dan child 0.
+  // Entri dibatalkan tetap TIDAK ikut dihitung/ditampilkan (cancelledAt: null di dalam helper).
+  order.payments = await kontribusiPembayaranOrder(prisma, order.id);
   const nominal = hitungNominal(order, order.payments);
   const status = statusEfektif({ invoice, nominal });
   const { merkKasur, ukuranKasur } = parseOrderNotesForInvoice(order.notes);
@@ -473,7 +477,16 @@ export async function buildCombinedInvoiceView(primaryInvoiceId, { userId = null
 
   const orders = validViews.map((v) => v.order);
   const items = validViews.flatMap((v) => v.items);
-  const payments = validViews.flatMap((v) => v.payments);
+  // Satu Payment yang dialokasikan ke beberapa anggota (pembayaran Resi di anchor) muncul sebagai bagian di tiap anggota — di dokumen
+  // gabungan disatukan lagi per Payment (nominal = Σ bagian) supaya customer melihat SATU transfer, bukan pecahannya. Payment tanpa
+  // alokasi tetap satu baris seperti sebelumnya.
+  const perPayment = new Map();
+  for (const p of validViews.flatMap((v) => v.payments)) {
+    const ada = perPayment.get(p.id);
+    if (ada) ada.amount += p.amount;
+    else perPayment.set(p.id, { ...p });
+  }
+  const payments = [...perPayment.values()]; // urutan kemunculan pertama = urutan lama
 
   // promoCode/diskonPersen cuma ditampilkan sebagai 1 nilai kalau SEMUA
   // anggota sama persis — beda promo antar order digabung jadi 1 kode akan

@@ -13,7 +13,8 @@ import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/fi
 import { setSetting, SETTING_KEYS } from "../../src/services/finance/settings.js";
 import { postRevenueRecognition } from "../../src/services/finance/posting/orderRevenue.js";
 import { createOrderForCustomer } from "../../src/services/orderCreation.js";
-import { paidForOrder } from "../../src/services/finance/allocation.js";
+import { paidForOrder, kontribusiPembayaranOrders } from "../../src/services/finance/allocation.js";
+import { recomputeOrderPaymentStatus } from "../../src/services/paymentLedger.js";
 import { bagiProporsional } from "../../src/services/resi.js";
 import { hitungAlokasiResi, validasiAlokasiResi, ResiBayarError } from "../../src/services/resiPembayaran.js";
 
@@ -320,68 +321,94 @@ test("Invarian alokasi (validasiAlokasiResi) menolak: child beda group/customer,
 
 // ── klaim Lunas + antrean Finance + verifikasi ───────────────────────────────────────────────────────────────────
 
-test("Klaim Lunas SEKALI di level Resi → SATU antrean Finance dengan rincian child; child tidak muncul per order; verifikasi membuat 1 Payment + alokasi + jurnal per child", async () => {
+test("Klaim Lunas SEKALI di level Resi → TIDAK mengubah status/paidAt child; SATU antrean Finance dengan rincian child; verifikasi membuat 1 Payment + alokasi + jurnal per child lalu status+paidAt dari ledger", async () => {
   const w = await dunia();
   const klaim = await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci());
   assert.equal(klaim.status, 201, JSON.stringify(klaim.body));
-  assert.equal(klaim.body.ditandai.length, 3);
-  assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "LUNAS" && o.paidAt), "semua child LUNAS, paidAt terisi");
+  assert.equal(klaim.body.sisa, TOTAL);
+  assert.equal(klaim.body.anak.length, 3);
+  const sebelum = await ambilAnak(w.groupId);
+  assert.ok(sebelum.every((o) => o.paymentStatus === "BELUM_BAYAR" && o.paidAt === null), "klaim TIDAK mengubah status bayar / paidAt (dasar komisi) sebelum Finance memverifikasi");
+  assert.ok((await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } })).lunasDiklaimPada, "klaim tersimpan di grup");
   assert.equal(await testPrisma.payment.count(), 0, "klaim TIDAK membuat Payment");
   assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "PEMBAYARAN_ORDER" } }), 0, "klaim tidak menjurnal");
-  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 409, "klaim kedua ditolak");
+  const kedua = await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci());
+  assert.equal(kedua.status, 409); assert.equal(kedua.body.code, "KLAIM_SUDAH_ADA");
 
   const q = await w.a.get("/api/finance/penerimaan/lunas-belum-dicatat");
   assert.equal(q.status, 200);
   assert.equal(q.body.resi.length, 1, "SATU antrean untuk Resi");
   const item = q.body.resi[0];
-  assert.equal(item.groupId, w.groupId); assert.equal(item.lengkap, true);
-  assert.equal(item.sisa, TOTAL); assert.equal(item.anak.length, 3);
+  assert.equal(item.groupId, w.groupId); assert.equal(item.sumberKlaim, "RESI"); assert.ok(item.klaim?.pada);
+  assert.equal(item.sisa, TOTAL); assert.equal(item.totalTagihan, TOTAL); assert.equal(item.ongkirTambahan, ONGKIR);
+  assert.equal(item.anak.length, 3);
   assert.deepEqual(item.anak.map((x) => x.sisa), TAGIHAN);
+  assert.deepEqual(item.anak.map((x) => x.anchor), [true, false, false]);
+  assert.deepEqual(item.pembayaran, []);
   assert.equal(q.body.items.filter((i) => w.anak.includes(i.orderId)).length, 0, "child tidak muncul sebagai baris per order");
+  const detail = await w.a.get(`/api/finance/penerimaan/resi/${w.groupId}`);
+  assert.equal(detail.status, 200, JSON.stringify(detail.body)); assert.equal(detail.body.sisa, TOTAL);
 
   const pra = await w.a.get(`/api/finance/penerimaan/resi/${w.groupId}/pratinjau`);
   assert.deepEqual(pra.body.alokasi.map((x) => x.alokasi), TAGIHAN);
 
+  const mulai = Date.now();
   const ver = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, {
     mode: "REKENING", method: "TRANSFER", cashAccountId: w.bank.id, alokasi: [{ orderId: w.anak[0], amount: TOTAL }], // diabaikan
   }, kunci());
   assert.equal(ver.status, 201, JSON.stringify(ver.body));
-  assert.equal(ver.body.amount, TOTAL);
+  assert.equal(ver.body.amount, TOTAL); assert.equal(ver.body.klaimDilepas, true);
   const [p] = await semuaPayment(w.anak);
   assert.equal(await testPrisma.payment.count(), 1);
   assert.equal(p.orderId, w.anchorId);
   assert.deepEqual(w.anak.map((id) => angka(p.finAllocations.find((x) => x.orderId === id).amount)), TAGIHAN, "alokasi server, bukan dari klien");
   assert.equal(await testPrisma.paymentVerification.count({ where: { paymentId: p.id } }), 1, "terverifikasi");
   await periksaJurnal(w, p);
-  assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "LUNAS"));
+  const sesudah = await ambilAnak(w.groupId);
+  assert.ok(sesudah.every((o) => o.paymentStatus === "LUNAS" && o.paidAt && o.paidAt.getTime() >= mulai - 1000), "status + paidAt bergerak SAAT verifikasi (ledger)");
+  assert.equal((await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } })).lunasDiklaimPada, null, "klaim dilepas setelah lunas penuh");
   const setelah = await w.a.get("/api/finance/penerimaan/lunas-belum-dicatat");
   assert.equal(setelah.body.resi.length, 0, "antrean bersih setelah verifikasi");
   const lagi = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id }, kunci());
-  assert.equal(lagi.status, 409, "tidak bisa memverifikasi dua kali (tidak ada sisa)");
+  assert.equal(lagi.status, 409, "tidak bisa memverifikasi dua kali");
 });
 
-test("Verifikasi Resi setelah DP: nominal default = sisa; klaim belum lengkap ditolak; SEBELUM_SALDO_AWAL ditolak; tolak klaim mengembalikan status child; minta bukti tercatat", async () => {
+test("Verifikasi Resi setelah DP: tanpa klaim ditolak; klaim tidak mengubah status DP; tolak klaim MEMPERTAHANKAN status & pembayaran sah; verifikasi sebagian menjaga klaim; sisanya melepas klaim", async () => {
   const w = await dunia();
   assert.equal((await bayarResi(w, { tipe: "DP" })).status, 201);
-  // klaim belum ada → verifikasi ditolak
+  assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "DP"));
   const belum = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id }, kunci());
-  assert.equal(belum.status, 409); assert.equal(belum.body.code, "KLAIM_BELUM_LENGKAP");
+  assert.equal(belum.status, 409); assert.equal(belum.body.code, "TIDAK_ADA_KLAIM");
   assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
-  const mode = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "SEBELUM_SALDO_AWAL" }, kunci());
-  assert.equal(mode.status, 422);
-  // minta bukti + tolak
+  assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "DP" && o.paidAt === null), "klaim tidak mengubah status DP");
+  // minta bukti → penanda di antrean
   const bukti = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/minta-bukti`, { catatan: "mohon foto transfer" });
   assert.equal(bukti.status, 201, JSON.stringify(bukti.body));
-  assert.ok(await testPrisma.activityEvent.count({ where: { eventType: "BUKTI_DIMINTA", entityId: { in: w.anak } } }) >= 1);
+  const q = await w.a.get("/api/finance/penerimaan/lunas-belum-dicatat");
+  assert.equal(q.body.resi[0].buktiDiminta?.catatan, "mohon foto transfer");
+  assert.equal(q.body.resi[0].pembayaran.length, 1, "DP yang sudah tercatat tampil untuk ditinjau (rekening, bukti)");
+  assert.equal(q.body.resi[0].pembayaran[0].rekening, w.bank.name);
+  // tolak klaim: status & pembayaran sah TIDAK dihapus
+  const jSebelum = await testPrisma.finJournalEntry.count();
   const tolak = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/tolak`, { reason: "uang belum masuk" });
   assert.equal(tolak.status, 200, JSON.stringify(tolak.body));
-  const anak = await ambilAnak(w.groupId);
-  assert.ok(anak.every((o) => o.paymentStatus === "DP" && o.paidAt === null), "kembali DP (sudah ada DP tercatat), paidAt kosong");
-  // klaim ulang lalu verifikasi: nominal = sisa setelah DP
+  assert.equal(tolak.body.klaimDilepas, true);
+  assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "DP"), "status DP (didukung ledger) dipertahankan");
+  assert.equal(await testPrisma.payment.count({ where: { cancelledAt: null } }), 1, "pembayaran DP tetap ada");
+  assert.equal(await testPrisma.finJournalEntry.count(), jSebelum, "tolak klaim tidak menyentuh jurnal");
+  const tolak2 = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/tolak`, { reason: "lagi" });
+  assert.equal(tolak2.status, 409); assert.equal(tolak2.body.code, "TIDAK_ADA_KLAIM");
+  // klaim ulang → verifikasi SEBAGIAN (klaim tetap) → verifikasi sisa (klaim lepas)
   assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  const sebagian = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id, amount: 100_000 }, kunci());
+  assert.equal(sebagian.status, 201, JSON.stringify(sebagian.body));
+  assert.equal(sebagian.body.klaimDilepas, false);
+  assert.ok((await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } })).lunasDiklaimPada, "klaim masih menunggu sisanya");
   const ver = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id }, kunci());
   assert.equal(ver.status, 201, JSON.stringify(ver.body));
-  assert.equal(ver.body.amount, TOTAL - DP);
+  assert.equal(ver.body.amount, TOTAL - DP - 100_000);
+  assert.equal(ver.body.klaimDilepas, true);
+  assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "LUNAS" && o.paidAt));
 });
 
 test("Tolak Payment Resi yang belum diverifikasi (alur Finance yang sudah ada): jurnal dibalik, semua child kembali BELUM_BAYAR", async () => {
@@ -473,7 +500,7 @@ test("Child yang sudah menerima alokasi TIDAK bisa dibatalkan diam-diam (PATCH s
   const child = w.anak[2];
   const patch = await w.s.patch(`/api/orders/${child}`, { status: "CANCELLED" });
   assert.equal(patch.status, 409, JSON.stringify(patch.body));
-  assert.match(patch.body.error, /alokasi pembayaran Resi/);
+  assert.match(patch.body.error, /dialokasikan ke order ini/);
   const cancel = await w.s.post(`/api/orders/${child}/cancel`, { reason: "uji" });
   assert.equal(cancel.status, 409, JSON.stringify(cancel.body));
   assert.notEqual((await testPrisma.order.findUnique({ where: { id: child } })).status, "CANCELLED");
@@ -603,6 +630,217 @@ test("Audit #3: Sales tidak bisa melunasi diam-diam Resi yang sedang diklaim Lun
   assert.equal(await testPrisma.payment.count(), 0);
   const q = await w.a.get("/api/finance/penerimaan/lunas-belum-dicatat");
   assert.equal(q.body.resi.length, 1);
+});
+
+// ── hardening 28 Sep 2026: tagihan kanonis, klaim per order lama, total sadar-alokasi, urutan kunci, cancel-vs-verify, metode ────────────────
+
+test("Tagihan kanonis: Ongkir Tambahan dihitung TEPAT sekali (anchor); status CRM anak Resi = value+ongkir anchor; order tunggal tetap aturan lama (value)", async () => {
+  const w = await dunia();
+  // ongkir yang (keliru) tercatat di child non-anchor TIDAK ikut tagihan Resi
+  await testPrisma.order.update({ where: { id: w.anak[1] }, data: { ongkir: 20_000 } });
+  const pra = await w.s.get(`/api/resi/${w.groupId}/pembayaran/pratinjau`);
+  assert.equal(pra.body.nominal, TOTAL, "Total Resi tetap: ongkir non-anchor diabaikan");
+  assert.deepEqual(pra.body.alokasi.map((x) => x.tagihan), TAGIHAN);
+  await testPrisma.order.update({ where: { id: w.anak[1] }, data: { ongkir: null } });
+  // PATCH ongkir ke child non-anchor ditolak; ke anchor boleh
+  const salah = await w.s.patch(`/api/orders/${w.anak[1]}`, { ongkir: 10_000 });
+  assert.equal(salah.status, 409, JSON.stringify(salah.body));
+  assert.match(salah.body.error, /hanya boleh diisi di order pertama/);
+  assert.equal((await w.s.patch(`/api/orders/${w.anchorId}`, { ongkir: ONGKIR })).status, 200);
+  // status CRM anchor: bayar sebesar value saja = DP (ongkir anchor belum), + ongkir = LUNAS
+  const b1 = await w.s.post(`/api/orders/${w.anchorId}/payments`, { amount: HARGA[0], method: "TRANSFER", cashAccountId: w.bank.id });
+  assert.equal(b1.status, 201, JSON.stringify(b1.body));
+  assert.equal((await testPrisma.order.findUnique({ where: { id: w.anchorId } })).paymentStatus, "DP");
+  await w.s.post(`/api/orders/${w.anchorId}/payments`, { amount: ONGKIR, method: "TRANSFER", cashAccountId: w.bank.id });
+  const anchor = await testPrisma.order.findUnique({ where: { id: w.anchorId } });
+  assert.equal(anchor.paymentStatus, "LUNAS"); assert.ok(anchor.paidAt);
+  // order tunggal dengan ongkir: bayar value = LUNAS (aturan lama, TIDAK berubah)
+  const tunggal = await createOrderForCustomer(w.customer.id, { notes: "{}", unitCount: 1, ongkir: 30_000 }, w.sales.user.id);
+  await testPrisma.order.update({ where: { id: tunggal.id }, data: { value: 400_000 } });
+  await w.s.post(`/api/orders/${tunggal.id}/payments`, { amount: 400_000, method: "CASH" });
+  assert.equal((await testPrisma.order.findUnique({ where: { id: tunggal.id } })).paymentStatus, "LUNAS", "order tunggal: pembanding tetap value");
+});
+
+test("Klaim Lunas per order LAMA (dropdown sebelum flag aktif) pada child Resi: dikunci saat flag ON, tampil di antrean Resi, tolak memulihkan status dari ledger tanpa menyentuh child lain", async () => {
+  const w = await dunia({ pembayaran: false });
+  assert.equal((await w.s.patch(`/api/orders/${w.anak[1]}`, { paymentStatus: "LUNAS" })).status, 200, "flag OFF: dropdown lama berjalan");
+  await setSetting(testPrisma, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF, "true");
+  const kunciDropdown = await w.s.patch(`/api/orders/${w.anak[2]}`, { paymentStatus: "LUNAS" });
+  assert.equal(kunciDropdown.status, 409, JSON.stringify(kunciDropdown.body)); assert.equal(kunciDropdown.body.code, "ANAK_RESI");
+  // form yang mengirim status SAMA (tanpa perubahan) tetap lolos
+  assert.equal((await w.s.patch(`/api/orders/${w.anak[2]}`, { paymentStatus: "BELUM_BAYAR", notes: "{}" })).status, 200);
+  const q = await w.a.get("/api/finance/penerimaan/lunas-belum-dicatat");
+  assert.equal(q.body.resi.length, 1); assert.equal(q.body.resi[0].sumberKlaim, "PER_ORDER");
+  assert.equal(q.body.items.filter((i) => w.anak.includes(i.orderId)).length, 0);
+  const tolak = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/tolak`, { reason: "belum masuk" });
+  assert.equal(tolak.status, 200, JSON.stringify(tolak.body));
+  const anak = await ambilAnak(w.groupId);
+  assert.ok(anak.every((o) => o.paymentStatus === "BELUM_BAYAR" && o.paidAt === null), "status dipulihkan dari ledger (tidak ada pembayaran)");
+  assert.equal((await w.a.get("/api/finance/penerimaan/lunas-belum-dicatat")).body.resi.length, 0);
+});
+
+test("Total sadar-alokasi: invoice, ringkasan Resi, dan kontribusi per child memakai FinPaymentAllocation (bukan Payment penuh di anchor)", async () => {
+  const w = await dunia();
+  const dpTarget = (await ambilAnak(w.groupId)).map((o) => o.dpTarget);
+  assert.equal((await bayarResi(w, { tipe: "DP" })).status, 201);
+  const kontribusi = await kontribusiPembayaranOrders(testPrisma, w.anak);
+  assert.deepEqual(w.anak.map((id) => kontribusi.get(id).reduce((s, p) => s + p.amount, 0)), dpTarget);
+  // invoice Resi = invoice GABUNGAN (Fase 1): total dibayar = DP, SATU baris pembayaran (bukan pecahan per child), dan semua anggota dari ledger
+  const inv = await w.s.get(`/api/orders/${w.anak[2]}/invoice`);
+  assert.equal(inv.status, 200, JSON.stringify(inv.body));
+  assert.equal(inv.body.nominal.dibayar, DP);
+  assert.equal(inv.body.nominal.totalTagihan, TOTAL);
+  assert.equal(inv.body.nominal.sisa, TOTAL - DP);
+  assert.equal(inv.body.nominal.dibayarTidakRinci, false, "anggota tanpa Payment sendiri kini terbaca dari alokasi, bukan \"tidak rinci\"");
+  assert.equal(inv.body.payments.length, 1, "satu transfer = satu baris");
+  assert.equal(inv.body.payments[0].amount, DP);
+  const ring = await w.s.get(`/api/resi/pelanggan/${w.customer.id}/pembayaran`);
+  assert.equal(ring.status, 200, JSON.stringify(ring.body));
+  assert.equal(ring.body.aktif, true); assert.equal(ring.body.resi.length, 1);
+  const r = ring.body.resi[0];
+  assert.equal(r.totalTagihan, TOTAL); assert.equal(r.ongkirTambahan, ONGKIR); assert.equal(r.dibayar, DP); assert.equal(r.sisa, TOTAL - DP);
+  assert.deepEqual(r.anak.map((a) => a.dibayar), dpTarget);
+  // order tunggal: invoice identik dengan perilaku lama (Payment penuh)
+  const tunggal = await createOrderForCustomer(w.customer.id, { notes: "{}", unitCount: 1 }, w.sales.user.id);
+  await testPrisma.order.update({ where: { id: tunggal.id }, data: { value: 700_000 } });
+  await w.s.post(`/api/orders/${tunggal.id}/payments`, { amount: 200_000, method: "CASH" });
+  const invT = await w.s.get(`/api/orders/${tunggal.id}/invoice`);
+  assert.equal(invT.body.nominal.dibayar, 200_000); assert.equal(invT.body.nominal.sisa, 500_000);
+  // flag OFF → ringkasan menyembunyikan fitur
+  await setSetting(testPrisma, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF, "false");
+  assert.deepEqual((await w.s.get(`/api/resi/pelanggan/${w.customer.id}/pembayaran`)).body, { aktif: false, resi: [] });
+});
+
+test("Urutan kunci kanonis: verifikasi/tolak Payment lama, pembayaran Resi, klaim, tolak klaim, dan PATCH paralel pada Resi yang sama — tanpa deadlock/500, status konsisten dengan ledger", async () => {
+  for (let putaran = 0; putaran < 3; putaran++) {
+    const w = await dunia();
+    const dp = await bayarResi(w, { tipe: "DP", nominal: 200_000 });
+    assert.equal(dp.status, 201);
+    const dp2 = await bayarResi(w, { tipe: "DP", nominal: 100_000 });
+    assert.equal(dp2.status, 201);
+    const adm = makeClient(server.baseUrl, (await createTestUser({ roles: ["ADMIN"] })).token);
+    const hasil = await Promise.all([
+      w.a.post(`/api/finance/pembayaran/${dp.body.paymentId}/verifikasi`, {}),
+      w.a.post(`/api/finance/pembayaran/${dp2.body.paymentId}/tolak`, { reason: "uji paralel" }),
+      bayarResi(w, { tipe: "TAGIHAN", nominal: 150_000 }),
+      bayarResi(w, { tipe: "TAGIHAN", nominal: 50_000 }),
+      w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci()),
+      adm.patch(`/api/orders/${w.anak[1]}`, { notes: "{}" }),
+      adm.post(`/api/orders/${w.anak[2]}/cancel`, { reason: "uji paralel" }),
+    ]);
+    for (const r of hasil) {
+      assert.ok(r.status < 500, `tidak ada 500/deadlock: ${r.status} ${JSON.stringify(r.body)}`);
+    }
+    // status CRM setiap child = hasil hitung ulang ledger (recompute tidak mengubah apa pun lagi)
+    const sebelum = await ambilAnak(w.groupId);
+    await testPrisma.$transaction(async (tx) => { for (const o of sebelum) await recomputeOrderPaymentStatus(tx, o.id); });
+    const sesudah = await ambilAnak(w.groupId);
+    assert.deepEqual(sesudah.map((o) => o.paymentStatus), sebelum.map((o) => o.paymentStatus), "status konsisten dengan ledger");
+    // invarian alokasi: Σ alokasi = Payment; tidak ada child CANCELLED dengan alokasi aktif
+    for (const p of await semuaPayment(w.anak)) {
+      if (p.finAllocations.length) assert.equal(p.finAllocations.reduce((s, a) => s + angka(a.amount), 0), p.amount);
+    }
+    const batalBeralokasi = await testPrisma.finPaymentAllocation.count({ where: { order: { status: "CANCELLED" }, payment: { cancelledAt: null } } });
+    assert.equal(batalBeralokasi, 0, "tidak ada child CANCELLED yang memegang alokasi aktif");
+    await truncateAll();
+  }
+});
+
+test("Cancel-vs-verify: pembatalan child paralel dengan verifikasi Resi — salah satu menang, tidak pernah child CANCELLED dengan alokasi aktif, Σ alokasi tepat", async () => {
+  const hasilAkhir = new Set();
+  for (let putaran = 0; putaran < 4; putaran++) {
+    const w = await dunia();
+    assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+    const adm = makeClient(server.baseUrl, (await createTestUser({ roles: ["ADMIN"] })).token);
+    const [ver, batal] = await Promise.all([
+      w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id }, kunci()),
+      putaran % 2 ? adm.post(`/api/orders/${w.anak[2]}/cancel`, { reason: "uji" }) : adm.patch(`/api/orders/${w.anak[2]}`, { status: "CANCELLED" }),
+    ]);
+    assert.equal(ver.status, 201, JSON.stringify(ver.body));
+    assert.ok([200, 409].includes(batal.status), `${batal.status} ${JSON.stringify(batal.body)}`);
+    const child = await testPrisma.order.findUnique({ where: { id: w.anak[2] } });
+    const [p] = await semuaPayment(w.anak);
+    const alokasiChild = p.finAllocations.find((a) => a.orderId === w.anak[2]);
+    if (batal.status === 200) {
+      assert.equal(child.status, "CANCELLED");
+      assert.equal(alokasiChild, undefined, "batal menang → verifikasi hanya ke child aktif");
+      assert.equal(p.amount, TAGIHAN[0] + TAGIHAN[1]);
+      hasilAkhir.add("batal-dulu");
+    } else {
+      assert.notEqual(child.status, "CANCELLED");
+      assert.ok(alokasiChild, "verifikasi menang → pembatalan ditolak karena ada alokasi aktif");
+      assert.match(batal.body.error, /dialokasikan ke order ini/);
+      hasilAkhir.add("verifikasi-dulu");
+    }
+    assert.equal(p.finAllocations.reduce((s, a) => s + angka(a.amount), 0), p.amount);
+    await truncateAll();
+  }
+  assert.ok(hasilAkhir.size >= 1);
+});
+
+test("Audit #4: anchor Resi dengan klaim Lunas MENUNGGU tidak bisa dibatalkan (409) sampai Finance menolak/verifikasi klaimnya; child non-anchor tetap bisa dibatalkan seperti biasa; klaim per order lama juga memblokir", async () => {
+  const w = await dunia();
+  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  const patchAnchor = await w.s.patch(`/api/orders/${w.anchorId}`, { status: "CANCELLED" });
+  assert.equal(patchAnchor.status, 409, JSON.stringify(patchAnchor.body));
+  assert.match(patchAnchor.body.error, /klaim Lunas Resi/);
+  const cancelAnchor = await w.s.post(`/api/orders/${w.anchorId}/cancel`, { reason: "uji" });
+  assert.equal(cancelAnchor.status, 409, JSON.stringify(cancelAnchor.body));
+  assert.notEqual((await testPrisma.order.findUnique({ where: { id: w.anchorId } })).status, "CANCELLED");
+  // child NON-anchor tanpa alokasi tetap bisa dibatalkan walau klaim Resi sedang menunggu
+  const okChild = await w.s.post(`/api/orders/${w.anak[2]}/cancel`, { reason: "uji" });
+  assert.equal(okChild.status, 200, JSON.stringify(okChild.body));
+  // setelah Finance menolak klaim, anchor bisa dibatalkan lagi seperti biasa
+  assert.equal((await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/tolak`, { reason: "belum masuk" })).status, 200);
+  assert.equal((await w.s.patch(`/api/orders/${w.anchorId}`, { status: "CANCELLED" })).status, 200);
+
+  // klaim PER ORDER lama (flag OFF lalu ON) juga memblokir pembatalan anchor sampai ditolak
+  await truncateAll();
+  const w2 = await dunia({ pembayaran: false });
+  assert.equal((await w2.s.patch(`/api/orders/${w2.anchorId}`, { paymentStatus: "LUNAS" })).status, 200);
+  await setSetting(testPrisma, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF, "true");
+  const tolakDulu = await w2.s.post(`/api/orders/${w2.anchorId}/cancel`, { reason: "uji" });
+  assert.equal(tolakDulu.status, 409, JSON.stringify(tolakDulu.body));
+  assert.match(tolakDulu.body.error, /klaim Lunas per order/);
+  assert.equal((await w2.a.post(`/api/finance/penerimaan/resi/${w2.groupId}/tolak`, { reason: "belum masuk" })).status, 200);
+  assert.equal((await w2.s.post(`/api/orders/${w2.anchorId}/cancel`, { reason: "uji" })).status, 200);
+});
+
+test("Metode & mode pembayaran: CASH/TRANSFER/QRIS/CARD diterima di catat & verifikasi Resi; metode/mode asing ditolak; SEBELUM_SALDO_AWAL = Dr Laba Ditahan, Cr per child, tanpa kas", async () => {
+  const w = await dunia();
+  for (const method of ["CASH", "TRANSFER", "QRIS", "CARD"]) {
+    const r = await bayarResi(w, { tipe: "DP", nominal: 10_000, method });
+    assert.equal(r.status, 201, `${method}: ${JSON.stringify(r.body)}`);
+  }
+  const asing = await bayarResi(w, { tipe: "DP", nominal: 10_000, method: "GOPAY" });
+  assert.equal(asing.status, 400); assert.equal(asing.body.code, "METODE_TIDAK_VALID");
+  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  const modeAsing = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "LAIN" }, kunci());
+  assert.equal(modeAsing.status, 400); assert.equal(modeAsing.body.code, "MODE_TIDAK_VALID");
+  const metodeAsing = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", method: "GOPAY", cashAccountId: w.bank.id }, kunci());
+  assert.equal(metodeAsing.status, 400);
+  const tanpaRek = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", method: "CARD" }, kunci());
+  assert.equal(tanpaRek.status, 400); assert.equal(tanpaRek.body.code, "REKENING_WAJIB");
+  // verifikasi sebagian dengan kartu (REKENING), sisanya SEBELUM_SALDO_AWAL
+  const kartu = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", method: "CARD", cashAccountId: w.bank.id, amount: 60_000 }, kunci());
+  assert.equal(kartu.status, 201, JSON.stringify(kartu.body));
+  const lama = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "SEBELUM_SALDO_AWAL", method: "TRANSFER", date: "2026-09-10" }, kunci());
+  assert.equal(lama.status, 201, JSON.stringify(lama.body));
+  assert.equal(lama.body.amount, TOTAL - 40_000 - 60_000);
+  const p = await testPrisma.payment.findUnique({ where: { id: lama.body.paymentId }, include: { finAllocations: true } });
+  assert.equal(p.cashAccountId, null, "tanpa rekening: kas tidak berubah");
+  const [e] = (await jurnalBayar()).filter((x) => x.sourceId === p.id);
+  const laba = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.LABA_DITAHAN } });
+  const { uangMuka } = await akunSistem();
+  const debit = e.lines.filter((l) => angka(l.debit) > 0);
+  assert.equal(debit.length, 1); assert.equal(debit[0].accountId, laba.id); assert.equal(angka(debit[0].debit), p.amount);
+  const kredit = e.lines.filter((l) => angka(l.credit) > 0);
+  assert.equal(kredit.length, p.finAllocations.length);
+  assert.ok(kredit.every((l) => l.accountId === uangMuka.id), "belum diakui → Uang Muka per child");
+  assert.equal(kredit.reduce((s, l) => s + angka(l.credit), 0), p.amount);
+  assert.ok(!e.lines.some((l) => l.accountId === w.bank.accountId), "tidak ada baris kas/bank");
+  assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "LUNAS"));
+  assert.equal((await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } })).lunasDiklaimPada, null);
 });
 
 test("Contoh angka 3 child (untuk laporan): DP → sisa → jurnal per child", async (t) => {

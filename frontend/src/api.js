@@ -826,6 +826,12 @@ export const api = {
   // Resi Gabungan Fase 1 — flag server-side RESI_INPUT_AKTIF; POST menolak 403 bila mati
   getResiStatus: () => request("/resi/status"),
   buatResi: (data) => request("/resi", { method: "POST", body: JSON.stringify(data) }),
+  // Resi Fase 3A — pembayaran/klaim Lunas di level Resi (flag server RESI_PEMBAYARAN_AKTIF; mati → { aktif: false }). Idempotency-Key WAJIB di server:
+  // pemanggil membuat SATU kunci per aksi (mis. per dialog konfirmasi) supaya klik ganda/ulang kirim diputar ulang, bukan dieksekusi dua kali.
+  getResiPembayaranPelanggan: (customerId) => request(`/resi/pelanggan/${customerId}/pembayaran`),
+  getResiPembayaranOrder: (orderId) => request(`/resi/order/${orderId}/pembayaran`),
+  klaimLunasResi: (groupId, idempotencyKey = mutationKey("resi-klaim")) =>
+    request(`/resi/${groupId}/klaim-lunas`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
   addOrder: (customerId, data) =>
     request(`/customers/${customerId}/orders`, { method: "POST", body: JSON.stringify(data) }),
   updateCustomerOrder: (customerId, orderId, data) =>
@@ -1374,6 +1380,15 @@ export const api = {
   verifikasiPenerimaanMassal: (data) => request("/finance/penerimaan/verifikasi-massal", { method: "POST", body: JSON.stringify(data) }),
   mintaBuktiPenerimaan: (orderId, catatan) => request("/finance/penerimaan/minta-bukti", { method: "POST", body: JSON.stringify({ orderId, catatan }) }),
   tolakLunas: (orderId, reason) => request("/finance/penerimaan/tolak", { method: "POST", body: JSON.stringify({ orderId, reason }) }),
+  // Antrean Resi (Fase 3A): SATU verifikasi per Resi; pembagian ke child dihitung server (pratinjau = baca-saja, verifikasi menghitung ulang).
+  getFinanceResi: (groupId) => request(`/finance/penerimaan/resi/${groupId}`),
+  pratinjauVerifikasiResi: (groupId, amount) => request(`/finance/penerimaan/resi/${groupId}/pratinjau${amount ? `?amount=${encodeURIComponent(amount)}` : ""}`),
+  verifikasiPenerimaanResi: (groupId, data, idempotencyKey = mutationKey("resi-verif")) =>
+    request(`/finance/penerimaan/resi/${groupId}/verifikasi`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  mintaBuktiResi: (groupId, catatan, idempotencyKey = mutationKey("resi-bukti")) =>
+    request(`/finance/penerimaan/resi/${groupId}/minta-bukti`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ catatan }) }),
+  tolakLunasResi: (groupId, reason, idempotencyKey = mutationKey("resi-tolak")) =>
+    request(`/finance/penerimaan/resi/${groupId}/tolak`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ reason }) }),
   getFinanceReceiptReview: () => request("/finance/bukti-review"),
   getFinancePurchaseCategories: (params = {}) => request(`/finance/purchase-categories${qsFinance(params)}`),
   getFinancePurchases: (params = {}) => request(`/finance/purchases${qsFinance(params)}`),

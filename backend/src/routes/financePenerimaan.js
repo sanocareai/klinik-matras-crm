@@ -8,7 +8,7 @@ import { idempotency } from "../middleware/idempotency.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { daftarLunasBelumDicatat, verifikasiPenerimaan, tolakLunas, mintaBukti } from "../services/finance/penerimaanOrder.js";
-import { daftarKlaimLunasResi, pratinjauVerifikasiResi, verifikasiPenerimaanResi, tolakLunasResi, mintaBuktiResi } from "../services/finance/penerimaanResi.js";
+import { daftarKlaimLunasResi, detailKlaimResi, pratinjauVerifikasiResi, verifikasiPenerimaanResi, tolakLunasResi, mintaBuktiResi } from "../services/finance/penerimaanResi.js";
 import { wajibIdempotencyKey } from "../middleware/idempotency.js";
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { handleFinanceError } from "./finance.js";
@@ -103,6 +103,15 @@ financePenerimaanRouter.post("/penerimaan/tolak", requirePermission(P.PAYMENT_WR
 
 // ── Resi Gabungan Fase 3A (flag RESI_PEMBAYARAN_AKTIF; 403 bila mati) ─────────────────────────────────────────────────────────────────────────────
 // Pratinjau alokasi SEBELUM verifikasi (BACA-SAJA). Server menghitung; verifikasi menghitung ULANG di bawah kunci dan tidak memakai angka klien.
+// Detail satu Resi (BACA-SAJA): total, ongkir tambahan, child, sisa, klaim, pembayaran tercatat (rekening + bukti bertanda tangan).
+financePenerimaanRouter.get("/penerimaan/resi/:groupId", requirePermission(P.PAYMENT_READ), async (req, res) => {
+  try {
+    res.json(await detailKlaimResi(prisma, { groupId: req.params.groupId }));
+  } catch (e) {
+    handleFinanceError(e, res);
+  }
+});
+
 financePenerimaanRouter.get("/penerimaan/resi/:groupId/pratinjau", requirePermission(P.PAYMENT_READ), async (req, res) => {
   try {
     res.json(await pratinjauVerifikasiResi(prisma, { groupId: req.params.groupId, amount: req.query.amount ?? null }));

@@ -14,6 +14,11 @@ import { siapkanNotesUkuran, sinkronUkuranUnit, teksUkuranDariNotes } from "../l
 import { ukuranCustomWajibSejak } from "../services/ukuranWajib.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
+import { kunciKanonis, kunciUntukPayment } from "../services/finance/urutanKunci.js";
+import { pastikanBukanAnakResiAktif } from "../services/resiPembayaran.js";
+import { paidForOrder } from "../services/finance/allocation.js";
+import { moneyToNumber } from "../services/finance/money.js";
+import { resiBaru, dasarStatusBayar, PILIH_TAGIHAN } from "../services/finance/tagihanOrder.js";
 // D-180 — jembatan ke buku besar. Lihat catatan panjang di hooks.js: modul
 // finance TIDAK PERNAH boleh menjatuhkan pencatatan pembayaran/order.
 import { bukukanPembayaran, batalkanJurnalPembayaran, bukukanPengakuanPendapatan } from "../services/finance/hooks.js";
@@ -271,12 +276,28 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
     // ada baris riwayat tanpa perubahan order yang berhasil (dan sebaliknya).
     // Pola ini sama dengan pipeline_transitions di routes/customers.js.
     const order = await prisma.$transaction(async (tx) => {
+      // Urutan kunci kanonis (grup → order) — perubahan status/pembayaran serial dengan verifikasi/pembayaran Resi (services/finance/urutanKunci.js).
+      await kunciKanonis(tx, { orderIds: [req.params.id] });
       const sebelum = await tx.order.findUnique({
         where: { id: req.params.id },
-        select: { status: true, paymentStatus: true, locationUrl: true, notes: true },
+        select: { status: true, paymentStatus: true, locationUrl: true, notes: true, ...PILIH_TAGIHAN },
       });
       if (!sebelum) {
         throw Object.assign(new Error("Order tidak ditemukan"), { statusCode: 404 });
+      }
+      // Pembatalan: cek ulang pengaman DI BAWAH KUNCI — pemeriksaan di luar transaksi bisa kalah balapan dengan verifikasi/alokasi yang
+      // baru selesai (cancel-vs-verify). Hasilnya sama dengan pemeriksaan awal kalau tidak ada yang berubah.
+      if (status === "CANCELLED" && sebelum.status !== "CANCELLED") {
+        const { blockers } = await checkCancelBlockers(req.params.id, tx);
+        if (blockers.length > 0) {
+          throw Object.assign(new Error(`Order tidak bisa dibatalkan karena sudah ada ${blockers.join(", ")} — pakai "Batalkan Order" untuk detail penanganannya, atau tangani manual lewat admin/Kendali.`), { statusCode: 409 });
+        }
+      }
+      // Resi Gabungan (pembayaran Resi AKTIF): status bayar child Resi BARU hanya lewat klaim Lunas Resi + verifikasi Finance.
+      if (paymentStatus !== undefined && paymentStatus !== sebelum.paymentStatus) await pastikanBukanAnakResiAktif(tx, req.params.id);
+      // Ongkir Tambahan Resi BARU hanya boleh di order anchor (dihitung TEPAT sekali per Resi — services/finance/tagihanOrder.js).
+      if (ongkir !== undefined && ongkir !== "" && ongkir !== null && Number(ongkir) !== 0 && resiBaru(sebelum) && sebelum.group?.anchorOrderId !== req.params.id) {
+        throw Object.assign(new Error("Ongkir Tambahan Resi hanya boleh diisi di order pertama (anchor) Resi ini, supaya tidak tertagih dua kali."), { statusCode: 409 });
       }
 
       // paidAt (30 Agustus 2026) — dropdown manual di sini adalah jalur LAIN
@@ -622,7 +643,7 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
 
     res.json(order);
   } catch (err) {
-    res.status(err.statusCode || 500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message, ...(typeof err.code === "string" && /^[A-Z_]+$/.test(err.code) && { code: err.code }) });
   }
 });
 
@@ -888,6 +909,7 @@ orderRouter.post("/:id/payments", async (req, res) => {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      await kunciKanonis(tx, { orderIds: [req.params.id] }); // urutan kunci kanonis: grup → order, lalu tulis + posting
       const payment = await tx.payment.create({
         data: {
           orderId: req.params.id, amount: amountInt, method,
@@ -927,6 +949,8 @@ orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
     const { reason } = req.body;
 
     const result = await prisma.$transaction(async (tx) => {
+      // Urutan kunci kanonis: grup → order terdampak (induk + tujuan alokasi) → payment, lalu tulis + balik jurnal.
+      if (/^[0-9a-f-]{36}$/i.test(String(req.params.paymentId))) await kunciUntukPayment(tx, req.params.paymentId);
       const payment = await tx.payment.findUnique({ where: { id: req.params.paymentId } });
       if (!payment || payment.orderId !== req.params.id) {
         throw Object.assign(new Error("Entri pembayaran tidak ditemukan"), { statusCode: 404 });
@@ -2093,17 +2117,21 @@ orderRouter.delete("/:id", async (req, res) => {
 // pembayaran tercatat, revisi lingkup kerja) — beda kelas risiko dari job
 // pengiriman: itu duit sungguhan/pekerjaan bengkel aktif, tetap butuh
 // admin/Kendali, TIDAK termasuk perubahan ini.
-async function checkCancelBlockers(orderId) {
-  const [units, paymentCount, scopeRevisionCount, alokasiResiCount] = await Promise.all([
-    prisma.unit.findMany({
+async function checkCancelBlockers(orderId, db = prisma) {
+  const [units, paymentCount, scopeRevisionCount, alokasiAktifCount, order] = await Promise.all([
+    db.unit.findMany({
       where: { orderId },
       select: { id: true, status: true, currentStageId: true, unitCode: true },
     }),
-    prisma.payment.count({ where: { orderId } }),
-    prisma.scopeRevision.count({ where: { orderId } }),
-    // Resi Gabungan Fase 3A: child Resi yang SUDAH menerima alokasi pembayaran tidak boleh dibatalkan diam-diam (tidak punya Payment sendiri, jadi
-    // hitungan payment di atas tidak menangkapnya). Hanya order ber-groupId; order tunggal/groupId NULL tidak berubah. Kontrak Fase 3B: docs/RESI-GABUNGAN-FASE3.md.
-    prisma.finPaymentAllocation.count({ where: { orderId, order: { groupId: { not: null } } } }),
+    db.payment.count({ where: { orderId } }),
+    db.scopeRevision.count({ where: { orderId } }),
+    // Alokasi AKTIF dari pembayaran order LAIN (mis. pembayaran Resi yang tercatat di anchor) — order ini memegang uang walau tidak punya
+    // Payment sendiri, jadi hitungan payment di atas tidak menangkapnya. Berlaku SELALU, tidak bergantung flag mana pun. Alokasi dari payment
+    // yang sudah dibatalkan tidak menghalangi. Pembatalan/refund sebagian Resi = Fase 3B (docs/RESI-GABUNGAN-FASE3.md).
+    db.finPaymentAllocation.count({ where: { orderId, payment: { cancelledAt: null, orderId: { not: orderId } } } }),
+    // Audit invariants (28 Sep 2026): perlu tahu groupId untuk pemeriksaan klaim Resi di bawah — tidak ada jalur lain di fungsi ini
+    // yang sudah memuat order-nya sendiri.
+    db.order.findUnique({ where: { id: orderId }, select: { groupId: true, group: { select: { id: true, source: true, anchorOrderId: true, lunasDiklaimPada: true } } } }),
   ]);
   const inFlightUnits = units.filter(
     (u) => u.currentStageId != null && u.status !== "CANCELLED" && u.status !== "DELIVERED"
@@ -2115,7 +2143,29 @@ async function checkCancelBlockers(orderId) {
   }
   if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
   if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
-  if (alokasiResiCount > 0) blockers.push(`${alokasiResiCount} alokasi pembayaran Resi (pembatalan/refund sebagian Resi belum didukung — Fase 3B)`);
+  if (alokasiAktifCount > 0) blockers.push(`${alokasiAktifCount} pembayaran gabungan/Resi yang sudah dialokasikan ke order ini (uangnya harus dipindahkan atau dikembalikan lewat Finance dulu — pembatalan sebagian Resi belum tersedia)`);
+  // Audit invariants (28 Sep 2026): klaim Lunas Resi yang BELUM punya Payment (jadi tidak tertangkap alokasiAktifCount di atas) tidak boleh
+  // hilang begitu ANCHOR dibatalkan — pastikanGrupLayak menolak SELURUH grup begitu anchor CANCELLED (ANCHOR_DIBATALKAN), membuat klaim yang
+  // sedang menunggu tidak lagi bisa diverifikasi ATAU ditolak Finance (tercecer permanen). Hanya berlaku untuk ANCHOR: child NON-anchor tetap
+  // memakai guard alokasi di atas (child yang belum punya alokasi aktif aman dibatalkan; group tetap "layak" karena aktif = child non-CANCELLED).
+  if (order?.groupId && order.group?.source === "BARU" && order.group.anchorOrderId === orderId) {
+    if (order.group.lunasDiklaimPada) {
+      blockers.push("klaim Lunas Resi yang sedang menunggu verifikasi Finance (tolak atau verifikasi klaimnya dulu lewat antrean Resi, baru batalkan order)");
+    } else {
+      const siblingLunas = await db.order.findMany({
+        where: { groupId: order.groupId, status: { not: "CANCELLED" }, paymentStatus: "LUNAS", value: { gt: 0 } },
+        select: { id: true, groupId: true, value: true, ongkir: true },
+      });
+      for (const s of siblingLunas) {
+        const dibayar = moneyToNumber(await paidForOrder(db, s.id, { enabled: false }));
+        // dasarStatusBayar (bukan value+ongkir mentah): ongkir HANYA dihitung di anchor, sama dengan aturan status CRM (tagihanOrder.js).
+        if (dibayar < dasarStatusBayar(s, order.group)) {
+          blockers.push("ada klaim Lunas per order (cara lama) di Resi ini yang belum diverifikasi Finance");
+          break;
+        }
+      }
+    }
+  }
   return { blockers, units };
 }
 
@@ -2153,9 +2203,17 @@ orderRouter.post("/:id/cancel", async (req, res) => {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      if (units.length > 0) {
+      // Cek ulang pengaman DI BAWAH KUNCI kanonis (grup → order): menutup balapan cancel-vs-verify/alokasi Resi.
+      await kunciKanonis(tx, { orderIds: [req.params.id] });
+      const ulang = await checkCancelBlockers(req.params.id, tx);
+      if (ulang.blockers.length > 0) {
+        throw Object.assign(new Error(`Order tidak bisa dibatalkan otomatis karena sudah ada ${ulang.blockers.join(", ")} — butuh penanganan manual admin/Kendali, bukan sekadar salah input.`), { statusCode: 409 });
+      }
+      // Audit invariants: unit-unit dibaca ULANG di bawah kunci (bukan `units` dari pemeriksaan di luar transaksi) — unit yang baru
+      // dibuat/berubah di antara dua pemeriksaan tetap ikut dibatalkan, bukan tertinggal jadi "ghost unit".
+      if (ulang.units.length > 0) {
         await tx.unit.updateMany({
-          where: { id: { in: units.map((u) => u.id) }, status: { not: "CANCELLED" } },
+          where: { id: { in: ulang.units.map((u) => u.id) }, status: { not: "CANCELLED" } },
           data: { status: "CANCELLED" },
         });
       }

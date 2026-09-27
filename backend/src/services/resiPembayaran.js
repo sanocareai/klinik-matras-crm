@@ -5,20 +5,25 @@
 //    child order aktif (tabel alokasi yang sudah ada). Jurnal tetap postPaymentReceived: Dr Kas/Bank sekali (total), Cr Piutang/Uang Muka
 //    SATU BARIS PER CHILD sesuai alokasi. Tidak ada uang masuk ganda dan tidak ada pengakuan pendapatan tambahan.
 //  - Server-authoritative: pembagian alokasi SELALU dihitung server dari sisa tagihan child aktif; nominal pembagian dari klien tidak dipercaya.
-//  - Flag RESI_PEMBAYARAN_AKTIF (default MATI) — semua fungsi publik menolak 403 bila mati.
+//  - Flag RESI_PEMBAYARAN_AKTIF (default MATI) — semua perintah publik menolak 403 bila mati.
 //  - Hanya group source BARU. Group BACKFILL_BUNDLE TIDAK masuk alur ini sebelum backfill resmi.
 //  - Order tunggal / groupId NULL: tidak disentuh sama sekali.
 //
-// ATURAN ANGKA
-//  - tagihan child = Order.value + Order.ongkir (Ongkir Tambahan hanya menempel di anchor). Sama dengan Total Resi / dasar DP 30% Fase 1.
+// ATURAN ANGKA (helper kanonis: services/finance/tagihanOrder.js)
+//  - tagihan child = Order.value + Ongkir Tambahan HANYA di anchor (tepat sekali per Resi). Σ = Total Resi = dasar DP 30% Fase 1.
 //  - dibayar child = paidForOrder TANPA gerbang verifikasi (semua payment tidak dibatalkan; konservatif — uang yang sudah dicatat Sales tetap
 //    mengurangi sisa walau belum diverifikasi Finance, supaya tidak pernah over-alokasi).
 //  - mode TAGIHAN: bobot = sisa tagihan child aktif. mode DP: bobot = sisa DP = max(min(dpTarget, tagihan) - dibayar, 0); tanpa pembayaran
 //    sebelumnya alokasi DP PERSIS sama dengan dpTarget tiap child (Σ dpTarget = DP 30% Total Resi).
 //  - pembagian: largest-remainder (bagiProporsional) sehingga Σ alokasi TEPAT sama dengan nominal Payment; baris 0 dibuang.
 //
-// YANG SENGAJA BELUM (Fase 3B, lihat dokumen): pembatalan/refund child. Child yang sudah menerima alokasi TIDAK boleh dibatalkan diam-diam
-// (guard di checkCancelBlockers, routes/orders.js).
+// KLAIM LUNAS (hardening 28 Sep 2026): klaim Sales disimpan di OrderGroup.lunasDiklaimPada — TIDAK mengubah paymentStatus/paidAt child.
+// Status dan paidAt (dasar komisi) hanya bergerak lewat ledger (Payment + alokasi + recompute) setelah Finance memverifikasi.
+//
+// URUTAN KUNCI: grup → child (id naik) → payment → posting (sama dengan services/finance/urutanKunci.js).
+//
+// YANG SENGAJA BELUM (Fase 3B, lihat dokumen): pembatalan/refund child. Child yang sudah menerima alokasi aktif TIDAK boleh dibatalkan
+// (guard di checkCancelBlockers, routes/orders.js — berlaku tanpa memandang flag).
 
 import { prisma } from "../db.js";
 import { bagiProporsional } from "./resi.js";
@@ -28,10 +33,12 @@ import { recomputeOrderPaymentStatus } from "./paymentLedger.js";
 import { bukukanPembayaran } from "./finance/hooks.js";
 import { getSettingRaw, parseBool, SETTING_KEYS } from "./finance/settings.js";
 import { moneyToNumber } from "./finance/money.js";
+import { tagihanOrder, ongkirDitagih } from "./finance/tagihanOrder.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const TIPE_BAYAR = Object.freeze({ DP: "DP", TAGIHAN: "TAGIHAN" });
-const METODE = ["CASH", "TRANSFER", "QRIS", "CARD"];
+// Sama dengan enum PaymentMethod dan semua jalur pencatatan/verifikasi lama (POST /orders/:id/payments, verifikasiPenerimaan).
+export const METODE_BAYAR = Object.freeze(["CASH", "TRANSFER", "QRIS", "CARD"]);
 const GATE_MATI = Object.freeze({ enabled: false });
 
 export class ResiBayarError extends Error {
@@ -47,25 +54,27 @@ export async function resiPembayaranAktif(db = prisma) {
   return parseBool(await getSettingRaw(db, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF));
 }
 
-async function pastikanAktif(db) {
+export async function pastikanAktif(db) {
   if (!(await resiPembayaranAktif(db))) throw new ResiBayarError("Pembayaran Resi belum diaktifkan", 403, "RESI_PEMBAYARAN_MATI");
 }
 
-export const tagihanAnak = (o) => (Number(o.value) || 0) + (Number(o.ongkir) || 0);
+/** Tagihan satu child Resi — delegasi ke helper kanonis. `grup` = { source, anchorOrderId }; tanpa grup = value + ongkir. */
+export const tagihanAnak = (o, grup = null) => tagihanOrder(o, grup);
 
 // ── perhitungan murni ─────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Hitung alokasi otomatis. MURNI (tanpa DB). `anak` = semua child (child CANCELLED diabaikan), `dibayar` = Map orderId → Rupiah yang sudah tercatat.
+ * Hitung alokasi otomatis. MURNI (tanpa DB). `anak` = semua child (child CANCELLED diabaikan), `dibayar` = Map orderId → Rupiah yang sudah tercatat,
+ * `grup` = { source, anchorOrderId } (Ongkir Tambahan hanya dihitung di anchor).
  * Mengembalikan { tipe, nominal, alokasi (semua child aktif, termasuk 0), tulis (hanya alokasi > 0), totalBobot, ... }.
  */
-export function hitungAlokasiResi({ anak, dibayar, tipe = TIPE_BAYAR.TAGIHAN, nominal = null }) {
+export function hitungAlokasiResi({ anak, dibayar, tipe = TIPE_BAYAR.TAGIHAN, nominal = null, grup = null }) {
   if (!Object.values(TIPE_BAYAR).includes(tipe)) throw new ResiBayarError("Tipe pembayaran tidak dikenal (pilih DP atau TAGIHAN)", 400, "TIPE_TIDAK_VALID");
   const aktif = anak.filter((o) => o.status !== "CANCELLED");
   if (aktif.length === 0) throw new ResiBayarError("Resi tidak punya order aktif", 409, "RESI_TANPA_ORDER_AKTIF");
 
   const baris = aktif.map((o) => {
-    const tagihan = tagihanAnak(o);
+    const tagihan = tagihanAnak(o, grup);
     const sudah = Math.max(Number(dibayar.get(o.id)) || 0, 0);
     const sisa = Math.max(tagihan - sudah, 0);
     const sisaDp = Math.max(Math.min(Number(o.dpTarget) || 0, tagihan) - sudah, 0);
@@ -109,18 +118,20 @@ export function hitungAlokasiResi({ anak, dibayar, tipe = TIPE_BAYAR.TAGIHAN, no
 // ── pemuatan + penguncian ─────────────────────────────────────────────────────────────────────────────────────────
 
 const PILIH_ANAK = { id: true, orderNumber: true, customerId: true, groupId: true, status: true, value: true, ongkir: true, dpTarget: true, paymentStatus: true, paidAt: true };
+const PILIH_GRUP = {
+  id: true, source: true, customerId: true, anchorOrderId: true, dpPersen: true, dpTarget: true, ongkirTambahan: true,
+  lunasDiklaimPada: true, lunasDiklaimOlehId: true, lunasDiklaimOleh: { select: { name: true } },
+  customer: { select: { name: true, assignedSalesId: true } },
+};
 
 /**
- * Muat group + seluruh child. Dengan `kunci` = true (WAJIB di dalam transaksi tulis): kunci baris group lalu SEMUA child secara URUT (id naik),
- * sehingga double-click/request paralel untuk Resi yang sama berjalan berurutan, tanpa deadlock antar-Resi.
+ * Muat group + seluruh child. Dengan `kunci` = true (WAJIB di dalam transaksi tulis): kunci baris group lalu SEMUA child secara URUT (id naik) —
+ * urutan kanonis grup → order (services/finance/urutanKunci.js), sehingga perintah paralel atas Resi yang sama berjalan berurutan tanpa deadlock.
  */
 export async function muatGrupResi(db, groupId, { kunci = false } = {}) {
   if (!groupId || typeof groupId !== "string") throw new ResiBayarError("Resi tidak ditemukan", 404);
   if (kunci) await lockRowForUpdate(db, "order_groups", groupId, { cast: null });
-  const grup = await db.orderGroup.findUnique({
-    where: { id: groupId },
-    select: { id: true, source: true, customerId: true, anchorOrderId: true, dpPersen: true, dpTarget: true, ongkirTambahan: true, customer: { select: { name: true, assignedSalesId: true } } },
-  });
+  const grup = await db.orderGroup.findUnique({ where: { id: groupId }, select: PILIH_GRUP });
   if (!grup) throw new ResiBayarError("Resi tidak ditemukan", 404);
   if (kunci) await db.$queryRawUnsafe('SELECT id FROM "Order" WHERE group_id = $1 ORDER BY id FOR UPDATE', groupId);
   const anak = await db.order.findMany({ where: { groupId }, orderBy: { id: "asc" }, select: PILIH_ANAK });
@@ -143,17 +154,29 @@ export function pastikanGrupLayak(grup, anak) {
   return { anchor, aktif: anak.filter((o) => o.status !== "CANCELLED") };
 }
 
-async function muatDibayar(db, aktif) {
+export async function muatDibayar(db, aktif) {
   const peta = new Map();
   for (const o of aktif) peta.set(o.id, moneyToNumber(await paidForOrder(db, o.id, GATE_MATI)));
   return peta;
+}
+
+/** Ringkasan per child untuk UI/antrean: tagihan kanonis, ongkir yang ditagih, dibayar, sisa. */
+export function rincianAnak(aktif, dibayar, grup) {
+  return aktif.map((o) => {
+    const tagihan = tagihanAnak(o, grup);
+    const sudah = Number(dibayar.get(o.id)) || 0;
+    return {
+      orderId: o.id, orderNumber: o.orderNumber, status: o.status, paymentStatus: o.paymentStatus, anchor: o.id === grup.anchorOrderId,
+      nilai: Number(o.value) || 0, ongkir: ongkirDitagih(o, grup), tagihan, dibayar: sudah, sisa: Math.max(tagihan - sudah, 0), dpTarget: o.dpTarget ?? null,
+    };
+  });
 }
 
 // ── invarian alokasi (dipanggil tepat sebelum menulis) ────────────────────────────────────────────────────────────
 
 /**
  * Validasi ULANG terhadap DATABASE (bukan terhadap hasil hitungan): child harus ada, satu group & satu customer, tidak CANCELLED, nominal bulat > 0,
- * tidak over-alokasi terhadap sisa tagihan, tanpa duplikat, dan Σ alokasi TEPAT sama dengan nominal Payment.
+ * tidak over-alokasi terhadap sisa tagihan KANONIS, tanpa duplikat, dan Σ alokasi TEPAT sama dengan nominal Payment.
  */
 export async function validasiAlokasiResi(db, { grup, alokasi, nominalPayment }) {
   const tolak = (pesan, code, status = 409) => { throw new ResiBayarError(pesan, status, code); };
@@ -176,7 +199,7 @@ export async function validasiAlokasiResi(db, { grup, alokasi, nominalPayment })
   }
   for (const a of alokasi) {
     const o = peta.get(a.orderId);
-    const sisa = tagihanAnak(o) - moneyToNumber(await paidForOrder(db, o.id, GATE_MATI));
+    const sisa = tagihanAnak(o, grup) - moneyToNumber(await paidForOrder(db, o.id, GATE_MATI));
     if (a.amount > sisa) tolak(`Alokasi ke order melebihi sisa tagihannya (Rp${a.amount.toLocaleString("id-ID")} > Rp${Math.max(sisa, 0).toLocaleString("id-ID")})`, "OVER_ALOKASI");
   }
   const total = alokasi.reduce((s, a) => s + a.amount, 0);
@@ -220,24 +243,50 @@ function bentukRespons(hitung, tulis, jurnal) {
   };
 }
 
-// ── Sales: pratinjau, catat pembayaran/DP, klaim Lunas ────────────────────────────────────────────────────────────
+function bentukKlaim(grup) {
+  return grup.lunasDiklaimPada ? { pada: grup.lunasDiklaimPada, olehId: grup.lunasDiklaimOlehId ?? null, olehNama: grup.lunasDiklaimOleh?.name ?? null } : null;
+}
+
+// ── Sales: ringkasan, pratinjau, catat pembayaran/DP, klaim Lunas ─────────────────────────────────────────────────
+
+/**
+ * Ringkasan pembayaran satu Resi (BACA-SAJA) untuk UI Sales/Finance: total, ongkir tambahan, rincian child, sisa, dan klaim yang menunggu.
+ * `aktif: false` bila flag mati — UI menyembunyikan seluruh fitur. Tidak pernah melempar untuk group BACKFILL (hanya `layak: false`).
+ */
+export async function ringkasanPembayaranResi(db, { groupId }) {
+  if (!(await resiPembayaranAktif(db))) return { aktif: false };
+  const { grup, anak } = await muatGrupResi(db, groupId);
+  if (grup.source !== "BARU") return { aktif: true, layak: false, alasan: "Resi hasil backfill bundle lama belum masuk alur pembayaran Resi", groupId: grup.id };
+  const { aktif } = pastikanGrupLayak(grup, anak);
+  const dibayar = await muatDibayar(db, aktif);
+  const rinci = rincianAnak(aktif, dibayar, grup);
+  const total = rinci.reduce((s, r) => s + r.tagihan, 0);
+  const sudah = rinci.reduce((s, r) => s + r.dibayar, 0);
+  return {
+    aktif: true, layak: true, groupId: grup.id, customerName: grup.customer?.name ?? null, anchorOrderId: grup.anchorOrderId,
+    totalTagihan: total, ongkirTambahan: rinci.reduce((s, r) => s + r.ongkir, 0), dpTarget: grup.dpTarget ?? null,
+    dibayar: sudah, sisa: Math.max(total - sudah, 0), klaim: bentukKlaim(grup), anak: rinci,
+    dibatalkan: anak.filter((o) => o.status === "CANCELLED").map((o) => ({ orderId: o.id, orderNumber: o.orderNumber })),
+  };
+}
 
 /** Pratinjau alokasi (BACA-SAJA, tanpa kunci). Server menghitung; klien hanya menerima hasilnya. Penulisan tetap menghitung ULANG di bawah kunci. */
 export async function pratinjauPembayaranResi(db, { groupId, tipe = TIPE_BAYAR.TAGIHAN, nominal = null }) {
   await pastikanAktif(db);
   const { grup, anak } = await muatGrupResi(db, groupId);
   const { aktif } = pastikanGrupLayak(grup, anak);
-  const hitung = hitungAlokasiResi({ anak: aktif, dibayar: await muatDibayar(db, aktif), tipe, nominal });
+  const hitung = hitungAlokasiResi({ anak: aktif, dibayar: await muatDibayar(db, aktif), tipe, nominal, grup });
   return {
     groupId: grup.id, customerName: grup.customer?.name ?? null, tipe: hitung.tipe, nominal: hitung.nominal,
     ringkasan: { totalTagihan: hitung.totalTagihan, dibayarSebelum: hitung.totalDibayarSebelum, sisa: hitung.totalSisa, dpTarget: grup.dpTarget },
     alokasi: hitung.alokasi.map((a) => ({ orderId: a.orderId, orderNumber: a.orderNumber, tagihan: a.tagihan, dibayar: a.dibayar, sisa: a.sisa, alokasi: a.alokasi, sisaSesudah: a.sisa - a.alokasi })),
+    klaim: bentukKlaim(grup),
     dibaca: "pratinjau", // bukan komitmen: penulisan menghitung ulang di bawah kunci
   };
 }
 
 function cekInput({ method, proofPhotoUrl }) {
-  if (!METODE.includes(method)) throw new ResiBayarError("Metode pembayaran tidak valid", 400, "METODE_TIDAK_VALID");
+  if (!METODE_BAYAR.includes(method)) throw new ResiBayarError("Metode pembayaran tidak valid (pilih Tunai, Transfer, QRIS, atau Kartu)", 400, "METODE_TIDAK_VALID");
   if (proofPhotoUrl != null && !String(proofPhotoUrl).startsWith("/media/payment-proofs/")) throw new ResiBayarError("URL foto bukti tidak valid", 400, "BUKTI_TIDAK_VALID");
 }
 
@@ -252,12 +301,11 @@ export async function catatPembayaranResi(db, { groupId, userId, tipe = TIPE_BAY
   return db.$transaction(async (tx) => {
     const { grup, anak } = await muatGrupResi(tx, groupId, { kunci: true });
     const { anchor, aktif } = pastikanGrupLayak(grup, anak);
-    const dibayar = await muatDibayar(tx, aktif);
     // Klaim Lunas yang menunggu Finance tidak boleh "dilunasi diam-diam" lewat pencatatan Sales (akan menghilangkan Resi dari antrean verifikasi).
-    if (aktif.some((o) => o.paymentStatus === "LUNAS" && (Number(o.value) || 0) > 0 && (dibayar.get?.(o.id) ?? 0) < tagihanAnak(o))) {
-      throw new ResiBayarError("Resi sedang diklaim Lunas dan menunggu verifikasi Finance; pembayaran tidak dicatat dari sisi Sales", 409, "KLAIM_LUNAS_AKTIF");
+    if (grup.lunasDiklaimPada) {
+      throw new ResiBayarError("Resi ini sudah diklaim Lunas dan sedang menunggu verifikasi Finance — pembayaran tidak dicatat dari sisi Sales", 409, "KLAIM_LUNAS_AKTIF");
     }
-    const hitung = hitungAlokasiResi({ anak: aktif, dibayar, tipe, nominal });
+    const hitung = hitungAlokasiResi({ anak: aktif, dibayar: await muatDibayar(tx, aktif), tipe, nominal, grup });
     const tulis = await tulisPembayaranResi(tx, { grup, anchor, aktif, hitung, method, cashAccountId, proofPhotoUrl, recordedById: userId });
     const jurnal = await bukukanPembayaran(tx, { paymentId: tulis.payment.id, userId });
     await recordActivity(tx, {
@@ -269,26 +317,26 @@ export async function catatPembayaranResi(db, { groupId, userId, tipe = TIPE_BAY
 }
 
 /**
- * Sales menandai Resi LUNAS SEKALI (semua child aktif) — pengganti klik Lunas per order. Tidak membuat Payment/jurnal: hanya klaim, sama seperti
- * dropdown Lunas biasa; Finance memverifikasinya lewat SATU antrean Resi (services/finance/penerimaanResi.js).
+ * Sales mengklaim Resi LUNAS SEKALI (bukan per order). Klaim hanya dicatat di grup (lunasDiklaimPada/Oleh) + activity log:
+ * TIDAK mengubah paymentStatus/paidAt child dan tidak membuat Payment/jurnal. Finance memverifikasinya lewat SATU antrean Resi
+ * (services/finance/penerimaanResi.js); status + paidAt (dasar komisi) baru bergerak lewat ledger saat verifikasi.
  */
 export async function klaimLunasResi(db, { groupId, userId }) {
   await pastikanAktif(db);
   return db.$transaction(async (tx) => {
     const { grup, anak } = await muatGrupResi(tx, groupId, { kunci: true });
     const { anchor, aktif } = pastikanGrupLayak(grup, anak);
-    const target = aktif.filter((o) => (Number(o.value) || 0) > 0 && o.paymentStatus !== "LUNAS");
-    if (target.length === 0) throw new ResiBayarError("Resi ini sudah ditandai Lunas", 409, "SUDAH_LUNAS");
+    if (grup.lunasDiklaimPada) throw new ResiBayarError("Resi ini sudah diklaim Lunas dan sedang menunggu verifikasi Finance", 409, "KLAIM_SUDAH_ADA");
+    const rinci = rincianAnak(aktif, await muatDibayar(tx, aktif), grup);
+    const sisa = rinci.reduce((s, r) => s + r.sisa, 0);
+    if (sisa <= 0) throw new ResiBayarError("Resi ini sudah lunas menurut pembayaran tercatat — tidak perlu diklaim", 409, "SUDAH_LUNAS");
     const sekarang = new Date();
-    for (const o of target) {
-      // paidAt = saat transisi masuk LUNAS (dasar komisi) — sama dengan PATCH /orders/:id paymentStatus=LUNAS.
-      await tx.order.update({ where: { id: o.id }, data: { paymentStatus: "LUNAS", paidAt: sekarang } });
-    }
+    await tx.orderGroup.update({ where: { id: grup.id }, data: { lunasDiklaimPada: sekarang, lunasDiklaimOlehId: userId } });
     await recordActivity(tx, {
       entityType: ENTITY_TYPES.ORDER, entityId: anchor.id, eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: userId,
-      metadata: { aksi: "klaim_lunas_resi", groupId: grup.id, child: target.map((o) => o.orderNumber || o.id) },
+      metadata: { aksi: "klaim_lunas_resi", groupId: grup.id, sisa: String(sisa), child: rinci.map((r) => r.orderNumber || r.orderId) },
     });
-    return { groupId: grup.id, ditandai: target.map((o) => ({ orderId: o.id, orderNumber: o.orderNumber })), total: target.reduce((s, o) => s + tagihanAnak(o), 0) };
+    return { groupId: grup.id, diklaimPada: sekarang, sisa, total: rinci.reduce((s, r) => s + r.tagihan, 0), anak: rinci };
   }, { maxWait: 15_000, timeout: 60_000 });
 }
 
@@ -297,16 +345,21 @@ export async function pastikanBukanAnakResiAktif(db, orderId) {
   if (!(await resiPembayaranAktif(db))) return;
   const o = await db.order.findUnique({ where: { id: orderId }, select: { groupId: true, group: { select: { source: true } } } });
   if (o?.groupId && o.group?.source === "BARU") {
-    throw new ResiBayarError("Order ini bagian dari Resi Gabungan — proses pembayarannya lewat alur Resi (antrean Resi Finance), bukan per order", 409, "ANAK_RESI");
+    throw new ResiBayarError("Order ini bagian dari Resi Gabungan — status dan pembayarannya diproses sekali di level Resi (Klaim Lunas Resi / antrean Resi Finance), bukan per order", 409, "ANAK_RESI");
   }
 }
 
-/** Guard koreksi alokasi manual: Payment Resi (anchor di group BARU) tidak boleh dialokasikan ulang lewat jalur Finance umum saat flag ON — pindah/batal child = Fase 3B. */
+/**
+ * Guard koreksi alokasi manual: Payment milik Resi BARU (Payment di anchor yang dialokasikan ke child) tidak boleh dialokasikan ulang lewat jalur
+ * Finance umum — BERLAKU TANPA MEMANDANG FLAG (Payment Resi tetap ada walau flag dimatikan). Pindah/batal child = Fase 3B.
+ */
 export async function pastikanPaymentBukanResi(db, paymentId) {
-  if (!(await resiPembayaranAktif(db))) return;
   if (!/^[0-9a-f-]{36}$/i.test(String(paymentId))) return;
-  const p = await db.payment.findUnique({ where: { id: String(paymentId) }, select: { order: { select: { groupId: true, group: { select: { source: true } } } } } });
-  if (p?.order?.groupId && p.order.group?.source === "BARU") {
+  const p = await db.payment.findUnique({
+    where: { id: String(paymentId) },
+    select: { order: { select: { groupId: true, group: { select: { source: true } } } }, _count: { select: { finAllocations: true } } },
+  });
+  if (p?.order?.groupId && p.order.group?.source === "BARU" && p._count.finAllocations > 0) {
     throw new ResiBayarError("Pembayaran ini milik Resi Gabungan — alokasinya dihitung server dan tidak bisa diubah manual (perubahan/realokasi Resi = Fase 3B)", 409, "ALOKASI_RESI_TERKUNCI");
   }
 }
