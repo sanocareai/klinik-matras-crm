@@ -950,6 +950,9 @@ orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
         userId: req.user.id,
       });
       const status = await recomputeOrderPaymentStatus(tx, req.params.id);
+      // Payment beralokasi (mis. Resi Gabungan): child lain ikut dihitung ulang supaya status/paidAt (dasar komisi) tidak menggantung. Tanpa alokasi = perilaku lama.
+      const alokasi = await tx.finPaymentAllocation.findMany({ where: { paymentId: req.params.paymentId, orderId: { not: req.params.id } }, select: { orderId: true } });
+      for (const orderId of [...new Set(alokasi.map((a) => a.orderId))]) await recomputeOrderPaymentStatus(tx, orderId);
       return { status, jurnal };
     });
 
@@ -2091,13 +2094,16 @@ orderRouter.delete("/:id", async (req, res) => {
 // pengiriman: itu duit sungguhan/pekerjaan bengkel aktif, tetap butuh
 // admin/Kendali, TIDAK termasuk perubahan ini.
 async function checkCancelBlockers(orderId) {
-  const [units, paymentCount, scopeRevisionCount] = await Promise.all([
+  const [units, paymentCount, scopeRevisionCount, alokasiResiCount] = await Promise.all([
     prisma.unit.findMany({
       where: { orderId },
       select: { id: true, status: true, currentStageId: true, unitCode: true },
     }),
     prisma.payment.count({ where: { orderId } }),
     prisma.scopeRevision.count({ where: { orderId } }),
+    // Resi Gabungan Fase 3A: child Resi yang SUDAH menerima alokasi pembayaran tidak boleh dibatalkan diam-diam (tidak punya Payment sendiri, jadi
+    // hitungan payment di atas tidak menangkapnya). Hanya order ber-groupId; order tunggal/groupId NULL tidak berubah. Kontrak Fase 3B: docs/RESI-GABUNGAN-FASE3.md.
+    prisma.finPaymentAllocation.count({ where: { orderId, order: { groupId: { not: null } } } }),
   ]);
   const inFlightUnits = units.filter(
     (u) => u.currentStageId != null && u.status !== "CANCELLED" && u.status !== "DELIVERED"
@@ -2109,6 +2115,7 @@ async function checkCancelBlockers(orderId) {
   }
   if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
   if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
+  if (alokasiResiCount > 0) blockers.push(`${alokasiResiCount} alokasi pembayaran Resi (pembatalan/refund sebagian Resi belum didukung — Fase 3B)`);
   return { blockers, units };
 }
 

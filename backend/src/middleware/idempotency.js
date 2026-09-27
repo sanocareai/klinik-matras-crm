@@ -168,3 +168,14 @@ export async function idempotency(req, res, next) {
     return res.status(500).json({ error: "Terjadi kesalahan di server" });
   }
 }
+
+/**
+ * Idempotency-Key WAJIB untuk SEMUA klien (web maupun mobile) — dipasang SEBELUM `idempotency` pada command uang yang tidak boleh berjalan tanpa
+ * kunci (mis. pembayaran/DP Resi). Format kunci divalidasi oleh `idempotency` sendiri.
+ */
+export function wajibIdempotencyKey(req, res, next) {
+  if (!req.headers["idempotency-key"]) {
+    return res.status(428).json({ error: "Header Idempotency-Key wajib untuk perintah ini (8–128 karakter)", code: "IDEMPOTENCY_KEY_REQUIRED" });
+  }
+  return next();
+}

@@ -39,6 +39,7 @@ import { resolveAccount, SYSTEM_KEYS } from "./accounts.js";
 import { toMoney, moneyToNumber, ZERO } from "./money.js";
 import { KEY as KEY_ORDER, STATUS_PENGAKUAN } from "./posting/orderRevenue.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
+import { resiPembayaranAktif, pastikanBukanAnakResiAktif } from "../resiPembayaran.js";
 
 function err(message, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
@@ -60,9 +61,12 @@ export async function tanggalCutoff(db) {
  * status bayar di CRM: paidForOrder — alokasi, gerbang, dan refund ikut).
  */
 export async function daftarLunasBelumDicatat(db) {
+  // Resi Gabungan Fase 3A: saat pembayaran Resi AKTIF, child dari Resi BARU tampil sebagai SATU antrean Resi (penerimaanResi.js), bukan baris per order.
+  // Flag MATI / groupId NULL / group BACKFILL_BUNDLE: daftar ini IDENTIK dengan perilaku lama.
+  const resiOn = await resiPembayaranAktif(db);
   const [orders, gate, cutoff] = await Promise.all([
     db.order.findMany({
-      where: { paymentStatus: "LUNAS", value: { gt: 0 }, status: { not: "CANCELLED" } },
+      where: { paymentStatus: "LUNAS", value: { gt: 0 }, status: { not: "CANCELLED" }, ...(resiOn && { OR: [{ groupId: null }, { group: { source: { not: "BARU" } } }] }) },
       select: {
         id: true, orderNumber: true, value: true, paidAt: true, status: true, createdAt: true,
         customer: { select: { id: true, name: true, assignedSales: { select: { id: true, name: true } } } },
@@ -132,6 +136,7 @@ export async function daftarLunasBelumDicatat(db) {
  * tidak membuat Payment, tidak menyentuh jurnal/saldo. Klaim tetap ada di Perlu Verifikasi Finance dengan penanda "Bukti diminta".
  */
 export async function mintaBukti(tx, { orderId, catatan = null, userId }) {
+  await pastikanBukanAnakResiAktif(tx, orderId); // child Resi (flag aktif) diproses lewat alur Resi
   await lockRowForUpdate(tx, '"Order"', orderId, { cast: null });
   const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, orderNumber: true, paymentStatus: true, value: true } });
   if (!order) throw err("Order tidak ditemukan", 404);
@@ -165,6 +170,7 @@ async function pendapatanSudahDiakui(tx, orderId) {
 export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, verifierId }) {
   if (!["REKENING", "SEBELUM_SALDO_AWAL"].includes(mode)) throw err("Pilihan \"uangnya masuk ke mana\" tidak dikenali");
   if (!["CASH", "TRANSFER", "QRIS", "CARD"].includes(method)) throw err("Cara bayar tidak dikenali");
+  await pastikanBukanAnakResiAktif(tx, orderId); // child Resi (flag aktif) diproses lewat alur Resi
 
   // S5: kunci baris order SEBELUM membaca sisa. Tanpa ini dua verifikasi paralel (dua tap / dua perangkat / kunci
   // idempotensi berbeda) sama-sama melihat sisa penuh dan membuat DUA Payment untuk satu order lunas.
@@ -268,6 +274,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
  */
 export async function tolakLunas(tx, { orderId, reason, userId }) {
   if (!reason?.trim()) throw err("Alasan wajib diisi");
+  await pastikanBukanAnakResiAktif(tx, orderId); // child Resi (flag aktif) diproses lewat alur Resi
   await lockRowForUpdate(tx, '"Order"', orderId, { cast: null }); // S5: serialkan dengan verifikasi paralel
   const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, orderNumber: true, paymentStatus: true, value: true } });
   if (!order) throw err("Order tidak ditemukan", 404);

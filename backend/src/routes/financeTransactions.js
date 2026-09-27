@@ -37,6 +37,7 @@ import { toMoney, sumMoney, moneyToNumber, ZERO, MoneyError } from "../services/
 import { saldoDariAplikasi, bentukAplikasiDp, daftarDpEligible, ringkasanDp } from "../services/finance/purchaseAdvanceRead.js";
 import { AccountError } from "../services/finance/accounts.js";
 import { SETTING_KEYS, getSettingRaw, parseIntOr, getVerificationGate } from "../services/finance/settings.js";
+import { pastikanPaymentBukanResi } from "../services/resiPembayaran.js";
 import { postExpenseApproved, postExpensePaid, KEY as EXPENSE_KEY } from "../services/finance/posting/expense.js";
 import { postPurchaseApproved, postPurchasePaid, totalDpDiterapkan, KEY as PURCHASE_KEY } from "../services/finance/posting/purchase.js";
 import { postAdvanceApplied } from "../services/finance/posting/purchaseAdvance.js";
@@ -2173,6 +2174,7 @@ financeTxRouter.get("/customer-payments", requirePermission(P.FINANCE_READ), asy
 financeTxRouter.post("/customer-payments/:id/allocations", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
     const { allocations } = req.body;
+    await pastikanPaymentBukanResi(prisma, req.params.id);
     const hasil = await prisma.$transaction(async (tx) => {
       const orderIds = await setAllocations(tx, {
         paymentId: req.params.id, allocations, userId: req.user.id,
