@@ -17,6 +17,8 @@ const WRITERS = [
   { kind: "RESERVATION_WRITER", regex: new RegExp(`\\.materialReservation\\.${WRITE_OPS}\\s*\\(`, "g") },
 ];
 const OWNER = "src/services/productionPlanningCommandService.js";
+// P4 (pengambilan bahan) satu-satunya penulis lain yang sah, HANYA untuk transisi reservasi ACTIVE -> CONSUMED.
+const RESERVATION_CONSUMER = "src/services/productionMaterialIssueCommandService.js";
 
 function walk(root) {
   const files = [];
@@ -37,7 +39,7 @@ export function auditPlanningWriters(files) {
     const text = raw.replace(/\r\n/g, "\n");
     for (const { kind, regex } of WRITERS) {
       for (const match of text.matchAll(regex)) {
-        const ok = rel === OWNER;
+        const ok = rel === OWNER || (kind === "RESERVATION_WRITER" && rel === RESERVATION_CONSUMER);
         findings.push({ file: rel, line: lineOf(text, match.index), kind, operation: match[1], disposition: ok ? "V2_COMMAND_OWNER" : "UNOWNED_PLANNING_WRITER", ok });
       }
     }

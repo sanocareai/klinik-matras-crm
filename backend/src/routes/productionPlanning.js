@@ -12,6 +12,9 @@ import {
   listEligibleUnitsForPlanning, listProductionPlans, releaseMaterialReservations,
   reserveMaterialForPlan, setPlannedBOM,
 } from "../services/productionPlanningCommandService.js";
+import {
+  cancelMaterialIssueBeforePick, getMaterialRequest, listMaterialRequests, pickMaterialIssue, requestMaterialPickup,
+} from "../services/productionMaterialIssueCommandService.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 
 export const productionPlanningRouter = express.Router();
@@ -136,6 +139,60 @@ productionPlanningRouter.post("/plans/:id/cancel", requireAnyPermission(...WRITE
   try {
     const result = await cancelProductionPlan(prisma, {
       planId: req.params.id, actorId: req.user.id, idempotencyKey: req.get("Idempotency-Key") || req.body?.idempotencyKey,
+      expectedRevision: req.body?.expectedRevision, reason: req.body?.reason,
+    });
+    res.json(result);
+  } catch (err) { handleErr(err, res); }
+});
+
+// ── P4: Pengambilan Bahan Produksi (Material Issue dari reservasi P3) ─────────────────────────────────────────
+const ISSUE_STATUSES = ["READY_TO_PICK", "ISSUED", "CANCELLED"];
+
+// GET /api/production-planning/material-requests?status=READY_TO_PICK&planId= — antrean Gudang + status untuk Produksi.
+productionPlanningRouter.get("/material-requests", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const status = req.query.status ? String(req.query.status) : null;
+    if (status && !ISSUE_STATUSES.includes(status)) return res.status(400).json({ error: "Status permintaan tidak valid", code: "MATERIAL_ISSUE_STATUS_INVALID" });
+    const gate = await readerGate(res);
+    if (!gate) return;
+    const planId = req.query.planId ? String(req.query.planId) : null;
+    res.json({ items: await listMaterialRequests(prisma, { status, planId, unitIds: gate.unitIds, limit: req.query.limit }), readerMode: gate.readerMode });
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.get("/material-requests/:id", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const gate = await readerGate(res);
+    if (!gate) return;
+    const issue = await getMaterialRequest(prisma, req.params.id);
+    if (!issue || (gate.unitIds && !gate.unitIds.includes(issue.unit?.id))) return res.status(404).json({ error: "Permintaan pengambilan bahan tidak ditemukan", code: "MATERIAL_ISSUE_NOT_FOUND" });
+    res.json({ ...issue, readerMode: gate.readerMode });
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-planning/plans/:id/material-request + Idempotency-Key — Produksi mengajukan (tanpa body baris).
+productionPlanningRouter.post("/plans/:id/material-request", requireAnyPermission(...WRITE_PERMS), async (req, res) => {
+  try {
+    const result = await requestMaterialPickup(prisma, { planId: req.params.id, actorId: req.user.id, idempotencyKey: req.get("Idempotency-Key") || req.body?.idempotencyKey });
+    res.status(201).json(result);
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-planning/material-requests/:id/pick { expectedRevision } — Gudang "Serahkan Bahan".
+productionPlanningRouter.post("/material-requests/:id/pick", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const result = await pickMaterialIssue(prisma, {
+      issueId: req.params.id, actorId: req.user.id, idempotencyKey: req.get("Idempotency-Key") || req.body?.idempotencyKey, expectedRevision: req.body?.expectedRevision,
+    });
+    res.json(result);
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-planning/material-requests/:id/cancel { reason, expectedRevision } — hanya sebelum PICKED.
+productionPlanningRouter.post("/material-requests/:id/cancel", requireAnyPermission(...WRITE_PERMS), async (req, res) => {
+  try {
+    const result = await cancelMaterialIssueBeforePick(prisma, {
+      issueId: req.params.id, actorId: req.user.id, idempotencyKey: req.get("Idempotency-Key") || req.body?.idempotencyKey,
       expectedRevision: req.body?.expectedRevision, reason: req.body?.reason,
     });
     res.json(result);

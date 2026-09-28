@@ -29,6 +29,16 @@ materialIssueRouter.use(requireAuth);
 class IssueError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
+
+// Production Workshop + Warehouse V2 P4 — dokumen dengan productionPlanId terisi "dimiliki" command owner P4
+// (productionMaterialIssueCommandService.js): revision/idempotency/outbox-nya HANYA aman lewat command itu.
+// Endpoint V1 di bawah menolak mutasi ke dokumen ini (409) — GET tetap terbuka (baca-saja, tidak ada risiko),
+// perilaku V1 untuk dokumen productionPlanId=NULL (SEMUA baris lama) TIDAK berubah sedikit pun.
+function assertNotOwnedByV2(issue) {
+  if (issue.productionPlanId) {
+    throw new IssueError("Permintaan ini dikelola Production V2 (Planned BOM/reservasi) — gunakan endpoint /api/production-planning/material-requests", 409);
+  }
+}
 function handleErr(err, res) {
   if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor issue sudah dipakai" });
@@ -81,7 +91,9 @@ const issueInclude = {
   },
 };
 
-function generateIssueCode(date) {
+// Diekspor: dipakai ulang oleh productionMaterialIssueCommandService.js (P4) supaya penomoran issueNumber tetap
+// SATU pola untuk seluruh tabel material_issues (v1 dan V2), bukan dua skema berbeda yang bisa bertabrakan.
+export function generateIssueCode(date) {
   const d = new Date(date);
   const dd = String(d.getUTCDate()).padStart(2, "0");
   const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -93,8 +105,10 @@ function generateIssueCode(date) {
 materialIssueRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res) => {
   try {
     const { status, sourceType, priority } = req.query;
+    // productionPlanId: null -> antrean V1 SELALU hanya menunjukkan dokumen v1 (tidak berubah sama sekali).
+    // Dokumen P4 punya antrean sendiri (GET /api/production-planning/material-requests, digerbang reader V2).
     const issues = await prisma.materialIssue.findMany({
-      where: { ...(status && { status }), ...(sourceType && { sourceType }), ...(priority && { priority }) },
+      where: { productionPlanId: null, ...(status && { status }), ...(sourceType && { sourceType }), ...(priority && { priority }) },
       include: issueInclude,
       orderBy: [{ createdAt: "desc" }],
     });
@@ -195,6 +209,7 @@ materialIssueRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (r
   try {
     const preCheck = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Material issue tidak ditemukan" });
+    assertNotOwnedByV2(preCheck);
 
     const { unitId, sourceReference, department, requiredDate, priority, notes, status } = req.body;
 
@@ -266,6 +281,7 @@ materialIssueRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WR
   try {
     const issue = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
     if (!issue) return res.status(404).json({ error: "Material issue tidak ditemukan" });
+    assertNotOwnedByV2(issue);
     if (issue.status === "ISSUED" || issue.status === "CANCELLED") {
       throw new IssueError(`Issue berstatus ${issue.status} tidak bisa diubah lagi`);
     }
@@ -302,6 +318,7 @@ materialIssueRouter.post("/:id/issue", requirePermission(P.INVENTORY_WRITE), asy
   try {
     const preCheck = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Material issue tidak ditemukan" });
+    assertNotOwnedByV2(preCheck);
 
     const overrides = Object.fromEntries((req.body.lines || []).map((l) => [l.lineId, l.issuedQty]));
 
@@ -357,6 +374,7 @@ materialIssueRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), a
   try {
     const preCheck = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Material issue tidak ditemukan" });
+    assertNotOwnedByV2(preCheck);
     const { reason } = req.body;
     if (!reason?.trim()) throw new IssueError("Alasan pembatalan wajib diisi");
 

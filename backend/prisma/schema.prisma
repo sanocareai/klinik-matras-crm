@@ -5224,6 +5224,20 @@ model MaterialIssue {
   complaintCaseId String?        @map("complaint_case_id") @db.Uuid
   complaintCase   ComplaintCase? @relation(fields: [complaintCaseId], references: [id], onDelete: SetNull)
 
+  // Production Workshop + Warehouse V2 P4 (permintaan pengambilan bahan dari Planned BOM/reservasi) — NULL untuk
+  // SEMUA baris v1 (perilaku V1 tidak berubah sama sekali). Terisi = dokumen ini "dimiliki" command owner P4
+  // (productionMaterialIssueCommandService.js); endpoint V1 (PATCH/:id, POST/:id/issue, PATCH/:id/cancel) menolak
+  // memutasinya (lihat guard di routes/materialIssue.js) supaya revision/idempotency/outbox P4 tidak bisa dilewati
+  // diam-diam lewat jalur lama. "Satu issue AKTIF per plan" ditegakkan partial unique index di migration (status
+  // NOT IN ISSUED/CANCELLED) — Prisma tidak bisa mengekspresikan WHERE di @@unique.
+  productionPlanId String?            @map("production_plan_id") @db.Uuid
+  productionPlan   ProductionRunPlan? @relation(fields: [productionPlanId], references: [id], onDelete: Restrict)
+  revision         Int                @default(1)
+  commandId        String?            @map("command_id") @db.Uuid
+  cancelledById    String?            @map("cancelled_by_id")
+  cancelledAt      DateTime?          @map("cancelled_at")
+  cancelReason     String?            @map("cancel_reason")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -5234,6 +5248,7 @@ model MaterialIssue {
   @@index([requiredDate])
   @@index([unitId])
   @@index([complaintCaseId])
+  @@index([productionPlanId])
   @@map("material_issues")
 }
 
@@ -5252,6 +5267,12 @@ model MaterialIssueLine {
   // tabel lokasi (belum ada — lihat catatan di StockMovement).
   sourceLocation String? @map("source_location")
   notes          String?
+
+  // P4 — jejak balik ke MaterialReservation V2 yang baris ini konsumsi (NULL untuk baris v1). @unique: satu
+  // reservasi hanya boleh dikonsumsi oleh SATU baris issue seumur hidupnya (Postgres mengizinkan banyak NULL
+  // di bawah unique index, jadi baris v1 tidak terpengaruh).
+  reservationId String?              @unique @map("reservation_id") @db.Uuid
+  reservation   MaterialReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
 
   @@index([materialIssueId])
   @@index([materialId])
@@ -8655,8 +8676,9 @@ model ProductionRunPlan {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  bomLines     PlannedBOMLine[]
-  reservations MaterialReservation[]
+  bomLines       PlannedBOMLine[]
+  reservations   MaterialReservation[]
+  materialIssues MaterialIssue[]
 
   @@index([status, updatedAt])
   @@map("production_run_plans_v2")
@@ -8713,10 +8735,15 @@ model MaterialReservation {
   releasedById  String?   @map("released_by_id")
   releasedAt    DateTime? @map("released_at")
   releaseReason String?   @map("release_reason")
+  // P4 — diisi saat MaterialIssueLine yang menunjuk reservasi ini benar-benar di-PICKED (stok fisik berkurang).
+  consumedById String?   @map("consumed_by_id")
+  consumedAt   DateTime? @map("consumed_at")
 
   commandId String?  @map("command_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+
+  issueLine MaterialIssueLine?
 
   // "Reservasi aktif ganda untuk sumber yang sama" -> partial unique (bom_line_id) WHERE status='ACTIVE'
   // di migration. Histori (RELEASED/CONSUMED/CANCELLED) tetap boleh banyak per bomLineId (tidak dihapus).

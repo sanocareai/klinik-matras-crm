@@ -190,11 +190,17 @@ export async function computeStockSnapshot(client) {
     FROM materials m
     LEFT JOIN stock_movements sm ON sm.material_id = m.id
     LEFT JOIN (
-      SELECT mil.material_id, SUM(mil.requested_qty) AS reserved
-      FROM material_issue_lines mil
-      JOIN material_issues mi ON mi.id = mil.material_issue_id
-      WHERE mi.status = ANY(${RESERVED_STATUSES}::"IssueStatus"[])
-      GROUP BY mil.material_id
+      -- Reserved = V1 (Material Issue APPROVED..PICKED, HANYA dokumen v1: production_plan_id IS NULL) + V2 (reservasi
+      -- P3 ACTIVE). Dokumen P4 (production_plan_id terisi) sengaja TIDAK dihitung di cabang V1: demand-nya sudah
+      -- terwakili reservasi V2 ACTIVE sampai CONSUMED — kalau tidak, dihitung dua kali dan availability terlalu kecil.
+      SELECT material_id, SUM(qty) AS reserved FROM (
+        SELECT mil.material_id, mil.requested_qty AS qty
+        FROM material_issue_lines mil
+        JOIN material_issues mi ON mi.id = mil.material_issue_id
+        WHERE mi.status = ANY(${RESERVED_STATUSES}::"IssueStatus"[]) AND mi.production_plan_id IS NULL
+        UNION ALL
+        SELECT r.material_id, r.qty::float FROM material_reservations_v2 r WHERE r.status = 'ACTIVE'
+      ) u GROUP BY material_id
     ) res ON res.material_id = m.id
     GROUP BY m.id, m.code, m.name, m.unit, m.active, m.category,
              m.service_line, m.reorder_point, m.reorder_qty, res.reserved,

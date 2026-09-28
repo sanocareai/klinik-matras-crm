@@ -274,6 +274,8 @@ const DIVISIONS = {
           { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
           // Custody unit V2 (P1–P2): antrean serah-terima Delivery <-> Gudang. Data kosong bila reader V2 belum diaktifkan (fail-closed).
           { to: "/warehouse/unit-custody", label: "Penerimaan Unit", Icon: ClipboardCheck },
+          // P4 — antrean Pengambilan Bahan Produksi (permintaan dari Planned BOM/reservasi; kosong/inert bila reader V2 OFF).
+          { to: "/warehouse/material-pickup", label: "Pengambilan Bahan Produksi", Icon: ArrowUpFromLine },
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
           { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
           // C1 — biaya operasional NON-STOK gudang (bongkar muat, kurir, perlengkapan). Hanya WAREHOUSE/Finance/Admin; server menegakkan ulang.

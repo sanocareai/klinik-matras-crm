@@ -11,6 +11,7 @@ import {
   PLAN_TABS, bomLineAvailability, canCancelPlan, canEditBOM, canReleaseReservations, canReservePlan,
   emptyStateCopy, planStatusBadgeFor, validateAssignmentForm, validateBOMLines,
 } from "@/features/production/planning.js";
+import { canCancelRequest, canRequestPickup, lineComparison, pickErrorMessage, pickupStatusBadgeFor } from "@/features/production/materialPickup.js";
 
 // Rencana Produksi H-1 (Production Workshop + Warehouse V2, P3) — antrean unit eligible, assignment
 // workshop/operator/target waktu, Planned BOM, reservasi bahan Gudang. Data hanya muncul bila reader V2
@@ -229,6 +230,75 @@ function ReservationSection({ plan, disabled, onSaved, onError }) {
   );
 }
 
+function MaterialRequestSection({ plan, disabled, onError, onChanged }) {
+  const [requests, setRequests] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [reason, setReason] = useState("");
+
+  const load = useCallback(() => {
+    api.getMaterialRequests({ planId: plan.id }).then((d) => setRequests(d.items || [])).catch(() => setRequests([]));
+  }, [plan.id]);
+  useEffect(() => { load(); }, [load, plan.status, plan.revision]);
+
+  const current = (requests || []).find((r) => r.status === "READY_TO_PICK") || (requests || []).find((r) => r.status === "ISSUED") || null;
+
+  const doRequest = async () => {
+    setSaving(true);
+    try { await api.requestMaterialPickup(plan.id); load(); onChanged("Pengambilan bahan diajukan ke Gudang."); }
+    catch (e) { onError(pickErrorMessage(e)); } finally { setSaving(false); }
+  };
+  const doCancel = async () => {
+    if (reason.trim().length < 3) { onError("Alasan pembatalan wajib diisi (minimal 3 karakter)"); return; }
+    setSaving(true);
+    try {
+      await api.cancelMaterialRequest(current.id, { reason: reason.trim(), expectedRevision: current.revision });
+      setCancelling(false); setReason(""); load(); onChanged("Permintaan dibatalkan; reservasi dilepas.");
+    } catch (e) { onError(pickErrorMessage(e)); } finally { setSaving(false); }
+  };
+
+  if (requests === null) return null;
+  const showRequest = canRequestPickup(plan, requests);
+  if (!current && !showRequest) return null;
+  const badge = current ? pickupStatusBadgeFor(current.status) : null;
+  return (
+    <div className="space-y-2 rounded-btn border border-line p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[12.5px] font-bold text-ink">Permintaan Bahan ke Gudang</p>
+        {badge && <Badge variant={badge.variant}>{badge.label}</Badge>}
+      </div>
+      {current ? (
+        <>
+          <p className="text-[12px] text-ink3">{current.issueNumber}{current.issuedAt ? ` · diserahkan ${waktu(current.issuedAt)}` : " · menunggu Gudang menyerahkan bahan"}</p>
+          <table className="w-full text-[12px]">
+            <thead><tr className="text-left text-ink3"><th className="font-medium">Bahan</th><th className="text-right font-medium">Kebutuhan</th><th className="text-right font-medium">Diserahkan</th></tr></thead>
+            <tbody>
+              {current.lines.map((l) => { const c = lineComparison(l); return (
+                <tr key={l.id} className="border-t border-line"><td className="py-1 text-ink">{l.code} · {l.name}</td><td className="py-1 text-right text-ink">{c.planned} {l.unit}</td><td className="py-1 text-right text-ink">{c.picked}</td></tr>
+              ); })}
+            </tbody>
+          </table>
+          {canCancelRequest(current) && !cancelling && <Button size="sm" variant="ghost" disabled={disabled || saving} onClick={() => setCancelling(true)}><XCircle size={14} /> Batalkan Permintaan</Button>}
+          {cancelling && (
+            <div className="space-y-2">
+              <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder="Alasan pembatalan" className="w-full rounded-btn border border-line bg-surface px-3 py-2 text-[13px] text-ink" />
+              <div className="flex gap-2">
+                <Button size="sm" variant="destructive" disabled={saving} onClick={doCancel}>{saving ? "Menyimpan…" : "Konfirmasi Batalkan"}</Button>
+                <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setCancelling(false); setReason(""); }}>Tutup</Button>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="text-[12px] text-ink3">Material dan jumlah diambil otomatis dari reservasi — tidak perlu diketik ulang. Stok fisik baru berkurang saat Gudang menyerahkan bahan.</p>
+          <Button size="sm" disabled={disabled || saving} onClick={doRequest}>{saving ? "Mengajukan…" : "Ajukan Pengambilan Bahan"}</Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PlanDetailModal({ plan, workCenters, operators, materials, stockByMaterial, onClose, onChanged }) {
   const [current, setCurrent] = useState(plan);
   const [notice, setNotice] = useState("");
@@ -271,6 +341,7 @@ function PlanDetailModal({ plan, workCenters, operators, materials, stockByMater
           onSaved={() => refresh("Planned BOM disimpan.")} onError={setError} />
         <ReservationSection plan={current} disabled={busy}
           onSaved={() => refresh("Bahan direservasi.")} onError={setError} />
+        <MaterialRequestSection plan={current} disabled={busy} onError={setError} onChanged={(m) => refresh(m)} />
 
         {canCancelPlan(current) && !cancelling && (
           <Button size="sm" variant="destructive" disabled={busy} onClick={() => setCancelling(true)}><XCircle size={14} /> Batalkan Rencana</Button>

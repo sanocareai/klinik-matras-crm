@@ -166,7 +166,20 @@ export async function createProductionPlan(prisma, { runId, actorId, idempotency
   });
 }
 
-async function loadPlanForWrite(tx, planId) {
+// P4: rencana yang sudah punya permintaan pengambilan bahan AKTIF (READY_TO_PICK) atau sudah DISERAHKAN (ISSUED) tidak
+// boleh diubah lewat jalur P3 (lepas reservasi/ubah BOM/batal rencana/reservasi ulang) — kalau tidak, dokumen issue
+// menjadi yatim atau bahan yang sudah keluar dipesan lagi. Batalkan permintaan lewat command P4 lebih dulu; setelah
+// ISSUED koreksi lewat return/adjustment stok. Baca-saja (tidak menulis tabel P4).
+async function assertNoBlockingMaterialIssue(tx, planId) {
+  const issue = await tx.materialIssue.findFirst({ where: { productionPlanId: planId, status: { in: ["READY_TO_PICK", "ISSUED"] } }, select: { id: true, status: true } });
+  if (!issue) return;
+  if (issue.status === "ISSUED") throw planError("Bahan untuk rencana ini sudah diserahkan Gudang; koreksi lewat return/adjustment stok", 409, "PLAN_MATERIAL_ALREADY_ISSUED", { issueId: issue.id });
+  throw planError("Ada permintaan pengambilan bahan aktif; batalkan permintaan itu lebih dulu", 409, "PLAN_MATERIAL_ISSUE_ACTIVE", { issueId: issue.id });
+}
+
+// Diekspor: dipakai ulang oleh productionMaterialIssueCommandService.js (P4) untuk mengunci+memuat plan di
+// dalam TRANSAKSI YANG SAMA dengan command-nya sendiri (mis. batal sebelum pick -> releaseReservationsInTx).
+export async function loadPlanForWrite(tx, planId) {
   await lockRowForUpdate(tx, "production_run_plans_v2", planId);
   const plan = await tx.productionRunPlan.findUnique({
     where: { id: planId },
@@ -256,6 +269,7 @@ export async function setPlannedBOM(prisma, { planId, actorId, idempotencyKey, e
     assertPlanNotCancelled(plan);
     assertPlanRevision(plan, revisionExpected);
     await assertWriterEnabledForUnit(tx, plan.run.unitId);
+    await assertNoBlockingMaterialIssue(tx, planId);
 
     const materials = await tx.material.findMany({ where: { id: { in: normalized.map((l) => l.materialId) } } });
     const byId = new Map(materials.map((m) => [m.id, m]));
@@ -340,7 +354,7 @@ async function availableForMaterial(tx, materialId, { excludePlanId = null } = {
   const [{ reserved: v1Reserved }] = await tx.$queryRaw`
     SELECT COALESCE(SUM(mil.requested_qty), 0)::float AS reserved
     FROM material_issue_lines mil JOIN material_issues mi ON mi.id = mil.material_issue_id
-    WHERE mil.material_id = ${materialId}::uuid AND mi.status = ANY(${RESERVED_STATUSES}::"IssueStatus"[])
+    WHERE mil.material_id = ${materialId}::uuid AND mi.status = ANY(${RESERVED_STATUSES}::"IssueStatus"[]) AND mi.production_plan_id IS NULL
   `;
   const [{ reserved: v2Reserved }] = excludePlanId
     ? await tx.$queryRaw`
@@ -367,6 +381,7 @@ export async function reserveMaterialForPlan(prisma, { planId, actorId, idempote
     assertPlanNotCancelled(plan);
     assertPlanRevision(plan, revisionExpected);
     await assertWriterEnabledForUnit(tx, plan.run.unitId);
+    await assertNoBlockingMaterialIssue(tx, planId);
     if (plan.status === "DRAFT") throw planError("Rencana belum ditetapkan (workshop/operator/target waktu)", 409, "PLAN_NOT_ASSIGNED");
     if (plan.status === "MATERIAL_RESERVED") throw planError("Bahan untuk rencana ini sudah direservasi", 409, "PLAN_ALREADY_RESERVED");
     if (plan.bomLines.length === 0) throw planError("Planned BOM belum diisi", 422, "PLAN_BOM_EMPTY");
@@ -424,6 +439,33 @@ export async function reserveMaterialForPlan(prisma, { planId, actorId, idempote
 // ---------------------------------------------------------------------------
 // 5. Lepas reservasi manual (tanpa mengubah BOM) — idempoten/no-op aman bila tidak ada reservasi aktif.
 // ---------------------------------------------------------------------------
+// Mutasi murni (TANPA v2Command sendiri) — dipakai ULANG oleh releaseMaterialReservations (di bawah, membungkusnya
+// dengan command RELEASE_RESERVATIONS sendiri) DAN oleh productionMaterialIssueCommandService.js (P4) saat
+// pembatalan permintaan bahan sebelum PICKED, di dalam TRANSAKSI YANG SAMA dengan command CANCEL_MATERIAL_ISSUE
+// milik P4 — nested prisma.$transaction tidak didukung, jadi bagian mutasi harus bisa dipanggil dengan `tx` polos.
+// `plan` HARUS sudah dimuat+dikunci (loadPlanForWrite) oleh pemanggil.
+export async function releaseReservationsInTx(tx, { plan, actorId, reason, commandId }) {
+  const now = new Date();
+  let released = 0;
+  for (const reservation of plan.reservations) {
+    const nextRevision = reservation.revision + 1;
+    await tx.materialReservation.update({
+      where: { id: reservation.id },
+      data: { status: "RELEASED", releasedById: actorId || null, releasedAt: now, releaseReason: reason, revision: nextRevision },
+    });
+    await outbox(tx, {
+      eventType: "production.reservation.released", aggregateType: "MaterialReservation", aggregateId: reservation.id, revision: nextRevision,
+      dedupeKey: `production-reservation-released:${reservation.id}:${nextRevision}`,
+      payload: { reservationId: reservation.id, planId: plan.id, materialId: reservation.materialId, reason, occurredAt: now.toISOString(), actorId },
+    });
+    released += 1;
+  }
+  const nextStatus = plan.status === "MATERIAL_RESERVED" ? "PLANNED" : plan.status;
+  const revision = plan.revision + 1;
+  await tx.productionRunPlan.update({ where: { id: plan.id }, data: { status: nextStatus, revision, commandId } });
+  return { releasedCount: released, nextStatus, revision };
+}
+
 export async function releaseMaterialReservations(prisma, { planId, actorId, idempotencyKey, expectedRevision, reason }) {
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
@@ -439,27 +481,11 @@ export async function releaseMaterialReservations(prisma, { planId, actorId, ide
     assertPlanNotCancelled(plan);
     assertPlanRevision(plan, revisionExpected);
     await assertWriterEnabledForUnit(tx, plan.run.unitId);
+    await assertNoBlockingMaterialIssue(tx, planId);
 
-    const now = new Date();
-    let released = 0;
-    for (const reservation of plan.reservations) {
-      const nextRevision = reservation.revision + 1;
-      await tx.materialReservation.update({
-        where: { id: reservation.id },
-        data: { status: "RELEASED", releasedById: actorId || null, releasedAt: now, releaseReason: cleaned, revision: nextRevision },
-      });
-      await outbox(tx, {
-        eventType: "production.reservation.released", aggregateType: "MaterialReservation", aggregateId: reservation.id, revision: nextRevision,
-        dedupeKey: `production-reservation-released:${reservation.id}:${nextRevision}`,
-        payload: { reservationId: reservation.id, planId, materialId: reservation.materialId, reason: cleaned, occurredAt: now.toISOString(), actorId },
-      });
-      released += 1;
-    }
-    const revision = plan.revision + 1;
-    const nextStatus = plan.status === "MATERIAL_RESERVED" ? "PLANNED" : plan.status;
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RELEASE_RESERVATIONS", aggregateType: "ProductionRunPlan", aggregateId: planId, requestHash, expectedRevision: revisionExpected });
-    await tx.productionRunPlan.update({ where: { id: planId }, data: { status: nextStatus, revision, commandId: command.id } });
-    const response = { planId, status: nextStatus, revision, releasedCount: released };
+    const { releasedCount, nextStatus, revision } = await releaseReservationsInTx(tx, { plan, actorId, reason: cleaned, commandId: command.id });
+    const response = { planId, status: nextStatus, revision, releasedCount };
     await finishCommand(tx, command, revision, response);
     return { replayed: false, ...response };
   });
@@ -483,6 +509,7 @@ export async function cancelProductionPlan(prisma, { planId, actorId, idempotenc
     assertPlanNotCancelled(plan);
     assertPlanRevision(plan, revisionExpected);
     await assertWriterEnabledForUnit(tx, plan.run.unitId);
+    await assertNoBlockingMaterialIssue(tx, planId);
 
     const now = new Date();
     for (const reservation of plan.reservations) {

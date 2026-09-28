@@ -146,6 +146,11 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_PLAN_BOM_SET: "PRODUCTION_PLAN_BOM_SET",
   PRODUCTION_PLAN_MATERIAL_RESERVED: "PRODUCTION_PLAN_MATERIAL_RESERVED",
   PRODUCTION_PLAN_CANCELLED: "PRODUCTION_PLAN_CANCELLED",
+  // Pengambilan Bahan Produksi V2 (P4): permintaan dari Plan MATERIAL_RESERVED, PICKED oleh Gudang (stok fisik
+  // berkurang + reservasi CONSUMED), atau dibatalkan sebelum PICKED (reservasi dilepas).
+  PRODUCTION_MATERIAL_ISSUE_REQUESTED: "PRODUCTION_MATERIAL_ISSUE_REQUESTED",
+  PRODUCTION_MATERIAL_ISSUE_PICKED: "PRODUCTION_MATERIAL_ISSUE_PICKED",
+  PRODUCTION_MATERIAL_ISSUE_CANCELLED: "PRODUCTION_MATERIAL_ISSUE_CANCELLED",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -349,6 +354,12 @@ export function formatActivitySentence(event) {
       return `Bahan direservasi untuk unit ${metadata.unitCode || "—"} (${metadata.reservationCount ?? 0} baris)`;
     case EVENT_TYPES.PRODUCTION_PLAN_CANCELLED:
       return `Rencana produksi unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_REQUESTED:
+      return `Produksi mengajukan pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan)`;
+    case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_PICKED:
+      return `Gudang menyerahkan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan, stok berkurang)`;
+    case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_CANCELLED:
+      return `Pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.BUKTI_DIMINTA:
       return metadata.catatan ? `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"} — ${metadata.catatan}` : `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"}`;
     case EVENT_TYPES.DOCUMENT_CANCELLED:

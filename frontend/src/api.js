@@ -539,6 +539,18 @@ export const api = {
     request(`/production-planning/plans/${id}/reserve`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   releasePlanReservations: (id, data, idempotencyKey = mutationKey("plan-release")) =>
     request(`/production-planning/plans/${id}/release`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Pengambilan Bahan Produksi V2 (P4) — Produksi mengajukan dari plan MATERIAL_RESERVED (tanpa baris: material/qty dari
+  // reservasi), Gudang "Serahkan Bahan" (stok fisik berkurang), batal hanya sebelum diserahkan.
+  getMaterialRequests: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production-planning/material-requests${qs ? `?${qs}` : ""}`);
+  },
+  requestMaterialPickup: (planId, idempotencyKey = mutationKey("issue-request")) =>
+    request(`/production-planning/plans/${planId}/material-request`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
+  pickMaterialRequest: (id, data, idempotencyKey = mutationKey("issue-pick")) =>
+    request(`/production-planning/material-requests/${id}/pick`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  cancelMaterialRequest: (id, data, idempotencyKey = mutationKey("issue-cancel")) =>
+    request(`/production-planning/material-requests/${id}/cancel`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   cancelProductionPlan: (id, data, idempotencyKey = mutationKey("plan-cancel")) =>
     request(`/production-planning/plans/${id}/cancel`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
 
