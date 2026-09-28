@@ -1397,6 +1397,15 @@ export const api = {
   setFinancePin: (password, pin) => request("/finance/pin", { method: "POST", body: JSON.stringify({ password, pin }) }),
   verifyFinancePin: (pin) => request("/finance/pin/verifikasi", { method: "POST", body: JSON.stringify({ pin }) }),
   getFinanceRiwayatVersi: (jenis, id) => request(`/finance/riwayat-versi/${jenis}/${id}`),
+  // B3.7 Koreksi Pembayaran Masuk Terverifikasi. Pratinjau (data.preview) tanpa PIN & tanpa Idempotency-Key; simpan: PIN step-up + kunci idempotensi.
+  editInfoPembayaran: (id, data, idempotencyKey = mutationKey("bayar-info")) =>
+    request(`/finance/pembayaran/${id}/info`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  koreksiPembayaran: (id, data, { stepUp = null, idempotencyKey = null } = {}) =>
+    request(`/finance/pembayaran/${id}/koreksi`, {
+      method: "POST", body: JSON.stringify(data),
+      headers: { ...(data.preview ? {} : { "Idempotency-Key": idempotencyKey || mutationKey("bayar-koreksi") }), ...(stepUp ? { "X-Finance-Stepup": stepUp } : {}) },
+    }),
+  getRiwayatPembayaran: (id) => request(`/finance/pembayaran/${id}/riwayat`),
   editFinanceRefund: (id, data) => request(`/finance/refunds/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   cancelFinanceRefund: (id, reason) => request(`/finance/refunds/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   editFinanceBill: (id, data) => request(`/finance/bills/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

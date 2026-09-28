@@ -3969,6 +3969,18 @@ model Payment {
   cancelledBy   User?     @relation("PaymentCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
   cancelReason  String?   @map("cancel_reason")
 
+  // B3.7 Koreksi Pembayaran Masuk Terverifikasi (Sep 2026) — informasi administratif (BUKAN angka buku besar): boleh diedit di tempat dengan
+  // audit sebelum/sesudah di ActivityEvent. Kolom lama tidak berubah arti.
+  referenceNumber String? @map("reference_number")
+  notes           String?
+  internalNote    String? @map("internal_note")
+
+  // Versi koreksi: koreksi nominal/rekening/tanggal/metode/order/alokasi TIDAK meng-update baris ini — baris lama dibatalkan (cancelledAt) dan
+  // jurnalnya dibalik, baris BARU dibuat menunjuk ke sini. @unique = satu Payment hanya bisa diganti SEKALI (exactly-once di level database).
+  replacesPaymentId String?  @unique @map("replaces_payment_id") @db.Uuid
+  replaces          Payment? @relation("PaymentVersion", fields: [replacesPaymentId], references: [id], onDelete: Restrict)
+  replacedBy        Payment? @relation("PaymentVersion")
+
   verifications PaymentVerification[]
 
   // Finance (D-180) — alokasi ke order. KOSONG untuk hampir semua baris:

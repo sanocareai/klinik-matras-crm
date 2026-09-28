@@ -70,6 +70,7 @@ import {
   pastikanStepUp, pastikanBelumDirekonsiliasi, snapshotJurnal, susunPratinjau, tautanJurnal, PratinjauKoreksi,
 } from "../services/finance/koreksiGate.js";
 import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/service.js";
+import { blokirKoreksiBatch, menuKoreksi } from "../services/finance/koreksiPembayaran.js";
 
 export const financeTxRouter = express.Router();
 financeTxRouter.use(requireAuth);
@@ -2135,6 +2136,7 @@ financeTxRouter.get("/customer-payments", requirePermission(P.FINANCE_READ), asy
         select: {
           id: true, amount: true, method: true, createdAt: true, proofPhotoUrl: true,
           cancelledAt: true, cancelReason: true, orderId: true,
+          referenceNumber: true, notes: true, internalNote: true, replacesPaymentId: true, replacedBy: { select: { id: true } },
           cashAccount: { select: { id: true, name: true } },
           recordedBy: { select: { id: true, name: true } },
           cancelledBy: { select: { id: true, name: true } },
@@ -2158,11 +2160,20 @@ financeTxRouter.get("/customer-payments", requirePermission(P.FINANCE_READ), asy
       getVerificationGate(prisma),
     ]);
 
+    // B3.7 — keadaan menu koreksi dihitung server (batch, hanya untuk baris terverifikasi yang masih aktif); klien tidak menyalin aturannya.
+    const punyaIzin = hasPermission(req.user, P.PAYMENT_KOREKSI);
+    const blokir = await blokirKoreksiBatch(prisma, payments.filter((p) => !p.cancelledAt && p.verifications.length > 0).map((p) => p.id));
     res.json({
       payments: payments.map((p) => ({
         ...p,
         terverifikasi: p.verifications.length > 0,
         finAllocations: p.finAllocations.map((a) => ({ ...a, amount: moneyToNumber(a.amount) })),
+        menuKoreksi: menuKoreksi(p, {
+          punyaIzin,
+          blokir: p.cancelledAt || p.verifications.length === 0
+            ? { kode: p.cancelledAt ? "TIDAK_AKTIF" : "BELUM_DIVERIFIKASI", alasan: p.cancelledAt ? "Pembayaran ini sudah dibatalkan atau diganti." : "Pembayaran ini belum diverifikasi.", arah: p.cancelledAt ? "Buka Riwayat Perubahan untuk versi terbaru." : "Verifikasi atau tolak dulu; koreksi hanya untuk uang masuk terverifikasi." }
+            : (blokir.get(p.id) ?? null),
+        }),
       })),
       gate,
     });
@@ -2636,9 +2647,10 @@ financeTxRouter.post("/bank-lines/:id/match", requirePermission(P.FINANCE_POST),
 
       const jurnal = await tx.finJournalLine.findUnique({
         where: { id: journalLineId },
-        select: { id: true, debit: true, credit: true, cashAccountId: true, entry: { select: { source: true } } },
+        select: { id: true, debit: true, credit: true, cashAccountId: true, entry: { select: { source: true, status: true } } },
       });
       if (!jurnal) throw err("Baris jurnal tidak ditemukan", 404);
+      if (jurnal.entry?.status !== "POSTED") throw err("Jurnal itu sudah dibalik atau belum diposting — pilih baris jurnal yang masih aktif", 409);
       if (jurnal.entry?.source === "SALDO_AWAL") throw err("Itu Penyesuaian Buku (kalibrasi/koreksi saldo), bukan transaksi bank — tidak dicocokkan dengan mutasi koran", 400);
       if (jurnal.cashAccountId !== baris.statement.cashAccountId) {
         throw err("Baris jurnal itu bukan mutasi rekening yang sedang direkonsiliasi", 400);

@@ -212,6 +212,9 @@ export const LABEL_FIELD = {
   transferFeeType: "Metode transfer", transferFeeAmount: "Biaya transfer", fromAccountId: "Dari rekening",
   toAccountId: "Ke rekening", feeAmount: "Biaya admin", reference: "Referensi", notes: "Catatan",
   accountId: "Akun pendapatan", attachmentUrl: "Lampiran", receiptUrl: "Bukti", supplierId: "Supplier", mode: "Cara bayar",
+  // Pembayaran masuk (B3.7)
+  tanggal: "Tanggal pembayaran", rekening: "Rekening penerima", metode: "Metode pembayaran", order: "Order", alokasi: "Pembagian ke order",
+  referenceNumber: "Nomor referensi", internalNote: "Keterangan internal", proofPhotoUrl: "Bukti",
 };
 const FIELD_UANG = new Set(["amount", "feeAmount", "transferFeeAmount"]);
 const FIELD_TANGGAL = new Set(["date"]);
