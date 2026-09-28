@@ -5,7 +5,7 @@
 // unit-custody P1-P2: UI ini bisa diperlihatkan tanpa ikut mengaktifkan mutasi.
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAnyPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { hasPermission, requireAnyPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import {
   assignProductionPlan, cancelProductionPlan, createProductionPlan, getProductionPlan,
@@ -18,6 +18,10 @@ import {
 import {
   completeWorkshopStage, getWorkshopRun, listWorkshopQueue, pauseWorkshopStage, registerWorkshopBornRun, resumeWorkshopStage, startWorkshopStage,
 } from "../services/productionWorkshopExecutionCommandService.js";
+import {
+  cancelProductionRun, getQcRun, listQcQueue, listRunExceptions, openRunException, QC_QUEUE_TABS, recordQualityInspection, requestReworkMaterial,
+  resolveHandoffRejection, resolveRunException, sweepRunExceptions,
+} from "../services/productionQcHandoffCommandService.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 
 export const productionPlanningRouter = express.Router();
@@ -259,6 +263,96 @@ productionPlanningRouter.post("/workshop/runs/:runId/complete", requireAnyPermis
     res.json(await completeWorkshopStage(prisma, {
       runId: req.params.runId, actorId: req.user.id, idempotencyKey: idemKey(req), expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId,
       note: req.body?.note, photoUrls: Array.isArray(req.body?.photoUrls) ? req.body.photoUrls : [],
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// ── P6: QC V2 (PASS/FAIL/WAIVED), rework, handoff barang jadi, rekonsiliasi override V1 ───────────────────────────
+// Command HANYA lewat productionQcHandoffCommandService (keputusan Gudang atas barang jadi lewat /api/inventory/unit-custody, direction=FINISHED_GOODS).
+// QC_WAIVED dan penerimaan override V1 memerlukan QC_WAIVE (ADMIN/OWNER); PASS/FAIL memerlukan QC_WRITE.
+const QC_DECIDE_PERMS = [P.QC_WRITE, P.QC_WAIVE];
+const SUPERVISOR_PERMS = [P.UNIT_ROUTING_WRITE];
+const RECONCILE_PERMS = [P.UNIT_ROUTING_WRITE, P.INVENTORY_WRITE, P.QC_WAIVE];
+
+productionPlanningRouter.get("/qc/queue", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const tab = QC_QUEUE_TABS.includes(String(req.query.tab)) ? String(req.query.tab) : "AWAITING_QC";
+    const gate = await readerGate(res);
+    if (!gate) return;
+    res.json({ items: await listQcQueue(prisma, { tab, unitIds: gate.unitIds, limit: req.query.limit }), readerMode: gate.readerMode, tab });
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.get("/qc/runs/:runId", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const gate = await readerGate(res);
+    if (!gate) return;
+    const run = await getQcRun(prisma, req.params.runId);
+    if (!run || (gate.unitIds && !gate.unitIds.includes(run.unit.id))) return res.status(404).json({ error: "Production Run tidak ditemukan", code: "QC_RUN_NOT_FOUND" });
+    res.json({ ...run, readerMode: gate.readerMode });
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/qc/runs/:runId/inspect", requireAnyPermission(...QC_DECIDE_PERMS), async (req, res) => {
+  try {
+    const b = req.body || {};
+    res.json(await recordQualityInspection(prisma, {
+      runId: req.params.runId, actorId: req.user.id, idempotencyKey: idemKey(req), expectedRevision: b.expectedRevision,
+      canInspect: hasPermission(req.user, P.QC_WRITE), canWaive: hasPermission(req.user, P.QC_WAIVE),
+      result: b.result, note: b.note, reason: b.reason, photoUrls: b.photoUrls, referenceWeightKg: b.referenceWeightKg, fitVerdict: b.fitVerdict,
+      customerPreferenceOverride: b.customerPreferenceOverride, educationGiven: b.educationGiven, items: b.items, reworkStageId: b.reworkStageId,
+      supplementalMaterials: b.supplementalMaterials,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/qc/runs/:runId/rework-material", requireAnyPermission(P.UNIT_ROUTING_WRITE, P.QC_WRITE), async (req, res) => {
+  try {
+    res.status(201).json(await requestReworkMaterial(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idemKey(req), expectedRevision: req.body?.expectedRevision, lines: req.body?.lines }));
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/qc/runs/:runId/handoff-rejection", requireAnyPermission(...SUPERVISOR_PERMS), async (req, res) => {
+  try {
+    res.json(await resolveHandoffRejection(prisma, {
+      runId: req.params.runId, actorId: req.user.id, idempotencyKey: idemKey(req), expectedRevision: req.body?.expectedRevision,
+      action: req.body?.action, note: req.body?.note, reworkStageId: req.body?.reworkStageId,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/qc/runs/:runId/cancel", requireAnyPermission(...SUPERVISOR_PERMS), async (req, res) => {
+  try {
+    res.json(await cancelProductionRun(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idemKey(req), expectedRevision: req.body?.expectedRevision, reason: req.body?.reason }));
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.get("/exceptions", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const status = ["OPEN", "RESOLVED"].includes(String(req.query.status)) ? String(req.query.status) : "OPEN";
+    const gate = await readerGate(res);
+    if (!gate) return;
+    res.json({ items: await listRunExceptions(prisma, { status, unitIds: gate.unitIds, limit: req.query.limit }), readerMode: gate.readerMode });
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/exceptions/open", requireAnyPermission(...RECONCILE_PERMS), async (req, res) => {
+  try {
+    res.status(201).json(await openRunException(prisma, { runId: req.body?.runId, actorId: req.user.id, idempotencyKey: idemKey(req) }));
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/exceptions/sweep", requireAnyPermission(...RECONCILE_PERMS), async (req, res) => {
+  try {
+    res.json(await sweepRunExceptions(prisma, { actorId: req.user.id, idempotencyKey: idemKey(req), limit: req.body?.limit }));
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/exceptions/:id/resolve", requireAnyPermission(...RECONCILE_PERMS), async (req, res) => {
+  try {
+    res.json(await resolveRunException(prisma, {
+      exceptionId: req.params.id, actorId: req.user.id, canWaive: hasPermission(req.user, P.QC_WAIVE), idempotencyKey: idemKey(req),
+      expectedRevision: req.body?.expectedRevision, resolution: req.body?.resolution, note: req.body?.note,
     }));
   } catch (err) { handleErr(err, res); }
 });

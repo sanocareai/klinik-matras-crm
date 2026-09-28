@@ -358,7 +358,9 @@ export async function startStage(unitId, { actorId } = {}) {
 // Varian dalam-transaksi — dipakai ulang oleh productionWorkshopExecutionCommandService.js (P5) supaya transisi V1
 // (unit_stage_logs + unit.currentStageId/status; engine ini SATU-SATUNYA penulis ledger tahap) berjalan di TRANSAKSI YANG
 // SAMA dengan command V2-nya. Perilaku identik dengan startStage() — fence V2 hanya ada di pembungkus V1 di atas.
-export async function startStageInTx(tx, unitId, { actorId } = {}) {
+// allowRerunOfLastStage (P6, hanya command owner V2): tahap TERAKHIR jalur yang sudah COMPLETE boleh dijalankan ULANG (rework setelah penolakan Gudang) —
+// resolveCurrentTarget() menyebutnya DONE karena lastLog COMPLETE, padahal run V2 sedang memproses ulang. Pemanggil menjamin fase PROCESS run aktif.
+export async function startStageInTx(tx, unitId, { actorId, allowRerunOfLastStage = false } = {}) {
   const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
   const path = await pathForUnit(tx, unit);
   const { stage: targetStage, state } = await resolveCurrentTarget(tx, unit, path);
@@ -372,7 +374,7 @@ export async function startStageInTx(tx, unitId, { actorId } = {}) {
     // yang benar resumeStage(), supaya satu attempt tetap satu START.
     throw new StageTransitionError(`Tahap "${targetStage.labelId}" sedang dijeda — gunakan "Lanjutkan" (Resume), bukan Mulai`);
   }
-  if (state === "DONE") {
+  if (state === "DONE" && !allowRerunOfLastStage) {
     throw new StageTransitionError("Unit sudah menyelesaikan seluruh tahap routing");
   }
   if (state === "MISMATCH" || !targetStage) {
@@ -509,7 +511,7 @@ export async function completeStage(unitId, stageId, { actorId, photoUrls = [], 
 // Varian dalam-transaksi — dipakai ulang oleh productionWorkshopExecutionCommandService.js (P5) supaya transisi V1
 // (unit_stage_logs + unit.currentStageId/status; engine ini SATU-SATUNYA penulis ledger tahap) berjalan di TRANSAKSI YANG
 // SAMA dengan command V2-nya. Perilaku identik dengan completeStage() — fence V2 hanya ada di pembungkus V1 di atas.
-export async function completeStageInTx(tx, unitId, stageId, { actorId, photoUrls = [], note } = {}) {
+export async function completeStageInTx(tx, unitId, stageId, { actorId, photoUrls = [], note, deferReady = false } = {}) {
   const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
 
   if (stage.requiresQc) {
@@ -541,7 +543,7 @@ export async function completeStageInTx(tx, unitId, stageId, { actorId, photoUrl
     );
   }
 
-  return finishStageInternal(tx, unitId, stage, open, { actorId, photoUrls, note });
+  return finishStageInternal(tx, unitId, stage, open, { actorId, photoUrls, note, deferReady });
 }
 
 /**
@@ -654,11 +656,14 @@ export async function resumeStageInTx(tx, unitId, stageId, { actorId } = {}) {
  * action yang sesuai (COMPLETE atau SKIP). Dipisah dari penulisan log supaya
  * setiap transisi menghasilkan TEPAT SATU baris ledger, tidak dobel.
  */
-async function advanceUnitPastStage(tx, unitId, stage) {
+// deferReady (P6, hanya dari command owner V2): tahap TERAKHIR selesai TIDAK langsung menjadikan unit READY_FOR_DELIVERY — unit V2 baru siap
+// kirim setelah Gudang menerima barang jadi (markUnitReadyForDeliveryInTx). Jalur V1 tidak pernah mengirim opsi ini (perilaku identik).
+async function advanceUnitPastStage(tx, unitId, stage, { deferReady = false } = {}) {
   const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
   const path = await pathForUnit(tx, unit);
 
   if (isLastStage(path, stage.id)) {
+    if (deferReady) return;
     // Seluruh routing selesai — unit siap kirim. currentStageId TETAP di
     // tahap terakhir (bukan null) supaya "tahap terakhir yang dilalui" masih
     // bisa dibaca dari unit tanpa query ke ledger.
@@ -701,7 +706,7 @@ async function reconstructClosingTiming(tx, unitId, stageId, closingAction, now)
 }
 
 /** Tulis log COMPLETE + majukan unit. Dipakai completeStage biasa dan QC lulus. */
-async function finishStageInternal(tx, unitId, stage, openLog, { actorId, photoUrls = [], note } = {}) {
+async function finishStageInternal(tx, unitId, stage, openLog, { actorId, photoUrls = [], note, deferReady = false } = {}) {
   const now = new Date();
   const { trueStartedAt, timing } = await reconstructClosingTiming(tx, unitId, stage.id, "COMPLETE", now);
 
@@ -733,7 +738,7 @@ async function finishStageInternal(tx, unitId, stage, openLog, { actorId, photoU
     },
   });
 
-  await advanceUnitPastStage(tx, unitId, stage);
+  await advanceUnitPastStage(tx, unitId, stage, { deferReady });
   return log;
 }
 
@@ -894,9 +899,7 @@ export async function skipStage(unitId, { actorId, note } = {}) {
  * TIDAK selesai, unit dikembalikan ke modul lapisan sebagai rework
  * (ROUTING.md §4) — "jangan biarkan rework tidak terlihat".
  */
-export async function recordQcFitTest(unitId, stageId, {
-  actorId, verdict, referenceWeightKg, customerPreferenceOverride, educationGiven, note, photoUrls = [],
-} = {}) {
+function assertQcFitInput({ verdict, referenceWeightKg, customerPreferenceOverride, educationGiven }) {
   if (!verdict) throw new StageTransitionError("verdict wajib diisi");
   if (!referenceWeightKg) throw new StageTransitionError("referenceWeightKg wajib diisi");
   if (customerPreferenceOverride && !educationGiven) {
@@ -905,55 +908,64 @@ export async function recordQcFitTest(unitId, stageId, {
     // untuk sales/QC jelas, bukan cuma error SQL mentah.
     throw new StageTransitionError("Override preferensi customer wajib disertai konfirmasi edukasi sudah diberikan");
   }
+}
 
+export async function recordQcFitTest(unitId, stageId, opts = {}) {
+  assertQcFitInput(opts);
   return prisma.$transaction(async (tx) => {
     await assertNotV2ExecutionOwned(tx, unitId);
-    const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
-    if (!stage.requiresQc) {
-      throw new StageTransitionError(`Tahap "${stage.labelId}" bukan gerbang QC`);
-    }
-    const open = await findOpenWork(tx, unitId, stageId);
-    if (!open) {
-      throw new StageTransitionError(`Tidak ada tahap "${stage.labelId}" yang sedang berjalan untuk unit ini`);
-    }
-    if (stage.requiresPhoto && photoUrls.length === 0) {
-      throw new StageTransitionError(`Tahap "${stage.labelId}" wajib foto sebelum bisa diselesaikan`);
-    }
+    return recordQcFitTestInTx(tx, unitId, stageId, opts);
+  });
+}
 
-    const test = await tx.qcFitTest.create({
-      data: {
-        unitId, stageId, verdict, referenceWeightKg,
-        customerPreferenceOverride: customerPreferenceOverride ?? null,
-        educationGiven: !!educationGiven,
-        testedById: actorId, note,
-      },
-    });
+// Varian dalam-transaksi (P6): dipakai command QC V2 supaya proyeksi V1 (qc_fit_tests + ledger tahap + currentStageId) ditulis di
+// TRANSAKSI YANG SAMA dengan inspeksi V2. Perilaku identik dengan recordQcFitTest() V1 kecuali dua opsi eksplisit yang hanya dikirim
+// command owner V2: reworkStageId (tahap rework DITENTUKAN EKSPLISIT, wajib sebelum gerbang QC — bukan aturan modul lapisan V1) dan
+// deferReady (lihat advanceUnitPastStage). Fence V2 hanya ada di pembungkus V1 di atas.
+export async function recordQcFitTestInTx(tx, unitId, stageId, {
+  actorId, verdict, referenceWeightKg, customerPreferenceOverride, educationGiven, note, photoUrls = [], reworkStageId = null, deferReady = false,
+} = {}) {
+  assertQcFitInput({ verdict, referenceWeightKg, customerPreferenceOverride, educationGiven });
+  const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
+  if (!stage.requiresQc) {
+    throw new StageTransitionError(`Tahap "${stage.labelId}" bukan gerbang QC`);
+  }
+  const open = await findOpenWork(tx, unitId, stageId);
+  if (!open) {
+    throw new StageTransitionError(`Tidak ada tahap "${stage.labelId}" yang sedang berjalan untuk unit ini`);
+  }
+  if (stage.requiresPhoto && photoUrls.length === 0) {
+    throw new StageTransitionError(`Tahap "${stage.labelId}" wajib foto sebelum bisa diselesaikan`);
+  }
 
-    const lulus = verdict === "PAS" || !!customerPreferenceOverride;
-    if (lulus) {
-      await finishStageInternal(tx, unitId, stage, open, { actorId, photoUrls, note: `QC: ${verdict}` });
-      return { test, result: "PASSED" };
-    }
+  const test = await tx.qcFitTest.create({
+    data: {
+      unitId, stageId, verdict, referenceWeightKg,
+      customerPreferenceOverride: customerPreferenceOverride ?? null,
+      educationGiven: !!educationGiven,
+      testedById: actorId, note,
+    },
+  });
 
-    // Gagal -> rework. Tutup START/RESUME yang terbuka sebagai FAIL (rework,
-    // bukan material_shortage/dst — QUALITY_ISSUE paling tepat mewakili
-    // "belum pas"). startedAt/durationSeconds direkonstruksi dari SELURUH
-    // attempt — pola sama dengan failStage()/finishStageInternal() (lihat
-    // reconstructClosingTiming()).
-    const reworkNow = new Date();
-    const { trueStartedAt, timing } = await reconstructClosingTiming(tx, unitId, stageId, "FAIL", reworkNow);
-    await tx.unitStageLog.create({
-      data: {
-        unitId, stageId, action: "FAIL", actorId, blockReason: "QUALITY_ISSUE",
-        note: `QC gagal: ${verdict}`, startedAt: trueStartedAt, endedAt: reworkNow,
-        durationSeconds: timing.timingKnown ? timing.touchSeconds : null,
-      },
-    });
+  const lulus = verdict === "PAS" || !!customerPreferenceOverride;
+  if (lulus) {
+    await finishStageInternal(tx, unitId, stage, open, { actorId, photoUrls, note: `QC: ${verdict}`, deferReady });
+    return { test, result: "PASSED" };
+  }
 
-    const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
-    const path = await pathForUnit(tx, unit);
-    const comfortLayer = findComfortLayerModule(path);
-    if (!comfortLayer) {
+  // Gagal -> rework. Tutup START/RESUME yang terbuka sebagai FAIL (rework,
+  // bukan material_shortage/dst — QUALITY_ISSUE paling tepat mewakili
+  // "belum pas"). startedAt/durationSeconds direkonstruksi dari SELURUH
+  // attempt — pola sama dengan failStage()/finishStageInternal() (lihat
+  // reconstructClosingTiming()).
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  const path = await pathForUnit(tx, unit);
+  let reworkStage;
+  if (reworkStageId) {
+    reworkStage = assertReworkTarget(path, stage, reworkStageId);
+  } else {
+    reworkStage = findComfortLayerModule(path);
+    if (!reworkStage) {
       // Layanan unit ini tidak punya modul lapisan (mis. Service Fondasi
       // murni) — tidak ada tempat rework yang masuk akal. Ini kondisi yang
       // TIDAK BOLEH ditebak; production lead harus menangani manual.
@@ -961,10 +973,96 @@ export async function recordQcFitTest(unitId, stageId, {
         `QC gagal tapi layanan unit ini tidak punya modul lapisan untuk rework — perlu penanganan manual Production Lead`
       );
     }
-    await tx.unit.update({ where: { id: unitId }, data: { currentStageId: comfortLayer.id } });
+  }
 
-    return { test, result: "REWORK", reworkStage: comfortLayer };
+  const reworkNow = new Date();
+  const { trueStartedAt, timing } = await reconstructClosingTiming(tx, unitId, stageId, "FAIL", reworkNow);
+  await tx.unitStageLog.create({
+    data: {
+      unitId, stageId, action: "FAIL", actorId, blockReason: "QUALITY_ISSUE",
+      note: `QC gagal: ${verdict}`, startedAt: trueStartedAt, endedAt: reworkNow,
+      durationSeconds: timing.timingKnown ? timing.touchSeconds : null,
+    },
   });
+  await tx.unit.update({ where: { id: unitId }, data: { currentStageId: reworkStage.id } });
+
+  return { test, result: "REWORK", reworkStage };
+}
+
+// Target rework eksplisit: harus ada di jalur unit, BUKAN gerbang QC, dan berada SEBELUM gerbang — supaya unit pasti kembali ke
+// gerbang QC setelah rework (tidak mungkin langsung lulus/handoff).
+function assertReworkTarget(path, gateStage, reworkStageId) {
+  const target = path.find((s) => s.id === reworkStageId);
+  if (!target) throw new StageTransitionError("Tahap rework tidak ada di jalur produksi unit ini", 422);
+  const gateIndex = path.findIndex((s) => s.id === gateStage.id);
+  const targetIndex = path.findIndex((s) => s.id === target.id);
+  if (target.requiresQc || targetIndex >= gateIndex) {
+    throw new StageTransitionError("Tahap rework harus berada SEBELUM gerbang QC supaya unit kembali diuji", 422);
+  }
+  return target;
+}
+
+// QC_WAIVED (P6): gerbang QC dilewati oleh pihak berwenang. Ledger jujur: SATU baris SKIP dengan catatan eksplisit (bukan COMPLETE, tidak ada
+// qc_fit_tests — tidak ada berat acuan yang boleh dikarang), lalu unit maju. Pemanggil (command owner V2) yang menegakkan izin QC_WAIVE + alasan.
+export async function waiveQcGateInTx(tx, unitId, stageId, { actorId, note, deferReady = true } = {}) {
+  const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
+  if (!stage.requiresQc) throw new StageTransitionError(`Tahap "${stage.labelId}" bukan gerbang QC`);
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  if (unit.currentStageId !== stageId) throw new StageTransitionError("Unit tidak sedang berada di gerbang QC", 409);
+  const open = await findOpenWork(tx, unitId, stageId);
+  if (open) throw new StageTransitionError("Gerbang QC sedang berjalan — tidak dapat di-waive", 409);
+  if (!note || !String(note).trim()) throw new StageTransitionError("Alasan waive QC wajib diisi");
+  const log = await tx.unitStageLog.create({
+    data: { unitId, stageId, action: "SKIP", actorId, note: `⚠️ QC_WAIVED — gerbang QC dilewati oleh pihak berwenang, BUKAN hasil uji sungguhan. ${String(note).trim()}` },
+  });
+  await advanceUnitPastStage(tx, unitId, stage, { deferReady });
+  return log;
+}
+
+// Seluruh tahap jalur unit sudah selesai (tahap terakhir COMPLETE/SKIP)? Dipakai command V2 sebelum handoff barang jadi.
+export async function isUnitPathDoneInTx(tx, unitId) {
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  const path = await pathForUnit(tx, unit);
+  const { state } = await resolveCurrentTarget(tx, unit, path);
+  return state === "DONE";
+}
+
+// Unit V2 baru READY_FOR_DELIVERY SETELAH Gudang menerima barang jadi — persis efek advanceUnitPastStage() V1 pada tahap terakhir
+// (status + sinkron order + saran job pengiriman), ditunda ke titik ini. Menolak bila tahap belum tuntas atau unit bukan IN_PRODUCTION.
+export async function markUnitReadyForDeliveryInTx(tx, unitId) {
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  if (unit.status !== "IN_PRODUCTION") {
+    throw new StageTransitionError(`Unit berstatus ${unit.status}; hanya unit IN_PRODUCTION yang dapat dijadikan siap kirim`, 409);
+  }
+  const path = await pathForUnit(tx, unit);
+  const { state } = await resolveCurrentTarget(tx, unit, path);
+  if (state !== "DONE") throw new StageTransitionError("Seluruh tahap produksi unit belum selesai", 409);
+  await tx.unit.update({ where: { id: unitId }, data: { status: "READY_FOR_DELIVERY" } });
+  await syncOrderStatus(tx, unit.orderId);
+  await suggestDeliveryJob(tx, unitId);
+}
+
+// Rework dari penolakan handoff (tanpa QC): arahkan unit kembali ke tahap sebelum gerbang QC supaya wajib lolos QC lagi.
+export async function reopenStageBeforeQcInTx(tx, unitId, stageId) {
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  const path = await pathForUnit(tx, unit);
+  const gateIndex = path.findIndex((s) => s.requiresQc);
+  const target = path.find((s) => s.id === stageId);
+  const targetIndex = path.findIndex((s) => s.id === stageId);
+  if (gateIndex < 0 || !target || target.requiresQc || targetIndex >= gateIndex) {
+    throw new StageTransitionError("Tahap rework harus berada SEBELUM gerbang QC supaya unit kembali diuji", 422);
+  }
+  await tx.unit.update({ where: { id: unitId }, data: { currentStageId: target.id } });
+  return target;
+}
+
+// Rekonsiliasi override V1 (RESTORE_UNIT_STATUS): kembalikan status unit ke keadaan produksi yang konsisten dengan ledger tahap.
+export async function restoreUnitStatusInTx(tx, unitId) {
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  const status = unit.currentStageId ? "IN_PRODUCTION" : "RECEIVED";
+  await tx.unit.update({ where: { id: unitId }, data: { status } });
+  await syncOrderStatus(tx, unit.orderId);
+  return status;
 }
 
 /**

@@ -10,11 +10,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
+import { isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEngine.js";
+import { assertNoOpenRunException, assertRunConsistent } from "./productionRunGuards.js";
 import {
   isProductionWriterEnabledFor, loadV2Flags, productionWriterEnabledForUnit, resolveProductionWriterState,
 } from "./v2FeatureFlags.js";
 
-export const CUSTODY_DIRECTION = Object.freeze({ INBOUND: "INBOUND", RETURN: "RETURN" });
+export const CUSTODY_DIRECTION = Object.freeze({ INBOUND: "INBOUND", RETURN: "RETURN", FINISHED_GOODS: "FINISHED_GOODS" });
 const ACTIVE_STATUSES = ["OFFERED", "ACCEPTED"];
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 
@@ -22,6 +24,8 @@ const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 export const ALLOWED_LOCATION_TYPES = Object.freeze({
   INBOUND: Object.freeze(["RECEIVING_AREA", "WIP_AREA", "QUARANTINE_AREA"]),
   RETURN: Object.freeze(["RETURN_AREA", "FINISHED_GOODS_AREA", "DISPATCH_AREA", "QUARANTINE_AREA"]),
+  // P6: barang jadi dari Produksi -> Gudang barang jadi / area dispatch.
+  FINISHED_GOODS: Object.freeze(["FINISHED_GOODS_AREA", "DISPATCH_AREA"]),
 });
 
 function custodyError(message, statusCode, code, details) {
@@ -59,7 +63,7 @@ export function assertLocationAllowed(direction, location) {
     throw custodyError("Lokasi penyimpanan tidak valid atau sudah nonaktif", 422, "CUSTODY_LOCATION_INVALID");
   }
   if (!ALLOWED_LOCATION_TYPES[direction].includes(location.locationType)) {
-    throw custodyError(`Lokasi ${location.code} (${location.locationType}) tidak sesuai untuk serah-terima ${direction === "INBOUND" ? "unit masuk" : "unit kembali"}`, 422, "CUSTODY_LOCATION_TYPE_INVALID");
+    throw custodyError(`Lokasi ${location.code} (${location.locationType}) tidak sesuai untuk serah-terima ${direction === "INBOUND" ? "unit masuk" : direction === "FINISHED_GOODS" ? "barang jadi" : "unit kembali"}`, 422, "CUSTODY_LOCATION_TYPE_INVALID");
   }
 }
 
@@ -132,7 +136,7 @@ async function offerOne(tx, { direction, unitId, jobId, actorId }) {
 
 // Mengembalikan handoff yang dibuat (kosong bila writer OFF / unit di luar cohort => perilaku V1 murni).
 export async function offerUnitCustody(tx, { direction, unitIds, jobId, actorId = null }) {
-  if (!CUSTODY_DIRECTION[direction]) throw new TypeError("direction custody tidak dikenal");
+  if (!CUSTODY_DIRECTION[direction] || direction === "FINISHED_GOODS") throw new TypeError("direction custody tidak dikenal (barang jadi memakai offerFinishedGoodsCustodyInTx)");
   if (!jobId) throw new TypeError("jobId wajib diisi");
   const ids = [...new Set((unitIds || []).filter(Boolean))].sort();
   if (!ids.length) return [];
@@ -143,6 +147,107 @@ export async function offerUnitCustody(tx, { direction, unitIds, jobId, actorId 
     results.push(await offerOne(tx, { direction, unitId, jobId, actorId }));
   }
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// P6 — Custody BARANG JADI (Produksi -> Gudang). Penawaran dibuat command Production V2 (P5: tahap `finished` selesai; P6: penawaran ulang
+// setelah penolakan) di TRANSAKSI-nya sendiri. Pemanggil SUDAH mengunci unit lalu run (urutan yang sama dengan P1–P5). Syarat handoff:
+// run ACTIVE di fase HANDOFF (ACTIVE), QC fase COMPLETED dengan inspeksi terakhir PASS/OVERRIDDEN(WAIVED), seluruh tahap jalur unit
+// selesai, unit IN_PRODUCTION, tidak ada exception OPEN, dan belum ada penawaran barang jadi yang menunggu.
+// ---------------------------------------------------------------------------
+export async function offerFinishedGoodsCustodyInTx(tx, { runId, actorId = null }) {
+  const run = await tx.productionRun.findUnique({
+    where: { id: runId },
+    include: { phases: true, unit: { select: { id: true, unitCode: true, orderId: true, status: true } }, inspections: { orderBy: { version: "desc" }, take: 1 } },
+  });
+  if (!run) throw custodyError("Production Run tidak ditemukan", 404, "CUSTODY_RUN_NOT_FOUND");
+  if (run.status !== "ACTIVE") throw custodyError("Production Run tidak aktif; handoff barang jadi tidak dapat dibuat", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run.status });
+  assertRunConsistent(run, run.unit);
+  await assertNoOpenRunException(tx, run.id);
+  const phase = (name) => run.phases.find((p) => p.phase === name);
+  if (run.currentPhase !== "HANDOFF" || phase("HANDOFF")?.status !== "ACTIVE") {
+    throw custodyError("Handoff barang jadi hanya dapat dibuat saat run berada di fase Handoff", 409, "CUSTODY_RUN_NOT_IN_HANDOFF", { currentPhase: run.currentPhase });
+  }
+  const latest = run.inspections[0];
+  if (phase("QC")?.status !== "COMPLETED" || !latest || !["PASS", "OVERRIDDEN"].includes(latest.result)) {
+    throw custodyError("Handoff barang jadi wajib didahului QC lulus (atau QC di-waive oleh pihak berwenang)", 409, "CUSTODY_QC_NOT_SATISFIED");
+  }
+  if (!(await isUnitPathDoneInTx(tx, run.unitId))) {
+    throw custodyError("Seluruh tahap produksi (termasuk tahap setelah QC) harus selesai sebelum handoff barang jadi", 409, "CUSTODY_PROCESS_NOT_FINISHED");
+  }
+  const waiting = await tx.unitCustodyHandoff.findFirst({ where: { unitId: run.unitId, direction: "FINISHED_GOODS", status: "OFFERED" }, select: { id: true } });
+  if (waiting) throw custodyError("Sudah ada penawaran barang jadi yang menunggu keputusan Gudang", 409, "CUSTODY_ALREADY_OFFERED", { handoffId: waiting.id });
+
+  // Handoff barang jadi lama yang sudah ACCEPTED (siklus produksi sebelumnya) digantikan; riwayat dipertahankan sebagai SUPERSEDED.
+  const previous = await tx.unitCustodyHandoff.findMany({ where: { unitId: run.unitId, direction: "FINISHED_GOODS", status: { in: ACTIVE_STATUSES } } });
+  for (const old of previous) {
+    const nextRevision = old.revision + 1;
+    await tx.unitCustodyHandoff.update({ where: { id: old.id }, data: { status: "SUPERSEDED", revision: nextRevision, reason: `Digantikan oleh handoff barang jadi run ${run.id}` } });
+    await outbox(tx, {
+      eventType: "warehouse.custody.superseded", aggregateId: old.id, revision: nextRevision, dedupeKey: `warehouse-custody-superseded:${old.id}:${nextRevision}`,
+      payload: { handoffId: old.id, unitId: run.unitId, orderId: run.unit.orderId, direction: "FINISHED_GOODS", revision: nextRevision, occurredAt: new Date().toISOString() },
+    });
+  }
+
+  const cycle = (await tx.unitCustodyHandoff.count({ where: { productionRunId: run.id, direction: "FINISHED_GOODS" } })) + 1;
+  const handoffId = randomUUID();
+  const actor = actorId || "SYSTEM";
+  const command = await beginCommand(tx, {
+    actor, idempotencyKey: `internal:OFFER_FINISHED_GOODS_CUSTODY:${run.id}:${cycle}`, commandType: "OFFER_FINISHED_GOODS_CUSTODY", aggregateId: handoffId,
+    requestHash: hash({ commandType: "OFFER_FINISHED_GOODS_CUSTODY", runId: run.id, cycle }),
+  });
+  const handoff = await tx.unitCustodyHandoff.create({
+    data: { id: handoffId, unitId: run.unitId, deliveryJobId: null, direction: "FINISHED_GOODS", status: "OFFERED", productionRunId: run.id, offeredById: actorId || null, revision: 1, commandId: command.id },
+  });
+  const qcBasis = latest.result === "OVERRIDDEN" ? "QC_WAIVED" : "QC_PASS";
+  await outbox(tx, {
+    eventType: "warehouse.custody.offered", aggregateId: handoffId, revision: 1, dedupeKey: `warehouse-custody-offered:${handoffId}`,
+    payload: { handoffId, unitId: run.unitId, orderId: run.unit.orderId, productionRunId: run.id, direction: "FINISHED_GOODS", qcBasis, revision: 1, occurredAt: new Date().toISOString(), actorId: actorId || null },
+  });
+  await recordActivity(tx, {
+    entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.CUSTODY_OFFERED, actorId: actorId || null,
+    metadata: { unitCode: run.unit.unitCode, direction: "FINISHED_GOODS", handoffId, runId: run.id, qcBasis },
+  });
+  await finishCommand(tx, command, 1, { handoffId, status: "OFFERED", revision: 1 });
+  return { handoff, qcBasis };
+}
+
+// Pembatalan penawaran barang jadi yang masih menunggu (run dibatalkan / ditutup lewat rekonsiliasi). Pemanggil SUDAH mengunci baris handoff
+// (handoff -> unit -> run) — riwayat dipertahankan sebagai CANCELLED, tidak dihapus.
+export async function cancelOfferedFinishedGoodsCustodyInTx(tx, { unitId, actor, reason }) {
+  const open = await tx.unitCustodyHandoff.findMany({ where: { unitId, direction: "FINISHED_GOODS", status: "OFFERED" }, include: { unit: { select: { unitCode: true } } } });
+  const cancelled = [];
+  for (const handoff of open) {
+    const revision = handoff.revision + 1;
+    const now = new Date();
+    await tx.unitCustodyHandoff.update({ where: { id: handoff.id }, data: { status: "CANCELLED", revision, cancelledById: actor, cancelledAt: now, reason } });
+    await outbox(tx, {
+      eventType: "warehouse.custody.cancelled", aggregateId: handoff.id, revision, dedupeKey: `warehouse-custody-cancelled:${handoff.id}:${revision}`,
+      payload: { handoffId: handoff.id, unitId, direction: "FINISHED_GOODS", revision, reason, occurredAt: now.toISOString(), actorId: actor },
+    });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.CUSTODY_ROLLED_BACK, actorId: actor === "SYSTEM" ? null : actor,
+      metadata: { unitCode: handoff.unit.unitCode, direction: "FINISHED_GOODS", handoffId: handoff.id, reason },
+    });
+    cancelled.push(handoff.id);
+  }
+  return cancelled;
+}
+
+// Kunci unit lalu run (urutan P1–P5; handoff sudah dikunci decide()) dan validasi run untuk keputusan Gudang atas barang jadi.
+async function prepareFinishedGoodsDecision(tx, handoff) {
+  if (!handoff.productionRunId) throw custodyError("Handoff barang jadi tidak terhubung ke Production Run", 409, "CUSTODY_RUN_MISSING");
+  await lockRowForUpdate(tx, "units", handoff.unitId);
+  await lockRowForUpdate(tx, "production_runs_v2", handoff.productionRunId);
+  const run = await tx.productionRun.findUnique({ where: { id: handoff.productionRunId }, include: { phases: true, unit: { select: { id: true, unitCode: true, orderId: true, status: true } } } });
+  if (!run || run.status !== "ACTIVE") throw custodyError("Production Run tidak aktif; keputusan Gudang atas barang jadi tidak dapat diproses", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run?.status ?? null });
+  assertRunConsistent(run, run.unit);
+  await assertNoOpenRunException(tx, run.id);
+  const handoffPhase = run.phases.find((p) => p.phase === "HANDOFF");
+  if (run.currentPhase !== "HANDOFF" || handoffPhase?.status !== "ACTIVE") {
+    throw custodyError("Production Run tidak berada di fase Handoff", 409, "CUSTODY_RUN_NOT_IN_HANDOFF", { currentPhase: run.currentPhase });
+  }
+  return run;
 }
 
 // ---------------------------------------------------------------------------
@@ -247,16 +352,35 @@ export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotenc
       assertLocationAllowed(handoff.direction, location);
       const now = new Date();
       let run = null;
+      // Barang jadi (P6): validasi + kunci run SEBELUM menulis apa pun; efek ke run/unit di bawah, setelah lokasi diproyeksikan.
+      const finishedRun = handoff.direction === "FINISHED_GOODS" ? await prepareFinishedGoodsDecision(tx, handoff) : null;
       if (handoff.direction === "INBOUND") run = (await openProductionIntakeV2(tx, { unitId: handoff.unitId, actorId: actor })).run;
       const revision = handoff.revision + 1;
       await tx.unitCustodyHandoff.update({
         where: { id: handoff.id },
-        data: { status: "ACCEPTED", revision, acceptedById: actor || null, acceptedAt: now, locationId, productionRunId: run?.id ?? null },
+        data: { status: "ACCEPTED", revision, acceptedById: actor || null, acceptedAt: now, locationId, productionRunId: run?.id ?? handoff.productionRunId ?? null },
       });
       // Proyeksi legacy V1 (ProductionUnitDetail.jsx "Lokasi Simpan") dari StorageLocation kanonis — locationId tetap
       // source of truth; kolom teks bebas ini HANYA disalin di sini, tidak pernah diterima langsung dari client.
       // Berjalan sekali per command (idempotency di atas mencegah replay memanggil apply() lagi).
       await tx.unit.update({ where: { id: handoff.unitId }, data: { storageLocation: location.code } });
+      let completedRunRevision = null;
+      if (finishedRun) {
+        // Urutan: lokasi (legacy + kanonis) sudah tertulis -> fase HANDOFF selesai -> run COMPLETED -> BARU unit READY_FOR_DELIVERY.
+        await tx.productionPhaseRun.update({ where: { runId_phase: { runId: finishedRun.id, phase: "HANDOFF" } }, data: { status: "COMPLETED", completedAt: now } });
+        completedRunRevision = finishedRun.revision + 1;
+        await tx.productionRun.update({ where: { id: finishedRun.id }, data: { status: "COMPLETED", completedAt: now, revision: completedRunRevision } });
+        await markUnitReadyForDeliveryInTx(tx, handoff.unitId);
+        await outbox(tx, {
+          domain: "PRODUCTION", eventType: "production.run.completed", aggregateType: "ProductionRun", aggregateId: finishedRun.id, revision: completedRunRevision,
+          dedupeKey: `production-run-completed:${finishedRun.id}:${completedRunRevision}`,
+          payload: { runId: finishedRun.id, unitId: handoff.unitId, handoffId: handoff.id, locationId, revision: completedRunRevision, occurredAt: now.toISOString(), actorId: actor || null },
+        });
+        await recordActivity(tx, {
+          entityType: "unit", entityId: handoff.unitId, eventType: EVENT_TYPES.PRODUCTION_RUN_COMPLETED, actorId: actor || null,
+          metadata: { unitCode: handoff.unit.unitCode, runId: finishedRun.id, locationCode: location.code },
+        });
+      }
       await outbox(tx, {
         eventType: "warehouse.custody.accepted", aggregateId: handoff.id, revision, dedupeKey: `warehouse-custody-accepted:${handoff.id}:${revision}`,
         payload: { handoffId: handoff.id, unitId: handoff.unitId, orderId: handoff.unit.orderId, direction: handoff.direction, locationId, productionRunId: run?.id ?? null, revision, occurredAt: now.toISOString(), actorId: actor || null },
@@ -265,7 +389,7 @@ export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotenc
         entityType: "unit", entityId: handoff.unitId, eventType: EVENT_TYPES.CUSTODY_ACCEPTED, actorId: actor || null,
         metadata: { unitCode: handoff.unit.unitCode, direction: handoff.direction, handoffId: handoff.id, locationCode: location.code },
       });
-      return { handoffId: handoff.id, unitId: handoff.unitId, status: "ACCEPTED", revision, locationId, productionRunId: run?.id ?? null };
+      return { handoffId: handoff.id, unitId: handoff.unitId, status: "ACCEPTED", revision, locationId, productionRunId: run?.id ?? handoff.productionRunId ?? null, ...(finishedRun ? { runStatus: "COMPLETED", runRevision: completedRunRevision, unitStatus: "READY_FOR_DELIVERY" } : {}) };
     },
   });
 }
@@ -277,11 +401,25 @@ export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotenc
     handoffId, actorId, idempotencyKey, expectedRevision, commandType: "REJECT_CUSTODY", payload: { reason: cleaned },
     apply: async (tx, { handoff, actorId: actor }) => {
       const now = new Date();
+      const finishedRun = handoff.direction === "FINISHED_GOODS" ? await prepareFinishedGoodsDecision(tx, handoff) : null;
       const revision = handoff.revision + 1;
       await tx.unitCustodyHandoff.update({
         where: { id: handoff.id },
         data: { status: "REJECTED", revision, rejectedById: actor || null, rejectedAt: now, reason: cleaned },
       });
+      let returnedRunRevision = null;
+      if (finishedRun) {
+        // Kasus kembali ke Production: fase HANDOFF BLOCKED (alasan tercatat), run tetap ACTIVE. Tindakan koreksi lewat command Production
+        // (tawarkan ulang / rework) — histori penolakan tetap di baris handoff ini.
+        await tx.productionPhaseRun.update({ where: { runId_phase: { runId: finishedRun.id, phase: "HANDOFF" } }, data: { status: "BLOCKED", reason: `Ditolak Gudang: ${cleaned}` } });
+        returnedRunRevision = finishedRun.revision + 1;
+        await tx.productionRun.update({ where: { id: finishedRun.id }, data: { revision: returnedRunRevision } });
+        await outbox(tx, {
+          domain: "PRODUCTION", eventType: "production.handoff.rejected", aggregateType: "ProductionRun", aggregateId: finishedRun.id, revision: returnedRunRevision,
+          dedupeKey: `production-handoff-rejected:${finishedRun.id}:${returnedRunRevision}`,
+          payload: { runId: finishedRun.id, unitId: handoff.unitId, handoffId: handoff.id, reason: cleaned, revision: returnedRunRevision, occurredAt: now.toISOString(), actorId: actor || null },
+        });
+      }
       await outbox(tx, {
         eventType: "warehouse.custody.rejected", aggregateId: handoff.id, revision, dedupeKey: `warehouse-custody-rejected:${handoff.id}:${revision}`,
         payload: { handoffId: handoff.id, unitId: handoff.unitId, orderId: handoff.unit.orderId, direction: handoff.direction, revision, occurredAt: now.toISOString(), actorId: actor || null },
@@ -290,7 +428,7 @@ export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotenc
         entityType: "unit", entityId: handoff.unitId, eventType: EVENT_TYPES.CUSTODY_REJECTED, actorId: actor || null,
         metadata: { unitCode: handoff.unit.unitCode, direction: handoff.direction, handoffId: handoff.id, reason: cleaned },
       });
-      return { handoffId: handoff.id, unitId: handoff.unitId, status: "REJECTED", revision, reason: cleaned };
+      return { handoffId: handoff.id, unitId: handoff.unitId, status: "REJECTED", revision, reason: cleaned, ...(finishedRun ? { runRevision: returnedRunRevision, runPhase: "HANDOFF", returnedToProduction: true } : {}) };
     },
   });
 }
@@ -352,17 +490,19 @@ const HISTORY_STATUSES = ["ACCEPTED", "REJECTED", "CANCELLED", "SUPERSEDED"];
 
 // Antrean Gudang. status=REJECTED berfungsi sebagai antrean exception (riwayat penolakan yang belum ditindaklanjuti).
 // status="HISTORY" (tab Riwayat) = seluruh handoff yang sudah selesai, terbaru dulu.
+// Tanpa direction eksplisit antrean lama (INBOUND/RETURN) TIDAK memuat barang jadi — barang jadi hanya tampil bila direction=FINISHED_GOODS.
 export async function listCustodyHandoffs(prisma, { status = "OFFERED", direction = null, limit = 100, unitIds = null } = {}) {
   const isHistory = status === "HISTORY";
   const statuses = isHistory ? HISTORY_STATUSES : [status];
   const rows = await prisma.unitCustodyHandoff.findMany({
-    where: { status: { in: statuses }, ...(direction ? { direction } : {}), ...(unitIds ? { unitId: { in: unitIds } } : {}) },
+    where: { status: { in: statuses }, direction: direction ? direction : { not: "FINISHED_GOODS" }, ...(unitIds ? { unitId: { in: unitIds } } : {}) },
     orderBy: isHistory ? [{ updatedAt: "desc" }, { id: "desc" }] : [{ offeredAt: "asc" }, { id: "asc" }],
     take: Math.min(Math.max(Number(limit) || 100, 1), 200),
     include: {
       unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, order: { select: { orderNumber: true } } } },
       location: { select: { id: true, code: true, zone: true, locationType: true } },
       deliveryJob: { select: { id: true, type: true, status: true } },
+      productionRun: { select: { id: true, revision: true, status: true, currentPhase: true } },
     },
   });
   return rows.map((row) => ({
@@ -370,5 +510,6 @@ export async function listCustodyHandoffs(prisma, { status = "OFFERED", directio
     acceptedAt: row.acceptedAt, rejectedAt: row.rejectedAt, cancelledAt: row.cancelledAt, reason: row.reason,
     unit: { id: row.unit.id, unitCode: row.unit.unitCode, merk: row.unit.merk, ukuran: row.unit.ukuran, orderNumber: row.unit.order?.orderNumber ?? null },
     location: row.location, deliveryJob: row.deliveryJob, productionRunId: row.productionRunId,
+    productionRun: row.productionRun ? { id: row.productionRun.id, revision: row.productionRun.revision, status: row.productionRun.status, currentPhase: row.productionRun.currentPhase } : null,
   }));
 }

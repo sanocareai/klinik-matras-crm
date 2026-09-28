@@ -437,6 +437,81 @@ export async function reserveMaterialForPlan(prisma, { planId, actorId, idempote
 }
 
 // ---------------------------------------------------------------------------
+// P6. Bahan TAMBAHAN rework (supplemental). Dipanggil command QC V2 (productionQcHandoffCommandService.js) di dalam TRANSAKSI-nya
+// sendiri; `plan` HARUS sudah dimuat+dikunci (loadPlanForWrite). Reservasi ASLI (CONSUMED) TIDAK PERNAH dibuka/diubah: baris BOM
+// tambahan terhubung ke inspeksi QC yang gagal, availability/reservasi memakai jalur yang SAMA dengan P3 (availableForMaterial, kunci
+// material ascending). Kekurangan stok untuk material APA PUN membatalkan seluruh transaksi pemanggil.
+// ---------------------------------------------------------------------------
+export async function reserveSupplementalInTx(tx, { plan, inspectionId, lines, actorId, commandId }) {
+  assertPlanBOMLines(lines);
+  if (plan.status !== "MATERIAL_RESERVED") throw planError("Bahan tambahan hanya dapat diajukan untuk rencana berstatus Bahan Direservasi", 409, "PLAN_NOT_MATERIAL_RESERVED", { status: plan.status });
+  const sorted = [...lines].map((l) => ({ materialId: l.materialId, qty: Number(l.qty) })).sort((a, b) => a.materialId.localeCompare(b.materialId));
+  const materials = await tx.material.findMany({ where: { id: { in: sorted.map((l) => l.materialId) } } });
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  for (const line of sorted) {
+    const material = byId.get(line.materialId);
+    if (!material) throw planError("Material tidak ditemukan", 404, "PLAN_BOM_MATERIAL_NOT_FOUND", { materialId: line.materialId });
+    if (!material.active) throw planError(`Material ${material.code} sudah nonaktif`, 422, "PLAN_BOM_MATERIAL_INACTIVE", { materialId: line.materialId });
+  }
+  const shortages = [];
+  for (const line of sorted) {
+    const available = await availableForMaterial(tx, line.materialId);
+    if (line.qty > available + EPSILON) {
+      shortages.push({ materialId: line.materialId, code: byId.get(line.materialId).code, needed: line.qty, available: Math.max(available, 0) });
+    }
+  }
+  if (shortages.length > 0) {
+    const detail = shortages.map((s) => `${s.code} (butuh ${s.needed}, tersedia ${s.available})`).join("; ");
+    throw planError(`Stok tidak cukup untuk bahan tambahan: ${detail}`, 409, "PLAN_MATERIAL_SHORTAGE", { shortages });
+  }
+  const now = new Date();
+  const reservations = [];
+  for (const line of sorted) {
+    const bomLine = await tx.plannedBOMLine.create({
+      data: { planId: plan.id, materialId: line.materialId, qty: line.qty, unit: byId.get(line.materialId).unit, status: "ACTIVE", revision: 1, createdById: actorId || null, supplementalInspectionId: inspectionId },
+    });
+    const reservation = await tx.materialReservation.create({
+      data: { bomLineId: bomLine.id, planId: plan.id, materialId: line.materialId, qty: line.qty, status: "ACTIVE", reservedById: actorId || null, reservedAt: now, commandId },
+    });
+    await outbox(tx, {
+      eventType: "production.reservation.created", aggregateType: "MaterialReservation", aggregateId: reservation.id, revision: 1,
+      dedupeKey: `production-reservation-created:${reservation.id}`,
+      payload: { reservationId: reservation.id, planId: plan.id, runId: plan.runId, unitId: plan.run.unitId, materialId: line.materialId, qty: line.qty, supplementalInspectionId: inspectionId, occurredAt: now.toISOString(), actorId },
+    });
+    reservations.push({ reservationId: reservation.id, bomLineId: bomLine.id, materialId: line.materialId, qty: line.qty });
+  }
+  await tx.productionRunPlan.update({ where: { id: plan.id }, data: { revision: plan.revision + 1 } });
+  return { reservations };
+}
+
+// Pembatalan bahan tambahan sebelum diserahkan (issue tambahan dibatalkan): lepas reservasi AKTIF milik inspeksi itu dan batalkan baris BOM
+// tambahannya. Status plan TIDAK berubah (reservasi asli tetap CONSUMED).
+export async function cancelSupplementalInTx(tx, { plan, inspectionId, actorId, reason }) {
+  const now = new Date();
+  const lines = await tx.plannedBOMLine.findMany({ where: { planId: plan.id, supplementalInspectionId: inspectionId, status: "ACTIVE" } });
+  let released = 0;
+  for (const line of lines) {
+    const reservations = await tx.materialReservation.findMany({ where: { bomLineId: line.id, status: "ACTIVE" } });
+    for (const reservation of reservations) {
+      const nextRevision = reservation.revision + 1;
+      await tx.materialReservation.update({
+        where: { id: reservation.id },
+        data: { status: "RELEASED", releasedById: actorId || null, releasedAt: now, releaseReason: reason, revision: nextRevision },
+      });
+      await outbox(tx, {
+        eventType: "production.reservation.released", aggregateType: "MaterialReservation", aggregateId: reservation.id, revision: nextRevision,
+        dedupeKey: `production-reservation-released:${reservation.id}:${nextRevision}`,
+        payload: { reservationId: reservation.id, planId: plan.id, materialId: reservation.materialId, reason, occurredAt: now.toISOString(), actorId },
+      });
+      released += 1;
+    }
+    await tx.plannedBOMLine.update({ where: { id: line.id }, data: { status: "CANCELLED", supersededById: actorId || null, supersededAt: now, revision: line.revision + 1 } });
+  }
+  await tx.productionRunPlan.update({ where: { id: plan.id }, data: { revision: plan.revision + 1 } });
+  return { releasedCount: released };
+}
+
+// ---------------------------------------------------------------------------
 // 5. Lepas reservasi manual (tanpa mengubah BOM) — idempoten/no-op aman bila tidak ada reservasi aktif.
 // ---------------------------------------------------------------------------
 // Mutasi murni (TANPA v2Command sendiri) — dipakai ULANG oleh releaseMaterialReservations (di bawah, membungkusnya

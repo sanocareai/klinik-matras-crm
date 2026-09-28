@@ -154,6 +154,15 @@ export const EVENT_TYPES = Object.freeze({
   // Eksekusi Workshop V2 (P5): unit BARU/SEWA didaftarkan lahir di workshop; run selesai tahap workshop -> menunggu QC.
   PRODUCTION_WORKSHOP_RUN_REGISTERED: "PRODUCTION_WORKSHOP_RUN_REGISTERED",
   PRODUCTION_WORKSHOP_AWAITING_QC: "PRODUCTION_WORKSHOP_AWAITING_QC",
+  // QC V2, rework, barang jadi, dan rekonsiliasi override V1 (P6). Detail (hasil, inspeksi, alasan) ada di metadata.
+  PRODUCTION_QC_RECORDED: "PRODUCTION_QC_RECORDED",
+  PRODUCTION_QC_WAIVED: "PRODUCTION_QC_WAIVED",
+  PRODUCTION_REWORK_OPENED: "PRODUCTION_REWORK_OPENED",
+  PRODUCTION_HANDOFF_ACTION: "PRODUCTION_HANDOFF_ACTION",
+  PRODUCTION_RUN_COMPLETED: "PRODUCTION_RUN_COMPLETED",
+  PRODUCTION_RUN_CANCELLED: "PRODUCTION_RUN_CANCELLED",
+  PRODUCTION_RUN_EXCEPTION_OPENED: "PRODUCTION_RUN_EXCEPTION_OPENED",
+  PRODUCTION_RUN_EXCEPTION_RESOLVED: "PRODUCTION_RUN_EXCEPTION_RESOLVED",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -340,7 +349,7 @@ export function formatActivitySentence(event) {
         ? `Dokumen ${metadata.receiptNumber || metadata.recordNumber || "—"} ditolak — ${metadata.reason}`
         : `Dokumen ${metadata.receiptNumber || metadata.recordNumber || "—"} ditolak`;
     case EVENT_TYPES.CUSTODY_OFFERED:
-      return `Unit ${metadata.unitCode || "—"} ditawarkan ke Gudang (${metadata.direction === "RETURN" ? "kembali dari pengiriman gagal" : "tiba dari pickup"})`;
+      return `Unit ${metadata.unitCode || "—"} ditawarkan ke Gudang (${metadata.direction === "RETURN" ? "kembali dari pengiriman gagal" : metadata.direction === "FINISHED_GOODS" ? "barang jadi dari Produksi" : "tiba dari pickup"})`;
     case EVENT_TYPES.CUSTODY_ACCEPTED:
       return `Gudang menerima unit ${metadata.unitCode || "—"}${metadata.locationCode ? ` di lokasi ${metadata.locationCode}` : ""}`;
     case EVENT_TYPES.CUSTODY_REJECTED:
@@ -365,6 +374,22 @@ export function formatActivitySentence(event) {
       return `Unit ${metadata.unitCode || "—"} (${metadata.category || "—"}) didaftarkan lahir di workshop tanpa pickup`;
     case EVENT_TYPES.PRODUCTION_WORKSHOP_AWAITING_QC:
       return `Seluruh tahap workshop unit ${metadata.unitCode || "—"} selesai — menunggu QC`;
+    case EVENT_TYPES.PRODUCTION_QC_RECORDED:
+      return `QC unit ${metadata.unitCode || "—"}: ${metadata.result === "PASS" ? "LULUS" : metadata.result === "FAIL" ? "GAGAL (rework)" : metadata.result || "—"} (inspeksi #${metadata.version ?? "—"})`;
+    case EVENT_TYPES.PRODUCTION_QC_WAIVED:
+      return `QC unit ${metadata.unitCode || "—"} di-waive oleh pihak berwenang — ${metadata.reason || "tanpa alasan"}`;
+    case EVENT_TYPES.PRODUCTION_REWORK_OPENED:
+      return `Rework dibuka untuk unit ${metadata.unitCode || "—"} pada tahap ${metadata.stageLabel || "—"}${metadata.note ? ` — ${metadata.note}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_HANDOFF_ACTION:
+      return `Tindak lanjut penolakan Gudang untuk unit ${metadata.unitCode || "—"}: ${metadata.action === "REWORK" ? "rework" : "tawarkan ulang"}${metadata.note ? ` — ${metadata.note}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_RUN_COMPLETED:
+      return `Produksi unit ${metadata.unitCode || "—"} selesai — barang jadi diterima Gudang${metadata.locationCode ? ` di lokasi ${metadata.locationCode}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_RUN_CANCELLED:
+      return `Production Run unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_RUN_EXCEPTION_OPENED:
+      return `Konflik rekonsiliasi dicatat untuk unit ${metadata.unitCode || "—"}: status unit ${metadata.unitStatus || "—"} berbeda dari Production Run yang berjalan`;
+    case EVENT_TYPES.PRODUCTION_RUN_EXCEPTION_RESOLVED:
+      return `Konflik rekonsiliasi unit ${metadata.unitCode || "—"} diselesaikan (${metadata.resolution || "—"})${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_CANCELLED:
       return `Pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.BUKTI_DIMINTA:

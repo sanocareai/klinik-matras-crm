@@ -35,6 +35,9 @@ export const PERMISSIONS = {
   UNIT_ROUTING_WRITE: "unit:routing:write",
   // Memutuskan hasil Uji Berat Badan (D-005).
   QC_WRITE: "qc:write",
+  // P6 — MEM-WAIVE gerbang QC / menerima override V1 pada rekonsiliasi. Hak pihak berwenang (ADMIN/OWNER), SENGAJA terpisah dari QC_WRITE:
+  // produksi tidak boleh melewati QC-nya sendiri, dan waive tidak pernah dicatat sebagai PASS.
+  QC_WAIVE: "qc:waive",
 
   // Revisi scope (PRD §7.4, D-008). SENGAJA DUA permission terpisah untuk
   // dua sisi alur yang sama — pemisahan ini yang membuat angka delta harga
@@ -211,6 +214,7 @@ const ADMIN_PERMS = [
   P.CONVERSATION_READ, P.CONVERSATION_WRITE,
   P.ORDER_READ, P.ORDER_WRITE, P.ORDER_PRICE_READ,
   P.UNIT_READ, P.UNIT_ROUTING_WRITE, P.SCOPE_REVISION_DECIDE,
+  P.QC_WAIVE,
   P.INVENTORY_READ,
   P.JOB_READ, P.JOB_WRITE, P.ROUTE_WRITE,
   P.DASHBOARD_READ, P.PAYMENT_READ,

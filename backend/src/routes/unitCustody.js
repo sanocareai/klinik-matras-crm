@@ -15,7 +15,7 @@ export const unitCustodyRouter = express.Router();
 unitCustodyRouter.use(requireAuth);
 
 const STATUSES = ["OFFERED", "ACCEPTED", "REJECTED", "CANCELLED", "SUPERSEDED", "HISTORY"];
-const DIRECTIONS = ["INBOUND", "RETURN"];
+const DIRECTIONS = ["INBOUND", "RETURN", "FINISHED_GOODS"];
 
 function handleErr(err, res) {
   if (Number.isInteger(err?.statusCode)) {

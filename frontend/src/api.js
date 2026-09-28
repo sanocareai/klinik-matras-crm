@@ -561,6 +561,31 @@ export const api = {
     request("/production-planning/workshop/runs", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ unitId }) }),
   workshopCommand: (runId, action, data, idempotencyKey) =>
     request(`/production-planning/workshop/runs/${runId}/${action}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey(`workshop-${action}`) }, body: JSON.stringify(data) }),
+  // QC V2 + rework + barang jadi + rekonsiliasi override V1 (P6). Semua perintah: Idempotency-Key + expectedRevision (revisi Production Run/konflik).
+  // Keputusan Gudang atas barang jadi memakai getUnitCustodyHandoffs({ direction: "FINISHED_GOODS" }) + acceptUnitCustody/rejectUnitCustody.
+  getQcQueue: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production-planning/qc/queue${qs ? `?${qs}` : ""}`);
+  },
+  getQcRun: (runId) => request(`/production-planning/qc/runs/${runId}`),
+  recordQcInspection: (runId, data, idempotencyKey) =>
+    request(`/production-planning/qc/runs/${runId}/inspect`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("qc-inspect") }, body: JSON.stringify(data) }),
+  requestReworkMaterial: (runId, data, idempotencyKey) =>
+    request(`/production-planning/qc/runs/${runId}/rework-material`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("rework-material") }, body: JSON.stringify(data) }),
+  resolveHandoffRejection: (runId, data, idempotencyKey) =>
+    request(`/production-planning/qc/runs/${runId}/handoff-rejection`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("handoff-resolve") }, body: JSON.stringify(data) }),
+  cancelProductionRun: (runId, data, idempotencyKey) =>
+    request(`/production-planning/qc/runs/${runId}/cancel`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("run-cancel") }, body: JSON.stringify(data) }),
+  getRunExceptions: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production-planning/exceptions${qs ? `?${qs}` : ""}`);
+  },
+  openRunException: (runId, idempotencyKey) =>
+    request("/production-planning/exceptions/open", { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("exception-open") }, body: JSON.stringify({ runId }) }),
+  sweepRunExceptions: (idempotencyKey) =>
+    request("/production-planning/exceptions/sweep", { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("exception-sweep") }, body: JSON.stringify({}) }),
+  resolveRunException: (id, data, idempotencyKey) =>
+    request(`/production-planning/exceptions/${id}/resolve`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("exception-resolve") }, body: JSON.stringify(data) }),
   cancelProductionPlan: (id, data, idempotencyKey = mutationKey("plan-cancel")) =>
     request(`/production-planning/plans/${id}/cancel`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
 

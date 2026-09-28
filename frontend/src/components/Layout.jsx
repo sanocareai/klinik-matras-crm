@@ -192,6 +192,8 @@ const DIVISIONS = {
           { to: "/bengkel/planning",        label: "Rencana Produksi", Icon: CalendarClock },
           // Antrean Kerja Workshop (P5) — mulai/jeda/lanjutkan/selesai tahap; inert bila reader V2 belum aktif.
           { to: "/bengkel/workshop",        label: "Antrean Kerja",   Icon: Wrench },
+          // Antrean QC V2 (P6) — putusan QC Lulus/Gagal/Waive, rework, tindak lanjut penolakan Gudang, dan rekonsiliasi konflik override V1.
+          { to: "/bengkel/qc-v2",           label: "Antrean QC (V2)", Icon: ClipboardCheck },
           // Semua Order (D-086, 5 September 2026) — pasangan Bengkel dari
           // "Semua Order" Delivery (lihat catatan D-052 di atas) — laporan
           // owner: sales suka lupa update status, semua divisi harus bisa
@@ -276,6 +278,8 @@ const DIVISIONS = {
           { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
           // Custody unit V2 (P1–P2): antrean serah-terima Delivery <-> Gudang. Data kosong bila reader V2 belum diaktifkan (fail-closed).
           { to: "/warehouse/unit-custody", label: "Penerimaan Unit", Icon: ClipboardCheck },
+          // P6 — penerimaan BARANG JADI dari Produksi (lokasi wajib; menerima = run selesai + unit siap kirim). Inert bila reader V2 OFF.
+          { to: "/warehouse/finished-goods", label: "Terima Barang Jadi", Icon: ArrowDownToLine },
           // P4 — antrean Pengambilan Bahan Produksi (permintaan dari Planned BOM/reservasi; kosong/inert bila reader V2 OFF).
           { to: "/warehouse/material-pickup", label: "Pengambilan Bahan Produksi", Icon: ArrowUpFromLine },
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },

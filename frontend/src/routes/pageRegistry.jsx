@@ -87,6 +87,8 @@ const WarehouseUnitCustody = lazy(() => import("../pages/warehouse/WarehouseUnit
 const WarehouseMaterialPickup = lazy(() => import("../pages/warehouse/WarehouseMaterialPickup.jsx"));
 const ProductionPlanning = lazy(() => import("../pages/bengkel/ProductionPlanning.jsx"));
 const ProductionWorkshop = lazy(() => import("../pages/bengkel/ProductionWorkshop.jsx"));
+const ProductionQc = lazy(() => import("../pages/bengkel/ProductionQc.jsx"));
+const WarehouseFinishedGoods = lazy(() => import("../pages/warehouse/WarehouseFinishedGoods.jsx"));
 const WarehouseMaterialIssue = lazy(() => import("../pages/warehouse/WarehouseMaterialIssue.jsx"));
 const WarehouseTransfers = lazy(() => import("../pages/warehouse/WarehouseTransfers.jsx"));
 const WarehouseStockCount = lazy(() => import("../pages/warehouse/WarehouseStockCount.jsx"));
@@ -204,6 +206,8 @@ export const PAGES = [
   { path: "/warehouse/unit-custody", render: () => <WarehouseUnitCustody /> },
   { path: "/bengkel/planning", render: () => <ProductionPlanning /> },
   { path: "/bengkel/workshop", render: () => <ProductionWorkshop /> },
+  { path: "/bengkel/qc-v2", render: () => <ProductionQc /> },
+  { path: "/warehouse/finished-goods", render: () => <WarehouseFinishedGoods /> },
   { path: "/warehouse/material-pickup", render: () => <WarehouseMaterialPickup /> },
   { path: "/warehouse/material-issue", render: () => <WarehouseMaterialIssue /> },
   { path: "/warehouse/transfers", render: () => <WarehouseTransfers /> },

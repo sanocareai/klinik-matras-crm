@@ -21,7 +21,7 @@ import { LedgerError, lockRowForUpdate, postStockMovement } from "./inventoryLed
 import { postMaterialIssueCost } from "./finance/posting/inventory.js";
 import { JournalError } from "./finance/journal.js";
 import { AccountError } from "./finance/accounts.js";
-import { loadPlanForWrite, releaseReservationsInTx } from "./productionPlanningCommandService.js";
+import { cancelSupplementalInTx, loadPlanForWrite, releaseReservationsInTx } from "./productionPlanningCommandService.js";
 import { generateIssueCode } from "../routes/materialIssue.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
@@ -151,6 +151,37 @@ export async function requestMaterialPickup(prisma, { planId, actorId, idempoten
 }
 
 // ---------------------------------------------------------------------------
+// P6. Permintaan bahan TAMBAHAN rework: dokumen Material Issue baru (READY_TO_PICK) yang terhubung ke inspeksi QC gagal dan ke
+// reservasi tambahan (reserveSupplementalInTx, P3). Dipanggil command QC V2 di transaksinya sendiri; `plan` sudah dikunci. Serah bahan,
+// stock movement, dan HPP memakai pickMaterialIssue di bawah — jalur yang SAMA, tidak ada ledger paralel.
+// ---------------------------------------------------------------------------
+export async function createSupplementalIssueInTx(tx, { plan, inspectionId, reservations, actorId, commandId }) {
+  if (!reservations?.length) throw issueError("Bahan tambahan wajib memuat minimal satu bahan", 400, "MATERIAL_ISSUE_SUPPLEMENTAL_EMPTY");
+  const now = new Date();
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const existing = await tx.materialIssue.count({ where: { createdAt: { gte: startOfDay } } });
+  const issueNumber = `${generateIssueCode(now)}-${String(existing + 1).padStart(2, "0")}`;
+  const sorted = [...reservations].sort((a, b) => a.materialId.localeCompare(b.materialId));
+  const issue = await tx.materialIssue.create({
+    data: {
+      issueNumber, sourceType: "PRODUCTION_WORK_ORDER", unitId: plan.run.unitId, productionPlanId: plan.id, reworkInspectionId: inspectionId,
+      sourceReference: `Bahan tambahan rework ${plan.run.unit.unitCode}`, department: "PRODUKSI",
+      requestedById: actorId || null, createdById: actorId || null, status: "READY_TO_PICK", revision: 1, commandId,
+      lines: { create: sorted.map((r) => ({ materialId: r.materialId, requestedQty: Number(r.qty), reservationId: r.reservationId })) },
+    },
+  });
+  await outbox(tx, {
+    eventType: "warehouse.material_issue.requested", aggregateId: issue.id, revision: 1, dedupeKey: `warehouse-material-issue-requested:${issue.id}`,
+    payload: { issueId: issue.id, issueNumber, planId: plan.id, runId: plan.runId, unitId: plan.run.unitId, lineCount: sorted.length, reworkInspectionId: inspectionId, occurredAt: now.toISOString(), actorId },
+  });
+  await recordActivity(tx, {
+    entityType: "unit", entityId: plan.run.unitId, eventType: EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_REQUESTED, actorId: actorId || null,
+    metadata: { unitCode: plan.run.unit.unitCode, issueNumber, planId: plan.id, lineCount: sorted.length, supplemental: true },
+  });
+  return { issueId: issue.id, issueNumber, status: "READY_TO_PICK", revision: 1, lineCount: sorted.length };
+}
+
+// ---------------------------------------------------------------------------
 // 2. Gudang "Serahkan Bahan" (PICKED): stok fisik berkurang + reservasi CONSUMED + issue terminal, atomik.
 // ---------------------------------------------------------------------------
 export async function pickMaterialIssue(prisma, { issueId, actorId, idempotencyKey, expectedRevision }) {
@@ -248,7 +279,10 @@ export async function cancelMaterialIssueBeforePick(prisma, { issueId, actorId, 
       where: { id: issue.id },
       data: { status: "CANCELLED", cancelledById: actorId || null, cancelledAt: now, cancelReason: cleaned, revision, commandId: command.id },
     });
-    const { releasedCount, nextStatus } = await releaseReservationsInTx(tx, { plan, actorId, commandId: command.id, reason: `Permintaan pengambilan bahan ${issue.issueNumber} dibatalkan: ${cleaned}` });
+    // Issue TAMBAHAN rework: hanya reservasi tambahan yang dilepas; plan tetap Bahan Direservasi (reservasi asli CONSUMED tidak disentuh).
+    const { releasedCount, nextStatus } = issue.reworkInspectionId
+      ? { ...(await cancelSupplementalInTx(tx, { plan, inspectionId: issue.reworkInspectionId, actorId, reason: `Permintaan bahan tambahan ${issue.issueNumber} dibatalkan: ${cleaned}` })), nextStatus: plan.status }
+      : await releaseReservationsInTx(tx, { plan, actorId, commandId: command.id, reason: `Permintaan pengambilan bahan ${issue.issueNumber} dibatalkan: ${cleaned}` });
     await outbox(tx, {
       eventType: "warehouse.material_issue.cancelled", aggregateId: issue.id, revision, dedupeKey: `warehouse-material-issue-cancelled:${issue.id}:${revision}`,
       payload: { issueId: issue.id, issueNumber: issue.issueNumber, planId: plan.id, unitId: issue.unitId, reason: cleaned, releasedReservations: releasedCount, revision, occurredAt: now.toISOString(), actorId },
@@ -270,6 +304,7 @@ function formatIssue(row) {
   return {
     id: row.id, issueNumber: row.issueNumber, status: row.status, revision: row.revision,
     planId: row.productionPlanId, planStatus: row.productionPlan?.status ?? null,
+    supplemental: Boolean(row.reworkInspectionId), reworkInspectionId: row.reworkInspectionId ?? null,
     unit: row.unit ? { id: row.unit.id, unitCode: row.unit.unitCode, orderNumber: row.unit.order?.orderNumber ?? null } : null,
     createdAt: row.createdAt, issuedAt: row.issuedAt, cancelledAt: row.cancelledAt, cancelReason: row.cancelReason,
     lines: row.lines.map((l) => ({

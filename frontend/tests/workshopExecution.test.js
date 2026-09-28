@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   PAUSE_REASONS, availableActions, currentStageOf, emptyStateCopy, historyActionLabel, nextStageOf, runStateBadgeFor,
-  stageProgress, startBlockedReason, validateCompleteForm, validatePauseForm, workshopErrorMessage,
+  stageProgress, startBlockedReason, validateCompleteForm, validatePauseForm, workshopErrorMessage, completionSummary,
 } from "../src/features/production/workshopExecution.js";
 
 const stages = [
@@ -29,10 +29,27 @@ test("aksi tersedia mengikuti state: mulai hanya bila siap + material siap; jeda
 });
 
 test("alasan start diblokir: menunggu QC dan bahan belum diserahkan", () => {
-  assert.match(startBlockedReason({ state: "AWAITING_QC" }), /menunggu QC/);
+  assert.match(startBlockedReason({ state: "AWAITING_QC" }), /menunggu keputusan QC/);
+  assert.match(startBlockedReason({ state: "IN_HANDOFF" }), /keputusan Gudang/);
+  assert.match(startBlockedReason({ state: "HANDOFF_REJECTED" }), /ditolak Gudang/);
   assert.match(startBlockedReason({ state: "READY_TO_START", material: { ready: false, reason: "bahan belum diserahkan" } }), /bahan belum diserahkan/);
   assert.equal(startBlockedReason({ state: "READY_TO_START", material: { ready: true } }), null);
   assert.equal(startBlockedReason(null), null);
+});
+
+test("gerbang QC di daftar tahap tidak dihitung sebagai tahap eksekusi (sekarang/berikutnya/progres); ringkasan selesai tahap: QC vs handoff", () => {
+  const withGate = { stages: [
+    { id: "a", status: "COMPLETED" }, { id: "qc", isQcGate: true, status: "AWAITING_QC" }, { id: "c", status: "NOT_STARTED" }, { id: "d", status: "NOT_STARTED" },
+  ] };
+  assert.equal(nextStageOf(withGate).id, "c");
+  assert.equal(currentStageOf({ stages: [{ id: "qc", isQcGate: true, status: "ACTIVE" }] }), null);
+  assert.deepEqual(stageProgress(withGate), { done: 1, total: 3, percent: 33 });
+  assert.equal(completionSummary({ awaitingQc: true }), "Seluruh tahap sebelum QC selesai — unit menunggu QC.");
+  assert.match(completionSummary({ handoffReady: true }), /ditawarkan ke Gudang/);
+  assert.equal(completionSummary({}), "Tahap diselesaikan.");
+  assert.equal(runStateBadgeFor("IN_HANDOFF").label, "Menunggu Gudang");
+  assert.equal(runStateBadgeFor("HANDOFF_REJECTED").label, "Ditolak Gudang");
+  assert.match(workshopErrorMessage({ code: "WORKSHOP_IN_HANDOFF" }), /Gudang/);
 });
 
 test("tahap: sekarang, berikutnya, progres", () => {

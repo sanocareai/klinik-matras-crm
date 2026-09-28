@@ -39,6 +39,7 @@ import { sendWithSessionFallback, resolveSendTarget, SessionResolutionError, SES
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { maskAccountNumber } from "../utils/maskAccount.js";
+import { assertOrderUnitsNotV2Owned } from "../services/productionRunGuards.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
@@ -284,6 +285,11 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
       });
       if (!sebelum) {
         throw Object.assign(new Error("Order tidak ditemukan"), { statusCode: 404 });
+      }
+      // Production V2 (P6): dropdown status yang MENGUBAH unit (CANCELLED/READY/DELIVERED) ditolak untuk unit cohort yang punya Production Run aktif
+      // — QC, handoff barang jadi, dan penutupan run hanya lewat command owner V2. Writer OFF / non-cohort / tanpa run: tidak ada efek (V1 identik).
+      if (["CANCELLED", "READY", "DELIVERED"].includes(status) && status !== sebelum.status) {
+        await assertOrderUnitsNotV2Owned(tx, req.params.id, `Mengubah status order ke ${status}`);
       }
       // Pembatalan: cek ulang pengaman DI BAWAH KUNCI — pemeriksaan di luar transaksi bisa kalah balapan dengan verifikasi/alokasi yang
       // baru selesai (cancel-vs-verify). Hasilnya sama dengan pemeriksaan awal kalau tidak ada yang berubah.
@@ -693,6 +699,7 @@ orderRouter.post("/:id/reopen-for-delivery", requirePermission(P.ORDER_WRITE), a
 
     let sebelum;
     await prisma.$transaction(async (tx) => {
+      await assertOrderUnitsNotV2Owned(tx, order.id, "Membuka kembali order untuk pengiriman");
       await tx.unit.updateMany({
         where: { id: { in: unitsPerluDibuka.map((u) => u.id) } },
         data: { status: "READY_FOR_DELIVERY" },
@@ -788,6 +795,7 @@ orderRouter.post("/:id/reopen-for-pickup", requirePermission(P.ORDER_WRITE), asy
 
     let sebelum;
     await prisma.$transaction(async (tx) => {
+      await assertOrderUnitsNotV2Owned(tx, order.id, "Membuka kembali order untuk pickup");
       await tx.unit.updateMany({
         where: { id: { in: unitsPerluDibuka.map((u) => u.id) } },
         data: { status: "AWAITING_PICKUP" },
@@ -2214,6 +2222,7 @@ orderRouter.post("/:id/cancel", async (req, res) => {
       if (ulang.blockers.length > 0) {
         throw Object.assign(new Error(`Order tidak bisa dibatalkan otomatis karena sudah ada ${ulang.blockers.join(", ")} — butuh penanganan manual admin/Kendali, bukan sekadar salah input.`), { statusCode: 409 });
       }
+      await assertOrderUnitsNotV2Owned(tx, req.params.id, "Membatalkan order");
       // Audit invariants: unit-unit dibaca ULANG di bawah kunci (bukan `units` dari pemeriksaan di luar transaksi) — unit yang baru
       // dibuat/berubah di antara dua pemeriksaan tetap ikut dibatalkan, bukan tertinggal jadi "ghost unit".
       if (ulang.units.length > 0) {

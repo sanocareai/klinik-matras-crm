@@ -470,8 +470,10 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
 // routes/units.js). Melihat antrean ≠ meluluskan QC.
 productionRouter.get("/qc-queue", requirePermission(P.UNIT_READ), async (req, res) => {
   try {
+    // Production V2 (P6): unit yang QC-nya dimiliki V2 (run berasal custody/workshop V2) TIDAK muncul di antrean V1 ini — putusannya lewat antrean QC V2.
+    // Unit tanpa run V2 (writer OFF/non-cohort/legacy) tidak terpengaruh: hasil query identik.
     const units = await prisma.unit.findMany({
-      where: { currentStage: { requiresQc: true } },
+      where: { currentStage: { requiresQc: true }, productionRunsV2: { none: { origin: { not: null } } } },
       include: {
         currentStage: { select: { id: true, code: true, labelId: true, requiresPhoto: true } },
         service: { select: { id: true, labelId: true, serviceLine: true } },

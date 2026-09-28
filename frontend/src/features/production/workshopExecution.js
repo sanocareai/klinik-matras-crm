@@ -12,6 +12,8 @@ export const RUN_STATE_BADGE = Object.freeze({
   IN_PROGRESS: { variant: "info", label: "Sedang Dikerjakan" },
   PAUSED: { variant: "neutral", label: "Dijeda" },
   AWAITING_QC: { variant: "success", label: "Menunggu QC" },
+  IN_HANDOFF: { variant: "accent", label: "Menunggu Gudang" },
+  HANDOFF_REJECTED: { variant: "danger", label: "Ditolak Gudang" },
 });
 
 export function runStateBadgeFor(state) {
@@ -23,6 +25,7 @@ export const STAGE_STATUS_LABEL = Object.freeze({
   ACTIVE: "Berjalan",
   PAUSED: "Dijeda",
   COMPLETED: "Selesai",
+  AWAITING_QC: "Menunggu QC",
 });
 
 // Alasan jeda yang diterima server (lib/domain/stageExecution.js). Kendala eksternal BUKAN jeda — pakai "Tandai Terhambat".
@@ -53,24 +56,27 @@ export function availableActions(run) {
 
 export function startBlockedReason(run) {
   if (!run) return null;
-  if (run.state === "AWAITING_QC") return "Seluruh tahap workshop selesai — unit menunggu QC.";
+  if (run.state === "AWAITING_QC") return "Seluruh tahap sebelum QC selesai — unit menunggu keputusan QC (Antrean QC).";
+  if (run.state === "IN_HANDOFF") return "Seluruh tahap produksi selesai — barang jadi menunggu keputusan Gudang.";
+  if (run.state === "HANDOFF_REJECTED") return "Barang jadi ditolak Gudang — tindak lanjut oleh Production Lead di Antrean QC (tab Ditolak Gudang).";
   if (run.state === "READY_TO_START" && run.material && !run.material.ready) {
     return `Belum bisa dimulai: ${run.material.reason || "bahan belum diserahkan Gudang"}.`;
   }
   return null;
 }
 
+// Gerbang QC (isQcGate) bukan tahap yang dieksekusi di layar ini — diputuskan lewat Antrean QC.
 export function currentStageOf(run) {
-  return (run?.stages || []).find((s) => s.status === "ACTIVE" || s.status === "PAUSED") || null;
+  return (run?.stages || []).find((s) => !s.isQcGate && (s.status === "ACTIVE" || s.status === "PAUSED")) || null;
 }
 
 // Tahap berikutnya yang akan dimulai (pertama yang belum dimulai) — untuk label tombol "Mulai <tahap>".
 export function nextStageOf(run) {
-  return (run?.stages || []).find((s) => s.status === "NOT_STARTED") || null;
+  return (run?.stages || []).find((s) => !s.isQcGate && s.status === "NOT_STARTED") || null;
 }
 
 export function stageProgress(run) {
-  const stages = run?.stages || [];
+  const stages = (run?.stages || []).filter((s) => !s.isQcGate);
   const done = stages.filter((s) => s.status === "COMPLETED").length;
   return { done, total: stages.length, percent: stages.length ? Math.round((done / stages.length) * 100) : 0 };
 }
@@ -97,11 +103,22 @@ export function workshopErrorMessage(error) {
     case "WORKSHOP_OPERATOR_MISMATCH": return "Anda bukan operator yang ditugaskan pada rencana ini.";
     case "WORKSHOP_WORK_CENTER_MISMATCH": return "Workshop tidak sesuai dengan rencana produksi.";
     case "WORKSHOP_STAGE_ALREADY_ACTIVE": return "Masih ada tahap yang berjalan/dijeda — selesaikan atau lanjutkan tahap itu dulu.";
-    case "WORKSHOP_AWAITING_QC": return "Seluruh tahap workshop sudah selesai; unit menunggu QC.";
+    case "WORKSHOP_AWAITING_QC": return "Seluruh tahap sebelum QC sudah selesai; unit menunggu QC.";
+    case "WORKSHOP_IN_HANDOFF": return "Seluruh tahap produksi selesai; barang jadi menunggu keputusan Gudang.";
+    case "WORKSHOP_HANDOFF_REJECTED": return "Barang jadi ditolak Gudang; tindak lanjut lewat Antrean QC.";
+    case "WORKSHOP_UNIT_NOT_IN_PRODUCTION": return error.message || "Status unit tidak lagi produksi — hubungi Production Lead.";
+    case "PRODUCTION_RUN_EXCEPTION_OPEN": return "Ada konflik rekonsiliasi yang belum diselesaikan untuk run ini.";
     case "WORKSHOP_PAUSE_REASON_INVALID": return error.message || "Alasan jeda tidak valid.";
     case "WORKSHOP_WRITER_OFF": return "Eksekusi workshop V2 belum aktif untuk unit ini.";
     default: return error?.message || "Gagal memproses perintah";
   }
+}
+
+// Ringkasan hasil "Selesai Tahap": menuju QC, atau seluruh tahap produksi selesai dan barang jadi ditawarkan ke Gudang.
+export function completionSummary(result) {
+  if (result?.handoffReady) return "Seluruh tahap produksi selesai — barang jadi ditawarkan ke Gudang.";
+  if (result?.awaitingQc) return "Seluruh tahap sebelum QC selesai — unit menunggu QC.";
+  return "Tahap diselesaikan.";
 }
 
 export function emptyStateCopy({ readerMode, scope }) {

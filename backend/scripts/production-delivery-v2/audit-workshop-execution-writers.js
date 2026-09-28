@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Audit writer Eksekusi Workshop (Production Workshop + Warehouse V2, P5). Read-only.
-//  1. production_operation_runs_v2: HANYA command owner P5.
-//  2. production_phase_runs_v2 / production_runs_v2: HANYA custody P1-P2 (buka intake) dan command owner P5.
+//  1. production_operation_runs_v2: HANYA command owner P5 (eksekusi) dan P6 (penutupan/pembatalan run).
+//  2. production_phase_runs_v2 / production_runs_v2: HANYA custody (P1-P2 buka intake; P6 keputusan Gudang atas barang jadi), command owner P5, dan command owner P6 (QC/handoff/rekonsiliasi).
 //  3. unit_stage_logs: HANYA stage engine (unitStageEngine.js) — P5 memakai varian *InTx-nya, tidak menulis ledger tahap sendiri.
 //  4. P5 TIDAK boleh menyentuh stok/reservasi/HPP: tanpa stockMovement, postStockMovement, materialReservation, postMaterialIssueCost, jurnal.
 //  5. Engine V1 wajib memagari (assertNotV2ExecutionOwned) SETIAP fungsi penulis ledger tahap V1, diperiksa PER FUNGSI (start/recordDone/complete/pause/resume/fail/skip/qc/adminBypass).
@@ -15,12 +15,13 @@ const backendRoot = path.resolve(here, "../..");
 const OPS = "(create|createMany|update|updateMany|upsert|delete|deleteMany)";
 const P5 = "src/services/productionWorkshopExecutionCommandService.js";
 const CUSTODY = "src/services/unitCustodyCommandService.js";
+const P6 = "src/services/productionQcHandoffCommandService.js";
 const ENGINE = "src/services/unitStageEngine.js";
 const writeRegex = (model) => new RegExp(String.raw`\.${model}\.${OPS}\s*\(`, "g");
 const RULES = [
-  { kind: "OPERATION_RUN_WRITER", regex: writeRegex("productionOperationRun"), owners: [P5] },
-  { kind: "PHASE_RUN_WRITER", regex: writeRegex("productionPhaseRun"), owners: [CUSTODY, P5] },
-  { kind: "RUN_WRITER", regex: writeRegex("productionRun"), owners: [CUSTODY, P5] },
+  { kind: "OPERATION_RUN_WRITER", regex: writeRegex("productionOperationRun"), owners: [P5, P6] },
+  { kind: "PHASE_RUN_WRITER", regex: writeRegex("productionPhaseRun"), owners: [CUSTODY, P5, P6] },
+  { kind: "RUN_WRITER", regex: writeRegex("productionRun"), owners: [CUSTODY, P5, P6] },
   { kind: "STAGE_LOG_WRITER", regex: writeRegex("unitStageLog"), owners: [ENGINE] },
 ];
 const FORBIDDEN_IN_P5 = [

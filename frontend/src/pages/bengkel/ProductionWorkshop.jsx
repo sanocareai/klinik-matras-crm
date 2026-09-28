@@ -10,7 +10,7 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import {
   PAUSE_REASONS, QUEUE_SCOPES, STAGE_STATUS_LABEL, availableActions, currentStageOf, emptyStateCopy, historyActionLabel,
-  nextStageOf, runStateBadgeFor, stageProgress, startBlockedReason, validateCompleteForm, validatePauseForm, workshopErrorMessage,
+  nextStageOf, runStateBadgeFor, stageProgress, startBlockedReason, validateCompleteForm, validatePauseForm, workshopErrorMessage, completionSummary,
 } from "@/features/production/workshopExecution.js";
 
 // Antrean Kerja Workshop (Production Workshop + Warehouse V2, P5) — mulai, jeda, lanjutkan, dan selesai tahap di atas
@@ -128,7 +128,7 @@ function RunDetailModal({ runId, onClose, onChanged }) {
   const submitComplete = () => {
     const check = validateCompleteForm({ stage, photoUrls: photos });
     if (!check.valid) { setError(check.error); return; }
-    execute("complete", { note: note.trim() || undefined, photoUrls: photos }, (r) => (r.awaitingQc ? "Seluruh tahap workshop selesai — unit menunggu QC." : "Tahap diselesaikan."));
+    execute("complete", { note: note.trim() || undefined, photoUrls: photos }, (r) => completionSummary(r));
   };
 
   return (
@@ -151,12 +151,12 @@ function RunDetailModal({ runId, onClose, onChanged }) {
               <ol className="divide-y divide-line rounded-card border border-line">
                 {run.stages.map((s) => (
                   <li key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 text-[12.5px]">
-                    <span className="text-ink">{s.order}. {s.label}{s.requiresPhoto ? " · wajib foto" : ""}{!s.required ? " · opsional" : ""}</span>
+                    <span className="text-ink">{s.order}. {s.label}{s.isQcGate ? " · gerbang QC (diputuskan petugas QC)" : ""}{s.requiresPhoto && !s.isQcGate ? " · wajib foto" : ""}{!s.required ? " · opsional" : ""}</span>
                     <Badge variant={s.status === "COMPLETED" ? "success" : s.status === "ACTIVE" ? "info" : s.status === "PAUSED" ? "warning" : "neutral"}>{STAGE_STATUS_LABEL[s.status] || s.status}</Badge>
                   </li>
                 ))}
               </ol>
-              {run.qcGate && <p className="mt-1 text-[11.5px] text-ink3">Setelah tahap terakhir: {run.qcGate.label} (QC) — diputuskan oleh petugas QC, bukan di layar ini.</p>}
+              {run.qcGate && <p className="mt-1 text-[11.5px] text-ink3">{run.qcGate.label} (QC) diputuskan lewat Antrean QC. Setelah lulus, tahap berikutnya (mis. Jahit Corner, Finish) dilanjutkan di sini; setelah tahap terakhir selesai, barang jadi ditawarkan ke Gudang.</p>}
             </section>
 
             {mode === "pause" && (

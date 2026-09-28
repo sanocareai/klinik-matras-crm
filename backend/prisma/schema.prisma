@@ -1654,6 +1654,7 @@ model Unit {
   complaintCases    ComplaintCase[]
   productionRunsV2  ProductionRun[]
   custodyHandoffs   UnitCustodyHandoff[]
+  productionRunExceptions ProductionRunException[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -4082,6 +4083,7 @@ model QcFitTest {
   createdAt DateTime @default(now()) @map("created_at")
 
   complaintCases ComplaintCase[]
+  qualityInspections QualityInspection[]
 
   @@index([unitId, createdAt])
   @@map("qc_fit_tests")
@@ -5237,6 +5239,10 @@ model MaterialIssue {
   cancelledById    String?            @map("cancelled_by_id")
   cancelledAt      DateTime?          @map("cancelled_at")
   cancelReason     String?            @map("cancel_reason")
+
+  // P6 — permintaan bahan TAMBAHAN rework (supplemental): terhubung ke inspeksi QC yang gagal. NULL untuk issue V1 dan issue P4 asli.
+  reworkInspectionId String?           @map("rework_inspection_id") @db.Uuid
+  reworkInspection   QualityInspection? @relation("ReworkMaterialIssues", fields: [reworkInspectionId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -8196,6 +8202,7 @@ model ProductionRun {
   handoff              ProductionHandoff?
   custodyHandoffs      UnitCustodyHandoff[]
   plan                 ProductionRunPlan?
+  exceptions           ProductionRunException[]
 
   @@unique([migrationSource, migrationSourceId])
   @@index([unitId, status])
@@ -8276,6 +8283,13 @@ model QualityInspection {
   createdAt        DateTime                @default(now()) @map("created_at")
   items            QualityInspectionItem[]
 
+  // P6 — proyeksi V1: putusan Uji Berat Badan (qc_fit_tests) yang ditulis di transaksi yang SAMA dengan inspeksi ini (NULL untuk
+  // QC_WAIVED: tidak ada berat acuan yang boleh dikarang). Baris inspeksi IMMUTABLE (trigger di migration): hanya INSERT.
+  qcFitTestId      String?                 @map("qc_fit_test_id") @db.Uuid
+  qcFitTest        QcFitTest?              @relation(fields: [qcFitTestId], references: [id], onDelete: Restrict)
+  supplementalBomLines PlannedBOMLine[]    @relation("SupplementalBomLines")
+  reworkIssues     MaterialIssue[]         @relation("ReworkMaterialIssues")
+
   @@unique([runId, version])
   @@index([result, createdAt])
   @@map("quality_inspections_v2")
@@ -8313,6 +8327,57 @@ model ProductionHandoff {
 
   @@index([status, offeredAt])
   @@map("production_handoffs_v2")
+}
+
+// P6 — konflik antara Production Run V2 yang aktif dan status unit yang diubah manual di V1 (mis. dropdown status order ->
+// READY/CANCELLED). Fail-closed: selama ada exception OPEN, command P5/P6 untuk run itu ditolak. Diselesaikan HANYA lewat command
+// owner (productionQcHandoffCommandService.js) dengan resolusi eksplisit + alasan; tidak pernah ditebak/ditimpa diam-diam.
+// Satu exception OPEN per run (partial unique index di migration).
+enum ProductionRunExceptionKind {
+  UNIT_CANCELLED
+  UNIT_MARKED_READY
+  UNIT_SHIPPED
+}
+
+enum ProductionRunExceptionStatus {
+  OPEN
+  RESOLVED
+}
+
+enum ProductionRunExceptionResolution {
+  RESTORE_UNIT_STATUS
+  CANCEL_RUN
+  ACCEPT_OVERRIDE
+  NO_LONGER_APPLICABLE
+}
+
+model ProductionRunException {
+  id              String                            @id @default(uuid()) @db.Uuid
+  runId           String                            @map("run_id") @db.Uuid
+  run             ProductionRun                     @relation(fields: [runId], references: [id], onDelete: Restrict)
+  unitId          String                            @map("unit_id") @db.Uuid
+  unit            Unit                              @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  kind            ProductionRunExceptionKind
+  status          ProductionRunExceptionStatus      @default(OPEN)
+  unitStatusSeen  String                            @map("unit_status_seen")
+  runPhaseSeen    String?                           @map("run_phase_seen")
+  runRevisionSeen Int                               @map("run_revision_seen")
+  evidence        Json                              @default("{}")
+  detectedById    String?                           @map("detected_by_id")
+  detectedAt      DateTime                          @default(now()) @map("detected_at")
+  resolution      ProductionRunExceptionResolution?
+  resolutionNote  String?                           @map("resolution_note")
+  resolvedById    String?                           @map("resolved_by_id")
+  resolvedAt      DateTime?                         @map("resolved_at")
+  revision        Int                               @default(1)
+  commandId       String?                           @map("command_id") @db.Uuid
+  createdAt       DateTime                          @default(now()) @map("created_at")
+  updatedAt       DateTime                          @updatedAt @map("updated_at")
+
+  // "Satu exception OPEN per run" ditegakkan partial unique index di migration (Prisma tidak bisa mengekspresikannya).
+  @@index([status, detectedAt])
+  @@index([runId, status])
+  @@map("production_run_exceptions_v2")
 }
 
 model DeliveryRouteState {
@@ -8580,6 +8645,10 @@ model FinOperationalAdvanceSettlement {
 enum UnitCustodyDirection {
   INBOUND
   RETURN
+  // P6 — barang jadi dari Produksi ke Gudang setelah QC lulus/di-waive DAN seluruh tahap produksi selesai. TANPA Job pengiriman
+  // (delivery_job_id NULL, dijaga CHECK di migration). Custody yang sama, bukan model paralel: lokasi wajib valid, tolak wajib
+  // alasan, riwayat kekal.
+  FINISHED_GOODS
 }
 
 enum UnitCustodyHandoffStatus {
@@ -8594,8 +8663,9 @@ model UnitCustodyHandoff {
   id              String                   @id @default(uuid()) @db.Uuid
   unitId          String                   @map("unit_id") @db.Uuid
   unit            Unit                     @relation(fields: [unitId], references: [id], onDelete: Restrict)
-  deliveryJobId   String                   @map("delivery_job_id") @db.Uuid
-  deliveryJob     Job                      @relation(fields: [deliveryJobId], references: [id], onDelete: Restrict)
+  // NULL hanya untuk direction FINISHED_GOODS (P6); INBOUND/RETURN wajib punya Job — ditegakkan CHECK di migration.
+  deliveryJobId   String?                  @map("delivery_job_id") @db.Uuid
+  deliveryJob     Job?                     @relation(fields: [deliveryJobId], references: [id], onDelete: Restrict)
   direction       UnitCustodyDirection
   status          UnitCustodyHandoffStatus @default(OFFERED)
   locationId      String?                  @map("location_id") @db.Uuid
@@ -8712,6 +8782,10 @@ model PlannedBOMLine {
   createdAt      DateTime  @default(now()) @map("created_at")
   supersededById String?   @map("superseded_by_id")
   supersededAt   DateTime? @map("superseded_at")
+
+  // P6 — bahan TAMBAHAN rework: terhubung ke inspeksi QC yang gagal. NULL = baris BOM asli (reservasi asli tidak pernah dibuka lagi).
+  supplementalInspectionId String?            @map("supplemental_inspection_id") @db.Uuid
+  supplementalInspection   QualityInspection? @relation("SupplementalBomLines", fields: [supplementalInspectionId], references: [id], onDelete: Restrict)
 
   reservations MaterialReservation[]
 
