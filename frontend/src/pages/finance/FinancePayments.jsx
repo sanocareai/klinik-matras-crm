@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ShieldCheck, Image as ImageIcon, Split } from "lucide-react";
+import { ShieldCheck, Image as ImageIcon, Split, Eye, PenLine, FileEdit, History } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -19,13 +19,25 @@ import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { DetailPembayaranDialog, EditInfoDialog, KoreksiPembayaranDialog, RiwayatPembayaranDialog } from "@/features/finance/KoreksiPembayaran.jsx";
 
 // Aksi PALING RELEVAN jadi tombol utama; "Bagi pembayaran" masuk menu
 // titik-tiga — foto bukti PISAH ke kolomnya sendiri (BuktiThumb), bukan
 // ikut jadi tombol di kolom Aksi.
-function aksiPembayaran(p, { verifikasi, setAlokasiUntuk }) {
+function aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog }) {
+  // B3.7 — menu untuk uang masuk terverifikasi (dan versi yang sudah diganti): tombol nonaktif TETAP tampil beserta alasan + arah tindakan dari server.
+  const m = p.menuKoreksi;
+  const nonaktif = (x) => (x && !x.aktif ? { disabled: true, alasan: [x.alasan, x.arah].filter(Boolean).join(" ") } : {});
+  const menuB37 = m && (p.terverifikasi || p.replacesPaymentId || p.replacedBy) ? [
+    { separator: true },
+    { key: "detail", label: "Lihat Detail", icon: Eye, onClick: () => bukaDialog("detail", p) },
+    { key: "info", label: "Edit Informasi", icon: FileEdit, onClick: () => bukaDialog("info", p), ...nonaktif(m.editInfo) },
+    { key: "koreksi", label: "Koreksi Pembayaran", icon: PenLine, onClick: () => bukaDialog("koreksi", p), ...nonaktif(m.koreksi) },
+    { key: "riwayat", label: "Riwayat Perubahan", icon: History, onClick: () => bukaDialog("riwayat", p) },
+  ] : [];
   const items = [
     !p.cancelledAt && { key: "alokasi", label: "Bagi ke beberapa order", icon: Split, onClick: () => setAlokasiUntuk(p) },
+    ...menuB37,
   ].filter(Boolean);
   if (!p.cancelledAt && !p.terverifikasi) {
     return { primary: { label: "Verifikasi", variant: "secondary", onClick: () => verifikasi(p) }, items };
@@ -66,6 +78,8 @@ export default function FinancePayments() {
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
   const [alokasiUntuk, setAlokasiUntuk] = useState(null);
+  const [dialog, setDialog] = useState(null); // { jenis: "detail" | "info" | "koreksi" | "riwayat", p }
+  const bukaDialog = (jenis, p) => setDialog({ jenis, p });
   const [fotoBukti, setFotoBukti] = useState(null);
   const [q, setQ] = useState("");
   const [fMetode, setFMetode] = useState("");
@@ -234,8 +248,8 @@ export default function FinancePayments() {
       <Card className={tab === "lunas_crm" ? "hidden" : "overflow-hidden"}>
         <JudulKartu
           title="Daftar Uang Masuk"
-          description="Kalau ada yang salah catat, batalkan lewat halaman Order. Barisnya tidak dihapus supaya jejaknya tetap ada."
-          info="Pembayaran yang sudah tercatat tidak bisa diedit atau dihapus diam-diam. Kalau ada kesalahan, pembayaran itu dibatalkan dari halaman Order sehingga tetap terlihat siapa yang membatalkan dan kenapa."
+          description="Salah catat atau salah verifikasi? Pakai menu ⋯ di tiap baris: Edit Informasi, Koreksi Pembayaran, atau Riwayat Perubahan. Barisnya tidak dihapus supaya jejaknya tetap ada."
+          info="Pembayaran yang sudah tercatat tidak pernah diedit atau dihapus diam-diam. Koreksi angka (nominal, tanggal, rekening, metode, order, pembagian) membalik jurnal lama dan membuat versi pembayaran pengganti dengan jurnal baru — semuanya tercatat siapa, kapan, dan alasannya."
         />
         {tampil.length === 0 ? (
           <CardContent><p className="py-6 text-center text-[13px] text-ink3">Tidak ada uang masuk yang cocok dengan pencarian ini.</p></CardContent>
@@ -258,7 +272,7 @@ export default function FinancePayments() {
               </THead>
               <TBody>
                 {tampil.map((p) => {
-                  const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk });
+                  const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog });
                   return (
                   <TR key={p.id}>
                     <TD sticky className="whitespace-nowrap text-[12px]">{tanggalJam(p.createdAt)}</TD>
@@ -285,7 +299,7 @@ export default function FinancePayments() {
                     </TD>
                     <TD>
                       {p.cancelledAt
-                        ? <Badge variant="red">Dibatalkan</Badge>
+                        ? <Badge variant={p.replacedBy ? "orange" : "red"}>{p.replacedBy ? "Diganti versi baru" : "Dibatalkan"}</Badge>
                         : p.terverifikasi
                           ? <Badge variant="green">Sudah diverifikasi</Badge>
                           : <Badge variant="orange">Menunggu</Badge>}
@@ -308,13 +322,13 @@ export default function FinancePayments() {
 
           <CardList className={CARD_VIEW_CLASS}>
             {tampil.map((p) => {
-              const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk });
+              const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog });
               return (
                 <RowCard
                   key={p.id}
                   title={tanggalJam(p.createdAt)}
                   status={
-                    p.cancelledAt ? <Badge variant="red">Dibatalkan</Badge>
+                    p.cancelledAt ? <Badge variant={p.replacedBy ? "orange" : "red"}>{p.replacedBy ? "Diganti versi baru" : "Dibatalkan"}</Badge>
                       : p.terverifikasi ? <Badge variant="green">Sudah diverifikasi</Badge>
                       : <Badge variant="orange">Menunggu</Badge>
                   }
@@ -345,6 +359,11 @@ export default function FinancePayments() {
         onSaved={async () => { setAlokasiUntuk(null); await muat(); }}
         onError={setPesan}
       />
+
+      {dialog?.jenis === "detail" && <DetailPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} />}
+      {dialog?.jenis === "riwayat" && <RiwayatPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} />}
+      {dialog?.jenis === "info" && <EditInfoDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
+      {dialog?.jenis === "koreksi" && <KoreksiPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
 
       <Modal open={Boolean(fotoBukti)} onOpenChange={(v) => !v && setFotoBukti(null)} title="Bukti Pembayaran" className="w-[560px]">
         {fotoBukti && <img src={fotoBukti} alt="Bukti pembayaran" className="max-h-[70vh] w-full rounded-lg object-contain" />}

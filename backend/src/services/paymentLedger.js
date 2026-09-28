@@ -35,11 +35,36 @@
 //    Alasan lengkapnya ada di services/finance/allocation.js#isPaymentCounted
 //    dan services/finance/settings.js.
 
-import { paidForOrder } from "./finance/allocation.js";
+import { paidForOrder, isPaymentCounted, kontribusiPembayaranOrder } from "./finance/allocation.js";
 import { getVerificationGate } from "./finance/settings.js";
 import { PILIH_TAGIHAN, dasarStatusBayar } from "./finance/tagihanOrder.js";
 
-export async function recomputeOrderPaymentStatus(tx, orderId) {
+const tanggalWIB = (d) => new Date(new Date(d).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+
+/**
+ * TANGGAL LUNAS EFEKTIF (B3.7): tanggal pembayaran yang PERTAMA KALI membuat total pembayaran yang dihitung mencapai tagihan kanonis `dasar`.
+ * Pembayaran (kontribusi sadar-alokasi, yang dihitung menurut gerbang verifikasi) diurutkan menurut TANGGAL efektif (hari WIB dari Payment.createdAt) lalu ID,
+ * dijumlahkan kumulatif; yang melewati titik lunas menentukan tanggalnya (bukan waktu koreksi/pencatatan). Belum mencapai → null.
+ */
+export async function tanggalLunasEfektif(tx, orderId, { gate, dasar }) {
+  if (!(dasar > 0)) return null;
+  const daftar = await kontribusiPembayaranOrder(tx, orderId, { select: { verifications: { select: { id: true } } } });
+  const dihitung = daftar.filter((c) => isPaymentCounted({ createdAt: c.createdAt, cancelledAt: null, verifications: c.verifications }, gate));
+  dihitung.sort((a, b) => (tanggalWIB(a.createdAt) < tanggalWIB(b.createdAt) ? -1 : tanggalWIB(a.createdAt) > tanggalWIB(b.createdAt) ? 1 : (a.id < b.id ? -1 : 1)));
+  let kumulatif = 0;
+  for (const c of dihitung) {
+    kumulatif += Number(c.amount) || 0;
+    if (kumulatif >= dasar) return c.createdAt;
+  }
+  return null;
+}
+
+/**
+ * `paidAtEfektif` (default false): dipakai koreksi pembayaran (B3.7) untuk order yang terdampak — paidAt SELALU dihitung ulang dari ledger
+ * (tanggal pembayaran yang melewati titik lunas, atau null bila belum lunas), tidak pernah waktu koreksi. Tanpa opsi ini (semua alur lama), order yang
+ * SUDAH LUNAS tidak digeser paidAt-nya (aturan lama); saat MASUK ke LUNAS paidAt = tanggal pembayaran pelunas (fallback: sekarang).
+ */
+export async function recomputeOrderPaymentStatus(tx, orderId, { paidAtEfektif = false } = {}) {
   const [order, gate] = await Promise.all([
     tx.order.findUnique({ where: { id: orderId }, select: { ...PILIH_TAGIHAN, paymentStatus: true } }),
     getVerificationGate(tx),
@@ -71,10 +96,10 @@ export async function recomputeOrderPaymentStatus(tx, orderId) {
   // kecil tidak boleh menggeser paidAt-nya), dan di-null-kan lagi kalau
   // keluar dari LUNAS (koreksi/refund sebagian) supaya paidAt selalu
   // konsisten dengan status SEKARANG, bukan riwayat basi.
-  const paidAt =
-    paymentStatus === "LUNAS"
-      ? (order.paymentStatus === "LUNAS" ? undefined : new Date()) // undefined = jangan sentuh field ini
-      : null;
+  let paidAt;
+  if (paymentStatus !== "LUNAS") paidAt = null;
+  else if (order.paymentStatus === "LUNAS" && !paidAtEfektif) paidAt = undefined; // undefined = jangan sentuh field ini
+  else paidAt = (await tanggalLunasEfektif(tx, orderId, { gate, dasar })) ?? new Date();
 
   await tx.order.update({
     where: { id: orderId },

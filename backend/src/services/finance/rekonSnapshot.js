@@ -252,7 +252,7 @@ export async function daftarException(db, { cashAccountId = null } = {}) {
             (SELECT string_agg(e.entry_number, ', ' ORDER BY e.entry_number) FROM fin_journal_entries e WHERE e.source = 'PEMBAYARAN_ORDER' AND e.source_id = d.id::text) AS jurnal,
             CASE WHEN d.cancelled_at IS NOT NULL THEN 'Pembayaran dibatalkan, jurnal masih aktif' ELSE 'Pembayaran aktif, seluruh jurnal sudah dibalik' END AS rincian
        FROM payments d
-      WHERE (d.cancelled_at IS NOT NULL AND EXISTS (SELECT 1 FROM fin_journal_entries e WHERE e.source = 'PEMBAYARAN_ORDER' AND e.source_id = d.id::text AND e.status = 'POSTED'))
+      WHERE (d.cancelled_at IS NOT NULL AND EXISTS (SELECT 1 FROM fin_journal_entries e WHERE e.source = 'PEMBAYARAN_ORDER' AND e.source_id = d.id::text AND e.status = 'POSTED' AND COALESCE(e.idempotency_key, '') NOT LIKE '%:RECLAS:%'))
          OR (d.cancelled_at IS NULL AND EXISTS (SELECT 1 FROM fin_journal_entries e WHERE e.source = 'PEMBAYARAN_ORDER' AND e.source_id = d.id::text)
              AND NOT EXISTS (SELECT 1 FROM fin_journal_entries e WHERE e.source = 'PEMBAYARAN_ORDER' AND e.source_id = d.id::text AND e.status = 'POSTED'))`);
   for (const r of p) hasil.push({ kode: "PEMBAYARAN_TIDAK_SINKRON", jenisDokumen: "Pembayaran order", ...r });

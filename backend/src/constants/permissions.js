@@ -89,6 +89,9 @@ export const PERMISSIONS = {
   DASHBOARD_READ: "dashboard:read",
   PAYMENT_READ: "payment:read",
   PAYMENT_WRITE: "payment:write",
+  // B3.7 — koreksi & edit informasi pembayaran masuk yang SUDAH diverifikasi (jurnal dibalik + versi pengganti, PIN Finance). Dipegang FINANCE dan
+  // ADMIN/OWNER; permission terpisah dari PAYMENT_WRITE (verifikasi) supaya keduanya bisa dipisah ke orang berbeda kelak.
+  PAYMENT_KOREKSI: "payment:koreksi",
 
   // --- Administrasi ---
   USER_MANAGE: "user:manage",
@@ -239,7 +242,7 @@ const ADMIN_PERMS = [
   // staf finance bisa mengubah bagan akun, jawabannya memberi dia role ADMIN
   // atau membuat role FINANCE_LEAD baru — BUKAN melebarkan FINANCE.
   P.FINANCE_READ, P.FINANCE_POST, P.FINANCE_APPROVE, P.FINANCE_ADMIN,
-  P.FINANCE_EXPENSE_SUBMIT,
+  P.FINANCE_EXPENSE_SUBMIT, P.PAYMENT_KOREKSI,
   // Snapshot Insentif — ADMIN/OWNER penuh (create+review+approve+read),
   // konsisten dengan pola FINANCE_ADMIN di atas ("ADMIN memegang SELURUH
   // permission finance").
@@ -402,7 +405,7 @@ export const ROLE_PERMISSIONS = {
   ],
 
   FINANCE: [
-    P.PAYMENT_READ, P.PAYMENT_WRITE,
+    P.PAYMENT_READ, P.PAYMENT_WRITE, P.PAYMENT_KOREKSI,
     P.ORDER_READ, P.ORDER_PRICE_READ,
     P.CUSTOMER_READ,
     P.DASHBOARD_READ,

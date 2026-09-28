@@ -6,7 +6,7 @@
 
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { handleFinanceError } from "./finance.js";
 import { statusPin, aturPin, verifikasiPin, riwayatVersi } from "../services/finance/koreksiGate.js";
@@ -17,11 +17,11 @@ export const financeKoreksiRouter = express.Router();
 // router.use akan menjalankan requireAuth lagi untuk SETIAP request /api/finance/* yang lewat — limiter token mobile
 // (120/menit) jadi menghitung dobel dan menolak permintaan sah (terbukti di tes Buku Besar).
 
-financeKoreksiRouter.get("/pin/status", requireAuth, requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+financeKoreksiRouter.get("/pin/status", requireAuth, requireAnyPermission(P.FINANCE_ADMIN, P.PAYMENT_KOREKSI), async (req, res) => {
   try { res.json(await statusPin(prisma, req.user.id)); } catch (e) { handleFinanceError(e, res); }
 });
 
-financeKoreksiRouter.post("/pin", requireAuth, requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+financeKoreksiRouter.post("/pin", requireAuth, requireAnyPermission(P.FINANCE_ADMIN, P.PAYMENT_KOREKSI), async (req, res) => {
   try {
     await aturPin(prisma, { userId: req.user.id, password: req.body?.password, pin: req.body?.pin });
     await recordActivity(prisma, {
@@ -32,7 +32,7 @@ financeKoreksiRouter.post("/pin", requireAuth, requirePermission(P.FINANCE_ADMIN
   } catch (e) { handleFinanceError(e, res); }
 });
 
-financeKoreksiRouter.post("/pin/verifikasi", requireAuth, requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+financeKoreksiRouter.post("/pin/verifikasi", requireAuth, requireAnyPermission(P.FINANCE_ADMIN, P.PAYMENT_KOREKSI), async (req, res) => {
   try { res.json(await verifikasiPin(prisma, { userId: req.user.id, pin: req.body?.pin })); } catch (e) { handleFinanceError(e, res); }
 });
 
