@@ -72,7 +72,6 @@ Kolom **Flag** = hal yang harus dijawab Gudang/Finance sebelum baris dapat diisi
 
 | Kode | Satuan | Stok sistem | Harga ref (Rp) | Nilai ref (Rp) | Flag |
 |---|---|---:|---:|---:|---|
-| Field separator is " | ". | undefined | undefined | undefined | perlu qty fisik + harga + dokumen |
 | KAYU-RACUK-2X5 | ROD | 240.00 | 1.609.500 | 386.280.000 | ANOMALI NILAI >Rp50jt — cek satuan/harga |
 | KAIN-KNITTING-PREMIUM-STANDARD | METER | 318.50 | 35.000 | 11.147.500 | perlu qty fisik + harga + dokumen |
 | PE-ENCASEMENT-195X19X4-MBB | PCS | 329.00 | 24.601 | 8.093.729 | perlu qty fisik + harga + dokumen |
