@@ -27,7 +27,9 @@ import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 const BORN_CATEGORIES = ["BARU", "SEWA"];
-const BORN_UNIT_STATUSES = ["RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY"];
+// Unit lahir di workshop = baru dibuat: status RECEIVED, belum punya tahap/log produksi V1. Unit yang sudah berjalan/selesai di V1
+// (legacy) atau punya jalur pickup/custody TIDAK boleh dimasukkan ke V2 lewat jalur ini.
+const BORN_UNIT_STATUSES = ["RECEIVED"];
 
 function workError(message, statusCode, code, details) {
   return Object.assign(new Error(message), { statusCode, code, ...(details ? { details } : {}) });
@@ -126,13 +128,19 @@ async function loadRunForWrite(tx, runId) {
   return run;
 }
 
+// Bukti serah bahan: tiap baris BOM harus punya reservasi CONSUMED milik plan ini YANG DIRUJUK baris material issue ISSUED milik plan
+// yang SAMA dengan issuedQty >= qty reservasi. Reservasi CONSUMED tanpa baris issue ISSUED, atau issue terminal milik plan lain,
+// tidak dihitung.
 async function loadMaterialFacts(tx, plan) {
-  const [issuedCount, activeReservations, consumed] = await Promise.all([
+  const [issuedCount, activeReservations, consumed, issuedLines] = await Promise.all([
     tx.materialIssue.count({ where: { productionPlanId: plan.id, status: "ISSUED" } }),
     tx.materialReservation.count({ where: { planId: plan.id, status: "ACTIVE" } }),
-    tx.materialReservation.findMany({ where: { planId: plan.id, status: "CONSUMED" }, select: { bomLineId: true } }),
+    tx.materialReservation.findMany({ where: { planId: plan.id, status: "CONSUMED" }, select: { id: true, bomLineId: true, qty: true } }),
+    tx.materialIssueLine.findMany({ where: { reservationId: { not: null }, materialIssue: { productionPlanId: plan.id, status: "ISSUED" } }, select: { reservationId: true, issuedQty: true } }),
   ]);
-  return { issuedCount, activeReservations, consumedBomLineIds: new Set(consumed.map((r) => r.bomLineId)) };
+  const issuedByReservation = new Map(issuedLines.map((line) => [line.reservationId, Number(line.issuedQty ?? 0)]));
+  const covered = consumed.filter((r) => (issuedByReservation.get(r.id) ?? -1) >= Number(r.qty) - 1e-9);
+  return { issuedCount, activeReservations, consumedBomLineIds: new Set(covered.map((r) => r.bomLineId)) };
 }
 
 async function authorizeOperator(tx, run, actorId, workCenterId) {
@@ -148,6 +156,14 @@ async function assertMaterialIssued(tx, plan) {
   if (!readiness.ready) throw workError(`Produksi belum bisa dimulai: ${readiness.reason}`, 409, "WORKSHOP_MATERIAL_NOT_ISSUED", { reason: readiness.reason });
 }
 
+// Override manual V1 (status order/unit) dapat memindahkan unit ke CANCELLED/READY_FOR_DELIVERY/DELIVERED di luar V2; eksekusi
+// workshop berhenti (409) alih-alih menulis ledger tahap untuk unit yang sudah bukan pekerjaan workshop.
+const EXECUTING_UNIT_STATUSES = ["RECEIVED", "IN_PRODUCTION"];
+function assertUnitInProduction(run, allowed = EXECUTING_UNIT_STATUSES) {
+  if (!allowed.includes(run.unit.status)) {
+    throw workError(`Unit berstatus ${run.unit.status}; eksekusi workshop tidak dapat dilanjutkan — hubungi Production Lead`, 409, "WORKSHOP_UNIT_NOT_IN_PRODUCTION", { unitStatus: run.unit.status });
+  }
+}
 function phaseOf(run, phase) { return run.phases.find((p) => p.phase === phase); }
 function assertProcessApplicable(run) {
   const process = phaseOf(run, "PROCESS");
@@ -177,13 +193,17 @@ export async function registerWorkshopBornRun(prisma, { unitId, actorId, idempot
     await lockRowForUpdate(tx, "units", unitId);
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
-    const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, order: { select: { category: true } } } });
+    const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, currentStageId: true, order: { select: { category: true } } } });
     if (!unit) throw workError("Unit tidak ditemukan", 404, "WORKSHOP_UNIT_NOT_FOUND");
     await assertWriterEnabledForUnit(tx, unitId);
     if (!BORN_CATEGORIES.includes(unit.order?.category)) throw workError("Hanya unit BARU/SEWA yang boleh didaftarkan lahir di workshop", 422, "WORKSHOP_BORN_CATEGORY_INVALID");
     if (!BORN_UNIT_STATUSES.includes(unit.status)) throw workError(`Unit berstatus ${unit.status}; tidak dapat didaftarkan ke workshop`, 409, "WORKSHOP_BORN_STATUS_INVALID");
     const active = await tx.productionRun.findFirst({ where: { unitId, status: { notIn: TERMINAL_RUN } }, select: { id: true } });
     if (active) throw workError("Unit ini sudah memiliki Production Run aktif", 409, "WORKSHOP_RUN_ALREADY_EXISTS", { runId: active.id });
+    const stageLogs = await tx.unitStageLog.count({ where: { unitId } });
+    if (unit.currentStageId || stageLogs > 0) {
+      throw workError("Unit ini sudah punya riwayat produksi V1/legacy; tidak dapat didaftarkan sebagai unit lahir di workshop", 409, "WORKSHOP_BORN_UNIT_NOT_FRESH");
+    }
     const pickup = await tx.jobUnit.findFirst({ where: { unitId, job: { type: "PICKUP" } }, select: { id: true } });
     const inbound = await tx.unitCustodyHandoff.findFirst({ where: { unitId, direction: "INBOUND" }, select: { id: true } });
     if (pickup || inbound) throw workError("Unit ini punya jalur pickup/custody; gunakan alur custody, bukan lahir di workshop", 409, "WORKSHOP_BORN_HAS_PICKUP");
@@ -230,6 +250,7 @@ export async function startWorkshopStage(prisma, { runId, actorId, idempotencyKe
     // Otorisasi (operator/work center) SEBELUM revisi: pihak yang tidak berhak tidak perlu tahu revisi.
     const plan = await authorizeOperator(tx, run, actorId, workCenterId);
     assertRunRevision(run, revisionExpected);
+    assertUnitInProduction(run);
     const process = assertProcessApplicable(run);
     await assertMaterialIssued(tx, plan);
     if (activeOperation(run)) throw workError("Masih ada tahap aktif pada run ini; selesaikan atau lanjutkan tahap tersebut", 409, "WORKSHOP_STAGE_ALREADY_ACTIVE");
@@ -276,6 +297,7 @@ async function operationCommand(prisma, { commandType, runId, actorId, idempoten
     await assertWriterEnabledForUnit(tx, run.unitId);
     await authorizeOperator(tx, run, actorId, workCenterId);
     assertRunRevision(run, revisionExpected);
+    assertUnitInProduction(run, ["IN_PRODUCTION"]);
     const op = activeOperation(run);
     if (!op) throw workError("Tidak ada tahap yang sedang berjalan/dijeda pada run ini", 409, "WORKSHOP_NO_ACTIVE_STAGE");
     if (op.status !== expectStatus) {

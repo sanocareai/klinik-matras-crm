@@ -8,6 +8,7 @@ import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixture
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
+import { adminBypassProduction, failStage, recordQcFitTest, recordStageDone, resolveBlocker, skipStage } from "../../src/services/unitStageEngine.js";
 
 let server;
 let seq = 0;
@@ -268,7 +269,7 @@ test("unit BARU/SEWA lahir di workshop: run WORKSHOP_BORN kanonis (tanpa custody
     return testPrisma.unit.create({ data: { unitCode: `UNIT-BORN-${++seq}`, orderId: order.id, seq: 1, status } });
   };
   const baru = await make("BARU", "RECEIVED");
-  const sewa = await make("SEWA", "READY_FOR_DELIVERY");
+  const sewa = await make("SEWA", "RECEIVED");
   const layanan = await make("LAYANAN", "RECEIVED");
   await setWriter({ enabled: true, unitIds: [baru.id, sewa.id, layanan.id] });
   await setReader({ enabled: true, unitIds: [baru.id, sewa.id, layanan.id] });
@@ -355,4 +356,149 @@ test("reader OFF: antrean kerja/detail kosong-inert; antrean hari ini + filter m
   const off = await w.op.api.get("/api/production-planning/workshop/queue");
   assert.deepEqual(off.body, { items: [], readerMode: "OFF" });
   assert.equal((await w.op.api.get(`${W}/${run.id}`)).body.items?.length, 0);
+});
+
+// ── Audit P5 (SHA 1e74ab3e): regresi temuan ────────────────────────────────────────────────────────────────────────────
+const rejects409 = (promise, pattern = /dikelola Production V2/) => assert.rejects(promise, (error) => error.statusCode === 409 && pattern.test(error.message));
+
+test("AUDIT F1/F2/F3: SEMUA penulis ledger tahap V1 dipagari untuk unit V2 (fail/qc/bypass/recordDone/skip/HTTP fail) — tanpa log/blocker/QC baru; resolveBlocker tetap jalan", async () => {
+  const w = await world();
+  const { run, unit } = await preparedRun(w);
+  const s1 = await start(w, w.op, run.id, 1, "f1-start");
+  assert.equal(s1.status, 200, JSON.stringify(s1.body));
+  const stageId = s1.body.stage.id;
+  const qcStage = await testPrisma.routingStage.findFirstOrThrow({ where: { requiresQc: true } });
+  const snapshot = async () => ({
+    logs: await testPrisma.unitStageLog.count({ where: { unitId: unit.id } }),
+    blockers: await testPrisma.productionBlocker.count({ where: { unitId: unit.id } }),
+    qc: await testPrisma.qcFitTest.count({ where: { unitId: unit.id } }),
+    unit: JSON.stringify(await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id }, select: { status: true, currentStageId: true } })),
+    ops: JSON.stringify(await testPrisma.productionOperationRun.findMany({ where: { runId: run.id }, select: { status: true } })),
+  });
+  const before = await snapshot();
+  await rejects409(failStage(unit.id, stageId, { actorId: w.op.user.id, blockReason: "MACHINE_DOWN", note: "mesin mati" }));
+  await rejects409(recordStageDone(unit.id, { actorId: w.op.user.id, photoUrls: PHOTO }));
+  await rejects409(skipStage(unit.id, { actorId: w.op.user.id, note: "lewati" }));
+  await rejects409(recordQcFitTest(unit.id, qcStage.id, { actorId: w.op.user.id, verdict: "PAS", referenceWeightKg: 60, photoUrls: PHOTO }));
+  await rejects409(adminBypassProduction(unit.id, { actorId: w.op.user.id, note: "bypass admin uji" }));
+  const http = await w.op.api.post(`/api/units/${unit.id}/stages/${stageId}/fail`, { blockReason: "MACHINE_DOWN", note: "mesin mati" });
+  assert.equal(http.status, 409, JSON.stringify(http.body));
+  assert.deepEqual(await snapshot(), before, "penolakan tidak boleh meninggalkan jejak V1 apa pun");
+  // V2 tetap konsisten setelah semua upaya V1 ditolak.
+  const p = await pause(w, w.op, run.id, s1.body.revision, "f1-pause", { reason: "BREAK" });
+  assert.equal(p.status, 200, JSON.stringify(p.body));
+
+  // Blokir V1 (unit di luar V2) dapat diselesaikan: resolveBlocker tidak lagi ReferenceError dan tidak dipagari.
+  const legacyUnit = (await acceptedUnit()).unit;
+  await setWriter({ enabled: false, unitIds: [legacyUnit.id] });
+  const started = await w.op.api.post(`/api/units/${legacyUnit.id}/stages/start`, {});
+  assert.equal(started.status, 200, JSON.stringify(started.body));
+  const failed = await failStage(legacyUnit.id, started.body.stage.id, { actorId: w.op.user.id, blockReason: "MACHINE_DOWN", note: "mesin mati" });
+  assert.ok(failed.blocker.id);
+  const resolved = await w.op.api.post(`/api/units/${legacyUnit.id}/blockers/${failed.blocker.id}/resolve`, { resolutionNote: "sudah normal" });
+  assert.equal(resolved.status, 200, JSON.stringify(resolved.body));
+  assert.ok(resolved.body.resolvedAt);
+});
+
+test("AUDIT F1: writer OFF / non-cohort -> failStage & recordStageDone berperilaku V1 murni (tanpa jejak V2)", async () => {
+  const w = await world();
+  const { run, unit } = await preparedRun(w);
+  const s1 = await start(w, w.op, run.id, 1, "off-fail-start");
+  assert.equal(s1.status, 200);
+  const commandsBefore = await testPrisma.v2Command.count();
+  await setWriter({ enabled: false, unitIds: [unit.id] });
+  const failed = await failStage(unit.id, s1.body.stage.id, { actorId: w.op.user.id, blockReason: "MACHINE_DOWN", note: "mesin mati" });
+  assert.equal(failed.log.action, "FAIL");
+  await setWriter({ enabled: true, unitIds: ["00000000-0000-0000-0000-000000000000"] });
+  const done = await recordStageDone(unit.id, { actorId: w.op.user.id, photoUrls: PHOTO });
+  assert.ok(done, "non-cohort: V1 mencatat tahap selesai");
+  assert.equal(await testPrisma.v2Command.count(), commandsBefore, "jalur V1 tidak membuat command/outbox V2");
+});
+
+test("AUDIT F4: bukti material — reservasi CONSUMED tanpa baris issue ISSUED milik plan yang sama (atau issuedQty kurang / issue CANCELLED) TIDAK cukup", async () => {
+  const w = await world();
+  const { run, issueId } = await preparedRun(w);
+  const before = await testPrisma.unitStageLog.count();
+  await testPrisma.materialIssueLine.updateMany({ where: { materialIssueId: issueId }, data: { reservationId: null } });
+  const noLink = await start(w, w.op, run.id, 1, "mat-nolink");
+  assert.equal(noLink.status, 409); assert.equal(noLink.body.code, "WORKSHOP_MATERIAL_NOT_ISSUED");
+  assert.equal(await testPrisma.unitStageLog.count(), before);
+
+  const w2 = await world();
+  const second = await preparedRun(w2);
+  await testPrisma.materialIssueLine.updateMany({ where: { materialIssueId: second.issueId }, data: { issuedQty: 0.5 } });
+  const short = await start(w2, w2.op, second.run.id, 1, "mat-short");
+  assert.equal(short.status, 409); assert.equal(short.body.code, "WORKSHOP_MATERIAL_NOT_ISSUED");
+
+  const w3 = await world();
+  const third = await preparedRun(w3);
+  await testPrisma.materialIssue.updateMany({ where: { id: third.issueId }, data: { status: "CANCELLED" } });
+  assert.equal((await start(w3, w3.op, third.run.id, 1, "mat-cancelled")).status, 409, "issue terminal CANCELLED bukan bukti");
+});
+
+test("AUDIT F5: unit lahir-di-workshop harus segar — status non-RECEIVED, currentStage, atau log tahap V1 ditolak (tidak boleh melompati custody/legacy)", async () => {
+  const w = await world();
+  const make = async (status, extra = {}) => {
+    const customer = await testPrisma.customer.create({ data: { name: "Pelanggan Born" } });
+    const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `BORN-${++seq}`, value: 1000, category: "BARU" } });
+    return testPrisma.unit.create({ data: { unitCode: `UNIT-BORN-${++seq}`, orderId: order.id, seq: 1, status, ...extra } });
+  };
+  const inProduction = await make("IN_PRODUCTION");
+  const ready = await make("READY_FOR_DELIVERY");
+  const legacyStage = await testPrisma.routingStage.findFirstOrThrow({ orderBy: { sequence: "asc" } });
+  const withStage = await make("RECEIVED", { currentStageId: legacyStage.id });
+  const withLog = await make("RECEIVED");
+  await testPrisma.unitStageLog.create({ data: { unitId: withLog.id, stageId: legacyStage.id, action: "START", actorId: w.op.user.id, startedAt: new Date() } });
+  const fresh = await make("RECEIVED");
+  await setWriter({ enabled: true, unitIds: [inProduction.id, ready.id, withStage.id, withLog.id, fresh.id] });
+  const reg = (unitId, tag) => w.op.api.post("/api/production-planning/workshop/runs", { unitId }, key(tag));
+  assert.equal((await reg(inProduction.id, "fresh-a")).body.code, "WORKSHOP_BORN_STATUS_INVALID");
+  assert.equal((await reg(ready.id, "fresh-b")).body.code, "WORKSHOP_BORN_STATUS_INVALID");
+  assert.equal((await reg(withStage.id, "fresh-c")).body.code, "WORKSHOP_BORN_UNIT_NOT_FRESH");
+  assert.equal((await reg(withLog.id, "fresh-d")).body.code, "WORKSHOP_BORN_UNIT_NOT_FRESH");
+  assert.equal(await testPrisma.productionRun.count(), 0, "tidak ada run terbentuk untuk unit legacy/berjalan");
+  assert.equal((await reg(fresh.id, "fresh-e")).status, 201);
+});
+
+test("AUDIT F6: override manual V1 (unit jadi READY_FOR_DELIVERY/CANCELLED) menghentikan eksekusi V2 (409) tanpa menulis ledger tahap", async () => {
+  const w = await world();
+  const { run, unit } = await preparedRun(w);
+  const s1 = await start(w, w.op, run.id, 1, "ovr-start");
+  assert.equal(s1.status, 200);
+  const logs = await testPrisma.unitStageLog.count({ where: { unitId: unit.id } });
+  await testPrisma.unit.update({ where: { id: unit.id }, data: { status: "READY_FOR_DELIVERY" } });
+  for (const [name, res] of [
+    ["pause", await pause(w, w.op, run.id, s1.body.revision, "ovr-pause", { reason: "BREAK" })],
+    ["complete", await complete(w, w.op, run.id, s1.body.revision, "ovr-complete")],
+  ]) { assert.equal(res.status, 409, name); assert.equal(res.body.code, "WORKSHOP_UNIT_NOT_IN_PRODUCTION", name); }
+  assert.equal(await testPrisma.unitStageLog.count({ where: { unitId: unit.id } }), logs);
+
+  const w2 = await world();
+  const second = await preparedRun(w2);
+  await testPrisma.unit.update({ where: { id: second.unit.id }, data: { status: "CANCELLED" } });
+  const cancelled = await start(w2, w2.op, second.run.id, 1, "ovr-start-cancelled");
+  assert.equal(cancelled.status, 409); assert.equal(cancelled.body.code, "WORKSHOP_UNIT_NOT_IN_PRODUCTION");
+  assert.equal(await testPrisma.unitStageLog.count({ where: { unitId: second.unit.id } }), 0);
+});
+
+test("AUDIT lock order: start bersamaan dengan assign P3 (2x) dan V1 fail pada run/unit/plan yang sama tidak deadlock dan tidak saling merusak", async () => {
+  const w = await world();
+  const { run, unit, planId } = await preparedRun(w);
+  const P = "/api/production-planning";
+  const firstStage = await testPrisma.routingStage.findFirstOrThrow({ orderBy: { sequence: "asc" } });
+  const assignNow = async (tag) => {
+    const plan = await testPrisma.productionRunPlan.findUniqueOrThrow({ where: { id: planId } });
+    return w.op.api.post(`${P}/plans/${planId}/assign`, { workCenterId: w.wc, operatorId: w.operator.id, targetStartAt: "2026-09-28T02:00:00.000Z", targetCompleteAt: "2026-09-28T10:00:00.000Z", expectedRevision: plan.revision }, key(tag));
+  };
+  const v1Fail = failStage(unit.id, firstStage.id, { actorId: w.op.user.id, blockReason: "MACHINE_DOWN", note: "mesin mati" }).then(() => "V1_FAIL_LOLOS", (error) => `V1_${error.statusCode ?? error.code}`);
+  const outcomes = await Promise.all([start(w, w.op, run.id, 1, "lock-start"), assignNow("lock-assign-1"), assignNow("lock-assign-2"), v1Fail]);
+  const [startRes, assignA, assignB, v1] = outcomes;
+  assert.equal(startRes.status, 200, JSON.stringify(startRes.body));
+  // V1 fail bisa saja kalah lomba dari start (unit belum punya tahap berjalan -> 400) atau menang lomba pagar (409); tidak pernah lolos.
+  assert.ok(["V1_409", "V1_400"].includes(v1), v1);
+  for (const res of [assignA, assignB]) assert.ok([200, 409].includes(res.status), JSON.stringify(res.body));
+  assert.equal(await testPrisma.unitStageLog.count({ where: { unitId: unit.id, action: "START" } }), 1);
+  assert.equal(await testPrisma.productionBlocker.count({ where: { unitId: unit.id } }), 0);
+  const rev = (await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).revision;
+  assert.equal((await pause(w, w.op, run.id, rev, "lock-pause", { reason: "BREAK" })).status, 200);
 });

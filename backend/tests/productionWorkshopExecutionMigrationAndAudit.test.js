@@ -21,11 +21,11 @@ test("migration P5 aditif: 1 enum, 1 kolom nullable di production_runs_v2, 1 par
   assert.equal(sql.includes("\r"), false, "migration harus LF (checksum stabil)");
 });
 
-test("writer audit P5 pada source aktual: 0 pelanggaran; ledger tahap hanya engine; P5 memakai engine *InTx; engine memagari 7 jalur V1", () => {
+test("writer audit P5 pada source aktual: 0 pelanggaran; ledger tahap hanya engine; P5 memakai engine *InTx; engine memagari 9 fungsi penulis ledger V1", () => {
   const report = runWorkshopExecutionWriterAudit(backendRoot);
   assert.equal(report.totals.violations, 0, JSON.stringify(report.findings.filter((f) => !f.ok)));
   assert.equal(report.totals.usesEngine, true);
-  assert.ok(report.totals.engineFences >= 7);
+  assert.equal(report.totals.engineFences, 9);
   assert.ok(report.findings.filter((f) => f.kind === "STAGE_LOG_WRITER").every((f) => f.file === "src/services/unitStageEngine.js"));
 });
 
@@ -41,4 +41,19 @@ test("writer audit P5 gagal: penulis operation run/stage log di luar owner, P5 m
 
   const noFence = new Map(sources); noFence.set("src/services/unitStageEngine.js", sources.get("src/services/unitStageEngine.js").replaceAll("await assertNotV2ExecutionOwned(tx, unitId);", ""));
   assert.ok(auditWorkshopExecutionWriters(noFence).findings.some((f) => f.kind === "ENGINE_FENCE"));
+});
+
+test("writer audit P5 memeriksa pagar PER FUNGSI: failStage tanpa pagar dan pagar salah tempat di resolveBlocker (tanpa unitId) terdeteksi", () => {
+  const sources = loadBackendSources(backendRoot);
+  const engine = sources.get("src/services/unitStageEngine.js");
+  const FENCE = "await assertNotV2ExecutionOwned(tx, unitId);";
+  const failStart = engine.indexOf("export async function failStage(");
+  const failFence = engine.indexOf(FENCE, failStart);
+  assert.ok(failFence > failStart && failFence < engine.indexOf("export async function resolveBlocker("), "failStage harus memuat pagar");
+  const misplaced = engine.slice(0, failFence) + engine.slice(failFence + FENCE.length);
+  const resolveHead = String.raw`export async function resolveBlocker(blockerId, { actorId, resolutionNote } = {}) {` + "\n  return prisma.$transaction(async (tx) => {\n";
+  assert.ok(misplaced.includes(resolveHead));
+  const mutated = new Map(sources); mutated.set("src/services/unitStageEngine.js", misplaced.replace(resolveHead, () => `${resolveHead}    ${FENCE}\n`));
+  const dispositions = auditWorkshopExecutionWriters(mutated).findings.filter((f) => !f.ok).map((f) => f.disposition).sort();
+  assert.deepEqual(dispositions, ["FENCE_WITHOUT_UNITID_resolveBlocker", "MISSING_FENCE_failStage"]);
 });

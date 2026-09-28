@@ -4,7 +4,7 @@
 //  2. production_phase_runs_v2 / production_runs_v2: HANYA custody P1-P2 (buka intake) dan command owner P5.
 //  3. unit_stage_logs: HANYA stage engine (unitStageEngine.js) — P5 memakai varian *InTx-nya, tidak menulis ledger tahap sendiri.
 //  4. P5 TIDAK boleh menyentuh stok/reservasi/HPP: tanpa stockMovement, postStockMovement, materialReservation, postMaterialIssueCost, jurnal.
-//  5. Engine V1 wajib memagari (assertNotV2ExecutionOwned) seluruh jalur transisi tahap V1 (start/pause/resume/complete/recordDone/fail/skip).
+//  5. Engine V1 wajib memagari (assertNotV2ExecutionOwned) SETIAP fungsi penulis ledger tahap V1, diperiksa PER FUNGSI (start/recordDone/complete/pause/resume/fail/skip/qc/adminBypass).
 //   node scripts/production-delivery-v2/audit-workshop-execution-writers.js [--output=file.json]
 import fs from "node:fs";
 import path from "node:path";
@@ -27,7 +27,16 @@ const FORBIDDEN_IN_P5 = [
   ["stockMovement", writeRegex("stockMovement")], ["postStockMovement", /\bpostStockMovement\b/], ["materialReservation", writeRegex("materialReservation")],
   ["postMaterialIssueCost", /\bpostMaterialIssueCost\b/], ["journal", /\bjournalEntry\b|\bpostJournal\b|\bbukukanPergerakan\b/],
 ];
-const REQUIRED_ENGINE_FENCES = 7;
+// SETIAP fungsi penulis ledger tahap V1 wajib dipagari — diperiksa PER FUNGSI (bukan sekadar jumlah), dan pagar hanya sah di fungsi yang
+// punya parameter unitId (pagar di fungsi tanpa unitId = ReferenceError saat runtime, mematahkan V1) serta tidak di varian *InTx.
+const FENCED_ENGINE_FUNCTIONS = ["startStage", "recordStageDone", "completeStage", "pauseStage", "resumeStage", "failStage", "skipStage", "recordQcFitTest", "adminBypassProduction"];
+const FENCE_CALL = /await assertNotV2ExecutionOwned\(tx, unitId\)/;
+
+// Badan fungsi top-level: dari "function NAME(" sampai deklarasi top-level berikutnya (tanpa parser; cukup untuk engine ini).
+function functionBodies(text) {
+  const heads = [...text.matchAll(/^(?:export )?(?:async )?function (\w+)\(([^)]*)\)/gm)];
+  return heads.map((match, index) => ({ name: match[1], params: match[2], body: text.slice(match.index, heads[index + 1]?.index ?? text.length) }));
+}
 
 function walk(root) {
   const files = [];
@@ -60,8 +69,17 @@ export function auditWorkshopExecutionWriters(files) {
   const usesEngine = ["startStageInTx", "pauseStageInTx", "resumeStageInTx", "completeStageInTx"].every((fn) => new RegExp(`\\b${fn}\\(`).test(code));
   if (!usesEngine) findings.push({ file: P5, line: 0, kind: "P5_CANONICAL_PATH", disposition: "MISSING_ENGINE_INTX_CALLS", ok: false });
   const engine = (files.get(ENGINE) || "").replace(/\r\n/g, "\n");
-  const fences = (engine.match(/await assertNotV2ExecutionOwned\(tx, unitId\)/g) || []).length;
-  if (fences < REQUIRED_ENGINE_FENCES) findings.push({ file: ENGINE, line: 0, kind: "ENGINE_FENCE", disposition: `FENCES_${fences}_LT_${REQUIRED_ENGINE_FENCES}`, ok: false });
+  const functions = functionBodies(engine);
+  let fences = 0;
+  for (const name of FENCED_ENGINE_FUNCTIONS) {
+    const fn = functions.find((f) => f.name === name);
+    if (fn && FENCE_CALL.test(fn.body)) fences += 1;
+    else findings.push({ file: ENGINE, line: 0, kind: "ENGINE_FENCE", disposition: `MISSING_FENCE_${name}`, ok: false });
+  }
+  for (const fn of functions) {
+    if (FENCE_CALL.test(fn.body) && !/\bunitId\b/.test(fn.params)) findings.push({ file: ENGINE, line: 0, kind: "ENGINE_FENCE", disposition: `FENCE_WITHOUT_UNITID_${fn.name}`, ok: false });
+    if (/InTx$/.test(fn.name) && FENCE_CALL.test(fn.body)) findings.push({ file: ENGINE, line: 0, kind: "ENGINE_FENCE", disposition: `FENCE_IN_INTX_${fn.name}`, ok: false });
+  }
   return { findings, usesEngine, engineFences: fences };
 }
 

@@ -13,7 +13,8 @@ P5 **tidak menulis stock movement, reservasi, atau HPP**, dan **tidak meluluskan
 | Gerbang QC V1 (`fit_test` "Uji Berat Badan", `qc-queue`) | UI `/bengkel/workshop` (Antrean Kerja) |
 
 ## Aturan
-- **Material gate:** start hanya bila plan `MATERIAL_RESERVED`, ada `material_issues` `ISSUED`, tidak ada reservasi `ACTIVE`, dan setiap baris BOM punya reservasi `CONSUMED` (P4). Bila tidak: 409 `WORKSHOP_MATERIAL_NOT_ISSUED`, tanpa tulisan apa pun.
+- **Material gate:** start hanya bila plan `MATERIAL_RESERVED`, ada `material_issues` `ISSUED`, tidak ada reservasi `ACTIVE`, dan setiap baris BOM punya reservasi `CONSUMED` milik plan yang sama **yang dirujuk baris material issue `ISSUED` plan itu dengan `issuedQty` ≥ qty reservasi** (bukan sekadar ada issue terminal). Bila tidak: 409 `WORKSHOP_MATERIAL_NOT_ISSUED`, tanpa tulisan apa pun.
+- **Status unit:** start hanya untuk unit `RECEIVED`/`IN_PRODUCTION`; jeda/lanjut/selesai hanya `IN_PRODUCTION`. Override manual V1 (unit jadi `CANCELLED`/`READY_FOR_DELIVERY`/`DELIVERED`) menghentikan eksekusi (409 `WORKSHOP_UNIT_NOT_IN_PRODUCTION`) tanpa menulis ledger tahap.
 - **Operator/work center:** aktor harus `ProductionOperator` yang ditugaskan pada plan P3 (403 `WORKSHOP_OPERATOR_MISMATCH`) dan `workCenterId` wajib sama dengan plan (422 `WORKSHOP_WORK_CENTER_MISMATCH`). Otorisasi dicek sebelum revisi.
 - **Satu tahap aktif per run:** pre-check + partial unique index `production_operation_runs_v2_active_run_key` (`status IN ('ACTIVE','PAUSED')`). Tahap dijeda tetap "aktif" — start tahap lain ditolak (409 `WORKSHOP_STAGE_ALREADY_ACTIVE`).
 - **Urutan tahap:** mengikuti jalur routing V1 unit (INTAKE + modul layanan); tahap tidak dapat dilompati (engine yang menolak).
@@ -29,13 +30,14 @@ Operasi (`production_operation_runs_v2`): `ACTIVE` ⇄ `PAUSED` → `COMPLETED`.
 (outbox `production.run.awaiting_qc`); tidak ada `QualityInspection`, tidak ada `READY_FOR_DELIVERY`, tidak ada saran delivery job.
 
 ## Pagar V1 (kepemilikan)
-`assertNotV2ExecutionOwned` di 7 jalur transisi engine (start/pause/resume/complete/recordDone/fail/skip): bila writer aktif untuk unit
+`assertNotV2ExecutionOwned` di 9 fungsi penulis ledger tahap engine (start/pause/resume/complete/recordDone/fail/skip/recordQcFitTest/adminBypassProduction;
+diperiksa PER FUNGSI oleh audit). `resolveBlocker` sengaja tidak dipagari (hanya menyentuh `production_blockers`, bukan ledger tahap). Bila writer aktif untuk unit
 tersebut **dan** unit punya Production Run non-terminal, endpoint V1 menolak (409, arahkan ke endpoint workshop). Writer OFF / unit
 non-cohort / unit tanpa run → jalur V1 persis seperti sebelumnya.
 
 ## Unit BARU/SEWA lahir di workshop
 `POST /workshop/runs {unitId}` membuat Production Run `origin = WORKSHOP_BORN`, `kind = NEW_PRODUCT`: fase INTAKE/DIAGNOSIS `NOT_APPLICABLE`,
-PROCESS `NOT_STARTED`. Hanya kategori order BARU/SEWA; unit yang punya job PICKUP atau custody INBOUND ditolak (409 `WORKSHOP_BORN_HAS_PICKUP`)
+PROCESS `NOT_STARTED`. Hanya kategori order BARU/SEWA dan unit **segar** (status `RECEIVED`, tanpa `currentStageId`, tanpa log tahap V1 — unit legacy/berjalan ditolak: `WORKSHOP_BORN_STATUS_INVALID`/`WORKSHOP_BORN_UNIT_NOT_FRESH`); unit yang punya job PICKUP atau custody INBOUND ditolak (409 `WORKSHOP_BORN_HAS_PICKUP`)
 — gunakan alur custody. **Tidak ada custody handoff palsu** dan `migrationSource` tidak dipakai. P3 memperlakukan `origin = WORKSHOP_BORN`
 sebagai eligible untuk rencana (di samping custody diterima / legacy). Unit ini baru mendapat custody barang jadi setelah QC/P6.
 Run yang dibuat lewat custody (P1–P2) kini diberi `origin = CUSTODY_PICKUP` (kolom nullable; run lama tetap `NULL`).
@@ -49,7 +51,14 @@ state loading/kosong/galat/409, kunci idempotensi per niat perintah. Logika murn
 ## Migrasi & audit
 `20261001080000_production_workshop_execution_v2` — additive (enum + kolom nullable + partial unique index), LF, tanpa backfill.
 `scripts/production-delivery-v2/audit-workshop-execution-writers.js` (0 pelanggaran): penulis operation-run hanya P5; phase/run hanya custody + P5;
-`unit_stage_logs` hanya engine; P5 tanpa stok/reservasi/HPP/jurnal dan wajib memakai keempat varian `*InTx`; engine punya ≥ 7 pagar.
+`unit_stage_logs` hanya engine; P5 tanpa stok/reservasi/HPP/jurnal dan wajib memakai keempat varian `*InTx`; engine memagari 9 fungsi (per fungsi; pagar di fungsi tanpa `unitId` atau di varian `*InTx` dianggap pelanggaran).
+
+## Risiko diterima (hasil audit 1e74ab3e)
+1. **Override manual order/unit di V1** (`PATCH /orders/:id` status READY/DELIVERED/CANCELLED, `reopen-for-delivery`) bisa memindahkan unit V2 ke `READY_FOR_DELIVERY`/`CANCELLED` tanpa lewat V2. P5 berhenti dengan 409 (tanpa menulis ledger); run V2 tetap `ACTIVE` sampai ditangani — rekonsiliasi jadi tugas P6.
+2. **`PATCH /units/:id/service` dan persetujuan Scope Revision** mengganti layanan (jalur routing) di tengah run. P5 fail-closed (`WORKSHOP_STAGE_MISMATCH`/galat engine → rollback), tidak merusak state.
+3. **Assign P3 setelah produksi berjalan** mengganti operator/work center; otorisasi P5 mengikuti assignment terbaru (serah-terima supervisor), tercatat di outbox/audit P3.
+4. **Unit di gerbang QC (AWAITING_QC)** belum bisa di-QC dari jalur V1 (mulai tahap QC dipagari) — jalur QC V2 = P6; flag Production tetap OFF.
+5. Skrip backfill historis (`backfill-core.js`, `resolve-admin-bypass-history.js`) menulis di luar engine; bukan writer runtime.
 
 ## Gap menuju P6
 1. **Keputusan QC:** PASS/FAIL, foto QC, dan rework ada di jalur QC V1 (`/units/:id/stages/:stageId/qc`); belum ada command owner V2 yang mengubah fase `QC`/`HANDOFF`.

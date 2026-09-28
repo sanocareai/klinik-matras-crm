@@ -760,6 +760,7 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note } 
 
   try {
     return await prisma.$transaction(async (tx) => {
+      await assertNotV2ExecutionOwned(tx, unitId);
       const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
       const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
 
@@ -834,7 +835,6 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note } 
  */
 export async function resolveBlocker(blockerId, { actorId, resolutionNote } = {}) {
   return prisma.$transaction(async (tx) => {
-    await assertNotV2ExecutionOwned(tx, unitId);
     const existing = await tx.productionBlocker.findUnique({ where: { id: blockerId } });
     if (!existing) throw new StageTransitionError("Blokir tidak ditemukan", 404);
 
@@ -907,6 +907,7 @@ export async function recordQcFitTest(unitId, stageId, {
   }
 
   return prisma.$transaction(async (tx) => {
+    await assertNotV2ExecutionOwned(tx, unitId);
     const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
     if (!stage.requiresQc) {
       throw new StageTransitionError(`Tahap "${stage.labelId}" bukan gerbang QC`);
@@ -1003,6 +1004,7 @@ export async function adminBypassProduction(unitId, { actorId, note } = {}) {
     throw new StageTransitionError("Catatan alasan bypass wajib diisi — ini override manual, harus bisa dipertanggungjawabkan");
   }
   return prisma.$transaction(async (tx) => {
+    await assertNotV2ExecutionOwned(tx, unitId);
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
     if (["CANCELLED", "DELIVERED", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"].includes(unit.status)) {
       throw new StageTransitionError(`Unit sudah berstatus ${unit.status} — bypass ini cuma untuk unit yang masih tersangkut di produksi`);
