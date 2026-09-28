@@ -1,0 +1,93 @@
+#!/usr/bin/env node
+// Audit writer Eksekusi Workshop (Production Workshop + Warehouse V2, P5). Read-only.
+//  1. production_operation_runs_v2: HANYA command owner P5.
+//  2. production_phase_runs_v2 / production_runs_v2: HANYA custody P1-P2 (buka intake) dan command owner P5.
+//  3. unit_stage_logs: HANYA stage engine (unitStageEngine.js) — P5 memakai varian *InTx-nya, tidak menulis ledger tahap sendiri.
+//  4. P5 TIDAK boleh menyentuh stok/reservasi/HPP: tanpa stockMovement, postStockMovement, materialReservation, postMaterialIssueCost, jurnal.
+//  5. Engine V1 wajib memagari (assertNotV2ExecutionOwned) seluruh jalur transisi tahap V1 (start/pause/resume/complete/recordDone/fail/skip).
+//   node scripts/production-delivery-v2/audit-workshop-execution-writers.js [--output=file.json]
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const backendRoot = path.resolve(here, "../..");
+const OPS = "(create|createMany|update|updateMany|upsert|delete|deleteMany)";
+const P5 = "src/services/productionWorkshopExecutionCommandService.js";
+const CUSTODY = "src/services/unitCustodyCommandService.js";
+const ENGINE = "src/services/unitStageEngine.js";
+const writeRegex = (model) => new RegExp(String.raw`\.${model}\.${OPS}\s*\(`, "g");
+const RULES = [
+  { kind: "OPERATION_RUN_WRITER", regex: writeRegex("productionOperationRun"), owners: [P5] },
+  { kind: "PHASE_RUN_WRITER", regex: writeRegex("productionPhaseRun"), owners: [CUSTODY, P5] },
+  { kind: "RUN_WRITER", regex: writeRegex("productionRun"), owners: [CUSTODY, P5] },
+  { kind: "STAGE_LOG_WRITER", regex: writeRegex("unitStageLog"), owners: [ENGINE] },
+];
+const FORBIDDEN_IN_P5 = [
+  ["stockMovement", writeRegex("stockMovement")], ["postStockMovement", /\bpostStockMovement\b/], ["materialReservation", writeRegex("materialReservation")],
+  ["postMaterialIssueCost", /\bpostMaterialIssueCost\b/], ["journal", /\bjournalEntry\b|\bpostJournal\b|\bbukukanPergerakan\b/],
+];
+const REQUIRED_ENGINE_FENCES = 7;
+
+function walk(root) {
+  const files = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const absolute = path.join(root, entry.name);
+    if (entry.isDirectory()) files.push(...walk(absolute));
+    else if (/\.(?:js|mjs)$/.test(entry.name) && !/\.test\./.test(entry.name)) files.push(absolute);
+  }
+  return files;
+}
+const lineOf = (text, index) => text.slice(0, index).split("\n").length;
+
+// files: Map<relativePath, text> (dapat diganti di tes).
+export function auditWorkshopExecutionWriters(files) {
+  const findings = [];
+  for (const [rel, raw] of files) {
+    const text = raw.replace(/\r\n/g, "\n");
+    for (const { kind, regex, owners } of RULES) {
+      for (const match of text.matchAll(regex)) {
+        const ok = owners.includes(rel);
+        findings.push({ file: rel, line: lineOf(text, match.index), kind, operation: match[1], disposition: ok ? "OWNER" : "UNOWNED_WRITER", ok });
+      }
+    }
+  }
+  const p5 = (files.get(P5) || "").replace(/\r\n/g, "\n");
+  const code = p5.split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
+  for (const [name, regex] of FORBIDDEN_IN_P5) {
+    if (regex.test(code)) findings.push({ file: P5, line: 0, kind: "P5_FORBIDDEN_WRITE", disposition: `FORBIDDEN_${name}`, ok: false });
+  }
+  const usesEngine = ["startStageInTx", "pauseStageInTx", "resumeStageInTx", "completeStageInTx"].every((fn) => new RegExp(`\\b${fn}\\(`).test(code));
+  if (!usesEngine) findings.push({ file: P5, line: 0, kind: "P5_CANONICAL_PATH", disposition: "MISSING_ENGINE_INTX_CALLS", ok: false });
+  const engine = (files.get(ENGINE) || "").replace(/\r\n/g, "\n");
+  const fences = (engine.match(/await assertNotV2ExecutionOwned\(tx, unitId\)/g) || []).length;
+  if (fences < REQUIRED_ENGINE_FENCES) findings.push({ file: ENGINE, line: 0, kind: "ENGINE_FENCE", disposition: `FENCES_${fences}_LT_${REQUIRED_ENGINE_FENCES}`, ok: false });
+  return { findings, usesEngine, engineFences: fences };
+}
+
+export function loadBackendSources(root = backendRoot) {
+  const files = new Map();
+  for (const file of walk(path.join(root, "src"))) files.set(path.relative(root, file).replaceAll("\\", "/"), fs.readFileSync(file, "utf8"));
+  return files;
+}
+
+export function runWorkshopExecutionWriterAudit(root = backendRoot) {
+  const { findings, usesEngine, engineFences } = auditWorkshopExecutionWriters(loadBackendSources(root));
+  const count = (kind) => findings.filter((f) => f.kind === kind).length;
+  return {
+    reportType: "workshop-execution-writer-audit", generatedAt: new Date().toISOString(),
+    totals: {
+      operationRunWriters: count("OPERATION_RUN_WRITER"), phaseRunWriters: count("PHASE_RUN_WRITER"), runWriters: count("RUN_WRITER"),
+      stageLogWriters: count("STAGE_LOG_WRITER"), violations: findings.filter((f) => !f.ok).length, usesEngine, engineFences,
+    },
+    findings,
+  };
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
+  const report = runWorkshopExecutionWriterAudit();
+  const output = process.argv.find((arg) => arg.startsWith("--output="))?.slice(9);
+  if (output) fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+  console.log(JSON.stringify(report.totals));
+  if (report.totals.violations > 0) process.exitCode = 1;
+}

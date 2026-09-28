@@ -151,6 +151,9 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_MATERIAL_ISSUE_REQUESTED: "PRODUCTION_MATERIAL_ISSUE_REQUESTED",
   PRODUCTION_MATERIAL_ISSUE_PICKED: "PRODUCTION_MATERIAL_ISSUE_PICKED",
   PRODUCTION_MATERIAL_ISSUE_CANCELLED: "PRODUCTION_MATERIAL_ISSUE_CANCELLED",
+  // Eksekusi Workshop V2 (P5): unit BARU/SEWA didaftarkan lahir di workshop; run selesai tahap workshop -> menunggu QC.
+  PRODUCTION_WORKSHOP_RUN_REGISTERED: "PRODUCTION_WORKSHOP_RUN_REGISTERED",
+  PRODUCTION_WORKSHOP_AWAITING_QC: "PRODUCTION_WORKSHOP_AWAITING_QC",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -358,6 +361,10 @@ export function formatActivitySentence(event) {
       return `Produksi mengajukan pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan)`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_PICKED:
       return `Gudang menyerahkan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan, stok berkurang)`;
+    case EVENT_TYPES.PRODUCTION_WORKSHOP_RUN_REGISTERED:
+      return `Unit ${metadata.unitCode || "—"} (${metadata.category || "—"}) didaftarkan lahir di workshop tanpa pickup`;
+    case EVENT_TYPES.PRODUCTION_WORKSHOP_AWAITING_QC:
+      return `Seluruh tahap workshop unit ${metadata.unitCode || "—"} selesai — menunggu QC`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_CANCELLED:
       return `Pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.BUKTI_DIMINTA:

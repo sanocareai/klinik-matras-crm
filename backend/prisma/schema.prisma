@@ -7954,6 +7954,14 @@ enum ProductionRunKind {
   REWORK
 }
 
+// P5 — asal Production Run. NULL = baris lama/backfill. CUSTODY_PICKUP = lahir dari custody INBOUND diterima Gudang (P1–P2).
+// WORKSHOP_BORN = unit BARU/SEWA yang lahir di workshop TANPA pickup (jalur kanonis; BUKAN migrationSource yang khusus
+// pengecualian data legacy). Custody barang jadi baru dibuat setelah QC/P6, bukan di sini.
+enum ProductionRunOrigin {
+  CUSTODY_PICKUP
+  WORKSHOP_BORN
+}
+
 enum ProductionRunStatus {
   PENDING_ARRIVAL
   ACTIVE
@@ -8163,6 +8171,7 @@ model ProductionRun {
   unitId               String                   @map("unit_id") @db.Uuid
   unit                 Unit                     @relation(fields: [unitId], references: [id], onDelete: Restrict)
   kind                 ProductionRunKind
+  origin               ProductionRunOrigin?
   status               ProductionRunStatus
   revision             Int                      @default(1)
   currentPhase         ProductionPhaseKind?     @map("current_phase")

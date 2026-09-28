@@ -141,7 +141,7 @@ export async function createProductionPlan(prisma, { runId, actorId, idempotency
     if (run.phases[0]?.status && ["ACTIVE", "COMPLETED"].includes(run.phases[0].status)) {
       throw planError("Fase Proses sudah dimulai untuk unit ini; rencana H-1 tidak berlaku lagi", 409, "PLAN_TOO_LATE");
     }
-    const eligible = run.custodyHandoffs.length > 0 || !!run.migrationSource;
+    const eligible = run.custodyHandoffs.length > 0 || !!run.migrationSource || run.origin === "WORKSHOP_BORN";
     if (!eligible) {
       throw planError("Unit ini belum memiliki custody/lokasi yang sah (bukan pengecualian data legacy)", 422, "PLAN_UNIT_NOT_ELIGIBLE");
     }
@@ -551,6 +551,7 @@ export async function listEligibleUnitsForPlanning(prisma, { unitIds = null, lim
       OR: [
         { custodyHandoffs: { some: { direction: "INBOUND", status: "ACCEPTED" } } },
         { migrationSource: { not: null } },
+        { origin: "WORKSHOP_BORN" },
       ],
       ...(unitIds ? { unitId: { in: unitIds } } : {}),
     },

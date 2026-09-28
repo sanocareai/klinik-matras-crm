@@ -190,6 +190,8 @@ const DIVISIONS = {
           // workshop/operator/target waktu, Planned BOM, reservasi bahan Gudang. Kosong/inert bila reader V2
           // (production_v2_reader) belum diaktifkan server untuk cohort unit terkait (fail-closed, bukan error).
           { to: "/bengkel/planning",        label: "Rencana Produksi", Icon: CalendarClock },
+          // Antrean Kerja Workshop (P5) — mulai/jeda/lanjutkan/selesai tahap; inert bila reader V2 belum aktif.
+          { to: "/bengkel/workshop",        label: "Antrean Kerja",   Icon: Wrench },
           // Semua Order (D-086, 5 September 2026) — pasangan Bengkel dari
           // "Semua Order" Delivery (lihat catatan D-052 di atas) — laporan
           // owner: sales suka lupa update status, semua divisi harus bisa

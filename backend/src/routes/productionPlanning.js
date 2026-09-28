@@ -15,6 +15,9 @@ import {
 import {
   cancelMaterialIssueBeforePick, getMaterialRequest, listMaterialRequests, pickMaterialIssue, requestMaterialPickup,
 } from "../services/productionMaterialIssueCommandService.js";
+import {
+  completeWorkshopStage, getWorkshopRun, listWorkshopQueue, pauseWorkshopStage, registerWorkshopBornRun, resumeWorkshopStage, startWorkshopStage,
+} from "../services/productionWorkshopExecutionCommandService.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 
 export const productionPlanningRouter = express.Router();
@@ -196,5 +199,66 @@ productionPlanningRouter.post("/material-requests/:id/cancel", requireAnyPermiss
       expectedRevision: req.body?.expectedRevision, reason: req.body?.reason,
     });
     res.json(result);
+  } catch (err) { handleErr(err, res); }
+});
+
+// ── P5: Eksekusi Workshop (mulai/jeda/lanjutkan/selesai tahap; unit BARU/SEWA lahir di workshop) ─────────────
+// Command HANYA lewat productionWorkshopExecutionCommandService. Operator = pengguna yang ditugaskan di rencana (P3).
+const EXEC_PERMS = [P.UNIT_STAGE_WRITE];
+const idemKey = (req) => req.get("Idempotency-Key") || req.body?.idempotencyKey;
+
+productionPlanningRouter.get("/workshop/queue", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const gate = await readerGate(res);
+    if (!gate) return;
+    const scope = req.query.scope === "all" ? "all" : "today";
+    const operatorUserId = req.query.mine === "1" || req.query.mine === "true" ? req.user.id : null;
+    res.json({ items: await listWorkshopQueue(prisma, { unitIds: gate.unitIds, operatorUserId, scope, limit: req.query.limit }), readerMode: gate.readerMode, scope });
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.get("/workshop/runs/:runId", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const gate = await readerGate(res);
+    if (!gate) return;
+    const run = await getWorkshopRun(prisma, req.params.runId);
+    if (!run || (gate.unitIds && !gate.unitIds.includes(run.unit.id))) return res.status(404).json({ error: "Production Run tidak ditemukan", code: "WORKSHOP_RUN_NOT_FOUND" });
+    res.json({ ...run, readerMode: gate.readerMode });
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/workshop/runs", requireAnyPermission(P.UNIT_ROUTING_WRITE, P.UNIT_MATERIAL_WRITE), async (req, res) => {
+  try {
+    res.status(201).json(await registerWorkshopBornRun(prisma, { unitId: req.body?.unitId, actorId: req.user.id, idempotencyKey: idemKey(req) }));
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/workshop/runs/:runId/start", requireAnyPermission(...EXEC_PERMS), async (req, res) => {
+  try {
+    res.json(await startWorkshopStage(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idemKey(req), expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId }));
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/workshop/runs/:runId/pause", requireAnyPermission(...EXEC_PERMS), async (req, res) => {
+  try {
+    res.json(await pauseWorkshopStage(prisma, {
+      runId: req.params.runId, actorId: req.user.id, idempotencyKey: idemKey(req), expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId,
+      reason: req.body?.reason, note: req.body?.note, photoUrls: Array.isArray(req.body?.photoUrls) ? req.body.photoUrls : [],
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/workshop/runs/:runId/resume", requireAnyPermission(...EXEC_PERMS), async (req, res) => {
+  try {
+    res.json(await resumeWorkshopStage(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idemKey(req), expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId }));
+  } catch (err) { handleErr(err, res); }
+});
+
+productionPlanningRouter.post("/workshop/runs/:runId/complete", requireAnyPermission(...EXEC_PERMS), async (req, res) => {
+  try {
+    res.json(await completeWorkshopStage(prisma, {
+      runId: req.params.runId, actorId: req.user.id, idempotencyKey: idemKey(req), expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId,
+      note: req.body?.note, photoUrls: Array.isArray(req.body?.photoUrls) ? req.body.photoUrls : [],
+    }));
   } catch (err) { handleErr(err, res); }
 });

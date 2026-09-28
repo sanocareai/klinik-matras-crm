@@ -551,6 +551,16 @@ export const api = {
     request(`/production-planning/material-requests/${id}/pick`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   cancelMaterialRequest: (id, data, idempotencyKey = mutationKey("issue-cancel")) =>
     request(`/production-planning/material-requests/${id}/cancel`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Eksekusi Workshop V2 (P5) — antrean kerja, detail tahap, mulai/jeda/lanjutkan/selesai tahap (idempoten + revision-aware).
+  getWorkshopQueue: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production-planning/workshop/queue${qs ? `?${qs}` : ""}`);
+  },
+  getWorkshopRun: (runId) => request(`/production-planning/workshop/runs/${runId}`),
+  registerWorkshopRun: (unitId, idempotencyKey = mutationKey("workshop-register")) =>
+    request("/production-planning/workshop/runs", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ unitId }) }),
+  workshopCommand: (runId, action, data, idempotencyKey) =>
+    request(`/production-planning/workshop/runs/${runId}/${action}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey(`workshop-${action}`) }, body: JSON.stringify(data) }),
   cancelProductionPlan: (id, data, idempotencyKey = mutationKey("plan-cancel")) =>
     request(`/production-planning/plans/${id}/cancel`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
 

@@ -38,6 +38,7 @@ import {
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { syncOrderStatus } from "./orderStatusSync.js";
 import { suggestDeliveryJob } from "./deliveryHandoff.js";
+import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
 // Isolation SERIALIZABLE untuk keempat perintah eksekusi inti (START/PAUSE/
 // RESUME/COMPLETE, Production Core Slice 3I) — pola "baca state tahap
@@ -61,6 +62,19 @@ class StageTransitionError extends Error {
   }
 }
 
+// Production Workshop + Warehouse V2 P5 — unit yang DIKELOLA V2 (writer aktif untuk unit itu DAN punya Production Run non-terminal)
+// eksekusi tahapnya hanya boleh lewat command owner V2 (productionWorkshopExecutionCommandService.js), yang memakai varian
+// *InTx di bawah di transaksinya sendiri. Jalur V1 menolak (409) supaya revision/idempotency/outbox V2 tidak bisa dilewati.
+// Flag OFF / unit di luar cohort / unit tanpa run => guard ini no-op dan perilaku V1 IDENTIK (satu baca flag saja).
+async function assertNotV2ExecutionOwned(tx, unitId) {
+  const state = resolveProductionWriterState(await loadV2Flags(tx));
+  if (!isProductionWriterEnabledFor(state, unitId)) return;
+  const run = await tx.productionRun.findFirst({ where: { unitId, status: { notIn: ["COMPLETED", "CANCELLED"] } }, select: { id: true } });
+  if (run) {
+    throw new StageTransitionError("Unit ini dikelola Production V2 (eksekusi workshop) — gunakan endpoint /api/production-planning/workshop", 409);
+  }
+}
+
 /** Ambil seluruh tahap INTAKE/FINISH global + tahap MODULE milik satu layanan. */
 async function loadRoutingData(tx, serviceId) {
   const [intakeStages, finishStages, moduleMappings] = await Promise.all([
@@ -79,7 +93,7 @@ async function loadRoutingData(tx, serviceId) {
 }
 
 /** Bangun jalur penuh unit ini. Lempar error jelas kalau layanan belum ditetapkan tapi dibutuhkan. */
-async function pathForUnit(tx, unit) {
+export async function pathForUnit(tx, unit) {
   const { intakeStages, finishStages, moduleStages } = await loadRoutingData(tx, unit.serviceId);
   return buildUnitPath(intakeStages, moduleStages, finishStages);
 }
@@ -131,7 +145,7 @@ export async function isUnitBlocked(unitId, stageId) {
  *
  * @returns {{stage: object|null, state: 'FIRST'|'READY'|'IN_PROGRESS'|'PAUSED'|'BLOCKED'|'DONE'|'MISMATCH'}}
  */
-async function resolveCurrentTarget(tx, unit, path) {
+export async function resolveCurrentTarget(tx, unit, path) {
   if (!unit.currentStageId) {
     const stage = getNextStage(path, null); // tahap pertama jalur
     return { stage, state: stage ? "FIRST" : "MISMATCH" };
@@ -336,75 +350,83 @@ export async function resolveNextStageForUnits(units) {
  */
 export async function startStage(unitId, { actorId } = {}) {
   return prisma.$transaction(async (tx) => {
-    const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
-    const path = await pathForUnit(tx, unit);
-    const { stage: targetStage, state } = await resolveCurrentTarget(tx, unit, path);
+    await assertNotV2ExecutionOwned(tx, unitId);
+    return startStageInTx(tx, unitId, { actorId });
+  }, EXECUTION_TX_OPTIONS);
+}
 
-    if (state === "IN_PROGRESS") {
-      throw new StageTransitionError(`Tahap "${targetStage.labelId}" sudah berjalan, selesaikan dulu`);
-    }
-    if (state === "PAUSED") {
-      // Production Core Slice 3A: retry tahap dijeda BUKAN lewat startStage()
-      // lagi — itu akan menulis START kedua untuk attempt yang SAMA. Jalan
-      // yang benar resumeStage(), supaya satu attempt tetap satu START.
-      throw new StageTransitionError(`Tahap "${targetStage.labelId}" sedang dijeda — gunakan "Lanjutkan" (Resume), bukan Mulai`);
-    }
-    if (state === "DONE") {
-      throw new StageTransitionError("Unit sudah menyelesaikan seluruh tahap routing");
-    }
-    if (state === "MISMATCH" || !targetStage) {
-      throw new StageTransitionError(
-        "Tahap unit sekarang tidak ditemukan di jalur layanan saat ini — perlu penanganan manual Production Lead"
-      );
-    }
-    // state FIRST / READY / BLOCKED(retry) — semuanya sah untuk START.
+// Varian dalam-transaksi — dipakai ulang oleh productionWorkshopExecutionCommandService.js (P5) supaya transisi V1
+// (unit_stage_logs + unit.currentStageId/status; engine ini SATU-SATUNYA penulis ledger tahap) berjalan di TRANSAKSI YANG
+// SAMA dengan command V2-nya. Perilaku identik dengan startStage() — fence V2 hanya ada di pembungkus V1 di atas.
+export async function startStageInTx(tx, unitId, { actorId } = {}) {
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  const path = await pathForUnit(tx, unit);
+  const { stage: targetStage, state } = await resolveCurrentTarget(tx, unit, path);
 
-    const log = await tx.unitStageLog.create({
-      data: { unitId, stageId: targetStage.id, action: "START", actorId, startedAt: new Date() },
+  if (state === "IN_PROGRESS") {
+    throw new StageTransitionError(`Tahap "${targetStage.labelId}" sudah berjalan, selesaikan dulu`);
+  }
+  if (state === "PAUSED") {
+    // Production Core Slice 3A: retry tahap dijeda BUKAN lewat startStage()
+    // lagi — itu akan menulis START kedua untuk attempt yang SAMA. Jalan
+    // yang benar resumeStage(), supaya satu attempt tetap satu START.
+    throw new StageTransitionError(`Tahap "${targetStage.labelId}" sedang dijeda — gunakan "Lanjutkan" (Resume), bukan Mulai`);
+  }
+  if (state === "DONE") {
+    throw new StageTransitionError("Unit sudah menyelesaikan seluruh tahap routing");
+  }
+  if (state === "MISMATCH" || !targetStage) {
+    throw new StageTransitionError(
+      "Tahap unit sekarang tidak ditemukan di jalur layanan saat ini — perlu penanganan manual Production Lead"
+    );
+  }
+  // state FIRST / READY / BLOCKED(retry) — semuanya sah untuk START.
+
+  const log = await tx.unitStageLog.create({
+    data: { unitId, stageId: targetStage.id, action: "START", actorId, startedAt: new Date() },
+  });
+  await recordActivity(tx, {
+    entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.STAGE_STARTED,
+    actorId, metadata: { stage: targetStage.labelId },
+  });
+
+  // Retry setelah BLOCKED (Production Core Slice 2A): me-restart tahap
+  // berarti kondisi pemblokirnya sudah tidak menghalangi lagi secara
+  // fisik. Auto-resolve blokir terbuka DI SINI penting untuk KEBENARAN,
+  // bukan cuma kenyamanan — deriveProductionStatus() mengecek
+  // hasOpenBlocker LEBIH DULU sebelum IN_PROGRESS, jadi kalau blokirnya
+  // dibiarkan terbuka, unit yang sudah jelas-jelas berjalan lagi akan
+  // tampil BLOCKED selamanya. resolveBlocker() (RESOLVE BLOCKER manual)
+  // TETAP tersedia terpisah untuk mencatat penyelesaian TANPA langsung
+  // me-restart (mis. supervisor konfirmasi bahan sudah datang, pekerja
+  // baru benar-benar mulai lagi belakangan) — dua jalur, satu state akhir
+  // yang konsisten: idempotent lewat `resolvedAt: null` di WHERE.
+  const openBlocker = await tx.productionBlocker.findFirst({ where: { unitId, resolvedAt: null } });
+  let resolvedBlocker = null;
+  if (openBlocker) {
+    resolvedBlocker = await tx.productionBlocker.update({
+      where: { id: openBlocker.id },
+      data: {
+        resolvedAt: new Date(), resolvedById: actorId || null,
+        resolutionNote: "Diselesaikan otomatis — produksi dilanjutkan",
+      },
     });
     await recordActivity(tx, {
-      entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.STAGE_STARTED,
-      actorId, metadata: { stage: targetStage.labelId },
+      entityType: ENTITY_TYPES.UNIT, entityId: unitId,
+      eventType: EVENT_TYPES.PRODUCTION_BLOCKER_RESOLVED, actorId,
+      metadata: { blockerId: openBlocker.id, reason: openBlocker.reason, resolutionNote: "auto: produksi dilanjutkan" },
     });
+  }
 
-    // Retry setelah BLOCKED (Production Core Slice 2A): me-restart tahap
-    // berarti kondisi pemblokirnya sudah tidak menghalangi lagi secara
-    // fisik. Auto-resolve blokir terbuka DI SINI penting untuk KEBENARAN,
-    // bukan cuma kenyamanan — deriveProductionStatus() mengecek
-    // hasOpenBlocker LEBIH DULU sebelum IN_PROGRESS, jadi kalau blokirnya
-    // dibiarkan terbuka, unit yang sudah jelas-jelas berjalan lagi akan
-    // tampil BLOCKED selamanya. resolveBlocker() (RESOLVE BLOCKER manual)
-    // TETAP tersedia terpisah untuk mencatat penyelesaian TANPA langsung
-    // me-restart (mis. supervisor konfirmasi bahan sudah datang, pekerja
-    // baru benar-benar mulai lagi belakangan) — dua jalur, satu state akhir
-    // yang konsisten: idempotent lewat `resolvedAt: null` di WHERE.
-    const openBlocker = await tx.productionBlocker.findFirst({ where: { unitId, resolvedAt: null } });
-    let resolvedBlocker = null;
-    if (openBlocker) {
-      resolvedBlocker = await tx.productionBlocker.update({
-        where: { id: openBlocker.id },
-        data: {
-          resolvedAt: new Date(), resolvedById: actorId || null,
-          resolutionNote: "Diselesaikan otomatis — produksi dilanjutkan",
-        },
-      });
-      await recordActivity(tx, {
-        entityType: ENTITY_TYPES.UNIT, entityId: unitId,
-        eventType: EVENT_TYPES.PRODUCTION_BLOCKER_RESOLVED, actorId,
-        metadata: { blockerId: openBlocker.id, reason: openBlocker.reason, resolutionNote: "auto: produksi dilanjutkan" },
-      });
-    }
+  // Tahap produksi pertama yang dimulai -> unit resmi masuk produksi.
+  const data = { currentStageId: targetStage.id };
+  if (unit.status === "RECEIVED" || unit.status === "AWAITING_PICKUP") {
+    data.status = "IN_PRODUCTION";
+  }
+  await tx.unit.update({ where: { id: unitId }, data });
+  if (data.status) await syncOrderStatus(tx, unit.orderId);
 
-    // Tahap produksi pertama yang dimulai -> unit resmi masuk produksi.
-    const data = { currentStageId: targetStage.id };
-    if (unit.status === "RECEIVED" || unit.status === "AWAITING_PICKUP") {
-      data.status = "IN_PRODUCTION";
-    }
-    await tx.unit.update({ where: { id: unitId }, data });
-    if (data.status) await syncOrderStatus(tx, unit.orderId);
-
-    return { log, stage: targetStage, resolvedBlocker };
-  }, EXECUTION_TX_OPTIONS);
+  return { log, stage: targetStage, resolvedBlocker };
 }
 
 /**
@@ -426,6 +448,7 @@ export async function startStage(unitId, { actorId } = {}) {
  */
 export async function recordStageDone(unitId, { actorId, photoUrls = [], note } = {}) {
   return prisma.$transaction(async (tx) => {
+    await assertNotV2ExecutionOwned(tx, unitId);
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
     const path = await pathForUnit(tx, unit);
     const { stage, state } = await resolveCurrentTarget(tx, unit, path);
@@ -478,39 +501,47 @@ export async function recordStageDone(unitId, { actorId, photoUrls = [], note } 
  */
 export async function completeStage(unitId, stageId, { actorId, photoUrls = [], note } = {}) {
   return prisma.$transaction(async (tx) => {
-    const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
-
-    if (stage.requiresQc) {
-      throw new StageTransitionError(
-        `Tahap "${stage.labelId}" adalah gerbang QC — selesaikan lewat pencatatan putusan QC, bukan endpoint ini`
-      );
-    }
-
-    const open = await findOpenWork(tx, unitId, stageId);
-    if (!open) {
-      throw new StageTransitionError(`Tidak ada tahap "${stage.labelId}" yang sedang berjalan untuk unit ini`);
-    }
-
-    if (stage.requiresPhoto && photoUrls.length === 0) {
-      throw new StageTransitionError(`Tahap "${stage.labelId}" wajib foto sebelum bisa diselesaikan`);
-    }
-
-    // D-008: lini/modul ditetapkan di Uji Fondasi/Diagnosa — kalau ini tahap
-    // INTAKE TERAKHIR dan layanan belum ditetapkan, JANGAN selesaikan (dan
-    // JANGAN tulis log apa pun): menyelesaikannya tanpa serviceId akan
-    // membuat advanceUnitPastStage melompati SELURUH fase MODULE secara diam-
-    // diam (path-nya jadi INTAKE+FINISH saja, tanpa modul apa pun). Diperiksa
-    // dari FASE+urutan (isLastIntakeStage), bukan nama kode tahap (D-003).
-    const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
-    const path = await pathForUnit(tx, unit);
-    if (isLastIntakeStage(path, stage.id) && !unit.serviceId) {
-      throw new StageTransitionError(
-        `Layanan unit belum ditetapkan — tidak bisa menyelesaikan "${stage.labelId}" sebelum lini/layanan ditentukan (PATCH /units/:id/service)`
-      );
-    }
-
-    return finishStageInternal(tx, unitId, stage, open, { actorId, photoUrls, note });
+    await assertNotV2ExecutionOwned(tx, unitId);
+    return completeStageInTx(tx, unitId, stageId, { actorId, photoUrls, note });
   }, EXECUTION_TX_OPTIONS);
+}
+
+// Varian dalam-transaksi — dipakai ulang oleh productionWorkshopExecutionCommandService.js (P5) supaya transisi V1
+// (unit_stage_logs + unit.currentStageId/status; engine ini SATU-SATUNYA penulis ledger tahap) berjalan di TRANSAKSI YANG
+// SAMA dengan command V2-nya. Perilaku identik dengan completeStage() — fence V2 hanya ada di pembungkus V1 di atas.
+export async function completeStageInTx(tx, unitId, stageId, { actorId, photoUrls = [], note } = {}) {
+  const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
+
+  if (stage.requiresQc) {
+    throw new StageTransitionError(
+      `Tahap "${stage.labelId}" adalah gerbang QC — selesaikan lewat pencatatan putusan QC, bukan endpoint ini`
+    );
+  }
+
+  const open = await findOpenWork(tx, unitId, stageId);
+  if (!open) {
+    throw new StageTransitionError(`Tidak ada tahap "${stage.labelId}" yang sedang berjalan untuk unit ini`);
+  }
+
+  if (stage.requiresPhoto && photoUrls.length === 0) {
+    throw new StageTransitionError(`Tahap "${stage.labelId}" wajib foto sebelum bisa diselesaikan`);
+  }
+
+  // D-008: lini/modul ditetapkan di Uji Fondasi/Diagnosa — kalau ini tahap
+  // INTAKE TERAKHIR dan layanan belum ditetapkan, JANGAN selesaikan (dan
+  // JANGAN tulis log apa pun): menyelesaikannya tanpa serviceId akan
+  // membuat advanceUnitPastStage melompati SELURUH fase MODULE secara diam-
+  // diam (path-nya jadi INTAKE+FINISH saja, tanpa modul apa pun). Diperiksa
+  // dari FASE+urutan (isLastIntakeStage), bukan nama kode tahap (D-003).
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  const path = await pathForUnit(tx, unit);
+  if (isLastIntakeStage(path, stage.id) && !unit.serviceId) {
+    throw new StageTransitionError(
+      `Layanan unit belum ditetapkan — tidak bisa menyelesaikan "${stage.labelId}" sebelum lini/layanan ditentukan (PATCH /units/:id/service)`
+    );
+  }
+
+  return finishStageInternal(tx, unitId, stage, open, { actorId, photoUrls, note });
 }
 
 /**
@@ -530,30 +561,38 @@ export async function completeStage(unitId, stageId, { actorId, photoUrls = [], 
  * (Serializable) membuat salah satunya gagal dengan konflik serialisasi
  * (P2034) alih-alih diam-diam menulis dua baris PAUSE berurutan.
  */
-export async function pauseStage(unitId, stageId, { actorId, reason, note } = {}) {
+export async function pauseStage(unitId, stageId, { actorId, reason, note, photoUrls = [] } = {}) {
+  return prisma.$transaction(async (tx) => {
+    await assertNotV2ExecutionOwned(tx, unitId);
+    return pauseStageInTx(tx, unitId, stageId, { actorId, reason, note, photoUrls });
+  }, EXECUTION_TX_OPTIONS);
+}
+
+// Varian dalam-transaksi — dipakai ulang oleh productionWorkshopExecutionCommandService.js (P5) supaya transisi V1
+// (unit_stage_logs + unit.currentStageId/status; engine ini SATU-SATUNYA penulis ledger tahap) berjalan di TRANSAKSI YANG
+// SAMA dengan command V2-nya. Perilaku identik dengan pauseStage() — fence V2 hanya ada di pembungkus V1 di atas.
+export async function pauseStageInTx(tx, unitId, stageId, { actorId, reason, note, photoUrls = [] } = {}) {
   // Validasi MURNI dulu (bisa diuji tanpa database) — lib/domain/stageExecution.js#validatePauseReason.
   const validationError = validatePauseReason({ reason, note });
   if (validationError) throw new StageTransitionError(validationError);
 
-  return prisma.$transaction(async (tx) => {
-    const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
+  const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
 
-    const open = await findOpenWork(tx, unitId, stageId);
-    if (!open) {
-      throw new StageTransitionError(`Tidak ada tahap "${stage.labelId}" yang sedang berjalan untuk unit ini — tidak bisa dijeda`);
-    }
+  const open = await findOpenWork(tx, unitId, stageId);
+  if (!open) {
+    throw new StageTransitionError(`Tidak ada tahap "${stage.labelId}" yang sedang berjalan untuk unit ini — tidak bisa dijeda`);
+  }
 
-    const log = await tx.unitStageLog.create({
-      data: { unitId, stageId, action: "PAUSE", actorId, pauseReason: reason, note: note?.trim() || null },
-    });
+  const log = await tx.unitStageLog.create({
+    data: { unitId, stageId, action: "PAUSE", actorId, pauseReason: reason, note: note?.trim() || null, photoUrls },
+  });
 
-    await recordActivity(tx, {
-      entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.STAGE_PAUSED, actorId,
-      metadata: { stage: stage.labelId, reason, note: note?.trim() || null },
-    });
+  await recordActivity(tx, {
+    entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.STAGE_PAUSED, actorId,
+    metadata: { stage: stage.labelId, reason, note: note?.trim() || null },
+  });
 
-    return { log };
-  }, EXECUTION_TX_OPTIONS);
+  return { log };
 }
 
 /**
@@ -572,32 +611,40 @@ export async function pauseStage(unitId, stageId, { actorId, reason, note } = {}
  */
 export async function resumeStage(unitId, stageId, { actorId } = {}) {
   return prisma.$transaction(async (tx) => {
-    const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
-    const last = await tx.unitStageLog.findFirst({
-      where: { unitId, stageId },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (last?.action === "FAIL") {
-      throw new StageTransitionError(
-        `Tahap "${stage.labelId}" sedang terhambat (blocked) — selesaikan blokirnya dulu lalu gunakan "Mulai Lagi", bukan Lanjutkan`
-      );
-    }
-    if (!last || last.action !== "PAUSE") {
-      throw new StageTransitionError(`Tahap "${stage.labelId}" tidak sedang dijeda — tidak ada yang bisa dilanjutkan`);
-    }
-
-    const log = await tx.unitStageLog.create({
-      data: { unitId, stageId, action: "RESUME", actorId },
-    });
-
-    await recordActivity(tx, {
-      entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.STAGE_RESUMED, actorId,
-      metadata: { stage: stage.labelId },
-    });
-
-    return { log };
+    await assertNotV2ExecutionOwned(tx, unitId);
+    return resumeStageInTx(tx, unitId, stageId, { actorId });
   }, EXECUTION_TX_OPTIONS);
+}
+
+// Varian dalam-transaksi — dipakai ulang oleh productionWorkshopExecutionCommandService.js (P5) supaya transisi V1
+// (unit_stage_logs + unit.currentStageId/status; engine ini SATU-SATUNYA penulis ledger tahap) berjalan di TRANSAKSI YANG
+// SAMA dengan command V2-nya. Perilaku identik dengan resumeStage() — fence V2 hanya ada di pembungkus V1 di atas.
+export async function resumeStageInTx(tx, unitId, stageId, { actorId } = {}) {
+  const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
+  const last = await tx.unitStageLog.findFirst({
+    where: { unitId, stageId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (last?.action === "FAIL") {
+    throw new StageTransitionError(
+      `Tahap "${stage.labelId}" sedang terhambat (blocked) — selesaikan blokirnya dulu lalu gunakan "Mulai Lagi", bukan Lanjutkan`
+    );
+  }
+  if (!last || last.action !== "PAUSE") {
+    throw new StageTransitionError(`Tahap "${stage.labelId}" tidak sedang dijeda — tidak ada yang bisa dilanjutkan`);
+  }
+
+  const log = await tx.unitStageLog.create({
+    data: { unitId, stageId, action: "RESUME", actorId },
+  });
+
+  await recordActivity(tx, {
+    entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.STAGE_RESUMED, actorId,
+    metadata: { stage: stage.labelId },
+  });
+
+  return { log };
 }
 
 /**
@@ -787,6 +834,7 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note } 
  */
 export async function resolveBlocker(blockerId, { actorId, resolutionNote } = {}) {
   return prisma.$transaction(async (tx) => {
+    await assertNotV2ExecutionOwned(tx, unitId);
     const existing = await tx.productionBlocker.findUnique({ where: { id: blockerId } });
     if (!existing) throw new StageTransitionError("Blokir tidak ditemukan", 404);
 
@@ -814,6 +862,7 @@ export async function resolveBlocker(blockerId, { actorId, resolutionNote } = {}
 /** LEWATI tahap opsional (isOptional=true). Tetap tercatat di ledger. */
 export async function skipStage(unitId, { actorId, note } = {}) {
   return prisma.$transaction(async (tx) => {
+    await assertNotV2ExecutionOwned(tx, unitId);
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
     const path = await pathForUnit(tx, unit);
 

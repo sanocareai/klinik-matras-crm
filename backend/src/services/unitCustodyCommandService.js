@@ -185,7 +185,7 @@ export async function openProductionIntakeV2(tx, { unitId, actorId = null }) {
   const notApplicable = kind === "FULFILLMENT_ONLY" ? new Set(["DIAGNOSIS", "PROCESS", "QC"]) : new Set();
   const run = await tx.productionRun.create({
     data: {
-      unitId, kind, status: "ACTIVE", currentPhase: "INTAKE", startedAt: now, revision: 1, parentRunId: last?.id || null,
+      unitId, kind, origin: "CUSTODY_PICKUP", status: "ACTIVE", currentPhase: "INTAKE", startedAt: now, revision: 1, parentRunId: last?.id || null,
       phases: {
         create: PHASES.map((phase, index) => ({
           phase, sequence: index + 1,
