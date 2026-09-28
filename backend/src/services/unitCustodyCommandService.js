@@ -12,6 +12,7 @@ import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEngine.js";
 import { assertNoOpenRunException, assertRunConsistent } from "./productionRunGuards.js";
+import { assertPhasesReadyForHandoffDecision, assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import {
   isProductionWriterEnabledFor, loadV2Flags, productionWriterEnabledForUnit, resolveProductionWriterState,
 } from "./v2FeatureFlags.js";
@@ -247,6 +248,8 @@ async function prepareFinishedGoodsDecision(tx, handoff) {
   if (run.currentPhase !== "HANDOFF" || handoffPhase?.status !== "ACTIVE") {
     throw custodyError("Production Run tidak berada di fase Handoff", 409, "CUSTODY_RUN_NOT_IN_HANDOFF", { currentPhase: run.currentPhase });
   }
+  // Fase lain WAJIB sudah terminal (tanpa auto-close): fase tertinggal = bug transisi -> 409 sebelum ada tulisan apa pun.
+  assertPhasesReadyForHandoffDecision(run);
   return run;
 }
 
@@ -367,7 +370,8 @@ export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotenc
       let completedRunRevision = null;
       if (finishedRun) {
         // Urutan: lokasi (legacy + kanonis) sudah tertulis -> fase HANDOFF selesai -> run COMPLETED -> BARU unit READY_FOR_DELIVERY.
-        await tx.productionPhaseRun.update({ where: { runId_phase: { runId: finishedRun.id, phase: "HANDOFF" } }, data: { status: "COMPLETED", completedAt: now } });
+        await transitionPhases(tx, finishedRun.id, [{ phase: "HANDOFF", data: { status: "COMPLETED", completedAt: now } }]);
+        await assertRunPhasesTerminal(tx, finishedRun.id);
         completedRunRevision = finishedRun.revision + 1;
         await tx.productionRun.update({ where: { id: finishedRun.id }, data: { status: "COMPLETED", completedAt: now, revision: completedRunRevision } });
         await markUnitReadyForDeliveryInTx(tx, handoff.unitId);
@@ -411,7 +415,7 @@ export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotenc
       if (finishedRun) {
         // Kasus kembali ke Production: fase HANDOFF BLOCKED (alasan tercatat), run tetap ACTIVE. Tindakan koreksi lewat command Production
         // (tawarkan ulang / rework) — histori penolakan tetap di baris handoff ini.
-        await tx.productionPhaseRun.update({ where: { runId_phase: { runId: finishedRun.id, phase: "HANDOFF" } }, data: { status: "BLOCKED", reason: `Ditolak Gudang: ${cleaned}` } });
+        await transitionPhases(tx, finishedRun.id, [{ phase: "HANDOFF", data: { status: "BLOCKED", reason: `Ditolak Gudang: ${cleaned}` } }]);
         returnedRunRevision = finishedRun.revision + 1;
         await tx.productionRun.update({ where: { id: finishedRun.id }, data: { revision: returnedRunRevision } });
         await outbox(tx, {

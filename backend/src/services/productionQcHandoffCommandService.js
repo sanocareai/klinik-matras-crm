@@ -28,6 +28,7 @@ import { getWorkshopRun, workshopPathOf } from "./productionWorkshopExecutionCom
 import {
   ALLOWED_RESOLUTIONS, RUN_OWNED_STATUSES, RUN_TERMINAL_STATUSES, assertNoOpenRunException, assertRunConsistent, detectRunInconsistency,
 } from "./productionRunGuards.js";
+import { assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
@@ -179,7 +180,6 @@ async function bumpRun(tx, run, data = {}) {
   await tx.productionRun.update({ where: { id: run.id }, data: { ...data, revision } });
   return revision;
 }
-const setPhase = (tx, runId, phase, data) => tx.productionPhaseRun.update({ where: { runId_phase: { runId, phase } }, data });
 
 // ---------------------------------------------------------------------------
 // 1. INSPEKSI QC (PASS / FAIL / WAIVED) untuk run AWAITING_QC.
@@ -246,17 +246,18 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
     let nextPhase;
     let handoff = null;
     if (data.result === "FAIL") {
-      await setPhase(tx, runId, "PROCESS", { status: "ACTIVE", completedAt: null, reason: `Rework QC #${version}: ${reworkStage.labelId}` });
+      await transitionPhases(tx, runId, [{ phase: "PROCESS", data: { status: "ACTIVE", completedAt: null, reason: `Rework QC #${version}: ${reworkStage.labelId}` } }]);
       nextPhase = "PROCESS";
     } else {
-      await setPhase(tx, runId, "QC", { status: "COMPLETED", startedAt: now, completedAt: now, reason: data.result === "WAIVED" ? `QC_WAIVED: ${data.reason}` : null });
+      // QC ditutup dan fase berikutnya dibuka dalam SATU transisi atomik.
+      const qcClosed = { phase: "QC", data: { status: "COMPLETED", startedAt: now, completedAt: now, reason: data.result === "WAIVED" ? `QC_WAIVED: ${data.reason}` : null } };
       const pathDone = await isUnitPathDoneInTx(tx, run.unitId);
       if (pathDone) {
         // Gerbang QC ternyata tahap terakhir jalur: langsung Handoff.
-        await setPhase(tx, runId, "HANDOFF", { status: "ACTIVE", startedAt: now, reason: null });
+        await transitionPhases(tx, runId, [qcClosed, { phase: "HANDOFF", data: { status: "ACTIVE", startedAt: now, reason: null } }]);
         nextPhase = "HANDOFF";
       } else {
-        await setPhase(tx, runId, "PROCESS", { status: "ACTIVE", completedAt: null, reason: "Tahap setelah QC" });
+        await transitionPhases(tx, runId, [qcClosed, { phase: "PROCESS", data: { status: "ACTIVE", completedAt: null, reason: "Tahap setelah QC" } }]);
         nextPhase = "PROCESS";
       }
     }
@@ -386,14 +387,16 @@ export async function resolveHandoffRejection(prisma, { runId, actorId, idempote
     let handoff = null;
     let reworkStage = null;
     if (act === "REOFFER") {
-      await setPhase(tx, runId, "HANDOFF", { status: "ACTIVE", reason: null });
+      await transitionPhases(tx, runId, [{ phase: "HANDOFF", data: { status: "ACTIVE", reason: null } }]);
       revision = await bumpRun(tx, run);
       handoff = await offerFinishedGoodsCustodyInTx(tx, { runId, actorId });
     } else {
       reworkStage = await viaEngine(() => reopenStageBeforeQcInTx(tx, run.unitId, reworkStageId));
-      await setPhase(tx, runId, "HANDOFF", { status: "NOT_STARTED", startedAt: null, completedAt: null, reason: `Rework setelah penolakan Gudang: ${cleaned}` });
-      await setPhase(tx, runId, "QC", { status: "NOT_STARTED", startedAt: null, completedAt: null, reason: null });
-      await setPhase(tx, runId, "PROCESS", { status: "ACTIVE", completedAt: null, reason: `Rework setelah penolakan Gudang: ${reworkStage.labelId}` });
+      await transitionPhases(tx, runId, [
+        { phase: "HANDOFF", data: { status: "NOT_STARTED", startedAt: null, completedAt: null, reason: `Rework setelah penolakan Gudang: ${cleaned}` } },
+        { phase: "QC", data: { status: "NOT_STARTED", startedAt: null, completedAt: null, reason: null } },
+        { phase: "PROCESS", data: { status: "ACTIVE", completedAt: null, reason: `Rework setelah penolakan Gudang: ${reworkStage.labelId}` } },
+      ]);
       revision = await bumpRun(tx, run, { currentPhase: "PROCESS" });
     }
     await outbox(tx, {
@@ -430,9 +433,8 @@ async function cancelRunInTx(tx, { run, actor, reason, now }) {
   for (const op of run.operations.filter((o) => o.status === "ACTIVE" || o.status === "PAUSED")) {
     await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "SKIPPED", completedAt: now } });
   }
-  for (const phase of run.phases.filter((p) => !["COMPLETED", "NOT_APPLICABLE", "CANCELLED"].includes(p.status))) {
-    await setPhase(tx, run.id, phase.phase, { status: "CANCELLED", reason: `Run dibatalkan: ${reason}` });
-  }
+  const openPhases = run.phases.filter((p) => !["COMPLETED", "NOT_APPLICABLE", "CANCELLED"].includes(p.status));
+  if (openPhases.length) await transitionPhases(tx, run.id, openPhases.map((phase) => ({ phase: phase.phase, data: { status: "CANCELLED", reason: `Run dibatalkan: ${reason}` } })));
   const cancelledHandoffs = await cancelOfferedFinishedGoodsCustodyInTx(tx, { unitId: run.unitId, actor, reason });
   const revision = run.revision + 1;
   await tx.productionRun.update({ where: { id: run.id }, data: { status: "CANCELLED", completedAt: now, revision } });
@@ -604,9 +606,10 @@ export async function resolveRunException(prisma, { exceptionId, actorId, canWai
       for (const op of run.operations.filter((o) => o.status === "ACTIVE" || o.status === "PAUSED")) {
         await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "SKIPPED", completedAt: now } });
       }
-      for (const phase of run.phases.filter((p) => !["COMPLETED", "NOT_APPLICABLE", "CANCELLED"].includes(p.status))) {
-        await setPhase(tx, run.id, phase.phase, { status: "NOT_APPLICABLE", reason: `Ditutup lewat override manual V1 (bukan hasil QC/custody): ${cleaned}` });
-      }
+      const openPhases = run.phases.filter((p) => !["COMPLETED", "NOT_APPLICABLE", "CANCELLED"].includes(p.status));
+      if (openPhases.length) await transitionPhases(tx, run.id, openPhases.map((phase) => ({ phase: phase.phase, data: { status: "NOT_APPLICABLE", reason: `Ditutup lewat override manual V1 (bukan hasil QC/custody): ${cleaned}` } })));
+      // Penutupan override eksplisit: seluruh fase terminal, HANDOFF boleh NOT_APPLICABLE (tanpa bukti custody yang dikarang).
+      await assertRunPhasesTerminal(tx, run.id, { requireHandoffCompleted: false });
       await cancelOfferedFinishedGoodsCustodyInTx(tx, { unitId: run.unitId, actor, reason: `Run ditutup lewat override V1: ${cleaned}` });
       runRevision = run.revision + 1;
       await tx.productionRun.update({ where: { id: run.id }, data: { status: "COMPLETED", completedAt: now, revision: runRevision } });

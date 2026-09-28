@@ -183,7 +183,7 @@ test("PASS -> tahap setelah QC (corner_sewing, finished) -> handoff barang jadi 
   const fit = await testPrisma.qcFitTest.findFirstOrThrow({ where: { unitId: p.unit.id } });
   assert.equal(fit.verdict, "PAS"); assert.equal(fit.referenceWeightKg, 60); assert.equal(inspection.qcFitTestId, fit.id, "proyeksi V1 terhubung ke inspeksi V2");
   assert.equal((await fgHandoffs(p.unit.id)).length, 0, "QC PASS TIDAK langsung membuat handoff");
-  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "ACTIVE", DIAGNOSIS: "NOT_STARTED", PROCESS: "ACTIVE", QC: "COMPLETED", HANDOFF: "NOT_STARTED" });
+  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "COMPLETED", DIAGNOSIS: "NOT_APPLICABLE", PROCESS: "ACTIVE", QC: "COMPLETED", HANDOFF: "NOT_STARTED" });
   let unitRow = await testPrisma.unit.findUniqueOrThrow({ where: { id: p.unit.id }, include: { currentStage: true } });
   assert.equal(unitRow.status, "IN_PRODUCTION"); assert.equal(unitRow.currentStage.code, "corner_sewing");
   assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: p.run.id } })).currentPhase, "PROCESS");
@@ -247,7 +247,7 @@ test("FAIL -> rework pada tahap eksplisit -> WAJIB kembali ke QC -> QC ulang PAS
   assert.equal(gateFail.blockReason, "QUALITY_ISSUE");
   const unitRow = await testPrisma.unit.findUniqueOrThrow({ where: { id: p.unit.id } });
   assert.equal(unitRow.currentStageId, reworkStage.id);
-  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "ACTIVE", DIAGNOSIS: "NOT_STARTED", PROCESS: "ACTIVE", QC: "NOT_STARTED", HANDOFF: "NOT_STARTED" });
+  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "COMPLETED", DIAGNOSIS: "NOT_APPLICABLE", PROCESS: "ACTIVE", QC: "NOT_STARTED", HANDOFF: "NOT_STARTED" });
   assert.equal((await fgHandoffs(p.unit.id)).length, 0);
   assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: p.run.id } })).revision, p.revision + 1, "revisi run bertambah");
 
@@ -481,7 +481,7 @@ test("penolakan Gudang -> REWORK (tahap eksplisit sebelum QC): run kembali ke PR
   assert.equal(badTarget.status, 422);
   const rework = await w.op.api.post(`${Q}/${p.run.id}/handoff-rejection`, { expectedRevision: run.revision, action: "REWORK", note: "ganti ukuran", reworkStageId: target.id }, key("t9-rework"));
   assert.equal(rework.status, 200, JSON.stringify(rework.body)); assert.equal(rework.body.nextPhase, "PROCESS");
-  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "ACTIVE", DIAGNOSIS: "NOT_STARTED", PROCESS: "ACTIVE", QC: "NOT_STARTED", HANDOFF: "NOT_STARTED" });
+  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "COMPLETED", DIAGNOSIS: "NOT_APPLICABLE", PROCESS: "ACTIVE", QC: "NOT_STARTED", HANDOFF: "NOT_STARTED" });
   const s = await start(w, p.run.id, rework.body.revision, "t9-start");
   assert.equal(s.status, 200, JSON.stringify(s.body)); assert.equal(s.body.stage.id, target.id);
   const c = await complete(w, p.run.id, s.body.revision, "t9-complete");
@@ -763,4 +763,191 @@ test("urutan kunci plan -> unit -> run: QC FAIL + bahan tambahan bersamaan denga
   assert.equal(await testPrisma.qualityInspection.count({ where: { runId: p.run.id } }), 1);
   assert.equal(await testPrisma.materialIssue.count({ where: { reworkInspectionId: { not: null } } }), 1);
   assert.equal(await testPrisma.unitStageLog.count({ where: { unitId: p.unit.id, action: "START", stage: { id: reworkStage.id } } }), 1, "hanya START rework dari pra-QC; tidak ada START dobel");
+});
+
+// ── Hotfix pra-P7B: invariant lifecycle fase + flag fail-closed ───────────────────────────────────────────────────────────────
+const IN_PROGRESS = ["ACTIVE", "BLOCKED"];
+const TERMINAL = ["COMPLETED", "NOT_APPLICABLE", "CANCELLED"];
+const inProgressCount = async (runId) => (await testPrisma.productionPhaseRun.count({ where: { runId, status: { in: IN_PROGRESS } } }));
+const fullSnapshot = async (runId, unitId) => ({
+  ...(await snapshot(runId, unitId)),
+  handoffs: JSON.stringify((await testPrisma.unitCustodyHandoff.findMany({ where: { unitId }, orderBy: { id: "asc" }, select: { id: true, status: true, revision: true, direction: true } }))),
+  phases: JSON.stringify(await phasesOf(runId)),
+});
+
+test("lifecycle fresh: custody INBOUND -> planning -> material -> PROCESS -> QC -> corner_sewing -> finished -> HANDOFF -> Gudang ACCEPTED -> run COMPLETED; tidak ada fase terbuka dan tidak pernah dua fase berjalan", async () => {
+  const w = await world();
+  const p = await prepare(w);
+  // Setelah custody + planning + material: hanya INTAKE yang berjalan; fase lain belum dimulai.
+  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "ACTIVE", DIAGNOSIS: "NOT_STARTED", PROCESS: "NOT_STARTED", QC: "NOT_STARTED", HANDOFF: "NOT_STARTED" });
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: p.run.id } })).origin, "CUSTODY_PICKUP");
+
+  // Start pertama = perpindahan INTAKE -> PROCESS secara atomik: INTAKE selesai, DIAGNOSIS tidak berlaku, PROCESS berjalan.
+  const s1 = await start(w, p.run.id, 1, "lc-s1");
+  assert.equal(s1.status, 200, JSON.stringify(s1.body));
+  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "COMPLETED", DIAGNOSIS: "NOT_APPLICABLE", PROCESS: "ACTIVE", QC: "NOT_STARTED", HANDOFF: "NOT_STARTED" });
+  assert.equal(await inProgressCount(p.run.id), 1);
+  const diagnosis = await testPrisma.productionPhaseRun.findUniqueOrThrow({ where: { runId_phase: { runId: p.run.id, phase: "DIAGNOSIS" } } });
+  assert.match(diagnosis.reason, /Diagnosis V2 belum tersedia/);
+  const intake = await testPrisma.productionPhaseRun.findUniqueOrThrow({ where: { runId_phase: { runId: p.run.id, phase: "INTAKE" } } });
+  assert.ok(intake.completedAt);
+
+  let c = await complete(w, p.run.id, s1.body.revision, "lc-c1");
+  let rev = c.body.revision;
+  for (let guard = 0; guard < 30 && !c.body.awaitingQc; guard += 1) {
+    const s = await start(w, p.run.id, rev, `lc-s-${guard}`);
+    assert.equal(s.status, 200, JSON.stringify(s.body));
+    assert.equal(await inProgressCount(p.run.id), 1);
+    c = await complete(w, p.run.id, s.body.revision, `lc-c-${guard}`);
+    assert.equal(c.status, 200, JSON.stringify(c.body));
+    rev = c.body.revision;
+  }
+  assert.equal(c.body.awaitingQc, true);
+  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "COMPLETED", DIAGNOSIS: "NOT_APPLICABLE", PROCESS: "COMPLETED", QC: "NOT_STARTED", HANDOFF: "NOT_STARTED" });
+  assert.equal(await inProgressCount(p.run.id), 0, "menunggu QC: tidak ada fase berjalan");
+
+  const pass = await inspect(w.qc, p.run.id, passBody(rev), "lc-pass");
+  assert.equal(pass.status, 200, JSON.stringify(pass.body));
+  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "COMPLETED", DIAGNOSIS: "NOT_APPLICABLE", PROCESS: "ACTIVE", QC: "COMPLETED", HANDOFF: "NOT_STARTED" });
+  assert.equal(await inProgressCount(p.run.id), 1);
+
+  const post = await runThroughPostQc(w, p.run.id, pass.body.revision);
+  assert.deepEqual(post.codes, ["corner_sewing", "finished"]);
+  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "COMPLETED", DIAGNOSIS: "NOT_APPLICABLE", PROCESS: "COMPLETED", QC: "COMPLETED", HANDOFF: "ACTIVE" });
+  assert.equal(await inProgressCount(p.run.id), 1, "HANDOFF satu-satunya fase berjalan");
+
+  const [handoff] = await fgHandoffs(p.unit.id);
+  const acc = await accept(w.gudang, handoff.id, handoff.revision, w.fgArea.id, "lc-accept");
+  assert.equal(acc.status, 200, JSON.stringify(acc.body));
+  assert.equal(acc.body.runStatus, "COMPLETED");
+  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "COMPLETED", DIAGNOSIS: "NOT_APPLICABLE", PROCESS: "COMPLETED", QC: "COMPLETED", HANDOFF: "COMPLETED" });
+  const phases = await testPrisma.productionPhaseRun.findMany({ where: { runId: p.run.id } });
+  assert.ok(phases.every((phase) => TERMINAL.includes(phase.status)), "semua fase terminal");
+  assert.equal(await inProgressCount(p.run.id), 0);
+  const run = await testPrisma.productionRun.findUniqueOrThrow({ where: { id: p.run.id } });
+  assert.equal(run.status, "COMPLETED"); assert.ok(run.completedAt);
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: p.unit.id } })).status, "READY_FOR_DELIVERY");
+});
+
+test("fase tertinggal (non-terminal selain HANDOFF): Gudang accept DAN reject ditolak 409 dan semuanya rollback — unit, run, custody, command, audit, outbox tidak berubah; tidak ada auto-close", async () => {
+  const w = await world();
+  const p = await toAwaitingQc(w);
+  const pass = await inspect(w.qc, p.run.id, passBody(p.revision), "lg-pass");
+  await runThroughPostQc(w, p.run.id, pass.body.revision);
+  const [handoff] = await fgHandoffs(p.unit.id);
+  assert.equal(handoff.status, "OFFERED");
+
+  // Simulasi bug sumber transisi: (a) DIAGNOSIS tertinggal NOT_STARTED, (b) INTAKE tertinggal ACTIVE.
+  for (const [phase, status, code] of [["DIAGNOSIS", "NOT_STARTED", "RUN_PHASES_NOT_TERMINAL"], ["INTAKE", "ACTIVE", "RUN_PHASES_NOT_TERMINAL"], ["INTAKE", "BLOCKED", "RUN_PHASES_NOT_TERMINAL"]]) {
+    await testPrisma.productionPhaseRun.update({ where: { runId_phase: { runId: p.run.id, phase } }, data: { status } });
+    const before = await fullSnapshot(p.run.id, p.unit.id);
+    const acc = await accept(w.gudang, handoff.id, handoff.revision, w.fgArea.id, `lg-acc-${phase}-${status}`);
+    assert.equal(acc.status, 409, JSON.stringify(acc.body)); assert.equal(acc.body.code, code); assert.deepEqual(acc.body.details.phases, [phase]);
+    const rej = await reject(w.gudang, handoff.id, handoff.revision, "Uji penolakan dengan fase tertinggal", `lg-rej-${phase}-${status}`);
+    assert.equal(rej.status, 409, JSON.stringify(rej.body)); assert.equal(rej.body.code, code);
+    assert.deepEqual(await fullSnapshot(p.run.id, p.unit.id), before, `rollback penuh (${phase}:${status})`);
+    assert.equal((await testPrisma.unitCustodyHandoff.findUniqueOrThrow({ where: { id: handoff.id } })).status, "OFFERED");
+    assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: p.run.id } })).status, "ACTIVE");
+    assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: p.unit.id } })).status, "IN_PRODUCTION");
+    assert.equal((await phasesOf(p.run.id))[phase], status, "fase tertinggal TIDAK ditutup otomatis");
+    await testPrisma.productionPhaseRun.update({ where: { runId_phase: { runId: p.run.id, phase } }, data: { status: phase === "DIAGNOSIS" ? "NOT_APPLICABLE" : "COMPLETED" } });
+  }
+  // Setelah sumbernya diperbaiki (fase terminal) keputusan Gudang berjalan normal.
+  const ok = await accept(w.gudang, handoff.id, handoff.revision, w.fgArea.id, "lg-acc-ok");
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.runStatus, "COMPLETED");
+});
+
+test("start P5: DIAGNOSIS sedang berjalan / INTAKE BLOCKED -> 409 tanpa perubahan (tidak menutup fase orang lain diam-diam)", async () => {
+  const w = await world();
+  const p = await prepare(w);
+  for (const [phase, status, code] of [["DIAGNOSIS", "ACTIVE", "WORKSHOP_DIAGNOSIS_OPEN"], ["DIAGNOSIS", "BLOCKED", "WORKSHOP_DIAGNOSIS_OPEN"]]) {
+    await testPrisma.productionPhaseRun.update({ where: { runId_phase: { runId: p.run.id, phase } }, data: { status } });
+    const before = await fullSnapshot(p.run.id, p.unit.id);
+    const res = await start(w, p.run.id, 1, `st-${phase}-${status}`);
+    assert.equal(res.status, 409, JSON.stringify(res.body)); assert.equal(res.body.code, code);
+    assert.deepEqual(await fullSnapshot(p.run.id, p.unit.id), before);
+    assert.equal(await testPrisma.productionOperationRun.count({ where: { runId: p.run.id } }), 0);
+    await testPrisma.productionPhaseRun.update({ where: { runId_phase: { runId: p.run.id, phase } }, data: { status: "NOT_STARTED" } });
+  }
+  await testPrisma.productionPhaseRun.update({ where: { runId_phase: { runId: p.run.id, phase: "INTAKE" } }, data: { status: "BLOCKED" } });
+  const before = await fullSnapshot(p.run.id, p.unit.id);
+  const res = await start(w, p.run.id, 1, "st-intake-blocked");
+  assert.equal(res.status, 409, JSON.stringify(res.body)); assert.equal(res.body.code, "WORKSHOP_INTAKE_NOT_CLOSABLE");
+  assert.deepEqual(await fullSnapshot(p.run.id, p.unit.id), before);
+  await testPrisma.productionPhaseRun.update({ where: { runId_phase: { runId: p.run.id, phase: "INTAKE" } }, data: { status: "ACTIVE" } });
+  assert.equal((await start(w, p.run.id, 1, "st-ok")).status, 200, "setelah kondisi normal, start berjalan");
+});
+
+test("rework (QC FAIL) dan penolakan Gudang -> rework tidak pernah menghasilkan dua fase berjalan; tetap tertutup semua saat selesai", async () => {
+  const w = await world();
+  const p = await toAwaitingQc(w);
+  const d = await detail(w, p.run.id);
+  const gate = d.stages.find((s) => s.isQcGate);
+  const reworkStage = d.stages.filter((s) => !s.isQcGate && s.order < gate.order).at(-1);
+  const fail = await inspect(w.qc, p.run.id, { expectedRevision: p.revision, result: "FAIL", photoUrls: PHOTO, referenceWeightKg: 55, fitVerdict: "TERLALU_KERAS", note: "perlu busa", reworkStageId: reworkStage.id }, "rw-fail");
+  assert.equal(fail.status, 200, JSON.stringify(fail.body));
+  assert.deepEqual(await phasesOf(p.run.id), { INTAKE: "COMPLETED", DIAGNOSIS: "NOT_APPLICABLE", PROCESS: "ACTIVE", QC: "NOT_STARTED", HANDOFF: "NOT_STARTED" });
+  assert.equal(await inProgressCount(p.run.id), 1);
+  let rev = fail.body.revision;
+  let c;
+  for (let guard = 0; guard < 30; guard += 1) {
+    const s = await start(w, p.run.id, rev, `rw-s-${guard}`);
+    assert.equal(s.status, 200, JSON.stringify(s.body));
+    c = await complete(w, p.run.id, s.body.revision, `rw-c-${guard}`);
+    assert.equal(c.status, 200, JSON.stringify(c.body));
+    rev = c.body.revision;
+    assert.ok((await inProgressCount(p.run.id)) <= 1);
+    if (c.body.awaitingQc) break;
+  }
+  const pass = await inspect(w.qc, p.run.id, passBody(rev), "rw-pass");
+  assert.equal(pass.status, 200, JSON.stringify(pass.body));
+  await runThroughPostQc(w, p.run.id, pass.body.revision);
+  const [first] = await fgHandoffs(p.unit.id);
+  const rej = await reject(w.gudang, first.id, first.revision, "Bantalan belum rata", "rw-rej");
+  assert.equal(rej.status, 200, JSON.stringify(rej.body));
+  assert.equal((await phasesOf(p.run.id)).HANDOFF, "BLOCKED");
+  assert.equal(await inProgressCount(p.run.id), 1, "HANDOFF BLOCKED satu-satunya fase berjalan");
+  const run = await testPrisma.productionRun.findUniqueOrThrow({ where: { id: p.run.id } });
+  const reoffer = await w.op.api.post(`${Q}/${p.run.id}/handoff-rejection`, { expectedRevision: run.revision, action: "REOFFER", note: "sudah dirapikan" }, key("rw-reoffer"));
+  assert.equal(reoffer.status, 200, JSON.stringify(reoffer.body));
+  const second = (await fgHandoffs(p.unit.id)).find((h) => h.status === "OFFERED");
+  const acc = await accept(w.gudang, second.id, second.revision, w.fgArea.id, "rw-acc");
+  assert.equal(acc.status, 200, JSON.stringify(acc.body));
+  const phases = await testPrisma.productionPhaseRun.findMany({ where: { runId: p.run.id } });
+  assert.ok(phases.every((phase) => TERMINAL.includes(phase.status)), JSON.stringify(phases.map((x) => [x.phase, x.status])));
+});
+
+test("unit non-cohort tetap V1: flag ON dengan config rusak/tanpa cohort tidak memagari Sales dan command V2 ditolak 503; cohort valid memagari hanya unit di dalamnya", async () => {
+  const w = await world();
+  const inCohort = await acceptedUnit();      // masuk cohort lewat addCohort
+  const outCohort = await acceptedUnit();     // ditambahkan lalu dikeluarkan dari cohort di bawah
+  const sales = makeClient(server.baseUrl, (await createTestUser({ roles: ["PRODUCTION_LEAD"] })).token);
+
+  // Cohort sah berisi keduanya -> keduanya dipagari.
+  assert.equal((await sales.post(`/api/orders/${inCohort.unit.orderId}/cancel`, { reason: "batal" })).status, 409);
+  assert.equal((await sales.post(`/api/orders/${outCohort.unit.orderId}/cancel`, { reason: "batal" })).status, 409);
+
+  // Cohort hanya unit A: unit B kini V1-only (pagar Sales tidak berlaku, command V2 ditolak).
+  await setFlag(V2_FLAGS.PRODUCTION_WRITER, { enabled: true, unitIds: [inCohort.unit.id] });
+  await setFlag(V2_FLAGS.PRODUCTION_READER, { enabled: true, unitIds: [inCohort.unit.id] });
+  const v2OnB = await w.op.api.post(`${Q}/${outCohort.run.id}/cancel`, { expectedRevision: outCohort.run.revision, reason: "coba V2" }, key("nc-b-cancel"));
+  assert.equal(v2OnB.status, 503, JSON.stringify(v2OnB.body));
+  assert.equal((await sales.post(`/api/orders/${inCohort.unit.orderId}/cancel`, { reason: "batal" })).status, 409, "unit cohort tetap dipagari");
+  const cancelB = await sales.post(`/api/orders/${outCohort.unit.orderId}/cancel`, { reason: "batal" });
+  assert.equal(cancelB.status, 200, JSON.stringify(cancelB.body));
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: outCohort.run.id } })).status, "ACTIVE", "V2 tidak menyentuh unit non-cohort");
+
+  // Config rusak (ON tanpa unitIds / array kosong / UUID invalid / ganda): tidak ada mode GLOBAL — semua unit V1-only.
+  for (const [index, unitIds] of [undefined, [], ["bukan-uuid"], [inCohort.unit.id, inCohort.unit.id]].entries()) {
+    await setFlag(V2_FLAGS.PRODUCTION_WRITER, { enabled: true, unitIds });
+    await setFlag(V2_FLAGS.PRODUCTION_READER, { enabled: true, unitIds });
+    const res = await w.op.api.post(`${Q}/${inCohort.run.id}/cancel`, { expectedRevision: inCohort.run.revision, reason: "coba V2" }, key(`nc-a-${index}`));
+    assert.equal(res.status, 503, `unitIds=${JSON.stringify(unitIds)}: ${JSON.stringify(res.body)}`);
+    const queue = await w.qc.api.get(`${P}/qc/queue`);
+    assert.deepEqual(queue.body.items, [], "reader fail-closed: antrean kosong");
+    assert.equal(queue.body.readerMode, "OFF");
+  }
+  const orderA = await sales.post(`/api/orders/${inCohort.unit.orderId}/cancel`, { reason: "batal" });
+  assert.equal(orderA.status, 200, JSON.stringify(orderA.body));
 });
