@@ -94,7 +94,9 @@ warehouseReportsRouter.get("/summary", requirePermission(P.INVENTORY_READ), asyn
       // laporan ini, supaya angka "menunggu approval"/"selisih terbuka"
       // tidak dihitung dua cara berbeda di dua halaman. ──
       prisma.goodsReceipt.count({ where: { status: { notIn: ["COMPLETED", "REJECTED"] } } }),
-      prisma.materialIssue.count({ where: { status: { notIn: ["ISSUED", "CANCELLED"] } } }),
+      // productionPlanId: null — backlog V1 tidak boleh menghitung permintaan Pengambilan Bahan Produksi V2 (P4;
+      // punya antrean sendiri). ISSUED V2 tetap ikut laporan throughput di atas: itu pergerakan stok fisik nyata.
+      prisma.materialIssue.count({ where: { status: { notIn: ["ISSUED", "CANCELLED"] }, productionPlanId: null } }),
       Promise.all([
         prisma.stockCount.count({ where: { status: "WAITING_REVIEW" } }),
         prisma.stockAdjustmentRequest.count({ where: { status: { in: ["DRAFT", "WAITING_APPROVAL", "APPROVED"] } } }),

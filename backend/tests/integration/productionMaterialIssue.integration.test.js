@@ -310,3 +310,35 @@ test("guard P3: selama ada permintaan aktif atau setelah ISSUED, lepas reservasi
   }
   assert.equal(await onHand(materials[0].id), 5);
 });
+
+test("audit: KPI backlog V1 (Pengeluaran Tertunda) tidak menghitung permintaan V2; dokumen V1 tetap terhitung", async () => {
+  const w = await world();
+  const { planId } = await reservedPlan(w);
+  const kpi = async () => (await w.gudang1.api.get("/api/inventory/reports/summary")).body.totals.pendingMaterialIssue;
+  const base = await kpi();
+  await request(w.planner, planId, "kpi-req");
+  assert.equal(await kpi(), base, "issue V2 READY_TO_PICK tidak masuk backlog V1");
+  await testPrisma.materialIssue.create({ data: { issueNumber: `MI-KPI-${++seq}`, sourceType: "MANUAL", status: "APPROVED" } });
+  assert.equal(await kpi(), base + 1, "dokumen V1 tetap terhitung");
+});
+
+test("audit: pick dan cancel bersamaan pada issue yang sama -> tepat satu menang, state konsisten (tidak ada campuran)", async () => {
+  const w = await world();
+  const { planId, materials } = await reservedPlan(w, [{ qty: 4, stock: 10 }, { qty: 2, stock: 5 }]);
+  const req = await request(w.planner, planId, "pc-req");
+  const [p, c] = await Promise.all([pick(w.gudang1, req.body.issueId, 1, "pc-pick"), cancel(w.planner, req.body.issueId, 1, "pc-cancel")]);
+  assert.deepEqual([p.status, c.status].sort(), [200, 409], JSON.stringify([p.body, c.body]));
+  const issue = await testPrisma.materialIssue.findUniqueOrThrow({ where: { id: req.body.issueId } });
+  const movements = await testPrisma.stockMovement.count({ where: { materialIssueId: issue.id } });
+  const consumed = await testPrisma.materialReservation.count({ where: { planId, status: "CONSUMED" } });
+  const released = await testPrisma.materialReservation.count({ where: { planId, status: "RELEASED" } });
+  const active = await testPrisma.materialReservation.count({ where: { planId, status: "ACTIVE" } });
+  const plan = await testPrisma.productionRunPlan.findUniqueOrThrow({ where: { id: planId } });
+  if (p.status === 200) {
+    assert.deepEqual({ s: issue.status, movements, consumed, released, active, plan: plan.status }, { s: "ISSUED", movements: 2, consumed: 2, released: 0, active: 0, plan: "MATERIAL_RESERVED" });
+    assert.equal(await onHand(materials[0].id), 6);
+  } else {
+    assert.deepEqual({ s: issue.status, movements, consumed, released, active, plan: plan.status }, { s: "CANCELLED", movements: 0, consumed: 0, released: 2, active: 0, plan: "PLANNED" });
+    assert.equal(await onHand(materials[0].id), 10);
+  }
+});
