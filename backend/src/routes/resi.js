@@ -6,6 +6,7 @@ import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../mi
 import { idempotency, wajibIdempotencyKey } from "../middleware/idempotency.js";
 import { resiAktif, buatResi, ResiError, DP_PERSEN, MAKS_ITEM_RESI } from "../services/resi.js";
 import { resiPembayaranAktif, pratinjauPembayaranResi, catatPembayaranResi, klaimLunasResi, ringkasanPembayaranResi, ResiBayarError } from "../services/resiPembayaran.js";
+import { resiPembatalanAktif, pratinjauPembatalanResi, batalkanChildResi } from "../services/resiPembatalan.js";
 
 export const resiRouter = express.Router();
 resiRouter.use(requireAuth);
@@ -13,7 +14,7 @@ resiRouter.use(requireAuth);
 // Klien bertanya apakah UI "Buat Resi" boleh tampil. Keputusan sebenarnya tetap di POST (server menolak bila mati).
 resiRouter.get("/status", async (req, res) => {
   try {
-    res.json({ aktif: await resiAktif(), pembayaranAktif: await resiPembayaranAktif(), dpPersen: DP_PERSEN, maksItem: MAKS_ITEM_RESI });
+    res.json({ aktif: await resiAktif(), pembayaranAktif: await resiPembayaranAktif(), pembatalanAktif: await resiPembatalanAktif(), dpPersen: DP_PERSEN, maksItem: MAKS_ITEM_RESI });
   } catch (err) {
     res.status(500).json({ error: "Gagal membaca status Resi Gabungan" });
   }
@@ -101,5 +102,29 @@ resiRouter.get("/order/:orderId/pembayaran", requireAnyPermission(P.ORDER_READ, 
     res.json({ ...r, untukOrder: r.anak?.find((a) => a.orderId === req.params.orderId) ?? null });
   } catch (err) {
     galatBayar(res, err, "ringkasan pembayaran order");
+  }
+});
+
+// ── Fase 3B: batalkan SATU child dari Resi (flag RESI_PEMBATALAN_AKTIF, DEFAULT MATI; menolak 403 bila mati) ──────────────────────────────────────
+// Jalur BARU dan TERPISAH dari tombol "Batalkan Order"/dropdown status lama — lihat services/resiPembatalan.js. Permission: Finance/Admin/Owner
+// (P.FINANCE_READ/FINANCE_POST — sama dengan gate refund manual yang sudah ada), BUKAN P.ORDER_WRITE (aksi ini memindahkan uang & bikin refund).
+
+// Pratinjau dampak (BACA-SAJA): child yang dibatalkan, realokasi, kelebihan/refund, anchor baru, ongkir, total & DP baru, status tiap child.
+resiRouter.get("/anak/:orderId/pembatalan/pratinjau", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    res.json(await pratinjauPembatalanResi(prisma, { orderId: req.params.orderId }));
+  } catch (err) {
+    galatBayar(res, err, "pratinjau pembatalan item Resi");
+  }
+});
+
+// Konfirmasi pembatalan: realokasi + refund (bila ada kelebihan) + anchor/ongkir/invoice + DP target, satu transaksi. Idempotency-Key WAJIB.
+resiRouter.post("/anak/:orderId/pembatalan", requirePermission(P.FINANCE_POST), wajibIdempotencyKey, idempotency, async (req, res) => {
+  try {
+    const { alasan, refundCashAccountId = null, versi = null } = req.body || {};
+    const hasil = await batalkanChildResi(prisma, { orderId: req.params.orderId, userId: req.user.id, alasan, refundCashAccountId, versi });
+    res.status(201).json(hasil);
+  } catch (err) {
+    galatBayar(res, err, "batalkan item Resi");
   }
 });

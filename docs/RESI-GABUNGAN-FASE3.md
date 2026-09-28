@@ -62,20 +62,34 @@ QA visual (Playwright, DB terisolasi) mengonfirmasi ketiga hal ini secara nyata 
 - Klaim per-order lama pada child Resi bisa "hilang" dari antrean bila verifikasi Resi **sebagian** menurunkan status child itu dari LUNAS ke DP (ledger menang atas klaim manual — dianggap benar: uang yang belum cukup memang belum lunas).
 - Ikon status di tabel order bawaan (di bawah kartu Resi, bukan bagian Fase 3A) tampil kosong di dark-mode — ditemukan saat QA visual putaran 3, pra-ada, di luar cakupan.
 
-## Kontrak Fase 3B (belum diimplementasikan — jangan dikerjakan diam-diam)
+## Fase 3B — Pembatalan Child, Realokasi DP, Refund (diimplementasikan, flag `RESI_PEMBATALAN_AKTIF` default MATI)
 
-**Tujuan**: pembatalan dan refund SEBAGIAN dalam satu Resi.
+Endpoint (hanya group BARU; BACKFILL_BUNDLE & order tunggal → 409 `BUKAN_CHILD_RESI_BARU`):
+- `GET  /api/resi/anak/:orderId/pembatalan/pratinjau` (FINANCE_READ) — server menghitung dampak; frontend tidak menghitung.
+- `POST /api/resi/anak/:orderId/pembatalan` (FINANCE_POST, Idempotency-Key wajib) `{ alasan, refundCashAccountId?, versi? }`.
+- Tombol lama "Batalkan Order" tidak berubah (tetap memblokir child beralokasi). Tidak memakai PIN step-up (pola cancel/refund existing tidak memakainya).
 
-1. **Pembatalan child dengan alokasi** (saat ini diblokir): wajib alur eksplisit, bukan PATCH status.
-   - Prasyarat: tidak ada unit in-flight/job aktif (aturan lama).
-   - Uang yang sudah dialokasikan ke child itu **tidak hilang**: dipilih Finance — (a) **realokasi** ke child aktif lain (sisa tagihan), atau (b) **refund** ke customer. Keduanya lewat jurnal resmi (tidak ada edit).
-2. **Refund child** memakai `FinRefund` per order (yang sudah ada) dengan batas `sisaBisaDirefund` (`paidForOrder`), sehingga alokasi ke child itu menjadi sumber refund. Pembagian refund lintas child dihitung server (largest-remainder) bila refund dimulai dari level Resi.
-3. **Ongkir Tambahan** (di anchor): bila anchor dibatalkan, ongkir dipindahkan/dihapus lewat koreksi eksplisit; anchor tidak boleh dibatalkan selama ada child aktif tanpa penetapan anchor baru (`OrderGroup.anchorOrderId` diganti dalam transaksi + audit). Hardening 28 Sep sudah memblokir pembatalan anchor selama ada KLAIM menunggu; 3B perlu memperluas ke child aktif secara umum.
-4. **DP**: `OrderGroup.dpTarget` dan `Order.dpTarget` child dihitung ulang proporsional atas sisa child aktif (snapshot lama tersimpan di `metadata`), tanpa mengubah Payment yang sudah ada.
-5. **Jurnal**: pembatalan child yang sudah menerima uang memakai jurnal koreksi berseri (pola `bukukanUlangAlokasi`: balik jurnal lama, posting pengganti dengan kunci `…:REALOKASI:<n>`); tidak pernah menimpa jurnal.
-6. ~~**Manual generik**: `POST /orders/:id/payments` perlu diberi guard...~~ **SELESAI di hardening putaran 3** (409 `ANAK_RESI_WAJIB_BAYAR_LEWAT_RESI`).
-7. **Tes wajib 3B**: batal child sebelum/sesudah DP, refund sebagian, realokasi, anchor dibatalkan, kunci konkurensi (sama pola 3A), rollback jurnal, dan Σ invarian (Σ alokasi = Payment, Σ dibayar child + refund = uang masuk bersih).
-8. **Feature flag terpisah** (`RESI_PEMBATALAN_AKTIF`, default MATI) dan hanya group `BARU`.
+### Aturan uang
+1. Belum ada pembayaran → child batal, total/DP grup dihitung ulang.
+2. Ada alokasi → dipindah ke child aktif lain sebatas sisa tagihannya (largest-remainder), per Payment (urut id), kapasitas dihitung ulang tiap Payment. Tagihan child tersisa dihitung SETELAH pembatalan (anchor baru memikul Ongkir Tambahan).
+3. Sisa yang tak tertampung → `FinRefund` MENUNGGU_APPROVAL (rekening wajib), disetujui lewat jalur existing; bila pendapatan sudah diakui, `postRefund` mendebit Retur & Potongan Penjualan (revenue lama tidak dihapus). Baris alokasi porsi kelebihan tetap di child batal sampai refund disetujui (`setAllocations` mengizinkan baris yang nominalnya tak berubah pada order batal).
+4. Jurnal penerimaan tiap Payment yang alokasinya berubah: balik jurnal lama (REVERSED) + posting ulang `…:REALOKASI:<n>` (`bukukanUlangAlokasi`); Payment/alokasi tak pernah dihapus. Status bayar/paidAt child penerima dihitung ulang setelah anchor/ongkir final.
+5. Anchor dibatalkan → child aktif id berikutnya jadi anchor, Ongkir Tambahan pindah sekali, invoice primary ikut pindah, semua dalam satu transaksi; grup kosong → anchor NULL.
+6. Kunci: grup → order (id naik) → payment → posting; `versi` = updatedAt grup (409 `VERSI_BERUBAH`); klaim Lunas aktif → 409 `KLAIM_LUNAS_AKTIF`.
+
+### Contoh (Resi 3 item: 1.000.000 / 500.000 / 250.001 + ongkir 50.000, Total 1.800.001, DP 30% = 540.000 → 315.000 / 150.000 / 75.000)
+- Batalkan item 3 setelah DP: dibayar 75.000 dipindah ke item 1 & 2 (kapasitas 735.000 & 350.000, pembagian proporsional); total 1.550.000, DP baru 465.000; tanpa refund.
+- Batalkan anchor (item 1) saat semua sudah lunas terhadap tagihan lama: anchor baru (item 2) kini menanggung ongkir → kapasitas 50.000; 1.000.000 lainnya kelebihan → refund.
+
+### Hasil audit ledger/refund (satu putaran Opus) — semuanya diperbaiki + tes
+- HIGH: jurnal penerimaan tidak mengikuti alokasi baru → sekarang reverse + repost; status bayar penerima di-recompute.
+- HIGH: `setAllocations` menolak baris lama di order batal → pembatalan kedua pada Payment yang sama gagal; sekarang boleh bila nominal tak berubah.
+- HIGH: kapasitas anchor baru mengabaikan ongkir → dihitung terhadap keadaan setelah pembatalan.
+
+### Risiko sisa
+- Refund kelebihan bersifat MENUNGGU_APPROVAL: sebelum disetujui, uang tetap tercatat pada alokasi child batal (konsisten `sisaBisaDirefund`).
+- Respons memuat pembagian rencana, bukan per-Payment aktual (kosmetik).
+- Belum ada deploy/backfill; flag MATI.
 
 ## Rollback
 

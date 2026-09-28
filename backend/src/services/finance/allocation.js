@@ -263,7 +263,15 @@ export async function setAllocations(tx, { paymentId, allocations, userId = null
   if (orders.length !== orderIds.length) {
     throw new AllocationError("Ada order tujuan yang tidak ditemukan", 404);
   }
-  const dibatalkan = orders.filter((o) => o.status === "CANCELLED");
+  // Baris yang SUDAH ada untuk order yang kemudian dibatalkan (mis. porsi kelebihan yang menunggu refund pada pembatalan item Resi)
+  // boleh dipertahankan dengan nominal SAMA — hanya nominal BARU/berubah ke order batal yang ditolak.
+  const barisLama = await tx.finPaymentAllocation.findMany({ where: { paymentId }, select: { orderId: true, amount: true } });
+  const petaLama = new Map(barisLama.map((r) => [r.orderId, toMoney(r.amount)]));
+  const dibatalkan = orders.filter((o) => o.status === "CANCELLED").filter((o) => {
+    const lama = petaLama.get(o.id);
+    const baru = bersih.find((b) => b.orderId === o.id)?.amount;
+    return !(lama && baru && lama.equals(baru));
+  });
   if (dibatalkan.length > 0) {
     throw new AllocationError(
       "Pembayaran tidak boleh dialokasikan ke order yang dibatalkan — pakai Refund kalau uangnya harus dikembalikan"

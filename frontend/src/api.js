@@ -869,6 +869,10 @@ export const api = {
   getResiPembayaranOrder: (orderId) => request(`/resi/order/${orderId}/pembayaran`),
   klaimLunasResi: (groupId, idempotencyKey = mutationKey("resi-klaim")) =>
     request(`/resi/${groupId}/klaim-lunas`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
+  // Resi Fase 3B — batalkan SATU item dari Resi (flag server RESI_PEMBATALAN_AKTIF; mati → 403). Finance/Admin/Owner saja di server.
+  getPratinjauPembatalanResi: (orderId) => request(`/resi/anak/${orderId}/pembatalan/pratinjau`),
+  batalkanItemResi: (orderId, data, idempotencyKey = mutationKey("resi-batal")) =>
+    request(`/resi/anak/${orderId}/pembatalan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   addOrder: (customerId, data) =>
     request(`/customers/${customerId}/orders`, { method: "POST", body: JSON.stringify(data) }),
   updateCustomerOrder: (customerId, orderId, data) =>
