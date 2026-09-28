@@ -25,8 +25,17 @@ Alokasi: Σ = nominal (bulat rupiah). Resi memakai `validasiAlokasiResi`/`pastik
 `SUDAH_DIGANTI`/`SUDAH_DIBATALKAN`, `BELUM_DIVERIFIKASI`, `JURNAL_TIDAK_ADA`, `PRA_SALDO_AWAL` (lawan Laba Ditahan), `ADA_REFUND`, `KLAIM_LUNAS_ORDER`, `KLAIM_LUNAS_AKTIF` (Resi), `SUDAH_DIREKONSILIASI` (baris jurnal dicocokkan ke mutasi bank), `PERIODE_REKON_SELESAI` (rekening efektif asal/tujuan), periode akuntansi tertutup (dari `postJournal`).
 
 ## Migrasi
-`20261002080000_payment_koreksi_versi` — aditif: 4 kolom nullable di `payments` + UNIQUE + FK Restrict.
+`20260928200000_payment_koreksi_versi` — aditif: 4 kolom nullable di `payments` + UNIQUE + FK Restrict.
+
+## paidAt (dasar komisi)
+paidAt = tanggal pembayaran efektif yang PERTAMA KALI membuat total pembayaran yang dihitung mencapai tagihan kanonis (`paymentLedger.js#tanggalLunasEfektif`): pembayaran diurutkan menurut tanggal efektif (hari WIB dari `Payment.createdAt`) lalu ID, kontribusi sadar-alokasi, dihitung menurut gerbang verifikasi. Belum lunas → null. Tidak pernah waktu koreksi.
+- Koreksi: semua order yang tersentuh (asal + tujuan) dihitung ulang dengan `paidAtEfektif`; order lain tidak berubah.
+- Alur lama: order yang SUDAH LUNAS tidak digeser; saat MASUK ke LUNAS paidAt = tanggal pembayaran pelunas (dulu: sekarang). Edit Informasi tidak menyentuh paidAt.
+- Resi: nominal berubah tanpa alokasi eksplisit dibagi memakai `hitungAlokasiResi` (sisa tagihan kanonis per child).
+
+## Rekonsiliasi
+- `SELESAI` dan jurnal yang sudah dicocokkan ke mutasi bank: tetap memblokir.
+- `DRAFT` / `DRAF_MENUNGGU_MUTASI` yang belum matched: koreksi boleh. Ringkasan periode dihitung ulang (saldo buku sebelum/sesudah, selisih ke saldo bank, keabsahan snapshot) dan dicatat pada periode sebagai audit "Pembayaran dikoreksi setelah periode dibuat". Snapshot immutable tidak disentuh; koreksi tampil sebagai reversal/posting setelah snapshot dan identitas snapshot tetap terpenuhi.
 
 ## Gap yang diketahui
-- **paidAt** (dasar komisi) mengikuti aturan lama `recomputeOrderPaymentStatus`: diisi "sekarang" saat status masuk LUNAS. Koreksi yang memindahkan pelunasan antar order/periode menggeser paidAt ke tanggal koreksi — perlu keputusan Owner (mis. paidAt = tanggal pembayaran pelunas) sebelum diubah.
-- Periode Rekonsiliasi berstatus `DRAF_MENUNGGU_MUTASI` (sementara, saldo dikonfirmasi owner) tidak ikut memblokir; hanya `SELESAI` dan baris yang sudah dicocokkan.
+- Bila periode akuntansi tempat jurnal asli/true-up berada sudah ditutup, koreksi ditolak oleh `postJournal` (koreksi harus lewat Jurnal Umum resmi oleh Admin).

@@ -18,6 +18,7 @@ import { setSetting, SETTING_KEYS } from "../../src/services/finance/settings.js
 import { bukukanPembayaran } from "../../src/services/finance/hooks.js";
 import { postRevenueRecognition } from "../../src/services/finance/posting/orderRevenue.js";
 import { paidForOrder } from "../../src/services/finance/allocation.js";
+import { buatSnapshot, pandanganCutoff } from "../../src/services/finance/rekonSnapshot.js";
 import { recomputeOrderPaymentStatus } from "../../src/services/paymentLedger.js";
 
 let server;
@@ -553,4 +554,126 @@ test("Pencocokan mutasi bank menolak baris jurnal yang sudah dibalik (tutup cela
   const line = await testPrisma.finBankStatementLine.create({ data: { statementId: stmt.id, date: new Date("2026-09-20"), description: "TRF", amount: 100_000 } });
   const m = await w.f.post(`/api/finance/bank-lines/${line.id}/match`, { journalLineId: barisKas.id });
   assert.equal(m.status, 409); assert.match(m.body.error, /sudah dibalik/);
+});
+
+// ── B3.7 final: paidAt = tanggal pembayaran efektif yang melewati titik lunas ─────────────────────────────
+
+const H = (tgl) => new Date(`${tgl}T05:00:00Z`); // 12.00 WIB
+const paidAtIso = async (id) => (await testPrisma.order.findUnique({ where: { id } })).paidAt?.toISOString() ?? null;
+
+test("paidAt: koreksi tanggal dalam bulan sama & pindah bulan — paidAt = tanggal pembayaran pelunas, BUKAN waktu koreksi", async () => {
+  const w = await dunia();
+  const o = await buatOrder({ value: 1_000_000 });
+  await bayar(w, o, { amount: 400_000, createdAt: H("2026-08-10") });
+  const p2 = await bayar(w, o, { amount: 600_000, createdAt: H("2026-09-20") });
+  assert.equal(await paidAtIso(o.id), H("2026-09-20").toISOString(), "transisi ke LUNAS memakai tanggal pembayaran pelunas");
+
+  const r1 = await koreksi(w, p2.id, { tanggal: "2026-09-25" }); // bulan sama
+  assert.equal(r1.status, 201, JSON.stringify(r1.body));
+  assert.equal(await paidAtIso(o.id), H("2026-09-25").toISOString());
+  const r2 = await koreksi(w, r1.body.baruId, { tanggal: "2026-08-25" }); // pindah bulan (mundur)
+  assert.equal(r2.status, 201, JSON.stringify(r2.body));
+  assert.equal(await paidAtIso(o.id), H("2026-08-25").toISOString());
+  const r3 = await koreksi(w, r2.body.baruId, { tanggal: "2026-08-05" }); // sebelum DP pertama: kini pembayaran 10 Agu yang melewati titik lunas
+  assert.equal(r3.status, 201);
+  assert.equal(await paidAtIso(o.id), H("2026-08-10").toISOString(), "urut menurut tanggal efektif: pembayaran 10 Agu yang melewati titik lunas");
+});
+
+test("paidAt: LUNAS→DP (null) dan DP→LUNAS (tanggal pembayaran itu, bukan sekarang)", async () => {
+  const w = await dunia();
+  const o = await buatOrder({ value: 1_000_000 });
+  const p = await bayar(w, o, { amount: 1_000_000, createdAt: H("2026-09-12") });
+  assert.equal(await paidAtIso(o.id), H("2026-09-12").toISOString());
+  const turun = await koreksi(w, p.id, { amount: 600_000 });
+  assert.equal(turun.status, 201);
+  const o1 = await statusBayar(o.id);
+  assert.equal(o1.paymentStatus, "DP"); assert.equal(o1.paidAt, null);
+  const naik = await koreksi(w, turun.body.baruId, { amount: 1_000_000 });
+  assert.equal(naik.status, 201);
+  assert.equal(await paidAtIso(o.id), H("2026-09-12").toISOString(), "kembali LUNAS: tanggal pembayaran, bukan waktu koreksi");
+});
+
+test("paidAt: koreksi alokasi antar-order — hanya order terdampak berubah; order tidak terdampak identik (termasuk paidAt lama)", async () => {
+  const w = await dunia();
+  const a = await buatOrder({ value: 60_000, nama: "Ibu A" }); const b = await buatOrder({ value: 60_000, nama: "Ibu B" });
+  const lain = await buatOrder({ value: 50_000, nama: "Bpk Lain" });
+  await bayar(w, lain, { amount: 50_000, createdAt: H("2026-07-01") });
+  await testPrisma.order.update({ where: { id: lain.id }, data: { paidAt: new Date("2026-07-03T00:00:00Z") } }); // paidAt lama (legacy) — tidak boleh bergeser
+  const p = await bayar(w, a, { amount: 100_000, createdAt: H("2026-09-15"), alokasi: [{ orderId: a.id, amount: 60_000 }, { orderId: b.id, amount: 40_000 }] });
+  assert.equal((await statusBayar(a.id)).paymentStatus, "LUNAS"); assert.equal(await paidAtIso(a.id), H("2026-09-15").toISOString());
+  assert.equal((await statusBayar(b.id)).paymentStatus, "DP");
+
+  const r = await koreksi(w, p.id, { alokasi: [{ orderId: a.id, amount: 40_000 }, { orderId: b.id, amount: 60_000 }] });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal((await statusBayar(a.id)).paymentStatus, "DP"); assert.equal((await statusBayar(a.id)).paidAt, null);
+  assert.equal((await statusBayar(b.id)).paymentStatus, "LUNAS"); assert.equal(await paidAtIso(b.id), H("2026-09-15").toISOString());
+  assert.equal(await paidAtIso(lain.id), "2026-07-03T00:00:00.000Z", "order tidak terdampak identik");
+});
+
+test("paidAt: Resi beberapa child — semua child LUNAS dengan tanggal pembayaran pelunas; kembali ke DP → null semua", async () => {
+  const w = await dunia();
+  const { anak, payment } = await resi(w);
+  const r1 = await koreksi(w, payment.id, { amount: 1_800_001, tanggal: "2026-09-15" });
+  assert.equal(r1.status, 201, JSON.stringify(r1.body));
+  for (const id of anak) { const o = await statusBayar(id); assert.equal(o.paymentStatus, "LUNAS"); assert.equal(o.paidAt.toISOString(), H("2026-09-15").toISOString()); }
+  const r2 = await koreksi(w, r1.body.baruId, { amount: 540_000 });
+  assert.equal(r2.status, 201, JSON.stringify(r2.body));
+  for (const id of anak) { const o = await statusBayar(id); assert.equal(o.paymentStatus, "DP"); assert.equal(o.paidAt, null); }
+});
+
+test("paidAt: pembayaran pada TANGGAL SAMA diurutkan menurut ID (deterministik); edit administratif tidak mengubah paidAt", async () => {
+  const w = await dunia();
+  const o = await buatOrder({ value: 1_000_000 });
+  const pa = await bayar(w, o, { amount: 500_000, createdAt: new Date("2026-09-14T03:00:00Z") });
+  const pb = await bayar(w, o, { amount: 500_000, createdAt: new Date("2026-09-14T09:00:00Z") });
+  const urut = [pa, pb].sort((x, y) => (x.id < y.id ? -1 : 1));
+  const melewati = urut[1]; // pembayaran kedua menurut ID melewati titik lunas
+  const sebelum = await paidAtIso(o.id);
+  assert.equal(sebelum, melewati.createdAt.toISOString());
+  const e = await w.f.post(`/api/finance/pembayaran/${pa.id}/info`, { reason: "referensi", referenceNumber: "REF-9" }, key());
+  assert.equal(e.status, 201);
+  assert.equal(await paidAtIso(o.id), sebelum, "edit administratif: paidAt identik");
+  const k = await koreksi(w, pa.id, { method: "QRIS" });
+  assert.equal(k.status, 201);
+  const o2 = await statusBayar(o.id);
+  assert.equal(o2.paymentStatus, "LUNAS");
+  assert.equal(o2.paidAt.toISOString().slice(0, 10), "2026-09-14");
+});
+
+// ── Rekonsiliasi DRAF ──────────────────────────────────────────────────────────────────────────────
+
+test("Rekon DRAF_MENUNGGU_MUTASI belum matched: koreksi BOLEH; ringkasan dihitung ulang + audit periode; snapshot immutable tidak berubah; SELESAI & matched tetap blokir", async () => {
+  const w = await dunia();
+  const o = await buatOrder(); const p = await bayar(w, o, { amount: 300_000, createdAt: H("2026-09-20") });
+  const stmt = await testPrisma.finBankStatement.create({ data: { cashAccountId: w.bank.id, periodStart: new Date("2026-09-01"), periodEnd: new Date("2026-09-30"), openingBalance: 0, closingBalance: 300_000, status: "DRAF_MENUNGGU_MUTASI", note: "sementara" } });
+  const { snapshot } = await testPrisma.$transaction((tx) => buatSnapshot(tx, { statementId: stmt.id, confirmedSource: "uji owner" }));
+  const snapAwal = await testPrisma.finReconSnapshot.findUnique({ where: { id: snapshot.id } });
+
+  const pra = await pratinjau(w, p.id, { amount: 350_000 });
+  assert.equal(pra.status, 200, JSON.stringify(pra.body));
+  assert.equal(pra.body.pratinjau.periodeRekon.length, 1);
+  assert.equal(pra.body.pratinjau.periodeRekon[0].saldoBukuSebelum, 300_000); assert.equal(pra.body.pratinjau.periodeRekon[0].saldoBukuSesudah, 350_000);
+
+  const r = await koreksi(w, p.id, { amount: 350_000 });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.periodeRekon[0].saldoBukuSesudah, 350_000); assert.equal(r.body.periodeRekon[0].snapshotValid, true);
+  const audit = await testPrisma.activityEvent.findFirst({ where: { entityId: stmt.id, entityType: "fin_bank_statement" }, orderBy: { createdAt: "desc" } });
+  assert.equal(audit.metadata.label, "Pembayaran dikoreksi setelah periode dibuat");
+  assert.equal(audit.metadata.paymentLamaId, p.id); assert.equal(audit.metadata.paymentBaruId, r.body.baruId); assert.equal(audit.metadata.saldoBukuSebelum, 300_000);
+  const snapKini = await testPrisma.finReconSnapshot.findUnique({ where: { id: snapshot.id } });
+  assert.equal(snapKini.entryHash, snapAwal.entryHash); assert.equal(Number(snapKini.bookBalance), 300_000);
+  const st = await testPrisma.finBankStatement.findUnique({ where: { id: stmt.id } });
+  const pandangan = await pandanganCutoff(testPrisma, snapKini, { closingBank: st.closingBalance });
+  assert.equal(pandangan.valid, true); assert.equal(pandangan.saldoBukuSekarang, 350_000);
+  assert.equal(st.status, "DRAF_MENUNGGU_MUTASI", "status periode tidak diubah");
+
+  const jr = (await jurnalPayment(r.body.baruId))[0];
+  const baris = jr.lines.find((l) => l.cashAccountId === w.bank.id);
+  await testPrisma.finBankStatementLine.create({ data: { statementId: stmt.id, date: new Date("2026-09-20"), description: "TRF", amount: 350_000, matchedLineId: baris.id } });
+  const blokirMatch = await koreksi(w, r.body.baruId, { amount: 360_000 });
+  assert.equal(blokirMatch.status, 409); assert.equal(blokirMatch.body.code, "SUDAH_DIREKONSILIASI");
+  await testPrisma.finBankStatementLine.deleteMany({});
+  await testPrisma.finBankStatement.update({ where: { id: stmt.id }, data: { status: "SELESAI" } });
+  const blokirSelesai = await koreksi(w, r.body.baruId, { amount: 360_000 });
+  assert.equal(blokirSelesai.status, 409); assert.equal(blokirSelesai.body.code, "PERIODE_REKON_SELESAI");
 });

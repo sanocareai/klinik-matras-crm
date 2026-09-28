@@ -365,7 +365,9 @@ test("Klaim Lunas SEKALI di level Resi → TIDAK mengubah status/paidAt child; S
   assert.equal(await testPrisma.paymentVerification.count({ where: { paymentId: p.id } }), 1, "terverifikasi");
   await periksaJurnal(w, p);
   const sesudah = await ambilAnak(w.groupId);
-  assert.ok(sesudah.every((o) => o.paymentStatus === "LUNAS" && o.paidAt && o.paidAt.getTime() >= mulai - 1000), "status + paidAt bergerak SAAT verifikasi (ledger)");
+  // B3.7: paidAt = TANGGAL pembayaran pelunas (bukan waktu verifikasi) — pembayaran dicatat hari ini, jadi hari WIB-nya sama dengan hari ini.
+  const hariWIB = (d) => new Date(d.getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  assert.ok(sesudah.every((o) => o.paymentStatus === "LUNAS" && o.paidAt && hariWIB(o.paidAt) === hariWIB(new Date(mulai))), "status + paidAt bergerak SAAT verifikasi (ledger); paidAt = tanggal pembayaran");
   assert.equal((await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } })).lunasDiklaimPada, null, "klaim dilepas setelah lunas penuh");
   const setelah = await w.a.get("/api/finance/penerimaan/lunas-belum-dicatat");
   assert.equal(setelah.body.resi.length, 0, "antrean bersih setelah verifikasi");

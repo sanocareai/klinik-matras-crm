@@ -19,6 +19,13 @@
 // selisih bersih R = Piutang − Uang Muka; R > 0 → Uang Muka 0, Piutang R; R < 0 (kelebihan bayar) → Piutang 0, Uang Muka −R. Selisihnya diposting sebagai
 // jurnal Dr/Cr Piutang↔Uang Muka BERTANGGAL jurnal pengakuan (periode lama tetap konsisten; bila periodenya tertutup, koreksi ditolak).
 //
+// PAIDAT: order yang terdampak dihitung ulang dengan paidAtEfektif — tanggal pembayaran (menurut tanggal efektif lalu ID, kontribusi sadar-alokasi)
+// yang pertama kali membuat total yang dihitung mencapai tagihan kanonis; null bila belum lunas; TIDAK pernah waktu koreksi (paymentLedger.js#tanggalLunasEfektif).
+//
+// REKONSILIASI: periode SELESAI dan jurnal yang sudah dicocokkan ke mutasi bank memblokir. Periode DRAFT / DRAF_MENUNGGU_MUTASI yang belum dicocokkan boleh
+// dikoreksi: ringkasan periode (saldo buku sebelum/sesudah, selisih ke saldo bank, keabsahan snapshot) dihitung ulang dan dicatat sebagai audit
+// "Pembayaran dikoreksi setelah periode dibuat" pada periode itu. Snapshot (immutable) TIDAK disentuh — koreksi masuk sebagai reversal/posting setelah snapshot.
+//
 // BLOKIR (dengan alasan + arah tindakan): sudah dibatalkan/diganti, belum diverifikasi, jurnal tidak ada/pra-saldo-awal (tidak aman dibalik),
 // ada refund aktif, klaim Lunas Resi menunggu, jurnal sudah dicocokkan rekonsiliasi bank, atau periode Rekonsiliasi Bank rekening itu SELESAI.
 //
@@ -35,8 +42,9 @@ import { paidForOrder, setAllocations, AllocationError } from "./allocation.js";
 import { kunciUntukPayment } from "./urutanKunci.js";
 import { PILIH_TAGIHAN, tagihanOrder, dasarStatusBayar } from "./tagihanOrder.js";
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
+import { saldoBukuRekening, pandanganCutoff } from "./rekonSnapshot.js";
 import { bagiProporsional } from "../resi.js";
-import { validasiAlokasiResi, muatGrupResi, pastikanGrupLayak, ResiBayarError } from "../resiPembayaran.js";
+import { validasiAlokasiResi, muatGrupResi, muatDibayar, hitungAlokasiResi, TIPE_BAYAR, pastikanGrupLayak, ResiBayarError } from "../resiPembayaran.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 
 const GATE_MATI = { enabled: false };
@@ -322,11 +330,13 @@ export async function koreksiPembayaran(tx, { paymentId, body, alasan, userId, p
 
   // 3) Alokasi baru (nominal bulat; Σ = amountBaru).
   let alokasiBaru = null; // null = order tunggal tanpa baris alokasi (perilaku lama)
+  let autoResi = false;
   if (perubahan.alokasi) {
     alokasiBaru = perubahan.alokasi;
   } else if (adaAlokasiLama) {
     const lamaRows = lama.finAllocations.map((a) => ({ orderId: a.orderId, amount: Math.round(moneyToNumber(a.amount)) }));
     if (amountBaru === lama.amount) alokasiBaru = lamaRows;
+    else if (resi) autoResi = true; // dihitung setelah Payment lama dibatalkan, dengan helper kanonis Resi (sisa tagihan per child)
     else {
       const bagi = bagiProporsional(amountBaru, lamaRows.map((r) => r.amount)); // deterministik largest-remainder
       alokasiBaru = lamaRows.map((r, i) => ({ orderId: r.orderId, amount: bagi[i] })).filter((r) => r.amount > 0);
@@ -342,6 +352,15 @@ export async function koreksiPembayaran(tx, { paymentId, body, alasan, userId, p
   const jurnalLama = await ambilJurnalAktif(tx, paymentId);
   const akunUM = await tx.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.UANG_MUKA_PELANGGAN }, select: { id: true } });
   const akunPiutang = await tx.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.PIUTANG_USAHA }, select: { id: true } });
+  // Periode rekonsiliasi (BELUM selesai) yang tersentuh: rekening+tanggal jurnal lama dan rekening+tanggal jurnal pengganti. Saldo buku SEBELUM dicatat.
+  const kasTanggal = [];
+  for (const e of jurnalLama) for (const l of e.lines) if (l.cashAccountId) kasTanggal.push({ cashAccountId: l.cashAccountId, date: e.date });
+  if (rekTujuan) kasTanggal.push({ cashAccountId: rekTujuan.id, date: toBookDate(createdAtBaru) });
+  const kandidat = kasTanggal.length
+    ? await tx.finBankStatement.findMany({ where: { status: { not: "SELESAI" }, OR: kasTanggal.map((k) => ({ cashAccountId: k.cashAccountId, periodStart: { lte: k.date }, periodEnd: { gte: k.date } })) }, orderBy: { id: "asc" } })
+    : [];
+  const saldoPeriodeSebelum = new Map();
+  for (const st of kandidat) saldoPeriodeSebelum.set(st.id, await saldoBukuRekening(tx, st.cashAccountId, st.periodEnd));
   const alasanBalik = `Koreksi pembayaran — ${reason}`;
   for (const e of jurnalLama) await reverseJournal(tx, { entryId: e.id, date: e.date, reason: alasanBalik, userId });
 
@@ -349,11 +368,18 @@ export async function koreksiPembayaran(tx, { paymentId, body, alasan, userId, p
   await tx.payment.update({ where: { id: paymentId }, data: { cancelledAt: new Date(), cancelledById: userId, cancelReason: `Dikoreksi — ${reason}`.slice(0, ALASAN_MAKS) } });
 
   // 6) Validasi target: order ada/aktif, aturan Resi, sisa tagihan (toleransi bagian LAMA yang sudah ada agar data lama tetap bisa dikoreksi turun).
-  const targets = alokasiBaru ?? [{ orderId: orderIdBaru, amount: amountBaru }];
+  let targets = alokasiBaru ?? [{ orderId: orderIdBaru, amount: amountBaru }];
   if (resi) {
     const { grup, anak } = await muatGrupResi(tx, lama.order.groupId);
     try {
-      pastikanGrupLayak(grup, anak); // anchor dibatalkan / backfill / customer beda → sama dengan alur Resi normal
+      const { aktif } = pastikanGrupLayak(grup, anak); // anchor dibatalkan / backfill / customer beda → sama dengan alur Resi normal
+      if (autoResi) {
+        // Nominal berubah tanpa alokasi eksplisit: bagi menurut sisa tagihan kanonis tiap child (Payment lama sudah tidak dihitung), sama dengan pembayaran Resi normal.
+        const dibayar = await muatDibayar(tx, aktif);
+        const hitung = hitungAlokasiResi({ anak, dibayar, tipe: TIPE_BAYAR.TAGIHAN, nominal: amountBaru, grup });
+        alokasiBaru = hitung.tulis.map((a) => ({ orderId: a.orderId, amount: a.alokasi }));
+        targets = alokasiBaru;
+      }
       await validasiAlokasiResi(tx, { grup, alokasi: targets, nominalPayment: amountBaru });
     } catch (e) {
       if (e instanceof ResiBayarError) throw tolak(e.message, "Sesuaikan alokasi item Resi.", e.statusCode || 409, e.code || "ALOKASI_RESI_DITOLAK");
@@ -438,8 +464,9 @@ export async function koreksiPembayaran(tx, { paymentId, body, alasan, userId, p
     }
   }
 
-  // 10) Status/paidAt semua order terkait.
-  for (const id of idTerdampak) await recomputeOrderPaymentStatus(tx, id);
+  // 10) Status/paidAt semua order terkait; order yang tersentuh koreksi memakai paidAt efektif (tanggal pembayaran pelunas, bukan waktu koreksi).
+  const idSentuh = new Set([...idLama, ...idTujuan]);
+  for (const id of idTerdampak) await recomputeOrderPaymentStatus(tx, id, { paidAtEfektif: idSentuh.has(id) });
   const statusSesudah = await fotoStatus();
 
   const tautan = await tautanJurnal(tx, sebelum, [...sources, { source: "PEMBAYARAN_ORDER", sourceId: baru.id }]);
@@ -459,18 +486,38 @@ export async function koreksiPembayaran(tx, { paymentId, body, alasan, userId, p
     return { orderId: id, nomor: b?.orderNumber ?? a?.orderNumber, statusLama: a?.paymentStatus ?? null, statusBaru: b?.paymentStatus ?? null, paidAtLama: a?.paidAt ?? null, paidAtBaru: b?.paidAt ?? null };
   });
 
+  // 11) Ringkasan periode rekonsiliasi (belum selesai) dihitung ulang; audit pada periode; snapshot final tidak diubah.
+  const periodeRekon = [];
+  for (const st of kandidat) {
+    const sesudah = await saldoBukuRekening(tx, st.cashAccountId, st.periodEnd);
+    const snap = await tx.finReconSnapshot.findUnique({ where: { statementId: st.id } });
+    const pandangan = snap ? await pandanganCutoff(tx, snap, { closingBank: st.closingBalance }) : null;
+    periodeRekon.push({
+      statementId: st.id, status: st.status, periodStart: st.periodStart, periodEnd: st.periodEnd, cashAccountId: st.cashAccountId,
+      saldoBukuSebelum: moneyToNumber(saldoPeriodeSebelum.get(st.id)), saldoBukuSesudah: moneyToNumber(sesudah),
+      selisihBankSesudah: moneyToNumber(toMoney(st.closingBalance).minus(sesudah)), snapshotAda: !!snap, snapshotValid: pandangan ? pandangan.valid : null,
+    });
+  }
+
   if (preview) {
     const data = await susunPratinjau(tx, { sebelum, sources: [...sources, { source: "PEMBAYARAN_ORDER", sourceId: baru.id }], perubahan: perubahanTampil });
     throw new PratinjauKoreksi({
       ...data, dampakStatus, alokasiLama: alokasiLamaTampil, alokasiBaru: alokasiBaruTampil,
       reklasUangMuka: reklas.map((r) => ({ orderId: r.orderId, jumlah: moneyToNumber(r.jml) })),
+      periodeRekon,
     });
   }
 
   const meta = { reason, before: perubahanTampil.before, after: perubahanTampil.after, ...tautan };
   await recordActivity(tx, { entityType: ENTITY_TYPES.PAYMENT, entityId: paymentId, eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: userId, metadata: { aksi: "koreksi_pembayaran", digantiOleh: baru.id, ...meta } });
   await recordActivity(tx, { entityType: ENTITY_TYPES.PAYMENT, entityId: baru.id, eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: userId, metadata: { aksi: "koreksi_pembayaran", menggantikan: paymentId, ...meta } });
-  return { ok: true, lamaId: paymentId, baruId: baru.id, dampakStatus, ...tautan };
+  for (const pr of periodeRekon) {
+    await recordActivity(tx, {
+      entityType: ENTITY_TYPES.FIN_BANK_STATEMENT, entityId: pr.statementId, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId,
+      metadata: { label: "Pembayaran dikoreksi setelah periode dibuat", aksi: "pembayaran_dikoreksi", paymentLamaId: paymentId, paymentBaruId: baru.id, reason, ...pr },
+    });
+  }
+  return { ok: true, lamaId: paymentId, baruId: baru.id, dampakStatus, periodeRekon, ...tautan };
 }
 
 // ── Riwayat ─────────────────────────────────────────────────────────────────────────────────────────────────────
