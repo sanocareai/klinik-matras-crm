@@ -6987,6 +6987,12 @@ model FinSupplierBill {
 
   allocations FinSupplierPaymentAllocation[]
 
+  // B3.8 (28 Sep 2026) — koreksi tagihan yang sudah disetujui = versi pengganti: dokumen lama DIBATALKAN, dokumen baru menunjuk ke
+  // lama lewat replacesBillId. UNIQUE: satu tagihan hanya bisa diganti sekali (koreksi paralel → satu menang, satu 409).
+  replacesBillId String?          @unique @map("replaces_bill_id") @db.Uuid
+  replaces       FinSupplierBill? @relation("FinBillVersi", fields: [replacesBillId], references: [id], onDelete: Restrict)
+  replacedBy     FinSupplierBill? @relation("FinBillVersi")
+
   @@index([supplierId, status])
   @@index([dueDate])
   @@index([status])
@@ -7140,6 +7146,11 @@ model FinRefund {
   createdBy   User?    @relation("FinRefundCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // B3.8 (28 Sep 2026) — versi pengganti hasil koreksi refund yang sudah disetujui (lihat replacesBillId di FinSupplierBill).
+  replacesRefundId String?    @unique @map("replaces_refund_id") @db.Uuid
+  replaces         FinRefund? @relation("FinRefundVersi", fields: [replacesRefundId], references: [id], onDelete: Restrict)
+  replacedBy       FinRefund? @relation("FinRefundVersi")
 
   @@index([orderId])
   @@index([status])

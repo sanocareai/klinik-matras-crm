@@ -85,7 +85,7 @@ export const KEY = {
 export const STATUS_PENGAKUAN = Object.freeze(["DELIVERED", "SEWA_DIKIRIM", "SEWA_DIAMBIL"]);
 
 /** Apakah pendapatan order ini SUDAH diakui (dan jurnalnya belum dibatalkan)? */
-async function pendapatanSudahDiakui(tx, orderId) {
+export async function pendapatanSudahDiakui(tx, orderId) {
   const entry = await findEntryByKey(tx, KEY.revenue(orderId));
   return Boolean(entry && entry.status === "POSTED");
 }

@@ -71,6 +71,9 @@ import {
 } from "../services/finance/koreksiGate.js";
 import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/service.js";
 import { blokirKoreksiBatch, menuKoreksi } from "../services/finance/koreksiPembayaran.js";
+import {
+  blokirKoreksiTagihanBatch, blokirKoreksiRefundBatch, menuKoreksiDokumen, editInfoTagihan, koreksiTagihan, editInfoRefund, koreksiRefund,
+} from "../services/finance/koreksiLanjutan.js";
 
 export const financeTxRouter = express.Router();
 financeTxRouter.use(requireAuth);
@@ -1449,6 +1452,8 @@ const billInclude = {
   purchaseCategory: { select: { id: true, code: true, name: true } },
   approvedBy: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },
+  replaces: { select: { id: true, billNumber: true } },
+  replacedBy: { select: { id: true, billNumber: true } },
   allocations: {
     where: { payment: { cancelledAt: null } },
     select: { amount: true, payment: { select: { id: true, paymentNumber: true, date: true } } },
@@ -1484,7 +1489,10 @@ financeTxRouter.get("/bills", requirePermission(P.FINANCE_READ), async (req, res
       take: 300,
       include: billInclude,
     });
-    res.json({ bills: bills.map(bentukBill) });
+    // B3.8 — keadaan menu Koreksi dihitung SERVER (satu set query), klien tidak menyalin aturan blokir.
+    const blokir = await blokirKoreksiTagihanBatch(prisma, bills.map((b) => b.id));
+    const punyaIzin = hasPermission(req.user, P.FINANCE_ADMIN);
+    res.json({ bills: bills.map((b) => ({ ...bentukBill(b), koreksi: menuKoreksiDokumen(blokir.get(b.id), { punyaIzin }) })) });
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -2237,6 +2245,8 @@ const refundInclude = {
   cashAccount: { select: { id: true, name: true } },
   approvedBy: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },
+  replaces: { select: { id: true, refundNumber: true } },
+  replacedBy: { select: { id: true, refundNumber: true } },
 };
 
 financeTxRouter.get("/refunds", requirePermission(P.FINANCE_READ), async (req, res) => {
@@ -2247,7 +2257,9 @@ financeTxRouter.get("/refunds", requirePermission(P.FINANCE_READ), async (req, r
       take: 200,
       include: refundInclude,
     });
-    res.json({ refunds: refunds.map((r) => ({ ...r, amount: moneyToNumber(r.amount) })) });
+    const blokir = await blokirKoreksiRefundBatch(prisma, refunds.map((r) => r.id));
+    const punyaIzin = hasPermission(req.user, P.FINANCE_ADMIN);
+    res.json({ refunds: refunds.map((r) => ({ ...r, amount: moneyToNumber(r.amount), koreksi: menuKoreksiDokumen(blokir.get(r.id), { punyaIzin }) })) });
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -3157,4 +3169,47 @@ financeTxRouter.post("/bills/:id/cancel", requirePermission(P.FINANCE_ADMIN), as
   } catch (e) {
     handleFinanceError(e, res);
   }
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// B3.8 — KOREKSI LANJUTAN: tagihan supplier & refund yang SUDAH disetujui
+// ═════════════════════════════════════════════════════════════════════════
+// /info    : ubah data administratif (tanpa jurnal) — FINANCE_POST + alasan wajib + audit sebelum/sesudah.
+// /koreksi : ubah data yang memengaruhi buku besar — FINANCE_ADMIN + PIN step-up (kecuali preview) + alasan wajib.
+//            Dokumen lama DIBATALKAN, jurnal lama DIBALIK, dokumen BARU (versi pengganti) + jurnal pengganti — satu transaksi.
+//            body.preview=true menjalankan kode yang sama lalu ROLLBACK (tanpa PIN). Batalkan TIDAK butuh PIN (keputusan owner).
+const OPSI_TRANSAKSI_KOREKSI = { maxWait: 15_000, timeout: 60_000 };
+
+financeTxRouter.post("/bills/:id/info", requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => editInfoTagihan(tx, { billId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id }), OPSI_TRANSAKSI_KOREKSI);
+    res.json(hasil);
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+financeTxRouter.post("/bills/:id/koreksi", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  const preview = req.body?.preview === true;
+  try {
+    const hasil = await prisma.$transaction((tx) => koreksiTagihan(tx, {
+      billId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id, preview, stepUp: () => pastikanStepUp(prisma, req),
+    }), OPSI_TRANSAKSI_KOREKSI);
+    res.status(201).json(hasil);
+  } catch (e) { tanganiKoreksi(e, res); }
+});
+
+financeTxRouter.post("/refunds/:id/info", requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => editInfoRefund(tx, { refundId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id }), OPSI_TRANSAKSI_KOREKSI);
+    res.json(hasil);
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+financeTxRouter.post("/refunds/:id/koreksi", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  const preview = req.body?.preview === true;
+  try {
+    const hasil = await prisma.$transaction((tx) => koreksiRefund(tx, {
+      refundId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id, preview, stepUp: () => pastikanStepUp(prisma, req),
+    }), OPSI_TRANSAKSI_KOREKSI);
+    res.status(201).json(hasil);
+  } catch (e) { tanganiKoreksi(e, res); }
 });

@@ -1424,7 +1424,8 @@ export const api = {
   // Koreksi transaksi yang sudah berjurnal: data.preview=true -> {pratinjau} tanpa menyimpan; simpan sungguhan
   // butuh token step-up PIN (header X-Finance-Stepup) dari verifyFinancePin.
   koreksiFinanceDoc: (jenis, id, data, stepUp) => request(`/finance/${jenis}/${id}/koreksi`, {
-    method: "POST", body: JSON.stringify(data), ...(stepUp ? { headers: { "X-Finance-Stepup": stepUp } } : {}),
+    method: "POST", body: JSON.stringify(data),
+    headers: { ...(data?.preview ? {} : { "Idempotency-Key": mutationKey("koreksi") }), ...(stepUp ? { "X-Finance-Stepup": stepUp } : {}) },
   }),
   // B3.6 Tutup stok periodik & persediaan awal perpetual
   getPersediaanAwal: () => request("/finance/persediaan-awal"),
@@ -1444,6 +1445,8 @@ export const api = {
   setFinancePin: (password, pin) => request("/finance/pin", { method: "POST", body: JSON.stringify({ password, pin }) }),
   verifyFinancePin: (pin) => request("/finance/pin/verifikasi", { method: "POST", body: JSON.stringify({ pin }) }),
   getFinanceRiwayatVersi: (jenis, id) => request(`/finance/riwayat-versi/${jenis}/${id}`),
+  // B3.8 Koreksi lanjutan: edit informasi (tanpa jurnal, tanpa PIN) untuk tagihan supplier & refund yang sudah disetujui.
+  editInfoFinanceDoc: (jenis, id, data) => request(`/finance/${jenis}/${id}/info`, { method: "POST", body: JSON.stringify(data) }),
   // B3.7 Koreksi Pembayaran Masuk Terverifikasi. Pratinjau (data.preview) tanpa PIN & tanpa Idempotency-Key; simpan: PIN step-up + kunci idempotensi.
   editInfoPembayaran: (id, data, idempotencyKey = mutationKey("bayar-info")) =>
     request(`/finance/pembayaran/${id}/info`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
