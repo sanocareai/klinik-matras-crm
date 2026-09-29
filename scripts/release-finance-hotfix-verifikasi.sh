@@ -158,8 +158,13 @@ MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | t
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 [ -n "$(grep -l "Sudah lunas sebelum" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat halaman Klaim Lunas"
 [ -n "$(grep -l "Atur Rekening & Verifikasi" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat dialog Atur Rekening & Verifikasi"
-[ "$NEW_INDEX" != "$PREV_INDEX" ] || die "bundel baru identik dengan lama (tidak diharapkan)"
-ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX})"
+if [ "$NEW_INDEX" = "$PREV_INDEX" ]; then
+  # Boleh identik HANYA bila kandidat tidak mengubah berkas frontend (rilis backend saja).
+  ! sg diff --name-only "$BASE_SHA" "$DEPLOY_SHA" | grep -q '^frontend/' || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"
+  ok "dist identik (${NEW_INDEX}) — wajar: rilis ini tidak mengubah frontend"
+else
+  ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX})"
+fi
 
 PHASE="5-build-image"; say "5. Build image backend baru (backend lama tetap melayani)"
 ROLLBACK_TAG="${IMG_NAME%%:*}:rollback-pre-finhv-${DEPLOY_SHORT}"
