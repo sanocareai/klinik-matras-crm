@@ -39,8 +39,8 @@ unitCustodyRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res)
     if (readerState.mode === PRODUCTION_READER_MODE.OFF) {
       return res.json({ items: [], readerMode: "OFF" });
     }
-    const unitIds = readerState.mode === PRODUCTION_READER_MODE.COHORT ? [...readerState.unitIds] : null;
-    if (unitIds && unitIds.length === 0) return res.json({ items: [], readerMode: "COHORT" });
+    const unitIds = [...readerState.unitIds]; // mode selain OFF hanya COHORT (tidak ada GLOBAL)
+    if (unitIds.length === 0) return res.json({ items: [], readerMode: "COHORT" });
     res.json({
       items: await listCustodyHandoffs(prisma, { status, direction, limit: req.query.limit, unitIds }),
       readerMode: readerState.mode,

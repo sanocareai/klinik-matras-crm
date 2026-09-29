@@ -25,6 +25,7 @@ import { assertNoOpenRunException } from "./productionRunGuards.js";
 import {
   completeStageInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, startStageInTx,
 } from "./unitStageEngine.js";
+import { PHASE_TERMINAL_STATUSES, isStrictLifecycleRun, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
@@ -182,6 +183,22 @@ function assertProcessApplicable(run) {
   if (phaseOf(run, "HANDOFF")?.status === "BLOCKED") throw workError("Handoff barang jadi ditolak Gudang; tindak lanjut lewat antrean QC/Produksi", 409, "WORKSHOP_HANDOFF_REJECTED");
   return process;
 }
+// Awal proses workshop = INTAKE selesai (barang sudah diterima Gudang + plan + bahan diserahkan) dan DIAGNOSIS tidak berlaku (belum ada command diagnosis V2).
+// Run baru: fase sebelum PROCESS wajib sudah tertutup atau ditutup di transisi yang sama; kondisi lain (mis. DIAGNOSIS sedang berjalan) = 409, bukan ditutup diam-diam.
+// Run legacy/backfill: perilaku lama (hanya PROCESS -> ACTIVE).
+function processStartTransition(run, now) {
+  const updates = [];
+  if (isStrictLifecycleRun(run)) {
+    const intake = phaseOf(run, "INTAKE");
+    const diagnosis = phaseOf(run, "DIAGNOSIS");
+    if (intake?.status === "ACTIVE") updates.push({ phase: "INTAKE", data: { status: "COMPLETED", completedAt: now } });
+    else if (!PHASE_TERMINAL_STATUSES.includes(intake?.status)) throw workError(`Fase Intake belum siap ditutup (status ${intake?.status ?? "tidak ada"}); proses workshop tidak dapat dimulai`, 409, "WORKSHOP_INTAKE_NOT_CLOSABLE", { phase: "INTAKE", status: intake?.status ?? null });
+    if (diagnosis?.status === "NOT_STARTED") updates.push({ phase: "DIAGNOSIS", data: { status: "NOT_APPLICABLE", reason: "Diagnosis V2 belum tersedia; kebutuhan pekerjaan ditetapkan lewat layanan unit dan Planning V2" } });
+    else if (!PHASE_TERMINAL_STATUSES.includes(diagnosis?.status)) throw workError(`Fase Diagnosis masih ${diagnosis?.status ?? "tidak ada"}; selesaikan dulu sebelum proses workshop dimulai`, 409, "WORKSHOP_DIAGNOSIS_OPEN", { phase: "DIAGNOSIS", status: diagnosis?.status ?? null });
+  }
+  updates.push({ phase: "PROCESS", data: { status: "ACTIVE", startedAt: now } });
+  return updates;
+}
 function activeOperation(run) { return run.operations.find((op) => op.status === "ACTIVE" || op.status === "PAUSED") || null; }
 
 async function bumpRun(tx, run, data) {
@@ -285,7 +302,7 @@ export async function startWorkshopStage(prisma, { runId, actorId, idempotencyKe
         planSnapshot: { workCenterId: run.plan.workCenterId, operatorId: run.plan.operatorId, serviceId: run.unit.serviceId, planId: run.plan.id },
       },
     });
-    if (process.status === "NOT_STARTED") await tx.productionPhaseRun.update({ where: { runId_phase: { runId, phase: "PROCESS" } }, data: { status: "ACTIVE", startedAt: now } });
+    if (process.status === "NOT_STARTED") await transitionPhases(tx, runId, processStartTransition(run, now));
     const revision = await bumpRun(tx, run, { currentPhase: "PROCESS", startedAt: run.startedAt || now });
     await outbox(tx, {
       eventType: "production.stage.started", aggregateId: runId, revision, dedupeKey: `production-stage-started:${runId}:${revision}`,
@@ -383,8 +400,11 @@ export async function completeWorkshopStage(prisma, { runId, actorId, idempotenc
       const handoffReady = isLastStage(path, op.stageId);
       const next = !handoffReady && unit.currentStageId ? path.find((s) => s.id === unit.currentStageId) : null;
       const awaitingQc = !!next?.requiresQc;
-      if (awaitingQc || handoffReady) await tx.productionPhaseRun.update({ where: { runId_phase: { runId: run.id, phase: "PROCESS" } }, data: { status: "COMPLETED", completedAt: now } });
-      if (handoffReady) await tx.productionPhaseRun.update({ where: { runId_phase: { runId: run.id, phase: "HANDOFF" } }, data: { status: "ACTIVE", startedAt: now, reason: null } });
+      // Penutupan PROCESS dan pembukaan HANDOFF dalam SATU transisi atomik (hanya satu fase berjalan).
+      const phaseUpdates = [];
+      if (awaitingQc || handoffReady) phaseUpdates.push({ phase: "PROCESS", data: { status: "COMPLETED", completedAt: now } });
+      if (handoffReady) phaseUpdates.push({ phase: "HANDOFF", data: { status: "ACTIVE", startedAt: now, reason: null } });
+      if (phaseUpdates.length) await transitionPhases(tx, run.id, phaseUpdates);
       const revision = await bumpRun(tx, run, awaitingQc ? { currentPhase: "QC" } : handoffReady ? { currentPhase: "HANDOFF" } : {});
       // Handoff barang jadi HANYA setelah tahap `finished` (terakhir) selesai; QC wajib sudah lulus/di-waive (divalidasi offerFinishedGoodsCustodyInTx,
       // kesalahan apa pun me-rollback seluruh penyelesaian tahap ini).

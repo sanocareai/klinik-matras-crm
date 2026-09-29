@@ -236,7 +236,7 @@ test("validasi rollback: unitIds dan reason wajib; alasan terlalu pendek ditolak
 });
 
 // ── 4. Reader flag (fail-closed + filter cohort) ────────────────────────────────────────────────────
-test("reader OFF: antrean kosong (bukan error) walau handoff ada; reader GLOBAL: semua tampil; reader COHORT: hanya unit yang diizinkan", async () => {
+test("reader OFF: antrean kosong (bukan error) walau handoff ada; reader ON tanpa cohort sah: tetap OFF (tidak ada GLOBAL); reader COHORT: hanya unit yang diizinkan", async () => {
   const w = await world();
   const a = await offered(w);
   const b = await offered(w);
@@ -249,10 +249,14 @@ test("reader OFF: antrean kosong (bukan error) walau handoff ada; reader GLOBAL:
   assert.deepEqual(off.body.items, []);
   assert.equal(off.body.readerMode, "OFF");
 
-  await setReader({ enabled: true });
-  const global = await w.wh1.api.get("/api/inventory/unit-custody?status=OFFERED&direction=INBOUND");
-  assert.equal(global.body.readerMode, "GLOBAL");
-  assert.deepEqual(global.body.items.map((i) => i.id).sort(), [a.handoff.id, b.handoff.id].sort());
+  // ON tanpa unitIds / array kosong / UUID rusak / UUID ganda => OFF fail-closed, BUKAN semua unit.
+  for (const unitIds of [undefined, [], ["bukan-uuid"], [a.unit.id, a.unit.id]]) {
+    await setReader({ enabled: true, unitIds });
+    const failClosed = await w.wh1.api.get("/api/inventory/unit-custody?status=OFFERED&direction=INBOUND");
+    assert.equal(failClosed.status, 200);
+    assert.equal(failClosed.body.readerMode, "OFF", "unitIds=" + JSON.stringify(unitIds));
+    assert.deepEqual(failClosed.body.items, []);
+  }
 
   await setReader({ enabled: true, unitIds: [a.unit.id] });
   const cohort = await w.wh1.api.get("/api/inventory/unit-custody?status=OFFERED&direction=INBOUND");

@@ -46,8 +46,8 @@ async function readerGate(res) {
     res.json({ items: [], readerMode: "OFF" });
     return null;
   }
-  const unitIds = readerState.mode === PRODUCTION_READER_MODE.COHORT ? [...readerState.unitIds] : null;
-  if (unitIds && unitIds.length === 0) {
+  const unitIds = [...readerState.unitIds]; // mode selain OFF hanya COHORT (tidak ada GLOBAL)
+  if (unitIds.length === 0) {
     res.json({ items: [], readerMode: "COHORT" });
     return null;
   }

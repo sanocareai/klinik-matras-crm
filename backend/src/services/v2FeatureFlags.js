@@ -152,24 +152,60 @@ export async function deliveryWriterDecision(client, flags, context = {}) {
 // ---------------------------------------------------------------------------
 // Writer Production/Warehouse V2 (custody unit) — memakai flag production_v2_writer yang sudah ada.
 // - flag OFF -> OFF (perilaku V1 murni).
-// - ON tanpa config.unitIds -> GLOBAL (legacy; bukan untuk canary).
-// - ON dengan config.unitIds -> COHORT: unitId wajib ada dan cocok; selain itu V1-only (fail-closed).
+// - ON tanpa cohort sah (lihat resolveProductionCohort) -> OFF; tidak ada GLOBAL.
+// - ON dengan config.unitIds sah -> COHORT: unitId wajib ada dan cocok; selain itu V1-only (fail-closed).
 // Tidak ada userIds: aktor berbeda (driver, petugas gudang) semuanya tercakup oleh cohort unit.
 // ---------------------------------------------------------------------------
-export const PRODUCTION_WRITER_MODE = Object.freeze({ OFF: "OFF", GLOBAL: "GLOBAL", COHORT: "COHORT" });
+export const PRODUCTION_WRITER_MODE = Object.freeze({ OFF: "OFF", COHORT: "COHORT" });
 
-export function resolveProductionWriterState(flags) {
-  const flag = flags[V2_FLAGS.PRODUCTION_WRITER];
-  if (flag?.enabled !== true) return { mode: PRODUCTION_WRITER_MODE.OFF, unitIds: new Set() };
-  const unitIds = nonEmptyList(flag.config?.unitIds);
-  if (unitIds.length === 0) return { mode: PRODUCTION_WRITER_MODE.GLOBAL, unitIds: new Set() };
-  return { mode: PRODUCTION_WRITER_MODE.COHORT, unitIds: new Set(unitIds) };
+// Keputusan flag Production V2 (writer dan reader memakai fungsi yang sama) — FAIL-CLOSED.
+// - flag OFF / tidak ada -> OFF (tanpa diagnostic).
+// - ON dengan config.unitIds = array UUID valid, unik, tidak kosong -> COHORT.
+// - ON dengan config hilang/rusak (bukan objek), unitIds hilang/kosong/bukan array, elemen bukan UUID, UUID ganda,
+//   atau kunci yang belum didukung (userIds, mode, global) -> OFF dengan diagnostic kode. TIDAK ADA mode GLOBAL:
+//   "ON tanpa cohort" tidak pernah berarti "semua unit". Bila kelak GLOBAL diperlukan, ia butuh konfigurasi eksplisit
+//   terpisah dan perubahan kode; unitIds yang hilang tidak boleh menyalakannya.
+// UUID dinormalisasi ke huruf kecil (id unit di PostgreSQL selalu huruf kecil). Diagnostic hanya berisi kode, tanpa ID.
+export const PRODUCTION_FLAG_DIAGNOSTIC = Object.freeze({
+  CONFIG_INVALID: "PRODUCTION_FLAG_CONFIG_INVALID",
+  COHORT_MISSING: "PRODUCTION_FLAG_COHORT_MISSING",
+  COHORT_INVALID: "PRODUCTION_FLAG_COHORT_INVALID",
+  COHORT_DUPLICATE: "PRODUCTION_FLAG_COHORT_DUPLICATE",
+  UNSUPPORTED_KEY: "PRODUCTION_FLAG_UNSUPPORTED_KEY",
+});
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PRODUCTION_UNSUPPORTED_KEYS = ["userIds", "mode", "global"];
+const productionDiagnosticSeen = new Map();
+
+function resolveProductionCohort(flag, label, offMode) {
+  const off = (code) => {
+    if (productionDiagnosticSeen.get(label) !== code) console.warn(`[production-v2-${label}] ${code}: flag ON tetapi cohort tidak sah — dianggap OFF (fail-closed ke V1)`);
+    productionDiagnosticSeen.set(label, code);
+    return { mode: offMode, unitIds: new Set(), diagnostic: code };
+  };
+  if (flag?.enabled !== true) { productionDiagnosticSeen.set(label, null); return { mode: offMode, unitIds: new Set(), diagnostic: null }; }
+  const config = flag.config;
+  if (config === null || typeof config !== "object" || Array.isArray(config)) return off(PRODUCTION_FLAG_DIAGNOSTIC.CONFIG_INVALID);
+  if (PRODUCTION_UNSUPPORTED_KEYS.some((key) => Object.prototype.hasOwnProperty.call(config, key))) return off(PRODUCTION_FLAG_DIAGNOSTIC.UNSUPPORTED_KEY);
+  if (config.unitIds === undefined || config.unitIds === null) return off(PRODUCTION_FLAG_DIAGNOSTIC.COHORT_MISSING);
+  if (!Array.isArray(config.unitIds)) return off(PRODUCTION_FLAG_DIAGNOSTIC.COHORT_INVALID);
+  if (config.unitIds.length === 0) return off(PRODUCTION_FLAG_DIAGNOSTIC.COHORT_MISSING);
+  if (config.unitIds.some((item) => typeof item !== "string" || !UUID_PATTERN.test(item))) return off(PRODUCTION_FLAG_DIAGNOSTIC.COHORT_INVALID);
+  const unitIds = config.unitIds.map((item) => item.toLowerCase());
+  if (new Set(unitIds).size !== unitIds.length) return off(PRODUCTION_FLAG_DIAGNOSTIC.COHORT_DUPLICATE);
+  productionDiagnosticSeen.set(label, null);
+  return { mode: "COHORT", unitIds: new Set(unitIds), diagnostic: null };
 }
 
+export function resolveProductionWriterState(flags) {
+  return resolveProductionCohort(flags[V2_FLAGS.PRODUCTION_WRITER], "writer", PRODUCTION_WRITER_MODE.OFF);
+}
+
+// Hanya unit yang tercantum di cohort; context tanpa unitId (atau bukan string) -> V1/inert.
+const inCohort = (state, unitId) => state.mode === "COHORT" && typeof unitId === "string" && state.unitIds.has(unitId.toLowerCase());
+
 export function isProductionWriterEnabledFor(state, unitId) {
-  if (state.mode === PRODUCTION_WRITER_MODE.OFF) return false;
-  if (state.mode === PRODUCTION_WRITER_MODE.GLOBAL) return true;
-  return Boolean(unitId) && state.unitIds.has(unitId);
+  return inCohort(state, unitId);
 }
 
 export async function productionWriterEnabledForUnit(client, unitId) {
@@ -180,22 +216,16 @@ export async function productionWriterEnabledForUnit(client, unitId) {
 // ---------------------------------------------------------------------------
 // Reader Production/Warehouse V2 (antrean custody Gudang). Simetris dengan writer, flag terpisah
 // (production_v2_reader) sehingga UI dapat diperlihatkan ke Gudang tanpa ikut mengaktifkan writer/surface
-// Production V2 lain. Fail-closed: flag OFF -> antrean kosong (bukan error); ON tanpa unitIds -> GLOBAL
-// (semua unit, cocok untuk rilis penuh nanti); ON dengan unitIds -> COHORT, hanya unit itu yang tampil.
+// Production V2 lain. Fail-closed: flag OFF -> antrean kosong (bukan error); ON tanpa cohort sah -> OFF; ON dengan unitIds sah -> COHORT,
+// hanya unit itu yang tampil. Tidak ada GLOBAL.
 // ---------------------------------------------------------------------------
-export const PRODUCTION_READER_MODE = Object.freeze({ OFF: "OFF", GLOBAL: "GLOBAL", COHORT: "COHORT" });
+export const PRODUCTION_READER_MODE = Object.freeze({ OFF: "OFF", COHORT: "COHORT" });
 
 export function resolveProductionReaderState(flags) {
-  const flag = flags[V2_FLAGS.PRODUCTION_READER];
-  if (flag?.enabled !== true) return { mode: PRODUCTION_READER_MODE.OFF, unitIds: new Set() };
-  const unitIds = nonEmptyList(flag.config?.unitIds);
-  if (unitIds.length === 0) return { mode: PRODUCTION_READER_MODE.GLOBAL, unitIds: new Set() };
-  return { mode: PRODUCTION_READER_MODE.COHORT, unitIds: new Set(unitIds) };
+  return resolveProductionCohort(flags[V2_FLAGS.PRODUCTION_READER], "reader", PRODUCTION_READER_MODE.OFF);
 }
 
 // unitIds=null pada mode COHORT berarti "daftar unitId yang boleh dilihat" (dipakai memfilter query list).
 export function isProductionReaderEnabledFor(state, unitId) {
-  if (state.mode === PRODUCTION_READER_MODE.OFF) return false;
-  if (state.mode === PRODUCTION_READER_MODE.GLOBAL) return true;
-  return Boolean(unitId) && state.unitIds.has(unitId);
+  return inCohort(state, unitId);
 }
