@@ -196,14 +196,21 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   if (nominal.lessThanOrEqualTo(0)) throw err("Nominal harus lebih dari 0");
   if (nominal.greaterThan(sisa)) throw err(`Nominal terlalu besar. Yang masih perlu dicek untuk order ini hanya Rp${Number(sisa).toLocaleString("id-ID")}`);
 
+  const tglStr = date || (order.paidAt ? tanggalWIB(order.paidAt) : tanggalWIB(new Date()));
+  // Uang yang diterima SEBELUM tanggal saldo awal sudah ada di saldo bank asli (lewat penyesuaian SALDO_AWAL). Menjurnalnya ke rekening
+  // lagi menggandakan kas — kasus nyata: Wilson (3 Sep, PT Sano) & 1 lain. Jadi pembayaran lama SELALU diperlakukan "sebelum saldo awal"
+  // di server, apa pun mode yang dikirim klien (verifikasi massal, klien lama, salah pilih). Verifikasi tidak boleh mengubah saldo.
+  const cutoff = await tanggalCutoff(tx);
+  const dialihkan = mode === "REKENING" && tglStr < cutoff;
+  const modeEfektif = dialihkan ? "SEBELUM_SALDO_AWAL" : mode;
+
   let rekening = null;
-  if (mode === "REKENING") {
+  if (modeEfektif === "REKENING") {
     if (!cashAccountId) throw err("Pilih dulu uangnya masuk ke rekening mana");
     rekening = await tx.finCashAccount.findUnique({ where: { id: cashAccountId }, select: { id: true, name: true, accountId: true, active: true } });
     if (!rekening || !rekening.active) throw err("Rekening itu tidak ditemukan atau sudah tidak dipakai", 404);
   }
 
-  const tglStr = date || (order.paidAt ? tanggalWIB(order.paidAt) : tanggalWIB(new Date()));
   const tanggal = toBookDate(tglStr);
   // createdAt = tanggal uang diterima (jam 12 WIB): postPaymentReceived memakainya
   // sebagai tanggal buku, jadi uang kemarin tetap masuk buku kemarin.
@@ -224,7 +231,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   await recomputeOrderPaymentStatus(tx, orderId);
   let jurnalDilewati = false;
 
-  if (mode === "REKENING") {
+  if (modeEfektif === "REKENING") {
     const hasil = await bukukanPembayaran(tx, { paymentId: payment.id, userId: verifierId });
     if (!hasil.posted) {
       throw err("Pembayaran ini belum bisa dicatat karena ada pengaturan akun keuangan yang belum lengkap (lihat menu Data Belum Lengkap). Belum ada yang tersimpan.", 422);
@@ -263,12 +270,12 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   await recordActivity(tx, {
     entityType: ENTITY_TYPES.ORDER, entityId: orderId, eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: verifierId,
     metadata: {
-      aksi: "verifikasi_penerimaan", mode, orderNumber: order.orderNumber, amount: String(nominal),
+      aksi: "verifikasi_penerimaan", mode: modeEfektif, ...(dialihkan && { modeDikirim: mode, dialihkan: "tanggal uang diterima sebelum saldo awal — tidak menambah saldo" }), orderNumber: order.orderNumber, amount: String(nominal),
       method, cashAccount: rekening?.name || null, paymentId: payment.id,
       ...(jurnalDilewati && { tanpaJurnal: "pendapatan order ini tidak pernah diakui di buku (pra-pembukuan)" }),
     },
   });
-  return { paymentId: payment.id, orderNumber: order.orderNumber, amount: moneyToNumber(nominal), tanpaJurnal: jurnalDilewati };
+  return { paymentId: payment.id, orderNumber: order.orderNumber, amount: moneyToNumber(nominal), tanpaJurnal: jurnalDilewati, sebelumSaldoAwal: modeEfektif === "SEBELUM_SALDO_AWAL", dialihkan };
 }
 
 /**
