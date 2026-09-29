@@ -1,14 +1,25 @@
 // P9B.1 — resolusi "foto identitas unit" untuk kartu Status Produksi/Rencana Produksi, dan command unggah manual.
 //
 // Prioritas resolusi (deterministik, TIDAK PERNAH menebak):
-//   1. Foto pickup driver — HANYA bila handoff INBOUND ACCEPTED unit ini menunjuk Job dengan TEPAT SATU
+//   1. Foto pickup driver — HANDOFF INBOUND unit ini (status OFFERED **atau** ACCEPTED — foto harus tersedia
+//      SEJAK unit masuk Status Produksi/"Dalam Perjalanan", bukan baru setelah Gudang accept; direction INBOUND
+//      sendiri sudah memastikan sumbernya SELALU Job bertipe PICKUP, tidak pernah Job DELIVERY/pengiriman —
+//      lihat armada.js projectJobCompleteV1: offerUnitCustody(direction:"INBOUND") hanya dipanggil untuk
+//      job.type==="PICKUP"). Diambil handoff PALING BARU (orderBy offeredAt, bukan acceptedAt yang null untuk
+//      baris OFFERED) — untuk kasus jarang unit di-offer ulang lewat Job berbeda (mis. setelah REJECTED),
+//      supaya tidak mengembalikan handoff basi. Foto boleh diatribusikan HANYA bila Job itu punya TEPAT SATU
 //      JobUnit (single-unit pickup) DAN Job itu punya proofPhotoUrls. Job/JobUnit tidak punya kolom foto
 //      per-unit sama sekali (JobUnit murni tabel penghubung) — untuk job multi-unit tidak ada cara aman
-//      mengaitkan satu entri proofPhotoUrls ke satu unit tertentu, jadi unit-unit itu TIDAK PERNAH mendapat
-//      foto pickup (jatuh ke langkah 2/3), sekalipun Job-nya punya foto.
+//      mengaitkan satu entri proofPhotoUrls ke satu unit tertentu (termasuk sibling unit dalam order/job yang
+//      sama), jadi unit-unit itu TIDAK PERNAH mendapat foto pickup (jatuh ke langkah 2/3), sekalipun Job-nya
+//      punya foto.
 //   2. Unggahan manual Production (unit_photos, PRODUCTION_MANUAL) TERBARU yang belum di-supersede — hanya
-//      relevan bila langkah 1 kosong (lihat listCanUploadManualPhoto).
+//      relevan bila langkah 1 kosong. Bila langkah 1 KEMUDIAN tersedia (mis. custody yang tadinya belum ada
+//      offer akhirnya di-offer), resolusi otomatis pindah ke DRIVER_PICKUP pada request berikutnya TANPA
+//      menyentuh/menghapus baris manual (baris manual tetap ada, hanya tidak lagi disurfacekan) — tidak pernah
+//      ambigu (satu fungsi murni, satu jawaban per panggilan) dan tidak pernah menduplikasi baris.
 //   3. null — frontend menampilkan placeholder, TIDAK PERNAH menebak/memakai foto unit lain.
+const LIVE_HANDOFF_STATUSES = Object.freeze(["OFFERED", "ACCEPTED"]);
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -31,8 +42,8 @@ function jobPhotoFilename(url) {
 // TIDAK PERNAH sebuah path filesystem/URL mentah ke pemanggil di luar module ini.
 export async function resolveUnitPhoto(prisma, unitId) {
   const handoff = await prisma.unitCustodyHandoff.findFirst({
-    where: { unitId, direction: "INBOUND", status: "ACCEPTED" },
-    orderBy: { acceptedAt: "desc" },
+    where: { unitId, direction: "INBOUND", status: { in: LIVE_HANDOFF_STATUSES } },
+    orderBy: { offeredAt: "desc" },
     select: { deliveryJob: { select: { proofPhotoUrls: true, units: { select: { id: true }, take: 2 } } } },
   });
   const job = handoff?.deliveryJob;
@@ -62,8 +73,8 @@ export async function resolveUnitPhotosBulk(prisma, unitIds) {
 
   const [handoffs, manualRows] = await Promise.all([
     prisma.unitCustodyHandoff.findMany({
-      where: { unitId: { in: ids }, direction: "INBOUND", status: "ACCEPTED" },
-      orderBy: { acceptedAt: "desc" },
+      where: { unitId: { in: ids }, direction: "INBOUND", status: { in: LIVE_HANDOFF_STATUSES } },
+      orderBy: { offeredAt: "desc" },
       select: { unitId: true, deliveryJob: { select: { proofPhotoUrls: true, units: { select: { id: true }, take: 2 } } } },
     }),
     prisma.unitPhoto.findMany({

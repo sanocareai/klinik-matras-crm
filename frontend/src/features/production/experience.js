@@ -65,11 +65,13 @@ export const PRIORITIES = Object.freeze([{ value: 0, label: "Normal" }, { value:
 // value 0=NORMAL(netral) 1=HIGH/Tinggi(oranye) 2=URGENT/Mendesak(merah) — dipakai badge kartu & pemilih prioritas.
 export const priorityTone = (priority) => (priority === 2 ? "red" : priority === 1 ? "orange" : "neutral");
 
-// P9B — kolom pipeline Rencana Produksi (Command Center). Label & urutan HARUS sama dengan backend
+// P9B.1 — kolom pipeline Status Produksi (Command Center). Label & urutan HARUS sama dengan backend
 // (lib/domain/productionSteps.js#COMMAND_CENTER_COLUMNS) — dipertahankan sebagai daftar statis di sini karena murni
 // label tampilan (server tetap kirim `key`+`label` per kolom, ini hanya fallback/urutan bila server belum kirim).
+// "Belum Dijadwalkan"/"Dijadwalkan" DIHAPUS sebagai kolom (status jadwal sekarang badge kartu, bukan kolom) —
+// diganti "Dalam Perjalanan"/"Tiba / Belum Mulai" yang mencerminkan KEADAAN FISIK unit, bukan status jadwalnya.
 export const COMMAND_CENTER_COLUMNS = Object.freeze([
-  "AKAN_MASUK", "BELUM_DIJADWALKAN", "DIJADWALKAN", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "QC", "CORNER", "SIAP_KIRIM",
+  "AKAN_MASUK", "DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "QC", "CORNER", "SIAP_KIRIM",
 ]);
 
 // Badge tanggal target (terpisah dari badge prioritas): besok=oranye, hari ini & belum mulai=merah, sudah lewat=merah "Terlambat".

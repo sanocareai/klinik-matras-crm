@@ -86,6 +86,10 @@ function RunCard({ item, onOpen, onConfirmArrival, draggable = true, today, tomo
           <div className="flex shrink-0 flex-wrap justify-end gap-1">
             {item.plan?.priority > 0 && <Badge variant={priorityTone(item.plan.priority)}>{item.plan.priorityLabel}</Badge>}
             {dateBadge && <Badge variant={dateBadge.tone}>{dateBadge.label}</Badge>}
+            {/* P9B.1 — status jadwal (meja/belum dijadwalkan) TIDAK LAGI menentukan kolom papan, jadi harus tetap
+                terlihat sebagai badge di kartu — paling relevan untuk Dalam Perjalanan & Tiba/Belum Mulai, tapi
+                ditampilkan konsisten di semua kartu (murni informasi, tidak berbahaya di kolom lain). */}
+            <Badge variant="neutral">{item.plan?.stationCode ? item.plan.stationLabel : "Belum dijadwalkan"}</Badge>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -378,7 +382,6 @@ export default function ProductionPlannerV2() {
   const [drawer, setDrawer] = useState(null);
   const [schedule, setSchedule] = useState(null);
   const [arrival, setArrival] = useState(null);
-  const [dropTarget, setDropTarget] = useState(null);
   const today = wibDate(0);
   const tomorrow = wibDate(1);
 
@@ -407,20 +410,12 @@ export default function ProductionPlannerV2() {
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(t); }, [notice]);
 
   const columns = cc?.columns || [];
-  const columnByKey = useMemo(() => Object.fromEntries(columns.map((c) => [c.key, c])), [columns]);
   // Daftar (tabel datar): seluruh kartu berbasis Run (punya runId nyata) di semua kolom KECUALI Akan Masuk (belum ada Run).
   const allItems = useMemo(() => columns.filter((c) => c.key !== "AKAN_MASUK").flatMap((c) => c.items.filter((i) => i.runId)), [columns]);
-  const belumDijadwalkanItems = columnByKey.BELUM_DIJADWALKAN?.items || [];
-  const schedulableUnscheduled = belumDijadwalkanItems.filter((i) => i.runId);
-  const unscheduledCount = belumDijadwalkanItems.length;
-
-  // Menjadwalkan (drag ATAU tombol "Jadwalkan/Pindahkan"): satu-satunya drop target sekarang kolom "Dijadwalkan" —
-  // papan tidak lagi mengelompokkan per meja fisik (kapasitas meja TETAP ditegakkan server, dipilih di dalam modal).
-  function scheduleDrop(runId) {
-    setDropTarget(null);
-    const item = schedulableUnscheduled.find((i) => i.runId === runId);
-    if (item) setSchedule(item);
-  }
+  // P9B.1 — halaman ini TIDAK LAGI punya kolom "Dijadwalkan" sebagai drop target (dihapus sebagai kolom tahap,
+  // lihat productionSteps.js#commandCenterColumn) — papan di sini jadi READ-ONLY untuk seret/lepas. Penjadwalan
+  // SUNGGUHAN (drag-and-drop) sekarang HANYA di workspace "Rencana Produksi" (ProductionRencanaWorkspace.jsx);
+  // di sini penjadwalan tetap tersedia sebagai jalan pintas tombol "Jadwalkan/Pindahkan" di kartu/drawer saja.
 
   const reader = cc?.readerMode;
   return (
@@ -463,7 +458,7 @@ export default function ProductionPlannerV2() {
             {/* P9B — KPI ringkas dari cc.kpi (SUMBER SAMA dengan Ringkasan Produksi & kolom papan di bawah — tidak ada
                 hitungan bayangan). Ringkas saat benar-benar kosong (P8.1); selebihnya link ke Ringkasan lengkap
                 (bukan duplikasi 9 kartu KPI penuh di dua halaman). */}
-            {cc && cc.kpi?.target === 0 && unscheduledCount === 0 && allItems.length === 0 ? (
+            {cc && cc.kpi?.target === 0 && allItems.length === 0 ? (
               <Card className="flex items-center gap-2 p-3 text-[12.5px] text-ink3">
                 <Target size={16} className="shrink-0 text-ink3" aria-hidden /> Belum ada target maupun unit aktif di Production V2 saat ini.
               </Card>
@@ -489,49 +484,43 @@ export default function ProductionPlannerV2() {
             ) : loading && !cc ? (
               <div className="grid gap-3 md:grid-cols-4">{[1, 2, 3, 4].map((n) => <Card key={n} className="h-72 animate-pulse bg-inset" />)}</div>
             ) : tab === "board" ? (
-              // P9B — kolom pipeline (Akan Masuk..Siap Kirim), BUKAN lagi per meja fisik. Kapasitas meja TETAP ditegakkan
-              // server — dipilih di dalam ScheduleModal (dropdown meja + kapasitas), bukan sebagai kolom papan lagi.
-              // Satu-satunya drop target: "Dijadwalkan" (membuka modal, meja dipilih di sana).
+              // P9B.1 — kolom pipeline mencerminkan KEADAAN FISIK (Akan Masuk/Dalam Perjalanan/Tiba-Belum Mulai/
+              // Fondasi../Siap Kirim), BUKAN status jadwal (itu sudah jadi badge di kartu, lihat RunCard) dan BUKAN
+              // per meja fisik (kapasitas meja tetap ditegakkan server, dipilih di dalam ScheduleModal). Papan di
+              // sini READ-ONLY untuk seret/lepas — penjadwalan drag-and-drop yang SUNGGUHAN sekarang di workspace
+              // "Rencana Produksi" terpisah; di sini penjadwalan tetap ada sebagai tombol "Jadwalkan/Pindahkan"
+              // pada kartu/drawer, bukan drop target kolom.
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {columns.map((col) => {
-                  const isDropTarget = col.key === "DIJADWALKAN";
-                  return (
-                    <section key={col.key} aria-label={col.label}
-                      onDragOver={isDropTarget ? (e) => { e.preventDefault(); setDropTarget(col.key); } : undefined}
-                      onDragLeave={isDropTarget ? () => setDropTarget(null) : undefined}
-                      onDrop={isDropTarget ? (e) => { e.preventDefault(); scheduleDrop(e.dataTransfer.getData("text/plain")); } : undefined}
-                      className={`flex flex-col gap-2 rounded-card bg-inset p-3 transition-colors ${dropTarget === col.key ? "ring-2 ring-accent" : ""}`}>
-                      <div className="flex items-center justify-between">
-                        <p className="text-[14px] font-bold text-ink">{col.label}</p>
-                        <span className="text-[12px] font-semibold tabular-nums text-ink3">{col.count}</span>
-                      </div>
-                      {col.items.length === 0 ? (
-                        <p className="flex min-h-[64px] items-center justify-center rounded-card border-2 border-dashed border-line text-center text-[11.5px] text-ink3">
-                          {isDropTarget ? "Seret unit dari Belum Dijadwalkan ke sini" : "Tidak ada unit"}
-                        </p>
-                      ) : col.items.map((item) => (
-                        item.kind === "UPCOMING_PICKUP" ? <UpcomingPickupCard key={`${item.jobId}-${item.unit.id}`} item={item} />
-                        : item.kind === "AWAITING_ARRIVAL_LEGACY" ? (
-                          <div key={item.handoffId} className="overflow-hidden rounded-card bg-surface shadow-sm">
-                            <div className="flex gap-2 p-3">
-                              <UnitPhotoThumb photoUrl={item.unit.photoUrl} />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
-                                <p className="text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"} · data lama</p>
-                                <Badge variant="neutral" className="mt-1.5">Dalam perjalanan ke workshop</Badge>
-                              </div>
-                            </div>
-                            <div className="border-t border-line px-3 py-2">
-                              <Button size="sm" variant="secondary" className="w-full" onClick={() => setArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
+                {columns.map((col) => (
+                  <section key={col.key} aria-label={col.label} className="flex flex-col gap-2 rounded-card bg-inset p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[14px] font-bold text-ink">{col.label}</p>
+                      <span className="text-[12px] font-semibold tabular-nums text-ink3">{col.count}</span>
+                    </div>
+                    {col.items.length === 0 ? (
+                      <p className="flex min-h-[64px] items-center justify-center rounded-card border-2 border-dashed border-line text-center text-[11.5px] text-ink3">Tidak ada unit</p>
+                    ) : col.items.map((item) => (
+                      item.kind === "UPCOMING_PICKUP" ? <UpcomingPickupCard key={`${item.jobId}-${item.unit.id}`} item={item} />
+                      : item.kind === "AWAITING_ARRIVAL_LEGACY" ? (
+                        <div key={item.handoffId} className="overflow-hidden rounded-card bg-surface shadow-sm">
+                          <div className="flex gap-2 p-3">
+                            <UnitPhotoThumb photoUrl={item.unit.photoUrl} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
+                              <p className="text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"} · data lama</p>
+                              <Badge variant="neutral" className="mt-1.5">Dalam perjalanan ke workshop</Badge>
                             </div>
                           </div>
-                        ) : (
-                          <RunCard key={item.runId} item={item} onOpen={setDrawer} onConfirmArrival={setArrival} draggable={col.key === "BELUM_DIJADWALKAN"} today={today} tomorrow={tomorrow} />
-                        )
-                      ))}
-                    </section>
-                  );
-                })}
+                          <div className="border-t border-line px-3 py-2">
+                            <Button size="sm" variant="secondary" className="w-full" onClick={() => setArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <RunCard key={item.runId} item={item} onOpen={setDrawer} onConfirmArrival={setArrival} draggable={false} today={today} tomorrow={tomorrow} />
+                      )
+                    ))}
+                  </section>
+                ))}
               </div>
             ) : (
               <Card className="overflow-x-auto p-0">

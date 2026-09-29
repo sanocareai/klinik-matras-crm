@@ -64,6 +64,132 @@ async function pickupUnits(count, { proofPhotoUrls }) {
   return units;
 }
 
+// P9B.1 (revisi) — versi TANPA accept: berhenti setelah driver /complete, handoff TETAP status OFFERED
+// (belum disentuh Gudang sama sekali) — precondition "foto pickup harus tersedia SEJAK unit masuk Status
+// Produksi", bukan menunggu ACCEPTED.
+async function pickupUnitsOffered(count, { proofPhotoUrls }) {
+  const driver = await createTestUser({ roles: ["DRIVER"] });
+  const driverApi = makeClient(server.baseUrl, driver.token);
+  const customer = await testPrisma.customer.create({ data: { name: "Pelanggan Foto Offered" } });
+  const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `PHO-OFR-${++seq}`, value: 1000, category: "LAYANAN" } });
+  const units = await Promise.all(
+    Array.from({ length: count }, (_, i) => testPrisma.unit.create({ data: { unitCode: `UNIT-PHO-OFR-${++seq}`, orderId: order.id, seq: i + 1, status: "AWAITING_PICKUP" } }))
+  );
+  const route = await testPrisma.route.create({ data: { code: `PHO-OFR-RTE-${++seq}`, date: new Date("2026-09-30T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: driver.user.id } });
+  const job = await testPrisma.job.create({ data: { type: "PICKUP", orderId: order.id, routeId: route.id, driverId: driver.user.id, status: "ASSIGNED", sequence: 1, scheduledDate: new Date("2026-09-30T00:00:00.000Z") } });
+  for (const unit of units) await testPrisma.jobUnit.create({ data: { jobId: job.id, unitId: unit.id } });
+  const allUnitIds = units.map((u) => u.id);
+  await setWriter({ enabled: true, unitIds: allUnitIds });
+  await setReader({ enabled: true, unitIds: allUnitIds });
+  const tag = `pickup-ofr-${++seq}`;
+  await driverApi.post(`/api/armada/jobs/${job.id}/start`, {}, key(`${tag}-start`));
+  await driverApi.post(`/api/armada/jobs/${job.id}/arrive`, { location: null }, key(`${tag}-arrive`));
+  const done = await driverApi.post(`/api/armada/jobs/${job.id}/complete`, { proofPhotoUrls, recipientName: "Penjaga Rumah", note: "diserahkan", location: null }, key(`${tag}-complete`));
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  for (const unit of units) {
+    const handoff = await testPrisma.unitCustodyHandoff.findFirstOrThrow({ where: { unitId: unit.id } });
+    assert.equal(handoff.status, "OFFERED", "precondition: belum di-accept Gudang sama sekali");
+  }
+  return { units, job };
+}
+
+test("handoff masih OFFERED (belum di-accept Gudang) -> foto pickup SUDAH tersedia sejak masuk Status Produksi", async () => {
+  const { units: [unit] } = await pickupUnitsOffered(1, { proofPhotoUrls: ["/media/job-photos/pod-offered.jpg"] });
+  const resolved = await resolveUnitPhoto(testPrisma, unit.id);
+  assert.equal(resolved.source, "DRIVER_PICKUP");
+  assert.equal(resolved.jobPhotoFilename, "pod-offered.jpg");
+});
+
+test("dua unit SIBLING (order sama) dipickup lewat JOB TERPISAH masing-masing satu-unit -> foto TIDAK PERNAH tertukar", async () => {
+  const driver = await createTestUser({ roles: ["DRIVER"] });
+  const driverApi = makeClient(server.baseUrl, driver.token);
+  const customer = await testPrisma.customer.create({ data: { name: "Pelanggan Sibling" } });
+  const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `PHO-SIB-${++seq}`, value: 1000, category: "LAYANAN" } });
+  const unitA = await testPrisma.unit.create({ data: { unitCode: `UNIT-SIB-A-${++seq}`, orderId: order.id, seq: 1, status: "AWAITING_PICKUP" } });
+  const unitB = await testPrisma.unit.create({ data: { unitCode: `UNIT-SIB-B-${++seq}`, orderId: order.id, seq: 2, status: "AWAITING_PICKUP" } });
+  await setWriter({ enabled: true, unitIds: [unitA.id, unitB.id] });
+  await setReader({ enabled: true, unitIds: [unitA.id, unitB.id] });
+
+  async function pickupSolo(unit, photoUrl, tag) {
+    const route = await testPrisma.route.create({ data: { code: `SIB-RTE-${tag}-${++seq}`, date: new Date("2026-09-30T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: driver.user.id } });
+    const job = await testPrisma.job.create({ data: { type: "PICKUP", orderId: order.id, routeId: route.id, driverId: driver.user.id, status: "ASSIGNED", sequence: 1, scheduledDate: new Date("2026-09-30T00:00:00.000Z") } });
+    await testPrisma.jobUnit.create({ data: { jobId: job.id, unitId: unit.id } });
+    await driverApi.post(`/api/armada/jobs/${job.id}/start`, {}, key(`sib-${tag}-start`));
+    await driverApi.post(`/api/armada/jobs/${job.id}/arrive`, { location: null }, key(`sib-${tag}-arrive`));
+    const done = await driverApi.post(`/api/armada/jobs/${job.id}/complete`, { proofPhotoUrls: [photoUrl], recipientName: "Penjaga", note: "ok", location: null }, key(`sib-${tag}-complete`));
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+  }
+  await pickupSolo(unitA, "/media/job-photos/sib-a.jpg", "a");
+  await pickupSolo(unitB, "/media/job-photos/sib-b.jpg", "b");
+
+  const resolvedA = await resolveUnitPhoto(testPrisma, unitA.id);
+  const resolvedB = await resolveUnitPhoto(testPrisma, unitB.id);
+  assert.equal(resolvedA.jobPhotoFilename, "sib-a.jpg");
+  assert.equal(resolvedB.jobPhotoFilename, "sib-b.jpg");
+  assert.notEqual(resolvedA.jobPhotoFilename, resolvedB.jobPhotoFilename, "sibling unit tidak boleh saling memakai foto milik saudaranya");
+});
+
+test("job DELIVERY (pengiriman, bukan pickup) dengan proofPhotoUrls -> TIDAK PERNAH terpilih sebagai foto pickup", async () => {
+  const driver = await createTestUser({ roles: ["DRIVER"] });
+  const driverApi = makeClient(server.baseUrl, driver.token);
+  const customer = await testPrisma.customer.create({ data: { name: "Pelanggan Delivery" } });
+  const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `PHO-DLV-${++seq}`, value: 1000, category: "LAYANAN" } });
+  const unit = await testPrisma.unit.create({ data: { unitCode: `UNIT-DLV-${++seq}`, orderId: order.id, seq: 1, status: "AWAITING_PICKUP" } });
+  await setWriter({ enabled: true, unitIds: [unit.id] });
+  await setReader({ enabled: true, unitIds: [unit.id] });
+  const route = await testPrisma.route.create({ data: { code: `DLV-RTE-${++seq}`, date: new Date("2026-09-30T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: driver.user.id } });
+  const job = await testPrisma.job.create({ data: { type: "DELIVERY", orderId: order.id, routeId: route.id, driverId: driver.user.id, status: "ASSIGNED", sequence: 1, scheduledDate: new Date("2026-09-30T00:00:00.000Z") } });
+  await testPrisma.jobUnit.create({ data: { jobId: job.id, unitId: unit.id } });
+  await driverApi.post(`/api/armada/jobs/${job.id}/start`, {}, key("dlv-start"));
+  await driverApi.post(`/api/armada/jobs/${job.id}/arrive`, { location: null }, key("dlv-arrive"));
+  const done = await driverApi.post(`/api/armada/jobs/${job.id}/complete`, { proofPhotoUrls: ["/media/job-photos/dlv-pod.jpg"], recipientName: "Customer", note: "ok", location: null }, key("dlv-complete"));
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+
+  // Job DELIVERY tidak pernah menghasilkan UnitCustodyHandoff INBOUND (hanya PICKUP yang menawarkan custody
+  // Gudang) — pastikan itu benar, dan pastikan resolveUnitPhoto tetap null (tidak menebak dari sumber lain).
+  const inboundHandoffs = await testPrisma.unitCustodyHandoff.count({ where: { unitId: unit.id, direction: "INBOUND" } });
+  assert.equal(inboundHandoffs, 0, "job DELIVERY tidak boleh menghasilkan custody handoff INBOUND sama sekali");
+  const resolved = await resolveUnitPhoto(testPrisma, unit.id);
+  assert.equal(resolved, null, "foto pengiriman tidak boleh terpilih sebagai foto pickup");
+});
+
+test("unggah manual dulu, foto pickup baru muncul kemudian -> resolusi pindah ke DRIVER_PICKUP TANPA duplikasi baris manual", async () => {
+  // Unit belum punya handoff/job pickup sama sekali saat unggahan manual dibuat (skenario "pickup belum tercatat
+  // di sistem, tapi unit sudah di lantai produksi").
+  const customer = await testPrisma.customer.create({ data: { name: "Pelanggan Transisi" } });
+  const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `PHO-TRN-${++seq}`, value: 1000, category: "LAYANAN" } });
+  const unit = await testPrisma.unit.create({ data: { unitCode: `UNIT-TRN-${++seq}`, orderId: order.id, seq: 1, status: "AWAITING_PICKUP" } });
+  await setWriter({ enabled: true, unitIds: [unit.id] });
+  await setReader({ enabled: true, unitIds: [unit.id] });
+  const lead = await createTestUser({ roles: ["PRODUCTION_LEAD"] });
+
+  const before = await resolveUnitPhoto(testPrisma, unit.id);
+  assert.equal(before, null, "belum ada sumber apa pun -> null");
+  const uploaded = await uploadPhoto(lead, unit.id);
+  assert.equal(uploaded.status, 201, JSON.stringify(uploaded.body));
+  const afterManual = await resolveUnitPhoto(testPrisma, unit.id);
+  assert.equal(afterManual.source, "PRODUCTION_MANUAL");
+
+  // Sekarang pickup TERCATAT (job single-unit, OFFERED) — resolusi harus otomatis pindah ke DRIVER_PICKUP.
+  const driver = await createTestUser({ roles: ["DRIVER"] });
+  const driverApi = makeClient(server.baseUrl, driver.token);
+  const route = await testPrisma.route.create({ data: { code: `TRN-RTE-${++seq}`, date: new Date("2026-09-30T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: driver.user.id } });
+  const job = await testPrisma.job.create({ data: { type: "PICKUP", orderId: order.id, routeId: route.id, driverId: driver.user.id, status: "ASSIGNED", sequence: 1, scheduledDate: new Date("2026-09-30T00:00:00.000Z") } });
+  await testPrisma.jobUnit.create({ data: { jobId: job.id, unitId: unit.id } });
+  await driverApi.post(`/api/armada/jobs/${job.id}/start`, {}, key("trn-start"));
+  await driverApi.post(`/api/armada/jobs/${job.id}/arrive`, { location: null }, key("trn-arrive"));
+  const done = await driverApi.post(`/api/armada/jobs/${job.id}/complete`, { proofPhotoUrls: ["/media/job-photos/trn-pod.jpg"], recipientName: "Penjaga", note: "ok", location: null }, key("trn-complete"));
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+
+  const afterPickup = await resolveUnitPhoto(testPrisma, unit.id);
+  assert.equal(afterPickup.source, "DRIVER_PICKUP", "pickup yang baru tercatat HARUS mengambil alih prioritas dari manual");
+  assert.equal(afterPickup.jobPhotoFilename, "trn-pod.jpg");
+
+  const manualRows = await testPrisma.unitPhoto.findMany({ where: { unitId: unit.id } });
+  assert.equal(manualRows.length, 1, "transisi prioritas TIDAK boleh menduplikasi atau menghapus baris manual — baris lama tetap ada, hanya tidak lagi disurfacekan");
+  assert.equal(manualRows[0].supersededAt, null, "baris manual TIDAK ditandai superseded oleh kemunculan pickup — supersede hanya berlaku antar-unggahan manual");
+});
+
 test("job pickup SATU unit dengan foto -> resolveUnitPhoto mengembalikan DRIVER_PICKUP", async () => {
   const [unit] = await pickupUnits(1, { proofPhotoUrls: ["/media/job-photos/pod-tunggal.jpg"] });
   const resolved = await resolveUnitPhoto(testPrisma, unit.id);

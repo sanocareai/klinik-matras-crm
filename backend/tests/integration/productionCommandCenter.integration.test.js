@@ -97,23 +97,25 @@ test("unit di luar cohort tidak muncul di KPI, kolom, attention, maupun akan-mas
   const res = await w.lead.api.get(CC);
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.readerMode, "COHORT");
-  const belumDijadwalkan = res.body.columns.find((c) => c.key === "BELUM_DIJADWALKAN");
-  assert.equal(belumDijadwalkan.items.length, 1);
-  assert.equal(belumDijadwalkan.items[0].unit.unitCode, unitA.unitCode);
+  const dalamPerjalanan = res.body.columns.find((c) => c.key === "DALAM_PERJALANAN");
+  assert.equal(dalamPerjalanan.items.length, 1);
+  assert.equal(dalamPerjalanan.items[0].unit.unitCode, unitA.unitCode);
   const akanMasuk = res.body.columns.find((c) => c.key === "AKAN_MASUK");
   assert.equal(akanMasuk.items.length, 0, "unit B (non-cohort) tidak boleh muncul di Akan Masuk");
 });
 
-test("KPI = panjang daftar detail yang SAMA dikirim ke klien (Belum Dijadwalkan, Dijadwalkan hari ini, Akan Masuk, Sedang Dikerjakan)", async () => {
+test("KPI = panjang daftar detail yang SAMA dikirim ke klien (Dalam Perjalanan, Tiba/Belum Mulai, Dijadwalkan hari ini, Akan Masuk, Sedang Dikerjakan)", async () => {
   const w = await world();
-  // Unit 1: pickup sukses, TIDAK dijadwalkan -> Belum Dijadwalkan (+ Dalam Perjalanan, run masih PENDING_ARRIVAL).
+  // Unit 1: pickup sukses, TIDAK dijadwalkan, run masih PENDING_ARRIVAL -> kolom Dalam Perjalanan (keadaan fisik,
+  // bukan status jadwal, yang menentukan kolom sejak P9B.1).
   const u1 = await orderWithUnit(w);
   await setCohort(u1.unit.id);
   const j1 = await jobFor(w, { orderId: u1.order.id, unitId: u1.unit.id });
   assert.equal((await completePickup(w, j1, "u1")).status, 200);
   const run1 = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: u1.unit.id } });
 
-  // Unit 2: pickup sukses + dijadwalkan hari ini (DATE), belum mulai -> Dijadwalkan + attention TARGET_BELUM_MULAI.
+  // Unit 2: pickup sukses + dijadwalkan hari ini (DATE) SEBELUM tiba (masih PENDING_ARRIVAL) -> TETAP kolom Dalam
+  // Perjalanan (P9B.1: sudah dijadwalkan tidak lagi memindahkan kartu ke kolom lain) + attention TARGET_BELUM_MULAI.
   const u2 = await orderWithUnit(w);
   await setCohort(u1.unit.id, u2.unit.id);
   const j2 = await jobFor(w, { orderId: u2.order.id, unitId: u2.unit.id });
@@ -151,14 +153,15 @@ test("KPI = panjang daftar detail yang SAMA dikirim ke klien (Belum Dijadwalkan,
   assert.equal(col.AKAN_MASUK.items[0].unit.unitCode, u4.unit.unitCode);
   assert.equal(res.body.kpi.akanMasuk, col.AKAN_MASUK.items.length);
 
-  assert.equal(col.BELUM_DIJADWALKAN.count, col.BELUM_DIJADWALKAN.items.length);
-  assert.ok(col.BELUM_DIJADWALKAN.items.some((i) => i.unit.unitCode === u1.unit.unitCode));
-  assert.equal(res.body.kpi.belumDijadwalkan, col.BELUM_DIJADWALKAN.items.length);
+  assert.equal(col.DALAM_PERJALANAN.count, col.DALAM_PERJALANAN.items.length);
+  assert.ok(col.DALAM_PERJALANAN.items.some((i) => i.unit.unitCode === u1.unit.unitCode), "u1 belum tiba, belum dijadwalkan -> Dalam Perjalanan");
+  assert.ok(col.DALAM_PERJALANAN.items.some((i) => i.unit.unitCode === u2.unit.unitCode), "u2 sudah dijadwalkan TAPI belum tiba -> tetap Dalam Perjalanan (jadwal cuma badge, P9B.1)");
+  assert.equal(res.body.kpi.belumDijadwalkan, 1, "hanya u1 yang benar-benar belum punya plan sama sekali (u2 sudah dijadwalkan)");
 
-  assert.equal(col.DIJADWALKAN.count, col.DIJADWALKAN.items.length);
-  assert.ok(col.DIJADWALKAN.items.some((i) => i.unit.unitCode === u2.unit.unitCode), "u2 dijadwalkan, belum mulai -> kolom Dijadwalkan");
-  assert.ok(col.DIJADWALKAN.items.some((i) => i.unit.unitCode === u3.unit.unitCode), "u3 dijadwalkan DAN sudah mulai -> tetap kolom Dijadwalkan (bongkar=tahap intake)");
-  assert.equal(res.body.kpi.dijadwalkanHariIni, 2);
+  assert.equal(col.TIBA_BELUM_MULAI.count, col.TIBA_BELUM_MULAI.items.length);
+  assert.ok(col.TIBA_BELUM_MULAI.items.some((i) => i.unit.unitCode === u3.unit.unitCode), "u3 sudah tiba (custody ACCEPTED) DAN sudah mulai -> Tiba/Belum Mulai (bongkar=tahap intake)");
+  assert.ok(!col.TIBA_BELUM_MULAI.items.some((i) => i.unit.unitCode === u2.unit.unitCode), "u2 belum tiba -> TIDAK boleh muncul di Tiba/Belum Mulai walau sudah dijadwalkan");
+  assert.equal(res.body.kpi.dijadwalkanHariIni, 2, "u2 dan u3 sama-sama punya plan.productionDate=hari ini, terlepas dari kolomnya masing-masing");
 
   assert.equal(res.body.kpi.sedangDikerjakan, 1, "hanya u3 yang punya operasi ACTIVE");
 
@@ -181,14 +184,14 @@ test("order.value HANYA terkirim untuk role dengan ORDER_PRICE_READ (ADMIN) — 
   const asAdmin = await w.admin.api.get(CC);
   assert.equal(asAdmin.status, 200, JSON.stringify(asAdmin.body));
   assert.equal(asAdmin.body.canSeeValue, true);
-  const adminCol = asAdmin.body.columns.find((c) => c.key === "BELUM_DIJADWALKAN");
+  const adminCol = asAdmin.body.columns.find((c) => c.key === "DALAM_PERJALANAN");
   const adminItem = adminCol.items.find((i) => i.unit.unitCode === u.unit.unitCode);
   assert.equal(adminItem.orderValue, 4_500_000);
 
   const asLead = await w.lead.api.get(CC);
   assert.equal(asLead.status, 200, JSON.stringify(asLead.body));
   assert.equal(asLead.body.canSeeValue, false);
-  const leadCol = asLead.body.columns.find((c) => c.key === "BELUM_DIJADWALKAN");
+  const leadCol = asLead.body.columns.find((c) => c.key === "DALAM_PERJALANAN");
   const leadItem = leadCol.items.find((i) => i.unit.unitCode === u.unit.unitCode);
   assert.equal(leadItem.orderValue, undefined, "field TIDAK boleh ada sama sekali untuk role tanpa ORDER_PRICE_READ");
   assert.equal(JSON.stringify(asLead.body).includes("4500000"), false, "nilai order tidak boleh bocor di respons sama sekali");
@@ -205,7 +208,7 @@ test("data Sales belum lengkap (berat badan kosong) -> attention DATA_SALES_BELU
   assert.ok(codes.includes("DATA_SALES_BELUM_LENGKAP"));
 });
 
-test("unit warisan OFFERED tanpa Production Run sama sekali tampil di Belum Dijadwalkan + Dalam Perjalanan TANPA mutasi", async () => {
+test("unit warisan OFFERED tanpa Production Run sama sekali tampil di Dalam Perjalanan TANPA mutasi", async () => {
   const w = await world();
   const u = await orderWithUnit(w);
   await setCohort(u.unit.id);
@@ -215,9 +218,9 @@ test("unit warisan OFFERED tanpa Production Run sama sekali tampil di Belum Dija
   assert.equal(await testPrisma.productionRun.count({ where: { unitId: u.unit.id } }), 0);
   const res = await w.lead.api.get(CC);
   assert.equal(res.status, 200, JSON.stringify(res.body));
-  const belumDijadwalkan = res.body.columns.find((c) => c.key === "BELUM_DIJADWALKAN");
-  const item = belumDijadwalkan.items.find((i) => i.unit.unitCode === u.unit.unitCode);
-  assert.ok(item, "unit warisan tanpa run harus tetap tampil di Belum Dijadwalkan");
+  const dalamPerjalanan = res.body.columns.find((c) => c.key === "DALAM_PERJALANAN");
+  const item = dalamPerjalanan.items.find((i) => i.unit.unitCode === u.unit.unitCode);
+  assert.ok(item, "unit warisan tanpa run harus tetap tampil di Dalam Perjalanan (P9B.1: kolom 'Belum Dijadwalkan' sudah dihapus)");
   assert.equal(item.kind, "AWAITING_ARRIVAL_LEGACY");
   assert.ok(res.body.kpi.dalamPerjalanan >= 1);
 

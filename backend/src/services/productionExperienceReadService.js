@@ -331,7 +331,9 @@ export async function getProductionCommandCenter(prisma, { unitIds, now = new Da
     if (col) columns[col].push(withValue(v));
   }
   columns.AKAN_MASUK = akanMasukList;
-  columns.BELUM_DIJADWALKAN = [...columns.BELUM_DIJADWALKAN, ...awaitingArrivalNoRun];
+  // P9B.1 — unit warisan (OFFERED, tanpa Run sama sekali) secara fisik SAMA dengan "pickup selesai, belum
+  // dikonfirmasi tiba" — masuk kolom DALAM_PERJALANAN, bukan lagi kolom "Belum Dijadwalkan" yang sudah dihapus.
+  columns.DALAM_PERJALANAN = [...columns.DALAM_PERJALANAN, ...awaitingArrivalNoRun];
 
   const dalamPerjalanan = views.filter((v) => v.bucket === "DALAM_PERJALANAN").length + awaitingArrivalNoRun.length;
   const belumDijadwalkan = views.filter((v) => !v.plan?.stationCode).length + awaitingArrivalNoRun.length;

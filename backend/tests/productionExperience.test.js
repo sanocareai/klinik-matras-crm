@@ -157,14 +157,17 @@ test("bucket Andon dari aksi berikutnya", () => {
   assert.equal(andonBucketOf({ next: { action: "WAIT", wait: "EXCEPTION_OPEN" }, started: true }), "TERHENTI");
 });
 
-// P9B — kolom pipeline Rencana Produksi: LEBIH HALUS dari bucket Andon (Uji Tekstur dipisah dari Lapisan), TIDAK mengubah
-// andonBucketOf. Tanpa plan -> Belum Dijadwalkan (walau bucket-nya DALAM_PERJALANAN); SELESAI -> null (dikeluarkan papan aktif).
-test("kolom Command Center (P9B): lebih halus dari bucket Andon, tanpa mengubah andonBucketOf", () => {
+// P9B.1 — kolom pipeline Status Produksi: LEBIH HALUS dari bucket Andon (Uji Tekstur dipisah dari Lapisan), TIDAK
+// mengubah andonBucketOf. "Dijadwalkan"/"Belum Dijadwalkan" DIHAPUS sebagai kolom — status jadwal (plan ada/tidak)
+// TIDAK LAGI menentukan kolom sama sekali, murni badge di kartu. Kolom sekarang murni KEADAAN FISIK: DALAM_PERJALANAN
+// (belum dikonfirmasi tiba, dijadwalkan atau tidak — sama saja) vs TIBA_BELUM_MULAI (sudah tiba, tahap 1-5/terhenti).
+test("kolom Status Produksi (P9B.1): keadaan fisik, bukan status jadwal; tanpa mengubah andonBucketOf", () => {
   const withPlan = { plan: { stationCode: "TABLE_1" } };
-  assert.equal(commandCenterColumn({ bucket: "DALAM_PERJALANAN", plan: null, next: { wait: "PENDING_ARRIVAL" } }), "BELUM_DIJADWALKAN", "belum ada plan sama sekali -> Belum Dijadwalkan walau sedang dalam perjalanan");
-  assert.equal(commandCenterColumn({ bucket: "DALAM_PERJALANAN", ...withPlan, next: { wait: "PENDING_ARRIVAL" } }), "DIJADWALKAN", "sudah dijadwalkan (pre-schedule P9A) tapi belum tiba -> tetap Dijadwalkan");
-  assert.equal(commandCenterColumn({ bucket: "ANTREAN", ...withPlan, next: { stepNo: 1 } }), "DIJADWALKAN");
-  assert.equal(commandCenterColumn({ bucket: "BONGKAR", ...withPlan, next: { stepNo: 3 } }), "DIJADWALKAN", "tahap intake 1-5 dianggap Dijadwalkan di papan pipeline ini");
+  assert.equal(commandCenterColumn({ bucket: "DALAM_PERJALANAN", plan: null, next: { wait: "PENDING_ARRIVAL" } }), "DALAM_PERJALANAN", "belum tiba, belum dijadwalkan -> tetap Dalam Perjalanan (bukan lagi Belum Dijadwalkan)");
+  assert.equal(commandCenterColumn({ bucket: "DALAM_PERJALANAN", ...withPlan, next: { wait: "PENDING_ARRIVAL" } }), "DALAM_PERJALANAN", "sudah dijadwalkan (pre-schedule P9A) TAPI belum tiba -> tetap Dalam Perjalanan (jadwal cuma badge)");
+  assert.equal(commandCenterColumn({ bucket: "ANTREAN", ...withPlan, next: { stepNo: 1 } }), "TIBA_BELUM_MULAI");
+  assert.equal(commandCenterColumn({ bucket: "ANTREAN", plan: null, next: { stepNo: 1 } }), "TIBA_BELUM_MULAI", "sudah tiba tapi belum sempat dijadwalkan pun tetap Tiba/Belum Mulai, bukan kolom terpisah");
+  assert.equal(commandCenterColumn({ bucket: "BONGKAR", ...withPlan, next: { stepNo: 3 } }), "TIBA_BELUM_MULAI", "tahap intake 1-5 dianggap Tiba/Belum Mulai di papan pipeline ini");
   assert.equal(commandCenterColumn({ bucket: "FONDASI", ...withPlan, next: { stepNo: 6 } }), "FONDASI");
   assert.equal(commandCenterColumn({ bucket: "LAPISAN", ...withPlan, next: { stepNo: 7 } }), "LAPISAN");
   assert.equal(commandCenterColumn({ bucket: "LAPISAN", ...withPlan, next: { stepNo: 8 } }), "UJI_TEKSTUR", "andonBucketOf menggabungkan 7&8 jadi LAPISAN, kolom P9B memisahkannya");
@@ -173,7 +176,7 @@ test("kolom Command Center (P9B): lebih halus dari bucket Andon, tanpa mengubah 
   assert.equal(commandCenterColumn({ bucket: "CORNER", ...withPlan, next: { stepNo: 11 } }), "CORNER");
   assert.equal(commandCenterColumn({ bucket: "HANDOFF", ...withPlan, next: { stepNo: 12, wait: "AWAITING_WAREHOUSE" } }), "SIAP_KIRIM");
   assert.equal(commandCenterColumn({ bucket: "SELESAI", ...withPlan, next: { wait: "COMPLETED" } }), null, "SELESAI dikeluarkan dari papan aktif (tetap terhitung KPI selesai hari ini)");
-  assert.equal(commandCenterColumn({ bucket: "TERHENTI", ...withPlan, next: { wait: "EXCEPTION_OPEN" } }), "DIJADWALKAN", "terhenti/exception tetap tampil di kolomnya, ditandai badge bukan kolom terpisah");
+  assert.equal(commandCenterColumn({ bucket: "TERHENTI", ...withPlan, next: { wait: "EXCEPTION_OPEN" } }), "TIBA_BELUM_MULAI", "terhenti/exception tetap tampil di kolomnya, ditandai badge bukan kolom terpisah");
   assert.equal(commandCenterColumn({ bucket: "MENUNGGU_BAHAN", ...withPlan, next: { stepNo: 6, wait: "MATERIAL_SHORTAGE" } }), "FONDASI", "menunggu bahan tetap di kolom tahapnya sendiri, bukan kolom terpisah");
 });
 
