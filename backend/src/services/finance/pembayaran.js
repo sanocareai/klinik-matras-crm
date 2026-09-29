@@ -30,6 +30,7 @@ import { getVerificationGate } from "./settings.js";
 import { batalkanJurnalPembayaran, bukukanPembayaran } from "./hooks.js";
 import { tanggalCutoff, sebelumCutoff } from "./cutoff.js";
 import { findEntryByKey } from "./journal.js";
+import { dasarStatusBayar } from "./tagihanOrder.js";
 import { KEY as KEY_ORDER } from "./posting/orderRevenue.js";
 import { toMoney, ZERO } from "./money.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
@@ -162,7 +163,8 @@ export async function jenisUntuk(db, payments) {
     perOrder.set(p.orderId, daftar);
   }
   for (const p of payments) {
-    const nilai = p.order?.value ?? 0;
+    // Nilai tagihan yang SAMA dengan pembanding status bayar (value + ongkir); pemanggil yang tidak memuat ongkir/grup otomatis jatuh ke value.
+    const nilai = p.order ? dasarStatusBayar(p.order, p.order.group ?? null) : 0;
     const daftar = perOrder.get(p.orderId) ?? [];
     const idx = daftar.findIndex((x) => x.id === p.id);
     if (idx === -1) { peta.set(p.id, null); continue; } // dibatalkan → tidak diklasifikasi

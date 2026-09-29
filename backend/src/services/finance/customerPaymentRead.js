@@ -16,6 +16,8 @@ export const paymentSelect = {
   order: {
     select: {
       id: true, orderNumber: true, value: true, paymentStatus: true,
+      // ongkir + grup: label DP/Cicilan/Pelunasan memakai nilai tagihan yang SAMA dengan status bayar (tagihanOrder.js).
+      ongkir: true, groupId: true, group: { select: { id: true, source: true, anchorOrderId: true } },
       customer: { select: { id: true, name: true } },
     },
   },

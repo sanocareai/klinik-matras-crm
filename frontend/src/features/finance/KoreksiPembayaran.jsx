@@ -18,6 +18,7 @@ import { Pilihan, InputUang, formatUang, tanggalJam, tanggalPendek } from "@/fea
 //  • Riwayat Perubahan   — rantai versi, audit, rantai jurnal.
 
 const LABEL_METODE = { TRANSFER: "Transfer", CASH: "Tunai", QRIS: "QRIS", CARD: "Kartu" };
+const LABEL_JENIS = { DP: "DP (uang muka)", CICILAN: "Cicilan", PELUNASAN: "Pelunasan" };
 const tglWIB = (t) => new Date(new Date(t).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 const kunciBaru = (awalan) => `${awalan}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`}`;
 
@@ -43,6 +44,7 @@ export function DetailPembayaranDialog({ p, onClose }) {
       <div className="space-y-1.5">
         <Baris label="Status"><Badge variant={p.cancelledAt ? "red" : p.terverifikasi ? "green" : "orange"}>{status}</Badge></Baris>
         <Baris label="Order">{p.order?.orderNumber} · {p.order?.customer?.name}</Baris>
+        <Baris label="Jenis">{p.jenisPembayaran ? <Badge variant={p.jenisPembayaran === "PELUNASAN" ? "green" : "info"}>{LABEL_JENIS[p.jenisPembayaran]}</Badge> : null}</Baris>
         <Baris label="Nominal">{formatUang(p.amount)}</Baris>
         <Baris label="Metode">{LABEL_METODE[p.method] || p.method}</Baris>
         <Baris label="Rekening penerima">{p.cashAccount?.name || "Rekening standar cara bayar"}</Baris>

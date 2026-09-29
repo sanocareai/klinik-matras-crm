@@ -124,3 +124,34 @@ test("Tanpa gap dan tanpa jurnal (bukan Posting Tertunda) Koreksi tetap diblokir
   await testPrisma.paymentVerification.create({ data: { paymentId: p.id, verifiedById: w.finance.id } });
   assert.equal((await blokirKoreksiBatch(testPrisma, [p.id])).get(p.id).kode, "JURNAL_TIDAK_ADA");
 });
+
+test("Jenis pembayaran (DP / Cicilan / Pelunasan) dihitung server dari urutan pembayaran aktif & nilai tagihan (value + ongkir)", async () => {
+  const { jenisUntuk } = await import("../../src/services/finance/pembayaran.js");
+  const w = await dunia({ petakan: true });
+  const customer = await testPrisma.customer.create({ data: { name: "Jenis" } });
+  const buat = (value, ongkir) => testPrisma.order.create({ data: { customerId: customer.id, value, ...(ongkir && { ongkir }), category: "BARU", orderNumber: `NEW-JNS-${String(++n).padStart(3, "0")}`, status: "PENDING" } });
+  const bayar = (order, amount, menit) => testPrisma.payment.create({ data: { orderId: order.id, amount, method: "TRANSFER", recordedById: w.sales.id, createdAt: new Date(Date.UTC(2026, 8, 20, 5, menit)) } });
+  const sel = { id: true, orderId: true, order: { select: { value: true, ongkir: true, groupId: true, group: { select: { id: true, source: true, anchorOrderId: true } } } } };
+  const jenisDari = async (ids) => jenisUntuk(testPrisma, await testPrisma.payment.findMany({ where: { id: { in: ids } }, select: sel }));
+
+  const o1 = await buat(2_600_000);                                 // Handry: DP 1,6 jt lalu pelunasan 1 jt
+  const a = await bayar(o1, 1_600_000, 0); const b = await bayar(o1, 1_000_000, 1);
+  const j1 = await jenisDari([a.id, b.id]);
+  assert.equal(j1.get(a.id), "DP"); assert.equal(j1.get(b.id), "PELUNASAN");
+
+  const o2 = await buat(1_000_000);                                 // tiga kali bayar: DP, Cicilan, Pelunasan
+  const c1 = await bayar(o2, 300_000, 0); const c2 = await bayar(o2, 300_000, 1); const c3 = await bayar(o2, 400_000, 2);
+  const j2 = await jenisDari([c1.id, c2.id, c3.id]);
+  assert.deepEqual([j2.get(c1.id), j2.get(c2.id), j2.get(c3.id)], ["DP", "CICILAN", "PELUNASAN"]);
+
+  const o3 = await buat(500_000, 200_000);                          // ongkir ikut tagihan: bayar 500rb = DP (bukan pelunasan), lalu 200rb = pelunasan
+  const d1 = await bayar(o3, 500_000, 0); const d2 = await bayar(o3, 200_000, 1);
+  const j3 = await jenisDari([d1.id, d2.id]);
+  assert.equal(j3.get(d1.id), "DP"); assert.equal(j3.get(d2.id), "PELUNASAN");
+
+  await testPrisma.payment.update({ where: { id: c2.id }, data: { cancelledAt: new Date() } });   // dibatalkan → tanpa label; yang lain menyesuaikan
+  const j4 = await jenisDari([c1.id, c2.id, c3.id]);
+  assert.equal(j4.get(c2.id), null);
+  assert.equal(j4.get(c3.id), "PELUNASAN" === j4.get(c3.id) ? "PELUNASAN" : "CICILAN"); // 300 + 400 = 700 < 1000 → CICILAN
+  assert.equal(j4.get(c3.id), "CICILAN");
+});

@@ -71,6 +71,7 @@ const TAB = [
 ];
 
 const LABEL_CARA_BAYAR = { TRANSFER: "Transfer", CASH: "Tunai", QRIS: "QRIS", CARD: "Kartu" };
+const LABEL_JENIS = { DP: "DP", CICILAN: "Cicilan", PELUNASAN: "Pelunasan" };
 
 export default function FinancePayments() {
   const [tab, setTab] = useState("perlu");
@@ -338,6 +339,7 @@ export default function FinancePayments() {
                         : p.terverifikasi
                           ? <Badge variant="green">Sudah diverifikasi</Badge>
                           : <Badge variant="orange">Menunggu</Badge>}
+                      {p.jenisPembayaran && !p.cancelledAt && <Badge variant={p.jenisPembayaran === "PELUNASAN" ? "green" : "info"} className="ml-1">{LABEL_JENIS[p.jenisPembayaran]}</Badge>}
                       {p.terverifikasi && (
                         <span className="mt-0.5 block truncate text-[11px] text-ink3">
                           oleh {p.verifications[0]?.verifiedBy?.name || "—"}
@@ -364,8 +366,12 @@ export default function FinancePayments() {
                   title={tanggalJam(p.createdAt)}
                   status={
                     p.cancelledAt ? <Badge variant={p.replacedBy ? "orange" : "red"}>{p.replacedBy ? "Diganti versi baru" : "Dibatalkan"}</Badge>
-                      : p.terverifikasi ? <Badge variant="green">Sudah diverifikasi</Badge>
-                      : <Badge variant="orange">Menunggu</Badge>
+                      : (
+                        <>
+                          {p.terverifikasi ? <Badge variant="green">Sudah diverifikasi</Badge> : <Badge variant="orange">Menunggu</Badge>}
+                          {p.jenisPembayaran && <Badge variant={p.jenisPembayaran === "PELUNASAN" ? "green" : "info"} className="ml-1">{LABEL_JENIS[p.jenisPembayaran]}</Badge>}
+                        </>
+                      )
                   }
                   subtitle={`${p.order?.orderNumber || "—"} · ${p.order?.customer?.name || "—"}`}
                   fields={[
