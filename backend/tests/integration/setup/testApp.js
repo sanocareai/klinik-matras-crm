@@ -60,6 +60,14 @@ const { kendaliRouter } = await import("../../../src/routes/kendali.js");
 const { incentiveSnapshotRouter } = await import("../../../src/routes/incentiveSnapshot.js");
 const { incentivePayoutRouter } = await import("../../../src/routes/incentivePayout.js");
 const { deliveryControlRouter } = await import("../../../src/routes/deliveryControl.js");
+// conversationRouter (29 September 2026) — ditambahkan untuk regresi RBAC Inbox
+// (conversationTakeoverRbac.integration.test.js, celah nyata: HELPER berhasil
+// POST /:id/takeover). Kode ASLI produksi, sama pola dengan router lain di file
+// ini. Router ini mengimpor services/wahaClient.js (kirim WA) — TIDAK masalah di
+// test: fungsi kirimnya cuma dipanggil pada endpoint yang benar-benar mengirim
+// pesan (di luar cakupan test RBAC ini), modul itu sendiri aman diimpor tanpa
+// WAHA hidup (semua panggilan jaringannya di dalam fungsi, bukan di top-level).
+const { conversationRouter } = await import("../../../src/routes/conversations.js");
 
 export function buildTestApp() {
   const app = express();
@@ -113,6 +121,7 @@ export function buildTestApp() {
   app.use("/api/resi", resiRouter);
   app.use("/api/kendali", kendaliRouter);
   app.use("/api/delivery-control", deliveryControlRouter);
+  app.use("/api/conversations", conversationRouter);
 
   return app;
 }
