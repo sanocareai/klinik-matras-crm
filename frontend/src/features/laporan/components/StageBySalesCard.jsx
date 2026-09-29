@@ -4,6 +4,7 @@ import { api } from "@/api.js";
 import { toApiParams } from "@/lib/dateRange.js";
 import { formatRupiahShort, STAGE_LABELS } from "@/utils/format.js";
 import ProgressRing from "@/components/ui/progress-ring.jsx";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 
 // ═══ SALES PER STAGE (30 September 2026) ═══════════════════════════════════
 // Permintaan owner: "sales per stage tuh kondisinya seperti apa" — dalam gaya
@@ -19,6 +20,29 @@ const STAGE_COLOR = {
   TRANSACTION: "var(--green)",
   REVIEWED:    "color-mix(in srgb, var(--green) 55%, transparent)",
   SPAM:        "var(--hairline)",
+};
+
+// Penjelasan tiap bagian, bahasa sederhana untuk sales & owner (permintaan
+// owner 30 Sep 2026). Definisinya mengikuti aturan sistem yang sebenarnya:
+// stage = Customer.pipelineStage, mandek = tidak disentuh >=14 hari.
+const STAGE_INFO = {
+  NEW: "Lead baru: orang yang baru chat masuk dan belum ada tanda jelas dia tertarik. Tugas sales: balas cepat dan gali kebutuhannya.",
+  PROSPECT: "Calon pembeli: sudah ngobrol dan tertarik (tanya harga, ukuran, atau layanan), tapi belum deal dan belum ada order. Ini yang perlu terus ditindaklanjuti.",
+  TRANSACTION: "Sudah deal: order sudah dibuat dan pengerjaan/pengirimannya dijadwalkan atau berjalan. Ini stage 'berhasil'.",
+  REVIEWED: "Sudah selesai: barang/layanan sudah diterima dan customer sudah memberi ulasan. Stage paling akhir yang berhasil.",
+  SPAM: "Bukan calon pelanggan asli (iseng, salah nomor, iklan, atau akun internal). Tidak dihitung ke omset maupun konversi.",
+};
+const INFO = {
+  totalLeads: "Jumlah lead (calon pelanggan) yang PERTAMA KALI masuk di periode yang dipilih di atas, dikelompokkan menurut posisinya sekarang. Bar warna menunjukkan porsi tiap stage; makin panjang satu warna, makin banyak lead di stage itu.",
+  mandek: "Mandek = lead di stage New atau Prospek yang sudah 14 hari atau lebih tidak ada perubahan/tindak lanjut. Mereka rawan hilang, jadi perlu dihubungi lagi. Stage Transaksi, Reviewed, dan Spam tidak dianggap mandek.",
+  pctMandek: "Persentase = jumlah lead mandek dibagi total lead di stage New + Prospek. Contoh: 5 mandek dari 20 lead New + Prospek = 25%. Makin kecil makin bagus. Cincin hijau = tidak ada yang mandek, oranye = ada.",
+  nilaiPasti: "Total nilai (Rupiah) order milik lead-lead di periode ini yang sudah PASTI: order berstatus Menunggu dan Dibatalkan tidak dihitung. Aturannya sama dengan omset di seluruh laporan.",
+  menunggu: "Order yang sudah diinput tapi statusnya Menunggu (misalnya customer minta dikerjakan 2 minggu lagi). Belum pasti, jadi TIDAK masuk omset. Nilainya ditampilkan di sini saja sebagai gambaran.",
+  stageValue: "Total nilai order pasti dari lead yang sekarang berada di stage ini (tanpa order Menunggu dan Dibatalkan).",
+  stageBar: "Bar kecil membandingkan jumlah lead stage ini dengan stage terbanyak (Spam tidak ikut dibandingkan).",
+  stageMandek: "Jumlah lead di stage ini yang sudah 14 hari atau lebih tidak ada tindak lanjut.",
+  perSales: "Setiap baris = satu sales beserta lead yang ditugaskan kepadanya (sales yang menangani chat customer). Bar berwarna menunjukkan sebaran lead sales itu di tiap stage, warnanya sama dengan warna stage di atas. 'Belum ditugaskan' = lead yang belum dipegang sales mana pun.",
+  aman: "Aman = tidak ada lead New/Prospek milik sales ini yang mandek 14 hari atau lebih.",
 };
 
 const Tile = ({ className = "", children }) => (
@@ -99,7 +123,7 @@ export default function StageBySalesCard({ range, onGoTab }) {
       {/* Baris bento atas: 1 kartu besar + 2 kartu angka */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr_1fr]">
         <Tile>
-          <p className="text-[13px] font-medium text-ink3">Lead di pipeline</p>
+          <p className="flex items-center gap-1 text-[13px] font-medium text-ink3">Lead di pipeline <InfoTooltip text={INFO.totalLeads} /></p>
           <p className="mt-1 text-[40px] font-extrabold leading-none tracking-tight tabular-nums text-ink">
             {data.totalLeads.toLocaleString("id-ID")}
           </p>
@@ -109,6 +133,7 @@ export default function StageBySalesCard({ range, onGoTab }) {
               <li key={s} className="flex items-center gap-1.5 text-[12px] text-ink3">
                 <span className="h-2 w-2 rounded-full" style={{ background: STAGE_COLOR[s] }} />
                 {STAGE_LABELS[s]} <strong className="tabular-nums text-ink2">{byStage[s]?.count || 0}</strong>
+                <InfoTooltip text={STAGE_INFO[s]} />
               </li>
             ))}
           </ul>
@@ -119,19 +144,19 @@ export default function StageBySalesCard({ range, onGoTab }) {
             <span className="text-lg font-extrabold tabular-nums text-ink">{pctMandek}%</span>
           </ProgressRing>
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-ink3">Mandek ≥{data.staleDays} hari</p>
+            <p className="flex items-center gap-1 text-[13px] font-medium text-ink3">Mandek ≥{data.staleDays} hari <InfoTooltip text={INFO.mandek} /></p>
             <p className="mt-1 text-[32px] font-extrabold leading-none tabular-nums text-ink">{mandek}</p>
-            <p className="mt-1 text-[12px] text-ink3">dari {aktif} lead New + Prospek</p>
+            <p className="mt-1 flex items-center gap-1 text-[12px] text-ink3">{pctMandek}% dari {aktif} lead New + Prospek <InfoTooltip text={INFO.pctMandek} /></p>
           </div>
         </Tile>
 
         <Tile>
-          <p className="text-[13px] font-medium text-ink3">Nilai order pasti</p>
+          <p className="flex items-center gap-1 text-[13px] font-medium text-ink3">Nilai order pasti <InfoTooltip text={INFO.nilaiPasti} /></p>
           <p className="mt-1 text-[32px] font-extrabold leading-none tracking-tight tabular-nums text-ink">
             {formatRupiahShort(nilaiPasti)}
           </p>
           <div className="mt-4 rounded-xl bg-inset px-3 py-2.5">
-            <p className="text-[12px] text-ink3">Menunggu (belum dihitung omset)</p>
+            <p className="flex items-center gap-1 text-[12px] text-ink3">Menunggu (belum dihitung omset) <InfoTooltip text={INFO.menunggu} /></p>
             <p className="text-[15px] font-bold tabular-nums text-ink2">{formatRupiahShort(nilaiMenunggu)}</p>
           </div>
         </Tile>
@@ -146,17 +171,18 @@ export default function StageBySalesCard({ range, onGoTab }) {
               <p className="flex items-center gap-1.5 text-[12px] font-medium text-ink3">
                 <span className="h-2 w-2 rounded-full" style={{ background: STAGE_COLOR[s] }} />
                 {STAGE_LABELS[s]}
+                <InfoTooltip text={STAGE_INFO[s]} />
               </p>
               <p className="mt-2 text-[28px] font-extrabold leading-none tabular-nums text-ink">{st.count}</p>
-              <p className="mt-1 text-[12px] tabular-nums text-ink3">{formatRupiahShort(st.value)}</p>
+              <p className="mt-1 flex items-center gap-1 text-[12px] tabular-nums text-ink3">{formatRupiahShort(st.value)} <InfoTooltip text={INFO.stageValue} /></p>
               {s !== "SPAM" && (
-                <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-inset">
+                <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-inset" title={INFO.stageBar}>
                   <span className="block h-full rounded-full" style={{ width: `${(st.count / maxStage) * 100}%`, background: STAGE_COLOR[s] }} />
                 </div>
               )}
               {st.stale > 0 && (
                 <span className="mt-3 inline-flex w-fit items-center gap-1 rounded-full bg-orange-bg px-2 py-0.5 text-[11px] font-semibold text-orange">
-                  <AlertTriangle size={11} /> {st.stale} mandek
+                  <AlertTriangle size={11} /> {st.stale} mandek <InfoTooltip text={INFO.stageMandek} />
                 </span>
               )}
             </Tile>
@@ -166,7 +192,7 @@ export default function StageBySalesCard({ range, onGoTab }) {
 
       {/* Per sales */}
       <Tile>
-        <p className="text-[15px] font-semibold text-ink">Per sales</p>
+        <p className="flex items-center gap-1.5 text-[15px] font-semibold text-ink">Per sales <InfoTooltip text={INFO.perSales} /></p>
         {data.sales.length === 0 ? (
           <p className="mt-3 text-sm text-ink3">Belum ada lead di periode ini.</p>
         ) : (
@@ -191,7 +217,7 @@ export default function StageBySalesCard({ range, onGoTab }) {
                 <div className="col-span-2 sm:col-span-1 sm:text-right">
                   {r.stale > 0
                     ? <span className="inline-flex items-center gap-1 rounded-full bg-orange-bg px-2 py-0.5 text-[11px] font-semibold text-orange"><AlertTriangle size={11} /> {r.stale} mandek</span>
-                    : <span className="inline-flex rounded-full bg-green-bg px-2 py-0.5 text-[11px] font-semibold text-green">Aman</span>}
+                    : <span className="inline-flex rounded-full bg-green-bg px-2 py-0.5 text-[11px] font-semibold text-green">Aman <InfoTooltip text={INFO.aman} /></span>}
                 </div>
               </li>
             ))}
