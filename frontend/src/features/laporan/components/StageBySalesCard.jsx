@@ -5,6 +5,7 @@ import { toApiParams } from "@/lib/dateRange.js";
 import { formatRupiahShort, STAGE_LABELS } from "@/utils/format.js";
 import ProgressRing from "@/components/ui/progress-ring.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
+import { STAGE_INFO } from "../utils/stageInfo.js";
 
 // ═══ SALES PER STAGE (30 September 2026) ═══════════════════════════════════
 // Permintaan owner: "sales per stage tuh kondisinya seperti apa" — dalam gaya
@@ -23,15 +24,7 @@ const STAGE_COLOR = {
 };
 
 // Penjelasan tiap bagian, bahasa sederhana untuk sales & owner (permintaan
-// owner 30 Sep 2026). Definisinya mengikuti aturan sistem yang sebenarnya:
-// stage = Customer.pipelineStage, mandek = tidak disentuh >=14 hari.
-const STAGE_INFO = {
-  NEW: "Lead baru: orang yang baru chat masuk dan belum ada tanda jelas dia tertarik. Tugas sales: balas cepat dan gali kebutuhannya.",
-  PROSPECT: "Calon pembeli: sudah ngobrol dan tertarik (tanya harga, ukuran, atau layanan), tapi belum deal dan belum ada order. Ini yang perlu terus ditindaklanjuti.",
-  TRANSACTION: "Sudah deal: order sudah dibuat dan pengerjaan/pengirimannya dijadwalkan atau berjalan. Ini stage 'berhasil'.",
-  REVIEWED: "Sudah selesai: barang/layanan sudah diterima dan customer sudah memberi ulasan. Stage paling akhir yang berhasil.",
-  SPAM: "Bukan calon pelanggan asli (iseng, salah nomor, iklan, atau akun internal). Tidak dihitung ke omset maupun konversi.",
-};
+// owner 30 Sep 2026). STAGE_INFO dipakai bersama dgn tab Pipeline.
 const INFO = {
   totalLeads: "Jumlah lead (calon pelanggan) yang PERTAMA KALI masuk di periode yang dipilih di atas, dikelompokkan menurut posisinya sekarang. Bar warna menunjukkan porsi tiap stage; makin panjang satu warna, makin banyak lead di stage itu.",
   mandek: "Mandek = lead di stage New atau Prospek yang sudah 14 hari atau lebih tidak ada perubahan/tindak lanjut. Mereka rawan hilang, jadi perlu dihubungi lagi. Stage Transaksi, Reviewed, dan Spam tidak dianggap mandek.",
