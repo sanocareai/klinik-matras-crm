@@ -96,9 +96,11 @@ ok "backend, source frontend, dependensi, schema, Docker TIDAK berubah"
 NEW_INDEX="$(sg show "${DEPLOY_SHA}:frontend/dist/index.html" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)"
 [ -n "$NEW_INDEX" ] || die "tidak dapat membaca bundel index dari commit rilis"
 sg show "${DEPLOY_SHA}:frontend/dist/assets/${NEW_INDEX}" >/dev/null 2>&1 || true
-MAPS_CHUNK="$(sg ls-tree -r --name-only "$DEPLOY_SHA" -- frontend/dist/assets | grep -E '^frontend/dist/assets/googleMapIcons-.*\.js$' | sed -n 1p)"
-[ -n "$MAPS_CHUNK" ] || die "chunk googleMapIcons-*.js tidak ada di commit rilis"
-sg show "${DEPLOY_SHA}:${MAPS_CHUNK}" | grep -q "$MAPS_KEY_TOKEN" || die "chunk peta di commit rilis TIDAK membawa kunci Maps JS (regresi yang sama akan terulang)"
+# Chunk mana yang membawa GOOGLE_MAPS_JS_KEY tidak stabil namanya antar-build (Rollup bisa menggabungkan/
+# memisahkan modul googleMaps.js dan googleMapIcons.js tergantung graf dependensi saat itu) — jadi diperiksa
+# dengan grep TOKEN di SELURUH berkas JS commit rilis, bukan glob nama chunk tertentu.
+MAPS_CHUNK="$(sg ls-tree -r --name-only "$DEPLOY_SHA" -- frontend/dist/assets | grep -E '\.js$' | while read -r f; do sg show "${DEPLOY_SHA}:${f}" 2>/dev/null | grep -q "$MAPS_KEY_TOKEN" && { echo "$f"; break; }; done)"
+[ -n "$MAPS_CHUNK" ] || die "TIDAK ADA berkas JS di commit rilis yang membawa kunci Maps JS (regresi yang sama akan terulang)"
 ok "commit rilis memuat kunci Maps JS di ${MAPS_CHUNK##*/}"
 
 # ── 2. Audit produksi (baca-saja) ────────────────────────────────────────────────────────────────────────
@@ -119,11 +121,10 @@ PUB_BEFORE="$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0
 [ "$PUB_BEFORE" = "$DIST_INDEX_OLD" ] || die "bundel publik (${PUB_BEFORE}) != dist release aktif (${DIST_INDEX_OLD})"
 [ "$NEW_INDEX" != "$DIST_INDEX_OLD" ] || die "bundel baru identik dengan lama (tidak diharapkan)"
 ok "health sehat; bundel publik saat ini ${DIST_INDEX_OLD} (akan berubah ke ${NEW_INDEX})"
-OLD_MAPS_CHUNK="$(ls "$PREV_DIR"/frontend/dist/assets/googleMapIcons-*.js 2>/dev/null | head -1)"
-if [ -n "$OLD_MAPS_CHUNK" ] && grep -q "$MAPS_KEY_TOKEN" "$OLD_MAPS_CHUNK" 2>/dev/null; then
+if grep -rlq "$MAPS_KEY_TOKEN" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null; then
   die "dist LAMA sudah membawa kunci — regresi yang dikira sedang diperbaiki mungkin sudah tidak ada; audit ulang sebelum lanjut"
 fi
-ok "dist lama dikonfirmasi TIDAK membawa kunci Maps JS (regresi nyata, rilis ini relevan)"
+ok "dist lama dikonfirmasi TIDAK membawa kunci Maps JS di berkas mana pun (regresi nyata, rilis ini relevan)"
 if [ "$PREFLIGHT_ONLY" = "1" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; exit 0; fi
 
 # ── 3. Release dir ───────────────────────────────────────────────────────────────────────────────────────
@@ -137,7 +138,7 @@ for f in docker-compose.yml docker-compose.release.yml backend/Dockerfile fronte
 printf '%s\n' "$DEPLOY_SHORT" > "$NEW_DIR/.release-commit"
 ln -s "$PERSIST/backend/.env" "$NEW_DIR/backend/.env"; [ -r "$NEW_DIR/backend/.env" ] || die "symlink backend/.env tidak terbaca"
 diff -q <(tr -d '\r' < "$PREV_DIR/docker-compose.release.yml") <(tr -d '\r' < "$NEW_DIR/docker-compose.release.yml") >/dev/null || die "docker-compose.release.yml berbeda dari release aktif"
-grep -q "$MAPS_KEY_TOKEN" "$NEW_DIR"/frontend/dist/assets/googleMapIcons-*.js 2>/dev/null || die "dist di release dir baru tidak membawa kunci (git archive rusak?)"
+grep -rlq "$MAPS_KEY_TOKEN" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null || die "dist di release dir baru tidak membawa kunci (git archive rusak?)"
 ok "release dir dibuat dari git archive; docker-compose identik; dist baru membawa kunci Maps JS"
 
 # ── 4. Migration (harus no-op; image lama dipakai ulang) ──────────────────────────────────────────────────
@@ -161,7 +162,7 @@ PHASE="6-healthcheck"; say "6. Healthcheck dan smoke (baca-saja)"
 curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck internal gagal"; ok "internal 200"
 curl -fsS --max-time 15 "${PUBLIC_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck publik gagal"; ok "publik 200"
 [ "$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)" = "$NEW_INDEX" ] || die "bundel publik BUKAN dist baru (${NEW_INDEX})"; ok "bundel web publik = ${NEW_INDEX} (dist baru)"
-PUB_MAPS_CHUNK="$(basename "$(ls "$NEW_DIR"/frontend/dist/assets/googleMapIcons-*.js | head -1)")"
+PUB_MAPS_CHUNK="$(basename "$MAPS_CHUNK")"
 curl -fsS --max-time 20 "${PUBLIC_URL}/assets/${PUB_MAPS_CHUNK}" | grep -q "$MAPS_KEY_TOKEN" || die "chunk peta TIDAK terlayani publik dengan kunci (masih regresi)"
 ok "web publik melayani chunk peta (${PUB_MAPS_CHUNK}) DENGAN kunci Maps JS — perbaikan terkonfirmasi live"
 
