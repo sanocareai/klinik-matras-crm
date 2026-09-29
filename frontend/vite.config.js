@@ -66,6 +66,12 @@ export default defineConfig({
         display: "standalone",
         orientation: "portrait",
         start_url: "/dashboard",
+        // P8: pintas aplikasi pekerja produksi (PWA terpasang) — langsung ke kartu kerja Meja Bongkar / Corner, dan Andon TV.
+        shortcuts: [
+          { name: "Meja Bongkar", short_name: "Meja", url: "/produksi/meja", icons: [{ src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" }] },
+          { name: "Meja Corner", short_name: "Corner", url: "/produksi/corner", icons: [{ src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" }] },
+          { name: "Andon Produksi", short_name: "Andon", url: "/bengkel/andon", icons: [{ src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" }] },
+        ],
         icons: [
           { src: "/favicon.png",     sizes: "32x32",   type: "image/png" },
           { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },

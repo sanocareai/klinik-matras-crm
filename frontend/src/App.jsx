@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { BrowserRouter } from "react-router-dom";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
+import { BrowserRouter, useLocation } from "react-router-dom";
 import Login from "./pages/Login.jsx";
 import Layout from "./components/Layout.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
@@ -7,7 +7,8 @@ import UpdateBanner from "./components/UpdateBanner.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { disconnectSocket } from "./lib/socket.js";
-import { PAGES } from "./routes/pageRegistry.jsx";
+import { PAGES, RouteFallback, standalonePageFor } from "./routes/pageRegistry.jsx";
+import ChunkErrorBoundary from "./components/ChunkErrorBoundary.jsx";
 import { TabsProvider } from "./lib/TabsContext.jsx";
 
 // D-143 (9 September 2026) — daftar halaman (lazy import + path) dipindah ke
@@ -149,9 +150,25 @@ export default function App() {
       <UpdateBanner />
       {/* Floating "Tanya Sano" (CoPilotFloat) DIHAPUS — sudah ada akses lewat
           sidebar (AI & OTOMASI > Tanya Sano), FAB ini jadi redundan. */}
-      <TabsProvider pages={PAGES} ctx={tabsCtx}>
-        <Layout user={user} onLogout={handleLogout} />
-      </TabsProvider>
+      <AppFrame tabsCtx={tabsCtx} user={user} onLogout={handleLogout} />
     </BrowserRouter>
+  );
+}
+
+// P8: halaman MANDIRI (aplikasi PIC Table/Corner, Andon TV) tampil tanpa kerangka desktop; sisanya lewat tab + Layout seperti biasa.
+function AppFrame({ tabsCtx, user, onLogout }) {
+  const location = useLocation();
+  const standalone = standalonePageFor(location.pathname);
+  if (standalone) {
+    return (
+      <ChunkErrorBoundary>
+        <Suspense fallback={<RouteFallback />}>{standalone.render(tabsCtx)}</Suspense>
+      </ChunkErrorBoundary>
+    );
+  }
+  return (
+    <TabsProvider pages={PAGES} ctx={tabsCtx}>
+      <Layout user={user} onLogout={onLogout} />
+    </TabsProvider>
   );
 }

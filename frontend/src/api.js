@@ -107,6 +107,29 @@ function qsFinance(params = {}) {
 }
 
 // Khusus untuk upload file (multipart/form-data — tanpa Content-Type header agar boundary otomatis)
+// Unggah bukti produksi V2 (P8) dengan progres — fetch belum punya progres upload, jadi XHR. Galat membawa .status/.code
+// seperti request() supaya pemanggil bisa membedakan 413/503/409.
+function uploadWithProgress(path, formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE}${path}`);
+    const token = localStorage.getItem("token");
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.timeout = 10 * 60 * 1000; // video besar di jaringan workshop
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100)); };
+    xhr.onload = () => {
+      let body = null;
+      try { body = JSON.parse(xhr.responseText); } catch { /* bukan JSON */ }
+      if (xhr.status === 401) { handleUnauthorized(); reject(Object.assign(new Error("Sesi berakhir, silakan login kembali"), { status: 401 })); return; }
+      if (xhr.status < 200 || xhr.status >= 300) { reject(Object.assign(new Error(body?.error || "Unggahan gagal"), { status: xhr.status, code: body?.code })); return; }
+      resolve(body);
+    };
+    xhr.onerror = () => reject(Object.assign(new Error("Koneksi terputus saat mengunggah — coba lagi"), { status: 0, code: "NETWORK" }));
+    xhr.ontimeout = () => reject(Object.assign(new Error("Unggahan terlalu lama — periksa sinyal lalu coba lagi"), { status: 0, code: "TIMEOUT" }));
+    xhr.send(formData);
+  });
+}
+
 async function requestFormData(path, formData, method = "POST") {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -684,6 +707,31 @@ export const api = {
   updateUnitProduction: (unitId, { priority, productionDueAt } = {}) =>
     request(`/units/${unitId}/production`, { method: "PATCH", body: JSON.stringify({ priority, productionDueAt }) }),
   getServiceCatalog: () => request("/master-data/service-catalog"),
+
+  // ── Production Experience V2 (P8): Planner papan meja, PIC Table/Corner, Andon, antrean Gudang, laporan Sales ──
+  // Bacaan inert (readerMode OFF) bila reader V2 belum aktif; mutasi ditolak server bila writer V2 tidak aktif untuk unit.
+  getProductionV2Board: (date) => request(`/production-v2/board${date ? `?date=${encodeURIComponent(date)}` : ""}`),
+  getProductionV2Andon: (date) => request(`/production-v2/andon${date ? `?date=${encodeURIComponent(date)}` : ""}`),
+  getProductionV2Card: (runId) => request(`/production-v2/runs/${runId}/card`),
+  getProductionV2WorkerQueue: (lane) => request(`/production-v2/worker/${lane}`),
+  getProductionV2WarehouseQueue: () => request("/production-v2/warehouse/queue"),
+  getProductionV2Report: (runId) => request(`/production-v2/runs/${runId}/report`),
+  planProductionV2Unit: (data, idempotencyKey = mutationKey("p8-plan")) =>
+    request("/production-v2/plans", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  scheduleProductionV2Plan: (planId, data, idempotencyKey = mutationKey("p8-schedule")) =>
+    request(`/production-v2/plans/${planId}/schedule`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  recordProductionV2Step: (runId, stepNo, data, idempotencyKey) =>
+    request(`/production-v2/runs/${runId}/steps/${stepNo}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  reportProductionV2Shortage: (runId, data, idempotencyKey = mutationKey("p8-shortage")) =>
+    request(`/production-v2/runs/${runId}/material-shortage`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  resolveProductionV2Shortage: (id, data, idempotencyKey = mutationKey("p8-shortage-resolve")) =>
+    request(`/production-v2/material-shortages/${id}/resolve`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  uploadProductionV2Evidence: (runId, files, onProgress) => {
+    const fd = new FormData();
+    fd.append("runId", runId);
+    for (const file of files) fd.append("files", file);
+    return uploadWithProgress("/production-v2/evidence/upload", fd, onProgress);
+  },
   getRoutingStages: () => request("/master-data/routing-stages"),
   failUnitStage: (unitId, stageId, { blockReason, note }) =>
     request(`/units/${unitId}/stages/${stageId}/fail`, {

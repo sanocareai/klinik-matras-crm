@@ -95,6 +95,22 @@ const WarehouseStockCount = lazy(() => import("../pages/warehouse/WarehouseStock
 const WarehouseAdjustments = lazy(() => import("../pages/warehouse/WarehouseAdjustments.jsx"));
 const WarehouseReplenishment = lazy(() => import("../pages/warehouse/WarehouseReplenishment.jsx"));
 const WarehouseReports = lazy(() => import("../pages/warehouse/WarehouseReports.jsx"));
+// P8 Production Experience V2 (inert bila reader V2 OFF). Aplikasi PIC Table/Corner & Andon TV adalah halaman MANDIRI (App.jsx STANDALONE_PAGES).
+const ProductionPlannerV2 = lazy(() => import("../pages/bengkel/ProductionPlannerV2.jsx"));
+const ProductionReportV2 = lazy(() => import("../pages/bengkel/ProductionReportV2.jsx"));
+const WarehouseProductionQueue = lazy(() => import("../pages/warehouse/WarehouseProductionQueue.jsx"));
+const WorkerLane = lazy(() => import("../pages/produksi/WorkerLane.jsx"));
+const ProductionAndon = lazy(() => import("../pages/bengkel/ProductionAndon.jsx"));
+
+// Halaman MANDIRI (P8): dirender App.jsx di luar sidebar/tab desktop — aplikasi PIC (PWA mobile) dan kiosk Andon TV. Tetap wajib login.
+export const STANDALONE_PAGES = [
+  { path: "/produksi/meja", render: () => <WorkerLane lane="TABLE" /> },
+  { path: "/produksi/corner", render: () => <WorkerLane lane="CORNER" /> },
+  { path: "/bengkel/andon", render: () => <ProductionAndon /> },
+];
+export function standalonePageFor(pathname) {
+  return STANDALONE_PAGES.find((p) => matchPath({ path: p.path, end: true }, pathname)) || null;
+}
 
 // D-144 (9 September 2026) — sistem tab dalam-app: sebuah TAB menyimpan
 // path TUJUAN NYATA-nya sendiri, bukan pernah path redirect ("/", "/armada",
@@ -207,6 +223,9 @@ export const PAGES = [
   { path: "/bengkel/planning", render: () => <ProductionPlanning /> },
   { path: "/bengkel/workshop", render: () => <ProductionWorkshop /> },
   { path: "/bengkel/qc-v2", render: () => <ProductionQc /> },
+  { path: "/bengkel/production-v2", render: () => <ProductionPlannerV2 /> },
+  { path: "/bengkel/production-v2/laporan/:runId", render: () => <ProductionReportV2 /> },
+  { path: "/warehouse/antrean-produksi", render: () => <WarehouseProductionQueue /> },
   { path: "/warehouse/finished-goods", render: () => <WarehouseFinishedGoods /> },
   { path: "/warehouse/material-pickup", render: () => <WarehouseMaterialPickup /> },
   { path: "/warehouse/material-issue", render: () => <WarehouseMaterialIssue /> },

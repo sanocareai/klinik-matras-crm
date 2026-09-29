@@ -185,6 +185,11 @@ const DIVISIONS = {
         section: "OPERASIONAL",
         items: [
           { to: "/bengkel",                 label: "Papan Produksi",  Icon: ClipboardList },
+          // P8 Production V2 — papan meja Planner, aplikasi PIC (PWA) dan Andon TV. Inert bila reader V2 OFF; Work Order lama tetap sebagai histori/fallback.
+          { to: "/bengkel/production-v2",   label: "Rencana Harian (V2)", Icon: CalendarClock },
+          { to: "/produksi/meja",           label: "Aplikasi Meja Bongkar", Icon: Wrench },
+          { to: "/produksi/corner",         label: "Aplikasi Meja Corner", Icon: Wrench },
+          { to: "/bengkel/andon",           label: "Andon TV",        Icon: LayoutDashboard },
           { to: "/bengkel/work-orders",     label: "Work Order",      Icon: Boxes },
           // Rencana Produksi H-1 (Production Workshop + Warehouse V2, P3) — antrean unit eligible, assignment
           // workshop/operator/target waktu, Planned BOM, reservasi bahan Gudang. Kosong/inert bila reader V2
@@ -275,6 +280,8 @@ const DIVISIONS = {
       {
         section: "TRANSAKSI",
         items: [
+          // P8 — antrean Gudang untuk Produksi V2 (unit masuk, bahan, kekurangan, barang jadi). Inert bila reader V2 OFF.
+          { to: "/warehouse/antrean-produksi", label: "Antrean Gudang Produksi", Icon: ClipboardCheck },
           { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
           // Custody unit V2 (P1–P2): antrean serah-terima Delivery <-> Gudang. Data kosong bila reader V2 belum diaktifkan (fail-closed).
           { to: "/warehouse/unit-custody", label: "Penerimaan Unit", Icon: ClipboardCheck },

@@ -4,6 +4,7 @@ import { NavLink } from "react-router-dom";
 import { motion } from "framer-motion";
 import { SquareArrowOutUpRight, AppWindow, Link2, Check } from "lucide-react";
 import { useTabs } from "@/lib/TabsContext.jsx";
+import { standalonePageFor } from "@/routes/pageRegistry.jsx";
 
 // Item navigasi sidebar (presentational). Diekstrak dari Layout HANYA untuk
 // keperluan layout/visual — data nav, role gating, dan route TETAP dikelola
@@ -45,6 +46,13 @@ export default function SidebarLink({
   function handleClick(e) {
     if (menu) return; // menu klik-kanan sedang terbuka, biarkan itu yang urus
     e.preventDefault();
+    // Halaman mandiri (aplikasi PIC / Andon TV) tidak dibuka sebagai tab: pindah penuh ke tampilannya sendiri.
+    if (standalonePageFor(to)) {
+      if (e.metaKey || e.ctrlKey) window.open(to, "_blank", "noopener");
+      else window.location.assign(to);
+      onNavigate?.();
+      return;
+    }
     if (e.metaKey || e.ctrlKey) {
       openNewTab(to, { title: label });
     } else {

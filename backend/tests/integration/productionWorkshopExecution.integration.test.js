@@ -152,7 +152,7 @@ test("intake ditolak bila rencana belum ditugaskan (DRAFT) — gerbang minimum t
   const created = await w.op.api.post("/api/production-planning/plans", { runId: run.id }, key(`c-${++seq}`));
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const res = await start(w, w.op, run.id, 1, "draft-start");
-  assert.equal(res.status, 403, "rencana DRAFT belum punya operator -> bukan operator yang ditugaskan");
+  assert.equal(res.status, 409, JSON.stringify(res.body)); assert.equal(res.body.code, "WORKSHOP_PLAN_NOT_ASSIGNED", "rencana DRAFT belum ditugaskan");
   assert.equal(await testPrisma.productionOperationRun.count({ where: { runId: run.id } }), 0);
 });
 

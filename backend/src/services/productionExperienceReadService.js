@@ -331,7 +331,8 @@ export async function getWarehouseProductionQueue(prisma, { unitIds, now = new D
       planId: plan.id, runId: plan.runId, unitCode: plan.run.unit.unitCode, customerName: plan.run.unit.order?.customer?.name ?? null,
       orderNumber: plan.run.unit.order?.orderNumber ?? null, stationLabel: stationLabel(plan.stationCode), productionDate: formatProductionDate(plan.productionDate),
       operatorName: plan.operator?.user?.name ?? null, planStatus: plan.status, planRevision: plan.revision,
-      status: hasShortage ? "KEKURANGAN" : statusKey,
+      // Status kebutuhan = status Material Issue rencana; laporan kekurangan (bisa bahan di luar BOM) tampil sebagai kartu terpisah.
+      status: statusKey, hasShortage,
       lines: plan.bomLines.map((l) => ({ materialId: l.materialId, code: l.material.code, name: l.material.name, qty: Number(l.qty), uom: l.material.unit, supplemental: !!l.supplementalInspectionId })),
       issues: issues.map((i) => ({ id: i.id, issueNumber: i.issueNumber, status: i.status, revision: i.revision, supplemental: !!i.reworkInspectionId })),
     };
