@@ -62,12 +62,15 @@ async function piutangBersihOrder(db, orderId) {
  * Klasifikasi SATU payment berdasarkan ledger saat ini. `abaikanJurnalId` = id jurnal Bank yang SEDANG akan dibalik (untuk BANK_GANDA, dihitung seakan
  * sudah dibalik). Tidak menulis apa pun. Mengembalikan { kelas, kode, alasan, lawan? } — lawan = "PIUTANG" | "UANG_MUKA" | null.
  */
-export async function klasifikasiPembayaranHistoris(db, p, { cutoff, sesudahBalik = false, lawanCermin = null } = {}) {
+export async function klasifikasiPembayaranHistoris(db, p, { cutoff, sesudahBalik = false, lawanCermin = null, konfirmasiOwner = false } = {}) {
   cutoff ??= await tanggalCutoff(db);
   const tolak = (kode, alasan) => ({ kelas: "C4", kode, alasan });
   if (p.cancelledAt) return tolak("SUDAH_DIBATALKAN_ATAU_DIGANTI", p.replacedBy ? "Payment sudah diganti versi baru." : "Payment sudah dibatalkan.");
   if (p.verifications.length === 0) return tolak("BELUM_DIVERIFIKASI", "Payment belum diverifikasi.");
-  if (!sebelumCutoff(p.createdAt, cutoff)) return tolak("BUKAN_HISTORIS", `Tanggal terima ${tanggalWIB(p.createdAt)} bukan sebelum saldo awal (${cutoff}).`);
+  // konfirmasiOwner: Owner menyatakan uangnya masuk SEBELUM cutoff walau tanggal yang tercatat tepat pada hari cutoff (mis. Aldho G, 18 Sep, Rp3.978.030).
+  // Hanya tanggal <= cutoff yang boleh dinyatakan begitu; tanggal sesudahnya tetap uang berjalan.
+  const historis = sebelumCutoff(p.createdAt, cutoff) || (konfirmasiOwner && tanggalWIB(p.createdAt) <= cutoff);
+  if (!historis) return tolak("BUKAN_HISTORIS", `Tanggal terima ${tanggalWIB(p.createdAt)} bukan sebelum saldo awal (${cutoff}).`);
   if (!(p.amount > 0)) return tolak("NOMINAL_TIDAK_VALID", "Nominal Payment tidak valid.");
   const o = p.order;
   if (o.status === "CANCELLED") return tolak("ORDER_DIBATALKAN", `Order ${o.orderNumber} dibatalkan.`);
@@ -184,7 +187,7 @@ export async function tuntaskanPembayaranHistoris(tx, { paymentId, userId, alasa
  * versi terverifikasi TANPA rekening (alokasi/order sama), lalu jurnal pengganti sesuai ledger (C1 tanpa jurnal / C2 Piutang / C3 Uang Muka).
  * Tanpa PIN — dijalankan Finance Admin lewat skrip server; tidak ada endpoint publik.
  */
-export async function koreksiPembayaranHistoris(tx, { paymentId, userId, alasan }) {
+export async function koreksiPembayaranHistoris(tx, { paymentId, userId, alasan, konfirmasiOwner = false }) {
   const reason = String(alasan ?? "").trim().slice(0, ALASAN_MAKS);
   if (!reason) throw new KoreksiError("Alasan koreksi wajib diisi", 400, "ALASAN_WAJIB");
   if (!(await kunciUntukPayment(tx, paymentId, {}))) throw new KoreksiError("Pembayaran tidak ditemukan", 404);
@@ -198,7 +201,7 @@ export async function koreksiPembayaranHistoris(tx, { paymentId, userId, alasan 
   if (blokir) throw new KoreksiError(`${blokir.alasan} ${blokir.arah}`.trim(), 409, blokir.kode);
 
   const cutoff = await tanggalCutoff(tx);
-  const awal = await klasifikasiPembayaranHistoris(tx, lama, { cutoff });
+  const awal = await klasifikasiPembayaranHistoris(tx, lama, { cutoff, konfirmasiOwner });
   if (awal.kelas !== "BANK_GANDA") throw new KoreksiError(`Bukan kasus kas terhitung dua kali (${awal.kode}): ${awal.alasan}`, 409, awal.kode === "SUDAH_TUNTAS" ? "SUDAH_TUNTAS" : awal.kode);
 
   // 1) Balik jurnal lama pada tanggal aslinya.
@@ -223,7 +226,7 @@ export async function koreksiPembayaranHistoris(tx, { paymentId, userId, alasan 
 
   // 3) Klasifikasi ULANG untuk versi pengganti (jurnal lama sudah dibalik) → jurnal non-kas sesuai ledger, atau tanpa jurnal (C1).
   const pBaru = await tx.payment.findUnique({ where: { id: baru.id }, select: SELECT_PAYMENT });
-  const k = await klasifikasiPembayaranHistoris(tx, pBaru, { cutoff, sesudahBalik: true, lawanCermin });
+  const k = await klasifikasiPembayaranHistoris(tx, pBaru, { cutoff, sesudahBalik: true, lawanCermin, konfirmasiOwner });
   if (k.kelas === "C4") throw new KoreksiError(`Koreksi dibatalkan (exception ${k.kode}): ${k.alasan}`, 409, k.kode);
   let entryNumber = null;
   if (k.lawan) {
@@ -236,7 +239,7 @@ export async function koreksiPembayaranHistoris(tx, { paymentId, userId, alasan 
   await recomputeOrderPaymentStatus(tx, lama.orderId, { paidAtEfektif: true });
   const sesudahOrder = await tx.order.findUnique({ where: { id: lama.orderId }, select: { paymentStatus: true, paidAt: true } });
   const meta = {
-    reason, aksi: "koreksi_pembayaran_historis", cutoff, label: LABEL_HISTORIS, dasar: "Keputusan Owner + konfirmasi CFO; bukan rekening koran", klasifikasi: k.kode,
+    reason, aksi: "koreksi_pembayaran_historis", cutoff, ...(konfirmasiOwner && { konfirmasiOwner: true }), label: LABEL_HISTORIS, dasar: "Keputusan Owner + konfirmasi CFO; bukan rekening koran", klasifikasi: k.kode,
     jurnalDibalik: jurnalLama.map((e) => e.entryNumber), jurnalPengganti: entryNumber, orderNumber: lama.order.orderNumber, amount: lama.amount, tanggalTerima: tanggalWIB(lama.createdAt),
     statusOrder: { sebelum: sebelumOrder.paymentStatus, sesudah: sesudahOrder.paymentStatus },
   };

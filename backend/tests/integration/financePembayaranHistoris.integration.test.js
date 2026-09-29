@@ -79,7 +79,7 @@ async function seimbang() {
   return Number(a._sum.debit ?? 0) === Number(a._sum.credit ?? 0);
 }
 const jurnal = (id) => testPrisma.finJournalEntry.findMany({ where: { source: "PEMBAYARAN_ORDER", sourceId: id }, include: { lines: { include: { account: { select: { systemKey: true } } } } }, orderBy: { createdAt: "asc" } });
-const koreksiH = (w, id) => testPrisma.$transaction((tx) => koreksiPembayaranHistoris(tx, { paymentId: id, userId: w.finance.id, alasan: ALASAN }));
+const koreksiH = (w, id, extra = {}) => testPrisma.$transaction((tx) => koreksiPembayaranHistoris(tx, { paymentId: id, userId: w.finance.id, alasan: ALASAN, ...extra }));
 const tuntaskan = (w, id) => testPrisma.$transaction((tx) => tuntaskanPembayaranHistoris(tx, { paymentId: id, userId: w.finance.id, alasan: ALASAN }));
 const rt = (d) => new Date(`${d}T05:00:00Z`); // jam 12 WIB
 
@@ -430,4 +430,31 @@ test("REVIEW OPUS #1: jurnal lama Dr Bank / Cr Uang Muka yang lalu dipindahkan k
   assert.equal(await saldoAkun(SYSTEM_KEYS.PIUTANG_USAHA, order.id), 600_000, "sisa tagihan pelanggan tetap Rp600.000 (tidak hilang)");
   assert.equal(await saldoAkun(SYSTEM_KEYS.LABA_DITAHAN), 400_000);
   assert.equal(await seimbang(), true);
+});
+
+test("ALDHO G: Payment QRIS bertanggal TEPAT 18 Sep (hari cutoff) dengan jurnal Bank; tanpa konfirmasi Owner ditolak, dengan konfirmasiOwner dikoreksi (Bank kembali, piutang selisih QRIS tetap Rp11.970)", async () => {
+  const w = await dunia();
+  const order = await buatOrder({ value: 3_990_000, nama: "Aldho G" });
+  await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: order.id, userId: w.finance.id }));
+  const lama = await bankGanda(w, order, { amount: 3_978_030, createdAt: rt("2026-09-18"), rek: w.kem, lawan: "PIUTANG" });
+  assert.equal(await saldoAkun(SYSTEM_KEYS.PIUTANG_USAHA, order.id), 11_970);
+
+  await assert.rejects(koreksiH(w, lama.id), (e) => e.statusCode === 409 && e.code === "BUKAN_HISTORIS", "tanpa konfirmasi: 18 Sep = uang berjalan");
+  assert.equal(await saldoRek(w.kem), 3_978_030, "tidak ada perubahan");
+
+  const r = await koreksiH(w, lama.id, { konfirmasiOwner: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.klasifikasi, "PIUTANG_TERBUKA");
+  assert.equal(await saldoRek(w.kem), 0, "saldo KEM turun tepat Rp3.978.030");
+  assert.equal(await saldoAkun(SYSTEM_KEYS.PIUTANG_USAHA, order.id), 11_970, "sisa piutang = potongan QRIS, tidak berubah");
+  assert.equal(await saldoAkun(SYSTEM_KEYS.LABA_DITAHAN), 3_978_030);
+  const baru = await testPrisma.payment.findUnique({ where: { id: (await testPrisma.payment.findUnique({ where: { id: lama.id }, include: { replacedBy: true } })).replacedBy.id }, include: { verifications: true } });
+  assert.equal(baru.cashAccountId, null);
+  assert.equal(baru.verifications.length, 1);
+  assert.equal(baru.createdAt.toISOString().slice(0, 10), "2026-09-18");
+  assert.equal(await seimbang(), true);
+  // konfirmasiOwner TIDAK membuka tanggal sesudah cutoff
+  const o2 = await buatOrder({ value: 500_000, nama: "Setelah" });
+  const p2 = await bankGanda(w, o2, { amount: 500_000, createdAt: rt("2026-09-19"), rek: w.kem });
+  await assert.rejects(koreksiH(w, p2.id, { konfirmasiOwner: true }), (e) => e.code === "BUKAN_HISTORIS");
 });
