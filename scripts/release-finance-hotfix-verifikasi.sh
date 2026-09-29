@@ -15,7 +15,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-hotfix/finance-verifikasi-sebelum-saldo-awal}"
 # Berkas yang BOLEH berbeda dari baseline: hanya area Finance + skrip/tes-nya. Apa pun di luar ini (Production, Delivery, Inbox, schema, migration,
 # package-lock) = berhenti — supaya pekerjaan workspace lain yang sudah live tidak pernah tertimpa.
-ALLOWED_RE='^(backend/src/(services/finance/|routes/financePembayaran\.js)|backend/tests/integration/(finance|koreksiPembayaran|resiPembayaran)|backend/scripts/(penuntasanHistoris|koreksiKasGanda)|frontend/src/(features/finance/|pages/finance/|api\.js$)|scripts/release-finance)'
+ALLOWED_RE='^(backend/src/(services/finance/|routes/finance[A-Za-z]*\.js)|backend/tests/integration/(finance|koreksiPembayaran|resiPembayaran)|backend/scripts/(penuntasanHistoris|koreksiKasGanda)|frontend/src/(features/finance/|pages/finance/|api\.js$)|scripts/release-finance)'
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
