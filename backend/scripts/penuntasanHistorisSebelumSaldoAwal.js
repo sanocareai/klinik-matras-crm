@@ -7,7 +7,6 @@
 // Isi:
 //  A. Koreksi WILSON (order NEW-21082026-014, Rp1.900.000, 3 Sep 2026, PT Sano, JV-03092026-747) — tepat satu Payment + satu jurnal.
 //  B. Koreksi KEM (Rp1.750.000, 15 Sep 2026, KEM - Sano Bank, diverifikasi 21 Sep) — tepat satu Payment. Ganda / sudah dicocokkan / periode SELESAI → dilaporkan, TIDAK dipaksa.
-//  B2. Koreksi ALDHO G (RES-11092026-059, QRIS Rp3.978.030, tercatat 18 Sep, KEM - Sano Bank) — dikonfirmasi Owner: uang masuk sebelum 18 Sep (konfirmasiOwner).
 //  C. Payment terverifikasi bertanggal sebelum cutoff yang belum berjurnal: C1 (audit saja) / C2 (Dr Laba Ditahan, Cr Piutang) / C3 (Dr Laba Ditahan, Cr Uang Muka);
 //     C4 = exception (tidak diposting). Kas/Bank TIDAK PERNAH disentuh oleh C1/C2/C3.
 // Semua penulisan dalam SATU transaksi + pemeriksaan pasca-tulis DI DALAM transaksi: kalau ada yang meleset, seluruhnya di-rollback.
@@ -25,8 +24,7 @@ const rp = (v) => `Rp${Number(v).toLocaleString("id-ID", { maximumFractionDigits
 const TARGET = [
   { nama: "WILSON", nomor: "NEW-21082026-014", amount: 1_900_000, tanggal: "2026-09-03", rekening: "PT Sano", jurnal: "JV-03092026-747", wajib: true },
   { nama: "KEM", nomor: null, amount: 1_750_000, tanggal: "2026-09-15", rekening: "KEM - Sano Bank", verifikasiWIB: "2026-09-21", wajib: false },
-  // Aldho G: Owner mengonfirmasi uangnya masuk SEBELUM 18 Sep walau tercatat bertanggal 18 Sep (hari cutoff) — konfirmasiOwner mengizinkan tanggal <= cutoff.
-  { nama: "ALDHO G", nomor: "RES-11092026-059", amount: 3_978_030, tanggal: "2026-09-18", rekening: "KEM - Sano Bank", wajib: false, konfirmasiOwner: true },
+  // ALDHO G (RES-11092026-059) SENGAJA TIDAK DIKOREKSI — keputusan Owner 30 Sep 2026: sudah lunas, saldo KEM sudah cocok dengan bank; jurnal Bank-nya dibiarkan.
 ];
 
 async function snapshot(db) {
