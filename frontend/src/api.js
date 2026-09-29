@@ -728,6 +728,10 @@ export const api = {
     request(`/production-v2/runs/${runId}/material-shortage`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   resolveProductionV2Shortage: (id, data, idempotencyKey = mutationKey("p8-shortage-resolve")) =>
     request(`/production-v2/material-shortages/${id}/resolve`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // P9A — "Unit Tiba di Workshop": pemilih lokasi Receiving/WIP + konfirmasi kedatangan fisik (tanpa buka workspace Gudang).
+  getProductionV2ReceivingLocations: () => request("/production-v2/receiving-locations"),
+  confirmProductionV2UnitArrival: (unitId, data, idempotencyKey = mutationKey("p9a-confirm-arrival")) =>
+    request(`/production-v2/units/${unitId}/confirm-arrival`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   uploadProductionV2Evidence: (runId, files, onProgress) => {
     const fd = new FormData();
     fd.append("runId", runId);

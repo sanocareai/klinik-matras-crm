@@ -68,6 +68,19 @@ export function assertLocationAllowed(direction, location) {
   }
 }
 
+// P9A — daftar lokasi Receiving/WIP AKTIF untuk pemilih di kartu "Unit Tiba di
+// Workshop" (Production). BACA-SAJA; tidak pernah menebak default — kartu
+// tetap wajib pengguna memilih satu (lihat confirmUnitArrival/acceptUnitCustody:
+// locationId tetap wajib, tidak ada fallback otomatis di sini maupun di sana).
+export async function listReceivingLocations(prisma) {
+  const rows = await prisma.storageLocation.findMany({
+    where: { active: true, locationType: { in: ["RECEIVING_AREA", "WIP_AREA"] } },
+    select: { id: true, code: true, zone: true, locationType: true },
+    orderBy: [{ locationType: "asc" }, { code: "asc" }],
+  });
+  return rows;
+}
+
 async function beginCommand(tx, { actor, idempotencyKey, commandType, aggregateId, requestHash, expectedRevision = null }) {
   return tx.v2Command.create({
     data: {
@@ -94,6 +107,13 @@ async function offerOne(tx, { direction, unitId, jobId, actorId }) {
   await lockRowForUpdate(tx, "units", unitId);
   const existing = await tx.unitCustodyHandoff.findUnique({ where: { deliveryJobId_unitId: { deliveryJobId: jobId, unitId } } });
   if (existing) return { handoff: existing, replayed: true };
+  // P9A (One-Location Production Intake) — unit lalu langsung terhitung `Masuk
+  // Produksi` begitu pickup-nya SENDIRI berhasil (bukan seluruh Order — lihat
+  // openPendingArrivalIntakeV2InTx), TANPA menunggu Gudang menerima custody
+  // secara manual. Hanya arah INBOUND (unit dari customer, bukan RETURN dari
+  // Delivery) — kunci unit di atas SUDAH cukup (urutan sama dengan
+  // openProductionIntakeV2: unit -> run).
+  if (direction === "INBOUND") await openPendingArrivalIntakeV2InTx(tx, { unitId, actorId });
 
   const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, orderId: true } });
   if (!unit) throw custodyError("Unit tidak ditemukan", 404, "UNIT_NOT_FOUND");
@@ -313,6 +333,57 @@ export async function openProductionIntakeV2(tx, { unitId, actorId = null }) {
 }
 
 // ---------------------------------------------------------------------------
+// P9A — One-Location Production Intake: dibuka SAAT custody INBOUND
+// DITAWARKAN (pickup berhasil), bukan menunggu Gudang menerima secara manual.
+// Kontrak: SATU Production Run per unit (dedup terhadap run non-terminal yang
+// SUDAH ADA — termasuk PENDING_ARRIVAL hasil backfill V1 lama, lihat
+// backfill-core.js); status PENDING_ARRIVAL, currentPhase NULL, SELURUH fase
+// NOT_STARTED/NOT_APPLICABLE (tanpa fase ACTIVE, tanpa startedAt) — tahap
+// produksi TIDAK BOLEH dimulai sebelum kedatangan fisik dikonfirmasi (digerbang
+// terpisah di loadRunForWrite, productionWorkshopExecutionCommandService.js).
+// Dipanggil DI DALAM transaksi offerOne (unit SUDAH dikunci oleh pemanggil) —
+// idempotency-nya berasal dari idempotency offerOne sendiri (dedup lewat
+// deliveryJobId_unitId SEBELUM fungsi ini pernah dipanggil, lihat offerOne).
+export async function openPendingArrivalIntakeV2InTx(tx, { unitId, actorId = null }) {
+  const now = new Date();
+  const active = await tx.productionRun.findFirst({ where: { unitId, status: { notIn: ["COMPLETED", "CANCELLED"] } }, orderBy: { createdAt: "desc" } });
+  if (active) return { run: active, opened: false }; // sudah ada run non-terminal (PENDING_ARRIVAL/ACTIVE/BLOCKED) — tidak menduplikasi.
+
+  const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { order: { select: { category: true } }, stageLogs: { select: { id: true }, take: 1 } } });
+  const last = await tx.productionRun.findFirst({ where: { unitId }, orderBy: { createdAt: "desc" }, select: { id: true } });
+  const kind = last ? "REWORK" : productionKind(unit?.order?.category, (unit?.stageLogs?.length || 0) > 0);
+  const notApplicable = kind === "FULFILLMENT_ONLY" ? new Set(["DIAGNOSIS", "PROCESS", "QC"]) : new Set();
+  // revision MULAI DARI 0 (bukan 1): PENDING_ARRIVAL di jalur BARU ini belum
+  // "resmi ada" dari sudut pandang penulis lain — belum ada satu pun command
+  // yang boleh menulis run ini selain promosi (openProductionIntakeV2, saat
+  // ACCEPT/konfirmasi tiba) atau pembatalan (rejectUnitCustody). Keduanya
+  // MENAIKKAN revisi dari basis ini (+1) sama seperti sebelum P9A — supaya
+  // run yang baru ACTIVE tetap revisi 1, sama seperti semua ekspektasi
+  // existing (test P3/P5 dkk yang mengasumsikan run baru = revisi 1) tanpa
+  // perlu diubah. Run dari jalur backfill LAMA (backfill-core.js, dibuat
+  // manual di luar fungsi ini) TETAP revisi 1 — tidak terpengaruh.
+  const run = await tx.productionRun.create({
+    data: {
+      unitId, kind, origin: "CUSTODY_PICKUP", status: "PENDING_ARRIVAL", currentPhase: null, startedAt: null, revision: 0, parentRunId: last?.id || null,
+      phases: {
+        create: PHASES.map((phase, index) => ({
+          phase, sequence: index + 1,
+          status: notApplicable.has(phase) ? "NOT_APPLICABLE" : "NOT_STARTED",
+          reason: notApplicable.has(phase) ? "Fulfillment tanpa proses restorasi" : null,
+          startedAt: null,
+        })),
+      },
+    },
+  });
+  await outbox(tx, {
+    domain: "PRODUCTION", eventType: "production.run.pending_arrival", aggregateType: "ProductionRun", aggregateId: run.id, revision: 0,
+    dedupeKey: `production-run-pending-arrival:${run.id}:0`,
+    payload: { runId: run.id, unitId, kind, revision: 0, occurredAt: now.toISOString(), actorId },
+  });
+  return { run, opened: true };
+}
+
+// ---------------------------------------------------------------------------
 // Keputusan Gudang: terima / tolak
 // ---------------------------------------------------------------------------
 async function decide(prisma, { handoffId, actorId, idempotencyKey, expectedRevision, commandType, payload, apply }) {
@@ -398,6 +469,34 @@ export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotenc
   });
 }
 
+// ---------------------------------------------------------------------------
+// P9A — "Unit Tiba di Workshop" (Production, BUKAN Gudang). Pembungkus TIPIS
+// di atas acceptUnitCustody: sama persis kuncinya (handoff -> unit -> run),
+// idempotensinya, dan atomisitasnya (custody ACCEPTED + run PENDING_ARRIVAL->
+// ACTIVE dalam SATU transaksi) — TIDAK ADA logika baru diduplikasi. Bedanya
+// HANYA titik masuk: dipanggil dari route Production (permission
+// UNIT_STAGE_WRITE, bukan INVENTORY_WRITE milik Gudang) dan dicari lewat
+// unitId (kartu Production tahu unit, belum tentu tahu handoffId — termasuk
+// unit lama yang OFFERED tanpa run sama sekali, mis. canary yang diverifikasi
+// harus TETAP terbaca tanpa dimutasi sampai tombol ini benar-benar diklik).
+// Pencarian handoffId di LUAR transaksi aman: acceptUnitCustody mengunci ulang
+// baris handoff dan mencocokkan expectedRevision di DALAM transaksinya sendiri
+// — percobaan basi (dua klik "Unit Tiba" bersamaan) otomatis ditolak 409 oleh
+// pemeriksaan revisi itu, bukan oleh fungsi ini.
+export async function confirmUnitArrival(prisma, { unitId, actorId, idempotencyKey, locationId }) {
+  if (!unitId) throw custodyError("unitId wajib diisi", 400, "UNIT_ID_REQUIRED");
+  const handoff = await prisma.unitCustodyHandoff.findFirst({
+    where: { unitId, direction: "INBOUND", status: "OFFERED" },
+    orderBy: { offeredAt: "desc" },
+    select: { id: true, revision: true },
+  });
+  if (!handoff) throw custodyError("Tidak ada unit yang menunggu konfirmasi kedatangan untuk unit ini", 404, "CUSTODY_NOT_OFFERED_FOR_UNIT");
+  // expectedRevision diturunkan dari baris yang SAMA persis dipakai untuk menemukan
+  // handoffId (bukan dari klien) — kartu Production tidak perlu tahu/menyimpan
+  // revisi custody internal; kunci konkurensi tetap ditegakkan di acceptUnitCustody/decide().
+  return acceptUnitCustody(prisma, { handoffId: handoff.id, actorId, idempotencyKey, expectedRevision: handoff.revision, locationId });
+}
+
 export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotencyKey, expectedRevision, reason }) {
   const cleaned = String(reason ?? "").trim();
   if (cleaned.length < 3) throw custodyError("Alasan penolakan wajib diisi (minimal 3 karakter)", 400, "CUSTODY_REASON_REQUIRED");
@@ -406,11 +505,32 @@ export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotenc
     apply: async (tx, { handoff, actorId: actor }) => {
       const now = new Date();
       const finishedRun = handoff.direction === "FINISHED_GOODS" ? await prepareFinishedGoodsDecision(tx, handoff) : null;
+      // P9A — custody INBOUND ditolak SEBELUM kedatangan fisik dikonfirmasi: run
+      // PENDING_ARRIVAL yang otomatis dibuka saat OFFER (openPendingArrivalIntakeV2InTx)
+      // ikut dibatalkan, supaya unit yang ditolak Gudang tidak nyangkut selamanya
+      // sebagai kartu "Masuk Produksi" di papan. Run yang SUDAH ACTIVE (sudah
+      // dikonfirmasi tiba) tidak mungkin lagi di titik ini — decide() hanya
+      // mengizinkan keputusan atas handoff yang masih OFFERED, dan konfirmasi
+      // kedatangan hanya terjadi lewat ACCEPT (yang menutup OFFERED lebih dulu).
+      const pendingArrivalRun = handoff.direction === "INBOUND"
+        ? await tx.productionRun.findFirst({ where: { unitId: handoff.unitId, status: "PENDING_ARRIVAL" }, include: { phases: true } })
+        : null;
       const revision = handoff.revision + 1;
       await tx.unitCustodyHandoff.update({
         where: { id: handoff.id },
         data: { status: "REJECTED", revision, rejectedById: actor || null, rejectedAt: now, reason: cleaned },
       });
+      if (pendingArrivalRun) {
+        const openPhases = pendingArrivalRun.phases.filter((p) => !["COMPLETED", "NOT_APPLICABLE", "CANCELLED"].includes(p.status));
+        if (openPhases.length) await transitionPhases(tx, pendingArrivalRun.id, openPhases.map((phase) => ({ phase: phase.phase, data: { status: "CANCELLED", reason: `Custody ditolak Gudang: ${cleaned}` } })));
+        const runRevision = pendingArrivalRun.revision + 1;
+        await tx.productionRun.update({ where: { id: pendingArrivalRun.id }, data: { status: "CANCELLED", completedAt: now, revision: runRevision } });
+        await outbox(tx, {
+          domain: "PRODUCTION", eventType: "production.run.cancelled", aggregateType: "ProductionRun", aggregateId: pendingArrivalRun.id, revision: runRevision,
+          dedupeKey: `production-run-cancelled:${pendingArrivalRun.id}:${runRevision}`,
+          payload: { runId: pendingArrivalRun.id, unitId: handoff.unitId, reason: `Custody ditolak Gudang: ${cleaned}`, revision: runRevision, occurredAt: now.toISOString(), actorId: actor || null },
+        });
+      }
       let returnedRunRevision = null;
       if (finishedRun) {
         // Kasus kembali ke Production: fase HANDOFF BLOCKED (alasan tercatat), run tetap ACTIVE. Tindakan koreksi lewat command Production
@@ -432,7 +552,11 @@ export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotenc
         entityType: "unit", entityId: handoff.unitId, eventType: EVENT_TYPES.CUSTODY_REJECTED, actorId: actor || null,
         metadata: { unitCode: handoff.unit.unitCode, direction: handoff.direction, handoffId: handoff.id, reason: cleaned },
       });
-      return { handoffId: handoff.id, unitId: handoff.unitId, status: "REJECTED", revision, reason: cleaned, ...(finishedRun ? { runRevision: returnedRunRevision, runPhase: "HANDOFF", returnedToProduction: true } : {}) };
+      return {
+        handoffId: handoff.id, unitId: handoff.unitId, status: "REJECTED", revision, reason: cleaned,
+        ...(finishedRun ? { runRevision: returnedRunRevision, runPhase: "HANDOFF", returnedToProduction: true } : {}),
+        ...(pendingArrivalRun ? { cancelledPendingArrivalRunId: pendingArrivalRun.id } : {}),
+      };
     },
   });
 }

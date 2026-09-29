@@ -11,7 +11,7 @@
 //      judul diturunkan — tanpa ini judul tab jadi title-case dari seluruh
 //      query mentah ("Order Produksi?Tab=Work Order&Status=DELIVERED"),
 //      bug nyata yang ditemukan lewat QA visual.
-import { splitPathQuery } from "./splitPathQuery.js";
+import { splitPathQuery, canonicalizeTabPath } from "./splitPathQuery.js";
 
 const RESOURCE_LABELS = {
   units: "Unit",
@@ -61,7 +61,44 @@ export function titleFromPath(rawPath) {
 // Dedup tab (P8.1) — dicari lewat PATH TUJUAN resolved (sama persis dengan apa
 // yang disimpan di tabs[].path, lihat resolveEntryPath di pageRegistry.jsx),
 // bukan path mentah yang diklik. Mengembalikan index tab yang sudah terbuka
-// untuk path itu, atau -1 kalau belum ada.
+// untuk path itu, atau -1 kalau belum ada. P8.2: dibandingkan dalam bentuk
+// KANONIK (canonicalizeTabPath) — urutan parameter query beda tidak dianggap
+// tab berbeda.
 export function findTabIndexByPath(tabs, path) {
-  return tabs.findIndex((t) => t.path === path);
+  const target = canonicalizeTabPath(path);
+  return tabs.findIndex((t) => canonicalizeTabPath(t.path) === target);
+}
+
+// Migrasi/dedup tab tersimpan (P8.2, UI Polish) — laporan owner dari
+// screenshot live: tab "Dashboard" dobel di tab strip. PENYEBAB: dedup di
+// openNewTab (P8.1) cuma mencegah duplikat BARU; tab yang SUDAH tersimpan
+// di localStorage dari SEBELUM perbaikan itu (atau dari alur navigasi lain
+// yang tidak lewat openNewTab, mis. loadTabs() lama) tetap dobel selamanya.
+// Dipanggil OTOMATIS setiap kali tab dimuat dari localStorage (TabsContext.jsx)
+// — bukan flag sekali-jalan yang rapuh (kalau bug serupa muncul lagi di masa
+// depan, flag sekali-jalan akan MENCEGAH pembersihan berikutnya; fungsi murni
+// idempoten ini aman dipanggil berkali-kali, tidak berbiaya kalau memang
+// sudah bersih).
+//
+// Aturan: SATU tab bertahan per path KANONIK. Kalau tab yang sedang AKTIF
+// (activeId) adalah salah satu duplikat, tab AKTIF itu yang dipertahankan
+// (bukan yang pertama ditemukan) — "jangan menghapus tab aktif pengguna
+// yang valid". Urutan RELATIF tab yang tersisa mengikuti kemunculan PERTAMA
+// path itu di daftar asli.
+export function dedupeTabs(tabs, activeId) {
+  const winnerByPath = new Map();
+  for (const t of tabs) {
+    const key = canonicalizeTabPath(t.path);
+    const existing = winnerByPath.get(key);
+    if (!existing || t.id === activeId) winnerByPath.set(key, t);
+  }
+  const seen = new Set();
+  const result = [];
+  for (const t of tabs) {
+    const key = canonicalizeTabPath(t.path);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(winnerByPath.get(key));
+  }
+  return result;
 }

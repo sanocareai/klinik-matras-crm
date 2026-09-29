@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, FileText, Monitor, PackageX, Plus, RefreshCw, Target, Timer,
+  AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, FileText, Monitor, PackageX, Plus, RefreshCw, Target, Timer, Truck,
 } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -41,34 +41,91 @@ function Kpi({ icon: Icon, label, value, tone = "neutral" }) {
   );
 }
 
-function RunCard({ item, onOpen, draggable = true }) {
+// P9A — unit sudah "Masuk Produksi" (pickup berhasil) TAPI belum dikonfirmasi
+// tiba secara fisik: kartu boleh dijadwalkan lebih dulu (bucket DALAM_PERJALANAN),
+// tapi tahap produksi baru bisa dimulai setelah tombol ini diklik (ditegakkan
+// server di loadRunForWrite). Tombol dipisah dari area klik "buka kartu" —
+// wrapper diganti dari <button> jadi <div> supaya dua aksi tidak bertumpuk.
+function RunCard({ item, onOpen, onConfirmArrival, draggable = true }) {
   const st = bucketStyle(item.bucket);
   const warn = item.warnings?.find((w) => ["KEKURANGAN", "LAYANAN_BELUM", "BAHAN_BELUM", "BOM_BELUM", "TERLAMBAT"].includes(w.code));
   const waiting = item.bucket === "MENUNGGU_BAHAN";
+  const inTransit = item.bucket === "DALAM_PERJALANAN";
   return (
-    <button type="button" draggable={draggable} onDragStart={(e) => { e.dataTransfer.setData("text/plain", item.runId); e.dataTransfer.effectAllowed = "move"; }}
-      onClick={() => onOpen(item)} className={`w-full rounded-card p-3 text-left transition-colors hover:bg-hovertint ${waiting ? "bg-orangebg/60" : "bg-surface"} shadow-sm`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
-          <p className="truncate text-[12.5px] text-ink2">{item.customer.name || "—"}</p>
-          <p className="truncate text-[12px] text-ink3">{[item.unit.ukuran, item.unit.service?.label || "Layanan belum ditetapkan"].filter(Boolean).join(" · ")}</p>
+    <div draggable={draggable} onDragStart={(e) => { e.dataTransfer.setData("text/plain", item.runId); e.dataTransfer.effectAllowed = "move"; }}
+      className={`w-full overflow-hidden rounded-card transition-colors ${waiting ? "bg-orangebg/60" : "bg-surface"} shadow-sm`}>
+      <button type="button" onClick={() => onOpen(item)} className="w-full p-3 text-left hover:bg-hovertint">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
+            <p className="truncate text-[12.5px] text-ink2">{item.customer.name || "—"}</p>
+            <p className="truncate text-[12px] text-ink3">{[item.unit.ukuran, item.unit.service?.label || "Layanan belum ditetapkan"].filter(Boolean).join(" · ")}</p>
+          </div>
+          {item.plan?.priority > 0 && <Badge variant={item.plan.priority === 2 ? "red" : "orange"}>{item.plan.priorityLabel}</Badge>}
         </div>
-        {item.plan?.priority > 0 && <Badge variant={item.plan.priority === 2 ? "red" : "orange"}>{item.plan.priorityLabel}</Badge>}
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <Badge variant={st.badge}>{st.label}</Badge>
-        {item.customer.weightKg && <span className="text-[11.5px] text-ink3">{item.customer.weightKg} kg</span>}
-      </div>
-      {warn && <p className="mt-1.5 flex items-center gap-1 text-[11.5px] font-medium text-orange"><AlertTriangle size={12} aria-hidden /> {warn.text}</p>}
-      <div className="mt-2 flex items-center gap-2">
-        {item.plan?.operator?.name && <span title={item.plan.operator.name} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white">{initials(item.plan.operator.name)}</span>}
-        <div className="flex-1">
-          <ProgressBar value={item.progress.total ? (item.progress.done / item.progress.total) * 100 : 0} variant={waiting ? "warning" : "accent"} />
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <Badge variant={st.badge}>{st.label}</Badge>
+          {item.customer.weightKg && <span className="text-[11.5px] text-ink3">{item.customer.weightKg} kg</span>}
         </div>
-        <span className="shrink-0 text-[11px] text-ink3 tabular-nums">{item.progress.done} dari {item.progress.total} tahap</span>
+        {warn && <p className="mt-1.5 flex items-center gap-1 text-[11.5px] font-medium text-orange"><AlertTriangle size={12} aria-hidden /> {warn.text}</p>}
+        <div className="mt-2 flex items-center gap-2">
+          {item.plan?.operator?.name && <span title={item.plan.operator.name} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white">{initials(item.plan.operator.name)}</span>}
+          <div className="flex-1">
+            <ProgressBar value={item.progress.total ? (item.progress.done / item.progress.total) * 100 : 0} variant={waiting ? "warning" : "accent"} />
+          </div>
+          <span className="shrink-0 text-[11px] text-ink3 tabular-nums">{item.progress.done} dari {item.progress.total} tahap</span>
+        </div>
+      </button>
+      {inTransit && onConfirmArrival && (
+        <div className="border-t border-line px-3 py-2">
+          <Button size="sm" variant="secondary" className="w-full" onClick={() => onConfirmArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// P9A — pemilih lokasi Receiving/WIP untuk "Unit Tiba di Workshop". Tidak ada
+// default terpilih (server juga menolak locationId kosong) — pengguna WAJIB
+// memilih sendiri, sesuai kontrak "jangan pernah menebak lokasi".
+function ArrivalModal({ target, onClose, onDone }) {
+  const [locations, setLocations] = useState(null);
+  const [locationId, setLocationId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let alive = true;
+    api.getProductionV2ReceivingLocations().then((r) => { if (alive) setLocations(r.locations || []); }).catch((e) => { if (alive) setError(friendlyError(e)); });
+    return () => { alive = false; };
+  }, []);
+  async function submit() {
+    if (!locationId) { setError("Pilih lokasi penyimpanan dulu."); return; }
+    setBusy(true); setError("");
+    try {
+      await api.confirmProductionV2UnitArrival(target.unit.id, { locationId });
+      onDone(`${target.unit.unitCode} tercatat tiba di workshop.`);
+    } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
+  }
+  return (
+    <Modal open onOpenChange={(v) => !v && onClose()} title={`Unit Tiba di Workshop — ${target.unit.unitCode}`}
+      description="Konfirmasi kedatangan fisik unit ke lokasi Receiving/WIP. Tahap produksi baru bisa dimulai setelah ini."
+      footer={
+        <div className="flex w-full justify-end gap-2">
+          <Button variant="neutral" onClick={onClose} disabled={busy}>Batal</Button>
+          <Button onClick={submit} disabled={busy || !locationId}>{busy ? "Menyimpan…" : "Konfirmasi Tiba"}</Button>
+        </div>
+      }>
+      <div className="space-y-3 px-6 pb-2">
+        <label className="text-[12.5px] text-ink3">Lokasi penyimpanan (Receiving/WIP)
+          <select className="mt-1 w-full rounded-btn border border-line bg-transparent px-3 py-2 text-[13.5px] text-ink" value={locationId} onChange={(e) => setLocationId(e.target.value)} disabled={!locations}>
+            <option value="">{locations ? "— pilih lokasi —" : "Memuat…"}</option>
+            {(locations || []).map((l) => <option key={l.id} value={l.id}>{l.code}{l.zone ? ` (${l.zone})` : ""}</option>)}
+          </select>
+        </label>
+        {locations && locations.length === 0 && <p className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Belum ada lokasi Receiving/WIP aktif. Minta Gudang mengaktifkan satu lokasi dulu.</p>}
+        {error && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
       </div>
-    </button>
+    </Modal>
   );
 }
 
@@ -142,7 +199,7 @@ function ScheduleModal({ target, board, date, refs, onClose, onDone }) {
   );
 }
 
-function RunDrawer({ item, refs, onClose, onSchedule, onChanged }) {
+function RunDrawer({ item, refs, onClose, onSchedule, onConfirmArrival, onChanged }) {
   const [serviceId, setServiceId] = useState(item.unit.service ? "" : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -194,6 +251,7 @@ function RunDrawer({ item, refs, onClose, onSchedule, onChanged }) {
         )}
         {error && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
         <div className="flex flex-wrap gap-2">
+          {item.bucket === "DALAM_PERJALANAN" && onConfirmArrival && <Button size="sm" onClick={() => onConfirmArrival(item)}><Truck size={14} aria-hidden /> Unit Tiba di Workshop</Button>}
           <Button size="sm" onClick={() => onSchedule(item)}><CalendarDays size={14} aria-hidden /> {item.plan?.stationCode ? "Pindah / Ubah Jadwal" : "Jadwalkan"}</Button>
           {item.plan && <Button size="sm" variant="secondary" asChild><Link to={`/bengkel/production-v2/laporan/${item.runId}`}><FileText size={14} aria-hidden /> Laporan</Link></Button>}
           <Button size="sm" variant="neutral" asChild><Link to={`/bengkel/units/${item.unit.id}`}>Detail unit (lama)</Link></Button>
@@ -259,6 +317,7 @@ function WeekStrip({ centerDate, onPick }) {
 
 export default function ProductionPlannerV2() {
   const [date, setDate] = useState(() => wibDate(0));
+  const dateInputRef = useRef(null);
   const [board, setBoard] = useState(null);
   const [refs, setRefs] = useState({ workCenters: [], operators: [], services: [] });
   const [loading, setLoading] = useState(true);
@@ -267,6 +326,7 @@ export default function ProductionPlannerV2() {
   const [tab, setTab] = useState("board");
   const [drawer, setDrawer] = useState(null);
   const [schedule, setSchedule] = useState(null);
+  const [arrival, setArrival] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
 
   const load = useCallback(() => {
@@ -313,9 +373,22 @@ export default function ProductionPlannerV2() {
       <PageHeader title="Rencana Produksi" subtitle={fmtDate(date)}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {/* P8.2 (UI Polish) — laporan owner dari screenshot live: input
+                tanggal native menampilkan format browser mentah ("09/29/2026"),
+                tidak konsisten dengan subjudul di bawah judul halaman yang
+                sudah Indonesia ("29 Sep 2026"). Input native TETAP dipakai
+                (dukungan a11y/mobile terbaik untuk kalender), tapi disembunyikan
+                visual (sr-only — tetap ada di DOM & bisa diklik lewat ref,
+                bukan display:none) di belakang tombol berlabel format Indonesia
+                yang membuka pemilih tanggal via showPicker(). */}
             <div className="flex items-center rounded-btn bg-inset">
               <Button variant="neutral" size="icon" aria-label="Hari sebelumnya" onClick={() => setDate((d) => shiftDate(d, -1))}><ChevronLeft size={16} /></Button>
-              <input type="date" aria-label="Tanggal produksi" className="bg-transparent px-1 text-[13px] text-ink" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+              <button type="button"
+                onClick={() => { const el = dateInputRef.current; if (!el) return; if (typeof el.showPicker === "function") el.showPicker(); else el.click(); }}
+                className="flex items-center gap-1.5 px-1 text-[13px] font-medium text-ink">
+                <CalendarDays size={14} className="text-ink3" aria-hidden /> {fmtDate(date)}
+              </button>
+              <input ref={dateInputRef} type="date" aria-label="Tanggal produksi" className="sr-only" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
               <Button variant="neutral" size="icon" aria-label="Hari berikutnya" onClick={() => setDate((d) => shiftDate(d, 1))}><ChevronRight size={16} /></Button>
             </div>
             <Button variant="neutral" size="sm" onClick={() => setDate(wibDate(0))}>Hari Ini</Button>
@@ -373,10 +446,17 @@ export default function ProductionPlannerV2() {
                         <span className={`text-[12px] font-semibold tabular-nums ${cap.full ? "text-orange" : "text-ink3"}`}>{cap.label}</span>
                       </div>
                       <p className="-mt-1 text-[12px] text-ink3">{s.operatorNames.join(", ") || "Belum ada PIC"}</p>
-                      {s.items.map((item) => <RunCard key={item.runId} item={item} onOpen={setDrawer} />)}
+                      {s.items.map((item) => <RunCard key={item.runId} item={item} onOpen={setDrawer} onConfirmArrival={setArrival} />)}
                       {!cap.full && (
-                        <button type="button" onClick={() => setSchedule({ pick: true, presetStation: s.code })}
-                          className="flex min-h-[72px] flex-col items-center justify-center rounded-card border-2 border-dashed border-line text-[12.5px] text-ink3 hover:bg-hovertint">
+                        // P8.2 (UI Polish) — dinonaktifkan saat Belum Dijadwalkan
+                        // kosong: sebelumnya tombol tetap bisa diklik dan membuka
+                        // modal "Pilih unit" yang kosong (cuma teks "Tidak ada
+                        // unit yang menunggu dijadwalkan."), langkah tambahan
+                        // tanpa guna. Tooltip Indonesia menjelaskan kenapa.
+                        <button type="button" disabled={unscheduledCount === 0}
+                          onClick={() => unscheduledCount > 0 && setSchedule({ pick: true, presetStation: s.code })}
+                          title={unscheduledCount === 0 ? "Belum ada unit yang menunggu dijadwalkan" : undefined}
+                          className="flex min-h-[72px] flex-col items-center justify-center rounded-card border-2 border-dashed border-line text-[12.5px] text-ink3 hover:bg-hovertint disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
                           <Plus size={16} aria-hidden /> Tambah unit ke {s.label}
                         </button>
                       )}
@@ -407,18 +487,42 @@ export default function ProductionPlannerV2() {
             <Card className="space-y-3 p-4">
               <div className="flex items-center gap-2"><p className="text-[14px] font-bold text-ink">Belum Dijadwalkan</p><Badge variant="neutral">{unscheduledCount} unit</Badge></div>
               {unscheduledCount === 0 ? (
-                <p className="text-[12.5px] text-ink3">Semua unit siap produksi sudah dijadwalkan. Unit baru muncul di sini setelah Gudang menerima unit dari pickup.</p>
+                // P9A — copy lama ("...setelah Gudang menerima unit dari pickup")
+                // sudah tidak akurat: unit sekarang langsung "Masuk Produksi"
+                // begitu PICKUP-nya sendiri berhasil, tanpa menunggu Gudang.
+                <p className="text-[12.5px] text-ink3">Semua unit siap produksi sudah dijadwalkan. Unit baru muncul di sini segera setelah pickup ke customer berhasil.</p>
               ) : (
                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                  {board.unscheduled.plans.map((item) => <RunCard key={item.runId} item={item} onOpen={setDrawer} />)}
-                  {board.unscheduled.units.map((u) => (
-                    <button key={u.runId} type="button" draggable onDragStart={(e) => e.dataTransfer.setData("text/plain", u.runId)} onClick={() => setSchedule(u)}
-                      className="rounded-card bg-surface p-3 text-left shadow-sm hover:bg-hovertint">
-                      <p className="text-[13px] font-bold text-ink">{u.unit.unitCode}</p>
-                      <p className="text-[12px] text-ink3">{[u.unit.merk, u.unit.ukuran].filter(Boolean).join(" · ") || "—"}{u.isLegacyException ? " · data lama" : ""}</p>
-                      <p className="mt-1 text-[11.5px] font-semibold text-accent">Rencanakan →</p>
-                    </button>
-                  ))}
+                  {board.unscheduled.plans.map((item) => <RunCard key={item.runId} item={item} onOpen={setDrawer} onConfirmArrival={setArrival} />)}
+                  {board.unscheduled.units.map((u) => {
+                    // P9A — dua jenis kartu di sini sekarang: (a) unit dengan
+                    // Run nyata (runId ada, TERMASUK yang masih PENDING_ARRIVAL)
+                    // — boleh "Rencanakan" lebih dulu; (b) kartu WARISAN
+                    // tanpa Run sama sekali (mis. canary lama) — belum bisa
+                    // direncanakan (createProductionPlan butuh Run), HANYA bisa
+                    // dikonfirmasi tiba dulu.
+                    const schedulable = !!u.runId;
+                    return (
+                      <div key={u.handoffId || u.runId} className="overflow-hidden rounded-card bg-surface shadow-sm">
+                        <button type="button" draggable={schedulable}
+                          onDragStart={schedulable ? (e) => e.dataTransfer.setData("text/plain", u.runId) : undefined}
+                          onClick={() => schedulable && setSchedule(u)} disabled={!schedulable}
+                          className={`w-full p-3 text-left ${schedulable ? "hover:bg-hovertint" : "cursor-default"}`}>
+                          <p className="text-[13px] font-bold text-ink">{u.unit.unitCode}</p>
+                          <p className="text-[12px] text-ink3">{[u.unit.merk, u.unit.ukuran].filter(Boolean).join(" · ") || "—"}{u.isLegacyException ? " · data lama" : ""}</p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            {u.inTransit && <Badge variant="neutral">Dalam perjalanan ke workshop</Badge>}
+                            {schedulable && <span className="text-[11.5px] font-semibold text-accent">Rencanakan →</span>}
+                          </div>
+                        </button>
+                        {u.inTransit && (
+                          <div className="border-t border-line px-3 py-2">
+                            <Button size="sm" variant="secondary" className="w-full" onClick={() => setArrival(u)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </Card>
@@ -427,12 +531,14 @@ export default function ProductionPlannerV2() {
         )}
       </PageBody>
 
-      {drawer && <RunDrawer item={drawer} refs={refs} onClose={() => setDrawer(null)} onSchedule={(i) => { setDrawer(null); setSchedule(i); }} onChanged={(msg) => { setDrawer(null); setNotice(msg); load(); }} />}
+      {drawer && <RunDrawer item={drawer} refs={refs} onClose={() => setDrawer(null)} onSchedule={(i) => { setDrawer(null); setSchedule(i); }} onConfirmArrival={(i) => { setDrawer(null); setArrival(i); }} onChanged={(msg) => { setDrawer(null); setNotice(msg); load(); }} />}
+      {arrival && <ArrivalModal target={arrival} onClose={() => setArrival(null)} onDone={(msg) => { setArrival(null); setNotice(msg); load(); }} />}
       {schedule?.pick && (
         <Modal open onOpenChange={(v) => !v && setSchedule(null)} title={`Pilih unit untuk ${schedule.presetStation.replace("TABLE_", "Meja ")}`}>
           <div className="space-y-2 px-6 pb-4">
             {unscheduledCount === 0 && <p className="text-[12.5px] text-ink3">Tidak ada unit yang menunggu dijadwalkan.</p>}
-            {[...(board?.unscheduled?.plans || []), ...(board?.unscheduled?.units || [])].map((u) => (
+            {/* P9A — kartu warisan tanpa Run (runId null) belum bisa direncanakan; disaring dari pemilih ini. */}
+            {[...(board?.unscheduled?.plans || []), ...(board?.unscheduled?.units || []).filter((u) => u.runId)].map((u) => (
               <button key={u.runId} type="button" onClick={() => setSchedule({ ...u, presetStation: schedule.presetStation })} className="flex w-full items-center justify-between rounded-btn bg-inset px-3 py-2.5 text-left text-[13px] hover:bg-hovertint">
                 <span><b className="text-ink">{u.unit.unitCode}</b> <span className="text-ink3">{u.customer?.name || [u.unit.merk, u.unit.ukuran].filter(Boolean).join(" ")}</span></span><ChevronRight size={14} aria-hidden />
               </button>

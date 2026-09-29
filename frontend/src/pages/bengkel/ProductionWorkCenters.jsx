@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Factory, Loader2, Plus } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Factory, Loader2, Plus, Settings } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -73,11 +74,11 @@ export default function ProductionWorkCenters() {
   return (
     <PageContainer>
       <PageHeader
-        title="Work Centers"
+        title="Work Center"
         subtitle="Area kerja produksi — konfigurasi, bukan perencanaan kapasitas."
         actions={canManage && (
           <Button size="sm" onClick={() => setAdding(true)}>
-            <Plus size={14} /> Work Center
+            <Plus size={14} /> Tambah Area Kerja
           </Button>
         )}
       />
@@ -105,9 +106,11 @@ export default function ProductionWorkCenters() {
                         <span className="ml-1.5 font-mono text-[10.5px] text-ink3">{w.code}</span>
                       </TD>
                       <TD>
-                        <Badge variant={w.active ? "green" : "neutral"}>{w.active ? "Active" : "Nonaktif"}</Badge>
+                        <Badge variant={w.active ? "green" : "neutral"}>{w.active ? "Aktif" : "Nonaktif"}</Badge>
                       </TD>
-                      <TD className="text-ink2">{w.stageCount} tahap</TD>
+                      <TD className="text-ink2">
+                        {w.stageCount > 0 ? `${w.stageCount} tahap` : <Badge variant="orange">Konfigurasi belum lengkap</Badge>}
+                      </TD>
                       <TD className="text-ink2">{w.operatorCount} operator</TD>
                       <TD className="text-ink2">{w.currentUnitCount} unit</TD>
                       {canManage && (
@@ -140,7 +143,15 @@ export default function ProductionWorkCenters() {
                 <div className="flex flex-wrap gap-1">
                   {detail.stages.map((s) => <Badge key={s.id} variant="accent">{s.labelId}</Badge>)}
                 </div>
-              ) : <p className="text-ink3">Belum ada tahap yang menjadikan ini default.</p>}
+              ) : (
+                <div className="rounded-btn border border-dashed border-line p-3">
+                  <p className="font-semibold text-ink">Konfigurasi belum lengkap</p>
+                  <p className="mt-0.5 text-ink3">Belum ada tahap yang menjadikan Work Center ini default.</p>
+                  <Button size="sm" variant="secondary" className="mt-2" asChild>
+                    <Link to="/bengkel/layanan-tahapan"><Settings size={13} aria-hidden /> Atur layanan &amp; tahapan</Link>
+                  </Button>
+                </div>
+              )}
             </div>
             <div>
               <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink3">Operator Aktif</h4>

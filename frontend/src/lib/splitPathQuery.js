@@ -9,3 +9,18 @@ export function splitPathQuery(pathname) {
   if (qIndex === -1) return { base: pathname, search: "" };
   return { base: pathname.slice(0, qIndex), search: pathname.slice(qIndex) };
 }
+
+// P8.2 (UI Polish) — bentuk KANONIK path+query, dipakai dedup tab
+// (findTabIndexByPath, dedupeTabs) supaya dua path yang SECARA MAKNA sama
+// (cuma beda urutan parameter query, mis. "?status=DELIVERED&tab=work-
+// order" vs "?tab=work-order&status=DELIVERED") dianggap tab yang SAMA,
+// bukan dua tab terpisah. Parameter diurutkan berdasarkan kunci; nilai
+// TIDAK diubah.
+export function canonicalizeTabPath(pathname) {
+  const { base, search } = splitPathQuery(pathname);
+  if (!search) return base;
+  const params = new URLSearchParams(search);
+  const sorted = [...params.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const qs = new URLSearchParams(sorted).toString();
+  return qs ? `${base}?${qs}` : base;
+}

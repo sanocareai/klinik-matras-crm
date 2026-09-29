@@ -261,6 +261,11 @@ export function latestTextureVerdict(opEvidence) {
 export function deriveNextAction(state) {
   if (!state || state.runStatus === "CANCELLED") return wait("NONE", "RUN_CANCELLED");
   if (state.runStatus === "COMPLETED") return wait("NONE", "COMPLETED", { stepNo: 12 });
+  // P9A (One-Location Production Intake) — "Masuk Produksi", pickup berhasil,
+  // TAPI belum dikonfirmasi tiba di workshop. Diperiksa LEBIH DULU dari
+  // exceptionOpen/unitStatus/dst di bawah — tidak satu pun itu relevan sebelum
+  // unit benar-benar tiba secara fisik.
+  if (state.runStatus === "PENDING_ARRIVAL") return wait("NONE", "PENDING_ARRIVAL");
   if (state.exceptionOpen) return wait("NONE", "EXCEPTION_OPEN");
   if (state.currentPhase === "HANDOFF") {
     return state.handoffPhaseStatus === "BLOCKED" ? wait("NONE", "HANDOFF_REJECTED", { stepNo: 12 }) : wait("WAREHOUSE", "AWAITING_WAREHOUSE", { stepNo: 12 });
@@ -314,6 +319,10 @@ export function deriveNextAction(state) {
 
 // Bucket Andon/Papan (murni) dari aksi berikutnya + konteks.
 export const ANDON_BUCKETS = Object.freeze([
+  // P9A — unit sudah "Masuk Produksi" (pickup berhasil) tapi masih dalam
+  // perjalanan fisik ke workshop; DIBEDAKAN dari ANTREAN (yang sudah tiba,
+  // tinggal menunggu giliran dikerjakan).
+  { key: "DALAM_PERJALANAN", label: "Dalam Perjalanan", tone: "neutral" },
   { key: "ANTREAN", label: "Antrean", tone: "neutral" },
   { key: "BONGKAR", label: "Proses Bongkar", tone: "info" },
   { key: "DIAGNOSA", label: "Diagnosa", tone: "info" },
@@ -329,6 +338,7 @@ export const ANDON_BUCKETS = Object.freeze([
 
 export function andonBucketOf({ next, started, rework = false }) {
   if (!next) return "ANTREAN";
+  if (next.wait === "PENDING_ARRIVAL") return "DALAM_PERJALANAN";
   if (next.wait === "COMPLETED") return "SELESAI";
   if (["RUN_CANCELLED", "EXCEPTION_OPEN", "UNIT_NOT_IN_PRODUCTION", "HANDOFF_REJECTED", "NO_TARGET"].includes(next.wait)) return "TERHENTI";
   if (next.wait === "MATERIAL_SHORTAGE" || next.wait === "MATERIAL_NOT_READY") return "MENUNGGU_BAHAN";

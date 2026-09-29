@@ -138,6 +138,15 @@ export async function loadRunForWrite(tx, runId) {
   await lockRowForUpdate(tx, "production_runs_v2", runId);
   const run = await tx.productionRun.findUnique({ where: { id: runId }, include: RUN_INCLUDE });
   if (TERMINAL_RUN.includes(run.status)) throw workError("Production Run sudah selesai/dibatalkan", 409, "WORKSHOP_RUN_TERMINAL");
+  // P9A (One-Location Production Intake) — unit sudah "Masuk Produksi" (pickup
+  // berhasil, kartu tampil di board) TAPI belum dikonfirmasi tiba secara fisik
+  // di workshop. SATU-SATUNYA titik gerbang untuk SELURUH command tahap
+  // (start/pause/resume/complete P5, dipakai ulang P8 productionStepCommandService.js
+  // — lihat catatan header file ini) supaya tidak ada jalur yang lolos memulai
+  // tahap sebelum "Unit Tiba di Workshop" diklik.
+  if (run.status === "PENDING_ARRIVAL") {
+    throw workError("Unit belum dikonfirmasi tiba di workshop — konfirmasi kedatangan dulu sebelum memulai tahap produksi", 409, "WORKSHOP_RUN_PENDING_ARRIVAL");
+  }
   return run;
 }
 

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { loadTabs, saveTabs } from "./openTabs.js";
-import { titleFromPath, findTabIndexByPath } from "./tabTitles.js";
+import { titleFromPath, findTabIndexByPath, dedupeTabs } from "./tabTitles.js";
 import { resolveEntryPath } from "../routes/pageRegistry.jsx";
 
 // D-144 (9 September 2026) — permintaan owner: "workspace SANSS seperti
@@ -40,7 +40,14 @@ export function TabsProvider({ pages, ctx, children }) {
 
   const [tabs, setTabs] = useState(() => {
     const saved = loadTabs();
-    if (saved) return saved.tabs;
+    // P8.2 (UI Polish) — laporan owner dari screenshot live: tab "Dashboard"
+    // dobel. Dedup di openNewTab (P8.1) cuma mencegah duplikat BARU — tab
+    // yang SUDAH tersimpan dari sebelum perbaikan itu tetap dobel selamanya
+    // kalau tidak dibersihkan di sini. dedupeTabs murni & idempoten (aman
+    // dipanggil setiap load, bukan flag sekali-jalan yang rapuh — lihat
+    // catatan di tabTitles.js), dan MEMPERTAHANKAN tab aktif kalau ia salah
+    // satu duplikat ("jangan menghapus tab aktif pengguna yang valid").
+    if (saved) return dedupeTabs(saved.tabs, saved.activeId);
     // P8.1 (UI & Navigation Consolidation) — location.pathname SENDIRIAN
     // tidak pernah memuat query string ("?tab=...", dipakai menu "Riwayat"
     // Order Produksi). Tanpa +location.search di sini, kunjungan PERTAMA

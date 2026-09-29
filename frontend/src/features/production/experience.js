@@ -44,6 +44,9 @@ export const MEDIA_RULES = Object.freeze({
 
 // Bucket papan/Andon -> tampilan (hanya 4 hue DS: accent/red/orange/green + netral).
 export const BUCKET_STYLE = Object.freeze({
+  // P9A — pickup berhasil, unit sudah "Masuk Produksi", TAPI belum
+  // dikonfirmasi tiba secara fisik di workshop.
+  DALAM_PERJALANAN: { label: "Dalam perjalanan ke workshop", badge: "neutral", tv: "bg-inset text-ink3", dot: "bg-ink3" },
   ANTREAN: { label: "Antrean", badge: "neutral", tv: "bg-inset text-ink2", dot: "bg-ink3" },
   BONGKAR: { label: "Proses Bongkar", badge: "accent", tv: "bg-accentbg text-accent", dot: "bg-accent" },
   DIAGNOSA: { label: "Diagnosa", badge: "accent", tv: "bg-accentbg text-accent", dot: "bg-accent" },
@@ -85,6 +88,11 @@ export function isQuickAction(next) {
 
 export function waitCopy(next) {
   switch (next?.wait) {
+    // P9A (One-Location Production Intake) — unit sudah "Masuk Produksi"
+    // (pickup berhasil) tapi belum dikonfirmasi tiba di workshop; tahap
+    // produksi tidak bisa dimulai sampai tombol "Unit Tiba di Workshop" di
+    // kartu Planner diklik (server menegakkan ulang, bukan cuma UI).
+    case "PENDING_ARRIVAL": return { title: "Menunggu konfirmasi kedatangan", text: "Unit sudah masuk produksi (pickup berhasil) tapi belum dikonfirmasi tiba di workshop. Konfirmasi kedatangan dulu di Rencana Produksi sebelum tahap ini bisa dimulai." };
     case "AWAITING_QC": return { title: "Menunggu QC", text: "Petugas QC akan menguji unit ini. Anda bisa lanjut ke unit lain." };
     case "MATERIAL_NOT_READY": return { title: "Bahan belum turun", text: "Gudang belum menyerahkan bahan untuk tahap berikutnya. Tekan “Menunggu Bahan Baku” bila bahan dibutuhkan sekarang." };
     case "MATERIAL_SHORTAGE": return { title: "Menunggu bahan baku", text: "Laporan kekurangan bahan sudah terkirim ke Gudang. Lanjutkan setelah bahan diserahkan." };

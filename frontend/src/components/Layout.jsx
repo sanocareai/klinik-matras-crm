@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog, Bell,
-  LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight, Send,
+  LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, Send,
   Wrench, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2, Wallet, PiggyBank,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
   Boxes, ScanLine, Award, ArrowUpDown, Check, Handshake,
@@ -234,6 +234,10 @@ const DIVISIONS = {
       {
         section: "LEGACY (ADMIN)",
         adminOnly: true,
+        // P8.2 (UI Polish) — accordion, DEFAULT TERTUTUP (laporan owner dari
+        // screenshot live: section ini selalu makan tempat di sidebar admin
+        // walau jarang dibuka). Klik label section untuk buka/tutup.
+        collapsibleDefaultClosed: true,
         items: [
           { to: "/bengkel",                 label: "Papan Produksi (lama, V1)", Icon: ClipboardList },
           { to: "/bengkel/planning",        label: "Rencana Produksi (lama, P3)", Icon: CalendarClock },
@@ -947,6 +951,13 @@ export default function Layout({ user, onLogout }) {
   // jadi butuh sinyal re-render setelah tiap drop; bump angka ini di situ.
   const [customizingNav, setCustomizingNav] = useState(false);
   const [orderVersion, setOrderVersion] = useState(0);
+  // Accordion section (P8.2, UI Polish) — section bertanda
+  // `collapsibleDefaultClosed` (mis. "LEGACY (ADMIN)") dimulai TERTUTUP.
+  // Set berisi nama section yang sudah PERNAH DIKLIK pengguna (buka ATAU
+  // tutup) — status open/closed AKTUAL section itu jadi kebalikan dari
+  // default-nya kalau namanya ada di set ini, apa adanya kalau tidak. State
+  // sesi saja (tidak disimpan), sama dengan `customizingNav`.
+  const [toggledSections, setToggledSections] = useState(() => new Set());
   // Keluar dari mode susun kalau pindah workspace ATAU sidebar disempitkan
   // (SidebarNavSection sengaja tidak mendukung mode compact 72px — tanpa
   // label, tidak ada cara membedakan item mana yang sedang digeser).
@@ -1218,27 +1229,66 @@ export default function Layout({ user, onLogout }) {
               dependency array yang gampang lupa disinkronkan (lihat komentar
               di deklarasi state-nya). */}
           <LayoutGroup>
-          {visibleSections(onHub ? HUB_SECTIONS : division.sections, isAdmin).map(({ section, items: itemsTampil }) => {
-            const itemsUrut = onHub
-              ? itemsTampil
-              : applyCustomOrder(itemsTampil, getSectionOrder(divisionKey, section));
-            return (
-              <div key={section} className="nav-section">
-                <div className="sidebar-section-label">{section}</div>
-                <SidebarNavSection
-                  items={itemsUrut}
-                  customizing={!onHub && customizingNav}
-                  onReorder={(orderedTos) => {
-                    saveSectionOrder(divisionKey, section, orderedTos);
-                    setOrderVersion((v) => v + 1);
-                  }}
-                  badgeCount={unreadCount}
-                  collapsed={collapsed}
-                  onNavigate={closeMobileMenu}
-                />
-              </div>
-            );
-          })}
+          {(() => {
+            const sectionsVisible = visibleSections(onHub ? HUB_SECTIONS : division.sections, isAdmin);
+            // P8.2 (UI Polish) — seluruh item yang TAMPIL saat ini (lintas
+            // section), dipakai lib/sidebarActive.js untuk mendeteksi
+            // "saudara" berquery yang lebih spesifik berbagi pathname sama
+            // (mis. Riwayat vs Order Produksi). Item yang disembunyikan
+            // (adminOnly/bolehPeran non-admin) sengaja TIDAK ikut — tidak
+            // dirender, jadi tidak relevan untuk status aktif visual.
+            const allVisibleItems = sectionsVisible.flatMap((s) => s.items);
+            return sectionsVisible.map(({ section, items: itemsTampil, collapsibleDefaultClosed }) => {
+              const itemsUrut = onHub
+                ? itemsTampil
+                : applyCustomOrder(itemsTampil, getSectionOrder(divisionKey, section));
+              // Accordion (P8.2) — section bertanda `collapsibleDefaultClosed`
+              // mulai TERTUTUP; klik label membalik status untuk sesi ini
+              // (disimpan di `toggledSections`, lihat deklarasinya). `collapsed`
+              // (72px, sidebar menyempit) selalu tampil penuh tanpa accordion —
+              // menyembunyikan section di sidebar sempit cuma membuat ikon-ikon
+              // hilang tanpa cara membukanya lagi.
+              const isCollapsible = !!collapsibleDefaultClosed && !onHub && !collapsed;
+              const open = !isCollapsible || toggledSections.has(section);
+              return (
+                <div key={section} className="nav-section">
+                  {isCollapsible ? (
+                    <button
+                      type="button"
+                      className="sidebar-section-label flex w-full items-center justify-between gap-1 text-left"
+                      aria-expanded={open}
+                      onClick={() => setToggledSections((prev) => {
+                        const next = new Set(prev);
+                        next.has(section) ? next.delete(section) : next.add(section);
+                        return next;
+                      })}
+                    >
+                      <span>{section}</span>
+                      <ChevronDown size={13} className={cn("shrink-0 transition-transform", !open && "-rotate-90")} aria-hidden />
+                    </button>
+                  ) : (
+                    <div className="sidebar-section-label">{section}</div>
+                  )}
+                  {open && (
+                    <SidebarNavSection
+                      items={itemsUrut}
+                      allDivisionItems={allVisibleItems}
+                      pathname={location.pathname}
+                      search={location.search}
+                      customizing={!onHub && customizingNav}
+                      onReorder={(orderedTos) => {
+                        saveSectionOrder(divisionKey, section, orderedTos);
+                        setOrderVersion((v) => v + 1);
+                      }}
+                      badgeCount={unreadCount}
+                      collapsed={collapsed}
+                      onNavigate={closeMobileMenu}
+                    />
+                  )}
+                </div>
+              );
+            });
+          })()}
           </LayoutGroup>
         </nav>
 
