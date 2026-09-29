@@ -10,6 +10,7 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { siapkanNotesUkuran, formatUkuranKasur } from "../lib/ukuranKasur.js";
 import { ukuranCustomWajibSejak } from "../services/ukuranWajib.js";
 import { buatFileVCard } from "../services/vcard.js";
+import { SERVICE_AREAS, STAGE_BUTUH_AREA, areaDariKota } from "../services/leadMilestones.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -484,7 +485,12 @@ customerRouter.patch("/:id", async (req, res) => {
     name, phone, tags, pipelineStage, assignedSalesId, email, city,
     leadSource, leadSourceDetail, leadSourceConfirmed,
     customerType, healthStatus, complaintCategory,
+    serviceArea, consulted, quoted,
   } = req.body;
+
+  if (serviceArea !== undefined && serviceArea !== null && !SERVICE_AREAS.includes(serviceArea)) {
+    return res.status(400).json({ error: "Area layanan tidak dikenal" });
+  }
 
   // Cek duplikat nomor kalau diubah
   if (phone !== undefined && phone !== null) {
@@ -517,6 +523,23 @@ customerRouter.patch("/:id", async (req, res) => {
       complaintCategory: healthStatus === "SAKIT" ? (complaintCategory || []) : [],
     }),
     ...(healthStatus === undefined && complaintCategory !== undefined && { complaintCategory: complaintCategory || [] }),
+    // Area layanan & milestone lead (services/leadMilestones.js). consulted/
+    // quoted = boolean dari tombol di Inbox: true mencap waktu SEKARANG &
+    // pelakunya, false menghapus tanda (koreksi salah klik).
+    ...(serviceArea !== undefined && {
+      serviceArea: serviceArea || null,
+      serviceAreaSetAt: serviceArea ? new Date() : null,
+      serviceAreaSetBy: serviceArea ? (req.user?.id || null) : null,
+    }),
+    ...(consulted !== undefined && {
+      consultedAt: consulted ? new Date() : null,
+      consultedBy: consulted ? (req.user?.id || null) : null,
+    }),
+    ...(quoted !== undefined && {
+      quotedAt: quoted ? new Date() : null,
+      quotedBy: quoted ? (req.user?.id || null) : null,
+      quotedSource: quoted ? "MANUAL" : null,
+    }),
   };
 
   // Kalau leadSource diubah manual → otomatis set confirmed = true
@@ -539,10 +562,33 @@ customerRouter.patch("/:id", async (req, res) => {
     const { customer, transisi } = await prisma.$transaction(async (tx) => {
       const sebelum = await tx.customer.findUnique({
         where: { id: req.params.id },
-        select: { pipelineStage: true },
+        select: { pipelineStage: true, serviceArea: true, consultedAt: true, quotedAt: true },
       });
       if (!sebelum) {
         throw Object.assign(new Error("Pelanggan tidak ditemukan"), { statusCode: 404 });
+      }
+
+      // Tombol "tandai" yang ditekan ulang tidak boleh menggeser waktu
+      // milestone yang sudah tercatat (waktu PERTAMA yang dipakai laporan).
+      if (consulted === true && sebelum.consultedAt) { delete data.consultedAt; delete data.consultedBy; }
+      if (quoted === true && sebelum.quotedAt) { delete data.quotedAt; delete data.quotedBy; delete data.quotedSource; }
+
+      // Area layanan WAJIB sebelum stage dinaikkan manual ke PROSPECT ke
+      // atas — tanpa ini wilayah lead tidak pernah terisi (analisis Sep
+      // 2026: 0% terisi). Kalau pelanggan sudah punya order dgn kota
+      // pengiriman, area diisi otomatis dari situ alih-alih ditolak.
+      const stageNaik = pipelineStage !== undefined && pipelineStage !== sebelum.pipelineStage
+        && STAGE_BUTUH_AREA.includes(pipelineStage);
+      if (stageNaik && !sebelum.serviceArea && !data.serviceArea) {
+        const order = await tx.order.findFirst({
+          where: { customerId: req.params.id, deliveryCity: { not: null } },
+          orderBy: { createdAt: "desc" }, select: { deliveryCity: true },
+        });
+        const area = areaDariKota(order?.deliveryCity);
+        if (!area) {
+          throw Object.assign(new Error("Isi Area Layanan pelanggan dulu sebelum memindah ke tahap ini"), { statusCode: 422, code: "AREA_WAJIB" });
+        }
+        Object.assign(data, { serviceArea: area, serviceAreaSetAt: new Date(), serviceAreaSetBy: null });
       }
 
       const customer = await tx.customer.update({ where: { id: req.params.id }, data });
@@ -594,7 +640,7 @@ customerRouter.patch("/:id", async (req, res) => {
       console.error("PATCH /customers/:id error setelah respons terkirim:", err);
       return;
     }
-    res.status(err.statusCode || 500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message, ...(err.code === "AREA_WAJIB" && { code: err.code }) });
   }
 });
 

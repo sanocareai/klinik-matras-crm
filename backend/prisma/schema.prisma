@@ -262,6 +262,14 @@ enum ConversationType {
 // SPAM ditambahkan supaya chat junk bisa dikecualikan eksplisit dari
 // perhitungan Closing Rate (routes/analytics.js) — sebelumnya chat 1-2x
 // balas/salah sasaran ikut jadi penyebut laporan performa sales.
+// Area layanan lead (7 Okt 2026) — lihat Customer.serviceArea. null = belum diketahui.
+enum ServiceArea {
+  JABODETABEK
+  BANDUNG
+  AREA_LAIN // di luar Jabodetabek/Bandung tapi masih dilayani (mis. Karawang, Sukabumi)
+  LUAR_AREA // di luar jangkauan layanan
+}
+
 enum PipelineStage {
   NEW // Lead baru masuk WhatsApp, belum kirim data diri
   PROSPECT // Sedang bernegosiasi/follow up — dulu QUALIFIED+QUOTED
@@ -753,6 +761,33 @@ model Customer {
   // Berguna untuk tahu kreatif MANA yang menghasilkan lead, karena payload
   // WA tidak membawa nama campaign.
   ctwaSourceUrl           String?                   @map("ctwa_source_url")
+
+  // ── Area layanan & milestone lead (7 Okt 2026) ────────────────────────
+  // Analisis lead Meta Sep 2026: Customer.city kosong 100% (dicabut dari
+  // panel Inbox 29 Agu karena redundan dgn Order.deliveryCity), jadi wilayah
+  // cuma diketahui untuk lead yang SUDAH order — lead yang tidak order
+  // (97%+) tidak bisa dipetakan sama sekali. serviceArea SENGAJA lebih kasar
+  // dari kota (4 pilihan, 1 ketukan di Inbox) dan TERPISAH dari city/
+  // deliveryCity: ditanyakan di awal percakapan, termasuk untuk lead di luar
+  // jangkauan yang tidak akan pernah punya order. Diisi otomatis dari
+  // Order.deliveryCity kalau masih kosong (services/leadMilestones.js).
+  // Wajib diisi sebelum stage dipindah manual ke PROSPECT/TRANSACTION/
+  // REVIEWED (routes/customers.js PATCH /:id).
+  serviceArea      ServiceArea? @map("service_area")
+  serviceAreaSetAt DateTime?    @map("service_area_set_at")
+  serviceAreaSetBy String?      @map("service_area_set_by") // User.id; null = otomatis dari order
+  // Konsultasi = sales sudah menggali keluhan & memberi rekomendasi. Tidak
+  // bisa dideteksi andal dari teks (template sapaan sudah bertanya
+  // "keluhan apa"), jadi DITANDAI MANUAL lewat tombol di Inbox.
+  consultedAt DateTime? @map("consulted_at")
+  consultedBy String?   @map("consulted_by")
+  // Penawaran = pesan OUTBOUND pertama yang memuat harga. Dideteksi otomatis
+  // (services/leadMilestones.js) — data Sep 2026: 1 dari 3.405 pesan sapaan
+  // memuat harga, sementara 100% lead yang order pernah dikirimi harga.
+  // quotedSource: AUTO_PESAN | MANUAL | BACKFILL.
+  quotedAt     DateTime? @map("quoted_at")
+  quotedBy     String?   @map("quoted_by")
+  quotedSource String?   @map("quoted_source")
   customerType            CustomerType              @default(END_USER)
   healthStatus            HealthStatus?
   // D-028 (20 Agustus 2026) — sama seperti Order.complaintCategory, tapi di

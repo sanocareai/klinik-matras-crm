@@ -13,11 +13,15 @@ export default function PipelineSection({ customer, onUpdate }) {
   const [undoState, setUndoState] = useState(null); // { previousStage }
   const timerRef = useRef(null);
 
-  async function commitStage(stage) {
+  // previousStage: dipulihkan kalau server menolak (mis. AREA_WAJIB — area
+  // layanan belum diisi), supaya pill tidak menampilkan stage yang tidak tersimpan.
+  async function commitStage(stage, previousStage) {
     try {
       const updated = await api.updateCustomer(customer.id, { pipelineStage: stage });
       onUpdate((c) => ({ ...c, ...updated }));
     } catch (err) {
+      onUpdate((c) => ({ ...c, pipelineStage: previousStage }));
+      setUndoState(null);
       alert(err.message);
     }
   }
@@ -27,7 +31,7 @@ export default function PipelineSection({ customer, onUpdate }) {
     if (newStage === previousStage) return;
 
     onUpdate((c) => ({ ...c, pipelineStage: newStage })); // optimistic
-    commitStage(newStage);
+    commitStage(newStage, previousStage);
 
     clearTimeout(timerRef.current);
     setUndoState({ previousStage });
@@ -40,7 +44,7 @@ export default function PipelineSection({ customer, onUpdate }) {
     const { previousStage } = undoState;
     setUndoState(null);
     onUpdate((c) => ({ ...c, pipelineStage: previousStage }));
-    commitStage(previousStage);
+    commitStage(previousStage, customer.pipelineStage);
   }
 
   return (

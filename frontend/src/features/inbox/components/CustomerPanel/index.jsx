@@ -5,6 +5,7 @@ import { api } from "../../../../api.js";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import ProfileSection from "./ProfileSection.jsx";
 import PipelineSection from "./PipelineSection.jsx";
+import LeadProgressSection from "./LeadProgressSection.jsx";
 import InfoSection from "./InfoSection.jsx";
 import MediaGallery from "./MediaGallery.jsx";
 import NotesSection from "./NotesSection.jsx";
@@ -166,6 +167,8 @@ export default function CustomerPanel({ conversation, onClose }) {
               />
             </div>
 
+            {/* Area Layanan di ATAS Pipeline: wajib diisi sebelum stage naik ke Prospek. */}
+            <LeadProgressSection customer={customer} onUpdate={setCustomer} />
             <PipelineSection customer={customer} onUpdate={setCustomer} />
             <InfoSection customer={customer} onUpdate={setCustomer} />
           </TabsContent>
