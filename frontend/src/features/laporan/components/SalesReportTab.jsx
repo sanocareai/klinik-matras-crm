@@ -58,7 +58,7 @@ const KOLOM = [
   { k: "orderConversionRate", label: "Konversi (Order)", title: "Konversi (Order) = (pelanggan yang order di periode ini) ÷ (percakapan yang dia tangani di periode ini) × 100%. Beda dari kolom Konversi: ini mengukur order yang BENAR-BENAR dibuat, bukan cuma kartu pindah stage." },
   { k: "spamRate",   label: "Spam %",     title: "Spam % = (chat yang dia pegang ditandai SPAM) ÷ (chat SPAM + chat yang dia tangani) × 100%. Bukan penalti performa — cuma pengawas, layak ditinjau kalau jauh di atas rata-rata tim." },
   { k: "orders",     label: "Order",      title: "Jumlah order (CANCELLED tidak dihitung)" },
-  { k: "grossValue", label: "Nilai",      title: "Total nilai (Rupiah) semua order masuk di periode ini — belum tentu sudah terbayar lunas." },
+  { k: "grossValue", label: "Nilai",      title: "Total nilai (Rupiah) semua order masuk di periode ini — belum tentu sudah terbayar lunas. Order Menunggu & Dibatalkan tidak dihitung (belum pasti)." },
   // Lunas (30 Agustus 2026, populasi DIPERBAIKI 31 Agustus 2026) — BASIS
   // KOMISI: order APA PUN (dari bulan manapun dibuatnya) yang jadi LUNAS
   // (Order.paidAt) DI DALAM periode ini. Populasi ini BEDA dari kolom Nilai

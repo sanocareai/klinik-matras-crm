@@ -13,6 +13,7 @@ import ProgressRing from "@/components/ui/progress-ring.jsx";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
+import StageBySalesCard from "./StageBySalesCard.jsx";
 
 // D-026 (20 Agustus 2026) — ringkasan kampanye promo (mis. "Merdeka dari
 // Sakit Pinggang"). SENGAJA fetch sendiri (bukan lewat prop `summary` dari
@@ -210,7 +211,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           format={(v) => formatRupiah(Math.round(v))}
           growth={overview?.growthOrderValue} compareLabel={cmp}
           sub={`${uang?.totalOrders || 0} order · order masuk (belum tentu terbayar)`}
-          tooltip="Total nilai order MASUK di periode yang dipilih di atas — belum tentu sudah dibayar (lihat kartu Sudah Lunas/Belum Lunas)."
+          tooltip="Total nilai order MASUK di periode yang dipilih di atas — belum tentu sudah dibayar (lihat kartu Sudah Lunas/Belum Lunas). Order berstatus Menunggu dan Dibatalkan TIDAK dihitung karena belum pasti."
         />
         <KpiCard
           index={1}
@@ -315,6 +316,9 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           </p>
         </div>
       )}
+
+      {/* ── SALES PER STAGE (30 Sep 2026, permintaan owner, gaya bento) ── */}
+      <StageBySalesCard range={range} onGoTab={onGoTab} />
 
       {/* ── 2. TREN PENDAPATAN + KONVERSI ─────────────────────────────── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
