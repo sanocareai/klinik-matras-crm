@@ -46,6 +46,7 @@ import { saldoBukuRekening, pandanganCutoff } from "./rekonSnapshot.js";
 import { bagiProporsional } from "../resi.js";
 import { validasiAlokasiResi, muatGrupResi, muatDibayar, hitungAlokasiResi, TIPE_BAYAR, pastikanGrupLayak, ResiBayarError } from "../resiPembayaran.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
+import { tanggalCutoff, sebelumCutoff, tampilCutoff } from "./cutoff.js";
 
 const GATE_MATI = { enabled: false };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,13 +64,13 @@ const tolak = (alasan, arah, status, kode) => new KoreksiError(arah ? `${alasan}
  * Alasan koreksi finansial DITOLAK per payment (batch — satu set query untuk banyak payment, dipakai daftar dan koreksi).
  * Mengembalikan Map paymentId → { kode, alasan, arah } | null. TIDAK melempar.
  */
-export async function blokirKoreksiBatch(db, ids) {
+export async function blokirKoreksiBatch(db, ids, { izinkanPraSaldoAwal = false } = {}) {
   const hasil = new Map(ids.map((id) => [id, null]));
   if (ids.length === 0) return hasil;
   const ps = await db.payment.findMany({
     where: { id: { in: ids } },
     select: {
-      id: true, orderId: true, cancelledAt: true, replacedBy: { select: { id: true } },
+      id: true, orderId: true, createdAt: true, cancelledAt: true, replacedBy: { select: { id: true } },
       verifications: { select: { id: true } }, finAllocations: { select: { orderId: true } },
       order: { select: { group: { select: { lunasDiklaimPada: true } } } },
     },
@@ -79,6 +80,10 @@ export async function blokirKoreksiBatch(db, ids) {
     select: { id: true, sourceId: true, date: true, lines: { select: { id: true, accountId: true, cashAccountId: true } } },
   });
   const laba = await db.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.LABA_DITAHAN }, select: { id: true } });
+  const cutoff = await tanggalCutoff(db);
+  // Payment terverifikasi yang MASIH punya "Posting Tertunda" (belum berjurnal karena rekening belum dipetakan / posting ditolak) boleh dikoreksi:
+  // tidak ada jurnal yang dibalik, versi pengganti langsung dibukukan ke rekening yang benar dan gap lama ditutup.
+  const gapTerbuka = new Set((await db.finPostingGap.findMany({ where: { source: "PEMBAYARAN_ORDER", sourceId: { in: ids }, resolvedAt: null, NOT: { reason: "SEBELUM_SALDO_AWAL" } }, select: { sourceId: true } })).map((g) => g.sourceId));
 
   const semuaOrder = [...new Set(ps.flatMap((p) => [p.orderId, ...p.finAllocations.map((a) => a.orderId)]))];
   const refunds = semuaOrder.length
@@ -114,12 +119,18 @@ export async function blokirKoreksiBatch(db, ids) {
       continue;
     }
     const aktif = entries.filter((e) => e.sourceId === p.id);
-    if (aktif.length === 0) {
+    if (aktif.length === 0 && !gapTerbuka.has(p.id)) {
       set("JURNAL_TIDAK_ADA", "Pembayaran ini belum punya jurnal aktif di buku besar, jadi tidak ada yang bisa dibalik dengan aman.", "Selesaikan dulu 'Posting Tertunda' di Finance, lalu coba lagi.");
       continue;
     }
     if (laba && aktif.some((e) => e.lines.some((l) => l.accountId === laba.id))) {
       set("PRA_SALDO_AWAL", "Pembayaran ini dibukukan sebagai uang masuk sebelum saldo awal (lawannya Laba Ditahan), bukan kas berjalan.", "Koreksi lewat Jurnal Umum resmi oleh Admin, bukan lewat menu ini.");
+      continue;
+    }
+    // Pembayaran bertanggal SEBELUM saldo awal yang masih punya jurnal Bank/Kas = kas terhitung dua kali. Koreksi umum akan memasang jurnal Bank
+    // pengganti yang sama salahnya, jadi diblokir; jalurnya khusus: penuntasan pembayaran historis (Finance Admin).
+    if (!izinkanPraSaldoAwal && sebelumCutoff(p.createdAt, cutoff) && aktif.some((e) => e.lines.some((l) => l.cashAccountId))) {
+      set("SEBELUM_SALDO_AWAL", `Pembayaran ini bertanggal sebelum saldo awal (${tampilCutoff(cutoff)}), jadi uangnya sudah tercakup di saldo kas/bank dan tidak boleh dijurnal ke rekening lagi.`, "Minta Finance Admin menuntaskannya lewat penuntasan pembayaran historis.");
       continue;
     }
     const refund = refunds.find((r) => r.orderId === p.orderId || p.finAllocations.some((a) => a.orderId === r.orderId));
@@ -301,6 +312,11 @@ export async function koreksiPembayaran(tx, { paymentId, body, alasan, userId, p
   const perubahanNyata = amountBaru !== lama.amount || methodBaru !== lama.method || (cashBaru ?? null) !== (lama.cashAccountId ?? null)
     || tanggalBaru !== tanggalLama || orderIdBaru !== lama.orderId || !!perubahan.alokasi;
   if (!perubahanNyata) throw new KoreksiError("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
+  // Guard cutoff: tanggal pembayaran tidak boleh dimundurkan ke sebelum saldo awal lewat koreksi umum (jurnal penggantinya akan menambah kas lagi).
+  const cutoff = await tanggalCutoff(tx);
+  if (sebelumCutoff(tanggalBaru, cutoff)) {
+    throw tolak(`Tanggal pembayaran ${tanggalBaru} jatuh sebelum saldo awal (${tampilCutoff(cutoff)}), sehingga tidak boleh menambah kas/bank.`, "Pembayaran historis dituntaskan Finance Admin lewat penuntasan pembayaran historis, bukan lewat Koreksi Pembayaran.", 409, "TANGGAL_SEBELUM_SALDO_AWAL");
+  }
 
   if (cashBaru) {
     const rek = await tx.finCashAccount.findUnique({ where: { id: cashBaru }, select: { id: true, name: true, active: true } });
@@ -366,6 +382,7 @@ export async function koreksiPembayaran(tx, { paymentId, body, alasan, userId, p
 
   // 5) Payment lama → batal (jejak tetap). Setelah ini paidForOrder tidak lagi memuatnya → validasi sisa tagihan bersih.
   await tx.payment.update({ where: { id: paymentId }, data: { cancelledAt: new Date(), cancelledById: userId, cancelReason: `Dikoreksi — ${reason}`.slice(0, ALASAN_MAKS) } });
+  await tx.finPostingGap.updateMany({ where: { source: "PEMBAYARAN_ORDER", sourceId: paymentId, resolvedAt: null }, data: { resolvedAt: new Date() } }); // gap pembayaran lama tidak relevan lagi — versi pengganti dibukukan sendiri
 
   // 6) Validasi target: order ada/aktif, aturan Resi, sisa tagihan (toleransi bagian LAMA yang sudah ada agar data lama tetap bisa dikoreksi turun).
   let targets = alokasiBaru ?? [{ orderId: orderIdBaru, amount: amountBaru }];

@@ -61,6 +61,57 @@ export function DetailPembayaranDialog({ p, onClose }) {
 }
 
 // ─── Edit Informasi ──────────────────────────────────────────────────────────────────────────────
+/**
+ * Verifikasi dengan pilihan rekening & cara bayar (kasus Handry 29 Sep 2026: DP tanpa rekening lalu terverifikasi tanpa jurnal).
+ * Rekening/cara bayar hanya bisa diubah SELAMA pembayaran belum berjurnal; server menolak kalau sudah (lalu pakai Koreksi Pembayaran)
+ * dan menolak verifikasi bila uangnya belum bisa dibukukan (pesan Indonesia dari server ditampilkan apa adanya).
+ */
+export function VerifikasiDialog({ p, onClose, onSaved }) {
+  const [akun, setAkun] = useState([]);
+  const [f, setF] = useState({ cashAccountId: p.cashAccount?.id || "", method: p.method });
+  const [galat, setGalat] = useState("");
+  const [sibuk, setSibuk] = useState(false);
+  useEffect(() => { api.getFinanceCashAccounts().then((r) => setAkun((r?.accounts || r || []).filter((a) => a.active !== false))).catch(() => {}); }, []);
+  const body = {};
+  if (f.cashAccountId && f.cashAccountId !== (p.cashAccount?.id || "")) body.cashAccountId = f.cashAccountId;
+  if (f.method !== p.method) body.method = f.method;
+  async function simpan() {
+    setSibuk(true); setGalat("");
+    try { await api.verifikasiPembayaranFinance(p.id, body); onSaved(); } catch (e) { setGalat(e.message); } finally { setSibuk(false); }
+  }
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()} title="Verifikasi Pembayaran" description={`${p.order?.orderNumber || ""} · ${formatUang(p.amount)}`}
+      className="w-[520px]"
+      footer={(
+        <>
+          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
+          <Button onClick={simpan} disabled={sibuk} className="max-sm:min-h-11 max-sm:px-4">{sibuk ? "Memproses…" : "Verifikasi"}</Button>
+        </>
+      )}
+    >
+      <div className="space-y-3">
+        <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
+          Pastikan uangnya benar-benar masuk, lalu pilih rekening penerimanya. Verifikasi memasukkan pembayaran ini ke buku besar (kalau belum) —
+          rekening dan cara bayar hanya bisa diubah di sini selama belum masuk buku. Setelah itu perubahan lewat Koreksi Pembayaran.
+        </p>
+        <Field label="Masuk ke rekening mana?">
+          <Pilihan value={f.cashAccountId} onChange={(v) => setF((s) => ({ ...s, cashAccountId: v }))}>
+            <option value="">{p.cashAccount?.name ? p.cashAccount.name : "Rekening standar cara bayar"}</option>
+            {akun.filter((a) => a.id !== p.cashAccount?.id).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </Pilihan>
+        </Field>
+        <Field label="Cara bayar">
+          <Pilihan value={f.method} onChange={(v) => setF((s) => ({ ...s, method: v }))}>
+            {Object.entries(LABEL_METODE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </Pilihan>
+        </Field>
+        {galat && <p className="text-[13px] text-danger" role="alert">{galat}</p>}
+      </div>
+    </Modal>
+  );
+}
+
 export function EditInfoDialog({ p, onClose, onSaved }) {
   const awal = { notes: p.notes || "", referenceNumber: p.referenceNumber || "", internalNote: p.internalNote || "", proofPhotoUrl: p.proofPhotoUrl || "" };
   const [f, setF] = useState(awal);

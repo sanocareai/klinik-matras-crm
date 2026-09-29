@@ -69,6 +69,7 @@ import { resolveCashAccountForPayment } from "../settings.js";
 import { toMoney, sumMoney, minMoney, ZERO } from "../money.js";
 import { paidForOrder } from "../allocation.js";
 import { barisBiayaAdmin } from "../transferFee.js";
+import { tanggalCutoff, sebelumCutoff, tampilCutoff } from "../cutoff.js";
 
 export const KEY = {
   payment: (paymentId) => `PEMBAYARAN_ORDER:${paymentId}`,
@@ -119,6 +120,23 @@ export async function postPaymentReceived(tx, { paymentId, userId = null }) {
 
   const sudahAda = await findEntryByKey(tx, KEY.payment(paymentId));
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
+
+  // GUARD CUTOFF (keputusan Owner 29 Sep 2026): uang yang diterima SEBELUM tanggal saldo awal sudah tercakup dalam saldo riil kas/bank.
+  // Payment generik TIDAK boleh membuat jurnal Bank/Kas untuknya (kas terhitung dua kali). Jalur yang benar: "Sebelum saldo awal"
+  // (verifikasi penerimaan / penuntasan pembayaran historis) — lawannya Laba Ditahan, kas tidak berubah.
+  const cutoff = await tanggalCutoff(tx);
+  if (sebelumCutoff(payment.createdAt, cutoff)) {
+    await recordPostingGap(tx, {
+      source: "PEMBAYARAN_ORDER",
+      sourceId: paymentId,
+      reason: "SEBELUM_SALDO_AWAL",
+      detail:
+        `Pembayaran ${payment.method} Rp${Number(payment.amount).toLocaleString("id-ID")} untuk order ${payment.order?.orderNumber || payment.orderId} ` +
+        `diterima sebelum saldo awal (${tampilCutoff(cutoff)}), jadi tidak boleh menambah kas/bank lagi. Selesaikan lewat penuntasan pembayaran historis (Finance Admin).`,
+      metadata: { paymentId, cutoff, amount: String(payment.amount), orderId: payment.orderId },
+    });
+    return { posted: false, gap: true, reason: "sebelum_saldo_awal" };
+  }
 
   try {
     const cashAccount = await resolveCashAccountForPayment(tx, payment);

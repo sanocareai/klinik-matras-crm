@@ -29,10 +29,10 @@ async function siapkan() {
 }
 
 /** Order yang sudah diserahkan (pendapatan diakui → piutang) lalu ditandai LUNAS oleh sales. */
-async function orderLunasTanpaPayment({ value = 1_000_000, paidAt = new Date(), sales = null } = {}) {
+async function orderLunasTanpaPayment({ value = 1_000_000, ongkir = null, paidAt = new Date(), sales = null } = {}) {
   const customer = await testPrisma.customer.create({ data: { name: "Ibu Erni", assignedSalesId: sales?.id || null } });
   const order = await testPrisma.order.create({
-    data: { customerId: customer.id, value, category: "LAYANAN", orderNumber: `RES-${Math.random().toString(36).slice(2, 8)}`, status: "DELIVERED", paymentStatus: "LUNAS", paidAt },
+    data: { customerId: customer.id, value, ...(ongkir != null && { ongkir }), category: "LAYANAN", orderNumber: `RES-${Math.random().toString(36).slice(2, 8)}`, status: "DELIVERED", paymentStatus: "LUNAS", paidAt },
   });
   const admin = await createTestUser({ roles: ["ADMIN"] });
   await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: order.id, userId: admin.user.id }));
@@ -233,4 +233,45 @@ test("Uang diterima pada/setelah saldo awal tetap menambah saldo rekening (jalur
   assert.equal(r.status, 201, JSON.stringify(r.body));
   assert.equal(r.body.dialihkan, false);
   assert.equal(await saldo(SYSTEM_KEYS.BANK), "500000.00");
+});
+
+test("Ongkir ikut nilai tagihan Finance untuk order biasa (keputusan Owner 29 Sep): antrean menagih value+ongkir, verifikasi penuh menutup piutang total, bayar sebagian = DP", async () => {
+  const { bank } = await siapkan();
+  const { order } = await orderLunasTanpaPayment({ value: 500_000, ongkir: 200_000, paidAt: new Date("2026-09-25T05:00:00Z") });
+  const c = await ADMIN();
+
+  const antre = (await c.get("/api/finance/penerimaan/lunas-belum-dicatat")).body;
+  assert.equal(antre.items[0].nilaiOrder, 700_000, "nilai tagihan = layanan + ongkir");
+  assert.equal(antre.items[0].sisa, 700_000);
+  assert.equal(await saldo(SYSTEM_KEYS.PIUTANG_USAHA), "700000.00", "jurnal pengakuan menagih layanan + ongkir");
+
+  // Bayar hanya sebesar layanan (kasus lama): TIDAK boleh lagi tampil Lunas — sisa ongkir masih ditagih.
+  const sebagian = await c.post("/api/finance/penerimaan/verifikasi", { orderId: order.id, mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id, date: "2026-09-25", amount: 500_000 });
+  assert.equal(sebagian.status, 201, JSON.stringify(sebagian.body));
+  assert.equal((await testPrisma.order.findUnique({ where: { id: order.id } })).paymentStatus, "DP");
+  assert.equal(await saldo(SYSTEM_KEYS.PIUTANG_USAHA), "200000.00", "sisa piutang = ongkir");
+
+  const sisa = (await c.get("/api/finance/penerimaan/lunas-belum-dicatat")).body;
+  assert.equal(sisa.items.length, 0, "order kini DP, bukan klaim Lunas");
+});
+
+test("Ongkir: bayar penuh value+ongkir = Lunas dan piutang nol (tidak ada piutang ongkir menggantung)", async () => {
+  const { bank } = await siapkan();
+  const { order } = await orderLunasTanpaPayment({ value: 2_200_000, ongkir: 200_000, paidAt: new Date("2026-09-25T05:00:00Z") });
+  const c = await ADMIN();
+  const r = await c.post("/api/finance/penerimaan/verifikasi", { orderId: order.id, mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id, date: "2026-09-25" });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.amount, 2_400_000);
+  assert.equal((await testPrisma.order.findUnique({ where: { id: order.id } })).paymentStatus, "LUNAS");
+  assert.equal(await saldo(SYSTEM_KEYS.PIUTANG_USAHA), "0.00");
+  assert.equal(await saldo(SYSTEM_KEYS.BANK), "2400000.00");
+});
+
+test("Order tanpa ongkir tidak berubah perilakunya (value saja)", async () => {
+  const { bank } = await siapkan();
+  const { order } = await orderLunasTanpaPayment({ value: 800_000, paidAt: new Date("2026-09-25T05:00:00Z") });
+  const c = await ADMIN();
+  const r = await c.post("/api/finance/penerimaan/verifikasi", { orderId: order.id, mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id, date: "2026-09-25" });
+  assert.equal(r.body.amount, 800_000);
+  assert.equal((await testPrisma.order.findUnique({ where: { id: order.id } })).paymentStatus, "LUNAS");
 });

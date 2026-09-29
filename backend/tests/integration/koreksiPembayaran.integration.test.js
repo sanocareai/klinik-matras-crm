@@ -32,6 +32,8 @@ let n = 0;
 
 async function dunia() {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
+  // Tes ini memakai tanggal pembayaran sebelum 18 Sep 2026 sebagai data uji jalur uang BERJALAN; guard cutoff (cutoff.js) diuji terpisah di financePembayaranHistoris.
+  await setSetting(testPrisma, SETTING_KEYS.SALDO_AWAL_CUTOFF, "2026-01-01");
   const akunBank = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.BANK } });
   const bank = await testPrisma.finCashAccount.create({ data: { name: "BCA Operasional", kind: "BANK", accountId: akunBank.id } });
   const bank2 = await testPrisma.finCashAccount.create({ data: { name: "Mandiri", kind: "BANK", accountId: akunBank.id } });

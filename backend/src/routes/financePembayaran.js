@@ -74,7 +74,7 @@ async function hasilResmi(req, paymentId, extra) {
 
 financePembayaranRouter.post("/pembayaran/:id/verifikasi", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
   try {
-    const r = await prisma.$transaction((tx) => verifikasiPembayaran(tx, { paymentId: req.params.id, userId: req.user.id }));
+    const r = await prisma.$transaction((tx) => verifikasiPembayaran(tx, { paymentId: req.params.id, userId: req.user.id, cashAccountId: req.body?.cashAccountId, method: req.body?.method }));
     res.status(201).json(await hasilResmi(req, r.paymentId, { orderIds: r.orderIds }));
   } catch (e) {
     handleFinanceError(e, res);

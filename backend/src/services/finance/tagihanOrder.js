@@ -4,10 +4,10 @@
 //   tagihanOrder   = Order.value + ongkir yang DITAGIH lewat order ini.
 //                    Order dalam Resi BARU: Ongkir Tambahan hanya dihitung di order ANCHOR (tepat sekali per Resi); ongkir yang (keliru)
 //                    tercatat di child lain tidak ikut. Order lain (tunggal / BACKFILL_BUNDLE): value + ongkir — sama dengan invoice.
-//   dasarStatusBayar = angka pembanding status Lunas/DP di CRM.
-//                    Resi BARU  → tagihanOrder (ongkir anchor ikut, supaya "Lunas" = seluruh Total Resi terbayar).
-//                    Lainnya    → Order.value SAJA — aturan LAMA dipertahankan apa adanya (keputusan kompatibilitas: status, paidAt, dan komisi
-//                                 order tunggal tidak boleh berubah diam-diam). Mengubahnya = keputusan Owner terpisah.
+//   dasarStatusBayar = angka pembanding status Lunas/DP di CRM = tagihanOrder (value + ongkir yang ditagih) UNTUK SEMUA order.
+//                    Keputusan Owner 29 Sep 2026: ongkir ikut nilai tagihan Finance. Sebelumnya order tunggal memakai Order.value SAJA, padahal
+//                    invoice menagih value + ongkir dan jurnal pengakuan pendapatan mengakui ongkir → order tampil "Lunas" dengan piutang ongkir
+//                    menggantung (mis. RES-21092026-128, Rp200.000). Komisi sales tetap berbasis Order.value (ongkir bukan omzet sales).
 //   tagihanResi    = Σ tagihanOrder child aktif (bukan CANCELLED) = Total Resi.
 
 export const PILIH_TAGIHAN = {
@@ -36,7 +36,7 @@ export function tagihanOrder(order, grup = null) {
 }
 
 export function dasarStatusBayar(order, grup = null) {
-  return resiBaru(order, grup) ? tagihanOrder(order, grup) : rp(order.value);
+  return tagihanOrder(order, grup);
 }
 
 export function tagihanResi(anak, grup) {

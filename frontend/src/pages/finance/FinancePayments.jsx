@@ -20,7 +20,7 @@ import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
-import { DetailPembayaranDialog, EditInfoDialog, KoreksiPembayaranDialog, RiwayatPembayaranDialog } from "@/features/finance/KoreksiPembayaran.jsx";
+import { DetailPembayaranDialog, EditInfoDialog, KoreksiPembayaranDialog, RiwayatPembayaranDialog, VerifikasiDialog } from "@/features/finance/KoreksiPembayaran.jsx";
 
 // Aksi PALING RELEVAN jadi tombol utama; "Bagi pembayaran" masuk menu
 // titik-tiga — foto bukti PISAH ke kolomnya sendiri (BuktiThumb), bukan
@@ -37,11 +37,13 @@ function aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog }) {
     { key: "riwayat", label: "Riwayat Perubahan", icon: History, onClick: () => bukaDialog("riwayat", p) },
   ] : [];
   const items = [
+    !p.cancelledAt && !p.terverifikasi && { key: "atur", label: "Atur Rekening & Verifikasi", icon: ShieldCheck, onClick: () => bukaDialog("verifikasi", p) },
     !p.cancelledAt && { key: "alokasi", label: "Bagi ke beberapa order", icon: Split, onClick: () => setAlokasiUntuk(p) },
     ...menuB37,
   ].filter(Boolean);
   if (!p.cancelledAt && !p.terverifikasi) {
-    return { primary: { label: "Verifikasi", variant: "secondary", onClick: () => verifikasi(p) }, items };
+    // Tanpa rekening tercatat → buka dialog pilih rekening dulu (bukan verifikasi buta); dengan rekening → verifikasi langsung seperti biasa.
+    return { primary: { label: "Verifikasi", variant: "secondary", onClick: () => (p.cashAccount ? verifikasi(p) : bukaDialog("verifikasi", p)) }, items };
   }
   return { primary: null, items };
 }
@@ -393,6 +395,7 @@ export default function FinancePayments() {
         onError={setPesan}
       />
 
+      {dialog?.jenis === "verifikasi" && <VerifikasiDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
       {dialog?.jenis === "detail" && <DetailPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} />}
       {dialog?.jenis === "riwayat" && <RiwayatPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} />}
       {dialog?.jenis === "info" && <EditInfoDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}

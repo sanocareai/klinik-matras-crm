@@ -27,7 +27,8 @@ import { kunciUntukPayment } from "./urutanKunci.js";
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
 import { isPaymentCounted, paidForOrder } from "./allocation.js";
 import { getVerificationGate } from "./settings.js";
-import { batalkanJurnalPembayaran } from "./hooks.js";
+import { batalkanJurnalPembayaran, bukukanPembayaran } from "./hooks.js";
+import { tanggalCutoff, sebelumCutoff } from "./cutoff.js";
 import { findEntryByKey } from "./journal.js";
 import { KEY as KEY_ORDER } from "./posting/orderRevenue.js";
 import { toMoney, ZERO } from "./money.js";
@@ -448,7 +449,7 @@ async function kunciPayment(tx, id) {
   const p = await tx.payment.findUnique({
     where: { id },
     select: {
-      id: true, orderId: true, amount: true, method: true, cancelledAt: true,
+      id: true, orderId: true, amount: true, method: true, cancelledAt: true, cashAccountId: true, createdAt: true,
       verifications: { select: { createdAt: true, verifiedBy: { select: { name: true } } } },
       order: { select: { orderNumber: true } },
     },
@@ -461,13 +462,54 @@ async function kunciPayment(tx, id) {
  * Verifikasi satu pembayaran. Dijalankan DI DALAM `prisma.$transaction`: baris payment dikunci (FOR UPDATE) sehingga
  * dua verifikasi paralel tidak bisa lolos bersamaan — yang kedua melihat verifikasi pertama dan mendapat 409.
  */
-export async function verifikasiPembayaran(tx, { paymentId, userId }) {
+export async function verifikasiPembayaran(tx, { paymentId, userId, cashAccountId, method }) {
   const p = await kunciPayment(tx, paymentId);
   if (p.cancelledAt) throw err("Pembayaran ini sudah dibatalkan, tidak bisa diverifikasi.", 409, { code: "SUDAH_DIBATALKAN" });
   if (p.verifications.length) {
     const v = p.verifications[0];
     throw err(`Pembayaran ini sudah diverifikasi oleh ${v.verifiedBy?.name ?? "pengguna lain"}.`, 409, { code: "SUDAH_DIPROSES" });
   }
+
+  // (1) Finance boleh menetapkan rekening/cara bayar SEBELUM verifikasi — hanya selama pembayaran ini belum punya jurnal aktif (setelah berjurnal,
+  // perubahan angka buku wajib lewat Koreksi Pembayaran: balik jurnal + versi pengganti).
+  const jurnalAktif = await findEntryByKey(tx, KEY_ORDER.payment(p.id));
+  const sudahBerjurnal = !!jurnalAktif && jurnalAktif.status === "POSTED";
+  const ubahRekening = cashAccountId !== undefined && (cashAccountId || null) !== (p.cashAccountId || null);
+  const ubahMetode = method !== undefined && method !== p.method;
+  if (ubahRekening || ubahMetode) {
+    if (sudahBerjurnal) throw err("Pembayaran ini sudah masuk buku besar, jadi rekening/cara bayarnya tidak bisa diubah dari sini. Gunakan Koreksi Pembayaran setelah diverifikasi.", 409, { code: "SUDAH_BERJURNAL" });
+    const data = {};
+    if (ubahMetode) {
+      if (!["CASH", "TRANSFER", "QRIS", "CARD"].includes(method)) throw err("Cara bayar tidak dikenali", 400);
+      data.method = method;
+    }
+    if (ubahRekening) {
+      if (cashAccountId) {
+        const rek = await tx.finCashAccount.findUnique({ where: { id: String(cashAccountId) }, select: { active: true } });
+        if (!rek || !rek.active) throw err("Rekening tujuan tidak ditemukan atau sudah tidak dipakai", 400);
+      }
+      data.cashAccountId = cashAccountId || null;
+    }
+    await tx.payment.update({ where: { id: p.id }, data });
+    await recordActivity(tx, {
+      entityType: ENTITY_TYPES.PAYMENT, entityId: p.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId,
+      metadata: { aksi: "atur_rekening_sebelum_verifikasi", before: { cashAccountId: p.cashAccountId ?? null, method: p.method }, after: { cashAccountId: data.cashAccountId ?? p.cashAccountId ?? null, method: data.method ?? p.method } },
+    });
+  }
+
+  // (2) Verifikasi TIDAK boleh meloloskan uang yang belum masuk buku (kasus Handry 29 Sep 2026: gap "rekening belum dipetakan" lalu diverifikasi,
+  // sehingga koreksi rekening terblokir). Bila belum berjurnal: bukukan SEKARANG; gagal → verifikasi ditolak dengan pesan yang bisa ditindaklanjuti.
+  // Uang yang diterima sebelum saldo awal memang tidak dijurnal ke rekening (guard cutoff) — dilewati.
+  if (!sudahBerjurnal && !sebelumCutoff(p.createdAt, await tanggalCutoff(tx))) {
+    const hasil = await bukukanPembayaran(tx, { paymentId: p.id, userId });
+    if (!hasil.posted) {
+      throw err("Pembayaran ini belum bisa dibukukan, jadi belum bisa diverifikasi. Pilih dulu rekening tujuan uangnya (atau lengkapi pemetaan rekening di Pengaturan Finance), lalu verifikasi lagi.", 422, { code: "BELUM_BISA_DIBUKUKAN" });
+    }
+    if (hasil.entry?.id) {
+      await tx.finPostingGap.updateMany({ where: { source: "PEMBAYARAN_ORDER", sourceId: p.id, resolvedAt: null }, data: { resolvedAt: new Date(), resolvedEntryId: hasil.entry.id } });
+    }
+  }
+
   await tx.paymentVerification.create({ data: { paymentId: p.id, verifiedById: userId } });
   const orderIds = await orderTerdampak(tx, p);
   for (const oid of orderIds) {

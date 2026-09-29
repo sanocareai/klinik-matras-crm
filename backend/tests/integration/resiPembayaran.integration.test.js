@@ -636,7 +636,7 @@ test("Audit #3: Sales tidak bisa melunasi diam-diam Resi yang sedang diklaim Lun
 
 // ── hardening 28 Sep 2026: tagihan kanonis, klaim per order lama, total sadar-alokasi, urutan kunci, cancel-vs-verify, metode ────────────────
 
-test("Tagihan kanonis: Ongkir Tambahan dihitung TEPAT sekali (anchor); status CRM anak Resi = value+ongkir anchor; order tunggal tetap aturan lama (value)", async () => {
+test("Tagihan kanonis: Ongkir Tambahan dihitung TEPAT sekali (anchor); status CRM anak Resi = value+ongkir anchor; order tunggal ikut ongkir (keputusan Owner 29 Sep 2026)", async () => {
   const w = await dunia();
   // ongkir yang (keliru) tercatat di child non-anchor TIDAK ikut tagihan Resi
   await testPrisma.order.update({ where: { id: w.anak[1] }, data: { ongkir: 20_000 } });
@@ -664,12 +664,14 @@ test("Tagihan kanonis: Ongkir Tambahan dihitung TEPAT sekali (anchor); status CR
   await testPrisma.$transaction((tx) => recomputeOrderPaymentStatus(tx, w.anchorId));
   const anchor = await testPrisma.order.findUnique({ where: { id: w.anchorId } });
   assert.equal(anchor.paymentStatus, "LUNAS"); assert.ok(anchor.paidAt);
-  // order tunggal (groupId NULL) dengan ongkir: endpoint generik TETAP berfungsi (guard baru tidak menyentuhnya); bayar value = LUNAS (lama)
+  // order tunggal (groupId NULL) dengan ongkir: endpoint generik TETAP berfungsi (guard baru tidak menyentuhnya); keputusan Owner 29 Sep 2026: ongkir ikut tagihan
   const tunggal = await createOrderForCustomer(w.customer.id, { notes: "{}", unitCount: 1, ongkir: 30_000 }, w.sales.user.id);
   await testPrisma.order.update({ where: { id: tunggal.id }, data: { value: 400_000 } });
   const bayarTunggal = await w.s.post(`/api/orders/${tunggal.id}/payments`, { amount: 400_000, method: "CASH" });
   assert.equal(bayarTunggal.status, 201, JSON.stringify(bayarTunggal.body));
-  assert.equal((await testPrisma.order.findUnique({ where: { id: tunggal.id } })).paymentStatus, "LUNAS", "order tunggal: pembanding tetap value");
+  assert.equal((await testPrisma.order.findUnique({ where: { id: tunggal.id } })).paymentStatus, "DP", "order tunggal: bayar value saja = DP, ongkir masih ditagih");
+  assert.equal((await w.s.post(`/api/orders/${tunggal.id}/payments`, { amount: 30_000, method: "CASH" })).status, 201);
+  assert.equal((await testPrisma.order.findUnique({ where: { id: tunggal.id } })).paymentStatus, "LUNAS", "value + ongkir terbayar = LUNAS");
 });
 
 test("Klaim Lunas per order LAMA (dropdown sebelum flag aktif) pada child Resi: dikunci saat flag ON, tampil di antrean Resi, tolak memulihkan status dari ledger tanpa menyentuh child lain", async () => {

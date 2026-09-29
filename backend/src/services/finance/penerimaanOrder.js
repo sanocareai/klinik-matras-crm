@@ -33,7 +33,8 @@ import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
 import { kunciKanonis } from "./urutanKunci.js";
 import { PILIH_TAGIHAN, dasarStatusBayar } from "./tagihanOrder.js";
 import { paidForOrder } from "./allocation.js";
-import { getVerificationGate, getSettingRaw, SETTING_KEYS } from "./settings.js";
+import { getVerificationGate } from "./settings.js";
+import { tanggalCutoff, tanggalWIB } from "./cutoff.js";
 import { bukukanPembayaran } from "./hooks.js";
 import { postJournal, findEntryByKey, toBookDate } from "./journal.js";
 import { resolveAccount, SYSTEM_KEYS } from "./accounts.js";
@@ -46,15 +47,7 @@ function err(message, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
 }
 
-/** Tanggal WIB (YYYY-MM-DD) dari sebuah instant. */
-function tanggalWIB(instant) {
-  return new Date(new Date(instant).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-}
-
-export async function tanggalCutoff(db) {
-  const raw = await getSettingRaw(db, SETTING_KEYS.SALDO_AWAL_CUTOFF);
-  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "2026-09-18";
-}
+export { tanggalCutoff };
 
 /**
  * Order LUNAS di CRM yang uang masuknya belum (penuh) tercatat sebagai Payment.

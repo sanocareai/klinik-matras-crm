@@ -39,6 +39,8 @@ const PER = "from=2026-09-01&to=2026-09-30";
 let no = 0;
 async function siapkan() {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
+  // Tes ini memakai tanggal pembayaran sebelum 18 Sep 2026 sebagai data uji jalur uang BERJALAN; guard cutoff (cutoff.js) diuji terpisah di financePembayaranHistoris.
+  await setSetting(testPrisma, SETTING_KEYS.SALDO_AWAL_CUTOFF, "2026-01-01");
   const akun = (systemKey) => testPrisma.finAccount.findUnique({ where: { systemKey } });
   const bankA = await akun(SYSTEM_KEYS.BANK); const kasA = await akun(SYSTEM_KEYS.KAS);
   const bank = await testPrisma.finCashAccount.create({ data: { name: "SANOBANK Kemal", kind: "BANK", accountId: bankA.id } });

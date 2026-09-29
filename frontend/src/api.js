@@ -479,6 +479,8 @@ export const api = {
     return request(`/armada/payments${qs ? `?${qs}` : ""}`);
   },
   verifyPayment: (id) => request(`/armada/payments/${id}/verify`, { method: "POST" }),
+  // Verifikasi + (opsional) menetapkan rekening/cara bayar SEBELUM diverifikasi; server membukukan bila belum berjurnal.
+  verifikasiPembayaranFinance: (id, data = {}) => request(`/finance/pembayaran/${id}/verifikasi`, { method: "POST", body: JSON.stringify(data) }),
 
   // Kendali — dashboard lintas portal (Sano Hub Phase 1)
   getKendaliOverview: () => request("/kendali/overview"),

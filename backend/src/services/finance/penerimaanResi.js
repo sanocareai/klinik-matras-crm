@@ -227,6 +227,17 @@ export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING",
   const hitung = hitungAlokasiResi({ anak: aktif, dibayar, tipe: TIPE_BAYAR.TAGIHAN, nominal: amount, grup });
 
   const tanggal = toBookDate(date || tanggalWIB(grup.lunasDiklaimPada ?? new Date()));
+  // Guard cutoff (Owner 29 Sep 2026): uang yang diterima sebelum saldo awal sudah ada di saldo riil — tidak boleh menambah rekening. Resi selalu
+  // dibuat setelah cutoff, jadi tanggal terima sebelum cutoff tidak masuk akal untuk Resi dan ditolak (bukan dialihkan diam-diam).
+  if (mode === "REKENING") {
+    const cutoffResi = await tanggalCutoff(tx);
+    if (tanggal.toISOString().slice(0, 10) < cutoffResi) {
+      throw new ResiBayarError(
+        `Tanggal uang diterima (${tanggal.toISOString().slice(0, 10)}) jatuh sebelum saldo awal (${cutoffResi}), sehingga tidak boleh menambah saldo rekening. Periksa tanggalnya, atau minta Finance Admin menuntaskannya sebagai pembayaran historis.`,
+        409, "TANGGAL_SEBELUM_SALDO_AWAL",
+      );
+    }
+  }
   // createdAt = tanggal uang diterima (jam 12 WIB): postPaymentReceived memakainya sebagai tanggal buku.
   const createdAt = new Date(Date.UTC(tanggal.getUTCFullYear(), tanggal.getUTCMonth(), tanggal.getUTCDate(), 5));
 
