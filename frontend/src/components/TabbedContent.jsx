@@ -2,6 +2,7 @@ import React, { Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import { useTabs, TabIdProvider } from "@/lib/TabsContext.jsx";
 import { RouteFallback } from "@/routes/pageRegistry.jsx";
+import { splitPathQuery } from "@/lib/splitPathQuery.js";
 import ChunkErrorBoundary from "./ChunkErrorBoundary.jsx";
 
 // D-144 — SEMUA tab yang terbuka dirender SEKALIGUS di sini (bukan cuma
@@ -27,21 +28,32 @@ export default function TabbedContent() {
 
   return (
     <>
-      {tabs.map((tab) => (
-        <div key={tab.id} hidden={tab.id !== activeTabId} className="h-full">
-          <TabIdProvider id={tab.id}>
-            <ChunkErrorBoundary>
-              <Suspense fallback={<RouteFallback />}>
-                <Routes location={{ pathname: tab.path }}>
-                  {pages.map((p) => (
-                    <Route key={p.path} path={p.path} element={p.render(ctx)} />
-                  ))}
-                </Routes>
-              </Suspense>
-            </ChunkErrorBoundary>
-          </TabIdProvider>
-        </div>
-      ))}
+      {tabs.map((tab) => {
+        // P8.1 (UI & Navigation Consolidation) — tab.path BOLEH memuat query
+        // string ("?tab=...", dipakai menu "Riwayat" Order Produksi).
+        // `{ pathname: tab.path }` SEBELUMNYA menaruh "?..." itu MENTAH di
+        // dalam field pathname tanpa pernah dipecah ke `search` — halaman di
+        // dalam <Routes> ini cocok (matcher toleran), tapi useSearchParams()/
+        // useLocation().search di dalamnya selalu kosong (bug nyata,
+        // ditemukan saat QA visual "Riwayat"). Dipecah di sini dengan helper
+        // yang SAMA dipakai resolveEntryPath (pageRegistry.jsx).
+        const { base, search } = splitPathQuery(tab.path);
+        return (
+          <div key={tab.id} hidden={tab.id !== activeTabId} className="h-full">
+            <TabIdProvider id={tab.id}>
+              <ChunkErrorBoundary>
+                <Suspense fallback={<RouteFallback />}>
+                  <Routes location={{ pathname: base, search }}>
+                    {pages.map((p) => (
+                      <Route key={p.path} path={p.path} element={p.render(ctx)} />
+                    ))}
+                  </Routes>
+                </Suspense>
+              </ChunkErrorBoundary>
+            </TabIdProvider>
+          </div>
+        );
+      })}
     </>
   );
 }

@@ -47,9 +47,12 @@ const TABS = [
   { key: "DELIVERED",          label: "Terkirim" },
 ];
 
-export default function ProductionWorkOrders() {
+// `initialStatus` (P8.1, opsional) — tab awal saat dibuka dari luar (mis.
+// menu "Riwayat" via ProductionOrdersHub.jsx, pra-filter "Terkirim"). Default
+// "" mempertahankan perilaku lama persis untuk SEMUA pemanggil yang sudah ada.
+export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState("");
+  const [tab, setTab] = useState(initialStatus);
   const [cari, setCari] = useState("");
   const [fServiceLine, setFServiceLine] = useState("");
   const [data, setData] = useState(null);

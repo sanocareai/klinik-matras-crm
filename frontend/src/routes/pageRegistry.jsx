@@ -1,6 +1,7 @@
 import React, { lazy } from "react";
 import { matchPath } from "react-router-dom";
 import { rolesOf } from "../lib/roles.js";
+import { splitPathQuery } from "../lib/splitPathQuery.js";
 
 // D-143 (9 September 2026) — SATU SUMBER KEBENARAN untuk daftar halaman.
 // Sebelumnya seluruh ~55 lazy import + <Route> ditulis langsung di App.jsx.
@@ -101,6 +102,12 @@ const ProductionReportV2 = lazy(() => import("../pages/bengkel/ProductionReportV
 const WarehouseProductionQueue = lazy(() => import("../pages/warehouse/WarehouseProductionQueue.jsx"));
 const WorkerLane = lazy(() => import("../pages/produksi/WorkerLane.jsx"));
 const ProductionAndon = lazy(() => import("../pages/bengkel/ProductionAndon.jsx"));
+// P8.1 (UI & Navigation Consolidation, 29 September 2026) — hub/halaman BARU
+// murni navigasi & layout; TIDAK ada state machine/API/migration baru.
+const ProductionRingkasan = lazy(() => import("../pages/bengkel/ProductionRingkasan.jsx"));
+const ProductionQcHub = lazy(() => import("../pages/bengkel/ProductionQcHub.jsx"));
+const ProductionOrdersHub = lazy(() => import("../pages/bengkel/ProductionOrdersHub.jsx"));
+const ProductionServiceStages = lazy(() => import("../pages/bengkel/ProductionServiceStages.jsx"));
 
 // Halaman MANDIRI (P8): dirender App.jsx di luar sidebar/tab desktop — aplikasi PIC (PWA mobile) dan kiosk Andon TV. Tetap wajib login.
 export const STANDALONE_PAGES = [
@@ -133,16 +140,24 @@ function isDriverOnlyUser() {
   }
 }
 
+// P8.1 (UI & Navigation Consolidation) — menu "Riwayat" mengarah ke
+// /bengkel/order-produksi?tab=work-order&status=DELIVERED (query string,
+// BUKAN halaman baru — lihat ProductionOrdersHub.jsx). matchPath TIDAK
+// paham "?..." menempel di pathname (akan gagal cocok, jatuh ke fallback
+// "/portal"), jadi query string dipisah SEBELUM dicocokkan lalu ditempel
+// kembali ke hasilnya. Pemanggil lama (tanpa "?" sama sekali) berperilaku
+// identik persis seperti sebelumnya.
 export function resolveEntryPath(pathname) {
-  if (pathname === "/") return "/portal";
+  const { base, search } = splitPathQuery(pathname);
+  if (base === "/") return "/portal";
   // /finance (tanpa sub-path) dirujuk PORTALS backend & WorkspaceSwitcher —
   // diselesaikan di sini supaya tidak pernah tersimpan sebagai path sebuah
   // tab (lihat catatan panjang D-144 di atas).
-  if (pathname === "/finance") return "/finance/dashboard";
-  if (pathname === "/warehouse") return "/warehouse/dashboard";
-  if (pathname === "/armada") return isDriverOnlyUser() ? "/armada/jobs" : "/armada/dashboard";
-  const dikenal = PAGES.some((p) => matchPath({ path: p.path, end: true }, pathname));
-  return dikenal ? pathname : "/portal"; // setara catch-all "*" lama
+  if (base === "/finance") return "/finance/dashboard";
+  if (base === "/warehouse") return "/warehouse/dashboard";
+  if (base === "/armada") return isDriverOnlyUser() ? "/armada/jobs" : "/armada/dashboard";
+  const dikenal = PAGES.some((p) => matchPath({ path: p.path, end: true }, base));
+  return dikenal ? base + search : "/portal"; // setara catch-all "*" lama
 }
 
 export function RouteFallback() {
@@ -225,6 +240,11 @@ export const PAGES = [
   { path: "/bengkel/qc-v2", render: () => <ProductionQc /> },
   { path: "/bengkel/production-v2", render: () => <ProductionPlannerV2 /> },
   { path: "/bengkel/production-v2/laporan/:runId", render: () => <ProductionReportV2 /> },
+  // P8.1 (UI & Navigation Consolidation) — rute BARU murni navigasi/layout.
+  { path: "/bengkel/ringkasan", render: () => <ProductionRingkasan /> },
+  { path: "/bengkel/quality-control", render: () => <ProductionQcHub /> },
+  { path: "/bengkel/order-produksi", render: () => <ProductionOrdersHub /> },
+  { path: "/bengkel/layanan-tahapan", render: () => <ProductionServiceStages /> },
   { path: "/warehouse/antrean-produksi", render: () => <WarehouseProductionQueue /> },
   { path: "/warehouse/finished-goods", render: () => <WarehouseFinishedGoods /> },
   { path: "/warehouse/material-pickup", render: () => <WarehouseMaterialPickup /> },

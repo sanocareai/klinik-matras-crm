@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { loadTabs, saveTabs } from "./openTabs.js";
+import { titleFromPath, findTabIndexByPath } from "./tabTitles.js";
 import { resolveEntryPath } from "../routes/pageRegistry.jsx";
 
 // D-144 (9 September 2026) — permintaan owner: "workspace SANSS seperti
@@ -29,30 +30,6 @@ const TabIdCtx = createContext(null);
 // menerjemahkan nama resource yang sudah diketahui ke Bahasa Indonesia;
 // resource baru yang belum terdaftar tetap dapat fallback title-case biasa
 // (lebih baik dari UUID mentah, walau bahasa Inggris) sampai didaftarkan.
-const RESOURCE_LABELS = {
-  units: "Unit",
-};
-
-function looksLikeId(seg) {
-  return (
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg) || // UUID
-    /^[0-9a-f]{16,}$/i.test(seg) || // hash/hex panjang
-    /^\d{4,}$/.test(seg) // ID numerik panjang
-  );
-}
-
-function titleFromPath(path) {
-  const parts = path.split("/").filter(Boolean);
-  let seg = parts.pop() || "portal";
-  if (looksLikeId(seg) && parts.length > 0) {
-    const resource = parts.pop();
-    seg = RESOURCE_LABELS[resource] || resource;
-  }
-  return seg
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function newId() {
   return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -64,7 +41,15 @@ export function TabsProvider({ pages, ctx, children }) {
   const [tabs, setTabs] = useState(() => {
     const saved = loadTabs();
     if (saved) return saved.tabs;
-    const path = resolveEntryPath(location.pathname);
+    // P8.1 (UI & Navigation Consolidation) — location.pathname SENDIRIAN
+    // tidak pernah memuat query string ("?tab=...", dipakai menu "Riwayat"
+    // Order Produksi). Tanpa +location.search di sini, kunjungan PERTAMA
+    // (belum ada tabs tersimpan) ke tautan berquery — bookmark, refresh,
+    // buka tab browser baru — akan diam-diam kehilangan query itu tepat di
+    // titik render pertama. resolveEntryPath sendiri SUDAH menangani "?..."
+    // dengan benar (lihat pageRegistry.jsx) — di sini cuma memastikan
+    // search ikut disertakan sebelum dioper ke situ.
+    const path = resolveEntryPath(location.pathname + location.search);
     return [{ id: newId(), path, title: titleFromPath(path) }];
   });
   const [activeTabId, setActiveTabId] = useState(() => {
@@ -98,7 +83,18 @@ export function TabsProvider({ pages, ctx, children }) {
     // efek di tab BACKGROUND yang memanggil navigate() sendiri (jarang),
     // tab aktif akan ikut berubah tanpa diklik user — belum ditangani di
     // v1 ini.
-    const path = resolveEntryPath(location.pathname);
+    //
+    // P8.1 (UI & Navigation Consolidation) — BUG NYATA yang ditemukan lewat
+    // QA visual menu "Riwayat": efek ini juga jalan pada MOUNT PERTAMA
+    // (bukan cuma perubahan berikutnya — useEffect selalu jalan sekali
+    // setelah render awal), dan `skipNextSync` masih `false` waktu itu (baru
+    // di-set true oleh gotoPath, yang belum pernah dipanggil). Sebelum
+    // perbaikan ini, "location.pathname" TANPA "+location.search" di sini
+    // MENIMPA BALIK path awal yang benar (sudah termasuk query, dari
+    // initializer tabs di atas) tepat sesudah render pertama — query string
+    // hilang lagi walau initializer-nya sudah benar. Dua tempat ini
+    // (initializer + efek sinkron) HARUS konsisten menyertakan search.
+    const path = resolveEntryPath(location.pathname + location.search);
     setTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, path, title: titleFromPath(path) } : t)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
@@ -114,8 +110,19 @@ export function TabsProvider({ pages, ctx, children }) {
     gotoPath(resolved, { push: true });
   }
 
+  // Dedup (P8.1, UI & Navigation Consolidation) — laporan owner: tab route
+  // yang sama tidak boleh terbuka berkali-kali (mis. klik-tengah dua kali di
+  // sidebar link yang sama). Kalau path TUJUAN (resolved) itu sudah punya
+  // tab terbuka, PINDAH ke tab itu saja, bukan bikin duplikat.
   function openNewTab(path, meta = {}) {
     const resolved = resolveEntryPath(path);
+    const existingIdx = findTabIndexByPath(tabs, resolved);
+    if (existingIdx !== -1) {
+      const existing = tabs[existingIdx];
+      setActiveTabId(existing.id);
+      gotoPath(existing.path, { push: false });
+      return;
+    }
     const id = newId();
     setTabs((prev) => [...prev, { id, path: resolved, title: meta.title || titleFromPath(resolved) }]);
     setActiveTabId(id);

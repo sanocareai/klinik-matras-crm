@@ -16,6 +16,7 @@ import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
 import SidebarNavSection from "./SidebarNavSection.jsx";
 import { applyCustomOrder, getSectionOrder, saveSectionOrder } from "@/lib/sidebarOrder.js";
+import { filterMenuByPermission, visibleSections } from "@/lib/menuVisibility.js";
 import { useSSE } from "../hooks/useSSE.js";
 import Topbar from "./Topbar.jsx";
 import TabStrip from "./TabStrip.jsx";
@@ -174,66 +175,73 @@ const DIVISIONS = {
     accent: {
       ...DIVISION_ACCENT,
     },
-    // Dikelompokkan 9 September 2026 (D-148, audit konsistensi — sebelumnya
-    // 6 menu rata dalam SATU section berlabel Inggris "PRODUCTION", satu-
-    // satunya divisi yang belum dikelompokkan seperti Growth/Delivery). Pola
-    // SAMA dengan `armada` di atas: OPERASIONAL untuk kerja harian (papan +
-    // daftar unit + pantau order), lalu section terpisah untuk mutu/revisi
-    // (setara "DOKUMEN & KENDALA" Delivery), lalu LAPORAN sendiri.
+    // P8.1 (UI & Navigation Consolidation, 29 September 2026) — REDESAIN dari
+    // pengelompokan D-148 di atas. Tiga hal berubah:
+    //   1. "Papan Produksi" (V1), "Rencana Harian (V2)", dan "Rencana Produksi"
+    //      (P3, lama) DIGABUNG NAVIGASI jadi SATU menu "Rencana Produksi" →
+    //      /bengkel/production-v2 (Papan Meja/Daftar/Kalender jadi TAB di
+    //      dalam halaman itu sendiri, lihat ProductionPlannerV2.jsx).
+    //   2. "Antrean QC (V2)" + "Inspeksi QC" → "Quality Control" (tab hub,
+    //      ProductionQcHub.jsx). "Work Order" + "Semua Order" → "Order
+    //      Produksi" (tab hub, ProductionOrdersHub.jsx) — dipindah ke section
+    //      administrasi karena sifatnya menelusuri/riwayat, bukan kerja
+    //      real-time harian seperti Rencana Produksi.
+    //   3. Section baru "LEGACY (ADMIN)" (adminOnly) menampung SEMUA rute lama
+    //      yang digabung di atas apa adanya — TIDAK ADA route atau komponen
+    //      yang dihapus (lihat src/lib/legacyProductionRoutes.js), cuma
+    //      disembunyikan dari menu operasional harian.
+    // State machine, API, migration, flag V2, dan cohort canary TIDAK disentuh
+    // sama sekali oleh redesain ini — murni navigasi & layout.
     sections: [
       {
         section: "OPERASIONAL",
         items: [
-          { to: "/bengkel",                 label: "Papan Produksi",  Icon: ClipboardList },
-          // P8 Production V2 — papan meja Planner, aplikasi PIC (PWA) dan Andon TV. Inert bila reader V2 OFF; Work Order lama tetap sebagai histori/fallback.
-          { to: "/bengkel/production-v2",   label: "Rencana Harian (V2)", Icon: CalendarClock },
-          { to: "/produksi/meja",           label: "Aplikasi Meja Bongkar", Icon: Wrench },
-          { to: "/produksi/corner",         label: "Aplikasi Meja Corner", Icon: Wrench },
+          { to: "/bengkel/ringkasan",       label: "Ringkasan",       Icon: Gauge },
+          { to: "/bengkel/production-v2",   label: "Rencana Produksi", Icon: CalendarClock },
+          { to: "/produksi/meja",           label: "Aplikasi Meja",   Icon: Wrench },
+          { to: "/bengkel/quality-control", label: "Quality Control", Icon: ClipboardCheck },
+          { to: "/produksi/corner",         label: "Aplikasi Corner", Icon: Wrench },
           { to: "/bengkel/andon",           label: "Andon TV",        Icon: LayoutDashboard },
-          { to: "/bengkel/work-orders",     label: "Work Order",      Icon: Boxes },
-          // Rencana Produksi H-1 (Production Workshop + Warehouse V2, P3) — antrean unit eligible, assignment
-          // workshop/operator/target waktu, Planned BOM, reservasi bahan Gudang. Kosong/inert bila reader V2
-          // (production_v2_reader) belum diaktifkan server untuk cohort unit terkait (fail-closed, bukan error).
-          { to: "/bengkel/planning",        label: "Rencana Produksi", Icon: CalendarClock },
-          // Antrean Kerja Workshop (P5) — mulai/jeda/lanjutkan/selesai tahap; inert bila reader V2 belum aktif.
-          { to: "/bengkel/workshop",        label: "Antrean Kerja",   Icon: Wrench },
-          // Antrean QC V2 (P6) — putusan QC Lulus/Gagal/Waive, rework, tindak lanjut penolakan Gudang, dan rekonsiliasi konflik override V1.
-          { to: "/bengkel/qc-v2",           label: "Antrean QC (V2)", Icon: ClipboardCheck },
-          // Semua Order (D-086, 5 September 2026) — pasangan Bengkel dari
-          // "Semua Order" Delivery (lihat catatan D-052 di atas) — laporan
-          // owner: sales suka lupa update status, semua divisi harus bisa
-          // pantau & ubah status order di workspace masing-masing.
-          { to: "/bengkel/orders",          label: "Semua Order",     Icon: ClipboardList },
+          { to: "/bengkel/reports",         label: "Laporan Produksi", Icon: BarChart3 },
         ],
       },
       {
-        section: "MUTU & REVISI",
+        section: "PENGATURAN & ADMINISTRASI",
         items: [
-          { to: "/bengkel/qc",              label: "Inspeksi QC",     Icon: ScanLine },
-          { to: "/bengkel/scope-revisions", label: "Revisi Lingkup",  Icon: GitBranch },
-          { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
+          { to: "/bengkel/order-produksi",  label: "Order Produksi",  Icon: ClipboardList },
+          { to: "/bengkel/work-centers",    label: "Work Center",     Icon: MapPin },
+          { to: "/bengkel/operators",       label: "Operator",        Icon: UserCog },
+          { to: "/bengkel/layanan-tahapan", label: "Layanan & Tahapan", Icon: GitBranch },
           // C1 — biaya operasional NON-STOK (servis mesin, jasa vendor, lembur, dll). Hanya PRODUCTION_LEAD/Finance/Admin; server menegakkan ulang.
           { to: "/bengkel/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "PRODUCTION_LEAD"], bolehDivisi: ["PRODUCTION"] },
+          { to: "/bengkel/scope-revisions", label: "Komplain & Revisi", Icon: AlertTriangle },
+          // Riwayat = Order Produksi (tab Work Order) pra-filter status Terkirim — bukan halaman baru, lihat ProductionOrdersHub.jsx.
+          { to: "/bengkel/order-produksi?tab=work-order&status=DELIVERED", label: "Riwayat", Icon: Boxes },
+        ],
+      },
+      {
+        section: "LAIN",
+        items: [
+          { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
           // Kasus Komplain (D-116, 11 September 2026) — halaman dibaca
           // lintas divisi, lihat catatan panjang di section armada di atas.
           { to: "/komplain",                label: "Kasus Komplain",  Icon: AlertTriangle },
         ],
       },
-      // Konfigurasi rute/staf produksi (Production Core Slice 4, 10
-      // September 2026) — SENGAJA section TERPISAH dari OPERASIONAL harian
-      // di atas: dua menu ini bukan kerja harian, tapi setup/admin (siapa
-      // bekerja di area mana, skill apa) yang jarang diubah.
+      // LEGACY (ADMIN) — P8.1: rute V1/lama yang digabung navigasi di atas.
+      // TIDAK dihapus (lihat src/lib/legacyProductionRoutes.js), cuma
+      // disembunyikan dari menu operasional non-admin.
       {
-        section: "TIM & AREA KERJA",
+        section: "LEGACY (ADMIN)",
+        adminOnly: true,
         items: [
-          { to: "/bengkel/work-centers",    label: "Work Centers",    Icon: MapPin },
-          { to: "/bengkel/operators",       label: "Operators",       Icon: UserCog },
-        ],
-      },
-      {
-        section: "LAPORAN",
-        items: [
-          { to: "/bengkel/reports",         label: "Laporan",         Icon: BarChart3 },
+          { to: "/bengkel",                 label: "Papan Produksi (lama, V1)", Icon: ClipboardList },
+          { to: "/bengkel/planning",        label: "Rencana Produksi (lama, P3)", Icon: CalendarClock },
+          { to: "/bengkel/workshop",        label: "Antrean Kerja (lama, P5)", Icon: Wrench },
+          { to: "/bengkel/work-orders",     label: "Work Order (lama)", Icon: Boxes },
+          { to: "/bengkel/orders",          label: "Semua Order (lama)", Icon: ClipboardList },
+          { to: "/bengkel/qc",              label: "Inspeksi QC (lama)", Icon: ScanLine },
+          { to: "/bengkel/qc-v2",           label: "Antrean QC V2 (lama)", Icon: ClipboardCheck },
         ],
       },
     ],
@@ -264,6 +272,16 @@ const DIVISIONS = {
   // dengan Bengkel/Delivery: OPERASIONAL (kerja harian), TRANSAKSI
   // (dokumen keluar-masuk barang), KONTROL STOK (hitung ulang & tindak
   // lanjut selisih/kekurangan), LAPORAN.
+  // P8.1 (UI & Navigation Consolidation, 29 September 2026) — menu inti
+  // digeser mengikuti alur Production V2 (Antrean Produksi lebih dulu dari
+  // Dashboard, relabel beberapa item ke istilah blueprint P8: "Permintaan
+  // Bahan", "Stok & Lokasi", "Riwayat Pergerakan"). Item TIDAK terkait
+  // Production V2 (Penerimaan Barang/pembelian, Pengeluaran Material,
+  // Transfer Stok, Stock Opname, Restok, Barang Rusak & Retur) SENGAJA
+  // DIPERTAHANKAN tampil normal — itu alur inventory umum Gudang yang
+  // dipakai staf non-admin tiap hari, di luar lingkup konsolidasi P8, dan
+  // menyembunyikannya di balik ADMIN akan jadi regresi fungsional nyata,
+  // bukan sekadar "rapi-rapi" navigasi.
   warehouse: {
     label: "Warehouse",
     accent: {
@@ -273,22 +291,23 @@ const DIVISIONS = {
       {
         section: "OPERASIONAL",
         items: [
+          // P8 — antrean Gudang untuk Produksi V2 (unit masuk, bahan, kekurangan, barang jadi). Inert bila reader V2 OFF.
+          { to: "/warehouse/antrean-produksi", label: "Antrean Produksi", Icon: ClipboardCheck },
           { to: "/warehouse/dashboard", label: "Dashboard",        Icon: LayoutDashboard },
-          { to: "/warehouse/inventory", label: "Stok & Material",  Icon: Package },
+          // Custody unit V2 (P1–P2): antrean serah-terima Delivery <-> Gudang. Data kosong bila reader V2 belum diaktifkan (fail-closed).
+          { to: "/warehouse/unit-custody", label: "Penerimaan Unit", Icon: ClipboardCheck },
         ],
       },
       {
         section: "TRANSAKSI",
         items: [
-          // P8 — antrean Gudang untuk Produksi V2 (unit masuk, bahan, kekurangan, barang jadi). Inert bila reader V2 OFF.
-          { to: "/warehouse/antrean-produksi", label: "Antrean Gudang Produksi", Icon: ClipboardCheck },
-          { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
-          // Custody unit V2 (P1–P2): antrean serah-terima Delivery <-> Gudang. Data kosong bila reader V2 belum diaktifkan (fail-closed).
-          { to: "/warehouse/unit-custody", label: "Penerimaan Unit", Icon: ClipboardCheck },
+          // P4 — antrean Pengambilan Bahan Produksi (permintaan dari Planned BOM/reservasi; kosong/inert bila reader V2 OFF).
+          // Produksi hanya MELIHAT status di sini — aksi serahkan bahan tetap milik Gudang (ProductionExperienceReadService, bukan halaman ini).
+          { to: "/warehouse/material-pickup", label: "Permintaan Bahan", Icon: ArrowUpFromLine },
           // P6 — penerimaan BARANG JADI dari Produksi (lokasi wajib; menerima = run selesai + unit siap kirim). Inert bila reader V2 OFF.
           { to: "/warehouse/finished-goods", label: "Terima Barang Jadi", Icon: ArrowDownToLine },
-          // P4 — antrean Pengambilan Bahan Produksi (permintaan dari Planned BOM/reservasi; kosong/inert bila reader V2 OFF).
-          { to: "/warehouse/material-pickup", label: "Pengambilan Bahan Produksi", Icon: ArrowUpFromLine },
+          { to: "/warehouse/inventory", label: "Stok & Lokasi",     Icon: Package },
+          { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
           { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
           // C1 — biaya operasional NON-STOK gudang (bongkar muat, kurir, perlengkapan). Hanya WAREHOUSE/Finance/Admin; server menegakkan ulang.
@@ -312,7 +331,7 @@ const DIVISIONS = {
       {
         section: "LAPORAN",
         items: [
-          { to: "/warehouse/reports", label: "Laporan", Icon: BarChart3 },
+          { to: "/warehouse/reports", label: "Riwayat Pergerakan", Icon: BarChart3 },
         ],
       },
     ],
@@ -881,9 +900,8 @@ export default function Layout({ user, onLogout }) {
     // `hideForLeaderDriver` (D-052, lihat "Semua Order" di sections armada
     // di atas). Beda dari driverOnly: LEADER_DRIVER TETAP dapat sidebar
     // penuh dispatcher, cuma satu-dua menu CRM tertentu yang disembunyikan.
-    // C1 — item bertanda `bolehPeran` hanya tampil untuk peran yang disebut (server tetap menegakkan izin sebenarnya).
-    // C2.1 — `bolehDivisi`: anggota divisi itu juga melihat menunya (peran ATAU divisi).
-    const saringPeran = (base) => ({ ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.filter((i) => !i.bolehPeran || roles.some((r) => i.bolehPeran.includes(r)) || (i.bolehDivisi || []).some((d) => divisiSaya.includes(d))) })) });
+    // C1/C2.1 — dipindah ke lib/menuVisibility.js (P8.1, testable via `node --test`); perilaku sama persis.
+    const saringPeran = (base) => filterMenuByPermission(base, { roles, divisiSaya });
     if (["bengkel", "warehouse", "growth", "kendali", "finance"].includes(divisionKey)) return saringPeran(divisionBase);
     const leaderDriverOnly = roles.includes("LEADER_DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
     if (divisionKey === "armada" && leaderDriverOnly) {
@@ -1200,9 +1218,7 @@ export default function Layout({ user, onLogout }) {
               dependency array yang gampang lupa disinkronkan (lihat komentar
               di deklarasi state-nya). */}
           <LayoutGroup>
-          {(onHub ? HUB_SECTIONS : division.sections).map(({ section, adminOnly, items }) => {
-            if (adminOnly && !isAdmin) return null;
-            const itemsTampil = items.filter((i) => !i.adminOnly || isAdmin);
+          {visibleSections(onHub ? HUB_SECTIONS : division.sections, isAdmin).map(({ section, items: itemsTampil }) => {
             const itemsUrut = onHub
               ? itemsTampil
               : applyCustomOrder(itemsTampil, getSectionOrder(divisionKey, section));

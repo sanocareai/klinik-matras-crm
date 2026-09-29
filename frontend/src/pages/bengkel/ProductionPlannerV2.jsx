@@ -12,6 +12,7 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { rolesOf } from "@/lib/roles.js";
+import { formatTanggal } from "@/utils/formatDate.js";
 import {
   PRIORITIES, bucketStyle, canDropOn, formatMinutes, friendlyError, indicatorList, initials, stationCapacity, wibDate,
 } from "@/features/production/experience.js";
@@ -23,7 +24,11 @@ import {
 
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 const canRoute = rolesOf(user).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r));
-const fmtDate = (d) => new Date(`${d}T00:00:00+07:00`).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+// Format tanggal Indonesia PENDEK ("29 Sep 2026", P8.1 UI & Navigation
+// Consolidation) — SAMA dengan formatTanggal() yang dipakai di seluruh app
+// (utils/formatDate.js), ganti format panjang lokal lama ("Senin, 29
+// September 2026") yang cuma dipakai di halaman ini.
+const fmtDate = (d) => formatTanggal(d);
 const shiftDate = (d, days) => new Date(new Date(`${d}T00:00:00Z`).getTime() + days * 86400_000).toISOString().slice(0, 10);
 const TONE_CLS = { green: "bg-greenbg text-green", red: "bg-redbg text-red", orange: "bg-orangebg text-orange", neutral: "bg-inset text-ink3" };
 
@@ -198,6 +203,60 @@ function RunDrawer({ item, refs, onClose, onSchedule, onChanged }) {
   );
 }
 
+// Kalender (P8.1, UI & Navigation Consolidation) — tab BARU ke-3 di halaman
+// Rencana Produksi (bersama Papan Meja & Daftar yang sudah ada). TIDAK ada
+// endpoint baru: 7 hari di sekitar tanggal terpilih diambil lewat
+// GET /production-v2/board?date= yang SAMA dipakai tab Papan Meja, dipanggil
+// paralel per hari (reader/writer cohort V2 tetap berlaku sama persis).
+// Klik satu hari pindah ke tab Papan Meja untuk hari itu — kalender ini
+// murni navigasi cepat lintas hari, bukan state machine baru.
+function WeekStrip({ centerDate, onPick }) {
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => shiftDate(centerDate, i - 3)), [centerDate]);
+  const [byDay, setByDay] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    Promise.all(days.map((d) => api.getProductionV2Board(d).then((b) => [d, b]).catch(() => [d, null])))
+      .then((pairs) => { if (alive) setByDay(Object.fromEntries(pairs)); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days.join(",")]);
+
+  const today = wibDate(0);
+  return (
+    <Card className="p-3">
+      <p className="mb-2 text-[12.5px] text-ink3">7 hari di sekitar tanggal terpilih — direncanakan/target per hari. Klik satu hari untuk membuka Papan Meja hari itu.</p>
+      <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+        {days.map((d) => {
+          const b = byDay[d];
+          const planned = b?.kpi?.planned ?? null;
+          const target = b?.kpi?.target ?? null;
+          const attention = (b?.kpi?.waitingMaterial ?? 0) > 0 || (b?.kpi?.late ?? 0) > 0;
+          const isToday = d === today;
+          const isSelected = d === centerDate;
+          const dow = new Date(`${d}T00:00:00+07:00`).toLocaleDateString("id-ID", { weekday: "short" });
+          const dm = new Date(`${d}T00:00:00+07:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
+          return (
+            <button key={d} type="button" onClick={() => onPick(d)}
+              className={`flex flex-col items-center gap-1 rounded-btn border p-2.5 text-center transition-colors ${isSelected ? "border-accent bg-accentbg" : "border-line hover:bg-hovertint"}`}>
+              <span className={`text-[11px] font-semibold uppercase ${isToday ? "text-accent" : "text-ink3"}`}>{dow}{isToday ? " · hari ini" : ""}</span>
+              <span className="text-[13px] font-bold text-ink">{dm}</span>
+              {loading ? (
+                <span className="h-4 w-10 animate-pulse rounded bg-inset" />
+              ) : (
+                <span className={`text-[12px] font-semibold tabular-nums ${attention ? "text-orange" : "text-ink3"}`}>{planned ?? "—"}/{target ?? "—"}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 export default function ProductionPlannerV2() {
   const [date, setDate] = useState(() => wibDate(0));
   const [board, setBoard] = useState(null);
@@ -259,6 +318,7 @@ export default function ProductionPlannerV2() {
               <input type="date" aria-label="Tanggal produksi" className="bg-transparent px-1 text-[13px] text-ink" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
               <Button variant="neutral" size="icon" aria-label="Hari berikutnya" onClick={() => setDate((d) => shiftDate(d, 1))}><ChevronRight size={16} /></Button>
             </div>
+            <Button variant="neutral" size="sm" onClick={() => setDate(wibDate(0))}>Hari Ini</Button>
             <Button variant="neutral" size="sm" onClick={() => setDate(wibDate(1))}>Besok (H-1)</Button>
             <Button variant="secondary" size="sm" asChild><Link to="/bengkel/andon"><Monitor size={14} aria-hidden /> Andon TV</Link></Button>
             <Button variant="neutral" size="sm" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>
@@ -272,21 +332,32 @@ export default function ProductionPlannerV2() {
           <Card className="p-0"><EmptyState icon={ClipboardList} title="Produksi V2 belum aktif" description="Papan meja tampil setelah Production V2 diaktifkan untuk unit terkait. Selama cutover, gunakan Work Order dan Papan Produksi lama." action={<Button size="sm" variant="secondary" asChild><Link to="/bengkel/work-orders">Buka Work Order</Link></Button>} /></Card>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-              <Kpi icon={Target} label="Target" value={`${board?.kpi?.target ?? "—"} unit`} />
-              <Kpi icon={ClipboardList} label="Direncanakan" value={`${board?.kpi?.planned ?? 0} unit`} />
-              <Kpi icon={CheckCircle2} label="Selesai" value={`${board?.kpi?.completed ?? 0} unit`} tone="green" />
-              <Kpi icon={PackageX} label="Menunggu bahan" value={board?.kpi?.waitingMaterial ?? 0} tone={board?.kpi?.waitingMaterial ? "red" : "neutral"} />
-              <Kpi icon={Timer} label="Terlambat" value={board?.kpi?.late ?? 0} tone={board?.kpi?.late ? "orange" : "neutral"} />
-            </div>
+            {/* Ringkas KPI saat papan benar-benar kosong (P8.1) — 5 kartu penuh
+                cuma bermakna kalau ada target/aktivitas; tanggal tanpa apa-apa
+                (mis. jauh di masa depan) cukup satu baris ringkas. */}
+            {board && board.kpi?.target === 0 && unscheduledCount === 0 && allItems.length === 0 ? (
+              <Card className="flex items-center gap-2 p-3 text-[12.5px] text-ink3">
+                <Target size={16} className="shrink-0 text-ink3" aria-hidden /> Belum ada target maupun unit dijadwalkan untuk {fmtDate(date)}.
+              </Card>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                <Kpi icon={Target} label="Target" value={`${board?.kpi?.target ?? "—"} unit`} />
+                <Kpi icon={ClipboardList} label="Direncanakan" value={`${board?.kpi?.planned ?? 0} unit`} />
+                <Kpi icon={CheckCircle2} label="Selesai" value={`${board?.kpi?.completed ?? 0} unit`} tone="green" />
+                <Kpi icon={PackageX} label="Menunggu bahan" value={board?.kpi?.waitingMaterial ?? 0} tone={board?.kpi?.waitingMaterial ? "red" : "neutral"} />
+                <Kpi icon={Timer} label="Terlambat" value={board?.kpi?.late ?? 0} tone={board?.kpi?.late ? "orange" : "neutral"} />
+              </div>
+            )}
 
             <div role="tablist" aria-label="Tampilan" className="flex gap-1 border-b border-line">
-              {[["board", "Papan Meja"], ["list", "Daftar"]].map(([k, l]) => (
+              {[["board", "Papan Meja"], ["list", "Daftar"], ["calendar", "Kalender"]].map(([k, l]) => (
                 <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-semibold ${tab === k ? "border-accent text-accent" : "border-transparent text-ink3 hover:text-ink2"}`}>{l}</button>
               ))}
             </div>
 
-            {loading && !board ? (
+            {tab === "calendar" ? (
+              <WeekStrip centerDate={date} onPick={(d) => { setDate(d); setTab("board"); }} />
+            ) : loading && !board ? (
               <div className="grid gap-3 md:grid-cols-4">{[1, 2, 3, 4].map((n) => <Card key={n} className="h-72 animate-pulse bg-inset" />)}</div>
             ) : tab === "board" ? (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -332,6 +403,7 @@ export default function ProductionPlannerV2() {
               </Card>
             )}
 
+            {tab !== "calendar" && (
             <Card className="space-y-3 p-4">
               <div className="flex items-center gap-2"><p className="text-[14px] font-bold text-ink">Belum Dijadwalkan</p><Badge variant="neutral">{unscheduledCount} unit</Badge></div>
               {unscheduledCount === 0 ? (
@@ -350,6 +422,7 @@ export default function ProductionPlannerV2() {
                 </div>
               )}
             </Card>
+            )}
           </>
         )}
       </PageBody>

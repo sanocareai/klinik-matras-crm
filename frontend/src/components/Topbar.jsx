@@ -55,6 +55,48 @@ const ROUTE_LABELS = {
   // Notification Center berdiri di atas semua workspace, seperti Main Hub —
   // jadi remahnya tunggal, tidak bersarang di bawah divisi mana pun.
   "/notifications": ["Notifikasi"],
+
+  // Production/Warehouse (P8.1, UI & Navigation Consolidation, 29 September
+  // 2026) — SEBELUMNYA /bengkel/* dan /warehouse/* TIDAK PUNYA entri di sini
+  // sama sekali, jadi jatuh ke fallback path mentah ("bengkel/production-
+  // v2") — laporan owner: breadcrumb harus manusia ("Produksi / Rencana
+  // Produksi"), bukan path teknis. Label mengikuti menu baru di Layout.jsx;
+  // rute lama (folded ke "LEGACY (ADMIN)") tetap didaftarkan supaya admin
+  // yang membukanya juga dapat breadcrumb manusia, bukan cuma yang baru.
+  "/bengkel/ringkasan":        ["Produksi", "Ringkasan"],
+  "/bengkel/production-v2":    ["Produksi", "Rencana Produksi"],
+  "/bengkel/quality-control":  ["Produksi", "Quality Control"],
+  "/bengkel/andon":            ["Produksi", "Andon TV"],
+  "/bengkel/reports":          ["Produksi", "Laporan Produksi"],
+  "/bengkel/order-produksi":   ["Produksi", "Order Produksi"],
+  "/bengkel/work-centers":     ["Produksi", "Work Center"],
+  "/bengkel/operators":        ["Produksi", "Operator"],
+  "/bengkel/layanan-tahapan":  ["Produksi", "Layanan & Tahapan"],
+  "/bengkel/pengajuan-biaya":  ["Produksi", "Pengajuan Biaya"],
+  "/bengkel/scope-revisions":  ["Produksi", "Komplain & Revisi"],
+  "/bengkel/materials":        ["Produksi", "Bahan Produksi"],
+  "/bengkel":                  ["Produksi", "Papan Produksi (lama, V1)"],
+  "/bengkel/planning":         ["Produksi", "Rencana Produksi (lama, P3)"],
+  "/bengkel/workshop":         ["Produksi", "Antrean Kerja (lama, P5)"],
+  "/bengkel/work-orders":      ["Produksi", "Work Order (lama)"],
+  "/bengkel/orders":           ["Produksi", "Semua Order (lama)"],
+  "/bengkel/qc":               ["Produksi", "Inspeksi QC (lama)"],
+  "/bengkel/qc-v2":            ["Produksi", "Antrean QC V2 (lama)"],
+
+  "/warehouse/antrean-produksi": ["Gudang", "Antrean Produksi"],
+  "/warehouse/dashboard":       ["Gudang", "Dashboard"],
+  "/warehouse/unit-custody":    ["Gudang", "Penerimaan Unit"],
+  "/warehouse/material-pickup": ["Gudang", "Permintaan Bahan"],
+  "/warehouse/finished-goods":  ["Gudang", "Terima Barang Jadi"],
+  "/warehouse/inventory":       ["Gudang", "Stok & Lokasi"],
+  "/warehouse/goods-receipt":   ["Gudang", "Penerimaan Barang"],
+  "/warehouse/material-issue":  ["Gudang", "Pengeluaran Material"],
+  "/warehouse/transfers":       ["Gudang", "Transfer Stok"],
+  "/warehouse/pengajuan-biaya": ["Gudang", "Pengajuan Biaya"],
+  "/warehouse/stock-count":     ["Gudang", "Stock Opname"],
+  "/warehouse/replenishment":   ["Gudang", "Restok"],
+  "/warehouse/adjustments":     ["Gudang", "Barang Rusak & Retur"],
+  "/warehouse/reports":         ["Gudang", "Riwayat Pergerakan"],
 };
 
 // Wave 1.1: search dominan + profil chip.

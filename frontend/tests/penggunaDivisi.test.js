@@ -39,7 +39,14 @@ test("Layout: menu Pengajuan Biaya mengikuti divisi (bolehDivisi) untuk Marketin
     assert.match(layout, new RegExp(`to: "${rute.replace(/\//g, "\\/")}"[^}]*bolehDivisi: \\["${div}"\\]`), rute);
   }
   assert.match(layout, /api\.getMyPortals\(\)\.then\(\(me\) =>[^)]*divisions/);
-  assert.match(layout, /\(i\.bolehDivisi \|\| \[\]\)\.some\(\(d\) => divisiSaya\.includes\(d\)\)/);
+  // P8.1 (UI & Navigation Consolidation) — logika filter bolehPeran/bolehDivisi
+  // dipindah ke lib/menuVisibility.js (testable via `node --test`, lihat
+  // tests/menuVisibility.test.js), Layout.jsx sekarang memakainya lewat
+  // filterMenuByPermission (REFACTOR MURNI, perilaku sama persis).
+  assert.match(layout, /import \{ filterMenuByPermission, visibleSections \} from "@\/lib\/menuVisibility\.js"/);
+  assert.match(layout, /const saringPeran = \(base\) => filterMenuByPermission\(base, \{ roles, divisiSaya \}\)/);
+  const menuVisibility = baca("lib/menuVisibility.js");
+  assert.match(menuVisibility, /\(i\.bolehDivisi \|\| \[\]\)\.some\(\(d\) => divisiSaya\.includes\(d\)\)/);
 });
 
 test("rute HR & GA untuk anggota divisi terdaftar", () => {
