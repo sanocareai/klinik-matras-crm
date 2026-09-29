@@ -25,7 +25,7 @@ import { pandanganCutoff, daftarException, buatSnapshot } from "../services/fina
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { requireAuth } from "../middleware/auth.js";
-import { idempotency } from "../middleware/idempotency.js";
+import { idempotency, wajibIdempotencyKey } from "../middleware/idempotency.js";
 import { requirePermission, requireAnyPermission, PERMISSIONS as P, hasPermission } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
@@ -2774,41 +2774,45 @@ financeTxRouter.post("/bills/:id/cancel", requirePermission(P.FINANCE_ADMIN), as
 // ═════════════════════════════════════════════════════════════════════════
 // B3.8 — KOREKSI LANJUTAN: tagihan supplier & refund yang SUDAH disetujui
 // ═════════════════════════════════════════════════════════════════════════
+// KEPUTUSAN OWNER (29 Sep 2026): koreksi Tagihan Supplier & Refund TIDAK memakai PIN — begitu juga Batalkan. Pengamannya:
+//   izin di server (/koreksi = FINANCE_ADMIN, /info = FINANCE_POST), alasan wajib, PRATINJAU server (preview:true → ROLLBACK), Idempotency-Key
+//   WAJIB pada simpan (klik ganda/retry tidak menggandakan jurnal), row lock + UNIQUE replaces_* (koreksi paralel → satu menang), audit
+//   sebelum/sesudah, reversal jurnal lama + dokumen & jurnal pengganti dalam SATU transaksi (tidak pernah overwrite).
 // /info    : ubah data administratif (tanpa jurnal) — FINANCE_POST + alasan wajib + audit sebelum/sesudah.
-// /koreksi : ubah data yang memengaruhi buku besar — FINANCE_ADMIN + PIN step-up (kecuali preview) + alasan wajib.
-//            Dokumen lama DIBATALKAN, jurnal lama DIBALIK, dokumen BARU (versi pengganti) + jurnal pengganti — satu transaksi.
-//            body.preview=true menjalankan kode yang sama lalu ROLLBACK (tanpa PIN). Batalkan TIDAK butuh PIN (keputusan owner).
+// /koreksi : ubah data yang memengaruhi buku besar — FINANCE_ADMIN + alasan wajib. Dokumen lama DIBATALKAN, jurnal lama DIBALIK,
+//            dokumen BARU (versi pengganti) + jurnal pengganti. body.preview=true menjalankan kode yang sama lalu ROLLBACK.
+const kunciKecualiPratinjau = (req, res, next) => (req.body?.preview === true ? next() : wajibIdempotencyKey(req, res, next));
 const OPSI_TRANSAKSI_KOREKSI = { maxWait: 15_000, timeout: 60_000 };
 
-financeTxRouter.post("/bills/:id/info", requirePermission(P.FINANCE_POST), async (req, res) => {
+financeTxRouter.post("/bills/:id/info", requirePermission(P.FINANCE_POST), wajibIdempotencyKey, async (req, res) => {
   try {
     const hasil = await prisma.$transaction((tx) => editInfoTagihan(tx, { billId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id }), OPSI_TRANSAKSI_KOREKSI);
     res.json(hasil);
   } catch (e) { handleFinanceError(e, res); }
 });
 
-financeTxRouter.post("/bills/:id/koreksi", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+financeTxRouter.post("/bills/:id/koreksi", requirePermission(P.FINANCE_ADMIN), kunciKecualiPratinjau, async (req, res) => {
   const preview = req.body?.preview === true;
   try {
     const hasil = await prisma.$transaction((tx) => koreksiTagihan(tx, {
-      billId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id, preview, stepUp: () => pastikanStepUp(prisma, req),
+      billId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id, preview,
     }), OPSI_TRANSAKSI_KOREKSI);
     res.status(201).json(hasil);
   } catch (e) { tanganiKoreksi(e, res); }
 });
 
-financeTxRouter.post("/refunds/:id/info", requirePermission(P.FINANCE_POST), async (req, res) => {
+financeTxRouter.post("/refunds/:id/info", requirePermission(P.FINANCE_POST), wajibIdempotencyKey, async (req, res) => {
   try {
     const hasil = await prisma.$transaction((tx) => editInfoRefund(tx, { refundId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id }), OPSI_TRANSAKSI_KOREKSI);
     res.json(hasil);
   } catch (e) { handleFinanceError(e, res); }
 });
 
-financeTxRouter.post("/refunds/:id/koreksi", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+financeTxRouter.post("/refunds/:id/koreksi", requirePermission(P.FINANCE_ADMIN), kunciKecualiPratinjau, async (req, res) => {
   const preview = req.body?.preview === true;
   try {
     const hasil = await prisma.$transaction((tx) => koreksiRefund(tx, {
-      refundId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id, preview, stepUp: () => pastikanStepUp(prisma, req),
+      refundId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id, preview,
     }), OPSI_TRANSAKSI_KOREKSI);
     res.status(201).json(hasil);
   } catch (e) { tanganiKoreksi(e, res); }

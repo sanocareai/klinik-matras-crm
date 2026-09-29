@@ -6,8 +6,9 @@
 //  • dokumen BARU (versi pengganti; replacesBillId/replacesRefundId → lama, UNIQUE = satu dokumen hanya bisa diganti sekali) langsung
 //    berstatus DISETUJUI dan menerbitkan jurnal pengganti lewat fungsi posting yang sama dengan alur normal;
 //  • semuanya SATU transaksi database: gagal di mana pun = tidak ada yang berubah.
-// PRATINJAU menjalankan kode yang sama persis lalu ROLLBACK; menyimpan butuh PIN Finance (step-up). Idempotency-Key OPSIONAL (middleware global memutar ulang
-// respons bila dikirim); tanpa kunci pun klik ganda/koreksi paralel aman: baris dokumen dikunci + UNIQUE replaces* → satu menang, satu 409 SUDAH_DIGANTI.
+// PRATINJAU menjalankan kode yang sama persis lalu ROLLBACK. KEPUTUSAN OWNER (29 Sep 2026): TANPA PIN (juga Batalkan). Pengaman: izin server,
+// alasan wajib, pratinjau server, Idempotency-Key WAJIB pada simpan (route), row lock + UNIQUE replaces* (koreksi paralel → satu menang, satu 409
+// SUDAH_DIGANTI), audit sebelum/sesudah, reversal + dokumen/jurnal pengganti dalam satu transaksi.
 //
 // Perubahan ADMINISTRATIF (bukan angka buku besar) lewat /info: tanpa jurnal, cukup alasan + audit sebelum/sesudah.
 //
@@ -245,7 +246,7 @@ function normalisasiKoreksiTagihan(body) {
  * Koreksi tagihan supplier yang SUDAH disetujui → versi pengganti + reversal jurnal lama + jurnal pengganti.
  * preview=true: jalankan semuanya lalu lempar PratinjauKoreksi (transaksi di-ROLLBACK oleh pemanggil).
  */
-export async function koreksiTagihan(tx, { billId, body, alasan, userId, preview = false, stepUp = null }) {
+export async function koreksiTagihan(tx, { billId, body, alasan, userId, preview = false }) {
   const reason = alasanWajib(alasan);
   const perubahan = normalisasiKoreksiTagihan(body || {});
   if (Object.keys(perubahan).length === 0) throw new KoreksiError("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
@@ -254,7 +255,6 @@ export async function koreksiTagihan(tx, { billId, body, alasan, userId, preview
   await kunciBarisJurnal(tx, "TAGIHAN_SUPPLIER", billId);
   const blokir = (await blokirKoreksiTagihanBatch(tx, [billId])).get(billId);
   if (blokir) throw tolak(blokir.alasan, blokir.arah, 409, blokir.kode);
-  if (!preview && stepUp) await stepUp();
 
   // Klasifikasi (jenis & penerimaan barang) menentukan akun jurnal; mengubahnya = dokumen berbeda → Batalkan & catat ulang.
   // Pengecualian: tagihan lama tanpa jenis boleh dilengkapi jenisnya sekarang.
@@ -445,7 +445,7 @@ function normalisasiKoreksiRefund(body) {
 }
 
 /** Koreksi refund yang SUDAH disetujui → versi pengganti + reversal jurnal lama + jurnal pengganti; status bayar order dihitung ulang. */
-export async function koreksiRefund(tx, { refundId, body, alasan, userId, preview = false, stepUp = null }) {
+export async function koreksiRefund(tx, { refundId, body, alasan, userId, preview = false }) {
   const reason = alasanWajib(alasan);
   const perubahan = normalisasiKoreksiRefund(body || {});
   if (Object.keys(perubahan).length === 0) throw new KoreksiError("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
@@ -462,7 +462,6 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
   );
   const blokir = (await blokirKoreksiRefundBatch(tx, [refundId])).get(refundId);
   if (blokir) throw tolak(blokir.alasan, blokir.arah, 409, blokir.kode);
-  if (!preview && stepUp) await stepUp();
 
   const metodeBaru = perubahan.paymentMethod !== undefined ? perubahan.paymentMethod : lama.paymentMethod;
   const cashBaru = perubahan.cashAccountId ?? lama.cashAccountId;

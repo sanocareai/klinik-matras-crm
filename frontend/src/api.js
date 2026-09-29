@@ -1423,9 +1423,10 @@ export const api = {
   editFinanceDoc: (jenis, id, data) => request(`/finance/${jenis}/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   // Koreksi transaksi yang sudah berjurnal: data.preview=true -> {pratinjau} tanpa menyimpan; simpan sungguhan
   // butuh token step-up PIN (header X-Finance-Stepup) dari verifyFinancePin.
-  koreksiFinanceDoc: (jenis, id, data, stepUp) => request(`/finance/${jenis}/${id}/koreksi`, {
+  // `idempotencyKey` (opsional) dipakai ulang oleh dialog selama isi yang sama, supaya klik ganda/retry tidak menggandakan koreksi.
+  koreksiFinanceDoc: (jenis, id, data, stepUp, idempotencyKey = null) => request(`/finance/${jenis}/${id}/koreksi`, {
     method: "POST", body: JSON.stringify(data),
-    headers: { ...(data?.preview ? {} : { "Idempotency-Key": mutationKey("koreksi") }), ...(stepUp ? { "X-Finance-Stepup": stepUp } : {}) },
+    headers: { ...(data?.preview ? {} : { "Idempotency-Key": idempotencyKey || mutationKey("koreksi") }), ...(stepUp ? { "X-Finance-Stepup": stepUp } : {}) },
   }),
   // B3.6 Tutup stok periodik & persediaan awal perpetual
   getPersediaanAwal: () => request("/finance/persediaan-awal"),
@@ -1465,7 +1466,9 @@ export const api = {
     return { blob: await res.blob(), namaFile };
   },
   // B3.8 Koreksi lanjutan: edit informasi (tanpa jurnal, tanpa PIN) untuk tagihan supplier & refund yang sudah disetujui.
-  editInfoFinanceDoc: (jenis, id, data) => request(`/finance/${jenis}/${id}/info`, { method: "POST", body: JSON.stringify(data) }),
+  editInfoFinanceDoc: (jenis, id, data, idempotencyKey = null) => request(`/finance/${jenis}/${id}/info`, {
+    method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("info") }, body: JSON.stringify(data),
+  }),
   // B3.7 Koreksi Pembayaran Masuk Terverifikasi. Pratinjau (data.preview) tanpa PIN & tanpa Idempotency-Key; simpan: PIN step-up + kunci idempotensi.
   editInfoPembayaran: (id, data, idempotencyKey = mutationKey("bayar-info")) =>
     request(`/finance/pembayaran/${id}/info`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),

@@ -409,13 +409,15 @@ export function RiwayatVersiDialog({ jenis, id, nomor, onClose, resolusi }) {
 // ─── Dialog Koreksi generik (transfer, pemasukan lain) ───────────────────────
 // `kolom`: [{ kunci, label, tipe: "teks"|"uang"|"tanggal"|"pilih", opsi?: [{id,name}], wajib? }]
 // `awal`: nilai awal per kunci. Hanya kolom yang BERUBAH yang dikirim.
-export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, onClose, onSaved, resolusi }) {
+// `tanpaPin` (Tagihan Supplier & Refund, keputusan Owner 29 Sep 2026): simpan tanpa PIN — izin server + alasan + pratinjau + Idempotency-Key.
+export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, onClose, onSaved, resolusi, tanpaPin = false }) {
   const [f, setF] = useState(awal);
   const [alasan, setAlasan] = useState("");
   const [galat, setGalat] = useState("");
   const [pratinjau, setPratinjau] = useState(null);
   const [sibuk, setSibuk] = useState(false);
   const { minta, dialogPin } = usePinStepUp();
+  const kunciRef = useRef(null); // Idempotency-Key per isi koreksi: dipakai ulang saat retry/klik ganda, diganti begitu isi berubah
 
   const beda = {};
   for (const k of kolom) {
@@ -438,12 +440,19 @@ export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, on
   async function simpan() {
     setGalat(""); setSibuk(true);
     try {
-      const r = await kirimKoreksi({ minta, jenis, id: doc.id, body: { ...beda, reason: alasan.trim() } });
-      if (r) onSaved();
+      const body = { ...beda, reason: alasan.trim() };
+      if (tanpaPin) {
+        kunciRef.current ||= globalThis.crypto?.randomUUID ? `koreksi-${globalThis.crypto.randomUUID()}` : `koreksi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+        await api.koreksiFinanceDoc(jenis, doc.id, body, null, kunciRef.current);
+        onSaved();
+      } else {
+        const r = await kirimKoreksi({ minta, jenis, id: doc.id, body });
+        if (r) onSaved();
+      }
     } catch (e) { setGalat(e.message); } finally { setSibuk(false); }
   }
 
-  const set = (k, v) => { setF((s) => ({ ...s, [k]: v })); setPratinjau(null); };
+  const set = (k, v) => { setF((s) => ({ ...s, [k]: v })); setPratinjau(null); kunciRef.current = null; };
 
   return (
     <>
@@ -466,7 +475,7 @@ export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, on
             <>
               <p className="text-[12.5px] text-ink2"><strong>Alasan:</strong> {alasan}</p>
               <PratinjauKoreksi pratinjau={pratinjau} resolusi={resolusi} />
-              <p className="text-[12px] text-ink3">Menyimpan akan meminta PIN Finance Anda.</p>
+              <p className="text-[12px] text-ink3">{tanpaPin ? "Menyimpan membuat dokumen pengganti dan membalik jurnal lama sekali saja (aman dari klik ganda)." : "Menyimpan akan meminta PIN Finance Anda."}</p>
             </>
           ) : (
             <>
@@ -486,7 +495,7 @@ export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, on
                 </Field>
               ))}
               <Field label="Alasan koreksi" required hint="Wajib — tercatat di riwayat audit">
-                <Input value={alasan} onChange={(e) => { setAlasan(e.target.value); setPratinjau(null); }} placeholder="mis. salah ketik nominal / salah pilih rekening" />
+                <Input value={alasan} onChange={(e) => { setAlasan(e.target.value); setPratinjau(null); kunciRef.current = null; }} placeholder="mis. salah ketik nominal / salah pilih rekening" />
               </Field>
               {!adaPerubahan && <p className="text-[12px] text-ink3">Ubah minimal satu kolom untuk melanjutkan.</p>}
             </>
@@ -507,12 +516,17 @@ export function InfoDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, onClo
   const [alasan, setAlasan] = useState("");
   const [galat, setGalat] = useState("");
   const [sibuk, setSibuk] = useState(false);
+  const kunciRef = useRef(null);
   const beda = {};
   for (const k of kolom) if ((awal[k.kunci] || "") !== (f[k.kunci] || "")) beda[k.kunci] = f[k.kunci];
   const valid = Object.keys(beda).length > 0 && alasan.trim();
   async function simpan() {
     setGalat(""); setSibuk(true);
-    try { await api.editInfoFinanceDoc(jenis, doc.id, { ...beda, reason: alasan.trim() }); onSaved(); }
+    try {
+      kunciRef.current ||= globalThis.crypto?.randomUUID ? `info-${globalThis.crypto.randomUUID()}` : `info-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      await api.editInfoFinanceDoc(jenis, doc.id, { ...beda, reason: alasan.trim() }, kunciRef.current);
+      onSaved();
+    }
     catch (e) { setGalat(e.message); } finally { setSibuk(false); }
   }
   return (

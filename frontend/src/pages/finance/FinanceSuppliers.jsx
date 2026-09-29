@@ -549,6 +549,7 @@ export default function FinanceSuppliers() {
       )}
       {koreksiUntuk && (
         <KoreksiDialog
+          tanpaPin
           jenis="bills" doc={koreksiUntuk} nomor={koreksiUntuk.billNumber} judulRingkas={`Tagihan disetujui · ${koreksiUntuk.jenisTagihan?.label || "tanpa jenis"} · ${formatUang(koreksiUntuk.amount)}`}
           kolom={[
             { kunci: "supplierId", label: "Supplier", tipe: "pilih", opsi: suppliers.filter((x) => x.active !== false || x.id === koreksiUntuk.supplierId).map((x) => ({ id: x.id, name: x.name })), wajib: true },

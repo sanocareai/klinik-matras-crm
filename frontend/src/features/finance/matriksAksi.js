@@ -75,7 +75,7 @@ export function aksiTagihan(b, { admin = false } = {}) {
     // B3.8: Edit Informasi (tanpa jurnal) + Koreksi (versi pengganti + reversal, PIN). Ada pembayaran aktif → Koreksi nonaktif dengan alasan.
     const koreksi = adaPembayaran && !b.koreksi
       ? tidak("koreksi", "koreksi", "Koreksi Tagihan", "Memiliki pembayaran aktif — batalkan pembayarannya dulu di tab Pembayaran, lalu koreksi")
-      : itemKoreksi(b, admin, "Koreksi Tagihan", "Nominal, tanggal, supplier, keterangan, kategori. Jurnal lama dibalik & tagihan pengganti dibuat (butuh PIN).");
+      : itemKoreksi(b, admin, "Koreksi Tagihan", "Nominal, tanggal, supplier, keterangan, kategori. Jurnal lama dibalik & tagihan pengganti dibuat (tanpa PIN).");
     return [
       ok("info", "edit", "Edit Informasi", { hint: "Nomor faktur supplier & jatuh tempo. Tanpa jurnal." }),
       koreksi, riwayat(), catatUlang,
@@ -126,7 +126,7 @@ export function aksiRefund(r, { admin = false } = {}) {
   if (r.status === "DISETUJUI") {
     return [
       ok("info", "edit", "Edit Informasi", { hint: "Alasan refund & lampiran. Tanpa jurnal." }),
-      itemKoreksi(r, admin, "Koreksi Refund", "Nominal, tanggal, rekening, biaya transfer. Jurnal lama dibalik & refund pengganti dibuat (butuh PIN)."),
+      itemKoreksi(r, admin, "Koreksi Refund", "Nominal, tanggal, rekening, biaya transfer. Jurnal lama dibalik & refund pengganti dibuat (tanpa PIN)."),
       riwayat(),
       izinAdmin(admin, ok("batalkan", "catatUlang", "Batalkan & Ajukan Ulang", { destructive: true, konfirmasi: true })),
     ];

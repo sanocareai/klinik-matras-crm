@@ -1,7 +1,7 @@
 // B3.8 — KOREKSI FINANCE LANJUTAN (tagihan supplier & refund yang sudah disetujui). Yang dikunci:
 //  - Koreksi = dokumen lama DIBATALKAN + jurnal lama REVERSED (isi tetap) + dokumen baru (replaces, UNIQUE) + jurnal pengganti,
 //    dalam SATU transaksi: gagal di mana pun = dokumen lama & jurnal lama tetap utuh (tidak ada setengah koreksi).
-//  - Pratinjau tidak menulis apa pun; menyimpan butuh PIN step-up; alasan wajib; permission server (FINANCE_ADMIN).
+//  - Pratinjau tidak menulis apa pun; TANPA PIN (keputusan Owner 29 Sep 2026); alasan wajib; permission server (FINANCE_ADMIN); Idempotency-Key wajib pada simpan.
 //  - Blokir: pembayaran supplier aktif, sudah direkonsiliasi, sudah diganti, pengakuan pendapatan berubah (refund), melebihi uang diterima.
 //  - Koreksi paralel: satu menang, satu 409. Riwayat menelusuri rantai versi.
 
@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
+import { randomUUID } from "node:crypto";
 import { makeClient } from "./setup/httpClient.js";
 import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/finance/accounts.js";
 import { postPaymentReceived, postRevenueRecognition } from "../../src/services/finance/posting/orderRevenue.js";
@@ -32,10 +33,19 @@ async function siapkan() {
   const supplier = await testPrisma.finSupplier.create({ data: { code: "SUP-K", name: "CV Tekstil" } });
   return {
     bank, bank2, kat, kat2, admin, finance, supplier,
-    a: makeClient(server.baseUrl, admin.token),                             // membawa step-up otomatis
-    aTanpa: makeClient(server.baseUrl, admin.token, { tanpaStepUp: true }),  // untuk menguji PIN
-    f: makeClient(server.baseUrl, finance.token),
+    // Koreksi/Info Tagihan & Refund WAJIB Idempotency-Key pada simpan: klien uji menambahkannya otomatis (kunci baru per panggilan) kecuali diberi header sendiri.
+    // TIDAK ADA token step-up/PIN di klien mana pun (admin uji tidak punya PIN) — membuktikan koreksi berjalan tanpa PIN.
+    a: denganKunci(makeClient(server.baseUrl, admin.token, { tanpaStepUp: true })),
+    aTanpa: denganKunci(makeClient(server.baseUrl, admin.token, { tanpaStepUp: true })),
+    a0: makeClient(server.baseUrl, admin.token, { tanpaStepUp: true }), // MENTAH: tidak menambah Idempotency-Key
+    f: denganKunci(makeClient(server.baseUrl, finance.token)),
   };
+}
+
+const POLA_SIMPAN = /\/(bills|refunds)\/[^/]+\/(koreksi|info)$/;
+function denganKunci(c) {
+  const post = c.post;
+  return { ...c, post: (path, body, headers) => post(path, body, headers ?? (POLA_SIMPAN.test(path) && !body?.preview ? { "Idempotency-Key": `uji-${randomUUID()}` } : undefined)) };
 }
 
 const jurnalPer = (source, sourceId) => testPrisma.finJournalEntry.findMany({
@@ -90,10 +100,10 @@ test("Koreksi tagihan disetujui: versi pengganti, jurnal lama REVERSED (isi teta
   assert.equal((await testPrisma.finSupplierBill.findUnique({ where: { id: b.id } })).status, "DISETUJUI");
   assert.equal(await testPrisma.finSupplierBill.count(), 1);
 
-  // Simpan sungguhan tanpa PIN → 403.
-  const tanpaPin = await ctx.aTanpa.post(`/api/finance/bills/${b.id}/koreksi`, { reason: "Nominal di faktur berbeda", amount: 1_200_000 });
-  assert.equal(tanpaPin.status, 403);
-  assert.ok(["STEPUP_DIPERLUKAN", "STEPUP_PIN_BELUM_DIATUR"].includes(tanpaPin.body.code));
+  // Simpan tanpa Idempotency-Key → 428 (tidak menulis apa pun); PIN TIDAK diminta.
+  const tanpaKunci = await ctx.a0.post(`/api/finance/bills/${b.id}/koreksi`, { reason: "Nominal di faktur berbeda", amount: 1_200_000 });
+  assert.equal(tanpaKunci.status, 428);
+  assert.equal(tanpaKunci.body.code, "IDEMPOTENCY_KEY_REQUIRED");
   assert.equal(await testPrisma.finJournalEntry.count(), sebelumJurnal);
 
   const k = await ctx.a.post(`/api/finance/bills/${b.id}/koreksi`, { reason: "Nominal di faktur berbeda", amount: 1_200_000, description: "Jasa jahit (revisi)" });
@@ -240,7 +250,7 @@ async function refundDisetujui(ctx, { nominalBayar = 2_000_000, nominalRefund = 
   return { order, refund: r.body };
 }
 
-test("Koreksi refund disetujui: nominal+rekening+biaya transfer → versi pengganti, kas pulih lalu keluar sekali, order dihitung ulang; PIN & alasan wajib", async () => {
+test("Koreksi refund disetujui: nominal+rekening+biaya transfer → versi pengganti, kas pulih lalu keluar sekali, order dihitung ulang; tanpa PIN, alasan wajib", async () => {
   const ctx = await siapkan();
   const { order, refund } = await refundDisetujui(ctx);
   assert.equal(await mutasiRekening(ctx.bank.id), -300_000);
@@ -250,7 +260,7 @@ test("Koreksi refund disetujui: nominal+rekening+biaya transfer → versi pengga
   assert.equal(pv.status, 200, JSON.stringify(pv.body));
   assert.equal(pv.body.pratinjau.jurnalPengganti[0].totalDebit, 252_500);
   assert.equal(await mutasiRekening(ctx.bank2.id), 0, "pratinjau tidak menulis");
-  assert.equal((await ctx.aTanpa.post(`/api/finance/refunds/${refund.id}/koreksi`, { reason: "Disepakati ulang", amount: 250_000 })).status, 403);
+  assert.equal((await ctx.a0.post(`/api/finance/refunds/${refund.id}/koreksi`, { reason: "Disepakati ulang", amount: 250_000 })).status, 428, "tanpa Idempotency-Key ditolak (bukan karena PIN)");
 
   const k = await ctx.a.post(`/api/finance/refunds/${refund.id}/koreksi`, { reason: "Disepakati ulang", amount: 250_000, cashAccountId: ctx.bank2.id, paymentMethod: "TRANSFER", transferFeeType: "BI_FAST" });
   assert.equal(k.status, 201, JSON.stringify(k.body));
@@ -394,5 +404,96 @@ test("Koreksi tagihan bahan baku PERIODIK tidak terkunci oleh penerimaan Gudang 
   assert.equal(k.status, 201, JSON.stringify(k.body));
   const baru = await jurnalPer("TAGIHAN_SUPPLIER", k.body.baruId);
   assert.ok(baru[0].lines.some((l) => Number(l.debit) === 4_800_000), "Dr 5-1100 sebesar nominal baru");
+  await pastikanBukuSeimbang();
+});
+
+// ── Keputusan Owner 29 Sep 2026: TANPA PIN ───────────────────────────────
+async function tungguKunciSelesai(key) {
+  for (let i = 0; i < 80; i++) {
+    const r = await testPrisma.apiIdempotencyKey.findFirst({ where: { key } });
+    if (r?.state === "DONE") return;
+    await new Promise((res) => setTimeout(res, 50));
+  }
+}
+
+test("TANPA PIN: koreksi & info Tagihan/Refund serta Batalkan berhasil untuk admin yang TIDAK punya PIN dan tanpa token step-up; pengguna tanpa izin tetap 403", async () => {
+  const ctx = await siapkan();
+  assert.equal((await testPrisma.user.findUnique({ where: { id: ctx.admin.user.id } })).financePinHash, null, "admin uji memang tidak punya PIN");
+  const b = await tagihanDisetujui(ctx);
+  const { refund } = await refundDisetujui(ctx);
+
+  const kb = await ctx.a.post(`/api/finance/bills/${b.id}/koreksi`, { reason: "Nominal salah ketik", amount: 900_000 });
+  assert.equal(kb.status, 201, JSON.stringify(kb.body));
+  const kr = await ctx.a.post(`/api/finance/refunds/${refund.id}/koreksi`, { reason: "Nominal disepakati ulang", amount: 250_000 });
+  assert.equal(kr.status, 201, JSON.stringify(kr.body));
+  assert.equal((await ctx.a.post(`/api/finance/bills/${kb.body.baruId}/info`, { reason: "Perbaiki nomor faktur", supplierRef: "INV-99" })).status, 200);
+  assert.equal((await ctx.a.post(`/api/finance/refunds/${kr.body.baruId}/info`, { reason: "Perjelas alasan", alasanRefund: "Ukuran kasur tidak sesuai" })).status, 200);
+  // Batalkan (jalur lama) juga tanpa PIN
+  assert.equal((await ctx.a0.post(`/api/finance/bills/${kb.body.baruId}/cancel`, { reason: "Tagihan dobel" })).status, 200);
+  assert.equal((await ctx.a0.post(`/api/finance/refunds/${kr.body.baruId}/cancel`, { reason: "Pelanggan batal" })).status, 200);
+  await pastikanBukuSeimbang();
+
+  // Izin server tetap berlaku: FINANCE (tanpa FINANCE_ADMIN) 403 di koreksi, info boleh (FINANCE_POST); SALES 403 di keduanya
+  const b2 = await tagihanDisetujui(ctx, { supplierRef: "INV-200" });
+  assert.equal((await ctx.f.post(`/api/finance/bills/${b2.id}/koreksi`, { reason: "x", amount: 500_000 })).status, 403);
+  assert.equal((await ctx.f.post(`/api/finance/bills/${b2.id}/info`, { reason: "ok", supplierRef: "INV-201" })).status, 200);
+  const sales = await createTestUser({ roles: ["SALES"] });
+  const s = denganKunci(makeClient(server.baseUrl, sales.token));
+  assert.equal((await s.post(`/api/finance/bills/${b2.id}/koreksi`, { reason: "x", amount: 500_000 })).status, 403);
+  assert.equal((await s.post(`/api/finance/bills/${b2.id}/info`, { reason: "x", supplierRef: "Z" })).status, 403);
+  assert.equal((await ctx.a0.post(`/api/finance/bills/${b2.id}/info`, { reason: "x", supplierRef: "INV-202" })).status, 428, "info tanpa Idempotency-Key ditolak");
+  assert.equal((await makeClient(server.baseUrl, null).post(`/api/finance/bills/${b2.id}/koreksi`, { reason: "x", amount: 1 })).status, 401);
+});
+
+test("REPLAY: Idempotency-Key yang sama memutar ulang respons pertama dan TIDAK menggandakan dokumen/jurnal (tagihan & refund)", async () => {
+  const ctx = await siapkan();
+  const b = await tagihanDisetujui(ctx);
+  const { refund } = await refundDisetujui(ctx);
+  for (const [path, body] of [
+    [`/api/finance/bills/${b.id}/koreksi`, { reason: "Nominal salah", amount: 800_000 }],
+    [`/api/finance/refunds/${refund.id}/koreksi`, { reason: "Nominal salah", amount: 200_000 }],
+  ]) {
+    const H = { "Idempotency-Key": `replay-${randomUUID()}` };
+    const pertama = await ctx.a0.post(path, body, H);
+    assert.equal(pertama.status, 201, JSON.stringify(pertama.body));
+    await tungguKunciSelesai(H["Idempotency-Key"]);
+    const kedua = await ctx.a0.post(path, body, H);
+    assert.equal(kedua.status, 201);
+    assert.equal(kedua.headers.get("idempotent-replayed"), "true");
+    assert.equal(kedua.body.baruId, pertama.body.baruId, "respons yang sama, bukan pengganti kedua");
+  }
+  assert.equal(await testPrisma.finSupplierBill.count(), 2, "satu tagihan lama + satu pengganti");
+  assert.equal(await testPrisma.finRefund.count(), 2, "satu refund lama + satu pengganti");
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "REVERSAL" } }), 2, "tiap dokumen dibalik SEKALI");
+  assert.equal(await saldoAkun(SYSTEM_KEYS.UTANG_USAHA), -800_000);
+  assert.equal(await mutasiRekening(ctx.bank.id), -200_000);
+  await pastikanBukuSeimbang();
+  // versi lama sudah diganti: edit informasinya ditolak
+  const H2 = { "Idempotency-Key": `replay-${randomUUID()}` };
+  assert.equal((await ctx.a0.post(`/api/finance/bills/${b.id}/info`, { reason: "a", supplierRef: "A-1" }, H2)).status, 409, "tagihan lama sudah dibatalkan/diganti");
+});
+
+test("PARALEL: request bersamaan (kunci sama maupun berbeda) hanya menghasilkan SATU pengganti dan satu set jurnal — tagihan & refund", async () => {
+  const ctx = await siapkan();
+  const b = await tagihanDisetujui(ctx);
+  const { refund } = await refundDisetujui(ctx);
+  const kunciSama = { "Idempotency-Key": `paralel-${randomUUID()}` };
+  const hb = await Promise.all([
+    ctx.a0.post(`/api/finance/bills/${b.id}/koreksi`, { reason: "A", amount: 1_300_000 }, kunciSama),
+    ctx.a0.post(`/api/finance/bills/${b.id}/koreksi`, { reason: "A", amount: 1_300_000 }, kunciSama),
+    ctx.a0.post(`/api/finance/bills/${b.id}/koreksi`, { reason: "B", amount: 1_400_000 }, { "Idempotency-Key": `paralel-${randomUUID()}` }),
+  ]);
+  assert.ok(hb.filter((h) => h.status === 201).length >= 1 && hb.every((h) => [201, 409].includes(h.status)), JSON.stringify(hb.map((h) => h.status)));
+  assert.equal(await testPrisma.finSupplierBill.count(), 2, "hanya satu tagihan pengganti");
+  assert.equal(await testPrisma.finSupplierBill.count({ where: { replacesBillId: b.id } }), 1);
+  const hr = await Promise.all([
+    ctx.a0.post(`/api/finance/refunds/${refund.id}/koreksi`, { reason: "A", amount: 250_000 }, { "Idempotency-Key": `paralel-${randomUUID()}` }),
+    ctx.a0.post(`/api/finance/refunds/${refund.id}/koreksi`, { reason: "B", amount: 260_000 }, { "Idempotency-Key": `paralel-${randomUUID()}` }),
+  ]);
+  assert.deepEqual(hr.map((h) => h.status).sort(), [201, 409], JSON.stringify(hr.map((h) => h.body)));
+  assert.equal(await testPrisma.finRefund.count({ where: { replacesRefundId: refund.id } }), 1);
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "REVERSAL" } }), 2, "satu pembalikan per dokumen lama");
+  assert.ok([-1_300_000, -1_400_000].includes(await saldoAkun(SYSTEM_KEYS.UTANG_USAHA)));
+  assert.ok([-250_000, -260_000].includes(await mutasiRekening(ctx.bank.id)));
   await pastikanBukuSeimbang();
 });

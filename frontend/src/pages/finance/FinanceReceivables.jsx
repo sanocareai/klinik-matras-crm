@@ -402,6 +402,7 @@ export default function FinanceReceivables() {
       )}
       {koreksiUntuk && (
         <KoreksiDialog
+          tanpaPin
           jenis="refunds" doc={koreksiUntuk} nomor={koreksiUntuk.refundNumber} judulRingkas={`Refund disetujui · order ${koreksiUntuk.order?.orderNumber || ""} · ${formatUang(koreksiUntuk.amount)}`}
           kolom={[
             { kunci: "amount", label: "Nominal refund", tipe: "uang", wajib: true },

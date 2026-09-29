@@ -487,7 +487,15 @@ export default function FinancePemasukan() {
       {tab !== "ringkasan" && aktif?.kategori && opsi && (
         <Penjelasan className="mb-3">{opsi.kategori.find((k) => k.id === aktif.kategori)?.penjelasan}</Penjelasan>
       )}
-      {tab === "ringkasan" && <Ringkasan periode={periode} ke={setTab} />}
+      {tab === "ringkasan" && (
+        <>
+          {/* Tab Ringkasan tidak punya daftar sendiri: export memuat seluruh pemasukan periode ini (semua kategori) + sheet Rekap Klasifikasi. */}
+          <div className="flex justify-end">
+            <TombolExportExcel modul="pemasukan" ambilBody={() => ({ periode: { from: periode.from, to: periode.to }, filter: {}, filterLabel: "Ringkasan — semua kategori pemasukan" })} />
+          </div>
+          <Ringkasan periode={periode} ke={setTab} />
+        </>
+      )}
       {tab === "verifikasi" && <PerluVerifikasi periode={periode} opsi={opsi} onBuka={buka} />}
       {["pendapatan", "pembayaran", "lain", "dana"].includes(tab) && <Daftar key={tab} periode={periode} kategori={aktif.kategori} opsi={opsi} onBuka={buka} />}
       {tab === "historis" && <DataSebelumSistem periode={periode} opsi={opsi} onBuka={buka} />}
