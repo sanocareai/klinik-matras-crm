@@ -15,27 +15,29 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 export const MEDIA_SIGN_TTL_SECONDS = 10 * 60;
 export const FILE_PATTERN = /^[a-f0-9]{40}(_t)?\.jpg$/;
 
-function secret() {
+// purpose = label kunci turunan. Default "finance-media-v1" (perilaku lama, tanda tangan lama tetap sah); bukti produksi P8 memakai
+// label sendiri sehingga tanda tangan satu jenis media tidak berlaku untuk jenis lain.
+function secret(purpose = "finance-media-v1") {
   const s = process.env.MEDIA_SIGNING_SECRET || process.env.JWT_SECRET;
   if (!s) throw new Error("MEDIA_SIGNING_SECRET/JWT_SECRET belum diisi");
-  return createHmac("sha256", s).update("finance-media-v1").digest();
+  return createHmac("sha256", s).update(purpose).digest();
 }
 
-function mac(file, exp) {
-  return createHmac("sha256", secret()).update(`${file}.${exp}`).digest("hex");
+function mac(file, exp, purpose) {
+  return createHmac("sha256", secret(purpose)).update(`${file}.${exp}`).digest("hex");
 }
 
 /** Query string `exp=...&sig=...` untuk satu nama file (bukan URL penuh). */
-export function signFile(file, { ttlSeconds = MEDIA_SIGN_TTL_SECONDS, now = Date.now() } = {}) {
+export function signFile(file, { ttlSeconds = MEDIA_SIGN_TTL_SECONDS, now = Date.now(), purpose } = {}) {
   const exp = Math.floor(now / 1000) + ttlSeconds;
-  return { exp, sig: mac(file, exp) };
+  return { exp, sig: mac(file, exp, purpose) };
 }
 
-export function verifyFileSignature(file, exp, sig, { now = Date.now() } = {}) {
+export function verifyFileSignature(file, exp, sig, { now = Date.now(), purpose } = {}) {
   const expNum = Number(exp);
   if (!file || !sig || !Number.isInteger(expNum)) return false;
   if (expNum < Math.floor(now / 1000)) return false;
-  const expected = Buffer.from(mac(file, expNum), "hex");
+  const expected = Buffer.from(mac(file, expNum, purpose), "hex");
   let given;
   try { given = Buffer.from(String(sig), "hex"); } catch { return false; }
   return given.length === expected.length && timingSafeEqual(given, expected);

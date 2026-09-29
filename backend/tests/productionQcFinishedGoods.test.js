@@ -104,7 +104,7 @@ test("migration P6 additif: enum value, kolom nullable, tabel baru, trigger, CHE
   assert.equal([...executable.matchAll(/ADD COLUMN\s+"([^"]+)"/g)].map((m) => m[1]).sort().join(","), "qc_fit_test_id,rework_inspection_id,supplemental_inspection_id");
   assert.equal(sql.includes("\r"), false, "migration harus LF (checksum stabil)");
   const names = fs.readdirSync(path.join(backendRoot, "prisma", "migrations"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
-  assert.equal(names.at(-1), MIGRATION, "migration P6 adalah yang terbaru di branch ini");
+  assert.ok(names.indexOf(MIGRATION) > names.indexOf("20261001080000_production_workshop_execution_v2"), "migration P6 sesudah P5 (P8 boleh menyusul)");
   assert.equal(new Set(names.map((n) => n.slice(0, 14))).size >= names.length - 3, true);
 });
 

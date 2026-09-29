@@ -120,14 +120,40 @@ async function runToAwaitingQc(w, runId, rev) {
   throw new Error("tidak pernah mencapai AWAITING_QC");
 }
 
-test("start sebelum material ISSUED ditolak (plan MATERIAL_RESERVED tanpa serah bahan) dan tidak menulis apa pun", async () => {
+// P8: tahap INTAKE routing (uji sebelum bongkar, bongkar, uji fondasi, diagnosa) berjalan sebelum bahan diserahkan — BOM dibuat setelah
+// diagnosa nyata. Gerbang material berlaku mulai tahap MODULE pertama.
+async function runIntake(w, runId, rev) {
+  for (let i = 0; i < 4; i += 1) {
+    const s = await start(w, w.op, runId, rev, `intake-s-${++seq}`);
+    assert.equal(s.status, 200, JSON.stringify(s.body));
+    assert.ok(["pre_teardown_test", "teardown", "foundation_test", "diagnosis"].includes(s.body.stage.code), s.body.stage.code);
+    const c = await complete(w, w.op, runId, s.body.revision, `intake-c-${++seq}`);
+    assert.equal(c.status, 200, JSON.stringify(c.body));
+    rev = c.body.revision;
+  }
+  return rev;
+}
+
+test("intake boleh sebelum material ISSUED; tahap MODULE pertama ditolak sampai bahan diserahkan dan penolakan tidak menulis apa pun", async () => {
   const w = await world();
   const { run, unit } = await preparedRun(w, { issued: false });
+  const rev = await runIntake(w, run.id, 1);
   const before = await counts(unit.id);
-  const res = await start(w, w.op, run.id, 1, "noissue");
+  const res = await start(w, w.op, run.id, rev, "noissue");
   assert.equal(res.status, 409); assert.equal(res.body.code, "WORKSHOP_MATERIAL_NOT_ISSUED");
   assert.deepEqual(await counts(unit.id), before);
-  assert.equal(await testPrisma.productionOperationRun.count(), 0);
+  assert.equal(await testPrisma.productionOperationRun.count({ where: { runId: run.id, stageCode: { notIn: ["pre_teardown_test", "teardown", "foundation_test", "diagnosis"] } } }), 0);
+});
+
+test("intake ditolak bila rencana belum ditugaskan (DRAFT) — gerbang minimum tetap ada", async () => {
+  const w = await world();
+  const { unit, run } = await acceptedUnit();
+  await setWriter({ enabled: true, unitIds: [unit.id] });
+  const created = await w.op.api.post("/api/production-planning/plans", { runId: run.id }, key(`c-${++seq}`));
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const res = await start(w, w.op, run.id, 1, "draft-start");
+  assert.equal(res.status, 403, "rencana DRAFT belum punya operator -> bukan operator yang ditugaskan");
+  assert.equal(await testPrisma.productionOperationRun.count({ where: { runId: run.id } }), 0);
 });
 
 test("start sukses + replay exact-once: tahap pertama ACTIVE, fase PROCESS ACTIVE, satu START di ledger V1; replay tidak menambah apa pun", async () => {
@@ -420,20 +446,25 @@ test("AUDIT F4: bukti material — reservasi CONSUMED tanpa baris issue ISSUED m
   const { run, issueId } = await preparedRun(w);
   const before = await testPrisma.unitStageLog.count();
   await testPrisma.materialIssueLine.updateMany({ where: { materialIssueId: issueId }, data: { reservationId: null } });
-  const noLink = await start(w, w.op, run.id, 1, "mat-nolink");
+  const intakeRev = await runIntake(w, run.id, 1);
+  const beforeModule = await testPrisma.unitStageLog.count();
+  const noLink = await start(w, w.op, run.id, intakeRev, "mat-nolink");
   assert.equal(noLink.status, 409); assert.equal(noLink.body.code, "WORKSHOP_MATERIAL_NOT_ISSUED");
-  assert.equal(await testPrisma.unitStageLog.count(), before);
+  assert.equal(await testPrisma.unitStageLog.count(), beforeModule);
+  assert.ok(before >= 0);
 
   const w2 = await world();
   const second = await preparedRun(w2);
   await testPrisma.materialIssueLine.updateMany({ where: { materialIssueId: second.issueId }, data: { issuedQty: 0.5 } });
-  const short = await start(w2, w2.op, second.run.id, 1, "mat-short");
+  const shortRev = await runIntake(w2, second.run.id, 1);
+  const short = await start(w2, w2.op, second.run.id, shortRev, "mat-short");
   assert.equal(short.status, 409); assert.equal(short.body.code, "WORKSHOP_MATERIAL_NOT_ISSUED");
 
   const w3 = await world();
   const third = await preparedRun(w3);
   await testPrisma.materialIssue.updateMany({ where: { id: third.issueId }, data: { status: "CANCELLED" } });
-  assert.equal((await start(w3, w3.op, third.run.id, 1, "mat-cancelled")).status, 409, "issue terminal CANCELLED bukan bukti");
+  const cancelledRev = await runIntake(w3, third.run.id, 1);
+  assert.equal((await start(w3, w3.op, third.run.id, cancelledRev, "mat-cancelled")).status, 409, "issue terminal CANCELLED bukan bukti");
 });
 
 test("AUDIT F5: unit lahir-di-workshop harus segar — status non-RECEIVED, currentStage, atau log tahap V1 ditolak (tidak boleh melompati custody/legacy)", async () => {

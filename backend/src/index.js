@@ -76,6 +76,8 @@ import { damagedStockRouter } from "./routes/damagedStock.js";
 import { returnRecordRouter } from "./routes/returnRecord.js";
 import { unitCustodyRouter } from "./routes/unitCustody.js";
 import { productionPlanningRouter } from "./routes/productionPlanning.js";
+import { productionExperienceRouter } from "./routes/productionExperience.js";
+import { productionEvidencePathRouter } from "./routes/productionEvidenceMedia.js";
 import { stockAdjustmentRouter } from "./routes/stockAdjustment.js";
 import { replenishmentRouter } from "./routes/replenishment.js";
 import { warehouseReportsRouter } from "./routes/warehouseReports.js";
@@ -183,7 +185,8 @@ app.use("/media/vehicle-receipts", express.static(vehicleReceiptsDir));
 // Foto nota finance TIDAK lagi statis publik — butuh Bearer+izin atau URL bertanda-tangan
 // (routes/financeMedia.js). Path tetap sama supaya receiptUrl lama tetap valid.
 app.use("/media/finance-receipts", financeReceiptsLegacyPathRouter);
-app.use("/media/bukti-pembayaran", financePaymentProofsPathRouter); // bukti pembayaran: Bearer atau URL bertanda-tangan (S5)
+app.use("/media/bukti-pembayaran", financePaymentProofsPathRouter);
+app.use("/media/production-evidence", productionEvidencePathRouter); // bukti tahap produksi V2: Bearer+reader cohort atau URL bertanda-tangan // bukti pembayaran: Bearer atau URL bertanda-tangan (S5)
 app.use("/media/products", express.static(productsDir));
 app.use("/media/invoice-pdfs", express.static(invoicePdfsDir));
 app.use("/media/warranty-pdfs", express.static(warrantyPdfsDir));
@@ -254,6 +257,7 @@ app.use("/api/inventory/damaged-stock", damagedStockRouter);
 app.use("/api/inventory/returns", returnRecordRouter);
 app.use("/api/inventory/unit-custody", unitCustodyRouter);
 app.use("/api/production-planning", productionPlanningRouter);
+app.use("/api/production-v2", productionExperienceRouter); // P8 Production Experience V2 (flag reader/writer Production)
 app.use("/api/inventory/adjustments", stockAdjustmentRouter);
 app.use("/api/inventory/replenishment", replenishmentRouter);
 app.use("/api/inventory/reports", warehouseReportsRouter);

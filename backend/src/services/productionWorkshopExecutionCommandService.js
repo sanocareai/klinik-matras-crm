@@ -7,8 +7,13 @@
 //  - REUSE stage engine V1 (unitStageEngine.js *InTx): transisi START/PAUSE/RESUME/COMPLETE + ledger unit_stage_logs +
 //    unit.currentStageId/status ditulis engine yang sama (proyeksi V1) di TRANSAKSI YANG SAMA dengan command V2. Tidak ada
 //    ledger tahap paralel. Engine V1 menolak (409) memutasi unit yang dikelola V2 (assertNotV2ExecutionOwned).
-//  - Produksi HANYA dimulai bila material P4 sudah ISSUED dan seluruh reservasi P3 sudah CONSUMED.
-//  - Operator/work center wajib sama dengan assignment P3 (plan.operatorId/workCenterId); aktor = operator yang ditugaskan.
+//  - Tahap routing INTAKE (uji sebelum bongkar, bongkar, uji fondasi, diagnosa) boleh berjalan setelah rencana DITUGASKAN (PLANNED) —
+//    BOM baru dibuat setelah diagnosa nyata (P8). Tahap MODULE ke atas HANYA dimulai bila material P4 sudah ISSUED dan seluruh
+//    reservasi P3 sudah CONSUMED.
+//  - Operator/work center wajib sama dengan assignment P3 (plan.operatorId/workCenterId); aktor = operator yang ditugaskan. Tahap SETELAH
+//    gerbang QC (Jahit Corner, Finish) memakai PIC Corner bila rencana menugaskannya (plan.cornerOperatorId/cornerWorkCenterId).
+//  - Inti transisi (prepareStartInTx/applyStartInTx/applyCompleteInTx/applyPauseInTx/applyResumeInTx) diekspor untuk command bukti tahap
+//    P8 (productionStepCommandService.js) supaya bukti + transisi commit di SATU transaksi; penulis tabel operasi tetap file ini.
 //  - Satu tahap AKTIF (ACTIVE/PAUSED) per Run: pra-cek + partial unique index. Urutan tahap = jalur routing V1.
 //  - Jeda wajib alasan (validatePauseReason); foto/catatan disimpan di ledger tahap (evidence).
 //  - Menyelesaikan tahap workshop TERAKHIR (tahap berikutnya di jalur = gerbang QC) -> AWAITING_QC: fase PROCESS COMPLETED,
@@ -118,7 +123,7 @@ async function viaEngine(fn) {
   }
 }
 
-const RUN_INCLUDE = {
+export const RUN_INCLUDE = {
   unit: { select: { id: true, unitCode: true, orderId: true, serviceId: true, status: true, currentStageId: true, order: { select: { category: true, orderNumber: true } } } },
   plan: { include: { bomLines: { where: { status: "ACTIVE" } }, workCenter: { select: { id: true, code: true, name: true } }, operator: { select: { id: true, userId: true, active: true, user: { select: { name: true } } } } } },
   phases: true,
@@ -126,7 +131,7 @@ const RUN_INCLUDE = {
 };
 
 // Urutan kunci: unit (sama dengan custody) -> run. Mencegah siklus dengan openProductionIntakeV2 (unit lalu run).
-async function loadRunForWrite(tx, runId) {
+export async function loadRunForWrite(tx, runId) {
   const pre = await tx.productionRun.findUnique({ where: { id: runId }, select: { unitId: true } });
   if (!pre) throw workError("Production Run tidak ditemukan", 404, "WORKSHOP_RUN_NOT_FOUND");
   await lockRowForUpdate(tx, "units", pre.unitId);
@@ -139,7 +144,7 @@ async function loadRunForWrite(tx, runId) {
 // Bukti serah bahan: tiap baris BOM harus punya reservasi CONSUMED milik plan ini YANG DIRUJUK baris material issue ISSUED milik plan
 // yang SAMA dengan issuedQty >= qty reservasi. Reservasi CONSUMED tanpa baris issue ISSUED, atau issue terminal milik plan lain,
 // tidak dihitung.
-async function loadMaterialFacts(tx, plan) {
+export async function loadMaterialFacts(tx, plan) {
   const [issuedCount, activeReservations, consumed, issuedLines] = await Promise.all([
     tx.materialIssue.count({ where: { productionPlanId: plan.id, status: "ISSUED" } }),
     tx.materialReservation.count({ where: { planId: plan.id, status: "ACTIVE" } }),
@@ -151,12 +156,30 @@ async function loadMaterialFacts(tx, plan) {
   return { issuedCount, activeReservations, consumedBomLineIds: new Set(covered.map((r) => r.bomLineId)) };
 }
 
-async function authorizeOperator(tx, run, actorId, workCenterId) {
+// PIC Corner (P8): tahap pasca-QC dikerjakan operator Corner bila rencana menugaskannya; work center Corner default ke work center rencana.
+export function assertAssignedCornerOperator(plan, operator, workCenterId) {
+  if (!plan.cornerOperatorId) return assertAssignedOperator(plan, operator, workCenterId);
+  if (!operator || !operator.active || operator.id !== plan.cornerOperatorId) {
+    throw workError("Anda bukan PIC Corner yang ditugaskan pada rencana ini", 403, "WORKSHOP_OPERATOR_MISMATCH");
+  }
+  const expected = plan.cornerWorkCenterId || plan.workCenterId;
+  if (!workCenterId || workCenterId !== expected) throw workError("Workshop Corner tidak sesuai dengan penugasan rencana", 422, "WORKSHOP_WORK_CENTER_MISMATCH");
+}
+
+export async function authorizeOperator(tx, run, actorId, workCenterId, { postQc = false } = {}) {
   const plan = run.plan;
   if (!plan || plan.status === "CANCELLED") throw workError("Production Run belum memiliki rencana aktif", 409, "WORKSHOP_NO_PLAN");
   const operator = actorId ? await tx.productionOperator.findUnique({ where: { userId: actorId } }) : null;
-  assertAssignedOperator(plan, operator, workCenterId);
+  if (postQc) assertAssignedCornerOperator(plan, operator, workCenterId);
+  else assertAssignedOperator(plan, operator, workCenterId);
   return plan;
+}
+
+// Tahap INTAKE routing boleh berjalan tanpa material, tetapi rencana wajib sudah ditugaskan (bukan DRAFT/CANCELLED).
+function assertPlanReadyForIntake(plan) {
+  if (!plan || !["PLANNED", "MATERIAL_RESERVED"].includes(plan.status)) {
+    throw workError("Rencana produksi belum ditugaskan (operator/workshop); tahap bongkar belum bisa dimulai", 409, "WORKSHOP_PLAN_NOT_ASSIGNED");
+  }
 }
 
 async function assertMaterialIssued(tx, plan) {
@@ -199,7 +222,12 @@ function processStartTransition(run, now) {
   updates.push({ phase: "PROCESS", data: { status: "ACTIVE", startedAt: now } });
   return updates;
 }
-function activeOperation(run) { return run.operations.find((op) => op.status === "ACTIVE" || op.status === "PAUSED") || null; }
+export function activeOperation(run) { return run.operations.find((op) => op.status === "ACTIVE" || op.status === "PAUSED") || null; }
+
+// Naikkan revisi run (dipakai juga command bukti P8 untuk langkah tanpa transisi tahap) — penulis production_runs_v2 tetap file ini.
+export async function bumpRunRevisionInTx(tx, run, data = {}) {
+  return bumpRun(tx, run, data);
+}
 
 async function bumpRun(tx, run, data) {
   const revision = run.revision + 1;
@@ -275,43 +303,72 @@ export async function startWorkshopStage(prisma, { runId, actorId, idempotencyKe
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
     await assertWriterEnabledForUnit(tx, run.unitId);
-    // Otorisasi (operator/work center) SEBELUM revisi: pihak yang tidak berhak tidak perlu tahu revisi.
-    const plan = await authorizeOperator(tx, run, actorId, workCenterId);
+    // Otorisasi (operator/work center) SEBELUM revisi: pihak yang tidak berhak tidak perlu tahu revisi. Tahap target diintip lebih dulu
+    // (tanpa melempar) hanya untuk memilih PIC meja vs PIC Corner.
+    await authorizeOperator(tx, run, actorId, workCenterId, { postQc: await peekStartIsPostQc(tx, run) });
     assertRunRevision(run, revisionExpected);
-    await assertNoOpenRunException(tx, runId);
-    assertUnitInProduction(run);
-    const process = assertProcessApplicable(run);
-    await assertMaterialIssued(tx, plan);
-    if (activeOperation(run)) throw workError("Masih ada tahap aktif pada run ini; selesaikan atau lanjutkan tahap tersebut", 409, "WORKSHOP_STAGE_ALREADY_ACTIVE");
-
-    const path = await pathForUnit(tx, run.unit);
-    const { executable } = workshopPathOf(path);
-    const { stage } = await resolveCurrentTarget(tx, run.unit, path);
-    if (stage?.requiresQc) throw workError("Seluruh tahap workshop sudah selesai; unit menunggu QC", 409, "WORKSHOP_AWAITING_QC");
-    // targetState DONE dengan fase PROCESS masih ACTIVE = tahap terakhir dijalankan ULANG (rework setelah penolakan Gudang); yang benar-benar selesai
-    // sudah ditolak assertProcessApplicable (PROCESS COMPLETED -> AWAITING_QC/IN_HANDOFF).
-    if (!stage || !executable.some((s) => s.id === stage.id)) throw workError("Tahap unit sekarang tidak ada di jalur workshop — perlu penanganan Production Lead", 409, "WORKSHOP_STAGE_MISMATCH");
-
-    const now = new Date();
+    const prepared = await prepareStartInTx(tx, run);
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "START_WORKSHOP_STAGE", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
-    await viaEngine(() => startStageInTx(tx, run.unitId, { actorId, allowRerunOfLastStage: true }));
-    const sequence = (run.operations.at(-1)?.sequence ?? 0) + 1;
-    await tx.productionOperationRun.create({
-      data: {
-        runId, stageId: stage.id, stageCode: stage.code, stageLabel: stage.labelId, sequence, required: !stage.isOptional, status: "ACTIVE", startedAt: now,
-        planSnapshot: { workCenterId: run.plan.workCenterId, operatorId: run.plan.operatorId, serviceId: run.unit.serviceId, planId: run.plan.id },
-      },
-    });
-    if (process.status === "NOT_STARTED") await transitionPhases(tx, runId, processStartTransition(run, now));
-    const revision = await bumpRun(tx, run, { currentPhase: "PROCESS", startedAt: run.startedAt || now });
-    await outbox(tx, {
-      eventType: "production.stage.started", aggregateId: runId, revision, dedupeKey: `production-stage-started:${runId}:${revision}`,
-      payload: { runId, unitId: run.unitId, stageId: stage.id, stageCode: stage.code, sequence, operatorId: run.plan.operatorId, workCenterId: run.plan.workCenterId, revision, occurredAt: now.toISOString(), actorId },
-    });
-    const response = { runId, revision, stage: { id: stage.id, code: stage.code, label: stage.labelId }, status: "ACTIVE", sequence };
-    await finishCommand(tx, command, revision, response);
+    const response = await applyStartInTx(tx, { run, prepared, actorId });
+    await finishCommand(tx, command, response.revision, response);
     return { replayed: false, ...response };
   });
+}
+
+// Tahap berikutnya pasca-QC? (tanpa melempar; dipakai memilih pihak yang berwenang sebelum validasi penuh)
+export async function peekStartIsPostQc(tx, run) {
+  try {
+    const path = await pathForUnit(tx, run.unit);
+    const { postQcStages } = workshopPathOf(path);
+    const { stage } = await resolveCurrentTarget(tx, run.unit, path);
+    return !!stage && postQcStages.some((s) => s.id === stage.id);
+  } catch { return false; }
+}
+export async function isPostQcStage(tx, run, stageId) {
+  try {
+    return workshopPathOf(await pathForUnit(tx, run.unit)).postQcStages.some((s) => s.id === stageId);
+  } catch { return false; }
+}
+
+// Validasi mulai tahap SETELAH otorisasi & revisi. Gerbang material hanya untuk tahap non-INTAKE (P8: bongkar/uji/diagnosa mendahului BOM).
+export async function prepareStartInTx(tx, run) {
+  await assertNoOpenRunException(tx, run.id);
+  assertUnitInProduction(run);
+  const process = assertProcessApplicable(run);
+  if (activeOperation(run)) throw workError("Masih ada tahap aktif pada run ini; selesaikan atau lanjutkan tahap tersebut", 409, "WORKSHOP_STAGE_ALREADY_ACTIVE");
+  const path = await pathForUnit(tx, run.unit);
+  const { executable, postQcStages } = workshopPathOf(path);
+  const { stage } = await resolveCurrentTarget(tx, run.unit, path);
+  if (stage?.requiresQc) throw workError("Seluruh tahap workshop sudah selesai; unit menunggu QC", 409, "WORKSHOP_AWAITING_QC");
+  // targetState DONE dengan fase PROCESS masih ACTIVE = tahap terakhir dijalankan ULANG (rework setelah penolakan Gudang); yang benar-benar selesai
+  // sudah ditolak assertProcessApplicable (PROCESS COMPLETED -> AWAITING_QC/IN_HANDOFF).
+  if (!stage || !executable.some((s) => s.id === stage.id)) throw workError("Tahap unit sekarang tidak ada di jalur workshop — perlu penanganan Production Lead", 409, "WORKSHOP_STAGE_MISMATCH");
+  if (stage.phase === "INTAKE") assertPlanReadyForIntake(run.plan);
+  else await assertMaterialIssued(tx, run.plan);
+  return { process, stage, isPostQc: postQcStages.some((s) => s.id === stage.id) };
+}
+
+// Terapkan mulai tahap (engine V1 *InTx + operasi V2 + fase + revisi + outbox). Pemanggil sudah mengunci unit->run dan memvalidasi.
+export async function applyStartInTx(tx, { run, prepared, actorId, now = new Date() }) {
+  const { process, stage, isPostQc } = prepared;
+  const runId = run.id;
+  await viaEngine(() => startStageInTx(tx, run.unitId, { actorId, allowRerunOfLastStage: true }));
+  const sequence = (run.operations.at(-1)?.sequence ?? 0) + 1;
+  const operatorId = isPostQc && run.plan.cornerOperatorId ? run.plan.cornerOperatorId : run.plan.operatorId;
+  const workCenterId = isPostQc && run.plan.cornerOperatorId ? (run.plan.cornerWorkCenterId || run.plan.workCenterId) : run.plan.workCenterId;
+  const operation = await tx.productionOperationRun.create({
+    data: {
+      runId, stageId: stage.id, stageCode: stage.code, stageLabel: stage.labelId, sequence, required: !stage.isOptional, status: "ACTIVE", startedAt: now,
+      planSnapshot: { workCenterId, operatorId, serviceId: run.unit.serviceId, planId: run.plan.id },
+    },
+  });
+  if (process.status === "NOT_STARTED") await transitionPhases(tx, runId, processStartTransition(run, now));
+  const revision = await bumpRun(tx, run, { currentPhase: "PROCESS", startedAt: run.startedAt || now });
+  await outbox(tx, {
+    eventType: "production.stage.started", aggregateId: runId, revision, dedupeKey: `production-stage-started:${runId}:${revision}`,
+    payload: { runId, unitId: run.unitId, stageId: stage.id, stageCode: stage.code, sequence, operatorId, workCenterId, revision, occurredAt: now.toISOString(), actorId },
+  });
+  return { runId, revision, stage: { id: stage.id, code: stage.code, label: stage.labelId }, status: "ACTIVE", sequence, operationRunId: operation.id };
 }
 
 async function operationCommand(prisma, { commandType, runId, actorId, idempotencyKey, expectedRevision, workCenterId, payload, expectStatus, apply }) {
@@ -326,11 +383,12 @@ async function operationCommand(prisma, { commandType, runId, actorId, idempoten
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
     await assertWriterEnabledForUnit(tx, run.unitId);
-    await authorizeOperator(tx, run, actorId, workCenterId);
+    const current = activeOperation(run);
+    await authorizeOperator(tx, run, actorId, workCenterId, { postQc: current ? await isPostQcStage(tx, run, current.stageId) : false });
     assertRunRevision(run, revisionExpected);
     await assertNoOpenRunException(tx, runId);
     assertUnitInProduction(run, ["IN_PRODUCTION"]);
-    const op = activeOperation(run);
+    const op = current;
     if (!op) throw workError("Tidak ada tahap yang sedang berjalan/dijeda pada run ini", 409, "WORKSHOP_NO_ACTIVE_STAGE");
     if (op.status !== expectStatus) {
       throw workError(expectStatus === "ACTIVE" ? "Tahap sedang dijeda — gunakan Lanjutkan" : "Tahap tidak sedang berjalan — gunakan Mulai/Lanjutkan", 409, "WORKSHOP_STAGE_STATE_INVALID", { status: op.status });
@@ -351,17 +409,19 @@ export async function pauseWorkshopStage(prisma, { runId, actorId, idempotencyKe
   return operationCommand(prisma, {
     commandType: "PAUSE_WORKSHOP_STAGE", runId, actorId, idempotencyKey, expectedRevision, workCenterId, expectStatus: "ACTIVE",
     payload: { reason: reason || null, note: note || null, photoUrls },
-    apply: async (tx, { run, op }) => {
-      await viaEngine(() => pauseStageInTx(tx, run.unitId, op.stageId, { actorId, reason, note, photoUrls }));
-      await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "PAUSED" } });
-      const revision = await bumpRun(tx, run, {});
-      await outbox(tx, {
-        eventType: "production.stage.paused", aggregateId: run.id, revision, dedupeKey: `production-stage-paused:${run.id}:${revision}`,
-        payload: { runId: run.id, unitId: run.unitId, stageId: op.stageId, reason, revision, occurredAt: new Date().toISOString(), actorId },
-      });
-      return { runId: run.id, revision, stage: { id: op.stageId, code: op.stageCode, label: op.stageLabel }, status: "PAUSED", reason };
-    },
+    apply: (tx, { run, op }) => applyPauseInTx(tx, { run, op, actorId, reason, note, photoUrls }),
   });
+}
+
+export async function applyPauseInTx(tx, { run, op, actorId, reason, note = null, photoUrls = [] }) {
+  await viaEngine(() => pauseStageInTx(tx, run.unitId, op.stageId, { actorId, reason, note, photoUrls }));
+  await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "PAUSED" } });
+  const revision = await bumpRun(tx, run, {});
+  await outbox(tx, {
+    eventType: "production.stage.paused", aggregateId: run.id, revision, dedupeKey: `production-stage-paused:${run.id}:${revision}`,
+    payload: { runId: run.id, unitId: run.unitId, stageId: op.stageId, reason, revision, occurredAt: new Date().toISOString(), actorId },
+  });
+  return { runId: run.id, revision, stage: { id: op.stageId, code: op.stageCode, label: op.stageLabel }, status: "PAUSED", reason };
 }
 
 // ---------------------------------------------------------------------------
@@ -370,17 +430,19 @@ export async function pauseWorkshopStage(prisma, { runId, actorId, idempotencyKe
 export async function resumeWorkshopStage(prisma, { runId, actorId, idempotencyKey, expectedRevision, workCenterId }) {
   return operationCommand(prisma, {
     commandType: "RESUME_WORKSHOP_STAGE", runId, actorId, idempotencyKey, expectedRevision, workCenterId, expectStatus: "PAUSED", payload: {},
-    apply: async (tx, { run, op }) => {
-      await viaEngine(() => resumeStageInTx(tx, run.unitId, op.stageId, { actorId }));
-      await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "ACTIVE" } });
-      const revision = await bumpRun(tx, run, {});
-      await outbox(tx, {
-        eventType: "production.stage.resumed", aggregateId: run.id, revision, dedupeKey: `production-stage-resumed:${run.id}:${revision}`,
-        payload: { runId: run.id, unitId: run.unitId, stageId: op.stageId, revision, occurredAt: new Date().toISOString(), actorId },
-      });
-      return { runId: run.id, revision, stage: { id: op.stageId, code: op.stageCode, label: op.stageLabel }, status: "ACTIVE" };
-    },
+    apply: (tx, { run, op }) => applyResumeInTx(tx, { run, op, actorId }),
   });
+}
+
+export async function applyResumeInTx(tx, { run, op, actorId }) {
+  await viaEngine(() => resumeStageInTx(tx, run.unitId, op.stageId, { actorId }));
+  await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "ACTIVE" } });
+  const revision = await bumpRun(tx, run, {});
+  await outbox(tx, {
+    eventType: "production.stage.resumed", aggregateId: run.id, revision, dedupeKey: `production-stage-resumed:${run.id}:${revision}`,
+    payload: { runId: run.id, unitId: run.unitId, stageId: op.stageId, revision, occurredAt: new Date().toISOString(), actorId },
+  });
+  return { runId: run.id, revision, stage: { id: op.stageId, code: op.stageCode, label: op.stageLabel }, status: "ACTIVE" };
 }
 
 // ---------------------------------------------------------------------------
@@ -390,42 +452,45 @@ export async function completeWorkshopStage(prisma, { runId, actorId, idempotenc
   return operationCommand(prisma, {
     commandType: "COMPLETE_WORKSHOP_STAGE", runId, actorId, idempotencyKey, expectedRevision, workCenterId, expectStatus: "ACTIVE",
     payload: { note: note || null, photoUrls },
-    apply: async (tx, { run, op }) => {
-      const now = new Date();
-      // deferReady: tahap TERAKHIR jalur selesai TIDAK menjadikan unit READY_FOR_DELIVERY — itu baru terjadi setelah Gudang menerima barang jadi.
-      await viaEngine(() => completeStageInTx(tx, run.unitId, op.stageId, { actorId, photoUrls, note, deferReady: true }));
-      await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "COMPLETED", completedAt: now } });
-      const unit = await tx.unit.findUniqueOrThrow({ where: { id: run.unitId }, select: { currentStageId: true, status: true } });
-      const path = await pathForUnit(tx, run.unit);
-      const handoffReady = isLastStage(path, op.stageId);
-      const next = !handoffReady && unit.currentStageId ? path.find((s) => s.id === unit.currentStageId) : null;
-      const awaitingQc = !!next?.requiresQc;
-      // Penutupan PROCESS dan pembukaan HANDOFF dalam SATU transisi atomik (hanya satu fase berjalan).
-      const phaseUpdates = [];
-      if (awaitingQc || handoffReady) phaseUpdates.push({ phase: "PROCESS", data: { status: "COMPLETED", completedAt: now } });
-      if (handoffReady) phaseUpdates.push({ phase: "HANDOFF", data: { status: "ACTIVE", startedAt: now, reason: null } });
-      if (phaseUpdates.length) await transitionPhases(tx, run.id, phaseUpdates);
-      const revision = await bumpRun(tx, run, awaitingQc ? { currentPhase: "QC" } : handoffReady ? { currentPhase: "HANDOFF" } : {});
-      // Handoff barang jadi HANYA setelah tahap `finished` (terakhir) selesai; QC wajib sudah lulus/di-waive (divalidasi offerFinishedGoodsCustodyInTx,
-      // kesalahan apa pun me-rollback seluruh penyelesaian tahap ini).
-      const handoff = handoffReady ? await offerFinishedGoodsCustodyInTx(tx, { runId: run.id, actorId }) : null;
-      await outbox(tx, {
-        eventType: "production.stage.completed", aggregateId: run.id, revision, dedupeKey: `production-stage-completed:${run.id}:${revision}`,
-        payload: { runId: run.id, unitId: run.unitId, stageId: op.stageId, awaitingQc, handoffReady, revision, occurredAt: now.toISOString(), actorId },
-      });
-      if (awaitingQc) {
-        await outbox(tx, {
-          eventType: "production.run.awaiting_qc", aggregateId: run.id, revision, dedupeKey: `production-run-awaiting-qc:${run.id}:${revision}`,
-          payload: { runId: run.id, unitId: run.unitId, qcStageId: next.id, revision, occurredAt: now.toISOString(), actorId },
-        });
-        await recordActivity(tx, {
-          entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_WORKSHOP_AWAITING_QC, actorId: actorId || null,
-          metadata: { unitCode: run.unit.unitCode, runId: run.id },
-        });
-      }
-      return { runId: run.id, revision, stage: { id: op.stageId, code: op.stageCode, label: op.stageLabel }, status: "COMPLETED", awaitingQc, handoffReady, ...(handoff ? { handoffId: handoff.handoff.id } : {}), unitStatus: unit.status };
-    },
+    apply: (tx, { run, op }) => applyCompleteInTx(tx, { run, op, actorId, note, photoUrls }),
   });
+}
+
+// Terapkan selesai tahap (engine V1 *InTx deferReady + operasi + fase + revisi + [handoff barang jadi P6] + outbox). Pemanggil sudah mengunci & memvalidasi.
+export async function applyCompleteInTx(tx, { run, op, actorId, note = null, photoUrls = [] }) {
+  const now = new Date();
+  // deferReady: tahap TERAKHIR jalur selesai TIDAK menjadikan unit READY_FOR_DELIVERY — itu baru terjadi setelah Gudang menerima barang jadi.
+  await viaEngine(() => completeStageInTx(tx, run.unitId, op.stageId, { actorId, photoUrls, note, deferReady: true }));
+  await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "COMPLETED", completedAt: now } });
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: run.unitId }, select: { currentStageId: true, status: true } });
+  const path = await pathForUnit(tx, run.unit);
+  const handoffReady = isLastStage(path, op.stageId);
+  const next = !handoffReady && unit.currentStageId ? path.find((s) => s.id === unit.currentStageId) : null;
+  const awaitingQc = !!next?.requiresQc;
+  // Penutupan PROCESS dan pembukaan HANDOFF dalam SATU transisi atomik (hanya satu fase berjalan).
+  const phaseUpdates = [];
+  if (awaitingQc || handoffReady) phaseUpdates.push({ phase: "PROCESS", data: { status: "COMPLETED", completedAt: now } });
+  if (handoffReady) phaseUpdates.push({ phase: "HANDOFF", data: { status: "ACTIVE", startedAt: now, reason: null } });
+  if (phaseUpdates.length) await transitionPhases(tx, run.id, phaseUpdates);
+  const revision = await bumpRun(tx, run, awaitingQc ? { currentPhase: "QC" } : handoffReady ? { currentPhase: "HANDOFF" } : {});
+  // Handoff barang jadi HANYA setelah tahap `finished` (terakhir) selesai; QC wajib sudah lulus/di-waive (divalidasi offerFinishedGoodsCustodyInTx,
+  // kesalahan apa pun me-rollback seluruh penyelesaian tahap ini).
+  const handoff = handoffReady ? await offerFinishedGoodsCustodyInTx(tx, { runId: run.id, actorId }) : null;
+  await outbox(tx, {
+    eventType: "production.stage.completed", aggregateId: run.id, revision, dedupeKey: `production-stage-completed:${run.id}:${revision}`,
+    payload: { runId: run.id, unitId: run.unitId, stageId: op.stageId, awaitingQc, handoffReady, revision, occurredAt: now.toISOString(), actorId },
+  });
+  if (awaitingQc) {
+    await outbox(tx, {
+      eventType: "production.run.awaiting_qc", aggregateId: run.id, revision, dedupeKey: `production-run-awaiting-qc:${run.id}:${revision}`,
+      payload: { runId: run.id, unitId: run.unitId, qcStageId: next.id, revision, occurredAt: now.toISOString(), actorId },
+    });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_WORKSHOP_AWAITING_QC, actorId: actorId || null,
+      metadata: { unitCode: run.unit.unitCode, runId: run.id },
+    });
+  }
+  return { runId: run.id, revision, stage: { id: op.stageId, code: op.stageCode, label: op.stageLabel }, status: "COMPLETED", awaitingQc, handoffReady, ...(handoff ? { handoffId: handoff.handoff.id } : {}), unitStatus: unit.status };
 }
 
 // ---------------------------------------------------------------------------

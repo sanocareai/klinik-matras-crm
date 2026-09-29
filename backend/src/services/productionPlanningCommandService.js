@@ -25,6 +25,7 @@ import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockMaterialBalance, lockRowForUpdate, RESERVED_STATUSES } from "./inventoryLedger.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
+import { BOARD_DEFAULTS, assertStationCapacity, formatProductionDate, normalizeScheduleInput, workWindowFor } from "../lib/domain/productionBoard.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const EPSILON = 1e-6;
@@ -244,6 +245,94 @@ export async function assignProductionPlan(prisma, { planId, actorId, idempotenc
       metadata: { unitCode: plan.run.unit.unitCode, planId, workCenterCode: workCenter.code, operatorId },
     });
     const response = { planId, status: nextStatus, revision, workCenterId, operatorId, targetStartAt: startAt.toISOString(), targetCompleteAt: completeAt.toISOString() };
+    await finishCommand(tx, command, revision, response);
+    return { replayed: false, ...response };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 2b. P8 — Jadwalkan ke papan meja (Planner H-1): tanggal produksi, meja bongkar, prioritas, PIC meja + work center, dan PIC Corner opsional.
+//     Superset assign: DRAFT -> PLANNED; target mulai/selesai diisi jendela kerja tanggal produksi (08.00–17.00 WIB). Kapasitas meja
+//     (default 3) dijaga di dalam transaksi setelah mengunci plan. Keluarkan dari papan = productionDate & stationCode null.
+//     Mengganti PIC saat masih ada tahap aktif/dijeda ditolak (operasi berjalan milik PIC lama).
+// ---------------------------------------------------------------------------
+export async function scheduleProductionPlan(prisma, { planId, actorId, idempotencyKey, expectedRevision, config = BOARD_DEFAULTS, ...input }) {
+  assertIdempotencyKey(idempotencyKey);
+  const revisionExpected = assertExpectedRevision(expectedRevision);
+  const data = normalizeScheduleInput(input, config);
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({
+    commandType: "SCHEDULE_PLAN", planId, expectedRevision: revisionExpected, ...data,
+    productionDate: data.productionDate ? formatProductionDate(data.productionDate) : null,
+  });
+
+  return prisma.$transaction(async (tx) => {
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    const plan = await loadPlanForWrite(tx, planId);
+    assertPlanNotCancelled(plan);
+    assertPlanRevision(plan, revisionExpected);
+    await assertWriterEnabledForUnit(tx, plan.run.unitId);
+
+    const now = new Date();
+    let update;
+    if (data.unschedule) {
+      update = { productionDate: null, stationCode: null, priority: data.priority };
+    } else {
+      const workCenter = await tx.workCenter.findUnique({ where: { id: data.workCenterId } });
+      if (!workCenter || !workCenter.active) throw planError("Workshop/work center tidak valid atau nonaktif", 422, "PLAN_WORK_CENTER_INVALID");
+      const operator = await tx.productionOperator.findUnique({ where: { id: data.operatorId } });
+      if (!operator || !operator.active) throw planError("PIC meja tidak valid atau nonaktif", 422, "PLAN_OPERATOR_INVALID");
+      if (data.cornerOperatorId) {
+        const corner = await tx.productionOperator.findUnique({ where: { id: data.cornerOperatorId } });
+        if (!corner || !corner.active) throw planError("PIC Corner tidak valid atau nonaktif", 422, "PLAN_CORNER_OPERATOR_INVALID");
+      }
+      if (data.cornerWorkCenterId) {
+        const cornerCenter = await tx.workCenter.findUnique({ where: { id: data.cornerWorkCenterId } });
+        if (!cornerCenter || !cornerCenter.active) throw planError("Work center Corner tidak valid atau nonaktif", 422, "PLAN_CORNER_WORK_CENTER_INVALID");
+      }
+      const operatorChanged = plan.operatorId !== data.operatorId || (plan.cornerOperatorId || null) !== data.cornerOperatorId;
+      if (operatorChanged) {
+        const running = await tx.productionOperationRun.count({ where: { runId: plan.runId, status: { in: ["ACTIVE", "PAUSED"] } } });
+        if (running > 0) throw planError("Masih ada tahap yang sedang dikerjakan/dijeda; selesaikan dulu sebelum mengganti PIC", 409, "PLAN_RUN_IN_PROGRESS");
+      }
+      const sameSlot = plan.productionDate && formatProductionDate(plan.productionDate) === formatProductionDate(data.productionDate) && plan.stationCode === data.stationCode;
+      if (!sameSlot) {
+        // Kunci slot (tanggal, meja) lewat advisory lock transaksi: dua penjadwalan bersamaan ke slot yang sama diserialkan TANPA mengunci
+        // baris plan lain (tidak ada siklus kunci dengan command yang mengunci plan-nya sendiri lebih dulu).
+        await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))::text AS k", `production-station:${formatProductionDate(data.productionDate)}:${data.stationCode}`);
+        const occupied = await tx.productionRunPlan.count({
+          where: { id: { not: planId }, productionDate: data.productionDate, stationCode: data.stationCode, status: { not: "CANCELLED" } },
+        });
+        assertStationCapacity(occupied, config);
+      }
+      const window = workWindowFor(data.productionDate, config);
+      update = {
+        productionDate: data.productionDate, stationCode: data.stationCode, priority: data.priority,
+        workCenterId: data.workCenterId, operatorId: data.operatorId,
+        cornerWorkCenterId: data.cornerWorkCenterId, cornerOperatorId: data.cornerOperatorId,
+        targetStartAt: window.targetStartAt, targetCompleteAt: window.targetCompleteAt,
+        status: plan.status === "DRAFT" ? "PLANNED" : plan.status,
+        plannedById: plan.plannedAt ? plan.plannedById : (actorId || null), plannedAt: plan.plannedAt || now,
+      };
+    }
+    const revision = plan.revision + 1;
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "SCHEDULE_PLAN", aggregateType: "ProductionRunPlan", aggregateId: planId, requestHash, expectedRevision: revisionExpected });
+    const updated = await tx.productionRunPlan.update({ where: { id: planId }, data: { ...update, revision, commandId: command.id } });
+    const productionDate = formatProductionDate(updated.productionDate);
+    await outbox(tx, {
+      eventType: data.unschedule ? "production.plan.unscheduled" : "production.plan.scheduled", aggregateType: "ProductionRunPlan", aggregateId: planId, revision,
+      dedupeKey: `production-plan-scheduled:${planId}:${revision}`,
+      payload: { planId, runId: plan.runId, unitId: plan.run.unitId, productionDate, stationCode: updated.stationCode, priority: updated.priority, operatorId: updated.operatorId, cornerOperatorId: updated.cornerOperatorId, revision, occurredAt: now.toISOString(), actorId },
+    });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: plan.run.unitId, eventType: EVENT_TYPES.PRODUCTION_PLAN_ASSIGNED, actorId: actorId || null,
+      metadata: { unitCode: plan.run.unit.unitCode, planId, productionDate, stationCode: updated.stationCode, priority: updated.priority, scheduled: !data.unschedule },
+    });
+    const response = {
+      planId, status: updated.status, revision, productionDate, stationCode: updated.stationCode, priority: updated.priority,
+      workCenterId: updated.workCenterId, operatorId: updated.operatorId, cornerWorkCenterId: updated.cornerWorkCenterId, cornerOperatorId: updated.cornerOperatorId,
+    };
     await finishCommand(tx, command, revision, response);
     return { replayed: false, ...response };
   });

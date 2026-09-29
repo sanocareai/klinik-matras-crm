@@ -1655,6 +1655,7 @@ model Unit {
   productionRunsV2  ProductionRun[]
   custodyHandoffs   UnitCustodyHandoff[]
   productionRunExceptions ProductionRunException[]
+  productionMaterialShortages ProductionMaterialShortage[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -2016,7 +2017,8 @@ model WorkCenter {
   routeStages      ProductionRouteStage[]
   operatorsPrimary ProductionOperator[]
   stageAssignments StageAssignment[]
-  productionPlans  ProductionRunPlan[]
+  productionPlans  ProductionRunPlan[] @relation("PlanWorkCenter")
+  cornerPlans      ProductionRunPlan[] @relation("PlanCornerWorkCenter")
 
   expenseSubmissions ExpenseSubmission[]
   @@map("work_centers")
@@ -2120,7 +2122,8 @@ model ProductionOperator {
 
   skills           OperatorSkill[]
   stageAssignments StageAssignment[]
-  productionPlans  ProductionRunPlan[]
+  productionPlans  ProductionRunPlan[] @relation("PlanOperator")
+  cornerPlans      ProductionRunPlan[] @relation("PlanCornerOperator")
 
   @@map("production_operators")
 }
@@ -8210,6 +8213,8 @@ model ProductionRun {
   phases               ProductionPhaseRun[]
   diagnoses            DiagnosisReport[]
   operations           ProductionOperationRun[]
+  stepEvidence         ProductionStepEvidence[]
+  materialShortages    ProductionMaterialShortage[]
   inspections          QualityInspection[]
   handoff              ProductionHandoff?
   custodyHandoffs      UnitCustodyHandoff[]
@@ -8748,9 +8753,19 @@ model ProductionRunPlan {
   // Penetapan workshop/operator memakai ID kanonis (bukan teks bebas) — "team"/"workshop" di bahasa tugas
   // dipetakan ke WorkCenter yang sudah ada (Production Core Slice 4E), bukan entitas baru.
   workCenterId String?             @map("work_center_id") @db.Uuid
-  workCenter   WorkCenter?         @relation(fields: [workCenterId], references: [id], onDelete: SetNull)
+  workCenter   WorkCenter?         @relation("PlanWorkCenter", fields: [workCenterId], references: [id], onDelete: SetNull)
   operatorId   String?             @map("operator_id") @db.Uuid
-  operator     ProductionOperator? @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+  operator     ProductionOperator? @relation("PlanOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+
+  // P8 papan meja: tanggal produksi (H), meja bongkar (TABLE_n), prioritas (0 normal, 1 tinggi, 2 mendesak), dan PIC Corner (jahit)
+  // yang berbeda dari PIC meja. Tetap ditulis HANYA oleh command owner P3 (SCHEDULE_PLAN).
+  productionDate      DateTime?           @map("production_date") @db.Date
+  stationCode         String?             @map("station_code")
+  priority            Int                 @default(0) @db.SmallInt
+  cornerWorkCenterId  String?             @map("corner_work_center_id") @db.Uuid
+  cornerWorkCenter    WorkCenter?         @relation("PlanCornerWorkCenter", fields: [cornerWorkCenterId], references: [id], onDelete: SetNull)
+  cornerOperatorId    String?             @map("corner_operator_id") @db.Uuid
+  cornerOperator      ProductionOperator? @relation("PlanCornerOperator", fields: [cornerOperatorId], references: [id], onDelete: SetNull)
 
   targetStartAt    DateTime? @map("target_start_at")
   targetCompleteAt DateTime? @map("target_complete_at")
@@ -8772,6 +8787,8 @@ model ProductionRunPlan {
   materialIssues MaterialIssue[]
 
   @@index([status, updatedAt])
+  @@index([productionDate, stationCode])
+  @@index([cornerOperatorId])
   @@map("production_run_plans_v2")
 }
 
@@ -8845,4 +8862,59 @@ model MaterialReservation {
   @@index([planId, status])
   @@index([materialId, status])
   @@map("material_reservations_v2")
+}
+
+// P8 — bukti tahap PIC Table/Corner (evidence-gated). IMMUTABLE di database (trigger: hanya INSERT). Versi naik per (run, tahap) untuk
+// pengulangan/rework; operationRunId/stageId/commandId menunjuk operasi P5, tahap routing, dan v2_commands (FK di database).
+model ProductionStepEvidence {
+  id              String        @id @default(uuid()) @db.Uuid
+  runId           String        @map("run_id") @db.Uuid
+  run             ProductionRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  operationRunId  String?       @map("operation_run_id") @db.Uuid
+  stageId         String?       @map("stage_id") @db.Uuid
+  stepNo          Int           @map("step_no") @db.SmallInt
+  stepCode        String        @map("step_code")
+  version         Int
+  payload         Json          @default("{}")
+  media           Json          @default("[]")
+  actorId         String?       @map("actor_id")
+  commandId       String?       @map("command_id") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@unique([runId, stepNo, version])
+  @@index([runId, createdAt])
+  @@index([operationRunId])
+  @@map("production_step_evidence_v2")
+}
+
+enum ProductionMaterialShortageStatus {
+  OPEN
+  RESOLVED
+  CANCELLED
+}
+
+// P8 — "Menunggu Bahan Baku": satu OPEN per run (partial unique di database). Diselesaikan Gudang; tidak pernah dihapus.
+model ProductionMaterialShortage {
+  id             String                           @id @default(uuid()) @db.Uuid
+  runId          String                           @map("run_id") @db.Uuid
+  run            ProductionRun                    @relation(fields: [runId], references: [id], onDelete: Restrict)
+  unitId         String                           @map("unit_id") @db.Uuid
+  unit           Unit                             @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  operationRunId String?                          @map("operation_run_id") @db.Uuid
+  status         ProductionMaterialShortageStatus @default(OPEN)
+  revision       Int                              @default(1)
+  items          Json                             @default("[]")
+  note           String?
+  reportedById   String?                          @map("reported_by_id")
+  reportedAt     DateTime                         @default(now()) @map("reported_at")
+  resolvedById   String?                          @map("resolved_by_id")
+  resolvedAt     DateTime?                        @map("resolved_at")
+  resolutionNote String?                          @map("resolution_note")
+  commandId      String?                          @map("command_id") @db.Uuid
+  createdAt      DateTime                         @default(now()) @map("created_at")
+  updatedAt      DateTime                         @updatedAt @map("updated_at")
+
+  @@index([status, reportedAt])
+  @@index([unitId])
+  @@map("production_material_shortages_v2")
 }

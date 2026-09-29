@@ -163,6 +163,10 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_RUN_CANCELLED: "PRODUCTION_RUN_CANCELLED",
   PRODUCTION_RUN_EXCEPTION_OPENED: "PRODUCTION_RUN_EXCEPTION_OPENED",
   PRODUCTION_RUN_EXCEPTION_RESOLVED: "PRODUCTION_RUN_EXCEPTION_RESOLVED",
+  // P8 — bukti tahap PIC Table/Corner dan "Menunggu Bahan Baku".
+  PRODUCTION_STEP_RECORDED: "PRODUCTION_STEP_RECORDED",
+  PRODUCTION_MATERIAL_SHORTAGE_REPORTED: "PRODUCTION_MATERIAL_SHORTAGE_REPORTED",
+  PRODUCTION_MATERIAL_SHORTAGE_RESOLVED: "PRODUCTION_MATERIAL_SHORTAGE_RESOLVED",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -390,6 +394,12 @@ export function formatActivitySentence(event) {
       return `Konflik rekonsiliasi dicatat untuk unit ${metadata.unitCode || "—"}: status unit ${metadata.unitStatus || "—"} berbeda dari Production Run yang berjalan`;
     case EVENT_TYPES.PRODUCTION_RUN_EXCEPTION_RESOLVED:
       return `Konflik rekonsiliasi unit ${metadata.unitCode || "—"} diselesaikan (${metadata.resolution || "—"})${metadata.note ? ` — ${metadata.note}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_STEP_RECORDED:
+      return `Tahap ${metadata.stepNo ?? "—"} (${metadata.stepLabel || "—"}) unit ${metadata.unitCode || "—"} tercatat${metadata.verdict ? ` — hasil ${metadata.verdict}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_MATERIAL_SHORTAGE_REPORTED:
+      return `Produksi menunggu bahan baku untuk unit ${metadata.unitCode || "—"} (${metadata.itemCount ?? 0} bahan)${metadata.note ? ` — ${metadata.note}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_MATERIAL_SHORTAGE_RESOLVED:
+      return `Kekurangan bahan unit ${metadata.unitCode || "—"} diselesaikan Gudang${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_CANCELLED:
       return `Pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.BUKTI_DIMINTA:
