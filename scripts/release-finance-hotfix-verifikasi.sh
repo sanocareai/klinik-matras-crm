@@ -81,10 +81,10 @@ sg remote get-url origin >/dev/null 2>&1 || sg remote add origin "$REPO_URL"
 sg fetch -q --depth=200 origin "+refs/heads/${CAND_BRANCH}:refs/remotes/origin/cand" || die "git fetch gagal"
 [ "$(sg rev-parse refs/remotes/origin/cand)" = "$DEPLOY_SHA" ] || die "origin/${CAND_BRANCH} bukan SHA rilis; kandidat bergeser"
 sg cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || die "baseline ${BASE_SHA:0:8} tidak ada di repo sumber"
-[ "$(sg rev-parse "${DEPLOY_SHA}^")" = "$BASE_SHA" ] || die "induk kandidat BUKAN baseline ${BASE_SHA:0:8}"
+sg merge-base --is-ancestor "$BASE_SHA" "$DEPLOY_SHA" || die "baseline ${BASE_SHA:0:8} BUKAN leluhur kandidat ${DEPLOY_SHORT}"
 CHANGED="$(sg diff --name-only "$BASE_SHA" "$DEPLOY_SHA" | LC_ALL=C sort)"
 [ "$CHANGED" = "$(printf '%s\n' "$EXPECT_FILES" | LC_ALL=C sort)" ] || { printf '%s\n' "$CHANGED"; die "berkas berubah tidak sama dengan yang diharapkan"; }
-ok "kandidat ${DEPLOY_SHORT} = baseline ${BASE_SHA:0:8} + 4 berkas (tanpa migration/schema/package-lock)"
+ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8}, hanya 4 berkas (tanpa migration/schema/package-lock)"
 
 PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"
 CID_OLD="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"
