@@ -523,19 +523,14 @@ export async function findEntryByKey(tx, idempotencyKey) {
  */
 export async function recordPostingGap(tx, { source, sourceId, reason, detail, metadata = {} }) {
   assertTx(tx, "recordPostingGap");
-  try {
-    return await tx.finPostingGap.create({
-      data: { source, sourceId, reason, detail, metadata },
-    });
-  } catch (e) {
-    if (e.code !== "P2002") throw e;
-    // Sudah pernah tercatat — perbarui detailnya (angka/qty bisa berubah)
-    // tapi JANGAN buka kembali gap yang sudah diselesaikan.
-    return tx.finPostingGap.update({
-      where: { source_sourceId: { source, sourceId } },
-      data: { reason, detail, metadata },
-    });
+  // Cek DULU, jangan mengandalkan tangkap P2002: di dalam transaksi Postgres, satu error query membatalkan SELURUH transaksi (25P02), sehingga update
+  // sesudah create yang gagal ikut gagal (verifikasi pembayaran yang masih Posting Tertunda jadi galat 500).
+  const ada = await tx.finPostingGap.findUnique({ where: { source_sourceId: { source, sourceId } }, select: { id: true } });
+  if (ada) {
+    // Sudah pernah tercatat — perbarui detailnya (angka/qty bisa berubah) tapi JANGAN buka kembali gap yang sudah diselesaikan.
+    return tx.finPostingGap.update({ where: { id: ada.id }, data: { reason, detail, metadata } });
   }
+  return tx.finPostingGap.create({ data: { source, sourceId, reason, detail, metadata } });
 }
 
 export async function resolvePostingGap(tx, { source, sourceId, entryId = null }) {
