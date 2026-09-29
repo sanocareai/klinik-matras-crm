@@ -4,13 +4,13 @@
 // menyembunyikan aksi. Pesan berbahasa Indonesia.
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { requireAnyPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { hasPermission, requireAnyPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { createProductionPlan, scheduleProductionPlan } from "../services/productionPlanningCommandService.js";
 import { recordProductionStep, reportMaterialShortage, resolveMaterialShortage } from "../services/productionStepCommandService.js";
 import { confirmUnitArrival, listReceivingLocations } from "../services/unitCustodyCommandService.js";
 import {
-  getAndonBoard, getProductionBoard, getProductionReport, getRunCard, getWarehouseProductionQueue, listWorkerQueue,
+  getAndonBoard, getProductionBoard, getProductionCommandCenter, getProductionReport, getRunCard, getWarehouseProductionQueue, listWorkerQueue,
 } from "../services/productionExperienceReadService.js";
 import { productionEvidenceUploadRouter } from "./productionEvidenceMedia.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
@@ -55,6 +55,21 @@ productionExperienceRouter.get("/board", requireAnyPermission(...READ_PERMS), as
     const unitIds = await readerCohort();
     if (!unitIds) return inert(res, { stations: [], unscheduled: { plans: [], units: [] } });
     res.json({ readerMode: "COHORT", ...(await getProductionBoard(prisma, { date: req.query.date ? String(req.query.date) : null, unitIds })) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/command-center — P9B Ringkasan Produksi + kolom pipeline Rencana Produksi. SATU payload,
+// dipakai KEDUA halaman (Ringkasan & Papan Meja) supaya KPI dan isi papan tidak pernah berbeda. order.value HANYA
+// disertakan (canSeeValue) bila pemanggil punya ORDER_PRICE_READ — sama seperti sanitizeOrder, tapi field tidak pernah
+// di-select dari Prisma saat tidak berhak (lihat getProductionCommandCenter).
+productionExperienceRouter.get("/command-center", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const unitIds = await readerCohort();
+    if (!unitIds) return inert(res, { kpi: {}, attention: [], picActivity: [], columns: [], completedToday: [], canSeeValue: false });
+    res.json({
+      readerMode: "COHORT",
+      ...(await getProductionCommandCenter(prisma, { unitIds, canSeeValue: hasPermission(req.user, P.ORDER_PRICE_READ) })),
+    });
   } catch (err) { handleErr(err, res); }
 });
 

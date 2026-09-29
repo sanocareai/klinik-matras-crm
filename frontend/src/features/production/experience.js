@@ -62,6 +62,25 @@ export const BUCKET_STYLE = Object.freeze({
 export const bucketStyle = (key) => BUCKET_STYLE[key] || BUCKET_STYLE.ANTREAN;
 
 export const PRIORITIES = Object.freeze([{ value: 0, label: "Normal" }, { value: 1, label: "Tinggi" }, { value: 2, label: "Mendesak" }]);
+// value 0=NORMAL(netral) 1=HIGH/Tinggi(oranye) 2=URGENT/Mendesak(merah) — dipakai badge kartu & pemilih prioritas.
+export const priorityTone = (priority) => (priority === 2 ? "red" : priority === 1 ? "orange" : "neutral");
+
+// P9B — kolom pipeline Rencana Produksi (Command Center). Label & urutan HARUS sama dengan backend
+// (lib/domain/productionSteps.js#COMMAND_CENTER_COLUMNS) — dipertahankan sebagai daftar statis di sini karena murni
+// label tampilan (server tetap kirim `key`+`label` per kolom, ini hanya fallback/urutan bila server belum kirim).
+export const COMMAND_CENTER_COLUMNS = Object.freeze([
+  "AKAN_MASUK", "BELUM_DIJADWALKAN", "DIJADWALKAN", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "QC", "CORNER", "SIAP_KIRIM",
+]);
+
+// Badge tanggal target (terpisah dari badge prioritas): besok=oranye, hari ini & belum mulai=merah, sudah lewat=merah "Terlambat".
+// today/tomorrow: string "YYYY-MM-DD" WIB (lihat wibDate()).
+export function targetDateBadge(view, today, tomorrow) {
+  if (!view?.plan?.productionDate) return null;
+  if (view.timer?.late) return { tone: "red", label: "Terlambat" };
+  if (view.plan.productionDate === today && (view.progress?.done ?? 0) === 0 && !view.activeOp) return { tone: "red", label: "Target hari ini" };
+  if (view.plan.productionDate === tomorrow) return { tone: "orange", label: "Target besok" };
+  return null;
+}
 
 // Teks tombol aksi utama untuk kartu pekerja.
 export function actionLabel(next, { stageLabel } = {}) {

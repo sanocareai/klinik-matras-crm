@@ -3,7 +3,7 @@
 // tidak ada status UI yang disimpan terpisah. Pemanggil (routes) wajib memfilter unitIds dari reader cohort; unit di luar cohort tidak pernah
 // dimuat. Data customer seperlunya: nama, berat badan, keluhan, request — tanpa telepon/alamat.
 import {
-  ANDON_BUCKETS, STEP_BY_NO, STEPS, andonBucketOf, stepNoForStage,
+  ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
 import { BOARD_DEFAULTS, PRIORITY_LABEL, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
 import { applicableStepsFor, loadStepContext } from "./productionStepCommandService.js";
@@ -27,7 +27,7 @@ export const RUN_VIEW_INCLUDE = {
         select: {
           orderNumber: true, category: true, beratBadan: true, notes: true, complaintCategory: true, customerPromiseDate: true,
           weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
-          customer: { select: { name: true, assignedSales: { select: { id: true, name: true } } } },
+          customer: { select: { name: true, city: true, assignedSales: { select: { id: true, name: true } } } },
         },
       },
     },
@@ -116,6 +116,7 @@ function customerOf(run) {
     orderNumber: order?.orderNumber ?? null,
     category: order?.category ?? null,
     name: order?.customer?.name ?? null,
+    city: order?.customer?.city ?? null,
     weightKg: order?.beratBadan ?? null,
     weightEntries: order?.weightEntries ?? [],
     complaints: (order?.complaintCategory || []).map((c) => COMPLAINT_LABEL[c] || c),
@@ -138,7 +139,7 @@ export function toRunView(run, ctx, { now = new Date() } = {}) {
   const bucket = andonBucketOf({ next, started });
   return {
     runId: run.id, revision: run.revision, status: run.status, currentPhase: run.currentPhase, origin: run.origin,
-    unit: { id: run.unit.id, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null },
+    unit: { id: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null },
     customer: customerOf(run),
     plan: run.plan ? {
       id: run.plan.id, status: run.plan.status, revision: run.plan.revision,
@@ -235,6 +236,130 @@ export async function getProductionBoard(prisma, { date, unitIds, config = BOARD
         ...awaitingArrivalNoRun,
       ],
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// P9B — Command Center: Ringkasan Produksi (KPI + Butuh Perhatian) DAN kolom pipeline Rencana Produksi, dari SATU sumber
+// data (views hasil toRunView atas SELURUH run non-terminal cohort + kartu warisan tanpa run + pickup yang akan masuk) —
+// setiap angka KPI = panjang salah satu daftar yang JUGA dikirim ke klien (tidak ada penghitungan bayangan terpisah).
+// BACA-SAJA, tanpa mutasi apa pun. Aman untuk unit warisan OFFERED tanpa run (mis. canary) — masuk lewat
+// listAwaitingArrivalNoRunUnits yang sama dipakai getProductionBoard, TIDAK dipaksa masuk toRunView (yang butuh Run).
+// order.value HANYA disertakan bila canSeeValue true (ORDER_PRICE_READ) — query terpisah, field TIDAK PERNAH di-select
+// dari Prisma saat false (bukan cuma disaring di respons).
+// ---------------------------------------------------------------------------
+function attentionItemsFrom(views, { today }) {
+  const items = [];
+  const push = (v, severity, code, text) => items.push({
+    severity, code, text, unitCode: v.unit.unitCode, runId: v.runId, customerName: v.customer.name, orderNumber: v.customer.orderNumber,
+  });
+  for (const v of views) {
+    const label = `${v.unit.unitCode} (${v.customer.name || "pelanggan tanpa nama"})`;
+    // Target hari ini belum dimulai: dijadwalkan hari ini, belum ada bukti tahap tercatat, dan tidak sedang berjalan.
+    if (v.plan?.productionDate === today && v.progress.done === 0 && !v.activeOp) push(v, "critical", "TARGET_BELUM_MULAI", `${label}: target hari ini, belum dimulai`);
+    if (v.warnings.some((w) => w.code === "TERLAMBAT")) push(v, "critical", "TERLAMBAT", `${label}: melewati target selesai`);
+    if (v.shortage) push(v, "critical", "KEKURANGAN_BAHAN", `${label}: menunggu bahan baku dari Gudang`);
+    if (v.bucket === "TERHENTI") push(v, "critical", "TERHENTI", `${label}: proses terhenti — perlu tindakan Production Lead`);
+    // Data Sales penting belum lengkap — definisi konservatif: berat badan customer (satu-satunya field kuantitatif wajib
+    // untuk diagnosa/fondasi yang SUDAH dimodelkan Order.beratBadan) belum diisi.
+    if (v.customer.weightKg == null) push(v, "warning", "DATA_SALES_BELUM_LENGKAP", `${label}: berat badan customer belum diisi Sales`);
+    if (v.warnings.some((w) => w.code === "LAYANAN_BELUM")) push(v, "warning", "LAYANAN_BELUM", `${label}: unit belum punya layanan terpetakan`);
+    // PIC/meja belum ada — HANYA untuk unit yang SUDAH dijadwalkan ke meja+tanggal tapi PIC belum ditetapkan (unit yang
+    // memang belum dijadwalkan sama sekali sudah terhitung tersendiri di KPI "Belum Dijadwalkan", tidak diulang di sini).
+    if (v.plan?.stationCode && !v.plan?.operator) push(v, "warning", "PIC_BELUM_ADA", `${label}: sudah dijadwalkan tapi PIC meja belum ditetapkan`);
+  }
+  const rank = { critical: 0, warning: 1 };
+  return items.sort((a, b) => rank[a.severity] - rank[b.severity]);
+}
+
+export async function getProductionCommandCenter(prisma, { unitIds, now = new Date(), canSeeValue = false, config = BOARD_DEFAULTS } = {}) {
+  const today = todayWib(now);
+  const startOfTodayUtc = new Date(`${today}T00:00:00.000Z`);
+  const cohort = { unitId: { in: unitIds } };
+  const [activeRuns, completedTodayRuns, awaitingArrivalNoRun, upcomingJobs] = await Promise.all([
+    loadRuns(prisma, { ...cohort, status: { notIn: TERMINAL_RUN } }),
+    loadRuns(prisma, { ...cohort, status: "COMPLETED", completedAt: { gte: startOfTodayUtc } }),
+    listAwaitingArrivalNoRunUnits(prisma, unitIds),
+    prisma.job.findMany({
+      where: { type: "PICKUP", status: { notIn: ["COMPLETED", "FAILED", "RESCHEDULED"] }, units: { some: { unitId: { in: unitIds } } } },
+      select: {
+        id: true, status: true, scheduledDate: true, driver: { select: { name: true } },
+        units: {
+          where: { unitId: { in: unitIds } },
+          select: { unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, order: { select: { orderNumber: true, customer: { select: { name: true, city: true } } } } } } },
+        },
+      },
+      orderBy: [{ scheduledDate: "asc" }],
+    }),
+  ]);
+  const views = await viewsOf(prisma, activeRuns, { now });
+  const completedToday = await viewsOf(prisma, completedTodayRuns, { now });
+
+  let valueByOrderId = new Map();
+  if (canSeeValue) {
+    const orderIds = [...new Set(views.map((v) => v.unit.orderId).filter(Boolean))];
+    if (orderIds.length) {
+      const orders = await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, value: true } });
+      valueByOrderId = new Map(orders.map((o) => [o.id, Number(o.value ?? 0)]));
+    }
+  }
+  const withValue = (v) => (canSeeValue ? { ...v, orderValue: valueByOrderId.get(v.unit.orderId) ?? null } : v);
+
+  const akanMasuk = upcomingJobs.flatMap((job) => job.units.map((ju) => ({
+    kind: "UPCOMING_PICKUP", jobId: job.id, jobStatus: job.status, scheduledDate: job.scheduledDate ? formatProductionDate(job.scheduledDate) : null,
+    driverName: job.driver?.name ?? null,
+    unit: { id: ju.unit.id, unitCode: ju.unit.unitCode, merk: ju.unit.merk, ukuran: ju.unit.ukuran, orderNumber: ju.unit.order?.orderNumber ?? null },
+    customer: { name: ju.unit.order?.customer?.name ?? null, city: ju.unit.order?.customer?.city ?? null },
+  })));
+  // Dedup per unit (satu unit idealnya satu Job pickup aktif; kalau ada anomali data lama dengan >1, tampilkan sekali saja berdasar yang paling awal terjadwal).
+  const akanMasukByUnit = new Map();
+  for (const item of akanMasuk) if (!akanMasukByUnit.has(item.unit.id)) akanMasukByUnit.set(item.unit.id, item);
+  const akanMasukList = [...akanMasukByUnit.values()];
+
+  const columns = Object.fromEntries(COMMAND_CENTER_COLUMNS.map((c) => [c.key, []]));
+  for (const v of views) {
+    const col = commandCenterColumn(v);
+    if (col) columns[col].push(withValue(v));
+  }
+  columns.AKAN_MASUK = akanMasukList;
+  columns.BELUM_DIJADWALKAN = [...columns.BELUM_DIJADWALKAN, ...awaitingArrivalNoRun];
+
+  const dalamPerjalanan = views.filter((v) => v.bucket === "DALAM_PERJALANAN").length + awaitingArrivalNoRun.length;
+  const belumDijadwalkan = views.filter((v) => !v.plan?.stationCode).length + awaitingArrivalNoRun.length;
+  const dijadwalkanHariIni = views.filter((v) => v.plan?.productionDate === today).length;
+  const sedangDikerjakan = views.filter((v) => v.activeOp?.status === "ACTIVE").length;
+  const menungguBahan = views.filter((v) => v.bucket === "MENUNGGU_BAHAN").length;
+  const menungguQc = views.filter((v) => v.bucket === "QC").length;
+  const terlambat = views.filter((v) => v.timer.late).length;
+  const siapKirim = views.filter((v) => v.bucket === "HANDOFF").length;
+  const selesaiHariIni = completedToday.length;
+
+  // Aktivitas PIC & meja hari ini: PIC yang punya unit aktif (plan hari ini ATAU sedang dikerjakan) atau menyelesaikan unit hari ini.
+  const picMap = new Map();
+  const bumpPic = (name, station, field) => {
+    if (!name) return;
+    const key = name;
+    const row = picMap.get(key) || { name, stationLabel: station || null, active: 0, completedToday: 0 };
+    row[field] += 1;
+    if (station) row.stationLabel = station;
+    picMap.set(key, row);
+  };
+  for (const v of views) if (v.plan?.productionDate === today || v.activeOp) bumpPic(v.plan?.operator?.name, v.plan?.stationLabel, "active");
+  for (const v of completedToday) bumpPic(v.plan?.operator?.name, v.plan?.stationLabel, "completedToday");
+  const picActivity = [...picMap.values()].sort((a, b) => (b.active + b.completedToday) - (a.active + a.completedToday));
+
+  return {
+    date: today, generatedAt: now.toISOString(),
+    kpi: {
+      akanMasuk: akanMasukList.length, dalamPerjalanan, belumDijadwalkan, dijadwalkanHariIni, sedangDikerjakan,
+      menungguBahan, menungguQc, terlambat, siapKirim,
+      target: config.dailyTarget, selesaiHariIni, sisaPekerjaan: Math.max(0, config.dailyTarget - selesaiHariIni),
+    },
+    attention: attentionItemsFrom(views, { today }),
+    picActivity,
+    columns: COMMAND_CENTER_COLUMNS.map((c) => ({ key: c.key, label: c.label, count: columns[c.key].length, items: columns[c.key] })),
+    completedToday: completedToday.map(withValue),
+    canSeeValue,
   };
 }
 

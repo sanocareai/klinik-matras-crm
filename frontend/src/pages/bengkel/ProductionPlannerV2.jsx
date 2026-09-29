@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, FileText, Monitor, PackageX, Plus, RefreshCw, Target, Timer, Truck,
+  AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, FileText, Monitor, PackageX, RefreshCw, Target, Timer, Truck,
 } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -13,14 +13,18 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { rolesOf } from "@/lib/roles.js";
 import { formatTanggal } from "@/utils/formatDate.js";
+import { formatRupiah } from "@/utils/format.js";
 import {
-  PRIORITIES, bucketStyle, canDropOn, formatMinutes, friendlyError, indicatorList, initials, stationCapacity, wibDate,
+  PRIORITIES, bucketStyle, formatMinutes, friendlyError, indicatorList, initials, priorityTone, stationCapacity,
+  targetDateBadge, wibDate,
 } from "@/features/production/experience.js";
 
-// Planner Produksi V2 (P8A) — papan meja H-1: target harian, Meja 1–4 (kapasitas per meja dari server), antrean belum dijadwalkan,
-// penugasan workshop + PIC meja + PIC Corner, prioritas, dan indikator kesiapan (custody/layanan/BOM/bahan/workshop/QC/serah Gudang).
-// Pindah meja: seret-lepas ATAU tombol "Pindah" (aksesibel keyboard). Server menegakkan kapasitas, izin, dan cohort writer V2 —
-// unit di luar cohort tidak pernah tampil (reader) dan tidak bisa diubah (writer). Work Order lama tetap tersedia sebagai histori/fallback.
+// Planner Produksi V2 (P8A, kolom pipeline P9B) — Papan Meja/Daftar/Kalender dalam satu workspace. Papan Meja
+// dikelompokkan per TAHAP PIPELINE (Akan Masuk..Siap Kirim, bukan lagi per meja fisik) — kapasitas meja TETAP
+// ditegakkan server, dipilih di dalam ScheduleModal (dropdown meja+kapasitas), bukan sebagai kolom papan. Menjadwalkan:
+// seret dari "Belum Dijadwalkan" ke "Dijadwalkan" ATAU tombol "Jadwalkan" di drawer kartu (fallback mobile/aksesibilitas).
+// Server menegakkan kapasitas, izin, dan cohort writer V2 — unit di luar cohort tidak pernah tampil (reader) dan tidak
+// bisa diubah (writer). Work Order lama tetap tersedia sebagai histori/fallback.
 
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 const canRoute = rolesOf(user).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r));
@@ -46,27 +50,44 @@ function Kpi({ icon: Icon, label, value, tone = "neutral" }) {
 // tapi tahap produksi baru bisa dimulai setelah tombol ini diklik (ditegakkan
 // server di loadRunForWrite). Tombol dipisah dari area klik "buka kartu" —
 // wrapper diganti dari <button> jadi <div> supaya dua aksi tidak bertumpuk.
-function RunCard({ item, onOpen, onConfirmArrival, draggable = true }) {
+// P9B — kartu diperkaya: kota, Sales, order value (HANYA bila server mengirim
+// orderValue — role tanpa ORDER_PRICE_READ tidak pernah menerima field ini
+// sama sekali, lihat getProductionCommandCenter), badge tanggal target
+// (terpisah dari badge prioritas — permintaan eksplisit P9B), dan ringkasan
+// keluhan/request customer untuk konteks cepat tanpa buka drawer.
+function RunCard({ item, onOpen, onConfirmArrival, draggable = true, today, tomorrow }) {
   const st = bucketStyle(item.bucket);
   const warn = item.warnings?.find((w) => ["KEKURANGAN", "LAYANAN_BELUM", "BAHAN_BELUM", "BOM_BELUM", "TERLAMBAT"].includes(w.code));
   const waiting = item.bucket === "MENUNGGU_BAHAN";
   const inTransit = item.bucket === "DALAM_PERJALANAN";
+  const dateBadge = today && tomorrow ? targetDateBadge(item, today, tomorrow) : null;
+  const c = item.customer || {};
   return (
     <div draggable={draggable} onDragStart={(e) => { e.dataTransfer.setData("text/plain", item.runId); e.dataTransfer.effectAllowed = "move"; }}
       className={`w-full overflow-hidden rounded-card transition-colors ${waiting ? "bg-orangebg/60" : "bg-surface"} shadow-sm`}>
       <button type="button" onClick={() => onOpen(item)} className="w-full p-3 text-left hover:bg-hovertint">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
-            <p className="truncate text-[12.5px] text-ink2">{item.customer.name || "—"}</p>
+        <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}{c.orderNumber ? ` · ${c.orderNumber}` : ""}</p>
+            <p className="truncate text-[12.5px] text-ink2">{c.name || "—"}{c.city ? ` · ${c.city}` : ""}</p>
             <p className="truncate text-[12px] text-ink3">{[item.unit.ukuran, item.unit.service?.label || "Layanan belum ditetapkan"].filter(Boolean).join(" · ")}</p>
+            {c.salesName && <p className="truncate text-[11px] text-ink3">Sales: {c.salesName}</p>}
           </div>
-          {item.plan?.priority > 0 && <Badge variant={item.plan.priority === 2 ? "red" : "orange"}>{item.plan.priorityLabel}</Badge>}
+          {/* flex-wrap pada baris induk (bukan flex-col shrink-0) — di kartu sempit (mobile), grup badge pindah ke
+              baris sendiri di bawah judul alih-alih terpotong overflow-hidden kartu (P9B, ditemukan lewat QA visual 390px). */}
+          <div className="flex shrink-0 flex-wrap justify-end gap-1">
+            {item.plan?.priority > 0 && <Badge variant={priorityTone(item.plan.priority)}>{item.plan.priorityLabel}</Badge>}
+            {dateBadge && <Badge variant={dateBadge.tone}>{dateBadge.label}</Badge>}
+          </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <Badge variant={st.badge}>{st.label}</Badge>
-          {item.customer.weightKg && <span className="text-[11.5px] text-ink3">{item.customer.weightKg} kg</span>}
+          {c.weightKg != null && <span className="text-[11.5px] text-ink3">{c.weightKg} kg</span>}
+          {item.orderValue != null && <span className="text-[11.5px] font-semibold text-ink2">{formatRupiah(item.orderValue)}</span>}
         </div>
+        {(c.complaints?.length || c.request) && (
+          <p className="mt-1.5 truncate text-[11.5px] text-ink3">{[c.complaints?.join(", "), c.request].filter(Boolean).join(" — ")}</p>
+        )}
         {warn && <p className="mt-1.5 flex items-center gap-1 text-[11.5px] font-medium text-orange"><AlertTriangle size={12} aria-hidden /> {warn.text}</p>}
         <div className="mt-2 flex items-center gap-2">
           {item.plan?.operator?.name && <span title={item.plan.operator.name} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white">{initials(item.plan.operator.name)}</span>}
@@ -81,6 +102,23 @@ function RunCard({ item, onOpen, onConfirmArrival, draggable = true }) {
           <Button size="sm" variant="secondary" className="w-full" onClick={() => onConfirmArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
         </div>
       )}
+    </div>
+  );
+}
+
+// P9B — kartu "Akan Masuk": pickup terjadwal tetapi belum selesai. BACA-SAJA (belum ada Run sama sekali) — tidak ada
+// aksi apa pun di sini, murni visibilitas supaya Rencana Produksi tidak buta terhadap unit yang akan datang.
+function UpcomingPickupCard({ item }) {
+  return (
+    <div className="w-full rounded-card bg-surface p-3 shadow-sm">
+      <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}{item.unit.orderNumber ? ` · ${item.unit.orderNumber}` : ""}</p>
+      <p className="truncate text-[12.5px] text-ink2">{item.customer?.name || "—"}{item.customer?.city ? ` · ${item.customer.city}` : ""}</p>
+      <p className="truncate text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"}</p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <Badge variant="neutral">Akan Masuk</Badge>
+        {item.scheduledDate && <span className="text-[11px] text-ink3">Pickup {formatTanggal(item.scheduledDate)}</span>}
+        {item.driverName && <span className="text-[11px] text-ink3">· {item.driverName}</span>}
+      </div>
     </div>
   );
 }
@@ -319,6 +357,7 @@ export default function ProductionPlannerV2() {
   const [date, setDate] = useState(() => wibDate(0));
   const dateInputRef = useRef(null);
   const [board, setBoard] = useState(null);
+  const [cc, setCc] = useState(null);
   const [refs, setRefs] = useState({ workCenters: [], operators: [], services: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -328,10 +367,18 @@ export default function ProductionPlannerV2() {
   const [schedule, setSchedule] = useState(null);
   const [arrival, setArrival] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
+  const today = wibDate(0);
+  const tomorrow = wibDate(1);
 
+  // P9B — cc (Command Center, TIDAK terikat tanggal) SEKARANG sumber tunggal untuk tab Papan Meja/Daftar & KPI ringkas
+  // di halaman ini — SAMA payload dipakai Ringkasan Produksi (CommandCenterSummary.jsx), jadi angka tidak pernah beda.
+  // `board` (per-tanggal) DIPERTAHANKAN hanya untuk 2 hal yang MEMANG per-tanggal: kapasitas meja di ScheduleModal, dan
+  // tab Kalender (WeekStrip) — BUKAN sumber data paralel untuk jadwal, murni proyeksi tanggal dari data yang sama.
   const load = useCallback(() => {
     setLoading(true); setError("");
-    return api.getProductionV2Board(date).then(setBoard).catch((e) => setError(friendlyError(e))).finally(() => setLoading(false));
+    return Promise.all([api.getProductionV2Board(date), api.getProductionV2CommandCenter()])
+      .then(([b, c]) => { setBoard(b); setCc(c); })
+      .catch((e) => setError(friendlyError(e))).finally(() => setLoading(false));
   }, [date]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -347,27 +394,23 @@ export default function ProductionPlannerV2() {
   }, []);
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(t); }, [notice]);
 
-  const allItems = useMemo(() => (board?.stations || []).flatMap((s) => s.items).concat(board?.unscheduled?.plans || []), [board]);
-  const unscheduledCount = (board?.unscheduled?.plans?.length || 0) + (board?.unscheduled?.units?.length || 0);
+  const columns = cc?.columns || [];
+  const columnByKey = useMemo(() => Object.fromEntries(columns.map((c) => [c.key, c])), [columns]);
+  // Daftar (tabel datar): seluruh kartu berbasis Run (punya runId nyata) di semua kolom KECUALI Akan Masuk (belum ada Run).
+  const allItems = useMemo(() => columns.filter((c) => c.key !== "AKAN_MASUK").flatMap((c) => c.items.filter((i) => i.runId)), [columns]);
+  const belumDijadwalkanItems = columnByKey.BELUM_DIJADWALKAN?.items || [];
+  const schedulableUnscheduled = belumDijadwalkanItems.filter((i) => i.runId);
+  const unscheduledCount = belumDijadwalkanItems.length;
 
-  async function dropOn(station, runId) {
+  // Menjadwalkan (drag ATAU tombol "Jadwalkan/Pindahkan"): satu-satunya drop target sekarang kolom "Dijadwalkan" —
+  // papan tidak lagi mengelompokkan per meja fisik (kapasitas meja TETAP ditegakkan server, dipilih di dalam modal).
+  function scheduleDrop(runId) {
     setDropTarget(null);
-    const item = allItems.find((i) => i.runId === runId);
-    const unit = board?.unscheduled?.units?.find((u) => u.runId === runId);
-    if (unit) { setSchedule({ ...unit, presetStation: station.code }); return; }
-    if (!item) return;
-    if (!canDropOn(station, item)) { setError(stationCapacity(station).full ? `${station.label} sudah penuh.` : ""); return; }
-    if (!item.plan?.operator?.id || !item.plan?.workCenter?.id) { setSchedule({ ...item, presetStation: station.code }); return; }
-    try {
-      await api.scheduleProductionV2Plan(item.plan.id, {
-        expectedRevision: item.plan.revision, productionDate: date, stationCode: station.code, priority: item.plan.priority,
-        workCenterId: item.plan.workCenter.id, operatorId: item.plan.operator.id, cornerOperatorId: item.plan.cornerOperator?.id,
-      });
-      setNotice(`${item.unit.unitCode} dipindah ke ${station.label}.`); load();
-    } catch (e) { setError(friendlyError(e)); load(); }
+    const item = schedulableUnscheduled.find((i) => i.runId === runId);
+    if (item) setSchedule(item);
   }
 
-  const reader = board?.readerMode;
+  const reader = cc?.readerMode;
   return (
     <PageContainer fluid>
       <PageHeader title="Rencana Produksi" subtitle={fmtDate(date)}
@@ -405,20 +448,21 @@ export default function ProductionPlannerV2() {
           <Card className="p-0"><EmptyState icon={ClipboardList} title="Produksi V2 belum aktif" description="Papan meja tampil setelah Production V2 diaktifkan untuk unit terkait. Selama cutover, gunakan Work Order dan Papan Produksi lama." action={<Button size="sm" variant="secondary" asChild><Link to="/bengkel/work-orders">Buka Work Order</Link></Button>} /></Card>
         ) : (
           <>
-            {/* Ringkas KPI saat papan benar-benar kosong (P8.1) — 5 kartu penuh
-                cuma bermakna kalau ada target/aktivitas; tanggal tanpa apa-apa
-                (mis. jauh di masa depan) cukup satu baris ringkas. */}
-            {board && board.kpi?.target === 0 && unscheduledCount === 0 && allItems.length === 0 ? (
+            {/* P9B — KPI ringkas dari cc.kpi (SUMBER SAMA dengan Ringkasan Produksi & kolom papan di bawah — tidak ada
+                hitungan bayangan). Ringkas saat benar-benar kosong (P8.1); selebihnya link ke Ringkasan lengkap
+                (bukan duplikasi 9 kartu KPI penuh di dua halaman). */}
+            {cc && cc.kpi?.target === 0 && unscheduledCount === 0 && allItems.length === 0 ? (
               <Card className="flex items-center gap-2 p-3 text-[12.5px] text-ink3">
-                <Target size={16} className="shrink-0 text-ink3" aria-hidden /> Belum ada target maupun unit dijadwalkan untuk {fmtDate(date)}.
+                <Target size={16} className="shrink-0 text-ink3" aria-hidden /> Belum ada target maupun unit aktif di Production V2 saat ini.
               </Card>
             ) : (
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-                <Kpi icon={Target} label="Target" value={`${board?.kpi?.target ?? "—"} unit`} />
-                <Kpi icon={ClipboardList} label="Direncanakan" value={`${board?.kpi?.planned ?? 0} unit`} />
-                <Kpi icon={CheckCircle2} label="Selesai" value={`${board?.kpi?.completed ?? 0} unit`} tone="green" />
-                <Kpi icon={PackageX} label="Menunggu bahan" value={board?.kpi?.waitingMaterial ?? 0} tone={board?.kpi?.waitingMaterial ? "red" : "neutral"} />
-                <Kpi icon={Timer} label="Terlambat" value={board?.kpi?.late ?? 0} tone={board?.kpi?.late ? "orange" : "neutral"} />
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+                <Kpi icon={Target} label="Target Harian" value={`${cc?.kpi?.target ?? "—"} unit`} />
+                <Kpi icon={ClipboardList} label="Dijadwalkan Hari Ini" value={`${cc?.kpi?.dijadwalkanHariIni ?? 0} unit`} />
+                <Kpi icon={CheckCircle2} label="Selesai Hari Ini" value={`${cc?.kpi?.selesaiHariIni ?? 0} unit`} tone="green" />
+                <Kpi icon={PackageX} label="Menunggu bahan" value={cc?.kpi?.menungguBahan ?? 0} tone={cc?.kpi?.menungguBahan ? "red" : "neutral"} />
+                <Kpi icon={Timer} label="Terlambat" value={cc?.kpi?.terlambat ?? 0} tone={cc?.kpi?.terlambat ? "orange" : "neutral"} />
+                <Card className="flex items-center justify-center p-4"><Button variant="secondary" size="sm" asChild><Link to="/bengkel/ringkasan">Ringkasan lengkap →</Link></Button></Card>
               </div>
             )}
 
@@ -430,36 +474,46 @@ export default function ProductionPlannerV2() {
 
             {tab === "calendar" ? (
               <WeekStrip centerDate={date} onPick={(d) => { setDate(d); setTab("board"); }} />
-            ) : loading && !board ? (
+            ) : loading && !cc ? (
               <div className="grid gap-3 md:grid-cols-4">{[1, 2, 3, 4].map((n) => <Card key={n} className="h-72 animate-pulse bg-inset" />)}</div>
             ) : tab === "board" ? (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {board?.stations.map((s) => {
-                  const cap = stationCapacity(s);
+              // P9B — kolom pipeline (Akan Masuk..Siap Kirim), BUKAN lagi per meja fisik. Kapasitas meja TETAP ditegakkan
+              // server — dipilih di dalam ScheduleModal (dropdown meja + kapasitas), bukan sebagai kolom papan lagi.
+              // Satu-satunya drop target: "Dijadwalkan" (membuka modal, meja dipilih di sana).
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {columns.map((col) => {
+                  const isDropTarget = col.key === "DIJADWALKAN";
                   return (
-                    <section key={s.code} aria-label={s.label}
-                      onDragOver={(e) => { e.preventDefault(); setDropTarget(s.code); }} onDragLeave={() => setDropTarget(null)}
-                      onDrop={(e) => { e.preventDefault(); dropOn(s, e.dataTransfer.getData("text/plain")); }}
-                      className={`flex flex-col gap-2 rounded-card bg-inset p-3 transition-colors ${dropTarget === s.code ? (cap.full ? "ring-2 ring-red" : "ring-2 ring-accent") : ""}`}>
+                    <section key={col.key} aria-label={col.label}
+                      onDragOver={isDropTarget ? (e) => { e.preventDefault(); setDropTarget(col.key); } : undefined}
+                      onDragLeave={isDropTarget ? () => setDropTarget(null) : undefined}
+                      onDrop={isDropTarget ? (e) => { e.preventDefault(); scheduleDrop(e.dataTransfer.getData("text/plain")); } : undefined}
+                      className={`flex flex-col gap-2 rounded-card bg-inset p-3 transition-colors ${dropTarget === col.key ? "ring-2 ring-accent" : ""}`}>
                       <div className="flex items-center justify-between">
-                        <p className="text-[14px] font-bold text-ink">{s.label}</p>
-                        <span className={`text-[12px] font-semibold tabular-nums ${cap.full ? "text-orange" : "text-ink3"}`}>{cap.label}</span>
+                        <p className="text-[14px] font-bold text-ink">{col.label}</p>
+                        <span className="text-[12px] font-semibold tabular-nums text-ink3">{col.count}</span>
                       </div>
-                      <p className="-mt-1 text-[12px] text-ink3">{s.operatorNames.join(", ") || "Belum ada PIC"}</p>
-                      {s.items.map((item) => <RunCard key={item.runId} item={item} onOpen={setDrawer} onConfirmArrival={setArrival} />)}
-                      {!cap.full && (
-                        // P8.2 (UI Polish) — dinonaktifkan saat Belum Dijadwalkan
-                        // kosong: sebelumnya tombol tetap bisa diklik dan membuka
-                        // modal "Pilih unit" yang kosong (cuma teks "Tidak ada
-                        // unit yang menunggu dijadwalkan."), langkah tambahan
-                        // tanpa guna. Tooltip Indonesia menjelaskan kenapa.
-                        <button type="button" disabled={unscheduledCount === 0}
-                          onClick={() => unscheduledCount > 0 && setSchedule({ pick: true, presetStation: s.code })}
-                          title={unscheduledCount === 0 ? "Belum ada unit yang menunggu dijadwalkan" : undefined}
-                          className="flex min-h-[72px] flex-col items-center justify-center rounded-card border-2 border-dashed border-line text-[12.5px] text-ink3 hover:bg-hovertint disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
-                          <Plus size={16} aria-hidden /> Tambah unit ke {s.label}
-                        </button>
-                      )}
+                      {col.items.length === 0 ? (
+                        <p className="flex min-h-[64px] items-center justify-center rounded-card border-2 border-dashed border-line text-center text-[11.5px] text-ink3">
+                          {isDropTarget ? "Seret unit dari Belum Dijadwalkan ke sini" : "Tidak ada unit"}
+                        </p>
+                      ) : col.items.map((item) => (
+                        item.kind === "UPCOMING_PICKUP" ? <UpcomingPickupCard key={`${item.jobId}-${item.unit.id}`} item={item} />
+                        : item.kind === "AWAITING_ARRIVAL_LEGACY" ? (
+                          <div key={item.handoffId} className="overflow-hidden rounded-card bg-surface shadow-sm">
+                            <div className="p-3">
+                              <p className="text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
+                              <p className="text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"} · data lama</p>
+                              <Badge variant="neutral" className="mt-1.5">Dalam perjalanan ke workshop</Badge>
+                            </div>
+                            <div className="border-t border-line px-3 py-2">
+                              <Button size="sm" variant="secondary" className="w-full" onClick={() => setArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <RunCard key={item.runId} item={item} onOpen={setDrawer} onConfirmArrival={setArrival} draggable={col.key === "BELUM_DIJADWALKAN"} today={today} tomorrow={tomorrow} />
+                        )
+                      ))}
                     </section>
                   );
                 })}
@@ -483,49 +537,27 @@ export default function ProductionPlannerV2() {
               </Card>
             )}
 
-            {tab !== "calendar" && (
-            <Card className="space-y-3 p-4">
-              <div className="flex items-center gap-2"><p className="text-[14px] font-bold text-ink">Belum Dijadwalkan</p><Badge variant="neutral">{unscheduledCount} unit</Badge></div>
-              {unscheduledCount === 0 ? (
-                // P9A — copy lama ("...setelah Gudang menerima unit dari pickup")
-                // sudah tidak akurat: unit sekarang langsung "Masuk Produksi"
-                // begitu PICKUP-nya sendiri berhasil, tanpa menunggu Gudang.
-                <p className="text-[12.5px] text-ink3">Semua unit siap produksi sudah dijadwalkan. Unit baru muncul di sini segera setelah pickup ke customer berhasil.</p>
-              ) : (
+            {/* P9B — kartu warisan tanpa Run sama sekali (mis. canary lama) TIDAK muncul di tab Daftar (tabel butuh
+                bucket/progress yang cuma ada di kartu berbasis Run) — baris ringkas ini menjaga visibilitas mereka di
+                LUAR tab Papan Meja (yang sudah menampilkannya di kolom Belum Dijadwalkan). Kosong -> tidak render apa pun. */}
+            {tab === "list" && belumDijadwalkanItems.some((i) => !i.runId) && (
+              <Card className="space-y-2 p-4">
+                <p className="text-[13px] font-bold text-ink">Unit Menunggu Kedatangan (data lama, belum ada Run)</p>
                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                  {board.unscheduled.plans.map((item) => <RunCard key={item.runId} item={item} onOpen={setDrawer} onConfirmArrival={setArrival} />)}
-                  {board.unscheduled.units.map((u) => {
-                    // P9A — dua jenis kartu di sini sekarang: (a) unit dengan
-                    // Run nyata (runId ada, TERMASUK yang masih PENDING_ARRIVAL)
-                    // — boleh "Rencanakan" lebih dulu; (b) kartu WARISAN
-                    // tanpa Run sama sekali (mis. canary lama) — belum bisa
-                    // direncanakan (createProductionPlan butuh Run), HANYA bisa
-                    // dikonfirmasi tiba dulu.
-                    const schedulable = !!u.runId;
-                    return (
-                      <div key={u.handoffId || u.runId} className="overflow-hidden rounded-card bg-surface shadow-sm">
-                        <button type="button" draggable={schedulable}
-                          onDragStart={schedulable ? (e) => e.dataTransfer.setData("text/plain", u.runId) : undefined}
-                          onClick={() => schedulable && setSchedule(u)} disabled={!schedulable}
-                          className={`w-full p-3 text-left ${schedulable ? "hover:bg-hovertint" : "cursor-default"}`}>
-                          <p className="text-[13px] font-bold text-ink">{u.unit.unitCode}</p>
-                          <p className="text-[12px] text-ink3">{[u.unit.merk, u.unit.ukuran].filter(Boolean).join(" · ") || "—"}{u.isLegacyException ? " · data lama" : ""}</p>
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            {u.inTransit && <Badge variant="neutral">Dalam perjalanan ke workshop</Badge>}
-                            {schedulable && <span className="text-[11.5px] font-semibold text-accent">Rencanakan →</span>}
-                          </div>
-                        </button>
-                        {u.inTransit && (
-                          <div className="border-t border-line px-3 py-2">
-                            <Button size="sm" variant="secondary" className="w-full" onClick={() => setArrival(u)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
-                          </div>
-                        )}
+                  {belumDijadwalkanItems.filter((i) => !i.runId).map((item) => (
+                    <div key={item.handoffId} className="overflow-hidden rounded-card bg-surface shadow-sm">
+                      <div className="p-3">
+                        <p className="text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
+                        <p className="text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"}</p>
+                        <Badge variant="neutral" className="mt-1.5">Dalam perjalanan ke workshop</Badge>
                       </div>
-                    );
-                  })}
+                      <div className="border-t border-line px-3 py-2">
+                        <Button size="sm" variant="secondary" className="w-full" onClick={() => setArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </Card>
+              </Card>
             )}
           </>
         )}
@@ -533,20 +565,7 @@ export default function ProductionPlannerV2() {
 
       {drawer && <RunDrawer item={drawer} refs={refs} onClose={() => setDrawer(null)} onSchedule={(i) => { setDrawer(null); setSchedule(i); }} onConfirmArrival={(i) => { setDrawer(null); setArrival(i); }} onChanged={(msg) => { setDrawer(null); setNotice(msg); load(); }} />}
       {arrival && <ArrivalModal target={arrival} onClose={() => setArrival(null)} onDone={(msg) => { setArrival(null); setNotice(msg); load(); }} />}
-      {schedule?.pick && (
-        <Modal open onOpenChange={(v) => !v && setSchedule(null)} title={`Pilih unit untuk ${schedule.presetStation.replace("TABLE_", "Meja ")}`}>
-          <div className="space-y-2 px-6 pb-4">
-            {unscheduledCount === 0 && <p className="text-[12.5px] text-ink3">Tidak ada unit yang menunggu dijadwalkan.</p>}
-            {/* P9A — kartu warisan tanpa Run (runId null) belum bisa direncanakan; disaring dari pemilih ini. */}
-            {[...(board?.unscheduled?.plans || []), ...(board?.unscheduled?.units || []).filter((u) => u.runId)].map((u) => (
-              <button key={u.runId} type="button" onClick={() => setSchedule({ ...u, presetStation: schedule.presetStation })} className="flex w-full items-center justify-between rounded-btn bg-inset px-3 py-2.5 text-left text-[13px] hover:bg-hovertint">
-                <span><b className="text-ink">{u.unit.unitCode}</b> <span className="text-ink3">{u.customer?.name || [u.unit.merk, u.unit.ukuran].filter(Boolean).join(" ")}</span></span><ChevronRight size={14} aria-hidden />
-              </button>
-            ))}
-          </div>
-        </Modal>
-      )}
-      {schedule && !schedule.pick && board && (
+      {schedule && board && (
         <ScheduleModal target={schedule} board={board} date={date} refs={refs} onClose={() => setSchedule(null)} onDone={(msg) => { setSchedule(null); setNotice(msg); load(); }} />
       )}
     </PageContainer>

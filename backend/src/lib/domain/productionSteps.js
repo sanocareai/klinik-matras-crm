@@ -353,6 +353,45 @@ export function andonBucketOf({ next, started, rework = false }) {
   return "BONGKAR";
 }
 
+// P9B — kolom Rencana Produksi (Command Center): pemetaan LEBIH HALUS dari andonBucketOf, KHUSUS untuk papan pipeline baru
+// (Akan Masuk/Belum Dijadwalkan/Dijadwalkan/Fondasi/Lapisan/Uji Tekstur/QC/Corner/Siap Kirim). TIDAK mengubah andonBucketOf
+// (dipakai Andon TV, WorkerLane, badge kartu lama — tetap harus stabil). "Akan Masuk" murni dari Job pickup (bukan Run),
+// jadi TIDAK dihasilkan di sini — dipetakan terpisah oleh pemanggil (unit belum punya Run sama sekali).
+// "Uji Tekstur" (tahap 8) dipisah dari "Lapisan" (tahap 7) di sini walau andonBucketOf menggabungkannya — permintaan P9B
+// eksplisit minta kolom terpisah; run yang MENUNGGU_BAHAN tetap ditempatkan di kolom tahapnya sendiri (bukan kolom
+// terpisah) — kekurangan bahan ditandai lewat badge pada kartu (lihat indicatorsOf/warningsOf), bukan lewat kolom.
+export const COMMAND_CENTER_COLUMNS = Object.freeze([
+  { key: "AKAN_MASUK", label: "Akan Masuk" },
+  { key: "BELUM_DIJADWALKAN", label: "Belum Dijadwalkan" },
+  { key: "DIJADWALKAN", label: "Dijadwalkan" },
+  { key: "FONDASI", label: "Fondasi" },
+  { key: "LAPISAN", label: "Lapisan" },
+  { key: "UJI_TEKSTUR", label: "Uji Tekstur" },
+  { key: "QC", label: "QC" },
+  { key: "CORNER", label: "Corner" },
+  { key: "SIAP_KIRIM", label: "Siap Kirim" },
+]);
+
+// view: hasil toRunView (punya .plan, .next, .bucket). Mengembalikan null untuk SELESAI (sudah diserahkan tuntas —
+// dikeluarkan dari papan aktif harian, tetap terhitung di KPI "selesai hari ini").
+export function commandCenterColumn(view) {
+  if (view.bucket === "SELESAI") return null;
+  if (!view.plan?.stationCode) return "BELUM_DIJADWALKAN";
+  // Bucket semantik (QC/HANDOFF) diperiksa LEBIH DULU dari stepNo mentah: rework yang menunggu QC bisa terpicu dari
+  // stepNo 7/8 (uji tekstur gagal) tapi TETAP harus jatuh ke kolom QC, bukan Lapisan/Uji Tekstur.
+  if (view.bucket === "QC") return "QC";
+  if (view.bucket === "HANDOFF") return "SIAP_KIRIM";
+  const stepNo = view.next?.stepNo;
+  if (stepNo === 8) return "UJI_TEKSTUR";
+  if (stepNo === 7) return "LAPISAN";
+  if (stepNo === 6) return "FONDASI";
+  if (stepNo === 9) return "QC";
+  if (stepNo != null && stepNo >= 10) return "CORNER";
+  // Tahap 1-5 (intake: sebelum bongkar..diagnosa), DALAM_PERJALANAN yang sudah dijadwalkan, atau TERHENTI —
+  // semua dianggap "Dijadwalkan" di papan pipeline ini (badge kartu tetap menunjukkan status sebenarnya).
+  return "DIJADWALKAN";
+}
+
 // Jumlah tahap selesai (untuk "x dari 12 tahap"): tahap dianggap selesai bila buktinya tercatat, kecuali tahap tanpa bukti yang dilewati jalur
 // (N/A tidak dihitung sebagai selesai; total disesuaikan).
 export function progressOf({ recordedSteps, applicableSteps }) {

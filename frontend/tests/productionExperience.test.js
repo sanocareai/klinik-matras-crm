@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  BUCKET_STYLE, MEDIA_RULES, STEPS, actionLabel, buildStepPayload, canDropOn, clearDraft, createIntentKeys, formatMinutes, friendlyError,
-  indicatorList, isRetryableError, loadDraft, saveDraft, stationCapacity, validateStepForm, waitCopy, wibDate,
+  BUCKET_STYLE, COMMAND_CENTER_COLUMNS, MEDIA_RULES, STEPS, actionLabel, buildStepPayload, canDropOn, clearDraft, createIntentKeys,
+  formatMinutes, friendlyError, indicatorList, isRetryableError, loadDraft, priorityTone, saveDraft, stationCapacity, targetDateBadge,
+  validateStepForm, waitCopy, wibDate,
 } from "../src/features/production/experience.js";
 
 const memoryStorage = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), size: () => m.size }; };
@@ -14,6 +15,24 @@ test("12 tahap: urut, Table 1–9 / Corner 10–12, aturan media cermin server (
   assert.deepEqual([2, 4, 6, 8].map((n) => MEDIA_RULES[n].video), [true, true, true, true]);
   assert.equal(MEDIA_RULES[12].min, 1);
   assert.equal(MEDIA_RULES[5].min, 0);
+});
+
+// P9B — prioritas & badge tanggal target adalah field TERPISAH (permintaan eksplisit): prioritas URGENT/HIGH/NORMAL
+// tidak boleh berubah warna karena tanggal target, dan sebaliknya.
+test("P9B: priorityTone URGENT=merah/HIGH=oranye/NORMAL=netral; targetDateBadge terlambat/hari-ini-belum-mulai/besok", () => {
+  assert.equal(priorityTone(2), "red");
+  assert.equal(priorityTone(1), "orange");
+  assert.equal(priorityTone(0), "neutral");
+  assert.equal(priorityTone(undefined), "neutral");
+
+  const today = "2026-09-30"; const tomorrow = "2026-10-01";
+  assert.equal(targetDateBadge({ plan: null }, today, tomorrow), null, "belum dijadwalkan -> tidak ada badge tanggal");
+  assert.deepEqual(targetDateBadge({ plan: { productionDate: today }, progress: { done: 0 }, activeOp: null, timer: { late: false } }, today, tomorrow), { tone: "red", label: "Target hari ini" });
+  assert.equal(targetDateBadge({ plan: { productionDate: today }, progress: { done: 2 }, activeOp: null, timer: { late: false } }, today, tomorrow), null, "sudah ada progres -> bukan 'belum mulai' lagi");
+  assert.deepEqual(targetDateBadge({ plan: { productionDate: tomorrow }, progress: { done: 0 }, activeOp: null, timer: { late: false } }, today, tomorrow), { tone: "orange", label: "Target besok" });
+  assert.deepEqual(targetDateBadge({ plan: { productionDate: today }, progress: { done: 5 }, activeOp: null, timer: { late: true } }, today, tomorrow), { tone: "red", label: "Terlambat" }, "terlambat menang atas aturan lain apa pun");
+
+  assert.deepEqual(COMMAND_CENTER_COLUMNS, ["AKAN_MASUK", "BELUM_DIJADWALKAN", "DIJADWALKAN", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "QC", "CORNER", "SIAP_KIRIM"]);
 });
 
 test("validasi form tahap: unggahan belum selesai/gagal, video wajib, pengukuran, rework, checklist", () => {
