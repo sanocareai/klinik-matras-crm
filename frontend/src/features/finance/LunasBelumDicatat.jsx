@@ -236,7 +236,7 @@ export default function LunasBelumDicatat({ onBerubah, ringkas = false, onTampil
       </Card>
 
       <ModalVerifikasi
-        modal={modal} onClose={() => setModal(null)} rekening={rekening} terpilih={terpilih} tgl={tgl}
+        modal={modal} onClose={() => setModal(null)} rekening={rekening} terpilih={terpilih} tgl={tgl} cutoff={data.cutoff}
         onSubmit={(payload) => aksi(() => (modal.massal
           ? api.verifikasiPenerimaanMassal({ ...payload, orderIds: terpilih.map((i) => i.orderId) }).then((r) => {
               if (r.gagal > 0) throw new Error(`${r.berhasil} berhasil, ${r.gagal} gagal: ${r.hasil.filter((h) => !h.ok).map((h) => h.error).slice(0, 2).join("; ")}`);
@@ -247,7 +247,7 @@ export default function LunasBelumDicatat({ onBerubah, ringkas = false, onTampil
   );
 }
 
-function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, onSubmit }) {
+function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, cutoff, onSubmit }) {
   const item = modal?.item;
   const [f, setF] = useState({ mode: "REKENING", method: "TRANSFER", cashAccountId: "", date: "", amount: "", proofPhotoUrl: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -263,7 +263,10 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, onSubmit }) 
   if (!modal) return null;
 
   const massal = !!modal.massal;
-  const valid = f.mode === "SEBELUM_SALDO_AWAL"
+  // Uang yang diterima sebelum tanggal saldo awal sudah ada di saldo bank asli: mode dikunci "tidak menambah saldo" (server juga memaksanya).
+  const uangLama = !massal && !!f.date && !!cutoff && f.date < cutoff;
+  const mode = uangLama ? "SEBELUM_SALDO_AWAL" : f.mode;
+  const valid = mode === "SEBELUM_SALDO_AWAL"
     ? true
     : f.cashAccountId && (massal || Number(f.amount) > 0);
 
@@ -280,7 +283,7 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, onSubmit }) 
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi
             onClick={() => onSubmit({
-              mode: f.mode, method: f.method, cashAccountId: f.cashAccountId || undefined,
+              mode, method: f.method, cashAccountId: f.cashAccountId || undefined,
               ...(massal ? {} : { date: f.date, amount: Number(f.amount), proofPhotoUrl: f.proofPhotoUrl || undefined }),
             })}
             disabled={!valid}
@@ -292,13 +295,13 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, onSubmit }) 
     >
       <div className="space-y-3">
         <Field label="Uangnya masuk ke mana?">
-          <Pilihan value={f.mode} onChange={(v) => set("mode", v)}>
+          <Pilihan value={mode} onChange={(v) => set("mode", v)} disabled={uangLama}>
             <option value="REKENING">Masuk ke rekening perusahaan</option>
             <option value="SEBELUM_SALDO_AWAL">{`Sudah lunas sebelum ${tgl} (tidak menambah saldo)`}</option>
           </Pilihan>
         </Field>
 
-        {f.mode === "SEBELUM_SALDO_AWAL" ? (
+        {mode === "SEBELUM_SALDO_AWAL" ? (
           <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
             Uang order ini sudah termasuk di saldo bank asli yang kita masukkan pada {tgl}, jadi saldo rekening
             tidak ditambah lagi. Kalau order ini masih tercatat sebagai piutang, otomatis dianggap lunas.

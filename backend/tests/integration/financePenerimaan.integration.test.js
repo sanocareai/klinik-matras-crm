@@ -201,3 +201,36 @@ test("Posisi piutang memakai tanggal buku WIB: instant UTC 'kemarin' yang sudah 
   assert.equal(p.menungguVerifikasi.jumlah, 1, "jurnal bertanggal buku hari ini harus ikut terhitung");
   assert.equal(p.menungguVerifikasi.total, 1_250_000);
 });
+
+test("Uang diterima SEBELUM saldo awal tetap tidak menambah saldo walau klien mengirim mode REKENING (kasus Wilson): dialihkan server, kas tidak berubah, verifikasi massal juga", async () => {
+  const { bank } = await siapkan();
+  const { order } = await orderLunasTanpaPayment({ value: 1_900_000, paidAt: new Date("2026-09-03T05:00:00Z") });
+  const c = await ADMIN();
+
+  const r = await c.post("/api/finance/penerimaan/verifikasi", { orderId: order.id, mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id, date: "2026-09-03" });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.dialihkan, true);
+  assert.equal(r.body.sebelumSaldoAwal, true);
+  assert.equal(await saldo(SYSTEM_KEYS.BANK), "0.00", "verifikasi uang lama TIDAK boleh mengubah saldo bank");
+  assert.equal(await saldo(SYSTEM_KEYS.PIUTANG_USAHA), "0.00");
+  assert.equal(await saldo(SYSTEM_KEYS.LABA_DITAHAN), "1900000.00");
+  const p = await testPrisma.payment.findUnique({ where: { id: r.body.paymentId }, include: { verifications: true } });
+  assert.equal(p.cashAccountId, null, "tanpa rekening — kas tidak disentuh");
+  assert.equal(p.verifications.length, 1, "tetap tercatat terverifikasi");
+
+  // Verifikasi massal (tanggal mengikuti paidAt): mode REKENING pada order lama juga tidak menambah saldo.
+  const { order: lama } = await orderLunasTanpaPayment({ value: 700_000, paidAt: new Date("2026-09-10T05:00:00Z") });
+  const m = await c.post("/api/finance/penerimaan/verifikasi-massal", { orderIds: [lama.id], mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id });
+  assert.equal(m.body.berhasil, 1, JSON.stringify(m.body));
+  assert.equal(await saldo(SYSTEM_KEYS.BANK), "0.00");
+});
+
+test("Uang diterima pada/setelah saldo awal tetap menambah saldo rekening (jalur normal tidak berubah)", async () => {
+  const { bank } = await siapkan();
+  const { order } = await orderLunasTanpaPayment({ value: 500_000, paidAt: new Date("2026-09-18T05:00:00Z") });
+  const c = await ADMIN();
+  const r = await c.post("/api/finance/penerimaan/verifikasi", { orderId: order.id, mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id, date: "2026-09-18" });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.dialihkan, false);
+  assert.equal(await saldo(SYSTEM_KEYS.BANK), "500000.00");
+});
