@@ -8,6 +8,7 @@ import { requireAnyPermission, requirePermission, PERMISSIONS as P } from "../mi
 import { prisma } from "../db.js";
 import { createProductionPlan, scheduleProductionPlan } from "../services/productionPlanningCommandService.js";
 import { recordProductionStep, reportMaterialShortage, resolveMaterialShortage } from "../services/productionStepCommandService.js";
+import { confirmUnitArrival, listReceivingLocations } from "../services/unitCustodyCommandService.js";
 import {
   getAndonBoard, getProductionBoard, getProductionReport, getRunCard, getWarehouseProductionQueue, listWorkerQueue,
 } from "../services/productionExperienceReadService.js";
@@ -164,6 +165,24 @@ productionExperienceRouter.post("/material-shortages/:id/resolve", requirePermis
   try {
     res.json(await resolveMaterialShortage(prisma, {
       shortageId: req.params.id, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, note: req.body?.note,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/receiving-locations — pemilih lokasi untuk kartu "Unit Tiba di Workshop" (Production, bukan Gudang).
+productionExperienceRouter.get("/receiving-locations", requirePermission(P.UNIT_STAGE_WRITE), async (_req, res) => {
+  try {
+    res.json({ locations: await listReceivingLocations(prisma) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/units/:unitId/confirm-arrival { locationId } — "Unit Tiba di Workshop".
+// Izin UNIT_STAGE_WRITE (Production) — sengaja DIPISAH dari alur terima custody Gudang (INVENTORY_WRITE); tidak perlu buka workspace Gudang.
+// Tidak ada expectedRevision dari klien: confirmUnitArrival menemukan handoff OFFERED unit ini dan memakai revisinya sendiri.
+productionExperienceRouter.post("/units/:unitId/confirm-arrival", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    res.json(await confirmUnitArrival(prisma, {
+      unitId: req.params.unitId, actorId: req.user.id, idempotencyKey: idem(req), locationId: req.body?.locationId,
     }));
   } catch (err) { handleErr(err, res); }
 });

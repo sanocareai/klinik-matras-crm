@@ -177,16 +177,44 @@ async function viewsOf(prisma, runs, opts) {
   return views;
 }
 
+// P9A — unit dengan custody INBOUND masih OFFERED (pickup sukses, TAPI belum
+// dikonfirmasi tiba) dan BELUM PERNAH punya Production Run sama sekali. Ini
+// khusus kasus WARISAN (mis. unit canary yang di-OFFER sebelum P9A ada) —
+// jalur BARU (openPendingArrivalIntakeV2InTx) langsung membuat run
+// PENDING_ARRIVAL saat offer, jadi sudah tercakup listEligibleUnitsForPlanning.
+// BACA-SAJA: tidak menyentuh/membuat apa pun, murni supaya kartu tetap
+// terlihat tanpa memaksa mutasi pada custody yang sudah ada.
+async function listAwaitingArrivalNoRunUnits(prisma, unitIds) {
+  const handoffs = await prisma.unitCustodyHandoff.findMany({
+    // PENTING: handoff.productionRunId TIDAK BISA dipakai sebagai filter di sini — kolom itu TETAP null untuk SEMUA
+    // handoff OFFERED (jalur BARU maupun lama), baru diproyeksikan saat ACCEPT (lihat acceptUnitCustody). Kartu
+    // warisan sejati dibedakan lewat unit.productionRunsV2: { none: {} } — benar-benar TIDAK punya Run sama sekali —
+    // supaya unit dari jalur BARU (yang sudah punya Run PENDING_ARRIVAL sejak offer) tidak ikut kehitung dua kali
+    // di papan (sekali dari sini, sekali lagi dari listEligibleUnitsForPlanning).
+    where: { direction: "INBOUND", status: "OFFERED", unitId: { in: unitIds }, unit: { is: { productionRunsV2: { none: {} } } } },
+    include: {
+      unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, storageLocation: true, order: { select: { orderNumber: true } } } },
+    },
+    orderBy: [{ offeredAt: "asc" }],
+  });
+  return handoffs.map((h) => ({
+    runId: null, handoffId: h.id,
+    unit: { id: h.unit.id, unitCode: h.unit.unitCode, merk: h.unit.merk, ukuran: h.unit.ukuran, storageLocation: h.unit.storageLocation, orderNumber: h.unit.order?.orderNumber ?? null },
+    kind: "AWAITING_ARRIVAL_LEGACY", isLegacyException: false, inTransit: true,
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Papan Planner H-1: kolom meja untuk tanggal produksi + unit belum dijadwalkan.
 // ---------------------------------------------------------------------------
 export async function getProductionBoard(prisma, { date, unitIds, config = BOARD_DEFAULTS, now = new Date() }) {
   const day = parseProductionDate(date || todayWib(now)) || parseProductionDate(todayWib(now));
   const cohort = { unitId: { in: unitIds } };
-  const [scheduledRuns, unscheduledRuns, eligible] = await Promise.all([
+  const [scheduledRuns, unscheduledRuns, eligible, awaitingArrivalNoRun] = await Promise.all([
     loadRuns(prisma, { ...cohort, status: { not: "CANCELLED" }, plan: { is: { productionDate: day, status: { not: "CANCELLED" } } } }),
     loadRuns(prisma, { ...cohort, status: { notIn: TERMINAL_RUN }, plan: { is: { productionDate: null, status: { not: "CANCELLED" } } } }),
     listEligibleUnitsForPlanning(prisma, { unitIds }),
+    listAwaitingArrivalNoRunUnits(prisma, unitIds),
   ]);
   const scheduled = await viewsOf(prisma, scheduledRuns, { now });
   const unscheduled = await viewsOf(prisma, unscheduledRuns, { now });
@@ -202,7 +230,10 @@ export async function getProductionBoard(prisma, { date, unitIds, config = BOARD
     stations,
     unscheduled: {
       plans: unscheduled,
-      units: eligible.map((e) => ({ runId: e.runId, unit: e.unit, kind: e.kind, isLegacyException: e.isLegacyException })),
+      units: [
+        ...eligible.map((e) => ({ runId: e.runId, unit: e.unit, kind: e.kind, isLegacyException: e.isLegacyException, inTransit: !!e.inTransit })),
+        ...awaitingArrivalNoRun,
+      ],
     },
   };
 }

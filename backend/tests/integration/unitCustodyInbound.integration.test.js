@@ -124,17 +124,25 @@ test("cohort ON: V1 tetap RECEIVED; custody OFFERED + command + outbox + audit t
   const command = await testPrisma.v2Command.findUniqueOrThrow({ where: { id: handoff.commandId } });
   assert.equal(command.commandType, "OFFER_INBOUND_CUSTODY");
   assert.equal(command.status, "APPLIED");
-  assert.deepEqual(await counts(), { handoffs: 1, commands: 1, outbox: 1, runs: 0, activities: 1 });
+  // P9A (One-Location Production Intake) — OFFER INBOUND langsung membuka Production Run PENDING_ARRIVAL
+  // ("Masuk Produksi"), TANPA menunggu Gudang menerima secara manual. handoff.productionRunId TETAP null
+  // di sini (hanya diproyeksikan saat ACCEPT) — keduanya ditautkan lewat unitId, bukan kolom itu.
+  assert.deepEqual(await counts(), { handoffs: 1, commands: 1, outbox: 1, runs: 1, activities: 1 });
+  const pendingRun = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: inCohort.unit.id } });
+  assert.equal(pendingRun.status, "PENDING_ARRIVAL");
+  assert.equal(pendingRun.currentPhase, null);
+  assert.equal(pendingRun.startedAt, null);
+  assert.equal(await testPrisma.domainOutbox.count({ where: { eventType: "production.run.pending_arrival" } }), 1);
   const outbox = await testPrisma.domainOutbox.findFirstOrThrow({ where: { aggregateId: handoff.id } });
   assert.equal(outbox.eventType, "warehouse.custody.offered");
   assert.equal(outbox.payload.direction, "INBOUND");
 
-  // Replay complete dengan Idempotency-Key sama: tidak ada handoff/command/outbox baru.
+  // Replay complete dengan Idempotency-Key sama: tidak ada handoff/command/outbox/run baru.
   const replay = await w.driver.api.post(`/api/armada/jobs/${inCohort.job.id}/complete`, {
     proofPhotoUrls: ["/media/job-photos/pod.jpg"], recipientName: "Penjaga Rumah", note: "Unit diserahkan", location: null,
   }, key("pickup-complete"));
   assert.equal(replay.status, 200, JSON.stringify(replay.body));
-  assert.deepEqual(await counts(), { handoffs: 1, commands: 1, outbox: 1, runs: 0, activities: 1 });
+  assert.deepEqual(await counts(), { handoffs: 1, commands: 1, outbox: 1, runs: 1, activities: 1 });
 
   // Unit di luar cohort tetap V1-only.
   const other = await completePickup(w, outside, "outside");
@@ -274,7 +282,12 @@ test("reject: alasan wajib; riwayat tidak dihapus; audit + outbox + antrean exce
   assert.equal(row.reason, "Kondisi unit rusak parah");
   assert.equal(row.rejectedById, w.wh1.user.id);
   assert.equal(row.locationId, null);
-  assert.equal(await testPrisma.productionRun.count(), 0);
+  // P9A — run PENDING_ARRIVAL yang dibuka otomatis saat OFFER ikut dibatalkan saat Gudang menolak
+  // (unit tidak boleh nyangkut selamanya sebagai kartu "Masuk Produksi" untuk custody yang sudah ditolak).
+  const cancelledRun = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: f.unit.id } });
+  assert.equal(await testPrisma.productionRun.count(), 1);
+  assert.equal(cancelledRun.status, "CANCELLED");
+  assert.equal(await testPrisma.domainOutbox.count({ where: { eventType: "production.run.cancelled", aggregateId: cancelledRun.id } }), 1);
   assert.equal(await testPrisma.domainOutbox.count({ where: { eventType: "warehouse.custody.rejected" } }), 1);
   const audit = await testPrisma.activityEvent.findFirstOrThrow({ where: { eventType: "CUSTODY_REJECTED", entityId: f.unit.id } });
   assert.equal(audit.metadata.reason, "Kondisi unit rusak parah");
@@ -299,7 +312,11 @@ test("writer dimatikan setelah penawaran: accept/reject ditolak 503 dan handoff 
   const row = await testPrisma.unitCustodyHandoff.findUniqueOrThrow({ where: { id: f.handoff.id } });
   assert.equal(row.status, "OFFERED");
   assert.equal(row.revision, 1);
-  assert.equal(await testPrisma.productionRun.count(), 0);
+  // P9A — run PENDING_ARRIVAL sudah dibuka SAAT offer (writer masih ON waktu itu, lihat helper offered());
+  // mematikan writer setelahnya menolak accept/reject tapi tidak menyentuh run yang sudah ada.
+  const run = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: f.unit.id } });
+  assert.equal(run.status, "PENDING_ARRIVAL");
+  assert.equal(await testPrisma.productionRun.count(), 1);
 });
 
 test("pengiriman gagal: V1 kembali READY_FOR_DELIVERY; handoff RETURN OFFERED tanpa lokasi; accept ke lokasi retur tidak membuka run", async () => {
@@ -380,4 +397,7 @@ test("atomik: kegagalan penawaran custody membatalkan pickup selesai V1 seluruhn
   assert.notEqual((await testPrisma.job.findUnique({ where: { id: f.job.id } })).status, "COMPLETED");
   assert.notEqual((await testPrisma.unit.findUnique({ where: { id: f.unit.id } })).status, "RECEIVED");
   assert.equal(await testPrisma.unitCustodyHandoff.count(), 0);
+  // P9A — run PENDING_ARRIVAL yang dibuka openPendingArrivalIntakeV2InTx DI DALAM transaksi yang sama
+  // ikut roll back; tidak ada "Masuk Produksi" hantu untuk pickup yang V1-nya sendiri gagal.
+  assert.equal(await testPrisma.productionRun.count(), 0);
 });

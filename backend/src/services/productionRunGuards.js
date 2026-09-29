@@ -9,7 +9,12 @@ import { PRODUCTION_WRITER_MODE, isProductionWriterEnabledFor, loadV2Flags, reso
 
 export const RUN_TERMINAL_STATUSES = Object.freeze(["COMPLETED", "CANCELLED"]);
 // Run yang "dimiliki" V2 dan masih berjalan (BLOCKED = terhenti tapi belum selesai).
-export const RUN_OWNED_STATUSES = Object.freeze(["ACTIVE", "BLOCKED"]);
+// PENDING_ARRIVAL (P9A, One-Location Production Intake) ikut dihitung "dimiliki" —
+// unit yang pickup-nya sudah berhasil tapi belum dikonfirmasi tiba di workshop TETAP
+// milik V2 (kartu sudah tampil di Production); mutasi status unit manual dari V1 saat
+// run masih PENDING_ARRIVAL harus TETAP terdeteksi sebagai inkonsistensi, sama seperti
+// ACTIVE/BLOCKED — bukan celah yang diam-diam lolos guard ini.
+export const RUN_OWNED_STATUSES = Object.freeze(["PENDING_ARRIVAL", "ACTIVE", "BLOCKED"]);
 
 const UNIT_STATUS_KIND = Object.freeze({
   CANCELLED: "UNIT_CANCELLED",

@@ -142,7 +142,13 @@ export async function createProductionPlan(prisma, { runId, actorId, idempotency
     if (run.phases[0]?.status && ["ACTIVE", "COMPLETED"].includes(run.phases[0].status)) {
       throw planError("Fase Proses sudah dimulai untuk unit ini; rencana H-1 tidak berlaku lagi", 409, "PLAN_TOO_LATE");
     }
-    const eligible = run.custodyHandoffs.length > 0 || !!run.migrationSource || run.origin === "WORKSHOP_BORN";
+    // P9A (One-Location Production Intake) — run.status === PENDING_ARRIVAL ikut
+    // eligible: unit yang pickup-nya berhasil boleh DIRENCANAKAN (tanggal, meja,
+    // PIC, prioritas) SEBELUM tiba secara fisik di workshop. Tahap produksi
+    // sendiri TETAP tidak bisa dimulai sebelum kedatangan dikonfirmasi — gerbang
+    // terpisah di loadRunForWrite (productionWorkshopExecutionCommandService.js),
+    // BUKAN di sini (di sini cuma soal boleh/tidaknya rencana dibuat).
+    const eligible = run.custodyHandoffs.length > 0 || !!run.migrationSource || run.origin === "WORKSHOP_BORN" || run.status === "PENDING_ARRIVAL";
     if (!eligible) {
       throw planError("Unit ini belum memiliki custody/lokasi yang sah (bukan pengecualian data legacy)", 422, "PLAN_UNIT_NOT_ELIGIBLE");
     }
@@ -716,6 +722,10 @@ export async function listEligibleUnitsForPlanning(prisma, { unitIds = null, lim
         { custodyHandoffs: { some: { direction: "INBOUND", status: "ACCEPTED" } } },
         { migrationSource: { not: null } },
         { origin: "WORKSHOP_BORN" },
+        // P9A — unit "Masuk Produksi" (Dalam perjalanan) BOLEH direncanakan
+        // sebelum kedatangan fisik dikonfirmasi (lihat catatan panjang di
+        // createProductionPlan di atas).
+        { status: "PENDING_ARRIVAL" },
       ],
       ...(unitIds ? { unitId: { in: unitIds } } : {}),
     },
@@ -731,6 +741,10 @@ export async function listEligibleUnitsForPlanning(prisma, { unitIds = null, lim
     .map((run) => ({
       runId: run.id, unit: { id: run.unit.id, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, storageLocation: run.unit.storageLocation, orderNumber: run.unit.order?.orderNumber ?? null },
       kind: run.kind, isLegacyException: !!run.migrationSource,
+      // P9A — kartu tetap "Rencanakan" seperti biasa, TAPI UI perlu tahu unit
+      // ini belum tiba secara fisik (badge "Dalam perjalanan ke workshop") supaya
+      // tidak menyiratkan siap dikerjakan segera setelah dijadwalkan.
+      inTransit: run.status === "PENDING_ARRIVAL",
     }));
 }
 
