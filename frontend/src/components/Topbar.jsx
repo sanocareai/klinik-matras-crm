@@ -64,7 +64,8 @@ const ROUTE_LABELS = {
   // rute lama (folded ke "LEGACY (ADMIN)") tetap didaftarkan supaya admin
   // yang membukanya juga dapat breadcrumb manusia, bukan cuma yang baru.
   "/bengkel/ringkasan":        ["Produksi", "Ringkasan"],
-  "/bengkel/production-v2":    ["Produksi", "Rencana Produksi"],
+  "/bengkel/production-v2":    ["Produksi", "Status Produksi"],
+  "/bengkel/rencana-produksi": ["Produksi", "Rencana Produksi"],
   "/bengkel/quality-control":  ["Produksi", "Quality Control"],
   "/bengkel/andon":            ["Produksi", "Andon TV"],
   "/bengkel/reports":          ["Produksi", "Laporan Produksi"],

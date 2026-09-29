@@ -7,7 +7,14 @@ import { titleFromPath, findTabIndexByPath } from "../src/lib/tabTitles.js";
 
 test("judul halaman biasa: title-case, strip tanda hubung", () => {
   assert.equal(titleFromPath("/bengkel/work-orders"), "Work Orders");
-  assert.equal(titleFromPath("/bengkel/production-v2"), "Production V2");
+  assert.equal(titleFromPath("/bengkel/rencana-produksi"), "Rencana Produksi");
+});
+
+// P9B.1 — halaman ganti nama tampilan ("Rencana Produksi" P9B -> "Status Produksi") TANPA ganti URL
+// (kompatibilitas bookmark/tab lama) — override eksplisit karena title-case umum ("Production V2") tidak
+// pernah cocok dengan nama tampilan baru.
+test("P9B.1: /bengkel/production-v2 berjudul tab 'Status Produksi' (override, URL tidak berubah)", () => {
+  assert.equal(titleFromPath("/bengkel/production-v2"), "Status Produksi");
 });
 
 test("segmen ID (UUID) memakai nama resource, bukan ID mentah", () => {

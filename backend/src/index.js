@@ -79,6 +79,7 @@ import { unitCustodyRouter } from "./routes/unitCustody.js";
 import { productionPlanningRouter } from "./routes/productionPlanning.js";
 import { productionExperienceRouter } from "./routes/productionExperience.js";
 import { productionEvidencePathRouter } from "./routes/productionEvidenceMedia.js";
+import { productionUnitPhotoPathRouter } from "./routes/productionUnitPhoto.js";
 import { stockAdjustmentRouter } from "./routes/stockAdjustment.js";
 import { replenishmentRouter } from "./routes/replenishment.js";
 import { warehouseReportsRouter } from "./routes/warehouseReports.js";
@@ -188,6 +189,7 @@ app.use("/media/vehicle-receipts", express.static(vehicleReceiptsDir));
 app.use("/media/finance-receipts", financeReceiptsLegacyPathRouter);
 app.use("/media/bukti-pembayaran", financePaymentProofsPathRouter);
 app.use("/media/production-evidence", productionEvidencePathRouter); // bukti tahap produksi V2: Bearer+reader cohort atau URL bertanda-tangan // bukti pembayaran: Bearer atau URL bertanda-tangan (S5)
+app.use("/media/unit-photo", productionUnitPhotoPathRouter); // P9B.1 foto identitas unit: Bearer+reader cohort atau URL bertanda-tangan (pola sama dengan production-evidence)
 app.use("/media/products", express.static(productsDir));
 app.use("/media/invoice-pdfs", express.static(invoicePdfsDir));
 app.use("/media/warranty-pdfs", express.static(warrantyPdfsDir));

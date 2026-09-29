@@ -17,6 +17,13 @@ const RESOURCE_LABELS = {
   units: "Unit",
 };
 
+// P9B.1 — segmen path yang tidak title-case rapi dengan aturan umum di bawah (huruf/angka bercampur, singkatan
+// versi, dll). URL /bengkel/production-v2 SENGAJA TIDAK diganti (kompatibilitas bookmark/tab lama) walau halamannya
+// sekarang berjudul "Status Produksi" — override ini HANYA memperbaiki judul tab, tidak menyentuh URL/redirect.
+const SEGMENT_LABEL_OVERRIDE = {
+  "production-v2": "Status Produksi",
+};
+
 const DIVISION_LABELS = {
   armada: "Delivery",
   bengkel: "Produksi",
@@ -51,6 +58,7 @@ export function titleFromPath(rawPath) {
     seg = RESOURCE_LABELS[resource] || resource;
   }
   const rawLast = seg.toLowerCase();
+  if (SEGMENT_LABEL_OVERRIDE[rawLast]) return SEGMENT_LABEL_OVERRIDE[rawLast];
   const label = seg.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   if (AMBIGUOUS_SEGMENTS.has(rawLast) && divisionSeg && DIVISION_LABELS[divisionSeg] && parts.length + 1 > 0 && divisionSeg !== rawLast) {
     return `${DIVISION_LABELS[divisionSeg]} · ${label}`;

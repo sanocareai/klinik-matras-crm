@@ -18,13 +18,18 @@ import {
   PRIORITIES, bucketStyle, formatMinutes, friendlyError, indicatorList, initials, priorityTone, stationCapacity,
   targetDateBadge, wibDate,
 } from "@/features/production/experience.js";
+import { UnitPhotoThumb, UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
 
-// Planner Produksi V2 (P8A, kolom pipeline P9B) — Papan Meja/Daftar/Kalender dalam satu workspace. Papan Meja
-// dikelompokkan per TAHAP PIPELINE (Akan Masuk..Siap Kirim, bukan lagi per meja fisik) — kapasitas meja TETAP
-// ditegakkan server, dipilih di dalam ScheduleModal (dropdown meja+kapasitas), bukan sebagai kolom papan. Menjadwalkan:
-// seret dari "Belum Dijadwalkan" ke "Dijadwalkan" ATAU tombol "Jadwalkan" di drawer kartu (fallback mobile/aksesibilitas).
-// Server menegakkan kapasitas, izin, dan cohort writer V2 — unit di luar cohort tidak pernah tampil (reader) dan tidak
-// bisa diubah (writer). Work Order lama tetap tersedia sebagai histori/fallback.
+// Status Produksi (P8A "Rencana Produksi" -> P9B.1 ganti nama tampilan) — Papan Meja/Daftar/Kalender dalam satu
+// workspace, MURNI status pipeline (Akan Masuk..Siap Kirim). URL TETAP /bengkel/production-v2 (kompatibilitas
+// bookmark/tab lama, lihat tabTitles.js#SEGMENT_LABEL_OVERRIDE) — hanya label tampilan yang berubah. Penjadwalan
+// SUNGGUHAN (assign meja/PIC/tanggal/BOM) sekarang punya workspace SENDIRI: "Rencana Produksi" (P9B.1, halaman
+// baru, lihat ProductionRencanaWorkspace.jsx) — halaman ini TETAP bisa menjadwalkan (drag/tombol) sebagai jalan
+// pintas dari kartu, tapi bukan lagi tempat UTAMA mengelola BOM/reservasi bahan.
+// Papan Meja dikelompokkan per TAHAP PIPELINE (Akan Masuk..Siap Kirim, bukan lagi per meja fisik) — kapasitas meja
+// TETAP ditegakkan server, dipilih di dalam ScheduleModal (dropdown meja+kapasitas), bukan sebagai kolom papan.
+// Server menegakkan kapasitas, izin, dan cohort writer V2 — unit di luar cohort tidak pernah tampil (reader) dan
+// tidak bisa diubah (writer). Work Order lama tetap tersedia sebagai histori/fallback.
 
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 const canRoute = rolesOf(user).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r));
@@ -67,11 +72,14 @@ function RunCard({ item, onOpen, onConfirmArrival, draggable = true, today, tomo
       className={`w-full overflow-hidden rounded-card transition-colors ${waiting ? "bg-orangebg/60" : "bg-surface"} shadow-sm`}>
       <button type="button" onClick={() => onOpen(item)} className="w-full p-3 text-left hover:bg-hovertint">
         <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}{c.orderNumber ? ` · ${c.orderNumber}` : ""}</p>
-            <p className="truncate text-[12.5px] text-ink2">{c.name || "—"}{c.city ? ` · ${c.city}` : ""}</p>
-            <p className="truncate text-[12px] text-ink3">{[item.unit.ukuran, item.unit.service?.label || "Layanan belum ditetapkan"].filter(Boolean).join(" · ")}</p>
-            {c.salesName && <p className="truncate text-[11px] text-ink3">Sales: {c.salesName}</p>}
+          <div className="flex min-w-0 flex-1 gap-2">
+            <UnitPhotoThumb photoUrl={item.unit.photoUrl} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}{c.orderNumber ? ` · ${c.orderNumber}` : ""}</p>
+              <p className="truncate text-[12.5px] text-ink2">{c.name || "—"}{c.city ? ` · ${c.city}` : ""}</p>
+              <p className="truncate text-[12px] text-ink3">{[item.unit.ukuran, item.unit.service?.label || "Layanan belum ditetapkan"].filter(Boolean).join(" · ")}</p>
+              {c.salesName && <p className="truncate text-[11px] text-ink3">Sales: {c.salesName}</p>}
+            </div>
           </div>
           {/* flex-wrap pada baris induk (bukan flex-col shrink-0) — di kartu sempit (mobile), grup badge pindah ke
               baris sendiri di bawah judul alih-alih terpotong overflow-hidden kartu (P9B, ditemukan lewat QA visual 390px). */}
@@ -110,14 +118,17 @@ function RunCard({ item, onOpen, onConfirmArrival, draggable = true, today, tomo
 // aksi apa pun di sini, murni visibilitas supaya Rencana Produksi tidak buta terhadap unit yang akan datang.
 function UpcomingPickupCard({ item }) {
   return (
-    <div className="w-full rounded-card bg-surface p-3 shadow-sm">
-      <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}{item.unit.orderNumber ? ` · ${item.unit.orderNumber}` : ""}</p>
-      <p className="truncate text-[12.5px] text-ink2">{item.customer?.name || "—"}{item.customer?.city ? ` · ${item.customer.city}` : ""}</p>
-      <p className="truncate text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"}</p>
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-        <Badge variant="neutral">Akan Masuk</Badge>
-        {item.scheduledDate && <span className="text-[11px] text-ink3">Pickup {formatTanggal(item.scheduledDate)}</span>}
-        {item.driverName && <span className="text-[11px] text-ink3">· {item.driverName}</span>}
+    <div className="flex w-full gap-2 rounded-card bg-surface p-3 shadow-sm">
+      <UnitPhotoThumb photoUrl={item.unit.photoUrl} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}{item.unit.orderNumber ? ` · ${item.unit.orderNumber}` : ""}</p>
+        <p className="truncate text-[12.5px] text-ink2">{item.customer?.name || "—"}{item.customer?.city ? ` · ${item.customer.city}` : ""}</p>
+        <p className="truncate text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"}</p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <Badge variant="neutral">Akan Masuk</Badge>
+          {item.scheduledDate && <span className="text-[11px] text-ink3">Pickup {formatTanggal(item.scheduledDate)}</span>}
+          {item.driverName && <span className="text-[11px] text-ink3">· {item.driverName}</span>}
+        </div>
       </div>
     </div>
   );
@@ -277,6 +288,7 @@ function RunDrawer({ item, refs, onClose, onSchedule, onConfirmArrival, onChange
             </li>
           ))}
         </ol>
+        <UnitPhotoPanel unitId={item.unit.id} photoUrl={item.unit.photoUrl} canUpload={canRoute} onUploaded={() => onChanged("Foto identitas unit disimpan.")} />
         {canRoute && !item.unit.service && (
           <div className="flex flex-wrap items-end gap-2 rounded-btn border border-line p-3">
             <label className="flex-1 text-[12.5px] text-ink3">Tetapkan layanan (setelah diagnosa nyata)
@@ -413,7 +425,7 @@ export default function ProductionPlannerV2() {
   const reader = cc?.readerMode;
   return (
     <PageContainer fluid>
-      <PageHeader title="Rencana Produksi" subtitle={fmtDate(date)}
+      <PageHeader title="Status Produksi" subtitle={fmtDate(date)}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {/* P8.2 (UI Polish) — laporan owner dari screenshot live: input
@@ -501,10 +513,13 @@ export default function ProductionPlannerV2() {
                         item.kind === "UPCOMING_PICKUP" ? <UpcomingPickupCard key={`${item.jobId}-${item.unit.id}`} item={item} />
                         : item.kind === "AWAITING_ARRIVAL_LEGACY" ? (
                           <div key={item.handoffId} className="overflow-hidden rounded-card bg-surface shadow-sm">
-                            <div className="p-3">
-                              <p className="text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
-                              <p className="text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"} · data lama</p>
-                              <Badge variant="neutral" className="mt-1.5">Dalam perjalanan ke workshop</Badge>
+                            <div className="flex gap-2 p-3">
+                              <UnitPhotoThumb photoUrl={item.unit.photoUrl} />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
+                                <p className="text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"} · data lama</p>
+                                <Badge variant="neutral" className="mt-1.5">Dalam perjalanan ke workshop</Badge>
+                              </div>
                             </div>
                             <div className="border-t border-line px-3 py-2">
                               <Button size="sm" variant="secondary" className="w-full" onClick={() => setArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>

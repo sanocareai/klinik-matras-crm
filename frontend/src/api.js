@@ -740,6 +740,12 @@ export const api = {
     for (const file of files) fd.append("files", file);
     return uploadWithProgress("/production-v2/evidence/upload", fd, onProgress);
   },
+  // P9B.1 — foto identitas unit manual (hanya tampil kalau unit belum punya foto pickup driver, lihat backend).
+  uploadUnitPhoto: (unitId, file, onProgress) => {
+    const fd = new FormData();
+    fd.append("photo", file);
+    return uploadWithProgress(`/production-v2/units/${unitId}/photo`, fd, onProgress);
+  },
   getRoutingStages: () => request("/master-data/routing-stages"),
   failUnitStage: (unitId, stageId, { blockReason, note }) =>
     request(`/units/${unitId}/stages/${stageId}/fail`, {

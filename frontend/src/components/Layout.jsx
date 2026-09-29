@@ -197,7 +197,12 @@ const DIVISIONS = {
         section: "OPERASIONAL",
         items: [
           { to: "/bengkel/ringkasan",       label: "Ringkasan",       Icon: Gauge },
-          { to: "/bengkel/production-v2",   label: "Rencana Produksi", Icon: CalendarClock },
+          // P9B.1 — "Rencana Produksi" (P9B, papan kolom pipeline) DIGANTI NAMA jadi "Status Produksi" (URL
+          // /bengkel/production-v2 TIDAK berubah — tab tersimpan & bookmark lama tetap valid tanpa redirect apa pun).
+          // "Rencana Produksi" SEKARANG merujuk ke workspace planning P3 yang BARU (Belum Direncanakan/Direncanakan/
+          // Bahan Direservasi) — bukan menu duplikat, dua konsep berbeda: status pipeline vs alokasi sumber daya.
+          { to: "/bengkel/production-v2",   label: "Status Produksi", Icon: CalendarClock },
+          { to: "/bengkel/rencana-produksi", label: "Rencana Produksi", Icon: ClipboardList },
           { to: "/produksi/meja",           label: "Aplikasi Meja",   Icon: Wrench },
           { to: "/bengkel/quality-control", label: "Quality Control", Icon: ClipboardCheck },
           { to: "/produksi/corner",         label: "Aplikasi Corner", Icon: Wrench },

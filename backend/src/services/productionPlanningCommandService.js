@@ -26,6 +26,7 @@ import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockMaterialBalance, lockRowForUpdate, RESERVED_STATUSES } from "./inventoryLedger.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 import { BOARD_DEFAULTS, assertStationCapacity, formatProductionDate, normalizeScheduleInput, workWindowFor } from "../lib/domain/productionBoard.js";
+import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const EPSILON = 1e-6;
@@ -736,22 +737,40 @@ export async function listEligibleUnitsForPlanning(prisma, { unitIds = null, lim
     orderBy: [{ createdAt: "asc" }],
     take: Math.min(Math.max(Number(limit) || 100, 1), 200),
   });
-  return runs
-    .filter((run) => !run.phases[0] || !["ACTIVE", "COMPLETED"].includes(run.phases[0].status))
-    .map((run) => ({
-      runId: run.id, unit: { id: run.unit.id, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, storageLocation: run.unit.storageLocation, orderNumber: run.unit.order?.orderNumber ?? null },
-      kind: run.kind, isLegacyException: !!run.migrationSource,
-      // P9A — kartu tetap "Rencanakan" seperti biasa, TAPI UI perlu tahu unit
-      // ini belum tiba secara fisik (badge "Dalam perjalanan ke workshop") supaya
-      // tidak menyiratkan siap dikerjakan segera setelah dijadwalkan.
-      inTransit: run.status === "PENDING_ARRIVAL",
-    }));
+  const eligible = runs.filter((run) => !run.phases[0] || !["ACTIVE", "COMPLETED"].includes(run.phases[0].status));
+  // P9B.1 — foto identitas unit untuk kartu "Belum Direncanakan" di Rencana Produksi, satu panggilan batch.
+  const photoByUnit = await signUnitPhotoUrlsBulk(prisma, eligible.map((run) => run.unit.id));
+  return eligible.map((run) => ({
+    runId: run.id, unit: { id: run.unit.id, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, storageLocation: run.unit.storageLocation, orderNumber: run.unit.order?.orderNumber ?? null, photoUrl: photoByUnit.get(run.unit.id) ?? null },
+    kind: run.kind, isLegacyException: !!run.migrationSource,
+    // P9A — kartu tetap "Rencanakan" seperti biasa, TAPI UI perlu tahu unit
+    // ini belum tiba secara fisik (badge "Dalam perjalanan ke workshop") supaya
+    // tidak menyiratkan siap dikerjakan segera setelah dijadwalkan.
+    inTransit: run.status === "PENDING_ARRIVAL",
+  }));
 }
 
+// P9B.1 — workspace baru "Rencana Produksi" butuh customer/layanan/prioritas/tanggal produksi/meja/PIC Corner yang
+// SUDAH ADA di baris ProductionRunPlan/Unit (dipakai scheduleProductionPlan sejak P9B) tapi TIDAK PERNAH di-select
+// di sini (formatPlan/getProductionPlans ini lebih tua, dari P3 sebelum kolom itu ada). Tambahan READ-ONLY murni —
+// TIDAK ada kolom/tabel baru, TIDAK ada command baru, TIDAK mengubah cara scheduleProductionPlan menulis.
 const PLAN_LIST_INCLUDE = {
-  run: { select: { id: true, unitId: true, kind: true, unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, order: { select: { orderNumber: true } } } } } },
+  run: {
+    select: {
+      id: true, unitId: true, kind: true,
+      unit: {
+        select: {
+          id: true, unitCode: true, merk: true, ukuran: true, serviceId: true,
+          service: { select: { code: true, labelId: true } },
+          order: { select: { orderNumber: true, customer: { select: { name: true, city: true, assignedSales: { select: { name: true } } } } } },
+        },
+      },
+    },
+  },
   workCenter: { select: { id: true, code: true, name: true } },
-  operator: { select: { id: true, userId: true, employeeCode: true } },
+  operator: { select: { id: true, userId: true, employeeCode: true, user: { select: { name: true } } } },
+  cornerWorkCenter: { select: { id: true, code: true, name: true } },
+  cornerOperator: { select: { id: true, userId: true, employeeCode: true, user: { select: { name: true } } } },
   bomLines: { where: { status: "ACTIVE" }, include: { material: { select: { code: true, name: true, unit: true } } } },
   reservations: { where: { status: "ACTIVE" }, select: { id: true, materialId: true, qty: true, reservedAt: true } },
 };
@@ -763,19 +782,30 @@ export async function listProductionPlans(prisma, { status = null, unitIds = nul
     orderBy: [{ updatedAt: "desc" }],
     take: Math.min(Math.max(Number(limit) || 100, 1), 200),
   });
-  return rows.map(formatPlan);
+  // P9B.1 — foto identitas unit untuk kartu "Direncanakan"/"Bahan Direservasi", satu panggilan batch.
+  const photoByUnit = await signUnitPhotoUrlsBulk(prisma, rows.map((r) => r.run.unit.id));
+  return rows.map((row) => formatPlan(row, photoByUnit.get(row.run.unit.id) ?? null));
 }
 
 export async function getProductionPlan(prisma, planId) {
   const row = await prisma.productionRunPlan.findUnique({ where: { id: planId }, include: PLAN_LIST_INCLUDE });
-  return row ? formatPlan(row) : null;
+  if (!row) return null;
+  return formatPlan(row, await signUnitPhotoUrlIfAny(prisma, row.run.unit.id));
 }
 
-function formatPlan(row) {
+function formatPlan(row, photoUrl = null) {
+  const unit = row.run.unit;
+  const order = unit.order;
   return {
     id: row.id, runId: row.runId, status: row.status, revision: row.revision,
-    unit: { id: row.run.unit.id, unitCode: row.run.unit.unitCode, merk: row.run.unit.merk, ukuran: row.run.unit.ukuran, orderNumber: row.run.unit.order?.orderNumber ?? null },
-    workCenter: row.workCenter, operator: row.operator,
+    unit: {
+      id: unit.id, unitCode: unit.unitCode, merk: unit.merk, ukuran: unit.ukuran, orderNumber: order?.orderNumber ?? null,
+      service: unit.service ? { code: unit.service.code, label: unit.service.labelId } : null, photoUrl,
+    },
+    customer: { name: order?.customer?.name ?? null, city: order?.customer?.city ?? null, salesName: order?.customer?.assignedSales?.name ?? null },
+    workCenter: row.workCenter, operator: row.operator ? { ...row.operator, name: row.operator.user?.name ?? null } : null,
+    cornerWorkCenter: row.cornerWorkCenter, cornerOperator: row.cornerOperator ? { ...row.cornerOperator, name: row.cornerOperator.user?.name ?? null } : null,
+    productionDate: row.productionDate, stationCode: row.stationCode, priority: row.priority,
     targetStartAt: row.targetStartAt, targetCompleteAt: row.targetCompleteAt,
     plannedAt: row.plannedAt, materialReservedAt: row.materialReservedAt, cancelledAt: row.cancelledAt, cancelReason: row.cancelReason,
     bomLines: row.bomLines.map((l) => ({ id: l.id, materialId: l.materialId, code: l.material.code, name: l.material.name, qty: Number(l.qty), unit: l.unit })),

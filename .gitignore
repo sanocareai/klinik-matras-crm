@@ -17,6 +17,9 @@ backend/data/knowledge/documents/*
 backend/data/knowledge/meta.json
 backend/data/driver-app-bundles/*
 !backend/data/driver-app-bundles/.gitkeep
+# P9B.1 — foto identitas unit manual (unggahan runtime, pola sama dengan dir data/ lain di atas)
+backend/data/unit-photo-evidence/*
+!backend/data/unit-photo-evidence/.gitkeep
 
 # Capacitor Android — keystore JANGAN di-commit (simpan terpisah di tempat aman)
 frontend/android/release.keystore

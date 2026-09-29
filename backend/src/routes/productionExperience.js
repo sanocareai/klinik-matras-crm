@@ -13,6 +13,7 @@ import {
   getAndonBoard, getProductionBoard, getProductionCommandCenter, getProductionReport, getRunCard, getWarehouseProductionQueue, listWorkerQueue,
 } from "../services/productionExperienceReadService.js";
 import { productionEvidenceUploadRouter } from "./productionEvidenceMedia.js";
+import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { BOARD_DEFAULTS } from "../lib/domain/productionBoard.js";
 
@@ -204,3 +205,5 @@ productionExperienceRouter.post("/units/:unitId/confirm-arrival", requirePermiss
 
 // Unggah bukti (multipart) — izin & cohort diperiksa di router media.
 productionExperienceRouter.use(productionEvidenceUploadRouter);
+// P9B.1 — unggah foto identitas unit manual (multipart) — izin & cohort diperiksa di router media.
+productionExperienceRouter.use(productionUnitPhotoUploadRouter);

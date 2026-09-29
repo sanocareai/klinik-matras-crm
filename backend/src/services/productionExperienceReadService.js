@@ -9,6 +9,7 @@ import { BOARD_DEFAULTS, PRIORITY_LABEL, formatProductionDate, parseProductionDa
 import { applicableStepsFor, loadStepContext } from "./productionStepCommandService.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
+import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 const COMPLAINT_LABEL = Object.freeze({
@@ -127,7 +128,7 @@ function customerOf(run) {
   };
 }
 
-export function toRunView(run, ctx, { now = new Date() } = {}) {
+export function toRunView(run, ctx, { now = new Date(), photoUrl = null } = {}) {
   const shortage = ctx.openShortage;
   const materialStatus = materialStatusOf(run.plan, ctx.material, shortage);
   const steps = stepStatuses(ctx);
@@ -139,7 +140,7 @@ export function toRunView(run, ctx, { now = new Date() } = {}) {
   const bucket = andonBucketOf({ next, started });
   return {
     runId: run.id, revision: run.revision, status: run.status, currentPhase: run.currentPhase, origin: run.origin,
-    unit: { id: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null },
+    unit: { id: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null, photoUrl },
     customer: customerOf(run),
     plan: run.plan ? {
       id: run.plan.id, status: run.plan.status, revision: run.plan.revision,
@@ -173,8 +174,9 @@ async function loadRuns(prisma, where) {
   return prisma.productionRun.findMany({ where, include: RUN_VIEW_INCLUDE, orderBy: [{ createdAt: "asc" }] });
 }
 async function viewsOf(prisma, runs, opts) {
+  const photoByUnit = await signUnitPhotoUrlsBulk(prisma, runs.map((r) => r.unitId));
   const views = [];
-  for (const run of runs) views.push(toRunView(run, await loadStepContext(prisma, run), opts));
+  for (const run of runs) views.push(toRunView(run, await loadStepContext(prisma, run), { ...opts, photoUrl: photoByUnit.get(run.unitId) ?? null }));
   return views;
 }
 
@@ -316,6 +318,13 @@ export async function getProductionCommandCenter(prisma, { unitIds, now = new Da
   for (const item of akanMasuk) if (!akanMasukByUnit.has(item.unit.id)) akanMasukByUnit.set(item.unit.id, item);
   const akanMasukList = [...akanMasukByUnit.values()];
 
+  // Foto identitas untuk dua daftar non-Run di atas (kartu Run sudah dapat dari viewsOf) — satu panggilan batch,
+  // bukan per kartu, supaya tetap tidak N+1 walau daftarnya digabung dari dua sumber berbeda.
+  const extraPhotoUnitIds = [...akanMasukList.map((i) => i.unit.id), ...awaitingArrivalNoRun.map((i) => i.unit.id)];
+  const extraPhotoByUnit = await signUnitPhotoUrlsBulk(prisma, extraPhotoUnitIds);
+  for (const item of akanMasukList) item.unit.photoUrl = extraPhotoByUnit.get(item.unit.id) ?? null;
+  for (const item of awaitingArrivalNoRun) item.unit.photoUrl = extraPhotoByUnit.get(item.unit.id) ?? null;
+
   const columns = Object.fromEntries(COMMAND_CENTER_COLUMNS.map((c) => [c.key, []]));
   for (const v of views) {
     const col = commandCenterColumn(v);
@@ -370,7 +379,7 @@ export async function getRunCard(prisma, runId, { unitIds, now = new Date() } = 
   const run = await prisma.productionRun.findFirst({ where: { id: runId, unitId: { in: unitIds } }, include: RUN_VIEW_INCLUDE });
   if (!run) return null;
   const ctx = await loadStepContext(prisma, run);
-  const view = toRunView(run, ctx, { now });
+  const view = toRunView(run, ctx, { now, photoUrl: await signUnitPhotoUrlIfAny(prisma, run.unitId) });
   const issuedLines = run.plan
     ? await prisma.materialIssueLine.findMany({
         where: { materialIssue: { productionPlanId: run.plan.id, status: "ISSUED" } },
