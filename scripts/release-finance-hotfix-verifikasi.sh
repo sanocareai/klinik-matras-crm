@@ -12,11 +12,10 @@ umask 077
 DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
-CAND_BRANCH="hotfix/finance-verifikasi-sebelum-saldo-awal"
-EXPECT_FILES="backend/src/services/finance/penerimaanOrder.js
-backend/tests/integration/financePenerimaan.integration.test.js
-frontend/src/features/finance/LunasBelumDicatat.jsx
-scripts/release-finance-hotfix-verifikasi.sh"
+CAND_BRANCH="${CAND_BRANCH:-hotfix/finance-verifikasi-sebelum-saldo-awal}"
+# Berkas yang BOLEH berbeda dari baseline: hanya area Finance + skrip/tes-nya. Apa pun di luar ini (Production, Delivery, Inbox, schema, migration,
+# package-lock) = berhenti — supaya pekerjaan workspace lain yang sudah live tidak pernah tertimpa.
+ALLOWED_RE='^(backend/src/(services/finance/|routes/financePembayaran\.js)|backend/tests/integration/(finance|koreksiPembayaran|resiPembayaran)|backend/scripts/(penuntasanHistoris|koreksiKasGanda)|frontend/src/(features/finance/|pages/finance/|api\.js$)|scripts/release-finance)'
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
@@ -83,8 +82,11 @@ sg fetch -q --depth=200 origin "+refs/heads/${CAND_BRANCH}:refs/remotes/origin/c
 sg cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || die "baseline ${BASE_SHA:0:8} tidak ada di repo sumber"
 sg merge-base --is-ancestor "$BASE_SHA" "$DEPLOY_SHA" || die "baseline ${BASE_SHA:0:8} BUKAN leluhur kandidat ${DEPLOY_SHORT}"
 CHANGED="$(sg diff --name-only "$BASE_SHA" "$DEPLOY_SHA" | LC_ALL=C sort)"
-[ "$CHANGED" = "$(printf '%s\n' "$EXPECT_FILES" | LC_ALL=C sort)" ] || { printf '%s\n' "$CHANGED"; die "berkas berubah tidak sama dengan yang diharapkan"; }
-ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8}, hanya 4 berkas (tanpa migration/schema/package-lock)"
+[ -n "$CHANGED" ] || die "kandidat identik dengan baseline (tidak ada perubahan)"
+LUAR="$(printf '%s\n' "$CHANGED" | grep -Ev "$ALLOWED_RE" || true)"
+[ -z "$LUAR" ] || { printf '%s\n' "$LUAR" | sed 's/^/        /'; die "ada berkas di LUAR area Finance yang berbeda dari baseline (Production/Delivery/Inbox/schema/migration?) — berhenti"; }
+! printf '%s\n' "$CHANGED" | grep -qE '^backend/prisma/|package(-lock)?\.json$' || die "schema/migration/dependensi berubah — rilis ini harus kode Finance saja"
+ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8}; $(printf '%s\n' "$CHANGED" | wc -l) berkas, SEMUA di area Finance (tanpa migration/schema/dependensi)"
 
 PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"
 CID_OLD="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"
@@ -155,6 +157,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 [ -n "$(grep -l "Sudah lunas sebelum" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat halaman Klaim Lunas"
+[ -n "$(grep -l "Atur Rekening & Verifikasi" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat dialog Atur Rekening & Verifikasi"
 [ "$NEW_INDEX" != "$PREV_INDEX" ] || die "bundel baru identik dengan lama (tidak diharapkan)"
 ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX})"
 
@@ -181,7 +184,7 @@ ok "backend baru sehat (image ${NEW_IMG_ID:7:12}, release ${DEPLOY_SHORT})"
 PHASE="8-verifikasi"; say "8. Verifikasi pasca-rilis (baca-saja)"
 curl -fsS --max-time 15 "${PUBLIC_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck publik gagal"; ok "publik 200"
 [ "$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)" = "$NEW_INDEX" ] || die "bundel publik BUKAN dist baru (${NEW_INDEX})"; ok "bundel web publik = dist baru ${NEW_INDEX}"
-for f in backend/src/services/finance/penerimaanOrder.js; do
+for f in backend/src/services/finance/penerimaanOrder.js backend/src/services/finance/pembayaran.js backend/src/services/finance/tagihanOrder.js backend/src/services/finance/cutoff.js backend/src/services/finance/pembayaranHistoris.js backend/scripts/penuntasanHistorisSebelumSaldoAwal.js; do
   want="$(sg show "${DEPLOY_SHA}:${f}" | tr -d '\r' | sha256sum | cut -d' ' -f1)"
   have="$(docker exec "$CID_NEW" sh -c "cat /app/${f#backend/}" | tr -d '\r' | sha256sum | cut -d' ' -f1)"
   [ "$want" = "$have" ] || die "container baru TIDAK memuat ${f} persis"
