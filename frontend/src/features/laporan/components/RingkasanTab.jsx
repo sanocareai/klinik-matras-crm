@@ -85,8 +85,13 @@ const CATEGORY_LABELS = {
 // Urutan alur kerja produksi, BUKAN alfabet — supaya kolom ini terbaca
 // sebagai antrean ("20 menunggu, 17 diambil, 10 dikerjakan..."), bukan
 // daftar acak. CANCELLED sengaja terakhir & diberi tone merah.
-const STATUS_ORDER = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
-const STATUS_TONE = { DELIVERED: "green", CANCELLED: "red", PENDING: "orange" };
+// 30 Sep 2026 (permintaan owner): jumlah order per SEMUA status ditampilkan —
+// Menunggu, Pengambilan, Diproses, Siap Kirim, Pengiriman, Terkirim, Sewa,
+// Dibatalkan. Menunggu & Dibatalkan tetap tampil jumlahnya tapi TIDAK masuk omset.
+const STATUS_ORDER = ["PENDING", "PICKUP", "PROCESSING", "READY", "SHIPPING", "DELIVERED", "SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
+const STATUS_TONE = { DELIVERED: "green", SHIPPING: "green", SEWA_DIAMBIL: "green", CANCELLED: "red", PENDING: "orange" };
+const STATUS_TANPA_OMSET = new Set(["PENDING", "CANCELLED"]);
+const INFO_STATUS = "Jumlah order di periode terpilih, dikelompokkan menurut status pengerjaannya. Menunggu = sudah diinput tapi belum pasti dikerjakan; Pengambilan = kasur dijemput dari customer; Diproses = sedang dikerjakan; Siap Kirim = selesai, menunggu diantar; Pengiriman = sedang diantar; Terkirim = sudah sampai. Menunggu dan Dibatalkan tetap dihitung jumlahnya di sini, tetapi nilainya TIDAK masuk omset.";
 
 function ChartTip({ active, payload, label, granularity }) {
   if (!active || !payload?.length) return null;
@@ -435,8 +440,8 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <ChartCard
           index={6}
-          title="Antrean Produksi"
-          description="Order per status — beban kerja tim saat ini"
+          title={<span className="inline-flex items-center gap-1.5">Order per Status <InfoTooltip text={INFO_STATUS} /></span>}
+          description="Jumlah order menurut status pengerjaan (Menunggu dan Dibatalkan tidak masuk omset)"
           empty={statusRows.length === 0 ? "Belum ada order pada periode ini." : null}
         >
           <div className="flex flex-col gap-2.5">
@@ -446,11 +451,15 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
                 label={ORDER_STATUS_LABELS[r.status] || r.status}
                 value={r.count} max={statusMax}
                 display={`${r.count} order`}
-                sub={formatRupiahShort(r.value)}
+                sub={STATUS_TANPA_OMSET.has(r.status) ? `${formatRupiahShort(r.value)} · tidak masuk omset` : formatRupiahShort(r.value)}
                 tone={STATUS_TONE[r.status] || "accent"}
               />
             ))}
           </div>
+          <p className="mt-3 border-t border-line pt-3 text-[11px] text-ink3">
+            Total <strong className="text-ink2">{statusRows.reduce((n, r) => n + r.count, 0).toLocaleString("id-ID")}</strong> order ·
+            masuk omset <strong className="text-ink2">{statusRows.filter((r) => !STATUS_TANPA_OMSET.has(r.status)).reduce((n, r) => n + r.count, 0).toLocaleString("id-ID")}</strong>
+          </p>
         </ChartCard>
 
         <ChartCard
