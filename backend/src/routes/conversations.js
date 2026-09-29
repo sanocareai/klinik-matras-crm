@@ -7,7 +7,7 @@ import { promisify } from "util";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
-import { rolesOf } from "../middleware/authorize.js";
+import { rolesOf, requirePermission, requireAnyPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { sendText, sendMedia, sendLocation, sendContactVcard, editMessage, deleteMessage, markChatAsRead, fetchChatHistory, downloadMediaMessage, getGroupParticipants, getGroupTopic, getGroupPicture, KNOWN_SESSIONS, checkNumberExists, getContactInfo, isPlaceholderGroupJid } from "../services/wahaClient.js";
 import { bakukanNomorIndonesia } from "../services/nomorIndonesia.js";
 import { TAG_BROADCAST } from "../services/broadcastPolicy.js";
@@ -27,6 +27,30 @@ const execAsync = promisify(exec);
 
 export const conversationRouter = express.Router();
 conversationRouter.use(requireAuth);
+
+// ⚠️ CELAH KEAMANAN DITEMUKAN & DITUTUP (29 September 2026) — sebelum perbaikan ini,
+// SELURUH router di bawah cuma dijaga requireAuth (login apa saja, peran apa saja).
+// Portal "Sales CRM & Omnichannel" (Inbox) menurut PERMISSIONS.PORTALS cuma untuk
+// ADMIN/OWNER/SALES, tapi backend-nya tidak pernah menegakkan itu — SIAPA PUN yang
+// login (driver, helper, finance, gudang, produksi) bisa buka /inbox lewat URL
+// langsung dan memanggil API-nya, TERMASUK POST /:id/takeover (kejadian nyata:
+// Arman, role HELPER/kurir, berhasil mengambil alih percakapan customer).
+//
+// Gate DIPASANG PER-RUTE (bukan router.use global) supaya 2 pengecualian yang
+// SUDAH menjadi fitur nyata tetap jalan tanpa perlu melebarkan peran manapun:
+//   - GET /unread-count, /counts, /latest-unread — badge ANGKA SAJA (bukan isi
+//     chat), sudah dipoll semua peran lewat shell app (Layout.jsx) sejak lama.
+//   - GET /:id/peek & POST /:id/messages — dipakai QuickChatModal.jsx dari Route
+//     Planner Armada (permintaan owner 8 September 2026: dispatcher/leader driver
+//     bisa konfirmasi customer TANPA buka Inbox penuh). DISPATCHER/LEADER_DRIVER
+//     tidak punya CONVERSATION_READ/WRITE, cuma JOB_READ — gate 2 rute ini
+//     SENGAJA "CONVERSATION_* ATAU JOB_READ" supaya fitur itu tidak ikut patah.
+//     DRIVER/HELPER TETAP tertolak (mereka cuma JOB_OWN_READ, bukan JOB_READ).
+const canReadConversation = requirePermission(P.CONVERSATION_READ);
+const canWriteConversation = requirePermission(P.CONVERSATION_WRITE);
+// "Quick chat" dari Armada — baca ATAU tulis penuh (Sales/Admin), ATAU JOB_READ
+// (Dispatcher/Leader Driver, fitur Route Planner yang sudah ada).
+const canPeekOrQuickChat = requireAnyPermission(P.CONVERSATION_READ, P.CONVERSATION_WRITE, P.JOB_READ);
 
 // Setup upload — simpan ke backend/uploads/
 const __dirname  = path.dirname(fileURLToPath(import.meta.url));
@@ -331,7 +355,7 @@ conversationRouter.put("/sales-group", requireAdmin, async (req, res) => {
 //      TERAKHIR karena paling mahal (panggilan jaringan) dan tidak perlu
 //      dilakukan untuk nomor yang sudah jelas ada di CRM.
 //   4. Customer/Conversation baru dibuat HANYA kalau nomornya terbukti ada.
-conversationRouter.post("/mulai-chat", async (req, res) => {
+conversationRouter.post("/mulai-chat", canWriteConversation, async (req, res) => {
   try {
     const { phone, session, name } = req.body;
 
@@ -431,7 +455,7 @@ conversationRouter.post("/mulai-chat", async (req, res) => {
 // GET /api/conversations/cek-nomor?phone=&session= — periksa nomor TANPA
 // membuat apa pun. Dipakai UI untuk memberi umpan balik langsung saat sales
 // mengetik, sebelum dia menekan tombol.
-conversationRouter.get("/cek-nomor", async (req, res) => {
+conversationRouter.get("/cek-nomor", canReadConversation, async (req, res) => {
   try {
     const { phone, session } = req.query;
     const baku = bakukanNomorIndonesia(phone);
@@ -464,7 +488,7 @@ conversationRouter.get("/cek-nomor", async (req, res) => {
 // yang belum paginate — refresh penuh setelah SSE, dsb — tetap dapat batch besar
 // seperti perilaku lama). Response SEKARANG {data, nextCursor}, bukan array
 // mentah lagi — frontend (api.js/useConversations.js) sudah disesuaikan.
-conversationRouter.get("/", async (req, res) => {
+conversationRouter.get("/", canReadConversation, async (req, res) => {
   const { status, search, assignedToId, cursor, unread, tag, unanswered, unassigned, stalled, scope, type } = req.query;
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
   const where = {};
@@ -649,7 +673,7 @@ conversationRouter.get("/", async (req, res) => {
 // chat lain — deep-link-nya diam-diam gagal, terlihat seperti "klik tidak
 // melakukan apa-apa". Endpoint ini jadi fallback: frontend cek dulu apakah
 // percakapan ada di daftar yang sudah di-fetch, kalau tidak baru panggil ini.
-conversationRouter.get("/:id", async (req, res) => {
+conversationRouter.get("/:id", canReadConversation, async (req, res) => {
   const conv = await prisma.conversation.findUnique({
     where: { id: req.params.id },
     include: {
@@ -675,7 +699,7 @@ conversationRouter.get("/:id", async (req, res) => {
 // Riwayat pesan dalam satu percakapan
 // Side effect: tandai percakapan sebagai "sudah dibuka" (isRead=true, unread=false)
 // + kirim read receipt ke WhatsApp dengan debounce 30 detik
-conversationRouter.get("/:id/messages", async (req, res) => {
+conversationRouter.get("/:id/messages", canReadConversation, async (req, res) => {
   const convId = req.params.id;
   // ?limit=N → hanya N pesan TERBARU (tetap urut lama→baru). Tanpa limit = seluruh riwayat seperti
   // sebelumnya, jadi web & app versi lama tidak terpengaruh. Percakapan terbesar di produksi
@@ -750,7 +774,7 @@ conversationRouter.get("/:id/messages", async (req, res) => {
 // isi chat tanpa percakapan itu ke-mark-as-read/badge unread hilang duluan
 // sebelum benar-benar dibuka. Taruh SEBELUM "/:id/messages" secara logis
 // tidak masalah di Express (literal suffix beda, bukan pola tumpang tindih).
-conversationRouter.get("/:id/peek", async (req, res) => {
+conversationRouter.get("/:id/peek", canPeekOrQuickChat, async (req, res) => {
   const convId = req.params.id;
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 20);
   const messages = await prisma.message.findMany({
@@ -772,7 +796,7 @@ conversationRouter.get("/:id/peek", async (req, res) => {
 // buka chat) — beda dari side-effect di atas: endpoint ini TIDAK ikut fetch
 // seluruh riwayat pesan, cuma update status baca. Reuse logic/debounce yang
 // sama dengan GET /:id/messages (readReceiptSentAt Map di atas).
-conversationRouter.post("/:id/read", async (req, res) => {
+conversationRouter.post("/:id/read", canWriteConversation, async (req, res) => {
   const convId = req.params.id;
   const conv = await prisma.conversation.findUnique({
     where:   { id: convId },
@@ -800,7 +824,7 @@ conversationRouter.post("/:id/read", async (req, res) => {
 // Kirim pesan teks
 // quotedMessageId: WAHA externalId pesan yang dikutip (opsional, untuk reply/quote)
 // replyToId: DB id pesan yang dikutip (opsional, untuk simpan relasi di DB)
-conversationRouter.post("/:id/messages", async (req, res) => {
+conversationRouter.post("/:id/messages", canPeekOrQuickChat, async (req, res) => {
   // clientId: dibuat mobile/web SEKALI per percobaan kirim (ChatScreen.js
   // #handleSend). BUG PRODUKSI YANG DIPERBAIKI (28 Jul 2026): field ini
   // SEBELUMNYA cuma dipakai rekonsiliasi optimistic-UI, TIDAK PERNAH dicek
@@ -917,7 +941,7 @@ conversationRouter.post("/:id/messages", async (req, res) => {
 // baru, bukan nunggu round-trip webhook lain.
 const EDIT_MESSAGE_WINDOW_MS = 15 * 60 * 1000;
 
-conversationRouter.patch("/:id/messages/:messageId", async (req, res) => {
+conversationRouter.patch("/:id/messages/:messageId", canWriteConversation, async (req, res) => {
   const { content } = req.body;
   if (!content?.trim()) return res.status(400).json({ error: "Isi pesan wajib diisi" });
 
@@ -979,7 +1003,7 @@ conversationRouter.patch("/:id/messages/:messageId", async (req, res) => {
 // jelas daripada biarkan gagal generik di WAHA).
 const DELETE_EVERYONE_WINDOW_MS = (2 * 24 + 12) * 60 * 60 * 1000; // 60 jam
 
-conversationRouter.delete("/:id/messages/:messageId", async (req, res) => {
+conversationRouter.delete("/:id/messages/:messageId", canWriteConversation, async (req, res) => {
   const conversation = await prisma.conversation.findUnique({
     where: { id: req.params.id },
     include: { customer: true },
@@ -1037,7 +1061,7 @@ conversationRouter.delete("/:id/messages/:messageId", async (req, res) => {
 // hidden-per-user terpisah, di luar scope sekarang). emitMessageDeleted
 // beritahu client lain yang lagi buka percakapan sama supaya bubble-nya
 // ikut hilang real-time.
-conversationRouter.delete("/:id/messages/:messageId/local", async (req, res) => {
+conversationRouter.delete("/:id/messages/:messageId/local", canWriteConversation, async (req, res) => {
   const conversation = await prisma.conversation.findUnique({ where: { id: req.params.id } });
   if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
 
@@ -1052,7 +1076,7 @@ conversationRouter.delete("/:id/messages/:messageId/local", async (req, res) => 
 });
 
 // Kirim media (foto / video / dokumen / suara)
-conversationRouter.post("/:id/media", upload.single("file"), async (req, res) => {
+conversationRouter.post("/:id/media", upload.single("file"), canWriteConversation, async (req, res) => {
   const file = req.file;
   if (!file) return res.status(400).json({ error: "File tidak ada" });
 
@@ -1224,7 +1248,7 @@ conversationRouter.post("/:id/media", upload.single("file"), async (req, res) =>
 const groupInfoCache = new Map(); // conversationId -> { data, at }
 const GROUP_INFO_TTL_MS = 5 * 60 * 1000;
 
-conversationRouter.get("/:id/group-info", async (req, res) => {
+conversationRouter.get("/:id/group-info", canReadConversation, async (req, res) => {
   const conversation = await prisma.conversation.findUnique({ where: { id: req.params.id } });
   if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
   if (conversation.type !== "GROUP" || !conversation.groupJid) {
@@ -1262,7 +1286,7 @@ conversationRouter.get("/:id/group-info", async (req, res) => {
 const participantsCache = new Map(); // conversationId -> { data, at }
 const PARTICIPANTS_TTL_MS = 5 * 60 * 1000; // anggota grup jarang berubah
 
-conversationRouter.get("/:id/participants", async (req, res) => {
+conversationRouter.get("/:id/participants", canReadConversation, async (req, res) => {
   const conversation = await prisma.conversation.findUnique({ where: { id: req.params.id } });
   if (!conversation) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
   // Bukan error untuk percakapan pribadi — cuma tidak ada anggota. Balikin
@@ -1307,7 +1331,7 @@ conversationRouter.get("/:id/participants", async (req, res) => {
 // {lat, lng, name, address}) — supaya LocationCard di frontend/mobile
 // merender bubble keluar dan masuk lewat satu jalur yang sama, tidak perlu
 // cabang khusus "lokasi yang kita kirim sendiri".
-conversationRouter.post("/:id/send-location", async (req, res) => {
+conversationRouter.post("/:id/send-location", canWriteConversation, async (req, res) => {
   const { lat, lng, name } = req.body;
   // Validasi rentang, bukan cuma "ada isinya" — nol itu koordinat SAH
   // (Teluk Guinea), jadi cek kebenaran nilai harus pakai Number.isFinite,
@@ -1367,7 +1391,7 @@ conversationRouter.post("/:id/send-location", async (req, res) => {
 //
 // Bentuk content SAMA dengan pesan kontak MASUK ({contacts:[{name, phone}]},
 // lihat tryParseContactNormalized) — alasan sama seperti send-location.
-conversationRouter.post("/:id/send-contact", async (req, res) => {
+conversationRouter.post("/:id/send-contact", canWriteConversation, async (req, res) => {
   const { name, phone } = req.body;
   if (!name?.trim() || !phone?.trim()) {
     return res.status(400).json({ error: "name & phone wajib diisi" });
@@ -1451,7 +1475,7 @@ conversationRouter.post("/:id/send-contact", async (req, res) => {
 // supaya retry penuh idempotent, tapi retry PARSIAL (mis. gambar 1-2 dari
 // 3 sudah sempat terkirim sebelum timeout) hanya mengirim ULANG sisanya,
 // bukan mengulang semua dari awal.
-conversationRouter.post("/:id/send-product", async (req, res) => {
+conversationRouter.post("/:id/send-product", canWriteConversation, async (req, res) => {
   const { productId, imageIds, includePrice, clientId } = req.body;
   if (!productId) return res.status(400).json({ error: "productId wajib diisi" });
 
@@ -1618,7 +1642,7 @@ conversationRouter.post("/:id/send-product", async (req, res) => {
 // CRM setelah melihat sendiri fotonya (D-015: manusia tetap mereview sebelum
 // sesuatu sampai ke customer, cuma jalurnya sekarang lewat WAHA bukan
 // WhatsApp pribadi sales).
-conversationRouter.post("/:id/send-documentation", async (req, res) => {
+conversationRouter.post("/:id/send-documentation", canWriteConversation, async (req, res) => {
   const { orderId, entries } = req.body;
   if (!orderId) return res.status(400).json({ error: "orderId wajib diisi" });
   if (!Array.isArray(entries) || entries.length === 0) {
@@ -1755,7 +1779,7 @@ conversationRouter.post("/:id/send-documentation", async (req, res) => {
 });
 
 // Ambil alih (handover) percakapan ke user yang request
-conversationRouter.post("/:id/takeover", async (req, res) => {
+conversationRouter.post("/:id/takeover", canWriteConversation, async (req, res) => {
   try {
     const conv = await prisma.conversation.findUnique({
       where: { id: req.params.id },
@@ -1838,7 +1862,7 @@ conversationRouter.post("/:id/takeover", async (req, res) => {
 // Riwayat LENGKAP siapa saja yang pernah menangani percakapan ini (takeover
 // & transfer manual) — dipanggil on-demand saat chat window dibuka (bukan
 // ikut di GET / list, supaya list tetap ringan untuk ratusan percakapan).
-conversationRouter.get("/:id/handover-history", async (req, res) => {
+conversationRouter.get("/:id/handover-history", canReadConversation, async (req, res) => {
   try {
     const events = await prisma.handoverEvent.findMany({
       where: { conversationId: req.params.id },
@@ -1855,7 +1879,7 @@ conversationRouter.get("/:id/handover-history", async (req, res) => {
 });
 
 // Teruskan (forward) pesan ke percakapan lain
-conversationRouter.post("/:id/forward", async (req, res) => {
+conversationRouter.post("/:id/forward", canWriteConversation, async (req, res) => {
   const { messageId, targetConversationId } = req.body;
   if (!messageId || !targetConversationId)
     return res.status(400).json({ error: "messageId dan targetConversationId wajib diisi" });
@@ -1979,7 +2003,7 @@ conversationRouter.post("/:id/forward", async (req, res) => {
 });
 
 // Update status / unread / isRead / pinned percakapan
-conversationRouter.patch("/:id", async (req, res) => {
+conversationRouter.patch("/:id", canWriteConversation, async (req, res) => {
   const { status, assignedToId, unread, isRead, handoverNote, pinned } = req.body;
 
   // BUG YANG DIPERBAIKI: transfer lead (ubah assignedToId lewat endpoint ini)
@@ -2044,7 +2068,7 @@ conversationRouter.patch("/:id", async (req, res) => {
 // Set sessionId manual — dipakai saat conversation.sessionId belum diketahui
 // (lihat resolveSendSession di atas) dan sales/admin perlu betulkan lewat
 // dropdown CS-1/CS-2 di header chat sebelum bisa kirim pesan.
-conversationRouter.patch("/:id/session", async (req, res) => {
+conversationRouter.patch("/:id/session", canWriteConversation, async (req, res) => {
   const { sessionId } = req.body;
   if (!sessionId || typeof sessionId !== "string" || !sessionId.trim()) {
     return res.status(400).json({ error: "sessionId wajib diisi" });
@@ -2121,7 +2145,7 @@ conversationRouter.post("/:id/sync-history", requireAdmin, async (req, res) => {
 // MessageBubble saat mediaType diketahui tapi mediaUrl belum tersedia
 // (WAHA gagal download otomatis saat webhook masuk). Coba download ulang
 // via externalId, simpan ke disk, update Message.mediaUrl.
-conversationRouter.post("/:id/messages/:messageId/load-media", async (req, res) => {
+conversationRouter.post("/:id/messages/:messageId/load-media", canReadConversation, async (req, res) => {
   const message = await prisma.message.findUnique({ where: { id: req.params.messageId } });
   if (!message || message.conversationId !== req.params.id) {
     return res.status(404).json({ error: "Pesan tidak ditemukan" });
