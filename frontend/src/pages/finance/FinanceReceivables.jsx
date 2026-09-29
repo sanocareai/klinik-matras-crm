@@ -22,6 +22,7 @@ import {
   StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 
@@ -152,6 +153,24 @@ export default function FinanceReceivables() {
     && cocok(qRefund, r.refundNumber, r.order?.orderNumber, r.order?.customer?.name, r.reason, teksNominal(r.amount)),
   ), [refunds, qRefund, fStatusRefund]);
 
+  // EXPORT EXCEL — persis yang tampil: piutang & refund sama-sama disaring di klien, jadi kirim id baris yang tampil (urutan layar).
+  // Server memuat ulang lewat fungsi baca yang sama dengan layar (umurPiutang & daftar refund).
+  function ambilBodyExport() {
+    const labelEmber = (data?.ember || []).find((e) => e.key === filterEmber)?.label;
+    return {
+      filter: { piutangIds: baris.map((b) => b.orderId), refundIds: refundTampil.map((r) => r.id) },
+      filterLabel: labelFilterAktif([
+        ["Umur (kartu)", labelEmber],
+        ["Sales", fSales],
+        ["Umur", { belum: "Belum jatuh tempo", "1_30": "1–30 hari", "31_60": "31–60 hari", "60_plus": "> 60 hari" }[fUmur]],
+        ["Acuan", { invoice: "Invoice", order: "Tanggal order" }[fAcuan]],
+        ["Cari piutang", q.trim()],
+        ["Status refund", fStatusRefund && (LABEL_STATUS[fStatusRefund] || fStatusRefund)],
+        ["Cari refund", qRefund.trim()],
+      ]),
+    };
+  }
+
   return (
     <HalamanFinance
       title="Piutang Pelanggan"
@@ -159,11 +178,14 @@ export default function FinanceReceivables() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={
-        <Button size="sm" onClick={() => setModalRefund(true)}>
-          <Undo2 size={14} /> Ajukan Refund
-        </Button>
-      }
+      actions={(
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <TombolExportExcel modul="piutang-refund" disabled={loading} ambilBody={ambilBodyExport} />
+          <Button size="sm" onClick={() => setModalRefund(true)}>
+            <Undo2 size={14} /> Ajukan Refund
+          </Button>
+        </div>
+      )}
     >
       {pesan && (
         <Card className="bg-redbg">

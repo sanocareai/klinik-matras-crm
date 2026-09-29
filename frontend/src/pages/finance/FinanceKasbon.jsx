@@ -22,6 +22,7 @@ import {
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { aksiKasbon as matriksKasbon } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
@@ -133,7 +134,18 @@ export default function FinanceKasbon() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={<Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Kasbon Baru</Button>}
+      actions={(
+        <>
+          <TombolExportExcel
+            modul="kasbon"
+            ambilBody={() => ({
+              filter: { status, q: qTunda.trim(), karyawan: fKaryawan },
+              filterLabel: labelFilterAktif([["Status", STATUS_TAB.find((t) => t.key === status)?.label], ["Karyawan", fKaryawan], ["Pencarian", qTunda.trim()]]),
+            })}
+          />
+          <Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Kasbon Baru</Button>
+        </>
+      )}
     >
       {pesan && (
         <Card className="bg-redbg">

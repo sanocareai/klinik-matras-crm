@@ -17,9 +17,10 @@ import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/fina
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek,
+  StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { RowActions, AKSI_COL_WIDTH, AKSI_COL_WIDTH_MENU_ONLY } from "@/features/finance/RowActions.jsx";
 import { RiwayatVersiDialog, KoreksiDialog, InfoDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiTagihan as matriksTagihan, aksiPembayaranSupplier } from "@/features/finance/matriksAksi.js";
@@ -74,6 +75,8 @@ function aksiPembayaran(p, { aksi, setVersiPay }) {
 // Nominal dicari sebagai angka polos maupun berformat titik ("1500000" / "1.500.000").
 const angka = (x) => `${Math.round(Number(x) || 0)} ${(Number(x) || 0).toLocaleString("id-ID")}`;
 const unik = (arr) => [...new Set(arr.filter(Boolean))].sort().map((v) => [v, v]);
+
+const LABEL_TEMPO = { lewat: "Lewat jatuh tempo", belum: "Belum jatuh tempo", tanpa: "Tanpa tanggal" };
 
 // Lewat jatuh tempo hanya berarti kalau tagihannya masih punya sisa.
 function statusTempo(b, awalHariIni) {
@@ -205,12 +208,36 @@ export default function FinanceSuppliers() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={
-        <Button size="sm" onClick={() => setModal(tab === "supplier" ? "supplier" : tab === "pembayaran" ? "bayar" : "tagihan")}>
-          <Plus size={14} />
-          {tab === "supplier" ? "Supplier Baru" : tab === "pembayaran" ? "Catat Pembayaran" : "Tagihan Baru"}
-        </Button>
-      }
+      actions={(
+        <>
+          {/* Export mengikuti TAB AKTIF: baris yang tampil setelah pencarian/filter sisi-klien dikirim sebagai `ids` (urutan layar). */}
+          <TombolExportExcel
+            modul="supplier-utang"
+            ambilBody={() => {
+              if (tab === "tagihan") {
+                return {
+                  filter: { tab }, ids: billsTampil.map((b) => b.id),
+                  filterLabel: labelFilterAktif([["Tab", "Tagihan (Utang)"], ["Supplier", fSupB], ["Status", fStatusB && (LABEL_STATUS[fStatusB] || fStatusB)], ["Jatuh tempo", LABEL_TEMPO[fTempo]], ["Pencarian", qB.trim()]]),
+                };
+              }
+              if (tab === "pembayaran") {
+                return {
+                  filter: { tab }, ids: paymentsTampil.map((p) => p.id),
+                  filterLabel: labelFilterAktif([["Tab", "Pembayaran"], ["Supplier", fSupP], ["Dari rekening", fRek], ["Status", fStatusP && (fStatusP === "batal" ? "Dibatalkan" : "Terposting")], ["Pencarian", qP.trim()]]),
+                };
+              }
+              return {
+                filter: { tab }, ids: suppliersTampil.map((s) => s.id),
+                filterLabel: labelFilterAktif([["Tab", "Master Supplier"], ["Status", fStatusS && (fStatusS === "aktif" ? "Aktif" : "Nonaktif")], ["Utang", fUtang && (fUtang === "ada" ? "Ada sisa utang" : "Lunas")], ["Pencarian", qS.trim()]]),
+              };
+            }}
+          />
+          <Button size="sm" onClick={() => setModal(tab === "supplier" ? "supplier" : tab === "pembayaran" ? "bayar" : "tagihan")}>
+            <Plus size={14} />
+            {tab === "supplier" ? "Supplier Baru" : tab === "pembayaran" ? "Catat Pembayaran" : "Tagihan Baru"}
+          </Button>
+        </>
+      )}
     >
       {pesan && (
         <Card className="bg-redbg">

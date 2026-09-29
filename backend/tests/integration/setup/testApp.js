@@ -30,6 +30,7 @@ const { financeTxRouter } = await import("../../../src/routes/financeTransaction
 // di file ini, additive di prefix /api/finance yang sama.
 const { expenseSubmissionRouter } = await import("../../../src/routes/expenseSubmissions.js");
 const { financeKasbonRouter } = await import("../../../src/routes/financeKasbon.js");
+const { financeExportRouter } = await import("../../../src/routes/financeExport.js");
 const { financeUangMukaRouter } = await import("../../../src/routes/financeOperationalAdvance.js");
 const { financeKoreksiRouter } = await import("../../../src/routes/financeKoreksi.js");
 const { financeRekonCutoffRouter } = await import("../../../src/routes/financeRekonCutoff.js");
@@ -88,6 +89,7 @@ export function buildTestApp() {
   app.use("/api/finance", financeTxRouter);
   app.use("/api/finance", expenseSubmissionRouter);
   app.use("/api/finance", financeKasbonRouter);
+  app.use("/api/finance", financeExportRouter);
   app.use("/api/finance", financeUangMukaRouter);
   app.use("/api/finance", financeKoreksiRouter);
   app.use("/api/finance", financeRekonCutoffRouter);

@@ -15,6 +15,7 @@ import {
   LABEL_SUMBER_JURNAL,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 
 // JURNAL UMUM — seluruh pencatatan buku besar, dari mana pun asalnya.
 //
@@ -99,6 +100,19 @@ export default function FinanceJournal() {
       actions={
         <>
           <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
+          {/* Export = semua jurnal pada periode + filter + pencarian yang sedang aktif (bukan hanya 100 terbaru di layar). */}
+          <TombolExportExcel
+            modul="jurnal-umum"
+            ambilBody={() => ({
+              periode: { from: periode.from, to: periode.to },
+              filter: { source: filter.source, status: filter.status, search: qTunda.trim() },
+              filterLabel: labelFilterAktif([
+                ["Sumber", filter.source && (LABEL_SUMBER_JURNAL[filter.source] || filter.source)],
+                ["Status", { POSTED: "Terposting", DRAFT: "Draft", REVERSED: "Dibalik" }[filter.status] || filter.status],
+                ["Pencarian", qTunda.trim()],
+              ]),
+            })}
+          />
           <Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Jurnal Manual</Button>
         </>
       }

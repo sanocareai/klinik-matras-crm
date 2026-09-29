@@ -15,6 +15,7 @@ import {
   PeriodePicker, periodeDefault, tanggalJam, InputUang,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
@@ -86,6 +87,7 @@ export default function FinancePayments() {
   const [fVerif, setFVerif] = useState("");
   const [fAlokasi, setFAlokasi] = useState("");
   const [fBukti, setFBukti] = useState("");
+  const [klaimIds, setKlaimIds] = useState(null); // orderId klaim Lunas dari Sales yang TAMPIL (dilaporkan LunasBelumDicatat) — untuk Export Excel
 
   const muat = useCallback(async () => {
     // Tab "Lunas di CRM" memuat datanya sendiri (LunasBelumDicatat).
@@ -161,6 +163,32 @@ export default function FinancePayments() {
     setQ(""); setFMetode(""); setFVerif(""); setFAlokasi(""); setFBukti("");
   }
 
+  // EXPORT EXCEL — persis yang tampil: periode + tab (status, disaring server), lalu pencarian & chip (disaring di klien) → kirim `ids`
+  // baris yang tampil (urutan layar). Tab Klaim Lunas dari Sales tidak punya daftar pembayaran: hanya sheet klaim (tanpa periode).
+  // Tab "Perlu Verifikasi" menampilkan keduanya (pembayaran + klaim), jadi berkasnya juga memuat keduanya.
+  function ambilBodyExport() {
+    const hanyaKlaim = tab === "lunas_crm";
+    const adaFilterKlien = Boolean(q.trim() || fMetode || fVerif || fAlokasi || fBukti);
+    const sertakanKlaim = hanyaKlaim || tab === "perlu";
+    const namaTab = TAB.find((t) => t.key === tab)?.label || "Semua";
+    return {
+      // `ids` HANYA bila ada filter/pencarian sisi-klien; tanpa itu server menjalankan periode+tab yang sama tanpa batas 300 baris layar (berkas lengkap).
+      ...(hanyaKlaim ? {} : { periode: { from: periode.from, to: periode.to }, ...(adaFilterKlien ? { ids: tampil.map((p) => p.id) } : {}) }),
+      filter: {
+        status: hanyaKlaim ? "" : tab === "perlu" ? "belum_verifikasi" : tab,
+        ...(sertakanKlaim ? { sertakanKlaim: true, hanyaKlaim, ...(klaimIds ? { klaimIds } : {}) } : {}),
+      },
+      filterLabel: labelFilterAktif([
+        ["Tab", namaTab],
+        ["Cara bayar", fMetode && (opsiMetode.find(([v]) => v === fMetode)?.[1] || fMetode)],
+        ["Status", { terverifikasi: "Sudah diverifikasi", belum: "Menunggu verifikasi", dibatalkan: "Dibatalkan" }[fVerif]],
+        ["Dibagi ke order lain", { ada: "Ya, dibagi", tanpa: "Tidak dibagi" }[fAlokasi]],
+        ["Foto bukti", { ada: "Ada foto", tanpa: "Tanpa foto" }[fBukti]],
+        ["Pencarian", q.trim()],
+      ]),
+    };
+  }
+
   return (
     <HalamanFinance
       title="Pembayaran & Verifikasi"
@@ -168,7 +196,12 @@ export default function FinancePayments() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={<PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />}
+      actions={(
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
+          <TombolExportExcel modul="pembayaran" disabled={loading} ambilBody={ambilBodyExport} />
+        </div>
+      )}
     >
       {pesan && (
         <Card className="bg-redbg">
@@ -228,7 +261,7 @@ export default function FinancePayments() {
       </p>
 
       {tab === "perlu" && <h3 className="mt-1 text-[14px] font-semibold text-ink">1. Klaim Lunas dari Sales</h3>}
-      {(tab === "lunas_crm" || tab === "perlu") && <LunasBelumDicatat ringkas={tab === "perlu"} />}
+      {(tab === "lunas_crm" || tab === "perlu") && <LunasBelumDicatat ringkas={tab === "perlu"} onTampil={setKlaimIds} />}
       {tab === "perlu" && <h3 className="mt-3 text-[14px] font-semibold text-ink">2. Pembayaran tercatat, menunggu verifikasi</h3>}
 
       <FilterBar

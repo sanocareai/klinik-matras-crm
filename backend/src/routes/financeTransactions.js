@@ -60,6 +60,12 @@ import {
   tanggalMulaiKebijakan, RECEIPTS_URL_PREFIX,
 } from "../services/finance/receipts.js";
 import { buatFinExpense, tarikFinExpense, setujuiFinExpense, expenseInclude, bentukExpense, ExpenseInputError } from "../services/finance/expenses.js";
+import { ambilDaftarPengeluaran } from "../services/finance/expenseRead.js";
+import {
+  billInclude, bentukBill, ambilDaftarTagihan, ambilDaftarPembayaranSupplier, ambilDaftarSupplier, ambilPenerimaanBelumDitagih,
+} from "../services/finance/supplierRead.js";
+import { ambilDaftarStatement, ambilDetailStatement } from "../services/finance/bankStatementRead.js";
+import { purchaseInclude, bentukPurchase, ambilDaftarPembelian } from "../services/finance/purchaseRead.js";
 // Sinkron dua arah FinExpense → ExpenseSubmission (Pengajuan Biaya Lintas
 // Divisi) — no-op kalau FinExpense ini tidak berasal dari pengajuan divisi.
 // Dipanggil di SETIAP transisi status FinExpense, DI DALAM transaksi yang
@@ -71,6 +77,8 @@ import {
 } from "../services/finance/koreksiGate.js";
 import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/service.js";
 import { blokirKoreksiBatch, menuKoreksi } from "../services/finance/koreksiPembayaran.js";
+import { ambilDaftarPembayaran } from "../services/finance/customerPaymentRead.js";
+import { ambilDaftarRefund, refundInclude } from "../services/finance/refundRead.js";
 import {
   blokirKoreksiTagihanBatch, blokirKoreksiRefundBatch, menuKoreksiDokumen, editInfoTagihan, koreksiTagihan, editInfoRefund, koreksiRefund,
 } from "../services/finance/koreksiLanjutan.js";
@@ -149,33 +157,7 @@ function resetVerifikasiBukti(perubahan) {
     : {};
 }
 
-/**
- * Klausa pencarian teks bebas untuk daftar pengeluaran/pembelian. Tiap KATA di
- * `q` harus cocok di salah satu kolom (AND antar kata, OR antar kolom), jadi
- * "kain oscar sep" menyempit dengan wajar. Kata berupa angka (mis. "150000"
- * atau "150.000") juga dicocokkan ke NOMINAL persis.
- */
-function klausaCari(q, kolomTeks) {
-  const kata = String(q || "").trim().split(/\s+/).filter(Boolean).slice(0, 6);
-  return kata.map((k) => {
-    const atau = kolomTeks.map((path) => {
-      const bagian = path.split(".");
-      return bagian.reduceRight((isi, kunci, i) => (i === bagian.length - 1 ? { [kunci]: { contains: k, mode: "insensitive" } } : { [kunci]: isi }), null);
-    });
-    const angka = k.replace(/\./g, "");
-    if (/^\d{3,}$/.test(angka)) atau.push({ amount: Number(angka) });
-    return { OR: atau };
-  });
-}
-
-/** Filter status bukti: ada | tanpa | terverifikasi | belum. */
-function klausaBukti(bukti) {
-  if (bukti === "ada") return { receiptUrl: { not: null } };
-  if (bukti === "tanpa") return { receiptUrl: null };
-  if (bukti === "terverifikasi") return { receiptVerifiedAt: { not: null } };
-  if (bukti === "belum") return { receiptUrl: { not: null }, receiptVerifiedAt: null };
-  return {};
-}
+// klausaCari / klausaBukti kini ada di services/finance/expenseRead.js (dipakai layar DAN Export Excel).
 
 /** Suffix idempotencyKey BARU untuk jurnal pengganti sebuah koreksi. */
 function suffixKoreksi() {
@@ -190,43 +172,10 @@ financeTxRouter.get("/expenses",
   requireAnyPermission(P.FINANCE_READ, P.FINANCE_EXPENSE_SUBMIT),
   async (req, res) => {
     try {
-      const { from, to } = rentangDariQuery(req.query);
+      // Query yang SAMA dipakai Export Excel (services/finance/expenseRead.js) — angka layar = angka berkas.
+      // Pemegang finance:expense:submit TANPA finance:read hanya melihat pengajuannya SENDIRI (dijaga di sana).
       const { status, division, categoryId, mode, q, bukti, cashAccountId } = req.query;
-
-      // Pemegang finance:expense:submit TANPA finance:read hanya boleh
-      // melihat pengajuannya SENDIRI. Pembatasan barisnya di query, persis
-      // pola JOB_OWN_READ milik driver (lihat constants/permissions.js).
-      const hanyaMilikSendiri = !hasPermission(req.user, P.FINANCE_READ);
-
-      const expenses = await prisma.finExpense.findMany({
-        where: {
-          date: { gte: from, lte: to },
-          ...(status && { status }),
-          ...(division && { division }),
-          ...(categoryId && { categoryId }),
-          ...(mode && { mode }),
-          ...(cashAccountId && { cashAccountId }),
-          ...klausaBukti(bukti),
-          AND: [
-            ...(hanyaMilikSendiri ? [{ OR: [{ createdById: req.user.id }, { reimburseToId: req.user.id }] }] : []),
-            ...klausaCari(q, ["expenseNumber", "description", "payeeName", "notes", "category.name", "supplier.name", "reimburseTo.name"]),
-          ],
-        },
-        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-        take: 300,
-        include: expenseInclude,
-      });
-
-      const total = expenses.length === 0 ? ZERO : sumMoney(expenses.map((e) => e.amount));
-      // `notaWajib`: aturan yang sama dengan yang dipakai saat Setujui — supaya UI bisa memberi tahu SEBELUM tombol ditekan
-      // (tanpa ini tombol tampak aktif tetapi server menolak 422 "wajib punya foto nota").
-      const ambang = await ambangNota(prisma);
-      res.json({
-        expenses: expenses.map((e) => ({ ...bentukExpense(e), notaWajib: notaWajibDenganAmbang({ jenis: "expense", mode: e.mode, amount: e.amount, categoryCode: e.category?.code }, ambang) })),
-        total: moneyToNumber(total),
-        hanyaMilikSendiri,
-        terpotong: expenses.length === 300,
-      });
+      res.json(await ambilDaftarPengeluaran(prisma, { rentang: rentangDariQuery(req.query), status, division, categoryId, mode, q, bukti, cashAccountId }, { user: req.user, take: 300 }));
     } catch (e) {
       handleFinanceError(e, res);
     }
@@ -611,90 +560,15 @@ financeTxRouter.post("/expenses/:id/koreksi", requirePermission(P.FINANCE_ADMIN)
 // (FinSupplierBill) — tidak digantikan oleh blok ini.
 // ═════════════════════════════════════════════════════════════════════════
 
-const purchaseInclude = {
-  category: { select: { id: true, code: true, name: true, account: { select: { code: true, name: true } } } },
-  cashAccount: { select: { id: true, name: true, kind: true } },
-  supplier: { select: { id: true, name: true } },
-  reimburseTo: { select: { id: true, name: true } },
-  approvedBy: { select: { id: true, name: true } },
-  createdBy: { select: { id: true, name: true } },
-  paidBy: { select: { id: true, name: true } },
-};
-
-function bentukPurchase(p) {
-  return { ...p, amount: moneyToNumber(p.amount), transferFeeAmount: moneyToNumber(p.transferFeeAmount ?? 0), ...ringkasBiaya(p) };
-}
+// purchaseInclude / bentukPurchase / daftar pembelian ada di services/finance/purchaseRead.js (dipakai layar DAN Export Excel).
 
 financeTxRouter.get("/purchases",
   requireAnyPermission(P.FINANCE_READ, P.FINANCE_EXPENSE_SUBMIT),
   async (req, res) => {
     try {
-      const { from, to } = rentangDariQuery(req.query);
+      // Query yang SAMA dipakai Export Excel — indikator DP/Sisa & batasan "milik sendiri" dihitung di services/finance/purchaseRead.js.
       const { status, division, categoryId, mode, q, bukti, cashAccountId } = req.query;
-
-      const hanyaMilikSendiri = !hasPermission(req.user, P.FINANCE_READ);
-
-      const purchases = await prisma.finPurchase.findMany({
-        where: {
-          date: { gte: from, lte: to },
-          ...(status && { status }),
-          ...(division && { division }),
-          ...(categoryId && { categoryId }),
-          ...(mode && { mode }),
-          ...(cashAccountId && { cashAccountId }),
-          ...klausaBukti(bukti),
-          AND: [
-            ...(hanyaMilikSendiri ? [{ OR: [{ createdById: req.user.id }, { reimburseToId: req.user.id }] }] : []),
-            ...klausaCari(q, ["purchaseNumber", "description", "payeeName", "notes", "category.name", "supplier.name", "reimburseTo.name"]),
-          ],
-        },
-        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-        take: 300,
-        include: purchaseInclude,
-      });
-
-      const total = purchases.length === 0 ? ZERO : sumMoney(purchases.map((p) => p.amount));
-
-      // Indikator "DP Rp…"/"Sisa Rp…" untuk daftar — dua agregat sekali
-      // jalan (bukan N+1 per baris). Sisi TUJUAN: pembelian mode UTANG
-      // menerima DP → dpDiterapkan/sisaUtang. Sisi SUMBER: pembelian
-      // kategori Uang Muka Pembelian yang sudah dipakai → dpDigunakan/
-      // dpTersedia. Baris yang tidak masuk salah satu golongan ini tidak
-      // dapat field tambahan sama sekali (tabel tidak makin sesak).
-      const idTujuan = purchases.filter((p) => p.mode === "UTANG" && p.category?.code !== "UANG_MUKA_PEMBELIAN").map((p) => p.id);
-      const idSumber = purchases.filter((p) => p.category?.code === "UANG_MUKA_PEMBELIAN").map((p) => p.id);
-      const [grupTujuan, grupSumber] = await Promise.all([
-        idTujuan.length === 0 ? [] : prisma.finPurchaseAdvanceApplication.groupBy({
-          by: ["targetPurchaseId"], where: { targetPurchaseId: { in: idTujuan }, status: "ACTIVE" }, _sum: { amount: true },
-        }),
-        idSumber.length === 0 ? [] : prisma.finPurchaseAdvanceApplication.groupBy({
-          by: ["advancePurchaseId"], where: { advancePurchaseId: { in: idSumber }, status: "ACTIVE" }, _sum: { amount: true },
-        }),
-      ]);
-      const dpTujuanMap = new Map(grupTujuan.map((g) => [g.targetPurchaseId, g._sum.amount]));
-      const dpSumberMap = new Map(grupSumber.map((g) => [g.advancePurchaseId, g._sum.amount]));
-
-      res.json({
-        purchases: purchases.map((p) => {
-          const hasil = { ...bentukPurchase(p), notaWajib: true }; // pembelian SELALU wajib nota (aturan notaWajib)
-          const dpKeTujuan = dpTujuanMap.get(p.id);
-          if (dpKeTujuan != null) {
-            const dp = toMoney(dpKeTujuan);
-            hasil.dpDiterapkan = moneyToNumber(dp);
-            hasil.sisaUtang = moneyToNumber(toMoney(p.amount).minus(dp));
-          }
-          const dpDipakai = dpSumberMap.get(p.id);
-          if (dpDipakai != null) {
-            const dp = toMoney(dpDipakai);
-            hasil.dpDigunakan = moneyToNumber(dp);
-            hasil.dpTersedia = moneyToNumber(toMoney(p.amount).minus(dp));
-          }
-          return hasil;
-        }),
-        total: moneyToNumber(total),
-        hanyaMilikSendiri,
-        terpotong: purchases.length === 300,
-      });
+      res.json(await ambilDaftarPembelian(prisma, { rentang: rentangDariQuery(req.query), status, division, categoryId, mode, q, bukti, cashAccountId }, { user: req.user, take: 300 }));
     } catch (e) {
       handleFinanceError(e, res);
     }
@@ -1360,25 +1234,8 @@ financeTxRouter.post("/purchases/advance-applications/:id/cancel", requirePermis
 
 financeTxRouter.get("/suppliers", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
-    const suppliers = await prisma.finSupplier.findMany({
-      where: req.query.includeInactive === "1" ? {} : { active: true },
-      orderBy: { name: "asc" },
-      include: {
-        bills: {
-          where: { status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN"] } },
-          select: { amount: true, allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } } },
-        },
-      },
-    });
-    res.json({
-      suppliers: suppliers.map((s) => {
-        const sisa = s.bills.reduce((acc, b) => {
-          const terbayar = b.allocations.length === 0 ? ZERO : sumMoney(b.allocations.map((a) => a.amount));
-          return acc.plus(toMoney(b.amount).minus(terbayar));
-        }, ZERO);
-        return { ...s, bills: undefined, jumlahTagihanTerbuka: s.bills.length, sisaUtang: moneyToNumber(sisa) };
-      }),
-    });
+    // Query yang SAMA dipakai Export Excel (services/finance/supplierRead.js) — angka layar = angka berkas.
+    res.json({ suppliers: await ambilDaftarSupplier(prisma, { includeInactive: req.query.includeInactive === "1" }) });
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -1446,49 +1303,12 @@ financeTxRouter.patch("/suppliers/:id", requirePermission(P.FINANCE_POST), async
 
 // ── Tagihan supplier ────────────────────────────────────────────────────
 
-const billInclude = {
-  supplier: { select: { id: true, code: true, name: true, paymentTermDays: true } },
-  goodsReceipt: { select: { id: true, receiptNumber: true, supplier: true, receivedDate: true } },
-  purchaseCategory: { select: { id: true, code: true, name: true } },
-  approvedBy: { select: { id: true, name: true } },
-  createdBy: { select: { id: true, name: true } },
-  replaces: { select: { id: true, billNumber: true } },
-  replacedBy: { select: { id: true, billNumber: true } },
-  allocations: {
-    where: { payment: { cancelledAt: null } },
-    select: { amount: true, payment: { select: { id: true, paymentNumber: true, date: true } } },
-  },
-};
-
-function bentukBill(b) {
-  const terbayar = b.allocations?.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO;
-  return {
-    ...b,
-    amount: moneyToNumber(b.amount),
-    terbayar: moneyToNumber(terbayar),
-    sisa: moneyToNumber(toMoney(b.amount).minus(terbayar)),
-    allocations: b.allocations?.map((a) => ({ ...a, amount: moneyToNumber(a.amount) })),
-    jenisTagihan: jenisTampilan(b),
-  };
-}
+// billInclude & bentukBill dipindah ke services/finance/supplierRead.js (dipakai bersama Export Excel).
 
 financeTxRouter.get("/bills", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const { status, supplierId, jatuhTempo } = req.query;
-    const bills = await prisma.finSupplierBill.findMany({
-      where: {
-        ...(status && { status }),
-        ...(supplierId && { supplierId }),
-        // "jatuhTempo=lewat" — tagihan yang sudah lewat jatuh tempo & belum lunas.
-        ...(jatuhTempo === "lewat" && {
-          dueDate: { lt: new Date() },
-          status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN"] },
-        }),
-      },
-      orderBy: [{ dueDate: "asc" }, { billDate: "desc" }],
-      take: 300,
-      include: billInclude,
-    });
+    const bills = await ambilDaftarTagihan(prisma, { status, supplierId, jatuhTempo }, { take: 300 });
     // B3.8 — keadaan menu Koreksi dihitung SERVER (satu set query), klien tidak menyalin aturan blokir.
     const blokir = await blokirKoreksiTagihanBatch(prisma, bills.map((b) => b.id));
     const punyaIzin = hasPermission(req.user, P.FINANCE_ADMIN);
@@ -1638,28 +1458,8 @@ financeTxRouter.get("/inventory-method", requirePermission(P.FINANCE_READ), asyn
 // membuat tagihan supplier, supaya finance tidak perlu mencari manual.
 financeTxRouter.get("/bills/unbilled-receipts", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
-    const receipts = await prisma.goodsReceipt.findMany({
-      where: { status: "COMPLETED", finSupplierBills: { none: {} } },
-      orderBy: { receivedDate: "desc" },
-      take: 100,
-      select: {
-        id: true, receiptNumber: true, supplier: true, receivedDate: true, sourceReference: true,
-        movements: { where: { type: "RECEIPT" }, select: { qty: true, unitCost: true } },
-      },
-    });
-    res.json({
-      receipts: receipts.map((r) => {
-        const berharga = r.movements.filter((m) => m.unitCost != null && m.unitCost > 0);
-        const nilai = berharga.length === 0 ? ZERO : sumMoney(berharga.map((m) => toMoney(m.qty).times(toMoney(m.unitCost))));
-        return {
-          id: r.id, receiptNumber: r.receiptNumber, supplier: r.supplier,
-          receivedDate: r.receivedDate, sourceReference: r.sourceReference,
-          jumlahBaris: r.movements.length,
-          barisTanpaHarga: r.movements.length - berharga.length,
-          nilaiTerima: moneyToNumber(nilai),
-        };
-      }),
-    });
+    // Query yang SAMA dipakai kartu ringkasan Export Excel (services/finance/supplierRead.js).
+    res.json({ receipts: await ambilPenerimaanBelumDitagih(prisma) });
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -1670,24 +1470,8 @@ financeTxRouter.get("/bills/unbilled-receipts", requirePermission(P.FINANCE_READ
 financeTxRouter.get("/supplier-payments", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const { from, to } = rentangDariQuery(req.query);
-    const payments = await prisma.finSupplierPayment.findMany({
-      where: { date: { gte: from, lte: to }, ...(req.query.supplierId && { supplierId: req.query.supplierId }) },
-      orderBy: { date: "desc" },
-      take: 200,
-      include: {
-        supplier: { select: { id: true, name: true } },
-        cashAccount: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, name: true } },
-        allocations: { include: { bill: { select: { id: true, billNumber: true } } } },
-      },
-    });
-    res.json({
-      payments: payments.map((p) => ({
-        ...p,
-        amount: moneyToNumber(p.amount),
-        allocations: p.allocations.map((a) => ({ ...a, amount: moneyToNumber(a.amount) })),
-      })),
-    });
+    // Query yang SAMA dipakai Export Excel (services/finance/supplierRead.js).
+    res.json({ payments: await ambilDaftarPembayaranSupplier(prisma, { rentang: { from, to }, supplierId: req.query.supplierId }, { take: 200 }) });
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -2126,45 +1910,12 @@ financeTxRouter.post("/other-income/:id/koreksi", requirePermission(P.FINANCE_AD
 // Antrean pembayaran pelanggan — dipakai halaman "Pembayaran & Verifikasi".
 financeTxRouter.get("/customer-payments", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
-    const { from, to } = rentangDariQuery(req.query);
+    const { fromStr, toStr } = rentangDariQuery(req.query);
     const { status } = req.query; // belum_verifikasi | terverifikasi | dibatalkan | semua
 
-    const where = {
-      createdAt: { gte: from, lt: new Date(to.getTime() + 86400000) },
-      ...(status === "belum_verifikasi" && { cancelledAt: null, verifications: { none: {} } }),
-      ...(status === "terverifikasi" && { cancelledAt: null, verifications: { some: {} } }),
-      ...(status === "dibatalkan" && { cancelledAt: { not: null } }),
-    };
-
+    // Query daftar ada di services/finance/customerPaymentRead.js — dipakai bersama Export Excel (Pembayaran & Verifikasi).
     const [payments, gate] = await Promise.all([
-      prisma.payment.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: 300,
-        select: {
-          id: true, amount: true, method: true, createdAt: true, proofPhotoUrl: true,
-          cancelledAt: true, cancelReason: true, orderId: true,
-          referenceNumber: true, notes: true, internalNote: true, replacesPaymentId: true, replacedBy: { select: { id: true } },
-          cashAccount: { select: { id: true, name: true } },
-          recordedBy: { select: { id: true, name: true } },
-          cancelledBy: { select: { id: true, name: true } },
-          verifications: { select: { id: true, createdAt: true, verifiedBy: { select: { id: true, name: true } } } },
-          finAllocations: { select: { id: true, orderId: true, amount: true, order: { select: { orderNumber: true } } } },
-          order: {
-            select: {
-              id: true, orderNumber: true, value: true, paymentStatus: true,
-              customer: { select: { id: true, name: true } },
-            },
-          },
-          // Job TIDAK punya kolom "jobNumber" (bukan seperti Order.orderNumber
-          // — lihat model Job di schema.prisma, tidak ada nomor dokumen
-          // manusiawi untuknya). Field itu sebelumnya di sini menyebabkan
-          // SELURUH endpoint ini gagal dengan PrismaClientValidationError
-          // ("Unknown field `jobNumber`") — halaman Pembayaran & Verifikasi
-          // tidak bisa memuat data sama sekali.
-          job: { select: { id: true, type: true } },
-        },
-      }),
+      ambilDaftarPembayaran(prisma, { fromStr, toStr, status }, { take: 300 }),
       getVerificationGate(prisma),
     ]);
 
@@ -2240,23 +1991,11 @@ financeTxRouter.post("/customer-payments/:id/allocations", requirePermission(P.F
 
 // ── Refund ──────────────────────────────────────────────────────────────
 
-const refundInclude = {
-  order: { select: { id: true, orderNumber: true, value: true, customer: { select: { id: true, name: true } } } },
-  cashAccount: { select: { id: true, name: true } },
-  approvedBy: { select: { id: true, name: true } },
-  createdBy: { select: { id: true, name: true } },
-  replaces: { select: { id: true, refundNumber: true } },
-  replacedBy: { select: { id: true, refundNumber: true } },
-};
+// refundInclude & query daftar ada di services/finance/refundRead.js — dipakai bersama Export Excel (Piutang & Refund).
 
 financeTxRouter.get("/refunds", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
-    const refunds = await prisma.finRefund.findMany({
-      where: req.query.status ? { status: req.query.status } : {},
-      orderBy: { createdAt: "desc" },
-      take: 200,
-      include: refundInclude,
-    });
+    const refunds = await ambilDaftarRefund(prisma, { status: req.query.status }, { take: 200 });
     const blokir = await blokirKoreksiRefundBatch(prisma, refunds.map((r) => r.id));
     const punyaIzin = hasPermission(req.user, P.FINANCE_ADMIN);
     res.json({ refunds: refunds.map((r) => ({ ...r, amount: moneyToNumber(r.amount), koreksi: menuKoreksiDokumen(blokir.get(r.id), { punyaIzin }) })) });
@@ -2410,58 +2149,12 @@ financeTxRouter.post("/refunds/:id/reject", requirePermission(P.FINANCE_APPROVE)
 
 financeTxRouter.get("/bank-statements", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
-    const statements = await prisma.finBankStatement.findMany({
-      where: req.query.cashAccountId ? { cashAccountId: req.query.cashAccountId } : {},
-      orderBy: { periodStart: "desc" },
-      take: 50,
-      include: {
-        cashAccount: { select: { id: true, name: true, kind: true } },
-        createdBy: { select: { id: true, name: true } },
-        completedBy: { select: { id: true, name: true } },
-        lines: { select: { id: true, status: true, amount: true } },
-        snapshot: true,
-      },
-    });
-    const exc = await daftarException(prisma);
-    const hasil = [];
-    for (const s of statements) {
-      const buku = await saldoBukuSampai(prisma, s.cashAccountId, s.periodEnd);
-      const selisih = toMoney(s.closingBalance).minus(buku); // bank − buku
-      hasil.push({
-        ...s,
-        openingBalance: moneyToNumber(s.openingBalance),
-        closingBalance: moneyToNumber(s.closingBalance),
-        statusLabel: LABEL_STATUS_REKON[s.status] ?? s.status,
-        sementara: s.status === STATUS_DRAF_MENUNGGU,
-        saldoBuku: moneyToNumber(buku),
-        selisih: moneyToNumber(selisih),
-        bukuLebihTinggi: moneyToNumber(buku.minus(toMoney(s.closingBalance))),
-        jumlahBaris: s.lines.length,
-        belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length,
-        lines: undefined,
-        snapshot: undefined,
-        // B3 (aditif): ringkasan cutoff dari snapshot TERSIMPAN — angka snapshot tidak dihitung ulang.
-        cutoffInfo: await ringkasCutoff(s),
-        perluDitinjau: exc.items.filter((x) => !x.ditinjau && x.rekeningIds.includes(s.cashAccountId)).length,
-      });
-    }
-    res.json({ statements: hasil });
+    // Query yang SAMA dipakai Export Excel (services/finance/bankStatementRead.js) — angka layar = angka berkas.
+    res.json({ statements: await ambilDaftarStatement(prisma, { cashAccountId: req.query.cashAccountId }, { take: 50 }) });
   } catch (e) {
     handleFinanceError(e, res);
   }
 });
-
-async function ringkasCutoff(s) {
-  if (!s.snapshot) return { adaSnapshot: false, cutoffAkhir: s.cutoffEndAt };
-  const p = await pandanganCutoff(prisma, s.snapshot, { closingBank: s.closingBalance });
-  const r = p.ringkasanSetelahSnapshot;
-  return {
-    adaSnapshot: true, cutoffAkhir: s.cutoffEndAt, snapshotAt: p.snapshot.snapshotAt, hwmAt: p.snapshot.hwmAt, hwmEntryNumber: p.snapshot.hwmEntryNumber,
-    saldoBukuSnapshot: p.snapshot.saldoBuku, selisihSnapshot: p.snapshot.selisih, valid: p.valid,
-    postingSetelahCutoff: r.POSTING_SETELAH_CUTOFF, reversalSetelahSnapshot: r.REVERSAL_SETELAH_SNAPSHOT, penyesuaianSetelahSnapshot: r.PENYESUAIAN_BUKU,
-    saldoBukuSekarang: p.saldoBukuSekarang,
-  };
-}
 
 financeTxRouter.post("/bank-statements", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
@@ -2507,103 +2200,10 @@ financeTxRouter.post("/bank-statements", requirePermission(P.FINANCE_POST), asyn
 // dicocokkan + selisih saldo buku vs koran.
 financeTxRouter.get("/bank-statements/:id", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
-    const s = await prisma.finBankStatement.findUnique({
-      where: { id: req.params.id },
-      include: {
-        cashAccount: { select: { id: true, name: true, kind: true, accountId: true } },
-        lines: {
-          orderBy: { date: "asc" },
-          include: {
-            matchedLine: {
-              select: {
-                id: true, debit: true, credit: true, description: true,
-                entry: { select: { id: true, entryNumber: true, date: true, description: true } },
-              },
-            },
-            matchedBy: { select: { id: true, name: true } },
-          },
-        },
-      },
-    });
-    if (!s) return res.status(404).json({ error: "Koran bank tidak ditemukan" });
-
-    const { STATUS_DIHITUNG } = await import("../services/finance/journal.js");
-
-    // Baris jurnal rekening ini di periode yang sama — kandidat pencocokan.
-    const kandidat = await prisma.finJournalLine.findMany({
-      where: {
-        cashAccountId: s.cashAccountId,
-        // Penyesuaian buku (kalibrasi saldo riil & koreksi kas ganda, sumber
-        // SALDO_AWAL) dan penyesuaian sementara rekonsiliasi (sumber
-        // REKONSILIASI_SEMENTARA, akun 2-1700) BUKAN transaksi bank → tidak
-        // pernah jadi kandidat pencocokan mutasi koran.
-        entry: { status: { in: STATUS_DIHITUNG }, date: { gte: s.periodStart, lte: s.periodEnd }, source: { notIn: ["SALDO_AWAL", "REKONSILIASI_SEMENTARA"] } },
-      },
-      orderBy: [{ entry: { date: "asc" } }],
-      select: {
-        id: true, debit: true, credit: true, description: true,
-        entry: { select: { id: true, entryNumber: true, date: true, description: true, source: true } },
-        bankStatementLines: { select: { id: true } },
-      },
-    });
-    const penyesuaianBuku = await penyesuaianBukuPeriode(prisma, { cashAccountId: s.cashAccountId, periodStart: s.periodStart, periodEnd: s.periodEnd });
-    const danaBelumTeridentifikasi = await saldoBelumTeridentifikasi(prisma, { cashAccountId: s.cashAccountId });
-
-    // Saldo menurut BUKU pada akhir periode (seluruh mutasi rekening ini
-    // sampai periodEnd) vs saldo menurut KORAN BANK.
-    const saldoBuku = await saldoBukuSampai(prisma, s.cashAccountId, s.periodEnd);
-    const snap = await prisma.finReconSnapshot.findUnique({ where: { statementId: s.id } });
-    const cutoff = snap ? await pandanganCutoff(prisma, snap, { closingBank: s.closingBalance }) : null;
-    const perluDitinjau = await daftarException(prisma, { cashAccountId: s.cashAccountId });
-    const selisih = toMoney(s.closingBalance).minus(saldoBuku);
-
-    res.json({
-      statement: {
-        ...s,
-        openingBalance: moneyToNumber(s.openingBalance),
-        closingBalance: moneyToNumber(s.closingBalance),
-        lines: s.lines.map((l) => ({
-          ...l,
-          amount: moneyToNumber(l.amount),
-          matchedLine: l.matchedLine && {
-            ...l.matchedLine,
-            debit: moneyToNumber(l.matchedLine.debit),
-            credit: moneyToNumber(l.matchedLine.credit),
-          },
-        })),
-      },
-      kandidat: kandidat
-        .filter((k) => k.bankStatementLines.length === 0)
-        .map((k) => ({
-          id: k.id,
-          nilai: moneyToNumber(toMoney(k.debit).minus(toMoney(k.credit))),
-          description: k.description || k.entry.description,
-          entryNumber: k.entry.entryNumber,
-          tanggal: k.entry.date,
-          source: k.entry.source,
-        })),
-      rekonsiliasi: {
-        saldoBuku: moneyToNumber(saldoBuku),
-        saldoKoran: moneyToNumber(s.closingBalance),
-        selisih: moneyToNumber(selisih),
-        bukuLebihTinggi: moneyToNumber(saldoBuku.minus(toMoney(s.closingBalance))),
-        cocok: selisih.isZero(),
-        belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length,
-        sementara: s.status === STATUS_DRAF_MENUNGGU,
-        statusLabel: LABEL_STATUS_REKON[s.status] ?? s.status,
-        labelSementara: s.status === STATUS_DRAF_MENUNGGU ? LABEL_REKON_SEMENTARA : null,
-        cutoff: { mulai: s.cutoffStartAt, selesai: s.cutoffEndAt },
-        penyelesaian: evaluasiSelesai({
-          status: s.status, jumlahBaris: s.lines.length, belumCocok: s.lines.filter((l) => l.status === "BELUM_COCOK").length,
-          selisih, danaBelumTeridentifikasi: danaBelumTeridentifikasi.total,
-          snapshotValid: cutoff ? cutoff.valid : true, exceptionTerbuka: perluDitinjau.terbuka,
-        }),
-      },
-      cutoff,
-      perluDitinjau,
-      penyesuaianBuku,
-      danaBelumTeridentifikasi,
-    });
+    // Perhitungan yang SAMA dipakai Export Excel (services/finance/bankStatementRead.js) — angka layar = angka berkas.
+    const detail = await ambilDetailStatement(prisma, req.params.id);
+    if (!detail) return res.status(404).json({ error: "Koran bank tidak ditemukan" });
+    res.json(detail);
   } catch (e) {
     handleFinanceError(e, res);
   }

@@ -30,6 +30,7 @@ import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 
 function teksMode(mode) {
   return mode === "LANGSUNG" ? "Bayar langsung" : mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang";
@@ -201,6 +202,24 @@ export default function FinanceExpenses() {
       actions={
         <>
           <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
+          {/* Export Excel: kirim filter/periode/pencarian yang SEDANG aktif — server menjalankan query yang sama dengan layar. */}
+          <TombolExportExcel
+            modul="pengeluaran"
+            disabled={data?.hanyaMilikSendiri}
+            ambilBody={() => ({
+              periode: { from: periode.from, to: periode.to },
+              filter: { status, q: qTunda.trim(), categoryId: fKategori, division: fDivisi, mode: fMode, cashAccountId: fRekening, bukti: fBukti },
+              filterLabel: labelFilterAktif([
+                ["Status", STATUS_TAB.find((t) => t.key === status)?.label],
+                ["Kategori", kategori.find((k) => k.id === fKategori)?.name],
+                ["Divisi", LABEL_DIVISI[fDivisi]],
+                ["Cara bayar", { LANGSUNG: "Bayar langsung", REIMBURSEMENT: "Reimbursement", UTANG: "Utang" }[fMode]],
+                ["Rekening", rekening.find((r) => r.id === fRekening)?.name],
+                ["Bukti", { ada: "Ada nota", tanpa: "Tanpa nota", terverifikasi: "Terverifikasi", belum: "Belum diverifikasi" }[fBukti]],
+                ["Pencarian", qTunda.trim()],
+              ]),
+            })}
+          />
           <Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Pengeluaran Baru</Button>
         </>
       }
