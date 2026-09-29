@@ -118,7 +118,7 @@ for lf in /tmp/release-*.lock; do
   ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf} dipegang)"
 done
 exec 9>/tmp/release-finance-b38.lock; flock -n 9 || die "rilis ini sudah berjalan (kunci /tmp/release-finance-b38.lock)"
-OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "rfb38\|release-finance-b38\|pgrep" || true)"
+OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "rfb38\|release-finance-b38\|pgrep\|node src/index.js" || true)"  # 'node src/index.js' = perintah start container backend yang SEDANG melayani (bukan deploy)
 [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain yang berjalan"; }
 ok "tidak ada deploy lain: semua kunci /tmp/release-*.lock bebas dan tidak ada proses build/migrate lain"
 mkdir -p "$BK_DIR" "$HOME/release-src" "$HOME/backups"
