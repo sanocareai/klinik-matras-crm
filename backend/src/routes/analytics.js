@@ -839,7 +839,7 @@ export async function computeSalesRow(u, ctx) {
     // terhitung di sini sampai paymentStatus-nya disentuh ulang.
     prisma.order.aggregate({
       where: tanpaOrderSpam({
-        status: { not: "CANCELLED" }, paidAt: { gte: mulai, lt: selesai },
+        status: { notIn: OMSET_EXCLUDED_STATUS }, paidAt: { gte: mulai, lt: selesai },
         customer: { conversations: { some: mineAtribusi } },
       }),
       _sum: { value: true },
@@ -1419,7 +1419,7 @@ analyticsRouter.get("/sales-report/lunas-detail", async (req, res) => {
 
     const orders = await prisma.order.findMany({
       where: tanpaOrderSpam({
-        status: { not: "CANCELLED" },
+        status: { notIn: OMSET_EXCLUDED_STATUS },
         paidAt: { gte: mulai, lt: selesai },
         customer: { conversations: { some: { type: "INDIVIDUAL", assignedToId: userId } } },
       }),

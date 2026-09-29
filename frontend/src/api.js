@@ -1241,6 +1241,7 @@ export const api = {
 
   // Pipeline
   getPipelineBoard: (params) => request("/pipeline/board" + buildQuery(params)),
+  getPipelineOrderBoard: (params) => request("/pipeline/order-board" + buildQuery(params)),
 
   // Broadcast
   getBroadcastCampaigns: () => request("/broadcast/campaigns"),

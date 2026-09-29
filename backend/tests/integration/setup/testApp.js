@@ -74,6 +74,7 @@ const { conversationRouter } = await import("../../../src/routes/conversations.j
 // analyticsRouter (30 September 2026) — regresi definisi omset (PENDING/"Menunggu"
 // tidak dihitung) + endpoint /stage-by-sales. Kode ASLI produksi.
 const { analyticsRouter } = await import("../../../src/routes/analytics.js");
+const { pipelineRouter } = await import("../../../src/routes/pipeline.js");
 
 export function buildTestApp() {
   const app = express();
@@ -132,6 +133,7 @@ export function buildTestApp() {
   app.use("/api/delivery-control", deliveryControlRouter);
   app.use("/api/conversations", conversationRouter);
   app.use("/api/analytics", analyticsRouter);
+  app.use("/api/pipeline", pipelineRouter);
 
   return app;
 }

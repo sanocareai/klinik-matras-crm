@@ -14,6 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableEmptyRow } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import KanbanCard, { STAGE_DOT, isStale } from "@/features/pipeline/components/KanbanCard.jsx";
+import OrderPipelineBoard from "@/features/pipeline/components/OrderPipelineBoard.jsx";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { rolesOf } from "@/lib/roles.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "../lib/dateRange.js";
@@ -198,6 +200,10 @@ export default function Pipeline() {
   // kolom. Tabel flatten SEMUA stage jadi satu daftar yang bisa di-sort,
   // filter yang sama (pencarian/sales/mandek) tetap berlaku di kedua mode.
   const [viewMode, setViewMode] = useState("papan"); // "papan" | "tabel"
+  // Dasar pipeline (30 Sep 2026): "pelanggan" = 5 stage penjualan (papan lama),
+  // "order" = status pengerjaan order (Menunggu/Diproses/Siap Kirim/...).
+  const [basis, setBasis] = useState("pelanggan"); // "pelanggan" | "order"
+  const modeOrder = basis === "order";
   const [sortKey, setSortKey] = useState("updatedAt");
   const [sortDir, setSortDir] = useState("desc");
 
@@ -372,11 +378,13 @@ export default function Pipeline() {
     // — itu yang mencegah board jadi absurd lebar di monitor ultra-wide,
     // bukan cap di container. Mode Tabel TETAP 1400px (tidak dilaporkan
     // bermasalah, dan tabel memang lebih enak dibaca tidak terlalu lebar).
-    <PageContainer className={viewMode === "papan" ? "max-w-none" : undefined}>
+    <PageContainer className={viewMode === "papan" || modeOrder ? "max-w-none" : undefined}>
       <PageHeader
         title="Pipeline"
         subtitle={
-          totalMandek > 0
+          modeOrder
+            ? "Order dikelompokkan menurut status pengerjaannya — berubah otomatis, tidak bisa digeser"
+            : totalMandek > 0
             ? `${totalMandek} deal mandek ${"≥"}14 hari — perlu ditindak`
             : "Geser kartu antar stage untuk memperbarui status"
         }
@@ -385,6 +393,22 @@ export default function Pipeline() {
             {/* Toggle Papan/Tabel (26 Agustus 2026, permintaan owner) — Kanban
                 bagus untuk drag antar stage, Tabel bagus untuk membandingkan
                 banyak pelanggan sekaligus (sort by nilai/hari-di-stage/kota). */}
+            {/* Dasar pipeline: pelanggan (5 stage) atau order (status pengerjaan). */}
+            <div className="flex items-center gap-0.5 rounded-lg bg-inset p-0.5">
+              {[["pelanggan", "Berdasarkan Pelanggan"], ["order", "Berdasarkan Order"]].map(([k, label]) => (
+                <button
+                  key={k} type="button" onClick={() => setBasis(k)} aria-pressed={basis === k}
+                  className={cn(
+                    "flex h-7 items-center rounded-md px-2.5 text-[12.5px] font-semibold transition-colors",
+                    basis === k ? "bg-surface text-ink shadow-card" : "text-ink3 hover:text-ink2"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+              <span className="pr-1.5"><InfoTooltip text="Berdasarkan Pelanggan: pelanggan dikelompokkan menurut stage penjualan (New, Prospek, Transaksi, Reviewed, Spam) dan bisa digeser manual. Berdasarkan Order: pesanan dikelompokkan menurut status pengerjaannya (Menunggu, Diproses, Siap Kirim, Terkirim, Dibatalkan). Status order berubah otomatis mengikuti progres bengkel dan pengiriman, jadi tidak bisa digeser." /></span>
+            </div>
+            {!modeOrder && (
             <div className="flex items-center gap-0.5 rounded-lg bg-inset p-0.5">
               <button
                 type="button"
@@ -411,6 +435,7 @@ export default function Pipeline() {
                 <List size={13} /> Tabel
               </button>
             </div>
+            )}
             <DateRangePicker value={range} onChange={setRange} />
             {/* Pencarian di dalam board — tanpa ini satu-satunya cara menemukan
                 customer di kolom berisi ribuan kartu adalah scroll manual. */}
@@ -442,26 +467,28 @@ export default function Pipeline() {
               placeholder="Semua Sales"
               ariaLabel="Filter sales person"
             />
-            <Button
+            {!modeOrder && (<Button
               variant={hanyaMandek ? "primary" : "ghost"} size="sm"
               onClick={() => setHanyaMandek((v) => !v)}
               title="Tampilkan hanya deal yang tidak disentuh ≥14 hari"
             >
               <AlertTriangle size={14} /> Mandek
-            </Button>
+            </Button>)}
             <Button variant="ghost" size="sm" onClick={loadBoard} disabled={loading}>
               <RefreshCw size={14} /> Refresh
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleExport}>
+            {!modeOrder && (<Button variant="ghost" size="sm" onClick={handleExport}>
               <Download size={14} /> Export
-            </Button>
+            </Button>)}
           </>
         }
       />
 
       <PageBody>
        <PageErrorBoundary label="Pipeline">
-        {loading ? (
+        {modeOrder ? (
+          <OrderPipelineBoard range={range} cari={cari} filterSales={filterSales} />
+        ) : loading ? (
           <div className="flex gap-3 overflow-hidden">
             {STAGES.slice(0, 5).map((s) => (
               <div key={s} className="flex w-64 shrink-0 flex-col gap-2 rounded-2xl bg-inset/80 p-2.5">
