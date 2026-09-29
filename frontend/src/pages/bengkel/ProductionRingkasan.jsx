@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
+import CommandCenterSummary from "@/features/production/CommandCenterSummary.jsx";
 import { EXCEPTION_TYPE_REAL, WORKSPACE_HEALTH_REAL } from "@/features/bengkel/unitStatus.js";
 import { formatDurasiMenit } from "@/utils/formatDate.js";
 
@@ -74,6 +75,9 @@ export default function ProductionRingkasan() {
         }
       />
       <PageBody>
+        {/* P9B — Command Center V2: KPI + Butuh Perhatian + aktivitas PIC/meja, cohort Production V2 saja. Inert
+            (tidak render apa pun) saat readerMode OFF — pusat kendali V1 di bawah tetap berlaku untuk seluruh unit. */}
+        <CommandCenterSummary />
         <ActiveComplaintsWidget currentOwner="PRODUCTION" title="Kasus Komplain Perlu Rework" />
 
         {error && !cc ? (
