@@ -134,7 +134,7 @@ export default function ProductionOperators() {
                   {!loading && operators.map((o) => (
                     <TR key={o.id}>
                       <TD className="font-semibold text-ink">{o.user.name}</TD>
-                      <TD><Badge variant={o.active ? "green" : "neutral"}>{o.active ? "Active" : "Nonaktif"}</Badge></TD>
+                      <TD><Badge variant={o.active ? "green" : "neutral"}>{o.active ? "Aktif" : "Nonaktif"}</Badge></TD>
                       <TD>
                         {canManage ? (
                           <select

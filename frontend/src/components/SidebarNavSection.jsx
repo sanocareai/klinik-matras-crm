@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { GripVertical } from "lucide-react";
 import SidebarLink from "./SidebarLink.jsx";
 import { cn } from "@/lib/utils.js";
+import { isSidebarItemActive } from "@/lib/sidebarActive.js";
 
 // Satu section menu sidebar (D-060, 4 September 2026) — laporan owner: mau
 // bisa "geser-geser" urutan menu sendiri (mis. Route Planner ke atas, Semua
@@ -18,24 +19,31 @@ import { cn } from "@/lib/utils.js";
 //
 // `customizing=false` (normal, hampir selalu) me-render SidebarLink apa
 // adanya — tidak ada biaya/risiko tambahan untuk pemakaian sehari-hari.
+// `allDivisionItems`/`pathname`/`search` (P8.2, UI Polish) — dipakai untuk
+// menghitung "aktif" EKSPLISIT lewat lib/sidebarActive.js, menggantikan
+// `isActive` bawaan NavLink (prefix-match, tidak paham query). `pathname`/
+// `search` default "" supaya pemanggil lama (tanpa argumen ini) tidak error
+// — cuma berarti tidak ada item yang terhitung aktif, bukan crash.
 export default function SidebarNavSection({
   items, customizing, onReorder, badgeCount, collapsed, onNavigate,
+  allDivisionItems = items, pathname = "", search = "",
 }) {
   const [dragIdx, setDragIdx] = useState(null);
   const [overIdx, setOverIdx] = useState(null);
 
   if (!customizing) {
-    return items.map(({ to, label, Icon, badge }) => (
+    return items.map((item) => (
       <SidebarLink
-        key={to}
-        to={to}
-        label={label}
-        Icon={Icon}
-        isAI={to === "/copilot"}
-        showBadge={!!(badge && badgeCount > 0)}
+        key={item.to}
+        to={item.to}
+        label={item.label}
+        Icon={item.Icon}
+        isAI={item.to === "/copilot"}
+        showBadge={!!(item.badge && badgeCount > 0)}
         badgeCount={badgeCount}
         collapsed={collapsed}
         onNavigate={onNavigate}
+        active={isSidebarItemActive(item, allDivisionItems, pathname, search)}
       />
     ));
   }

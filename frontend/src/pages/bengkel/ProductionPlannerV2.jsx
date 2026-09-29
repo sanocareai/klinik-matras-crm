@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, FileText, Monitor, PackageX, Plus, RefreshCw, Target, Timer,
@@ -259,6 +259,7 @@ function WeekStrip({ centerDate, onPick }) {
 
 export default function ProductionPlannerV2() {
   const [date, setDate] = useState(() => wibDate(0));
+  const dateInputRef = useRef(null);
   const [board, setBoard] = useState(null);
   const [refs, setRefs] = useState({ workCenters: [], operators: [], services: [] });
   const [loading, setLoading] = useState(true);
@@ -313,9 +314,22 @@ export default function ProductionPlannerV2() {
       <PageHeader title="Rencana Produksi" subtitle={fmtDate(date)}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {/* P8.2 (UI Polish) — laporan owner dari screenshot live: input
+                tanggal native menampilkan format browser mentah ("09/29/2026"),
+                tidak konsisten dengan subjudul di bawah judul halaman yang
+                sudah Indonesia ("29 Sep 2026"). Input native TETAP dipakai
+                (dukungan a11y/mobile terbaik untuk kalender), tapi disembunyikan
+                visual (sr-only — tetap ada di DOM & bisa diklik lewat ref,
+                bukan display:none) di belakang tombol berlabel format Indonesia
+                yang membuka pemilih tanggal via showPicker(). */}
             <div className="flex items-center rounded-btn bg-inset">
               <Button variant="neutral" size="icon" aria-label="Hari sebelumnya" onClick={() => setDate((d) => shiftDate(d, -1))}><ChevronLeft size={16} /></Button>
-              <input type="date" aria-label="Tanggal produksi" className="bg-transparent px-1 text-[13px] text-ink" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+              <button type="button"
+                onClick={() => { const el = dateInputRef.current; if (!el) return; if (typeof el.showPicker === "function") el.showPicker(); else el.click(); }}
+                className="flex items-center gap-1.5 px-1 text-[13px] font-medium text-ink">
+                <CalendarDays size={14} className="text-ink3" aria-hidden /> {fmtDate(date)}
+              </button>
+              <input ref={dateInputRef} type="date" aria-label="Tanggal produksi" className="sr-only" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
               <Button variant="neutral" size="icon" aria-label="Hari berikutnya" onClick={() => setDate((d) => shiftDate(d, 1))}><ChevronRight size={16} /></Button>
             </div>
             <Button variant="neutral" size="sm" onClick={() => setDate(wibDate(0))}>Hari Ini</Button>
@@ -375,8 +389,15 @@ export default function ProductionPlannerV2() {
                       <p className="-mt-1 text-[12px] text-ink3">{s.operatorNames.join(", ") || "Belum ada PIC"}</p>
                       {s.items.map((item) => <RunCard key={item.runId} item={item} onOpen={setDrawer} />)}
                       {!cap.full && (
-                        <button type="button" onClick={() => setSchedule({ pick: true, presetStation: s.code })}
-                          className="flex min-h-[72px] flex-col items-center justify-center rounded-card border-2 border-dashed border-line text-[12.5px] text-ink3 hover:bg-hovertint">
+                        // P8.2 (UI Polish) — dinonaktifkan saat Belum Dijadwalkan
+                        // kosong: sebelumnya tombol tetap bisa diklik dan membuka
+                        // modal "Pilih unit" yang kosong (cuma teks "Tidak ada
+                        // unit yang menunggu dijadwalkan."), langkah tambahan
+                        // tanpa guna. Tooltip Indonesia menjelaskan kenapa.
+                        <button type="button" disabled={unscheduledCount === 0}
+                          onClick={() => unscheduledCount > 0 && setSchedule({ pick: true, presetStation: s.code })}
+                          title={unscheduledCount === 0 ? "Belum ada unit yang menunggu dijadwalkan" : undefined}
+                          className="flex min-h-[72px] flex-col items-center justify-center rounded-card border-2 border-dashed border-line text-[12.5px] text-ink3 hover:bg-hovertint disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
                           <Plus size={16} aria-hidden /> Tambah unit ke {s.label}
                         </button>
                       )}

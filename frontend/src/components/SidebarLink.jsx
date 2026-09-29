@@ -29,6 +29,14 @@ import { standalonePageFor } from "@/routes/pageRegistry.jsx";
 // D-144 — itu sekarang cuma lewat menu klik-kanan di atas. `preventDefault()`
 // di kedua jalur supaya `<a href>` bawaan tidak ikut jalan dobel dengan aksi
 // tab kita (navigasi lewat TabsContext, bukan lewat anchor-nya langsung).
+// `active` (P8.2, UI Polish, WAJIB diisi pemanggil) — dihitung EKSPLISIT
+// di luar (lib/sidebarActive.js, lihat SidebarNavSection.jsx), BUKAN lagi
+// diserahkan ke `isActive` bawaan NavLink. NavLink tanpa `end` mencocokkan
+// PREFIX pathname (bug nyata: "/bengkel" ikut aktif untuk SEMUA "/bengkel/
+// *"), dan tidak pernah membedakan dua item yang berbagi pathname sama
+// tapi beda query (Order Produksi vs Riwayat). `to` tetap dipakai NavLink
+// apa adanya untuk href/navigasi — cuma kelas "active" & pill yang sekarang
+// bersumber dari prop ini.
 export default function SidebarLink({
   to,
   label,
@@ -38,6 +46,7 @@ export default function SidebarLink({
   badgeCount = 0,
   collapsed = false,
   onNavigate,
+  active,
 }) {
   const { openInActiveTab, openNewTab } = useTabs();
   const [menu, setMenu] = useState(null); // { x, y }
@@ -112,39 +121,44 @@ export default function SidebarLink({
         onClick={handleClick}
         onAuxClick={handleAuxClick}
         onContextMenu={handleContextMenu}
-        className={({ isActive }) =>
-          "sidebar-link" + (isActive ? " active" : "") + (collapsed ? " collapsed" : "")
-        }
+        // P8.2 (UI Polish) — BUG NYATA ditemukan lewat QA visual: className
+        // string (bukan fungsi) TIDAK menghentikan `isActive` bawaan NavLink
+        // — react-router-dom v6 tetap MENEMPELKAN "active" miliknya sendiri
+        // DI ATAS string yang dioper, kalau isActive versi NavLink (prefix/
+        // pathname SAJA, tepat bug yang sedang diperbaiki di sini) bernilai
+        // true — persis kasus "Riwayat" ikut ber-class "active" walau prop
+        // `active` di atas sudah false. Fungsi (bukan string) yang benar-
+        // benar mengambil alih SEPENUHNYA, tanpa NavLink menambahkan apa pun
+        // sendiri di baliknya.
+        className={() => "sidebar-link" + (active ? " active" : "") + (collapsed ? " collapsed" : "")}
       >
-        {({ isActive }) => (
-          <>
-            {/* Pill latar item aktif — geser antar item. z-index di bawah konten. */}
-            {isActive && (
-              <motion.span
-                layoutId="sidebarActivePill"
-                className="nav-pill"
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                aria-hidden="true"
-              />
-            )}
-            <Icon size={17} className={"nav-icon" + (isAI ? " nav-icon-ai" : "")} />
-            {collapsed ? (
-              // Tooltip saat sidebar menyempit (72px): tanpa ini item nav jadi
-              // deretan ikon tanpa nama. `title` di NavLink saja tidak cukup —
-              // tooltip bawaan browser lambat muncul (±1 detik) dan tidak
-              // terbaca screen reader sebagai label item.
-              <span className="nav-tooltip" role="tooltip">{label}</span>
-            ) : (
-              <span className="nav-label">{label}</span>
-            )}
-            {isAI && !collapsed && !showBadge && (
-              <span className="nav-ai-dot" aria-hidden="true" />
-            )}
-            {showBadge && (
-              <span className="nav-badge">{badgeCount > 99 ? "99+" : badgeCount}</span>
-            )}
-          </>
-        )}
+        <>
+          {/* Pill latar item aktif — geser antar item. z-index di bawah konten. */}
+          {active && (
+            <motion.span
+              layoutId="sidebarActivePill"
+              className="nav-pill"
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              aria-hidden="true"
+            />
+          )}
+          <Icon size={17} className={"nav-icon" + (isAI ? " nav-icon-ai" : "")} />
+          {collapsed ? (
+            // Tooltip saat sidebar menyempit (72px): tanpa ini item nav jadi
+            // deretan ikon tanpa nama. `title` di NavLink saja tidak cukup —
+            // tooltip bawaan browser lambat muncul (±1 detik) dan tidak
+            // terbaca screen reader sebagai label item.
+            <span className="nav-tooltip" role="tooltip">{label}</span>
+          ) : (
+            <span className="nav-label">{label}</span>
+          )}
+          {isAI && !collapsed && !showBadge && (
+            <span className="nav-ai-dot" aria-hidden="true" />
+          )}
+          {showBadge && (
+            <span className="nav-badge">{badgeCount > 99 ? "99+" : badgeCount}</span>
+          )}
+        </>
       </NavLink>
 
       {/* D-142 — di-portal ke document.body (bukan inline di dalam

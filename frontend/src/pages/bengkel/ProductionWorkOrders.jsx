@@ -1,18 +1,20 @@
 import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, RefreshCw } from "lucide-react";
+import { ClipboardList, RefreshCw, ExternalLink } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
+import { Modal } from "@/components/ui/modal.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatTanggal, formatDurasiDetik } from "@/utils/formatDate.js";
+import { describeRowCount } from "@/lib/workOrderCounts.js";
 import {
   UNIT_STATUS_REAL, SERVICE_LINE_REAL, IN_WORKSHOP_STATUSES,
   PRODUCTION_STATUS_REAL, PRODUCTION_PRIORITY_REAL, STAGE_LOG_STATUS,
@@ -58,6 +60,13 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Drawer detail (P8.2, UI Polish) — laporan owner dari screenshot live:
+  // tabel 14 kolom terlalu padat, kode unit sampai pecah 2 baris. Kolom
+  // dipangkas ke 5 prioritas (Unit/Pelanggan/Status/Tahap/PIC); sisanya
+  // (Order, Kasur, Lini, Layanan, Eksekusi, Prioritas, Target, Update
+  // Terakhir, Progres) pindah ke drawer ini, dibuka lewat klik baris —
+  // TIDAK ada data yang hilang, cuma dipindah dari tabel ke drawer.
+  const [detailUnit, setDetailUnit] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -95,6 +104,7 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
 
   const kosong = !loading && rows && rows.length === 0;
   const belumAdaYangDiEngine = rows?.every((u) => !u.currentStage && !u.service);
+  const hasActiveFilter = tab !== "" || !!fServiceLine || !!cari.trim();
 
   return (
     <PageContainer>
@@ -134,7 +144,14 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
               </button>
             );
           })}
-          {rows && <span className="ml-auto self-center text-[11.5px] text-ink3">{rows.length} unit</span>}
+          {rows && (
+            <span
+              className="ml-auto self-center text-[11.5px] text-ink3"
+              title="Angka pada tab di atas (Semua, Di Bengkel, dst) adalah TOTAL seluruh unit per status, tidak mengikuti pencarian/filter lini layanan. Jumlah di sini mengikuti filter yang aktif, dibatasi maksimum 500 baris."
+            >
+              {describeRowCount({ rowCount: rows.length, hasActiveFilter })}
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -163,86 +180,41 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
             />
           ) : (
             <>
+              {/* P8.2 (UI Polish) — 5 kolom prioritas (Unit/Pelanggan/Status/
+                  Tahap/PIC), Unit sticky-kiri + header sticky-atas (TH/TD
+                  `sticky`, lihat components/ui/table.jsx), kode unit SATU
+                  baris (`whitespace-nowrap`, bukan truncate — kode harus
+                  utuh terbaca, bukan terpotong). Kolom lain (Order, Kasur,
+                  Lini, Layanan, Eksekusi, Prioritas, Target, Update Terakhir,
+                  Progres) pindah ke drawer klik-baris — data SAMA, cuma
+                  tempatnya beda. `truncate` (ellipsis) + tooltip OTOMATIS
+                  dari `autoTitle` di TD (lihat table.jsx) untuk sel teks
+                  panjang (Pelanggan/Tahap/PIC). */}
               <TableWrap className="hidden lg:block">
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Kode Unit</TH><TH>Order</TH><TH>Pelanggan</TH>
-                      <TH>Kasur</TH><TH>Lini</TH><TH>Layanan</TH><TH>Tahap</TH><TH>Eksekusi</TH><TH>Ditugaskan</TH>
-                      <TH>Prioritas</TH><TH>Target</TH><TH>Update Terakhir</TH><TH>Status</TH><TH>Progres</TH>
+                      <TH sticky>Unit</TH><TH>Pelanggan</TH><TH>Status</TH><TH>Tahap</TH><TH>PIC</TH>
                     </TR>
                   </THead>
                   <TBody>
-                    {loading && <TableSkeletonRows rows={8} cols={14} />}
+                    {loading && <TableSkeletonRows rows={8} cols={5} />}
                     {!loading && rows?.map((u) => (
-                      <TR key={u.id} clickable onClick={() => navigate(`/bengkel/units/${u.id}`)}>
-                        <TD className="font-semibold text-ink">{u.unitCode}</TD>
-                        <TD className="text-ink2">{u.order?.orderNumber || "—"}</TD>
+                      <TR key={u.id} clickable onClick={() => setDetailUnit(u)}>
+                        <TD sticky className="whitespace-nowrap font-semibold text-ink">{u.unitCode}</TD>
                         <TD truncate>{u.order?.customer?.name || "—"}</TD>
-                        <TD truncate className="text-ink2">
-                          {[u.merk, formatUkuranLabel(u.ukuran)].filter(Boolean).join(" · ") || "—"}
-                        </TD>
-                        <TD>
-                          {u.serviceLine
-                            ? <Badge variant="accent">{SERVICE_LINE_REAL[u.serviceLine]?.label}</Badge>
-                            : <span className="text-ink3">—</span>}
-                        </TD>
-                        <TD truncate className="text-ink2">{u.service?.labelId || <span className="text-ink3">—</span>}</TD>
-                        <TD truncate className="text-ink2">{u.currentStage?.labelId || <span className="text-ink3">—</span>}</TD>
-                        {/* Eksekusi/Elapsed — Production Core Slice 3P.
-                            executionState/currentSegmentStartedAt sudah
-                            batch-loaded dari lastLog (BUKAN query per unit,
-                            lihat routes/production.js) — Elapsed cuma tampil
-                            kalau segmen SEDANG berjalan (START/RESUME),
-                            kosong untuk PAUSED/BLOCKED/DONE/dst (durasi jeda/
-                            selesai bukan urusan kolom ini, lihat Detail Unit). */}
-                        <TD>
-                          {u.executionState && u.executionState !== "NOT_STARTED" ? (
-                            <div className="flex items-center gap-1">
-                              <Badge variant={STAGE_LOG_STATUS[u.executionState]?.tone || "neutral"}>
-                                {STAGE_LOG_STATUS[u.executionState]?.label || u.executionState}
-                              </Badge>
-                              {u.currentSegmentStartedAt && (
-                                <span className="text-[10.5px] text-ink3">{formatDurasiDetik(elapsedSejak(u.currentSegmentStartedAt))}</span>
-                              )}
-                            </div>
-                          ) : <span className="text-ink3">—</span>}
-                        </TD>
-                        {/* Ditugaskan (Production Core Slice 4O) — Operator +
-                            Work Center, SATU kolom gabungan (bukan dua) untuk
-                            menghindari ledakan lebar tabel. Sudah batch-loaded
-                            di backend (routes/production.js), bukan query per
-                            baris. */}
-                        <TD truncate>
-                          {u.assignedOperator?.name || <span className="text-ink3">Belum ditugaskan</span>}
-                          {u.workCenter?.name && <span className="block text-[10px] text-ink3">{u.workCenter.name}</span>}
-                        </TD>
-                        {/* Prioritas/Target/Progres — Production Core Slice 1.
-                            Prioritas NORMAL sengaja tanpa badge (default,
-                            tidak perlu penekanan visual — sama pola dengan
-                            header unit detail). */}
-                        <TD>
-                          {u.priority && u.priority !== "NORMAL" ? (
-                            <Badge variant={PRODUCTION_PRIORITY_REAL[u.priority]?.tone || "neutral"}>
-                              {PRODUCTION_PRIORITY_REAL[u.priority]?.label || u.priority}
-                            </Badge>
-                          ) : <span className="text-ink3">—</span>}
-                        </TD>
-                        <TD className="whitespace-nowrap text-ink2">
-                          {u.productionDueAt ? formatTanggal(u.productionDueAt) : <span className="text-ink3">—</span>}
-                        </TD>
-                        <TD className="whitespace-nowrap text-ink2">{formatTanggal(u.updatedAt)}</TD>
                         <TD>
                           <Badge variant={UNIT_STATUS_REAL[u.status]?.tone || "neutral"}>
                             {UNIT_STATUS_REAL[u.status]?.label || u.status}
                           </Badge>
                         </TD>
-                        <TD>
-                          {u.productionStatus && (
-                            <Badge variant={PRODUCTION_STATUS_REAL[u.productionStatus]?.tone || "neutral"}>
-                              {PRODUCTION_STATUS_REAL[u.productionStatus]?.label || u.productionStatus}
-                            </Badge>
-                          )}
+                        <TD truncate className="text-ink2">{u.currentStage?.labelId || <span className="text-ink3">—</span>}</TD>
+                        {/* PIC (Ditugaskan, Production Core Slice 4O) — Operator +
+                            Work Center, SATU kolom gabungan. Sudah batch-loaded
+                            di backend (routes/production.js), bukan query per baris. */}
+                        <TD truncate>
+                          {u.assignedOperator?.name || <span className="text-ink3">Belum ditugaskan</span>}
+                          {u.workCenter?.name && <span className="block text-[10px] text-ink3">{u.workCenter.name}</span>}
                         </TD>
                       </TR>
                     ))}
@@ -255,7 +227,7 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
                   <li key={u.id}>
                     <button
                       type="button"
-                      onClick={() => navigate(`/bengkel/units/${u.id}`)}
+                      onClick={() => setDetailUnit(u)}
                       className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
                     >
                       <div className="flex items-center gap-1.5">
@@ -288,6 +260,49 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
           )}
         </Card>
       </PageBody>
+
+      {/* Drawer detail (P8.2) — field yang dipangkas dari tabel utama.
+          "Buka Detail Unit Lengkap" tetap mengarah ke halaman lama
+          (/bengkel/units/:id, TIDAK diubah) untuk pengguna yang butuh
+          riwayat/aksi lengkap unit itu. */}
+      <Modal open={!!detailUnit} onOpenChange={(v) => !v && setDetailUnit(null)}
+        title={detailUnit?.unitCode} description={detailUnit?.order?.customer?.name || "—"} className="w-[520px]">
+        {detailUnit && (
+          <div className="space-y-3 px-6 pb-4">
+            <dl className="m-0 grid grid-cols-2 gap-2 text-[12.5px]">
+              {[
+                ["Order", detailUnit.order?.orderNumber || "—"],
+                ["Kasur", [detailUnit.merk, formatUkuranLabel(detailUnit.ukuran)].filter(Boolean).join(" · ") || "—"],
+                ["Lini", detailUnit.serviceLine ? SERVICE_LINE_REAL[detailUnit.serviceLine]?.label : "—"],
+                ["Layanan", detailUnit.service?.labelId || "—"],
+                ["Prioritas", detailUnit.priority && detailUnit.priority !== "NORMAL" ? (PRODUCTION_PRIORITY_REAL[detailUnit.priority]?.label || detailUnit.priority) : "Normal"],
+                ["Target", detailUnit.productionDueAt ? formatTanggal(detailUnit.productionDueAt) : "—"],
+                ["Update Terakhir", formatTanggal(detailUnit.updatedAt)],
+                ["Progres", detailUnit.productionStatus ? (PRODUCTION_STATUS_REAL[detailUnit.productionStatus]?.label || detailUnit.productionStatus) : "—"],
+              ].map(([k, v]) => (
+                <div key={k} className="rounded-btn bg-inset px-3 py-2">
+                  <dt className="m-0 text-ink3">{k}</dt>
+                  <dd className="m-0 truncate font-semibold text-ink" title={typeof v === "string" ? v : undefined}>{v}</dd>
+                </div>
+              ))}
+            </dl>
+            {detailUnit.executionState && detailUnit.executionState !== "NOT_STARTED" && (
+              <div className="flex items-center gap-1.5 rounded-btn bg-inset px-3 py-2 text-[12.5px]">
+                <span className="text-ink3">Eksekusi:</span>
+                <Badge variant={STAGE_LOG_STATUS[detailUnit.executionState]?.tone || "neutral"}>
+                  {STAGE_LOG_STATUS[detailUnit.executionState]?.label || detailUnit.executionState}
+                </Badge>
+                {detailUnit.currentSegmentStartedAt && (
+                  <span className="text-[11px] text-ink3">{formatDurasiDetik(elapsedSejak(detailUnit.currentSegmentStartedAt))}</span>
+                )}
+              </div>
+            )}
+            <Button size="sm" variant="secondary" onClick={() => navigate(`/bengkel/units/${detailUnit.id}`)}>
+              <ExternalLink size={13} aria-hidden /> Buka Detail Unit Lengkap
+            </Button>
+          </div>
+        )}
+      </Modal>
     </PageContainer>
   );
 }

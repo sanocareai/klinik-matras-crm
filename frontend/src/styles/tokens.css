@@ -145,7 +145,15 @@ tr[data-selected="true"] .tbl-sticky-td { background: var(--accent-bg); }
 
   --text-primary:   #F5F5F7;
   --text-secondary: rgba(245, 245, 247, 0.60);
-  --text-tertiary:  rgba(245, 245, 247, 0.40);
+  /* P8.2 (UI Polish, 29 September 2026) — dinaikkan dari 0.40 ke 0.52: pada
+     opacity lama, teks ink3/text-muted/text-small (dipakai label sekunder,
+     caption, placeholder di SELURUH app) cuma ~3.6:1 di atas --bg-surface
+     gelap — di bawah ambang WCAG AA teks normal (4.5:1). 0.52 terukur
+     ~4.6:1 di --bg-inset (permukaan gelap TERANG di antara dua permukaan
+     dark mode, jadi kasus kontras TERBURUK) dan ~5.1:1 di --bg-surface —
+     keduanya lolos AA. --text-secondary (0.60) TIDAK disentuh — sudah
+     ~5.6-6.4:1, jauh di atas ambang. */
+  --text-tertiary:  rgba(245, 245, 247, 0.52);
 
   --hairline: rgba(255, 255, 255, 0.10);
   --shadow-card:    0 1px 3px rgba(0, 0, 0, 0.30), 0 8px 24px rgba(0, 0, 0, 0.20);
