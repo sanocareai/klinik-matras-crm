@@ -146,6 +146,16 @@ export const STAGE_LABELS = {
   SPAM: "Spam",
 };
 
+// Area layanan lead (Customer.serviceArea, 7 Okt 2026) — lebih kasar dari kota,
+// diisi 1 ketukan di Inbox. Urutan = urutan tombol.
+export const SERVICE_AREA_LABELS = {
+  JABODETABEK: "Jabodetabek",
+  BANDUNG: "Bandung",
+  AREA_LAIN: "Area Lain (Dilayani)",
+  LUAR_AREA: "Luar Area",
+};
+export const SERVICE_AREA_OPTIONS = Object.keys(SERVICE_AREA_LABELS);
+
 export const ORDER_STATUS_LABELS = {
   PENDING: "Menunggu",
   PICKUP: "Pengambilan",

@@ -4,7 +4,7 @@ import StageSelect from "../../customer/StageSelect.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import { SOURCE_LABELS, KOTA_LIST, formatTanggalWaktu } from "../../../utils/format.js";
+import { SOURCE_LABELS, KOTA_LIST, SERVICE_AREA_LABELS, SERVICE_AREA_OPTIONS, formatTanggalWaktu } from "../../../utils/format.js";
 
 // Sumber lead yang BOLEH dipilih manual — versi enum saat ini saja (bukan
 // enum lama "ADS"/"WEBSITE" di SOURCE_LABELS, yang cuma dipertahankan
@@ -100,6 +100,13 @@ export default function ProfileFields({ customer, onUpdated }) {
       <Field label="Email"><Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="email@contoh.com" /></Field>
       <Field label="Tags (pisahkan koma)"><Input value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} placeholder="premium, repeat-order" /></Field>
 
+      {/* Area Layanan (7 Okt 2026) — wajib sebelum stage naik ke Prospek; lihat LeadProgressSection.jsx di Inbox. */}
+      <Field label="Area Layanan">
+        <select value={customer.serviceArea || ""} disabled={busy} onChange={(e) => patch({ serviceArea: e.target.value || null })} className={selectCls}>
+          <option value="">— Belum diisi —</option>
+          {SERVICE_AREA_OPTIONS.map((a) => <option key={a} value={a}>{SERVICE_AREA_LABELS[a]}</option>)}
+        </select>
+      </Field>
       <Field label="Tahap Pipeline"><StageSelect value={customer.pipelineStage} onChange={(s) => patch({ pipelineStage: s })} /></Field>
 
       <Field label="Tipe Customer">

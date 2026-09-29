@@ -92,6 +92,7 @@ import { startReconciliationJob } from "./services/reconciliation.js";
 import { startVideoCompressJob } from "./services/videoCompressJob.js";
 import { startSlaAlertJob } from "./services/slaAlertJob.js";
 import { startStaleLeadAlertJob } from "./services/staleLeadAlertJob.js";
+import { startLeadMilestoneJob } from "./services/leadMilestones.js";
 import { startSalesReminderDigestJob } from "./services/salesReminderDigestJob.js";
 import { startLeaderRecapJob } from "./services/leaderRecapJob.js";
 import { startFinanceReminderJob } from "./services/financeReminderJob.js";
@@ -366,6 +367,8 @@ server.listen(PORT, () => {
   startVideoCompressJob();
   startSlaAlertJob();
   startStaleLeadAlertJob();
+  // Penawaran otomatis (pesan berharga) + area layanan dari order — lihat services/leadMilestones.js.
+  startLeadMilestoneJob();
   // Terdaftar tapi DORMAN — enabled:false default (lihat
   // salesReminderDigestJob.js), tidak pernah kirim WA sampai owner
   // meninjau contoh pesan (scripts/preview-sales-reminder-digest.js) dan
