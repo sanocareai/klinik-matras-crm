@@ -1471,8 +1471,10 @@ export const api = {
   editFinanceDoc: (jenis, id, data) => request(`/finance/${jenis}/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   // Koreksi transaksi yang sudah berjurnal: data.preview=true -> {pratinjau} tanpa menyimpan; simpan sungguhan
   // butuh token step-up PIN (header X-Finance-Stepup) dari verifyFinancePin.
-  koreksiFinanceDoc: (jenis, id, data, stepUp) => request(`/finance/${jenis}/${id}/koreksi`, {
-    method: "POST", body: JSON.stringify(data), ...(stepUp ? { headers: { "X-Finance-Stepup": stepUp } } : {}),
+  // `idempotencyKey` (opsional) dipakai ulang oleh dialog selama isi yang sama, supaya klik ganda/retry tidak menggandakan koreksi.
+  koreksiFinanceDoc: (jenis, id, data, stepUp, idempotencyKey = null) => request(`/finance/${jenis}/${id}/koreksi`, {
+    method: "POST", body: JSON.stringify(data),
+    headers: { ...(data?.preview ? {} : { "Idempotency-Key": idempotencyKey || mutationKey("koreksi") }), ...(stepUp ? { "X-Finance-Stepup": stepUp } : {}) },
   }),
   // B3.6 Tutup stok periodik & persediaan awal perpetual
   getPersediaanAwal: () => request("/finance/persediaan-awal"),
@@ -1492,6 +1494,29 @@ export const api = {
   setFinancePin: (password, pin) => request("/finance/pin", { method: "POST", body: JSON.stringify({ password, pin }) }),
   verifyFinancePin: (pin) => request("/finance/pin/verifikasi", { method: "POST", body: JSON.stringify({ pin }) }),
   getFinanceRiwayatVersi: (jenis, id) => request(`/finance/riwayat-versi/${jenis}/${id}`),
+  // B3.9 Export Excel Finance — respons berupa BERKAS (bukan JSON), jadi tidak lewat request(). Server membangun .xlsx
+  // (izin, WIB, angka Excel, anti-formula-injection); klien hanya mengirim filter/periode/ids yang sedang aktif di layar.
+  exportFinanceExcel: async (modul, body) => {
+    const res = await fetch(`${BASE}/finance/export/${encodeURIComponent(modul)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify(body || {}),
+    });
+    adoptRefreshedToken(res);
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) {
+      let msg = "Gagal mengekspor ke Excel";
+      try { msg = (await res.json()).error || msg; } catch { /* respons bukan JSON */ }
+      throw new Error(msg);
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    const namaFile = cd.match(/filename="([^"]+)"/)?.[1] || `Finance_${modul}.xlsx`;
+    return { blob: await res.blob(), namaFile };
+  },
+  // B3.8 Koreksi lanjutan: edit informasi (tanpa jurnal, tanpa PIN) untuk tagihan supplier & refund yang sudah disetujui.
+  editInfoFinanceDoc: (jenis, id, data, idempotencyKey = null) => request(`/finance/${jenis}/${id}/info`, {
+    method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("info") }, body: JSON.stringify(data),
+  }),
   // B3.7 Koreksi Pembayaran Masuk Terverifikasi. Pratinjau (data.preview) tanpa PIN & tanpa Idempotency-Key; simpan: PIN step-up + kunci idempotensi.
   editInfoPembayaran: (id, data, idempotencyKey = mutationKey("bayar-info")) =>
     request(`/finance/pembayaran/${id}/info`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),

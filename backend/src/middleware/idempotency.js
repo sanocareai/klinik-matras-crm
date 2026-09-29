@@ -27,7 +27,8 @@ const METODE_UBAH = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const POLA_KUNCI = /^[A-Za-z0-9_\-:.]{8,128}$/;
 const TTL_MS = 24 * 3600 * 1000;
 const PROCESSING_STALE_MS = 60_000;
-const DIKECUALIKAN = [/\/receipts\/upload$/, /\/media\/sign$/];
+// Export Excel Finance: POST read-only yang membalas berkas besar — tidak boleh disimpan sebagai "respons idempoten".
+const DIKECUALIKAN = [/\/receipts\/upload$/, /\/media\/sign$/, /\/finance\/export\/[a-z-]+$/];
 
 function stableStringify(v) {
   if (v === null || typeof v !== "object") return JSON.stringify(v) ?? "null";

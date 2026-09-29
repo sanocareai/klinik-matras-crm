@@ -350,7 +350,12 @@ async function piutangTersisa(db, sampai) {
 }
 
 // ── DAFTAR ──────────────────────────────────────────────────────────────────────────────────────────────────────
-export async function daftarPemasukan(db, q = {}) {
+/**
+ * SATU sumber baris untuk layar Pemasukan (GET /api/finance/pemasukan) DAN Export Excel (services/finance/export/pemasukan.js):
+ * periode + kategori + pencarian/status/rekening/pihak/sumber/statusBayar, urut tanggal terbaru → SEMUA baris yang cocok (tanpa paginasi).
+ * Layar memotong halaman dari hasil ini; export memakai semuanya.
+ */
+export async function pemasukanTersaring(db, q = {}) {
   const p = periode(q);
   const kategori = q.kategori && KATEGORI[q.kategori] ? q.kategori : null;
   if (q.kategori && !kategori) throw new PemasukanError("Kategori tidak dikenal");
@@ -359,10 +364,15 @@ export async function daftarPemasukan(db, q = {}) {
   if (q.rekening && /^[0-9a-f-]{36}$/i.test(String(q.rekening))) rekeningNama = (await db.finCashAccount.findUnique({ where: { id: q.rekening }, select: { name: true } }))?.name ?? null;
   const filter = { kategori, status: q.status || null, rekening: rekeningNama ?? (q.rekening && !/^[0-9a-f-]{36}$/i.test(String(q.rekening)) ? q.rekening : null), sumber: q.sumber || null, statusBayar: q.statusBayar || null, pihak: q.pihak || null, q: q.q ? String(q.q).slice(0, 80) : null };
   const tampil = baris.filter((b) => cocok(b, filter)).sort((a, b) => (b.tanggal ?? "").localeCompare(a.tanggal ?? "") || String(b.nomor).localeCompare(String(a.nomor)));
+  const total = tampil.length ? uang(sumMoney(tampil.filter((b) => b.kategori !== "DIKECUALIKAN" && b.status !== "DITOLAK" && b.status !== "DIBATALKAN").map((b) => b._nilai))) : "0.00";
+  return { p, kategori, tampil, terpotong, totalNilai: total };
+}
+
+export async function daftarPemasukan(db, q = {}) {
+  const { p, kategori, tampil, terpotong, totalNilai: total } = await pemasukanTersaring(db, q);
   const limit = Math.min(Math.max(parseInt(q.limit, 10) || 20, 1), 100);
   const page = Math.max(parseInt(q.page, 10) || 1, 1);
   const potong = tampil.slice((page - 1) * limit, page * limit);
-  const total = tampil.length ? uang(sumMoney(tampil.filter((b) => b.kategori !== "DIKECUALIKAN" && b.status !== "DITOLAK" && b.status !== "DIBATALKAN").map((b) => b._nilai))) : "0.00";
   return { periode: { from: p.from, to: p.to }, kategori, items: potong.map(bersih), page, limit, total: tampil.length, totalNilai: total, adaLagi: page * limit < tampil.length, terpotong, diperbaruiPada: new Date().toISOString() };
 }
 

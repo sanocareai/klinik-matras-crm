@@ -21,6 +21,7 @@ import {
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { aksiUangMuka as matriksUangMuka } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 
@@ -135,7 +136,16 @@ export default function FinanceUangMuka() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={<Button size="sm" onClick={() => setModalBerikan(true)}><Plus size={14} /> Berikan Uang Muka</Button>}
+      actions={(
+        <>
+          {/* Export mengikuti TAB AKTIF (layar ini tidak punya pencarian/filter lain). */}
+          <TombolExportExcel
+            modul="uang-muka"
+            ambilBody={() => ({ filter: { tab }, filterLabel: labelFilterAktif([["Tab", TAB.find((t) => t.key === tab)?.label]]) })}
+          />
+          <Button size="sm" onClick={() => setModalBerikan(true)}><Plus size={14} /> Berikan Uang Muka</Button>
+        </>
+      )}
     >
       {pesan && (
         <Card className="bg-redbg">

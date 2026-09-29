@@ -35,7 +35,9 @@ function hariIniISO() {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-export default function LunasBelumDicatat({ onBerubah, ringkas = false }) {
+// `onTampil(ids|null)` (opsional) melaporkan orderId baris yang TAMPIL setelah pencarian/filter di sini (urutan layar) — dipakai tombol
+// Export Excel halaman induk supaya berkas memuat persis baris yang terlihat. Dipanggil null saat komponen dilepas.
+export default function LunasBelumDicatat({ onBerubah, ringkas = false, onTampil }) {
   const [data, setData] = useState(null);
   const [rekening, setRekening] = useState([]);
   const [galat, setGalat] = useState(null);
@@ -85,6 +87,9 @@ export default function LunasBelumDicatat({ onBerubah, ringkas = false }) {
     return cocok(String(q || "").split(/\s+/).map((k) => (/^[\d.]+$/.test(k) ? k.replace(/\./g, "") : k)).join(" "),
       i.orderNumber, i.customerName, i.salesName, i.sisa, i.nilaiOrder);
   }), [items, q, fSales, fKelompok]);
+
+  useEffect(() => { if (data) onTampil?.(tampil.map((i) => i.orderId)); }, [data, tampil]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onTampil?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const semuaTerpilih = tampil.length > 0 && tampil.every((i) => pilih.has(i.orderId));
   const terpilih = items.filter((i) => pilih.has(i.orderId));

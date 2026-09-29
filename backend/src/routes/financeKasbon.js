@@ -23,11 +23,12 @@ import { prisma } from "../db.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { reverseJournal, generateDocumentNumber, toBookDate, todayBookDateWIB, findEntryByKey } from "../services/finance/journal.js";
 import { toMoney, sumMoney, moneyToNumber, ZERO } from "../services/finance/money.js";
-import { hitungBiayaTransfer, ringkasBiaya } from "../services/finance/transferFee.js";
+import { hitungBiayaTransfer } from "../services/finance/transferFee.js";
 import { postKasbonDiberikan, postKasbonPelunasan, KEY as KASBON_KEY } from "../services/finance/posting/kasbon.js";
 import { getSettingRaw, parseIntOr, SETTING_KEYS } from "../services/finance/settings.js";
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { daftarKaryawanKasbon, pastikanBolehMenerimaKasbon } from "../services/finance/karyawan.js";
+import { kasbonInclude, bentukKasbon, ambilDaftarKasbon } from "../services/finance/kasbonRead.js";
 import { handleFinanceError } from "./finance.js";
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
 
@@ -48,32 +49,6 @@ export function rapikanNama(nama) {
 
 const METODE = ["POTONG_GAJI"];
 
-const kasbonInclude = {
-  repayments: {
-    orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-    include: { createdBy: { select: { id: true, name: true } }, cashAccount: { select: { id: true, name: true } } },
-  },
-  cashAccount: { select: { id: true, name: true } },
-  createdBy: { select: { id: true, name: true } },
-};
-
-function bentukKasbon(k) {
-  const aktif = k.repayments.filter((r) => !r.cancelledAt);
-  const dariBaris = aktif.length ? sumMoney(aktif.map((r) => r.amount)) : ZERO;
-  const amount = toMoney(k.amount);
-  const lunas = k.status === "LUNAS";
-  const sisa = k.status === "AKTIF" ? amount.minus(dariBaris) : ZERO;
-  return {
-    ...k,
-    amount: moneyToNumber(amount),
-    transferFeeAmount: moneyToNumber(k.transferFeeAmount ?? 0),
-    ...ringkasBiaya(k),
-    terlunasi: moneyToNumber(lunas ? amount : dariBaris),
-    sisa: moneyToNumber(sisa),
-    repayments: k.repayments.map((r) => ({ ...r, amount: moneyToNumber(r.amount) })),
-  };
-}
-
 /** Sisa kasbon aktif satu karyawan (semua kasbon AKTIF-nya, nama dicocokkan tanpa peduli huruf besar-kecil). */
 async function sisaAktifKaryawan(db, nama) {
   const daftar = await db.finKasbon.findMany({
@@ -88,31 +63,11 @@ async function sisaAktifKaryawan(db, nama) {
   return total;
 }
 
-function klausaCari(q) {
-  const kata = String(q || "").trim().split(/\s+/).filter(Boolean).slice(0, 6);
-  return kata.map((k) => {
-    const atau = ["kasbonNumber", "employeeName", "urgency", "notes"].map((f) => ({ [f]: { contains: k, mode: "insensitive" } }));
-    const angka = k.replace(/\./g, "");
-    if (/^\d{3,}$/.test(angka)) atau.push({ amount: Number(angka) });
-    return { OR: atau };
-  });
-}
-
 // ─── DAFTAR + RINGKASAN ──────────────────────────────────────────────────
 financeKasbonRouter.get("/kasbon", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
-    const { q, status, karyawan, from, to } = req.query;
-    const rows = await prisma.finKasbon.findMany({
-      where: {
-        ...(status && { status }),
-        ...(karyawan && { employeeName: { equals: karyawan, mode: "insensitive" } }),
-        ...((from || to) && { date: { ...(from && { gte: toBookDate(from) }), ...(to && { lte: toBookDate(to) }) } }),
-        AND: klausaCari(q),
-      },
-      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-      take: 500,
-      include: kasbonInclude,
-    });
+    // Query yang SAMA dipakai Export Excel (services/finance/kasbonRead.js) — angka layar = angka berkas.
+    const rows = await ambilDaftarKasbon(prisma, req.query, { take: 500 });
 
     // Ringkasan SELALU dihitung dari seluruh kasbon aktif, bukan dari baris
     // yang sedang disaring — supaya angka "siapa berutang berapa" tidak

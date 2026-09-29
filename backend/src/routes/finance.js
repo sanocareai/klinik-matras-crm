@@ -43,6 +43,7 @@ import {
   saldoKasBank, catatanLaporan,
 } from "../services/finance/reports.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+import { ambilDaftarJurnal, bentukJurnal } from "../services/finance/jurnalRead.js";
 // hitungNominal & statusEfektif DIPAKAI ULANG dari services/invoice.js —
 // BUKAN dihitung ulang di sini. Itu satu-satunya tempat arti nominal
 // invoice didefinisikan (harga final per item, ongkir ditagihkan,
@@ -610,46 +611,9 @@ financeRouter.get("/journal", requirePermission(P.FINANCE_READ), async (req, res
     const take = Math.min(Number(req.query.limit) || 100, 500);
     const skip = Number(req.query.offset) || 0;
 
-    const where = {
-      date: { gte: from, lte: to },
-      ...(source && { source }),
-      ...(status && { status }),
-      ...(search && {
-        OR: [
-          { entryNumber: { contains: search, mode: "insensitive" } },
-          { description: { contains: search, mode: "insensitive" } },
-        ],
-      }),
-    };
-
-    const [entries, total] = await Promise.all([
-      prisma.finJournalEntry.findMany({
-        where,
-        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-        take, skip,
-        include: {
-          lines: {
-            orderBy: { lineNo: "asc" },
-            include: { account: { select: { id: true, code: true, name: true } } },
-          },
-          createdBy: { select: { id: true, name: true } },
-          reversedBy: { select: { id: true, entryNumber: true } },
-          reversalOf: { select: { id: true, entryNumber: true } },
-        },
-      }),
-      prisma.finJournalEntry.count({ where }),
-    ]);
-
-    res.json({
-      entries: entries.map((e) => ({
-        ...e,
-        totalDebit: moneyToNumber(sumMoney(e.lines.map((l) => l.debit))),
-        lines: e.lines.map((l) => ({
-          ...l, debit: moneyToNumber(l.debit), credit: moneyToNumber(l.credit),
-        })),
-      })),
-      total,
-    });
+    // Query daftar ada di services/finance/jurnalRead.js — dipakai bersama Export Excel (satu sumber dgn layar).
+    const { entries, total } = await ambilDaftarJurnal(prisma, { from, to, source, status, search }, { take, skip });
+    res.json({ entries: entries.map(bentukJurnal), total });
   } catch (err) {
     handleFinanceError(err, res);
   }

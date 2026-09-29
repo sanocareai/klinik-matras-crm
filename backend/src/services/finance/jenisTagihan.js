@@ -96,7 +96,7 @@ export async function siapkanJenisTagihan(db, { billType, goodsReceiptId, expens
 /**
  * Penjaga saat MENYETUJUI (jurnal akan lahir). Melempar 409/422 dengan penjelasan bila berisiko menjurnal persediaan dua kali.
  */
-export async function pastikanAmanDisetujui(tx, bill) {
+export async function pastikanAmanDisetujui(tx, bill, { lewatiPenerimaanBelumDitagih = false } = {}) {
   if (!bill.billType) {
     throw new JenisTagihanError(
       "Tagihan ini belum punya Jenis Tagihan. Edit dan pilih jenisnya dulu (mis. Bahan Baku untuk kain/busa) supaya tidak salah tercatat sebagai beban.",
@@ -140,6 +140,8 @@ export async function pastikanAmanDisetujui(tx, bill) {
     if (lain) throw new JenisTagihanError(`Penerimaan barang ini sudah ditagih di ${lain.billNumber} — persediaan akan tercatat dua kali`, 409, "PENERIMAAN_SUDAH_DITAGIH");
     return;
   }
+
+  if (lewatiPenerimaanBelumDitagih) return; // hanya untuk koreksi tagihan yang sudah pernah disetujui (lihat koreksiLanjutan.js)
 
   // Bahan baku TANPA penerimaan: tolak bila supplier yang sama punya penerimaan barang yang sudah dibukukan tetapi belum ditagih —
   // barang itu sudah masuk Persediaan lewat Gudang, jadi tagihannya harus menaut penerimaan tersebut.

@@ -12,21 +12,18 @@ Setelah itu **Riwayat perubahan** (siapa, kapan, alasan, perubahan, rantai jurna
 | Pengeluaran & reimbursement | **Edit** penuh (nominal, tanggal, kategori, divisi, penerima, penalang, rekening, metode/biaya transfer, bukti, catatan) | Bukti/catatan langsung (audit) | **Koreksi**: reversal + pengganti, pratinjau, PIN | Sudah direkonsiliasi bank; mode Uang Muka (angka: batalkan lalu catat ulang); cara bayar tidak bisa diubah | Ya |
 | Pembelian (termasuk DP/Uang Muka Pembelian) | **Edit** penuh | Bukti/catatan | **Koreksi** sama seperti di atas | Direkonsiliasi; DP sudah dipakai/diterapkan (relasi aktif) | Ya |
 | Pengajuan Biaya Delivery → FinExpense | Draf: edit oleh pengaju | Koreksi metadata pengajuan (alasan wajib) | Koreksi di FinExpense-nya (jalur Pengeluaran) | Sama dengan Pengeluaran | Lewat FinExpense |
-| Kasbon | — (langsung berjurnal) | PATCH: nama karyawan, urgensi, catatan, bukti (audit) | Nominal tidak diedit: **Batalkan** (jurnal dibalik) lalu catat ulang | Sudah ada pelunasan aktif → batalkan pelunasan dulu | API ya; UI: riwayat kasbon yang ada |
+| Kasbon | — (langsung berjurnal) | PATCH: nama karyawan, urgensi, catatan, bukti (audit) | Nominal tidak diedit: **Batalkan** (jurnal dibalik) lalu catat ulang | Sudah ada pelunasan aktif → batalkan pelunasan dulu | Ya — tombol **Riwayat perubahan** (B3.8), terpisah dari riwayat pemotongan gaji |
 | Pemasukan Lain | — (langsung berjurnal) | Lampiran/catatan lewat Koreksi | **Koreksi** (tanggal, nominal, keterangan, akun pendapatan, rekening) + pratinjau + PIN; **Batalkan** | Direkonsiliasi; akun pendapatan order dilarang | Ya |
 | Transfer kas/bank | — | Referensi/catatan lewat Koreksi | **Koreksi** (tanggal, nominal, biaya admin, rekening asal/tujuan) + pratinjau + PIN; **Batalkan** | Direkonsiliasi | Ya |
-| Refund | **Edit** (MENUNGGU_APPROVAL): nominal, tanggal, alasan, rekening, biaya transfer, bukti; validasi ulang batas uang diterima | — | Sudah disetujui: **Batalkan** (reversal, status bayar order dihitung ulang) lalu ajukan ulang | Hanya pembuat/admin yang boleh edit | Ya |
-| Tagihan supplier | **Edit** (DRAFT/MENUNGGU): supplier, nomor faktur, tanggal, jatuh tempo, nominal, keterangan, kategori | — | Sudah disetujui: **Batalkan** (reversal) lalu catat ulang | Ada alokasi pembayaran aktif → batalkan pembayaran dulu | Ya |
-| Pembayaran supplier | — | — | **Batalkan** (reversal alokasi + jurnal) lalu catat ulang | — | Riwayat jurnal |
+| Refund | **Edit** (MENUNGGU_APPROVAL): nominal, tanggal, alasan, rekening, biaya transfer, bukti; validasi ulang batas uang diterima | **Edit Informasi** (alasan refund, lampiran) — B3.8 | Sudah disetujui: **Koreksi** (versi pengganti + reversal, TANPA PIN, B3.8) atau **Batalkan** (reversal, status bayar order dihitung ulang) lalu ajukan ulang | Direkonsiliasi/periode rekon selesai/periode akuntansi tutup/pengakuan pendapatan berubah/melebihi uang diterima; hanya pembuat/admin yang boleh edit | Ya (rantai versi) |
+| Tagihan supplier | **Edit** (DRAFT/MENUNGGU): supplier, nomor faktur, tanggal, jatuh tempo, nominal, keterangan, kategori | **Edit Informasi** (nomor faktur, jatuh tempo, lampiran) — B3.8 | Sudah disetujui: **Koreksi** (versi pengganti + reversal, TANPA PIN, B3.8) atau **Batalkan** (reversal) lalu catat ulang | Ada alokasi pembayaran aktif → batalkan pembayaran dulu; direkonsiliasi; periode akuntansi tutup; jenis/penerimaan tidak bisa diubah | Ya (rantai versi) |
+| Pembayaran supplier | — | — | **Batalkan** (reversal alokasi + jurnal) lalu catat ulang | — | Ya — tombol **Riwayat perubahan** di menu ⋯ |
 | Uang Muka Operasional | — (langsung berjurnal) | **Edit keterangan**: tujuan, tenggat, catatan, bukti, divisi (tanpa jurnal, saldo tetap) | Angka/pemegang/rekening/tanggal **diblokir**: Batalkan lalu catat ulang | Ada pertanggungjawaban/pengembalian aktif → batalkan itu dulu | Ya |
 
-Izin: edit biasa mengikuti pemilik/status; **koreksi finansial minimal FINANCE_ADMIN + PIN**. Pembatalan (reversal) saat ini FINANCE_ADMIN tanpa PIN (gap di bawah).
+Izin: edit biasa mengikuti pemilik/status; **koreksi finansial minimal FINANCE_ADMIN + PIN**. Koreksi Tagihan Supplier & Refund (B3.8) dan Pembatalan: FINANCE_ADMIN TANPA PIN — keputusan owner 29 Sep 2026 (pengaman: izin, alasan, pratinjau server, Idempotency-Key wajib, row lock, audit). Koreksi jenis lain (pengeluaran, pembelian, transfer, pemasukan lain, pembayaran masuk) tetap memakai PIN. Detail B3.8: `docs/B38-KOREKSI-LANJUTAN.md`.
 
 ## Gap yang tersisa (jujur)
-- Pembatalan (Batalkan) belum meminta PIN; hanya Koreksi yang meminta.
-- Tagihan/refund yang sudah disetujui tidak punya "Koreksi in-place": jalurnya Batalkan lalu catat ulang.
 - Pemasukan Lain/Transfer: koreksi hanya untuk dokumen yang belum dibatalkan.
-- Riwayat versi Kasbon/Pembayaran supplier belum ada tombolnya di UI (API sudah).
 - Aplikasi mobile Finance & insentif driver sengaja tidak disentuh (sesi pemilik lain).
 - Rute insentif/armada masih memetakan P2028 ke 409 yang menyesatkan; akar masalahnya diredam di `db.js` (batas transaksi Prisma 15 dtk/30 dtk).
 

@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap, bodyBiayaTransfer } from "@/features/finance/biayaTransfer.js";
-import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import { RiwayatVersiDialog, KoreksiDialog, InfoDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiRefund as matriksRefund } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
@@ -22,14 +22,17 @@ import {
   StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 
 // Refund: belum disetujui = Edit bebas (belum ada jurnal); sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // pilihannya Batalkan (jurnal dibalik resmi, status bayar order dihitung ulang) lalu ajukan ulang dengan data yang benar.
-function aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk }) {
+function aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk }) {
   const items = bentukItemMenu(matriksRefund(r, { admin: adminSaatIni() }), {
     edit: () => setEditUntuk(r),
+    info: () => setInfoUntuk(r),
+    koreksi: () => setKoreksiUntuk(r),
     versi: () => setVersiUntuk(r),
     tolak: () => {
       const alasan = window.prompt("Alasan penolakan refund:");
@@ -87,6 +90,8 @@ export default function FinanceReceivables() {
   const [modalRefund, setModalRefund] = useState(false);
   const [editUntuk, setEditUntuk] = useState(null);
   const [versiUntuk, setVersiUntuk] = useState(null);
+  const [infoUntuk, setInfoUntuk] = useState(null);
+  const [koreksiUntuk, setKoreksiUntuk] = useState(null);
   const [rekening, setRekening] = useState([]);
 
   const muat = useCallback(async () => {
@@ -148,6 +153,24 @@ export default function FinanceReceivables() {
     && cocok(qRefund, r.refundNumber, r.order?.orderNumber, r.order?.customer?.name, r.reason, teksNominal(r.amount)),
   ), [refunds, qRefund, fStatusRefund]);
 
+  // EXPORT EXCEL — persis yang tampil: piutang & refund sama-sama disaring di klien, jadi kirim id baris yang tampil (urutan layar).
+  // Server memuat ulang lewat fungsi baca yang sama dengan layar (umurPiutang & daftar refund).
+  function ambilBodyExport() {
+    const labelEmber = (data?.ember || []).find((e) => e.key === filterEmber)?.label;
+    return {
+      filter: { piutangIds: baris.map((b) => b.orderId), refundIds: refundTampil.map((r) => r.id) },
+      filterLabel: labelFilterAktif([
+        ["Umur (kartu)", labelEmber],
+        ["Sales", fSales],
+        ["Umur", { belum: "Belum jatuh tempo", "1_30": "1–30 hari", "31_60": "31–60 hari", "60_plus": "> 60 hari" }[fUmur]],
+        ["Acuan", { invoice: "Invoice", order: "Tanggal order" }[fAcuan]],
+        ["Cari piutang", q.trim()],
+        ["Status refund", fStatusRefund && (LABEL_STATUS[fStatusRefund] || fStatusRefund)],
+        ["Cari refund", qRefund.trim()],
+      ]),
+    };
+  }
+
   return (
     <HalamanFinance
       title="Piutang Pelanggan"
@@ -155,11 +178,14 @@ export default function FinanceReceivables() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={
-        <Button size="sm" onClick={() => setModalRefund(true)}>
-          <Undo2 size={14} /> Ajukan Refund
-        </Button>
-      }
+      actions={(
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <TombolExportExcel modul="piutang-refund" disabled={loading} ambilBody={ambilBodyExport} />
+          <Button size="sm" onClick={() => setModalRefund(true)}>
+            <Undo2 size={14} /> Ajukan Refund
+          </Button>
+        </div>
+      )}
     >
       {pesan && (
         <Card className="bg-redbg">
@@ -316,7 +342,7 @@ export default function FinanceReceivables() {
               </THead>
               <TBody>
                 {refundTampil.map((r) => {
-                  const a = aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk });
+                  const a = aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk });
                   return (
                   <TR key={r.id}>
                     <TD sticky className="font-mono text-[12px]">{r.refundNumber}</TD>
@@ -338,7 +364,7 @@ export default function FinanceReceivables() {
 
           <CardList className={CARD_VIEW_CLASS}>
             {refundTampil.map((r) => {
-              const a = aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk });
+              const a = aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk });
               return (
                 <RowCard
                   key={r.id}
@@ -364,6 +390,27 @@ export default function FinanceReceivables() {
         <ModalEditRefund
           refund={editUntuk} rekening={rekening} onClose={() => setEditUntuk(null)}
           onSubmit={(d) => aksi(async () => { await api.editFinanceRefund(editUntuk.id, d); setEditUntuk(null); })}
+        />
+      )}
+      {infoUntuk && (
+        <InfoDialog
+          jenis="refunds" doc={infoUntuk} nomor={infoUntuk.refundNumber} judulRingkas={`Order ${infoUntuk.order?.orderNumber || ""} · ${formatUang(infoUntuk.amount)}`}
+          kolom={[{ kunci: "alasanRefund", label: "Alasan refund" }]}
+          awal={{ alasanRefund: infoUntuk.reason || "" }}
+          onClose={() => setInfoUntuk(null)} onSaved={() => { setInfoUntuk(null); muat(); }}
+        />
+      )}
+      {koreksiUntuk && (
+        <KoreksiDialog
+          tanpaPin
+          jenis="refunds" doc={koreksiUntuk} nomor={koreksiUntuk.refundNumber} judulRingkas={`Refund disetujui · order ${koreksiUntuk.order?.orderNumber || ""} · ${formatUang(koreksiUntuk.amount)}`}
+          kolom={[
+            { kunci: "amount", label: "Nominal refund", tipe: "uang", wajib: true },
+            { kunci: "date", label: "Tanggal refund", tipe: "tanggal", wajib: true },
+            { kunci: "cashAccountId", label: "Rekening sumber pengembalian", tipe: "pilih", opsi: rekening.map((x) => ({ id: x.id, name: x.name })), wajib: true },
+          ]}
+          awal={{ amount: Number(koreksiUntuk.amount) || 0, date: String(koreksiUntuk.date || "").slice(0, 10), cashAccountId: koreksiUntuk.cashAccountId || "" }}
+          onClose={() => setKoreksiUntuk(null)} onSaved={() => { setKoreksiUntuk(null); muat(); }}
         />
       )}
       {versiUntuk && <RiwayatVersiDialog jenis="refunds" id={versiUntuk.id} nomor={versiUntuk.refundNumber} onClose={() => setVersiUntuk(null)} />}

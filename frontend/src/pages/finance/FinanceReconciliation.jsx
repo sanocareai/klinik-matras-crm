@@ -17,6 +17,7 @@ import {
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import PanelCutoff, { PerluDitinjau } from "@/features/finance/RekonCutoff.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { rolesOf } from "@/lib/roles.js";
 
 // FINANCE_ADMIN (snapshot, tandai tinjau) dipegang ADMIN/OWNER — server tetap sumber kebenaran (403 bila tidak berhak).
@@ -140,7 +141,29 @@ export default function FinanceReconciliation() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={<Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Periode Baru</Button>}
+      actions={(
+        <>
+          {/* Export = tabel periode yang tampil (ids, urutan layar) + detail periode yang sedang dibuka (mutasi yang tampil = lineIds). */}
+          <TombolExportExcel
+            modul="rekonsiliasi"
+            ambilBody={() => {
+              const buka = detail?.statement;
+              const namaBuka = buka ? `${buka.cashAccount?.name || ""} ${tanggalPendek(buka.periodStart)} – ${tanggalPendek(buka.periodEnd)}` : "";
+              return {
+                ids: periodeTampil.map((s) => s.id),
+                filter: buka ? { statementId: buka.id, lineIds: barisTampil.map((l) => l.id), fokus: fokusDetail } : {},
+                filterLabel: labelFilterAktif([
+                  ["Status periode", fStatusP && LABEL_STATUS_PERIODE[fStatusP]], ["Rekening", fRekening], ["Belum cocok", fBelum && (fBelum === "ada" ? "Ada" : "Semua cocok")],
+                  ["Posting setelah cutoff", fLate && (fLate === "ada" ? "Ada" : "Tidak ada")], ["Perlu ditinjau", fTinjau && (fTinjau === "ada" ? "Ada" : "Tidak ada")], ["Pencarian periode", qPeriode.trim()],
+                  ["Periode dibuka", namaBuka], ["Status mutasi", buka && fStatusB && (LABEL_STATUS[fStatusB] || fStatusB)], ["Arah mutasi", buka && fArah && (fArah === "masuk" ? "Masuk" : "Keluar")],
+                  ["Pencarian mutasi", buka && qBaris.trim()], ["Fokus", fokusDetail === "late" ? "Posting Setelah Cutoff" : fokusDetail === "tinjau" ? "Perlu Ditinjau" : ""],
+                ]),
+              };
+            }}
+          />
+          <Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Periode Baru</Button>
+        </>
+      )}
     >
       {pesan && (
         <Card className="bg-redbg">

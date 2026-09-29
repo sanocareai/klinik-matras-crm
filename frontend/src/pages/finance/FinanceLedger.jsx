@@ -10,6 +10,7 @@ import {
   PeriodePicker, periodeDefault, tanggalPendek, LABEL_SUMBER_JURNAL, LABEL_TIPE_AKUN,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 
 // BUKU BESAR — semua mutasi satu akun, berurut, dengan saldo berjalan.
 //
@@ -103,6 +104,27 @@ export default function FinanceLedger() {
             ))}
           </Pilihan>
           <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
+          {/* Pencarian/filter Buku Besar berjalan di KLIEN, jadi bila ada filter aktif yang dikirim adalah `ids` baris yang tampil (urutan layar);
+              server memuat ulang baris itu lewat fungsi baca yang sama. Tanpa filter: semua mutasi periode (tidak dibatasi 500 baris layar). */}
+          <TombolExportExcel
+            modul="buku-besar"
+            disabled={!accountId || !data}
+            ambilBody={() => {
+              const akunTerpilih = akun.find((a) => a.id === accountId);
+              return {
+                periode: { from: periode.from, to: periode.to },
+                filter: { accountId },
+                ...(adaFilter ? { ids: baris.map((b) => b.lineId) } : {}),
+                filterLabel: labelFilterAktif([
+                  ["Akun", akunTerpilih && `${akunTerpilih.code} · ${akunTerpilih.name}`],
+                  ["Sumber", fSumber && (LABEL_SUMBER_JURNAL[fSumber] || fSumber)],
+                  ["Jenis", { debit: "Debit saja", kredit: "Kredit saja" }[fJenis]],
+                  ["Status", { POSTED: "Terposting", REVERSED: "Dibalik" }[fStatus]],
+                  ["Pencarian", q.trim()],
+                ]),
+              };
+            }}
+          />
         </>
       }
     >

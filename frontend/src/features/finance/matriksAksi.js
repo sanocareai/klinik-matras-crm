@@ -18,6 +18,16 @@ const tidak = (key, aksi, label, alasan, extra = {}) => ({ key, aksi, label, akt
 const izinAdmin = (admin, deskriptor) => (admin ? deskriptor : { ...deskriptor, aktif: false, alasan: ALASAN_ADMIN });
 const riwayat = () => ok("versi", "riwayat", "Riwayat perubahan");
 
+// B3.8 — item Koreksi untuk dokumen yang SUDAH berjurnal & versi-pengganti (tagihan supplier, refund). Keadaan aktif/nonaktif + alasan
+// + arah tindakan dihitung SERVER (doc.koreksi dari GET /bills & /refunds); klien tidak menyalin aturan blokir. Tanpa data server
+// (mis. klien lama), item tetap aktif dan server yang menolak dengan pesan yang sama.
+const gabungAlasan = (k) => [k?.alasan, k?.arah].filter(Boolean).join(" ");
+function itemKoreksi(doc, admin, label, hint) {
+  if (!admin) return tidak("koreksi", "koreksi", label, ALASAN_ADMIN);
+  if (doc.koreksi && doc.koreksi.aktif === false) return tidak("koreksi", "koreksi", label, gabungAlasan(doc.koreksi) || "Tidak bisa dikoreksi saat ini");
+  return ok("koreksi", "koreksi", label, { hint });
+}
+
 // ─── Pengeluaran & Pembelian ─────────────────────────────────────────────
 const SUDAH_BERJURNAL = ["DISETUJUI", "DIBAYAR"];
 const PRA_JURNAL = ["DRAFT", "MENUNGGU_APPROVAL"];
@@ -59,11 +69,20 @@ export function aksiTagihan(b, { admin = false } = {}) {
     ];
   }
   if (["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"].includes(s)) {
-    const alasanEdit = "Sudah masuk buku besar — pakai Batalkan & Catat Ulang";
     const catatUlang = adaPembayaran
       ? tidak("batalkan", "catatUlang", "Batalkan & Catat Ulang", "Memiliki pembayaran aktif — batalkan pembayarannya dulu di tab Pembayaran", { destructive: true })
       : izinAdmin(admin, ok("batalkan", "catatUlang", "Batalkan & Catat Ulang", { destructive: true, konfirmasi: true }));
-    return [tidak("edit", "edit", "Edit", alasanEdit), riwayat(), catatUlang];
+    // B3.8: Edit Informasi (tanpa jurnal) + Koreksi (versi pengganti + reversal, PIN). Ada pembayaran aktif → Koreksi nonaktif dengan alasan.
+    const koreksi = adaPembayaran && !b.koreksi
+      ? tidak("koreksi", "koreksi", "Koreksi Tagihan", "Memiliki pembayaran aktif — batalkan pembayarannya dulu di tab Pembayaran, lalu koreksi")
+      : itemKoreksi(b, admin, "Koreksi Tagihan", "Nominal, tanggal, supplier, keterangan, kategori. Jurnal lama dibalik & tagihan pengganti dibuat (tanpa PIN).");
+    return [
+      ok("info", "edit", "Edit Informasi", { hint: "Nomor faktur supplier & jatuh tempo. Tanpa jurnal." }),
+      koreksi, riwayat(), catatUlang,
+    ];
+  }
+  if (s === "DIBATALKAN" && b.replacedBy?.billNumber) {
+    return [tidak("edit", "edit", "Edit", `Sudah dikoreksi — digantikan ${b.replacedBy.billNumber}. Buka Riwayat untuk versi terbaru`), riwayat()];
   }
   return [tidak("edit", "edit", "Edit", "Tagihan yang sudah ditolak atau dibatalkan tidak bisa diedit — catat tagihan baru"), riwayat()];
 }
@@ -87,6 +106,8 @@ export function aksiKasbon(k, { admin = false } = {}) {
   const batal = k.status === "DIBATALKAN";
   const pelunasanAktif = (k.repayments || []).filter((r) => !r.cancelledAt).length;
   const hasil = [];
+  // B3.8: Riwayat perubahan (siapa mengubah apa, alasan, rantai jurnal) SELALU ada; riwayat pemotongan gaji terpisah.
+  hasil.push(ok("versi", "riwayat", "Riwayat perubahan"));
   if ((k.repayments || []).length > 0) hasil.push(ok("riwayat", "riwayat", `Riwayat pemotongan (${pelunasanAktif})`));
   hasil.push(batal
     ? tidak("edit", "edit", "Edit Data", "Kasbon yang sudah dibatalkan tidak bisa diubah")
@@ -104,10 +125,14 @@ export function aksiRefund(r, { admin = false } = {}) {
   }
   if (r.status === "DISETUJUI") {
     return [
-      tidak("edit", "edit", "Edit", "Sudah masuk buku besar — pakai Batalkan & Ajukan Ulang"),
+      ok("info", "edit", "Edit Informasi", { hint: "Alasan refund & lampiran. Tanpa jurnal." }),
+      itemKoreksi(r, admin, "Koreksi Refund", "Nominal, tanggal, rekening, biaya transfer. Jurnal lama dibalik & refund pengganti dibuat (tanpa PIN)."),
       riwayat(),
       izinAdmin(admin, ok("batalkan", "catatUlang", "Batalkan & Ajukan Ulang", { destructive: true, konfirmasi: true })),
     ];
+  }
+  if (r.status === "DIBATALKAN" && r.replacedBy?.refundNumber) {
+    return [tidak("edit", "edit", "Edit", `Sudah dikoreksi — digantikan ${r.replacedBy.refundNumber}. Buka Riwayat untuk versi terbaru`), riwayat()];
   }
   return [tidak("edit", "edit", "Edit", "Refund yang sudah ditolak atau dibatalkan tidak bisa diedit — ajukan refund baru"), riwayat()];
 }

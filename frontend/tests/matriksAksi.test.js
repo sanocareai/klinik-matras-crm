@@ -53,7 +53,9 @@ test("Tagihan supplier: Menunggu -> Edit; Disetujui belum dibayar -> Batalkan & 
   assert.ok(cari(d, "edit").aktif);
   d = aksiTagihan({ status: "DISETUJUI", terbayar: 0 }, admin);
   assert.equal(cari(d, "batalkan").label, "Batalkan & Catat Ulang"); assert.ok(cari(d, "batalkan").aktif);
-  assert.ok(!cari(d, "edit").aktif); assert.match(cari(d, "edit").alasan, /Batalkan & Catat Ulang/);
+  // B3.8: Edit Informasi (tanpa jurnal) + Koreksi tersedia untuk tagihan yang sudah disetujui
+  assert.equal(cari(d, "info").label, "Edit Informasi"); assert.ok(cari(d, "info").aktif);
+  assert.equal(cari(d, "koreksi").label, "Koreksi Tagihan"); assert.ok(cari(d, "koreksi").aktif);
   d = aksiTagihan({ status: "LUNAS", terbayar: 100 }, admin);
   assert.ok(!cari(d, "batalkan").aktif); assert.match(cari(d, "batalkan").alasan, /Memiliki pembayaran aktif/);
   d = aksiTagihan({ status: "DIBAYAR_SEBAGIAN", terbayar: 50 }, admin);
@@ -77,7 +79,7 @@ test("Refund: Menunggu -> Edit; Disetujui -> alasan + Batalkan & Ajukan Ulang; d
   let d = aksiRefund({ status: "MENUNGGU_APPROVAL" }, admin);
   assert.ok(cari(d, "edit").aktif);
   d = aksiRefund({ status: "DISETUJUI" }, admin);
-  assert.ok(!cari(d, "edit").aktif); assert.match(cari(d, "edit").alasan, /Batalkan & Ajukan Ulang/);
+  assert.ok(cari(d, "info").aktif && cari(d, "koreksi").aktif); // B3.8: Edit Informasi + Koreksi (versi pengganti)
   assert.equal(cari(d, "batalkan").label, "Batalkan & Ajukan Ulang"); assert.ok(cari(d, "batalkan").aktif);
   semuaNonaktifBeralasan(aksiRefund({ status: "DITOLAK" }, admin));
 });
@@ -120,4 +122,34 @@ test("Button meneruskan ref (forwardRef): tanpa ini trigger menu Radix tak punya
   const b = baca("components/ui/button.jsx");
   assert.match(b, /React\.forwardRef\(function Button/);
   assert.match(b, /ref=\{ref\}/);
+});
+
+test("B3.8 Koreksi tagihan/refund: keadaan dari server (koreksi.aktif=false → nonaktif + alasan + arah); non-admin nonaktif; sudah diganti → tunjuk pengganti", () => {
+  const blok = { aktif: false, kode: "ADA_PEMBAYARAN", alasan: "Tagihan ini sudah punya 1 pembayaran aktif.", arah: "Batalkan pembayarannya dulu." };
+  let d = aksiTagihan({ status: "DISETUJUI", terbayar: 0, koreksi: blok }, admin);
+  assert.ok(!cari(d, "koreksi").aktif); assert.match(cari(d, "koreksi").alasan, /pembayaran aktif.*Batalkan pembayarannya dulu/);
+  d = aksiTagihan({ status: "DISETUJUI", terbayar: 0 }, bukanAdmin);
+  assert.ok(!cari(d, "koreksi").aktif); assert.equal(cari(d, "koreksi").alasan, ALASAN_ADMIN);
+  assert.ok(cari(d, "info").aktif, "edit informasi bukan hak Admin Keuangan");
+  d = aksiTagihan({ status: "LUNAS", terbayar: 100 }, admin);
+  assert.ok(!cari(d, "koreksi").aktif); assert.match(cari(d, "koreksi").alasan, /pembayaran aktif/);
+  d = aksiTagihan({ status: "DIBATALKAN", replacedBy: { billNumber: "BILL-01102026-002" } }, admin);
+  assert.match(cari(d, "edit").alasan, /digantikan BILL-01102026-002/); semuaNonaktifBeralasan(d);
+
+  d = aksiRefund({ status: "DISETUJUI" }, admin);
+  assert.equal(cari(d, "koreksi").label, "Koreksi Refund"); assert.ok(cari(d, "koreksi").aktif); assert.ok(cari(d, "info").aktif);
+  d = aksiRefund({ status: "DISETUJUI", koreksi: { aktif: false, alasan: "Jurnal refund ini sudah dicocokkan.", arah: "Lepas pencocokannya dulu." } }, admin);
+  assert.ok(!cari(d, "koreksi").aktif); assert.match(cari(d, "koreksi").alasan, /dicocokkan.*Lepas/);
+  d = aksiRefund({ status: "DIBATALKAN", replacedBy: { refundNumber: "RFD-01102026-002" } }, admin);
+  assert.match(cari(d, "edit").alasan, /digantikan RFD-01102026-002/);
+});
+
+test("B3.8 Kasbon: tombol Riwayat perubahan selalu ada (terpisah dari riwayat pemotongan)", () => {
+  let d = aksiKasbon({ status: "AKTIF", repayments: [] }, admin);
+  assert.equal(cari(d, "versi").label, "Riwayat perubahan"); assert.ok(cari(d, "versi").aktif);
+  assert.ok(!d.some((x) => x.key === "riwayat"), "tanpa pemotongan → tidak ada riwayat pemotongan");
+  d = aksiKasbon({ status: "LUNAS", repayments: [{ cancelledAt: null }] }, admin);
+  assert.ok(cari(d, "versi").aktif); assert.ok(cari(d, "riwayat").aktif);
+  d = aksiKasbon({ status: "DIBATALKAN", repayments: [] }, admin);
+  assert.ok(cari(d, "versi").aktif);
 });

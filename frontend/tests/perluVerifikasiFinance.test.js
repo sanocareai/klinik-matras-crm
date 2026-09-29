@@ -46,7 +46,7 @@ test("Pembayaran (Finance): tab Perlu Verifikasi Finance (default), Klaim Lunas 
   assert.match(s, /key: "terverifikasi", label: "Uang Masuk Terverifikasi"/);
   assert.match(s, /useState\("perlu"\)/);
   assert.doesNotMatch(s, /label: "Ditandai Lunas oleh Sales"|label: "Menunggu Verifikasi" \}/);
-  assert.match(s, /\(tab === "lunas_crm" \|\| tab === "perlu"\) && <LunasBelumDicatat ringkas=\{tab === "perlu"\} \/>/);
+  assert.match(s, /\(tab === "lunas_crm" \|\| tab === "perlu"\) && <LunasBelumDicatat ringkas=\{tab === "perlu"\} onTampil=\{setKlaimIds\} \/>/); // onTampil: dipakai Export Excel (B3.9)
   assert.match(s, /tab === "perlu" \? "belum_verifikasi" : tab/);
 });
 

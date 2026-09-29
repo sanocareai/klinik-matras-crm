@@ -17,11 +17,12 @@ import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/fina
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek,
+  StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { RowActions, AKSI_COL_WIDTH, AKSI_COL_WIDTH_MENU_ONLY } from "@/features/finance/RowActions.jsx";
-import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import { RiwayatVersiDialog, KoreksiDialog, InfoDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiTagihan as matriksTagihan, aksiPembayaranSupplier } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
@@ -29,10 +30,12 @@ import PilihJenisTagihan, { bodyJenis, jenisLengkap } from "@/features/finance/J
 
 // Tagihan: belum disetujui = Edit bebas (belum ada jurnal). Sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // Batalkan (jurnal dibalik; diblokir server kalau sudah ada pembayaran aktif) lalu catat ulang.
-function aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk }) {
+function aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk }) {
   // Isi menu dari matriks aksi (features/finance/matriksAksi.js): tindakan yang tidak tersedia tetap tampil dengan alasannya.
   const items = bentukItemMenu(matriksTagihan(b, { admin: adminSaatIni() }), {
     edit: () => setEditUntuk(b),
+    info: () => setInfoUntuk(b),
+    koreksi: () => setKoreksiUntuk(b),
     versi: () => setVersiUntuk(b),
     tolak: () => {
       const alasan = window.prompt("Alasan penolakan tagihan:");
@@ -73,6 +76,8 @@ function aksiPembayaran(p, { aksi, setVersiPay }) {
 const angka = (x) => `${Math.round(Number(x) || 0)} ${(Number(x) || 0).toLocaleString("id-ID")}`;
 const unik = (arr) => [...new Set(arr.filter(Boolean))].sort().map((v) => [v, v]);
 
+const LABEL_TEMPO = { lewat: "Lewat jatuh tempo", belum: "Belum jatuh tempo", tanpa: "Tanpa tanggal" };
+
 // Lewat jatuh tempo hanya berarti kalau tagihannya masih punya sisa.
 function statusTempo(b, awalHariIni) {
   if (!b.dueDate) return "tanpa";
@@ -102,6 +107,8 @@ export default function FinanceSuppliers() {
   const [bills, setBills] = useState([]);
   const [editUntuk, setEditUntuk] = useState(null);
   const [versiUntuk, setVersiUntuk] = useState(null);
+  const [infoUntuk, setInfoUntuk] = useState(null);
+  const [koreksiUntuk, setKoreksiUntuk] = useState(null);
   const [versiPay, setVersiPay] = useState(null);
   const [payments, setPayments] = useState([]);
   const [aging, setAging] = useState(null);
@@ -201,12 +208,36 @@ export default function FinanceSuppliers() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={
-        <Button size="sm" onClick={() => setModal(tab === "supplier" ? "supplier" : tab === "pembayaran" ? "bayar" : "tagihan")}>
-          <Plus size={14} />
-          {tab === "supplier" ? "Supplier Baru" : tab === "pembayaran" ? "Catat Pembayaran" : "Tagihan Baru"}
-        </Button>
-      }
+      actions={(
+        <>
+          {/* Export mengikuti TAB AKTIF: baris yang tampil setelah pencarian/filter sisi-klien dikirim sebagai `ids` (urutan layar). */}
+          <TombolExportExcel
+            modul="supplier-utang"
+            ambilBody={() => {
+              if (tab === "tagihan") {
+                return {
+                  filter: { tab }, ids: billsTampil.map((b) => b.id),
+                  filterLabel: labelFilterAktif([["Tab", "Tagihan (Utang)"], ["Supplier", fSupB], ["Status", fStatusB && (LABEL_STATUS[fStatusB] || fStatusB)], ["Jatuh tempo", LABEL_TEMPO[fTempo]], ["Pencarian", qB.trim()]]),
+                };
+              }
+              if (tab === "pembayaran") {
+                return {
+                  filter: { tab }, ids: paymentsTampil.map((p) => p.id),
+                  filterLabel: labelFilterAktif([["Tab", "Pembayaran"], ["Supplier", fSupP], ["Dari rekening", fRek], ["Status", fStatusP && (fStatusP === "batal" ? "Dibatalkan" : "Terposting")], ["Pencarian", qP.trim()]]),
+                };
+              }
+              return {
+                filter: { tab }, ids: suppliersTampil.map((s) => s.id),
+                filterLabel: labelFilterAktif([["Tab", "Master Supplier"], ["Status", fStatusS && (fStatusS === "aktif" ? "Aktif" : "Nonaktif")], ["Utang", fUtang && (fUtang === "ada" ? "Ada sisa utang" : "Lunas")], ["Pencarian", qS.trim()]]),
+              };
+            }}
+          />
+          <Button size="sm" onClick={() => setModal(tab === "supplier" ? "supplier" : tab === "pembayaran" ? "bayar" : "tagihan")}>
+            <Plus size={14} />
+            {tab === "supplier" ? "Supplier Baru" : tab === "pembayaran" ? "Catat Pembayaran" : "Tagihan Baru"}
+          </Button>
+        </>
+      )}
     >
       {pesan && (
         <Card className="bg-redbg">
@@ -304,7 +335,7 @@ export default function FinanceSuppliers() {
                 </THead>
                 <TBody>
                   {billsTampil.map((b) => {
-                    const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk });
+                    const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk });
                     const kedua = teksKedua(b, tier);
                     return (
                     <TR key={b.id}>
@@ -345,7 +376,7 @@ export default function FinanceSuppliers() {
             {tier === "card" && (
             <CardList>
               {billsTampil.map((b) => {
-                const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk });
+                const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk });
                 return (
                   <RowCard
                     key={b.id}
@@ -506,6 +537,35 @@ export default function FinanceSuppliers() {
         <ModalEditTagihan
           bill={editUntuk} suppliers={suppliers} kategori={kategori} kategoriBeli={kategoriBeli} metodeInfo={metodeInfo} unbilled={unbilled} onClose={() => setEditUntuk(null)}
           onSubmit={(d) => aksi(async () => { await api.editFinanceBill(editUntuk.id, d); setEditUntuk(null); })}
+        />
+      )}
+      {infoUntuk && (
+        <InfoDialog
+          jenis="bills" doc={infoUntuk} nomor={infoUntuk.billNumber} judulRingkas={`${infoUntuk.supplier?.name || ""} · ${formatUang(infoUntuk.amount)}`}
+          kolom={[{ kunci: "supplierRef", label: "Nomor faktur supplier" }, { kunci: "dueDate", label: "Jatuh tempo", tipe: "tanggal" }]}
+          awal={{ supplierRef: infoUntuk.supplierRef || "", dueDate: infoUntuk.dueDate ? String(infoUntuk.dueDate).slice(0, 10) : "" }}
+          onClose={() => setInfoUntuk(null)} onSaved={() => { setInfoUntuk(null); muat(); }}
+        />
+      )}
+      {koreksiUntuk && (
+        <KoreksiDialog
+          tanpaPin
+          jenis="bills" doc={koreksiUntuk} nomor={koreksiUntuk.billNumber} judulRingkas={`Tagihan disetujui · ${koreksiUntuk.jenisTagihan?.label || "tanpa jenis"} · ${formatUang(koreksiUntuk.amount)}`}
+          kolom={[
+            { kunci: "supplierId", label: "Supplier", tipe: "pilih", opsi: suppliers.filter((x) => x.active !== false || x.id === koreksiUntuk.supplierId).map((x) => ({ id: x.id, name: x.name })), wajib: true },
+            { kunci: "billDate", label: "Tanggal tagihan", tipe: "tanggal", wajib: true },
+            { kunci: "amount", label: "Nominal tagihan", tipe: "uang", wajib: true },
+            { kunci: "description", label: "Keterangan", wajib: true },
+            ...(["JASA_OPERASIONAL", "BIAYA_PRODUKSI_NON_STOK"].includes(koreksiUntuk.billType)
+              ? [{ kunci: "expenseCategoryId", label: "Kategori biaya", tipe: "pilih", opsi: kategori.map((x) => ({ id: x.id, name: x.name })), wajib: true }] : []),
+            ...(["MESIN_PERALATAN", "UANG_MUKA_PEMBELIAN"].includes(koreksiUntuk.billType)
+              ? [{ kunci: "purchaseCategoryId", label: "Kategori aset", tipe: "pilih", opsi: kategoriBeli.map((x) => ({ id: x.id, name: x.name })), wajib: true }] : []),
+          ]}
+          awal={{
+            supplierId: koreksiUntuk.supplierId, billDate: String(koreksiUntuk.billDate || "").slice(0, 10), amount: Number(koreksiUntuk.amount) || 0,
+            description: koreksiUntuk.description || "", expenseCategoryId: koreksiUntuk.expenseCategoryId || "", purchaseCategoryId: koreksiUntuk.purchaseCategoryId || "",
+          }}
+          onClose={() => setKoreksiUntuk(null)} onSaved={() => { setKoreksiUntuk(null); muat(); }}
         />
       )}
       {versiPay && <RiwayatVersiDialog jenis="supplier-payments" id={versiPay.id} nomor={versiPay.paymentNumber} onClose={() => setVersiPay(null)} />}

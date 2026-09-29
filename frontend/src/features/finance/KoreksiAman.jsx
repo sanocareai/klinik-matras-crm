@@ -215,9 +215,13 @@ export const LABEL_FIELD = {
   // Pembayaran masuk (B3.7)
   tanggal: "Tanggal pembayaran", rekening: "Rekening penerima", metode: "Metode pembayaran", order: "Order", alokasi: "Pembagian ke order",
   referenceNumber: "Nomor referensi", internalNote: "Keterangan internal", proofPhotoUrl: "Bukti",
+  // Tagihan supplier & refund (B3.8)
+  supplierRef: "Nomor faktur supplier", dueDate: "Jatuh tempo", billDate: "Tanggal tagihan", jatuhTempo: "Jatuh tempo", nominal: "Nominal",
+  keterangan: "Keterangan", jenis: "Jenis tagihan", kategoriBiaya: "Kategori biaya", kategoriAset: "Kategori aset", biayaTransfer: "Biaya transfer",
+  alasanRefund: "Alasan refund", reason: "Alasan refund", rekeningSumber: "Rekening sumber",
 };
-const FIELD_UANG = new Set(["amount", "feeAmount", "transferFeeAmount"]);
-const FIELD_TANGGAL = new Set(["date"]);
+const FIELD_UANG = new Set(["amount", "feeAmount", "transferFeeAmount", "nominal", "biayaTransfer"]);
+const FIELD_TANGGAL = new Set(["date", "tanggal", "jatuhTempo", "dueDate", "billDate"]);
 
 /** Tampilkan nilai; `resolusi(field, nilai)` (opsional) menerjemahkan id -> nama. */
 export function tampilNilai(field, v, resolusi) {
@@ -340,6 +344,22 @@ export function RiwayatVersiDialog({ jenis, id, nomor, onClose, resolusi }) {
       {!data && !galat && <p className="text-[13px] text-ink3">Memuat…</p>}
       {data && (
         <div className="space-y-4">
+          {data.rantai?.length > 1 && (
+            <div>
+              <div className="mb-1 text-[12px] font-medium uppercase tracking-[0.05em] text-ink3">Rantai versi (lama → terbaru)</div>
+              <div className="space-y-1">
+                {data.rantai.map((v) => (
+                  <div key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-inset px-3 py-2 text-[12.5px]">
+                    <span><span className="font-mono">{v.nomor}</span> <span className="text-ink3">· versi {v.nomorVersi}</span></span>
+                    <span className="flex items-center gap-2">
+                      {v.nominal != null && <span className="tabular-nums">{formatUang(v.nominal)}</span>}
+                      <Badge variant={v.terbaru ? "green" : "neutral"}>{v.terbaru ? "Terbaru" : "Diganti"}</Badge>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             {data.versi.length === 0 && <p className="text-[13px] text-ink3">Belum ada riwayat.</p>}
             {data.versi.map((v, i) => (
@@ -389,13 +409,15 @@ export function RiwayatVersiDialog({ jenis, id, nomor, onClose, resolusi }) {
 // ─── Dialog Koreksi generik (transfer, pemasukan lain) ───────────────────────
 // `kolom`: [{ kunci, label, tipe: "teks"|"uang"|"tanggal"|"pilih", opsi?: [{id,name}], wajib? }]
 // `awal`: nilai awal per kunci. Hanya kolom yang BERUBAH yang dikirim.
-export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, onClose, onSaved, resolusi }) {
+// `tanpaPin` (Tagihan Supplier & Refund, keputusan Owner 29 Sep 2026): simpan tanpa PIN — izin server + alasan + pratinjau + Idempotency-Key.
+export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, onClose, onSaved, resolusi, tanpaPin = false }) {
   const [f, setF] = useState(awal);
   const [alasan, setAlasan] = useState("");
   const [galat, setGalat] = useState("");
   const [pratinjau, setPratinjau] = useState(null);
   const [sibuk, setSibuk] = useState(false);
   const { minta, dialogPin } = usePinStepUp();
+  const kunciRef = useRef(null); // Idempotency-Key per isi koreksi: dipakai ulang saat retry/klik ganda, diganti begitu isi berubah
 
   const beda = {};
   for (const k of kolom) {
@@ -418,12 +440,19 @@ export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, on
   async function simpan() {
     setGalat(""); setSibuk(true);
     try {
-      const r = await kirimKoreksi({ minta, jenis, id: doc.id, body: { ...beda, reason: alasan.trim() } });
-      if (r) onSaved();
+      const body = { ...beda, reason: alasan.trim() };
+      if (tanpaPin) {
+        kunciRef.current ||= globalThis.crypto?.randomUUID ? `koreksi-${globalThis.crypto.randomUUID()}` : `koreksi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+        await api.koreksiFinanceDoc(jenis, doc.id, body, null, kunciRef.current);
+        onSaved();
+      } else {
+        const r = await kirimKoreksi({ minta, jenis, id: doc.id, body });
+        if (r) onSaved();
+      }
     } catch (e) { setGalat(e.message); } finally { setSibuk(false); }
   }
 
-  const set = (k, v) => { setF((s) => ({ ...s, [k]: v })); setPratinjau(null); };
+  const set = (k, v) => { setF((s) => ({ ...s, [k]: v })); setPratinjau(null); kunciRef.current = null; };
 
   return (
     <>
@@ -446,7 +475,7 @@ export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, on
             <>
               <p className="text-[12.5px] text-ink2"><strong>Alasan:</strong> {alasan}</p>
               <PratinjauKoreksi pratinjau={pratinjau} resolusi={resolusi} />
-              <p className="text-[12px] text-ink3">Menyimpan akan meminta PIN Finance Anda.</p>
+              <p className="text-[12px] text-ink3">{tanpaPin ? "Menyimpan membuat dokumen pengganti dan membalik jurnal lama sekali saja (aman dari klik ganda)." : "Menyimpan akan meminta PIN Finance Anda."}</p>
             </>
           ) : (
             <>
@@ -466,7 +495,7 @@ export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, on
                 </Field>
               ))}
               <Field label="Alasan koreksi" required hint="Wajib — tercatat di riwayat audit">
-                <Input value={alasan} onChange={(e) => { setAlasan(e.target.value); setPratinjau(null); }} placeholder="mis. salah ketik nominal / salah pilih rekening" />
+                <Input value={alasan} onChange={(e) => { setAlasan(e.target.value); setPratinjau(null); kunciRef.current = null; }} placeholder="mis. salah ketik nominal / salah pilih rekening" />
               </Field>
               {!adaPerubahan && <p className="text-[12px] text-ink3">Ubah minimal satu kolom untuk melanjutkan.</p>}
             </>
@@ -476,5 +505,55 @@ export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, on
       </Modal>
       {dialogPin}
     </>
+  );
+}
+
+// ─── Dialog Edit Informasi (B3.8) ────────────────────────────────────────────
+// Untuk dokumen yang SUDAH berjurnal tetapi perubahannya BUKAN angka buku besar (nomor faktur, jatuh tempo, alasan refund).
+// Tanpa jurnal & tanpa PIN; alasan wajib; server mencatat sebelum/sesudah di riwayat.
+export function InfoDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, onClose, onSaved }) {
+  const [f, setF] = useState(awal);
+  const [alasan, setAlasan] = useState("");
+  const [galat, setGalat] = useState("");
+  const [sibuk, setSibuk] = useState(false);
+  const kunciRef = useRef(null);
+  const beda = {};
+  for (const k of kolom) if ((awal[k.kunci] || "") !== (f[k.kunci] || "")) beda[k.kunci] = f[k.kunci];
+  const valid = Object.keys(beda).length > 0 && alasan.trim();
+  async function simpan() {
+    setGalat(""); setSibuk(true);
+    try {
+      kunciRef.current ||= globalThis.crypto?.randomUUID ? `info-${globalThis.crypto.randomUUID()}` : `info-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      await api.editInfoFinanceDoc(jenis, doc.id, { ...beda, reason: alasan.trim() }, kunciRef.current);
+      onSaved();
+    }
+    catch (e) { setGalat(e.message); } finally { setSibuk(false); }
+  }
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()}
+      title={`Edit informasi ${nomor}`} description={judulRingkas} className="w-[520px]"
+      footer={<>
+        <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
+        <Button onClick={simpan} disabled={!valid || sibuk} className="max-sm:min-h-11 max-sm:px-4">Simpan</Button>
+      </>}
+    >
+      <div className="space-y-3">
+        <p className="rounded-lg bg-accentbg px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
+          Perubahan ini tidak menyentuh buku besar (tanpa jurnal, saldo tidak berubah). Untuk nominal, tanggal, atau rekening gunakan <strong>Koreksi</strong>.
+        </p>
+        {kolom.map((k) => (
+          <Field key={k.kunci} label={k.label}>
+            {k.tipe === "tanggal"
+              ? <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f[k.kunci]} onChange={(v) => setF((st) => ({ ...st, [k.kunci]: v }))} />
+              : <Input value={f[k.kunci] || ""} onChange={(e) => setF((st) => ({ ...st, [k.kunci]: e.target.value }))} />}
+          </Field>
+        ))}
+        <Field label="Alasan perubahan" required hint="Wajib — tercatat di riwayat audit">
+          <Input value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. salah ketik nomor faktur" />
+        </Field>
+        {galat && <p className="text-[13px] text-red">{galat}</p>}
+      </div>
+    </Modal>
   );
 }

@@ -12,6 +12,7 @@ const PERINGATAN_PENDAPATAN_2026 = "Pendapatan 2026 masih dalam proses rekonsili
 import { HalamanFinance, KartuAngka, JudulKartu, Penjelasan, PeriodePicker, periodeDefault, tanggalPendek } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 
 // PEMASUKAN TERPADU — agregator (READ-MODEL). Semua angka & klasifikasi dihitung SERVER; halaman ini hanya menata. Tidak ada tombol "buat pemasukan umum":
 // pencatatan baru hanya lewat Pemasukan Lain (validasi akun di server). Uang dari server berupa STRING desimal → diformat tanpa float.
@@ -84,7 +85,25 @@ function Daftar({ periode, kategori, opsi, onBuka, judulKosong, statusAwal = "" 
         ringkasan={data ? `${data.total} baris · total ${teksRp(data.totalNilai)}` : ""}
         onReset={() => { setQ(""); setPihak(""); setRekening(""); setStatus(statusAwal); setStatusBayar(""); }}
       />
-      <Input value={pihak} onChange={(e) => setPihak(e.target.value)} placeholder="Cari pelanggan / pembayar…" className="max-w-xs" aria-label="Cari pelanggan atau pembayar" />
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <Input value={pihak} onChange={(e) => setPihak(e.target.value)} placeholder="Cari pelanggan / pembayar…" className="max-w-xs" aria-label="Cari pelanggan atau pembayar" />
+        {/* Export mengirim filter yang SAMA dengan yang sedang dikirim layar ke endpoint daftar (server yang memfilter). */}
+        <TombolExportExcel
+          modul="pemasukan"
+          ambilBody={() => ({
+            periode: { from: periode.from, to: periode.to },
+            filter: { kategori, q: qT, pihak: pihakT, rekening, status, statusBayar },
+            filterLabel: labelFilterAktif([
+              ["Kategori", opsi?.kategori?.find((k) => k.id === kategori)?.label],
+              ["Status", statusOpsi.find(([id]) => id === status)?.[1]],
+              ["Status pembayaran", statusBayarOpsi.find(([id]) => id === statusBayar)?.[1]],
+              ["Rekening", rekOpsi.find(([id]) => id === rekening)?.[1]],
+              ["Pelanggan/pembayar", pihakT],
+              ["Pencarian", qT],
+            ]),
+          })}
+        />
+      </div>
       {data?.terpotong && <Penjelasan>Data sangat besar; daftar dipotong server. Persempit periode.</Penjelasan>}
       {error && <Card><CardContent className="py-6 text-red">Gagal memuat: {error} <Button size="sm" onClick={muat}>Coba lagi</Button></CardContent></Card>}
       <Card>
@@ -468,7 +487,15 @@ export default function FinancePemasukan() {
       {tab !== "ringkasan" && aktif?.kategori && opsi && (
         <Penjelasan className="mb-3">{opsi.kategori.find((k) => k.id === aktif.kategori)?.penjelasan}</Penjelasan>
       )}
-      {tab === "ringkasan" && <Ringkasan periode={periode} ke={setTab} />}
+      {tab === "ringkasan" && (
+        <>
+          {/* Tab Ringkasan tidak punya daftar sendiri: export memuat seluruh pemasukan periode ini (semua kategori) + sheet Rekap Klasifikasi. */}
+          <div className="flex justify-end">
+            <TombolExportExcel modul="pemasukan" ambilBody={() => ({ periode: { from: periode.from, to: periode.to }, filter: {}, filterLabel: "Ringkasan — semua kategori pemasukan" })} />
+          </div>
+          <Ringkasan periode={periode} ke={setTab} />
+        </>
+      )}
       {tab === "verifikasi" && <PerluVerifikasi periode={periode} opsi={opsi} onBuka={buka} />}
       {["pendapatan", "pembayaran", "lain", "dana"].includes(tab) && <Daftar key={tab} periode={periode} kategori={aktif.kategori} opsi={opsi} onBuka={buka} />}
       {tab === "historis" && <DataSebelumSistem periode={periode} opsi={opsi} onBuka={buka} />}

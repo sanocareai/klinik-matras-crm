@@ -21,16 +21,19 @@ import {
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
+import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { aksiKasbon as matriksKasbon } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 
 // Aksi PALING RELEVAN jadi tombol utama; sisanya masuk menu titik-tiga —
 // sama seperti FinanceExpenses.jsx (lihat komentar di sana).
-function aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, aksi }) {
+function aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, setVersiUntuk, aksi }) {
   // Isi menu dari matriks aksi: Edit Data untuk field non-uang; nominal hanya lewat Batalkan & Catat Ulang (dengan penjelasannya).
   const items = bentukItemMenu(matriksKasbon(k, { admin: adminSaatIni() }), {
     riwayat: () => setRiwayatId(k.id),
+    versi: () => setVersiUntuk(k),
     edit: () => setEditUntuk(k),
     batalkan: () => {
       const alasan = window.prompt(`Alasan membatalkan ${k.kasbonNumber}? Jurnalnya akan dibalik, lalu catat ulang kasbon dengan data yang benar:`);
@@ -81,6 +84,7 @@ export default function FinanceKasbon() {
   const [lunasiUntuk, setLunasiUntuk] = useState(null); // { kasbon } | { karyawan, sisa }
   const [riwayatId, setRiwayatId] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
+  const [versiUntuk, setVersiUntuk] = useState(null);
 
   // { diam: true } = muat ulang di latar belakang (layar & scroll tetap).
   const muat = useCallback(async (opsi) => {
@@ -130,7 +134,18 @@ export default function FinanceKasbon() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={<Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Kasbon Baru</Button>}
+      actions={(
+        <>
+          <TombolExportExcel
+            modul="kasbon"
+            ambilBody={() => ({
+              filter: { status, q: qTunda.trim(), karyawan: fKaryawan },
+              filterLabel: labelFilterAktif([["Status", STATUS_TAB.find((t) => t.key === status)?.label], ["Karyawan", fKaryawan], ["Pencarian", qTunda.trim()]]),
+            })}
+          />
+          <Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Kasbon Baru</Button>
+        </>
+      )}
     >
       {pesan && (
         <Card className="bg-redbg">
@@ -243,7 +258,7 @@ export default function FinanceKasbon() {
               </THead>
               <TBody>
                 {kasbon.map((k) => {
-                  const a = aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, aksi });
+                  const a = aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, setVersiUntuk, aksi });
                   return (
                   <TR key={k.id}>
                     <TD sticky className="font-mono text-[12px]">{k.kasbonNumber}</TD>
@@ -271,7 +286,7 @@ export default function FinanceKasbon() {
 
           <CardList className={CARD_VIEW_CLASS}>
             {kasbon.map((k) => {
-              const a = aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, aksi });
+              const a = aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, setVersiUntuk, aksi });
               return (
                 <RowCard
                   key={k.id}
@@ -327,6 +342,7 @@ export default function FinanceKasbon() {
         }}
       />
 
+      {versiUntuk && <RiwayatVersiDialog jenis="kasbon" id={versiUntuk.id} nomor={versiUntuk.kasbonNumber} onClose={() => setVersiUntuk(null)} />}
       <ModalEdit kasbon={editUntuk} onClose={() => setEditUntuk(null)} onSubmit={(d) => aksi(() => api.editKasbon(editUntuk.id, d))} />
     </HalamanFinance>
   );

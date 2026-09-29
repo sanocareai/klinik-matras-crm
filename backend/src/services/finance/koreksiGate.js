@@ -178,8 +178,9 @@ export const JENIS_DOKUMEN = {
   transfers: { model: "finCashTransfer", nomor: "transferNumber", entity: ENTITY_TYPES.FIN_CASH_TRANSFER, source: "TRANSFER_KAS" },
   "other-income": { model: "finOtherIncome", nomor: "incomeNumber", entity: ENTITY_TYPES.FIN_OTHER_INCOME, source: "PEMASUKAN_LAIN" },
   kasbon: { model: "finKasbon", nomor: "kasbonNumber", entity: ENTITY_TYPES.FIN_KASBON, source: "KASBON" },
-  refunds: { model: "finRefund", nomor: "refundNumber", entity: ENTITY_TYPES.FIN_REFUND, source: "REFUND" },
-  bills: { model: "finSupplierBill", nomor: "billNumber", entity: ENTITY_TYPES.FIN_SUPPLIER_BILL, source: "TAGIHAN_SUPPLIER" },
+  // B3.8: refund & tagihan yang dikoreksi menjadi RANTAI versi (replaces → lama); riwayat menelusuri seluruh rantai.
+  refunds: { model: "finRefund", nomor: "refundNumber", entity: ENTITY_TYPES.FIN_REFUND, source: "REFUND", replaces: "replacesRefundId" },
+  bills: { model: "finSupplierBill", nomor: "billNumber", entity: ENTITY_TYPES.FIN_SUPPLIER_BILL, source: "TAGIHAN_SUPPLIER", replaces: "replacesBillId" },
   "supplier-payments": { model: "finSupplierPayment", nomor: "paymentNumber", entity: null, source: "PEMBAYARAN_SUPPLIER" },
   "uang-muka": { model: "finOperationalAdvance", nomor: "advanceNumber", entity: ENTITY_TYPES.FIN_UANG_MUKA, source: "UANG_MUKA_OPERASIONAL" },
 };
@@ -188,6 +189,25 @@ const LABEL_AKSI = {
   DOCUMENT_CREATED: "Dibuat", DOCUMENT_EDITED: "Diedit", DOCUMENT_CORRECTED: "Dikoreksi", DOCUMENT_APPROVED: "Disetujui",
   DOCUMENT_POSTED: "Diposting", DOCUMENT_CANCELLED: "Dibatalkan", DOCUMENT_REJECTED: "Ditolak",
 };
+
+/** Id seluruh versi dalam rantai koreksi (paling lama → terbaru) untuk dokumen yang punya kolom "replaces". */
+async function rantaiVersi(db, cfg, id) {
+  if (!cfg.replaces) return [id];
+  const ids = [id];
+  let sel = id;
+  for (let i = 0; i < 50; i++) {
+    const d = await db[cfg.model].findUnique({ where: { id: sel }, select: { [cfg.replaces]: true } });
+    if (!d?.[cfg.replaces]) break;
+    ids.unshift(d[cfg.replaces]); sel = d[cfg.replaces];
+  }
+  sel = id;
+  for (let i = 0; i < 50; i++) {
+    const d = await db[cfg.model].findUnique({ where: { id: sel }, select: { replacedBy: { select: { id: true } } } });
+    if (!d?.replacedBy) break;
+    ids.push(d.replacedBy.id); sel = d.replacedBy.id;
+  }
+  return ids;
+}
 
 function ubahKePerubahan(m) {
   if (m?.changes && typeof m.changes === "object") {
@@ -206,14 +226,16 @@ export async function riwayatVersi(db, jenis, id) {
   const doc = await db[cfg.model].findUnique({ where: { id } });
   if (!doc) throw new KoreksiError("Dokumen tidak ditemukan", 404);
 
+  const ids = await rantaiVersi(db, cfg, id);
   const events = cfg.entity
-    ? await db.activityEvent.findMany({ where: { entityType: cfg.entity, entityId: id }, orderBy: { createdAt: "asc" } })
+    ? await db.activityEvent.findMany({ where: { entityType: cfg.entity, entityId: { in: ids } }, orderBy: { createdAt: "asc" } })
     : [];
   const aktorIds = [...new Set(events.map((e) => e.actorId).filter(Boolean))];
   const aktor = aktorIds.length ? await db.user.findMany({ where: { id: { in: aktorIds } }, select: { id: true, name: true } }) : [];
   const namaAktor = new Map(aktor.map((a) => [a.id, a.name]));
 
-  const versi = events.map((e) => ({
+  // Satu koreksi menulis DUA peristiwa (di dokumen lama & baru) dengan isi sama — tampilkan sekali (yang di dokumen lama).
+  const versi = events.filter((e) => !(cfg.replaces && e.metadata?.menggantikan)).map((e) => ({
     waktu: e.createdAt, aksi: LABEL_AKSI[e.eventType] || e.eventType, eventType: e.eventType,
     aktor: e.actorType === "SYSTEM" ? "Sistem" : (namaAktor.get(e.actorId) || "—"),
     alasan: e.metadata?.reason || e.metadata?.alasan || null,
@@ -222,7 +244,7 @@ export async function riwayatVersi(db, jenis, id) {
   }));
 
   const entries = await db.finJournalEntry.findMany({
-    where: { source: cfg.source, sourceId: id },
+    where: { source: cfg.source, sourceId: { in: ids } },
     include: { reversalOf: { select: { entryNumber: true } }, reversedBy: { select: { entryNumber: true, reversalReason: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -237,7 +259,15 @@ export async function riwayatVersi(db, jenis, id) {
       alasanBalik: e.reversalReason || e.reversedBy?.reversalReason || null, dibuatPada: e.createdAt,
     }));
 
-  return { dokumen: { jenis, id, nomor: doc[cfg.nomor] }, versi, jurnal };
+  let rantai = null;
+  if (cfg.replaces && ids.length > 1) {
+    const rows = await db[cfg.model].findMany({ where: { id: { in: ids } }, select: { id: true, [cfg.nomor]: true, status: true, amount: true } });
+    rantai = ids.map((vid, i) => {
+      const r = rows.find((x) => x.id === vid);
+      return { id: vid, nomor: r?.[cfg.nomor] ?? null, nomorVersi: i + 1, terbaru: i === ids.length - 1, status: r?.status ?? null, nominal: r ? moneyToNumber(r.amount) : null };
+    });
+  }
+  return { dokumen: { jenis, id, nomor: doc[cfg.nomor] }, versi, jurnal, ...(rantai ? { rantai } : {}) };
 }
 
 /** Nomor jurnal yang dibalik & yang menjadi pengganti pada koreksi ini — disimpan di log audit supaya dokumen & jurnal saling tertaut. */
