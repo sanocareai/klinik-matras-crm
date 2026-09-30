@@ -1011,7 +1011,7 @@ orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
 // customer-nya (?conv=<id>) — sama seperti kartu Kanban Pipeline.
 orderRouter.get("/", async (req, res) => {
   try {
-    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished, hasConfirmedDate, sortBy } = req.query;
+    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished, hasConfirmedDate, sortBy, includeActiveComplaint } = req.query;
     // BUG YANG DIPERBAIKI (1 September 2026, ditemukan owner lewat audit
     // export Excel — "krusial banget, butuh keakuratan tinggi"): batas
     // atas SEBELUMNYA cuma 500, sementara Export Excel di Orders.jsx
@@ -1085,9 +1085,45 @@ orderRouter.get("/", async (req, res) => {
       })(),
     };
 
+    // includeActiveComplaint=true (30 Sep 2026, permintaan admin produksi): export
+    // "Diproses" dipakai admin produksi sbg daftar target kerja. Order yang sedang
+    // KOMPLAIN/REVISI (status order sudah Terkirim) dulu tidak ikut, sehingga admin
+    // harus mengubah status order jadi Diproses dulu — merusak riwayat status &
+    // laporan. Dengan flag ini, order yang punya komplain/revisi AKTIF ikut
+    // dikembalikan APA PUN status order & tanggal buatnya; filter lain (kategori,
+    // sales, pembayaran, pencarian, dst) tetap berlaku. Status order TIDAK diubah.
+    let whereFinal = where;
+    if (includeActiveComplaint === "true") {
+      const { status: _s, createdAt: _c, ...tanpaStatusTanggal } = where;
+      whereFinal = {
+        OR: [
+          where,
+          {
+            ...tanpaStatusTanggal,
+            AND: [
+              ...(tanpaStatusTanggal.AND || []),
+              {
+                OR: [
+                  { complaintCases: { some: { status: { notIn: ["SELESAI", "DIBATALKAN"] } } } },
+                  { units: { some: { revisions: { some: { status: { notIn: ["REDELIVERED", "CONFIRMED", "CANCELLED"] } } } } } },
+                  { hasComplaint: true, complaintResolvedAt: null },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+    }
+
     const orders = await prisma.order.findMany({
-      where,
+      where: whereFinal,
       include: {
+        // Kasus komplain aktif — dipakai kolom "Komplain" di export Excel.
+        complaintCases: {
+          where: { status: { notIn: ["SELESAI", "DIBATALKAN"] } },
+          select: { caseNumber: true, status: true, category: true, description: true },
+          orderBy: { createdAt: "desc" },
+        },
         items: { orderBy: { sortOrder: "asc" } },
         // BUG YANG DIPERBAIKI (ditemukan sebelum sempat dipakai — mobile
         // OrdersScreen.js membuka OrderFormModal edit yang sama dengan

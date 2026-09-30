@@ -100,6 +100,11 @@ function kanbanBucket(status) {
 // SENTINEL bucket "Diproses" (PENDING+PICKUP+PROCESSING) — backend cuma
 // bisa cocokkan SATU nilai literal, jadi bucket ini SENGAJA tidak dikirim,
 // disaring ulang client-side (lihat `items` useMemo & handleExport).
+// Order sedang komplain/revisi aktif (kasus komplain, revisi unit, atau flag lama belum tuntas).
+function punyaKomplainAktif(o) {
+  return (o.complaintCases?.length || 0) > 0 || !!o.activeRevision || (o.hasComplaint && !o.complaintResolvedAt);
+}
+
 function statusQueryParam(fStatus) {
   return (fStatus && fStatus !== "PROCESSING") ? fStatus : undefined;
 }
@@ -753,6 +758,9 @@ export default function Orders() {
   }
 
   const [exporting, setExporting] = useState(false);
+  // Export "Diproses" menyertakan order komplain/revisi aktif (default nyala) —
+  // supaya admin produksi tidak perlu mengubah status order Terkirim → Diproses.
+  const [sertakanKomplain, setSertakanKomplain] = useState(true);
   const [reopeningId, setReopeningId] = useState(null);
 
   async function handleExport() {
@@ -777,6 +785,7 @@ export default function Orders() {
         salesId: fSales || undefined,
         promoId: fPromo || undefined,
         pipelineStage: fPipeline || undefined,
+        includeActiveComplaint: fStatus === "PROCESSING" && sertakanKomplain ? "true" : undefined,
         limit: 5000,
         ...toApiParams(range),
       });
@@ -794,7 +803,9 @@ export default function Orders() {
       // Bucket "Diproses" (lihat statusQueryParam) tidak dikirim ke backend,
       // jadi disaring ulang di sini SEBELUM dipakai export — sama seperti
       // `items` di layar.
-      semuaOrder = fStatus === "PROCESSING" ? res.items.filter((o) => orderStatusBucket(o.status) === "PROCESSING") : res.items;
+      semuaOrder = fStatus === "PROCESSING"
+        ? res.items.filter((o) => orderStatusBucket(o.status) === "PROCESSING" || (sertakanKomplain && punyaKomplainAktif(o)))
+        : res.items;
     } catch (e) {
       alert("Gagal memuat data untuk export: " + e.message);
       setExporting(false);
@@ -849,6 +860,11 @@ export default function Orders() {
 
         // ── Status & fulfillment ─────────────────────────────────────────
         Status: ORDER_STATUS_LABELS[o.status] || o.status,
+        // Kolom penanda komplain (30 Sep 2026): produksi bisa membedakan pekerjaan
+        // BARU vs KOMPLAIN/REVISI tanpa mengubah status order.
+        "Jenis Pekerjaan": punyaKomplainAktif(o) ? "KOMPLAIN / REVISI" : "Order Baru",
+        "No Komplain": (o.complaintCases || []).map((c) => c.caseNumber).join(", "),
+        "Keluhan": (o.complaintCases || []).map((c) => c.description).join(" | ") || o.activeRevision?.complaint || (o.hasComplaint ? o.complaintDetail || "" : ""),
         "Hari di Status": o.daysInStatus ?? "",
         // Perkiraan? (29 Agustus 2026) — sebelumnya TIDAK di-export sama
         // sekali. "Ya" = order ini belum punya riwayat perpindahan status
@@ -1049,6 +1065,12 @@ export default function Orders() {
             <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
               <RefreshCw size={14} /> Refresh
             </Button>
+            {fStatus === "PROCESSING" && (
+              <label className="flex cursor-pointer items-center gap-1.5 text-[12.5px] font-medium text-ink2" title="Ikut sertakan order yang sedang komplain/revisi di file Excel, walau status order-nya sudah Terkirim. Status order tidak diubah.">
+                <input type="checkbox" checked={sertakanKomplain} onChange={(e) => setSertakanKomplain(e.target.checked)} className="accent-[var(--accent)]" />
+                Sertakan komplain
+              </label>
+            )}
             <Button variant="ghost" size="sm" onClick={handleExport} disabled={items.length === 0 || exporting}>
               <Download size={14} /> {exporting ? "Menyiapkan…" : "Export"}
             </Button>
