@@ -1,7 +1,8 @@
 // Penyusun isi PANEL DETAIL untuk tiap jenis daftar Finance. Murni fungsi: menerima baris yang SUDAH dimuat daftar dan mengembalikan
 // spec untuk <PanelDetail>. Nilai kosong otomatis disembunyikan panel. Semua teks Bahasa Indonesia.
 import React from "react";
-import { LABEL_DIVISI, formatUang, tanggalPendek, tanggalJam } from "./shared.jsx";
+import { LABEL_DIVISI, formatUang, tanggalPendek, tanggalJam, Foto } from "./shared.jsx";
+import { LinkBukti } from "./receiptMedia.jsx";
 
 const uang = (v) => (v === null || v === undefined ? null : formatUang(v));
 const nama = (o) => o?.name || null;
@@ -177,7 +178,20 @@ export function specPembayaran(p, { badge, aksi } = {}) {
     bagian: [
       { judul: "Pembayaran", baris: [["Diterima", tanggalJam(p.createdAt)], ["Metode", LABEL_METODE_BAYAR[p.method] || p.method], ["Masuk ke rekening", nama(p.cashAccount) || "Rekening standar cara bayar"], ["Nomor referensi", p.referenceNumber], ["Dibagi ke order", p.finAllocations?.length ? p.finAllocations.map((a) => `${a.order?.orderNumber}: ${formatUang(a.amount)}`).join("; ") : null]] },
       { judul: "Verifikasi", baris: [["Status", p.cancelledAt ? (p.replacedBy ? "Diganti versi baru" : "Dibatalkan") : v ? "Sudah diverifikasi" : "Menunggu verifikasi"], ["Dicatat oleh", nama(p.recordedBy)], ["Diverifikasi oleh", v ? `${nama(v.verifiedBy) || "—"} · ${tanggalJam(v.createdAt)}` : null], ["Alasan pembatalan", p.cancelReason]] },
-      { judul: "Bukti & catatan", baris: [["Bukti", ada(p.proofPhotoUrl)], ["Catatan", p.notes], ["Keterangan internal", p.internalNote]] },
+      { judul: "Bukti & catatan", baris: [["Bukti", galeriBukti(p)], ["Catatan", p.notes], ["Keterangan internal", p.internalNote]] },
     ],
   };
+}
+
+/** Semua foto bukti pembayaran sebagai thumbnail (klik = buka penuh). Null bila tidak ada foto. */
+function galeriBukti(p) {
+  const urls = p.proofPhotoUrls?.length ? p.proofPhotoUrls : p.proofPhotoUrl ? [p.proofPhotoUrl] : [];
+  if (urls.length === 0) return null;
+  return React.createElement(
+    "div", { className: "flex flex-wrap gap-2" },
+    urls.map((u, i) => React.createElement(
+      LinkBukti, { key: u, url: u, className: "block h-14 w-14 overflow-hidden rounded-lg border border-line", "aria-label": `Bukti ${i + 1}` },
+      React.createElement(Foto, { url: u, className: "h-full w-full object-cover" }),
+    )),
+  );
 }

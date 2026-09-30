@@ -3946,6 +3946,8 @@ model Payment {
   amount        Int // Rupiah, integer
   method        PaymentMethod
   proofPhotoUrl String?       @map("proof_photo_url")
+  // SEMUA foto bukti (30 Sep 2026) — termasuk yang pertama. proofPhotoUrl tetap diisi foto pertama untuk kompatibilitas pembaca lama.
+  proofPhotoUrls String[]     @default([]) @map("proof_photo_urls")
 
   // Rekening tujuan yang DIPILIH pencatat (Tunai/Bank Kemal/Bank PT/QRIS,
   // dst — daftar dari Finance > Rekening Kas & Bank). NULL = tidak dipilih:

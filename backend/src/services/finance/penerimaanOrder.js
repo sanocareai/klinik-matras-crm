@@ -163,7 +163,9 @@ async function pendapatanSudahDiakui(tx, orderId) {
  *   mode "REKENING"            butuh cashAccountId; jurnal ke kas/bank.
  *   mode "SEBELUM_SALDO_AWAL"  tanpa rekening; jurnal ke Laba Ditahan.
  */
-export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, verifierId }) {
+export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, proofPhotoUrls = null, verifierId }) {
+  // Bukti bisa BANYAK foto (30 Sep 2026): daftar unik, foto pertama juga disimpan di proofPhotoUrl (kompatibilitas pembaca lama).
+  const bukti = [...new Set([proofPhotoUrl, ...(Array.isArray(proofPhotoUrls) ? proofPhotoUrls : [])].filter(Boolean))];
   if (!["REKENING", "SEBELUM_SALDO_AWAL"].includes(mode)) throw err("Pilihan \"uangnya masuk ke mana\" tidak dikenali");
   if (!["CASH", "TRANSFER", "QRIS", "CARD"].includes(method)) throw err("Cara bayar tidak dikenali");
   await pastikanBukanAnakResiAktif(tx, orderId); // child Resi (flag aktif) diproses lewat alur Resi
@@ -214,7 +216,8 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   const payment = await tx.payment.create({
     data: {
       orderId, amount: Math.round(Number(nominal)), method,
-      proofPhotoUrl: proofPhotoUrl || null,
+      proofPhotoUrl: bukti[0] || null,
+      proofPhotoUrls: bukti,
       cashAccountId: rekening?.id || null,
       // Yang mencatat = sales pemilik lead (dialah yang melapor lunas); finance
       // yang memverifikasi. Dua orang berbeda = kontrol yang berarti.

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Info, Loader2, Camera, X, ShieldCheck, ClipboardPaste } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -462,6 +462,18 @@ function gambarDariEvent(e) {
   return null;
 }
 
+/** SEMUA gambar dari clipboard/seret-lepas (bisa lebih dari satu). */
+function semuaGambarDariEvent(e) {
+  const dt = e.clipboardData || e.dataTransfer;
+  if (!dt) return [];
+  const hasil = [];
+  for (const item of dt.items || []) {
+    if (item.kind === "file" && item.type.startsWith("image/")) { const f = item.getAsFile(); if (f) hasil.push(f); }
+  }
+  if (hasil.length === 0) for (const file of dt.files || []) if (file.type.startsWith("image/")) hasil.push(file);
+  return hasil;
+}
+
 /** Baca gambar dari clipboard lewat tombol (butuh izin browser & HTTPS). */
 async function bacaGambarClipboard() {
   if (!navigator.clipboard?.read) {
@@ -687,6 +699,98 @@ export function SelBukti({ doc, jenis, aksi, compact = false }) {
           Verifikasi
         </TombolAksi>
       )}
+    </div>
+  );
+}
+
+/**
+ * Pemilih bukti BANYAK FOTO (30 Sep 2026): tempel (Ctrl+V) beberapa kali atau langsung beberapa gambar, pilih beberapa berkas sekaligus,
+ * atau seret-lepas beberapa gambar. Tiap foto tampil sebagai thumbnail yang bisa dilepas. `urls` = daftar URL hasil unggahan, `onChange(daftarBaru)`.
+ * Unggahan berurutan (urutan foto = urutan tempel/pilih) dan memakai daftar TERBARU lewat ref, jadi beberapa unggahan berturut-turut tidak saling menimpa.
+ */
+export function PemilihBuktiBanyak({ urls = [], onChange, maks = 10 }) {
+  const [sibuk, setSibuk] = useState(0);
+  const [galat, setGalat] = useState("");
+  const [sorot, setSorot] = useState(false);
+  const terbaru = useRef(urls);
+  terbaru.current = urls;
+
+  async function prosesBanyak(files) {
+    const sisa = maks - terbaru.current.length;
+    if (sisa <= 0) { setGalat(`Maksimal ${maks} foto bukti.`); return; }
+    const pilih = files.slice(0, sisa);
+    setGalat(files.length > sisa ? `Hanya ${sisa} foto pertama yang dipakai (maksimal ${maks} foto).` : "");
+    setSibuk((n) => n + pilih.length);
+    for (const file of pilih) {
+      try {
+        const fd = new FormData();
+        fd.append("receipt", await siapkanFoto(file));
+        const r = await api.uploadFinanceReceipt(fd);
+        terbaru.current = [...terbaru.current, r.url];
+        onChange(terbaru.current);
+        peringatanDobel(r.dipakaiDi);
+      } catch (err) {
+        setGalat(err.message);
+      } finally {
+        setSibuk((n) => n - 1);
+      }
+    }
+  }
+
+  useEffect(() => {
+    function saatTempel(e) {
+      const files = semuaGambarDariEvent(e);
+      if (files.length === 0) return; // tempel teks biasa ke kolom isian tidak diganggu
+      e.preventDefault();
+      prosesBanyak(files);
+    }
+    document.addEventListener("paste", saatTempel);
+    return () => document.removeEventListener("paste", saatTempel);
+  });
+
+  function pilih(e) {
+    const files = [...(e.target.files || [])];
+    e.target.value = "";
+    if (files.length) prosesBanyak(files);
+  }
+  const lepas = (i) => { terbaru.current = terbaru.current.filter((_, j) => j !== i); onChange(terbaru.current); setGalat(""); };
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setSorot(true); }}
+      onDragLeave={() => setSorot(false)}
+      onDrop={(e) => { e.preventDefault(); setSorot(false); const files = semuaGambarDariEvent(e); if (files.length) prosesBanyak(files); }}
+      className={cn("rounded-lg border border-dashed p-2.5 transition-colors", sorot ? "border-accent bg-accentbg" : "border-line")}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {urls.map((u, i) => (
+          <div key={u} className="relative">
+            <LinkBukti url={u} className="block h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-line">
+              <Foto url={u} className="h-full w-full object-cover" />
+            </LinkBukti>
+            <button
+              type="button" onClick={() => lepas(i)} aria-label={`Lepas foto ${i + 1}`} title="Lepas foto ini"
+              className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface text-ink3 shadow ring-1 ring-line hover:text-red"
+            >
+              <X size={11} />
+            </button>
+          </div>
+        ))}
+        <label className={cn(
+          "inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] text-ink2 transition-colors hover:border-accent hover:text-accent",
+          (sibuk > 0 || urls.length >= maks) && "pointer-events-none opacity-60"
+        )}>
+          {sibuk > 0 ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+          {urls.length > 0 ? "Tambah foto" : "Foto / unggah bukti"}
+          <input type="file" accept="image/*" multiple className="hidden" onChange={pilih} disabled={sibuk > 0 || urls.length >= maks} />
+        </label>
+        {urls.length > 0 && <span className="text-[11.5px] text-ink3">{urls.length} foto</span>}
+      </div>
+      <p className="mt-1.5 text-[11.5px] text-ink3">
+        Dari WhatsApp: klik kanan foto → <strong>Salin gambar</strong> → tekan <kbd className="rounded bg-inset px-1">Ctrl</kbd>+<kbd className="rounded bg-inset px-1">V</kbd> di sini.
+        Bisa ditempel berkali-kali, atau pilih/seret beberapa gambar sekaligus (maksimal {maks}).
+      </p>
+      {galat && <p className="mt-1 text-[12px] text-red">{galat}</p>}
     </div>
   );
 }

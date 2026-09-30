@@ -12,13 +12,13 @@ import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  PeriodePicker, periodeDefault, tanggalJam, InputUang,
+  PeriodePicker, periodeDefault, tanggalJam, InputUang, Foto,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
-import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
+import { BuktiBanyak, daftarBukti } from "@/features/finance/BuktiThumb.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { DetailPembayaranDialog, EditInfoDialog, KoreksiPembayaranDialog, RiwayatPembayaranDialog, VerifikasiDialog } from "@/features/finance/KoreksiPembayaran.jsx";
@@ -347,7 +347,7 @@ export default function FinancePayments() {
                         </span>
                       )}
                     </TD>
-                    <TD><BuktiThumb url={p.proofPhotoUrl} onView={() => setFotoBukti(p.proofPhotoUrl)} label="Lihat foto bukti" /></TD>
+                    <TD><BuktiBanyak urls={daftarBukti(p)} onView={setFotoBukti} label="Lihat foto bukti" /></TD>
                     <TD>
                       <RowActions primary={a.primary} items={a.items} />
                     </TD>
@@ -385,7 +385,7 @@ export default function FinancePayments() {
                       label: "Untuk Order", span: true,
                       value: p.finAllocations.length === 0 ? "order ini saja" : p.finAllocations.map((al) => `${al.order?.orderNumber || "—"}: ${formatUang(al.amount)}`).join(", "),
                     },
-                    { label: "Bukti", value: <BuktiThumb url={p.proofPhotoUrl} onView={() => setFotoBukti(p.proofPhotoUrl)} label="Lihat foto bukti" /> },
+                    { label: "Bukti", value: <BuktiBanyak urls={daftarBukti(p)} onView={setFotoBukti} label="Lihat foto bukti" /> },
                   ]}
                   actions={<RowActions primary={a.primary} items={a.items} />}
                 />
@@ -410,7 +410,11 @@ export default function FinancePayments() {
       {dialog?.jenis === "koreksi" && <KoreksiPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
 
       <Modal open={Boolean(fotoBukti)} onOpenChange={(v) => !v && setFotoBukti(null)} title="Bukti Pembayaran" className="w-[560px]">
-        {fotoBukti && <img src={fotoBukti} alt="Bukti pembayaran" className="max-h-[70vh] w-full rounded-lg object-contain" />}
+        {fotoBukti && (
+          <div className="max-h-[70vh] space-y-3 overflow-y-auto">
+            {fotoBukti.map((u, i) => <Foto key={u} url={u} alt={`Bukti pembayaran ${i + 1}`} className="w-full rounded-lg object-contain" />)}
+          </div>
+        )}
       </Modal>
     </HalamanFinance>
   );

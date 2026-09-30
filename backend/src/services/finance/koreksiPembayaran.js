@@ -207,6 +207,12 @@ export async function editInfoPembayaran(tx, { paymentId, body, alasan, userId }
   }
   if (Object.keys(after).length === 0) throw new KoreksiError("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
 
+  // Mengganti foto bukti UTAMA (yang pertama) menjaga foto tambahan tetap ada: proofPhotoUrls disinkronkan.
+  if ("proofPhotoUrl" in after) {
+    const sisa = (p.proofPhotoUrls ?? []).slice(1);
+    before.proofPhotoUrls = p.proofPhotoUrls ?? [];
+    after.proofPhotoUrls = [after.proofPhotoUrl, ...sisa].filter(Boolean);
+  }
   const baru = await tx.payment.update({ where: { id: paymentId }, data: after });
   await recordActivity(tx, {
     entityType: ENTITY_TYPES.PAYMENT, entityId: paymentId, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId,
@@ -424,7 +430,7 @@ export async function koreksiPembayaran(tx, { paymentId, body, alasan, userId, p
   // 7) Payment BARU (versi pengganti) + alokasi + verifikasi.
   const baru = await tx.payment.create({
     data: {
-      orderId: orderIdBaru, jobId: lama.jobId, amount: amountBaru, method: methodBaru, proofPhotoUrl: lama.proofPhotoUrl,
+      orderId: orderIdBaru, jobId: lama.jobId, amount: amountBaru, method: methodBaru, proofPhotoUrl: lama.proofPhotoUrl, proofPhotoUrls: lama.proofPhotoUrls ?? [],
       cashAccountId: cashBaru ?? null, recordedById: lama.recordedById, createdAt: createdAtBaru,
       referenceNumber: lama.referenceNumber, notes: lama.notes, internalNote: lama.internalNote, replacesPaymentId: lama.id,
     },

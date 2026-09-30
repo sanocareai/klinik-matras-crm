@@ -11,7 +11,7 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
 import {
   Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi, Pilihan, InputUang,
-  PemilihBukti, tanggalPendek,
+  PemilihBuktiBanyak, tanggalPendek,
 } from "@/features/finance/shared.jsx";
 import { cn } from "@/lib/utils.js";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
@@ -256,13 +256,16 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, cutoff, onSu
     if (!modal) return;
     setF({
       mode: item ? (item.kelompok === "LAMA" ? "SEBELUM_SALDO_AWAL" : "REKENING") : "REKENING",
-      method: "TRANSFER", cashAccountId: "",
+      method: "TRANSFER", cashAccountId: "", totalDiterima: "", buktiFoto: [],
       date: item?.lunasSejak || hariIniISO(), amount: item ? item.sisa : "", proofPhotoUrl: "",
     });
   }, [modal]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!modal) return null;
 
   const massal = !!modal.massal;
+  const totalTerpilih = massal ? terpilih.reduce((s, i) => s + i.sisa, 0) : 0;
+  const totalCek = f.totalDiterima === "" || f.totalDiterima == null ? null : Number(f.totalDiterima);
+  const selisihTotal = massal && totalCek !== null && Number.isFinite(totalCek) ? totalCek - totalTerpilih : 0;
   // Uang yang diterima sebelum tanggal saldo awal sudah ada di saldo bank asli: mode dikunci "tidak menambah saldo" (server juga memaksanya).
   const uangLama = !massal && !!f.date && !!cutoff && f.date < cutoff;
   const mode = uangLama ? "SEBELUM_SALDO_AWAL" : f.mode;
@@ -284,7 +287,8 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, cutoff, onSu
           <TombolAksi
             onClick={() => onSubmit({
               mode, method: f.method, cashAccountId: f.cashAccountId || undefined,
-              ...(massal ? {} : { date: f.date, amount: Number(f.amount), proofPhotoUrl: f.proofPhotoUrl || undefined }),
+              proofPhotoUrls: f.buktiFoto?.length ? f.buktiFoto : undefined, // bisa BANYAK foto; massal: dilampirkan ke semua order terpilih
+              ...(massal ? {} : { date: f.date, amount: Number(f.amount) }),
             })}
             disabled={!valid}
           >
@@ -294,6 +298,22 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, cutoff, onSu
       }
     >
       <div className="space-y-3">
+        {massal && (
+          <div className="rounded-lg bg-inset px-3 py-2.5">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[12px] text-ink3">{terpilih.length} order dipilih</span>
+              <span className="text-[16px] font-bold tabular-nums text-ink">{formatUang(totalTerpilih)}</span>
+            </div>
+            <Field label="Total uang yang benar-benar masuk (opsional, untuk pengecekan)" hint="Isi dari mutasi bank / bukti transfer gabungan. Hanya untuk mencocokkan — tiap order tetap diverifikasi sebesar nilainya sendiri.">
+              <InputUang value={f.totalDiterima ?? ""} onChange={(v) => set("totalDiterima", v)} />
+            </Field>
+            {totalCek !== null && (
+              <p className={cn("mt-1 text-[12px] font-semibold", selisihTotal === 0 ? "text-green" : "text-red")} role="status">
+                {selisihTotal === 0 ? "Total cocok dengan jumlah order yang dipilih." : `Selisih ${formatUang(Math.abs(selisihTotal))} (${selisihTotal > 0 ? "uang masuk lebih besar" : "uang masuk lebih kecil"} dari total order) — cek lagi sebelum verifikasi.`}
+              </p>
+            )}
+          </div>
+        )}
         <Field label="Uangnya masuk ke mana?">
           <Pilihan value={mode} onChange={(v) => set("mode", v)} disabled={uangLama}>
             <option value="REKENING">Masuk ke rekening perusahaan</option>
@@ -352,17 +372,20 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, cutoff, onSu
               )}
             </div>
             {!massal && (
-              <>
-                <Field label="Nominal yang masuk" hint="Kalau uang yang masuk lebih kecil dari nilai order, ubah di sini — sisanya tetap menunggu dicek">
-                  <InputUang value={f.amount} onChange={(v) => set("amount", v)} />
-                </Field>
-                <Field label="Foto bukti pembayaran" hint="Salin fotonya dari WhatsApp lalu tekan Ctrl+V, atau unggah dari galeri">
-                  <PemilihBukti url={f.proofPhotoUrl} onChange={(v) => set("proofPhotoUrl", v)} />
-                </Field>
-              </>
+              <Field label="Nominal yang masuk" hint="Kalau uang yang masuk lebih kecil dari nilai order, ubah di sini — sisanya tetap menunggu dicek">
+                <InputUang value={f.amount} onChange={(v) => set("amount", v)} />
+              </Field>
             )}
           </>
         )}
+
+        {/* Foto bukti — tersedia di SEMUA mode (satuan & massal). Massal: satu foto (mis. bukti transfer gabungan) dilampirkan ke semua order terpilih. */}
+        <Field
+          label={massal ? `Foto bukti pembayaran (opsional, semua foto dilampirkan ke ${terpilih.length} order)` : "Foto bukti pembayaran (opsional, bisa lebih dari satu)"}
+          hint="Salin foto dari WhatsApp lalu tekan Ctrl+V (bisa berkali-kali), atau unggah beberapa foto dari galeri"
+        >
+          <PemilihBuktiBanyak urls={f.buktiFoto || []} onChange={(v) => set("buktiFoto", v)} />
+        </Field>
       </div>
     </Modal>
   );

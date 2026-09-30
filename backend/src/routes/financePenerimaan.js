@@ -28,6 +28,16 @@ function cekBukti(url) {
   }
 }
 
+const MAKS_FOTO_BUKTI = 10;
+/** Daftar foto bukti (opsional): array maksimal ${MAKS_FOTO_BUKTI} URL, tiap URL harus hasil unggahan sistem. Mengembalikan array bersih (unik). */
+function cekBuktiBanyak(daftar) {
+  if (daftar === undefined || daftar === null) return [];
+  if (!Array.isArray(daftar)) throw err("Daftar foto bukti tidak valid");
+  if (daftar.length > MAKS_FOTO_BUKTI) throw err(`Maksimal ${MAKS_FOTO_BUKTI} foto bukti`);
+  for (const u of daftar) { if (typeof u !== "string") throw err("Daftar foto bukti tidak valid"); cekBukti(u); }
+  return [...new Set(daftar)];
+}
+
 financePenerimaanRouter.get("/penerimaan/lunas-belum-dicatat", requirePermission(P.PAYMENT_READ), async (req, res) => {
   try {
     const daftar = await daftarLunasBelumDicatat(prisma);
@@ -44,8 +54,9 @@ financePenerimaanRouter.post("/penerimaan/verifikasi", requirePermission(P.PAYME
     const { orderId, mode, method, cashAccountId, date, amount, proofPhotoUrl } = req.body;
     if (!orderId) throw err("Order wajib dipilih");
     cekBukti(proofPhotoUrl);
+    const proofPhotoUrls = cekBuktiBanyak(req.body.proofPhotoUrls);
     const hasil = await prisma.$transaction((tx) =>
-      verifikasiPenerimaan(tx, { orderId, mode, method, cashAccountId, date, amount, proofPhotoUrl, verifierId: req.user.id })
+      verifikasiPenerimaan(tx, { orderId, mode, method, cashAccountId, date, amount, proofPhotoUrl, proofPhotoUrls, verifierId: req.user.id })
     );
     res.status(201).json(hasil);
   } catch (e) {
@@ -59,14 +70,16 @@ financePenerimaanRouter.post("/penerimaan/verifikasi", requirePermission(P.PAYME
 // dilihat ulang. Tanggal tiap order = tanggal sales menandainya lunas.
 financePenerimaanRouter.post("/penerimaan/verifikasi-massal", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
   try {
-    const { orderIds, mode, method, cashAccountId } = req.body;
+    const { orderIds, mode, method, cashAccountId, proofPhotoUrl } = req.body;
     if (!Array.isArray(orderIds) || orderIds.length === 0) throw err("Pilih minimal satu order");
     if (orderIds.length > 500) throw err("Maksimal 500 order sekali proses");
+    cekBukti(proofPhotoUrl); // foto bukti (mis. bukti transfer gabungan) dilampirkan ke SEMUA pembayaran yang dibuat
+    const proofPhotoUrls = cekBuktiBanyak(req.body.proofPhotoUrls);
     const hasil = [];
     for (const orderId of orderIds) {
       try {
         const r = await prisma.$transaction((tx) =>
-          verifikasiPenerimaan(tx, { orderId, mode, method, cashAccountId, verifierId: req.user.id })
+          verifikasiPenerimaan(tx, { orderId, mode, method, cashAccountId, proofPhotoUrl, proofPhotoUrls, verifierId: req.user.id })
         );
         hasil.push({ orderId, ok: true, ...r });
       } catch (e) {
