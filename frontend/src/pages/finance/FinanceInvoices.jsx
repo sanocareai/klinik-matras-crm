@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { CalendarClock, FileText, AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -44,6 +46,7 @@ const FILTER = [
 ];
 
 export default function FinanceInvoices() {
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   const [jatuhTempo, setJatuhTempo] = useState("");
   const [search, setSearch] = useState("");
   const [fStatus, setFStatus] = useState("");
@@ -240,7 +243,7 @@ export default function FinanceInvoices() {
                 {invoices.map((inv) => {
                   const st = STATUS_INVOICE[inv.status] || { label: inv.status, variant: "neutral" };
                   return (
-                    <TR key={inv.id}>
+                    <TR key={inv.id} {...klikBuka(() => setPanelRincian(specOtomatis(inv)))}>
                       <TD sticky className="font-mono text-[12px]">
                         {inv.invoiceNumber}
                         {inv.jumlahOrder > 1 && (
@@ -299,6 +302,7 @@ export default function FinanceInvoices() {
         onClose={() => setAturTempo(null)}
         onSubmit={simpanTempo}
       />
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }

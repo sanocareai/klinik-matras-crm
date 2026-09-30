@@ -197,9 +197,11 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   const dialihkan = mode === "REKENING" && tglStr < cutoff;
   const modeEfektif = dialihkan ? "SEBELUM_SALDO_AWAL" : mode;
 
+  // Rekening WAJIB untuk mode Rekening. Untuk "sebelum saldo awal" rekening OPSIONAL: hanya dicatat pada Payment sebagai KETERANGAN (rekening mana yang
+  // menerima uangnya dulu) — tidak ada jurnal Bank/Kas, saldo tidak berubah (permintaan Owner 30 Sep 2026: order sebelum 18 Sep tidak pernah punya rekening).
   let rekening = null;
-  if (modeEfektif === "REKENING") {
-    if (!cashAccountId) throw err("Pilih dulu uangnya masuk ke rekening mana");
+  if (modeEfektif === "REKENING" && !cashAccountId) throw err("Pilih dulu uangnya masuk ke rekening mana");
+  if (cashAccountId) {
     rekening = await tx.finCashAccount.findUnique({ where: { id: cashAccountId }, select: { id: true, name: true, accountId: true, active: true } });
     if (!rekening || !rekening.active) throw err("Rekening itu tidak ditemukan atau sudah tidak dipakai", 404);
   }

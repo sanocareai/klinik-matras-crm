@@ -24,6 +24,8 @@ import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specKasbon } from "@/features/finance/detailSpecs.js";
 import { aksiKasbon as matriksKasbon } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 
@@ -82,6 +84,7 @@ export default function FinanceKasbon() {
   const [pesan, setPesan] = useState(null);
 
   const [modalBaru, setModalBaru] = useState(false);
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   const [lunasiUntuk, setLunasiUntuk] = useState(null); // { kasbon } | { karyawan, sisa }
   const [riwayatId, setRiwayatId] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
@@ -268,7 +271,7 @@ export default function FinanceKasbon() {
                 {kasbon.map((k) => {
                   const a = aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, setVersiUntuk, aksi });
                   return (
-                  <TR key={k.id}>
+                  <TR key={k.id} {...klikBuka(() => setPanelRincian(specKasbon(k, { badge: <StatusBadge status={k.status} /> })))}>
                     <TD sticky className="font-mono text-[12px]">{k.kasbonNumber}</TD>
                     <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(k.date)}</TD>
                     <TD truncate className="font-medium">{k.employeeName}</TD>
@@ -298,6 +301,7 @@ export default function FinanceKasbon() {
               return (
                 <RowCard
                   key={k.id}
+                  onClick={() => setPanelRincian(specKasbon(k, { badge: <StatusBadge status={k.status} /> }))}
                   title={k.kasbonNumber}
                   status={<StatusBadge status={k.status} />}
                   subtitle={k.employeeName}
@@ -352,6 +356,7 @@ export default function FinanceKasbon() {
 
       {versiUntuk && <RiwayatVersiDialog jenis="kasbon" id={versiUntuk.id} nomor={versiUntuk.kasbonNumber} onClose={() => setVersiUntuk(null)} />}
       <ModalEdit kasbon={editUntuk} onClose={() => setEditUntuk(null)} onSubmit={(d) => aksi(() => api.editKasbon(editUntuk.id, d))} />
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }

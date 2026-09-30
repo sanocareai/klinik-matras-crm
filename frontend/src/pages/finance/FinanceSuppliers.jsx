@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { Plus, Building2, FileText, Banknote, Pencil, History, Ban } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -100,6 +102,7 @@ const TAB = [
 ];
 
 export default function FinanceSuppliers() {
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   // Tier tabel Tagihan dari lebar CONTAINER (bukan viewport) — lihat features/finance/tierTagihan.js.
   const [tableRef, tier] = useContainerTier(tierTagihan);
   const [tab, setTab] = useState("tagihan");
@@ -338,7 +341,7 @@ export default function FinanceSuppliers() {
                     const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk });
                     const kedua = teksKedua(b, tier);
                     return (
-                    <TR key={b.id}>
+                    <TR key={b.id} {...klikBuka(() => setPanelRincian(specOtomatis(b)))}>
                       <TD sticky className="font-mono text-[12px]">
                         <span className="block min-w-0 truncate overflow-hidden whitespace-nowrap" title={b.billNumber} data-sel="nomor">{b.billNumber}</span>
                       </TD>
@@ -380,6 +383,7 @@ export default function FinanceSuppliers() {
                 return (
                   <RowCard
                     key={b.id}
+                    onClick={() => setPanelRincian(specOtomatis(b))}
                     title={b.billNumber}
                     status={<StatusBadge status={b.status} />}
                     subtitle={b.supplier?.name}
@@ -443,7 +447,7 @@ export default function FinanceSuppliers() {
                 </THead>
                 <TBody>
                   {paymentsTampil.map((p) => (
-                    <TR key={p.id}>
+                    <TR key={p.id} {...klikBuka(() => setPanelRincian(specOtomatis(p)))}>
                       <TD sticky className="font-mono text-[12px]">
                         <span className="block min-w-0 truncate overflow-hidden whitespace-nowrap" title={p.paymentNumber} data-sel="nomor">{p.paymentNumber}</span>
                       </TD>
@@ -507,7 +511,7 @@ export default function FinanceSuppliers() {
                 </THead>
                 <TBody>
                   {suppliersTampil.map((s) => (
-                    <TR key={s.id}>
+                    <TR key={s.id} {...klikBuka(() => setPanelRincian(specOtomatis(s)))}>
                       <TD sticky className="font-mono text-[12px]">{s.code}</TD>
                       <TD truncate className="font-medium">{s.name}</TD>
                       <TD truncate className="text-[12px] text-ink2">{s.phone || s.email || "—"}</TD>
@@ -575,6 +579,7 @@ export default function FinanceSuppliers() {
         suppliers={suppliers} bills={bills} rekening={rekening}
         onSubmit={(d) => aksi(() => api.createFinanceSupplierPayment(d))}
       />
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }

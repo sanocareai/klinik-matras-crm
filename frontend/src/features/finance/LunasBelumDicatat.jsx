@@ -302,11 +302,26 @@ function ModalVerifikasi({ modal, onClose, rekening, terpilih, tgl, cutoff, onSu
         </Field>
 
         {mode === "SEBELUM_SALDO_AWAL" ? (
-          <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
-            Uang order ini sudah termasuk di saldo bank asli yang kita masukkan pada {tgl}, jadi saldo rekening
-            tidak ditambah lagi. Kalau order ini masih tercatat sebagai piutang, otomatis dianggap lunas.
-            Tetap tercatat sebagai pembayaran yang sudah diverifikasi.
-          </p>
+          <>
+            <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
+              Uang order ini sudah termasuk di saldo bank asli yang kita masukkan pada {tgl}, jadi saldo rekening
+              tidak ditambah lagi. Kalau order ini masih tercatat sebagai piutang, otomatis dianggap lunas.
+              Tetap tercatat sebagai pembayaran yang sudah diverifikasi.
+            </p>
+            {/* Order lama tidak pernah punya rekening (sistem baru berjalan) — rekening di sini OPSIONAL dan hanya keterangan; saldo tidak berubah. */}
+            <Field label="Rekening penerima (opsional)">
+              <Pilihan value={f.cashAccountId} onChange={(v) => set("cashAccountId", v)}>
+                <option value="">Tidak dipilih</option>
+                {rekening.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </Pilihan>
+              <p className="mt-1 text-[11.5px] text-ink3">Hanya dicatat sebagai keterangan di pembayaran ini. Saldo rekening tidak berubah.</p>
+            </Field>
+            <Field label="Cara bayar">
+              <Pilihan value={f.method} onChange={(v) => set("method", v)}>
+                {METODE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </Pilihan>
+            </Field>
+          </>
         ) : (
           <>
             <Field label="Masuk ke rekening mana?" required>

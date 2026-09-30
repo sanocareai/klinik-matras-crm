@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { useNavigate } from "react-router-dom";
 import { Undo2, Plus, Pencil, History, Ban } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
@@ -81,6 +83,7 @@ function bucketUmur(hari) {
 // dan angka di sinilah yang benar secara akuntansi.
 
 export default function FinanceReceivables() {
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   const [data, setData] = useState(null);
   const [refunds, setRefunds] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -282,7 +285,7 @@ export default function FinanceReceivables() {
               </THead>
               <TBody>
                 {baris.map((b) => (
-                  <TR key={b.orderId}>
+                  <TR key={b.orderId} {...klikBuka(() => setPanelRincian(specOtomatis(b)))}>
                     <TD sticky className="font-medium">{b.orderNumber || "—"}</TD>
                     <TD hideBelow="wide" className="font-mono text-[12px]">{b.invoiceNumber || "—"}</TD>
                     <TD truncate>{b.customerName}</TD>
@@ -344,7 +347,7 @@ export default function FinanceReceivables() {
                 {refundTampil.map((r) => {
                   const a = aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk });
                   return (
-                  <TR key={r.id}>
+                  <TR key={r.id} {...klikBuka(() => setPanelRincian(specOtomatis(r)))}>
                     <TD sticky className="font-mono text-[12px]">{r.refundNumber}</TD>
                     <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(r.date)}</TD>
                     <TD hideBelow="2xl" truncate className="font-medium">{r.order?.orderNumber || "—"}</TD>
@@ -368,6 +371,7 @@ export default function FinanceReceivables() {
               return (
                 <RowCard
                   key={r.id}
+                  onClick={() => setPanelRincian(specOtomatis(r))}
                   title={r.refundNumber}
                   status={<StatusBadge status={r.status} />}
                   subtitle={r.order?.customer?.name || "—"}
@@ -421,6 +425,7 @@ export default function FinanceReceivables() {
         piutang={data?.baris || []}
         onSubmit={(d) => aksi(() => api.createFinanceRefund(d))}
       />
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }

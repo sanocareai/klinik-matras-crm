@@ -38,6 +38,7 @@ import { saldoDariAplikasi, bentukAplikasiDp, daftarDpEligible, ringkasanDp } fr
 import { AccountError } from "../services/finance/accounts.js";
 import { SETTING_KEYS, getSettingRaw, parseIntOr, getVerificationGate } from "../services/finance/settings.js";
 import { jenisUntuk } from "../services/finance/pembayaran.js";
+import { tanggalCutoff } from "../services/finance/cutoff.js";
 import { pastikanPaymentBukanResi } from "../services/resiPembayaran.js";
 import { kunciUntukPayment } from "../services/finance/urutanKunci.js";
 import { postExpenseApproved, postExpensePaid, KEY as EXPENSE_KEY } from "../services/finance/posting/expense.js";
@@ -1923,6 +1924,7 @@ financeTxRouter.get("/customer-payments", requirePermission(P.FINANCE_READ), asy
     // B3.7 — keadaan menu koreksi dihitung server (batch, hanya untuk baris terverifikasi yang masih aktif); klien tidak menyalin aturannya.
     const punyaIzin = hasPermission(req.user, P.PAYMENT_KOREKSI);
     const blokir = await blokirKoreksiBatch(prisma, payments.filter((p) => !p.cancelledAt && p.verifications.length > 0).map((p) => p.id));
+    const cutoff = await tanggalCutoff(prisma); // tanggal saldo awal — layar memakainya untuk menjelaskan pembayaran lama (tidak menambah saldo)
     const jenis = await jenisUntuk(prisma, payments); // DP / CICILAN / PELUNASAN — turunan dari urutan pembayaran aktif order (null bila dibatalkan)
     res.json({
       payments: payments.map((p) => ({
@@ -1938,6 +1940,7 @@ financeTxRouter.get("/customer-payments", requirePermission(P.FINANCE_READ), asy
         }),
       })),
       gate,
+      cutoff,
     });
   } catch (e) {
     handleFinanceError(e, res);

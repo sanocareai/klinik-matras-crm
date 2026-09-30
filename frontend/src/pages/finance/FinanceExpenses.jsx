@@ -30,6 +30,8 @@ import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specPengeluaran } from "@/features/finance/detailSpecs.js";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 
 function teksMode(mode) {
@@ -127,6 +129,7 @@ export default function FinanceExpenses() {
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
   const [modalBaru, setModalBaru] = useState(false);
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
   const [versiUntuk, setVersiUntuk] = useState(null);
@@ -317,6 +320,7 @@ export default function FinanceExpenses() {
                   return (
                     <RowCard
                       key={e.id}
+                      onClick={() => setPanelRincian(specPengeluaran(e, { badge: <StatusBadge status={e.status} /> }))}
                       title={e.expenseNumber}
                       status={<StatusBadge status={e.status} />}
                       subtitle={e.description}
@@ -384,7 +388,7 @@ export default function FinanceExpenses() {
                       );
                       return (
                         <React.Fragment key={e.id}>
-                          <TR>
+                          <TR {...klikBuka(() => setPanelRincian(specPengeluaran(e, { badge: <StatusBadge status={e.status} /> })))}>
                             <TD sticky className="font-mono text-[12px]">{e.expenseNumber}</TD>
                             {tier !== "minimal" && <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(e.date)}</TD>}
                             <TD className="max-w-0 w-full pl-4">
@@ -461,6 +465,7 @@ export default function FinanceExpenses() {
         onSaved={() => { setEditUntuk(null); muat({ diam: true }); }}
       />
       {versiUntuk && <RiwayatVersiDialog jenis="expenses" id={versiUntuk.id} nomor={versiUntuk.expenseNumber} onClose={() => setVersiUntuk(null)} />}
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }

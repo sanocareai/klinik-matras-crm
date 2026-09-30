@@ -20,6 +20,7 @@ import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { DetailPembayaranDialog, EditInfoDialog, KoreksiPembayaranDialog, RiwayatPembayaranDialog, VerifikasiDialog } from "@/features/finance/KoreksiPembayaran.jsx";
 
 // Aksi PALING RELEVAN jadi tombol utama; "Bagi pembayaran" masuk menu
@@ -310,7 +311,7 @@ export default function FinancePayments() {
                 {tampil.map((p) => {
                   const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog });
                   return (
-                  <TR key={p.id}>
+                  <TR key={p.id} {...klikBuka(() => bukaDialog("detail", p))}>
                     <TD sticky className="whitespace-nowrap text-[12px]">{tanggalJam(p.createdAt)}</TD>
                     <TD className="truncate font-medium" title={p.order?.orderNumber || "—"}>{p.order?.orderNumber || "—"}</TD>
                     <TD truncate>{p.order?.customer?.name || "—"}</TD>
@@ -363,6 +364,7 @@ export default function FinancePayments() {
               return (
                 <RowCard
                   key={p.id}
+                  onClick={() => bukaDialog("detail", p)}
                   title={tanggalJam(p.createdAt)}
                   status={
                     p.cancelledAt ? <Badge variant={p.replacedBy ? "orange" : "red"}>{p.replacedBy ? "Diganti versi baru" : "Dibatalkan"}</Badge>
@@ -401,7 +403,7 @@ export default function FinancePayments() {
         onError={setPesan}
       />
 
-      {dialog?.jenis === "verifikasi" && <VerifikasiDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
+      {dialog?.jenis === "verifikasi" && <VerifikasiDialog p={dialog.p} cutoff={data?.cutoff} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
       {dialog?.jenis === "detail" && <DetailPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} />}
       {dialog?.jenis === "riwayat" && <RiwayatPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} />}
       {dialog?.jenis === "info" && <EditInfoDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}

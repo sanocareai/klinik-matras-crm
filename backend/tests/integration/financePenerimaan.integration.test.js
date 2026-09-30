@@ -215,7 +215,8 @@ test("Uang diterima SEBELUM saldo awal tetap tidak menambah saldo walau klien me
   assert.equal(await saldo(SYSTEM_KEYS.PIUTANG_USAHA), "0.00");
   assert.equal(await saldo(SYSTEM_KEYS.LABA_DITAHAN), "1900000.00");
   const p = await testPrisma.payment.findUnique({ where: { id: r.body.paymentId }, include: { verifications: true } });
-  assert.equal(p.cashAccountId, null, "tanpa rekening — kas tidak disentuh");
+  assert.equal(p.cashAccountId, bank.id, "rekening yang dipilih tercatat sebagai keterangan pada Payment");
+  assert.equal(await saldo(SYSTEM_KEYS.BANK), "0.00", "tetapi kas/bank TIDAK disentuh (tidak ada jurnal ke rekening)");
   assert.equal(p.verifications.length, 1, "tetap tercatat terverifikasi");
 
   // Verifikasi massal (tanggal mengikuti paidAt): mode REKENING pada order lama juga tidak menambah saldo.
