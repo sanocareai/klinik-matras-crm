@@ -872,15 +872,22 @@ orderRouter.post("/:id/payments/proof", proofUpload.single("photo"), async (req,
 // saat mencatat pembayaran (Finance > Rekening Kas & Bank, yang aktif). Terbuka
 // untuk semua user login (sales mencatat DP), tapi HANYA field yang perlu
 // untuk memilih: nomor rekening & saldo TIDAK ikut keluar.
-orderRouter.get("/payment-accounts", async (_req, res) => {
+// ?method=CASH (30 Sep 2026, keputusan Owner): pembayaran Tunai sekarang juga memilih
+// rekening, dan HANYA rekening Sano KEM ("KEM - Sano Bank"); rekening PT tidak
+// ditawarkan untuk Tunai. Metode lain (Transfer/QRIS/Kartu) tetap daftar Bank/E-wallet.
+// Tanpa ?method= perilaku lama (daftar Bank/E-wallet) — APK lama tidak terpengaruh.
+const REKENING_TUNAI_KEM = /(^|[^A-Za-z])KEM([^A-Za-z]|$)/i;
+orderRouter.get("/payment-accounts", async (req, res) => {
   try {
+    const tunai = req.query.method === "CASH";
     const rows = await prisma.finCashAccount.findMany({
-      // Kas tunai TIDAK ikut: pembayaran Tunai tidak memilih rekening, jurnalnya
-      // mengikuti pemetaan Tunai di Finance > Pengaturan (keputusan owner 19 Sep 2026).
-      where: { active: true, kind: { in: ["BANK", "EWALLET"] } },
+      where: tunai
+        ? { active: true, name: { contains: "KEM", mode: "insensitive" } }
+        : { active: true, kind: { in: ["BANK", "EWALLET"] } },
       select: { id: true, name: true, kind: true, bankName: true, accountHolder: true, accountNumber: true },
       orderBy: [{ kind: "asc" }, { name: "asc" }],
     });
+    if (tunai) rows.splice(0, rows.length, ...rows.filter((r) => REKENING_TUNAI_KEM.test(r.name)));
     // Tambahan aditif (20 Sep 2026): accountNumberMasked ("••••7890") supaya kartu rekening di mobile bisa dikenali
     // tanpa membuka nomor lengkap. accountNumber mentah TIDAK ikut respons.
     res.json(rows.map(({ accountNumber, ...r }) => ({ ...r, accountNumberMasked: maskAccountNumber(accountNumber) })));
@@ -909,8 +916,12 @@ orderRouter.post("/:id/payments", async (req, res) => {
       return res.status(400).json({ error: "Metode pembayaran tidak valid" });
     }
     if (cashAccountId) {
-      const akun = await prisma.finCashAccount.findUnique({ where: { id: String(cashAccountId) }, select: { active: true } });
+      const akun = await prisma.finCashAccount.findUnique({ where: { id: String(cashAccountId) }, select: { active: true, name: true } });
       if (!akun || !akun.active) return res.status(400).json({ error: "Rekening tujuan tidak valid atau sudah nonaktif" });
+      // Tunai hanya boleh ke rekening Sano KEM (keputusan Owner 30 Sep 2026).
+      if (method === "CASH" && !REKENING_TUNAI_KEM.test(akun.name)) {
+        return res.status(400).json({ error: "Pembayaran Tunai hanya bisa dicatat ke rekening Sano KEM" });
+      }
     }
     if (proofPhotoUrl != null && !String(proofPhotoUrl).startsWith("/media/payment-proofs/")) {
       return res.status(400).json({ error: "URL foto bukti tidak valid" });
