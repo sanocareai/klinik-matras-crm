@@ -20,8 +20,9 @@ import { idempotency } from "../middleware/idempotency.js";
 import { hasPermission, rolesOf, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { createLimiter } from "../lib/rateLimit.js";
 import {
-  klaimUntukOrder, buatDraft, ubahKlaim, lampirkanBukti, hapusBukti, ajukanKlaim, tarikKlaim, KlaimError,
+  klaimUntukOrder, buatDraft, ubahKlaim, lampirkanBukti, hapusBukti, ajukanKlaim, tarikKlaim, klaimUntukResi, buatDraftResi, klaimGateAktif, KlaimError,
 } from "../services/finance/klaimLunas.js";
+import { ResiBayarError } from "../services/resiPembayaran.js";
 import { simpanBerkas, hapusBerkasDisk, BerkasError, MAKS_UKURAN_BYTE, POLA_NAMA, pathBerkas, tandaTanganSah } from "../services/finance/klaimLunasBerkas.js";
 
 export const klaimLunasRouter = express.Router();
@@ -38,6 +39,7 @@ const limiterUnggah = createLimiter({
 });
 
 function kirimGalat(e, res) {
+  if (e instanceof ResiBayarError) return res.status(e.statusCode || 409).json({ error: e.message, ...(e.code && { code: e.code }) });
   if (e instanceof KlaimError || e instanceof BerkasError) {
     return res.status(e.statusCode).json({ error: e.message, ...(e.code && { code: e.code }), ...(e.kekurangan && { kekurangan: e.kekurangan }) });
   }
@@ -50,6 +52,11 @@ function kirimGalat(e, res) {
 
 const lihatSemua = (user) => rolesOf(user).includes("ADMIN");
 
+// Status sakelar rollout — dibaca klien (web & aplikasi Sales) untuk memilih UI lama vs klaim berbukti.
+klaimLunasRouter.get("/status", async (req, res) => {
+  try { res.json({ aktif: await klaimGateAktif(prisma) }); } catch (e) { kirimGalat(e, res); }
+});
+
 klaimLunasRouter.get("/order/:orderId", async (req, res) => {
   try {
     res.json(await klaimUntukOrder(prisma, { orderId: req.params.orderId, user: req.user, lihatSemua: lihatSemua(req.user) }));
@@ -59,6 +66,20 @@ klaimLunasRouter.get("/order/:orderId", async (req, res) => {
 klaimLunasRouter.post("/order/:orderId", async (req, res) => {
   try {
     const hasil = await buatDraft(prisma, { orderId: req.params.orderId, user: req.user, data: req.body || {} });
+    res.status(hasil.dibuatBaru ? 201 : 200).json(hasil);
+  } catch (e) { kirimGalat(e, res); }
+});
+
+// ── Klaim level RESI (satu klaim untuk seluruh Resi; alokasi ke child hanya oleh helper kanonis server saat Finance memverifikasi) ──
+klaimLunasRouter.get("/resi/:groupId", async (req, res) => {
+  try {
+    res.json(await klaimUntukResi(prisma, { groupId: req.params.groupId, user: req.user, lihatSemua: lihatSemua(req.user) }));
+  } catch (e) { kirimGalat(e, res); }
+});
+
+klaimLunasRouter.post("/resi/:groupId", async (req, res) => {
+  try {
+    const hasil = await buatDraftResi(prisma, { groupId: req.params.groupId, user: req.user, data: req.body || {} });
     res.status(hasil.dibuatBaru ? 201 : 200).json(hasil);
   } catch (e) { kirimGalat(e, res); }
 });

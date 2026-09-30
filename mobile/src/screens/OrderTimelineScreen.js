@@ -30,6 +30,8 @@ import OrderInvoiceTab from "../components/order/OrderInvoiceTab";
 import OrderWarrantyTab from "../components/order/OrderWarrantyTab";
 import OrderComplaintTab from "../components/order/OrderComplaintTab";
 import OrderKlaimLunas from "../components/order/OrderKlaimLunas";
+import { useAuth } from "../context/AuthContext";
+import { useKlaimLunasAktif } from "../lib/klaimGate";
 import { useTokens } from "../constants/theme";
 import {
   METHODS, METHOD_LABEL, METHOD_USES_ACCOUNT, normalizeAccounts, initialDraft, draftReducer, selectedAccountId, buildPaymentPayload,
@@ -590,6 +592,11 @@ function useCardSizes() {
 
 function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, tokens, styles }) {
   const { miniCardSize } = useCardSizes();
+  // Sejak 1 Okt 2026 hanya ADMIN yang mencatat Payment langsung; Sales mengajukan Klaim Lunas berbukti (server menolak POST payment Sales dengan 409).
+  const { user } = useAuth();
+  const roles = Array.isArray(user?.roles) && user.roles.length > 0 ? user.roles : [user?.role];
+  const klaimGateAktif = useKlaimLunasAktif() === true; // sakelar rollout: MATI → form catat pembayaran lama tetap tampil untuk semua
+  const bolehCatatLangsung = roles.includes("ADMIN") || !klaimGateAktif;
   const [payments, setPayments] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -682,7 +689,11 @@ function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, token
       {/* Klaim Lunas (1 Okt 2026): Sales mengajukan klaim berbukti — bukan menandai Lunas sendiri. Status berubah setelah Finance memverifikasi. */}
       <OrderKlaimLunas order={order} onChanged={load} />
 
-      {!draft.open ? (
+      {!bolehCatatLangsung ? (
+        <Text style={styles.hintText} testID="catat-pembayaran-via-klaim">
+          Pembayaran dari Sales diajukan lewat "Ajukan Klaim Lunas" dengan bukti pembayaran — Finance yang memverifikasi dan mencatatnya.
+        </Text>
+      ) : !draft.open ? (
         <TouchableOpacity style={styles.recordBtn} onPress={() => dispatch({ type: "open" })}>
           <Wallet size={14} color={tokens.color.accent} strokeWidth={2.2} />
           <Text style={styles.recordBtnText}>Catat Pembayaran</Text>

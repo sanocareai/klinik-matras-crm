@@ -67,6 +67,10 @@ export const SETTING_KEYS = Object.freeze({
   // Resi Gabungan Fase 3A (pembayaran/DP Resi, klaim Lunas level Resi, verifikasi Finance level Resi). DEFAULT MATI; ditegakkan di SERVER
   // (semua endpoint pembayaran Resi menolak 403 bila mati). Bebas dari RESI_INPUT_AKTIF: keduanya dinyalakan terpisah.
   RESI_PEMBAYARAN_AKTIF: "resi_pembayaran_aktif",
+  // GERBANG KLAIM LUNAS (1 Okt 2026) — SAKELAR ROLLOUT, bukan pengaturan bisnis. MATI (default) = perilaku lama persis (aplikasi Sales lama tetap bekerja,
+  // klaim berbukti belum bisa dibuat, UI klaim tersembunyi). NYALA = penegakan PENUH dan tanpa pengecualian di server: tidak ada peran yang boleh PATCH
+  // paymentStatus=LUNAS, Sales tidak boleh membuat Payment langsung (order & Resi), klaim Resi lama ditutup. Dinyalakan SETELAH aplikasi Sales versi baru terbit.
+  KLAIM_LUNAS_GATE_AKTIF: "klaim_lunas_gate_aktif",
   // Ukuran Kasur Custom — penegakan di SERVER (DEFAULT MATI). true = order BARU dengan "Ukuran Custom" wajib Lebar & Panjang; edit order legacy
   // (custom tanpa angka) yang tidak mengubah ukuran tetap boleh. SEJAK diisi otomatis saat dinyalakan (order yang dibuat sebelum itu = legacy).
   UKURAN_CUSTOM_WAJIB: "ukuran_custom_wajib",
@@ -104,6 +108,7 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.CASH_ACCOUNT_CARD]: "",
   [SETTING_KEYS.RESI_INPUT_AKTIF]: "false",
   [SETTING_KEYS.RESI_PEMBAYARAN_AKTIF]: "false",
+  [SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF]: "false",
   [SETTING_KEYS.UKURAN_CUSTOM_WAJIB]: "false",
   [SETTING_KEYS.UKURAN_CUSTOM_WAJIB_SEJAK]: "",
 });

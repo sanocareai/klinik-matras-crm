@@ -50,12 +50,13 @@ test("Kekurangan memberi pesan Bahasa Indonesia per field", () => {
   assert.ok(k.find((x) => x.field === "evidence").pesan.includes("Bukti Pembayaran"));
 });
 
-test("Sales tidak melihat opsi 'Lunas'; Admin tetap; order yang sudah Lunas tetap menampilkan nilainya", () => {
+test("Opsi 'Lunas' disembunyikan untuk SIAPA PUN (termasuk Admin/Owner — server menolak 409); order yang sudah Lunas tetap menampilkan nilainya", () => {
   const semua = ["BELUM_BAYAR", "DP", "LUNAS"];
-  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false), ["BELUM_BAYAR", "DP"]);
-  assert.deepEqual(opsiStatusBayar(semua, "DP", false), ["BELUM_BAYAR", "DP"]);
-  assert.deepEqual(opsiStatusBayar(semua, "LUNAS", false), semua);
-  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", true), semua);
+  for (const admin of [false, true]) {
+    assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", admin), ["BELUM_BAYAR", "DP"]);
+    assert.deepEqual(opsiStatusBayar(semua, "DP", admin), ["BELUM_BAYAR", "DP"]);
+    assert.deepEqual(opsiStatusBayar(semua, "LUNAS", admin), semua);
+  }
 });
 
 test("Berkas: hanya JPG/PNG/WEBP/PDF sampai 8 MB", () => {
@@ -85,7 +86,7 @@ const finance = baca("src/features/finance/KlaimLunasSales.jsx");
 const legacy = baca("src/features/finance/LunasBelumDicatat.jsx");
 
 test("Dialog: judul & tombol 'Ajukan Klaim Lunas', istilah 'Bukti Pembayaran' (bukan hanya 'Bukti Transfer'), tombol terkunci oleh bisaDiajukan", () => {
-  assert.match(dialog, /title="Ajukan Klaim Lunas"/);
+  assert.match(dialog, /"Ajukan Klaim Lunas Resi" : "Ajukan Klaim Lunas"/);
   assert.match(dialog, /Ajukan Klaim Lunas<\/Button>|"Ajukan Klaim Lunas"/);
   assert.match(dialog, /Bukti Pembayaran/);
   assert.doesNotMatch(dialog, /Bukti Transfer/);
@@ -137,4 +138,31 @@ test("Finance: layar sempit memakai daftar kartu (tombol aksi terjangkau tanpa g
   assert.match(finance, /data-testid="klaim-kartu-mobile"/);
   assert.match(finance, /md:hidden/);
   assert.match(finance, /dh-table hidden md:block/);
+});
+
+test("Resi: kartu Resi memakai dialog klaim berbukti (mode resiGroupId), bukan modal klaim lama; tab Pembayaran tidak menawarkan catat Payment langsung ke non-Admin", () => {
+  const kartu = baca("src/features/resi/PembayaranResiPelanggan.jsx");
+  assert.match(kartu, /<KlaimLunasDialog/);
+  assert.match(kartu, /resiGroupId=\{klaim\.groupId\}/);
+  assert.match(kartu, /<ModalKlaim/, "modal klaim lama tetap dipakai HANYA saat sakelar MATI");
+  assert.match(dialog, /api\.getKlaimLunasResi\(resiGroupId\)/);
+  assert.match(dialog, /api\.buatDraftKlaimLunasResi\(resiGroupId/);
+  assert.match(baca("src/features/orders/OrderTimelineDrawer.jsx"), /data-testid="catat-pembayaran-via-klaim"/);
+  assert.match(finance, /Resi · \{k\.resiInfo/);
+});
+
+test("Sakelar rollout: MATI → daftar status lama apa adanya & panel klaim tersembunyi; NYALA → Lunas disembunyikan & panel tampil; gagal baca = MATI", () => {
+  const semua = ["BELUM_BAYAR", "DP", "LUNAS"];
+  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false, false), semua);
+  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", true, false), semua);
+  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", true, true), ["BELUM_BAYAR", "DP"]);
+  assert.match(panel, /if \(gateAktif !== true \|\| !info\) return null;/);
+  const hook = baca("src/features/klaim/useKlaimLunasAktif.js");
+  assert.match(hook, /api\.getKlaimLunasStatus\(\)\.then\(\(r\) => !!r\?\.aktif\)\.catch\(\(\) => false\)/);
+  for (const f of ["src/features/orders/PaymentStatusSelect.jsx", "src/pages/Orders.jsx", "src/components/customer/OrderSection.jsx"]) {
+    assert.match(baca(f), /opsiStatusBayar\(PAYMENT_STATUSES, .*(?:gateAktif|klaimGateAktif)\)/, `${f} meneruskan sakelar`);
+  }
+  assert.match(baca("src/features/orders/OrderTimelineDrawer.jsx"), /klaimGateAktif && !canEditLunas/);
+  assert.match(baca("src/features/resi/PembayaranResiPelanggan.jsx"), /gateAktif \? klaim && \(/);
+  assert.match(baca("src/features/resi/PembayaranResiPelanggan.jsx"), /<ModalKlaim/, "modal klaim lama tetap untuk sakelar MATI");
 });

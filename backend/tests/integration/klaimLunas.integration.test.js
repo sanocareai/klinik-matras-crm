@@ -13,6 +13,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { setSetting, SETTING_KEYS } from "../../src/services/finance/settings.js";
 import { ensureDefaultChartOfAccounts } from "../../src/services/finance/accounts.js";
 import { signFile } from "../../src/lib/mediaSigning.js";
 
@@ -27,8 +28,10 @@ const PNG2 = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1
 const PDF = Buffer.from("%PDF-1.4\n% bukti pembayaran\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF");
 const HTML = Buffer.from("<html><script>alert(1)</script></html>".padEnd(40, " "));
 
-async function dunia() {
+async function dunia({ gerbang = true } = {}) {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
+  // Sakelar rollout gerbang Klaim Lunas (default MATI di produksi). Sebagian besar tes menguji penegakan PENUH → NYALA.
+  if (gerbang) await setSetting(testPrisma, SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF, "true");
   const akunBank = await testPrisma.finAccount.findFirst({ where: { systemKey: "BANK" } });
   const bank = await testPrisma.finCashAccount.create({ data: { name: "PT Sano - BCA", kind: "BANK", accountId: akunBank.id } });
   const sales = await createTestUser({ roles: ["SALES"] });
@@ -446,23 +449,59 @@ test("Akses bukti: pemilik & Finance (Bearer) bisa, Sales lain/tanpa login tidak
 
 // ── gerbang status LUNAS ───────────────────────────────────────────────────────────────────────────────────────────
 
-test("Sales tidak bisa lagi menandai LUNAS lewat PATCH order (409 + arahan ke Klaim Lunas); Admin tetap bisa; menurunkan status tidak terkena", async () => {
+test("SATU-SATUNYA sumber LUNAS: PATCH paymentStatus=LUNAS ditolak untuk SALES, ADMIN, dan OWNER (409 LUNAS_HANYA_DARI_LEDGER); status/paidAt tidak berubah; DP manual & kirim ulang nilai sama tidak terkena", async () => {
   const w = await dunia();
+  const owner = await createTestUser({ roles: ["OWNER"] });
+  const cOwner = makeClient(server.baseUrl, owner.token);
   const order = await buatOrder({ sales: w.sales });
-  const r = await w.cSales.patch(`/api/orders/${order.id}`, { paymentStatus: "LUNAS" });
-  assert.equal(r.status, 409, JSON.stringify(r.body));
-  assert.equal(r.body.code, "KLAIM_LUNAS_WAJIB");
-  assert.match(r.body.error, /Klaim Lunas/);
+  for (const [nama, c] of [["SALES", w.cSales], ["ADMIN", w.cAdmin], ["OWNER", cOwner]]) {
+    const r = await c.patch(`/api/orders/${order.id}`, { paymentStatus: "LUNAS" });
+    assert.equal(r.status, 409, `${nama}: ${JSON.stringify(r.body)}`);
+    assert.equal(r.body.code, "LUNAS_HANYA_DARI_LEDGER", nama);
+    assert.match(r.body.error, /Klaim Lunas|Koreksi Pembayaran/, nama);
+  }
   const o = await testPrisma.order.findUnique({ where: { id: order.id } });
   assert.equal(o.paymentStatus, "BELUM_BAYAR");
   assert.equal(o.paidAt, null);
+  assert.equal(await testPrisma.payment.count(), 0);
 
-  // field lain tetap bisa diubah Sales; status DP manual tidak terkena gerbang
+  // field lain & status DP manual tidak terkena
   assert.equal((await w.cSales.patch(`/api/orders/${order.id}`, { notes: "catatan biasa" })).status, 200);
   assert.equal((await w.cSales.patch(`/api/orders/${order.id}`, { paymentStatus: "DP" })).status, 200);
-  // Admin (Owner) tetap dapat menandai LUNAS manual
-  assert.equal((await w.cAdmin.patch(`/api/orders/${order.id}`, { paymentStatus: "LUNAS" })).status, 200);
-  assert.equal((await testPrisma.order.findUnique({ where: { id: order.id } })).paymentStatus, "LUNAS");
+
+  // data LAMA: order yang sudah LUNAS (tanpa Payment) — kirim ulang status yang SAMA (form yang mengirim semua field) tetap lolos dan tidak mengubah apa pun
+  const lama = await buatOrder({ paymentStatus: "LUNAS", paidAt: new Date("2026-09-25T03:00:00Z"), sales: w.sales });
+  const jurnalSebelum = await testPrisma.finJournalEntry.count();
+  const ulang = await w.cAdmin.patch(`/api/orders/${lama.id}`, { paymentStatus: "LUNAS", notes: "{}" });
+  assert.equal(ulang.status, 200, JSON.stringify(ulang.body));
+  const l = await testPrisma.order.findUnique({ where: { id: lama.id } });
+  assert.equal(l.paymentStatus, "LUNAS");
+  assert.equal(l.paidAt.toISOString(), "2026-09-25T03:00:00.000Z", "paidAt historis tidak berubah");
+  assert.equal(await testPrisma.finJournalEntry.count(), jurnalSebelum);
+});
+
+test("POST /orders/:id/payments: Sales (murni) DITOLAK 409 dengan pesan Indonesia — SELALU, walau gerbang verifikasi OFF; tidak ada Payment/status/jurnal; Finance & Admin tetap bisa", async () => {
+  const w = await dunia();
+  const order = await buatOrder({ value: 1_000_000, sales: w.sales });
+  const badan = { amount: 1_000_000, method: "TRANSFER", cashAccountId: w.bank.id };
+  for (const gerbang of ["true", "false"]) {
+    await setSetting(testPrisma, SETTING_KEYS.PAYMENT_VERIFICATION_GATE, gerbang);
+    const r = await w.cSales.post(`/api/orders/${order.id}/payments`, badan);
+    assert.equal(r.status, 409, `gerbang ${gerbang}: ${JSON.stringify(r.body)}`);
+    assert.equal(r.body.code, "PEMBAYARAN_SALES_LEWAT_KLAIM");
+    assert.match(r.body.error, /Ajukan Klaim Lunas/);
+  }
+  assert.equal(await testPrisma.payment.count(), 0);
+  const o = await testPrisma.order.findUnique({ where: { id: order.id } });
+  assert.equal(o.paymentStatus, "BELUM_BAYAR");
+  assert.equal(o.paidAt, null);
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "PEMBAYARAN_ORDER" } }), 0);
+  // peran tanpa ORDER_WRITE: 403
+  assert.equal((await w.cDriver.post(`/api/orders/${order.id}/payments`, badan)).status, 403);
+  // Finance (PAYMENT_WRITE) dan Admin tetap memakai jalur yang punya verifikasi/idempotensi/audit
+  assert.equal((await w.cFin.post(`/api/orders/${order.id}/payments`, { ...badan, amount: 400_000 })).status, 201);
+  assert.equal((await w.cAdmin.post(`/api/orders/${order.id}/payments`, { ...badan, amount: 100_000 })).status, 201);
+  assert.equal(await testPrisma.payment.count(), 2);
 });
 
 test("Order yang sudah lunas menurut ledger tidak bisa diklaim; order batal / tanpa harga ditolak", async () => {
@@ -480,4 +519,36 @@ test("Order yang sudah lunas menurut ledger tidak bisa diklaim; order batal / ta
   const batal = await buatOrder({ sales: w.sales });
   await testPrisma.order.update({ where: { id: batal.id }, data: { status: "CANCELLED" } });
   assert.equal((await w.cSales.post(`/api/klaim-lunas/order/${batal.id}`, {})).status, 409);
+});
+
+test("SAKELAR ROLLOUT MATI (default produksi): perilaku lama persis — Sales masih bisa PATCH LUNAS & catat Payment, klaim berbukti belum bisa dibuat (403), status = {aktif:false}; NYALA → penegakan penuh", async () => {
+  const w = await dunia({ gerbang: false });
+  assert.deepEqual((await w.cSales.get("/api/klaim-lunas/status")).body, { aktif: false });
+  const order = await buatOrder({ value: 1_000_000, sales: w.sales });
+  const draf = await w.cSales.post(`/api/klaim-lunas/order/${order.id}`, {});
+  assert.equal(draf.status, 403);
+  assert.equal(draf.body.code, "KLAIM_LUNAS_BELUM_AKTIF");
+  const bayar = await w.cSales.post(`/api/orders/${order.id}/payments`, { amount: 300_000, method: "TRANSFER", cashAccountId: w.bank.id });
+  assert.equal(bayar.status, 201, "aplikasi Sales lama tetap bisa mencatat pembayaran sebelum gerbang diaktifkan");
+  const lunas = await w.cSales.patch(`/api/orders/${order.id}`, { paymentStatus: "LUNAS" });
+  assert.equal(lunas.status, 200, JSON.stringify(lunas.body));
+
+  await setSetting(testPrisma, SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF, "true");
+  assert.deepEqual((await w.cSales.get("/api/klaim-lunas/status")).body, { aktif: true });
+  const o2 = await buatOrder({ value: 1_000_000, sales: w.sales });
+  assert.equal((await w.cSales.post(`/api/orders/${o2.id}/payments`, { amount: 300_000, method: "TRANSFER", cashAccountId: w.bank.id })).status, 409);
+  assert.equal((await w.cAdmin.patch(`/api/orders/${o2.id}`, { paymentStatus: "LUNAS" })).status, 409);
+  assert.equal((await w.cSales.post(`/api/klaim-lunas/order/${o2.id}`, {})).status, 201);
+});
+
+test("Klaim Tunai hanya ke rekening Sano KEM (sama dengan pencatatan pembayaran Sales lain): rekening PT ditolak 400 di draft dan perubahan", async () => {
+  const w = await dunia();
+  const akunBank = await testPrisma.finAccount.findFirst({ where: { systemKey: "BANK" } });
+  const kem = await testPrisma.finCashAccount.create({ data: { name: "KEM - Sano Bank", kind: "BANK", accountId: akunBank.id } });
+  const order = await buatOrder({ sales: w.sales });
+  const d = await w.cSales.post(`/api/klaim-lunas/order/${order.id}`, { method: "CASH", cashAccountId: w.bank.id });
+  assert.equal(d.status, 400, JSON.stringify(d.body));
+  assert.equal(d.body.code, "REKENING_TUNAI_TIDAK_SESUAI");
+  const ok = await w.cSales.post(`/api/klaim-lunas/order/${order.id}`, { method: "CASH", cashAccountId: kem.id });
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
 });

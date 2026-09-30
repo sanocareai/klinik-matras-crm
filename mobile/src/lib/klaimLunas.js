@@ -28,9 +28,9 @@ export const MAKS_UKURAN_MB = 8;
 /** Status bukti: "antre" (belum dikirim / offline), "mengunggah", "tersimpan" (dikonfirmasi server), "gagal". */
 export const STATUS_BUKTI = { ANTRE: "antre", MENGUNGGAH: "mengunggah", TERSIMPAN: "tersimpan", GAGAL: "gagal" };
 
-/** Sales tidak melihat "Lunas" di pilihan status bayar (server juga menolaknya); Admin tetap; nilai aktif Lunas tetap tampil. */
-export function opsiStatusBayar(semuaStatus, nilaiSekarang, isAdmin) {
-  if (isAdmin) return semuaStatus;
+/** "Lunas" tidak ditawarkan di pilihan status bayar untuk SIAPA PUN (server menolaknya 409: LUNAS hanya dihasilkan sistem dari pembayaran terverifikasi). Nilai aktif Lunas tetap tampil. */
+export function opsiStatusBayar(semuaStatus, nilaiSekarang, _isAdmin, gateAktif = true) {
+  if (!gateAktif) return semuaStatus; // sakelar rollout MATI → daftar lama apa adanya
   return semuaStatus.filter((s) => s !== "LUNAS" || nilaiSekarang === "LUNAS");
 }
 

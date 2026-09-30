@@ -23,12 +23,16 @@ import { prisma } from "../../db.js";
 import { kunciKanonis } from "./urutanKunci.js";
 import { PILIH_TAGIHAN, dasarStatusBayar } from "./tagihanOrder.js";
 import { paidForOrder } from "./allocation.js";
-import { getVerificationGate } from "./settings.js";
+import { getVerificationGate, getSettingRaw, parseBool, SETTING_KEYS } from "./settings.js";
 import { tanggalCutoff, tanggalWIB } from "./cutoff.js";
 import { moneyToNumber } from "./money.js";
 import { verifikasiPenerimaan } from "./penerimaanOrder.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
-import { pastikanBukanAnakResiWajibBayarLewatResi } from "../resiPembayaran.js";
+import {
+  pastikanBukanAnakResiWajibBayarLewatResi, pastikanAktif as pastikanResiAktif, muatGrupResi, pastikanGrupLayak, muatDibayar, rincianAnak,
+  hitungAlokasiResi, ResiBayarError, TIPE_BAYAR,
+} from "../resiPembayaran.js";
+import { verifikasiPenerimaanResi } from "./penerimaanResi.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 import {
   MAKS_BERKAS_PER_KLAIM, berkasTersimpan, hapusBerkasDisk, urlBertandaTangan, salinKeBuktiPayment,
@@ -45,6 +49,14 @@ export const METODE_BAYAR = Object.freeze(["CASH", "TRANSFER", "QRIS", "CARD"]);
 const REKENING_TUNAI_KEM = /(^|[^A-Za-z])KEM([^A-Za-z]|$)/i;
 const DIR_BUKTI_PAYMENT = process.env.PAYMENT_PROOFS_DIR
   || path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../data/payment-proofs");
+
+/** Sakelar rollout gerbang Klaim Lunas (default MATI). Lihat komentar di SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF. */
+export async function klaimGateAktif(db = prisma) {
+  return parseBool(await getSettingRaw(db, SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF));
+}
+async function pastikanGateAktif(db) {
+  if (!(await klaimGateAktif(db))) throw new KlaimError("Klaim Lunas berbukti belum diaktifkan. Gunakan cara pencatatan yang biasa sampai Admin mengaktifkannya.", 403, "KLAIM_LUNAS_BELUM_AKTIF");
+}
 
 export class KlaimError extends Error {
   constructor(message, statusCode = 400, code = null, extra = null) {
@@ -128,7 +140,7 @@ export function kekuranganKlaim(klaim, evidence) {
 // ── pembacaan ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const PILIH_KLAIM = {
-  id: true, orderId: true, status: true, paymentDate: true, amount: true, method: true, cashAccountId: true, note: true, createdById: true,
+  id: true, orderId: true, groupId: true, status: true, paymentDate: true, amount: true, method: true, cashAccountId: true, note: true, createdById: true,
   submittedAt: true, submitCount: true, reviewedById: true, reviewedAt: true, reviewReason: true, paymentId: true, version: true, createdAt: true, updatedAt: true,
   cashAccount: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },
@@ -139,7 +151,7 @@ const PILIH_KLAIM = {
 /** Bentuk klaim untuk UI. URL bukti SELALU bertanda-tangan berumur pendek; nama berkas di disk tidak dikirim. */
 export function bentukKlaim(k) {
   return {
-    id: k.id, orderId: k.orderId, status: k.status, paymentDate: k.paymentDate, amount: k.amount, method: k.method,
+    id: k.id, orderId: k.orderId, groupId: k.groupId ?? null, resi: !!k.groupId, status: k.status, paymentDate: k.paymentDate, amount: k.amount, method: k.method,
     cashAccountId: k.cashAccountId, cashAccount: k.cashAccount ?? null, note: k.note,
     createdById: k.createdById, createdByName: k.createdBy?.name ?? null,
     submittedAt: k.submittedAt, submitCount: k.submitCount,
@@ -181,7 +193,7 @@ export async function klaimUntukOrder(db, { orderId, user, lihatSemua = false })
   const order = await db.order.findUnique({ where: { id: orderId }, select: PILIH_ORDER_KLAIM });
   if (!order) throw new KlaimError("Order tidak ditemukan", 404, "ORDER_TIDAK_ADA");
   const klaim = await db.orderPaymentClaim.findMany({
-    where: { orderId, ...(lihatSemua || adalahAdmin(user) ? {} : { createdById: user.id }) },
+    where: { orderId, groupId: null, ...(lihatSemua || adalahAdmin(user) ? {} : { createdById: user.id }) },
     orderBy: { createdAt: "desc" }, select: PILIH_KLAIM,
   });
   const { tagihan, dibayar, sisa } = await sisaTagihan(db, order);
@@ -208,6 +220,7 @@ export async function klaimUntukOrder(db, { orderId, user, lihatSemua = false })
 /** Buat draft klaim (idempoten: draft aktif milik pengguna yang sama untuk order ini dikembalikan, bukan digandakan). */
 export async function buatDraft(db, { orderId, user, data = {} }) {
   const input = normalisasiInput(data);
+  await pastikanGateAktif(db);
   return db.$transaction(async (tx) => {
     await kunciKanonis(tx, { orderIds: [orderId] });
     const order = await tx.order.findUnique({ where: { id: orderId }, select: PILIH_ORDER_KLAIM });
@@ -302,11 +315,16 @@ export async function ajukanKlaim(db, { claimId, user }) {
     if (kurang.length) throw new KlaimError("Klaim belum lengkap: " + kurang.map((x) => x.pesan).join("; "), 422, "KLAIM_TIDAK_LENGKAP", { kekurangan: kurang });
 
     const order = await tx.order.findUnique({ where: { id: k.orderId }, select: PILIH_ORDER_KLAIM });
-    if (order.status === "CANCELLED") throw new KlaimError("Order sudah dibatalkan — klaim tidak bisa diajukan", 409, "ORDER_DIBATALKAN");
-    await pastikanBukanAnakResiWajibBayarLewatResi(tx, k.orderId);
-    const { sisa } = await sisaTagihan(tx, order);
-    if (sisa <= 0) throw new KlaimError("Order ini sudah tercatat lunas oleh pembayaran terverifikasi — tidak ada yang perlu diklaim", 409, "SUDAH_LUNAS");
-    if (k.amount > sisa) throw new KlaimError(`Nominal klaim ${rp(k.amount)} melebihi sisa tagihan ${rp(sisa)}`, 422, "NOMINAL_MELEBIHI_SISA");
+    if (k.groupId) {
+      // Klaim RESI: validasi terhadap sisa tagihan Resi lewat helper kanonis (hitungAlokasiResi) — TIDAK ada Payment/alokasi/status child yang ditulis.
+      await validasiResiUntukKlaim(tx, k);
+    } else {
+      if (order.status === "CANCELLED") throw new KlaimError("Order sudah dibatalkan — klaim tidak bisa diajukan", 409, "ORDER_DIBATALKAN");
+      await pastikanBukanAnakResiWajibBayarLewatResi(tx, k.orderId);
+      const { sisa } = await sisaTagihan(tx, order);
+      if (sisa <= 0) throw new KlaimError("Order ini sudah tercatat lunas oleh pembayaran terverifikasi — tidak ada yang perlu diklaim", 409, "SUDAH_LUNAS");
+      if (k.amount > sisa) throw new KlaimError(`Nominal klaim ${rp(k.amount)} melebihi sisa tagihan ${rp(sisa)}`, 422, "NOMINAL_MELEBIHI_SISA");
+    }
     await pastikanRekeningValid(tx, { cashAccountId: k.cashAccountId, method: k.method });
     if (k.paymentDate > tanggalWIB(new Date())) throw new KlaimError("Tanggal pembayaran tidak boleh di masa depan", 422, "TANGGAL_MASA_DEPAN");
 
@@ -321,7 +339,7 @@ export async function ajukanKlaim(db, { claimId, user }) {
     });
     await recordActivity(tx, {
       entityType: ENTITY_TYPES.ORDER, entityId: k.orderId, eventType: EVENT_TYPES.KLAIM_LUNAS, actorId: user.id,
-      metadata: { aksi: ulang ? "diajukan_ulang" : "diajukan", klaimId: k.id, amount: k.amount, method: k.method, jumlahBukti: k.evidence.length, orderNumber: order.orderNumber },
+      metadata: { aksi: ulang ? "diajukan_ulang" : "diajukan", klaimId: k.id, amount: k.amount, method: k.method, jumlahBukti: k.evidence.length, orderNumber: order.orderNumber, ...(k.groupId && { groupId: k.groupId }) },
     });
     return { klaim: bentukKlaim(baru), diulang: false };
   }, TX_OPSI);
@@ -357,7 +375,15 @@ async function peringatanBuktiSama(db, klaim) {
 
 async function bentukUntukFinance(db, k) {
   const order = await db.order.findUnique({ where: { id: k.orderId }, select: { ...PILIH_ORDER_KLAIM, value: true } });
-  const { tagihan, dibayar, sisa } = await sisaTagihan(db, order);
+  let resi = null;
+  let { tagihan, dibayar, sisa } = k.groupId ? { tagihan: 0, dibayar: 0, sisa: 0 } : await sisaTagihan(db, order);
+  if (k.groupId) {
+    const { grup, anak } = await muatGrupResi(db, k.groupId);
+    const { aktif } = pastikanGrupLayak(grup, anak);
+    const rinci = rincianAnak(aktif, await muatDibayar(db, aktif), grup);
+    tagihan = rinci.reduce((s, r) => s + r.tagihan, 0); dibayar = rinci.reduce((s, r) => s + r.dibayar, 0); sisa = Math.max(tagihan - dibayar, 0);
+    resi = { groupId: k.groupId, anak: rinci };
+  }
   const peringatan = [];
   if (k.amount && k.amount > sisa) peringatan.push({ kode: "NOMINAL_MELEBIHI_SISA", pesan: `Nominal klaim ${rp(k.amount)} melebihi sisa tagihan ${rp(sisa)}` });
   if (sisa <= 0) peringatan.push({ kode: "SUDAH_LUNAS_LEDGER", pesan: "Order ini sudah tercatat lunas oleh pembayaran terverifikasi" });
@@ -370,6 +396,7 @@ async function bentukUntukFinance(db, k) {
       id: order.id, orderNumber: order.orderNumber, customerName: order.customer?.name ?? "—", salesName: order.customer?.assignedSales?.name ?? null,
       status: order.status, paymentStatus: order.paymentStatus, nilai: order.value, tagihan, dibayar, sisa,
     },
+    ...(resi && { resiInfo: resi }),
     peringatan,
   };
 }
@@ -450,6 +477,7 @@ export async function verifikasiKlaim(tx, { claimId, verifierId, cashAccountId =
   if (hanyaBerkas.length) throw new KlaimError("Klaim tidak lengkap: " + hanyaBerkas.map((x) => x.pesan).join("; "), 422, "KLAIM_TIDAK_LENGKAP", { kekurangan: hanyaBerkas });
 
   const order = await tx.order.findUnique({ where: { id: k.orderId }, select: { status: true, orderNumber: true } });
+  if (k.groupId) return verifikasiKlaimResi(tx, { k, order, verifierId, cashAccountId, date, amount, method });
   if (order.status === "CANCELLED") throw new KlaimError(`Order ${order.orderNumber} sudah dibatalkan — klaim tidak bisa diverifikasi`, 409, "ORDER_DIBATALKAN");
 
   const urlBukti = k.evidence.map((e) => salinKeBuktiPayment(e, { dirTujuan: DIR_BUKTI_PAYMENT }));
@@ -474,6 +502,96 @@ export async function verifikasiKlaim(tx, { claimId, verifierId, cashAccountId =
     metadata: { aksi: "diverifikasi", klaimId: k.id, paymentId: hasil.paymentId, amount: hasil.amount, statusBayar, orderNumber: order.orderNumber },
   });
   return { ...hasil, klaimId: k.id, statusBayar };
+}
+
+// ── KLAIM LUNAS RESI ────────────────────────────────────────────────────────────────────────────────────────────────
+// Satu klaim untuk SELURUH Resi (orderId = anchor, groupId = Resi). Sales hanya mengajukan nominal; pembagian ke child dihitung SERVER oleh helper kanonis
+// (resiPembayaran.hitungAlokasiResi, largest-remainder, Σ alokasi = nominal) SAAT Finance memverifikasi — klaim tidak pernah membawa alokasi dari klien.
+
+function galatResi(e) {
+  if (e instanceof ResiBayarError) return new KlaimError(e.message, e.statusCode === 403 ? 403 : e.statusCode || 409, e.code || "RESI");
+  return e;
+}
+
+/** Validasi Resi untuk klaim: flag aktif, grup layak, nominal ≤ sisa tagihan Resi (dry-run helper kanonis — tidak menulis apa pun). */
+async function validasiResiUntukKlaim(tx, k) {
+  try {
+    await pastikanResiAktif(tx);
+    const { grup, anak } = await muatGrupResi(tx, k.groupId, { kunci: true });
+    const { aktif } = pastikanGrupLayak(grup, anak);
+    hitungAlokasiResi({ anak: aktif, dibayar: await muatDibayar(tx, aktif), tipe: TIPE_BAYAR.TAGIHAN, nominal: k.amount, grup });
+  } catch (e) {
+    if (e instanceof ResiBayarError && e.code === "OVER_ALOKASI") throw new KlaimError(e.message, 422, "NOMINAL_MELEBIHI_SISA");
+    if (e instanceof ResiBayarError && e.code === "TIDAK_ADA_SISA") throw new KlaimError("Resi ini sudah lunas oleh pembayaran terverifikasi — tidak ada yang perlu diklaim", 409, "SUDAH_LUNAS");
+    throw galatResi(e);
+  }
+}
+
+/** Info klaim Resi untuk Sales: total/sisa tagihan Resi, klaim milik pengguna, dan apakah bisa diklaim. */
+export async function klaimUntukResi(db, { groupId, user, lihatSemua = false }) {
+  try {
+    await pastikanResiAktif(db);
+    const { grup, anak } = await muatGrupResi(db, groupId);
+    const { anchor, aktif } = pastikanGrupLayak(grup, anak);
+    const rinci = rincianAnak(aktif, await muatDibayar(db, aktif), grup);
+    const tagihan = rinci.reduce((s, r) => s + r.tagihan, 0);
+    const dibayar = rinci.reduce((s, r) => s + r.dibayar, 0);
+    const sisa = Math.max(tagihan - dibayar, 0);
+    const klaim = await db.orderPaymentClaim.findMany({
+      where: { groupId, ...(lihatSemua || adalahAdmin(user) ? {} : { createdById: user.id }) }, orderBy: { createdAt: "desc" }, select: PILIH_KLAIM,
+    });
+    const aktifK = klaim.find((x) => STATUS_AKTIF.includes(x.status)) || null;
+    return {
+      groupId, anchorOrderId: anchor.id, anchorOrderNumber: anchor.orderNumber, tagihan, dibayar, sisa, anak: rinci,
+      bolehDiklaim: sisa > 0, alasanTidakBisa: sisa > 0 ? null : "Resi ini sudah lunas oleh pembayaran terverifikasi",
+      klaimAktifId: aktifK?.id ?? null, klaim: klaim.map(bentukKlaim),
+    };
+  } catch (e) { throw galatResi(e); }
+}
+
+/** Buat draft klaim Resi (idempoten per pemilik; satu klaim aktif per Resi). */
+export async function buatDraftResi(db, { groupId, user, data = {} }) {
+  const input = normalisasiInput(data);
+  await pastikanGateAktif(db);
+  return db.$transaction(async (tx) => {
+    try {
+      await pastikanResiAktif(tx);
+      const { grup, anak } = await muatGrupResi(tx, groupId, { kunci: true });
+      const { anchor, aktif } = pastikanGrupLayak(grup, anak);
+      const rinci = rincianAnak(aktif, await muatDibayar(tx, aktif), grup);
+      if (rinci.reduce((s, r) => s + r.sisa, 0) <= 0) throw new KlaimError("Resi ini sudah lunas oleh pembayaran terverifikasi — tidak ada yang perlu diklaim", 409, "SUDAH_LUNAS");
+      const ada = await tx.orderPaymentClaim.findFirst({ where: { groupId, status: { in: STATUS_AKTIF } }, select: { id: true, createdById: true, createdBy: { select: { name: true } } } });
+      if (ada) {
+        if (ada.createdById === user.id) return { klaim: bentukKlaim(await tx.orderPaymentClaim.findUnique({ where: { id: ada.id }, select: PILIH_KLAIM })), dibuatBaru: false };
+        throw new KlaimError(`Sudah ada klaim aktif untuk Resi ini dari ${ada.createdBy?.name || "pengguna lain"}`, 409, "KLAIM_AKTIF_ADA");
+      }
+      if (input.cashAccountId) await pastikanRekeningValid(tx, { cashAccountId: input.cashAccountId, method: input.method });
+      const dibuat = await tx.orderPaymentClaim.create({ data: { orderId: anchor.id, groupId, createdById: user.id, status: STATUS.DRAFT, ...input }, select: PILIH_KLAIM });
+      await recordActivity(tx, { entityType: ENTITY_TYPES.ORDER, entityId: anchor.id, eventType: EVENT_TYPES.KLAIM_LUNAS, actorId: user.id, metadata: { aksi: "draft_dibuat", klaimId: dibuat.id, groupId } });
+      return { klaim: bentukKlaim(dibuat), dibuatBaru: true };
+    } catch (e) { throw galatResi(e); }
+  }, TX_OPSI);
+}
+
+/** Finance memverifikasi klaim Resi: SATU Payment di anchor + alokasi kanonis ke child (Σ = nominal) + jurnal; bukti klaim jadi bukti Payment. */
+async function verifikasiKlaimResi(tx, { k, order, verifierId, cashAccountId, date, amount, method }) {
+  const urlBukti = k.evidence.map((e) => salinKeBuktiPayment(e, { dirTujuan: DIR_BUKTI_PAYMENT }));
+  let hasil;
+  try {
+    hasil = await verifikasiPenerimaanResi(tx, {
+      groupId: k.groupId, mode: "REKENING", method: method || k.method, cashAccountId: cashAccountId || k.cashAccountId || null,
+      date: date || k.paymentDate, amount: amount ?? k.amount, proofPhotoUrls: urlBukti, verifierId, klaim: { id: k.id, createdById: k.createdById },
+    });
+  } catch (e) { throw galatResi(e); }
+  await tx.orderPaymentClaim.update({
+    where: { id: k.id },
+    data: { status: STATUS.VERIFIED, paymentId: hasil.paymentId, reviewedById: verifierId, reviewedAt: new Date(), reviewReason: null, version: { increment: 1 } },
+  });
+  await recordActivity(tx, {
+    entityType: ENTITY_TYPES.ORDER, entityId: k.orderId, eventType: EVENT_TYPES.KLAIM_LUNAS, actorId: verifierId,
+    metadata: { aksi: "diverifikasi", klaimId: k.id, groupId: k.groupId, paymentId: hasil.paymentId, amount: hasil.amount, statusBayar: hasil.lunasPenuh ? "LUNAS" : "DP", orderNumber: order.orderNumber },
+  });
+  return { ...hasil, klaimId: k.id, statusBayar: hasil.lunasPenuh ? "LUNAS" : "DP" };
 }
 
 /** Jumlah klaim menunggu Finance (badge/ringkasan). */

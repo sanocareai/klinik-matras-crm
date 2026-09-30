@@ -30,7 +30,8 @@ function gambarDariEvent(e) {
   return hasil;
 }
 
-export default function KlaimLunasDialog({ open, order, onClose, onChanged }) {
+// `resiGroupId` (opsional) = klaim level RESI: satu klaim untuk seluruh Resi (order = anchor untuk judul). Alokasi ke child dihitung SERVER saat Finance memverifikasi.
+export default function KlaimLunasDialog({ open, order, resiGroupId = null, onClose, onChanged }) {
   const [info, setInfo] = useState(null);
   const [klaim, setKlaim] = useState(null); // klaim aktif milik pengguna (atau null = belum ada)
   const [form, setForm] = useState(() => formDariKlaim(null, { hariIni: hariIniWIB() }));
@@ -47,7 +48,7 @@ export default function KlaimLunasDialog({ open, order, onClose, onChanged }) {
   const muat = useCallback(async () => {
     setMemuat(true); setGalat("");
     try {
-      const d = await api.getKlaimLunasOrder(order.id);
+      const d = resiGroupId ? await api.getKlaimLunasResi(resiGroupId) : await api.getKlaimLunasOrder(order.id);
       setInfo(d);
       // Klaim yang dikerjakan: yang aktif (draft / menunggu / diminta bukti); kalau tidak ada, klaim terakhir yang DITOLAK (diperbaiki lalu diajukan ulang).
       const sumber = (d.klaimAktifId && d.klaim.find((k) => k.id === d.klaimAktifId)) || d.klaim.find((k) => k.status === "REJECTED") || null;
@@ -59,7 +60,7 @@ export default function KlaimLunasDialog({ open, order, onClose, onChanged }) {
     } finally {
       setMemuat(false);
     }
-  }, [order.id]);
+  }, [order.id, resiGroupId]);
 
   useEffect(() => { if (open) { idKlaim.current = null; membuatDraft.current = null; muat(); } }, [open, muat]);
 
@@ -91,7 +92,7 @@ export default function KlaimLunasDialog({ open, order, onClose, onChanged }) {
   async function pastikanDraft() {
     if (idKlaim.current) return idKlaim.current;
     if (!membuatDraft.current) {
-      membuatDraft.current = api.buatDraftKlaimLunas(order.id, bodyForm())
+      membuatDraft.current = (resiGroupId ? api.buatDraftKlaimLunasResi(resiGroupId, bodyForm()) : api.buatDraftKlaimLunas(order.id, bodyForm()))
         .then((r) => { setKlaim(r.klaim); idKlaim.current = r.klaim.id; return r.klaim.id; })
         .finally(() => { membuatDraft.current = null; });
     }
@@ -184,7 +185,7 @@ export default function KlaimLunasDialog({ open, order, onClose, onChanged }) {
     <Modal
       open={open}
       onOpenChange={(v) => { if (!v && !mengirim) onClose(); }}
-      title="Ajukan Klaim Lunas"
+      title={resiGroupId ? "Ajukan Klaim Lunas Resi" : "Ajukan Klaim Lunas"}
       description={order.orderNumber ? `Order ${order.orderNumber}${order.customerName ? ` — ${order.customerName}` : ""}` : undefined}
       className="w-[520px] max-h-[92vh]"
       footer={(
@@ -219,7 +220,7 @@ export default function KlaimLunasDialog({ open, order, onClose, onChanged }) {
       ) : (
         <div className="flex flex-col gap-3.5">
           <p className="rounded-xl bg-accentbg px-3 py-2.5 text-[12px] leading-relaxed text-accent">
-            Mengajukan klaim <strong>tidak mengubah status pembayaran</strong> order ini. Status berubah menjadi Lunas setelah Finance memeriksa bukti dan uangnya.
+            Mengajukan klaim <strong>tidak mengubah status pembayaran</strong> {resiGroupId ? "order dalam Resi ini" : "order ini"}. Status berubah menjadi Lunas setelah Finance memeriksa bukti dan uangnya.
             Sisa tagihan order: <strong>{formatRupiah(info.sisa)}</strong>.
           </p>
 

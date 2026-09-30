@@ -446,6 +446,7 @@ export const api = {
   // method opsional (Tunai → hanya rekening Sano KEM); tanpa method = perilaku lama (Bank/E-wallet).
   getPaymentAccounts: (method) => request("/orders/payment-accounts" + (method ? `?method=${encodeURIComponent(method)}` : "")),
   // ── Klaim Lunas Sales (1 Okt 2026): Sales MENGAJUKAN klaim berbukti; status Lunas baru muncul setelah Finance memverifikasi ──
+  getKlaimLunasStatus: () => request("/klaim-lunas/status"),
   getKlaimLunasOrder: (orderId) => request(`/klaim-lunas/order/${orderId}`),
   buatDraftKlaimLunas: (orderId, data = {}) => request(`/klaim-lunas/order/${orderId}`, { method: "POST", body: JSON.stringify(data) }),
   ubahKlaimLunas: (id, data) => request(`/klaim-lunas/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

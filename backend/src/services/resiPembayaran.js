@@ -215,14 +215,16 @@ export async function validasiAlokasiResi(db, { grup, alokasi, nominalPayment })
 }
 
 /** Tulis Payment anchor + alokasi + hitung ulang status semua child. Pemanggil WAJIB sudah memegang kunci (muatGrupResi kunci=true). */
-export async function tulisPembayaranResi(tx, { grup, anchor, aktif, hitung, method, cashAccountId = null, proofPhotoUrl = null, recordedById, verifierId = null, createdAt = null }) {
+export async function tulisPembayaranResi(tx, { grup, anchor, aktif, hitung, method, cashAccountId = null, proofPhotoUrl = null, proofPhotoUrls = null, recordedById, verifierId = null, createdAt = null }) {
+  // Bukti bisa BANYAK (klaim Resi berbukti, 1 Okt 2026): daftar unik; foto pertama juga di proofPhotoUrl untuk pembaca lama.
+  const bukti = [...new Set([proofPhotoUrl, ...(Array.isArray(proofPhotoUrls) ? proofPhotoUrls : [])].filter(Boolean))];
   const alokasi = hitung.tulis.map((a) => ({ orderId: a.orderId, amount: a.alokasi }));
   await validasiAlokasiResi(tx, { grup, alokasi, nominalPayment: hitung.nominal });
 
   const payment = await tx.payment.create({
     data: {
       orderId: anchor.id, amount: hitung.nominal, method,
-      proofPhotoUrl: proofPhotoUrl || null, cashAccountId: cashAccountId || null,
+      proofPhotoUrl: bukti[0] || null, proofPhotoUrls: bukti, cashAccountId: cashAccountId || null,
       recordedById, ...(createdAt && { createdAt }),
     },
   });

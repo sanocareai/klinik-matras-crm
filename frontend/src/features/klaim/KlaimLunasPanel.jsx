@@ -4,19 +4,22 @@ import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
 import KlaimLunasDialog from "./KlaimLunasDialog.jsx";
 import { STATUS_KLAIM_LABEL } from "./klaimLunasLogic.js";
+import { useKlaimLunasAktif } from "./useKlaimLunasAktif.js";
 
 // Panel kecil "Klaim Lunas" untuk satu order: status klaim terkini + tombol "Ajukan Klaim Lunas". Menggantikan cara lama Sales menandai order
 // Lunas lewat dropdown (server menolaknya untuk non-Admin). Dipakai di tab Pembayaran drawer order dan di form order Pelanggan.
 export default function KlaimLunasPanel({ order, onChanged, className }) {
+  const gateAktif = useKlaimLunasAktif(); // sakelar rollout: MATI → panel tidak tampil (UI lama)
   const [info, setInfo] = useState(null);
   const [buka, setBuka] = useState(false);
 
   const muat = useCallback(() => {
+    if (gateAktif !== true) return;
     api.getKlaimLunasOrder(order.id).then(setInfo).catch(() => setInfo(null));
-  }, [order.id]);
+  }, [order.id, gateAktif]);
   useEffect(() => { setInfo(null); muat(); }, [muat]);
 
-  if (!info) return null;
+  if (gateAktif !== true || !info) return null;
   const aktif = info.klaim.find((k) => k.id === info.klaimAktifId) || null;
   const ditolak = !aktif ? info.klaim.find((k) => k.status === "REJECTED") : null;
   const terakhir = aktif || ditolak;

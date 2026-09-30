@@ -4,6 +4,7 @@ import { PAYMENT_STATUSES, PAYMENT_STATUS_LABELS, paymentStatusVariant } from "@
 import { badgeVariants } from "@/components/ui/badge.jsx";
 import { isAdminUser } from "@/lib/roles.js";
 import { opsiStatusBayar } from "@/features/klaim/klaimLunasLogic.js";
+import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 
 // Pengguna login (untuk menyembunyikan opsi "Lunas" bagi non-Admin — Klaim Lunas 1 Okt 2026).
 function penggunaLogin() {
@@ -17,11 +18,12 @@ function penggunaLogin() {
 // file yang lagi aktif dikerjakan sesi lain tidak ikut tersentuh oleh
 // perubahan ini.
 export function PaymentStatusSelect({ order, onChange, className, locked }) {
+  const gateAktif = useKlaimLunasAktif() === true;
   return (
     <BadgeDropdown
       value={order.paymentStatus || "BELUM_BAYAR"}
       onChange={(v) => onChange(order, v)}
-      options={opsiStatusBayar(PAYMENT_STATUSES, order.paymentStatus, isAdminUser(penggunaLogin())).map((s) => ({ value: s, label: PAYMENT_STATUS_LABELS[s] || s }))}
+      options={opsiStatusBayar(PAYMENT_STATUSES, order.paymentStatus, isAdminUser(penggunaLogin()), gateAktif).map((s) => ({ value: s, label: PAYMENT_STATUS_LABELS[s] || s }))}
       getChipClass={(v) => badgeVariants({ variant: paymentStatusVariant(v) })}
       disabled={locked}
       title={locked ? "Order sudah LUNAS — cuma admin/sales yang bisa ubah pembayaran" : undefined}

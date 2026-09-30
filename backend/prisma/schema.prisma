@@ -1376,6 +1376,8 @@ enum OrderGroupSource {
 }
 
 model OrderGroup {
+  // Klaim Lunas level Resi (1 Okt 2026): klaim berbukti yang diajukan Sales untuk SATU Resi (orderId klaim = anchor, groupId = Resi ini).
+  paymentClaims OrderPaymentClaim[] @relation("OrderGroupPaymentClaims")
   id         String           @id @default(cuid())
   customerId String           @map("customer_id")
   customer   Customer         @relation(fields: [customerId], references: [id])
@@ -9002,6 +9004,11 @@ model OrderPaymentClaim {
   orderId String @map("order_id")
   order   Order  @relation("OrderPaymentClaims", fields: [orderId], references: [id], onDelete: Restrict)
 
+  // Klaim level RESI: terisi = klaim untuk seluruh Resi (orderId = order anchor). NULL = klaim per order biasa. Alokasi ke child HANYA oleh helper
+  // kanonis server saat Finance memverifikasi (services/resiPembayaran.js) — nominal dari klaim, bukan alokasi dari klien.
+  groupId String?     @map("group_id")
+  group   OrderGroup? @relation("OrderGroupPaymentClaims", fields: [groupId], references: [id], onDelete: Restrict)
+
   status KlaimLunasStatus @default(DRAFT)
 
   // Tanggal pembayaran diterima (tanggal kalender WIB "YYYY-MM-DD") — teks supaya tidak ada ambiguitas zona waktu.
@@ -9036,6 +9043,7 @@ model OrderPaymentClaim {
   evidence OrderPaymentClaimEvidence[]
 
   @@index([orderId])
+  @@index([groupId])
   @@index([status])
   @@index([createdById])
   @@map("order_payment_claims")

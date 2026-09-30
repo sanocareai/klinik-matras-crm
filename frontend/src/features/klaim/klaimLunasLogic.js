@@ -24,9 +24,13 @@ export const MAKS_BUKTI = 10;
 export const MAKS_UKURAN_MB = 8;
 export const TIPE_BUKTI_DITERIMA = "image/jpeg,image/png,image/webp,application/pdf";
 
-/** Sales tidak melihat opsi "Lunas" di dropdown status bayar (server juga menolaknya); Admin tetap. Nilai aktif yang sudah Lunas tetap tampil. */
-export function opsiStatusBayar(semuaStatus, nilaiSekarang, isAdmin) {
-  if (isAdmin) return semuaStatus;
+/**
+ * Opsi "Lunas" TIDAK ditawarkan di dropdown status bayar untuk SIAPA PUN (termasuk Admin/Owner) — server menolaknya 409 (LUNAS_HANYA_DARI_LEDGER):
+ * LUNAS hanya dihasilkan sistem setelah pembayaran terverifikasi mencapai tagihan. Order yang SUDAH Lunas tetap menampilkan nilainya.
+ * Parameter ketiga dipertahankan agar pemanggil lama tidak rusak, tetapi tidak lagi berpengaruh.
+ */
+export function opsiStatusBayar(semuaStatus, nilaiSekarang, _isAdmin, gateAktif = true) {
+  if (!gateAktif) return semuaStatus; // sakelar rollout MATI → daftar lama apa adanya
   return semuaStatus.filter((s) => s !== "LUNAS" || nilaiSekarang === "LUNAS");
 }
 

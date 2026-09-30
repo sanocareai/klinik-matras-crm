@@ -5,7 +5,8 @@ import { fileURLToPath } from "url";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { rolesOf, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { rolesOf, hasPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { klaimGateAktif } from "../services/finance/klaimLunas.js";
 // Batas rentang tanggal WIB — WAJIB dipakai, jangan `new Date(from)` polos.
 // Container backend jalan di UTC, jadi batas polos menggeser jendela 7 jam
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
@@ -301,11 +302,12 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
       }
       // Resi Gabungan (pembayaran Resi AKTIF): status bayar child Resi BARU hanya lewat klaim Lunas Resi + verifikasi Finance.
       if (paymentStatus !== undefined && paymentStatus !== sebelum.paymentStatus) await pastikanBukanAnakResiAktif(tx, req.params.id);
-      // GERBANG KLAIM LUNAS (1 Okt 2026, keputusan Owner; DI BAWAH penjaga child Resi supaya child Resi tetap dijawab ANAK_RESI): menandai order LUNAS tanpa catatan/bukti pembayaran ditutup untuk selain ADMIN. Sales
-      // mengajukan Klaim Lunas (tanggal, nominal, metode, catatan, minimal satu Bukti Pembayaran) di /api/klaim-lunas; status LUNAS baru muncul setelah
-      // Finance memverifikasi dan ledger mencapai tagihan. Menurunkan status (mis. ke DP) atau mengirim ulang nilai yang sama tidak terkena.
-      if (paymentStatus === "LUNAS" && sebelum.paymentStatus !== "LUNAS" && !rolesOf(req.user).includes("ADMIN")) {
-        throw Object.assign(new Error("Status Lunas tidak bisa diisi langsung. Gunakan \"Ajukan Klaim Lunas\" dengan bukti pembayaran — status berubah setelah Finance memverifikasi."), { statusCode: 409, code: "KLAIM_LUNAS_WAJIB" });
+      // SATU-SATUNYA SUMBER STATUS LUNAS (1 Okt 2026, keputusan Owner; DI BAWAH penjaga child Resi supaya child Resi tetap dijawab ANAK_RESI): TIDAK ADA role
+      // (termasuk ADMIN/OWNER) yang boleh mengisi paymentStatus=LUNAS lewat PATCH. LUNAS hanya dihasilkan server (recomputeOrderPaymentStatus) setelah Payment aktif
+      // dan terverifikasi mencapai tagihan kanonis. Sales → "Ajukan Klaim Lunas" berbukti (/api/klaim-lunas); Admin yang memperbaiki transaksi → Koreksi Pembayaran
+      // resmi / verifikasi Finance. Mengirim ulang nilai yang SAMA (order yang sudah LUNAS: data lama/form yang mengirim semua field) dan menurunkan status tidak terkena.
+      if (paymentStatus === "LUNAS" && sebelum.paymentStatus !== "LUNAS" && (await klaimGateAktif(tx))) {
+        throw Object.assign(new Error("Status Lunas tidak bisa diisi langsung oleh siapa pun — status dihasilkan sistem setelah pembayaran terverifikasi Finance mencapai tagihan. Sales: pakai \"Ajukan Klaim Lunas\" dengan bukti pembayaran. Admin: catat/verifikasi pembayaran lewat Finance atau pakai Koreksi Pembayaran."), { statusCode: 409, code: "LUNAS_HANYA_DARI_LEDGER" });
       }
       // Ongkir Tambahan Resi BARU hanya boleh di order anchor (dihitung TEPAT sekali per Resi — services/finance/tagihanOrder.js).
       if (ongkir !== undefined && ongkir !== "" && ongkir !== null && Number(ongkir) !== 0 && resiBaru(sebelum) && sebelum.group?.anchorOrderId !== req.params.id) {
@@ -910,6 +912,18 @@ orderRouter.get("/payment-accounts", async (req, res) => {
 // sano-hub §"PRD bilang RLS... di sini artinya middleware Express").
 orderRouter.post("/:id/payments", async (req, res) => {
   try {
+    // JALUR PAYMENT LANGSUNG DITUTUP UNTUK SALES (1 Okt 2026): Payment baru hanya boleh dibuat ADMIN / pemegang PAYMENT_WRITE (Finance). Sales (dan peran lain)
+    // mengajukan Klaim Lunas berbukti (/api/klaim-lunas) yang diverifikasi Finance. Ini ditegakkan di server SELALU — tidak bergantung pada payment_verification_gate
+    // (yang bisa OFF, dan saat OFF pembayaran Sales langsung ikut menentukan status). Pesan 409 ini juga yang dibaca aplikasi Sales versi lama.
+    if (!(rolesOf(req.user).includes("ADMIN") || hasPermission(req.user, P.PAYMENT_WRITE)) && (await klaimGateAktif(prisma))) {
+      const bisaKlaim = hasPermission(req.user, P.ORDER_WRITE);
+      return res.status(bisaKlaim ? 409 : 403).json({
+        error: bisaKlaim
+          ? "Pembayaran dari Sales tidak lagi dicatat langsung. Ajukan Klaim Lunas dengan bukti pembayaran (tombol \"Ajukan Klaim Lunas\" di tab Pembayaran) — Finance yang memverifikasi dan mencatatnya. Perbarui aplikasi jika tombol itu belum ada."
+          : "Anda tidak punya izin mencatat pembayaran.",
+        code: "PEMBAYARAN_SALES_LEWAT_KLAIM",
+      });
+    }
     const guarded = await guardOrderLocked(req, res, req.params.id, "mencatat pembayaran baru");
     if (!guarded) return;
 

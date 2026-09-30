@@ -74,7 +74,7 @@ export default function KlaimLunasSales({ onBerubah }) {
               <div key={k.id} className="rounded-xl border border-line p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-mono text-[12.5px] font-semibold text-ink">{k.order.orderNumber || "—"}</p>
+                    <p className="font-mono text-[12.5px] font-semibold text-ink">{k.order.orderNumber || "—"}{k.resi && <span className="ml-1.5 font-sans text-[11px] font-medium text-accent">Resi · {k.resiInfo?.anak.length ?? "?"} order</span>}</p>
                     <p className="truncate text-[12.5px] text-ink2">{k.order.customerName} · {k.createdByName || "—"}</p>
                   </div>
                   <div className="shrink-0 text-right">
@@ -111,7 +111,10 @@ export default function KlaimLunasSales({ onBerubah }) {
               <TBody>
                 {data.items.map((k) => (
                   <TR key={k.id}>
-                    <TD className="font-medium">{k.order.orderNumber || "—"}</TD>
+                    <TD className="font-medium">
+                      {k.order.orderNumber || "—"}
+                      {k.resi && <div className="mt-0.5"><Badge variant="accent">Resi · {k.resiInfo?.anak.length ?? "?"} order</Badge></div>}
+                    </TD>
                     <TD className="max-w-[170px] truncate">{k.order.customerName}</TD>
                     <TD className="text-[12px] text-ink2">{k.createdByName || "—"}</TD>
                     <TD className="whitespace-nowrap">{k.paymentDate ? tanggalPendek(k.paymentDate) : "—"}</TD>
@@ -236,6 +239,7 @@ function ModalVerifikasiKlaim({ modal, rekening, onClose, onKirim }) {
         <p className="rounded-xl bg-accentbg px-3 py-2.5 text-[12px] leading-relaxed text-accent">
           Ini membuat <strong>satu pembayaran resmi</strong> dari klaim Sales ({k.createdByName || "Sales"}), memakai bukti klaim sebagai bukti pembayaran, lalu menghitung ulang status order dari ledger.
           Order menjadi <strong>Lunas</strong> hanya bila pembayaran terverifikasi mencapai tagihan ({formatUang(k.order.tagihan)}; sudah terbayar {formatUang(k.order.dibayar)}).
+          {k.resi && <> Ini klaim <strong>Resi ({k.resiInfo?.anak.length} order)</strong>: satu pembayaran di order pertama, dibagi otomatis oleh sistem ke tiap order sesuai sisa tagihannya (jumlah alokasi = nominal).</>}
         </p>
         <div className="flex flex-wrap gap-2">{k.bukti.map((b) => <BuktiMini key={b.id} b={b} />)}</div>
         {k.note && <p className="text-[12px] text-ink2"><strong>Catatan Sales:</strong> {k.note}</p>}

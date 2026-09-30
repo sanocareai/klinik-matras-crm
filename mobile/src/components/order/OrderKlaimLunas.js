@@ -19,6 +19,7 @@ import storage from "../../lib/storage";
 import { useTokens } from "../../constants/theme";
 import { formatRupiah } from "../../utils/format";
 import DateField from "../DateField";
+import { useKlaimLunasAktif } from "../../lib/klaimGate";
 import {
   METODE_KLAIM, STATUS_KLAIM_LABEL, STATUS_BISA_DIEDIT, STATUS_BUKTI, MAKS_BUKTI,
   bisaDiajukan, alasanNonaktif, cekBerkas, formDariKlaim, buktiDariKlaim, bodyDariForm,
@@ -42,15 +43,17 @@ function useOnline() {
 export default function OrderKlaimLunas({ order, onChanged }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const gateAktif = useKlaimLunasAktif(); // sakelar rollout: MATI → tidak tampil (UI lama)
   const [info, setInfo] = useState(null);
   const [buka, setBuka] = useState(false);
 
   const muat = useCallback(() => {
+    if (gateAktif !== true) return;
     api.getKlaimLunasOrder(order.id).then(setInfo).catch(() => setInfo(null));
-  }, [order.id]);
+  }, [order.id, gateAktif]);
   useEffect(() => { setInfo(null); muat(); }, [muat]);
 
-  if (!info) return null;
+  if (gateAktif !== true || !info) return null;
   const aktif = info.klaim.find((k) => k.id === info.klaimAktifId) || null;
   const ditolak = !aktif ? info.klaim.find((k) => k.status === "REJECTED") : null;
   const terakhir = aktif || ditolak;

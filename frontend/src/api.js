@@ -1064,7 +1064,10 @@ export const api = {
     request(`/orders/${orderId}/payments`, { method: "POST", body: JSON.stringify(data) }),
   getOrderPayments: (orderId) => api.getPayments({ orderId }),
   // ── Klaim Lunas Sales (1 Okt 2026) — Sales MENGAJUKAN klaim berbukti; status Lunas baru muncul setelah Finance memverifikasi ──
+  getKlaimLunasStatus: () => request("/klaim-lunas/status"),
   getKlaimLunasOrder: (orderId) => request(`/klaim-lunas/order/${orderId}`),
+  getKlaimLunasResi: (groupId) => request(`/klaim-lunas/resi/${groupId}`),
+  buatDraftKlaimLunasResi: (groupId, data = {}) => request(`/klaim-lunas/resi/${groupId}`, { method: "POST", body: JSON.stringify(data) }),
   buatDraftKlaimLunas: (orderId, data = {}) => request(`/klaim-lunas/order/${orderId}`, { method: "POST", body: JSON.stringify(data) }),
   ubahKlaimLunas: (id, data) => request(`/klaim-lunas/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   unggahBuktiKlaimLunas: (id, formData, onProgress) => uploadWithProgress(`/klaim-lunas/${id}/bukti`, formData, onProgress),

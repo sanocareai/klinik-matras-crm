@@ -14,6 +14,7 @@ import ReadinessPanel from "./ReadinessPanel.jsx";
 import { StatusSelect } from "./StatusSelect.jsx";
 import { PaymentStatusSelect } from "./PaymentStatusSelect.jsx";
 import KlaimLunasPanel from "@/features/klaim/KlaimLunasPanel.jsx";
+import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS,
@@ -431,6 +432,7 @@ function DetailPesananSection({ order, onChanged }) {
 // memicu Orders.jsx refetch daftar order supaya badge status langsung
 // menampilkan nilai baru tanpa navigasi ulang.
 function PaymentTab({ order, onRecorded, canEditLunas }) {
+  const klaimGateAktif = useKlaimLunasAktif() === true; // sakelar rollout gerbang Klaim Lunas
   const [payments, setPayments] = useState(null);
   const [error, setError] = useState("");
   const [form, setForm] = useState(false);
@@ -687,6 +689,11 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
         <p className="flex items-center gap-1.5 rounded-xl bg-inset px-3.5 py-3 text-center text-[12px] text-ink3">
           <Wallet size={14} className="shrink-0" />
           Order ini sudah LUNAS dan terkunci — cuma admin yang bisa mencatat pembayaran baru.
+        </p>
+      ) : klaimGateAktif && !canEditLunas ? (
+        // Sejak 1 Okt 2026 Sales tidak mencatat Payment langsung (server menolak 409): pembayaran/DP/pelunasan diajukan sebagai Klaim Lunas berbukti (panel di atas).
+        <p className="rounded-xl bg-inset px-3.5 py-3 text-center text-[12px] text-ink3" data-testid="catat-pembayaran-via-klaim">
+          Pembayaran dari Sales diajukan lewat <strong>Ajukan Klaim Lunas</strong> dengan bukti pembayaran — Finance yang memverifikasi dan mencatatnya.
         </p>
       ) : !form ? (
         <button

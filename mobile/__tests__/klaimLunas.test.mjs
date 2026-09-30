@@ -52,7 +52,7 @@ test("Sales tidak melihat opsi 'Lunas'; Admin tetap; order yang sudah Lunas teta
   const semua = ["BELUM_BAYAR", "DP", "LUNAS"];
   assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false), ["BELUM_BAYAR", "DP"]);
   assert.deepEqual(opsiStatusBayar(semua, "LUNAS", false), semua);
-  assert.deepEqual(opsiStatusBayar(semua, "DP", true), semua);
+  assert.deepEqual(opsiStatusBayar(semua, "DP", true), ["BELUM_BAYAR", "DP"], "Admin pun tidak ditawari Lunas");
 });
 
 test("Berkas: hanya JPG/PNG/WEBP/PDF sampai 8 MB", () => {
@@ -104,4 +104,14 @@ test("Komponen: 'Ajukan Klaim Lunas', 'Bukti Pembayaran' (bukan hanya 'Bukti Tra
   assert.match(baca("../src/screens/OrderTimelineScreen.js"), /<OrderKlaimLunas order=\{order\}/);
   assert.match(baca("../src/components/OrderFormModal.js"), /opsiStatusBayar\(PAYMENT_STATUSES/);
   assert.match(baca("../src/api.js"), /unggahBuktiKlaimLunas: \(id, file\) => uploadFile\(`\/klaim-lunas\/\$\{id\}\/bukti`, file, \{\}, "berkas"\)/);
+});
+
+test("Sakelar rollout mobile: MATI → status bayar lama & form catat pembayaran lama & panel klaim tersembunyi; gagal baca = MATI", () => {
+  const semua = ["BELUM_BAYAR", "DP", "LUNAS"];
+  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false, false), semua);
+  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false, true), ["BELUM_BAYAR", "DP"]);
+  assert.match(baca("../src/lib/klaimGate.js"), /api\.getKlaimLunasStatus\(\)\.then\(\(r\) => !!r\?\.aktif\)\.catch\(\(\) => false\)/);
+  assert.match(baca("../src/components/order/OrderKlaimLunas.js"), /if \(gateAktif !== true \|\| !info\) return null;/);
+  assert.match(baca("../src/screens/OrderTimelineScreen.js"), /bolehCatatLangsung = roles\.includes\("ADMIN"\) \|\| !klaimGateAktif/);
+  assert.match(baca("../src/components/OrderFormModal.js"), /opsiStatusBayar\(PAYMENT_STATUSES, order\?\.paymentStatus, isAdminEditor, klaimGateAktif\)/);
 });

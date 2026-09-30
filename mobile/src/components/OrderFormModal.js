@@ -46,6 +46,7 @@ import {
 } from "../utils/format";
 import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import { opsiStatusBayar } from "../lib/klaimLunas";
+import { useKlaimLunasAktif } from "../lib/klaimGate";
 import DateField from "./DateField";
 import { stageLabels, stageColors } from "../theme";
 import { isUkuranCustom, validasiUkuranCustom, parseAngkaCm } from "../utils/ukuranKasur";
@@ -410,6 +411,7 @@ export default function OrderFormModal({
   // diedit, submit baru ditolak di akhir. Disamakan sekarang dgn web
   // (canEditLunasOrder() di OrderSection.jsx) — admin-only, titik.
   const { user } = useAuth();
+  const klaimGateAktif = useKlaimLunasAktif() === true; // sakelar rollout gerbang Klaim Lunas
   const userRoles = Array.isArray(user?.roles) && user.roles.length > 0 ? user.roles : [user?.role];
   const isAdminEditor = userRoles.includes("ADMIN");
   const canEditLunas = isAdminEditor;
@@ -866,7 +868,7 @@ export default function OrderFormModal({
                     MELIHAT badge-nya, tidak bisa mengedit sama sekali. */}
                 <Text style={styles.label}>Status Pembayaran</Text>
                 <View style={styles.statusRow}>
-                  {opsiStatusBayar(PAYMENT_STATUSES, order?.paymentStatus, isAdminEditor).map((s) => {
+                  {opsiStatusBayar(PAYMENT_STATUSES, order?.paymentStatus, isAdminEditor, klaimGateAktif).map((s) => {
                     const active = paymentStatus === s;
                     return (
                       <TouchableOpacity
