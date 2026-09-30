@@ -14,6 +14,8 @@ import { STAGE_INFO } from "../utils/stageInfo.js";
 // Pipeline (populasi, sales = assignedSales, mandek ≥14 hari), jadi angka di
 // sini dan di halaman Pipeline tidak pernah beda. Nilai order "Menunggu"
 // ditampilkan TERPISAH dan tidak ikut omset (keputusan owner hari yang sama).
+// Jumlah sales yang tampil sebelum "Tampilkan semua".
+const SALES_AWAL = 6;
 const STAGES = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED", "SPAM"];
 const STAGE_COLOR = {
   NEW:         "var(--orange)",
@@ -71,6 +73,7 @@ function StageBar({ byStage, total, height = 8 }) {
 export default function StageBySalesCard({ range, onGoTab }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [semuaSales, setSemuaSales] = useState(false);
 
   useEffect(() => {
     if ((!!range?.from) !== (!!range?.to)) return;
@@ -96,6 +99,7 @@ export default function StageBySalesCard({ range, onGoTab }) {
   const pctMandek = aktif > 0 ? Math.round((mandek / aktif) * 100) : 0;
   const nilaiPasti = data.stages.reduce((n, s) => n + s.value, 0);
   const nilaiMenunggu = data.stages.reduce((n, s) => n + s.pendingValue, 0);
+  const tampilSales = semuaSales ? data.sales : data.sales.slice(0, SALES_AWAL);
   const maxStage = Math.max(1, ...data.stages.filter((s) => s.stage !== "SPAM").map((s) => s.count));
 
   return (
@@ -183,40 +187,60 @@ export default function StageBySalesCard({ range, onGoTab }) {
         })}
       </div>
 
-      {/* Per sales */}
-      <Tile>
-        <p className="flex items-center gap-1.5 text-[15px] font-semibold text-ink">Per sales <InfoTooltip text={INFO.perSales} /></p>
+      {/* Per sales — grid kartu ringkas (30 Sep 2026): daftar satu-baris-per-sales
+          dengan bar selebar layar terlalu panjang & penuh saat 12+ sales tampil.
+          Sekarang 3 kolom, bar selebar kartu, dan hanya 6 teratas dulu. */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="flex items-center gap-1.5 text-[15px] font-semibold text-ink">
+            Per sales <span className="text-[12px] font-normal text-ink3">{data.sales.length} orang</span>
+            <InfoTooltip text={INFO.perSales} />
+          </p>
+        </div>
         {data.sales.length === 0 ? (
-          <p className="mt-3 text-sm text-ink3">Belum ada lead di periode ini.</p>
+          <Tile><p className="text-sm text-ink3">Belum ada lead di periode ini.</p></Tile>
         ) : (
-          <ul className="mt-3 flex flex-col divide-y divide-[var(--hairline)]">
-            {data.sales.map((r) => (
-              <li key={r.userId || "none"} className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 py-3 sm:grid-cols-[auto_minmax(120px,180px)_1fr_auto]">
-                <Avatar name={r.name} url={r.avatarUrl} />
-                <div className="min-w-0">
-                  <p className="truncate text-[14px] font-semibold text-ink">{r.name}</p>
-                  <p className="text-[12px] tabular-nums text-ink3">
-                    {r.total} lead · {formatRupiahShort(r.value)}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {tampilSales.map((r) => (
+              <Tile key={r.userId || "none"} className="flex flex-col gap-3 !p-4">
+                <div className="flex items-center gap-3">
+                  <Avatar name={r.name} url={r.avatarUrl} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[14px] font-semibold text-ink">{r.name}</p>
+                    <p className="text-[12px] tabular-nums text-ink3">{formatRupiahShort(r.value)}</p>
+                  </div>
+                  <p className="shrink-0 text-right text-[22px] font-extrabold leading-none tabular-nums text-ink">
+                    {r.total.toLocaleString("id-ID")}
+                    <span className="block text-[10px] font-medium text-ink3">lead</span>
                   </p>
                 </div>
-                <div className="col-span-2 flex flex-col gap-1.5 sm:col-span-1">
-                  <StageBar byStage={r.byStage} total={r.total} />
-                  <p className="flex flex-wrap gap-x-3 text-[11px] tabular-nums text-ink3">
+                <StageBar byStage={r.byStage} total={r.total} />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="flex min-w-0 flex-wrap gap-x-2.5 text-[11px] tabular-nums text-ink3">
                     {STAGES.filter((s) => r.byStage[s] > 0).map((s) => (
-                      <span key={s}>{STAGE_LABELS[s].split(" /")[0]} <strong className="text-ink2">{r.byStage[s]}</strong></span>
+                      <span key={s} className="inline-flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: STAGE_COLOR[s] }} />
+                        {STAGE_LABELS[s].split(" /")[0]} <strong className="text-ink2">{r.byStage[s].toLocaleString("id-ID")}</strong>
+                      </span>
                     ))}
                   </p>
-                </div>
-                <div className="col-span-2 sm:col-span-1 sm:text-right">
                   {r.stale > 0
-                    ? <span className="inline-flex items-center gap-1 rounded-full bg-orange-bg px-2 py-0.5 text-[11px] font-semibold text-orange"><AlertTriangle size={11} /> {r.stale} mandek</span>
-                    : <span className="inline-flex rounded-full bg-green-bg px-2 py-0.5 text-[11px] font-semibold text-green">Aman <InfoTooltip text={INFO.aman} /></span>}
+                    ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-orange-bg px-2 py-0.5 text-[11px] font-semibold text-orange"><AlertTriangle size={11} /> {r.stale.toLocaleString("id-ID")} mandek</span>
+                    : <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-green-bg px-2 py-0.5 text-[11px] font-semibold text-green">Aman <InfoTooltip text={INFO.aman} /></span>}
                 </div>
-              </li>
+              </Tile>
             ))}
-          </ul>
+          </div>
         )}
-      </Tile>
+        {data.sales.length > SALES_AWAL && (
+          <button
+            type="button" onClick={() => setSemuaSales((v) => !v)}
+            className="self-center rounded-full bg-surface px-4 py-2 text-[12px] font-semibold text-accent shadow-card transition-colors hover:bg-accentbg"
+          >
+            {semuaSales ? "Tampilkan lebih sedikit" : `Tampilkan semua ${data.sales.length} sales`}
+          </button>
+        )}
+      </div>
     </section>
   );
 }
