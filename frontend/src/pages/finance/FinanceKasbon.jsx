@@ -163,7 +163,12 @@ export default function FinanceKasbon() {
         sistem otomatis menambahkannya ke beban gaji sehingga totalnya menjadi gaji kotor.
       </Penjelasan>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <KartuAngka
+          label="Total Kasbon" value={formatUang(data?.total?.diberikan ?? 0)}
+          sub={`${data?.total?.jumlah ?? 0} kasbon · ${formatUang(data?.total?.dipotong ?? 0)} sudah dipotong · ${formatUang(data?.total?.sisa ?? 0)} belum`}
+          info="Jumlah SELURUH kasbon yang pernah diberikan (tanpa yang dibatalkan), sepanjang waktu — bukan hanya bulan ini dan bukan hanya baris yang tampil di tabel. Sudah dipotong + belum dipotong = total kasbon."
+        />
         <KartuAngka
           label="Belum Dipotong dari Gaji" value={formatUang(data?.totalSisa ?? 0)}
           tone={(data?.totalSisa ?? 0) > 0 ? "orange" : "default"} sub="total kasbon yang masih menunggu dipotong"

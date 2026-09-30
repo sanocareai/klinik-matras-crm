@@ -178,3 +178,20 @@ test("Edit kasbon: alasan wajib; nominal tidak bisa diubah lewat edit", async ()
   const nominal = await c.patch(`/api/finance/kasbon/${k.id}`, { amount: 1, reason: "coba ubah nominal" });
   assert.equal(nominal.status, 400, "amount bukan field yang diterima, jadi tidak ada perubahan");
 });
+
+test("Kartu Total Kasbon: total diberikan sepanjang waktu (tanpa dibatalkan), sudah dipotong, dan sisa — sama dengan Piutang Karyawan", async () => {
+  const { rekening } = await siapkan();
+  const { token } = await createTestUser({ roles: ["ADMIN"] });
+  const c = makeClient(server.baseUrl, token);
+  const a = (await c.post("/api/finance/kasbon", baru(rekening, { date: "2026-08-10", amount: 300_000, employeeName: "rifki" }))).body;
+  await c.post("/api/finance/kasbon", baru(rekening, { date: "2026-09-10", amount: 400_000, employeeName: "imam" }));
+  const dibatal = (await c.post("/api/finance/kasbon", baru(rekening, { date: "2026-09-11", amount: 900_000, employeeName: "fathul" }))).body;
+  assert.equal((await c.post(`/api/finance/kasbon/${dibatal.id}/batal`, { reason: "salah input" })).status, 200);
+  assert.equal((await c.post("/api/finance/kasbon/pelunasan-karyawan", { employeeName: "rifki", amount: 100_000, method: "POTONG_GAJI" })).status, 201);
+
+  const d = (await c.get("/api/finance/kasbon")).body;
+  assert.deepEqual(d.total, { jumlah: 2, diberikan: 700_000, dipotong: 100_000, sisa: 600_000 });
+  assert.equal(d.total.sisa, d.totalSisa, "sisa kartu Total = kartu Belum Dipotong");
+  assert.equal(String(d.total.sisa) + ".00", await saldo("1-1350"), "sama dengan saldo Piutang Karyawan");
+  void a;
+});

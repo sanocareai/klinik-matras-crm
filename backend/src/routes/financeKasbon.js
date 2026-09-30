@@ -96,16 +96,23 @@ financeKasbonRouter.get("/kasbon", requirePermission(P.FINANCE_READ), async (req
     const hariIni = todayBookDateWIB();
     const awal = new Date(Date.UTC(hariIni.getUTCFullYear(), hariIni.getUTCMonth(), 1));
     const akhir = new Date(Date.UTC(hariIni.getUTCFullYear(), hariIni.getUTCMonth() + 1, 0));
-    const [diberikan, dipotong] = await Promise.all([
+    const [diberikan, dipotong, semuaDiberikan, semuaDipotong] = await Promise.all([
       prisma.finKasbon.aggregate({ where: { status: { not: "DIBATALKAN" }, date: { gte: awal, lte: akhir } }, _sum: { amount: true } }),
       prisma.finKasbonRepayment.aggregate({ where: { cancelledAt: null, date: { gte: awal, lte: akhir } }, _sum: { amount: true } }),
+      // TOTAL KASBON sepanjang waktu (kartu "Total Kasbon"): dihitung dari SEMUA kasbon, bukan hanya 500 baris yang dimuat di tabel.
+      // Kasbon dibatalkan tidak dihitung; potongan hanya yang belum dibatalkan dan milik kasbon yang tidak dibatalkan.
+      prisma.finKasbon.aggregate({ where: { status: { not: "DIBATALKAN" } }, _count: { _all: true }, _sum: { amount: true } }),
+      prisma.finKasbonRepayment.aggregate({ where: { cancelledAt: null, kasbon: { status: { not: "DIBATALKAN" } } }, _sum: { amount: true } }),
     ]);
+    const totalDiberikan = Number(semuaDiberikan._sum.amount || 0);
+    const totalDipotong = Number(semuaDipotong._sum.amount || 0);
 
     res.json({
       kasbon: rows.map(bentukKasbon),
       perKaryawan,
       totalSisa: moneyToNumber(totalSisa),
       bulanIni: { diberikan: Number(diberikan._sum.amount || 0), terpotong: Number(dipotong._sum.amount || 0) },
+      total: { jumlah: semuaDiberikan._count._all, diberikan: totalDiberikan, dipotong: totalDipotong, sisa: totalDiberikan - totalDipotong },
       batas: parseIntOr(await getSettingRaw(prisma, SETTING_KEYS.KASBON_BATAS_AKTIF), 0),
       terpotong: rows.length === 500,
     });
