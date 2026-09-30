@@ -12,6 +12,8 @@ import { daftarKlaimLunasResi, detailKlaimResi, pratinjauVerifikasiResi, verifik
 import { wajibIdempotencyKey } from "../middleware/idempotency.js";
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { handleFinanceError } from "./finance.js";
+import { daftarKlaimFinance, detailKlaimFinance, mintaBuktiKlaim, tolakKlaim, verifikasiKlaim, ringkasKlaimMenunggu, KlaimError } from "../services/finance/klaimLunas.js";
+import { BerkasError } from "../services/finance/klaimLunasBerkas.js";
 
 export const financePenerimaanRouter = express.Router();
 financePenerimaanRouter.use(requireAuth);
@@ -112,6 +114,52 @@ financePenerimaanRouter.post("/penerimaan/tolak", requirePermission(P.PAYMENT_WR
   } catch (e) {
     handleFinanceError(e, res);
   }
+});
+
+// ── Klaim Lunas Sales (1 Okt 2026) — antrean + keputusan Finance. Sales mengajukan lewat /api/klaim-lunas; di sini Finance memilih Minta Bukti / Tolak / Verifikasi.
+// Verifikasi membuat TEPAT SATU Payment resmi (bukti klaim menjadi bukti Payment) lewat jalur verifikasiPenerimaan; status order dihitung dari ledger.
+function galatKlaim(e, res) {
+  if (e instanceof KlaimError || e instanceof BerkasError) {
+    return res.status(e.statusCode).json({ error: e.message, ...(e.code && { code: e.code }), ...(e.kekurangan && { kekurangan: e.kekurangan }) });
+  }
+  return handleFinanceError(e, res);
+}
+
+financePenerimaanRouter.get("/penerimaan/klaim-lunas", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const semua = String(req.query.status || "") === "SEMUA";
+    res.json(await daftarKlaimFinance(prisma, semua ? { status: ["SUBMITTED", "EVIDENCE_REQUESTED", "REJECTED", "VERIFIED"], take: 300 } : {}));
+  } catch (e) { galatKlaim(e, res); }
+});
+
+financePenerimaanRouter.get("/penerimaan/klaim-lunas/ringkasan", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await ringkasKlaimMenunggu(prisma)); } catch (e) { galatKlaim(e, res); }
+});
+
+financePenerimaanRouter.get("/penerimaan/klaim-lunas/:id", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await detailKlaimFinance(prisma, req.params.id)); } catch (e) { galatKlaim(e, res); }
+});
+
+financePenerimaanRouter.post("/penerimaan/klaim-lunas/:id/minta-bukti", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
+  try {
+    res.status(201).json(await prisma.$transaction((tx) => mintaBuktiKlaim(tx, { claimId: req.params.id, alasan: req.body?.alasan, versi: req.body?.versi, userId: req.user.id }), { maxWait: 15_000, timeout: 60_000 }));
+  } catch (e) { galatKlaim(e, res); }
+});
+
+financePenerimaanRouter.post("/penerimaan/klaim-lunas/:id/tolak", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
+  try {
+    res.json(await prisma.$transaction((tx) => tolakKlaim(tx, { claimId: req.params.id, alasan: req.body?.alasan, versi: req.body?.versi, userId: req.user.id }), { maxWait: 15_000, timeout: 60_000 }));
+  } catch (e) { galatKlaim(e, res); }
+});
+
+financePenerimaanRouter.post("/penerimaan/klaim-lunas/:id/verifikasi", requirePermission(P.PAYMENT_WRITE), async (req, res) => {
+  try {
+    const { cashAccountId, date, amount, method, versi } = req.body || {};
+    res.status(201).json(await prisma.$transaction(
+      (tx) => verifikasiKlaim(tx, { claimId: req.params.id, verifierId: req.user.id, cashAccountId, date, amount, method, versi }),
+      { maxWait: 15_000, timeout: 60_000 },
+    ));
+  } catch (e) { galatKlaim(e, res); }
 });
 
 // ── Resi Gabungan Fase 3A (flag RESI_PEMBAYARAN_AKTIF; 403 bila mati) ─────────────────────────────────────────────────────────────────────────────

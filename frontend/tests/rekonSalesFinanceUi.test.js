@@ -59,3 +59,18 @@ test("Export Excel: sheet Rekonsiliasi memakai payload server yang sama dengan l
   assert.match(ekspor, /rekonSales\.bridge/);
   assert.match(ekspor, /rekonSales\.detail\[b\.kunci\]/);
 });
+
+test("Bridge: tanda tampilan = EFEK (tanda × jumlah) — langkah 'kurangi' berjumlah negatif (Selisih Nominal Lain) tampil '+', bukan '−'; Excel memakai arah & jumlah mutlak yang sama", () => {
+  assert.match(rekon, /const efek = b\.tanda \* b\.jumlah;/);
+  assert.match(rekon, /efek < 0 \? "−" : "\+"/);
+  assert.match(ekspor, /b\.tanda \* b\.jumlah < 0 \? "Kurangi" : "Tambah"/);
+  assert.match(ekspor, /Math\.abs\(b\.jumlah\)/);
+});
+
+test("Drill-down: layar sempit memakai daftar kartu per order (tabel 6 kolom terpotong di 390px); angka negatif ditulis '−Rp…' (bukan 'Rp-…')", () => {
+  assert.match(rekon, /data-testid="rekon-kartu-mobile"/);
+  assert.match(rekon, /hidden max-h-\[60vh\] overflow-auto sm:block/);
+  assert.match(rekon, /sm:hidden/);
+  assert.match(rekon, /const rpBertanda = \(n\) => \(n < 0 \?/);
+  assert.doesNotMatch(rekon, /description=\{kunci \? `\$\{baris\.length\} order · \$\{formatRupiah\(/, "deskripsi modal memakai rpBertanda");
+});

@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils.js";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import KlaimLunasResi from "@/features/finance/KlaimLunasResi.jsx";
+import KlaimLunasSales from "@/features/finance/KlaimLunasSales.jsx";
 
 // ORDER YANG DITANDAI LUNAS OLEH SALES, UANG MASUKNYA BELUM DICEK.
 //
@@ -122,6 +123,9 @@ export default function LunasBelumDicatat({ onBerubah, ringkas = false, onTampil
         Kalau uangnya ternyata belum masuk, tekan <strong>Tolak Klaim</strong> — status order dikembalikan.
       </Penjelasan>}
 
+      {/* Klaim Lunas BERBUKTI (1 Okt 2026): antrean baru — Sales mengajukan dengan tanggal, nominal, metode, catatan, dan bukti. */}
+      <KlaimLunasSales onBerubah={async () => { await muat(); onBerubah?.(); }} />
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KartuAngka
           label="Perlu Anda Cek" value={data.baru.jumlah} tone={data.baru.jumlah > 0 ? "orange" : "default"}
@@ -198,6 +202,8 @@ export default function LunasBelumDicatat({ onBerubah, ringkas = false, onTampil
                     <TD numeric><Uang value={i.sisa} className="font-bold" /></TD>
                     <TD>
                       <Badge variant={i.kelompok === "BARU" ? "orange" : "neutral"}>{i.kelompok === "BARU" ? "Perlu dicek" : `Sebelum ${tgl}`}</Badge>
+                      {/* Klaim lama (status Lunas diisi Sales tanpa pembayaran tercatat): TIDAK dibuatkan Payment otomatis — ditandai sampai ada klaim berbukti / Finance memverifikasi. */}
+                      <div className="mt-1" data-testid="bukti-belum-lengkap"><Badge variant="orange">Bukti belum lengkap</Badge></div>
                       {i.buktiDiminta && (
                         <div className="mt-1" data-testid="bukti-diminta" title={i.buktiDiminta.catatan || undefined}>
                           <Badge variant="accent">{"Bukti diminta " + tanggalPendek(String(i.buktiDiminta.pada).slice(0, 10))}</Badge>

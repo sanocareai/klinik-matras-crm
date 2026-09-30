@@ -571,8 +571,8 @@ test("Order tunggal / groupId NULL IDENTIK dengan perilaku lama: hasil skenario 
     await testPrisma.order.update({ where: { id: o.id }, data: { value: 1_000_000 } });
     const dp = await w.s.post(`/api/orders/${o.id}/payments`, { amount: 300_000, method: "TRANSFER", cashAccountId: w.bank.id });
     assert.equal(dp.status, 201, JSON.stringify(dp.body));
-    const patch = await w.s.patch(`/api/orders/${o.id}`, { paymentStatus: "LUNAS" });
-    assert.equal(patch.status, 200, JSON.stringify(patch.body));
+    // Klaim Lunas LAMA disiapkan langsung di DB (meniru klaim yang dibuat sebelum gerbang Klaim Lunas 1 Okt 2026): Sales tidak lagi bisa menandai LUNAS lewat dropdown.
+    await testPrisma.order.update({ where: { id: o.id }, data: { paymentStatus: "LUNAS", paidAt: new Date() } });
     const q = await w.a.get("/api/finance/penerimaan/lunas-belum-dicatat");
     const baris = q.body.items.find((i) => i.orderId === o.id);
     assert.ok(baris, "order tunggal selalu tampil per order di antrean lama");
@@ -676,7 +676,8 @@ test("Tagihan kanonis: Ongkir Tambahan dihitung TEPAT sekali (anchor); status CR
 
 test("Klaim Lunas per order LAMA (dropdown sebelum flag aktif) pada child Resi: dikunci saat flag ON, tampil di antrean Resi, tolak memulihkan status dari ledger tanpa menyentuh child lain", async () => {
   const w = await dunia({ pembayaran: false });
-  assert.equal((await w.s.patch(`/api/orders/${w.anak[1]}`, { paymentStatus: "LUNAS" })).status, 200, "flag OFF: dropdown lama berjalan");
+  // Klaim Lunas LAMA disiapkan langsung di DB (meniru klaim yang dibuat sebelum gerbang Klaim Lunas 1 Okt 2026): Sales tidak lagi bisa menandai LUNAS lewat dropdown.
+  await testPrisma.order.update({ where: { id: w.anak[1] }, data: { paymentStatus: "LUNAS", paidAt: new Date() } });
   await setSetting(testPrisma, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF, "true");
   const kunciDropdown = await w.s.patch(`/api/orders/${w.anak[2]}`, { paymentStatus: "LUNAS" });
   assert.equal(kunciDropdown.status, 409, JSON.stringify(kunciDropdown.body)); assert.equal(kunciDropdown.body.code, "ANAK_RESI");
@@ -810,7 +811,7 @@ test("Audit #4: anchor Resi dengan klaim Lunas MENUNGGU tidak bisa dibatalkan (4
   // klaim PER ORDER lama (flag OFF lalu ON) juga memblokir pembatalan anchor sampai ditolak
   await truncateAll();
   const w2 = await dunia({ pembayaran: false });
-  assert.equal((await w2.s.patch(`/api/orders/${w2.anchorId}`, { paymentStatus: "LUNAS" })).status, 200);
+  await testPrisma.order.update({ where: { id: w2.anchorId }, data: { paymentStatus: "LUNAS", paidAt: new Date() } }); // klaim lama (lihat catatan di atas)
   await setSetting(testPrisma, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF, "true");
   const tolakDulu = await w2.s.post(`/api/orders/${w2.anchorId}/cancel`, { reason: "uji" });
   assert.equal(tolakDulu.status, 409, JSON.stringify(tolakDulu.body));

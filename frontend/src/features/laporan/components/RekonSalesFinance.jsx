@@ -19,6 +19,8 @@ import ChartCard from "./ChartCard.jsx";
 // Klik baris bridge → daftar order penyusunnya (hanya bila server mengirim detail: Finance/Admin). Sales hanya melihat angka.
 
 const tanggal = (d) => (d ? formatTanggalPendek(d) : "—");
+/** Rupiah bertanda: negatif tampil "−Rp8.070.000" (bukan "Rp-8.070.000"). */
+const rpBertanda = (n) => (n < 0 ? `−${formatRupiah(Math.abs(n))}` : formatRupiah(n));
 const JENIS = { TRANSFER: "Transfer", CASH: "Tunai", QRIS: "QRIS", CARD: "Kartu" };
 
 function currentUser() {
@@ -83,7 +85,10 @@ export function PanelRekon({ data, loading, error, onBuka }) {
                 const hasil = ["TOTAL_PERUSAHAAN", "NILAI_LUNAS_SALES"].includes(b.kunci);
                 const awal = b.kunci === "UANG_MASUK";
                 const bisa = bisaBuka && b.nOrder > 0;
-                const tampil = b.tanda < 0 ? `− ${formatRupiah(Math.abs(b.jumlah))}` : b.tanda > 0 ? `+ ${formatRupiah(b.jumlah)}` : formatRupiah(b.jumlah);
+                // EFEK langkah terhadap angka berjalan = tanda × jumlah. Langkah "kurangi" yang jumlahnya NEGATIF (mis. Selisih Nominal Lain: Lunas menurut Sales
+                // tanpa uang terverifikasi penuh) justru MENAMBAH — tampilannya harus "+", bukan "−" (ditemukan saat QA visual 1 Okt 2026).
+                const efek = b.tanda * b.jumlah;
+                const tampil = b.tanda === 0 || b.jumlah === 0 ? formatRupiah(b.jumlah) : `${efek < 0 ? "−" : "+"} ${formatRupiah(Math.abs(efek))}`;
                 return (
                   <tr
                     key={b.kunci}
@@ -98,7 +103,7 @@ export function PanelRekon({ data, loading, error, onBuka }) {
                       <span className="block text-[11px] font-normal text-ink3">{b.keterangan}</span>
                     </td>
                     <td className="whitespace-nowrap py-2 pr-2 text-right tabular-nums text-ink3">{b.nOrder > 0 ? `${b.nOrder} order` : ""}</td>
-                    <td className={cn("whitespace-nowrap py-2 pr-2 text-right tabular-nums", b.tanda < 0 && b.jumlah !== 0 && "text-red", b.tanda > 0 && b.jumlah !== 0 && "text-green")}>{tampil}</td>
+                    <td className={cn("whitespace-nowrap py-2 pr-2 text-right tabular-nums", b.tanda !== 0 && efek < 0 && "text-red", b.tanda !== 0 && efek > 0 && "text-green")}>{tampil}</td>
                     <td className="w-5 py-2 pr-1 text-ink3">{bisa ? <ChevronRight size={14} aria-hidden /> : null}</td>
                   </tr>
                 );
@@ -156,11 +161,13 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
 
   return (
     <>
-      <Modal open={!!kunci} onOpenChange={(v) => { if (!v) onClose(); }} title={kunci ? JUDUL_DETAIL[kunci] : ""} description={kunci ? `${baris.length} order · ${formatRupiah(baris.reduce((s, b) => s + b.jumlah, 0))}` : ""} className="w-[860px]">
+      <Modal open={!!kunci} onOpenChange={(v) => { if (!v) onClose(); }} title={kunci ? JUDUL_DETAIL[kunci] : ""} description={kunci ? `${baris.length} order · ${rpBertanda(baris.reduce((s, b) => s + b.jumlah, 0))}` : ""} className="w-[860px]">
         {baris.length === 0 ? (
           <p className="py-6 text-center text-[13px] text-ink3">Tidak ada order pada baris ini.</p>
         ) : (
-          <div className="max-h-[60vh] overflow-auto">
+          <>
+          {/* Layar lebar: tabel. Layar sempit (HP, 390px): tabel 6 kolom terpotong, jadi diganti daftar kartu per order (QA visual 1 Okt 2026). */}
+          <div className="hidden max-h-[60vh] overflow-auto sm:block">
             <table className="w-full text-[12.5px]">
               <thead className="sticky top-0 bg-surface">
                 <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink3">
@@ -179,7 +186,7 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
                       <tr className="bg-inset">
                         <td colSpan={6} className="px-2 py-1.5 text-[12px] font-semibold text-ink">
                           {g.pelanggan}
-                          {g.items.length > 1 && <span className="ml-2 font-normal text-ink3">{g.items.length} order pelanggan yang sama · {formatRupiah(g.jumlah)} — data terpisah, tidak digabung</span>}
+                          {g.items.length > 1 && <span className="ml-2 font-normal text-ink3">{g.items.length} order pelanggan yang sama · {rpBertanda(g.jumlah)} — data terpisah, tidak digabung</span>}
                         </td>
                       </tr>
                     )}
@@ -195,7 +202,7 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
                         <td className="py-2 pr-2 text-right tabular-nums">{formatRupiah(b.nilaiJasa)}</td>
                         <td className="py-2 pr-2 text-right tabular-nums">{b.ongkir ? formatRupiah(b.ongkir) : "—"}</td>
                         <td className="py-2 pr-2 text-right tabular-nums">{formatRupiah(b.totalTagihan)}</td>
-                        <td className={cn("py-2 pr-2 text-right font-semibold tabular-nums", b.jumlah < 0 && "text-red")}>{formatRupiah(b.jumlah)}</td>
+                        <td className={cn("py-2 pr-2 text-right font-semibold tabular-nums", b.jumlah < 0 && "text-red")}>{rpBertanda(b.jumlah)}</td>
                         <td className="py-2 text-[11.5px] text-ink2">
                           {(b.pembayaran || []).length === 0 ? <span className="text-ink3">—</span> : b.pembayaran.map((p) => (
                             <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}</div>
@@ -212,6 +219,45 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
               </tbody>
             </table>
           </div>
+          <div className="flex max-h-[60vh] flex-col gap-2 overflow-auto sm:hidden" data-testid="rekon-kartu-mobile">
+            {kelompok.map((g) => (
+              <React.Fragment key={g.pelanggan}>
+                {(kelompok.length > 1 || g.items.length > 1) && (
+                  <div className="rounded-lg bg-inset px-2.5 py-1.5 text-[12px] font-semibold text-ink">
+                    {g.pelanggan}
+                    {g.items.length > 1 && <span className="block text-[11px] font-normal text-ink3">{g.items.length} order pelanggan yang sama · {rpBertanda(g.jumlah)} — data terpisah, tidak digabung</span>}
+                  </div>
+                )}
+                {g.items.map((b) => (
+                  <div key={`${b.orderId}-${b.jumlah}`} className="rounded-xl border border-line p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <button type="button" className="inline-flex min-h-8 items-center gap-1 text-left font-mono text-[12.5px] text-ink hover:text-accent" onClick={() => navigate(`/orders?id=${b.orderId}`)} title="Buka order">
+                        {b.nomor} <ExternalLink size={10} />
+                      </button>
+                      <span className={cn("shrink-0 text-[13px] font-semibold tabular-nums", b.jumlah < 0 && "text-red")}>{rpBertanda(b.jumlah)}</span>
+                    </div>
+                    {kelompok.length === 1 && g.items.length === 1 && <div className="text-[11.5px] text-ink2">{b.pelanggan}</div>}
+                    <div className="text-[11px] text-ink3">{b.statusBayar} · {b.status}{b.alasan ? ` · ${b.alasan}` : ""}{b.pemegangInformasi ? ` · dipegang ${b.pemegangInformasi}` : ""}{b.sales ? ` · ${b.sales.join(", ")}` : ""}</div>
+                    <dl className="m-0 mt-2 grid grid-cols-3 gap-2 text-[11.5px]">
+                      <div className="min-w-0"><dt className="text-ink3">Nilai Jasa</dt><dd className="m-0 tabular-nums">{formatRupiah(b.nilaiJasa)}</dd></div>
+                      <div className="min-w-0"><dt className="text-ink3">Ongkir</dt><dd className="m-0 tabular-nums">{b.ongkir ? formatRupiah(b.ongkir) : "—"}</dd></div>
+                      <div className="min-w-0"><dt className="text-ink3">Total Tagihan</dt><dd className="m-0 tabular-nums">{formatRupiah(b.totalTagihan)}</dd></div>
+                    </dl>
+                    <div className="mt-2 text-[11.5px] text-ink2">
+                      {(b.pembayaran || []).length === 0 ? <span className="text-ink3">Payment: —</span> : b.pembayaran.map((p) => (
+                        <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}</div>
+                      ))}
+                      {typeof b.dibayarTotal === "number" && <div className="text-ink3">Total dibayar {formatRupiah(b.dibayarTotal)} · sisa {formatRupiah(b.sisaTagihan)}</div>}
+                      {kunci === "TANPA_SALES" && admin && (
+                        <Button size="sm" variant="neutral" className="mt-1" onClick={() => bukaTetapkan(b)}>Tetapkan Sales</Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </React.Fragment>
+            ))}
+          </div>
+          </>
         )}
         <div className="mt-3 flex justify-end">
           <button type="button" className="text-[12px] text-accent hover:underline" onClick={() => navigate("/finance/payments")}>Buka Pembayaran & Verifikasi</button>

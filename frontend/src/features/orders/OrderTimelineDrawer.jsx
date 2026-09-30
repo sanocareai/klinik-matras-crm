@@ -13,6 +13,7 @@ import WarrantyPanel from "./WarrantyPanel.jsx";
 import ReadinessPanel from "./ReadinessPanel.jsx";
 import { StatusSelect } from "./StatusSelect.jsx";
 import { PaymentStatusSelect } from "./PaymentStatusSelect.jsx";
+import KlaimLunasPanel from "@/features/klaim/KlaimLunasPanel.jsx";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS,
@@ -674,6 +675,9 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
           </div>
         );
       })}
+
+      {/* Klaim Lunas (1 Okt 2026): Sales tidak lagi menandai Lunas sendiri — mengajukan klaim berbukti; status berubah setelah Finance memverifikasi. */}
+      <KlaimLunasPanel order={order} onChanged={onRecorded} />
 
       {/* Order LUNAS + bukan admin (1 September 2026) — kunci proaktif di UI
           supaya sales tidak isi form lalu baru kaget 403 saat submit; alasan

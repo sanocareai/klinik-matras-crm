@@ -321,6 +321,8 @@ model User {
   financePinSetAt       DateTime? @map("finance_pin_set_at")
   finAdvancesHeld    FinOperationalAdvance[] @relation("FinAdvanceHolder")
   finAdvancesCreated FinOperationalAdvance[] @relation("FinAdvanceCreator")
+  klaimLunasDibuat   OrderPaymentClaim[]          @relation("KlaimLunasCreator")
+  klaimLunasDitinjau OrderPaymentClaim[]          @relation("KlaimLunasReviewer")
   id           String   @id @default(cuid())
   name         String
   email        String   @unique
@@ -1176,6 +1178,7 @@ model Order {
   // Pemilik Sales STABIL (30 Sep 2026): diisi saat order dibuat (pembuat bila SALES, atau pemilik lead bila SALES), diganti hanya lewat penugasan ulang
   // eksplisit + audit. NULL = "Tanpa Sales" untuk order baru; order lama NULL tetap diatribusikan lewat percakapan (services/salesOwner.js).
   salesOwnerId          String?       @map("sales_owner_id")
+  paymentClaims         OrderPaymentClaim[] @relation("OrderPaymentClaims")
   // dpTarget (2 Sep 2026) — nominal DP yang DISEPAKATI dengan customer,
   // bukan yang benar-benar sudah masuk (itu SUM(payments), lihat Payment
   // model). null = tidak ada kesepakatan DP spesifik untuk order ini.
@@ -3993,6 +3996,9 @@ model Payment {
   replaces          Payment? @relation("PaymentVersion", fields: [replacesPaymentId], references: [id], onDelete: Restrict)
   replacedBy        Payment? @relation("PaymentVersion")
 
+  // Klaim Lunas Sales yang diverifikasi Finance menghasilkan Payment ini (OrderPaymentClaim.paymentId @unique — satu klaim → paling banyak satu Payment).
+  klaimLunas OrderPaymentClaim? @relation("KlaimLunasPayment")
+
   verifications PaymentVerification[]
 
   // Finance (D-180) — alokasi ke order. KOSONG untuk hampir semua baris:
@@ -6458,6 +6464,7 @@ enum FinCashAccountKind {
 // dan rekonsiliasi bank butuh entitas per-rekening (nomor rekening, saldo
 // menurut koran bank) yang tidak punya tempat di bagan akun.
 model FinCashAccount {
+  klaimLunas OrderPaymentClaim[] @relation("KlaimLunasRekening")
   incentivePayouts IncentivePayout[] @relation("IncentivePayoutCashAccount")
   id   String             @id @default(uuid()) @db.Uuid
   name String // "BCA 1234567890 - Operasional"
@@ -8973,4 +8980,86 @@ model ProductionMaterialShortage {
   @@index([status, reportedAt])
   @@index([unitId])
   @@map("production_material_shortages_v2")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// KLAIM LUNAS SALES (1 Okt 2026) — Sales TIDAK lagi menandai order LUNAS lewat dropdown; Sales MENGAJUKAN klaim berisi tanggal, nominal, metode,
+// rekening, catatan, dan MINIMAL satu bukti pembayaran. Klaim hanya data pengajuan: TIDAK mengubah Order.paymentStatus/paidAt, komisi, jurnal,
+// saldo, atau piutang. Baru setelah Finance memverifikasi dibuat SATU Payment resmi (paymentId @unique) dan status order dihitung ulang dari ledger.
+// Draft boleh tanpa bukti/catatan, tetapi hanya klaim lengkap yang bisa diajukan (dijaga server, bukan hanya UI).
+enum KlaimLunasStatus {
+  DRAFT              // disimpan Sales, belum diajukan (boleh belum lengkap)
+  SUBMITTED          // diajukan, menunggu Finance
+  EVIDENCE_REQUESTED // Finance meminta bukti/penjelasan tambahan (alasan wajib) — Sales melengkapi lalu mengajukan ulang
+  REJECTED           // Finance menolak (alasan wajib) — Sales boleh memperbaiki dan mengajukan ulang
+  VERIFIED           // Finance memverifikasi → Payment resmi dibuat (paymentId)
+  CANCELLED          // ditarik Sales sebelum diverifikasi
+}
+
+model OrderPaymentClaim {
+  id String @id @default(uuid()) @db.Uuid
+
+  orderId String @map("order_id")
+  order   Order  @relation("OrderPaymentClaims", fields: [orderId], references: [id], onDelete: Restrict)
+
+  status KlaimLunasStatus @default(DRAFT)
+
+  // Tanggal pembayaran diterima (tanggal kalender WIB "YYYY-MM-DD") — teks supaya tidak ada ambiguitas zona waktu.
+  paymentDate String?        @map("payment_date") @db.VarChar(10)
+  amount      Int? // nominal yang diklaim (Rupiah bulat)
+  method      PaymentMethod?
+
+  cashAccountId String?         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount? @relation("KlaimLunasRekening", fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  note String? // catatan pembayaran (wajib saat diajukan)
+
+  createdById String @map("created_by")
+  createdBy   User   @relation("KlaimLunasCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  submittedAt DateTime? @map("submitted_at")
+  submitCount Int       @default(0) @map("submit_count") // berapa kali diajukan (pengajuan ulang setelah ditolak/diminta bukti)
+
+  reviewedById String?   @map("reviewed_by")
+  reviewedBy   User?     @relation("KlaimLunasReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime? @map("reviewed_at")
+  reviewReason String?   @map("review_reason") // alasan minta bukti / tolak (wajib di sana); kosong saat verifikasi
+
+  // Payment resmi hasil verifikasi. @unique = satu klaim hanya bisa menghasilkan SATU Payment (exactly-once di level database).
+  paymentId String?  @unique @map("payment_id") @db.Uuid
+  payment   Payment? @relation("KlaimLunasPayment", fields: [paymentId], references: [id], onDelete: Restrict)
+
+  version   Int      @default(1) // versi optimistik: verifikasi/tolak/minta-bukti wajib mengirim versi yang dilihatnya
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  evidence OrderPaymentClaimEvidence[]
+
+  @@index([orderId])
+  @@index([status])
+  @@index([createdById])
+  @@map("order_payment_claims")
+}
+
+// Berkas Bukti Pembayaran (foto transfer/struk QRIS/foto tunai/PDF). Satu baris terikat SATU klaim selamanya (claimId tidak pernah dipindah);
+// nama berkas di disk dibuat server (acak) dan tidak pernah memakai nama dari klien. Berkas TIDAK disajikan statis — hanya lewat
+// /media/klaim-lunas/:file (Bearer pemilik/Finance atau URL bertanda-tangan berumur pendek).
+model OrderPaymentClaimEvidence {
+  id String @id @default(uuid()) @db.Uuid
+
+  claimId String            @map("claim_id") @db.Uuid
+  claim   OrderPaymentClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+
+  storedName   String @unique @map("stored_name") // nama di disk (acak + ekstensi dari tipe TERDETEKSI)
+  originalName String @map("original_name") // hanya untuk tampilan (sudah dibersihkan)
+  mimeType     String @map("mime_type") // dari isi berkas (magic bytes), bukan dari klien
+  sizeBytes    Int    @map("size_bytes")
+  sha256       String @db.VarChar(64)
+
+  uploadedById String   @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([claimId])
+  @@index([sha256])
+  @@map("order_payment_claim_evidence")
 }

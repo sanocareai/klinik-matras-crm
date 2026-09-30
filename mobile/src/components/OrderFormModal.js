@@ -45,6 +45,7 @@ import {
   jenisProdukOptions, resolveVariantKey,
 } from "../utils/format";
 import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
+import { opsiStatusBayar } from "../lib/klaimLunas";
 import DateField from "./DateField";
 import { stageLabels, stageColors } from "../theme";
 import { isUkuranCustom, validasiUkuranCustom, parseAngkaCm } from "../utils/ukuranKasur";
@@ -865,7 +866,7 @@ export default function OrderFormModal({
                     MELIHAT badge-nya, tidak bisa mengedit sama sekali. */}
                 <Text style={styles.label}>Status Pembayaran</Text>
                 <View style={styles.statusRow}>
-                  {PAYMENT_STATUSES.map((s) => {
+                  {opsiStatusBayar(PAYMENT_STATUSES, order?.paymentStatus, isAdminEditor).map((s) => {
                     const active = paymentStatus === s;
                     return (
                       <TouchableOpacity

@@ -163,7 +163,10 @@ async function pendapatanSudahDiakui(tx, orderId) {
  *   mode "REKENING"            butuh cashAccountId; jurnal ke kas/bank.
  *   mode "SEBELUM_SALDO_AWAL"  tanpa rekening; jurnal ke Laba Ditahan.
  */
-export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, proofPhotoUrls = null, verifierId }) {
+export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, proofPhotoUrls = null, verifierId, klaim = null }) {
+  // `klaim` (Klaim Lunas Sales, 1 Okt 2026) = { id, createdById }: pembayaran ini hasil verifikasi KLAIM, bukan konfirmasi order yang sudah
+  // ditandai LUNAS. Order BELUM berstatus Lunas pada saat klaim diajukan (klaim tidak mengubah status), jadi syarat "harus LUNAS di CRM" dilewati —
+  // status akhir dihitung dari ledger oleh recomputeOrderPaymentStatus di bawah. Semua pengaman lain (sisa, nominal, cutoff, rekening) tetap sama.
   // Bukti bisa BANYAK foto (30 Sep 2026): daftar unik, foto pertama juga disimpan di proofPhotoUrl (kompatibilitas pembaca lama).
   const bukti = [...new Set([proofPhotoUrl, ...(Array.isArray(proofPhotoUrls) ? proofPhotoUrls : [])].filter(Boolean))];
   if (!["REKENING", "SEBELUM_SALDO_AWAL"].includes(mode)) throw err("Pilihan \"uangnya masuk ke mana\" tidak dikenali");
@@ -182,7 +185,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
     },
   });
   if (!order) throw err("Order tidak ditemukan", 404);
-  if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM (mungkin baru diubah sales). Muat ulang halaman ini.`, 409);
+  if (!klaim && order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM (mungkin baru diubah sales). Muat ulang halaman ini.`, 409);
 
   const gate = await getVerificationGate(tx);
   const sisa = toMoney(dasarStatusBayar(order)).minus(await paidForOrder(tx, orderId, gate));
@@ -221,7 +224,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
       cashAccountId: rekening?.id || null,
       // Yang mencatat = sales pemilik lead (dialah yang melapor lunas); finance
       // yang memverifikasi. Dua orang berbeda = kontrol yang berarti.
-      recordedById: order.customer?.assignedSalesId || verifierId,
+      recordedById: klaim?.createdById || order.customer?.assignedSalesId || verifierId,
       createdAt,
     },
   });
@@ -274,7 +277,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   await recordActivity(tx, {
     entityType: ENTITY_TYPES.ORDER, entityId: orderId, eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: verifierId,
     metadata: {
-      aksi: "verifikasi_penerimaan", mode: modeEfektif, ...(dialihkan && { modeDikirim: mode, dialihkan: "tanggal uang diterima sebelum saldo awal — tidak menambah saldo" }), orderNumber: order.orderNumber, amount: String(nominal),
+      aksi: klaim ? "verifikasi_klaim_lunas" : "verifikasi_penerimaan", ...(klaim && { klaimId: klaim.id }), mode: modeEfektif, ...(dialihkan && { modeDikirim: mode, dialihkan: "tanggal uang diterima sebelum saldo awal — tidak menambah saldo" }), orderNumber: order.orderNumber, amount: String(nominal),
       method, cashAccount: rekening?.name || null, paymentId: payment.id,
       ...(jurnalDilewati && { tanpaJurnal: "pendapatan order ini tidak pernah diakui di buku (pra-pembukuan)" }),
     },

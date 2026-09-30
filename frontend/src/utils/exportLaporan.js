@@ -223,8 +223,9 @@ function sheetRekon({ periode, rekonSales }) {
   sb.row(["Dari Uang Masuk Terverifikasi (Finance) ke Nilai Order yang Menjadi Lunas (Sales). Angka dihitung server."]);
   sb.blank();
   sb.row(["Langkah", "Arah", "Jumlah order", "Jumlah (Rp)", "Keterangan"]);
-  const arah = (t) => (t < 0 ? "Kurangi" : t > 0 ? "Tambah" : "Hasil/Awal");
-  for (const b of rekonSales.bridge) sb.row([b.label, arah(b.tanda), b.nOrder || 0, rp(b.jumlah), b.keterangan]);
+  // Arah = efek sebenarnya (tanda × jumlah); jumlah ditulis mutlak supaya "Kurangi/Tambah" tidak ambigu untuk langkah yang jumlahnya negatif.
+  const arah = (b) => (b.tanda === 0 ? "Hasil/Awal" : b.tanda * b.jumlah < 0 ? "Kurangi" : "Tambah");
+  for (const b of rekonSales.bridge) sb.row([b.label, arah(b), b.nOrder || 0, rp(b.tanda === 0 ? b.jumlah : Math.abs(b.jumlah)), b.keterangan]);
   sb.row(["Residual (harus 0)", "", "", rp(rekonSales.residual)]);
   sb.blank();
   sb.row(["Kartu", "", "", "Jumlah (Rp)"]);

@@ -1063,6 +1063,14 @@ export const api = {
   recordOrderPayment: (orderId, data) =>
     request(`/orders/${orderId}/payments`, { method: "POST", body: JSON.stringify(data) }),
   getOrderPayments: (orderId) => api.getPayments({ orderId }),
+  // ── Klaim Lunas Sales (1 Okt 2026) — Sales MENGAJUKAN klaim berbukti; status Lunas baru muncul setelah Finance memverifikasi ──
+  getKlaimLunasOrder: (orderId) => request(`/klaim-lunas/order/${orderId}`),
+  buatDraftKlaimLunas: (orderId, data = {}) => request(`/klaim-lunas/order/${orderId}`, { method: "POST", body: JSON.stringify(data) }),
+  ubahKlaimLunas: (id, data) => request(`/klaim-lunas/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  unggahBuktiKlaimLunas: (id, formData, onProgress) => uploadWithProgress(`/klaim-lunas/${id}/bukti`, formData, onProgress),
+  hapusBuktiKlaimLunas: (id, evidenceId) => request(`/klaim-lunas/${id}/bukti/${evidenceId}`, { method: "DELETE" }),
+  ajukanKlaimLunas: (id, idempotencyKey = mutationKey("klaim-ajukan")) => request(`/klaim-lunas/${id}/ajukan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
+  tarikKlaimLunas: (id) => request(`/klaim-lunas/${id}/tarik`, { method: "POST", body: JSON.stringify({}) }),
   // Koreksi salah input (2 Sep 2026) — admin-only di backend, lihat
   // routes/orders.js. Entri TIDAK dihapus, cuma ditandai batal.
   cancelOrderPayment: (orderId, paymentId, data) =>
@@ -1567,6 +1575,12 @@ export const api = {
   verifikasiPenerimaan: (data) => request("/finance/penerimaan/verifikasi", { method: "POST", body: JSON.stringify(data) }),
   verifikasiPenerimaanMassal: (data) => request("/finance/penerimaan/verifikasi-massal", { method: "POST", body: JSON.stringify(data) }),
   mintaBuktiPenerimaan: (orderId, catatan) => request("/finance/penerimaan/minta-bukti", { method: "POST", body: JSON.stringify({ orderId, catatan }) }),
+  // Klaim Lunas Sales — keputusan Finance (Minta Bukti / Tolak / Verifikasi; alasan wajib di dua yang pertama)
+  getKlaimLunasAntrean: (params) => request(`/finance/penerimaan/klaim-lunas${qsFinance(params)}`),
+  getKlaimLunasRingkasan: () => request("/finance/penerimaan/klaim-lunas/ringkasan"),
+  mintaBuktiKlaimLunas: (id, body, idempotencyKey = mutationKey("klaim-minta")) => request(`/finance/penerimaan/klaim-lunas/${id}/minta-bukti`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  tolakKlaimLunas: (id, body, idempotencyKey = mutationKey("klaim-tolak")) => request(`/finance/penerimaan/klaim-lunas/${id}/tolak`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  verifikasiKlaimLunas: (id, body, idempotencyKey = mutationKey("klaim-verif")) => request(`/finance/penerimaan/klaim-lunas/${id}/verifikasi`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
   tolakLunas: (orderId, reason) => request("/finance/penerimaan/tolak", { method: "POST", body: JSON.stringify({ orderId, reason }) }),
   // Antrean Resi (Fase 3A): SATU verifikasi per Resi; pembagian ke child dihitung server (pratinjau = baca-saja, verifikasi menghitung ulang).
   getFinanceResi: (groupId) => request(`/finance/penerimaan/resi/${groupId}`),

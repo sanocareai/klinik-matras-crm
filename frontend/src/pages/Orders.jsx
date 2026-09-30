@@ -26,6 +26,7 @@ import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
+import { opsiStatusBayar } from "@/features/klaim/klaimLunasLogic.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
 import ReadinessBadge from "../features/orders/ReadinessBadge.jsx";
 import { JOB_STATUS_REAL } from "../features/armada/jobStatus.js";
@@ -269,7 +270,7 @@ function PaymentStatusSelect({ order, onChange, className, locked }) {
     <BadgeDropdown
       value={order.paymentStatus || "BELUM_BAYAR"}
       onChange={(v) => onChange(order, v)}
-      options={PAYMENT_STATUSES.map((s) => ({ value: s, label: PAYMENT_STATUS_LABELS[s] || s }))}
+      options={opsiStatusBayar(PAYMENT_STATUSES, order.paymentStatus, isAdminUser(currentUser())).map((s) => ({ value: s, label: PAYMENT_STATUS_LABELS[s] || s }))}
       getChipClass={(v) => PAYMENT_TONE[v]}
       disabled={locked}
       title={locked ? "Order sudah LUNAS — cuma admin/sales yang bisa ubah pembayaran" : undefined}

@@ -1619,3 +1619,33 @@ TIDAK mereproduksi logic candidate-selection job (siapa yang SEHARUSNYA
 dialert tapi belum) — itu logic besar & sering berubah, reimplementasi
 berisiko drift dari job aslinya. Keputusan ini dikonfirmasi user, bukan
 kelalaian.
+
+---
+
+## 21. GERBANG KLAIM LUNAS SALES (1 Oktober 2026)
+
+Sales **tidak lagi menandai order LUNAS** (dropdown status bayar web + aplikasi Sales). Sales **mengajukan klaim**: tanggal pembayaran, nominal,
+metode, rekening tujuan (wajib untuk Transfer), catatan, dan **minimal satu Bukti Pembayaran** (istilah "Bukti Pembayaran", bukan "Bukti Transfer" —
+bisa Transfer/QRIS/Tunai/Kartu). Kode: `backend/src/services/finance/klaimLunas.js` (+ `klaimLunasBerkas.js`), route Sales `routes/klaimLunas.js`
+(`/api/klaim-lunas`), aksi Finance di `routes/financePenerimaan.js` (`/api/finance/penerimaan/klaim-lunas`), tabel `order_payment_claims` +
+`order_payment_claim_evidence`. UI: `frontend/src/features/klaim/`, `features/finance/KlaimLunasSales.jsx`, `mobile/src/components/order/OrderKlaimLunas.js`.
+
+**Aturan yang tidak boleh dilonggarkan:**
+1. **Server yang menegakkan** — pengajuan tanpa catatan/bukti/nominal valid ditolak 422 walau UI dilewati. UI hanya membantu (tombol nonaktif).
+2. **Mengajukan klaim TIDAK mengubah** `paymentStatus`, `paidAt`, komisi, jurnal, saldo, atau piutang. Hanya baris klaim + berkas + audit (`KLAIM_LUNAS`).
+3. **Finance Verifikasi = tepat SATU Payment** (`paymentId @unique`, kunci baris klaim `FOR UPDATE`, versi optimistik) lewat `verifikasiPenerimaan`
+   (cutoff 18 Sep, rekening, nominal ≤ sisa tagihan ikut berlaku). Bukti klaim disalin menjadi bukti Payment. Status dihitung ulang dari ledger —
+   LUNAS hanya bila pembayaran terverifikasi mencapai tagihan kanonis (`tagihanOrder`).
+4. **Minta Bukti & Tolak wajib alasan** dan diaudit. Klaim lama (order berstatus LUNAS tanpa Payment) ditampilkan "Bukti belum lengkap" —
+   **jangan membuat Payment otomatis**.
+5. **`PATCH /orders/:id` dengan `paymentStatus: "LUNAS"` dari non-ADMIN → 409 `KLAIM_LUNAS_WAJIB`** (child Resi tetap dijawab `ANAK_RESI`).
+   ADMIN/Owner tetap boleh. Menurunkan status (DP/BELUM_BAYAR) tidak terkena.
+6. **Upload:** tipe dari ISI berkas (magic bytes: JPG/PNG/WEBP/PDF), maks 8 MB, nama di disk acak buatan server, nama klien hanya label yang
+   dibersihkan, tidak pernah statis — `/media/klaim-lunas/:file` butuh Bearer (pemilik/Finance/Admin) atau URL bertanda-tangan 15 menit
+   (label kunci `klaim-lunas-v1`, terpisah dari media lain). Satu berkas fisik ↔ satu klaim; isi identik di klaim lain → peringatan untuk Finance.
+
+**Yang belum tercakup (jujur):** (a) `POST /orders/:id/payments` (Sales mencatat pembayaran langsung) tetap ada — bila gerbang verifikasi Finance
+MATI, pembayaran itu ikut menghitung status; (b) klaim Lunas level Resi (`klaimLunasResi`) punya jalurnya sendiri & belum diubah ke model berbukti;
+(c) aplikasi Sales versi lama masih menampilkan chip "Lunas" — server menolaknya 409 dengan pesan arahan; (d) migrasi ini **CREATE TABLE/TYPE**, bukan
+`ADD COLUMN` saja, jadi mode `NEW_MIGRATION` di `scripts/release-finance-hotfix-verifikasi.sh` (hanya `ADD COLUMN`) akan MENOLAKNYA — skrip rilis
+harus disesuaikan dulu sebelum deploy.

@@ -301,6 +301,12 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
       }
       // Resi Gabungan (pembayaran Resi AKTIF): status bayar child Resi BARU hanya lewat klaim Lunas Resi + verifikasi Finance.
       if (paymentStatus !== undefined && paymentStatus !== sebelum.paymentStatus) await pastikanBukanAnakResiAktif(tx, req.params.id);
+      // GERBANG KLAIM LUNAS (1 Okt 2026, keputusan Owner; DI BAWAH penjaga child Resi supaya child Resi tetap dijawab ANAK_RESI): menandai order LUNAS tanpa catatan/bukti pembayaran ditutup untuk selain ADMIN. Sales
+      // mengajukan Klaim Lunas (tanggal, nominal, metode, catatan, minimal satu Bukti Pembayaran) di /api/klaim-lunas; status LUNAS baru muncul setelah
+      // Finance memverifikasi dan ledger mencapai tagihan. Menurunkan status (mis. ke DP) atau mengirim ulang nilai yang sama tidak terkena.
+      if (paymentStatus === "LUNAS" && sebelum.paymentStatus !== "LUNAS" && !rolesOf(req.user).includes("ADMIN")) {
+        throw Object.assign(new Error("Status Lunas tidak bisa diisi langsung. Gunakan \"Ajukan Klaim Lunas\" dengan bukti pembayaran — status berubah setelah Finance memverifikasi."), { statusCode: 409, code: "KLAIM_LUNAS_WAJIB" });
+      }
       // Ongkir Tambahan Resi BARU hanya boleh di order anchor (dihitung TEPAT sekali per Resi — services/finance/tagihanOrder.js).
       if (ongkir !== undefined && ongkir !== "" && ongkir !== null && Number(ongkir) !== 0 && resiBaru(sebelum) && sebelum.group?.anchorOrderId !== req.params.id) {
         throw Object.assign(new Error("Ongkir Tambahan Resi hanya boleh diisi di order pertama (anchor) Resi ini, supaya tidak tertagih dua kali."), { statusCode: 409 });

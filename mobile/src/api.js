@@ -443,7 +443,18 @@ export const api = {
       method: "POST", body: JSON.stringify({ orderId, entries }),
     }),
   // Rekening tujuan yang bisa dipilih saat mencatat pembayaran (Finance > Rekening Kas & Bank).
-  getPaymentAccounts: () => request("/orders/payment-accounts"),
+  // method opsional (Tunai → hanya rekening Sano KEM); tanpa method = perilaku lama (Bank/E-wallet).
+  getPaymentAccounts: (method) => request("/orders/payment-accounts" + (method ? `?method=${encodeURIComponent(method)}` : "")),
+  // ── Klaim Lunas Sales (1 Okt 2026): Sales MENGAJUKAN klaim berbukti; status Lunas baru muncul setelah Finance memverifikasi ──
+  getKlaimLunasOrder: (orderId) => request(`/klaim-lunas/order/${orderId}`),
+  buatDraftKlaimLunas: (orderId, data = {}) => request(`/klaim-lunas/order/${orderId}`, { method: "POST", body: JSON.stringify(data) }),
+  ubahKlaimLunas: (id, data) => request(`/klaim-lunas/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Bukti Pembayaran — multipart field "berkas"; balikan { bukti } HANYA setelah server menyimpan berkasnya.
+  unggahBuktiKlaimLunas: (id, file) => uploadFile(`/klaim-lunas/${id}/bukti`, file, {}, "berkas"),
+  hapusBuktiKlaimLunas: (id, evidenceId) => request(`/klaim-lunas/${id}/bukti/${evidenceId}`, { method: "DELETE" }),
+  ajukanKlaimLunas: (id, idempotencyKey) =>
+    request(`/klaim-lunas/${id}/ajukan`, { method: "POST", headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}, body: JSON.stringify({}) }),
+  tarikKlaimLunas: (id) => request(`/klaim-lunas/${id}/tarik`, { method: "POST", body: JSON.stringify({}) }),
   // Foto bukti bayar — multipart field "photo", balikan { url } dipakai sbg proofPhotoUrl.
   uploadPaymentProof: (orderId, file) => uploadFile(`/orders/${orderId}/payments/proof`, file, {}, "photo"),
   // Invoice & garansi & komplain (19 Sep 2026) — endpoint SAMA dengan web.

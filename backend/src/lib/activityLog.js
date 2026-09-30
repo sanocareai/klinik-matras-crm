@@ -134,6 +134,9 @@ export const EVENT_TYPES = Object.freeze({
   DOCUMENT_REJECTED: "DOCUMENT_REJECTED",
   // Finance meminta bukti pembayaran atas order yang ditandai Lunas oleh Sales (Perlu Verifikasi Finance). Tidak mengubah status/keuangan apa pun.
   BUKTI_DIMINTA: "BUKTI_DIMINTA",
+  // Klaim Lunas Sales (1 Okt 2026): satu event generik per titik keputusan klaim; jenisnya ada di metadata.aksi
+  // (draft_dibuat | diajukan | diajukan_ulang | bukti_ditambah | bukti_dihapus | bukti_diminta | ditolak | diverifikasi | ditarik | ubah_pemilik).
+  KLAIM_LUNAS: "KLAIM_LUNAS",
   // Custody unit Gudang V2 (P1–P2): serah-terima Delivery <-> Gudang. Detail (unit, arah, lokasi, alasan) ada di metadata.
   CUSTODY_OFFERED: "CUSTODY_OFFERED",
   CUSTODY_ACCEPTED: "CUSTODY_ACCEPTED",
@@ -402,6 +405,22 @@ export function formatActivitySentence(event) {
       return `Kekurangan bahan unit ${metadata.unitCode || "—"} diselesaikan Gudang${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_CANCELLED:
       return `Pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.KLAIM_LUNAS: {
+      const rp = `Rp${Number(metadata.amount ?? 0).toLocaleString("id-ID")}`;
+      const alasan = metadata.alasan ? ` — ${metadata.alasan}` : "";
+      switch (metadata.aksi) {
+        case "draft_dibuat": return "Draft Klaim Lunas dibuat";
+        case "diajukan": return `Klaim Lunas ${rp} diajukan, menunggu verifikasi Finance (${metadata.jumlahBukti ?? 0} bukti)`;
+        case "diajukan_ulang": return `Klaim Lunas ${rp} diajukan ulang, menunggu verifikasi Finance (${metadata.jumlahBukti ?? 0} bukti)`;
+        case "bukti_ditambah": return "Bukti Pembayaran ditambahkan ke klaim";
+        case "bukti_dihapus": return "Bukti Pembayaran dihapus dari draft klaim";
+        case "bukti_diminta": return `Finance meminta bukti tambahan untuk Klaim Lunas${alasan}`;
+        case "ditolak": return `Klaim Lunas ditolak Finance${alasan}`;
+        case "diverifikasi": return `Klaim Lunas diverifikasi Finance — Payment ${rp} dibuat, status bayar: ${metadata.statusBayar || "—"}`;
+        case "ditarik": return "Klaim Lunas ditarik oleh Sales";
+        default: return "Klaim Lunas";
+      }
+    }
     case EVENT_TYPES.BUKTI_DIMINTA:
       return metadata.catatan ? `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"} — ${metadata.catatan}` : `Finance meminta bukti pembayaran order ${metadata.orderNumber || "—"}`;
     case EVENT_TYPES.DOCUMENT_CANCELLED:

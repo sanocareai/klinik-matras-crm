@@ -17,6 +17,7 @@ import { customerRouter }   from "./routes/customers.js";
 import { b2bRouter }        from "./routes/b2b.js";
 import { analyticsRouter }  from "./routes/analytics.js";
 import { salesFinanceRouter } from "./routes/salesFinance.js";
+import { klaimLunasRouter, klaimLunasFilePathRouter } from "./routes/klaimLunas.js";
 import { qualityScorerRouter } from "./routes/qualityScorer.js";
 import { salesRiskRouter } from "./routes/salesRisk.js";
 import { salesPerformanceRouter } from "./routes/salesPerformance.js";
@@ -189,6 +190,7 @@ app.use("/media/vehicle-receipts", express.static(vehicleReceiptsDir));
 // (routes/financeMedia.js). Path tetap sama supaya receiptUrl lama tetap valid.
 app.use("/media/finance-receipts", financeReceiptsLegacyPathRouter);
 app.use("/media/bukti-pembayaran", financePaymentProofsPathRouter);
+app.use("/media/klaim-lunas", klaimLunasFilePathRouter); // Bukti Pembayaran klaim Sales: TIDAK statis — Bearer pemilik/Finance atau URL bertanda-tangan
 app.use("/media/production-evidence", productionEvidencePathRouter); // bukti tahap produksi V2: Bearer+reader cohort atau URL bertanda-tangan // bukti pembayaran: Bearer atau URL bertanda-tangan (S5)
 app.use("/media/unit-photo", productionUnitPhotoPathRouter); // P9B.1 foto identitas unit: Bearer+reader cohort atau URL bertanda-tangan (pola sama dengan production-evidence)
 app.use("/media/products", express.static(productsDir));
@@ -204,6 +206,7 @@ app.use("/api/customers",    customerRouter);
 app.use("/api/b2b",          b2bRouter);
 app.use("/api/analytics",    analyticsRouter);
 app.use("/api/sales-finance", salesFinanceRouter);
+app.use("/api/klaim-lunas",  klaimLunasRouter);
 app.use("/api/quality-scorer", qualityScorerRouter);
 app.use("/api/sales-risk", salesRiskRouter);
 app.use("/api/sales-intelligence", salesPerformanceRouter);

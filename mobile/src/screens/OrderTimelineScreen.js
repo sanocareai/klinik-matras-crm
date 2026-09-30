@@ -29,6 +29,7 @@ import MediaViewerModal from "../components/MediaViewerModal";
 import OrderInvoiceTab from "../components/order/OrderInvoiceTab";
 import OrderWarrantyTab from "../components/order/OrderWarrantyTab";
 import OrderComplaintTab from "../components/order/OrderComplaintTab";
+import OrderKlaimLunas from "../components/order/OrderKlaimLunas";
 import { useTokens } from "../constants/theme";
 import {
   METHODS, METHOD_LABEL, METHOD_USES_ACCOUNT, normalizeAccounts, initialDraft, draftReducer, selectedAccountId, buildPaymentPayload,
@@ -677,6 +678,9 @@ function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, token
           {p.verifications?.length > 0 && <CheckCircle2 size={16} color={tokens.color.success} />}
         </View>
       ))}
+
+      {/* Klaim Lunas (1 Okt 2026): Sales mengajukan klaim berbukti — bukan menandai Lunas sendiri. Status berubah setelah Finance memverifikasi. */}
+      <OrderKlaimLunas order={order} onChanged={load} />
 
       {!draft.open ? (
         <TouchableOpacity style={styles.recordBtn} onPress={() => dispatch({ type: "open" })}>
