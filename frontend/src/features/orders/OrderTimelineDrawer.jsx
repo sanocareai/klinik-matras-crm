@@ -455,7 +455,23 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
     if (order.groupId) api.getResiPembayaranOrder(order.id).then((r) => setResi(r?.aktif && r.layak && r.untukOrder ? r : null)).catch(() => setResi(null));
   }
   useEffect(() => { setPayments(null); setResi(null); load(); }, [order.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { api.getPaymentAccounts().then(setAccounts).catch(() => {}); }, []);
+  // Rekening tujuan bergantung metode (30 Sep 2026): Tunai → hanya rekening Sano KEM; metode lain → Bank/E-wallet.
+  // Selalu ada pilihan rekening & wajib dipilih supaya pembayaran langsung terbukukan ke rekening yang benar di Finance
+  // (tanpa rekening, jurnal jatuh ke "rekening belum dipetakan" dan harus dibereskan manual oleh Finance).
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
+  useEffect(() => {
+    let batal = false;
+    setAccounts([]); setCashAccountId(""); setAccountsLoaded(false);
+    api.getPaymentAccounts(method)
+      .then((list) => {
+        if (batal) return;
+        setAccounts(list);
+        if (list.length === 1) setCashAccountId(list[0].id); // satu-satunya pilihan (mis. Tunai → Sano KEM) langsung terpilih
+      })
+      .catch(() => {})
+      .finally(() => { if (!batal) setAccountsLoaded(true); });
+    return () => { batal = true; };
+  }, [method]);
 
   async function handlePhoto(e) {
     const file = e.target.files?.[0];
@@ -477,11 +493,12 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
   async function handleSave() {
     const amountInt = parseInt(amount, 10);
     if (!amountInt || amountInt <= 0) { setFormErr("Jumlah wajib diisi"); return; }
+    if (accounts.length > 0 && !cashAccountId) { setFormErr("Pilih rekening tujuan pembayaran"); return; }
     setBusy(true);
     setFormErr("");
     try {
       await api.recordOrderPayment(order.id, { amount: amountInt, method, proofPhotoUrl: photo, cashAccountId: cashAccountId || undefined });
-      setForm(false); setAmount(""); setMethod("TRANSFER"); setCashAccountId(""); setPhoto(null);
+      setForm(false); setAmount(""); setMethod("TRANSFER"); setPhoto(null);
       load();
       onRecorded?.();
     } catch (e2) {
@@ -694,14 +711,20 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
               </button>
             ))}
           </div>
-          {accounts.length > 0 && (
-            <select
-              value={cashAccountId} onChange={(e) => setCashAccountId(e.target.value)}
-              className="h-10 rounded-lg border border-line bg-white px-3 text-[13px] outline-none focus:border-accent"
-            >
-              <option value="">Dibayar ke rekening… (opsional)</option>
-              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+          <select
+            value={cashAccountId} onChange={(e) => setCashAccountId(e.target.value)}
+            disabled={!accountsLoaded}
+            aria-label="Rekening tujuan pembayaran"
+            className="h-10 rounded-lg border border-line bg-white px-3 text-[13px] outline-none focus:border-accent"
+          >
+            <option value="">{accountsLoaded ? "Dibayar ke rekening…" : "Memuat rekening…"}</option>
+            {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          {accountsLoaded && accounts.length === 0 && (
+            <p className="text-[11px] text-red">Belum ada rekening untuk metode ini — pembayaran akan mengikuti pemetaan default Finance.</p>
+          )}
+          {method === "CASH" && accounts.length > 0 && (
+            <p className="text-[11px] text-ink3">Pembayaran tunai dicatat ke rekening Sano KEM dan otomatis masuk ke Finance.</p>
           )}
           <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line text-[12px] font-medium text-ink2">
             {uploadingPhoto ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}

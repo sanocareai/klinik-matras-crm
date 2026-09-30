@@ -1059,7 +1059,7 @@ export const api = {
   // recordJobPayment yang terikat ke job pickup/delivery driver.
   uploadPaymentProof: (orderId, formData) => requestFormData(`/orders/${orderId}/payments/proof`, formData),
   // Rekening tujuan yang bisa dipilih saat mencatat pembayaran (Finance > Rekening Kas & Bank).
-  getPaymentAccounts: () => request("/orders/payment-accounts"),
+  getPaymentAccounts: (method) => request("/orders/payment-accounts" + (method ? `?method=${encodeURIComponent(method)}` : "")),
   recordOrderPayment: (orderId, data) =>
     request(`/orders/${orderId}/payments`, { method: "POST", body: JSON.stringify(data) }),
   getOrderPayments: (orderId) => api.getPayments({ orderId }),
