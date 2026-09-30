@@ -21,7 +21,9 @@ import { STAGE_LABELS, ORDER_STATUS_LABELS, SOURCE_LABELS } from "./format.js";
 // dibutuhkan, jalurnya ganti library (mis. exceljs), bukan menambah properti
 // yang diabaikan. Hirarki visual di sini dibangun dari struktur (baris judul,
 // baris kosong, urutan) — bukan dari font.
-const FMT = {
+// FMT/num/rp/pct/SheetBuilder/judul di-EXPORT (30 September 2026) supaya export Excel lain (mis.
+// utils/exportArmadaLaporan.js) memakai pola angka-asli yang sama, bukan menduplikasi/mengarang ulang.
+export const FMT = {
   rp:    '"Rp"#,##0',
   int:   "#,##0",
   pct:   '0.0"%"',
@@ -31,13 +33,13 @@ const FMT = {
 
 // Angka yang boleh kosong. `null` ditulis sebagai "—" (teks) supaya beda jelas
 // dari 0 — "belum ada datanya" dan "nol" adalah dua hal berbeda di laporan.
-function num(v, z = FMT.int) {
+export function num(v, z = FMT.int) {
   return v == null || Number.isNaN(v) ? "—" : { v: Number(v), z };
 }
-const rp  = (v) => num(v, FMT.rp);
-const pct = (v) => num(v, FMT.pct);
+export const rp  = (v) => num(v, FMT.rp);
+export const pct = (v) => num(v, FMT.pct);
 
-class SheetBuilder {
+export class SheetBuilder {
   constructor() { this.aoa = []; this.fmts = []; }
 
   // cells: nilai biasa, atau { v, z } untuk nilai + number format.
@@ -68,7 +70,7 @@ class SheetBuilder {
   }
 }
 
-function judul(sb, teks, periode) {
+export function judul(sb, teks, periode) {
   sb.row([teks]);
   sb.row([`Periode: ${periode}`]);
   sb.row([`Dibuat: ${new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB`]);
