@@ -195,3 +195,25 @@ test("Kartu Total Kasbon: total diberikan sepanjang waktu (tanpa dibatalkan), su
   assert.equal(String(d.total.sisa) + ".00", await saldo("1-1350"), "sama dengan saldo Piutang Karyawan");
   void a;
 });
+
+test("Periode kasbon: from/to menyaring daftar DAN ringkasan filter (bukan kartu Total sepanjang waktu); kasbon dibatalkan tidak dijumlahkan", async () => {
+  const { rekening } = await siapkan();
+  const { token } = await createTestUser({ roles: ["ADMIN"] });
+  const c = makeClient(server.baseUrl, token);
+  await c.post("/api/finance/kasbon", baru(rekening, { date: "2026-08-10", amount: 300_000, employeeName: "rifki" }));
+  await c.post("/api/finance/kasbon", baru(rekening, { date: "2026-09-10", amount: 400_000, employeeName: "imam" }));
+  const dibatal = (await c.post("/api/finance/kasbon", baru(rekening, { date: "2026-09-12", amount: 900_000, employeeName: "fathul" }))).body;
+  assert.equal((await c.post(`/api/finance/kasbon/${dibatal.id}/batal`, { reason: "salah input" })).status, 200);
+
+  const sepAktif = (await c.get("/api/finance/kasbon?from=2026-09-01&to=2026-09-30&status=AKTIF")).body;
+  assert.equal(sepAktif.kasbon.length, 1, "tab Aktif: hanya kasbon aktif bertanggal September");
+  const sep = (await c.get("/api/finance/kasbon?from=2026-09-01&to=2026-09-30")).body;
+  assert.equal(sep.kasbon.length, 2, "tab Semua menampilkan juga yang dibatalkan (tetap terlihat di daftar)");
+  const sepSemua = (await c.get("/api/finance/kasbon?from=2026-09-01&to=2026-09-30")).body;
+  assert.deepEqual(sepSemua.dalamFilter, { jumlah: 1, nominal: 400_000 }, "ringkasan periode: tanpa yang dibatalkan");
+  assert.equal(sepSemua.total.diberikan, 700_000, "kartu Total tetap sepanjang waktu");
+  const agu = (await c.get("/api/finance/kasbon?from=2026-08-01&to=2026-08-31")).body;
+  assert.deepEqual(agu.dalamFilter, { jumlah: 1, nominal: 300_000 });
+  const batal = (await c.get("/api/finance/kasbon?from=2026-09-01&to=2026-09-30&status=DIBATALKAN")).body;
+  assert.deepEqual(batal.dalamFilter, { jumlah: 1, nominal: 900_000 }, "filter status Dibatalkan menghitung yang dibatalkan");
+});

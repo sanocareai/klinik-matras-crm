@@ -17,7 +17,7 @@ import { LinkBukti } from "@/features/finance/receiptMedia.jsx";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, PeriodePicker, tanggalPendek, PemilihBukti,
+  StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek, PemilihBukti,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
@@ -71,6 +71,7 @@ export default function FinanceKasbon() {
   const [status, setStatus] = useState("AKTIF");
   const [q, setQ] = useState("");
   const [fKaryawan, setFKaryawan] = useState("");
+  const [periode, setPeriode] = useState(periodeDefault); // sama dengan tab Pengeluaran/Pembelian: bulan berjalan (WIB) sebagai bawaan
   const qTunda = useTertunda(q);
   const pernahMuat = useRef(false);
 
@@ -93,7 +94,7 @@ export default function FinanceKasbon() {
     setError(null);
     try {
       const [d, r] = await Promise.all([
-        api.getFinanceKasbon({ status, q: qTunda.trim(), karyawan: fKaryawan }),
+        api.getFinanceKasbon({ ...periode, status, q: qTunda.trim(), karyawan: fKaryawan }),
         api.getFinanceCashAccounts().catch(() => ({ accounts: [] })),
       ]);
       setData(d);
@@ -104,7 +105,7 @@ export default function FinanceKasbon() {
     } finally {
       if (!diam) setLoading(false);
     }
-  }, [status, qTunda, fKaryawan]);
+  }, [periode, status, qTunda, fKaryawan]);
 
   useEffect(() => {
     muat({ diam: pernahMuat.current });
@@ -136,9 +137,11 @@ export default function FinanceKasbon() {
       onRetry={muat}
       actions={(
         <>
+          <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
           <TombolExportExcel
             modul="kasbon"
             ambilBody={() => ({
+              periode: { from: periode.from, to: periode.to },
               filter: { status, q: qTunda.trim(), karyawan: fKaryawan },
               filterLabel: labelFilterAktif([["Status", STATUS_TAB.find((t) => t.key === status)?.label], ["Karyawan", fKaryawan], ["Pencarian", qTunda.trim()]]),
             })}
@@ -226,7 +229,7 @@ export default function FinanceKasbon() {
         filters={[
           { key: "kar", label: "Karyawan", value: fKaryawan, onChange: setFKaryawan, options: perKaryawan.map((p) => [p.nama, p.nama]) },
         ]}
-        ringkasan={`${kasbon.length} kasbon${data?.terpotong ? " · baru 500 teratas tampil — persempit pencarian" : ""}`}
+        ringkasan={`${kasbon.length} kasbon${data?.terpotong ? ` dari ${data?.dalamFilter?.jumlah} · baru 500 teratas tampil — persempit pencarian atau periode` : ""}${data?.dalamFilter ? ` · diberikan ${formatUang(data.dalamFilter.nominal)} pada periode ini` : ""} · kartu di atas mencakup semua kasbon`}
         onReset={() => { setQ(""); setFKaryawan(""); }}
       />
 
