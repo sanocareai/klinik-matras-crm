@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { CalendarClock, PackageCheck, RefreshCw, Search, Undo2, XCircle } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -11,6 +12,7 @@ import { formatTanggal } from "@/utils/formatDate.js";
 import { PRIORITIES, friendlyError, priorityTone, wibDate } from "@/features/production/experience.js";
 import { bomLineAvailability, validateBOMLines } from "@/features/production/planning.js";
 import { UnitPhotoThumb, UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
+import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import { rolesOf } from "@/lib/roles.js";
 
 // P9B.1 — Rencana Produksi (workspace BARU, terpisah dari "Status Produksi" P9B): tempat SUNGGUHAN mengalokasikan
@@ -35,7 +37,7 @@ function RencanaCard({ group, item, onOpen }) {
   const isEligible = group === "BELUM_DIRENCANAKAN";
   const unit = item.unit;
   return (
-    <button type="button" onClick={() => onOpen(item, group)} className="w-full rounded-card bg-surface p-3 text-left shadow-sm hover:bg-hovertint">
+    <button type="button" onClick={() => onOpen(unit.id)} className="w-full rounded-card bg-surface p-3 text-left shadow-sm hover:bg-hovertint">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 gap-2">
           <UnitPhotoThumb photoUrl={unit.photoUrl} />
@@ -266,6 +268,19 @@ export default function ProductionRencanaWorkspace() {
   const [detail, setDetail] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
 
+  // P9C — Unit 360 sekarang aksi UTAMA klik kartu; "Detail Rencana" (jadwal/BOM/reservasi) TETAP ADA sebagai
+  // jalan pintas "Kelola Rencana" DARI DALAM Unit 360 — semua aksi tulis lama tetap sama persis.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [overviewUnitId, setOverviewUnitId] = useState(() => searchParams.get("unit") || null);
+  const openOverview = useCallback((unitId) => {
+    setOverviewUnitId(unitId);
+    setSearchParams((prev) => { const next = new URLSearchParams(prev); next.set("unit", unitId); return next; }, { replace: false });
+  }, [setSearchParams]);
+  const closeOverview = useCallback(() => {
+    setOverviewUnitId(null);
+    setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete("unit"); return next; }, { replace: true });
+  }, [setSearchParams]);
+
   const load = useCallback(() => {
     setLoading(true); setError("");
     return Promise.all([
@@ -303,6 +318,12 @@ export default function ProductionRencanaWorkspace() {
     if (group === "BELUM_DIRENCANAKAN") setDetail({ runId: item.runId, unit: item.unit, customer: null, plan: null });
     else setDetail({ runId: item.runId, unit: item.unit, customer: item.customer, plan: item });
   };
+  function openManageFor(unitId) {
+    for (const [group, items] of Object.entries(groupItems)) {
+      const item = items.find((i) => i.unit.id === unitId);
+      if (item) { closeOverview(); openDetail(item, group); return; }
+    }
+  }
 
   function dropOn(group, runId) {
     setDropTarget(null);
@@ -353,16 +374,19 @@ export default function ProductionRencanaWorkspace() {
                   const items = groupItems[g.key];
                   const isDrop = g.key === "DIRENCANAKAN";
                   return (
+                    // min-w-0: <section> grid item langsung — tanpa ini, min-width:auto bawaan grid item
+                    // membuatnya tidak pernah menyusut di bawah lebar konten terlebarnya di mobile (P9C,
+                    // "grid blowout" klasik — lihat catatan sama di ProductionPlannerV2.jsx).
                     <section key={g.key} aria-label={g.label}
                       onDragOver={isDrop ? (e) => { e.preventDefault(); setDropTarget(g.key); } : undefined}
                       onDragLeave={isDrop ? () => setDropTarget(null) : undefined}
                       onDrop={isDrop ? (e) => { e.preventDefault(); dropOn(g.key, e.dataTransfer.getData("text/plain")); } : undefined}
-                      className={`flex flex-col gap-2 rounded-card bg-inset p-3 transition-colors ${dropTarget === g.key ? "ring-2 ring-accent" : ""}`}>
+                      className={`flex min-w-0 flex-col gap-2 rounded-card bg-inset p-3 transition-colors ${dropTarget === g.key ? "ring-2 ring-accent" : ""}`}>
                       <div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${g.dot}`} aria-hidden /><p className="text-[13.5px] font-bold text-ink">{g.label}</p><span className="ml-auto text-[12px] font-semibold tabular-nums text-ink3">{items.length}</span></div>
                       {items.length === 0 ? <p className="rounded-card border-2 border-dashed border-line p-4 text-center text-[11.5px] text-ink3">Tidak ada unit</p>
                         : items.map((item) => (
                           <div key={item.runId} draggable onDragStart={(e) => { e.dataTransfer.setData("text/plain", item.runId); e.dataTransfer.effectAllowed = "move"; }}>
-                            <RencanaCard group={g.key} item={item} onOpen={openDetail} />
+                            <RencanaCard group={g.key} item={item} onOpen={openOverview} />
                           </div>
                         ))}
                     </section>
@@ -399,7 +423,7 @@ export default function ProductionRencanaWorkspace() {
                   <thead className="bg-inset text-ink3"><tr>{["Kelompok", "Unit", "Pelanggan", "Target", "Workshop", "PIC", "Status"].map((h) => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
                   <tbody>
                     {GROUPS.flatMap((g) => groupItems[g.key].map((item) => (
-                      <tr key={`${g.key}-${item.runId}`} className="cursor-pointer border-t border-line hover:bg-hovertint" onClick={() => openDetail(item, g.key)}>
+                      <tr key={`${g.key}-${item.runId}`} className="cursor-pointer border-t border-line hover:bg-hovertint" onClick={() => openOverview(item.unit.id)}>
                         <td className="px-3 py-2"><Badge variant="neutral">{g.label}</Badge></td>
                         <td className="px-3 py-2 font-semibold text-ink">{item.unit.unitCode}</td>
                         <td className="px-3 py-2">{item.customer?.name || "Belum dicatat"}</td>
@@ -417,6 +441,10 @@ export default function ProductionRencanaWorkspace() {
         )}
       </PageBody>
       {detail && <DetailRencana target={detail} refs={refs} materials={refs.materials} stockByMaterial={stockByMaterial} onClose={() => setDetail(null)} onChanged={load} />}
+      {overviewUnitId && (
+        <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} manageLabel="Kelola Rencana"
+          onManage={() => openManageFor(overviewUnitId)} />
+      )}
     </PageContainer>
   );
 }

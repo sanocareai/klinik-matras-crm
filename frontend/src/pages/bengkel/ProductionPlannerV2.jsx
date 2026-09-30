@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, FileText, Monitor, PackageX, RefreshCw, Target, Timer, Truck,
 } from "lucide-react";
@@ -19,6 +19,7 @@ import {
   targetDateBadge, wibDate,
 } from "@/features/production/experience.js";
 import { UnitPhotoThumb, UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
+import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 
 // Status Produksi (P8A "Rencana Produksi" -> P9B.1 ganti nama tampilan) — Papan Meja/Daftar/Kalender dalam satu
 // workspace, MURNI status pipeline (Akan Masuk..Siap Kirim). URL TETAP /bengkel/production-v2 (kompatibilitas
@@ -120,9 +121,9 @@ function RunCard({ item, onOpen, onConfirmArrival, draggable = true, today, tomo
 
 // P9B — kartu "Akan Masuk": pickup terjadwal tetapi belum selesai. BACA-SAJA (belum ada Run sama sekali) — tidak ada
 // aksi apa pun di sini, murni visibilitas supaya Rencana Produksi tidak buta terhadap unit yang akan datang.
-function UpcomingPickupCard({ item }) {
+function UpcomingPickupCard({ item, onOpen }) {
   return (
-    <div className="flex w-full gap-2 rounded-card bg-surface p-3 shadow-sm">
+    <button type="button" onClick={() => onOpen(item.unit.id)} className="flex w-full gap-2 rounded-card bg-surface p-3 text-left shadow-sm hover:bg-hovertint">
       <UnitPhotoThumb photoUrl={item.unit.photoUrl} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}{item.unit.orderNumber ? ` · ${item.unit.orderNumber}` : ""}</p>
@@ -134,7 +135,7 @@ function UpcomingPickupCard({ item }) {
           {item.driverName && <span className="text-[11px] text-ink3">· {item.driverName}</span>}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -385,6 +386,21 @@ export default function ProductionPlannerV2() {
   const today = wibDate(0);
   const tomorrow = wibDate(1);
 
+  // P9C — Unit 360 sekarang aksi UTAMA klik kartu (setara "detail Resi"); drawer jadwal/layanan lama (RunDrawer)
+  // TETAP ADA sebagai jalan pintas "Kelola" DARI DALAM Unit 360 (bukan dihapus — semua aksi tulis lama tetap
+  // sama persis, cuma satu klik lebih dalam). Deep-link via ?unit=<id>, dibuang dari URL saat drawer ditutup
+  // supaya "kembali ke tab asal" bersih (pola sama dengan Orders.jsx).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [overviewUnitId, setOverviewUnitId] = useState(() => searchParams.get("unit") || null);
+  const openOverview = useCallback((unitId) => {
+    setOverviewUnitId(unitId);
+    setSearchParams((prev) => { const next = new URLSearchParams(prev); next.set("unit", unitId); return next; }, { replace: false });
+  }, [setSearchParams]);
+  const closeOverview = useCallback(() => {
+    setOverviewUnitId(null);
+    setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete("unit"); return next; }, { replace: true });
+  }, [setSearchParams]);
+
   // P9B — cc (Command Center, TIDAK terikat tanggal) SEKARANG sumber tunggal untuk tab Papan Meja/Daftar & KPI ringkas
   // di halaman ini — SAMA payload dipakai Ringkasan Produksi (CommandCenterSummary.jsx), jadi angka tidak pernah beda.
   // `board` (per-tanggal) DIPERTAHANKAN hanya untuk 2 hal yang MEMANG per-tanggal: kapasitas meja di ScheduleModal, dan
@@ -492,7 +508,13 @@ export default function ProductionPlannerV2() {
               // pada kartu/drawer, bukan drop target kolom.
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {columns.map((col) => (
-                  <section key={col.key} aria-label={col.label} className="flex flex-col gap-2 rounded-card bg-inset p-3">
+                  // min-w-0 WAJIB di <section> (bukan cuma di flex/teks di dalamnya): ia GRID ITEM langsung —
+                  // default CSS Grid, grid item punya min-width:auto (content-based), jadi TIDAK pernah
+                  // menyusut di bawah lebar konten terlebarnya (mis. badge "Dalam perjalanan ke workshop" yang
+                  // whitespace-nowrap) walau parent grid-nya sendiri sudah 1 kolom di mobile — "grid blowout"
+                  // klasik. Ditemukan lewat pengukuran overflow eksplisit (scrollWidth vs clientWidth) 390px,
+                  // P9C: .page-body 939px vs viewport 390px, 26-28 tombol keluar viewport.
+                  <section key={col.key} aria-label={col.label} className="flex min-w-0 flex-col gap-2 rounded-card bg-inset p-3">
                     <div className="flex items-center justify-between">
                       <p className="text-[14px] font-bold text-ink">{col.label}</p>
                       <span className="text-[12px] font-semibold tabular-nums text-ink3">{col.count}</span>
@@ -500,23 +522,23 @@ export default function ProductionPlannerV2() {
                     {col.items.length === 0 ? (
                       <p className="flex min-h-[64px] items-center justify-center rounded-card border-2 border-dashed border-line text-center text-[11.5px] text-ink3">Tidak ada unit</p>
                     ) : col.items.map((item) => (
-                      item.kind === "UPCOMING_PICKUP" ? <UpcomingPickupCard key={`${item.jobId}-${item.unit.id}`} item={item} />
+                      item.kind === "UPCOMING_PICKUP" ? <UpcomingPickupCard key={`${item.jobId}-${item.unit.id}`} item={item} onOpen={openOverview} />
                       : item.kind === "AWAITING_ARRIVAL_LEGACY" ? (
                         <div key={item.handoffId} className="overflow-hidden rounded-card bg-surface shadow-sm">
-                          <div className="flex gap-2 p-3">
+                          <button type="button" onClick={() => openOverview(item.unit.id)} className="flex w-full gap-2 p-3 text-left hover:bg-hovertint">
                             <UnitPhotoThumb photoUrl={item.unit.photoUrl} />
                             <div className="min-w-0 flex-1">
                               <p className="text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
                               <p className="text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"} · data lama</p>
                               <Badge variant="neutral" className="mt-1.5">Dalam perjalanan ke workshop</Badge>
                             </div>
-                          </div>
+                          </button>
                           <div className="border-t border-line px-3 py-2">
                             <Button size="sm" variant="secondary" className="w-full" onClick={() => setArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
                           </div>
                         </div>
                       ) : (
-                        <RunCard key={item.runId} item={item} onOpen={setDrawer} onConfirmArrival={setArrival} draggable={false} today={today} tomorrow={tomorrow} />
+                        <RunCard key={item.runId} item={item} onOpen={(i) => openOverview(i.unit.id)} onConfirmArrival={setArrival} draggable={false} today={today} tomorrow={tomorrow} />
                       )
                     ))}
                   </section>
@@ -528,7 +550,7 @@ export default function ProductionPlannerV2() {
                   <thead className="bg-inset text-ink3"><tr>{["Unit", "Customer", "Meja", "PIC", "Status", "Tahap", "Bahan", "Waktu"].map((h) => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
                   <tbody>
                     {allItems.map((i) => (
-                      <tr key={i.runId} className="cursor-pointer border-t border-line hover:bg-hovertint" onClick={() => setDrawer(i)}>
+                      <tr key={i.runId} className="cursor-pointer border-t border-line hover:bg-hovertint" onClick={() => openOverview(i.unit.id)}>
                         <td className="px-3 py-2 font-semibold text-ink">{i.unit.unitCode}</td><td className="px-3 py-2">{i.customer.name}</td>
                         <td className="px-3 py-2">{i.plan?.stationLabel}</td><td className="px-3 py-2">{i.plan?.operator?.name || "—"}</td>
                         <td className="px-3 py-2"><Badge variant={bucketStyle(i.bucket).badge}>{bucketStyle(i.bucket).label}</Badge></td>
@@ -568,6 +590,10 @@ export default function ProductionPlannerV2() {
       </PageBody>
 
       {drawer && <RunDrawer item={drawer} refs={refs} onClose={() => setDrawer(null)} onSchedule={(i) => { setDrawer(null); setSchedule(i); }} onConfirmArrival={(i) => { setDrawer(null); setArrival(i); }} onChanged={(msg) => { setDrawer(null); setNotice(msg); load(); }} />}
+      {overviewUnitId && (
+        <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} manageLabel="Kelola Jadwal / Layanan"
+          onManage={() => { const item = allItems.find((i) => i.unit.id === overviewUnitId); closeOverview(); if (item) setDrawer(item); }} />
+      )}
       {arrival && <ArrivalModal target={arrival} onClose={() => setArrival(null)} onDone={(msg) => { setArrival(null); setNotice(msg); load(); }} />}
       {schedule && board && (
         <ScheduleModal target={schedule} board={board} date={date} refs={refs} onClose={() => setSchedule(null)} onDone={(msg) => { setSchedule(null); setNotice(msg); load(); }} />

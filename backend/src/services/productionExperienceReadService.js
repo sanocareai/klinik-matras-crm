@@ -12,12 +12,12 @@ import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
-const COMPLAINT_LABEL = Object.freeze({
+export const COMPLAINT_LABEL = Object.freeze({
   KEPALA_PUSING: "Kepala pusing", SAKIT_PINGGANG: "Sakit pinggang", SAKIT_PUNGGUNG: "Sakit punggung", SAKIT_LEHER: "Sakit leher",
   BAHU: "Bahu", PEGAL_PEGAL: "Pegal-pegal", SARAF_KEJEPIT: "Saraf kejepit", SKOLIOSIS: "Skoliosis", LAINNYA: "Lainnya",
 });
-const STYLE_LABEL = Object.freeze({ BIASA: "Kasur Biasa", PLUSHTOP: "Plushtop", PILLOWTOP: "Pillowtop" });
-const VERDICT_LABEL = Object.freeze({ PAS: "PAS", TERLALU_KERAS: "Terlalu Keras", TERLALU_EMPUK: "Terlalu Empuk" });
+export const STYLE_LABEL = Object.freeze({ BIASA: "Kasur Biasa", PLUSHTOP: "Plushtop", PILLOWTOP: "Pillowtop" });
+export const VERDICT_LABEL = Object.freeze({ PAS: "PAS", TERLALU_KERAS: "Terlalu Keras", TERLALU_EMPUK: "Terlalu Empuk" });
 
 export const RUN_VIEW_INCLUDE = {
   unit: {
@@ -48,10 +48,10 @@ export const RUN_VIEW_INCLUDE = {
   custodyHandoffs: { select: { id: true, direction: true, status: true, revision: true, acceptedAt: true, offeredAt: true }, orderBy: { offeredAt: "asc" } },
 };
 
-const nameOf = (op) => op?.user?.name ?? null;
-const minutesBetween = (a, b) => Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000));
+export const nameOf = (op) => op?.user?.name ?? null;
+export const minutesBetween = (a, b) => Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000));
 
-function materialStatusOf(plan, material, shortage) {
+export function materialStatusOf(plan, material, shortage) {
   if (shortage) return { key: "KEKURANGAN", label: "Kekurangan bahan" };
   if (!plan) return { key: "BELUM_ADA_RENCANA", label: "Belum ada rencana" };
   if (!plan.bomLines.length) return { key: "BOM_BELUM_ADA", label: "BOM belum dibuat" };
@@ -63,7 +63,7 @@ function materialStatusOf(plan, material, shortage) {
 }
 
 // Status per tahap untuk UI: NA (tidak berlaku di jalur), DONE (bukti tercatat), CURRENT (aksi berikutnya), WAITING (menunggu pihak lain), PENDING.
-function stepStatuses(ctx) {
+export function stepStatuses(ctx) {
   const applicable = applicableStepsFor(ctx.split);
   const recorded = new Map();
   for (const e of ctx.evidence) recorded.set(e.stepNo, e);
@@ -81,7 +81,7 @@ function stepStatuses(ctx) {
   });
 }
 
-function indicatorsOf(run, ctx, materialStatus) {
+export function indicatorsOf(run, ctx, materialStatus) {
   const inbound = run.custodyHandoffs.filter((h) => h.direction === "INBOUND").at(-1);
   const fg = run.custodyHandoffs.filter((h) => h.direction === "FINISHED_GOODS").at(-1);
   const qc = ctx.latestInspection;
@@ -96,7 +96,7 @@ function indicatorsOf(run, ctx, materialStatus) {
   };
 }
 
-function warningsOf(run, ctx, materialStatus) {
+export function warningsOf(run, ctx, materialStatus) {
   const w = [];
   if (!run.plan?.operatorId) w.push({ code: "OPERATOR_BELUM", text: "PIC meja belum ditetapkan" });
   if (!run.unit.serviceId) w.push({ code: "LAYANAN_BELUM", text: "Layanan unit belum ditetapkan (ditetapkan setelah diagnosa)" });
@@ -111,7 +111,7 @@ function warningsOf(run, ctx, materialStatus) {
   return w;
 }
 
-function customerOf(run) {
+export function customerOf(run) {
   const order = run.unit.order;
   return {
     orderNumber: order?.orderNumber ?? null,
@@ -521,7 +521,7 @@ export async function getWarehouseProductionQueue(prisma, { unitIds, now = new D
 // Paket laporan (before–process–after) untuk Sales. Media bertanda tangan (akses aman, 60 menit). Status broadcast = baris outbox
 // `production.report.ready` (PENDING sampai consumer mengirim; tidak pernah dikarang terkirim).
 // ---------------------------------------------------------------------------
-const latestOf = (evidence, stepNo) => evidence.filter((e) => e.stepNo === stepNo).at(-1) || null;
+export const latestOf = (evidence, stepNo) => evidence.filter((e) => e.stepNo === stepNo).at(-1) || null;
 
 export function buildReportMessage(report) {
   const lines = [];

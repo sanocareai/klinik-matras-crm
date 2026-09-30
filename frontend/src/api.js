@@ -717,6 +717,8 @@ export const api = {
   getProductionV2CommandCenter: () => request("/production-v2/command-center"),
   getProductionV2Andon: (date) => request(`/production-v2/andon${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   getProductionV2Card: (runId) => request(`/production-v2/runs/${runId}/card`),
+  // P9C — Unit 360: satu bacaan kanonis per unit (setara detail Resi), dipakai kartu Status Produksi & Rencana Produksi.
+  getUnitOverview: (unitId) => request(`/production-v2/units/${unitId}/overview`),
   getProductionV2WorkerQueue: (lane) => request(`/production-v2/worker/${lane}`),
   getProductionV2WarehouseQueue: () => request("/production-v2/warehouse/queue"),
   getProductionV2Report: (runId) => request(`/production-v2/runs/${runId}/report`),
