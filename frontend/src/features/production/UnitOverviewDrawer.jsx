@@ -23,16 +23,19 @@ const fmtD = (d) => (d ? formatTanggal(d) : "Belum dicatat");
 // ditandai kecil supaya pengguna tidak menyangka itu unik untuk unit ini — jujur, bukan menyembunyikan.
 function OrderField({ label, field, format = (v) => bd(v) }) {
   return (
-    <div className="rounded-btn bg-inset px-3 py-2">
+    <div className="min-w-0 rounded-btn bg-inset px-3 py-2">
       <dt className="m-0 flex items-center gap-1 text-ink3">
         {label} {field?.scope === "ORDER" && <span className="rounded-chip bg-accentbg px-1 py-0.5 text-[9px] font-semibold text-accent" title="Data di level Order — sama untuk semua unit dalam order ini">ORDER</span>}
       </dt>
-      <dd className="m-0 font-semibold text-ink">{format(field?.value)}</dd>
+      {/* break-words: teks Sales (request/keluhan) kadang berisi URL/token panjang tanpa spasi
+          (mis. link Maps ditempel manual, sama seperti .bubble-link di chat) — tanpa ini, satu
+          token panjang bisa mendorong card melebar horizontal di mobile. */}
+      <dd className="m-0 break-words font-semibold text-ink">{format(field?.value)}</dd>
     </div>
   );
 }
 function Field({ label, value }) {
-  return <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">{label}</dt><dd className="m-0 font-semibold text-ink">{bd(value)}</dd></div>;
+  return <div className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">{label}</dt><dd className="m-0 break-words font-semibold text-ink">{bd(value)}</dd></div>;
 }
 
 const TABS = [
@@ -123,7 +126,7 @@ function Bahan({ d }) {
   return (
     <div className="space-y-3">
       {d.materials.shortageOpen && (
-        <p className="flex items-center gap-1.5 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red"><PackageX size={13} aria-hidden /> Menunggu bahan baku dari Gudang{d.materials.shortageNote ? `: ${d.materials.shortageNote}` : ""}</p>
+        <p className="flex items-center gap-1.5 break-words rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red"><PackageX size={13} aria-hidden className="shrink-0" /> Menunggu bahan baku dari Gudang{d.materials.shortageNote ? `: ${d.materials.shortageNote}` : ""}</p>
       )}
       <table className="w-full text-left text-[12px]">
         <thead className="text-ink3"><tr>{["Bahan", "Rencana", "Direservasi", "Diserahkan", "Terpakai", "Status"].map((h) => <th key={h} className="px-2 py-1.5 font-semibold">{h}</th>)}</tr></thead>
@@ -177,10 +180,10 @@ function QcHandoff({ d }) {
             <span className="text-[11px] text-ink3">{fmtDT(q.inspectedAt)}</span>
           </div>
           <p className="m-0 text-[12px] text-ink3">Pemeriksa: {bd(q.inspectorName)}</p>
-          {q.overrideReason && <p className="m-0 text-[12px] text-orange">Alasan waive: {q.overrideReason}</p>}
+          {q.overrideReason && <p className="m-0 break-words text-[12px] text-orange">Alasan waive: {q.overrideReason}</p>}
           {q.items.length > 0 && (
             <ul className="m-0 mt-2 list-none space-y-1 p-0 text-[11.5px]">
-              {q.items.map((it) => <li key={it.itemCode} className="flex justify-between gap-2"><span>{it.label}</span><span className="text-ink3">{it.result}{it.note ? ` — ${it.note}` : ""}</span></li>)}
+              {q.items.map((it) => <li key={it.itemCode} className="flex justify-between gap-2"><span className="shrink-0">{it.label}</span><span className="min-w-0 break-words text-right text-ink3">{it.result}{it.note ? ` — ${it.note}` : ""}</span></li>)}
             </ul>
           )}
           {q.items.some((it) => it.photoUrls.length) && <div className="mt-2"><MediaGrid items={q.items.flatMap((it) => it.photoUrls.map((url) => ({ stepLabel: it.label, url, kind: "image" })))} empty="" /></div>}
@@ -208,7 +211,7 @@ function Aktivitas({ d }) {
       {d.activity.map((a, i) => (
         <li key={i} className="flex gap-3 border-l-2 border-line pl-3 text-[12px]">
           <div className="min-w-0 flex-1">
-            <p className="m-0 text-ink">{a.label}</p>
+            <p className="m-0 break-words text-ink">{a.label}</p>
             <p className="m-0 text-[11px] text-ink3">{fmtDT(a.at)}{a.actor ? ` · ${a.actor}` : ""}</p>
           </div>
         </li>

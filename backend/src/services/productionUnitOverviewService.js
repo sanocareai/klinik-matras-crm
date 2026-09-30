@@ -200,31 +200,50 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
   };
 }
 
+// Bentuk LENGKAP unit+order (weightEntries, customer, notes, dll) — HANYA dipakai di jalur TANPA run
+// (buildNoRunOverview), sebab di jalur ITU tidak ada RUN_VIEW_INCLUDE yang sudah membawa data yang sama.
+// JANGAN dipakai lagi di jalur run-exists — akan dobel-fetch unit/order/customer/weightEntries yang
+// sama persis dengan yang sudah datang lewat run.unit.order (RUN_VIEW_INCLUDE), diukur nyata: 4 query
+// SQL duplikat per request (diagnostik P9C audit N+1/query-count, 30 Sep 2026).
+const UNIT_FULL_SELECT = {
+  id: true, unitCode: true, orderId: true, serviceId: true, status: true, merk: true, ukuran: true,
+  service: { select: { code: true, labelId: true } },
+  order: {
+    select: {
+      orderNumber: true, category: true, productLine: true, productType: true, beratBadan: true, notes: true,
+      complaintCategory: true, customerPromiseDate: true, value: true,
+      weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
+      customer: { select: { name: true, city: true, assignedSales: { select: { name: true } } } },
+    },
+  },
+};
+
 export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = false, now = new Date() } = {}) {
   // PENTING: cek cohort di JS, BUKAN menaruh dua kunci "id" di satu object literal Prisma where (mis.
   // { id: unitId, ...(unitIds ? { id: { in: unitIds } } : {}) }) — kunci kedua diam-diam MENIMPA yang pertama
   // (semantik object literal JS biasa), membuat query mengabaikan unitId yang diminta sama sekali dan malah
   // mengembalikan unit LAIN yang kebetulan ada di cohort. Ditemukan lewat test integrasi non-cohort P9C.
   if (unitIds && !unitIds.includes(unitId)) return null;
-  const unit = await prisma.unit.findFirst({
-    where: { id: unitId },
-    select: {
-      id: true, unitCode: true, orderId: true, serviceId: true, status: true, merk: true, ukuran: true,
-      service: { select: { code: true, labelId: true } },
-      order: {
-        select: {
-          orderNumber: true, category: true, productLine: true, productType: true, beratBadan: true, notes: true,
-          complaintCategory: true, customerPromiseDate: true, value: true,
-          weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
-          customer: { select: { name: true, city: true, assignedSales: { select: { name: true } } } },
-        },
-      },
-    },
-  });
-  if (!unit) return null;
 
   const run = await prisma.productionRun.findFirst({ where: { unitId }, include: RUN_VIEW_INCLUDE, orderBy: { createdAt: "desc" } });
-  if (!run) return buildNoRunOverview(prisma, unit, { canSeeValue });
+
+  if (!run) {
+    // Tanpa run, RUN_VIEW_INCLUDE tidak pernah jalan — query "lengkap" di bawah ini SATU-SATUNYA sumber
+    // unit/order untuk jalur ini, jadi tidak ada duplikasi.
+    const unit = await prisma.unit.findFirst({ where: { id: unitId }, select: UNIT_FULL_SELECT });
+    if (!unit) return null;
+    return buildNoRunOverview(prisma, unit, { canSeeValue });
+  }
+  if (!run.unit) return null; // unit terhapus/tidak konsisten — seharusnya tidak terjadi (FK), jaga-jaga saja
+
+  // run.unit.order SUDAH punya orderNumber/category/beratBadan/notes/complaintCategory/customerPromiseDate/
+  // weightEntries/customer lewat RUN_VIEW_INCLUDE (lihat customerOf() di productionExperienceReadService.js).
+  // Hanya productLine/productType/value yang TIDAK diseleksi RUN_VIEW_INCLUDE (dipakai banyak read-path lain,
+  // menambah field di sana akan membesarkan payload SEMUA pemanggil) — ambil 3 field itu saja secara terpisah,
+  // BUKAN unit lengkap lagi.
+  const orderExtra = run.unit.orderId
+    ? await prisma.order.findUnique({ where: { id: run.unit.orderId }, select: { productLine: true, productType: true, value: true } })
+    : null;
 
   const ctx = await loadStepContext(prisma, run);
   const materialStatus = materialStatusOf(run.plan, ctx.material, ctx.openShortage);
@@ -255,7 +274,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
 
   return {
     identity: {
-      unitId: unit.id, unitCode: unit.unitCode, orderId: unit.orderId, orderNumber: customer.orderNumber,
+      unitId: run.unit.id, unitCode: run.unit.unitCode, orderId: run.unit.orderId, orderNumber: customer.orderNumber,
       merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, photoUrl,
       target: {
         productionDate: run.plan?.productionDate ? formatProductionDate(run.plan.productionDate) : null,
@@ -274,7 +293,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
       complaints: orderScopedField(customer.complaints), request: orderScopedField(customer.request),
       weightKg: orderScopedField(customer.weightKg), weightEntries: orderScopedField(customer.weightEntries),
       promiseDate: orderScopedField(customer.promiseDate), category: orderScopedField(customer.category),
-      productLine: orderScopedField(unit.order?.productLine ?? null), productType: orderScopedField(unit.order?.productType ?? null),
+      productLine: orderScopedField(orderExtra?.productLine ?? null), productType: orderScopedField(orderExtra?.productType ?? null),
       dataGaps,
     },
     service: { code: run.unit.service?.code ?? null, label: run.unit.service?.labelId ?? null, set: !!run.unit.serviceId },
@@ -306,9 +325,9 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
       finishedGoodsHandoff: fgHandoff ? { status: fgHandoff.status, offeredAt: fgHandoff.offeredAt, acceptedAt: fgHandoff.acceptedAt } : null,
       readyForDelivery: run.unit.status === "READY_FOR_DELIVERY" || run.unit.status === "DELIVERED",
     },
-    activity: await loadActivity(prisma, { unit, run, ctx, pickup }),
+    activity: await loadActivity(prisma, { unit: run.unit, run, ctx, pickup }),
     warnings,
     permissions: { canSeeValue },
-    ...(canSeeValue ? { orderValue: unit.order?.value ?? null } : {}),
+    ...(canSeeValue ? { orderValue: orderExtra?.value ?? null } : {}),
   };
 }
