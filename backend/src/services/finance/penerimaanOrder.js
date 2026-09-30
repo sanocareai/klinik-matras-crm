@@ -226,7 +226,13 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
     },
   });
   await tx.paymentVerification.create({ data: { paymentId: payment.id, verifiedById: verifierId } });
-  await recomputeOrderPaymentStatus(tx, orderId);
+  const hasilStatus = await recomputeOrderPaymentStatus(tx, orderId, { paidAtSinkron: true }); // tanggal lunas final = tanggal Payment terverifikasi (paymentLedger.js)
+  if (hasilStatus?.paidAtDisinkron) {
+    await recordActivity(tx, {
+      entityType: ENTITY_TYPES.ORDER, entityId: orderId, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: verifierId,
+      metadata: { aksi: "paid_at_disinkron", sebab: "verifikasi_penerimaan", paymentId: payment.id, dari: hasilStatus.paidAtDisinkron.dari, ke: hasilStatus.paidAtDisinkron.ke, pindahBulan: hasilStatus.paidAtDisinkron.pindahBulan },
+    });
+  }
   let jurnalDilewati = false;
 
   if (modeEfektif === "REKENING") {

@@ -215,6 +215,38 @@ function sheetPipeline({ periode, funnel, velocity }) {
 }
 
 // ── Sheet 4: Sales ────────────────────────────────────────────────────────
+// ── Sheet: Rekonsiliasi Sales–Finance ──────────────────────────────────────────────────
+// Payload dari server (services/finance/rekonSalesFinance.js) — SAMA dengan panel di layar; tidak dihitung ulang di sini.
+function sheetRekon({ periode, rekonSales }) {
+  const sb = new SheetBuilder();
+  judul(sb, "REKONSILIASI SALES–FINANCE", periode);
+  sb.row(["Dari Uang Masuk Terverifikasi (Finance) ke Nilai Order yang Menjadi Lunas (Sales). Angka dihitung server."]);
+  sb.blank();
+  sb.row(["Langkah", "Arah", "Jumlah order", "Jumlah (Rp)", "Keterangan"]);
+  const arah = (t) => (t < 0 ? "Kurangi" : t > 0 ? "Tambah" : "Hasil/Awal");
+  for (const b of rekonSales.bridge) sb.row([b.label, arah(b.tanda), b.nOrder || 0, rp(b.jumlah), b.keterangan]);
+  sb.row(["Residual (harus 0)", "", "", rp(rekonSales.residual)]);
+  sb.blank();
+  sb.row(["Kartu", "", "", "Jumlah (Rp)"]);
+  const k = rekonSales.kartu;
+  sb.row(["Uang Masuk Terverifikasi dari Order", "", "", rp(k.uangMasukDariOrder)]);
+  sb.row(["DP Belum Lunas", "", k.jumlahOrderDp, rp(k.dpBelumLunas)]);
+  sb.row(["Ongkir Diterima", "", "", rp(k.ongkirDiterima)]);
+  sb.row(["Tanpa Atribusi Sales", "", k.jumlahOrderTanpaSales, rp(k.tanpaAtribusiSales)]);
+  sb.row(["Nilai Order yang Menjadi Lunas — Total Perusahaan", "", "", rp(k.totalPerusahaan)]);
+  if (rekonSales.detailTersedia && rekonSales.detail) {
+    sb.blank();
+    sb.row(["Rincian order per langkah"]);
+    sb.row(["Langkah", "Order", "Pelanggan", "Nilai Jasa (Rp)", "Ongkir (Rp)", "Total Tagihan (Rp)", "Jumlah (Rp)", "Status Bayar", "Catatan"]);
+    for (const b of rekonSales.bridge) {
+      for (const d of rekonSales.detail[b.kunci] || []) {
+        sb.row([b.label, d.nomor, d.pelanggan, rp(d.nilaiJasa), rp(d.ongkir), rp(d.totalTagihan), rp(d.jumlah), d.statusBayar, d.alasan || d.pemegangInformasi || ""]);
+      }
+    }
+  }
+  return sb.build([48, 18, 26, 18, 16, 20, 18, 14, 40]);
+}
+
 function sheetSales({ periode, report }) {
   const sb = new SheetBuilder();
   judul(sb, "LAPORAN SALES", periode);
@@ -507,7 +539,10 @@ const SHEET_PER_TAB = {
     ["Penjualan",  d.summary && sheetPenjualan(d)],
   ],
   Pipeline:  (d) => [["Pipeline",   (d.funnel?.length || d.velocity) && sheetPipeline(d)]],
-  Sales:     (d) => [["Sales",      d.salesReport?.rows?.length && sheetSales({ ...d, report: d.salesReport })]],
+  Sales:     (d) => [
+    ["Sales", d.salesReport?.rows?.length && sheetSales({ ...d, report: d.salesReport })],
+    ["Rekonsiliasi", d.rekonSales && sheetRekon(d)],
+  ],
 };
 
 /**
@@ -516,9 +551,9 @@ const SHEET_PER_TAB = {
  */
 export function exportLaporanWorkbook({
   periode, namaFile, tab,
-  summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail,
+  summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales,
 }) {
-  const data = { periode, summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail };
+  const data = { periode, summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales };
   const wb = XLSX.utils.book_new();
 
   const builder = SHEET_PER_TAB[tab];

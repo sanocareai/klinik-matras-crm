@@ -12,6 +12,7 @@ import { computeTeamTarget, namaBulanTarget } from "../utils/teamTarget.js";
 import { api } from "@/api.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
+import { useRekonSalesFinance, KartuRekon, PanelRekon, DaftarRekonModal } from "./RekonSalesFinance.jsx";
 import BarRow from "./BarRow.jsx";
 
 // ═══ LAPORAN SALES ════════════════════════════════════════════════════════
@@ -78,6 +79,10 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
   const navigate = useNavigate();
   const cmp = compareLabel(range);
 
+  // Rekonsiliasi Sales–Finance: angka SEMUA dari server (helper yang sama dengan Finance); payload juga diteruskan ke Export Excel supaya berkas = layar.
+  const [rekonBuka, setRekonBuka] = useState(null); // kunci baris bridge yang daftar ordernya dibuka
+  const rekon = useRekonSalesFinance(range);
+
   // Rincian order per-individu di balik kolom "Lunas" (30 Agustus 2026) —
   // komisi dihitung PER SALES, bukan per tim, jadi admin perlu lihat order
   // MANA SAJA yang menyusun angka lunas satu orang, bukan cuma totalnya.
@@ -141,7 +146,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
   return (
     <div className="flex flex-col gap-5">
       <div className="flex justify-end">
-        <button className="btn btn-ghost btn-sm" onClick={onExport}>
+        <button className="btn btn-ghost btn-sm" onClick={() => onExport({ rekonSales: rekon.data })}>
           <Download size={14} /> Export Excel
         </button>
       </div>
@@ -161,11 +166,11 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           tooltip="Total nilai order seluruh tim (8 sales + closing pribadi Team Lead) di periode yang dipilih di atas — “reach”, belum tentu sudah lunas."
         />
         <KpiCard
-          index={1} label="Nilai Lunas Tim"
+          index={1} label="Nilai Order yang Menjadi Lunas"
           numericValue={teamCollectedAll}
           format={(v) => formatRupiah(Math.round(v))}
           sub={`${formatRupiahShort(Math.max(teamGrossAll - teamCollectedAll, 0))} belum lunas/masih proses (perkiraan)`}
-          tooltip="BASIS KOMISI: order APA PUN (dari bulan manapun dibuatnya) yang jadi LUNAS di dalam periode ini — order bulan lalu yang baru lunas sekarang IKUT di sini (geser bulan, bukan hangus), jadi populasinya BEDA dari 'Nilai Penjualan Tim' (basisnya kapan order dibuat). Angka ini TERKUNCI per periode: dibuka belakangan pun hasilnya sama — order yang lunasnya SETELAH tanggal terakhir periode ini geser ke periode berikutnya, bukan ikut naik di sini. Beda dari kartu 'Belum Lunas' di halaman Order yang LIVE ikut status sekarang, bukan salah hitung kalau angkanya tidak sama. Order LUNAS lama (sebelum fitur paidAt ada) belum kehitung di sini sampai statusnya disentuh ulang."
+          tooltip="Nilai penuh order yang mencapai lunas pada periode ini. Tidak selalu sama dengan uang masuk periode karena DP, ongkir, dan pembayaran lintas periode."
         />
         <KpiCard
           index={2} label="Konversi Tim"
@@ -202,6 +207,11 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
           tooltip={`Spam % = (chat yang dipegang tim & ditandai SPAM) ÷ (chat SPAM + chat yang ditangani) × 100%, dijumlahkan dari 8 sales aktif (Team Lead TIDAK ikut) — scope sama dengan kartu lain di atas. Bukan penalti performa sales — ini pengawas KUALITAS LEAD masuk, layak ditinjau kalau jumlahnya tiba-tiba melonjak.`}
         />
       </div>
+
+      {/* ── Rekonsiliasi Sales–Finance: kartu terpisah + bridge (angka dari server) ─────────────── */}
+      <KartuRekon data={rekon.data} loading={rekon.loading} onBuka={setRekonBuka} />
+      <PanelRekon data={rekon.data} loading={rekon.loading} error={rekon.error} onBuka={setRekonBuka} />
+      <DaftarRekonModal kunci={rekonBuka} data={rekon.data} onClose={() => setRekonBuka(null)} onDitetapkan={() => { setRekonBuka(null); rekon.muatUlang(); }} />
 
       {/* ── Leaderboard ───────────────────────────────────────────────── */}
       <ChartCard

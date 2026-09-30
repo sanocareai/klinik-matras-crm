@@ -63,10 +63,14 @@ export async function tanggalLunasEfektif(tx, orderId, { gate, dasar }) {
  * `paidAtEfektif` (default false): dipakai koreksi pembayaran (B3.7) untuk order yang terdampak — paidAt SELALU dihitung ulang dari ledger
  * (tanggal pembayaran yang melewati titik lunas, atau null bila belum lunas), tidak pernah waktu koreksi. Tanpa opsi ini (semua alur lama), order yang
  * SUDAH LUNAS tidak digeser paidAt-nya (aturan lama); saat MASUK ke LUNAS paidAt = tanggal pembayaran pelunas (fallback: sekarang).
+ *
+ * `paidAtSinkron` (30 Sep 2026, keputusan Owner — Sales hanya membuat KLAIM Lunas, tanggal lunas final berasal dari Payment terverifikasi): dipakai jalur
+ * VERIFIKASI Finance. Untuk order yang SUDAH LUNAS, paidAt digeser ke tanggal Payment terverifikasi yang membuat akumulasi mencapai tagihan HANYA bila
+ * tanggal WIB-nya berbeda (beda jam pada tanggal WIB yang sama dibiarkan). Perubahan dikembalikan di `paidAtDisinkron` agar bisa diaudit.
  */
-export async function recomputeOrderPaymentStatus(tx, orderId, { paidAtEfektif = false } = {}) {
+export async function recomputeOrderPaymentStatus(tx, orderId, { paidAtEfektif = false, paidAtSinkron = false } = {}) {
   const [order, gate] = await Promise.all([
-    tx.order.findUnique({ where: { id: orderId }, select: { ...PILIH_TAGIHAN, paymentStatus: true } }),
+    tx.order.findUnique({ where: { id: orderId }, select: { ...PILIH_TAGIHAN, paymentStatus: true, paidAt: true } }),
     getVerificationGate(tx),
   ]);
   if (!order) return null;
@@ -97,13 +101,22 @@ export async function recomputeOrderPaymentStatus(tx, orderId, { paidAtEfektif =
   // keluar dari LUNAS (koreksi/refund sebagian) supaya paidAt selalu
   // konsisten dengan status SEKARANG, bukan riwayat basi.
   let paidAt;
+  let paidAtDisinkron = null;
   if (paymentStatus !== "LUNAS") paidAt = null;
-  else if (order.paymentStatus === "LUNAS" && !paidAtEfektif) paidAt = undefined; // undefined = jangan sentuh field ini
-  else paidAt = (await tanggalLunasEfektif(tx, orderId, { gate, dasar })) ?? new Date();
+  else if (order.paymentStatus === "LUNAS" && !paidAtEfektif) {
+    paidAt = undefined; // undefined = jangan sentuh field ini
+    if (paidAtSinkron && order.paidAt) {
+      const efektif = await tanggalLunasEfektif(tx, orderId, { gate, dasar });
+      if (efektif && tanggalWIB(efektif) !== tanggalWIB(order.paidAt)) {
+        paidAt = efektif;
+        paidAtDisinkron = { dari: order.paidAt, ke: efektif, pindahBulan: tanggalWIB(efektif).slice(0, 7) !== tanggalWIB(order.paidAt).slice(0, 7) };
+      }
+    }
+  } else paidAt = (await tanggalLunasEfektif(tx, orderId, { gate, dasar })) ?? new Date();
 
   await tx.order.update({
     where: { id: orderId },
     data: paidAt === undefined ? { paymentStatus } : { paymentStatus, paidAt },
   });
-  return { paid, outstanding: Math.max(dasar - paid, 0), paymentStatus };
+  return { paid, outstanding: Math.max(dasar - paid, 0), paymentStatus, ...(paidAtDisinkron && { paidAtDisinkron }) };
 }

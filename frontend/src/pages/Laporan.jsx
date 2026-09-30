@@ -123,7 +123,9 @@ export default function Laporan() {
   // Ringkasan mengekspor 6 baris, Performa CS punya tombolnya sendiri, dan
   // tab lain tidak bisa diexport sama sekali). Isinya sheet terpisah per
   // bagian — lihat utils/exportLaporan.js.
-  async function handleExport() {
+  // `extra.rekonSales` (tab Sales): payload rekonsiliasi Sales–Finance yang SAMA dengan yang tampil di layar — berkas = layar.
+  async function handleExport(extra) {
+    const rekonSales = extra && !extra.nativeEvent && extra.rekonSales ? extra.rekonSales : null;
     setExporting(true);
     try {
       const { exportLaporanWorkbook } = await import("../utils/exportLaporan.js");
@@ -135,7 +137,7 @@ export default function Laporan() {
         tab,
         periode: formatRangeText(range),
         namaFile: `laporan-${tab.toLowerCase()}-${namaFile(range)}`,
-        summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail,
+        summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales,
       });
     } catch (e) {
       alert(e.message || "Gagal membuat file export.");

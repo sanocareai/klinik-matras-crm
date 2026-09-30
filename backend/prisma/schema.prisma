@@ -1173,6 +1173,9 @@ model Order {
   // "pertama kali sepanjang masa") — itu yang benar-benar mencerminkan
   // "kapan uangnya benar-benar dianggap masuk", termasuk setelah koreksi.
   paidAt                DateTime?     @map("paid_at")
+  // Pemilik Sales STABIL (30 Sep 2026): diisi saat order dibuat (pembuat bila SALES, atau pemilik lead bila SALES), diganti hanya lewat penugasan ulang
+  // eksplisit + audit. NULL = "Tanpa Sales" untuk order baru; order lama NULL tetap diatribusikan lewat percakapan (services/salesOwner.js).
+  salesOwnerId          String?       @map("sales_owner_id")
   // dpTarget (2 Sep 2026) — nominal DP yang DISEPAKATI dengan customer,
   // bukan yang benar-benar sudah masuk (itu SUM(payments), lihat Payment
   // model). null = tidak ada kesepakatan DP spesifik untuk order ini.

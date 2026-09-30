@@ -75,6 +75,7 @@ const { conversationRouter } = await import("../../../src/routes/conversations.j
 // tidak dihitung) + endpoint /stage-by-sales. Kode ASLI produksi.
 const { analyticsRouter } = await import("../../../src/routes/analytics.js");
 const { pipelineRouter } = await import("../../../src/routes/pipeline.js");
+const { salesFinanceRouter } = await import("../../../src/routes/salesFinance.js");
 
 export function buildTestApp() {
   const app = express();
@@ -133,6 +134,7 @@ export function buildTestApp() {
   app.use("/api/delivery-control", deliveryControlRouter);
   app.use("/api/conversations", conversationRouter);
   app.use("/api/analytics", analyticsRouter);
+  app.use("/api/sales-finance", salesFinanceRouter);
   app.use("/api/pipeline", pipelineRouter);
 
   return app;

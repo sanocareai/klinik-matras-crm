@@ -30,6 +30,8 @@ import { pctOrNull } from "../services/conversionMetrics.js";
 // tidak diubah. Raw SQL di file ini memakai literal NOT IN yang sama.
 const OMSET_EXCLUDED_STATUS = ["CANCELLED", "PENDING"];
 
+import { atribusiOrderWhere } from "../services/salesOwner.js";
+
 export const analyticsRouter = express.Router();
 analyticsRouter.use(requireAuth);
 
@@ -811,7 +813,7 @@ export async function computeSalesRow(u, ctx) {
     prisma.order.aggregate({
       where: tanpaOrderSpam({
         ...buildDateWhere(from, to), status: { notIn: OMSET_EXCLUDED_STATUS },
-        customer: { conversations: { some: mineAtribusi } },
+        ...atribusiOrderWhere(u.id, mineAtribusi), // pemilik order eksplisit (salesOwnerId) menang; kosong → atribusi percakapan lama
       }),
       _count: { _all: true }, _sum: { value: true },
     }),
@@ -840,14 +842,14 @@ export async function computeSalesRow(u, ctx) {
     prisma.order.aggregate({
       where: tanpaOrderSpam({
         status: { notIn: OMSET_EXCLUDED_STATUS }, paidAt: { gte: mulai, lt: selesai },
-        customer: { conversations: { some: mineAtribusi } },
+        ...atribusiOrderWhere(u.id, mineAtribusi),
       }),
       _sum: { value: true },
     }),
     prisma.order.count({
       where: tanpaOrderSpam({
         ...buildDateWhere(from, to), hasComplaint: true,
-        customer: { conversations: { some: mineAtribusi } },
+        ...atribusiOrderWhere(u.id, mineAtribusi),
       }),
     }),
 
@@ -1285,7 +1287,10 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     const teamGrossPrevAgg = prevRangeSales ? await prisma.order.aggregate({
       where: tanpaOrderSpam({
         createdAt: prevRangeSales, status: { notIn: OMSET_EXCLUDED_STATUS },
-        customer: { conversations: { some: { assignedToId: { in: allTeamIds }, type: "INDIVIDUAL" } } },
+        OR: [
+          { salesOwnerId: { in: allTeamIds } },
+          { salesOwnerId: null, customer: { conversations: { some: { assignedToId: { in: allTeamIds }, type: "INDIVIDUAL" } } } },
+        ],
       }),
       _sum: { value: true },
     }) : null;
@@ -1421,7 +1426,7 @@ analyticsRouter.get("/sales-report/lunas-detail", async (req, res) => {
       where: tanpaOrderSpam({
         status: { notIn: OMSET_EXCLUDED_STATUS },
         paidAt: { gte: mulai, lt: selesai },
-        customer: { conversations: { some: { type: "INDIVIDUAL", assignedToId: userId } } },
+        ...atribusiOrderWhere(userId, { type: "INDIVIDUAL", assignedToId: userId }),
       }),
       select: {
         id: true, orderNumber: true, value: true, createdAt: true, paidAt: true,
