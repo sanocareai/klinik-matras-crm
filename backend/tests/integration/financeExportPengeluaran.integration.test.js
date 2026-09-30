@@ -194,3 +194,40 @@ test("Batas layar 300 baris: layar terpotong, berkas memuat SEMUA baris cocok (3
   ws.eachRow((row) => { const v = row.getCell(1).value; if (typeof v === "string") teks.push(v); });
   assert.ok(teks.some((t) => /Layar hanya menampilkan 300 baris teratas; berkas ini memuat seluruh 305 baris/.test(t)), "catatan menjelaskan selisih dengan layar");
 });
+
+test("TOTAL: kartu layar dihitung dari SEMUA baris (bukan 300 teratas), tanpa dibatalkan/ditolak bila tanpa filter status; Excel TOTAL AKTIF sama dengan kartu layar", async () => {
+  const c = await siapkan();
+  // 310 pengeluaran September (> batas 300 baris layar) + 1 ditolak + 1 dibatalkan
+  const kat = c.kat;
+  const data = [];
+  for (let i = 0; i < 310; i++) data.push({ expenseNumber: `EXP-UJI-${String(i).padStart(4, "0")}`, date: new Date(`2026-09-${String((i % 25) + 1).padStart(2, "0")}T00:00:00Z`), amount: 1_000, description: `uji ${i}`, categoryId: kat.id, mode: "LANGSUNG", status: "DIBAYAR", createdById: c.admin.user.id, cashAccountId: c.kas.id });
+  await testPrisma.finExpense.createMany({ data });
+  await testPrisma.finExpense.create({ data: { expenseNumber: "EXP-UJI-TOLAK", date: new Date("2026-09-10T00:00:00Z"), amount: 500_000, description: "ditolak", categoryId: kat.id, mode: "LANGSUNG", status: "DITOLAK", createdById: c.admin.user.id } });
+  await testPrisma.finExpense.create({ data: { expenseNumber: "EXP-UJI-BATAL", date: new Date("2026-09-11T00:00:00Z"), amount: 2_000_000, description: "dibatalkan", categoryId: kat.id, mode: "LANGSUNG", status: "DIBATALKAN", createdById: c.admin.user.id } });
+
+  const layar = (await c.a.get(`/api/finance/expenses${layarQuery({ ...PERIODE })}`)).body;
+  const nyata = 310 * 1_000 + 425_000; // 310 uji + e1..e3 (100rb + 250rb + 75rb)
+  assert.equal(layar.expenses.length, 300, "tabel tetap dibatasi 300 baris");
+  assert.equal(layar.terpotong, true);
+  assert.equal(layar.ringkasan.jumlahSemua, 3 + 310 + 2, "ringkasan menghitung SEMUA baris, bukan 300");
+  assert.equal(layar.ringkasan.total, 310_000 + 425_000 + 500_000 + 2_000_000, "total semua status");
+  assert.equal(layar.ringkasan.totalAktif, nyata, "total aktif = di luar dibatalkan/ditolak");
+  assert.deepEqual(layar.ringkasan.tidakDihitung, { jumlah: 2, nominal: 2_500_000 });
+  assert.equal(layar.ringkasan.perStatus.DITOLAK.jumlah, 1);
+  assert.equal(layar.ringkasan.perStatus.DIBATALKAN.nominal, 2_000_000);
+
+  // Excel: 315 baris (semua), TOTAL AKTIF = kartu layar; yang dikecualikan dijelaskan
+  const r = await unduhExport(server.baseUrl, c.admin.token, "pengeluaran", { periode: PERIODE, filterLabel: "Tanpa filter (semua data)" });
+  const s = bacaSheet(r.wb, "Pengeluaran");
+  assert.equal(s.baris.length, 315);
+  assert.equal(s.total["Nominal (Rp)"], layar.ringkasan.totalAktif, "TOTAL Excel = kartu layar");
+  assert.match(s.total["No. Pengeluaran"], /^TOTAL AKTIF \(313 pengeluaran, tanpa dibatalkan\/ditolak\)/);
+  const teksSheet = [];
+  r.wb.getWorksheet("Pengeluaran").eachRow((row) => row.eachCell((cell) => { if (typeof cell.value === "string") teksSheet.push(cell.value); }));
+  assert.ok(teksSheet.some((t) => /2 baris dibatalkan\/ditolak senilai Rp2\.500\.000/.test(t)), "catatan menyebut yang tidak dijumlahkan");
+
+  // Filter status tertentu: total apa adanya (dibatalkan boleh dilihat totalnya)
+  const bt = (await c.a.get(`/api/finance/expenses${layarQuery({ ...PERIODE, status: "DIBATALKAN" })}`)).body;
+  assert.equal(bt.ringkasan.total, 2_000_000);
+  assert.equal(bt.total, 2_000_000);
+});

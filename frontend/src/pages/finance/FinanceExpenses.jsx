@@ -247,20 +247,22 @@ export default function FinanceExpenses() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KartuAngka
-          label="Total di Filter Ini"
-          value={formatUang(data?.total ?? 0)}
-          sub={`${expenses.length} pengeluaran`}
-          info="Jumlah nominal seluruh baris yang tampil di tabel bawah, sesuai filter periode & status yang sedang aktif — bukan total pengeluaran sepanjang masa."
+          label={status ? "Total di Filter Ini" : "Total Pengeluaran (di luar dibatalkan/ditolak)"}
+          value={formatUang(status ? (data?.ringkasan?.total ?? data?.total ?? 0) : (data?.ringkasan?.totalAktif ?? data?.total ?? 0))}
+          sub={status
+            ? `${data?.ringkasan?.jumlahSemua ?? expenses.length} pengeluaran`
+            : `${data?.ringkasan?.jumlahAktif ?? expenses.length} pengeluaran${data?.ringkasan?.tidakDihitung?.jumlah ? ` · ${data.ringkasan.tidakDihitung.jumlah} dibatalkan/ditolak (${formatUang(data.ringkasan.tidakDihitung.nominal)}) tidak dihitung` : ""}`}
+          info="Dihitung dari SEMUA pengeluaran sesuai filter periode & lainnya, bukan hanya baris yang tampil di tabel (tabel memuat maksimal 300 baris). Tanpa memilih tahap, pengeluaran yang dibatalkan atau ditolak tidak ikut dijumlahkan; pilih tab Dibatalkan/Ditolak untuk melihat totalnya."
         />
         <KartuAngka
           label="Menunggu Persetujuan"
-          value={expenses.filter((e) => e.status === "MENUNGGU_APPROVAL").length}
-          tone={expenses.some((e) => e.status === "MENUNGGU_APPROVAL") ? "orange" : "default"}
+          value={data?.ringkasan?.perStatus?.MENUNGGU_APPROVAL?.jumlah ?? expenses.filter((e) => e.status === "MENUNGGU_APPROVAL").length}
+          tone={(data?.ringkasan?.perStatus?.MENUNGGU_APPROVAL?.jumlah ?? expenses.filter((e) => e.status === "MENUNGGU_APPROVAL").length) > 0 ? "orange" : "default"}
           info="Pengajuan yang belum ada keputusan — belum masuk buku besar sama sekali. Perlu Setujui atau Tolak."
         />
         <KartuAngka
           label="Disetujui, Belum Dibayar"
-          value={expenses.filter((e) => e.status === "DISETUJUI").length}
+          value={data?.ringkasan?.perStatus?.DISETUJUI?.jumlah ?? expenses.filter((e) => e.status === "DISETUJUI").length}
           sub="Reimbursement & utang"
           info="Bebannya SUDAH tercatat di laba rugi, tapi uangnya belum benar-benar keluar — menunggu diganti ke karyawan atau dibayar ke pihak ketiga."
         />
@@ -287,7 +289,7 @@ export default function FinanceExpenses() {
           { key: "rekening", label: "Rekening / bank", value: fRekening, onChange: setFRekening, options: rekening.map((r) => [r.id, r.name]) },
           { key: "bukti", label: "Bukti", value: fBukti, onChange: setFBukti, options: [["ada", "Ada nota"], ["tanpa", "Tanpa nota"], ["terverifikasi", "Terverifikasi"], ["belum", "Belum diverifikasi"]] },
         ]}
-        ringkasan={`${expenses.length} pengeluaran${data?.terpotong ? " · baru 300 teratas tampil — persempit pencarian atau periode" : ""}`}
+        ringkasan={`${expenses.length} pengeluaran${data?.terpotong ? ` dari ${data?.ringkasan?.jumlahSemua} · tabel baru memuat 300 teratas (total di kartu tetap dihitung dari semuanya) — persempit pencarian atau periode` : ""}`}
         onReset={aturUlangFilter}
       />
 

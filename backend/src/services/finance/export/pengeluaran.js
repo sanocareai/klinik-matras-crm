@@ -3,7 +3,7 @@
 // fungsi baca yang sama dengan parameter yang sama. Bila klien mengirim `ids`, baris itu dimuat ulang (urutan mengikuti `ids`).
 import { PERMISSIONS as P } from "../../../middleware/authorize.js";
 import { rentangDariQuery } from "../../../routes/finance.js";
-import { ambilDaftarPengeluaran, ambilPengeluaranByIds } from "../expenseRead.js";
+import { ambilDaftarPengeluaran, ambilPengeluaranByIds, STATUS_TIDAK_DIHITUNG } from "../expenseRead.js";
 import { susunLabelFilter, labelPeriode, ExportError } from "./excel.js";
 import { labelStatus, labelCaraBayar, labelMetodeTransfer } from "./label.js";
 
@@ -139,11 +139,19 @@ async function ambil(db, { user, filter: filterMentah, periode, ids, filterLabel
   const rows = hasil.expenses;
   const baris = rows.map((d) => ({ ...barisDokumen(d, "expenseNumber"), uangMukaDipakai: d.advanceAppliedAmount == null ? 0 : Number(d.advanceAppliedAmount) || 0, uangMuka: d.advance?.advanceNumber || "", order: d.order?.orderNumber || "" }));
 
+  // Bila filter status = Semua, baris TOTAL hanya menjumlahkan pengeluaran NYATA (di luar dibatalkan/ditolak) supaya tidak menggelembung; yang dikecualikan
+  // dilaporkan terpisah di catatan dan tetap terlihat sebagai baris + di sheet Ringkasan per status. Filter status tertentu: total apa adanya.
+  const kecualikan = !filter.status;
+  const labelTidakDihitung = STATUS_TIDAK_DIHITUNG.map(labelStatus);
+  const barisHitung = kecualikan ? baris.filter((b) => !labelTidakDihitung.includes(b.status)) : baris;
+  const barisTidak = baris.filter((b) => !barisHitung.includes(b));
   const menunggu = rows.filter((e) => e.status === "MENUNGGU_APPROVAL").length;
   const disetujui = rows.filter((e) => e.status === "DISETUJUI").length;
   const catatan = [
     `Ringkasan seperti kartu di layar: ${baris.length} pengeluaran · ${menunggu} menunggu persetujuan · ${disetujui} disetujui (belum dibayar).`,
-    "Total nominal menjumlahkan semua baris yang tampil sesuai filter (termasuk yang ditolak/dibatalkan bila filter status = Semua), sama seperti kartu \"Total di Filter Ini\" di layar.",
+    barisTidak.length > 0
+      ? `Baris TOTAL menjumlahkan pengeluaran nyata saja (${barisHitung.length} baris, di luar dibatalkan/ditolak). ${barisTidak.length} baris dibatalkan/ditolak senilai Rp${jumlah(barisTidak, "nominal").toLocaleString("id-ID")} tetap tercantum di daftar tetapi TIDAK dijumlahkan; rinciannya ada di sheet Ringkasan.`
+      : "Total nominal menjumlahkan semua baris yang tampil sesuai filter, sama seperti kartu \"Total di Filter Ini\" di layar.",
     ...(!ids && baris.length > 300 ? [`Layar hanya menampilkan 300 baris teratas; berkas ini memuat seluruh ${baris.length} baris yang cocok dengan filter.`] : []),
   ];
 
@@ -163,7 +171,7 @@ async function ambil(db, { user, filter: filterMentah, periode, ids, filterLabel
           ],
         }),
         baris,
-        total: { label: `TOTAL (${baris.length} pengeluaran)`, nilai: { nominal: jumlah(baris, "nominal"), biayaAdmin: jumlah(baris, "biayaAdmin"), totalKeluar: jumlah(baris, "totalKeluar"), uangMukaDipakai: jumlah(baris, "uangMukaDipakai") } },
+        total: { label: barisTidak.length > 0 ? `TOTAL AKTIF (${barisHitung.length} pengeluaran, tanpa dibatalkan/ditolak)` : `TOTAL (${baris.length} pengeluaran)`, nilai: { nominal: jumlah(barisHitung, "nominal"), biayaAdmin: jumlah(barisHitung, "biayaAdmin"), totalKeluar: jumlah(barisHitung, "totalKeluar"), uangMukaDipakai: jumlah(barisHitung, "uangMukaDipakai") } },
         catatan,
       },
       ...(baris.length > 0 ? [sheetRingkasanStatus(baris, "Ringkasan Pengeluaran per Status")] : []),
