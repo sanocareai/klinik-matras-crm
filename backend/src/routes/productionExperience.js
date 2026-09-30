@@ -12,7 +12,9 @@ import { confirmUnitArrival, listReceivingLocations } from "../services/unitCust
 import {
   getAndonBoard, getProductionBoard, getProductionCommandCenter, getProductionReport, getRunCard, getWarehouseProductionQueue, listWorkerQueue,
 } from "../services/productionExperienceReadService.js";
+import { getUnitOverview } from "../services/productionUnitOverviewService.js";
 import { productionEvidenceUploadRouter } from "./productionEvidenceMedia.js";
+import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { BOARD_DEFAULTS } from "../lib/domain/productionBoard.js";
 
@@ -90,6 +92,19 @@ productionExperienceRouter.get("/runs/:runId/card", requireAnyPermission(...READ
     const card = await getRunCard(prisma, req.params.runId, { unitIds });
     if (!card) return res.status(404).json({ error: "Kartu produksi tidak ditemukan", code: "RUN_NOT_FOUND" });
     res.json({ readerMode: "COHORT", ...card });
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/units/:unitId/overview — P9C "Unit 360": satu bacaan kanonis per unit (setara detail
+// Resi), dipakai kartu Status Produksi & Rencana Produksi. Reader-gate SAMA seperti endpoint lain (cohort unit
+// ini wajib ada di reader cohort) — unit di luar cohort 404, BUKAN data V2 bocor lewat jalur ini.
+productionExperienceRouter.get("/units/:unitId/overview", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const unitIds = await readerCohort();
+    if (!unitIds) return res.status(404).json({ error: "Unit 360 tidak tersedia", code: "PRODUCTION_V2_READER_OFF" });
+    const overview = await getUnitOverview(prisma, req.params.unitId, { unitIds, canSeeValue: hasPermission(req.user, P.ORDER_PRICE_READ) });
+    if (!overview) return res.status(404).json({ error: "Unit tidak ditemukan atau di luar cohort", code: "UNIT_NOT_FOUND" });
+    res.json({ readerMode: "COHORT", ...overview });
   } catch (err) { handleErr(err, res); }
 });
 
@@ -204,3 +219,5 @@ productionExperienceRouter.post("/units/:unitId/confirm-arrival", requirePermiss
 
 // Unggah bukti (multipart) — izin & cohort diperiksa di router media.
 productionExperienceRouter.use(productionEvidenceUploadRouter);
+// P9B.1 — unggah foto identitas unit manual (multipart) — izin & cohort diperiksa di router media.
+productionExperienceRouter.use(productionUnitPhotoUploadRouter);

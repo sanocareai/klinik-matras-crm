@@ -9,14 +9,15 @@ import { BOARD_DEFAULTS, PRIORITY_LABEL, formatProductionDate, parseProductionDa
 import { applicableStepsFor, loadStepContext } from "./productionStepCommandService.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
+import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
-const COMPLAINT_LABEL = Object.freeze({
+export const COMPLAINT_LABEL = Object.freeze({
   KEPALA_PUSING: "Kepala pusing", SAKIT_PINGGANG: "Sakit pinggang", SAKIT_PUNGGUNG: "Sakit punggung", SAKIT_LEHER: "Sakit leher",
   BAHU: "Bahu", PEGAL_PEGAL: "Pegal-pegal", SARAF_KEJEPIT: "Saraf kejepit", SKOLIOSIS: "Skoliosis", LAINNYA: "Lainnya",
 });
-const STYLE_LABEL = Object.freeze({ BIASA: "Kasur Biasa", PLUSHTOP: "Plushtop", PILLOWTOP: "Pillowtop" });
-const VERDICT_LABEL = Object.freeze({ PAS: "PAS", TERLALU_KERAS: "Terlalu Keras", TERLALU_EMPUK: "Terlalu Empuk" });
+export const STYLE_LABEL = Object.freeze({ BIASA: "Kasur Biasa", PLUSHTOP: "Plushtop", PILLOWTOP: "Pillowtop" });
+export const VERDICT_LABEL = Object.freeze({ PAS: "PAS", TERLALU_KERAS: "Terlalu Keras", TERLALU_EMPUK: "Terlalu Empuk" });
 
 export const RUN_VIEW_INCLUDE = {
   unit: {
@@ -47,10 +48,10 @@ export const RUN_VIEW_INCLUDE = {
   custodyHandoffs: { select: { id: true, direction: true, status: true, revision: true, acceptedAt: true, offeredAt: true }, orderBy: { offeredAt: "asc" } },
 };
 
-const nameOf = (op) => op?.user?.name ?? null;
-const minutesBetween = (a, b) => Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000));
+export const nameOf = (op) => op?.user?.name ?? null;
+export const minutesBetween = (a, b) => Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000));
 
-function materialStatusOf(plan, material, shortage) {
+export function materialStatusOf(plan, material, shortage) {
   if (shortage) return { key: "KEKURANGAN", label: "Kekurangan bahan" };
   if (!plan) return { key: "BELUM_ADA_RENCANA", label: "Belum ada rencana" };
   if (!plan.bomLines.length) return { key: "BOM_BELUM_ADA", label: "BOM belum dibuat" };
@@ -62,7 +63,7 @@ function materialStatusOf(plan, material, shortage) {
 }
 
 // Status per tahap untuk UI: NA (tidak berlaku di jalur), DONE (bukti tercatat), CURRENT (aksi berikutnya), WAITING (menunggu pihak lain), PENDING.
-function stepStatuses(ctx) {
+export function stepStatuses(ctx) {
   const applicable = applicableStepsFor(ctx.split);
   const recorded = new Map();
   for (const e of ctx.evidence) recorded.set(e.stepNo, e);
@@ -80,7 +81,7 @@ function stepStatuses(ctx) {
   });
 }
 
-function indicatorsOf(run, ctx, materialStatus) {
+export function indicatorsOf(run, ctx, materialStatus) {
   const inbound = run.custodyHandoffs.filter((h) => h.direction === "INBOUND").at(-1);
   const fg = run.custodyHandoffs.filter((h) => h.direction === "FINISHED_GOODS").at(-1);
   const qc = ctx.latestInspection;
@@ -95,7 +96,7 @@ function indicatorsOf(run, ctx, materialStatus) {
   };
 }
 
-function warningsOf(run, ctx, materialStatus) {
+export function warningsOf(run, ctx, materialStatus) {
   const w = [];
   if (!run.plan?.operatorId) w.push({ code: "OPERATOR_BELUM", text: "PIC meja belum ditetapkan" });
   if (!run.unit.serviceId) w.push({ code: "LAYANAN_BELUM", text: "Layanan unit belum ditetapkan (ditetapkan setelah diagnosa)" });
@@ -110,7 +111,7 @@ function warningsOf(run, ctx, materialStatus) {
   return w;
 }
 
-function customerOf(run) {
+export function customerOf(run) {
   const order = run.unit.order;
   return {
     orderNumber: order?.orderNumber ?? null,
@@ -127,7 +128,7 @@ function customerOf(run) {
   };
 }
 
-export function toRunView(run, ctx, { now = new Date() } = {}) {
+export function toRunView(run, ctx, { now = new Date(), photoUrl = null } = {}) {
   const shortage = ctx.openShortage;
   const materialStatus = materialStatusOf(run.plan, ctx.material, shortage);
   const steps = stepStatuses(ctx);
@@ -139,7 +140,7 @@ export function toRunView(run, ctx, { now = new Date() } = {}) {
   const bucket = andonBucketOf({ next, started });
   return {
     runId: run.id, revision: run.revision, status: run.status, currentPhase: run.currentPhase, origin: run.origin,
-    unit: { id: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null },
+    unit: { id: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null, photoUrl },
     customer: customerOf(run),
     plan: run.plan ? {
       id: run.plan.id, status: run.plan.status, revision: run.plan.revision,
@@ -173,8 +174,9 @@ async function loadRuns(prisma, where) {
   return prisma.productionRun.findMany({ where, include: RUN_VIEW_INCLUDE, orderBy: [{ createdAt: "asc" }] });
 }
 async function viewsOf(prisma, runs, opts) {
+  const photoByUnit = await signUnitPhotoUrlsBulk(prisma, runs.map((r) => r.unitId));
   const views = [];
-  for (const run of runs) views.push(toRunView(run, await loadStepContext(prisma, run), opts));
+  for (const run of runs) views.push(toRunView(run, await loadStepContext(prisma, run), { ...opts, photoUrl: photoByUnit.get(run.unitId) ?? null }));
   return views;
 }
 
@@ -316,13 +318,22 @@ export async function getProductionCommandCenter(prisma, { unitIds, now = new Da
   for (const item of akanMasuk) if (!akanMasukByUnit.has(item.unit.id)) akanMasukByUnit.set(item.unit.id, item);
   const akanMasukList = [...akanMasukByUnit.values()];
 
+  // Foto identitas untuk dua daftar non-Run di atas (kartu Run sudah dapat dari viewsOf) — satu panggilan batch,
+  // bukan per kartu, supaya tetap tidak N+1 walau daftarnya digabung dari dua sumber berbeda.
+  const extraPhotoUnitIds = [...akanMasukList.map((i) => i.unit.id), ...awaitingArrivalNoRun.map((i) => i.unit.id)];
+  const extraPhotoByUnit = await signUnitPhotoUrlsBulk(prisma, extraPhotoUnitIds);
+  for (const item of akanMasukList) item.unit.photoUrl = extraPhotoByUnit.get(item.unit.id) ?? null;
+  for (const item of awaitingArrivalNoRun) item.unit.photoUrl = extraPhotoByUnit.get(item.unit.id) ?? null;
+
   const columns = Object.fromEntries(COMMAND_CENTER_COLUMNS.map((c) => [c.key, []]));
   for (const v of views) {
     const col = commandCenterColumn(v);
     if (col) columns[col].push(withValue(v));
   }
   columns.AKAN_MASUK = akanMasukList;
-  columns.BELUM_DIJADWALKAN = [...columns.BELUM_DIJADWALKAN, ...awaitingArrivalNoRun];
+  // P9B.1 — unit warisan (OFFERED, tanpa Run sama sekali) secara fisik SAMA dengan "pickup selesai, belum
+  // dikonfirmasi tiba" — masuk kolom DALAM_PERJALANAN, bukan lagi kolom "Belum Dijadwalkan" yang sudah dihapus.
+  columns.DALAM_PERJALANAN = [...columns.DALAM_PERJALANAN, ...awaitingArrivalNoRun];
 
   const dalamPerjalanan = views.filter((v) => v.bucket === "DALAM_PERJALANAN").length + awaitingArrivalNoRun.length;
   const belumDijadwalkan = views.filter((v) => !v.plan?.stationCode).length + awaitingArrivalNoRun.length;
@@ -370,7 +381,7 @@ export async function getRunCard(prisma, runId, { unitIds, now = new Date() } = 
   const run = await prisma.productionRun.findFirst({ where: { id: runId, unitId: { in: unitIds } }, include: RUN_VIEW_INCLUDE });
   if (!run) return null;
   const ctx = await loadStepContext(prisma, run);
-  const view = toRunView(run, ctx, { now });
+  const view = toRunView(run, ctx, { now, photoUrl: await signUnitPhotoUrlIfAny(prisma, run.unitId) });
   const issuedLines = run.plan
     ? await prisma.materialIssueLine.findMany({
         where: { materialIssue: { productionPlanId: run.plan.id, status: "ISSUED" } },
@@ -510,7 +521,7 @@ export async function getWarehouseProductionQueue(prisma, { unitIds, now = new D
 // Paket laporan (before–process–after) untuk Sales. Media bertanda tangan (akses aman, 60 menit). Status broadcast = baris outbox
 // `production.report.ready` (PENDING sampai consumer mengirim; tidak pernah dikarang terkirim).
 // ---------------------------------------------------------------------------
-const latestOf = (evidence, stepNo) => evidence.filter((e) => e.stepNo === stepNo).at(-1) || null;
+export const latestOf = (evidence, stepNo) => evidence.filter((e) => e.stepNo === stepNo).at(-1) || null;
 
 export function buildReportMessage(report) {
   const lines = [];

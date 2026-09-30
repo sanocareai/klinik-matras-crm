@@ -717,6 +717,8 @@ export const api = {
   getProductionV2CommandCenter: () => request("/production-v2/command-center"),
   getProductionV2Andon: (date) => request(`/production-v2/andon${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   getProductionV2Card: (runId) => request(`/production-v2/runs/${runId}/card`),
+  // P9C — Unit 360: satu bacaan kanonis per unit (setara detail Resi), dipakai kartu Status Produksi & Rencana Produksi.
+  getUnitOverview: (unitId) => request(`/production-v2/units/${unitId}/overview`),
   getProductionV2WorkerQueue: (lane) => request(`/production-v2/worker/${lane}`),
   getProductionV2WarehouseQueue: () => request("/production-v2/warehouse/queue"),
   getProductionV2Report: (runId) => request(`/production-v2/runs/${runId}/report`),
@@ -739,6 +741,12 @@ export const api = {
     fd.append("runId", runId);
     for (const file of files) fd.append("files", file);
     return uploadWithProgress("/production-v2/evidence/upload", fd, onProgress);
+  },
+  // P9B.1 — foto identitas unit manual (hanya tampil kalau unit belum punya foto pickup driver, lihat backend).
+  uploadUnitPhoto: (unitId, file, onProgress) => {
+    const fd = new FormData();
+    fd.append("photo", file);
+    return uploadWithProgress(`/production-v2/units/${unitId}/photo`, fd, onProgress);
   },
   getRoutingStages: () => request("/master-data/routing-stages"),
   failUnitStage: (unitId, stageId, { blockReason, note }) =>
@@ -1108,6 +1116,7 @@ export const api = {
   getAnalyticsOverview: (params) => request("/analytics/overview" + buildQuery(params)),
   getAnalyticsPerformance: (params) => request("/analytics/performance" + buildQuery(params)),
   getAnalyticsPipelineFunnel: (params) => request("/analytics/pipeline-funnel" + buildQuery(params)),
+  getAnalyticsStageBySales: (params) => request("/analytics/stage-by-sales" + buildQuery(params)),
   // Sisi WAKTU pipeline (lama di stage + pergerakan) — pembaca tabel
   // pipeline_transitions. Data baru terkumpul sejak 25 Juli 2026, tidak
   // bisa di-backfill; respons menyertakan dataStartedAt untuk empty state.
@@ -1234,6 +1243,7 @@ export const api = {
 
   // Pipeline
   getPipelineBoard: (params) => request("/pipeline/board" + buildQuery(params)),
+  getPipelineOrderBoard: (params) => request("/pipeline/order-board" + buildQuery(params)),
 
   // Broadcast
   getBroadcastCampaigns: () => request("/broadcast/campaigns"),

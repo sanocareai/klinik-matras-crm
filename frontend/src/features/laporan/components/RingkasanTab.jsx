@@ -13,6 +13,7 @@ import ProgressRing from "@/components/ui/progress-ring.jsx";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import BarRow from "./BarRow.jsx";
+import StageBySalesCard from "./StageBySalesCard.jsx";
 
 // D-026 (20 Agustus 2026) — ringkasan kampanye promo (mis. "Merdeka dari
 // Sakit Pinggang"). SENGAJA fetch sendiri (bukan lewat prop `summary` dari
@@ -84,8 +85,14 @@ const CATEGORY_LABELS = {
 // Urutan alur kerja produksi, BUKAN alfabet — supaya kolom ini terbaca
 // sebagai antrean ("20 menunggu, 17 diambil, 10 dikerjakan..."), bukan
 // daftar acak. CANCELLED sengaja terakhir & diberi tone merah.
-const STATUS_ORDER = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
-const STATUS_TONE = { DELIVERED: "green", CANCELLED: "red", PENDING: "orange" };
+// 30 Sep 2026 (permintaan owner): jumlah order per SEMUA status ditampilkan —
+// Menunggu, Pengambilan, Diproses, Siap Kirim, Pengiriman, Terkirim, Sewa,
+// Dibatalkan. Menunggu & Dibatalkan tetap tampil jumlahnya tapi TIDAK masuk omset.
+const STATUS_ORDER = ["PENDING", "PICKUP", "PROCESSING", "READY", "SHIPPING", "DELIVERED", "SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
+const STATUS_TONE = { DELIVERED: "green", SHIPPING: "green", SEWA_DIAMBIL: "green", CANCELLED: "red", PENDING: "orange" };
+const STATUS_TANPA_OMSET = new Set(["PENDING", "CANCELLED"]);
+const INFO_TARGET = "Total nilai order (tanpa Menunggu dan Dibatalkan) yang dipegang 8 sales + team lead pada BULAN BERJALAN, dibandingkan dengan target bulanan tim. Angkanya bisa lebih kecil dari kartu Nilai Penjualan karena Nilai Penjualan menghitung SEMUA order di periode yang dipilih, termasuk order dari pelanggan yang belum ditugaskan ke sales atau dipegang non-sales (mis. admin/B2B). Target juga selalu bulan berjalan, tidak ikut pilihan tanggal di atas.";
+const INFO_STATUS = "Jumlah order di periode terpilih, dikelompokkan menurut status pengerjaannya. Menunggu = sudah diinput tapi belum pasti dikerjakan; Pengambilan = kasur dijemput dari customer; Diproses = sedang dikerjakan; Siap Kirim = selesai, menunggu diantar; Pengiriman = sedang diantar; Terkirim = sudah sampai. Menunggu dan Dibatalkan tetap dihitung jumlahnya di sini, tetapi nilainya TIDAK masuk omset.";
 
 function ChartTip({ active, payload, label, granularity }) {
   if (!active || !payload?.length) return null;
@@ -105,6 +112,12 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
   // targetReport SENGAJA month-to-date TETAP, tidak ikut `range` yang
   // dipilih — lihat catatan panjang di Laporan.jsx#salesReportBulanIni.
   const { teamGrossAll, percentToTarget, targetValue } = computeTeamTarget(targetReport);
+  // Selisih dengan kartu Nilai Penjualan hanya bermakna kalau periode yang dipilih
+  // = SELURUH bulan berjalan (sama dengan periode target); selain itu disembunyikan.
+  const pt = targetReport?.periodeTarget;
+  const blnPrefix = pt ? `${pt.year}-${String(pt.month).padStart(2, "0")}` : null;
+  const periodeSamaDenganTarget = !!blnPrefix && range?.from === `${blnPrefix}-01` && (range?.to || "").startsWith(blnPrefix);
+  const selisihVsNilai = periodeSamaDenganTarget && summary?.uang ? (summary.uang.grossValue || 0) - teamGrossAll : null;
   const labelBulanTarget = namaBulanTarget(targetReport?.periodeTarget);
   const sumberLead = [...(overview?.leadSourceBreakdown || [])].sort((a, b) => b.count - a.count);
   const sumberLeadMax = Math.max(1, ...sumberLead.map((r) => r.count));
@@ -170,8 +183,8 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
                 </span>
               </ProgressRing>
               <div className="min-w-[160px] flex-1">
-                <p className="text-[13px] font-medium text-ink3">
-                  Target Bulanan Tim
+                <p className="flex flex-wrap items-center gap-1 text-[13px] font-medium text-ink3">
+                  Target Bulanan Tim <InfoTooltip text={INFO_TARGET} />
                   {/* Selalu bulan berjalan — TIDAK ikut date picker di atas
                       (lihat catatan Laporan.jsx#salesReportBulanIni).
                       Ditandai eksplisit supaya tidak membingungkan saat
@@ -183,6 +196,11 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
                   {formatRupiah(teamGrossAll)}
                 </p>
                 <p className="text-xs text-ink3">dari target {formatRupiah(targetValue)}</p>
+                {selisihVsNilai != null && selisihVsNilai > 0 && (
+                  <p className="mt-1 text-[11px] text-ink3">
+                    Nilai Penjualan {formatRupiah(summary.uang.grossValue)} lebih besar {formatRupiah(selisihVsNilai)} karena termasuk order yang tidak dipegang sales tim.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -210,7 +228,7 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           format={(v) => formatRupiah(Math.round(v))}
           growth={overview?.growthOrderValue} compareLabel={cmp}
           sub={`${uang?.totalOrders || 0} order · order masuk (belum tentu terbayar)`}
-          tooltip="Total nilai order MASUK di periode yang dipilih di atas — belum tentu sudah dibayar (lihat kartu Sudah Lunas/Belum Lunas)."
+          tooltip="Total nilai order MASUK di periode yang dipilih di atas — belum tentu sudah dibayar (lihat kartu Sudah Lunas/Belum Lunas). Order berstatus Menunggu dan Dibatalkan TIDAK dihitung karena belum pasti."
         />
         <KpiCard
           index={1}
@@ -315,6 +333,9 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
           </p>
         </div>
       )}
+
+      {/* ── SALES PER STAGE (30 Sep 2026, permintaan owner, gaya bento) ── */}
+      <StageBySalesCard range={range} onGoTab={onGoTab} />
 
       {/* ── 2. TREN PENDAPATAN + KONVERSI ─────────────────────────────── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
@@ -431,8 +452,8 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <ChartCard
           index={6}
-          title="Antrean Produksi"
-          description="Order per status — beban kerja tim saat ini"
+          title={<span className="inline-flex items-center gap-1.5">Order per Status <InfoTooltip text={INFO_STATUS} /></span>}
+          description="Jumlah order menurut status pengerjaan (Menunggu dan Dibatalkan tidak masuk omset)"
           empty={statusRows.length === 0 ? "Belum ada order pada periode ini." : null}
         >
           <div className="flex flex-col gap-2.5">
@@ -442,11 +463,15 @@ export default function RingkasanTab({ summary, overview, perf, funnel = [], onG
                 label={ORDER_STATUS_LABELS[r.status] || r.status}
                 value={r.count} max={statusMax}
                 display={`${r.count} order`}
-                sub={formatRupiahShort(r.value)}
+                sub={STATUS_TANPA_OMSET.has(r.status) ? `${formatRupiahShort(r.value)} · tidak masuk omset` : formatRupiahShort(r.value)}
                 tone={STATUS_TONE[r.status] || "accent"}
               />
             ))}
           </div>
+          <p className="mt-3 border-t border-line pt-3 text-[11px] text-ink3">
+            Total <strong className="text-ink2">{statusRows.reduce((n, r) => n + r.count, 0).toLocaleString("id-ID")}</strong> order ·
+            masuk omset <strong className="text-ink2">{statusRows.filter((r) => !STATUS_TANPA_OMSET.has(r.status)).reduce((n, r) => n + r.count, 0).toLocaleString("id-ID")}</strong>
+          </p>
         </ChartCard>
 
         <ChartCard

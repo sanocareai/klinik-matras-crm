@@ -1656,6 +1656,9 @@ model Unit {
   custodyHandoffs   UnitCustodyHandoff[]
   productionRunExceptions ProductionRunException[]
   productionMaterialShortages ProductionMaterialShortage[]
+  // P9B.1 — foto identitas unit (fallback manual saja; foto pickup driver DIBACA LANGSUNG dari Job.proofPhotoUrls
+  // via storage_key, tidak pernah disalin ke sini — lihat UnitPhoto di bawah).
+  photos UnitPhoto[]
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -8896,6 +8899,43 @@ model ProductionStepEvidence {
   @@index([runId, createdAt])
   @@index([operationRunId])
   @@map("production_step_evidence_v2")
+}
+
+// P9B.1 — "foto identitas unit" untuk kartu Status Produksi/Rencana Produksi. HANYA menyimpan unggahan MANUAL
+// Production (PRODUCTION_MANUAL) — foto pickup driver (DRIVER_PICKUP) TIDAK PERNAH disalin ke sini, dibaca
+// langsung dari Job.proofPhotoUrls saat request (lihat productionUnitPhotoService.js) karena Job/JobUnit tidak
+// punya kolom foto per-unit sama sekali (JobUnit murni tabel penghubung) — atribusi per-unit hanya aman untuk
+// job dengan TEPAT SATU JobUnit; job multi-unit tidak pernah menampilkan foto pickup untuk unit manapun
+// (jangan menebak unit mana foto milik siapa). Source di enum tetap mencantumkan DRIVER_PICKUP untuk
+// mendokumentasikan pasangan sumber konseptual yang dipakai read API (photoSource di respons), bukan berarti
+// baris dengan source itu akan pernah benar-benar ditulis ke tabel ini.
+enum UnitPhotoSource {
+  DRIVER_PICKUP
+  PRODUCTION_MANUAL
+}
+
+model UnitPhoto {
+  id     String @id @default(uuid()) @db.Uuid
+  unitId String @map("unit_id") @db.Uuid
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  source UnitPhotoSource
+
+  // Nama file di disk = sha1(isi) + ekstensi (pola sama dengan production_step_evidence_v2/productionEvidenceMedia.js)
+  // — unggah ulang berkas identik tidak pernah menggandakan baris/berkas. TIDAK ADA URL publik permanen apa pun
+  // disimpan di sini; URL bertanda-tangan/terautentikasi dibuat saat baca (lihat routes/productionUnitPhoto.js).
+  storageKey String @map("storage_key")
+  mimeType   String @map("mime_type")
+  sizeBytes  Int    @map("size_bytes")
+
+  uploadedById String   @map("uploaded_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  // Diganti unggahan manual yang lebih baru untuk unit yang sama — baris LAMA tidak dihapus (audit), hanya
+  // ditandai supersededAt supaya read API tahu baris mana yang aktif tanpa query "terbaru per unit" berulang.
+  supersededAt DateTime? @map("superseded_at")
+
+  @@index([unitId, source, supersededAt])
+  @@map("unit_photos")
 }
 
 enum ProductionMaterialShortageStatus {

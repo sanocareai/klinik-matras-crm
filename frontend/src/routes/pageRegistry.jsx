@@ -99,6 +99,9 @@ const WarehouseReports = lazy(() => import("../pages/warehouse/WarehouseReports.
 // P8 Production Experience V2 (inert bila reader V2 OFF). Aplikasi PIC Table/Corner & Andon TV adalah halaman MANDIRI (App.jsx STANDALONE_PAGES).
 const ProductionPlannerV2 = lazy(() => import("../pages/bengkel/ProductionPlannerV2.jsx"));
 const ProductionReportV2 = lazy(() => import("../pages/bengkel/ProductionReportV2.jsx"));
+// P9B.1 — workspace penjadwalan BARU ("Rencana Produksi"), terpisah dari halaman status pipeline di atas
+// (ProductionPlannerV2, sekarang berjudul tampilan "Status Produksi" tapi URL-nya tetap production-v2).
+const ProductionRencanaWorkspace = lazy(() => import("../pages/bengkel/ProductionRencanaWorkspace.jsx"));
 const WarehouseProductionQueue = lazy(() => import("../pages/warehouse/WarehouseProductionQueue.jsx"));
 const WorkerLane = lazy(() => import("../pages/produksi/WorkerLane.jsx"));
 const ProductionAndon = lazy(() => import("../pages/bengkel/ProductionAndon.jsx"));
@@ -240,6 +243,8 @@ export const PAGES = [
   { path: "/bengkel/qc-v2", render: () => <ProductionQc /> },
   { path: "/bengkel/production-v2", render: () => <ProductionPlannerV2 /> },
   { path: "/bengkel/production-v2/laporan/:runId", render: () => <ProductionReportV2 /> },
+  // P9B.1 — workspace penjadwalan baru, URL sendiri (bukan sub-path production-v2, supaya tidak butuh redirect/D-144).
+  { path: "/bengkel/rencana-produksi", render: () => <ProductionRencanaWorkspace /> },
   // P8.1 (UI & Navigation Consolidation) — rute BARU murni navigasi/layout.
   { path: "/bengkel/ringkasan", render: () => <ProductionRingkasan /> },
   { path: "/bengkel/quality-control", render: () => <ProductionQcHub /> },
