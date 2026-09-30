@@ -22,6 +22,14 @@ function avgEffectiveMinutes(pairs) {
 import { platformDariDetail, PLATFORM } from "../services/platformIklan.js";
 import { pctOrNull } from "../services/conversionMetrics.js";
 
+// Definisi OMSET (30 September 2026, keputusan Owner): order berstatus PENDING
+// ("Menunggu" — mis. customer sudah fix tapi minta dikerjakan 2 minggu lagi)
+// BELUM PASTI, jadi TIDAK dihitung omset/nilai order di laporan mana pun —
+// sama dengan CANCELLED. Berlaku untuk semua SUM(value) berbasis createdAt.
+// Angka berbasis paidAt (uang benar-benar diterima: Terkumpul/komisi) SENGAJA
+// tidak diubah. Raw SQL di file ini memakai literal NOT IN yang sama.
+const OMSET_EXCLUDED_STATUS = ["CANCELLED", "PENDING"];
+
 export const analyticsRouter = express.Router();
 analyticsRouter.use(requireAuth);
 
@@ -164,13 +172,13 @@ analyticsRouter.get("/overview", async (req, res) => {
       prevRange ? prisma.customer.count({ where: { createdAt: prevRange, pipelineStage: { not: "SPAM" }, leadSource: { not: "B2B_DIRECT" } } }) : Promise.resolve(null),
 
       prisma.order.aggregate({
-        where: tanpaOrderSpam({ ...orderWhere, status: { not: "CANCELLED" } }),
+        where: tanpaOrderSpam({ ...orderWhere, status: { notIn: OMSET_EXCLUDED_STATUS } }),
         _count: { _all: true },
         _sum: { value: true },
       }),
       prevRange
         ? prisma.order.aggregate({
-            where: tanpaOrderSpam({ createdAt: prevRange, status: { not: "CANCELLED" } }),
+            where: tanpaOrderSpam({ createdAt: prevRange, status: { notIn: OMSET_EXCLUDED_STATUS } }),
             _count: { _all: true },
             _sum: { value: true },
           })
@@ -179,7 +187,7 @@ analyticsRouter.get("/overview", async (req, res) => {
       // thisMonth = range saat ini (atau bulan ini kalau tidak ada filter)
       (from && to)
         ? prisma.order.aggregate({
-            where: tanpaOrderSpam({ ...orderWhere, status: { not: "CANCELLED" } }),
+            where: tanpaOrderSpam({ ...orderWhere, status: { notIn: OMSET_EXCLUDED_STATUS } }),
             _sum: { value: true },
           })
         : (async () => {
@@ -190,7 +198,7 @@ analyticsRouter.get("/overview", async (req, res) => {
             return prisma.order.aggregate({
               where: tanpaOrderSpam({
                 createdAt: { gte: startOfMonthWIB(year, month) },
-                status: { not: "CANCELLED" },
+                status: { notIn: OMSET_EXCLUDED_STATUS },
               }),
               _sum: { value: true },
             });
@@ -239,7 +247,7 @@ analyticsRouter.get("/overview", async (req, res) => {
                COALESCE(SUM(o.value), 0)::bigint as value
         FROM "Order" o
         JOIN "Customer" c ON c.id = o."customerId"
-        WHERE o.status != 'CANCELLED'
+        WHERE o.status NOT IN ('CANCELLED', 'PENDING')
           AND c."pipelineStage" != 'SPAM'
           AND o."createdAt" >= NOW() - INTERVAL '6 months'
         GROUP BY 1
@@ -446,7 +454,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
     // di bawah — leadSource breakdown & totalOrders/grossValue tetap
     // mencakup B2B penuh. Keputusan owner, 11 September 2026.
     const custWhereFunnel = { ...custWhereKonversi, leadSource: { not: "B2B_DIRECT" } };
-    const orderWhere = { ...buildDateWhere(from, to), status: { not: "CANCELLED" } };
+    const orderWhere = { ...buildDateWhere(from, to), status: { notIn: OMSET_EXCLUDED_STATUS } };
     const win = seriesWindow(from, to);
 
     const [
@@ -538,7 +546,7 @@ analyticsRouter.get("/business-summary", async (req, res) => {
             SELECT to_char(date_trunc('hour', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD"T"HH24') AS bucket,
                    COALESCE(SUM(o.value), 0)::bigint AS value
             FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
-            WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+            WHERE o.status NOT IN ('CANCELLED', 'PENDING') AND c."pipelineStage" != 'SPAM'
               AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
             GROUP BY 1 ORDER BY 1`
       : win.granularity === "day"
@@ -546,14 +554,14 @@ analyticsRouter.get("/business-summary", async (req, res) => {
             SELECT to_char(date_trunc('day', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
                    COALESCE(SUM(o.value), 0)::bigint AS value
             FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
-            WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+            WHERE o.status NOT IN ('CANCELLED', 'PENDING') AND c."pipelineStage" != 'SPAM'
               AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
             GROUP BY 1 ORDER BY 1`
         : prisma.$queryRaw`
             SELECT to_char(date_trunc('month', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
                    COALESCE(SUM(o.value), 0)::bigint AS value
             FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
-            WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+            WHERE o.status NOT IN ('CANCELLED', 'PENDING') AND c."pipelineStage" != 'SPAM'
               AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
             GROUP BY 1 ORDER BY 1`,
 
@@ -802,7 +810,7 @@ export async function computeSalesRow(u, ctx) {
     // catatan `mineAtribusi`).
     prisma.order.aggregate({
       where: tanpaOrderSpam({
-        ...buildDateWhere(from, to), status: { not: "CANCELLED" },
+        ...buildDateWhere(from, to), status: { notIn: OMSET_EXCLUDED_STATUS },
         customer: { conversations: { some: mineAtribusi } },
       }),
       _count: { _all: true }, _sum: { value: true },
@@ -831,7 +839,7 @@ export async function computeSalesRow(u, ctx) {
     // terhitung di sini sampai paymentStatus-nya disentuh ulang.
     prisma.order.aggregate({
       where: tanpaOrderSpam({
-        status: { not: "CANCELLED" }, paidAt: { gte: mulai, lt: selesai },
+        status: { notIn: OMSET_EXCLUDED_STATUS }, paidAt: { gte: mulai, lt: selesai },
         customer: { conversations: { some: mineAtribusi } },
       }),
       _sum: { value: true },
@@ -1276,7 +1284,7 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     const allTeamIds = [...users.map((u) => u.id), ...teamLeadUsers.map((u) => u.id)];
     const teamGrossPrevAgg = prevRangeSales ? await prisma.order.aggregate({
       where: tanpaOrderSpam({
-        createdAt: prevRangeSales, status: { not: "CANCELLED" },
+        createdAt: prevRangeSales, status: { notIn: OMSET_EXCLUDED_STATUS },
         customer: { conversations: { some: { assignedToId: { in: allTeamIds }, type: "INDIVIDUAL" } } },
       }),
       _sum: { value: true },
@@ -1411,7 +1419,7 @@ analyticsRouter.get("/sales-report/lunas-detail", async (req, res) => {
 
     const orders = await prisma.order.findMany({
       where: tanpaOrderSpam({
-        status: { not: "CANCELLED" },
+        status: { notIn: OMSET_EXCLUDED_STATUS },
         paidAt: { gte: mulai, lt: selesai },
         customer: { conversations: { some: { type: "INDIVIDUAL", assignedToId: userId } } },
       }),
@@ -1659,7 +1667,7 @@ analyticsRouter.get("/source-performance", async (req, res) => {
         prisma.order.aggregate({
           where: tanpaOrderSpam({
             customer: { leadSource: s.leadSource, ...custDateWhere },
-            status: { not: "CANCELLED" },
+            status: { notIn: OMSET_EXCLUDED_STATUS },
           }),
           _sum: { value: true },
         }),
@@ -1752,7 +1760,7 @@ analyticsRouter.get("/sales-performance", async (req, res) => {
       const orderAgg = await prisma.order.aggregate({
         where: tanpaOrderSpam({
           customer: { assignedSalesId: u.id },
-          status:   { not: "CANCELLED" },
+          status: { notIn: OMSET_EXCLUDED_STATUS },
           createdAt: { gte: startOfMonth, lt: endOfMonth },
         }),
         _sum: { value: true },
@@ -1793,7 +1801,7 @@ analyticsRouter.get("/pipeline-funnel", async (req, res) => {
         const agg = await prisma.order.aggregate({
           where: {
             customer: { pipelineStage: g.pipelineStage, ...custWhere },
-            status: { not: "CANCELLED" },
+            status: { notIn: OMSET_EXCLUDED_STATUS },
           },
           _sum: { value: true },
         });
@@ -1815,6 +1823,71 @@ analyticsRouter.get("/pipeline-funnel", async (req, res) => {
   }
 });
 
+
+// ── GET /analytics/stage-by-sales?from=&to= ────────────────────────────────
+// Kartu "Sales per Stage" di tab Ringkasan (30 September 2026). Menjawab:
+// "tiap sales sedang pegang berapa lead di stage mana, dan berapa yang mandek?"
+// Populasi & aturan SAMA PERSIS dengan papan Pipeline (routes/pipeline.js
+// /board): filter Customer.createdAt (WIB), sales = Customer.assignedSales,
+// mandek = updatedAt >= 14 hari & stage bukan TRANSACTION/REVIEWED/SPAM
+// (isStale di KanbanCard.jsx) — supaya angka di sini dan di halaman Pipeline
+// tidak pernah beda. Nilai dipisah: `value` = omset pasti (tanpa CANCELLED &
+// PENDING, lihat OMSET_EXCLUDED_STATUS), `pendingValue` = order "Menunggu"
+// yang belum pasti — ditampilkan terpisah, TIDAK dijumlah ke omset.
+const STAGE_URUT = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED", "SPAM"];
+const STAGE_TIDAK_MANDEK = new Set(["TRANSACTION", "REVIEWED", "SPAM"]);
+analyticsRouter.get("/stage-by-sales", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const customers = await prisma.customer.findMany({
+      where: buildDateWhere(from, to),
+      select: {
+        pipelineStage: true, updatedAt: true,
+        assignedSales: { select: { id: true, name: true, avatarUrl: true } },
+        orders: { select: { status: true, value: true } },
+      },
+    });
+
+    const now = Date.now();
+    const stages = Object.fromEntries(STAGE_URUT.map((s) => [s, { stage: s, count: 0, value: 0, pendingValue: 0, stale: 0 }]));
+    const sales = new Map();
+    for (const c of customers) {
+      const stage = c.pipelineStage || "NEW";
+      const st = stages[stage] || (stages[stage] = { stage, count: 0, value: 0, pendingValue: 0, stale: 0 });
+      const stale = !STAGE_TIDAK_MANDEK.has(stage) && (now - new Date(c.updatedAt).getTime()) / 86_400_000 >= 14;
+      let value = 0, pendingValue = 0;
+      for (const o of c.orders) {
+        if (o.status === "PENDING") pendingValue += o.value;
+        else if (!OMSET_EXCLUDED_STATUS.includes(o.status)) value += o.value;
+      }
+      st.count++; st.value += value; st.pendingValue += pendingValue; if (stale) st.stale++;
+
+      const key = c.assignedSales?.id || "__none__";
+      if (!sales.has(key)) {
+        sales.set(key, {
+          userId: c.assignedSales?.id || null,
+          name: c.assignedSales?.name || "Belum ditugaskan",
+          avatarUrl: c.assignedSales?.avatarUrl || null,
+          total: 0, stale: 0, value: 0, pendingValue: 0,
+          byStage: Object.fromEntries(STAGE_URUT.map((s) => [s, 0])),
+        });
+      }
+      const row = sales.get(key);
+      row.total++; row.byStage[stage] = (row.byStage[stage] || 0) + 1;
+      row.value += value; row.pendingValue += pendingValue; if (stale) row.stale++;
+    }
+
+    res.json({
+      staleDays: 14,
+      totalLeads: customers.length,
+      stages: Object.values(stages),
+      sales: [...sales.values()].sort((a, b) => (a.userId === null) - (b.userId === null) || b.total - a.total),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
 // ── GET /analytics/revenue-series?from=&to= ────────────────────────────────
 // Deret pendapatan untuk grafik "Sales Overview".
 //
@@ -1852,7 +1925,7 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
           SELECT to_char(date_trunc('hour', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD"T"HH24') AS bucket,
                  COALESCE(SUM(o.value), 0)::bigint AS value
           FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
-          WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+          WHERE o.status NOT IN ('CANCELLED', 'PENDING') AND c."pipelineStage" != 'SPAM'
             AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
     } else if (win.granularity === "day") {
@@ -1860,7 +1933,7 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
           SELECT to_char(date_trunc('day', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM-DD') AS bucket,
                  COALESCE(SUM(o.value), 0)::bigint AS value
           FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
-          WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+          WHERE o.status NOT IN ('CANCELLED', 'PENDING') AND c."pipelineStage" != 'SPAM'
             AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
     } else {
@@ -1868,7 +1941,7 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
           SELECT to_char(date_trunc('month', o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta'), 'YYYY-MM') AS bucket,
                  COALESCE(SUM(o.value), 0)::bigint AS value
           FROM "Order" o JOIN "Customer" c ON c.id = o."customerId"
-          WHERE o.status != 'CANCELLED' AND c."pipelineStage" != 'SPAM'
+          WHERE o.status NOT IN ('CANCELLED', 'PENDING') AND c."pipelineStage" != 'SPAM'
             AND o."createdAt" >= ${win.mulai} AND o."createdAt" < ${win.selesai}
           GROUP BY 1 ORDER BY 1`;
     }
@@ -1883,7 +1956,7 @@ analyticsRouter.get("/revenue-series", async (req, res) => {
     // `points`) karena butuh COUNT, bukan cuma SUM — win.mulai/selesai yang
     // SAMA supaya AOV selalu sepadan dengan Total Revenue di atasnya.
     const orderCountAgg = await prisma.order.aggregate({
-      where: tanpaOrderSpam({ status: { not: "CANCELLED" }, createdAt: { gte: win.mulai, lt: win.selesai } }),
+      where: tanpaOrderSpam({ status: { notIn: OMSET_EXCLUDED_STATUS }, createdAt: { gte: win.mulai, lt: win.selesai } }),
       _count: { _all: true },
     });
     const totalOrders = orderCountAgg._count._all;
@@ -2151,7 +2224,7 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
         -- total_value yang sudah benar exclude CANCELLED.
         COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" IN ('TRANSACTION', 'REVIEWED') AND o.status <> 'CANCELLED')::int AS won,
         COUNT(DISTINCT c.id) FILTER (WHERE c."pipelineStage" = 'SPAM')::int        AS spam_count,
-        COALESCE(SUM(o.value) FILTER (WHERE o.status <> 'CANCELLED'), 0)::bigint   AS total_value
+        COALESCE(SUM(o.value) FILTER (WHERE o.status NOT IN ('CANCELLED', 'PENDING')), 0)::bigint   AS total_value
       FROM "Customer" c
       LEFT JOIN "Order" o ON o."customerId" = c.id
       WHERE c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
@@ -2223,7 +2296,7 @@ analyticsRouter.get("/lead-source-detail", async (req, res) => {
       SELECT COUNT(*)::int AS n, COALESCE(SUM(o.value), 0)::bigint AS nilai
       FROM "Order" o
       JOIN "Customer" c ON c.id = o."customerId"
-      WHERE o.status <> 'CANCELLED'
+      WHERE o.status NOT IN ('CANCELLED', 'PENDING')
         AND o."createdAt" >= ${mulai} AND o."createdAt" < ${selesai}
         AND c."createdAt" < ${mulai}`;
     const leadLama = { order: Number(leadLamaRaw.n), totalValue: Number(leadLamaRaw.nilai) };

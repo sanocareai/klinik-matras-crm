@@ -2,7 +2,9 @@ import React from "react";
 import { ChevronRight, Timer, ArrowRightLeft } from "lucide-react";
 import { formatRupiah, STAGE_LABELS } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
+import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import ChartCard from "./ChartCard.jsx";
+import { STAGE_INFO } from "../utils/stageInfo.js";
 import Sparkline from "./Sparkline.jsx";
 
 // Revisi 26 Jul 2026: pipeline 8-stage, LOST dihapus (jadi hanya PAID/REVIEWED
@@ -55,6 +57,20 @@ function cariBottleneck(avgDaysInStage) {
   return kandidat.reduce((a, b) => (b.avgDays > a.avgDays ? b : a));
 }
 
+// Penjelasan sederhana tiap bagian (permintaan owner 30 Sep 2026). Definisi
+// stage ada di ../utils/stageInfo.js (dipakai juga kartu Sales per Stage).
+const INFO = {
+  funnel: "Gambaran perjalanan pelanggan dari lead baru sampai transaksi. Tiap kotak = satu stage: angka besar adalah jumlah pelanggan yang SEKARANG ada di stage itu, Rp di bawahnya adalah nilai order pasti mereka (order Menunggu dan Dibatalkan tidak dihitung). Yang dihitung hanya pelanggan yang pertama kali masuk di periode terpilih.",
+  konversi: "Persentase di antara dua kotak = jumlah pelanggan di kotak kanan dibagi jumlah di kotak kiri. Contoh: 2 di Prospek dan 1 di Transaksi berarti 50%. Ini foto kondisi sekarang, bukan hitungan pelanggan yang benar-benar berpindah, jadi hanya patokan kasar. Tanda 0% muncul kalau stage sebelumnya kosong atau stage ini belum ada isinya.",
+  detail: "Rincian angka funnel dalam bentuk tabel, supaya lebih mudah dibandingkan antar stage.",
+  jumlah: "Jumlah pelanggan yang sekarang berada di stage itu.",
+  nilai: "Total nilai order pasti milik pelanggan di stage itu. Order Menunggu (belum pasti) dan Dibatalkan tidak dihitung.",
+  persen: "Porsi stage ini dari SELURUH pelanggan di periode terpilih (termasuk Spam). Rumus: jumlah di stage ini dibagi total semua stage. Semua baris kalau dijumlah = 100%.",
+  kecepatan: "Rata-rata berapa lama pelanggan tinggal di satu stage sebelum dipindah ke stage berikutnya. Makin pendek makin cepat closing. Dihitung dari riwayat perpindahan stage yang dicatat sistem.",
+  sample: "n = jumlah perpindahan yang dipakai untuk menghitung rata-rata itu. Kalau angkanya kecil (mis. n=2), rata-ratanya belum bisa dipercaya.",
+  pergerakan: "Berapa pelanggan MASUK ke tiap stage selama periode terpilih. Beda dengan funnel di atas yang menunjukkan posisi pelanggan saat ini: di sini yang dihitung adalah kejadian perpindahannya.",
+};
+
 export default function PipelineTab({ funnel, velocity }) {
   const total = funnel.reduce((s, f) => s + f.count, 0);
 
@@ -85,7 +101,7 @@ export default function PipelineTab({ funnel, velocity }) {
   return (
     <div className="flex flex-col gap-5">
       <ChartCard
-        title="Sales Pipeline Funnel"
+        title={<span className="inline-flex items-center gap-1.5">Sales Pipeline Funnel <InfoTooltip text={INFO.funnel} /></span>}
         description="Jumlah pelanggan & konversi antar stage"
         empty={funnel.length === 0 ? "Belum ada data pipeline." : null}
       >
@@ -99,7 +115,7 @@ export default function PipelineTab({ funnel, velocity }) {
                   <div className="flex flex-col items-center justify-center px-1 py-2 sm:py-0">
                     <ChevronRight className="text-ink3" size={18} />
                     {conversion != null && (
-                      <span className="text-[11px] font-bold text-ink3">{conversion}%</span>
+                      <span className="flex items-center gap-0.5 text-[11px] font-bold text-ink3">{conversion}% <InfoTooltip text={INFO.konversi} /></span>
                     )}
                   </div>
                 )}
@@ -110,7 +126,7 @@ export default function PipelineTab({ funnel, velocity }) {
                   {/* Teks putih dihapus — kartu funnel sekarang permukaan
                       terang, jadi warna teks ikut tangga tipe normal. */}
                   <p className="t-metric text-[26px]">{item.count}</p>
-                  <p className="t-body mt-1.5 font-medium">{item.label}</p>
+                  <p className="t-body mt-1.5 flex items-center gap-1 font-medium">{item.label} <InfoTooltip text={STAGE_INFO[item.stage]} /></p>
                   <p className="t-secondary mt-0.5">{formatRupiah(item.value)}</p>
                 </div>
               </React.Fragment>
@@ -119,13 +135,15 @@ export default function PipelineTab({ funnel, velocity }) {
         </div>
       </ChartCard>
 
-      <ChartCard title="Detail per Stage">
+      <ChartCard title={<span className="inline-flex items-center gap-1.5">Detail per Stage <InfoTooltip text={INFO.detail} /></span>}>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                {["Stage", "Jumlah", "Total Nilai", "Persentase"].map((h) => (
-                  <th key={h} className="border-b border-line px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-ink3">{h}</th>
+                {[["Stage", null], ["Jumlah", INFO.jumlah], ["Total Nilai", INFO.nilai], ["Persentase", INFO.persen]].map(([h, tip]) => (
+                  <th key={h} className="border-b border-line px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-ink3">
+                    <span className="inline-flex items-center gap-1">{h}{tip && <InfoTooltip text={tip} />}</span>
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -138,6 +156,7 @@ export default function PipelineTab({ funnel, velocity }) {
                       <span className="flex items-center gap-2 font-semibold text-ink">
                         <span className={`h-2.5 w-2.5 rounded-full ${STAGE_DOT[item.stage] || "bg-ink3"}`} />
                         {item.label}
+                        <InfoTooltip text={STAGE_INFO[item.stage]} />
                       </span>
                     </td>
                     <td className="px-3 py-3 text-lg font-bold text-ink">{item.count}</td>
@@ -164,7 +183,7 @@ export default function PipelineTab({ funnel, velocity }) {
       {/* ── KECEPATAN PIPELINE (dari tabel pipeline_transitions) ───────────── */}
       <ChartCard
         index={2}
-        title="Kecepatan Pipeline"
+        title={<span className="inline-flex items-center gap-1.5">Kecepatan Pipeline <InfoTooltip text={INFO.kecepatan} /></span>}
         description="Rata-rata lama pelanggan tertahan di tiap stage — makin pendek makin cepat closing"
         empty={adaData ? null : pesanKosong}
       >
@@ -194,6 +213,7 @@ export default function PipelineTab({ funnel, velocity }) {
                 <span className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold text-ink2 sm:w-32 sm:flex-none">
                   <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STAGE_DOT[row.stage] || "bg-ink3"}`} />
                   <span className="truncate">{STAGE_LABELS[row.stage] || row.stage}</span>
+                  <InfoTooltip text={STAGE_INFO[row.stage]} />
                 </span>
                 <span className="shrink-0 text-right text-xs font-bold tabular-nums text-ink sm:order-3 sm:w-20">
                   {formatDurasiHari(row.avgDays)}
@@ -202,7 +222,7 @@ export default function PipelineTab({ funnel, velocity }) {
                     kecil = rata-rata belum bisa dipercaya, jadi ditampilkan
                     terbuka daripada menyembunyikan ketidakpastiannya. */}
                 <span className="shrink-0 text-right text-[11px] text-ink3 sm:order-4 sm:w-14" title="Jumlah perpindahan yang jadi dasar perhitungan">
-                  {row.sample > 0 ? `n=${row.sample}` : "—"}
+                  {row.sample > 0 ? <span className="inline-flex items-center gap-0.5">n={row.sample} <InfoTooltip text={INFO.sample} /></span> : "—"}
                 </span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-inset sm:order-2 sm:w-auto sm:flex-1">
@@ -225,7 +245,7 @@ export default function PipelineTab({ funnel, velocity }) {
 
       <ChartCard
         index={3}
-        title="Pergerakan Pipeline"
+        title={<span className="inline-flex items-center gap-1.5">Pergerakan Pipeline <InfoTooltip text={INFO.pergerakan} /></span>}
         description="Berapa pelanggan MASUK ke tiap stage pada periode ini (beda dari tabel di atas yang menghitung posisi saat ini)"
         empty={adaData ? null : pesanKosong}
       >
@@ -238,6 +258,7 @@ export default function PipelineTab({ funnel, velocity }) {
               <p className="flex items-center gap-1.5 text-[11px] font-semibold text-ink2">
                 <ArrowRightLeft size={11} className="shrink-0 text-ink3" />
                 <span className="truncate">{STAGE_LABELS[row.stage] || row.stage}</span>
+                <InfoTooltip text={STAGE_INFO[row.stage]} />
               </p>
               <p className="mt-1.5 text-xl font-extrabold tabular-nums text-ink">{row.count}</p>
             </div>

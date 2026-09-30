@@ -52,13 +52,18 @@ pipelineRouter.get("/board", async (req, res) => {
       // kolom Kanban (dan nilai di tiap kartu) bisa menghitung uang dari deal
       // yang sudah batal seolah masih berjalan.
       const ordersAktif = orders.filter((o) => o.status !== "CANCELLED");
-      const totalValue = ordersAktif.reduce((sum, o) => sum + o.value, 0);
+      // Nilai kartu/kolom = order PASTI saja: PENDING ("Menunggu", belum pasti,
+      // keputusan Owner 30 Sep 2026) tidak dihitung, sama dengan Laporan.
+      // Nilainya tetap dikirim terpisah (pendingValue) untuk ditampilkan.
+      const totalValue = ordersAktif.reduce((sum, o) => sum + (o.status === "PENDING" ? 0 : o.value), 0);
+      const pendingValue = ordersAktif.reduce((sum, o) => sum + (o.status === "PENDING" ? o.value : 0), 0);
       const conv = conversations?.[0] || null;
       if (!board[stage]) board[stage] = [];
       board[stage].push({
         ...c,
         orderCount: ordersAktif.length,
         totalValue,
+        pendingValue,
         daysSince,
         conversationId: conv?.id || null,
         lastMessageAt: conv?.lastMessageAt || null,
@@ -73,6 +78,65 @@ pipelineRouter.get("/board", async (req, res) => {
     });
 
     res.json(board);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/pipeline/order-board?from=&to= — pipeline BERBASIS ORDER (30 Sep
+// 2026, permintaan owner): papan /board di atas mengelompokkan PELANGGAN per
+// stage penjualan (New/Prospek/Transaksi/Reviewed/Spam), sedangkan ini
+// mengelompokkan ORDER per status pengerjaan (Menunggu → Pengambilan →
+// Diproses → Siap Kirim → Pengiriman → Terkirim, plus Sewa & Dibatalkan).
+// Status order dihitung otomatis dari unit (orderStatusSync), jadi papan ini
+// READ-ONLY — tidak ada drag. Filter tanggal = Order.createdAt (WIB), sama
+// dengan Laporan. Order milik pelanggan SPAM dikecualikan (D-041). Sales =
+// sales yang ditugaskan ke pelanggan, sama dengan papan pelanggan.
+// `inOmset` = status ini dihitung omset (Menunggu & Dibatalkan tidak).
+const ORDER_BOARD_STATUSES = ["PENDING", "PICKUP", "PROCESSING", "READY", "SHIPPING", "DELIVERED", "SEWA_DIKIRIM", "SEWA_DIAMBIL", "CANCELLED"];
+pipelineRouter.get("/order-board", async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const createdAt = (from && to)
+      ? { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } }
+      : {};
+    const orders = await prisma.order.findMany({
+      where: { ...createdAt, customer: { pipelineStage: { not: "SPAM" } } },
+      select: {
+        id: true, orderNumber: true, status: true, value: true, category: true,
+        paymentStatus: true, createdAt: true, updatedAt: true,
+        customer: {
+          select: {
+            id: true, name: true, phone: true, city: true, assignedSalesId: true,
+            assignedSales: { select: { id: true, name: true } },
+            conversations: {
+              where: { type: "INDIVIDUAL" }, orderBy: { lastMessageAt: "desc" }, take: 1, select: { id: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const now = Date.now();
+    const board = {};
+    ORDER_BOARD_STATUSES.forEach((st) => { board[st] = []; });
+    for (const { customer, ...o } of orders) {
+      if (!board[o.status]) board[o.status] = [];
+      board[o.status].push({
+        ...o,
+        daysSince: Math.floor((now - new Date(o.updatedAt).getTime()) / 86_400_000),
+        customerId: customer.id,
+        customerName: customer.name,
+        customerPhone: customer.phone,
+        customerCity: customer.city,
+        assignedSalesId: customer.assignedSalesId,
+        assignedSalesName: customer.assignedSales?.name || null,
+        conversationId: customer.conversations?.[0]?.id || null,
+      });
+    }
+    res.json({ statuses: ORDER_BOARD_STATUSES, board });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

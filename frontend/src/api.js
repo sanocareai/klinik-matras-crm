@@ -1116,6 +1116,7 @@ export const api = {
   getAnalyticsOverview: (params) => request("/analytics/overview" + buildQuery(params)),
   getAnalyticsPerformance: (params) => request("/analytics/performance" + buildQuery(params)),
   getAnalyticsPipelineFunnel: (params) => request("/analytics/pipeline-funnel" + buildQuery(params)),
+  getAnalyticsStageBySales: (params) => request("/analytics/stage-by-sales" + buildQuery(params)),
   // Sisi WAKTU pipeline (lama di stage + pergerakan) — pembaca tabel
   // pipeline_transitions. Data baru terkumpul sejak 25 Juli 2026, tidak
   // bisa di-backfill; respons menyertakan dataStartedAt untuk empty state.
@@ -1242,6 +1243,7 @@ export const api = {
 
   // Pipeline
   getPipelineBoard: (params) => request("/pipeline/board" + buildQuery(params)),
+  getPipelineOrderBoard: (params) => request("/pipeline/order-board" + buildQuery(params)),
 
   // Broadcast
   getBroadcastCampaigns: () => request("/broadcast/campaigns"),
