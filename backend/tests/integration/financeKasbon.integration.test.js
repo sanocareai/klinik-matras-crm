@@ -196,7 +196,7 @@ test("Kartu Total Kasbon: total diberikan sepanjang waktu (tanpa dibatalkan), su
   void a;
 });
 
-test("Periode kasbon: from/to menyaring daftar DAN ringkasan filter (bukan kartu Total sepanjang waktu); kasbon dibatalkan tidak dijumlahkan", async () => {
+test("Periode kasbon: from/to menyaring daftar DAN ringkasan filter; kartu Total mengikuti periode, Belum Dipotong tidak; kasbon dibatalkan tidak dijumlahkan", async () => {
   const { rekening } = await siapkan();
   const { token } = await createTestUser({ roles: ["ADMIN"] });
   const c = makeClient(server.baseUrl, token);
@@ -211,9 +211,35 @@ test("Periode kasbon: from/to menyaring daftar DAN ringkasan filter (bukan kartu
   assert.equal(sep.kasbon.length, 2, "tab Semua menampilkan juga yang dibatalkan (tetap terlihat di daftar)");
   const sepSemua = (await c.get("/api/finance/kasbon?from=2026-09-01&to=2026-09-30")).body;
   assert.deepEqual(sepSemua.dalamFilter, { jumlah: 1, nominal: 400_000 }, "ringkasan periode: tanpa yang dibatalkan");
-  assert.equal(sepSemua.total.diberikan, 700_000, "kartu Total tetap sepanjang waktu");
+  assert.equal(sepSemua.total.diberikan, 400_000, "kartu Total Kasbon mengikuti periode (September saja)");
+  assert.equal(sepSemua.totalSisa, 700_000, "kartu Belum Dipotong tetap semua kasbon aktif");
   const agu = (await c.get("/api/finance/kasbon?from=2026-08-01&to=2026-08-31")).body;
   assert.deepEqual(agu.dalamFilter, { jumlah: 1, nominal: 300_000 });
   const batal = (await c.get("/api/finance/kasbon?from=2026-09-01&to=2026-09-30&status=DIBATALKAN")).body;
   assert.deepEqual(batal.dalamFilter, { jumlah: 1, nominal: 900_000 }, "filter status Dibatalkan menghitung yang dibatalkan");
+});
+
+test("Kartu Total Kasbon mengikuti PERIODE: kasbon yang diberikan dalam rentang, potongan atas kasbon itu, sisa = total - dipotong; tanpa periode = sepanjang waktu", async () => {
+  const { rekening } = await siapkan();
+  const { token } = await createTestUser({ roles: ["ADMIN"] });
+  const c = makeClient(server.baseUrl, token);
+  await c.post("/api/finance/kasbon", baru(rekening, { date: "2026-08-10", amount: 300_000, employeeName: "rifki" }));   // Agustus
+  await c.post("/api/finance/kasbon", baru(rekening, { date: "2026-09-10", amount: 400_000, employeeName: "imam" }));    // September
+  await c.post("/api/finance/kasbon", baru(rekening, { date: "2026-09-20", amount: 200_000, employeeName: "fathul" }));  // September
+  const bt = (await c.post("/api/finance/kasbon", baru(rekening, { date: "2026-09-21", amount: 900_000, employeeName: "kiki" }))).body;
+  assert.equal((await c.post(`/api/finance/kasbon/${bt.id}/batal`, { reason: "salah input" })).status, 200);
+  assert.equal((await c.post("/api/finance/kasbon/pelunasan-karyawan", { employeeName: "imam", amount: 150_000, method: "POTONG_GAJI" })).status, 201);
+  assert.equal((await c.post("/api/finance/kasbon/pelunasan-karyawan", { employeeName: "rifki", amount: 100_000, method: "POTONG_GAJI" })).status, 201);
+
+  const sep = (await c.get("/api/finance/kasbon?from=2026-09-01&to=2026-09-30")).body;
+  assert.deepEqual(sep.total, { jumlah: 2, diberikan: 600_000, dipotong: 150_000, sisa: 450_000 }, "hanya kasbon September, tanpa yang dibatalkan");
+  const agu = (await c.get("/api/finance/kasbon?from=2026-08-01&to=2026-08-31")).body;
+  assert.deepEqual(agu.total, { jumlah: 1, diberikan: 300_000, dipotong: 100_000, sisa: 200_000 });
+  const semua = (await c.get("/api/finance/kasbon")).body;
+  assert.deepEqual(semua.total, { jumlah: 3, diberikan: 900_000, dipotong: 250_000, sisa: 650_000 }, "tanpa periode = sepanjang waktu");
+  assert.equal(semua.total.sisa, semua.totalSisa, "sepanjang waktu sama dengan kartu Belum Dipotong");
+  const kosong = (await c.get("/api/finance/kasbon?from=2026-01-01&to=2026-01-31")).body;
+  assert.deepEqual(kosong.total, { jumlah: 0, diberikan: 0, dipotong: 0, sisa: 0 });
+  // kartu Belum Dipotong tidak ikut periode
+  assert.equal(sep.totalSisa, 650_000);
 });

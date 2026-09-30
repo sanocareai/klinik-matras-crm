@@ -168,9 +168,9 @@ export default function FinanceKasbon() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KartuAngka
-          label="Total Kasbon" value={formatUang(data?.total?.diberikan ?? 0)}
+          label="Total Kasbon (periode)" value={formatUang(data?.total?.diberikan ?? 0)}
           sub={`${data?.total?.jumlah ?? 0} kasbon · ${formatUang(data?.total?.dipotong ?? 0)} sudah dipotong · ${formatUang(data?.total?.sisa ?? 0)} belum`}
-          info="Jumlah SELURUH kasbon yang pernah diberikan (tanpa yang dibatalkan), sepanjang waktu — bukan hanya bulan ini dan bukan hanya baris yang tampil di tabel. Sudah dipotong + belum dipotong = total kasbon."
+          info="Jumlah kasbon yang DIBERIKAN pada periode yang dipilih di atas (tanpa yang dibatalkan), dihitung dari semua kasbon periode itu — bukan hanya baris yang tampil di tabel. Sudah dipotong + belum dipotong = total; potongan dihitung atas kasbon-kasbon itu, kapan pun dipotongnya. Geser periode untuk melihat bulan lain."
         />
         <KartuAngka
           label="Belum Dipotong dari Gaji" value={formatUang(data?.totalSisa ?? 0)}
@@ -229,7 +229,7 @@ export default function FinanceKasbon() {
         filters={[
           { key: "kar", label: "Karyawan", value: fKaryawan, onChange: setFKaryawan, options: perKaryawan.map((p) => [p.nama, p.nama]) },
         ]}
-        ringkasan={`${kasbon.length} kasbon${data?.terpotong ? ` dari ${data?.dalamFilter?.jumlah} · baru 500 teratas tampil — persempit pencarian atau periode` : ""}${data?.dalamFilter ? ` · diberikan ${formatUang(data.dalamFilter.nominal)} pada periode ini` : ""} · kartu di atas mencakup semua kasbon`}
+        ringkasan={`${kasbon.length} kasbon${data?.terpotong ? ` dari ${data?.dalamFilter?.jumlah} · baru 500 teratas tampil — persempit pencarian atau periode` : ""}${data?.dalamFilter ? ` · diberikan ${formatUang(data.dalamFilter.nominal)} pada periode ini` : ""} · kartu Belum Dipotong & Karyawan mencakup semua kasbon`}
         onReset={() => { setQ(""); setFKaryawan(""); }}
       />
 

@@ -97,13 +97,16 @@ financeKasbonRouter.get("/kasbon", requirePermission(P.FINANCE_READ), async (req
     const hariIni = todayBookDateWIB();
     const awal = new Date(Date.UTC(hariIni.getUTCFullYear(), hariIni.getUTCMonth(), 1));
     const akhir = new Date(Date.UTC(hariIni.getUTCFullYear(), hariIni.getUTCMonth() + 1, 0));
+    // Kartu "Total Kasbon" mengikuti PERIODE yang dipilih (from/to); tanpa from/to = sepanjang waktu.
+    const tglTotal = (req.query.from || req.query.to) ? { date: { ...(req.query.from && { gte: toBookDate(req.query.from) }), ...(req.query.to && { lte: toBookDate(req.query.to) }) } } : {};
     const [diberikan, dipotong, semuaDiberikan, semuaDipotong] = await Promise.all([
       prisma.finKasbon.aggregate({ where: { status: { not: "DIBATALKAN" }, date: { gte: awal, lte: akhir } }, _sum: { amount: true } }),
       prisma.finKasbonRepayment.aggregate({ where: { cancelledAt: null, date: { gte: awal, lte: akhir } }, _sum: { amount: true } }),
-      // TOTAL KASBON sepanjang waktu (kartu "Total Kasbon"): dihitung dari SEMUA kasbon, bukan hanya 500 baris yang dimuat di tabel.
-      // Kasbon dibatalkan tidak dihitung; potongan hanya yang belum dibatalkan dan milik kasbon yang tidak dibatalkan.
-      prisma.finKasbon.aggregate({ where: { status: { not: "DIBATALKAN" } }, _count: { _all: true }, _sum: { amount: true } }),
-      prisma.finKasbonRepayment.aggregate({ where: { cancelledAt: null, kasbon: { status: { not: "DIBATALKAN" } } }, _sum: { amount: true } }),
+      // TOTAL KASBON (kartu "Total Kasbon") untuk kasbon yang DIBERIKAN dalam periode — dihitung dari SEMUA kasbon periode itu, bukan hanya 500 baris
+      // yang dimuat di tabel. Kasbon dibatalkan tidak dihitung. Potongan = potongan (belum dibatalkan, kapan pun dilakukan) atas kasbon-kasbon itu,
+      // sehingga dipotong + belum = total selalu berlaku.
+      prisma.finKasbon.aggregate({ where: { status: { not: "DIBATALKAN" }, ...tglTotal }, _count: { _all: true }, _sum: { amount: true } }),
+      prisma.finKasbonRepayment.aggregate({ where: { cancelledAt: null, kasbon: { status: { not: "DIBATALKAN" }, ...tglTotal } }, _sum: { amount: true } }),
     ]);
     const totalDiberikan = Number(semuaDiberikan._sum.amount || 0);
     const totalDipotong = Number(semuaDipotong._sum.amount || 0);
