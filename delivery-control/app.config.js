@@ -19,7 +19,7 @@ module.exports = ({ config }) => ({
   userInterfaceStyle: "automatic",
   android: {
     package: "com.klinikmatras.deliverycontrol",
-    versionCode: 1,
+    versionCode: 2,
     softwareKeyboardLayoutMode: "resize",
     adaptiveIcon: { backgroundColor: "#0A1424", foregroundImage: "./assets/icon.png" },
     blockedPermissions: [
