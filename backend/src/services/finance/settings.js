@@ -71,6 +71,11 @@ export const SETTING_KEYS = Object.freeze({
   // klaim berbukti belum bisa dibuat, UI klaim tersembunyi). NYALA = penegakan PENUH dan tanpa pengecualian di server: tidak ada peran yang boleh PATCH
   // paymentStatus=LUNAS, Sales tidak boleh membuat Payment langsung (order & Resi), klaim Resi lama ditutup. Dinyalakan SETELAH aplikasi Sales versi baru terbit.
   KLAIM_LUNAS_GATE_AKTIF: "klaim_lunas_gate_aktif",
+  // LAPORAN DIVISI (Fase 2, 1 Okt 2026) — SAKELAR ROLLOUT, DEFAULT MATI. MATI = seluruh endpoint /api/laporan-divisi (kecuali pengaturan/dry-run Finance Admin) menolak 403 dan menu tersembunyi.
+  // LAPORAN_DIVISI_WORKSPACE = daftar scope yang sudah dibuka untuk workspace divisinya (dipisah koma, mis. "DELIVERY,PRODUCTION"); kosong = hanya Finance/Admin/Owner.
+  // Sakelar tidak pernah mengubah ledger.
+  LAPORAN_DIVISI_AKTIF: "laporan_divisi_aktif",
+  LAPORAN_DIVISI_WORKSPACE: "laporan_divisi_workspace",
   // Ukuran Kasur Custom — penegakan di SERVER (DEFAULT MATI). true = order BARU dengan "Ukuran Custom" wajib Lebar & Panjang; edit order legacy
   // (custom tanpa angka) yang tidak mengubah ukuran tetap boleh. SEJAK diisi otomatis saat dinyalakan (order yang dibuat sebelum itu = legacy).
   UKURAN_CUSTOM_WAJIB: "ukuran_custom_wajib",
@@ -109,6 +114,8 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.RESI_INPUT_AKTIF]: "false",
   [SETTING_KEYS.RESI_PEMBAYARAN_AKTIF]: "false",
   [SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF]: "false",
+  [SETTING_KEYS.LAPORAN_DIVISI_AKTIF]: "false",
+  [SETTING_KEYS.LAPORAN_DIVISI_WORKSPACE]: "",
   [SETTING_KEYS.UKURAN_CUSTOM_WAJIB]: "false",
   [SETTING_KEYS.UKURAN_CUSTOM_WAJIB_SEJAK]: "",
 });

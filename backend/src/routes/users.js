@@ -486,9 +486,14 @@ userRouter.put("/:id/divisions", async (req, res) => {
   try {
     const peran = rolesOf(req.user);
     if (!peran.includes("ADMIN") && !peran.includes("OWNER")) return res.status(403).json({ error: "Hanya Admin atau Owner yang bisa mengatur divisi pengguna" });
-    const { divisions } = req.body || {};
-    if (!Array.isArray(divisions) || divisions.some((d) => !DIVISI_KEANGGOTAAN.includes(d))) {
+    const { divisions, leaders } = req.body || {};
+    // Fase 2: D&T bisa menjadi keanggotaan (Laporan Divisi) walau belum punya workspace Pengajuan Biaya; `leaders` (opsional) = subset divisi yang dipimpin pengguna ini.
+    const DIVISI_VALID = [...DIVISI_KEANGGOTAAN, "DIGITAL_TECHNOLOGY"];
+    if (!Array.isArray(divisions) || divisions.some((d) => !DIVISI_VALID.includes(d))) {
       return res.status(400).json({ error: "Divisi tidak valid" });
+    }
+    if (leaders !== undefined && (!Array.isArray(leaders) || leaders.some((d) => !divisions.includes(d)))) {
+      return res.status(400).json({ error: "Leader harus berupa subset dari divisi yang dipilih" });
     }
     const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!target) return res.status(404).json({ error: "User tidak ditemukan" });
@@ -496,9 +501,14 @@ userRouter.put("/:id/divisions", async (req, res) => {
     await prisma.$transaction([
       prisma.userDivision.deleteMany({ where: { userId: target.id, division: { notIn: baru } } }),
       prisma.userDivision.createMany({ data: baru.map((division) => ({ userId: target.id, division, grantedById: req.user.id })), skipDuplicates: true }),
+      // leaders tidak dikirim = status leader yang sudah ada TIDAK diubah (klien lama tetap aman).
+      ...(leaders !== undefined ? [
+        prisma.userDivision.updateMany({ where: { userId: target.id, division: { in: baru } }, data: { isLeader: false } }),
+        prisma.userDivision.updateMany({ where: { userId: target.id, division: { in: [...new Set(leaders)] } }, data: { isLeader: true } }),
+      ] : []),
     ]);
-    const rows = await prisma.userDivision.findMany({ where: { userId: target.id }, select: { division: true } });
-    res.json({ divisions: rows.map((r) => r.division) });
+    const rows = await prisma.userDivision.findMany({ where: { userId: target.id }, select: { division: true, isLeader: true } });
+    res.json({ divisions: rows.map((r) => r.division), leaders: rows.filter((r) => r.isLeader).map((r) => r.division) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

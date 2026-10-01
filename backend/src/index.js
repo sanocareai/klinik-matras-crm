@@ -17,6 +17,7 @@ import { customerRouter }   from "./routes/customers.js";
 import { b2bRouter }        from "./routes/b2b.js";
 import { analyticsRouter }  from "./routes/analytics.js";
 import { salesFinanceRouter } from "./routes/salesFinance.js";
+import { laporanDivisiRouter } from "./routes/laporanDivisi.js";
 import { klaimLunasRouter, klaimLunasFilePathRouter } from "./routes/klaimLunas.js";
 import { qualityScorerRouter } from "./routes/qualityScorer.js";
 import { salesRiskRouter } from "./routes/salesRisk.js";
@@ -245,6 +246,7 @@ app.use("/api/finance",      financeKasbonRouter);
 app.use("/api/finance",      financeExportRouter); // Export Excel Finance (B3.9) — read-only, server-side
 app.use("/api/finance",      financeUangMukaRouter);
 app.use("/api/finance",      financeKoreksiRouter);
+app.use("/api/laporan-divisi", laporanDivisiRouter); // Fase 2 Laporan Divisi — read-only + anggaran; sakelar laporan_divisi_aktif default MATI
 app.use("/api/finance",      financeRekonCutoffRouter); // B3 snapshot rekonsiliasi & Perlu Ditinjau
 app.use("/api/finance",      financePenerimaanRouter);
 app.use("/api/finance",      financePersediaanAwalRouter); // B3.6 tutup stok periodik & persediaan awal perpetual

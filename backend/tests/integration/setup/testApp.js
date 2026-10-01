@@ -76,6 +76,7 @@ const { conversationRouter } = await import("../../../src/routes/conversations.j
 const { analyticsRouter } = await import("../../../src/routes/analytics.js");
 const { pipelineRouter } = await import("../../../src/routes/pipeline.js");
 const { salesFinanceRouter } = await import("../../../src/routes/salesFinance.js");
+const { laporanDivisiRouter } = await import("../../../src/routes/laporanDivisi.js");
 const { klaimLunasRouter, klaimLunasFilePathRouter } = await import("../../../src/routes/klaimLunas.js");
 const { staffBroadcastRouter } = await import("../../../src/routes/staffBroadcast.js");
 
@@ -137,6 +138,7 @@ export function buildTestApp() {
   app.use("/api/conversations", conversationRouter);
   app.use("/api/analytics", analyticsRouter);
   app.use("/api/sales-finance", salesFinanceRouter);
+  app.use("/api/laporan-divisi", laporanDivisiRouter);
   app.use("/api/klaim-lunas", klaimLunasRouter);
   app.use("/media/klaim-lunas", klaimLunasFilePathRouter);
   app.use("/api/pipeline", pipelineRouter);
