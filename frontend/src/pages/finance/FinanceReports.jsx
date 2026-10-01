@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
 import { formatRupiahShort } from "@/utils/format.js";
+import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, CatatanLaporan, Penjelasan,
   PeriodePicker, periodeDefault, tanggalPendek, LABEL_TIPE_AKUN,
@@ -94,7 +95,7 @@ function LabaRugi({ d }) {
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KartuAngka
-          label="Pendapatan Bersih" value={formatUang(r.pendapatanBersih)}
+          label="Pendapatan Bersih" metrik="pendapatan_diakui" value={formatUang(r.pendapatanBersih)}
           info="Pendapatan kotor dikurangi retur & potongan. Hanya dari order yang SUDAH diserahkan ke pelanggan — DP untuk order yang belum diserahkan tidak dihitung sebagai pendapatan."
         />
         <KartuAngka
@@ -106,8 +107,8 @@ function LabaRugi({ d }) {
           info="Biaya menjalankan bisnis di luar produksi langsung — gaji, sewa, listrik, dan sejenisnya."
         />
         <KartuAngka
-          label="Laba Bersih" value={formatUang(r.labaBersih)}
-          tone={r.labaBersih < 0 ? "red" : "green"}
+          label="Laba Bersih" metrik="laba_bersih_sementara" value={formatUang(r.labaBersih)}
+          tone={r.labaBersih < 0 ? "red" : "default"}
           sub={r.marginBersih != null ? `Margin ${r.marginBersih.toFixed(1)}%` : undefined}
           info="Angka paling bawah — untung/rugi sesungguhnya setelah SEMUA beban dikurangkan. Ini yang biasanya dimaksud saat orang bertanya 'untung berapa bulan ini'."
         />
@@ -352,18 +353,22 @@ function ArusKas({ d }) {
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KartuAngka label="Saldo Awal Kas" value={formatUang(r.saldoAwal)} info="Total kas & bank tepat sebelum periode ini dimulai." />
-        <KartuAngka label="Kas Masuk" value={formatUang(r.masuk)} tone="green" info="Seluruh uang tunai yang benar-benar masuk selama periode ini, dari mana pun sumbernya." />
-        <KartuAngka label="Kas Keluar" value={formatUang(r.keluar)} tone="red" info="Seluruh uang tunai yang benar-benar keluar selama periode ini, untuk apa pun tujuannya." />
-        <KartuAngka label="Arus Bersih" value={formatUang(r.arusBersih)} tone={r.arusBersih < 0 ? "red" : "green"} info="Kas Masuk dikurangi Kas Keluar. Bisa beda dari Laba Bersih di laporan Laba Rugi — laba dihitung saat diakui, arus kas dihitung saat uangnya benar-benar berpindah." />
-        <KartuAngka label="Saldo Akhir Kas" value={formatUang(r.saldoAkhir)} info="Saldo Awal ditambah Arus Bersih — harus sama persis dengan total Kas & Bank aktual di akhir periode." />
+        <KartuAngka label="Kas Masuk" metrik="arus_kas_masuk" value={formatUang(r.masuk)} info="Seluruh uang tunai yang benar-benar masuk selama periode ini, dari mana pun sumbernya." />
+        <KartuAngka label="Kas Keluar" metrik="arus_kas_keluar" value={formatUang(r.keluar)} info="Seluruh uang tunai yang benar-benar keluar selama periode ini, untuk apa pun tujuannya." />
+        <KartuAngka label="Arus Bersih" value={formatUang(r.arusBersih)} tone={r.arusBersih < 0 ? "red" : "default"} info="Kas Masuk dikurangi Kas Keluar. Bisa beda dari Laba Bersih di laporan Laba Rugi — laba dihitung saat diakui, arus kas dihitung saat uangnya benar-benar berpindah." />
+        <KartuAngka label="Saldo Akhir Kas" metrik="arus_kas_saldo_akhir" value={formatUang(r.saldoAkhir)} info="Saldo Awal ditambah Arus Bersih — harus sama persis dengan total Kas & Bank aktual di akhir periode." />
       </div>
 
       <ArusKasChart r={r} />
 
+      <RincianSumberKas rincian={d.rincianSumber} />
+
+      <KenapaBeda metrik={["arus_kas_masuk", "kas_masuk_pelanggan", "uang_masuk_terverifikasi", "arus_kas_keluar", "uang_keluar_kas"]} from={String(d.periode?.from ?? "").slice(0, 10)} to={String(d.periode?.to ?? "").slice(0, 10)} denganJembatan />
+
       <Penjelasan>
         Disusun dengan <strong>metode langsung</strong> — dari mutasi kas yang benar-benar terjadi,
         dikelompokkan menurut akun lawannya. Mutasi antar rekening sendiri (setor tunai ke bank, tarik tunai)
-        sengaja TIDAK dihitung: uangnya tidak ke mana-mana, dan menghitungnya akan menggelembungkan kedua sisi.
+        tidak dihitung sebagai kas masuk/keluar: uangnya tidak ke mana-mana, dan menghitungnya akan menggelembungkan kedua sisi. Yang tetap dihitung hanya biaya admin transfernya.
       </Penjelasan>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -379,6 +384,34 @@ function ArusKas({ d }) {
         )}
       </div>
     </>
+  );
+}
+
+const LABEL_SUMBER_ARUS = {
+  PEMBAYARAN_ORDER: "Pembayaran pelanggan", PEMASUKAN_LAIN: "Pemasukan lain", SALDO_AWAL: "Penyesuaian saldo awal", REVERSAL: "Jurnal pembalik",
+  REKONSILIASI_SEMENTARA: "Rekonsiliasi sementara", PENGELUARAN: "Pengeluaran", PEMBELIAN: "Pembelian", PEMBAYARAN_SUPPLIER: "Pembayaran supplier", KASBON: "Kasbon",
+  UANG_MUKA_OPERASIONAL: "Uang muka operasional", REFUND: "Refund pelanggan", TRANSFER_KAS: "Biaya admin transfer antar rekening", BIAYA_KENDARAAN: "Biaya kendaraan", BIAYA_IKLAN: "Biaya iklan",
+  INSENTIF_DRIVER: "Insentif driver", MANUAL: "Jurnal manual", TERAPKAN_UANG_MUKA: "DP pembelian diterapkan", PEMAKAIAN_BAHAN: "Pemakaian bahan", PENERIMAAN_BAHAN: "Penerimaan bahan", PERSEDIAAN_AWAL: "Persediaan awal",
+};
+
+/** Rincian Kas Masuk/Keluar per sumber jurnal — dari server. Menjawab "kenapa Kas Masuk beda dari Uang Masuk" tanpa menebak. Kartu di HP, bukan tabel lebar. */
+function RincianSumberKas({ rincian }) {
+  if (!rincian?.length) return null;
+  return (
+    <Card>
+      <JudulKartu title="Dari mana saja Kas Masuk & Keluar" description="Dikelompokkan menurut sumber jurnal. Penyesuaian saldo awal dan jurnal pembalik ikut dihitung di sini karena benar-benar mengubah saldo kas." />
+      <CardContent className="divide-y divide-line/60 p-0">
+        {rincian.map((x) => (
+          <div key={x.sumber} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-4 py-2.5 text-[13px]">
+            <span className="min-w-0 flex-1 basis-40 text-ink2">{LABEL_SUMBER_ARUS[x.sumber] ?? x.sumber}<span className="ml-1.5 text-[11.5px] text-ink3">{x.jumlahJurnal} jurnal</span></span>
+            <span className="flex gap-4 tabular-nums">
+              <span className="text-ink2">Masuk <b className="font-semibold text-ink">{formatUang(x.masuk)}</b></span>
+              <span className="text-ink2">Keluar <b className="font-semibold text-ink">{formatUang(x.keluar)}</b></span>
+            </span>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 

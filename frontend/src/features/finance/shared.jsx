@@ -12,6 +12,7 @@ import { useUrlBukti, LinkBukti } from "@/features/finance/receiptMedia.jsx";
 import { compressImage } from "@/utils/compressImage.js";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { SIMPLE_PRESETS, makeRange, makeCustomRange, todayWIB } from "@/lib/dateRange.js";
+import { useKontrak, IsiDefinisi, ChipBasis } from "@/features/finance/kontrakData.jsx";
 
 // Potongan UI yang dipakai berulang di SELURUH workspace Finance.
 // Dikumpulkan di satu file karena semuanya kecil dan selalu berpasangan —
@@ -253,13 +254,18 @@ export function HalamanFinance({ title, subtitle, actions, loading, error, onRet
  * angkanya dihitung dari mana atau kenapa penting, kartunya WAJIB punya
  * `info` — bukan hiasan, ini pengganti training manual untuk tim yang baru
  * pindah dari pencatatan manual (Notion) ke sistem ini.
+ *
+ * `metrik` (Fase 1 — Kontrak Angka): kunci metrik di kontrak server (services/finance/kontrakMetrik.js). Bila diberikan, tooltip berisi definisi, rumus, basis tanggal, dan
+ * yang tidak termasuk DARI KONTRAK, plus chip basis tanggal tampil di kartu. `info` hanya cadangan selama kontrak belum termuat / kunci tidak dikenal.
  */
-export function KartuAngka({ label, value, sub, tone = "default", onClick, info }) {
+export function KartuAngka({ label, value, sub, tone = "default", onClick, info, metrik }) {
+  const kontrak = useKontrak();
+  const m = metrik ? kontrak?.peta.get(metrik) : null;
   const isi = (
     <>
       <div className="flex items-center gap-1">
         <p className="text-[12px] font-medium text-ink3">{label}</p>
-        {info && <InfoTooltip text={info} />}
+        {m ? <InfoTooltip text={<IsiDefinisi m={m} />} lebar={304} /> : info && <InfoTooltip text={info} />}
       </div>
       <p className={cn(
         "mt-1.5 text-[20px] font-bold tabular-nums leading-tight",
@@ -270,6 +276,7 @@ export function KartuAngka({ label, value, sub, tone = "default", onClick, info 
         {value}
       </p>
       {sub && <p className="mt-1 text-[12px] text-ink3">{sub}</p>}
+      {m && <ChipBasis label={m.basisLabel} />}
     </>
   );
   const kelas = cn(

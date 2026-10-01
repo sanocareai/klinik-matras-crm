@@ -250,6 +250,7 @@ export default function FinanceExpenses() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KartuAngka
+          metrik={status ? undefined : "pengeluaran_aktif"}
           label={status ? "Total di Filter Ini" : "Total Pengeluaran (di luar dibatalkan/ditolak)"}
           value={formatUang(status ? (data?.ringkasan?.total ?? data?.total ?? 0) : (data?.ringkasan?.totalAktif ?? data?.total ?? 0))}
           sub={status
@@ -264,7 +265,7 @@ export default function FinanceExpenses() {
           info="Pengajuan yang belum ada keputusan — belum masuk buku besar sama sekali. Perlu Setujui atau Tolak."
         />
         <KartuAngka
-          label="Disetujui, Belum Dibayar"
+          label="Disetujui, Belum Dibayar" metrik="komitmen_belum_dibayar"
           value={data?.ringkasan?.perStatus?.DISETUJUI?.jumlah ?? expenses.filter((e) => e.status === "DISETUJUI").length}
           sub="Reimbursement & utang"
           info="Bebannya SUDAH tercatat di laba rugi, tapi uangnya belum benar-benar keluar — menunggu diganti ke karyawan atau dibayar ke pihak ketiga."

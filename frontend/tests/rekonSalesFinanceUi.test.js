@@ -31,10 +31,13 @@ test("Angka bridge dari SERVER: komponen tidak menjumlah/menghitung ulang (tanpa
   assert.match(rekon, /api\.getRekonSalesFinance\(/);
   assert.match(api, /getRekonSalesFinance: \(params\) => request\("\/sales-finance\/rekon"/);
   // satu-satunya reduce di komponen adalah subtotal tampilan daftar (jumlah baris yang SUDAH dikirim server), bukan bridge
-  const bagianBridge = rekon.slice(rekon.indexOf("export function PanelRekon"), rekon.indexOf("const JUDUL_DETAIL"));
-  assert.doesNotMatch(bagianBridge, /\.reduce\(/, "PanelRekon tidak boleh menghitung ulang");
-  assert.match(bagianBridge, /data\.bridge\.map/);
-  assert.match(bagianBridge, /data\.residual/);
+  const bagianBridge = rekon.slice(rekon.indexOf("function TahapRekon"), rekon.indexOf("const JUDUL_DETAIL"));
+  assert.doesNotMatch(bagianBridge, /\.reduce\(/, "PanelRekon/TahapRekon tidak boleh menghitung ulang");
+  assert.match(bagianBridge, /t\.langkah\.map/, "baris tahap dari server");
+  assert.match(bagianBridge, /data\.tahap1/);
+  assert.match(bagianBridge, /data\.tahap2/);
+  assert.match(bagianBridge, /t\.residual/);
+  assert.match(bagianBridge, /t\.komponenLain/, "baris nol dilipat server → ditampilkan sebagai Komponen lain");
 });
 
 test("Drill-down: tiga nilai terpisah (jasa/ongkir/total tagihan), pembayaran per order, multi-order pelanggan dikelompokkan tanpa digabung, tautan ke order", () => {
@@ -73,4 +76,15 @@ test("Drill-down: layar sempit memakai daftar kartu per order (tabel 6 kolom ter
   assert.match(rekon, /sm:hidden/);
   assert.match(rekon, /const rpBertanda = \(n\) => \(n < 0 \?/);
   assert.doesNotMatch(rekon, /description=\{kunci \? `\$\{baris\.length\} order · \$\{formatRupiah\(/, "deskripsi modal memakai rpBertanda");
+});
+
+test("Dua tahap (Fase 1): status 'Perhitungan cocok' dan 'Perlu ditinjau' TERPISAH, kartu per baris (tanpa tabel lebar), merah hanya untuk residual ≠ 0", () => {
+  const bagian = rekon.slice(rekon.indexOf("function TahapRekon"), rekon.indexOf("const JUDUL_DETAIL"));
+  assert.match(bagian, /<StatusJembatan status=\{t\.status\}/);
+  assert.doesNotMatch(bagian, /<table/, "tahap jembatan tidak memakai tabel (HP 390px)");
+  assert.match(bagian, /t\.residual === 0 \? "text-ink2" : "text-red"/);
+  assert.doesNotMatch(bagian, /efek < 0 && "text-red"/, "pengurang bukan masalah — tidak diberi warna merah");
+  const kontrak = baca("src/features/finance/kontrak.jsx");
+  assert.match(kontrak, /perhitungan === "COCOK"/);
+  assert.match(kontrak, /Perlu ditinjau/);
 });

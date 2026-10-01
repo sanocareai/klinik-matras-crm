@@ -1,7 +1,7 @@
 // BACA PEMBELIAN — SATU sumber query untuk layar Pembelian (GET /api/finance/purchases) dan Export Excel
 // (services/finance/export/pembelian.js). Pola identik dengan expenseRead.js. Murni baca.
 
-import { toMoney, sumMoney, moneyToNumber, ZERO } from "./money.js";
+import { toMoney, moneyToNumber, ZERO } from "./money.js";
 import { ringkasBiaya } from "./transferFee.js";
 import { klausaCari, klausaBukti, batasMilikSendiri, hanyaMilikSendiri, POLA_UUID } from "./expenseRead.js";
 
@@ -59,32 +59,45 @@ async function perkaya(db, purchases) {
 }
 
 /** Daftar pembelian menurut filter layar. Bentuk hasil sama persis dengan respons GET /purchases. */
-export async function ambilDaftarPembelian(db, { rentang, status, division, categoryId, mode, q, bukti, cashAccountId } = {}, { user, take = 300 } = {}) {
-  const purchases = await db.finPurchase.findMany({
-    where: {
-      date: { gte: rentang.from, lte: rentang.to },
-      ...(status && { status }),
-      ...(division && { division }),
-      ...(categoryId && { categoryId }),
-      ...(mode && { mode }),
-      ...(cashAccountId && { cashAccountId }),
-      ...klausaBukti(bukti),
-      AND: [
-        ...batasMilikSendiri(user),
-        ...klausaCari(q, KOLOM_CARI_PEMBELIAN),
-      ],
-    },
-    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    take,
-    include: purchaseInclude,
-  });
+// Status yang TIDAK dihitung sebagai pembelian nyata (sama dengan pengeluaran): dibatalkan (jurnal dibalik) dan ditolak (tidak pernah dibukukan).
+export const STATUS_TIDAK_DIHITUNG = ["DIBATALKAN", "DITOLAK"];
 
-  const total = purchases.length === 0 ? ZERO : sumMoney(purchases.map((p) => p.amount));
+export async function ambilDaftarPembelian(db, { rentang, status, division, categoryId, mode, q, bukti, cashAccountId } = {}, { user, take = 300 } = {}) {
+  const where = {
+    date: { gte: rentang.from, lte: rentang.to },
+    ...(status && { status }),
+    ...(division && { division }),
+    ...(categoryId && { categoryId }),
+    ...(mode && { mode }),
+    ...(cashAccountId && { cashAccountId }),
+    ...klausaBukti(bukti),
+    AND: [
+      ...batasMilikSendiri(user),
+      ...klausaCari(q, KOLOM_CARI_PEMBELIAN),
+    ],
+  };
+  const [purchases, perStatusMentah] = await Promise.all([
+    db.finPurchase.findMany({ where, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take, include: purchaseInclude }),
+    // Fase 1 — Kontrak Angka: ringkasan dari SEMUA baris yang cocok filter (bukan hanya `take` baris yang dimuat), dan pembelian Dibatalkan/Ditolak dipisah dari
+    // total aktif — sama dengan Pengeluaran. Sebelumnya "Total di Filter Ini" menjumlahkan semua status (termasuk yang dibatalkan) dan hanya 300 baris teratas.
+    db.finPurchase.groupBy({ by: ["status"], where, _sum: { amount: true }, _count: { _all: true } }),
+  ]);
+
+  const perStatus = {};
+  for (const g of perStatusMentah) perStatus[g.status] = { jumlah: g._count._all, nominal: moneyToNumber(g._sum.amount ?? ZERO) };
+  const jumlahSemua = Object.values(perStatus).reduce((s, x) => s + x.jumlah, 0);
+  const total = Object.values(perStatus).reduce((s, x) => s + x.nominal, 0);
+  const tidakDihitung = STATUS_TIDAK_DIHITUNG.reduce((a, s) => ({ jumlah: a.jumlah + (perStatus[s]?.jumlah ?? 0), nominal: a.nominal + (perStatus[s]?.nominal ?? 0) }), { jumlah: 0, nominal: 0 });
   return {
     purchases: await perkaya(db, purchases),
-    total: moneyToNumber(total),
+    total, // SEMUA baris yang cocok filter, semua status
+    ringkasan: {
+      jumlahSemua, total,
+      jumlahAktif: jumlahSemua - tidakDihitung.jumlah, totalAktif: total - tidakDihitung.nominal, // di luar dibatalkan/ditolak
+      tidakDihitung, perStatus,
+    },
     hanyaMilikSendiri: hanyaMilikSendiri(user),
-    terpotong: purchases.length === take,
+    terpotong: jumlahSemua > purchases.length,
   };
 }
 

@@ -129,6 +129,9 @@ export default function Laporan() {
     setExporting(true);
     try {
       const { exportLaporanWorkbook } = await import("../utils/exportLaporan.js");
+      // Definisi angka dari kontrak server (sheet "Definisi Angka"); bila gagal dimuat, berkas tetap dibuat tanpa sheet itu.
+      const { muatKontrak } = await import("../features/finance/kontrakData.jsx");
+      const kontrak = await muatKontrak().catch(() => null);
       // `tab` menentukan isi file — tiap tab punya sheet-nya sendiri, tidak
       // lagi menulis semua sheet apa pun tab yang dibuka (lihat catatan bug
       // di utils/exportLaporan.js#SHEET_PER_TAB). Nama file ikut menyebut
@@ -137,7 +140,7 @@ export default function Laporan() {
         tab,
         periode: formatRangeText(range),
         namaFile: `laporan-${tab.toLowerCase()}-${namaFile(range)}`,
-        summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales,
+        summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales, kontrak,
       });
     } catch (e) {
       alert(e.message || "Gagal membuat file export.");

@@ -31,6 +31,9 @@ import {
 } from "../services/finance/accounts.js";
 import { Prisma } from "@prisma/client";
 import { MoneyError, moneyToNumber, toMoney, sumMoney } from "../services/finance/money.js";
+import { kontrakUntukKlien } from "../services/finance/kontrakMetrik.js";
+import { jembatanKas } from "../services/finance/jembatanKas.js";
+import { auditKonsistensi } from "../services/finance/auditKonsistensi.js";
 import { presetRekening, validasiPresets, JENIS_BIAYA_TRANSFER, presetBawaan } from "../services/finance/transferFee.js";
 import { ringkasLunasBelumDicatat } from "../services/finance/penerimaanOrder.js";
 import { SALDO_RIIL_TERKONFIRMASI, bandingkanSaldoRiil } from "../services/finance/saldoRiil.js";
@@ -1143,6 +1146,36 @@ financeRouter.get("/saldo-riil", requirePermission(P.FINANCE_READ), async (_req,
   }
 });
 
+// Kontrak metrik kanonis (definisi, rumus, sumber, basis tanggal, pasangan rekonsiliasi). Statis & baca-saja — layar (tooltip, "Kenapa angkanya berbeda?")
+// dan sheet "Definisi Angka" Excel membaca dari sini; klien TIDAK mendefinisikan angka sendiri.
+// Hanya definisi (teks statis, tanpa data transaksi) — boleh dibaca semua pengguna yang login: Laporan Sales ikut memakainya untuk tooltip & sheet "Definisi Angka".
+financeRouter.get("/kontrak-metrik", (_req, res) => {
+  res.json(kontrakUntukKlien());
+});
+
+// Jembatan Uang Masuk Terverifikasi → Kas Masuk menurut buku (baca-saja; satu helper untuk layar & Excel) dan audit hitung ganda (baca-saja).
+financeRouter.get("/jembatan/uang-masuk-kas", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const { fromStr, toStr } = rentangDariQuery(req.query);
+    res.json(await jembatanKas(prisma, { from: fromStr, to: toStr, denganDetail: true }));
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message });
+    if (adalahGalatInfraDb(e)) return kirimGalatInfraDb(res, e);
+    console.error("finance/jembatan error:", e);
+    res.status(500).json({ error: "Gagal memuat jembatan Uang Masuk → Kas" });
+  }
+});
+
+financeRouter.get("/audit-konsistensi", requirePermission(P.FINANCE_READ), async (_req, res) => {
+  try {
+    res.json(await auditKonsistensi(prisma));
+  } catch (e) {
+    if (adalahGalatInfraDb(e)) return kirimGalatInfraDb(res, e);
+    console.error("finance/audit-konsistensi error:", e);
+    res.status(500).json({ error: "Gagal menjalankan audit konsistensi" });
+  }
+});
+
 financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const { from, to, fromStr, toStr } = rentangDariQuery(req.query);
@@ -1152,7 +1185,7 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
     const [
       kasBank, lr, piutang, utang, gate, catatan,
       pembayaranBelumVerifikasi, pengeluaranMenunggu, pembelianMenunggu, tagihanMenunggu, refundMenunggu,
-      jurnalTerakhir, lunasBelumDicatat,
+      jurnalTerakhir, lunasBelumDicatat, jumlahBelumVerifikasi,
     ] = await Promise.all([
       saldoKasBank(prisma, { to: sekarang }),
       labaRugi(prisma, { from, to }),
@@ -1185,6 +1218,8 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
         },
       }),
       ringkasLunasBelumDicatat(prisma),
+      // Jumlah TOTAL (bukan panjang daftar 50 baris di atas — daftar dipotong, angka kartu tidak boleh ikut terpotong; Fase 1 Kontrak Angka).
+      prisma.payment.count({ where: { cancelledAt: null, verifications: { none: {} } } }),
     ]);
 
     const totalKas = kasBank.reduce((s, a) => s + a.saldo, 0);
@@ -1202,7 +1237,7 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
           orderNumber: p.order?.orderNumber || null,
           customerName: p.order?.customer?.name || null,
         })),
-        jumlahPembayaranBelumVerifikasi: pembayaranBelumVerifikasi.length,
+        jumlahPembayaranBelumVerifikasi: jumlahBelumVerifikasi,
         lunasBelumDicatat,
         pengeluaranMenunggu,
         pembelianMenunggu,

@@ -304,7 +304,7 @@ export default function FinanceReconciliation() {
               info="Saldo rekening ini menurut jurnal yang tercatat di sistem — hasil hitungan sendiri, bukan disalin dari bank."
             />
             <KartuAngka
-              label="Saldo Menurut Bank" value={formatUang(detail.rekonsiliasi.saldoKoran)}
+              label="Saldo Menurut Bank" metrik="saldo_bank_koran" value={formatUang(detail.rekonsiliasi.saldoKoran)}
               info="Saldo akhir yang tertulis di koran bank asli untuk periode ini — diisi manual saat membuat periode rekonsiliasi."
             />
             <KartuAngka

@@ -90,7 +90,7 @@ test("Jurnal: daftar (periode, cari, sumber, status, akun), seimbang, dokumen te
   // Pembalikan: jurnal balik menautkan keduanya
   const { reverseJournal } = await import("../../src/services/finance/journal.js");
   const admin = await testPrisma.user.findFirst({ where: { name: "Admin Seed" } });
-  await testPrisma.$transaction((tx) => reverseJournal(tx, { entryId: jurnalDok.id, reason: "salah input", userId: admin.id }));
+  await testPrisma.$transaction((tx) => reverseJournal(tx, { entryId: jurnalDok.id, date: "2026-09-29", reason: "salah input", userId: admin.id }));
   const setelah = (await get(fin, "/buku/jurnal?from=2026-09-01&to=2026-09-30")).body;
   const asli = setelah.items.find((x) => x.id === jurnalDok.id);
   assert.equal(asli.status, "REVERSED");

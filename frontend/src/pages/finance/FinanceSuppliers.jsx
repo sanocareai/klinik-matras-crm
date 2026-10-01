@@ -253,7 +253,7 @@ export default function FinanceSuppliers() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KartuAngka
-          label="Total Utang Usaha" value={formatUang(aging?.total ?? 0)} sub={`${aging?.baris?.length ?? 0} tagihan terbuka`}
+          label="Total Utang Usaha" metrik="utang_supplier" value={formatUang(aging?.total ?? 0)} sub={`${aging?.baris?.length ?? 0} tagihan terbuka`}
           info="Total tagihan yang sudah disetujui tapi belum lunas dibayar ke supplier."
         />
         <KartuAngka

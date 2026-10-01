@@ -23,14 +23,18 @@ import { cn } from "@/lib/utils.js";
 // <button> TIDAK menerima fokus saat disentuh (beda dari desktop, di mana
 // klik = fokus). Tanpa ini, tap di HP tidak pernah membuka tooltip sama
 // sekali walau kelihatan seperti tombol yang bisa ditekan.
-export default function InfoTooltip({ text, className }) {
+export default function InfoTooltip({ text, className, lebar = 256 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
 
   function show() {
     const r = btnRef.current?.getBoundingClientRect();
-    if (r) setPos({ x: r.left + r.width / 2, y: r.top });
+    // Dijepit ke dalam layar supaya tooltip lebar tidak terpotong di HP (x = titik tengah tooltip).
+    if (r) {
+      const setengah = Math.min(lebar, window.innerWidth - 16) / 2;
+      setPos({ x: Math.min(Math.max(r.left + r.width / 2, setengah + 8), window.innerWidth - setengah - 8), y: r.top });
+    }
     setOpen(true);
   }
 
@@ -67,8 +71,8 @@ export default function InfoTooltip({ text, className }) {
 
       {open && pos && createPortal(
         <div
-          className="pointer-events-none fixed z-[1200] w-64 -translate-x-1/2 -translate-y-full rounded-btn bg-surface px-3 py-2.5 text-[11.5px] leading-relaxed text-ink2 shadow-popover"
-          style={{ left: pos.x, top: pos.y - 8 }}
+          className="pointer-events-none fixed z-[1200] -translate-x-1/2 -translate-y-full rounded-btn bg-surface px-3 py-2.5 text-[11.5px] leading-relaxed text-ink2 shadow-popover"
+          style={{ left: pos.x, top: pos.y - 8, width: Math.min(lebar, window.innerWidth - 16) }}
         >
           {text}
         </div>,

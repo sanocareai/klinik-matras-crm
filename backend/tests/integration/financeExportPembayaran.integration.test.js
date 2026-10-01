@@ -195,7 +195,7 @@ test("Klaim Lunas dari Sales: sheet ikut di tab Perlu Verifikasi & tab Klaim (da
 
   const hanya = await unduhExport(server.baseUrl, c.admin.token, "pembayaran", { filter: { hanyaKlaim: true, klaimIds: [k1.id] } });
   assert.equal(hanya.status, 200);
-  assert.deepEqual(hanya.wb.worksheets.map((w) => w.name), ["Klaim Lunas Sales"], "tanpa daftar pembayaran");
+  assert.deepEqual(hanya.wb.worksheets.map((w) => w.name), ["Klaim Lunas Sales", "Definisi Angka"], "tanpa daftar pembayaran (hanya klaim + definisi angka)");
   assert.deepEqual(bacaSheet(hanya.wb, "Klaim Lunas Sales").baris.map((b) => b["No. Order"]), [k1.orderNumber]);
   assert.match(bacaSheet(hanya.wb, "Klaim Lunas Sales").kepala[1], /tidak terikat periode/);
   assert.match(hanya.headers.get("content-disposition"), /Finance_Pembayaran_Verifikasi_per_\d{4}-\d{2}-\d{2}\.xlsx/);

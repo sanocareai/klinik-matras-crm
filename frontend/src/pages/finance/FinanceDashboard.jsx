@@ -13,6 +13,7 @@ import {
   LABEL_SUMBER_JURNAL,
 } from "@/features/finance/shared.jsx";
 import BuktiReview from "@/features/finance/BuktiReview.jsx";
+import { KenapaBeda, AuditKonsistensi } from "@/features/finance/kontrak.jsx";
 import { hitungKualitasData, margin as hitungMargin, pisahkanPiutang, ringkasAging, LABEL_BANNER, LABEL_REKONSILIASI } from "@/features/finance/ringkasanKualitas.js";
 
 // Ringkasan Keuangan — urutan layar (atas → bawah):
@@ -89,14 +90,14 @@ export default function FinanceDashboard() {
           {/* ── KPI ringkas: SATU baris (hero & kartu ganda dihapus) ── */}
           <section aria-label="Angka utama" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KartuAngka
-              label="Kas & Bank (menurut buku)"
+              label="Kas & Bank (menurut buku)" metrik="kas_bank_buku"
               value={formatUang(data.totalKas)}
               sub={`${data.kasBank.length} rekening · bukan saldo koran bank`}
               onClick={() => navigate("/finance/cash")}
               info="Jumlah saldo seluruh rekening kas, bank, dan e-wallet aktif menurut jurnal di buku besar. Bandingkan dengan saldo riil terkonfirmasi di bagian Kas & Bank di bawah."
             />
             <KartuAngka
-              label="Laba Bersih Sementara"
+              label="Laba Bersih Sementara" metrik="laba_bersih_sementara"
               value={formatUang(lr?.labaBersih ?? 0)}
               tone={(lr?.labaBersih ?? 0) < 0 ? "red" : "default"}
               sub="Dari jurnal yang sudah dibukukan · belum final"
@@ -104,7 +105,7 @@ export default function FinanceDashboard() {
               info="Pendapatan yang SUDAH dibukukan dikurangi seluruh beban yang sudah dibukukan. Order yang sudah selesai tetapi belum diakui pendapatannya belum ikut, sehingga angka ini bisa lebih rendah dari kenyataan. DP yang belum diserahkan tidak dihitung sebagai pendapatan."
             />
             <KartuAngka
-              label="Piutang Menurut Buku Besar"
+              label="Piutang Menurut Buku Besar" metrik="piutang_usaha"
               value={formatUang(piutang.bukuBesar)}
               tone={data.piutang.ringkasan?.["90_plus"] > 0 ? "red" : "default"}
               sub="Saldo akun Piutang Usaha di buku besar"
@@ -112,13 +113,15 @@ export default function FinanceDashboard() {
               info="Saldo Piutang Usaha menurut jurnal. Terdiri dari tagihan operasional (belum lunas menurut CRM) dan order yang sudah lunas di CRM tetapi pembayarannya belum diverifikasi. Bukan sama dengan pembayaran yang belum tercatat — lihat bagian Piutang di bawah."
             />
             <KartuAngka
-              label="Utang Usaha"
+              label="Utang Usaha" metrik="utang_supplier"
               value={formatUang(data.utang.total)}
               sub="Tagihan supplier belum dibayar"
               onClick={() => navigate("/finance/suppliers")}
               info="Total tagihan supplier yang sudah disetujui tetapi belum dibayar — kebalikan dari piutang."
             />
           </section>
+
+          <KenapaBeda metrik={["uang_masuk_terverifikasi", "kas_masuk_pelanggan", "pendapatan_diakui", "piutang_usaha", "uang_keluar_kas", "beban_diakui"]} from={periode.from} to={periode.to} denganJembatan />
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
             <KasBank data={data} riil={riil} navigate={navigate} className="lg:col-span-3" />
@@ -153,7 +156,7 @@ export default function FinanceDashboard() {
             <h2 className="text-[14px] font-bold text-ink">Piutang, tagihan, dan pembayaran — tiga hal yang berbeda</h2>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <KartuAngka
-                label="Piutang Menurut Buku Besar"
+                label="Piutang Menurut Buku Besar" metrik="piutang_usaha"
                 value={formatUang(piutang.bukuBesar)}
                 sub={`Termasuk ${formatUang(piutang.menungguVerifikasi.total)} (${piutang.menungguVerifikasi.jumlah} order lunas di CRM, menunggu verifikasi)`}
                 onClick={() => navigate("/finance/receivables")}
@@ -167,7 +170,7 @@ export default function FinanceDashboard() {
                 info="Daftar tagihan yang harus ditagih tim (order diserahkan, belum lunas). Bagian dari piutang buku besar; tidak termasuk order yang sudah lunas di CRM."
               />
               <KartuAngka
-                label="Pembayaran Belum Tercatat"
+                label="Pembayaran Belum Tercatat" metrik="klaim_lunas_menunggu"
                 value={piutang.pembayaranBelumTercatat.jumlah === null ? TANPA_DATA : `${piutang.pembayaranBelumTercatat.jumlah.toLocaleString("id-ID")} order`}
                 tone={piutang.pembayaranBelumTercatat.jumlah > 0 ? "orange" : "default"}
                 sub={piutang.pembayaranBelumTercatat.total === null ? undefined : `Senilai ${formatUang(piutang.pembayaranBelumTercatat.total)} · lunas di CRM, belum ada catatan pembayaran & rekening`}
@@ -191,6 +194,8 @@ export default function FinanceDashboard() {
             <KartuAngka label="Refund Menunggu" value={antrean.refundMenunggu ?? 0} tone={antrean.refundMenunggu > 0 ? "orange" : "default"} sub="Perlu persetujuan" onClick={() => navigate("/finance/payments")}
               info="Permintaan refund yang belum disetujui — belum keluar dari kas." />
           </section>
+
+          <AuditKonsistensi />
 
           <BuktiReview />
 

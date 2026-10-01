@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
+import { StatusJembatan } from "@/features/finance/kontrak.jsx";
 
 // ═══ REKONSILIASI SALES–FINANCE (30 Sep 2026) ═══════════════════════════════════════════════════════
 // SEMUA angka dari server (services/finance/rekonSalesFinance.js — SATU helper yang juga dipakai Finance & Export Excel). Komponen ini TIDAK
@@ -65,55 +66,87 @@ export function KartuRekon({ data, loading, onBuka }) {
   );
 }
 
-/** Panel bridge: Uang Masuk Terverifikasi → Nilai Order yang Menjadi Lunas. */
+/**
+ * Satu tahap jembatan Sales–Finance (kartu per baris — TANPA tabel lebar, aman di HP 390px). Semua angka, status, residual, dan "Komponen lain" dari server;
+ * komponen ini hanya menampilkan. Tanda tampilan = EFEK langkah (tanda × jumlah): langkah "kurangi" berjumlah negatif (mis. Selisih Nominal Lain) justru MENAMBAH → "+".
+ */
+function TahapRekon({ t, bisaBuka, onBuka }) {
+  return (
+    <section className="rounded-card bg-surface shadow-card" aria-label={`Tahap ${t.nomor}`} data-testid={`rekon-tahap-${t.nomor}`}>
+      <div className="space-y-2 border-b border-line/60 px-3 py-3">
+        <p className="text-[13px] font-bold text-ink">Tahap {t.nomor} · {t.judul}</p>
+        <StatusJembatan status={t.status} />
+      </div>
+      <div>
+        {t.langkah.map((b) => {
+          const hasil = b.tanda === 0;
+          const bisa = bisaBuka && b.nOrder > 0;
+          // EFEK langkah terhadap angka berjalan = tanda × jumlah (ditemukan saat QA visual 1 Okt 2026).
+          const efek = b.tanda * b.jumlah;
+          const tampil = b.tanda === 0 || b.jumlah === 0 ? formatRupiah(b.jumlah) : `${efek < 0 ? "−" : "+"} ${formatRupiah(Math.abs(efek))}`;
+          return (
+            <div
+              key={b.kunci}
+              className={cn("flex items-start gap-2 border-b border-line/60 px-3 py-2.5 last:border-0 max-sm:min-h-11", hasil && "bg-inset/60", bisa && "cursor-pointer hover:bg-hovertint")}
+              onClick={bisa ? () => onBuka(b.kunci) : undefined}
+              role={bisa ? "button" : undefined}
+              tabIndex={bisa ? 0 : undefined}
+              onKeyDown={bisa ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onBuka(b.kunci); } } : undefined}
+            >
+              <span className="min-w-0 flex-1">
+                <span className={cn("block text-[13px] leading-snug", hasil ? "font-bold text-ink" : "text-ink2")}>{b.label}</span>
+                {b.keterangan && <span className="mt-0.5 block text-[11.5px] leading-snug text-ink3">{b.keterangan}</span>}
+                {b.nOrder > 0 && <span className="mt-0.5 block text-[11.5px] text-ink3">{b.nOrder} order</span>}
+              </span>
+              <span className={cn("shrink-0 whitespace-nowrap text-right text-[13px] tabular-nums", hasil ? "font-bold text-ink" : "font-semibold text-ink2")}>{tampil}</span>
+              <span className="w-4 shrink-0 pt-0.5 text-ink3">{bisa ? <ChevronRight size={14} aria-hidden /> : null}</span>
+            </div>
+          );
+        })}
+        {t.komponenLain?.daftar?.length > 0 && (
+          <p className="border-t border-line/60 px-3 py-2.5 text-[12px] leading-snug text-ink3" data-testid="rekon-komponen-lain">
+            <b className="font-semibold text-ink2">Komponen lain (Rp0): </b>{t.komponenLain.daftar.join(" · ")}
+          </p>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line/60 px-3 py-2.5 text-[12px] text-ink3">
+        <span className="min-w-0">{t.pembanding.label}: <b className="tabular-nums text-ink2">{formatRupiah(t.pembanding.jumlah)}</b></span>
+        <span className={cn("font-semibold tabular-nums", t.residual === 0 ? "text-ink2" : "text-red")}>Selisih (residual): {rpBertanda(t.residual)}</span>
+      </div>
+      {t.status.alasanTinjau.length > 0 && (
+        <ul className="space-y-1 border-t border-line/60 px-3 py-2.5">
+          {t.status.alasanTinjau.map((a) => (
+            <li key={a.kunci} className="text-[12px] leading-snug text-ink2">
+              <b className="font-semibold text-orange">Perlu ditinjau · </b>{a.nOrder} order · {rpBertanda(a.jumlah)} — {a.alasan}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** Panel rekonsiliasi dua tahap: (1) Uang Masuk Terverifikasi → Total Perusahaan, (2) Total Perusahaan → Tim Sales. */
 export function PanelRekon({ data, loading, error, onBuka }) {
   const bisaBuka = !!data?.detailTersedia;
   return (
     <ChartCard
       index={2}
       title="Rekonsiliasi Sales–Finance"
-      description="Dari Uang Masuk Terverifikasi (Finance) ke Nilai Order yang Menjadi Lunas (Sales) — angka dari server, sama dengan yang dipakai Finance."
+      description="Dua tahap: dari Uang Masuk Terverifikasi (Finance) ke Nilai Order yang Menjadi Lunas — Total Perusahaan, lalu ke angka Tim Sales. Angka dari server, sama dengan yang dipakai Finance."
       empty={error ? `Gagal memuat rekonsiliasi: ${error}` : null}
     >
       {loading && !data ? (
         <div className="flex items-center justify-center gap-2 py-6 text-[13px] text-ink3"><Loader2 size={16} className="animate-spin" /> Memuat…</div>
-      ) : data ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <tbody>
-              {data.bridge.map((b) => {
-                const hasil = ["TOTAL_PERUSAHAAN", "NILAI_LUNAS_SALES"].includes(b.kunci);
-                const awal = b.kunci === "UANG_MASUK";
-                const bisa = bisaBuka && b.nOrder > 0;
-                // EFEK langkah terhadap angka berjalan = tanda × jumlah. Langkah "kurangi" yang jumlahnya NEGATIF (mis. Selisih Nominal Lain: Lunas menurut Sales
-                // tanpa uang terverifikasi penuh) justru MENAMBAH — tampilannya harus "+", bukan "−" (ditemukan saat QA visual 1 Okt 2026).
-                const efek = b.tanda * b.jumlah;
-                const tampil = b.tanda === 0 || b.jumlah === 0 ? formatRupiah(b.jumlah) : `${efek < 0 ? "−" : "+"} ${formatRupiah(Math.abs(efek))}`;
-                return (
-                  <tr
-                    key={b.kunci}
-                    className={cn("border-b border-line last:border-0", hasil && "bg-inset font-bold", awal && "font-semibold", bisa && "cursor-pointer hover:bg-hovertint")}
-                    onClick={bisa ? () => onBuka(b.kunci) : undefined}
-                    role={bisa ? "button" : undefined}
-                    tabIndex={bisa ? 0 : undefined}
-                    onKeyDown={bisa ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onBuka(b.kunci); } } : undefined}
-                  >
-                    <td className="py-2 pl-2 pr-3">
-                      <span className="block">{b.label}</span>
-                      <span className="block text-[11px] font-normal text-ink3">{b.keterangan}</span>
-                    </td>
-                    <td className="whitespace-nowrap py-2 pr-2 text-right tabular-nums text-ink3">{b.nOrder > 0 ? `${b.nOrder} order` : ""}</td>
-                    <td className={cn("whitespace-nowrap py-2 pr-2 text-right tabular-nums", b.tanda !== 0 && efek < 0 && "text-red", b.tanda !== 0 && efek > 0 && "text-green")}>{tampil}</td>
-                    <td className="w-5 py-2 pr-1 text-ink3">{bisa ? <ChevronRight size={14} aria-hidden /> : null}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      ) : data?.tahap1 ? (
+        <div className="space-y-4">
+          <StatusJembatan status={{ perhitungan: data.status.perhitungan, perhitunganLabel: data.status.perhitungan === "COCOK" ? "Perhitungan cocok (kedua tahap)" : "Perhitungan tidak cocok", perluDitinjau: data.status.perluDitinjau }} />
+          <TahapRekon t={data.tahap1} bisaBuka={bisaBuka} onBuka={onBuka} />
+          <TahapRekon t={data.tahap2} bisaBuka={bisaBuka} onBuka={onBuka} />
           {data.residual !== 0 && (
-            <p className="mt-2 rounded-btn bg-redbg px-3 py-2 text-[12px] text-red" role="alert">Bridge belum menutup: selisih {formatRupiah(data.residual)}. Hubungi admin — angka ini seharusnya nol.</p>
+            <p className="rounded-btn bg-redbg px-3 py-2 text-[12px] text-red" role="alert">Bridge belum menutup: selisih {formatRupiah(data.residual)}. Hubungi admin — angka ini seharusnya nol.</p>
           )}
-          {!bisaBuka && <p className="mt-2 text-[11.5px] text-ink3">Daftar order penyusun hanya tampil untuk Finance dan Admin.</p>}
+          {!bisaBuka && <p className="text-[11.5px] text-ink3">Daftar order penyusun hanya tampil untuk Finance dan Admin.</p>}
         </div>
       ) : null}
     </ChartCard>

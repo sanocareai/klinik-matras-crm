@@ -17,6 +17,7 @@ import {
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
+import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { BuktiBanyak, daftarBukti } from "@/features/finance/BuktiThumb.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
@@ -233,7 +234,7 @@ export default function FinancePayments() {
 
       <div className={tab === "lunas_crm" ? "hidden" : "grid grid-cols-1 gap-4 sm:grid-cols-3"}>
         <KartuAngka
-          label="Total Uang Masuk (periode ini)" value={formatUang(total)}
+          label="Payment Tercatat (periode ini)" metrik="payment_tercatat" value={formatUang(total)}
           sub={`Sudah diverifikasi ${formatUang(sudah)} · Menunggu ${formatUang(belum)}`}
           info={`Jumlah semua pembayaran pelanggan di periode yang dipilih (${aktif.length} pembayaran; yang dibatalkan tidak dihitung), dipisah antara yang sudah dan yang masih menunggu verifikasi.`}
         />
@@ -243,11 +244,13 @@ export default function FinancePayments() {
           info="Pembayaran yang sudah dicatat sales atau driver, tapi belum ada yang memastikan uangnya benar-benar masuk ke rekening atau kas perusahaan."
         />
         <KartuAngka
-          label="Sudah Diverifikasi" value={formatUang(sudah)} tone="green"
+          label="Uang Masuk Terverifikasi" metrik="uang_masuk_terverifikasi" value={formatUang(sudah)} tone="green"
           sub={`${sudahList.length} pembayaran`}
           info="Sudah dicek dan uangnya memang masuk. Status Lunas order tetap diatur dari CRM."
         />
       </div>
+
+      <KenapaBeda metrik={["payment_tercatat", "uang_masuk_terverifikasi", "klaim_lunas_menunggu", "kas_masuk_pelanggan"]} from={periode.from} to={periode.to} denganJembatan />
 
       <div className="flex flex-wrap gap-2">
         {TAB.map((t) => (

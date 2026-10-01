@@ -201,7 +201,7 @@ export default function FinanceCash() {
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KartuAngka
-              label="Total Kas & Bank" value={formatUang(rekening?.totalSaldo ?? 0)} sub="Menurut buku besar"
+              label="Total Kas & Bank" metrik="kas_bank_buku" value={formatUang(rekening?.totalSaldo ?? 0)} sub="Menurut buku besar"
               info="Jumlah semua rekening yang masih Aktif. Ini angka 'uang kita ada berapa sekarang', dihitung dari seluruh jurnal yang pernah tercatat — bukan tebakan."
             />
             {(rekening?.accounts || []).filter((a) => a.active).slice(0, 3).map((a) => (

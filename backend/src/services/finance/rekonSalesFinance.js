@@ -215,10 +215,53 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
 
   const residual = rp(kartuSales) - rp(nilaiSalesKartu); // bridge vs hitungan langsung Σ value×jumlah Sales — HARUS 0
   const ringkas = (arr) => arr.map((b) => ({ ...b }));
+
+  // ── DUA TAHAP (Fase 1 — Kontrak Angka): dua pertanyaan berbeda, dua residual, dua status — supaya "perhitungan cocok" tidak tercampur dengan "perlu ditinjau" ──
+  //   Tahap 1: Uang Masuk Terverifikasi → Nilai Order Lunas Total Perusahaan.  Pembanding independen = Σ Order.value order lunas-periode dihitung LANGSUNG (totalNilaiL).
+  //   Tahap 2: Total Perusahaan → Nilai Tim Sales.                              Pembanding independen = Σ Order.value × jumlah Sales pemilik (nilaiSalesKartu).
+  //   Status "Perhitungan cocok" = residual Rp0 (matematis; tak ada uang/order yang hilang dari jembatan).
+  //   Status "Perlu ditinjau"    = ada data yang butuh keputusan manusia walau perhitungannya cocok (mis. Lunas tanpa Payment penuh, order tanpa Sales).
+  const idxSelisih = baris[KUNCI.SELISIH_LAIN];
+  const lunasKurangUang = idxSelisih.filter((b) => b.jumlah < 0);
+  const residual1 = rp(totalPerusahaan) - rp(totalNilaiL);
+  const residual2 = rp(totalNilaiL - total[KUNCI.TANPA_SALES] + total[KUNCI.DIHITUNG_GANDA]) - rp(nilaiSalesKartu);
+  const urutan1 = [KUNCI.UANG_MASUK, KUNCI.DP_BELUM_LUNAS, KUNCI.ORDER_TIDAK_DIHITUNG, KUNCI.LUNAS_PERIODE_LAIN, KUNCI.REFUND_NON_LUNAS, KUNCI.DP_SEBELUMNYA, KUNCI.REFUND_LUNAS, KUNCI.ONGKIR, KUNCI.SELISIH_LAIN, KUNCI.TOTAL_PERUSAHAAN];
+  const urutan2 = [KUNCI.TOTAL_PERUSAHAAN, KUNCI.TANPA_SALES, KUNCI.DIHITUNG_GANDA, KUNCI.NILAI_LUNAS_SALES];
+  const ambilLangkah = (urutan) => urutan.map((k) => langkahBridge.find((b) => b.kunci === k));
+  // Baris bernilai Rp0 dan tanpa order TIDAK ditampilkan satu per satu; digabung ke "Komponen lain" (nama-namanya tetap tercantum, bukan dibuang).
+  const lipatNol = (arr) => {
+    const ujung = new Set([arr[0].kunci, arr[arr.length - 1].kunci]);
+    const nol = arr.filter((b) => !ujung.has(b.kunci) && b.jumlah === 0 && b.nOrder === 0);
+    return { langkah: arr.filter((b) => !nol.includes(b)), komponenLain: { jumlah: 0, nOrder: 0, daftar: nol.map((b) => b.label) } };
+  };
+  const susunTahap = (nomor, judul, urutan, pembanding, residualTahap, tinjau) => {
+    const semua = ambilLangkah(urutan);
+    const { langkah: tampil, komponenLain } = lipatNol(semua);
+    return {
+      nomor, judul,
+      mulai: semua[0], akhir: semua[semua.length - 1],
+      langkah: tampil, komponenLain,
+      pembanding: { label: nomor === 1 ? "Σ nilai order lunas (dihitung langsung)" : "Σ nilai order × jumlah Sales pemilik (dihitung langsung)", jumlah: rp(pembanding) },
+      residual: residualTahap,
+      status: { perhitungan: residualTahap === 0 ? "COCOK" : "TIDAK_COCOK", perhitunganLabel: residualTahap === 0 ? "Perhitungan cocok" : "Perhitungan tidak cocok", perluDitinjau: tinjau.length > 0, perluDitinjauLabel: tinjau.length > 0 ? "Perlu ditinjau" : "Tidak ada yang perlu ditinjau", alasanTinjau: tinjau },
+    };
+  };
+  const tinjau1 = [];
+  if (lunasKurangUang.length) tinjau1.push({ kunci: KUNCI.SELISIH_LAIN, nOrder: lunasKurangUang.length, jumlah: rp(lunasKurangUang.reduce((s, b) => s + b.jumlah, 0)), alasan: "Order berstatus Lunas tetapi Payment terverifikasi belum menutup nilai order (klaim Lunas lama / belum diverifikasi)" });
+  if (baris[KUNCI.REFUND_NON_LUNAS].length) tinjau1.push({ kunci: KUNCI.REFUND_NON_LUNAS, nOrder: baris[KUNCI.REFUND_NON_LUNAS].length, jumlah: rp(total[KUNCI.REFUND_NON_LUNAS]), alasan: "Refund membuat order keluar dari status lunas" });
+  const tinjau2 = [];
+  if (baris[KUNCI.TANPA_SALES].length) tinjau2.push({ kunci: KUNCI.TANPA_SALES, nOrder: baris[KUNCI.TANPA_SALES].length, jumlah: rp(total[KUNCI.TANPA_SALES]), alasan: "Order lunas tanpa pemilik Sales — tetapkan pemilik bila memang closing Sales" });
+  if (baris[KUNCI.DIHITUNG_GANDA].length) tinjau2.push({ kunci: KUNCI.DIHITUNG_GANDA, nOrder: baris[KUNCI.DIHITUNG_GANDA].length, jumlah: rp(total[KUNCI.DIHITUNG_GANDA]), alasan: "Order dipegang lebih dari satu Sales sehingga nilainya dihitung ganda di laporan per-Sales" });
+  const tahap1 = susunTahap(1, "Uang Masuk Terverifikasi → Nilai Order Lunas (Total Perusahaan)", urutan1, totalNilaiL, residual1, tinjau1);
+  const tahap2 = susunTahap(2, "Total Perusahaan → Nilai Order Lunas Tim Sales", urutan2, nilaiSalesKartu, residual2, tinjau2);
+
   const hasil = {
     periode: { from, to },
     bridge: langkahBridge,
     residual,
+    tahap1, tahap2,
+    status: { perhitungan: residual1 === 0 && residual2 === 0 ? "COCOK" : "TIDAK_COCOK", perluDitinjau: tinjau1.length + tinjau2.length > 0 },
+    metrikKunci: { uangMasuk: "uang_masuk_terverifikasi", totalPerusahaan: "nilai_order_lunas_perusahaan", tim: "nilai_lunas_tim_sales", tanpaSales: "tanpa_atribusi_sales" },
     kartu: {
       uangMasukDariOrder: rp(M),
       dpBelumLunas: rp(total[KUNCI.DP_BELUM_LUNAS]), jumlahOrderDp: baris[KUNCI.DP_BELUM_LUNAS].length,

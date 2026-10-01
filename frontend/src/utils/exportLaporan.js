@@ -72,6 +72,7 @@ function judul(sb, teks, periode) {
   sb.row([teks]);
   sb.row([`Periode: ${periode}`]);
   sb.row([`Dibuat: ${new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB`]);
+  sb.row(["Zona waktu: WIB (UTC+7). Basis tanggal tiap angka: lihat sheet \"Definisi Angka\"."]);
   sb.blank();
   return sb;
 }
@@ -220,8 +221,23 @@ function sheetPipeline({ periode, funnel, velocity }) {
 function sheetRekon({ periode, rekonSales }) {
   const sb = new SheetBuilder();
   judul(sb, "REKONSILIASI SALES–FINANCE", periode);
-  sb.row(["Dari Uang Masuk Terverifikasi (Finance) ke Nilai Order yang Menjadi Lunas (Sales). Angka dihitung server."]);
+  sb.row(["Dari Uang Masuk Terverifikasi (Finance) ke Nilai Order yang Menjadi Lunas (Sales), dua tahap. Angka dihitung server."]);
+  if (rekonSales.status) {
+    sb.row(["Status perhitungan", rekonSales.status.perhitungan === "COCOK" ? "Perhitungan cocok" : "Perhitungan TIDAK cocok", "Perlu ditinjau", rekonSales.status.perluDitinjau ? "Ya" : "Tidak"]);
+  }
+  for (const t of [rekonSales.tahap1, rekonSales.tahap2]) {
+    if (!t) continue;
+    sb.blank();
+    sb.row([`Tahap ${t.nomor}: ${t.judul}`]);
+    sb.row(["Langkah", "Arah", "Jumlah order", "Jumlah (Rp)", "Keterangan"]);
+    for (const b of t.langkah) sb.row([b.label, b.tanda === 0 ? "Hasil/Awal" : b.tanda * b.jumlah < 0 ? "Kurangi" : "Tambah", b.nOrder || 0, rp(b.tanda === 0 ? b.jumlah : Math.abs(b.jumlah)), b.keterangan]);
+    if (t.komponenLain?.daftar?.length) sb.row(["Komponen lain (Rp0)", "", "", rp(0), t.komponenLain.daftar.join(" · ")]);
+    sb.row([t.pembanding.label, "", "", rp(t.pembanding.jumlah)]);
+    sb.row([`Residual tahap ${t.nomor} (harus 0)`, "", "", rp(t.residual), t.status.perhitunganLabel + (t.status.perluDitinjau ? " · Perlu ditinjau" : "")]);
+    for (const a of t.status.alasanTinjau || []) sb.row(["Perlu ditinjau", "", a.nOrder, rp(a.jumlah), a.alasan]);
+  }
   sb.blank();
+  sb.row(["Rincian seluruh langkah (gabungan dua tahap, format lama)"]);
   sb.row(["Langkah", "Arah", "Jumlah order", "Jumlah (Rp)", "Keterangan"]);
   // Arah = efek sebenarnya (tanda × jumlah); jumlah ditulis mutlak supaya "Kurangi/Tambah" tidak ambigu untuk langkah yang jumlahnya negatif.
   const arah = (b) => (b.tanda === 0 ? "Hasil/Awal" : b.tanda * b.jumlah < 0 ? "Kurangi" : "Tambah");
@@ -246,6 +262,22 @@ function sheetRekon({ periode, rekonSales }) {
     }
   }
   return sb.build([48, 18, 26, 18, 16, 20, 18, 14, 40]);
+}
+
+// ── Sheet: Definisi Angka ─────────────────────────────────────────────────────────────
+// Dari kontrak metrik server (services/finance/kontrakMetrik.js) — SAMA dengan tooltip di layar & sheet "Definisi Angka" export Finance. Tidak mendefinisikan angka sendiri.
+const METRIK_LAPORAN = ["uang_masuk_terverifikasi", "nilai_order_lunas_perusahaan", "nilai_lunas_tim_sales", "tanpa_atribusi_sales", "pendapatan_diakui", "piutang_usaha"];
+function sheetDefinisi({ periode, kontrak }) {
+  if (!kontrak?.metrik) return null;
+  const sb = new SheetBuilder();
+  judul(sb, "DEFINISI ANGKA", periode);
+  sb.row(["Angka", "Definisi", "Rumus", "Sumber data", "Status yang dihitung", "Basis tanggal", "Termasuk", "Tidak termasuk", "Dibandingkan dengan"]);
+  const nama = (k) => kontrak.metrik.find((m) => m.kunci === k)?.nama ?? k;
+  for (const k of METRIK_LAPORAN) {
+    const m = kontrak.metrik.find((x) => x.kunci === k);
+    if (m) sb.row([m.nama, m.definisi, m.rumus, m.sumber, m.status, m.basisLabel, m.termasuk.join("; "), m.tidakTermasuk.join("; "), m.pasangan.map(nama).join("; ")]);
+  }
+  return sb.build([30, 60, 44, 30, 26, 26, 44, 44, 36]);
 }
 
 function sheetSales({ periode, report }) {
@@ -543,6 +575,7 @@ const SHEET_PER_TAB = {
   Sales:     (d) => [
     ["Sales", d.salesReport?.rows?.length && sheetSales({ ...d, report: d.salesReport })],
     ["Rekonsiliasi", d.rekonSales && sheetRekon(d)],
+    ["Definisi Angka", d.rekonSales && sheetDefinisi(d)],
   ],
 };
 
@@ -552,9 +585,9 @@ const SHEET_PER_TAB = {
  */
 export function exportLaporanWorkbook({
   periode, namaFile, tab,
-  summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales,
+  summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales, kontrak,
 }) {
-  const data = { periode, summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales };
+  const data = { periode, summary, overview, perf, funnel, velocity, salesReport, traffic, sourceDetail, rekonSales, kontrak };
   const wb = XLSX.utils.book_new();
 
   const builder = SHEET_PER_TAB[tab];

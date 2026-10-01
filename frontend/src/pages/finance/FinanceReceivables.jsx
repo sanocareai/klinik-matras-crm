@@ -222,7 +222,7 @@ export default function FinanceReceivables() {
       {/* Ember umur — dipakai juga sebagai filter, jadi angka & daftarnya tidak terpisah. */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <KartuAngka
-          label="Total Piutang" value={formatUang(data?.total ?? 0)}
+          label="Total Piutang" metrik="piutang_usaha" value={formatUang(data?.total ?? 0)}
           sub={`${data?.baris?.length ?? 0} order`}
           onClick={() => setFilterEmber("")}
           info="Total tagihan yang belum lunas dari order yang SUDAH diserahkan ke pelanggan. Klik untuk menghapus filter umur di bawah."

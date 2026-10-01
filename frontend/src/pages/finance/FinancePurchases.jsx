@@ -284,10 +284,13 @@ export default function FinancePurchases() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KartuAngka
-          label="Total di Filter Ini"
-          value={formatUang(data?.total ?? 0)}
-          sub={`${purchases.length} pembelian`}
-          info="Jumlah nominal seluruh baris yang tampil di tabel bawah, sesuai filter periode & status yang sedang aktif — bukan total pembelian sepanjang masa."
+          metrik={status ? undefined : "pembelian_aktif"}
+          label={status ? "Total di Filter Ini" : "Total Pembelian (di luar dibatalkan/ditolak)"}
+          value={formatUang(status ? (data?.ringkasan?.total ?? data?.total ?? 0) : (data?.ringkasan?.totalAktif ?? data?.total ?? 0))}
+          sub={status
+            ? `${data?.ringkasan?.jumlahSemua ?? purchases.length} pembelian`
+            : `${data?.ringkasan?.jumlahAktif ?? purchases.length} pembelian${data?.ringkasan?.tidakDihitung?.jumlah ? ` · ${data.ringkasan.tidakDihitung.jumlah} dibatalkan/ditolak (${formatUang(data.ringkasan.tidakDihitung.nominal)}) tidak dihitung` : ""}`}
+          info="Dihitung dari SEMUA pembelian sesuai filter periode & lainnya, bukan hanya baris yang tampil di tabel. Tanpa memilih tahap, pembelian yang dibatalkan atau ditolak tidak ikut dijumlahkan; pilih tab Dibatalkan/Ditolak untuk melihat totalnya."
         />
         <KartuAngka
           label="Menunggu Persetujuan"
@@ -296,7 +299,7 @@ export default function FinancePurchases() {
           info="Pengajuan yang belum ada keputusan — belum masuk buku besar sama sekali. Perlu Setujui atau Tolak."
         />
         <KartuAngka
-          label="Disetujui, Belum Dibayar"
+          label="Disetujui, Belum Dibayar" metrik="komitmen_belum_dibayar"
           value={purchases.filter((p) => p.status === "DISETUJUI").length}
           sub="Reimbursement & utang"
           info="Barang/asetnya SUDAH tercatat di buku besar, tapi uangnya belum benar-benar keluar — menunggu diganti ke karyawan atau dibayar ke pihak ketiga."

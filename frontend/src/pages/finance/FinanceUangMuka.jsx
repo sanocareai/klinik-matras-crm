@@ -167,7 +167,7 @@ export default function FinanceUangMuka() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KartuAngka
-          label="Saldo Uang Muka Aktif" value={formatUang(ringkasan.totalSaldoAktif)}
+          label="Saldo Uang Muka Aktif" metrik="uang_muka_operasional_saldo" value={formatUang(ringkasan.totalSaldoAktif)}
           tone={ringkasan.totalSaldoAktif > 0 ? "orange" : "default"} sub="uang yang masih dipegang dan belum dipertanggungjawabkan"
           info="Sama dengan saldo akun 1-1360 Uang Muka Operasional di neraca. Dihitung server dari seluruh uang muka aktif."
         />

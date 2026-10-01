@@ -218,3 +218,62 @@ test("PEMILIK SALES: order baru memakai pembuat bila SALES, atau pemilik lead bi
   assert.equal((await raw("POST", `/api/sales-finance/orders/${c.id}/pemilik`, { token: w.admin.token, body: { userId: null, alasan: "Salah tetapkan" } })).status, 200);
   assert.equal(await ambil(c), null);
 });
+
+test("DUA TAHAP (Fase 1): tahap 1 Uang Masuk→Total Perusahaan & tahap 2 Total Perusahaan→Tim Sales — masing-masing punya pembanding independen, residual Rp0, status 'Perhitungan cocok' TERPISAH dari 'Perlu ditinjau'; baris nol dilipat ke Komponen lain", async () => {
+  const w = await dunia();
+  await skenario(w);
+  const b = (await raw("GET", `/api/sales-finance/rekon?${PERIODE}`, { token: w.admin.token })).body;
+  const { tahap1, tahap2 } = b;
+  // Tahap 1
+  assert.equal(tahap1.mulai.kunci, "UANG_MASUK");
+  assert.equal(tahap1.mulai.jumlah, 10_300_000);
+  assert.equal(tahap1.akhir.kunci, "TOTAL_PERUSAHAAN");
+  assert.equal(tahap1.akhir.jumlah, 8_611_000);
+  assert.equal(tahap1.pembanding.jumlah, 8_611_000, "Σ Order.value order lunas periode, dihitung langsung (bukan dari bridge)");
+  assert.equal(tahap1.residual, 0);
+  assert.equal(tahap1.status.perhitungan, "COCOK");
+  assert.equal(tahap1.status.perhitunganLabel, "Perhitungan cocok");
+  // Perlu ditinjau ≠ perhitungan: o6 (Lunas tanpa Payment −600.000) + o10 (−111.000) ⇒ ada yang perlu ditinjau walau residual 0
+  assert.equal(tahap1.status.perluDitinjau, true);
+  const selisih = tahap1.status.alasanTinjau.find((a) => a.kunci === "SELISIH_LAIN");
+  assert.equal(selisih.nOrder, 2);
+  assert.equal(selisih.jumlah, -711_000);
+  // Tahap 2
+  assert.equal(tahap2.mulai.kunci, "TOTAL_PERUSAHAAN");
+  assert.equal(tahap2.akhir.kunci, "NILAI_LUNAS_SALES");
+  assert.equal(tahap2.akhir.jumlah, 4_611_000);
+  assert.equal(tahap2.pembanding.jumlah, 4_611_000);
+  assert.equal(tahap2.residual, 0);
+  assert.equal(tahap2.status.perhitungan, "COCOK");
+  assert.equal(tahap2.status.alasanTinjau[0].kunci, "TANPA_SALES");
+  assert.equal(tahap2.status.alasanTinjau[0].jumlah, 4_000_000);
+  assert.equal(b.status.perhitungan, "COCOK");
+  assert.equal(b.status.perluDitinjau, true);
+  // Baris nol (mis. Refund pada order yang kembali belum lunas, Dihitung ganda) tidak ditampilkan sendiri, namanya ada di Komponen lain
+  assert.ok(!tahap1.langkah.some((l) => l.kunci === "REFUND_NON_LUNAS"));
+  assert.ok(tahap1.komponenLain.daftar.some((n) => /Refund pada Order yang Kembali Belum Lunas/.test(n)));
+  assert.ok(!tahap2.langkah.some((l) => l.kunci === "DIHITUNG_GANDA"));
+  assert.equal(tahap1.komponenLain.jumlah, 0);
+  // Penjumlahan langkah yang ditampilkan + komponen lain menutup persis (mulai + Σ tanda×jumlah = akhir)
+  const hitung = (t) => t.langkah.slice(1, -1).reduce((s, l) => s + l.tanda * l.jumlah, t.mulai.jumlah);
+  assert.equal(hitung(tahap1), tahap1.akhir.jumlah);
+  assert.equal(hitung(tahap2), tahap2.akhir.jumlah);
+});
+
+test("DUA TAHAP: kasus tepi (dihitung ganda) tetap residual 0 di kedua tahap; periode tanpa data → semua Rp0 'cocok' dan tidak ada yang perlu ditinjau", async () => {
+  const w = await dunia();
+  const kosong = (await raw("GET", `/api/sales-finance/rekon?from=2026-03-01&to=2026-03-31`, { token: w.admin.token })).body;
+  assert.equal(kosong.tahap1.residual, 0);
+  assert.equal(kosong.tahap2.residual, 0);
+  assert.equal(kosong.status.perluDitinjau, false);
+  assert.equal(kosong.tahap1.mulai.jumlah, 0);
+  const c = await pelanggan("Dua Sales", { sales: w.kiki.user.id, tambahan: [w.fadlan.user.id] });
+  const o = await order(c, { nilai: 1_000_000, paidAt: new Date("2026-09-10T05:00:00Z") });
+  await bayar(o, 1_000_000, "2026-09-10T05:00:00Z", w.kw);
+  const b = (await raw("GET", `/api/sales-finance/rekon?${PERIODE}`, { token: w.admin.token })).body;
+  assert.equal(b.tahap1.residual, 0);
+  assert.equal(b.tahap2.residual, 0);
+  assert.equal(b.tahap2.akhir.jumlah, 2_000_000, "dipegang 2 Sales → dihitung 2x di laporan per-Sales");
+  assert.equal(b.tahap2.status.alasanTinjau.find((a) => a.kunci === "DIHITUNG_GANDA").jumlah, 1_000_000);
+  assert.ok(b.tahap2.langkah.some((l) => l.kunci === "DIHITUNG_GANDA"));
+});

@@ -139,6 +139,7 @@ export async function buatXlsx(data, { pengekspor = "", bolehSensitif = false, s
       [`Periode: ${data.periodeLabel || "Semua periode"}`],
       [`Filter: ${data.filterLabel || "Tanpa filter (semua data)"}`],
       [`Diekspor: ${waktuEksporWIB(sekarang)}${pengekspor ? ` oleh ${netralkanRumus(String(pengekspor))}` : ""}`],
+      [`Basis tanggal: ${data.basisTanggalLabel || "Tanggal pada baris sumber"} · Zona waktu: WIB (UTC+7)`],
     ];
     kepala.forEach((baris, i) => {
       const r = ws.getRow(i + 1);

@@ -328,10 +328,11 @@ export async function neraca(db, { to }) {
 /**
  * ARUS KAS — metode LANGSUNG. Lihat komentar di kepala file.
  *
- * TRANSFER ANTAR REKENING SENDIRI DIKECUALIKAN TOTAL (source TRANSFER_KAS):
+ * TRANSFER ANTAR REKENING SENDIRI TIDAK DIHITUNG GROSS (source TRANSFER_KAS):
  * setor tunai ke bank akan tampil sebagai "kas keluar Rp X" DAN "kas masuk
  * Rp X" kalau ikut dihitung — menggelembungkan kedua sisi laporan untuk
- * uang yang sebenarnya tidak ke mana-mana.
+ * uang yang sebenarnya tidak ke mana-mana. Hanya NETO-nya yang dihitung
+ * (= biaya admin transfer, uang yang benar-benar keluar dari kas).
  */
 export async function arusKas(db, { from, to }) {
   const akunKasIds = (await db.finAccount.findMany({
@@ -344,6 +345,7 @@ export async function arusKas(db, { from, to }) {
       periode: { from, to },
       operasi: [], investasi: [], pendanaan: [], takTerkategori: [],
       ringkasan: { saldoAwal: 0, masuk: 0, keluar: 0, arusBersih: 0, saldoAkhir: 0 },
+      rincianSumber: [],
       catatan: await catatanLaporan(db),
     };
   }
@@ -364,7 +366,6 @@ export async function arusKas(db, { from, to }) {
     where: {
       status: { in: STATUS_DIHITUNG },
       date: { gte: from, lte: to },
-      source: { not: "TRANSFER_KAS" },
       lines: { some: { accountId: { in: akunKasIds } } },
     },
     select: {
@@ -381,18 +382,33 @@ export async function arusKas(db, { from, to }) {
   const bucket = { OPERASI: new Map(), INVESTASI: new Map(), PENDANAAN: new Map(), LAIN: new Map() };
   let masuk = ZERO;
   let keluar = ZERO;
+  // Rincian per SUMBER jurnal (Fase 1 — Kontrak Angka): menjelaskan kenapa "Kas Masuk" arus kas berbeda dari "Uang Masuk Terverifikasi" (mis. penyesuaian saldo awal,
+  // jurnal pembalik, rekonsiliasi sementara ikut dihitung sebagai kas masuk/keluar). Aditif — tidak mengubah angka lain.
+  const perSumber = new Map();
 
   for (const e of entries) {
     const barisKas = e.lines.filter((l) => akunKasIds.includes(l.accountId));
     const barisLawan = e.lines.filter((l) => !akunKasIds.includes(l.accountId));
 
-    const kasMasuk = sumMoney(barisKas.map((l) => l.debit));
-    const kasKeluar = sumMoney(barisKas.map((l) => l.credit));
+    let kasMasuk = sumMoney(barisKas.map((l) => l.debit));
+    let kasKeluar = sumMoney(barisKas.map((l) => l.credit));
     const arusBersih = kasMasuk.minus(kasKeluar);
     if (arusBersih.isZero()) continue;
+    // Transfer antar rekening sendiri: sisi masuk & keluar saling meniadakan dan TIDAK dihitung gross (uangnya tidak ke mana-mana). Yang tersisa hanya NETO-nya —
+    // yaitu biaya admin transfer, uang yang benar-benar keluar dari kas. Dulu seluruh jurnal transfer dikecualikan sehingga biaya admin hilang dari Kas Keluar dan
+    // Saldo Akhir Arus Kas tidak sama dengan Kas & Bank menurut buku (Fase 1, 1 Okt 2026). Transfer tanpa biaya bernilai neto 0 → tetap dilewati di atas.
+    if (e.source === "TRANSFER_KAS") {
+      kasMasuk = arusBersih.greaterThan(0) ? arusBersih : ZERO;
+      kasKeluar = arusBersih.lessThan(0) ? arusBersih.negated() : ZERO;
+    }
 
     masuk = masuk.plus(kasMasuk);
     keluar = keluar.plus(kasKeluar);
+    const rs = perSumber.get(e.source) ?? { sumber: e.source, masuk: ZERO, keluar: ZERO, jumlahJurnal: 0 };
+    rs.masuk = rs.masuk.plus(kasMasuk);
+    rs.keluar = rs.keluar.plus(kasKeluar);
+    rs.jumlahJurnal += 1;
+    perSumber.set(e.source, rs);
 
     // Bobot per akun lawan — jurnal dengan beberapa lawan (mis. pendapatan
     // + ongkir) dibagi proporsional, bukan dilempar semua ke lawan pertama.
@@ -437,6 +453,9 @@ export async function arusKas(db, { from, to }) {
       arusBersih: moneyToNumber(arusBersih),
       saldoAkhir: moneyToNumber(saldoAwal.plus(arusBersih)),
     },
+    rincianSumber: [...perSumber.values()]
+      .map((r) => ({ sumber: r.sumber, masuk: moneyToNumber(r.masuk), keluar: moneyToNumber(r.keluar), bersih: moneyToNumber(r.masuk.minus(r.keluar)), jumlahJurnal: r.jumlahJurnal }))
+      .sort((a, b) => b.masuk + b.keluar - (a.masuk + a.keluar)),
     catatan: await catatanLaporan(db),
   };
 }

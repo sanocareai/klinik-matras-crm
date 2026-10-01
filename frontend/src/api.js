@@ -1448,6 +1448,10 @@ export const api = {
   // filter status string kosong dan mengembalikan nol baris.
   getFinanceDashboard: (params = {}) => request(`/finance/dashboard${qsFinance(params)}`),
   getFinanceSaldoRiil: () => request("/finance/saldo-riil"),
+  // Fase 1 — Kontrak Angka (1 Okt 2026): definisi metrik, jembatan Uang Masuk → Kas, audit hitung ganda. SEMUA angka & definisi dari server.
+  getFinanceKontrakMetrik: () => request("/finance/kontrak-metrik"),
+  getFinanceJembatanUangMasukKas: (params = {}) => request(`/finance/jembatan/uang-masuk-kas${qsFinance(params)}`),
+  getFinanceAuditKonsistensi: () => request("/finance/audit-konsistensi"),
   getFinanceRekonBackfill: () => request("/finance/pemasukan/rekonsiliasi/backfill"),
 
   // Bagan akun & master data

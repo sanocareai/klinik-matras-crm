@@ -10,6 +10,7 @@ import { hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { handleFinanceError } from "./finance.js";
 import { MODUL_EXPORT } from "../services/finance/export/registry.js";
+import { basisTanggalModul, sheetDefinisiAngka } from "../services/finance/kontrakMetrik.js";
 import { buatXlsx, namaBerkas, labelPeriode, ExportError } from "../services/finance/export/excel.js";
 
 export const financeExportRouter = express.Router();
@@ -99,6 +100,10 @@ financeExportRouter.post("/export/:modul", requireAuth, async (req, res) => {
     const data = await modul.ambil(prisma, ctx);
     data.periodeLabel ||= labelPeriode(periode);
     data.filterLabel ||= filterLabel;
+    // Fase 1 — Kontrak Angka: basis tanggal tercetak di kepala tiap sheet + sheet "Definisi Angka" dari kontrak metrik yang SAMA dengan tooltip layar.
+    data.basisTanggalLabel ||= basisTanggalModul(modul.kunci);
+    const defisi = sheetDefinisiAngka(modul.kunci);
+    if (defisi.baris.length > 0) data.sheets = [...(data.sheets || []), defisi];
     // Modul yang difilter di klien memuat baris yang tampil di layar (layar sendiri membatasi jumlah baris yang dimuat): beri tahu pembaca berkas.
     if (ids && ids.length >= 200) {
       for (const sh of data.sheets || []) {
