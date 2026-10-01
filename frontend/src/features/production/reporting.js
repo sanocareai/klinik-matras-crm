@@ -37,7 +37,7 @@ export function metricView(m) {
   else if (m.unit === "%") text = `${nf.format(m.value)}%`;
   else text = nf.format(m.value);
   let sub = "";
-  if (m.key === "target_vs_done") sub = `Target ${nf.format(m.target)} (${m.dailyTarget}/hari × ${m.activeDays} hari aktif)${m.achievementPct != null ? ` · ${nf.format(m.achievementPct)}%` : ""}`;
+  if (m.key === "target_vs_done") sub = `Target ${nf.format(m.target)} (${m.targetDesc || `${m.dailyTarget}/hari × ${m.activeDays} hari aktif`})${m.achievementPct != null ? ` · ${nf.format(m.achievementPct)}%` : ""}`;
   else if (m.kind !== "count") sub = `n=${m.n}`;
   return { text, sub, insufficient: false };
 }
@@ -47,6 +47,17 @@ export function groupMetrics(metrics = []) {
   const order = []; const by = new Map();
   for (const m of metrics) { if (!by.has(m.group)) { by.set(m.group, []); order.push(m.group); } by.get(m.group).push(m); }
   return order.map((group) => ({ group, items: by.get(group) }));
+}
+
+// Validasi formulir target (cermin aturan server; server tetap menegakkan ulang).
+export function targetFormError(form, meta = {}) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(form.effectiveFrom || "")) return "Pilih tanggal berlaku";
+  if (meta.minEffectiveDate && form.effectiveFrom < meta.minEffectiveDate) return `Tanggal berlaku paling awal ${meta.minEffectiveDate}`;
+  const n = Number(form.targetUnits);
+  if (!Number.isInteger(n) || n < 1 || n > (meta.maxTargetUnits || 500)) return `Target harus bilangan bulat 1–${meta.maxTargetUnits || 500} unit`;
+  const r = (form.reason || "").trim();
+  if (r.length < 5 || r.length > 300) return "Alasan wajib diisi (5–300 karakter)";
+  return "";
 }
 
 // ---------------------------------------------------------------- tab menurut izin ----------------------------------------------------------

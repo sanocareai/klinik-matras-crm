@@ -6,6 +6,7 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import TargetPanel from "@/features/production/TargetPanel.jsx";
 import { CoverageBar, DrillModal, ExportButtons, FilterBar, MetricCard, OffNotice, ReportTable, TrendChart } from "@/features/production/ReportParts.jsx";
 import {
   EXPORTABLE, emptyFilters, formatCell, formatMinutes, groupMetrics, offMessage, reportQuery, tabsFor,
@@ -106,6 +107,7 @@ export default function ProductionKpi({ defaultTab = DEFAULT_TAB }) {
           <div className={`min-w-0 space-y-4 ${loading ? "opacity-60" : ""}`} data-testid={`panel-${tab.key}`}>
             <CoverageBar doc={doc} />
             {tab.key === "ringkasan" && <SummaryPanel doc={doc} granularity={granularity} onMetric={openMetric} onUnit={setUnitId} />}
+            {tab.key === "ringkasan" && <TargetPanel canWrite={!!meta?.capabilities?.targetWrite} onChanged={load} />}
             {tab.key === "meja" && <StationsPanel doc={doc} onList={openList} onUnit={setUnitId} />}
             {tab.key === "pic" && <OperatorsPanel doc={doc} onList={openList} />}
             {tab.key === "gudang" && <WarehousePanel doc={doc} onList={openWarehouseList} />}

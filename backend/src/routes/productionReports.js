@@ -70,9 +70,9 @@ productionReportsRouter.get("/meta", async (req, res) => {
     const c = caps(req.user);
     if (!c.any) return deny(res);
     const unitIds = await readerCohort();
-    const base = { capabilities: { summary: c.full, stations: c.full, operators: c.full, units: c.full, warehouse: c.warehouse, self: c.self }, minSample: MIN_SAMPLE, granularities: GRANULARITY, dateBases: DATE_BASES, sla: { ...SLA, note: SLA_NOTE } };
+    const base = { capabilities: { targetWrite: hasPermission(req.user, P.PRODUCTION_TARGET_WRITE), summary: c.full, stations: c.full, operators: c.full, units: c.full, warehouse: c.warehouse, self: c.self }, minSample: MIN_SAMPLE, granularities: GRANULARITY, dateBases: DATE_BASES, sla: { ...SLA, note: SLA_NOTE } };
     if (!unitIds) return res.json({ ...OFF(), ...base });
-    const meta = { ...base, readerMode: "COHORT", targetPerHari: BOARD_DEFAULTS.dailyTarget, targetNote: "Target harian = konfigurasi sistem saat ini; belum tersimpan historis.",
+    const meta = { ...base, readerMode: "COHORT", targetPerHari: BOARD_DEFAULTS.dailyTarget, targetNote: "Target harian = konfigurasi sistem (belum ada target tercatat).",
       stations: BOARD_DEFAULTS.stations.map((code) => ({ code, label: stationLabel(code) })), capacityPerStation: BOARD_DEFAULTS.capacityPerStation,
       statuses: Object.entries(STATUS_BUCKETS).map(([key, label]) => ({ key, label })), priorities: Object.entries(PRIORITY_LABEL).map(([key, label]) => ({ key: Number(key), label })), qcFilters: QC_FILTERS, docFilters: DOC_FILTERS,
       metrics: METRICS.map((m) => ({ key: m.key, group: m.group, label: m.label, unit: m.unit, kind: m.kind, formula: m.formula, basis: m.basis === "snapshot" ? "Posisi saat ini" : (DATE_BASES[m.basis] || m.basis), note: m.note || null })) };
@@ -81,6 +81,7 @@ productionReportsRouter.get("/meta", async (req, res) => {
       meta.operators = [...ctx.operatorNames].map(([id, name]) => ({ id, name })).sort((a, b) => String(a.name).localeCompare(String(b.name), "id"));
       meta.services = [...ctx.serviceLabels].map(([code, label]) => ({ code, label })).sort((a, b) => String(a.label).localeCompare(String(b.label), "id"));
       meta.coverage = ctx.coverage;
+      meta.targetPerHari = ctx.targets.perDay; meta.targetNote = ctx.targets.note;
     }
     return res.json(meta);
   } catch (err) { return handleErr(err, res); }

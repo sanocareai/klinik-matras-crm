@@ -19,7 +19,7 @@ import { buildDocumentationMatrix, deriveNextStepNo, isDocumentationRow, LEGACY_
 import {
   DATE_BASES, METRICS, MIN_SAMPLE, SLA, SLA_NOTE, STATUS_BUCKETS, activeFilterLabels, bucketKey, computeMetrics, drillRows, formatMinutes, inPeriod, keyInPeriod,
   makeFact, matchesFilters, minutesBetween, normalizeFilters, operatorReport, parsePeriod, periodError, round1, stationReport, statusBucketOf, trendSeries, warehouseReport,
-  dateKeyOfDateColumn, wibKey, GRANULARITY,
+  dateKeyOfDateColumn, wibKey, GRANULARITY, buildTargetResolver, describeTargets,
 } from "../lib/domain/productionMetrics.js";
 
 export const MAX_UNIT_ROWS = 5000;
@@ -197,6 +197,10 @@ export async function buildReportContext(prisma, { unitIds, query = {}, now = ne
     issues: loaded.warehouse.issues.filter((x) => runSet.has(x.runId)), returns: loaded.warehouse.returns.filter((x) => runSet.has(x.runId)), shortages: loaded.warehouse.shortages.filter((x) => runSet.has(x.runId)),
     finishedGoods: loaded.warehouse.finishedGoods.filter((x) => runSet.has(x.runId)), waste: loaded.warehouse.waste.filter((x) => runSet.has(x.runId)),
   };
+  // Target harian tersimpan historis (tabel kecil, append-only): satu query; hari tanpa target tercatat memakai konfigurasi sistem.
+  const targetRows = (await prisma.productionDailyTarget.findMany({ select: { effectiveFrom: true, targetUnits: true, createdAt: true } })).map((r) => ({ effectiveFrom: dateKeyOfDateColumn(r.effectiveFrom), targetUnits: r.targetUnits, createdAt: r.createdAt }));
+  const resolver = buildTargetResolver(targetRows, config.dailyTarget);
+  const targets = { resolver, ...describeTargets(resolver, period) };
   const [totalV2] = await prisma.$queryRaw`SELECT count(DISTINCT unit_id)::int AS units, count(*)::int AS runs FROM production_runs_v2`;
   const operatorNames = new Map(); for (const f of loaded.facts) { if (f.operatorId) operatorNames.set(f.operatorId, f.operatorName); if (f.cornerOperatorId) operatorNames.set(f.cornerOperatorId, f.cornerOperatorName); }
   const serviceLabels = new Map(loaded.facts.filter((f) => f.serviceCode).map((f) => [f.serviceCode, f.serviceLabel]));
@@ -204,7 +208,7 @@ export async function buildReportContext(prisma, { unitIds, query = {}, now = ne
     scope: "Produksi V2 (reader cohort) — unit V1 tidak termasuk", cohortUnits: unitIds.length, runsInCohort: loaded.coverage.runsInCohort, runsAfterFilters: facts.length,
     totalV2Units: totalV2.units, totalV2Runs: totalV2.runs, period: { from: period.from, to: period.to, days: period.days }, timezone: "WIB (UTC+7)",
   };
-  return { period, filters, granularity, facts, factsByRun, wh, coverage, now, config, operatorNames, serviceLabels, allFacts: loaded.facts,
+  return { period, filters, granularity, facts, factsByRun, wh, coverage, now, config, targets, operatorNames, serviceLabels, allFacts: loaded.facts,
     filterLabels: activeFilterLabels(filters, { stationLabel, operatorName: (id) => operatorNames.get(id) || id, serviceLabel: (c) => serviceLabels.get(c) || c }) };
 }
 
@@ -239,12 +243,12 @@ function kpiTable(metrics) {
   };
 }
 
-export function metricsOf(ctx) { return computeMetrics(ctx.facts, ctx.period, { dailyTarget: ctx.config.dailyTarget, now: ctx.now }); }
+export function metricsOf(ctx) { return computeMetrics(ctx.facts, ctx.period, { dailyTarget: ctx.config.dailyTarget, targetFor: ctx.targets.resolver.targetFor, now: ctx.now }); }
 
 export function reportBase(ctx, kind, title) {
   return {
     kind, title, generatedAt: ctx.now.toISOString(), timezone: "WIB (UTC+7)", period: ctx.coverage.period, filters: ctx.filterLabels, coverage: ctx.coverage,
-    targetPerHari: ctx.config.dailyTarget, targetNote: "Target harian = konfigurasi sistem saat ini; belum tersimpan historis.", minSample: MIN_SAMPLE,
+    targetPerHari: ctx.targets.perDay, targetNote: ctx.targets.note, minSample: MIN_SAMPLE,
     dateBases: DATE_BASES, sla: { ...SLA, note: SLA_NOTE }, tables: [], definitions: [],
   };
 }

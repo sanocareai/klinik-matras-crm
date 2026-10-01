@@ -14,6 +14,8 @@
 //  7. Reporting & KPI (P11) BACA-SAJA: modul metrik, loader routing, service, export, dan router laporan tidak boleh menulis apa pun (create/update/
 //     delete/upsert/$executeRaw/$transaction), router hanya GET, tidak memanggil command owner/helper lifecycle, dan pembaca bukti WAJIB memisahkan
 //     baris DOC_* (isDocumentationRow) dari lifecycle.
+//  8. Target harian historis (P11.1): production_daily_targets_v2 HANYA ditulis productionTargetService, HANYA create (append-only; update/upsert/delete
+//     di mana pun = pelanggaran); router target tidak menulis langsung.
 //   node scripts/production-delivery-v2/audit-production-experience-writers.js [--output=file.json]
 import fs from "node:fs";
 import path from "node:path";
@@ -31,6 +33,8 @@ const MATERIAL_RETURN = "src/services/productionMaterialReturnService.js";
 const REPORT_SERVICE = "src/services/productionReportingService.js";
 const REPORT_ROUTE = "src/routes/productionReports.js";
 const REPORT_FILES = ["src/lib/domain/productionMetrics.js", "src/services/productionReportingRouting.js", REPORT_SERVICE, "src/services/productionReportExport.js", REPORT_ROUTE];
+const TARGET_SERVICE = "src/services/productionTargetService.js";
+const TARGET_ROUTE = "src/routes/productionTargets.js";
 const REPORT_PURE_IMPORTS = new Set(["workshopPathOf", "applicableStepsFor"]); // fungsi murni (tanpa prisma/tx) dari modul command
 const READER_ALLOW = new Set(["src/services/productionStepCommandService.js", MATERIAL_RETURN, DOC_SERVICE, REPORT_SERVICE]);
 const SQL_READER_ALLOW = new Set([MEDIA, DOC_SERVICE]);
@@ -70,6 +74,10 @@ export function auditProductionExperienceWriters(files) {
     for (const match of text.matchAll(writeRegex("productionStepEvidence"))) {
       const ok = (rel === STEP || rel === DOC_SERVICE) && match[1] === "create";
       add(rel, match.index, text, "STEP_EVIDENCE_WRITER", ok ? (rel === DOC_SERVICE ? "DOCUMENTATION_OWNER_CREATE" : "OWNER_CREATE") : match[1] === "create" ? "UNOWNED_WRITER" : `IMMUTABLE_VIOLATION_${match[1]}`, ok);
+    }
+    for (const match of text.matchAll(writeRegex("productionDailyTarget"))) {
+      const ok = rel === TARGET_SERVICE && match[1] === "create";
+      add(rel, match.index, text, "TARGET_WRITER", ok ? "TARGET_OWNER_CREATE" : match[1] === "create" ? "UNOWNED_TARGET_WRITER" : `TARGET_IMMUTABLE_VIOLATION_${match[1]}`, ok);
     }
     for (const match of text.matchAll(writeRegex("productionMaterialShortage"))) {
       add(rel, match.index, text, "SHORTAGE_WRITER", rel === STEP ? "OWNER" : "UNOWNED_WRITER", rel === STEP);
@@ -126,6 +134,11 @@ export function auditProductionExperienceWriters(files) {
     }
     for (const match of text.matchAll(/\b\w*[rR]outer\.(post|put|patch|delete)\s*\(/g)) add(rel, match.index, text, "REPORT_ROUTE_MUTATES", `FORBIDDEN_ROUTE_${match[1].toUpperCase()}`, false);
   }
+  if (files.has(TARGET_ROUTE)) {
+    const route = stripComments(files.get(TARGET_ROUTE).replace(/\r\n/g, "\n"));
+    for (const match of route.matchAll(ANY_WRITE)) add(TARGET_ROUTE, match.index, route, "TARGET_ROUTE_WRITE", "TARGET_ROUTER_MUST_USE_SERVICE", false);
+  } else add(TARGET_ROUTE, null, "", "TARGET_FILE", "MISSING_TARGET_ROUTE", false);
+  if (!files.has(TARGET_SERVICE)) add(TARGET_SERVICE, null, "", "TARGET_FILE", "MISSING_TARGET_SERVICE", false);
   const reporting = stripComments((files.get(REPORT_SERVICE) || "").replace(/\r\n/g, "\n"));
   if (reporting && new RegExp(String.raw`\.productionStepEvidence\.${READ_OPS}`).test(reporting) && !/isDocumentationRow\(/.test(reporting)) add(REPORT_SERVICE, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_reporting", false);
   if (files.has(REPORT_ROUTE) && !/\.get\(/.test(files.get(REPORT_ROUTE))) add(REPORT_ROUTE, null, "", "REPORT_ROUTE", "MISSING_GET_ROUTES", false);

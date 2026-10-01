@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  METRICS, METRIC_BY_KEY, MIN_SAMPLE, STATUS_BUCKETS, activeFilterLabels, addDays, bucketKey, bucketsOf, formatMinutes, minutesBetween, normalizeFilters,
+  METRICS, METRIC_BY_KEY, MIN_SAMPLE, STATUS_BUCKETS, activeFilterLabels, addDays, bucketKey, bucketsOf, buildTargetResolver, computeMetrics, describeTargets, formatMinutes, minutesBetween, normalizeFilters,
   parsePeriod, pct, percentile, round1, startOfWibDay, statusBucketOf, wibKey,
 } from "../src/lib/domain/productionMetrics.js";
 
@@ -84,4 +84,34 @@ test("definisi metrik: kunci unik, tiap metrik punya rumus + dasar tanggal + jen
   for (const m of METRICS) { assert.ok(m.label && m.formula && m.basis && ["count", "rate", "avg"].includes(m.kind), m.key); assert.equal(/omzet|harga|bayar|hpp|laba|margin/i.test(`${m.label} ${m.formula}`), false, `${m.key} bocor ke keuangan`); }
   for (const m of METRICS.filter((x) => x.kind === "count")) assert.ok(m.unit, m.key);
   for (const required of ["target_vs_done", "units_in", "units_scheduled", "in_progress", "delayed", "late_open", "waiting_material", "waiting_qc", "waiting_return", "tat_arrival_ready", "on_time", "qc_first_pass", "rework_rate", "doc_completeness", "material_adherence", "extra_material", "returns_pending", "waste_units", "attention"]) assert.ok(METRIC_BY_KEY[required], required);
+});
+
+test("target harian historis: berlaku mulai effective_from, kembar tanggal = createdAt terbaru, sebelum target pertama = konfigurasi; catatan menyebut sumbernya", () => {
+  const rows = [
+    { effectiveFrom: "2026-10-11", targetUnits: 20, createdAt: "2026-10-01T00:00:00Z" },
+    { effectiveFrom: "2026-10-05", targetUnits: 15, createdAt: "2026-10-01T00:00:00Z" },
+    { effectiveFrom: "2026-10-11", targetUnits: 18, createdAt: "2026-10-02T00:00:00Z" }, // koreksi di tanggal yang sama menang
+  ];
+  const r = buildTargetResolver(rows, 12);
+  assert.equal(r.targetFor("2026-10-04"), 12); assert.equal(r.recorded("2026-10-04"), false);
+  assert.equal(r.targetFor("2026-10-05"), 15); assert.equal(r.targetFor("2026-10-10"), 15);
+  assert.equal(r.targetFor("2026-10-11"), 18); assert.equal(r.targetFor("2027-01-01"), 18); assert.equal(r.recorded("2026-10-11"), true);
+  const d = describeTargets(r, parsePeriod({ from: "2026-10-03", to: "2026-10-12" }));
+  assert.equal(d.perDay, "12–18"); assert.deepEqual(d.segments.map((s) => [s.from, s.to, s.units, s.source]), [["2026-10-03", "2026-10-04", 12, "konfigurasi"], ["2026-10-05", "2026-10-10", 15, "tercatat"], ["2026-10-11", "2026-10-12", 18, "tercatat"]]);
+  assert.match(d.note, /tercatat historis: 12\/hari 2026-10-03–2026-10-04 \(konfigurasi sistem/); assert.match(d.note, /18\/hari 2026-10-11–2026-10-12/);
+  const none = describeTargets(buildTargetResolver([], 12), parsePeriod({ from: "2026-10-03", to: "2026-10-12" }));
+  assert.equal(none.perDay, 12); assert.match(none.note, /belum tersimpan historis untuk periode ini/);
+  const uniform = describeTargets(buildTargetResolver([{ effectiveFrom: "2026-01-01", targetUnits: 14, createdAt: "2026-01-01T00:00:00Z" }], 12), parsePeriod({ from: "2026-10-03", to: "2026-10-12" }));
+  assert.equal(uniform.perDay, 14);
+});
+
+test("computeMetrics: target = jumlah target tiap hari aktif menurut target yang berlaku pada hari itu (bukan satu angka × hari)", () => {
+  const p = parsePeriod({ from: "2026-10-01", to: "2026-10-10" });
+  const mkFact = (planned) => ({ runId: planned, plannedDate: planned, finishedAt: null, arrivedAt: null, startedAt: null, readyAt: null, qc: { firstAt: null, count: 0, fails: 0 }, docs: { required: 0 }, materials: [], returns: { pending: 0 }, waste: [], statusBucket: "TERJADWAL", activeInPeriod: () => true, lateOpen: () => false, attentionReasons: () => [] });
+  const facts = ["2026-10-02", "2026-10-06"].map(mkFact);
+  const resolver = buildTargetResolver([{ effectiveFrom: "2026-10-05", targetUnits: 20, createdAt: "2026-10-01T00:00:00Z" }], 12);
+  const m = computeMetrics(facts, p, { dailyTarget: 12, now: new Date("2026-10-10T00:00:00Z"), targetFor: resolver.targetFor }).target_vs_done;
+  assert.equal(m.target, 12 + 20); assert.equal(m.activeDays, 2); assert.equal(m.dailyTarget, null); assert.equal(m.targetDesc, "12–20/hari × 2 hari aktif");
+  const flat = computeMetrics(facts, p, { dailyTarget: 12, now: new Date("2026-10-10T00:00:00Z") }).target_vs_done;
+  assert.equal(flat.target, 24); assert.equal(flat.dailyTarget, 12);
 });

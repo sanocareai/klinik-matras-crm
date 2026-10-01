@@ -345,3 +345,23 @@ test("migration P8 aditif: kolom plan nullable/berdefault, 2 tabel baru, trigger
   assert.ok(names.includes(MIGRATION), "migration P8 ada");
   assert.ok(names.indexOf(MIGRATION) >= names.filter((n) => n < MIGRATION).length, "urutan migration P8 konsisten");
 });
+
+test("audit P11.1 target harian: hanya productionTargetService yang create; update/upsert/delete & penulis liar & router menulis langsung = pelanggaran; migration aditif + trigger append-only + LF", () => {
+  const sources = loadBackendSources(backendRoot);
+  const real = auditProductionExperienceWriters(sources).findings.filter((f) => f.kind.startsWith("TARGET_"));
+  assert.deepEqual(real.map((f) => `${f.file}:${f.disposition}`), ["src/services/productionTargetService.js:TARGET_OWNER_CREATE"]);
+  const bad = new Map(sources);
+  bad.set("src/routes/liar.js", "await prisma.productionDailyTarget.create({});\nawait prisma.productionDailyTarget.update({});\nawait prisma.productionDailyTarget.deleteMany({});\n");
+  bad.set("src/routes/productionTargets.js", `${sources.get("src/routes/productionTargets.js")}\nawait prisma.productionDailyTarget.create({});\n`);
+  bad.set("src/services/productionTargetService.js", `${sources.get("src/services/productionTargetService.js")}\nawait prisma.productionDailyTarget.upsert({});\n`);
+  const d = auditProductionExperienceWriters(bad).findings.filter((f) => !f.ok).map((f) => f.disposition);
+  for (const expected of ["UNOWNED_TARGET_WRITER", "TARGET_IMMUTABLE_VIOLATION_update", "TARGET_IMMUTABLE_VIOLATION_deleteMany", "TARGET_IMMUTABLE_VIOLATION_upsert", "TARGET_ROUTER_MUST_USE_SERVICE"]) assert.ok(d.includes(expected), `${expected}: ${d.join(",")}`);
+  const missing = new Map(sources); missing.delete("src/routes/productionTargets.js");
+  assert.ok(auditProductionExperienceWriters(missing).findings.some((f) => f.disposition === "MISSING_TARGET_ROUTE"));
+  const sql = fs.readFileSync(path.join(backendRoot, "prisma", "migrations", "20261014090000_production_daily_targets_v2", "migration.sql"), "utf8");
+  const executable = sql.split("\n").filter((line) => !line.startsWith("--")).join("\n");
+  assert.equal(sql.includes("\r"), false, "migration harus LF");
+  assert.equal(/\b(DROP|TRUNCATE|DELETE FROM|UPDATE\s+"|RENAME|INSERT INTO|ALTER TABLE)\b/i.test(executable.replace(/BEFORE UPDATE OR DELETE/g, "")), false, "aditif murni: hanya CREATE");
+  assert.equal((executable.match(/CREATE TABLE/g) || []).length, 1);
+  assert.match(executable, /BEFORE UPDATE OR DELETE ON "production_daily_targets_v2"/); assert.match(executable, /target_units" BETWEEN 1 AND 500/);
+});

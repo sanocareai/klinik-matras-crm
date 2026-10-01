@@ -8,8 +8,9 @@
 //  • Semua waktu WIB (UTC+7 tetap). Tanggal DIRENCANAKAN (kolom DATE), MASUK (tiba), MULAI, SELESAI (tahap 12 / fase Handoff), dan
 //    SIAP KIRIM (barang jadi diterima Gudang) adalah lima tanggal yang berbeda dan tidak pernah dipertukarkan.
 //  • TIDAK ADA omzet / harga / pembayaran / HPP di modul ini (gate Finance PERSEDIAAN_AWAL_BELUM_DIPOSTING belum selesai).
-//  • Target harian: nilai konfigurasi sistem (BOARD_DEFAULTS.dailyTarget), BELUM tersimpan historis -> dipakai apa adanya dan dicatat di
-//    setiap laporan ("targetPerHari") agar berkas lama tetap menyatakan target yang dipakainya.
+//  • Target harian: tersimpan historis di production_daily_targets_v2 (berlaku mulai effective_from, append-only). Hari tanpa target tercatat
+//    memakai konfigurasi sistem (BOARD_DEFAULTS.dailyTarget). Target yang dipakai + sumbernya dicatat di setiap laporan ("targetPerHari",
+//    "targetNote") agar berkas lama tetap menyatakan target yang dipakainya.
 
 export const MIN_SAMPLE = 5;
 export const MAX_RANGE_DAYS = 366;
@@ -38,6 +39,7 @@ const isKey = (v) => {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 };
 
+export const isCalendarKey = isKey;
 export function periodError(message, code = "REPORT_PERIOD_INVALID") { return Object.assign(new Error(message), { statusCode: 400, code }); }
 export function parsePeriod({ from, to, now = new Date() } = {}) {
   const today = wibKey(now);
@@ -58,6 +60,31 @@ export function bucketKey(key, granularity) {
 }
 export function bucketsOf(p, granularity) { const out = []; for (let i = 0; i < p.days; i += 1) { const b = bucketKey(addDays(p.from, i), granularity); if (out[out.length - 1] !== b) out.push(b); } return out; }
 export const GRANULARITY = Object.freeze(["day", "week", "month"]);
+
+// ---------------------------------------------------------------- target harian historis ----------------------------------------------------
+// rows: [{ effectiveFrom: "YYYY-MM-DD" (kalender WIB), targetUnits, createdAt }]. Target berlaku pada hari D = baris dengan effective_from <= D
+// terbaru (kembar tanggal: createdAt terbaru menang). Tak ada baris yang berlaku -> fallback (konfigurasi sistem).
+export function buildTargetResolver(rows = [], fallback) {
+  const sorted = rows.map((r) => ({ from: r.effectiveFrom, units: r.targetUnits, at: new Date(r.createdAt).getTime() })).sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : a.at - b.at));
+  const find = (key) => { let hit = null; for (const r of sorted) { if (r.from <= key) hit = r; else break; } return hit; };
+  return { targetFor: (key) => find(key)?.units ?? fallback, recorded: (key) => !!find(key), fallback, count: sorted.length };
+}
+// Ringkasan target untuk satu periode: nilai per hari (angka seragam atau "a–b"), potongan (tercatat vs konfigurasi), dan catatan yang dicetak di setiap laporan.
+export function describeTargets(resolver, p) {
+  const segs = [];
+  for (let i = 0; i < p.days; i += 1) {
+    const day = addDays(p.from, i); const units = resolver.targetFor(day); const source = resolver.recorded(day) ? "tercatat" : "konfigurasi";
+    const last = segs[segs.length - 1];
+    if (last && last.units === units && last.source === source) last.to = day; else segs.push({ from: day, to: day, units, source });
+  }
+  const values = segs.map((s) => s.units); const lo = Math.min(...values); const hi = Math.max(...values);
+  const perDay = lo === hi ? lo : `${lo}–${hi}`;
+  const anyRecorded = segs.some((s) => s.source === "tercatat");
+  const note = anyRecorded
+    ? `Target harian tercatat historis: ${segs.map((s) => `${s.units}/hari ${s.from === s.to ? s.from : `${s.from}–${s.to}`}${s.source === "konfigurasi" ? " (konfigurasi sistem, belum ada target tercatat)" : ""}`).join("; ")}.`
+    : `Target harian = konfigurasi sistem (${resolver.fallback}/hari); belum tersimpan historis untuk periode ini.`;
+  return { perDay, note, segments: segs };
+}
 
 // ---------------------------------------------------------------- statistik --------------------------------------------------------------
 export const round1 = (n) => Math.round(n * 10) / 10;
@@ -172,7 +199,7 @@ function finalize(def, members, extra = {}) {
 }
 
 // ---------------------------------------------------------------- perhitungan metrik dari fakta ---------------------------------------------
-export function computeMetrics(facts, p, { dailyTarget, now }) {
+export function computeMetrics(facts, p, { dailyTarget, now, targetFor = () => dailyTarget }) {
   const out = {};
   const inP = (d) => inPeriod(d, p);
   const m = (key, members, extra) => { out[key] = finalize(METRIC_BY_KEY[key], members, extra); };
@@ -181,8 +208,11 @@ export function computeMetrics(facts, p, { dailyTarget, now }) {
   const finishedF = facts.filter((f) => inP(f.finishedAt));
   const activeDays = new Set();
   for (const f of facts) { if (keyInPeriod(f.plannedDate, p)) activeDays.add(f.plannedDate); if (f.finishedAt && inP(f.finishedAt)) activeDays.add(wibKey(f.finishedAt)); }
-  const targetTotal = dailyTarget * activeDays.size;
-  m("target_vs_done", finishedF.map((f) => mk(f, true, { value: 1 })), { target: targetTotal, activeDays: activeDays.size, achievementPct: targetTotal > 0 ? pct(finishedF.length, targetTotal) : null, dailyTarget });
+  const dayTargets = [...activeDays].map((d) => targetFor(d));
+  const targetTotal = dayTargets.reduce((s, x) => s + x, 0); // jumlah target tiap hari aktif menurut target yang berlaku pada hari itu
+  const lo = dayTargets.length ? Math.min(...dayTargets) : dailyTarget; const hi = dayTargets.length ? Math.max(...dayTargets) : dailyTarget;
+  m("target_vs_done", finishedF.map((f) => mk(f, true, { value: 1 })), { target: targetTotal, activeDays: activeDays.size, achievementPct: targetTotal > 0 ? pct(finishedF.length, targetTotal) : null, dailyTarget: lo === hi ? lo : null,
+    targetDesc: `${lo === hi ? lo : `${lo}–${hi}`}/hari × ${activeDays.size} hari aktif` });
   m("units_in", facts.filter((f) => inP(f.arrivedAt)).map((f) => mk(f, true, { value: 1 })));
   m("units_scheduled", facts.filter((f) => keyInPeriod(f.plannedDate, p)).map((f) => mk(f, true, { value: 1 })));
   m("in_progress", facts.filter((f) => f.statusBucket === "DIKERJAKAN").map((f) => mk(f, true)));
