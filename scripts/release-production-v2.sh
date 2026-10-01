@@ -11,8 +11,6 @@ umask 077
 : "${CAND_FULL:?CAND_FULL wajib}"; : "${PREV_FULL:?PREV_FULL wajib}"; : "${PREV_IMG:?PREV_IMG wajib}"; : "${SCOPE_FILE:?SCOPE_FILE wajib}"; : "${BRANCH:?BRANCH wajib}"; TAG="${TAG:-pv2}"
 EXPECT_PREV_FULL="$PREV_FULL"
 EXPECT_PREV_SHORT="${PREV_FULL:0:8}"
-FROZEN_MAIN_FULL="9b102635074a09961b3513c628ef3bfaa293eaa9"   # origin/main sungguhan — jauh tertinggal, dicek hanya sebagai sanity (bukan basis rilis)
-FROZEN_OMSET_BRANCH="${LIVE_BRANCH:-feat/klaim-lunas-gate}"   # branch asal commit live; ujung boleh maju, yang dibekukan hanya PREV_FULL
 EXPECT_PREV_IMG="$PREV_IMG"
 EXPECT_APPLIED=""; EXPECT_APPLIED_AFTER=""   # dihitung aktual di fase 1/2
 CANARY_UNIT_ID="81ce67e2-2794-4f2d-a397-9e5a9974aa45"
@@ -69,10 +67,10 @@ ok "mount persisten ada, frontend/.env (kunci Maps) tersedia untuk build"
 
 PHASE=2-ancestry; say "2. Ancestry + scope (branch=$BRANCH)"
 [ -d "$SRC" ] || die "cache git $SRC tidak ada"
-sg fetch -q origin "+refs/heads/$BRANCH:refs/cache/p9dcand" "+refs/heads/main:refs/cache/main" "+refs/heads/$FROZEN_OMSET_BRANCH:refs/cache/omset" 2>&1 | tail -3 || true
+sg fetch -q origin "+refs/heads/$BRANCH:refs/cache/p9dcand" "+refs/heads/main:refs/cache/main" "+refs/heads/*:refs/cache/all/*" 2>&1 | tail -3 || true
 [ "$(sg rev-parse refs/cache/p9dcand)" = "$CAND_FULL" ] || die "branch kandidat ($BRANCH) berubah: $(sg rev-parse refs/cache/p9dcand)"
-[ "$(sg rev-parse refs/cache/omset)" = "$EXPECT_PREV_FULL" ] || die "basis rilis NYATA ($FROZEN_OMSET_BRANCH) BERGERAK sejak freeze ($(sg rev-parse refs/cache/omset)) — STOP"
-MAIN_NOW="$(sg rev-parse refs/cache/main)"; [ "$MAIN_NOW" = "$FROZEN_MAIN_FULL" ] || warn "origin/main bergerak ($MAIN_NOW) — bukan basis rilis di repo ini, dilanjutkan (sudah dikonfirmasi ke user P9C dibangun di atas feature branch, bukan main)"
+# (cek 'ujung branch live == commit live' dihapus: commit live bisa di branch mana pun dan ujungnya boleh maju; yang dibekukan = image+release dir+PREV_FULL)
+MAIN_NOW="$(sg rev-parse refs/cache/main)"; sg merge-base --is-ancestor "$MAIN_NOW" "$CAND_FULL" || die "origin/main ($MAIN_NOW) TIDAK termuat di kandidat — merge main dulu"; ok "origin/main ($MAIN_NOW) termuat di kandidat"
 git --git-dir="$SRC" cat-file -e "$EXPECT_PREV_FULL" 2>/dev/null || die "commit produksi aktif ($EXPECT_PREV_SHORT) tidak ditemukan di cache git"
 sg merge-base --is-ancestor "$EXPECT_PREV_FULL" "$CAND_FULL" || die "live ($EXPECT_PREV_SHORT) BUKAN ancestor kandidat — bukan superset bersih, STOP"
 ok "live ($EXPECT_PREV_SHORT) TERBUKTI leluhur LANGSUNG kandidat — superset bersih (bukan workaround dist-only)"
@@ -116,7 +114,7 @@ OLD_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$PREV_DIR/frontend/dist/index.h
 ( cd "$NEW_DIR/frontend" && npm run build ) > "$BK_DIR/build-frontend.log" 2>&1 || { tail -n 25 "$BK_DIR/build-frontend.log"; die "build frontend gagal"; }
 NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.html" | sed -n 1p)"; [ -n "$NEW_INDEX" ] && [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "hasil build frontend tidak valid"
 [ "$NEW_INDEX" != "$OLD_INDEX" ] || die "bundel baru identik dengan lama"
-for s in "Isi Diagnosis" "Revisi Diagnosis" "MODE KERJA & PERANGKAT" "Belum Dijadwalkan" "Putusan QC" "Layanan Dipesan (Sales)"; do grep -rlF "$s" "$NEW_DIR"/frontend/dist/assets/*.js >/dev/null 2>&1 || die "dist tidak memuat referensi P9C Unit 360 \"$s\""; done
+for s in ${DIST_MUST_CONTAIN_LIST:-"Isi Diagnosis" "Revisi Diagnosis" "MODE KERJA & PERANGKAT" "Belum Dijadwalkan" "Putusan QC" "Layanan Dipesan (Sales)" "Ajukan Pengambilan Bahan"}; do grep -rlF "$s" "$NEW_DIR"/frontend/dist/assets/*.js >/dev/null 2>&1 || die "dist tidak memuat referensi P9C Unit 360 \"$s\""; done
 for s in "Sales per Stage" "Gerbang Klaim Lunas" "Status Produksi" "Rencana Produksi"; do grep -rlF "$s" "$NEW_DIR"/frontend/dist/assets/*.js >/dev/null 2>&1 || die "dist kehilangan fitur lama \"$s\" (Sales Stage/Pipeline atau P9B.1)"; done
 grep -rlF "AIzaSy" "$NEW_DIR"/frontend/dist/assets/*.js >/dev/null 2>&1 || die "dist TIDAK memuat kunci Google Maps — STOP sebelum switch"
 ok "frontend: build index=$NEW_INDEX (lama $OLD_INDEX); dist memuat Unit 360 P9C DAN Sales per Stage/Pipeline/P9B.1 (tidak hilang) DAN kunci Google Maps"
@@ -132,8 +130,8 @@ docker run --rm "$NEW_IMG_ID" node -e "const s=require('fs').readFileSync('/app/
 ok "image baru memuat P9D, Sales per Stage, DAN P9B.1 (tidak ada yang hilang)"
 
 PHASE=7-pre-switch-gate; say "7. Freeze ulang sebelum switch + pre-switch gate"
-sg fetch -q origin "+refs/heads/$FROZEN_OMSET_BRANCH:refs/cache/omset2" 2>&1 | tail -1 || true
-[ "$(sg rev-parse refs/cache/omset2)" = "$EXPECT_PREV_FULL" ] || die "basis rilis (feat/laporan-omset-stage) bergerak sebelum switch — STOP"
+sg fetch -q origin "+refs/heads/$BRANCH:refs/cache/p9dcand2" 2>&1 | tail -1 || true
+[ "$(sg rev-parse refs/cache/p9dcand2)" = "$CAND_FULL" ] || die "branch kandidat bergerak sebelum switch — STOP"
 [ "$(flags_snapshot)" = "$EXPECT_FLAGS" ] || die "flag V2 berubah sebelum switch — STOP"
 [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$EXPECT_PREV_IMG" ] || die "production berubah — STOP"
 [ "$(docker inspect -f '{{.RestartCount}}' "$CID_OLD")" = "$RC0" ] || die "restart count production berubah sejak freeze — STOP"
