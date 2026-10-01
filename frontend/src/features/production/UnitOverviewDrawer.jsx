@@ -9,6 +9,7 @@ import { formatRupiah } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import { friendlyError, priorityTone } from "@/features/production/experience.js";
 import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
+import { DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS } from "@/features/production/documentation.js";
 import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
 import { humanizeRequest } from "@/features/production/unitCardModel.js";
 
@@ -225,7 +226,11 @@ function Bahan({ d, onDiagnosisRefresh }) {
                 <td className="px-2 py-1.5 tabular-nums" data-col="terpakai">{l.usedQty ?? 0} {l.uom}</td>
                 <td className="px-2 py-1.5 tabular-nums" data-col="sisa">{l.leftoverQty ?? 0} {l.uom}</td>
                 <td className="px-2 py-1.5 tabular-nums" data-col="waste">{l.wasteQty ?? 0} {l.uom}</td>
-                <td className="px-2 py-1.5">{l.status.replaceAll("_", " ")}</td>
+                <td className="px-2 py-1.5">
+                  {l.status.replaceAll("_", " ")}
+                  {l.returnStatus === "PENDING" && <Badge variant="orange" className="ml-1" data-testid="return-status">Retur menunggu Gudang</Badge>}
+                  {l.returnStatus === "RECEIVED" && <Badge variant="green" className="ml-1" data-testid="return-status">Retur diterima Gudang{l.returnedQty ? ` (${l.returnedQty} ${l.uom})` : ""}</Badge>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -248,10 +253,32 @@ function MediaGrid({ items, empty }) {
   return (
     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
       {items.map((m, i) => (
-        <a key={`${m.stepNo}-${i}`} href={m.url} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-btn bg-inset" title={m.stepLabel}>
-          {m.kind === "video" ? <video src={m.url} className="h-full w-full object-cover" muted /> : <img src={m.url} alt={m.stepLabel} className="h-full w-full object-cover" loading="lazy" />}
+        <a key={`${m.stepNo}-${i}`} href={m.url} target="_blank" rel="noreferrer" className="relative block aspect-square overflow-hidden rounded-btn bg-inset" title={[m.stepLabel, m.caption].filter(Boolean).join(" — ")} data-testid="evidence-item" data-documentation={m.documentation ? "true" : undefined}>
+          {m.kind === "video" ? <video src={m.url} className="h-full w-full object-cover" muted /> : <img src={m.url} alt={m.caption || m.stepLabel} className="h-full w-full object-cover" loading="lazy" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />}
+          {m.source && <span className="absolute bottom-1 left-1"><Badge variant={DOC_SOURCE_BADGE[m.source] || "neutral"}>{DOC_SOURCE_LABEL[m.source] || m.source}</Badge></span>}
         </a>
       ))}
+    </div>
+  );
+}
+
+// P10B — ringkasan matriks dokumentasi kanonis (sama dengan Aplikasi Dokumentasi & Laporan) + tautan buka aplikasi.
+function MatriksDokumentasi({ matrix }) {
+  if (!matrix) return null;
+  return (
+    <div className="space-y-2 rounded-card border border-line p-3" data-testid="doc-matrix">
+      <div className="flex items-center justify-between gap-2">
+        <p className="m-0 text-[12.5px] font-bold text-ink">Matriks dokumentasi · {matrix.totals.satisfied}/{matrix.totals.required} foto</p>
+        <a href="/produksi/dokumentasi" className="text-[12px] font-semibold text-accent underline">Buka Aplikasi Dokumentasi</a>
+      </div>
+      <ul className="m-0 grid list-none gap-1 p-0 sm:grid-cols-2">
+        {matrix.categories.map((c) => (
+          <li key={c.key} className="flex items-center justify-between gap-2 rounded-btn bg-inset px-2.5 py-1.5 text-[12px]" data-category={c.key} data-status={c.status}>
+            <span className="min-w-0 truncate text-ink2">{c.label}</span>
+            <span className="flex shrink-0 items-center gap-1.5"><span className="tabular-nums text-ink3">{c.count}/{c.min}</span><Badge variant={(DOC_STATUS[c.status] || DOC_STATUS.MENUNGGU).variant}>{(DOC_STATUS[c.status] || DOC_STATUS.MENUNGGU).label}</Badge></span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -259,6 +286,7 @@ function MediaGrid({ items, empty }) {
 function Dokumentasi({ d }) {
   return (
     <div className="space-y-4">
+      <MatriksDokumentasi matrix={d.documentation} />
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">Before</p><MediaGrid items={d.evidence.before} empty="Belum ada dokumentasi before." /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">Proses</p><MediaGrid items={d.evidence.process} empty="Belum ada dokumentasi proses." /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">After</p><MediaGrid items={d.evidence.after} empty="Belum ada dokumentasi after." /></div>

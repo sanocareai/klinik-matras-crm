@@ -106,6 +106,7 @@ const ProductionReportV2 = lazy(() => import("../pages/bengkel/ProductionReportV
 const ProductionRencanaWorkspace = lazy(() => import("../pages/bengkel/ProductionRencanaWorkspace.jsx"));
 const WarehouseProductionQueue = lazy(() => import("../pages/warehouse/WarehouseProductionQueue.jsx"));
 const WorkerLane = lazy(() => import("../pages/produksi/WorkerLane.jsx"));
+const ProductionDocumentation = lazy(() => import("../pages/produksi/ProductionDocumentation.jsx"));
 const ProductionAndon = lazy(() => import("../pages/bengkel/ProductionAndon.jsx"));
 // P8.1 (UI & Navigation Consolidation, 29 September 2026) — hub/halaman BARU
 // murni navigasi & layout; TIDAK ada state machine/API/migration baru.
@@ -118,6 +119,7 @@ const ProductionServiceStages = lazy(() => import("../pages/bengkel/ProductionSe
 export const STANDALONE_PAGES = [
   { path: "/produksi/meja", render: () => <WorkerLane lane="TABLE" /> },
   { path: "/produksi/corner", render: () => <WorkerLane lane="CORNER" /> },
+  { path: "/produksi/dokumentasi", render: () => <ProductionDocumentation /> },
   { path: "/bengkel/andon", render: () => <ProductionAndon /> },
 ];
 export function standalonePageFor(pathname) {

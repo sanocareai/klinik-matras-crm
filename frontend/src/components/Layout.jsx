@@ -4,7 +4,7 @@ import {
   LayoutDashboard, MessageSquare, Users, GitBranch, ClipboardList,
   Megaphone, BarChart3, Zap, Settings, UserCog, Bell,
   LogOut, Package, X, Link2, Sparkles, MoreVertical, ChevronLeft, ChevronRight, ChevronDown, Send,
-  Wrench, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2, Wallet, PiggyBank,
+  Wrench, Camera, Gauge, CalendarClock, Route, MapPin, ClipboardCheck, AlertTriangle, Undo2, Wallet, PiggyBank,
   ArrowDownToLine, ArrowUpFromLine, ArrowLeftRight, Scale, TrendingUp,
   Boxes, ScanLine, Award, ArrowUpDown, Check, Handshake,
   Landmark, BookOpen, FileSpreadsheet, Banknote, Receipt, Building2, Scale as ScaleIcon, ListTree,
@@ -216,6 +216,7 @@ const DIVISIONS = {
         items: [
           { to: "/produksi/meja",           label: "Aplikasi Meja",   Icon: Wrench },
           { to: "/produksi/corner",         label: "Aplikasi Corner", Icon: Wrench },
+          { to: "/produksi/dokumentasi",    label: "Aplikasi Dokumentasi", Icon: Camera },
           { to: "/bengkel/andon",           label: "Andon TV",        Icon: LayoutDashboard },
         ],
       },

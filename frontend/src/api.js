@@ -726,6 +726,12 @@ export const api = {
     request("/production-v2/plans", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   scheduleProductionV2Plan: (planId, data, idempotencyKey = mutationKey("p8-schedule")) =>
     request(`/production-v2/plans/${planId}/schedule`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Urutan manual unit per meja (drag-drop / naik-turun) — daftar LENGKAP plan id di slot menurut urutan baru.
+  reorderProductionV2Station: (data, idempotencyKey = mutationKey("pv2-reorder")) =>
+    request("/production-v2/stations/reorder", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Antrean retur sisa bahan: Gudang menerima fisik sisa bahan dari produksi (stok RETURN tertaut unit).
+  receiveProductionV2MaterialReturn: (id, data, idempotencyKey = mutationKey("pv2-return-receive")) =>
+    request(`/production-v2/material-returns/${id}/receive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   recordProductionV2Step: (runId, stepNo, data, idempotencyKey) =>
     request(`/production-v2/runs/${runId}/steps/${stepNo}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // P9D — Diagnosis Produksi + Planned BOM Terpadu.
@@ -750,6 +756,19 @@ export const api = {
     for (const file of files) fd.append("files", file);
     return uploadWithProgress("/production-v2/evidence/upload", fd, onProgress);
   },
+  // P10B — Aplikasi Dokumentasi (foto dokumentasi produksi; tidak mengubah lifecycle). Tulis butuh izin PRODUCTION_DOCUMENTATION_WRITE.
+  getProductionV2DocQueue: ({ filter = "ALL", q = "" } = {}) => request(`/production-v2/documentation/queue?filter=${encodeURIComponent(filter)}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
+  getProductionV2DocDetail: (runId) => request(`/production-v2/documentation/runs/${runId}`),
+  uploadProductionV2Documentation: (runId, files, onProgress) => {
+    const fd = new FormData();
+    fd.append("runId", runId);
+    for (const file of files) fd.append("files", file);
+    return uploadWithProgress("/production-v2/documentation/upload", fd, onProgress);
+  },
+  submitProductionV2Documentation: (runId, data, idempotencyKey = mutationKey("p10b-doc")) =>
+    request(`/production-v2/documentation/runs/${runId}/submit`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  correctProductionV2Documentation: (runId, data, idempotencyKey = mutationKey("p10b-doc-fix")) =>
+    request(`/production-v2/documentation/runs/${runId}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // P9B.1 — foto identitas unit manual (hanya tampil kalau unit belum punya foto pickup driver, lihat backend).
   uploadUnitPhoto: (unitId, file, onProgress) => {
     const fd = new FormData();

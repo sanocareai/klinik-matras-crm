@@ -6,8 +6,9 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { hasPermission, requireAnyPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { createProductionPlan, scheduleProductionPlan } from "../services/productionPlanningCommandService.js";
+import { createProductionPlan, reorderStationPlans, scheduleProductionPlan } from "../services/productionPlanningCommandService.js";
 import { recordProductionStep, reportMaterialShortage, resolveMaterialShortage } from "../services/productionStepCommandService.js";
+import { receiveMaterialReturn } from "../services/productionMaterialReturnService.js";
 import { confirmUnitArrival, listReceivingLocations } from "../services/unitCustodyCommandService.js";
 import {
   getAndonBoard, getProductionBoard, getProductionCommandCenter, getProductionReport, getRunCard, getWarehouseProductionQueue, listWorkerQueue,
@@ -15,6 +16,7 @@ import {
 import { getUnitOverview } from "../services/productionUnitOverviewService.js";
 import { getDiagnosisState, mapManualMaterial, saveDiagnosisDraft, submitDiagnosis } from "../services/productionDiagnosisCommandService.js";
 import { productionEvidenceUploadRouter } from "./productionEvidenceMedia.js";
+import { productionDocumentationRouter } from "./productionDocumentation.js";
 import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { BOARD_DEFAULTS } from "../lib/domain/productionBoard.js";
@@ -124,7 +126,7 @@ productionExperienceRouter.get("/worker/:lane", requirePermission(P.UNIT_STAGE_W
 productionExperienceRouter.get("/warehouse/queue", requirePermission(P.INVENTORY_READ), async (_req, res) => {
   try {
     const unitIds = await readerCohort();
-    if (!unitIds) return inert(res, { shortages: [], materialNeeds: [], inbound: [], finishedGoods: [], kpi: {} });
+    if (!unitIds) return inert(res, { shortages: [], materialNeeds: [], inbound: [], finishedGoods: [], returns: [], kpi: {} });
     res.json({ readerMode: "COHORT", ...(await getWarehouseProductionQueue(prisma, { unitIds })) });
   } catch (err) { handleErr(err, res); }
 });
@@ -167,6 +169,25 @@ productionExperienceRouter.post("/plans/:id/schedule", requirePermission(P.PRODU
       productionDate: req.body?.productionDate ?? null, stationCode: req.body?.stationCode ?? null, priority: req.body?.priority,
       workCenterId: req.body?.workCenterId, operatorId: req.body?.operatorId,
       cornerWorkCenterId: req.body?.cornerWorkCenterId, cornerOperatorId: req.body?.cornerOperatorId,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/stations/reorder { productionDate, stationCode, orderedPlanIds[] } — urutan manual unit di satu meja
+// (drag-drop / tombol naik-turun). Daftar LENGKAP plan di slot; 409 STATION_ORDER_STALE bila isi meja berubah. Prioritas tidak disentuh.
+productionExperienceRouter.post("/stations/reorder", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try {
+    res.json(await reorderStationPlans(prisma, {
+      actorId: req.user.id, idempotencyKey: idem(req), productionDate: req.body?.productionDate, stationCode: req.body?.stationCode, orderedPlanIds: req.body?.orderedPlanIds,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/material-returns/:id/receive { expectedRevision, qty?, note? } — Gudang menerima fisik sisa bahan (stok RETURN tertaut unit).
+productionExperienceRouter.post("/material-returns/:id/receive", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    res.json(await receiveMaterialReturn(prisma, {
+      returnId: req.params.id, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, qty: req.body?.qty, note: req.body?.note,
     }));
   } catch (err) { handleErr(err, res); }
 });
@@ -284,5 +305,7 @@ productionExperienceRouter.post("/units/:unitId/confirm-arrival", requirePermiss
 
 // Unggah bukti (multipart) — izin & cohort diperiksa di router media.
 productionExperienceRouter.use(productionEvidenceUploadRouter);
+// P10B — Aplikasi Dokumentasi (antrean, matriks, unggah, kirim, koreksi): izin & cohort diperiksa di router.
+productionExperienceRouter.use("/documentation", productionDocumentationRouter);
 // P9B.1 — unggah foto identitas unit manual (multipart) — izin & cohort diperiksa di router media.
 productionExperienceRouter.use(productionUnitPhotoUploadRouter);

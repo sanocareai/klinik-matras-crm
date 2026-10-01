@@ -5,8 +5,11 @@
 import {
   ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
-import { BOARD_DEFAULTS, PRIORITY_LABEL, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
+import { listMaterialReturns } from "./productionMaterialReturnService.js";
+import { BOARD_DEFAULTS, PRIORITY_LABEL, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
 import { applicableStepsFor, loadStepContext } from "./productionStepCommandService.js";
+import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
+import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
@@ -148,6 +151,7 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null } = {}) 
     plan: run.plan ? {
       id: run.plan.id, status: run.plan.status, revision: run.plan.revision,
       productionDate: formatProductionDate(run.plan.productionDate), stationCode: run.plan.stationCode, stationLabel: stationLabel(run.plan.stationCode),
+      stationSequence: run.plan.stationSequence ?? null,
       priority: run.plan.priority, priorityLabel: PRIORITY_LABEL[run.plan.priority] || "Normal",
       workCenter: run.plan.workCenter, cornerWorkCenter: run.plan.cornerWorkCenter,
       operator: run.plan.operator ? { id: run.plan.operator.id, userId: run.plan.operator.userId, name: nameOf(run.plan.operator) } : null,
@@ -227,7 +231,7 @@ export async function getProductionBoard(prisma, { date, unitIds, config = BOARD
   const scheduled = await viewsOf(prisma, scheduledRuns, { now });
   const unscheduled = await viewsOf(prisma, unscheduledRuns, { now });
   const stations = config.stations.map((code) => {
-    const items = scheduled.filter((v) => v.plan?.stationCode === code).sort((a, b) => (b.plan.priority - a.plan.priority));
+    const items = scheduled.filter((v) => v.plan?.stationCode === code).sort((a, b) => compareStationOrder(a.plan, b.plan));
     const operatorNames = [...new Set(items.map((v) => v.plan?.operator?.name).filter(Boolean))];
     return { code, label: stationLabel(code), capacity: config.capacityPerStation, count: items.length, operatorNames, items };
   });
@@ -434,8 +438,10 @@ export async function listWorkerQueue(prisma, { unitIds, userId, lane, now = new
     .filter((v) => (lane === "CORNER"
       ? v.next?.actor === "CORNER" || (v.next?.stepNo >= 10 && v.next?.stepNo <= 12)
       : v.next?.stepNo == null || v.next.stepNo <= 9 || v.next?.wait === "AWAITING_QC"))
-    .sort((a, b) => (b.plan?.priority ?? 0) - (a.plan?.priority ?? 0)
-      || new Date(a.plan?.targetStartAt || 0).getTime() - new Date(b.plan?.targetStartAt || 0).getTime());
+    // Hari lebih awal dulu, lalu per meja, lalu urutan meja (manual menang atas prioritas — sama dengan papan Rencana).
+    .sort((a, b) => String(a.plan?.productionDate || "9999").localeCompare(String(b.plan?.productionDate || "9999"))
+      || String(a.plan?.stationCode || "").localeCompare(String(b.plan?.stationCode || ""))
+      || compareStationOrder(a.plan, b.plan));
   return { operator: { id: operator.id }, items };
 }
 
@@ -465,7 +471,7 @@ export async function getAndonBoard(prisma, { date, unitIds, config = BOARD_DEFA
 // Stok TIDAK berkurang di sini — penyerahan tetap lewat Material Issue P4 (pick).
 // ---------------------------------------------------------------------------
 export async function getWarehouseProductionQueue(prisma, { unitIds, now = new Date() }) {
-  const [plans, shortages, inbound, finished] = await Promise.all([
+  const [plans, shortages, inbound, finished, returns] = await Promise.all([
     prisma.productionRunPlan.findMany({
       where: { status: { not: "CANCELLED" }, run: { unitId: { in: unitIds }, status: { notIn: TERMINAL_RUN } }, bomLines: { some: { status: "ACTIVE" } } },
       include: {
@@ -491,6 +497,7 @@ export async function getWarehouseProductionQueue(prisma, { unitIds, now = new D
       select: { id: true, revision: true, offeredAt: true, productionRunId: true, unit: { select: { unitCode: true, order: { select: { customer: { select: { name: true } } } } } } },
       orderBy: { offeredAt: "asc" },
     }),
+    listMaterialReturns(prisma, { status: "PENDING", unitIds }),
   ]);
   const materialNeeds = plans.map((plan) => {
     const issues = plan.materialIssues;
@@ -511,14 +518,15 @@ export async function getWarehouseProductionQueue(prisma, { unitIds, now = new D
   });
   return {
     generatedAt: now.toISOString(),
-    kpi: { inbound: inbound.length, materialRequests: materialNeeds.filter((m) => m.status !== "SUDAH_DISERAHKAN").length, shortages: shortages.length, finishedGoods: finished.length },
+    kpi: { inbound: inbound.length, materialRequests: materialNeeds.filter((m) => m.status !== "SUDAH_DISERAHKAN").length, shortages: shortages.length, finishedGoods: finished.length, returns: returns.length },
     shortages: shortages.map((s) => ({
       id: s.id, revision: s.revision, runId: s.runId, unitCode: s.unit.unitCode, customerName: s.unit.order?.customer?.name ?? null,
       stationLabel: stationLabel(s.run.plan?.stationCode), items: s.items, note: s.note, reportedAt: s.reportedAt, waitingMinutes: minutesBetween(s.reportedAt, now),
     })),
     materialNeeds,
+    returns,
     inbound: inbound.map((h) => ({ handoffId: h.id, revision: h.revision, unitCode: h.unit.unitCode, customerName: h.unit.order?.customer?.name ?? null, offeredAt: h.offeredAt })),
-    finishedGoods: finished.map((h) => ({ handoffId: h.id, revision: h.revision, runId: h.productionRunId, unitCode: h.unit.unitCode, customerName: h.unit.order?.customer?.name ?? null, offeredAt: h.offeredAt })),
+    finishedGoods: finished.map((h) => ({ handoffId: h.id, revision: h.revision, runId: h.productionRunId, unitCode: h.unit.unitCode, customerName: h.unit.order?.customer?.name ?? null, offeredAt: h.offeredAt, returnPending: returns.filter((r) => r.runId === h.productionRunId).length })),
   };
 }
 
@@ -575,7 +583,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
   const actorName = new Map(actors.map((a) => [a.id, a.name]));
   const tableActor = latestOf(evidence, 5)?.actorId || latestOf(evidence, 1)?.actorId;
   const cornerActor = latestOf(evidence, 11)?.actorId || latestOf(evidence, 10)?.actorId;
-  const mediaOf = (stepNos) => evidence.filter((e) => stepNos.includes(e.stepNo)).flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url) }))).filter((m) => m.url);
+  const mediaOf = (stepNos) => evidence.filter((e) => stepNos.includes(e.stepNo)).flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url), source: sourceOfStep(e.stepNo) }))).filter((m) => m.url);
   const measurement = latestOf(evidence, 4)?.payload ?? null;
   const finalTests = evidence.filter((e) => e.stepNo === 8);
   const finalPass = [...finalTests].reverse().find((e) => e.payload?.verdict === "PAS");
@@ -584,6 +592,8 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     where: { eventType: "production.report.ready", aggregateId: run.id }, orderBy: { id: "desc" },
     select: { status: true, deliveredAt: true, attempts: true, lastError: true, createdAt: true },
   });
+  const documentation = await buildRunDocumentation(prisma, run, ctx);
+  const docBuckets = documentationBuckets(documentation);
   const report = {
     runId: run.id, status: run.status, reportPath: `/bengkel/production-v2/laporan/${run.id}`,
     ready: !!latestOf(evidence, 12),
@@ -605,7 +615,8 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     qc: ctx.latestInspection ? { result: ctx.latestInspection.result, version: ctx.latestInspection.version, at: ctx.latestInspection.inspectedAt } : null,
     finishing: latestOf(evidence, 10)?.payload ?? null,
     cornerChecklist: latestOf(evidence, 11)?.payload?.checklist ?? null,
-    media: { before: mediaOf([1, 2, 3]), process: mediaOf([4, 6, 7]), after: mediaOf([8, 9, 11, 12]) },
+    media: { before: [...mediaOf([1, 2, 3]), ...docBuckets.before], process: [...mediaOf([4, 6, 7]), ...docBuckets.process], after: [...mediaOf([8, 9, 11, 12]), ...docBuckets.after] },
+    documentation,
     handoffStatus: fg?.status ?? null,
     broadcast: outboxRow
       ? { status: outboxRow.status, deliveredAt: outboxRow.deliveredAt, attempts: outboxRow.attempts, lastError: outboxRow.lastError, queuedAt: outboxRow.createdAt, consumerAvailable: false }

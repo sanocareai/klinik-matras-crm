@@ -13,6 +13,7 @@ import { friendlyError } from "@/features/production/experience.js";
 // Status broadcast dibaca dari outbox: selama pengirim otomatis belum aktif, status jujur "Menunggu pengirim" (PENDING) — tidak pernah
 // dianggap terkirim. Tombol Salin Pesan membantu Sales mengirim manual sampai consumer tersedia.
 const STYLE = { BIASA: "Kasur Biasa", PLUSHTOP: "Plushtop", PILLOWTOP: "Pillowtop" };
+const SOURCE_LABEL = { DRIVER_PICKUP: "Driver Pickup", PRODUKSI: "Produksi", QC: "QC", CORNER: "Corner", GUDANG: "Gudang", MANUAL: "Manual" };
 const VERDICT = { PAS: "PAS", TERLALU_KERAS: "Terlalu Keras", TERLALU_EMPUK: "Terlalu Empuk" };
 
 function Gallery({ title, items }) {
@@ -23,8 +24,10 @@ function Gallery({ title, items }) {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {items.map((m) => (
             <figure key={m.url} className="overflow-hidden rounded-btn bg-inset">
-              {m.kind === "video" ? <video src={m.url} controls preload="metadata" className="aspect-video w-full bg-black object-contain" /> : <img src={m.url} alt={m.stepLabel} loading="lazy" className="aspect-video w-full object-cover" />}
-              <figcaption className="px-2 py-1 text-[11px] text-ink3">{m.stepNo}. {m.stepLabel}</figcaption>
+              {m.kind === "video" ? <video src={m.url} controls preload="metadata" className="aspect-video w-full bg-black object-contain" /> : <img src={m.url} alt={m.caption || m.stepLabel} loading="lazy" className="aspect-video w-full object-cover" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />}
+              <figcaption className="px-2 py-1 text-[11px] text-ink3 [overflow-wrap:anywhere]" data-testid="report-media" data-documentation={m.documentation ? "true" : undefined}>
+                {m.documentation ? m.stepLabel : `${m.stepNo}. ${m.stepLabel}`}{m.source ? ` · ${SOURCE_LABEL[m.source] || m.source}` : ""}{m.caption ? ` — ${m.caption}` : ""}
+              </figcaption>
             </figure>
           ))}
         </div>

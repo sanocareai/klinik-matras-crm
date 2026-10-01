@@ -13,6 +13,19 @@ export const BOARD_DEFAULTS = Object.freeze({
 
 export const PRIORITY_LABEL = Object.freeze({ 0: "Normal", 1: "Tinggi", 2: "Mendesak" });
 
+// Urutan kartu di satu meja. Urutan MANUAL (stationSequence, diatur Planner lewat drag-drop / tombol naik-turun) selalu menang;
+// prioritas hanya URUTAN BAWAAN untuk kartu yang belum punya nomor manual (prioritas tinggi dulu, lalu target mulai paling awal).
+// Kartu bernomor manual selalu di atas yang belum bernomor, jadi prioritas tidak pernah melompati urutan yang sudah diatur orang.
+export function compareStationOrder(a, b) {
+  const sa = a?.stationSequence ?? null;
+  const sb = b?.stationSequence ?? null;
+  if (sa != null && sb != null && sa !== sb) return sa - sb;
+  if (sa != null && sb == null) return -1;
+  if (sa == null && sb != null) return 1;
+  return ((b?.priority ?? 0) - (a?.priority ?? 0))
+    || (new Date(a?.targetStartAt || 0).getTime() - new Date(b?.targetStartAt || 0).getTime());
+}
+
 export function stationLabel(code) {
   const m = /^TABLE_(\d{1,2})$/.exec(code || "");
   return m ? `Meja ${Number(m[1])}` : "Belum dijadwalkan";

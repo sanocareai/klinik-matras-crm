@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { CalendarDays, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, PackageCheck, PackageX, RefreshCw, Target, Timer, Undo2, XCircle } from "lucide-react";
+import { CalendarDays, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardList, PackageCheck, PackageX, RefreshCw, Target, Timer, Undo2, XCircle } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -16,6 +16,7 @@ import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx
 import { UnitCard } from "@/features/production/UnitCard.jsx";
 import { ScheduleModal } from "@/features/production/ScheduleModals.jsx";
 import { MEJA, backlogOf, mejaLabel } from "@/features/production/unitCardModel.js";
+import { dropPosition, hasManualOrder, moveRelativeTo, moveStep, orderedStationItems } from "@/features/production/stationOrder.js";
 import { rolesOf } from "@/lib/roles.js";
 
 // Rencana Produksi (P9 UX Realignment) — PLANNER harian seperti Route Planner Delivery: panel backlog "Belum
@@ -275,10 +276,22 @@ function WeekStrip({ centerDate, onPick }) {
   );
 }
 
-function MejaColumn({ station, date, dropActive, onDragOverMeja, onDropMeja, onOpen, onMove, dragStart, today, tomorrow }) {
+function MejaColumn({ station, date, dropActive, onDragOverMeja, onDropMeja, onOpen, onMove, onReorder, dragStart, today, tomorrow, busy = false }) {
   const cap = stationCapacity(station);
   const slots = Math.max(0, cap.capacity - station.items.length);
-  const items = [...station.items].sort((a, b) => (b.plan?.priority ?? 0) - (a.plan?.priority ?? 0));
+  // Urutan tampil = urutan manual bila ada, selain itu prioritas (bawaan). Server mengirim urutan yang sama; sort lokal hanya pengaman.
+  const items = orderedStationItems(station.items);
+  const planIds = items.map((v) => v.plan?.id).filter(Boolean);
+  const manual = hasManualOrder(items);
+  // Seret kartu DI meja yang sama ke kartu lain = ubah urutan; dari meja lain / backlog = jadwalkan ke meja ini (ditambahkan paling bawah).
+  function onDropCard(e, target) {
+    const runId = e.dataTransfer.getData("text/plain");
+    const dragged = items.find((x) => x.runId === runId);
+    if (!dragged?.plan?.id || !target.plan?.id) return; // bukan kartu meja ini -> menggelembung ke kolom (jadwalkan)
+    e.preventDefault(); e.stopPropagation(); onDragOverMeja(null);
+    const next = moveRelativeTo(planIds, dragged.plan.id, target.plan.id, dropPosition(e.clientY, e.currentTarget.getBoundingClientRect()));
+    if (next) onReorder(station, next);
+  }
   return (
     <section data-testid="meja-column" data-station={station.code} aria-label={`${station.label}, ${cap.label}`}
       onDragOver={(e) => { e.preventDefault(); onDragOverMeja(station.code); }} onDragLeave={() => onDragOverMeja(null)} onDrop={(e) => { e.preventDefault(); onDropMeja(station.code, e.dataTransfer.getData("text/plain")); }}
@@ -287,12 +300,27 @@ function MejaColumn({ station, date, dropActive, onDragOverMeja, onDropMeja, onO
         <div className="min-w-0">
           <p className="m-0 text-[14px] font-bold text-ink">{station.label}</p>
           <p className="m-0 truncate text-[11.5px] text-ink3">{station.operatorNames?.length ? `PIC ${station.operatorNames.join(", ")}` : "PIC belum ada"}</p>
+          {items.length > 1 && <p data-testid="meja-order-hint" className="m-0 text-[11px] text-ink3">{manual ? "Urutan diatur manual" : "Urutan bawaan: prioritas"} · seret kartu atau pakai ▲▼</p>}
         </div>
         <span data-testid="meja-capacity" className={`shrink-0 rounded-chip px-2 py-0.5 text-[12px] font-bold tabular-nums ${cap.full ? "bg-redbg text-red" : "bg-surface text-ink2"}`}>{cap.count} / {cap.capacity} unit{cap.full ? " · penuh" : ""}</span>
       </div>
       {items.map((v, idx) => (
-        <UnitCard key={v.runId} view={v} variant="compact" seq={idx + 1} today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => onOpen(x.unit.id)}
-          footer={<Button size="sm" variant="secondary" className="min-h-[44px] w-full" onClick={() => onMove(v, station.code)}><CalendarDays size={13} aria-hidden /> Pindahkan</Button>} />
+        <div key={v.runId} data-testid="meja-card" data-plan-id={v.plan?.id} onDrop={(e) => onDropCard(e, v)} className="min-w-0">
+          <UnitCard view={v} variant="compact" seq={idx + 1} today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => onOpen(x.unit.id)}
+            footer={(
+              <div className="flex w-full gap-1.5">
+                <Button size="sm" variant="secondary" className="min-h-[44px] flex-1" onClick={() => onMove(v, station.code)}><CalendarDays size={13} aria-hidden /> Pindahkan</Button>
+                {items.length > 1 && (
+                  <>
+                    <Button size="sm" variant="secondary" className="min-h-[44px] min-w-[44px]" data-testid="order-up" aria-label={`Naikkan urutan ${v.unit.unitCode}`} disabled={busy || idx === 0}
+                      onClick={() => { const next = moveStep(planIds, v.plan?.id, -1); if (next) onReorder(station, next); }}><ChevronUp size={16} aria-hidden /></Button>
+                    <Button size="sm" variant="secondary" className="min-h-[44px] min-w-[44px]" data-testid="order-down" aria-label={`Turunkan urutan ${v.unit.unitCode}`} disabled={busy || idx === items.length - 1}
+                      onClick={() => { const next = moveStep(planIds, v.plan?.id, 1); if (next) onReorder(station, next); }}><ChevronDown size={16} aria-hidden /></Button>
+                  </>
+                )}
+              </div>
+            )} />
+        </div>
       ))}
       {Array.from({ length: slots }).map((_, i) => (
         <div key={i} data-testid="meja-slot" className="flex min-h-[64px] items-center justify-center rounded-card border-2 border-dashed border-line px-2 text-center text-[11.5px] text-ink3">
@@ -344,6 +372,9 @@ export default function ProductionRencanaWorkspace() {
       .then(([w, o, m, s]) => setRefs((r) => ({ ...r, workCenters: (w.workCenters || []).filter((x) => x.active !== false), operators: (o.operators || []).filter((x) => x.active !== false), materials: m || [], stock: s || [] })))
       .catch(() => {});
   }, []);
+  // Galat drag/urutan muncul di atas halaman; pengguna biasanya sedang menggulir di kartu meja — bawa galat ke pandangan.
+  const alertRef = useRef(null);
+  useEffect(() => { if (error) alertRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [error]);
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(t); }, [notice]);
 
   const stockByMaterial = useMemo(() => new Map(refs.stock.map((row) => [row.materialId, row])), [refs.stock]);
@@ -385,6 +416,16 @@ export default function ProductionRencanaWorkspace() {
       await load();
     } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
   }
+  // Urutan manual di satu meja: kirim DAFTAR LENGKAP plan id menurut urutan baru; server menolak (409) bila isi meja berubah.
+  async function reorderStation(station, orderedPlanIds) {
+    setBusy(true); setError("");
+    try {
+      await api.reorderProductionV2Station({ productionDate: date, stationCode: station.code, orderedPlanIds });
+      setNotice(`Urutan ${station.label} diperbarui.`);
+      await load();
+    } catch (e) { await load(); setError(friendlyError(e)); } // muat ulang dulu (load mengosongkan galat) agar pesan konflik tetap terlihat
+    finally { setBusy(false); }
+  }
   const dragStart = (e, runId) => { e.dataTransfer.setData("text/plain", runId); e.dataTransfer.effectAllowed = "move"; };
 
   // Kelola Rencana (BOM/reservasi, P3) — dibuka dari dalam Unit 360, aksi tulis lama tidak berubah.
@@ -418,7 +459,7 @@ export default function ProductionRencanaWorkspace() {
         } />
       <PageBody>
         {notice && <div role="status" className="rounded-btn bg-greenbg px-3 py-2.5 text-[12.5px] text-green">{notice}</div>}
-        {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
+        {error && <div role="alert" ref={alertRef} className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
         {reader === "OFF" ? (
           <Card className="p-0"><EmptyState icon={CalendarClock} title="Rencana produksi belum diaktifkan" description="Fitur ini sedang dalam tahap uji coba (canary)." /></Card>
         ) : (
@@ -451,7 +492,7 @@ export default function ProductionRencanaWorkspace() {
                 {(stations.length ? stations : (cfg?.stations || MEJA).map((code) => ({ code, label: mejaLabel(code), capacity: 3, count: 0, items: [], operatorNames: [] }))).map((s) => (
                   <MejaColumn key={s.code} station={s} date={date} dropActive={dropOver === s.code} onDragOverMeja={setDropOver}
                     onDropMeja={(code, runId) => { setDropOver(null); const v = findView(runId); if (v) placeOn(v, code); }}
-                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} dragStart={dragStart} today={today} tomorrow={tomorrow} />
+                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} onReorder={reorderStation} busy={busy} dragStart={dragStart} today={today} tomorrow={tomorrow} />
                 ))}
               </div>
             </div>
