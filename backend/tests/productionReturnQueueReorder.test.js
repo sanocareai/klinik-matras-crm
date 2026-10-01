@@ -37,7 +37,7 @@ test("compareStationOrder: urutan manual menang atas prioritas; tanpa nomor = pr
   assert.deepEqual(sort([{ id: "new", priority: 2 }, { id: "m1", stationSequence: 1, priority: 0 }]), ["m1", "new"]);
 });
 
-test("migration 20261012090000: additive murni (tanpa DROP/DELETE/UPDATE/TRUNCATE), kolom & tabel sesuai kontrak", () => {
+test("migration 20261012100000: additive murni (tanpa DROP/DELETE/UPDATE/TRUNCATE), kolom & tabel sesuai kontrak", () => {
   const dir = readdirSync(path.join(here, "..", "prisma", "migrations")).find((d) => d.endsWith("production_return_queue_and_station_order"));
   assert.ok(dir, "folder migration ada");
   const sql = read(`prisma/migrations/${dir}/migration.sql`);

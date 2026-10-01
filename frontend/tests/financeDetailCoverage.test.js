@@ -20,6 +20,7 @@ const DETAIL_SENDIRI = {
   "FinancePayments.jsx": "baris membuka DetailPembayaranDialog (panel samping) via bukaDialog(\"detail\")",
   "FinancePemasukan.jsx": "klik baris memanggil onBuka(b) → rincian sumber pemasukan",
   "FinanceJournal.jsx": "klik baris membuka detail jurnal (setDetail)",
+  "FinanceLaporanDivisi.jsx": "drill-down sendiri di features/laporanDivisi: kategori → Transaksi (dokumen sumber + aturan atribusi) → tombol 'Buka di Finance' ke modul sumber",
 };
 const TANPA_DAFTAR = {
   "FinanceDashboard.jsx": "kartu KPI/grafik", "FinanceReports.jsx": "laporan terhitung", "FinanceAccounts.jsx": "master bagan akun (diedit inline)",

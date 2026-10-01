@@ -32,6 +32,7 @@ import {
 import { Prisma } from "@prisma/client";
 import { MoneyError, moneyToNumber, toMoney, sumMoney } from "../services/finance/money.js";
 import { kontrakUntukKlien } from "../services/finance/kontrakMetrik.js";
+import { DIVISI as DIVISI_RESMI } from "../services/finance/laporanDivisi/divisi.js";
 import { jembatanKas } from "../services/finance/jembatanKas.js";
 import { auditKonsistensi } from "../services/finance/auditKonsistensi.js";
 import { presetRekening, validasiPresets, JENIS_BIAYA_TRANSFER, presetBawaan } from "../services/finance/transferFee.js";
@@ -1002,6 +1003,14 @@ financeRouter.patch("/settings", requirePermission(P.FINANCE_ADMIN), async (req,
         // Sakelar rollout Gerbang Klaim Lunas: hanya "true"/"false" (nilai lain = salah ketik yang diam-diam dianggap MATI).
         if (key === SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF && !["true", "false"].includes(String(value))) {
           throw Object.assign(new Error("Nilai Gerbang Klaim Lunas harus true atau false"), { statusCode: 400 });
+        }
+        // Sakelar rollout Laporan Divisi: aktif = true/false; workspace = daftar scope resmi dipisah koma (nilai salah ketik jangan diam-diam diabaikan).
+        if (key === SETTING_KEYS.LAPORAN_DIVISI_AKTIF && !["true", "false"].includes(String(value))) {
+          throw Object.assign(new Error("Nilai Laporan Divisi aktif harus true atau false"), { statusCode: 400 });
+        }
+        if (key === SETTING_KEYS.LAPORAN_DIVISI_WORKSPACE) {
+          const daftar = String(value).split(",").map((s) => s.trim()).filter(Boolean);
+          if (daftar.some((s) => !DIVISI_RESMI.includes(s))) throw Object.assign(new Error("Daftar divisi workspace tidak valid"), { statusCode: 400 });
         }
         if (sebelum[key] === String(value)) continue;
 

@@ -76,6 +76,8 @@ const PengajuanBiayaWorkspace = lazy(() => import("../pages/pengajuanBiaya/Penga
 const PengajuanBiayaHub = lazy(() => import("../pages/pengajuanBiaya/PengajuanBiayaHub.jsx"));
 const FinanceLedger         = lazy(() => import("../pages/finance/FinanceLedger.jsx"));
 const FinanceReports        = lazy(() => import("../pages/finance/FinanceReports.jsx"));
+const FinanceLaporanDivisi  = lazy(() => import("../pages/finance/FinanceLaporanDivisi.jsx"));
+const LaporanBiayaDivisi    = lazy(() => import("../pages/laporanDivisi/LaporanBiayaDivisi.jsx"));
 const FinanceReconciliation = lazy(() => import("../pages/finance/FinanceReconciliation.jsx"));
 const FinanceSettings       = lazy(() => import("../pages/finance/FinanceSettings.jsx"));
 const B2BOrders       = lazy(() => import("../pages/b2b/B2BOrders.jsx"));
@@ -229,6 +231,14 @@ export const PAGES = [
   { path: "/finance/pengajuan-divisi", render: () => <PengajuanBiayaHub /> },
   { path: "/finance/ledger",         render: () => <FinanceLedger /> },
   { path: "/finance/reports",        render: () => <FinanceReports /> },
+  // Fase 2 — Laporan Biaya per Divisi: Finance melihat semua; workspace divisi memakai komponen yang sama dikunci ke divisinya (izin di server)
+  { path: "/finance/laporan-divisi", render: () => <FinanceLaporanDivisi /> },
+  { path: "/armada/laporan-biaya",    render: () => <LaporanBiayaDivisi scope="DELIVERY" judul="Laporan Biaya Delivery" /> },
+  { path: "/bengkel/laporan-biaya",   render: () => <LaporanBiayaDivisi scope="PRODUCTION" judul="Laporan Biaya Produksi" /> },
+  { path: "/warehouse/laporan-biaya", render: () => <LaporanBiayaDivisi scope="WAREHOUSE" judul="Laporan Biaya Gudang" /> },
+  { path: "/marketing/laporan-biaya", render: () => <LaporanBiayaDivisi scope="MARKETING" judul="Laporan Biaya Marketing" /> },
+  { path: "/kendali/laporan-biaya",   render: () => <LaporanBiayaDivisi scope="MANAGEMENT" judul="Laporan Biaya Management" /> },
+  { path: "/kendali/laporan-hrga",    render: () => <LaporanBiayaDivisi scope="HR_GA" judul="Laporan Biaya HR & GA" /> },
   { path: "/finance/accounts",       render: () => <FinanceAccounts /> },
   { path: "/finance/settings",       render: () => <FinanceSettings /> },
   { path: "/b2b",         render: () => <B2BOrders /> },

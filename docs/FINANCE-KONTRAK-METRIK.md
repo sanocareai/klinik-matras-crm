@@ -274,7 +274,7 @@ Biaya yang diakui di Laba Rugi menurut jurnal (saat disetujui/diposting), terlep
 | Termasuk | Beban dari pengeluaran, kendaraan, iklan, pemakaian bahan, insentif, admin bank |
 | Tidak termasuk | Pembelian aset (menjadi aset/persediaan); Uang muka operasional sebelum dipertanggungjawabkan; Kasbon (piutang karyawan) |
 | Pasangan rekonsiliasi | Pengeluaran (Aktif); Uang Keluar (Kas/Bank) |
-| Tampil di | Dashboard; Laporan Keuangan |
+| Tampil di | Dashboard; Laporan Keuangan; Laporan Divisi |
 | Export | — |
 
 ### Uang Keluar (Kas/Bank) (`uang_keluar_kas`)
@@ -290,7 +290,7 @@ Uang yang benar-benar keluar dari Kas/Bank menurut buku besar. Berbeda dari beba
 | Termasuk | Pengeluaran langsung, pembelian, pembayaran supplier, kasbon, uang muka, refund, biaya admin transfer |
 | Tidak termasuk | Transfer antar rekening sendiri; Pertanggungjawaban uang muka (kas sudah keluar saat uang muka diberikan) |
 | Pasangan rekonsiliasi | Beban Diakui; Utang Supplier; Kas Keluar (Arus Kas) |
-| Tampil di | Arus Kas; Kas & Bank |
+| Tampil di | Arus Kas; Kas & Bank; Laporan Divisi |
 | Export | — |
 
 ### Utang Supplier (`utang_supplier`)
@@ -322,8 +322,56 @@ Biaya yang sudah disetujui tetapi uangnya belum keluar (pengeluaran/pembelian Di
 | Termasuk | Reimbursement karyawan yang disetujui |
 | Tidak termasuk | Yang sudah dibayar; Yang masih menunggu persetujuan (belum komitmen) |
 | Pasangan rekonsiliasi | Utang Supplier; Uang Keluar (Kas/Bank) |
-| Tampil di | Pengeluaran; Pembelian; Supplier & Utang |
+| Tampil di | Pengeluaran; Pembelian; Supplier & Utang; Laporan Divisi |
 | Export | — |
+
+### Anggaran Divisi (`anggaran_divisi`)
+
+Batas biaya bulanan sebuah divisi menurut versi anggaran yang DISETUJUI. Belum ada versi disetujui = 'Belum ada anggaran' (bukan Rp0). Anggaran tidak mengubah ledger sama sekali.
+
+| | |
+|---|---|
+| Rumus | Σ anggaran versi DISETUJUI pada bulan dalam periode (tingkat Divisi bila ada; kalau tidak Σ Kategori; kalau tidak Σ Proyek — tanpa hitung ganda) |
+| Sumber | tabel fin_division_budgets |
+| Status dihitung | disetujui (versi lama = digantikan, draf tidak berlaku) |
+| Basis tanggal | Tanggal dokumen |
+| Termasuk | Versi anggaran disetujui terbaru per divisi/kategori/proyek/bulan |
+| Tidak termasuk | Draf anggaran; Versi yang sudah digantikan |
+| Pasangan rekonsiliasi | Beban Diakui; Sisa Anggaran Divisi |
+| Tampil di | Laporan Divisi |
+| Export | laporan-divisi |
+
+### Sisa Anggaran Divisi (`sisa_anggaran_divisi`)
+
+Anggaran dikurangi Aktual (Beban Diakui) divisi pada periode. Negatif = melebihi anggaran (satu-satunya keadaan yang ditandai merah). Tanpa anggaran tidak dihitung.
+
+| | |
+|---|---|
+| Rumus | anggaran_divisi − beban_diakui divisi (hanya bila anggaran ada) |
+| Sumber | fin_division_budgets + jurnal beban |
+| Status dihitung | terposting |
+| Basis tanggal | Tanggal buku (jurnal) |
+| Termasuk | Beban yang teratribusi ke divisi |
+| Tidak termasuk | Kas keluar dan komitmen (bukan beban); Biaya bersama / tidak terklasifikasi |
+| Pasangan rekonsiliasi | Anggaran Divisi; Beban Diakui; Komitmen Belum Dibayar |
+| Tampil di | Laporan Divisi |
+| Export | laporan-divisi |
+
+### Biaya Tidak Terklasifikasi (`biaya_tidak_terklasifikasi`)
+
+Beban/kas keluar yang divisinya TIDAK terbukti dari dokumen sumber (tidak ada divisi eksplisit, relasi, atau kategori terpetakan). Tidak pernah ditebak dari pembuat transaksi. Biaya bersama resmi (UMUM) dilaporkan terpisah sebagai Biaya Bersama.
+
+| | |
+|---|---|
+| Rumus | Σ beban jurnal yang atribusinya TIDAK_TERKLASIFIKASI |
+| Sumber | jurnal + dokumen sumber (atribusi.js) |
+| Status dihitung | terposting |
+| Basis tanggal | Tanggal buku (jurnal) |
+| Termasuk | Jurnal manual tanpa dokumen; Tagihan/pembelian dengan kategori belum terpetakan |
+| Tidak termasuk | Biaya Bersama (SHARED); Pembayaran/pengakuan order dan saldo awal (bukan biaya divisi) |
+| Pasangan rekonsiliasi | Beban Diakui |
+| Tampil di | Laporan Divisi |
+| Export | laporan-divisi |
 
 ## Kas, bank & rekonsiliasi
 

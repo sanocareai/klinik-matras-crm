@@ -84,6 +84,7 @@ const DIVISIONS = {
           { to: "/customers", label: "Pelanggan",     Icon: Users },
           // C2 — biaya marketing (iklan di luar AdSpend, konten, event, cetak, tools). Hanya SALES/Finance/Admin/Owner; server menegakkan ulang.
           { to: "/marketing/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"], bolehDivisi: ["MARKETING"] },
+          { to: "/marketing/laporan-biaya", label: "Laporan Biaya", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE"], bolehDivisi: ["MARKETING"] },
           { to: "/pipeline",  label: "Pipeline",      Icon: GitBranch },
           // Order = sisi PENGERJAAN (antrean produksi), terpisah dari Pipeline yang
           // sisi PENJUALAN. Sengaja bukan tab di Pelanggan: 1 baris = 1 order.
@@ -227,6 +228,7 @@ const DIVISIONS = {
           { to: "/bengkel/layanan-tahapan", label: "Layanan & Tahapan", Icon: GitBranch },
           // C1 — biaya operasional NON-STOK (servis mesin, jasa vendor, lembur, dll). Hanya PRODUCTION_LEAD/Finance/Admin; server menegakkan ulang.
           { to: "/bengkel/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "PRODUCTION_LEAD"], bolehDivisi: ["PRODUCTION"] },
+          { to: "/bengkel/laporan-biaya", label: "Laporan Biaya", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "PRODUCTION_LEAD"], bolehDivisi: ["PRODUCTION"] },
           { to: "/bengkel/scope-revisions", label: "Komplain & Revisi", Icon: AlertTriangle },
           // Riwayat = Order Produksi (tab Work Order) pra-filter status Terkirim — bukan halaman baru, lihat ProductionOrdersHub.jsx.
           { to: "/bengkel/order-produksi?tab=work-order&status=DELIVERED", label: "Riwayat", Icon: Boxes },
@@ -329,6 +331,7 @@ const DIVISIONS = {
           { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
           // C1 — biaya operasional NON-STOK gudang (bongkar muat, kurir, perlengkapan). Hanya WAREHOUSE/Finance/Admin; server menegakkan ulang.
           { to: "/warehouse/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"], bolehDivisi: ["WAREHOUSE"] },
+          { to: "/warehouse/laporan-biaya", label: "Laporan Biaya", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "WAREHOUSE"], bolehDivisi: ["WAREHOUSE"] },
         ],
       },
       {
@@ -424,6 +427,8 @@ const DIVISIONS = {
           // FINANCE_EXPENSE_SUBMIT (lihat constants/permissions.js) — pola
           // sama dengan "Semua Order" di atas.
           { to: "/armada/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, hideForLeaderDriver: true },
+          // Fase 2 — laporan biaya divisi Delivery (Finance/leader/anggota; server menegakkan; hanya muncul bila sakelar workspace aktif)
+          { to: "/armada/laporan-biaya", label: "Laporan Biaya", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "LEADER_DRIVER"], bolehDivisi: ["DELIVERY"] },
         ],
       },
       {
@@ -493,6 +498,8 @@ const DIVISIONS = {
           { to: "/kendali/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"], bolehDivisi: ["MANAGEMENT"] },
           // C2.1 — HR & GA punya menu sendiri untuk anggota divisinya (sebelumnya hanya lewat hub Finance).
           { to: "/kendali/pengajuan-hrga", label: "Pengajuan Biaya HR & GA", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"], bolehDivisi: ["HR_GA"] },
+          { to: "/kendali/laporan-biaya", label: "Laporan Biaya Management", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE"], bolehDivisi: ["MANAGEMENT"] },
+          { to: "/kendali/laporan-hrga", label: "Laporan Biaya HR & GA", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE"], bolehDivisi: ["HR_GA"] },
           { to: "/orders",  label: "Order",      Icon: ClipboardList },
           { to: "/laporan", label: "Laporan",    Icon: BarChart3, adminOnly: true },
         ],
@@ -550,6 +557,8 @@ const DIVISIONS = {
         section: "LAPORAN",
         items: [
           { to: "/finance/reports", label: "Laporan Keuangan", Icon: BarChart3 },
+          // Fase 2 — biaya per divisi (aktual, kas keluar, komitmen, anggaran). Server menegakkan sakelar & izin.
+          { to: "/finance/laporan-divisi", label: "Laporan Divisi", Icon: BarChart3 },
         ],
       },
       {
@@ -921,18 +930,20 @@ export default function Layout({ user, onLogout }) {
     const saringPeran = (base) => filterMenuByPermission(base, { roles, divisiSaya });
     if (["bengkel", "warehouse", "growth", "kendali", "finance"].includes(divisionKey)) return saringPeran(divisionBase);
     const leaderDriverOnly = roles.includes("LEADER_DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+    // Fase 2 — menu Delivery bertanda bolehPeran/bolehDivisi ("Laporan Biaya") disaring DULU; item tanpa penanda (semua menu Delivery lama) tidak terpengaruh.
+    const armadaBase = divisionKey === "armada" ? saringPeran(divisionBase) : divisionBase;
     if (divisionKey === "armada" && leaderDriverOnly) {
       return {
-        ...divisionBase,
-        sections: divisionBase.sections.map((s) => ({
+        ...armadaBase,
+        sections: armadaBase.sections.map((s) => ({
           ...s,
           items: s.items.filter((i) => !i.hideForLeaderDriver),
         })),
       };
     }
-    if (divisionKey !== "armada" || !driverOnly) return divisionBase;
+    if (divisionKey !== "armada" || !driverOnly) return armadaBase;
     return {
-      ...divisionBase,
+      ...armadaBase,
       sections: [{
         section: "TUGAS SAYA",
         // Di-flatten lintas SEMUA section (4 September 2026) — dulu cuma
@@ -940,7 +951,7 @@ export default function Layout({ user, onLogout }) {
         // dipecah 4 section (Operasional/Armada/Dokumen/Laporan) supaya
         // pencarian "/armada/jobs" tidak diam-diam patah tergantung section
         // mana dia ditaruh.
-        items: divisionBase.sections.flatMap((s) => s.items).filter((i) => i.to === "/armada/jobs")
+        items: armadaBase.sections.flatMap((s) => s.items).filter((i) => i.to === "/armada/jobs")
           .map((i) => ({ ...i, label: "Job Saya" })),
       }],
     };

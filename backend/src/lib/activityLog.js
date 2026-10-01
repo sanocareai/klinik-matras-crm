@@ -53,6 +53,7 @@ export const ENTITY_TYPES = Object.freeze({
   FIN_PERIOD: "fin_period",
   FIN_ACCOUNT: "fin_account",
   FIN_SETTING: "fin_setting",
+  FIN_DIVISION_BUDGET: "fin_division_budget", // Fase 2 Laporan Divisi — versi anggaran divisi
   FIN_INVENTORY_OPENING: "fin_inventory_opening", // B3.6 snapshot stok & persediaan awal
   // Koreksi transaksi finance (17 Sept 2026, permintaan owner: sistem baru
   // mulai dipakai, wajar ada salah input, tapi tidak boleh diam-diam
@@ -202,6 +203,7 @@ export const EVENT_TYPES = Object.freeze({
   PERIOD_CLOSED: "PERIOD_CLOSED",
   PERIOD_REOPENED: "PERIOD_REOPENED",
   FINANCE_SETTING_CHANGED: "FINANCE_SETTING_CHANGED",
+  DIVISION_BUDGET_CHANGED: "DIVISION_BUDGET_CHANGED", // anggaran divisi: draf dibuat/diubah/dihapus, disetujui (menggantikan versi lama)
   CHART_OF_ACCOUNTS_CHANGED: "CHART_OF_ACCOUNTS_CHANGED",
   // Koreksi (17 Sept 2026) — admin mengubah nilai transaksi yang SUDAH
   // diposting. BUKAN edit diam-diam: jurnal lama dibalik (tetap ada,
@@ -478,6 +480,10 @@ export function formatActivitySentence(event) {
       return `Periode ${metadata.periode || "—"} dibuka kembali${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.FINANCE_SETTING_CHANGED:
       return `Pengaturan finance "${metadata.key || "—"}" diubah: ${metadata.from ?? "(kosong)"} → ${metadata.to ?? "(kosong)"}`;
+    case EVENT_TYPES.DIVISION_BUDGET_CHANGED: {
+      const aksi = { draf_dibuat: "dibuat (draf)", draf_diubah: "diubah (draf)", disetujui: "disetujui", draf_dihapus: "draf dihapus" }[metadata.aksi] || "diubah";
+      return `Anggaran divisi ${metadata.lineKey || "—"} v${metadata.version ?? "?"} ${aksi}${metadata.ke != null ? ` — Rp${Number(metadata.ke).toLocaleString("id-ID")}` : ""}${metadata.alasan ? ` — ${metadata.alasan}` : ""}`;
+    }
     case EVENT_TYPES.CHART_OF_ACCOUNTS_CHANGED: {
       const fields = Object.keys(metadata.changes || {});
       if (metadata.aksi === "dibuat") return `Akun ${metadata.code || "—"} ${metadata.name || ""} ditambahkan ke bagan akun`.trim();
