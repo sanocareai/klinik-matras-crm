@@ -213,3 +213,10 @@ test("Sandbox#9 QC: pemilih bahan rework memakai pencarian produksi (bukan /inve
   assert.match(QC, /api\.searchProductionV2Materials\(t\)/);
   assert.match(QC, /<MaterialPicker value=\{row\.materialId\}/);
 });
+
+test("Sandbox#10 Gudang: retur & waste bisa ditautkan ke unit (unitId) supaya Sisa/Waste muncul di Unit 360", () => {
+  const G = read("pages", "Gudang.jsx");
+  assert.ok(G.includes("api.returnStock({ materialId: material.materialId, qty: qtyNum, unitId: unit?.id"));
+  assert.ok(G.includes("api.wasteStock({ materialId: material.materialId, qty: qtyNum, reason: reason.trim(), unitId: unit?.id"));
+  assert.ok(G.includes('type === "issue" || type === "return" || type === "waste"'));
+});

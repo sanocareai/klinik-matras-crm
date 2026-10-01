@@ -244,9 +244,12 @@ function MovementModal({ open, onClose, material, onSaved }) {
         const unit = await api.getUnitByCode(unitCode.trim().toUpperCase());
         await api.issueStock({ materialId: material.materialId, qty: qtyNum, unitId: unit.id, note: note || undefined });
       } else if (type === "return") {
-        await api.returnStock({ materialId: material.materialId, qty: qtyNum, note: note || undefined });
+        // Kode unit OPSIONAL: bila diisi, sisa yang dikembalikan tertaut ke unit itu dan muncul di Unit 360 > Bahan (kolom Sisa/Retur).
+        const unit = unitCode.trim() ? await api.getUnitByCode(unitCode.trim().toUpperCase()) : null;
+        await api.returnStock({ materialId: material.materialId, qty: qtyNum, unitId: unit?.id, note: note || undefined });
       } else if (type === "waste") {
-        await api.wasteStock({ materialId: material.materialId, qty: qtyNum, reason: reason.trim(), note: note || undefined });
+        const unit = unitCode.trim() ? await api.getUnitByCode(unitCode.trim().toUpperCase()) : null;
+        await api.wasteStock({ materialId: material.materialId, qty: qtyNum, reason: reason.trim(), unitId: unit?.id, note: note || undefined });
       } else if (type === "adjustment") {
         await api.adjustStock({ materialId: material.materialId, actualQty: qtyNum, reason: reason.trim(), note: note || undefined });
       }
@@ -304,9 +307,9 @@ function MovementModal({ open, onClose, material, onSaved }) {
           </div>
         )}
 
-        {type === "issue" && (
+        {(type === "issue" || type === "return" || type === "waste") && (
           <div>
-            <label className="mb-1 block text-[13px] font-medium text-ink2">Kode Unit</label>
+            <label className="mb-1 block text-[13px] font-medium text-ink2">Kode Unit{type === "issue" ? "" : " (opsional — tautkan ke unit agar tampil di Unit 360)"}</label>
             <input value={unitCode} onChange={(e) => setUnitCode(e.target.value)} placeholder="RES-07072026-001-U2"
               className="h-10 w-full rounded-btn border border-border px-3 text-sm font-mono outline-none focus:border-accent" />
           </div>
