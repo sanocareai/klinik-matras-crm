@@ -10,7 +10,7 @@ import { labelPeriode, susunLabelFilter } from "../export/excel.js";
 export const TAB_EXPORT = Object.freeze(["ringkasan", "kategori", "tren", "dokumen", "komitmen", "anggaran", "semua"]);
 const STATUS_ANGGARAN = (a) => (a == null ? "Belum ada anggaran" : "Ada anggaran");
 const LABEL_TAHAP = { EKSPLISIT: "Divisi tertulis pada dokumen", RELASI: "Relasi dokumen sumber", KATEGORI: "Pemetaan kategori", SHARED: "Biaya bersama", TIDAK_TERKLASIFIKASI: "Tidak terklasifikasi", BUKAN_BIAYA: "Bukan biaya divisi" };
-const LABEL_JENIS = { BELUM_DIBUKUKAN: "Menunggu persetujuan (belum beban, belum kas keluar)", DIBUKUKAN_BELUM_DIBAYAR: "Dibukukan, belum dibayar (sudah beban, belum kas keluar)" };
+const LABEL_JENIS = { BELUM_DIBUKUKAN: "Menunggu persetujuan (belum beban, belum kas keluar)", DIBUKUKAN_BELUM_DIBAYAR: "Dibukukan, belum dibayar (belum kas keluar; menjadi beban bila bukan persediaan/aset)" };
 const LABEL_MODUL = { pengeluaran: "Pengeluaran", pembelian: "Pembelian", "supplier-utang": "Tagihan/Pembayaran Supplier", "uang-muka": "Uang Muka Operasional", "armada-biaya": "Biaya Kendaraan (Armada)", "ad-spend": "Belanja Iklan", "material-issue": "Material Issue", "stock-movement": "Pergerakan Stok", "stock-count": "Stock Opname", "goods-receipt": "Penerimaan Barang" };
 
 const uang = (key, header, lebar) => ({ key, header, tipe: "uang", ...(lebar ? { lebar } : {}) });

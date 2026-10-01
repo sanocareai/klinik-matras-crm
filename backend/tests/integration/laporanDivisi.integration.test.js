@@ -356,3 +356,38 @@ test("SKRIP dry-run produksi (scripts/laporan-divisi-dryrun.js): berjalan sebaga
   assert.ok(j.dryRun.kelompok.DETERMINISTIK.jumlahTransaksi > 0 && j.dryRun.kelompok.TIDAK_TERKLASIFIKASI.jumlahTransaksi > 0 && j.dryRun.kelompok.KONFLIK.jumlahTransaksi > 0);
   assert.equal(await hitung(), sebelum, "skrip dry-run TIDAK boleh mengubah data");
 });
+
+test("KOMITMEN tidak menghitung ganda uang muka/DP yang sudah keluar sebagai kas (temuan review): pertanggungjawaban melebihi uang muka & DP pembelian diterapkan; filter proyek ikut ke komitmen; jembatan aktual menyebut di-luar-divisi", async () => {
+  const w = await dunia();
+  // (a) uang muka Delivery 100.000 → pertanggungjawaban BBM 150.000: 100.000 dari uang muka (sudah kas), selisih 50.000 = satu-satunya komitmen
+  const katBbm = await w.kat("BBM");
+  const um = await w.a.post("/api/finance/uang-muka", { holderId: w.anggotaDel.user.id, division: "DELIVERY", purpose: "Uang jalan", date: "2026-09-18", dueDate: "2026-09-30", amount: 100_000, cashAccountId: w.bank.id });
+  assert.equal(um.status, 201, JSON.stringify(um.body));
+  const pj = await w.a.post(`/api/finance/uang-muka/${um.body.id}/pertanggungjawaban`, { date: "2026-09-19", amount: 150_000, description: "BBM lebih", categoryId: katBbm.id, payeeName: "SPBU", receiptUrl: NOTA });
+  assert.equal(pj.status, 201, JSON.stringify(pj.body));
+  assert.equal((await w.a.post(`/api/finance/expenses/${pj.body.id}/approve`, {})).status, 200);
+  // (b) pembelian bahan baku UTANG 2.100.000 dengan DP 600.000 diterapkan → komitmen Produksi 1.500.000 (bukan 2.100.000)
+  const sup = await testPrisma.finSupplier.create({ data: { code: "SUP-P", name: "Toko Busa" } });
+  const katDp = await testPrisma.finPurchaseCategory.findUnique({ where: { code: "UANG_MUKA_PEMBELIAN" } });
+  const katBahan = await testPrisma.finPurchaseCategory.findUnique({ where: { code: "BAHAN_BAKU_MANUAL" } });
+  const dp = await w.a.post("/api/finance/purchases", { receiptUrl: NOTA, date: "2026-09-10", amount: 600_000, description: "DP busa", categoryId: katDp.id, mode: "LANGSUNG", cashAccountId: w.bank.id, supplierId: sup.id });
+  assert.equal(dp.status, 201, JSON.stringify(dp.body));
+  assert.equal((await w.a.post(`/api/finance/purchases/${dp.body.id}/approve`, {})).status, 200);
+  const beli = await w.a.post("/api/finance/purchases", { receiptUrl: NOTA, date: "2026-09-15", amount: 2_100_000, description: "Busa", categoryId: katBahan.id, mode: "UTANG", supplierId: sup.id });
+  assert.equal((await w.a.post(`/api/finance/purchases/${beli.body.id}/approve`, {})).status, 200);
+  const terap = await w.a.post("/api/finance/purchases/advance-applications", { advancePurchaseId: dp.body.id, targetPurchaseId: beli.body.id, amount: 600_000 }, { "Idempotency-Key": "uji-komitmen-dp-1" });
+  assert.equal(terap.status, 201, JSON.stringify(terap.body));
+
+  const lap = (await w.fa.get(`/api/laporan-divisi/laporan?${P}`)).body;
+  const kom = (s) => div(lap, s).komitmen;
+  sama(kom("DELIVERY").dibukukanBelumDibayar, 50_000, "komitmen Delivery = selisih uang muka saja");
+  const prod = kom("PRODUCTION").dibukukanBelumDibayar;
+  sama(prod, 1_500_000, "komitmen Produksi = pembelian − DP diterapkan");
+  // filter proyek: komitmen tidak punya proyek → tidak ikut (konsisten dengan Aktual & Kas Keluar)
+  const proy = (await w.fa.get(`/api/laporan-divisi/laporan?${P}&proyek=META_ADS`)).body;
+  for (const d of proy.divisi) { sama(d.komitmen.belumDibukukan + d.komitmen.dibukukanBelumDibayar, 0, `komitmen ${d.scope} dengan filter proyek`); }
+  // jembatan aktual membawa kolom di-luar-divisi eksplisit dan tetap cocok
+  assert.equal(typeof lap.jembatan.aktual.diLuarDivisi, "number");
+  sama(lap.jembatan.aktual.totalKelompok + lap.jembatan.aktual.diLuarDivisi, lap.jembatan.aktual.ledger, "Σ kelompok + di luar divisi = ledger");
+  assert.equal(lap.jembatan.status.perhitungan, "COCOK");
+});

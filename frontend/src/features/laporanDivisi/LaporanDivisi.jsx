@@ -31,6 +31,15 @@ const bulanLabel = (b) => { try { return new Date(`${b}-01T00:00:00Z`).toLocaleD
 const bulanIni = () => periodeDefault().from.slice(0, 7);
 const rpBertanda = (n) => (n < 0 ? `−${formatUang(Math.abs(n))}` : formatUang(n));
 
+// Panel: permukaan "glass" Finance (sama dengan FilterBar) tanpa padding ganda Card p-6 + CardContent.
+function Panel({ className, children, ...p }) {
+  return <div className={cn("fin-glass px-4 py-3", className)} {...p}>{children}</div>;
+}
+// Pemberitahuan merah (over-budget / galat). Warna dari token (--red-bg), bukan utilitas bg-* yang kadang tidak ter-generate.
+function Pemberitahuan({ className, children }) {
+  return <div role="alert" className={cn("rounded-card px-4 py-3", className)} style={{ background: "var(--red-bg)" }}>{children}</div>;
+}
+
 function Chip({ aktif, onClick, children }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={aktif}
@@ -183,7 +192,7 @@ export default function LaporanDivisi({ scopeTetap = null, judul = "Laporan Biay
         </div>
       )}
     >
-      {pesan && <Card className="bg-redbg"><CardContent className="py-3 text-[13px] text-ink">{pesan}</CardContent></Card>}
+      {pesan && <Pemberitahuan className="text-[13px] text-ink">{pesan}</Pemberitahuan>}
 
       {/* pilih divisi (Finance / pengguna multi-divisi) */}
       {!scopeTetap && (
@@ -199,8 +208,7 @@ export default function LaporanDivisi({ scopeTetap = null, judul = "Laporan Biay
       </div>
 
       {/* filter */}
-      <Card className="fin-glass">
-        <CardContent className="grid grid-cols-1 gap-2 py-3 sm:grid-cols-3">
+      <Panel className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {(finance || akses.level === "LEADER") && (
             <label className="text-[12px] text-ink3">Kategori
               <select value={kategori} onChange={(e) => setKategori(e.target.value)} className="mt-1 h-10 w-full rounded-btn border border-line bg-surface px-2 text-[13px] text-ink">
@@ -217,17 +225,16 @@ export default function LaporanDivisi({ scopeTetap = null, judul = "Laporan Biay
           <label className="text-[12px] text-ink3">Proyek / campaign
             <Input value={proyek} onChange={(e) => setProyek(e.target.value)} placeholder="mis. META_ADS" className="mt-1 h-10" />
           </label>
-        </CardContent>
-      </Card>
+      </Panel>
 
       {loading && !lap && <div className="flex items-center gap-2 py-8 text-[13px] text-ink2"><Loader2 size={14} className="animate-spin" /> Memuat laporan…</div>}
 
       {lap && (
         <>
           {lap.ringkasan.alert.length > 0 && (
-            <Card className="bg-redbg"><CardContent className="space-y-1 py-3">
+            <Pemberitahuan className="space-y-1">
               {lap.ringkasan.alert.map((a) => <p key={a.scope} className="flex items-start gap-2 text-[13px] text-ink"><AlertTriangle size={15} className="mt-0.5 shrink-0 text-red" /><span><b>{a.label}:</b> {a.pesan}</span></p>)}
-            </CardContent></Card>
+            </Pemberitahuan>
           )}
 
           {/* ═══ RINGKASAN ═══ */}
@@ -248,23 +255,23 @@ export default function LaporanDivisi({ scopeTetap = null, judul = "Laporan Biay
               {finance && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {["SHARED", "TIDAK_TERKLASIFIKASI"].map((s) => { const d = lap.divisi.find((x) => x.scope === s); return d ? (
-                    <Card key={s} className="fin-glass" data-testid={`kartu-${s}`}><CardContent className="space-y-1 py-4">
+                    <Panel key={s} data-testid={`kartu-${s}`} className="space-y-1 py-4">
                       <p className="text-[14px] font-bold text-ink">{d.label}</p>
                       <p className="text-[12px] leading-snug text-ink2">{s === "SHARED" ? "Biaya kantor/administrasi umum yang tidak milik satu divisi. Tetap bersama sampai ada alokasi resmi." : "Biaya yang divisinya TIDAK terbukti dari dokumen sumber. Tidak pernah ditebak dari pembuat transaksi."}</p>
                       <p className="text-[20px] font-bold tabular-nums text-ink">{formatUang(d.aktual)}</p>
                       <p className="text-[12px] text-ink3">Kas keluar {formatUang(d.kasKeluar)} · {d.nDokumen} dokumen</p>
                       <Button size="sm" variant="neutral" onClick={() => { setPilihan(s); setSub("dokumen"); }}>Lihat dokumen</Button>
-                    </CardContent></Card>
+                    </Panel>
                   ) : null; })}
                 </div>
               )}
               {lap.jembatan && (
-                <Card className="fin-glass"><CardContent className="space-y-1 py-3 text-[12.5px] text-ink2">
+                <Panel className="space-y-1  text-[12.5px] text-ink2">
                   <p className="font-semibold text-ink">Jembatan ke buku besar (hanya Finance)</p>
-                  <p>Aktual semua kelompok {formatUang(lap.jembatan.aktual.totalKelompok)} = Beban Diakui ledger {formatUang(lap.jembatan.aktual.ledger)} · selisih {rpBertanda(lap.jembatan.aktual.residual)}</p>
+                  <p>Aktual semua kelompok {formatUang(lap.jembatan.aktual.totalKelompok)} + di luar divisi {formatUang(lap.jembatan.aktual.diLuarDivisi)} = Beban Diakui ledger {formatUang(lap.jembatan.aktual.ledger)} · selisih {rpBertanda(lap.jembatan.aktual.residual)}</p>
                   <p>Kas keluar kelompok {formatUang(lap.jembatan.kasKeluar.totalKelompok)} + di luar divisi {formatUang(lap.jembatan.kasKeluar.diLuarDivisi)} = Arus Kas {formatUang(lap.jembatan.kasKeluar.arusKas)} · selisih {rpBertanda(lap.jembatan.kasKeluar.residual)}</p>
                   <Badge variant={lap.jembatan.status.perhitungan === "COCOK" ? "green" : "red"}>{lap.jembatan.status.perhitungan === "COCOK" ? "Perhitungan cocok" : "Perhitungan tidak cocok"}</Badge>
-                </CardContent></Card>
+                </Panel>
               )}
             </>
           )}
@@ -275,10 +282,10 @@ export default function LaporanDivisi({ scopeTetap = null, judul = "Laporan Biay
                 {tampilKartu.map((k) => <KartuAngka key={k.label} {...k} />)}
               </div>
               {dataDiv.persediaan && (
-                <Card className="fin-glass"><CardContent className="space-y-1 py-3 text-[12.5px] text-ink2">
+                <Panel className="space-y-1  text-[12.5px] text-ink2">
                   <p className="font-semibold text-ink">Persediaan Gudang (bukan beban)</p>
                   <p>Nilai penerimaan {formatUang(dataDiv.persediaan.nilaiPenerimaan)} · nilai pemakaian {formatUang(dataDiv.persediaan.nilaiPemakaian)}. Penerimaan menambah aset persediaan; hanya pemakaian yang menjadi beban (di Produksi).</p>
-                </CardContent></Card>
+                </Panel>
               )}
               <Card>
                 <JudulKartu title="Rincian kelompok biaya" description="Kelompok bernilai nol digabung ke “Komponen lain”." />
@@ -291,11 +298,11 @@ export default function LaporanDivisi({ scopeTetap = null, judul = "Laporan Biay
                 </CardContent>
               </Card>
               {finance && dataDiv.tahap && (
-                <Card className="fin-glass"><CardContent className="py-3 text-[12.5px] text-ink2">
+                <Panel className="text-[12.5px] text-ink2">
                   <p className="font-semibold text-ink">Dasar atribusi (hanya Finance)</p>
                   <ul className="mt-1 space-y-0.5">{dataDiv.tahap.map((t) => <li key={t.tahap}>{LABEL_TAHAP[t.tahap] ?? t.tahap}: {t.n} dokumen · {formatUang(t.aktual)}</li>)}</ul>
                   {dataDiv.konflik > 0 && <p className="mt-1 text-ink">{dataDiv.konflik} dokumen punya petunjuk divisi yang bertentangan — atribusi mengikuti prioritas (eksplisit → relasi → kategori) dan perlu ditinjau.</p>}
-                </CardContent></Card>
+                </Panel>
               )}
             </>
           )}
@@ -386,16 +393,14 @@ export default function LaporanDivisi({ scopeTetap = null, judul = "Laporan Biay
           {sub === "anggaran" && <PanelAnggaran akses={akses} divTunggal={divTunggal} anggaran={anggaran} periode={periode} dataDiv={dataDiv} onBerubah={muat} />}
 
           {/* ═══ DEFINISI ═══ */}
-          <Card className="fin-glass" data-testid="definisi-laporan">
-            <CardContent className="space-y-2 py-3 text-[12.5px] leading-relaxed text-ink2">
+          <Panel data-testid="definisi-laporan" className="space-y-2 text-[12.5px] leading-relaxed text-ink2">
               <p className="flex items-center gap-1.5 font-semibold text-ink"><Info size={14} className="text-accent" />Definisi angka & alasan bisa berbeda dari laporan lain</p>
               <p><b>Aktual</b> = beban yang diakui di jurnal (tanggal buku). <b>Kas Keluar</b> = uang yang benar-benar keluar dari kas/bank. Keduanya berbeda: tagihan supplier menjadi Aktual saat disetujui tetapi baru menjadi Kas Keluar saat dibayar; uang muka menjadi Kas Keluar saat diberikan dan menjadi Aktual saat dipertanggungjawabkan.</p>
               <p><b>Komitmen</b> belum menjadi beban atau kas keluar: dokumen yang menunggu persetujuan belum dijurnal sama sekali; yang sudah dibukukan tetapi belum dibayar sudah menjadi Aktual (bila beban) tetapi belum Kas Keluar. Satu transaksi sumber hanya dihitung sekali pada tiap konsep.</p>
               <p>Basis tanggal: {lap.basis.aktual} (Aktual), {lap.basis.kasKeluar} (Kas Keluar), {lap.basis.komitmen} (Komitmen), {lap.basis.anggaran} (Anggaran); zona waktu {lap.basis.zonaWaktu}. Filter aktif: periode {formatTanggalPendek(lap.periode.from)}–{formatTanggalPendek(lap.periode.to)}{kategori ? ` · kategori ${kategori}` : ""}{status ? ` · status ${status}` : ""}{proyek ? ` · proyek ${proyek}` : ""}.</p>
               <p><b>Tidak termasuk:</b> {lap.tidakTermasuk.join("; ")}.</p>
               {lap.sensitifDisaring && <p>Sebagian dokumen sensitif (gaji, kasbon, investor) tidak ditampilkan untuk akun Anda.</p>}
-            </CardContent>
-          </Card>
+          </Panel>
           <KenapaBeda metrik={["beban_diakui", "uang_keluar_kas", "komitmen_belum_dibayar", "anggaran_divisi", "sisa_anggaran_divisi", "biaya_tidak_terklasifikasi"]} />
         </>
       )}
@@ -440,7 +445,7 @@ function PanelAnggaran({ akses, divTunggal, anggaran, periode, dataDiv, onBeruba
         </CardContent>
       </Card>
       {boleh && (
-        <Card className="fin-glass"><CardContent className="space-y-2 py-3">
+        <Panel className="space-y-2">
           <p className="text-[13px] font-semibold text-ink">Buat draf anggaran {dataDiv?.label ?? ""}</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label className="text-[12px] text-ink3">Bulan<Input type="month" value={form.periode} onChange={(e) => setForm({ ...form, periode: e.target.value })} className="mt-1 h-10" /></label>
@@ -454,7 +459,7 @@ function PanelAnggaran({ akses, divTunggal, anggaran, periode, dataDiv, onBeruba
           {galat && <p role="alert" className="text-[12.5px] text-red">{galat}</p>}
           <Button size="sm" onClick={simpan} disabled={sibuk || !form.nominal}>{sibuk ? "Menyimpan…" : "Simpan draf"}</Button>
           <p className="text-[11.5px] text-ink3">Draf tidak berlaku sampai disetujui Finance (penyetuju berbeda dari pembuat). Menyetujui versi baru menggantikan versi lama; riwayat tidak dihapus.</p>
-        </CardContent></Card>
+        </Panel>
       )}
     </>
   );

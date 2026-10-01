@@ -185,6 +185,8 @@ export async function bangunLaporan(db, { from, to, scopeDiminta = null, filter 
     if (a.sensitif && !semua) continue;
     if (filter.kategori && a.kategori?.kode !== filter.kategori) continue;
     if (filter.status && k.status !== filter.status) continue;
+    // Proyek/campaign hanya dikenal pada belanja iklan; dokumen komitmen tidak punya proyek → tidak ikut bila filter proyek aktif (konsisten dengan Aktual & Kas Keluar).
+    if (filter.proyek && (a.proyek ?? "").toLowerCase() !== String(filter.proyek).toLowerCase()) continue;
     for (const b of a.bagian) {
       const c = komitmen.get(b.scope) ?? { belumDibukukan: 0, dibukukanBelumDibayar: 0, n: 0 };
       if (k.jenis === JENIS_KOMITMEN.BELUM_DIBUKUKAN) c.belumDibukukan += k.jumlah * b.bobot; else c.dibukukanBelumDibayar += k.jumlah * b.bobot;
@@ -244,13 +246,14 @@ export async function bangunLaporan(db, { from, to, scopeDiminta = null, filter 
   let jembatan = null;
   if (semua && !filter.kategori && !filter.proyek && !filter.status) {
     const [ledger, kas] = await Promise.all([bebanLedger(db, { from, to }), arusKas(db, { from: new Date(`${from}T00:00:00.000Z`), to: new Date(`${to}T00:00:00.000Z`) })]);
-    const aktualDivisi = rp([...per.values()].reduce((s, c) => s + c.aktual, 0));
+    const aktualDivisi = rp([...per.entries()].filter(([k]) => k !== DI_LUAR_DIVISI).reduce((s, [, c]) => s + c.aktual, 0));
+    const aktualLuar = rp(per.get(DI_LUAR_DIVISI)?.aktual ?? 0);
     const kasDivisi = rp([...per.entries()].filter(([k]) => k !== DI_LUAR_DIVISI).reduce((s, [, c]) => s + c.kasKeluar, 0));
     const kasLuar = rp(per.get(DI_LUAR_DIVISI)?.kasKeluar ?? 0);
     jembatan = {
-      aktual: { totalKelompok: aktualDivisi, ledger: rp(ledger), residual: rp(aktualDivisi - ledger), pembanding: "Σ debit−kredit akun beban & beban pokok (jurnal POSTED/REVERSED) — sama dengan Beban Diakui Fase 1" },
+      aktual: { totalKelompok: aktualDivisi, diLuarDivisi: aktualLuar, ledger: rp(ledger), residual: rp(aktualDivisi + aktualLuar - ledger), pembanding: "Σ debit−kredit akun beban & beban pokok (jurnal POSTED/REVERSED) — sama dengan Beban Diakui Fase 1" },
       kasKeluar: { totalKelompok: kasDivisi, diLuarDivisi: kasLuar, arusKas: rp(kas.ringkasan.keluar), residual: rp(kasDivisi + kasLuar - kas.ringkasan.keluar), pembanding: "Kas Keluar pada Laporan Arus Kas (Fase 1)" },
-      status: { perhitungan: Math.abs(aktualDivisi - ledger) < 0.01 && Math.abs(kasDivisi + kasLuar - kas.ringkasan.keluar) < 0.01 ? "COCOK" : "TIDAK_COCOK" },
+      status: { perhitungan: Math.abs(aktualDivisi + aktualLuar - ledger) < 0.01 && Math.abs(kasDivisi + kasLuar - kas.ringkasan.keluar) < 0.01 ? "COCOK" : "TIDAK_COCOK" },
     };
   }
 

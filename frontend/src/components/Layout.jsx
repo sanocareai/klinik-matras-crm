@@ -930,18 +930,20 @@ export default function Layout({ user, onLogout }) {
     const saringPeran = (base) => filterMenuByPermission(base, { roles, divisiSaya });
     if (["bengkel", "warehouse", "growth", "kendali", "finance"].includes(divisionKey)) return saringPeran(divisionBase);
     const leaderDriverOnly = roles.includes("LEADER_DRIVER") && !roles.some((r) => ["ADMIN", "DISPATCHER"].includes(r));
+    // Fase 2 — menu Delivery bertanda bolehPeran/bolehDivisi ("Laporan Biaya") disaring DULU; item tanpa penanda (semua menu Delivery lama) tidak terpengaruh.
+    const armadaBase = divisionKey === "armada" ? saringPeran(divisionBase) : divisionBase;
     if (divisionKey === "armada" && leaderDriverOnly) {
       return {
-        ...divisionBase,
-        sections: divisionBase.sections.map((s) => ({
+        ...armadaBase,
+        sections: armadaBase.sections.map((s) => ({
           ...s,
           items: s.items.filter((i) => !i.hideForLeaderDriver),
         })),
       };
     }
-    if (divisionKey !== "armada" || !driverOnly) return divisionBase;
+    if (divisionKey !== "armada" || !driverOnly) return armadaBase;
     return {
-      ...divisionBase,
+      ...armadaBase,
       sections: [{
         section: "TUGAS SAYA",
         // Di-flatten lintas SEMUA section (4 September 2026) — dulu cuma
@@ -949,7 +951,7 @@ export default function Layout({ user, onLogout }) {
         // dipecah 4 section (Operasional/Armada/Dokumen/Laporan) supaya
         // pencarian "/armada/jobs" tidak diam-diam patah tergantung section
         // mana dia ditaruh.
-        items: divisionBase.sections.flatMap((s) => s.items).filter((i) => i.to === "/armada/jobs")
+        items: armadaBase.sections.flatMap((s) => s.items).filter((i) => i.to === "/armada/jobs")
           .map((i) => ({ ...i, label: "Job Saya" })),
       }],
     };
