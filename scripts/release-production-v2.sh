@@ -48,7 +48,7 @@ trap cleanup EXIT
 PHASE=0-lock; say "0. Lock eksklusif + kondisi awal"
 mkdir "$LOCK" 2>/dev/null || die "lock rilis dipegang sesi lain: $(cat "$LOCK/owner" 2>/dev/null)"; HAVE_LOCK=1; echo "p9dux $SHORT $(date -u +%FT%TZ)" > "$LOCK/owner"; ok "lock diambil"
 [ ! -e "$NEW_DIR" ] || die "$NEW_DIR sudah ada"
-if ps -eo args | grep -E 'release-[a-z0-9-]+\.sh|docker compose .* build|docker build|prisma migrate deploy' | grep -v grep | grep -v "release-p9d-ux" | grep -v 'sh -c npx prisma migrate deploy && node' | grep -q .; then die "ada deployment/build lain berjalan"; fi; ok "tidak ada deployment/build lain berjalan"
+if ps -eo args | grep -E 'release-[a-z0-9-]+\.sh|docker compose .* build|docker build|prisma migrate deploy' | grep -v grep | grep -v "release-production-v2" | grep -v 'sh -c npx prisma migrate deploy && node' | grep -q .; then die "ada deployment/build lain berjalan"; fi; ok "tidak ada deployment/build lain berjalan"
 
 PHASE=1-freeze; say "1. Freeze: production aktif harus persis $EXPECT_PREV_SHORT"
 CID_OLD="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=backend")"; [ "$(printf '%s' "$CID_OLD" | wc -w)" = 1 ] || die "container backend != 1"
