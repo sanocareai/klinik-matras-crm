@@ -15,6 +15,7 @@ import { StatusSelect } from "./StatusSelect.jsx";
 import { PaymentStatusSelect } from "./PaymentStatusSelect.jsx";
 import KlaimLunasPanel from "@/features/klaim/KlaimLunasPanel.jsx";
 import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
+import { lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN } from "@/features/klaim/klaimLunasLogic.js";
 import { api } from "../../api.js";
 import {
   formatRupiah, ORDER_STATUS_LABELS,
@@ -1016,7 +1017,9 @@ const TONE = {
 // pemanggil (lihat komentar di JSX-nya). Prop-nya SENGAJA tetap diterima
 // (bukan dihapus dari signature) supaya ProductionOrders.jsx/ArmadaOrders.jsx
 // yang masih mengirimnya tidak perlu ikut diubah — cuma jadi no-op di sini.
-export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false, canEditStatus: _canEditStatus = false }) {
+// `tabAwal` (opsional): buka langsung di tab itu ("pembayaran" | "dokumentasi") — jalan pintas dari badge pembayaran di daftar order.
+export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false, canEditStatus: _canEditStatus = false, tabAwal = null }) {
+  const klaimGateAktifDrawer = useKlaimLunasAktif() === true;
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab]         = useState("status"); // "status" | "dokumentasi" | "pembayaran"
@@ -1027,7 +1030,7 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
   // Balik ke tab Status tiap kali drawer dibuka order BARU — supaya sales
   // yang barusan lihat dokumentasi order sebelumnya tidak salah kira sedang
   // lihat dokumentasi order yang baru dibuka.
-  useEffect(() => { if (order) setTab("status"); }, [order?.id]);
+  useEffect(() => { if (order) setTab(tabAwal || "status"); }, [order?.id, tabAwal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!order) { setData(null); return; }
@@ -1065,6 +1068,11 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
 
   async function handlePaymentStatusChange(ord, newStatus) {
     if (newStatus === (ord.paymentStatus || "BELUM_BAYAR")) return;
+    if (newStatus === "LUNAS" && lunasDicegat({ isAdmin: canEditLunas, gateAktif: klaimGateAktifDrawer })) {
+      alert(PESAN_LUNAS_BUTUH_PEMBAYARAN);
+      setTab("pembayaran");
+      return;
+    }
     try {
       await api.updateOrder(ord.id, { paymentStatus: newStatus });
       onPaymentRecorded?.();

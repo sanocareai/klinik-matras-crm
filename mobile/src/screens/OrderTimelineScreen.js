@@ -590,7 +590,7 @@ function useCardSizes() {
   };
 }
 
-function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, tokens, styles }) {
+function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, tokens, styles, autoBukaKlaim = false }) {
   const { miniCardSize } = useCardSizes();
   // Sejak 1 Okt 2026 hanya ADMIN yang mencatat Payment langsung; Sales mengajukan Klaim Lunas berbukti (server menolak POST payment Sales dengan 409).
   const { user } = useAuth();
@@ -687,7 +687,7 @@ function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, token
       ))}
 
       {/* Klaim Lunas (1 Okt 2026): Sales mengajukan klaim berbukti — bukan menandai Lunas sendiri. Status berubah setelah Finance memverifikasi. */}
-      <OrderKlaimLunas order={order} onChanged={load} />
+      <OrderKlaimLunas order={order} onChanged={load} autoOpen={autoBukaKlaim} />
 
       {!bolehCatatLangsung ? (
         <Text style={styles.hintText} testID="catat-pembayaran-via-klaim">
@@ -764,12 +764,12 @@ function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, token
 }
 
 export default function OrderTimelineScreen({ route, navigation }) {
-  const { orderId, orderNumber, customerName } = route.params || {};
+  const { orderId, orderNumber, customerName, tab: tabAwal, bukaKlaim } = route.params || {};
   const tokens = useTokens();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const { summaryCardSize } = useCardSizes();
-  const [tab, setTab] = useState("status");
+  const [tab, setTab] = useState(TABS.some((t) => t.key === tabAwal) ? tabAwal : "status"); // jalan pintas dari kartu order (Catat Pembayaran / Kirim Dokumentasi)
   // Ringkasan order (status/pembayaran/nilai) — dipakai kartu atas DAN
   // PembayaranTab (butuh order.value untuk hitung sisa tagihan). Diambil
   // dari GET /orders?search=<orderNumber> (bentuk data SAMA dengan yang
@@ -905,7 +905,7 @@ export default function OrderTimelineScreen({ route, navigation }) {
           {tab === "status" && <StatusTab orderId={orderId} tokens={tokens} styles={styles} />}
           {tab === "dokumentasi" && <DokumentasiTab orderId={orderId} conversationId={order?.conversationId || null} customerNameLabel={customerName} tokens={tokens} styles={styles} />}
           {tab === "pembayaran" && order && (
-            <PembayaranTab order={order} draft={draft} dispatch={dispatch} accounts={accounts} reloadAccounts={loadAccounts} tokens={tokens} styles={styles} />
+            <PembayaranTab autoBukaKlaim={!!bukaKlaim} order={order} draft={draft} dispatch={dispatch} accounts={accounts} reloadAccounts={loadAccounts} tokens={tokens} styles={styles} />
           )}
           {tab === "invoice" && <OrderInvoiceTab orderId={orderId} />}
           {tab === "garansi" && <OrderWarrantyTab orderId={orderId} order={order} />}

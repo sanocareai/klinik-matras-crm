@@ -12,7 +12,7 @@
 // PATCH /orders/:id/complaint.
 import React, { useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Alert, TextInput } from "react-native";
-import { ChevronDown, ChevronUp, Trash2, AlertTriangle, PackageSearch, Send } from "lucide-react-native";
+import { ChevronDown, ChevronUp, Trash2, AlertTriangle, PackageSearch, Send, Wallet, Camera } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
 import { navigateToOrderTimeline } from "../lib/navigationRef";
@@ -240,6 +240,28 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
             </TouchableOpacity>
           </View>
 
+          {/* Jalan pintas (1 Okt 2026): langsung ke pencatatan pembayaran / kirim dokumentasi tanpa Rincian dulu. */}
+          <View style={styles.quickRow}>
+            {order.paymentStatus !== "LUNAS" && (
+              <TouchableOpacity
+                style={[styles.quickBtn, styles.quickBtnPrimary]}
+                accessibilityRole="button" accessibilityLabel="Catat pembayaran"
+                onPress={() => navigateToOrderTimeline({ orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName, tab: "pembayaran", bukaKlaim: true })}
+              >
+                <Wallet size={13} color="#fff" strokeWidth={2.2} />
+                <Text style={styles.quickBtnPrimaryText}>Catat Pembayaran</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.quickBtn}
+              accessibilityRole="button" accessibilityLabel="Kirim dokumentasi"
+              onPress={() => navigateToOrderTimeline({ orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName, tab: "dokumentasi" })}
+            >
+              <Camera size={13} color={tokens.color.accent} strokeWidth={2.2} />
+              <Text style={styles.quickBtnText}>Kirim Dokumentasi</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Badge komplain */}
           {order.hasComplaint && (
             <View style={styles.complaintBadge}>
@@ -380,6 +402,11 @@ function createStyles(tokens) {
   detail: { paddingHorizontal: 12, paddingBottom: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: tokens.color.border, paddingTop: 10 },
   actionRow: { flexDirection: "row", gap: 6, justifyContent: "flex-end", marginBottom: 10 },
   rincianBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: tokens.color.accentSoft, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, marginRight: "auto" },
+  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 },
+  quickBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 44, paddingHorizontal: 14, borderRadius: 12, backgroundColor: tokens.color.accentSoft, flexGrow: 1 },
+  quickBtnPrimary: { backgroundColor: tokens.color.accent },
+  quickBtnText: { fontSize: 13, fontWeight: "700", color: tokens.color.accent },
+  quickBtnPrimaryText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   rincianBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.accent },
   waBtn: { flexDirection: "row", alignItems: "center", gap: 4, ...tokens.glass.surface, borderWidth: 1, borderColor: tokens.color.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   waBtnText: { fontSize: 12, fontWeight: "600", color: tokens.color.accent },

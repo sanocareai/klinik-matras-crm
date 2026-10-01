@@ -26,7 +26,7 @@ import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { cn } from "@/lib/utils.js";
 import { isAdminUser, rolesOf } from "@/lib/roles.js";
-import { opsiStatusBayar } from "@/features/klaim/klaimLunasLogic.js";
+import { opsiStatusBayar, lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN } from "@/features/klaim/klaimLunasLogic.js";
 import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
 import ReadinessBadge from "../features/orders/ReadinessBadge.jsx";
@@ -485,6 +485,8 @@ export default function Orders() {
   const [promos, setPromos]   = useState([]);
   const [hanyaMandek, setHanyaMandek] = useState(false);
   const [timelineOrder, setTimelineOrder] = useState(null);
+  const [timelineTab, setTimelineTab] = useState(null); // tab awal drawer (jalan pintas pembayaran)
+  const klaimGateAktifHalaman = useKlaimLunasAktif() === true;
   // Filter tanggal order DIBUAT (Order.createdAt) — default "Semua waktu"
   // (3 Sep 2026, revisi dari "Hari ini"). Beda sengaja dari Dashboard/
   // Pipeline (yang defaultnya memang "Hari ini"/rentang laporan): halaman
@@ -735,6 +737,13 @@ export default function Orders() {
   // dipakai OrderSection.jsx (drawer profil pelanggan), PATCH /orders/:id.
   async function handlePaymentChange(order, newPayment) {
     if (newPayment === (order.paymentStatus || "BELUM_BAYAR")) return;
+    // "Lunas" tidak menetapkan status: beri tahu harus catat pembayaran dulu, lalu buka rincian order langsung di tab Pembayaran.
+    if (newPayment === "LUNAS" && lunasDicegat({ isAdmin, gateAktif: klaimGateAktifHalaman })) {
+      alert(PESAN_LUNAS_BUTUH_PEMBAYARAN);
+      setTimelineTab("pembayaran");
+      setTimelineOrder(order);
+      return;
+    }
     try {
       await api.updateOrder(order.id, { paymentStatus: newPayment });
       load();
@@ -1428,7 +1437,8 @@ export default function Orders() {
 
       <OrderTimelineDrawer
         order={timelineOrder}
-        onClose={() => setTimelineOrder(null)}
+        onClose={() => { setTimelineOrder(null); setTimelineTab(null); }}
+        tabAwal={timelineTab}
         onOpenChat={bukaChat}
         onPaymentRecorded={load}
         canEditLunas={canEditLunas}

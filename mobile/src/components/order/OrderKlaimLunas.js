@@ -40,7 +40,7 @@ function useOnline() {
 }
 
 /** Panel ringkas di tab Pembayaran: status klaim terkini + tombol. `onChanged` dipanggil setelah klaim berubah (muat ulang order). */
-export default function OrderKlaimLunas({ order, onChanged }) {
+export default function OrderKlaimLunas({ order, onChanged, autoOpen = false }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const gateAktif = useKlaimLunasAktif(); // sakelar rollout: MATI → tidak tampil (UI lama)
@@ -52,6 +52,12 @@ export default function OrderKlaimLunas({ order, onChanged }) {
     api.getKlaimLunasOrder(order.id).then(setInfo).catch(() => setInfo(null));
   }, [order.id, gateAktif]);
   useEffect(() => { setInfo(null); muat(); }, [muat]);
+
+  // Jalan pintas "Catat Pembayaran" dari kartu order: buka sheet sekali begitu info klaim termuat dan order memang bisa diklaim.
+  const sudahAutoBuka = useRef(false);
+  useEffect(() => {
+    if (autoOpen && info && !sudahAutoBuka.current && (info.bolehDiklaim || info.klaimAktifId)) { sudahAutoBuka.current = true; setBuka(true); }
+  }, [autoOpen, info]);
 
   if (gateAktif !== true || !info) return null;
   const aktif = info.klaim.find((k) => k.id === info.klaimAktifId) || null;

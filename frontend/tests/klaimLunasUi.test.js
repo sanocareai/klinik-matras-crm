@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN,
   kekuranganForm, bisaDiajukan, alasanNonaktif, opsiStatusBayar, cekBerkas, formDariKlaim, buktiDariKlaim, STATUS_BISA_DIEDIT, METODE_KLAIM,
 } from "../src/features/klaim/klaimLunasLogic.js";
 
@@ -50,13 +51,27 @@ test("Kekurangan memberi pesan Bahasa Indonesia per field", () => {
   assert.ok(k.find((x) => x.field === "evidence").pesan.includes("Bukti Pembayaran"));
 });
 
-test("Opsi 'Lunas' disembunyikan untuk SIAPA PUN (termasuk Admin/Owner — server menolak 409); order yang sudah Lunas tetap menampilkan nilainya", () => {
+test("Opsi 'Lunas' selalu tampil (target yang dikenal Sales) tetapi DICEGAT: tidak menetapkan status, pengguna diarahkan mencatat pembayaran", () => {
   const semua = ["BELUM_BAYAR", "DP", "LUNAS"];
-  for (const admin of [false, true]) {
-    assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", admin), ["BELUM_BAYAR", "DP"]);
-    assert.deepEqual(opsiStatusBayar(semua, "DP", admin), ["BELUM_BAYAR", "DP"]);
-    assert.deepEqual(opsiStatusBayar(semua, "LUNAS", admin), semua);
-  }
+  for (const admin of [false, true]) for (const gate of [false, true]) assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", admin, gate), semua);
+  assert.equal(lunasDicegat({ isAdmin: false, gateAktif: false }), true, "Sales saat MATI: dicegat");
+  assert.equal(lunasDicegat({ isAdmin: false, gateAktif: true }), true, "Sales saat AKTIF: dicegat");
+  assert.equal(lunasDicegat({ isAdmin: true, gateAktif: true }), true, "Admin saat AKTIF: dicegat (server menolak LUNAS langsung)");
+  assert.equal(lunasDicegat({ isAdmin: true, gateAktif: false }), false, "Admin saat MATI: perilaku lama");
+  assert.match(PESAN_LUNAS_BUTUH_PEMBAYARAN, /Catat pembayaran dulu/);
+  assert.match(PESAN_LUNAS_BUTUH_PEMBAYARAN, /nominal, metode, rekening tujuan, dan bukti pembayaran/);
+});
+
+test("Web: memilih Lunas di daftar Order / drawer / form pelanggan memunculkan peringatan, TIDAK memanggil updateOrder, dan membuka tab Pembayaran", () => {
+  const orders = baca("src/pages/Orders.jsx");
+  assert.match(orders, /newPayment === "LUNAS" && lunasDicegat\(\{ isAdmin, gateAktif: klaimGateAktifHalaman \}\)/);
+  assert.match(orders, /setTimelineTab\("pembayaran"\);\s*setTimelineOrder\(order\);\s*return;/);
+  assert.match(orders, /tabAwal=\{timelineTab\}/);
+  const drawer = baca("src/features/orders/OrderTimelineDrawer.jsx");
+  assert.match(drawer, /newStatus === "LUNAS" && lunasDicegat\(/);
+  assert.match(drawer, /setTab\(tabAwal \|\| "status"\)/);
+  const sec = baca("src/components/customer/OrderSection.jsx");
+  assert.match(sec, /v === "LUNAS" && order\.paymentStatus !== "LUNAS" && lunasDicegat\(/);
 });
 
 test("Berkas: hanya JPG/PNG/WEBP/PDF sampai 8 MB", () => {
@@ -151,11 +166,11 @@ test("Resi: kartu Resi memakai dialog klaim berbukti (mode resiGroupId), bukan m
   assert.match(finance, /Resi · \{k\.resiInfo/);
 });
 
-test("Sakelar rollout: MATI → daftar status lama apa adanya & panel klaim tersembunyi; NYALA → Lunas disembunyikan & panel tampil; gagal baca = MATI", () => {
+test("Sakelar rollout: MATI → panel klaim tersembunyi; NYALA → panel tampil; Lunas dicegat di keduanya; gagal baca = MATI", () => {
   const semua = ["BELUM_BAYAR", "DP", "LUNAS"];
   assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false, false), semua);
   assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", true, false), semua);
-  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", true, true), ["BELUM_BAYAR", "DP"]);
+  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", true, true), semua, "Lunas tetap tampil; pemilihannya dicegat (lunasDicegat)");
   assert.match(panel, /if \(gateAktif !== true \|\| !info\) return null;/);
   const hook = baca("src/features/klaim/useKlaimLunasAktif.js");
   assert.match(hook, /api\.getKlaimLunasStatus\(\)\.then\(\(r\) => !!r\?\.aktif\)\.catch\(\(\) => false\)/);

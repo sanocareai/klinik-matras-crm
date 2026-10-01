@@ -29,10 +29,21 @@ export const TIPE_BUKTI_DITERIMA = "image/jpeg,image/png,image/webp,application/
  * LUNAS hanya dihasilkan sistem setelah pembayaran terverifikasi mencapai tagihan. Order yang SUDAH Lunas tetap menampilkan nilainya.
  * Parameter ketiga dipertahankan agar pemanggil lama tidak rusak, tetapi tidak lagi berpengaruh.
  */
-export function opsiStatusBayar(semuaStatus, nilaiSekarang, _isAdmin, gateAktif = true) {
-  if (!gateAktif) return semuaStatus; // sakelar rollout MATI → daftar lama apa adanya
-  return semuaStatus.filter((s) => s !== "LUNAS" || nilaiSekarang === "LUNAS");
+export function opsiStatusBayar(semuaStatus, _nilaiSekarang, _isAdmin, _gateAktif = true) {
+  // Opsi "Lunas" SELALU tampil (target yang dikenal Sales). Memilihnya tidak mengubah status — lihat lunasDicegat(): pengguna diarahkan mencatat pembayaran dulu.
+  return semuaStatus;
 }
+
+/**
+ * Memilih "Lunas" TIDAK menetapkan status; harus lewat catatan pembayaran (nominal, metode, rekening, bukti) yang diverifikasi Finance.
+ * Dicegat untuk: semua peran saat gerbang AKTIF (server menolak LUNAS langsung), dan non-Admin saat gerbang MATI. Admin saat MATI tetap boleh (perilaku lama).
+ */
+export function lunasDicegat({ isAdmin, gateAktif }) {
+  return !!gateAktif || !isAdmin;
+}
+
+export const PESAN_LUNAS_BUTUH_PEMBAYARAN =
+  "Catat pembayaran dulu.\n\nStatus Lunas muncul setelah ada catatan pembayaran: nominal, metode, rekening tujuan, dan bukti pembayaran. Status Lunas tidak bisa dipilih langsung.";
 
 /**
  * Kekurangan isian klaim. `bukti` = daftar { status: "mengunggah" | "tersimpan" | "gagal" }. Mengembalikan daftar { field, pesan }.
