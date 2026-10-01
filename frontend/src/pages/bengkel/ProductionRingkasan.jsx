@@ -1,40 +1,44 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock, Hourglass, Loader2, PackageX, PlayCircle, RefreshCw, ShieldCheck, Target, Timer } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
-import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
+import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import { EmptyState } from "@/components/ui/empty-state.jsx";
 import ActiveComplaintsWidget from "@/features/complaints/ActiveComplaintsWidget.jsx";
-import CommandCenterSummary from "@/features/production/CommandCenterSummary.jsx";
-import { EXCEPTION_TYPE_REAL, WORKSPACE_HEALTH_REAL } from "@/features/bengkel/unitStatus.js";
-import { formatDurasiMenit } from "@/utils/formatDate.js";
+import { formatTanggal } from "@/utils/formatDate.js";
+import { summaryFromV1, summaryFromV2 } from "@/features/production/ringkasanModel.js";
 
-// Ringkasan (P8.1, UI & Navigation Consolidation) — halaman baru, landasan
-// "OPERASIONAL" workspace Produksi. Memakai endpoint yang SAMA dengan Command
-// Center di Papan Produksi V1 lama (Bengkel.jsx, GET /production/command-
-// center — tidak ada API baru), tapi TANPA papan target harian V1 (unit per
-// tahap, tandai selesai per unit) yang sekarang jadi bagian "Rencana
-// Produksi" (V2, /bengkel/production-v2). Bengkel.jsx sendiri TIDAK diubah —
-// tetap utuh sebagai fallback ADMIN "Papan Produksi (lama, V1)".
-function todayWibISO() {
-  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-}
+// Ringkasan (P9 UX Realignment) — SATU dashboard produksi. Sebelumnya halaman ini menumpuk DUA dashboard (Ringkasan
+// Produksi V2 + "Pusat Kendali Produksi" V1) dengan KPI ganda dan angka yang saling bertentangan (mis. Target 12 vs 0).
+// Sekarang satu baris KPI, satu strip pipeline, satu daftar Butuh Perhatian, satu tabel aktivitas PIC. Sumber data: Command
+// Center V2 (sama dengan Status Produksi/Rencana Produksi — tidak ada hitungan paralel). Hanya bila Production V2 belum aktif
+// (readerMode OFF) halaman memakai Command Center V1 lewat adaptor yang menghasilkan bentuk ringkasan yang SAMA.
+function todayWibISO() { return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10); }
+function currentRoles() { try { return JSON.parse(localStorage.getItem("user"))?.roles || []; } catch { return []; } }
 
-function currentRoles() {
-  try {
-    return JSON.parse(localStorage.getItem("user"))?.roles || [];
-  } catch {
-    return [];
-  }
+const TILE_ICON = { target: Target, done: CheckCircle2, active: PlayCircle, queue: Hourglass, late: Timer, material: PackageX, qc: ClipboardCheck };
+const TONE_CLS = { neutral: "bg-accentbg text-accent", red: "bg-redbg text-red", orange: "bg-orangebg text-orange", green: "bg-greenbg text-green" };
+
+function Tile({ tile }) {
+  const Icon = TILE_ICON[tile.key] || Clock;
+  const body = (
+    <Card data-testid="kpi-tile" data-kpi={tile.key} className="flex h-full min-h-[84px] items-center gap-3 p-3.5 transition-colors hover:bg-hovertint">
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-btn ${TONE_CLS[tile.tone] || TONE_CLS.neutral}`}><Icon size={19} aria-hidden /></span>
+      <div className="min-w-0">
+        <p className="m-0 text-[22px] font-bold leading-none text-ink tabular-nums">{tile.value}{tile.of != null && <span className="text-[13px] font-semibold text-ink3">/{tile.of}</span>}</p>
+        <p className="m-0 mt-1 text-[11.5px] leading-tight text-ink3">{tile.label}</p>
+      </div>
+    </Card>
+  );
+  return tile.to ? <Link to={tile.to} className="block min-w-0 no-underline">{body}</Link> : body;
 }
 
 export default function ProductionRingkasan() {
   const date = todayWibISO();
-  const [cc, setCc] = useState(null);
+  const [v2, setV2] = useState(null);
+  const [v1, setV1] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -43,10 +47,17 @@ export default function ProductionRingkasan() {
 
   const load = useCallback(() => {
     setLoading(true); setError("");
-    return api.getCommandCenter(date).then(setCc).catch((e) => setError(e.message)).finally(() => setLoading(false));
+    return api.getProductionV2CommandCenter()
+      .then(async (c) => { setV2(c); setV1(c.readerMode === "OFF" ? await api.getCommandCenter(date).catch(() => null) : null); })
+      .catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, [date]);
-
   useEffect(() => { if (allowed) load(); }, [allowed, load]);
+
+  const summary = useMemo(() => {
+    if (!v2) return null;
+    if (v2.readerMode !== "OFF") return summaryFromV2(v2);
+    return v1 ? summaryFromV1(v1) : null;
+  }, [v2, v1]);
 
   if (!allowed) {
     return (
@@ -60,112 +71,85 @@ export default function ProductionRingkasan() {
     );
   }
 
-  const dueDateTracked = (cc?.summary?.unitsWithDueDate || 0) > 0;
-  const healthTone = cc?.workspaceHealth?.level === "CRITICAL" ? "critical" : cc?.workspaceHealth?.level === "ATTENTION" ? "warn" : "ok";
-
   return (
     <PageContainer>
-      <PageHeader
-        title="Ringkasan"
-        subtitle="Kendali produksi harian — target, risiko, hambatan, dan progres bengkel."
-        actions={
-          <Button variant="ghost" onClick={load} className="h-10" disabled={loading}>
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Muat Ulang
-          </Button>
-        }
-      />
+      <PageHeader title="Ringkasan" subtitle={`Kendali produksi harian · ${formatTanggal(date)}`}
+        actions={<Button variant="ghost" onClick={load} className="h-10" disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Muat Ulang</Button>} />
       <PageBody>
-        {/* P9B — Command Center V2: KPI + Butuh Perhatian + aktivitas PIC/meja, cohort Production V2 saja. Inert
-            (tidak render apa pun) saat readerMode OFF — pusat kendali V1 di bawah tetap berlaku untuk seluruh unit. */}
-        <CommandCenterSummary />
-        <ActiveComplaintsWidget currentOwner="PRODUCTION" title="Kasus Komplain Perlu Rework" />
-
-        {error && !cc ? (
+        {error && !summary ? (
           <Card className="p-4 text-[12.5px] text-red">{error}</Card>
-        ) : loading && !cc ? (
-          <Card className="flex items-center justify-center gap-2 p-8 text-ink2">
-            <Loader2 className="h-4 w-4 animate-spin" /> <span className="text-sm">Memuat pusat kendali…</span>
-          </Card>
-        ) : cc ? (
+        ) : loading && !summary ? (
+          <Card className="flex items-center justify-center gap-2 p-8 text-ink2"><Loader2 className="h-4 w-4 animate-spin" /> <span className="text-sm">Memuat ringkasan produksi…</span></Card>
+        ) : summary ? (
           <>
-            <WorkspaceHero
-              tone="amber"
-              title="Pusat Kendali Produksi"
-              subtitle="Target harian, progres tahap pengerjaan, dan unit yang belum masuk papan hari ini."
-              health={{ label: WORKSPACE_HEALTH_REAL[cc.workspaceHealth.level]?.label || cc.workspaceHealth.level, tone: healthTone }}
-              stats={[
-                { label: "Target Hari Ini", value: cc.summary.targetToday, hint: cc.date },
-                { label: "Selesai Hari Ini", value: cc.summary.completedToday, hint: `dari ${cc.summary.targetToday} target` },
-                { label: "Sedang Dikerjakan", value: cc.summary.inProgress },
-                { label: "Terhambat", value: cc.summary.blocked, hint: cc.summary.blocked > 0 ? "perlu tindakan" : "tidak ada" },
-                dueDateTracked
-                  ? { label: "Berisiko", value: cc.summary.atRisk, hint: "berisiko terlambat" }
-                  : { label: "Berisiko", value: "—", hint: "Belum ada target tanggal" },
-                dueDateTracked
-                  ? { label: "Terlambat", value: cc.summary.overdue, hint: "sudah lewat target" }
-                  : { label: "Terlambat", value: "—", hint: "Belum ada target tanggal" },
-                {
-                  label: "Belum Ditugaskan", value: cc.unassignedActiveUnits.count,
-                  hint: cc.unassignedActiveUnits.count > 0 ? "unit aktif tanpa operator" : "semua sudah ditugaskan",
-                },
-              ]}
-            />
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7" data-testid="kpi-row">
+              {summary.tiles.map((t) => <Tile key={t.key} tile={t} />)}
+            </div>
 
-            {cc.workspaceHealth.reasons.length > 0 && (
-              <Card className="border-l-[3px] border-orange p-4">
-                <h3 className="text-[13px] font-bold text-ink">
-                  {cc.workspaceHealth.level === "CRITICAL" ? "Perlu Tindakan Segera" : "Perlu Perhatian"}
-                </h3>
-                <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[12.5px] text-ink2">
-                  {cc.workspaceHealth.reasons.map((r, i) => <li key={i}>{r}</li>)}
-                </ul>
+            {summary.pipeline.length > 0 && (
+              <Card className="p-4" data-testid="pipeline-strip">
+                <div className="mb-2 flex items-center justify-between">
+                  <h2 className="m-0 text-[13.5px] font-bold text-ink">Posisi unit di jalur produksi</h2>
+                  <Link to="/bengkel/production-v2" className="text-[12.5px] font-semibold text-accent underline">Buka Status Produksi →</Link>
+                </div>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 xl:grid-cols-9">
+                  {summary.pipeline.map((s) => (
+                    <Link key={s.key} to="/bengkel/production-v2" className="min-w-0 rounded-btn bg-inset p-2.5 text-center no-underline hover:bg-hovertint">
+                      <p className={`m-0 text-[18px] font-bold tabular-nums ${s.count ? "text-ink" : "text-ink3"}`}>{s.count}</p>
+                      <p className="m-0 truncate text-[11px] text-ink3" title={s.label}>{s.label}</p>
+                    </Link>
+                  ))}
+                </div>
               </Card>
             )}
 
-            <Card className="overflow-hidden p-0">
-              <CardHeader>
-                <CardTitle>Perlu Perhatian</CardTitle>
-                <CardDescription>Unit blocked, overdue, atau berisiko terlambat — urut prioritas.</CardDescription>
-              </CardHeader>
-              {cc.exceptions.length === 0 ? (
-                <EmptyState icon={CheckCircle2} title="Tidak ada pengecualian produksi" description="Operasional produksi berjalan tanpa blocker, overdue, atau risiko aktif pada filter saat ini." compact />
-              ) : (
-                <ul className="m-0 list-none divide-y divide-line p-0">
-                  {cc.exceptions.map((exc) => (
-                    <li key={`${exc.type}-${exc.unitId}`} className="flex items-center justify-between gap-3 px-4 py-3">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-mono text-[11.5px] font-semibold text-ink">{exc.unitCode}</span>
-                          <Badge variant={EXCEPTION_TYPE_REAL[exc.type]?.tone || "neutral"}>{EXCEPTION_TYPE_REAL[exc.type]?.label || exc.type}</Badge>
+            <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+              <Card className="min-w-0 overflow-hidden p-0" data-testid="attention-card">
+                <div className="flex items-center gap-2 border-b border-line px-4 py-3"><AlertTriangle size={16} className="text-orange" aria-hidden /><h2 className="m-0 text-[13.5px] font-bold text-ink">Butuh Perhatian</h2>
+                  <span className="ml-auto text-[11.5px] text-ink3">{summary.attention.length} hal</span></div>
+                {summary.attention.length === 0 ? (
+                  <div className="flex items-center gap-2 px-4 py-6 text-[12.5px] text-green"><ShieldCheck size={18} aria-hidden /> Tidak ada yang butuh perhatian saat ini — operasional produksi berjalan normal.</div>
+                ) : (
+                  <ul className="m-0 list-none divide-y divide-line p-0">
+                    {summary.attention.slice(0, 8).map((a, i) => (
+                      <li key={`${a.code}-${a.unitCode}-${i}`} className="flex items-start gap-2.5 px-4 py-3">
+                        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${a.severity === "critical" ? "bg-red" : "bg-orange"}`} aria-hidden />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge variant={a.severity === "critical" ? "red" : "orange"}>{a.severity === "critical" ? "Kritis" : "Perhatian"}</Badge>
+                            {a.orderNumber && <span className="text-[11px] text-ink3">{a.orderNumber}</span>}
+                          </div>
+                          <p className="m-0 mt-0.5 break-words text-[12.5px] text-ink2">{a.text}</p>
                         </div>
-                        <p className="mt-0.5 truncate text-[12.5px] text-ink2">{exc.reason}</p>
-                        {(exc.customerName || exc.orderNumber) && (
-                          <p className="truncate text-[11px] text-ink3">{exc.customerName || "—"}{exc.orderNumber ? ` · ${exc.orderNumber}` : ""}</p>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {exc.durationMinutes != null && <span className="text-[11px] text-ink3">{formatDurasiMenit(exc.durationMinutes)}</span>}
-                        <Button size="sm" variant="secondary" asChild><Link to={exc.href}>Buka</Link></Button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
+                        {a.to && <Button size="sm" variant="secondary" className="min-h-[40px] shrink-0" asChild><Link to={a.to}>Buka</Link></Button>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {summary.attention.length > 8 && <p className="m-0 border-t border-line px-4 py-2 text-[11.5px] text-ink3">+{summary.attention.length - 8} hal lainnya — lihat Status Produksi.</p>}
+              </Card>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-              {[
-                ["Antrean", cc.flow.queued], ["Dikerjakan", cc.flow.inProgress], ["Dijeda", cc.flow.paused],
-                ["Tunggu QC", cc.flow.waitingQc], ["Diulang", cc.flow.rework], ["Selesai Hari Ini", cc.flow.completed],
-              ].map(([label, value]) => (
-                <Card key={label} className="p-3 text-center">
-                  <p className="text-[22px] font-bold leading-none text-ink">{value}</p>
-                  <p className="mt-1 text-[11px] text-ink3">{label}</p>
-                </Card>
-              ))}
+              <Card className="min-w-0 overflow-hidden p-0" data-testid="pic-card">
+                <div className="border-b border-line px-4 py-3"><h2 className="m-0 text-[13.5px] font-bold text-ink">Aktivitas PIC &amp; Meja Hari Ini</h2></div>
+                {summary.pic.length === 0 ? (
+                  <p className="m-0 px-4 py-5 text-[12.5px] text-ink3">Belum ada PIC dengan unit aktif hari ini.</p>
+                ) : (
+                  <ul className="m-0 list-none divide-y divide-line p-0">
+                    {summary.pic.map((p) => (
+                      <li key={p.name} className="flex items-center gap-3 px-4 py-2.5 text-[12.5px]">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-white">{p.name.slice(0, 1).toUpperCase()}</span>
+                        <div className="min-w-0 flex-1"><p className="m-0 truncate font-semibold text-ink">{p.name}</p><p className="m-0 text-[11.5px] text-ink3">{p.stationLabel || "—"}</p></div>
+                        <span className="shrink-0 text-right tabular-nums text-ink2"><b>{p.active}</b> aktif<br /><span className="text-[11.5px] text-ink3">{p.completedToday} selesai</span></span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
             </div>
           </>
         ) : null}
+
+        <ActiveComplaintsWidget currentOwner="PRODUCTION" title="Kasus Komplain Perlu Rework" />
       </PageBody>
     </PageContainer>
   );

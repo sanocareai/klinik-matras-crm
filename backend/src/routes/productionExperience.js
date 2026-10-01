@@ -13,6 +13,7 @@ import {
   getAndonBoard, getProductionBoard, getProductionCommandCenter, getProductionReport, getRunCard, getWarehouseProductionQueue, listWorkerQueue,
 } from "../services/productionExperienceReadService.js";
 import { getUnitOverview } from "../services/productionUnitOverviewService.js";
+import { getDiagnosisState, mapManualMaterial, saveDiagnosisDraft, submitDiagnosis } from "../services/productionDiagnosisCommandService.js";
 import { productionEvidenceUploadRouter } from "./productionEvidenceMedia.js";
 import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
@@ -177,6 +178,70 @@ productionExperienceRouter.post("/runs/:runId/steps/:stepNo", requirePermission(
       runId: req.params.runId, stepNo: Number(req.params.stepNo), actorId: req.user.id, idempotencyKey: idem(req),
       expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId, payload: req.body?.payload ?? {}, media: req.body?.media ?? [],
     }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// ---- P9D: Diagnosis Produksi + Planned BOM Terpadu -----------------------------------------------------------------------------
+// GET /api/production-v2/diagnosis/:runId — bacaan (Unit 360 + prefill wizard). Sama gerbang reader (cohort) dengan bacaan lain.
+productionExperienceRouter.get("/diagnosis/:runId", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const unitIds = await readerCohort();
+    if (!unitIds) return inert(res, { current: null, history: [] });
+    const run = await prisma.productionRun.findUnique({ where: { id: req.params.runId }, select: { unitId: true } });
+    if (!run || !unitIds.includes(run.unitId)) return res.status(404).json({ error: "Run tidak ditemukan atau di luar cohort", code: "RUN_NOT_FOUND" });
+    res.json({ readerMode: "COHORT", ...(await getDiagnosisState(prisma, req.params.runId)) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/diagnosis/:runId/draft — operator assigned SAJA (authorizeOperator di dalam command).
+// { expectedRevision, workCenterId, findings, photoUrls, recommendedServiceId?, manualMaterials? }
+productionExperienceRouter.post("/diagnosis/:runId/draft", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    res.json(await saveDiagnosisDraft(prisma, {
+      runId: req.params.runId, actorId: req.user.id, workCenterId: req.body?.workCenterId, expectedRevision: req.body?.expectedRevision,
+      findings: req.body?.findings, photoUrls: req.body?.photoUrls, recommendedServiceId: req.body?.recommendedServiceId, manualMaterials: req.body?.manualMaterials,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/diagnosis/:runId/submit — menulis Planned BOM + Unit.serviceId dalam SATU transaksi.
+// { expectedRevision, workCenterId, findings, photoUrls, recommendedServiceId, materials?, manualMaterials? }
+productionExperienceRouter.post("/diagnosis/:runId/submit", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    res.status(201).json(await submitDiagnosis(prisma, {
+      runId: req.params.runId, actorId: req.user.id, workCenterId: req.body?.workCenterId, expectedRevision: req.body?.expectedRevision,
+      findings: req.body?.findings, photoUrls: req.body?.photoUrls, recommendedServiceId: req.body?.recommendedServiceId,
+      materials: req.body?.materials, manualMaterials: req.body?.manualMaterials,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/diagnosis/manual-materials/:id/map — Production Lead/Admin SAJA (UNIT_ROUTING_WRITE,
+// level supervisor — sama izin dengan PATCH /units/:id/service). { materialId, qty? }
+productionExperienceRouter.post("/diagnosis/manual-materials/:id/map", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
+  try {
+    res.json(await mapManualMaterial(prisma, { manualMaterialId: req.params.id, materialId: req.body?.materialId, qty: req.body?.qty, actorId: req.user.id }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/materials/search?q=&limit= — katalog Material untuk Diagnosis. Field TERBATAS SENGAJA
+// (code/name/unit/category) — TIDAK PERNAH menyertakan referenceUnitCost/referenceStockValue (harga beli/HPP),
+// walau permission UNIT_MATERIAL_WRITE (level operator produksi) dipakai di sini juga (sama dengan GET
+// /inventory/materials yang sudah ada) — beda dari endpoint itu, endpoint INI secara eksplisit memilih kolom.
+productionExperienceRouter.get("/materials/search", requireAnyPermission(P.UNIT_STAGE_WRITE, P.UNIT_MATERIAL_WRITE), async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
+    const materials = await prisma.material.findMany({
+      where: { active: true, ...(q ? { OR: [{ code: { contains: q, mode: "insensitive" } }, { name: { contains: q, mode: "insensitive" } }] } : {}) },
+      select: { id: true, code: true, name: true, unit: true, category: true },
+      orderBy: { code: "asc" }, take: limit,
+    });
+    const onHand = materials.length
+      ? await prisma.stockMovement.groupBy({ by: ["materialId"], where: { materialId: { in: materials.map((m) => m.id) } }, _sum: { qty: true } })
+      : [];
+    const onHandById = new Map(onHand.map((o) => [o.materialId, Number(o._sum.qty || 0)]));
+    res.json({ items: materials.map((m) => ({ ...m, onHandQty: onHandById.get(m.id) ?? 0 })) });
   } catch (err) { handleErr(err, res); }
 });
 

@@ -29,6 +29,7 @@ import { pathForUnit, resolveCurrentTarget } from "./unitStageEngine.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
+import { allManualMaterialsMapped, diagnosisBomValid } from "./productionDiagnosisCommandService.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -88,12 +89,15 @@ export async function loadStepContext(client, run) {
   } catch (error) { pathError = error.message; }
   const stageById = new Map((path || []).map((s) => [s.id, s]));
   const op = activeOperation(run);
-  const [evidence, openShortage, latestInspection, exception, materialFacts] = await Promise.all([
+  const [evidence, openShortage, latestInspection, exception, materialFacts, diagnosisManualMapped, diagnosisBomHasLines] = await Promise.all([
     client.productionStepEvidence.findMany({ where: { runId: run.id }, orderBy: [{ createdAt: "asc" }, { stepNo: "asc" }, { version: "asc" }] }),
     client.productionMaterialShortage.findFirst({ where: { runId: run.id, status: "OPEN" } }),
     client.qualityInspection.findFirst({ where: { runId: run.id }, orderBy: { version: "desc" }, select: { id: true, version: true, result: true, inspectedAt: true, createdAt: true } }),
     client.productionRunException.findFirst({ where: { runId: run.id, status: "OPEN" }, select: { id: true } }),
     run.plan ? loadMaterialFacts(client, run.plan) : null,
+    // P9D — gerbang tahap 5 (lihat state.diagnosisManualMapped/diagnosisBomHasLines di bawah + deriveNextAction).
+    allManualMaterialsMapped(client, run.id),
+    diagnosisBomValid(client, run.id, run.plan?.id),
   ]);
   const material = run.plan ? materialReadiness({ plan: run.plan, ...materialFacts }) : { ready: false, reason: "Belum ada rencana" };
   let target = null;
@@ -123,6 +127,7 @@ export async function loadStepContext(client, run) {
     serviceSet: !!run.unit.serviceId,
     pathHasModules: !!split?.stages.some((s) => s.phase === "MODULE"),
     materialReady: material.ready,
+    diagnosisManualMapped, diagnosisBomHasLines,
   };
   return { path, split, pathError, evidence: ordered, openShortage, latestInspection, material, state, next: deriveNextAction(state) };
 }
@@ -176,7 +181,7 @@ function waitMessage(next) {
     case "AWAITING_QC": return "Unit sedang menunggu QC oleh petugas QC.";
     case "MATERIAL_NOT_READY": return "Bahan dari Gudang belum diserahkan untuk tahap ini.";
     case "MATERIAL_SHORTAGE": return "Unit menunggu bahan baku dari Gudang.";
-    case "SERVICE_NOT_SET": return "Diagnosa sudah dikirim. Layanan unit belum ditetapkan Production Lead.";
+    case "SERVICE_NOT_SET": return "Diagnosa sudah dikirim. Menunggu layanan teknis/Planned BOM/pemetaan bahan manual selesai.";
     case "AWAITING_WAREHOUSE": return "Barang jadi menunggu diterima Gudang.";
     case "HANDOFF_REJECTED": return "Barang jadi ditolak Gudang — tindak lanjut lewat Production Lead.";
     case "EXCEPTION_OPEN": return "Ada konflik data yang harus diselesaikan Production Lead lebih dulu.";
@@ -257,8 +262,11 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
         const reuseDiagnosis = requestedStep === 5 && existingDiagnosis && !payload?.diagnosis;
         const validated = reuseDiagnosis ? null : validateStepEvidence(requestedStep, { payload, media }, evidenceCtx);
         if (validated) await record(op.id, op.stageId, validated);
-        if (requestedStep === 5 && (!ctx.state.serviceSet || !ctx.state.pathHasModules)) {
-          // Diagnosa tercatat; tahap belum ditutup karena jalur modul belum diketahui (menyelesaikannya sekarang akan membawa unit ke QC).
+        // P9D — tahap 5 belum boleh ditutup selama: layanan belum ditetapkan (lama, P8), jalur modul belum
+        // diketahui (lama, P8), ATAU (BARU) masih ada bahan manual belum dipetakan/Planned BOM belum berisi
+        // apa pun (state.diagnosisManualMapped/diagnosisBomHasLines, dihitung di loadStepContext).
+        if (requestedStep === 5 && (!ctx.state.serviceSet || !ctx.state.pathHasModules || !ctx.state.diagnosisManualMapped || !ctx.state.diagnosisBomHasLines)) {
+          // Diagnosa tercatat; tahap belum ditutup (menyelesaikannya sekarang akan membawa unit ke QC).
           revision = await bumpRunRevisionInTx(tx, run);
           break;
         }

@@ -13,6 +13,10 @@ import {
   inspectionBadgeFor, nextInspectionSummary, qcErrorMessage, qcStateBadgeFor, reworkStageOptions, validateInspectionForm, validateNoteForm, MIN_WAIVE_REASON,
 } from "@/features/production/qcHandoff.js";
 import { STAGE_STATUS_LABEL } from "@/features/production/workshopExecution.js";
+import { UnitCard } from "@/features/production/UnitCard.jsx";
+import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import { mergeQcWithViews } from "@/features/production/unitCardModel.js";
+import { wibDate } from "@/features/production/experience.js";
 
 // Antrean QC Production V2 (Production Workshop + Warehouse V2, P6): putusan QC Lulus/Gagal/Waive dengan bukti foto, rework terkontrol
 // (tahap rework dipilih eksplisit, bahan tambahan lewat jalur reservasi/Material Issue), tindak lanjut penolakan Gudang, dan rekonsiliasi
@@ -403,6 +407,8 @@ export default function ProductionQc() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [selectedRunId, setSelectedRunId] = useState(null);
+  const [cc, setCc] = useState(null);
+  const [overviewUnitId, setOverviewUnitId] = useState(null);
   const [sweeping, setSweeping] = useState(false);
   const sweepKey = useRef(null);
 
@@ -414,6 +420,11 @@ export default function ProductionQc() {
       .finally(() => setLoading(false));
   }, [tab]);
   useEffect(() => { load(); }, [load]);
+  // P9 UX — kartu QC = kartu Status Produksi yang SAMA (foto-pertama, Layanan Sales, PIC, tahap): dilengkapi lewat runId dari
+  // Command Center (sumber tunggal pipeline). Gagal/OFF -> kartu QC lama tetap tampil (fallback), bukan kosong.
+  useEffect(() => { api.getProductionV2CommandCenter().then(setCc).catch(() => setCc(null)); }, []);
+  const merged = mergeQcWithViews(items, cc?.columns);
+  const today = wibDate(0), tomorrow = wibDate(1);
 
   const sweep = async () => {
     setSweeping(true); setError(""); setNotice("");
@@ -432,8 +443,8 @@ export default function ProductionQc() {
   return (
     <PageContainer>
       <PageHeader
-        title="Antrean QC (V2)"
-        subtitle="Putusan QC Lulus/Gagal/Waive, rework terkontrol, penolakan Gudang, dan konflik status unit."
+        title="Quality Control"
+        subtitle="Antrean putusan QC — kartu & Unit 360 sama dengan Status Produksi. Lulus/Gagal/Waive, rework, penolakan Gudang, konflik status."
         actions={(
           <div className="flex gap-2">
             {tab === "CONFLICT" && <Button variant="ghost" size="sm" onClick={sweep} disabled={sweeping}>{sweeping ? "Memindai…" : "Pindai Konflik"}</Button>}
@@ -459,11 +470,29 @@ export default function ProductionQc() {
           <Card className="overflow-hidden p-0"><EmptyState icon={ClipboardCheck} title={copy.title} description={copy.description} /></Card>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {(items || []).map((item) => <QueueCard key={item.runId} item={item} onOpen={(i) => setSelectedRunId(i.runId)} />)}
+            {merged.map(({ queue, view }) => {
+              if (!view) return <QueueCard key={queue.runId} item={queue} onOpen={(i) => setSelectedRunId(i.runId)} />;
+              const badge = qcStateBadgeFor(queue.state);
+              return (
+                <UnitCard key={queue.runId} view={view} today={today} tomorrow={tomorrow} showGaps={false} onOpen={(v) => setOverviewUnitId(v.unit.id)}
+                  qcBadge={(
+                    <div className="flex flex-wrap items-center gap-1.5" data-testid="qc-state">
+                      <Badge variant={badge.variant}>{badge.label}</Badge>
+                      {queue.lastInspection && <span className="text-[11.5px] text-ink3">QC terakhir #{queue.lastInspection.version} · {inspectionBadgeFor(queue.lastInspection.result).label}</span>}
+                      {queue.conflict && <span className="flex items-center gap-1 text-[11.5px] text-red"><AlertTriangle size={12} aria-hidden /> {conflictKindLabel(queue.conflict.kind)}</span>}
+                    </div>
+                  )}
+                  footer={<Button size="sm" className="min-h-[44px] w-full" onClick={() => setSelectedRunId(queue.runId)}><ClipboardCheck size={14} aria-hidden /> Putusan QC</Button>} />
+              );
+            })}
           </div>
         )}
       </PageBody>
 
+      {overviewUnitId && (
+        <UnitOverviewDrawer unitId={overviewUnitId} onClose={() => setOverviewUnitId(null)} manageLabel="Putusan QC"
+          onManage={() => { const m = merged.find((x) => x.view?.unit?.id === overviewUnitId); setOverviewUnitId(null); if (m) setSelectedRunId(m.queue.runId); }} />
+      )}
       {selectedRunId && <RunDetailModal runId={selectedRunId} onClose={() => { setSelectedRunId(null); load(); }} onChanged={load} />}
     </PageContainer>
   );

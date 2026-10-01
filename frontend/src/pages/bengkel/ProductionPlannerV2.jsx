@@ -1,8 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import {
-  AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, FileText, Monitor, PackageX, RefreshCw, Target, Timer, Truck,
-} from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle2, ClipboardList, FileText, LayoutGrid, List, PackageX, RefreshCw, Truck } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -10,248 +8,25 @@ import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { ProgressBar } from "@/components/ui/progress.jsx";
 import { rolesOf } from "@/lib/roles.js";
-import { formatTanggal } from "@/utils/formatDate.js";
-import { formatRupiah } from "@/utils/format.js";
 import {
-  PRIORITIES, bucketStyle, formatMinutes, friendlyError, indicatorList, initials, priorityTone, stationCapacity,
-  targetDateBadge, wibDate,
+  bucketStyle, formatMinutes, friendlyError, indicatorList, wibDate,
 } from "@/features/production/experience.js";
-import { UnitPhotoThumb, UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
+import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import { UnitCard, UpcomingCard, PicChips } from "@/features/production/UnitCard.jsx";
+import { ArrivalModal, ScheduleModal } from "@/features/production/ScheduleModals.jsx";
+import { mejaLabel, pipelineChips, priorityMeta, stageText } from "@/features/production/unitCardModel.js";
 
-// Status Produksi (P8A "Rencana Produksi" -> P9B.1 ganti nama tampilan) — Papan Meja/Daftar/Kalender dalam satu
-// workspace, MURNI status pipeline (Akan Masuk..Siap Kirim). URL TETAP /bengkel/production-v2 (kompatibilitas
-// bookmark/tab lama, lihat tabTitles.js#SEGMENT_LABEL_OVERRIDE) — hanya label tampilan yang berubah. Penjadwalan
-// SUNGGUHAN (assign meja/PIC/tanggal/BOM) sekarang punya workspace SENDIRI: "Rencana Produksi" (P9B.1, halaman
-// baru, lihat ProductionRencanaWorkspace.jsx) — halaman ini TETAP bisa menjadwalkan (drag/tombol) sebagai jalan
-// pintas dari kartu, tapi bukan lagi tempat UTAMA mengelola BOM/reservasi bahan.
-// Papan Meja dikelompokkan per TAHAP PIPELINE (Akan Masuk..Siap Kirim, bukan lagi per meja fisik) — kapasitas meja
-// TETAP ditegakkan server, dipilih di dalam ScheduleModal (dropdown meja+kapasitas), bukan sebagai kolom papan.
-// Server menegakkan kapasitas, izin, dan cohort writer V2 — unit di luar cohort tidak pernah tampil (reader) dan
-// tidak bisa diubah (writer). Work Order lama tetap tersedia sebagai histori/fallback.
+// Status Produksi (P9 UX Realignment) — HANYA pipeline: di mana posisi setiap unit sekarang. BUKAN planner: tidak ada
+// navigator tanggal, KPI kedua, Kalender, atau drop-target di sini (KPI ada di Ringkasan; jadwal/meja/PIC di Rencana
+// Produksi). Kartu foto-pertama yang SAMA dengan Rencana & QC; klik kartu = Unit 360. Kolom = keadaan fisik unit
+// (payload Command Center P9B.1 apa adanya — tidak ada perhitungan paralel). URL TETAP /bengkel/production-v2.
+// Jalan pintas tulis lama (Jadwalkan/Pindahkan, tetapkan layanan, Unit Tiba) tetap ada, dijangkau dari Unit 360.
 
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 const canRoute = rolesOf(user).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r));
-// Format tanggal Indonesia PENDEK ("29 Sep 2026", P8.1 UI & Navigation
-// Consolidation) — SAMA dengan formatTanggal() yang dipakai di seluruh app
-// (utils/formatDate.js), ganti format panjang lokal lama ("Senin, 29
-// September 2026") yang cuma dipakai di halaman ini.
-const fmtDate = (d) => formatTanggal(d);
-const shiftDate = (d, days) => new Date(new Date(`${d}T00:00:00Z`).getTime() + days * 86400_000).toISOString().slice(0, 10);
 const TONE_CLS = { green: "bg-greenbg text-green", red: "bg-redbg text-red", orange: "bg-orangebg text-orange", neutral: "bg-inset text-ink3" };
-
-function Kpi({ icon: Icon, label, value, tone = "neutral" }) {
-  return (
-    <Card className="flex items-center gap-3 p-4">
-      <span className={`flex h-10 w-10 items-center justify-center rounded-btn ${tone === "red" ? "bg-redbg text-red" : tone === "orange" ? "bg-orangebg text-orange" : tone === "green" ? "bg-greenbg text-green" : "bg-accentbg text-accent"}`}><Icon size={19} aria-hidden /></span>
-      <div><p className="text-[12px] text-ink3">{label}</p><p className="text-[20px] font-bold leading-tight text-ink tabular-nums">{value}</p></div>
-    </Card>
-  );
-}
-
-// P9A — unit sudah "Masuk Produksi" (pickup berhasil) TAPI belum dikonfirmasi
-// tiba secara fisik: kartu boleh dijadwalkan lebih dulu (bucket DALAM_PERJALANAN),
-// tapi tahap produksi baru bisa dimulai setelah tombol ini diklik (ditegakkan
-// server di loadRunForWrite). Tombol dipisah dari area klik "buka kartu" —
-// wrapper diganti dari <button> jadi <div> supaya dua aksi tidak bertumpuk.
-// P9B — kartu diperkaya: kota, Sales, order value (HANYA bila server mengirim
-// orderValue — role tanpa ORDER_PRICE_READ tidak pernah menerima field ini
-// sama sekali, lihat getProductionCommandCenter), badge tanggal target
-// (terpisah dari badge prioritas — permintaan eksplisit P9B), dan ringkasan
-// keluhan/request customer untuk konteks cepat tanpa buka drawer.
-function RunCard({ item, onOpen, onConfirmArrival, draggable = true, today, tomorrow }) {
-  const st = bucketStyle(item.bucket);
-  const warn = item.warnings?.find((w) => ["KEKURANGAN", "LAYANAN_BELUM", "BAHAN_BELUM", "BOM_BELUM", "TERLAMBAT"].includes(w.code));
-  const waiting = item.bucket === "MENUNGGU_BAHAN";
-  const inTransit = item.bucket === "DALAM_PERJALANAN";
-  const dateBadge = today && tomorrow ? targetDateBadge(item, today, tomorrow) : null;
-  const c = item.customer || {};
-  return (
-    <div draggable={draggable} onDragStart={(e) => { e.dataTransfer.setData("text/plain", item.runId); e.dataTransfer.effectAllowed = "move"; }}
-      className={`w-full overflow-hidden rounded-card transition-colors ${waiting ? "bg-orangebg/60" : "bg-surface"} shadow-sm`}>
-      <button type="button" onClick={() => onOpen(item)} className="w-full p-3 text-left hover:bg-hovertint">
-        <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
-          <div className="flex min-w-0 flex-1 gap-2">
-            <UnitPhotoThumb photoUrl={item.unit.photoUrl} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}{c.orderNumber ? ` · ${c.orderNumber}` : ""}</p>
-              <p className="truncate text-[12.5px] text-ink2">{c.name || "—"}{c.city ? ` · ${c.city}` : ""}</p>
-              <p className="truncate text-[12px] text-ink3">{[item.unit.ukuran, item.unit.service?.label || "Layanan belum ditetapkan"].filter(Boolean).join(" · ")}</p>
-              {c.salesName && <p className="truncate text-[11px] text-ink3">Sales: {c.salesName}</p>}
-            </div>
-          </div>
-          {/* flex-wrap pada baris induk (bukan flex-col shrink-0) — di kartu sempit (mobile), grup badge pindah ke
-              baris sendiri di bawah judul alih-alih terpotong overflow-hidden kartu (P9B, ditemukan lewat QA visual 390px). */}
-          <div className="flex shrink-0 flex-wrap justify-end gap-1">
-            {item.plan?.priority > 0 && <Badge variant={priorityTone(item.plan.priority)}>{item.plan.priorityLabel}</Badge>}
-            {dateBadge && <Badge variant={dateBadge.tone}>{dateBadge.label}</Badge>}
-            {/* P9B.1 — status jadwal (meja/belum dijadwalkan) TIDAK LAGI menentukan kolom papan, jadi harus tetap
-                terlihat sebagai badge di kartu — paling relevan untuk Dalam Perjalanan & Tiba/Belum Mulai, tapi
-                ditampilkan konsisten di semua kartu (murni informasi, tidak berbahaya di kolom lain). */}
-            <Badge variant="neutral">{item.plan?.stationCode ? item.plan.stationLabel : "Belum dijadwalkan"}</Badge>
-          </div>
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <Badge variant={st.badge}>{st.label}</Badge>
-          {c.weightKg != null && <span className="text-[11.5px] text-ink3">{c.weightKg} kg</span>}
-          {item.orderValue != null && <span className="text-[11.5px] font-semibold text-ink2">{formatRupiah(item.orderValue)}</span>}
-        </div>
-        {(c.complaints?.length || c.request) && (
-          <p className="mt-1.5 truncate text-[11.5px] text-ink3">{[c.complaints?.join(", "), c.request].filter(Boolean).join(" — ")}</p>
-        )}
-        {warn && <p className="mt-1.5 flex items-center gap-1 text-[11.5px] font-medium text-orange"><AlertTriangle size={12} aria-hidden /> {warn.text}</p>}
-        <div className="mt-2 flex items-center gap-2">
-          {item.plan?.operator?.name && <span title={item.plan.operator.name} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white">{initials(item.plan.operator.name)}</span>}
-          <div className="flex-1">
-            <ProgressBar value={item.progress.total ? (item.progress.done / item.progress.total) * 100 : 0} variant={waiting ? "warning" : "accent"} />
-          </div>
-          <span className="shrink-0 text-[11px] text-ink3 tabular-nums">{item.progress.done} dari {item.progress.total} tahap</span>
-        </div>
-      </button>
-      {inTransit && onConfirmArrival && (
-        <div className="border-t border-line px-3 py-2">
-          <Button size="sm" variant="secondary" className="w-full" onClick={() => onConfirmArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// P9B — kartu "Akan Masuk": pickup terjadwal tetapi belum selesai. BACA-SAJA (belum ada Run sama sekali) — tidak ada
-// aksi apa pun di sini, murni visibilitas supaya Rencana Produksi tidak buta terhadap unit yang akan datang.
-function UpcomingPickupCard({ item, onOpen }) {
-  return (
-    <button type="button" onClick={() => onOpen(item.unit.id)} className="flex w-full gap-2 rounded-card bg-surface p-3 text-left shadow-sm hover:bg-hovertint">
-      <UnitPhotoThumb photoUrl={item.unit.photoUrl} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-bold text-ink">{item.unit.unitCode}{item.unit.orderNumber ? ` · ${item.unit.orderNumber}` : ""}</p>
-        <p className="truncate text-[12.5px] text-ink2">{item.customer?.name || "—"}{item.customer?.city ? ` · ${item.customer.city}` : ""}</p>
-        <p className="truncate text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"}</p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <Badge variant="neutral">Akan Masuk</Badge>
-          {item.scheduledDate && <span className="text-[11px] text-ink3">Pickup {formatTanggal(item.scheduledDate)}</span>}
-          {item.driverName && <span className="text-[11px] text-ink3">· {item.driverName}</span>}
-        </div>
-      </div>
-    </button>
-  );
-}
-
-// P9A — pemilih lokasi Receiving/WIP untuk "Unit Tiba di Workshop". Tidak ada
-// default terpilih (server juga menolak locationId kosong) — pengguna WAJIB
-// memilih sendiri, sesuai kontrak "jangan pernah menebak lokasi".
-function ArrivalModal({ target, onClose, onDone }) {
-  const [locations, setLocations] = useState(null);
-  const [locationId, setLocationId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let alive = true;
-    api.getProductionV2ReceivingLocations().then((r) => { if (alive) setLocations(r.locations || []); }).catch((e) => { if (alive) setError(friendlyError(e)); });
-    return () => { alive = false; };
-  }, []);
-  async function submit() {
-    if (!locationId) { setError("Pilih lokasi penyimpanan dulu."); return; }
-    setBusy(true); setError("");
-    try {
-      await api.confirmProductionV2UnitArrival(target.unit.id, { locationId });
-      onDone(`${target.unit.unitCode} tercatat tiba di workshop.`);
-    } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
-  }
-  return (
-    <Modal open onOpenChange={(v) => !v && onClose()} title={`Unit Tiba di Workshop — ${target.unit.unitCode}`}
-      description="Konfirmasi kedatangan fisik unit ke lokasi Receiving/WIP. Tahap produksi baru bisa dimulai setelah ini."
-      footer={
-        <div className="flex w-full justify-end gap-2">
-          <Button variant="neutral" onClick={onClose} disabled={busy}>Batal</Button>
-          <Button onClick={submit} disabled={busy || !locationId}>{busy ? "Menyimpan…" : "Konfirmasi Tiba"}</Button>
-        </div>
-      }>
-      <div className="space-y-3 px-6 pb-2">
-        <label className="text-[12.5px] text-ink3">Lokasi penyimpanan (Receiving/WIP)
-          <select className="mt-1 w-full rounded-btn border border-line bg-transparent px-3 py-2 text-[13.5px] text-ink" value={locationId} onChange={(e) => setLocationId(e.target.value)} disabled={!locations}>
-            <option value="">{locations ? "— pilih lokasi —" : "Memuat…"}</option>
-            {(locations || []).map((l) => <option key={l.id} value={l.id}>{l.code}{l.zone ? ` (${l.zone})` : ""}</option>)}
-          </select>
-        </label>
-        {locations && locations.length === 0 && <p className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Belum ada lokasi Receiving/WIP aktif. Minta Gudang mengaktifkan satu lokasi dulu.</p>}
-        {error && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
-      </div>
-    </Modal>
-  );
-}
-
-function ScheduleModal({ target, board, date, refs, onClose, onDone }) {
-  const plan = target.plan;
-  const [form, setForm] = useState(() => ({
-    productionDate: plan?.productionDate || date,
-    stationCode: target.presetStation || plan?.stationCode || board.stations.find((s) => !stationCapacity(s).full)?.code || board.config.stations[0],
-    priority: plan?.priority ?? 0,
-    workCenterId: plan?.workCenter?.id || refs.workCenters[0]?.id || "",
-    operatorId: plan?.operator?.id || "",
-    cornerOperatorId: plan?.cornerOperator?.id || "",
-  }));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
-  const unitCode = target.unit?.unitCode;
-  const field = "mt-1 w-full rounded-btn border border-line bg-transparent px-3 py-2 text-[13.5px] text-ink";
-
-  async function submit(unschedule = false) {
-    if (!unschedule && (!form.workCenterId || !form.operatorId)) { setError("Pilih workshop dan PIC meja."); return; }
-    setBusy(true); setError("");
-    const body = unschedule
-      ? { productionDate: null, stationCode: null, priority: form.priority }
-      : { ...form, priority: Number(form.priority), cornerOperatorId: form.cornerOperatorId || undefined };
-    try {
-      if (plan) await api.scheduleProductionV2Plan(plan.id, { ...body, expectedRevision: plan.revision });
-      else await api.planProductionV2Unit({ runId: target.runId, ...body });
-      onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}.`);
-    } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
-  }
-
-  return (
-    <Modal open onOpenChange={(v) => !v && onClose()} title={plan ? `Jadwal ${unitCode}` : `Rencanakan ${unitCode}`} description="Tanggal produksi, meja bongkar, dan PIC. Kapasitas meja dijaga server."
-      footer={
-        <div className="flex w-full flex-wrap justify-end gap-2">
-          {plan?.stationCode && <Button variant="neutral" disabled={busy} onClick={() => submit(true)}>Keluarkan dari papan</Button>}
-          <Button variant="neutral" onClick={onClose} disabled={busy}>Batal</Button>
-          <Button onClick={() => submit(false)} disabled={busy}>{busy ? "Menyimpan…" : "Simpan Jadwal"}</Button>
-        </div>
-      }>
-      <div className="grid gap-3 px-6 pb-2 sm:grid-cols-2">
-        <label className="text-[12.5px] text-ink3">Tanggal produksi<input type="date" className={field} value={form.productionDate} onChange={(e) => set({ productionDate: e.target.value })} /></label>
-        <label className="text-[12.5px] text-ink3">Meja bongkar
-          <select className={field} value={form.stationCode} onChange={(e) => set({ stationCode: e.target.value })}>
-            {board.stations.map((s) => { const c = stationCapacity(s); return <option key={s.code} value={s.code} disabled={c.full && s.code !== plan?.stationCode}>{s.label} ({c.label}{c.full ? " — penuh" : ""})</option>; })}
-          </select>
-        </label>
-        <label className="text-[12.5px] text-ink3">Prioritas
-          <select className={field} value={form.priority} onChange={(e) => set({ priority: e.target.value })}>{PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}</select>
-        </label>
-        <label className="text-[12.5px] text-ink3">Workshop
-          <select className={field} value={form.workCenterId} onChange={(e) => set({ workCenterId: e.target.value })}>
-            <option value="">— pilih —</option>{refs.workCenters.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
-        </label>
-        <label className="text-[12.5px] text-ink3">PIC meja (bongkar & restorasi)
-          <select className={field} value={form.operatorId} onChange={(e) => set({ operatorId: e.target.value })}>
-            <option value="">— pilih —</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.user?.name || o.employeeCode}</option>)}
-          </select>
-        </label>
-        <label className="text-[12.5px] text-ink3">PIC Corner (jahit) — opsional
-          <select className={field} value={form.cornerOperatorId} onChange={(e) => set({ cornerOperatorId: e.target.value })}>
-            <option value="">Sama dengan PIC meja</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.user?.name || o.employeeCode}</option>)}
-          </select>
-        </label>
-        {refs.operators.length === 0 && <p className="sm:col-span-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Belum ada operator aktif. Tambahkan di Tim & Area Kerja → Operators.</p>}
-        {error && <p role="alert" className="sm:col-span-2 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
-      </div>
-    </Modal>
-  );
-}
 
 function RunDrawer({ item, refs, onClose, onSchedule, onConfirmArrival, onChanged }) {
   const [serviceId, setServiceId] = useState(item.unit.service ? "" : "");
@@ -316,80 +91,51 @@ function RunDrawer({ item, refs, onClose, onSchedule, onConfirmArrival, onChange
   );
 }
 
-// Kalender (P8.1, UI & Navigation Consolidation) — tab BARU ke-3 di halaman
-// Rencana Produksi (bersama Papan Meja & Daftar yang sudah ada). TIDAK ada
-// endpoint baru: 7 hari di sekitar tanggal terpilih diambil lewat
-// GET /production-v2/board?date= yang SAMA dipakai tab Papan Meja, dipanggil
-// paralel per hari (reader/writer cohort V2 tetap berlaku sama persis).
-// Klik satu hari pindah ke tab Papan Meja untuk hari itu — kalender ini
-// murni navigasi cepat lintas hari, bukan state machine baru.
-function WeekStrip({ centerDate, onPick }) {
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => shiftDate(centerDate, i - 3)), [centerDate]);
-  const [byDay, setByDay] = useState({});
-  const [loading, setLoading] = useState(true);
+function ArrivalButton({ item, onConfirm }) {
+  return <Button size="sm" variant="secondary" className="min-h-[44px] w-full" onClick={() => onConfirm(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>;
+}
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    Promise.all(days.map((d) => api.getProductionV2Board(d).then((b) => [d, b]).catch(() => [d, null])))
-      .then((pairs) => { if (alive) setByDay(Object.fromEntries(pairs)); })
-      .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days.join(",")]);
-
-  const today = wibDate(0);
+function renderCard(item, { openOverview, setArrival, today, tomorrow }) {
+  if (item.kind === "UPCOMING_PICKUP") return <UpcomingCard key={`${item.jobId}-${item.unit.id}`} item={item} onOpen={openOverview} />;
+  if (item.kind === "AWAITING_ARRIVAL_LEGACY") {
+    return <UpcomingCard key={item.handoffId} item={item} onOpen={openOverview} badgeLabel="Dalam perjalanan · data lama" footer={<ArrivalButton item={item} onConfirm={setArrival} />} />;
+  }
   return (
-    <Card className="p-3">
-      <p className="mb-2 text-[12.5px] text-ink3">7 hari di sekitar tanggal terpilih — direncanakan/target per hari. Klik satu hari untuk membuka Papan Meja hari itu.</p>
-      <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
-        {days.map((d) => {
-          const b = byDay[d];
-          const planned = b?.kpi?.planned ?? null;
-          const target = b?.kpi?.target ?? null;
-          const attention = (b?.kpi?.waitingMaterial ?? 0) > 0 || (b?.kpi?.late ?? 0) > 0;
-          const isToday = d === today;
-          const isSelected = d === centerDate;
-          const dow = new Date(`${d}T00:00:00+07:00`).toLocaleDateString("id-ID", { weekday: "short" });
-          const dm = new Date(`${d}T00:00:00+07:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
-          return (
-            <button key={d} type="button" onClick={() => onPick(d)}
-              className={`flex flex-col items-center gap-1 rounded-btn border p-2.5 text-center transition-colors ${isSelected ? "border-accent bg-accentbg" : "border-line hover:bg-hovertint"}`}>
-              <span className={`text-[11px] font-semibold uppercase ${isToday ? "text-accent" : "text-ink3"}`}>{dow}{isToday ? " · hari ini" : ""}</span>
-              <span className="text-[13px] font-bold text-ink">{dm}</span>
-              {loading ? (
-                <span className="h-4 w-10 animate-pulse rounded bg-inset" />
-              ) : (
-                <span className={`text-[12px] font-semibold tabular-nums ${attention ? "text-orange" : "text-ink3"}`}>{planned ?? "—"}/{target ?? "—"}</span>
-              )}
-            </button>
-          );
-        })}
+    <UnitCard key={item.runId} view={item} today={today} tomorrow={tomorrow} onOpen={(v) => openOverview(v.unit.id)}
+      footer={item.bucket === "DALAM_PERJALANAN" ? <ArrivalButton item={item} onConfirm={setArrival} /> : null} />
+  );
+}
+
+function PipelineColumn({ col, children }) {
+  return (
+    <section aria-label={col.label} data-testid="pipeline-column" data-column={col.key} className="flex w-[284px] shrink-0 flex-col gap-2 rounded-card bg-inset p-2.5">
+      <div className="flex items-center justify-between px-1">
+        <p className="m-0 text-[13.5px] font-bold text-ink">{col.label}</p>
+        <span className="rounded-chip bg-surface px-2 py-0.5 text-[12px] font-bold tabular-nums text-ink2">{col.count}</span>
       </div>
-    </Card>
+      {col.items.length === 0
+        ? <p className="flex min-h-[72px] items-center justify-center rounded-card border-2 border-dashed border-line text-center text-[11.5px] text-ink3">Tidak ada unit</p>
+        : children}
+    </section>
   );
 }
 
 export default function ProductionPlannerV2() {
-  const [date, setDate] = useState(() => wibDate(0));
-  const dateInputRef = useRef(null);
   const [board, setBoard] = useState(null);
   const [cc, setCc] = useState(null);
   const [refs, setRefs] = useState({ workCenters: [], operators: [], services: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [tab, setTab] = useState("board");
+  const [view, setView] = useState("pipeline");
+  const [mobileCol, setMobileCol] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [schedule, setSchedule] = useState(null);
   const [arrival, setArrival] = useState(null);
   const today = wibDate(0);
   const tomorrow = wibDate(1);
 
-  // P9C — Unit 360 sekarang aksi UTAMA klik kartu (setara "detail Resi"); drawer jadwal/layanan lama (RunDrawer)
-  // TETAP ADA sebagai jalan pintas "Kelola" DARI DALAM Unit 360 (bukan dihapus — semua aksi tulis lama tetap
-  // sama persis, cuma satu klik lebih dalam). Deep-link via ?unit=<id>, dibuang dari URL saat drawer ditutup
-  // supaya "kembali ke tab asal" bersih (pola sama dengan Orders.jsx).
+  // Unit 360 = aksi utama klik kartu; deep-link ?unit=<id> dibuang saat ditutup (pola sama Orders.jsx).
   const [searchParams, setSearchParams] = useSearchParams();
   const [overviewUnitId, setOverviewUnitId] = useState(() => searchParams.get("unit") || null);
   const openOverview = useCallback((unitId) => {
@@ -401,16 +147,13 @@ export default function ProductionPlannerV2() {
     setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete("unit"); return next; }, { replace: true });
   }, [setSearchParams]);
 
-  // P9B — cc (Command Center, TIDAK terikat tanggal) SEKARANG sumber tunggal untuk tab Papan Meja/Daftar & KPI ringkas
-  // di halaman ini — SAMA payload dipakai Ringkasan Produksi (CommandCenterSummary.jsx), jadi angka tidak pernah beda.
-  // `board` (per-tanggal) DIPERTAHANKAN hanya untuk 2 hal yang MEMANG per-tanggal: kapasitas meja di ScheduleModal, dan
-  // tab Kalender (WeekStrip) — BUKAN sumber data paralel untuk jadwal, murni proyeksi tanggal dari data yang sama.
+  // cc = SATU sumber data pipeline (sama dengan Ringkasan). board (per-tanggal) hanya untuk kapasitas meja di ScheduleModal.
   const load = useCallback(() => {
     setLoading(true); setError("");
-    return Promise.all([api.getProductionV2Board(date), api.getProductionV2CommandCenter()])
+    return Promise.all([api.getProductionV2Board(today), api.getProductionV2CommandCenter()])
       .then(([b, c]) => { setBoard(b); setCc(c); })
       .catch((e) => setError(friendlyError(e))).finally(() => setLoading(false));
-  }, [date]);
+  }, [today]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     Promise.all([
@@ -426,41 +169,25 @@ export default function ProductionPlannerV2() {
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(t); }, [notice]);
 
   const columns = cc?.columns || [];
-  // Daftar (tabel datar): seluruh kartu berbasis Run (punya runId nyata) di semua kolom KECUALI Akan Masuk (belum ada Run).
-  const allItems = useMemo(() => columns.filter((c) => c.key !== "AKAN_MASUK").flatMap((c) => c.items.filter((i) => i.runId)), [columns]);
-  // P9B.1 — halaman ini TIDAK LAGI punya kolom "Dijadwalkan" sebagai drop target (dihapus sebagai kolom tahap,
-  // lihat productionSteps.js#commandCenterColumn) — papan di sini jadi READ-ONLY untuk seret/lepas. Penjadwalan
-  // SUNGGUHAN (drag-and-drop) sekarang HANYA di workspace "Rencana Produksi" (ProductionRencanaWorkspace.jsx);
-  // di sini penjadwalan tetap tersedia sebagai jalan pintas tombol "Jadwalkan/Pindahkan" di kartu/drawer saja.
-
+  const chips = useMemo(() => pipelineChips(columns), [columns]);
+  const activeMobileCol = mobileCol || chips.find((c) => c.count > 0)?.key || chips[0]?.key;
+  const allItems = useMemo(() => columns.flatMap((c) => c.items.map((i) => ({ ...i, __col: c.label }))), [columns]);
+  const totalUnits = allItems.length;
+  const ctx = { openOverview, setArrival, today, tomorrow };
   const reader = cc?.readerMode;
+
   return (
     <PageContainer fluid>
-      <PageHeader title="Status Produksi" subtitle={fmtDate(date)}
+      <PageHeader title="Status Produksi" subtitle="Posisi setiap unit di jalur produksi — klik kartu untuk membuka Unit 360."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            {/* P8.2 (UI Polish) — laporan owner dari screenshot live: input
-                tanggal native menampilkan format browser mentah ("09/29/2026"),
-                tidak konsisten dengan subjudul di bawah judul halaman yang
-                sudah Indonesia ("29 Sep 2026"). Input native TETAP dipakai
-                (dukungan a11y/mobile terbaik untuk kalender), tapi disembunyikan
-                visual (sr-only — tetap ada di DOM & bisa diklik lewat ref,
-                bukan display:none) di belakang tombol berlabel format Indonesia
-                yang membuka pemilih tanggal via showPicker(). */}
-            <div className="flex items-center rounded-btn bg-inset">
-              <Button variant="neutral" size="icon" aria-label="Hari sebelumnya" onClick={() => setDate((d) => shiftDate(d, -1))}><ChevronLeft size={16} /></Button>
-              <button type="button"
-                onClick={() => { const el = dateInputRef.current; if (!el) return; if (typeof el.showPicker === "function") el.showPicker(); else el.click(); }}
-                className="flex items-center gap-1.5 px-1 text-[13px] font-medium text-ink">
-                <CalendarDays size={14} className="text-ink3" aria-hidden /> {fmtDate(date)}
-              </button>
-              <input ref={dateInputRef} type="date" aria-label="Tanggal produksi" className="sr-only" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
-              <Button variant="neutral" size="icon" aria-label="Hari berikutnya" onClick={() => setDate((d) => shiftDate(d, 1))}><ChevronRight size={16} /></Button>
+            <div role="tablist" aria-label="Tampilan" className="flex rounded-btn bg-inset p-0.5">
+              {[["pipeline", "Pipeline", LayoutGrid], ["list", "Daftar", List]].map(([k, l, Icon]) => (
+                <button key={k} type="button" role="tab" aria-selected={view === k} onClick={() => setView(k)}
+                  className={`flex min-h-[40px] items-center gap-1.5 rounded-btn px-3 text-[13px] font-semibold ${view === k ? "bg-surface text-accent shadow-sm" : "text-ink3"}`}><Icon size={14} aria-hidden /> {l}</button>
+              ))}
             </div>
-            <Button variant="neutral" size="sm" onClick={() => setDate(wibDate(0))}>Hari Ini</Button>
-            <Button variant="neutral" size="sm" onClick={() => setDate(wibDate(1))}>Besok (H-1)</Button>
-            <Button variant="secondary" size="sm" asChild><Link to="/bengkel/andon"><Monitor size={14} aria-hidden /> Andon TV</Link></Button>
-            <Button variant="neutral" size="sm" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>
+            <Button variant="neutral" size="sm" className="min-h-[40px]" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>
           </div>
         } />
       <PageBody>
@@ -468,121 +195,63 @@ export default function ProductionPlannerV2() {
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
         {reader === "OFF" ? (
-          <Card className="p-0"><EmptyState icon={ClipboardList} title="Produksi V2 belum aktif" description="Papan meja tampil setelah Production V2 diaktifkan untuk unit terkait. Selama cutover, gunakan Work Order dan Papan Produksi lama." action={<Button size="sm" variant="secondary" asChild><Link to="/bengkel/work-orders">Buka Work Order</Link></Button>} /></Card>
+          <Card className="p-0"><EmptyState icon={ClipboardList} title="Produksi V2 belum aktif" description="Pipeline tampil setelah Production V2 diaktifkan untuk unit terkait. Selama cutover, gunakan Work Order dan Papan Produksi lama." action={<Button size="sm" variant="secondary" asChild><Link to="/bengkel/work-orders">Buka Work Order</Link></Button>} /></Card>
+        ) : loading && !cc ? (
+          <div className="flex gap-3 overflow-hidden">{[1, 2, 3].map((n) => <Card key={n} className="h-72 w-[284px] shrink-0 animate-pulse bg-inset" />)}</div>
         ) : (
           <>
-            {/* P9B — KPI ringkas dari cc.kpi (SUMBER SAMA dengan Ringkasan Produksi & kolom papan di bawah — tidak ada
-                hitungan bayangan). Ringkas saat benar-benar kosong (P8.1); selebihnya link ke Ringkasan lengkap
-                (bukan duplikasi 9 kartu KPI penuh di dua halaman). */}
-            {cc && cc.kpi?.target === 0 && allItems.length === 0 ? (
-              <Card className="flex items-center gap-2 p-3 text-[12.5px] text-ink3">
-                <Target size={16} className="shrink-0 text-ink3" aria-hidden /> Belum ada target maupun unit aktif di Production V2 saat ini.
-              </Card>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-                <Kpi icon={Target} label="Target Harian" value={`${cc?.kpi?.target ?? "—"} unit`} />
-                <Kpi icon={ClipboardList} label="Dijadwalkan Hari Ini" value={`${cc?.kpi?.dijadwalkanHariIni ?? 0} unit`} />
-                <Kpi icon={CheckCircle2} label="Selesai Hari Ini" value={`${cc?.kpi?.selesaiHariIni ?? 0} unit`} tone="green" />
-                <Kpi icon={PackageX} label="Menunggu bahan" value={cc?.kpi?.menungguBahan ?? 0} tone={cc?.kpi?.menungguBahan ? "red" : "neutral"} />
-                <Kpi icon={Timer} label="Terlambat" value={cc?.kpi?.terlambat ?? 0} tone={cc?.kpi?.terlambat ? "orange" : "neutral"} />
-                <Card className="flex items-center justify-center p-4"><Button variant="secondary" size="sm" asChild><Link to="/bengkel/ringkasan">Ringkasan lengkap →</Link></Button></Card>
-              </div>
-            )}
+            <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-ink3">
+              <span data-testid="pipeline-total"><b className="text-ink">{totalUnits}</b> unit di jalur</span>
+              <Link to="/bengkel/ringkasan" className="font-semibold text-accent underline">Target &amp; KPI di Ringkasan →</Link>
+              <Link to="/bengkel/rencana-produksi" className="font-semibold text-accent underline">Atur jadwal di Rencana Produksi →</Link>
+            </p>
 
-            <div role="tablist" aria-label="Tampilan" className="flex gap-1 border-b border-line">
-              {[["board", "Papan Meja"], ["list", "Daftar"], ["calendar", "Kalender"]].map(([k, l]) => (
-                <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-semibold ${tab === k ? "border-accent text-accent" : "border-transparent text-ink3 hover:text-ink2"}`}>{l}</button>
-              ))}
-            </div>
-
-            {tab === "calendar" ? (
-              <WeekStrip centerDate={date} onPick={(d) => { setDate(d); setTab("board"); }} />
-            ) : loading && !cc ? (
-              <div className="grid gap-3 md:grid-cols-4">{[1, 2, 3, 4].map((n) => <Card key={n} className="h-72 animate-pulse bg-inset" />)}</div>
-            ) : tab === "board" ? (
-              // P9B.1 — kolom pipeline mencerminkan KEADAAN FISIK (Akan Masuk/Dalam Perjalanan/Tiba-Belum Mulai/
-              // Fondasi../Siap Kirim), BUKAN status jadwal (itu sudah jadi badge di kartu, lihat RunCard) dan BUKAN
-              // per meja fisik (kapasitas meja tetap ditegakkan server, dipilih di dalam ScheduleModal). Papan di
-              // sini READ-ONLY untuk seret/lepas — penjadwalan drag-and-drop yang SUNGGUHAN sekarang di workspace
-              // "Rencana Produksi" terpisah; di sini penjadwalan tetap ada sebagai tombol "Jadwalkan/Pindahkan"
-              // pada kartu/drawer, bukan drop target kolom.
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {columns.map((col) => (
-                  // min-w-0 WAJIB di <section> (bukan cuma di flex/teks di dalamnya): ia GRID ITEM langsung —
-                  // default CSS Grid, grid item punya min-width:auto (content-based), jadi TIDAK pernah
-                  // menyusut di bawah lebar konten terlebarnya (mis. badge "Dalam perjalanan ke workshop" yang
-                  // whitespace-nowrap) walau parent grid-nya sendiri sudah 1 kolom di mobile — "grid blowout"
-                  // klasik. Ditemukan lewat pengukuran overflow eksplisit (scrollWidth vs clientWidth) 390px,
-                  // P9C: .page-body 939px vs viewport 390px, 26-28 tombol keluar viewport.
-                  <section key={col.key} aria-label={col.label} className="flex min-w-0 flex-col gap-2 rounded-card bg-inset p-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[14px] font-bold text-ink">{col.label}</p>
-                      <span className="text-[12px] font-semibold tabular-nums text-ink3">{col.count}</span>
-                    </div>
-                    {col.items.length === 0 ? (
-                      <p className="flex min-h-[64px] items-center justify-center rounded-card border-2 border-dashed border-line text-center text-[11.5px] text-ink3">Tidak ada unit</p>
-                    ) : col.items.map((item) => (
-                      item.kind === "UPCOMING_PICKUP" ? <UpcomingPickupCard key={`${item.jobId}-${item.unit.id}`} item={item} onOpen={openOverview} />
-                      : item.kind === "AWAITING_ARRIVAL_LEGACY" ? (
-                        <div key={item.handoffId} className="overflow-hidden rounded-card bg-surface shadow-sm">
-                          <button type="button" onClick={() => openOverview(item.unit.id)} className="flex w-full gap-2 p-3 text-left hover:bg-hovertint">
-                            <UnitPhotoThumb photoUrl={item.unit.photoUrl} />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
-                              <p className="text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"} · data lama</p>
-                              <Badge variant="neutral" className="mt-1.5">Dalam perjalanan ke workshop</Badge>
-                            </div>
-                          </button>
-                          <div className="border-t border-line px-3 py-2">
-                            <Button size="sm" variant="secondary" className="w-full" onClick={() => setArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <RunCard key={item.runId} item={item} onOpen={(i) => openOverview(i.unit.id)} onConfirmArrival={setArrival} draggable={false} today={today} tomorrow={tomorrow} />
-                      )
+            {view === "pipeline" ? (
+              <>
+                {/* Layar sempit: chip tahap + satu kolom (tanpa scroll horizontal halaman). */}
+                <div className="md:hidden">
+                  <div role="tablist" aria-label="Tahap pipeline" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-2">
+                    {chips.map((c) => (
+                      <button key={c.key} type="button" role="tab" aria-selected={activeMobileCol === c.key} onClick={() => setMobileCol(c.key)}
+                        className={`flex min-h-[44px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-chip border px-3 text-[12.5px] font-semibold ${activeMobileCol === c.key ? "border-accent bg-accentbg text-accent" : "border-line bg-surface text-ink2"}`}>
+                        {c.label} <span className="rounded-chip bg-inset px-1.5 text-[11px] tabular-nums text-ink2">{c.count}</span>
+                      </button>
                     ))}
-                  </section>
-                ))}
-              </div>
+                  </div>
+                  <div className="space-y-3" data-testid="mobile-column">
+                    {columns.filter((c) => c.key === activeMobileCol).map((col) => (
+                      col.items.length === 0
+                        ? <p key={col.key} className="rounded-card border-2 border-dashed border-line p-6 text-center text-[12px] text-ink3">Tidak ada unit di tahap {col.label}</p>
+                        : col.items.map((item) => renderCard(item, ctx))
+                    ))}
+                  </div>
+                </div>
+                {/* Desktop: pipeline horizontal — semua tahap berdampingan, scroll di dalam kontainer. */}
+                <div className="hidden gap-3 overflow-x-auto pb-3 md:flex" data-testid="pipeline">
+                  {columns.map((col) => <PipelineColumn key={col.key} col={col}>{col.items.map((item) => renderCard(item, ctx))}</PipelineColumn>)}
+                </div>
+              </>
             ) : (
               <Card className="overflow-x-auto p-0">
-                <table className="w-full text-left text-[12.5px]">
-                  <thead className="bg-inset text-ink3"><tr>{["Unit", "Customer", "Meja", "PIC", "Status", "Tahap", "Bahan", "Waktu"].map((h) => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
+                <table className="w-full min-w-[860px] text-left text-[12.5px]">
+                  <thead className="bg-inset text-ink3"><tr>{["Unit", "Customer", "Layanan Sales", "Tahap", "Meja", "PIC", "Prioritas"].map((h) => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
                   <tbody>
-                    {allItems.map((i) => (
-                      <tr key={i.runId} className="cursor-pointer border-t border-line hover:bg-hovertint" onClick={() => openOverview(i.unit.id)}>
-                        <td className="px-3 py-2 font-semibold text-ink">{i.unit.unitCode}</td><td className="px-3 py-2">{i.customer.name}</td>
-                        <td className="px-3 py-2">{i.plan?.stationLabel}</td><td className="px-3 py-2">{i.plan?.operator?.name || "—"}</td>
-                        <td className="px-3 py-2"><Badge variant={bucketStyle(i.bucket).badge}>{bucketStyle(i.bucket).label}</Badge></td>
-                        <td className="px-3 py-2 tabular-nums">{i.progress.done}/{i.progress.total}</td><td className="px-3 py-2">{i.materialStatus.label}</td>
-                        <td className="px-3 py-2 tabular-nums">{formatMinutes(i.timer.elapsedMinutes)}</td>
-                      </tr>
-                    ))}
+                    {allItems.map((i) => {
+                      const pm = priorityMeta(i.plan?.priority ?? 0);
+                      return (
+                        <tr key={i.runId || i.handoffId || `${i.jobId}-${i.unit.id}`} className="cursor-pointer border-t border-line hover:bg-hovertint" onClick={() => openOverview(i.unit.id)}>
+                          <td className="px-3 py-2 font-semibold text-ink">{i.unit.unitCode}<div className="font-normal text-ink3">{i.customer?.orderNumber || i.unit.orderNumber || ""}</div></td>
+                          <td className="px-3 py-2">{i.customer?.name || "—"}<div className="text-ink3">{i.customer?.city || ""}</div></td>
+                          <td className="px-3 py-2">{i.customer?.salesServices?.join(" + ") || <span className="text-ink3">belum tercatat</span>}</td>
+                          <td className="px-3 py-2"><Badge variant={i.bucket ? bucketStyle(i.bucket).badge : "neutral"}>{i.__col}</Badge>{i.runId && <div className="mt-0.5 text-ink3">{stageText(i)}</div>}</td>
+                          <td className="px-3 py-2">{i.plan?.stationCode ? mejaLabel(i.plan.stationCode) : "Belum dijadwalkan"}</td>
+                          <td className="px-3 py-2">{i.runId ? <PicChips view={i} /> : "—"}</td>
+                          <td className="px-3 py-2">{pm.icon ? <Badge variant="red">{pm.label}</Badge> : <span className="text-ink3">Normal</span>}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-              </Card>
-            )}
-
-            {/* P9B — kartu warisan tanpa Run sama sekali (mis. canary lama) TIDAK muncul di tab Daftar (tabel butuh
-                bucket/progress yang cuma ada di kartu berbasis Run) — baris ringkas ini menjaga visibilitas mereka di
-                LUAR tab Papan Meja (yang sudah menampilkannya di kolom Belum Dijadwalkan). Kosong -> tidak render apa pun. */}
-            {tab === "list" && belumDijadwalkanItems.some((i) => !i.runId) && (
-              <Card className="space-y-2 p-4">
-                <p className="text-[13px] font-bold text-ink">Unit Menunggu Kedatangan (data lama, belum ada Run)</p>
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                  {belumDijadwalkanItems.filter((i) => !i.runId).map((item) => (
-                    <div key={item.handoffId} className="overflow-hidden rounded-card bg-surface shadow-sm">
-                      <div className="p-3">
-                        <p className="text-[13px] font-bold text-ink">{item.unit.unitCode}</p>
-                        <p className="text-[12px] text-ink3">{[item.unit.merk, item.unit.ukuran].filter(Boolean).join(" · ") || "—"}</p>
-                        <Badge variant="neutral" className="mt-1.5">Dalam perjalanan ke workshop</Badge>
-                      </div>
-                      <div className="border-t border-line px-3 py-2">
-                        <Button size="sm" variant="secondary" className="w-full" onClick={() => setArrival(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </Card>
             )}
           </>
@@ -592,11 +261,11 @@ export default function ProductionPlannerV2() {
       {drawer && <RunDrawer item={drawer} refs={refs} onClose={() => setDrawer(null)} onSchedule={(i) => { setDrawer(null); setSchedule(i); }} onConfirmArrival={(i) => { setDrawer(null); setArrival(i); }} onChanged={(msg) => { setDrawer(null); setNotice(msg); load(); }} />}
       {overviewUnitId && (
         <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} manageLabel="Kelola Jadwal / Layanan"
-          onManage={() => { const item = allItems.find((i) => i.unit.id === overviewUnitId); closeOverview(); if (item) setDrawer(item); }} />
+          onManage={() => { const item = allItems.find((i) => i.unit.id === overviewUnitId && i.runId); closeOverview(); if (item) setDrawer(item); }} />
       )}
       {arrival && <ArrivalModal target={arrival} onClose={() => setArrival(null)} onDone={(msg) => { setArrival(null); setNotice(msg); load(); }} />}
       {schedule && board && (
-        <ScheduleModal target={schedule} board={board} date={date} refs={refs} onClose={() => setSchedule(null)} onDone={(msg) => { setSchedule(null); setNotice(msg); load(); }} />
+        <ScheduleModal target={schedule} board={board} date={today} refs={refs} onClose={() => setSchedule(null)} onDone={(msg) => { setSchedule(null); setNotice(msg); load(); }} />
       )}
     </PageContainer>
   );

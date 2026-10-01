@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { CalendarClock, PackageCheck, RefreshCw, Search, Undo2, XCircle } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { CalendarDays, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, PackageCheck, PackageX, RefreshCw, Target, Timer, Undo2, XCircle } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -9,54 +9,26 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
-import { PRIORITIES, friendlyError, priorityTone, wibDate } from "@/features/production/experience.js";
+import { PRIORITIES, friendlyError, stationCapacity, wibDate } from "@/features/production/experience.js";
 import { bomLineAvailability, validateBOMLines } from "@/features/production/planning.js";
-import { UnitPhotoThumb, UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
+import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import { UnitCard } from "@/features/production/UnitCard.jsx";
+import { ScheduleModal } from "@/features/production/ScheduleModals.jsx";
+import { MEJA, backlogOf, mejaLabel } from "@/features/production/unitCardModel.js";
 import { rolesOf } from "@/lib/roles.js";
 
-// P9B.1 — Rencana Produksi (workspace BARU, terpisah dari "Status Produksi" P9B): tempat SUNGGUHAN mengalokasikan
-// sumber daya (meja/PIC/tanggal) dan bahan (Planned BOM/reservasi). Tiga kelompok (Belum Direncanakan/Direncanakan/
-// Bahan Direservasi), Papan/Kalender/Daftar. SELURUH mutasi lewat command P3 yang SUDAH ADA (planProductionV2Unit/
-// scheduleProductionV2Plan dari P9B — BUKAN assignProductionPlan lama yang field-nya beda/targetStartAt-targetCompleteAt,
-// supaya cuma SATU jalur tulis assignment yang aktif — plus setPlannedBOM/reserveMaterialForPlan/releasePlanReservations
-// dari P3, tidak berubah sejak awal). TIDAK ADA endpoint/command baru di frontend maupun backend untuk workspace ini.
+// Rencana Produksi (P9 UX Realignment) — PLANNER harian seperti Route Planner Delivery: panel backlog "Belum
+// Dijadwalkan" di kiri + area jadwal per Meja 1–4 (kapasitas 3 unit/meja, target 12/hari) untuk tanggal terpilih.
+// Kartu unit SAMA dengan Status Produksi & QC (foto-pertama). Seret-lepas kartu ke meja = jadwalkan/pindahkan; tombol
+// "Jadwalkan/Pindahkan" adalah fallback yang selalu ada (layar sentuh, keyboard). Seluruh mutasi lewat command P3/P9B
+// yang SUDAH ADA (planProductionV2Unit / scheduleProductionV2Plan) — server menegakkan kapasitas, izin, cohort, dan
+// revisi. Alokasi bahan (Planned BOM/reservasi) tetap lewat "Kelola Rencana" di dalam Unit 360 (DetailRencana).
 
-const GROUPS = Object.freeze([
-  { key: "BELUM_DIRENCANAKAN", label: "Belum Direncanakan", dot: "bg-ink3" },
-  { key: "DIRENCANAKAN", label: "Direncanakan", dot: "bg-accent" },
-  { key: "BAHAN_SIAP", label: "Bahan Direservasi", dot: "bg-green" },
-]);
-
-const fmtDate = (d) => (d ? formatTanggal(d) : "Belum dicatat");
 const fmtShort = (iso) => (iso ? new Date(iso).toISOString().slice(0, 10) : null);
+const shiftDate = (d, days) => new Date(new Date(`${d}T00:00:00Z`).getTime() + days * 86400_000).toISOString().slice(0, 10);
 const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
 const canUploadPhoto = rolesOf(user).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r));
-
-function RencanaCard({ group, item, onOpen }) {
-  const isEligible = group === "BELUM_DIRENCANAKAN";
-  const unit = item.unit;
-  return (
-    <button type="button" onClick={() => onOpen(unit.id)} className="w-full rounded-card bg-surface p-3 text-left shadow-sm hover:bg-hovertint">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 gap-2">
-          <UnitPhotoThumb photoUrl={unit.photoUrl} />
-          <div className="min-w-0">
-            <p className="truncate text-[13px] font-bold text-ink">{unit.unitCode}{unit.orderNumber ? ` · ${unit.orderNumber}` : ""}</p>
-            <p className="truncate text-[12px] text-ink3">{item.customer?.name || "Belum dicatat"}{item.customer?.city ? ` · ${item.customer.city}` : ""}</p>
-          </div>
-        </div>
-        {!isEligible && item.priority > 0 && <Badge variant={priorityTone(item.priority)}>{PRIORITIES.find((p) => p.value === item.priority)?.label}</Badge>}
-      </div>
-      <dl className="mt-2 space-y-1 text-[11.5px]">
-        <div className="flex justify-between"><dt className="text-ink3">Target Selesai</dt><dd className="text-ink">{isEligible ? "Belum dicatat" : fmtDate(fmtShort(item.productionDate) || fmtShort(item.targetCompleteAt))}</dd></div>
-        <div className="flex justify-between"><dt className="text-ink3">Workshop</dt><dd className="text-ink">{item.workCenter?.name || "Belum dicatat"}</dd></div>
-        <div className="flex justify-between"><dt className="text-ink3">Operator</dt><dd className="text-ink">{item.operator?.name || "Belum dicatat"}</dd></div>
-        {!isEligible && <div className="flex justify-between"><dt className="text-ink3">Planned BOM</dt><dd className="text-ink">{item.bomLines?.length ?? 0} bahan</dd></div>}
-      </dl>
-    </button>
-  );
-}
 
 function AssignSection({ target, refs, onSaved, onError }) {
   const plan = target.plan;
@@ -253,23 +225,92 @@ function DetailRencana({ target, refs, materials, stockByMaterial, onClose, onCh
   );
 }
 
+function Kpi({ icon: Icon, label, value, hint, tone = "neutral" }) {
+  const cls = tone === "red" ? "bg-redbg text-red" : tone === "orange" ? "bg-orangebg text-orange" : tone === "green" ? "bg-greenbg text-green" : "bg-accentbg text-accent";
+  return (
+    <Card className="flex items-center gap-3 p-4">
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-btn ${cls}`}><Icon size={20} aria-hidden /></span>
+      <div className="min-w-0"><p className="m-0 text-[12px] text-ink3">{label}</p><p className="m-0 text-[20px] font-bold leading-tight text-ink tabular-nums">{value}</p>{hint && <p className="m-0 text-[11px] text-ink3">{hint}</p>}</div>
+    </Card>
+  );
+}
+
+function WeekStrip({ centerDate, onPick }) {
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => shiftDate(centerDate, i - 3)), [centerDate]);
+  const [byDay, setByDay] = useState({});
+  useEffect(() => {
+    let alive = true;
+    Promise.all(days.map((d) => api.getProductionV2Board(d).then((b) => [d, b]).catch(() => [d, null])))
+      .then((pairs) => { if (alive) setByDay(Object.fromEntries(pairs)); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days.join(",")]);
+  const today = wibDate(0);
+  return (
+    <div className="grid grid-cols-7 gap-1.5" data-testid="week-strip" aria-label="Kalender 7 hari">
+      {days.map((d) => {
+        const b = byDay[d];
+        const planned = b?.kpi?.planned ?? null, target = b?.kpi?.target ?? null;
+        const sel = d === centerDate;
+        const dow = new Date(`${d}T00:00:00+07:00`).toLocaleDateString("id-ID", { weekday: "short" });
+        const dm = new Date(`${d}T00:00:00+07:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
+        return (
+          <button key={d} type="button" onClick={() => onPick(d)} aria-pressed={sel}
+            className={`flex min-h-[56px] min-w-0 flex-col items-center justify-center rounded-btn border px-1 py-1.5 text-center ${sel ? "border-accent bg-accentbg" : "border-line bg-surface hover:bg-hovertint"}`}>
+            <span className={`text-[10.5px] font-semibold uppercase ${d === today ? "text-accent" : "text-ink3"}`}>{dow}</span>
+            <span className="text-[12px] font-bold text-ink">{dm}</span>
+            <span className="text-[11px] font-semibold tabular-nums text-ink3">{planned ?? "—"}/{target ?? "—"}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MejaColumn({ station, date, dropActive, onDragOverMeja, onDropMeja, onOpen, onMove, dragStart, today, tomorrow }) {
+  const cap = stationCapacity(station);
+  const slots = Math.max(0, cap.capacity - station.items.length);
+  const items = [...station.items].sort((a, b) => (b.plan?.priority ?? 0) - (a.plan?.priority ?? 0));
+  return (
+    <section data-testid="meja-column" data-station={station.code} aria-label={`${station.label}, ${cap.label}`}
+      onDragOver={(e) => { e.preventDefault(); onDragOverMeja(station.code); }} onDragLeave={() => onDragOverMeja(null)} onDrop={(e) => { e.preventDefault(); onDropMeja(station.code, e.dataTransfer.getData("text/plain")); }}
+      className={`flex min-w-0 flex-col gap-2 rounded-card bg-inset p-2.5 transition-shadow ${dropActive ? "ring-2 ring-accent" : ""}`}>
+      <div className="flex items-start justify-between gap-2 px-1">
+        <div className="min-w-0">
+          <p className="m-0 text-[14px] font-bold text-ink">{station.label}</p>
+          <p className="m-0 truncate text-[11.5px] text-ink3">{station.operatorNames?.length ? `PIC ${station.operatorNames.join(", ")}` : "PIC belum ada"}</p>
+        </div>
+        <span data-testid="meja-capacity" className={`shrink-0 rounded-chip px-2 py-0.5 text-[12px] font-bold tabular-nums ${cap.full ? "bg-redbg text-red" : "bg-surface text-ink2"}`}>{cap.count} / {cap.capacity} unit{cap.full ? " · penuh" : ""}</span>
+      </div>
+      {items.map((v, idx) => (
+        <UnitCard key={v.runId} view={v} variant="compact" seq={idx + 1} today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => onOpen(x.unit.id)}
+          footer={<Button size="sm" variant="secondary" className="min-h-[44px] w-full" onClick={() => onMove(v, station.code)}><CalendarDays size={13} aria-hidden /> Pindahkan</Button>} />
+      ))}
+      {Array.from({ length: slots }).map((_, i) => (
+        <div key={i} data-testid="meja-slot" className="flex min-h-[64px] items-center justify-center rounded-card border-2 border-dashed border-line px-2 text-center text-[11.5px] text-ink3">
+          + Seret unit ke {station.label}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 export default function ProductionRencanaWorkspace() {
-  const [tab, setTab] = useState("board");
-  const [search, setSearch] = useState("");
-  const [workshopFilter, setWorkshopFilter] = useState("");
-  const [operatorFilter, setOperatorFilter] = useState("");
-  const [eligible, setEligible] = useState([]);
-  const [planned, setPlanned] = useState([]);
-  const [reserved, setReserved] = useState([]);
-  const [readerMode, setReaderMode] = useState(null);
-  const [refs, setRefs] = useState({ workCenters: [], operators: [], materials: [], stock: [], stations: ["TABLE_1", "TABLE_2", "TABLE_3", "TABLE_4"] });
+  const [date, setDate] = useState(() => wibDate(0));
+  const dateInputRef = useRef(null);
+  const [board, setBoard] = useState(null);
+  const [cc, setCc] = useState(null);
+  const [refs, setRefs] = useState({ workCenters: [], operators: [], materials: [], stock: [], stations: [...MEJA], services: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [detail, setDetail] = useState(null);
-  const [dropTarget, setDropTarget] = useState(null);
+  const [schedule, setSchedule] = useState(null);
+  const [dropOver, setDropOver] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const today = wibDate(0);
+  const tomorrow = wibDate(1);
 
-  // P9C — Unit 360 sekarang aksi UTAMA klik kartu; "Detail Rencana" (jadwal/BOM/reservasi) TETAP ADA sebagai
-  // jalan pintas "Kelola Rencana" DARI DALAM Unit 360 — semua aksi tulis lama tetap sama persis.
   const [searchParams, setSearchParams] = useSearchParams();
   const [overviewUnitId, setOverviewUnitId] = useState(() => searchParams.get("unit") || null);
   const openOverview = useCallback((unitId) => {
@@ -283,168 +324,133 @@ export default function ProductionRencanaWorkspace() {
 
   const load = useCallback(() => {
     setLoading(true); setError("");
-    return Promise.all([
-      api.getEligibleUnitsForPlanning(),
-      api.getProductionPlans({ status: "PLANNED" }),
-      api.getProductionPlans({ status: "MATERIAL_RESERVED" }),
-    ]).then(([e, p, r]) => {
-      setEligible(e.items || []); setPlanned(p.items || []); setReserved(r.items || []);
-      setReaderMode(e.readerMode || null);
-    }).catch((e) => setError(friendlyError(e))).finally(() => setLoading(false));
-  }, []);
+    return Promise.all([api.getProductionV2Board(date), api.getProductionV2CommandCenter()])
+      .then(([b, c]) => { setBoard(b); setCc(c); })
+      .catch((e) => setError(friendlyError(e))).finally(() => setLoading(false));
+  }, [date]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     Promise.all([api.getWorkCenters(), api.getProductionOperators(), api.getMaterials({ active: "true" }), api.getStock()])
       .then(([w, o, m, s]) => setRefs((r) => ({ ...r, workCenters: (w.workCenters || []).filter((x) => x.active !== false), operators: (o.operators || []).filter((x) => x.active !== false), materials: m || [], stock: s || [] })))
       .catch(() => {});
   }, []);
+  useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(t); }, [notice]);
 
   const stockByMaterial = useMemo(() => new Map(refs.stock.map((row) => [row.materialId, row])), [refs.stock]);
+  const backlog = useMemo(() => backlogOf(cc?.columns), [cc]);
+  const stations = board?.stations || [];
+  const findView = (runId) => backlog.find((v) => v.runId === runId) || stations.flatMap((s) => s.items).find((v) => v.runId === runId);
+  const kpi = board?.kpi;
+  const cfg = board?.config;
 
-  const norm = (item) => ({ ...item, unit: item.unit, customer: item.customer || null, plan: item.plan ?? (item.status ? item : null) });
-  const matches = (item) => {
-    const q = search.trim().toLowerCase();
-    if (q && !`${item.unit.unitCode} ${item.unit.orderNumber || ""} ${item.customer?.name || ""}`.toLowerCase().includes(q)) return false;
-    if (workshopFilter && item.workCenter?.id !== workshopFilter) return false;
-    if (operatorFilter && item.operator?.id !== operatorFilter) return false;
-    return true;
-  };
-  const eligibleF = useMemo(() => eligible.filter(matches), [eligible, search, workshopFilter, operatorFilter]);
-  const plannedF = useMemo(() => planned.filter(matches), [planned, search, workshopFilter, operatorFilter]);
-  const reservedF = useMemo(() => reserved.filter(matches), [reserved, search, workshopFilter, operatorFilter]);
-  const groupItems = { BELUM_DIRENCANAKAN: eligibleF, DIRENCANAKAN: plannedF, BAHAN_SIAP: reservedF };
+  const fmtLong = (d) => formatTanggal(d);
 
-  const openDetail = (item, group) => {
-    if (group === "BELUM_DIRENCANAKAN") setDetail({ runId: item.runId, unit: item.unit, customer: null, plan: null });
-    else setDetail({ runId: item.runId, unit: item.unit, customer: item.customer, plan: item });
-  };
-  function openManageFor(unitId) {
-    for (const [group, items] of Object.entries(groupItems)) {
-      const item = items.find((i) => i.unit.id === unitId);
-      if (item) { closeOverview(); openDetail(item, group); return; }
+  // Jadwalkan/pindahkan langsung (seret-lepas) bila PIC & workshop sudah ada di rencana; kalau belum, buka form (fallback).
+  async function placeOn(view, stationCode) {
+    const plan = view.plan;
+    const target = stations.find((s) => s.code === stationCode);
+    if (plan?.stationCode === stationCode && plan?.productionDate === date) return;
+    if (target && stationCapacity(target).full) { setError(`${target.label} sudah penuh (${stationCapacity(target).label}). Pilih meja lain.`); return; }
+    if (plan?.workCenter?.id && plan?.operator?.id) {
+      setBusy(true); setError("");
+      try {
+        await api.scheduleProductionV2Plan(plan.id, {
+          productionDate: date, stationCode, priority: plan.priority ?? 0, workCenterId: plan.workCenter.id, operatorId: plan.operator.id,
+          cornerOperatorId: plan.cornerOperator?.id || undefined, expectedRevision: plan.revision,
+        });
+        setNotice(`${view.unit.unitCode} dijadwalkan ke ${mejaLabel(stationCode)} — ${fmtLong(date)}.`);
+        await load();
+      } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
+    } else {
+      setSchedule({ ...view, presetStation: stationCode });
     }
   }
+  async function unschedule(view) {
+    const plan = view.plan;
+    if (!plan?.stationCode) return;
+    setBusy(true); setError("");
+    try {
+      await api.scheduleProductionV2Plan(plan.id, { productionDate: null, stationCode: null, priority: plan.priority ?? 0, workCenterId: plan.workCenter?.id, operatorId: plan.operator?.id, cornerOperatorId: plan.cornerOperator?.id || undefined, expectedRevision: plan.revision });
+      setNotice(`${view.unit.unitCode} dikembalikan ke Belum Dijadwalkan.`);
+      await load();
+    } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
+  }
+  const dragStart = (e, runId) => { e.dataTransfer.setData("text/plain", runId); e.dataTransfer.effectAllowed = "move"; };
 
-  function dropOn(group, runId) {
-    setDropTarget(null);
-    if (group !== "DIRENCANAKAN") return; // hanya kolom Direncanakan yang jadi target drop (butuh form, sama pola Status Produksi)
-    const item = eligibleF.find((i) => i.runId === runId) || plannedF.find((i) => i.runId === runId) || reservedF.find((i) => i.runId === runId);
-    if (!item) return;
-    openDetail(item, item.status ? "DIRENCANAKAN" : "BELUM_DIRENCANAKAN");
+  // Kelola Rencana (BOM/reservasi, P3) — dibuka dari dalam Unit 360, aksi tulis lama tidak berubah.
+  async function openManageFor(unitId) {
+    const view = findView(cc?.columns?.flatMap((c) => c.items).find((i) => i.unit?.id === unitId)?.runId) || cc?.columns?.flatMap((c) => c.items).find((i) => i.unit?.id === unitId && i.runId);
+    closeOverview();
+    if (!view) return;
+    if (view.plan?.id) {
+      try { const fresh = await api.getProductionPlan(view.plan.id); setDetail({ runId: view.runId, unit: fresh.unit || view.unit, customer: fresh.customer || view.customer, plan: fresh }); return; } catch (e) { setError(friendlyError(e)); return; }
+    }
+    setDetail({ runId: view.runId, unit: view.unit, customer: view.customer, plan: null });
   }
 
-  const reader = readerMode;
-  const totalCount = eligibleF.length + plannedF.length + reservedF.length;
+  const reader = cc?.readerMode ?? board?.readerMode;
 
   return (
     <PageContainer fluid>
-      <PageHeader title="Rencana Produksi" subtitle="Atur jadwal produksi, alokasikan sumber daya, dan pastikan ketersediaan bahan untuk setiap unit matras."
-        actions={<Button variant="neutral" size="sm" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>} />
+      <PageHeader title="Rencana Produksi" subtitle={`Jadwal harian per meja · ${fmtLong(date)}`}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-btn bg-inset">
+              <Button variant="neutral" size="icon" aria-label="Hari sebelumnya" className="min-h-[40px] min-w-[40px]" onClick={() => setDate((d) => shiftDate(d, -1))}><ChevronLeft size={16} /></Button>
+              <button type="button" data-testid="date-button" onClick={() => { const el = dateInputRef.current; if (!el) return; if (typeof el.showPicker === "function") el.showPicker(); else el.click(); }} className="flex min-h-[40px] items-center gap-1.5 px-1 text-[13px] font-medium text-ink"><CalendarDays size={14} className="text-ink3" aria-hidden /> {fmtLong(date)}</button>
+              <input ref={dateInputRef} type="date" aria-label="Tanggal produksi" className="sr-only" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+              <Button variant="neutral" size="icon" aria-label="Hari berikutnya" className="min-h-[40px] min-w-[40px]" onClick={() => setDate((d) => shiftDate(d, 1))}><ChevronRight size={16} /></Button>
+            </div>
+            <Button variant="neutral" size="sm" className="min-h-[40px]" onClick={() => setDate(today)}>Hari Ini</Button>
+            <Button variant="neutral" size="sm" className="min-h-[40px]" onClick={() => setDate(tomorrow)}>Besok (H-1)</Button>
+            <Button variant="neutral" size="sm" className="min-h-[40px]" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>
+          </div>
+        } />
       <PageBody>
+        {notice && <div role="status" className="rounded-btn bg-greenbg px-3 py-2.5 text-[12.5px] text-green">{notice}</div>}
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
         {reader === "OFF" ? (
           <Card className="p-0"><EmptyState icon={CalendarClock} title="Rencana produksi belum diaktifkan" description="Fitur ini sedang dalam tahap uji coba (canary)." /></Card>
         ) : (
           <>
-            <Card className="flex flex-wrap items-center gap-2 p-3">
-              <div className="flex min-w-[220px] flex-1 items-center gap-2 rounded-btn border border-line px-3 py-2">
-                <Search size={14} className="text-ink3" aria-hidden />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari kode unit atau nomor order…" className="w-full bg-transparent text-[13px] text-ink outline-none" />
-              </div>
-              <select value={workshopFilter} onChange={(e) => setWorkshopFilter(e.target.value)} className="rounded-btn border border-line bg-transparent px-3 py-2 text-[13px] text-ink">
-                <option value="">Semua Workshop</option>{refs.workCenters.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-              <select value={operatorFilter} onChange={(e) => setOperatorFilter(e.target.value)} className="rounded-btn border border-line bg-transparent px-3 py-2 text-[13px] text-ink">
-                <option value="">Semua Operator</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.user?.name || o.employeeCode}</option>)}
-              </select>
-            </Card>
-
-            <div role="tablist" aria-label="Tampilan" className="flex gap-1 border-b border-line">
-              {[["board", "Papan"], ["calendar", "Kalender"], ["list", "Daftar"]].map(([k, l]) => (
-                <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-semibold ${tab === k ? "border-accent text-accent" : "border-transparent text-ink3 hover:text-ink2"}`}>{l}</button>
-              ))}
-              <span className="ml-auto self-center text-[11.5px] text-ink3">{totalCount} unit</span>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="planner-kpi">
+              <Kpi icon={Target} label="Target harian" value={`${cfg?.dailyTarget ?? "—"} unit`} hint={`${cfg?.capacityPerStation ?? 3} unit per meja × ${cfg?.stations?.length ?? 4} meja`} />
+              <Kpi icon={ClipboardList} label="Direncanakan" value={`${kpi?.planned ?? 0} unit`} hint={fmtLong(date)} />
+              <Kpi icon={CheckCircle2} label="Selesai" value={`${kpi?.completed ?? 0} unit`} tone="green" />
+              <Kpi icon={kpi?.waitingMaterial ? PackageX : Timer} label="Perlu perhatian" value={`${(kpi?.waitingMaterial ?? 0) + (kpi?.late ?? 0)}`} hint={`${kpi?.waitingMaterial ?? 0} menunggu bahan · ${kpi?.late ?? 0} terlambat`} tone={(kpi?.waitingMaterial ?? 0) + (kpi?.late ?? 0) ? "red" : "neutral"} />
             </div>
+            <WeekStrip centerDate={date} onPick={setDate} />
 
-            {loading && !eligible.length && !planned.length && !reserved.length ? (
-              <div className="grid gap-3 md:grid-cols-3">{[1, 2, 3].map((n) => <Card key={n} className="h-64 animate-pulse bg-inset" />)}</div>
-            ) : tab === "board" ? (
-              <div className="grid gap-3 md:grid-cols-3">
-                {GROUPS.map((g) => {
-                  const items = groupItems[g.key];
-                  const isDrop = g.key === "DIRENCANAKAN";
-                  return (
-                    // min-w-0: <section> grid item langsung — tanpa ini, min-width:auto bawaan grid item
-                    // membuatnya tidak pernah menyusut di bawah lebar konten terlebarnya di mobile (P9C,
-                    // "grid blowout" klasik — lihat catatan sama di ProductionPlannerV2.jsx).
-                    <section key={g.key} aria-label={g.label}
-                      onDragOver={isDrop ? (e) => { e.preventDefault(); setDropTarget(g.key); } : undefined}
-                      onDragLeave={isDrop ? () => setDropTarget(null) : undefined}
-                      onDrop={isDrop ? (e) => { e.preventDefault(); dropOn(g.key, e.dataTransfer.getData("text/plain")); } : undefined}
-                      className={`flex min-w-0 flex-col gap-2 rounded-card bg-inset p-3 transition-colors ${dropTarget === g.key ? "ring-2 ring-accent" : ""}`}>
-                      <div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${g.dot}`} aria-hidden /><p className="text-[13.5px] font-bold text-ink">{g.label}</p><span className="ml-auto text-[12px] font-semibold tabular-nums text-ink3">{items.length}</span></div>
-                      {items.length === 0 ? <p className="rounded-card border-2 border-dashed border-line p-4 text-center text-[11.5px] text-ink3">Tidak ada unit</p>
-                        : items.map((item) => (
-                          <div key={item.runId} draggable onDragStart={(e) => { e.dataTransfer.setData("text/plain", item.runId); e.dataTransfer.effectAllowed = "move"; }}>
-                            <RencanaCard group={g.key} item={item} onOpen={openOverview} />
-                          </div>
-                        ))}
-                    </section>
-                  );
-                })}
+            <div className="grid min-w-0 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+              <section data-testid="backlog-panel" aria-label="Belum Dijadwalkan"
+                onDragOver={(e) => { e.preventDefault(); setDropOver("BACKLOG"); }} onDragLeave={() => setDropOver(null)}
+                onDrop={(e) => { e.preventDefault(); setDropOver(null); const v = findView(e.dataTransfer.getData("text/plain")); if (v?.plan?.stationCode) unschedule(v); }}
+                className={`flex min-w-0 flex-col gap-2.5 rounded-card bg-inset p-3 xl:max-h-[calc(100vh-260px)] xl:overflow-y-auto ${dropOver === "BACKLOG" ? "ring-2 ring-accent" : ""}`}>
+                <div className="flex items-center justify-between px-1">
+                  <h2 className="m-0 text-[14px] font-bold text-ink">Belum Dijadwalkan</h2>
+                  <span data-testid="backlog-count" className="rounded-chip bg-surface px-2 py-0.5 text-[12px] font-bold tabular-nums text-ink2">{backlog.length} unit</span>
+                </div>
+                {backlog.length === 0 && !loading && <p className="rounded-card border-2 border-dashed border-line p-5 text-center text-[12px] text-ink3">Semua unit sudah dijadwalkan.</p>}
+                {backlog.map((v) => (
+                  <UnitCard key={v.runId} view={v} variant="compact" today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => openOverview(x.unit.id)}
+                    footer={<Button size="sm" className="min-h-[44px] w-full" disabled={busy} onClick={() => setSchedule(v)}><CalendarDays size={13} aria-hidden /> Jadwalkan</Button>} />
+                ))}
+              </section>
+
+              <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2" data-testid="meja-grid">
+                {(stations.length ? stations : (cfg?.stations || MEJA).map((code) => ({ code, label: mejaLabel(code), capacity: 3, count: 0, items: [], operatorNames: [] }))).map((s) => (
+                  <MejaColumn key={s.code} station={s} date={date} dropActive={dropOver === s.code} onDragOverMeja={setDropOver}
+                    onDropMeja={(code, runId) => { setDropOver(null); const v = findView(runId); if (v) placeOn(v, code); }}
+                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} today={today} tomorrow={tomorrow} />
+                ))}
               </div>
-            ) : tab === "calendar" ? (
-              <Card className="p-4">
-                {(() => {
-                  const byDate = new Map();
-                  for (const p of [...plannedF, ...reservedF]) {
-                    const d = fmtShort(p.productionDate);
-                    if (!d) continue;
-                    byDate.set(d, (byDate.get(d) || 0) + 1);
-                  }
-                  const days = [...byDate.keys()].sort();
-                  if (days.length === 0) return <p className="text-[12.5px] text-ink3">Belum ada rencana dengan tanggal produksi tercatat.</p>;
-                  return (
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-                      {days.map((d) => (
-                        <div key={d} className="rounded-btn border border-line p-3 text-center">
-                          <p className="text-[12px] font-semibold text-ink">{fmtDate(d)}</p>
-                          <p className="mt-1 text-[18px] font-bold tabular-nums text-ink">{byDate.get(d)}</p>
-                          <p className="text-[10.5px] text-ink3">unit</p>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </Card>
-            ) : (
-              <Card className="overflow-x-auto p-0">
-                <table className="w-full text-left text-[12.5px]">
-                  <thead className="bg-inset text-ink3"><tr>{["Kelompok", "Unit", "Pelanggan", "Target", "Workshop", "PIC", "Status"].map((h) => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
-                  <tbody>
-                    {GROUPS.flatMap((g) => groupItems[g.key].map((item) => (
-                      <tr key={`${g.key}-${item.runId}`} className="cursor-pointer border-t border-line hover:bg-hovertint" onClick={() => openOverview(item.unit.id)}>
-                        <td className="px-3 py-2"><Badge variant="neutral">{g.label}</Badge></td>
-                        <td className="px-3 py-2 font-semibold text-ink">{item.unit.unitCode}</td>
-                        <td className="px-3 py-2">{item.customer?.name || "Belum dicatat"}</td>
-                        <td className="px-3 py-2">{g.key === "BELUM_DIRENCANAKAN" ? "Belum dicatat" : fmtDate(fmtShort(item.productionDate))}</td>
-                        <td className="px-3 py-2">{item.workCenter?.name || "Belum dicatat"}</td>
-                        <td className="px-3 py-2">{item.operator?.name || "Belum dicatat"}</td>
-                        <td className="px-3 py-2">{g.key !== "BELUM_DIRENCANAKAN" && <Badge variant={g.key === "BAHAN_SIAP" ? "green" : "accent"}>{g.label}</Badge>}</td>
-                      </tr>
-                    )))}
-                  </tbody>
-                </table>
-              </Card>
-            )}
+            </div>
           </>
         )}
       </PageBody>
       {detail && <DetailRencana target={detail} refs={refs} materials={refs.materials} stockByMaterial={stockByMaterial} onClose={() => setDetail(null)} onChanged={load} />}
-      {overviewUnitId && (
-        <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} manageLabel="Kelola Rencana"
-          onManage={() => openManageFor(overviewUnitId)} />
-      )}
+      {overviewUnitId && <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} manageLabel="Kelola Rencana" onManage={() => openManageFor(overviewUnitId)} />}
+      {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services }} onClose={() => setSchedule(null)} onDone={(msg) => { setSchedule(null); setNotice(msg); load(); }} />}
     </PageContainer>
   );
 }

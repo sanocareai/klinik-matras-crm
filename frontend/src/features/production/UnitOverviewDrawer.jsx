@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, PackageX } from "lucide-react";
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -9,6 +9,7 @@ import { formatRupiah } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import { friendlyError, priorityTone } from "@/features/production/experience.js";
 import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
+import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
 
 // P9C — Unit 360: satu drawer kanonis (setara "detail Resi") dibuka dari kartu Status Produksi MAUPUN Rencana
 // Produksi — komponen ini TIDAK peduli dari halaman mana ia dipanggil, hanya butuh unitId. Deep-link (?unit=)
@@ -63,6 +64,7 @@ function Ringkasan({ d }) {
         {d.identity.target.late && <Badge variant="red">Terlambat</Badge>}
       </div>
       <OrderField label="Keluhan Customer" field={d.salesContext.complaints} format={bdArr} />
+      <OrderField label="Layanan Dipesan (Sales)" field={d.salesContext.salesServices} format={bdArr} />
       <OrderField label="Request Customer" field={d.salesContext.request} />
       {d.salesContext.dataGaps?.length > 0 && (
         <ul className="m-0 list-none space-y-1 p-0">
@@ -94,7 +96,41 @@ function Ringkasan({ d }) {
   );
 }
 
-function Proses({ d }) {
+// P9D — hasil Diagnosis Produksi (layanan pesanan vs teknis, kesimpulan, bahan manual perlu dipetakan, foto,
+// siapa+kapan). "Isi Diagnosis" hanya muncul saat tahap 5 CURRENT/WAITING (op.stageCode diagnosis) — di luar
+// itu, wizard tidak relevan (belum sampai atau sudah lewat tahapnya).
+function DiagnosisPanel({ d, onOpenWizard }) {
+  const step5 = d.production.steps.find((s) => s.no === 5);
+  const canDiagnose = step5 && (step5.status === "CURRENT" || step5.status === "WAITING");
+  const diag = d.diagnosis?.current;
+  return (
+    <div className="space-y-3 rounded-btn border border-line p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="m-0 text-[13px] font-bold text-ink">Diagnosis Produksi</p>
+        {canDiagnose && <Button size="sm" variant="secondary" className="min-h-[44px]" data-testid="open-diagnosis" onClick={onOpenWizard}>{diagnosisCtaLabel({ status: diag?.status, hasDraft: hasLocalDraft(d.production.runId) })}</Button>}
+      </div>
+      {!diag && <p className="m-0 text-[12.5px] text-ink3">Belum ada diagnosis tercatat untuk unit ini.</p>}
+      {diag && (
+        <div className="space-y-2 text-[12.5px]">
+          <span data-testid="diagnosis-status" data-diagnosis-status={diag.status} className="inline-block"><Badge variant={diag.status === "RECORDED" ? "green" : "neutral"}>{diag.status === "RECORDED" ? "Sudah dikirim" : "Draft"}</Badge></span>
+          <dl className="m-0 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Layanan teknis</dt><dd className="m-0 break-words font-semibold text-ink">{bd(diag.recommendedServiceLabel)}</dd></div>
+            <div className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Dikirim</dt><dd className="m-0 font-semibold text-ink">{fmtDT(diag.recordedAt)}</dd></div>
+          </dl>
+          {diag.findings?.serviceNote && <div className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Kesimpulan diagnosis</dt><dd className="m-0 break-words font-semibold text-ink">{diag.findings.serviceNote}</dd></div>}
+          {diag.manualMaterials?.some((m) => m.status === "NEEDS_MAPPING") && (
+            <p className="flex items-center gap-1.5 rounded-btn bg-orangebg px-3 py-2 text-red"><AlertTriangle size={12} aria-hidden />
+              {diag.manualMaterials.filter((m) => m.status === "NEEDS_MAPPING").length} bahan manual belum dipetakan Production Lead ke katalog.
+            </p>
+          )}
+          {diag.photoUrls?.length > 0 && <MediaGrid items={diag.photoUrls.map((url, i) => ({ stepLabel: `Diagnosis ${i + 1}`, url, kind: "image" }))} empty="" />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Proses({ d, onOpenDiagnosis }) {
   if (!d.production.runId) return <p className="text-[12.5px] text-ink3">Unit belum masuk proses produksi (belum ada Production Run).</p>;
   return (
     <div className="space-y-3">
@@ -117,32 +153,90 @@ function Proses({ d }) {
           <p className="m-0 font-semibold text-ink">{d.production.activeOp.stageLabel} — {d.production.activeOp.status}</p>
         </div>
       )}
+      <DiagnosisPanel d={d} onOpenWizard={onOpenDiagnosis} />
     </div>
   );
 }
 
-function Bahan({ d }) {
-  if (!d.materials.lines.length) return <p className="text-[12.5px] text-ink3">{d.production.runId ? "Belum ada Planned BOM untuk unit ini." : "Unit belum masuk proses produksi."}</p>;
+// P9D — bahan manual/noncatalog dari Diagnosis ("Bahan belum terdaftar"). "Petakan" hanya berlaku (server
+// menolak 403 kalau tidak berwenang — UI tidak menebak peran pengguna, cukup tampilkan aksi dan biarkan server
+// yang memutuskan, pola sama dengan tombol tulis lainnya di Unit 360).
+function ManualMaterialRow({ m, onMapped }) {
+  const [mapping, setMapping] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { setResults([]); return undefined; }
+    const t = setTimeout(() => { api.searchProductionV2Materials(q).then((r) => setResults(r.items || [])).catch(() => setResults([])); }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+  async function map(materialId) {
+    setBusy(true); setError("");
+    try { await api.mapProductionV2DiagnosisManualMaterial(m.id, { materialId, qty: m.qty }); setMapping(false); onMapped(); }
+    catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
+  }
+  if (m.status === "MAPPED") {
+    return <li className="rounded-btn bg-greenbg px-3 py-2 text-[12px] text-green">{m.description} ({m.qty} {m.estimatedUnit || ""}) → dipetakan ke {m.mappedMaterialCode} — {m.mappedMaterialName}</li>;
+  }
+  return (
+    <li className="space-y-2 rounded-btn bg-orangebg px-3 py-2 text-[12px] text-orange">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 break-words">{m.description} ({m.qty} {m.estimatedUnit || ""}) — {m.reason}</span>
+        {!mapping && <button type="button" onClick={() => setMapping(true)} className="min-h-[44px] shrink-0 rounded-btn bg-surface px-2 text-[11.5px] font-semibold text-ink2">Petakan</button>}
+      </div>
+      {mapping && (
+        <div className="space-y-1.5">
+          <input className="block w-full min-h-[44px] rounded-btn border border-line bg-surface px-2 text-[13px] text-ink" placeholder="Cari material katalog…" value={query} onChange={(e) => setQuery(e.target.value)} disabled={busy} />
+          {results.length > 0 && (
+            <ul className="m-0 list-none space-y-1 p-0">
+              {results.map((r) => <li key={r.id}><button type="button" disabled={busy} onClick={() => map(r.id)} className="flex min-h-[44px] w-full items-center rounded-btn bg-surface px-2 text-left text-[12.5px] text-ink">{r.code} — {r.name}</button></li>)}
+            </ul>
+          )}
+          {error && <p className="m-0 text-red">{error}</p>}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function Bahan({ d, onDiagnosisRefresh }) {
+  const manualMaterials = d.diagnosis?.current?.manualMaterials || [];
+  if (!d.materials.lines.length && !manualMaterials.length) {
+    return <p className="text-[12.5px] text-ink3">{d.production.runId ? "Belum ada Planned BOM untuk unit ini." : "Unit belum masuk proses produksi."}</p>;
+  }
   return (
     <div className="space-y-3">
       {d.materials.shortageOpen && (
         <p className="flex items-center gap-1.5 break-words rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red"><PackageX size={13} aria-hidden className="shrink-0" /> Menunggu bahan baku dari Gudang{d.materials.shortageNote ? `: ${d.materials.shortageNote}` : ""}</p>
       )}
-      <table className="w-full text-left text-[12px]">
-        <thead className="text-ink3"><tr>{["Bahan", "Rencana", "Direservasi", "Diserahkan", "Terpakai", "Status"].map((h) => <th key={h} className="px-2 py-1.5 font-semibold">{h}</th>)}</tr></thead>
-        <tbody>
-          {d.materials.lines.map((l) => (
-            <tr key={l.materialId} className="border-t border-line">
-              <td className="px-2 py-1.5">{l.code} — {l.name}{l.supplemental && <Badge variant="orange" className="ml-1">Rework</Badge>}</td>
-              <td className="px-2 py-1.5 tabular-nums">{l.plannedQty} {l.uom}</td>
-              <td className="px-2 py-1.5 tabular-nums">{l.reservedQty} {l.uom}</td>
-              <td className="px-2 py-1.5 tabular-nums">{l.issuedQty} {l.uom}</td>
-              <td className="px-2 py-1.5 tabular-nums">{l.consumedQty} {l.uom}</td>
-              <td className="px-2 py-1.5">{l.status.replaceAll("_", " ")}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {d.materials.lines.length > 0 && (
+        <table className="w-full text-left text-[12px]">
+          <thead className="text-ink3"><tr>{["Bahan", "Rencana", "Direservasi", "Diserahkan", "Terpakai", "Status"].map((h) => <th key={h} className="px-2 py-1.5 font-semibold">{h}</th>)}</tr></thead>
+          <tbody>
+            {d.materials.lines.map((l) => (
+              <tr key={l.materialId} className="border-t border-line">
+                <td className="px-2 py-1.5">{l.code} — {l.name}{l.supplemental && <Badge variant="orange" className="ml-1">Rework</Badge>}</td>
+                <td className="px-2 py-1.5 tabular-nums">{l.plannedQty} {l.uom}</td>
+                <td className="px-2 py-1.5 tabular-nums">{l.reservedQty} {l.uom}</td>
+                <td className="px-2 py-1.5 tabular-nums">{l.issuedQty} {l.uom}</td>
+                <td className="px-2 py-1.5 tabular-nums">{l.consumedQty} {l.uom}</td>
+                <td className="px-2 py-1.5">{l.status.replaceAll("_", " ")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {manualMaterials.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="m-0 text-[12.5px] font-bold text-ink">Bahan belum terdaftar (dari Diagnosis)</p>
+          <ul className="m-0 list-none space-y-1.5 p-0">
+            {manualMaterials.map((m) => <ManualMaterialRow key={m.id} m={m} onMapped={onDiagnosisRefresh} />)}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -220,29 +314,51 @@ function Aktivitas({ d }) {
   );
 }
 
+// Konstanta modul (identitas stabil) — selector uji yang stabil untuk dialog Unit 360.
+const UNIT_DIALOG_PROPS = { "data-testid": "unit-overview-dialog" };
+
 export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "Kelola" }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("ringkasan");
+  const [showDiagnosis, setShowDiagnosis] = useState(false);
+
+  const reload = useCallback(() => {
+    if (!unitId) return;
+    api.getUnitOverview(unitId).then(setData).catch((e) => setError(friendlyError(e)));
+  }, [unitId]);
 
   useEffect(() => {
     if (!unitId) return undefined;
     let alive = true;
-    setData(null); setError(""); setTab("ringkasan");
+    setData(null); setError(""); setTab("ringkasan"); setShowDiagnosis(false);
     api.getUnitOverview(unitId).then((res) => { if (alive) setData(res); }).catch((e) => { if (alive) setError(friendlyError(e)); });
     return () => { alive = false; };
   }, [unitId]);
 
+  // P9D — submit diagnosis (BOM+layanan) lalu tutup tahap 5 lewat jalur SAMA dengan Aplikasi Meja
+  // (recordProductionV2Step). Kalau penutupan tahap gagal, diagnosis TETAP tersimpan — muat ulang saja.
+  async function handleDiagnosisSubmitted(result) {
+    setShowDiagnosis(false);
+    try {
+      await api.recordProductionV2Step(data.production.runId, 5, {
+        expectedRevision: data.production.revision, workCenterId: data.planning?.workCenter?.id,
+        payload: { diagnosis: result.serviceLabel ? `Layanan teknis: ${result.serviceLabel}` : "Diagnosis dikirim", inputMethod: "TEXT" }, media: [],
+      }, `p9d-unit360-close-${data.production.runId}-${Date.now()}`);
+    } catch { /* diagnosis sudah tersimpan; operator/Lead bisa menutup tahap dari Aplikasi Meja */ }
+    reload();
+  }
+
   return (
-    <Modal open={!!unitId} onOpenChange={(v) => !v && onClose()}
+    <Modal open={!!unitId} onOpenChange={(v) => !v && onClose()} contentProps={UNIT_DIALOG_PROPS}
       title={data ? `${data.identity.unitCode}${data.identity.orderNumber ? ` · ${data.identity.orderNumber}` : ""}` : "Unit 360"}
       description={data ? (data.customer.name?.value || "Pelanggan belum dicatat") : undefined}
       className="flex w-[900px] flex-col max-sm:!h-full max-sm:!max-h-full max-sm:!w-full max-sm:!max-w-full max-sm:!translate-x-0 max-sm:!translate-y-0 max-sm:!rounded-none max-sm:!top-0 max-sm:!left-0">
       <div className="flex min-h-0 flex-1 flex-col px-6 pb-4">
         {error && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
-        {!data && !error && <div className="space-y-2"><div className="h-6 w-2/3 animate-pulse rounded bg-inset" /><div className="h-24 animate-pulse rounded bg-inset" /></div>}
+        {!data && !error && <div data-testid="unit-overview-loading" className="space-y-2"><div className="h-6 w-2/3 animate-pulse rounded bg-inset" /><div className="h-24 animate-pulse rounded bg-inset" /></div>}
         {data && (
-          <>
+          <div data-testid="unit-overview-ready" className="flex min-h-0 flex-1 flex-col">
             <div className="mb-3 flex shrink-0 items-center gap-3">
               <UnitPhotoThumb photoUrl={data.identity.photoUrl} size={56} />
               <div className="min-w-0 flex-1">
@@ -260,15 +376,30 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto pb-2">
               {tab === "ringkasan" && <Ringkasan d={data} />}
-              {tab === "proses" && <Proses d={data} />}
-              {tab === "bahan" && <Bahan d={data} />}
+              {tab === "proses" && <Proses d={data} onOpenDiagnosis={() => setShowDiagnosis(true)} />}
+              {tab === "bahan" && <Bahan d={data} onDiagnosisRefresh={reload} />}
               {tab === "dokumentasi" && <Dokumentasi d={data} />}
               {tab === "qc" && <QcHandoff d={data} />}
               {tab === "aktivitas" && <Aktivitas d={data} />}
             </div>
-          </>
+          </div>
         )}
       </div>
+      {showDiagnosis && data && (
+        <DiagnosisWizard
+          card={{
+            runId: data.production.runId, unitCode: data.identity.unitCode, workCenterId: data.planning?.workCenter?.id,
+            customer: {
+              category: data.salesContext.category?.value ?? null, weightKg: data.salesContext.weightKg?.value ?? null,
+              complaints: data.salesContext.complaints?.value ?? [], request: data.salesContext.request?.value ?? null,
+            },
+            priorServiceLabel: data.service?.set ? data.service.label : null,
+            diagnosisRevision: data.diagnosis?.current?.revision ?? 0,
+          }}
+          onClose={() => setShowDiagnosis(false)}
+          onSubmitted={handleDiagnosisSubmitted}
+        />
+      )}
     </Modal>
   );
 }

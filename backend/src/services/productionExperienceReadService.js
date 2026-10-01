@@ -27,6 +27,8 @@ export const RUN_VIEW_INCLUDE = {
       order: {
         select: {
           orderNumber: true, category: true, beratBadan: true, notes: true, complaintCategory: true, customerPromiseDate: true,
+          // P9 UX — nama layanan yang DIPESAN di Sales (snapshot OrderItem.layananName). SENGAJA hanya nama: harga tidak di-select.
+          items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } },
           weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
           customer: { select: { name: true, city: true, assignedSales: { select: { id: true, name: true } } } },
         },
@@ -122,6 +124,7 @@ export function customerOf(run) {
     weightEntries: order?.weightEntries ?? [],
     complaints: (order?.complaintCategory || []).map((c) => COMPLAINT_LABEL[c] || c),
     request: order?.notes ?? null,
+    salesServices: (order?.items || []).map((i) => i.layananName).filter(Boolean),
     sleepPosition: null, // belum ditangkap Sales (gap P8)
     promiseDate: order?.customerPromiseDate ?? null,
     salesName: order?.customer?.assignedSales?.name ?? null,
@@ -288,7 +291,7 @@ export async function getProductionCommandCenter(prisma, { unitIds, now = new Da
         id: true, status: true, scheduledDate: true, driver: { select: { name: true } },
         units: {
           where: { unitId: { in: unitIds } },
-          select: { unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, order: { select: { orderNumber: true, customer: { select: { name: true, city: true } } } } } } },
+          select: { unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, order: { select: { orderNumber: true, notes: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } } } } },
         },
       },
       orderBy: [{ scheduledDate: "asc" }],
@@ -311,7 +314,7 @@ export async function getProductionCommandCenter(prisma, { unitIds, now = new Da
     kind: "UPCOMING_PICKUP", jobId: job.id, jobStatus: job.status, scheduledDate: job.scheduledDate ? formatProductionDate(job.scheduledDate) : null,
     driverName: job.driver?.name ?? null,
     unit: { id: ju.unit.id, unitCode: ju.unit.unitCode, merk: ju.unit.merk, ukuran: ju.unit.ukuran, orderNumber: ju.unit.order?.orderNumber ?? null },
-    customer: { name: ju.unit.order?.customer?.name ?? null, city: ju.unit.order?.customer?.city ?? null },
+    customer: { name: ju.unit.order?.customer?.name ?? null, city: ju.unit.order?.customer?.city ?? null, request: ju.unit.order?.notes ?? null, salesServices: (ju.unit.order?.items || []).map((i) => i.layananName).filter(Boolean) },
   })));
   // Dedup per unit (satu unit idealnya satu Job pickup aktif; kalau ada anomali data lama dengan >1, tampilkan sekali saja berdasar yang paling awal terjadwal).
   const akanMasukByUnit = new Map();

@@ -728,6 +728,14 @@ export const api = {
     request(`/production-v2/plans/${planId}/schedule`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   recordProductionV2Step: (runId, stepNo, data, idempotencyKey) =>
     request(`/production-v2/runs/${runId}/steps/${stepNo}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // P9D — Diagnosis Produksi + Planned BOM Terpadu.
+  getProductionV2Diagnosis: (runId) => request(`/production-v2/diagnosis/${runId}`),
+  saveProductionV2DiagnosisDraft: (runId, data) => request(`/production-v2/diagnosis/${runId}/draft`, { method: "POST", body: JSON.stringify(data) }),
+  submitProductionV2Diagnosis: (runId, data, idempotencyKey = mutationKey("p9d-diagnosis")) =>
+    request(`/production-v2/diagnosis/${runId}/submit`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  mapProductionV2DiagnosisManualMaterial: (manualMaterialId, data, idempotencyKey = mutationKey("p9d-map")) =>
+    request(`/production-v2/diagnosis/manual-materials/${manualMaterialId}/map`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  searchProductionV2Materials: (q) => request(`/production-v2/materials/search${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   reportProductionV2Shortage: (runId, data, idempotencyKey = mutationKey("p8-shortage")) =>
     request(`/production-v2/runs/${runId}/material-shortage`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   resolveProductionV2Shortage: (id, data, idempotencyKey = mutationKey("p8-shortage-resolve")) =>

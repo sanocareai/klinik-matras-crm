@@ -149,6 +149,10 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_PLAN_BOM_SET: "PRODUCTION_PLAN_BOM_SET",
   PRODUCTION_PLAN_MATERIAL_RESERVED: "PRODUCTION_PLAN_MATERIAL_RESERVED",
   PRODUCTION_PLAN_CANCELLED: "PRODUCTION_PLAN_CANCELLED",
+  // Diagnosis Produksi + Planned BOM Terpadu (P9D): hasil bongkar + layanan teknis + Planned BOM dalam satu
+  // wizard. Detail (findings ringkas, jumlah bahan, dll) ada di metadata — TIDAK menyalin seluruh findings JSON.
+  PRODUCTION_DIAGNOSIS_SUBMITTED: "PRODUCTION_DIAGNOSIS_SUBMITTED",
+  PRODUCTION_DIAGNOSIS_MANUAL_MATERIAL_MAPPED: "PRODUCTION_DIAGNOSIS_MANUAL_MATERIAL_MAPPED",
   // Pengambilan Bahan Produksi V2 (P4): permintaan dari Plan MATERIAL_RESERVED, PICKED oleh Gudang (stok fisik
   // berkurang + reservasi CONSUMED), atau dibatalkan sebelum PICKED (reservasi dilepas).
   PRODUCTION_MATERIAL_ISSUE_REQUESTED: "PRODUCTION_MATERIAL_ISSUE_REQUESTED",
@@ -373,6 +377,10 @@ export function formatActivitySentence(event) {
       return `Bahan direservasi untuk unit ${metadata.unitCode || "—"} (${metadata.reservationCount ?? 0} baris)`;
     case EVENT_TYPES.PRODUCTION_PLAN_CANCELLED:
       return `Rencana produksi unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_DIAGNOSIS_SUBMITTED:
+      return `Diagnosis unit ${metadata.unitCode || "—"} dikirim (v${metadata.version ?? "—"}) — layanan teknis ${metadata.serviceLabel || "—"}, ${metadata.bomLineCount ?? 0} bahan katalog${metadata.manualMaterialCount ? `, ${metadata.manualMaterialCount} bahan manual perlu dipetakan` : ""}`;
+    case EVENT_TYPES.PRODUCTION_DIAGNOSIS_MANUAL_MATERIAL_MAPPED:
+      return `Bahan manual "${metadata.description || "—"}" (unit ${metadata.unitCode || "—"}) dipetakan ke ${metadata.materialCode || "—"}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_REQUESTED:
       return `Produksi mengajukan pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan)`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_PICKED:

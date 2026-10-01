@@ -17,6 +17,7 @@ import { PRIORITY_LABEL, formatProductionDate, stationLabel } from "../lib/domai
 import { STEP_BY_NO } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny } from "../routes/productionUnitPhoto.js";
+import { getDiagnosisState } from "./productionDiagnosisCommandService.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 
@@ -181,6 +182,7 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
       request: orderScopedField(order?.notes ?? null),
       weightKg: orderScopedField(order?.beratBadan ?? null),
       weightEntries: orderScopedField(order?.weightEntries ?? []),
+      salesServices: orderScopedField((order?.items || []).map((i) => i.layananName).filter(Boolean)),
       promiseDate: orderScopedField(order?.customerPromiseDate ?? null),
       category: orderScopedField(order?.category ?? null),
       dataGaps: !order?.beratBadan ? ["Berat badan customer belum dicatat Sales"] : [],
@@ -192,6 +194,7 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
     materials: { lines: [], shortageOpen: false, shortageItems: [] },
     evidence: { before: [], process: [], after: [] },
     qc: [],
+    diagnosis: null, // P9D — belum ada run sama sekali, jadi belum mungkin ada diagnosis (keyed by runId)
     deliveryReadiness: { unitStatus: unit.status, finishedGoodsHandoff: null, readyForDelivery: false },
     activity: await loadActivity(prisma, { unit, run: null, ctx: null, pickup }),
     warnings,
@@ -213,6 +216,7 @@ const UNIT_FULL_SELECT = {
       orderNumber: true, category: true, productLine: true, productType: true, beratBadan: true, notes: true,
       complaintCategory: true, customerPromiseDate: true, value: true,
       weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
+      items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } },
       customer: { select: { name: true, city: true, assignedSales: { select: { name: true } } } },
     },
   },
@@ -249,10 +253,11 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
   const materialStatus = materialStatusOf(run.plan, ctx.material, ctx.openShortage);
   const steps = stepStatuses(ctx);
   const applicableSteps = steps.filter((s) => s.status !== "NA");
-  const [pickup, materials, qc] = await Promise.all([
+  const [pickup, materials, qc, diagnosis] = await Promise.all([
     loadPickup(prisma, unitId),
     loadMaterials(prisma, run.plan),
     loadQc(prisma, run.id),
+    getDiagnosisState(prisma, run.id),
   ]);
   const photoUrl = await signUnitPhotoUrlIfAny(prisma, unitId);
   const customer = customerOf(run);
@@ -292,6 +297,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
     salesContext: {
       complaints: orderScopedField(customer.complaints), request: orderScopedField(customer.request),
       weightKg: orderScopedField(customer.weightKg), weightEntries: orderScopedField(customer.weightEntries),
+      salesServices: orderScopedField(customer.salesServices),
       promiseDate: orderScopedField(customer.promiseDate), category: orderScopedField(customer.category),
       productLine: orderScopedField(orderExtra?.productLine ?? null), productType: orderScopedField(orderExtra?.productType ?? null),
       dataGaps,
@@ -307,7 +313,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
       materialReservedAt: run.plan.materialReservedAt, targetStartAt: run.plan.targetStartAt, targetCompleteAt: run.plan.targetCompleteAt,
     } : null,
     production: {
-      runId: run.id, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
+      runId: run.id, revision: run.revision, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
       steps, progress: { done: applicableSteps.filter((s) => s.status === "DONE").length, total: applicableSteps.length },
       timer: {
         startedAt: firstStart, stepStartedAt: op?.startedAt ?? null,
@@ -320,6 +326,13 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
     materials,
     evidence: { before: mediaOf([1, 2, 3]), process: mediaOf([4, 6, 7]), after: mediaOf([8, 9, 11, 12]) },
     qc,
+    diagnosis: {
+      ...diagnosis,
+      current: diagnosis.current ? {
+        ...diagnosis.current,
+        photoUrls: (diagnosis.current.photoUrls || []).map((u) => signEvidenceUrl(u)).filter(Boolean),
+      } : null,
+    },
     deliveryReadiness: {
       unitStatus: run.unit.status,
       finishedGoodsHandoff: fgHandoff ? { status: fgHandoff.status, offeredAt: fgHandoff.offeredAt, acceptedAt: fgHandoff.acceptedAt } : null,
