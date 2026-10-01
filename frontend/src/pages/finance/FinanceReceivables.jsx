@@ -16,6 +16,7 @@ import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap, bodyBiayaTransfer } from "@/features/finance/biayaTransfer.js";
 import { RiwayatVersiDialog, KoreksiDialog, InfoDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiRefund as matriksRefund } from "@/features/finance/matriksAksi.js";
+import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
@@ -242,6 +243,8 @@ export default function FinanceReceivables() {
           );
         })}
       </div>
+
+      <KenapaBeda metrik={["piutang_usaha", "refund_diberikan", "uang_masuk_terverifikasi", "uang_muka_pelanggan"]} />
 
       <FilterBar
         q={q} onQ={setQ}

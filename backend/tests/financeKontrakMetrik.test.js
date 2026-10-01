@@ -98,3 +98,15 @@ test("COVERAGE TAB: setiap halaman Finance diklasifikasi — punya metrik di kon
     assert.ok(dipakai.length > 0 || TANPA_ANGKA.has(f), `${f}: halaman Finance tidak punya metrik kontrak dan belum dinyatakan tanpa angka uang`);
   }
 });
+
+test("COVERAGE METRIK: seluruh metrik kontrak dipakai di UI (kartu/panel Kenapa angkanya berbeda) — tidak ada metrik yatim", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const akar = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/src");
+  const berkas = [];
+  (function jalan(d) { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) jalan(p); else if (/\.jsx?$/.test(e.name)) berkas.push(p); } })(akar);
+  const sumber = berkas.map((f) => fs.readFileSync(f, "utf8")).join("\n");
+  const yatim = METRIK.filter((m) => !sumber.includes(`"${m.kunci}"`)).map((m) => m.kunci);
+  assert.deepEqual(yatim, [], `metrik tanpa pemakaian di UI: ${yatim.join(", ")}`);
+});

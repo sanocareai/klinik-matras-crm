@@ -220,6 +220,8 @@ function Neraca({ d }) {
         />
       </div>
 
+      <KenapaBeda metrik={["piutang_usaha", "uang_muka_pelanggan", "persediaan_nilai", "utang_supplier", "kas_bank_buku"]} />
+
       {!d.ringkasan.seimbang && (
         <Card className="bg-redbg">
           <CardContent className="flex gap-3 py-4">

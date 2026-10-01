@@ -13,6 +13,7 @@ import { api } from "@/api.js";
 import KpiCard from "./KpiCard.jsx";
 import ChartCard from "./ChartCard.jsx";
 import { useRekonSalesFinance, KartuRekon, PanelRekon, DaftarRekonModal } from "./RekonSalesFinance.jsx";
+import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import BarRow from "./BarRow.jsx";
 
 // ═══ LAPORAN SALES ════════════════════════════════════════════════════════
@@ -211,6 +212,7 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
       {/* ── Rekonsiliasi Sales–Finance: kartu terpisah + bridge (angka dari server) ─────────────── */}
       <KartuRekon data={rekon.data} loading={rekon.loading} onBuka={setRekonBuka} />
       <PanelRekon data={rekon.data} loading={rekon.loading} error={rekon.error} onBuka={setRekonBuka} />
+      <KenapaBeda metrik={["uang_masuk_terverifikasi", "klaim_lunas_menunggu", "order_lunas_terverifikasi", "nilai_order_lunas_perusahaan", "nilai_lunas_tim_sales", "tanpa_atribusi_sales"]} />
       <DaftarRekonModal kunci={rekonBuka} data={rekon.data} onClose={() => setRekonBuka(null)} onDitetapkan={() => { setRekonBuka(null); rekon.muatUlang(); }} />
 
       {/* ── Leaderboard ───────────────────────────────────────────────── */}
