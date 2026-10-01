@@ -769,6 +769,25 @@ export const api = {
     request(`/production-v2/documentation/runs/${runId}/submit`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   correctProductionV2Documentation: (runId, data, idempotencyKey = mutationKey("p10b-doc-fix")) =>
     request(`/production-v2/documentation/runs/${runId}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // P11 — Reporting & KPI Production–Warehouse (BACA-SAJA). `qs` = query string yang SAMA untuk layar, drill-down, dan export.
+  getProductionReportMeta: () => request("/production-v2/reports/meta"),
+  getProductionReport: (kind, qs = "") => request(`/production-v2/reports/${kind}${qs ? `?${qs}` : ""}`),
+  getProductionReportDrill: (metric, qs = "") => request(`/production-v2/reports/drill/${encodeURIComponent(metric)}${qs ? `?${qs}` : ""}`),
+  getProductionReportUnit: (runId, qs = "") => request(`/production-v2/reports/units/${encodeURIComponent(runId)}${qs ? `?${qs}` : ""}`),
+  getProductionReportList: (path, qs = "") => request(`/production-v2/reports/${path}${qs ? `?${qs}` : ""}`),
+  // Export = berkas (bukan JSON): server membangun Excel/PDF dari dokumen laporan yang sama dengan layar.
+  exportProductionReport: async (qs) => {
+    const res = await fetch(`${BASE}/production-v2/reports/export?${qs}`, { headers: { ...authHeaders() } });
+    adoptRefreshedToken(res);
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) {
+      let msg = "Gagal mengekspor laporan";
+      try { msg = (await res.json()).error || msg; } catch { /* respons bukan JSON */ }
+      throw new Error(msg);
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    return { blob: await res.blob(), namaFile: cd.match(/filename="([^"]+)"/)?.[1] || "Production_laporan" };
+  },
   // P9B.1 — foto identitas unit manual (hanya tampil kalau unit belum punya foto pickup driver, lihat backend).
   uploadUnitPhoto: (unitId, file, onProgress) => {
     const fd = new FormData();

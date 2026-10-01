@@ -239,6 +239,8 @@ const DIVISIONS = {
         section: "LAIN",
         items: [
           { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
+          // P11 — KPI Produksi & Gudang (baca-saja). Sengaja di LAIN: OPERASIONAL tetap lima menu kerja (keputusan UX P9).
+          { to: "/bengkel/kpi",             label: "KPI Produksi",    Icon: Gauge, bolehPeran: ["ADMIN", "OWNER", "PRODUCTION_LEAD"] },
           // Kasus Komplain (D-116, 11 September 2026) — halaman dibaca
           // lintas divisi, lihat catatan panjang di section armada di atas.
           { to: "/komplain",                label: "Kasus Komplain",  Icon: AlertTriangle },
@@ -353,6 +355,7 @@ const DIVISIONS = {
         section: "LAPORAN",
         items: [
           { to: "/warehouse/reports", label: "Riwayat Pergerakan", Icon: BarChart3 },
+          { to: "/warehouse/kpi",     label: "KPI Gudang",         Icon: Gauge, bolehPeran: ["ADMIN", "OWNER", "PRODUCTION_LEAD", "WAREHOUSE"] },
         ],
       },
     ],

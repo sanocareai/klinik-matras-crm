@@ -234,7 +234,7 @@ test("audit READER P10B: semua pembaca production_step_evidence_v2 teraudit; bar
   const readers = report.findings.filter((f) => f.kind === "STEP_EVIDENCE_READER" || f.kind === "STEP_EVIDENCE_SQL_READER");
   assert.ok(readers.length >= 4, "pembaca Prisma + SQL terdeteksi: " + readers.map((r) => r.file + ":" + r.disposition).join(","));
   assert.deepEqual([...new Set(readers.map((r) => r.file))].sort(), [
-    "src/routes/productionEvidenceMedia.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionStepCommandService.js",
+    "src/routes/productionEvidenceMedia.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionReportingService.js", "src/services/productionStepCommandService.js",
   ]);
   assert.equal(report.findings.filter((f) => !f.ok).length, 0);
   const sources = loadBackendSources(backendRoot);
@@ -283,6 +283,31 @@ await applyCompleteInTx();
 await prisma.unit.update({});
 `);
   assert.ok(auditProductionExperienceWriters(routeWrites).findings.some((f) => f.disposition === "READ_MODEL_MUST_NOT_WRITE"));
+});
+
+test("audit P11 BACA-SAJA: laporan tidak punya penulis; menangkap create/update/$executeRaw/$transaction/SQL tulis, route non-GET, impor command, helper lifecycle, dan pembaca bukti tanpa pemisah DOC_", () => {
+  const sources = loadBackendSources(backendRoot);
+  const REPORT = "src/services/productionReportingService.js";
+  const ROUTE = "src/routes/productionReports.js";
+  const real = auditProductionExperienceWriters(sources).findings;
+  assert.equal(real.filter((f) => f.kind.startsWith("REPORT_") || f.kind === "DOC_FILTER").filter((f) => !f.ok).length, 0, JSON.stringify(real.filter((f) => !f.ok)));
+  const bad = new Map(sources);
+  bad.set(REPORT, `${sources.get(REPORT)}
+await prisma.unit.update({});
+await prisma.$transaction([]);
+await prisma.$executeRaw\`UPDATE units SET status = 'X'\`;
+await applyCompleteInTx();
+`);
+  bad.set("src/services/productionReportingRouting.js", `${sources.get("src/services/productionReportingRouting.js")}\nimport { completeStep } from "./productionStepCommandService.js";\n`);
+  bad.set(ROUTE, `${sources.get(ROUTE)}\nproductionReportsRouter.post("/x", () => {});\nproductionReportsRouter.delete("/x", () => {});\n`);
+  const d = auditProductionExperienceWriters(bad).findings.filter((f) => !f.ok).map((f) => f.disposition);
+  for (const expected of ["REPORT_MUST_NOT_WRITE", "REPORT_MUST_NOT_OPEN_TRANSACTION_OR_UNSAFE_SQL", "FORBIDDEN_applyCompleteInTx", "FORBIDDEN_IMPORT_completeStep", "FORBIDDEN_ROUTE_POST", "FORBIDDEN_ROUTE_DELETE"]) assert.ok(d.includes(expected), `${expected}: ${d.join(",")}`);
+  assert.ok(d.includes("REPORT_MUST_NOT_RUN_WRITE_SQL") || d.includes("REPORT_MUST_NOT_WRITE"));
+  const noDocFilter = new Map(sources);
+  noDocFilter.set(REPORT, sources.get(REPORT).replaceAll("isDocumentationRow(", "bukanDokumentasi("));
+  assert.ok(auditProductionExperienceWriters(noDocFilter).findings.some((f) => f.disposition === "MISSING_DOC_FILTER_reporting"));
+  const missing = new Map(sources); missing.delete(ROUTE);
+  assert.ok(auditProductionExperienceWriters(missing).findings.some((f) => f.disposition === "MISSING_REPORT_FILE"));
 });
 
 test("audit writer P8 menangkap: bukti diubah/dihapus, penulis liar, P8 menulis operasi/stok langsung, read-model menulis, outbox ditandai terkirim", () => {

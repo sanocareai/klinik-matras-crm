@@ -69,6 +69,7 @@ const ROUTE_LABELS = {
   "/bengkel/quality-control":  ["Produksi", "Quality Control"],
   "/bengkel/andon":            ["Produksi", "Andon TV"],
   "/bengkel/reports":          ["Produksi", "Laporan Produksi"],
+  "/bengkel/kpi":              ["Produksi", "KPI Produksi"],
   "/bengkel/order-produksi":   ["Produksi", "Order Produksi"],
   "/bengkel/work-centers":     ["Produksi", "Work Center"],
   "/bengkel/operators":        ["Produksi", "Operator"],
@@ -101,6 +102,7 @@ const ROUTE_LABELS = {
   "/warehouse/replenishment":   ["Gudang", "Restok"],
   "/warehouse/adjustments":     ["Gudang", "Barang Rusak & Retur"],
   "/warehouse/reports":         ["Gudang", "Riwayat Pergerakan"],
+  "/warehouse/kpi":             ["Gudang", "KPI Gudang"],
 };
 
 // Wave 1.1: search dominan + profil chip.
