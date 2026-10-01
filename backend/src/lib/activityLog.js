@@ -138,6 +138,8 @@ export const EVENT_TYPES = Object.freeze({
   // Klaim Lunas Sales (1 Okt 2026): satu event generik per titik keputusan klaim; jenisnya ada di metadata.aksi
   // (draft_dibuat | diajukan | diajukan_ulang | bukti_ditambah | bukti_dihapus | bukti_diminta | ditolak | diverifikasi | ditarik | ubah_pemilik).
   KLAIM_LUNAS: "KLAIM_LUNAS",
+  // Penjualan Karyawan (1 Okt 2026): penanda karyawan non-Sales yang menjual sebuah order diubah (metadata: before/to = nama karyawan).
+  PENJUALAN_KARYAWAN_DIUBAH: "PENJUALAN_KARYAWAN_DIUBAH",
   // Custody unit Gudang V2 (P1–P2): serah-terima Delivery <-> Gudang. Detail (unit, arah, lokasi, alasan) ada di metadata.
   CUSTODY_OFFERED: "CUSTODY_OFFERED",
   CUSTODY_ACCEPTED: "CUSTODY_ACCEPTED",
@@ -432,6 +434,8 @@ export function formatActivitySentence(event) {
       return `Kekurangan bahan unit ${metadata.unitCode || "—"} diselesaikan Gudang${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_CANCELLED:
       return `Pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.PENJUALAN_KARYAWAN_DIUBAH:
+      return metadata.to ? `Ditandai Penjualan Karyawan — penjual: ${metadata.to}${metadata.before ? ` (sebelumnya ${metadata.before})` : ""}` : "Penanda Penjualan Karyawan dihapus";
     case EVENT_TYPES.KLAIM_LUNAS: {
       const rp = `Rp${Number(metadata.amount ?? 0).toLocaleString("id-ID")}`;
       const alasan = metadata.alasan ? ` — ${metadata.alasan}` : "";

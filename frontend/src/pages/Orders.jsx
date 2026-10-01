@@ -125,6 +125,7 @@ const FILTER_TONE = {
   sales:      { icon: UserRound,  hex: "#2563eb" },
   promo:      { icon: Percent,    hex: "#db2777" },
   pipeline:   { icon: GitBranch,  hex: "#ea580c" },
+  penjual:    { icon: UserRound,  hex: "#0d9488" },
 };
 // ── Pengaturan Grup WA Order (D-032) — ADMIN only, sekali setup ──────────
 // Sengaja MINIMAL (satu dropdown + tombol simpan), pola SAMA PERSIS dengan
@@ -317,6 +318,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
           <p className="mt-0.5 truncate font-mono text-[10px] text-ink3">
             {order.orderNumber || "tanpa ID"}
           </p>
+          {order.staffSeller && <p className="mt-0.5 truncate text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {order.staffSeller.name}</p>}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <PaymentStatusSelect order={order} onChange={onPaymentChange} locked={paymentLocked} />
@@ -480,6 +482,7 @@ export default function Orders() {
   const [fKategori, setFKategori] = useState("");
   const [fBayar, setFBayar]   = useState("");
   const [fSales, setFSales]   = useState("");
+  const [fPenjual, setFPenjual] = useState(""); // "" semua | TIM_SALES | KARYAWAN (Penjualan Karyawan, di luar tim Sales)
   const [fPromo, setFPromo]   = useState("");
   const [fPipeline, setFPipeline] = useState("");
   const [promos, setPromos]   = useState([]);
@@ -538,6 +541,7 @@ export default function Orders() {
         salesId: fSales || undefined,
         promoId: fPromo || undefined,
         pipelineStage: fPipeline || undefined,
+        penjualan: fPenjual || undefined,
         ...toApiParams(range),
       });
       setData(res);
@@ -547,7 +551,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, fStatus, fKategori, fBayar, fSales, fPromo, fPipeline, range]);
+  }, [debounced, fStatus, fKategori, fBayar, fSales, fPromo, fPipeline, fPenjual, range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -699,7 +703,7 @@ export default function Orders() {
   // dari badge itu yang menandai riwayat SEPANJANG WAKTU pelanggannya.
   const complaintCount = itemsAktif.filter((o) => o.hasComplaint).length;
   const complaintRate = itemsAktif.length > 0 ? Math.round((complaintCount / itemsAktif.length) * 1000) / 10 : null;
-  const adaFilter = !!(debounced || fStatus || fKategori || fBayar || fSales || fPromo || fPipeline || hanyaMandek);
+  const adaFilter = !!(debounced || fStatus || fKategori || fBayar || fSales || fPromo || fPipeline || fPenjual || hanyaMandek);
 
   function bukaChat(order) {
     if (order.conversationId) navigate(`/inbox?conv=${order.conversationId}`);
@@ -797,6 +801,7 @@ export default function Orders() {
         salesId: fSales || undefined,
         promoId: fPromo || undefined,
         pipelineStage: fPipeline || undefined,
+        penjualan: fPenjual || undefined,
         includeActiveComplaint: fStatus === "PROCESSING" && sertakanKomplain ? "true" : undefined,
         limit: 5000,
         ...toApiParams(range),
@@ -1046,6 +1051,13 @@ export default function Orders() {
               options={salesUsers.map((u) => ({ value: u.id, label: u.name }))}
               placeholder="Semua Sales"
               ariaLabel="Filter sales person"
+            />
+            <FilterDropdown
+              icon={FILTER_TONE.penjual.icon} activeColor={FILTER_TONE.penjual.hex}
+              value={fPenjual} onChange={setFPenjual}
+              options={[{ value: "TIM_SALES", label: "Tim Sales" }, { value: "KARYAWAN", label: "Penjualan Karyawan" }]}
+              placeholder="Semua Penjual"
+              ariaLabel="Filter penjual (tim Sales / Penjualan Karyawan)"
             />
             <FilterDropdown
               icon={FILTER_TONE.pipeline.icon} activeColor={FILTER_TONE.pipeline.hex}
@@ -1317,6 +1329,7 @@ export default function Orders() {
                     >
                       <td className="whitespace-nowrap px-3 py-2.5 font-mono text-[11px] text-ink2">
                         {o.orderNumber || "—"}
+                        {o.staffSeller && <span className="mt-0.5 block whitespace-normal font-sans text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {o.staffSeller.name}</span>}
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">

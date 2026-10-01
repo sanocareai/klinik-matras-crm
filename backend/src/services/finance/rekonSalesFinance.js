@@ -102,7 +102,7 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
 
   // ── Order lunas-periode (L) — definisi Sales ──
   const selectOrder = {
-    id: true, orderNumber: true, value: true, ongkir: true, status: true, paymentStatus: true, paidAt: true, groupId: true, salesOwnerId: true,
+    id: true, orderNumber: true, value: true, ongkir: true, status: true, paymentStatus: true, paidAt: true, groupId: true, salesOwnerId: true, staffSeller: { select: { name: true } },
     group: { select: { id: true, source: true, anchorOrderId: true } },
     customer: { select: { id: true, name: true, pipelineStage: true, assignedSales: { select: { name: true } } } },
   };
@@ -260,7 +260,7 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
 
     const pemilik = salesDari(o);
     if (pemilik.length === 0) {
-      const info2 = { ...info, pemegangInformasi: o.salesOwnerId ? "Pemilik eksplisit bukan Sales aktif" : (namaPemegang.get(o.customer.id) || o.customer.assignedSales?.name || null) };
+      const info2 = { ...info, pemegangInformasi: o.staffSeller ? `Penjualan Karyawan · ${o.staffSeller.name}` : o.salesOwnerId ? "Pemilik eksplisit bukan Sales aktif" : (namaPemegang.get(o.customer.id) || o.customer.assignedSales?.name || null) };
       tambah(KUNCI.TANPA_SALES, info2, nilai, { pembayaran: masuk.get(o.id)?.pay ?? [] });
     } else {
       nilaiSalesKartu += nilai * pemilik.length;

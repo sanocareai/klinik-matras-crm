@@ -15,6 +15,7 @@ import ChartCard from "./ChartCard.jsx";
 import { useRekonSalesFinance, KartuRekon, PanelRekon, DaftarRekonModal } from "./RekonSalesFinance.jsx";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import BarRow from "./BarRow.jsx";
+import KartuPenjualanKaryawan from "./KartuPenjualanKaryawan.jsx";
 
 // ═══ LAPORAN SALES ════════════════════════════════════════════════════════
 // FOKUS PENJUALAN — siapa closing berapa, target, konversi. Metrik KECEPATAN
@@ -214,6 +215,9 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
       <PanelRekon data={rekon.data} loading={rekon.loading} error={rekon.error} onBuka={setRekonBuka} />
       <KenapaBeda metrik={["uang_masuk_terverifikasi", "klaim_lunas_menunggu", "order_lunas_terverifikasi", "nilai_order_lunas_perusahaan", "nilai_lunas_tim_sales", "tanpa_atribusi_sales"]} />
       <DaftarRekonModal kunci={rekonBuka} data={rekon.data} onClose={() => setRekonBuka(null)} onDitetapkan={() => { setRekonBuka(null); rekon.muatUlang(); }} />
+
+      {/* ── Penjualan Karyawan: order karyawan non-Sales, masuk omzet perusahaan tetapi di luar angka Tim Sales ── */}
+      <KartuPenjualanKaryawan range={range} />
 
       {/* ── Leaderboard ───────────────────────────────────────────────── */}
       <ChartCard

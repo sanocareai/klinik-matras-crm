@@ -7,6 +7,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { rolesOf, hasPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { klaimGateAktif } from "../services/finance/klaimLunas.js";
+import { ubahPenjualKaryawan, ringkasanPenjualanKaryawan, PenjualanKaryawanError } from "../services/penjualanKaryawan.js";
 // Batas rentang tanggal WIB — WAJIB dipakai, jangan `new Date(from)` polos.
 // Container backend jalan di UTC, jadi batas polos menggeser jendela 7 jam
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
@@ -885,6 +886,32 @@ orderRouter.post("/:id/payments/proof", proofUpload.single("photo"), async (req,
 // ditawarkan untuk Tunai. Metode lain (Transfer/QRIS/Kartu) tetap daftar Bank/E-wallet.
 // Tanpa ?method= perilaku lama (daftar Bank/E-wallet) — APK lama tidak terpengaruh.
 const REKENING_TUNAI_KEM = /(^|[^A-Za-z])KEM([^A-Za-z]|$)/i;
+
+// ── PENJUALAN KARYAWAN (1 Okt 2026) ── harus di ATAS route "/:id/..." supaya tidak tertangkap parameter. Tidak menulis Payment/jurnal.
+// GET /api/orders/penjualan-karyawan/ringkasan?from=&to= — Admin/Owner atau pemegang finance:read.
+orderRouter.get("/penjualan-karyawan/ringkasan", async (req, res) => {
+  try {
+    if (!(rolesOf(req.user).some((r) => r === "ADMIN" || r === "OWNER") || hasPermission(req.user, P.FINANCE_READ))) return res.status(403).json({ error: "Anda tidak punya izin melihat ringkasan Penjualan Karyawan" });
+    const tgl = /^\d{4}-\d{2}-\d{2}$/;
+    const from = tgl.test(String(req.query.from || "")) ? String(req.query.from) : null;
+    const to = tgl.test(String(req.query.to || "")) ? String(req.query.to) : null;
+    res.json(await ringkasanPenjualanKaryawan(prisma, from && to ? { from, to } : {}));
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : "Server error: " + err.message }); }
+});
+
+// PUT /api/orders/:id/penjual-karyawan { staffSellerId: <userId>|null } — HANYA Admin/Owner; null menghapus penanda. Diaudit.
+orderRouter.put("/:id/penjual-karyawan", async (req, res) => {
+  try {
+    if (!rolesOf(req.user).some((r) => r === "ADMIN" || r === "OWNER")) return res.status(403).json({ error: "Hanya Admin yang dapat menandai Penjualan Karyawan" });
+    const sid = req.body?.staffSellerId;
+    if (sid !== null && sid !== undefined && typeof sid !== "string") return res.status(400).json({ error: "staffSellerId harus berupa id karyawan atau null" });
+    const hasil = await prisma.$transaction((tx) => ubahPenjualKaryawan(tx, { orderId: req.params.id, staffSellerId: sid ?? null, actorId: req.user.id }));
+    res.json(hasil);
+  } catch (err) {
+    if (err instanceof PenjualanKaryawanError) return res.status(err.statusCode).json({ error: err.message, code: err.code });
+    res.status(500).json({ error: "Server error: " + err.message });
+  }
+});
 orderRouter.get("/payment-accounts", async (req, res) => {
   try {
     const tunai = req.query.method === "CASH";
@@ -1047,7 +1074,7 @@ orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
 // customer-nya (?conv=<id>) — sama seperti kartu Kanban Pipeline.
 orderRouter.get("/", async (req, res) => {
   try {
-    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished, hasConfirmedDate, sortBy, includeActiveComplaint } = req.query;
+    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished, hasConfirmedDate, sortBy, includeActiveComplaint, penjualan, staffSellerId } = req.query;
     // BUG YANG DIPERBAIKI (1 September 2026, ditemukan owner lewat audit
     // export Excel — "krusial banget, butuh keakuratan tinggi"): batas
     // atas SEBELUMNYA cuma 500, sementara Export Excel di Orders.jsx
@@ -1089,6 +1116,10 @@ orderRouter.get("/", async (req, res) => {
       ...(from && to && { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } }),
       ...(Object.keys(customerWhere).length > 0 && { customer: customerWhere }),
       ...(promoId && { promoId }),
+      // Penjualan Karyawan (1 Okt 2026): ?penjualan=KARYAWAN (order yang dijual karyawan non-Sales) | TIM_SALES (selain itu); ?staffSellerId=<karyawan> untuk satu karyawan.
+      ...(penjualan === "KARYAWAN" && { staffSellerId: { not: null } }),
+      ...(penjualan === "TIM_SALES" && { staffSellerId: null }),
+      ...(staffSellerId && { staffSellerId: String(staffSellerId) }),
       // hasConfirmedDate DAN search dua-duanya butuh `OR` — DIGABUNG lewat
       // `AND: [{OR:...}, {OR:...}]` (bukan dua key `OR` terpisah, yang akan
       // SALING MENIMPA seperti bug customerWhere/scheduledDateFilter yang
@@ -1161,6 +1192,7 @@ orderRouter.get("/", async (req, res) => {
           orderBy: { createdAt: "desc" },
         },
         items: { orderBy: { sortOrder: "asc" } },
+        staffSeller: { select: { id: true, name: true } },
         // BUG YANG DIPERBAIKI (ditemukan sebelum sempat dipakai — mobile
         // OrdersScreen.js membuka OrderFormModal edit yang sama dengan
         // konteks 1-customer): tanpa weightEntries di sini, form edit

@@ -325,6 +325,7 @@ model User {
   finAdvancesHeld    FinOperationalAdvance[] @relation("FinAdvanceHolder")
   finAdvancesCreated FinOperationalAdvance[] @relation("FinAdvanceCreator")
   klaimLunasDibuat   OrderPaymentClaim[]          @relation("KlaimLunasCreator")
+  ordersSoldAsStaff  Order[]                      @relation("OrderStaffSeller")
   klaimLunasDitinjau OrderPaymentClaim[]          @relation("KlaimLunasReviewer")
   id           String   @id @default(cuid())
   name         String
@@ -1189,6 +1190,10 @@ model Order {
   // eksplisit + audit. NULL = "Tanpa Sales" untuk order baru; order lama NULL tetap diatribusikan lewat percakapan (services/salesOwner.js).
   salesOwnerId          String?       @map("sales_owner_id")
   paymentClaims         OrderPaymentClaim[] @relation("OrderPaymentClaims")
+  // PENJUALAN KARYAWAN (1 Okt 2026): karyawan NON-Sales yang menjual order ini (mis. karyawan produksi menjual ke kerabat). Kosong = order biasa.
+  // Terisi → order tetap masuk omzet perusahaan tetapi di luar angka Tim Sales. Tidak memengaruhi pembayaran/jurnal. Lihat services/penjualanKaryawan.js.
+  staffSellerId         String?       @map("staff_seller_id")
+  staffSeller           User?         @relation("OrderStaffSeller", fields: [staffSellerId], references: [id], onDelete: SetNull)
   // dpTarget (2 Sep 2026) — nominal DP yang DISEPAKATI dengan customer,
   // bukan yang benar-benar sudah masuk (itu SUM(payments), lihat Payment
   // model). null = tidak ada kesepakatan DP spesifik untuk order ini.
@@ -1355,6 +1360,7 @@ model Order {
   @@index([groupId])
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
   @@index([promoId])
+  @@index([staffSellerId])
 }
 
 // ─── INVOICE (31 Agustus 2026) ──────────────────────────────────────────────
