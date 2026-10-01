@@ -73,13 +73,13 @@ export default function OrderKlaimLunas({ order, onChanged, autoOpen = false }) 
     <View style={styles.card} testID="panel-klaim-lunas">
       <View style={styles.head}><BadgeCheck size={13} color={tokens.color.textMuted} strokeWidth={2.2} /><Text style={styles.title}>Klaim Lunas</Text></View>
       {info.buktiBelumLengkap && !terakhir ? (
-        <View style={[styles.banner, { backgroundColor: tokens.color.warningBg || "#FEF3C7" }]}>
+        <View style={[styles.banner, { backgroundColor: "rgba(245,158,11,0.16)" }]}>
           <FileWarning size={14} color={tokens.color.warning || "#B45309"} />
           <Text style={[styles.bannerText, { color: tokens.color.warning || "#B45309" }]}>Bukti belum lengkap — order ini ditandai Lunas tetapi belum ada pembayaran tercatat.</Text>
         </View>
       ) : null}
       {terakhir ? (
-        <View style={[styles.banner, { backgroundColor: terakhir.status === "SUBMITTED" ? (tokens.color.successBg || "#DCFCE7") : tokens.color.subtle }]}>
+        <View style={[styles.banner, { backgroundColor: terakhir.status === "SUBMITTED" ? "rgba(16,185,129,0.16)" : tokens.color.subtle }]}>
           <View style={{ flex: 1 }}>
             <Text style={styles.bannerTitle}>{STATUS_KLAIM_LABEL[terakhir.status] || terakhir.status}</Text>
             {terakhir.reviewReason ? <Text style={styles.bannerText}>Alasan Finance: {terakhir.reviewReason}</Text> : null}
@@ -299,7 +299,7 @@ function KlaimLunasSheet({ order, onClose, onChanged }) {
               <View style={styles.banner}><AlertCircle size={16} color={tokens.color.textSecondary} /><Text style={styles.bannerText}>{info.alasanTidakBisa || "Order ini tidak bisa diklaim."}</Text></View>
             ) : (
               <>
-                <View style={[styles.banner, { backgroundColor: tokens.color.accentBg || tokens.color.subtle }]}>
+                <View style={[styles.banner, { backgroundColor: tokens.color.accentSoft }]}>
                   <Text style={[styles.bannerText, { color: tokens.color.accent }]}>
                     Mengajukan klaim tidak mengubah status pembayaran. Status berubah menjadi Lunas setelah Finance memeriksa bukti dan uangnya. Sisa tagihan: {formatRupiah(info.sisa)}.
                   </Text>
@@ -390,7 +390,7 @@ function BuktiKecil({ b, tokens, styles, onRetry }) {
   const pdf = b.mime === "application/pdf" || /\.pdf$/i.test(b.nama || "");
   if (b.status === STATUS_BUKTI.MENGUNGGAH) return <View style={[styles.buktiThumb, { backgroundColor: tokens.color.subtle }]}><ActivityIndicator size="small" color={tokens.color.textMuted} /></View>;
   if (b.status === STATUS_BUKTI.GAGAL) {
-    return <TouchableOpacity style={[styles.buktiThumb, { backgroundColor: tokens.color.dangerBg || "#FEE2E2" }]} onPress={onRetry} accessibilityLabel={`Unggahan ${b.nama} gagal, ketuk untuk coba lagi`}><RefreshCw size={16} color={tokens.color.danger} /></TouchableOpacity>;
+    return <TouchableOpacity style={[styles.buktiThumb, { backgroundColor: "rgba(244,63,94,0.16)" }]} onPress={onRetry} accessibilityLabel={`Unggahan ${b.nama} gagal, ketuk untuk coba lagi`}><RefreshCw size={16} color={tokens.color.danger} /></TouchableOpacity>;
   }
   if (b.status === STATUS_BUKTI.ANTRE) return <View style={[styles.buktiThumb, { backgroundColor: tokens.color.subtle }]}>{pdf ? <FileText size={18} color={tokens.color.textSecondary} /> : <Image source={{ uri: b.file?.uri }} style={styles.buktiImg} />}<View style={styles.antreDot} /></View>;
   if (pdf) return <TouchableOpacity style={[styles.buktiThumb, { backgroundColor: tokens.color.subtle }]} onPress={() => Linking.openURL(mediaUrl(b.url))} accessibilityLabel={`Buka ${b.nama}`}><FileText size={18} color={tokens.color.textSecondary} /></TouchableOpacity>;
@@ -411,7 +411,7 @@ function createStyles(t) {
     ghost: { alignItems: "center", justifyContent: "center", backgroundColor: t.color.subtle, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, minHeight: 46 },
     ghostText: { color: t.color.textPrimary, fontWeight: "600", fontSize: 13 },
     overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" },
-    sheet: { backgroundColor: t.color.surface || t.color.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "92%" },
+    sheet: { backgroundColor: t.color.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "92%" },
     sheetHead: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4, gap: 8 },
     sheetTitle: { fontSize: 17, fontWeight: "700", color: t.color.textPrimary },
     closeBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
@@ -428,7 +428,7 @@ function createStyles(t) {
     buktiBox: { position: "relative" },
     buktiThumb: { width: 56, height: 56, borderRadius: 10, alignItems: "center", justifyContent: "center", overflow: "hidden" },
     buktiImg: { width: 56, height: 56 },
-    buktiX: { position: "absolute", top: -8, right: -8, width: 22, height: 22, borderRadius: 11, backgroundColor: t.color.background, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: t.color.subtle },
+    buktiX: { position: "absolute", top: -8, right: -8, width: 22, height: 22, borderRadius: 11, backgroundColor: t.color.bg, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: t.color.subtle },
     antreDot: { position: "absolute", bottom: 3, right: 3, width: 8, height: 8, borderRadius: 4, backgroundColor: "#F59E0B" },
     tambah: { flexDirection: "row", gap: 6, alignItems: "center", paddingHorizontal: 14, height: 56, borderRadius: 10, backgroundColor: t.color.subtle },
     tambahText: { fontSize: 13, color: t.color.textSecondary, fontWeight: "600" },
