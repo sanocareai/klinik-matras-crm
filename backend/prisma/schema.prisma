@@ -6093,6 +6093,9 @@ model StaffBroadcast {
   // dijadwalkan dan waktu kirim, penerima tetap sesuai yang disetujui
   // admin (sama filosofi dgn BroadcastTarget.phone yang dibekukan).
   recipientIds String[]             @default([]) @map("recipient_ids")
+  // Penerima NON-sales (Broadcast Team, 1 Okt 2026): id TeamContact — orang
+  // (dikirim pribadi satu per satu) atau grup WA. Aditif; broadcast lama = [].
+  contactIds   String[]             @default([]) @map("contact_ids")
   scheduledAt  DateTime             @map("scheduled_at")
   status       StaffBroadcastStatus @default(SCHEDULED)
   kind         StaffBroadcastKind   @default(MANUAL)
@@ -6133,6 +6136,27 @@ model StaffBroadcast {
   // ini belum" (lalu disaring lagi di kode utk recipientIds, volume kecil).
   @@index([kind, topic, createdAt])
   @@map("staff_broadcasts")
+}
+
+// Kontak tim untuk Broadcast Team (1 Oktober 2026): orang (kind=PERSON, nomor WA
+// pribadi) atau grup WA (kind=GROUP, dicari lewat Conversation.groupName di Inbox)
+// per divisi. Sales tetap lewat User + directory nomor seperti sebelumnya.
+model TeamContact {
+  id        String   @id @default(cuid())
+  name      String
+  division  String // DELIVERY | SALES | PRODUKSI, dst
+  roleLabel String?  @map("role_label") // Driver / Admin / Leader
+  kind      String // PERSON | GROUP
+  phone     String? // 62xxxxxxxxxx (hanya PERSON)
+  groupName String?  @map("group_name") // nama grup WA persis di Inbox (hanya GROUP)
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([division, name])
+  @@index([active, division])
+  @@map("team_contacts")
 }
 
 // ─── OAuth 2.1 untuk MCP server (/mcp, /oauth/*) ────────────────────────────

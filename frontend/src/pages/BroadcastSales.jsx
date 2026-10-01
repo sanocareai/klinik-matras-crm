@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Send, Loader2, Ban, CheckCircle2, Clock, Users, PenSquare, History } from "lucide-react";
+import { Send, Loader2, Ban, CheckCircle2, Clock, Users, UsersRound, PenSquare, History } from "lucide-react";
 import { api } from "../api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -10,6 +10,9 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import { formatTanggalLengkap, formatJam, toWIB } from "../utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
 
+// Broadcast Team (1 Oktober 2026): penerima sekarang sales + kontak tim per divisi
+// (orang → WA pribadi, grup → WA grup). Rute tetap /broadcast-sales.
+//
 // Broadcast MANUAL admin/leader ke WA pribadi SALES (7 September 2026,
 // permintaan owner) — "se simple juga misal broadcast meeting di tanggal
 // tertentu". Beda dari /broadcast (Broadcast & Campaign, untuk PELANGGAN):
@@ -64,7 +67,24 @@ function kelompokPerHari(items) {
   return [...map.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)); // terbaru dulu
 }
 
-function ComposeTab({ recipients, onCreated }) {
+const DIVISI_LABEL = { SALES: "Sales", DELIVERY: "Delivery", PRODUKSI: "Produksi" };
+const DIVISI_URUT = ["SALES", "DELIVERY", "PRODUKSI"];
+
+// Gabungkan sales (User) + kontak tim (orang/grup) jadi satu daftar penerima per
+// divisi. Kunci pilihan: "u:<userId>" untuk sales, "c:<contactId>" untuk kontak.
+function susunPenerima(sales, contacts) {
+  const list = [];
+  for (const s of sales || []) {
+    list.push({ key: "u:" + s.id, id: s.id, tipe: "user", divisi: "SALES", name: s.name, peran: "Sales", ok: !!s.phone, masalah: s.phone ? null : "Nomor WA belum terdaftar — tidak akan menerima pesan" });
+  }
+  for (const c of contacts || []) {
+    list.push({ key: "c:" + c.id, id: c.id, tipe: c.kind === "GROUP" ? "grup" : "orang", divisi: c.division, name: c.name, peran: c.roleLabel, ok: c.ready, masalah: c.problem });
+  }
+  return list;
+}
+
+function ComposeTab({ sales, contacts, onCreated }) {
+  const recipients = useMemo(() => (sales && contacts ? susunPenerima(sales, contacts) : null), [sales, contacts]);
   const [message, setMessage] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [tanggal, setTanggal] = useState(nowDateStr());
@@ -72,9 +92,18 @@ function ComposeTab({ recipients, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [formErr, setFormErr] = useState("");
 
-  useEffect(() => {
-    if (recipients) setSelectedIds(new Set(recipients.map((s) => s.id)));
-  }, [recipients]);
+  // Sengaja TIDAK ada yang terpilih dari awal (beda dari versi Sales-only): daftar sekarang
+  // memuat grup WA & divisi lain, jadi salah kirim ke banyak orang harus butuh pilihan sadar.
+
+  function toggleDivisi(divisi) {
+    const keys = recipients.filter((r) => r.divisi === divisi).map((r) => r.key);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const semua = keys.every((k) => next.has(k));
+      keys.forEach((k) => (semua ? next.delete(k) : next.add(k)));
+      return next;
+    });
+  }
 
   function toggleRecipient(id) {
     setSelectedIds((prev) => {
@@ -86,7 +115,7 @@ function ComposeTab({ recipients, onCreated }) {
 
   function toggleAll() {
     setSelectedIds((prev) =>
-      prev.size === recipients.length ? new Set() : new Set(recipients.map((s) => s.id))
+      prev.size === recipients.length ? new Set() : new Set(recipients.map((s) => s.key))
     );
   }
 
@@ -102,7 +131,8 @@ function ComposeTab({ recipients, onCreated }) {
     try {
       const created = await api.createStaffBroadcast({
         message: message.trim(),
-        recipientIds: [...selectedIds],
+        recipientIds: [...selectedIds].filter((k) => k.startsWith("u:")).map((k) => k.slice(2)),
+        contactIds: [...selectedIds].filter((k) => k.startsWith("c:")).map((k) => k.slice(2)),
         scheduledAt: scheduledAt.toISOString(),
       });
       onCreated(created);
@@ -244,7 +274,7 @@ function HistoryTab({ items, onCancel, cancellingId }) {
                       </div>
                       <p className="whitespace-pre-wrap text-[13px] text-ink">{b.message}</p>
                       <p className="mt-1.5 text-[11px] text-ink3">
-                        {b.recipientIds.length} penerima
+                        {b.recipientIds.length + (b.contactIds?.length || 0)} penerima
                         {b.createdBy?.name && ` · dibuat oleh ${b.createdBy.name}`}
                       </p>
                       {b.status === "SENT" && (
@@ -280,7 +310,8 @@ function HistoryTab({ items, onCancel, cancellingId }) {
 
 export default function BroadcastSales() {
   const [tab, setTab] = useState("compose"); // "compose" | "history"
-  const [recipients, setRecipients] = useState(null);
+  const [sales, setSales] = useState(null);
+  const [contacts, setContacts] = useState(null);
   const [items, setItems] = useState(null);
   const [recipientsErr, setRecipientsErr] = useState("");
   const [itemsErr, setItemsErr] = useState("");
@@ -294,7 +325,8 @@ export default function BroadcastSales() {
   // recipients-nya sendiri baik-baik saja. Sekarang gagal satu, yang lain
   // tetap tampil.
   function load() {
-    api.getStaffBroadcastRecipients().then(setRecipients).catch((err) => setRecipientsErr(err.message));
+    api.getStaffBroadcastRecipients().then(setSales).catch((err) => { setSales([]); setRecipientsErr(err.message); });
+    api.getStaffBroadcastContacts().then(setContacts).catch((err) => { setContacts([]); setRecipientsErr(err.message); });
     api.getStaffBroadcasts().then(setItems).catch((err) => setItemsErr(err.message));
   }
 
@@ -318,8 +350,8 @@ export default function BroadcastSales() {
   return (
     <PageContainer>
       <PageHeader
-        title="Broadcast Sales"
-        subtitle="Kirim pengingat manual (mis. jadwal meeting) ke WA pribadi sales, dan pantau pengingat otomatis yang sudah terkirim."
+        title="Broadcast Team"
+        subtitle="Kirim pesan (mis. jadwal meeting) ke WA pribadi tim atau grup WA per divisi — Sales dan Delivery — dan pantau pengingat otomatis yang sudah terkirim."
       />
       <PageBody>
         {recipientsErr && <Card className="bg-redbg text-[13px] text-red">Gagal muat penerima: {recipientsErr}</Card>}
@@ -345,7 +377,7 @@ export default function BroadcastSales() {
         </div>
 
         {tab === "compose" ? (
-          <ComposeTab recipients={recipients} onCreated={handleCreated} />
+          <ComposeTab sales={sales} contacts={contacts} onCreated={handleCreated} />
         ) : (
           <HistoryTab items={items} onCancel={handleCancel} cancellingId={cancellingId} />
         )}

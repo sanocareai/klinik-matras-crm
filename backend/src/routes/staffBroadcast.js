@@ -10,6 +10,7 @@ import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { readSalesPhoneDirectory, resolveSalesPhone } from "../services/salesPhoneDirectory.js";
+import { cariGrupUntukKontak } from "../services/staffBroadcastWorker.js";
 
 export const staffBroadcastRouter = express.Router();
 staffBroadcastRouter.use(requireAuth, requireAdmin);
@@ -47,14 +48,39 @@ staffBroadcastRouter.get("/recipients", async (req, res) => {
   }
 });
 
+// GET /contacts — kontak tim non-sales (orang & grup WA) per divisi, untuk
+// Broadcast Team. Untuk GRUP, dicek apakah grupnya SUDAH terdeteksi di Inbox
+// (Conversation GROUP dengan nama itu, JID asli) — kalau belum, UI memberi
+// peringatan SEBELUM dijadwalkan, bukan baru gagal saat waktunya tiba.
+staffBroadcastRouter.get("/contacts", async (req, res) => {
+  try {
+    const rows = await prisma.teamContact.findMany({
+      where: { active: true },
+      orderBy: [{ division: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
+    });
+    const out = [];
+    for (const c of rows) {
+      if (c.kind === "GROUP") {
+        const g = await cariGrupUntukKontak(c);
+        out.push({ ...c, ready: !!g, problem: g ? null : "Grup belum terdeteksi di Inbox (nama grup harus sama persis dan nomor WA bot harus anggota grup)" });
+      } else {
+        out.push({ ...c, ready: !!c.phone, problem: c.phone ? null : "Nomor WA belum diisi" });
+      }
+    }
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST / — jadwalkan broadcast baru.
 staffBroadcastRouter.post("/", async (req, res) => {
   try {
-    const { message, recipientIds, scheduledAt } = req.body;
+    const { message, recipientIds = [], contactIds = [], scheduledAt } = req.body;
     if (!message || !String(message).trim()) {
       return res.status(400).json({ error: "Pesan wajib diisi" });
     }
-    if (!Array.isArray(recipientIds) || recipientIds.length === 0) {
+    if (!Array.isArray(recipientIds) || !Array.isArray(contactIds) || recipientIds.length + contactIds.length === 0) {
       return res.status(400).json({ error: "Pilih minimal 1 penerima" });
     }
     const when = new Date(scheduledAt);
@@ -69,14 +95,20 @@ staffBroadcastRouter.post("/", async (req, res) => {
       select: { id: true },
     });
     const validIds = validSales.map((s) => s.id);
-    if (validIds.length === 0) {
-      return res.status(400).json({ error: "Tidak ada penerima valid (sales aktif) dari pilihan ini" });
+    // Kontak tim (orang/grup) — hanya yang aktif.
+    const validContacts = contactIds.length
+      ? await prisma.teamContact.findMany({ where: { id: { in: contactIds }, active: true }, select: { id: true } })
+      : [];
+    const validContactIds = validContacts.map((c) => c.id);
+    if (validIds.length + validContactIds.length === 0) {
+      return res.status(400).json({ error: "Tidak ada penerima valid dari pilihan ini" });
     }
 
     const created = await prisma.staffBroadcast.create({
       data: {
         message: String(message).trim(),
         recipientIds: validIds,
+        contactIds: validContactIds,
         scheduledAt: when,
         createdById: req.user?.id || null,
       },
