@@ -12,14 +12,15 @@ import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  PeriodePicker, periodeDefault, tanggalJam, InputUang,
+  PeriodePicker, periodeDefault, tanggalJam, InputUang, Foto,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
-import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
+import { BuktiBanyak, daftarBukti } from "@/features/finance/BuktiThumb.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { DetailPembayaranDialog, EditInfoDialog, KoreksiPembayaranDialog, RiwayatPembayaranDialog, VerifikasiDialog } from "@/features/finance/KoreksiPembayaran.jsx";
 
 // Aksi PALING RELEVAN jadi tombol utama; "Bagi pembayaran" masuk menu
@@ -310,7 +311,7 @@ export default function FinancePayments() {
                 {tampil.map((p) => {
                   const a = aksiPembayaran(p, { verifikasi, setAlokasiUntuk, bukaDialog });
                   return (
-                  <TR key={p.id}>
+                  <TR key={p.id} {...klikBuka(() => bukaDialog("detail", p))}>
                     <TD sticky className="whitespace-nowrap text-[12px]">{tanggalJam(p.createdAt)}</TD>
                     <TD className="truncate font-medium" title={p.order?.orderNumber || "—"}>{p.order?.orderNumber || "—"}</TD>
                     <TD truncate>{p.order?.customer?.name || "—"}</TD>
@@ -346,7 +347,7 @@ export default function FinancePayments() {
                         </span>
                       )}
                     </TD>
-                    <TD><BuktiThumb url={p.proofPhotoUrl} onView={() => setFotoBukti(p.proofPhotoUrl)} label="Lihat foto bukti" /></TD>
+                    <TD><BuktiBanyak urls={daftarBukti(p)} onView={setFotoBukti} label="Lihat foto bukti" /></TD>
                     <TD>
                       <RowActions primary={a.primary} items={a.items} />
                     </TD>
@@ -363,6 +364,7 @@ export default function FinancePayments() {
               return (
                 <RowCard
                   key={p.id}
+                  onClick={() => bukaDialog("detail", p)}
                   title={tanggalJam(p.createdAt)}
                   status={
                     p.cancelledAt ? <Badge variant={p.replacedBy ? "orange" : "red"}>{p.replacedBy ? "Diganti versi baru" : "Dibatalkan"}</Badge>
@@ -383,7 +385,7 @@ export default function FinancePayments() {
                       label: "Untuk Order", span: true,
                       value: p.finAllocations.length === 0 ? "order ini saja" : p.finAllocations.map((al) => `${al.order?.orderNumber || "—"}: ${formatUang(al.amount)}`).join(", "),
                     },
-                    { label: "Bukti", value: <BuktiThumb url={p.proofPhotoUrl} onView={() => setFotoBukti(p.proofPhotoUrl)} label="Lihat foto bukti" /> },
+                    { label: "Bukti", value: <BuktiBanyak urls={daftarBukti(p)} onView={setFotoBukti} label="Lihat foto bukti" /> },
                   ]}
                   actions={<RowActions primary={a.primary} items={a.items} />}
                 />
@@ -401,14 +403,18 @@ export default function FinancePayments() {
         onError={setPesan}
       />
 
-      {dialog?.jenis === "verifikasi" && <VerifikasiDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
+      {dialog?.jenis === "verifikasi" && <VerifikasiDialog p={dialog.p} cutoff={data?.cutoff} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
       {dialog?.jenis === "detail" && <DetailPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} />}
       {dialog?.jenis === "riwayat" && <RiwayatPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} />}
       {dialog?.jenis === "info" && <EditInfoDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
       {dialog?.jenis === "koreksi" && <KoreksiPembayaranDialog p={dialog.p} onClose={() => setDialog(null)} onSaved={async () => { setDialog(null); await muat(); }} />}
 
       <Modal open={Boolean(fotoBukti)} onOpenChange={(v) => !v && setFotoBukti(null)} title="Bukti Pembayaran" className="w-[560px]">
-        {fotoBukti && <img src={fotoBukti} alt="Bukti pembayaran" className="max-h-[70vh] w-full rounded-lg object-contain" />}
+        {fotoBukti && (
+          <div className="max-h-[70vh] space-y-3 overflow-y-auto">
+            {fotoBukti.map((u, i) => <Foto key={u} url={u} alt={`Bukti pembayaran ${i + 1}`} className="w-full rounded-lg object-contain" />)}
+          </div>
+        )}
       </Modal>
     </HalamanFinance>
   );

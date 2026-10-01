@@ -215,7 +215,8 @@ test("Uang diterima SEBELUM saldo awal tetap tidak menambah saldo walau klien me
   assert.equal(await saldo(SYSTEM_KEYS.PIUTANG_USAHA), "0.00");
   assert.equal(await saldo(SYSTEM_KEYS.LABA_DITAHAN), "1900000.00");
   const p = await testPrisma.payment.findUnique({ where: { id: r.body.paymentId }, include: { verifications: true } });
-  assert.equal(p.cashAccountId, null, "tanpa rekening — kas tidak disentuh");
+  assert.equal(p.cashAccountId, bank.id, "rekening yang dipilih tercatat sebagai keterangan pada Payment");
+  assert.equal(await saldo(SYSTEM_KEYS.BANK), "0.00", "tetapi kas/bank TIDAK disentuh (tidak ada jurnal ke rekening)");
   assert.equal(p.verifications.length, 1, "tetap tercatat terverifikasi");
 
   // Verifikasi massal (tanggal mengikuti paidAt): mode REKENING pada order lama juga tidak menambah saldo.
@@ -274,4 +275,58 @@ test("Order tanpa ongkir tidak berubah perilakunya (value saja)", async () => {
   const r = await c.post("/api/finance/penerimaan/verifikasi", { orderId: order.id, mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id, date: "2026-09-25" });
   assert.equal(r.body.amount, 800_000);
   assert.equal((await testPrisma.order.findUnique({ where: { id: order.id } })).paymentStatus, "LUNAS");
+});
+
+test("Verifikasi massal: satu foto bukti dilampirkan ke SEMUA pembayaran yang dibuat; URL foto tidak valid ditolak sebelum apa pun dibuat", async () => {
+  const { bank } = await siapkan();
+  const a = (await orderLunasTanpaPayment({ value: 300_000, paidAt: new Date("2026-09-25T05:00:00Z") })).order;
+  const b = (await orderLunasTanpaPayment({ value: 450_000, paidAt: new Date("2026-09-26T05:00:00Z") })).order;
+  const c = await ADMIN();
+
+  const salah = await c.post("/api/finance/penerimaan/verifikasi-massal", { orderIds: [a.id, b.id], mode: "REKENING", cashAccountId: bank.id, proofPhotoUrl: "https://evil.example/x.jpg" });
+  assert.equal(salah.status, 400, "URL foto tidak valid ditolak");
+  assert.equal(await testPrisma.payment.count(), 0, "tidak ada pembayaran yang dibuat");
+
+  const ok = await c.post("/api/finance/penerimaan/verifikasi-massal", { orderIds: [a.id, b.id], mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id, proofPhotoUrl: "/media/finance-receipts/gabungan.jpg" });
+  assert.equal(ok.body.berhasil, 2, JSON.stringify(ok.body));
+  const ps = await testPrisma.payment.findMany({ orderBy: { amount: "asc" } });
+  assert.equal(ps.length, 2);
+  assert.ok(ps.every((p) => p.proofPhotoUrl === "/media/finance-receipts/gabungan.jpg"), "foto yang sama tertaut ke tiap pembayaran");
+  assert.equal(await saldo(SYSTEM_KEYS.BANK), "750000.00");
+});
+
+test("BANYAK foto bukti: verifikasi satuan & massal menyimpan semua foto (foto pertama juga di proofPhotoUrl); tanpa duplikat; maksimal 10; URL tidak valid ditolak", async () => {
+  const { bank } = await siapkan();
+  const o1 = (await orderLunasTanpaPayment({ value: 300_000, paidAt: new Date("2026-09-25T05:00:00Z") })).order;
+  const o2 = (await orderLunasTanpaPayment({ value: 450_000, paidAt: new Date("2026-09-26T05:00:00Z") })).order;
+  const o3 = (await orderLunasTanpaPayment({ value: 500_000, paidAt: new Date("2026-09-27T05:00:00Z") })).order;
+  const c = await ADMIN();
+  const foto = (n) => `/media/finance-receipts/${"a".repeat(30)}${n}.jpg`;
+
+  // satuan: 3 foto (ada duplikat) → 3 unik, urutan dipertahankan
+  const s = await c.post("/api/finance/penerimaan/verifikasi", { orderId: o1.id, mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id, date: "2026-09-25", proofPhotoUrls: [foto(1), foto(2), foto(1), foto(3)] });
+  assert.equal(s.status, 201, JSON.stringify(s.body));
+  const p1 = await testPrisma.payment.findUnique({ where: { id: s.body.paymentId } });
+  assert.deepEqual(p1.proofPhotoUrls, [foto(1), foto(2), foto(3)]);
+  assert.equal(p1.proofPhotoUrl, foto(1), "foto pertama juga di kolom lama");
+
+  // massal: semua foto ke tiap pembayaran
+  const m = await c.post("/api/finance/penerimaan/verifikasi-massal", { orderIds: [o2.id, o3.id], mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id, proofPhotoUrls: [foto(7), foto(8)] });
+  assert.equal(m.body.berhasil, 2, JSON.stringify(m.body));
+  const semua = await testPrisma.payment.findMany({ where: { id: { in: m.body.hasil.map((h) => h.paymentId) } } });
+  assert.ok(semua.every((p) => p.proofPhotoUrls.length === 2 && p.proofPhotoUrl === foto(7)));
+
+  // tanpa foto: array kosong, kolom lama null
+  const o4 = (await orderLunasTanpaPayment({ value: 100_000, paidAt: new Date("2026-09-28T05:00:00Z") })).order;
+  const t = await c.post("/api/finance/penerimaan/verifikasi", { orderId: o4.id, mode: "REKENING", method: "TRANSFER", cashAccountId: bank.id, date: "2026-09-28" });
+  const p4 = await testPrisma.payment.findUnique({ where: { id: t.body.paymentId } });
+  assert.deepEqual(p4.proofPhotoUrls, []); assert.equal(p4.proofPhotoUrl, null);
+
+  // validasi: > 10 foto, URL asing, bukan array
+  const o5 = (await orderLunasTanpaPayment({ value: 100_000, paidAt: new Date("2026-09-28T05:00:00Z") })).order;
+  const banyak = Array.from({ length: 11 }, (_, i) => foto(i));
+  assert.equal((await c.post("/api/finance/penerimaan/verifikasi", { orderId: o5.id, mode: "REKENING", cashAccountId: bank.id, date: "2026-09-28", proofPhotoUrls: banyak })).status, 400);
+  assert.equal((await c.post("/api/finance/penerimaan/verifikasi", { orderId: o5.id, mode: "REKENING", cashAccountId: bank.id, date: "2026-09-28", proofPhotoUrls: ["https://evil.example/x.jpg"] })).status, 400);
+  assert.equal((await c.post("/api/finance/penerimaan/verifikasi", { orderId: o5.id, mode: "REKENING", cashAccountId: bank.id, date: "2026-09-28", proofPhotoUrls: "bukan-array" })).status, 400);
+  assert.equal(await testPrisma.payment.count({ where: { orderId: o5.id } }), 0, "tidak ada pembayaran dibuat saat validasi gagal");
 });

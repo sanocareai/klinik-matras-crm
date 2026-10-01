@@ -5,7 +5,8 @@ import { fileURLToPath } from "url";
 import multer from "multer";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { rolesOf, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { rolesOf, hasPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { klaimGateAktif } from "../services/finance/klaimLunas.js";
 // Batas rentang tanggal WIB — WAJIB dipakai, jangan `new Date(from)` polos.
 // Container backend jalan di UTC, jadi batas polos menggeser jendela 7 jam
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
@@ -301,6 +302,13 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
       }
       // Resi Gabungan (pembayaran Resi AKTIF): status bayar child Resi BARU hanya lewat klaim Lunas Resi + verifikasi Finance.
       if (paymentStatus !== undefined && paymentStatus !== sebelum.paymentStatus) await pastikanBukanAnakResiAktif(tx, req.params.id);
+      // SATU-SATUNYA SUMBER STATUS LUNAS (1 Okt 2026, keputusan Owner; DI BAWAH penjaga child Resi supaya child Resi tetap dijawab ANAK_RESI): TIDAK ADA role
+      // (termasuk ADMIN/OWNER) yang boleh mengisi paymentStatus=LUNAS lewat PATCH. LUNAS hanya dihasilkan server (recomputeOrderPaymentStatus) setelah Payment aktif
+      // dan terverifikasi mencapai tagihan kanonis. Sales → "Ajukan Klaim Lunas" berbukti (/api/klaim-lunas); Admin yang memperbaiki transaksi → Koreksi Pembayaran
+      // resmi / verifikasi Finance. Mengirim ulang nilai yang SAMA (order yang sudah LUNAS: data lama/form yang mengirim semua field) dan menurunkan status tidak terkena.
+      if (paymentStatus === "LUNAS" && sebelum.paymentStatus !== "LUNAS" && (await klaimGateAktif(tx))) {
+        throw Object.assign(new Error("Status Lunas tidak bisa diisi langsung oleh siapa pun — status dihasilkan sistem setelah pembayaran terverifikasi Finance mencapai tagihan. Sales: pakai \"Ajukan Klaim Lunas\" dengan bukti pembayaran. Admin: catat/verifikasi pembayaran lewat Finance atau pakai Koreksi Pembayaran."), { statusCode: 409, code: "LUNAS_HANYA_DARI_LEDGER" });
+      }
       // Ongkir Tambahan Resi BARU hanya boleh di order anchor (dihitung TEPAT sekali per Resi — services/finance/tagihanOrder.js).
       if (ongkir !== undefined && ongkir !== "" && ongkir !== null && Number(ongkir) !== 0 && resiBaru(sebelum) && sebelum.group?.anchorOrderId !== req.params.id) {
         throw Object.assign(new Error("Ongkir Tambahan Resi hanya boleh diisi di order pertama (anchor) Resi ini, supaya tidak tertagih dua kali."), { statusCode: 409 });
@@ -872,15 +880,22 @@ orderRouter.post("/:id/payments/proof", proofUpload.single("photo"), async (req,
 // saat mencatat pembayaran (Finance > Rekening Kas & Bank, yang aktif). Terbuka
 // untuk semua user login (sales mencatat DP), tapi HANYA field yang perlu
 // untuk memilih: nomor rekening & saldo TIDAK ikut keluar.
-orderRouter.get("/payment-accounts", async (_req, res) => {
+// ?method=CASH (30 Sep 2026, keputusan Owner): pembayaran Tunai sekarang juga memilih
+// rekening, dan HANYA rekening Sano KEM ("KEM - Sano Bank"); rekening PT tidak
+// ditawarkan untuk Tunai. Metode lain (Transfer/QRIS/Kartu) tetap daftar Bank/E-wallet.
+// Tanpa ?method= perilaku lama (daftar Bank/E-wallet) — APK lama tidak terpengaruh.
+const REKENING_TUNAI_KEM = /(^|[^A-Za-z])KEM([^A-Za-z]|$)/i;
+orderRouter.get("/payment-accounts", async (req, res) => {
   try {
+    const tunai = req.query.method === "CASH";
     const rows = await prisma.finCashAccount.findMany({
-      // Kas tunai TIDAK ikut: pembayaran Tunai tidak memilih rekening, jurnalnya
-      // mengikuti pemetaan Tunai di Finance > Pengaturan (keputusan owner 19 Sep 2026).
-      where: { active: true, kind: { in: ["BANK", "EWALLET"] } },
+      where: tunai
+        ? { active: true, name: { contains: "KEM", mode: "insensitive" } }
+        : { active: true, kind: { in: ["BANK", "EWALLET"] } },
       select: { id: true, name: true, kind: true, bankName: true, accountHolder: true, accountNumber: true },
       orderBy: [{ kind: "asc" }, { name: "asc" }],
     });
+    if (tunai) rows.splice(0, rows.length, ...rows.filter((r) => REKENING_TUNAI_KEM.test(r.name)));
     // Tambahan aditif (20 Sep 2026): accountNumberMasked ("••••7890") supaya kartu rekening di mobile bisa dikenali
     // tanpa membuka nomor lengkap. accountNumber mentah TIDAK ikut respons.
     res.json(rows.map(({ accountNumber, ...r }) => ({ ...r, accountNumberMasked: maskAccountNumber(accountNumber) })));
@@ -897,6 +912,18 @@ orderRouter.get("/payment-accounts", async (_req, res) => {
 // sano-hub §"PRD bilang RLS... di sini artinya middleware Express").
 orderRouter.post("/:id/payments", async (req, res) => {
   try {
+    // JALUR PAYMENT LANGSUNG DITUTUP UNTUK SALES (1 Okt 2026): Payment baru hanya boleh dibuat ADMIN / pemegang PAYMENT_WRITE (Finance). Sales (dan peran lain)
+    // mengajukan Klaim Lunas berbukti (/api/klaim-lunas) yang diverifikasi Finance. Ini ditegakkan di server SELALU — tidak bergantung pada payment_verification_gate
+    // (yang bisa OFF, dan saat OFF pembayaran Sales langsung ikut menentukan status). Pesan 409 ini juga yang dibaca aplikasi Sales versi lama.
+    if (!(rolesOf(req.user).includes("ADMIN") || hasPermission(req.user, P.PAYMENT_WRITE)) && (await klaimGateAktif(prisma))) {
+      const bisaKlaim = hasPermission(req.user, P.ORDER_WRITE);
+      return res.status(bisaKlaim ? 409 : 403).json({
+        error: bisaKlaim
+          ? "Pembayaran dari Sales tidak lagi dicatat langsung. Ajukan Klaim Lunas dengan bukti pembayaran (tombol \"Ajukan Klaim Lunas\" di tab Pembayaran) — Finance yang memverifikasi dan mencatatnya. Perbarui aplikasi jika tombol itu belum ada."
+          : "Anda tidak punya izin mencatat pembayaran.",
+        code: "PEMBAYARAN_SALES_LEWAT_KLAIM",
+      });
+    }
     const guarded = await guardOrderLocked(req, res, req.params.id, "mencatat pembayaran baru");
     if (!guarded) return;
 
@@ -909,8 +936,12 @@ orderRouter.post("/:id/payments", async (req, res) => {
       return res.status(400).json({ error: "Metode pembayaran tidak valid" });
     }
     if (cashAccountId) {
-      const akun = await prisma.finCashAccount.findUnique({ where: { id: String(cashAccountId) }, select: { active: true } });
+      const akun = await prisma.finCashAccount.findUnique({ where: { id: String(cashAccountId) }, select: { active: true, name: true } });
       if (!akun || !akun.active) return res.status(400).json({ error: "Rekening tujuan tidak valid atau sudah nonaktif" });
+      // Tunai hanya boleh ke rekening Sano KEM (keputusan Owner 30 Sep 2026).
+      if (method === "CASH" && !REKENING_TUNAI_KEM.test(akun.name)) {
+        return res.status(400).json({ error: "Pembayaran Tunai hanya bisa dicatat ke rekening Sano KEM" });
+      }
     }
     if (proofPhotoUrl != null && !String(proofPhotoUrl).startsWith("/media/payment-proofs/")) {
       return res.status(400).json({ error: "URL foto bukti tidak valid" });
@@ -1011,7 +1042,7 @@ orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
 // customer-nya (?conv=<id>) — sama seperti kartu Kanban Pipeline.
 orderRouter.get("/", async (req, res) => {
   try {
-    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished, hasConfirmedDate, sortBy } = req.query;
+    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished, hasConfirmedDate, sortBy, includeActiveComplaint } = req.query;
     // BUG YANG DIPERBAIKI (1 September 2026, ditemukan owner lewat audit
     // export Excel — "krusial banget, butuh keakuratan tinggi"): batas
     // atas SEBELUMNYA cuma 500, sementara Export Excel di Orders.jsx
@@ -1085,9 +1116,45 @@ orderRouter.get("/", async (req, res) => {
       })(),
     };
 
+    // includeActiveComplaint=true (30 Sep 2026, permintaan admin produksi): export
+    // "Diproses" dipakai admin produksi sbg daftar target kerja. Order yang sedang
+    // KOMPLAIN/REVISI (status order sudah Terkirim) dulu tidak ikut, sehingga admin
+    // harus mengubah status order jadi Diproses dulu — merusak riwayat status &
+    // laporan. Dengan flag ini, order yang punya komplain/revisi AKTIF ikut
+    // dikembalikan APA PUN status order & tanggal buatnya; filter lain (kategori,
+    // sales, pembayaran, pencarian, dst) tetap berlaku. Status order TIDAK diubah.
+    let whereFinal = where;
+    if (includeActiveComplaint === "true") {
+      const { status: _s, createdAt: _c, ...tanpaStatusTanggal } = where;
+      whereFinal = {
+        OR: [
+          where,
+          {
+            ...tanpaStatusTanggal,
+            AND: [
+              ...(tanpaStatusTanggal.AND || []),
+              {
+                OR: [
+                  { complaintCases: { some: { status: { notIn: ["SELESAI", "DIBATALKAN"] } } } },
+                  { units: { some: { revisions: { some: { status: { notIn: ["REDELIVERED", "CONFIRMED", "CANCELLED"] } } } } } },
+                  { hasComplaint: true, complaintResolvedAt: null },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+    }
+
     const orders = await prisma.order.findMany({
-      where,
+      where: whereFinal,
       include: {
+        // Kasus komplain aktif — dipakai kolom "Komplain" di export Excel.
+        complaintCases: {
+          where: { status: { notIn: ["SELESAI", "DIBATALKAN"] } },
+          select: { caseNumber: true, status: true, category: true, description: true },
+          orderBy: { createdAt: "desc" },
+        },
         items: { orderBy: { sortOrder: "asc" } },
         // BUG YANG DIPERBAIKI (ditemukan sebelum sempat dipakai — mobile
         // OrdersScreen.js membuka OrderFormModal edit yang sama dengan

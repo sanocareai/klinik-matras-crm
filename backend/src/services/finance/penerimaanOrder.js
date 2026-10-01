@@ -163,7 +163,12 @@ async function pendapatanSudahDiakui(tx, orderId) {
  *   mode "REKENING"            butuh cashAccountId; jurnal ke kas/bank.
  *   mode "SEBELUM_SALDO_AWAL"  tanpa rekening; jurnal ke Laba Ditahan.
  */
-export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, verifierId }) {
+export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, proofPhotoUrls = null, verifierId, klaim = null }) {
+  // `klaim` (Klaim Lunas Sales, 1 Okt 2026) = { id, createdById }: pembayaran ini hasil verifikasi KLAIM, bukan konfirmasi order yang sudah
+  // ditandai LUNAS. Order BELUM berstatus Lunas pada saat klaim diajukan (klaim tidak mengubah status), jadi syarat "harus LUNAS di CRM" dilewati —
+  // status akhir dihitung dari ledger oleh recomputeOrderPaymentStatus di bawah. Semua pengaman lain (sisa, nominal, cutoff, rekening) tetap sama.
+  // Bukti bisa BANYAK foto (30 Sep 2026): daftar unik, foto pertama juga disimpan di proofPhotoUrl (kompatibilitas pembaca lama).
+  const bukti = [...new Set([proofPhotoUrl, ...(Array.isArray(proofPhotoUrls) ? proofPhotoUrls : [])].filter(Boolean))];
   if (!["REKENING", "SEBELUM_SALDO_AWAL"].includes(mode)) throw err("Pilihan \"uangnya masuk ke mana\" tidak dikenali");
   if (!["CASH", "TRANSFER", "QRIS", "CARD"].includes(method)) throw err("Cara bayar tidak dikenali");
   await pastikanBukanAnakResiAktif(tx, orderId); // child Resi (flag aktif) diproses lewat alur Resi
@@ -180,7 +185,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
     },
   });
   if (!order) throw err("Order tidak ditemukan", 404);
-  if (order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM (mungkin baru diubah sales). Muat ulang halaman ini.`, 409);
+  if (!klaim && order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM (mungkin baru diubah sales). Muat ulang halaman ini.`, 409);
 
   const gate = await getVerificationGate(tx);
   const sisa = toMoney(dasarStatusBayar(order)).minus(await paidForOrder(tx, orderId, gate));
@@ -197,9 +202,11 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   const dialihkan = mode === "REKENING" && tglStr < cutoff;
   const modeEfektif = dialihkan ? "SEBELUM_SALDO_AWAL" : mode;
 
+  // Rekening WAJIB untuk mode Rekening. Untuk "sebelum saldo awal" rekening OPSIONAL: hanya dicatat pada Payment sebagai KETERANGAN (rekening mana yang
+  // menerima uangnya dulu) — tidak ada jurnal Bank/Kas, saldo tidak berubah (permintaan Owner 30 Sep 2026: order sebelum 18 Sep tidak pernah punya rekening).
   let rekening = null;
-  if (modeEfektif === "REKENING") {
-    if (!cashAccountId) throw err("Pilih dulu uangnya masuk ke rekening mana");
+  if (modeEfektif === "REKENING" && !cashAccountId) throw err("Pilih dulu uangnya masuk ke rekening mana");
+  if (cashAccountId) {
     rekening = await tx.finCashAccount.findUnique({ where: { id: cashAccountId }, select: { id: true, name: true, accountId: true, active: true } });
     if (!rekening || !rekening.active) throw err("Rekening itu tidak ditemukan atau sudah tidak dipakai", 404);
   }
@@ -212,16 +219,23 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   const payment = await tx.payment.create({
     data: {
       orderId, amount: Math.round(Number(nominal)), method,
-      proofPhotoUrl: proofPhotoUrl || null,
+      proofPhotoUrl: bukti[0] || null,
+      proofPhotoUrls: bukti,
       cashAccountId: rekening?.id || null,
       // Yang mencatat = sales pemilik lead (dialah yang melapor lunas); finance
       // yang memverifikasi. Dua orang berbeda = kontrol yang berarti.
-      recordedById: order.customer?.assignedSalesId || verifierId,
+      recordedById: klaim?.createdById || order.customer?.assignedSalesId || verifierId,
       createdAt,
     },
   });
   await tx.paymentVerification.create({ data: { paymentId: payment.id, verifiedById: verifierId } });
-  await recomputeOrderPaymentStatus(tx, orderId);
+  const hasilStatus = await recomputeOrderPaymentStatus(tx, orderId, { paidAtSinkron: true }); // tanggal lunas final = tanggal Payment terverifikasi (paymentLedger.js)
+  if (hasilStatus?.paidAtDisinkron) {
+    await recordActivity(tx, {
+      entityType: ENTITY_TYPES.ORDER, entityId: orderId, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: verifierId,
+      metadata: { aksi: "paid_at_disinkron", sebab: "verifikasi_penerimaan", paymentId: payment.id, dari: hasilStatus.paidAtDisinkron.dari, ke: hasilStatus.paidAtDisinkron.ke, pindahBulan: hasilStatus.paidAtDisinkron.pindahBulan },
+    });
+  }
   let jurnalDilewati = false;
 
   if (modeEfektif === "REKENING") {
@@ -263,7 +277,7 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   await recordActivity(tx, {
     entityType: ENTITY_TYPES.ORDER, entityId: orderId, eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: verifierId,
     metadata: {
-      aksi: "verifikasi_penerimaan", mode: modeEfektif, ...(dialihkan && { modeDikirim: mode, dialihkan: "tanggal uang diterima sebelum saldo awal — tidak menambah saldo" }), orderNumber: order.orderNumber, amount: String(nominal),
+      aksi: klaim ? "verifikasi_klaim_lunas" : "verifikasi_penerimaan", ...(klaim && { klaimId: klaim.id }), mode: modeEfektif, ...(dialihkan && { modeDikirim: mode, dialihkan: "tanggal uang diterima sebelum saldo awal — tidak menambah saldo" }), orderNumber: order.orderNumber, amount: String(nominal),
       method, cashAccount: rekening?.name || null, paymentId: payment.id,
       ...(jurnalDilewati && { tanpaJurnal: "pendapatan order ini tidak pernah diakui di buku (pra-pembukuan)" }),
     },

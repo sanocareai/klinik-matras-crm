@@ -41,18 +41,35 @@ export function klausaCariKasbon(q) {
   });
 }
 
+/** WHERE daftar kasbon menurut filter layar (q, status, karyawan, from, to) — dipakai daftar DAN ringkasan filter supaya angkanya pasti sama. */
+export function whereKasbon({ q, status, karyawan, from, to } = {}) {
+  return {
+    ...(status && { status }),
+    ...(karyawan && { employeeName: { equals: karyawan, mode: "insensitive" } }),
+    ...((from || to) && { date: { ...(from && { gte: toBookDate(from) }), ...(to && { lte: toBookDate(to) }) } }),
+    AND: klausaCariKasbon(q),
+  };
+}
+
 /** Daftar kasbon menurut filter layar (q, status, karyawan, from, to). `take` membatasi jumlah baris; export memakai batas lebih besar. */
-export async function ambilDaftarKasbon(db, { q, status, karyawan, from, to } = {}, { take = 500 } = {}) {
-  const rows = await db.finKasbon.findMany({
-    where: {
-      ...(status && { status }),
-      ...(karyawan && { employeeName: { equals: karyawan, mode: "insensitive" } }),
-      ...((from || to) && { date: { ...(from && { gte: toBookDate(from) }), ...(to && { lte: toBookDate(to) }) } }),
-      AND: klausaCariKasbon(q),
-    },
+export async function ambilDaftarKasbon(db, filter = {}, { take = 500 } = {}) {
+  return db.finKasbon.findMany({
+    where: whereKasbon(filter),
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     take,
     include: kasbonInclude,
   });
-  return rows;
+}
+
+/**
+ * Ringkasan SEMUA kasbon yang cocok filter (bukan hanya baris yang dimuat): jumlah & nominal diberikan. Kasbon dibatalkan tidak dijumlahkan
+ * kecuali filter status memang meminta Dibatalkan.
+ */
+export async function ringkasFilterKasbon(db, filter = {}) {
+  const where = whereKasbon(filter);
+  const a = await db.finKasbon.aggregate({
+    where: filter.status ? where : { AND: [where, { status: { not: "DIBATALKAN" } }] },
+    _count: { _all: true }, _sum: { amount: true },
+  });
+  return { jumlah: a._count._all, nominal: Number(a._sum.amount || 0) };
 }

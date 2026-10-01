@@ -191,7 +191,9 @@ async function jurnalSebelumSaldoAwalResi(tx, { payment, alokasi, aktif, grup, t
  * SEBAGIAN yang genuinely berurutan (bukan balapan) tetap berjalan normal selama klien memakai `versi` terbaru (dikembalikan di setiap respons).
  * `versi` yang tidak dikirim (null/undefined) melewati pemeriksaan ini — kompatibel dengan pemanggil lama.
  */
-export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING", method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, versi = null, verifierId }) {
+export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING", method = "TRANSFER", cashAccountId = null, date = null, amount = null, proofPhotoUrl = null, proofPhotoUrls = null, versi = null, verifierId, klaim = null }) {
+  // `klaim` ({ id, createdById }) = pembayaran ini hasil verifikasi KLAIM berbukti (services/finance/klaimLunas.js): tidak butuh klaim Lunas lama
+  // (lunasDiklaimPada / per-order), dan pencatatnya = Sales pengaju. Semua pengaman lain (alokasi kanonis Σ = nominal, cutoff, rekening) tetap.
   await pastikanAktif(tx);
   if (!MODE_UANG_MASUK.includes(mode)) throw new ResiBayarError("Pilihan \"uangnya masuk ke mana\" tidak dikenali", 400, "MODE_TIDAK_VALID");
   if (!METODE_BAYAR.includes(method)) throw new ResiBayarError("Cara bayar tidak dikenali", 400, "METODE_TIDAK_VALID");
@@ -221,7 +223,7 @@ export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING",
   }
   const { anchor, aktif } = pastikanGrupLayak(grup, anak);
   const dibayar = await muatDibayar(tx, aktif);
-  if (!grup.lunasDiklaimPada && klaimPerOrder(aktif, dibayar, grup).length === 0) {
+  if (!klaim && !grup.lunasDiklaimPada && klaimPerOrder(aktif, dibayar, grup).length === 0) {
     throw new ResiBayarError("Resi ini tidak sedang diklaim Lunas (mungkin baru ditolak atau sudah diverifikasi). Muat ulang antrean.", 409, "TIDAK_ADA_KLAIM");
   }
   const hitung = hitungAlokasiResi({ anak: aktif, dibayar, tipe: TIPE_BAYAR.TAGIHAN, nominal: amount, grup });
@@ -242,8 +244,8 @@ export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING",
   const createdAt = new Date(Date.UTC(tanggal.getUTCFullYear(), tanggal.getUTCMonth(), tanggal.getUTCDate(), 5));
 
   const tulis = await tulisPembayaranResi(tx, {
-    grup, anchor, aktif, hitung, method, cashAccountId: rekening?.id ?? null, proofPhotoUrl,
-    recordedById: grup.lunasDiklaimOlehId || grup.customer?.assignedSalesId || verifierId, verifierId, createdAt,
+    grup, anchor, aktif, hitung, method, cashAccountId: rekening?.id ?? null, proofPhotoUrl, proofPhotoUrls,
+    recordedById: klaim?.createdById || grup.lunasDiklaimOlehId || grup.customer?.assignedSalesId || verifierId, verifierId, createdAt,
   });
   let jurnal;
   if (mode === "REKENING") {
@@ -266,7 +268,7 @@ export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING",
   await recordActivity(tx, {
     entityType: ENTITY_TYPES.ORDER, entityId: anchor.id, eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: verifierId,
     metadata: {
-      aksi: "verifikasi_penerimaan_resi", groupId: grup.id, mode, amount: String(hitung.nominal), method, cashAccount: rekening?.name ?? null,
+      aksi: klaim ? "verifikasi_klaim_lunas_resi" : "verifikasi_penerimaan_resi", ...(klaim && { klaimId: klaim.id }), groupId: grup.id, mode, amount: String(hitung.nominal), method, cashAccount: rekening?.name ?? null,
       paymentId: tulis.payment.id, child: hitung.tulis.length, lunasPenuh, ...(jurnal?.tanpaJurnal && { tanpaJurnal: "semua child pra-pembukuan" }),
       ...(jurnal?.dilewati?.length && { childTanpaJurnal: jurnal.dilewati }),
     },

@@ -959,16 +959,28 @@ financeRouter.post("/gaps/:id/retry", requirePermission(P.FINANCE_POST), async (
 
 financeRouter.get("/settings", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
-    const [settings, gate, cashAccounts] = await Promise.all([
+    const [settings, gate, riwayatKlaimGate, cashAccounts] = await Promise.all([
       getAllSettings(prisma),
       getVerificationGate(prisma),
+      // Riwayat audit sakelar Gerbang Klaim Lunas (5 terakhir): siapa, kapan, nilai sebelum/sesudah.
+      prisma.activityEvent.findMany({
+        where: { entityType: ENTITY_TYPES.FIN_SETTING, entityId: SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF, eventType: EVENT_TYPES.FINANCE_SETTING_CHANGED },
+        orderBy: { createdAt: "desc" }, take: 5, select: { actorId: true, createdAt: true, metadata: true },
+      }),
       prisma.finCashAccount.findMany({
         where: { active: true },
         select: { id: true, name: true, kind: true },
         orderBy: { name: "asc" },
       }),
     ]);
-    res.json({ settings, gate, cashAccounts, keys: SETTING_KEYS });
+    const aktor = riwayatKlaimGate.length
+      ? new Map((await prisma.user.findMany({ where: { id: { in: [...new Set(riwayatKlaimGate.map((r) => r.actorId).filter(Boolean))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]))
+      : new Map();
+    const klaimLunasGate = {
+      aktif: parseBool(settings[SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF]),
+      riwayat: riwayatKlaimGate.map((r) => ({ oleh: aktor.get(r.actorId) || "—", pada: r.createdAt, dari: r.metadata?.from ?? null, ke: r.metadata?.to ?? null })),
+    };
+    res.json({ settings, gate, cashAccounts, klaimLunasGate, keys: SETTING_KEYS });
   } catch (err) {
     handleFinanceError(err, res);
   }
@@ -984,6 +996,10 @@ financeRouter.patch("/settings", requirePermission(P.FINANCE_ADMIN), async (req,
     const hasil = await prisma.$transaction(async (tx) => {
       const sebelum = await getAllSettings(tx);
       for (const [key, value] of Object.entries(perubahan)) {
+        // Sakelar rollout Gerbang Klaim Lunas: hanya "true"/"false" (nilai lain = salah ketik yang diam-diam dianggap MATI).
+        if (key === SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF && !["true", "false"].includes(String(value))) {
+          throw Object.assign(new Error("Nilai Gerbang Klaim Lunas harus true atau false"), { statusCode: 400 });
+        }
         if (sebelum[key] === String(value)) continue;
 
         // Menyalakan gerbang verifikasi MENGUNCI tanggal mulainya ke SAAT

@@ -109,7 +109,7 @@ const DIVISIONS = {
           // 2026) — beda dari "Broadcast & Campaign" di atas (itu ke
           // PELANGGAN). adminOnly di level section ini sudah cukup, sales
           // tidak perlu (dan backend menolak) akses halaman ini.
-          { to: "/broadcast-sales", label: "Broadcast Sales", Icon: Send },
+          { to: "/broadcast-sales", label: "Broadcast Team", Icon: Send },
         ],
       },
       {

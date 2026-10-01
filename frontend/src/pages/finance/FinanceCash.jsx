@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2, History, Ban } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -40,6 +42,7 @@ const TAB = [
 ];
 
 export default function FinanceCash() {
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   const [tab, setTab] = useState("rekening");
   const [periode, setPeriode] = useState(periodeDefault);
   const [rekening, setRekening] = useState(null);
@@ -260,7 +263,7 @@ export default function FinanceCash() {
                   </THead>
                   <TBody>
                     {rekeningTampil.map((a) => (
-                      <TR key={a.id}>
+                      <TR key={a.id} {...klikBuka(() => setPanelRincian(specOtomatis(a)))}>
                         <TD sticky truncate className="font-medium">{a.name}</TD>
                         <TD><Badge variant="neutral">{a.kind}</Badge></TD>
                         <TD hideBelow="wide" truncate className="text-[12px] text-ink2">
@@ -329,7 +332,7 @@ export default function FinanceCash() {
                 </THead>
                 <TBody>
                   {transferTampil.map((t) => (
-                    <TR key={t.id}>
+                    <TR key={t.id} {...klikBuka(() => setPanelRincian(specOtomatis(t)))}>
                       <TD sticky className="font-mono text-[12px]">{t.transferNumber}</TD>
                       <TD className="whitespace-nowrap">{tanggalPendek(t.date)}</TD>
                       <TD truncate>{t.fromAccount?.name}</TD>
@@ -389,7 +392,7 @@ export default function FinanceCash() {
                 </THead>
                 <TBody>
                   {pemasukanTampil.map((i) => (
-                    <TR key={i.id}>
+                    <TR key={i.id} {...klikBuka(() => setPanelRincian(specOtomatis(i)))}>
                       <TD sticky className="font-mono text-[12px]">{i.incomeNumber}</TD>
                       <TD className="whitespace-nowrap">{tanggalPendek(i.date)}</TD>
                       <TD truncate>{i.description}</TD>
@@ -474,6 +477,7 @@ export default function FinanceCash() {
         akunPendapatan={akunPendapatan}
         onSubmit={(d) => aksi(() => api.createFinanceOtherIncome(d))}
       />
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }

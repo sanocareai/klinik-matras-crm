@@ -5,7 +5,7 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../../utils/wib.js";
 
 /** Kolom yang dibaca untuk daftar (layar memakai semuanya; export memilih yang perlu). */
 export const paymentSelect = {
-  id: true, amount: true, method: true, createdAt: true, proofPhotoUrl: true,
+  id: true, amount: true, method: true, createdAt: true, proofPhotoUrl: true, proofPhotoUrls: true,
   cancelledAt: true, cancelReason: true, orderId: true,
   referenceNumber: true, notes: true, internalNote: true, replacesPaymentId: true, replacedBy: { select: { id: true } },
   cashAccount: { select: { id: true, name: true } },

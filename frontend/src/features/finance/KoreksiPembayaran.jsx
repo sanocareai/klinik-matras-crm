@@ -9,6 +9,8 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import { PratinjauKoreksi, usePinStepUp, perluPin, lupakanStepUp, tampilNilai, LABEL_FIELD } from "@/features/finance/KoreksiAman.jsx";
+import { PanelDetail } from "@/features/finance/PanelDetail.jsx";
+import { specPembayaran } from "@/features/finance/detailSpecs.js";
 import { Pilihan, InputUang, formatUang, tanggalJam, tanggalPendek } from "@/features/finance/shared.jsx";
 
 // B3.7 — KOREKSI PEMBAYARAN MASUK TERVERIFIKASI (dialog UI). Semua aturan ditegakkan dan dihitung SERVER; komponen ini hanya menampilkan:
@@ -34,41 +36,20 @@ function Baris({ label, children }) {
 const tombolModal = "max-sm:min-h-11 max-sm:px-4";
 
 // ─── Lihat Detail ────────────────────────────────────────────────────────────────────────────────
+/** Detail pembayaran = PANEL SAMPING (sama dengan semua daftar Finance lain). Dibuka dari menu "Lihat Detail" maupun klik baris. */
 export function DetailPembayaranDialog({ p, onClose }) {
   const status = p.cancelledAt ? (p.replacedBy ? "Diganti versi baru" : "Dibatalkan") : p.terverifikasi ? "Sudah diverifikasi" : "Menunggu verifikasi";
-  return (
-    <Modal
-      open onOpenChange={(v) => !v && onClose()} title="Detail Pembayaran" description={`${formatUang(p.amount)} · ${tanggalJam(p.createdAt)}`}
-      className="w-[560px]" footer={<Button variant="neutral" onClick={onClose} className={tombolModal}>Tutup</Button>}
-    >
-      <div className="space-y-1.5">
-        <Baris label="Status"><Badge variant={p.cancelledAt ? "red" : p.terverifikasi ? "green" : "orange"}>{status}</Badge></Baris>
-        <Baris label="Order">{p.order?.orderNumber} · {p.order?.customer?.name}</Baris>
-        <Baris label="Jenis">{p.jenisPembayaran ? <Badge variant={p.jenisPembayaran === "PELUNASAN" ? "green" : "info"}>{LABEL_JENIS[p.jenisPembayaran]}</Badge> : null}</Baris>
-        <Baris label="Nominal">{formatUang(p.amount)}</Baris>
-        <Baris label="Metode">{LABEL_METODE[p.method] || p.method}</Baris>
-        <Baris label="Rekening penerima">{p.cashAccount?.name || "Rekening standar cara bayar"}</Baris>
-        <Baris label="Dibagi ke order">
-          {p.finAllocations?.length ? p.finAllocations.map((a) => <span key={a.id} className="block">{a.order?.orderNumber}: {formatUang(a.amount)}</span>) : null}
-        </Baris>
-        <Baris label="Dicatat oleh">{p.recordedBy?.name}</Baris>
-        <Baris label="Diverifikasi oleh">{p.verifications?.[0] ? `${p.verifications[0].verifiedBy?.name || "—"} · ${tanggalJam(p.verifications[0].createdAt)}` : null}</Baris>
-        <Baris label="Nomor referensi">{p.referenceNumber}</Baris>
-        <Baris label="Catatan">{p.notes}</Baris>
-        <Baris label="Keterangan internal">{p.internalNote}</Baris>
-        {p.cancelledAt && <Baris label="Alasan">{p.cancelReason}</Baris>}
-      </div>
-    </Modal>
-  );
+  const badge = <Badge variant={p.cancelledAt ? "red" : p.terverifikasi ? "green" : "orange"}>{status}</Badge>;
+  return <PanelDetail spec={specPembayaran(p, { badge })} onClose={onClose} />;
 }
 
-// ─── Edit Informasi ──────────────────────────────────────────────────────────────────────────────
 /**
  * Verifikasi dengan pilihan rekening & cara bayar (kasus Handry 29 Sep 2026: DP tanpa rekening lalu terverifikasi tanpa jurnal).
  * Rekening/cara bayar hanya bisa diubah SELAMA pembayaran belum berjurnal; server menolak kalau sudah (lalu pakai Koreksi Pembayaran)
  * dan menolak verifikasi bila uangnya belum bisa dibukukan (pesan Indonesia dari server ditampilkan apa adanya).
  */
-export function VerifikasiDialog({ p, onClose, onSaved }) {
+export function VerifikasiDialog({ p, cutoff, onClose, onSaved }) {
+  const lama = !!cutoff && tglWIB(p.createdAt) < cutoff; // uang diterima sebelum saldo awal: sudah tercakup di saldo bank, tidak menambah saldo
   const [akun, setAkun] = useState([]);
   const [f, setF] = useState({ cashAccountId: p.cashAccount?.id || "", method: p.method });
   const [galat, setGalat] = useState("");
@@ -94,12 +75,14 @@ export function VerifikasiDialog({ p, onClose, onSaved }) {
     >
       <div className="space-y-3">
         <p className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink2">
-          Pastikan uangnya benar-benar masuk, lalu pilih rekening penerimanya. Verifikasi memasukkan pembayaran ini ke buku besar (kalau belum) —
-          rekening dan cara bayar hanya bisa diubah di sini selama belum masuk buku. Setelah itu perubahan lewat Koreksi Pembayaran.
+          {lama
+            ? <>Uang ini diterima <strong>sebelum saldo awal ({cutoff})</strong>, jadi sudah tercakup di saldo bank dan <strong>tidak menambah saldo</strong>. Rekening di bawah hanya dicatat sebagai keterangan (boleh dikosongkan).</>
+            : <>Pastikan uangnya benar-benar masuk, lalu pilih rekening penerimanya. Verifikasi memasukkan pembayaran ini ke buku besar (kalau belum) —
+              rekening dan cara bayar hanya bisa diubah di sini selama belum masuk buku. Setelah itu perubahan lewat Koreksi Pembayaran.</>}
         </p>
         <Field label="Masuk ke rekening mana?">
           <Pilihan value={f.cashAccountId} onChange={(v) => setF((s) => ({ ...s, cashAccountId: v }))}>
-            <option value="">{p.cashAccount?.name ? p.cashAccount.name : "Rekening standar cara bayar"}</option>
+            <option value="">{p.cashAccount?.name ? p.cashAccount.name : (lama ? "Tidak dipilih (tidak menambah saldo)" : "Rekening standar cara bayar")}</option>
             {akun.filter((a) => a.id !== p.cashAccount?.id).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </Pilihan>
         </Field>

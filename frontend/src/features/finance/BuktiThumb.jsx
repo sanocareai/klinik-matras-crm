@@ -37,3 +37,25 @@ export function BuktiThumb({ url, onView, label = "Lihat bukti" }) {
     </LinkBukti>
   );
 }
+
+/** Daftar foto bukti sebuah pembayaran: foto lama (proofPhotoUrl) tetap terbaca bila proofPhotoUrls kosong. */
+export const daftarBukti = (p) => (p?.proofPhotoUrls?.length ? p.proofPhotoUrls : p?.proofPhotoUrl ? [p.proofPhotoUrl] : []);
+
+/**
+ * Bukti BANYAK foto di kolom tabel: maksimal dua thumbnail + "+N"; klik membuka semua foto (lewat onView(daftar)).
+ */
+export function BuktiBanyak({ urls = [], onView, label = "Lihat foto bukti" }) {
+  if (urls.length === 0) return <span className="text-ink3">—</span>;
+  const tampil = urls.slice(0, 2);
+  const sisa = urls.length - tampil.length;
+  return (
+    <span className="inline-flex items-center gap-1">
+      {tampil.map((u) => <BuktiThumb key={u} url={u} onView={onView ? () => onView(urls) : undefined} label={label} />)}
+      {sisa > 0 && (
+        <button type="button" onClick={onView ? () => onView(urls) : undefined} className="text-[11px] font-semibold text-accent hover:underline" aria-label={`${sisa} foto lainnya`}>
+          +{sisa}
+        </button>
+      )}
+    </span>
+  );
+}

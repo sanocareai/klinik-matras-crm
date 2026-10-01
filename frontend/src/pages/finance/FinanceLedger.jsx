@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { BookOpen } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -20,6 +22,7 @@ import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportEx
 // dicocokkan dengan dokumen apa pun.
 
 export default function FinanceLedger() {
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   const [periode, setPeriode] = useState(periodeDefault);
   const [accountId, setAccountId] = useState("");
   const [akun, setAkun] = useState([]);
@@ -200,7 +203,7 @@ export default function FinanceLedger() {
                   </THead>
                   <TBody>
                     {baris.map((b) => (
-                      <TR key={b.lineId} className={b.status === "REVERSED" ? "opacity-60" : undefined}>
+                      <TR key={b.lineId} className={b.status === "REVERSED" ? "opacity-60" : undefined} {...klikBuka(() => setPanelRincian(specOtomatis(b, { judul: b.nomor || b.entryNumber || "Baris jurnal" })))}>
                         <TD sticky className="whitespace-nowrap">{tanggalPendek(b.tanggal)}</TD>
                         <TD truncate className="font-mono text-[12px]">{b.entryNumber}</TD>
                         <TD className="min-w-0">
@@ -230,6 +233,7 @@ export default function FinanceLedger() {
           </Card>
         </>
       )}
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }

@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { api } from "@/api.js";
+import KlaimLunasDialog from "@/features/klaim/KlaimLunasDialog.jsx";
+import { STATUS_KLAIM_LABEL } from "@/features/klaim/klaimLunasLogic.js";
+import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 import { formatRupiah, PAYMENT_STATUS_LABELS } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 
@@ -33,9 +36,17 @@ function Angka({ label, value, tone }) {
   );
 }
 
-function KartuResi({ r, onBukaOrder, onKlaim }) {
+function KartuResi({ r, onBukaOrder, onKlaim, gateAktif, versiKlaim }) {
   const st = statusResi(r);
   const anchor = r.anak.find((a) => a.anchor);
+  // Klaim berbukti terkini (draft / menunggu Finance / diminta bukti / ditolak) untuk Resi ini — hanya saat sakelar gerbang Klaim Lunas NYALA.
+  const [klaimBaru, setKlaimBaru] = useState(null);
+  useEffect(() => {
+    if (!gateAktif) return undefined;
+    let batal = false;
+    api.getKlaimLunasResi(r.groupId).then((d) => { if (!batal) setKlaimBaru(d.klaim.find((k) => k.id === d.klaimAktifId) || d.klaim.find((k) => k.status === "REJECTED") || null); }).catch(() => { if (!batal) setKlaimBaru(null); });
+    return () => { batal = true; };
+  }, [r.groupId, gateAktif, versiKlaim]);
   return (
     <Card className="p-4" data-testid="kartu-resi">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -90,6 +101,17 @@ function KartuResi({ r, onBukaOrder, onKlaim }) {
             <Clock size={14} className="mt-0.5 shrink-0" />
             <span>Diklaim Lunas {tanggal(r.klaim.pada)}{r.klaim.olehNama ? ` oleh ${r.klaim.olehNama}` : ""}. Status order &amp; komisi berubah setelah Finance memverifikasi uangnya.</span>
           </p>
+        ) : gateAktif ? (
+          <div className="flex flex-col gap-2">
+            {klaimBaru && (
+              <p className={cn("rounded-btn px-3 py-2 text-[12.5px]", klaimBaru.status === "SUBMITTED" ? "bg-greenbg text-green" : klaimBaru.status === "DRAFT" ? "bg-inset text-ink2" : "bg-orangebg text-orange")} data-testid="status-klaim-resi">
+                <strong>{STATUS_KLAIM_LABEL[klaimBaru.status] || klaimBaru.status}</strong>{klaimBaru.reviewReason ? ` — ${klaimBaru.reviewReason}` : ""}
+              </p>
+            )}
+            <Button className="w-full max-sm:min-h-11 sm:w-auto" onClick={() => onKlaim(r)} data-testid="klaim-lunas-resi">
+              {!klaimBaru ? "Ajukan Klaim Lunas Resi" : klaimBaru.status === "SUBMITTED" ? "Lihat Klaim" : klaimBaru.status === "DRAFT" ? "Lengkapi & Ajukan Klaim" : "Perbaiki & Ajukan Ulang"} · {formatRupiah(r.sisa)}
+            </Button>
+          </div>
         ) : (
           <Button className="w-full max-sm:min-h-11 sm:w-auto" onClick={() => onKlaim(r)} data-testid="klaim-lunas-resi">
             Klaim Lunas Resi · {formatRupiah(r.sisa)}
@@ -167,6 +189,8 @@ export default function PembayaranResiPelanggan({ customerId, versi, onBukaOrder
   const [galat, setGalat] = useState(null);
   const [klaim, setKlaim] = useState(null);
   const [pesan, setPesan] = useState(null);
+  const gateAktif = useKlaimLunasAktif() === true;
+  const [versiKlaim, setVersiKlaim] = useState(0);
 
   const muat = useCallback(async () => {
     try {
@@ -205,11 +229,20 @@ export default function PembayaranResiPelanggan({ customerId, versi, onBukaOrder
           <button type="button" className="text-[12px] font-semibold" onClick={() => setPesan(null)}>Tutup</button>
         </p>
       )}
-      {resi.map((r) => <KartuResi key={r.groupId} r={r} onBukaOrder={onBukaOrder} onKlaim={setKlaim} />)}
-      <ModalKlaim
-        resi={klaim} onClose={() => setKlaim(null)}
-        onSelesai={async (teks) => { setKlaim(null); setPesan(teks); await muat(); onBerubah?.(); }}
-      />
+      {resi.map((r) => <KartuResi key={r.groupId} r={r} onBukaOrder={onBukaOrder} onKlaim={setKlaim} gateAktif={gateAktif} versiKlaim={versiKlaim} />)}
+      {gateAktif ? klaim && (
+        <KlaimLunasDialog
+          open resiGroupId={klaim.groupId}
+          order={{ id: klaim.anak.find((a) => a.anchor)?.orderId, orderNumber: `Resi ${klaim.anak.find((a) => a.anchor)?.orderNumber || ""}`.trim(), customerName: `${klaim.anak.length} order` }}
+          onClose={() => { setKlaim(null); setVersiKlaim((v) => v + 1); }}
+          onChanged={async () => { setVersiKlaim((v) => v + 1); await muat(); onBerubah?.(); }}
+        />
+      ) : (
+        <ModalKlaim
+          resi={klaim} onClose={() => setKlaim(null)}
+          onSelesai={async (teks) => { setKlaim(null); setPesan(teks); await muat(); onBerubah?.(); }}
+        />
+      )}
     </div>
   );
 }

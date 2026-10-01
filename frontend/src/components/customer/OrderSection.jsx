@@ -28,6 +28,9 @@ import {
   jenisProdukOptions, resolveVariantKey, UKURAN_VARIANT_KEY,
 } from "../../utils/format.js";
 import { isAdminUser } from "../../lib/roles.js";
+import KlaimLunasPanel from "../../features/klaim/KlaimLunasPanel.jsx";
+import { opsiStatusBayar } from "../../features/klaim/klaimLunasLogic.js";
+import { useKlaimLunasAktif } from "../../features/klaim/useKlaimLunasAktif.js";
 import UkuranCustomFields from "./UkuranCustomFields.jsx";
 import { isUkuranCustom, validasiUkuranCustom, formatUkuranKasur } from "../../utils/ukuranKasur.js";
 import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.jsx";
@@ -341,6 +344,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
   // routes/orders.js PATCH /:id soal ID Order & provisioning Unit yang
   // TIDAK ikut disesuaikan otomatis kalau field ini diubah.
   const isAdminEditor = canEditLunasOrder();
+  const klaimGateAktif = useKlaimLunasAktif() === true;
   const [category, setCategoryEdit]       = useState(order.category || "LAYANAN");
   const [productLine, setProductLineEdit] = useState(order.productLine || "");
   const [productType, setProductTypeEdit] = useState(order.productType || "");
@@ -809,7 +813,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
             <BadgeDropdown
               value={paymentStatus}
               onChange={setPaymentStatus}
-              options={PAYMENT_STATUSES.map((s) => ({ value: s, label: PAYMENT_STATUS_LABELS[s] || s }))}
+              options={opsiStatusBayar(PAYMENT_STATUSES, order.paymentStatus, isAdminEditor, klaimGateAktif).map((s) => ({ value: s, label: PAYMENT_STATUS_LABELS[s] || s }))}
               getChipStyle={(v) => PAYMENT_STATUS_BADGE[v] || PAYMENT_STATUS_BADGE.BELUM_BAYAR}
               ariaLabel="Ubah status pembayaran"
             />
@@ -848,6 +852,10 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         {order.statusLocked && order.statusOverrideNote && (
           <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>"{order.statusOverrideNote}"</p>
         )}
+
+        {/* Klaim Lunas (1 Okt 2026): Sales mengajukan klaim berbukti (bukan menandai Lunas sendiri); status berubah setelah Finance memverifikasi.
+            Tidak ditampilkan untuk child Resi Gabungan (status bayarnya lewat Klaim Lunas Resi). */}
+        {!statusBayarDiResi && <KlaimLunasPanel order={order} onChanged={onRefresh} className="mt-2" />}
 
         {/* Status Delivery — D-036 (30 Agustus 2026), komponen SAMA dengan
             yang dipakai Delivery Hub (JobDetailDrawer.jsx) — sales lihat

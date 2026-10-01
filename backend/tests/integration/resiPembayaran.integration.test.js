@@ -1,6 +1,8 @@
 // RESI GABUNGAN FASE 3A — pembayaran/DP Resi: SATU Payment anchor + FinPaymentAllocation ke child, jurnal per child, klaim Lunas level Resi,
 // antrean Finance satu Resi, dan jaminan invarian (tanpa uang/pendapatan ganda; order tunggal & groupId NULL identik; BACKFILL_BUNDLE tidak ikut).
 import "./setup/env.js";
+import "./setup/klaimTmpEnv.js"; // folder berkas Klaim Lunas ke folder sementara SEBELUM modul klaim dievaluasi
+import "./setup/paymentProofsTmpEnv.js"; // bukti Payment hasil verifikasi klaim juga ke folder sementara
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -16,7 +18,7 @@ import { createOrderForCustomer } from "../../src/services/orderCreation.js";
 import { paidForOrder, kontribusiPembayaranOrders } from "../../src/services/finance/allocation.js";
 import { recomputeOrderPaymentStatus } from "../../src/services/paymentLedger.js";
 import { bagiProporsional } from "../../src/services/resi.js";
-import { hitungAlokasiResi, validasiAlokasiResi, ResiBayarError } from "../../src/services/resiPembayaran.js";
+import { hitungAlokasiResi, validasiAlokasiResi, ResiBayarError, klaimLunasResi } from "../../src/services/resiPembayaran.js";
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -35,11 +37,14 @@ async function dunia({ pembayaran = true, resiInput = true } = {}) {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
   const bankAkun = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.BANK } });
   const bank = await testPrisma.finCashAccount.create({ data: { name: "SANOBANK Uji", kind: "BANK", accountId: bankAkun.id } });
-  const sales = await createTestUser({ roles: ["SALES"] });
+  // Klien `s` memegang SALES + FINANCE: sejak 1 Okt 2026 Payment langsung hanya untuk ADMIN/PAYMENT_WRITE, sedangkan file ini menguji MEKANIKA pembayaran Resi
+  // (alokasi, jurnal, klaim lama). Aturan "Sales murni tidak bisa" diuji di klaimLunas.integration.test.js.
+  const sales = await createTestUser({ roles: ["SALES", "FINANCE"] });
   const admin = await createTestUser({ roles: ["FINANCE"] }); // FINANCE memegang payment:read/write
   const customer = await testPrisma.customer.create({ data: { name: "Ibu Resi", assignedSalesId: sales.user.id } });
   if (resiInput) await setSetting(testPrisma, SETTING_KEYS.RESI_INPUT_AKTIF, "true");
   if (pembayaran) await setSetting(testPrisma, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF, "true");
+  await setSetting(testPrisma, SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF, "true"); // sakelar rollout gerbang Klaim Lunas (default MATI di produksi); tes ini menguji penegakan penuh
   const s = makeClient(server.baseUrl, sales.token);
   const a = makeClient(server.baseUrl, admin.token);
   const r = await s.post("/api/resi", {
@@ -54,6 +59,11 @@ const ambilAnak = (groupId) => testPrisma.order.findMany({ where: { groupId }, o
 const semuaPayment = (anak) => testPrisma.payment.findMany({ where: { orderId: { in: anak } }, include: { finAllocations: true }, orderBy: { createdAt: "asc" } });
 const jurnalBayar = () => testPrisma.finJournalEntry.findMany({ where: { source: "PEMBAYARAN_ORDER" }, include: { lines: true }, orderBy: { createdAt: "asc" } });
 const angka = (d) => Number(d);
+// Klaim Lunas Resi LAMA (lunasDiklaimPada): endpoint HTTP ditutup (409 KLAIM_RESI_WAJIB_BERBUKTI); disiapkan lewat service seperti data historis yang sudah ada.
+const klaimLama = async (w, userId = w.sales.user.id) => {
+  try { return { status: 201, body: await klaimLunasResi(testPrisma, { groupId: w.groupId, userId }) }; }
+  catch (e) { if (e instanceof ResiBayarError) return { status: e.statusCode, body: { error: e.message, code: e.code } }; throw e; }
+};
 const bayarResi = (w, body, headers = kunci()) => w.s.post(`/api/resi/${w.groupId}/pembayaran`, { method: "TRANSFER", cashAccountId: w.bank.id, ...body }, headers);
 
 async function akunSistem() {
@@ -96,7 +106,7 @@ test("Flag RESI_PEMBAYARAN_AKTIF default MATI (server-authoritative): semua endp
   for (const r of [
     await w.s.get(`/api/resi/${w.groupId}/pembayaran/pratinjau`),
     await bayarResi(w, { tipe: "DP" }),
-    await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci()),
+    await klaimLama(w),
     await w.a.get(`/api/finance/penerimaan/resi/${w.groupId}/pratinjau`),
     await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id }, kunci()),
     await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/tolak`, { reason: "x" }, kunci()),
@@ -323,7 +333,7 @@ test("Invarian alokasi (validasiAlokasiResi) menolak: child beda group/customer,
 
 test("Klaim Lunas SEKALI di level Resi → TIDAK mengubah status/paidAt child; SATU antrean Finance dengan rincian child; verifikasi membuat 1 Payment + alokasi + jurnal per child lalu status+paidAt dari ledger", async () => {
   const w = await dunia();
-  const klaim = await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci());
+  const klaim = await klaimLama(w);
   assert.equal(klaim.status, 201, JSON.stringify(klaim.body));
   assert.equal(klaim.body.sisa, TOTAL);
   assert.equal(klaim.body.anak.length, 3);
@@ -332,7 +342,7 @@ test("Klaim Lunas SEKALI di level Resi → TIDAK mengubah status/paidAt child; S
   assert.ok((await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } })).lunasDiklaimPada, "klaim tersimpan di grup");
   assert.equal(await testPrisma.payment.count(), 0, "klaim TIDAK membuat Payment");
   assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "PEMBAYARAN_ORDER" } }), 0, "klaim tidak menjurnal");
-  const kedua = await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci());
+  const kedua = await klaimLama(w);
   assert.equal(kedua.status, 409); assert.equal(kedua.body.code, "KLAIM_SUDAH_ADA");
 
   const q = await w.a.get("/api/finance/penerimaan/lunas-belum-dicatat");
@@ -381,7 +391,7 @@ test("Verifikasi Resi setelah DP: tanpa klaim ditolak; klaim tidak mengubah stat
   assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "DP"));
   const belum = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id }, kunci());
   assert.equal(belum.status, 409); assert.equal(belum.body.code, "TIDAK_ADA_KLAIM");
-  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  assert.equal((await klaimLama(w)).status, 201);
   assert.ok((await ambilAnak(w.groupId)).every((o) => o.paymentStatus === "DP" && o.paidAt === null), "klaim tidak mengubah status DP");
   // minta bukti → penanda di antrean
   const bukti = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/minta-bukti`, { catatan: "mohon foto transfer" });
@@ -401,7 +411,7 @@ test("Verifikasi Resi setelah DP: tanpa klaim ditolak; klaim tidak mengubah stat
   const tolak2 = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/tolak`, { reason: "lagi" });
   assert.equal(tolak2.status, 409); assert.equal(tolak2.body.code, "TIDAK_ADA_KLAIM");
   // klaim ulang → verifikasi SEBAGIAN (klaim tetap) → verifikasi sisa (klaim lepas)
-  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  assert.equal((await klaimLama(w)).status, 201);
   const sebagian = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id, amount: 100_000 }, kunci());
   assert.equal(sebagian.status, 201, JSON.stringify(sebagian.body));
   assert.equal(sebagian.body.klaimDilepas, false);
@@ -443,11 +453,10 @@ test("Replay Idempotency-Key SAMA (isi sama) memutar ulang respons pertama tanpa
   const c = await bayarResi(w, { tipe: "TAGIHAN" }, h);
   assert.equal(c.status, 422);
   assert.deepEqual(await total(), sebelum);
-  // klaim Lunas juga idempoten
-  const k = kunci();
-  const k1 = await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, k);
-  const k2 = await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, k);
-  assert.equal(k1.status, 201); assert.equal(k2.status, 201); assert.equal(k2.headers.get("idempotent-replayed"), "true");
+  // klaim Lunas LAMA (service): klaim kedua atas Resi yang sama ditolak 409 (satu klaim per Resi); klaim berbukti yang baru idempoten di klaimLunas tests
+  const k1 = await klaimLama(w);
+  const k2 = await klaimLama(w);
+  assert.equal(k1.status, 201); assert.equal(k2.status, 409);
 });
 
 test("Concurrency/double-click: request paralel dengan kunci SAMA → satu eksekusi; kunci BERBEDA pada pelunasan penuh → tepat satu berhasil, sisanya 409; tidak ada over-alokasi", async () => {
@@ -539,7 +548,7 @@ test("Group source BACKFILL_BUNDLE TIDAK masuk alur pembayaran Resi (409) dan ch
   for (const r of [
     await w.s.get(`/api/resi/${w.groupId}/pembayaran/pratinjau`),
     await bayarResi(w, { tipe: "DP" }),
-    await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci()),
+    await klaimLama(w),
   ]) { assert.equal(r.status, 409, JSON.stringify(r.body)); assert.equal(r.body.code, "GRUP_BACKFILL"); }
   // antrean & verifikasi per-order legacy tetap berlaku untuk child
   await testPrisma.order.update({ where: { id: w.anak[1] }, data: { paymentStatus: "LUNAS", paidAt: new Date() } });
@@ -571,8 +580,8 @@ test("Order tunggal / groupId NULL IDENTIK dengan perilaku lama: hasil skenario 
     await testPrisma.order.update({ where: { id: o.id }, data: { value: 1_000_000 } });
     const dp = await w.s.post(`/api/orders/${o.id}/payments`, { amount: 300_000, method: "TRANSFER", cashAccountId: w.bank.id });
     assert.equal(dp.status, 201, JSON.stringify(dp.body));
-    const patch = await w.s.patch(`/api/orders/${o.id}`, { paymentStatus: "LUNAS" });
-    assert.equal(patch.status, 200, JSON.stringify(patch.body));
+    // Klaim Lunas LAMA disiapkan langsung di DB (meniru klaim yang dibuat sebelum gerbang Klaim Lunas 1 Okt 2026): Sales tidak lagi bisa menandai LUNAS lewat dropdown.
+    await testPrisma.order.update({ where: { id: o.id }, data: { paymentStatus: "LUNAS", paidAt: new Date() } });
     const q = await w.a.get("/api/finance/penerimaan/lunas-belum-dicatat");
     const baris = q.body.items.find((i) => i.orderId === o.id);
     assert.ok(baris, "order tunggal selalu tampil per order di antrean lama");
@@ -625,7 +634,7 @@ test("Audit #2: koreksi alokasi manual atas Payment Resi ditolak (409 ALOKASI_RE
 
 test("Audit #3: Sales tidak bisa melunasi diam-diam Resi yang sedang diklaim Lunas (409 KLAIM_LUNAS_AKTIF); Resi tetap di antrean Finance", async () => {
   const w = await dunia();
-  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  assert.equal((await klaimLama(w)).status, 201);
   const b = await bayarResi(w, { tipe: "TAGIHAN" });
   assert.equal(b.status, 409, JSON.stringify(b.body));
   assert.equal(b.body.code, "KLAIM_LUNAS_AKTIF");
@@ -676,7 +685,8 @@ test("Tagihan kanonis: Ongkir Tambahan dihitung TEPAT sekali (anchor); status CR
 
 test("Klaim Lunas per order LAMA (dropdown sebelum flag aktif) pada child Resi: dikunci saat flag ON, tampil di antrean Resi, tolak memulihkan status dari ledger tanpa menyentuh child lain", async () => {
   const w = await dunia({ pembayaran: false });
-  assert.equal((await w.s.patch(`/api/orders/${w.anak[1]}`, { paymentStatus: "LUNAS" })).status, 200, "flag OFF: dropdown lama berjalan");
+  // Klaim Lunas LAMA disiapkan langsung di DB (meniru klaim yang dibuat sebelum gerbang Klaim Lunas 1 Okt 2026): Sales tidak lagi bisa menandai LUNAS lewat dropdown.
+  await testPrisma.order.update({ where: { id: w.anak[1] }, data: { paymentStatus: "LUNAS", paidAt: new Date() } });
   await setSetting(testPrisma, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF, "true");
   const kunciDropdown = await w.s.patch(`/api/orders/${w.anak[2]}`, { paymentStatus: "LUNAS" });
   assert.equal(kunciDropdown.status, 409, JSON.stringify(kunciDropdown.body)); assert.equal(kunciDropdown.body.code, "ANAK_RESI");
@@ -737,7 +747,7 @@ test("Urutan kunci kanonis: verifikasi/tolak Payment lama, pembayaran Resi, klai
       w.a.post(`/api/finance/pembayaran/${dp2.body.paymentId}/tolak`, { reason: "uji paralel" }),
       bayarResi(w, { tipe: "TAGIHAN", nominal: 150_000 }),
       bayarResi(w, { tipe: "TAGIHAN", nominal: 50_000 }),
-      w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci()),
+      klaimLama(w),
       adm.patch(`/api/orders/${w.anak[1]}`, { notes: "{}" }),
       adm.post(`/api/orders/${w.anak[2]}/cancel`, { reason: "uji paralel" }),
     ]);
@@ -763,7 +773,7 @@ test("Cancel-vs-verify: pembatalan child paralel dengan verifikasi Resi — sala
   const hasilAkhir = new Set();
   for (let putaran = 0; putaran < 4; putaran++) {
     const w = await dunia();
-    assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+    assert.equal((await klaimLama(w)).status, 201);
     const adm = makeClient(server.baseUrl, (await createTestUser({ roles: ["ADMIN"] })).token);
     const [ver, batal] = await Promise.all([
       w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id }, kunci()),
@@ -793,7 +803,7 @@ test("Cancel-vs-verify: pembatalan child paralel dengan verifikasi Resi — sala
 
 test("Audit #4: anchor Resi dengan klaim Lunas MENUNGGU tidak bisa dibatalkan (409) sampai Finance menolak/verifikasi klaimnya; child non-anchor tetap bisa dibatalkan seperti biasa; klaim per order lama juga memblokir", async () => {
   const w = await dunia();
-  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  assert.equal((await klaimLama(w)).status, 201);
   const patchAnchor = await w.s.patch(`/api/orders/${w.anchorId}`, { status: "CANCELLED" });
   assert.equal(patchAnchor.status, 409, JSON.stringify(patchAnchor.body));
   assert.match(patchAnchor.body.error, /klaim Lunas Resi/);
@@ -810,7 +820,7 @@ test("Audit #4: anchor Resi dengan klaim Lunas MENUNGGU tidak bisa dibatalkan (4
   // klaim PER ORDER lama (flag OFF lalu ON) juga memblokir pembatalan anchor sampai ditolak
   await truncateAll();
   const w2 = await dunia({ pembayaran: false });
-  assert.equal((await w2.s.patch(`/api/orders/${w2.anchorId}`, { paymentStatus: "LUNAS" })).status, 200);
+  await testPrisma.order.update({ where: { id: w2.anchorId }, data: { paymentStatus: "LUNAS", paidAt: new Date() } }); // klaim lama (lihat catatan di atas)
   await setSetting(testPrisma, SETTING_KEYS.RESI_PEMBAYARAN_AKTIF, "true");
   const tolakDulu = await w2.s.post(`/api/orders/${w2.anchorId}/cancel`, { reason: "uji" });
   assert.equal(tolakDulu.status, 409, JSON.stringify(tolakDulu.body));
@@ -827,7 +837,7 @@ test("Metode & mode pembayaran: CASH/TRANSFER/QRIS/CARD diterima di catat & veri
   }
   const asing = await bayarResi(w, { tipe: "DP", nominal: 10_000, method: "GOPAY" });
   assert.equal(asing.status, 400); assert.equal(asing.body.code, "METODE_TIDAK_VALID");
-  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  assert.equal((await klaimLama(w)).status, 201);
   const modeAsing = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "LAIN" }, kunci());
   assert.equal(modeAsing.status, 400); assert.equal(modeAsing.body.code, "MODE_TIDAK_VALID");
   const metodeAsing = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", method: "GOPAY", cashAccountId: w.bank.id }, kunci());
@@ -848,7 +858,7 @@ test("Metode & mode pembayaran: CASH/TRANSFER/QRIS/CARD diterima di catat & veri
 
 test("SEBELUM_SALDO_AWAL: diblokir untuk Resi BARU yang dibuat pada/setelah cutoff saldo awal; tetap berfungsi (Dr Laba Ditahan, Cr per child, tanpa kas) untuk Resi historis SEBELUM cutoff", async () => {
   const w = await dunia();
-  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  assert.equal((await klaimLama(w)).status, 201);
   // Resi ini dibuat "hari ini" (jauh setelah cutoff 18 Sep 2026) — SEBELUM_SALDO_AWAL wajib ditolak, apa pun tanggal `date` yang dikirim.
   const ditolak = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "SEBELUM_SALDO_AWAL", method: "TRANSFER", date: "2026-09-10" }, kunci());
   assert.equal(ditolak.status, 409, JSON.stringify(ditolak.body));
@@ -906,7 +916,7 @@ test("POST /orders/:id/payments generik: ditolak (409 ANAK_RESI_WAJIB_BAYAR_LEWA
 
 test("Verifikasi Resi exactly-once: dua request paralel dengan Idempotency-Key BERBEDA (versi SAMA) — tepat satu Payment/jurnal, yang kalah 409 VERSI_BERUBAH tanpa alokasi/jurnal/paidAt tambahan; sequential dengan versi baru tetap berjalan", async () => {
   const w = await dunia();
-  assert.equal((await w.s.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  assert.equal((await klaimLama(w)).status, 201);
   const pra = await w.a.get(`/api/finance/penerimaan/resi/${w.groupId}/pratinjau`);
   assert.equal(pra.status, 200);
   const versi = pra.body.versi;
@@ -938,7 +948,7 @@ test("Verifikasi Resi exactly-once: dua request paralel dengan Idempotency-Key B
   await truncateAll();
   const w2 = await dunia();
   assert.equal((await bayarResi(w2, { tipe: "DP" })).status, 201);
-  assert.equal((await w2.s.post(`/api/resi/${w2.groupId}/klaim-lunas`, {}, kunci())).status, 201);
+  assert.equal((await klaimLama(w2)).status, 201);
   const v1 = await w2.a.post(`/api/finance/penerimaan/resi/${w2.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w2.bank.id, amount: 60_000 }, kunci());
   assert.equal(v1.status, 201, JSON.stringify(v1.body));
   assert.ok(v1.body.versi);
@@ -960,4 +970,152 @@ test("Contoh angka 3 child (untuk laporan): DP → sisa → jurnal per child", a
   if (process.env.RESI_CONTOH) console.log(JSON.stringify({ tagihan: TAGIHAN, total: TOTAL, dpTarget: (await ambilAnak(w.groupId)).map((o) => o.dpTarget), dp: dp.body.alokasi.map((x) => x.jumlah), pelunasan: pel.body.alokasi.map((x) => x.jumlah), jurnal: ringkas }, null, 1));
   assert.equal(jur.length, 2);
   t.diagnostic("contoh angka tercetak bila RESI_CONTOH=1");
+});
+
+
+// ═══ KLAIM LUNAS RESI BERBUKTI (1 Okt 2026) ═══════════════════════════════════════════════════════════════════════════
+const PNG_R = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("bukti-resi-".repeat(12))]);
+const hariIniR = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+async function unggahR(token, claimId, isi = PNG_R, nama = "bukti.png") {
+  const fd = new FormData();
+  fd.append("berkas", new Blob([isi], { type: "image/png" }), nama);
+  const res = await fetch(`${server.baseUrl}/api/klaim-lunas/${claimId}/bukti`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd });
+  let body = null; try { body = await res.json(); } catch { /* kosong */ }
+  return { status: res.status, body };
+}
+/** Sales MURNI (tanpa FINANCE): hanya boleh mengajukan klaim. */
+async function salesMurni(w) {
+  const u = await createTestUser({ roles: ["SALES"] });
+  await testPrisma.customer.update({ where: { id: w.customer.id }, data: { assignedSalesId: u.user.id } });
+  return { u, c: makeClient(server.baseUrl, u.token) };
+}
+const LENGKAP_R = (w, extra = {}) => ({ paymentDate: hariIniR(), amount: DP, method: "TRANSFER", cashAccountId: w.bank.id, note: "Transfer DP 30% Resi, dicek di mutasi BCA", ...extra });
+async function klaimResiSiap(w, sm, extra = {}) {
+  const d = await sm.c.post(`/api/klaim-lunas/resi/${w.groupId}`, LENGKAP_R(w, extra));
+  assert.equal(d.status, 201, JSON.stringify(d.body));
+  const id = d.body.klaim.id;
+  assert.equal((await unggahR(sm.u.token, id)).status, 201);
+  return id;
+}
+const fotoUang = async () => ({ pay: await testPrisma.payment.count(), alok: await testPrisma.finPaymentAllocation.count(), jurnal: await testPrisma.finJournalEntry.count() });
+
+test("Sales murni: POST pembayaran Resi langsung & klaim Lunas Resi lama DITOLAK 409 (pesan Indonesia yang jelas); tidak ada Payment/alokasi/klaim tertulis", async () => {
+  const w = await dunia();
+  const sm = await salesMurni(w);
+  const sebelum = await fotoUang();
+  const bayar = await sm.c.post(`/api/resi/${w.groupId}/pembayaran`, { method: "TRANSFER", cashAccountId: w.bank.id, tipe: "DP" }, kunci());
+  assert.equal(bayar.status, 409, JSON.stringify(bayar.body));
+  assert.equal(bayar.body.code, "PEMBAYARAN_SALES_LEWAT_KLAIM");
+  assert.match(bayar.body.error, /Klaim Lunas Resi/);
+  const lama = await sm.c.post(`/api/resi/${w.groupId}/klaim-lunas`, {}, kunci());
+  assert.equal(lama.status, 409, JSON.stringify(lama.body));
+  assert.equal(lama.body.code, "KLAIM_RESI_WAJIB_BERBUKTI");
+  assert.deepEqual(await fotoUang(), sebelum);
+  assert.equal((await testPrisma.orderGroup.findUnique({ where: { id: w.groupId } })).lunasDiklaimPada, null);
+  // pemegang PAYMENT_WRITE (Finance) tetap bisa mencatat langsung
+  assert.equal((await w.s.post(`/api/resi/${w.groupId}/pembayaran`, { method: "TRANSFER", cashAccountId: w.bank.id, tipe: "DP" }, kunci())).status, 201);
+});
+
+test("Klaim Resi: wajib tanggal/nominal/metode/catatan/rekening(Transfer)/bukti — server menolak walau UI dilewati; draft boleh tanpa bukti; pengajuan TIDAK mengubah Payment/status child/paidAt/jurnal", async () => {
+  const w = await dunia();
+  const sm = await salesMurni(w);
+  const d = await sm.c.post(`/api/klaim-lunas/resi/${w.groupId}`, { amount: DP });
+  assert.equal(d.status, 201, JSON.stringify(d.body));
+  const id = d.body.klaim.id;
+  assert.equal(d.body.klaim.resi, true);
+  const a0 = await sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {});
+  assert.equal(a0.status, 422);
+  assert.deepEqual(a0.body.kekurangan.map((k) => k.field).sort(), ["evidence", "method", "note", "paymentDate"]);
+  await sm.c.patch(`/api/klaim-lunas/${id}`, { paymentDate: hariIniR(), method: "TRANSFER", note: "  " });
+  assert.deepEqual((await sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {})).body.kekurangan.map((k) => k.field).sort(), ["cashAccountId", "evidence", "note"]);
+  await sm.c.patch(`/api/klaim-lunas/${id}`, { note: "Transfer DP Resi", cashAccountId: w.bank.id });
+  assert.deepEqual((await sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {})).body.kekurangan.map((k) => k.field), ["evidence"]);
+  assert.equal((await unggahR(sm.u.token, id)).status, 201);
+
+  const sebelum = await fotoUang();
+  const anakSebelum = await ambilAnak(w.groupId);
+  const [a1, a2] = await Promise.all([sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {}), sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {})]);
+  assert.ok([a1.status, a2.status].every((x) => x === 200 || x === 201), `${a1.status}/${a2.status}`);
+  assert.equal((await testPrisma.orderPaymentClaim.findUnique({ where: { id } })).submitCount, 1, "double-click: satu pengajuan");
+  assert.deepEqual(await fotoUang(), sebelum, "tidak ada Payment/alokasi/jurnal baru");
+  assert.deepEqual(await ambilAnak(w.groupId), anakSebelum, "status child & paidAt tidak berubah");
+});
+
+test("Klaim Resi: nominal melebihi sisa Resi ditolak 422; Sales murni tidak bisa memakai endpoint Finance; klaim order biasa untuk child Resi ditolak", async () => {
+  const w = await dunia();
+  const sm = await salesMurni(w);
+  const id = await klaimResiSiap(w, sm, { amount: TOTAL + 1 });
+  const a = await sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {});
+  assert.equal(a.status, 422);
+  assert.equal(a.body.code, "NOMINAL_MELEBIHI_SISA");
+  assert.equal((await sm.c.post(`/api/finance/penerimaan/klaim-lunas/${id}/verifikasi`, {})).status, 403);
+  const anak = await sm.c.post(`/api/klaim-lunas/order/${w.anak[1]}`, {});
+  assert.equal(anak.status, 409, "child Resi tidak bisa diklaim per order");
+  assert.equal(anak.body.code, "ANAK_RESI_WAJIB_BAYAR_LEWAT_RESI");
+});
+
+test("Finance verifikasi klaim Resi (sebagian): SATU Payment di anchor, alokasi dari helper kanonis Σ = nominal, bukti klaim = bukti Payment, status child DP (bukan LUNAS)", async () => {
+  const w = await dunia();
+  const sm = await salesMurni(w);
+  const id = await klaimResiSiap(w, sm, { amount: DP });
+  await sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {});
+  const antre = await w.a.get("/api/finance/penerimaan/klaim-lunas");
+  assert.equal(antre.status, 200);
+  assert.equal(antre.body.items[0].resi, true);
+  assert.equal(antre.body.items[0].resiInfo.anak.length, 3);
+
+  const [v1, v2] = await Promise.all([
+    w.a.post(`/api/finance/penerimaan/klaim-lunas/${id}/verifikasi`, {}),
+    w.a.post(`/api/finance/penerimaan/klaim-lunas/${id}/verifikasi`, {}),
+  ]);
+  assert.equal([v1, v2].filter((r) => r.status === 201).length, 1, `tepat satu sukses: ${v1.status}/${v2.status} ${JSON.stringify(v1.body)} ${JSON.stringify(v2.body)}`);
+  const payments = await semuaPayment(w.anak);
+  assert.equal(payments.length, 1, "tepat satu Payment");
+  const p = payments[0];
+  assert.equal(p.orderId, w.anchorId);
+  assert.equal(p.amount, DP);
+  assert.equal(p.recordedById, sm.u.user.id, "pencatat = Sales pengaju");
+  assert.equal(p.proofPhotoUrls.length, 1);
+  assert.match(p.proofPhotoUrls[0], /^\/media\/payment-proofs\/klaim-/);
+  assert.equal(p.finAllocations.reduce((x, a) => x + Number(a.amount), 0), DP, "Σ alokasi = nominal");
+  assert.ok(p.finAllocations.length >= 2);
+  const anak = await ambilAnak(w.groupId);
+  assert.ok(anak.every((o) => o.paymentStatus === "DP"), "DP 30% ≠ LUNAS");
+  assert.ok(anak.every((o) => o.paidAt === null));
+  const k = await testPrisma.orderPaymentClaim.findUnique({ where: { id } });
+  assert.equal(k.status, "VERIFIED");
+  assert.equal(k.paymentId, p.id);
+  assert.equal((await w.a.post(`/api/finance/penerimaan/klaim-lunas/${id}/verifikasi`, {})).status, 409);
+});
+
+test("Finance verifikasi klaim Resi sebesar sisa penuh: semua child LUNAS dari ledger; Σ alokasi = nominal = Total Resi", async () => {
+  const w = await dunia();
+  const sm = await salesMurni(w);
+  const id = await klaimResiSiap(w, sm, { amount: TOTAL });
+  await sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {});
+  const v = await w.a.post(`/api/finance/penerimaan/klaim-lunas/${id}/verifikasi`, {});
+  assert.equal(v.status, 201, JSON.stringify(v.body));
+  const [p] = await semuaPayment(w.anak);
+  assert.equal(p.amount, TOTAL);
+  assert.equal(p.finAllocations.reduce((x, a) => x + Number(a.amount), 0), TOTAL);
+  const anak = await ambilAnak(w.groupId);
+  assert.ok(anak.every((o) => o.paymentStatus === "LUNAS" && o.paidAt), "LUNAS dihasilkan server dari ledger");
+});
+
+test("Klaim Resi: Minta Bukti & Tolak wajib alasan dan diaudit; Sales melengkapi lalu mengajukan ulang; tidak menyentuh keuangan", async () => {
+  const w = await dunia();
+  const sm = await salesMurni(w);
+  const id = await klaimResiSiap(w, sm);
+  await sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {});
+  assert.equal((await w.a.post(`/api/finance/penerimaan/klaim-lunas/${id}/minta-bukti`, {})).status, 400);
+  assert.equal((await w.a.post(`/api/finance/penerimaan/klaim-lunas/${id}/tolak`, { alasan: " " })).status, 400);
+  const sebelum = await fotoUang();
+  assert.equal((await w.a.post(`/api/finance/penerimaan/klaim-lunas/${id}/minta-bukti`, { alasan: "Kirim mutasi rekening" })).status, 201);
+  assert.equal((await unggahR(sm.u.token, id, Buffer.concat([PNG_R, Buffer.from("dua")]))).status, 201);
+  assert.equal((await sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {})).status, 201);
+  assert.equal((await w.a.post(`/api/finance/penerimaan/klaim-lunas/${id}/tolak`, { alasan: "Uang tidak ditemukan" })).status, 200);
+  assert.equal((await sm.c.post(`/api/klaim-lunas/${id}/ajukan`, {})).status, 201, "resubmit setelah ditolak");
+  assert.deepEqual(await fotoUang(), sebelum);
+  const aksi = (await testPrisma.activityEvent.findMany({ where: { entityId: w.anchorId, eventType: "KLAIM_LUNAS" } })).map((e) => e.metadata?.aksi);
+  for (const a of ["diajukan", "bukti_diminta", "diajukan_ulang", "ditolak"]) assert.ok(aksi.includes(a), a);
 });

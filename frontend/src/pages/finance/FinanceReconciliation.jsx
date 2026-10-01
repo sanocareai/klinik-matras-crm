@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { useSearchParams } from "react-router-dom";
 import { Plus, Link2, Unlink, EyeOff, CheckCircle2, Scale, AlertTriangle, Check, X } from "lucide-react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card.jsx";
@@ -52,6 +54,7 @@ function teksCutoff(c) {
 // jujur manual — orang akan berhenti memeriksa.
 
 export default function FinanceReconciliation() {
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   const [searchParams] = useSearchParams();
   // Halaman dibuka di dalam sistem tab — sebagian tab tidak meneruskan search string ke router, jadi window.location jadi cadangan.
   const periodeDariUrl = searchParams.get("periode") || new URLSearchParams(window.location.search).get("periode");
@@ -410,7 +413,7 @@ export default function FinanceReconciliation() {
                   </THead>
                   <TBody>
                     {barisTampil.map((l) => (
-                      <TR key={l.id}>
+                      <TR key={l.id} {...klikBuka(() => setPanelRincian(specOtomatis(l, { judul: "Mutasi bank" })))}>
                         <TD sticky className="whitespace-nowrap">{tanggalPendek(l.date)}</TD>
                         <TD truncate title={l.description}>{l.description}</TD>
                         <TD hideBelow="wide" truncate className="text-[12px] text-ink2">{l.reference || "—"}</TD>
@@ -477,6 +480,7 @@ export default function FinanceReconciliation() {
         onClose={() => setCocokkan(null)}
         onSubmit={(journalLineId) => aksi(() => api.matchFinanceBankLine(cocokkan.id, journalLineId))}
       />
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }
@@ -620,7 +624,7 @@ function PenyesuaianBuku({ data }) {
           </THead>
           <TBody>
             {data.items.map((x) => (
-              <TR key={x.jurnalId}>
+              <TR key={x.jurnalId} {...klikBuka(() => setPanelRincian(specOtomatis(x, { judul: "Jurnal" })))}>
                 <TD sticky truncate className="font-mono text-[12px]">{x.nomor}</TD>
                 <TD className="whitespace-nowrap">{tanggalPendek(x.tanggal)}</TD>
                 <TD><Badge variant="neutral">{x.jenisLabel}</Badge></TD>

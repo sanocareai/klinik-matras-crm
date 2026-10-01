@@ -39,7 +39,7 @@ const rupiah = (n) => `Rp${Number(n).toLocaleString("id-ID")}`;
 
 const SELECT_PAYMENT = {
   id: true, amount: true, method: true, cashAccountId: true, createdAt: true, cancelledAt: true, orderId: true, jobId: true,
-  proofPhotoUrl: true, recordedById: true, referenceNumber: true, notes: true, internalNote: true, replacesPaymentId: true,
+  proofPhotoUrl: true, proofPhotoUrls: true, recordedById: true, referenceNumber: true, notes: true, internalNote: true, replacesPaymentId: true,
   replacedBy: { select: { id: true } }, verifications: { select: { id: true } }, finAllocations: { select: { orderId: true } },
   order: { select: { ...PILIH_TAGIHAN, orderNumber: true, customerId: true, status: true, groupId: true, group: { select: { id: true, source: true } } } },
 };
@@ -218,7 +218,7 @@ export async function koreksiPembayaranHistoris(tx, { paymentId, userId, alasan,
   await tx.payment.update({ where: { id: paymentId }, data: { cancelledAt: new Date(), cancelledById: userId, cancelReason: `Dikoreksi — ${reason}`.slice(0, ALASAN_MAKS) } });
   const baru = await tx.payment.create({
     data: {
-      orderId: lama.orderId, jobId: lama.jobId, amount: lama.amount, method: lama.method, proofPhotoUrl: lama.proofPhotoUrl, cashAccountId: null,
+      orderId: lama.orderId, jobId: lama.jobId, amount: lama.amount, method: lama.method, proofPhotoUrl: lama.proofPhotoUrl, proofPhotoUrls: lama.proofPhotoUrls ?? [], cashAccountId: null,
       recordedById: lama.recordedById, createdAt: lama.createdAt, referenceNumber: lama.referenceNumber, notes: lama.notes, internalNote: lama.internalNote, replacesPaymentId: lama.id,
     },
   });

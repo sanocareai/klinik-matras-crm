@@ -1619,3 +1619,52 @@ TIDAK mereproduksi logic candidate-selection job (siapa yang SEHARUSNYA
 dialert tapi belum) — itu logic besar & sering berubah, reimplementasi
 berisiko drift dari job aslinya. Keputusan ini dikonfirmasi user, bukan
 kelalaian.
+
+---
+
+## 21. GERBANG KLAIM LUNAS SALES (1 Oktober 2026 — perilaku FINAL)
+
+Sales **tidak lagi menandai order LUNAS** dan **tidak lagi mencatat Payment langsung**. Sales **mengajukan klaim** berisi tanggal pembayaran, nominal, metode
+(Transfer/QRIS/Tunai/Kartu), rekening tujuan (wajib untuk Transfer; Tunai hanya ke rekening Sano KEM), catatan, dan **minimal satu Bukti Pembayaran**
+(istilah "Bukti Pembayaran", bukan "Bukti Transfer"). Runbook rollout & troubleshooting: `docs/RUNBOOK-KLAIM-LUNAS.md`.
+
+**Kode:** `backend/src/services/finance/klaimLunas.js` (+ `klaimLunasBerkas.js`), route Sales `routes/klaimLunas.js` (`/api/klaim-lunas`, termasuk
+`/status` dan `/resi/:groupId`), aksi Finance di `routes/financePenerimaan.js` (`/api/finance/penerimaan/klaim-lunas`), tabel `order_payment_claims` (+ `group_id` untuk
+klaim Resi) dan `order_payment_claim_evidence`. UI: `frontend/src/features/klaim/`, `features/finance/KlaimLunasSales.jsx`, kartu sakelar di
+`pages/finance/FinanceSettings.jsx`; mobile: `mobile/src/components/order/OrderKlaimLunas.js`, `mobile/src/lib/klaimLunas.js`, `klaimGate.js`.
+
+### Sakelar rollout `fin_settings.klaim_lunas_gate_aktif` (DEFAULT MATI)
+- **MATI** (kondisi produksi sejak rilis `c2fbdcfe`): perilaku lama persis — Sales boleh PATCH Lunas, POST `/orders/:id/payments`, klaim Lunas Resi lama; klaim berbukti
+  belum bisa dibuat (403 `KLAIM_LUNAS_BELUM_AKTIF`); UI klaim tersembunyi di web & aplikasi. Gagal membaca status = dianggap MATI.
+- **AKTIF**: penegakan penuh di server, tanpa pengecualian peran. Mengubahnya: **Finance > Pengaturan > kartu "Gerbang Klaim Lunas"** (hanya Admin/FINANCE_ADMIN; konfirmasi
+  sebelum mengubah; audit `FINANCE_SETTING_CHANGED` berisi aktor, waktu, nilai sebelum/sesudah; riwayat 5 terakhir tampil di kartu). Nilai selain `true`/`false` ditolak 400.
+- **Mematikan kembali = kill switch**: tidak menghapus/mengubah data apa pun (klaim yang ada tetap tersimpan), perilaku lama pulih seketika.
+
+### Aturan yang tidak boleh dilonggarkan (saat AKTIF)
+1. **LUNAS hanya dari ledger.** `PATCH /orders/:id` dengan `paymentStatus: "LUNAS"` ditolak untuk SEMUA peran termasuk ADMIN/OWNER (409 `LUNAS_HANYA_DARI_LEDGER`); child Resi tetap
+   dijawab `ANAK_RESI`. Status Lunas dihasilkan `recomputeOrderPaymentStatus` setelah Payment aktif dan terverifikasi mencapai tagihan kanonis (`tagihanOrder`). Admin yang
+   memperbaiki transaksi memakai verifikasi Finance / Koreksi Pembayaran resmi. Mengirim ulang status yang SAMA (data lama) dan menurunkan status tidak terkena; jurnal & `paid_at` lama tidak berubah.
+2. **Payment langsung Sales ditutup.** `POST /orders/:id/payments` dan `POST /resi/:id/pembayaran` hanya untuk ADMIN / pemegang PAYMENT_WRITE; Sales (ORDER_WRITE) → 409
+   `PEMBAYARAN_SALES_LEWAT_KLAIM` (pesan Indonesia yang terbaca aplikasi lama), peran lain 403. Tidak bergantung pada `payment_verification_gate` (yang bisa OFF).
+3. **Server yang menegakkan**: pengajuan tanpa catatan/bukti/nominal valid/rekening (Transfer) ditolak 422 walau UI dilewati. Draft boleh tanpa bukti.
+4. **Mengajukan klaim TIDAK mengubah** `paymentStatus`, `paidAt`, komisi, jurnal, saldo, atau piutang (hanya baris klaim + berkas + audit `KLAIM_LUNAS`).
+5. **Finance Verifikasi = tepat SATU Payment** (`paymentId @unique`, kunci baris klaim, versi optimistik) lewat `verifikasiPenerimaan` (order) atau `verifikasiPenerimaanResi` (Resi);
+   bukti klaim disalin menjadi bukti Payment; status dihitung ulang dari ledger (DP bila sebagian, LUNAS hanya bila mencapai tagihan). Minta Bukti & Tolak wajib alasan dan diaudit;
+   Sales melengkapi/memperbaiki lalu mengajukan ulang. Klaim lama (order LUNAS tanpa Payment) tampil "Bukti belum lengkap" — **jangan membuat Payment otomatis**.
+6. **Klaim Resi**: satu klaim untuk seluruh Resi (`orderId` = anchor, `group_id`). Alokasi ke child HANYA oleh helper kanonis server saat verifikasi (`hitungAlokasiResi`,
+   Σ alokasi = nominal); klaim tidak pernah membawa alokasi dari klien. Endpoint klaim Resi lama (`POST /resi/:id/klaim-lunas`) → 409 `KLAIM_RESI_WAJIB_BERBUKTI` saat AKTIF.
+7. **Upload:** tipe dari ISI berkas (JPG/PNG/WEBP/PDF), maks 8 MB, nama di disk acak, tidak pernah statis — `/media/klaim-lunas/:file` butuh Bearer (pemilik/Finance/Admin) atau URL
+   bertanda-tangan 15 menit (label kunci `klaim-lunas-v1`). Satu berkas fisik ↔ satu klaim; isi identik di klaim lain → peringatan untuk Finance (tidak memblokir: satu transfer gabungan sah).
+
+### Prosedur rollout (urutan WAJIB)
+1. Backend + web dirilis dengan sakelar MATI (selesai: `c2fbdcfe`, migrasi `20261007090000_order_payment_claims`; skrip `scripts/release-klaim-lunas-gate.sh`).
+2. **OTA aplikasi Sales** ke channel yang BENAR — channel nyata APK Sales = **`preview`** (semua build APK memakai profil `preview`; channel `apk` hanya berisi update lama runtime 3.0.1,
+   JANGAN dipakai). Runtime `appVersion` = **3.3.0** (versionCode 22). Perubahan JS-only (tidak ada dependensi native baru: package.json identik dengan build APK kecuali skrip test).
+   Perintah: `cd mobile && npm ci && npx eas update --branch preview --message "<pesan>" --platform android` (akun EAS `sanocare` sudah login; jangan memindahkan kredensial).
+   Catat: update group, runtime, channel/branch, commit, waktu.
+3. Pastikan SEMUA HP Sales sudah menerima OTA (versi/bundle terbaru terbuka sekali; update diunduh saat aplikasi dibuka dan aktif pada peluncuran berikutnya — `lib/autoUpdate.js`).
+4. QA perangkat (S25 Ultra) dengan backend & DB QA terisolasi — jangan membuat order/klaim/Payment produksi.
+5. Backup konfigurasi + baseline order/payment/jurnal → aktifkan sakelar SEKALI lewat kartu Pengaturan → verifikasi `/api/klaim-lunas/status` = aktif → smoke tanpa transaksi → monitor 409/422/500
+   dan log upload 30 menit → pastikan jurnal/saldo/Payment/status/paidAt/komisi tidak berubah.
+6. **Rollback:** (a) kill switch — matikan sakelar di kartu Pengaturan (seketika, tanpa mengubah data); (b) OTA — `npx eas update:rollback` atau republish update sebelumnya ke branch `preview`;
+   (c) backend — image `klinik-matras-backend:rollback-pre-klg-c2fbdcfe` (tabel baru diabaikan kode lama, database tidak perlu dipulihkan).

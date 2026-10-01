@@ -27,6 +27,8 @@ import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import PilihPenalang from "@/features/finance/PilihPenalang.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specPembelian } from "@/features/finance/detailSpecs.js";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 
 function teksModePembelian(mode) {
@@ -155,6 +157,7 @@ export default function FinancePurchases() {
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
   const [modalBaru, setModalBaru] = useState(false);
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
   const [versiUntuk, setVersiUntuk] = useState(null);
@@ -349,6 +352,7 @@ export default function FinancePurchases() {
                   return (
                     <RowCard
                       key={p.id}
+                      onClick={() => setPanelRincian(specPembelian(p, { badge: <StatusBadge status={p.status} /> }))}
                       title={p.purchaseNumber}
                       status={<StatusBadge status={p.status} />}
                       subtitle={p.description}
@@ -415,7 +419,7 @@ export default function FinancePurchases() {
                       );
                       return (
                         <React.Fragment key={p.id}>
-                          <TR>
+                          <TR {...klikBuka(() => setPanelRincian(specPembelian(p, { badge: <StatusBadge status={p.status} /> })))}>
                             <TD sticky className="font-mono text-[12px]">{p.purchaseNumber}</TD>
                             {tier !== "minimal" && <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(p.date)}</TD>}
                             <TD className="max-w-0 w-full pl-4">
@@ -504,6 +508,7 @@ export default function FinancePurchases() {
         purchase={riwayatUntuk} onClose={() => setRiwayatUntuk(null)}
         onChanged={() => muat({ diam: true })}
       />
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }

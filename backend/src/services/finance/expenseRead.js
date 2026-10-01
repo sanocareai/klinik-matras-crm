@@ -59,32 +59,45 @@ async function perkaya(db, rows) {
  * Daftar pengeluaran menurut filter layar. `rentang` = { from, to } (Date tanggal-buku, dari rentangDariQuery).
  * Mengembalikan bentuk yang sama persis dengan respons GET /expenses.
  */
-export async function ambilDaftarPengeluaran(db, { rentang, status, division, categoryId, mode, q, bukti, cashAccountId } = {}, { user, take = 300 } = {}) {
-  const expenses = await db.finExpense.findMany({
-    where: {
-      date: { gte: rentang.from, lte: rentang.to },
-      ...(status && { status }),
-      ...(division && { division }),
-      ...(categoryId && { categoryId }),
-      ...(mode && { mode }),
-      ...(cashAccountId && { cashAccountId }),
-      ...klausaBukti(bukti),
-      AND: [
-        ...batasMilikSendiri(user),
-        ...klausaCari(q, KOLOM_CARI_PENGELUARAN),
-      ],
-    },
-    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    take,
-    include: expenseInclude,
-  });
+// Status yang TIDAK dihitung sebagai pengeluaran nyata: dibatalkan (jurnal dibalik) dan ditolak (tidak pernah dibukukan).
+export const STATUS_TIDAK_DIHITUNG = ["DIBATALKAN", "DITOLAK"];
 
-  const total = expenses.length === 0 ? ZERO : sumMoney(expenses.map((e) => e.amount));
+export async function ambilDaftarPengeluaran(db, { rentang, status, division, categoryId, mode, q, bukti, cashAccountId } = {}, { user, take = 300 } = {}) {
+  const where = {
+    date: { gte: rentang.from, lte: rentang.to },
+    ...(status && { status }),
+    ...(division && { division }),
+    ...(categoryId && { categoryId }),
+    ...(mode && { mode }),
+    ...(cashAccountId && { cashAccountId }),
+    ...klausaBukti(bukti),
+    AND: [
+      ...batasMilikSendiri(user),
+      ...klausaCari(q, KOLOM_CARI_PENGELUARAN),
+    ],
+  };
+  const [expenses, perStatusMentah] = await Promise.all([
+    db.finExpense.findMany({ where, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take, include: expenseInclude }),
+    // Ringkasan dihitung dari SEMUA baris yang cocok filter (bukan hanya baris yang dimuat sebanyak take) — sebelumnya total layar hanya menjumlahkan
+    // 300 baris teratas sehingga jauh lebih kecil dari Excel (kasus 30 Sep 2026: Rp235,8 jt di layar vs Rp316,5 jt di Excel untuk 396 baris).
+    db.finExpense.groupBy({ by: ["status"], where, _sum: { amount: true }, _count: { _all: true } }),
+  ]);
+
+  const perStatus = {};
+  for (const g of perStatusMentah) perStatus[g.status] = { jumlah: g._count._all, nominal: moneyToNumber(g._sum.amount ?? ZERO) };
+  const jumlahSemua = Object.values(perStatus).reduce((s, x) => s + x.jumlah, 0);
+  const total = Object.values(perStatus).reduce((s, x) => s + x.nominal, 0);
+  const tidakDihitung = STATUS_TIDAK_DIHITUNG.reduce((a, s) => ({ jumlah: a.jumlah + (perStatus[s]?.jumlah ?? 0), nominal: a.nominal + (perStatus[s]?.nominal ?? 0) }), { jumlah: 0, nominal: 0 });
   return {
     expenses: await perkaya(db, expenses),
-    total: moneyToNumber(total),
+    total, // SEMUA baris yang cocok filter, semua status
+    ringkasan: {
+      jumlahSemua, total,
+      jumlahAktif: jumlahSemua - tidakDihitung.jumlah, totalAktif: total - tidakDihitung.nominal, // di luar dibatalkan/ditolak
+      tidakDihitung, perStatus,
+    },
     hanyaMilikSendiri: hanyaMilikSendiri(user),
-    terpotong: expenses.length === take,
+    terpotong: jumlahSemua > expenses.length,
   };
 }
 

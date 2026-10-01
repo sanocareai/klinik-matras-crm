@@ -28,7 +28,7 @@ import { postKasbonDiberikan, postKasbonPelunasan, KEY as KASBON_KEY } from "../
 import { getSettingRaw, parseIntOr, SETTING_KEYS } from "../services/finance/settings.js";
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { daftarKaryawanKasbon, pastikanBolehMenerimaKasbon } from "../services/finance/karyawan.js";
-import { kasbonInclude, bentukKasbon, ambilDaftarKasbon } from "../services/finance/kasbonRead.js";
+import { kasbonInclude, bentukKasbon, ambilDaftarKasbon, ringkasFilterKasbon } from "../services/finance/kasbonRead.js";
 import { handleFinanceError } from "./finance.js";
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
 
@@ -68,6 +68,7 @@ financeKasbonRouter.get("/kasbon", requirePermission(P.FINANCE_READ), async (req
   try {
     // Query yang SAMA dipakai Export Excel (services/finance/kasbonRead.js) — angka layar = angka berkas.
     const rows = await ambilDaftarKasbon(prisma, req.query, { take: 500 });
+    const ringkasanFilter = await ringkasFilterKasbon(prisma, req.query); // semua kasbon yang cocok filter/periode, tidak terpotong 500
 
     // Ringkasan SELALU dihitung dari seluruh kasbon aktif, bukan dari baris
     // yang sedang disaring — supaya angka "siapa berutang berapa" tidak
@@ -96,16 +97,27 @@ financeKasbonRouter.get("/kasbon", requirePermission(P.FINANCE_READ), async (req
     const hariIni = todayBookDateWIB();
     const awal = new Date(Date.UTC(hariIni.getUTCFullYear(), hariIni.getUTCMonth(), 1));
     const akhir = new Date(Date.UTC(hariIni.getUTCFullYear(), hariIni.getUTCMonth() + 1, 0));
-    const [diberikan, dipotong] = await Promise.all([
+    // Kartu "Total Kasbon" mengikuti PERIODE yang dipilih (from/to); tanpa from/to = sepanjang waktu.
+    const tglTotal = (req.query.from || req.query.to) ? { date: { ...(req.query.from && { gte: toBookDate(req.query.from) }), ...(req.query.to && { lte: toBookDate(req.query.to) }) } } : {};
+    const [diberikan, dipotong, semuaDiberikan, semuaDipotong] = await Promise.all([
       prisma.finKasbon.aggregate({ where: { status: { not: "DIBATALKAN" }, date: { gte: awal, lte: akhir } }, _sum: { amount: true } }),
       prisma.finKasbonRepayment.aggregate({ where: { cancelledAt: null, date: { gte: awal, lte: akhir } }, _sum: { amount: true } }),
+      // TOTAL KASBON (kartu "Total Kasbon") untuk kasbon yang DIBERIKAN dalam periode — dihitung dari SEMUA kasbon periode itu, bukan hanya 500 baris
+      // yang dimuat di tabel. Kasbon dibatalkan tidak dihitung. Potongan = potongan (belum dibatalkan, kapan pun dilakukan) atas kasbon-kasbon itu,
+      // sehingga dipotong + belum = total selalu berlaku.
+      prisma.finKasbon.aggregate({ where: { status: { not: "DIBATALKAN" }, ...tglTotal }, _count: { _all: true }, _sum: { amount: true } }),
+      prisma.finKasbonRepayment.aggregate({ where: { cancelledAt: null, kasbon: { status: { not: "DIBATALKAN" }, ...tglTotal } }, _sum: { amount: true } }),
     ]);
+    const totalDiberikan = Number(semuaDiberikan._sum.amount || 0);
+    const totalDipotong = Number(semuaDipotong._sum.amount || 0);
 
     res.json({
       kasbon: rows.map(bentukKasbon),
       perKaryawan,
       totalSisa: moneyToNumber(totalSisa),
       bulanIni: { diberikan: Number(diberikan._sum.amount || 0), terpotong: Number(dipotong._sum.amount || 0) },
+      dalamFilter: ringkasanFilter,
+      total: { jumlah: semuaDiberikan._count._all, diberikan: totalDiberikan, dipotong: totalDipotong, sisa: totalDiberikan - totalDipotong },
       batas: parseIntOr(await getSettingRaw(prisma, SETTING_KEYS.KASBON_BATAS_AKTIF), 0),
       terpotong: rows.length === 500,
     });

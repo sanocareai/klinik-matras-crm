@@ -18,6 +18,7 @@ import { ensureInvoiceForOrder } from "./invoice.js";
 import { parseTanggalKalender } from "../utils/wib.js";
 import { siapkanNotesUkuran } from "../lib/ukuranKasur.js";
 import { ukuranCustomWajibSejak } from "./ukuranWajib.js";
+import { tentukanPemilikSalesBaru } from "./salesOwner.js";
 
 // `opts.tx` (opsional, Resi Gabungan Fase 1): jalankan di dalam transaksi PEMANGGIL (mis. N order dalam SATU transaksi). Tanpa `opts.tx` perilaku
 // PERSIS seperti sebelumnya (transaksi sendiri). Catatan: nomor order (generateOrderNumber) memakai transaksi terpisah, sehingga bila transaksi
@@ -46,9 +47,11 @@ export async function createOrderForCustomer(customerId, body, userId, opts = {}
   // adalah keadaan yang tidak boleh terjadi; jangan biarkan kegagalan
   // separuh jalan membuatnya lagi.
   const jalankan = async (tx) => {
+    const pemilik = await tentukanPemilikSalesBaru(tx, { customerId, pembuatId: userId }); // stabil sejak dibuat; null = "Tanpa Sales" (tidak ditebak)
     const created = await tx.order.create({
       data: {
         customerId,
+        salesOwnerId: pemilik.salesOwnerId,
         value: 0,
         quantity: quantity ? Number(quantity) : 1,
         status: status || "PENDING",

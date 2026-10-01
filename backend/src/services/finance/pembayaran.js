@@ -515,7 +515,14 @@ export async function verifikasiPembayaran(tx, { paymentId, userId, cashAccountI
   await tx.paymentVerification.create({ data: { paymentId: p.id, verifiedById: userId } });
   const orderIds = await orderTerdampak(tx, p);
   for (const oid of orderIds) {
-    await recomputeOrderPaymentStatus(tx, oid);
+    // paidAtSinkron: tanggal lunas final = tanggal Payment terverifikasi yang melunasi (bukan waktu klik Sales) — lihat paymentLedger.js.
+    const hasil = await recomputeOrderPaymentStatus(tx, oid, { paidAtSinkron: true });
+    if (hasil?.paidAtDisinkron) {
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.ORDER, entityId: oid, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId,
+        metadata: { aksi: "paid_at_disinkron", sebab: "verifikasi_pembayaran", paymentId: p.id, dari: hasil.paidAtDisinkron.dari, ke: hasil.paidAtDisinkron.ke, pindahBulan: hasil.paidAtDisinkron.pindahBulan },
+      });
+    }
   }
   await recordActivity(tx, {
     entityType: ENTITY_TYPES.PAYMENT, entityId: p.id, eventType: EVENT_TYPES.DOCUMENT_APPROVED, actorId: userId,

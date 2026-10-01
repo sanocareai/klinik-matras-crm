@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { Plus, PiggyBank, Undo2, ReceiptText, History, Ban, Pencil } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -67,6 +69,7 @@ function aksiUangMuka(u, { setPakaiUntuk, setKembaliUntuk, setEditUntuk, setVers
 }
 
 export default function FinanceUangMuka() {
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   const [tab, setTab] = useState("SALDO");
   const [data, setData] = useState(null);
   const [riwayat, setRiwayat] = useState([]);
@@ -235,7 +238,7 @@ export default function FinanceUangMuka() {
                       {items.map((u) => {
                         const a = aksiUangMuka(u, { setPakaiUntuk, setKembaliUntuk, setEditUntuk, setVersiUntuk, aksi });
                         return (
-                          <TR key={u.id}>
+                          <TR key={u.id} {...klikBuka(() => setPanelRincian(specOtomatis(u)))}>
                             <TD sticky className="font-mono text-[12px]">{u.advanceNumber}</TD>
                             <TD truncate className="font-medium">{u.holder?.name}</TD>
                             <TD truncate>{u.purpose}</TD>
@@ -265,6 +268,7 @@ export default function FinanceUangMuka() {
                     return (
                       <RowCard
                         key={u.id}
+                        onClick={() => setPanelRincian(specOtomatis(u))}
                         title={u.advanceNumber}
                         status={<StatusBadge status={u.status} />}
                         subtitle={`${u.holder?.name || "—"} · ${u.purpose}`}
@@ -311,7 +315,7 @@ export default function FinanceUangMuka() {
                     const dipakai = Number(e.advanceAppliedAmount) || 0;
                     const menunggu = ["DRAFT", "MENUNGGU_APPROVAL"].includes(e.status);
                     return (
-                      <TR key={e.id}>
+                      <TR key={e.id} {...klikBuka(() => setPanelRincian(specOtomatis(e)))}>
                         <TD sticky className="font-mono text-[12px]">{e.expenseNumber}</TD>
                         <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(e.date)}</TD>
                         <TD className="font-mono text-[12px]">{e.advance?.advanceNumber || "—"}</TD>
@@ -352,7 +356,7 @@ export default function FinanceUangMuka() {
                 <THead><TR><TH sticky>Uang Muka</TH><TH>Tanggal</TH><TH>Pemegang</TH><TH>Keterangan</TH><TH numeric>Nominal</TH><TH>Status</TH><TH /></TR></THead>
                 <TBody>
                   {pengembalian.map((r) => (
-                    <TR key={r.settlementId}>
+                    <TR key={r.settlementId} {...klikBuka(() => setPanelRincian(specOtomatis(r, { judul: r.advanceNumber })))}>
                       <TD sticky className="font-mono text-[12px]">{r.advanceNumber}</TD>
                       <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(r.tanggal)}</TD>
                       <TD>{r.pemegang}</TD>
@@ -387,7 +391,7 @@ export default function FinanceUangMuka() {
                 <THead><TR><TH sticky>Uang Muka</TH><TH>Tanggal</TH><TH>Jenis</TH><TH>Pemegang</TH><TH>Keterangan</TH><TH numeric>Nominal</TH><TH>Status</TH></TR></THead>
                 <TBody>
                   {riwayat.map((r, i) => (
-                    <TR key={`${r.advanceId}-${r.settlementId || "awal"}-${i}`}>
+                    <TR key={`${r.advanceId}-${r.settlementId || "awal"}-${i}`} {...klikBuka(() => setPanelRincian(specOtomatis(r, { judul: r.advanceNumber })))}>
                       <TD sticky className="font-mono text-[12px]">{r.advanceNumber}</TD>
                       <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(r.tanggal)}</TD>
                       <TD>{LABEL_JENIS[r.jenis] || r.jenis}</TD>
@@ -414,6 +418,7 @@ export default function FinanceUangMuka() {
       )}
       {versiUntuk && <RiwayatVersiDialog jenis="uang-muka" id={versiUntuk.id} nomor={versiUntuk.advanceNumber} onClose={() => setVersiUntuk(null)} />}
       <ModalKembalikan uangMuka={kembaliUntuk} rekening={rekening} onClose={() => setKembaliUntuk(null)} onSubmit={(d) => aksi(() => api.kembalikanUangMuka(kembaliUntuk.id, d))} />
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }

@@ -17,13 +17,15 @@ import { LinkBukti } from "@/features/finance/receiptMedia.jsx";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, PeriodePicker, tanggalPendek, PemilihBukti,
+  StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek, PemilihBukti,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { specKasbon } from "@/features/finance/detailSpecs.js";
 import { aksiKasbon as matriksKasbon } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 
@@ -71,6 +73,7 @@ export default function FinanceKasbon() {
   const [status, setStatus] = useState("AKTIF");
   const [q, setQ] = useState("");
   const [fKaryawan, setFKaryawan] = useState("");
+  const [periode, setPeriode] = useState(periodeDefault); // sama dengan tab Pengeluaran/Pembelian: bulan berjalan (WIB) sebagai bawaan
   const qTunda = useTertunda(q);
   const pernahMuat = useRef(false);
 
@@ -81,6 +84,7 @@ export default function FinanceKasbon() {
   const [pesan, setPesan] = useState(null);
 
   const [modalBaru, setModalBaru] = useState(false);
+  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   const [lunasiUntuk, setLunasiUntuk] = useState(null); // { kasbon } | { karyawan, sisa }
   const [riwayatId, setRiwayatId] = useState(null);
   const [editUntuk, setEditUntuk] = useState(null);
@@ -93,7 +97,7 @@ export default function FinanceKasbon() {
     setError(null);
     try {
       const [d, r] = await Promise.all([
-        api.getFinanceKasbon({ status, q: qTunda.trim(), karyawan: fKaryawan }),
+        api.getFinanceKasbon({ ...periode, status, q: qTunda.trim(), karyawan: fKaryawan }),
         api.getFinanceCashAccounts().catch(() => ({ accounts: [] })),
       ]);
       setData(d);
@@ -104,7 +108,7 @@ export default function FinanceKasbon() {
     } finally {
       if (!diam) setLoading(false);
     }
-  }, [status, qTunda, fKaryawan]);
+  }, [periode, status, qTunda, fKaryawan]);
 
   useEffect(() => {
     muat({ diam: pernahMuat.current });
@@ -136,9 +140,11 @@ export default function FinanceKasbon() {
       onRetry={muat}
       actions={(
         <>
+          <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
           <TombolExportExcel
             modul="kasbon"
             ambilBody={() => ({
+              periode: { from: periode.from, to: periode.to },
               filter: { status, q: qTunda.trim(), karyawan: fKaryawan },
               filterLabel: labelFilterAktif([["Status", STATUS_TAB.find((t) => t.key === status)?.label], ["Karyawan", fKaryawan], ["Pencarian", qTunda.trim()]]),
             })}
@@ -163,7 +169,12 @@ export default function FinanceKasbon() {
         sistem otomatis menambahkannya ke beban gaji sehingga totalnya menjadi gaji kotor.
       </Penjelasan>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <KartuAngka
+          label="Total Kasbon (periode)" value={formatUang(data?.total?.diberikan ?? 0)}
+          sub={`${data?.total?.jumlah ?? 0} kasbon · ${formatUang(data?.total?.dipotong ?? 0)} sudah dipotong · ${formatUang(data?.total?.sisa ?? 0)} belum`}
+          info="Jumlah kasbon yang DIBERIKAN pada periode yang dipilih di atas (tanpa yang dibatalkan), dihitung dari semua kasbon periode itu — bukan hanya baris yang tampil di tabel. Sudah dipotong + belum dipotong = total; potongan dihitung atas kasbon-kasbon itu, kapan pun dipotongnya. Geser periode untuk melihat bulan lain."
+        />
         <KartuAngka
           label="Belum Dipotong dari Gaji" value={formatUang(data?.totalSisa ?? 0)}
           tone={(data?.totalSisa ?? 0) > 0 ? "orange" : "default"} sub="total kasbon yang masih menunggu dipotong"
@@ -221,7 +232,7 @@ export default function FinanceKasbon() {
         filters={[
           { key: "kar", label: "Karyawan", value: fKaryawan, onChange: setFKaryawan, options: perKaryawan.map((p) => [p.nama, p.nama]) },
         ]}
-        ringkasan={`${kasbon.length} kasbon${data?.terpotong ? " · baru 500 teratas tampil — persempit pencarian" : ""}`}
+        ringkasan={`${kasbon.length} kasbon${data?.terpotong ? ` dari ${data?.dalamFilter?.jumlah} · baru 500 teratas tampil — persempit pencarian atau periode` : ""}${data?.dalamFilter ? ` · diberikan ${formatUang(data.dalamFilter.nominal)} pada periode ini` : ""} · kartu Belum Dipotong & Karyawan mencakup semua kasbon`}
         onReset={() => { setQ(""); setFKaryawan(""); }}
       />
 
@@ -260,7 +271,7 @@ export default function FinanceKasbon() {
                 {kasbon.map((k) => {
                   const a = aksiKasbon(k, { setLunasiUntuk, setRiwayatId, setEditUntuk, setVersiUntuk, aksi });
                   return (
-                  <TR key={k.id}>
+                  <TR key={k.id} {...klikBuka(() => setPanelRincian(specKasbon(k, { badge: <StatusBadge status={k.status} /> })))}>
                     <TD sticky className="font-mono text-[12px]">{k.kasbonNumber}</TD>
                     <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(k.date)}</TD>
                     <TD truncate className="font-medium">{k.employeeName}</TD>
@@ -290,6 +301,7 @@ export default function FinanceKasbon() {
               return (
                 <RowCard
                   key={k.id}
+                  onClick={() => setPanelRincian(specKasbon(k, { badge: <StatusBadge status={k.status} /> }))}
                   title={k.kasbonNumber}
                   status={<StatusBadge status={k.status} />}
                   subtitle={k.employeeName}
@@ -344,6 +356,7 @@ export default function FinanceKasbon() {
 
       {versiUntuk && <RiwayatVersiDialog jenis="kasbon" id={versiUntuk.id} nomor={versiUntuk.kasbonNumber} onClose={() => setVersiUntuk(null)} />}
       <ModalEdit kasbon={editUntuk} onClose={() => setEditUntuk(null)} onSubmit={(d) => aksi(() => api.editKasbon(editUntuk.id, d))} />
+      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
 }

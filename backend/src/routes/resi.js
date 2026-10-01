@@ -2,8 +2,9 @@
 import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, requireAnyPermission, hasPermission, rolesOf, PERMISSIONS as P } from "../middleware/authorize.js";
 import { idempotency, wajibIdempotencyKey } from "../middleware/idempotency.js";
+import { klaimGateAktif } from "../services/finance/klaimLunas.js";
 import { resiAktif, buatResi, ResiError, DP_PERSEN, MAKS_ITEM_RESI } from "../services/resi.js";
 import { resiPembayaranAktif, pratinjauPembayaranResi, catatPembayaranResi, klaimLunasResi, ringkasanPembayaranResi, ResiBayarError } from "../services/resiPembayaran.js";
 
@@ -52,6 +53,10 @@ resiRouter.get("/:groupId/pembayaran/pratinjau", requireAnyPermission(P.ORDER_WR
 // Catat pembayaran/DP Resi: SATU Payment anchor + alokasi otomatis ke child. Idempotency-Key WAJIB. Field `alokasi` dari klien DIABAIKAN.
 resiRouter.post("/:groupId/pembayaran", requirePermission(P.ORDER_WRITE), wajibIdempotencyKey, idempotency, async (req, res) => {
   try {
+    // Payment Resi langsung hanya ADMIN / pemegang PAYMENT_WRITE (1 Okt 2026) — Sales mengajukan Klaim Lunas Resi berbukti (/api/klaim-lunas/resi/:groupId).
+    if (!(rolesOf(req.user).includes("ADMIN") || hasPermission(req.user, P.PAYMENT_WRITE)) && (await klaimGateAktif(prisma))) {
+      return res.status(409).json({ error: "Pembayaran Resi dari Sales tidak lagi dicatat langsung. Ajukan Klaim Lunas Resi dengan bukti pembayaran — Finance yang memverifikasi dan membagi ke tiap order. Perbarui aplikasi jika tombol itu belum ada.", code: "PEMBAYARAN_SALES_LEWAT_KLAIM" });
+    }
     const { tipe = "TAGIHAN", nominal = null, method, cashAccountId = null, proofPhotoUrl = null } = req.body || {};
     const hasil = await catatPembayaranResi(prisma, { groupId: req.params.groupId, userId: req.user.id, tipe: String(tipe).toUpperCase(), nominal, method, cashAccountId, proofPhotoUrl });
     res.status(201).json(hasil);
@@ -61,12 +66,14 @@ resiRouter.post("/:groupId/pembayaran", requirePermission(P.ORDER_WRITE), wajibI
 });
 
 // Klaim Lunas Sales SEKALI di level Resi (semua child aktif). Tidak membuat Payment/jurnal; Finance memverifikasinya lewat satu antrean Resi.
+// DITUTUP (1 Okt 2026): klaim Lunas Resi tanpa tanggal/nominal/metode/catatan/bukti tidak diterima lagi. Pakai POST /api/klaim-lunas/resi/:groupId (klaim berbukti).
+// Klaim LAMA yang sudah tercatat (lunasDiklaimPada) tetap diproses Finance lewat antrean Resi yang ada — data historis tidak diubah.
 resiRouter.post("/:groupId/klaim-lunas", requirePermission(P.ORDER_WRITE), wajibIdempotencyKey, idempotency, async (req, res) => {
-  try {
-    res.status(201).json(await klaimLunasResi(prisma, { groupId: req.params.groupId, userId: req.user.id }));
-  } catch (err) {
-    galatBayar(res, err, "klaim lunas");
+  if (!(await klaimGateAktif(prisma))) {
+    // Gerbang belum aktif → perilaku LAMA persis (klaim Lunas Resi tanpa bukti).
+    try { return res.status(201).json(await klaimLunasResi(prisma, { groupId: req.params.groupId, userId: req.user.id })); } catch (err) { return galatBayar(res, err, "klaim lunas"); }
   }
+  res.status(409).json({ error: "Klaim Lunas Resi kini wajib memakai tanggal, nominal, metode, catatan, dan minimal satu bukti pembayaran. Gunakan \"Ajukan Klaim Lunas\" pada kartu Resi (perbarui aplikasi jika tombolnya belum ada).", code: "KLAIM_RESI_WAJIB_BERBUKTI" });
 });
 
 // Ringkasan pembayaran SEMUA Resi BARU milik satu customer (kartu Resi di profil — BACA-SAJA): total, ongkir tambahan, child, sisa, klaim.
