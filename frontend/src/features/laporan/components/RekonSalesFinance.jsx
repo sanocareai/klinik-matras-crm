@@ -68,7 +68,7 @@ export function KartuRekon({ data, loading, onBuka }) {
 
 /**
  * Satu tahap jembatan Sales–Finance (kartu per baris — TANPA tabel lebar, aman di HP 390px). Semua angka, status, residual, dan "Komponen lain" dari server;
- * komponen ini hanya menampilkan. Tanda tampilan = EFEK langkah (tanda × jumlah): langkah "kurangi" berjumlah negatif (mis. Selisih Nominal Lain) justru MENAMBAH → "+".
+ * komponen ini hanya menampilkan. Tanda tampilan = EFEK langkah (tanda × jumlah): langkah "kurangi" berjumlah negatif (mis. Klaim Lunas tanpa Payment) justru MENAMBAH → "+".
  */
 function TahapRekon({ t, bisaBuka, onBuka }) {
   return (
@@ -156,7 +156,9 @@ export function PanelRekon({ data, loading, error, onBuka }) {
 const JUDUL_DETAIL = {
   UANG_MASUK: "Uang Masuk Terverifikasi", DP_BELUM_LUNAS: "DP / Parsial Belum Lunas", ORDER_TIDAK_DIHITUNG: "Order Batal / Pending / Spam",
   LUNAS_PERIODE_LAIN: "Pembayaran untuk Order Lunas di Periode Lain", REFUND_NON_LUNAS: "Refund pada Order yang Kembali Belum Lunas",
-  DP_SEBELUMNYA: "DP Periode Sebelumnya", REFUND_LUNAS: "Penyesuaian Refund / Reversal", ONGKIR: "Ongkir Diterima", SELISIH_LAIN: "Selisih Nominal Lain",
+  DP_SEBELUMNYA: "DP Periode Sebelumnya", REFUND_LUNAS: "Penyesuaian Refund / Reversal", ONGKIR: "Ongkir Diterima",
+  KLAIM_TANPA_PAYMENT: "Klaim Lunas tanpa Payment", PAYMENT_MENUNGGU: "Payment Menunggu Verifikasi", PAYMENT_KURANG: "Payment Terverifikasi Kurang dari Nilai Order",
+  KELEBIHAN_BAYAR: "Kelebihan Bayar / DP Periode Lain", SELISIH_LAIN: "Tak Terklasifikasi",
   TANPA_SALES: "Tanpa Atribusi Sales", DIHITUNG_GANDA: "Dihitung Ganda (dipegang >1 Sales)",
 };
 
@@ -208,6 +210,10 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
                   <th className="pb-2 pr-2 text-right font-medium">Nilai Jasa</th>
                   <th className="pb-2 pr-2 text-right font-medium">Ongkir</th>
                   <th className="pb-2 pr-2 text-right font-medium">Total Tagihan</th>
+                  <th className="pb-2 pr-2 text-right font-medium">Payment Tercatat</th>
+                  <th className="pb-2 pr-2 text-right font-medium">Payment Terverifikasi</th>
+                  <th className="pb-2 pr-2 text-right font-medium">Kurang / Lebih</th>
+                  <th className="pb-2 pr-2 font-medium">Tgl Bayar · Lunas</th>
                   <th className="pb-2 pr-2 text-right font-medium">Jumlah</th>
                   <th className="pb-2 font-medium">Payment</th>
                 </tr>
@@ -217,7 +223,7 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
                   <React.Fragment key={g.pelanggan}>
                     {(kelompok.length > 1 || g.items.length > 1) && (
                       <tr className="bg-inset">
-                        <td colSpan={6} className="px-2 py-1.5 text-[12px] font-semibold text-ink">
+                        <td colSpan={11} className="px-2 py-1.5 text-[12px] font-semibold text-ink">
                           {g.pelanggan}
                           {g.items.length > 1 && <span className="ml-2 font-normal text-ink3">{g.items.length} order pelanggan yang sama · {rpBertanda(g.jumlah)} — data terpisah, tidak digabung</span>}
                         </td>
@@ -230,19 +236,24 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
                             {b.nomor} <ExternalLink size={10} />
                           </button>
                           {kelompok.length === 1 && g.items.length === 1 && <div className="text-[11px] text-ink3">{b.pelanggan}</div>}
-                          <div className="text-[11px] text-ink3">{b.statusBayar} · {b.status}{b.alasan ? ` · ${b.alasan}` : ""}{b.pemegangInformasi ? ` · dipegang ${b.pemegangInformasi}` : ""}{b.sales ? ` · ${b.sales.join(", ")}` : ""}</div>
+                          <div className="text-[11px] text-ink3">{b.statusBayar} · {b.status}{b.alasan ? ` · ${b.alasan}` : ""}{b.pemegangInformasi ? ` · dipegang ${b.pemegangInformasi}` : ""}{b.sales ? ` · Sales ${Array.isArray(b.sales) ? b.sales.join(", ") : b.sales}` : ""}</div>
                         </td>
                         <td className="py-2 pr-2 text-right tabular-nums">{formatRupiah(b.nilaiJasa)}</td>
                         <td className="py-2 pr-2 text-right tabular-nums">{b.ongkir ? formatRupiah(b.ongkir) : "—"}</td>
                         <td className="py-2 pr-2 text-right tabular-nums">{formatRupiah(b.totalTagihan)}</td>
-                        <td className={cn("py-2 pr-2 text-right font-semibold tabular-nums", b.jumlah < 0 && "text-red")}>{rpBertanda(b.jumlah)}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums">{typeof b.paymentTercatat === "number" ? formatRupiah(b.paymentTercatat) : "—"}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums">{typeof b.paymentTerverifikasi === "number" ? formatRupiah(b.paymentTerverifikasi) : "—"}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums">{typeof b.kurangLebih === "number" ? (b.kurangLebih === 0 ? "Pas" : b.kurangLebih < 0 ? `Kurang ${formatRupiah(-b.kurangLebih)}` : `Lebih ${formatRupiah(b.kurangLebih)}`) : "—"}</td>
+                        <td className="py-2 pr-2 text-[11.5px] text-ink2">{b.tanggalBayar ? tanggal(b.tanggalBayar) : "—"} · {b.tanggalLunas ? tanggal(b.tanggalLunas) : "—"}</td>
+                        <td className="py-2 pr-2 text-right font-semibold tabular-nums">{rpBertanda(b.jumlah)}</td>
                         <td className="py-2 text-[11.5px] text-ink2">
                           {(b.pembayaran || []).length === 0 ? <span className="text-ink3">—</span> : b.pembayaran.map((p) => (
                             <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}</div>
                           ))}
                           {typeof b.dibayarTotal === "number" && <div className="text-ink3">Total dibayar {formatRupiah(b.dibayarTotal)} · sisa {formatRupiah(b.sisaTagihan)}</div>}
+                          {b.tindakan && <div className="mt-1 inline-block rounded-full bg-inset px-2 py-0.5 text-[11px] font-medium text-ink2">{b.tindakan.label}</div>}
                           {kunci === "TANPA_SALES" && admin && (
-                            <Button size="sm" variant="neutral" className="mt-1" onClick={() => bukaTetapkan(b)}>Tetapkan Sales</Button>
+                            <Button size="sm" variant="neutral" className="mt-1 block" onClick={() => bukaTetapkan(b)}>Tetapkan Sales</Button>
                           )}
                         </td>
                       </tr>
@@ -267,15 +278,23 @@ export function DaftarRekonModal({ kunci, data, onClose, onDitetapkan }) {
                       <button type="button" className="inline-flex min-h-8 items-center gap-1 text-left font-mono text-[12.5px] text-ink hover:text-accent" onClick={() => navigate(`/orders?id=${b.orderId}`)} title="Buka order">
                         {b.nomor} <ExternalLink size={10} />
                       </button>
-                      <span className={cn("shrink-0 text-[13px] font-semibold tabular-nums", b.jumlah < 0 && "text-red")}>{rpBertanda(b.jumlah)}</span>
+                      <span className={"shrink-0 text-[13px] font-semibold tabular-nums"}>{rpBertanda(b.jumlah)}</span>
                     </div>
                     {kelompok.length === 1 && g.items.length === 1 && <div className="text-[11.5px] text-ink2">{b.pelanggan}</div>}
-                    <div className="text-[11px] text-ink3">{b.statusBayar} · {b.status}{b.alasan ? ` · ${b.alasan}` : ""}{b.pemegangInformasi ? ` · dipegang ${b.pemegangInformasi}` : ""}{b.sales ? ` · ${b.sales.join(", ")}` : ""}</div>
+                    <div className="text-[11px] text-ink3">{b.statusBayar} · {b.status}{b.alasan ? ` · ${b.alasan}` : ""}{b.pemegangInformasi ? ` · dipegang ${b.pemegangInformasi}` : ""}{b.sales ? ` · Sales ${Array.isArray(b.sales) ? b.sales.join(", ") : b.sales}` : ""}</div>
                     <dl className="m-0 mt-2 grid grid-cols-3 gap-2 text-[11.5px]">
                       <div className="min-w-0"><dt className="text-ink3">Nilai Jasa</dt><dd className="m-0 tabular-nums">{formatRupiah(b.nilaiJasa)}</dd></div>
                       <div className="min-w-0"><dt className="text-ink3">Ongkir</dt><dd className="m-0 tabular-nums">{b.ongkir ? formatRupiah(b.ongkir) : "—"}</dd></div>
                       <div className="min-w-0"><dt className="text-ink3">Total Tagihan</dt><dd className="m-0 tabular-nums">{formatRupiah(b.totalTagihan)}</dd></div>
                     </dl>
+                    {typeof b.paymentTercatat === "number" && (
+                      <dl className="m-0 mt-2 grid grid-cols-3 gap-2 text-[11.5px]">
+                        <div className="min-w-0"><dt className="text-ink3">Tercatat</dt><dd className="m-0 tabular-nums">{formatRupiah(b.paymentTercatat)}</dd></div>
+                        <div className="min-w-0"><dt className="text-ink3">Terverifikasi</dt><dd className="m-0 tabular-nums">{formatRupiah(b.paymentTerverifikasi)}</dd></div>
+                        <div className="min-w-0"><dt className="text-ink3">Kurang / Lebih</dt><dd className="m-0 tabular-nums">{b.kurangLebih === 0 ? "Pas" : b.kurangLebih < 0 ? `Kurang ${formatRupiah(-b.kurangLebih)}` : `Lebih ${formatRupiah(b.kurangLebih)}`}</dd></div>
+                      </dl>
+                    )}
+                    <div className="mt-1 text-[11.5px] text-ink3">Bayar {b.tanggalBayar ? tanggal(b.tanggalBayar) : "—"} · Lunas {b.tanggalLunas ? tanggal(b.tanggalLunas) : "—"}{b.tindakan ? ` · Tindakan: ${b.tindakan.label}` : ""}</div>
                     <div className="mt-2 text-[11.5px] text-ink2">
                       {(b.pembayaran || []).length === 0 ? <span className="text-ink3">Payment: —</span> : b.pembayaran.map((p) => (
                         <div key={`${p.id}-${p.nominal}`}>{tanggal(p.tanggal)} · {formatRupiah(p.nominal)} · {JENIS[p.metode] || p.metode}</div>

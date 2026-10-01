@@ -34,6 +34,7 @@ export function bacaSheet(wb, nama) {
   for (let r = 7; r <= ws.rowCount; r++) {
     const row = ws.getRow(r);
     if (row.actualCellCount === 0) continue;
+    if (nilai(row.getCell(1)) === "Tidak ada data sesuai periode dan filter") continue; // pesan sheet kosong, bukan baris data
     const obj = {};
     header.forEach((h, i) => { obj[h] = nilai(row.getCell(i + 1)) ?? null; });
     const pertama = obj[header[0]];

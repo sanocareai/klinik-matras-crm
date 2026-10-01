@@ -20,6 +20,7 @@ import ExcelJS from "exceljs";
 import { WIB_OFFSET_MS } from "../../../utils/wib.js";
 
 export const MAKS_BARIS = 50_000;
+export const PESAN_KOSONG = "Tidak ada data sesuai periode dan filter";
 // Batas total SEL (baris × kolom, semua sheet): pembuat xlsx bekerja di memori (~2,7 KB/sel) dan menahan event loop — 400 ribu sel ≈ 1 GB / 4 detik.
 export const MAKS_SEL = 400_000;
 const MAKS_PANJANG_TEKS = 32_000; // batas sel Excel 32.767 karakter
@@ -171,7 +172,15 @@ export async function buatXlsx(data, { pengekspor = "", bolehSensitif = false, s
       });
     });
 
-    let akhir = 7 + (sh.baris?.length || 0);
+    // Sheet tanpa baris TIDAK boleh berupa tabel kosong tanpa penjelasan: tulis pesan di baris pertama data (hotfix 1 Okt 2026).
+    const kosong = (sh.baris?.length || 0) === 0;
+    if (kosong) {
+      const rk = ws.getRow(7);
+      rk.getCell(1).value = sh.pesanKosong || PESAN_KOSONG;
+      rk.getCell(1).font = { bold: true, italic: true, color: { argb: "FF555555" } };
+      ws.mergeCells(7, 1, 7, lebarKolom);
+    }
+    let akhir = 7 + (sh.baris?.length || 0) + (kosong ? 1 : 0);
     if (sh.total) {
       const r = ws.getRow(akhir);
       r.getCell(1).value = netralkanRumus(sh.total.label || "TOTAL");
