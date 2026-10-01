@@ -11,8 +11,23 @@
 
 import cron from "node-cron";
 import { prisma } from "../db.js";
-import { sendText, getDefaultOpsSession } from "./wahaClient.js";
+import { sendText, getDefaultOpsSession, isPlaceholderGroupJid } from "./wahaClient.js";
 import { readSalesPhoneDirectory, resolveSalesPhone } from "./salesPhoneDirectory.js";
+
+// Cari percakapan GRUP WA di Inbox untuk kontak kind=GROUP (Broadcast Team,
+// 1 Okt 2026). Dicocokkan lewat NAMA grup (tanpa beda huruf besar/kecil, spasi
+// ganda diabaikan); JID placeholder ("unknown-…") dilewati karena bukan alamat
+// WA asli. Kalau ada beberapa yang cocok, pilih yang pesannya paling baru aktif.
+export async function cariGrupUntukKontak(contact) {
+  const nama = String(contact.groupName || contact.name || "").trim().replace(/\s+/g, " ");
+  if (!nama) return null;
+  const kandidat = await prisma.conversation.findMany({
+    where: { type: "GROUP", groupName: { equals: nama, mode: "insensitive" }, groupJid: { not: null } },
+    select: { id: true, groupJid: true, sessionId: true, lastMessageAt: true },
+    orderBy: { lastMessageAt: "desc" },
+  });
+  return kandidat.find((k) => k.groupJid && !isPlaceholderGroupJid(k.groupJid)) || null;
+}
 
 let cycleRunning = false; // cegah tumpang tindih siklus kalau kirim lambat
 
@@ -31,6 +46,34 @@ async function processDue() {
     });
 
     const results = {};
+    // Kontak tim (Broadcast Team): orang → WA PRIBADI satu per satu; grup → ke grupnya.
+    const contacts = broadcast.contactIds?.length
+      ? await prisma.teamContact.findMany({ where: { id: { in: broadcast.contactIds } } })
+      : [];
+    for (const c of contacts) {
+      const key = "c:" + c.id;
+      const label = c.roleLabel ? `${c.name} (${c.division} · ${c.roleLabel})` : c.name;
+      try {
+        if (c.kind === "GROUP") {
+          const g = await cariGrupUntukKontak(c);
+          if (!g) {
+            results[key] = { nama: label, phone: null, status: "GAGAL", error: "Grup belum terdeteksi di Inbox (nama harus sama persis & nomor WA bot anggota grup)" };
+            continue;
+          }
+          await sendText(g.groupJid, broadcast.message, null, g.sessionId || getDefaultOpsSession());
+          results[key] = { nama: label, phone: g.groupJid, status: "TERKIRIM" };
+        } else {
+          if (!c.phone) {
+            results[key] = { nama: label, phone: null, status: "GAGAL", error: "Nomor WA belum diisi" };
+            continue;
+          }
+          await sendText(c.phone, broadcast.message, null, getDefaultOpsSession());
+          results[key] = { nama: label, phone: c.phone, status: "TERKIRIM" };
+        }
+      } catch (err) {
+        results[key] = { nama: label, phone: c.phone || null, status: "GAGAL", error: err.message };
+      }
+    }
     for (const u of users) {
       const phone = resolveSalesPhone(u.name, directory);
       if (!phone) {
@@ -49,7 +92,7 @@ async function processDue() {
       where: { id: broadcast.id },
       data: { status: "SENT", sentAt: new Date(), results },
     });
-    console.log(`[staff-broadcast] Terkirim ke ${Object.values(results).filter((r) => r.status === "TERKIRIM").length}/${users.length} penerima (id: ${broadcast.id})`);
+    console.log(`[staff-broadcast] Terkirim ke ${Object.values(results).filter((r) => r.status === "TERKIRIM").length}/${users.length + contacts.length} penerima (id: ${broadcast.id})`);
   }
 }
 

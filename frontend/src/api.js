@@ -1185,6 +1185,7 @@ export const api = {
   // routes/staffBroadcast.js.
   getStaffBroadcasts: () => request("/staff-broadcast"),
   getStaffBroadcastRecipients: () => request("/staff-broadcast/recipients"),
+  getStaffBroadcastContacts: () => request("/staff-broadcast/contacts"),
   createStaffBroadcast: (data) =>
     request("/staff-broadcast", { method: "POST", body: JSON.stringify(data) }),
   cancelStaffBroadcast: (id) =>
