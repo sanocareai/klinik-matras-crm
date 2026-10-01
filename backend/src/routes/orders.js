@@ -928,6 +928,11 @@ orderRouter.post("/:id/payments", async (req, res) => {
     if (!guarded) return;
 
     const { amount, method, proofPhotoUrl, cashAccountId } = req.body;
+    // BUKTI PEMBAYARAN WAJIB untuk Sales (1 Okt 2026, keputusan Owner): tanpa bukti tidak bisa dicatat. Admin/pemegang PAYMENT_WRITE (Finance) dikecualikan —
+    // mereka memverifikasi/mencatat dari mutasi bank langsung. Berlaku walau sakelar Gerbang Klaim Lunas MATI.
+    if (!(rolesOf(req.user).includes("ADMIN") || hasPermission(req.user, P.PAYMENT_WRITE)) && !proofPhotoUrl) {
+      return res.status(400).json({ error: "Bukti pembayaran wajib dilampirkan (foto bukti transfer/struk). Tanpa bukti, pembayaran tidak bisa dicatat.", code: "BUKTI_WAJIB" });
+    }
     const amountInt = Number(amount);
     if (!Number.isInteger(amountInt) || amountInt <= 0) {
       return res.status(400).json({ error: "Jumlah pembayaran wajib angka bulat lebih dari 0" });

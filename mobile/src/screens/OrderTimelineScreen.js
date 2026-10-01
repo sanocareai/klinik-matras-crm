@@ -597,6 +597,7 @@ function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, token
   const roles = Array.isArray(user?.roles) && user.roles.length > 0 ? user.roles : [user?.role];
   const klaimGateAktif = useKlaimLunasAktif() === true; // sakelar rollout: MATI → form catat pembayaran lama tetap tampil untuk semua
   const bolehCatatLangsung = roles.includes("ADMIN") || !klaimGateAktif;
+  const fotoWajib = !roles.includes("ADMIN"); // bukti pembayaran WAJIB untuk Sales (server juga menolak tanpa bukti)
   const [payments, setPayments] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -636,6 +637,7 @@ function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, token
   async function save() {
     const payload = buildPaymentPayload(draft, accounts.items, null);
     if (!payload.amount || payload.amount <= 0) { Alert.alert("Jumlah wajib diisi", "Isi jumlah pembayaran yang valid (angka, lebih dari 0)."); return; }
+    if (fotoWajib && !draft.photo) { Alert.alert("Bukti pembayaran wajib", "Ambil/pilih foto bukti transfer atau struk dulu. Tanpa bukti, pembayaran tidak bisa dicatat."); return; }
     setBusy(true);
     try {
       // Foto diunggah dulu; kalau upload gagal, pencatatan dibatalkan (bukan
@@ -745,7 +747,7 @@ function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, token
           <TouchableOpacity style={styles.proofBtn} onPress={pickProof} disabled={busy}>
             <Camera size={15} color={draft.photo ? tokens.color.success : tokens.color.textSecondary} strokeWidth={2.2} />
             <Text style={[styles.methodChipText, { flexShrink: 1 }, draft.photo && { color: tokens.color.success }]}>
-              {draft.photo ? "Foto bukti siap (ketuk untuk ganti)" : "Foto bukti bayar (opsional)"}
+              {draft.photo ? "Foto bukti siap (ketuk untuk ganti)" : fotoWajib ? "Foto bukti bayar (WAJIB)" : "Foto bukti bayar (opsional)"}
             </Text>
           </TouchableOpacity>
           {draft.photo ? <Image source={{ uri: draft.photo.uri }} style={styles.proofPreview} /> : null}
@@ -753,7 +755,7 @@ function PembayaranTab({ order, draft, dispatch, accounts, reloadAccounts, token
             <TouchableOpacity style={styles.cancelBtn} onPress={() => dispatch({ type: "reset" })} disabled={busy}>
               <Text style={styles.cancelBtnText}>Batal</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.saveBtn, busy && { opacity: 0.6 }]} onPress={save} disabled={busy}>
+            <TouchableOpacity style={[styles.saveBtn, (busy || (fotoWajib && !draft.photo)) && { opacity: 0.45 }]} onPress={save} disabled={busy || (fotoWajib && !draft.photo)} accessibilityState={{ disabled: busy || (fotoWajib && !draft.photo) }}>
               <Text style={styles.saveBtnText}>{busy ? "Menyimpan…" : "Simpan"}</Text>
             </TouchableOpacity>
           </View>

@@ -134,3 +134,11 @@ test("Sakelar rollout mobile: MATI → status bayar lama & form catat pembayaran
   assert.match(baca("../src/screens/OrderTimelineScreen.js"), /bolehCatatLangsung = roles\.includes\("ADMIN"\) \|\| !klaimGateAktif/);
   assert.match(baca("../src/components/OrderFormModal.js"), /opsiStatusBayar\(PAYMENT_STATUSES, order\?\.paymentStatus, isAdminEditor, klaimGateAktif\)/);
 });
+
+test("Mobile: bukti pembayaran WAJIB untuk non-Admin — tombol Simpan nonaktif & Alert tanpa foto", () => {
+  const r = baca("../src/screens/OrderTimelineScreen.js");
+  assert.match(r, /const fotoWajib = !roles\.includes\("ADMIN"\)/);
+  assert.match(r, /if \(fotoWajib && !draft\.photo\) \{ Alert\.alert\("Bukti pembayaran wajib"/);
+  assert.match(r, /Foto bukti bayar \(WAJIB\)/);
+  assert.match(r, /disabled=\{busy \|\| \(fotoWajib && !draft\.photo\)\}/);
+});

@@ -86,9 +86,9 @@ test("KLIEN LAMA saat gerbang AKTIF: PATCH Lunas (409 LUNAS_HANYA_DARI_LEDGER) d
   const cust = await testPrisma.customer.create({ data: { name: "Bu Lama", assignedSalesId: w.sales.user.id } });
   const o = await testPrisma.order.create({ data: { customerId: cust.id, value: 500_000, category: "LAYANAN", orderNumber: "RES-UJI-2", status: "PENDING" } });
   // MATI: perilaku lama (klien lama masih berjalan normal)
-  assert.equal((await w.cSales.post(`/api/orders/${o.id}/payments`, { amount: 100_000, method: "CASH" })).status, 201);
+  assert.equal((await w.cSales.post(`/api/orders/${o.id}/payments`, { amount: 100_000, method: "CASH", proofPhotoUrl: "/media/payment-proofs/uji-bukti.jpg" })).status, 201);
   await w.cAdmin.patch("/api/finance/settings", { settings: { [KEY]: "true" } });
-  const bayar = await w.cSales.post(`/api/orders/${o.id}/payments`, { amount: 100_000, method: "CASH" });
+  const bayar = await w.cSales.post(`/api/orders/${o.id}/payments`, { amount: 100_000, method: "CASH", proofPhotoUrl: "/media/payment-proofs/uji-bukti.jpg" });
   assert.equal(bayar.status, 409);
   assert.match(bayar.body.error, /Ajukan Klaim Lunas/);
   assert.match(bayar.body.error, /Perbarui aplikasi/);
@@ -108,4 +108,25 @@ test("Klaim Resi/order & akses bukti tetap berlaku setelah sakelar dinyalakan le
   await w.cAdmin.patch("/api/finance/settings", { settings: { [KEY]: "false" } });
   assert.equal((await w.cSales.post(`/api/klaim-lunas/order/${o.id}`, {})).status, 403, "dimatikan → klaim baru tidak bisa dibuat");
   assert.equal(await testPrisma.orderPaymentClaim.count(), 1, "klaim yang sudah ada tidak dihapus saat gerbang dimatikan");
+});
+
+test("BUKTI WAJIB untuk Sales: POST pembayaran order & Resi tanpa bukti ditolak 400 BUKTI_WAJIB (gerbang MATI); dengan bukti 201; Finance/Admin dikecualikan; tidak ada Payment tertulis saat ditolak", async () => {
+  const w = await dunia();
+  const cust = await testPrisma.customer.create({ data: { name: "Bu Bukti", assignedSalesId: w.sales.user.id } });
+  const o = await testPrisma.order.create({ data: { customerId: cust.id, value: 500_000, category: "LAYANAN", orderNumber: "RES-UJI-4", status: "PENDING" } });
+  const badan = { amount: 100_000, method: "CASH" };
+  const tanpa = await w.cSales.post(`/api/orders/${o.id}/payments`, badan);
+  assert.equal(tanpa.status, 400, JSON.stringify(tanpa.body));
+  assert.equal(tanpa.body.code, "BUKTI_WAJIB");
+  assert.match(tanpa.body.error, /Bukti pembayaran wajib/);
+  assert.equal((await w.cSales.post(`/api/orders/${o.id}/payments`, { ...badan, proofPhotoUrl: "" })).status, 400, "string kosong = tanpa bukti");
+  assert.equal(await testPrisma.payment.count(), 0);
+  assert.equal((await w.cSales.post(`/api/orders/${o.id}/payments`, { ...badan, proofPhotoUrl: "/media/payment-proofs/uji-bukti.jpg" })).status, 201);
+  // Finance/Admin dikecualikan (mencatat dari mutasi bank)
+  assert.equal((await w.cFin.post(`/api/orders/${o.id}/payments`, badan)).status, 201);
+  assert.equal((await w.cAdmin.post(`/api/orders/${o.id}/payments`, badan)).status, 201);
+  // Resi: Sales murni tanpa bukti → 400 BUKTI_WAJIB (cek terjadi sebelum validasi Resi lain)
+  const r = await w.cSales.post("/api/resi/xxxx/pembayaran", { method: "CASH" }, { "Idempotency-Key": "bukti-wajib-uji-1" });
+  assert.equal(r.status, 400, JSON.stringify(r.body));
+  assert.equal(r.body.code, "BUKTI_WAJIB");
 });

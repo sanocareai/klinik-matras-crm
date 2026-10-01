@@ -58,6 +58,10 @@ resiRouter.post("/:groupId/pembayaran", requirePermission(P.ORDER_WRITE), wajibI
       return res.status(409).json({ error: "Pembayaran Resi dari Sales tidak lagi dicatat langsung. Ajukan Klaim Lunas Resi dengan bukti pembayaran — Finance yang memverifikasi dan membagi ke tiap order. Perbarui aplikasi jika tombol itu belum ada.", code: "PEMBAYARAN_SALES_LEWAT_KLAIM" });
     }
     const { tipe = "TAGIHAN", nominal = null, method, cashAccountId = null, proofPhotoUrl = null } = req.body || {};
+    // Bukti pembayaran wajib untuk Sales (1 Okt 2026); Admin/PAYMENT_WRITE dikecualikan.
+    if (!(rolesOf(req.user).includes("ADMIN") || hasPermission(req.user, P.PAYMENT_WRITE)) && !proofPhotoUrl) {
+      return res.status(400).json({ error: "Bukti pembayaran wajib dilampirkan (foto bukti transfer/struk). Tanpa bukti, pembayaran tidak bisa dicatat.", code: "BUKTI_WAJIB" });
+    }
     const hasil = await catatPembayaranResi(prisma, { groupId: req.params.groupId, userId: req.user.id, tipe: String(tipe).toUpperCase(), nominal, method, cashAccountId, proofPhotoUrl });
     res.status(201).json(hasil);
   } catch (err) {

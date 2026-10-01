@@ -42,10 +42,10 @@ test("Tunai hanya menawarkan rekening KEM; Transfer menawarkan Bank (termasuk PT
 test("Bayar Tunai ke KEM: tersimpan dengan rekening & masuk buku besar Finance; ke rekening PT ditolak", async () => {
   const { token, kem, pt, order } = await siapkan();
 
-  const ditolak = await raw("POST", `/api/orders/${order.id}/payments`, { token, body: { amount: 500_000, method: "CASH", cashAccountId: pt.id } });
+  const ditolak = await raw("POST", `/api/orders/${order.id}/payments`, { token, body: { amount: 500_000, method: "CASH", cashAccountId: pt.id, proofPhotoUrl: "/media/payment-proofs/uji-bukti.jpg" } });
   assert.equal(ditolak.status, 400, JSON.stringify(ditolak.body));
 
-  const ok = await raw("POST", `/api/orders/${order.id}/payments`, { token, body: { amount: 500_000, method: "CASH", cashAccountId: kem.id } });
+  const ok = await raw("POST", `/api/orders/${order.id}/payments`, { token, body: { amount: 500_000, method: "CASH", cashAccountId: kem.id, proofPhotoUrl: "/media/payment-proofs/uji-bukti.jpg" } });
   assert.equal(ok.status, 201, JSON.stringify(ok.body));
   assert.equal(ok.body.payment.cashAccountId, kem.id);
   assert.equal(ok.body.jurnal?.posted, true, "harus terbukukan ke Finance: " + JSON.stringify(ok.body.jurnal));

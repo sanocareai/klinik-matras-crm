@@ -193,3 +193,17 @@ test("Kartu 'Gerbang Klaim Lunas' di Finance > Pengaturan: status AKTIF/MATI, pe
   assert.match(set, /onUbah\(aktif \? "false" : "true"\)/);
   assert.match(set, /Riwayat perubahan/);
 });
+
+test("Bukti pembayaran WAJIB untuk non-Admin (web & mobile) dan dialog verifikasi Finance menampilkan semua data terisi (bukti, nominal, tanggal, metode, rekening, catatan) tanpa isi ulang", () => {
+  const drawer = baca("src/features/orders/OrderTimelineDrawer.jsx");
+  assert.match(drawer, /const fotoWajib = !canEditLunas/);
+  assert.match(drawer, /fotoWajib && !photo\) \{ setFormErr\("Bukti pembayaran wajib dilampirkan/);
+  assert.match(drawer, /disabled=\{busy \|\| uploadingPhoto \|\| \(fotoWajib && !photo\)\}/);
+  assert.match(drawer, /"Foto Bukti \(wajib\)"/);
+  const ver = baca("src/features/finance/KoreksiPembayaran.jsx");
+  assert.match(ver, /data-testid="ringkasan-verifikasi"/);
+  assert.match(ver, /<BuktiBanyak urls=\{daftarBukti\(p\)\}/);
+  assert.match(ver, /data-testid="tanpa-bukti"/);
+  for (const s of ["Nominal", "Tanggal diterima", "Cara bayar", "Dicatat oleh", "Catatan: "]) assert.ok(ver.includes(s), s);
+  assert.match(ver, /useState\(\{ cashAccountId: p\.cashAccount\?\.id \|\| "", method: p\.method \}\)/, "rekening & cara bayar terisi dari data Sales (masih bisa dikoreksi)");
+});

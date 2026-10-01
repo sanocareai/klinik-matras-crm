@@ -434,6 +434,7 @@ function DetailPesananSection({ order, onChanged }) {
 // menampilkan nilai baru tanpa navigasi ulang.
 function PaymentTab({ order, onRecorded, canEditLunas }) {
   const klaimGateAktif = useKlaimLunasAktif() === true; // sakelar rollout gerbang Klaim Lunas
+  const fotoWajib = !canEditLunas; // bukti pembayaran WAJIB untuk Sales (server juga menolak tanpa bukti); Admin dikecualikan
   const [payments, setPayments] = useState(null);
   const [error, setError] = useState("");
   const [form, setForm] = useState(false);
@@ -497,6 +498,7 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
   async function handleSave() {
     const amountInt = parseInt(amount, 10);
     if (!amountInt || amountInt <= 0) { setFormErr("Jumlah wajib diisi"); return; }
+    if (fotoWajib && !photo) { setFormErr("Bukti pembayaran wajib dilampirkan (foto bukti transfer/struk)"); return; }
     if (accounts.length > 0 && !cashAccountId) { setFormErr("Pilih rekening tujuan pembayaran"); return; }
     setBusy(true);
     setFormErr("");
@@ -740,7 +742,7 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
           )}
           <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line text-[12px] font-medium text-ink2">
             {uploadingPhoto ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
-            {photo ? "Foto siap" : "Foto Bukti (opsional)"}
+            {photo ? "Foto siap" : fotoWajib ? "Foto Bukti (wajib)" : "Foto Bukti (opsional)"}
             <input type="file" accept="image/*" hidden onChange={handlePhoto} disabled={uploadingPhoto} />
           </label>
           {formErr && <p className="text-[11px] text-red">{formErr}</p>}
@@ -748,7 +750,7 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
             <button type="button" onClick={() => { setForm(false); setFormErr(""); }}
               className="h-9 flex-1 rounded-lg text-[12px] font-semibold text-ink2">Batal</button>
             <button
-              type="button" disabled={busy} onClick={handleSave}
+              type="button" disabled={busy || uploadingPhoto || (fotoWajib && !photo)} onClick={handleSave}
               className="h-9 flex-1 rounded-lg bg-accent text-[12px] font-semibold text-white disabled:opacity-40"
             >
               {busy ? <Loader2 size={13} className="mx-auto animate-spin" /> : "Simpan"}

@@ -10,6 +10,7 @@ import { api } from "@/api.js";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import { PratinjauKoreksi, usePinStepUp, perluPin, lupakanStepUp, tampilNilai, LABEL_FIELD } from "@/features/finance/KoreksiAman.jsx";
 import { PanelDetail } from "@/features/finance/PanelDetail.jsx";
+import { BuktiBanyak, daftarBukti } from "@/features/finance/BuktiThumb.jsx";
 import { specPembayaran } from "@/features/finance/detailSpecs.js";
 import { Pilihan, InputUang, formatUang, tanggalJam, tanggalPendek } from "@/features/finance/shared.jsx";
 
@@ -80,6 +81,21 @@ export function VerifikasiDialog({ p, cutoff, onClose, onSaved }) {
             : <>Pastikan uangnya benar-benar masuk, lalu pilih rekening penerimanya. Verifikasi memasukkan pembayaran ini ke buku besar (kalau belum) —
               rekening dan cara bayar hanya bisa diubah di sini selama belum masuk buku. Setelah itu perubahan lewat Koreksi Pembayaran.</>}
         </p>
+        {/* Ringkasan yang SUDAH diisi Sales (tidak perlu diisi ulang): bukti, nominal, tanggal, metode, rekening, catatan. Rekening/cara bayar di bawah boleh dikoreksi. */}
+        <div className="space-y-2 rounded-lg border border-line p-3" data-testid="ringkasan-verifikasi">
+          <div className="flex flex-wrap items-center gap-2">
+            {daftarBukti(p).length > 0
+              ? <BuktiBanyak urls={daftarBukti(p)} label="Lihat bukti pembayaran" />
+              : <span className="rounded-md bg-orangebg px-2 py-1 text-[12px] font-medium text-orange" data-testid="tanpa-bukti">Belum ada bukti pembayaran — minta Sales melampirkan sebelum diverifikasi</span>}
+          </div>
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12.5px]">
+            <div><dt className="text-ink3">Nominal</dt><dd className="font-semibold text-ink">{formatUang(p.amount)}</dd></div>
+            <div><dt className="text-ink3">Tanggal diterima</dt><dd className="text-ink">{tglWIB(p.createdAt)}</dd></div>
+            <div><dt className="text-ink3">Cara bayar</dt><dd className="text-ink">{LABEL_METODE[p.method] || p.method}</dd></div>
+            <div><dt className="text-ink3">Dicatat oleh</dt><dd className="text-ink">{p.recordedBy?.name || "—"}</dd></div>
+          </dl>
+          {p.notes && <p className="text-[12.5px] text-ink2"><span className="text-ink3">Catatan: </span>{p.notes}</p>}
+        </div>
         <Field label="Masuk ke rekening mana?">
           <Pilihan value={f.cashAccountId} onChange={(v) => setF((s) => ({ ...s, cashAccountId: v }))}>
             <option value="">{p.cashAccount?.name ? p.cashAccount.name : (lama ? "Tidak dipilih (tidak menambah saldo)" : "Rekening standar cara bayar")}</option>

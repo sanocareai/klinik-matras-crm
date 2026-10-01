@@ -486,7 +486,7 @@ test("POST /orders/:id/payments: Sales (murni) DITOLAK 409 dengan pesan Indonesi
   const badan = { amount: 1_000_000, method: "TRANSFER", cashAccountId: w.bank.id };
   for (const gerbang of ["true", "false"]) {
     await setSetting(testPrisma, SETTING_KEYS.PAYMENT_VERIFICATION_GATE, gerbang);
-    const r = await w.cSales.post(`/api/orders/${order.id}/payments`, badan);
+    const r = await w.cSales.post(`/api/orders/${order.id}/payments`, { ...badan, proofPhotoUrl: "/media/payment-proofs/uji-bukti.jpg" });
     assert.equal(r.status, 409, `gerbang ${gerbang}: ${JSON.stringify(r.body)}`);
     assert.equal(r.body.code, "PEMBAYARAN_SALES_LEWAT_KLAIM");
     assert.match(r.body.error, /Ajukan Klaim Lunas/);
@@ -528,7 +528,7 @@ test("SAKELAR ROLLOUT MATI (default produksi): perilaku lama persis — Sales ma
   const draf = await w.cSales.post(`/api/klaim-lunas/order/${order.id}`, {});
   assert.equal(draf.status, 403);
   assert.equal(draf.body.code, "KLAIM_LUNAS_BELUM_AKTIF");
-  const bayar = await w.cSales.post(`/api/orders/${order.id}/payments`, { amount: 300_000, method: "TRANSFER", cashAccountId: w.bank.id });
+  const bayar = await w.cSales.post(`/api/orders/${order.id}/payments`, { amount: 300_000, method: "TRANSFER", cashAccountId: w.bank.id, proofPhotoUrl: "/media/payment-proofs/uji-bukti.jpg" });
   assert.equal(bayar.status, 201, "aplikasi Sales lama tetap bisa mencatat pembayaran sebelum gerbang diaktifkan");
   const lunas = await w.cSales.patch(`/api/orders/${order.id}`, { paymentStatus: "LUNAS" });
   assert.equal(lunas.status, 200, JSON.stringify(lunas.body));
@@ -536,7 +536,7 @@ test("SAKELAR ROLLOUT MATI (default produksi): perilaku lama persis — Sales ma
   await setSetting(testPrisma, SETTING_KEYS.KLAIM_LUNAS_GATE_AKTIF, "true");
   assert.deepEqual((await w.cSales.get("/api/klaim-lunas/status")).body, { aktif: true });
   const o2 = await buatOrder({ value: 1_000_000, sales: w.sales });
-  assert.equal((await w.cSales.post(`/api/orders/${o2.id}/payments`, { amount: 300_000, method: "TRANSFER", cashAccountId: w.bank.id })).status, 409);
+  assert.equal((await w.cSales.post(`/api/orders/${o2.id}/payments`, { amount: 300_000, method: "TRANSFER", cashAccountId: w.bank.id, proofPhotoUrl: "/media/payment-proofs/uji-bukti.jpg" })).status, 409);
   assert.equal((await w.cAdmin.patch(`/api/orders/${o2.id}`, { paymentStatus: "LUNAS" })).status, 409);
   assert.equal((await w.cSales.post(`/api/klaim-lunas/order/${o2.id}`, {})).status, 201);
 });
