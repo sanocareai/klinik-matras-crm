@@ -207,3 +207,9 @@ test("Sandbox#8 Unit 360 Bahan: kolom Rencana · Diserahkan · Terpakai · Sisa 
   for (const col of ["diserahkan", "terpakai", "sisa", "waste"]) assert.ok(D.includes(`data-col="${col}"`), col);
   assert.match(D, /l\.usedQty \?\? 0/); assert.match(D, /l\.leftoverQty \?\? 0/); assert.match(D, /l\.wasteQty \?\? 0/);
 });
+test("Sandbox#9 QC: pemilih bahan rework memakai pencarian produksi (bukan /inventory/materials yang 403 untuk QC)", () => {
+  assert.doesNotMatch(QC, /api\.getMaterials/);
+  assert.match(QC, /function MaterialPicker/);
+  assert.match(QC, /api\.searchProductionV2Materials\(t\)/);
+  assert.match(QC, /<MaterialPicker value=\{row\.materialId\}/);
+});
