@@ -1062,6 +1062,18 @@ visual di Inbox (badge CS-1/CS-2) [belum/sudah] diimplementasikan.
 - Sync status "sudah dibaca" jangan ikut status read-receipt asli WA
 - History chat lama (sebelum WA connect ke WAHA) belum ter-backfill ke CRM
 
+### ⚠️ Nama field WAHA yang sudah terbukti (diverifikasi dari kode WAHA produksi, 1 Okt 2026)
+
+- **Kutipan/reply = `reply_to`**, BUKAN `quotedMessageId`. Field yang tidak dikenal
+  DIABAIKAN diam-diam oleh WAHA (tidak error) — itu sebabnya reply tampil di CRM
+  tapi jadi pesan biasa di WhatsApp. Dikunci tes `tests/wahaQuote.test.js`.
+- **Unduh media pesan (`downloadMediaMessage`) WAJIB diberi sesi** milik percakapan
+  (CS-1/CS-2). Tanpa itu dipakai WAHA_SESSION global dan pesan CS-2 dijawab 404.
+- **Forward kontak/lokasi/poll TIDAK punya file** — jangan diperlakukan sebagai media
+  berupa file. Keputusan cara forward ada di `utils/forwardPlan.js` (dites).
+- nginx produksi `client_max_body_size 50M`: upload > 50 MB ditolak 413 SETELAH
+  terunggah penuh — klien (web & mobile) sudah mencegat di sisi klien.
+
 ---
 
 ## 14. DNS & DOMAIN

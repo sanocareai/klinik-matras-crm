@@ -15,6 +15,7 @@ import { buildMessagePreview, buildSearchSnippet } from "../utils/messagePreview
 import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { resolveMediaExt } from "../utils/mediaExt.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
+import { rencanaForward } from "../utils/forwardPlan.js";
 import { downloadAndSaveMedia } from "./webhooks.js";
 import { emitNewMessage, emitConversationUpdate, emitMessageUpdate, emitMessageDeleted } from "../socket.js";
 
@@ -489,7 +490,7 @@ conversationRouter.get("/cek-nomor", canReadConversation, async (req, res) => {
 // seperti perilaku lama). Response SEKARANG {data, nextCursor}, bukan array
 // mentah lagi — frontend (api.js/useConversations.js) sudah disesuaikan.
 conversationRouter.get("/", canReadConversation, async (req, res) => {
-  const { status, search, assignedToId, cursor, unread, tag, unanswered, unassigned, stalled, scope, type } = req.query;
+  const { status, search, assignedToId, cursor, unread, tag, unanswered, unassigned, stalled, scope, type, nameOnly } = req.query;
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
   const where = {};
   if (status)       where.status       = status;
@@ -510,9 +511,12 @@ conversationRouter.get("/", canReadConversation, async (req, res) => {
   // scope manapun di sini (grup tidak punya Customer sama sekali) — jadi
   // untuk default HARUS di-OR-kan eksplisit (bukan lewat where.customer
   // biasa), supaya grup tetap lolos filter ini seperti sebelumnya.
+  // ?scope=all — pemilih tujuan forward: SEMUA percakapan termasuk Kontak Tim.
+  // Meneruskan pesan ke rekan tim itu pemakaian forward yang paling umum, tapi
+  // default di bawah menyembunyikan mereka dari daftar biasa.
   if (scope === "internal") {
     where.customer = { isInternalStaff: true };
-  } else {
+  } else if (scope !== "all") {
     where.AND = [
       ...(where.AND || []),
       { OR: [{ customerId: null }, { customer: { isInternalStaff: false } }] },
@@ -575,6 +579,9 @@ conversationRouter.get("/", canReadConversation, async (req, res) => {
   // dipakai badge unread-count di bawah (unread=true), bukan hitungan baru.
   if (unread === "true") where.unread = true;
 
+  // ?nameOnly=true — cari HANYA di nama/nomor/nama grup, tidak di isi pesan.
+  // Pemilih tujuan forward butuh ini: mengetik "Budi" harus menemukan kontak
+  // bernama Budi, bukan 50 percakapan yang kebetulan menyebut kata "budi".
   if (search) {
     // Cari di customer (individual), groupName (grup), DAN isi pesan —
     // sebelumnya search cuma cocok ke nama/nomor/nama grup, jadi customer
@@ -588,7 +595,7 @@ conversationRouter.get("/", canReadConversation, async (req, res) => {
         { phone: { contains: search } },
       ]}},
       { groupName: { contains: search, mode: "insensitive" } },
-      { messages: { some: { content: { contains: search, mode: "insensitive" } } } },
+      ...(nameOnly === "true" ? [] : [{ messages: { some: { content: { contains: search, mode: "insensitive" } } } }]),
     ];
   }
 
@@ -1551,7 +1558,7 @@ conversationRouter.post("/:id/send-product", canWriteConversation, async (req, r
       // di-cache ke conversation.sessionId (in-memory) supaya gambar
       // berikutnya di loop yang sama langsung pakai sesi itu, tidak
       // mengulang percobaan CS-1/CS-2 dari awal tiap gambar.
-      const { session } = await sendWithSessionFallback(conversation, (s) =>
+      const { session, result: waResult } = await sendWithSessionFallback(conversation, (s) =>
         sendMedia(
           sendTarget,
           { mimetype: "image/jpeg", filename: img.url.split("/").pop(), url: fileUrl },
@@ -1563,6 +1570,11 @@ conversationRouter.post("/:id/send-product", canWriteConversation, async (req, r
       conversation.sessionId = session;
       let msg;
       try {
+        // externalId WAJIB disimpan (BUG 1 Okt 2026): tanpa ini centang
+        // kirim/terima/baca tidak pernah bisa dicocokkan — bubble ini macet di
+        // ikon jam — dan gema webhook dari WAHA tidak dikenali sebagai pesan
+        // yang sama, jadi tiap foto galeri muncul DUA kali (satu jam pending,
+        // satu centang biru).
         msg = await prisma.message.create({
           data: {
             conversationId: conversation.id,
@@ -1570,14 +1582,18 @@ conversationRouter.post("/:id/send-product", canWriteConversation, async (req, r
             content: caption,
             mediaType: "image",
             mediaUrl: img.url,
+            externalId: waResult?.id || null,
             clientId: cid,
           },
         });
       } catch (e) {
-        if (e.code !== "P2002" || !cid) throw e;
-        // Race sempit — sama pola dengan POST /:id/messages: 2 request
-        // ber-clientId sama lolos cek alreadySent di atas nyaris bersamaan.
-        msg = await prisma.message.findUnique({ where: { clientId: cid } });
+        if (e.code !== "P2002") throw e;
+        // Race sempit: (a) 2 request ber-clientId sama lolos cek alreadySent
+        // nyaris bersamaan, ATAU (b) gema webhook WAHA sudah menyimpan pesan
+        // ini lebih dulu (externalId sama).
+        msg = (cid && await prisma.message.findUnique({ where: { clientId: cid } }))
+          || (waResult?.id && await prisma.message.findUnique({ where: { externalId: waResult.id } }));
+        if (!msg) throw e;
       }
       savedMessages.push(msg);
       // BUG YANG DIPERBAIKI (26 Agustus 2026 — laporan "loading lama pas
@@ -1726,7 +1742,7 @@ conversationRouter.post("/:id/send-documentation", canWriteConversation, async (
     const fileUrl = `${BACKEND_INTERNAL_URL}${url}`;
 
     try {
-      const { session } = await sendWithSessionFallback(conversation, (s) =>
+      const { session, result: waResult } = await sendWithSessionFallback(conversation, (s) =>
         sendMedia(
           conversation.customer.phone,
           { mimetype: "image/jpeg", filename: url.split("/").pop(), url: fileUrl },
@@ -1736,16 +1752,26 @@ conversationRouter.post("/:id/send-documentation", canWriteConversation, async (
         )
       );
       conversation.sessionId = session;
-      const msg = await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          direction: "OUTBOUND",
-          content: caption,
-          mediaType: "image",
-          mediaUrl: url,
-          sentById: req.user.id,
-        },
-      });
+      // externalId disimpan supaya ack ter-update & gema webhook tidak jadi
+      // bubble kedua — lihat catatan di /send-product.
+      let msg;
+      try {
+        msg = await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            direction: "OUTBOUND",
+            content: caption,
+            mediaType: "image",
+            mediaUrl: url,
+            externalId: waResult?.id || null,
+            sentById: req.user.id,
+          },
+        });
+      } catch (e) {
+        if (e.code !== "P2002" || !waResult?.id) throw e;
+        msg = await prisma.message.findUnique({ where: { externalId: waResult.id } });
+        if (!msg) throw e;
+      }
       savedMessages.push(msg);
       // Sama seperti /send-product — emit per foto begitu terkirim, bukan
       // dibatch di akhir, supaya progress terasa real-time (lihat catatan
@@ -1878,6 +1904,23 @@ conversationRouter.get("/:id/handover-history", canReadConversation, async (req,
   }
 });
 
+// Unduh ulang media pesan lewat sesi WAHA yang BENAR. Dipakai forward dan
+// "Muat Media". Dulu keduanya memanggil WAHA lewat WAHA_SESSION global (CS-1),
+// jadi media pesan yang diterima CS-2 selalu 404. Kalau sessionId percakapan
+// belum diketahui, coba semua sesi yang dikenal.
+async function unduhUlangMediaPesan(message) {
+  const conv = await prisma.conversation.findUnique({
+    where: { id: message.conversationId },
+    select: { sessionId: true },
+  });
+  const daftarSesi = conv?.sessionId ? [conv.sessionId] : KNOWN_SESSIONS;
+  for (const sesi of daftarSesi) {
+    const url = await downloadAndSaveMedia(null, message.externalId, "", message.mediaType, sesi);
+    if (url) return url;
+  }
+  return null;
+}
+
 // Teruskan (forward) pesan ke percakapan lain
 conversationRouter.post("/:id/forward", canWriteConversation, async (req, res) => {
   const { messageId, targetConversationId } = req.body;
@@ -1887,31 +1930,29 @@ conversationRouter.post("/:id/forward", canWriteConversation, async (req, res) =
   let sourceMsg = await prisma.message.findUnique({ where: { id: messageId } });
   if (!sourceMsg) return res.status(404).json({ error: "Pesan tidak ditemukan" });
 
-  // BUG YANG DIPERBAIKI (10 Agustus 2026): pesan media yang mediaUrl-nya
-  // masih null (download awal gagal — WAHA belum selesai proses saat webhook
-  // tiba, sering terjadi kalau customer kirim BANYAK video sekaligus lewat
-  // fitur "album" WhatsApp, mis. 5-7 video bersamaan) SEBELUMNYA jatuh ke
-  // cabang `else if (sourceMsg.content)` di bawah — content untuk pesan media
-  // gagal-unduh sudah diisi PLACEHOLDER teks (mis. "[Video]", lihat
-  // parseHistoryMessage.js), jadi forward "berhasil" tapi yang benar-benar
-  // terkirim ke tujuan cuma teks placeholder itu, BUKAN videonya. Sales
-  // menyangka fitur forward video-nya rusak, padahal videonya memang belum
-  // pernah berhasil diunduh dari awal. Sekarang forward MENCOBA UNDUH ULANG
-  // di titik ini — pada saat sales forward (biasanya beberapa menit setelah
-  // pesan masuk), WAHA hampir pasti sudah selesai proses medianya.
-  if (sourceMsg.mediaType && !sourceMsg.mediaUrl && sourceMsg.externalId) {
-    const redownloaded = await downloadAndSaveMedia(null, sourceMsg.externalId, "", sourceMsg.mediaType);
-    if (redownloaded) {
-      sourceMsg = await prisma.message.update({
-        where: { id: sourceMsg.id },
-        data:  { mediaUrl: redownloaded },
-      });
-    } else {
+  // Tentukan CARA meneruskan dari JENIS pesannya (lihat utils/forwardPlan.js).
+  // Kontak & lokasi tidak punya file, jadi TIDAK BOLEH masuk jalur "unduh ulang
+  // media" — itu penyebab forward kontak gagal 502 berulang di produksi
+  // (30 Sep 2026) dan, kalau lolos, mengirim JSON mentah ke penerima.
+  let plan = rencanaForward(sourceMsg);
+
+  // Media berupa file yang mediaUrl-nya masih null (unduhan awal gagal — mis.
+  // WAHA belum selesai memproses saat webhook tiba; sering terjadi pada album
+  // video) diunduh ulang SEKARANG, lewat sesi WAHA milik percakapan sumber.
+  if (plan.kind === "needsDownload") {
+    const redownloaded = sourceMsg.externalId ? await unduhUlangMediaPesan(sourceMsg) : null;
+    if (!redownloaded) {
       return res.status(502).json({
         error: "Media pesan ini belum berhasil diunduh dari WhatsApp — coba lagi sebentar lagi.",
       });
     }
+    sourceMsg = await prisma.message.update({
+      where: { id: sourceMsg.id },
+      data:  { mediaUrl: redownloaded },
+    });
+    plan = rencanaForward(sourceMsg);
   }
+  if (plan.kind === "error") return res.status(422).json({ error: plan.error });
 
   const targetConv = await prisma.conversation.findUnique({
     where: { id: targetConversationId },
@@ -1942,24 +1983,31 @@ conversationRouter.post("/:id/forward", canWriteConversation, async (req, res) =
     // Session diambil dari conversation TUJUAN (targetConv), bukan sumber —
     // pesan diteruskan KELUAR lewat nomor CS yang menangani percakapan tujuan.
     try {
-      if (sourceMsg.mediaUrl && sourceMsg.mediaType) {
+      if (plan.kind === "contact") {
+        ({ result: wahaMsg } = await sendWithSessionFallback(targetConv, (session) =>
+          sendContactVcard(target, plan.contacts, session)
+        ));
+      } else if (plan.kind === "location") {
+        ({ result: wahaMsg } = await sendWithSessionFallback(targetConv, (session) =>
+          sendLocation(target, { lat: plan.lat, lng: plan.lng, title: plan.title }, session)
+        ));
+      } else if (plan.kind === "media") {
         const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
         const fileUrl = sourceMsg.mediaUrl.startsWith("http")
           ? sourceMsg.mediaUrl
           : `${BACKEND_INTERNAL_URL}${sourceMsg.mediaUrl}`;
-        const mimeMap = { image: "image/jpeg", video: "video/mp4", audio: "audio/ogg", document: "application/octet-stream" };
         ({ result: wahaMsg } = await sendWithSessionFallback(targetConv, (session) =>
           sendMedia(
             target,
-            { mimetype: mimeMap[sourceMsg.mediaType] || "application/octet-stream", filename: sourceMsg.mediaUrl.split("/").pop(), url: fileUrl },
-            sourceMsg.content || "",
-            "media",
+            { mimetype: plan.mimetype, filename: plan.filename, url: fileUrl },
+            plan.caption,
+            plan.sendAs,
             session
           )
         ));
-      } else if (sourceMsg.content) {
+      } else {
         ({ result: wahaMsg } = await sendWithSessionFallback(targetConv, (session) =>
-          sendText(target, sourceMsg.content, null, session)
+          sendText(target, plan.text, null, session)
         ));
       }
     } catch (err) {
@@ -1975,9 +2023,13 @@ conversationRouter.post("/:id/forward", canWriteConversation, async (req, res) =
     data: {
       conversationId: targetConversationId,
       direction: "OUTBOUND",
-      content: sourceMsg.content || "",
+      // Media: caption bersih (placeholder "[Video]" bukan isi pesan). Kontak/
+      // lokasi: JSON aslinya dipertahankan supaya bubble-nya dirender kartu.
+      content: plan.kind === "media" ? plan.caption : (sourceMsg.content || ""),
       mediaType: sourceMsg.mediaType || null,
       mediaUrl: sourceMsg.mediaUrl || null,
+      rawType: plan.kind === "contact" || plan.kind === "location" ? plan.kind : undefined,
+      sentById: req.user.id,
       forwarded: true,
       externalId: wahaMsg?.id || null,
       // Poster IKUT diwariskan dari pesan sumber — file videonya sama persis
@@ -2161,7 +2213,17 @@ conversationRouter.post("/:id/messages/:messageId/load-media", canReadConversati
   }
 
   try {
-    const downloaded = await downloadMediaMessage(message.externalId);
+    // Sesi WAHA milik percakapan ini — BUKAN WAHA_SESSION global (lihat
+    // unduhUlangMediaPesan: pesan CS-2 dijawab 404 kalau diunduh lewat CS-1).
+    const conv = await prisma.conversation.findUnique({
+      where: { id: message.conversationId },
+      select: { sessionId: true },
+    });
+    let downloaded = null;
+    for (const sesi of (conv?.sessionId ? [conv.sessionId] : KNOWN_SESSIONS)) {
+      downloaded = await downloadMediaMessage(message.externalId, sesi);
+      if (downloaded?.data) break;
+    }
     if (!downloaded?.data) {
       return res.status(502).json({ error: "WAHA tidak bisa kasih media ini lagi (mungkin sudah kedaluwarsa di server WhatsApp)" });
     }

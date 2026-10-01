@@ -55,6 +55,9 @@ const isMandek = (o) =>
 // lihat catatan panjang di utils/format.js ORDER_STATUS_BUCKET.
 const STATUS_TABS = [
   { key: "", label: "Semua" },
+  // PENDING ("Menunggu") sebelumnya tidak punya tab — 17 order produksi hanya
+  // terlihat di "Semua" dan tidak bisa disaring (1 Okt 2026).
+  { key: "PENDING", label: ORDER_STATUS_BUCKET_LABELS.PENDING },
   { key: "PICKUP", label: ORDER_STATUS_BUCKET_LABELS.PICKUP },
   { key: "PROCESSING", label: ORDER_STATUS_BUCKET_LABELS.PROCESSING },
   { key: "READY", label: ORDER_STATUS_BUCKET_LABELS.READY },
@@ -184,7 +187,13 @@ export default function OrdersScreen({ navigation }) {
       // catatan `hideFinished` di routes/orders.js). Tab bucket "Diproses"
       // (statusFilter==="PROCESSING" tanpa statusParam) JUGA tidak boleh ikut
       // hideFinished — itu sendiri sudah eksplisit memilih status tertentu.
-      else if (!statusFilter) params.hideFinished = "true";
+      //
+      // BUG YANG DIPERBAIKI (1 Okt 2026): sedang MENCARI nama/nomor/ID order
+      // tidak boleh menyembunyikan order selesai. Sales mencari pelanggan yang
+      // order-nya sudah terkirim (DELIVERED = 496 dari 615 order produksi) dan
+      // hasilnya "Tidak ada order yang cocok", padahal pelanggannya ada di tab
+      // Pelanggan. Layar Armada & Produksi sudah menerapkan aturan yang sama.
+      else if (!statusFilter && !search) params.hideFinished = "true";
       if (salesFilter) params.salesId = salesFilter.id;
       const data = await api.getOrders(params);
       // Bucket "Diproses" tidak dikirim ke backend (lihat statusQueryParam) —
@@ -379,8 +388,13 @@ export default function OrdersScreen({ navigation }) {
         <View style={styles.emptyWrap}>
           <Package size={36} color={tokens.color.textMuted} strokeWidth={1.6} style={{ marginBottom: 8 }} />
           <Text style={styles.emptyText}>
-            {search || statusFilter || hanyaMandek || salesFilter ? "Tidak ada order yang cocok" : "Belum ada order"}
+            {search || statusFilter || hanyaMandek || salesFilter ? "Tidak ada order yang cocok" : "Belum ada order aktif"}
           </Text>
+          {!search && !statusFilter && !hanyaMandek && !salesFilter && (
+            <Text style={[styles.emptyText, { fontSize: 12, marginTop: 4 }]}>
+              Tab "Semua" hanya menampilkan order yang belum selesai. Pilih "Terkirim" atau cari nama untuk melihat yang sudah selesai.
+            </Text>
+          )}
         </View>
       ) : (
         <FlashList

@@ -87,7 +87,14 @@ export async function sendText(to, text, quotedMessageId = null, session, mentio
   // tidak ada, jadi pesan hilang tanpa error dan sales tidak pernah tahu.
   const chatId = buildChatId(to, "sendText");
   const body = { session, chatId, text };
-  if (quotedMessageId) body.quotedMessageId = quotedMessageId;
+  // BUG YANG DIPERBAIKI (1 Oktober 2026): dulu field ini dikirim sebagai
+  // `quotedMessageId` — nama itu TIDAK DIKENAL WAHA, jadi diabaikan diam-diam
+  // dan balasan-kutipan di CRM tampil sebagai pesan biasa di WhatsApp
+  // (kutipan cuma ada di sisi CRM). Nama field WAHA adalah `reply_to`;
+  // diverifikasi langsung dari kode engine GOWS di produksi
+  // (session.gows.core.js: `replyTo: getMessageIdFromSerialized(request.reply_to)`
+  // dan MessageTextRequest di chatting.dto.js).
+  if (quotedMessageId) body.reply_to = quotedMessageId;
   if (mentions?.length) body.mentions = mentions;
   // Timeout WAJIB: tanpa ini, WAHA yang menggantung membuat request backend
   // menggantung juga TANPA BATAS. Nyata: JID grup tidak valid membuat engine
@@ -281,10 +288,14 @@ export async function downloadMediaFromUrl(url) {
 
 // Download media via message ID endpoint
 // Return: { data: base64, mimetype, filename } atau null kalau gagal
-export async function downloadMediaMessage(messageId) {
+// session: sesi WAHA tempat pesan ini diterima (CS-1/CS-2). Default ke
+// WAHA_SESSION global HANYA demi caller lama — pesan CS-2 yang diunduh lewat
+// sesi CS-1 dijawab 404, itu sebabnya 53 dokumen CS-2 di produksi tidak
+// pernah bisa dimuat ulang ("Muat Media") maupun diteruskan.
+export async function downloadMediaMessage(messageId, session = WAHA_SESSION) {
   try {
     const res = await fetch(
-      `${WAHA_BASE_URL}/api/${WAHA_SESSION}/messages/${encodeURIComponent(messageId)}/download`,
+      `${WAHA_BASE_URL}/api/${encodeURIComponent(session || WAHA_SESSION)}/messages/${encodeURIComponent(messageId)}/download`,
       { headers: headers() }
     );
     if (!res.ok) {

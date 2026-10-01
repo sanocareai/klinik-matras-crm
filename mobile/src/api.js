@@ -72,9 +72,12 @@ async function tanganiSesiDitolak(tokenDipakai) {
   if (onUnauthorized) onUnauthorized();
 }
 
-async function request(path, options = {}) {
+async function request(path, optionsMentah = {}) {
+  // timeoutMs: batas tunggu khusus permintaan ini (default TIMEOUT_MS). Bukan
+  // opsi fetch, jadi dipisah dulu supaya tidak ikut terkirim.
+  const { timeoutMs, ...options } = optionsMentah;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs || TIMEOUT_MS);
   const tokenDipakai = token; // token yang benar-benar dikirim permintaan INI (lihat penanganan 401 di bawah)
 
   try {
@@ -274,10 +277,15 @@ export const api = {
   getHandoverHistory: (id) =>
     request(`/conversations/${id}/handover-history`),
   // Teruskan pesan ke percakapan lain (dipakai modal Forward di ChatScreen)
+  // timeoutMs 90 detik: meneruskan video/dokumen besar membuat server menunggu
+  // WAHA mengunggah ke WhatsApp — lebih lama dari 30 detik default. Kalau klien
+  // menyerah duluan padahal server masih mengirim, pesan SUDAH terkirim tapi
+  // terlihat gagal, lalu sales mengulang dan penerima menerima dobel.
   forwardMessage: (sourceConvId, messageId, targetConversationId) =>
     request(`/conversations/${sourceConvId}/forward`, {
       method: "POST",
       body: JSON.stringify({ messageId, targetConversationId }),
+      timeoutMs: 90000,
     }),
   // Edit pesan OUTBOUND (teks saja, 15 menit sejak terkirim — sama seperti
   // batas edit WhatsApp asli, ditegakkan di backend).
