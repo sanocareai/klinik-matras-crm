@@ -81,3 +81,20 @@ test("Setiap modul export terdaftar punya ≥1 definisi angka; sheet 'Definisi A
   }
   assert.match(basisTanggalModul("pembayaran"), /Tanggal pembayaran diterima/);
 });
+
+test("COVERAGE TAB: setiap halaman Finance diklasifikasi — punya metrik di kontrak atau dinyatakan tanpa angka uang; kartu UI hanya memakai kunci metrik yang ada", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const akar = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/src/pages/finance");
+  // Halaman tanpa kartu angka uang (daftar/pengaturan/buku) — dinyatakan eksplisit supaya halaman baru tidak lolos tanpa klasifikasi.
+  const TANPA_ANGKA = new Set(["FinanceAccounts.jsx", "FinanceInvoices.jsx", "FinanceJournal.jsx", "FinanceLedger.jsx", "FinancePersediaanAwal.jsx", "FinanceSettings.jsx"]);
+  const kunci = new Set(METRIK.map((m) => m.kunci));
+  for (const f of fs.readdirSync(akar).filter((x) => x.endsWith(".jsx"))) {
+    const src = fs.readFileSync(path.join(akar, f), "utf8");
+    const dipakai = [...src.matchAll(/metrik[=:]\s*\{?\s*"([a-z_]+)"/g)].map((m) => m[1]);
+    for (const d of dipakai) assert.ok(kunci.has(d), `${f}: metrik="${d}" tidak ada di kontrak`);
+    for (const m of src.matchAll(/metrik=\{\[([^\]]+)\]\}/g)) for (const d of m[1].match(/"([a-z_]+)"/g) ?? []) assert.ok(kunci.has(d.replace(/"/g, "")), `${f}: ${d} tidak ada di kontrak`);
+    assert.ok(dipakai.length > 0 || TANPA_ANGKA.has(f), `${f}: halaman Finance tidak punya metrik kontrak dan belum dinyatakan tanpa angka uang`);
+  }
+});
