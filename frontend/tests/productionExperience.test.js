@@ -66,6 +66,8 @@ test("label aksi & teks tunggu dalam Bahasa Indonesia", () => {
   assert.equal(actionLabel({ stepNo: 6, action: "START" }, { stageLabel: "Upgrade Fondasi" }), "Mulai Upgrade Fondasi");
   assert.equal(waitCopy({ wait: "AWAITING_QC" }).title, "Menunggu QC");
   assert.match(waitCopy({ wait: "SERVICE_NOT_SET" }).text, /Production Lead/);
+  assert.match(waitCopy({ wait: "DIAGNOSIS_MANUAL_UNMAPPED" }).text, /memetakan bahan manual/);
+  assert.match(waitCopy({ wait: "DIAGNOSIS_BOM_EMPTY" }).text, /Revisi Diagnosis/);
 });
 
 test("pesan galat ramah (409 revisi, urutan, jaringan, akses) tanpa kode teknis", () => {

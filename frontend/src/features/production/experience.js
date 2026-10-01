@@ -118,6 +118,8 @@ export function waitCopy(next) {
     case "MATERIAL_NOT_READY": return { title: "Bahan belum turun", text: "Gudang belum menyerahkan bahan untuk tahap berikutnya. Tekan “Menunggu Bahan Baku” bila bahan dibutuhkan sekarang." };
     case "MATERIAL_SHORTAGE": return { title: "Menunggu bahan baku", text: "Laporan kekurangan bahan sudah terkirim ke Gudang. Lanjutkan setelah bahan diserahkan." };
     case "SERVICE_NOT_SET": return { title: "Menunggu keputusan layanan", text: "Diagnosa sudah terkirim. Production Lead perlu menetapkan layanan unit sebelum pekerjaan dilanjutkan." };
+    case "DIAGNOSIS_MANUAL_UNMAPPED": return { title: "Menunggu pemetaan bahan manual", text: "Diagnosa sudah terkirim. Production Lead perlu memetakan bahan manual ke katalog (Unit 360 > Bahan) sebelum pekerjaan dilanjutkan." };
+    case "DIAGNOSIS_BOM_EMPTY": return { title: "Planned BOM masih kosong", text: "Diagnosa sudah terkirim tetapi belum ada bahan katalog. Buka Unit 360 > Proses > Revisi Diagnosis dan isi bahan yang dibutuhkan." };
     case "AWAITING_WAREHOUSE": return { title: "Menunggu Gudang", text: "Barang jadi sudah diserahkan dan menunggu diterima Gudang." };
     case "HANDOFF_REJECTED": return { title: "Ditolak Gudang", text: "Barang jadi ditolak Gudang. Production Lead akan menentukan tindak lanjut." };
     case "EXCEPTION_OPEN": return { title: "Perlu tindakan Production Lead", text: "Ada konflik data pada unit ini. Hubungi Production Lead." };

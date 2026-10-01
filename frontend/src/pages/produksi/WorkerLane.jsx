@@ -131,7 +131,7 @@ function DiagnosisStepSheet({ card, next, onClose, onSubmitted }) {
       card={{
         runId: card.runId, unitCode: card.unit.unitCode, workCenterId: card.workCenterId,
         customer: card.customer, priorServiceLabel: card.unit.service?.label ?? null,
-        diagnosisRevision: diagState.current?.revision ?? 0,
+        diagnosisRevision: diagState.current?.revision ?? 0, current: diagState.current,
       }}
       onClose={onClose}
       onSubmitted={handleSubmitted}

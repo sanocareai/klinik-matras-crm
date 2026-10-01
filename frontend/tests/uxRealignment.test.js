@@ -181,3 +181,29 @@ test("Rencana: MejaColumn menerima & dipasangi dragStart (kartu di meja bisa dis
   assert.match(RENCANA, /<MejaColumn [\s\S]*?dragStart=\{dragStart\}/);
   assert.ok(RENCANA.includes("onDragStart={(e) => dragStart(e, v.runId)}"));
 });
+
+// ---- Temuan sandbox QA (fix/production-v2-sandbox-findings) ----
+test("Sandbox#1 Revisi Diagnosis tidak lagi kosong: wizard di-seed dari diagnosis server (temuan, layanan, BOM, manual belum terpetakan, foto)", () => {
+  const W = read("features", "production", "DiagnosisWizard.jsx");
+  assert.match(W, /export function serverSeed\(cur\)/);
+  assert.match(W, /const seed = local \|\| \(server \? serverSeed\(server\) : null\)/);
+  assert.match(W, /filter\(\(m\) => m\.status === "NEEDS_MAPPING"\)/, "hanya bahan manual belum terpetakan yang dibawa");
+  assert.match(read("pages", "produksi", "WorkerLane.jsx"), /current: diagState\.current/);
+  assert.match(read("features", "production", "UnitOverviewDrawer.jsx"), /current: data\.diagnosis\?\.current \?\? null/);
+});
+test("Sandbox#3 PIC/Gudang tidak memicu 403 daftar workshop/operator di Status & Rencana", () => {
+  assert.match(STATUS, /if \(!canRoute\) return;/);
+  assert.match(RENCANA, /if \(!canUploadPhoto\) \{/);
+});
+test("Sandbox#5/#6 Rencana: reservasi tampil kode·nama (bukan UUID) dan ada tombol 'Ajukan Pengambilan Bahan' di UI baru", () => {
+  assert.match(RENCANA, /matLabel\(r\.materialId\)/);
+  assert.doesNotMatch(RENCANA, /<span>\{r\.materialId\}<\/span>/);
+  assert.match(RENCANA, /api\.requestMaterialPickup\(plan\.id\)/);
+  assert.match(RENCANA, /Ajukan Pengambilan Bahan/);
+});
+test("Sandbox#8 Unit 360 Bahan: kolom Rencana · Diserahkan · Terpakai · Sisa · Waste (bukan 'Terpakai' = reservasi dikonsumsi)", () => {
+  const D = read("features", "production", "UnitOverviewDrawer.jsx");
+  assert.match(D, /\["Bahan", "Rencana", "Diserahkan", "Terpakai", "Sisa", "Waste", "Status"\]/);
+  for (const col of ["diserahkan", "terpakai", "sisa", "waste"]) assert.ok(D.includes(`data-col="${col}"`), col);
+  assert.match(D, /l\.usedQty \?\? 0/); assert.match(D, /l\.leftoverQty \?\? 0/); assert.match(D, /l\.wasteQty \?\? 0/);
+});

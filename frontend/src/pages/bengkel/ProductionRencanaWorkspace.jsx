@@ -140,7 +140,8 @@ function BOMSection({ plan, materials, stockByMaterial, onSaved, onError }) {
   );
 }
 
-function ReservationSection({ plan, onSaved, onError }) {
+function ReservationSection({ plan, materials = [], onSaved, onError }) {
+  const matLabel = (id) => { const m = materials.find((x) => x.id === id); return m ? `${m.code} · ${m.name}` : id; };
   const [busy, setBusy] = useState(false);
   const [shortages, setShortages] = useState(null);
   const [releasing, setReleasing] = useState(false);
@@ -157,6 +158,12 @@ function ReservationSection({ plan, onSaved, onError }) {
       if (e.code === "PLAN_MATERIAL_SHORTAGE") setShortages(e.detail?.shortages || []); else onError(friendlyError(e));
     } finally { setBusy(false); }
   }
+  // Jalur UI baru untuk meminta Gudang menyerahkan bahan (sebelumnya hanya ada di halaman legacy "Rencana Produksi (lama, P3)").
+  async function doRequestPickup() {
+    setBusy(true);
+    try { const result = await api.requestMaterialPickup(plan.id); onSaved(result, "Pengambilan bahan diajukan ke Gudang (Antrean Gudang > Pengambilan Bahan)."); }
+    catch (e) { onError(friendlyError(e)); } finally { setBusy(false); }
+  }
   async function doRelease() {
     if (reason.trim().length < 3) { onError("Alasan pelepasan wajib diisi (minimal 3 karakter)."); return; }
     setBusy(true);
@@ -171,11 +178,12 @@ function ReservationSection({ plan, onSaved, onError }) {
     <div className="space-y-2 rounded-btn border border-line p-3">
       <div className="flex items-center justify-between"><p className="text-[12.5px] font-bold text-ink">Status Reservasi Bahan</p><Badge variant={plan.status === "MATERIAL_RESERVED" ? "green" : "neutral"}>{plan.status === "MATERIAL_RESERVED" ? "Direservasi" : "Belum direservasi"}</Badge></div>
       {plan.reservations?.length > 0 ? (
-        <ul className="space-y-0.5 text-[11.5px] text-ink3">{plan.reservations.map((r) => <li key={r.id} className="flex justify-between"><span>{r.materialId}</span><span>{r.qty}</span></li>)}</ul>
+        <ul className="space-y-0.5 text-[11.5px] text-ink3">{plan.reservations.map((r) => <li key={r.id} className="flex justify-between gap-2"><span className="min-w-0 break-words">{matLabel(r.materialId)}</span><span className="tabular-nums">{r.qty}</span></li>)}</ul>
       ) : <p className="text-[11.5px] text-ink3">Belum ada reservasi aktif.</p>}
       {shortages && shortages.length > 0 && <div className="rounded-btn bg-redbg px-2 py-1.5 text-[11.5px] text-red">Stok tidak cukup: {shortages.map((s) => `${s.code} (butuh ${s.needed}, tersedia ${s.available})`).join("; ")}</div>}
       <div className="flex flex-wrap gap-2">
         {canReserve && <Button size="sm" disabled={busy} onClick={doReserve}><PackageCheck size={14} /> Reservasi Bahan</Button>}
+        {plan.status === "MATERIAL_RESERVED" && !releasing && <Button size="sm" disabled={busy} onClick={doRequestPickup}><PackageCheck size={14} /> Ajukan Pengambilan Bahan</Button>}
         {plan.status === "MATERIAL_RESERVED" && !releasing && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setReleasing(true)}><Undo2 size={14} /> Lepas Reservasi</Button>}
       </div>
       {releasing && (
@@ -219,7 +227,7 @@ function DetailRencana({ target, refs, materials, stockByMaterial, onClose, onCh
           onUploaded={(photoUrl) => { setCurrent((c) => ({ ...c, unit: { ...c.unit, photoUrl } })); setNotice("Foto identitas unit disimpan."); }} />
         <AssignSection target={current} refs={refs} onSaved={applySaved} onError={setError} />
         <BOMSection plan={current.plan} materials={materials} stockByMaterial={stockByMaterial} onSaved={applySaved} onError={setError} />
-        <ReservationSection plan={current.plan} onSaved={applySaved} onError={setError} />
+        <ReservationSection plan={current.plan} materials={materials} onSaved={applySaved} onError={setError} />
       </div>
     </Modal>
   );
@@ -330,6 +338,8 @@ export default function ProductionRencanaWorkspace() {
   }, [date]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
+    // Peran tanpa hak menjadwalkan (PIC/Gudang) tidak boleh memanggil daftar workshop/operator (403 + galat konsol).
+    if (!canUploadPhoto) { Promise.all([api.getMaterials({ active: "true" }), api.getStock()]).then(([m, s]) => setRefs((r) => ({ ...r, materials: m || [], stock: s || [] }))).catch(() => {}); return; }
     Promise.all([api.getWorkCenters(), api.getProductionOperators(), api.getMaterials({ active: "true" }), api.getStock()])
       .then(([w, o, m, s]) => setRefs((r) => ({ ...r, workCenters: (w.workCenters || []).filter((x) => x.active !== false), operators: (o.operators || []).filter((x) => x.active !== false), materials: m || [], stock: s || [] })))
       .catch(() => {});
