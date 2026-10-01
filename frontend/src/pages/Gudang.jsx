@@ -204,6 +204,15 @@ function ReorderModal({ open, onClose, material, onSaved }) {
   );
 }
 
+// GET /units/by-code mengembalikan { unit: { id, ... }, ... } (bentuk getUnitStatus) — BUKAN objek unit datar. Kode lama membaca
+// `unit.id` langsung sehingga unitId selalu undefined (Keluar ke Unit gagal; retur/waste tidak tertaut) — ditemukan lewat sandbox QA.
+export async function resolveUnitId(code) {
+  const r = await api.getUnitByCode(String(code).trim().toUpperCase());
+  const id = r?.unit?.id ?? r?.id;
+  if (!id) throw new Error(`Unit "${code}" tidak ditemukan`);
+  return id;
+}
+
 // ── Modal Catat Pergerakan ───────────────────────────────────────────────
 function MovementModal({ open, onClose, material, onSaved }) {
   const [type, setType] = useState("receipt");
@@ -241,15 +250,15 @@ function MovementModal({ open, onClose, material, onSaved }) {
         });
       } else if (type === "issue") {
         if (!unitCode.trim()) { setErr("Kode unit wajib diisi"); setBusy(false); return; }
-        const unit = await api.getUnitByCode(unitCode.trim().toUpperCase());
-        await api.issueStock({ materialId: material.materialId, qty: qtyNum, unitId: unit.id, note: note || undefined });
+        const unitId = await resolveUnitId(unitCode);
+        await api.issueStock({ materialId: material.materialId, qty: qtyNum, unitId, note: note || undefined });
       } else if (type === "return") {
         // Kode unit OPSIONAL: bila diisi, sisa yang dikembalikan tertaut ke unit itu dan muncul di Unit 360 > Bahan (kolom Sisa/Retur).
-        const unit = unitCode.trim() ? await api.getUnitByCode(unitCode.trim().toUpperCase()) : null;
-        await api.returnStock({ materialId: material.materialId, qty: qtyNum, unitId: unit?.id, note: note || undefined });
+        const unitId = unitCode.trim() ? await resolveUnitId(unitCode) : undefined;
+        await api.returnStock({ materialId: material.materialId, qty: qtyNum, unitId, note: note || undefined });
       } else if (type === "waste") {
-        const unit = unitCode.trim() ? await api.getUnitByCode(unitCode.trim().toUpperCase()) : null;
-        await api.wasteStock({ materialId: material.materialId, qty: qtyNum, reason: reason.trim(), unitId: unit?.id, note: note || undefined });
+        const unitId = unitCode.trim() ? await resolveUnitId(unitCode) : undefined;
+        await api.wasteStock({ materialId: material.materialId, qty: qtyNum, reason: reason.trim(), unitId, note: note || undefined });
       } else if (type === "adjustment") {
         await api.adjustStock({ materialId: material.materialId, actualQty: qtyNum, reason: reason.trim(), note: note || undefined });
       }
