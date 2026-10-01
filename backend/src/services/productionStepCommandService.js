@@ -181,7 +181,9 @@ function waitMessage(next) {
     case "AWAITING_QC": return "Unit sedang menunggu QC oleh petugas QC.";
     case "MATERIAL_NOT_READY": return "Bahan dari Gudang belum diserahkan untuk tahap ini.";
     case "MATERIAL_SHORTAGE": return "Unit menunggu bahan baku dari Gudang.";
-    case "SERVICE_NOT_SET": return "Diagnosa sudah dikirim. Menunggu layanan teknis/Planned BOM/pemetaan bahan manual selesai.";
+    case "SERVICE_NOT_SET": return "Diagnosa sudah dikirim. Menunggu layanan teknis ditetapkan.";
+    case "DIAGNOSIS_MANUAL_UNMAPPED": return "Diagnosa sudah dikirim. Menunggu Production Lead memetakan bahan manual ke katalog.";
+    case "DIAGNOSIS_BOM_EMPTY": return "Diagnosa sudah dikirim. Planned BOM masih kosong — isi bahan katalog lewat Revisi Diagnosis.";
     case "AWAITING_WAREHOUSE": return "Barang jadi menunggu diterima Gudang.";
     case "HANDOFF_REJECTED": return "Barang jadi ditolak Gudang — tindak lanjut lewat Production Lead.";
     case "EXCEPTION_OPEN": return "Ada konflik data yang harus diselesaikan Production Lead lebih dulu.";

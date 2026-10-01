@@ -116,7 +116,12 @@ test("BRIDGE: residual 0; komponen tepat (DP, ongkir, Tanpa Sales, DP periode se
   assert.equal(garis(b, "ONGKIR").jumlah, 200_000);
   // Selisih lain: o1 +888.000 (kelebihan: 1.000.000 + 888.000 DP lama vs nilai 1.000.000), o6 −600.000 (Lunas tanpa Payment), o10 −111.000 (Payment belum diverifikasi/dibatalkan).
   // Refund tidak mengubah selisih lain (o8: 1.000.000 − 100.000 = 900.000 = nilai).
-  assert.equal(garis(b, "SELISIH_LAIN").jumlah, 888_000 - 600_000 - 111_000);
+  // "Selisih Nominal Lain" DIHAPUS (Fase 1b): setiap bagian terklasifikasi — kelebihan (o1), Klaim Lunas tanpa Payment (o6), Payment menunggu verifikasi (o10).
+  assert.equal(garis(b, "KELEBIHAN_BAYAR").jumlah, 888_000);
+  assert.equal(garis(b, "KLAIM_TANPA_PAYMENT").jumlah, -600_000);
+  assert.equal(garis(b, "PAYMENT_MENUNGGU").jumlah, -111_000);
+  assert.equal(garis(b, "PAYMENT_KURANG").jumlah, 0);
+  assert.equal(garis(b, "SELISIH_LAIN").jumlah, 0, "tidak ada yang tak terklasifikasi");
   // Total perusahaan = Σ nilai order lunas Sep: o1 1.000.000 + o2 500.000 + o4 4.000.000 + o5 800.000 + o6 600.000 + o7 700.000 + o8 900.000 + o10 111.000
   assert.equal(garis(b, "TOTAL_PERUSAHAAN").jumlah, 8_611_000);
   assert.equal(garis(b, "TANPA_SALES").jumlah, 4_000_000, "hanya order tanpa pemilik & tanpa percakapan Sales");
@@ -235,9 +240,11 @@ test("DUA TAHAP (Fase 1): tahap 1 Uang Masuk→Total Perusahaan & tahap 2 Total 
   assert.equal(tahap1.status.perhitunganLabel, "Perhitungan cocok");
   // Perlu ditinjau ≠ perhitungan: o6 (Lunas tanpa Payment −600.000) + o10 (−111.000) ⇒ ada yang perlu ditinjau walau residual 0
   assert.equal(tahap1.status.perluDitinjau, true);
-  const selisih = tahap1.status.alasanTinjau.find((a) => a.kunci === "SELISIH_LAIN");
-  assert.equal(selisih.nOrder, 2);
-  assert.equal(selisih.jumlah, -711_000);
+  const tanpaPayment = tahap1.status.alasanTinjau.find((a) => a.kunci === "KLAIM_TANPA_PAYMENT");
+  assert.equal(tanpaPayment.nOrder, 1); assert.equal(tanpaPayment.jumlah, -600_000);
+  const menunggu = tahap1.status.alasanTinjau.find((a) => a.kunci === "PAYMENT_MENUNGGU");
+  assert.equal(menunggu.nOrder, 1); assert.equal(menunggu.jumlah, -111_000);
+  assert.ok(!tahap1.status.alasanTinjau.some((a) => a.kunci === "SELISIH_LAIN"));
   // Tahap 2
   assert.equal(tahap2.mulai.kunci, "TOTAL_PERUSAHAAN");
   assert.equal(tahap2.akhir.kunci, "NILAI_LUNAS_SALES");
@@ -276,4 +283,86 @@ test("DUA TAHAP: kasus tepi (dihitung ganda) tetap residual 0 di kedua tahap; pe
   assert.equal(b.tahap2.akhir.jumlah, 2_000_000, "dipegang 2 Sales → dihitung 2x di laporan per-Sales");
   assert.equal(b.tahap2.status.alasanTinjau.find((a) => a.kunci === "DIHITUNG_GANDA").jumlah, 1_000_000);
   assert.ok(b.tahap2.langkah.some((l) => l.kunci === "DIHITUNG_GANDA"));
+});
+
+test("KARTU 'Kenapa angka Finance dan Sales berbeda?': tercatat/terverifikasi/klaim Lunas/selisih; penyebab terklasifikasi (tanpa 'Selisih Nominal Lain'); residual Rp0; status; payload drill-down diperkaya; satu payload untuk kartu & detail", async () => {
+  const w = await dunia();
+  await skenario(w);
+  const b = (await raw("GET", `/api/sales-finance/rekon?${PERIODE}`, { token: w.admin.token })).body;
+  const k = b.kartuSelisih;
+  // 1-4. Payment tercatat (periode, aktif): uang masuk terverifikasi 10.300.000 + o10 menunggu 111.000 (yang dibatalkan TIDAK dihitung)
+  assert.equal(k.terverifikasi.jumlah, 10_300_000);
+  assert.equal(k.tercatat.menunggu.jumlah, 111_000); assert.equal(k.tercatat.menunggu.nPayment, 1);
+  assert.equal(k.tercatat.jumlah, 10_300_000 + 111_000);
+  assert.equal(k.klaimLunas.jumlah, 8_611_000); assert.equal(k.klaimLunas.nOrder, 8);
+  assert.equal(k.selisih.jumlah, 8_611_000 - 10_300_000);
+  // 5-7. penyebab: jumlah efek = selisih (residual Rp0); tiap penyebab punya order & nominal; tidak ada "Selisih Nominal Lain"
+  assert.equal(k.penyebab.reduce((s, p) => s + p.efek, 0), k.selisih.jumlah);
+  assert.ok(!JSON.stringify(k).includes("Selisih Nominal Lain"));
+  const pk = Object.fromEntries(k.penyebab.map((p) => [p.kunci, p]));
+  assert.equal(pk.KLAIM_TANPA_PAYMENT.nOrder, 1); assert.equal(pk.KLAIM_TANPA_PAYMENT.efek, 600_000); assert.equal(pk.KLAIM_TANPA_PAYMENT.arah, "MENAMBAH");
+  assert.equal(pk.PAYMENT_MENUNGGU.nOrder, 1); assert.equal(pk.PAYMENT_MENUNGGU.tindakan.kode, "TINJAU_PAYMENT_MENUNGGU");
+  assert.equal(pk.DP_BELUM_LUNAS.efek, -2_250_000);
+  assert.equal(pk.ONGKIR.tindakan.kode, "LIHAT_ONGKIR");
+  assert.equal(k.residual.nol, true); assert.equal(k.residual.terklasifikasiPenuh, true);
+  assert.equal(k.status.kode, "TERJELASKAN"); assert.equal(k.status.label, "Berbeda tetapi terjelaskan");
+  // Tim Sales: Tanpa Sales (CTA Tetapkan Sales)
+  assert.equal(k.tim.jumlah, 4_611_000); assert.equal(k.tim.selisihDariTotal, -4_000_000);
+  assert.equal(k.tim.penyebab[0].kunci, "TANPA_SALES"); assert.equal(k.tim.penyebab[0].tindakan.kode, "TETAPKAN_SALES");
+  // 8. transaksi yang perlu ditindaklanjuti
+  const tk = Object.fromEntries(k.tindakLanjut.map((t) => [t.kunci, t]));
+  assert.equal(tk.PAYMENT_MENUNGGU.nOrder, 1); assert.equal(tk.KLAIM_TANPA_PAYMENT.nOrder, 1);
+  // Drill-down: kolom lengkap dari payload yang SAMA
+  const d = b.detail.KLAIM_TANPA_PAYMENT[0];
+  for (const f of ["nomor", "pelanggan", "sales", "nilaiJasa", "ongkir", "totalTagihan", "paymentTercatat", "paymentTerverifikasi", "kurangLebih", "tanggalBayar", "tanggalLunas", "tindakan"]) assert.ok(f in d, `kolom ${f}`);
+  assert.equal(d.nilaiJasa, 600_000); assert.equal(d.paymentTercatat, 0); assert.equal(d.paymentTerverifikasi, 0); assert.equal(d.kurangLebih, -600_000);
+  assert.equal(d.sales, "Kiki"); assert.equal(d.tindakan.label, "Tinjau klaim Lunas"); assert.equal(d.tanggalLunas, "2026-09-03");
+  const m = b.detail.PAYMENT_MENUNGGU[0];
+  assert.equal(m.paymentTercatat, 111_000); assert.equal(m.paymentMenunggu, 111_000); assert.equal(m.paymentTerverifikasi, 0);
+  const ong = b.detail.ONGKIR[0];
+  assert.equal(ong.ongkir, 200_000); assert.equal(ong.sales, "Fadlan");
+});
+
+test("KARTU: periode kosong = 'Cocok'; Payment parsial terverifikasi + sisa menunggu dipecah tepat (menunggu dulu, sisanya 'Payment kurang'); tanpa Sales untuk order dengan pemilik tak dikenal tetap tampil nama informasi", async () => {
+  const w = await dunia();
+  const kosong = (await raw("GET", `/api/sales-finance/rekon?from=2026-03-01&to=2026-03-31`, { token: w.admin.token })).body.kartuSelisih;
+  assert.equal(kosong.status.kode, "COCOK"); assert.equal(kosong.penyebab.length, 0); assert.equal(kosong.tercatat.jumlah, 0);
+  const c = await pelanggan("Ibu Parsial", { sales: w.kiki.user.id });
+  const o = await order(c, { nilai: 1_000_000, paidAt: new Date("2026-09-14T05:00:00Z") });                       // Lunas menurut Sales
+  await bayar(o, 400_000, "2026-09-14T05:00:00Z", w.kw);                                                         // terverifikasi 400.000
+  await bayar(o, 250_000, "2026-09-14T06:00:00Z", { ...w.kw, verif: false });                                    // menunggu 250.000 → kurang 350.000
+  const k = (await raw("GET", `/api/sales-finance/rekon?${PERIODE}`, { token: w.admin.token })).body.kartuSelisih;
+  const pk = Object.fromEntries(k.penyebab.map((p) => [p.kunci, p]));
+  assert.equal(pk.PAYMENT_MENUNGGU.efek, 250_000);
+  assert.equal(pk.PAYMENT_KURANG.efek, 350_000);
+  assert.equal(pk.KLAIM_TANPA_PAYMENT, undefined);
+  assert.equal(k.selisih.jumlah, 1_000_000 - 400_000); assert.equal(k.residual.nol, true);
+});
+
+test("EXPORT Rekonsiliasi: payload SAMA dengan kartu/drill-down (Ringkasan = kartuSelisih, Rincian Order = detail), sheet Definisi Angka + basis tanggal; hanya Finance/Admin (Sales 403)", async () => {
+  const { unduhExport, bacaSheet } = await import("./setup/exportHelper.js");
+  const w = await dunia();
+  await skenario(w);
+  const b = (await raw("GET", `/api/sales-finance/rekon?${PERIODE}`, { token: w.admin.token })).body;
+  const k = b.kartuSelisih;
+  const r = await unduhExport(server.baseUrl, w.admin.token, "rekon-sales-finance", { periode: { from: "2026-09-01", to: "2026-09-30" } });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  const ring = bacaSheet(r.wb, "Ringkasan");
+  const baris = (u) => ring.baris.find((x) => String(x["Uraian"]).includes(u));
+  assert.equal(baris("Uang masuk terverifikasi")["Jumlah (Rp)"], k.terverifikasi.jumlah);
+  assert.equal(baris("Payment tercatat (aktif")["Jumlah (Rp)"], k.tercatat.jumlah);
+  assert.equal(baris("Klaim Lunas Sales")["Jumlah (Rp)"], k.klaimLunas.jumlah);
+  assert.equal(baris("Selisih (Klaim")["Jumlah (Rp)"], k.selisih.jumlah);
+  for (const p of k.penyebab) assert.equal(baris(p.label)["Jumlah (Rp)"], p.efek, p.label);
+  assert.ok(!JSON.stringify(ring.baris).includes("Selisih Nominal Lain"));
+  assert.match(String(baris("STATUS")["Uraian"]), /Berbeda tetapi terjelaskan/);
+  const rin = bacaSheet(r.wb, "Rincian Order");
+  const totalDetail = Object.values(b.detail).reduce((s, a) => s + a.length, 0);
+  assert.equal(rin.baris.length, totalDetail, "baris rincian = seluruh detail di layar");
+  const klaim = rin.baris.find((x) => x["Penyebab"] === "Klaim Lunas tanpa Payment");
+  assert.equal(klaim["Kekurangan(−)/Kelebihan(+) (Rp)"], -600_000); assert.equal(klaim["Sales"], "Kiki"); assert.equal(klaim["Status Tindakan"], "Tinjau klaim Lunas");
+  assert.ok(r.wb.getWorksheet("Definisi Angka")); assert.ok(r.wb.getWorksheet("Jembatan")); assert.ok(r.wb.getWorksheet("Tindak Lanjut"));
+  assert.match(String(r.wb.getWorksheet("Ringkasan").getRow(5).getCell(1).value), /Basis tanggal: .* Zona waktu: WIB/);
+  const sales = await unduhExport(server.baseUrl, w.kiki.token, "rekon-sales-finance", { periode: { from: "2026-09-01", to: "2026-09-30" } });
+  assert.equal(sales.status, 403);
 });

@@ -102,7 +102,7 @@ test("baris bahan: duplikat/qty nol ditolak; opsional di tahap 10", () => {
 // Keadaan dasar untuk derivasi.
 const base = (over = {}) => ({
   runStatus: "ACTIVE", currentPhase: "PROCESS", unitStatus: "IN_PRODUCTION", handoffPhaseStatus: "NOT_STARTED", exceptionOpen: false,
-  activeOp: null, target: null, opEvidence: [], step9SinceQc: false, openShortage: false, serviceSet: true, pathHasModules: true, materialReady: true, ...over,
+  activeOp: null, target: null, opEvidence: [], step9SinceQc: false, openShortage: false, serviceSet: true, pathHasModules: true, materialReady: true, diagnosisManualMapped: true, diagnosisBomHasLines: true, ...over,
 });
 const op = (stageCode, extra = {}) => ({ stageCode, stagePhase: extra.stagePhase || (["foundation_upgrade", "comfort_layer_upgrade"].includes(stageCode) ? "MODULE" : ["corner_sewing", "finished"].includes(stageCode) ? "FINISH" : "INTAKE"), stageSequence: extra.stageSequence ?? (stageCode === "foundation_upgrade" ? 10 : stageCode === "comfort_layer_upgrade" ? 20 : 1), status: "ACTIVE", isLastPreQc: false, isPostQc: false, ...extra });
 
@@ -114,7 +114,13 @@ test("derivasi urutan tahap: tidak ada tahap yang bisa dilewati; rework tekstur;
   // Diagnosa tanpa layanan: boleh kirim diagnosa, setelah terkirim menunggu Planner.
   assert.equal(deriveNextAction(base({ activeOp: op("diagnosis"), serviceSet: false })).serviceMissing, true);
   assert.equal(deriveNextAction(base({ activeOp: op("diagnosis"), serviceSet: false, opEvidence: [{ stepNo: 5, order: 0 }] })).wait, "SERVICE_NOT_SET");
-  assert.equal(deriveNextAction(base({ activeOp: op("diagnosis"), serviceSet: true, opEvidence: [{ stepNo: 5, order: 0 }] })).action, "COMPLETE");
+  // Semua syarat terpenuhi + diagnosa sudah tercatat: PIC cukup "Lanjutkan" (continueOnly) — sebelumnya flag ini tidak pernah dikirim.
+  const cont = deriveNextAction(base({ activeOp: op("diagnosis"), serviceSet: true, opEvidence: [{ stepNo: 5, order: 0 }] }));
+  assert.equal(cont.action, "COMPLETE"); assert.equal(cont.continueOnly, true);
+  assert.equal(deriveNextAction(base({ activeOp: op("diagnosis"), serviceSet: true })).continueOnly, undefined, "belum ada diagnosa: bukan continueOnly");
+  // Alasan menunggu dibedakan (P9D): bahan manual belum dipetakan / Planned BOM kosong.
+  assert.equal(deriveNextAction(base({ activeOp: op("diagnosis"), opEvidence: [{ stepNo: 5, order: 0 }], diagnosisManualMapped: false })).wait, "DIAGNOSIS_MANUAL_UNMAPPED");
+  assert.equal(deriveNextAction(base({ activeOp: op("diagnosis"), opEvidence: [{ stepNo: 5, order: 0 }], diagnosisBomHasLines: false })).wait, "DIAGNOSIS_BOM_EMPTY");
   // Modul menunggu bahan / kekurangan.
   assert.equal(deriveNextAction(base({ target: { code: "foundation_upgrade", phase: "MODULE", sequence: 10 }, materialReady: false })).wait, "MATERIAL_NOT_READY");
   assert.equal(deriveNextAction(base({ target: { code: "foundation_upgrade", phase: "MODULE", sequence: 10 }, materialReady: false, openShortage: true })).wait, "MATERIAL_SHORTAGE");
@@ -251,5 +257,8 @@ test("migration P8 aditif: kolom plan nullable/berdefault, 2 tabel baru, trigger
   assert.match(executable, /CREATE UNIQUE INDEX "production_material_shortages_v2_open_run_key" ON "production_material_shortages_v2"\("run_id"\) WHERE "status" = 'OPEN'/);
   assert.match(executable, /CREATE UNIQUE INDEX "production_step_evidence_v2_run_id_step_no_version_key"/);
   const names = fs.readdirSync(path.join(backendRoot, "prisma", "migrations"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
-  assert.equal(names.at(-1), MIGRATION, "migration P8 adalah yang terbaru di branch ini");
+  // Migration P8 harus ada dan tidak boleh didahului-urut oleh migration yang lebih lama (urutan nama = urutan terapan); migration
+  // yang lebih BARU (P9A..P9D, Finance) memang wajar ada setelahnya.
+  assert.ok(names.includes(MIGRATION), "migration P8 ada");
+  assert.ok(names.indexOf(MIGRATION) >= names.filter((n) => n < MIGRATION).length, "urutan migration P8 konsisten");
 });

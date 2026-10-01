@@ -14,10 +14,12 @@ import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   PeriodePicker, periodeDefault, tanggalJam, InputUang, Foto,
 } from "@/features/finance/shared.jsx";
-import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import FilterBar from "@/features/finance/FilterBar.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
+import KartuSelisihSalesFinance from "@/features/finance/KartuSelisihSalesFinance.jsx";
+import { saringPembayaran } from "@/features/finance/saringPembayaran.js";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { BuktiBanyak, daftarBukti } from "@/features/finance/BuktiThumb.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
@@ -142,26 +144,8 @@ export default function FinancePayments() {
     () => [...new Set(payments.map((p) => p.method).filter(Boolean))].sort().map((m) => [m, LABEL_CARA_BAYAR[m] || m]),
     [payments]
   );
-  const tampil = useMemo(() => {
-    // "150.000" harus cocok dengan nominal 150000: titik pemisah ribuan dibuang
-    // dari kata yang murni angka.
-    const qNorm = String(q || "").split(/\s+/).map((k) => (/^[\d.]+$/.test(k) ? k.replace(/\./g, "") : k)).join(" ");
-    return payments.filter((p) => {
-      if (fMetode && p.method !== fMetode) return false;
-      if (fVerif === "terverifikasi" && !(p.terverifikasi && !p.cancelledAt)) return false;
-      if (fVerif === "belum" && (p.terverifikasi || p.cancelledAt)) return false;
-      if (fVerif === "dibatalkan" && !p.cancelledAt) return false;
-      const adaAlokasi = (p.finAllocations || []).length > 0;
-      if (fAlokasi === "ada" && !adaAlokasi) return false;
-      if (fAlokasi === "tanpa" && adaAlokasi) return false;
-      if (fBukti === "ada" && !p.proofPhotoUrl) return false;
-      if (fBukti === "tanpa" && p.proofPhotoUrl) return false;
-      return cocok(
-        qNorm, p.order?.orderNumber, p.order?.customer?.name, p.recordedBy?.name,
-        p.method, p.amount, p.notes
-      );
-    });
-  }, [payments, q, fMetode, fVerif, fAlokasi, fBukti]);
+  // Saringan pencarian + chip = fungsi murni SAMA yang dibuktikan identik dengan versi server Export Excel (tes paritas) — bukan logika inline lagi.
+  const tampil = useMemo(() => saringPembayaran(payments, { q, metode: fMetode, verif: fVerif, alokasi: fAlokasi, bukti: fBukti }), [payments, q, fMetode, fVerif, fAlokasi, fBukti]);
   const disaring = !!q || !!fMetode || !!fVerif || !!fAlokasi || !!fBukti;
 
   function aturUlangFilter() {
@@ -173,14 +157,14 @@ export default function FinancePayments() {
   // Tab "Perlu Verifikasi" menampilkan keduanya (pembayaran + klaim), jadi berkasnya juga memuat keduanya.
   function ambilBodyExport() {
     const hanyaKlaim = tab === "lunas_crm";
-    const adaFilterKlien = Boolean(q.trim() || fMetode || fVerif || fAlokasi || fBukti);
     const sertakanKlaim = hanyaKlaim || tab === "perlu";
     const namaTab = TAB.find((t) => t.key === tab)?.label || "Semua";
     return {
-      // `ids` HANYA bila ada filter/pencarian sisi-klien; tanpa itu server menjalankan periode+tab yang sama tanpa batas 300 baris layar (berkas lengkap).
-      ...(hanyaKlaim ? {} : { periode: { from: periode.from, to: periode.to }, ...(adaFilterKlien ? { ids: tampil.map((p) => p.id) } : {}) }),
+      // Periode + tab (status) + SELURUH saringan layar dikirim sebagai PARAMETER (bukan daftar id yang bisa basi): server menjalankan query & saringan yang sama tanpa batas 300 baris layar.
+      ...(hanyaKlaim ? {} : { periode: { from: periode.from, to: periode.to } }),
       filter: {
         status: hanyaKlaim ? "" : tab === "perlu" ? "belum_verifikasi" : tab,
+        ...(hanyaKlaim ? {} : { q: q.trim(), metode: fMetode, verif: fVerif, alokasi: fAlokasi, bukti: fBukti }),
         ...(sertakanKlaim ? { sertakanKlaim: true, hanyaKlaim, ...(klaimIds ? { klaimIds } : {}) } : {}),
       },
       filterLabel: labelFilterAktif([
@@ -216,6 +200,8 @@ export default function FinancePayments() {
           </CardContent>
         </Card>
       )}
+
+      <KartuSelisihSalesFinance from={periode.from} to={periode.to} onTinjauMenunggu={() => setTab("perlu")} onTinjauKlaim={() => setTab("lunas_crm")} />
 
       <Penjelasan>
         <span className="inline-flex items-center gap-1.5 font-medium text-ink">

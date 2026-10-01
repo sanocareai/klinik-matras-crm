@@ -83,16 +83,43 @@ function PhotoPicker({ unitId, photos, onChange, disabled, onError }) {
   );
 }
 
-function MaterialRows({ rows, materials, onChange, disabled }) {
+// Pemilih bahan berbasis pencarian (endpoint produksi /production-v2/materials/search — izin UNIT_STAGE_WRITE yang SUDAH dimiliki QC/PIC,
+// tanpa harga/HPP). Sebelumnya memuat SELURUH katalog lewat /inventory/materials: peran QC mendapat 403 (daftar kosong, galat konsol)
+// sehingga "Ajukan Bahan Tambahan Rework" tidak bisa dipakai QC Lead (ditemukan lewat sandbox QA).
+function MaterialPicker({ value, disabled, onPick }) {
+  const [q, setQ] = useState("");
+  const [label, setLabel] = useState("");
+  const [results, setResults] = useState([]);
+  useEffect(() => {
+    const t = q.trim();
+    if (label || t.length < 2) { setResults([]); return undefined; }
+    const id = setTimeout(() => { api.searchProductionV2Materials(t).then((r) => setResults(r.items || [])).catch(() => setResults([])); }, 250);
+    return () => clearTimeout(id);
+  }, [q, label]);
+  useEffect(() => { if (!value) { setLabel(""); } }, [value]);
+  return (
+    <div className="relative min-w-0 flex-1">
+      <input aria-label="Bahan tambahan" className={`${field} mt-0`} placeholder="Cari kode/nama bahan…" disabled={disabled} value={label || q}
+        onChange={(e) => { setLabel(""); onPick(""); setQ(e.target.value); }} />
+      {results.length > 0 && (
+        <ul data-testid="material-picker-results" className="absolute z-20 mt-1 max-h-52 w-full list-none overflow-auto rounded-btn border border-line bg-surface p-1 shadow-md">
+          {results.map((m) => (
+            <li key={m.id}><button type="button" data-material-code={m.code} className="flex min-h-[40px] w-full items-center rounded-btn px-2 text-left text-[12.5px] text-ink hover:bg-hovertint"
+              onClick={() => { setLabel(`${m.code} · ${m.name}`); setResults([]); onPick(m.id); }}>{m.code} · {m.name}</button></li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function MaterialRows({ rows, onChange, disabled }) {
   const update = (index, patch) => onChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   return (
     <div className="space-y-2">
       {rows.map((row, index) => (
         <div key={index} className="flex items-center gap-2">
-          <select aria-label="Bahan tambahan" className={`${field} mt-0`} value={row.materialId} disabled={disabled} onChange={(e) => update(index, { materialId: e.target.value })}>
-            <option value="">— Pilih bahan —</option>
-            {materials.map((m) => <option key={m.id} value={m.id}>{m.code} · {m.name}</option>)}
-          </select>
+          <MaterialPicker value={row.materialId} disabled={disabled} onPick={(id) => update(index, { materialId: id })} />
           <input aria-label="Jumlah" type="number" min="0" step="any" className={`${field} mt-0 w-24`} value={row.qty} disabled={disabled} onChange={(e) => update(index, { qty: e.target.value })} />
           <button type="button" aria-label="Hapus baris bahan" className="text-ink3 hover:text-red" disabled={disabled} onClick={() => onChange(rows.filter((_, i) => i !== index))}><Trash2 size={15} /></button>
         </div>
@@ -102,7 +129,7 @@ function MaterialRows({ rows, materials, onChange, disabled }) {
   );
 }
 
-function InspectionForm({ run, materials, busy, onSubmit, onError }) {
+function InspectionForm({ run, busy, onSubmit, onError }) {
   const [form, setForm] = useState({ mode: "PASS", photoUrls: [], referenceWeightKg: "", fitVerdict: "PAS", customerPreferenceOverride: "", educationGiven: false, note: "", reworkStageId: "", reason: "", materials: [] });
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const stages = reworkStageOptions(run);
@@ -165,7 +192,7 @@ function InspectionForm({ run, materials, busy, onSubmit, onError }) {
               </label>
               <div>
                 <p className="text-[12px] text-ink3">Bahan tambahan (opsional) — diminta lewat reservasi &amp; Material Issue; rework baru bisa dimulai setelah Gudang menyerahkan bahan.</p>
-                <MaterialRows rows={form.materials} materials={materials} onChange={(rows) => set({ materials: rows })} disabled={busy} />
+                <MaterialRows rows={form.materials} onChange={(rows) => set({ materials: rows })} disabled={busy} />
               </div>
             </>
           )}
@@ -212,7 +239,6 @@ function ConflictPanel({ run, busy, onOpen, onResolve, onError }) {
 
 function RunDetailModal({ runId, onClose, onChanged }) {
   const [run, setRun] = useState(null);
-  const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -228,7 +254,6 @@ function RunDetailModal({ runId, onClose, onChanged }) {
     return api.getQcRun(runId).then(setRun).catch((e) => setError(e.message || "Gagal memuat detail")).finally(() => setLoading(false));
   }, [runId]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.getMaterials({ active: "true" }).then((d) => setMaterials(Array.isArray(d) ? d : d?.items || d?.materials || [])).catch(() => setMaterials([])); }, []);
 
   const execute = async (name, call, success) => {
     setBusy(true); setError(""); setNotice("");
@@ -282,7 +307,7 @@ function RunDetailModal({ runId, onClose, onChanged }) {
               </ol>
             </section>
 
-            {canRecordInspection(run) && <InspectionForm run={run} materials={materials} busy={busy} onError={setError}
+            {canRecordInspection(run) && <InspectionForm run={run} busy={busy} onError={setError}
               onSubmit={(body) => execute("inspect", (key) => api.recordQcInspection(runId, body, key), nextInspectionSummary)} />}
             {run.state === "AWAITING_QC" && run.conflict && <p className="text-[12px] text-orange">Pencatatan QC ditutup selama ada konflik status.</p>}
             {run.state === "HANDOFF" && <p className="rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2">Barang jadi sudah ditawarkan ke Gudang — menunggu keputusan di menu Terima Barang Jadi.</p>}
@@ -292,7 +317,7 @@ function RunDetailModal({ runId, onClose, onChanged }) {
             {action === "material" && (
               <section aria-label="Bahan tambahan rework" className="space-y-2 rounded-card border border-line p-3">
                 <h3 className="text-[12.5px] font-bold text-ink">Bahan Tambahan Rework</h3>
-                <MaterialRows rows={materialRows} materials={materials} onChange={setMaterialRows} disabled={busy} />
+                <MaterialRows rows={materialRows} onChange={setMaterialRows} disabled={busy} />
                 <div className="flex gap-2">
                   <Button size="sm" disabled={busy} onClick={() => {
                     const lines = materialRows.filter((r) => r.materialId).map((r) => ({ materialId: r.materialId, qty: Number(r.qty) }));
