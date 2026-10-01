@@ -18,7 +18,8 @@ export function navigateToChat({ conversationId, name, isGroup = false, customer
 // CustomerProfileContent.js dalam profil 1 pelanggan) — pakai navigationRef
 // global di sini alih-alih prop-drilling `navigation` lewat kedua parent
 // itu, pola SAMA dengan navigateToChat di atas.
-export function navigateToOrderTimeline({ orderId, orderNumber, customerName }) {
+// `tab` (opsional: "pembayaran" | "dokumentasi" | ...) membuka tab itu langsung; `bukaKlaim` membuka sheet "Ajukan Klaim Lunas" otomatis (jalan pintas Catat Pembayaran).
+export function navigateToOrderTimeline({ orderId, orderNumber, customerName, tab, bukaKlaim }) {
   if (!orderId || !navigationRef.isReady()) return;
-  navigationRef.navigate("OrderTimeline", { orderId, orderNumber, customerName });
+  navigationRef.navigate("OrderTimeline", { orderId, orderNumber, customerName, ...(tab && { tab }), ...(bukaKlaim && { bukaKlaim: true }) });
 }

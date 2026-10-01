@@ -45,7 +45,8 @@ import {
   jenisProdukOptions, resolveVariantKey,
 } from "../utils/format";
 import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
-import { opsiStatusBayar } from "../lib/klaimLunas";
+import { opsiStatusBayar, lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN } from "../lib/klaimLunas";
+import { navigateToOrderTimeline } from "../lib/navigationRef";
 import { useKlaimLunasAktif } from "../lib/klaimGate";
 import DateField from "./DateField";
 import { stageLabels, stageColors } from "../theme";
@@ -874,7 +875,17 @@ export default function OrderFormModal({
                       <TouchableOpacity
                         key={s}
                         style={[styles.statusChip, active && styles.categoryChipActive]}
-                        onPress={() => setPaymentStatus(s)}
+                        onPress={() => {
+                          // "Lunas" tidak menetapkan status: Sales diberi tahu harus mencatat pembayaran dulu, lalu diarahkan ke pencatatan (tanpa status berubah diam-diam).
+                          if (s === "LUNAS" && isEdit && order?.paymentStatus !== "LUNAS" && lunasDicegat({ isAdmin: isAdminEditor, gateAktif: klaimGateAktif })) {
+                            Alert.alert(PESAN_LUNAS_BUTUH_PEMBAYARAN.judul, PESAN_LUNAS_BUTUH_PEMBAYARAN.isi, [
+                              { text: "Batal", style: "cancel" },
+                              { text: PESAN_LUNAS_BUTUH_PEMBAYARAN.tombol, onPress: () => { onClose(); navigateToOrderTimeline({ orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName, tab: "pembayaran", bukaKlaim: true }); } },
+                            ]);
+                            return;
+                          }
+                          setPaymentStatus(s);
+                        }}
                       >
                         <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]} numberOfLines={1}>
                           {PAYMENT_STATUS_LABELS[s] || s}

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   kekuranganForm, bisaDiajukan, alasanNonaktif, opsiStatusBayar, cekBerkas, formDariKlaim, buktiDariKlaim, bodyDariForm,
-  simpanDrafLokal, bacaDrafLokal, hapusDrafLokal, STATUS_BUKTI, METODE_KLAIM, STATUS_BISA_DIEDIT,
+  simpanDrafLokal, bacaDrafLokal, hapusDrafLokal, STATUS_BUKTI, METODE_KLAIM, STATUS_BISA_DIEDIT, lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN,
 } from "../src/lib/klaimLunas.js";
 
 const LENGKAP = { paymentDate: "2026-10-01", amount: "1500000", method: "TRANSFER", cashAccountId: "rek-1", note: "Transfer BCA, dicek mutasi" };
@@ -48,11 +48,30 @@ test("Kekurangan memberi pesan per field, menyebut 'Bukti Pembayaran'", () => {
   assert.ok(k.at(-1).pesan.includes("Bukti Pembayaran"));
 });
 
-test("Sales tidak melihat opsi 'Lunas'; Admin tetap; order yang sudah Lunas tetap menampilkan nilainya", () => {
+test("Chip 'Lunas' selalu tampil tetapi DICEGAT (tidak menetapkan status; diarahkan mencatat pembayaran); Admin saat MATI = perilaku lama", () => {
   const semua = ["BELUM_BAYAR", "DP", "LUNAS"];
-  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false), ["BELUM_BAYAR", "DP"]);
-  assert.deepEqual(opsiStatusBayar(semua, "LUNAS", false), semua);
-  assert.deepEqual(opsiStatusBayar(semua, "DP", true), ["BELUM_BAYAR", "DP"], "Admin pun tidak ditawari Lunas");
+  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false), semua);
+  assert.equal(lunasDicegat({ isAdmin: false, gateAktif: false }), true);
+  assert.equal(lunasDicegat({ isAdmin: false, gateAktif: true }), true);
+  assert.equal(lunasDicegat({ isAdmin: true, gateAktif: true }), true);
+  assert.equal(lunasDicegat({ isAdmin: true, gateAktif: false }), false);
+  assert.equal(PESAN_LUNAS_BUTUH_PEMBAYARAN.tombol, "Catat Pembayaran");
+  assert.match(PESAN_LUNAS_BUTUH_PEMBAYARAN.isi, /nominal, metode, rekening tujuan, dan bukti pembayaran/);
+});
+
+test("Mobile: Lunas di form order memunculkan Alert + diarahkan ke tab Pembayaran (tanpa mengubah status); kartu order punya jalan pintas Catat Pembayaran & Kirim Dokumentasi; Rincian membuka tab awal", () => {
+  const form = baca("../src/components/OrderFormModal.js");
+  assert.match(form, /s === "LUNAS" && isEdit && order\?\.paymentStatus !== "LUNAS" && lunasDicegat\(\{ isAdmin: isAdminEditor, gateAktif: klaimGateAktif \}\)/);
+  assert.match(form, /tab: "pembayaran", bukaKlaim: true/);
+  const kartu = baca("../src/components/OrderCard.js");
+  assert.match(kartu, /tab: "pembayaran", bukaKlaim: true/);
+  assert.match(kartu, /tab: "dokumentasi"/);
+  assert.match(kartu, /order\.paymentStatus !== "LUNAS" && \(/, "Catat Pembayaran hanya untuk order belum lunas");
+  assert.match(baca("../src/lib/navigationRef.js"), /tab, bukaKlaim/);
+  const rincian = baca("../src/screens/OrderTimelineScreen.js");
+  assert.match(rincian, /TABS\.some\(\(t\) => t\.key === tabAwal\) \? tabAwal : "status"/);
+  assert.match(rincian, /autoOpen=\{autoBukaKlaim\}/);
+  assert.match(baca("../src/components/order/OrderKlaimLunas.js"), /info\.bolehDiklaim \|\| info\.klaimAktifId/);
 });
 
 test("Berkas: hanya JPG/PNG/WEBP/PDF sampai 8 MB", () => {
@@ -109,7 +128,7 @@ test("Komponen: 'Ajukan Klaim Lunas', 'Bukti Pembayaran' (bukan hanya 'Bukti Tra
 test("Sakelar rollout mobile: MATI → status bayar lama & form catat pembayaran lama & panel klaim tersembunyi; gagal baca = MATI", () => {
   const semua = ["BELUM_BAYAR", "DP", "LUNAS"];
   assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false, false), semua);
-  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false, true), ["BELUM_BAYAR", "DP"]);
+  assert.deepEqual(opsiStatusBayar(semua, "BELUM_BAYAR", false, true), semua);
   assert.match(baca("../src/lib/klaimGate.js"), /api\.getKlaimLunasStatus\(\)\.then\(\(r\) => !!r\?\.aktif\)\.catch\(\(\) => false\)/);
   assert.match(baca("../src/components/order/OrderKlaimLunas.js"), /if \(gateAktif !== true \|\| !info\) return null;/);
   assert.match(baca("../src/screens/OrderTimelineScreen.js"), /bolehCatatLangsung = roles\.includes\("ADMIN"\) \|\| !klaimGateAktif/);

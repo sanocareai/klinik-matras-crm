@@ -29,10 +29,24 @@ export const MAKS_UKURAN_MB = 8;
 export const STATUS_BUKTI = { ANTRE: "antre", MENGUNGGAH: "mengunggah", TERSIMPAN: "tersimpan", GAGAL: "gagal" };
 
 /** "Lunas" tidak ditawarkan di pilihan status bayar untuk SIAPA PUN (server menolaknya 409: LUNAS hanya dihasilkan sistem dari pembayaran terverifikasi). Nilai aktif Lunas tetap tampil. */
-export function opsiStatusBayar(semuaStatus, nilaiSekarang, _isAdmin, gateAktif = true) {
-  if (!gateAktif) return semuaStatus; // sakelar rollout MATI → daftar lama apa adanya
-  return semuaStatus.filter((s) => s !== "LUNAS" || nilaiSekarang === "LUNAS");
+export function opsiStatusBayar(semuaStatus, _nilaiSekarang, _isAdmin, _gateAktif = true) {
+  // Chip "Lunas" SELALU tampil (target yang dikenal Sales). Memilihnya tidak mengubah status — lihat lunasDicegat(): Sales diarahkan mencatat pembayaran dulu.
+  return semuaStatus;
 }
+
+/**
+ * Memilih "Lunas" TIDAK menetapkan status; harus lewat catatan pembayaran (nominal, metode, rekening, bukti) yang diverifikasi Finance.
+ * Dicegat untuk: semua peran saat gerbang AKTIF (server menolak LUNAS langsung), dan non-Admin saat gerbang MATI. Admin saat MATI tetap boleh (perilaku lama).
+ */
+export function lunasDicegat({ isAdmin, gateAktif }) {
+  return !!gateAktif || !isAdmin;
+}
+
+export const PESAN_LUNAS_BUTUH_PEMBAYARAN = {
+  judul: "Catat pembayaran dulu",
+  isi: "Status Lunas muncul setelah ada catatan pembayaran: nominal, metode, rekening tujuan, dan bukti pembayaran. Status Lunas tidak bisa dipilih langsung.",
+  tombol: "Catat Pembayaran",
+};
 
 export function kekuranganForm(form, bukti = []) {
   const k = [];

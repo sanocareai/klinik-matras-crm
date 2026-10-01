@@ -31,6 +31,7 @@ import { isAdminUser } from "../../lib/roles.js";
 import KlaimLunasPanel from "../../features/klaim/KlaimLunasPanel.jsx";
 import { opsiStatusBayar } from "../../features/klaim/klaimLunasLogic.js";
 import { useKlaimLunasAktif } from "../../features/klaim/useKlaimLunasAktif.js";
+import { lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN } from "../../features/klaim/klaimLunasLogic.js";
 import UkuranCustomFields from "./UkuranCustomFields.jsx";
 import { isUkuranCustom, validasiUkuranCustom, formatUkuranKasur } from "../../utils/ukuranKasur.js";
 import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.jsx";
@@ -812,7 +813,11 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           {editing && !statusBayarDiResi ? (
             <BadgeDropdown
               value={paymentStatus}
-              onChange={setPaymentStatus}
+              onChange={(v) => {
+                // "Lunas" tidak menetapkan status: harus catat pembayaran dulu (panel Klaim Lunas ada tepat di bawah status).
+                if (v === "LUNAS" && order.paymentStatus !== "LUNAS" && lunasDicegat({ isAdmin: isAdminEditor, gateAktif: klaimGateAktif })) { alert(PESAN_LUNAS_BUTUH_PEMBAYARAN); return; }
+                setPaymentStatus(v);
+              }}
               options={opsiStatusBayar(PAYMENT_STATUSES, order.paymentStatus, isAdminEditor, klaimGateAktif).map((s) => ({ value: s, label: PAYMENT_STATUS_LABELS[s] || s }))}
               getChipStyle={(v) => PAYMENT_STATUS_BADGE[v] || PAYMENT_STATUS_BADGE.BELUM_BAYAR}
               ariaLabel="Ubah status pembayaran"
