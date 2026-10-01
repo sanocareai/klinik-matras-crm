@@ -26,6 +26,8 @@ const DIEKSPOR = {
 };
 // Tombol export yang hidup di komponen fitur (bukan langsung di halaman): kartu Selisih Sales–Finance di Pembayaran & Verifikasi.
 const DIEKSPOR_DI_FITUR = { "src/features/finance/KartuSelisihSalesFinance.jsx": ["rekon-sales-finance"] };
+// Export lewat ENDPOINT SENDIRI (izin per divisi, bukan registri modul Finance): Laporan Divisi (Fase 2) — POST /api/laporan-divisi/export.
+const DIEKSPOR_ENDPOINT_SENDIRI = { "FinanceLaporanDivisi.jsx": { komponen: "src/features/laporanDivisi/LaporanDivisi.jsx", panggilan: "api.exportLaporanDivisi" } };
 // Sengaja TIDAK diekspor (alasan lengkap di docs/FINANCE-EXPORT-COVERAGE.md bagian B).
 const TIDAK_DIEKSPOR = {
   "FinanceDashboard.jsx": "kartu KPI/grafik, tanpa tabel transaksi",
@@ -40,7 +42,7 @@ const TIDAK_DIEKSPOR = {
 test("setiap halaman Finance: punya tombol export modul yang benar atau tercantum sebagai tidak diekspor", () => {
   const berkas = fs.readdirSync(halaman).filter((f) => /^Finance.*\.jsx$/.test(f));
   for (const f of berkas) {
-    assert.ok(f in DIEKSPOR || f in TIDAK_DIEKSPOR, `halaman ${f} belum diklasifikasikan (export atau tidak) di financeExportCoverage.test.js + docs/FINANCE-EXPORT-COVERAGE.md`);
+    assert.ok(f in DIEKSPOR || f in TIDAK_DIEKSPOR || f in DIEKSPOR_ENDPOINT_SENDIRI, `halaman ${f} belum diklasifikasikan (export atau tidak) di financeExportCoverage.test.js + docs/FINANCE-EXPORT-COVERAGE.md`);
   }
   for (const [f, moduls] of Object.entries(DIEKSPOR)) {
     const s = baca(path.join(halaman, f));
@@ -48,6 +50,10 @@ test("setiap halaman Finance: punya tombol export modul yang benar atau tercantu
       assert.match(s, new RegExp(`<TombolExportExcel[^>]*modul="${m}"`, "s"), `${f}: tombol export modul "${m}" tidak ada`);
     }
     assert.match(s, /ambilBody=/, `${f}: tombol export harus mengirim filter aktif (ambilBody)`);
+  }
+  for (const [f, { komponen, panggilan }] of Object.entries(DIEKSPOR_ENDPOINT_SENDIRI)) {
+    assert.match(baca(path.join(akar, "frontend", komponen)), new RegExp(panggilan.replace(".", "\.")), `${f}: komponen ${komponen} tidak memanggil ${panggilan}`);
+    assert.match(baca(path.join(akar, "docs/FINANCE-EXPORT-COVERAGE.md")), /laporan-divisi/, "dokumen coverage belum memuat Laporan Divisi");
   }
   for (const f of Object.keys(TIDAK_DIEKSPOR)) assert.doesNotMatch(baca(path.join(halaman, f)), /<TombolExportExcel/, `${f}: tercantum tidak diekspor tetapi punya tombol — perbarui daftar & dokumen`);
 });
