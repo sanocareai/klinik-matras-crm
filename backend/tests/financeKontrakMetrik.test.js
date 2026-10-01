@@ -29,7 +29,8 @@ test("Pasangan rekonsiliasi menunjuk metrik yang ada dan tidak menunjuk dirinya 
 });
 
 test("Modul ekspor yang disebut metrik benar-benar terdaftar di registry export", () => {
-  for (const x of METRIK) for (const e of x.ekspor) assert.ok(MODUL_EXPORT[e], `${x.kunci} → modul ekspor '${e}' tidak ada`);
+  // "laporan-divisi" diekspor lewat endpoint tersendiri (/api/laporan-divisi/export — izin per divisi), bukan registry Finance.
+  for (const x of METRIK) for (const e of x.ekspor) assert.ok(MODUL_EXPORT[e] || e === "laporan-divisi", `${x.kunci} → modul ekspor '${e}' tidak ada`);
   assert.ok(metrikUntukModulExport("pembayaran").length > 0);
 });
 
@@ -89,9 +90,11 @@ test("COVERAGE TAB: setiap halaman Finance diklasifikasi — punya metrik di kon
   const akar = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/src/pages/finance");
   // Halaman tanpa kartu angka uang (daftar/pengaturan/buku) — dinyatakan eksplisit supaya halaman baru tidak lolos tanpa klasifikasi.
   const TANPA_ANGKA = new Set(["FinanceAccounts.jsx", "FinanceInvoices.jsx", "FinanceJournal.jsx", "FinanceLedger.jsx", "FinancePersediaanAwal.jsx", "FinanceSettings.jsx"]);
+  // Halaman tipis yang seluruh kartunya hidup di komponen fitur: kunci metrik dibaca dari komponen itu (tetap divalidasi terhadap kontrak).
+  const DELEGASI_FITUR = { "FinanceLaporanDivisi.jsx": "../features/laporanDivisi/LaporanDivisi.jsx" };
   const kunci = new Set(METRIK.map((m) => m.kunci));
   for (const f of fs.readdirSync(akar).filter((x) => x.endsWith(".jsx"))) {
-    const src = fs.readFileSync(path.join(akar, f), "utf8");
+    const src = fs.readFileSync(path.join(akar, DELEGASI_FITUR[f] ? path.join("..", DELEGASI_FITUR[f]) : f), "utf8");
     const dipakai = [...src.matchAll(/metrik[=:]\s*\{?\s*"([a-z_]+)"/g)].map((m) => m[1]);
     for (const d of dipakai) assert.ok(kunci.has(d), `${f}: metrik="${d}" tidak ada di kontrak`);
     for (const m of src.matchAll(/metrik=\{\[([^\]]+)\]\}/g)) for (const d of m[1].match(/"([a-z_]+)"/g) ?? []) assert.ok(kunci.has(d.replace(/"/g, "")), `${f}: ${d} tidak ada di kontrak`);

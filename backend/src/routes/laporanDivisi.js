@@ -17,6 +17,8 @@ import { bangunLaporan } from "../services/finance/laporanDivisi/laporan.js";
 import { muatAkses, tetapkanScope, bolehRinci, adalahAdminFinance, AksesError, LEVEL } from "../services/finance/laporanDivisi/akses.js";
 import { simpanDraf, setujui, hapusDraf, daftarAnggaran, bentukAnggaran, AnggaranError } from "../services/finance/laporanDivisi/anggaran.js";
 import { dryRunAtribusi } from "../services/finance/laporanDivisi/dryRun.js";
+import { dataExportLaporan, TAB_EXPORT } from "../services/finance/laporanDivisi/export.js";
+import { buatXlsx, namaBerkas, ExportError } from "../services/finance/export/excel.js";
 import { SEMUA_KELOMPOK, LABEL_DIVISI, DIVISI } from "../services/finance/laporanDivisi/divisi.js";
 
 export const laporanDivisiRouter = express.Router();
@@ -53,7 +55,7 @@ laporanDivisiRouter.get("/akses", async (req, res) => {
   try {
     const akses = await muatAkses(prisma, req.user);
     const kategori = akses.semua || akses.level === LEVEL.LEADER
-      ? (await prisma.finExpenseCategory.findMany({ where: { active: true }, select: { code: true, name: true, division: true }, orderBy: { name: "asc" } })).map((k) => ({ kode: k.code, nama: k.name, divisi: k.division }))
+      ? (await prisma.finExpenseCategory.findMany({ where: { active: true }, select: { id: true, code: true, name: true, division: true }, orderBy: { name: "asc" } })).map((k) => ({ id: k.id, kode: k.code, nama: k.name, divisi: k.division }))
       : [];
     res.json({
       sakelar: akses.sakelar, level: akses.level, scopes: Object.fromEntries(akses.scopes),
@@ -94,6 +96,29 @@ laporanDivisiRouter.get("/dokumen", async (req, res) => {
       komitmen: lap.komitmenRinci.filter((k) => k.atribusi.bagian.some((x) => x.scope === scope)).map((k) => ({ modul: k.modul, id: k.id, nomor: k.nomor, tanggal: k.tanggal, status: k.status, jumlah: k.jumlah, jenis: k.jenis, kategori: k.atribusi.kategori })),
     });
   } catch (e) { tangani(e, res, "dokumen"); }
+});
+
+// ── Export Excel: payload & izin SAMA dengan layar (bangunLaporan); tab ringkasan|kategori|tren|dokumen|komitmen|anggaran|semua ──
+laporanDivisiRouter.post("/export", async (req, res) => {
+  try {
+    const akses = await muatAkses(prisma, req.user);
+    const b = req.body || {};
+    const { from, to } = rentang(b);
+    const tab = TAB_EXPORT.includes(b.tab) ? b.tab : "semua";
+    const divisi = Array.isArray(b.divisi) ? b.divisi.map(String).slice(0, 12) : dafar(b.divisi);
+    const filter = filterDari(b.filter || {});
+    const data = await dataExportLaporan(prisma, { akses, from, to, divisi, filter, tab });
+    const buf = await buatXlsx(data, { pengekspor: req.user?.name || "", bolehSensitif: akses.semua });
+    const nama = namaBerkas(`Laporan Divisi ${divisi.length === 1 ? divisi[0] : "Semua"} ${tab}`, { from, to });
+    res.set({
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${nama}"`,
+      "Content-Length": String(buf.length), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+    });
+    res.send(buf);
+  } catch (e) {
+    if (e instanceof ExportError) return res.status(e.statusCode).json({ error: e.message, code: e.code });
+    tangani(e, res, "export");
+  }
 });
 
 // ── Anggaran ──────────────────────────────────────────────────────────────────────────────────────────────────────────

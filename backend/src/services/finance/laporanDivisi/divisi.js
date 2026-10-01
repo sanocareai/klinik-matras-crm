@@ -78,17 +78,23 @@ export const KELOMPOK = Object.freeze({
     { kunci: "kurir", label: "Kurir / logistik", kategori: ["KURIR_EKSTERNAL"] },
     { kunci: "sewa", label: "Sewa kendaraan", kategori: ["SEWA_KENDARAAN"] },
     { kunci: "insentif", label: "Insentif driver", sumber: ["INSENTIF_DRIVER"] },
+    { kunci: "kendaraan", label: "Biaya kendaraan lainnya", kategori: ["BIAYA_KENDARAAN_LAIN"] },
   ],
   PRODUCTION: [
-    { kunci: "bahan", label: "Bahan terpakai", sumber: ["PEMAKAIAN_BAHAN"], akun: ["5-1100", "5-1150"] },
+    { kunci: "bahan", label: "Bahan terpakai", sumber: ["PEMAKAIAN_BAHAN"], akun: ["5-1100", "5-1150"], kategori: ["BAHAN_BAKU_MANUAL"] },
     { kunci: "vendor", label: "Jasa vendor / tukang", kategori: ["UPAH_PRODUKSI"] },
     { kunci: "mesin", label: "Perawatan mesin", kategori: ["MAINT_MESIN"] },
     { kunci: "overhead", label: "Overhead produksi", kategori: ["OVERHEAD_PRODUKSI"] },
+    // Tooling & lembur belum punya kategori sendiri di bagan kategori: tampil di "Komponen lain" sampai Finance menambah kategorinya — TIDAK ditebak.
+    { kunci: "tooling", label: "Tooling", kategori: ["TOOLING_PRODUKSI"] },
+    { kunci: "lembur", label: "Lembur", kategori: ["LEMBUR_PRODUKSI"] },
   ],
   WAREHOUSE: [
     { kunci: "bongkar", label: "Bongkar muat", kategori: ["BONGKAR_MUAT_GUDANG"] },
     { kunci: "fasilitas", label: "Perawatan fasilitas", kategori: ["PERAWATAN_FASILITAS_GUDANG"] },
     { kunci: "mendesak", label: "Operasional mendesak", kategori: ["BIAYA_GUDANG_MENDESAK"] },
+    { kunci: "perlengkapan", label: "Perlengkapan gudang", kategori: ["PERLENGKAPAN_GUDANG"] },
+    { kunci: "logistik", label: "Logistik", kategori: ["LOGISTIK_GUDANG"] },
     { kunci: "susut", label: "Kerusakan / kehilangan", akun: ["5-1900"] },
     { kunci: "selisih", label: "Selisih stok", akun: ["5-1960"] },
   ],
@@ -97,6 +103,8 @@ export const KELOMPOK = Object.freeze({
     { kunci: "konten", label: "Konten", kategori: ["MKT_KONTEN"] },
     { kunci: "event", label: "Event & aktivasi", kategori: ["MKT_EVENT"] },
     { kunci: "cetak", label: "Cetak", kategori: ["MKT_CETAK"] },
+    { kunci: "tools", label: "Tools / langganan", kategori: ["LANGGANAN_APLIKASI"] },
+    { kunci: "transportasi", label: "Transportasi", kategori: ["OPS_MEETING"] },
   ],
   DIGITAL_TECHNOLOGY: [
     { kunci: "iklan", label: "Iklan digital (platform)", kategori: ["IKLAN"], sumber: ["BIAYA_IKLAN"] },

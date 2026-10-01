@@ -1559,6 +1559,23 @@ export const api = {
     const namaFile = cd.match(/filename="([^"]+)"/)?.[1] || `Finance_${modul}.xlsx`;
     return { blob: await res.blob(), namaFile };
   },
+  // ── Laporan Divisi (Fase 2). Semua angka dari server (/api/laporan-divisi); export = berkas dari payload yang sama. ──
+  getLaporanDivisiAkses: () => request("/laporan-divisi/akses"),
+  getLaporanDivisi: (params = {}) => request(`/laporan-divisi/laporan${qsFinance(params)}`),
+  getLaporanDivisiDokumen: (params = {}) => request(`/laporan-divisi/dokumen${qsFinance(params)}`),
+  getLaporanDivisiAnggaran: (params = {}) => request(`/laporan-divisi/anggaran${qsFinance(params)}`),
+  simpanAnggaranDivisi: (body) => request("/laporan-divisi/anggaran", { method: "POST", body: JSON.stringify(body) }),
+  setujuiAnggaranDivisi: (id) => request(`/laporan-divisi/anggaran/${id}/setujui`, { method: "POST", body: "{}" }),
+  hapusAnggaranDivisi: (id) => request(`/laporan-divisi/anggaran/${id}`, { method: "DELETE" }),
+  getLaporanDivisiDryRun: (params = {}) => request(`/laporan-divisi/dry-run${qsFinance(params)}`),
+  exportLaporanDivisi: async (body) => {
+    const res = await fetch(`${BASE}/laporan-divisi/export`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
+    adoptRefreshedToken(res);
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) { let msg = "Gagal mengekspor ke Excel"; try { msg = (await res.json()).error || msg; } catch { /* bukan JSON */ } throw new Error(msg); }
+    const cd = res.headers.get("Content-Disposition") || "";
+    return { blob: await res.blob(), namaFile: cd.match(/filename="([^"]+)"/)?.[1] || "Finance_Laporan_Divisi.xlsx" };
+  },
   // B3.8 Koreksi lanjutan: edit informasi (tanpa jurnal, tanpa PIN) untuk tagihan supplier & refund yang sudah disetujui.
   editInfoFinanceDoc: (jenis, id, data, idempotencyKey = null) => request(`/finance/${jenis}/${id}/info`, {
     method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("info") }, body: JSON.stringify(data),

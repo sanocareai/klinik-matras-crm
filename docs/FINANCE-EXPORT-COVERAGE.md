@@ -23,6 +23,12 @@ Mode filter: **Server** = layar mengirim filter/periode ke endpoint daftar, expo
 | **Jurnal Umum** | `jurnal-umum` | `GET /finance/journal` (`jurnalRead`) | Server: sumber, status, pencarian + periode | Total Debit = Total Kredit → baris TOTAL | alasan pembalikan (+ bagian sesudah " — " pada keterangan jurnal balik dipotong untuk non-admin) |
 | **Buku Besar** (per akun) | `buku-besar` | `GET /finance/reports/ledger/:accountId` (`bukuBesar`) | Server: akun + periode; klien: pencarian/sumber/jenis/status → `ids` | Saldo awal, total debit/kredit, saldo akhir → baris TOTAL + sheet Ringkasan | (alasan pembalikan pada keterangan dipotong untuk non-admin) |
 
+## A2. Export lewat endpoint sendiri — Laporan Divisi (Fase 2)
+
+| Halaman / tab | Endpoint | Isi | Parity |
+|---|---|---|---|
+| **Laporan Divisi** (Finance: semua divisi) dan **Laporan Biaya** di workspace Delivery/Produksi/Gudang/Marketing/Management/HR-GA — tab Ringkasan, Kategori, Tren Bulanan, Transaksi, Komitmen, Anggaran, atau Semua | `POST /api/laporan-divisi/export` (`laporan-divisi`; `dataExportLaporan` memanggil `bangunLaporan` yang SAMA dengan layar) | Satu sheet per tab + sheet Definisi Angka; kepala berisi periode (WIB), divisi, filter aktif, basis tanggal; angka numerik, baris TOTAL, pesan "Tidak ada data sesuai periode dan filter." bila kosong | Izin & isolasi divisi ditegakkan `muatAkses` (sama dengan layar); data sensitif disaring untuk non-Finance; tes paritas `laporanDivisi.integration.test.js` |
+
 ## B. Halaman yang TIDAK diekspor (keputusan + alasan)
 
 | Halaman / tab | Perlu export? | Alasan |
