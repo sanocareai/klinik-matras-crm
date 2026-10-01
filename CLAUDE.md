@@ -1668,3 +1668,26 @@ klaim Resi) dan `order_payment_claim_evidence`. UI: `frontend/src/features/klaim
    dan log upload 30 menit → pastikan jurnal/saldo/Payment/status/paidAt/komisi tidak berubah.
 6. **Rollback:** (a) kill switch — matikan sakelar di kartu Pengaturan (seketika, tanpa mengubah data); (b) OTA — `npx eas update:rollback` atau republish update sebelumnya ke branch `preview`;
    (c) backend — image `klinik-matras-backend:rollback-pre-klg-c2fbdcfe` (tabel baru diabaikan kode lama, database tidak perlu dipulihkan).
+
+
+---
+
+## 22. LAPORAN BIAYA PER DIVISI — Finance Fase 2 (LIVE 1 Okt 2026, rilis f9f0bba9, sakelar MATI)
+
+Kode: `backend/src/services/finance/laporanDivisi/` (divisi, atribusi, komitmen, anggaran, akses, laporan, export, dryRun), route `backend/src/routes/laporanDivisi.js` (`/api/laporan-divisi/*`), UI `frontend/src/features/laporanDivisi/LaporanDivisi.jsx` (satu komponen untuk Finance `/finance/laporan-divisi` dan workspace `/armada|bengkel|warehouse|marketing/laporan-biaya`, `/kendali/laporan-biaya|laporan-hrga` dengan `scopeTetap`). Tes: `backend/tests/integration/laporanDivisi.integration.test.js` (atribusi, scope, anggaran, dry-run, paritas layar↔Excel, komitmen). Rilis: `scripts/release-finance-fase2.sh`.
+
+**Sakelar:** `laporan_divisi_aktif` (default MATI) + `laporan_divisi_workspace` (daftar divisi yang menu/izinnya dibuka). MATI = semua endpoint 403 `LAPORAN_DIVISI_MATI` (kecuali dry-run Admin Finance). **Jangan dinyalakan sebelum Owner menyetujui agregat dry-run.**
+
+**Aturan yang tidak boleh dilonggarkan:**
+1. Atribusi per JURNAL dari dokumen sumber, prioritas EKSPLISIT → RELASI → KATEGORI → SHARED(UMUM) → TIDAK_TERKLASIFIKASI. TIDAK PERNAH menebak dari pembuat transaksi. D&T = divisi sendiri (bukan Marketing). Tidak ada backfill; atribusi dihitung saat laporan dibuka.
+2. Tiga konsep terpisah: **Aktual** (beban jurnal, tanggal buku) · **Kas Keluar** (uang keluar; transfer hanya neto biaya admin) · **Komitmen** (menunggu persetujuan = belum beban/kas; dibukukan-belum-dibayar = belum kas). Satu dokumen sumber sekali per konsep. Komitmen pengeluaran mode UANG_MUKA dan pembelian ber-DP HANYA menghitung selisih di luar uang muka/DP yang sudah keluar sebagai kas (bug hitung-ganda ditemukan review 1 Okt, dikunci tes).
+3. Jembatan (hanya Finance, tanpa filter): Σ aktual kelompok + di-luar-divisi = Beban Diakui ledger; Σ kas keluar kelompok + di-luar-divisi = Arus Kas keluar. Dry-run produksi Sep–Okt: residual Rp0 kedua bulan.
+4. Anggaran berversi (DRAF → DISETUJUI → DIGANTIKAN; pembuat ≠ penyetuju kecuali Admin Finance; alasan wajib untuk versi berikutnya). Tanpa versi disetujui = "Belum ada anggaran" (bukan Rp0). Merah HANYA untuk over-budget.
+5. Izin ditegakkan server (`akses.js`): Finance/Admin/Owner semua divisi + Biaya Bersama + Tidak Terklasifikasi + jembatan; leader (`UserDivision.isLeader`, PRODUCTION_LEAD→Produksi, LEADER_DRIVER→Delivery) hanya divisinya; anggota biasa hanya ringkasan; baris sensitif (gaji, kasbon, investor) tidak bocor ke non-Finance (layar, drill-down, export).
+6. Export Excel = payload layar yang sama (`dataExportLaporan` → `bangunLaporan`), satu sheet per tab + Definisi Angka.
+
+**Keterbatasan yang diketahui (belum diubah):** (a) pembalikan jurnal transfer antar-kas dihitung bruto di `arusKas` Fase 1 DAN laporan divisi (produksi: 0 kasus dari 41 pembalik); (b) sisa tagihan supplier dihitung per hari ini, bukan per akhir periode; (c) Kas Keluar divisi bruto (pengembalian sisa uang muka tidak dikurangkan); (d) kategori Tooling, Lembur, Perlengkapan/Logistik Gudang belum ada di bagan kategori → tampil di "Komponen lain"; (e) `Komitmen` tidak punya dimensi proyek (filter proyek → 0).
+
+**Dry-run baca-saja produksi:** `docker compose exec -T backend node scripts/laporan-divisi-dryrun.js --from 2026-09-01 --to 2026-10-31` (tidak menyentuh sakelar/data). Hasil 1 Okt 2026 (Sep–Okt, 638 jurnal): deterministik 468 trx/Rp278,1 jt aktual; Biaya Bersama 126 trx/Rp117,6 jt (Rp78 jt di antaranya GAJI_KARYAWAN divisi UMUM — sensitif); tidak terklasifikasi 5 trx/Rp0,6 jt aktual (jurnal manual, kas Rp12,8 jt); konflik petunjuk divisi 18 trx/Rp25,1 jt; di-luar-divisi 21 trx (saldo awal & pembayaran order, aktual Rp0). Kasbon = potongan gaji ke Beban Gaji → HR&GA lewat aturan sumber tetap.
+
+**Perbaikan 404 aset lama:** `release-finance-fase2.sh` (4c) membawa aset ber-hash dari dist release aktif ke dist baru (tanpa menimpa, dipangkas >21 hari) sehingga tab terbuka saat deploy tetap bisa memuat chunk lama; aset yang memang tidak ada tetap 404 jujur (bukan index.html). Menu Delivery bertanda `bolehPeran/bolehDivisi` kini disaring di `Layout.jsx` (`armadaBase`).
