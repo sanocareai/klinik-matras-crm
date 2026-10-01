@@ -12,6 +12,8 @@ import { setSetting, SETTING_KEYS } from "../../src/services/finance/settings.js
 import { postJournal } from "../../src/services/finance/journal.js";
 import { postCashTransfer } from "../../src/services/finance/posting/cash.js";
 import { postAdSpend } from "../../src/services/finance/posting/expense.js";
+import ExcelJS from "exceljs";
+import { bacaSheet } from "./setup/exportHelper.js";
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -238,4 +240,103 @@ test("DRY-RUN legacy: empat kelompok (deterministik / SHARED / TIDAK_TERKLASIFIK
   const beban = await testPrisma.finJournalLine.aggregate({ where: { account: { type: { in: ["BEBAN", "BEBAN_POKOK"] } } }, _sum: { debit: true, credit: true } });
   assert.equal(Math.round(totalAktual), Math.round(Number(beban._sum.debit) - Number(beban._sum.credit)), "empat kelompok + di luar divisi = seluruh beban ledger (tidak ada yang hilang/dobel)");
   assert.deepEqual({ je: await testPrisma.finJournalEntry.count(), jl: await testPrisma.finJournalLine.count(), ex: await testPrisma.finExpense.count(), bud: await testPrisma.finDivisionBudget.count(), act: await testPrisma.activityEvent.count() }, sebelum, "dry-run tidak menulis apa pun");
+});
+
+// ═══ PARITAS LAYAR ↔ EXCEL: berkas dibangun dari payload yang SAMA; sheet Ringkasan/Kelompok/Kategori/Tren/Transaksi/Komitmen/Anggaran cocok angka per angka ═══
+async function unduh(token, body) {
+  const res = await fetch(`${server.baseUrl}/api/laporan-divisi/export`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+  const tipe = res.headers.get("content-type") || "";
+  if (!tipe.includes("spreadsheetml")) return { status: res.status, wb: null, json: await res.json().catch(() => null), headers: res.headers };
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(Buffer.from(await res.arrayBuffer()));
+  return { status: res.status, wb, json: null, headers: res.headers };
+}
+const sama = (a, b, ket) => assert.ok(Math.abs(Number(a ?? 0) - Number(b ?? 0)) < 0.005, `${ket}: ${a} ≠ ${b}`);
+
+test("PARITAS: export semua tab (Finance) = payload layar — angka tiap divisi, kelompok, kategori, tren, transaksi, komitmen, anggaran; baris TOTAL; sheet Definisi Angka", async () => {
+  const w = await dunia();
+  await skenario(w);
+  // satu anggaran disetujui untuk Delivery supaya kolom anggaran/sisa/peringatan terisi
+  const draf = await w.a.post("/api/laporan-divisi/anggaran", { division: "DELIVERY", period: "2026-09", amount: 500_000, reason: "uji" });
+  assert.equal(draf.status, 201, JSON.stringify(draf.body));
+  assert.equal((await w.fa.post(`/api/laporan-divisi/anggaran/${draf.body.anggaran.id}/setujui`, {})).status, 200);
+  const layar = (await w.fa.get(`/api/laporan-divisi/laporan?${P}`)).body;
+  const dokLayar = (await w.fa.get(`/api/laporan-divisi/dokumen?${P}&divisi=DELIVERY`)).body;
+  const u = await unduh(w.finA.token, { from: "2026-09-01", to: "2026-09-30", divisi: layar.scopeTampil, tab: "semua" });
+  assert.equal(u.status, 200, JSON.stringify(u.json));
+  const nama = u.wb.worksheets.map((s) => s.name);
+  for (const s of ["Ringkasan", "Kelompok", "Kategori", "Tren Bulanan", "Rincian Transaksi", "Komitmen", "Anggaran vs Aktual", "Definisi Angka"]) assert.ok(nama.includes(s), `sheet ${s} tidak ada: ${nama.join(",")}`);
+
+  const rg = bacaSheet(u.wb, "Ringkasan");
+  for (const d of layar.divisi) {
+    const b = rg.baris.find((x) => x["Divisi"] === d.label);
+    assert.ok(b, `divisi ${d.label} tidak ada di sheet Ringkasan`);
+    sama(b["Aktual / Beban Diakui (Rp)"], d.aktual, `aktual ${d.scope}`);
+    sama(b["Kas Keluar (Rp)"], d.kasKeluar, `kas ${d.scope}`);
+    sama(b["Komitmen Menunggu Persetujuan (Rp)"], d.komitmen.belumDibukukan, `komitmen belum ${d.scope}`);
+    sama(b["Komitmen Dibukukan Belum Dibayar (Rp)"], d.komitmen.dibukukanBelumDibayar, `komitmen bayar ${d.scope}`);
+    assert.equal(b["Status Anggaran"], d.anggaran == null ? "Belum ada anggaran" : "Ada anggaran");
+    if (d.anggaran == null) assert.equal(b["Anggaran (Rp)"], null, "Belum ada anggaran harus kosong, BUKAN 0");
+  }
+  sama(rg.total["Aktual / Beban Diakui (Rp)"], layar.ringkasan.aktual, "TOTAL aktual = ringkasan layar");
+  sama(rg.total["Kas Keluar (Rp)"], layar.ringkasan.kasKeluar, "TOTAL kas = ringkasan layar");
+
+  const kl = bacaSheet(u.wb, "Kelompok");
+  for (const d of layar.divisi) for (const g of d.kelompok) {
+    const b = kl.baris.find((x) => x["Divisi"] === d.label && x["Kelompok"] === g.label);
+    assert.ok(b, `kelompok ${d.label}/${g.label} tidak ada di Excel`); sama(b["Aktual (Rp)"], g.aktual, `kelompok ${g.label}`); sama(b["Kas Keluar (Rp)"], g.kasKeluar, `kelompok kas ${g.label}`);
+  }
+  const kt = bacaSheet(u.wb, "Kategori");
+  for (const d of layar.divisi) for (const k of d.perKategori) {
+    const b = kt.baris.find((x) => x["Divisi"] === d.label && x["Kode"] === k.kode);
+    assert.ok(b, `kategori ${k.kode} tidak ada`); sama(b["Aktual (Rp)"], k.aktual, `kategori ${k.kode}`);
+  }
+  const tr = bacaSheet(u.wb, "Tren Bulanan");
+  for (const d of layar.divisi) for (const t of d.tren) { const b = tr.baris.find((x) => x["Divisi"] === d.label && x["Bulan (WIB)"] === t.bulan); assert.ok(b, `tren ${d.label} ${t.bulan}`); sama(b["Aktual (Rp)"], t.aktual, `tren ${d.scope} ${t.bulan}`); }
+  // Transaksi: Σ aktual semua baris = Σ aktual ringkasan (tiap baris dokumen sekali, tanpa hitung ganda)
+  const tx = bacaSheet(u.wb, "Rincian Transaksi");
+  sama(tx.total["Aktual (Rp)"], layar.ringkasan.aktual, "Σ transaksi = Σ ringkasan");
+  sama(tx.total["Kas Keluar (Rp)"], layar.ringkasan.kasKeluar, "Σ kas transaksi = ringkasan");
+  assert.equal(tx.baris.filter((x) => x["Divisi"] === "Delivery").length, dokLayar.baris.length, "jumlah baris Delivery = drill-down layar");
+  const km = bacaSheet(u.wb, "Komitmen");
+  sama(km.total["Jumlah (Rp)"], layar.ringkasan.komitmenBelumDibukukan + layar.ringkasan.komitmenDibukukanBelumDibayar, "Σ komitmen = ringkasan");
+  const ag = bacaSheet(u.wb, "Anggaran vs Aktual");
+  const del = ag.baris.find((x) => x["Divisi"] === "Delivery"); sama(del["Anggaran (Rp)"], 500_000, "anggaran Delivery"); sama(del["Sisa Anggaran (Rp)"], div(layar, "DELIVERY").sisaAnggaran, "sisa Delivery");
+  assert.ok(bacaSheet(u.wb, "Definisi Angka").baris.length >= 6);
+  assert.match(u.headers.get("content-disposition"), /\.xlsx/);
+});
+
+test("PARITAS tab & scope: leader hanya divisinya; filter kategori ikut; kosong → pesan resmi; anggota tanpa rincian; tanpa izin 403; sakelar MATI 403", async () => {
+  const w = await dunia({ workspace: "DELIVERY,DIGITAL_TECHNOLOGY" });
+  await skenario(w);
+  // leader Delivery minta divisi lain → ditolak (isolasi), bukan dibocorkan
+  const lain = await unduh(w.leaderDel.token, { from: "2026-09-01", to: "2026-09-30", divisi: ["DELIVERY", "DIGITAL_TECHNOLOGY", "SHARED"], tab: "dokumen" });
+  assert.equal(lain.status, 403, "leader tidak boleh meminta divisi lain");
+  const layar = (await w.ld.get(`/api/laporan-divisi/laporan?${P}&divisi=DELIVERY`)).body;
+  const u2 = await unduh(w.leaderDel.token, { from: "2026-09-01", to: "2026-09-30", divisi: ["DELIVERY"], tab: "ringkasan" });
+  assert.equal(u2.status, 200, JSON.stringify(u2.json));
+  const rg = bacaSheet(u2.wb, "Ringkasan");
+  assert.deepEqual(rg.baris.map((x) => x["Divisi"]), ["Delivery"]);
+  sama(rg.baris[0]["Aktual / Beban Diakui (Rp)"], div(layar, "DELIVERY").aktual, "aktual leader = layar leader");
+  // transaksi leader: tanpa baris sensitif (gaji)
+  const ut = await unduh(w.leaderDel.token, { from: "2026-09-01", to: "2026-09-30", divisi: ["DELIVERY"], tab: "dokumen" });
+  const tx = bacaSheet(ut.wb, "Rincian Transaksi");
+  assert.ok(tx.baris.length > 0 && tx.baris.every((x) => x["Divisi"] === "Delivery"));
+  assert.ok(!tx.baris.some((x) => /gaji/i.test(`${x["Kategori"]} ${x["Deskripsi"]}`)), "baris sensitif (gaji) tidak boleh ikut untuk non-Finance");
+  // filter kategori ikut ke Excel
+  const f = await unduh(w.finA.token, { from: "2026-09-01", to: "2026-09-30", divisi: ["DELIVERY"], tab: "dokumen", filter: { kategori: "BBM" } });
+  const fl = (await w.fa.get(`/api/laporan-divisi/dokumen?${P}&divisi=DELIVERY&kategori=BBM`)).body;
+  const fx = bacaSheet(f.wb, "Rincian Transaksi");
+  assert.equal(fx.baris.length, fl.baris.length);
+  assert.ok(fx.baris.length > 0 && fx.baris.every((x) => /bbm/i.test(x["Kategori"])), "filter kategori harus ikut");
+  // kosong: bulan tanpa data → pesan resmi di sheet
+  const kosong = await unduh(w.finA.token, { from: "2026-01-01", to: "2026-01-31", divisi: ["DELIVERY"], tab: "dokumen" });
+  assert.equal(kosong.status, 200);
+  assert.equal(kosong.wb.getWorksheet("Rincian Transaksi").getCell("A7").value, "Tidak ada data sesuai periode dan filter");
+  // anggota biasa: tanpa rincian dokumen; pengguna tanpa keanggotaan 403
+  const a = await unduh(w.anggotaDel.token, { from: "2026-09-01", to: "2026-09-30", divisi: ["DELIVERY"], tab: "dokumen" });
+  if (a.status === 200) assert.equal(bacaSheet(a.wb, "Rincian Transaksi").baris.length, 0, "anggota biasa tidak boleh melihat rincian dokumen");
+  assert.equal((await unduh(w.tanpa.token, { from: "2026-09-01", to: "2026-09-30", divisi: ["DELIVERY"], tab: "ringkasan" })).status, 403);
+  // sakelar MATI → export juga ditolak
+  await setSetting(testPrisma, SETTING_KEYS.LAPORAN_DIVISI_AKTIF, "false");
+  assert.equal((await unduh(w.finA.token, { from: "2026-09-01", to: "2026-09-30", divisi: ["DELIVERY"], tab: "ringkasan" })).status, 403);
 });
