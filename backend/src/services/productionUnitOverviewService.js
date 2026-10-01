@@ -13,6 +13,8 @@
 // kebocoran antar-unit bersaudara (lihat resolveUnitPhoto yang sudah menolak atribusi job multi-unit).
 import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, minutesBetween, nameOf, stepStatuses, warningsOf } from "./productionExperienceReadService.js";
 import { loadStepContext } from "./productionStepCommandService.js";
+import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
+import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { PRIORITY_LABEL, formatProductionDate, stationLabel } from "../lib/domain/productionBoard.js";
 import { STEP_BY_NO } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
@@ -287,9 +289,12 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
   const indicators = indicatorsOf(run, ctx, materialStatus);
 
   const mediaOf = (stepNos) => ctx.evidence.filter((e) => stepNos.includes(e.stepNo))
-    .flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url) })))
+    .flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url), source: sourceOfStep(e.stepNo) })))
     .filter((m) => m.url);
 
+  // P10B — matriks dokumentasi kanonis; foto dokumentasi langsung masuk bucket before/process/after yang sudah dipakai layar.
+  const documentation = await buildRunDocumentation(prisma, run, ctx);
+  const docBuckets = documentationBuckets(documentation);
   const fgHandoff = run.custodyHandoffs.filter((h) => h.direction === "FINISHED_GOODS").at(-1) ?? null;
   const firstStart = run.operations[0]?.startedAt ?? null;
   const op = ctx.state.activeOp;
@@ -346,7 +351,8 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
       indicators,
     },
     materials,
-    evidence: { before: mediaOf([1, 2, 3]), process: mediaOf([4, 6, 7]), after: mediaOf([8, 9, 11, 12]) },
+    evidence: { before: [...mediaOf([1, 2, 3]), ...docBuckets.before], process: [...mediaOf([4, 6, 7]), ...docBuckets.process], after: [...mediaOf([8, 9, 11, 12]), ...docBuckets.after] },
+    documentation,
     qc,
     diagnosis: {
       ...diagnosis,

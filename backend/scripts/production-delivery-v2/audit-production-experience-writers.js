@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Audit writer Production Experience V2 (P8). Read-only, statis atas src/.
-//  1. production_step_evidence_v2: HANYA command owner P8 dan HANYA create (immutable: update/upsert/delete di mana pun = pelanggaran).
+//  1. production_step_evidence_v2: HANYA command owner P8 (bukti tahap) dan command owner P10B (dokumentasi, stepCode DOC_*), HANYA create
+//     (immutable: update/upsert/delete di mana pun = pelanggaran). Command dokumentasi TIDAK boleh menulis lifecycle (run/operasi/fase/unit/stok/
+//     revisi) dan loadStepContext WAJIB memisahkan baris DOC_ dari lifecycle (isDocumentationRow).
 //  2. production_material_shortages_v2: HANYA command owner P8.
 //  3. Command P8 TIDAK menulis langsung operasi/run/fase/ledger tahap/unit/stok/reservasi/HPP/jurnal — transisi lewat helper P5 (apply*InTx).
 //  4. Command P8 wajib memakai deriveNextAction + validateStepEvidence + helper P5 (applyStartInTx/applyCompleteInTx/applyPauseInTx/applyResumeInTx).
@@ -18,6 +20,10 @@ const STEP = "src/services/productionStepCommandService.js";
 const READ = "src/services/productionExperienceReadService.js";
 const ROUTE = "src/routes/productionExperience.js";
 const MEDIA = "src/routes/productionEvidenceMedia.js";
+const DOC_SERVICE = "src/services/productionDocumentationService.js";
+const DOC_READ = "src/services/productionDocumentationRead.js";
+const DOC_ROUTE = "src/routes/productionDocumentation.js";
+const LIFECYCLE_HELPERS = /\b(applyStartInTx|applyCompleteInTx|applyPauseInTx|applyResumeInTx|prepareStartInTx|bumpRunRevisionInTx|transitionPhases)\b/;
 const writeRegex = (model) => new RegExp(String.raw`\.${model}\.${OPS}\s*\(`, "g");
 const FORBIDDEN_IN_STEP = [
   ["productionOperationRun", writeRegex("productionOperationRun")], ["productionRun", writeRegex("productionRun")],
@@ -48,8 +54,8 @@ export function auditProductionExperienceWriters(files) {
   for (const [rel, raw] of files) {
     const text = stripComments(raw.replace(/\r\n/g, "\n"));
     for (const match of text.matchAll(writeRegex("productionStepEvidence"))) {
-      const ok = rel === STEP && match[1] === "create";
-      add(rel, match.index, text, "STEP_EVIDENCE_WRITER", ok ? "OWNER_CREATE" : match[1] === "create" ? "UNOWNED_WRITER" : `IMMUTABLE_VIOLATION_${match[1]}`, ok);
+      const ok = (rel === STEP || rel === DOC_SERVICE) && match[1] === "create";
+      add(rel, match.index, text, "STEP_EVIDENCE_WRITER", ok ? (rel === DOC_SERVICE ? "DOCUMENTATION_OWNER_CREATE" : "OWNER_CREATE") : match[1] === "create" ? "UNOWNED_WRITER" : `IMMUTABLE_VIOLATION_${match[1]}`, ok);
     }
     for (const match of text.matchAll(writeRegex("productionMaterialShortage"))) {
       add(rel, match.index, text, "SHORTAGE_WRITER", rel === STEP ? "OWNER" : "UNOWNED_WRITER", rel === STEP);
@@ -63,7 +69,17 @@ export function auditProductionExperienceWriters(files) {
   for (const name of REQUIRED_IN_STEP) {
     if (!new RegExp(String.raw`\b${name}\(`).test(step)) add(STEP, null, "", "STEP_CANONICAL_PATH", `MISSING_${name}`, false);
   }
-  for (const rel of [READ, ROUTE]) {
+  // Command dokumentasi: tidak menulis lifecycle, tidak memanggil helper lifecycle, dan menulis HANYA baris DOC_ (docStepCode).
+  const docSvc = stripComments((files.get(DOC_SERVICE) || "").replace(/\r\n/g, "\n"));
+  if (docSvc) {
+    for (const [name, regex] of FORBIDDEN_IN_STEP) for (const match of docSvc.matchAll(new RegExp(regex.source, "g"))) add(DOC_SERVICE, match.index, docSvc, "DOC_FORBIDDEN_WRITE", `FORBIDDEN_${name}`, false);
+    const helper = LIFECYCLE_HELPERS.exec(docSvc);
+    if (helper) add(DOC_SERVICE, helper.index, docSvc, "DOC_LIFECYCLE_HELPER", `FORBIDDEN_${helper[1]}`, false);
+    if (!/docStepCode\(/.test(docSvc)) add(DOC_SERVICE, null, "", "DOC_MARKER", "MISSING_docStepCode", false);
+    if (!/deriveDocSource\(/.test(docSvc)) add(DOC_SERVICE, null, "", "DOC_SOURCE", "MISSING_deriveDocSource", false);
+  }
+  if (files.has(DOC_SERVICE) && !/isDocumentationRow\(/.test(step)) add(STEP, null, "", "DOC_LIFECYCLE_ISOLATION", "MISSING_isDocumentationRow_in_loadStepContext", false);
+  for (const rel of [READ, ROUTE, DOC_READ, DOC_ROUTE]) {
     const text = stripComments((files.get(rel) || "").replace(/\r\n/g, "\n"));
     for (const match of text.matchAll(ANY_WRITE)) add(rel, match.index, text, "READ_MODEL_WRITE", "READ_MODEL_MUST_NOT_WRITE", false);
   }

@@ -37,7 +37,7 @@ export async function createLeftoverReturnsInTx(tx, { run, actorId, commandId = 
   if (!plan) return { created: 0 };
   const [issueLines, evidence, moves] = await Promise.all([
     tx.materialIssueLine.findMany({ where: { materialIssue: { productionPlanId: plan.id, status: "ISSUED" } }, select: { materialId: true, issuedQty: true } }),
-    tx.productionStepEvidence.findMany({ where: { runId: run.id, stepNo: { in: [6, 7, 10] } }, select: { payload: true } }),
+    tx.productionStepEvidence.findMany({ where: { runId: run.id, stepNo: { in: [6, 7, 10] }, NOT: { stepCode: { startsWith: "DOC_" } } }, select: { payload: true } }),
     tx.stockMovement.findMany({ where: { unitId: run.unitId, type: { in: ["WASTE", "RETURN"] } }, select: { materialId: true, type: true, qty: true } }),
   ]);
   const sum = (m, id, v) => m.set(id, (m.get(id) || 0) + v);

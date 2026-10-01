@@ -71,6 +71,10 @@ export const PERMISSIONS = {
   // jadi 2 permission tidak menambah kontrol nyata (D-010 semangat
   // "jangan tambah permission kalau yang ada sudah cukup").
   PRODUCTION_ASSIGNMENT_WRITE: "production_assignment:write",
+  // P10B — mengunggah/mengoreksi DOKUMENTASI foto produksi (Aplikasi Dokumentasi). SENGAJA terpisah dari UNIT_STAGE_WRITE:
+  // dokumentasi tidak menyelesaikan tahap. TIDAK diberikan ke PRODUCTION_WORKER (semua worker); hanya PRODUCTION_LEAD dan
+  // peran khusus PRODUCTION_DOCUMENTER. ADMIN/OWNER tidak (pola sama UNIT_STAGE_WRITE: jejak audit jujur).
+  PRODUCTION_DOCUMENTATION_WRITE: "production_documentation:write",
 
   // --- Armada (pickup & delivery) ---
   JOB_READ: "job:read",
@@ -327,6 +331,7 @@ export const ROLE_PERMISSIONS = {
     P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
     P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
     P.PRODUCTION_ASSIGNMENT_WRITE,
+    P.PRODUCTION_DOCUMENTATION_WRITE,
     // D-116 — memutuskan root cause/rework & menandai kasus DALAM_PENANGANAN.
     P.COMPLAINT_READ, P.COMPLAINT_WRITE,
     // D-180 — mengajukan biaya produksi non-bahan (upah harian tukang,
@@ -453,6 +458,12 @@ export const ROLE_PERMISSIONS = {
     P.INCENTIVE_SNAPSHOT_READ, P.INCENTIVE_PAYOUT_READ,
   ],
 
+  // PRODUCTION_DOCUMENTER (P10B) — petugas dokumentasi: lihat unit produksi + unggah dokumentasi foto. TANPA harga,
+  // pembayaran, jurnal, nomor telepon, UNIT_STAGE_WRITE atau QC_WRITE.
+  PRODUCTION_DOCUMENTER: [
+    P.UNIT_READ, P.PRODUCTION_DOCUMENTATION_WRITE,
+  ],
+
   // APPROVER — penyetuju: membaca dan MEMUTUSKAN (setuju/tolak) pengajuan, tidak
   // mencatat apa pun (tanpa FINANCE_POST) dan tidak memverifikasi pembayaran.
   APPROVER: [
@@ -490,7 +501,7 @@ export const PORTALS = [
     label: "Production Operations",
     description: "Perencanaan produksi, work order, quality control, dan kapasitas.",
     path: "/bengkel",
-    roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"],
+    roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "PRODUCTION_DOCUMENTER"],
   },
   {
     key: "warehouse",

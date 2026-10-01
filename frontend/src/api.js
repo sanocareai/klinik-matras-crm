@@ -756,6 +756,19 @@ export const api = {
     for (const file of files) fd.append("files", file);
     return uploadWithProgress("/production-v2/evidence/upload", fd, onProgress);
   },
+  // P10B — Aplikasi Dokumentasi (foto dokumentasi produksi; tidak mengubah lifecycle). Tulis butuh izin PRODUCTION_DOCUMENTATION_WRITE.
+  getProductionV2DocQueue: ({ filter = "ALL", q = "" } = {}) => request(`/production-v2/documentation/queue?filter=${encodeURIComponent(filter)}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
+  getProductionV2DocDetail: (runId) => request(`/production-v2/documentation/runs/${runId}`),
+  uploadProductionV2Documentation: (runId, files, onProgress) => {
+    const fd = new FormData();
+    fd.append("runId", runId);
+    for (const file of files) fd.append("files", file);
+    return uploadWithProgress("/production-v2/documentation/upload", fd, onProgress);
+  },
+  submitProductionV2Documentation: (runId, data, idempotencyKey = mutationKey("p10b-doc")) =>
+    request(`/production-v2/documentation/runs/${runId}/submit`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  correctProductionV2Documentation: (runId, data, idempotencyKey = mutationKey("p10b-doc-fix")) =>
+    request(`/production-v2/documentation/runs/${runId}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // P9B.1 — foto identitas unit manual (hanya tampil kalau unit belum punya foto pickup driver, lihat backend).
   uploadUnitPhoto: (unitId, file, onProgress) => {
     const fd = new FormData();

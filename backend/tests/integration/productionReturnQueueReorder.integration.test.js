@@ -41,11 +41,11 @@ async function world() {
     createTestUser({ roles: ["QC_LEAD"] }),
     createTestUser({ roles: ["DRIVER"] }),
   ]);
-  const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-P8-${++seq}`, name: "Workshop Utama" } });
+  const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-PRQ-${++seq}`, name: "Workshop Utama" } });
   const nadyaOp = await testPrisma.productionOperator.create({ data: { userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
   const cornerOp = await testPrisma.productionOperator.create({ data: { userId: corner.user.id, primaryWorkCenterId: workCenter.id } });
-  const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-P8-${++seq}`, name: "Gudang P8" } });
-  const loc = (zone, locationType) => testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone, locationType, code: `${zone}-P8-${++seq}` } });
+  const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-PRQ-${++seq}`, name: "Gudang P8" } });
+  const loc = (zone, locationType) => testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone, locationType, code: `${zone}-PRQ-${++seq}` } });
   const [rcv, fg] = [await loc("RCV", "RECEIVING_AREA"), await loc("FG", "FINISHED_GOODS_AREA")];
   const service = await testPrisma.serviceCatalog.findUniqueOrThrow({ where: { code: "UPG_FONDASI_LAPISAN" } });
   const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
@@ -60,10 +60,10 @@ async function world() {
 async function acceptedUnit(w, { cohort = true } = {}) {
   const customer = await testPrisma.customer.create({ data: { name: `Ibu Maya ${++seq}` } });
   const order = await testPrisma.order.create({
-    data: { customerId: customer.id, orderNumber: `P8O-${++seq}`, value: 1000, category: "LAYANAN", beratBadan: 85, complaintCategory: ["SAKIT_PINGGANG"], notes: "Minta tekstur firm" },
+    data: { customerId: customer.id, orderNumber: `PRQO-${++seq}`, value: 1000, category: "LAYANAN", beratBadan: 85, complaintCategory: ["SAKIT_PINGGANG"], notes: "Minta tekstur firm" },
   });
-  const unit = await testPrisma.unit.create({ data: { unitCode: `UNIT-P8-${++seq}`, orderId: order.id, seq: 1, status: "AWAITING_PICKUP", merk: "King Koil", ukuran: "180x200" } });
-  const route = await testPrisma.route.create({ data: { code: `P8-RTE-${++seq}`, date: new Date("2026-09-29T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: w.driver.user.id } });
+  const unit = await testPrisma.unit.create({ data: { unitCode: `UNIT-PRQ-${++seq}`, orderId: order.id, seq: 1, status: "AWAITING_PICKUP", merk: "King Koil", ukuran: "180x200" } });
+  const route = await testPrisma.route.create({ data: { code: `PRQ-RTE-${++seq}`, date: new Date("2026-09-29T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: w.driver.user.id } });
   const job = await testPrisma.job.create({ data: { type: "PICKUP", orderId: order.id, routeId: route.id, driverId: w.driver.user.id, status: "ASSIGNED", sequence: 1, scheduledDate: new Date("2026-09-29T00:00:00.000Z") } });
   await testPrisma.jobUnit.create({ data: { jobId: job.id, unitId: unit.id } });
   if (cohort) await addCohort(unit.id);

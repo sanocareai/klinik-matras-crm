@@ -29,6 +29,8 @@ const ROLE_LABELS = {
   SALES: "Sales",
   PRODUCTION_LEAD: "Kepala Produksi",
   PRODUCTION_WORKER: "Pekerja Produksi",
+  // P10B — hanya UNIT_READ + unggah dokumentasi foto produksi; tidak otomatis diberikan ke siapa pun.
+  PRODUCTION_DOCUMENTER: "Petugas Dokumentasi",
   QC_LEAD: "QC Leader",
   WAREHOUSE: "Gudang",
   DISPATCHER: "Dispatcher",
@@ -54,6 +56,7 @@ const ROLE_COLORS = {
   SALES:             { color: "#2563eb" },
   PRODUCTION_LEAD:   { color: "#b45309" },
   PRODUCTION_WORKER: { color: "#b45309" },
+  PRODUCTION_DOCUMENTER: { color: "#b45309" },
   QC_LEAD:           { color: "#be185d" },
   WAREHOUSE:         { color: "#b45309" },
   DISPATCHER:        { color: "#059669" },
@@ -74,7 +77,7 @@ const ALL_ROLES = Object.keys(ROLE_LABELS);
 // divisi yang perannya ia pegang — bukan dipaksa ke satu divisi.
 const DIVISIONS = [
   { key: "growth",    label: "Growth",     roles: ["SALES"] },
-  { key: "production", label: "Production", roles: ["PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD"] },
+  { key: "production", label: "Production", roles: ["PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "PRODUCTION_DOCUMENTER"] },
   { key: "warehouse", label: "Warehouse",  roles: ["WAREHOUSE"] },
   { key: "delivery",  label: "Delivery",   roles: ["DISPATCHER", "DRIVER", "HELPER", "LEADER_DRIVER"] },
   { key: "finance",   label: "Finance",    roles: ["FINANCE", "ACCOUNTANT", "APPROVER"] },

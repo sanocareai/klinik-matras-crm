@@ -29,6 +29,7 @@ import { pathForUnit, resolveCurrentTarget } from "./unitStageEngine.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
+import { isDocumentationRow, DOC_STEP_CODE_PREFIX } from "../lib/domain/productionDocumentation.js";
 import { createLeftoverReturnsInTx } from "./productionMaterialReturnService.js";
 import { allManualMaterialsMapped, diagnosisBomValid } from "./productionDiagnosisCommandService.js";
 
@@ -90,7 +91,7 @@ export async function loadStepContext(client, run) {
   } catch (error) { pathError = error.message; }
   const stageById = new Map((path || []).map((s) => [s.id, s]));
   const op = activeOperation(run);
-  const [evidence, openShortage, latestInspection, exception, materialFacts, diagnosisManualMapped, diagnosisBomHasLines] = await Promise.all([
+  const [allEvidence, openShortage, latestInspection, exception, materialFacts, diagnosisManualMapped, diagnosisBomHasLines] = await Promise.all([
     client.productionStepEvidence.findMany({ where: { runId: run.id }, orderBy: [{ createdAt: "asc" }, { stepNo: "asc" }, { version: "asc" }] }),
     client.productionMaterialShortage.findFirst({ where: { runId: run.id, status: "OPEN" } }),
     client.qualityInspection.findFirst({ where: { runId: run.id }, orderBy: { version: "desc" }, select: { id: true, version: true, result: true, inspectedAt: true, createdAt: true } }),
@@ -100,6 +101,9 @@ export async function loadStepContext(client, run) {
     allManualMaterialsMapped(client, run.id),
     diagnosisBomValid(client, run.id, run.plan?.id),
   ]);
+  // P10B: baris DOKUMENTASI (stepCode DOC_*) hidup di tabel yang sama tetapi TIDAK PERNAH ikut lifecycle — dipisah di satu tempat ini.
+  const evidence = allEvidence.filter((e) => !isDocumentationRow(e));
+  const documentation = allEvidence.filter((e) => isDocumentationRow(e));
   const material = run.plan ? materialReadiness({ plan: run.plan, ...materialFacts }) : { ready: false, reason: "Belum ada rencana" };
   let target = null;
   if (!op && path && split && !TERMINAL_RUN.includes(run.status)) {
@@ -130,7 +134,7 @@ export async function loadStepContext(client, run) {
     materialReady: material.ready,
     diagnosisManualMapped, diagnosisBomHasLines,
   };
-  return { path, split, pathError, evidence: ordered, openShortage, latestInspection, material, state, next: deriveNextAction(state) };
+  return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, next: deriveNextAction(state) };
 }
 
 // Nomor tahap yang berlaku untuk jalur unit (untuk "x dari 12"): tahap 6/7 hanya bila jalurnya punya modul terkait.
@@ -154,7 +158,8 @@ async function issuedQtyByMaterial(tx, planId) {
 }
 
 async function writeEvidence(tx, { run, stepNo, operationRunId, stageId, payload, media, actorId, commandId }) {
-  const version = (await tx.productionStepEvidence.count({ where: { runId: run.id, stepNo } })) + 1;
+  // versi dihitung dari bukti TAHAP saja (baris dokumentasi DOC_* memakai rentang versi >= 1000 dan tidak boleh menggeser nomor versi tahap)
+  const version = (await tx.productionStepEvidence.count({ where: { runId: run.id, stepNo, NOT: { stepCode: { startsWith: DOC_STEP_CODE_PREFIX } } } })) + 1;
   const step = STEP_BY_NO[stepNo];
   return tx.productionStepEvidence.create({
     data: { id: randomUUID(), runId: run.id, operationRunId: operationRunId || null, stageId: stageId || null, stepNo, stepCode: step.code, version, payload, media, actorId: actorId || null, commandId },

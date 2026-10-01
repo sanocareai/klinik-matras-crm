@@ -8,6 +8,8 @@ import {
 import { listMaterialReturns } from "./productionMaterialReturnService.js";
 import { BOARD_DEFAULTS, PRIORITY_LABEL, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
 import { applicableStepsFor, loadStepContext } from "./productionStepCommandService.js";
+import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
+import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
@@ -581,7 +583,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
   const actorName = new Map(actors.map((a) => [a.id, a.name]));
   const tableActor = latestOf(evidence, 5)?.actorId || latestOf(evidence, 1)?.actorId;
   const cornerActor = latestOf(evidence, 11)?.actorId || latestOf(evidence, 10)?.actorId;
-  const mediaOf = (stepNos) => evidence.filter((e) => stepNos.includes(e.stepNo)).flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url) }))).filter((m) => m.url);
+  const mediaOf = (stepNos) => evidence.filter((e) => stepNos.includes(e.stepNo)).flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url), source: sourceOfStep(e.stepNo) }))).filter((m) => m.url);
   const measurement = latestOf(evidence, 4)?.payload ?? null;
   const finalTests = evidence.filter((e) => e.stepNo === 8);
   const finalPass = [...finalTests].reverse().find((e) => e.payload?.verdict === "PAS");
@@ -590,6 +592,8 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     where: { eventType: "production.report.ready", aggregateId: run.id }, orderBy: { id: "desc" },
     select: { status: true, deliveredAt: true, attempts: true, lastError: true, createdAt: true },
   });
+  const documentation = await buildRunDocumentation(prisma, run, ctx);
+  const docBuckets = documentationBuckets(documentation);
   const report = {
     runId: run.id, status: run.status, reportPath: `/bengkel/production-v2/laporan/${run.id}`,
     ready: !!latestOf(evidence, 12),
@@ -611,7 +615,8 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     qc: ctx.latestInspection ? { result: ctx.latestInspection.result, version: ctx.latestInspection.version, at: ctx.latestInspection.inspectedAt } : null,
     finishing: latestOf(evidence, 10)?.payload ?? null,
     cornerChecklist: latestOf(evidence, 11)?.payload?.checklist ?? null,
-    media: { before: mediaOf([1, 2, 3]), process: mediaOf([4, 6, 7]), after: mediaOf([8, 9, 11, 12]) },
+    media: { before: [...mediaOf([1, 2, 3]), ...docBuckets.before], process: [...mediaOf([4, 6, 7]), ...docBuckets.process], after: [...mediaOf([8, 9, 11, 12]), ...docBuckets.after] },
+    documentation,
     handoffStatus: fg?.status ?? null,
     broadcast: outboxRow
       ? { status: outboxRow.status, deliveredAt: outboxRow.deliveredAt, attempts: outboxRow.attempts, lastError: outboxRow.lastError, queuedAt: outboxRow.createdAt, consumerAvailable: false }

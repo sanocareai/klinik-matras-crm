@@ -50,6 +50,9 @@ enum Role {
   // lewat halaman Pengguna & Peran. Lihat constants/permissions.js.
   ACCOUNTANT
   APPROVER
+  // P10B (Aplikasi Dokumentasi): petugas dokumentasi lantai produksi. Hanya UNIT_READ + PRODUCTION_DOCUMENTATION_WRITE
+  // (tanpa UNIT_STAGE_WRITE/QC/harga/finance). Tidak ada pengguna yang diberi peran ini otomatis.
+  PRODUCTION_DOCUMENTER
 }
 
 // Lini produk penentu katalog material, termin garansi, dan lead time (D-004).

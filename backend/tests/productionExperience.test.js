@@ -224,7 +224,37 @@ test("pesan laporan Sales mengikuti format blueprint dan jujur soal status Gudan
 test("audit writer P8 pada source aktual: 0 pelanggaran", () => {
   const report = runProductionExperienceWriterAudit(backendRoot);
   assert.equal(report.totals.violations, 0, JSON.stringify(report.findings.filter((f) => !f.ok)));
-  assert.equal(report.totals.evidenceWriters, 1);
+  // Dua penulis sah tabel bukti: command tahap (P8) dan command dokumentasi (P10B, baris DOC_* saja).
+  assert.equal(report.totals.evidenceWriters, 2);
+  assert.deepEqual(report.findings.filter((f) => f.kind === "STEP_EVIDENCE_WRITER").map((f) => f.disposition).sort(), ["DOCUMENTATION_OWNER_CREATE", "OWNER_CREATE"]);
+});
+
+test("audit writer P10B menangkap: command dokumentasi menulis lifecycle/memanggil helper tahap, tanpa penanda DOC_, atau loadStepContext tak memisahkan baris dokumentasi", () => {
+  const sources = loadBackendSources(backendRoot);
+  const DOC = "src/services/productionDocumentationService.js";
+  const STEP = "src/services/productionStepCommandService.js";
+  const bad = new Map(sources);
+  bad.set(DOC, `${sources.get(DOC)}
+await tx.productionRun.update({});
+await tx.unit.update({});
+await applyCompleteInTx();
+`);
+  const d1 = auditProductionExperienceWriters(bad).findings.filter((f) => !f.ok).map((f) => f.disposition);
+  for (const expected of ["FORBIDDEN_productionRun", "FORBIDDEN_unit", "FORBIDDEN_applyCompleteInTx"]) assert.ok(d1.includes(expected), `${expected}: ${d1.join(",")}`);
+  const noMarker = new Map(sources);
+  noMarker.set(DOC, sources.get(DOC).replaceAll("docStepCode(", "kodeLain("));
+  assert.ok(auditProductionExperienceWriters(noMarker).findings.some((f) => f.disposition === "MISSING_docStepCode"));
+  const noIsolation = new Map(sources);
+  noIsolation.set(STEP, sources.get(STEP).replaceAll("isDocumentationRow(", "bukanDokumentasi("));
+  assert.ok(auditProductionExperienceWriters(noIsolation).findings.some((f) => f.disposition === "MISSING_isDocumentationRow_in_loadStepContext"));
+  const wildWriter = new Map(sources);
+  wildWriter.set("src/routes/dokumentasiLiar.js", "await tx.productionStepEvidence.create({});\n");
+  assert.ok(auditProductionExperienceWriters(wildWriter).findings.some((f) => f.disposition === "UNOWNED_WRITER"));
+  const routeWrites = new Map(sources);
+  routeWrites.set("src/routes/productionDocumentation.js", `${sources.get("src/routes/productionDocumentation.js")}
+await prisma.unit.update({});
+`);
+  assert.ok(auditProductionExperienceWriters(routeWrites).findings.some((f) => f.disposition === "READ_MODEL_MUST_NOT_WRITE"));
 });
 
 test("audit writer P8 menangkap: bukti diubah/dihapus, penulis liar, P8 menulis operasi/stok langsung, read-model menulis, outbox ditandai terkirim", () => {
