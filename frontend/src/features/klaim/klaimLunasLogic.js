@@ -49,11 +49,12 @@ export const PESAN_LUNAS_BUTUH_PEMBAYARAN =
  * Kekurangan isian klaim. `bukti` = daftar { status: "mengunggah" | "tersimpan" | "gagal" }. Mengembalikan daftar { field, pesan }.
  * Bukti dihitung SAH hanya yang statusnya "tersimpan" (server sudah mengonfirmasi berkas tersimpan) — bukan yang masih diunggah / gagal.
  */
-export function kekuranganForm(form, bukti = []) {
+export function kekuranganForm(form, bukti = [], { sisa = null } = {}) {
   const k = [];
   const nominal = Number(form?.amount);
   if (!form?.paymentDate) k.push({ field: "paymentDate", pesan: "Tanggal pembayaran wajib diisi" });
   if (!Number.isInteger(nominal) || nominal <= 0) k.push({ field: "amount", pesan: "Nominal yang diklaim wajib diisi" });
+  else if (sisa != null && sisa > 0 && nominal > sisa) k.push({ field: "amount", pesan: "Nominal melebihi sisa tagihan" });
   if (!form?.method) k.push({ field: "method", pesan: "Metode pembayaran wajib dipilih" });
   if (form?.method === "TRANSFER" && !form?.cashAccountId) k.push({ field: "cashAccountId", pesan: "Rekening tujuan wajib dipilih untuk pembayaran Transfer" });
   if (!form?.note || form.note.trim().length < 3) k.push({ field: "note", pesan: "Catatan pembayaran wajib diisi" });
@@ -62,17 +63,17 @@ export function kekuranganForm(form, bukti = []) {
 }
 
 /** Tombol "Ajukan Klaim Lunas" aktif HANYA bila isian lengkap, tidak ada unggahan yang masih berjalan, dan tidak sedang mengirim. */
-export function bisaDiajukan(form, bukti = [], { mengirim = false } = {}) {
+export function bisaDiajukan(form, bukti = [], { mengirim = false, sisa = null } = {}) {
   if (mengirim) return false;
   if (bukti.some((b) => b.status === "mengunggah")) return false;
-  return kekuranganForm(form, bukti).length === 0;
+  return kekuranganForm(form, bukti, { sisa }).length === 0;
 }
 
 /** Alasan singkat mengapa tombol nonaktif (untuk teks bantu di bawah tombol). null = aktif. */
-export function alasanNonaktif(form, bukti = [], { mengirim = false } = {}) {
+export function alasanNonaktif(form, bukti = [], { mengirim = false, sisa = null } = {}) {
   if (mengirim) return "Sedang mengirim…";
   if (bukti.some((b) => b.status === "mengunggah")) return "Menunggu unggahan bukti selesai…";
-  const k = kekuranganForm(form, bukti);
+  const k = kekuranganForm(form, bukti, { sisa });
   return k.length ? k[0].pesan : null;
 }
 
@@ -85,11 +86,50 @@ export function cekBerkas(file) {
   return null;
 }
 
-/** Isi form dari klaim di server (atau default untuk klaim baru: tanggal hari ini WIB, nominal = sisa tagihan). */
-export function formDariKlaim(klaim, { sisa = 0, hariIni } = {}) {
+
+// ── JENIS PEMBAYARAN: DP atau Pelunasan (1 Okt 2026) ─────────────────────────────────────────────────────────────────
+// Server TIDAK punya kolom "jenis": klaim berisi nominal ≤ sisa tagihan; setelah Finance memverifikasi, order jadi DP (nominal < sisa) atau Lunas (nominal ≥ sisa).
+// "Jenis" di sini murni bantuan UI (mengisi nominal otomatis + teks yang jujur soal dampaknya), tidak dikirim ke server.
+export const JENIS_BAYAR = Object.freeze([
+  { value: "DP", label: "DP" },
+  { value: "PELUNASAN", label: "Pelunasan" },
+]);
+
+/** Nominal otomatis per jenis. Pelunasan = sisa tagihan. DP = kekurangan terhadap "DP disepakati" (dpTarget), maksimal sisa; kosong bila DP belum disepakati / sudah terpenuhi. */
+export function nominalOtomatis(jenis, { sisa = 0, dpTarget = null, dibayar = 0 } = {}) {
+  if (jenis === "PELUNASAN") return sisa > 0 ? String(sisa) : "";
+  const kurang = dpTarget > 0 ? Math.min(Math.max(dpTarget - dibayar, 0), sisa) : 0;
+  return kurang > 0 ? String(kurang) : "";
+}
+
+/** Jenis awal klaim baru: DP bila DP disepakati belum terpenuhi, selain itu Pelunasan (perilaku lama). */
+export function jenisAwal({ dpTarget = null, dibayar = 0, sisa = 0 } = {}) {
+  return dpTarget > dibayar && sisa > 0 ? "DP" : "PELUNASAN";
+}
+
+/** Jenis dari nominal: di bawah sisa = DP; sama dengan sisa (atau lebih) = Pelunasan. */
+export function jenisDariNominal(amount, { sisa = 0 } = {}) {
+  const n = Number(amount);
+  return n > 0 && sisa > 0 && n < sisa ? "DP" : "PELUNASAN";
+}
+
+/** Dampak nominal terhadap status pembayaran (setelah Finance memverifikasi) — teks jujur untuk Sales. null = nominal belum valid. */
+export function dampakNominal(amount, { sisa = 0 } = {}) {
+  const n = Number(amount);
+  if (!(n > 0) || !(sisa > 0)) return null;
+  const rp = (v) => "Rp" + Math.round(v).toLocaleString("id-ID");
+  if (n > sisa) return { tingkat: "galat", teks: `Nominal melebihi sisa tagihan (${rp(sisa)}) — tidak bisa diajukan.` };
+  if (n < sisa) return { tingkat: "info", teks: `Setelah diverifikasi Finance, tercatat sebagai DP. Sisa tagihan menjadi ${rp(sisa - n)}.` };
+  return { tingkat: "info", teks: "Setelah diverifikasi Finance, order berstatus Lunas." };
+}
+
+/** Isi form dari klaim di server (atau default klaim baru: tanggal hari ini WIB; DP bila DP disepakati belum terpenuhi → nominal = kekurangan DP, selain itu Pelunasan → nominal = sisa tagihan). */
+export function formDariKlaim(klaim, { sisa = 0, hariIni, dpTarget = null, dibayar = 0 } = {}) {
+  const jenis = klaim?.amount != null ? jenisDariNominal(klaim.amount, { sisa }) : jenisAwal({ dpTarget, dibayar, sisa });
   return {
+    jenis,
     paymentDate: klaim?.paymentDate || hariIni || "",
-    amount: klaim?.amount != null ? String(klaim.amount) : sisa > 0 ? String(sisa) : "",
+    amount: klaim?.amount != null ? String(klaim.amount) : nominalOtomatis(jenis, { sisa, dpTarget, dibayar }),
     method: klaim?.method || "TRANSFER",
     cashAccountId: klaim?.cashAccountId || "",
     note: klaim?.note || "",

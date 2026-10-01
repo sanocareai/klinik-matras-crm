@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
   lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN,
   kekuranganForm, bisaDiajukan, alasanNonaktif, opsiStatusBayar, cekBerkas, formDariKlaim, buktiDariKlaim, STATUS_BISA_DIEDIT, METODE_KLAIM,
+  JENIS_BAYAR, nominalOtomatis, jenisAwal, jenisDariNominal, dampakNominal,
 } from "../src/features/klaim/klaimLunasLogic.js";
 
 const akar = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -84,7 +85,7 @@ test("Berkas: hanya JPG/PNG/WEBP/PDF sampai 8 MB", () => {
 
 test("Form dari klaim: default tanggal hari ini & nominal = sisa; klaim tersimpan dipakai apa adanya; bukti tersimpan dipetakan", () => {
   const baru = formDariKlaim(null, { sisa: 750000, hariIni: "2026-10-01" });
-  assert.deepEqual(baru, { paymentDate: "2026-10-01", amount: "750000", method: "TRANSFER", cashAccountId: "", note: "" });
+  assert.deepEqual(baru, { jenis: "PELUNASAN", paymentDate: "2026-10-01", amount: "750000", method: "TRANSFER", cashAccountId: "", note: "" });
   const dari = formDariKlaim({ paymentDate: "2026-09-30", amount: 500000, method: "QRIS", cashAccountId: "r", note: "x" }, { sisa: 1 });
   assert.equal(dari.amount, "500000");
   assert.equal(dari.method, "QRIS");
@@ -101,13 +102,15 @@ const finance = baca("src/features/finance/KlaimLunasSales.jsx");
 const legacy = baca("src/features/finance/LunasBelumDicatat.jsx");
 
 test("Dialog: judul & tombol 'Ajukan Klaim Lunas', istilah 'Bukti Pembayaran' (bukan hanya 'Bukti Transfer'), tombol terkunci oleh bisaDiajukan", () => {
-  assert.match(dialog, /"Ajukan Klaim Lunas Resi" : "Ajukan Klaim Lunas"/);
-  assert.match(dialog, /Ajukan Klaim Lunas<\/Button>|"Ajukan Klaim Lunas"/);
+  assert.match(dialog, /"Ajukan Klaim Lunas Resi" : "Ajukan Pembayaran \(DP \/ Lunas\)"/);
+  assert.match(dialog, /"Ajukan Pembayaran DP" : "Ajukan Klaim Lunas"/);
+  assert.match(dialog, /data-testid="jenis-bayar"/);
+  assert.match(dialog, /data-testid="dampak-nominal"/);
   assert.match(dialog, /Bukti Pembayaran/);
   assert.doesNotMatch(dialog, /Bukti Transfer/);
   assert.doesNotMatch(dialog, /Tandai Lunas/);
   assert.match(dialog, /disabled=\{!aktifTombol\}/);
-  assert.match(dialog, /aktifTombol = bisaDiedit && bisaDiajukan\(form, bukti/);
+  assert.match(dialog, /aktifTombol = bisaDiedit && bisaDiajukan\(form, bukti, \{ mengirim, sisa: sisaTagihan \}\)/);
   // bukti hanya 'tersimpan' setelah respons server
   assert.match(dialog, /status: "tersimpan"/);
   assert.match(dialog, /status: "gagal"/);
@@ -125,7 +128,7 @@ test("Dialog: field wajib tersedia — tanggal, nominal, metode, rekening, catat
 });
 
 test("Panel: menggantikan 'Tandai Lunas' — tombol 'Ajukan Klaim Lunas', 'Bukti belum lengkap' untuk klaim lama", () => {
-  assert.match(panel, /Ajukan Klaim Lunas/);
+  assert.match(panel, /Ajukan Pembayaran \(DP \/ Lunas\)/);
   assert.match(panel, /Bukti belum lengkap/);
   assert.match(panel, /Status pembayaran berubah menjadi Lunas setelah Finance memverifikasi/);
 });
@@ -206,4 +209,35 @@ test("Bukti pembayaran WAJIB untuk non-Admin (web & mobile) dan dialog verifikas
   assert.match(ver, /data-testid="tanpa-bukti"/);
   for (const s of ["Nominal", "Tanggal diterima", "Cara bayar", "Dicatat oleh", "Catatan: "]) assert.ok(ver.includes(s), s);
   assert.match(ver, /useState\(\{ cashAccountId: p\.cashAccount\?\.id \|\| "", method: p\.method \}\)/, "rekening & cara bayar terisi dari data Sales (masih bisa dikoreksi)");
+});
+
+test("Jenis pembayaran DP / Pelunasan: nominal otomatis, jenis dari nominal, dampak jujur, batas sisa", () => {
+  assert.equal(nominalOtomatis("PELUNASAN", { sisa: 2090000 }), "2090000");
+  assert.equal(nominalOtomatis("DP", { sisa: 2090000, dpTarget: 1000000, dibayar: 0 }), "1000000");
+  assert.equal(nominalOtomatis("DP", { sisa: 2090000, dpTarget: 1000000, dibayar: 400000 }), "600000");
+  assert.equal(nominalOtomatis("DP", { sisa: 300000, dpTarget: 1000000, dibayar: 0 }), "300000", "DP tidak boleh melebihi sisa");
+  assert.equal(nominalOtomatis("DP", { sisa: 2090000, dpTarget: null }), "", "DP belum disepakati → kosong, Sales mengisi sendiri");
+  assert.equal(nominalOtomatis("DP", { sisa: 2090000, dpTarget: 1000000, dibayar: 1000000 }), "", "DP sudah terpenuhi");
+  assert.equal(jenisAwal({ dpTarget: 1000000, dibayar: 0, sisa: 2090000 }), "DP");
+  assert.equal(jenisAwal({ dpTarget: null, dibayar: 0, sisa: 2090000 }), "PELUNASAN", "tanpa DP disepakati = perilaku lama");
+  assert.equal(jenisAwal({ dpTarget: 1000000, dibayar: 1000000, sisa: 1090000 }), "PELUNASAN");
+  const baru = formDariKlaim(null, { sisa: 2090000, dpTarget: 1000000, dibayar: 0, hariIni: "2026-10-01" });
+  assert.equal(baru.jenis, "DP"); assert.equal(baru.amount, "1000000");
+  assert.equal(formDariKlaim({ amount: 500000 }, { sisa: 2090000 }).jenis, "DP");
+  assert.equal(formDariKlaim({ amount: 2090000 }, { sisa: 2090000 }).jenis, "PELUNASAN");
+  assert.equal(jenisDariNominal("500000", { sisa: 2090000 }), "DP");
+  assert.equal(jenisDariNominal("2090000", { sisa: 2090000 }), "PELUNASAN");
+  assert.deepEqual(JENIS_BAYAR.map((j) => j.label), ["DP", "Pelunasan"]);
+  assert.match(dampakNominal("500000", { sisa: 2090000 }).teks, /tercatat sebagai DP.*Rp1\.590\.000/);
+  assert.match(dampakNominal("2090000", { sisa: 2090000 }).teks, /berstatus Lunas/);
+  assert.equal(dampakNominal("2100000", { sisa: 2090000 }).tingkat, "galat");
+  assert.equal(dampakNominal("", { sisa: 2090000 }), null);
+  // nominal melebihi sisa tidak bisa diajukan (server juga menolak NOMINAL_MELEBIHI_SISA)
+  assert.ok(kekuranganForm({ ...LENGKAP, amount: "2100000" }, OK, { sisa: 2090000 }).some((k) => k.field === "amount"));
+  assert.equal(kekuranganForm({ ...LENGKAP, amount: "500000" }, OK, { sisa: 2090000 }).length, 0, "DP (nominal < sisa) boleh diajukan");
+  assert.equal(bisaDiajukan({ ...LENGKAP, amount: "500000" }, OK, { sisa: 2090000 }), true);
+  assert.equal(bisaDiajukan({ ...LENGKAP, amount: "2100000" }, OK, { sisa: 2090000 }), false);
+  assert.equal(kekuranganForm({ ...LENGKAP, amount: "2100000" }, OK).length, 0, "tanpa info sisa, tidak ada batas di sisi klien");
+  // jenis hanya bantuan UI: dialog membangun body tanpa field jenis
+  assert.doesNotMatch(baca("src/features/klaim/KlaimLunasDialog.jsx").match(/const bodyForm = [\s\S]*?\}\);/)?.[0] ?? "", /jenis/);
 });

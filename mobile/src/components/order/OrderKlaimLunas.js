@@ -23,6 +23,7 @@ import { useKlaimLunasAktif } from "../../lib/klaimGate";
 import {
   METODE_KLAIM, STATUS_KLAIM_LABEL, STATUS_BISA_DIEDIT, STATUS_BUKTI, MAKS_BUKTI,
   bisaDiajukan, alasanNonaktif, cekBerkas, formDariKlaim, buktiDariKlaim, bodyDariForm,
+  JENIS_BAYAR, nominalOtomatis, jenisDariNominal, dampakNominal,
   simpanDrafLokal, bacaDrafLokal, hapusDrafLokal,
 } from "../../lib/klaimLunas";
 
@@ -65,13 +66,13 @@ export default function OrderKlaimLunas({ order, onChanged, autoOpen = false }) 
   const terakhir = aktif || ditolak;
   if (!info.bolehDiklaim && !terakhir && !info.buktiBelumLengkap) return null;
 
-  const teksTombol = !terakhir ? "Ajukan Klaim Lunas"
+  const teksTombol = !terakhir ? "Ajukan Pembayaran (DP / Lunas)"
     : terakhir.status === "SUBMITTED" ? "Lihat Klaim"
       : terakhir.status === "DRAFT" ? "Lengkapi & Ajukan Klaim" : "Perbaiki & Ajukan Ulang";
 
   return (
     <View style={styles.card} testID="panel-klaim-lunas">
-      <View style={styles.head}><BadgeCheck size={13} color={tokens.color.textMuted} strokeWidth={2.2} /><Text style={styles.title}>Klaim Lunas</Text></View>
+      <View style={styles.head}><BadgeCheck size={13} color={tokens.color.textMuted} strokeWidth={2.2} /><Text style={styles.title}>Pembayaran (DP / Lunas)</Text></View>
       {info.buktiBelumLengkap && !terakhir ? (
         <View style={[styles.banner, { backgroundColor: "rgba(245,158,11,0.16)" }]}>
           <FileWarning size={14} color={tokens.color.warning || "#B45309"} />
@@ -125,7 +126,7 @@ function KlaimLunasSheet({ order, onClose, onChanged }) {
       setInfo(d);
       const sumber = (d.klaimAktifId && d.klaim.find((k) => k.id === d.klaimAktifId)) || d.klaim.find((k) => k.status === "REJECTED") || null;
       setKlaim(sumber);
-      const dasar = formDariKlaim(sumber, { sisa: d.sisa });
+      const dasar = formDariKlaim(sumber, { sisa: d.sisa, dibayar: d.dibayar, dpTarget: order.dpTarget ?? null });
       // Draf lokal (offline) menimpa isian default selama klaim di server masih bisa diedit.
       const lokal = !sumber || STATUS_BISA_DIEDIT.includes(sumber.status) ? bacaDrafLokal(storage, order.id) : null;
       setForm(lokal ? { ...dasar, ...lokal.form } : dasar);
@@ -149,6 +150,9 @@ function KlaimLunasSheet({ order, onClose, onChanged }) {
   }, [form.method]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // Jenis (DP / Pelunasan) hanya bantuan UI: memilih jenis mengisi nominal otomatis; mengetik nominal menyesuaikan jenis. Server hanya menerima nominal ≤ sisa.
+  const pilihJenis = (j) => setForm((f) => ({ ...f, jenis: j, amount: nominalOtomatis(j, { sisa: info?.sisa ?? 0, dibayar: info?.dibayar ?? 0, dpTarget: order.dpTarget ?? null }) }));
+  const ubahNominal = (v) => setForm((f) => ({ ...f, amount: v, jenis: v === "" ? f.jenis : jenisDariNominal(v, { sisa: info?.sisa ?? 0 }) }));
   const bisaDiedit = !klaim || STATUS_BISA_DIEDIT.includes(klaim.status);
   const menunggu = klaim?.status === "SUBMITTED";
 
@@ -251,7 +255,7 @@ function KlaimLunasSheet({ order, onClose, onChanged }) {
   }
 
   async function ajukan() {
-    if (!bisaDiajukan(form, bukti, { mengirim, online })) return;
+    if (!bisaDiajukan(form, bukti, { mengirim, online, sisa: info?.sisa ?? null })) return;
     setMengirim(true); setGalat("");
     try {
       const id = await pastikanDraft();
@@ -277,8 +281,10 @@ function KlaimLunasSheet({ order, onClose, onChanged }) {
     ]);
   }
 
-  const aktifTombol = bisaDiedit && bisaDiajukan(form, bukti, { mengirim, online });
-  const bantu = bisaDiedit ? alasanNonaktif(form, bukti, { mengirim, online }) : null;
+  const aktifTombol = bisaDiedit && bisaDiajukan(form, bukti, { mengirim, online, sisa: info?.sisa ?? null });
+  const bantu = bisaDiedit ? alasanNonaktif(form, bukti, { mengirim, online, sisa: info?.sisa ?? null }) : null;
+  const dampak = dampakNominal(form.amount, { sisa: info?.sisa ?? 0 });
+  const tombolAjukan = form.jenis === "DP" ? "Ajukan Pembayaran DP" : "Ajukan Klaim Lunas";
   const adaUnggahan = bukti.some((b) => b.status === STATUS_BUKTI.MENGUNGGAH);
 
   return (
@@ -287,7 +293,7 @@ function KlaimLunasSheet({ order, onClose, onChanged }) {
         <View style={styles.sheet}>
           <View style={styles.sheetHead}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.sheetTitle}>Ajukan Klaim Lunas</Text>
+              <Text style={styles.sheetTitle}>Ajukan Pembayaran (DP / Lunas)</Text>
               {order.orderNumber ? <Text style={styles.muted}>Order {order.orderNumber}</Text> : null}
             </View>
             <TouchableOpacity onPress={onClose} disabled={mengirim} accessibilityLabel="Tutup" style={styles.closeBtn}><X size={18} color={tokens.color.textSecondary} /></TouchableOpacity>
@@ -301,7 +307,7 @@ function KlaimLunasSheet({ order, onClose, onChanged }) {
               <>
                 <View style={[styles.banner, { backgroundColor: tokens.color.accentSoft }]}>
                   <Text style={[styles.bannerText, { color: tokens.color.accent }]}>
-                    Mengajukan klaim tidak mengubah status pembayaran. Status berubah menjadi Lunas setelah Finance memeriksa bukti dan uangnya. Sisa tagihan: {formatRupiah(info.sisa)}.
+                    Mengajukan klaim tidak mengubah status pembayaran. Status berubah (DP atau Lunas, sesuai nominal) setelah Finance memeriksa bukti dan uangnya. Sisa tagihan: {formatRupiah(info.sisa)}.
                   </Text>
                 </View>
                 {klaim ? (
@@ -314,11 +320,22 @@ function KlaimLunasSheet({ order, onClose, onChanged }) {
                 ) : null}
                 {!online ? <View style={styles.banner}><AlertCircle size={15} color={tokens.color.warning || "#B45309"} /><Text style={styles.bannerText}>Tidak ada koneksi. Isian dan foto disimpan sebagai draf di perangkat; pengajuan hanya bisa saat online.</Text></View> : null}
 
+                <Text style={styles.label}>Jenis pembayaran</Text>
+                <View style={styles.row} accessibilityRole="radiogroup">
+                  {JENIS_BAYAR.map((j) => (
+                    <TouchableOpacity key={j.value} disabled={!bisaDiedit} onPress={() => pilihJenis(j.value)} style={[styles.chip, form.jenis === j.value && styles.chipOn]} accessibilityRole="radio" accessibilityState={{ selected: form.jenis === j.value }} testID={`jenis-${j.value}`}>
+                      <Text style={[styles.chipText, form.jenis === j.value && { color: "#fff" }]}>{j.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
                 <Text style={styles.label}>Tanggal pembayaran</Text>
                 <View pointerEvents={bisaDiedit ? "auto" : "none"} style={!bisaDiedit && { opacity: 0.6 }}><DateField value={form.paymentDate} onChange={(v) => set("paymentDate", v)} /></View>
 
                 <Text style={styles.label}>Nominal yang diklaim (Rp)</Text>
-                <TextInput style={styles.input} keyboardType="numeric" value={String(form.amount)} editable={bisaDiedit} onChangeText={(v) => set("amount", v.replace(/[^0-9]/g, ""))} placeholder="Rp 0" placeholderTextColor={tokens.color.textMuted} maxFontSizeMultiplier={1.5} />
+                <TextInput style={styles.input} keyboardType="numeric" value={String(form.amount)} editable={bisaDiedit} onChangeText={(v) => ubahNominal(v.replace(/[^0-9]/g, ""))} placeholder="Rp 0" placeholderTextColor={tokens.color.textMuted} maxFontSizeMultiplier={1.5} />
+                {dampak ? <Text style={[styles.muted, { color: dampak.tingkat === "galat" ? tokens.color.danger : tokens.color.accent }]} testID="dampak-nominal">{dampak.teks}</Text> : null}
+                {form.jenis === "DP" && form.amount === "" ? <Text style={styles.muted}>Isi nominal DP yang dibayar customer.</Text> : null}
 
                 <Text style={styles.label}>Metode pembayaran</Text>
                 <View style={styles.row} accessibilityRole="radiogroup">
@@ -374,7 +391,7 @@ function KlaimLunasSheet({ order, onClose, onChanged }) {
                 {bisaDiedit ? <TouchableOpacity style={[styles.ghost, (mengirim || adaUnggahan || memuat) && { opacity: 0.5 }]} disabled={mengirim || adaUnggahan || memuat} onPress={simpanDraft}><Text style={styles.ghostText}>Simpan Draft</Text></TouchableOpacity> : null}
                 {bisaDiedit ? (
                   <TouchableOpacity style={[styles.primary, { flex: 1 }, !aktifTombol && { opacity: 0.4 }]} disabled={!aktifTombol} onPress={ajukan} accessibilityRole="button" accessibilityState={{ disabled: !aktifTombol }} testID="tombol-ajukan-klaim">
-                    {mengirim ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Ajukan Klaim Lunas</Text>}
+                    {mengirim ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>{tombolAjukan}</Text>}
                   </TouchableOpacity>
                 ) : null}
               </>

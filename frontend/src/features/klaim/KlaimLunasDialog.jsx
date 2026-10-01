@@ -9,6 +9,7 @@ import { formatRupiah } from "@/utils/format.js";
 import {
   METODE_KLAIM, STATUS_KLAIM_LABEL, STATUS_BISA_DIEDIT, MAKS_BUKTI, TIPE_BUKTI_DITERIMA,
   bisaDiajukan, alasanNonaktif, cekBerkas, formDariKlaim, buktiDariKlaim, hariIniWIB,
+  JENIS_BAYAR, nominalOtomatis, jenisDariNominal, dampakNominal,
 } from "./klaimLunasLogic.js";
 
 // KLAIM LUNAS SALES (web). Sales TIDAK lagi menandai order "Lunas" sendiri: di sini Sales mengajukan klaim berisi tanggal, nominal, metode, rekening,
@@ -53,7 +54,7 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
       // Klaim yang dikerjakan: yang aktif (draft / menunggu / diminta bukti); kalau tidak ada, klaim terakhir yang DITOLAK (diperbaiki lalu diajukan ulang).
       const sumber = (d.klaimAktifId && d.klaim.find((k) => k.id === d.klaimAktifId)) || d.klaim.find((k) => k.status === "REJECTED") || null;
       setKlaim(sumber);
-      setForm(formDariKlaim(sumber, { sisa: d.sisa, hariIni: hariIniWIB() }));
+      setForm(formDariKlaim(sumber, { sisa: d.sisa, dibayar: d.dibayar, dpTarget: resiGroupId ? null : (order?.dpTarget ?? null), hariIni: hariIniWIB() }));
       setBukti(buktiDariKlaim(sumber));
     } catch (e) {
       setGalat(e.message);
@@ -177,15 +178,21 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
     try { await api.tarikKlaimLunas(klaim.id); onChanged?.(); onClose(); } catch (e) { setGalat(e.message); } finally { setMengirim(false); }
   }
 
-  const aktifTombol = bisaDiedit && bisaDiajukan(form, bukti, { mengirim });
-  const bantu = bisaDiedit ? alasanNonaktif(form, bukti, { mengirim }) : null;
+  const sisaTagihan = info?.sisa ?? null;
+  const aktifTombol = bisaDiedit && bisaDiajukan(form, bukti, { mengirim, sisa: sisaTagihan });
+  const bantu = bisaDiedit ? alasanNonaktif(form, bukti, { mengirim, sisa: sisaTagihan }) : null;
+  const dampak = dampakNominal(form.amount, { sisa: sisaTagihan ?? 0 });
+  // Memilih jenis mengisi nominal otomatis (Pelunasan = sisa; DP = kekurangan DP disepakati bila ada); mengetik nominal menyesuaikan jenis.
+  const pilihJenis = (j) => setForm((f) => ({ ...f, jenis: j, amount: nominalOtomatis(j, { sisa: info?.sisa ?? 0, dibayar: info?.dibayar ?? 0, dpTarget: resiGroupId ? null : (order?.dpTarget ?? null) }) }));
+  const ubahNominal = (v) => setForm((f) => ({ ...f, amount: v, jenis: v === "" ? f.jenis : jenisDariNominal(v, { sisa: info?.sisa ?? 0 }) }));
+  const tombolAjukan = form.jenis === "DP" ? "Ajukan Pembayaran DP" : "Ajukan Klaim Lunas";
   const adaUnggahan = bukti.some((b) => b.status === "mengunggah");
 
   return (
     <Modal
       open={open}
       onOpenChange={(v) => { if (!v && !mengirim) onClose(); }}
-      title={resiGroupId ? "Ajukan Klaim Lunas Resi" : "Ajukan Klaim Lunas"}
+      title={resiGroupId ? "Ajukan Klaim Lunas Resi" : "Ajukan Pembayaran (DP / Lunas)"}
       description={order.orderNumber ? `Order ${order.orderNumber}${order.customerName ? ` — ${order.customerName}` : ""}` : undefined}
       className="w-[520px] max-h-[92vh]"
       footer={(
@@ -204,7 +211,7 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
               <>
                 <Button variant="neutral" onClick={onClose} disabled={mengirim}>Batal</Button>
                 {bisaDiedit && <Button variant="secondary" disabled={mengirim || adaUnggahan || memuat || !info?.bolehDiklaim && !klaim} onClick={simpanDraft}>Simpan Draft</Button>}
-                {bisaDiedit && <Button disabled={!aktifTombol} onClick={ajukan} data-testid="tombol-ajukan-klaim">{mengirim ? <Loader2 size={14} className="animate-spin" /> : "Ajukan Klaim Lunas"}</Button>}
+                {bisaDiedit && <Button disabled={!aktifTombol} onClick={ajukan} data-testid="tombol-ajukan-klaim">{mengirim ? <Loader2 size={14} className="animate-spin" /> : tombolAjukan}</Button>}
               </>
             )}
           </div>
@@ -220,7 +227,7 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
       ) : (
         <div className="flex flex-col gap-3.5">
           <p className="rounded-xl bg-accentbg px-3 py-2.5 text-[12px] leading-relaxed text-accent">
-            Mengajukan klaim <strong>tidak mengubah status pembayaran</strong> {resiGroupId ? "order dalam Resi ini" : "order ini"}. Status berubah menjadi Lunas setelah Finance memeriksa bukti dan uangnya.
+            Mengajukan klaim <strong>tidak mengubah status pembayaran</strong> {resiGroupId ? "order dalam Resi ini" : "order ini"}. Status berubah (DP atau Lunas, sesuai nominal) setelah Finance memeriksa bukti dan uangnya.
             Sisa tagihan order: <strong>{formatRupiah(info.sisa)}</strong>.
           </p>
 
@@ -269,6 +276,18 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
             </div>
           </div>
 
+          <div>
+            <span className={labelCls}>Jenis pembayaran</span>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Jenis pembayaran" data-testid="jenis-bayar">
+              {JENIS_BAYAR.map((j) => (
+                <button
+                  key={j.value} type="button" role="radio" aria-checked={form.jenis === j.value} disabled={!bisaDiedit} onClick={() => pilihJenis(j.value)}
+                  className={cn("flex h-10 items-center justify-center rounded-lg border-2 text-center text-[12.5px] font-medium", form.jenis === j.value ? "border-accent bg-accentbg text-accent" : "border-transparent bg-inset text-ink2")}
+                >{j.label}</button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls} htmlFor="klaim-tanggal">Tanggal pembayaran</label>
@@ -276,8 +295,10 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
             </div>
             <div>
               <label className={labelCls} htmlFor="klaim-nominal">Nominal yang diklaim (Rp)</label>
-              <input id="klaim-nominal" type="number" inputMode="numeric" min="1" className={inputCls} value={form.amount} onChange={(e) => set("amount", e.target.value)} disabled={!bisaDiedit} />
+              <input id="klaim-nominal" type="number" inputMode="numeric" min="1" className={inputCls} value={form.amount} onChange={(e) => ubahNominal(e.target.value)} disabled={!bisaDiedit} />
               {Number(form.amount) > 0 && <p className="mt-1 text-[11px] text-ink3" data-testid="nominal-terformat">{formatRupiah(Number(form.amount))}</p>}
+              {dampak && <p className={cn("mt-1 text-[11.5px]", dampak.tingkat === "galat" ? "text-red" : "text-accent")} data-testid="dampak-nominal">{dampak.teks}</p>}
+              {form.jenis === "DP" && form.amount === "" && <p className="mt-1 text-[11.5px] text-ink3">Isi nominal DP yang dibayar customer.</p>}
             </div>
           </div>
 

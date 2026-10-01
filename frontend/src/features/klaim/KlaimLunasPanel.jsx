@@ -26,7 +26,7 @@ export default function KlaimLunasPanel({ order, onChanged, className }) {
   // Tidak ada yang bisa dilakukan & tidak ada klaim untuk ditampilkan → panel tidak perlu ada.
   if (!info.bolehDiklaim && !terakhir && !info.buktiBelumLengkap) return null;
 
-  const teksTombol = !terakhir ? "Ajukan Klaim Lunas"
+  const teksTombol = !terakhir ? "Ajukan Pembayaran (DP / Lunas)"
     : terakhir.status === "SUBMITTED" ? "Lihat Klaim"
       : terakhir.status === "DRAFT" ? "Lengkapi & Ajukan Klaim"
         : "Perbaiki & Ajukan Ulang";
@@ -37,7 +37,7 @@ export default function KlaimLunasPanel({ order, onChanged, className }) {
   return (
     <div className={cn("flex flex-col gap-2 rounded-xl bg-surface p-3 shadow-card", className)} data-testid="panel-klaim-lunas">
       <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-ink3">
-        <BadgeCheck size={12} /> Klaim Lunas
+        <BadgeCheck size={12} /> Pembayaran (DP / Lunas)
       </div>
       {info.buktiBelumLengkap && !terakhir && (
         <p className="flex items-start gap-1.5 rounded-lg bg-orangebg px-2.5 py-2 text-[11.5px] text-orange" data-testid="bukti-belum-lengkap">

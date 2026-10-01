@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   kekuranganForm, bisaDiajukan, alasanNonaktif, opsiStatusBayar, cekBerkas, formDariKlaim, buktiDariKlaim, bodyDariForm,
-  simpanDrafLokal, bacaDrafLokal, hapusDrafLokal, STATUS_BUKTI, METODE_KLAIM, STATUS_BISA_DIEDIT, lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN,
+  simpanDrafLokal, bacaDrafLokal, hapusDrafLokal, STATUS_BUKTI, METODE_KLAIM, JENIS_BAYAR, nominalOtomatis, jenisAwal, jenisDariNominal, dampakNominal, STATUS_BISA_DIEDIT, lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN,
 } from "../src/lib/klaimLunas.js";
 
 const LENGKAP = { paymentDate: "2026-10-01", amount: "1500000", method: "TRANSFER", cashAccountId: "rek-1", note: "Transfer BCA, dicek mutasi" };
@@ -84,7 +84,7 @@ test("Berkas: hanya JPG/PNG/WEBP/PDF sampai 8 MB", () => {
 
 test("Form & body: default tanggal/nominal; nilai kosong → null (draf parsial valid di server)", () => {
   const baru = formDariKlaim(null, { sisa: 750000, hariIni: "2026-10-01" });
-  assert.deepEqual(baru, { paymentDate: "2026-10-01", amount: "750000", method: "TRANSFER", cashAccountId: "", note: "" });
+  assert.deepEqual(baru, { jenis: "PELUNASAN", paymentDate: "2026-10-01", amount: "750000", method: "TRANSFER", cashAccountId: "", note: "" });
   assert.deepEqual(bodyDariForm({ paymentDate: "", amount: "", method: "TRANSFER", cashAccountId: "", note: "" }), { paymentDate: null, amount: null, method: "TRANSFER", cashAccountId: null, note: "" });
   assert.equal(bodyDariForm(LENGKAP).amount, 1500000);
   assert.deepEqual(buktiDariKlaim({ bukti: [{ id: "b", nama: "n", mime: "image/png", url: "/u" }] }).map((b) => b.status), [STATUS_BUKTI.TERSIMPAN]);
@@ -117,7 +117,10 @@ test("Komponen: 'Ajukan Klaim Lunas', 'Bukti Pembayaran' (bukan hanya 'Bukti Tra
   assert.doesNotMatch(k, /Bukti Transfer/);
   assert.doesNotMatch(k, /Tandai Lunas/);
   assert.match(k, /disabled=\{!aktifTombol\}/);
-  assert.match(k, /bisaDiajukan\(form, bukti, \{ mengirim, online \}\)/);
+  assert.match(k, /bisaDiajukan\(form, bukti, \{ mengirim, online, sisa: info\?\.sisa \?\? null \}\)/);
+  assert.match(k, /testID=\{`jenis-\$\{j\.value\}`\}/);
+  assert.match(k, /Ajukan Pembayaran DP/);
+  assert.match(k, /testID="dampak-nominal"/);
   assert.match(k, /api\.unggahBuktiKlaimLunas/);
   assert.match(k, /api\.ajukanKlaimLunas\(id, kunciAjukan\.current\)/);
   assert.match(baca("../src/screens/OrderTimelineScreen.js"), /<OrderKlaimLunas order=\{order\}/);
@@ -141,4 +144,34 @@ test("Mobile: bukti pembayaran WAJIB untuk non-Admin — tombol Simpan nonaktif 
   assert.match(r, /if \(fotoWajib && !draft\.photo\) \{ Alert\.alert\("Bukti pembayaran wajib"/);
   assert.match(r, /Foto bukti bayar \(WAJIB\)/);
   assert.match(r, /disabled=\{busy \|\| \(fotoWajib && !draft\.photo\)\}/);
+});
+
+test("Jenis pembayaran DP / Pelunasan: nominal otomatis, jenis dari nominal, dampak jujur, batas sisa", () => {
+  assert.equal(nominalOtomatis("PELUNASAN", { sisa: 2090000 }), "2090000");
+  assert.equal(nominalOtomatis("DP", { sisa: 2090000, dpTarget: 1000000, dibayar: 0 }), "1000000");
+  assert.equal(nominalOtomatis("DP", { sisa: 2090000, dpTarget: 1000000, dibayar: 400000 }), "600000");
+  assert.equal(nominalOtomatis("DP", { sisa: 300000, dpTarget: 1000000, dibayar: 0 }), "300000", "DP tidak boleh melebihi sisa");
+  assert.equal(nominalOtomatis("DP", { sisa: 2090000, dpTarget: null }), "", "DP belum disepakati → kosong, Sales mengisi sendiri");
+  assert.equal(nominalOtomatis("DP", { sisa: 2090000, dpTarget: 1000000, dibayar: 1000000 }), "", "DP sudah terpenuhi");
+  assert.equal(jenisAwal({ dpTarget: 1000000, dibayar: 0, sisa: 2090000 }), "DP");
+  assert.equal(jenisAwal({ dpTarget: null, dibayar: 0, sisa: 2090000 }), "PELUNASAN", "tanpa DP disepakati = perilaku lama");
+  assert.equal(jenisAwal({ dpTarget: 1000000, dibayar: 1000000, sisa: 1090000 }), "PELUNASAN");
+  const baru = formDariKlaim(null, { sisa: 2090000, dpTarget: 1000000, dibayar: 0, hariIni: "2026-10-01" });
+  assert.equal(baru.jenis, "DP"); assert.equal(baru.amount, "1000000");
+  assert.equal(formDariKlaim({ amount: 500000 }, { sisa: 2090000 }).jenis, "DP");
+  assert.equal(formDariKlaim({ amount: 2090000 }, { sisa: 2090000 }).jenis, "PELUNASAN");
+  assert.equal(jenisDariNominal("500000", { sisa: 2090000 }), "DP");
+  assert.equal(jenisDariNominal("2090000", { sisa: 2090000 }), "PELUNASAN");
+  assert.deepEqual(JENIS_BAYAR.map((j) => j.label), ["DP", "Pelunasan"]);
+  assert.match(dampakNominal("500000", { sisa: 2090000 }).teks, /tercatat sebagai DP.*Rp1\.590\.000/);
+  assert.match(dampakNominal("2090000", { sisa: 2090000 }).teks, /berstatus Lunas/);
+  assert.equal(dampakNominal("2100000", { sisa: 2090000 }).tingkat, "galat");
+  assert.equal(dampakNominal("", { sisa: 2090000 }), null);
+  // nominal melebihi sisa tidak bisa diajukan (server juga menolak NOMINAL_MELEBIHI_SISA)
+  assert.ok(kekuranganForm({ ...LENGKAP, amount: "2100000" }, OK, { sisa: 2090000 }).some((k) => k.field === "amount"));
+  assert.equal(kekuranganForm({ ...LENGKAP, amount: "500000" }, OK, { sisa: 2090000 }).length, 0, "DP (nominal < sisa) boleh diajukan");
+  assert.equal(bisaDiajukan({ ...LENGKAP, amount: "500000" }, OK, { sisa: 2090000 }), true);
+  assert.equal(bisaDiajukan({ ...LENGKAP, amount: "2100000" }, OK, { sisa: 2090000 }), false);
+  assert.equal(kekuranganForm({ ...LENGKAP, amount: "2100000" }, OK).length, 0, "tanpa info sisa, tidak ada batas di sisi klien");
+  assert.ok(!("jenis" in bodyDariForm({ ...LENGKAP, jenis: "DP" })), "jenis hanya bantuan UI, tidak dikirim ke server");
 });
