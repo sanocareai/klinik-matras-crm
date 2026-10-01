@@ -872,6 +872,8 @@ export const api = {
       if (statusOrParams.scope)        params.set("scope", statusOrParams.scope);
       // Filter type=GROUP — dipakai ForwardModal buat ambil semua grup WA.
       if (statusOrParams.type)         params.set("type", statusOrParams.type);
+      // Cari hanya di nama/nomor/nama grup (pemilih tujuan forward) — bukan isi pesan.
+      if (statusOrParams.nameOnly)     params.set("nameOnly", "true");
       if (statusOrParams.cursor)       params.set("cursor", statusOrParams.cursor);
       if (statusOrParams.limit)        params.set("limit", statusOrParams.limit);
       const s = params.toString();
