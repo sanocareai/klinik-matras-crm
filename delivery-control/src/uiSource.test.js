@@ -217,3 +217,11 @@ test("Foto driver: Avatar memakai foto server dengan inisial hanya fallback; lay
   // tanpa permintaan foto per pengguna
   for (const f of ["ui.js", "screens/KruScreen.js", "screens/PerformaScreen.js", "screens/TrackingScreen.js"]) assert.doesNotMatch(baca(f), /users\/\$\{|\/users\/[^"]*avatar/, f);
 });
+
+test("Performa: baris daftar bisa diketuk untuk melihat rincian alamat insentif (paritas dengan web); data detail dari API, tanpa dihitung ulang di app", () => {
+  const src = baca("screens/PerformaScreen.js");
+  assert.ok(src.includes("onPress={() => setPilih(o)}"), "baris daftar harus bisa diketuk");
+  assert.ok(src.includes("pilih.detail.map") || src.includes("pilih?.detail?.map"), "rincian memakai detail dari respons API (tidak dihitung ulang)");
+  assert.ok(src.includes("d.orderNumber") && src.includes("d.customerName") && src.includes("d.addressText"), "rincian menampilkan order, pelanggan, dan alamat dari server");
+  assert.doesNotMatch(src, /totalAlamat\s*\*|totalInsentif\s*=.*\*.*rate/i, "tidak menghitung ulang insentif di app");
+});
