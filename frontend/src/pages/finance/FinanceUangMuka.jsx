@@ -20,6 +20,7 @@ import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, tanggalPendek, PemilihBukti, LABEL_DIVISI,
 } from "@/features/finance/shared.jsx";
+import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
@@ -175,6 +176,9 @@ export default function FinanceUangMuka() {
         <KartuAngka label="Lewat Tenggat" value={ringkasan.jumlahLewatTempo} tone={ringkasan.jumlahLewatTempo > 0 ? "red" : "default"} sub="belum dipertanggungjawabkan sampai tenggat" />
         <KartuAngka label="Pemegang" value={ringkasan.perPemegang.length} sub="orang yang sedang memegang uang muka" />
       </div>
+
+      <KenapaBeda metrik={["uang_muka_operasional_saldo","pengeluaran_aktif","uang_keluar_kas","beban_diakui"]} />
+
 
       <div className="flex flex-wrap gap-2">
         {TAB.map((t) => (

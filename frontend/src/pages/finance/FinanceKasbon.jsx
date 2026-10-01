@@ -19,6 +19,7 @@ import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek, PemilihBukti,
 } from "@/features/finance/shared.jsx";
+import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
@@ -217,6 +218,9 @@ export default function FinanceKasbon() {
           </TableWrap>
         </Card>
       )}
+
+      <KenapaBeda metrik={["kasbon_diberikan","kasbon_sisa","uang_keluar_kas","beban_diakui"]} />
+
 
       <div className="flex flex-wrap gap-2">
         {STATUS_TAB.map((t) => (

@@ -22,6 +22,7 @@ import {
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
   LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
+import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiDokumenBiaya } from "@/features/finance/matriksAksi.js";
@@ -271,6 +272,9 @@ export default function FinanceExpenses() {
           info="Bebannya SUDAH tercatat di laba rugi, tapi uangnya belum benar-benar keluar — menunggu diganti ke karyawan atau dibayar ke pihak ketiga."
         />
       </div>
+
+      <KenapaBeda metrik={["pengeluaran_aktif","pembelian_aktif","uang_muka_operasional_saldo","komitmen_belum_dibayar","uang_keluar_kas","beban_diakui"]} />
+
 
       <div className="flex flex-wrap gap-2">
         {STATUS_TAB.map((t) => (

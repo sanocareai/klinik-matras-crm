@@ -21,6 +21,7 @@ import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
 } from "@/features/finance/shared.jsx";
+import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { RowActions, AKSI_COL_WIDTH, AKSI_COL_WIDTH_MENU_ONLY } from "@/features/finance/RowActions.jsx";
@@ -278,6 +279,9 @@ export default function FinanceSuppliers() {
         “Utang Barang Belum Ditagih” dan melahirkan Utang Usaha. Selisih antara tagihan supplier dan nilai
         penerimaan masuk akun Selisih Harga Pembelian, bukan mengubah nilai persediaan yang sudah tercatat.
       </Penjelasan>
+
+      <KenapaBeda metrik={["utang_supplier","pembelian_aktif","komitmen_belum_dibayar","uang_keluar_kas","persediaan_nilai"]} />
+
 
       <div className="flex flex-wrap gap-2">
         {TAB.map((t) => (

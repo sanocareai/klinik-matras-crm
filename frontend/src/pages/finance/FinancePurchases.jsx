@@ -19,6 +19,7 @@ import {
   StatusBadge, Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek,
   LABEL_DIVISI, PemilihBukti, SelBukti,
 } from "@/features/finance/shared.jsx";
+import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import EditDokumen, { STATUS_BISA_DIEDIT } from "@/features/finance/EditDokumen.jsx";
 import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiDokumenBiaya } from "@/features/finance/matriksAksi.js";
@@ -305,6 +306,9 @@ export default function FinancePurchases() {
           info="Barang/asetnya SUDAH tercatat di buku besar, tapi uangnya belum benar-benar keluar — menunggu diganti ke karyawan atau dibayar ke pihak ketiga."
         />
       </div>
+
+      <KenapaBeda metrik={["pembelian_aktif","pengeluaran_aktif","utang_supplier","persediaan_nilai","komitmen_belum_dibayar"]} />
+
 
       <div className="flex flex-wrap gap-2">
         {STATUS_TAB.map((t) => (
