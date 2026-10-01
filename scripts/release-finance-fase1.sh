@@ -278,6 +278,10 @@ else
   ok "backend lama tetap sehat setelah migrasi aditif"
 fi
 
+# Snapshot sebelum DIAMBIL ULANG tepat sebelum switch (jendela sebelum/sesudah hanya beberapa detik): produksi hidup, Sales/Finance bisa mengubah order/payment selama build (menit).
+psql_live -At -c "$SNAP_SQL" > "$BK_DIR/data-sebelum.txt" || die "snapshot data sebelum (ulang) gagal"
+dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -v ON_ERROR_STOP=1 < /tmp/snap_metrik.sql > "$BK_DIR/metrik-sebelum.txt" || die "snapshot metrik sebelum (ulang) gagal"
+ok "snapshot sebelum diambil ulang tepat sebelum switch"
 PHASE="7-switch"; say "7. Switch backend ke release baru (SATU kali)"
 dcp "$NEW_DIR" up -d --no-deps backend </dev/null >/dev/null 2>&1 || die "docker compose up backend gagal"
 UP=0; for i in $(seq 1 45); do curl -fsS --max-time 4 "${INTERNAL_URL}/api/health" >/dev/null 2>&1 && { UP=1; break; }; sleep 2; done
