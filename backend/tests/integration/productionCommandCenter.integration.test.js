@@ -197,6 +197,25 @@ test("order.value HANYA terkirim untuk role dengan ORDER_PRICE_READ (ADMIN) — 
   assert.equal(JSON.stringify(asLead.body).includes("4500000"), false, "nilai order tidak boleh bocor di respons sama sekali");
 });
 
+test("P9 UX: layanan yang DIPESAN di Sales (nama saja) tampil di kartu Akan Masuk & kartu Run — harga item TIDAK bocor ke role tanpa ORDER_PRICE_READ", async () => {
+  const w = await world();
+  const u = await orderWithUnit(w, { weightKg: 70 });
+  await testPrisma.orderItem.createMany({ data: [{ orderId: u.order.id, layananName: "Paket Upgrade Fondasi + Lapisan MS", harga: 3_690_001, sortOrder: 0 }, { orderId: u.order.id, layananName: "Tambah Busa", harga: 777_002, sortOrder: 1 }] });
+  await setCohort(u.unit.id);
+  const job = await jobFor(w, { orderId: u.order.id, unitId: u.unit.id });
+
+  const before = await w.lead.api.get(CC); // pickup belum selesai -> kartu Akan Masuk
+  const upcoming = before.body.columns.find((c) => c.key === "AKAN_MASUK").items.find((i) => i.unit.unitCode === u.unit.unitCode);
+  assert.deepEqual(upcoming.customer.salesServices, ["Paket Upgrade Fondasi + Lapisan MS", "Tambah Busa"]);
+
+  assert.equal((await completePickup(w, job, "svc")).status, 200);
+  const after = await w.lead.api.get(CC);
+  const item = after.body.columns.find((c) => c.key === "DALAM_PERJALANAN").items.find((i) => i.unit.unitCode === u.unit.unitCode);
+  assert.deepEqual(item.customer.salesServices, ["Paket Upgrade Fondasi + Lapisan MS", "Tambah Busa"]);
+  const raw = JSON.stringify(after.body) + JSON.stringify(before.body);
+  assert.equal(raw.includes("3690001") || raw.includes("777002"), false, "harga item order tidak boleh ada di respons PRODUCTION_LEAD");
+});
+
 test("data Sales belum lengkap (berat badan kosong) -> attention DATA_SALES_BELUM_LENGKAP", async () => {
   const w = await world();
   const u = await orderWithUnit(w, { weightKg: null });

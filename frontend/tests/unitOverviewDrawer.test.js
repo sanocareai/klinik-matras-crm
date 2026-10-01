@@ -80,15 +80,12 @@ test("Status Produksi & Rencana Produksi: aksi tulis lama (Jadwalkan/Layanan, Ke
 // (badge/nama panjang whitespace-nowrap) walau grid-nya sendiri sudah 1 kolom di mobile —
 // "grid blowout". Diukur nyata via Puppeteer 390px: .page-body scrollWidth 939 vs clientWidth 390,
 // 26-28 tombol keluar viewport. Kalau min-w-0 ini dihapus lagi dari <section>, bug ini kembali.
-test("Status Produksi & Rencana Produksi: <section> grid item punya min-w-0 (cegah CSS Grid blowout di mobile)", () => {
-  assert.match(
-    STATUS_PRODUKSI,
-    /<section key=\{col\.key\} aria-label=\{col\.label\} className="flex min-w-0 flex-col/,
-    "<section> board Status Produksi kehilangan min-w-0 — akan overflow horizontal di mobile"
-  );
-  assert.match(
-    RENCANA_PRODUKSI,
-    /className=\{`flex min-w-0 flex-col gap-2 rounded-card bg-inset p-3/,
-    "<section> board Rencana Produksi kehilangan min-w-0 — akan overflow horizontal di mobile"
-  );
+test("Status Produksi & Rencana Produksi: tidak ada grid-item tanpa min-w-0 di mobile (P9 UX: pipeline hanya md+, chip+satu kolom di layar sempit)", () => {
+  // Status: kolom pipeline berdampingan HANYA md+ (kontainer scroll sendiri); di mobile dirender daftar satu kolom tanpa grid.
+  assert.match(STATUS_PRODUKSI, /className="hidden gap-3 overflow-x-auto pb-3 md:flex"/, "pipeline desktop harus di kontainer scroll md+ saja");
+  assert.match(STATUS_PRODUKSI, /<div className="md:hidden">/, "layar sempit harus punya tampilan satu kolom");
+  // Rencana: grid item langsung (backlog, meja-grid, kolom meja) wajib min-w-0 agar tidak blowout.
+  assert.ok(RENCANA_PRODUKSI.includes('<div className="grid min-w-0 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">'));
+  assert.ok(RENCANA_PRODUKSI.includes("className={`flex min-w-0 flex-col gap-2 rounded-card bg-inset p-2.5"));
+  assert.match(RENCANA_PRODUKSI, /<div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2" data-testid="meja-grid">/);
 });

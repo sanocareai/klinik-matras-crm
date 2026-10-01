@@ -11,23 +11,27 @@ import ProductionQcQueue from "./ProductionQcQueue.jsx";
 // /bengkel/qc-v2) TETAP ADA (lihat Layout.jsx section "LEGACY (ADMIN)").
 // Default tab = V2 (alur QC yang berlaku untuk cohort Production V2 aktif).
 const TABS = [
-  { key: "v2", label: "Quality Control (V2)" },
+  { key: "v2", label: "Quality Control" },
   { key: "v1", label: "Inspeksi QC (lama)" },
 ];
+
+const isAdmin = (() => { try { return (JSON.parse(localStorage.getItem("user"))?.roles || []).includes("ADMIN"); } catch { return false; } })();
 
 export default function ProductionQcHub() {
   const [tab, setTab] = useState("v2");
 
+  // P9 UX Realignment — QC operasional = SATU pengalaman (kartu + Unit 360 yang sama dengan Status Produksi). Tab "Inspeksi QC
+  // (lama)" (halaman terpisah, buka detail unit V1) tinggal untuk ADMIN sebagai legacy; staf lain tidak melihat tab strip.
   return (
     <div>
-      <div role="tablist" aria-label="Tampilan Quality Control" className="flex gap-1 border-b border-line px-4 pt-4 md:px-8 md:pt-6">
+      {isAdmin && <div role="tablist" aria-label="Tampilan Quality Control" className="flex gap-1 border-b border-line px-4 pt-4 md:px-8 md:pt-6">
         {TABS.map((t) => (
           <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
             className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-semibold ${tab === t.key ? "border-accent text-accent" : "border-transparent text-ink3 hover:text-ink2"}`}>
             {t.label}
           </button>
         ))}
-      </div>
+      </div>}
       <div className={tab === "v2" ? "" : "hidden"}>
         <ProductionQc />
       </div>

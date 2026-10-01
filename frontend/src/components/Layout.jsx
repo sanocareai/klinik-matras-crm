@@ -203,11 +203,19 @@ const DIVISIONS = {
           // Bahan Direservasi) — bukan menu duplikat, dua konsep berbeda: status pipeline vs alokasi sumber daya.
           { to: "/bengkel/production-v2",   label: "Status Produksi", Icon: CalendarClock },
           { to: "/bengkel/rencana-produksi", label: "Rencana Produksi", Icon: ClipboardList },
-          { to: "/produksi/meja",           label: "Aplikasi Meja",   Icon: Wrench },
           { to: "/bengkel/quality-control", label: "Quality Control", Icon: ClipboardCheck },
+          { to: "/bengkel/reports",         label: "Laporan Produksi", Icon: BarChart3 },
+        ],
+      },
+      // P9 UX Realignment — Aplikasi Meja/Corner dan Andon TV adalah MODE KERJA / PERANGKAT (HP PIC, layar TV), bukan
+      // workspace administratif: dipisah dari menu operasional utama supaya "OPERASIONAL" hanya berisi lima halaman kerja
+      // (Ringkasan, Status, Rencana, Quality Control, Laporan). Rute TIDAK berubah.
+      {
+        section: "MODE KERJA & PERANGKAT",
+        items: [
+          { to: "/produksi/meja",           label: "Aplikasi Meja",   Icon: Wrench },
           { to: "/produksi/corner",         label: "Aplikasi Corner", Icon: Wrench },
           { to: "/bengkel/andon",           label: "Andon TV",        Icon: LayoutDashboard },
-          { to: "/bengkel/reports",         label: "Laporan Produksi", Icon: BarChart3 },
         ],
       },
       {

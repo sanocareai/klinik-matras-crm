@@ -1761,6 +1761,9 @@ model ServiceCatalog {
   // masuk routing produksi. Lihat catatan panjang di model PriceItem.
   priceItems PriceItem[]
 
+  // P9D — rekomendasi Layanan Teknis dari Diagnosis Produksi (recommendedServiceId di DiagnosisReport).
+  diagnosisReports DiagnosisReport[]
+
   @@map("service_catalog")
 }
 
@@ -4936,6 +4939,8 @@ model Material {
 
   @@index([active])
   expenseSubmissions ExpenseSubmission[]
+  // P9D — bahan manual/noncatalog dari Diagnosis Produksi yang sudah dipetakan ke material kanonis ini.
+  diagnosisManualMaterials DiagnosisManualMaterial[]
   @@map("materials")
 }
 
@@ -8259,24 +8264,78 @@ model ProductionPhaseRun {
   @@map("production_phase_runs_v2")
 }
 
+// P9D — bagian dari fondasi P8 (dormant, TIDAK PERNAH ditulis kode apa pun sebelum P9D: diverifikasi lewat
+// `grep -rl "diagnosisReport" src/` = kosong). Direuse APA ADANYA sebagai penyimpan Diagnosis Produksi:
+// `findings` (JSON bebas, sudah ada) menampung kondisi/fondasi/lapisan/komponen terstruktur + catatan bebas
+// (bentuk didokumentasikan di productionDiagnosisCommandService.js, TIDAK dipaksakan lewat kolom DB baru).
+// `status`: DRAFT dipakai APA ADANYA; RECORDED direinterpretasi sebagai "SUBMITTED" (bahasa tugas P9D) — TIDAK
+// diganti nama enum-nya (menghindari ALTER TYPE yang tidak murni additive); APPROVED/overrideReason/approvedById
+// TETAP DORMANT (P9D tidak membangun alur persetujuan terpisah — bukan bagian dari scope).
+// Kolom BARU (additive): `revision` (lock optimistik utk simpan-di-tempat saat DRAFT, TERPISAH dari `version`
+// yang menandai riwayat supersede antar-diagnosis resmi) dan `recordedAt` (kapan RECORDED terjadi, `createdAt`
+// tetap waktu baris dibuat). Relasi BARU `recommendedService` (FK yang sebelumnya cuma UUID lepas tanpa
+// constraint) supaya bisa di-include langsung tanpa query terpisah.
 model DiagnosisReport {
   id                   String                @id @default(uuid()) @db.Uuid
   runId                String                @map("run_id") @db.Uuid
   run                  ProductionRun         @relation(fields: [runId], references: [id], onDelete: Restrict)
   version              Int
+  revision             Int                   @default(1)
   status               DiagnosisReportStatus @default(DRAFT)
   findings             Json                  @default("{}")
   photoUrls            String[]              @default([]) @map("photo_urls")
   recommendedServiceId String?               @map("recommended_service_id") @db.Uuid
+  recommendedService   ServiceCatalog?       @relation(fields: [recommendedServiceId], references: [id], onDelete: SetNull)
   diagnosedById        String?               @map("diagnosed_by_id")
   approvedById         String?               @map("approved_by_id")
   overrideReason       String?               @map("override_reason")
   createdAt            DateTime              @default(now()) @map("created_at")
+  recordedAt           DateTime?             @map("recorded_at")
   approvedAt           DateTime?             @map("approved_at")
+
+  manualMaterials DiagnosisManualMaterial[]
 
   @@unique([runId, version])
   @@index([runId, status])
   @@map("diagnosis_reports_v2")
+}
+
+enum DiagnosisManualMaterialStatus {
+  NEEDS_MAPPING
+  MAPPED
+}
+
+// P9D — bahan yang operator sebut saat diagnosis TAPI tidak ada di katalog Material kanonis ("Bahan belum
+// terdaftar", §4 tugas). TIDAK PERNAH mengurangi stok/direservasi langsung — deskripsi awal operator disimpan
+// SELAMANYA di `description`/`estimatedUnit`/`qty` (tidak pernah ditimpa); pemetaan ke Material asli oleh
+// Production Lead/Admin ditulis di kolom `mapped*` TERPISAH, dan `bomLineId` diisi setelah baris BOM asli
+// (planned_bom_lines_v2, lewat command owner P3 yang SAMA — setPlannedBOMInTx) dibuat untuknya.
+model DiagnosisManualMaterial {
+  id                String                         @id @default(uuid()) @db.Uuid
+  diagnosisReportId String                         @map("diagnosis_report_id") @db.Uuid
+  diagnosisReport   DiagnosisReport                @relation(fields: [diagnosisReportId], references: [id], onDelete: Restrict)
+
+  description   String
+  estimatedUnit String?  @map("estimated_unit")
+  qty           Decimal  @db.Decimal(12, 4)
+  reason        String
+
+  status DiagnosisManualMaterialStatus @default(NEEDS_MAPPING)
+
+  mappedMaterialId String?   @map("mapped_material_id") @db.Uuid
+  mappedMaterial   Material? @relation(fields: [mappedMaterialId], references: [id], onDelete: SetNull)
+  mappedQty        Decimal?  @db.Decimal(12, 4) @map("mapped_qty")
+  mappedById       String?   @map("mapped_by_id")
+  mappedAt         DateTime? @map("mapped_at")
+
+  bomLineId String?         @map("bom_line_id") @db.Uuid
+  bomLine   PlannedBOMLine? @relation(fields: [bomLineId], references: [id], onDelete: SetNull)
+
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([diagnosisReportId, status])
+  @@map("diagnosis_manual_materials_v2")
 }
 
 model ProductionOperationRun {
@@ -8831,6 +8890,9 @@ model PlannedBOMLine {
   supplementalInspection   QualityInspection? @relation("SupplementalBomLines", fields: [supplementalInspectionId], references: [id], onDelete: Restrict)
 
   reservations MaterialReservation[]
+
+  // P9D — bahan manual/noncatalog Diagnosis yang sudah dipetakan MENJADI baris BOM ini.
+  diagnosisManualMaterials DiagnosisManualMaterial[]
 
   // "Planned BOM aktif ganda untuk material yang sama dalam satu run" -> partial unique (plan_id, material_id)
   // WHERE status='ACTIVE' di migration (Prisma tidak bisa mengekspresikan partial index secara deklaratif).

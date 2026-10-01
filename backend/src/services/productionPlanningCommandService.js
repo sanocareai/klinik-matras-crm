@@ -350,10 +350,91 @@ export async function scheduleProductionPlan(prisma, { planId, actorId, idempote
 //    aktif milik plan ini dalam transaksi yang SAMA (tidak pernah meninggalkan saldo reservasi yatim) dan
 //    mengembalikan status ke PLANNED — reservasi ulang harus dipanggil eksplisit lagi.
 // ---------------------------------------------------------------------------
+// Inti "susun/ubah Planned BOM" TANPA transaksi/idempotency sendiri — dipakai ULANG oleh setPlannedBOM (di
+// bawah, membungkusnya dengan transaksi+command SET_PLANNED_BOM sendiri) DAN oleh
+// productionDiagnosisCommandService.js (P9D) di dalam TRANSAKSI YANG SAMA dengan command SUBMIT_DIAGNOSIS-nya
+// sendiri — pola "InTx" SAMA dengan reserveSupplementalInTx/releaseReservationsInTx di file ini. `plan` HARUS
+// sudah dimuat+dikunci (loadPlanForWrite) oleh pemanggil; command yang membungkus (`command`) dipakai untuk
+// commandId pada baris yang ditulis, BUKAN dibuat di sini.
+export async function setPlannedBOMInTx(tx, { plan, lines, actorId, commandId = null }) {
+  assertPlanBOMLines(lines);
+  assertPlanNotCancelled(plan);
+  await assertNoBlockingMaterialIssue(tx, plan.id);
+  const normalized = lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty) }));
+
+  const materials = await tx.material.findMany({ where: { id: { in: normalized.map((l) => l.materialId) } } });
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  for (const line of normalized) {
+    const material = byId.get(line.materialId);
+    if (!material) throw planError("Material tidak ditemukan", 404, "PLAN_BOM_MATERIAL_NOT_FOUND", { materialId: line.materialId });
+    if (!material.active) throw planError(`Material ${material.code} sudah nonaktif`, 422, "PLAN_BOM_MATERIAL_INACTIVE", { materialId: line.materialId });
+  }
+
+  const now = new Date();
+  const currentByMaterial = new Map(plan.bomLines.map((l) => [l.materialId, l]));
+  const newIds = new Set(normalized.map((l) => l.materialId));
+
+  // Baris lama yang tidak lagi ada di daftar baru, atau qty-nya berubah -> supersede (histori dipertahankan).
+  for (const [materialId, oldLine] of currentByMaterial) {
+    const next = normalized.find((l) => l.materialId === materialId);
+    const changed = !next || Math.abs(Number(oldLine.qty) - next.qty) > EPSILON;
+    if (changed) {
+      await tx.plannedBOMLine.update({
+        where: { id: oldLine.id },
+        data: { status: "SUPERSEDED", supersededById: actorId || null, supersededAt: now, revision: oldLine.revision + 1 },
+      });
+    }
+  }
+  // Baris baru (materialId belum ACTIVE, atau qty berubah) -> baris baru.
+  const createdLines = [];
+  for (const line of normalized) {
+    const old = currentByMaterial.get(line.materialId);
+    const unchanged = old && Math.abs(Number(old.qty) - line.qty) <= EPSILON;
+    if (unchanged) continue;
+    const material = byId.get(line.materialId);
+    const created = await tx.plannedBOMLine.create({
+      data: { planId: plan.id, materialId: line.materialId, qty: line.qty, unit: material.unit, status: "ACTIVE", revision: 1, createdById: actorId || null },
+    });
+    createdLines.push(created);
+  }
+
+  const bomChanged = createdLines.length > 0 || [...currentByMaterial.keys()].some((id) => !newIds.has(id));
+  let nextStatus = plan.status;
+  let releasedCount = 0;
+  if (bomChanged && plan.status === "MATERIAL_RESERVED") {
+    for (const reservation of plan.reservations) {
+      const nextRevision = reservation.revision + 1;
+      await tx.materialReservation.update({
+        where: { id: reservation.id },
+        data: { status: "RELEASED", releasedById: actorId || null, releasedAt: now, releaseReason: "Planned BOM diubah", revision: nextRevision },
+      });
+      await outbox(tx, {
+        eventType: "production.reservation.released", aggregateType: "MaterialReservation", aggregateId: reservation.id, revision: nextRevision,
+        dedupeKey: `production-reservation-released:${reservation.id}:${nextRevision}`,
+        payload: { reservationId: reservation.id, planId: plan.id, materialId: reservation.materialId, reason: "Planned BOM diubah", occurredAt: now.toISOString(), actorId },
+      });
+      releasedCount += 1;
+    }
+    nextStatus = "PLANNED";
+  }
+
+  const revision = plan.revision + 1;
+  await tx.productionRunPlan.update({ where: { id: plan.id }, data: { revision, status: nextStatus, commandId } });
+  await outbox(tx, {
+    eventType: "production.plan.bom_set", aggregateType: "ProductionRunPlan", aggregateId: plan.id, revision,
+    dedupeKey: `production-plan-bom-set:${plan.id}:${revision}`,
+    payload: { planId: plan.id, runId: plan.runId, unitId: plan.run.unitId, lines: normalized, releasedReservations: releasedCount, revision, occurredAt: now.toISOString(), actorId },
+  });
+  await recordActivity(tx, {
+    entityType: "unit", entityId: plan.run.unitId, eventType: EVENT_TYPES.PRODUCTION_PLAN_BOM_SET, actorId: actorId || null,
+    metadata: { unitCode: plan.run.unit.unitCode, planId: plan.id, lineCount: normalized.length, releasedReservations: releasedCount },
+  });
+  return { planId: plan.id, status: nextStatus, revision, lineCount: normalized.length, releasedReservations: releasedCount };
+}
+
 export async function setPlannedBOM(prisma, { planId, actorId, idempotencyKey, expectedRevision, lines }) {
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
-  assertPlanBOMLines(lines);
   const actor = actorId || "SYSTEM";
   const normalized = lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty) }));
   const requestHash = hash({ commandType: "SET_PLANNED_BOM", planId, expectedRevision: revisionExpected, lines: [...normalized].sort((a, b) => a.materialId.localeCompare(b.materialId)) });
@@ -362,82 +443,12 @@ export async function setPlannedBOM(prisma, { planId, actorId, idempotencyKey, e
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
     const plan = await loadPlanForWrite(tx, planId);
-    assertPlanNotCancelled(plan);
     assertPlanRevision(plan, revisionExpected);
     await assertWriterEnabledForUnit(tx, plan.run.unitId);
-    await assertNoBlockingMaterialIssue(tx, planId);
 
-    const materials = await tx.material.findMany({ where: { id: { in: normalized.map((l) => l.materialId) } } });
-    const byId = new Map(materials.map((m) => [m.id, m]));
-    for (const line of normalized) {
-      const material = byId.get(line.materialId);
-      if (!material) throw planError("Material tidak ditemukan", 404, "PLAN_BOM_MATERIAL_NOT_FOUND", { materialId: line.materialId });
-      if (!material.active) throw planError(`Material ${material.code} sudah nonaktif`, 422, "PLAN_BOM_MATERIAL_INACTIVE", { materialId: line.materialId });
-    }
-
-    const now = new Date();
-    let revision = plan.revision;
-    const currentByMaterial = new Map(plan.bomLines.map((l) => [l.materialId, l]));
-    const newIds = new Set(normalized.map((l) => l.materialId));
-
-    // Baris lama yang tidak lagi ada di daftar baru, atau qty-nya berubah -> supersede (histori dipertahankan).
-    for (const [materialId, oldLine] of currentByMaterial) {
-      const next = normalized.find((l) => l.materialId === materialId);
-      const changed = !next || Math.abs(Number(oldLine.qty) - next.qty) > EPSILON;
-      if (changed) {
-        await tx.plannedBOMLine.update({
-          where: { id: oldLine.id },
-          data: { status: "SUPERSEDED", supersededById: actorId || null, supersededAt: now, revision: oldLine.revision + 1 },
-        });
-      }
-    }
-    // Baris baru (materialId belum ACTIVE, atau qty berubah) -> baris baru.
-    const createdLines = [];
-    for (const line of normalized) {
-      const old = currentByMaterial.get(line.materialId);
-      const unchanged = old && Math.abs(Number(old.qty) - line.qty) <= EPSILON;
-      if (unchanged) continue;
-      const material = byId.get(line.materialId);
-      const created = await tx.plannedBOMLine.create({
-        data: { planId, materialId: line.materialId, qty: line.qty, unit: material.unit, status: "ACTIVE", revision: 1, createdById: actorId || null },
-      });
-      createdLines.push(created);
-    }
-
-    const bomChanged = createdLines.length > 0 || [...currentByMaterial.keys()].some((id) => !newIds.has(id));
-    let nextStatus = plan.status;
-    let releasedCount = 0;
-    if (bomChanged && plan.status === "MATERIAL_RESERVED") {
-      for (const reservation of plan.reservations) {
-        const nextRevision = reservation.revision + 1;
-        await tx.materialReservation.update({
-          where: { id: reservation.id },
-          data: { status: "RELEASED", releasedById: actorId || null, releasedAt: now, releaseReason: "Planned BOM diubah", revision: nextRevision },
-        });
-        await outbox(tx, {
-          eventType: "production.reservation.released", aggregateType: "MaterialReservation", aggregateId: reservation.id, revision: nextRevision,
-          dedupeKey: `production-reservation-released:${reservation.id}:${nextRevision}`,
-          payload: { reservationId: reservation.id, planId, materialId: reservation.materialId, reason: "Planned BOM diubah", occurredAt: now.toISOString(), actorId },
-        });
-        releasedCount += 1;
-      }
-      nextStatus = "PLANNED";
-    }
-
-    revision = plan.revision + 1;
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "SET_PLANNED_BOM", aggregateType: "ProductionRunPlan", aggregateId: planId, requestHash, expectedRevision: revisionExpected });
-    await tx.productionRunPlan.update({ where: { id: planId }, data: { revision, status: nextStatus, commandId: command.id } });
-    await outbox(tx, {
-      eventType: "production.plan.bom_set", aggregateType: "ProductionRunPlan", aggregateId: planId, revision,
-      dedupeKey: `production-plan-bom-set:${planId}:${revision}`,
-      payload: { planId, runId: plan.runId, unitId: plan.run.unitId, lines: normalized, releasedReservations: releasedCount, revision, occurredAt: now.toISOString(), actorId },
-    });
-    await recordActivity(tx, {
-      entityType: "unit", entityId: plan.run.unitId, eventType: EVENT_TYPES.PRODUCTION_PLAN_BOM_SET, actorId: actorId || null,
-      metadata: { unitCode: plan.run.unit.unitCode, planId, lineCount: normalized.length, releasedReservations: releasedCount },
-    });
-    const response = { planId, status: nextStatus, revision, lineCount: normalized.length, releasedReservations: releasedCount };
-    await finishCommand(tx, command, revision, response);
+    const response = await setPlannedBOMInTx(tx, { plan, lines, actorId, commandId: command.id });
+    await finishCommand(tx, command, response.revision, response);
     return { replayed: false, ...response };
   });
 }

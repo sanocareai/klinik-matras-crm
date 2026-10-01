@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import EvidenceCapture from "@/features/production/components/EvidenceCapture.jsx";
 import StepForm from "@/features/production/components/StepForm.jsx";
+import { DiagnosisWizard } from "@/features/production/DiagnosisWizard.jsx";
 import {
   MEDIA_RULES, STEP_BY_NO, actionLabel, bucketStyle, buildStepPayload, clearDraft, createIntentKeys, formatMinutes, friendlyError,
   isQuickAction, isRetryableError, loadDraft, saveDraft, validateStepForm, waitCopy,
@@ -32,8 +33,8 @@ function UnitHeader({ card }) {
       <dl className="m-0 grid grid-cols-2 gap-2 text-[13px]">
         <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Berat badan</dt><dd className="m-0 font-semibold text-ink">{card.customer.weightKg ? `${card.customer.weightKg} kg` : "—"}</dd></div>
         <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Posisi tidur</dt><dd className="m-0 font-semibold text-ink">{card.customer.sleepPosition || "Belum dicatat Sales"}</dd></div>
-        <div className="col-span-2 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Keluhan</dt><dd className="m-0 font-semibold text-ink">{card.customer.complaints?.length ? card.customer.complaints.join(", ") : "—"}</dd></div>
-        {card.customer.request && <div className="col-span-2 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Request khusus</dt><dd className="m-0 font-semibold text-ink">{card.customer.request}</dd></div>}
+        <div className="col-span-2 min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Keluhan</dt><dd className="m-0 break-words font-semibold text-ink">{card.customer.complaints?.length ? card.customer.complaints.join(", ") : "—"}</dd></div>
+        {card.customer.request && <div data-testid="request-khusus" className="col-span-2 min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Request khusus</dt><dd className="m-0 break-words font-semibold text-ink [overflow-wrap:anywhere]">{card.customer.request}</dd></div>}
       </dl>
       <div>
         <div className="mb-1 flex justify-between text-[12.5px] text-ink3">
@@ -87,9 +88,61 @@ function EvidenceHistory({ evidence }) {
   );
 }
 
+// P9D — tahap 5 (Diagnosa) pakai wizard KHUSUS (DiagnosisWizard), bukan StepForm generik: submit-nya menulis
+// Planned BOM + layanan teknis lewat command TERPISAH (submitDiagnosis), baru KEMUDIAN menutup tahap lewat
+// recordProductionV2Step yang SAMA persis dipakai tahap lain (payload ringkas dari kesimpulan diagnosa) —
+// mengulang findings terstruktur sebagai `diagnosis` teks supaya validateStepEvidence (kontrak lama, TIDAK
+// diubah) tetap terpenuhi. TIDAK membuka halaman baru — tetap StepSheet layar-penuh yang sama.
+function DiagnosisStepSheet({ card, next, onClose, onSubmitted }) {
+  const [diagState, setDiagState] = useState(null);
+  const [closeError, setCloseError] = useState("");
+  useEffect(() => { api.getProductionV2Diagnosis(card.runId).then(setDiagState).catch(() => setDiagState({ current: null })); }, [card.runId]);
+  if (!diagState) return <div className="fixed inset-0 z-50 flex items-center justify-center bg-base"><Loader2 size={24} className="animate-spin text-accent" aria-hidden /></div>;
+  if (closeError) {
+    return (
+      <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-base px-6 text-center">
+        <p className="text-[15px] font-semibold text-ink">Diagnosis tersimpan, tapi tahap belum tertutup:</p>
+        <p className="rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{closeError}</p>
+        <p className="text-[13px] text-ink3">Buka tahap 5 lagi untuk melanjutkan — data diagnosis tidak hilang.</p>
+        <button type="button" onClick={onClose} className="min-h-[48px] rounded-btn bg-accent px-6 text-[15px] font-bold text-white">Tutup</button>
+      </div>
+    );
+  }
+
+  async function handleSubmitted(result) {
+    // Diagnosis (BOM + layanan teknis) sudah tersimpan server. Tutup tahap 5 lewat jalur SAMA dengan tahap
+    // lain — kalau gagal (mis. revisi run basi), diagnosis TETAP tersimpan (tidak hilang), operator tinggal
+    // buka lagi tahap 5 untuk "Lanjutkan" (pola reuseDiagnosis yang sudah ada di recordProductionStep).
+    try {
+      const closeResult = await api.recordProductionV2Step(card.runId, 5, {
+        expectedRevision: card.revision, workCenterId: card.workCenterId,
+        payload: { diagnosis: result.serviceLabel ? `Layanan teknis: ${result.serviceLabel}` : "Diagnosis dikirim", inputMethod: "TEXT" }, media: [],
+      }, intentKeys.keyFor(card.runId, 5, card.revision));
+      intentKeys.release(card.runId, 5, card.revision);
+      onSubmitted(closeResult);
+    } catch (e) {
+      setCloseError(friendlyError(e));
+      onSubmitted(null); // muat ulang kartu — diagnosis sudah tersimpan, status terbaru akan terlihat
+    }
+  }
+
+  return (
+    <DiagnosisWizard
+      card={{
+        runId: card.runId, unitCode: card.unit.unitCode, workCenterId: card.workCenterId,
+        customer: card.customer, priorServiceLabel: card.unit.service?.label ?? null,
+        diagnosisRevision: diagState.current?.revision ?? 0,
+      }}
+      onClose={onClose}
+      onSubmitted={handleSubmitted}
+    />
+  );
+}
+
 // Lembar isian tahap (layar penuh di HP). Draft form + bukti terunggah disimpan lokal otomatis.
 function StepSheet({ card, next, onClose, onSubmitted }) {
   const stepNo = next.stepNo;
+  if (stepNo === 5) return <DiagnosisStepSheet card={card} next={next} onClose={onClose} onSubmitted={onSubmitted} />;
   const step = STEP_BY_NO[stepNo];
   const draft = useMemo(() => loadDraft(storage, card.runId, stepNo), [card.runId, stepNo]);
   const [form, setForm] = useState(() => draft?.form || {});
@@ -285,7 +338,7 @@ export default function WorkerLane({ lane = "TABLE" }) {
               const st = bucketStyle(item.bucket);
               return (
                 <li key={item.runId}>
-                  <button type="button" onClick={() => setSelectedId(item.runId)} className="flex w-full items-center gap-3 rounded-card bg-surface p-4 text-left shadow-sm active:scale-[0.99]">
+                  <button type="button" data-testid="worker-unit-card" data-unit-code={item.unit.unitCode} onClick={() => setSelectedId(item.runId)} className="flex w-full items-center gap-3 rounded-card bg-surface p-4 text-left shadow-sm active:scale-[0.99]">
                     <span className={`h-10 w-1.5 shrink-0 rounded-full ${st.dot}`} aria-hidden />
                     <span className="min-w-0 flex-1">
                       <span className="block text-[16px] font-bold text-ink">{item.unit.unitCode}</span>
@@ -302,7 +355,7 @@ export default function WorkerLane({ lane = "TABLE" }) {
           <div className="rounded-card bg-surface p-6 text-center"><CheckCircle2 className="mx-auto mb-2 text-green" size={32} aria-hidden /><p className="font-semibold text-ink">Tidak ada unit untuk Anda</p><p className="mt-1 text-[13.5px] text-ink3">Unit muncul di sini setelah Planner menugaskannya ke Anda.</p></div>
         )
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4" data-testid="worker-unit-detail" data-unit-code={card.unit?.unitCode}>
           {queue?.length > 1 && <button type="button" onClick={() => { setSelectedId(null); setCard(null); }} className="min-h-[44px] text-[13.5px] font-semibold text-accent">← Semua unit ({queue.length})</button>}
           <div className="rounded-card bg-surface p-4 shadow-sm"><UnitHeader card={card} /></div>
 
@@ -310,7 +363,7 @@ export default function WorkerLane({ lane = "TABLE" }) {
             <div className="space-y-2">
               <p className="text-[13px] text-ink3">Tindakan berikutnya · Tahap {next.stepNo}</p>
               {next.rework && <p className="rounded-btn bg-orangebg px-3 py-2 text-[13.5px] text-orange">Uji tekstur {String(next.lastVerdict || "").replace("_", " ").toLowerCase()} — sesuaikan lapisan lalu kirim ulang bukti.</p>}
-              <button type="button" disabled={quickBusy} onClick={() => (isQuickAction(next) ? quick() : setSheet("step"))}
+              <button type="button" data-testid={next.stepNo === 5 ? "open-diagnosis" : undefined} disabled={quickBusy} onClick={() => (isQuickAction(next) ? quick() : setSheet("step"))}
                 className="flex min-h-[64px] w-full items-center justify-center gap-2 rounded-btn bg-accent px-4 text-[17px] font-bold text-white shadow-sm active:scale-[0.99] disabled:opacity-50">
                 {quickBusy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : null}
                 {actionLabel(next, { stageLabel: card.activeOp?.stageLabel })}

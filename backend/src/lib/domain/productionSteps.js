@@ -289,7 +289,10 @@ export function deriveNextAction(state) {
       if (!lastModule || reworkPending) return { actor, stepNo, action: "EVIDENCE", rework: reworkPending, lastVerdict: verdict?.payload?.verdict ?? null };
       return { actor, stepNo: 8, action: "TEST" };
     }
-    if (op.stageCode === "diagnosis" && (!state.serviceSet || !state.pathHasModules)) {
+    // P9D: selain layanan/jalur modul (P8, lama), tahap 5 juga menunggu Diagnosis Produksi selesai — bahan
+    // manual terpetakan semua DAN Planned BOM sudah berisi (lihat productionDiagnosisCommandService.js).
+    const diagnosisPending = !state.diagnosisManualMapped || !state.diagnosisBomHasLines;
+    if (op.stageCode === "diagnosis" && (!state.serviceSet || !state.pathHasModules || diagnosisPending)) {
       const diagnosed = (state.opEvidence || []).some((e) => e.stepNo === 5);
       return diagnosed
         ? wait("PLANNER", "SERVICE_NOT_SET", { stepNo: 5, retryAction: "COMPLETE" })
