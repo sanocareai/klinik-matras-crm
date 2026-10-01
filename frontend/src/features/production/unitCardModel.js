@@ -70,3 +70,19 @@ export function mergeQcWithViews(queueItems, columns) {
   for (const col of columns || []) for (const it of col.items || []) if (it.runId) byRun.set(it.runId, it);
   return (queueItems || []).map((q) => ({ queue: q, view: byRun.get(q.runId) || null }));
 }
+
+// Catatan/Request dari Sales kadang berupa JSON mentah dari formulir intake ({"merkKasur":"…","keluhanCustomer":"…"}).
+// Terjemahkan ke kalimat terbaca TANPA menebak isi: hanya memetakan kunci yang dikenal, sisanya apa adanya. Teks biasa tidak diubah.
+const REQUEST_KEYS = { merkKasur: "Merk", ukuranKasur: "Ukuran", keluhanCustomer: "Keluhan", jenisKasurLainnya: "Jenis kasur", catatan: "Catatan", request: "Request" };
+export function humanizeRequest(text) {
+  if (typeof text !== "string") return text ?? null;
+  const t = text.trim();
+  if (!(t.startsWith("{") && t.endsWith("}"))) return text;
+  try {
+    const o = JSON.parse(t);
+    if (!o || typeof o !== "object" || Array.isArray(o)) return text;
+    const parts = Object.entries(o).filter(([, v]) => v !== null && v !== "" && typeof v !== "object")
+      .map(([k, v]) => `${REQUEST_KEYS[k] || k}: ${v}`);
+    return parts.length ? parts.join(" · ") : text;
+  } catch { return text; }
+}

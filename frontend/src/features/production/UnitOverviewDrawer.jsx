@@ -10,6 +10,7 @@ import { formatTanggal } from "@/utils/formatDate.js";
 import { friendlyError, priorityTone } from "@/features/production/experience.js";
 import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
 import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
+import { humanizeRequest } from "@/features/production/unitCardModel.js";
 
 // P9C — Unit 360: satu drawer kanonis (setara "detail Resi") dibuka dari kartu Status Produksi MAUPUN Rencana
 // Produksi — komponen ini TIDAK peduli dari halaman mana ia dipanggil, hanya butuh unitId. Deep-link (?unit=)
@@ -49,7 +50,7 @@ function Ringkasan({ d }) {
     <div className="space-y-3">
       <dl className="m-0 grid grid-cols-2 gap-2 text-[12.5px] sm:grid-cols-3">
         <Field label="Merk & Ukuran" value={[d.identity.merk, d.identity.ukuran].filter(Boolean).join(" ")} />
-        <Field label="Layanan" value={d.service.set ? d.service.label : null} />
+        <Field label="Layanan Teknis (Produksi)" value={d.service.set ? d.service.label : "Belum ditetapkan — diisi dari Diagnosis"} />
         <Field label="Meja / Workshop" value={d.identity.station.label} />
         <Field label="PIC Meja" value={d.identity.pic.table} />
         <Field label="PIC Corner" value={d.identity.pic.corner} />
@@ -65,7 +66,7 @@ function Ringkasan({ d }) {
       </div>
       <OrderField label="Keluhan Customer" field={d.salesContext.complaints} format={bdArr} />
       <OrderField label="Layanan Dipesan (Sales)" field={d.salesContext.salesServices} format={bdArr} />
-      <OrderField label="Request Customer" field={d.salesContext.request} />
+      <OrderField label="Request Customer" field={d.salesContext.request} format={(v) => bd(humanizeRequest(v))} />
       {d.salesContext.dataGaps?.length > 0 && (
         <ul className="m-0 list-none space-y-1 p-0">
           {d.salesContext.dataGaps.map((g) => <li key={g} className="flex items-center gap-1.5 rounded-btn bg-orangebg px-3 py-2 text-[12px] text-orange"><AlertTriangle size={12} aria-hidden /> {g}</li>)}
@@ -390,7 +391,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
           card={{
             runId: data.production.runId, unitCode: data.identity.unitCode, workCenterId: data.planning?.workCenter?.id,
             customer: {
-              category: data.salesContext.category?.value ?? null, weightKg: data.salesContext.weightKg?.value ?? null,
+              category: data.salesContext.category?.value ?? null, weightKg: data.salesContext.weightKg?.value ?? null, salesServices: data.salesContext.salesServices?.value ?? [],
               complaints: data.salesContext.complaints?.value ?? [], request: data.salesContext.request?.value ?? null,
             },
             priorServiceLabel: data.service?.set ? data.service.label : null,

@@ -230,6 +230,7 @@ test("data Sales belum lengkap (berat badan kosong) -> attention DATA_SALES_BELU
 test("unit warisan OFFERED tanpa Production Run sama sekali tampil di Dalam Perjalanan TANPA mutasi", async () => {
   const w = await world();
   const u = await orderWithUnit(w);
+  await testPrisma.orderItem.create({ data: { orderId: u.order.id, layananName: "Paket Warisan", harga: 123456, sortOrder: 0 } });
   await setCohort(u.unit.id);
   const job = await jobFor(w, { orderId: u.order.id, unitId: u.unit.id });
   const handoff = await testPrisma.unitCustodyHandoff.create({ data: { unitId: u.unit.id, deliveryJobId: job.id, direction: "INBOUND", status: "OFFERED", revision: 1 } });
@@ -242,6 +243,10 @@ test("unit warisan OFFERED tanpa Production Run sama sekali tampil di Dalam Perj
   assert.ok(item, "unit warisan tanpa run harus tetap tampil di Dalam Perjalanan (P9B.1: kolom 'Belum Dijadwalkan' sudah dihapus)");
   assert.equal(item.kind, "AWAITING_ARRIVAL_LEGACY");
   assert.ok(res.body.kpi.dalamPerjalanan >= 1);
+  // Kontrak layanan: kartu warisan membawa pelanggan + Layanan DIPESAN Sales (nama saja); harga item tidak bocor.
+  assert.ok(item.customer?.name, "kartu warisan harus membawa nama pelanggan");
+  assert.deepEqual(item.customer.salesServices, ["Paket Warisan"]);
+  assert.equal(JSON.stringify(res.body).includes("123456"), false, "harga item order tidak boleh bocor ke PRODUCTION_LEAD");
 
   const rowAfter = await testPrisma.unitCustodyHandoff.findUniqueOrThrow({ where: { id: handoff.id } });
   assert.equal(rowAfter.status, "OFFERED");

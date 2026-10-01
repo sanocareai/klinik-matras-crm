@@ -3,7 +3,7 @@ import { AlertTriangle, CalendarDays, ChevronsUp, Flame, ImageOff, PackageX, Wre
 import { Badge } from "@/components/ui/badge.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { bucketStyle, initials, targetDateBadge } from "@/features/production/experience.js";
-import { dataGaps, materialBadge, mejaLabel, priorityMeta, stageText } from "@/features/production/unitCardModel.js";
+import { dataGaps, humanizeRequest, materialBadge, mejaLabel, priorityMeta, stageText } from "@/features/production/unitCardModel.js";
 import { formatRupiah } from "@/utils/format.js";
 
 // P9 UX Realignment — SATU kartu unit untuk Status Produksi, Rencana Produksi (backlog + slot meja), dan Quality
@@ -75,8 +75,11 @@ export function UnitCard({
       <p className="m-0 line-clamp-2 text-[12px] text-ink2" title={sales || ""}>
         <span className="font-semibold text-ink3">Layanan Sales: </span>{sales || <span className="text-ink3">belum tercatat</span>}
       </p>
+      <p data-testid="tech-service" className="m-0 line-clamp-1 text-[12px] text-ink2" title={view.unit.service?.label || ""}>
+        <span className="font-semibold text-ink3">Layanan Teknis: </span>{view.unit.service?.label || <span className="text-ink3">belum ditetapkan (dari Diagnosis)</span>}
+      </p>
       {c.request && (
-        <p data-testid="sales-note" className="m-0 line-clamp-2 break-words text-[11.5px] italic text-ink3 [overflow-wrap:anywhere]" title={c.request}>“{c.request}”</p>
+        <p data-testid="sales-note" className="m-0 line-clamp-2 break-words text-[11.5px] italic text-ink3 [overflow-wrap:anywhere]" title={humanizeRequest(c.request)}>“{humanizeRequest(c.request)}”</p>
       )}
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant={st.badge}>{st.label}</Badge>
@@ -148,7 +151,7 @@ export function UpcomingCard({ item, onOpen, footer = null, badgeLabel = "Akan M
           <p className="m-0 truncate text-[13.5px] font-bold text-ink">{item.unit.unitCode}{item.unit.orderNumber ? <span className="font-medium text-ink3"> · {item.unit.orderNumber}</span> : null}</p>
           <p className="m-0 truncate text-[12.5px] font-semibold text-ink2">{c.name || "Pelanggan belum dicatat"}{c.city ? <span className="font-normal text-ink3"> · {c.city}</span> : null}</p>
           <p className="m-0 line-clamp-2 text-[12px] text-ink2"><span className="font-semibold text-ink3">Layanan Sales: </span>{c.salesServices?.length ? c.salesServices.join(" + ") : <span className="text-ink3">belum tercatat</span>}</p>
-          {c.request && <p data-testid="sales-note" className="m-0 line-clamp-2 break-words text-[11.5px] italic text-ink3 [overflow-wrap:anywhere]">“{c.request}”</p>}
+          {c.request && <p data-testid="sales-note" className="m-0 line-clamp-2 break-words text-[11.5px] italic text-ink3 [overflow-wrap:anywhere]">“{humanizeRequest(c.request)}”</p>}
           <div className="flex flex-wrap items-center gap-1.5"><Badge variant="neutral">{badgeLabel}</Badge>{item.scheduledDate && <span className="text-[11.5px] text-ink3">Pickup {item.scheduledDate}</span>}{item.driverName && <span className="text-[11.5px] text-ink3">· {item.driverName}</span>}</div>
           {!item.unit.photoUrl && <ul data-testid="data-gaps" className="m-0 flex list-none flex-wrap gap-1 p-0"><li className="inline-flex items-center gap-1 rounded-chip bg-orangebg px-1.5 py-0.5 text-[10.5px] font-medium text-orange"><AlertTriangle size={10} aria-hidden /> Foto unit belum ada</li></ul>}
         </div>

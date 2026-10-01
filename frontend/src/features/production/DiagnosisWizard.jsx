@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Search, X } from "lu
 import { api } from "@/api.js";
 import { EvidenceCapture } from "@/features/production/components/EvidenceCapture.jsx";
 import { friendlyError } from "@/features/production/experience.js";
+import { humanizeRequest } from "@/features/production/unitCardModel.js";
 
 // P9D — Diagnosis Produksi + Planned BOM Terpadu. SATU wizard dipakai dari DUA tempat (Aplikasi Meja tahap 5
 // via WorkerLane.jsx, DAN Unit 360 via "Isi Diagnosis") — bukan halaman terpisah. Draft disimpan lokal per
@@ -79,10 +80,11 @@ function SalesSection({ card }) {
     <div className="space-y-3">
       <p className="rounded-btn bg-accentbg px-3 py-2 text-[13px] text-accent">Data ini milik Sales, hanya untuk referensi — Production tidak dapat mengubahnya di sini.</p>
       <dl className="m-0 grid grid-cols-1 gap-2 text-[13px] sm:grid-cols-2">
+        <div data-testid="sales-ordered-service" className="min-w-0 rounded-btn bg-inset px-3 py-2 sm:col-span-2"><dt className="m-0 text-ink3">Layanan dipesan (Sales) — hanya baca</dt><dd className="m-0 break-words font-semibold text-ink">{c.salesServices?.length ? c.salesServices.join(" + ") : "Belum dicatat"}</dd></div>
         <div className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Kategori pesanan (Sales)</dt><dd className="m-0 break-words font-semibold text-ink">{c.category || "Belum dicatat"}</dd></div>
         <div className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Berat badan</dt><dd className="m-0 break-words font-semibold text-ink">{c.weightKg ? `${c.weightKg} kg` : "Belum dicatat"}</dd></div>
         <div className="min-w-0 rounded-btn bg-inset px-3 py-2 sm:col-span-2"><dt className="m-0 text-ink3">Keluhan customer</dt><dd className="m-0 break-words font-semibold text-ink">{c.complaints?.length ? c.complaints.join(", ") : "Belum dicatat"}</dd></div>
-        {c.request && <div className="min-w-0 rounded-btn bg-inset px-3 py-2 sm:col-span-2"><dt className="m-0 text-ink3">Request customer</dt><dd className="m-0 break-words font-semibold text-ink">{c.request}</dd></div>}
+        {c.request && <div className="min-w-0 rounded-btn bg-inset px-3 py-2 sm:col-span-2"><dt className="m-0 text-ink3">Request customer</dt><dd className="m-0 break-words font-semibold text-ink">{humanizeRequest(c.request)}</dd></div>}
       </dl>
     </div>
   );
@@ -244,7 +246,7 @@ function ReviewSection({ findings, setFindings, services, recommendedServiceId, 
   const differs = priorServiceLabel && recommendedServiceId && services.find((s) => s.id === recommendedServiceId)?.labelId !== priorServiceLabel;
   return (
     <div className="space-y-4">
-      <Field label="Layanan teknis *" hint="Ditetapkan Production berdasarkan hasil diagnosa — boleh berbeda dari layanan pesanan Sales.">
+      <Field label="Layanan teknis *" hint="Ditetapkan Production dari hasil diagnosa. Terpisah dari Layanan Dipesan (Sales): tidak mengubah order, item, atau harga.">
         <select className={inputCls} value={recommendedServiceId || ""} onChange={(e) => setRecommendedServiceId(e.target.value)}>
           <option value="">— Pilih layanan teknis —</option>
           {services.map((s) => <option key={s.id} value={s.id}>{s.labelId}</option>)}

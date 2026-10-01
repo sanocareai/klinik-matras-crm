@@ -199,13 +199,15 @@ async function listAwaitingArrivalNoRunUnits(prisma, unitIds) {
     // di papan (sekali dari sini, sekali lagi dari listEligibleUnitsForPlanning).
     where: { direction: "INBOUND", status: "OFFERED", unitId: { in: unitIds }, unit: { is: { productionRunsV2: { none: {} } } } },
     include: {
-      unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, storageLocation: true, order: { select: { orderNumber: true } } } },
+      unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, storageLocation: true, order: { select: { orderNumber: true, notes: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } } } },
     },
     orderBy: [{ offeredAt: "asc" }],
   });
   return handoffs.map((h) => ({
     runId: null, handoffId: h.id,
     unit: { id: h.unit.id, unitCode: h.unit.unitCode, merk: h.unit.merk, ukuran: h.unit.ukuran, storageLocation: h.unit.storageLocation, orderNumber: h.unit.order?.orderNumber ?? null },
+    // P9 kontrak layanan: kartu warisan juga membawa pelanggan + Layanan DIPESAN Sales (nama saja, tanpa harga) — read-only dari order.
+    customer: { name: h.unit.order?.customer?.name ?? null, city: h.unit.order?.customer?.city ?? null, request: h.unit.order?.notes ?? null, salesServices: (h.unit.order?.items || []).map((i) => i.layananName).filter(Boolean) },
     kind: "AWAITING_ARRIVAL_LEGACY", isLegacyException: false, inTransit: true,
   }));
 }

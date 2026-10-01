@@ -25,7 +25,7 @@ function loadModel() {
   const src = MODEL_SRC.replace(/^import .*$/gm, "").replace(/^export /gm, "");
   const STEP_BY_NO = { 5: { label: "Diagnosa" }, 1: { label: "Sebelum Bongkar" } };
   const bucketStyle = (k) => ({ label: k || "Antrean" });
-  return new Function("STEP_BY_NO", "bucketStyle", `${src}\nreturn { priorityMeta, dataGaps, materialBadge, stageText, backlogOf, mergeQcWithViews, pipelineChips, mejaLabel, MEJA };`)(STEP_BY_NO, bucketStyle);
+  return new Function("STEP_BY_NO", "bucketStyle", `${src}\nreturn { priorityMeta, dataGaps, materialBadge, stageText, backlogOf, mergeQcWithViews, pipelineChips, mejaLabel, MEJA, humanizeRequest };`)(STEP_BY_NO, bucketStyle);
 }
 
 test("Navigasi Production: OPERASIONAL hanya 5 menu; Aplikasi Meja/Corner/Andon di 'MODE KERJA & PERANGKAT'; Legacy admin-only & tertutup", () => {
@@ -150,4 +150,34 @@ test("unitCardModel: kartu QC dipetakan ke view Command Center lewat runId (fall
   const out = mergeQcWithViews([{ runId: "a" }, { runId: "zz" }], [{ items: [{ runId: "a", unit: { id: "u" } }] }]);
   assert.equal(out[0].view.unit.id, "u");
   assert.equal(out[1].view, null);
+});
+
+// Kontrak layanan: Layanan Dipesan (Sales) read-only vs Layanan Teknis (hasil Diagnosis) — tampil TERPISAH di kartu, Unit 360, wizard.
+test("Kontrak layanan: kartu menampilkan 'Layanan Sales' DAN 'Layanan Teknis' sebagai dua baris terpisah", () => {
+  assert.match(CARD, /Layanan Sales: /);
+  assert.match(CARD, /data-testid="tech-service"/);
+  assert.match(CARD, /Layanan Teknis: /);
+});
+test("Kontrak layanan: Unit 360 — 'Layanan Teknis (Produksi)' terpisah dari 'Layanan Dipesan (Sales)' (badge ORDER = read-only)", () => {
+  const D = read("features", "production", "UnitOverviewDrawer.jsx");
+  assert.match(D, /label="Layanan Teknis \(Produksi\)"/);
+  assert.match(D, /label="Layanan Dipesan \(Sales\)" field=\{d\.salesContext\.salesServices\}/);
+});
+test("Kontrak layanan: wizard menampilkan Layanan Dipesan (Sales) hanya-baca & menegaskan layanan teknis tidak mengubah order", () => {
+  const W = read("features", "production", "DiagnosisWizard.jsx");
+  assert.match(W, /data-testid="sales-ordered-service"/);
+  assert.match(W, /tidak mengubah order, item, atau harga/);
+});
+test("humanizeRequest: JSON intake Sales jadi kalimat terbaca; teks biasa & JSON tak dikenal tidak diubah", () => {
+  const { humanizeRequest } = loadModel();
+  assert.equal(humanizeRequest('{"merkKasur":"Lainnya","ukuranKasur":"120x200 cm","keluhanCustomer":"Di buat menopang bb 95","jenisKasurLainnya":""}'), "Merk: Lainnya · Ukuran: 120x200 cm · Keluhan: Di buat menopang bb 95");
+  assert.equal(humanizeRequest("Req sampai lomasi jam 10:00 pagi"), "Req sampai lomasi jam 10:00 pagi");
+  assert.equal(humanizeRequest("{bukan json}"), "{bukan json}");
+  assert.equal(humanizeRequest(null), null);
+});
+
+// Regresi (ditemukan uji drag-drop nyata): kartu di dalam kolom Meja tidak bisa diseret karena prop dragStart tidak diteruskan.
+test("Rencana: MejaColumn menerima & dipasangi dragStart (kartu di meja bisa diseret antar-meja / balik ke backlog)", () => {
+  assert.match(RENCANA, /<MejaColumn [\s\S]*?dragStart=\{dragStart\}/);
+  assert.ok(RENCANA.includes("onDragStart={(e) => dragStart(e, v.runId)}"));
 });
