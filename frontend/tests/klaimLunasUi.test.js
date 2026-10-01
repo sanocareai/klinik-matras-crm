@@ -166,3 +166,15 @@ test("Sakelar rollout: MATI → daftar status lama apa adanya & panel klaim ters
   assert.match(baca("src/features/resi/PembayaranResiPelanggan.jsx"), /gateAktif \? klaim && \(/);
   assert.match(baca("src/features/resi/PembayaranResiPelanggan.jsx"), /<ModalKlaim/, "modal klaim lama tetap untuk sakelar MATI");
 });
+
+test("Kartu 'Gerbang Klaim Lunas' di Finance > Pengaturan: status AKTIF/MATI, penjelasan dampak web & aplikasi, konfirmasi sebelum aktif, riwayat audit, nilai 'true'/'false'", () => {
+  const set = baca("src/pages/finance/FinanceSettings.jsx");
+  assert.match(set, /<KartuGerbangKlaimLunas data=\{settings\?\.klaimLunasGate\}/);
+  assert.match(set, /onUbah=\{\(nilai\) => ubahSetting\(K\.KLAIM_LUNAS_GATE_AKTIF, nilai\)\}/);
+  assert.match(set, /\{aktif \? "AKTIF" : "MATI"\}/);
+  assert.match(set, /confirmText=\{aktif/, "konfirmasi untuk aktifkan DAN matikan");
+  assert.match(set, /Aplikasi Sales versi lama akan menerima pesan penolakan|aplikasi Sales versi lama akan menerima pesan penolakan/);
+  assert.match(set, /TIDAK dihapus atau diubah/, "mematikan tidak mengubah data");
+  assert.match(set, /onUbah\(aktif \? "false" : "true"\)/);
+  assert.match(set, /Riwayat perubahan/);
+});

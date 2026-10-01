@@ -234,6 +234,9 @@ export default function FinanceSettings() {
         </CardContent>
       </Card>
 
+      {/* ── GERBANG KLAIM LUNAS (sakelar rollout, 1 Okt 2026) ── */}
+      <KartuGerbangKlaimLunas data={settings?.klaimLunasGate} onUbah={(nilai) => ubahSetting(K.KLAIM_LUNAS_GATE_AKTIF, nilai)} />
+
       {/* ── KEBIJAKAN BUKTI / NOTA ── */}
       <Card>
         <JudulKartu
@@ -450,6 +453,52 @@ export default function FinanceSettings() {
         onSubmit={(d) => aksi(() => api.createFinanceExpenseCategory(d))}
       />
     </HalamanFinance>
+  );
+}
+
+// Sakelar rollout Gerbang Klaim Lunas. MATI (bawaan) = perilaku Sales lama persis. AKTIF = penegakan penuh. Mematikannya TIDAK mengubah data apa pun.
+function KartuGerbangKlaimLunas({ data, onUbah }) {
+  const aktif = !!data?.aktif;
+  return (
+    <Card data-testid="kartu-gerbang-klaim-lunas">
+      <JudulKartu
+        title="Gerbang Klaim Lunas"
+        description="Sales mengajukan klaim berbukti — bukan menandai Lunas sendiri."
+        info="Sakelar rollout. Nyalakan HANYA setelah aplikasi Sales versi terbaru terpasang di semua HP Sales. Dapat dimatikan kembali kapan saja tanpa mengubah data."
+      />
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge variant={aktif ? "green" : "neutral"} data-testid="status-gerbang-klaim">{aktif ? "AKTIF" : "MATI"}</Badge>
+          <TombolAksi
+            size="sm"
+            variant={aktif ? "neutral" : "secondary"}
+            confirmText={aktif
+              ? "Matikan Gerbang Klaim Lunas? Sales kembali bisa mencatat pembayaran langsung dan menandai Lunas seperti sebelumnya. Data klaim yang sudah ada TIDAK dihapus atau diubah."
+              : "Aktifkan Gerbang Klaim Lunas? Mulai sekarang: (1) tidak ada yang bisa mengisi status Lunas langsung — Lunas hanya muncul setelah Finance memverifikasi pembayaran sampai tagihan; (2) Sales tidak bisa lagi mencatat pembayaran langsung — mereka mengajukan Klaim Lunas dengan bukti; (3) aplikasi Sales versi lama akan menerima pesan penolakan. Pastikan semua HP Sales sudah memakai aplikasi terbaru."}
+            onClick={() => onUbah(aktif ? "false" : "true")}
+          >
+            {aktif ? "Matikan" : "Aktifkan"}
+          </TombolAksi>
+        </div>
+        <div className="rounded-lg bg-inset px-3 py-2.5 text-[13px] leading-relaxed text-ink2">
+          <p className="font-medium text-ink">Kalau MATI (bawaan):</p>
+          <p>Web dan aplikasi Sales bekerja seperti biasa: Sales bisa menandai Lunas dan mencatat pembayaran langsung. Klaim berbukti belum bisa dibuat.</p>
+          <p className="mt-2 font-medium text-ink">Kalau AKTIF:</p>
+          <p>
+            Status Lunas hanya dihasilkan sistem dari pembayaran terverifikasi (tidak ada peran yang bisa mengisinya langsung, termasuk Admin).
+            Sales mengajukan Klaim Lunas dengan tanggal, nominal, metode, catatan, dan minimal satu bukti; Finance memverifikasi di Pembayaran &amp; Verifikasi.
+            Pembayaran langsung dari Sales ditolak server. Order dan pembayaran lama tidak diubah.
+          </p>
+        </div>
+        {data?.riwayat?.length > 0 ? (
+          <ul className="space-y-1 text-[12px] text-ink3" aria-label="Riwayat perubahan">
+            {data.riwayat.map((r, i) => (
+              <li key={i}>{tanggalJam(r.pada)} — {r.oleh}: {r.dari === "true" ? "AKTIF" : "MATI"} → {r.ke === "true" ? "AKTIF" : "MATI"}</li>
+            ))}
+          </ul>
+        ) : <p className="text-[12px] text-ink3">Belum pernah diubah (bawaan: MATI).</p>}
+      </CardContent>
+    </Card>
   );
 }
 
