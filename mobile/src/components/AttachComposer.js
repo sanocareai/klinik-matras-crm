@@ -29,6 +29,13 @@ import { useSheetMaxHeight } from "../lib/useSheetMaxHeight";
 import ProductPicker from "./ProductPicker";
 import KirimLokasiModal from "./KirimLokasiModal";
 
+// Batas ukuran upload = client_max_body_size nginx produksi (50 MB). File yang
+// lebih besar DITOLAK nginx dengan 413 SETELAH seluruh file selesai diunggah —
+// di produksi terlihat 2x (1 Okt 2026): sales menunggu upload penuh lewat data
+// seluler lalu cuma dapat error HTML. Video dari galeri HP (kualitas asli)
+// gampang melewati 50 MB, jadi dicegat di sini SEBELUM upload.
+const MAKS_UPLOAD_BYTES = 50 * 1024 * 1024;
+
 let uidCounter = 0;
 function nextUid() { uidCounter += 1; return `att-${Date.now()}-${uidCounter}`; }
 
@@ -111,7 +118,22 @@ const AttachComposer = forwardRef(function AttachComposer({ conversationId, cust
 
   // mediaTypeOf: string tetap ("document") ATAU function per-asset (dari
   // ImagePicker, tiap asset punya field .type "image"|"video" sendiri).
-  function addAssets(assets, mediaTypeOf) {
+  function addAssets(semuaAssets, mediaTypeOf) {
+    // Foto tidak dicek: dikompres dulu sebelum kirim (lihat compressImage).
+    const tipeDari = (a) => (typeof mediaTypeOf === "function" ? mediaTypeOf(a) : mediaTypeOf);
+    const ukuranDari = (a) => a.fileSize ?? a.size ?? 0;
+    const terlaluBesar = semuaAssets.filter((a) => tipeDari(a) !== "image" && ukuranDari(a) > MAKS_UPLOAD_BYTES);
+    if (terlaluBesar.length) {
+      const daftar = terlaluBesar
+        .map((a) => `• ${a.fileName || a.name || "File"} (${Math.round(ukuranDari(a) / 1048576)} MB)`)
+        .join("\n");
+      Alert.alert(
+        "File terlalu besar",
+        `Maksimal 50 MB per file. Potong atau kecilkan dulu, lalu coba lagi:\n\n${daftar}`
+      );
+    }
+    const assets = semuaAssets.filter((a) => !terlaluBesar.includes(a));
+    if (!assets.length) return;
     const newItems = assets.map((a) => {
       const mediaType = typeof mediaTypeOf === "function" ? mediaTypeOf(a) : mediaTypeOf;
       return {

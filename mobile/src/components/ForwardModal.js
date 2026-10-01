@@ -29,19 +29,35 @@ export default function ForwardModal({ visible, message, messages, onClose }) {
 
   const items = messages?.length ? messages : (message ? [message] : []);
 
-  useEffect(() => {
-    if (!visible) return;
-    setLoading(true);
-    api.getConversations({}).then((res) => { setConvs(res.data || []); setLoading(false); }).catch(() => setLoading(false));
-  }, [visible]);
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const q = search.trim().toLowerCase();
-  const filtered = convs.filter((c) => {
-    if (!q) return true;
-    return (c.customer?.name || "").toLowerCase().includes(q)
-      || (c.customer?.phone || "").includes(q)
-      || (c.groupName || "").toLowerCase().includes(q);
-  });
+  // BUG (fix, 1 Okt 2026): "kontak yang mau di-forward tidak ada". Dulu daftar
+  // cuma 100 percakapan TERBARU lalu disaring di HP — kontak lain (dari ~3.300
+  // pelanggan) tidak pernah ada di daftar dan tidak bisa dicari; Kontak Tim
+  // juga disembunyikan dari daftar biasa. Sekarang pencarian di SERVER
+  // (debounce), semua percakapan termasuk Kontak Tim, hanya nama/nomor/grup.
+  useEffect(() => {
+    if (!visible) return undefined;
+    let alive = true;
+    setLoading(true);
+    setError("");
+    const t = setTimeout(async () => {
+      try {
+        const q = search.trim();
+        const res = await api.getConversations({ scope: "all", nameOnly: "true", limit: 100, ...(q ? { search: q } : {}) });
+        if (alive) setConvs(res.data || []);
+      } catch (err) {
+        if (alive) setError(err?.message || "Gagal memuat daftar percakapan");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }, search ? 300 : 0);
+    return () => { alive = false; clearTimeout(t); };
+  }, [visible, search, reloadKey]);
+
+  // Penyaringan sudah dilakukan server.
+  const filtered = convs;
 
   // BUG (fix, 17 Agt 2026): SEBELUMNYA `Promise.allSettled(items.map(...))`
   // — mengirim SEMUA pesan sekaligus secara BERSAMAAN. Untuk 1 pesan itu
@@ -57,17 +73,24 @@ export default function ForwardModal({ visible, message, messages, onClose }) {
     if (forwarding || !items.length) return;
     setForwarding(true);
     let gagal = 0;
+    let pesanErrorPertama = "";
     for (let i = 0; i < items.length; i++) {
       try {
         await api.forwardMessage(items[i].conversationId, items[i].id, targetConvId);
-      } catch {
+      } catch (err) {
         gagal += 1;
+        if (!pesanErrorPertama) pesanErrorPertama = err?.message || "";
       }
       if (i < items.length - 1) await new Promise((r) => setTimeout(r, 1500));
     }
     setForwarding(false);
     if (gagal > 0) {
-      Alert.alert("Sebagian gagal diteruskan", `${gagal} dari ${items.length} pesan gagal diteruskan.`);
+      // Sertakan alasan ASLI dari server — dulu cuma "gagal diteruskan" tanpa
+      // tahu kenapa, jadi terasa seperti fitur forward rusak permanen.
+      Alert.alert(
+        "Sebagian gagal diteruskan",
+        `${gagal} dari ${items.length} pesan gagal diteruskan.${pesanErrorPertama ? `\n\n${pesanErrorPertama}` : ""}`
+      );
     } else {
       onClose();
     }
@@ -105,11 +128,23 @@ export default function ForwardModal({ visible, message, messages, onClose }) {
           />
           {loading ? (
             <ActivityIndicator style={{ marginTop: 24 }} color={tokens.color.accent} />
+          ) : error ? (
+            <View style={{ alignItems: "center", paddingVertical: 24 }}>
+              <Text style={styles.empty}>{error}</Text>
+              <TouchableOpacity onPress={() => setReloadKey((k) => k + 1)} style={{ marginTop: 10 }}>
+                <Text style={{ color: tokens.color.accent, fontWeight: "600" }}>Coba lagi</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             <FlatList
               data={filtered}
               keyExtractor={(c) => c.id}
               style={{ maxHeight: 360 }}
+              // BUG (fix, 1 Okt 2026): tanpa ini, mengetuk kontak saat keyboard
+              // pencarian masih terbuka HANYA menutup keyboard — ketukan tidak
+              // sampai ke baris ("kontak diklik tidak bisa"). "handled" membuat
+              // ketukan pada baris langsung diproses.
+              keyboardShouldPersistTaps="handled"
               ListEmptyComponent={<Text style={styles.empty}>Tidak ditemukan</Text>}
               renderItem={({ item: c }) => {
                 const isGroup = c.type === "GROUP";
