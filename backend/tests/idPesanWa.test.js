@@ -50,3 +50,16 @@ test("ID pesan berbeda TIDAK dianggap sama", () => {
   const b = "false_120363406463516936@g.us_BBBBBBBBBBBB_111@lid";
   assert.notEqual(idPesanInti(a), idPesanInti(b));
 });
+
+// Regresi "centang macet di jam pending" (1 Okt 2026): event ack grup datang
+// dengan JID/pengirim berbeda dari yang tersimpan, jadi pencocokan harus
+// memakai ID inti (bagian ke-3), BUKAN bagian terakhir (= nomor pengirim).
+test("ack grup cocok dengan pesan tersimpan walau JID & pengirim berbeda", () => {
+  const tersimpan = "true_120363406463516936@g.us_3EB077D39AC2FE43CC73CF_6285166662896@c.us";
+  const eventAck  = "true_120363406463516936@g.us_3EB077D39AC2FE43CC73CF_222681874051121@lid";
+  const inti = idPesanInti(eventAck);
+  assert.equal(inti, "3EB077D39AC2FE43CC73CF");
+  assert.ok(tersimpan.includes(inti));
+  // bagian terakhir (cara lama) TIDAK akan pernah cocok
+  assert.ok(!tersimpan.includes(eventAck.split("_").pop()));
+});
