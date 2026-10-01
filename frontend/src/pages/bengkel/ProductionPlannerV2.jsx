@@ -156,6 +156,9 @@ export default function ProductionPlannerV2() {
   }, [today]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
+    // Referensi jadwal (workshop/operator/layanan) hanya dibutuhkan peran yang boleh menjadwalkan; peran lain (PIC/Gudang) mendapat
+    // 403 dan menimbulkan galat konsol/jaringan di setiap pembukaan halaman (ditemukan lewat sandbox QA).
+    if (!canRoute) return;
     Promise.all([
       api.getWorkCenters().catch(() => ({ workCenters: [] })),
       api.getProductionOperators().catch(() => ({ operators: [] })),

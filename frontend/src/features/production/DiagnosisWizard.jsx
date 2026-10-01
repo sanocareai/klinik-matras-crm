@@ -36,6 +36,18 @@ function clearLocalDraft(runId) {
   try { localStorage.removeItem(draftKey(runId)); } catch { /* no-op */ }
 }
 
+// Benih form dari diagnosis server (status RECORDED/DRAFT): hanya bahan manual yang BELUM dipetakan yang dibawa (yang sudah
+// dipetakan sudah menjadi baris Planned BOM).
+export function serverSeed(cur) {
+  return {
+    findings: { ...emptyFindings(), ...(cur.findings || {}), general: { ...emptyFindings().general, ...(cur.findings?.general || {}) }, foundation: { ...emptyFindings().foundation, ...(cur.findings?.foundation || {}) }, components: { ...emptyFindings().components, ...(cur.findings?.components || {}) }, layers: cur.findings?.layers || [] },
+    media: (cur.prefill?.photos || []).map((ph, i) => ({ id: `srv-${i}`, kind: "image", status: "done", progress: 100, url: ph.url, previewUrl: ph.previewUrl })),
+    bomLines: (cur.prefill?.bomLines || []).map((l) => ({ materialId: l.materialId, code: l.code, name: l.name, unit: l.unit, qty: String(l.qty) })),
+    manualMaterials: (cur.manualMaterials || []).filter((m) => m.status === "NEEDS_MAPPING").map((m) => ({ description: m.description, estimatedUnit: m.estimatedUnit || "", qty: String(m.qty), reason: m.reason || "" })),
+    recommendedServiceId: cur.recommendedServiceId || null,
+  };
+}
+
 function emptyFindings() {
   return {
     general: { condition: "", mainDamage: "", damageLevel: "", teardownNote: "" },
@@ -267,12 +279,15 @@ function ReviewSection({ findings, setFindings, services, recommendedServiceId, 
 export function DiagnosisWizard({ card, onClose, onSubmitted }) {
   const runId = card.runId;
   const local = useMemo(() => loadLocalDraft(runId), [runId]);
+  // Revisi diagnosis yang SUDAH dikirim: tanpa draft lokal, isi dari server (temuan, layanan, BOM, bahan manual belum terpetakan, foto).
+  const server = card.current || null;
+  const seed = local || (server ? serverSeed(server) : null);
   const [section, setSection] = useState(0);
-  const [findings, setFindings] = useState(() => local?.findings || emptyFindings());
-  const [media, setMedia] = useState(() => (local?.media || []).filter((m) => m.status === "done"));
-  const [bomLines, setBomLines] = useState(() => local?.bomLines || []);
-  const [manualMaterials, setManualMaterials] = useState(() => local?.manualMaterials || []);
-  const [recommendedServiceId, setRecommendedServiceId] = useState(() => local?.recommendedServiceId || null);
+  const [findings, setFindings] = useState(() => seed?.findings || emptyFindings());
+  const [media, setMedia] = useState(() => (seed?.media || []).filter((m) => m.status === "done"));
+  const [bomLines, setBomLines] = useState(() => seed?.bomLines || []);
+  const [manualMaterials, setManualMaterials] = useState(() => seed?.manualMaterials || []);
+  const [recommendedServiceId, setRecommendedServiceId] = useState(() => seed?.recommendedServiceId || null);
   const [services, setServices] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

@@ -294,10 +294,16 @@ export function deriveNextAction(state) {
     const diagnosisPending = !state.diagnosisManualMapped || !state.diagnosisBomHasLines;
     if (op.stageCode === "diagnosis" && (!state.serviceSet || !state.pathHasModules || diagnosisPending)) {
       const diagnosed = (state.opEvidence || []).some((e) => e.stepNo === 5);
-      return diagnosed
-        ? wait("PLANNER", "SERVICE_NOT_SET", { stepNo: 5, retryAction: "COMPLETE" })
-        : { actor, stepNo: 5, action: "COMPLETE", serviceMissing: true };
+      if (!diagnosed) return { actor, stepNo: 5, action: "COMPLETE", serviceMissing: true };
+      // Alasan menunggu DIBEDAKAN (sandbox QA: pesan lama selalu menyuruh Lead "menetapkan layanan" padahal yang tertunda bahan manual).
+      if (!state.serviceSet || !state.pathHasModules) return wait("PLANNER", "SERVICE_NOT_SET", { stepNo: 5, retryAction: "COMPLETE" });
+      if (!state.diagnosisManualMapped) return wait("PLANNER", "DIAGNOSIS_MANUAL_UNMAPPED", { stepNo: 5, retryAction: "COMPLETE" });
+      return wait("PLANNER", "DIAGNOSIS_BOM_EMPTY", { stepNo: 5, retryAction: "COMPLETE" });
     }
+    // Diagnosa SUDAH tercatat & semua syarat (layanan, jalur, bahan manual terpetakan, BOM terisi) terpenuhi: PIC cukup "Lanjutkan"
+    // satu ketuk (payload kosong -> recordProductionStep memakai ulang diagnosa yang sudah ada). Sebelumnya flag ini tidak pernah
+    // dikirim server sehingga PIC dipaksa mengisi ulang wizard dari kosong.
+    if (op.stageCode === "diagnosis" && (state.opEvidence || []).some((e) => e.stepNo === 5)) return { actor, stepNo, action: "COMPLETE", continueOnly: true };
     return { actor, stepNo, action: "COMPLETE" };
   }
 

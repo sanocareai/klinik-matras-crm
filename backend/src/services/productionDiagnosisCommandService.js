@@ -34,6 +34,7 @@ import { authorizeOperator, loadRunForWrite } from "./productionWorkshopExecutio
 import { loadPlanForWrite, setPlannedBOMInTx, assertPlanBOMLines } from "./productionPlanningCommandService.js";
 import { tryProvisionUnitRoute } from "./productionRouting.js";
 import { normalizeMedia } from "../lib/domain/productionSteps.js";
+import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const FOUNDATION_ACTIONS = Object.freeze(["KEEP", "REINFORCE", "REPLACE"]);
@@ -372,7 +373,9 @@ export async function diagnosisBomValid(tx, runId, planId) {
 // Bacaan Unit 360 + wizard (prefill draft/tampilkan hasil submit). Baris DRAFT/RECORDED terbaru + riwayat
 // SUPERSEDED ringkas + bahan manual (semua status, deskripsi awal tidak pernah hilang).
 export async function getDiagnosisState(prisma, runId) {
-  const [current, historyRaw] = await Promise.all([
+  const plan = await prisma.productionRunPlan.findFirst({ where: { runId, status: { not: "CANCELLED" } }, select: { id: true } });
+  const [bomRows, current, historyRaw] = await Promise.all([
+    plan ? prisma.plannedBOMLine.findMany({ where: { planId: plan.id, status: "ACTIVE" }, orderBy: { createdAt: "asc" }, include: { material: { select: { id: true, code: true, name: true, unit: true } } } }) : [],
     prisma.diagnosisReport.findFirst({
       where: { runId, status: { in: ["DRAFT", "RECORDED"] } },
       orderBy: { version: "desc" },
@@ -390,6 +393,13 @@ export async function getDiagnosisState(prisma, runId) {
       recommendedServiceId: current.recommendedServiceId,
       recommendedServiceLabel: current.recommendedService?.labelId ?? null,
       recordedAt: current.recordedAt, createdAt: current.createdAt,
+      // Prefill "Revisi Diagnosis" (sandbox QA: wizard dibuka KOSONG padahal diagnosis sudah ada — kirim ulang = menimpa BOM).
+      // bomLines = SEMUA baris Planned BOM aktif (termasuk hasil pemetaan bahan manual) supaya revisi tidak menghilangkannya;
+      // photos membawa URL mentah (untuk dikirim ulang) + pratinjau bertanda tangan (untuk ditampilkan).
+      prefill: {
+        bomLines: bomRows.map((l) => ({ materialId: l.materialId, code: l.material.code, name: l.material.name, unit: l.material.unit, qty: Number(l.qty) })),
+        photos: (current.photoUrls || []).map((u) => ({ url: u, previewUrl: signEvidenceUrl(u) })).filter((x) => x.previewUrl),
+      },
       manualMaterials: current.manualMaterials.map((m) => ({
         id: m.id, description: m.description, estimatedUnit: m.estimatedUnit, qty: Number(m.qty), reason: m.reason, status: m.status,
         mappedMaterialCode: m.mappedMaterial?.code ?? null, mappedMaterialName: m.mappedMaterial?.name ?? null, mappedQty: m.mappedQty != null ? Number(m.mappedQty) : null,
