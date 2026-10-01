@@ -340,3 +340,19 @@ test("PARITAS tab & scope: leader hanya divisinya; filter kategori ikut; kosong 
   await setSetting(testPrisma, SETTING_KEYS.LAPORAN_DIVISI_AKTIF, "false");
   assert.equal((await unduh(w.finA.token, { from: "2026-09-01", to: "2026-09-30", divisi: ["DELIVERY"], tab: "ringkasan" })).status, 403);
 });
+
+test("SKRIP dry-run produksi (scripts/laporan-divisi-dryrun.js): berjalan sebagai subproses, BACA-SAJA, angka = laporan Finance; tidak menulis apa pun", async () => {
+  const w = await dunia({ sakelar: false });          // sakelar MATI: skrip tetap jalan (tidak bergantung sakelar)
+  await skenario(w);
+  const hitung = async () => JSON.stringify(await testPrisma.$queryRawUnsafe(`select (select count(*) from fin_journal_entries) j, (select count(*) from fin_journal_lines) l, (select count(*) from fin_expenses) e, (select count(*) from fin_division_budgets) b, (select count(*) from fin_settings) s`, ).then((r) => r.map((x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, String(v)])))));
+  const sebelum = await hitung();
+  const { execFileSync } = await import("node:child_process");
+  const keluar = execFileSync(process.execPath, ["scripts/laporan-divisi-dryrun.js", "--from", "2026-09-01", "--to", "2026-09-30"], { cwd: new URL("../../", import.meta.url), env: process.env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const j = JSON.parse(keluar);
+  assert.equal(j.bacaSaja, true);
+  assert.equal(j.perBulan.length, 1);
+  assert.equal(j.perBulan[0].jembatan.status.perhitungan, "COCOK");
+  assert.equal(j.perBulan[0].jembatan.aktual.residual, 0);
+  assert.ok(j.dryRun.kelompok.DETERMINISTIK.jumlahTransaksi > 0 && j.dryRun.kelompok.TIDAK_TERKLASIFIKASI.jumlahTransaksi > 0 && j.dryRun.kelompok.KONFLIK.jumlahTransaksi > 0);
+  assert.equal(await hitung(), sebelum, "skrip dry-run TIDAK boleh mengubah data");
+});
