@@ -49,7 +49,7 @@ export function docBatches(items) {
 
 export function docFriendlyError(error) {
   const code = error?.code || "";
-  if (error?.status === 0 || code === "NETWORK" || code === "TIMEOUT") return "Koneksi terputus. Foto belum terkirim — periksa sinyal lalu tekan Kirim lagi.";
+  if (error?.status === 0 || code === "NETWORK" || code === "TIMEOUT" || error?.name === "TypeError" || /Failed to fetch|NetworkError|Load failed/i.test(error?.message || "")) return "Koneksi terputus. Foto belum terkirim — periksa sinyal lalu tekan Kirim lagi.";
   if (code === "DOC_WRITER_OFF") return "Produksi V2 belum aktif untuk unit ini — dokumentasi belum bisa dikirim.";
   if (code === "DOC_MEDIA_ALREADY_SUBMITTED") return "Foto ini sudah tercatat di unit ini. Hapus foto yang sama lalu kirim lagi.";
   if (code === "DOC_MEDIA_OTHER_UNIT") return "Foto ini sudah dipakai sebagai bukti unit lain. Ambil foto baru.";

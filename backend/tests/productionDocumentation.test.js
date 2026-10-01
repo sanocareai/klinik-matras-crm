@@ -74,10 +74,10 @@ test("buildDocumentationMatrix: belum dimulai, jatuh tempo, kurang vs menunggu, 
   assert.equal(cat(m, "FOUNDATION").status, "NA"); assert.equal(cat(m, "LAYER_COMPONENT").status, "NA");
   assert.equal(cat(m, "PROCESS").due, true, "tanpa modul, Proses jatuh tempo setelah diagnosa");
   // Foto Corner (tahap 9 & 11) dan Hasil akhir (12) memakai sumber Corner/Produksi yang benar.
-  m = buildDocumentationMatrix(base({ recordedSteps: new Set([9, 11, 12]), nextStepNo: null, run: { origin: "CUSTODY_PICKUP", status: "ACTIVE" }, stepMedia: new Map([[9, media(url("9"))], [11, media(url("b"), url("c"))], [12, media(url("d"), url("e"))]]) }));
+  m = buildDocumentationMatrix(base({ recordedSteps: new Set([9, 11, 12]), nextStepNo: null, run: { origin: "CUSTODY_PICKUP", status: "ACTIVE" }, stepMedia: new Map([[9, media(url("9"))], [11, media(url("b"), url("c"))], [12, media(url("d"), url("e"), url("f"))]]) }));
   assert.deepEqual(cat(m, "CORNER").items.map((i) => i.source), ["PRODUKSI", "CORNER", "CORNER"]); assert.equal(cat(m, "FINAL_RESULT").status, "LENGKAP");
   // Foto QC dan diagnosis dihitung ke kategorinya.
-  m = buildDocumentationMatrix(base({ qcDone: true, extra: { qcPhotos: [{ url: "/media/unit-photos/qc.jpg" }], diagnosisPhotos: [{ url: url("f") }] } }));
+  m = buildDocumentationMatrix(base({ qcDone: true, extra: { qcPhotos: [{ url: "/media/unit-photos/qc.jpg" }, { url: "/media/unit-photos/qc2.jpg" }], diagnosisPhotos: [{ url: url("f") }] } }));
   assert.equal(cat(m, "QC").items[0].source, "QC"); assert.equal(cat(m, "QC").status, "LENGKAP"); assert.equal(cat(m, "TEARDOWN_DIAGNOSIS").items[0].source, "PRODUKSI");
   // Dokumentasi manual + koreksi: hanya versi terbaru berlaku; riwayat menyimpan versi lama beserta alasan koreksi.
   const rows = parseDocRows([
@@ -94,10 +94,10 @@ test("flag antrean & filter: Lengkap hanya bila semua kategori berlaku terpenuhi
   const stepMedia = new Map(ALL_STEPS.map((n) => [n, media(url(String(n % 10)), url("a" + String(n % 10)), url("b" + String(n % 10)))]));
   const full = buildDocumentationMatrix(base({
     run: { origin: "CUSTODY_PICKUP", status: "COMPLETED" }, recordedSteps: new Set(ALL_STEPS), nextStepNo: null, qcDone: true, stepMedia,
-    extra: { pickupPhoto: { url: "/media/unit-photo/u?exp=1&sig=a" }, qcPhotos: [{ url: "/media/unit-photos/q.jpg" }] },
+    extra: { pickupPhoto: { url: "/media/unit-photo/u?exp=1&sig=a" }, qcPhotos: [{ url: "/media/unit-photos/q.jpg" }, { url: "/media/unit-photos/q2.jpg" }] },
     docRows: parseDocRows([
-      { id: "p", stepCode: "DOC_PROCESS", actorId: null, createdAt: "2026-10-02T02:00:00Z", media: [{ url: url("p"), kind: "image" }], payload: { documentation: { category: "PROCESS", source: "MANUAL", items: [] } } },
-      { id: "r", stepCode: "DOC_READY_TO_SHIP", actorId: null, createdAt: "2026-10-02T02:00:00Z", media: [{ url: url("r"), kind: "image" }], payload: { documentation: { category: "READY_TO_SHIP", source: "GUDANG", items: [] } } },
+      { id: "p", stepCode: "DOC_PROCESS", actorId: null, createdAt: "2026-10-02T02:00:00Z", media: [{ url: url("p"), kind: "image" }, { url: url("q"), kind: "image" }], payload: { documentation: { category: "PROCESS", source: "MANUAL", items: [] } } },
+      { id: "r", stepCode: "DOC_READY_TO_SHIP", actorId: null, createdAt: "2026-10-02T02:00:00Z", media: [{ url: url("r"), kind: "image" }, { url: url("s"), kind: "image" }], payload: { documentation: { category: "READY_TO_SHIP", source: "GUDANG", items: [] } } },
     ]),
   }));
   assert.equal(full.flags.lengkap, true, JSON.stringify(full.missing)); assert.equal(full.missingTotal, 0);
@@ -144,4 +144,16 @@ test("pagar kode: route tulis butuh izin khusus; unggah memakai magic byte + pre
   assert.match(steps, /NOT: \{ stepCode: \{ startsWith: DOC_STEP_CODE_PREFIX \} \}/, "versi bukti tahap tidak dihitung dari baris dokumentasi");
   const exp = read("src/routes/productionExperience.js");
   assert.match(exp, /productionExperienceRouter\.use\("\/documentation", productionDocumentationRouter\)/);
+});
+
+test("matriks minimum keputusan Owner (1 Okt 2026): 12 kategori dengan minimum & label persis; minimum = kelengkapan, bukan gerbang lifecycle", () => {
+  assert.deepEqual(DOC_CATEGORIES.map((c) => [c.label, c.min]), [
+    ["Pickup / tiba", 1], ["Kondisi awal", 3], ["Sebelum bongkar", 2], ["Hasil bongkar / diagnosis", 3], ["Fondasi", 2], ["Lapisan / komponen", 2],
+    ["Proses pengerjaan", 2], ["Uji tekstur", 1], ["QC", 2], ["Corner", 2], ["Hasil akhir", 3], ["Siap kirim / packing", 2],
+  ]);
+  // Gerbang lifecycle (MEDIA_RULES command tahap) tidak dibaca dari matriks dan tidak berubah: modul dokumentasi tidak diimpor stage engine.
+  const steps = read("src/services/productionStepCommandService.js");
+  assert.doesNotMatch(steps.replace(/import \{ isDocumentationRow, DOC_STEP_CODE_PREFIX \} from "[^"]+";/, ""), /DOC_CATEGORIES|buildDocumentationMatrix|\.min\b.*requireMedia/);
+  const stepsDomain = read("src/lib/domain/productionSteps.js");
+  assert.doesNotMatch(stepsDomain, /productionDocumentation/);
 });

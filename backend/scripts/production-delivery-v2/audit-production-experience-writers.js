@@ -3,6 +3,9 @@
 //  1. production_step_evidence_v2: HANYA command owner P8 (bukti tahap) dan command owner P10B (dokumentasi, stepCode DOC_*), HANYA create
 //     (immutable: update/upsert/delete di mana pun = pelanggaran). Command dokumentasi TIDAK boleh menulis lifecycle (run/operasi/fase/unit/stok/
 //     revisi) dan loadStepContext WAJIB memisahkan baris DOC_ dari lifecycle (isDocumentationRow).
+//  1b. READER production_step_evidence_v2 (P10B): baris dokumentasi (DOC_*) TIDAK BOLEH dihitung sebagai lifecycle. Semua pembaca Prisma/SQL
+//     tabel itu di src/ harus berada di allowlist (STEP, MATERIAL_RETURN, DOC_SERVICE; SQL mentah: MEDIA route + DOC_SERVICE) dan pembaca
+//     lifecycle (STEP/MATERIAL_RETURN) WAJIB menyaring DOC_* (isDocumentationRow / NOT startsWith DOC_). Pembaca baru = pelanggaran sampai ditinjau.
 //  2. production_material_shortages_v2: HANYA command owner P8.
 //  3. Command P8 TIDAK menulis langsung operasi/run/fase/ledger tahap/unit/stok/reservasi/HPP/jurnal — transisi lewat helper P5 (apply*InTx).
 //  4. Command P8 wajib memakai deriveNextAction + validateStepEvidence + helper P5 (applyStartInTx/applyCompleteInTx/applyPauseInTx/applyResumeInTx).
@@ -21,6 +24,10 @@ const READ = "src/services/productionExperienceReadService.js";
 const ROUTE = "src/routes/productionExperience.js";
 const MEDIA = "src/routes/productionEvidenceMedia.js";
 const DOC_SERVICE = "src/services/productionDocumentationService.js";
+const MATERIAL_RETURN = "src/services/productionMaterialReturnService.js";
+const READER_ALLOW = new Set(["src/services/productionStepCommandService.js", MATERIAL_RETURN, DOC_SERVICE]);
+const SQL_READER_ALLOW = new Set([MEDIA, DOC_SERVICE]);
+const READ_OPS = "(findMany|findFirst|findFirstOrThrow|findUnique|findUniqueOrThrow|count|aggregate|groupBy)";
 const DOC_READ = "src/services/productionDocumentationRead.js";
 const DOC_ROUTE = "src/routes/productionDocumentation.js";
 const LIFECYCLE_HELPERS = /\b(applyStartInTx|applyCompleteInTx|applyPauseInTx|applyResumeInTx|prepareStartInTx|bumpRunRevisionInTx|transitionPhases)\b/;
@@ -60,6 +67,13 @@ export function auditProductionExperienceWriters(files) {
     for (const match of text.matchAll(writeRegex("productionMaterialShortage"))) {
       add(rel, match.index, text, "SHORTAGE_WRITER", rel === STEP ? "OWNER" : "UNOWNED_WRITER", rel === STEP);
     }
+    for (const match of text.matchAll(new RegExp(String.raw`\.productionStepEvidence\.${READ_OPS}\s*\(`, "g"))) {
+      add(rel, match.index, text, "STEP_EVIDENCE_READER", READER_ALLOW.has(rel) ? "READER_ALLOWED" : "UNREVIEWED_READER", READER_ALLOW.has(rel));
+    }
+    if (/\b(FROM|JOIN)\s+production_step_evidence_v2\b/i.test(text)) {
+      const idx = text.search(/\b(FROM|JOIN)\s+production_step_evidence_v2\b/i);
+      add(rel, idx, text, "STEP_EVIDENCE_SQL_READER", SQL_READER_ALLOW.has(rel) ? "SQL_READER_ALLOWED" : "UNREVIEWED_SQL_READER", SQL_READER_ALLOW.has(rel));
+    }
     if ([STEP, READ, ROUTE, MEDIA].includes(rel) && OUTBOX_DELIVERED.test(text)) add(rel, null, "", "OUTBOX_STATUS", "P8_MARKS_OUTBOX_DELIVERED", false);
   }
   const step = stripComments((files.get(STEP) || "").replace(/\r\n/g, "\n"));
@@ -69,6 +83,11 @@ export function auditProductionExperienceWriters(files) {
   for (const name of REQUIRED_IN_STEP) {
     if (!new RegExp(String.raw`\b${name}\(`).test(step)) add(STEP, null, "", "STEP_CANONICAL_PATH", `MISSING_${name}`, false);
   }
+  // Pembaca lifecycle WAJIB menyaring baris DOC_*.
+  const matReturn = stripComments((files.get(MATERIAL_RETURN) || "").replace(/\r\n/g, "\n"));
+  if (matReturn && new RegExp(String.raw`\.productionStepEvidence\.${READ_OPS}`).test(matReturn) && !/startsWith:\s*"DOC_"/.test(matReturn)) add(MATERIAL_RETURN, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_material_return", false);
+  if (!/allEvidence\.filter\(\(e\) => !isDocumentationRow\(e\)\)/.test(step)) add(STEP, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_loadStepContext", false);
+  if (!/NOT:\s*\{\s*stepCode:\s*\{\s*startsWith:\s*DOC_STEP_CODE_PREFIX/.test(step)) add(STEP, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_writeEvidence_version", false);
   // Command dokumentasi: tidak menulis lifecycle, tidak memanggil helper lifecycle, dan menulis HANYA baris DOC_ (docStepCode).
   const docSvc = stripComments((files.get(DOC_SERVICE) || "").replace(/\r\n/g, "\n"));
   if (docSvc) {

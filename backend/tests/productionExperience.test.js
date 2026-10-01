@@ -229,6 +229,34 @@ test("audit writer P8 pada source aktual: 0 pelanggaran", () => {
   assert.deepEqual(report.findings.filter((f) => f.kind === "STEP_EVIDENCE_WRITER").map((f) => f.disposition).sort(), ["DOCUMENTATION_OWNER_CREATE", "OWNER_CREATE"]);
 });
 
+test("audit READER P10B: semua pembaca production_step_evidence_v2 teraudit; baris DOC_* tidak pernah dihitung sebagai lifecycle", () => {
+  const report = runProductionExperienceWriterAudit(backendRoot);
+  const readers = report.findings.filter((f) => f.kind === "STEP_EVIDENCE_READER" || f.kind === "STEP_EVIDENCE_SQL_READER");
+  assert.ok(readers.length >= 4, "pembaca Prisma + SQL terdeteksi: " + readers.map((r) => r.file + ":" + r.disposition).join(","));
+  assert.deepEqual([...new Set(readers.map((r) => r.file))].sort(), [
+    "src/routes/productionEvidenceMedia.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionStepCommandService.js",
+  ]);
+  assert.equal(report.findings.filter((f) => !f.ok).length, 0);
+  const sources = loadBackendSources(backendRoot);
+  const STEP = "src/services/productionStepCommandService.js";
+  // pembaca liar (Prisma dan SQL) = pelanggaran
+  const wild = new Map(sources);
+  wild.set("src/services/pembacaLiar.js", "await prisma.productionStepEvidence.findMany({ where: { runId } });\nawait prisma.$queryRaw`SELECT * FROM production_step_evidence_v2`;\n");
+  const d1 = auditProductionExperienceWriters(wild).findings.filter((f) => !f.ok).map((f) => f.disposition);
+  assert.ok(d1.includes("UNREVIEWED_READER") && d1.includes("UNREVIEWED_SQL_READER"), d1.join(","));
+  // filter DOC_ dihapus dari loadStepContext / versi writeEvidence / pembaca retur = pelanggaran
+  const noFilter = new Map(sources);
+  noFilter.set(STEP, sources.get(STEP).replace("allEvidence.filter((e) => !isDocumentationRow(e))", "allEvidence"));
+  assert.ok(auditProductionExperienceWriters(noFilter).findings.some((f) => f.disposition === "MISSING_DOC_FILTER_loadStepContext"));
+  const noVersionFilter = new Map(sources);
+  noVersionFilter.set(STEP, sources.get(STEP).replace("NOT: { stepCode: { startsWith: DOC_STEP_CODE_PREFIX } }", ""));
+  assert.ok(auditProductionExperienceWriters(noVersionFilter).findings.some((f) => f.disposition === "MISSING_DOC_FILTER_writeEvidence_version"));
+  const MAT = "src/services/productionMaterialReturnService.js";
+  const noMat = new Map(sources);
+  noMat.set(MAT, sources.get(MAT).replace('NOT: { stepCode: { startsWith: "DOC_" } }', ""));
+  assert.ok(auditProductionExperienceWriters(noMat).findings.some((f) => f.disposition === "MISSING_DOC_FILTER_material_return"));
+});
+
 test("audit writer P10B menangkap: command dokumentasi menulis lifecycle/memanggil helper tahap, tanpa penanda DOC_, atau loadStepContext tak memisahkan baris dokumentasi", () => {
   const sources = loadBackendSources(backendRoot);
   const DOC = "src/services/productionDocumentationService.js";

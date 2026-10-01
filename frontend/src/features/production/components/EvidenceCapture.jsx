@@ -11,10 +11,12 @@ import { friendlyError } from "@/features/production/experience.js";
 // P10B — komponen yang SAMA dipakai Aplikasi Dokumentasi lewat prop opsional (perilaku bawaan tahap TIDAK berubah):
 //   uploadFile(runId, file, onProgress)  pengunggah pengganti (default: bukti tahap)    imagesOnly  sembunyikan tombol video, hanya foto
 //   withCaption                          kolom keterangan per foto (item.caption)        reorderable tombol geser urutan (kiri/kanan)
+//   controlled {onAddFiles,onRemove,onCaption,onMove,onRetry}  induk memegang SELURUH state & unggahan (draf offline IndexedDB, P10B);
+//                                        komponen hanya menampilkan item (status: uploading|done|error|pending) dan meneruskan aksi.
 let seq = 0;
 const nextId = () => `ev-${Date.now().toString(36)}-${++seq}`;
 
-export function EvidenceCapture({ runId, items, onChange, rule = { min: 0, video: false }, disabled = false, uploadFile = null, imagesOnly = false, withCaption = false, reorderable = false, hint = null }) {
+export function EvidenceCapture({ runId, items, onChange, rule = { min: 0, video: false }, disabled = false, uploadFile = null, imagesOnly = false, withCaption = false, reorderable = false, hint = null, controlled = null }) {
   const filesRef = useRef(new Map()); // id -> File (untuk coba lagi)
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -24,7 +26,10 @@ export function EvidenceCapture({ runId, items, onChange, rule = { min: 0, video
     for (const item of itemsRef.current) if (item.localUrl) URL.revokeObjectURL(item.localUrl);
   }, []);
 
-  const patch = (id, change) => onChange((prev) => prev.map((it) => (it.id === id ? { ...it, ...change } : it)));
+  const patch = (id, change) => {
+    if (controlled) { if ("caption" in change) controlled.onCaption?.(id, change.caption); return; }
+    onChange((prev) => prev.map((it) => (it.id === id ? { ...it, ...change } : it)));
+  };
 
   async function uploadOne(id) {
     const file = filesRef.current.get(id);
@@ -45,6 +50,7 @@ export function EvidenceCapture({ runId, items, onChange, rule = { min: 0, video
   function addFiles(fileList) {
     const files = Array.from(fileList || []).filter((f) => !imagesOnly || f.type.startsWith("image/"));
     if (!files.length) return;
+    if (controlled) { controlled.onAddFiles?.(files); return; }
     const added = files.map((file) => {
       const id = nextId();
       filesRef.current.set(id, file);
@@ -55,6 +61,7 @@ export function EvidenceCapture({ runId, items, onChange, rule = { min: 0, video
   }
 
   function remove(id) {
+    if (controlled) { controlled.onRemove?.(id); return; }
     const item = items.find((it) => it.id === id);
     if (item?.localUrl) URL.revokeObjectURL(item.localUrl);
     filesRef.current.delete(id);
@@ -62,6 +69,7 @@ export function EvidenceCapture({ runId, items, onChange, rule = { min: 0, video
   }
 
   function move(id, delta) {
+    if (controlled) { controlled.onMove?.(id, delta); return; }
     onChange((prev) => {
       const from = prev.findIndex((it) => it.id === id);
       const to = from + delta;
@@ -106,7 +114,7 @@ export function EvidenceCapture({ runId, items, onChange, rule = { min: 0, video
               <div className="relative">
                 {item.kind === "video"
                   ? <video src={item.localUrl || item.previewUrl} className="aspect-square w-full object-cover" muted playsInline preload="metadata" />
-                  : <img src={item.localUrl || item.previewUrl} alt="Bukti" className="aspect-square w-full object-cover" />}
+                  : <img src={item.localUrl || item.previewUrl || item.thumb} alt="Bukti" className="aspect-square w-full object-cover" />}
                 {item.kind === "video" && <span className="absolute left-1 top-1 rounded-chip bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white">VIDEO</span>}
                 {reorderable && <span className="absolute left-1 top-1 rounded-chip bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white" data-testid="capture-order">{index + 1}</span>}
                 {item.status === "uploading" && (
@@ -115,11 +123,14 @@ export function EvidenceCapture({ runId, items, onChange, rule = { min: 0, video
                     <span className="text-[12px] font-semibold">{item.progress ?? 0}%</span>
                   </div>
                 )}
+                {item.status === "pending" && (
+                  <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-1 text-center text-[10.5px] font-semibold text-white" data-testid="capture-pending">{item.pendingText || "Menunggu sinyal"}</div>
+                )}
                 {item.status === "error" && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-red/80 p-1 text-center text-white">
                     <span className="text-[10.5px] leading-tight">{item.error || "Gagal"}</span>
-                    {filesRef.current.has(item.id) && (
-                      <button type="button" onClick={() => uploadOne(item.id)} data-testid="capture-retry" className="flex min-h-[32px] items-center gap-1 rounded-chip bg-white/25 px-2 text-[11px] font-semibold">
+                    {(controlled ? !!controlled.onRetry : filesRef.current.has(item.id)) && (
+                      <button type="button" onClick={() => (controlled ? controlled.onRetry(item.id) : uploadOne(item.id))} data-testid="capture-retry" className="flex min-h-[32px] items-center gap-1 rounded-chip bg-white/25 px-2 text-[11px] font-semibold">
                         <RotateCcw size={12} aria-hidden /> Coba lagi
                       </button>
                     )}
@@ -133,7 +144,7 @@ export function EvidenceCapture({ runId, items, onChange, rule = { min: 0, video
               {(withCaption || reorderable) && (
                 <div className="space-y-1.5 p-1.5">
                   {withCaption && (
-                    <input type="text" value={item.caption || ""} maxLength={200} onChange={(e) => patch(item.id, { caption: e.target.value })} disabled={disabled}
+                    <input type="text" {...(controlled ? { defaultValue: item.caption || "" } : { value: item.caption || "" })} maxLength={200} onChange={(e) => patch(item.id, { caption: e.target.value })} disabled={disabled}
                       aria-label="Keterangan foto" placeholder="Keterangan (opsional)" data-testid="capture-caption"
                       className="w-full min-w-0 rounded-btn border border-line bg-surface px-2 py-1.5 text-[12.5px] text-ink" />
                   )}

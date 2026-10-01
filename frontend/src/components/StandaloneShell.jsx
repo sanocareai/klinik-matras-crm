@@ -17,13 +17,13 @@ export function useOnline() {
   return online;
 }
 
-export default function StandaloneShell({ title, subtitle, onRefresh, refreshing = false, backHref = "/portal", children, wide = false, right = null }) {
+export default function StandaloneShell({ title, subtitle, onRefresh, refreshing = false, backHref = "/portal", children, wide = false, right = null, onLeave = null }) {
   const online = useOnline();
   return (
     <div className="min-h-[100dvh] bg-base text-ink">
       <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className={`mx-auto flex items-center gap-2 px-3 py-2 ${wide ? "max-w-none" : "max-w-[640px]"}`}>
-          <Link to={backHref} aria-label="Kembali ke SANSS" className="flex h-11 w-11 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint">
+          <Link to={backHref} onClick={(e) => { if (onLeave && !onLeave()) e.preventDefault(); }} aria-label="Kembali ke SANSS" className="flex h-11 w-11 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint">
             <ArrowLeft size={20} aria-hidden />
           </Link>
           <div className="min-w-0 flex-1">

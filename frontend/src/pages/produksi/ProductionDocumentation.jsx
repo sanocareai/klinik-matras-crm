@@ -5,10 +5,8 @@ import StandaloneShell from "@/components/StandaloneShell.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
-import EvidenceCapture from "@/features/production/components/EvidenceCapture.jsx";
-import {
-  DOC_FILTERS, DOC_GROUP_LABEL, DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS, docBatches, docFriendlyError, isRetryableDocError, itemsForCorrection, submitState, toSubmitItems,
-} from "@/features/production/documentation.js";
+import { CaptureSheet, DraftPanel, useDraftManager } from "@/features/production/DocumentationDraftUi.jsx";
+import { DOC_FILTERS, DOC_GROUP_LABEL, DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS, docBatches, docFriendlyError } from "@/features/production/documentation.js";
 
 // Aplikasi Dokumentasi (P10B) — mobile-first/PWA. Antrean unit cohort + matriks dokumentasi kanonis (12 kategori, dari backend) +
 // kamera-first/galeri, keterangan, urutan, unggah per berkas dengan progres/coba lagi, dan koreksi bersejarah.
@@ -16,7 +14,6 @@ import {
 // tombol tulis hanya tampil bila `canWrite` dari server. Tidak ada harga/pembayaran/finance di layar ini.
 const POLL_MS = 60_000;
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—");
-const newKey = () => `p10b-doc-${crypto.randomUUID()}`;
 
 function SafeImage({ src, alt = "", className = "", size = null }) {
   const [broken, setBroken] = useState(false);
@@ -110,64 +107,6 @@ function Lightbox({ item, onClose, onCorrect, canCorrect }) {
   );
 }
 
-// ---------- Kamera/galeri + kirim (tambah) atau koreksi ----------
-function CaptureSheet({ detail, category, correction, onClose, onDone }) {
-  const [items, setItems] = useState(() => (correction ? itemsForCorrection(category.items, correction.evidenceId) : []));
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const keyRef = useRef(null);
-  const state = submitState(items, { reason, correcting: !!correction });
-
-  async function submit() {
-    if (!state.ok || busy) return;
-    setBusy(true); setError("");
-    keyRef.current = keyRef.current || newKey();
-    const body = { category: category.key, items: toSubmitItems(items), ...(correction ? { supersedesEvidenceId: correction.evidenceId, reason: reason.trim() } : {}) };
-    try {
-      const res = correction ? await api.correctProductionV2Documentation(detail.runId, body, keyRef.current) : await api.submitProductionV2Documentation(detail.runId, body, keyRef.current);
-      keyRef.current = null;
-      onDone(`${res.count} foto ${correction ? "koreksi " : ""}terkirim ke ${category.label}.`);
-    } catch (e) {
-      if (!isRetryableDocError(e)) keyRef.current = null;
-      setError(docFriendlyError(e));
-    } finally { setBusy(false); }
-  }
-
-  return (
-    <div role="dialog" aria-modal="true" aria-label={`${correction ? "Koreksi" : "Tambah"} dokumentasi ${category.label}`} className="fixed inset-0 z-[60] flex items-end justify-center bg-black/45 sm:items-center" data-testid="capture-sheet">
-      <div className="flex max-h-[94dvh] w-full max-w-[640px] flex-col rounded-t-card bg-surface shadow-xl sm:rounded-card" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-        <div className="flex items-start justify-between gap-2 border-b border-line px-4 py-3">
-          <div className="min-w-0">
-            <p className="m-0 text-[16px] font-bold text-ink">{correction ? "Koreksi" : "Tambah foto"} · {category.label}</p>
-            <p className="m-0 break-words text-[12px] text-ink3 [overflow-wrap:anywhere]">{detail.unit.unitCode} · {detail.customerName || "Customer"}</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Tutup" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint"><X size={20} aria-hidden /></button>
-        </div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-          {correction && <p className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Koreksi membuat versi BARU. Versi lama tetap tersimpan di riwayat. Foto lama ikut di bawah — hapus yang salah, tambah yang benar.</p>}
-          <EvidenceCapture runId={detail.runId} items={items} onChange={setItems} rule={{ min: 0 }} disabled={busy}
-            uploadFile={(runId, file, onProgress) => api.uploadProductionV2Documentation(runId, [file], onProgress)} imagesOnly withCaption reorderable
-            hint={`Min. ${category.min} foto disarankan untuk kategori ini.`} />
-          {correction && (
-            <label className="block text-[12.5px] font-semibold text-ink2">Alasan koreksi (wajib)
-              <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={300} data-testid="correction-reason"
-                className="mt-1 w-full rounded-btn border border-line bg-surface px-3 py-2 text-[13px] font-normal text-ink" placeholder="Mis. foto tertukar dengan unit lain" />
-            </label>
-          )}
-          {error && <p role="alert" className="m-0 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red" data-testid="submit-error">{error}</p>}
-        </div>
-        <div className="flex items-center gap-2 border-t border-line px-4 py-3">
-          <p className="m-0 min-w-0 flex-1 text-[12px] text-ink3">{state.ok ? `${state.count} foto siap dikirim` : state.reason}</p>
-          <Button onClick={submit} disabled={!state.ok || busy} className="min-h-[48px] min-w-[132px]" data-testid="submit-documentation">
-            {busy ? <><Loader2 size={16} className="animate-spin" aria-hidden /> Mengirim…</> : correction ? "Kirim Koreksi" : "Kirim Foto"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function CategoryBlock({ cat, canWrite, onAdd, onOpenPhoto, onCorrectBatch }) {
   const st = DOC_STATUS[cat.status] || DOC_STATUS.MENUNGGU;
   const batches = docBatches(cat.items);
@@ -219,7 +158,7 @@ function CategoryBlock({ cat, canWrite, onAdd, onOpenPhoto, onCorrectBatch }) {
   );
 }
 
-function DetailSheet({ runId, onClose, onChanged }) {
+function DetailSheet({ runId, onClose, onChanged, drafts, resume, onResumeConsumed }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -229,6 +168,8 @@ function DetailSheet({ runId, onClose, onChanged }) {
     try { setDetail(await api.getProductionV2DocDetail(runId)); setError(""); } catch (e) { setError(docFriendlyError(e)); }
   }, [runId]);
   useEffect(() => { load(); }, [load]);
+  // Pengiriman latar belakang (antrean offline) selesai -> segarkan matriks.
+  useEffect(() => { if (drafts.lastSent) load(); }, [drafts.lastSent, load]);
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(t); }, [notice]);
 
   const groups = useMemo(() => {
@@ -236,6 +177,13 @@ function DetailSheet({ runId, onClose, onChanged }) {
     return ["BEFORE", "PROCESS", "AFTER"].map((g) => ({ key: g, label: DOC_GROUP_LABEL[g], cats: detail.categories.filter((c) => c.group === g) }));
   }, [detail]);
   const catOf = (key) => detail.categories.find((c) => c.key === key);
+  // "Lanjutkan" dari panel draf: buka sheet kamera untuk draf itu begitu detail termuat.
+  useEffect(() => {
+    if (!resume || !detail) return;
+    const cat = detail.categories.find((c) => c.key === resume.category);
+    if (cat) setCapture({ category: cat, correction: resume.correction ? { evidenceId: resume.correction.evidenceId } : undefined, resumeId: resume.id });
+    onResumeConsumed();
+  }, [resume, detail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Dokumentasi unit" className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" data-testid="doc-detail">
@@ -267,7 +215,7 @@ function DetailSheet({ runId, onClose, onChanged }) {
                 <div key={g.key} className="space-y-2">
                   <h3 className="m-0 text-[13px] font-bold uppercase tracking-wide text-ink2" data-testid="doc-group" data-group={g.key}>{g.label}</h3>
                   {g.cats.map((cat) => (
-                    <CategoryBlock key={cat.key} cat={cat} canWrite={detail.canWrite}
+                    <CategoryBlock key={cat.key} cat={cat} canWrite={detail.canWrite && !!drafts.manager}
                       onAdd={(c) => setCapture({ category: c })} onOpenPhoto={setPhoto}
                       onCorrectBatch={(c, b) => setCapture({ category: c, correction: b })} />
                   ))}
@@ -277,9 +225,10 @@ function DetailSheet({ runId, onClose, onChanged }) {
           )}
         </div>
       </div>
-      {capture && detail && (
-        <CaptureSheet detail={detail} category={catOf(capture.category.key)} correction={capture.correction} onClose={() => setCapture(null)}
-          onDone={async (msg) => { setCapture(null); setNotice(msg); await load(); onChanged(); }} />
+      {capture && detail && drafts.manager && (
+        <CaptureSheet manager={drafts.manager} online={drafts.online} detail={detail} category={catOf(capture.category.key)} correction={capture.correction} resumeId={capture.resumeId}
+          onClose={() => { setCapture(null); drafts.refresh(); }}
+          onDone={async (msg) => { setCapture(null); setNotice(msg); await load(); onChanged(); drafts.refresh(); }} />
       )}
       {photo && <Lightbox item={photo} canCorrect={detail?.canWrite} onClose={() => setPhoto(null)}
         onCorrect={(it) => { const cat = catOf(it.category || detail.categories.find((c) => c.label === it.categoryLabel)?.key); setPhoto(null); if (cat && it.evidenceId) setCapture({ category: cat, correction: { evidenceId: it.evidenceId } }); }} />}
@@ -295,7 +244,11 @@ export default function ProductionDocumentation() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [openRun, setOpenRun] = useState(null);
+  const [resume, setResume] = useState(null);
+  const [standalone, setStandalone] = useState(null); // draf yang dilanjutkan dari panel (tanpa memuat detail unit dari server)
+  const [purgeNote, setPurgeNote] = useState(true);
   const reqRef = useRef(0);
+  const drafts = useDraftManager();
 
   useEffect(() => { const t = setTimeout(() => setQDebounced(q.trim()), 300); return () => clearTimeout(t); }, [q]);
   const load = useCallback(async () => {
@@ -313,11 +266,18 @@ export default function ProductionDocumentation() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", tick); };
   }, [load, openRun]);
 
+  // Pengiriman latar belakang selesai -> segarkan antrean.
+  useEffect(() => { if (drafts.lastSent) load(); }, [drafts.lastSent, load]);
   const items = data?.items || [];
+  const purged = drafts.summary && (drafts.summary.foreign + drafts.summary.corrupt + drafts.summary.schema > 0 || drafts.summary.reset);
   return (
-    <StandaloneShell title="Aplikasi Dokumentasi" subtitle={data ? `${items.length} unit${filter !== "ALL" ? " (disaring)" : ""}` : "Memuat…"} onRefresh={() => { setLoading(true); load(); }} refreshing={loading} wide>
+    <StandaloneShell title="Aplikasi Dokumentasi" subtitle={data ? `${items.length} unit${filter !== "ALL" ? " (disaring)" : ""}` : "Memuat…"} onLeave={drafts.confirmLeave} onRefresh={() => { setLoading(true); load(); }} refreshing={loading} wide>
       <div className="mx-auto w-full max-w-[1100px] space-y-3">
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red" data-testid="queue-error">{error}</div>}
+        {!drafts.persistent && <div role="status" className="rounded-btn bg-orangebg px-3 py-2.5 text-[12.5px] text-orange" data-testid="no-persist">Penyimpanan offline tidak tersedia di browser ini (mis. mode privat). Foto hanya tersimpan selama halaman terbuka — kirim sebelum menutup.</div>}
+        {purged && purgeNote && <div role="status" className="flex items-start justify-between gap-2 rounded-btn bg-inset px-3 py-2.5 text-[12.5px] text-ink2" data-testid="purge-note"><span>Draf lama dari pengguna lain atau yang rusak sudah dibersihkan dari HP ini.</span><button type="button" onClick={() => setPurgeNote(false)} aria-label="Tutup pemberitahuan" className="shrink-0 text-ink3">Tutup</button></div>}
+        {drafts.lastSent && <div role="status" className="rounded-btn bg-greenbg px-3 py-2.5 text-[12.5px] font-semibold text-green" data-testid="sent-note" key={drafts.lastSent.at}>{drafts.lastSent.count} foto {drafts.lastSent.corrected ? "koreksi " : ""}terkirim{drafts.lastSent.label ? ` ke ${drafts.lastSent.label}` : ""}{drafts.lastSent.unitCode ? ` (${drafts.lastSent.unitCode})` : ""}.</div>}
+        {drafts.manager && <DraftPanel manager={drafts.manager} records={drafts.records} online={drafts.online} onResume={(r) => setStandalone(r)} />}
         <div className="relative">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Cari customer, resi, atau kode unit" placeholder="Cari customer, resi, atau kode unit"
@@ -343,7 +303,15 @@ export default function ProductionDocumentation() {
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3" data-testid="doc-list">{items.map((item) => <UnitCard key={item.runId} item={item} onOpen={setOpenRun} />)}</div>
         )}
       </div>
-      {openRun && <DetailSheet runId={openRun} onClose={() => setOpenRun(null)} onChanged={load} />}
+      {standalone && drafts.manager && (
+        <CaptureSheet manager={drafts.manager} online={drafts.online} resumeId={standalone.id}
+          detail={{ runId: standalone.runId, unit: { unitCode: standalone.unitCode || "Unit" }, customerName: standalone.customerName }}
+          category={{ key: standalone.category, label: standalone.categoryLabel || "Dokumentasi", min: null, items: [] }}
+          correction={standalone.correction ? { evidenceId: standalone.correction.evidenceId } : undefined}
+          onClose={() => { setStandalone(null); drafts.refresh(); }}
+          onDone={async (msg) => { setStandalone(null); drafts.refresh(); load(); }} />
+      )}
+      {openRun && <DetailSheet runId={openRun} onClose={() => { setOpenRun(null); setResume(null); }} onChanged={load} drafts={drafts} resume={resume} onResumeConsumed={() => setResume(null)} />}
     </StandaloneShell>
   );
 }

@@ -8,6 +8,10 @@
 // tahap (productionStepCommandService) setelah gate buktinya terpenuhi.
 //
 // Foto yang sudah ada dari tahap/QC/driver DIHITUNG ke kategori yang sesuai (sumber ditampilkan), bukan disalin ulang.
+// Minimum per kategori = KELENGKAPAN dokumentasi (keputusan Owner 1 Okt 2026), BUKAN gerbang lifecycle: hanya foto yang diwajibkan command tahap
+// (MEDIA_RULES di productionSteps.js) yang boleh memblokir tahap; kekurangan dokumentasi hanya ditampilkan.
+// Minimum per kategori = KELENGKAPAN dokumentasi (keputusan Owner 1 Okt 2026), BUKAN gerbang lifecycle: hanya foto yang diwajibkan command tahap
+// (MEDIA_RULES di productionSteps.js) yang boleh memblokir tahap; kekurangan dokumentasi hanya ditampilkan.
 
 export const DOC_STEP_CODE_PREFIX = "DOC_";
 export const DOC_VERSION_BASE = 1000; // versi bukti tahap asli < 1000; baris dokumentasi >= 1000 (unik per run+stepNo)
@@ -26,17 +30,17 @@ export const DOC_SOURCES = Object.freeze({
 //   {qc:true} = setelah QC tercatat · {runCompleted:true} = setelah run selesai · {always:true} = sejak run ada
 export const DOC_CATEGORIES = Object.freeze([
   { key: "PICKUP_ARRIVAL", label: "Pickup / tiba", group: "BEFORE", min: 1, storeStepNo: 1, stepSources: [], pickupPhoto: true, requiresPickupOrigin: true, due: { always: true } },
-  { key: "INITIAL_CONDITION", label: "Kondisi awal", group: "BEFORE", min: 1, storeStepNo: 2, stepSources: [2], due: { step: 2 } },
+  { key: "INITIAL_CONDITION", label: "Kondisi awal", group: "BEFORE", min: 3, storeStepNo: 2, stepSources: [2], due: { step: 2 } },
   { key: "BEFORE_TEARDOWN", label: "Sebelum bongkar", group: "BEFORE", min: 2, storeStepNo: 1, stepSources: [1], due: { step: 1 } },
-  { key: "TEARDOWN_DIAGNOSIS", label: "Hasil bongkar / diagnosis", group: "BEFORE", min: 2, storeStepNo: 3, stepSources: [3], diagnosisPhotos: true, due: { step: 3 } },
+  { key: "TEARDOWN_DIAGNOSIS", label: "Hasil bongkar / diagnosis", group: "BEFORE", min: 3, storeStepNo: 3, stepSources: [3], diagnosisPhotos: true, due: { step: 3 } },
   { key: "FOUNDATION", label: "Fondasi", group: "PROCESS", min: 2, storeStepNo: 6, stepSources: [4, 6], needsStep: 6, due: { step: 6 } },
   { key: "LAYER_COMPONENT", label: "Lapisan / komponen", group: "PROCESS", min: 2, storeStepNo: 7, stepSources: [7], needsStep: 7, due: { step: 7 } },
-  { key: "PROCESS", label: "Proses", group: "PROCESS", min: 1, storeStepNo: 7, stepSources: [], due: { modulesDone: true } },
+  { key: "PROCESS", label: "Proses pengerjaan", group: "PROCESS", min: 2, storeStepNo: 7, stepSources: [], due: { modulesDone: true } },
   { key: "TEXTURE_TEST", label: "Uji tekstur", group: "AFTER", min: 1, storeStepNo: 8, stepSources: [8], due: { step: 8 } },
-  { key: "QC", label: "QC", group: "AFTER", min: 1, storeStepNo: 8, stepSources: [], qcPhotos: true, due: { qc: true } },
+  { key: "QC", label: "QC", group: "AFTER", min: 2, storeStepNo: 8, stepSources: [], qcPhotos: true, due: { qc: true } },
   { key: "CORNER", label: "Corner", group: "AFTER", min: 2, storeStepNo: 11, stepSources: [9, 11], due: { step: 11 } },
-  { key: "FINAL_RESULT", label: "Hasil akhir", group: "AFTER", min: 2, storeStepNo: 12, stepSources: [12], due: { step: 12 } },
-  { key: "READY_TO_SHIP", label: "Siap kirim", group: "AFTER", min: 1, storeStepNo: 12, stepSources: [], due: { runCompleted: true } },
+  { key: "FINAL_RESULT", label: "Hasil akhir", group: "AFTER", min: 3, storeStepNo: 12, stepSources: [12], due: { step: 12 } },
+  { key: "READY_TO_SHIP", label: "Siap kirim / packing", group: "AFTER", min: 2, storeStepNo: 12, stepSources: [], due: { runCompleted: true } },
 ]);
 export const DOC_CATEGORY_BY_KEY = Object.freeze(Object.fromEntries(DOC_CATEGORIES.map((c) => [c.key, c])));
 

@@ -49,6 +49,13 @@ export default function App() {
   }
 
   function handleLogout() {
+    // P10B: draf unggahan dokumentasi offline milik pengguna ini ikut dibersihkan (tidak boleh terbaca pengguna berikutnya di HP yang sama).
+    const principal = user?.id ? String(user.id) : null;
+    if (principal) {
+      import("./features/production/documentationDrafts.js")
+        .then(({ purgePrincipalDrafts, createIdbAdapter }) => purgePrincipalDrafts(createIdbAdapter(), principal))
+        .catch(() => { /* IndexedDB tidak tersedia: tidak ada yang perlu dibersihkan */ });
+    }
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     disconnectSocket();
