@@ -46,6 +46,7 @@ export function fgErrorMessage(error) {
     case "PRODUCTION_RUN_EXCEPTION_OPEN": return "Ada konflik rekonsiliasi yang belum diselesaikan untuk unit ini.";
     case "CUSTODY_RUN_NOT_IN_HANDOFF":
     case "CUSTODY_RUN_NOT_ACTIVE": return "Production Run tidak lagi berada di tahap handoff — muat ulang antrean.";
+    case "RETURN_PENDING": return "Sisa bahan unit ini belum diterima Gudang — terima retur di Antrean Gudang (tab Retur) dulu, lalu terima barang jadi.";
     case "CUSTODY_WRITER_OFF": return "Penerimaan barang jadi V2 belum aktif untuk unit ini.";
     default: return error?.message || "Gagal memproses keputusan";
   }

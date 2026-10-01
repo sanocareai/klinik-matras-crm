@@ -98,7 +98,7 @@ async function loadMaterials(prisma, plan, { evidence = [], unitId = null } = {}
   const adjustments = unitId && materialIds.length
     ? await prisma.stockMovement.findMany({ where: { unitId, materialId: { in: materialIds }, type: { in: ["WASTE", "RETURN"] } }, select: { materialId: true, type: true, qty: true } })
     : [];
-  const [issueLines, reservations] = await Promise.all([
+  const [issueLines, reservations, returnRows] = await Promise.all([
     materialIds.length
       ? prisma.materialIssueLine.findMany({
           where: { materialId: { in: materialIds }, materialIssue: { productionPlanId: plan.id, status: { not: "CANCELLED" } } },
@@ -108,6 +108,7 @@ async function loadMaterials(prisma, plan, { evidence = [], unitId = null } = {}
     materialIds.length
       ? prisma.materialReservation.findMany({ where: { planId: plan.id, status: { not: "CANCELLED" } }, select: { materialId: true, qty: true, status: true, consumedAt: true } })
       : [],
+    prisma.productionMaterialReturn.findMany({ where: { runId: plan.runId }, select: { materialId: true, status: true } }),
   ]);
   const lines = plan.bomLines.map((l) => {
     const issued = issueLines.filter((i) => i.materialId === l.materialId);
@@ -127,6 +128,7 @@ async function loadMaterials(prisma, plan, { evidence = [], unitId = null } = {}
     return {
       materialId: l.materialId, code: l.material.code, name: l.material.name, uom: l.material.unit,
       plannedQty, reservedQty, issuedQty, consumedQty, usedQty, wasteQty, returnedQty, leftoverQty, status,
+      returnStatus: returnRows.find((r) => r.materialId === l.materialId)?.status ?? null, // antrean retur Gudang: PENDING = sisa belum diterima
       supplemental: !!l.supplementalInspectionId, // baris tambahan dari rework QC, bukan BOM awal
     };
   });

@@ -29,6 +29,7 @@ import { pathForUnit, resolveCurrentTarget } from "./unitStageEngine.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
+import { createLeftoverReturnsInTx } from "./productionMaterialReturnService.js";
 import { allManualMaterialsMapped, diagnosisBomValid } from "./productionDiagnosisCommandService.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
@@ -340,6 +341,8 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
       });
     }
     if (requestedStep === 12 && transition?.handoffReady) {
+      // Sisa bahan WAJIB dikembalikan ke Gudang: antrean retur dibuka di transaksi yang sama; barang jadi baru bisa diterima setelah retur diterima.
+      await createLeftoverReturnsInTx(tx, { run, actorId, commandId: command.id });
       await outbox(tx, {
         eventType: "production.report.ready", aggregateId: run.id, revision, dedupeKey: `production-report-ready:${run.id}:${transition.handoffId}`,
         payload: {

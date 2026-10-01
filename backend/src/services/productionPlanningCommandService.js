@@ -25,7 +25,7 @@ import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockMaterialBalance, lockRowForUpdate, RESERVED_STATUSES } from "./inventoryLedger.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
-import { BOARD_DEFAULTS, assertStationCapacity, formatProductionDate, normalizeScheduleInput, workWindowFor } from "../lib/domain/productionBoard.js";
+import { BOARD_DEFAULTS, assertStationCapacity, formatProductionDate, normalizeScheduleInput, parseProductionDate, workWindowFor } from "../lib/domain/productionBoard.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
@@ -284,7 +284,7 @@ export async function scheduleProductionPlan(prisma, { planId, actorId, idempote
     const now = new Date();
     let update;
     if (data.unschedule) {
-      update = { productionDate: null, stationCode: null, priority: data.priority };
+      update = { productionDate: null, stationCode: null, stationSequence: null, priority: data.priority };
     } else {
       const workCenter = await tx.workCenter.findUnique({ where: { id: data.workCenterId } });
       if (!workCenter || !workCenter.active) throw planError("Workshop/work center tidak valid atau nonaktif", 422, "PLAN_WORK_CENTER_INVALID");
@@ -304,6 +304,7 @@ export async function scheduleProductionPlan(prisma, { planId, actorId, idempote
         if (running > 0) throw planError("Masih ada tahap yang sedang dikerjakan/dijeda; selesaikan dulu sebelum mengganti PIC", 409, "PLAN_RUN_IN_PROGRESS");
       }
       const sameSlot = plan.productionDate && formatProductionDate(plan.productionDate) === formatProductionDate(data.productionDate) && plan.stationCode === data.stationCode;
+      let stationSequence = sameSlot ? (plan.stationSequence ?? null) : null;
       if (!sameSlot) {
         // Kunci slot (tanggal, meja) lewat advisory lock transaksi: dua penjadwalan bersamaan ke slot yang sama diserialkan TANPA mengunci
         // baris plan lain (tidak ada siklus kunci dengan command yang mengunci plan-nya sendiri lebih dulu).
@@ -312,10 +313,13 @@ export async function scheduleProductionPlan(prisma, { planId, actorId, idempote
           where: { id: { not: planId }, productionDate: data.productionDate, stationCode: data.stationCode, status: { not: "CANCELLED" } },
         });
         assertStationCapacity(occupied, config);
+        // Slot sudah punya urutan MANUAL -> unit baru ditaruh di akhir (max+1); slot tanpa urutan manual -> NULL (urutan bawaan = prioritas).
+        const top = await tx.productionRunPlan.aggregate({ where: { id: { not: planId }, productionDate: data.productionDate, stationCode: data.stationCode, status: { not: "CANCELLED" } }, _max: { stationSequence: true } });
+        stationSequence = top._max.stationSequence != null ? top._max.stationSequence + 1 : null;
       }
       const window = workWindowFor(data.productionDate, config);
       update = {
-        productionDate: data.productionDate, stationCode: data.stationCode, priority: data.priority,
+        productionDate: data.productionDate, stationCode: data.stationCode, stationSequence, priority: data.priority,
         workCenterId: data.workCenterId, operatorId: data.operatorId,
         cornerWorkCenterId: data.cornerWorkCenterId, cornerOperatorId: data.cornerOperatorId,
         targetStartAt: window.targetStartAt, targetCompleteAt: window.targetCompleteAt,
@@ -341,6 +345,71 @@ export async function scheduleProductionPlan(prisma, { planId, actorId, idempote
       workCenterId: updated.workCenterId, operatorId: updated.operatorId, cornerWorkCenterId: updated.cornerWorkCenterId, cornerOperatorId: updated.cornerOperatorId,
     };
     await finishCommand(tx, command, revision, response);
+    return { replayed: false, ...response };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 2b. Atur URUTAN MANUAL unit dalam satu meja pada satu tanggal (drag-drop / tombol naik-turun di Rencana Produksi).
+//     Mengirim DAFTAR LENGKAP plan (id) di slot itu menurut urutan baru — server menolak (409 STATION_ORDER_STALE) bila himpunan plan
+//     di slot berbeda dari yang dilihat klien (ada yang masuk/keluar/dibatalkan sejak dimuat), jadi urutan tidak pernah menimpa
+//     perubahan orang lain diam-diam. Slot dikunci advisory lock YANG SAMA dengan penjadwalan (serial dengan "Jadwalkan/Pindahkan").
+//     Hanya baris yang nomornya BERUBAH yang dinaikkan revisinya. Prioritas TIDAK disentuh (urutan manual menang atas prioritas;
+//     prioritas hanya urutan bawaan saat belum ada urutan manual). Tidak mengubah kapasitas/jadwal/PIC.
+// ---------------------------------------------------------------------------
+export async function reorderStationPlans(prisma, { actorId, idempotencyKey, productionDate, stationCode, orderedPlanIds, config = BOARD_DEFAULTS }) {
+  assertIdempotencyKey(idempotencyKey);
+  const parsedDate = parseProductionDate(productionDate);
+  if (!parsedDate) throw planError("Tanggal produksi wajib diisi dengan format YYYY-MM-DD", 400, "PLAN_PRODUCTION_DATE_INVALID");
+  if (!config.stations.includes(stationCode)) throw planError("Meja tidak dikenal", 400, "PLAN_STATION_INVALID", { stations: config.stations });
+  const data = { productionDate: parsedDate, stationCode };
+  if (!Array.isArray(orderedPlanIds) || orderedPlanIds.length === 0 || orderedPlanIds.some((id) => typeof id !== "string") || new Set(orderedPlanIds).size !== orderedPlanIds.length) {
+    throw planError("orderedPlanIds wajib berisi daftar id plan unik di meja ini", 400, "STATION_ORDER_INVALID");
+  }
+  const actor = actorId || "SYSTEM";
+  const dateKey = formatProductionDate(data.productionDate);
+  const requestHash = hash({ commandType: "REORDER_STATION", productionDate: dateKey, stationCode: data.stationCode, orderedPlanIds });
+
+  return prisma.$transaction(async (tx) => {
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))::text AS k", `production-station:${dateKey}:${data.stationCode}`);
+    const plans = await tx.productionRunPlan.findMany({
+      where: { productionDate: data.productionDate, stationCode: data.stationCode, status: { not: "CANCELLED" } },
+      include: { run: { select: { unitId: true, unit: { select: { unitCode: true } } } } },
+    });
+    const have = plans.map((p) => p.id).sort();
+    const want = [...orderedPlanIds].sort();
+    if (have.length !== want.length || have.some((id, i) => id !== want[i])) {
+      throw planError("Isi meja ini berubah sejak dimuat (ada unit masuk/keluar). Muat ulang lalu atur urutan lagi.", 409, "STATION_ORDER_STALE", { currentPlanIds: have });
+    }
+    for (const p of plans) await assertWriterEnabledForUnit(tx, p.run.unitId);
+
+    const byId = new Map(plans.map((p) => [p.id, p]));
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "REORDER_STATION", aggregateType: "ProductionStation", aggregateId: `${dateKey}:${data.stationCode}`, requestHash });
+    const changed = [];
+    for (let i = 0; i < orderedPlanIds.length; i += 1) {
+      const p = byId.get(orderedPlanIds[i]);
+      const seq = i + 1;
+      if (p.stationSequence === seq) continue;
+      await lockRowForUpdate(tx, "production_run_plans_v2", p.id);
+      const revision = p.revision + 1;
+      await tx.productionRunPlan.update({ where: { id: p.id }, data: { stationSequence: seq, revision, commandId: command.id } });
+      changed.push({ planId: p.id, unitId: p.run.unitId, unitCode: p.run.unit.unitCode, sequence: seq, revision });
+    }
+    const response = { productionDate: dateKey, stationCode: data.stationCode, orderedPlanIds, changedCount: changed.length };
+    await outbox(tx, {
+      eventType: "production.station.reordered", aggregateType: "ProductionStation", aggregateId: `${dateKey}:${data.stationCode}`, revision: 1,
+      dedupeKey: `production-station-reordered:${command.id}`,
+      payload: { ...response, changed, occurredAt: new Date().toISOString(), actorId: actorId || null },
+    });
+    for (const c of changed) {
+      await recordActivity(tx, {
+        entityType: "unit", entityId: c.unitId, eventType: EVENT_TYPES.PRODUCTION_STATION_REORDERED, actorId: actorId || null,
+        metadata: { unitCode: c.unitCode, planId: c.planId, productionDate: dateKey, stationCode: data.stationCode, sequence: c.sequence },
+      });
+    }
+    await finishCommand(tx, command, 1, response);
     return { replayed: false, ...response };
   });
 }

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Clock, Package, PackageCheck, PackageX, RefreshCw, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Package, PackageCheck, PackageX, RefreshCw, Truck, Undo2 } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -19,7 +19,7 @@ const NEED_STATUS = {
   SUDAH_DISERAHKAN: { label: "Sudah diserahkan", variant: "green" },
   KEKURANGAN: { label: "Kekurangan", variant: "red" },
 };
-const TABS = [["all", "Semua"], ["inbound", "Unit Masuk"], ["material", "Bahan"], ["shortage", "Kekurangan"], ["finished", "Barang Jadi"]];
+const TABS = [["all", "Semua"], ["inbound", "Unit Masuk"], ["material", "Bahan"], ["shortage", "Kekurangan"], ["return", "Retur Sisa"], ["finished", "Barang Jadi"]];
 
 function ActionCard({ icon: Icon, tone = "accent", title, subtitle, meta, badge, children, action }) {
   const toneCls = { accent: "bg-accentbg text-accent", red: "bg-redbg text-red", orange: "bg-orangebg text-orange", green: "bg-greenbg text-green" }[tone];
@@ -34,6 +34,29 @@ function ActionCard({ icon: Icon, tone = "accent", title, subtitle, meta, badge,
       </div>
       {action && <div className="flex shrink-0 flex-col items-stretch gap-1 sm:w-48">{action}</div>}
     </Card>
+  );
+}
+
+// Retur sisa bahan: WAJIB diterima Gudang sebelum barang jadi unit itu bisa diterima. Stok bertambah (RETURN tertaut unit) saat diterima.
+// Diterima kurang dari sisa -> catatan wajib; selisih dicatat Gudang sebagai waste manual (tidak dibukukan otomatis).
+function ReturnCard({ r, busy, onReceive }) {
+  const [qty, setQty] = useState(String(r.qty));
+  const [note, setNote] = useState("");
+  const short = Number(qty) > 0 && Number(qty) < r.qty - 1e-6;
+  const invalid = !(Number(qty) > 0) || Number(qty) > r.qty + 1e-6 || (short && !note.trim());
+  return (
+    <ActionCard icon={Undo2} tone="orange" title={`Terima retur sisa bahan • ${r.unit.unitCode}`} subtitle={`${r.material.name} (${r.material.code})`}
+      meta={`Sisa dari produksi: ${r.qty} ${String(r.material.unit || "").toLowerCase()}`}
+      badge={<Badge variant="orange">Menunggu diterima Gudang</Badge>}
+      action={<Button data-testid="receive-return" onClick={() => onReceive(r, { qty: Number(qty), note })} disabled={busy || invalid}>{busy ? "Menyimpan…" : "Terima Retur"}</Button>}>
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-ink2">
+        <label className="flex items-center gap-1">Jumlah diterima
+          <input type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} aria-label="Jumlah diterima" className="w-24 rounded-btn border border-line bg-surface px-2 py-1 text-[13px] text-ink" />
+        </label>
+        {short && <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Catatan selisih (wajib)" aria-label="Catatan selisih" className="min-w-[12rem] flex-1 rounded-btn border border-line bg-surface px-2 py-1 text-[13px] text-ink" />}
+      </div>
+      <p className="text-[11px] text-ink3">Barang jadi unit ini baru bisa diterima setelah retur diterima.</p>
+    </ActionCard>
   );
 }
 
@@ -62,9 +85,15 @@ export default function WarehouseProductionQueue() {
     catch (e) { setError(friendlyError(e)); } finally { setBusy(null); }
   }
 
+  async function receiveReturn(r, { qty, note }) {
+    setBusy(r.id); setError("");
+    try { await api.receiveProductionV2MaterialReturn(r.id, { expectedRevision: r.revision, qty, note: note || undefined }); setNotice(`Retur ${r.material.code} dari ${r.unit.unitCode} diterima — stok bertambah.`); load(); }
+    catch (e) { setError(friendlyError(e)); } finally { setBusy(null); }
+  }
+
   const show = (k) => tab === "all" || tab === k;
   const needs = (data?.materialNeeds || []).filter((m) => m.status !== "SUDAH_DISERAHKAN" || tab === "material");
-  const empty = data && !data.inbound?.length && !needs.length && !data.shortages?.length && !data.finishedGoods?.length;
+  const empty = data && !data.inbound?.length && !needs.length && !data.shortages?.length && !data.finishedGoods?.length && !data.returns?.length;
 
   return (
     <PageContainer>
@@ -77,8 +106,8 @@ export default function WarehouseProductionQueue() {
           <Card className="p-0"><EmptyState icon={Package} title="Produksi V2 belum aktif" description="Antrean ini terisi setelah Production V2 diaktifkan untuk unit terkait." /></Card>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {[[Truck, "unit masuk", data?.kpi?.inbound], [Package, "permintaan bahan", data?.kpi?.materialRequests], [PackageX, "kekurangan bahan", data?.kpi?.shortages], [PackageCheck, "barang jadi", data?.kpi?.finishedGoods]].map(([Icon, label, value]) => (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+              {[[Truck, "unit masuk", data?.kpi?.inbound], [Package, "permintaan bahan", data?.kpi?.materialRequests], [PackageX, "kekurangan bahan", data?.kpi?.shortages], [Undo2, "retur sisa", data?.kpi?.returns], [PackageCheck, "barang jadi", data?.kpi?.finishedGoods]].map(([Icon, label, value]) => (
                 <Card key={label} className="flex items-center gap-3 p-4">
                   <span className={`flex h-10 w-10 items-center justify-center rounded-btn ${label === "kekurangan bahan" && value ? "bg-redbg text-red" : "bg-accentbg text-accent"}`}><Icon size={19} aria-hidden /></span>
                   <div><p className="text-[20px] font-bold leading-tight text-ink tabular-nums">{value ?? 0}</p><p className="text-[12px] text-ink3">{label}</p></div>
@@ -116,10 +145,11 @@ export default function WarehouseProductionQueue() {
                     <ul className="m-0 list-none p-0 mt-1 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">{m.lines.map((l) => <li key={l.materialId} className="flex justify-between gap-2"><span>{l.name}{l.supplemental ? " (rework)" : ""}</span><span>{l.qty} {String(l.uom || "").toLowerCase()}</span></li>)}</ul>
                   </ActionCard>
                 ))}
+                {show("return") && (data.returns || []).map((r) => <ReturnCard key={r.id} r={r} busy={busy === r.id} onReceive={receiveReturn} />)}
                 {show("finished") && data.finishedGoods.map((h) => (
                   <ActionCard key={h.handoffId} icon={PackageCheck} tone="green" title="Terima barang jadi" subtitle={`${h.unitCode} • ${h.customerName || "—"}`} meta="Siap kirim setelah Gudang menerima"
-                    badge={<Badge variant="green">QC lulus • Finishing selesai</Badge>}
-                    action={<Button asChild><Link to="/warehouse/finished-goods">Periksa & Simpan</Link></Button>} />
+                    badge={h.returnPending ? <Badge variant="orange">Retur sisa belum diterima</Badge> : <Badge variant="green">QC lulus • Finishing selesai</Badge>}
+                    action={h.returnPending ? <p className="text-[11.5px] text-orange">Terima retur sisa bahan (tab Retur Sisa) dulu.</p> : <Button asChild><Link to="/warehouse/finished-goods">Periksa & Simpan</Link></Button>} />
                 ))}
               </div>
             )}

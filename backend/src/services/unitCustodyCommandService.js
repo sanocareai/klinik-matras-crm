@@ -12,6 +12,7 @@ import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEngine.js";
 import { assertNoOpenRunException, assertRunConsistent } from "./productionRunGuards.js";
+import { assertNoPendingReturnsInTx } from "./productionMaterialReturnService.js";
 import { assertPhasesReadyForHandoffDecision, assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import {
   isProductionWriterEnabledFor, loadV2Flags, productionWriterEnabledForUnit, resolveProductionWriterState,
@@ -428,6 +429,7 @@ export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotenc
       let run = null;
       // Barang jadi (P6): validasi + kunci run SEBELUM menulis apa pun; efek ke run/unit di bawah, setelah lokasi diproyeksikan.
       const finishedRun = handoff.direction === "FINISHED_GOODS" ? await prepareFinishedGoodsDecision(tx, handoff) : null;
+      if (finishedRun) await assertNoPendingReturnsInTx(tx, finishedRun.id); // retur sisa bahan harus diterima Gudang dulu
       if (handoff.direction === "INBOUND") run = (await openProductionIntakeV2(tx, { unitId: handoff.unitId, actorId: actor })).run;
       const revision = handoff.revision + 1;
       await tx.unitCustodyHandoff.update({
