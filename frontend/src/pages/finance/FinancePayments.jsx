@@ -18,6 +18,7 @@ import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import LunasBelumDicatat from "@/features/finance/LunasBelumDicatat.jsx";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
+import KartuSelisihSalesFinance from "@/features/finance/KartuSelisihSalesFinance.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { BuktiBanyak, daftarBukti } from "@/features/finance/BuktiThumb.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
@@ -216,6 +217,8 @@ export default function FinancePayments() {
           </CardContent>
         </Card>
       )}
+
+      <KartuSelisihSalesFinance from={periode.from} to={periode.to} onTinjauMenunggu={() => setTab("perlu")} onTinjauKlaim={() => setTab("lunas_crm")} />
 
       <Penjelasan>
         <span className="inline-flex items-center gap-1.5 font-medium text-ink">

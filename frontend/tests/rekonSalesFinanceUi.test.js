@@ -88,3 +88,20 @@ test("Dua tahap (Fase 1): status 'Perhitungan cocok' dan 'Perlu ditinjau' TERPIS
   assert.match(kontrak, /perhitungan === "COCOK"/);
   assert.match(kontrak, /Perlu ditinjau/);
 });
+
+test("Kartu 'Kenapa angka Finance dan Sales berbeda?' di Pembayaran & Verifikasi: payload server tunggal, tanpa hitung ulang, status 3 nilai, CTA, penjelasan tanpa hover, Export Rekonsiliasi", () => {
+  const kartu = baca("src/features/finance/KartuSelisihSalesFinance.jsx");
+  const bayar = baca("src/pages/finance/FinancePayments.jsx");
+  assert.match(bayar, /<KartuSelisihSalesFinance from=\{periode\.from\} to=\{periode\.to\}/);
+  assert.match(kartu, /api\.getRekonSalesFinance\(\{ from, to \}\)/);
+  assert.doesNotMatch(kartu.replace(/k\.penyebab\.reduce\(\(a, p\) => a \+ p\.efek, 0\)/, ""), /\.reduce\(/, "kartu tidak menjumlah ulang selain pembuktian jumlah penyebab = selisih yang ditampilkan");
+  for (const t of ["Kenapa angka Finance dan Sales berbeda?", "Payment tercatat", "Sudah diverifikasi Finance", "Klaim Lunas Sales", "Selisih", "Tinjau Payment Menunggu", "Tinjau Klaim Tanpa Payment", "Tetapkan Sales", "Lihat Ongkir", "Export Rekonsiliasi"]) assert.ok(kartu.includes(t), t);
+  assert.match(kartu, /modul="rekon-sales-finance"/);
+  assert.match(kartu, /<DaftarRekonModal kunci=\{buka\} data=\{d\}/, "drill-down memakai payload yang sama");
+  for (const kode of ["COCOK", "TERJELASKAN", "TIDAK_COCOK"]) assert.ok(kartu.includes(kode));
+  assert.doesNotMatch(kartu, /Selisih Nominal Lain/);
+  assert.match(kartu, /\{p\.penjelasan\}/, "penjelasan tampil langsung, bukan tooltip");
+  const rekon = baca("src/features/laporan/components/RekonSalesFinance.jsx");
+  for (const t of ["Payment Tercatat", "Payment Terverifikasi", "Kurang / Lebih", "Tgl Bayar · Lunas", "KLAIM_TANPA_PAYMENT", "PAYMENT_MENUNGGU"]) assert.ok(rekon.includes(t), t);
+  assert.doesNotMatch(rekon, /Selisih Nominal Lain/);
+});

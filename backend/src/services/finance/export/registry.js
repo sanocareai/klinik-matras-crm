@@ -20,7 +20,8 @@ import supplierUtang from "./supplier-utang.js";
 import rekonsiliasi from "./rekonsiliasi.js";
 import jurnalUmum from "./jurnal-umum.js";
 import bukuBesar from "./buku-besar.js";
+import rekonSalesFinance from "./rekon-sales-finance.js";
 
 export const MODUL_EXPORT = Object.freeze(
-  Object.fromEntries([kasbon, pemasukan, pembayaran, pengeluaran, pembelian, uangMuka, piutangRefund, supplierUtang, rekonsiliasi, jurnalUmum, bukuBesar].map((m) => [m.kunci, m])),
+  Object.fromEntries([kasbon, pemasukan, pembayaran, pengeluaran, pembelian, uangMuka, piutangRefund, supplierUtang, rekonsiliasi, jurnalUmum, bukuBesar, rekonSalesFinance].map((m) => [m.kunci, m])),
 );

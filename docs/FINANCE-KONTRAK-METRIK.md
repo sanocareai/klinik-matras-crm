@@ -63,7 +63,7 @@ Uang pelanggan yang SUDAH diverifikasi Finance, dihitung per tanggal pembayaran 
 | Tidak termasuk | Pembayaran menunggu/ditolak/dibatalkan; Klaim Lunas yang belum diverifikasi |
 | Pasangan rekonsiliasi | Kas Masuk dari Pelanggan (Menurut Buku); Nilai Order yang Menjadi Lunas — Total Perusahaan; Payment Tercatat |
 | Tampil di | Pembayaran & Verifikasi; Pemasukan (Uang Masuk); Rekonsiliasi Sales–Finance |
-| Export | pembayaran, pemasukan |
+| Export | pembayaran, pemasukan, rekon-sales-finance |
 
 ### Kas Masuk dari Pelanggan (Menurut Buku) (`kas_masuk_pelanggan`)
 
@@ -111,7 +111,7 @@ Order yang statusnya Lunas karena Payment terverifikasi sudah mencapai tagihan (
 | Tidak termasuk | Order berstatus Lunas tanpa Payment (klaim lama); Order batal/pending/spam |
 | Pasangan rekonsiliasi | Nilai Order yang Menjadi Lunas — Total Perusahaan; Klaim Lunas Menunggu Verifikasi |
 | Tampil di | Laporan Sales; Rekonsiliasi Sales–Finance |
-| Export | — |
+| Export | rekon-sales-finance |
 
 ### Nilai Order yang Menjadi Lunas — Total Perusahaan (`nilai_order_lunas_perusahaan`)
 
@@ -127,7 +127,7 @@ Nilai penuh semua order yang mencapai lunas pada periode (basis tanggal lunas), 
 | Tidak termasuk | Ongkir (bukan nilai jasa); DP order yang belum lunas; Order batal/pending/spam |
 | Pasangan rekonsiliasi | Uang Masuk Terverifikasi; Nilai Order yang Menjadi Lunas — Tim Sales |
 | Tampil di | Rekonsiliasi Sales–Finance |
-| Export | — |
+| Export | rekon-sales-finance |
 
 ### Pendapatan Diakui (`pendapatan_diakui`)
 
@@ -209,7 +209,7 @@ Angka kartu di Laporan Sales (dasar komisi): Total Perusahaan dikurangi order ta
 | Tidak termasuk | Order tanpa Sales; Closing Admin/Owner selain Team Lead |
 | Pasangan rekonsiliasi | Nilai Order yang Menjadi Lunas — Total Perusahaan; Tanpa Atribusi Sales |
 | Tampil di | Laporan Sales; Rekonsiliasi Sales–Finance |
-| Export | — |
+| Export | rekon-sales-finance |
 
 ### Tanpa Atribusi Sales (`tanpa_atribusi_sales`)
 
@@ -225,7 +225,7 @@ Order lunas yang tidak dimiliki Sales mana pun (order internal / pelanggan di lu
 | Tidak termasuk | Order yang pemilik Sales-nya jelas |
 | Pasangan rekonsiliasi | Nilai Order yang Menjadi Lunas — Tim Sales |
 | Tampil di | Rekonsiliasi Sales–Finance |
-| Export | — |
+| Export | rekon-sales-finance |
 
 ## Biaya, pembelian & utang
 
