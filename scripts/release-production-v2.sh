@@ -79,7 +79,7 @@ sg diff --name-only "$EXPECT_PREV_FULL" "$CAND_FULL" -- ':!frontend/dist' > "$BK
 diff <(LC_ALL=C sort "$SCOPE_FILE") <(LC_ALL=C sort "$BK_DIR/scope.txt") > "$BK_DIR/scope_diff.txt" 2>&1 || die "scope TIDAK PERSIS berkas yang direview — lihat $BK_DIR/scope_diff.txt: $(tr '
 ' ' ' < "$BK_DIR/scope_diff.txt")"
 ok "scope = tepat $(wc -l < "$BK_DIR/scope.txt") berkas yang direview vs production aktif"
-sg diff --name-status "$EXPECT_PREV_FULL" "$CAND_FULL" -- backend/prisma/migrations | grep -vE '^As+backend/prisma/migrations/[0-9]+_[a-z0-9_]+/migration.sql$' | grep -q . && die "diff migration berisi perubahan selain penambahan migrasi baru (tidak aditif) — STOP"
+sg diff --name-status "$EXPECT_PREV_FULL" "$CAND_FULL" -- backend/prisma/migrations | grep -vE '^A[[:space:]]+backend/prisma/migrations/[0-9]+_[a-z0-9_]+/migration.sql$' | grep -q . && die "diff migration berisi perubahan selain penambahan migrasi baru (tidak aditif) — STOP"
 NEW_MIG="$(sg diff --name-only --diff-filter=A "$EXPECT_PREV_FULL" "$CAND_FULL" -- backend/prisma/migrations | grep -c 'migration.sql' || true)"
 EXPECT_APPLIED_AFTER=$((EXPECT_APPLIED + NEW_MIG))
 ok "migrasi baru aditif = $NEW_MIG; applied pasca-switch yang diharapkan = $EXPECT_APPLIED_AFTER (aktual: $EXPECT_APPLIED + $NEW_MIG)"
