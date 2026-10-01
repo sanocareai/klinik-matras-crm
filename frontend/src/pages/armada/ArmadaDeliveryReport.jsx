@@ -7,14 +7,14 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
-import { makeRange, toApiParams } from "@/lib/dateRange.js";
+import { makeRange, toApiParams, formatRangeText } from "@/lib/dateRange.js";
 import { KpiRowSkeleton, ChartGridSkeleton } from "@/features/laporan/components/LaporanSkeleton.jsx";
 import ChartCard from "@/features/laporan/components/ChartCard.jsx";
 import KpiCard from "@/features/laporan/components/KpiCard.jsx";
 import BarRow from "@/features/laporan/components/BarRow.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@/components/ui/table.jsx";
-import { Users, Truck as TruckIcon, Wallet, ArrowRight } from "lucide-react";
+import { Users, Truck as TruckIcon, Wallet, ArrowRight, Download } from "lucide-react";
 import Avatar from "@/components/Avatar.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { JOB_STATUS_REAL, JOB_TYPE_REAL, ACTIVE_STATUSES } from "@/features/armada/jobStatus.js";
@@ -95,6 +95,9 @@ export default function ArmadaDeliveryReport() {
   // getIncentiveSummary (field `detail` per orang), murni state UI baris
   // mana yang lagi dibuka.
   const [selectedOrang, setSelectedOrang] = useState(null);
+  // Export Excel "Performa & Insentif Driver" (30 September 2026, laporan owner: "performa driver
+  // masuknya" ke bagian insentif + "tambah fitur export excel") — lihat utils/exportArmadaLaporan.js.
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(() => {
     const params = toApiParams(range);
@@ -113,6 +116,24 @@ export default function ArmadaDeliveryReport() {
   }, [range]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleExportPerforma() {
+    setExporting(true);
+    try {
+      const { exportPerformaInsentifDriver } = await import("@/utils/exportArmadaLaporan.js");
+      const namaRentang = range?.from && range?.to ? `${range.from}-${range.to}` : "semua";
+      exportPerformaInsentifDriver({
+        periode: formatRangeText(range),
+        namaFile: `performa-insentif-driver-${namaRentang}`,
+        driverProductivity: data?.driverProductivity || [],
+        insentif,
+      });
+    } catch (e) {
+      alert(e.message || "Gagal membuat file export.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const byStatusCounts = Object.fromEntries((data?.byStatus || []).map((r) => [r.status, r.count]));
   const byTypeCounts = Object.fromEntries((data?.byType || []).map((r) => [r.type, r.count]));
@@ -178,6 +199,105 @@ export default function ArmadaDeliveryReport() {
               <KpiCard label="Masih Berjalan" numericValue={active} index={3} />
             </div>
 
+            {/* Performa & Insentif Driver (30 September 2026, laporan owner: "laporan insentif driver
+                bisa buat di atas... jadi performa driver masuknya, lalu tambah fitur export excel") —
+                digabung PALING ATAS (sebelumnya Produktivitas Driver tenggelam di tengah grid status
+                job/armada, dan Insentif ada di paling bawah setelah Ringkasan Biaya). Satu tombol
+                Export Excel untuk section ini (2 sheet: Produktivitas + Insentif) — lihat
+                utils/exportArmadaLaporan.js untuk kenapa angkanya ditulis sebagai NUMBER Excel asli,
+                bukan teks formatRupiah (supaya bisa dijumlah/pivot pembaca laporan). */}
+            <div>
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h2 className="text-[15px] font-bold text-ink">Performa &amp; Insentif Driver</h2>
+                  <p className="text-[12px] text-ink3">Job selesai dan estimasi insentif per orang, dalam rentang tanggal yang sama di atas.</p>
+                </div>
+                <Button
+                  size="sm" variant="secondary" onClick={handleExportPerforma}
+                  disabled={exporting || (totalDrivers === 0 && !insentif?.orang?.length)}
+                >
+                  <Download size={13} /> {exporting ? "Menyiapkan…" : "Export Excel"}
+                </Button>
+              </div>
+
+              <ChartCard
+                title="Produktivitas Driver"
+                description="Jumlah job selesai per driver dalam rentang tanggal terpilih."
+                index={0}
+                className="mb-4"
+              >
+                {totalDrivers === 0 ? (
+                  <EmptyState icon={Users} title="Belum ada job selesai" description="Coba pilih rentang tanggal lain." />
+                ) : (
+                  <div className="space-y-2.5">
+                    {data.driverProductivity.map((d) => (
+                      <BarRow
+                        key={d.driverId} label={d.name} value={d.completed}
+                        max={data.driverProductivity[0].completed} display={d.completed}
+                      />
+                    ))}
+                  </div>
+                )}
+              </ChartCard>
+
+              {/* Insentif Driver & Helper (D-162, 13 September 2026) — cara
+                  Klinik Matras SUNGGUHAN menghitung insentif: per ALAMAT
+                  selesai (1 pelanggan + lokasi sama + tanggal sama = 1,
+                  order lain hari dihitung lagi), tarif Rp7.000/alamat kalau
+                  punya SIM, Rp3.000 kalau tidak (lihat GET
+                  /armada/incentive-summary). Sebagai Driver/Sebagai Helper
+                  ditampilkan terpisah murni informasi peran — Total Alamat
+                  (yang dipakai hitung Rupiah) sudah digabung lintas peran,
+                  supaya orang yang kebetulan jadi driver di 1 job & helper
+                  di job lain untuk PELANGGAN+TANGGAL yang sama tetap
+                  dihitung 1 alamat, bukan 2. */}
+              {insentif?.orang?.length > 0 && (
+                <div>
+                  <h3 className="mb-1 text-[13px] font-bold text-ink">Estimasi Insentif Driver &amp; Helper</h3>
+                  {/* Disclaimer "estimasi, bisa berubah" (audit insentif, 23
+                      September 2026) — angka LIVE RECOMPUTE dari data
+                      sekarang (lihat GET /armada/incentive-summary), bukan
+                      status "sudah dibayar" — sistem ini tidak melacak
+                      pembayaran sama sekali. */}
+                  <p className="mb-3 text-[12px] text-ink3">
+                    Per alamat selesai, dalam rentang tanggal yang sama di atas — Rp{insentif.ratePerAlamat.withSim.toLocaleString("id-ID")}/alamat (punya SIM) · Rp{insentif.ratePerAlamat.withoutSim.toLocaleString("id-ID")}/alamat (tidak punya SIM). Estimasi berdasarkan data terbaru — bisa berubah kalau ada koreksi POD atau status SIM, bukan status sudah/akan dibayar.
+                  </p>
+                  <Card className="overflow-hidden p-0">
+                    <TableWrap>
+                      <Table>
+                        <THead>
+                          <TR>
+                            <TH>Nama</TH><TH>Punya SIM</TH>
+                            <TH numeric>Sebagai Driver</TH><TH numeric>Sebagai Helper</TH>
+                            <TH numeric>Total Alamat</TH><TH numeric>Estimasi Insentif</TH>
+                          </TR>
+                        </THead>
+                        <TBody>
+                          {insentif.orang.map((o) => (
+                            <TR key={o.id} clickable onClick={() => setSelectedOrang(o)}>
+                              <TD className="font-semibold text-ink">
+                                <span className="flex items-center gap-2">
+                                  <Avatar name={o.name} size="sm" gradient className="h-7 w-7 shrink-0 text-[10px]" />
+                                  {o.name}
+                                </span>
+                              </TD>
+                              <TD>
+                                <Badge variant={o.hasSim ? "green" : "neutral"}>{o.hasSim ? "Ya" : "Tidak"}</Badge>
+                              </TD>
+                              <TD numeric className="text-ink2">{o.asDriver}</TD>
+                              <TD numeric className="text-ink2">{o.asHelper}</TD>
+                              <TD numeric className="font-semibold text-ink">{o.totalAlamat}</TD>
+                              <TD numeric className="font-semibold text-accent">{formatRupiah(o.totalInsentif)}</TD>
+                            </TR>
+                          ))}
+                        </TBody>
+                      </Table>
+                    </TableWrap>
+                  </Card>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <ChartCard
                 title="Distribusi Status Job"
@@ -232,25 +352,6 @@ export default function ArmadaDeliveryReport() {
                 <div className="space-y-2.5">
                   {statusBars(byVehicleCounts, VEHICLE_STATUS_REAL).map((b) => <BarRow key={b.label} {...b} />)}
                 </div>
-              </ChartCard>
-
-              <ChartCard
-                title="Produktivitas Driver"
-                description="Jumlah job selesai per driver dalam rentang tanggal terpilih."
-                index={5}
-              >
-                {totalDrivers === 0 ? (
-                  <EmptyState icon={Users} title="Belum ada job selesai" description="Coba pilih rentang tanggal lain." />
-                ) : (
-                  <div className="space-y-2.5">
-                    {data.driverProductivity.map((d) => (
-                      <BarRow
-                        key={d.driverId} label={d.name} value={d.completed}
-                        max={data.driverProductivity[0].completed} display={d.completed}
-                      />
-                    ))}
-                  </div>
-                )}
               </ChartCard>
             </div>
 
@@ -366,63 +467,6 @@ export default function ArmadaDeliveryReport() {
                 km/liter dihitung dari selisih odometer tertinggi−terendah dibagi total liter periode ini (minimal 2 pengisian BBM ber-odometer). Rp/km ikut naik-turun mengikuti harga BBM — km/liter yang murni mengukur cara bawa mobil.
               </p>
             </div>
-
-            {/* Insentif Driver & Helper (D-162, 13 September 2026) — cara
-                Klinik Matras SUNGGUHAN menghitung insentif: per ALAMAT
-                selesai (1 pelanggan + lokasi sama + tanggal sama = 1,
-                order lain hari dihitung lagi), tarif Rp7.000/alamat kalau
-                punya SIM, Rp3.000 kalau tidak (lihat GET
-                /armada/incentive-summary). Sebagai Driver/Sebagai Helper
-                ditampilkan terpisah murni informasi peran — Total Alamat
-                (yang dipakai hitung Rupiah) sudah digabung lintas peran,
-                supaya orang yang kebetulan jadi driver di 1 job & helper
-                di job lain untuk PELANGGAN+TANGGAL yang sama tetap
-                dihitung 1 alamat, bukan 2. */}
-            {insentif?.orang?.length > 0 && (
-              <div>
-                <h2 className="mb-1 text-[15px] font-bold text-ink">Estimasi Insentif Driver &amp; Helper</h2>
-                {/* Disclaimer "estimasi, bisa berubah" (audit insentif, 23
-                    September 2026) — angka LIVE RECOMPUTE dari data
-                    sekarang (lihat GET /armada/incentive-summary), bukan
-                    status "sudah dibayar" — sistem ini tidak melacak
-                    pembayaran sama sekali. */}
-                <p className="mb-3 text-[12px] text-ink3">
-                  Per alamat selesai, dalam rentang tanggal yang sama di atas — Rp{insentif.ratePerAlamat.withSim.toLocaleString("id-ID")}/alamat (punya SIM) · Rp{insentif.ratePerAlamat.withoutSim.toLocaleString("id-ID")}/alamat (tidak punya SIM). Estimasi berdasarkan data terbaru — bisa berubah kalau ada koreksi POD atau status SIM, bukan status sudah/akan dibayar.
-                </p>
-                <Card className="overflow-hidden p-0">
-                  <TableWrap>
-                    <Table>
-                      <THead>
-                        <TR>
-                          <TH>Nama</TH><TH>Punya SIM</TH>
-                          <TH numeric>Sebagai Driver</TH><TH numeric>Sebagai Helper</TH>
-                          <TH numeric>Total Alamat</TH><TH numeric>Estimasi Insentif</TH>
-                        </TR>
-                      </THead>
-                      <TBody>
-                        {insentif.orang.map((o) => (
-                          <TR key={o.id} clickable onClick={() => setSelectedOrang(o)}>
-                            <TD className="font-semibold text-ink">
-                              <span className="flex items-center gap-2">
-                                <Avatar name={o.name} size="sm" gradient className="h-7 w-7 shrink-0 text-[10px]" />
-                                {o.name}
-                              </span>
-                            </TD>
-                            <TD>
-                              <Badge variant={o.hasSim ? "green" : "neutral"}>{o.hasSim ? "Ya" : "Tidak"}</Badge>
-                            </TD>
-                            <TD numeric className="text-ink2">{o.asDriver}</TD>
-                            <TD numeric className="text-ink2">{o.asHelper}</TD>
-                            <TD numeric className="font-semibold text-ink">{o.totalAlamat}</TD>
-                            <TD numeric className="font-semibold text-accent">{formatRupiah(o.totalInsentif)}</TD>
-                          </TR>
-                        ))}
-                      </TBody>
-                    </Table>
-                  </TableWrap>
-                </Card>
-              </div>
-            )}
 
             {/* Kurir Eksternal / Lalamove (D-161, 13 September 2026) — kajian
                 owner: "ada beberapa customer yang minta cepat dan memilih
