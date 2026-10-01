@@ -146,6 +146,9 @@ export default function WarehouseProductionQueue() {
                   </ActionCard>
                 ))}
                 {show("return") && (data.returns || []).map((r) => <ReturnCard key={r.id} r={r} busy={busy === r.id} onReceive={receiveReturn} />)}
+                {tab === "return" && !data.returns?.length && (
+                  <Card className="p-0" data-testid="return-empty"><EmptyState icon={Undo2} title="Tidak ada retur sisa menunggu" description="Sisa bahan dari unit yang selesai produksi muncul di sini sampai Gudang menerimanya." /></Card>
+                )}
                 {show("finished") && data.finishedGoods.map((h) => (
                   <ActionCard key={h.handoffId} icon={PackageCheck} tone="green" title="Terima barang jadi" subtitle={`${h.unitCode} • ${h.customerName || "—"}`} meta="Siap kirim setelah Gudang menerima"
                     badge={h.returnPending ? <Badge variant="orange">Retur sisa belum diterima</Badge> : <Badge variant="green">QC lulus • Finishing selesai</Badge>}

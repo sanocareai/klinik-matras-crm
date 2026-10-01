@@ -65,3 +65,12 @@ test("Gudang: tab Retur Sisa + kartu Terima Retur (jumlah, catatan wajib bila ku
   assert.match(API, /receiveProductionV2MaterialReturn:[\s\S]{0,200}material-returns\/\$\{id\}\/receive/);
   assert.match(FG, /case "RETURN_PENDING"/);
 });
+
+test("QA P10A: Unit 360 menampilkan status retur; tab Retur Sisa punya empty state; galat urutan dimuat-ulang lalu ditampilkan dan digulirkan ke pandangan", () => {
+  const DRAWER = read("features", "production", "UnitOverviewDrawer.jsx");
+  assert.match(DRAWER, /l\.returnStatus === "PENDING"[\s\S]{0,200}Retur menunggu Gudang/);
+  assert.match(DRAWER, /l\.returnStatus === "RECEIVED"[\s\S]{0,200}Retur diterima Gudang/);
+  assert.match(QUEUE, /data-testid="return-empty"[\s\S]{0,200}Tidak ada retur sisa menunggu/);
+  assert.match(RENCANA, /catch \(e\) \{ await load\(\); setError\(friendlyError\(e\)\); \}/, "load() mengosongkan galat, jadi galat diset SETELAH muat ulang");
+  assert.match(RENCANA, /alertRef\.current\?\.scrollIntoView/);
+});

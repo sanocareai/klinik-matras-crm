@@ -372,6 +372,9 @@ export default function ProductionRencanaWorkspace() {
       .then(([w, o, m, s]) => setRefs((r) => ({ ...r, workCenters: (w.workCenters || []).filter((x) => x.active !== false), operators: (o.operators || []).filter((x) => x.active !== false), materials: m || [], stock: s || [] })))
       .catch(() => {});
   }, []);
+  // Galat drag/urutan muncul di atas halaman; pengguna biasanya sedang menggulir di kartu meja — bawa galat ke pandangan.
+  const alertRef = useRef(null);
+  useEffect(() => { if (error) alertRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [error]);
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(t); }, [notice]);
 
   const stockByMaterial = useMemo(() => new Map(refs.stock.map((row) => [row.materialId, row])), [refs.stock]);
@@ -420,7 +423,8 @@ export default function ProductionRencanaWorkspace() {
       await api.reorderProductionV2Station({ productionDate: date, stationCode: station.code, orderedPlanIds });
       setNotice(`Urutan ${station.label} diperbarui.`);
       await load();
-    } catch (e) { setError(friendlyError(e)); await load(); } finally { setBusy(false); }
+    } catch (e) { await load(); setError(friendlyError(e)); } // muat ulang dulu (load mengosongkan galat) agar pesan konflik tetap terlihat
+    finally { setBusy(false); }
   }
   const dragStart = (e, runId) => { e.dataTransfer.setData("text/plain", runId); e.dataTransfer.effectAllowed = "move"; };
 
@@ -455,7 +459,7 @@ export default function ProductionRencanaWorkspace() {
         } />
       <PageBody>
         {notice && <div role="status" className="rounded-btn bg-greenbg px-3 py-2.5 text-[12.5px] text-green">{notice}</div>}
-        {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
+        {error && <div role="alert" ref={alertRef} className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
         {reader === "OFF" ? (
           <Card className="p-0"><EmptyState icon={CalendarClock} title="Rencana produksi belum diaktifkan" description="Fitur ini sedang dalam tahap uji coba (canary)." /></Card>
         ) : (

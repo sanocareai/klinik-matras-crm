@@ -225,7 +225,11 @@ function Bahan({ d, onDiagnosisRefresh }) {
                 <td className="px-2 py-1.5 tabular-nums" data-col="terpakai">{l.usedQty ?? 0} {l.uom}</td>
                 <td className="px-2 py-1.5 tabular-nums" data-col="sisa">{l.leftoverQty ?? 0} {l.uom}</td>
                 <td className="px-2 py-1.5 tabular-nums" data-col="waste">{l.wasteQty ?? 0} {l.uom}</td>
-                <td className="px-2 py-1.5">{l.status.replaceAll("_", " ")}</td>
+                <td className="px-2 py-1.5">
+                  {l.status.replaceAll("_", " ")}
+                  {l.returnStatus === "PENDING" && <Badge variant="orange" className="ml-1" data-testid="return-status">Retur menunggu Gudang</Badge>}
+                  {l.returnStatus === "RECEIVED" && <Badge variant="green" className="ml-1" data-testid="return-status">Retur diterima Gudang{l.returnedQty ? ` (${l.returnedQty} ${l.uom})` : ""}</Badge>}
+                </td>
               </tr>
             ))}
           </tbody>
