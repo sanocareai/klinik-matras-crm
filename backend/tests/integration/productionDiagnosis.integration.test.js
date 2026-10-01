@@ -157,6 +157,10 @@ test("submit: menulis Planned BOM + Unit.serviceId dalam satu transaksi; tahap 5
   await setCohort(unit.id);
   const run = await reachStep5(w, unit);
 
+  // Kontrak layanan: Layanan DIPESAN Sales (OrderItem) read-only; Layanan TEKNIS (Unit.serviceId) hasil diagnosis — terpisah, tidak saling menimpa.
+  await testPrisma.orderItem.createMany({ data: [{ orderId: order.id, layananName: "Paket Upgrade Fondasi (Sales)", harga: 4_321_000, sortOrder: 0 }] });
+  const itemsBefore = JSON.stringify(await testPrisma.orderItem.findMany({ where: { orderId: order.id }, orderBy: { sortOrder: "asc" } }));
+  const orderBefore = await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } });
   const stockBefore = await testPrisma.stockMovement.count();
 
   const photo = await mediaUpload(w.nadya, run.id);
@@ -166,6 +170,15 @@ test("submit: menulis Planned BOM + Unit.serviceId dalam satu transaksi; tahap 5
   });
   assert.equal(res.status, 201, JSON.stringify(res.body));
   assert.equal(res.body.status, "RECORDED");
+  const itemsAfter = JSON.stringify(await testPrisma.orderItem.findMany({ where: { orderId: order.id }, orderBy: { sortOrder: "asc" } }));
+  assert.equal(itemsAfter, itemsBefore, "diagnosis TIDAK mengubah OrderItem (nama layanan/harga Sales)");
+  const orderAfter = await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } });
+  assert.equal(orderAfter.value, orderBefore.value, "nilai order Sales tidak berubah");
+  const ov = await w.nadya.api.get(`${V2}/units/${unit.id}/overview`);
+  assert.equal(ov.status, 200, JSON.stringify(ov.body));
+  assert.deepEqual(ov.body.salesContext.salesServices.value, ["Paket Upgrade Fondasi (Sales)"], "Layanan Dipesan Sales tampil terpisah");
+  assert.equal(ov.body.service.label, w.service.labelId, "Layanan Teknis = hasil diagnosis");
+  assert.notEqual(ov.body.service.label, ov.body.salesContext.salesServices.value[0], "keduanya tidak saling menimpa");
   assert.equal(res.body.bom.lineCount, 1);
 
   const stockAfter = await testPrisma.stockMovement.count();

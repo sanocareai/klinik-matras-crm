@@ -441,7 +441,7 @@ export default function ProductionRencanaWorkspace() {
                 {(stations.length ? stations : (cfg?.stations || MEJA).map((code) => ({ code, label: mejaLabel(code), capacity: 3, count: 0, items: [], operatorNames: [] }))).map((s) => (
                   <MejaColumn key={s.code} station={s} date={date} dropActive={dropOver === s.code} onDragOverMeja={setDropOver}
                     onDropMeja={(code, runId) => { setDropOver(null); const v = findView(runId); if (v) placeOn(v, code); }}
-                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} today={today} tomorrow={tomorrow} />
+                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} dragStart={dragStart} today={today} tomorrow={tomorrow} />
                 ))}
               </div>
             </div>
