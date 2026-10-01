@@ -224,6 +224,7 @@ test("submit dengan bahan manual: TIDAK masuk Planned BOM/reservasi; tahap 5 TET
   const closeAttempt = await w.nadya.api.post(`${V2}/runs/${run.id}/steps/5`, { expectedRevision: run.revision, workCenterId: w.wc, payload: { diagnosis: "Diagnosis dikirim, menunggu pemetaan bahan manual" }, media: [] }, key(`p9d-close-blocked-${++seq}`));
   assert.equal(closeAttempt.status, 200, JSON.stringify(closeAttempt.body));
   assert.equal(closeAttempt.body.next.stepNo, 5, "tahap 5 tetap terbuka — bahan manual belum dipetakan");
+  assert.equal(closeAttempt.body.next.wait, "DIAGNOSIS_MANUAL_UNMAPPED", "alasan menunggu = bahan manual (bukan 'layanan belum ditetapkan')");
 
   const manual = await testPrisma.diagnosisManualMaterial.findFirstOrThrow({ where: { diagnosisReport: { runId: run.id } } });
   const mapRes = await w.lead.api.post(`${V2}/diagnosis/manual-materials/${manual.id}/map`, { materialId: w.materials[1].id }, key(`p9d-map-${++seq}`));
@@ -233,6 +234,13 @@ test("submit dengan bahan manual: TIDAK masuk Planned BOM/reservasi; tahap 5 TET
   assert.equal(bomLinesAfter.length, 1, "setelah dipetakan, bahan manual JADI baris BOM asli lewat setPlannedBOMInTx");
 
   const runFresh = await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } });
+  // Sandbox#1/#2: setelah dipetakan PIC cukup "Lanjutkan" (continueOnly) dan Revisi Diagnosis punya prefill dari server.
+  const cardAfterMap = await w.nadya.api.get(`${V2}/runs/${run.id}/card`);
+  assert.equal(cardAfterMap.body.next.continueOnly, true, "server mengirim continueOnly setelah semua syarat terpenuhi");
+  const dg = await w.nadya.api.get(`${V2}/diagnosis/${run.id}`);
+  assert.equal(dg.body.current.prefill.bomLines.length, 1, "prefill membawa baris BOM hasil pemetaan");
+  assert.equal(dg.body.current.prefill.bomLines[0].materialId, w.materials[1].id);
+  assert.equal(dg.body.current.prefill.photos.length, 1); assert.ok(dg.body.current.prefill.photos[0].url.startsWith("/media/") && dg.body.current.prefill.photos[0].previewUrl);
   const closeAfterMap = await w.nadya.api.post(`${V2}/runs/${run.id}/steps/5`, { expectedRevision: runFresh.revision, workCenterId: w.wc, payload: {}, media: [] }, key(`p9d-close-after-map-${++seq}`));
   assert.equal(closeAfterMap.status, 200, JSON.stringify(closeAfterMap.body));
   assert.notEqual(closeAfterMap.body.next.stepNo, 5, "tahap 5 sekarang bisa selesai — semua bahan manual sudah dipetakan");

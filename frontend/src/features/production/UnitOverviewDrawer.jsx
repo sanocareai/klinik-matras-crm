@@ -214,21 +214,22 @@ function Bahan({ d, onDiagnosisRefresh }) {
         <p className="flex items-center gap-1.5 break-words rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red"><PackageX size={13} aria-hidden className="shrink-0" /> Menunggu bahan baku dari Gudang{d.materials.shortageNote ? `: ${d.materials.shortageNote}` : ""}</p>
       )}
       {d.materials.lines.length > 0 && (
-        <table className="w-full text-left text-[12px]">
-          <thead className="text-ink3"><tr>{["Bahan", "Rencana", "Direservasi", "Diserahkan", "Terpakai", "Status"].map((h) => <th key={h} className="px-2 py-1.5 font-semibold">{h}</th>)}</tr></thead>
+        <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-[12px]" data-testid="material-table">
+          <thead className="text-ink3"><tr>{["Bahan", "Rencana", "Diserahkan", "Terpakai", "Sisa", "Waste", "Status"].map((h) => <th key={h} className="px-2 py-1.5 font-semibold">{h}</th>)}</tr></thead>
           <tbody>
             {d.materials.lines.map((l) => (
               <tr key={l.materialId} className="border-t border-line">
                 <td className="px-2 py-1.5">{l.code} — {l.name}{l.supplemental && <Badge variant="orange" className="ml-1">Rework</Badge>}</td>
                 <td className="px-2 py-1.5 tabular-nums">{l.plannedQty} {l.uom}</td>
-                <td className="px-2 py-1.5 tabular-nums">{l.reservedQty} {l.uom}</td>
-                <td className="px-2 py-1.5 tabular-nums">{l.issuedQty} {l.uom}</td>
-                <td className="px-2 py-1.5 tabular-nums">{l.consumedQty} {l.uom}</td>
+                <td className="px-2 py-1.5 tabular-nums" data-col="diserahkan">{l.issuedQty} {l.uom}</td>
+                <td className="px-2 py-1.5 tabular-nums" data-col="terpakai">{l.usedQty ?? 0} {l.uom}</td>
+                <td className="px-2 py-1.5 tabular-nums" data-col="sisa">{l.leftoverQty ?? 0} {l.uom}</td>
+                <td className="px-2 py-1.5 tabular-nums" data-col="waste">{l.wasteQty ?? 0} {l.uom}</td>
                 <td className="px-2 py-1.5">{l.status.replaceAll("_", " ")}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
       {manualMaterials.length > 0 && (
         <div className="space-y-1.5">
@@ -395,7 +396,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
               complaints: data.salesContext.complaints?.value ?? [], request: data.salesContext.request?.value ?? null,
             },
             priorServiceLabel: data.service?.set ? data.service.label : null,
-            diagnosisRevision: data.diagnosis?.current?.revision ?? 0,
+            diagnosisRevision: data.diagnosis?.current?.revision ?? 0, current: data.diagnosis?.current ?? null,
           }}
           onClose={() => setShowDiagnosis(false)}
           onSubmitted={handleDiagnosisSubmitted}

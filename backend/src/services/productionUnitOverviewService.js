@@ -79,9 +79,25 @@ async function loadPickup(prisma, unitId) {
   };
 }
 
-async function loadMaterials(prisma, plan) {
+// Terpakai = jumlah yang DICATAT PIC di bukti tahap (6/7/10, payload.materials); Sisa = diserahkan − terpakai − waste − retur;
+// Waste/Retur = pergerakan stok WASTE/RETURN yang ditautkan ke unit ini oleh Gudang. consumedQty (lama) = reservasi sudah
+// dikonsumsi saat Gudang menyerahkan (BUKAN pemakaian aktual) — dipertahankan untuk kompatibilitas.
+export function usedQtyByMaterial(evidence) {
+  const m = new Map();
+  for (const e of evidence || []) {
+    if (![6, 7, 10].includes(e.stepNo)) continue;
+    for (const l of e.payload?.materials || []) m.set(l.materialId, (m.get(l.materialId) || 0) + Number(l.qty || 0));
+  }
+  return m;
+}
+
+async function loadMaterials(prisma, plan, { evidence = [], unitId = null } = {}) {
   if (!plan) return { lines: [], shortageOpen: false, shortageItems: [] };
   const materialIds = [...new Set(plan.bomLines.map((l) => l.materialId))];
+  const usedBy = usedQtyByMaterial(evidence);
+  const adjustments = unitId && materialIds.length
+    ? await prisma.stockMovement.findMany({ where: { unitId, materialId: { in: materialIds }, type: { in: ["WASTE", "RETURN"] } }, select: { materialId: true, type: true, qty: true } })
+    : [];
   const [issueLines, reservations] = await Promise.all([
     materialIds.length
       ? prisma.materialIssueLine.findMany({
@@ -100,13 +116,17 @@ async function loadMaterials(prisma, plan) {
     const reservedQty = reserved.filter((r) => r.status === "ACTIVE").reduce((sum, r) => sum + Number(r.qty), 0);
     const consumedQty = reserved.filter((r) => r.consumedAt).reduce((sum, r) => sum + Number(r.qty), 0);
     const plannedQty = Number(l.qty);
+    const usedQty = usedBy.get(l.materialId) || 0;
+    const wasteQty = adjustments.filter((a) => a.materialId === l.materialId && a.type === "WASTE").reduce((sum, a) => sum + Math.abs(Number(a.qty)), 0);
+    const returnedQty = adjustments.filter((a) => a.materialId === l.materialId && a.type === "RETURN").reduce((sum, a) => sum + Math.abs(Number(a.qty)), 0);
+    const leftoverQty = Math.max(0, Math.round((issuedQty - usedQty - wasteQty - returnedQty) * 10000) / 10000);
     let status = "BELUM_DIRESERVASI";
     if (consumedQty > 0) status = "TERPAKAI";
     else if (issuedQty > 0) status = "SUDAH_DISERAHKAN";
     else if (reservedQty > 0) status = "DIRESERVASI";
     return {
       materialId: l.materialId, code: l.material.code, name: l.material.name, uom: l.material.unit,
-      plannedQty, reservedQty, issuedQty, consumedQty, status,
+      plannedQty, reservedQty, issuedQty, consumedQty, usedQty, wasteQty, returnedQty, leftoverQty, status,
       supplemental: !!l.supplementalInspectionId, // baris tambahan dari rework QC, bukan BOM awal
     };
   });
@@ -255,7 +275,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
   const applicableSteps = steps.filter((s) => s.status !== "NA");
   const [pickup, materials, qc, diagnosis] = await Promise.all([
     loadPickup(prisma, unitId),
-    loadMaterials(prisma, run.plan),
+    loadMaterials(prisma, run.plan, { evidence: ctx.evidence, unitId }),
     loadQc(prisma, run.id),
     getDiagnosisState(prisma, run.id),
   ]);
