@@ -1190,6 +1190,7 @@ export const api = {
   getSalesReport: (params) => request("/analytics/sales-report" + buildQuery(params)),
   getSalesLunasDetail: (params) => request("/analytics/sales-report/lunas-detail" + buildQuery(params)),
   // Rekonsiliasi Sales–Finance (30 Sep 2026): bridge Uang Masuk Terverifikasi → Nilai Order yang Menjadi Lunas (angka dari server, satu helper dengan Finance).
+  getPenjualanKaryawan: (params) => request("/orders/penjualan-karyawan/ringkasan" + buildQuery(params)),
   getRekonSalesFinance: (params) => request("/sales-finance/rekon" + buildQuery(params)),
   getSalesFinanceSalesAktif: () => request("/sales-finance/sales-aktif"),
   tetapkanPemilikSalesOrder: (orderId, body) => request(`/sales-finance/orders/${orderId}/pemilik`, { method: "POST", body: JSON.stringify(body) }),
