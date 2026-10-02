@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-  STEPS, andonBucketOf, commandCenterColumn, deriveNextAction, mediaKindOf, normalizeMaterialLines, normalizeMedia, stepNoForStage, validateStepEvidence,
+  COMMAND_CENTER_COLUMNS, STEPS, andonBucketOf, commandCenterColumn, deriveNextAction, mediaKindOf, normalizeMaterialLines, normalizeMedia, stepNoForStage, validateStepEvidence,
 } from "../src/lib/domain/productionSteps.js";
 import {
   BOARD_DEFAULTS, assertStationCapacity, normalizeScheduleInput, parseProductionDate, stationLabel, todayWib, workWindowFor,
@@ -173,17 +173,23 @@ test("kolom Status Produksi (P9B.1): keadaan fisik, bukan status jadwal; tanpa m
   assert.equal(commandCenterColumn({ bucket: "DALAM_PERJALANAN", ...withPlan, next: { wait: "PENDING_ARRIVAL" } }), "DALAM_PERJALANAN", "sudah dijadwalkan (pre-schedule P9A) TAPI belum tiba -> tetap Dalam Perjalanan (jadwal cuma badge)");
   assert.equal(commandCenterColumn({ bucket: "ANTREAN", ...withPlan, next: { stepNo: 1 } }), "TIBA_BELUM_MULAI");
   assert.equal(commandCenterColumn({ bucket: "ANTREAN", plan: null, next: { stepNo: 1 } }), "TIBA_BELUM_MULAI", "sudah tiba tapi belum sempat dijadwalkan pun tetap Tiba/Belum Mulai, bukan kolom terpisah");
-  assert.equal(commandCenterColumn({ bucket: "BONGKAR", ...withPlan, next: { stepNo: 3 } }), "TIBA_BELUM_MULAI", "tahap intake 1-5 dianggap Tiba/Belum Mulai di papan pipeline ini");
-  assert.equal(commandCenterColumn({ bucket: "FONDASI", ...withPlan, next: { stepNo: 6 } }), "FONDASI");
-  assert.equal(commandCenterColumn({ bucket: "LAPISAN", ...withPlan, next: { stepNo: 7 } }), "LAPISAN");
-  assert.equal(commandCenterColumn({ bucket: "LAPISAN", ...withPlan, next: { stepNo: 8 } }), "UJI_TEKSTUR", "andonBucketOf menggabungkan 7&8 jadi LAPISAN, kolom P9B memisahkannya");
-  assert.equal(commandCenterColumn({ bucket: "QC", ...withPlan, next: { stepNo: 9 } }), "QC");
-  assert.equal(commandCenterColumn({ bucket: "QC", ...withPlan, next: { stepNo: 7, wait: "AWAITING_QC" } }), "QC", "rework menunggu QC tetap kolom QC walau stepNo pemicu-nya 7");
+  // Revisi stage 2 Okt 2026: Tahap Bongkar > Uji Fondasi > Fondasi Jadi > Lapisan Jadi > Uji Tekstur Sebelum Corner > Corner.
+  assert.equal(commandCenterColumn({ bucket: "BONGKAR", ...withPlan, next: { stepNo: 1 } }), "BONGKAR", "Langkah 1 sudah berjalan -> Tahap Bongkar");
+  assert.equal(commandCenterColumn({ bucket: "BONGKAR", ...withPlan, next: { stepNo: 3 } }), "BONGKAR");
+  assert.equal(commandCenterColumn({ bucket: "BONGKAR", ...withPlan, next: { stepNo: 4 } }), "UJI_FONDASI", "uji fondasi lama");
+  assert.equal(commandCenterColumn({ bucket: "DIAGNOSA", ...withPlan, next: { stepNo: 5 } }), "UJI_FONDASI", "diagnosa mengikuti uji fondasi");
+  assert.equal(commandCenterColumn({ bucket: "FONDASI", ...withPlan, next: { stepNo: 6 } }), "UJI_FONDASI", "fondasi baru masih dikerjakan/diuji");
+  assert.equal(commandCenterColumn({ bucket: "LAPISAN", ...withPlan, next: { stepNo: 7 } }), "FONDASI", "fondasi selesai, lapisan berikutnya -> Fondasi Jadi");
+  assert.equal(commandCenterColumn({ bucket: "LAPISAN", ...withPlan, next: { stepNo: 8 } }), "LAPISAN", "lapisan selesai, uji tekstur belum dikirim -> Lapisan Jadi");
+  assert.equal(commandCenterColumn({ bucket: "QC", ...withPlan, next: { stepNo: 9 } }), "UJI_TEKSTUR");
+  assert.equal(commandCenterColumn({ bucket: "QC", ...withPlan, next: { stepNo: 7, wait: "AWAITING_QC" } }), "UJI_TEKSTUR", "rework menunggu QC tetap di uji tekstur walau stepNo pemicu-nya 7");
+  assert.deepEqual(COMMAND_CENTER_COLUMNS.map((c) => c.label), ["Akan Masuk", "Dalam Perjalanan", "Tiba / Belum Mulai", "Tahap Bongkar", "Uji Fondasi", "Fondasi Jadi", "Lapisan Jadi", "Uji Tekstur Sebelum Corner", "Corner", "Siap Kirim"]);
+  assert.ok(!COMMAND_CENTER_COLUMNS.some((c) => c.key === "QC"), "kolom QC dilebur");
   assert.equal(commandCenterColumn({ bucket: "CORNER", ...withPlan, next: { stepNo: 11 } }), "CORNER");
   assert.equal(commandCenterColumn({ bucket: "HANDOFF", ...withPlan, next: { stepNo: 12, wait: "AWAITING_WAREHOUSE" } }), "SIAP_KIRIM");
   assert.equal(commandCenterColumn({ bucket: "SELESAI", ...withPlan, next: { wait: "COMPLETED" } }), null, "SELESAI dikeluarkan dari papan aktif (tetap terhitung KPI selesai hari ini)");
   assert.equal(commandCenterColumn({ bucket: "TERHENTI", ...withPlan, next: { wait: "EXCEPTION_OPEN" } }), "TIBA_BELUM_MULAI", "terhenti/exception tetap tampil di kolomnya, ditandai badge bukan kolom terpisah");
-  assert.equal(commandCenterColumn({ bucket: "MENUNGGU_BAHAN", ...withPlan, next: { stepNo: 6, wait: "MATERIAL_SHORTAGE" } }), "FONDASI", "menunggu bahan tetap di kolom tahapnya sendiri, bukan kolom terpisah");
+  assert.equal(commandCenterColumn({ bucket: "MENUNGGU_BAHAN", ...withPlan, next: { stepNo: 6, wait: "MATERIAL_SHORTAGE" } }), "UJI_FONDASI", "menunggu bahan tetap di kolom tahapnya sendiri, bukan kolom terpisah");
 });
 
 test("papan meja: default 12 unit / 4 meja / 3 per meja; validasi jadwal; kapasitas; jendela kerja WIB", () => {

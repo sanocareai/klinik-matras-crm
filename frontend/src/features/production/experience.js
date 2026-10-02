@@ -71,7 +71,7 @@ export const priorityTone = (priority) => (priority === 2 ? "red" : priority ===
 // "Belum Dijadwalkan"/"Dijadwalkan" DIHAPUS sebagai kolom (status jadwal sekarang badge kartu, bukan kolom) —
 // diganti "Dalam Perjalanan"/"Tiba / Belum Mulai" yang mencerminkan KEADAAN FISIK unit, bukan status jadwalnya.
 export const COMMAND_CENTER_COLUMNS = Object.freeze([
-  "AKAN_MASUK", "DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "QC", "CORNER", "SIAP_KIRIM",
+  "AKAN_MASUK", "DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "BONGKAR", "UJI_FONDASI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "CORNER", "SIAP_KIRIM",
 ]);
 
 // Badge tanggal target (terpisah dari badge prioritas): besok=oranye, hari ini & belum mulai=merah, sudah lewat=merah "Terlambat".

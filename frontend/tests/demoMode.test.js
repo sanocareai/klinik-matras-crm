@@ -90,7 +90,7 @@ test("snapshot QA-PV2: 12 unit bernomor U01–U12, seluruh keadaan matriks hadir
   const cc = get("/production-v2/command-center"); const items = cc.columns.flatMap((c) => c.items);
   assert.equal(items.length + (cc.completedToday?.length || 0), 12, "11 di kolom pipeline + 1 selesai hari ini"); assert.equal(cc.readerMode, "COHORT");
   const buckets = Object.fromEntries(cc.columns.map((c) => [c.key, c.count]));
-  for (const k of ["DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "FONDASI", "LAPISAN", "QC", "CORNER", "SIAP_KIRIM"]) assert.ok(buckets[k] >= 1, k);
+  for (const k of ["DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "BONGKAR", "UJI_FONDASI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "CORNER", "SIAP_KIRIM"]) assert.ok(buckets[k] >= 1, k);
   const board = get(`/production-v2/board?date=${snapshot.today}`);
   assert.equal(board.unscheduled.plans.length + board.unscheduled.units.length, 3, "3 belum dijadwalkan (2 punya rencana tanpa tanggal/meja + 1 belum direncanakan)");
   for (const st of ["TABLE_1", "TABLE_2", "TABLE_3", "TABLE_4"]) assert.ok((board.stations.find((s) => s.code === st)?.items || []).length >= 1, `${st} terisi`);

@@ -15,7 +15,7 @@ import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import { UnitCard } from "@/features/production/UnitCard.jsx";
 import { ScheduleModal } from "@/features/production/ScheduleModals.jsx";
-import { MEJA, backlogOf, mejaLabel } from "@/features/production/unitCardModel.js";
+import { MEJA, backlogOf, mattressInfo, mejaLabel } from "@/features/production/unitCardModel.js";
 import { dropPosition, hasManualOrder, moveRelativeTo, moveStep, orderedStationItems } from "@/features/production/stationOrder.js";
 import { rolesOf } from "@/lib/roles.js";
 
@@ -214,6 +214,7 @@ function DetailRencana({ target, refs, materials, stockByMaterial, onClose, onCh
     onChanged();
   };
   const c = current.customer || {};
+  const mattress = mattressInfo({ unit, customer: c.request != null || c.productType ? c : target.customer });
   return (
     <Modal open onOpenChange={(v) => !v && onClose()} title={`Rencana Produksi — ${unit.unitCode}`} description={unit.orderNumber ? `Order ${unit.orderNumber}` : "Tanpa nomor order"} className="w-[680px]">
       <div className="space-y-3 px-6 pb-4">
@@ -221,7 +222,7 @@ function DetailRencana({ target, refs, materials, stockByMaterial, onClose, onCh
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</div>}
         <dl className="grid grid-cols-2 gap-2 text-[11.5px] sm:grid-cols-3">
           {[["Pelanggan", c.name || "Belum dicatat"], ["Kota", c.city || "Belum dicatat"], ["Sales", c.salesName || "Belum dicatat"],
-            ["Layanan", unit.service?.label || "Belum ditetapkan"], ["Merk/Ukuran", [unit.merk, unit.ukuran].filter(Boolean).join(" ") || "Belum dicatat"]]
+            ["Layanan Sales", (c.salesServices?.length ? c : target.customer || {}).salesServices?.join(" + ") || "Belum tercatat"], ["Kasur", [mattress.jenis, mattress.merk, mattress.ukuran].filter(Boolean).join(" · ") || "Belum dicatat"]]
             .map(([k, v]) => <div key={k} className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">{k}</dt><dd className="m-0 font-semibold text-ink">{v}</dd></div>)}
         </dl>
         <UnitPhotoPanel unitId={unit.id} photoUrl={unit.photoUrl} canUpload={canUploadPhoto}
@@ -306,7 +307,7 @@ function MejaColumn({ station, date, dropActive, onDragOverMeja, onDropMeja, onO
       </div>
       {items.map((v, idx) => (
         <div key={v.runId} data-testid="meja-card" data-plan-id={v.plan?.id} onDrop={(e) => onDropCard(e, v)} className="min-w-0">
-          <UnitCard view={v} variant="compact" seq={idx + 1} today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => onOpen(x.unit.id)}
+          <UnitCard view={v} variant="compact" showTechService={false} seq={idx + 1} today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => onOpen(x.unit.id)}
             footer={(
               <div className="flex w-full gap-1.5">
                 <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] flex-1" onClick={() => onMove(v, station.code)}><CalendarDays size={13} aria-hidden /> Pindahkan</Button>
@@ -483,7 +484,7 @@ export default function ProductionRencanaWorkspace() {
                 </div>
                 {backlog.length === 0 && !loading && <p className="rounded-card border-2 border-dashed border-line p-5 text-center text-[12px] text-ink3">Semua unit sudah dijadwalkan.</p>}
                 {backlog.map((v) => (
-                  <UnitCard key={v.runId} view={v} variant="compact" today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => openOverview(x.unit.id)}
+                  <UnitCard key={v.runId} view={v} variant="compact" showTechService={false} today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => openOverview(x.unit.id)}
                     footer={<Button size="sm" data-mutates className="min-h-[44px] w-full" disabled={busy} onClick={() => setSchedule(v)}><CalendarDays size={13} aria-hidden /> Jadwalkan</Button>} />
                 ))}
               </section>
