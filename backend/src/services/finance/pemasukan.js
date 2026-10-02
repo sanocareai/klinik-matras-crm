@@ -53,6 +53,7 @@ const SUB_LABEL = {
   PENDAPATAN_LAIN: "Pendapatan lain-lain", SETORAN_MODAL: "Setoran modal pemilik", PENDANAAN_PIHAK_KETIGA: "Pendanaan pihak ketiga (investor/mitra)",
   TRANSFER: "Transfer antar-rekening", SALDO_AWAL: "Saldo awal / koreksi saldo", PEMBALIKAN_BIAYA: "Pembalikan pengeluaran (bukan pemasukan)",
   PEMBAYARAN_TERVERIFIKASI: "Uang masuk terverifikasi", PEMBAYARAN_MENUNGGU: "Uang masuk menunggu verifikasi", PEMBAYARAN_TIDAK_DIHITUNG: "Tidak dihitung (ditolak/dibatalkan)",
+  PENJUALAN_KARYAWAN: "Penjualan karyawan (input manual, di luar Order)", PELUNASAN_PIUTANG_KARYAWAN: "Pelunasan tagihan penjualan karyawan (bukan pendapatan baru)",
   PEMBAYARAN_BELUM_DIBUKUKAN: "Terverifikasi, belum masuk buku besar", TIDAK_JELAS: "Akun lawan tidak menentukan jenis dana", HISTORIS: "Pendapatan arsip (non-posting)",
 };
 const AKUN_ORDER = new Set(["PENDAPATAN_LAYANAN", "PENDAPATAN_PRODUK", "PENDAPATAN_SEWA", "PENDAPATAN_ONGKIR", "RETUR_PENJUALAN"]);
@@ -72,6 +73,8 @@ export function klasifikasiJurnal(e) {
   const kasNet = kas.length ? sumMoney(kas.map((l) => toMoney(l.debit).minus(toMoney(l.credit)))) : ZERO;
   const item = (kategori, sub, nilai, extra = {}) => ({ kategori, sub, nilai: toMoney(nilai), ...extra });
 
+  // Uang masuk dari karyawan untuk melunasi tagihan penjualannya = penyelesaian piutang; pendapatannya sudah diakui saat penjualan dicatat. Tidak dihitung dua kali.
+  if (asal === "PEMBAYARAN_PENJUALAN_KARYAWAN") return kasMasuk.isZero() ? [] : [item("DIKECUALIKAN", "PELUNASAN_PIUTANG_KARYAWAN", kasMasuk)];
   if (asal === "TRANSFER_KAS") return kasMasuk.isZero() ? [] : [item("DIKECUALIKAN", "TRANSFER", kasMasuk)];
   if (asal === "SALDO_AWAL") return kasNet.isZero() ? [] : [item("DIKECUALIKAN", "SALDO_AWAL", kasNet)];
 
@@ -96,6 +99,7 @@ export function klasifikasiJurnal(e) {
     const nilai = net(revLain);
     if (!nilai.isZero()) {
       if (asal === "PEMASUKAN_LAIN") hasil.push(item("LAIN", "PENDAPATAN_LAIN", nilai));
+      else if (asal === "PENJUALAN_KARYAWAN") hasil.push(item("LAIN", "PENJUALAN_KARYAWAN", nilai)); // di luar penjualan order: masuk pendapatan perusahaan, terpisah dari omzet order/Tim Sales
       else hasil.push(item("DITINJAU", "TIDAK_JELAS", nilai, { catatan: "Pendapatan pada akun non-penjualan di luar alur Pemasukan Lain" }));
       dijelaskan = dijelaskan.plus(nilai);
     }

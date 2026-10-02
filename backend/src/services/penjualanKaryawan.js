@@ -22,6 +22,14 @@ export class PenjualanKaryawanError extends Error {
 
 const rp = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
+/** Karyawan penjual harus akun aktif dan BUKAN Sales (penjualan tim Sales punya jalur sendiri). Dipakai penanda di Order dan modul Penjualan Karyawan manual. */
+export async function pastikanKaryawanNonSales(db, userId) {
+  const u = await db.user.findUnique({ where: { id: userId }, select: { id: true, name: true, active: true, role: true, roles: { select: { role: true } } } });
+  if (!u || !u.active) throw new PenjualanKaryawanError("Karyawan tidak ditemukan atau tidak aktif", 422, "KARYAWAN_TIDAK_VALID");
+  if (rolesOf({ role: u.role, roles: u.roles.map((r) => r.role) }).includes("SALES")) throw new PenjualanKaryawanError("Penjual karyawan harus non-Sales. Order yang dijual tim Sales ditetapkan lewat pemilik Sales.", 422, "KARYAWAN_ADALAH_SALES");
+  return u;
+}
+
 /** Set / hapus penjual karyawan sebuah order (Admin). `staffSellerId = null` menghapus penanda. Diaudit. `tx` = klien transaksi. */
 export async function ubahPenjualKaryawan(tx, { orderId, staffSellerId = null, actorId }) {
   const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true, orderNumber: true, staffSellerId: true, staffSeller: { select: { name: true } } } });
@@ -30,10 +38,7 @@ export async function ubahPenjualKaryawan(tx, { orderId, staffSellerId = null, a
   if ((order.staffSellerId ?? null) === baru) throw new PenjualanKaryawanError("Penjual karyawan sudah sama", 409, "SUDAH_SAMA");
   let namaBaru = null;
   if (baru) {
-    const u = await tx.user.findUnique({ where: { id: baru }, select: { id: true, name: true, active: true, role: true, roles: { select: { role: true } } } });
-    if (!u || !u.active) throw new PenjualanKaryawanError("Karyawan tidak ditemukan atau tidak aktif", 422, "KARYAWAN_TIDAK_VALID");
-    if (rolesOf({ role: u.role, roles: u.roles.map((r) => r.role) }).includes("SALES")) throw new PenjualanKaryawanError("Penjual karyawan harus non-Sales. Order yang dijual tim Sales ditetapkan lewat pemilik Sales.", 422, "KARYAWAN_ADALAH_SALES");
-    namaBaru = u.name;
+    namaBaru = (await pastikanKaryawanNonSales(tx, baru)).name;
   }
   await tx.order.update({ where: { id: orderId }, data: { staffSellerId: baru } });
   await recordActivity(tx, {

@@ -1623,6 +1623,13 @@ export const api = {
   batalPelunasanKasbon: (id, rid, reason) => request(`/finance/kasbon/${id}/pelunasan/${rid}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
   batalKasbon: (id, reason) => request(`/finance/kasbon/${id}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
   editKasbon: (id, data) => request(`/finance/kasbon/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Penjualan Karyawan — input manual di luar Order (Finance)
+  getPenjualanKaryawanFinance: (params = {}) => request(`/finance/penjualan-karyawan${qsFinance(params)}`),
+  getKaryawanPenjualanKaryawan: () => request("/finance/penjualan-karyawan/karyawan"),
+  createPenjualanKaryawan: (data) => request("/finance/penjualan-karyawan", { method: "POST", body: JSON.stringify(data) }),
+  catatPembayaranPenjualanKaryawan: (id, data) => request(`/finance/penjualan-karyawan/${id}/pembayaran`, { method: "POST", body: JSON.stringify(data) }),
+  batalPembayaranPenjualanKaryawan: (id, pid, reason) => request(`/finance/penjualan-karyawan/${id}/pembayaran/${pid}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
+  batalPenjualanKaryawan: (id, reason) => request(`/finance/penjualan-karyawan/${id}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
   // Verifikasi penerimaan order yang ditandai LUNAS sales tanpa catatan pembayaran
   getFinanceLunasBelumDicatat: () => request("/finance/penerimaan/lunas-belum-dicatat"),
   verifikasiPenerimaan: (data) => request("/finance/penerimaan/verifikasi", { method: "POST", body: JSON.stringify(data) }),

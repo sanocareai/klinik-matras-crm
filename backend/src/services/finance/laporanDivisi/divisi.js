@@ -40,6 +40,7 @@ export const SUMBER_TETAP = Object.freeze({
   REFUND: { scope: "SALES", aturan: "Refund pelanggan atas order milik Sales" },
   TRANSFER_KAS: { scope: "SHARED", aturan: "Biaya admin transfer antar rekening = biaya bank bersama" },
   KASBON: { scope: "HR_GA", aturan: "Kasbon gaji karyawan dikelola HR & GA", sensitif: true },
+  PEMBAYARAN_PENJUALAN_KARYAWAN: { scope: "HR_GA", aturan: "Potong gaji atas tagihan penjualan karyawan dikelola HR & GA (sisi jurnal sama dengan potongan Kasbon)", sensitif: true },
 });
 
 /** Kategori pembelian (FinPurchaseCategory belum punya kolom divisi) → scope. Yang tidak terdaftar = tidak terbukti → TIDAK_TERKLASIFIKASI. */
@@ -61,7 +62,7 @@ export const AKUN_SENSITIF = Object.freeze(["6-1100", "1-1350", "2-1500", "2-160
 /** Sumber jurnal yang mewakili BIAYA/penggunaan uang oleh divisi (selain sumber di luar: pendapatan, saldo awal, rekonsiliasi). */
 export const SUMBER_BIAYA = Object.freeze([
   "PENGELUARAN", "PEMBELIAN", "BIAYA_KENDARAAN", "BIAYA_IKLAN", "TAGIHAN_SUPPLIER", "PEMBAYARAN_SUPPLIER", "PEMAKAIAN_BAHAN", "PENERIMAAN_BAHAN",
-  "KASBON", "UANG_MUKA_OPERASIONAL", "INSENTIF_DRIVER", "REFUND", "TRANSFER_KAS", "TERAPKAN_UANG_MUKA", "MANUAL", "REVERSAL",
+  "KASBON", "PEMBAYARAN_PENJUALAN_KARYAWAN", "UANG_MUKA_OPERASIONAL", "INSENTIF_DRIVER", "REFUND", "TRANSFER_KAS", "TERAPKAN_UANG_MUKA", "MANUAL", "REVERSAL",
 ]);
 
 /**

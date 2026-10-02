@@ -574,6 +574,9 @@ model User {
   finKasbonEmployee                      FinKasbon[]                     @relation("FinKasbonEmployee")
   finKasbonCreated                       FinKasbon[]                     @relation("FinKasbonCreator")
   finKasbonRepaymentCreated              FinKasbonRepayment[]            @relation("FinKasbonRepaymentCreator")
+  finPenjualanKaryawanSold               FinPenjualanKaryawan[]          @relation("FinPenjualanKaryawanSeller")
+  finPenjualanKaryawanCreated            FinPenjualanKaryawan[]          @relation("FinPenjualanKaryawanCreator")
+  finPenjualanKaryawanPaymentCreated     FinPenjualanKaryawanPayment[]   @relation("FinPenjualanKaryawanPaymentCreator")
   finOtherIncomesCreated                 FinOtherIncome[]                @relation("FinOtherIncomeCreator")
   finOtherIncomesVoided                  FinOtherIncome[]                @relation("FinOtherIncomeCanceller")
   finCashTransfersCreated                FinCashTransfer[]               @relation("FinCashTransferCreator")
@@ -6544,6 +6547,7 @@ model FinCashAccount {
   purchases        FinPurchase[]
   kasbon           FinKasbon[]
   kasbonRepayments FinKasbonRepayment[]
+  penjualanKaryawanPayments FinPenjualanKaryawanPayment[]
   otherIncomes     FinOtherIncome[]
   transfersFrom    FinCashTransfer[]    @relation("FinTransferFrom")
   transfersTo      FinCashTransfer[]    @relation("FinTransferTo")
@@ -6621,6 +6625,8 @@ enum FinJournalSource {
   INSENTIF_DRIVER // IncentivePayout — Dr Beban Insentif Driver / Cr Kas-Bank; lihat posting/incentivePayout.js
   UANG_MUKA_OPERASIONAL // Uang Muka Operasional: pemberian, pengembalian sisa; lihat posting/operationalAdvance.js
   REVERSAL // jurnal balik dari pembatalan jurnal lain
+  PENJUALAN_KARYAWAN // Penjualan Karyawan (input manual di luar Order): Dr Piutang Karyawan / Cr Pendapatan Penjualan Karyawan; lihat posting/penjualanKaryawan.js
+  PEMBAYARAN_PENJUALAN_KARYAWAN // pelunasan penjualan karyawan: Dr Kas/Bank / Cr Piutang Karyawan, atau potong gaji Dr Beban Gaji / Cr Piutang Karyawan
   PERSEDIAAN_AWAL // B3.6 — penutupan stok periodik → persediaan awal perpetual dari stok opname fisik (FinInventoryOpening)
 }
 
@@ -7832,6 +7838,99 @@ model FinKasbonRepayment {
 
   @@index([kasbonId])
   @@map("fin_kasbon_repayments")
+}
+
+// ═══ PENJUALAN KARYAWAN — input manual di luar Order (2 Okt 2026) ═══════════
+// Karyawan non-Sales menjual ke kerabat. Dicatat MANUAL oleh Finance/Admin: TANPA Order, TANPA Customer/Inbox, TANPA unit produksi atau job
+// delivery (tidak mengganggu alur order customer). Pembeli = teks bebas. Pendapatan diakui saat dicatat dan tagihannya jadi Piutang Karyawan
+// (1-1350) milik karyawan penjual; pelunasan = tunai/transfer ke rekening atau potong gaji. HPP TIDAK dibukukan di modul ini.
+// Jurnal & aturan: services/finance/posting/penjualanKaryawan.js. Order lama yang sudah ditandai Order.staffSellerId TIDAK dimasukkan lagi di sini.
+enum FinPenjualanKaryawanStatus {
+  AKTIF
+  DIBATALKAN
+}
+
+enum FinPenjualanKaryawanMetode {
+  TUNAI // uang tunai disetor ke rekening kas perusahaan
+  TRANSFER // transfer masuk ke rekening perusahaan
+  POTONG_GAJI // dipotong dari gaji karyawan penjual — kas tidak tersentuh (Dr Beban Gaji / Cr Piutang Karyawan)
+}
+
+model FinPenjualanKaryawan {
+  id    String @id @default(uuid()) @db.Uuid
+  nomor String @unique // PKR-DDMMYYYY-NNN
+
+  date DateTime @db.Date
+
+  // Karyawan penjual (akun sistem): penanggung piutangnya. Restrict: karyawan yang punya penjualan tidak boleh terhapus diam-diam.
+  sellerId String @map("seller_id")
+  seller   User   @relation("FinPenjualanKaryawanSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+
+  buyerName String  @map("buyer_name") // kerabat/pembeli — teks bebas, bukan Customer
+  notes     String?
+
+  // Dihitung SERVER = jumlah (qty × harga satuan) seluruh item; tidak pernah diterima dari klien.
+  total Decimal @db.Decimal(18, 2)
+
+  status FinPenjualanKaryawanStatus @default(AKTIF)
+
+  cancelledAt  DateTime? @map("cancelled_at")
+  cancelReason String?   @map("cancel_reason")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinPenjualanKaryawanCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  items    FinPenjualanKaryawanItem[]
+  payments FinPenjualanKaryawanPayment[]
+
+  @@index([sellerId, status])
+  @@index([date])
+  @@map("fin_penjualan_karyawan")
+}
+
+model FinPenjualanKaryawanItem {
+  id String @id @default(uuid()) @db.Uuid
+
+  penjualanId String               @map("penjualan_id") @db.Uuid
+  penjualan   FinPenjualanKaryawan @relation(fields: [penjualanId], references: [id], onDelete: Restrict)
+
+  name      String
+  quantity  Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(18, 2)
+  sortOrder Int     @default(0) @map("sort_order")
+
+  @@index([penjualanId])
+  @@map("fin_penjualan_karyawan_items")
+}
+
+model FinPenjualanKaryawanPayment {
+  id String @id @default(uuid()) @db.Uuid
+
+  penjualanId String               @map("penjualan_id") @db.Uuid
+  penjualan   FinPenjualanKaryawan @relation(fields: [penjualanId], references: [id], onDelete: Restrict)
+
+  date   DateTime                   @db.Date
+  amount Decimal                    @db.Decimal(18, 2)
+  method FinPenjualanKaryawanMetode
+
+  // Wajib untuk TUNAI/TRANSFER (uang masuk ke rekening mana), kosong untuk POTONG_GAJI.
+  cashAccountId String?         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  receiptUrl String? @map("receipt_url") // bukti transfer/setoran
+  notes      String?
+
+  cancelledAt  DateTime? @map("cancelled_at")
+  cancelReason String?   @map("cancel_reason")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinPenjualanKaryawanPaymentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([penjualanId])
+  @@map("fin_penjualan_karyawan_payments")
 }
 
 // ═══ SESI MOBILE (Finance Android, 19 September 2026) ═══════════════════════

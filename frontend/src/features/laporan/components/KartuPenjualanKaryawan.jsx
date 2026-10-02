@@ -23,7 +23,8 @@ export default function KartuPenjualanKaryawan({ range }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kunci, boleh]);
 
-  if (!boleh || !data || data.total.jumlahOrder === 0) return null;
+  const manual = data?.manual && data.manual.jumlah > 0 ? data.manual : null;
+  if (!boleh || !data || (data.total.jumlahOrder === 0 && !manual)) return null;
   return (
     <section className="rounded-card bg-surface p-4 shadow-card" data-testid="kartu-penjualan-karyawan">
       <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-ink3"><UserRound size={13} /> Penjualan Karyawan (di luar tim Sales)</div>
@@ -50,6 +51,15 @@ export default function KartuPenjualanKaryawan({ range }) {
           </details>
         ))}
       </div>
+      {manual && (
+        <div className="mt-3 rounded-lg bg-inset p-3" data-testid="penjualan-karyawan-manual">
+          <p className="text-[12px] font-semibold text-ink">Dicatat manual di Finance (di luar Order) · {manual.jumlah} penjualan</p>
+          <p className="mt-0.5 text-[12px] text-ink2">Nilai {formatRupiah(manual.nilai)} · Dibayar {formatRupiah(manual.terbayar)} · Sisa {formatRupiah(manual.sisa)}</p>
+          <ul className="mt-1.5 space-y-0.5 text-[12px] text-ink2">
+            {manual.karyawan.map((k) => <li key={k.sellerId} className="flex justify-between gap-2"><span>{k.nama} · {k.jumlah} penjualan</span><span className="tabular-nums">Sisa {formatRupiah(k.sisa)}</span></li>)}
+          </ul>
+        </div>
+      )}
       <p className="mt-2 text-[11.5px] leading-relaxed text-ink3">{data.catatan.join(" ")}</p>
     </section>
   );

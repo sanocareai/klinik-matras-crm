@@ -10,6 +10,7 @@ import {
   Landmark, BookOpen, FileSpreadsheet, Banknote, Receipt, Building2, Scale as ScaleIcon, ListTree,
   ShoppingCart,
   HandCoins,
+  UserRound,
   FileCheck,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
@@ -534,6 +535,7 @@ const DIVISIONS = {
           { to: "/finance/pengajuan-divisi", label: "Pengajuan Biaya Divisi", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"] },
           { to: "/finance/purchases", label: "Pembelian",              Icon: ShoppingCart },
           { to: "/finance/kasbon",    label: "Kasbon",                 Icon: HandCoins },
+          { to: "/finance/penjualan-karyawan", label: "Penjualan Karyawan", Icon: UserRound },
           { to: "/finance/uang-muka", label: "Uang Muka Operasional",  Icon: PiggyBank },
         ],
       },

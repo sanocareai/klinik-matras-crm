@@ -390,7 +390,7 @@ function ArusKas({ d }) {
 }
 
 const LABEL_SUMBER_ARUS = {
-  PEMBAYARAN_ORDER: "Pembayaran pelanggan", PEMASUKAN_LAIN: "Pemasukan lain", SALDO_AWAL: "Penyesuaian saldo awal", REVERSAL: "Jurnal pembalik",
+  PEMBAYARAN_ORDER: "Pembayaran pelanggan", PEMASUKAN_LAIN: "Pemasukan lain", PENJUALAN_KARYAWAN: "Penjualan karyawan", PEMBAYARAN_PENJUALAN_KARYAWAN: "Pembayaran penjualan karyawan", SALDO_AWAL: "Penyesuaian saldo awal", REVERSAL: "Jurnal pembalik",
   REKONSILIASI_SEMENTARA: "Rekonsiliasi sementara", PENGELUARAN: "Pengeluaran", PEMBELIAN: "Pembelian", PEMBAYARAN_SUPPLIER: "Pembayaran supplier", KASBON: "Kasbon",
   UANG_MUKA_OPERASIONAL: "Uang muka operasional", REFUND: "Refund pelanggan", TRANSFER_KAS: "Biaya admin transfer antar rekening", BIAYA_KENDARAAN: "Biaya kendaraan", BIAYA_IKLAN: "Biaya iklan",
   INSENTIF_DRIVER: "Insentif driver", MANUAL: "Jurnal manual", TERAPKAN_UANG_MUKA: "DP pembelian diterapkan", PEMAKAIAN_BAHAN: "Pemakaian bahan", PENERIMAAN_BAHAN: "Penerimaan bahan", PERSEDIAAN_AWAL: "Persediaan awal",

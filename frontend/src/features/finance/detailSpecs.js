@@ -3,6 +3,7 @@
 import React from "react";
 import { LABEL_DIVISI, formatUang, tanggalPendek, tanggalJam, Foto } from "./shared.jsx";
 import { LinkBukti } from "./receiptMedia.jsx";
+import { LABEL_METODE_PJK } from "./penjualanKaryawanLogic.js";
 
 const uang = (v) => (v === null || v === undefined ? null : formatUang(v));
 const nama = (o) => o?.name || null;
@@ -92,6 +93,23 @@ export function specKasbon(k, { badge, aksi } = {}) {
       { judul: "Uang keluar", baris: [["Sumber dana", nama(k.cashAccount)], ["Metode", k.paymentMethod ? (LABEL_METODE_BAYAR[k.paymentMethod] || k.paymentMethod) : null], ["Bukti", ada(k.receiptUrl)]] },
       ...(riwayat.length > 0 ? [{ judul: `Potongan gaji (${riwayat.length})`, baris: riwayat.map((r, i) => [`${i + 1}. ${tanggalPendek(r.date)}`, `${formatUang(r.amount)}${r.notes ? ` — ${r.notes}` : ""}`]) }] : []),
       { judul: "Jejak", baris: [["Dibuat oleh", nama(k.createdBy)], ["Dibuat pada", TAMPIL_TANGGAL(k.createdAt)], ["Dibatalkan", k.cancelledAt ? `${TAMPIL_TANGGAL(k.cancelledAt)}${k.cancelReason ? ` — ${k.cancelReason}` : ""}` : null]] },
+    ],
+  };
+}
+
+export function specPenjualanKaryawan(p, { badge, aksi } = {}) {
+  const bayar = (p.payments || []).filter((x) => !x.cancelledAt);
+  return {
+    judul: p.nomor, subjudul: `Penjualan ${p.seller?.name || "karyawan"} → ${p.buyerName}`, badge, aksi,
+    ringkas: [
+      ["Total penjualan", formatUang(p.total)],
+      ["Sisa tagihan ke karyawan", formatUang(p.sisa ?? 0), Number(p.sisa) > 0 ? "oranye" : "hijau"],
+    ],
+    bagian: [
+      { judul: "Penjualan", baris: [["Tanggal", tanggalPendek(p.date)], ["Karyawan penjual", nama(p.seller)], ["Pembeli", p.buyerName], ["Sudah dibayar", uang(p.terbayar)], ["Catatan", p.notes]] },
+      { judul: `Item (${(p.items || []).length})`, baris: (p.items || []).map((i) => [i.name, `${i.quantity} × ${formatUang(i.unitPrice)} = ${formatUang(i.subtotal)}`]) },
+      ...(bayar.length > 0 ? [{ judul: `Pembayaran (${bayar.length})`, baris: bayar.map((x, i) => [`${i + 1}. ${tanggalPendek(x.date)}`, `${formatUang(x.amount)} · ${LABEL_METODE_PJK[x.method] || x.method}${x.cashAccount ? ` ke ${x.cashAccount.name}` : ""}${x.notes ? ` — ${x.notes}` : ""}`]) }] : []),
+      { judul: "Jejak", baris: [["Dibuat oleh", nama(p.createdBy)], ["Dibuat pada", TAMPIL_TANGGAL(p.createdAt)], ["Dibatalkan", p.cancelledAt ? `${TAMPIL_TANGGAL(p.cancelledAt)}${p.cancelReason ? ` — ${p.cancelReason}` : ""}` : null]] },
     ],
   };
 }

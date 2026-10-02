@@ -16,7 +16,7 @@ import { JudulKartu, KartuAngka, formatUang, Uang, tanggalPendek, tanggalJam } f
 
 const LABEL_SUMBER = {
   PEMBAYARAN_ORDER: "Pembayaran order", PENGELUARAN: "Pengeluaran", PEMBELIAN: "Pembelian", TRANSFER_KAS: "Transfer kas",
-  PEMASUKAN_LAIN: "Pemasukan lain", PEMBAYARAN_SUPPLIER: "Pembayaran supplier", REFUND: "Refund", KASBON: "Kasbon",
+  PEMASUKAN_LAIN: "Pemasukan lain", PEMBAYARAN_SUPPLIER: "Pembayaran supplier", REFUND: "Refund", KASBON: "Kasbon", PENJUALAN_KARYAWAN: "Penjualan karyawan", PEMBAYARAN_PENJUALAN_KARYAWAN: "Pembayaran penjualan karyawan",
   SALDO_AWAL: "Penyesuaian saldo", REKONSILIASI_SEMENTARA: "Penyesuaian sementara (2-1700)", REVERSAL: "Reversal", MANUAL: "Jurnal umum",
   UANG_MUKA_OPERASIONAL: "Uang muka operasional", INSENTIF_DRIVER: "Insentif driver",
 };

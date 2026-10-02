@@ -8,6 +8,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { rolesOf, hasPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { klaimGateAktif } from "../services/finance/klaimLunas.js";
 import { ubahPenjualKaryawan, ringkasanPenjualanKaryawan, PenjualanKaryawanError } from "../services/penjualanKaryawan.js";
+import { ringkasanPerKaryawan } from "../services/finance/penjualanKaryawanManual.js";
 // Batas rentang tanggal WIB — WAJIB dipakai, jangan `new Date(from)` polos.
 // Container backend jalan di UTC, jadi batas polos menggeser jendela 7 jam
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
@@ -895,7 +896,9 @@ orderRouter.get("/penjualan-karyawan/ringkasan", async (req, res) => {
     const tgl = /^\d{4}-\d{2}-\d{2}$/;
     const from = tgl.test(String(req.query.from || "")) ? String(req.query.from) : null;
     const to = tgl.test(String(req.query.to || "")) ? String(req.query.to) : null;
-    res.json(await ringkasanPenjualanKaryawan(prisma, from && to ? { from, to } : {}));
+    const periode = from && to ? { from, to } : {};
+    // "manual" = penjualan karyawan yang dicatat Finance di luar Order (modul Penjualan Karyawan); dua sumber berbeda, tidak pernah tumpang tindih.
+    res.json({ ...(await ringkasanPenjualanKaryawan(prisma, periode)), manual: await ringkasanPerKaryawan(prisma, periode) });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : "Server error: " + err.message }); }
 });
 
