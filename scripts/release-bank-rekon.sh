@@ -22,7 +22,7 @@ declare -A MIGRASI_TERAUDIT=( ["20261015100000_bank_reconciliation_v2"]="09277b2
 NEW_MIGRATION="${NEW_MIGRATION-}"
 # Berkas yang BOLEH berbeda dari baseline: hanya area Finance + skrip/tes-nya. Apa pun di luar ini (Production, Delivery, Inbox, schema, migration,
 # package-lock) = berhenti — supaya pekerjaan workspace lain yang sudah live tidak pernah tertimpa.
-ALLOWED_RE='^(backend/src/services/finance/buku\.js|backend/tests/integration/mutasiRekening\.integration\.test\.js|scripts/release-bank-rekon\.sh)$'  # EKSPLISIT: path persis tiap berkas yang berubah (3); Production/Delivery/Inbox/Sales tidak boleh ikut
+ALLOWED_RE='^(CLAUDE\.md|backend/src/routes/financeBuku\.js|backend/src/routes/financeRekon\.js|backend/src/services/finance/bankRekon/pencocokan\.js|backend/src/services/finance/buku\.js|backend/src/services/finance/export/mutasi-bank\.js|backend/src/services/finance/export/mutasi-rekening\.js|backend/src/services/finance/saringUrut\.js|backend/tests/integration/bankRekon\.integration\.test\.js|backend/tests/integration/mutasiRekening\.integration\.test\.js|frontend/src/features/finance/MutasiBank\.jsx|frontend/src/features/finance/MutasiRekening\.jsx|frontend/src/features/finance/SaringNominal\.jsx|frontend/src/features/finance/rekonBankLogic\.js|frontend/tests/rekonBankUi\.test\.js|scripts/release-bank-rekon\.sh)$'  # EKSPLISIT: path persis tiap berkas yang berubah (16); Production/Delivery/Inbox/Sales tidak boleh ikut
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
@@ -338,12 +338,12 @@ ok "backend baru sehat (image ${NEW_IMG_ID:7:12}, release ${DEPLOY_SHORT})"
 PHASE="8-verifikasi"; say "8. Verifikasi pasca-rilis (baca-saja)"
 curl -fsS --max-time 15 "${PUBLIC_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck publik gagal"; ok "publik 200"
 [ "$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)" = "$NEW_INDEX" ] || die "bundel publik BUKAN dist baru (${NEW_INDEX})"; ok "bundel web publik = dist baru ${NEW_INDEX}"
-for f in backend/src/services/finance/buku.js; do
+for f in backend/src/routes/financeBuku.js backend/src/routes/financeRekon.js backend/src/services/finance/bankRekon/pencocokan.js backend/src/services/finance/buku.js backend/src/services/finance/export/mutasi-bank.js backend/src/services/finance/export/mutasi-rekening.js backend/src/services/finance/saringUrut.js; do
   want="$(sg show "${DEPLOY_SHA}:${f}" | tr -d '\r' | sha256sum | cut -d' ' -f1)"
   have="$(docker exec "$CID_NEW" sh -c "cat /app/${f#backend/}" | tr -d '\r' | sha256sum | cut -d' ' -f1)"
   [ "$want" = "$have" ] || die "container baru TIDAK memuat ${f} persis"
 done
-ok "1 berkas backend di container = kandidat (byte-identik)"
+ok "7 berkas backend di container = kandidat (byte-identik)"
 PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }
 [ "$(PSQLN "select count(*) from information_schema.tables where table_name in ('fin_bank_import_batches','fin_bank_import_lines','fin_bank_match_groups','fin_bank_match_items','fin_bank_recon_periods','fin_cash_counts')")" = "6" ] || die "6 tabel V2 tidak ada setelah rilis"
 for T in fin_bank_import_batches fin_bank_import_lines fin_bank_match_groups fin_bank_match_items fin_bank_recon_periods fin_cash_counts; do [ "$(PSQLN "select count(*) from $T")" = "0" ] || die "tabel $T TIDAK kosong setelah rilis (tidak boleh ada data rekening nyata/QA)"; done
