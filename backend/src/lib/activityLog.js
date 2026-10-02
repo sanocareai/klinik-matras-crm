@@ -66,6 +66,8 @@ export const ENTITY_TYPES = Object.freeze({
   FIN_OTHER_INCOME: "fin_other_income",
   // Rekonsiliasi bank: pencocokan/pelepasan baris koran dengan mutasi buku (S9).
   FIN_BANK_STATEMENT: "fin_bank_statement",
+  // Rekonsiliasi Bank V2 (15 Okt 2026): impor rekening koran, pencocokan, pengecualian, hitung fisik kas, penyelesaian periode. entityId = id rekening kas/bank, kelompok pencocokan, batch, atau periode.
+  FIN_BANK_REKON: "fin_bank_rekon",
   FIN_LEGACY_BATCH: "fin_legacy_batch", // Data Sebelum Sistem (register pendapatan historis non-posting)
   // Hardening insentif driver (23 September 2026) — koreksi admin atas
   // driver/helper/completedAt POD (PATCH /armada/pod/:jobId/edit) LANGSUNG
@@ -141,6 +143,7 @@ export const EVENT_TYPES = Object.freeze({
   KLAIM_LUNAS: "KLAIM_LUNAS",
   // Penjualan Karyawan (1 Okt 2026): penanda karyawan non-Sales yang menjual sebuah order diubah (metadata: before/to = nama karyawan).
   PENJUALAN_KARYAWAN_DIUBAH: "PENJUALAN_KARYAWAN_DIUBAH",
+  BANK_REKON_V2: "BANK_REKON_V2", // metadata.aksi: impor | impor_dibatalkan | cocok | cocok_dibatalkan | dikecualikan | opname | periode_selesai | periode_dibatalkan — services/finance/bankRekon/
   PAIDAT_PENGECUALIAN: "PAIDAT_PENGECUALIAN", // pengecualian tanggal lunas (Order.paidAt) dibuat/dicabut oleh Owner — services/pengecualianPaidAt.js
   // Custody unit Gudang V2 (P1–P2): serah-terima Delivery <-> Gudang. Detail (unit, arah, lokasi, alasan) ada di metadata.
   CUSTODY_OFFERED: "CUSTODY_OFFERED",
@@ -436,6 +439,20 @@ export function formatActivitySentence(event) {
       return `Kekurangan bahan unit ${metadata.unitCode || "—"} diselesaikan Gudang${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_CANCELLED:
       return `Pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.BANK_REKON_V2: {
+      const alasan = metadata.alasan ? ` — ${metadata.alasan}` : "";
+      switch (metadata.aksi) {
+        case "impor": return `Rekening koran diimpor (${metadata.rekening ?? "rekening"}): ${metadata.jumlahBaris ?? 0} baris${metadata.dilewati ? `, ${metadata.dilewati} baris ganda dilewati` : ""}`;
+        case "impor_dibatalkan": return `Impor rekening koran dibatalkan (${metadata.jumlahBaris ?? 0} baris)${alasan}`;
+        case "cocok": return `Pencocokan ${metadata.bentuk ?? ""} dibuat (${metadata.jenis === "OTOMATIS" ? "otomatis" : "manual"})${alasan}`.replace("  ", " ");
+        case "cocok_dibatalkan": return `Pencocokan dibatalkan${alasan}`;
+        case "dikecualikan": return `Dikecualikan dari pencocokan${alasan}`;
+        case "opname": return `Hitung fisik kas Rp${Number(metadata.jumlah ?? 0).toLocaleString("id-ID")} dicatat${alasan}`;
+        case "periode_selesai": return `Periode rekonsiliasi diselesaikan (${metadata.periode ?? ""})`;
+        case "periode_dibatalkan": return `Periode rekonsiliasi dinyatakan tidak berlaku${alasan}`;
+        default: return "Aktivitas rekonsiliasi bank";
+      }
+    }
     case EVENT_TYPES.PAIDAT_PENGECUALIAN:
       return metadata.aksi === "dicabut"
         ? `Pengecualian tanggal lunas dicabut — ${metadata.alasan ?? "tanpa alasan"}`

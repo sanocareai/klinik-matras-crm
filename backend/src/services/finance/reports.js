@@ -712,19 +712,18 @@ export async function saldoKasBank(db, { to: batas = todayBookDateWIB() } = {}) 
   });
   if (rekening.length === 0) return [];
 
-  const grouped = await db.finJournalLine.groupBy({
-    by: ["cashAccountId"],
-    where: {
-      cashAccountId: { in: rekening.map((r) => r.id) },
-      entry: { status: { in: STATUS_DIHITUNG }, date: { lte: to } },
-    },
-    _sum: { debit: true, credit: true },
-  });
-  const peta = new Map(grouped.map((g) => [g.cashAccountId, g]));
+  // DEFINISI SALDO REKENING (15 Okt 2026, SATU definisi untuk kartu Kas & Bank, Mutasi Buku, dan Rekonsiliasi): hanya baris yang ditandai rekening ini DAN berakun kas/bank rekening itu.
+  // Baris bertanda rekening tetapi berakun lain (mis. beban biaya admin yang dulu ikut ditandai) bukan uang di rekening dan tidak boleh menggeser saldonya. Sama dengan saldoBukuRekening().
+  const grouped = await db.$queryRawUnsafe(
+    `SELECT l.cash_account_id::text AS id, COALESCE(SUM(l.debit - l.credit), 0)::text AS saldo
+       FROM fin_journal_lines l
+       JOIN fin_cash_accounts c ON c.id = l.cash_account_id AND c.account_id = l.account_id
+       JOIN fin_journal_entries e ON e.id = l.entry_id
+      WHERE l.cash_account_id = ANY($1::uuid[]) AND e.status IN ('POSTED','REVERSED') AND e.date <= $2::date
+      GROUP BY l.cash_account_id`,
+    rekening.map((r) => r.id), to,
+  );
+  const peta = new Map(grouped.map((g) => [g.id, g.saldo]));
 
-  return rekening.map((r) => {
-    const g = peta.get(r.id);
-    const saldo = toMoney(g?._sum.debit || 0).minus(toMoney(g?._sum.credit || 0));
-    return { ...r, saldo: moneyToNumber(saldo) };
-  });
+  return rekening.map((r) => ({ ...r, saldo: moneyToNumber(toMoney(peta.get(r.id) ?? 0)) }));
 }

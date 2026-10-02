@@ -407,6 +407,86 @@ Saldo menurut koran/mutasi bank pada periode rekonsiliasi. Selisihnya dengan buk
 | Tampil di | Rekonsiliasi |
 | Export | rekonsiliasi |
 
+### Saldo Buku per Rekening (`saldo_buku_rekening`)
+
+Saldo SATU rekening (PT Sano, KEM, Uang Kas) menurut jurnal sampai tanggal posisi. Definisi yang sama dengan kartu Kas & Bank, Mutasi Buku, dan Rekonsiliasi — saldo awal + mutasi = saldo ini.
+
+| | |
+|---|---|
+| Rumus | Σ debit − kredit baris jurnal yang ditandai rekening itu DAN berakun kas/bank rekening itu |
+| Sumber | jurnal akun Kas/Bank per rekening (cash_account_id) |
+| Status dihitung | terposting + dibalik |
+| Basis tanggal | Posisi per tanggal |
+| Termasuk | Baris pada akun kas/bank rekening itu, termasuk transfer antar rekening dan biaya admin sebagai kredit rekening sumber |
+| Tidak termasuk | Baris beban/utang/piutang (lawan) walau salah tertanda rekening; Jurnal lama tanpa rekening (dilaporkan sebagai exception) |
+| Pasangan rekonsiliasi | Kas & Bank (Menurut Buku); Saldo Rekening Koran / Hitung Fisik; Selisih Saldo Buku − Bank |
+| Tampil di | Kas & Bank (Mutasi Buku, Rekonsiliasi) |
+| Export | mutasi-rekening, rekonsiliasi-rekening |
+
+### Saldo Rekening Koran / Hitung Fisik (`saldo_bank_rekening`)
+
+Saldo menurut rekening koran yang diimpor (kolom saldo berkas atau diisi pengguna). Untuk Uang Kas: jumlah uang fisik hasil hitung (opname) terakhir. BUKAN hasil hitungan sistem.
+
+| | |
+|---|---|
+| Rumus | saldo baris rekening koran terakhir ≤ tanggal posisi; Uang Kas: opname terakhir ≤ tanggal posisi |
+| Sumber | tabel fin_bank_import_lines / fin_cash_counts |
+| Status dihitung | baris bank aktif (impor tidak dibatalkan) |
+| Basis tanggal | Posisi per tanggal |
+| Termasuk | Baris rekening koran yang diimpor |
+| Tidak termasuk | Impor yang dibatalkan; Mutasi bank yang belum diimpor |
+| Pasangan rekonsiliasi | Saldo Buku per Rekening; Selisih Saldo Buku − Bank |
+| Tampil di | Kas & Bank (Mutasi Rekening, Rekonsiliasi) |
+| Export | mutasi-bank, rekonsiliasi-rekening |
+
+### Selisih Saldo Buku − Bank (`selisih_buku_bank`)
+
+Saldo buku dikurangi saldo rekening koran (atau hitung fisik kas). Positif = buku lebih tinggi dari bank. Diurai menjadi bank belum dibukukan, buku belum muncul di bank, cutoff, penyesuaian, dikecualikan, dan belum dijelaskan.
+
+| | |
+|---|---|
+| Rumus | saldo_buku_rekening − saldo_bank_rekening |
+| Sumber | perhitungan panel Rekonsiliasi (server) |
+| Status dihitung | terposting + baris bank aktif |
+| Basis tanggal | Posisi per tanggal |
+| Termasuk | Seluruh selisih, termasuk yang sudah dijelaskan |
+| Tidak termasuk | Selisih antar periode yang sudah diselesaikan dan tidak berlaku lagi |
+| Pasangan rekonsiliasi | Bank Belum Dibukukan; Selisih Belum Dijelaskan |
+| Tampil di | Kas & Bank (Rekonsiliasi) |
+| Export | rekonsiliasi-rekening |
+
+### Bank Belum Dibukukan (`bank_belum_dibukukan`)
+
+Mutasi di rekening koran yang belum ada/cocok di buku. Mengandung uang yang mungkin belum dicatat; dicatat lewat dokumen normal (pengeluaran, pemasukan, transfer) — tidak pernah otomatis dari bank.
+
+| | |
+|---|---|
+| Rumus | Σ baris bank belum dicocokkan/dikecualikan; efek pada selisih = −Σ (masuk − keluar) |
+| Sumber | tabel fin_bank_import_lines + fin_bank_match_items |
+| Status dihitung | belum dicocokkan, tanggal ≤ posisi |
+| Basis tanggal | Posisi per tanggal |
+| Termasuk | Baris bank berstatus Belum ada di buku atau Disarankan |
+| Tidak termasuk | Baris yang sudah dicocokkan atau dikecualikan dengan alasan |
+| Pasangan rekonsiliasi | Selisih Saldo Buku − Bank; Selisih Belum Dijelaskan |
+| Tampil di | Kas & Bank (Pencocokan, Rekonsiliasi) |
+| Export | pencocokan-bank, mutasi-bank, rekonsiliasi-rekening |
+
+### Selisih Belum Dijelaskan (`selisih_belum_dijelaskan`)
+
+Bagian selisih buku − bank yang tidak bisa diuraikan oleh daftar transaksi. Nol berarti rekening koran lengkap dan semua selisih punya penyebab; bukan nol berarti baris bank hilang atau saldo akhir tidak sesuai rantai saldo. Periode hanya bisa selesai bila Rp0.
+
+| | |
+|---|---|
+| Rumus | selisih − (selisih saldo awal + bank belum dibukukan + buku belum muncul + cutoff + penyesuaian + dikecualikan) |
+| Sumber | perhitungan panel Rekonsiliasi (server) |
+| Status dihitung | terposting + baris bank aktif |
+| Basis tanggal | Posisi per tanggal |
+| Termasuk | Sisa selisih setelah semua komponen |
+| Tidak termasuk | Komponen yang sudah dijelaskan |
+| Pasangan rekonsiliasi | Selisih Saldo Buku − Bank; Bank Belum Dibukukan |
+| Tampil di | Kas & Bank (Rekonsiliasi) |
+| Export | rekonsiliasi-rekening |
+
 ### Kas Masuk (Arus Kas) (`arus_kas_masuk`)
 
 Jumlah debit Kas/Bank pada jurnal periode di luar transfer antar rekening. Mencakup uang pelanggan DAN penyesuaian saldo awal, pembalikan, dan rekonsiliasi sementara — lihat rincian per sumber.

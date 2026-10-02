@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2, History, Ban, ListOrdered } from "lucide-react";
-import MutasiRekening from "@/features/finance/MutasiRekening.jsx";
+import RekonRekening from "@/features/finance/RekonRekening.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -39,7 +39,7 @@ const LABEL_JENIS = { KAS: "Kas tunai", BANK: "Rekening bank", EWALLET: "E-walle
 
 const TAB = [
   { key: "rekening", label: "Rekening", Icon: Wallet, penjelasan: "Semua tempat uang perusahaan disimpan — kas tunai, rekening bank, dan e-wallet — beserta saldo terkini masing-masing." },
-  { key: "mutasi", label: "Mutasi Rekening", Icon: ListOrdered, penjelasan: "Mutasi satu rekening (PT Sano, KEM, Uang Kas): saldo awal, tiap uang masuk dan keluar dengan saldo berjalan, saldo akhir. Pakai untuk mencocokkan dengan rekening koran bank." },
+  { key: "mutasi", label: "Mutasi & Rekonsiliasi", Icon: ListOrdered, penjelasan: "Per rekening (PT Sano, KEM, Uang Kas): saldo buku, saldo bank/kas, selisih, dan yang belum cocok. Buka satu rekening untuk Mutasi Buku, Mutasi Rekening (bank), Pencocokan, dan Rekonsiliasi." },
   { key: "transfer", label: "Mutasi Antar Rekening", Icon: ArrowLeftRight, penjelasan: "Riwayat perpindahan uang dari satu rekening perusahaan ke rekening lain, misalnya setor tunai dari kas ke bank." },
   { key: "pemasukan", label: "Pemasukan Lain", Icon: TrendingUp, penjelasan: "Uang masuk yang BUKAN dari pembayaran pelanggan — jual barang bekas, bunga bank, klaim asuransi, dan sejenisnya." },
 ];
@@ -202,7 +202,7 @@ export default function FinanceCash() {
         {TAB.find((t) => t.key === tab)?.penjelasan}
       </p>
 
-      {tab === "mutasi" && <MutasiRekening rekening={semuaRekening} periode={periode} />}
+      {tab === "mutasi" && <RekonRekening rekening={semuaRekening} periode={periode} />}
 
       {tab === "rekening" && (
         <>

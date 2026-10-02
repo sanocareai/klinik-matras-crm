@@ -65,6 +65,8 @@ function bikinTx({ periode = null, entriBerdasarKey = new Map(), lemparP2002 = f
           active: id !== AKUN_NONAKTIF,
         })),
     },
+    // Aturan rekening (pastikanRekeningBaris): tidak ada rekening kas/bank di fixture ini, jadi tidak ada akun yang wajib menyebut rekening.
+    finCashAccount: { findMany: async () => [] },
     finJournalEntry: {
       findUnique: async ({ where }) => entriBerdasarKey.get(where.idempotencyKey) || null,
       create: async ({ data }) => {

@@ -117,7 +117,8 @@ test("Peringatan: baris beban salah-tanda (data lama) tidak dihitung sebagai uan
   assert.equal(m.peringatan.find((p) => p.kode === "BARIS_TANPA_REKENING").nilai, "-6715170.00");
   assert.equal(m.jumlahMutasi, 4, "mutasi 3 + baris kredit 2.500 pada akun bank bertanda PT Sano (itu uang keluar sungguhan)");
   const kartu = (await saldoKasBank(testPrisma)).find((s) => s.name === "PT Sano").saldo;
-  assert.equal(Number(m.saldoAkhir) + 2_500, kartu, "kartu tab Rekening lebih tinggi sebesar baris salah-tanda (+Rp2.500 beban) — selisihnya dilaporkan");
+  assert.equal(Number(m.saldoAkhir), kartu, "definisi saldo tunggal (15 Okt 2026): baris salah-tanda tidak lagi menaikkan kartu — kartu = mutasi, dan baris keliru tetap DILAPORKAN");
+  assert.equal(m.paritas.cocok, true);
 });
 
 test("Izin: Finance/Admin boleh baca; Sales 403; tanpa login 401", async () => {

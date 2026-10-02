@@ -1010,6 +1010,9 @@ financeRouter.patch("/settings", requirePermission(P.FINANCE_ADMIN), async (req,
         if (key === SETTING_KEYS.LAPORAN_DIVISI_AKTIF && !["true", "false"].includes(String(value))) {
           throw Object.assign(new Error("Nilai Laporan Divisi aktif harus true atau false"), { statusCode: 400 });
         }
+        if (key === SETTING_KEYS.BANK_RECONCILIATION_V2_ACTIVE && !["true", "false"].includes(String(value))) {
+          throw Object.assign(new Error("Nilai Rekonsiliasi Bank V2 harus true atau false"), { statusCode: 400 });
+        }
         if (key === SETTING_KEYS.LAPORAN_DIVISI_WORKSPACE) {
           const daftar = String(value).split(",").map((s) => s.trim()).filter(Boolean);
           if (daftar.some((s) => !DIVISI_RESMI.includes(s))) throw Object.assign(new Error("Daftar divisi workspace tidak valid"), { statusCode: 400 });

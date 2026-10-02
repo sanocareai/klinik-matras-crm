@@ -116,7 +116,9 @@ export function specMutasiRekening(b, { rekening, badge, aksi } = {}) {
       ["Saldo setelah transaksi", formatUang(b.saldo)],
     ],
     bagian: [
-      { judul: "Transaksi", baris: [["Tanggal", tanggalPendek(b.tanggal)], ["Keterangan", b.keterangan], ["Akun lawan", b.lawan], ["Sumber", b.sumberLabel], ["Dokumen", b.dokumen?.nomor], ["Status jurnal", LABEL_STATUS_DOK[b.status] || (b.status === "REVERSED" ? "Sudah dibalik" : b.status === "POSTED" ? "Terposting" : b.status)], ["Membalik jurnal", b.membalik]] },
+      { judul: "Transaksi", baris: [["Tanggal buku", tanggalPendek(b.tanggalBuku ?? b.tanggal)], ["Keterangan", b.keterangan], ["Akun lawan", b.lawan], ["Sumber", b.sumberLabel], ["Dokumen", b.dokumen?.nomor], ["Status jurnal", LABEL_STATUS_DOK[b.status] || (b.status === "REVERSED" ? "Sudah dibalik" : b.status === "POSTED" ? "Terposting" : b.status)], ["Membalik jurnal", b.membalik]] },
+      // Empat tanggal yang tidak boleh dicampur: tanggal buku (di jurnal), kapan diinput, tanggal bank & efektif (dari rekening koran yang dicocokkan).
+      { judul: "Waktu & pencatat", baris: [["Dibuat pada", b.dibuatPada ? tanggalJam(b.dibuatPada) : null], ["Dibuat oleh", b.aktor], ["Diinput setelah tanggal bukunya", b.dibuatSetelahTanggalBuku ? "Ya (jurnal mundur)" : null], ["Tanggal bank", b.tanggalBank ? tanggalPendek(b.tanggalBank) : null], ["Tanggal efektif", b.tanggalEfektif ? tanggalPendek(b.tanggalEfektif) : null], ["Pencocokan bank", { COCOK_OTOMATIS: "Cocok otomatis", COCOK_MANUAL: "Cocok manual", DIKECUALIKAN: "Dikecualikan" }[b.statusCocok] || "Belum dicocokkan"]] },
     ],
   };
 }

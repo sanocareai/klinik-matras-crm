@@ -439,6 +439,9 @@ export default function FinanceSettings() {
         </TableWrap>
       </Card>
 
+      {/* ── REKONSILIASI BANK V2 (sakelar rollout, bawaan MATI) ── */}
+      <KartuRekonBankV2 aktif={S.bank_reconciliation_v2_active === "true"} onUbah={(v) => ubahSetting("bank_reconciliation_v2_active", v)} />
+
       {/* ── PIN FINANCE (step-up koreksi) ── */}
       <Card>
         <JudulKartu
@@ -453,6 +456,35 @@ export default function FinanceSettings() {
         onSubmit={(d) => aksi(() => api.createFinanceExpenseCategory(d))}
       />
     </HalamanFinance>
+  );
+}
+
+// Sakelar rollout Rekonsiliasi Bank V2. MATI (bawaan): impor rekening koran, pencocokan, pengecualian, hitung fisik kas, dan penyelesaian periode ditolak di server; Mutasi Buku, kartu, panel, dan export tetap bisa dipakai.
+// Sakelar TIDAK PERNAH mengubah jurnal atau saldo buku; mematikannya kembali tidak menghapus data impor/pencocokan.
+function KartuRekonBankV2({ aktif, onUbah }) {
+  return (
+    <Card data-testid="kartu-rekon-bank-v2">
+      <JudulKartu
+        title="Rekonsiliasi Bank V2"
+        description="Impor rekening koran (XLSX/CSV), pencocokan bank ↔ buku, dan penyelesaian periode di Kas & Bank › Mutasi & Rekonsiliasi."
+        info="Sakelar rollout. Hanya Admin/Owner. Impor dan pencocokan TIDAK pernah membuat jurnal atau mengubah saldo buku — selisih yang ditemukan dicatat lewat dokumen normal. Dapat dimatikan kembali tanpa menghapus data."
+      />
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge variant={aktif ? "green" : "neutral"} data-testid="status-rekon-bank-v2">{aktif ? "AKTIF" : "MATI"}</Badge>
+          <TombolAksi
+            size="sm" variant={aktif ? "neutral" : "secondary"}
+            confirmText={aktif
+              ? "Matikan Rekonsiliasi Bank V2? Impor, pencocokan, dan penyelesaian periode berhenti (ditolak server). Data yang sudah ada TIDAK dihapus; Mutasi Buku tetap bisa dipakai."
+              : "Aktifkan Rekonsiliasi Bank V2? Finance bisa mengimpor rekening koran dan mencocokkannya dengan buku. Tidak ada jurnal yang dibuat otomatis dan saldo buku tidak berubah."}
+            onClick={() => onUbah(aktif ? "false" : "true")}
+          >
+            {aktif ? "Matikan" : "Aktifkan"}
+          </TombolAksi>
+        </div>
+        <p className="text-[12.5px] leading-relaxed text-ink3">Bawaan MATI. Mutasi Buku, kartu rekening, panel selisih, laporan exception jurnal tanpa rekening, dan export Excel tetap hidup walau sakelar mati.</p>
+      </CardContent>
+    </Card>
   );
 }
 

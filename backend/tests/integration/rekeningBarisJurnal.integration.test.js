@@ -82,11 +82,12 @@ test("Skrip rapikan-tanda-rekening-biaya-admin: dry-run tidak menulis; --apply m
     { lineNo: 2, accountId: w.akunBank.id, debit: 0, credit: 1_002_500, cashAccountId: w.ptSano.id },
     { lineNo: 3, accountId: w.bebanAdmin.id, debit: 2_500, credit: 0, cashAccountId: w.ptSano.id },
   ] } } });
-  assert.equal(await saldo("PT Sano"), -1_000_000, "kondisi lama: saldo salah Rp2.500 terlalu tinggi");
+  // Sejak definisi saldo tunggal (15 Okt 2026) baris beban yang salah tanda TIDAK lagi menggeser saldo rekening — saldo sudah benar sebelum perapian; skrip hanya merapikan tandanya.
+  assert.equal(await saldo("PT Sano"), -1_002_500, "saldo tidak menghitung baris beban salah-tanda");
   const jalankan = (...arg) => execFileSync(process.execPath, ["scripts/rapikan-tanda-rekening-biaya-admin.js", "--actor", "admin-uji@example.test", ...arg], { cwd: new URL("../..", import.meta.url), env: process.env, encoding: "utf8" });
 
   assert.match(jalankan(), /DRY-RUN: 1 baris/);
-  assert.equal(await saldo("PT Sano"), -1_000_000, "dry-run tidak menulis");
+  assert.equal((await testPrisma.finJournalLine.findMany({ where: { entryId: entry.id, cashAccountId: w.ptSano.id } })).length, 2, "dry-run tidak menulis (tanda masih ada)");
   assert.match(jalankan("--apply"), /SELESAI/);
   assert.equal(await saldo("PT Sano"), -1_002_500, "saldo kini = bank sebenarnya");
   const lines = await testPrisma.finJournalLine.findMany({ where: { entryId: entry.id } });

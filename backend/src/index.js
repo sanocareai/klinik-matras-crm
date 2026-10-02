@@ -71,6 +71,7 @@ import { financePembayaranRouter } from "./routes/financePembayaran.js";
 import { financeTransaksiRouter } from "./routes/financeTransaksi.js";
 import { expenseSubmissionRouter } from "./routes/expenseSubmissions.js";
 import { financeBukuRouter } from "./routes/financeBuku.js";
+import { financeRekonRouter } from "./routes/financeRekon.js";
 import { financePemasukanRouter } from "./routes/financePemasukan.js";
 import { financeMediaRouter, financeReceiptsLegacyPathRouter, financePaymentProofsPathRouter } from "./routes/financeMedia.js";
 import { mobileRouter } from "./routes/mobileAuth.js";
@@ -259,6 +260,7 @@ app.use("/api/finance",      financePersediaanAwalRouter); // B3.6 tutup stok pe
 app.use("/api/finance",      financeApprovalsRouter); // read-model inbox persetujuan (S4)
 app.use("/api/finance",      financePembayaranRouter); // pembayaran pelanggan: daftar/detail/verifikasi/tolak (S5)
 app.use("/api/finance",      financePemasukanRouter); // read-model Pemasukan terpadu + Data Sebelum Sistem (non-posting)
+app.use("/api/finance",      financeRekonRouter);      // Rekonsiliasi Bank V2 (impor koran, pencocokan, panel) — sakelar bank_reconciliation_v2_active
 app.use("/api/finance",      financeBukuRouter);       // read-model jurnal, buku besar, rekonsiliasi (S9)
 app.use("/api/finance",      financeTransaksiRouter);  // read-model transaksi: pengeluaran, pembelian, kasbon, piutang, supplier, ... (S6–S8)
 app.use("/api/finance",      expenseSubmissionRouter); // Pengajuan Biaya Lintas Divisi — pilot Delivery (menghasilkan FinExpense lewat services/expenseSubmission/)

@@ -7,13 +7,14 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
-import { Uang, formatUang, KartuAngka, JudulKartu, tanggalPendek } from "@/features/finance/shared.jsx";
+import { Uang, formatUang, KartuAngka, JudulKartu, tanggalPendek, tanggalJam } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specMutasiRekening } from "@/features/finance/detailSpecs.js";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { urutkanRekening, pilihanAwal, arahBaris } from "@/features/finance/mutasiRekeningLogic.js";
+import { statusTampil } from "@/features/finance/rekonBankLogic.js";
 
 // MUTASI REKENING — mutasi SATU rekening (PT Sano, KEM, Uang Kas) seperti rekening koran versi buku: saldo awal, tiap uang masuk/keluar dengan saldo berjalan, saldo akhir.
 // Dipakai untuk mencocokkan dengan rekening koran bank: baris yang hanya ada di salah satu sisi adalah penyebab selisih. Semua angka dari server (satu sumber dengan Export Excel).
@@ -24,9 +25,10 @@ const ArahBadge = ({ b }) => (arahBaris(b) === "MASUK"
   ? <Badge variant="green" className="gap-1 normal-case"><ArrowDownLeft size={11} />Masuk</Badge>
   : <Badge variant="orange" className="gap-1 normal-case"><ArrowUpRight size={11} />Keluar</Badge>);
 
-export default function MutasiRekening({ rekening, periode }) {
+// Tab "Mutasi Buku" di detail rekening (Kas & Bank): rekeningTetap = id rekening yang sudah dipilih dari kartu (pilihan rekening disembunyikan).
+export default function MutasiRekening({ rekening, periode, rekeningTetap = null }) {
   const pilihan = urutkanRekening(rekening);
-  const [id, setId] = useState("");
+  const [id, setId] = useState(rekeningTetap || "");
   const [q, setQ] = useState("");
   const qTunda = useTertunda(q);
   const [hal, setHal] = useState(1);
@@ -36,7 +38,7 @@ export default function MutasiRekening({ rekening, periode }) {
   const [panelRincian, setPanelRincian] = useState(null);
   const permintaan = useRef(0);
 
-  useEffect(() => { if (!id && pilihan.length) setId(pilihanAwal(rekening)); }, [id, pilihan.length, rekening]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (rekeningTetap && id !== rekeningTetap) setId(rekeningTetap); else if (!id && pilihan.length) setId(pilihanAwal(rekening)); }, [id, rekeningTetap, pilihan.length, rekening]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setHal(1); }, [id, qTunda, periode.from, periode.to]);
 
   const muat = useCallback(async () => {
@@ -61,13 +63,15 @@ export default function MutasiRekening({ rekening, periode }) {
 
   return (
     <>
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Pilih rekening">
-        {pilihan.map((r) => (
-          <Button key={r.id} size="sm" variant={id === r.id ? "secondary" : "neutral"} onClick={() => setId(r.id)} role="tab" aria-selected={id === r.id}>
-            {r.name}
-          </Button>
-        ))}
-      </div>
+      {!rekeningTetap && (
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Pilih rekening">
+          {pilihan.map((r) => (
+            <Button key={r.id} size="sm" variant={id === r.id ? "secondary" : "neutral"} onClick={() => setId(r.id)} role="tab" aria-selected={id === r.id}>
+              {r.name}
+            </Button>
+          ))}
+        </div>
+      )}
 
       {galat && <Card className="bg-redbg"><CardContent className="flex items-center justify-between gap-3 py-3"><p className="text-[13px] text-ink">{galat}</p><Button size="sm" variant="neutral" onClick={muat}>Coba lagi</Button></CardContent></Card>}
 
@@ -76,7 +80,7 @@ export default function MutasiRekening({ rekening, periode }) {
         <KartuAngka label="Uang Masuk" value={formatUang(data?.totalMasuk ?? 0)} tone="green" sub={`${data?.jumlahMasuk ?? 0} transaksi`} />
         <KartuAngka label="Uang Keluar" value={formatUang(data?.totalKeluar ?? 0)} tone="orange" sub={`${data?.jumlahKeluar ?? 0} transaksi`} />
         <KartuAngka
-          label="Saldo Akhir (menurut buku)" value={formatUang(data?.saldoAkhir ?? 0)} sub={`per ${tanggalPendek(periode.to)}`}
+          label="Saldo Akhir (menurut buku)" value={formatUang(data?.saldoAkhir ?? 0)} sub={`per ${tanggalPendek(periode.to)}${data?.paritas ? (data.paritas.cocok ? " · sama dengan kartu Kas & Bank" : ` · BEDA dari kartu Kas & Bank (${formatUang(data.paritas.saldoKartu)})`) : ""}`}
           info="Saldo menurut pembukuan sistem, bukan menurut bank. Bandingkan dengan saldo di aplikasi bank: kalau berbeda, cocokkan mutasi di bawah dengan rekening koran — transaksi yang hanya ada di satu sisi adalah penyebab selisihnya."
         />
       </div>
@@ -99,7 +103,7 @@ export default function MutasiRekening({ rekening, periode }) {
       <Card className="overflow-hidden">
         <JudulKartu
           title={`Mutasi ${rekAktif?.name ?? ""}`}
-          description="Urut tanggal; tiap baris menunjukkan saldo setelah transaksi itu. Jurnal pembatalan tampil sebagai baris sendiri."
+          description="Urut tanggal buku; tiap baris menunjukkan saldo setelah transaksi itu. Tanggal buku, waktu dibuat, tanggal bank, dan tanggal efektif adalah empat hal berbeda — jangan dicampur. Jurnal pembatalan tampil sebagai baris sendiri."
         />
         <div className="flex justify-end px-4 pb-3">
           <TombolExportExcel
@@ -119,20 +123,27 @@ export default function MutasiRekening({ rekening, periode }) {
               <Table fixed>
                 <THead>
                   <TR>
-                    <TH sticky width={86}>Tanggal</TH><TH width={128}>No. Jurnal</TH><TH>Keterangan</TH><TH width={120} hideBelow="2xl">Sumber</TH>
-                    <TH numeric width={120}>Masuk</TH><TH numeric width={120}>Keluar</TH><TH numeric width={130}>Saldo</TH>
+                    <TH sticky width={96}>Tgl Buku</TH><TH width={128}>No. Jurnal</TH><TH>Keterangan</TH><TH width={120} hideBelow="2xl">Sumber</TH>
+                    <TH width={118} hideBelow="2xl">Dibuat</TH><TH width={96} hideBelow="wide">Tgl Bank</TH><TH width={122} hideBelow="wide">Cocok Bank</TH>
+                    <TH numeric width={116}>Masuk</TH><TH numeric width={116}>Keluar</TH><TH numeric width={128}>Saldo</TH>
                   </TR>
                 </THead>
                 <TBody>
                   {baris.map((b) => (
                     <TR key={b.lineId} {...klikBuka(() => setPanelRincian(specMutasiRekening(b, { rekening: rekAktif?.name })))}>
-                      <TD sticky className="whitespace-nowrap text-[12px]">{tanggalPendek(b.tanggal)}</TD>
+                      <TD sticky className="whitespace-nowrap text-[12px]">{tanggalPendek(b.tanggalBuku ?? b.tanggal)}</TD>
                       <TD className="font-mono text-[12px]">{b.nomor}</TD>
                       <TD>
                         <span className="block truncate">{b.keterangan}</span>
                         {b.lawan && <span className="block truncate text-[11.5px] text-ink3">{b.lawan}</span>}
                       </TD>
                       <TD hideBelow="2xl" truncate className="text-[12px]">{b.sumberLabel}</TD>
+                      <TD hideBelow="2xl" className="text-[11.5px] leading-tight text-ink2">
+                        <span className="block whitespace-nowrap">{b.dibuatPada ? tanggalJam(b.dibuatPada) : "—"}</span>
+                        <span className="block truncate text-ink3">{b.aktor || ""}{b.dibuatSetelahTanggalBuku ? " · mundur" : ""}</span>
+                      </TD>
+                      <TD hideBelow="wide" className="whitespace-nowrap text-[12px]">{b.tanggalBank ? tanggalPendek(b.tanggalBank) : <span className="text-ink3">—</span>}</TD>
+                      <TD hideBelow="wide">{b.statusCocok ? <Badge variant={statusTampil(b.statusCocok).variant} className="normal-case">{statusTampil(b.statusCocok).label}</Badge> : <span className="text-[12px] text-ink3">Belum</span>}</TD>
                       <TD numeric>{b.masuk ? <Uang value={b.masuk} className="text-green" /> : <span className="text-ink3">—</span>}</TD>
                       <TD numeric>{b.keluar ? <Uang value={b.keluar} className="text-orange" /> : <span className="text-ink3">—</span>}</TD>
                       <TD numeric><Uang value={b.saldo} className="font-semibold" sen /></TD>
@@ -150,9 +161,11 @@ export default function MutasiRekening({ rekening, periode }) {
                   status={<ArahBadge b={b} />}
                   subtitle={b.keterangan}
                   fields={[
-                    { label: "Tanggal", value: tanggalPendek(b.tanggal) },
+                    { label: "Tgl buku", value: tanggalPendek(b.tanggalBuku ?? b.tanggal) },
                     { label: b.masuk ? "Masuk" : "Keluar", value: formatUang(b.masuk || b.keluar) },
                     { label: "Saldo", value: formatUang(b.saldo) },
+                    { label: "Dibuat", value: b.dibuatPada ? `${tanggalJam(b.dibuatPada)}${b.aktor ? ` · ${b.aktor}` : ""}` : "—", span: true },
+                    { label: "Cocok bank", value: b.statusCocok ? `${statusTampil(b.statusCocok).label}${b.tanggalBank ? ` · bank ${tanggalPendek(b.tanggalBank)}` : ""}` : "Belum dicocokkan", span: true },
                     { label: "Akun lawan", value: b.lawan, span: true },
                   ]}
                 />

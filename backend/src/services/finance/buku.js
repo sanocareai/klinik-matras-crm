@@ -10,7 +10,7 @@ import { PERMISSIONS as P } from "../../constants/permissions.js";
 import { ENTITY_TYPES } from "../../lib/activityLog.js";
 import { toMoney, sumMoney, ZERO } from "./money.js";
 import { STATUS_DIHITUNG } from "./journal.js";
-import { pandanganCutoff } from "./rekonSnapshot.js";
+import { pandanganCutoff, saldoBukuRekening } from "./rekonSnapshot.js";
 
 // B3 (aditif, klien mobile lama mengabaikan field ini): ringkasan cutoff dari snapshot TERSIMPAN.
 async function cutoffRingkas(db, s) {
@@ -35,6 +35,7 @@ const uang = (v) => toMoney(v ?? 0).toFixed(2);
 const tgl = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 const waktu = (d) => (d ? new Date(d).toISOString() : null);
 const orang = (u) => (u ? { id: u.id, name: u.name } : null);
+const tglWIB = (d) => new Date(new Date(d).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 const tanggalKolom = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? new Date(`${v}T00:00:00.000Z`) : null);
 const batas = (o, dasar = 20) => {
   const limit = Math.min(Math.max(parseInt(o.limit, 10) || dasar, 1), 100);
@@ -387,7 +388,12 @@ export async function mutasiRekening(db, { cashAccountId, from, to, q, page, lim
     where: { ...milikRekening, entry: { status: { in: STATUS_DIHITUNG }, date: { gte: dari, lte: sampai } } },
     orderBy: [{ entry: { date: "asc" } }, { entry: { createdAt: "asc" } }, { entry: { entryNumber: "asc" } }, { lineNo: "asc" }],
     take: BATAS_BARIS_BUKU + 1,
-    select: { id: true, debit: true, credit: true, description: true, entry: { select: { id: true, entryNumber: true, date: true, description: true, source: true, sourceId: true, status: true, reversalOf: { select: { entryNumber: true } } } } },
+    select: {
+      id: true, debit: true, credit: true, description: true,
+      entry: { select: { id: true, entryNumber: true, date: true, createdAt: true, description: true, source: true, sourceId: true, status: true, reversalOf: { select: { entryNumber: true } }, createdBy: { select: { id: true, name: true } } } },
+      // Pencocokan rekening koran V2 (aktif saja): tanggal bank & tanggal efektif berasal DARI bank, bukan dari buku.
+      bankMatchItems: { where: { active: true }, select: { group: { select: { id: true, kind: true, items: { where: { active: true, bankLineId: { not: null } }, select: { bankLine: { select: { txDate: true, effectiveDate: true } } } } } } } },
+    },
   });
   if (lines.length > BATAS_BARIS_BUKU) throw new BukuError(`Rekening ini punya lebih dari ${BATAS_BARIS_BUKU} mutasi pada periode tersebut. Persempit periode.`, 422);
 
@@ -407,8 +413,20 @@ export async function mutasiRekening(db, { cashAccountId, from, to, q, page, lim
     saldo = saldo.plus(d).minus(k);
     if (d.greaterThan(0)) { masuk = masuk.plus(d); nMasuk += 1; }
     if (k.greaterThan(0)) { keluar = keluar.plus(k); nKeluar += 1; }
+    // Empat tanggal yang TIDAK boleh dicampur: tanggalBuku (tanggal di jurnal), dibuatPada (kapan diinput; instant), tanggalBank & tanggalEfektif (dari baris rekening koran yang dicocokkan; null bila belum dicocokkan).
+    const grup = l.bankMatchItems?.[0]?.group ?? null;
+    const barisBank = grup ? grup.items.map((i) => i.bankLine).filter(Boolean) : [];
+    const tanggalBank = barisBank.length ? tgl(barisBank.map((b) => b.txDate).sort((x, y) => x - y)[0]) : null;
+    const tglEfektif = barisBank.map((b) => b.effectiveDate).filter(Boolean).sort((x, y) => x - y)[0];
+    const dibuat = waktu(l.entry.createdAt);
     return {
-      lineId: l.id, jurnalId: l.entry.id, nomor: l.entry.entryNumber, tanggal: tgl(l.entry.date), keterangan: l.description || l.entry.description, lawan: (lawan.get(l.entry.id) ?? []).join(" · ") || null,
+      lineId: l.id, jurnalId: l.entry.id, nomor: l.entry.entryNumber, tanggal: tgl(l.entry.date), tanggalBuku: tgl(l.entry.date), dibuatPada: dibuat,
+      // Diinput di tanggal WIB yang lebih baru dari tanggal bukunya = jurnal "mundur" (penyebab klasik selisih cutoff).
+      dibuatSetelahTanggalBuku: tglWIB(l.entry.createdAt) > tgl(l.entry.date),
+      tanggalBank, tanggalEfektif: tglEfektif ? tgl(tglEfektif) : tanggalBank,
+      statusCocok: grup ? (grup.kind === "KECUALI" ? "DIKECUALIKAN" : grup.kind === "OTOMATIS" ? "COCOK_OTOMATIS" : "COCOK_MANUAL") : null,
+      aktor: l.entry.createdBy?.name ?? null, sumberId: l.entry.sourceId ?? null,
+      keterangan: l.description || l.entry.description, lawan: (lawan.get(l.entry.id) ?? []).join(" · ") || null,
       sumber: l.entry.source, sumberLabel: LABEL_SUMBER[l.entry.source] ?? l.entry.source, status: l.entry.status, membalik: l.entry.reversalOf?.entryNumber ?? null,
       masuk: d.greaterThan(0) ? uang(d) : null, keluar: k.greaterThan(0) ? uang(k) : null, saldo: uang(saldo), dokumen: dok(l.entry),
     };
@@ -424,7 +442,7 @@ export async function mutasiRekening(db, { cashAccountId, from, to, q, page, lim
   const peringatan = [];
   if (salah._count._all > 0) {
     const net = toMoney(salah._sum.debit || 0).minus(toMoney(salah._sum.credit || 0));
-    peringatan.push({ kode: "BARIS_SALAH_TANDA", jumlahBaris: salah._count._all, nilai: uang(net), pesan: `${salah._count._all} baris beban (mis. biaya admin) ditandai rekening ini sehingga kartu saldo di tab Rekening lebih tinggi ${rupiahTeks(net)} dari mutasi di bawah. Mutasi di bawah yang benar.` });
+    peringatan.push({ kode: "BARIS_SALAH_TANDA", jumlahBaris: salah._count._all, nilai: uang(net), pesan: `${salah._count._all} baris pada akun lain (mis. beban biaya admin, netto ${rupiahTeks(net)}) salah ditandai rekening ini (data lama). Tidak dihitung dalam saldo karena bukan uang di rekening — saldo kartu Kas & Bank, mutasi, dan rekonsiliasi memakai definisi yang sama. Tandanya sebaiknya dirapikan dengan skrip rapikan-tanda-rekening-biaya-admin.` });
   }
   const tidakBerrekening = await db.finJournalLine.aggregate({ where: { cashAccountId: null, accountId: rek.accountId, entry: { status: { in: STATUS_DIHITUNG }, date: { lte: sampai } } }, _sum: { debit: true, credit: true }, _count: { _all: true } });
   if (tidakBerrekening._count._all > 0) {
@@ -432,9 +450,13 @@ export async function mutasiRekening(db, { cashAccountId, from, to, q, page, lim
     peringatan.push({ kode: "BARIS_TANPA_REKENING", jumlahBaris: tidakBerrekening._count._all, nilai: uang(net), pesan: `${tidakBerrekening._count._all} baris pada akun kas/bank yang sama tidak menyebut rekening (jurnal manual lama), netto ${rupiahTeks(net)}. Uang itu keluar/masuk dari salah satu rekening tetapi tidak muncul di mutasi rekening mana pun — lengkapi rekeningnya di Jurnal Umum.` });
   }
 
+  // PARITAS: saldo akhir mutasi HARUS sama persis dengan saldo di kartu Kas & Bank (fungsi saldo yang sama dengan rekonsiliasi) pada tanggal akhir. Dihitung lewat query terpisah supaya selisih definisi langsung terlihat.
+  const saldoKartu = await saldoBukuRekening(db, rek.id, sampai);
+  const paritas = { saldoKartu: uang(saldoKartu), saldoAkhir: uang(saldo), selisih: uang(saldoKartu.minus(saldo)), cocok: saldoKartu.equals(saldo) };
+
   return {
     rekening: { id: rek.id, nama: rek.name, jenis: rek.kind, bank: rek.bankName, nomor: rek.accountNumber, aktif: rek.active },
-    periode: { from: tgl(dari), to: tgl(sampai) }, saldoAwal: uang(saldoAwal), totalMasuk: uang(masuk), totalKeluar: uang(keluar), saldoAkhir: uang(saldo),
+    periode: { from: tgl(dari), to: tgl(sampai) }, saldoAwal: uang(saldoAwal), totalMasuk: uang(masuk), totalKeluar: uang(keluar), saldoAkhir: uang(saldo), paritas,
     jumlahMasuk: nMasuk, jumlahKeluar: nKeluar, jumlahMutasi: semuaBaris.length, total: tersaring.length, disaring: kata.length > 0,
     page: semua ? 1 : hal, limit: semua ? tersaring.length : lim, adaLagi: semua ? false : skip + lim < tersaring.length, baris: semua ? tersaring : tersaring.slice(skip, skip + lim), peringatan, diperbaruiPada: new Date().toISOString(),
   };

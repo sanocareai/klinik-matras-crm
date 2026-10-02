@@ -155,8 +155,9 @@ async function requestFormData(path, formData, method = "POST") {
     if (!res.ok) {
       const text = await res.text();
       let msg = "Terjadi kesalahan";
-      try { msg = JSON.parse(text).error || msg; } catch {}
-      throw new Error(msg);
+      let code;
+      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code; } catch {}
+      throw Object.assign(new Error(msg), { status: res.status, code });
     }
     return res.json();
   } catch (err) {
@@ -1661,6 +1662,24 @@ export const api = {
   editKasbon: (id, data) => request(`/finance/kasbon/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   // Mutasi per rekening kas/bank (saldo berjalan menurut buku)
   getMutasiRekening: (id, params = {}) => request(`/finance/buku/rekening/${id}/mutasi${qsFinance(params)}`),
+  // Rekonsiliasi Bank V2 — impor rekening koran, pencocokan, panel (sakelar bank_reconciliation_v2_active; baca selalu boleh, tulis ditolak 403 SAKELAR_MATI saat mati)
+  getRekonKartu: (params = {}) => request(`/finance/rekon-bank/kartu${qsFinance(params)}`),
+  getRekonPanel: (id, params = {}) => request(`/finance/rekon-bank/${id}/panel${qsFinance(params)}`),
+  getRekonMutasiBank: (id, params = {}) => request(`/finance/rekon-bank/${id}/mutasi-bank${qsFinance(params)}`),
+  getRekonPencocokan: (id, params = {}) => request(`/finance/rekon-bank/${id}/pencocokan${qsFinance(params)}`),
+  getRekonBatch: (id) => request(`/finance/rekon-bank/${id}/batch`),
+  getRekonExceptionTanpaRekening: (params = {}) => request(`/finance/rekon-bank/exception-jurnal-tanpa-rekening${qsFinance(params)}`),
+  pratinjauImporKoran: (id, file, pemetaan) => { const fd = new FormData(); fd.append("file", file); if (pemetaan) fd.append("pemetaan", JSON.stringify(pemetaan)); return requestFormData(`/finance/rekon-bank/${id}/impor/pratinjau`, fd); },
+  imporKoran: (id, file, pemetaan) => { const fd = new FormData(); fd.append("file", file); if (pemetaan) fd.append("pemetaan", JSON.stringify(pemetaan)); return requestFormData(`/finance/rekon-bank/${id}/impor`, fd); },
+  batalkanImporKoran: (batchId, data) => request(`/finance/rekon-bank/batch/${batchId}/batalkan`, { method: "POST", body: JSON.stringify(data) }),
+  cocokkanOtomatisBank: (id, data) => request(`/finance/rekon-bank/${id}/cocokkan-otomatis`, { method: "POST", body: JSON.stringify(data) }),
+  cocokkanBank: (id, data) => request(`/finance/rekon-bank/${id}/cocokkan`, { method: "POST", body: JSON.stringify(data) }),
+  kecualikanBank: (id, data) => request(`/finance/rekon-bank/${id}/kecualikan`, { method: "POST", body: JSON.stringify(data) }),
+  lepasPencocokanBank: (groupId, alasan) => request(`/finance/rekon-bank/pencocokan/${groupId}/lepas`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  catatOpnameKas: (id, data) => request(`/finance/rekon-bank/${id}/opname`, { method: "POST", body: JSON.stringify(data) }),
+  tinjauExceptionRekening: (lineId, catatan) => request(`/finance/rekon-bank/exception/${lineId}/tinjau`, { method: "POST", body: JSON.stringify({ catatan }) }),
+  selesaikanPeriodeRekon: (id, data) => request(`/finance/rekon-bank/${id}/periode/selesai`, { method: "POST", body: JSON.stringify(data) }),
+  batalkanPeriodeRekon: (periodeId, alasan) => request(`/finance/rekon-bank/periode/${periodeId}/batalkan`, { method: "POST", body: JSON.stringify({ alasan }) }),
   // Pengecualian Tanggal Lunas (keputusan Owner, ber-riwayat)
   getPengecualianLunas: (params = {}) => request(`/finance/pengecualian-lunas${qsFinance(params)}`),
   buatPengecualianLunas: (data) => request("/finance/pengecualian-lunas", { method: "POST", body: JSON.stringify(data) }),

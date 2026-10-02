@@ -24,9 +24,21 @@
 // laba rugi bulan berjalan akan selalu terlihat lebih bagus dari kenyataan.
 
 import { postJournal, recordPostingGap, findEntryByKey } from "../journal.js";
+import { resolveCashAccountForMethod } from "../settings.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { toMoney } from "../money.js";
 import { barisBiayaAdmin } from "../transferFee.js";
+
+// REKENING UNTUK POSTING OTOMATIS TANPA PILIHAN PENGGUNA (15 Okt 2026): biaya kendaraan/servis (kas lapangan) dan belanja iklan dulu mengkredit akun Kas/Bank TANPA menyebut rekening, sehingga uangnya
+// keluar dari "rekening tak bernama". Sekarang rekeningnya diambil dari PEMETAAN METODE di Pengaturan Finance (CASH → kas lapangan, CARD → kartu/rekening iklan) dan hanya dipakai bila akun
+// COA rekening itu SAMA dengan akun yang dikredit. Tidak dipetakan = TIDAK menebak: lahir FinPostingGap "REKENING_BELUM_DIPETAKAN", jurnal tidak dibuat.
+async function rekeningPemetaan(tx, metode, akunId) {
+  const r = await resolveCashAccountForMethod(tx, metode);
+  if (r && r.accountId === akunId) return r;
+  // Bukan tebakan: bila akun COA itu hanya dimiliki SATU rekening aktif (mis. akun Kas → "Uang Kas"), rekeningnya pasti. Dua rekening atau lebih (akun Bank) = ambigu → tidak ditebak.
+  const kandidat = await tx.finCashAccount.findMany({ where: { accountId: akunId, active: true }, select: { id: true, name: true, accountId: true }, take: 2 });
+  return kandidat.length === 1 ? kandidat[0] : null;
+}
 
 // Cutover Pengajuan Biaya Lintas Divisi (D-181, 24 September 2026) — rapat
 // ulang arsitektur pilot Delivery: VehicleExpense/VehicleService BERHENTI
@@ -283,6 +295,11 @@ export async function postVehicleExpense(tx, { vehicleExpenseId, userId = null }
   try {
     const kat = await kategoriOtomatis(tx, `VEHICLE:${ve.category}`);
     const kas = await resolveAccount(tx, SYSTEM_KEYS.KAS);
+    const rekKas = await rekeningPemetaan(tx, "CASH", kas.id);
+    if (!rekKas) {
+      await recordPostingGap(tx, { source: "BIAYA_KENDARAAN", sourceId: vehicleExpenseId, reason: "REKENING_BELUM_DIPETAKAN", detail: "Biaya kendaraan belum dibukukan: rekening Kas (tunai) belum dipetakan di Pengaturan Finance, jadi uang keluarnya tidak bisa ditempelkan ke rekening.", metadata: { vehicleExpenseId, amount: String(ve.amount) } });
+      return { posted: false, gap: true };
+    }
     const amount = toMoney(ve.amount);
 
     const { entry, created } = await postJournal(tx, {
@@ -296,7 +313,7 @@ export async function postVehicleExpense(tx, { vehicleExpenseId, userId = null }
       userId,
       lines: [
         { accountId: kat.accountId, debit: amount, description: ve.notes || kat.name },
-        { accountId: kas.id, credit: amount, description: "Kas lapangan (tunai supir)" },
+        { accountId: kas.id, credit: amount, description: "Kas lapangan (tunai supir)", cashAccountId: rekKas.id },
       ],
     });
     return { posted: true, entry, created };
@@ -332,6 +349,11 @@ export async function postVehicleService(tx, { vehicleServiceId, userId = null }
   try {
     const kat = await kategoriOtomatis(tx, "VEHICLE_SERVICE");
     const kas = await resolveAccount(tx, SYSTEM_KEYS.KAS);
+    const rekKas = await rekeningPemetaan(tx, "CASH", kas.id);
+    if (!rekKas) {
+      await recordPostingGap(tx, { source: "BIAYA_KENDARAAN", sourceId: vehicleServiceId, reason: "REKENING_BELUM_DIPETAKAN", detail: "Servis kendaraan belum dibukukan: rekening Kas (tunai) belum dipetakan di Pengaturan Finance, jadi uang keluarnya tidak bisa ditempelkan ke rekening.", metadata: { vehicleServiceId, amount: String(vs.cost) } });
+      return { posted: false, gap: true };
+    }
     const amount = toMoney(vs.cost);
 
     const { entry, created } = await postJournal(tx, {
@@ -343,7 +365,7 @@ export async function postVehicleService(tx, { vehicleServiceId, userId = null }
       userId,
       lines: [
         { accountId: kat.accountId, debit: amount, description: vs.description || kat.name },
-        { accountId: kas.id, credit: amount, description: "Kas lapangan (tunai)" },
+        { accountId: kas.id, credit: amount, description: "Kas lapangan (tunai)", cashAccountId: rekKas.id },
       ],
     });
     return { posted: true, entry, created };
@@ -377,6 +399,11 @@ export async function postAdSpend(tx, { adSpendId, userId = null }) {
   try {
     const kat = await kategoriOtomatis(tx, "ADSPEND");
     const kasBank = await resolveAccount(tx, SYSTEM_KEYS.BANK);
+    const rekIklan = await rekeningPemetaan(tx, "CARD", kasBank.id);
+    if (!rekIklan) {
+      await recordPostingGap(tx, { source: "BIAYA_IKLAN", sourceId: adSpendId, reason: "REKENING_BELUM_DIPETAKAN", detail: `Belanja iklan ${ad.source} ${ad.month}/${ad.year} belum dibukukan: rekening pembayaran kartu/iklan belum dipetakan di Pengaturan Finance.`, metadata: { adSpendId, amount: String(ad.amount) } });
+      return { posted: false, gap: true };
+    }
     const amount = toMoney(ad.amount);
 
     // Akhir bulan: tanggal 0 bulan berikutnya = hari terakhir bulan ini.
@@ -393,7 +420,7 @@ export async function postAdSpend(tx, { adSpendId, userId = null }) {
         { accountId: kat.accountId, debit: amount, description: `Iklan ${ad.source}` },
         // Belanja iklan platform SELALU lewat kartu/rekening, tidak pernah
         // tunai — itu sebabnya lawannya akun Bank, bukan Kas.
-        { accountId: kasBank.id, credit: amount, description: "Pembayaran platform iklan" },
+        { accountId: kasBank.id, credit: amount, description: "Pembayaran platform iklan", cashAccountId: rekIklan.id },
       ],
     });
     return { posted: true, entry, created };

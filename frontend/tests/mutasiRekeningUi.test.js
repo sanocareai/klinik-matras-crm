@@ -43,8 +43,9 @@ test("Jurnal manual: baris akun kas/bank WAJIB rekening yang cocok dengan akunny
 
 test("Terpasang: tab Mutasi Rekening di Kas & Bank, komponen membaca API server dan export; form Jurnal Manual mengirim cashAccountId", () => {
   const cash = baca("src/pages/finance/FinanceCash.jsx");
-  assert.match(cash, /key: "mutasi", label: "Mutasi Rekening"/);
-  assert.match(cash, /<MutasiRekening rekening=\{semuaRekening\} periode=\{periode\} \/>/);
+  assert.match(cash, /key: "mutasi", label: "Mutasi & Rekonsiliasi"/);
+  assert.match(cash, /<RekonRekening rekening=\{semuaRekening\} periode=\{periode\} \/>/);
+  assert.match(baca("src/features/finance/RekonRekening.jsx"), /<MutasiRekening[^>]*rekeningTetap/, "Mutasi Buku = tab pertama detail rekening");
   const m = baca("src/features/finance/MutasiRekening.jsx");
   assert.match(m, /api\.getMutasiRekening\(/);
   assert.match(m, /<TombolExportExcel[\s\S]*modul="mutasi-rekening"/);
