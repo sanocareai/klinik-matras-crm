@@ -110,9 +110,10 @@ function PipelineColumn({ col, children }) {
   return (
     <section aria-label={col.label} data-testid="pipeline-column" data-column={col.key} className="flex w-[284px] shrink-0 flex-col gap-2 rounded-card bg-inset p-2.5">
       <div className="flex items-center justify-between px-1">
-        <p className="m-0 text-[13.5px] font-bold text-ink">{col.label}</p>
+        <p className="m-0 text-[13.5px] font-bold text-ink" title={col.key === "AKAN_MASUK" ? "Perkiraan kedatangan — bukan WIP, target, atau selesai" : "Tahap berubah setelah proses dan bukti disimpan"}>{col.label}</p>
         <span className="rounded-chip bg-surface px-2 py-0.5 text-[12px] font-bold tabular-nums text-ink2">{col.count}</span>
       </div>
+      {col.key === "AKAN_MASUK" && <p data-testid="forecast-note" className="m-0 px-1 text-[11px] text-ink3">Forecast kedatangan · hanya-baca, bukan WIP/target/selesai</p>}
       {col.items.length === 0
         ? <p className="flex min-h-[72px] items-center justify-center rounded-card border-2 border-dashed border-line text-center text-[11.5px] text-ink3">Tidak ada unit</p>
         : children}
@@ -181,7 +182,7 @@ export default function ProductionPlannerV2() {
 
   return (
     <PageContainer fluid>
-      <PageHeader title="Status Produksi" subtitle="Posisi setiap unit di jalur produksi — klik kartu untuk membuka Unit 360."
+      <PageHeader title="Status Produksi" subtitle="Posisi setiap unit di jalur produksi — klik kartu untuk membuka Unit 360. Tahap berubah setelah proses dan bukti disimpan (kartu tidak bisa diseret antar tahap)."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <div role="tablist" aria-label="Tampilan" className="flex rounded-btn bg-inset p-0.5">

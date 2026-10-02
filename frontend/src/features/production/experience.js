@@ -144,7 +144,11 @@ export function friendlyError(error) {
   if (code === "EVIDENCE_TOO_LARGE") return "Berkas terlalu besar (video maks. 80 MB, foto maks. 15 MB). Rekam lebih singkat.";
   if (code === "IDEMPOTENCY_CONFLICT") return "Isian berubah setelah terkirim. Muat ulang kartu lalu kirim sebagai isian baru.";
   if (code === "SHORTAGE_ALREADY_OPEN") return "Laporan menunggu bahan untuk unit ini masih terbuka di Gudang.";
-  if (code === "PLAN_STATION_FULL") return error.message;
+  if (code === "PLAN_STATION_FULL") return `Meja sudah penuh (maks. ${error.detail?.capacity ?? 3} unit per meja). Kartu dikembalikan — pilih meja lain atau keluarkan unit dari meja itu.`;
+  if (code === "PLAN_REVISION_CONFLICT") return "Rencana unit ini sudah diubah orang lain. Kartu dikembalikan dan tampilan dimuat ulang — coba lagi.";
+  if (code === "STATION_ORDER_STALE") return "Isi meja berubah saat Anda menyeret (ada unit masuk/keluar). Kartu dikembalikan dan tampilan dimuat ulang — atur ulang urutannya.";
+  if (code === "STATION_ORDER_INVALID") return "Urutan tidak valid. Tampilan dimuat ulang — coba lagi.";
+  if (code === "PLAN_STATION_INVALID") return "Meja tujuan tidak dikenal. Muat ulang halaman.";
   if (error.status === 403) return "Anda tidak punya akses untuk aksi ini.";
   if (error.status === 503) return "Layanan produksi V2 tidak aktif untuk unit ini.";
   return error.message || "Terjadi kesalahan. Coba lagi.";

@@ -84,8 +84,9 @@ test("Rencana Produksi: planner harian — backlog 'Belum Dijadwalkan', Meja 1�
   assert.match(RENCANA, /data-testid="backlog-panel"/);
   assert.match(RENCANA, /data-testid="meja-column"/);
   assert.match(RENCANA, /data-testid="meja-slot"/);
-  assert.match(RENCANA, /onDrop=/);
-  assert.match(RENCANA, /draggable/);
+  assert.match(RENCANA, /data-drop="backlog"/);
+  assert.match(RENCANA, /data-drop="meja"/);
+  assert.match(RENCANA, /<DragHandle /);
   assert.match(RENCANA, /Jadwalkan<\/Button>/);
   assert.match(RENCANA, /Pindahkan<\/Button>/);
   assert.match(RENCANA, /scheduleProductionV2Plan/);
@@ -178,9 +179,10 @@ test("humanizeRequest: JSON intake Sales jadi kalimat terbaca; teks biasa & JSON
 });
 
 // Regresi (ditemukan uji drag-drop nyata): kartu di dalam kolom Meja tidak bisa diseret karena prop dragStart tidak diteruskan.
-test("Rencana: MejaColumn menerima & dipasangi dragStart (kartu di meja bisa diseret antar-meja / balik ke backlog)", () => {
-  assert.match(RENCANA, /<MejaColumn [\s\S]*?dragStart=\{dragStart\}/);
-  assert.ok(RENCANA.includes("onDragStart={(e) => dragStart(e, v.runId)}"));
+test("Rencana: MejaColumn menerima onHandleDown & drag; kartu meja dan backlog punya handle seret (antar-meja / balik ke backlog)", () => {
+  assert.match(RENCANA, /<MejaColumn [\s\S]*?onHandleDown=\{onHandleDown\}/);
+  assert.ok(RENCANA.includes("handle={<DragHandle unitCode={v.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, v)} />}"));
+  assert.equal((RENCANA.match(/<DragHandle /g) || []).length, 2, "backlog + meja");
 });
 
 // ---- Temuan sandbox QA (fix/production-v2-sandbox-findings) ----
@@ -228,7 +230,7 @@ test("Sandbox#10 Gudang: retur & waste bisa ditautkan ke unit (unitId) supaya Si
 test("Rencana Produksi: kartu tanpa Layanan Teknis (prop showTechService=false), Status/QC tetap menampilkannya", () => {
   assert.match(CARD, /showTechService = true/);
   assert.match(CARD, /\{showTechService && \(/);
-  assert.equal((RENCANA.match(/showTechService=\{false\}/g) || []).length, 2, "kartu backlog + kartu meja");
+  assert.equal((RENCANA.match(/showTechService=\{false\}/g) || []).length, 3, "kartu backlog + kartu meja + ghost seret");
   assert.ok(!/Layanan Teknis/.test(RENCANA), "Rencana tidak menyebut Layanan Teknis sama sekali");
 });
 test("Kartu unit: baris Kasur (jenis·merk·ukuran) & Catatan Sales ada di kartu Production dan kartu Akan Masuk", () => {
@@ -237,7 +239,7 @@ test("Kartu unit: baris Kasur (jenis·merk·ukuran) & Catatan Sales ada di kartu
   assert.equal((CARD.match(/<SalesNote view=/g) || []).length, 2);
 });
 test("Ganti Kain: kartu berwarna beda (oranye) + kotak peringatan yang selalu tampil; hanya dikenali dari layanan Sales", () => {
-  assert.match(CARD, /bg-orangebg ring-2 ring-orange/);
+  assert.match(CARD, /kpi-glass-guard ring-2 ring-orange/);
   assert.match(CARD, /data-testid="ganti-kain-note"/);
   assert.match(CARD, /data-ganti-kain=/);
   const M = loadModel();

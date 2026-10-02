@@ -1,6 +1,6 @@
 import React from "react";
 import { isDemoActive } from "./demo/demoGate.js"; // P12A: kartu tidak bisa diseret selama Mode Demo
-import { AlertTriangle, CalendarDays, ChevronsUp, Flame, ImageOff, PackageX, Scissors, Wrench } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronsUp, Flame, GripVertical, ImageOff, PackageX, Scissors, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { bucketStyle, initials, targetDateBadge } from "@/features/production/experience.js";
@@ -83,8 +83,24 @@ export function PicChips({ view }) {
   );
 }
 
+// Handle seret (Rencana Produksi). SATU-SATUNYA bagian kartu yang menangkap sentuhan untuk menyeret (touch-action:none) — di luar handle
+// halaman tetap bisa digulir dan ketukan kartu tetap membuka Unit 360. Target 44px untuk jari. data-mutates = ikut dinonaktifkan di Mode Demo.
+export function DragHandle({ unitCode, onPointerDown, disabled = false }) {
+  return (
+    <button type="button" data-testid="drag-handle" data-mutates disabled={disabled} aria-label={`Seret ${unitCode} untuk memindahkan`} title="Seret untuk memindahkan (atau pakai tombol Jadwalkan/Pindahkan)"
+      onPointerDown={onPointerDown} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "none" }}
+      className="flex h-11 w-11 select-none items-center justify-center rounded-btn border border-line bg-surface text-ink2 shadow-sm hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-grab enabled:active:cursor-grabbing">
+      <GripVertical size={20} aria-hidden />
+    </button>
+  );
+}
+
+// Ganti Kain: latar oranye lembut di atas permukaan solid. "kpi-glass-guard" mengecualikan kartu dari aturan kaca global (.glass-division
+// [class*="rounded-card"]) yang kalau tidak akan menimpa warna latar & ring-nya sehingga kartu tampak sama dengan kartu biasa.
+const GANTI_KAIN_STYLE = { backgroundColor: "var(--bg-surface)", backgroundImage: "linear-gradient(var(--orange-bg), var(--orange-bg))" };
+
 export function UnitCard({
-  view, onOpen, footer = null, variant = "photo", today, tomorrow, draggable = false, onDragStart, showGaps = true, className = "", qcBadge = null, seq = null, showTechService = true,
+  view, onOpen, footer = null, variant = "photo", today, tomorrow, draggable = false, onDragStart, showGaps = true, className = "", qcBadge = null, seq = null, showTechService = true, handle = null, dragging = false,
 }) {
   if (!view) return null;
   const c = view.customer || {};
@@ -145,12 +161,13 @@ export function UnitCard({
   );
 
   return (
-    <article data-testid="unit-card" data-unit-code={view.unit.unitCode} data-priority={p.key} data-ganti-kain={gantiKain ? "true" : undefined} draggable={draggable && !isDemoActive()} onDragStart={isDemoActive() ? (e) => e.preventDefault() : onDragStart} title={draggable && isDemoActive() ? "Seret-lepas dinonaktifkan di Mode Demo (hanya-baca)" : undefined}
-      className={`relative w-full min-w-0 overflow-hidden rounded-card shadow-sm ${gantiKain ? "bg-orangebg ring-2 ring-orange" : "bg-surface"} ${p.edge} ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${className}`}>
+    <article data-testid="unit-card" data-drag-card data-unit-code={view.unit.unitCode} data-priority={p.key} data-ganti-kain={gantiKain ? "true" : undefined} style={gantiKain ? GANTI_KAIN_STYLE : undefined} draggable={draggable && !isDemoActive()} onDragStart={isDemoActive() ? (e) => e.preventDefault() : onDragStart} title={draggable && isDemoActive() ? "Seret-lepas dinonaktifkan di Mode Demo (hanya-baca)" : undefined}
+      className={`relative w-full min-w-0 overflow-hidden rounded-card shadow-sm ${gantiKain ? "kpi-glass-guard ring-2 ring-orange" : "bg-surface"} ${p.edge} ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${dragging ? "opacity-40" : ""} ${className}`}>
+      {handle && <div className="absolute right-2 top-2 z-10">{handle}</div>}
       <button type="button" onClick={open} className="block w-full text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-label={`Buka Unit 360 ${view.unit.unitCode}`}>
         {variant === "compact" ? (
           <>
-            <div className="flex gap-3 p-3">
+            <div className={`flex gap-3 p-3 ${handle ? "pr-14" : ""}`}>
               <UnitPhoto photoUrl={view.unit.photoUrl} variant="compact" />
               <div className="min-w-0 flex-1 space-y-1.5">
                 {head}
@@ -180,7 +197,7 @@ export function UnitCard({
 export function UpcomingCard({ item, onOpen, footer = null, badgeLabel = "Akan Masuk" }) {
   const c = item.customer || {};
   return (
-    <article data-testid="unit-card" data-unit-code={item.unit.unitCode} data-ganti-kain={isGantiKain(item) ? "true" : undefined} className={`relative w-full min-w-0 overflow-hidden rounded-card border-l-[4px] border-l-transparent shadow-sm ${isGantiKain(item) ? "bg-orangebg ring-2 ring-orange" : "bg-surface"}`}>
+    <article data-testid="unit-card" data-unit-code={item.unit.unitCode} data-ganti-kain={isGantiKain(item) ? "true" : undefined} style={isGantiKain(item) ? GANTI_KAIN_STYLE : undefined} className={`relative w-full min-w-0 overflow-hidden rounded-card border-l-[4px] border-l-transparent shadow-sm ${isGantiKain(item) ? "kpi-glass-guard ring-2 ring-orange" : "bg-surface"}`}>
       <button type="button" onClick={() => onOpen?.(item.unit.id)} className="block w-full text-left hover:bg-hovertint" aria-label={`Buka Unit 360 ${item.unit.unitCode}`}>
         <UnitPhoto photoUrl={item.unit.photoUrl} variant="photo" />
         <div className="space-y-1.5 p-3">

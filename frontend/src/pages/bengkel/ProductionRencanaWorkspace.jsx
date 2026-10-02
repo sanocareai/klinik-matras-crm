@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { CalendarDays, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardList, PackageCheck, PackageX, RefreshCw, Target, Timer, Undo2, XCircle } from "lucide-react";
 import { api } from "@/api.js";
@@ -13,10 +14,12 @@ import { PRIORITIES, friendlyError, stationCapacity, wibDate } from "@/features/
 import { bomLineAvailability, validateBOMLines } from "@/features/production/planning.js";
 import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
-import { UnitCard } from "@/features/production/UnitCard.jsx";
+import { DragHandle, UnitCard, UpcomingCard } from "@/features/production/UnitCard.jsx";
+import { decideDrop, describeTarget, insertIndexAt } from "@/features/production/planDnd.js";
+import { usePlanDrag } from "@/features/production/usePlanDrag.js";
 import { ScheduleModal } from "@/features/production/ScheduleModals.jsx";
 import { MEJA, backlogOf, mattressInfo, mejaLabel } from "@/features/production/unitCardModel.js";
-import { dropPosition, hasManualOrder, moveRelativeTo, moveStep, orderedStationItems } from "@/features/production/stationOrder.js";
+import { hasManualOrder, moveStep, orderedStationItems } from "@/features/production/stationOrder.js";
 import { rolesOf } from "@/lib/roles.js";
 
 // Rencana Produksi (P9 UX Realignment) — PLANNER harian seperti Route Planner Delivery: panel backlog "Belum
@@ -245,7 +248,7 @@ function Kpi({ icon: Icon, label, value, hint, tone = "neutral" }) {
   );
 }
 
-function WeekStrip({ centerDate, onPick }) {
+function WeekStrip({ centerDate, onPick, drag, refreshKey }) {
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => shiftDate(centerDate, i - 3)), [centerDate]);
   const [byDay, setByDay] = useState({});
   useEffect(() => {
@@ -254,7 +257,7 @@ function WeekStrip({ centerDate, onPick }) {
       .then((pairs) => { if (alive) setByDay(Object.fromEntries(pairs)); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days.join(",")]);
+  }, [days.join(","), refreshKey]);
   const today = wibDate(0);
   return (
     <div className="grid grid-cols-7 gap-1.5" data-testid="week-strip" aria-label="Kalender 7 hari">
@@ -262,11 +265,12 @@ function WeekStrip({ centerDate, onPick }) {
         const b = byDay[d];
         const planned = b?.kpi?.planned ?? null, target = b?.kpi?.target ?? null;
         const sel = d === centerDate;
+        const overDay = drag?.resolved?.target?.kind === "day" && drag.resolved.target.date === d ? drag.resolved.decision?.type : null;
         const dow = new Date(`${d}T00:00:00+07:00`).toLocaleDateString("id-ID", { weekday: "short" });
         const dm = new Date(`${d}T00:00:00+07:00`).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
         return (
-          <button key={d} type="button" onClick={() => onPick(d)} aria-pressed={sel}
-            className={`flex min-h-[56px] min-w-0 flex-col items-center justify-center rounded-btn border px-1 py-1.5 text-center ${sel ? "border-accent bg-accentbg" : "border-line bg-surface hover:bg-hovertint"}`}>
+          <button key={d} type="button" data-drop-day={d} onClick={() => onPick(d)} aria-pressed={sel}
+            className={`flex min-h-[56px] min-w-0 flex-col items-center justify-center rounded-btn border px-1 py-1.5 text-center ${overDay === "moveDate" ? "ring-2 ring-accent" : overDay === "reject" ? "ring-2 ring-red" : ""} ${sel ? "border-accent bg-accentbg" : "border-line bg-surface hover:bg-hovertint"}`}>
             <span className={`text-[10.5px] font-semibold uppercase ${d === today ? "text-accent" : "text-ink3"}`}>{dow}</span>
             <span className="text-[12px] font-bold text-ink">{dm}</span>
             <span className="text-[11px] font-semibold tabular-nums text-ink3">{planned ?? "—"}/{target ?? "—"}</span>
@@ -277,57 +281,73 @@ function WeekStrip({ centerDate, onPick }) {
   );
 }
 
-function MejaColumn({ station, date, dropActive, onDragOverMeja, onDropMeja, onOpen, onMove, onReorder, dragStart, today, tomorrow, busy = false }) {
+// Indikator urutan sisip: garis di antara kartu pada posisi tujuan (hanya saat seret ke meja ini dan tujuan valid).
+function InsertLine() {
+  return <div data-testid="drop-indicator" aria-hidden className="relative my-0.5 h-1.5 rounded-full bg-accent"><span className="absolute -left-1 -top-[3px] h-3 w-3 rounded-full bg-accent" /></div>;
+}
+
+function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onHandleDown, today, tomorrow, busy = false }) {
   const cap = stationCapacity(station);
-  const slots = Math.max(0, cap.capacity - station.items.length);
   // Urutan tampil = urutan manual bila ada, selain itu prioritas (bawaan). Server mengirim urutan yang sama; sort lokal hanya pengaman.
   const items = orderedStationItems(station.items);
   const planIds = items.map((v) => v.plan?.id).filter(Boolean);
   const manual = hasManualOrder(items);
-  // Seret kartu DI meja yang sama ke kartu lain = ubah urutan; dari meja lain / backlog = jadwalkan ke meja ini (ditambahkan paling bawah).
-  function onDropCard(e, target) {
-    const runId = e.dataTransfer.getData("text/plain");
-    const dragged = items.find((x) => x.runId === runId);
-    if (!dragged?.plan?.id || !target.plan?.id) return; // bukan kartu meja ini -> menggelembung ke kolom (jadwalkan)
-    e.preventDefault(); e.stopPropagation(); onDragOverMeja(null);
-    const next = moveRelativeTo(planIds, dragged.plan.id, target.plan.id, dropPosition(e.clientY, e.currentTarget.getBoundingClientRect()));
-    if (next) onReorder(station, next);
-  }
+  const draggingRunId = drag?.view?.runId ?? null;
+  const over = drag?.resolved?.target?.kind === "meja" && drag.resolved.target.code === station.code ? drag.resolved : null; // sasaran saat ini = meja ini
+  const decision = over?.decision;
+  const valid = !!decision && (decision.type === "place" || decision.type === "reorder");
+  const rejected = decision?.type === "reject";
+  const here = items.filter((v) => v.runId !== draggingRunId); // kartu selain yang diseret = acuan indeks sisip
+  const insertAt = valid ? Math.max(0, Math.min(over.target.index ?? here.length, here.length)) : -1;
+  const slots = Math.max(0, cap.capacity - items.length);
+  const ring = rejected ? "ring-2 ring-red" : valid ? "ring-2 ring-accent" : drag ? "ring-1 ring-line" : "";
+  let seen = 0; // kartu non-seret yang sudah dirender
   return (
-    <section data-testid="meja-column" data-station={station.code} aria-label={`${station.label}, ${cap.label}`}
-      onDragOver={(e) => { e.preventDefault(); onDragOverMeja(station.code); }} onDragLeave={() => onDragOverMeja(null)} onDrop={(e) => { e.preventDefault(); onDropMeja(station.code, e.dataTransfer.getData("text/plain")); }}
-      className={`flex min-w-0 flex-col gap-2 rounded-card bg-inset p-2.5 transition-shadow ${dropActive ? "ring-2 ring-accent" : ""}`}>
+    <section data-testid="meja-column" data-drop="meja" data-station={station.code} aria-label={`${station.label}, ${cap.label}`}
+      className={`flex min-w-0 flex-col gap-2 rounded-card bg-inset p-2.5 transition-shadow ${ring} ${valid ? "bg-accentbg/40" : ""}`}>
       <div className="flex items-start justify-between gap-2 px-1">
         <div className="min-w-0">
           <p className="m-0 text-[14px] font-bold text-ink">{station.label}</p>
           <p className="m-0 truncate text-[11.5px] text-ink3">{station.operatorNames?.length ? `PIC ${station.operatorNames.join(", ")}` : "PIC belum ada"}</p>
-          {items.length > 1 && <p data-testid="meja-order-hint" className="m-0 text-[11px] text-ink3">{manual ? "Urutan diatur manual" : "Urutan bawaan: prioritas"} · seret kartu atau pakai ▲▼</p>}
+          {items.length > 1 && <p data-testid="meja-order-hint" className="m-0 text-[11px] text-ink3">{manual ? "Urutan diatur manual" : "Urutan bawaan: prioritas"} · seret lewat ⋮⋮ atau pakai ▲▼</p>}
         </div>
         <span data-testid="meja-capacity" className={`shrink-0 rounded-chip px-2 py-0.5 text-[12px] font-bold tabular-nums ${cap.full ? "bg-redbg text-red" : "bg-surface text-ink2"}`}>{cap.count} / {cap.capacity} unit{cap.full ? " · penuh" : ""}</span>
       </div>
-      {items.map((v, idx) => (
-        <div key={v.runId} data-testid="meja-card" data-plan-id={v.plan?.id} onDrop={(e) => onDropCard(e, v)} className="min-w-0">
-          <UnitCard view={v} variant="compact" showTechService={false} seq={idx + 1} today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => onOpen(x.unit.id)}
-            footer={(
-              <div className="flex w-full gap-1.5">
-                <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] flex-1" onClick={() => onMove(v, station.code)}><CalendarDays size={13} aria-hidden /> Pindahkan</Button>
-                {items.length > 1 && (
-                  <>
-                    <Button size="sm" variant="secondary" className="min-h-[44px] min-w-[44px]" data-testid="order-up" data-mutates aria-label={`Naikkan urutan ${v.unit.unitCode}`} disabled={busy || idx === 0}
-                      onClick={() => { const next = moveStep(planIds, v.plan?.id, -1); if (next) onReorder(station, next); }}><ChevronUp size={16} aria-hidden /></Button>
-                    <Button size="sm" variant="secondary" className="min-h-[44px] min-w-[44px]" data-testid="order-down" data-mutates aria-label={`Turunkan urutan ${v.unit.unitCode}`} disabled={busy || idx === items.length - 1}
-                      onClick={() => { const next = moveStep(planIds, v.plan?.id, 1); if (next) onReorder(station, next); }}><ChevronDown size={16} aria-hidden /></Button>
-                  </>
-                )}
-              </div>
-            )} />
-        </div>
-      ))}
+      {rejected && <p data-testid="drop-reject" role="status" className="m-0 rounded-btn bg-redbg px-2 py-1.5 text-[12px] font-semibold text-red">{decision.message}</p>}
+      {items.map((v, idx) => {
+        const isDragged = v.runId === draggingRunId;
+        const line = !isDragged && insertAt === seen; // garis sebelum kartu non-seret ke-`seen`
+        if (!isDragged) seen += 1;
+        return (
+          <React.Fragment key={v.runId}>
+            {line && <InsertLine />}
+            <div data-testid="meja-card" data-meja-card data-run-id={v.runId} data-plan-id={v.plan?.id} className="min-w-0">
+              <UnitCard view={v} variant="compact" showTechService={false} seq={idx + 1} today={today} tomorrow={tomorrow} dragging={isDragged} onOpen={(x) => onOpen(x.unit.id)}
+                handle={<DragHandle unitCode={v.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, v)} />}
+                footer={(
+                  <div className="flex w-full gap-1.5">
+                    <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] flex-1" disabled={busy} onClick={() => onMove(v, station.code)}><CalendarDays size={13} aria-hidden /> Pindahkan</Button>
+                    {items.length > 1 && (
+                      <>
+                        <Button size="sm" variant="secondary" className="min-h-[44px] min-w-[44px]" data-testid="order-up" data-mutates aria-label={`Naikkan urutan ${v.unit.unitCode}`} disabled={busy || idx === 0}
+                          onClick={() => { const next = moveStep(planIds, v.plan?.id, -1); if (next) onReorder(station, next); }}><ChevronUp size={16} aria-hidden /></Button>
+                        <Button size="sm" variant="secondary" className="min-h-[44px] min-w-[44px]" data-testid="order-down" data-mutates aria-label={`Turunkan urutan ${v.unit.unitCode}`} disabled={busy || idx === items.length - 1}
+                          onClick={() => { const next = moveStep(planIds, v.plan?.id, 1); if (next) onReorder(station, next); }}><ChevronDown size={16} aria-hidden /></Button>
+                      </>
+                    )}
+                  </div>
+                )} />
+            </div>
+          </React.Fragment>
+        );
+      })}
+      {valid && insertAt === seen && <InsertLine />}
       {Array.from({ length: slots }).map((_, i) => (
-        <div key={i} data-testid="meja-slot" className="flex min-h-[64px] items-center justify-center rounded-card border-2 border-dashed border-line px-2 text-center text-[11.5px] text-ink3">
-          + Seret unit ke {station.label}
+        <div key={i} data-testid="meja-slot" className={`flex min-h-[72px] items-center justify-center rounded-card border-2 border-dashed px-2 text-center text-[11.5px] ${valid ? "border-accent bg-accentbg/40 text-accent" : "border-line text-ink3"}`}>
+          {valid ? `Lepas di sini → ${station.label}` : `+ Seret unit (⋮⋮) ke ${station.label}`}
         </div>
       ))}
+      {saving && <p className="sr-only" role="status">Menyimpan…</p>}
     </section>
   );
 }
@@ -343,8 +363,8 @@ export default function ProductionRencanaWorkspace() {
   const [notice, setNotice] = useState("");
   const [detail, setDetail] = useState(null);
   const [schedule, setSchedule] = useState(null);
-  const [dropOver, setDropOver] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(""); // "Menyimpan…" selama command berjalan — posisi final HANYA setelah respons server
   const today = wibDate(0);
   const tomorrow = wibDate(1);
 
@@ -380,54 +400,107 @@ export default function ProductionRencanaWorkspace() {
 
   const stockByMaterial = useMemo(() => new Map(refs.stock.map((row) => [row.materialId, row])), [refs.stock]);
   const backlog = useMemo(() => backlogOf(cc?.columns), [cc]);
+  const upcoming = useMemo(() => cc?.columns?.find((c) => c.key === "AKAN_MASUK")?.items || [], [cc]); // forecast read-only (bukan WIP)
   const stations = board?.stations || [];
   const findView = (runId) => backlog.find((v) => v.runId === runId) || stations.flatMap((s) => s.items).find((v) => v.runId === runId);
   const kpi = board?.kpi;
   const cfg = board?.config;
+  const reader = cc?.readerMode ?? board?.readerMode;
 
   const fmtLong = (d) => formatTanggal(d);
 
-  // Jadwalkan/pindahkan langsung (seret-lepas) bila PIC & workshop sudah ada di rencana; kalau belum, buka form (fallback).
-  async function placeOn(view, stationCode) {
+  // SEMUA perubahan jadwal (seret-lepas MAUPUN tombol Jadwalkan/Pindahkan/▲▼) lewat command yang sama. TIDAK optimistic: kartu baru berpindah
+  // setelah server menjawab dan papan dimuat ulang. Bila gagal (409 revisi/isi meja berubah/meja penuh/403), papan dimuat ulang dari server
+  // (kartu kembali ke posisi sebenarnya) dan pesan Bahasa Indonesia ditampilkan.
+  async function commit(label, fn) {
+    setBusy(true); setSaving(label); setError("");
+    try {
+      const out = await fn();
+      await load();
+      if (out?.notice) setNotice(out.notice);
+      if (out?.warning) setError(out.warning);
+    } catch (e) { await load(); setError(friendlyError(e)); } // muat ulang dulu (load mengosongkan galat) agar pesan tetap terlihat
+    finally { setBusy(false); setSaving(""); }
+  }
+  // Jadwalkan/pindahkan langsung bila PIC & workshop sudah ada di rencana; kalau belum, buka form (fallback).
+  async function placeOn(view, stationCode, decision = null) {
     const plan = view.plan;
     const target = stations.find((s) => s.code === stationCode);
     if (plan?.stationCode === stationCode && plan?.productionDate === date) return;
     if (target && stationCapacity(target).full) { setError(`${target.label} sudah penuh (${stationCapacity(target).label}). Pilih meja lain.`); return; }
-    if (plan?.workCenter?.id && plan?.operator?.id) {
-      setBusy(true); setError("");
+    if (!(plan?.workCenter?.id && plan?.operator?.id)) { setSchedule({ ...view, presetStation: stationCode }); return; }
+    await commit("Menyimpan jadwal…", async () => {
+      await api.scheduleProductionV2Plan(plan.id, {
+        productionDate: date, stationCode, priority: plan.priority ?? 0, workCenterId: plan.workCenter.id, operatorId: plan.operator.id,
+        cornerOperatorId: plan.cornerOperator?.id || undefined, expectedRevision: plan.revision,
+      });
+      const where = `${mejaLabel(stationCode)} — ${fmtLong(date)}`;
+      if (!decision?.needsReorder) return { notice: `${view.unit.unitCode} dijadwalkan ke ${where}.` };
       try {
-        await api.scheduleProductionV2Plan(plan.id, {
-          productionDate: date, stationCode, priority: plan.priority ?? 0, workCenterId: plan.workCenter.id, operatorId: plan.operator.id,
-          cornerOperatorId: plan.cornerOperator?.id || undefined, expectedRevision: plan.revision,
-        });
-        setNotice(`${view.unit.unitCode} dijadwalkan ke ${mejaLabel(stationCode)} — ${fmtLong(date)}.`);
-        await load();
-      } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
-    } else {
-      setSchedule({ ...view, presetStation: stationCode });
-    }
+        await api.reorderProductionV2Station({ productionDate: date, stationCode, orderedPlanIds: decision.orderedIds });
+        return { notice: `${view.unit.unitCode} dijadwalkan ke ${where} di urutan ${decision.orderedIds.indexOf(plan.id) + 1}.` };
+      } catch (e) {
+        return { warning: `${view.unit.unitCode} sudah dijadwalkan ke ${where}, tetapi urutannya belum tersimpan (masuk paling bawah): ${friendlyError(e)}` };
+      }
+    });
   }
   async function unschedule(view) {
     const plan = view.plan;
     if (!plan?.stationCode) return;
-    setBusy(true); setError("");
-    try {
+    await commit("Menyimpan…", async () => {
       await api.scheduleProductionV2Plan(plan.id, { productionDate: null, stationCode: null, priority: plan.priority ?? 0, workCenterId: plan.workCenter?.id, operatorId: plan.operator?.id, cornerOperatorId: plan.cornerOperator?.id || undefined, expectedRevision: plan.revision });
-      setNotice(`${view.unit.unitCode} dikembalikan ke Belum Dijadwalkan.`);
-      await load();
-    } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
+      return { notice: `${view.unit.unitCode} dikembalikan ke Belum Dijadwalkan.` };
+    });
+  }
+  // Pindah tanggal (seret kartu ke hari di kalender): meja SAMA, tanggal baru; server menegakkan kapasitas meja pada tanggal itu.
+  async function moveDate(view, day) {
+    const plan = view.plan;
+    if (!(plan?.workCenter?.id && plan?.operator?.id && plan?.stationCode)) { setSchedule({ ...view, presetStation: plan?.stationCode }); return; }
+    await commit("Menyimpan jadwal…", async () => {
+      await api.scheduleProductionV2Plan(plan.id, {
+        productionDate: day, stationCode: plan.stationCode, priority: plan.priority ?? 0, workCenterId: plan.workCenter.id, operatorId: plan.operator.id,
+        cornerOperatorId: plan.cornerOperator?.id || undefined, expectedRevision: plan.revision,
+      });
+      return { notice: `${view.unit.unitCode} dipindah ke ${mejaLabel(plan.stationCode)} — ${fmtLong(day)}.` };
+    });
   }
   // Urutan manual di satu meja: kirim DAFTAR LENGKAP plan id menurut urutan baru; server menolak (409) bila isi meja berubah.
   async function reorderStation(station, orderedPlanIds) {
-    setBusy(true); setError("");
-    try {
+    await commit("Menyimpan urutan…", async () => {
       await api.reorderProductionV2Station({ productionDate: date, stationCode: station.code, orderedPlanIds });
-      setNotice(`Urutan ${station.label} diperbarui.`);
-      await load();
-    } catch (e) { await load(); setError(friendlyError(e)); } // muat ulang dulu (load mengosongkan galat) agar pesan konflik tetap terlihat
-    finally { setBusy(false); }
+      return { notice: `Urutan ${station.label} diperbarui.` };
+    });
   }
-  const dragStart = (e, runId) => { e.dataTransfer.setData("text/plain", runId); e.dataTransfer.effectAllowed = "move"; };
+
+  // --- seret-lepas pointer (mouse + sentuh) ---
+  const stationsRef = useRef(stations); stationsRef.current = stations;
+  const resolveDrop = (x, y, view) => {
+    const els = document.elementsFromPoint(x, y);
+    const day = els.map((e) => e.closest?.("[data-drop-day]")).find(Boolean);
+    let target = null;
+    if (day) target = { kind: "day", date: day.getAttribute("data-drop-day") };
+    else {
+      const col = els.map((e) => e.closest?.("[data-drop]")).find(Boolean);
+      const kind = col?.getAttribute("data-drop");
+      if (kind === "meja") {
+        const mids = [...col.querySelectorAll("[data-meja-card]")].filter((c) => c.getAttribute("data-run-id") !== view.runId)
+          .map((c) => { const r = c.getBoundingClientRect(); return r.top + r.height / 2; });
+        target = { kind: "meja", code: col.getAttribute("data-station"), index: insertIndexAt(y, mids) };
+      } else if (kind === "backlog") target = { kind: "backlog" };
+    }
+    return target ? { target, decision: decideDrop({ view, target, stations: stationsRef.current, date }) } : null; // lepas di luar sasaran = batal
+  };
+  const handleDrop = (view, { decision }) => {
+    switch (decision?.type) {
+      case "reject": setNotice(""); setError(decision.message); break;
+      case "unschedule": unschedule(view); break;
+      case "reorder": reorderStation(stationsRef.current.find((s) => s.code === decision.stationCode), decision.orderedIds); break;
+      case "place": placeOn(view, decision.stationCode, decision); break;
+      case "moveDate": moveDate(view, decision.date); break;
+      default: break; // noop
+    }
+  };
+  const { drag, start: onHandleDown } = usePlanDrag({ enabled: !busy && reader !== "OFF", resolve: resolveDrop, onDrop: handleDrop });
 
   // Kelola Rencana (BOM/reservasi, P3) — dibuka dari dalam Unit 360, aksi tulis lama tidak berubah.
   async function openManageFor(unitId) {
@@ -440,7 +513,7 @@ export default function ProductionRencanaWorkspace() {
     setDetail({ runId: view.runId, unit: view.unit, customer: view.customer, plan: null });
   }
 
-  const reader = cc?.readerMode ?? board?.readerMode;
+  const backlogOver = drag?.resolved?.target?.kind === "backlog" ? drag.resolved.decision?.type : null;
 
   return (
     <PageContainer fluid>
@@ -471,35 +544,55 @@ export default function ProductionRencanaWorkspace() {
               <Kpi icon={CheckCircle2} label="Selesai" value={`${kpi?.completed ?? 0} unit`} tone="green" />
               <Kpi icon={kpi?.waitingMaterial ? PackageX : Timer} label="Perlu perhatian" value={`${(kpi?.waitingMaterial ?? 0) + (kpi?.late ?? 0)}`} hint={`${kpi?.waitingMaterial ?? 0} menunggu bahan · ${kpi?.late ?? 0} terlambat`} tone={(kpi?.waitingMaterial ?? 0) + (kpi?.late ?? 0) ? "red" : "neutral"} />
             </div>
-            <WeekStrip centerDate={date} onPick={setDate} />
+            <WeekStrip centerDate={date} onPick={setDate} drag={drag} refreshKey={board} />
 
             <div className="grid min-w-0 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
-              <section data-testid="backlog-panel" aria-label="Belum Dijadwalkan"
-                onDragOver={(e) => { e.preventDefault(); setDropOver("BACKLOG"); }} onDragLeave={() => setDropOver(null)}
-                onDrop={(e) => { e.preventDefault(); setDropOver(null); const v = findView(e.dataTransfer.getData("text/plain")); if (v?.plan?.stationCode) unschedule(v); }}
-                className={`flex min-w-0 flex-col gap-2.5 rounded-card bg-inset p-3 xl:max-h-[calc(100vh-260px)] xl:overflow-y-auto ${dropOver === "BACKLOG" ? "ring-2 ring-accent" : ""}`}>
+              <div className="flex min-w-0 flex-col gap-4">
+              <section data-testid="backlog-panel" data-drop="backlog" aria-label="Belum Dijadwalkan"
+                className={`flex min-w-0 flex-col gap-2.5 rounded-card bg-inset p-3 xl:max-h-[calc(100vh-260px)] xl:overflow-y-auto ${backlogOver === "unschedule" ? "ring-2 ring-accent" : drag ? "ring-1 ring-line" : ""}`}>
                 <div className="flex items-center justify-between px-1">
                   <h2 className="m-0 text-[14px] font-bold text-ink">Belum Dijadwalkan</h2>
                   <span data-testid="backlog-count" className="rounded-chip bg-surface px-2 py-0.5 text-[12px] font-bold tabular-nums text-ink2">{backlog.length} unit</span>
                 </div>
+                {drag && <p data-testid="backlog-drop-hint" className={`m-0 rounded-btn px-2 py-1.5 text-[12px] font-semibold ${backlogOver === "unschedule" ? "bg-accentbg text-accent" : "bg-surface text-ink3"}`}>Lepas di sini untuk mengembalikan ke Belum Dijadwalkan</p>}
                 {backlog.length === 0 && !loading && <p className="rounded-card border-2 border-dashed border-line p-5 text-center text-[12px] text-ink3">Semua unit sudah dijadwalkan.</p>}
                 {backlog.map((v) => (
-                  <UnitCard key={v.runId} view={v} variant="compact" showTechService={false} today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => openOverview(x.unit.id)}
+                  <UnitCard key={v.runId} view={v} variant="compact" showTechService={false} today={today} tomorrow={tomorrow} dragging={drag?.view?.runId === v.runId} onOpen={(x) => openOverview(x.unit.id)}
+                    handle={<DragHandle unitCode={v.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, v)} />}
                     footer={<Button size="sm" data-mutates className="min-h-[44px] w-full" disabled={busy} onClick={() => setSchedule(v)}><CalendarDays size={13} aria-hidden /> Jadwalkan</Button>} />
                 ))}
               </section>
+              {upcoming.length > 0 && (
+                <section data-testid="upcoming-forecast" aria-label="Akan Masuk — Pickup Terjadwal" className="flex min-w-0 flex-col gap-2.5 rounded-card border border-dashed border-line bg-surface p-3">
+                  <div className="flex items-center justify-between px-1">
+                    <h2 className="m-0 text-[13.5px] font-bold text-ink">Akan Masuk — Pickup Terjadwal</h2>
+                    <span data-testid="upcoming-count" className="rounded-chip bg-inset px-2 py-0.5 text-[12px] font-bold tabular-nums text-ink2">{upcoming.length} unit</span>
+                  </div>
+                  <p className="m-0 px-1 text-[11.5px] text-ink3">Perkiraan kedatangan (forecast). Hanya-baca: belum bisa dijadwalkan atau diseret sampai unit tiba, dan tidak dihitung sebagai WIP, target, atau selesai.</p>
+                  {upcoming.map((item) => <UpcomingCard key={item.unit.id} item={item} badgeLabel="Forecast kedatangan" onOpen={openOverview} />)}
+                </section>
+              )}
+              </div>
 
               <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2" data-testid="meja-grid">
                 {(stations.length ? stations : (cfg?.stations || MEJA).map((code) => ({ code, label: mejaLabel(code), capacity: 3, count: 0, items: [], operatorNames: [] }))).map((s) => (
-                  <MejaColumn key={s.code} station={s} date={date} dropActive={dropOver === s.code} onDragOverMeja={setDropOver}
-                    onDropMeja={(code, runId) => { setDropOver(null); const v = findView(runId); if (v) placeOn(v, code); }}
-                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} onReorder={reorderStation} busy={busy} dragStart={dragStart} today={today} tomorrow={tomorrow} />
+                  <MejaColumn key={s.code} station={s} drag={drag} saving={!!saving} onHandleDown={onHandleDown}
+                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} onReorder={reorderStation} busy={busy} today={today} tomorrow={tomorrow} />
                 ))}
               </div>
             </div>
           </>
         )}
       </PageBody>
+      {saving && createPortal(<div role="status" data-testid="saving-banner" className="fixed bottom-4 left-1/2 z-[90] -translate-x-1/2 rounded-btn bg-accent px-4 py-2 text-[13px] font-semibold text-white shadow-lg">{saving}</div>, document.body)}
+      {drag && createPortal(
+        // Label tujuan di ATAS kartu (tetap terlihat saat jari di tepi bawah layar); posisi dijepit agar ghost tidak terpotong di tepi kiri/kanan.
+        <div data-testid="drag-ghost" aria-hidden className="pointer-events-none fixed z-[100] opacity-95 shadow-2xl" style={{ left: Math.max(4, Math.min(drag.x - drag.offX, window.innerWidth - drag.width - 4)), top: drag.y - drag.offY - 34, width: drag.width }}>
+          <p data-testid="drag-label" className={`m-0 mb-1 rounded-btn px-2 py-1 text-[12px] font-semibold text-white ${drag.resolved?.decision?.type === "reject" ? "bg-red" : drag.resolved?.decision && drag.resolved.decision.type !== "noop" ? "bg-accent" : "bg-ink3"}`}>
+            {drag.resolved ? (describeTarget(drag.resolved.decision, stations, drag.view.plan?.id) || "Posisi sama — tidak ada perubahan") : "Lepas di Meja atau Belum Dijadwalkan"}
+          </p>
+          <div className="rotate-1"><UnitCard view={drag.view} variant="compact" showTechService={false} today={today} tomorrow={tomorrow} /></div>
+        </div>, document.body)}
       {detail && <DetailRencana target={detail} refs={refs} materials={refs.materials} stockByMaterial={stockByMaterial} onClose={() => setDetail(null)} onChanged={load} />}
       {overviewUnitId && <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} manageLabel="Kelola Rencana" onManage={() => openManageFor(overviewUnitId)} />}
       {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services }} onClose={() => setSchedule(null)} onDone={(msg) => { setSchedule(null); setNotice(msg); load(); }} />}

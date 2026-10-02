@@ -380,7 +380,7 @@ export function andonBucketOf({ next, started, rework = false }) {
 //     bongkar..diagnosa) belum menjadi Fondasi, ATAU macet/TERHENTI — baik yang sudah dijadwalkan maupun belum,
 //     dibedakan lewat badge, bukan kolom.
 export const COMMAND_CENTER_COLUMNS = Object.freeze([
-  { key: "AKAN_MASUK", label: "Akan Masuk" },
+  { key: "AKAN_MASUK", label: "Akan Masuk — Pickup Terjadwal" },
   { key: "DALAM_PERJALANAN", label: "Dalam Perjalanan" },
   { key: "TIBA_BELUM_MULAI", label: "Tiba / Belum Mulai" },
   { key: "BONGKAR", label: "Tahap Bongkar" },

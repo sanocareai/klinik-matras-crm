@@ -45,9 +45,9 @@ export const MATRIX = Object.freeze([
   { n: 9, cust: "Pelanggan 09", city: "Bandung", sales: "Fadlan", svc: "Full Service (Service + Tambah Busa + Ganti Kain)", note: "Motif kain mau polos abu-abu", kg: 55, comp: ["PEGAL_PEGAL"], size: "160 × 200", stage: "corner", photo: "pickup", prio: 0, station: "TABLE_4", op: 3, corner: 0, docs: "kurang", label: "Meja 4 — di Corner" },
   { n: 10, cust: "Pelanggan 10", city: "Jakarta Selatan", sales: "Kiki", svc: "Service Fondasi + Tambah Busa", note: "Sisa busa harus dikembalikan", kg: 88, comp: ["SAKIT_PINGGANG"], size: "160 × 200", stage: "menunggu_retur", photo: "pickup", prio: 2, station: "TABLE_4", op: 3, corner: 1, docs: "kurang", label: "Meja 4 — menunggu retur sisa bahan" },
   { n: 11, cust: "Pelanggan 11", city: "Bandung", sales: "Rifki", svc: "Paket Upgrade Fondasi + Lapisan MS", note: "Sudah selesai, siap diantar", kg: 68, comp: ["SAKIT_PINGGANG"], size: "180 × 200", stage: "siap_kirim", photo: "pickup", prio: 0, station: "TABLE_1", op: 0, corner: 1, docs: "lengkap", label: "Meja 1 — siap kirim, dokumentasi lengkap" },
-  { n: 12, cust: "Pelanggan 12", city: "Depok", sales: "Ervina", svc: "Upgrade Fondasi Matras Sehat (150kg)", note: "Fondasi sedang dikerjakan", kg: 80, comp: ["SAKIT_PUNGGUNG"], size: "180 × 200", stage: "lapisan", photo: "pickup", prio: 1, station: "TABLE_1", op: 0, docs: "kurang", label: "Meja 1 — fondasi selesai, lanjut lapisan" },
+  { n: 12, cust: "Pelanggan 12", city: "Depok", sales: "Ervina", svc: "Upgrade Fondasi Matras Sehat (150kg)", note: "Pickup besok pagi", kg: 80, comp: ["SAKIT_PUNGGUNG"], size: "180 × 200", stage: "akan_masuk", photo: "none", prio: 0, station: null, label: "Akan masuk — pickup terjadwal (forecast)" },
 ]);
-export const STAGE_ORDER = Object.freeze(["perjalanan", "tiba", "bongkar", "diagnosa", "bahan_kurang", "fondasi", "lapisan", "lapisan_selesai", "menunggu_qc", "qc_gagal", "corner", "menunggu_retur", "siap_kirim"]);
+export const STAGE_ORDER = Object.freeze(["akan_masuk", "perjalanan", "tiba", "bongkar", "diagnosa", "bahan_kurang", "fondasi", "lapisan", "lapisan_selesai", "menunggu_qc", "qc_gagal", "corner", "menunggu_retur", "siap_kirim"]);
 const DIAG = { diagnosis: "Per tengah lemah dan busa penopang kempes sehingga pinggang melengkung saat tidur.", inputMethod: "TEXT" };
 
 const credsFile = (ctx) => path.resolve(ctx.dataDir, "qa-pv2-credentials.json");
@@ -122,6 +122,12 @@ async function advance(ctx, W, spec, { unit, order }) {
   const { prisma, kit } = ctx; const A = W.accounts;
   const stage = STAGE_ORDER.indexOf(spec.stage); if (stage < 0) throw new Error(`stage tidak dikenal: ${spec.stage}`);
   const at = (s) => stage >= STAGE_ORDER.indexOf(s);
+  if (spec.stage === "akan_masuk") { // pickup TERJADWAL (belum dijemput): forecast kedatangan, belum punya Run — bukan WIP/target
+    const route = await prisma.route.create({ data: { code: qaCode(`RTE-${String(spec.n).padStart(2, "0")}-${Date.now().toString(36)}`), date: new Date(), status: "PUBLISHED", publishedAt: new Date(), driverId: A.driver.id } });
+    const job = await prisma.job.create({ data: { type: "PICKUP", orderId: order.id, routeId: route.id, driverId: A.driver.id, status: "ASSIGNED", sequence: 1, scheduledDate: new Date(Date.now() + 86_400_000) } });
+    await prisma.jobUnit.create({ data: { jobId: job.id, unitId: unit.id } });
+    return;
+  }
   // --- pickup driver (foto pickup fixture lokal) ---
   const podName = `${PREFIX}-pod-${String(spec.n).padStart(2, "0")}.png`;
   const podDir = path.resolve(ctx.dataDir, "job-photos"); fs.mkdirSync(podDir, { recursive: true });
