@@ -88,6 +88,14 @@ export const ENTITY_TYPES = Object.freeze({
 
 export const EVENT_TYPES = Object.freeze({
   PRIORITY_CHANGED: "PRIORITY_CHANGED",
+  // Usulan Prioritas Pagi (Route Planner -> Produksi, 3 Oktober 2026) — lihat
+  // model MorningPriorityRequest di schema.prisma dan services/morningPriority.js.
+  // Entity-nya ORDER (usulan ini bicara soal order, bukan satu unit tertentu);
+  // perubahan Unit.priority yang terjadi saat disetujui TETAP memakai
+  // PRIORITY_CHANGED di atas, dicatat ber-entity UNIT seperti biasa.
+  MORNING_PRIORITY_REQUESTED: "MORNING_PRIORITY_REQUESTED",
+  MORNING_PRIORITY_APPROVED: "MORNING_PRIORITY_APPROVED",
+  MORNING_PRIORITY_DISMISSED: "MORNING_PRIORITY_DISMISSED",
   DUE_DATE_CHANGED: "DUE_DATE_CHANGED",
   SERVICE_ASSIGNED: "SERVICE_ASSIGNED",
   // Production Core Slice 2 — lifecycle ProductionBlocker.

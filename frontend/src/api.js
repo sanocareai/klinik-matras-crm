@@ -327,6 +327,13 @@ export const api = {
   // backend — batalkan dulu baru bisa dihapus.
   deleteRoute: (id) => request(`/armada/routes/${id}`, { method: "DELETE" }),
 
+  // Usulan Prioritas Pagi (Route Planner -> Produksi, 3 Oktober 2026) — dispatcher mengusulkan order
+  // yang masih Diproses, production_lead/admin menyetujui/menolak. Lihat backend/src/services/morningPriority.js.
+  getMorningPriorityRequests: (params = {}) => request(`/morning-priority-requests${buildQuery(params)}`),
+  requestMorningPriority: (orderId, data = {}) => request("/morning-priority-requests", { method: "POST", body: JSON.stringify({ orderId, ...data }) }),
+  approveMorningPriority: (id, priority) => request(`/morning-priority-requests/${id}/approve`, { method: "PATCH", body: JSON.stringify(priority ? { priority } : {}) }),
+  dismissMorningPriority: (id) => request(`/morning-priority-requests/${id}/dismiss`, { method: "PATCH" }),
+
   // Proof of Delivery — sisi verifikasi (Delivery Tahap 4)
   // D-085 — sebelumnya cuma terima `status` (string tunggal). Sekarang
   // objek params supaya `from`/`to` (rentang tanggal) bisa ikut, pola SAMA

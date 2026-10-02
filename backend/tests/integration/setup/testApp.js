@@ -26,6 +26,7 @@ const { stockAdjustmentRouter } = await import("../../../src/routes/stockAdjustm
 const { replenishmentRouter } = await import("../../../src/routes/replenishment.js");
 const { warehouseReportsRouter } = await import("../../../src/routes/warehouseReports.js");
 const { unitRouter } = await import("../../../src/routes/units.js");
+const { morningPriorityRouter } = await import("../../../src/routes/morningPriority.js");
 const { financeRouter } = await import("../../../src/routes/finance.js");
 const { financeTxRouter } = await import("../../../src/routes/financeTransactions.js");
 // expenseSubmissionRouter (24 September 2026) — Pengajuan Biaya Lintas
@@ -89,6 +90,7 @@ export function buildTestApp() {
   // /api/inventory vs /api/inventory/goods-receipts) identik dengan
   // produksi.
   app.use("/api/units", unitRouter);
+  app.use("/api/morning-priority-requests", morningPriorityRouter);
   app.use("/api/inventory", inventoryRouter);
   app.use("/api/inventory/goods-receipts", goodsReceiptRouter);
   app.use("/api/inventory/material-issues", materialIssueRouter);

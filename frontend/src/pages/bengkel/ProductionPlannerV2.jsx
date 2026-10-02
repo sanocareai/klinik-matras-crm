@@ -13,6 +13,7 @@ import {
   bucketStyle, formatMinutes, friendlyError, indicatorList, wibDate,
 } from "@/features/production/experience.js";
 import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
+import MorningPriorityApprovalPanel from "@/features/production/MorningPriorityApprovalPanel.jsx";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import { UnitCard, UpcomingCard, PicChips } from "@/features/production/UnitCard.jsx";
 import { ArrivalModal, ScheduleModal } from "@/features/production/ScheduleModals.jsx";
@@ -196,6 +197,10 @@ export default function ProductionPlannerV2() {
       <PageBody>
         {notice && <div role="status" className="rounded-btn bg-greenbg px-3 py-2.5 text-[12.5px] text-green">{notice}</div>}
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
+
+        {/* Usulan Prioritas Pagi dari Dispatcher (3 Oktober 2026) — lihat MorningPriorityApprovalPanel.jsx.
+            Komponen sembunyi diri sendiri kalau akun ini tidak berhak (403) atau tidak ada usulan PENDING. */}
+        <MorningPriorityApprovalPanel />
 
         {reader === "OFF" ? (
           <Card className="p-0"><EmptyState icon={ClipboardList} title="Produksi V2 belum aktif" description="Pipeline tampil setelah Production V2 diaktifkan untuk unit terkait. Selama cutover, gunakan Work Order dan Papan Produksi lama." action={<Button size="sm" variant="secondary" asChild><Link to="/bengkel/work-orders">Buka Work Order</Link></Button>} /></Card>
