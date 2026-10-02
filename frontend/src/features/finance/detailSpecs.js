@@ -31,16 +31,26 @@ function bagianJejak(d) {
   };
 }
 
+/** Rincian biaya admin transfer untuk panel detail: tiga baris (nominal, biaya admin, total keluar rekening) hanya bila ada biaya. Daftar menampilkan TOTAL; di sini rinciannya. */
+export function barisBiayaAdminPanel(d) {
+  const admin = Number(d?.biayaAdmin ?? d?.transferFeeAmount ?? d?.feeAmount ?? 0);
+  if (!(admin > 0)) return [];
+  const nominal = Number(d?.nominalDiterima ?? d?.amount ?? 0);
+  return [
+    ["Nominal (diterima penerima)", formatUang(nominal)],
+    ["Biaya admin transfer", formatUang(admin)],
+    ["Total keluar rekening", formatUang(d?.totalKeluarRekening ?? nominal + admin)],
+  ];
+}
+
 function bagianUangKeluar(d) {
-  const admin = Number(d.transferFeeAmount || d.biayaAdmin || 0);
   return {
     judul: "Pembayaran",
     baris: [
       ["Cara bayar", LABEL_MODE[d.mode] || d.mode],
       ["Metode", d.paymentMethod ? (LABEL_METODE_BAYAR[d.paymentMethod] || d.paymentMethod) : null],
       ["Sumber dana", nama(d.cashAccount)],
-      ["Biaya admin transfer", admin > 0 ? formatUang(admin) : null],
-      ["Total keluar rekening", admin > 0 && d.totalKeluarRekening != null ? formatUang(d.totalKeluarRekening) : null],
+      ...barisBiayaAdminPanel(d),
       ["Ditalangi oleh", nama(d.reimburseTo)],
       ["Dibayar ke", nama(d.supplier) || d.payeeName],
     ],
@@ -90,7 +100,7 @@ export function specKasbon(k, { badge, aksi } = {}) {
     ],
     bagian: [
       { judul: "Kasbon", baris: [["Karyawan", k.employeeName], ["Tanggal", tanggalPendek(k.date)], ["Status", LABEL_STATUS_DOK[k.status] || k.status], ["Alasan / urgensi", k.urgency], ["Sudah dipotong", uang(k.terlunasi)], ["Catatan", k.notes], ["Sumber lama", k.historis ? "Data historis (impor)" : null]] },
-      { judul: "Uang keluar", baris: [["Sumber dana", nama(k.cashAccount)], ["Metode", k.paymentMethod ? (LABEL_METODE_BAYAR[k.paymentMethod] || k.paymentMethod) : null], ["Bukti", ada(k.receiptUrl)]] },
+      { judul: "Uang keluar", baris: [["Sumber dana", nama(k.cashAccount)], ...barisBiayaAdminPanel(k), ["Metode", k.paymentMethod ? (LABEL_METODE_BAYAR[k.paymentMethod] || k.paymentMethod) : null], ["Bukti", ada(k.receiptUrl)]] },
       ...(riwayat.length > 0 ? [{ judul: `Potongan gaji (${riwayat.length})`, baris: riwayat.map((r, i) => [`${i + 1}. ${tanggalPendek(r.date)}`, `${formatUang(r.amount)}${r.notes ? ` — ${r.notes}` : ""}`]) }] : []),
       { judul: "Jejak", baris: [["Dibuat oleh", nama(k.createdBy)], ["Dibuat pada", TAMPIL_TANGGAL(k.createdAt)], ["Dibatalkan", k.cancelledAt ? `${TAMPIL_TANGGAL(k.cancelledAt)}${k.cancelReason ? ` — ${k.cancelReason}` : ""}` : null]] },
     ],
@@ -164,7 +174,7 @@ const LABEL_KOLOM = {
   receiptUrl: "Bukti", proofPhotoUrl: "Bukti", umur: "Umur (hari)", ember: "Kelompok umur",
   name: "Nama", phone: "Telepon", email: "Email", address: "Alamat", kind: "Jenis", jenis: "Jenis", source: "Sumber", sumber: "Sumber", sumberLabel: "Sumber",
   payeeName: "Penerima", createdBy: "Dibuat oleh", approvedBy: "Disetujui oleh", paidBy: "Dibayar oleh", recordedBy: "Dicatat oleh", cancelledBy: "Dibatalkan oleh",
-  transferFeeAmount: "Biaya admin transfer", paymentMethod: "Metode",
+  transferFeeAmount: "Biaya admin transfer", paymentMethod: "Metode", biayaAdmin: "Biaya admin transfer", nominalDiterima: "Nominal (diterima penerima)", totalKeluarRekening: "Total keluar rekening", feeAmount: "Biaya admin transfer", fromAccount: "Dari rekening", toAccount: "Ke rekening", transferNumber: "No. transfer",
 };
 const UANG = /(amount|nominal|saldo|total|harga|nilai|debit|credit|kredit|sisa|dibayar|terbayar|dipertanggungjawabkan|dikembalikan|fee|biaya|outstanding|piutang|utang|refund|diterima|tagihan|umurPiutang)/i;
 const KECUALI = /(^id$|Id$|Ids$|^key$|^lineId$|sortOrder|^menu|^aksi|^bentuk|^_|repayments|allocations|Allocations|lines|^items$|^perStatus$|thumbUrl|tautan$|version|^versi|replaces|replacedBy|^lewatTempo$)/;
@@ -191,7 +201,7 @@ function nilaiOtomatis(k, v) {
   return String(v);
 }
 
-const KANDIDAT_NOMOR = ["expenseNumber", "purchaseNumber", "kasbonNumber", "advanceNumber", "billNumber", "paymentNumber", "refundNumber", "invoiceNumber", "entryNumber", "orderNumber", "nomor", "name", "code"];
+const KANDIDAT_NOMOR = ["transferNumber", "expenseNumber", "purchaseNumber", "kasbonNumber", "advanceNumber", "billNumber", "paymentNumber", "refundNumber", "invoiceNumber", "entryNumber", "orderNumber", "nomor", "name", "code"];
 const KANDIDAT_SUB = ["keterangan", "description", "purpose", "pihak", "customerName", "pelanggan", "supplierName", "name", "notes"];
 
 /**
@@ -203,9 +213,12 @@ export function specOtomatis(row, opsi = {}) {
   const judul = opsi.judul ?? pilih(KANDIDAT_NOMOR) ?? "Detail";
   const subjudul = opsi.subjudul ?? pilih(KANDIDAT_SUB);
   const sembunyi = new Set(opsi.sembunyi || []);
+  // Ada biaya admin transfer: tampilkan tiga baris rincian (nominal, biaya admin, total keluar rekening) di awal dan sembunyikan kolom mentahnya agar tidak ganda.
+  const rincianBiaya = barisBiayaAdminPanel(r);
+  if (rincianBiaya.length) for (const k of ["transferFeeAmount", "feeAmount", "nominalDiterima", "biayaAdmin", "totalKeluarRekening", "amount"]) sembunyi.add(k);
   const urut = opsi.urut || [];
   const kunci = [...urut.filter((k) => k in r), ...Object.keys(r).filter((k) => !urut.includes(k))];
-  const baris = [];
+  const baris = [...rincianBiaya];
   for (const k of kunci) {
     if (sembunyi.has(k) || KECUALI.test(k)) continue;
     const t = nilaiOtomatis(k, r[k]);

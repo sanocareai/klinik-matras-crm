@@ -11,6 +11,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW
 import { cn } from "@/lib/utils.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
+import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import { LinkBukti } from "@/features/finance/receiptMedia.jsx";
@@ -281,7 +282,7 @@ export default function FinanceKasbon() {
                     <TD truncate className="font-medium">{k.employeeName}</TD>
                     <TD hideBelow="2xl" truncate>{k.urgency || <span className="text-ink3">—</span>}</TD>
                     <TD hideBelow="2xl" truncate className="text-[12px]">{k.cashAccount ? k.cashAccount.name : <span className="text-ink3">—</span>}</TD>
-                    <TD hideBelow="2xl" numeric><Uang value={k.amount} /></TD>
+                    <TD hideBelow="2xl" numeric><NominalDenganBiaya d={k} /></TD>
                     <TD hideBelow="2xl" numeric><Uang value={k.terlunasi} nolSebagaiStrip /></TD>
                     <TD numeric><Uang value={k.sisa} className="font-bold" nolSebagaiStrip /></TD>
                     <TD>
@@ -312,7 +313,7 @@ export default function FinanceKasbon() {
                   fields={[
                     { label: "Tanggal", value: tanggalPendek(k.date) },
                     { label: "Belum Dipotong", value: formatUang(k.sisa) },
-                    { label: "Kasbon", value: formatUang(k.amount) },
+                    { label: "Kasbon", value: nominalTeks(k) },
                     { label: "Sudah Dipotong", value: formatUang(k.terlunasi) },
                     { label: "Urgensi", value: k.urgency, span: true },
                     { label: "Sumber Dana", value: k.cashAccount?.name },

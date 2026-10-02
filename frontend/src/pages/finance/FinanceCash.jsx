@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, Pilihan, InputUang,
@@ -331,7 +332,6 @@ export default function FinanceCash() {
                     <TH>Dari</TH>
                     <TH>Ke</TH>
                     <TH numeric width={128}>Nominal</TH>
-                    <TH numeric width={112} hideBelow="wide">Biaya Admin</TH>
                     <TH width={116}>Status</TH>
                     <TH width={AKSI_COL_WIDTH_MENU_ONLY} />
                   </TR>
@@ -343,8 +343,7 @@ export default function FinanceCash() {
                       <TD className="whitespace-nowrap">{tanggalPendek(t.date)}</TD>
                       <TD truncate>{t.fromAccount?.name}</TD>
                       <TD truncate>{t.toAccount?.name}</TD>
-                      <TD numeric><Uang value={t.amount} /></TD>
-                      <TD hideBelow="wide" numeric><Uang value={t.feeAmount} nolSebagaiStrip /></TD>
+                      <TD numeric><NominalDenganBiaya d={t} /></TD>
                       <TD>
                         {t.cancelledAt
                           ? <Badge variant="red">Dibatalkan</Badge>

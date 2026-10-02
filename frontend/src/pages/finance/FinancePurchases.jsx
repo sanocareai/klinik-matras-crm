@@ -11,6 +11,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, ExpandToggle, DetailRow, Co
 import { cn } from "@/lib/utils.js";
 import { useContainerTier } from "@/hooks/useContainerTier.js";
 import { api } from "@/api.js";
+import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
@@ -365,7 +366,7 @@ export default function FinancePurchases() {
                       subtitle={p.description}
                       fields={[
                         { label: "Tanggal", value: tanggalPendek(p.date) },
-                        { label: "Nominal", value: formatUang(p.amount) },
+                        { label: "Nominal", value: nominalTeks(p) },
                         ...(teksDpBadge(p) ? [{ label: "Uang Muka", value: teksDpBadge(p) }] : []),
                         { label: "Jenis", value: p.category?.name },
                         { label: "Divisi", value: LABEL_DIVISI[p.division] || p.division },
@@ -438,7 +439,7 @@ export default function FinancePurchases() {
                             {(tier === "full" || tier === "reduced") && <TD className="min-w-0">{klasifikasi}</TD>}
                             {tier === "full" && <TD className="min-w-0">{pembayaran}</TD>}
                             <TD numeric>
-                              <Uang value={p.amount} />
+                              <NominalDenganBiaya d={p} />
                               {teksDpBadge(p) && <span className="block truncate text-[11px] text-ink3" title={teksDpBadge(p)}>{teksDpBadge(p)}</span>}
                             </TD>
                             <TD><StatusBadge status={p.status} /></TD>
