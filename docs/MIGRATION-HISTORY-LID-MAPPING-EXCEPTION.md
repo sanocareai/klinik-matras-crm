@@ -27,7 +27,7 @@ Timestamp sengaja setelah migration terbaru di branch dan di `origin/main` (`202
 
 ## Kontrol
 `backend/scripts/verify-migration-history.js` (logika: `backend/src/lib/migrationHistoryVerifier.js`, tes: `backend/tests/migrationHistoryVerifier.test.js`).
-Hanya-baca (SELECT). Exit 0 bila semua migration applied checksum-identik, ATAU satu-satunya beda adalah pengecualian ini
+Hanya-baca (SELECT). Dua pengecualian bernama: LID (dokumen ini) dan Broadcast Team CRLF (`docs/MIGRATION-HISTORY-BROADCAST-TEAM-CRLF-EXCEPTION.md`). Exit 0 bila semua migration applied checksum-identik, ATAU satu-satunya beda adalah pengecualian ini
 dengan SEMUA syarat: nama persis; checksum DB = hash asli; checksum repo = hash current; beda tepat satu baris di atas
 (dibuktikan dengan merekonstruksi berkas asli dan mencocokkan hash); index `OrderWeightEntry_orderId_idx` tidak ada;
 `LidMapping_lid_key` dan `LidMapping_pkey` ada; migration normalisasi WAJIB ada di repo dengan checksum di atas (hilang/berubah → gagal). Bukan allowlist umum: satu byte berubah / checksum lain berbeda / CRLF → gagal.
