@@ -195,6 +195,10 @@ test("Kartu Laporan Sales: endpoint ringkasan memuat bagian 'manual' (penjualan 
   assert.equal(r.body.manual.jumlah, 1);
   assert.equal(r.body.manual.nilai, 1_600_000);
   assert.equal(r.body.manual.sisa, 1_000_000);
+  assert.equal(r.body.gabungan.jumlah, 1, "gabungan dihitung server");
+  assert.equal(r.body.gabungan.nilai, 1_600_000);
+  assert.equal(r.body.gabungan.sisa, 1_000_000);
+  assert.equal(r.body.gabungan.karyawan[0].transaksi[0].jenis, "MANUAL");
 
   const diLuar = await c.get("/api/orders/penjualan-karyawan/ringkasan?from=2026-09-01&to=2026-09-30");
   assert.equal(diLuar.body.manual.jumlah, 0, "periode lain tidak ikut");

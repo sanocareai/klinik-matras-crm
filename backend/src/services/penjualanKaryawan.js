@@ -84,3 +84,28 @@ export async function ringkasanPenjualanKaryawan(db, { from = null, to = null } 
     ],
   };
 }
+
+/**
+ * Gabungan dua sumber Penjualan Karyawan untuk kartu Laporan Sales: (1) order bertanda `staffSellerId` (ringkasanPenjualanKaryawan) dan (2) dokumen manual Finance
+ * (ringkasanPerKaryawan). Dua sumber itu tidak pernah tumpang tindih (order lama tidak diinput ulang di modul manual), jadi menjumlahkannya aman. MURNI — semua penjumlahan
+ * dilakukan di sini (server) supaya layar tidak menghitung uang. `transaksi` diurut tanggal terbaru dulu per karyawan.
+ */
+export function gabungkanPenjualanKaryawan(order, manual) {
+  const per = new Map();
+  const ambil = (id, nama) => { if (!per.has(id)) per.set(id, { id, nama, jumlah: 0, nilai: 0, terbayar: 0, sisa: 0, transaksi: [] }); return per.get(id); };
+  for (const k of order?.karyawan ?? []) {
+    const g = ambil(k.staffSellerId, k.nama);
+    g.jumlah += k.jumlahOrder; g.nilai += k.nilai; g.terbayar += k.terbayar; g.sisa += k.sisa;
+    for (const o of k.orders) g.transaksi.push({ jenis: "ORDER", nomor: o.orderNumber, tanggal: new Date(o.tanggal).toISOString().slice(0, 10), pihak: o.pelanggan, nilai: o.nilai, terbayar: o.terbayar, sisa: o.sisa });
+  }
+  for (const k of manual?.karyawan ?? []) {
+    const g = ambil(k.sellerId, k.nama);
+    g.jumlah += k.jumlah; g.nilai += k.nilai; g.terbayar += k.terbayar; g.sisa += k.sisa;
+    for (const d of k.dokumen) g.transaksi.push({ jenis: "MANUAL", nomor: d.nomor, tanggal: d.tanggal, pihak: d.pembeli, nilai: d.nilai, terbayar: d.terbayar, sisa: d.sisa });
+  }
+  const karyawan = [...per.values()]
+    .map((g) => ({ ...g, nilai: rp(g.nilai), terbayar: rp(g.terbayar), sisa: rp(g.sisa), transaksi: g.transaksi.sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0)) }))
+    .sort((a, b) => b.sisa - a.sisa || b.nilai - a.nilai);
+  const jumlah = (f) => rp(karyawan.reduce((s, k) => s + k[f], 0));
+  return { jumlah: karyawan.reduce((s, k) => s + k.jumlah, 0), nilai: jumlah("nilai"), terbayar: jumlah("terbayar"), sisa: jumlah("sisa"), karyawan };
+}
