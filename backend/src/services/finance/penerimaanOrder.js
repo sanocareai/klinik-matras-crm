@@ -66,6 +66,7 @@ export async function daftarLunasBelumDicatat(db) {
         id: true, orderNumber: true, value: true, paidAt: true, status: true, createdAt: true,
         customer: { select: { id: true, name: true, assignedSales: { select: { id: true, name: true } } } },
         _count: { select: { payments: true } },
+        payments: { where: { cancelledAt: null, verifications: { none: {} } }, select: { amount: true } },
       },
       orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
       take: 2000,
@@ -105,6 +106,8 @@ export async function daftarLunasBelumDicatat(db) {
       customerId: o.customer?.id || null, customerName: o.customer?.name || "—",
       salesName: o.customer?.assignedSales?.name || null,
       nilaiOrder: dasarStatusBayar(o), sudahDicatat: moneyToNumber(dibayar), sisa: moneyToNumber(sisa),
+      // Payment aktif yang belum diverifikasi: bila ada, verifikasi penerimaan DITOLAK server (guard) — selesaikan di menu Pembayaran dulu.
+      pembayaranMenunggu: { jumlah: o.payments.length, total: o.payments.reduce((x, p) => x + Number(p.amount), 0) },
       lunasSejak: tglLunas,
       // Tanpa paidAt (order lama sebelum 30 Agt 2026) tidak ada bukti kapan
       // uangnya masuk — perlakukan sebagai lama.
@@ -150,6 +153,19 @@ export async function mintaBukti(tx, { orderId, catatan = null, userId }) {
   return { orderNumber: order.orderNumber, catatan: teks };
 }
 
+/**
+ * Payment AKTIF yang BELUM diverifikasi untuk satu order (langsung ke order ini, atau lewat alokasi). Dipakai sebagai GUARD: verifikasi penerimaan membuat
+ * Payment BARU, sedangkan Payment menunggu (mis. dicatat Sales/driver/Finance sebelumnya) sudah punya jurnal kas/bank dan TIDAK terhitung pada status bayar
+ * selama gerbang verifikasi menyala — tanpa guard, order tampak "belum dicatat" lalu uangnya terbukukan DUA KALI (kasus RES-21092026-130, 30 Sep 2026).
+ */
+export async function pembayaranMenungguVerifikasi(db, orderId) {
+  return db.payment.findMany({
+    where: { cancelledAt: null, verifications: { none: {} }, OR: [{ orderId }, { finAllocations: { some: { orderId } } }] },
+    select: { id: true, amount: true, method: true, createdAt: true, cashAccountId: true },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 async function pendapatanSudahDiakui(tx, orderId) {
   const e = await findEntryByKey(tx, KEY_ORDER.revenue(orderId));
   return !!e && e.status === "POSTED";
@@ -188,6 +204,16 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   if (!klaim && order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM (mungkin baru diubah sales). Muat ulang halaman ini.`, 409);
 
   const gate = await getVerificationGate(tx);
+  // GUARD PAYMENT MENUNGGU: jangan membuat Payment baru bila order masih punya Payment aktif yang belum diverifikasi. Selesaikan dulu yang menunggu itu
+  // (verifikasi di Pembayaran, atau batalkan bila salah input) — baru verifikasi penerimaan dilanjutkan bila memang masih ada sisa.
+  const menunggu = await pembayaranMenungguVerifikasi(tx, orderId);
+  if (menunggu.length > 0) {
+    const rincian = menunggu.map((m) => `Rp${Number(m.amount).toLocaleString("id-ID")} (${m.method}, ${tanggalWIB(m.createdAt)})`).join("; ");
+    throw Object.assign(
+      err(`Order ${order.orderNumber} sudah punya ${menunggu.length} pembayaran yang BELUM diverifikasi: ${rincian}. Verifikasi atau batalkan pembayaran itu dulu di menu Pembayaran — jangan membuat penerimaan baru, nanti uangnya tercatat dua kali.`, 409),
+      { code: "PAYMENT_MENUNGGU_VERIFIKASI" },
+    );
+  }
   const sisa = toMoney(dasarStatusBayar(order)).minus(await paidForOrder(tx, orderId, gate));
   if (sisa.lessThanOrEqualTo(0)) throw err(`Order ${order.orderNumber} sudah tercatat lunas penuh, tidak ada yang perlu diverifikasi lagi`, 409);
   const nominal = amount === null || amount === "" || amount === undefined ? sisa : toMoney(amount, { field: "Nominal" });
