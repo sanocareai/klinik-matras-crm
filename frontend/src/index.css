@@ -4210,3 +4210,7 @@ body {
 .fin-search input:focus, .fin-search input:focus-visible { outline: 0; box-shadow: none; }
 .fin-search input[type="search"]::-webkit-search-cancel-button { display: none; }
 .fin-search input, .fin-search input:hover { background: transparent !important; border-radius: 0; padding-left: 0; padding-right: 0; }
+
+/* Rencana Produksi — selama kartu diseret (pointer): tanpa seleksi teks, kursor menggenggam. */
+body.plan-dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+body.plan-dragging * { cursor: grabbing !important; }

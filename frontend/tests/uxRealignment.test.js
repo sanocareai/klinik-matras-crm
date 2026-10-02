@@ -25,7 +25,8 @@ function loadModel() {
   const src = MODEL_SRC.replace(/^import .*$/gm, "").replace(/^export /gm, "");
   const STEP_BY_NO = { 5: { label: "Diagnosa" }, 1: { label: "Sebelum Bongkar" } };
   const bucketStyle = (k) => ({ label: k || "Antrean" });
-  return new Function("STEP_BY_NO", "bucketStyle", `${src}\nreturn { priorityMeta, dataGaps, materialBadge, stageText, backlogOf, mergeQcWithViews, pipelineChips, mejaLabel, MEJA, humanizeRequest };`)(STEP_BY_NO, bucketStyle);
+  const PRODUCT_TYPE_LABELS = { KASUR_SPRING: "Kasur Spring", KASUR_BUSA: "Kasur Busa", KASUR_LAINNYA: "Lainnya" };
+  return new Function("STEP_BY_NO", "bucketStyle", "PRODUCT_TYPE_LABELS", `${src}\nreturn { priorityMeta, dataGaps, materialBadge, stageText, backlogOf, mergeQcWithViews, pipelineChips, mejaLabel, MEJA, humanizeRequest, isGantiKain, mattressInfo, salesNoteOf };`)(STEP_BY_NO, bucketStyle, PRODUCT_TYPE_LABELS);
 }
 
 test("Navigasi Production: OPERASIONAL hanya 5 menu; Aplikasi Meja/Corner/Andon di 'MODE KERJA & PERANGKAT'; Legacy admin-only & tertutup", () => {
@@ -83,8 +84,9 @@ test("Rencana Produksi: planner harian — backlog 'Belum Dijadwalkan', Meja 1�
   assert.match(RENCANA, /data-testid="backlog-panel"/);
   assert.match(RENCANA, /data-testid="meja-column"/);
   assert.match(RENCANA, /data-testid="meja-slot"/);
-  assert.match(RENCANA, /onDrop=/);
-  assert.match(RENCANA, /draggable/);
+  assert.match(RENCANA, /data-drop="backlog"/);
+  assert.match(RENCANA, /data-drop="meja"/);
+  assert.match(RENCANA, /<DragHandle /);
   assert.match(RENCANA, /Jadwalkan<\/Button>/);
   assert.match(RENCANA, /Pindahkan<\/Button>/);
   assert.match(RENCANA, /scheduleProductionV2Plan/);
@@ -177,9 +179,10 @@ test("humanizeRequest: JSON intake Sales jadi kalimat terbaca; teks biasa & JSON
 });
 
 // Regresi (ditemukan uji drag-drop nyata): kartu di dalam kolom Meja tidak bisa diseret karena prop dragStart tidak diteruskan.
-test("Rencana: MejaColumn menerima & dipasangi dragStart (kartu di meja bisa diseret antar-meja / balik ke backlog)", () => {
-  assert.match(RENCANA, /<MejaColumn [\s\S]*?dragStart=\{dragStart\}/);
-  assert.ok(RENCANA.includes("onDragStart={(e) => dragStart(e, v.runId)}"));
+test("Rencana: MejaColumn menerima onHandleDown & drag; kartu meja dan backlog punya handle seret (antar-meja / balik ke backlog)", () => {
+  assert.match(RENCANA, /<MejaColumn [\s\S]*?onHandleDown=\{onHandleDown\}/);
+  assert.ok(RENCANA.includes("handle={<DragHandle unitCode={v.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, v)} />}"));
+  assert.equal((RENCANA.match(/<DragHandle /g) || []).length, 2, "backlog + meja");
 });
 
 // ---- Temuan sandbox QA (fix/production-v2-sandbox-findings) ----
@@ -220,4 +223,39 @@ test("Sandbox#10 Gudang: retur & waste bisa ditautkan ke unit (unitId) supaya Si
   assert.ok(G.includes("api.wasteStock({ materialId: material.materialId, qty: qtyNum, reason: reason.trim(), unitId,"));
   assert.ok(G.includes("r?.unit?.id ?? r?.id"), "by-code mengembalikan { unit: { id } } — baca unit.id bertingkat");
   assert.ok(G.includes('type === "issue" || type === "return" || type === "waste"'));
+});
+
+// Revisi kartu Rencana Produksi (2 Okt 2026): layanan cukup dari Sales (tanpa Layanan Teknis), + jenis/merk/ukuran kasur,
+// + catatan Sales, + Ganti Kain berwarna beda (krusial: harus sesuai keinginan customer).
+test("Rencana Produksi: kartu tanpa Layanan Teknis (prop showTechService=false), Status/QC tetap menampilkannya", () => {
+  assert.match(CARD, /showTechService = true/);
+  assert.match(CARD, /\{showTechService && \(/);
+  assert.equal((RENCANA.match(/showTechService=\{false\}/g) || []).length, 3, "kartu backlog + kartu meja + ghost seret");
+  assert.ok(!/Layanan Teknis/.test(RENCANA), "Rencana tidak menyebut Layanan Teknis sama sekali");
+});
+test("Kartu unit: baris Kasur (jenis·merk·ukuran) & Catatan Sales ada di kartu Production dan kartu Akan Masuk", () => {
+  assert.match(CARD, /data-testid="mattress-info"/);
+  assert.equal((CARD.match(/<MattressLine view=/g) || []).length, 2);
+  assert.equal((CARD.match(/<SalesNote view=/g) || []).length, 2);
+});
+test("Ganti Kain: kartu berwarna beda (oranye) + kotak peringatan yang selalu tampil; hanya dikenali dari layanan Sales", () => {
+  assert.match(CARD, /kpi-glass-guard ring-2 ring-orange/);
+  assert.match(CARD, /data-testid="ganti-kain-note"/);
+  assert.match(CARD, /data-ganti-kain=/);
+  const M = loadModel();
+  assert.equal(M.isGantiKain({ customer: { salesServices: ["Ganti Kain"] } }), true);
+  assert.equal(M.isGantiKain({ customer: { salesServices: ["Full Service (Service + Tambah Busa + Ganti Kain)"] } }), true);
+  assert.equal(M.isGantiKain({ customer: { salesServices: ["Full Service"] } }), false);
+  assert.equal(M.isGantiKain({ customer: { salesServices: [], request: "ganti kain polos" } }), false, "tidak menebak dari teks bebas");
+  assert.equal(M.isGantiKain({ customer: {} }), false);
+});
+test("mattressInfo/salesNoteOf: jenis dari tipe produk, merk/ukuran dari unit lalu catatan order; catatan Sales tanpa merk/ukuran; kosong = null", () => {
+  const M = loadModel();
+  assert.deepEqual(M.mattressInfo({ unit: { merk: "Serta", ukuran: "160 × 200" }, customer: { productType: "KASUR_SPRING" } }), { jenis: "Kasur Spring", merk: "Serta", ukuran: "160 × 200" });
+  assert.deepEqual(M.mattressInfo({ unit: {}, customer: { productType: "KASUR_LAINNYA", request: JSON.stringify({ merkKasur: "Zinus", ukuranKasur: "90x200 cm (Single)", jenisKasurLainnya: "Kasur lipat" }) } }), { jenis: "Lainnya (Kasur lipat)", merk: "Zinus", ukuran: "90x200 cm (Single)" });
+  assert.deepEqual(M.mattressInfo({ unit: {}, customer: {} }), { jenis: null, merk: null, ukuran: null });
+  assert.equal(M.salesNoteOf({ customer: { request: JSON.stringify({ merkKasur: "Zinus", ukuranKasur: "x", keluhanCustomer: "Kain polos abu-abu" }) } }), "Kain polos abu-abu", "merk/ukuran tidak diulang di catatan");
+  assert.equal(M.salesNoteOf({ customer: { request: "Segera — pindah rumah" } }), "Segera — pindah rumah");
+  assert.equal(M.salesNoteOf({ customer: { request: JSON.stringify({ merkKasur: "Zinus" }) } }), null);
+  assert.equal(M.salesNoteOf({ customer: { request: "  " } }), null);
 });

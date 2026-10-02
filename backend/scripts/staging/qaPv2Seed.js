@@ -37,17 +37,17 @@ export const MATRIX = Object.freeze([
   { n: 1, cust: "Pelanggan 01", city: "Bandung", sales: "Fadlan", svc: "Paket Upgrade Fondasi + Lapisan MS", note: "Minta lapisan atas lebih empuk", kg: 62, comp: ["SAKIT_PUNGGUNG"], size: "180 × 200", stage: "perjalanan", photo: "manual", prio: 0, station: null, label: "Dalam perjalanan (belum dijadwalkan)" },
   { n: 2, cust: "Pelanggan 02", city: "Jakarta Selatan", sales: "Rifki", svc: "Rubah Texture Menjadi Empuk/Keras", note: "Kasur terasa terlalu lembek", kg: 58, comp: ["SAKIT_PINGGANG"], size: "160 × 200", stage: "tiba", photo: "pickup", prio: 1, station: null, label: "Tiba, belum dijadwalkan — prioritas tinggi" },
   { n: 3, cust: "Pelanggan 03", city: "Depok", sales: "Ervina", svc: "Full Service (Service + Tambah Busa + Ganti Kain)", note: "Segera — pelanggan pindah rumah akhir pekan", kg: 75, comp: ["PEGAL_PEGAL"], size: "200 × 200", stage: "tiba", photo: "pickup", prio: 2, station: null, label: "Tiba, belum dijadwalkan — mendesak" },
-  { n: 4, cust: "Pelanggan 04", city: "Bekasi", sales: "Kiki", svc: "Service Fondasi + Tambah Busa", note: "Kasur anak, jangan terlalu keras", kg: 45, comp: [], size: "120 × 200", stage: "diagnosa", photo: "pickup", prio: 0, station: "TABLE_1", op: 0, docs: "kurang", label: "Meja 1 — diagnosis belum lengkap" },
+  { n: 4, cust: "Pelanggan 04", city: "Bekasi", sales: "Kiki", svc: "Service Fondasi + Tambah Busa", note: "Kasur anak, jangan terlalu keras", kg: 45, comp: [], size: "120 × 200", stage: "bongkar", photo: "pickup", prio: 0, station: "TABLE_1", op: 0, docs: "kurang", label: "Meja 1 — tahap bongkar (diagnosis belum)" },
   { n: 5, cust: "Pelanggan 05", city: "Bogor", sales: "Kiki", svc: "Upgrade Fondasi Matras Sehat (150kg)", note: "Suami 84kg, istri 53kg", kg: 84, comp: ["SAKIT_LEHER"], size: "180 × 200", stage: "bahan_kurang", photo: "manual", prio: 2, station: "TABLE_2", op: 1, docs: "kurang", label: "Meja 2 — menunggu bahan" },
-  { n: 6, cust: "Pelanggan 06", city: "Bandung", sales: "Fadlan", svc: "Paket Upgrade Fondasi + Lapisan MS", note: "Kasur amblas sisi kanan", kg: 60, comp: ["KEPALA_PUSING"], size: "180 × 200", stage: "fondasi", photo: "pickup", prio: 1, station: "TABLE_2", op: 1, docs: "kurang", label: "Meja 2 — sedang dikerjakan (fondasi)" },
+  { n: 6, cust: "Pelanggan 06", city: "Bandung", sales: "Fadlan", svc: "Paket Upgrade Fondasi + Lapisan MS", note: "Kasur amblas sisi kanan", kg: 60, comp: ["KEPALA_PUSING"], size: "180 × 200", stage: "lapisan_selesai", photo: "pickup", prio: 1, station: "TABLE_2", op: 1, docs: "kurang", label: "Meja 2 — lapisan selesai, uji tekstur berikutnya" },
   { n: 7, cust: "Pelanggan 07", city: "Tangerang", sales: "Rifki", svc: "Paket Upgrade Fondasi + Lapisan MS", note: "", kg: 70, comp: ["BAHU"], size: "160 × 200", stage: "menunggu_qc", photo: "pickup", prio: 0, station: "TABLE_3", op: 2, docs: "kurang", label: "Meja 3 — menunggu QC" },
   { n: 8, cust: "Pelanggan 08", city: "Jakarta Timur", sales: "Ervina", svc: "Paket Upgrade Fondasi + Lapisan MS", note: "Untuk orang tua — jangan terlalu keras", kg: 95, comp: ["SAKIT_PINGGANG"], size: "200 × 200", stage: "qc_gagal", photo: "pickup", prio: 1, station: "TABLE_3", op: 2, docs: "kurang", label: "Meja 3 — QC gagal, rework" },
   { n: 9, cust: "Pelanggan 09", city: "Bandung", sales: "Fadlan", svc: "Full Service (Service + Tambah Busa + Ganti Kain)", note: "Motif kain mau polos abu-abu", kg: 55, comp: ["PEGAL_PEGAL"], size: "160 × 200", stage: "corner", photo: "pickup", prio: 0, station: "TABLE_4", op: 3, corner: 0, docs: "kurang", label: "Meja 4 — di Corner" },
   { n: 10, cust: "Pelanggan 10", city: "Jakarta Selatan", sales: "Kiki", svc: "Service Fondasi + Tambah Busa", note: "Sisa busa harus dikembalikan", kg: 88, comp: ["SAKIT_PINGGANG"], size: "160 × 200", stage: "menunggu_retur", photo: "pickup", prio: 2, station: "TABLE_4", op: 3, corner: 1, docs: "kurang", label: "Meja 4 — menunggu retur sisa bahan" },
   { n: 11, cust: "Pelanggan 11", city: "Bandung", sales: "Rifki", svc: "Paket Upgrade Fondasi + Lapisan MS", note: "Sudah selesai, siap diantar", kg: 68, comp: ["SAKIT_PINGGANG"], size: "180 × 200", stage: "siap_kirim", photo: "pickup", prio: 0, station: "TABLE_1", op: 0, corner: 1, docs: "lengkap", label: "Meja 1 — siap kirim, dokumentasi lengkap" },
-  { n: 12, cust: "Pelanggan 12", city: "Depok", sales: "Ervina", svc: "Upgrade Fondasi Matras Sehat (150kg)", note: "Fondasi sedang dikerjakan", kg: 80, comp: ["SAKIT_PUNGGUNG"], size: "180 × 200", stage: "lapisan", photo: "pickup", prio: 1, station: "TABLE_1", op: 0, docs: "kurang", label: "Meja 1 — fondasi selesai, lanjut lapisan" },
+  { n: 12, cust: "Pelanggan 12", city: "Depok", sales: "Ervina", svc: "Upgrade Fondasi Matras Sehat (150kg)", note: "Pickup besok pagi", kg: 80, comp: ["SAKIT_PUNGGUNG"], size: "180 × 200", stage: "akan_masuk", photo: "none", prio: 0, station: null, label: "Akan masuk — pickup terjadwal (forecast)" },
 ]);
-export const STAGE_ORDER = Object.freeze(["perjalanan", "tiba", "diagnosa", "bahan_kurang", "fondasi", "lapisan", "menunggu_qc", "qc_gagal", "corner", "menunggu_retur", "siap_kirim"]);
+export const STAGE_ORDER = Object.freeze(["akan_masuk", "perjalanan", "tiba", "bongkar", "diagnosa", "bahan_kurang", "fondasi", "lapisan", "lapisan_selesai", "menunggu_qc", "qc_gagal", "corner", "menunggu_retur", "siap_kirim"]);
 const DIAG = { diagnosis: "Per tengah lemah dan busa penopang kempes sehingga pinggang melengkung saat tidur.", inputMethod: "TEXT" };
 
 const credsFile = (ctx) => path.resolve(ctx.dataDir, "qa-pv2-credentials.json");
@@ -109,7 +109,7 @@ export async function ensureUnit(ctx, W, spec) {
   const existing = await prisma.unit.findUnique({ where: { unitCode: code } });
   if (existing) { ctx.log(`  ${code}: sudah ada — dilewati (idempoten)`); return { code, unitId: existing.id, existed: true }; }
   const customer = await prisma.customer.create({ data: { name: `${PREFIX} ${spec.cust}`, city: spec.city, assignedSalesId: A[`sales_${spec.sales.toLowerCase()}`]?.id ?? null } });
-  const order = await prisma.order.create({ data: { customerId: customer.id, orderNumber: orderNoOf(spec.n), value: 1_500_000 + spec.n * 130_000, category: "LAYANAN", beratBadan: spec.kg, complaintCategory: spec.comp, notes: spec.note ? `${spec.note}` : null, customerPromiseDate: new Date(Date.now() + (3 + (spec.n % 5)) * 86_400_000) } });
+  const order = await prisma.order.create({ data: { customerId: customer.id, orderNumber: orderNoOf(spec.n), value: 1_500_000 + spec.n * 130_000, category: "LAYANAN", productType: ["KASUR_SPRING", "KASUR_BUSA", "KASUR_2IN1_ATAS", "KASUR_SPRING"][spec.n % 4], beratBadan: spec.kg, complaintCategory: spec.comp, notes: spec.note ? `${spec.note}` : null, customerPromiseDate: new Date(Date.now() + (3 + (spec.n % 5)) * 86_400_000) } });
   await prisma.orderItem.create({ data: { orderId: order.id, layananName: spec.svc, harga: 1_500_000 + spec.n * 130_000, sortOrder: 0 } });
   const unit = await prisma.unit.create({ data: { unitCode: code, orderId: order.id, seq: 1, status: "AWAITING_PICKUP", merk: ["King Koil", "Serta", "Comforta", "Florence"][spec.n % 4], ukuran: spec.size } });
   await addToCohort(ctx, [unit.id]);
@@ -122,6 +122,12 @@ async function advance(ctx, W, spec, { unit, order }) {
   const { prisma, kit } = ctx; const A = W.accounts;
   const stage = STAGE_ORDER.indexOf(spec.stage); if (stage < 0) throw new Error(`stage tidak dikenal: ${spec.stage}`);
   const at = (s) => stage >= STAGE_ORDER.indexOf(s);
+  if (spec.stage === "akan_masuk") { // pickup TERJADWAL (belum dijemput): forecast kedatangan, belum punya Run — bukan WIP/target
+    const route = await prisma.route.create({ data: { code: qaCode(`RTE-${String(spec.n).padStart(2, "0")}-${Date.now().toString(36)}`), date: new Date(), status: "PUBLISHED", publishedAt: new Date(), driverId: A.driver.id } });
+    const job = await prisma.job.create({ data: { type: "PICKUP", orderId: order.id, routeId: route.id, driverId: A.driver.id, status: "ASSIGNED", sequence: 1, scheduledDate: new Date(Date.now() + 86_400_000) } });
+    await prisma.jobUnit.create({ data: { jobId: job.id, unitId: unit.id } });
+    return;
+  }
   // --- pickup driver (foto pickup fixture lokal) ---
   const podName = `${PREFIX}-pod-${String(spec.n).padStart(2, "0")}.png`;
   const podDir = path.resolve(ctx.dataDir, "job-photos"); fs.mkdirSync(podDir, { recursive: true });
@@ -152,6 +158,11 @@ async function advance(ctx, W, spec, { unit, order }) {
   const media = async (who, ...kinds) => (await kit.upload(who, `${V2}/evidence/upload`, { runId: run.id, files: kinds.length, video: kinds[0] === "v" })).items.map((i) => i.url);
   const step = async (who, n, payload = {}, mediaUrls = []) => kit.post(who, `${V2}/runs/${run.id}/steps/${n}`, { expectedRevision: await rev(), workCenterId: W.wc.id, payload, media: mediaUrls });
   const planId = planned.planId || planned.id;
+  if (spec.stage === "bongkar") { // Tahap Bongkar: Langkah 1-2 selesai, hasil bongkar (3) berikutnya
+    await step(meja, 1, { conditionConfirmed: true, conditionNote: "kain luar kusam" }, await media(meja, "i"));
+    await step(meja, 2, { feelNote: "Tengah terasa amblas" }, await media(meja, "v"));
+    await maybeDocs(ctx, W, spec, run.id); return;
+  }
   if (at("diagnosa")) {
     await step(meja, 1, { conditionConfirmed: true, conditionNote: "kain luar kusam" }, await media(meja, "i"));
     await step(meja, 2, { feelNote: "Tengah terasa amblas" }, await media(meja, "v"));
@@ -178,6 +189,7 @@ async function advance(ctx, W, spec, { unit, order }) {
   const usedLapisan = spec.stage === "menunggu_retur" ? 1 : 2;
   if (spec.stage === "lapisan") { await maybeDocs(ctx, W, spec, run.id); return; } // fondasi selesai, tahap lapisan (7) berikutnya — tahap 7 tak punya langkah "mulai" terpisah
   await step(meja, 7, { materials: [{ materialId: W.materials["LTX-05"].id, qty: usedLapisan }] }, await media(meja, "i"));
+  if (spec.stage === "lapisan_selesai") { await maybeDocs(ctx, W, spec, run.id); return; } // Lapisan Jadi: uji tekstur akhir (8) belum dikirim
   await step(meja, 8, { verdict: "PAS", testerWeightKg: spec.kg }, await media(meja, "v"));
   if (spec.stage === "menunggu_qc") { await maybeDocs(ctx, W, spec, run.id); return; }
   const qcRun = await kit.get(A.qc, `${P}/qc/runs/${run.id}`);

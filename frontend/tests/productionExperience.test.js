@@ -32,7 +32,7 @@ test("P9B: priorityTone URGENT=merah/HIGH=oranye/NORMAL=netral; targetDateBadge 
   assert.deepEqual(targetDateBadge({ plan: { productionDate: tomorrow }, progress: { done: 0 }, activeOp: null, timer: { late: false } }, today, tomorrow), { tone: "orange", label: "Target besok" });
   assert.deepEqual(targetDateBadge({ plan: { productionDate: today }, progress: { done: 5 }, activeOp: null, timer: { late: true } }, today, tomorrow), { tone: "red", label: "Terlambat" }, "terlambat menang atas aturan lain apa pun");
 
-  assert.deepEqual(COMMAND_CENTER_COLUMNS, ["AKAN_MASUK", "DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "QC", "CORNER", "SIAP_KIRIM"]);
+  assert.deepEqual(COMMAND_CENTER_COLUMNS, ["AKAN_MASUK", "DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "BONGKAR", "UJI_FONDASI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "CORNER", "SIAP_KIRIM"]);
 });
 
 test("validasi form tahap: unggahan belum selesai/gagal, video wajib, pengukuran, rework, checklist", () => {

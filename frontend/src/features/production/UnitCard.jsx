@@ -1,10 +1,10 @@
 import React from "react";
 import { isDemoActive } from "./demo/demoGate.js"; // P12A: kartu tidak bisa diseret selama Mode Demo
-import { AlertTriangle, CalendarDays, ChevronsUp, Flame, ImageOff, PackageX, Wrench } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronsUp, Flame, GripVertical, ImageOff, PackageX, Scissors, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { bucketStyle, initials, targetDateBadge } from "@/features/production/experience.js";
-import { dataGaps, humanizeRequest, materialBadge, mejaLabel, priorityMeta, stageText } from "@/features/production/unitCardModel.js";
+import { dataGaps, isGantiKain, materialBadge, mattressInfo, mejaLabel, priorityMeta, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
 import { formatRupiah } from "@/utils/format.js";
 
 // P9 UX Realignment — SATU kartu unit untuk Status Produksi, Rencana Produksi (backlog + slot meja), dan Quality
@@ -39,6 +39,39 @@ export function UnitPhoto({ photoUrl, variant, className = "" }) {
   );
 }
 
+// Baris "Kasur: jenis · merk · ukuran" — SATU tempat untuk kartu Status/Rencana/QC/Akan Masuk. Bagian kosong dilewati; semua kosong = "belum tercatat".
+export function MattressLine({ view }) {
+  const m = mattressInfo(view);
+  const parts = [m.jenis, m.merk, m.ukuran].filter(Boolean);
+  return (
+    <p data-testid="mattress-info" className="m-0 line-clamp-2 text-[12px] text-ink2" title={parts.join(" · ")}>
+      <span className="font-semibold text-ink3">Kasur: </span>{parts.length ? parts.join(" · ") : <span className="text-ink3">belum tercatat</span>}
+    </p>
+  );
+}
+
+// Catatan Sales. Ganti Kain = krusial: kotak peringatan yang SELALU tampil (juga bila catatan kosong) supaya PIC memastikan
+// kain sesuai keinginan customer sebelum mengerjakan.
+export function SalesNote({ view }) {
+  const note = salesNoteOf(view);
+  if (isGantiKain(view)) {
+    return (
+      <div data-testid="ganti-kain-note" className="rounded-btn border border-orange bg-surface px-2 py-1.5">
+        <p className="m-0 flex items-center gap-1 text-[11.5px] font-bold text-orange"><Scissors size={12} aria-hidden /> Ganti Kain — pastikan sesuai permintaan customer</p>
+        <p data-testid="sales-note" className="m-0 mt-0.5 line-clamp-3 break-words text-[12px] font-medium text-ink [overflow-wrap:anywhere]" title={note || ""}>
+          <span className="font-semibold text-ink3">Catatan Sales: </span>{note || <span className="text-orange">belum ada catatan kain dari Sales — konfirmasi ke Sales</span>}
+        </p>
+      </div>
+    );
+  }
+  if (!note) return null;
+  return (
+    <p data-testid="sales-note" className="m-0 line-clamp-2 break-words text-[11.5px] text-ink2 [overflow-wrap:anywhere]" title={note}>
+      <span className="font-semibold text-ink3">Catatan Sales: </span><span className="italic">“{note}”</span>
+    </p>
+  );
+}
+
 export function PicChips({ view }) {
   const t = view?.plan?.operator?.name, c = view?.plan?.cornerOperator?.name;
   if (!t && !c) return <span className="text-[11.5px] text-ink3">PIC belum ditetapkan</span>;
@@ -50,8 +83,24 @@ export function PicChips({ view }) {
   );
 }
 
+// Handle seret (Rencana Produksi). SATU-SATUNYA bagian kartu yang menangkap sentuhan untuk menyeret (touch-action:none) — di luar handle
+// halaman tetap bisa digulir dan ketukan kartu tetap membuka Unit 360. Target 44px untuk jari. data-mutates = ikut dinonaktifkan di Mode Demo.
+export function DragHandle({ unitCode, onPointerDown, disabled = false }) {
+  return (
+    <button type="button" data-testid="drag-handle" data-mutates disabled={disabled} aria-label={`Seret ${unitCode} untuk memindahkan`} title="Seret untuk memindahkan (atau pakai tombol Jadwalkan/Pindahkan)"
+      onPointerDown={onPointerDown} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "none" }}
+      className="flex h-11 w-11 select-none items-center justify-center rounded-btn border border-line bg-surface text-ink2 shadow-sm hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-grab enabled:active:cursor-grabbing">
+      <GripVertical size={20} aria-hidden />
+    </button>
+  );
+}
+
+// Ganti Kain: latar oranye lembut di atas permukaan solid. "kpi-glass-guard" mengecualikan kartu dari aturan kaca global (.glass-division
+// [class*="rounded-card"]) yang kalau tidak akan menimpa warna latar & ring-nya sehingga kartu tampak sama dengan kartu biasa.
+const GANTI_KAIN_STYLE = { backgroundColor: "var(--bg-surface)", backgroundImage: "linear-gradient(var(--orange-bg), var(--orange-bg))" };
+
 export function UnitCard({
-  view, onOpen, footer = null, variant = "photo", today, tomorrow, draggable = false, onDragStart, showGaps = true, className = "", qcBadge = null, seq = null,
+  view, onOpen, footer = null, variant = "photo", today, tomorrow, draggable = false, onDragStart, showGaps = true, className = "", qcBadge = null, seq = null, showTechService = true, handle = null, dragging = false,
 }) {
   if (!view) return null;
   const c = view.customer || {};
@@ -61,6 +110,7 @@ export function UnitCard({
   const gaps = showGaps ? dataGaps(view) : [];
   const mat = materialBadge(view);
   const sales = c.salesServices?.length ? c.salesServices.join(" + ") : null;
+  const gantiKain = isGantiKain(view);
   const progress = view.progress?.total ? (view.progress.done / view.progress.total) * 100 : 0;
   const open = () => onOpen?.(view);
   const station = view.plan?.stationCode ? mejaLabel(view.plan.stationCode) : "Belum dijadwalkan";
@@ -76,12 +126,13 @@ export function UnitCard({
       <p className="m-0 line-clamp-2 text-[12px] text-ink2" title={sales || ""}>
         <span className="font-semibold text-ink3">Layanan Sales: </span>{sales || <span className="text-ink3">belum tercatat</span>}
       </p>
-      <p data-testid="tech-service" className="m-0 line-clamp-1 text-[12px] text-ink2" title={view.unit.service?.label || ""}>
-        <span className="font-semibold text-ink3">Layanan Teknis: </span>{view.unit.service?.label || <span className="text-ink3">belum ditetapkan (dari Diagnosis)</span>}
-      </p>
-      {c.request && (
-        <p data-testid="sales-note" className="m-0 line-clamp-2 break-words text-[11.5px] italic text-ink3 [overflow-wrap:anywhere]" title={humanizeRequest(c.request)}>“{humanizeRequest(c.request)}”</p>
+      {showTechService && (
+        <p data-testid="tech-service" className="m-0 line-clamp-1 text-[12px] text-ink2" title={view.unit.service?.label || ""}>
+          <span className="font-semibold text-ink3">Layanan Teknis: </span>{view.unit.service?.label || <span className="text-ink3">belum ditetapkan (dari Diagnosis)</span>}
+        </p>
       )}
+      <MattressLine view={view} />
+      <SalesNote view={view} />
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant={st.badge}>{st.label}</Badge>
         {view.next?.stepNo && <span className="text-[11.5px] font-medium text-ink2">{stageText(view)}</span>}
@@ -110,12 +161,13 @@ export function UnitCard({
   );
 
   return (
-    <article data-testid="unit-card" data-unit-code={view.unit.unitCode} data-priority={p.key} draggable={draggable && !isDemoActive()} onDragStart={isDemoActive() ? (e) => e.preventDefault() : onDragStart} title={draggable && isDemoActive() ? "Seret-lepas dinonaktifkan di Mode Demo (hanya-baca)" : undefined}
-      className={`relative w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-sm ${p.edge} ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${className}`}>
+    <article data-testid="unit-card" data-drag-card data-unit-code={view.unit.unitCode} data-priority={p.key} data-ganti-kain={gantiKain ? "true" : undefined} style={gantiKain ? GANTI_KAIN_STYLE : undefined} draggable={draggable && !isDemoActive()} onDragStart={isDemoActive() ? (e) => e.preventDefault() : onDragStart} title={draggable && isDemoActive() ? "Seret-lepas dinonaktifkan di Mode Demo (hanya-baca)" : undefined}
+      className={`relative w-full min-w-0 overflow-hidden rounded-card shadow-sm ${gantiKain ? "kpi-glass-guard ring-2 ring-orange" : "bg-surface"} ${p.edge} ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${dragging ? "opacity-40" : ""} ${className}`}>
+      {handle && <div className="absolute right-2 top-2 z-10">{handle}</div>}
       <button type="button" onClick={open} className="block w-full text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-label={`Buka Unit 360 ${view.unit.unitCode}`}>
         {variant === "compact" ? (
           <>
-            <div className="flex gap-3 p-3">
+            <div className={`flex gap-3 p-3 ${handle ? "pr-14" : ""}`}>
               <UnitPhoto photoUrl={view.unit.photoUrl} variant="compact" />
               <div className="min-w-0 flex-1 space-y-1.5">
                 {head}
@@ -145,14 +197,15 @@ export function UnitCard({
 export function UpcomingCard({ item, onOpen, footer = null, badgeLabel = "Akan Masuk" }) {
   const c = item.customer || {};
   return (
-    <article data-testid="unit-card" data-unit-code={item.unit.unitCode} className="relative w-full min-w-0 overflow-hidden rounded-card border-l-[4px] border-l-transparent bg-surface shadow-sm">
+    <article data-testid="unit-card" data-unit-code={item.unit.unitCode} data-ganti-kain={isGantiKain(item) ? "true" : undefined} style={isGantiKain(item) ? GANTI_KAIN_STYLE : undefined} className={`relative w-full min-w-0 overflow-hidden rounded-card border-l-[4px] border-l-transparent shadow-sm ${isGantiKain(item) ? "kpi-glass-guard ring-2 ring-orange" : "bg-surface"}`}>
       <button type="button" onClick={() => onOpen?.(item.unit.id)} className="block w-full text-left hover:bg-hovertint" aria-label={`Buka Unit 360 ${item.unit.unitCode}`}>
         <UnitPhoto photoUrl={item.unit.photoUrl} variant="photo" />
         <div className="space-y-1.5 p-3">
           <p className="m-0 truncate text-[13.5px] font-bold text-ink">{item.unit.unitCode}{item.unit.orderNumber ? <span className="font-medium text-ink3"> · {item.unit.orderNumber}</span> : null}</p>
           <p className="m-0 truncate text-[12.5px] font-semibold text-ink2">{c.name || "Pelanggan belum dicatat"}{c.city ? <span className="font-normal text-ink3"> · {c.city}</span> : null}</p>
           <p className="m-0 line-clamp-2 text-[12px] text-ink2"><span className="font-semibold text-ink3">Layanan Sales: </span>{c.salesServices?.length ? c.salesServices.join(" + ") : <span className="text-ink3">belum tercatat</span>}</p>
-          {c.request && <p data-testid="sales-note" className="m-0 line-clamp-2 break-words text-[11.5px] italic text-ink3 [overflow-wrap:anywhere]">“{humanizeRequest(c.request)}”</p>}
+          <MattressLine view={item} />
+          <SalesNote view={item} />
           <div className="flex flex-wrap items-center gap-1.5"><Badge variant="neutral">{badgeLabel}</Badge>{item.scheduledDate && <span className="text-[11.5px] text-ink3">Pickup {item.scheduledDate}</span>}{item.driverName && <span className="text-[11.5px] text-ink3">· {item.driverName}</span>}</div>
           {!item.unit.photoUrl && <ul data-testid="data-gaps" className="m-0 flex list-none flex-wrap gap-1 p-0"><li className="inline-flex items-center gap-1 rounded-chip bg-orangebg px-1.5 py-0.5 text-[10.5px] font-medium text-orange"><AlertTriangle size={10} aria-hidden /> Foto unit belum ada</li></ul>}
         </div>

@@ -29,7 +29,7 @@ export const RUN_VIEW_INCLUDE = {
       service: { select: { code: true, labelId: true } },
       order: {
         select: {
-          orderNumber: true, category: true, beratBadan: true, notes: true, complaintCategory: true, customerPromiseDate: true,
+          orderNumber: true, category: true, productType: true, beratBadan: true, notes: true, complaintCategory: true, customerPromiseDate: true,
           // P9 UX — nama layanan yang DIPESAN di Sales (snapshot OrderItem.layananName). SENGAJA hanya nama: harga tidak di-select.
           items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } },
           weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
@@ -121,6 +121,7 @@ export function customerOf(run) {
   return {
     orderNumber: order?.orderNumber ?? null,
     category: order?.category ?? null,
+    productType: order?.productType ?? null,
     name: order?.customer?.name ?? null,
     city: order?.customer?.city ?? null,
     weightKg: order?.beratBadan ?? null,
@@ -203,7 +204,7 @@ async function listAwaitingArrivalNoRunUnits(prisma, unitIds) {
     // di papan (sekali dari sini, sekali lagi dari listEligibleUnitsForPlanning).
     where: { direction: "INBOUND", status: "OFFERED", unitId: { in: unitIds }, unit: { is: { productionRunsV2: { none: {} } } } },
     include: {
-      unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, storageLocation: true, order: { select: { orderNumber: true, notes: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } } } },
+      unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, storageLocation: true, order: { select: { orderNumber: true, productType: true, notes: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } } } },
     },
     orderBy: [{ offeredAt: "asc" }],
   });
@@ -211,7 +212,7 @@ async function listAwaitingArrivalNoRunUnits(prisma, unitIds) {
     runId: null, handoffId: h.id,
     unit: { id: h.unit.id, unitCode: h.unit.unitCode, merk: h.unit.merk, ukuran: h.unit.ukuran, storageLocation: h.unit.storageLocation, orderNumber: h.unit.order?.orderNumber ?? null },
     // P9 kontrak layanan: kartu warisan juga membawa pelanggan + Layanan DIPESAN Sales (nama saja, tanpa harga) — read-only dari order.
-    customer: { name: h.unit.order?.customer?.name ?? null, city: h.unit.order?.customer?.city ?? null, request: h.unit.order?.notes ?? null, salesServices: (h.unit.order?.items || []).map((i) => i.layananName).filter(Boolean) },
+    customer: { name: h.unit.order?.customer?.name ?? null, city: h.unit.order?.customer?.city ?? null, productType: h.unit.order?.productType ?? null, request: h.unit.order?.notes ?? null, salesServices: (h.unit.order?.items || []).map((i) => i.layananName).filter(Boolean) },
     kind: "AWAITING_ARRIVAL_LEGACY", isLegacyException: false, inTransit: true,
   }));
 }
@@ -297,7 +298,7 @@ export async function getProductionCommandCenter(prisma, { unitIds, now = new Da
         id: true, status: true, scheduledDate: true, driver: { select: { name: true } },
         units: {
           where: { unitId: { in: unitIds } },
-          select: { unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, order: { select: { orderNumber: true, notes: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } } } } },
+          select: { unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, order: { select: { orderNumber: true, productType: true, notes: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } } } } },
         },
       },
       orderBy: [{ scheduledDate: "asc" }],
@@ -320,7 +321,7 @@ export async function getProductionCommandCenter(prisma, { unitIds, now = new Da
     kind: "UPCOMING_PICKUP", jobId: job.id, jobStatus: job.status, scheduledDate: job.scheduledDate ? formatProductionDate(job.scheduledDate) : null,
     driverName: job.driver?.name ?? null,
     unit: { id: ju.unit.id, unitCode: ju.unit.unitCode, merk: ju.unit.merk, ukuran: ju.unit.ukuran, orderNumber: ju.unit.order?.orderNumber ?? null },
-    customer: { name: ju.unit.order?.customer?.name ?? null, city: ju.unit.order?.customer?.city ?? null, request: ju.unit.order?.notes ?? null, salesServices: (ju.unit.order?.items || []).map((i) => i.layananName).filter(Boolean) },
+    customer: { name: ju.unit.order?.customer?.name ?? null, city: ju.unit.order?.customer?.city ?? null, productType: ju.unit.order?.productType ?? null, request: ju.unit.order?.notes ?? null, salesServices: (ju.unit.order?.items || []).map((i) => i.layananName).filter(Boolean) },
   })));
   // Dedup per unit (satu unit idealnya satu Job pickup aktif; kalau ada anomali data lama dengan >1, tampilkan sekali saja berdasar yang paling awal terjadwal).
   const akanMasukByUnit = new Map();

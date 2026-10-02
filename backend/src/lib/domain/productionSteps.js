@@ -380,36 +380,49 @@ export function andonBucketOf({ next, started, rework = false }) {
 //     bongkar..diagnosa) belum menjadi Fondasi, ATAU macet/TERHENTI — baik yang sudah dijadwalkan maupun belum,
 //     dibedakan lewat badge, bukan kolom.
 export const COMMAND_CENTER_COLUMNS = Object.freeze([
-  { key: "AKAN_MASUK", label: "Akan Masuk" },
+  { key: "AKAN_MASUK", label: "Akan Masuk — Pickup Terjadwal" },
   { key: "DALAM_PERJALANAN", label: "Dalam Perjalanan" },
   { key: "TIBA_BELUM_MULAI", label: "Tiba / Belum Mulai" },
-  { key: "FONDASI", label: "Fondasi" },
-  { key: "LAPISAN", label: "Lapisan" },
-  { key: "UJI_TEKSTUR", label: "Uji Tekstur" },
-  { key: "QC", label: "QC" },
+  { key: "BONGKAR", label: "Tahap Bongkar" },
+  { key: "UJI_FONDASI", label: "Uji Fondasi" },
+  { key: "FONDASI", label: "Fondasi Jadi" },
+  { key: "LAPISAN", label: "Lapisan Jadi" },
+  { key: "UJI_TEKSTUR", label: "Uji Tekstur Sebelum Corner" },
   { key: "CORNER", label: "Corner" },
   { key: "SIAP_KIRIM", label: "Siap Kirim" },
 ]);
 
 // view: hasil toRunView (punya .plan, .next, .bucket). Mengembalikan null untuk SELESAI (sudah diserahkan tuntas —
 // dikeluarkan dari papan aktif harian, tetap terhitung di KPI "selesai hari ini").
+//
+// Revisi stage (permintaan Owner 2 Okt 2026): kolom = KEADAAN FISIK unit menurut `next.stepNo` (tahap berikutnya yang
+// harus dikerjakan), dinamai menurut capaian terakhir:
+//   Tiba / Belum Mulai          — sudah tiba, Langkah 1 belum dimulai (atau terhenti/tanpa tahap)
+//   Tahap Bongkar               — Langkah 1-3 (sebelum bongkar, uji rasa awal, hasil bongkar) sudah berjalan
+//   Uji Fondasi                 — Langkah 4-6 (uji fondasi lama, diagnosa, fondasi baru dikerjakan/diuji)
+//   Fondasi Jadi                — Langkah 6 selesai; berikutnya Langkah 7 (lapisan baru)
+//   Lapisan Jadi                — Langkah 7 selesai; berikutnya Langkah 8 (uji tekstur akhir belum dikirim)
+//   Uji Tekstur Sebelum Corner  — uji tekstur terkirim: menunggu QC / rework / Langkah 9 (kirim ke Corner)
+//   Corner                      — Langkah 10-12 (jahit & konfirmasi selesai)
+// Kolom "QC" lama DILEBUR ke Uji Tekstur Sebelum Corner (QC memang uji sebelum Corner). Kunci FONDASI/LAPISAN/UJI_TEKSTUR
+// dipertahankan (hanya label berubah) supaya konsumen lain tidak patah.
 export function commandCenterColumn(view) {
   if (view.bucket === "SELESAI") return null;
   // Fisik belum tiba -> kolom KEADAAN FISIK, TIDAK PEDULI status jadwal (stationCode ada atau tidak) — jadwal
   // hanya badge di kartu, bukan penentu kolom lagi (beda dari perilaku P9B sebelumnya).
   if (view.bucket === "DALAM_PERJALANAN") return "DALAM_PERJALANAN";
   // Bucket semantik (QC/HANDOFF) diperiksa LEBIH DULU dari stepNo mentah: rework yang menunggu QC bisa terpicu dari
-  // stepNo 7/8 (uji tekstur gagal) tapi TETAP harus jatuh ke kolom QC, bukan Lapisan/Uji Tekstur.
-  if (view.bucket === "QC") return "QC";
+  // stepNo 7/8 (uji tekstur gagal) tapi TETAP harus jatuh ke kolom uji tekstur, bukan Fondasi/Lapisan Jadi.
+  if (view.bucket === "QC") return "UJI_TEKSTUR";
   if (view.bucket === "HANDOFF") return "SIAP_KIRIM";
   const stepNo = view.next?.stepNo;
-  if (stepNo === 8) return "UJI_TEKSTUR";
-  if (stepNo === 7) return "LAPISAN";
-  if (stepNo === 6) return "FONDASI";
-  if (stepNo === 9) return "QC";
+  if (stepNo === 9) return "UJI_TEKSTUR";
+  if (stepNo === 8) return "LAPISAN";
+  if (stepNo === 7) return "FONDASI";
   if (stepNo != null && stepNo >= 10) return "CORNER";
-  // Tahap 1-5 (intake: sebelum bongkar..diagnosa) atau TERHENTI — sudah tiba, belum jadi Fondasi. Status jadwal
-  // (sudah/belum) ditandai badge pada kartu, bukan kolom terpisah.
+  if (stepNo >= 4 && stepNo <= 6) return "UJI_FONDASI";
+  // Langkah 1-3: belum dimulai (ANTREAN) = Tiba / Belum Mulai; sudah berjalan = Tahap Bongkar. Terhenti/tanpa tahap -> Tiba.
+  if (stepNo >= 1 && stepNo <= 3 && view.bucket !== "ANTREAN" && view.bucket !== "TERHENTI") return "BONGKAR";
   return "TIBA_BELUM_MULAI";
 }
 

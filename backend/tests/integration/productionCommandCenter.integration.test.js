@@ -159,7 +159,8 @@ test("KPI = panjang daftar detail yang SAMA dikirim ke klien (Dalam Perjalanan, 
   assert.equal(res.body.kpi.belumDijadwalkan, 1, "hanya u1 yang benar-benar belum punya plan sama sekali (u2 sudah dijadwalkan)");
 
   assert.equal(col.TIBA_BELUM_MULAI.count, col.TIBA_BELUM_MULAI.items.length);
-  assert.ok(col.TIBA_BELUM_MULAI.items.some((i) => i.unit.unitCode === u3.unit.unitCode), "u3 sudah tiba (custody ACCEPTED) DAN sudah mulai -> Tiba/Belum Mulai (bongkar=tahap intake)");
+  assert.ok(col.BONGKAR.items.some((i) => i.unit.unitCode === u3.unit.unitCode), "u3 sudah tiba (custody ACCEPTED) DAN sudah mulai -> Tahap Bongkar (revisi stage 2 Okt 2026)");
+  assert.ok(!col.TIBA_BELUM_MULAI.items.some((i) => i.unit.unitCode === u3.unit.unitCode), "u3 sudah mulai -> bukan lagi Tiba/Belum Mulai");
   assert.ok(!col.TIBA_BELUM_MULAI.items.some((i) => i.unit.unitCode === u2.unit.unitCode), "u2 belum tiba -> TIDAK boleh muncul di Tiba/Belum Mulai walau sudah dijadwalkan");
   assert.equal(res.body.kpi.dijadwalkanHariIni, 2, "u2 dan u3 sama-sama punya plan.productionDate=hari ini, terlepas dari kolomnya masing-masing");
 

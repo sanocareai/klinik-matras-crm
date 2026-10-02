@@ -90,7 +90,7 @@ test("snapshot QA-PV2: 12 unit bernomor U01–U12, seluruh keadaan matriks hadir
   const cc = get("/production-v2/command-center"); const items = cc.columns.flatMap((c) => c.items);
   assert.equal(items.length + (cc.completedToday?.length || 0), 12, "11 di kolom pipeline + 1 selesai hari ini"); assert.equal(cc.readerMode, "COHORT");
   const buckets = Object.fromEntries(cc.columns.map((c) => [c.key, c.count]));
-  for (const k of ["DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "FONDASI", "LAPISAN", "QC", "CORNER", "SIAP_KIRIM"]) assert.ok(buckets[k] >= 1, k);
+  for (const k of ["AKAN_MASUK", "DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "BONGKAR", "UJI_FONDASI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "CORNER", "SIAP_KIRIM"]) assert.ok(buckets[k] >= 1, k);
   const board = get(`/production-v2/board?date=${snapshot.today}`);
   assert.equal(board.unscheduled.plans.length + board.unscheduled.units.length, 3, "3 belum dijadwalkan (2 punya rencana tanpa tanggal/meja + 1 belum direncanakan)");
   for (const st of ["TABLE_1", "TABLE_2", "TABLE_3", "TABLE_4"]) assert.ok((board.stations.find((s) => s.code === st)?.items || []).length >= 1, `${st} terisi`);
@@ -99,14 +99,18 @@ test("snapshot QA-PV2: 12 unit bernomor U01–U12, seluruh keadaan matriks hadir
   assert.ok(items.some((i) => i.shortage), "menunggu bahan"); assert.ok(items.some((i) => i.bucket === "QC" || i.qc), "menunggu QC");
   assert.ok(get("/production-planning/qc/queue?tab=REWORK").items?.length >= 1 || get("/production-planning/qc/queue?tab=REWORK").length >= 1 || text(get("/production-planning/qc/queue?tab=REWORK")).includes("QA-PV2-U08"), "QC gagal → rework");
   const wq = get("/production-v2/warehouse/queue"); assert.ok(wq.returns.length >= 1, "menunggu retur"); assert.ok(wq.shortages.length >= 1); assert.ok(wq.finishedGoods.length >= 0);
-  const dq = get("/production-v2/documentation/queue?filter=ALL"); assert.equal(dq.items.length, 12);
+  const dq = get("/production-v2/documentation/queue?filter=ALL"); assert.equal(dq.items.length, 11, "11 unit punya Run (U12 = Akan Masuk, pickup terjadwal, belum punya Run)");
   assert.ok(dq.counts.LENGKAP >= 1 && dq.counts.BEFORE_KURANG + dq.counts.PROSES_KURANG + dq.counts.AFTER_KURANG >= 1, "dokumentasi lengkap & kurang");
   assert.ok(items.some((i) => i.unit.service === null || i.unit.service?.label == null), "diagnosis belum lengkap (layanan teknis belum ditetapkan)");
   assert.ok(items.some((i) => i.plan?.cornerOperatorName || i.plan?.cornerOperator), "PIC Corner terisi");
 });
 
 test("isi kartu: customer dummy, nomor order/resi, foto, layanan Sales, layanan teknis, request Sales, PIC, meja, prioritas, target, progres, status bahan/QC/retur/dokumentasi", () => {
-  const cc = get("/production-v2/command-center"); const items = cc.columns.flatMap((c) => c.items);
+  const cc = get("/production-v2/command-center"); const all = cc.columns.flatMap((c) => c.items);
+  const upcoming = all.filter((i) => i.kind === "UPCOMING_PICKUP");
+  assert.equal(upcoming.length, 1, "Akan Masuk — Pickup Terjadwal terisi 1 unit (forecast, belum punya Run)");
+  assert.ok(upcoming[0].customer.salesServices.length && upcoming[0].scheduledDate && !upcoming[0].runId && !upcoming[0].progress, "forecast: tanpa Run/progres");
+  const items = all.filter((i) => i.kind !== "UPCOMING_PICKUP");
   for (const i of items) {
     assert.match(i.customer.name, /^QA-PV2 /); assert.match(i.customer.orderNumber, /^QA-PV2-RES-\d{4}$/); assert.match(i.unit.unitCode, /^QA-PV2-U\d{2}$/);
     assert.ok(Array.isArray(i.customer.salesServices) && i.customer.salesServices.length, `layanan Sales ${i.unit.unitCode}`);

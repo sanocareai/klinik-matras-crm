@@ -67,7 +67,10 @@ test("matriks 12 unit lewat jalur tulis asli: setiap keadaan wajib hadir, semua 
   for (const n of [2, 3]) { const r = await runOf(n); assert.equal(r.status, "ACTIVE"); assert.equal(r.plan.productionDate, null, `U${n} belum dijadwalkan`); assert.equal(r.plan.stationCode, null); }
   assert.equal((await runOf(2)).plan.priority, 1); assert.equal((await runOf(3)).plan.priority, 2);
   const stationOf = async (n) => (await runOf(n)).plan.stationCode;
-  assert.deepEqual([await stationOf(4), await stationOf(5), await stationOf(6), await stationOf(7), await stationOf(8), await stationOf(9), await stationOf(10), await stationOf(11), await stationOf(12)], ["TABLE_1", "TABLE_2", "TABLE_2", "TABLE_3", "TABLE_3", "TABLE_4", "TABLE_4", "TABLE_1", "TABLE_1"]);
+  assert.deepEqual([await stationOf(4), await stationOf(5), await stationOf(6), await stationOf(7), await stationOf(8), await stationOf(9), await stationOf(10), await stationOf(11)], ["TABLE_1", "TABLE_2", "TABLE_2", "TABLE_3", "TABLE_3", "TABLE_4", "TABLE_4", "TABLE_1"]);
+  // U12 = Akan Masuk — Pickup Terjadwal: pickup terjadwal (belum dijemput), BELUM punya Run -> forecast, bukan WIP
+  const u12 = await byCode(12); assert.equal(await testPrisma.productionRun.count({ where: { unitId: u12.id } }), 0, "U12 belum punya Run");
+  const j12 = await testPrisma.job.findFirstOrThrow({ where: { units: { some: { unitId: u12.id } } } }); assert.equal(j12.type, "PICKUP"); assert.equal(j12.status, "ASSIGNED", "U12 pickup terjadwal, belum dijemput");
   assert.deepEqual([...new Set((await testPrisma.productionRunPlan.findMany({ where: { stationCode: { not: null } } })).map((p) => p.priority))].sort(), [0, 1, 2], "prioritas normal, tinggi, mendesak");
   assert.equal((await runOf(4)).currentPhase, "PROCESS"); assert.equal(await testPrisma.diagnosisReport.count({ where: { runId: (await runOf(4)).id } }), 0, "U04 diagnosis belum lengkap");
   assert.equal((await testPrisma.productionMaterialShortage.findFirstOrThrow({ where: { runId: (await runOf(5)).id } })).status, "OPEN", "U05 menunggu bahan");
