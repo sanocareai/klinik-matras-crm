@@ -705,3 +705,28 @@ test("IDENTITAS PANEL (acak, 6 benih): selisih = Σ komponen + belum dijelaskan,
     assert.equal(jumlah, Math.round(Number(p.selisih) * 100), `seed ${seed}: Σ komponen = selisih`);
   }
 });
+
+test("SARING & URUT Mutasi Rekening (bank): arah, nominal, urutan nominal/saldo/tanggal; ringkasan baris tersaring; opsi tak sah 400; Excel = layar", async () => {
+  const { w, csv } = await skenarioPtSano();
+  await unggah(w.adminToken, R(w, w.ptSano, "/impor"), csv);
+  const q = (s) => w.admin.get(R(w, w.ptSano, `/mutasi-bank?from=2026-10-01&to=2026-10-02${s}`));
+  const penuh = (await q("")).body;
+  const keluar = (await q("&arah=KELUAR")).body, masuk = (await q("&arah=MASUK")).body;
+  assert.equal(keluar.total + masuk.total, penuh.total);
+  assert.ok(keluar.baris.every((b) => b.keluar && !b.masuk));
+  assert.equal(keluar.tersaring.masuk, "0.00");
+  assert.equal(Number(keluar.tersaring.keluar), Number(penuh.totalKeluar));
+  const besar = (await q("&nominalMin=6.000.000")).body;
+  assert.deepEqual(besar.baris.map((b) => Number(b.keluar ?? b.masuk)).sort((a, b) => a - b), [6_493_500, 6_715_170, 7_225_019, 10_000_000]);
+  const nom = (await q("&urut=nominal&arahUrut=desc")).body.baris.map((b) => Number(b.keluar ?? b.masuk));
+  assert.deepEqual(nom, [...nom].sort((a, b) => b - a));
+  const asc = (await q("&urut=tanggal&arahUrut=desc")).body.baris;
+  assert.deepEqual(asc.map((b) => b.id), penuh.baris.map((b) => b.id).reverse());
+  const saldo = (await q("&urut=saldo&arahUrut=desc")).body.baris.map((b) => Number(b.saldo));
+  assert.deepEqual(saldo, [...saldo].sort((a, b) => b - a));
+  for (const bad of ["&arah=X", "&urut=acak", "&nominalMin=abc"]) assert.equal((await q(bad)).status, 400, bad);
+  const x = await unduhExport(server.baseUrl, w.adminToken, "mutasi-bank", { periode: { from: "2026-10-01", to: "2026-10-02" }, filter: { cashAccountId: w.ptSano.id, arah: "KELUAR", nominalMin: "6000000", urut: "nominal", arahUrut: "desc" } });
+  assert.equal(x.status, 200, JSON.stringify(x.json));
+  const layar = (await q("&arah=KELUAR&nominalMin=6000000&urut=nominal&arahUrut=desc")).body.baris;
+  assert.deepEqual(bacaSheet(x.wb, "Mutasi Bank").baris.map((b) => b["Keterangan Bank"]), layar.map((b) => b.deskripsi));
+});

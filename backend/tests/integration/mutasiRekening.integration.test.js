@@ -171,3 +171,49 @@ test("REGRESI produksi 2 Okt 2026: jurnal KASBON impor dengan sourceId bukan-UUI
   const x = await unduhExport(server.baseUrl, w.adminToken, "mutasi-rekening", { periode: { from: "2026-09-01", to: "2026-10-31" }, filter: { cashAccountId: w.ptSano.id } });
   assert.equal(x.status, 200, JSON.stringify(x.json));
 });
+
+test("SARING & URUT Mutasi Buku: arah, nominal, sumber, cocok; urut tanggal/nominal/saldo; saldo tetap saldo berjalan; opsi tak sah 400; Excel = layar", async () => {
+  const w = await skenario();
+  const q = (s) => mutasi(w, w.ptSano, s);
+  const penuh = (await q("")).body;
+  // arah
+  const masukSaja = (await q("&arah=MASUK")).body;
+  assert.ok(masukSaja.total > 0 && masukSaja.baris.every((b) => b.masuk && !b.keluar));
+  assert.equal(masukSaja.disaring, true);
+  assert.equal(masukSaja.tersaring.keluar, "0.00");
+  const keluarSaja = (await q("&arah=KELUAR")).body;
+  assert.equal(masukSaja.total + keluarSaja.total, penuh.total, "masuk + keluar = semua");
+  // saldo berjalan baris tidak berubah oleh saringan
+  const saldoAsli = new Map(penuh.baris.map((b) => [b.lineId, b.saldo]));
+  for (const b of keluarSaja.baris) assert.equal(b.saldo, saldoAsli.get(b.lineId));
+  // nominal
+  const besar = (await q("&nominalMin=5.000.000")).body;
+  assert.ok(besar.total > 0 && besar.baris.every((b) => Number(b.masuk ?? b.keluar) >= 5_000_000));
+  assert.equal((await q("&nominalMin=3000000&nominalMaks=3100000")).body.baris.every((b) => Number(b.masuk ?? b.keluar) >= 3_000_000 && Number(b.masuk ?? b.keluar) <= 3_100_000), true);
+  // sumber & cocok
+  const trf = (await q("&sumber=TRANSFER_KAS")).body;
+  assert.ok(trf.total >= 1 && trf.baris.every((b) => b.sumber === "TRANSFER_KAS"));
+  assert.ok(penuh.sumberTersedia.some((s) => s.kode === "TRANSFER_KAS"));
+  assert.equal((await q("&cocok=BELUM")).body.total, penuh.total, "belum ada impor bank → semua belum dicocokkan");
+  assert.equal((await q("&cocok=COCOK")).body.total, 0);
+  // urut
+  const nom = (await q("&urut=nominal&arahUrut=desc")).body.baris.map((b) => Number(b.masuk ?? b.keluar));
+  assert.deepEqual(nom, [...nom].sort((a, b) => b - a));
+  const tglDesc = (await q("&urut=tanggal&arahUrut=desc")).body.baris.map((b) => b.nomor);
+  assert.deepEqual(tglDesc, penuh.baris.map((b) => b.nomor).reverse());
+  const saldoAsc = (await q("&urut=saldo&arahUrut=asc")).body.baris.map((b) => Number(b.saldo));
+  assert.deepEqual(saldoAsc, [...saldoAsc].sort((a, b) => a - b));
+  // halaman mengikuti urutan
+  const hal1 = (await q("&urut=nominal&arahUrut=desc&limit=2&page=1")).body;
+  assert.equal(hal1.baris.length, 2); assert.equal(Number(hal1.baris[0].masuk ?? hal1.baris[0].keluar), Math.max(...nom));
+  // opsi tidak sah
+  for (const bad of ["&arah=SAMPING", "&urut=acak", "&arahUrut=miring", "&nominalMin=abc", "&nominalMin=10&nominalMaks=5", "&cocok=ENTAH"]) assert.equal((await q(bad)).status, 400, bad);
+  // Excel = layar
+  const x = await unduhExport(server.baseUrl, w.adminToken, "mutasi-rekening", { periode: { from: "2026-10-01", to: "2026-10-31" }, filter: { cashAccountId: w.ptSano.id, arah: "KELUAR", urut: "nominal", arahUrut: "desc" } });
+  assert.equal(x.status, 200, JSON.stringify(x.json));
+  const sh = bacaSheet(x.wb, "Mutasi");
+  const layar = (await q("&arah=KELUAR&urut=nominal&arahUrut=desc")).body.baris;
+  const barisX = sh.baris.slice(1);
+  assert.deepEqual(barisX.map((b) => b["No. Jurnal"]), layar.map((b) => b.nomor), "urutan & isi Excel = layar");
+  assert.match(sh.kepala[2] ?? sh.kepala.join(" "), /Uang keluar/);
+});

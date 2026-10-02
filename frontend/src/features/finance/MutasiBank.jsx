@@ -15,7 +15,8 @@ import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import ImporRekeningKoran from "@/features/finance/ImporRekeningKoran.jsx";
-import { statusTampil, STATUS_BANK } from "@/features/finance/rekonBankLogic.js";
+import { statusTampil, STATUS_BANK, OPSI_ARAH, OPSI_URUT, paramSaring } from "@/features/finance/rekonBankLogic.js";
+import SaringNominal from "@/features/finance/SaringNominal.jsx";
 
 // MUTASI REKENING (menurut BANK) — salinan rekening koran yang diimpor. Tidak bisa diubah; impor tidak pernah membuat jurnal atau mengubah saldo buku.
 
@@ -25,6 +26,12 @@ export default function MutasiBank({ rek, periode, sakelar, onBerubah }) {
   const [q, setQ] = useState("");
   const qTunda = useTertunda(q);
   const [status, setStatus] = useState("");
+  const [arah, setArah] = useState("");
+  const [urut, setUrut] = useState("");
+  const [min, setMin] = useState("");
+  const [maks, setMaks] = useState("");
+  const saring = paramSaring({ arah, urut, min, maks });
+  const kunciSaring = JSON.stringify(saring);
   const [hal, setHal] = useState(1);
   const [data, setData] = useState(null);
   const [batch, setBatch] = useState([]);
@@ -35,14 +42,14 @@ export default function MutasiBank({ rek, periode, sakelar, onBerubah }) {
   const [pesan, setPesan] = useState(null);
   const permintaan = useRef(0);
 
-  useEffect(() => { setHal(1); }, [qTunda, status, periode.from, periode.to, rek.id]);
+  useEffect(() => { setHal(1); }, [qTunda, status, periode.from, periode.to, rek.id, kunciSaring]);
 
   const muat = useCallback(async () => {
     const no = ++permintaan.current;
     setMemuat(true); setGalat(null);
     try {
       const [d, b] = await Promise.all([
-        api.getRekonMutasiBank(rek.id, { from: periode.from, to: periode.to, q: qTunda.trim(), status, page: hal, limit: BATAS }),
+        api.getRekonMutasiBank(rek.id, { from: periode.from, to: periode.to, q: qTunda.trim(), status, page: hal, limit: BATAS, ...saring }),
         api.getRekonBatch(rek.id),
       ]);
       if (no === permintaan.current) { setData(d); setBatch(b); }
@@ -51,7 +58,7 @@ export default function MutasiBank({ rek, periode, sakelar, onBerubah }) {
     } finally {
       if (no === permintaan.current) setMemuat(false);
     }
-  }, [rek.id, periode.from, periode.to, qTunda, status, hal]);
+  }, [rek.id, periode.from, periode.to, qTunda, status, hal, kunciSaring]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { muat(); }, [muat]);
 
   async function batalkan() {
@@ -109,10 +116,17 @@ export default function MutasiBank({ rek, periode, sakelar, onBerubah }) {
       {!kosong && (
         <FilterBar
           q={q} onQ={setQ} placeholder="Cari keterangan, referensi, nominal…"
-          filters={[{ key: "status", label: "Status", value: status, onChange: setStatus, options: Object.entries(STATUS_BANK).filter(([k]) => k !== "BELUM_ADA_DI_BANK").map(([k, v]) => [k, v.label]) }]}
-          ringkasan={`${data?.total ?? 0} dari ${data?.jumlahBaris ?? 0} baris${qTunda || status ? " (disaring)" : ""}`}
-          onReset={() => { setQ(""); setStatus(""); }}
+          filters={[
+            { key: "arah", label: "Arah", value: arah, onChange: setArah, options: OPSI_ARAH },
+            { key: "status", label: "Status", value: status, onChange: setStatus, options: Object.entries(STATUS_BANK).filter(([k]) => k !== "BELUM_ADA_DI_BANK").map(([k, v]) => [k, v.label]) },
+            { key: "urut", label: "Urutan", value: urut, onChange: setUrut, options: OPSI_URUT },
+          ]}
+          ringkasan={`${data?.total ?? 0} dari ${data?.jumlahBaris ?? 0} baris${data?.disaring ? " (disaring)" : ""}${data?.disaring && data?.tersaring ? ` · tampil: masuk ${formatUang(data.tersaring.masuk)}, keluar ${formatUang(data.tersaring.keluar)}` : ""}`}
+          onReset={() => { setQ(""); setStatus(""); setArah(""); setUrut(""); setMin(""); setMaks(""); }}
         />
+      )}
+      {!kosong && (
+        <SaringNominal min={min} maks={maks} onMin={setMin} onMaks={setMaks} />
       )}
 
       <Card className="overflow-hidden">
@@ -122,8 +136,8 @@ export default function MutasiBank({ rek, periode, sakelar, onBerubah }) {
             modul="mutasi-bank" disabled={kosong}
             ambilBody={() => ({
               periode: { from: periode.from, to: periode.to },
-              filter: { cashAccountId: rek.id, q: qTunda.trim(), status },
-              filterLabel: labelFilterAktif([["Rekening", rek.name], ["Status", status ? STATUS_BANK[status]?.label : ""], ["Pencarian", qTunda.trim()]]),
+              filter: { cashAccountId: rek.id, q: qTunda.trim(), status, ...saring },
+              filterLabel: labelFilterAktif([["Rekening", rek.name], ["Status", status ? STATUS_BANK[status]?.label : ""], ["Pencarian", qTunda.trim()], ["Arah", OPSI_ARAH.find(([k]) => k === arah)?.[1]], ["Urutan", OPSI_URUT.find(([k]) => k === urut)?.[1]], ["Nominal", saring.nominalMin || saring.nominalMaks ? `${saring.nominalMin || "0"} – ${saring.nominalMaks || "∞"}` : ""]]),
             })}
           />
         </div>

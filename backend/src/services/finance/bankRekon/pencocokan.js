@@ -14,6 +14,7 @@ import {
   RekonError, wajibRekonV2Aktif, ambilRekening, uang, tgl, waktu, tanggalKolom, POLA_UUID, nilaiBank, nilaiBuku, STATUS_BANK, STATUS_BUKU, KATEGORI,
 } from "./shared.js";
 import { LABEL_SUMBER } from "../buku.js";
+import { opsiDari, saring, urutkan, ringkasTersaring, adaSaringan } from "../saringUrut.js";
 
 const BATAS_MUAT = 50_000;
 const SUMBER_PENYESUAIAN = new Set(["SALDO_AWAL", "REKONSILIASI_SEMENTARA"]);
@@ -177,7 +178,8 @@ export async function daftarPencocokan(db, { cashAccountId, to, from = null }) {
 }
 
 /** Tab Mutasi Rekening (menurut BANK): baris rekening koran + status pencocokan; filter tanggal, pencarian, status. */
-export async function mutasiBank(db, { cashAccountId, from, to, q, status, page, limit, semua = false }) {
+export async function mutasiBank(db, { cashAccountId, from, to, q, status, page, limit, semua = false, arah, urut, arahUrut, nominalMin, nominalMaks }) {
+  const opsi = (() => { try { return opsiDari({ arah, urut, arahUrut, nominalMin, nominalMaks }); } catch (e) { throw new RekonError(e.message, 400, "OPSI_TIDAK_VALID"); } })();
   const rek = await ambilRekening(db, cashAccountId);
   const dari = tanggalKolom(from), sampai = tanggalKolom(to);
   if (!dari || !sampai) throw new RekonError("Periode (from & to, YYYY-MM-DD) wajib diisi", 400, "TANGGAL_WAJIB");
@@ -186,14 +188,18 @@ export async function mutasiBank(db, { cashAccountId, from, to, q, status, page,
   const sebelum = data.bank.filter((x) => x.tanggal < from);
   const dalam = data.bank.filter((x) => x.tanggal >= from);
   const kata = String(q ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
-  const baris = dalam.filter((x) => (!status || x.status === status) && kata.every((w) => [x.deskripsi, x.referensi, uang(x.debit), uang(x.kredit), x.statusLabel].filter(Boolean).some((v) => String(v).toLowerCase().includes(w))));
+  const bentukSaring = (x) => ({ ...x, masuk: x.kredit.greaterThan(0) ? x.kredit.toFixed(2) : null, keluar: x.debit.greaterThan(0) ? x.debit.toFixed(2) : null, saldo: x.saldo ? x.saldo.toFixed(2) : null });
+  const lolos = dalam.filter((x) => (!status || x.status === status) && kata.every((w) => [x.deskripsi, x.referensi, uang(x.debit), uang(x.kredit), x.statusLabel].filter(Boolean).some((v) => String(v).toLowerCase().includes(w))));
+  // Arah, rentang nominal, dan urutan (tanggal/nominal/saldo bank) — nilai asli tetap objek bank; hanya urutan/daftar yang berubah.
+  const peta = new Map(lolos.map((x) => [x.id, x]));
+  const baris = urutkan(saring(lolos.map(bentukSaring), opsi), opsi).map((x) => peta.get(x.id));
   const masuk = dalam.reduce((t, x) => t.plus(x.kredit), ZERO), keluar = dalam.reduce((t, x) => t.plus(x.debit), ZERO);
   const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200), hal = Math.max(parseInt(page, 10) || 1, 1);
   const ke = semua ? baris : baris.slice((hal - 1) * lim, hal * lim);
   const hitung = Object.fromEntries(Object.keys(STATUS_BANK).map((k) => [k, dalam.filter((x) => x.status === k).length]));
   return {
     rekening: { id: rek.id, nama: rek.name, jenis: rek.kind, bank: rek.bankName },
-    periode: { from, to }, jumlahSebelumPeriode: sebelum.length, total: baris.length, jumlahBaris: dalam.length, totalMasuk: uang(masuk), totalKeluar: uang(keluar), perStatus: hitung,
+    periode: { from, to }, urut: { kunci: opsi.urut, arah: opsi.arahUrut }, disaring: !!(kata.length || status || adaSaringan(opsi)), tersaring: ringkasTersaring(baris.map(bentukSaring)), jumlahSebelumPeriode: sebelum.length, total: baris.length, jumlahBaris: dalam.length, totalMasuk: uang(masuk), totalKeluar: uang(keluar), perStatus: hitung,
     saldoAwalBank: dalam[0]?.saldo ? uang(dalam[0].saldo.minus(dalam[0].kredit).plus(dalam[0].debit)) : null, saldoAkhirBank: dalam.at(-1)?.saldo ? uang(dalam.at(-1).saldo) : null,
     page: semua ? 1 : hal, limit: semua ? baris.length : lim, adaLagi: semua ? false : hal * lim < baris.length, baris: ke.map((x) => bentukBank(x)),
   };

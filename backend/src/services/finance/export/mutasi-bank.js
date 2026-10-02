@@ -13,13 +13,13 @@ async function ambil(db, { filter, periode }) {
   if (!POLA_UUID.test(cashAccountId)) throw new ExportError("Pilih rekening yang akan diekspor", 400, "REKENING_WAJIB");
   const rentang = rentangDariQuery({ from: periode.from ?? filter.from, to: periode.to ?? filter.to });
   const status = filter.status && STATUS_BANK[filter.status] ? filter.status : null;
-  const hasil = await mutasiBank(db, { cashAccountId, from: rentang.fromStr, to: rentang.toStr, q: filter.q, status, semua: true });
+  const hasil = await mutasiBank(db, { cashAccountId, from: rentang.fromStr, to: rentang.toStr, q: filter.q, status, arah: filter.arah, urut: filter.urut, arahUrut: filter.arahUrut, nominalMin: filter.nominalMin, nominalMaks: filter.nominalMaks, semua: true });
   if (hasil.baris.length > MAKS_BARIS) throw new ExportError(`Mutasi bank melebihi ${MAKS_BARIS.toLocaleString("id-ID")} baris pada periode tersebut. Persempit periode lalu coba lagi.`, 413, "TERLALU_BESAR");
   const nama = hasil.rekening.nama;
   return {
     nama: "Mutasi Bank",
     periodeLabel: labelPeriode({ from: rentang.fromStr, to: rentang.toStr }),
-    filterLabel: susunLabelFilter([["Rekening", nama], ["Status", status ? STATUS_BANK[status] : null], ["Pencarian", filter.q]]),
+    filterLabel: susunLabelFilter([["Rekening", nama], ["Status", status ? STATUS_BANK[status] : null], ["Pencarian", filter.q], ["Arah", { MASUK: "Uang masuk", KELUAR: "Uang keluar" }[String(filter.arah || "").toUpperCase()]], ["Nominal", filter.nominalMin || filter.nominalMaks ? `${filter.nominalMin || "0"} – ${filter.nominalMaks || "∞"}` : null], ["Urutan", filter.urut && filter.urut !== "tanggal" || filter.arahUrut === "desc" ? `${filter.urut || "tanggal"} ${filter.arahUrut === "desc" ? "terbesar/terbaru dulu" : "terkecil/terlama dulu"}` : null]]),
     sheets: [
       {
         nama: "Mutasi Bank", judul: `Mutasi Rekening Koran — ${nama}`,

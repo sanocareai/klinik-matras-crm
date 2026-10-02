@@ -118,3 +118,27 @@ test("Layout aman: tanpa lebar tetap yang memaksa scroll horizontal; mobile mema
   assert.match(panel, /grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4/);
   for (const f of ["MutasiBank", "PencocokanBank", "PanelRekon", "RekonRekening", "ImporRekeningKoran"]) assert.doesNotMatch(baca(`src/features/finance/${f}.jsx`), /min-w-\[(?:[6-9]\d\d|\d{4})px\]/, `${f}: min-width besar memaksa scroll di HP`);
 });
+
+import { pecahUrut, angkaSaring, paramSaring, adaSaringanAktif, OPSI_URUT, OPSI_ARAH } from "../src/features/finance/rekonBankLogic.js";
+
+test("Saring & urut: opsi urut dipecah, nominal diketik gaya Indonesia, parameter bersih; Mutasi Buku & Bank memasang filter arah, urutan, nominal dan mengirimnya ke export", () => {
+  assert.deepEqual(pecahUrut("nominal:desc"), { urut: "nominal", arahUrut: "desc" });
+  assert.deepEqual(pecahUrut(""), {});
+  assert.equal(angkaSaring("1.500.000"), "1500000");
+  assert.equal(angkaSaring("2500,50"), "2500.50");
+  assert.equal(angkaSaring("abc"), "");
+  assert.equal(angkaSaring("-5"), "");
+  assert.deepEqual(paramSaring({ arah: "KELUAR", urut: "saldo:asc", min: "1.000", maks: "", sumber: "", cocok: "" }), { arah: "KELUAR", urut: "saldo", arahUrut: "asc", nominalMin: "1000", nominalMaks: "", sumber: "", cocok: "" });
+  assert.equal(adaSaringanAktif({}), false);
+  assert.equal(adaSaringanAktif({ min: "5" }), true);
+  assert.deepEqual(OPSI_ARAH.map(([k]) => k), ["MASUK", "KELUAR"]);
+  assert.ok(OPSI_URUT.every(([k]) => /^(tanggal|nominal|saldo):(asc|desc)$/.test(k)));
+  for (const f of ["MutasiRekening", "MutasiBank"]) {
+    const s = baca(`src/features/finance/${f}.jsx`);
+    assert.match(s, /\.\.\.saring \}/, `${f}: parameter saring dikirim ke API`);
+    assert.match(s, /filter: \{[^}]*\.\.\.saring/, `${f}: export membawa saringan layar`);
+    assert.match(s, /<SaringNominal/, `${f}: rentang nominal`);
+    assert.match(s, /key: "arah"/); assert.match(s, /key: "urut"/);
+  }
+  assert.match(baca("src/features/finance/MutasiRekening.jsx"), /key: "sumber"/);
+});

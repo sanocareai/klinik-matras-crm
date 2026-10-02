@@ -116,3 +116,32 @@ export const TAB_DETAIL = [
   { key: "cocok", label: "Pencocokan", penjelasan: "Pasangkan baris bank dengan baris buku (1:1, 1:N, N:1). Saran tidak pernah dipakai otomatis bila ambigu." },
   { key: "rekon", label: "Rekonsiliasi", penjelasan: "Saldo buku vs saldo bank, selisihnya, dan penjelasan tiap bagian selisih. Periode hanya bisa selesai bila selisih belum dijelaskan Rp0." },
 ];
+
+// ── Saring & urut mutasi (Mutasi Buku & Mutasi Rekening bank) ────────────────────────────────────────────────
+export const OPSI_ARAH = [["MASUK", "Uang masuk"], ["KELUAR", "Uang keluar"]];
+export const OPSI_URUT = [
+  ["tanggal:desc", "Tanggal — terbaru dulu"], ["nominal:desc", "Nominal — terbesar dulu"], ["nominal:asc", "Nominal — terkecil dulu"],
+  ["saldo:desc", "Saldo — tertinggi dulu"], ["saldo:asc", "Saldo — terendah dulu"],
+];
+export const OPSI_COCOK_BUKU = [["COCOK", "Sudah dicocokkan"], ["BELUM", "Belum dicocokkan"], ["DIKECUALIKAN", "Dikecualikan"]];
+
+/** "nominal:desc" → { urut:"nominal", arahUrut:"desc" }; kosong = bawaan server (tanggal terlama dulu). */
+export function pecahUrut(v) {
+  if (!v) return {};
+  const [urut, arahUrut] = String(v).split(":");
+  return { urut, arahUrut };
+}
+
+/** Angka ketikan pengguna ("1.500.000", "1500000,50") → teks angka polos untuk server; kosong/tidak sah → "". */
+export function angkaSaring(v) {
+  const t = String(v ?? "").trim().replace(/\./g, "").replace(",", ".");
+  return /^\d+(\.\d{1,2})?$/.test(t) ? t : "";
+}
+
+/** Parameter saring/urut untuk API & export (nilai kosong dibuang oleh qsFinance / diabaikan server). */
+export function paramSaring({ arah, urut, min, maks, sumber, cocok }) {
+  return { arah, ...pecahUrut(urut), nominalMin: angkaSaring(min), nominalMaks: angkaSaring(maks), sumber, cocok };
+}
+
+/** Ada saringan/urutan aktif selain pencarian? (untuk tombol "Atur ulang" dan keterangan ringkasan) */
+export const adaSaringanAktif = (o) => !!(o.arah || o.urut || angkaSaring(o.min) || angkaSaring(o.maks) || o.sumber || o.cocok);

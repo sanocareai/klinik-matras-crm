@@ -17,7 +17,7 @@ async function ambil(db, { filter, periode, filterLabel, bolehSensitif }) {
   const cashAccountId = String(filter.cashAccountId || "");
   if (!POLA_UUID.test(cashAccountId)) throw new ExportError("Pilih rekening yang akan diekspor", 400, "REKENING_WAJIB");
   const rentang = rentangDariQuery({ from: periode.from ?? filter.from, to: periode.to ?? filter.to });
-  const hasil = await mutasiRekening(db, { cashAccountId, from: rentang.fromStr, to: rentang.toStr, q: filter.q, semua: true });
+  const hasil = await mutasiRekening(db, { cashAccountId, from: rentang.fromStr, to: rentang.toStr, q: filter.q, arah: filter.arah, urut: filter.urut, arahUrut: filter.arahUrut, nominalMin: filter.nominalMin, nominalMaks: filter.nominalMaks, sumber: filter.sumber, cocok: filter.cocok, semua: true });
   if (!hasil) throw new ExportError("Rekening tidak ditemukan", 404, "REKENING_TIDAK_ADA");
   if (hasil.baris.length > MAKS_BARIS) throw new ExportError(`Mutasi rekening ini melebihi ${MAKS_BARIS.toLocaleString("id-ID")} baris pada periode tersebut. Persempit periode lalu coba lagi.`, 413, "TERLALU_BESAR");
 
@@ -33,7 +33,7 @@ async function ambil(db, { filter, periode, filterLabel, bolehSensitif }) {
   return {
     nama: "Mutasi Rekening",
     periodeLabel: labelPeriode({ from: rentang.fromStr, to: rentang.toStr }),
-    filterLabel: filterLabel || susunLabelFilter([["Rekening", nama], ["Pencarian", filter.q]]),
+    filterLabel: filterLabel || susunLabelFilter([["Rekening", nama], ["Pencarian", filter.q], ["Sumber", filter.sumber], ["Cocok bank", filter.cocok], ["Arah", { MASUK: "Uang masuk", KELUAR: "Uang keluar" }[String(filter.arah || "").toUpperCase()]], ["Nominal", filter.nominalMin || filter.nominalMaks ? `${filter.nominalMin || "0"} – ${filter.nominalMaks || "∞"}` : null], ["Urutan", filter.urut && filter.urut !== "tanggal" || filter.arahUrut === "desc" ? `${filter.urut || "tanggal"} ${filter.arahUrut === "desc" ? "terbesar/terbaru dulu" : "terkecil/terlama dulu"}` : null]]),
     sheets: [
       {
         nama: "Mutasi", judul: `Mutasi Rekening — ${nama}`,
@@ -51,7 +51,7 @@ async function ambil(db, { filter, periode, filterLabel, bolehSensitif }) {
           "Jurnal pembalik (pembatalan) ikut tampil sebagai baris terpisah supaya saldo berjalan tetap sama dengan layar.",
           "Empat tanggal berbeda: Tanggal Buku (di jurnal), Dibuat Pada (kapan diinput), Tanggal Bank dan Tanggal Efektif (dari rekening koran yang dicocokkan; kosong bila belum dicocokkan).",
           `Paritas: saldo akhir mutasi ${hasil.paritas.saldoAkhir} ${hasil.paritas.cocok ? "SAMA dengan" : "BERBEDA dari"} saldo kartu Kas & Bank ${hasil.paritas.saldoKartu}.`,
-          ...(hasil.disaring ? [`Hanya ${hasil.baris.length} dari ${hasil.jumlahMutasi} mutasi yang diekspor (sesuai pencarian); kolom Saldo tetap saldo berjalan seluruh periode.`] : []),
+          ...(hasil.disaring ? [`Hanya ${hasil.baris.length} dari ${hasil.jumlahMutasi} mutasi yang diekspor (sesuai pencarian/filter); kolom Saldo tetap saldo berjalan seluruh periode.`] : []),
           ...hasil.peringatan.map((p) => `PERHATIAN: ${p.pesan}`),
         ],
       },

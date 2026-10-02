@@ -11,6 +11,7 @@ import { ENTITY_TYPES } from "../../lib/activityLog.js";
 import { toMoney, sumMoney, ZERO } from "./money.js";
 import { STATUS_DIHITUNG } from "./journal.js";
 import { pandanganCutoff, saldoBukuRekening } from "./rekonSnapshot.js";
+import { opsiDari, saring, urutkan, ringkasTersaring, adaSaringan } from "./saringUrut.js";
 
 // B3 (aditif, klien mobile lama mengabaikan field ini): ringkasan cutoff dari snapshot TERSIMPAN.
 async function cutoffRingkas(db, s) {
@@ -374,7 +375,9 @@ export async function detailRekon(db, user, id) {
 // Dipakai layar Kas & Bank → Mutasi Rekening, Export Excel, dan (nanti) rekonsiliasi — satu sumber supaya angkanya tidak mungkin berbeda.
 // Hanya baris yang ditandai rekening ini DAN berakun kas/bank rekening itu (accountId = rekening.accountId): baris lain yang keliru ditandai (mis. beban biaya admin lama) tidak ikut
 // sebagai uang masuk — dilaporkan di \`peringatan\` agar terlihat kenapa angka ini bisa berbeda dari kartu saldo di tab Rekening sampai data lama dirapikan.
-export async function mutasiRekening(db, { cashAccountId, from, to, q, page, limit, semua = false }) {
+export async function mutasiRekening(db, { cashAccountId, from, to, q, page, limit, semua = false, arah, urut, arahUrut, nominalMin, nominalMaks, sumber, cocok }) {
+  const opsi = opsiDari({ arah, urut, arahUrut, nominalMin, nominalMaks });
+  if (cocok && !["COCOK", "BELUM", "DIKECUALIKAN"].includes(String(cocok))) throw new BukuError("Filter cocok harus COCOK, BELUM, atau DIKECUALIKAN");
   const dari = tanggalKolom(from);
   const sampai = tanggalKolom(to);
   if (!dari || !sampai) throw new BukuError("Periode (from & to, YYYY-MM-DD) wajib diisi untuk mutasi rekening");
@@ -438,7 +441,11 @@ export async function mutasiRekening(db, { cashAccountId, from, to, q, page, lim
   // Filter pencarian SETELAH saldo berjalan dihitung — saldo tiap baris tetap benar walau baris lain disembunyikan.
   const kata = String(q ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
   const cocokBaris = (b) => kata.every((w) => [b.nomor, b.keterangan, b.lawan, b.sumberLabel, b.dokumen?.nomor, b.masuk, b.keluar, (b.masuk ?? b.keluar ?? "").replace(/\.00$/, "")].filter(Boolean).some((v) => String(v).toLowerCase().includes(w)));
-  const tersaring = kata.length ? semuaBaris.filter(cocokBaris) : semuaBaris;
+  const cocokStatus = (b) => !cocok || (cocok === "COCOK" ? ["COCOK_OTOMATIS", "COCOK_MANUAL"].includes(b.statusCocok) : cocok === "BELUM" ? !b.statusCocok : b.statusCocok === "DIKECUALIKAN");
+  const disaringKata = kata.length ? semuaBaris.filter(cocokBaris) : semuaBaris;
+  // Saring (arah, nominal, sumber, status cocok) lalu urut — setelah saldo berjalan dihitung; kolom Saldo tetap saldo berjalan seluruh periode.
+  const tersaring = urutkan(saring(disaringKata, opsi).filter((b) => (!sumber || b.sumber === String(sumber)) && cocokStatus(b)), opsi);
+  const adaFilter = kata.length > 0 || adaSaringan(opsi) || !!sumber || !!cocok;
 
   // Peringatan: baris yang ditandai rekening ini tetapi BUKAN akun kas/bank-nya (tidak dihitung di atas, tetapi MASIH dihitung kartu saldo tab Rekening).
   const salah = await db.finJournalLine.aggregate({ where: { cashAccountId: rek.id, NOT: { accountId: rek.accountId }, entry: { status: { in: STATUS_DIHITUNG } } }, _sum: { debit: true, credit: true }, _count: { _all: true } });
@@ -460,7 +467,8 @@ export async function mutasiRekening(db, { cashAccountId, from, to, q, page, lim
   return {
     rekening: { id: rek.id, nama: rek.name, jenis: rek.kind, bank: rek.bankName, nomor: rek.accountNumber, aktif: rek.active },
     periode: { from: tgl(dari), to: tgl(sampai) }, saldoAwal: uang(saldoAwal), totalMasuk: uang(masuk), totalKeluar: uang(keluar), saldoAkhir: uang(saldo), paritas,
-    jumlahMasuk: nMasuk, jumlahKeluar: nKeluar, jumlahMutasi: semuaBaris.length, total: tersaring.length, disaring: kata.length > 0,
+    jumlahMasuk: nMasuk, jumlahKeluar: nKeluar, jumlahMutasi: semuaBaris.length, total: tersaring.length, disaring: adaFilter, tersaring: ringkasTersaring(tersaring), urut: { kunci: opsi.urut, arah: opsi.arahUrut },
+    sumberTersedia: [...new Map(semuaBaris.map((b) => [b.sumber, b.sumberLabel])).entries()].map(([kode, label]) => ({ kode, label })).sort((a, b) => a.label.localeCompare(b.label, "id")),
     page: semua ? 1 : hal, limit: semua ? tersaring.length : lim, adaLagi: semua ? false : skip + lim < tersaring.length, baris: semua ? tersaring : tersaring.slice(skip, skip + lim), peringatan, diperbaruiPada: new Date().toISOString(),
   };
 }

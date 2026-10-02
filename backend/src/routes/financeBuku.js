@@ -32,6 +32,6 @@ financeBukuRouter.get("/buku/jurnal", jalur((req) => daftarJurnal(prisma, req.qu
 financeBukuRouter.get("/buku/jurnal/:id", jalur((req) => detailJurnal(prisma, req.user, req.params.id)));
 financeBukuRouter.get("/buku/akun", jalur((req) => daftarAkun(prisma, req.query)));
 financeBukuRouter.get("/buku/akun/:id/mutasi", jalur((req) => mutasiAkun(prisma, { accountId: req.params.id, from: req.query.from, to: req.query.to, page: req.query.page, limit: req.query.limit })));
-financeBukuRouter.get("/buku/rekening/:id/mutasi", jalur((req) => mutasiRekening(prisma, { cashAccountId: req.params.id, from: req.query.from, to: req.query.to, q: req.query.q, page: req.query.page, limit: req.query.limit })));
+financeBukuRouter.get("/buku/rekening/:id/mutasi", jalur((req) => mutasiRekening(prisma, { cashAccountId: req.params.id, from: req.query.from, to: req.query.to, q: req.query.q, page: req.query.page, limit: req.query.limit, arah: req.query.arah, urut: req.query.urut, arahUrut: req.query.arahUrut, nominalMin: req.query.nominalMin, nominalMaks: req.query.nominalMaks, sumber: req.query.sumber, cocok: req.query.cocok })));
 financeBukuRouter.get("/buku/rekon", jalur((req) => daftarRekon(prisma, req.query)));
 financeBukuRouter.get("/buku/rekon/:id", jalur((req) => detailRekon(prisma, req.user, req.params.id)));
