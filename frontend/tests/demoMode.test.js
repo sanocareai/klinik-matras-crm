@@ -142,7 +142,11 @@ test("pagar kode: pembungkus 7 halaman + KPI gudang; api.js memanggil gerbang; a
   assert.match(ctl, /data-testid="demo-badge"/); assert.match(ctl, /DEMO_LABEL/);
   for (const f of ["src/features/production/demo/demoGate.js", "src/features/production/demo/demoDataset.js", "src/features/production/demo/DemoControls.jsx", "src/features/production/demo/demoLoader.js"]) assert.doesNotMatch(read(f), /method:\s*"(POST|PUT|PATCH|DELETE)"|\.post\(|\.patch\(/, `${f} baca-saja`);
   assert.match(read("src/features/production/demo/demoLoader.js"), /import snapshot from "\.\/demoSnapshot\.json"/);
-  assert.match(read("src/features/production/UnitCard.jsx"), /draggable=\{draggable && !isDemoActive\(\)\}/);
+  // P12A.2: seret di Mode Demo = SIMULASI client-only (tanpa jaringan); satu model pointer, tanpa HTML5 drag.
+  const rencana = read("src/pages/bengkel/ProductionRencanaWorkspace.jsx");
+  assert.match(rencana, /if \(decision\?\.type !== "reject" && isDemoActive\(\)\) \{ if \(\["place", "reorder", "unschedule", "moveDate"\]\.includes\(decision\?\.type\)\) simulate\(view, decision\); return; \}/);
+  assert.doesNotMatch(read("src/features/production/UnitCard.jsx"), /draggable=|onDragStart|dataTransfer/);
+  const sim = read("src/features/production/planDndSim.js"); assert.doesNotMatch(sim, /api\.|fetch\(|XMLHttpRequest|localStorage|sessionStorage/, "simulasi murni: tanpa jaringan/penyimpanan");
   assert.doesNotMatch(reg, /demoSnapshot/);
 });
 
@@ -177,7 +181,8 @@ test("UI demo: catatan 11 vs 12 unit, tooltip Bahasa Indonesia untuk tombol/sere
   const ctl = read("src/features/production/demo/DemoControls.jsx");
   assert.match(ctl, /Pipeline Status Produksi hanya menampilkan 11 unit karena 1 unit \(QA-PV2-U11\) sudah selesai/); assert.match(ctl, /data-testid="demo-unit-note"/);
   assert.match(ctl, /DEMO_DISABLED_TIP = "Dinonaktifkan di Mode Demo/); assert.match(ctl, /el\.title = DEMO_DISABLED_TIP/);
-  assert.match(read("src/features/production/UnitCard.jsx"), /Seret-lepas dinonaktifkan di Mode Demo/);
+  assert.match(read("src/features/production/PlanCard.jsx"), /title="Tahan lalu seret"/);
+  assert.match(read("src/pages/bengkel/ProductionRencanaWorkspace.jsx"), /Simulasi Mode Demo — .*Tidak disimpan; data awal kembali saat dimuat ulang/);
   assert.match(read("src/features/production/ReportParts.jsx"), /data-mutates disabled=\{disabled \|\| !!busy\} onClick=\{\(\) => go\("xlsx"\)\}/);
   assert.match(read("src/features/production/UnitPhotoThumb.jsx"), /data-mutates onClick=\{\(\) => inputRef\.current\?\.click\(\)\}/);
 });

@@ -227,21 +227,51 @@ test("Sandbox#10 Gudang: retur & waste bisa ditautkan ke unit (unitId) supaya Si
 
 // Revisi kartu Rencana Produksi (2 Okt 2026): layanan cukup dari Sales (tanpa Layanan Teknis), + jenis/merk/ukuran kasur,
 // + catatan Sales, + Ganti Kain berwarna beda (krusial: harus sesuai keinginan customer).
-test("Rencana Produksi: kartu tanpa Layanan Teknis (prop showTechService=false), Status/QC tetap menampilkannya", () => {
+const PLAN = read("features", "production", "PlanCard.jsx");
+test("Rencana Produksi: kartu PlanCard tanpa Layanan Teknis & tanpa harga; Status/QC (UnitCard) tetap menampilkan Layanan Teknis", () => {
   assert.match(CARD, /showTechService = true/);
   assert.match(CARD, /\{showTechService && \(/);
-  assert.equal((RENCANA.match(/showTechService=\{false\}/g) || []).length, 3, "kartu backlog + kartu meja + ghost seret");
-  assert.ok(!/Layanan Teknis/.test(RENCANA), "Rencana tidak menyebut Layanan Teknis sama sekali");
+  assert.ok(!/Layanan Teknis|tech-service|formatRupiah|orderValue/.test(PLAN), "PlanCard: tanpa Layanan Teknis dan tanpa harga");
+  assert.ok(!/Layanan Teknis|formatRupiah|orderValue/.test(RENCANA));
+  assert.equal((RENCANA.match(/<PlanCard /g) || []).length, 3, "backlog + meja + ghost seret");
+  assert.ok(!/<UnitCard /.test(RENCANA), "Rencana tidak lagi memakai UnitCard");
 });
-test("Kartu unit: baris Kasur (jenis·merk·ukuran) & Catatan Sales ada di kartu Production dan kartu Akan Masuk", () => {
+test("Kartu unit: baris Kasur (jenis·merk·ukuran) & Catatan Sales ada di kartu Status/QC/Akan Masuk (UnitCard)", () => {
   assert.match(CARD, /data-testid="mattress-info"/);
   assert.equal((CARD.match(/<MattressLine view=/g) || []).length, 2);
   assert.equal((CARD.match(/<SalesNote view=/g) || []).length, 2);
 });
+test("PlanCard: tiga blok berbeda (Layanan Sales biru · Kasur netral · Catatan Sales kuning + 'Sales: nama'), teks kosong, operasional terpisah, dua kolom via container query", () => {
+  for (const t of ['kind="sales" label="Layanan Sales"', 'kind="kasur" label="Kasur"', 'kind="note" label="Catatan Sales"']) assert.ok(PLAN.includes(t), t);
+  for (const t of ["Layanan belum dicatat Sales", "Data kasur belum lengkap", "Catatan Sales belum tersedia", "Sales: {c.salesName}"]) assert.ok(PLAN.includes(t), t);
+  for (const t of ["Tahap", "Bahan", "Target", "Meja", "PIC usulan", "tahap</span>"]) assert.ok(PLAN.includes(t), t);
+  assert.match(PLAN, /testid="row-stage"/); assert.match(PLAN, /testid="row-material"/, "status bahan terpisah dari nama tahap");
+  assert.match(PLAN, /@container/); assert.match(PLAN, /@\[34rem\]:grid-cols-2/);
+  assert.match(PLAN, /formatTanggal\(plan\.productionDate\)/, "target format Indonesia");
+  assert.match(PLAN, /Urutan \$\{seq\}/);
+  assert.match(PLAN, /h-\[68px\]|variant="plan"/);
+  const css = fs.readFileSync(path.join(__dirname, "..", "src", "index.css"), "utf8");
+  for (const c of [".plan-block-sales", ".plan-block-kasur", ".plan-block-note", ".plan-prio-urgent", ".plan-prio-high", ".plan-prio-normal"]) assert.ok(css.includes(c), c);
+});
+test("Prioritas kanonis: MENDESAK merah tua + api + garis tebal; TINGGI merah terang; NORMAL biru; overdue badge terpisah; tidak diinfer dari catatan", () => {
+  const M = loadModel();
+  const u = M.priorityMeta(2), h = M.priorityMeta(1), n = M.priorityMeta(0);
+  assert.deepEqual([u.label, u.icon, u.badgeClass, u.stripeWidth], ["Mendesak", "urgent", "plan-prio-urgent", 7]);
+  assert.deepEqual([h.label, h.icon, h.badgeClass, h.stripeWidth], ["Tinggi", "high", "plan-prio-high", 5]);
+  assert.deepEqual([n.label, n.icon, n.badgeClass], ["Normal", null, "plan-prio-normal"]);
+  assert.ok(u.stripeWidth > h.stripeWidth && h.stripeWidth > n.stripeWidth, "garis kiri makin tebal makin mendesak");
+  assert.match(PLAN, /view\.timer\?\.late && <Badge variant="red">Terlambat<\/Badge>/, "overdue = badge terpisah");
+  assert.match(PLAN, /priorityMeta\(plan\?\.priority \?\? 0\)/, "prioritas dari plan.priority");
+  assert.ok(!/request|notes|catatan/i.test(PLAN.slice(PLAN.indexOf("const p = priorityMeta"), PLAN.indexOf("const p = priorityMeta") + 80)), "tidak diinfer dari teks");
+});
 test("Ganti Kain: kartu berwarna beda (oranye) + kotak peringatan yang selalu tampil; hanya dikenali dari layanan Sales", () => {
-  assert.match(CARD, /kpi-glass-guard ring-2 ring-orange/);
-  assert.match(CARD, /data-testid="ganti-kain-note"/);
-  assert.match(CARD, /data-ganti-kain=/);
+  // P12A.2: latar kartu NORMAL; penanda = garis kiri oranye + kotak peringatan oranye (bukan tint/ring seluruh kartu)
+  assert.ok(!/GANTI_KAIN_STYLE|kpi-glass-guard|ring-2 ring-orange/.test(CARD) && !/GANTI_KAIN_STYLE|kpi-glass-guard|ring-2 ring-orange/.test(PLAN));
+  for (const src of [CARD, PLAN]) {
+    assert.match(src, /data-testid="ganti-kain-note"/); assert.match(src, /data-ganti-kain=/);
+    assert.ok(src.includes("Ganti Kain — pastikan sesuai permintaan customer")); assert.ok(src.includes("Catatan kain belum tersedia — konfirmasi ke Sales"));
+  }
+  assert.match(CARD, /data-testid="ganti-kain-stripe"[\s\S]{0,120}bg-orange/); assert.match(PLAN, /data-testid="ganti-kain-stripe"/);
   const M = loadModel();
   assert.equal(M.isGantiKain({ customer: { salesServices: ["Ganti Kain"] } }), true);
   assert.equal(M.isGantiKain({ customer: { salesServices: ["Full Service (Service + Tambah Busa + Ganti Kain)"] } }), true);

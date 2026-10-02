@@ -1,6 +1,5 @@
 import React from "react";
-import { isDemoActive } from "./demo/demoGate.js"; // P12A: kartu tidak bisa diseret selama Mode Demo
-import { AlertTriangle, CalendarDays, ChevronsUp, Flame, GripVertical, ImageOff, PackageX, Scissors, Wrench } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronsUp, Flame, ImageOff, PackageX, Scissors, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { bucketStyle, initials, targetDateBadge } from "@/features/production/experience.js";
@@ -17,22 +16,23 @@ function PriorityTag({ priority, className = "" }) {
   if (!p.icon) return null;
   const Icon = p.icon === "urgent" ? Flame : ChevronsUp;
   return (
-    <span data-testid="priority-tag" data-priority={p.key} className={`inline-flex items-center gap-1 rounded-chip bg-red px-2 py-0.5 text-[11px] font-bold text-white ${className}`}>
+    <span data-testid="priority-tag" data-priority={p.key} className={`inline-flex items-center gap-1 rounded-chip px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${p.badgeClass} ${className}`}>
       <Icon size={12} aria-hidden /> {p.label}
     </span>
   );
 }
 
 export function UnitPhoto({ photoUrl, variant, className = "" }) {
-  const size = variant === "compact" ? "h-16 w-16" : "h-28 w-full";
+  const small = variant === "compact" || variant === "plan";
+  const size = variant === "plan" ? "h-[68px] w-[68px]" : variant === "compact" ? "h-16 w-16" : "h-28 w-full";
   return (
-    <div className={`relative shrink-0 overflow-hidden bg-inset ${variant === "compact" ? "rounded-btn" : "rounded-t-card"} ${size} ${className}`}>
+    <div className={`relative shrink-0 overflow-hidden bg-inset ${small ? "rounded-btn" : "rounded-t-card"} ${size} ${className}`}>
       {photoUrl
         ? <img src={photoUrl} alt="Foto unit" className="h-full w-full object-cover" loading="lazy" />
         : (
           <div data-testid="photo-empty" className="flex h-full w-full flex-col items-center justify-center gap-1 border border-dashed border-line text-ink3">
-            <ImageOff size={variant === "compact" ? 18 : 26} aria-hidden />
-            {variant !== "compact" && <span className="text-[11.5px] font-medium">Belum ada foto</span>}
+            <ImageOff size={small ? 18 : 26} aria-hidden />
+            {!small && <span className="text-[11.5px] font-medium">Belum ada foto</span>}
           </div>
         )}
     </div>
@@ -50,17 +50,17 @@ export function MattressLine({ view }) {
   );
 }
 
-// Catatan Sales. Ganti Kain = krusial: kotak peringatan yang SELALU tampil (juga bila catatan kosong) supaya PIC memastikan
-// kain sesuai keinginan customer sebelum mengerjakan.
+// Catatan Sales (kartu Status/QC/Akan Masuk). Ganti Kain = krusial: kotak peringatan oranye yang SELALU tampil (juga bila catatan kosong) supaya
+// PIC memastikan kain sesuai keinginan customer sebelum mengerjakan. Kartu tetap berlatar normal; penanda = garis kiri oranye (GantiKainStripe).
 export function SalesNote({ view }) {
   const note = salesNoteOf(view);
   if (isGantiKain(view)) {
     return (
-      <div data-testid="ganti-kain-note" className="rounded-btn border border-orange bg-surface px-2 py-1.5">
-        <p className="m-0 flex items-center gap-1 text-[11.5px] font-bold text-orange"><Scissors size={12} aria-hidden /> Ganti Kain — pastikan sesuai permintaan customer</p>
-        <p data-testid="sales-note" className="m-0 mt-0.5 line-clamp-3 break-words text-[12px] font-medium text-ink [overflow-wrap:anywhere]" title={note || ""}>
-          <span className="font-semibold text-ink3">Catatan Sales: </span>{note || <span className="text-orange">belum ada catatan kain dari Sales — konfirmasi ke Sales</span>}
-        </p>
+      <div data-testid="ganti-kain-note" className="rounded-btn border border-orange bg-orangebg px-2.5 py-1.5">
+        <p className="m-0 flex items-start gap-1.5 text-[11.5px] font-bold text-orange"><Scissors size={12} className="mt-px shrink-0" aria-hidden /> Ganti Kain — pastikan sesuai permintaan customer</p>
+        {note
+          ? <p data-testid="sales-note" className="m-0 mt-0.5 line-clamp-3 break-words text-[12px] font-medium text-ink [overflow-wrap:anywhere]" title={note}><span className="font-semibold text-ink3">Catatan Sales: </span>{note}</p>
+          : <p className="m-0 mt-0.5 text-[11.5px] font-semibold text-orange">Catatan kain belum tersedia — konfirmasi ke Sales</p>}
       </div>
     );
   }
@@ -69,6 +69,18 @@ export function SalesNote({ view }) {
     <p data-testid="sales-note" className="m-0 line-clamp-2 break-words text-[11.5px] text-ink2 [overflow-wrap:anywhere]" title={note}>
       <span className="font-semibold text-ink3">Catatan Sales: </span><span className="italic">“{note}”</span>
     </p>
+  );
+}
+
+// Garis kiri kartu (prioritas kanonis) + garis oranye tambahan untuk Ganti Kain. Elemen SENDIRI (bukan border kartu): aturan kaca global
+// (.glass-division [class*="rounded-card"]) menimpa border kartu, sehingga border-left tidak pernah terlihat.
+export function CardStripes({ priority, gantiKain }) {
+  const p = priorityMeta(priority);
+  return (
+    <>
+      <span aria-hidden data-testid="priority-stripe" className={`absolute inset-y-0 left-0 ${p.stripeClass}`} />
+      {gantiKain && <span aria-hidden data-testid="ganti-kain-stripe" className="absolute inset-y-0 w-1 bg-orange" style={{ left: p.stripeWidth }} />}
+    </>
   );
 }
 
@@ -83,24 +95,8 @@ export function PicChips({ view }) {
   );
 }
 
-// Handle seret (Rencana Produksi). SATU-SATUNYA bagian kartu yang menangkap sentuhan untuk menyeret (touch-action:none) — di luar handle
-// halaman tetap bisa digulir dan ketukan kartu tetap membuka Unit 360. Target 44px untuk jari. data-mutates = ikut dinonaktifkan di Mode Demo.
-export function DragHandle({ unitCode, onPointerDown, disabled = false }) {
-  return (
-    <button type="button" data-testid="drag-handle" data-mutates disabled={disabled} aria-label={`Seret ${unitCode} untuk memindahkan`} title="Seret untuk memindahkan (atau pakai tombol Jadwalkan/Pindahkan)"
-      onPointerDown={onPointerDown} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()} style={{ touchAction: "none" }}
-      className="flex h-11 w-11 select-none items-center justify-center rounded-btn border border-line bg-surface text-ink2 shadow-sm hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 enabled:cursor-grab enabled:active:cursor-grabbing">
-      <GripVertical size={20} aria-hidden />
-    </button>
-  );
-}
-
-// Ganti Kain: latar oranye lembut di atas permukaan solid. "kpi-glass-guard" mengecualikan kartu dari aturan kaca global (.glass-division
-// [class*="rounded-card"]) yang kalau tidak akan menimpa warna latar & ring-nya sehingga kartu tampak sama dengan kartu biasa.
-const GANTI_KAIN_STYLE = { backgroundColor: "var(--bg-surface)", backgroundImage: "linear-gradient(var(--orange-bg), var(--orange-bg))" };
-
 export function UnitCard({
-  view, onOpen, footer = null, variant = "photo", today, tomorrow, draggable = false, onDragStart, showGaps = true, className = "", qcBadge = null, seq = null, showTechService = true, handle = null, dragging = false,
+  view, onOpen, footer = null, variant = "photo", today, tomorrow, showGaps = true, className = "", qcBadge = null, seq = null, showTechService = true,
 }) {
   if (!view) return null;
   const c = view.customer || {};
@@ -122,7 +118,7 @@ export function UnitCard({
     </div>
   );
   const body = (
-    <div className={`min-w-0 space-y-1.5 ${variant === "compact" ? "px-3 pb-3" : "px-3 pb-3"}`}>
+    <div className="min-w-0 space-y-1.5 px-3 pb-3 pl-5">
       <p className="m-0 line-clamp-2 text-[12px] text-ink2" title={sales || ""}>
         <span className="font-semibold text-ink3">Layanan Sales: </span>{sales || <span className="text-ink3">belum tercatat</span>}
       </p>
@@ -161,13 +157,13 @@ export function UnitCard({
   );
 
   return (
-    <article data-testid="unit-card" data-drag-card data-unit-code={view.unit.unitCode} data-priority={p.key} data-ganti-kain={gantiKain ? "true" : undefined} style={gantiKain ? GANTI_KAIN_STYLE : undefined} draggable={draggable && !isDemoActive()} onDragStart={isDemoActive() ? (e) => e.preventDefault() : onDragStart} title={draggable && isDemoActive() ? "Seret-lepas dinonaktifkan di Mode Demo (hanya-baca)" : undefined}
-      className={`relative w-full min-w-0 overflow-hidden rounded-card shadow-sm ${gantiKain ? "kpi-glass-guard ring-2 ring-orange" : "bg-surface"} ${p.edge} ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${dragging ? "opacity-40" : ""} ${className}`}>
-      {handle && <div className="absolute right-2 top-2 z-10">{handle}</div>}
+    <article data-testid="unit-card" data-unit-code={view.unit.unitCode} data-priority={p.key} data-ganti-kain={gantiKain ? "true" : undefined}
+      className={`relative w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-sm ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${className}`}>
+      <CardStripes priority={view.plan?.priority ?? 0} gantiKain={gantiKain} />
       <button type="button" onClick={open} className="block w-full text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-label={`Buka Unit 360 ${view.unit.unitCode}`}>
         {variant === "compact" ? (
           <>
-            <div className={`flex gap-3 p-3 ${handle ? "pr-14" : ""}`}>
+            <div className="flex gap-3 p-3 pl-5">
               <UnitPhoto photoUrl={view.unit.photoUrl} variant="compact" />
               <div className="min-w-0 flex-1 space-y-1.5">
                 {head}
@@ -183,7 +179,7 @@ export function UnitCard({
               <div className="absolute left-2 top-2"><PriorityTag priority={view.plan?.priority ?? 0} /></div>
               <div className="absolute right-2 top-2"><span className="inline-flex items-center gap-1 rounded-chip bg-surface/95 px-2 py-0.5 text-[11px] font-semibold text-ink shadow-sm"><Wrench size={11} aria-hidden /> {station}</span></div>
             </div>
-            <div className="px-3 pt-3">{head}</div>
+            <div className="px-3 pt-3 pl-5">{head}</div>
             <div className="pt-1.5">{body}</div>
           </>
         )}
@@ -197,10 +193,11 @@ export function UnitCard({
 export function UpcomingCard({ item, onOpen, footer = null, badgeLabel = "Akan Masuk" }) {
   const c = item.customer || {};
   return (
-    <article data-testid="unit-card" data-unit-code={item.unit.unitCode} data-ganti-kain={isGantiKain(item) ? "true" : undefined} style={isGantiKain(item) ? GANTI_KAIN_STYLE : undefined} className={`relative w-full min-w-0 overflow-hidden rounded-card border-l-[4px] border-l-transparent shadow-sm ${isGantiKain(item) ? "kpi-glass-guard ring-2 ring-orange" : "bg-surface"}`}>
+    <article data-testid="unit-card" data-unit-code={item.unit.unitCode} data-ganti-kain={isGantiKain(item) ? "true" : undefined} className="relative w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-sm">
+      <CardStripes priority={0} gantiKain={isGantiKain(item)} />
       <button type="button" onClick={() => onOpen?.(item.unit.id)} className="block w-full text-left hover:bg-hovertint" aria-label={`Buka Unit 360 ${item.unit.unitCode}`}>
         <UnitPhoto photoUrl={item.unit.photoUrl} variant="photo" />
-        <div className="space-y-1.5 p-3">
+        <div className="space-y-1.5 p-3 pl-5">
           <p className="m-0 truncate text-[13.5px] font-bold text-ink">{item.unit.unitCode}{item.unit.orderNumber ? <span className="font-medium text-ink3"> · {item.unit.orderNumber}</span> : null}</p>
           <p className="m-0 truncate text-[12.5px] font-semibold text-ink2">{c.name || "Pelanggan belum dicatat"}{c.city ? <span className="font-normal text-ink3"> · {c.city}</span> : null}</p>
           <p className="m-0 line-clamp-2 text-[12px] text-ink2"><span className="font-semibold text-ink3">Layanan Sales: </span>{c.salesServices?.length ? c.salesServices.join(" + ") : <span className="text-ink3">belum tercatat</span>}</p>

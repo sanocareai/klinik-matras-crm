@@ -4214,3 +4214,15 @@ body {
 /* Rencana Produksi — selama kartu diseret (pointer): tanpa seleksi teks, kursor menggenggam. */
 body.plan-dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
 body.plan-dragging * { cursor: grabbing !important; }
+
+/* P12A.2 — kartu Rencana Produksi: prioritas kanonis, tiga blok informasi, garis kiri. Warna tetap terbaca di terang & gelap. */
+.plan-prio-urgent { background: #8F1220; color: #fff; }
+.plan-prio-high   { background: #E5484D; color: #fff; }
+.plan-prio-normal { background: var(--accent-bg); color: var(--accent); }
+.plan-stripe-urgent { width: 7px; background: #8F1220; }
+.plan-stripe-high   { width: 5px; background: #E5484D; }
+.plan-stripe-normal { width: 4px; background: var(--accent); opacity: 0.4; }
+.plan-block { border-radius: var(--r-md, 10px); padding: 6px 9px; border-left: 3px solid transparent; }
+.plan-block-sales { background: var(--accent-bg); border-left-color: var(--accent); }
+.plan-block-kasur { background: var(--bg-inset); border-left-color: var(--text-tertiary); }
+.plan-block-note  { background: rgba(255, 204, 0, 0.16); border-left-color: #D9A400; }

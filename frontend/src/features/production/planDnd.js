@@ -21,6 +21,11 @@ export function listWithInserted(ids, id, index) {
   return [...rest.slice(0, at), id, ...rest.slice(at)];
 }
 
+// Unit 12/12 (semua tahap selesai): terkunci — tidak bisa diseret/dipindah, selalu di urutan paling bawah meja.
+export const isPlanComplete = (v) => (v?.progress?.total ?? 0) > 0 && (v.progress.done ?? 0) >= v.progress.total;
+// Urutan tampil di meja = urutan server (manual > prioritas bawaan), LALU unit 12/12 dikunci di bawah (stabil). Dipakai render DAN keputusan drop.
+export const planDisplayOrder = (items) => { const o = orderedStationItems(items); return [...o.filter((v) => !isPlanComplete(v)), ...o.filter(isPlanComplete)]; };
+
 const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 /**
@@ -36,6 +41,7 @@ const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]
 export function decideDrop({ view, target, stations = [], date }) {
   const plan = view?.plan;
   if (!target) return { type: "noop" };
+  if (isPlanComplete(view)) return { type: "reject", message: "Unit 12/12 sudah selesai dan terkunci — tidak bisa dipindahkan." };
   if (target.kind === "backlog") return plan?.stationCode ? { type: "unschedule" } : { type: "noop" };
   if (target.kind === "day") {
     if (!plan?.stationCode) return { type: "reject", message: "Unit ini belum punya meja. Letakkan di Meja dulu; tanggal lain bisa dipilih lewat tombol Jadwalkan." };
@@ -45,20 +51,25 @@ export function decideDrop({ view, target, stations = [], date }) {
   if (target.kind !== "meja") return { type: "noop" };
   const station = stations.find((s) => s.code === target.code);
   if (!station) return { type: "reject", message: "Meja tujuan tidak ditemukan. Muat ulang halaman." };
-  const ids = orderedStationItems(station.items).map((v) => v.plan?.id).filter(Boolean);
+  const ordered = planDisplayOrder(station.items);
+  const ids = ordered.map((v) => v.plan?.id).filter(Boolean);
   const planId = plan?.id ?? view?.runId;
   const here = plan?.id ? ids.includes(plan.id) : false;
+  // Posisi sisip tidak boleh melewati unit 12/12 yang terkunci di bawah.
+  const lockedOthers = ordered.filter((v) => isPlanComplete(v) && v.plan?.id !== planId).length;
+  const limit = ids.filter((x) => x !== planId).length - lockedOthers;
+  const index = Math.max(0, Math.min(target.index ?? limit, limit));
   if (here) {
-    const next = listWithInserted(ids, plan.id, target.index);
+    const next = listWithInserted(ids, plan.id, index);
     return sameList(next, ids) ? { type: "noop" } : { type: "reorder", stationCode: station.code, orderedIds: next };
   }
   const cap = stationCapacity(station);
   if (cap.full) return { type: "reject", message: `${station.label} sudah penuh (${cap.label}). Pilih meja lain.` };
-  const orderedIds = listWithInserted(ids, planId, target.index);
+  const orderedIds = listWithInserted(ids, planId, index);
   // Posisi bawah hanya TERJAMIN bila semua isi meja sudah bernomor manual (kartu baru masuk paling bawah). Kalau belum, urutan bawaan = prioritas
   // dan kartu baru bisa naik — jadi posisi yang ditunjuk indikator disimpan eksplisit lewat urutan manual.
-  const allSequenced = orderedStationItems(station.items).every((v) => v.plan?.stationSequence != null);
-  return { type: "place", stationCode: station.code, orderedIds, needsReorder: orderedIds[orderedIds.length - 1] !== planId || !allSequenced };
+  const allSequenced = ordered.every((v) => v.plan?.stationSequence != null);
+  return { type: "place", stationCode: station.code, orderedIds, needsReorder: orderedIds.indexOf(planId) !== orderedIds.length - 1 - lockedOthers || !allSequenced || lockedOthers > 0 };
 }
 
 // Teks petunjuk di ghost/indikator saat seret.

@@ -13,13 +13,13 @@ const raw = (...p) => fs.readFileSync(path.join(__dirname, "..", "src", ...p), "
 const read = (...p) => raw(...p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const DND_SRC = read("features", "production", "planDnd.js");
 const HOOK = read("features", "production", "usePlanDrag.js");
-const CARD = read("features", "production", "UnitCard.jsx");
+const CARD = read("features", "production", "PlanCard.jsx");
 const RENCANA = read("pages", "bengkel", "ProductionRencanaWorkspace.jsx");
 const STATUS = read("pages", "bengkel", "ProductionPlannerV2.jsx");
 
 function loadDnd() {
   const src = DND_SRC.replace(/^import .*$/gm, "").replace(/^export /gm, "");
-  return new Function("stationCapacity", "orderedStationItems", `${src}\nreturn { DRAG_THRESHOLD_PX, dragMoved, insertIndexAt, listWithInserted, decideDrop, describeTarget };`)(stationCapacity, orderedStationItems);
+  return new Function("stationCapacity", "orderedStationItems", `${src}\nreturn { DRAG_THRESHOLD_PX, dragMoved, insertIndexAt, listWithInserted, decideDrop, describeTarget, isPlanComplete, planDisplayOrder };`)(stationCapacity, orderedStationItems);
 }
 const D = loadDnd();
 
@@ -100,7 +100,8 @@ test("handle & sentuh: hanya handle yang menangkap sentuhan (touch-action:none);
   assert.match(CARD, /onClick=\{\(e\) => e\.stopPropagation\(\)\}/, "klik handle tidak membuka kartu");
   assert.match(CARD, /onContextMenu=\{\(e\) => e\.preventDefault\(\)\}/, "tekan-lama tidak memunculkan menu konteks");
   assert.match(CARD, /<button type="button" onClick=\{open\}/, "ketukan kartu = buka Unit 360");
-  assert.match(CARD, /data-mutates/, "handle ikut dinonaktifkan di Mode Demo");
+  assert.ok(!/data-mutates/.test(CARD.slice(CARD.indexOf("export function DragHandle"), CARD.indexOf("function PriorityBadge"))), "handle TIDAK dinonaktifkan di Mode Demo (simulasi client-only)");
+  assert.match(CARD, /title="Tahan lalu seret"/);
   assert.ok(!/draggable=\{draggable && /.test(RENCANA) && !/\bdraggable\b/.test(RENCANA), "Rencana tidak memakai HTML5 draggable (tak jalan di sentuh)");
   assert.ok(!/onDragStart|dataTransfer/.test(RENCANA));
 });
@@ -155,4 +156,48 @@ test("Akan Masuk — Pickup Terjadwal: forecast read-only di Rencana (tanpa hand
 test("Status Produksi: kartu TIDAK bisa diseret; tahap hanya berubah lewat proses+bukti (petunjuk tooltip)", () => {
   assert.ok(!/draggable|onDragStart|DragHandle|usePlanDrag|onHandleDown|dataTransfer/.test(STATUS));
   assert.match(STATUS, /Tahap berubah setelah proses dan bukti disimpan/);
+});
+
+// ---- P12A.2: unit 12/12 terkunci di bawah, simulasi Mode Demo (client-only) ----
+const done = (n, extra = {}) => ({ ...unit(n, { station: "TABLE_1", seq: n, ...extra }), progress: { done: 12, total: 12 } });
+const SIM_SRC = read("features", "production", "planDndSim.js").replace(/^import .*$/gm, "").replace(/^export /gm, "");
+const { simulateDrop } = new Function(`${SIM_SRC}\nreturn { simulateDrop };`)();
+
+test("unit 12/12: terkunci (tidak bisa diseret), selalu di urutan paling bawah meja, sisipan tidak melewatinya", () => {
+  assert.equal(D.isPlanComplete(done(1)), true); assert.equal(D.isPlanComplete(unit(2)), false);
+  assert.equal(D.isPlanComplete({ progress: { done: 11, total: 12 } }), false);
+  const a = done(1), b = unit(2, { station: "TABLE_1", seq: 2 }), c = unit(3, { station: "TABLE_1", seq: 3 });
+  assert.deepEqual(D.planDisplayOrder([a, b, c]).map((v) => v.plan.id), ["plan-2", "plan-3", "plan-1"], "12/12 dipindah ke bawah walau urutan manual-nya pertama");
+  const st = [meja("TABLE_1", [a, b, c], 4)]; // kapasitas 4 supaya sisipan ke meja tidak ditolak karena penuh
+  const drag = D.decideDrop({ view: a, target: { kind: "meja", code: "TABLE_2", index: 0 }, stations: st, date: DATE });
+  assert.equal(drag.type, "reject"); assert.match(drag.message, /12\/12 sudah selesai dan terkunci/);
+  assert.equal(D.decideDrop({ view: a, target: { kind: "backlog" }, stations: st, date: DATE }).type, "reject", "juga tidak bisa dikembalikan ke backlog");
+  // sisipkan unit baru ke Meja 1 di indeks 3 (setelah unit terkunci): dijepit di atas unit 12/12
+  const placed = D.decideDrop({ view: unit(9), target: { kind: "meja", code: "TABLE_1", index: 3 }, stations: st, date: DATE });
+  assert.equal(placed.type, "place"); assert.deepEqual(placed.orderedIds, ["plan-2", "plan-3", "plan-9", "plan-1"]); assert.equal(placed.needsReorder, true);
+  const reorder = D.decideDrop({ view: c, target: { kind: "meja", code: "TABLE_1", index: 3 }, stations: st, date: DATE });
+  assert.equal(reorder.type, "noop", "kartu terakhir yang bisa digeser sudah di posisi akhir yang diizinkan (di atas unit 12/12) -> tanpa perubahan");
+});
+
+test("simulateDrop (Mode Demo): murni & tidak mengubah input; backlog→meja, urutan, meja→backlog, pindah tanggal", () => {
+  const a = unit(1, { station: "TABLE_1", seq: 1 }), b = unit(2, { station: "TABLE_1", seq: 2 }), x = unit(9);
+  const board = { kpi: { planned: 2 }, stations: [{ code: "TABLE_1", label: "Meja 1", count: 2, items: [a, b] }, { code: "TABLE_2", label: "Meja 2", count: 0, items: [] }] };
+  const cc = { columns: [{ key: "TIBA_BELUM_MULAI", items: [x] }] };
+  const snapshotBefore = JSON.stringify({ board, cc });
+  const place = D.decideDrop({ view: x, target: { kind: "meja", code: "TABLE_1", index: 1 }, stations: board.stations, date: DATE });
+  const r1 = simulateDrop({ board, cc, view: x, decision: place, date: DATE });
+  assert.equal(JSON.stringify({ board, cc }), snapshotBefore, "input tidak berubah (salinan)");
+  assert.deepEqual(r1.board.stations[0].items.map((v) => v.plan.id), ["plan-1", "plan-9", "plan-2"]);
+  assert.equal(r1.board.stations[0].count, 3); assert.equal(r1.board.kpi.planned, 3);
+  assert.equal(r1.cc.columns[0].items[0].plan.stationCode, "TABLE_1", "kartu di Command Center ikut berubah");
+  assert.match(r1.message, /plan|U9 dijadwalkan ke Meja 1/);
+  const re = D.decideDrop({ view: r1.board.stations[0].items[2], target: { kind: "meja", code: "TABLE_1", index: 0 }, stations: r1.board.stations, date: DATE });
+  const r2 = simulateDrop({ board: r1.board, cc: r1.cc, view: r1.board.stations[0].items[2], decision: re, date: DATE });
+  assert.deepEqual(r2.board.stations[0].items.map((v) => v.plan.id), ["plan-2", "plan-1", "plan-9"]);
+  const r3 = simulateDrop({ board: r2.board, cc: r2.cc, view: r2.board.stations[0].items[2], decision: { type: "unschedule" }, date: DATE });
+  assert.equal(r3.board.stations[0].items.length, 2); assert.equal(r3.board.kpi.planned, 2);
+  assert.equal(r3.cc.columns[0].items[0].plan.stationCode, null, "kembali ke backlog");
+  const r4 = simulateDrop({ board: r3.board, cc: r3.cc, view: r3.board.stations[0].items[0], decision: { type: "moveDate", date: "2026-10-06" }, date: DATE });
+  assert.equal(r4.board.stations[0].items.length, 1); assert.equal(r4.board.kpi.planned, 1);
+  assert.equal(simulateDrop({ board, cc, view: x, decision: { type: "noop" }, date: DATE }).message, "", "keputusan tanpa aksi = tanpa perubahan");
 });
