@@ -48,3 +48,7 @@ backend/scripts/data/warehouse-import/
 /docs/pilot/matching-*.json
 /docs/pilot/rekening-koran-*
 /docs/FINANCE-REKONSILIASI-*-RAW.md
+
+# P12A staging: env & kredensial QA-PV2 (acak) tidak boleh di-commit
+backend/.env.staging
+backend/data/qa-pv2-credentials.json

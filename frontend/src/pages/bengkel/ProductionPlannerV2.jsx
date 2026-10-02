@@ -76,13 +76,13 @@ function RunDrawer({ item, refs, onClose, onSchedule, onConfirmArrival, onChange
                 <option value="">— pilih layanan —</option>{refs.services.map((s) => <option key={s.id} value={s.id}>{s.labelId}</option>)}
               </select>
             </label>
-            <Button size="sm" disabled={!serviceId || busy} onClick={setService}>Tetapkan</Button>
+            <Button size="sm" data-mutates disabled={!serviceId || busy} onClick={setService}>Tetapkan</Button>
           </div>
         )}
         {error && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
         <div className="flex flex-wrap gap-2">
-          {item.bucket === "DALAM_PERJALANAN" && onConfirmArrival && <Button size="sm" onClick={() => onConfirmArrival(item)}><Truck size={14} aria-hidden /> Unit Tiba di Workshop</Button>}
-          <Button size="sm" onClick={() => onSchedule(item)}><CalendarDays size={14} aria-hidden /> {item.plan?.stationCode ? "Pindah / Ubah Jadwal" : "Jadwalkan"}</Button>
+          {item.bucket === "DALAM_PERJALANAN" && onConfirmArrival && <Button size="sm" data-mutates onClick={() => onConfirmArrival(item)}><Truck size={14} aria-hidden /> Unit Tiba di Workshop</Button>}
+          <Button size="sm" data-mutates onClick={() => onSchedule(item)}><CalendarDays size={14} aria-hidden /> {item.plan?.stationCode ? "Pindah / Ubah Jadwal" : "Jadwalkan"}</Button>
           {item.plan && <Button size="sm" variant="secondary" asChild><Link to={`/bengkel/production-v2/laporan/${item.runId}`}><FileText size={14} aria-hidden /> Laporan</Link></Button>}
           <Button size="sm" variant="neutral" asChild><Link to={`/bengkel/units/${item.unit.id}`}>Detail unit (lama)</Link></Button>
         </div>
@@ -92,7 +92,7 @@ function RunDrawer({ item, refs, onClose, onSchedule, onConfirmArrival, onChange
 }
 
 function ArrivalButton({ item, onConfirm }) {
-  return <Button size="sm" variant="secondary" className="min-h-[44px] w-full" onClick={() => onConfirm(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>;
+  return <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] w-full" onClick={() => onConfirm(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>;
 }
 
 function renderCard(item, { openOverview, setArrival, today, tomorrow }) {

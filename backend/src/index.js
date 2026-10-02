@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { bootstrapStaging, backgroundJobsEnabled } from "./lib/stagingGuard.js";
+bootstrapStaging(); // P12A: no-op di production; di staging: tolak DB production, blok egress, netralkan kredensial eksternal
 import express from "express";
 import http from "http";
 import cors from "cors";
@@ -375,6 +377,7 @@ server.listen(PORT, () => {
   logStatusMcp();
   logStatusGptActions();
   logStatusMcpHub();
+  if (!backgroundJobsEnabled()) { console.log("[staging] job latar & worker pengirim dimatikan"); return; }
   startReconciliationJob();
   startVideoCompressJob();
   startSlaAlertJob();

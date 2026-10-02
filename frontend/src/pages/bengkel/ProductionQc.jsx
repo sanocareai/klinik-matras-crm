@@ -198,7 +198,7 @@ function InspectionForm({ run, busy, onSubmit, onError }) {
           )}
         </div>
       )}
-      <Button size="sm" onClick={submit} disabled={busy}><ClipboardCheck size={14} /> {busy ? "Menyimpan…" : mode === "PASS" ? "Simpan — Lulus" : mode === "FAIL" ? "Simpan — Gagal (Buka Rework)" : "Simpan — Waive QC"}</Button>
+      <Button size="sm" data-mutates onClick={submit} disabled={busy}><ClipboardCheck size={14} /> {busy ? "Menyimpan…" : mode === "PASS" ? "Simpan — Lulus" : mode === "FAIL" ? "Simpan — Gagal (Buka Rework)" : "Simpan — Waive QC"}</Button>
     </section>
   );
 }
@@ -213,7 +213,7 @@ function ConflictPanel({ run, busy, onOpen, onResolve, onError }) {
       <h3 className="flex items-center gap-1 text-[12.5px] font-bold text-red"><AlertTriangle size={14} /> Konflik status unit vs Production Run</h3>
       <p className="text-[12px] text-ink2">{conflictKindLabel(exception?.kind || run.conflict?.detected?.kind)}. Semua perintah QC/produksi untuk run ini ditolak sampai konflik diselesaikan — sistem tidak menebak atau menimpa status unit.</p>
       {!exception ? (
-        <Button size="sm" onClick={onOpen} disabled={busy}>Catat Konflik</Button>
+        <Button size="sm" data-mutates onClick={onOpen} disabled={busy}>Catat Konflik</Button>
       ) : (
         <div className="space-y-2">
           <label className="block text-[12px] text-ink3">Resolusi
@@ -226,7 +226,7 @@ function ConflictPanel({ run, busy, onOpen, onResolve, onError }) {
           <label className="block text-[12px] text-ink3">Catatan resolusi (wajib)
             <textarea className={field} rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
-          <Button size="sm" disabled={busy} onClick={() => {
+          <Button size="sm" data-mutates disabled={busy} onClick={() => {
             if (!resolution) { onError("Pilih resolusi terlebih dahulu"); return; }
             if (note.trim().length < 3) { onError("Catatan resolusi wajib diisi (minimal 3 karakter)"); return; }
             onResolve({ exceptionId: exception.id, expectedRevision: exception.revision, resolution, note: note.trim() });
@@ -313,13 +313,13 @@ function RunDetailModal({ runId, onClose, onChanged }) {
             {run.state === "HANDOFF" && <p className="rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2">Barang jadi sudah ditawarkan ke Gudang — menunggu keputusan di menu Terima Barang Jadi.</p>}
             {inRework && <p className="rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2">Rework berjalan: lanjutkan tahap di Antrean Kerja. Setelah selesai, unit wajib kembali ke QC.</p>}
 
-            {canAddMaterial && action !== "material" && <Button size="sm" variant="ghost" onClick={() => setAction("material")}>Ajukan Bahan Tambahan Rework</Button>}
+            {canAddMaterial && action !== "material" && <Button size="sm" variant="ghost" data-mutates onClick={() => setAction("material")}>Ajukan Bahan Tambahan Rework</Button>}
             {action === "material" && (
               <section aria-label="Bahan tambahan rework" className="space-y-2 rounded-card border border-line p-3">
                 <h3 className="text-[12.5px] font-bold text-ink">Bahan Tambahan Rework</h3>
                 <MaterialRows rows={materialRows} onChange={setMaterialRows} disabled={busy} />
                 <div className="flex gap-2">
-                  <Button size="sm" disabled={busy} onClick={() => {
+                  <Button size="sm" data-mutates disabled={busy} onClick={() => {
                     const lines = materialRows.filter((r) => r.materialId).map((r) => ({ materialId: r.materialId, qty: Number(r.qty) }));
                     if (!lines.length || lines.some((l) => !(l.qty > 0))) { setError("Isi bahan dan jumlah (> 0)"); return; }
                     execute("rework-material", (key) => api.requestReworkMaterial(runId, { expectedRevision: run.revision, lines }, key), () => "Permintaan bahan tambahan dibuat — menunggu Gudang menyerahkan bahan.");
@@ -335,8 +335,8 @@ function RunDetailModal({ runId, onClose, onChanged }) {
                 <p className="text-[12px] text-ink2">{lastHandoff?.reason || "Tanpa alasan tercatat"}</p>
                 {!action || action === "cancel" || action === "material" ? (
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" onClick={() => { setAction("reoffer"); setError(""); }}>Tawarkan Ulang</Button>
-                    <Button size="sm" variant="ghost" onClick={() => { setAction("rework"); setError(""); }}>Kembalikan ke Rework</Button>
+                    <Button size="sm" data-mutates onClick={() => { setAction("reoffer"); setError(""); }}>Tawarkan Ulang</Button>
+                    <Button size="sm" variant="ghost" data-mutates onClick={() => { setAction("rework"); setError(""); }}>Kembalikan ke Rework</Button>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -352,7 +352,7 @@ function RunDetailModal({ runId, onClose, onChanged }) {
                       <textarea className={field} rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
                     </label>
                     <div className="flex gap-2">
-                      <Button size="sm" disabled={busy} onClick={() => {
+                      <Button size="sm" data-mutates disabled={busy} onClick={() => {
                         const actionName = action === "rework" ? "REWORK" : "REOFFER";
                         const check = validateNoteForm({ note, action: actionName, reworkStageId });
                         if (!check.valid) { setError(check.error); return; }
@@ -407,14 +407,14 @@ function RunDetailModal({ runId, onClose, onChanged }) {
                       <textarea className={field} rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
                     </label>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="destructive" disabled={busy} onClick={() => {
+                      <Button size="sm" variant="destructive" data-mutates disabled={busy} onClick={() => {
                         if (note.trim().length < 3) { setError("Alasan pembatalan wajib diisi (minimal 3 karakter)"); return; }
                         execute("run-cancel", (key) => api.cancelProductionRun(runId, { expectedRevision: run.revision, reason: note.trim() }, key), () => "Production Run dibatalkan.");
                       }}>Batalkan Run</Button>
                       <Button size="sm" variant="ghost" onClick={() => { setAction(null); setError(""); }} disabled={busy}>Batal</Button>
                     </div>
                   </div>
-                ) : <button type="button" className="text-[12px] text-ink3 underline hover:text-red" onClick={() => { setAction("cancel"); setNote(""); setError(""); }}>Batalkan Production Run…</button>}
+                ) : <button type="button" data-mutates className="text-[12px] text-ink3 underline hover:text-red" onClick={() => { setAction("cancel"); setNote(""); setError(""); }}>Batalkan Production Run…</button>}
               </div>
             ) : null}
           </>
@@ -472,7 +472,7 @@ export default function ProductionQc() {
         subtitle="Antrean putusan QC — kartu & Unit 360 sama dengan Status Produksi. Lulus/Gagal/Waive, rework, penolakan Gudang, konflik status."
         actions={(
           <div className="flex gap-2">
-            {tab === "CONFLICT" && <Button variant="ghost" size="sm" onClick={sweep} disabled={sweeping}>{sweeping ? "Memindai…" : "Pindai Konflik"}</Button>}
+            {tab === "CONFLICT" && <Button variant="ghost" size="sm" data-mutates onClick={sweep} disabled={sweeping}>{sweeping ? "Memindai…" : "Pindai Konflik"}</Button>}
             <Button variant="ghost" size="sm" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>
           </div>
         )}
@@ -507,7 +507,7 @@ export default function ProductionQc() {
                       {queue.conflict && <span className="flex items-center gap-1 text-[11.5px] text-red"><AlertTriangle size={12} aria-hidden /> {conflictKindLabel(queue.conflict.kind)}</span>}
                     </div>
                   )}
-                  footer={<Button size="sm" className="min-h-[44px] w-full" onClick={() => setSelectedRunId(queue.runId)}><ClipboardCheck size={14} aria-hidden /> Putusan QC</Button>} />
+                  footer={<Button size="sm" data-mutates className="min-h-[44px] w-full" onClick={() => setSelectedRunId(queue.runId)}><ClipboardCheck size={14} aria-hidden /> Putusan QC</Button>} />
               );
             })}
           </div>

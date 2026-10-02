@@ -56,7 +56,7 @@ export default function TargetPanel({ canWrite, onChanged }) {
           <label className="col-span-2 min-w-0 text-[11px] font-medium text-ink3 md:col-span-1">Alasan (wajib)
             <input type="text" maxLength={300} className="mt-0.5 h-9 w-full rounded-btn border border-line bg-transparent px-2.5 text-[13px] text-ink" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="mis. tambah satu shift Corner" required data-testid="target-reason" />
           </label>
-          <Button type="submit" size="sm" className="col-span-2 min-h-[36px] md:col-span-1" disabled={busy} data-testid="target-submit">{busy ? "Menyimpan…" : "Simpan target"}</Button>
+          <Button type="submit" size="sm" className="col-span-2 min-h-[36px] md:col-span-1" disabled={busy} data-testid="target-submit" data-mutates>{busy ? "Menyimpan…" : "Simpan target"}</Button>
         </form>
       )}
       {error && <div className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red" role="alert" data-testid="target-error">{error}</div>}

@@ -35,7 +35,7 @@ export function ArrivalModal({ target, onClose, onDone }) {
       footer={
         <div className="flex w-full justify-end gap-2">
           <Button variant="neutral" onClick={onClose} disabled={busy}>Batal</Button>
-          <Button onClick={submit} disabled={busy || !locationId}>{busy ? "Menyimpan…" : "Konfirmasi Tiba"}</Button>
+          <Button data-mutates onClick={submit} disabled={busy || !locationId}>{busy ? "Menyimpan…" : "Konfirmasi Tiba"}</Button>
         </div>
       }>
       <div className="space-y-3 px-6 pb-2">
@@ -85,9 +85,9 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone }) {
     <Modal open onOpenChange={(v) => !v && onClose()} title={plan ? `Jadwal ${unitCode}` : `Rencanakan ${unitCode}`} description="Tanggal produksi, meja bongkar, dan PIC. Kapasitas meja dijaga server."
       footer={
         <div className="flex w-full flex-wrap justify-end gap-2">
-          {plan?.stationCode && <Button variant="neutral" disabled={busy} onClick={() => submit(true)}>Keluarkan dari papan</Button>}
+          {plan?.stationCode && <Button variant="neutral" data-mutates disabled={busy} onClick={() => submit(true)}>Keluarkan dari papan</Button>}
           <Button variant="neutral" onClick={onClose} disabled={busy}>Batal</Button>
-          <Button onClick={() => submit(false)} disabled={busy}>{busy ? "Menyimpan…" : "Simpan Jadwal"}</Button>
+          <Button data-mutates onClick={() => submit(false)} disabled={busy}>{busy ? "Menyimpan…" : "Simpan Jadwal"}</Button>
         </div>
       }>
       <div className="grid gap-3 px-6 pb-2 sm:grid-cols-2">

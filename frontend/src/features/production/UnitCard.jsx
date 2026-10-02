@@ -1,4 +1,5 @@
 import React from "react";
+import { isDemoActive } from "./demo/demoGate.js"; // P12A: kartu tidak bisa diseret selama Mode Demo
 import { AlertTriangle, CalendarDays, ChevronsUp, Flame, ImageOff, PackageX, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
@@ -109,7 +110,7 @@ export function UnitCard({
   );
 
   return (
-    <article data-testid="unit-card" data-unit-code={view.unit.unitCode} data-priority={p.key} draggable={draggable} onDragStart={onDragStart}
+    <article data-testid="unit-card" data-unit-code={view.unit.unitCode} data-priority={p.key} draggable={draggable && !isDemoActive()} onDragStart={isDemoActive() ? (e) => e.preventDefault() : onDragStart} title={draggable && isDemoActive() ? "Seret-lepas dinonaktifkan di Mode Demo (hanya-baca)" : undefined}
       className={`relative w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-sm ${p.edge} ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${className}`}>
       <button type="button" onClick={open} className="block w-full text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-label={`Buka Unit 360 ${view.unit.unitCode}`}>
         {variant === "compact" ? (

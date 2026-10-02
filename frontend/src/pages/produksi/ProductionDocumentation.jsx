@@ -101,7 +101,7 @@ function Lightbox({ item, onClose, onCorrect, canCorrect }) {
         <div className="flex flex-wrap items-center gap-2"><SourceBadge source={item.source} /><span className="font-semibold text-ink">{item.categoryLabel}</span></div>
         {item.caption && <p className="m-0 break-words text-ink2 [overflow-wrap:anywhere]">{item.caption}</p>}
         <p className="m-0 text-[12px] text-ink3">{item.actorName ? `${item.actorName} · ` : ""}{fmtTime(item.createdAt)}</p>
-        {canCorrect && item.correctable && <Button size="sm" variant="secondary" onClick={() => onCorrect(item)}><Pencil size={14} aria-hidden /> Koreksi pengiriman ini</Button>}
+        {canCorrect && item.correctable && <Button size="sm" variant="secondary" data-mutates onClick={() => onCorrect(item)}><Pencil size={14} aria-hidden /> Koreksi pengiriman ini</Button>}
       </div>
     </div>
   );
@@ -135,9 +135,9 @@ function CategoryBlock({ cat, canWrite, onAdd, onOpenPhoto, onCorrectBatch }) {
       {cat.applicable && cat.items.length === 0 && <p className="m-0 text-[12px] text-ink3">Belum ada foto.</p>}
       {cat.applicable && canWrite && (
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" className="min-h-[44px]" onClick={() => onAdd(cat)} data-testid="add-photos"><Plus size={14} aria-hidden /> Tambah foto</Button>
+          <Button size="sm" variant="secondary" className="min-h-[44px]" onClick={() => onAdd(cat)} data-testid="add-photos" data-mutates><Plus size={14} aria-hidden /> Tambah foto</Button>
           {batches.map((b) => (
-            <Button key={b.evidenceId} size="sm" variant="ghost" className="min-h-[44px]" onClick={() => onCorrectBatch(cat, b)} data-testid="correct-batch"><Pencil size={13} aria-hidden /> Koreksi {fmtTime(b.createdAt)} ({b.count})</Button>
+            <Button key={b.evidenceId} size="sm" variant="ghost" className="min-h-[44px]" onClick={() => onCorrectBatch(cat, b)} data-testid="correct-batch" data-mutates><Pencil size={13} aria-hidden /> Koreksi {fmtTime(b.createdAt)} ({b.count})</Button>
           ))}
         </div>
       )}

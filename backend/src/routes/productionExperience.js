@@ -309,6 +309,11 @@ productionExperienceRouter.post("/units/:unitId/confirm-arrival", requirePermiss
 productionExperienceRouter.use(productionEvidenceUploadRouter);
 // P10B — Aplikasi Dokumentasi (antrean, matriks, unggah, kirim, koreksi): izin & cohort diperiksa di router.
 productionExperienceRouter.use("/documentation", productionDocumentationRouter);
+// P12A — Mode Demo: server hanya MEMUTUSKAN boleh/tidak (ADMIN/OWNER). Data demo sintetis dimuat frontend setelah 200 dari sini; endpoint ini tidak membaca/menulis database.
+productionExperienceRouter.get("/demo/access", requirePermission(P.PRODUCTION_DEMO_VIEW), (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ allowed: true, readOnly: true, label: "MODE DEMO — bukan data operasional" });
+});
 // P11 — Reporting & KPI Production–Warehouse (baca-saja; izin & cohort diperiksa di router).
 productionExperienceRouter.use("/targets", productionTargetsRouter);
 productionExperienceRouter.use("/reports", productionReportsRouter);

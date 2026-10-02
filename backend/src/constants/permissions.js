@@ -80,6 +80,7 @@ export const PERMISSIONS = {
   PRODUCTION_REPORT_WAREHOUSE: "production_report:warehouse", // laporan Gudang & bahan terkait (WAREHOUSE + pemegang READ)
   PRODUCTION_REPORT_SELF: "production_report:self", // hanya ringkasan pekerjaan sendiri (PIC/dokumentasi/QC)
   PRODUCTION_TARGET_WRITE: "production_target:write", // P11.1 — mengatur target harian tersimpan historis (ADMIN, OWNER)
+  PRODUCTION_DEMO_VIEW: "production_demo:view", // P12A — Mode Demo (data sintetis frontend, baca-saja) hanya ADMIN, OWNER
 
   // --- Armada (pickup & delivery) ---
   JOB_READ: "job:read",
@@ -239,7 +240,7 @@ const ADMIN_PERMS = [
   P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
   P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
   P.PRODUCTION_ASSIGNMENT_WRITE,
-  P.PRODUCTION_REPORT_READ, P.PRODUCTION_REPORT_WAREHOUSE, P.PRODUCTION_TARGET_WRITE,
+  P.PRODUCTION_REPORT_READ, P.PRODUCTION_REPORT_WAREHOUSE, P.PRODUCTION_TARGET_WRITE, P.PRODUCTION_DEMO_VIEW,
   // D-116 — ADMIN penuh lintas divisi, konsisten dengan ORDER_WRITE/JOB_WRITE
   // yang sudah dipegang ADMIN sejak awal.
   P.COMPLAINT_READ, P.COMPLAINT_WRITE,

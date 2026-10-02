@@ -146,8 +146,8 @@ export function ExportButtons({ report, extra = {}, period, filters, disabled, l
   return (
     <div className="flex flex-wrap items-center gap-2" data-testid="export-buttons">
       <span className="text-[12px] text-ink3">{label}:</span>
-      <Button size="sm" variant="secondary" disabled={disabled || !!busy} onClick={() => go("xlsx")} className="min-h-[36px]"><FileSpreadsheet size={14} aria-hidden /> {busy === "xlsx" ? "Menyiapkan…" : "Excel"}</Button>
-      <Button size="sm" variant="secondary" disabled={disabled || !!busy} onClick={() => go("pdf")} className="min-h-[36px]"><FileText size={14} aria-hidden /> {busy === "pdf" ? "Menyiapkan…" : "PDF"}</Button>
+      <Button size="sm" variant="secondary" data-mutates disabled={disabled || !!busy} onClick={() => go("xlsx")} className="min-h-[36px]"><FileSpreadsheet size={14} aria-hidden /> {busy === "xlsx" ? "Menyiapkan…" : "Excel"}</Button>
+      <Button size="sm" variant="secondary" data-mutates disabled={disabled || !!busy} onClick={() => go("pdf")} className="min-h-[36px]"><FileText size={14} aria-hidden /> {busy === "pdf" ? "Menyiapkan…" : "PDF"}</Button>
       {err && <span className="text-[12px] text-red" role="alert">{err}</span>}
     </div>
   );

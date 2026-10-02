@@ -83,7 +83,7 @@ test("menu & route: Aplikasi Dokumentasi di 'MODE KERJA & PERANGKAT' sejajar Apl
   const block = section.slice(0, section.indexOf("PENGATURAN & ADMINISTRASI"));
   for (const label of ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]) assert.ok(block.includes(`label: "${label}"`), label);
   assert.match(block, /to: "\/produksi\/dokumentasi", +label: "Aplikasi Dokumentasi"/);
-  assert.match(REGISTRY, /path: "\/produksi\/dokumentasi", render: \(\) => <ProductionDocumentation \/>/);
+  assert.match(REGISTRY, /path: "\/produksi\/dokumentasi", render: \(\) => <DemoPage><ProductionDocumentation \/><\/DemoPage>/); // P12A: dibungkus Mode Demo (admin-only)
   const standalone = REGISTRY.slice(REGISTRY.indexOf("export const STANDALONE_PAGES"), REGISTRY.indexOf("export function standalonePageFor"));
   assert.ok(standalone.includes("/produksi/dokumentasi"), "mandiri (PWA), bukan halaman sidebar");
   assert.match(PENGGUNA, /PRODUCTION_DOCUMENTER: "Petugas Dokumentasi"/);
