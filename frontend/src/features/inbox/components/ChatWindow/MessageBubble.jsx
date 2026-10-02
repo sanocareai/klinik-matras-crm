@@ -2,7 +2,7 @@ import { thumbUrl } from "../../../../lib/mediaThumb.js";
 import React, { memo, useEffect, useRef, useState } from "react";
 import {
   Reply, Forward, Pencil, Trash2, CheckSquare, FileText, Image as ImageIcon, Video, Mic, Smile,
-  Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3, Ban, HelpCircle,
+  Play, Pause, Check, CheckCheck, Clock, Download, Loader2, MapPin, User, BarChart3, Ban, HelpCircle, BadgeCheck,
 } from "lucide-react";
 import { formatWaktu } from "../../../../utils/format.js";
 import { parseWaFormatting, extractMapsLocation } from "../../../../utils/waFormat.jsx";
@@ -222,7 +222,7 @@ const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 menit — sama dengan backend (conv
 const DELETE_EVERYONE_WINDOW_MS = (2 * 24 + 12) * 60 * 60 * 1000; // 2 hari 12 jam — SAMA dengan backend, cuma gating tampilan
 
 function MessageBubbleBase({
-  message: m, conversationId, isGroup, isFirstInGroup, isLastInGroup, mentionMap, onReply, onForward, onEdit, onJumpToReply, highlighted, onRetry, onOpenMedia,
+  message: m, conversationId, isGroup, isFirstInGroup, isLastInGroup, mentionMap, onReply, onForward, onEdit, onJumpToReply, highlighted, onRetry, onOpenMedia, onCatatPembayaran,
   onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selected, onToggleSelect,
 }) {
   // Revisi 28 Jul 2026 — GANTI POLA INTERAKSI: dulu aksi pesan (Balas/
@@ -283,6 +283,7 @@ function MessageBubbleBase({
   const canDeleteEveryone = isOut && !isRevoked && !isSending && !isFailed && !!onDeleteEveryone
     && (Date.now() - new Date(m.createdAt).getTime()) < DELETE_EVERYONE_WINDOW_MS;
   const canDeleteLocal = !isSending && !!onDeleteLocal;
+  const canCatatPembayaran = !!onCatatPembayaran && !isGroup && !isOut && !!m.mediaUrl && (m.mediaType === "image" || m.mediaType === "document");
 
   function handleDeleteLocalClick(e) {
     e.stopPropagation();
@@ -365,6 +366,8 @@ function MessageBubbleBase({
   const actions = [
     onReply       && { key: "reply",   label: "Balas",             Icon: Reply,      onClick: () => onReply(m) },
     onForward     && { key: "forward", label: "Teruskan",          Icon: Forward,    onClick: () => onForward(m) },
+    // Foto/PDF dari PELANGGAN (bukti transfer) -> jalan pintas ke klaim DP/Lunas. Hanya chat pribadi & bila gerbang Klaim Lunas aktif (diputuskan ChatWindow).
+    canCatatPembayaran && { key: "catat-bayar", label: "Catat Pembayaran", Icon: BadgeCheck, onClick: () => onCatatPembayaran(m) },
     canEdit       && { key: "edit",    label: "Edit",              Icon: Pencil,     onClick: () => onEdit(m) },
     onEnterSelection && { key: "select", label: "Pilih",           Icon: CheckSquare, onClick: () => onEnterSelection(m) },
     canDeleteLocal && { key: "del-local", label: "Hapus untuk Saya", Icon: Trash2, onClick: null, raw: handleDeleteLocalClick },

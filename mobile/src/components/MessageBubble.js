@@ -15,7 +15,7 @@ import Animated, {
 } from "react-native-reanimated";
 import {
   Check, CheckCheck, CheckSquare, Clock, FileText, Play, Forward, Reply, Copy, MapPin, User, BarChart3, Ban, Pencil, Trash2,
-  Image as ImageIcon, Video as VideoIcon, Mic, Smile, Download, Loader2,
+  Image as ImageIcon, Video as VideoIcon, Mic, Smile, Download, Loader2, BadgeCheck,
 } from "lucide-react-native";
 import { mediaUrl, api } from "../api";
 import { useTokens } from "../constants/theme";
@@ -299,7 +299,7 @@ function AlbumGrid({ items, onOpenMedia, styles }) {
 }
 
 function MessageBubbleBase({
-  message: m, albumMessages, conversationId, isGroup, mentionMap, onReply, onForward, onEdit, onJumpToReply, onOpenMedia, onRetry, highlighted,
+  message: m, albumMessages, conversationId, isGroup, mentionMap, onReply, onForward, onEdit, onJumpToReply, onOpenMedia, onRetry, highlighted, onCatatPembayaran,
   onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selected, onToggleSelect,
 }) {
   const tokens = useTokens();
@@ -382,6 +382,13 @@ function MessageBubbleBase({
     } catch {
       Alert.alert("Gagal meneruskan", "Terjadi kesalahan saat menyiapkan pesan diteruskan");
     }
+  }
+
+  // Foto/PDF dari PELANGGAN (bukti transfer) -> jalan pintas ke klaim DP/Lunas. ChatScreen hanya memberi callback ini bila gerbang Klaim Lunas aktif.
+  const canCatatPembayaran = !!onCatatPembayaran && !isGroup && !isOut && !!m.mediaUrl && (m.mediaType === "image" || m.mediaType === "document");
+  function handleCatatPembayaran() {
+    setShowActions(false);
+    try { onCatatPembayaran?.(m); } catch { Alert.alert("Gagal", "Tidak bisa membuka pencatatan pembayaran"); }
   }
 
   function handleEditPress() {
@@ -745,6 +752,12 @@ function MessageBubbleBase({
               <TouchableOpacity style={styles.actionItemRow} onPress={handleForward}>
                 <Forward size={16} color={tokens.color.textPrimary} strokeWidth={2} style={styles.actionIcon} />
                 <Text style={styles.actionText}>Teruskan</Text>
+              </TouchableOpacity>
+            )}
+            {canCatatPembayaran && (
+              <TouchableOpacity style={styles.actionItemRow} onPress={handleCatatPembayaran}>
+                <BadgeCheck size={16} color={tokens.color.textPrimary} strokeWidth={2} style={styles.actionIcon} />
+                <Text style={styles.actionText}>Catat Pembayaran</Text>
               </TouchableOpacity>
             )}
             {canEdit && (

@@ -216,7 +216,11 @@ function uploadWithProgress(conversationId, formData, onProgress) {
         try { resolve(JSON.parse(xhr.responseText)); }
         catch { reject(new Error("Respons server tidak valid")); }
       } else {
+        // Respons nginx (413/502/504) berupa HTML, bukan JSON — beri pesan
+        // yang bisa dimengerti, bukan "Gagal upload" polos.
         let msg = "Gagal upload";
+        if (xhr.status === 413) msg = `File terlalu besar (maksimal ${MAX_FILE_MB} MB)`;
+        else if (xhr.status === 502 || xhr.status === 504) msg = "Server sedang sibuk atau WhatsApp lambat merespons — cek chat sebentar, jangan kirim ulang jika pesan sudah muncul";
         try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
         reject(new Error(msg));
       }

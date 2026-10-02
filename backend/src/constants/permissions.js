@@ -75,6 +75,11 @@ export const PERMISSIONS = {
   // dokumentasi tidak menyelesaikan tahap. TIDAK diberikan ke PRODUCTION_WORKER (semua worker); hanya PRODUCTION_LEAD dan
   // peran khusus PRODUCTION_DOCUMENTER. ADMIN/OWNER tidak (pola sama UNIT_STAGE_WRITE: jejak audit jujur).
   PRODUCTION_DOCUMENTATION_WRITE: "production_documentation:write",
+  // P11 — Reporting & KPI Production–Warehouse (BACA-SAJA). Tiga cakupan terpisah; Finance/Sales/Driver TIDAK otomatis mendapat satu pun.
+  PRODUCTION_REPORT_READ: "production_report:read", // seluruh laporan Production (ADMIN, OWNER, PRODUCTION_LEAD)
+  PRODUCTION_REPORT_WAREHOUSE: "production_report:warehouse", // laporan Gudang & bahan terkait (WAREHOUSE + pemegang READ)
+  PRODUCTION_REPORT_SELF: "production_report:self", // hanya ringkasan pekerjaan sendiri (PIC/dokumentasi/QC)
+  PRODUCTION_TARGET_WRITE: "production_target:write", // P11.1 — mengatur target harian tersimpan historis (ADMIN, OWNER)
 
   // --- Armada (pickup & delivery) ---
   JOB_READ: "job:read",
@@ -234,6 +239,7 @@ const ADMIN_PERMS = [
   P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
   P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
   P.PRODUCTION_ASSIGNMENT_WRITE,
+  P.PRODUCTION_REPORT_READ, P.PRODUCTION_REPORT_WAREHOUSE, P.PRODUCTION_TARGET_WRITE,
   // D-116 — ADMIN penuh lintas divisi, konsisten dengan ORDER_WRITE/JOB_WRITE
   // yang sudah dipegang ADMIN sejak awal.
   P.COMPLAINT_READ, P.COMPLAINT_WRITE,
@@ -304,7 +310,7 @@ export const ROLE_PERMISSIONS = {
   // Lantai produksi: tahu kasur siapa dan harus diapakan, TIDAK tahu nomor
   // telepon customer maupun harga.
   PRODUCTION_WORKER: [
-    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_MATERIAL_WRITE,
+    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_MATERIAL_WRITE, P.PRODUCTION_REPORT_SELF,
     P.CUSTOMER_READ, P.ORDER_READ,
     // D-116 — baca saja: tahu unit yang dikerjakan sedang menangani komplain
     // apa, TIDAK memutuskan status/root cause kasus (itu ranah PRODUCTION_LEAD).
@@ -332,6 +338,7 @@ export const ROLE_PERMISSIONS = {
     P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
     P.PRODUCTION_ASSIGNMENT_WRITE,
     P.PRODUCTION_DOCUMENTATION_WRITE,
+    P.PRODUCTION_REPORT_READ, P.PRODUCTION_REPORT_WAREHOUSE,
     // D-116 — memutuskan root cause/rework & menandai kasus DALAM_PENANGANAN.
     P.COMPLAINT_READ, P.COMPLAINT_WRITE,
     // D-180 — mengajukan biaya produksi non-bahan (upah harian tukang,
@@ -341,7 +348,7 @@ export const ROLE_PERMISSIONS = {
   ],
 
   QC_LEAD: [
-    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.QC_WRITE, P.SCOPE_REVISION_PROPOSE,
+    P.UNIT_READ, P.UNIT_STAGE_WRITE, P.QC_WRITE, P.SCOPE_REVISION_PROPOSE, P.PRODUCTION_REPORT_SELF,
     P.CUSTOMER_READ, P.ORDER_READ,
     P.DASHBOARD_READ,
     // D-116 — menautkan hasil QC ulang ke kasus (POST /complaints/:id/link-qc
@@ -350,6 +357,7 @@ export const ROLE_PERMISSIONS = {
   ],
 
   WAREHOUSE: [
+    P.PRODUCTION_REPORT_WAREHOUSE,
     P.INVENTORY_READ, P.INVENTORY_WRITE, P.UNIT_MATERIAL_WRITE,
     P.UNIT_READ,
     // D-116 — mengelola Material Requirement (POST /complaints/:id/material-
@@ -461,7 +469,7 @@ export const ROLE_PERMISSIONS = {
   // PRODUCTION_DOCUMENTER (P10B) — petugas dokumentasi: lihat unit produksi + unggah dokumentasi foto. TANPA harga,
   // pembayaran, jurnal, nomor telepon, UNIT_STAGE_WRITE atau QC_WRITE.
   PRODUCTION_DOCUMENTER: [
-    P.UNIT_READ, P.PRODUCTION_DOCUMENTATION_WRITE,
+    P.UNIT_READ, P.PRODUCTION_DOCUMENTATION_WRITE, P.PRODUCTION_REPORT_SELF,
   ],
 
   // APPROVER — penyetuju: membaca dan MEMUTUSKAN (setuju/tolak) pengajuan, tidak

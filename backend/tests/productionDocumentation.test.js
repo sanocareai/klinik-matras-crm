@@ -111,7 +111,8 @@ test("flag antrean & filter: Lengkap hanya bila semua kategori berlaku terpenuhi
 test("izin: PRODUCTION_DOCUMENTATION_WRITE hanya PRODUCTION_LEAD dan PRODUCTION_DOCUMENTER; TIDAK ke worker, ADMIN/OWNER, QC, Gudang, Finance, Driver; peran khusus tanpa harga/finance/tahap/QC", () => {
   const holders = Object.entries(ROLE_PERMISSIONS).filter(([, perms]) => perms.includes(P.PRODUCTION_DOCUMENTATION_WRITE)).map(([role]) => role).sort();
   assert.deepEqual(holders, ["PRODUCTION_DOCUMENTER", "PRODUCTION_LEAD"]);
-  assert.deepEqual([...ROLE_PERMISSIONS.PRODUCTION_DOCUMENTER].sort(), [P.PRODUCTION_DOCUMENTATION_WRITE, P.UNIT_READ].sort());
+  // + P11: ringkasan kinerja milik sendiri (hanya angka pekerjaannya sendiri; bukan laporan Production).
+  assert.deepEqual([...ROLE_PERMISSIONS.PRODUCTION_DOCUMENTER].sort(), [P.PRODUCTION_DOCUMENTATION_WRITE, P.PRODUCTION_REPORT_SELF, P.UNIT_READ].sort());
   for (const forbidden of [P.UNIT_STAGE_WRITE, P.QC_WRITE, P.ORDER_PRICE_READ, P.PAYMENT_READ, P.FINANCE_READ, P.CUSTOMER_PII_READ, P.INVENTORY_WRITE]) assert.equal(ROLE_PERMISSIONS.PRODUCTION_DOCUMENTER.includes(forbidden), false, forbidden);
   assert.equal(ROLE_PERMISSIONS.PRODUCTION_WORKER.includes(P.PRODUCTION_DOCUMENTATION_WRITE), false);
   assert.ok(PORTALS.find((p) => p.key === "bengkel").roles.includes("PRODUCTION_DOCUMENTER"), "peran khusus bisa membuka workspace Production");

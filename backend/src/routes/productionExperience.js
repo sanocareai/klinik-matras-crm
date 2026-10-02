@@ -17,6 +17,8 @@ import { getUnitOverview } from "../services/productionUnitOverviewService.js";
 import { getDiagnosisState, mapManualMaterial, saveDiagnosisDraft, submitDiagnosis } from "../services/productionDiagnosisCommandService.js";
 import { productionEvidenceUploadRouter } from "./productionEvidenceMedia.js";
 import { productionDocumentationRouter } from "./productionDocumentation.js";
+import { productionReportsRouter } from "./productionReports.js";
+import { productionTargetsRouter } from "./productionTargets.js";
 import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { BOARD_DEFAULTS } from "../lib/domain/productionBoard.js";
@@ -307,5 +309,8 @@ productionExperienceRouter.post("/units/:unitId/confirm-arrival", requirePermiss
 productionExperienceRouter.use(productionEvidenceUploadRouter);
 // P10B — Aplikasi Dokumentasi (antrean, matriks, unggah, kirim, koreksi): izin & cohort diperiksa di router.
 productionExperienceRouter.use("/documentation", productionDocumentationRouter);
+// P11 — Reporting & KPI Production–Warehouse (baca-saja; izin & cohort diperiksa di router).
+productionExperienceRouter.use("/targets", productionTargetsRouter);
+productionExperienceRouter.use("/reports", productionReportsRouter);
 // P9B.1 — unggah foto identitas unit manual (multipart) — izin & cohort diperiksa di router media.
 productionExperienceRouter.use(productionUnitPhotoUploadRouter);

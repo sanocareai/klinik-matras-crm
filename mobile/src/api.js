@@ -72,9 +72,12 @@ async function tanganiSesiDitolak(tokenDipakai) {
   if (onUnauthorized) onUnauthorized();
 }
 
-async function request(path, options = {}) {
+async function request(path, optionsMentah = {}) {
+  // timeoutMs: batas tunggu khusus permintaan ini (default TIMEOUT_MS). Bukan
+  // opsi fetch, jadi dipisah dulu supaya tidak ikut terkirim.
+  const { timeoutMs, ...options } = optionsMentah;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs || TIMEOUT_MS);
   const tokenDipakai = token; // token yang benar-benar dikirim permintaan INI (lihat penanganan 401 di bawah)
 
   try {
@@ -274,10 +277,15 @@ export const api = {
   getHandoverHistory: (id) =>
     request(`/conversations/${id}/handover-history`),
   // Teruskan pesan ke percakapan lain (dipakai modal Forward di ChatScreen)
+  // timeoutMs 90 detik: meneruskan video/dokumen besar membuat server menunggu
+  // WAHA mengunggah ke WhatsApp — lebih lama dari 30 detik default. Kalau klien
+  // menyerah duluan padahal server masih mengirim, pesan SUDAH terkirim tapi
+  // terlihat gagal, lalu sales mengulang dan penerima menerima dobel.
   forwardMessage: (sourceConvId, messageId, targetConversationId) =>
     request(`/conversations/${sourceConvId}/forward`, {
       method: "POST",
       body: JSON.stringify({ messageId, targetConversationId }),
+      timeoutMs: 90000,
     }),
   // Edit pesan OUTBOUND (teks saja, 15 menit sejak terkirim — sama seperti
   // batas edit WhatsApp asli, ditegakkan di backend).
@@ -456,6 +464,10 @@ export const api = {
   ajukanKlaimLunas: (id, idempotencyKey) =>
     request(`/klaim-lunas/${id}/ajukan`, { method: "POST", headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}, body: JSON.stringify({}) }),
   tarikKlaimLunas: (id) => request(`/klaim-lunas/${id}/tarik`, { method: "POST", body: JSON.stringify({}) }),
+  // "Catat Pembayaran" dari foto di chat: pemilih order + jadikan foto chat sebagai bukti pada draf klaim (backend/src/services/finance/klaimDariChat.js).
+  getKandidatOrderDariPesan: (messageId) => request(`/klaim-lunas/dari-pesan/${encodeURIComponent(messageId)}/order`),
+  lampirkanBuktiDariPesan: (orderId, messageId, idempotencyKey) =>
+    request(`/klaim-lunas/order/${orderId}/dari-pesan`, { method: "POST", headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}, body: JSON.stringify({ messageId }) }),
   // Foto bukti bayar — multipart field "photo", balikan { url } dipakai sbg proofPhotoUrl.
   uploadPaymentProof: (orderId, file) => uploadFile(`/orders/${orderId}/payments/proof`, file, {}, "photo"),
   // Invoice & garansi & komplain (19 Sep 2026) — endpoint SAMA dengan web.

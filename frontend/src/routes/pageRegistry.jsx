@@ -101,6 +101,8 @@ const WarehouseReports = lazy(() => import("../pages/warehouse/WarehouseReports.
 // P8 Production Experience V2 (inert bila reader V2 OFF). Aplikasi PIC Table/Corner & Andon TV adalah halaman MANDIRI (App.jsx STANDALONE_PAGES).
 const ProductionPlannerV2 = lazy(() => import("../pages/bengkel/ProductionPlannerV2.jsx"));
 const ProductionReportV2 = lazy(() => import("../pages/bengkel/ProductionReportV2.jsx"));
+// P11 — KPI Produksi & Gudang (baca-saja; reader V2 OFF -> pesan kosong, bukan error).
+const ProductionKpi = lazy(() => import("../pages/bengkel/ProductionKpi.jsx"));
 // P9B.1 — workspace penjadwalan BARU ("Rencana Produksi"), terpisah dari halaman status pipeline di atas
 // (ProductionPlannerV2, sekarang berjudul tampilan "Status Produksi" tapi URL-nya tetap production-v2).
 const ProductionRencanaWorkspace = lazy(() => import("../pages/bengkel/ProductionRencanaWorkspace.jsx"));
@@ -120,6 +122,7 @@ export const STANDALONE_PAGES = [
   { path: "/produksi/meja", render: () => <WorkerLane lane="TABLE" /> },
   { path: "/produksi/corner", render: () => <WorkerLane lane="CORNER" /> },
   { path: "/produksi/dokumentasi", render: () => <ProductionDocumentation /> },
+  { path: "/produksi/ringkasan-saya", render: () => <ProductionKpi /> }, // P11 — ringkasan pekerjaan sendiri (PIC/dokumentasi/QC)
   { path: "/bengkel/andon", render: () => <ProductionAndon /> },
 ];
 export function standalonePageFor(pathname) {
@@ -189,6 +192,7 @@ export const PAGES = [
   { path: "/bengkel/scope-revisions", render: () => <ProductionScopeRevisions /> },
   { path: "/bengkel/materials", render: () => <ProductionMaterialUsage /> },
   { path: "/bengkel/reports", render: () => <ProductionLaporan /> },
+  { path: "/bengkel/kpi", render: () => <ProductionKpi /> },
   { path: "/bengkel/orders", render: () => <ProductionOrders /> },
   { path: "/bengkel/work-centers", render: () => <ProductionWorkCenters /> },
   { path: "/bengkel/operators", render: () => <ProductionOperators /> },
@@ -271,6 +275,7 @@ export const PAGES = [
   { path: "/warehouse/replenishment", render: () => <WarehouseReplenishment /> },
   { path: "/warehouse/adjustments", render: () => <WarehouseAdjustments /> },
   { path: "/warehouse/reports", render: () => <WarehouseReports /> },
+  { path: "/warehouse/kpi", render: () => <ProductionKpi defaultTab="gudang" /> },
   { path: "/dashboard",   render: (ctx) => <Dashboard user={ctx.user} /> },
   { path: "/inbox",       render: (ctx) => <Inbox user={ctx.user} /> },
   { path: "/customers",   render: () => <Customers /> },

@@ -94,7 +94,7 @@ function buildItems(messages, isGroup) {
 // perbaikan di fase berikutnya kalau perlu betul-betul sticky.
 const MessageList = forwardRef(function MessageList(
   {
-    conversation, onReply, onForward, onEdit, onRetry, loading, mentionMap,
+    conversation, onReply, onForward, onEdit, onRetry, loading, mentionMap, onCatatPembayaran,
     onDeleteLocal, onDeleteEveryone, onEnterSelection, selectionMode, selectedIds, onToggleSelect,
   },
   ref,
@@ -113,10 +113,11 @@ const MessageList = forwardRef(function MessageList(
   // langsung ke MessageBubble, React.memo-nya percuma: SETIAP pesan baru/ketikan me-render
   // semua bubble yang tampil. Pembungkus stabil di bawah membaca versi terbaru lewat ref.
   const cbRef = useRef({});
-  cbRef.current = { onReply, onForward, onEdit, onRetry, onDeleteLocal, onDeleteEveryone, onEnterSelection, onToggleSelect, scrollToMessage };
+  cbRef.current = { onReply, onForward, onEdit, onRetry, onCatatPembayaran, onDeleteLocal, onDeleteEveryone, onEnterSelection, onToggleSelect, scrollToMessage };
   const stable = useMemo(() => ({
     onReply: (...a) => cbRef.current.onReply?.(...a),
     onForward: (...a) => cbRef.current.onForward?.(...a),
+    onCatatPembayaran: (...a) => cbRef.current.onCatatPembayaran?.(...a),
     onEdit: (...a) => cbRef.current.onEdit?.(...a),
     onRetry: (...a) => cbRef.current.onRetry?.(...a),
     onDeleteLocal: (...a) => cbRef.current.onDeleteLocal?.(...a),
@@ -285,7 +286,7 @@ const MessageList = forwardRef(function MessageList(
 
   // itemContent STABIL: Virtuoso me-render ulang semua baris tampil kalau identitas fungsi ini
   // berubah. Deps hanya nilai yang memang mengubah tampilan bubble.
-  const hasEdit = !!onEdit, hasDelLocal = !!onDeleteLocal, hasDelAll = !!onDeleteEveryone;
+  const hasEdit = !!onEdit, hasDelLocal = !!onDeleteLocal, hasDelAll = !!onDeleteEveryone, hasCatatBayar = !!onCatatPembayaran;
   const renderItem = useCallback((_, item) => {
     if (item.type === "divider") {
       return (
@@ -305,6 +306,7 @@ const MessageList = forwardRef(function MessageList(
         mentionMap={mentionMap}
         onReply={stable.onReply}
         onForward={stable.onForward}
+        onCatatPembayaran={hasCatatBayar ? stable.onCatatPembayaran : undefined}
         onEdit={hasEdit ? stable.onEdit : undefined}
         onJumpToReply={stable.onJumpToReply}
         highlighted={highlightedId === m.id}
@@ -318,7 +320,7 @@ const MessageList = forwardRef(function MessageList(
         onToggleSelect={stable.onToggleSelect}
       />
     );
-  }, [conversationId, isGroup, mentionMap, highlightedId, selectionMode, selectedIds, stable, hasEdit, hasDelLocal, hasDelAll]);
+  }, [conversationId, isGroup, mentionMap, highlightedId, selectionMode, selectedIds, stable, hasEdit, hasDelLocal, hasDelAll, hasCatatBayar]);
 
   if (!conversationId) return null;
 
