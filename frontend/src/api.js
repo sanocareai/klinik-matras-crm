@@ -1122,6 +1122,9 @@ export const api = {
   hapusBuktiKlaimLunas: (id, evidenceId) => request(`/klaim-lunas/${id}/bukti/${evidenceId}`, { method: "DELETE" }),
   ajukanKlaimLunas: (id, idempotencyKey = mutationKey("klaim-ajukan")) => request(`/klaim-lunas/${id}/ajukan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
   tarikKlaimLunas: (id) => request(`/klaim-lunas/${id}/tarik`, { method: "POST", body: JSON.stringify({}) }),
+  // "Catat Pembayaran" dari foto di chat: pemilih order + jadikan foto chat sebagai bukti pada draf klaim (backend/src/services/finance/klaimDariChat.js).
+  getKandidatOrderDariPesan: (messageId) => request(`/klaim-lunas/dari-pesan/${encodeURIComponent(messageId)}/order`),
+  lampirkanBuktiDariPesan: (orderId, messageId) => request(`/klaim-lunas/order/${orderId}/dari-pesan`, { method: "POST", body: JSON.stringify({ messageId }) }),
   // Koreksi salah input (2 Sep 2026) — admin-only di backend, lihat
   // routes/orders.js. Entri TIDAK dihapus, cuma ditandai batal.
   cancelOrderPayment: (orderId, paymentId, data) =>

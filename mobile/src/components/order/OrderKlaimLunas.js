@@ -102,7 +102,7 @@ export default function OrderKlaimLunas({ order, onChanged, autoOpen = false }) 
   );
 }
 
-function KlaimLunasSheet({ order, onClose, onChanged }) {
+export function KlaimLunasSheet({ order, onClose, onChanged }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const online = useOnline();

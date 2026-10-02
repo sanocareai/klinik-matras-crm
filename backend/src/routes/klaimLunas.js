@@ -3,6 +3,8 @@
 //   GET    /api/klaim-lunas/order/:orderId        klaim order ini + apakah bisa diklaim (Sales: hanya miliknya; Admin: semua)
 //   POST   /api/klaim-lunas/order/:orderId        buat draft (boleh tanpa bukti/catatan; idempoten per pemilik)
 //   PATCH  /api/klaim-lunas/:id                   ubah isi (draft / diminta bukti / ditolak)
+//   GET    /api/klaim-lunas/dari-pesan/:messageId/order   order pelanggan di chat itu yang bisa dicatat pembayarannya (pemilih order di Inbox)
+//   POST   /api/klaim-lunas/order/:orderId/dari-pesan     jadikan FOTO/PDF chat sebagai bukti pada draf klaim order (body: { messageId }); lihat services/finance/klaimDariChat.js
 //   POST   /api/klaim-lunas/:id/bukti             unggah SATU Bukti Pembayaran (multipart field "berkas") — JPG/PNG/WEBP/PDF, maks 8 MB
 //   DELETE /api/klaim-lunas/:id/bukti/:evidenceId hapus bukti dari klaim yang belum diajukan
 //   POST   /api/klaim-lunas/:id/ajukan            ajukan — server menolak yang tidak lengkap (422), apa pun yang dikirim UI
@@ -23,6 +25,7 @@ import {
   klaimUntukOrder, buatDraft, ubahKlaim, lampirkanBukti, hapusBukti, ajukanKlaim, tarikKlaim, klaimUntukResi, buatDraftResi, klaimGateAktif, KlaimError,
 } from "../services/finance/klaimLunas.js";
 import { ResiBayarError } from "../services/resiPembayaran.js";
+import { kandidatOrderDariPesan, lampirkanDariPesan } from "../services/finance/klaimDariChat.js";
 import { simpanBerkas, hapusBerkasDisk, BerkasError, MAKS_UKURAN_BYTE, POLA_NAMA, pathBerkas, tandaTanganSah } from "../services/finance/klaimLunasBerkas.js";
 
 export const klaimLunasRouter = express.Router();
@@ -74,6 +77,24 @@ klaimLunasRouter.post("/order/:orderId", async (req, res) => {
 klaimLunasRouter.get("/resi/:groupId", async (req, res) => {
   try {
     res.json(await klaimUntukResi(prisma, { groupId: req.params.groupId, user: req.user, lihatSemua: lihatSemua(req.user) }));
+  } catch (e) { kirimGalat(e, res); }
+});
+
+// ── Dari chat: foto bukti transfer di Inbox → draf klaim ────────────────────────────────────────────────────────────
+// Membaca pesan chat → wajib izin baca percakapan SELAIN izin tulis order (router sudah mewajibkan ORDER_WRITE).
+const wajibBacaChat = (req, res, next) => (hasPermission(req.user, P.CONVERSATION_READ)
+  ? next() : res.status(403).json({ error: "Anda tidak punya akses ke percakapan ini", code: "TIDAK_ADA_AKSES_CHAT" }));
+
+klaimLunasRouter.get("/dari-pesan/:messageId/order", wajibBacaChat, async (req, res) => {
+  try {
+    res.json(await kandidatOrderDariPesan(prisma, { messageId: req.params.messageId, user: req.user }));
+  } catch (e) { kirimGalat(e, res); }
+});
+
+klaimLunasRouter.post("/order/:orderId/dari-pesan", wajibBacaChat, limiterUnggah, async (req, res) => {
+  try {
+    const hasil = await lampirkanDariPesan(prisma, { orderId: req.params.orderId, messageId: req.body?.messageId, user: req.user });
+    res.status(hasil.duplikat ? 200 : 201).json(hasil);
   } catch (e) { kirimGalat(e, res); }
 });
 

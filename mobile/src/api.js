@@ -464,6 +464,10 @@ export const api = {
   ajukanKlaimLunas: (id, idempotencyKey) =>
     request(`/klaim-lunas/${id}/ajukan`, { method: "POST", headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}, body: JSON.stringify({}) }),
   tarikKlaimLunas: (id) => request(`/klaim-lunas/${id}/tarik`, { method: "POST", body: JSON.stringify({}) }),
+  // "Catat Pembayaran" dari foto di chat: pemilih order + jadikan foto chat sebagai bukti pada draf klaim (backend/src/services/finance/klaimDariChat.js).
+  getKandidatOrderDariPesan: (messageId) => request(`/klaim-lunas/dari-pesan/${encodeURIComponent(messageId)}/order`),
+  lampirkanBuktiDariPesan: (orderId, messageId, idempotencyKey) =>
+    request(`/klaim-lunas/order/${orderId}/dari-pesan`, { method: "POST", headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}, body: JSON.stringify({ messageId }) }),
   // Foto bukti bayar — multipart field "photo", balikan { url } dipakai sbg proofPhotoUrl.
   uploadPaymentProof: (orderId, file) => uploadFile(`/orders/${orderId}/payments/proof`, file, {}, "photo"),
   // Invoice & garansi & komplain (19 Sep 2026) — endpoint SAMA dengan web.

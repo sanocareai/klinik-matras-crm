@@ -18,6 +18,8 @@ import MessageList from "./MessageList.jsx";
 import InChatSearch from "./InChatSearch.jsx";
 import Composer from "./Composer.jsx";
 import HandoverHistoryBanner from "./HandoverHistoryBanner.jsx";
+import CatatPembayaranDariChat from "./CatatPembayaranDariChat.jsx";
+import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 import { useMessages } from "../../hooks/useMessages.js";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore, useMessagesForConv } from "../../stores/messageStore.js";
@@ -182,6 +184,8 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const [takingOver, setTakingOver]     = useState(false);
   const [resolving, setResolving]       = useState(false);
   const [forwardMsg, setForwardMsg]     = useState(null);
+  const [bayarMsg, setBayarMsg]         = useState(null); // foto bukti transfer yang sedang dicatat sebagai pembayaran (klaim DP/Lunas)
+  const gateKlaimAktif = useKlaimLunasAktif(); // menu "Catat Pembayaran" hanya bila gerbang Klaim Lunas aktif
   const [forwardBulk, setForwardBulk]   = useState(null); // array pesan — forward BULK dari mode pilih (beda dari forwardMsg tunggal)
   const [dragOver, setDragOver]         = useState(false);
   const [syncingHistory, setSyncingHistory] = useState(false);
@@ -630,6 +634,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
         mentionMap={mentionMap}
         onReply={(msg) => useComposerStore.getState().setReplyTarget(msg)}
         onForward={(msg) => setForwardMsg(msg)}
+        onCatatPembayaran={gateKlaimAktif === true ? (msg) => setBayarMsg(msg) : undefined}
         onEdit={(msg) => useComposerStore.getState().startEditingMessage(conversationId, msg)}
         onRetry={handleRetry}
         onDeleteLocal={handleDeleteLocal}
@@ -657,6 +662,13 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
 
       {/* ── Forward Modal ── */}
       {forwardMsg && <ForwardModal messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} />}
+      {bayarMsg && (
+        <CatatPembayaranDariChat
+          message={bayarMsg}
+          customerName={conversation?.customer?.name || conversation?.customer?.phone}
+          onClose={() => setBayarMsg(null)}
+        />
+      )}
       {forwardBulk && (
         <ForwardModal messagesToForward={forwardBulk} onClose={() => { setForwardBulk(null); cancelSelection(); }} />
       )}

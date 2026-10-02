@@ -48,6 +48,8 @@ import VoiceRecorderBar from "../components/VoiceRecorderBar";
 // benar-benar dibuka.
 const MediaViewerModal = lazy(() => import("../components/MediaViewerModal"));
 import ForwardModal from "../components/ForwardModal";
+import CatatPembayaranDariChat from "../components/CatatPembayaranDariChat";
+import { useKlaimLunasAktif } from "../lib/klaimGate";
 import TransferModal from "../components/TransferModal";
 import CustomerSheet from "../components/CustomerSheet";
 import TemplatePickerSheet from "../components/TemplatePickerSheet";
@@ -170,6 +172,8 @@ export default function ChatScreen({ route, navigation }) {
   const [showTransfer, setShowTransfer] = useState(false);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [forwardMsg, setForwardMsg] = useState(null);
+  const [bayarMsg, setBayarMsg] = useState(null); // foto bukti transfer yang sedang dicatat sebagai pembayaran (klaim DP/Lunas)
+  const gateKlaimAktif = useKlaimLunasAktif(); // menu "Catat Pembayaran" hanya bila gerbang Klaim Lunas aktif
   const [forwardBulk, setForwardBulk] = useState(null); // array pesan — forward BULK dari mode pilih (beda dari forwardMsg tunggal)
   const [mediaViewer, setMediaViewer] = useState(null); // { items, index }
   const [isOffline, setIsOffline] = useState(false);
@@ -920,6 +924,7 @@ export default function ChatScreen({ route, navigation }) {
         highlighted={highlightedId === m.id}
         onReply={handleReplyMessage}
         onForward={handleForwardMessage}
+        onCatatPembayaran={gateKlaimAktif === true ? setBayarMsg : undefined}
         onEdit={handleEditMessage}
         onJumpToReply={scrollToMessage}
         onRetry={handleRetry}
@@ -933,7 +938,7 @@ export default function ChatScreen({ route, navigation }) {
       />
     );
   }, [
-    styles, isGroup, mentionMap, highlightedId, handleReplyMessage, handleForwardMessage, handleEditMessage, scrollToMessage,
+    styles, isGroup, mentionMap, highlightedId, handleReplyMessage, handleForwardMessage, handleEditMessage, scrollToMessage, gateKlaimAktif,
     handleRetry, openMediaViewer, handleDeleteLocal, handleDeleteEveryone, handleEnterSelection,
     selectionMode, selectedIds, handleToggleSelect, conversationId,
   ]);
@@ -1312,6 +1317,7 @@ export default function ChatScreen({ route, navigation }) {
       />
 
       <ForwardModal visible={!!forwardMsg} message={forwardMsg} onClose={() => setForwardMsg(null)} />
+      {bayarMsg ? <CatatPembayaranDariChat message={bayarMsg} customerName={routeName} onClose={() => setBayarMsg(null)} /> : null}
       <ForwardModal
         visible={!!forwardBulk}
         messages={forwardBulk}
