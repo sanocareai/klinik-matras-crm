@@ -48,7 +48,7 @@ function ReturnCard({ r, busy, onReceive }) {
     <ActionCard icon={Undo2} tone="orange" title={`Terima retur sisa bahan • ${r.unit.unitCode}`} subtitle={`${r.material.name} (${r.material.code})`}
       meta={`Sisa dari produksi: ${r.qty} ${String(r.material.unit || "").toLowerCase()}`}
       badge={<Badge variant="orange">Menunggu diterima Gudang</Badge>}
-      action={<Button data-testid="receive-return" onClick={() => onReceive(r, { qty: Number(qty), note })} disabled={busy || invalid}>{busy ? "Menyimpan…" : "Terima Retur"}</Button>}>
+      action={<Button data-testid="receive-return" data-mutates onClick={() => onReceive(r, { qty: Number(qty), note })} disabled={busy || invalid}>{busy ? "Menyimpan…" : "Terima Retur"}</Button>}>
       <div className="mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-ink2">
         <label className="flex items-center gap-1">Jumlah diterima
           <input type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} aria-label="Jumlah diterima" className="w-24 rounded-btn border border-line bg-surface px-2 py-1 text-[13px] text-ink" />
@@ -126,7 +126,7 @@ export default function WarehouseProductionQueue() {
                     meta={<span className="flex items-center gap-1"><Clock size={12} aria-hidden /> menunggu {formatMinutes(s.waitingMinutes)}{s.note ? ` — ${s.note}` : ""}</span>}
                     badge={<Badge variant="red"><AlertTriangle size={11} aria-hidden /> Produksi berhenti</Badge>}
                     action={<>
-                      <Button onClick={() => resolve(s)} disabled={busy === s.id}>{busy === s.id ? "Menyimpan…" : "Tandai Sudah Diserahkan"}</Button>
+                      <Button data-mutates onClick={() => resolve(s)} disabled={busy === s.id}>{busy === s.id ? "Menyimpan…" : "Tandai Sudah Diserahkan"}</Button>
                       <p className="text-[11px] text-ink3">Serahkan lewat Pengambilan Bahan bila bahan dari rencana; stok berkurang saat diserahkan.</p>
                     </>}>
                     <ul className="m-0 list-none p-0 mt-1 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">{s.items.map((i) => <li key={i.materialId} className="flex justify-between gap-2"><span>{i.name} <span className="text-ink3">({i.code})</span></span><span>{i.qty ?? "—"} {String(i.uom || "").toLowerCase()}</span></li>)}</ul>
@@ -135,13 +135,13 @@ export default function WarehouseProductionQueue() {
                 {show("inbound") && data.inbound.map((h) => (
                   <ActionCard key={h.handoffId} icon={Truck} title="Terima unit dari pickup" subtitle={`${h.unitCode} • ${h.customerName || "—"}`} meta="Lokasi penerimaan wajib dipilih"
                     badge={<Badge variant="red">Menunggu penerimaan</Badge>}
-                    action={<Button asChild><Link to="/warehouse/unit-custody">Periksa & Terima</Link></Button>} />
+                    action={<Button asChild data-mutates><Link to="/warehouse/unit-custody">Periksa & Terima</Link></Button>} />
                 ))}
                 {show("material") && needs.map((m) => (
                   <ActionCard key={m.planId} icon={Package} tone={m.status === "KEKURANGAN" ? "red" : m.status === "SIAP_DIAMBIL" ? "orange" : m.status === "SUDAH_DISERAHKAN" ? "green" : "accent"}
                     title={`Siapkan bahan • ${m.stationLabel}`} subtitle={`${m.unitCode} • ${m.customerName || "—"}`} meta={`Untuk: Produksi${m.operatorName ? ` (${m.operatorName})` : ""}${m.productionDate ? ` · ${m.productionDate}` : ""}`}
                     badge={<Badge variant={NEED_STATUS[m.status]?.variant}>{NEED_STATUS[m.status]?.label}</Badge>}
-                    action={m.status === "SIAP_DIAMBIL" ? <><Button asChild><Link to="/warehouse/material-pickup">Serahkan Bahan</Link></Button><p className="text-[11px] text-ink3">Stok berkurang saat diserahkan</p></> : null}>
+                    action={m.status === "SIAP_DIAMBIL" ? <><Button asChild data-mutates><Link to="/warehouse/material-pickup">Serahkan Bahan</Link></Button><p className="text-[11px] text-ink3">Stok berkurang saat diserahkan</p></> : null}>
                     <ul className="m-0 list-none p-0 mt-1 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">{m.lines.map((l) => <li key={l.materialId} className="flex justify-between gap-2"><span>{l.name}{l.supplemental ? " (rework)" : ""}</span><span>{l.qty} {String(l.uom || "").toLowerCase()}</span></li>)}</ul>
                   </ActionCard>
                 ))}
@@ -152,7 +152,7 @@ export default function WarehouseProductionQueue() {
                 {show("finished") && data.finishedGoods.map((h) => (
                   <ActionCard key={h.handoffId} icon={PackageCheck} tone="green" title="Terima barang jadi" subtitle={`${h.unitCode} • ${h.customerName || "—"}`} meta="Siap kirim setelah Gudang menerima"
                     badge={h.returnPending ? <Badge variant="orange">Retur sisa belum diterima</Badge> : <Badge variant="green">QC lulus • Finishing selesai</Badge>}
-                    action={h.returnPending ? <p className="text-[11.5px] text-orange">Terima retur sisa bahan (tab Retur Sisa) dulu.</p> : <Button asChild><Link to="/warehouse/finished-goods">Periksa & Simpan</Link></Button>} />
+                    action={h.returnPending ? <p className="text-[11.5px] text-orange">Terima retur sisa bahan (tab Retur Sisa) dulu.</p> : <Button asChild data-mutates><Link to="/warehouse/finished-goods">Periksa & Simpan</Link></Button>} />
                 ))}
               </div>
             )}

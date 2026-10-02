@@ -1,0 +1,60 @@
+# STAGING terisolasi (P12A) — TIDAK dipakai production. Jalankan:
+#   cp backend/.env.staging.example backend/.env.staging   (isi JWT_SECRET acak + STAGING_DB_PASSWORD)
+#   docker compose -f docker-compose.staging.yml --env-file backend/.env.staging up -d --build
+# Isolasi:
+#   • project name berbeda ("sanss-staging") -> container, network, volume TERPISAH dari project production "klinik-matras".
+#   • database SENDIRI (postgres-staging, volume pgdata_staging, tanpa port ke host) — tidak memakai kredensial/DB production.
+#   • volume media SENDIRI (uploads_staging, data_staging).
+#   • jaringan staging_internal bersifat `internal: true` -> kontainer backend/postgres TIDAK punya rute keluar (WhatsApp/email/webhook/push
+#     mustahil secara OS). Satu-satunya pintu masuk: edge-staging (nginx) pada 127.0.0.1:${STAGING_PORT}. Tidak ada layanan WAHA.
+#   • APP_ENV=staging -> egress guard aplikasi + job latar mati + kredensial eksternal dinetralkan (backend/src/lib/stagingGuard.js).
+name: sanss-staging
+
+services:
+  postgres-staging:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qa_pv2
+      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:?isi STAGING_DB_PASSWORD di backend/.env.staging}
+      POSTGRES_DB: sanss_staging
+    volumes:
+      - pgdata_staging:/var/lib/postgresql/data
+    networks: [staging_internal]
+
+  backend-staging:
+    build: ./backend
+    restart: unless-stopped
+    env_file: ./backend/.env.staging
+    environment:
+      APP_ENV: staging
+      PORT: "4000"
+      DISABLE_BACKGROUND_JOBS: "1"
+      DATABASE_URL: postgresql://qa_pv2:${STAGING_DB_PASSWORD}@postgres-staging:5432/sanss_staging
+      BACKEND_INTERNAL_URL: http://backend-staging:4000
+    volumes:
+      - ./frontend/dist:/frontend/dist:ro
+      - uploads_staging:/app/uploads
+      - data_staging:/app/data
+    depends_on: [postgres-staging]
+    networks: [staging_internal]
+
+  edge-staging:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${STAGING_PORT:-18080}:80"
+    volumes:
+      - ./deploy/staging/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [backend-staging]
+    networks: [staging_internal, staging_edge]
+
+networks:
+  staging_internal:
+    internal: true
+  staging_edge: {}
+
+volumes:
+  pgdata_staging:
+  uploads_staging:
+  data_staging:

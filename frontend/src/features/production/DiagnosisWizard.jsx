@@ -369,7 +369,7 @@ export function DiagnosisWizard({ card, onClose, onSubmitted }) {
         {section < SECTIONS.length - 1 ? (
           <button type="button" onClick={() => setSection((s) => s + 1)} className="flex min-h-[48px] flex-1 items-center justify-center gap-1 rounded-btn bg-accent text-[15px] font-bold text-white">Lanjut <ChevronRight size={18} aria-hidden /></button>
         ) : (
-          <button type="button" data-testid="wizard-submit" onClick={submit} disabled={busy} className="flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-btn bg-accent text-[15px] font-bold text-white disabled:opacity-50">
+          <button type="button" data-testid="wizard-submit" data-mutates onClick={submit} disabled={busy} className="flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-btn bg-accent text-[15px] font-bold text-white disabled:opacity-50">
             {busy ? <><Loader2 size={18} className="animate-spin" aria-hidden /> Mengirim…</> : "Kirim Diagnosis"}
           </button>
         )}

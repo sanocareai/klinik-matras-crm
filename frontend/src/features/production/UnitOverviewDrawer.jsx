@@ -109,7 +109,7 @@ function DiagnosisPanel({ d, onOpenWizard }) {
     <div className="space-y-3 rounded-btn border border-line p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="m-0 text-[13px] font-bold text-ink">Diagnosis Produksi</p>
-        {canDiagnose && <Button size="sm" variant="secondary" className="min-h-[44px]" data-testid="open-diagnosis" onClick={onOpenWizard}>{diagnosisCtaLabel({ status: diag?.status, hasDraft: hasLocalDraft(d.production.runId) })}</Button>}
+        {canDiagnose && <Button size="sm" variant="secondary" className="min-h-[44px]" data-testid="open-diagnosis" data-mutates onClick={onOpenWizard}>{diagnosisCtaLabel({ status: diag?.status, hasDraft: hasLocalDraft(d.production.runId) })}</Button>}
       </div>
       {!diag && <p className="m-0 text-[12.5px] text-ink3">Belum ada diagnosis tercatat untuk unit ini.</p>}
       {diag && (
@@ -187,7 +187,7 @@ function ManualMaterialRow({ m, onMapped }) {
     <li className="space-y-2 rounded-btn bg-orangebg px-3 py-2 text-[12px] text-orange">
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 break-words">{m.description} ({m.qty} {m.estimatedUnit || ""}) — {m.reason}</span>
-        {!mapping && <button type="button" onClick={() => setMapping(true)} className="min-h-[44px] shrink-0 rounded-btn bg-surface px-2 text-[11.5px] font-semibold text-ink2">Petakan</button>}
+        {!mapping && <button type="button" data-mutates onClick={() => setMapping(true)} className="min-h-[44px] shrink-0 rounded-btn bg-surface px-2 text-[11.5px] font-semibold text-ink2">Petakan</button>}
       </div>
       {mapping && (
         <div className="space-y-1.5">
@@ -394,7 +394,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
               <div className="min-w-0 flex-1">
                 {data.permissions.canSeeValue && data.orderValue != null && <p className="m-0 text-[13px] font-semibold text-ink2">{formatRupiah(data.orderValue)}</p>}
               </div>
-              {onManage && <Button size="sm" variant="secondary" className="min-h-[44px] shrink-0" onClick={onManage}>{manageLabel}</Button>}
+              {onManage && <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] shrink-0" onClick={onManage}>{manageLabel}</Button>}
             </div>
             <div role="tablist" aria-label="Bagian Unit 360" className="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-line">
               {TABS.map(([k, l]) => (

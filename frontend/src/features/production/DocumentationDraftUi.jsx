@@ -107,10 +107,10 @@ export function DraftPanel({ manager, records, online, onResume }) {
             </div>
             {r.status === STATUS.FAILED && r.lastError && <p className="m-0 break-words text-[12px] text-red [overflow-wrap:anywhere]" data-testid="draft-error">{r.lastError}</p>}
             <div className="flex flex-wrap gap-1.5">
-              {r.status === STATUS.DRAFT && <Button size="sm" variant="secondary" className="min-h-[44px]" onClick={() => onResume(r)} data-testid="draft-resume"><Play size={13} aria-hidden /> Lanjutkan</Button>}
-              {r.status === STATUS.FAILED && <Button size="sm" variant="secondary" className="min-h-[44px]" onClick={() => guard(() => manager.retry(r.id))} data-testid="draft-retry"><RotateCcw size={13} aria-hidden /> Coba Lagi</Button>}
+              {r.status === STATUS.DRAFT && <Button size="sm" variant="secondary" className="min-h-[44px]" onClick={() => onResume(r)} data-testid="draft-resume" data-mutates><Play size={13} aria-hidden /> Lanjutkan</Button>}
+              {r.status === STATUS.FAILED && <Button size="sm" variant="secondary" className="min-h-[44px]" onClick={() => guard(() => manager.retry(r.id))} data-testid="draft-retry" data-mutates><RotateCcw size={13} aria-hidden /> Coba Lagi</Button>}
               {r.status === STATUS.FAILED && r.outcomeKnown && <Button size="sm" variant="ghost" className="min-h-[44px]" onClick={() => guard(async () => { await manager.reopen(r.id); onResume({ ...r, status: STATUS.DRAFT }); })} data-testid="draft-edit"><Pencil size={13} aria-hidden /> Ubah</Button>}
-              {r.status !== STATUS.SENDING && <Button size="sm" variant="ghost" className="min-h-[44px] text-red" onClick={() => del(r)} data-testid="draft-delete"><Trash2 size={13} aria-hidden /> Hapus draft</Button>}
+              {r.status !== STATUS.SENDING && <Button size="sm" variant="ghost" className="min-h-[44px] text-red" onClick={() => del(r)} data-testid="draft-delete" data-mutates><Trash2 size={13} aria-hidden /> Hapus draft</Button>}
             </div>
           </li>
         ))}
@@ -231,7 +231,7 @@ export function CaptureSheet({ manager, online, detail, category, correction, re
         </div>
         <div className="flex items-center gap-2 border-t border-line px-4 py-3">
           <p className="m-0 min-w-0 flex-1 text-[12px] text-ink3" data-testid="capture-hint">{hint}</p>
-          <Button onClick={send} disabled={!canSend} className="min-h-[48px] min-w-[132px]" data-testid="submit-documentation">
+          <Button onClick={send} disabled={!canSend} className="min-h-[48px] min-w-[132px]" data-testid="submit-documentation" data-mutates>
             {busy ? <><Loader2 size={16} className="animate-spin" aria-hidden /> Mengirim…</> : online ? (correcting ? "Kirim Koreksi" : "Kirim Foto") : "Simpan & Kirim Nanti"}
           </Button>
         </div>

@@ -43,7 +43,7 @@ export default function ProductionRingkasan() {
   const [loading, setLoading] = useState(true);
 
   const roles = currentRoles();
-  const allowed = roles.some((r) => ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE"].includes(r));
+  const allowed = roles.some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE"].includes(r));
 
   const load = useCallback(() => {
     setLoading(true); setError("");

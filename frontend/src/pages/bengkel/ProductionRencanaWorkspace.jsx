@@ -84,7 +84,7 @@ function AssignSection({ target, refs, onSaved, onError }) {
           </select>
         </label>
       </div>
-      <Button size="sm" disabled={busy} onClick={submit}>{busy ? "Menyimpan…" : "Simpan Rencana"}</Button>
+      <Button size="sm" data-mutates disabled={busy} onClick={submit}>{busy ? "Menyimpan…" : "Simpan Rencana"}</Button>
     </div>
   );
 }
@@ -127,15 +127,15 @@ function BOMSection({ plan, materials, stockByMaterial, onSaved, onError }) {
                 <td className="py-1.5 text-right"><input type="number" min="0" step="0.0001" value={line.qty} onChange={(e) => updateLine(i, { qty: e.target.value })} className="w-16 rounded-btn border border-line bg-transparent px-2 py-1 text-right text-ink" /></td>
                 <td className="py-1.5 text-right text-ink3">{avail ? avail.available : "—"}</td>
                 <td className="py-1.5 text-right">{avail ? <Badge variant={avail.sufficient ? "green" : "red"}>{avail.sufficient ? "Cukup" : `Kurang ${avail.shortage}`}</Badge> : "—"}</td>
-                <td className="py-1.5 text-right"><Button size="sm" variant="ghost" onClick={() => removeLine(i)}><XCircle size={13} /></Button></td>
+                <td className="py-1.5 text-right"><Button size="sm" variant="ghost" data-mutates onClick={() => removeLine(i)}><XCircle size={13} /></Button></td>
               </tr>
             );
           })}
         </tbody>
       </table>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="ghost" onClick={addLine}>+ Tambah Bahan</Button>
-        <Button size="sm" variant="secondary" disabled={busy} onClick={submit}>{busy ? "Menyimpan…" : "Simpan Planned BOM"}</Button>
+        <Button size="sm" variant="ghost" data-mutates onClick={addLine}>+ Tambah Bahan</Button>
+        <Button size="sm" variant="secondary" data-mutates disabled={busy} onClick={submit}>{busy ? "Menyimpan…" : "Simpan Planned BOM"}</Button>
       </div>
     </div>
   );
@@ -183,15 +183,15 @@ function ReservationSection({ plan, materials = [], onSaved, onError }) {
       ) : <p className="text-[11.5px] text-ink3">Belum ada reservasi aktif.</p>}
       {shortages && shortages.length > 0 && <div className="rounded-btn bg-redbg px-2 py-1.5 text-[11.5px] text-red">Stok tidak cukup: {shortages.map((s) => `${s.code} (butuh ${s.needed}, tersedia ${s.available})`).join("; ")}</div>}
       <div className="flex flex-wrap gap-2">
-        {canReserve && <Button size="sm" disabled={busy} onClick={doReserve}><PackageCheck size={14} /> Reservasi Bahan</Button>}
-        {plan.status === "MATERIAL_RESERVED" && !releasing && <Button size="sm" disabled={busy} onClick={doRequestPickup}><PackageCheck size={14} /> Ajukan Pengambilan Bahan</Button>}
-        {plan.status === "MATERIAL_RESERVED" && !releasing && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setReleasing(true)}><Undo2 size={14} /> Lepas Reservasi</Button>}
+        {canReserve && <Button size="sm" data-mutates disabled={busy} onClick={doReserve}><PackageCheck size={14} /> Reservasi Bahan</Button>}
+        {plan.status === "MATERIAL_RESERVED" && !releasing && <Button size="sm" data-mutates disabled={busy} onClick={doRequestPickup}><PackageCheck size={14} /> Ajukan Pengambilan Bahan</Button>}
+        {plan.status === "MATERIAL_RESERVED" && !releasing && <Button size="sm" variant="ghost" data-mutates disabled={busy} onClick={() => setReleasing(true)}><Undo2 size={14} /> Lepas Reservasi</Button>}
       </div>
       {releasing && (
         <div className="space-y-2">
           <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} placeholder="Alasan pelepasan" className="w-full rounded-btn border border-line bg-transparent px-3 py-2 text-[12.5px] text-ink" />
           <div className="flex gap-2">
-            <Button size="sm" variant="destructive" disabled={busy} onClick={doRelease}>Konfirmasi Lepas</Button>
+            <Button size="sm" variant="destructive" data-mutates disabled={busy} onClick={doRelease}>Konfirmasi Lepas</Button>
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setReleasing(false); setReason(""); }}>Batal</Button>
           </div>
         </div>
@@ -309,12 +309,12 @@ function MejaColumn({ station, date, dropActive, onDragOverMeja, onDropMeja, onO
           <UnitCard view={v} variant="compact" seq={idx + 1} today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => onOpen(x.unit.id)}
             footer={(
               <div className="flex w-full gap-1.5">
-                <Button size="sm" variant="secondary" className="min-h-[44px] flex-1" onClick={() => onMove(v, station.code)}><CalendarDays size={13} aria-hidden /> Pindahkan</Button>
+                <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] flex-1" onClick={() => onMove(v, station.code)}><CalendarDays size={13} aria-hidden /> Pindahkan</Button>
                 {items.length > 1 && (
                   <>
-                    <Button size="sm" variant="secondary" className="min-h-[44px] min-w-[44px]" data-testid="order-up" aria-label={`Naikkan urutan ${v.unit.unitCode}`} disabled={busy || idx === 0}
+                    <Button size="sm" variant="secondary" className="min-h-[44px] min-w-[44px]" data-testid="order-up" data-mutates aria-label={`Naikkan urutan ${v.unit.unitCode}`} disabled={busy || idx === 0}
                       onClick={() => { const next = moveStep(planIds, v.plan?.id, -1); if (next) onReorder(station, next); }}><ChevronUp size={16} aria-hidden /></Button>
-                    <Button size="sm" variant="secondary" className="min-h-[44px] min-w-[44px]" data-testid="order-down" aria-label={`Turunkan urutan ${v.unit.unitCode}`} disabled={busy || idx === items.length - 1}
+                    <Button size="sm" variant="secondary" className="min-h-[44px] min-w-[44px]" data-testid="order-down" data-mutates aria-label={`Turunkan urutan ${v.unit.unitCode}`} disabled={busy || idx === items.length - 1}
                       onClick={() => { const next = moveStep(planIds, v.plan?.id, 1); if (next) onReorder(station, next); }}><ChevronDown size={16} aria-hidden /></Button>
                   </>
                 )}
@@ -484,7 +484,7 @@ export default function ProductionRencanaWorkspace() {
                 {backlog.length === 0 && !loading && <p className="rounded-card border-2 border-dashed border-line p-5 text-center text-[12px] text-ink3">Semua unit sudah dijadwalkan.</p>}
                 {backlog.map((v) => (
                   <UnitCard key={v.runId} view={v} variant="compact" today={today} tomorrow={tomorrow} draggable onDragStart={(e) => dragStart(e, v.runId)} onOpen={(x) => openOverview(x.unit.id)}
-                    footer={<Button size="sm" className="min-h-[44px] w-full" disabled={busy} onClick={() => setSchedule(v)}><CalendarDays size={13} aria-hidden /> Jadwalkan</Button>} />
+                    footer={<Button size="sm" data-mutates className="min-h-[44px] w-full" disabled={busy} onClick={() => setSchedule(v)}><CalendarDays size={13} aria-hidden /> Jadwalkan</Button>} />
                 ))}
               </section>
 

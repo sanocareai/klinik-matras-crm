@@ -2,6 +2,7 @@ import React, { lazy } from "react";
 import { matchPath } from "react-router-dom";
 import { rolesOf } from "../lib/roles.js";
 import { splitPathQuery } from "../lib/splitPathQuery.js";
+import { DemoPage } from "../features/production/demo/DemoControls.jsx";
 
 // D-143 (9 September 2026) — SATU SUMBER KEBENARAN untuk daftar halaman.
 // Sebelumnya seluruh ~55 lazy import + <Route> ditulis langsung di App.jsx.
@@ -103,6 +104,7 @@ const ProductionPlannerV2 = lazy(() => import("../pages/bengkel/ProductionPlanne
 const ProductionReportV2 = lazy(() => import("../pages/bengkel/ProductionReportV2.jsx"));
 // P11 — KPI Produksi & Gudang (baca-saja; reader V2 OFF -> pesan kosong, bukan error).
 const ProductionKpi = lazy(() => import("../pages/bengkel/ProductionKpi.jsx"));
+// P12A — pembungkus Mode Demo (Admin/Owner; ?demo=1): toggle + label + gerbang data sintetis. Dataset-nya TIDAK di bundel utama.
 // P9B.1 — workspace penjadwalan BARU ("Rencana Produksi"), terpisah dari halaman status pipeline di atas
 // (ProductionPlannerV2, sekarang berjudul tampilan "Status Produksi" tapi URL-nya tetap production-v2).
 const ProductionRencanaWorkspace = lazy(() => import("../pages/bengkel/ProductionRencanaWorkspace.jsx"));
@@ -121,7 +123,7 @@ const ProductionServiceStages = lazy(() => import("../pages/bengkel/ProductionSe
 export const STANDALONE_PAGES = [
   { path: "/produksi/meja", render: () => <WorkerLane lane="TABLE" /> },
   { path: "/produksi/corner", render: () => <WorkerLane lane="CORNER" /> },
-  { path: "/produksi/dokumentasi", render: () => <ProductionDocumentation /> },
+  { path: "/produksi/dokumentasi", render: () => <DemoPage><ProductionDocumentation /></DemoPage> },
   { path: "/produksi/ringkasan-saya", render: () => <ProductionKpi /> }, // P11 — ringkasan pekerjaan sendiri (PIC/dokumentasi/QC)
   { path: "/bengkel/andon", render: () => <ProductionAndon /> },
 ];
@@ -192,7 +194,7 @@ export const PAGES = [
   { path: "/bengkel/scope-revisions", render: () => <ProductionScopeRevisions /> },
   { path: "/bengkel/materials", render: () => <ProductionMaterialUsage /> },
   { path: "/bengkel/reports", render: () => <ProductionLaporan /> },
-  { path: "/bengkel/kpi", render: () => <ProductionKpi /> },
+  { path: "/bengkel/kpi", render: () => <DemoPage><ProductionKpi /></DemoPage> },
   { path: "/bengkel/orders", render: () => <ProductionOrders /> },
   { path: "/bengkel/work-centers", render: () => <ProductionWorkCenters /> },
   { path: "/bengkel/operators", render: () => <ProductionOperators /> },
@@ -257,16 +259,16 @@ export const PAGES = [
   { path: "/bengkel/planning", render: () => <ProductionPlanning /> },
   { path: "/bengkel/workshop", render: () => <ProductionWorkshop /> },
   { path: "/bengkel/qc-v2", render: () => <ProductionQc /> },
-  { path: "/bengkel/production-v2", render: () => <ProductionPlannerV2 /> },
+  { path: "/bengkel/production-v2", render: () => <DemoPage><ProductionPlannerV2 /></DemoPage> },
   { path: "/bengkel/production-v2/laporan/:runId", render: () => <ProductionReportV2 /> },
   // P9B.1 — workspace penjadwalan baru, URL sendiri (bukan sub-path production-v2, supaya tidak butuh redirect/D-144).
-  { path: "/bengkel/rencana-produksi", render: () => <ProductionRencanaWorkspace /> },
+  { path: "/bengkel/rencana-produksi", render: () => <DemoPage><ProductionRencanaWorkspace /></DemoPage> },
   // P8.1 (UI & Navigation Consolidation) — rute BARU murni navigasi/layout.
-  { path: "/bengkel/ringkasan", render: () => <ProductionRingkasan /> },
-  { path: "/bengkel/quality-control", render: () => <ProductionQcHub /> },
+  { path: "/bengkel/ringkasan", render: () => <DemoPage><ProductionRingkasan /></DemoPage> },
+  { path: "/bengkel/quality-control", render: () => <DemoPage><ProductionQcHub /></DemoPage> },
   { path: "/bengkel/order-produksi", render: () => <ProductionOrdersHub /> },
   { path: "/bengkel/layanan-tahapan", render: () => <ProductionServiceStages /> },
-  { path: "/warehouse/antrean-produksi", render: () => <WarehouseProductionQueue /> },
+  { path: "/warehouse/antrean-produksi", render: () => <DemoPage><WarehouseProductionQueue /></DemoPage> },
   { path: "/warehouse/finished-goods", render: () => <WarehouseFinishedGoods /> },
   { path: "/warehouse/material-pickup", render: () => <WarehouseMaterialPickup /> },
   { path: "/warehouse/material-issue", render: () => <WarehouseMaterialIssue /> },
@@ -275,7 +277,7 @@ export const PAGES = [
   { path: "/warehouse/replenishment", render: () => <WarehouseReplenishment /> },
   { path: "/warehouse/adjustments", render: () => <WarehouseAdjustments /> },
   { path: "/warehouse/reports", render: () => <WarehouseReports /> },
-  { path: "/warehouse/kpi", render: () => <ProductionKpi defaultTab="gudang" /> },
+  { path: "/warehouse/kpi", render: () => <DemoPage><ProductionKpi defaultTab="gudang" /></DemoPage> },
   { path: "/dashboard",   render: (ctx) => <Dashboard user={ctx.user} /> },
   { path: "/inbox",       render: (ctx) => <Inbox user={ctx.user} /> },
   { path: "/customers",   render: () => <Customers /> },

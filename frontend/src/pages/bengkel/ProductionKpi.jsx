@@ -40,9 +40,13 @@ export default function ProductionKpi({ defaultTab = DEFAULT_TAB }) {
   useEffect(() => { api.getProductionReportMeta().then(setMeta).catch((e) => setMetaErr(e.message)); }, []);
 
   const tabs = useMemo(() => tabsFor(meta?.capabilities), [meta]);
-  const wanted = params.get("tab") || defaultTab;
-  const tab = tabs.find((t) => t.key === wanted) || tabs[0] || null;
-  const setTab = (key) => setParams((p) => { const n = new URLSearchParams(p); n.set("tab", key); return n; }, { replace: true });
+  // Tab aktif disimpan di state LOKAL (diinisialisasi & diselaraskan dari ?tab=): di sistem tab dalam-app, perubahan HANYA query tidak
+  // menggeser lokasi virtual tab, sehingga membaca useSearchParams saja membuat klik tab tidak berpengaruh. URL tetap diperbarui (deep-link).
+  const urlTab = params.get("tab") || defaultTab;
+  const [tabKey, setTabKey] = useState(urlTab);
+  useEffect(() => { setTabKey(urlTab); }, [urlTab]);
+  const tab = tabs.find((t) => t.key === tabKey) || tabs[0] || null;
+  const setTab = (key) => { setTabKey(key); setParams((p) => { const n = new URLSearchParams(p); n.set("tab", key); return n; }, { replace: true }); };
 
   const qs = useMemo(() => reportQuery(period, filters, tab?.key === "ringkasan" ? { granularity } : {}), [period, filters, granularity, tab?.key]);
   const baseQs = useMemo(() => reportQuery(period, filters), [period, filters]);
@@ -103,7 +107,7 @@ export default function ProductionKpi({ defaultTab = DEFAULT_TAB }) {
         {off && <OffNotice message={off} />}
         {loading && !doc && <p className="m-0 text-[12.5px] text-ink3">Memuat laporan…</p>}
 
-        {doc && !off && tab?.kind !== "mine" && (
+        {doc && !off && tab?.kind !== "mine" && doc.kind === tab?.kind && (
           <div className={`min-w-0 space-y-4 ${loading ? "opacity-60" : ""}`} data-testid={`panel-${tab.key}`}>
             <CoverageBar doc={doc} />
             {tab.key === "ringkasan" && <SummaryPanel doc={doc} granularity={granularity} onMetric={openMetric} onUnit={setUnitId} />}
@@ -116,7 +120,7 @@ export default function ProductionKpi({ defaultTab = DEFAULT_TAB }) {
             <Definitions doc={doc} />
           </div>
         )}
-        {doc && tab?.kind === "mine" && <MyPanel doc={doc} />}
+        {doc && tab?.kind === "mine" && doc.pekerjaan && <MyPanel doc={doc} />}
       </PageBody>
 
       {drill && <DrillModal title={drill.title} load={drill.load} onClose={() => setDrill(null)} onUnit={(id) => { setDrill(null); setUnitId(id); }} period={period} filters={filters} exportExtra={drill.exportExtra} />}

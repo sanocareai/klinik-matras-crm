@@ -76,7 +76,7 @@ test("pagar kode halaman: baca-saja (tanpa metode tulis), semua angka dari serve
   assert.match(page, /getProductionReportDrill/); assert.match(page, /warehouse\/units\//); assert.match(page, /stations\/\$\{/); assert.match(page, /operators\/\$\{/);
   assert.match(parts, /data-testid="coverage-bar"/); assert.match(parts, /data-testid="export-buttons"/); assert.match(parts, /Data belum cukup/);
   const registry = read("src/routes/pageRegistry.jsx");
-  assert.match(registry, /path: "\/bengkel\/kpi"/); assert.match(registry, /path: "\/warehouse\/kpi", render: \(\) => <ProductionKpi defaultTab="gudang" \/>/); assert.match(registry, /path: "\/produksi\/ringkasan-saya"/);
+  assert.match(registry, /path: "\/bengkel\/kpi"/); assert.match(registry, /path: "\/warehouse\/kpi", render: \(\) => <DemoPage><ProductionKpi defaultTab="gudang" \/><\/DemoPage>/); assert.match(registry, /path: "\/produksi\/ringkasan-saya"/);
   assert.match(page, /makeRange/, "periode memakai skema tanggal standar app");
   assert.match(parts, /DateRangePicker/); assert.doesNotMatch(parts, /type="date"/, "tanpa input tanggal native");
   assert.match(read("src/components/Topbar.jsx"), /"\/bengkel\/kpi":\s*\["Produksi", "KPI Produksi"\]/);
@@ -96,4 +96,11 @@ test("P11.1 target harian: kartu memakai deskripsi target historis dari server; 
   const posts = api.match(/production-v2\/[a-z/]*",\s*\{\s*method: "POST"/g) || [];
   assert.match(api, /setProductionTarget: \(data\) => request\("\/production-v2\/targets", \{ method: "POST"/); assert.ok(posts.length >= 1);
   assert.doesNotMatch(panel, /method: "(PUT|PATCH|DELETE)"/, "riwayat tidak bisa diubah/dihapus dari UI");
+});
+
+test("P12A: tab KPI memakai state lokal (klik tab bekerja di sistem tab dalam-app) dan panel hanya dirender bila jenis dokumen = jenis tab (tanpa crash saat data tab sebelumnya masih ada)", () => {
+  const page = read("src/pages/bengkel/ProductionKpi.jsx");
+  assert.match(page, /const \[tabKey, setTabKey\] = useState\(urlTab\)/); assert.match(page, /const setTab = \(key\) => \{ setTabKey\(key\);/);
+  assert.match(page, /doc\.kind === tab\?\.kind/);
+  assert.match(page, /doc\.pekerjaan && <MyPanel/);
 });

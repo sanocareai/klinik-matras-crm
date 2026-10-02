@@ -1,5 +1,6 @@
 // VITE_API_BASE kosong = relative URL (untuk web/PWA browser, pakai proxy Vite dev / same-origin prod)
 // VITE_API_BASE diisi = absolute URL (untuk Capacitor APK, perlu tahu alamat server produksi)
+import { demoGate, demoBlock } from "./features/production/demo/demoGate.js";
 const BASE = (import.meta.env.VITE_API_BASE || "") + "/api";
 const TIMEOUT_MS = 30000; // 30 detik — cegah request hang selamanya
 
@@ -54,6 +55,9 @@ async function fetchDenganUlang(url, init) {
 }
 
 async function request(path, options = {}) {
+  // P12A Mode Demo: bacaan data Production dilayani dataset sintetis; metode non-GET ditolak SEBELUM jaringan.
+  const demo = demoGate(path, options.method || "GET");
+  if (demo) return demo;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -110,6 +114,7 @@ function qsFinance(params = {}) {
 // Unggah bukti produksi V2 (P8) dengan progres — fetch belum punya progres upload, jadi XHR. Galat membawa .status/.code
 // seperti request() supaya pemanggil bisa membedakan 413/503/409.
 function uploadWithProgress(path, formData, onProgress) {
+  const demo = demoBlock("Unggah berkas"); if (demo) return demo;
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${BASE}${path}`);
@@ -131,6 +136,7 @@ function uploadWithProgress(path, formData, onProgress) {
 }
 
 async function requestFormData(path, formData, method = "POST") {
+  const demo = demoBlock("Unggah berkas"); if (demo) return demo;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -770,6 +776,8 @@ export const api = {
   correctProductionV2Documentation: (runId, data, idempotencyKey = mutationKey("p10b-doc-fix")) =>
     request(`/production-v2/documentation/runs/${runId}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // P11 — Reporting & KPI Production–Warehouse (BACA-SAJA). `qs` = query string yang SAMA untuk layar, drill-down, dan export.
+  // P12A — server hanya memutuskan boleh/tidak (ADMIN/OWNER); dataset demo dimuat frontend setelah 200.
+  getDemoAccess: () => request("/production-v2/demo/access"),
   getProductionReportMeta: () => request("/production-v2/reports/meta"),
   getProductionReport: (kind, qs = "") => request(`/production-v2/reports/${kind}${qs ? `?${qs}` : ""}`),
   getProductionReportDrill: (metric, qs = "") => request(`/production-v2/reports/drill/${encodeURIComponent(metric)}${qs ? `?${qs}` : ""}`),
@@ -777,6 +785,7 @@ export const api = {
   getProductionReportList: (path, qs = "") => request(`/production-v2/reports/${path}${qs ? `?${qs}` : ""}`),
   // Export = berkas (bukan JSON): server membangun Excel/PDF dari dokumen laporan yang sama dengan layar.
   exportProductionReport: async (qs) => {
+    const demo = demoBlock("Export"); if (demo) return demo; // demo TIDAK pernah menghasilkan export production
     const res = await fetch(`${BASE}/production-v2/reports/export?${qs}`, { headers: { ...authHeaders() } });
     adoptRefreshedToken(res);
     if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }

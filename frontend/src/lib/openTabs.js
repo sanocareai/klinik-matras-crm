@@ -6,13 +6,22 @@
 // server, sama seperti alasan sidebarOrder.js.
 const KEY = "open-tabs:v1";
 
+// P12A: Mode Demo TIDAK boleh bertahan lintas sesi/logout — parameter ?demo=1 dibuang dari path tab saat disimpan DAN saat dipulihkan.
+export function stripDemoParam(path) {
+  if (typeof path !== "string" || !path.includes("demo=")) return path;
+  const [base, query = ""] = path.split("?");
+  const kept = query.split("&").filter((kv) => kv && !kv.startsWith("demo="));
+  return kept.length ? `${base}?${kept.join("&")}` : base;
+}
+const cleanTabs = (tabs) => (Array.isArray(tabs) ? tabs.map((t) => (t && typeof t.path === "string" ? { ...t, path: stripDemoParam(t.path) } : t)) : tabs);
+
 export function loadTabs() {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed?.tabs) || parsed.tabs.length === 0) return null;
-    return parsed;
+    return { ...parsed, tabs: cleanTabs(parsed.tabs) };
   } catch {
     return null;
   }
@@ -20,7 +29,7 @@ export function loadTabs() {
 
 export function saveTabs({ tabs, activeId }) {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ tabs, activeId }));
+    localStorage.setItem(KEY, JSON.stringify({ tabs: cleanTabs(tabs), activeId }));
   } catch {
     // localStorage penuh/diblokir — tab tetap berfungsi untuk sesi ini,
     // cuma tidak akan dipulihkan setelah reload. Bukan error fatal.

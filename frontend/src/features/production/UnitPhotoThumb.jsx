@@ -47,7 +47,7 @@ export function UnitPhotoPanel({ unitId, photoUrl, canUpload, onUploaded }) {
       </div>
       {canUpload && !photoUrl && (
         <>
-          <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}
+          <button type="button" data-mutates onClick={() => inputRef.current?.click()} disabled={busy}
             className="flex shrink-0 items-center gap-1 rounded-btn border border-line px-2.5 py-1.5 text-[12px] font-semibold text-ink2 hover:bg-hovertint disabled:opacity-50">
             <Camera size={13} aria-hidden /> {busy ? "Mengunggah…" : "Unggah Foto"}
           </button>
