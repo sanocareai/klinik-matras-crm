@@ -788,6 +788,9 @@ export const api = {
     const cd = res.headers.get("Content-Disposition") || "";
     return { blob: await res.blob(), namaFile: cd.match(/filename="([^"]+)"/)?.[1] || "Production_laporan" };
   },
+  // P11.1 — target harian historis (append-only; POST hanya Admin/Owner, server menegakkan).
+  getProductionTargets: () => request("/production-v2/targets"),
+  setProductionTarget: (data) => request("/production-v2/targets", { method: "POST", body: JSON.stringify(data) }),
   // P9B.1 — foto identitas unit manual (hanya tampil kalau unit belum punya foto pickup driver, lihat backend).
   uploadUnitPhoto: (unitId, file, onProgress) => {
     const fd = new FormData();

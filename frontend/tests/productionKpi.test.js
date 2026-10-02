@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   EXPORTABLE, FILTER_FIELDS, INSUFFICIENT, activeFilterCount, coverageChips, emptyFilters, formatCell, formatMinutes, groupMetrics, metricView, offMessage,
-  reportQuery, sensitiveLeak, tabsFor, trendSeries, trendTick, wibStamp,
+  reportQuery, targetFormError, sensitiveLeak, tabsFor, trendSeries, trendTick, wibStamp,
 } from "../src/features/production/reporting.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -69,7 +69,7 @@ test("pagar kode halaman: baca-saja (tanpa metode tulis), semua angka dari serve
     assert.doesNotMatch(src, /method:\s*"(POST|PUT|PATCH|DELETE)"/, "laporan tidak menulis");
     assert.doesNotMatch(src, /\.(omzet|harga|payment|hpp|orderPrice|totalHarga)\b|api\.\w*(Payment|Finance|Harga)/i, "tidak membaca field/endpoint keuangan");
   }
-  const api = read("src/api.js"); const block = api.slice(api.indexOf("getProductionReportMeta"), api.indexOf("// P9B.1 — foto identitas unit manual"));
+  const api = read("src/api.js"); const block = api.slice(api.indexOf("getProductionReportMeta"), api.indexOf("// P11.1 — target harian historis"));
   assert.doesNotMatch(block, /method:/, "klien API laporan hanya GET");
   assert.match(block, /exportProductionReport/);
   assert.match(page, /UnitOverviewDrawer/, "drill-down ke Unit 360");
@@ -81,4 +81,19 @@ test("pagar kode halaman: baca-saja (tanpa metode tulis), semua angka dari serve
   assert.match(parts, /DateRangePicker/); assert.doesNotMatch(parts, /type="date"/, "tanpa input tanggal native");
   assert.match(read("src/components/Topbar.jsx"), /"\/bengkel\/kpi":\s*\["Produksi", "KPI Produksi"\]/);
   assert.match(read("src/components/Layout.jsx"), /\/warehouse\/kpi/);
+});
+
+test("P11.1 target harian: kartu memakai deskripsi target historis dari server; validasi formulir; panel baca-saja kecuali izin tulis; satu-satunya POST di klien", () => {
+  const varTarget = metricView({ key: "target_vs_done", unit: "unit", kind: "count", value: 20, target: 320, dailyTarget: null, targetDesc: "12–18/hari × 20 hari aktif", activeDays: 20, achievementPct: 6.3 });
+  assert.match(varTarget.sub, /Target 320 \(12–18\/hari × 20 hari aktif\) · 6,3%/);
+  const meta = { minEffectiveDate: "2026-01-01", maxTargetUnits: 500 };
+  const ok = { effectiveFrom: "2026-10-11", targetUnits: "20", reason: "Tambah satu shift" };
+  assert.equal(targetFormError(ok, meta), "");
+  for (const bad of [{ effectiveFrom: "" }, { effectiveFrom: "2025-12-31" }, { targetUnits: "0" }, { targetUnits: "501" }, { targetUnits: "12.5" }, { targetUnits: "" }, { reason: "x" }, { reason: "   " }, { reason: "x".repeat(301) }]) assert.notEqual(targetFormError({ ...ok, ...bad }, meta), "", JSON.stringify(bad));
+  const panel = read("src/features/production/TargetPanel.jsx"); const api = read("src/api.js"); const page = read("src/pages/bengkel/ProductionKpi.jsx");
+  assert.match(panel, /canWrite && \(/, "formulir hanya untuk pemegang izin tulis"); assert.match(panel, /tidak dapat diubah atau dihapus/);
+  assert.match(page, /TargetPanel canWrite=\{!!meta\?\.capabilities\?\.targetWrite\}/);
+  const posts = api.match(/production-v2\/[a-z/]*",\s*\{\s*method: "POST"/g) || [];
+  assert.match(api, /setProductionTarget: \(data\) => request\("\/production-v2\/targets", \{ method: "POST"/); assert.ok(posts.length >= 1);
+  assert.doesNotMatch(panel, /method: "(PUT|PATCH|DELETE)"/, "riwayat tidak bisa diubah/dihapus dari UI");
 });
