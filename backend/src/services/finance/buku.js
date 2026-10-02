@@ -76,7 +76,10 @@ function whereJurnal({ from, to, q, source, status, akunId }) {
 
 /** Modul mobile + nomor dokumen sumber tiap jurnal (bila ada). Satu kueri per jenis dokumen; tidak ada N+1. */
 async function dokumenTerkait(db, entries) {
-  const per = (src) => entries.filter((e) => e.source === src && e.sourceId).map((e) => e.sourceId);
+  // sourceId polimorfik (teks). Tabel dokumen bertipe UUID MENOLAK id yang bukan UUID dengan galat Prisma P2023 (500), dan produksi punya 30 jurnal KASBON impor dengan sourceId "IMPORT-KASBON-SEPT2026-N" —
+  // id bukan-UUID dilewati (tidak punya dokumen terkait), bukan menjatuhkan seluruh daftar. Payment (cuid) tidak bertipe UUID.
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const per = (src) => entries.filter((e) => e.source === src && e.sourceId && (src === "PEMBAYARAN_ORDER" || UUID.test(e.sourceId))).map((e) => e.sourceId);
   const [exp, pur, bill, pay, inc, ref, kas, kasRep, bayarOrder, pjk, pjkBayar] = await Promise.all([
     per("PENGELUARAN").length ? db.finExpense.findMany({ where: { id: { in: per("PENGELUARAN") } }, select: { id: true, expenseNumber: true } }) : [],
     per("PEMBELIAN").length ? db.finPurchase.findMany({ where: { id: { in: per("PEMBELIAN") } }, select: { id: true, purchaseNumber: true } }) : [],

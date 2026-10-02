@@ -154,3 +154,20 @@ test("Export Excel Mutasi Rekening = layar: saldo awal, tiap baris dengan saldo 
   const dari = await createTestUser({ roles: ["SALES"] });
   assert.equal((await unduhExport(server.baseUrl, dari.token, "mutasi-rekening", { periode: { from: "2026-10-01", to: "2026-10-31" }, filter: { cashAccountId: w.ptSano.id } })).status, 403);
 });
+
+test("REGRESI produksi 2 Okt 2026: jurnal KASBON impor dengan sourceId bukan-UUID ('IMPORT-KASBON-SEPT2026-0') TIDAK menjatuhkan Mutasi Rekening / detail jurnal (500 P2023) — dokumen terkait dilewati", async () => {
+  const w = await dunia();
+  await masuk(w, w.ptSano, w.akunBank, 1_000_000, "2026-09-30", "Saldo");
+  const piutang = await testPrisma.finAccount.findUnique({ where: { code: "1-1350" } });
+  const e = await testPrisma.finJournalEntry.create({ data: { entryNumber: "JV-IMPOR-KSB", date: new Date("2026-10-01T00:00:00Z"), description: "Kasbon impor September", source: "KASBON", sourceId: "IMPORT-KASBON-SEPT2026-0", status: "POSTED", lines: { create: [
+    { lineNo: 1, accountId: piutang.id, debit: 300_000, credit: 0 }, { lineNo: 2, accountId: w.akunBank.id, debit: 0, credit: 300_000, cashAccountId: w.ptSano.id } ] } } });
+  const r = await mutasi(w, w.ptSano);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const baris = r.body.baris.find((b) => b.nomor === "JV-IMPOR-KSB");
+  assert.equal(baris.dokumen, null, "tidak ada dokumen terkait untuk id bukan-UUID");
+  assert.equal(r.body.saldoAkhir, "700000.00");
+  assert.equal((await w.admin.get(`/api/finance/buku/jurnal/${e.id}`)).status, 200, "detail jurnal juga aman");
+  assert.equal((await w.admin.get(`/api/finance/buku/jurnal?from=2026-09-01&to=2026-10-31`)).status, 200);
+  const x = await unduhExport(server.baseUrl, w.adminToken, "mutasi-rekening", { periode: { from: "2026-09-01", to: "2026-10-31" }, filter: { cashAccountId: w.ptSano.id } });
+  assert.equal(x.status, 200, JSON.stringify(x.json));
+});
