@@ -614,6 +614,9 @@ model User {
   incentivePayoutsReceived IncentivePayout[]
   incentivePayoutsRecorded IncentivePayout[] @relation("IncentivePayoutRecorder")
   incentivePayoutsVoided   IncentivePayout[] @relation("IncentivePayoutVoider")
+
+  morningPriorityRequested MorningPriorityRequest[] @relation("MorningPriorityRequestedBy")
+  morningPriorityDecided   MorningPriorityRequest[] @relation("MorningPriorityDecidedBy")
 }
 
 // Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
@@ -1350,6 +1353,7 @@ model Order {
   revisionLogs      OrderRevisionLog[]
   invoice           Invoice?
   complaintCases    ComplaintCase[]
+  morningPriorityRequests MorningPriorityRequest[]
 
   // Finance (D-180) — dimensi analitik buku besar + dokumen keuangan yang
   // menunjuk order ini. SetNull/Restrict diputuskan di sisi sana: baris
@@ -1599,6 +1603,58 @@ enum ProductionPriority {
   HIGH
   URGENT
   CRITICAL
+}
+
+// Usulan Prioritas Pagi (Route Planner <-> Produksi, 3 Oktober 2026, laporan owner: "orderan yang
+// statusnya di proses bisa masuk penjadwalan, route planner... nyambung dengan produksi menentukan
+// high priority"). TIDAK melonggarkan Job DELIVERY (itu TETAP baru lahir saat unit READY_FOR_DELIVERY,
+// lihat deliveryHandoff.js) dan TIDAK memberi Dispatcher UNIT_ROUTING_WRITE (pemisahan tugas yang
+// sudah konsisten dijaga di seluruh sistem ini — dispatcher melihat produksi, tidak menulisnya).
+// Sebagai gantinya: Dispatcher mengUSULKAN dari Route Planner (permission JOB_WRITE, yang sudah
+// dipegang DISPATCHER) untuk order yang Order.status masih PROCESSING; Production Lead/Admin/Owner
+// (UNIT_ROUTING_WRITE) MENYETUJUI atau MENOLAK dari papan Produksi. Hanya saat DISETUJUI, server
+// menulis ProductionPriority ke semua unit aktif order itu lewat jalur yang SAMA dengan
+// PATCH /units/:id/production (recordActivity PRIORITY_CHANGED per unit, pola yang sudah ada,
+// bukan jalur baru) — lihat services/morningPriority.js.
+enum MorningPriorityStatus {
+  PENDING
+  APPROVED
+  DISMISSED
+}
+
+model MorningPriorityRequest {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Restrict: order dengan riwayat usulan prioritas tidak boleh terhapus diam-diam.
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  requestedById String @map("requested_by_id")
+  requestedBy   User   @relation("MorningPriorityRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  // Catatan dispatcher opsional — "kenapa pagi ini", bukan field wajib (beda dari ScopeRevision.reason
+  // yang memang wajib karena itu dasar negosiasi harga; ini murni sinyal koordinasi harian).
+  note String?
+
+  // Prioritas yang DIUSULKAN dispatcher — production boleh mengubahnya saat menyetujui (lihat `priority`
+  // di endpoint approve), jadi ini catatan niat awal, bukan nilai final yang pasti diterapkan apa adanya.
+  suggestedPriority ProductionPriority @default(HIGH) @map("suggested_priority")
+
+  status MorningPriorityStatus @default(PENDING)
+
+  // Diisi SEKALI saat disetujui/ditolak, dijaga di service layer (pola sama dengan ScopeRevision di atas).
+  decidedById String?   @map("decided_by_id")
+  decidedBy   User?     @relation("MorningPriorityDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt   DateTime? @map("decided_at")
+  // Prioritas yang BENAR-BENAR diterapkan ke unit saat disetujui (bisa beda dari suggestedPriority kalau
+  // production menaikkan/menurunkannya) — NULL kalau status bukan APPROVED.
+  appliedPriority ProductionPriority? @map("applied_priority")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@index([status])
+  @@map("morning_priority_requests")
 }
 
 // UNIT — entitas inti Sano Hub (D-002). Satu kasur fisik.
