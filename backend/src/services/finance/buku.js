@@ -47,6 +47,7 @@ export const LABEL_SUMBER = {
   PENGELUARAN: "Pengeluaran", PEMBELIAN: "Pembelian", BIAYA_KENDARAAN: "Biaya kendaraan", BIAYA_IKLAN: "Biaya iklan", PEMASUKAN_LAIN: "Pemasukan lain",
   TRANSFER_KAS: "Transfer kas", TAGIHAN_SUPPLIER: "Tagihan supplier", PEMBAYARAN_SUPPLIER: "Pembayaran supplier", PEMAKAIAN_BAHAN: "Pemakaian bahan",
   PENERIMAAN_BAHAN: "Penerimaan bahan", KASBON: "Kasbon", REVERSAL: "Jurnal balik", PERSEDIAAN_AWAL: "Persediaan awal (stok opname)",
+  PENJUALAN_KARYAWAN: "Penjualan karyawan", PEMBAYARAN_PENJUALAN_KARYAWAN: "Pembayaran penjualan karyawan",
 };
 const STATUS_JURNAL = { DRAFT: ["Draf", "neutral"], POSTED: ["Terposting", "success"], REVERSED: ["Sudah dibalik", "warning"], VOID: ["Batal", "neutral"] };
 const statusJ = (s) => ({ status: s, statusLabel: STATUS_JURNAL[s]?.[0] ?? s, nada: STATUS_JURNAL[s]?.[1] ?? "neutral" });
@@ -75,7 +76,7 @@ function whereJurnal({ from, to, q, source, status, akunId }) {
 /** Modul mobile + nomor dokumen sumber tiap jurnal (bila ada). Satu kueri per jenis dokumen; tidak ada N+1. */
 async function dokumenTerkait(db, entries) {
   const per = (src) => entries.filter((e) => e.source === src && e.sourceId).map((e) => e.sourceId);
-  const [exp, pur, bill, pay, inc, ref, kas, kasRep, bayarOrder] = await Promise.all([
+  const [exp, pur, bill, pay, inc, ref, kas, kasRep, bayarOrder, pjk, pjkBayar] = await Promise.all([
     per("PENGELUARAN").length ? db.finExpense.findMany({ where: { id: { in: per("PENGELUARAN") } }, select: { id: true, expenseNumber: true } }) : [],
     per("PEMBELIAN").length ? db.finPurchase.findMany({ where: { id: { in: per("PEMBELIAN") } }, select: { id: true, purchaseNumber: true } }) : [],
     per("TAGIHAN_SUPPLIER").length ? db.finSupplierBill.findMany({ where: { id: { in: per("TAGIHAN_SUPPLIER") } }, select: { id: true, billNumber: true } }) : [],
@@ -85,6 +86,8 @@ async function dokumenTerkait(db, entries) {
     per("KASBON").length ? db.finKasbon.findMany({ where: { id: { in: per("KASBON") } }, select: { id: true, kasbonNumber: true } }) : [],
     per("KASBON").length ? db.finKasbonRepayment.findMany({ where: { id: { in: per("KASBON") } }, select: { id: true, kasbon: { select: { id: true, kasbonNumber: true } } } }) : [],
     per("PEMBAYARAN_ORDER").length ? db.payment.findMany({ where: { id: { in: per("PEMBAYARAN_ORDER") } }, select: { id: true, order: { select: { orderNumber: true } } } }) : [],
+    per("PENJUALAN_KARYAWAN").length ? db.finPenjualanKaryawan.findMany({ where: { id: { in: per("PENJUALAN_KARYAWAN") } }, select: { id: true, nomor: true } }) : [],
+    per("PEMBAYARAN_PENJUALAN_KARYAWAN").length ? db.finPenjualanKaryawanPayment.findMany({ where: { id: { in: per("PEMBAYARAN_PENJUALAN_KARYAWAN") } }, select: { id: true, penjualan: { select: { id: true, nomor: true } } } }) : [],
   ]);
   const peta = new Map();
   for (const x of exp) peta.set(`PENGELUARAN:${x.id}`, { modul: "pengeluaran", id: x.id, nomor: x.expenseNumber });
@@ -95,6 +98,8 @@ async function dokumenTerkait(db, entries) {
   for (const x of ref) peta.set(`REFUND:${x.id}`, { modul: "refund", id: x.id, nomor: x.refundNumber });
   for (const x of kas) peta.set(`KASBON:${x.id}`, { modul: "kasbon", id: x.id, nomor: x.kasbonNumber });
   for (const x of kasRep) peta.set(`KASBON:${x.id}`, { modul: "kasbon", id: x.kasbon.id, nomor: x.kasbon.kasbonNumber });
+  for (const x of pjk) peta.set(`PENJUALAN_KARYAWAN:${x.id}`, { modul: "penjualan-karyawan", id: x.id, nomor: x.nomor });
+  for (const x of pjkBayar) peta.set(`PEMBAYARAN_PENJUALAN_KARYAWAN:${x.id}`, { modul: "penjualan-karyawan", id: x.penjualan.id, nomor: x.penjualan.nomor });
   // Pembayaran pelanggan memakai layar S5 (bukan modul transaksi): modul "pembayaran".
   for (const x of bayarOrder) peta.set(`PEMBAYARAN_ORDER:${x.id}`, { modul: "pembayaran", id: x.id, nomor: x.order?.orderNumber ?? "Pembayaran" });
   return (e) => peta.get(`${e.source}:${e.sourceId}`) ?? null;

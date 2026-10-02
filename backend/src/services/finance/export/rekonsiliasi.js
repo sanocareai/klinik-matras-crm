@@ -20,6 +20,7 @@ const LABEL_SUMBER = {
   PEMASUKAN_LAIN: "Pemasukan lain", PEMBAYARAN_SUPPLIER: "Pembayaran supplier", REFUND: "Refund", KASBON: "Kasbon",
   SALDO_AWAL: "Penyesuaian saldo", REKONSILIASI_SEMENTARA: "Penyesuaian sementara (2-1700)", REVERSAL: "Reversal", MANUAL: "Jurnal umum",
   UANG_MUKA_OPERASIONAL: "Uang muka operasional", INSENTIF_DRIVER: "Insentif driver",
+  PENJUALAN_KARYAWAN: "Penjualan karyawan", PEMBAYARAN_PENJUALAN_KARYAWAN: "Pembayaran penjualan karyawan",
 };
 const labelSumber = (s) => LABEL_SUMBER[s] || String(s ?? "");
 const jumlah = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);

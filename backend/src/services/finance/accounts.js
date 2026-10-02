@@ -58,6 +58,7 @@ export const SYSTEM_KEYS = Object.freeze({
   PENDAPATAN_PRODUK: "PENDAPATAN_PRODUK",
   PENDAPATAN_SEWA: "PENDAPATAN_SEWA",
   PENDAPATAN_ONGKIR: "PENDAPATAN_ONGKIR",
+  PENDAPATAN_PENJUALAN_KARYAWAN: "PENDAPATAN_PENJUALAN_KARYAWAN",
   RETUR_PENJUALAN: "RETUR_PENJUALAN",
   PENDAPATAN_LAIN: "PENDAPATAN_LAIN",
   BEBAN_POKOK_BAHAN: "BEBAN_POKOK_BAHAN",
@@ -179,6 +180,10 @@ export const DEFAULT_COA = Object.freeze([
   { code: "4-1900", name: "Pendapatan Ongkos Kirim", type: P, normalBalance: C, parent: "4-0000",
     systemKey: SYSTEM_KEYS.PENDAPATAN_ONGKIR, cashFlowCategory: "OPERASI",
     description: "Order.ongkir yang ditagihkan ke customer. TIDAK termasuk Order.ongkirKlaimGaransi — itu biaya kami, bukan tagihan (lihat services/invoice.js)." },
+  // Penjualan karyawan non-Sales yang dicatat manual (modul Penjualan Karyawan) — TERPISAH dari akun pendapatan order supaya tidak bercampur dengan omzet Tim Sales.
+  { code: "4-1250", name: "Pendapatan Penjualan Karyawan", type: P, normalBalance: C, parent: "4-0000",
+    systemKey: SYSTEM_KEYS.PENDAPATAN_PENJUALAN_KARYAWAN, cashFlowCategory: "OPERASI",
+    description: "Penjualan karyawan non-Sales ke kerabat, dicatat manual di luar Order (modul Penjualan Karyawan). Piutangnya ada di 1-1350 Piutang Karyawan." },
   // Akun KONTRA pendapatan.
   { code: "4-2100", name: "Retur & Potongan Penjualan", type: P, normalBalance: D, parent: "4-0000",
     systemKey: SYSTEM_KEYS.RETUR_PENJUALAN, cashFlowCategory: "OPERASI" },

@@ -65,6 +65,7 @@ export const LABEL_SUMBER_JURNAL = {
   UANG_MUKA_OPERASIONAL: "Uang Muka Operasional", PENGELUARAN: "Pengeluaran", PEMBELIAN: "Pembelian", BIAYA_KENDARAAN: "Biaya Kendaraan", BIAYA_IKLAN: "Belanja Iklan",
   PEMASUKAN_LAIN: "Pemasukan Lain", TRANSFER_KAS: "Transfer Kas", TAGIHAN_SUPPLIER: "Tagihan Supplier", PEMBAYARAN_SUPPLIER: "Pembayaran Supplier",
   PEMAKAIAN_BAHAN: "Pemakaian Bahan", PENERIMAAN_BAHAN: "Penerimaan Bahan", KASBON: "Kasbon", REVERSAL: "Jurnal Balik",
+  PENJUALAN_KARYAWAN: "Penjualan Karyawan", PEMBAYARAN_PENJUALAN_KARYAWAN: "Pembayaran Penjualan Karyawan",
 };
 export const labelSumberJurnal = (s) => LABEL_SUMBER_JURNAL[s] || s || "";
 export const LABEL_STATUS_JURNAL = { DRAFT: "Draft", POSTED: "Terposting", REVERSED: "Dibalik" };

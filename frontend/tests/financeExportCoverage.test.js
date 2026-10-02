@@ -37,6 +37,7 @@ const TIDAK_DIEKSPOR = {
   "FinanceReports.jsx": "laporan terhitung (Laba Rugi/Neraca/Arus Kas/Neraca Saldo), ditelusuri dari Buku Besar & Jurnal Umum",
   "FinanceAccounts.jsx": "master bagan akun",
   "FinanceSettings.jsx": "konfigurasi",
+  "FinancePenjualanKaryawan.jsx": "modul baru (2 Okt 2026): jurnalnya tercakup Jurnal Umum & Buku Besar, pendapatan tercakup export Pemasukan (Pemasukan Lain · Penjualan karyawan); export khusus dibuat bila Owner minta",
 };
 
 test("setiap halaman Finance: punya tombol export modul yang benar atau tercantum sebagai tidak diekspor", () => {
