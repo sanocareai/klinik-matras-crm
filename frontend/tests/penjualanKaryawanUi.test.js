@@ -24,6 +24,9 @@ test("Kartu Laporan: angka dari server (tanpa hitungan klien), hanya Admin/Owner
   assert.match(k, /Penjualan Karyawan \(di luar tim Sales\)/);
   assert.match(k, /Sisa Tagihan ke Karyawan/);
   assert.doesNotMatch(k, /\.reduce\(/, "tidak menjumlah di klien");
+  assert.match(k, /data\?\.gabungan/, "angka gabungan (order + manual) dari server");
+  assert.match(k, /Dicatat manual di Finance \(di luar Order\)/);
+  assert.doesNotMatch(k, /variant="blue"|group-open|\/(10|50|60)\b/, "hanya token/varian yang benar-benar ter-generate");
   assert.match(baca("src/features/laporan/components/SalesReportTab.jsx"), /<KartuPenjualanKaryawan range=\{range\} \/>/);
   assert.match(baca("src/api.js"), /getPenjualanKaryawan: \(params\) => request\("\/orders\/penjualan-karyawan\/ringkasan"/);
 });
