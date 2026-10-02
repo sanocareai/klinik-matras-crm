@@ -18,6 +18,8 @@ import MessageList from "./MessageList.jsx";
 import InChatSearch from "./InChatSearch.jsx";
 import Composer from "./Composer.jsx";
 import HandoverHistoryBanner from "./HandoverHistoryBanner.jsx";
+import CatatPembayaranDariChat from "./CatatPembayaranDariChat.jsx";
+import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 import { useMessages } from "../../hooks/useMessages.js";
 import { useSendMessage } from "../../hooks/useSendMessage.js";
 import { useMessageStore, useMessagesForConv } from "../../stores/messageStore.js";
@@ -38,30 +40,42 @@ function ForwardModal({ messageToForward, messagesToForward, onClose }) {
 
   const items = messagesToForward?.length ? messagesToForward : (messageToForward ? [messageToForward] : []);
 
-  // BUG (fix, 9 Sep 2026): sebelumnya cuma fetch daftar customer biasa
-  // (limit 100, urut lastMessageAt) — grup WA internal (Grup Sales,
-  // Drivethru, dst) tidak dijamin masuk 100 teratas, dan search/render di
-  // bawah cuma baca c.customer, jadi grup manapun yang KEBETULAN lolos
-  // tetap tampil sebagai "Pelanggan" tak bernama & tak bisa dicari. Fetch
-  // grup TERPISAH lewat ?type=GROUP (baru, backend/routes/conversations.js)
-  // supaya semua grup selalu tersedia sebagai target forward.
+  // BUG (fix, 1 Okt 2026): "kontak yang mau di-forward tidak ada / tidak bisa
+  // dipilih". Dulu daftar cuma 100 percakapan TERBARU (default API), lalu
+  // pencariannya disaring di browser — kontak di luar 100 itu (dari ~3.300
+  // pelanggan) tidak pernah ada di daftar dan TIDAK BISA dicari. Kontak Tim
+  // (rekan sales) juga disembunyikan dari daftar biasa, padahal itu tujuan
+  // forward paling umum. Sekarang pencarian dilakukan di SERVER (debounce),
+  // mencakup semua percakapan termasuk Kontak Tim, hanya di nama/nomor/grup.
+  // Kegagalan fetch juga ditampilkan, bukan ditelan jadi "Tidak ditemukan".
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
-    Promise.all([
-      api.getConversations(),
-      api.getConversations({ type: "GROUP", limit: 200 }),
-    ]).then(([customers, groups]) => {
-      const groupIds = new Set(groups.data.map((g) => g.id));
-      setConvs([...groups.data, ...customers.data.filter((c) => !groupIds.has(c.id))]);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
+    let alive = true;
+    setLoading(true);
+    setError("");
+    const t = setTimeout(async () => {
+      try {
+        const q = search.trim();
+        const dasar = { scope: "all", nameOnly: true, ...(q ? { search: q } : {}) };
+        const [customers, groups] = await Promise.all([
+          api.getConversations({ ...dasar, limit: 60 }),
+          api.getConversations({ ...dasar, type: "GROUP", limit: 200 }),
+        ]);
+        if (!alive) return;
+        const groupIds = new Set(groups.data.map((g) => g.id));
+        setConvs([...groups.data, ...customers.data.filter((c) => !groupIds.has(c.id))]);
+      } catch (err) {
+        if (alive) setError(err?.message || "Gagal memuat daftar percakapan");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }, search ? 300 : 0);
+    return () => { alive = false; clearTimeout(t); };
+  }, [search, reloadKey]);
 
-  const filtered = convs.filter((c) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    if (c.type === "GROUP") return (c.groupName || "").toLowerCase().includes(q);
-    return c.customer?.name?.toLowerCase().includes(q) || (c.customer?.phone || "").includes(q);
-  });
+  // Penyaringan sudah dilakukan server; `convs` langsung ditampilkan.
+  const filtered = convs;
 
   // BUG (fix, 17 Agt 2026): SEBELUMNYA `Promise.allSettled(items.map(...))`
   // mengirim SEMUA pesan bersamaan — untuk album (>1 foto sekaligus, lihat
@@ -119,7 +133,14 @@ function ForwardModal({ messageToForward, messagesToForward, onClose }) {
         </div>
         <div style={{ overflowY: "auto", flex: 1 }}>
           {loading && <p style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Memuat...</p>}
-          {!loading && filtered.length === 0 && <p style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Tidak ditemukan</p>}
+          {!loading && error && (
+            <div style={{ padding: 20, textAlign: "center", fontSize: 13 }}>
+              <p style={{ color: "var(--color-danger, #dc2626)", margin: "0 0 8px" }}>{error}</p>
+              <button onClick={() => setReloadKey((k) => k + 1)}>Coba lagi</button>
+            </div>
+          )}
+          {!loading && !error && filtered.length === 0 && <p style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Tidak ditemukan</p>}
+          {forwarding && <p style={{ padding: "8px 20px", textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>Meneruskan pesan…</p>}
           {filtered.map((c) => {
             const isGroup = c.type === "GROUP";
             const name = isGroup ? (c.groupName || "Grup WA") : (c.customer?.name || c.customer?.phone || "Pelanggan");
@@ -163,6 +184,8 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
   const [takingOver, setTakingOver]     = useState(false);
   const [resolving, setResolving]       = useState(false);
   const [forwardMsg, setForwardMsg]     = useState(null);
+  const [bayarMsg, setBayarMsg]         = useState(null); // foto bukti transfer yang sedang dicatat sebagai pembayaran (klaim DP/Lunas)
+  const gateKlaimAktif = useKlaimLunasAktif(); // menu "Catat Pembayaran" hanya bila gerbang Klaim Lunas aktif
   const [forwardBulk, setForwardBulk]   = useState(null); // array pesan — forward BULK dari mode pilih (beda dari forwardMsg tunggal)
   const [dragOver, setDragOver]         = useState(false);
   const [syncingHistory, setSyncingHistory] = useState(false);
@@ -611,6 +634,7 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
         mentionMap={mentionMap}
         onReply={(msg) => useComposerStore.getState().setReplyTarget(msg)}
         onForward={(msg) => setForwardMsg(msg)}
+        onCatatPembayaran={gateKlaimAktif === true ? (msg) => setBayarMsg(msg) : undefined}
         onEdit={(msg) => useComposerStore.getState().startEditingMessage(conversationId, msg)}
         onRetry={handleRetry}
         onDeleteLocal={handleDeleteLocal}
@@ -638,6 +662,13 @@ export default function ChatWindow({ conversation, user, onBack, panelCollapsed,
 
       {/* ── Forward Modal ── */}
       {forwardMsg && <ForwardModal messageToForward={forwardMsg} onClose={() => setForwardMsg(null)} />}
+      {bayarMsg && (
+        <CatatPembayaranDariChat
+          message={bayarMsg}
+          customerName={conversation?.customer?.name || conversation?.customer?.phone}
+          onClose={() => setBayarMsg(null)}
+        />
+      )}
       {forwardBulk && (
         <ForwardModal messagesToForward={forwardBulk} onClose={() => { setForwardBulk(null); cancelSelection(); }} />
       )}

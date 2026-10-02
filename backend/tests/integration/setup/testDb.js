@@ -31,6 +31,7 @@ const TABLES_TO_TRUNCATE = [
   "stock_adjustment_requests", "replenishment_requests",
   "materials",
   "storage_locations", "warehouses",
+  "production_daily_targets_v2", // P11.1 — append-only, tanpa FK: harus dikosongkan eksplisit antar tes
   // ── Finance Workspace (D-180, 17 September 2026) ────────────────────────
   // WAJIB ada di daftar ini, bukan mengandalkan CASCADE dari "Order".
   // Alasannya BUKAN teoretis: sejak D-180, putaway goods receipt & material

@@ -61,7 +61,7 @@ async function resolveReplyToId(quotedExternalId, conversationId) {
   if (!idSegment) return null;
   const quoted = await prisma.message.findFirst({
     where: {
-      externalId: { endsWith: idSegment },
+      externalId: { contains: idSegment },
       ...(conversationId ? { conversationId } : {}),
     },
     select: { id: true },
@@ -80,8 +80,18 @@ async function resolveReplyToId(quotedExternalId, conversationId) {
 // ack macet di angka lama walau WAHA sudah kirim update yang benar. Sama
 // pola dengan message.revoked/message.edited di bawah yang sudah lebih dulu
 // pakai `contains` untuk alasan yang sama.
+//
+// BUG YANG DIPERBAIKI (1 Okt 2026 — "pesan sudah delivered tapi di Sano
+// Messenger jam pending terus"): id pesan GRUP punya 4 bagian,
+// "true_<grup>@g.us_<idPesan>_<pengirim>@c.us". Mengambil bagian TERAKHIR
+// menghasilkan nomor pengirim, bukan id pesan — event ack tidak pernah cocok
+// dengan pesannya (di produksi: 0 dari 97 pesan grup 7 hari terakhir pernah
+// naik di atas ack 1). Sekarang pakai idPesanInti (bagian ke-3) dan pencarian
+// memakai `contains`, bukan `endsWith`.
 function messageIdSegment(fullId) {
   if (!fullId) return null;
+  const inti = idPesanInti(fullId);
+  if (inti) return inti;
   const idx = fullId.lastIndexOf("_");
   return idx === -1 ? fullId : fullId.slice(idx + 1);
 }
@@ -194,7 +204,7 @@ function mimeToMediaType(mime) {
 }
 
 // Download media dengan retry — WAHA terkadang belum selesai proses media saat webhook tiba
-async function downloadWithRetry(mediaInfo, messageId) {
+async function downloadWithRetry(mediaInfo, messageId, session) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (attempt > 1) {
       await new Promise(r => setTimeout(r, 1500 * attempt));
@@ -205,7 +215,7 @@ async function downloadWithRetry(mediaInfo, messageId) {
       if (result?.data) return result;
     }
     if (messageId) {
-      const result = await downloadMediaMessage(messageId);
+      const result = await downloadMediaMessage(messageId, session);
       if (result?.data) return result;
     }
   }
@@ -229,8 +239,8 @@ async function downloadWithRetry(mediaInfo, messageId) {
 // pasti selesai proses beberapa saat kemudian), forward WAJIB coba unduh
 // ulang di titik itu — bukan diam-diam kirim placeholder teks "[Video]" ke
 // tujuan seolah videonya benar-benar terkirim.
-export async function downloadAndSaveMedia(mediaInfo, externalId, fallbackMime, mediaType) {
-  const downloaded = await downloadWithRetry(mediaInfo, externalId);
+export async function downloadAndSaveMedia(mediaInfo, externalId, fallbackMime, mediaType, session) {
+  const downloaded = await downloadWithRetry(mediaInfo, externalId, session);
   if (!downloaded?.data) return null;
   const finalMime = (downloaded.mimetype && downloaded.mimetype !== "application/octet-stream")
     ? downloaded.mimetype : (fallbackMime || "");
@@ -383,7 +393,7 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
 
     if (mediaType && !NON_DOWNLOADABLE_MEDIA_TYPES.has(mediaType)) {
       const fallbackMime = payload.media?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
-      mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime, mediaType);
+      mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime, mediaType, sessionName);
       if (!mediaUrl) console.warn("[webhook] Grup: gagal download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
     }
 
@@ -761,7 +771,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   if (mediaType && !NON_DOWNLOADABLE_MEDIA_TYPES.has(mediaType)) {
     const fallbackMime = mediaInfo?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
     console.log("[webhook] Ada media, tipe:", mediaType, "mime:", fallbackMime, "url:", mediaInfo?.url?.slice(0, 80));
-    mediaUrl = await downloadAndSaveMedia(mediaInfo, externalId, fallbackMime, mediaType);
+    mediaUrl = await downloadAndSaveMedia(mediaInfo, externalId, fallbackMime, mediaType, sessionName);
     if (!mediaUrl) console.warn("[webhook] Tidak bisa download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
   }
 
@@ -931,7 +941,7 @@ async function handleOutboundFromPhone(payload, phone, text, externalId, session
 
   if (mediaType && !NON_DOWNLOADABLE_MEDIA_TYPES.has(mediaType)) {
     const fallbackMime = payload.media?.mimetype || payload._data?.mimetype || payload._data?.Info?.Mimetype || "";
-    mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime, mediaType);
+    mediaUrl = await downloadAndSaveMedia(payload.media || null, externalId, fallbackMime, mediaType, sessionName);
     if (!mediaUrl) console.warn("[webhook] fromMe: gagal download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
   }
 
@@ -1038,7 +1048,7 @@ webhookRouter.post("/waha", async (req, res) => {
           const idSegment = messageIdSegment(externalId);
           ackedMessage = idSegment
             ? await prisma.message.findFirst({
-                where: { externalId: { endsWith: idSegment } },
+                where: { externalId: { contains: idSegment } },
                 select: { id: true, externalId: true, conversationId: true, ack: true, direction: true },
               })
             : null;

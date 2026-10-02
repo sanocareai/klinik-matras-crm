@@ -769,6 +769,28 @@ export const api = {
     request(`/production-v2/documentation/runs/${runId}/submit`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   correctProductionV2Documentation: (runId, data, idempotencyKey = mutationKey("p10b-doc-fix")) =>
     request(`/production-v2/documentation/runs/${runId}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // P11 — Reporting & KPI Production–Warehouse (BACA-SAJA). `qs` = query string yang SAMA untuk layar, drill-down, dan export.
+  getProductionReportMeta: () => request("/production-v2/reports/meta"),
+  getProductionReport: (kind, qs = "") => request(`/production-v2/reports/${kind}${qs ? `?${qs}` : ""}`),
+  getProductionReportDrill: (metric, qs = "") => request(`/production-v2/reports/drill/${encodeURIComponent(metric)}${qs ? `?${qs}` : ""}`),
+  getProductionReportUnit: (runId, qs = "") => request(`/production-v2/reports/units/${encodeURIComponent(runId)}${qs ? `?${qs}` : ""}`),
+  getProductionReportList: (path, qs = "") => request(`/production-v2/reports/${path}${qs ? `?${qs}` : ""}`),
+  // Export = berkas (bukan JSON): server membangun Excel/PDF dari dokumen laporan yang sama dengan layar.
+  exportProductionReport: async (qs) => {
+    const res = await fetch(`${BASE}/production-v2/reports/export?${qs}`, { headers: { ...authHeaders() } });
+    adoptRefreshedToken(res);
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) {
+      let msg = "Gagal mengekspor laporan";
+      try { msg = (await res.json()).error || msg; } catch { /* respons bukan JSON */ }
+      throw new Error(msg);
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    return { blob: await res.blob(), namaFile: cd.match(/filename="([^"]+)"/)?.[1] || "Production_laporan" };
+  },
+  // P11.1 — target harian historis (append-only; POST hanya Admin/Owner, server menegakkan).
+  getProductionTargets: () => request("/production-v2/targets"),
+  setProductionTarget: (data) => request("/production-v2/targets", { method: "POST", body: JSON.stringify(data) }),
   // P9B.1 — foto identitas unit manual (hanya tampil kalau unit belum punya foto pickup driver, lihat backend).
   uploadUnitPhoto: (unitId, file, onProgress) => {
     const fd = new FormData();
@@ -853,6 +875,8 @@ export const api = {
       if (statusOrParams.scope)        params.set("scope", statusOrParams.scope);
       // Filter type=GROUP — dipakai ForwardModal buat ambil semua grup WA.
       if (statusOrParams.type)         params.set("type", statusOrParams.type);
+      // Cari hanya di nama/nomor/nama grup (pemilih tujuan forward) — bukan isi pesan.
+      if (statusOrParams.nameOnly)     params.set("nameOnly", "true");
       if (statusOrParams.cursor)       params.set("cursor", statusOrParams.cursor);
       if (statusOrParams.limit)        params.set("limit", statusOrParams.limit);
       const s = params.toString();
@@ -1101,6 +1125,9 @@ export const api = {
   hapusBuktiKlaimLunas: (id, evidenceId) => request(`/klaim-lunas/${id}/bukti/${evidenceId}`, { method: "DELETE" }),
   ajukanKlaimLunas: (id, idempotencyKey = mutationKey("klaim-ajukan")) => request(`/klaim-lunas/${id}/ajukan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({}) }),
   tarikKlaimLunas: (id) => request(`/klaim-lunas/${id}/tarik`, { method: "POST", body: JSON.stringify({}) }),
+  // "Catat Pembayaran" dari foto di chat: pemilih order + jadikan foto chat sebagai bukti pada draf klaim (backend/src/services/finance/klaimDariChat.js).
+  getKandidatOrderDariPesan: (messageId) => request(`/klaim-lunas/dari-pesan/${encodeURIComponent(messageId)}/order`),
+  lampirkanBuktiDariPesan: (orderId, messageId) => request(`/klaim-lunas/order/${orderId}/dari-pesan`, { method: "POST", body: JSON.stringify({ messageId }) }),
   // Koreksi salah input (2 Sep 2026) — admin-only di backend, lihat
   // routes/orders.js. Entri TIDAK dihapus, cuma ditandai batal.
   cancelOrderPayment: (orderId, paymentId, data) =>

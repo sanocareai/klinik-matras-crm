@@ -234,7 +234,7 @@ test("audit READER P10B: semua pembaca production_step_evidence_v2 teraudit; bar
   const readers = report.findings.filter((f) => f.kind === "STEP_EVIDENCE_READER" || f.kind === "STEP_EVIDENCE_SQL_READER");
   assert.ok(readers.length >= 4, "pembaca Prisma + SQL terdeteksi: " + readers.map((r) => r.file + ":" + r.disposition).join(","));
   assert.deepEqual([...new Set(readers.map((r) => r.file))].sort(), [
-    "src/routes/productionEvidenceMedia.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionStepCommandService.js",
+    "src/routes/productionEvidenceMedia.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionReportingService.js", "src/services/productionStepCommandService.js",
   ]);
   assert.equal(report.findings.filter((f) => !f.ok).length, 0);
   const sources = loadBackendSources(backendRoot);
@@ -285,6 +285,31 @@ await prisma.unit.update({});
   assert.ok(auditProductionExperienceWriters(routeWrites).findings.some((f) => f.disposition === "READ_MODEL_MUST_NOT_WRITE"));
 });
 
+test("audit P11 BACA-SAJA: laporan tidak punya penulis; menangkap create/update/$executeRaw/$transaction/SQL tulis, route non-GET, impor command, helper lifecycle, dan pembaca bukti tanpa pemisah DOC_", () => {
+  const sources = loadBackendSources(backendRoot);
+  const REPORT = "src/services/productionReportingService.js";
+  const ROUTE = "src/routes/productionReports.js";
+  const real = auditProductionExperienceWriters(sources).findings;
+  assert.equal(real.filter((f) => f.kind.startsWith("REPORT_") || f.kind === "DOC_FILTER").filter((f) => !f.ok).length, 0, JSON.stringify(real.filter((f) => !f.ok)));
+  const bad = new Map(sources);
+  bad.set(REPORT, `${sources.get(REPORT)}
+await prisma.unit.update({});
+await prisma.$transaction([]);
+await prisma.$executeRaw\`UPDATE units SET status = 'X'\`;
+await applyCompleteInTx();
+`);
+  bad.set("src/services/productionReportingRouting.js", `${sources.get("src/services/productionReportingRouting.js")}\nimport { completeStep } from "./productionStepCommandService.js";\n`);
+  bad.set(ROUTE, `${sources.get(ROUTE)}\nproductionReportsRouter.post("/x", () => {});\nproductionReportsRouter.delete("/x", () => {});\n`);
+  const d = auditProductionExperienceWriters(bad).findings.filter((f) => !f.ok).map((f) => f.disposition);
+  for (const expected of ["REPORT_MUST_NOT_WRITE", "REPORT_MUST_NOT_OPEN_TRANSACTION_OR_UNSAFE_SQL", "FORBIDDEN_applyCompleteInTx", "FORBIDDEN_IMPORT_completeStep", "FORBIDDEN_ROUTE_POST", "FORBIDDEN_ROUTE_DELETE"]) assert.ok(d.includes(expected), `${expected}: ${d.join(",")}`);
+  assert.ok(d.includes("REPORT_MUST_NOT_RUN_WRITE_SQL") || d.includes("REPORT_MUST_NOT_WRITE"));
+  const noDocFilter = new Map(sources);
+  noDocFilter.set(REPORT, sources.get(REPORT).replaceAll("isDocumentationRow(", "bukanDokumentasi("));
+  assert.ok(auditProductionExperienceWriters(noDocFilter).findings.some((f) => f.disposition === "MISSING_DOC_FILTER_reporting"));
+  const missing = new Map(sources); missing.delete(ROUTE);
+  assert.ok(auditProductionExperienceWriters(missing).findings.some((f) => f.disposition === "MISSING_REPORT_FILE"));
+});
+
 test("audit writer P8 menangkap: bukti diubah/dihapus, penulis liar, P8 menulis operasi/stok langsung, read-model menulis, outbox ditandai terkirim", () => {
   const sources = loadBackendSources(backendRoot);
   const STEP = "src/services/productionStepCommandService.js";
@@ -319,4 +344,24 @@ test("migration P8 aditif: kolom plan nullable/berdefault, 2 tabel baru, trigger
   // yang lebih BARU (P9A..P9D, Finance) memang wajar ada setelahnya.
   assert.ok(names.includes(MIGRATION), "migration P8 ada");
   assert.ok(names.indexOf(MIGRATION) >= names.filter((n) => n < MIGRATION).length, "urutan migration P8 konsisten");
+});
+
+test("audit P11.1 target harian: hanya productionTargetService yang create; update/upsert/delete & penulis liar & router menulis langsung = pelanggaran; migration aditif + trigger append-only + LF", () => {
+  const sources = loadBackendSources(backendRoot);
+  const real = auditProductionExperienceWriters(sources).findings.filter((f) => f.kind.startsWith("TARGET_"));
+  assert.deepEqual(real.map((f) => `${f.file}:${f.disposition}`), ["src/services/productionTargetService.js:TARGET_OWNER_CREATE"]);
+  const bad = new Map(sources);
+  bad.set("src/routes/liar.js", "await prisma.productionDailyTarget.create({});\nawait prisma.productionDailyTarget.update({});\nawait prisma.productionDailyTarget.deleteMany({});\n");
+  bad.set("src/routes/productionTargets.js", `${sources.get("src/routes/productionTargets.js")}\nawait prisma.productionDailyTarget.create({});\n`);
+  bad.set("src/services/productionTargetService.js", `${sources.get("src/services/productionTargetService.js")}\nawait prisma.productionDailyTarget.upsert({});\n`);
+  const d = auditProductionExperienceWriters(bad).findings.filter((f) => !f.ok).map((f) => f.disposition);
+  for (const expected of ["UNOWNED_TARGET_WRITER", "TARGET_IMMUTABLE_VIOLATION_update", "TARGET_IMMUTABLE_VIOLATION_deleteMany", "TARGET_IMMUTABLE_VIOLATION_upsert", "TARGET_ROUTER_MUST_USE_SERVICE"]) assert.ok(d.includes(expected), `${expected}: ${d.join(",")}`);
+  const missing = new Map(sources); missing.delete("src/routes/productionTargets.js");
+  assert.ok(auditProductionExperienceWriters(missing).findings.some((f) => f.disposition === "MISSING_TARGET_ROUTE"));
+  const sql = fs.readFileSync(path.join(backendRoot, "prisma", "migrations", "20261014090000_production_daily_targets_v2", "migration.sql"), "utf8");
+  const executable = sql.split("\n").filter((line) => !line.startsWith("--")).join("\n");
+  assert.equal(sql.includes("\r"), false, "migration harus LF");
+  assert.equal(/\b(DROP|TRUNCATE|DELETE FROM|UPDATE\s+"|RENAME|INSERT INTO|ALTER TABLE)\b/i.test(executable.replace(/BEFORE UPDATE OR DELETE/g, "")), false, "aditif murni: hanya CREATE");
+  assert.equal((executable.match(/CREATE TABLE/g) || []).length, 1);
+  assert.match(executable, /BEFORE UPDATE OR DELETE ON "production_daily_targets_v2"/); assert.match(executable, /target_units" BETWEEN 1 AND 500/);
 });

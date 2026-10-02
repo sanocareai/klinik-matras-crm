@@ -9351,3 +9351,18 @@ model FinDivisionBudget {
   @@index([division, period, status])
   @@map("fin_division_budgets")
 }
+
+// P11.1 — target harian Produksi V2 yang TERSIMPAN historis (berlaku mulai effective_from, tanggal kalender WIB). APPEND-ONLY
+// (trigger melarang UPDATE/DELETE): koreksi = baris baru. Laporan P11 memakai target yang berlaku pada tiap hari; hari tanpa
+// target tercatat memakai konfigurasi sistem. Satu-satunya penulis: productionTargetService (create-only).
+model ProductionDailyTarget {
+  id            String   @id @default(uuid()) @db.Uuid
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  targetUnits   Int      @map("target_units")
+  reason        String
+  actorId       String?  @map("actor_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([effectiveFrom, createdAt])
+  @@map("production_daily_targets_v2")
+}

@@ -6,10 +6,9 @@ import { applicableStepsFor } from "./productionStepCommandService.js";
 import { resolveUnitPhoto } from "./productionUnitPhotoService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrl } from "../routes/productionUnitPhoto.js";
-import { buildDocumentationMatrix, parseDocRows } from "../lib/domain/productionDocumentation.js";
+import { buildDocumentationMatrix, deriveNextStepNo, parseDocRows, LEGACY_PHOTO_PREFIX } from "../lib/domain/productionDocumentation.js";
 import { STEP_BY_NO } from "../lib/domain/productionSteps.js";
 
-const LEGACY_PHOTO_PREFIX = /^\/media\/(unit-photos|job-photos)\/[A-Za-z0-9._-]+$/; // penyimpanan foto QC lama (statis); tanpa path traversal
 
 export async function buildRunDocumentation(prisma, run, ctx) {
   const evidence = ctx.evidence || [];
@@ -46,7 +45,7 @@ export async function buildRunDocumentation(prisma, run, ctx) {
   const matrix = buildDocumentationMatrix({
     applicableSteps: applicableStepsFor(ctx.split),
     recordedSteps: new Set(evidence.map((e) => e.stepNo)),
-    nextStepNo: ctx.next?.stepNo ?? null,
+    nextStepNo: deriveNextStepNo(new Set(evidence.map((e) => e.stepNo))),
     started,
     run: { origin: run.origin, status: run.status },
     qcDone: inspections.length > 0,

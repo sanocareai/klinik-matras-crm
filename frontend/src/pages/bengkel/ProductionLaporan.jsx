@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Gauge, Clock, ShieldCheck, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -58,6 +59,8 @@ export default function ProductionLaporan() {
       />
 
       <PageBody>
+        {/* P11 — laporan V2 (target, TAT, QC, Meja/PIC, Gudang, Excel/PDF) ada di halaman terpisah; laporan ini tetap data tahap V1 apa adanya. */}
+        <p className="m-0 rounded-btn bg-accentbg px-3 py-2 text-[12.5px] text-accent" data-testid="link-kpi-v2">Butuh KPI Production V2 (target vs selesai, turnaround, QC pertama, performa Meja/PIC, Gudang, Excel/PDF)? <Link to="/bengkel/kpi" className="font-semibold underline">Buka KPI Produksi</Link>.</p>
         <div className="flex flex-wrap items-center gap-2">
           <DateRangePicker value={range} onChange={setRange} />
         </div>

@@ -160,6 +160,11 @@ export function buildDocumentationMatrix({ applicableSteps, recordedSteps, nextS
   };
 }
 
+// Tahap yang dianggap "lewat" untuk kelengkapan dokumentasi: tahap setelah bukti tertinggi yang sudah tercatat. SATU definisi dipakai
+// detail dokumentasi, Unit 360, dan laporan KPI (P11) supaya angkanya identik.
+export const deriveNextStepNo = (recordedSteps) => (recordedSteps.size ? Math.max(...recordedSteps) + 1 : null);
+export const LEGACY_PHOTO_PREFIX = /^\/media\/(unit-photos|job-photos)\/[A-Za-z0-9._-]+$/;
+
 export const DOC_QUEUE_FILTERS = Object.freeze(["ALL", "BELUM_DIMULAI", "BEFORE_KURANG", "PROSES_KURANG", "AFTER_KURANG", "LENGKAP"]);
 export function matchesDocFilter(flags, filter) {
   switch (filter) {
