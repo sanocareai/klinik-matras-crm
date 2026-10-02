@@ -326,6 +326,8 @@ model User {
   finAdvancesCreated FinOperationalAdvance[] @relation("FinAdvanceCreator")
   klaimLunasDibuat   OrderPaymentClaim[]          @relation("KlaimLunasCreator")
   ordersSoldAsStaff  Order[]                      @relation("OrderStaffSeller")
+  paidAtPengecualianDibuat  OrderPaidAtPengecualian[] @relation("PaidAtPengecualianPembuat")
+  paidAtPengecualianDicabut OrderPaidAtPengecualian[] @relation("PaidAtPengecualianPencabut")
   klaimLunasDitinjau OrderPaymentClaim[]          @relation("KlaimLunasReviewer")
   id           String   @id @default(cuid())
   name         String
@@ -1364,6 +1366,7 @@ model Order {
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
   @@index([promoId])
   @@index([staffSellerId])
+  paidAtPengecualian    OrderPaidAtPengecualian[]
 }
 
 // ─── INVOICE (31 Agustus 2026) ──────────────────────────────────────────────
@@ -9365,4 +9368,34 @@ model ProductionDailyTarget {
 
   @@index([effectiveFrom, createdAt])
   @@map("production_daily_targets_v2")
+}
+
+// ═══ PENGECUALIAN TANGGAL LUNAS (Order.paidAt) — keputusan Owner, ber-riwayat (2 Okt 2026) ═══════════════════════════════════════════════════════
+// Order.paidAt normalnya MENGIKUTI tanggal Payment terverifikasi yang melunasi (services/paymentLedger.js, paidAtSinkron/paidAtEfektif). Itu menggeser order yang
+// diklaim lunas di akhir bulan tetapi diverifikasi Finance bulan berikutnya ke bulan berikutnya. Pengecualian ini = Owner memutuskan tanggal hitung lunas sebuah order
+// DIKUNCI (mis. target Sales 120 jt di September): selama ada pengecualian AKTIF, TIDAK ADA jalur yang mengubah Order.paidAt order itu. TIDAK menyentuh Payment, jurnal,
+// saldo, atau status bayar — hanya tanggal hitung lunas. Setiap pengecualian punya alasan, pembuat, waktu, dan (bila dicabut) pencabut + alasan: tabel ini adalah riwayatnya,
+// baris tidak pernah dihapus. Satu order maksimal SATU pengecualian aktif (indeks unik parsial di migrasi). Hanya Admin/Owner (FINANCE_ADMIN).
+model OrderPaidAtPengecualian {
+  id String @id @default(uuid()) @db.Uuid
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  paidAtDikunci DateTime @map("paid_at_dikunci") // tanggal hitung lunas yang dihormati
+  paidAtAsli    DateTime? @map("paid_at_asli")   // paidAt sesaat sebelum pengecualian dibuat (untuk riwayat)
+  alasan        String
+
+  createdById String   @map("created_by")
+  createdBy   User     @relation("PaidAtPengecualianPembuat", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  dicabutAt     DateTime? @map("dicabut_at")
+  dicabutById   String?   @map("dicabut_by")
+  dicabutBy     User?     @relation("PaidAtPengecualianPencabut", fields: [dicabutById], references: [id], onDelete: SetNull)
+  alasanDicabut String?   @map("alasan_dicabut")
+
+  @@index([orderId])
+  @@index([dicabutAt])
+  @@map("order_paid_at_pengecualian")
 }

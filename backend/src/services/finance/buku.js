@@ -213,6 +213,7 @@ export async function daftarAkun(db, { q = "", limit = 50 } = {}) {
 }
 
 const BATAS_BARIS_BUKU = 20000;
+const rupiahTeks = (m) => { const n = Number(toMoney(m ?? 0).toFixed(2)); return `${n < 0 ? "-" : ""}Rp${Math.abs(n).toLocaleString("id-ID", { maximumFractionDigits: 2 })}`; };
 
 /** Mutasi satu akun + saldo awal + saldo berjalan (Decimal di server). Halaman = potongan dari daftar lengkap periode; saldo berjalan SUDAH benar per baris. */
 export async function mutasiAkun(db, { accountId, from, to, page, limit }) {
@@ -361,5 +362,80 @@ export async function detailRekon(db, user, id) {
     },
     baris, terpotong: s.lines.length >= 500, riwayat, diperbaruiPada: new Date().toISOString(), cutoff: await cutoffRingkas(db, s),
     penutup: s.completedAt ? { pada: waktu(s.completedAt), oleh: orang(s.completedBy) } : null,
+  };
+}
+
+// ── MUTASI REKENING (2 Okt 2026) ──────────────────────────────────────────────────────────────────────────
+// Mutasi SATU rekening kas/bank (mis. PT Sano, KEM, Uang Kas) seperti rekening koran versi buku: saldo awal, tiap uang masuk/keluar dengan saldo berjalan, saldo akhir.
+// Dipakai layar Kas & Bank → Mutasi Rekening, Export Excel, dan (nanti) rekonsiliasi — satu sumber supaya angkanya tidak mungkin berbeda.
+// Hanya baris yang ditandai rekening ini DAN berakun kas/bank rekening itu (accountId = rekening.accountId): baris lain yang keliru ditandai (mis. beban biaya admin lama) tidak ikut
+// sebagai uang masuk — dilaporkan di \`peringatan\` agar terlihat kenapa angka ini bisa berbeda dari kartu saldo di tab Rekening sampai data lama dirapikan.
+export async function mutasiRekening(db, { cashAccountId, from, to, q, page, limit, semua = false }) {
+  const dari = tanggalKolom(from);
+  const sampai = tanggalKolom(to);
+  if (!dari || !sampai) throw new BukuError("Periode (from & to, YYYY-MM-DD) wajib diisi untuk mutasi rekening");
+  if (dari > sampai) throw new BukuError("Tanggal awal tidak boleh setelah tanggal akhir");
+  const rek = await db.finCashAccount.findUnique({ where: { id: cashAccountId }, select: { id: true, name: true, kind: true, bankName: true, accountNumber: true, accountId: true, active: true } });
+  if (!rek) return null;
+  const { limit: lim, page: hal, skip } = batas({ page, limit }, 50);
+  const milikRekening = { cashAccountId: rek.id, accountId: rek.accountId };
+
+  const sebelum = await db.finJournalLine.aggregate({ where: { ...milikRekening, entry: { status: { in: STATUS_DIHITUNG }, date: { lt: dari } } }, _sum: { debit: true, credit: true } });
+  const saldoAwal = toMoney(sebelum._sum.debit || 0).minus(toMoney(sebelum._sum.credit || 0));
+
+  const lines = await db.finJournalLine.findMany({
+    where: { ...milikRekening, entry: { status: { in: STATUS_DIHITUNG }, date: { gte: dari, lte: sampai } } },
+    orderBy: [{ entry: { date: "asc" } }, { entry: { createdAt: "asc" } }, { entry: { entryNumber: "asc" } }, { lineNo: "asc" }],
+    take: BATAS_BARIS_BUKU + 1,
+    select: { id: true, debit: true, credit: true, description: true, entry: { select: { id: true, entryNumber: true, date: true, description: true, source: true, sourceId: true, status: true, reversalOf: { select: { entryNumber: true } } } } },
+  });
+  if (lines.length > BATAS_BARIS_BUKU) throw new BukuError(`Rekening ini punya lebih dari ${BATAS_BARIS_BUKU} mutasi pada periode tersebut. Persempit periode.`, 422);
+
+  // Akun lawan tiap jurnal (baris selain milik rekening ini) — "uang ini untuk apa/dari mana" tanpa membuka jurnal.
+  const idJurnal = [...new Set(lines.map((l) => l.entry.id))];
+  const lawan = new Map();
+  if (idJurnal.length) {
+    const lain = await db.finJournalLine.findMany({ where: { entryId: { in: idJurnal }, NOT: { cashAccountId: rek.id, accountId: rek.accountId } }, select: { entryId: true, account: { select: { code: true, name: true } } }, orderBy: { lineNo: "asc" } });
+    for (const l of lain) { const a = lawan.get(l.entryId) ?? []; const t = `${l.account.code} ${l.account.name}`; if (!a.includes(t)) a.push(t); lawan.set(l.entryId, a); }
+  }
+  const dok = await dokumenTerkait(db, lines.map((l) => l.entry));
+
+  let saldo = saldoAwal;
+  let masuk = ZERO, keluar = ZERO, nMasuk = 0, nKeluar = 0;
+  const semuaBaris = lines.map((l) => {
+    const d = toMoney(l.debit), k = toMoney(l.credit);
+    saldo = saldo.plus(d).minus(k);
+    if (d.greaterThan(0)) { masuk = masuk.plus(d); nMasuk += 1; }
+    if (k.greaterThan(0)) { keluar = keluar.plus(k); nKeluar += 1; }
+    return {
+      lineId: l.id, jurnalId: l.entry.id, nomor: l.entry.entryNumber, tanggal: tgl(l.entry.date), keterangan: l.description || l.entry.description, lawan: (lawan.get(l.entry.id) ?? []).join(" · ") || null,
+      sumber: l.entry.source, sumberLabel: LABEL_SUMBER[l.entry.source] ?? l.entry.source, status: l.entry.status, membalik: l.entry.reversalOf?.entryNumber ?? null,
+      masuk: d.greaterThan(0) ? uang(d) : null, keluar: k.greaterThan(0) ? uang(k) : null, saldo: uang(saldo), dokumen: dok(l.entry),
+    };
+  });
+
+  // Filter pencarian SETELAH saldo berjalan dihitung — saldo tiap baris tetap benar walau baris lain disembunyikan.
+  const kata = String(q ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
+  const cocokBaris = (b) => kata.every((w) => [b.nomor, b.keterangan, b.lawan, b.sumberLabel, b.dokumen?.nomor, b.masuk, b.keluar, (b.masuk ?? b.keluar ?? "").replace(/\.00$/, "")].filter(Boolean).some((v) => String(v).toLowerCase().includes(w)));
+  const tersaring = kata.length ? semuaBaris.filter(cocokBaris) : semuaBaris;
+
+  // Peringatan: baris yang ditandai rekening ini tetapi BUKAN akun kas/bank-nya (tidak dihitung di atas, tetapi MASIH dihitung kartu saldo tab Rekening).
+  const salah = await db.finJournalLine.aggregate({ where: { cashAccountId: rek.id, NOT: { accountId: rek.accountId }, entry: { status: { in: STATUS_DIHITUNG } } }, _sum: { debit: true, credit: true }, _count: { _all: true } });
+  const peringatan = [];
+  if (salah._count._all > 0) {
+    const net = toMoney(salah._sum.debit || 0).minus(toMoney(salah._sum.credit || 0));
+    peringatan.push({ kode: "BARIS_SALAH_TANDA", jumlahBaris: salah._count._all, nilai: uang(net), pesan: `${salah._count._all} baris beban (mis. biaya admin) ditandai rekening ini sehingga kartu saldo di tab Rekening lebih tinggi ${rupiahTeks(net)} dari mutasi di bawah. Mutasi di bawah yang benar.` });
+  }
+  const tidakBerrekening = await db.finJournalLine.aggregate({ where: { cashAccountId: null, accountId: rek.accountId, entry: { status: { in: STATUS_DIHITUNG }, date: { lte: sampai } } }, _sum: { debit: true, credit: true }, _count: { _all: true } });
+  if (tidakBerrekening._count._all > 0) {
+    const net = toMoney(tidakBerrekening._sum.debit || 0).minus(toMoney(tidakBerrekening._sum.credit || 0));
+    peringatan.push({ kode: "BARIS_TANPA_REKENING", jumlahBaris: tidakBerrekening._count._all, nilai: uang(net), pesan: `${tidakBerrekening._count._all} baris pada akun kas/bank yang sama tidak menyebut rekening (jurnal manual lama), netto ${rupiahTeks(net)}. Uang itu keluar/masuk dari salah satu rekening tetapi tidak muncul di mutasi rekening mana pun — lengkapi rekeningnya di Jurnal Umum.` });
+  }
+
+  return {
+    rekening: { id: rek.id, nama: rek.name, jenis: rek.kind, bank: rek.bankName, nomor: rek.accountNumber, aktif: rek.active },
+    periode: { from: tgl(dari), to: tgl(sampai) }, saldoAwal: uang(saldoAwal), totalMasuk: uang(masuk), totalKeluar: uang(keluar), saldoAkhir: uang(saldo),
+    jumlahMasuk: nMasuk, jumlahKeluar: nKeluar, jumlahMutasi: semuaBaris.length, total: tersaring.length, disaring: kata.length > 0,
+    page: semua ? 1 : hal, limit: semua ? tersaring.length : lim, adaLagi: semua ? false : skip + lim < tersaring.length, baris: semua ? tersaring : tersaring.slice(skip, skip + lim), peringatan, diperbaruiPada: new Date().toISOString(),
   };
 }

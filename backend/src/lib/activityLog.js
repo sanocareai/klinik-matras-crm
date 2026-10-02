@@ -141,6 +141,7 @@ export const EVENT_TYPES = Object.freeze({
   KLAIM_LUNAS: "KLAIM_LUNAS",
   // Penjualan Karyawan (1 Okt 2026): penanda karyawan non-Sales yang menjual sebuah order diubah (metadata: before/to = nama karyawan).
   PENJUALAN_KARYAWAN_DIUBAH: "PENJUALAN_KARYAWAN_DIUBAH",
+  PAIDAT_PENGECUALIAN: "PAIDAT_PENGECUALIAN", // pengecualian tanggal lunas (Order.paidAt) dibuat/dicabut oleh Owner — services/pengecualianPaidAt.js
   // Custody unit Gudang V2 (P1–P2): serah-terima Delivery <-> Gudang. Detail (unit, arah, lokasi, alasan) ada di metadata.
   CUSTODY_OFFERED: "CUSTODY_OFFERED",
   CUSTODY_ACCEPTED: "CUSTODY_ACCEPTED",
@@ -435,6 +436,10 @@ export function formatActivitySentence(event) {
       return `Kekurangan bahan unit ${metadata.unitCode || "—"} diselesaikan Gudang${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_CANCELLED:
       return `Pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.PAIDAT_PENGECUALIAN:
+      return metadata.aksi === "dicabut"
+        ? `Pengecualian tanggal lunas dicabut — ${metadata.alasan ?? "tanpa alasan"}`
+        : `Tanggal lunas dikunci oleh Owner (pengecualian) — ${metadata.alasan ?? "tanpa alasan"}`;
     case EVENT_TYPES.PENJUALAN_KARYAWAN_DIUBAH:
       return metadata.to ? `Ditandai Penjualan Karyawan — penjual: ${metadata.to}${metadata.before ? ` (sebelumnya ${metadata.before})` : ""}` : "Penanda Penjualan Karyawan dihapus";
     case EVENT_TYPES.KLAIM_LUNAS: {

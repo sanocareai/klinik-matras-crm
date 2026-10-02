@@ -23,7 +23,7 @@ import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js"
 import { prisma } from "../db.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import {
-  postJournal, reverseJournal, toBookDate, todayBookDateWIB, ensurePeriodOpen,
+  postJournal, pastikanRekeningBaris, normalizeLines, reverseJournal, toBookDate, todayBookDateWIB, ensurePeriodOpen,
   JournalError, STATUS_DIHITUNG, recordPostingGap,
 } from "../services/finance/journal.js";
 import {
@@ -661,6 +661,8 @@ financeRouter.post("/journal", requirePermission(P.FINANCE_POST), async (req, re
   try {
     const { date, description, lines, saldoAwal, simpanDraft } = req.body;
     const entry = await prisma.$transaction(async (tx) => {
+      // Jurnal manual: baris akun kas/bank WAJIB menyebut rekeningnya (lihat pastikanRekeningBaris).
+      await pastikanRekeningBaris(tx, normalizeLines(lines).lines, { wajibUntukAkunKas: true });
       const { entry: e } = await postJournal(tx, {
         date: date || todayBookDateWIB(),
         description,

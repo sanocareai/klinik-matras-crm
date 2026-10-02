@@ -57,6 +57,7 @@ import { financeRouter }    from "./routes/finance.js";
 import { financeTxRouter }  from "./routes/financeTransactions.js";
 import { financeKasbonRouter } from "./routes/financeKasbon.js";
 import { financePenjualanKaryawanRouter } from "./routes/financePenjualanKaryawan.js";
+import { financePengecualianLunasRouter } from "./routes/financePengecualianLunas.js";
 import { financeExportRouter } from "./routes/financeExport.js";
 import { financeUangMukaRouter } from "./routes/financeOperationalAdvance.js";
 import { financeKoreksiRouter } from "./routes/financeKoreksi.js";
@@ -245,6 +246,7 @@ app.use("/api/finance",      financeRouter);
 app.use("/api/finance",      financeTxRouter); // additive, tidak mengubah financeRouter
 app.use("/api/finance",      financeKasbonRouter);
 app.use("/api/finance",      financePenjualanKaryawanRouter);
+app.use("/api/finance",      financePengecualianLunasRouter);
 app.use("/api/finance",      financeExportRouter); // Export Excel Finance (B3.9) — read-only, server-side
 app.use("/api/finance",      financeUangMukaRouter);
 app.use("/api/finance",      financeKoreksiRouter);

@@ -61,7 +61,7 @@ export async function postCashTransfer(tx, { transferId, userId = null, keySuffi
       accountId: bebanAdmin.id,
       debit: fee,
       description: "Biaya administrasi transfer",
-      cashAccountId: t.fromAccount.id,
+      // TANPA cashAccountId (koreksi 2 Okt 2026): kredit rekening asal sudah amount + biaya; menandai baris beban ke rekening membuat saldo rekening menghitung biaya sebagai uang masuk.
     });
   }
 

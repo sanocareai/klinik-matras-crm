@@ -195,6 +195,38 @@ export async function ensurePeriodOpen(tx, date, { allowClosed = false } = {}) {
  * Menerima { accountId, debit?, credit?, description?, orderId?, customerId?,
  * supplierId?, cashAccountId?, unitId? }.
  */
+/**
+ * ATURAN REKENING PADA BARIS JURNAL (satu pintu, 2 Okt 2026).
+ *  (a) Baris yang membawa cashAccountId HARUS berakun SAMA dengan akun COA rekening itu. Menandai baris akun lain (mis. beban biaya admin) ke sebuah rekening membuat saldo per rekening
+ *      salah — kasus nyata: Rp42.500 saldo palsu di rekening bank.
+ *  (b) wajibUntukAkunKas = true (jurnal MANUAL): baris pada akun yang menjadi akun rekening kas/bank WAJIB memilih rekening, kalau tidak uangnya keluar/masuk dari "bank tak bernama" dan
+ *      tidak mengubah saldo rekening mana pun — kasus nyata: JV-25092026-731 (Rp6.715.170).
+ * Satu query rekening untuk semua baris. `lines` = baris ternormalisasi { lineNo, accountId, cashAccountId }.
+ */
+export async function pastikanRekeningBaris(tx, lines, { wajibUntukAkunKas = false } = {}) {
+  const ids = [...new Set(lines.map((l) => l.cashAccountId).filter(Boolean))];
+  const rekening = ids.length || wajibUntukAkunKas
+    ? await tx.finCashAccount.findMany({ where: wajibUntukAkunKas ? { OR: [{ id: { in: ids } }, { active: true }] } : { id: { in: ids } }, select: { id: true, name: true, accountId: true } })
+    : [];
+  const byId = new Map(rekening.map((r) => [r.id, r]));
+  for (const l of lines) {
+    if (!l.cashAccountId) continue;
+    const r = byId.get(l.cashAccountId);
+    if (!r) throw new JournalError(`Baris ke-${l.lineNo}: rekening tidak ditemukan`, 404);
+    if (r.accountId !== l.accountId) {
+      throw new JournalError(`Baris ke-${l.lineNo}: rekening "${r.name}" hanya boleh dipakai pada akun kas/bank-nya sendiri, bukan pada akun lain (akan merusak saldo rekening)`);
+    }
+  }
+  if (wajibUntukAkunKas) {
+    const akunKas = new Set(rekening.map((r) => r.accountId));
+    for (const l of lines) {
+      if (akunKas.has(l.accountId) && !l.cashAccountId) {
+        throw new JournalError(`Baris ke-${l.lineNo}: akun kas/bank wajib memilih rekeningnya (mis. Mandiri PT Sano). Tanpa rekening, saldo rekening tidak berubah padahal uang bergerak.`);
+      }
+    }
+  }
+}
+
 export function normalizeLines(lines) {
   if (!Array.isArray(lines) || lines.length < 2) {
     throw new JournalError("Jurnal wajib punya minimal 2 baris (satu debit, satu kredit)");
@@ -342,6 +374,8 @@ export async function postJournal(tx, {
       throw new JournalError(`Akun ${acc.code} ${acc.name} sudah dinonaktifkan — pilih akun lain`);
     }
   }
+
+  await pastikanRekeningBaris(tx, normalized);
 
   const entryNumber = await generateDocumentNumber(tx, "JV", bookDate);
 

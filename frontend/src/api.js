@@ -1650,6 +1650,12 @@ export const api = {
   batalPelunasanKasbon: (id, rid, reason) => request(`/finance/kasbon/${id}/pelunasan/${rid}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
   batalKasbon: (id, reason) => request(`/finance/kasbon/${id}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
   editKasbon: (id, data) => request(`/finance/kasbon/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Mutasi per rekening kas/bank (saldo berjalan menurut buku)
+  getMutasiRekening: (id, params = {}) => request(`/finance/buku/rekening/${id}/mutasi${qsFinance(params)}`),
+  // Pengecualian Tanggal Lunas (keputusan Owner, ber-riwayat)
+  getPengecualianLunas: (params = {}) => request(`/finance/pengecualian-lunas${qsFinance(params)}`),
+  buatPengecualianLunas: (data) => request("/finance/pengecualian-lunas", { method: "POST", body: JSON.stringify(data) }),
+  cabutPengecualianLunas: (id, alasan) => request(`/finance/pengecualian-lunas/${id}/cabut`, { method: "POST", body: JSON.stringify({ alasan }) }),
   // Penjualan Karyawan — input manual di luar Order (Finance)
   getPenjualanKaryawanFinance: (params = {}) => request(`/finance/penjualan-karyawan${qsFinance(params)}`),
   getKaryawanPenjualanKaryawan: () => request("/finance/penjualan-karyawan/karyawan"),

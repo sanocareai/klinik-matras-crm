@@ -97,6 +97,36 @@ export function specKasbon(k, { badge, aksi } = {}) {
   };
 }
 
+export function specMutasiRekening(b, { rekening, badge, aksi } = {}) {
+  const masuk = !!b.masuk;
+  return {
+    judul: b.nomor, subjudul: `${masuk ? "Uang masuk ke" : "Uang keluar dari"} ${rekening || "rekening"}`, badge, aksi,
+    ringkas: [
+      [masuk ? "Uang masuk" : "Uang keluar", formatUang(b.masuk || b.keluar), masuk ? "hijau" : "oranye"],
+      ["Saldo setelah transaksi", formatUang(b.saldo)],
+    ],
+    bagian: [
+      { judul: "Transaksi", baris: [["Tanggal", tanggalPendek(b.tanggal)], ["Keterangan", b.keterangan], ["Akun lawan", b.lawan], ["Sumber", b.sumberLabel], ["Dokumen", b.dokumen?.nomor], ["Status jurnal", LABEL_STATUS_DOK[b.status] || (b.status === "REVERSED" ? "Sudah dibalik" : b.status === "POSTED" ? "Terposting" : b.status)], ["Membalik jurnal", b.membalik]] },
+    ],
+  };
+}
+
+export function specPengecualianLunas(p, { badge, aksi } = {}) {
+  const tgl = (v) => (v ? TAMPIL_TANGGAL(v) : null);
+  return {
+    judul: p.order.nomor, subjudul: `Pengecualian tanggal lunas — ${p.order.pelanggan || "pelanggan"}`, badge, aksi,
+    ringkas: [
+      ["Nilai order", formatUang(p.order.nilai)],
+      ["Lunas dikunci", tgl(p.paidAtDikunci) || "—", p.aktif ? "hijau" : undefined],
+    ],
+    bagian: [
+      { judul: "Keputusan", baris: [["Alasan", p.alasan], ["Dibuat oleh", p.dibuatOleh], ["Dibuat pada", tgl(p.dibuatPada)], ["Tanggal lunas sebelum dikunci", tgl(p.paidAtAsli)]] },
+      { judul: "Order saat ini", baris: [["Status bayar", p.order.statusBayar], ["Tanggal lunas sekarang", tgl(p.order.paidAtSekarang)], ["Penjaga", p.aktif ? (p.konsisten ? "Bekerja (tanggal sesuai yang dikunci)" : "PERLU DICEK: tanggal berbeda dari yang dikunci") : null]] },
+      ...(p.aktif ? [] : [{ judul: "Pencabutan", baris: [["Dicabut oleh", p.dicabutOleh], ["Dicabut pada", tgl(p.dicabutPada)], ["Alasan mencabut", p.alasanDicabut]] }]),
+    ],
+  };
+}
+
 export function specPenjualanKaryawan(p, { badge, aksi } = {}) {
   const bayar = (p.payments || []).filter((x) => !x.cancelledAt);
   return {
