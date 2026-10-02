@@ -153,3 +153,27 @@ test("tombol mutasi di semua halaman Production ditandai data-mutates (dinonakti
   assert.equal(stripDemoParam("/bengkel/kpi?tab=meja"), "/bengkel/kpi?tab=meja"); assert.equal(stripDemoParam("/x?demo=1&y=2"), "/x?y=2");
   const tabs = read("src/lib/openTabs.js"); assert.match(tabs, /JSON\.stringify\(\{ tabs: cleanTabs\(tabs\), activeId \}\)/); assert.match(tabs, /tabs: cleanTabs\(parsed\.tabs\)/);
 });
+
+test("audit rilis: snapshot publik 100% sintetis (tanpa /media/, tanda tangan, JWT, telepon, email non-staging.invalid, host eksternal); ekspor menolak sisa; rumus foto = frontend", async () => {
+  const raw = read("src/features/production/demo/demoSnapshot.json");
+  assert.equal((raw.match(/\/media\//g) || []).length, 0); assert.equal((raw.match(/[?&](sig|exp)=/g) || []).length, 0); assert.equal((raw.match(/eyJ[A-Za-z0-9_-]{20,}/g) || []).length, 0);
+  assert.equal((raw.match(/\b(?:\+?62|0)8\d{8,12}\b/g) || []).length, 0, "tanpa nomor telepon");
+  assert.deepEqual([...new Set(raw.match(/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/g) || [])].filter((e) => !e.endsWith("@staging.invalid")), [], "tanpa email nyata");
+  assert.deepEqual([...new Set(raw.match(/https?:\/\/[^"\s\\]+/g) || [])], [], "tanpa host eksternal");
+  assert.equal(/passw|secret|api_?key/i.test(raw), false);
+  const names = new Set(); (function w(x) { if (x && typeof x === "object") for (const [k, v] of Object.entries(x)) { if (/^(customerName|name|actorName|operatorName)$/.test(k) && typeof v === "string") names.add(v); w(v); } })(snapshot);
+  for (const n of names) assert.match(n, /^QA-PV2 /, `nama non-sintetis: ${n}`);
+  for (const e of snapshot.entries) assert.doesNotMatch(JSON.stringify(e.data).replace(/"(orderNumber|unitCode)":"QA-PV2[^"]*"/g, ""), /"(orderNumber|unitCode)":"/);
+  const exp = read("../backend/scripts/staging/export-demo-snapshot.js"); assert.match(exp, /process\.exit\(3\)/); assert.ok(exp.includes("[?&](sig|exp)=") && exp.includes("process.exit(3)"), "ekspor gagal bila tersisa /media/ atau tanda tangan");
+  const sample = "/media/unit-photo/abc?exp=1&sig=2"; const h = (str) => { let x = 2166136261; for (let i = 0; i < str.length; i += 1) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619); } return x >>> 0; };
+  assert.equal(`/demo/photo-${String((h(sample.split("?")[0]) % 12) + 1).padStart(2, "0")}.png`, demoPhotoUrl(sample), "rumus ekspor = rumus frontend");
+});
+
+test("UI demo: catatan 11 vs 12 unit, tooltip Bahasa Indonesia untuk tombol/seret-lepas dinonaktifkan, tombol Excel/PDF & unggah bertanda data-mutates", () => {
+  const ctl = read("src/features/production/demo/DemoControls.jsx");
+  assert.match(ctl, /Pipeline Status Produksi hanya menampilkan 11 unit karena 1 unit \(QA-PV2-U11\) sudah selesai/); assert.match(ctl, /data-testid="demo-unit-note"/);
+  assert.match(ctl, /DEMO_DISABLED_TIP = "Dinonaktifkan di Mode Demo/); assert.match(ctl, /el\.title = DEMO_DISABLED_TIP/);
+  assert.match(read("src/features/production/UnitCard.jsx"), /Seret-lepas dinonaktifkan di Mode Demo/);
+  assert.match(read("src/features/production/ReportParts.jsx"), /data-mutates disabled=\{disabled \|\| !!busy\} onClick=\{\(\) => go\("xlsx"\)\}/);
+  assert.match(read("src/features/production/UnitPhotoThumb.jsx"), /data-mutates onClick=\{\(\) => inputRef\.current\?\.click\(\)\}/);
+});

@@ -11,6 +11,8 @@ export const DEMO_PAGES = Object.freeze([
   ["Ringkasan", "/bengkel/ringkasan"], ["Status Produksi", "/bengkel/production-v2"], ["Rencana Produksi", "/bengkel/rencana-produksi"], ["Quality Control", "/bengkel/quality-control"],
   ["KPI Produksi", "/bengkel/kpi"], ["Aplikasi Dokumentasi", "/produksi/dokumentasi"], ["Antrean Gudang", "/warehouse/antrean-produksi"],
 ]);
+export const DEMO_UNIT_NOTE = "Dataset demo berisi 12 unit. Pipeline Status Produksi hanya menampilkan 11 unit karena 1 unit (QA-PV2-U11) sudah selesai dan siap kirim — unit itu tampil di Ringkasan, Aplikasi Dokumentasi, dan Antrean Gudang, bukan di kolom pipeline.";
+export const DEMO_DISABLED_TIP = "Dinonaktifkan di Mode Demo (hanya-baca, data sintetis)";
 export const canUseDemo = (roles = []) => roles.some((r) => r === "ADMIN" || r === "OWNER");
 // Tab dalam-app tetap ter-mount saat tersembunyi: hanya halaman pada tab AKTIF yang boleh menyalakan/mematikan demo (state demo bersifat global).
 function useIsActiveTab() { try { return useTabVisibility(); } catch { return true; } }
@@ -36,6 +38,7 @@ function DemoBar({ active, onToggle, denied }) {
           <>
             <b data-testid="demo-label">{DEMO_LABEL}</b>
             <span className="text-[11.5px] opacity-90">Data sintetis QA-PV2 · hanya-baca · tidak masuk KPI/export production</span>
+            <p className="m-0 basis-full text-[11.5px] opacity-90" data-testid="demo-unit-note">{DEMO_UNIT_NOTE}</p>
             <span className="flex flex-wrap gap-1" aria-label="Halaman demo">
               {DEMO_PAGES.map(([label, to]) => <Link key={to} to={`${to}?demo=1`} className="rounded-chip bg-surface px-2 py-0.5 text-[11.5px] font-semibold text-accent no-underline hover:underline">{label}</Link>)}
             </span>
@@ -88,7 +91,7 @@ export function DemoPage({ children }) {
   useEffect(() => { // tombol bertanda data-mutates dinonaktifkan selama demo (termasuk yang muncul belakangan di modal/laci)
     if (!active) return undefined;
     const apply = () => document.querySelectorAll("[data-mutates]").forEach((el) => {
-      if (!el.disabled) { el.disabled = true; el.setAttribute("aria-disabled", "true"); el.title = "Dinonaktifkan di Mode Demo"; el.style.opacity = "0.5"; el.style.cursor = "not-allowed"; el.style.pointerEvents = "none"; el.tabIndex = -1; el.dataset.demoDisabled = "1"; }
+      if (!el.disabled) { el.disabled = true; el.setAttribute("aria-disabled", "true"); el.title = DEMO_DISABLED_TIP; el.style.opacity = "0.5"; el.style.cursor = "not-allowed"; el.style.pointerEvents = "none"; el.tabIndex = -1; el.dataset.demoDisabled = "1"; }
     });
     apply();
     const mo = new MutationObserver(apply); mo.observe(document.body, { childList: true, subtree: true });

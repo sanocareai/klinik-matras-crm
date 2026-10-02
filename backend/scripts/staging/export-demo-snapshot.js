@@ -52,6 +52,13 @@ for (const url of urls) {
   if (res.status !== 200) { skipped.push(`${res.status} ${url}`); continue; }
   entries.push({ url, data: await res.json() });
 }
-process.stdout.write(JSON.stringify({ format: 1, label: "QA-PV2 demo snapshot", capturedAt: new Date().toISOString(), today, timezone: "WIB (UTC+7)", unitCodes: units.map((u) => u.unitCode), entries }));
+// SANITASI (P12A audit): berkas ini dilayani publik sebagai chunk frontend. Semua URL /media/* (termasuk tanda tangan ?exp=&sig= dari secret staging)
+// ditulis ulang ke fixture lokal /demo/photo-NN.png SAAT EKSPOR — rumus identik dengan frontend demoDataset.demoPhotoUrl (dijaga tes). Sisa /media/ atau sig= = gagal.
+const hash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i += 1) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+const photoUrl = (src) => `/demo/photo-${String((hash(String(src).split("?")[0]) % 12) + 1).padStart(2, "0")}.png`;
+const clean = (v) => (typeof v === "string" ? (v.startsWith("/media/") ? photoUrl(v) : v) : Array.isArray(v) ? v.map(clean) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, clean(x)])) : v);
+const out = JSON.stringify(clean({ format: 1, label: "QA-PV2 demo snapshot", capturedAt: new Date().toISOString(), today, timezone: "WIB (UTC+7)", unitCodes: units.map((u) => u.unitCode), entries }));
+if (/\/media\/|[?&](sig|exp)=|eyJ[A-Za-z0-9_-]{20,}/.test(out)) { console.error("[snapshot] GAGAL: sisa /media/, tanda tangan, atau JWT di snapshot"); process.exit(3); }
+process.stdout.write(out);
 console.error(`[snapshot] ${entries.length} entri, ${skipped.length} dilewati`); for (const s of skipped.slice(0, 20)) console.error(`  lewat: ${s}`);
 await prisma.$disconnect();

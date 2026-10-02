@@ -136,3 +136,18 @@ test("audit statis outbound: job latar & worker pengirim hanya jalan lewat backg
   const unknown = found.filter((f) => !KNOWN.includes(f));
   assert.deepEqual(unknown, [], `modul outbound baru perlu ditinjau untuk staging: ${unknown.join(", ")}`);
 });
+
+test("audit rilis: export snapshot ikut ditolak di production; compose production tidak memuat/menyalakan staging; tidak ada berkas rahasia staging yang tracked", () => {
+  const exp = path.join(backend, "scripts/staging/export-demo-snapshot.js");
+  for (const env of [{}, { APP_ENV: "production", DATABASE_URL: "postgresql://klinik:x@postgres:5432/klinik_matras" }, { APP_ENV: "staging", DATABASE_URL: "postgresql://klinik:x@unreachable.invalid:5432/klinik_matras" }]) {
+    const r = spawnSync(process.execPath, [exp], { encoding: "utf8", env: { PATH: process.env.PATH, ...env }, timeout: 20_000 });
+    assert.equal(r.status, 2, `${JSON.stringify(env)}: ${r.stdout}${r.stderr}`); assert.match(r.stderr, /QA-PV2 DITOLAK/); assert.equal(r.stdout, "", "tidak ada keluaran data");
+  }
+  for (const f of ["docker-compose.yml", "docker-compose.release.yml"]) { const y = read(path.join(root, f)); assert.doesNotMatch(y, /staging|qa_pv2|QA-PV2/i, f); assert.doesNotMatch(y, /^include:/m, f); }
+  const tracked = spawnSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).stdout.split("\n");
+  assert.equal(tracked.some((f) => f === "backend/.env.staging" || /qa-pv2-credentials/.test(f)), false);
+  assert.ok(tracked.includes("backend/.env.staging.example"));
+  const gi = read(path.join(root, ".gitignore")); assert.match(gi, /^backend\/data\/qa-pv2-credentials\.json$/m);
+  const pass = read(path.join(backend, "scripts/staging/qaPv2Seed.js")).split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+  assert.doesNotMatch(pass, /console\.log\([^)]*(pw|password)/i, "seeder tidak mencetak password");
+});
