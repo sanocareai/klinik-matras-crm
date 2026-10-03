@@ -41,6 +41,18 @@ export default function RuteDetailScreen({ route, navigation }) {
           <Text style={{ color: t.ink2, fontSize: 13 }}>{rk.selesai} selesai · {rk.gagal} gagal · {rk.sisa} tersisa dari {rk.stop} stop</Text>
         </View>
 
+        {!!r.notes && (
+          <Section title="Catatan rute" icon="note">
+            <Text style={{ color: t.ink2, fontSize: 13, lineHeight: 19 }}>{r.notes}</Text>
+            {!!r.manualMapsUrl && (
+              <Pressable onPress={() => Linking.openURL(r.manualMapsUrl)} accessibilityRole="link" hitSlop={6} style={[s.row, { marginTop: 2 }]}>
+                <Icon name="mapPin" size={13} color={t.accent} />
+                <Text style={{ color: t.accent, fontSize: 12, fontWeight: "700", flex: 1 }} numberOfLines={1}>{r.manualMapsUrl}</Text>
+              </Pressable>
+            )}
+          </Section>
+        )}
+
         <Section title="Kru & kendaraan" icon="users">
           <View>
             {[["Driver", r.driver], ["Helper", r.helper]].map(([peran, o]) => (
