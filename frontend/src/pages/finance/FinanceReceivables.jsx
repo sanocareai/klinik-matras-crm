@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
+import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap, bodyBiayaTransfer } from "@/features/finance/biayaTransfer.js";
 import { RiwayatVersiDialog, KoreksiDialog, InfoDialog } from "@/features/finance/KoreksiAman.jsx";
@@ -356,7 +357,7 @@ export default function FinanceReceivables() {
                     <TD hideBelow="2xl" truncate className="font-medium">{r.order?.orderNumber || "—"}</TD>
                     <TD truncate>{r.order?.customer?.name || "—"}</TD>
                     <TD truncate>{r.reason}</TD>
-                    <TD numeric><Uang value={r.amount} /></TD>
+                    <TD numeric><NominalDenganBiaya d={r} /></TD>
                     <TD><StatusBadge status={r.status} /></TD>
                     <TD>
                       <RowActions primary={a.primary} items={a.items} />
@@ -380,7 +381,7 @@ export default function FinanceReceivables() {
                   subtitle={r.order?.customer?.name || "—"}
                   fields={[
                     { label: "Tanggal", value: tanggalPendek(r.date) },
-                    { label: "Nominal", value: formatUang(r.amount) },
+                    { label: "Nominal", value: nominalTeks(r) },
                     { label: "Order", value: r.order?.orderNumber },
                     { label: "Alasan", value: r.reason, span: true },
                   ]}

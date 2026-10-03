@@ -195,6 +195,69 @@ export async function ensurePeriodOpen(tx, date, { allowClosed = false } = {}) {
  * Menerima { accountId, debit?, credit?, description?, orderId?, customerId?,
  * supplierId?, cashAccountId?, unitId? }.
  */
+/**
+ * ATURAN REKENING PADA BARIS JURNAL (satu pintu, 2 Okt 2026; diperluas ke SEMUA sumber jurnal 15 Okt 2026).
+ *  (a) Baris yang membawa cashAccountId HARUS berakun SAMA dengan akun COA rekening itu. Menandai baris akun lain (mis. beban biaya admin) ke sebuah rekening membuat saldo per rekening
+ *      salah — kasus nyata: Rp42.500 saldo palsu di rekening bank.
+ *  (b) Baris pada akun yang menjadi akun rekening kas/bank WAJIB menyebut rekeningnya, kalau tidak uangnya keluar/masuk dari "bank tak bernama" dan tidak mengubah saldo rekening mana pun —
+ *      kasus nyata: JV-25092026-731 (Rp6.715.170). Dulu hanya jurnal MANUAL; sekarang SEMUA sumber (otomatis pun), diaudit: tidak ada jalur posting produksi yang menghasilkan baris tanpa rekening.
+ *      `wajibUntukAkunKas: false` hanya tersisa untuk pemanggil lama yang sengaja memeriksa (a) saja.
+ * Satu query rekening untuk semua baris. `lines` = baris ternormalisasi { lineNo, accountId, cashAccountId }.
+ */
+export async function pastikanRekeningBaris(tx, lines, { wajibUntukAkunKas = true } = {}) {
+  const ids = [...new Set(lines.map((l) => l.cashAccountId).filter(Boolean))];
+  const idAkun = [...new Set(lines.map((l) => l.accountId))];
+  const rekening = await tx.finCashAccount.findMany({
+    where: { OR: [{ id: { in: ids } }, ...(wajibUntukAkunKas ? [{ accountId: { in: idAkun } }] : [])] },
+    select: { id: true, name: true, accountId: true },
+  });
+  const byId = new Map(rekening.map((r) => [r.id, r]));
+  for (const l of lines) {
+    if (!l.cashAccountId) continue;
+    const r = byId.get(l.cashAccountId);
+    if (!r) throw new JournalError(`Baris ke-${l.lineNo}: rekening tidak ditemukan`, 404);
+    if (r.accountId !== l.accountId) {
+      throw new JournalError(`Baris ke-${l.lineNo}: rekening "${r.name}" hanya boleh dipakai pada akun kas/bank-nya sendiri, bukan pada akun lain (akan merusak saldo rekening)`);
+    }
+  }
+  if (wajibUntukAkunKas) {
+    const akunKas = new Set(rekening.map((r) => r.accountId));
+    for (const l of lines) {
+      if (akunKas.has(l.accountId) && !l.cashAccountId) {
+        throw new JournalError(`Baris ke-${l.lineNo}: akun kas/bank wajib memilih rekeningnya (mis. Mandiri PT Sano). Tanpa rekening, saldo rekening tidak berubah padahal uang bergerak.`);
+      }
+    }
+  }
+}
+
+/**
+ * TRANSFER ANTAR-REKENING HARUS BERPASANGAN DAN SEIMBANG (15 Okt 2026). Jurnal bersumber TRANSFER_KAS wajib berbentuk:
+ *   Dr rekening TUJUAN  nominal
+ *   Cr rekening SUMBER  nominal + biaya admin
+ *   Dr Beban Administrasi Bank  biaya admin   (hanya bila ada biaya; TANPA tanda rekening)
+ * Dua rekening berbeda, tepat satu debit dan satu kredit pada akun kas/bank, dan kredit sumber = debit tujuan + biaya. Murni (tanpa DB) supaya bisa dites.
+ * `lines` = baris ternormalisasi (Decimal). Melempar JournalError bila tidak berpasangan.
+ */
+export function pastikanTransferBerpasangan(lines) {
+  const bertanda = lines.filter((l) => l.cashAccountId);
+  const debit = bertanda.filter((l) => l.debit.greaterThan(0));
+  const kredit = bertanda.filter((l) => l.credit.greaterThan(0));
+  if (debit.length !== 1 || kredit.length !== 1) {
+    throw new JournalError("Transfer antar-rekening harus berpasangan: tepat satu rekening tujuan (debit) dan satu rekening sumber (kredit)");
+  }
+  if (debit[0].cashAccountId === kredit[0].cashAccountId) {
+    throw new JournalError("Transfer antar-rekening: rekening sumber dan tujuan tidak boleh sama");
+  }
+  const biaya = lines.filter((l) => !l.cashAccountId);
+  if (biaya.some((l) => l.credit.greaterThan(0))) {
+    throw new JournalError("Transfer antar-rekening: baris selain rekening hanya boleh biaya administrasi (debit)");
+  }
+  const totalBiaya = biaya.reduce((t, l) => t.plus(l.debit), ZERO);
+  if (!kredit[0].credit.equals(debit[0].debit.plus(totalBiaya))) {
+    throw new JournalError("Transfer antar-rekening tidak seimbang: yang keluar dari rekening sumber harus sama dengan nominal diterima ditambah biaya admin");
+  }
+}
+
 export function normalizeLines(lines) {
   if (!Array.isArray(lines) || lines.length < 2) {
     throw new JournalError("Jurnal wajib punya minimal 2 baris (satu debit, satu kredit)");
@@ -342,6 +405,9 @@ export async function postJournal(tx, {
       throw new JournalError(`Akun ${acc.code} ${acc.name} sudah dinonaktifkan — pilih akun lain`);
     }
   }
+
+  await pastikanRekeningBaris(tx, normalized);
+  if (source === "TRANSFER_KAS") pastikanTransferBerpasangan(normalized);
 
   const entryNumber = await generateDocumentNumber(tx, "JV", bookDate);
 

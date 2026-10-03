@@ -37,6 +37,7 @@
 
 import { paidForOrder, isPaymentCounted, kontribusiPembayaranOrder } from "./finance/allocation.js";
 import { getVerificationGate } from "./finance/settings.js";
+import { pengecualianAktif } from "./pengecualianPaidAt.js";
 import { PILIH_TAGIHAN, dasarStatusBayar } from "./finance/tagihanOrder.js";
 
 const tanggalWIB = (d) => new Date(new Date(d).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
@@ -102,7 +103,10 @@ export async function recomputeOrderPaymentStatus(tx, orderId, { paidAtEfektif =
   // konsisten dengan status SEKARANG, bukan riwayat basi.
   let paidAt;
   let paidAtDisinkron = null;
-  if (paymentStatus !== "LUNAS") paidAt = null;
+  // PENGECUALIAN OWNER (services/pengecualianPaidAt.js): bila aktif, paidAt DIKUNCI — jalur mana pun (verifikasi, koreksi, historis) tidak menyentuhnya. Status bayar tetap jujur dari ledger.
+  const dikunci = await pengecualianAktif(tx, orderId);
+  if (dikunci) paidAt = undefined;
+  else if (paymentStatus !== "LUNAS") paidAt = null;
   else if (order.paymentStatus === "LUNAS" && !paidAtEfektif) {
     paidAt = undefined; // undefined = jangan sentuh field ini
     if (paidAtSinkron && order.paidAt) {
@@ -118,5 +122,5 @@ export async function recomputeOrderPaymentStatus(tx, orderId, { paidAtEfektif =
     where: { id: orderId },
     data: paidAt === undefined ? { paymentStatus } : { paymentStatus, paidAt },
   });
-  return { paid, outstanding: Math.max(dasar - paid, 0), paymentStatus, ...(paidAtDisinkron && { paidAtDisinkron }) };
+  return { paid, outstanding: Math.max(dasar - paid, 0), paymentStatus, ...(paidAtDisinkron && { paidAtDisinkron }), ...(dikunci && { paidAtDikunci: true }) };
 }

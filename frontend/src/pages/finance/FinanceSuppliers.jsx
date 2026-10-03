@@ -14,6 +14,7 @@ import { useContainerTier } from "@/hooks/useContainerTier.js";
 import { tierTagihan, lebarKolom, adaKolom, teksKedua, LEBAR_NOMOR } from "@/features/finance/tierTagihan.js";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
+import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
@@ -461,7 +462,7 @@ export default function FinanceSuppliers() {
                       <TD truncate className="text-[12px]" title={p.allocations.map((a) => a.bill?.billNumber).join(", ") || "—"}>
                         {p.allocations.map((a) => a.bill?.billNumber).join(", ") || "—"}
                       </TD>
-                      <TD numeric><Uang value={p.amount} /></TD>
+                      <TD numeric><NominalDenganBiaya d={p} /></TD>
                       <TD>{p.cancelledAt ? <Badge variant="red">Dibatalkan</Badge> : <Badge variant="green">Terposting</Badge>}</TD>
                       <TD><RowActions primary={null} items={aksiPembayaran(p, { aksi, setVersiPay })} /></TD>
                     </TR>

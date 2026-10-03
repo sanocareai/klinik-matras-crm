@@ -1616,6 +1616,7 @@ financeTxRouter.get("/transfers", requirePermission(P.FINANCE_READ), async (req,
     res.json({
       transfers: transfers.map((t) => ({
         ...t, amount: moneyToNumber(t.amount), feeAmount: moneyToNumber(t.feeAmount),
+        ...ringkasBiaya({ amount: t.amount, transferFeeAmount: t.feeAmount }), // nominalDiterima / biayaAdmin / totalKeluarRekening (dihitung server)
       })),
     });
   } catch (e) {
@@ -2004,7 +2005,7 @@ financeTxRouter.get("/refunds", requirePermission(P.FINANCE_READ), async (req, r
     const refunds = await ambilDaftarRefund(prisma, { status: req.query.status }, { take: 200 });
     const blokir = await blokirKoreksiRefundBatch(prisma, refunds.map((r) => r.id));
     const punyaIzin = hasPermission(req.user, P.FINANCE_ADMIN);
-    res.json({ refunds: refunds.map((r) => ({ ...r, amount: moneyToNumber(r.amount), koreksi: menuKoreksiDokumen(blokir.get(r.id), { punyaIzin }) })) });
+    res.json({ refunds: refunds.map((r) => ({ ...r, amount: moneyToNumber(r.amount), transferFeeAmount: moneyToNumber(r.transferFeeAmount ?? 0), ...ringkasBiaya(r), koreksi: menuKoreksiDokumen(blokir.get(r.id), { punyaIzin }) })) });
   } catch (e) {
     handleFinanceError(e, res);
   }

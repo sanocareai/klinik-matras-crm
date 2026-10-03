@@ -369,6 +369,9 @@ test("Cutover: VehicleExpense BARU (lahir setelah cutover) tanpa tautan pengajua
 
 test("Cutover TIDAK meregresi data lama: VehicleExpense yang lahir SEBELUM cutover tetap bisa diposting seperti biasa", async () => {
   const vehicle = await buatVehicle();
+  // Posting biaya kendaraan mengkredit Kas lapangan dan sejak 15 Okt 2026 WAJIB menyebut rekening: seperti produksi, akun Kas punya satu rekening aktif ("Uang Kas").
+  const akunKasUji = await testPrisma.finAccount.findFirst({ where: { systemKey: "KAS" } });
+  await testPrisma.finCashAccount.create({ data: { name: "Uang Kas Uji", kind: "KAS", accountId: akunKasUji.id } });
   const veLama = await testPrisma.vehicleExpense.create({
     data: {
       vehicleId: vehicle.id, date: new Date("2026-08-01"), category: "TOL", amount: 20_000,

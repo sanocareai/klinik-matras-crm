@@ -26,6 +26,7 @@ const { stockAdjustmentRouter } = await import("../../../src/routes/stockAdjustm
 const { replenishmentRouter } = await import("../../../src/routes/replenishment.js");
 const { warehouseReportsRouter } = await import("../../../src/routes/warehouseReports.js");
 const { unitRouter } = await import("../../../src/routes/units.js");
+const { morningPriorityRouter } = await import("../../../src/routes/morningPriority.js");
 const { financeRouter } = await import("../../../src/routes/finance.js");
 const { financeTxRouter } = await import("../../../src/routes/financeTransactions.js");
 // expenseSubmissionRouter (24 September 2026) — Pengajuan Biaya Lintas
@@ -34,6 +35,7 @@ const { financeTxRouter } = await import("../../../src/routes/financeTransaction
 const { expenseSubmissionRouter } = await import("../../../src/routes/expenseSubmissions.js");
 const { financeKasbonRouter } = await import("../../../src/routes/financeKasbon.js");
 const { financePenjualanKaryawanRouter } = await import("../../../src/routes/financePenjualanKaryawan.js");
+const { financePengecualianLunasRouter } = await import("../../../src/routes/financePengecualianLunas.js");
 const { financeExportRouter } = await import("../../../src/routes/financeExport.js");
 const { financeUangMukaRouter } = await import("../../../src/routes/financeOperationalAdvance.js");
 const { financeKoreksiRouter } = await import("../../../src/routes/financeKoreksi.js");
@@ -46,6 +48,7 @@ const { financeApprovalsRouter } = await import("../../../src/routes/financeAppr
 const { financePembayaranRouter } = await import("../../../src/routes/financePembayaran.js");
 const { financeTransaksiRouter } = await import("../../../src/routes/financeTransaksi.js");
 const { financeBukuRouter } = await import("../../../src/routes/financeBuku.js");
+const { financeRekonRouter } = await import("../../../src/routes/financeRekon.js");
 const { financeMediaRouter, financeReceiptsLegacyPathRouter, financePaymentProofsPathRouter } = await import("../../../src/routes/financeMedia.js");
 const { mobileRouter } = await import("../../../src/routes/mobileAuth.js");
 const { authRouter } = await import("../../../src/routes/auth.js");
@@ -90,6 +93,7 @@ export function buildTestApp() {
   // /api/inventory vs /api/inventory/goods-receipts) identik dengan
   // produksi.
   app.use("/api/units", unitRouter);
+  app.use("/api/morning-priority-requests", morningPriorityRouter);
   app.use("/api/inventory", inventoryRouter);
   app.use("/api/inventory/goods-receipts", goodsReceiptRouter);
   app.use("/api/inventory/material-issues", materialIssueRouter);
@@ -113,6 +117,7 @@ export function buildTestApp() {
   app.use("/api/finance", expenseSubmissionRouter);
   app.use("/api/finance", financeKasbonRouter);
   app.use("/api/finance", financePenjualanKaryawanRouter);
+  app.use("/api/finance", financePengecualianLunasRouter);
   app.use("/api/finance", financeExportRouter);
   app.use("/api/finance", financeUangMukaRouter);
   app.use("/api/finance", financeKoreksiRouter);
@@ -123,6 +128,7 @@ export function buildTestApp() {
   app.use("/api/finance", financePemasukanRouter);
   app.use("/api/finance", financePembayaranRouter);
   app.use("/api/finance", financeTransaksiRouter);
+  app.use("/api/finance", financeRekonRouter);
   app.use("/api/finance", financeBukuRouter);
   app.use("/api/finance", financeMediaRouter);
   app.use("/media/finance-receipts", financeReceiptsLegacyPathRouter);

@@ -44,6 +44,7 @@ import { internalRouter } from "./routes/internal.js";
 import { sseRouter }      from "./routes/sse.js";
 import { adminRouter }    from "./routes/admin.js";
 import { unitRouter }     from "./routes/units.js";
+import { morningPriorityRouter } from "./routes/morningPriority.js";
 import { productionRouter } from "./routes/production.js";
 import { activityRouter } from "./routes/activity.js";
 import { armadaRouter }     from "./routes/armada.js";
@@ -59,6 +60,7 @@ import { financeRouter }    from "./routes/finance.js";
 import { financeTxRouter }  from "./routes/financeTransactions.js";
 import { financeKasbonRouter } from "./routes/financeKasbon.js";
 import { financePenjualanKaryawanRouter } from "./routes/financePenjualanKaryawan.js";
+import { financePengecualianLunasRouter } from "./routes/financePengecualianLunas.js";
 import { financeExportRouter } from "./routes/financeExport.js";
 import { financeUangMukaRouter } from "./routes/financeOperationalAdvance.js";
 import { financeKoreksiRouter } from "./routes/financeKoreksi.js";
@@ -70,6 +72,7 @@ import { financePembayaranRouter } from "./routes/financePembayaran.js";
 import { financeTransaksiRouter } from "./routes/financeTransaksi.js";
 import { expenseSubmissionRouter } from "./routes/expenseSubmissions.js";
 import { financeBukuRouter } from "./routes/financeBuku.js";
+import { financeRekonRouter } from "./routes/financeRekon.js";
 import { financePemasukanRouter } from "./routes/financePemasukan.js";
 import { financeMediaRouter, financeReceiptsLegacyPathRouter, financePaymentProofsPathRouter } from "./routes/financeMedia.js";
 import { mobileRouter } from "./routes/mobileAuth.js";
@@ -233,6 +236,7 @@ app.use("/api/knowledge",    knowledgeRouter);
 // endpointnya ada tapi tidak ada satu pun akun yang bisa memakainya sampai
 // role diberikan lewat UserRole. Lihat docs/sano-hub/PHASE-0.md.
 app.use("/api/units",        unitRouter);
+app.use("/api/morning-priority-requests", morningPriorityRouter);
 app.use("/api/production",   productionRouter);
 app.use("/api/activity",     activityRouter);
 app.use("/api/complaints",   complaintsRouter);
@@ -247,6 +251,7 @@ app.use("/api/finance",      financeRouter);
 app.use("/api/finance",      financeTxRouter); // additive, tidak mengubah financeRouter
 app.use("/api/finance",      financeKasbonRouter);
 app.use("/api/finance",      financePenjualanKaryawanRouter);
+app.use("/api/finance",      financePengecualianLunasRouter);
 app.use("/api/finance",      financeExportRouter); // Export Excel Finance (B3.9) — read-only, server-side
 app.use("/api/finance",      financeUangMukaRouter);
 app.use("/api/finance",      financeKoreksiRouter);
@@ -257,6 +262,7 @@ app.use("/api/finance",      financePersediaanAwalRouter); // B3.6 tutup stok pe
 app.use("/api/finance",      financeApprovalsRouter); // read-model inbox persetujuan (S4)
 app.use("/api/finance",      financePembayaranRouter); // pembayaran pelanggan: daftar/detail/verifikasi/tolak (S5)
 app.use("/api/finance",      financePemasukanRouter); // read-model Pemasukan terpadu + Data Sebelum Sistem (non-posting)
+app.use("/api/finance",      financeRekonRouter);      // Rekonsiliasi Bank V2 (impor koran, pencocokan, panel) — sakelar bank_reconciliation_v2_active
 app.use("/api/finance",      financeBukuRouter);       // read-model jurnal, buku besar, rekonsiliasi (S9)
 app.use("/api/finance",      financeTransaksiRouter);  // read-model transaksi: pengeluaran, pembelian, kasbon, piutang, supplier, ... (S6–S8)
 app.use("/api/finance",      expenseSubmissionRouter); // Pengajuan Biaya Lintas Divisi — pilot Delivery (menghasilkan FinExpense lewat services/expenseSubmission/)

@@ -64,7 +64,7 @@ async function skenario(w) {
   await biaya(w, { kode: "BBM", division: "PRODUKSI", amount: 70_000 });             // KONFLIK: dokumen Produksi vs kategori BBM → Delivery
   // jurnal manual tanpa dokumen → TIDAK_TERKLASIFIKASI
   const beban = await testPrisma.finAccount.findUnique({ where: { code: "6-1900" } });
-  await testPrisma.$transaction((tx) => postJournal(tx, { date: new Date("2026-09-12T00:00:00Z"), description: "Jurnal manual uji", source: "MANUAL", userId: w.admin.user.id, lines: [{ accountId: beban.id, debit: 20_000 }, { accountId: w.bank.accountId, credit: 20_000 }] }));
+  await testPrisma.$transaction((tx) => postJournal(tx, { date: new Date("2026-09-12T00:00:00Z"), description: "Jurnal manual uji", source: "MANUAL", userId: w.admin.user.id, lines: [{ accountId: beban.id, debit: 20_000 }, { accountId: w.bank.accountId, cashAccountId: w.bank.id, credit: 20_000 }] }));
   // supplier: tagihan BBM (Delivery) 600.000 disetujui lalu dibayar 600.000 → aktual SEKALI, kas SEKALI
   const sup = await testPrisma.finSupplier.create({ data: { code: "SUP-D", name: "SPBU Mitra" } });
   const katBbm = await w.kat("BBM");
@@ -79,6 +79,8 @@ async function skenario(w) {
   const tf = await testPrisma.finCashTransfer.create({ data: { transferNumber: "TRF-UJI-1", date: new Date("2026-09-20T00:00:00Z"), amount: 1_000_000, fromAccountId: w.bank.id, toAccountId: w.bank2.id, feeAmount: 6_500, createdById: w.finA.user.id } });
   await testPrisma.$transaction((tx) => postCashTransfer(tx, { transferId: tf.id, userId: w.finA.user.id }));
   // AdSpend Meta 1.000.000: satu jurnal (beban + bank) → D&T SEKALI
+  // Belanja iklan mengkredit Bank: sejak 15 Okt 2026 rekeningnya diambil dari pemetaan "kartu/rekening iklan" (tanpa pemetaan = FinPostingGap, tidak menebak).
+  await testPrisma.finSetting.upsert({ where: { key: "cash_account_card" }, create: { key: "cash_account_card", value: w.bank.id }, update: { value: w.bank.id } });
   const ad = await testPrisma.adSpend.create({ data: { source: "META_ADS", year: 2026, month: 9, amount: 1_000_000 } });
   await testPrisma.$transaction((tx) => postAdSpend(tx, { adSpendId: ad.id, userId: w.admin.user.id }));
   // pengeluaran MENUNGGU persetujuan Marketing → komitmen belum dibukukan (bukan aktual, bukan kas)

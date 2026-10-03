@@ -8,6 +8,7 @@
 
 import { jenisTampilan } from "./jenisTagihan.js";
 import { toMoney, sumMoney, moneyToNumber, ZERO } from "./money.js";
+import { ringkasBiaya } from "./transferFee.js";
 
 /** Urutkan baris hasil query `id in (...)` mengikuti urutan `ids` (urutan layar). */
 export function urutkanSesuaiIds(rows, ids) {
@@ -85,6 +86,8 @@ export function bentukPembayaranSupplier(p) {
   return {
     ...p,
     amount: moneyToNumber(p.amount),
+    // biaya admin transfer + total keluar rekening dihitung SERVER (layar menampilkan total di daftar, rincian di panel)
+    transferFeeAmount: moneyToNumber(p.transferFeeAmount ?? 0), ...ringkasBiaya(p),
     allocations: p.allocations.map((a) => ({ ...a, amount: moneyToNumber(a.amount) })),
   };
 }

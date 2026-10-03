@@ -133,12 +133,12 @@ test("CHECK constraint Postgres MENOLAK baris jurnal dengan debit DAN kredit ter
 });
 
 test("UNIQUE idempotencyKey ditegakkan Postgres — bukan cuma cek di kode", async () => {
-  await siapkanFinance();
+  const { rekeningKas } = await siapkanFinance(); // posting ke akun Kas WAJIB menyebut rekening (aturan rekening semua sumber, 15 Okt 2026)
   const kas = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.KAS } });
   const pendapatan = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.PENDAPATAN_LAYANAN } });
 
   const lines = [
-    { accountId: kas.id, debit: 1000 },
+    { accountId: kas.id, cashAccountId: rekeningKas.id, debit: 1000 },
     { accountId: pendapatan.id, credit: 1000 },
   ];
   const opts = { date: "2026-09-17", description: "uji idempotensi", source: "MANUAL", idempotencyKey: "UJI:1", lines };
@@ -155,14 +155,14 @@ test("UNIQUE idempotencyKey ditegakkan Postgres — bukan cuma cek di kode", asy
 });
 
 test("Decimal(18,2) menyimpan presisi sen apa adanya, bukan dibulatkan ke rupiah", async () => {
-  await siapkanFinance();
+  const { rekeningKas } = await siapkanFinance(); // posting ke akun Kas WAJIB menyebut rekening (aturan rekening semua sumber, 15 Okt 2026)
   const kas = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.KAS } });
   const pendapatan = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.PENDAPATAN_LAYANAN } });
 
   await testPrisma.$transaction((tx) => postJournal(tx, {
     date: "2026-09-17", description: "uji presisi", source: "MANUAL",
     lines: [
-      { accountId: kas.id, debit: "3333333.33" },
+      { accountId: kas.id, cashAccountId: rekeningKas.id, debit: "3333333.33" },
       { accountId: pendapatan.id, credit: "3333333.33" },
     ],
   }));
@@ -291,13 +291,13 @@ test("Pembatalan jurnal lewat REVERSAL mengembalikan saldo ke nol — baris asli
 });
 
 test("Satu jurnal mustahil dibalik DUA KALI — dijaga UNIQUE reversal_of_id", async () => {
-  await siapkanFinance();
+  const { rekeningKas } = await siapkanFinance(); // posting ke akun Kas WAJIB menyebut rekening (aturan rekening semua sumber, 15 Okt 2026)
   const kas = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.KAS } });
   const pendapatan = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.PENDAPATAN_LAIN } });
 
   const { entry } = await testPrisma.$transaction((tx) => postJournal(tx, {
     date: "2026-09-17", description: "uji reversal ganda", source: "MANUAL",
-    lines: [{ accountId: kas.id, debit: 500 }, { accountId: pendapatan.id, credit: 500 }],
+    lines: [{ accountId: kas.id, cashAccountId: rekeningKas.id, debit: 500 }, { accountId: pendapatan.id, credit: 500 }],
   }));
 
   await testPrisma.$transaction((tx) => reverseJournal(tx, { entryId: entry.id, reason: "pertama" }));
@@ -598,7 +598,7 @@ test("KONKURENSI NYATA: setAllocations dua panggilan PARALEL untuk payment yang 
 });
 
 test("KONKURENSI NYATA: ensurePeriodOpen menyerialkan posting jurnal vs penutupan periode — urutan commit menentukan hasil, tidak pernah dua-duanya 'menang' tanpa saling tahu", async () => {
-  await siapkanFinance();
+  const { rekeningKas } = await siapkanFinance(); // posting ke akun Kas WAJIB menyebut rekening (aturan rekening semua sumber, 15 Okt 2026)
   const kas = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.KAS } });
   const pendapatan = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.PENDAPATAN_LAIN } });
   const { user } = await createTestUser({ roles: ["FINANCE"] });
@@ -606,7 +606,7 @@ test("KONKURENSI NYATA: ensurePeriodOpen menyerialkan posting jurnal vs penutupa
   const urutanSelesai = [];
   const posting = testPrisma.$transaction((tx) => postJournal(tx, {
     date: "2026-11-15", description: "uji race periode", source: "MANUAL",
-    lines: [{ accountId: kas.id, debit: 1000 }, { accountId: pendapatan.id, credit: 1000 }],
+    lines: [{ accountId: kas.id, cashAccountId: rekeningKas.id, debit: 1000 }, { accountId: pendapatan.id, credit: 1000 }],
   })).then(
     (r) => { urutanSelesai.push("POSTING"); return r; },
     (e) => { urutanSelesai.push("POSTING"); throw e; }

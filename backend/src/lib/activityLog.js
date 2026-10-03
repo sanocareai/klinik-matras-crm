@@ -66,6 +66,8 @@ export const ENTITY_TYPES = Object.freeze({
   FIN_OTHER_INCOME: "fin_other_income",
   // Rekonsiliasi bank: pencocokan/pelepasan baris koran dengan mutasi buku (S9).
   FIN_BANK_STATEMENT: "fin_bank_statement",
+  // Rekonsiliasi Bank V2 (15 Okt 2026): impor rekening koran, pencocokan, pengecualian, hitung fisik kas, penyelesaian periode. entityId = id rekening kas/bank, kelompok pencocokan, batch, atau periode.
+  FIN_BANK_REKON: "fin_bank_rekon",
   FIN_LEGACY_BATCH: "fin_legacy_batch", // Data Sebelum Sistem (register pendapatan historis non-posting)
   // Hardening insentif driver (23 September 2026) — koreksi admin atas
   // driver/helper/completedAt POD (PATCH /armada/pod/:jobId/edit) LANGSUNG
@@ -89,6 +91,14 @@ export const ENTITY_TYPES = Object.freeze({
 
 export const EVENT_TYPES = Object.freeze({
   PRIORITY_CHANGED: "PRIORITY_CHANGED",
+  // Usulan Prioritas Pagi (Route Planner -> Produksi, 3 Oktober 2026) — lihat
+  // model MorningPriorityRequest di schema.prisma dan services/morningPriority.js.
+  // Entity-nya ORDER (usulan ini bicara soal order, bukan satu unit tertentu);
+  // perubahan Unit.priority yang terjadi saat disetujui TETAP memakai
+  // PRIORITY_CHANGED di atas, dicatat ber-entity UNIT seperti biasa.
+  MORNING_PRIORITY_REQUESTED: "MORNING_PRIORITY_REQUESTED",
+  MORNING_PRIORITY_APPROVED: "MORNING_PRIORITY_APPROVED",
+  MORNING_PRIORITY_DISMISSED: "MORNING_PRIORITY_DISMISSED",
   DUE_DATE_CHANGED: "DUE_DATE_CHANGED",
   SERVICE_ASSIGNED: "SERVICE_ASSIGNED",
   // Production Core Slice 2 — lifecycle ProductionBlocker.
@@ -141,6 +151,8 @@ export const EVENT_TYPES = Object.freeze({
   KLAIM_LUNAS: "KLAIM_LUNAS",
   // Penjualan Karyawan (1 Okt 2026): penanda karyawan non-Sales yang menjual sebuah order diubah (metadata: before/to = nama karyawan).
   PENJUALAN_KARYAWAN_DIUBAH: "PENJUALAN_KARYAWAN_DIUBAH",
+  BANK_REKON_V2: "BANK_REKON_V2", // metadata.aksi: impor | impor_dibatalkan | cocok | cocok_dibatalkan | dikecualikan | opname | periode_selesai | periode_dibatalkan — services/finance/bankRekon/
+  PAIDAT_PENGECUALIAN: "PAIDAT_PENGECUALIAN", // pengecualian tanggal lunas (Order.paidAt) dibuat/dicabut oleh Owner — services/pengecualianPaidAt.js
   // Custody unit Gudang V2 (P1–P2): serah-terima Delivery <-> Gudang. Detail (unit, arah, lokasi, alasan) ada di metadata.
   CUSTODY_OFFERED: "CUSTODY_OFFERED",
   CUSTODY_ACCEPTED: "CUSTODY_ACCEPTED",
@@ -313,6 +325,12 @@ export function formatActivitySentence(event) {
   switch (eventType) {
     case EVENT_TYPES.PRIORITY_CHANGED:
       return `Prioritas diubah dari ${PRIORITY_LABEL[metadata.from] || "Normal"} ke ${PRIORITY_LABEL[metadata.to] || "Normal"}`;
+    case EVENT_TYPES.MORNING_PRIORITY_REQUESTED:
+      return `Ditandai prioritas pagi: ${PRIORITY_LABEL[metadata.suggestedPriority] || metadata.suggestedPriority}${metadata.note ? ` — "${metadata.note}"` : ""}`;
+    case EVENT_TYPES.MORNING_PRIORITY_APPROVED:
+      return `Prioritas pagi diterapkan ke ${metadata.unitCount ?? 0} unit: ${PRIORITY_LABEL[metadata.appliedPriority] || metadata.appliedPriority}`;
+    case EVENT_TYPES.MORNING_PRIORITY_DISMISSED:
+      return "Prioritas pagi dibatalkan";
     case EVENT_TYPES.DUE_DATE_CHANGED:
       return metadata.to
         ? `Target produksi diatur ke ${tanggalSaja(metadata.to)}`
@@ -435,6 +453,24 @@ export function formatActivitySentence(event) {
       return `Kekurangan bahan unit ${metadata.unitCode || "—"} diselesaikan Gudang${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_CANCELLED:
       return `Pengambilan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.BANK_REKON_V2: {
+      const alasan = metadata.alasan ? ` — ${metadata.alasan}` : "";
+      switch (metadata.aksi) {
+        case "impor": return `Rekening koran diimpor (${metadata.rekening ?? "rekening"}): ${metadata.jumlahBaris ?? 0} baris${metadata.dilewati ? `, ${metadata.dilewati} baris ganda dilewati` : ""}`;
+        case "impor_dibatalkan": return `Impor rekening koran dibatalkan (${metadata.jumlahBaris ?? 0} baris)${alasan}`;
+        case "cocok": return `Pencocokan ${metadata.bentuk ?? ""} dibuat (${metadata.jenis === "OTOMATIS" ? "otomatis" : "manual"})${alasan}`.replace("  ", " ");
+        case "cocok_dibatalkan": return `Pencocokan dibatalkan${alasan}`;
+        case "dikecualikan": return `Dikecualikan dari pencocokan${alasan}`;
+        case "opname": return `Hitung fisik kas Rp${Number(metadata.jumlah ?? 0).toLocaleString("id-ID")} dicatat${alasan}`;
+        case "periode_selesai": return `Periode rekonsiliasi diselesaikan (${metadata.periode ?? ""})`;
+        case "periode_dibatalkan": return `Periode rekonsiliasi dinyatakan tidak berlaku${alasan}`;
+        default: return "Aktivitas rekonsiliasi bank";
+      }
+    }
+    case EVENT_TYPES.PAIDAT_PENGECUALIAN:
+      return metadata.aksi === "dicabut"
+        ? `Pengecualian tanggal lunas dicabut — ${metadata.alasan ?? "tanpa alasan"}`
+        : `Tanggal lunas dikunci oleh Owner (pengecualian) — ${metadata.alasan ?? "tanpa alasan"}`;
     case EVENT_TYPES.PENJUALAN_KARYAWAN_DIUBAH:
       return metadata.to ? `Ditandai Penjualan Karyawan — penjual: ${metadata.to}${metadata.before ? ` (sebelumnya ${metadata.before})` : ""}` : "Penanda Penjualan Karyawan dihapus";
     case EVENT_TYPES.KLAIM_LUNAS: {

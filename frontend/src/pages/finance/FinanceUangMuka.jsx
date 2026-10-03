@@ -13,6 +13,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW
 import { cn } from "@/lib/utils.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
+import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import { BuktiThumb } from "@/features/finance/BuktiThumb.jsx";
@@ -252,7 +253,7 @@ export default function FinanceUangMuka() {
                               {tanggalPendek(u.dueDate)}
                               {u.lewatTempo && <Badge variant="red" className="ml-1">Lewat</Badge>}
                             </TD>
-                            <TD hideBelow="2xl" numeric><Uang value={u.amount} /></TD>
+                            <TD hideBelow="2xl" numeric><NominalDenganBiaya d={u} /></TD>
                             <TD hideBelow="2xl" numeric><Uang value={u.dipertanggungjawabkan} nolSebagaiStrip /></TD>
                             <TD hideBelow="2xl" numeric><Uang value={u.dikembalikan} nolSebagaiStrip /></TD>
                             <TD numeric><Uang value={u.saldo} className="font-bold" nolSebagaiStrip /></TD>
@@ -278,7 +279,7 @@ export default function FinanceUangMuka() {
                         subtitle={`${u.holder?.name || "—"} · ${u.purpose}`}
                         fields={[
                           { label: "Saldo", value: formatUang(u.saldo) },
-                          { label: "Nominal", value: formatUang(u.amount) },
+                          { label: "Nominal", value: nominalTeks(u) },
                           { label: "Dipertanggungjawabkan", value: formatUang(u.dipertanggungjawabkan) },
                           { label: "Dikembalikan", value: formatUang(u.dikembalikan) },
                           { label: "Diberikan", value: tanggalPendek(u.date) },

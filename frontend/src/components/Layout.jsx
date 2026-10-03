@@ -11,6 +11,7 @@ import {
   ShoppingCart,
   HandCoins,
   UserRound,
+  ShieldCheck,
   FileCheck,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
@@ -539,6 +540,7 @@ const DIVISIONS = {
           { to: "/finance/purchases", label: "Pembelian",              Icon: ShoppingCart },
           { to: "/finance/kasbon",    label: "Kasbon",                 Icon: HandCoins },
           { to: "/finance/penjualan-karyawan", label: "Penjualan Karyawan", Icon: UserRound },
+          { to: "/finance/pengecualian-lunas", label: "Pengecualian Tgl Lunas", Icon: ShieldCheck },
           { to: "/finance/uang-muka", label: "Uang Muka Operasional",  Icon: PiggyBank },
         ],
       },

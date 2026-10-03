@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
-import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2, History, Ban } from "lucide-react";
+import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2, History, Ban, ListOrdered } from "lucide-react";
+import RekonRekening from "@/features/finance/RekonRekening.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, Pilihan, InputUang,
@@ -37,6 +39,7 @@ const LABEL_JENIS = { KAS: "Kas tunai", BANK: "Rekening bank", EWALLET: "E-walle
 
 const TAB = [
   { key: "rekening", label: "Rekening", Icon: Wallet, penjelasan: "Semua tempat uang perusahaan disimpan — kas tunai, rekening bank, dan e-wallet — beserta saldo terkini masing-masing." },
+  { key: "mutasi", label: "Mutasi & Rekonsiliasi", Icon: ListOrdered, penjelasan: "Per rekening (PT Sano, KEM, Uang Kas): saldo buku, saldo bank/kas, selisih, dan yang belum cocok. Buka satu rekening untuk Mutasi Buku, Mutasi Rekening (bank), Pencocokan, dan Rekonsiliasi." },
   { key: "transfer", label: "Mutasi Antar Rekening", Icon: ArrowLeftRight, penjelasan: "Riwayat perpindahan uang dari satu rekening perusahaan ke rekening lain, misalnya setor tunai dari kas ke bank." },
   { key: "pemasukan", label: "Pemasukan Lain", Icon: TrendingUp, penjelasan: "Uang masuk yang BUKAN dari pembayaran pelanggan — jual barang bekas, bunga bank, klaim asuransi, dan sejenisnya." },
 ];
@@ -166,10 +169,12 @@ export default function FinanceCash() {
       actions={
         <>
           {tab !== "rekening" && <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />}
-          <Button size="sm" onClick={() => setModal(tab)}>
-            <Plus size={14} />
-            {tab === "rekening" ? "Rekening Baru" : tab === "transfer" ? "Catat Transfer" : "Catat Pemasukan"}
-          </Button>
+          {tab !== "mutasi" && (
+            <Button size="sm" onClick={() => setModal(tab)}>
+              <Plus size={14} />
+              {tab === "rekening" ? "Rekening Baru" : tab === "transfer" ? "Catat Transfer" : "Catat Pemasukan"}
+            </Button>
+          )}
         </>
       }
     >
@@ -196,6 +201,8 @@ export default function FinanceCash() {
       <p className="text-[13px] leading-relaxed text-ink3">
         {TAB.find((t) => t.key === tab)?.penjelasan}
       </p>
+
+      {tab === "mutasi" && <RekonRekening rekening={semuaRekening} periode={periode} />}
 
       {tab === "rekening" && (
         <>
@@ -325,7 +332,6 @@ export default function FinanceCash() {
                     <TH>Dari</TH>
                     <TH>Ke</TH>
                     <TH numeric width={128}>Nominal</TH>
-                    <TH numeric width={112} hideBelow="wide">Biaya Admin</TH>
                     <TH width={116}>Status</TH>
                     <TH width={AKSI_COL_WIDTH_MENU_ONLY} />
                   </TR>
@@ -337,8 +343,7 @@ export default function FinanceCash() {
                       <TD className="whitespace-nowrap">{tanggalPendek(t.date)}</TD>
                       <TD truncate>{t.fromAccount?.name}</TD>
                       <TD truncate>{t.toAccount?.name}</TD>
-                      <TD numeric><Uang value={t.amount} /></TD>
-                      <TD hideBelow="wide" numeric><Uang value={t.feeAmount} nolSebagaiStrip /></TD>
+                      <TD numeric><NominalDenganBiaya d={t} /></TD>
                       <TD>
                         {t.cancelledAt
                           ? <Badge variant="red">Dibatalkan</Badge>

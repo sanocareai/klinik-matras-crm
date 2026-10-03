@@ -135,9 +135,11 @@ export async function hitungBiayaTransfer(db, { cashAccountId, paymentMethod, tr
 }
 
 /**
- * Baris jurnal biaya admin (kosong bila biaya 0). Kredit kas/bank pemanggil
- * harus sebesar amount + biaya; baris ini mengimbanginya di sisi debit dan
- * memakai cashAccountId yang sama supaya buku per rekening tetap benar.
+ * Baris jurnal biaya admin (kosong bila biaya 0). Kredit kas/bank pemanggil harus sebesar amount + biaya; baris ini mengimbanginya di sisi debit ke akun beban.
+ *
+ * TIDAK diberi cashAccountId (koreksi 2 Okt 2026). Sebelumnya baris ini ikut ditandai rekening sehingga saldo per rekening (Kas & Bank, saldo buku rekonsiliasi) menghitung
+ * biaya admin sebagai UANG MASUK Rp2.500 — saldo rekening PT Sano lebih tinggi dari bank (Rp15.000 pada 6 transfer, Rp42.500 di semua bank). Uang yang keluar dari bank = kredit
+ * (amount + biaya) seluruhnya; yang ditandai rekening hanya baris pada akun kas/bank itu sendiri. Laporan arus kas/neraca memakai akun COA, bukan tanda ini, jadi tidak terpengaruh.
  */
 export async function barisBiayaAdmin(tx, { fee, cashAccount }) {
   const biaya = toMoney(fee || 0);
@@ -147,7 +149,6 @@ export async function barisBiayaAdmin(tx, { fee, cashAccount }) {
     accountId: bebanAdmin.id,
     debit: biaya,
     description: "Biaya administrasi transfer",
-    cashAccountId: cashAccount.id,
   }];
 }
 

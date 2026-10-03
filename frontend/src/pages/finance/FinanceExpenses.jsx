@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils.js";
 import { useContainerTier } from "@/hooks/useContainerTier.js";
 import { api } from "@/api.js";
+import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
@@ -331,7 +332,7 @@ export default function FinanceExpenses() {
                       subtitle={e.description}
                       fields={[
                         { label: "Tanggal", value: tanggalPendek(e.date) },
-                        { label: "Nominal", value: formatUang(e.amount) },
+                        { label: "Nominal", value: nominalTeks(e) },
                         { label: "Kategori", value: e.category?.name },
                         { label: "Divisi", value: LABEL_DIVISI[e.division] || e.division },
                         { label: "Mode", value: teksMode(e.mode) },
@@ -405,7 +406,7 @@ export default function FinanceExpenses() {
                             </TD>
                             {(tier === "full" || tier === "reduced") && <TD className="min-w-0">{klasifikasi}</TD>}
                             {tier === "full" && <TD className="min-w-0">{pembayaran}</TD>}
-                            <TD numeric><Uang value={e.amount} /></TD>
+                            <TD numeric><NominalDenganBiaya d={e} /></TD>
                             <TD><StatusBadge status={e.status} /></TD>
                             {tier === "full" && <TD>{bukti}</TD>}
                             {tier !== "full" && (

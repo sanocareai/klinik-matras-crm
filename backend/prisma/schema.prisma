@@ -326,6 +326,15 @@ model User {
   finAdvancesCreated FinOperationalAdvance[] @relation("FinAdvanceCreator")
   klaimLunasDibuat   OrderPaymentClaim[]          @relation("KlaimLunasCreator")
   ordersSoldAsStaff  Order[]                      @relation("OrderStaffSeller")
+  paidAtPengecualianDibuat  OrderPaidAtPengecualian[] @relation("PaidAtPengecualianPembuat")
+  paidAtPengecualianDicabut OrderPaidAtPengecualian[] @relation("PaidAtPengecualianPencabut")
+  bankImportBatchesDibuat   FinBankImportBatch[]   @relation("BankImportBatchPengimpor")
+  bankImportBatchesDibatalkan FinBankImportBatch[] @relation("BankImportBatchPembatal")
+  bankMatchGroupsDibuat     FinBankMatchGroup[]    @relation("BankMatchGroupPembuat")
+  bankMatchGroupsDibatalkan FinBankMatchGroup[]    @relation("BankMatchGroupPembatal")
+  bankReconPeriodsSelesai   FinBankReconPeriod[]   @relation("BankReconPeriodPenutup")
+  bankReconPeriodsDibatalkan FinBankReconPeriod[]  @relation("BankReconPeriodPembatal")
+  cashCountsDibuat          FinCashCount[]         @relation("CashCountPencacah")
   klaimLunasDitinjau OrderPaymentClaim[]          @relation("KlaimLunasReviewer")
   id           String   @id @default(cuid())
   name         String
@@ -605,6 +614,9 @@ model User {
   incentivePayoutsReceived IncentivePayout[]
   incentivePayoutsRecorded IncentivePayout[] @relation("IncentivePayoutRecorder")
   incentivePayoutsVoided   IncentivePayout[] @relation("IncentivePayoutVoider")
+
+  morningPriorityRequested MorningPriorityRequest[] @relation("MorningPriorityRequestedBy")
+  morningPriorityDecided   MorningPriorityRequest[] @relation("MorningPriorityDecidedBy")
 }
 
 // Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
@@ -1341,6 +1353,7 @@ model Order {
   revisionLogs      OrderRevisionLog[]
   invoice           Invoice?
   complaintCases    ComplaintCase[]
+  morningPriorityRequests MorningPriorityRequest[]
 
   // Finance (D-180) — dimensi analitik buku besar + dokumen keuangan yang
   // menunjuk order ini. SetNull/Restrict diputuskan di sisi sana: baris
@@ -1364,6 +1377,7 @@ model Order {
   @@index([status, createdAt]) // papan Order per status + laporan antrean produksi
   @@index([promoId])
   @@index([staffSellerId])
+  paidAtPengecualian    OrderPaidAtPengecualian[]
 }
 
 // ─── INVOICE (31 Agustus 2026) ──────────────────────────────────────────────
@@ -1589,6 +1603,58 @@ enum ProductionPriority {
   HIGH
   URGENT
   CRITICAL
+}
+
+// Usulan Prioritas Pagi (Route Planner <-> Produksi, 3 Oktober 2026, laporan owner: "orderan yang
+// statusnya di proses bisa masuk penjadwalan, route planner... nyambung dengan produksi menentukan
+// high priority"). TIDAK melonggarkan Job DELIVERY (itu TETAP baru lahir saat unit READY_FOR_DELIVERY,
+// lihat deliveryHandoff.js) dan TIDAK memberi Dispatcher UNIT_ROUTING_WRITE (pemisahan tugas yang
+// sudah konsisten dijaga di seluruh sistem ini — dispatcher melihat produksi, tidak menulisnya).
+// Sebagai gantinya: Dispatcher mengUSULKAN dari Route Planner (permission JOB_WRITE, yang sudah
+// dipegang DISPATCHER) untuk order yang Order.status masih PROCESSING; Production Lead/Admin/Owner
+// (UNIT_ROUTING_WRITE) MENYETUJUI atau MENOLAK dari papan Produksi. Hanya saat DISETUJUI, server
+// menulis ProductionPriority ke semua unit aktif order itu lewat jalur yang SAMA dengan
+// PATCH /units/:id/production (recordActivity PRIORITY_CHANGED per unit, pola yang sudah ada,
+// bukan jalur baru) — lihat services/morningPriority.js.
+enum MorningPriorityStatus {
+  PENDING
+  APPROVED
+  DISMISSED
+}
+
+model MorningPriorityRequest {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Restrict: order dengan riwayat usulan prioritas tidak boleh terhapus diam-diam.
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  requestedById String @map("requested_by_id")
+  requestedBy   User   @relation("MorningPriorityRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  // Catatan dispatcher opsional — "kenapa pagi ini", bukan field wajib (beda dari ScopeRevision.reason
+  // yang memang wajib karena itu dasar negosiasi harga; ini murni sinyal koordinasi harian).
+  note String?
+
+  // Prioritas yang DIUSULKAN dispatcher — production boleh mengubahnya saat menyetujui (lihat `priority`
+  // di endpoint approve), jadi ini catatan niat awal, bukan nilai final yang pasti diterapkan apa adanya.
+  suggestedPriority ProductionPriority @default(HIGH) @map("suggested_priority")
+
+  status MorningPriorityStatus @default(PENDING)
+
+  // Diisi SEKALI saat disetujui/ditolak, dijaga di service layer (pola sama dengan ScopeRevision di atas).
+  decidedById String?   @map("decided_by_id")
+  decidedBy   User?     @relation("MorningPriorityDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt   DateTime? @map("decided_at")
+  // Prioritas yang BENAR-BENAR diterapkan ke unit saat disetujui (bisa beda dari suggestedPriority kalau
+  // production menaikkan/menurunkannya) — NULL kalau status bukan APPROVED.
+  appliedPriority ProductionPriority? @map("applied_priority")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@index([status])
+  @@map("morning_priority_requests")
 }
 
 // UNIT — entitas inti Sano Hub (D-002). Satu kasur fisik.
@@ -6554,6 +6620,11 @@ model FinCashAccount {
   supplierPayments FinSupplierPayment[]
   refunds          FinRefund[]
   payments         Payment[]
+  bankImportBatches FinBankImportBatch[]
+  bankImportLines   FinBankImportLine[]
+  bankMatchGroups   FinBankMatchGroup[]
+  bankReconPeriods  FinBankReconPeriod[]
+  cashCounts        FinCashCount[]
 
   @@index([active])
   @@map("fin_cash_accounts")
@@ -6731,6 +6802,7 @@ model FinJournalLine {
   createdAt DateTime @default(now()) @map("created_at")
 
   bankStatementLines FinBankStatementLine[]
+  bankMatchItems     FinBankMatchItem[]
 
   @@index([accountId, createdAt]) // buku besar per akun
   @@index([entryId])
@@ -9365,4 +9437,196 @@ model ProductionDailyTarget {
 
   @@index([effectiveFrom, createdAt])
   @@map("production_daily_targets_v2")
+}
+
+// ═══ PENGECUALIAN TANGGAL LUNAS (Order.paidAt) — keputusan Owner, ber-riwayat (2 Okt 2026) ═══════════════════════════════════════════════════════
+// Order.paidAt normalnya MENGIKUTI tanggal Payment terverifikasi yang melunasi (services/paymentLedger.js, paidAtSinkron/paidAtEfektif). Itu menggeser order yang
+// diklaim lunas di akhir bulan tetapi diverifikasi Finance bulan berikutnya ke bulan berikutnya. Pengecualian ini = Owner memutuskan tanggal hitung lunas sebuah order
+// DIKUNCI (mis. target Sales 120 jt di September): selama ada pengecualian AKTIF, TIDAK ADA jalur yang mengubah Order.paidAt order itu. TIDAK menyentuh Payment, jurnal,
+// saldo, atau status bayar — hanya tanggal hitung lunas. Setiap pengecualian punya alasan, pembuat, waktu, dan (bila dicabut) pencabut + alasan: tabel ini adalah riwayatnya,
+// baris tidak pernah dihapus. Satu order maksimal SATU pengecualian aktif (indeks unik parsial di migrasi). Hanya Admin/Owner (FINANCE_ADMIN).
+model OrderPaidAtPengecualian {
+  id String @id @default(uuid()) @db.Uuid
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  paidAtDikunci DateTime @map("paid_at_dikunci") // tanggal hitung lunas yang dihormati
+  paidAtAsli    DateTime? @map("paid_at_asli")   // paidAt sesaat sebelum pengecualian dibuat (untuk riwayat)
+  alasan        String
+
+  createdById String   @map("created_by")
+  createdBy   User     @relation("PaidAtPengecualianPembuat", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  dicabutAt     DateTime? @map("dicabut_at")
+  dicabutById   String?   @map("dicabut_by")
+  dicabutBy     User?     @relation("PaidAtPengecualianPencabut", fields: [dicabutById], references: [id], onDelete: SetNull)
+  alasanDicabut String?   @map("alasan_dicabut")
+
+  @@index([orderId])
+  @@index([dicabutAt])
+  @@map("order_paid_at_pengecualian")
+}
+
+// ══ REKONSILIASI BANK V2 (2 Okt 2026) ═══════════════════════════════════════════════════════════════════════════════════════
+// Impor rekening koran (XLSX/CSV) + pencocokan baris bank <-> baris jurnal. Seluruhnya TERPISAH dari jurnal: tidak ada tabel di sini yang membuat atau mengubah jurnal/saldo buku.
+// Baris bank immutable (trigger DB); pencocokan hanya bisa dibatalkan (riwayat tetap); periode selesai immutable. Sakelar: fin_settings "bank_reconciliation_v2_active" (default MATI).
+enum FinBankImportStatus {
+  AKTIF
+  DIBATALKAN
+}
+
+enum FinBankMatchKind {
+  OTOMATIS
+  MANUAL
+  KECUALI // dikecualikan dari pencocokan (wajib alasan) — bukan "cocok"
+}
+
+model FinBankImportBatch {
+  id            String         @id @default(uuid()) @db.Uuid
+  cashAccountId String         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  fileName    String              @map("file_name")
+  fileSha256  String              @map("file_sha256")
+  rowCount    Int                 @map("row_count")
+  totalDebit  Decimal             @map("total_debit") @db.Decimal(18, 2) // total KELUAR menurut bank
+  totalCredit Decimal             @map("total_credit") @db.Decimal(18, 2) // total MASUK menurut bank
+  dateFrom    DateTime            @map("date_from") @db.Date
+  dateTo      DateTime            @map("date_to") @db.Date
+  mapping     Json // pemetaan kolom yang dipakai (audit)
+  status      FinBankImportStatus @default(AKTIF)
+
+  importedById String?  @map("imported_by")
+  importedBy   User?    @relation("BankImportBatchPengimpor", fields: [importedById], references: [id], onDelete: SetNull)
+  importedAt   DateTime @default(now()) @map("imported_at")
+
+  rolledBackAt     DateTime? @map("rolled_back_at")
+  rolledBackById   String?   @map("rolled_back_by")
+  rolledBackBy     User?     @relation("BankImportBatchPembatal", fields: [rolledBackById], references: [id], onDelete: SetNull)
+  rolledBackReason String?   @map("rolled_back_reason")
+
+  lines FinBankImportLine[]
+
+  @@index([cashAccountId, importedAt])
+  @@map("fin_bank_import_batches")
+}
+
+model FinBankImportLine {
+  id      String             @id @default(uuid()) @db.Uuid
+  batchId String             @map("batch_id") @db.Uuid
+  batch   FinBankImportBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+
+  cashAccountId String         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  lineNo         Int       @map("line_no")
+  txDate         DateTime  @map("tx_date") @db.Date // tanggal transaksi MENURUT BANK (bukan tanggal buku)
+  effectiveDate  DateTime? @map("effective_date") @db.Date // tanggal efektif/valuta menurut bank (bila berkas menyediakan)
+  description    String
+  reference      String?
+  debit          Decimal   @default(0) @db.Decimal(18, 2) // uang KELUAR rekening menurut bank
+  credit         Decimal   @default(0) @db.Decimal(18, 2) // uang MASUK rekening menurut bank
+  runningBalance Decimal?  @map("running_balance") @db.Decimal(18, 2)
+  fingerprint    String
+  raw            Json // baris asli berkas, apa adanya
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  // Satu-satunya kolom yang boleh berubah (sekali, saat batch dibatalkan) — dijaga trigger DB.
+  rolledBackAt DateTime? @map("rolled_back_at")
+
+  matchItems FinBankMatchItem[]
+
+  @@index([cashAccountId, txDate])
+  @@index([batchId])
+  @@map("fin_bank_import_lines")
+}
+
+model FinBankMatchGroup {
+  id            String         @id @default(uuid()) @db.Uuid
+  cashAccountId String         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  kind     FinBankMatchKind
+  category String? // TRANSFER_ANTAR_REKENING | BIAYA_BANK | BUNGA | PAJAK_BUNGA | BEDA_TANGGAL | LAINNYA
+  reason   String? // wajib untuk MANUAL dan KECUALI
+  shape    String // "1:1" | "1:N" | "N:1" | "N:N" | "BANK_SAJA" | "BUKU_SAJA" (KECUALI)
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("BankMatchGroupPembuat", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  undoneAt     DateTime? @map("undone_at")
+  undoneById   String?   @map("undone_by")
+  undoneBy     User?     @relation("BankMatchGroupPembatal", fields: [undoneById], references: [id], onDelete: SetNull)
+  undoneReason String?   @map("undone_reason")
+
+  items FinBankMatchItem[]
+
+  @@index([cashAccountId, createdAt])
+  @@map("fin_bank_match_groups")
+}
+
+model FinBankMatchItem {
+  id      String            @id @default(uuid()) @db.Uuid
+  groupId String            @map("group_id") @db.Uuid
+  group   FinBankMatchGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  bankLineId    String?            @map("bank_line_id") @db.Uuid
+  bankLine      FinBankImportLine? @relation(fields: [bankLineId], references: [id], onDelete: Restrict)
+  journalLineId String?            @map("journal_line_id") @db.Uuid
+  journalLine   FinJournalLine?    @relation(fields: [journalLineId], references: [id], onDelete: Restrict)
+
+  active Boolean @default(true) // false setelah kelompoknya dibatalkan
+
+  @@index([groupId])
+  @@map("fin_bank_match_items")
+}
+
+model FinBankReconPeriod {
+  id            String         @id @default(uuid()) @db.Uuid
+  cashAccountId String         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  periodFrom    DateTime @map("period_from") @db.Date
+  periodTo      DateTime @map("period_to") @db.Date
+  balanceSource String   @map("balance_source") // REKENING_KORAN | OPNAME_FISIK
+  actualBalance Decimal  @map("actual_balance") @db.Decimal(18, 2) // saldo menurut koran bank / hasil hitung fisik
+  bookBalance   Decimal  @map("book_balance") @db.Decimal(18, 2)
+  residual      Decimal  @db.Decimal(18, 2) // selisih belum dijelaskan saat diselesaikan (selalu 0)
+
+  hwmAt        DateTime @map("hwm_at") // jurnal ber-created_at <= hwmAt termasuk snapshot
+  snapshotHash String   @map("snapshot_hash")
+  snapshot     Json
+
+  completedById String?  @map("completed_by")
+  completedBy   User?    @relation("BankReconPeriodPenutup", fields: [completedById], references: [id], onDelete: SetNull)
+  completedAt   DateTime @default(now()) @map("completed_at")
+
+  invalidatedAt   DateTime? @map("invalidated_at")
+  invalidatedById String?   @map("invalidated_by")
+  invalidatedBy   User?     @relation("BankReconPeriodPembatal", fields: [invalidatedById], references: [id], onDelete: SetNull)
+  invalidReason   String?   @map("invalid_reason")
+
+  @@index([cashAccountId, periodTo])
+  @@map("fin_bank_recon_periods")
+}
+
+// Hitung fisik Uang Kas (opname). Immutable. Dasar rekonsiliasi rekening berjenis KAS (tidak ada rekening koran).
+model FinCashCount {
+  id            String         @id @default(uuid()) @db.Uuid
+  cashAccountId String         @map("cash_account_id") @db.Uuid
+  cashAccount   FinCashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+
+  countDate DateTime @map("count_date") @db.Date
+  amount    Decimal  @db.Decimal(18, 2)
+  note      String?
+
+  countedById String?  @map("counted_by")
+  countedBy   User?    @relation("CashCountPencacah", fields: [countedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([cashAccountId, countDate])
+  @@map("fin_cash_counts")
 }

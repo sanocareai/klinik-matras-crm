@@ -55,7 +55,7 @@ const TABLES_TO_TRUNCATE = [
   // sebelumnya (urutan di sini tidak masalah karena TRUNCATE...CASCADE satu
   // statement, tapi baris ini TETAP wajib ADA, lihat komentar di kepala file).
   "fin_purchase_advance_applications", "fin_purchases", "fin_kasbon_repayments", "fin_kasbon", "fin_other_incomes",
-  "fin_penjualan_karyawan_payments", "fin_penjualan_karyawan_items", "fin_penjualan_karyawan",
+  "fin_penjualan_karyawan_payments", "fin_penjualan_karyawan_items", "fin_penjualan_karyawan", "order_paid_at_pengecualian",
   "fin_cash_transfers",
   "fin_journal_lines", "fin_journal_entries",
   "fin_posting_gaps", "fin_periods", "fin_settings",

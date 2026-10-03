@@ -155,8 +155,9 @@ async function requestFormData(path, formData, method = "POST") {
     if (!res.ok) {
       const text = await res.text();
       let msg = "Terjadi kesalahan";
-      try { msg = JSON.parse(text).error || msg; } catch {}
-      throw new Error(msg);
+      let code;
+      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code; } catch {}
+      throw Object.assign(new Error(msg), { status: res.status, code });
     }
     return res.json();
   } catch (err) {
@@ -332,6 +333,12 @@ export const api = {
   // benar-benar menghapus baris Route-nya. PUBLISHED/COMPLETED ditolak
   // backend — batalkan dulu baru bisa dihapus.
   deleteRoute: (id) => request(`/armada/routes/${id}`, { method: "DELETE" }),
+
+  // Usulan Prioritas Pagi (Route Planner -> Produksi, 3 Oktober 2026) — dispatcher mengusulkan order
+  // yang masih Diproses, production_lead/admin menyetujui/menolak. Lihat backend/src/services/morningPriority.js.
+  getMorningPriorityRequests: (params = {}) => request(`/morning-priority-requests${buildQuery(params)}`),
+  requestMorningPriority: (orderId, data = {}) => request("/morning-priority-requests", { method: "POST", body: JSON.stringify({ orderId, ...data }) }), // berlaku langsung
+  dismissMorningPriority: (id) => request(`/morning-priority-requests/${id}/dismiss`, { method: "PATCH" }),
 
   // Proof of Delivery — sisi verifikasi (Delivery Tahap 4)
   // D-085 — sebelumnya cuma terima `status` (string tunggal). Sekarang
@@ -1659,6 +1666,30 @@ export const api = {
   batalPelunasanKasbon: (id, rid, reason) => request(`/finance/kasbon/${id}/pelunasan/${rid}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
   batalKasbon: (id, reason) => request(`/finance/kasbon/${id}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
   editKasbon: (id, data) => request(`/finance/kasbon/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Mutasi per rekening kas/bank (saldo berjalan menurut buku)
+  getMutasiRekening: (id, params = {}) => request(`/finance/buku/rekening/${id}/mutasi${qsFinance(params)}`),
+  // Rekonsiliasi Bank V2 — impor rekening koran, pencocokan, panel (sakelar bank_reconciliation_v2_active; baca selalu boleh, tulis ditolak 403 SAKELAR_MATI saat mati)
+  getRekonKartu: (params = {}) => request(`/finance/rekon-bank/kartu${qsFinance(params)}`),
+  getRekonPanel: (id, params = {}) => request(`/finance/rekon-bank/${id}/panel${qsFinance(params)}`),
+  getRekonMutasiBank: (id, params = {}) => request(`/finance/rekon-bank/${id}/mutasi-bank${qsFinance(params)}`),
+  getRekonPencocokan: (id, params = {}) => request(`/finance/rekon-bank/${id}/pencocokan${qsFinance(params)}`),
+  getRekonBatch: (id) => request(`/finance/rekon-bank/${id}/batch`),
+  getRekonExceptionTanpaRekening: (params = {}) => request(`/finance/rekon-bank/exception-jurnal-tanpa-rekening${qsFinance(params)}`),
+  pratinjauImporKoran: (id, file, pemetaan) => { const fd = new FormData(); fd.append("file", file); if (pemetaan) fd.append("pemetaan", JSON.stringify(pemetaan)); return requestFormData(`/finance/rekon-bank/${id}/impor/pratinjau`, fd); },
+  imporKoran: (id, file, pemetaan) => { const fd = new FormData(); fd.append("file", file); if (pemetaan) fd.append("pemetaan", JSON.stringify(pemetaan)); return requestFormData(`/finance/rekon-bank/${id}/impor`, fd); },
+  batalkanImporKoran: (batchId, data) => request(`/finance/rekon-bank/batch/${batchId}/batalkan`, { method: "POST", body: JSON.stringify(data) }),
+  cocokkanOtomatisBank: (id, data) => request(`/finance/rekon-bank/${id}/cocokkan-otomatis`, { method: "POST", body: JSON.stringify(data) }),
+  cocokkanBank: (id, data) => request(`/finance/rekon-bank/${id}/cocokkan`, { method: "POST", body: JSON.stringify(data) }),
+  kecualikanBank: (id, data) => request(`/finance/rekon-bank/${id}/kecualikan`, { method: "POST", body: JSON.stringify(data) }),
+  lepasPencocokanBank: (groupId, alasan) => request(`/finance/rekon-bank/pencocokan/${groupId}/lepas`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  catatOpnameKas: (id, data) => request(`/finance/rekon-bank/${id}/opname`, { method: "POST", body: JSON.stringify(data) }),
+  tinjauExceptionRekening: (lineId, catatan) => request(`/finance/rekon-bank/exception/${lineId}/tinjau`, { method: "POST", body: JSON.stringify({ catatan }) }),
+  selesaikanPeriodeRekon: (id, data) => request(`/finance/rekon-bank/${id}/periode/selesai`, { method: "POST", body: JSON.stringify(data) }),
+  batalkanPeriodeRekon: (periodeId, alasan) => request(`/finance/rekon-bank/periode/${periodeId}/batalkan`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  // Pengecualian Tanggal Lunas (keputusan Owner, ber-riwayat)
+  getPengecualianLunas: (params = {}) => request(`/finance/pengecualian-lunas${qsFinance(params)}`),
+  buatPengecualianLunas: (data) => request("/finance/pengecualian-lunas", { method: "POST", body: JSON.stringify(data) }),
+  cabutPengecualianLunas: (id, alasan) => request(`/finance/pengecualian-lunas/${id}/cabut`, { method: "POST", body: JSON.stringify({ alasan }) }),
   // Penjualan Karyawan — input manual di luar Order (Finance)
   getPenjualanKaryawanFinance: (params = {}) => request(`/finance/penjualan-karyawan${qsFinance(params)}`),
   getKaryawanPenjualanKaryawan: () => request("/finance/penjualan-karyawan/karyawan"),

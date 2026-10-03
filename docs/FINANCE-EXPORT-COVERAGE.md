@@ -34,11 +34,16 @@ Mode filter: **Server** = layar mengirim filter/periode ke endpoint daftar, expo
 | Halaman / tab | Perlu export? | Alasan |
 |---|---|---|
 | **Dashboard Finance** | Tidak | Hanya kartu KPI/grafik, tidak ada tabel transaksi. |
+| **Kas & Bank → Mutasi & Rekonsiliasi → Mutasi Buku** (per rekening: PT Sano, KEM, Uang Kas) | **Ya** — modul `mutasi-rekening` (tombol di tab, features/finance/MutasiRekening.jsx) | Saldo awal, tiap uang masuk/keluar dengan saldo berjalan, saldo akhir; EMPAT tanggal terpisah (tanggal buku, dibuat pada, tanggal bank, tanggal efektif), pencatat, status cocok bank; filter pencarian ikut; baris paritas dengan kartu Kas & Bank; peringatan data lama tercantum di catatan sheet. |
+| **…→ Mutasi Rekening (bank)** (rekening koran yang diimpor, Rekonsiliasi Bank V2) | **Ya** — modul `mutasi-bank` (features/finance/MutasiBank.jsx) | Baris bank apa adanya + saldo bank + status pencocokan; filter periode, pencarian, dan status ikut; sheet Ringkasan (saldo awal/akhir bank, total, jumlah per status). |
+| **…→ Pencocokan** (bank ↔ buku) | **Ya** — modul `pencocokan-bank` (features/finance/PencocokanBank.jsx) | Sheet Bank Belum Dicocokkan, Buku Belum Dicocokkan, Saran Kombinasi, Pencocokan Aktif (satu baris per anggota kelompok), Ringkasan; sumber = daftarPencocokan() yang sama dengan layar. |
+| **…→ Rekonsiliasi** (satu workbook lengkap) | **Ya** — modul `rekonsiliasi-rekening` (features/finance/PanelRekon.jsx) | Sheet Rekonsiliasi (saldo buku, saldo bank/kas, selisih, komponen penjelas, belum dijelaskan), Exception, Jurnal Tanpa Rekening, Skenario, lalu seluruh sheet Mutasi Buku + Mutasi Bank + Pencocokan. Angka = panel layar (hitungPanel). |
 | **Kas & Bank** — Rekening; Mutasi Antar Rekening; Pemasukan Lain | Tidak (di luar 11 modul) | Pemasukan Lain sudah tercakup export Pemasukan; mutasi & saldo rekening tercakup Buku Besar akun kas/bank + Jurnal Umum (sumber transfer kas) + Rekonsiliasi. Bisa dibuat bila Owner minta. |
 | **Faktur** | Tidak (di luar 11 modul) | Dokumen tagihan pelanggan; nilai/saldonya tercakup Piutang & Refund dan Pembayaran & Verifikasi. |
 | **Persediaan Awal (cutover)** | Tidak (di luar 11 modul) | Alur input/pemeriksaan snapshot (Tempel CSV); bukan laporan transaksi. Usul lanjutan: template hitung fisik. |
 | **Laporan Keuangan** — Laba Rugi, Neraca, Arus Kas, Neraca Saldo | Tidak (di luar 11 modul) | Laporan terhitung; angka pokoknya dapat ditelusuri dari Buku Besar & Jurnal Umum. Usul lanjutan bila Owner butuh Excel laporan. |
 | **Bagan Akun**, **Pengaturan Finance** | Tidak | Data master/konfigurasi, bukan transaksi. |
+| **Pengecualian Tanggal Lunas** (keputusan Owner, 2 Okt 2026) | Tidak (di luar 11 modul) | Daftar riwayat keputusan Owner yang kecil; setiap perubahan juga tercatat di Aktivitas order. Export dibuat bila Owner minta. |
 | **Penjualan Karyawan** (input manual di luar Order, 2 Okt 2026) | Tidak (di luar 11 modul) | Modul baru. Jurnalnya (sumber Penjualan Karyawan / Pembayaran Penjualan Karyawan) tercakup Jurnal Umum & Buku Besar; pendapatannya tercakup export Pemasukan (Pemasukan Lain · Penjualan karyawan). Export khusus bisa dibuat bila Owner minta. |
 
 ## C. Gap yang ditutup pada finalisasi ini

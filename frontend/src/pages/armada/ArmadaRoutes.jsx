@@ -8,6 +8,7 @@ import DateRangePicker from "@/components/DateRangePicker.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { makeRange, toApiParams, todayWIB } from "@/lib/dateRange.js";
 import UnroutedJobsPanel from "@/features/armada/components/UnroutedJobsPanel.jsx";
+import MorningPriorityPanel from "@/features/armada/components/MorningPriorityPanel.jsx";
 import RouteCard from "@/features/armada/components/RouteCard.jsx";
 import RouteMap from "@/features/armada/components/RouteMap.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
@@ -414,6 +415,11 @@ export default function ArmadaRoutes() {
       />
 
       {error && <div className="mb-3 rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
+
+      {/* Usulan Prioritas Pagi (3 Oktober 2026) — full-width, collapsed default, DI LUAR grid 2 kolom di
+          bawah (kolom kiri 300px sudah sempit, lihat catatan D-057). TIDAK membuat Job/baris rute apa
+          pun — murni koordinasi ke papan Produksi, lihat MorningPriorityPanel.jsx untuk desain lengkap. */}
+      <MorningPriorityPanel />
 
       {/* `xl:` (1280px), BUKAN `lg:` (1024px) — D-056, 4 September 2026.
           Laporan owner: 3 panel (240px + tengah + 240px) tampil sejajar

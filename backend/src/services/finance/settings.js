@@ -80,6 +80,9 @@ export const SETTING_KEYS = Object.freeze({
   // (custom tanpa angka) yang tidak mengubah ukuran tetap boleh. SEJAK diisi otomatis saat dinyalakan (order yang dibuat sebelum itu = legacy).
   UKURAN_CUSTOM_WAJIB: "ukuran_custom_wajib",
   UKURAN_CUSTOM_WAJIB_SEJAK: "ukuran_custom_wajib_sejak",
+  // REKONSILIASI BANK V2 (15 Okt 2026) — SAKELAR ROLLOUT, DEFAULT MATI. MATI = impor rekening koran, pencocokan, pengecualian, opname kas, dan penyelesaian periode ditolak 403 di server.
+  // Mutasi Buku per rekening & laporan exception (baca-saja) TIDAK memakai sakelar ini. Sakelar tidak pernah mengubah jurnal/saldo buku.
+  BANK_RECONCILIATION_V2_ACTIVE: "bank_reconciliation_v2_active",
 });
 
 const DEFAULTS = Object.freeze({
@@ -118,6 +121,7 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.LAPORAN_DIVISI_WORKSPACE]: "",
   [SETTING_KEYS.UKURAN_CUSTOM_WAJIB]: "false",
   [SETTING_KEYS.UKURAN_CUSTOM_WAJIB_SEJAK]: "",
+  [SETTING_KEYS.BANK_RECONCILIATION_V2_ACTIVE]: "false",
 });
 
 // Payment.method → kunci pengaturan rekening tujuannya. SATU tempat, supaya

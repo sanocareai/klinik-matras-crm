@@ -13,7 +13,7 @@ const baca = (p) => fs.readFileSync(p, "utf8").split("\r\n").join("\n");
 // Memakai PanelDetail + klikBuka (klik baris/kartu membuka panel samping).
 const PANEL = [
   "FinanceExpenses.jsx", "FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx",
-  "FinanceSuppliers.jsx", "FinanceInvoices.jsx", "FinanceCash.jsx", "FinanceLedger.jsx", "FinanceReconciliation.jsx", "FinancePenjualanKaryawan.jsx",
+  "FinanceSuppliers.jsx", "FinanceInvoices.jsx", "FinanceCash.jsx", "FinanceLedger.jsx", "FinanceReconciliation.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx",
 ];
 // Detail lewat dialog/panel milik komponen lain yang dipanggil dari baris.
 const DETAIL_SENDIRI = {
@@ -42,7 +42,7 @@ test("setiap halaman Finance: punya panel detail (klik baris), detail sendiri, a
 });
 
 test("halaman berdaftar dengan kartu (HP) juga bisa dibuka: RowCard memakai onClick", () => {
-  for (const f of ["FinanceExpenses.jsx", "FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx", "FinanceSuppliers.jsx", "FinancePayments.jsx", "FinancePenjualanKaryawan.jsx"]) {
+  for (const f of ["FinanceExpenses.jsx", "FinancePurchases.jsx", "FinanceKasbon.jsx", "FinanceUangMuka.jsx", "FinanceReceivables.jsx", "FinanceSuppliers.jsx", "FinancePayments.jsx", "FinancePenjualanKaryawan.jsx", "FinancePengecualianLunas.jsx"]) {
     const s = baca(path.join(halaman, f));
     const kartu = (s.match(/<RowCard\n/g) || []).length;
     const ber = (s.match(/<RowCard\n\s+key=\{[^}]+\}\n\s+onClick=/g) || []).length;

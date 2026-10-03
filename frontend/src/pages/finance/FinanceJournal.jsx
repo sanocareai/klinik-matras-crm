@@ -8,6 +8,7 @@ import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
 import { api } from "@/api.js";
+import { rekeningUntukAkun, butuhRekening, rekeningBarisValid } from "@/features/finance/jurnalRekeningLogic.js";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   HalamanFinance, Uang, formatUang, JudulKartu, Penjelasan, TombolAksi, StatusBadge,
@@ -300,19 +301,28 @@ function DetailJurnal({ entryId, onClose, onReversed, onError }) {
 function ModalJurnalManual({ open, onClose, akun, onSubmit }) {
   const [f, setF] = useState({ date: "", description: "", saldoAwal: false });
   const [baris, setBaris] = useState([
-    { accountId: "", debit: "", credit: "", description: "" },
-    { accountId: "", debit: "", credit: "", description: "" },
+    { accountId: "", cashAccountId: "", debit: "", credit: "", description: "" },
+    { accountId: "", cashAccountId: "", debit: "", credit: "", description: "" },
   ]);
+  const [rekening, setRekening] = useState([]);
+  const [rekGalat, setRekGalat] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    setRekGalat(null);
+    api.getFinanceCashAccounts().then((r) => setRekening((r.accounts || []).filter((a) => a.active))).catch((e) => setRekGalat(e.message || "Gagal memuat daftar rekening"));
+  }, [open]);
 
   const totalDebit = baris.reduce((s, b) => s + (Number(b.debit) || 0), 0);
   const totalKredit = baris.reduce((s, b) => s + (Number(b.credit) || 0), 0);
   const seimbang = Math.abs(totalDebit - totalKredit) < 0.005 && totalDebit > 0;
-  const valid = f.description.trim() && seimbang && baris.every((b) => !b.accountId || Number(b.debit) > 0 || Number(b.credit) > 0);
+  const valid = f.description.trim() && seimbang && baris.every((b) => !b.accountId || Number(b.debit) > 0 || Number(b.credit) > 0) && baris.every((b) => rekeningBarisValid(rekening, b)) && !rekGalat;
 
   function ubah(i, k, v) {
     setBaris((s) => s.map((b, idx) => {
       if (idx !== i) return b;
       const next = { ...b, [k]: v };
+      // Ganti akun → pilihan rekening direset; bila akun itu hanya dipakai SATU rekening, langsung terpilih.
+      if (k === "accountId") { const cocok = rekeningUntukAkun(rekening, v); next.cashAccountId = cocok.length === 1 ? cocok[0].id : ""; }
       // Satu baris hanya boleh debit ATAU kredit — mengisi salah satunya
       // mengosongkan yang lain, supaya tidak perlu menghapus manual dan
       // tidak pernah terkirim baris yang ditolak backend.
@@ -337,6 +347,7 @@ function ModalJurnalManual({ open, onClose, akun, onSubmit }) {
               ...f,
               lines: baris.filter((b) => b.accountId).map((b) => ({
                 accountId: b.accountId,
+                ...(b.cashAccountId && { cashAccountId: b.cashAccountId }),
                 debit: Number(b.debit) || 0,
                 credit: Number(b.credit) || 0,
                 description: b.description || null,
@@ -368,8 +379,10 @@ function ModalJurnalManual({ open, onClose, akun, onSubmit }) {
         </div>
 
         <div className="space-y-2">
+          {rekGalat && <p className="text-[12px] text-red">{rekGalat}. Tutup dan buka lagi form ini.</p>}
           {baris.map((b, i) => (
-            <div key={i} className="grid grid-cols-[1fr_120px_120px_28px] items-center gap-2">
+            <div key={i} className="space-y-1">
+            <div className="grid grid-cols-[1fr_120px_120px_28px] items-center gap-2">
               <Pilihan value={b.accountId} onChange={(v) => ubah(i, "accountId", v)}>
                 <option value="">— pilih akun —</option>
                 {akun.map((a) => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
@@ -384,10 +397,20 @@ function ModalJurnalManual({ open, onClose, akun, onSubmit }) {
                 ×
               </Button>
             </div>
+            {butuhRekening(rekening, b.accountId) && (
+              <div className="pl-1" data-testid="pilih-rekening-baris">
+                <Pilihan value={b.cashAccountId} onChange={(v) => ubah(i, "cashAccountId", v)}>
+                  <option value="">— pilih rekening bank/kas —</option>
+                  {rekeningUntukAkun(rekening, b.accountId).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </Pilihan>
+                {!b.cashAccountId && <p className="mt-0.5 text-[11.5px] text-orange">Wajib: pilih rekeningnya supaya saldo rekening ikut berubah.</p>}
+              </div>
+            )}
+            </div>
           ))}
           <Button
             size="sm" variant="tertiary" className="px-0"
-            onClick={() => setBaris((s) => [...s, { accountId: "", debit: "", credit: "", description: "" }])}
+            onClick={() => setBaris((s) => [...s, { accountId: "", cashAccountId: "", debit: "", credit: "", description: "" }])}
           >
             + Tambah baris
           </Button>

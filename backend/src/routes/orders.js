@@ -9,6 +9,7 @@ import { rolesOf, hasPermission, requirePermission, PERMISSIONS as P } from "../
 import { klaimGateAktif } from "../services/finance/klaimLunas.js";
 import { ubahPenjualKaryawan, ringkasanPenjualanKaryawan, gabungkanPenjualanKaryawan, PenjualanKaryawanError } from "../services/penjualanKaryawan.js";
 import { ringkasanPerKaryawan } from "../services/finance/penjualanKaryawanManual.js";
+import { pengecualianAktif } from "../services/pengecualianPaidAt.js";
 // Batas rentang tanggal WIB — WAJIB dipakai, jangan `new Date(from)` polos.
 // Container backend jalan di UTC, jadi batas polos menggeser jendela 7 jam
 // (lihat CLAUDE.md §11 "TANGGAL & TIMEZONE").
@@ -322,7 +323,9 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
       // aturan transisi yang SAMA supaya basis komisi sales konsisten
       // dari jalur mana pun paymentStatus berubah. Lihat komentar panjang
       // di schema.prisma.
-      const paidAtPatch = paymentStatus === undefined ? {}
+      // Pengecualian Owner aktif → paidAt DIKUNCI (tidak dinullkan/digeser oleh perubahan status manual); lihat services/pengecualianPaidAt.js.
+      const paidAtDikunci = paymentStatus !== undefined && !!(await pengecualianAktif(tx, req.params.id));
+      const paidAtPatch = paymentStatus === undefined || paidAtDikunci ? {}
         : paymentStatus === "LUNAS"
           ? (sebelum.paymentStatus === "LUNAS" ? {} : { paidAt: new Date() })
           : { paidAt: null };
