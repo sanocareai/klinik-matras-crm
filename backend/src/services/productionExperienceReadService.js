@@ -424,12 +424,15 @@ export async function getRunCard(prisma, runId, { unitIds, now = new Date() } = 
 // Antrean pekerja: PIC Table = rencana dengan operator = saya; PIC Corner = rencana dengan PIC Corner = saya (atau operator meja bila
 // Corner tidak ditugaskan) yang sudah melewati tahap 9. Satu kartu aktif per unit; urut prioritas lalu target mulai.
 // ---------------------------------------------------------------------------
-export async function listWorkerQueue(prisma, { unitIds, userId, lane, now = new Date() }) {
-  const operator = userId ? await prisma.productionOperator.findUnique({ where: { userId }, select: { id: true, active: true } }) : null;
-  if (!operator || !operator.active) return { operator: null, items: [] };
-  const planWhere = lane === "CORNER"
-    ? { OR: [{ cornerOperatorId: operator.id }, { cornerOperatorId: null, operatorId: operator.id }] }
-    : { operatorId: operator.id };
+// all=true (ADMIN/OWNER dengan PRODUCTION_EXECUTE_ANY, keputusan owner 4 Okt 2026): antrean SEMUA PIC pada lane itu, bukan hanya milik sendiri.
+export async function listWorkerQueue(prisma, { unitIds, userId, lane, all = false, now = new Date() }) {
+  const operator = !all && userId ? await prisma.productionOperator.findUnique({ where: { userId }, select: { id: true, active: true } }) : null;
+  if (!all && (!operator || !operator.active)) return { operator: null, items: [] };
+  const planWhere = all
+    ? { operatorId: { not: null } }
+    : lane === "CORNER"
+      ? { OR: [{ cornerOperatorId: operator.id }, { cornerOperatorId: null, operatorId: operator.id }] }
+      : { operatorId: operator.id };
   const runs = await loadRuns(prisma, {
     unitId: { in: unitIds }, status: { notIn: TERMINAL_RUN },
     plan: { is: { ...planWhere, status: { not: "CANCELLED" } } },
@@ -443,7 +446,7 @@ export async function listWorkerQueue(prisma, { unitIds, userId, lane, now = new
     .sort((a, b) => String(a.plan?.productionDate || "9999").localeCompare(String(b.plan?.productionDate || "9999"))
       || String(a.plan?.stationCode || "").localeCompare(String(b.plan?.stationCode || ""))
       || compareStationOrder(a.plan, b.plan));
-  return { operator: { id: operator.id }, items };
+  return { operator: all ? { id: null, all: true } : { id: operator.id }, items };
 }
 
 // ---------------------------------------------------------------------------

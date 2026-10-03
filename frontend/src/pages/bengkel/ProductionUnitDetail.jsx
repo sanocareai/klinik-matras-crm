@@ -143,9 +143,8 @@ export default function ProductionUnitDetail() {
 
   // Blokir Produksi (Production Core Slice 2A) — RESOLVE permission SAMA
   // dengan OPEN (UNIT_STAGE_WRITE backend): PRODUCTION_WORKER/PRODUCTION_LEAD/
-  // QC_LEAD, BUKAN ADMIN (D-013: admin tidak memajukan/menyentuh produksi
-  // langsung) dan BUKAN SALES.
-  const canResolveBlocker = myRoles.some((r) => ["PRODUCTION_WORKER", "PRODUCTION_LEAD", "QC_LEAD"].includes(r));
+  // QC_LEAD, dan sejak 4 Okt 2026 (keputusan owner) ADMIN/OWNER; BUKAN SALES.
+  const canResolveBlocker = myRoles.some((r) => ["PRODUCTION_WORKER", "PRODUCTION_LEAD", "QC_LEAD", "ADMIN", "OWNER"].includes(r));
   const [resolvingBlocker, setResolvingBlocker] = useState(false);
   const [resolutionNote, setResolutionNote] = useState("");
   const [blockerBusy, setBlockerBusy] = useState(false);

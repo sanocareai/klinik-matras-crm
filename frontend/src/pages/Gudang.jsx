@@ -360,7 +360,7 @@ export default function Gudang() {
 
   const roles = currentRoles();
   const allowed = roles.some((r) => ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE"].includes(r));
-  const canWrite = roles.includes("WAREHOUSE");
+  const canWrite = roles.some((r) => ["WAREHOUSE", "ADMIN", "OWNER"].includes(r)); // keputusan owner 4 Okt 2026: ADMIN/OWNER memegang INVENTORY_WRITE
 
   const load = useCallback(async () => {
     try {

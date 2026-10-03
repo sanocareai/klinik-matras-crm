@@ -113,14 +113,14 @@ productionExperienceRouter.get("/units/:unitId/overview", requireAnyPermission(.
   } catch (err) { handleErr(err, res); }
 });
 
-// GET /api/production-v2/worker/:lane (table|corner) — antrean milik operator yang login.
+// GET /api/production-v2/worker/:lane (table|corner) — antrean milik operator yang login (ADMIN/OWNER: antrean semua PIC pada lane itu).
 productionExperienceRouter.get("/worker/:lane", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
     const lane = req.params.lane === "corner" ? "CORNER" : req.params.lane === "table" ? "TABLE" : null;
     if (!lane) return res.status(404).json({ error: "Antrean tidak dikenal" });
     const unitIds = await readerCohort();
     if (!unitIds) return inert(res, { items: [], operator: null });
-    res.json({ readerMode: "COHORT", lane, ...(await listWorkerQueue(prisma, { unitIds, userId: req.user.id, lane })) });
+    res.json({ readerMode: "COHORT", lane, ...(await listWorkerQueue(prisma, { unitIds, userId: req.user.id, lane, all: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY) })) });
   } catch (err) { handleErr(err, res); }
 });
 

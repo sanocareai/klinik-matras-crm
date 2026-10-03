@@ -121,13 +121,11 @@ test("hanya FINANCE yang bisa menulis pembayaran — ADMIN pun tidak", () => {
   assert.ok(!hasPermission(sales, P.PAYMENT_WRITE));
 });
 
-test("ADMIN TIDAK bisa memajukan tahap produksi atau memutuskan QC", () => {
-  // Bukan kelalaian — ini disengaja (PRD §3). Kalau admin bisa memajukan
-  // tahap, kolom "siapa mengerjakan" di unit_stage_logs berhenti bisa
-  // dipercaya. Admin yang memang ikut mengerjakan diberi role produksi
-  // sebagai TAMBAHAN, bukan dengan melebarkan ADMIN.
-  assert.ok(!hasPermission(admin, P.UNIT_STAGE_WRITE));
-  assert.ok(!hasPermission(admin, P.QC_WRITE));
+test("ADMIN memajukan tahap produksi & memutuskan QC — keputusan owner 4 Okt 2026 (menggantikan D-013/PRD §3 untuk ADMIN/OWNER)", () => {
+  // DULU larangan disengaja (jejak audit "siapa mengerjakan"). Owner memutuskan ADMIN/OWNER memegang semua lini produksi; mitigasi jejak
+  // audit = actor_id selalu user penekan. Role lain TIDAK ikut melebar (lihat tests/adminAllLines.test.js).
+  assert.ok(hasPermission(admin, P.UNIT_STAGE_WRITE));
+  assert.ok(hasPermission(admin, P.QC_WRITE));
   // Multi-role adalah jalan keluarnya:
   assert.ok(hasPermission({ roles: ["ADMIN", "QC_LEAD"] }, P.QC_WRITE));
 });
@@ -145,10 +143,8 @@ test("OPEN/RESOLVE BLOCKER (Production Core Slice 2A) butuh UNIT_STAGE_WRITE —
   const r = runMiddleware(requirePermission(P.UNIT_STAGE_WRITE), sales);
   assert.equal(r.status, 403);
 
-  // ADMIN SENGAJA tidak dapat UNIT_STAGE_WRITE (D-013) — konsisten: ADMIN
-  // juga tidak boleh membuka/menutup blokir produksi sendiri, sama seperti
-  // tidak boleh memajukan tahap atau memutuskan QC.
-  assert.ok(!hasPermission(admin, P.UNIT_STAGE_WRITE));
+  // Sejak 4 Okt 2026 ADMIN memegang UNIT_STAGE_WRITE (keputusan owner) — boleh membuka/menutup blokir produksi.
+  assert.ok(hasPermission(admin, P.UNIT_STAGE_WRITE));
 });
 
 test("PAUSE/RESUME tahap (Production Core Slice 3) butuh UNIT_STAGE_WRITE — sama dengan start/complete/fail", () => {
@@ -159,8 +155,8 @@ test("PAUSE/RESUME tahap (Production Core Slice 3) butuh UNIT_STAGE_WRITE — sa
   // OPEN/RESOLVE BLOCKER di atas.
   assert.ok(hasPermission(worker, P.UNIT_STAGE_WRITE), "PRODUCTION_WORKER harus bisa pause/resume tahapnya sendiri");
   assert.ok(!hasPermission(sales, P.UNIT_STAGE_WRITE), "SALES tidak boleh pause/resume tahap produksi");
-  // ADMIN SENGAJA tidak dapat UNIT_STAGE_WRITE (D-013) — konsisten di sini juga.
-  assert.ok(!hasPermission(admin, P.UNIT_STAGE_WRITE));
+  // ADMIN kini juga boleh pause/resume (UNIT_STAGE_WRITE sejak 4 Okt 2026).
+  assert.ok(hasPermission(admin, P.UNIT_STAGE_WRITE));
 });
 
 test("PATCH /units/:id/production butuh UNIT_ROUTING_WRITE — PRODUCTION_WORKER tidak boleh mereprioritaskan pekerjaannya sendiri", () => {

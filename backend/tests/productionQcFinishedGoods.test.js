@@ -51,10 +51,11 @@ test("QC_WAIVED: alasan >= 10 karakter, tanpa bahan tambahan, tanpa syarat foto/
   assert.equal(code(() => validateInspectionInput({ result: "waived", reason: "Alasan yang cukup panjang" })), null, "huruf kecil dinormalkan");
 });
 
-test("permission QC_WAIVE hanya untuk ADMIN/OWNER (bukan QC_LEAD/PRODUCTION_LEAD); QC_WRITE tetap hak QC_LEAD (ADMIN tidak memegangnya)", () => {
+test("permission QC_WAIVE hanya untuk ADMIN/OWNER (bukan QC_LEAD/PRODUCTION_LEAD); QC_WRITE hak QC_LEAD + (sejak 4 Okt 2026, keputusan owner) ADMIN/OWNER", () => {
   const holders = Object.entries(ROLE_PERMISSIONS).filter(([, perms]) => perms.includes(P.QC_WAIVE)).map(([role]) => role).sort();
   assert.deepEqual(holders, ["ADMIN", "OWNER"]);
-  assert.equal(ROLE_PERMISSIONS.ADMIN.includes(P.QC_WRITE), false);
+  assert.equal(ROLE_PERMISSIONS.ADMIN.includes(P.QC_WRITE), true);
+  assert.equal(ROLE_PERMISSIONS.OWNER.includes(P.QC_WRITE), true);
   assert.equal(ROLE_PERMISSIONS.QC_LEAD.includes(P.QC_WRITE), true);
 });
 
