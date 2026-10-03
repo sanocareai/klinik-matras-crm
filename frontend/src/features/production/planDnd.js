@@ -26,6 +26,34 @@ export const isPlanComplete = (v) => (v?.progress?.total ?? 0) > 0 && (v.progres
 // Urutan tampil di meja = urutan server (manual > prioritas bawaan), LALU unit 12/12 dikunci di bawah (stabil). Dipakai render DAN keputusan drop.
 export const planDisplayOrder = (items) => { const o = orderedStationItems(items); return [...o.filter((v) => !isPlanComplete(v)), ...o.filter(isPlanComplete)]; };
 
+// ---- Prioritas vs urutan manual (P12A.3) ----
+// ATURAN: stationSequence/urutan manual SELALU menang di meja. Prioritas HANYA (1) mengurutkan backlog, (2) menentukan posisi AWAL unit yang
+// masuk meja tanpa posisi eksplisit (tombol Jadwalkan), dan (3) memicu peringatan non-blocking bila Mendesak/Tinggi berada di bawah Normal.
+// TIDAK PERNAH mengurutkan ulang meja secara otomatis.
+export const priorityOf = (v) => v?.plan?.priority ?? 0;
+
+// Indeks posisi awal untuk unit berprioritas `priority` di daftar `others` (urutan tampil meja, TANPA unit itu; unit 12/12 terkunci diabaikan):
+// tepat setelah item terakhir yang prioritasnya >= priority (Normal -> paling bawah; Mendesak -> di depan semua yang lebih rendah).
+export function priorityInsertIndex(others, priority) {
+  const movable = (others || []).filter((v) => !isPlanComplete(v));
+  let last = -1;
+  movable.forEach((v, i) => { if (priorityOf(v) >= priority) last = i; });
+  return last + 1;
+}
+
+// Inversi prioritas di satu meja: unit yang lebih mendesak berada SETELAH unit yang kurang mendesak (kartu 12/12 tidak dihitung).
+// Mengembalikan kode unit yang "tertinggal" (kosong = tidak ada peringatan). Murni informasi — tidak mengubah urutan.
+export function priorityInversion(items) {
+  const movable = (items || []).filter((v) => !isPlanComplete(v));
+  const out = []; let minBefore = Infinity;
+  for (const v of movable) {
+    const p = priorityOf(v);
+    if (p > minBefore) out.push(v.unit?.unitCode);
+    minBefore = Math.min(minBefore, p);
+  }
+  return out;
+}
+
 const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 /**

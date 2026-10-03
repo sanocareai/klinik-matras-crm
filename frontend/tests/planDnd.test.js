@@ -19,7 +19,7 @@ const STATUS = read("pages", "bengkel", "ProductionPlannerV2.jsx");
 
 function loadDnd() {
   const src = DND_SRC.replace(/^import .*$/gm, "").replace(/^export /gm, "");
-  return new Function("stationCapacity", "orderedStationItems", `${src}\nreturn { DRAG_THRESHOLD_PX, dragMoved, insertIndexAt, listWithInserted, decideDrop, describeTarget, isPlanComplete, planDisplayOrder };`)(stationCapacity, orderedStationItems);
+  return new Function("stationCapacity", "orderedStationItems", `${src}\nreturn { DRAG_THRESHOLD_PX, dragMoved, insertIndexAt, listWithInserted, decideDrop, describeTarget, isPlanComplete, planDisplayOrder, priorityInsertIndex, priorityInversion, priorityOf };`)(stationCapacity, orderedStationItems);
 }
 const D = loadDnd();
 
@@ -200,4 +200,63 @@ test("simulateDrop (Mode Demo): murni & tidak mengubah input; backlog→meja, ur
   const r4 = simulateDrop({ board: r3.board, cc: r3.cc, view: r3.board.stations[0].items[0], decision: { type: "moveDate", date: "2026-10-06" }, date: DATE });
   assert.equal(r4.board.stations[0].items.length, 1); assert.equal(r4.board.kpi.planned, 1);
   assert.equal(simulateDrop({ board, cc, view: x, decision: { type: "noop" }, date: DATE }).message, "", "keputusan tanpa aksi = tanpa perubahan");
+});
+
+// ---- P12A.3: prioritas vs urutan manual, harga, tipografi ----
+const RENCANA_RAW = read("pages", "bengkel", "ProductionRencanaWorkspace.jsx");
+const UNITCARD = read("features", "production", "UnitCard.jsx");
+const QC_SRC = read("pages", "bengkel", "ProductionQc.jsx");
+const prio = (n, p, seq = null) => ({ ...unit(n, { station: "TABLE_1", seq, prio: p }), progress: { done: 3, total: 12 } });
+
+test("urutan manual SELALU menang: planDisplayOrder tidak mengurutkan ulang menurut prioritas; keputusan seret/▲▼ tidak memakai prioritas", () => {
+  const a = prio(1, 0, 1), b = prio(2, 2, 2), c = prio(3, 1, 3); // manual: Normal, Mendesak, Tinggi
+  assert.deepEqual(D.planDisplayOrder([c, b, a]).map((v) => v.plan.id), ["plan-1", "plan-2", "plan-3"], "tetap urutan manual walau Mendesak di bawah Normal");
+  const re = D.decideDrop({ view: a, target: { kind: "meja", code: "TABLE_1", index: 2 }, stations: [meja("TABLE_1", [a, b, c])], date: DATE });
+  assert.deepEqual(re.orderedIds, ["plan-2", "plan-3", "plan-1"], "posisi yang ditunjuk pengguna dipakai apa adanya");
+  assert.ok(!/priorityInsertIndex|priorityOf/.test(read("features", "production", "planDnd.js").slice(read("features", "production", "planDnd.js").indexOf("export function decideDrop"))), "decideDrop tidak memakai prioritas");
+  assert.ok(!/reorderStation\([^)]*priority/.test(RENCANA_RAW) && !/auto.?reorder|sortByPriority/i.test(RENCANA_RAW), "tidak ada auto-reorder");
+});
+
+test("prioritas hanya menentukan POSISI AWAL (tombol Jadwalkan): setelah item terakhir berprioritas >= miliknya; 12/12 diabaikan", () => {
+  const n1 = prio(1, 0, 1), h = prio(2, 1, 2), n2 = prio(3, 0, 3), done12 = { ...prio(4, 0, 4), progress: { done: 12, total: 12 } };
+  const others = D.planDisplayOrder([n1, h, n2, done12]);
+  assert.equal(D.priorityInsertIndex(others, 2), 0, "Mendesak masuk paling atas");
+  assert.equal(D.priorityInsertIndex(others, 1), 2, "Tinggi: setelah Tinggi terakhir (di antara H dan N)");
+  assert.equal(D.priorityInsertIndex(others, 0), 3, "Normal: paling bawah, di atas unit 12/12 terkunci");
+  assert.equal(D.priorityInsertIndex([], 2), 0);
+  assert.match(RENCANA_RAW, /priorityInsertIndex\(others, meta\.priority\)/);
+  assert.match(RENCANA_RAW, /hasManualOrder\(ordered\)/, "urutan manual yang ada tidak diubah; tanpa urutan manual, urutan bawaan server sudah cukup");
+  assert.match(read("features", "production", "ScheduleModals.jsx"), /priority: Number\(form\.priority\) \}\)/, "modal meneruskan info penempatan");
+});
+
+test("peringatan inversi prioritas non-blocking: Mendesak/Tinggi di bawah prioritas lebih rendah; tanpa inversi = kosong; 12/12 tidak dihitung", () => {
+  assert.deepEqual(D.priorityInversion([prio(1, 0, 1), prio(2, 2, 2)]), ["U2"], "Mendesak di bawah Normal");
+  assert.deepEqual(D.priorityInversion([prio(1, 0, 1), prio(2, 1, 2), prio(3, 2, 3)]), ["U2", "U3"]);
+  assert.deepEqual(D.priorityInversion([prio(1, 2, 1), prio(2, 1, 2), prio(3, 0, 3)]), [], "Mendesak → Tinggi → Normal = tidak ada peringatan");
+  assert.deepEqual(D.priorityInversion([prio(1, 1, 1), prio(2, 1, 2)]), [], "sama rata = tidak ada peringatan");
+  assert.deepEqual(D.priorityInversion([prio(1, 0, 1), { ...prio(2, 2, 2), progress: { done: 12, total: 12 } }]), [], "unit 12/12 terkunci tidak dihitung");
+  assert.match(RENCANA_RAW, /data-testid="priority-inversion" role="note"/);
+  assert.match(RENCANA_RAW, /Urutan manual dihormati — tidak diubah otomatis/);
+});
+
+test("harga/orderValue TIDAK ada di kartu Rencana, Status, QC; harga tetap di Unit 360 dan hanya untuk role berizin", () => {
+  for (const [name, src] of [["PlanCard", read("features", "production", "PlanCard.jsx")], ["UnitCard (Status/QC/Akan Masuk)", UNITCARD], ["Rencana", RENCANA_RAW], ["Status", read("pages", "bengkel", "ProductionPlannerV2.jsx")], ["QC", QC_SRC]]) {
+    assert.ok(!/orderValue|formatRupiah/.test(src), `${name}: tanpa harga`);
+  }
+  const drawer = fs.readFileSync(path.join(__dirname, "..", "src", "features", "production", "UnitOverviewDrawer.jsx"), "utf8");
+  assert.match(drawer, /data\.permissions\.canSeeValue && data\.orderValue != null/, "Unit 360: harga hanya bila server mengizinkan (canSeeValue)");
+});
+
+test("tipografi kartu: nama customer 16px; label ≥ 12px; nilai 13–14px; badge ≥ 11.5px; TIDAK ada teks 10,5px; ada line-clamp + tooltip", () => {
+  for (const [name, src] of [["PlanCard", read("features", "production", "PlanCard.jsx")], ["UnitCard", UNITCARD]]) {
+    assert.ok(!/text-\[(?:[0-9]|10)(?:\.\d+)?px\]/.test(src), `${name}: tidak ada ukuran di bawah 11px`);
+    assert.ok(!/text-\[10\.5px\]/.test(src));
+    assert.match(src, /data-testid="customer-name"[^>]*text-\[16px\]|text-\[16px\][^>]*data-testid="customer-name"/, `${name}: nama customer 16px`);
+    assert.match(src, /line-clamp-/);
+  }
+  const plan = read("features", "production", "PlanCard.jsx");
+  assert.match(plan, /text-\[12px\] font-bold uppercase tracking-wide text-ink2"><span>\{label\}/, "label blok 12px");
+  assert.match(plan, /mt-0\.5 break-words text-\[13\.5px\]/, "nilai blok 13.5px");
+  assert.match(plan, /w-\[72px\] shrink-0 text-\[12px\] font-semibold text-ink3/, "label baris 12px");
+  assert.match(plan, /clamp="line-clamp-3" title=\{sales/); assert.match(plan, /clamp="line-clamp-4" title=\{note/); assert.match(plan, /clamp="line-clamp-2" title=\{kasurParts/);
 });

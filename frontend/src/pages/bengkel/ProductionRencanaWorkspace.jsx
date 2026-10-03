@@ -16,7 +16,7 @@ import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import { UpcomingCard } from "@/features/production/UnitCard.jsx";
 import { DragHandle, PlanCard } from "@/features/production/PlanCard.jsx";
-import { decideDrop, describeTarget, insertIndexAt, isPlanComplete, planDisplayOrder } from "@/features/production/planDnd.js";
+import { decideDrop, describeTarget, insertIndexAt, isPlanComplete, listWithInserted, planDisplayOrder, priorityInsertIndex, priorityInversion } from "@/features/production/planDnd.js";
 import { simulateDrop } from "@/features/production/planDndSim.js";
 import { isDemoActive } from "@/features/production/demo/demoGate.js";
 import { usePlanDrag } from "@/features/production/usePlanDrag.js";
@@ -298,6 +298,7 @@ function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onHandle
   const items = planDisplayOrder(station.items);
   const planIds = items.map((v) => v.plan?.id).filter(Boolean);
   const manual = hasManualOrder(items);
+  const inversion = priorityInversion(items);
   const draggingRunId = drag?.view?.runId ?? null;
   const over = drag?.resolved?.target?.kind === "meja" && drag.resolved.target.code === station.code ? drag.resolved : null; // sasaran saat ini = meja ini
   const decision = over?.decision;
@@ -319,6 +320,11 @@ function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onHandle
         </div>
         <span data-testid="meja-capacity" className={`shrink-0 rounded-chip px-2 py-0.5 text-[12px] font-bold tabular-nums ${cap.full ? "bg-redbg text-red" : "bg-surface text-ink2"}`}>{cap.count} / {cap.capacity} unit{cap.full ? " · penuh" : ""}</span>
       </div>
+      {inversion.length > 0 && (
+        <p data-testid="priority-inversion" role="note" className="m-0 rounded-btn bg-orangebg px-2 py-1.5 text-[12px] font-semibold text-orange">
+          Perhatian: {inversion.join(", ")} berprioritas lebih tinggi tetapi berada di bawah unit berprioritas lebih rendah. Urutan manual dihormati — tidak diubah otomatis.
+        </p>
+      )}
       {rejected && <p data-testid="drop-reject" role="status" className="m-0 rounded-btn bg-redbg px-2 py-1.5 text-[12px] font-semibold text-red">{decision.message}</p>}
       {items.map((v, idx) => {
         const isDragged = v.runId === draggingRunId;
@@ -482,6 +488,23 @@ export default function ProductionRencanaWorkspace() {
     });
   }
 
+  // Posisi AWAL menurut prioritas (hanya unit yang masuk meja lewat tombol Jadwalkan, tanpa posisi eksplisit). Urutan manual yang sudah ada TIDAK
+  // diubah; bila meja belum punya urutan manual, urutan bawaan server (prioritas) sudah cukup — tidak membuat urutan manual baru.
+  async function applyInitialPosition(meta) {
+    if (!meta?.stationCode || !meta.planId || isDemoActive()) { await load(); return; }
+    try {
+      const b = await api.getProductionV2Board(meta.productionDate);
+      const ordered = planDisplayOrder((b.stations || []).find((x) => x.code === meta.stationCode)?.items || []);
+      const ids = ordered.map((v) => v.plan?.id).filter(Boolean);
+      if (ids.length > 1 && ids.includes(meta.planId) && hasManualOrder(ordered)) {
+        const others = ordered.filter((v) => v.plan?.id !== meta.planId);
+        const want = listWithInserted(ids.filter((x) => x !== meta.planId), meta.planId, priorityInsertIndex(others, meta.priority));
+        if (want.some((id, i) => id !== ids[i])) await api.reorderProductionV2Station({ productionDate: meta.productionDate, stationCode: meta.stationCode, orderedPlanIds: want });
+      }
+    } catch (e) { setError(`Unit sudah dijadwalkan, tetapi posisi awal menurut prioritas belum tersimpan (masuk paling bawah): ${friendlyError(e)}`); }
+    await load();
+  }
+
   // --- Mode Demo: seret SIMULASI client-only — tanpa jaringan, hanya mengubah salinan papan/Command Center di memori. Dimuat ulang / keluar demo = data awal. ---
   const planOfOrder = (station, orderedIds) => (station.items || []).find((v) => v.plan?.id === orderedIds[0]) || null;
   function simulate(view, decision, fallbackView = null) {
@@ -617,7 +640,7 @@ export default function ProductionRencanaWorkspace() {
         </div>, document.body)}
       {detail && <DetailRencana target={detail} refs={refs} materials={refs.materials} stockByMaterial={stockByMaterial} onClose={() => setDetail(null)} onChanged={load} />}
       {overviewUnitId && <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} manageLabel="Kelola Rencana" onManage={() => openManageFor(overviewUnitId)} />}
-      {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services }} onClose={() => setSchedule(null)} onDone={(msg) => { setSchedule(null); setNotice(msg); load(); }} />}
+      {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services }} onClose={() => setSchedule(null)} onDone={(msg, meta) => { setSchedule(null); setNotice(msg); applyInitialPosition(meta); }} />}
     </PageContainer>
   );
 }

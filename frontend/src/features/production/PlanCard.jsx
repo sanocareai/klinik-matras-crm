@@ -27,17 +27,17 @@ export function DragHandle({ unitCode, onPointerDown, disabled = false }) {
 function PriorityBadge({ meta }) {
   const Icon = meta.icon === "urgent" ? Flame : meta.icon === "high" ? ChevronsUp : null;
   return (
-    <span data-testid="priority-tag" data-priority={meta.key} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-chip px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${meta.badgeClass}`}>
+    <span data-testid="priority-tag" data-priority={meta.key} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-chip px-2 py-0.5 text-[11.5px] font-bold uppercase tracking-wide ${meta.badgeClass}`}>
       {Icon && <Icon size={12} aria-hidden />}{meta.label}
     </span>
   );
 }
 
-function Block({ kind, label, aside = null, testid, children }) {
+function Block({ kind, label, aside = null, testid, clamp = "line-clamp-3", title, children }) {
   return (
     <div data-testid={testid} className={`plan-block plan-block-${kind} min-w-0`}>
-      <p className="m-0 flex items-baseline justify-between gap-2 text-[10.5px] font-bold uppercase tracking-wide text-ink2"><span>{label}</span>{aside}</p>
-      <div className="mt-0.5 break-words text-[12.5px] leading-snug text-ink [overflow-wrap:anywhere]">{children}</div>
+      <p className="m-0 flex items-baseline justify-between gap-2 text-[12px] font-bold uppercase tracking-wide text-ink2"><span>{label}</span>{aside}</p>
+      <div className={`mt-0.5 break-words text-[13.5px] leading-snug text-ink [overflow-wrap:anywhere] ${clamp}`} title={title}>{children}</div>
     </div>
   );
 }
@@ -45,8 +45,8 @@ const Empty = ({ children }) => <span className="italic text-ink3">{children}</s
 
 function Row({ label, children, testid }) {
   return (
-    <div data-testid={testid} className="flex min-w-0 items-baseline gap-2 text-[12px]">
-      <span className="w-[68px] shrink-0 font-semibold text-ink3">{label}</span>
+    <div data-testid={testid} className="flex min-w-0 items-baseline gap-2 text-[13px]">
+      <span className="w-[72px] shrink-0 text-[12px] font-semibold text-ink3">{label}</span>
       <span className="min-w-0 flex-1 break-words text-ink2 [overflow-wrap:anywhere]">{children}</span>
     </div>
   );
@@ -87,12 +87,12 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
         <div className="flex min-w-0 items-start gap-3 py-3 pl-5 pr-14">
           <UnitPhoto photoUrl={view.unit.photoUrl} variant="plan" />
           <div className="min-w-0 flex-1">
-            <p data-testid="customer-name" className="m-0 line-clamp-2 break-words text-[15.5px] font-bold leading-tight text-ink [overflow-wrap:anywhere]" title={c.name || ""}>{c.name || "Pelanggan belum dicatat"}</p>
-            <p className="m-0 mt-0.5 truncate text-[12px] text-ink3" title={`${view.unit.unitCode}${c.orderNumber ? ` · ${c.orderNumber}` : ""}`}>{view.unit.unitCode}{c.orderNumber ? ` · ${c.orderNumber}` : ""}{c.city ? ` · ${c.city}` : ""}</p>
+            <p data-testid="customer-name" className="m-0 line-clamp-2 break-words text-[16px] font-bold leading-tight text-ink [overflow-wrap:anywhere]" title={c.name || ""}>{c.name || "Pelanggan belum dicatat"}</p>
+            <p className="m-0 mt-0.5 truncate text-[12.5px] text-ink3" title={`${view.unit.unitCode}${c.orderNumber ? ` · ${c.orderNumber}` : ""}`}>{view.unit.unitCode}{c.orderNumber ? ` · ${c.orderNumber}` : ""}{c.city ? ` · ${c.city}` : ""}</p>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <PriorityBadge meta={p} />
               {view.timer?.late && <Badge variant="red">Terlambat</Badge>}
-              {complete && <span data-testid="complete-chip" className="inline-flex items-center gap-1 rounded-chip bg-inset px-2 py-0.5 text-[11px] font-bold text-ink2"><Lock size={11} aria-hidden /> Selesai 12/12 · terkunci</span>}
+              {complete && <span data-testid="complete-chip" className="inline-flex items-center gap-1 rounded-chip bg-inset px-2 py-0.5 text-[11.5px] font-bold text-ink2"><Lock size={12} aria-hidden /> Selesai 12/12 · terkunci</span>}
             </div>
           </div>
         </div>
@@ -100,18 +100,18 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
         {/* Isi: dua kolom di kartu lebar, satu kolom di backlog/tablet/HP */}
         <div className="grid min-w-0 gap-3 pb-3 pl-5 pr-3 @[34rem]:grid-cols-2">
           <div className="min-w-0 space-y-2">
-            <Block kind="sales" label="Layanan Sales" testid="block-sales">{sales || <Empty>Layanan belum dicatat Sales</Empty>}</Block>
-            <Block kind="kasur" label="Kasur" testid="mattress-info">
+            <Block kind="sales" label="Layanan Sales" testid="block-sales" clamp="line-clamp-3" title={sales || undefined}>{sales || <Empty>Layanan belum dicatat Sales</Empty>}</Block>
+            <Block kind="kasur" label="Kasur" testid="mattress-info" clamp="line-clamp-2" title={kasurParts.join(" · ") || undefined}>
               {kasurParts.length ? kasurParts.join(" · ") : <Empty>Data kasur belum lengkap</Empty>}
-              {kasurParts.length > 0 && kasurIncomplete && <span className="mt-0.5 block text-[11px] text-ink3">Data kasur belum lengkap</span>}
+              {kasurParts.length > 0 && kasurIncomplete && <span className="mt-0.5 block text-[12px] text-ink3">Data kasur belum lengkap</span>}
             </Block>
-            <Block kind="note" label="Catatan Sales" testid="block-note" aside={c.salesName ? <span className="normal-case font-semibold tracking-normal text-ink3" data-testid="sales-name">Sales: {c.salesName}</span> : null}>
+            <Block kind="note" label="Catatan Sales" testid="block-note" clamp="line-clamp-4" title={note || undefined} aside={c.salesName ? <span className="normal-case font-semibold tracking-normal text-ink3" data-testid="sales-name">Sales: {c.salesName}</span> : null}>
               {note ? <span data-testid="sales-note" title={note}>{note}</span> : <Empty>Catatan Sales belum tersedia</Empty>}
             </Block>
             {gantiKain && (
               <div data-testid="ganti-kain-note" className="rounded-btn border border-orange bg-orangebg px-2.5 py-1.5">
-                <p className="m-0 flex items-start gap-1.5 text-[12px] font-bold text-orange"><Scissors size={13} className="mt-px shrink-0" aria-hidden /> Ganti Kain — pastikan sesuai permintaan customer</p>
-                {!note && <p className="m-0 mt-0.5 text-[11.5px] font-semibold text-orange">Catatan kain belum tersedia — konfirmasi ke Sales</p>}
+                <p className="m-0 flex items-start gap-1.5 text-[13px] font-bold text-orange"><Scissors size={14} className="mt-px shrink-0" aria-hidden /> Ganti Kain — pastikan sesuai permintaan customer</p>
+                {!note && <p className="m-0 mt-0.5 text-[12.5px] font-semibold text-orange">Catatan kain belum tersedia — konfirmasi ke Sales</p>}
               </div>
             )}
           </div>
@@ -131,13 +131,13 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
             {view.progress && (
               <div className="flex items-center gap-2 pt-0.5" data-testid="row-progress">
                 <div className="flex-1"><ProgressBar value={progress} variant={view.shortage ? "warning" : "accent"} /></div>
-                <span className="shrink-0 text-[11.5px] font-semibold tabular-nums text-ink2">{view.progress.done}/{view.progress.total} tahap</span>
+                <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-ink2">{view.progress.done}/{view.progress.total} tahap</span>
               </div>
             )}
-            {view.shortage && <p className="m-0 flex items-center gap-1 text-[11.5px] font-medium text-red"><PackageX size={12} aria-hidden /> Menunggu bahan: {view.shortage.items?.map((i) => i.name).join(", ")}</p>}
+            {view.shortage && <p className="m-0 flex items-center gap-1 text-[12.5px] font-medium text-red"><PackageX size={13} aria-hidden /> Menunggu bahan: {view.shortage.items?.map((i) => i.name).join(", ")}</p>}
             {gaps.length > 0 && (
               <ul data-testid="data-gaps" className="m-0 flex list-none flex-wrap gap-1 p-0">
-                {gaps.map((g) => <li key={g} className="inline-flex items-center gap-1 rounded-chip bg-orangebg px-1.5 py-0.5 text-[10.5px] font-medium text-orange"><AlertTriangle size={10} aria-hidden /> {g}</li>)}
+                {gaps.map((g) => <li key={g} className="inline-flex items-center gap-1 rounded-chip bg-orangebg px-1.5 py-0.5 text-[11.5px] font-medium text-orange"><AlertTriangle size={11} aria-hidden /> {g}</li>)}
               </ul>
             )}
           </div>
