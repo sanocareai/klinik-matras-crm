@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { ArrowLeft, RefreshCw, WifiOff } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle.jsx";
+import { lastActiveTabPath } from "../lib/openTabs.js";
 
 // Shell halaman MANDIRI (di luar sidebar/tab desktop): aplikasi PIC Table/Corner (PWA, mobile-first) dan kiosk Andon TV.
 // Tetap memakai sesi login & tema aplikasi (ThemeProvider di main.jsx), hanya tanpa kerangka desktop.
@@ -17,13 +18,17 @@ export function useOnline() {
   return online;
 }
 
-export default function StandaloneShell({ title, subtitle, onRefresh, refreshing = false, backHref = "/portal", children, wide = false, right = null, onLeave = null }) {
+export default function StandaloneShell({ title, subtitle, onRefresh, refreshing = false, backHref, children, wide = false, right = null, onLeave = null }) {
   const online = useOnline();
+  const { pathname } = useLocation();
+  // Panah kembali = tab yang tadi aktif (sebelum membuka aplikasi mandiri ini), BUKAN selalu Main Hub. /portal hanya cadangan
+  // saat belum ada tab tersimpan (mis. PWA dibuka langsung di halaman ini).
+  const target = backHref || lastActiveTabPath(pathname) || "/portal";
   return (
     <div className="min-h-[100dvh] bg-base text-ink">
       <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className={`mx-auto flex items-center gap-2 px-3 py-2 ${wide ? "max-w-none" : "max-w-[640px]"}`}>
-          <Link to={backHref} onClick={(e) => { if (onLeave && !onLeave()) e.preventDefault(); }} aria-label="Kembali ke SANSS" className="flex h-11 w-11 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint">
+          <Link to={target} onClick={(e) => { if (onLeave && !onLeave()) e.preventDefault(); }} aria-label={target === "/portal" ? "Kembali ke SANSS" : "Kembali ke tab sebelumnya"} className="flex h-11 w-11 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint">
             <ArrowLeft size={20} aria-hidden />
           </Link>
           <div className="min-w-0 flex-1">

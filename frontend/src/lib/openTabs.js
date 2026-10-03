@@ -27,6 +27,18 @@ export function loadTabs() {
   }
 }
 
+// Path tab AKTIF yang tersimpan — tujuan "kembali" dari halaman mandiri (aplikasi Meja/Corner/Dokumentasi), yang dibuka lewat
+// window.location.assign sehingga TabsProvider tidak hidup di sana. `exclude` = path halaman mandiri itu sendiri (jangan balik ke dirinya).
+// Mengembalikan null bila tak ada tab tersimpan → pemanggil jatuh ke /portal.
+export function lastActiveTabPath(exclude) {
+  const saved = loadTabs();
+  const tab = saved?.tabs.find((t) => t.id === saved.activeId);
+  const path = typeof tab?.path === "string" ? tab.path : null;
+  if (!path || !path.startsWith("/")) return null;
+  if (exclude && path.split("?")[0] === exclude) return null;
+  return path;
+}
+
 export function saveTabs({ tabs, activeId }) {
   try {
     localStorage.setItem(KEY, JSON.stringify({ tabs: cleanTabs(tabs), activeId }));
