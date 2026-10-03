@@ -1,7 +1,7 @@
 import React from "react";
 import { ArrowLeft, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
-import { useHubParam } from "@/hooks/useHubParam.js";
+import { useHubParam, useOpenParam } from "@/hooks/useHubParam.js";
 import ProductionWorkOrders, { ORDER_SCOPES } from "./ProductionWorkOrders.jsx";
 import ProductionOrders from "./ProductionOrders.jsx";
 
@@ -16,6 +16,7 @@ export const ORDER_SCOPE_KEYS = ORDER_SCOPES.map((s) => s.key);
 export default function ProductionOrdersHub() {
   const [scope, setScope] = useHubParam("tab", ORDER_SCOPE_KEYS, "aktif");
   const [view, setView] = useHubParam("view", ["units", "order"], "units");
+  const [unitId, setUnitId] = useOpenParam("unit"); // ?unit=<id> → drawer Unit 360 terbuka (bookmark/muat ulang/tab lama aman)
 
   if (view === "order") {
     return (
@@ -31,6 +32,8 @@ export default function ProductionOrdersHub() {
     <ProductionWorkOrders
       scope={scope}
       onScopeChange={setScope}
+      unitId={unitId}
+      onUnitChange={setUnitId}
       headerExtra={<Button variant="ghost" size="sm" onClick={() => setView("order")} data-testid="order-open-status"><ListChecks size={14} aria-hidden /> Status order</Button>}
     />
   );

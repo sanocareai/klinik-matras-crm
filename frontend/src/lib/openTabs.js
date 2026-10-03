@@ -5,6 +5,7 @@
 // tampilan PER PERANGKAT/BROWSER, bukan data bisnis — tidak butuh sinkron
 // server, sama seperti alasan sidebarOrder.js.
 import { tabPathFor } from "./legacyProductionRoutes.js";
+import { titleFromPath } from "./tabTitles.js";
 
 const KEY = "open-tabs:v1";
 
@@ -16,7 +17,13 @@ export function stripDemoParam(path) {
   return kept.length ? `${base}?${kept.join("&")}` : base;
 }
 // P12B.2: tab tersimpan yang menunjuk rute Production LAMA diterjemahkan ke halaman kanonis baru (tujuan mandiri → Ringkasan).
-const cleanTabs = (tabs) => (Array.isArray(tabs) ? tabs.map((t) => (t && typeof t.path === "string" ? { ...t, path: tabPathFor(stripDemoParam(t.path)) } : t)) : tabs);
+// Judul ikut diperbarui bila path berpindah ke halaman baru (mis. tab "Unit" → "Order Produksi"), supaya tidak tersisa tab berlabel halaman yang sudah dihapus.
+const cleanTab = (t) => {
+  if (!t || typeof t.path !== "string") return t;
+  const before = stripDemoParam(t.path); const after = tabPathFor(before);
+  return after === before ? { ...t, path: before } : { ...t, path: after, title: titleFromPath(after) };
+};
+const cleanTabs = (tabs) => (Array.isArray(tabs) ? tabs.map(cleanTab) : tabs);
 
 export function loadTabs() {
   try {

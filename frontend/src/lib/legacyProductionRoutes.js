@@ -27,8 +27,15 @@ const ORDER_TAB_MAP = { "work-order": "aktif", "semua-order": "semua-order" };
 
 // Mengembalikan { to, standalone } untuk path(+query) lama, atau null bila bukan rute lama. Query tambahan dari URL lama dipertahankan
 // (kecuali ?tab/?status Order Produksi yang diterjemahkan ke kunci tab baru).
+// P12B.4 — halaman "Unit" lama (/bengkel/units/:id) dihapus dari UI Production; detail unit = drawer Unit 360 di Order Produksi (?unit=<id>).
+// Hanya SATU segmen id (bukan sub-path lain) yang dialihkan.
+const LEGACY_UNIT_RE = new RegExp("^/bengkel/units/([^/?#]+)/?$");
+export const unitDetailPath = (unitId) => `/bengkel/order-produksi?unit=${encodeURIComponent(unitId)}`;
+
 export function legacyRedirectFor(pathWithQuery) {
   const { base, search } = splitPathQuery(pathWithQuery);
+  const unitHit = base.match(LEGACY_UNIT_RE);
+  if (unitHit) return { to: unitDetailPath(decodeURIComponent(unitHit[1])), standalone: false };
   const hit = LEGACY_PRODUCTION_REDIRECTS[base];
   if (hit) {
     const [toBase, toQuery = ""] = hit.to.split("?");

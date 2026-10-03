@@ -1,7 +1,6 @@
 import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ClipboardList, RefreshCw, ExternalLink } from "lucide-react";
+import { ClipboardList, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -17,7 +16,7 @@ import { describeRowCount } from "@/lib/workOrderCounts.js";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import {
   UNIT_STATUS_REAL, SERVICE_LINE_REAL, IN_WORKSHOP_STATUSES,
-  PRODUCTION_STATUS_REAL, PRODUCTION_PRIORITY_REAL, STAGE_LOG_STATUS,
+  PRODUCTION_PRIORITY_REAL,
 } from "@/features/bengkel/unitStatus.js";
 
 // "Elapsed" per baris (Production Core Slice 3P) — STATIS per-muat, BUKAN
@@ -57,8 +56,9 @@ const TABS = [
 // P12B.3 — `onScopeChange` (opsional): bila diberikan, filter ringan Aktif · Semua · Riwayat tampil di baris saring halaman INI (bukan bilah tab terpisah),
 // `scope` "aktif" | "semua" | "riwayat" dikendalikan pemanggil (default Aktif). "semua" = seluruh unit tanpa penyaringan status.
 export const ORDER_SCOPES = Object.freeze([{ key: "aktif", label: "Aktif" }, { key: "semua", label: "Semua" }, { key: "riwayat", label: "Riwayat" }]);
-export default function ProductionWorkOrders({ initialStatus = "", scope = "", onScopeChange = null, headerExtra = null } = {}) {
-  const navigate = useNavigate();
+// `unitId`/`onUnitChange` (P12B.4): unit yang sedang dibuka di drawer Unit 360 dikendalikan pemanggil (?unit= di URL, bertahan saat muat ulang & bisa di-bookmark).
+// Tanpa keduanya, state lokal. Klik baris TIDAK membuat tab/halaman baru.
+export default function ProductionWorkOrders({ initialStatus = "", scope = "", onScopeChange = null, headerExtra = null, unitId: unitIdProp, onUnitChange = null } = {}) {
   const [tab, setTab] = useState(scope === "riwayat" ? "DELIVERED" : initialStatus);
   const firstScope = useRef(true);
   // Pindah filter ringan → status rinci kembali ke "semua dalam lingkup itu" (riwayat = Terkirim).
@@ -75,7 +75,9 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   // (Order, Kasur, Lini, Layanan, Eksekusi, Prioritas, Target, Update
   // Terakhir, Progres) pindah ke drawer ini, dibuka lewat klik baris —
   // TIDAK ada data yang hilang, cuma dipindah dari tabel ke drawer.
-  const [detailUnit, setDetailUnit] = useState(null);
+  const [localUnitId, setLocalUnitId] = useState(null);
+  const openUnitId = onUnitChange ? (unitIdProp || null) : localUnitId;
+  const setDetailUnit = (u) => (onUnitChange ? onUnitChange(u?.id || null) : setLocalUnitId(u?.id || null));
 
   const load = useCallback(() => {
     setLoading(true);
@@ -292,51 +294,9 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
         </Card>
       </PageBody>
 
-      {/* Klik baris → Unit 360 (P12B.3). Unit yang BELUM masuk Production V2 (Unit 360 = 404 di server, cohort tidak diperluas) tetap terbaca:
-          fakta order asli + tautan ke halaman detail unit — tanpa pesan galat dan tanpa mewajibkan V2/Mode Latihan. */}
-      <UnitOverviewDrawer
-        unitId={detailUnit?.id || null}
-        onClose={() => setDetailUnit(null)}
-        fallbackTitle={detailUnit?.unitCode || "Detail unit"}
-        fallbackDescription={detailUnit?.order?.customer?.name || "—"}
-        fallback={detailUnit && (
-          <div className="space-y-3 pb-4" data-testid="order-detail-fallback">
-            <p className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Unit ini belum memakai alur Production V2, jadi Unit 360 belum tersedia. Berikut data order aslinya.</p>
-            <dl className="m-0 grid grid-cols-2 gap-2 text-[12.5px]">
-              {[
-                ["Order", detailUnit.order?.orderNumber || "—"],
-                ["Kasur", [detailUnit.merk, formatUkuranLabel(detailUnit.ukuran)].filter(Boolean).join(" · ") || "—"],
-                ["Lini", detailUnit.serviceLine ? SERVICE_LINE_REAL[detailUnit.serviceLine]?.label : "—"],
-                ["Layanan", detailUnit.service?.labelId || "—"],
-                ["Prioritas", detailUnit.priority && detailUnit.priority !== "NORMAL" ? (PRODUCTION_PRIORITY_REAL[detailUnit.priority]?.label || detailUnit.priority) : "Normal"],
-                ["Target", detailUnit.productionDueAt ? formatTanggal(detailUnit.productionDueAt) : "—"],
-                ["Update Terakhir", formatTanggal(detailUnit.updatedAt)],
-                ["Progres", detailUnit.productionStatus ? (PRODUCTION_STATUS_REAL[detailUnit.productionStatus]?.label || detailUnit.productionStatus) : "—"],
-              ].map(([k, v]) => (
-                <div key={k} className="rounded-btn bg-inset px-3 py-2">
-                  <dt className="m-0 text-ink3">{k}</dt>
-                  <dd className="m-0 truncate font-semibold text-ink" title={typeof v === "string" ? v : undefined}>{v}</dd>
-                </div>
-              ))}
-            </dl>
-            {detailUnit.executionState && detailUnit.executionState !== "NOT_STARTED" && (
-              <div className="flex items-center gap-1.5 rounded-btn bg-inset px-3 py-2 text-[12.5px]">
-                <span className="text-ink3">Eksekusi:</span>
-                <Badge variant={STAGE_LOG_STATUS[detailUnit.executionState]?.tone || "neutral"}>
-                  {STAGE_LOG_STATUS[detailUnit.executionState]?.label || detailUnit.executionState}
-                </Badge>
-                {detailUnit.currentSegmentStartedAt && (
-                  <span className="text-[11px] text-ink3">{formatDurasiDetik(elapsedSejak(detailUnit.currentSegmentStartedAt))}</span>
-                )}
-              </div>
-            )}
-
-            <Button size="sm" variant="secondary" onClick={() => navigate(`/bengkel/units/${detailUnit.id}`)}>
-              <ExternalLink size={13} aria-hidden /> Buka Detail Unit
-            </Button>
-          </div>
-        )}
-      />
+      {/* Klik baris → Unit 360 di drawer yang SAMA (P12B.4). Unit di luar cohort Production V2 tetap terbaca di drawer ini (fallback data order asli),
+          bukan halaman/tab Unit terpisah. */}
+      <UnitOverviewDrawer unitId={openUnitId} onClose={() => setDetailUnit(null)} />
     </PageContainer>
   );
 }

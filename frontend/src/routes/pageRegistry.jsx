@@ -32,7 +32,6 @@ const CoPilot       = lazy(() => import("../pages/CoPilot.jsx"));
 const Portal        = lazy(() => import("../pages/Portal.jsx"));
 const DivisionPage  = lazy(() => import("../pages/DivisionPage.jsx"));
 const Notifications = lazy(() => import("../pages/Notifications.jsx"));
-const ProductionUnitDetail = lazy(() => import("../pages/bengkel/ProductionUnitDetail.jsx"));
 const ProductionMaterialUsage = lazy(() => import("../pages/bengkel/ProductionMaterialUsage.jsx"));
 const ArmadaDashboard   = lazy(() => import("../pages/armada/ArmadaDashboard.jsx"));
 const ArmadaRingkasan   = lazy(() => import("../pages/armada/ArmadaRingkasan.jsx"));
@@ -185,7 +184,6 @@ export function RouteFallback() {
 export const PAGES = [
   { path: "/portal",      render: () => <Portal /> },
   { path: "/portal/:key", render: (ctx) => <DivisionPage user={ctx.user} /> },
-  { path: "/bengkel/units/:id", render: () => <ProductionUnitDetail /> },
   { path: "/bengkel/materials", render: () => <ProductionMaterialUsage /> },
   { path: "/bengkel/kpi", render: () => <DemoPage><ProductionKpi /></DemoPage> },
   { path: "/armada/dashboard", render: () => <ArmadaDashboard /> },

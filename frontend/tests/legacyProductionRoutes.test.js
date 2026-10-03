@@ -49,7 +49,7 @@ test("query lama dipertahankan; kunci tab Order Produksi lama (work-order/semua-
 
 test("isLegacyProductionRoute: true untuk rute lama, false untuk rute baru dan rute yang dipertahankan", () => {
   for (const p of Object.keys(LEGACY_PRODUCTION_REDIRECTS)) assert.equal(isLegacyProductionRoute(p), true, p);
-  for (const p of ["/bengkel/ringkasan", "/bengkel/production-v2", "/bengkel/rencana-produksi", "/bengkel/quality-control", "/bengkel/order-produksi", "/bengkel/materials", "/bengkel/kpi", "/bengkel/andon", "/komplain", "/bengkel/units/abc"]) assert.equal(isLegacyProductionRoute(p), false, p);
+  for (const p of ["/bengkel/ringkasan", "/bengkel/production-v2", "/bengkel/rencana-produksi", "/bengkel/quality-control", "/bengkel/order-produksi", "/bengkel/materials", "/bengkel/kpi", "/bengkel/andon", "/komplain", "/bengkel/units/abc/extra"]) assert.equal(isLegacyProductionRoute(p), false, p);
 });
 
 test("setiap tujuan redirect adalah halaman nyata (terdaftar atau mandiri) dan TIDAK ada rute lama yang masih terdaftar sebagai halaman", () => {
@@ -69,5 +69,5 @@ test("pembungkus: resolveEntryPath menerjemahkan lebih dulu, AppFrame mengalihka
   assert.match(src("routes", "pageRegistry.jsx"), /const translated = tabPathFor\(pathname\);\s*if \(translated !== pathname\) return resolveEntryPath\(translated\)/);
   assert.match(src("App.jsx"), /legacy\?\.standalone\) return <Navigate to=\{legacy\.to\} replace \/>/);
   assert.match(src("lib", "TabsContext.jsx"), /legacyRedirectFor\(location\.pathname \+ location\.search\)[\s\S]{0,200}navigate\(path, \{ replace: true \}\)/);
-  assert.match(src("lib", "openTabs.js"), /tabPathFor\(stripDemoParam\(t\.path\)\)/);
+  assert.match(src("lib", "openTabs.js"), /tabPathFor\(before\)/);
 });

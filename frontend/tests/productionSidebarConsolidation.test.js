@@ -160,7 +160,7 @@ test("Order Produksi: scope aktif menyembunyikan Terkirim, riwayat hanya Terkiri
   assert.match(wo, /scope === "riwayat" \? "DELIVERED" : initialStatus/);
   assert.match(wo, /scope === "aktif" \? TABS\.filter\(\(t\) => t\.key !== "DELIVERED"\)/);
   assert.match(wo, /scope === "riwayat" \|\| scope === "semua" \? \[\]/);
-  assert.match(wo, /export default function ProductionWorkOrders\(\{ initialStatus = "", scope = "", onScopeChange = null, headerExtra = null \} = \{\}\)/);
+  assert.match(wo, /export default function ProductionWorkOrders\(\{ initialStatus = "", scope = "", onScopeChange = null, headerExtra = null, unitId: unitIdProp, onUnitChange = null \} = \{\}\)/);
   const cc = src("pages", "ComplaintCases.jsx");
   assert.match(cc, /scope === "aktif" \? allCases\.filter\(\(c\) => !kasusTutup\(c\)\) : scope === "riwayat" \? allCases\.filter\(kasusTutup\) : allCases/);
   const pb = src("pages", "pengajuanBiaya", "PengajuanBiayaWorkspace.jsx");

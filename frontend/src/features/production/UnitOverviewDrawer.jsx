@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, PackageX } from "lucide-react";
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -13,6 +13,7 @@ import { DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS } from "@/features/produ
 import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
 import { humanizeRequest } from "@/features/production/unitCardModel.js";
 import { isOutsideV2 } from "@/features/production/unit360Availability.js";
+import UnitOrderFallback from "@/features/production/UnitOrderFallback.jsx";
 
 // P9C — Unit 360: satu drawer kanonis (setara "detail Resi") dibuka dari kartu Status Produksi MAUPUN Rencana
 // Produksi — komponen ini TIDAK peduli dari halaman mana ia dipanggil, hanya butuh unitId. Deep-link (?unit=)
@@ -348,13 +349,13 @@ function Aktivitas({ d }) {
 // Konstanta modul (identitas stabil) — selector uji yang stabil untuk dialog Unit 360.
 const UNIT_DIALOG_PROPS = { "data-testid": "unit-overview-dialog" };
 
-// `fallback` (opsional, P12B.3): isi yang ditampilkan bila unit TIDAK tersedia di Unit 360 (di luar cohort Production V2 → server 404, reader OFF). Tanpa
-// fallback perilaku lama persis (pesan galat). Dengan fallback, daftar Order Produksi tetap bisa membuka unit order asli tanpa mewajibkan V2.
-export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "Kelola", fallback = null, fallbackTitle = "Detail unit", fallbackDescription }) {
+// P12B.4 — unit di LUAR cohort Production V2 (Unit 360 = 404; cohort tidak diperluas) tetap terbuka di drawer yang SAMA: data order/unit asli (baca-saja,
+// GET /units/:id/timeline) + penjelasan jujur bagian V2 yang belum tersedia (UnitOrderFallback). Tidak ada halaman/tab Unit terpisah.
+export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "Kelola" }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [unavailable, setUnavailable] = useState(false);
-  const hasFallback = useRef(!!fallback); hasFallback.current = !!fallback;
+  const [legacy, setLegacy] = useState({ data: null, error: "", loading: false });
   const [tab, setTab] = useState("ringkasan");
   const [showDiagnosis, setShowDiagnosis] = useState(false);
 
@@ -366,8 +367,15 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
   useEffect(() => {
     if (!unitId) return undefined;
     let alive = true;
-    setData(null); setError(""); setUnavailable(false); setTab("ringkasan"); setShowDiagnosis(false);
-    api.getUnitOverview(unitId).then((res) => { if (alive) setData(res); }).catch((e) => { if (!alive) return; if (hasFallback.current && isOutsideV2(e)) setUnavailable(true); else setError(friendlyError(e)); });
+    setData(null); setError(""); setUnavailable(false); setLegacy({ data: null, error: "", loading: false }); setTab("ringkasan"); setShowDiagnosis(false);
+    api.getUnitOverview(unitId).then((res) => { if (alive) setData(res); }).catch((e) => {
+      if (!alive) return;
+      if (!isOutsideV2(e)) { setError(friendlyError(e)); return; }
+      setUnavailable(true); setLegacy({ data: null, error: "", loading: true });
+      api.getUnitTimeline(unitId)
+        .then((t) => { if (alive) setLegacy({ data: t, error: "", loading: false }); })
+        .catch((e2) => { if (alive) setLegacy({ data: null, error: friendlyError(e2), loading: false }); });
+    });
     return () => { alive = false; };
   }, [unitId]);
 
@@ -386,12 +394,12 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
 
   return (
     <Modal open={!!unitId} onOpenChange={(v) => !v && onClose()} contentProps={UNIT_DIALOG_PROPS}
-      title={data ? `${data.identity.unitCode}${data.identity.orderNumber ? ` · ${data.identity.orderNumber}` : ""}` : unavailable ? fallbackTitle : "Unit 360"}
-      description={data ? (data.customer.name?.value || "Pelanggan belum dicatat") : unavailable ? fallbackDescription : undefined}
+      title={data ? `${data.identity.unitCode}${data.identity.orderNumber ? ` · ${data.identity.orderNumber}` : ""}` : unavailable ? (legacy.data?.unit?.unitCode ? `${legacy.data.unit.unitCode}${legacy.data.unit.order?.orderNumber ? ` · ${legacy.data.unit.order.orderNumber}` : ""}` : "Detail unit") : "Unit 360"}
+      description={data ? (data.customer.name?.value || "Pelanggan belum dicatat") : unavailable ? (legacy.data?.unit?.order?.customer?.name || undefined) : undefined}
       className="flex w-[900px] flex-col max-sm:!h-full max-sm:!max-h-full max-sm:!w-full max-sm:!max-w-full max-sm:!translate-x-0 max-sm:!translate-y-0 max-sm:!rounded-none max-sm:!top-0 max-sm:!left-0">
       <div className="flex min-h-0 flex-1 flex-col px-6 pb-4">
         {error && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
-        {unavailable && <div data-testid="unit-overview-fallback">{fallback}</div>}
+        {unavailable && <div data-testid="unit-overview-fallback"><UnitOrderFallback data={legacy.data} error={legacy.error} loading={legacy.loading} /></div>}
         {!data && !error && !unavailable && <div data-testid="unit-overview-loading" className="space-y-2"><div className="h-6 w-2/3 animate-pulse rounded bg-inset" /><div className="h-24 animate-pulse rounded bg-inset" /></div>}
         {data && (
           <div data-testid="unit-overview-ready" className="flex min-h-0 flex-1 flex-col">

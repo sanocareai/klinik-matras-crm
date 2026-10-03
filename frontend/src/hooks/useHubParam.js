@@ -22,3 +22,21 @@ export function useHubParam(param, validKeys, defaultKey) {
   };
   return [value, set];
 }
+
+// P12B.4 — parameter bebas (mis. ?unit=<id>) untuk panel/drawer yang terbuka: null = tertutup (parameter dibuang dari URL). Berbagi mekanisme path-tab-aktif
+// dengan useHubParam sehingga tersimpan di tab, bertahan saat muat ulang, dan klik membuka drawer di tab yang sama (replace, tanpa tab baru).
+export function useOpenParam(param) {
+  const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const tabsCtx = useOptionalTabs();
+  const fromUrl = params.get(param) || null;
+  const [value, setValue] = useState(fromUrl);
+  useEffect(() => { setValue(fromUrl); }, [fromUrl]);
+  const set = (next) => {
+    setValue(next || null);
+    const path = withParam(location.pathname + location.search, param, next || null, null);
+    if (tabsCtx?.replaceActivePath) tabsCtx.replaceActivePath(path);
+    else setParams((p) => { const n = new URLSearchParams(p); if (next) n.set(param, next); else n.delete(param); return n; }, { replace: true });
+  };
+  return [value, set];
+}

@@ -47,13 +47,13 @@ test("loading, kosong, dan galat tampil langsung pada daftar", () => {
 test("klik baris/kartu membuka Unit 360 (drawer kanonis), bukan halaman lama; unit non-V2 mendapat fallback data order asli", () => {
   assert.match(WO, /<TR key=\{u\.id\} clickable data-testid="order-row"[^>]*onClick=\{\(\) => setDetailUnit\(u\)\}/);
   assert.match(WO, /data-testid="order-row" data-unit-code=\{u\.unitCode\}\s*onClick=\{\(\) => setDetailUnit\(u\)\}/, "kartu mobile juga");
-  assert.match(WO, /<UnitOverviewDrawer\s+unitId=\{detailUnit\?\.id \|\| null\}/);
-  assert.match(WO, /fallback=\{detailUnit && \(/); assert.match(WO, /data-testid="order-detail-fallback"/);
-  assert.doesNotMatch(WO, /<Modal\b/, "tidak ada modal ringkas terpisah");
+  assert.match(WO, /<UnitOverviewDrawer unitId=\{openUnitId\} onClose=\{\(\) => setDetailUnit\(null\)\} \/>/);
+  assert.doesNotMatch(WO, /<Modal\b|navigate\(|useNavigate/, "tanpa modal ringkas terpisah dan tanpa navigasi ke halaman/tab lain");
   const drawer = strip(src("features", "production", "UnitOverviewDrawer.jsx"));
   assert.match(drawer, /import \{ isOutsideV2 \} from "@\/features\/production\/unit360Availability\.js"/);
-  assert.match(drawer, /if \(hasFallback\.current && isOutsideV2\(e\)\) setUnavailable\(true\); else setError\(friendlyError\(e\)\)/);
-  assert.match(drawer, /\{unavailable && <div data-testid="unit-overview-fallback">\{fallback\}<\/div>\}/);
+  assert.match(drawer, /if \(!isOutsideV2\(e\)\) \{ setError\(friendlyError\(e\)\); return; \}/);
+  assert.match(drawer, /api\.getUnitTimeline\(unitId\)/);
+  assert.match(drawer, /\{unavailable && <div data-testid="unit-overview-fallback"><UnitOrderFallback /);
 });
 
 test("aturan ketersediaan Unit 360: 404/UNIT_NOT_FOUND/READER_OFF = di luar V2; galat lain tetap galat", () => {
