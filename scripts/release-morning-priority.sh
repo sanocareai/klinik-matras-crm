@@ -49,7 +49,9 @@ mkdir -p "$BK_DIR" "$HOME/release-src" "$HOME/backups"
 LOG="$BK_DIR/release.log"; exec > >(tee -a "$LOG") 2>&1
 mkdir "$LOCK" 2>/dev/null || die "lock rilis dipegang sesi lain: $(cat "$LOCK/owner" 2>/dev/null)"; HAVE_LOCK=1; echo "morning-priority $SHORT $(date -u +%FT%TZ)" > "$LOCK/owner"; ok "lock diambil; log: $LOG"
 [ ! -e "$NEW_DIR" ] || die "$NEW_DIR sudah ada"
-if ps -eo args | grep -E 'release-[a-z0-9-]+\.sh|docker compose .* build|docker build|prisma migrate deploy' | grep -v grep | grep -v "release-morning-priority" | grep -q .; then die "ada deployment/build lain berjalan"; fi; ok "tidak ada deployment/build lain berjalan"
+OTHER="$(ps -eo args | grep -E 'release-[a-z0-9-]+\.sh|docker compose .* build|docker build|prisma migrate deploy' | grep -v grep | grep -v "release-morning-priority" | grep -v "node src/index.js" || true)"
+[ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada deployment/build lain berjalan"; }
+ok "tidak ada deployment/build lain berjalan"
 
 PHASE=1-freeze; say "1. Freeze: production aktif harus persis $EXPECT_PREV_SHORT"
 CID_OLD="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=backend")"; [ "$(printf '%s' "$CID_OLD" | wc -w)" = 1 ] || die "container backend != 1"
