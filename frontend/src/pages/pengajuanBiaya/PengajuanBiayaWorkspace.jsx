@@ -61,7 +61,9 @@ function BuktiUploader({ id, proofs, onSaved, bisa }) {
   );
 }
 
-export default function PengajuanBiayaWorkspace({ workspace, embedded = false }) {
+// `view` (P12B.2, hub Biaya Produksi): "pengajuan" = panduan + tombol Ajukan biaya + template; "status" = ringkasan angka + daftar status pengajuan;
+// "semua" (default) = perilaku lama persis (halaman Gudang/Marketing/Management/HR-GA tidak berubah). State & endpoint sama untuk semua view.
+export default function PengajuanBiayaWorkspace({ workspace, embedded = false, view = "semua" }) {
   const ui = WORKSPACES_UI[workspace];
   const [cfg, setCfg] = useState(null);
   const [opsi, setOpsi] = useState({ mesin: [], gudang: [], material: [], unit: [], order: [], pengguna: [] });
@@ -197,6 +199,7 @@ export default function PengajuanBiayaWorkspace({ workspace, embedded = false })
       embedded={embedded} title={ui.judul} subtitle={cfg?.ringkas || ui.ringkas} loading={loading} error={error} onRetry={muat}
       actions={<TombolAksi onClick={() => buka()}><Plus size={14} /> Ajukan biaya</TombolAksi>}
     >
+      {view !== "status" && (
       <div className="flex items-start gap-2 rounded-xl bg-accentbg px-3.5 py-2.5 text-[12.5px] text-ink2" data-testid="bukan-stok">
         <Info size={15} className="mt-0.5 shrink-0 text-accent" />
         <div>
@@ -208,17 +211,21 @@ export default function PengajuanBiayaWorkspace({ workspace, embedded = false })
           )}
         </div>
       </div>
+      )}
 
+      {view !== "pengajuan" && (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KartuAngka label="Pengajuan" value={(tampil || []).length} sub="sesuai filter" />
         <KartuAngka label="Menunggu persetujuan" value={menunggu} tone={menunggu ? "orange" : "default"} />
         <KartuAngka label="Perlu revisi" value={perluRevisi} tone={perluRevisi ? "orange" : "default"} sub="perbaiki lalu ajukan ulang" />
         <KartuAngka label="Total nominal" value={formatUang((tampil || []).reduce((n, r) => n + r.amount, 0))} />
       </div>
+      )}
 
       {pesan && <div role="status" className={pesan.jenis === "ok" ? "rounded-xl bg-greenbg px-4 py-3 text-[13px] text-green" : "rounded-xl bg-redbg px-4 py-3 text-[13px] text-red"}>{pesan.teks}</div>}
 
-      {templates.length > 0 && (
+      {view !== "status" && templates.length > 0 && (
+
         <div className="flex flex-wrap items-center gap-2" data-testid="template">
           <span className="text-[12px] text-ink3">Template:</span>
           {templates.map((t) => (
@@ -230,6 +237,7 @@ export default function PengajuanBiayaWorkspace({ workspace, embedded = false })
         </div>
       )}
 
+      {view !== "pengajuan" && (
       <Card className="overflow-hidden">
         <JudulKartu title="Daftar pengajuan" description="Draf → Ajukan → Perlu Revisi / Disetujui / Ditolak → Dibayar. Persetujuan & pembayaran oleh Finance." />
         <CardContent className="space-y-3">
@@ -287,6 +295,7 @@ export default function PengajuanBiayaWorkspace({ workspace, embedded = false })
           )}
         </div>
       </Card>
+      )}
 
       {/* ── FORM ─────────────────────────────────────────────────────────────────────────────────────────── */}
       <Modal open={formBuka} onOpenChange={(o) => !o && setFormBuka(false)} title={editId ? "Ubah draf pengajuan" : "Ajukan biaya"} description={ui.ringkas}

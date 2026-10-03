@@ -61,15 +61,20 @@ export function targetFormError(form, meta = {}) {
 }
 
 // ---------------------------------------------------------------- tab menurut izin ----------------------------------------------------------
+// P12B.2 — "KPI & Laporan": Ringkasan KPI + Produksi memakai dokumen ringkasan yang SAMA (satu endpoint, dua tampilan: kartu KPI vs tren & tabel),
+// Export hanya mengumpulkan tombol unduh laporan yang sudah ada (tanpa memuat data baru).
 export const TABS = [
-  { key: "ringkasan", label: "Ringkasan", kind: "summary", cap: "summary" },
-  { key: "meja", label: "Performa Meja", kind: "stations", cap: "stations" },
-  { key: "pic", label: "Performa PIC", kind: "operators", cap: "operators" },
+  { key: "ringkasan", label: "Ringkasan KPI", kind: "summary", cap: "summary" },
+  { key: "produksi", label: "Produksi", kind: "summary", cap: "summary" },
+  { key: "meja", label: "Meja", kind: "stations", cap: "stations" },
+  { key: "pic", label: "PIC", kind: "operators", cap: "operators" },
   { key: "gudang", label: "Gudang", kind: "warehouse", cap: "warehouse" },
-  { key: "laporan", label: "Laporan", kind: "units", cap: "units" },
+  { key: "laporan", label: "Laporan Unit", kind: "units", cap: "units" },
+  { key: "export", label: "Export", kind: "export", cap: "export" },
 ];
+const EXPORT_CAPS = ["summary", "stations", "operators", "units", "warehouse"];
 export function tabsFor(capabilities = {}) {
-  const tabs = TABS.filter((t) => capabilities[t.cap]);
+  const tabs = TABS.filter((t) => (t.cap === "export" ? EXPORT_CAPS.some((c) => capabilities[c]) : capabilities[t.cap]));
   if (!tabs.length && capabilities.self) return [{ key: "saya", label: "Ringkasan Saya", kind: "mine", cap: "self" }];
   return tabs;
 }

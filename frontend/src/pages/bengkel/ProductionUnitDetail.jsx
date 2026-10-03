@@ -442,7 +442,7 @@ export default function ProductionUnitDetail() {
     <PageContainer>
       <PageHeader
         title={
-          <button type="button" onClick={() => navigate("/bengkel/work-orders")} className="flex items-center gap-2 text-ink hover:text-accent">
+          <button type="button" onClick={() => navigate("/bengkel/order-produksi?tab=aktif")} className="flex items-center gap-2 text-ink hover:text-accent">
             <ArrowLeft size={18} /> {unit.unitCode}
           </button>
         }

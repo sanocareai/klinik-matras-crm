@@ -4,6 +4,8 @@
 // seluruh sidebar/tab-strip. Isi tab (path & judul) murni preferensi
 // tampilan PER PERANGKAT/BROWSER, bukan data bisnis — tidak butuh sinkron
 // server, sama seperti alasan sidebarOrder.js.
+import { tabPathFor } from "./legacyProductionRoutes.js";
+
 const KEY = "open-tabs:v1";
 
 // P12A: Mode Demo TIDAK boleh bertahan lintas sesi/logout — parameter ?demo=1 dibuang dari path tab saat disimpan DAN saat dipulihkan.
@@ -13,7 +15,8 @@ export function stripDemoParam(path) {
   const kept = query.split("&").filter((kv) => kv && !kv.startsWith("demo="));
   return kept.length ? `${base}?${kept.join("&")}` : base;
 }
-const cleanTabs = (tabs) => (Array.isArray(tabs) ? tabs.map((t) => (t && typeof t.path === "string" ? { ...t, path: stripDemoParam(t.path) } : t)) : tabs);
+// P12B.2: tab tersimpan yang menunjuk rute Production LAMA diterjemahkan ke halaman kanonis baru (tujuan mandiri → Ringkasan).
+const cleanTabs = (tabs) => (Array.isArray(tabs) ? tabs.map((t) => (t && typeof t.path === "string" ? { ...t, path: tabPathFor(stripDemoParam(t.path)) } : t)) : tabs);
 
 export function loadTabs() {
   try {

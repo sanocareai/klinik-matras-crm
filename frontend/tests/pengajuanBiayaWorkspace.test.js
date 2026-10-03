@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PRODUCTION_NAV } from "../src/lib/productionNav.js";
 import {
   WORKSPACES_UI, FORM_KOSONG, bentukPayload, galatForm, kekuranganAjukan, konteksLabel, payloadTemplate, terapkanTemplate,
   terapkanPilihanTerakhir, teksDuplikat, PESAN_BUKAN_STOK, LABEL_SUMBER_DANA,
@@ -69,10 +70,13 @@ test("UI menegaskan pengecualian stok dan memakai jalur yang sama dengan Finance
 
 test("Menu Pengajuan Biaya muncul di workspace Produksi & Gudang dengan gerbang peran; rute terdaftar", () => {
   const layout = baca("components/Layout.jsx");
-  assert.match(layout, /to: "\/bengkel\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER", "PRODUCTION_LEAD"\]/);
+  // P12B.2: menu Produksi kini "Biaya Produksi" (hub bertab); gerbang peran sama persis (lib/productionNav.js).
+  const biayaProduksi = PRODUCTION_NAV.flatMap((sec) => sec.items).find((x) => x.to === "/bengkel/biaya-produksi");
+  assert.deepEqual(biayaProduksi.bolehPeran, ["ADMIN", "OWNER", "FINANCE", "APPROVER", "PRODUCTION_LEAD"]); assert.deepEqual(biayaProduksi.bolehDivisi, ["PRODUCTION"]);
   assert.match(layout, /to: "\/warehouse\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"\]/);
   const reg = baca("routes/pageRegistry.jsx");
-  assert.match(reg, /\/bengkel\/pengajuan-biaya[^\n]*workspace="PRODUKSI"/); assert.match(reg, /\/warehouse\/pengajuan-biaya[^\n]*workspace="WAREHOUSE"/);
+  assert.match(reg, /\/bengkel\/biaya-produksi[^\n]*<ProductionCostHub/); assert.match(baca("pages/bengkel/ProductionCostHub.jsx"), /<PengajuanBiayaWorkspace workspace="PRODUKSI"/);
+  assert.match(reg, /\/warehouse\/pengajuan-biaya[^\n]*workspace="WAREHOUSE"/);
   assert.match(baca("api.js"), /getPengajuanOpsi/);
 });
 
@@ -84,7 +88,7 @@ test("C2: lima workspace memakai satu komponen; konfigurasi divisi baru terdafta
   assert.equal(WORKSPACES_UI.MARKETING.division, "MARKETING"); assert.equal(WORKSPACES_UI.MANAGEMENT.division, "MANAGEMENT"); assert.equal(WORKSPACES_UI.HR_GA.division, "HR_GA");
   for (const ws of URUTAN_WORKSPACE) assert.ok(WORKSPACES_UI[ws].judul.startsWith("Pengajuan Biaya") && WORKSPACES_UI[ws].singkat, ws);
   const reg = baca("routes/pageRegistry.jsx");
-  for (const [ws, jalur] of [["MARKETING", "/marketing/pengajuan-biaya"], ["MANAGEMENT", "/kendali/pengajuan-biaya"], ["PRODUKSI", "/bengkel/pengajuan-biaya"], ["WAREHOUSE", "/warehouse/pengajuan-biaya"]]) {
+  for (const [ws, jalur] of [["MARKETING", "/marketing/pengajuan-biaya"], ["MANAGEMENT", "/kendali/pengajuan-biaya"], ["WAREHOUSE", "/warehouse/pengajuan-biaya"]]) {
     assert.match(reg, new RegExp(`${jalur.replace(/\//g, "\/")}[^\n]*<PengajuanBiayaWorkspace workspace="${ws}"`));
   }
   assert.match(reg, /\/finance\/pengajuan-divisi[^\n]*<PengajuanBiayaHub/);

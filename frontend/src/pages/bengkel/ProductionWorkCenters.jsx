@@ -148,7 +148,7 @@ export default function ProductionWorkCenters() {
                   <p className="font-semibold text-ink">Konfigurasi belum lengkap</p>
                   <p className="mt-0.5 text-ink3">Belum ada tahap yang menjadikan Work Center ini default.</p>
                   <Button size="sm" variant="secondary" className="mt-2" asChild>
-                    <Link to="/bengkel/layanan-tahapan"><Settings size={13} aria-hidden /> Atur layanan &amp; tahapan</Link>
+                    <Link to="/bengkel/pengaturan?tab=layanan"><Settings size={13} aria-hidden /> Atur layanan &amp; tahapan</Link>
                   </Button>
                 </div>
               )}

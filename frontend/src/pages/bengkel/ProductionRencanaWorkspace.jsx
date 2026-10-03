@@ -513,7 +513,7 @@ export default function ProductionRencanaWorkspace() {
     const out = simulateDrop({ board, cc, view: v, decision, date });
     if (!out.message) return;
     setBoard(out.board); setCc(out.cc); setError("");
-    setNotice(`Simulasi Mode Demo — ${out.message}. Tidak disimpan; data awal kembali saat dimuat ulang.`);
+    setNotice(`Simulasi Mode Latihan — ${out.message}. Tidak disimpan; data awal kembali saat dimuat ulang.`);
   }
 
   // --- seret-lepas pointer (mouse + sentuh) ---

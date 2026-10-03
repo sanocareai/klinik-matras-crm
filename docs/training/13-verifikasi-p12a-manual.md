@@ -1,23 +1,23 @@
 # Verifikasi manual P12A (Owner/Admin nyata + Samsung S25 Ultra fisik)
 
-Dua pemeriksaan ini **belum dapat dilakukan engineer** (butuh login ADMIN/OWNER asli di production dan perangkat fisik). Kerjakan sekali; catat **LULUS / GAGAL** + foto layar. **Jangan menjadwalkan, menyeret, atau menyimpan data nyata** — yang diuji hanya **Mode Demo** (data fiktif, hanya-baca).
+Dua pemeriksaan ini **belum dapat dilakukan engineer** (butuh login ADMIN/OWNER asli di production dan perangkat fisik). Kerjakan sekali; catat **LULUS / GAGAL** + foto layar. **Jangan menjadwalkan, menyeret, atau menyimpan data nyata** — yang diuji hanya **Mode Latihan** (data fiktif, hanya-baca).
 
-## A1. Mode Demo di production — Owner atau Admin asli (±5 menit, laptop)
+## A1. Mode Latihan di production — Owner atau Admin asli (±5 menit, laptop)
 1. Login → **Production Operations → Rencana Produksi**.
-2. Di bar atas halaman: nyalakan **Lihat Data Demo**.
-   - [ ] Banner oranye **"MODE DEMO — bukan data operasional"** tampil terus-menerus.
+2. Di bar atas halaman: nyalakan **Mode Latihan**.
+   - [ ] Banner oranye **"MODE LATIHAN — bukan data operasional"** tampil terus-menerus.
    - [ ] Halaman terisi **12 unit contoh** (nama berawalan **QA-PV2**), bukan data pelanggan Anda.
 3. **Seret simulasi**: tahan ikon **⋮⋮** pada satu kartu *Belum Dijadwalkan* → seret ke **Meja 1** → lepas.
-   - [ ] Kartu pindah + muncul pemberitahuan **"Simulasi Mode Demo … Tidak disimpan"**.
+   - [ ] Kartu pindah + muncul pemberitahuan **"Simulasi Mode Latihan … Tidak disimpan"**.
    - [ ] (Opsional, DevTools → Network) **tidak ada request POST/PUT/PATCH/DELETE** ke server.
 4. **Muat ulang** halaman (F5).
    - [ ] Kartu kembali ke susunan awal (fixture).
-5. Matikan **Lihat Data Demo** (atau buka halaman tanpa `?demo=1`).
+5. Matikan **Mode Latihan** (atau buka halaman tanpa `?demo=1`).
    - [ ] Banner hilang, **data nyata** kembali, dan unit nyata **tidak berubah posisi**.
 6. Pastikan **tidak ada** unit nyata yang ikut berpindah/berubah di Rencana Produksi.
 
-## A2. Samsung S25 Ultra (fisik) — pakai Mode Demo juga (±10 menit)
-Buka di Chrome HP **alamat production yang sama**, login Owner/Admin, **Rencana Produksi → nyalakan Lihat Data Demo**.
+## A2. Samsung S25 Ultra (fisik) — pakai Mode Latihan juga (±10 menit)
+Buka di Chrome HP **alamat production yang sama**, login Owner/Admin, **Rencana Produksi → nyalakan Mode Latihan**.
 - [ ] **Gulir**: sentuh dan geser jari pada **badan kartu** (teks) → halaman menggulir normal, **tidak ada kartu pindah**.
 - [ ] **Ketuk kartu** → Unit 360 terbuka.
 - [ ] **Tahan lalu seret** lewat **⋮⋮**: ghost kartu mengikuti jari, garis biru/slot sorot, label tujuan terbaca; lepas di Meja → simulasi berhasil.

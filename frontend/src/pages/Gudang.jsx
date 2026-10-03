@@ -416,9 +416,9 @@ export default function Gudang() {
         )}
       >
         <div className="mt-2 flex gap-2">
-          <button onClick={() => navigate("/bengkel")}
+          <button onClick={() => navigate("/bengkel/production-v2")}
             className="rounded-chip px-3 py-1 text-[13px] font-medium text-ink2 hover:bg-hovertint">
-            Papan Produksi
+            Status Produksi
           </button>
           <button className="rounded-chip bg-accentbg px-3 py-1 text-[13px] font-medium text-accent">
             Gudang

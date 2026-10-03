@@ -52,9 +52,12 @@ const TABS = [
 // `initialStatus` (P8.1, opsional) — tab awal saat dibuka dari luar (mis.
 // menu "Riwayat" via ProductionOrdersHub.jsx, pra-filter "Terkirim"). Default
 // "" mempertahankan perilaku lama persis untuk SEMUA pemanggil yang sudah ada.
-export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
+// `scope` (P12B.2, hub Order Produksi): "aktif" = semua unit KECUALI Terkirim (tab Terkirim disembunyikan), "riwayat" = hanya Terkirim
+// (tanpa tab status). Kosong = perilaku lama persis. Endpoint & data sama (getWorkOrders); hanya penyaringan tampilan.
+export default function ProductionWorkOrders({ initialStatus = "", scope = "" } = {}) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState(initialStatus);
+  const [tab, setTab] = useState(scope === "riwayat" ? "DELIVERED" : initialStatus);
+  const tabsShown = scope === "riwayat" ? [] : scope === "aktif" ? TABS.filter((t) => t.key !== "DELIVERED").map((t) => (t.key === "" ? { ...t, label: "Semua Aktif" } : t)) : TABS;
   const [cari, setCari] = useState("");
   const [fServiceLine, setFServiceLine] = useState("");
   const [data, setData] = useState(null);
@@ -91,26 +94,27 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
   const rows = useMemo(() => {
     if (!data) return null;
     if (tab === "__WORKSHOP") return data.units.filter((u) => IN_WORKSHOP_STATUSES.includes(u.status));
+    if (scope === "aktif" && tab === "") return data.units.filter((u) => u.status !== "DELIVERED");
     return data.units;
-  }, [data, tab]);
+  }, [data, tab, scope]);
 
   const countFor = useCallback((key) => {
     if (!data) return null;
     const map = Object.fromEntries(data.statusCounts.map((s) => [s.status, s.count]));
-    if (key === "") return data.statusCounts.reduce((n, s) => n + s.count, 0);
+    if (key === "") return data.statusCounts.reduce((n, s) => n + (scope === "aktif" && s.status === "DELIVERED" ? 0 : s.count), 0);
     if (key === "__WORKSHOP") return IN_WORKSHOP_STATUSES.reduce((n, s) => n + (map[s] || 0), 0);
     return map[key] || 0;
-  }, [data]);
+  }, [data, scope]);
 
   const kosong = !loading && rows && rows.length === 0;
   const belumAdaYangDiEngine = rows?.every((u) => !u.currentStage && !u.service);
-  const hasActiveFilter = tab !== "" || !!fServiceLine || !!cari.trim();
+  const hasActiveFilter = (scope ? false : tab !== "") || !!fServiceLine || !!cari.trim();
 
   return (
     <PageContainer>
       <PageHeader
-        title="Work Order"
-        subtitle="Seluruh unit kasur beserta status dan tahap pengerjaannya."
+        title={scope === "riwayat" ? "Riwayat Order Produksi" : scope === "aktif" ? "Order Produksi Aktif" : "Work Order"}
+        subtitle={scope === "riwayat" ? "Unit yang sudah terkirim ke pelanggan." : scope === "aktif" ? "Unit yang masih berjalan — belum terkirim." : "Seluruh unit kasur beserta status dan tahap pengerjaannya."}
         actions={
           <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
@@ -129,7 +133,7 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
         )}
 
         <div role="tablist" aria-label="Saring status unit" className="flex flex-wrap gap-1 border-b border-line pb-2">
-          {TABS.map((t) => {
+          {tabsShown.map((t) => {
             const n = countFor(t.key);
             return (
               <button

@@ -13,12 +13,15 @@ import {
   UserRound,
   ShieldCheck,
   FileCheck,
+  Scissors, Tv,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
 import SidebarNavSection from "./SidebarNavSection.jsx";
 import { applyCustomOrder, getSectionOrder, saveSectionOrder } from "@/lib/sidebarOrder.js";
 import { filterMenuByPermission, visibleSections } from "@/lib/menuVisibility.js";
+import { PRODUCTION_NAV, sectionIsOpen } from "@/lib/productionNav.js";
+import { loadToggledSections, saveToggledSections } from "@/lib/sidebarSections.js";
 import { useSSE } from "../hooks/useSSE.js";
 import Topbar from "./Topbar.jsx";
 import TabStrip from "./TabStrip.jsx";
@@ -60,6 +63,9 @@ import { cn } from "@/lib/utils.js";
 // hidup berdampingan (badge polos vs kartu besar), tapi kalau suatu saat mau
 // disatukan, ubah DUA-DUANYA sekaligus, jangan cuma satu lalu terasa lebih
 // tidak konsisten.
+// P12B.2 — nama ikon di lib/productionNav.js → komponen lucide (ikon konsisten: satu ikon per menu, tanpa duplikat dalam satu sidebar).
+const NAV_ICONS = { Gauge, Boxes, CalendarClock, ClipboardList, ClipboardCheck, ArrowUpFromLine, Wrench, Scissors, Camera, Tv, BarChart3, Receipt, AlertTriangle, Settings };
+
 const DIVISION_ACCENT = {
   text: "text-blue-700",
   bg: "bg-blue-50",
@@ -178,97 +184,16 @@ const DIVISIONS = {
     accent: {
       ...DIVISION_ACCENT,
     },
-    // P8.1 (UI & Navigation Consolidation, 29 September 2026) — REDESAIN dari
-    // pengelompokan D-148 di atas. Tiga hal berubah:
-    //   1. "Papan Produksi" (V1), "Rencana Harian (V2)", dan "Rencana Produksi"
-    //      (P3, lama) DIGABUNG NAVIGASI jadi SATU menu "Rencana Produksi" →
-    //      /bengkel/production-v2 (Papan Meja/Daftar/Kalender jadi TAB di
-    //      dalam halaman itu sendiri, lihat ProductionPlannerV2.jsx).
-    //   2. "Antrean QC (V2)" + "Inspeksi QC" → "Quality Control" (tab hub,
-    //      ProductionQcHub.jsx). "Work Order" + "Semua Order" → "Order
-    //      Produksi" (tab hub, ProductionOrdersHub.jsx) — dipindah ke section
-    //      administrasi karena sifatnya menelusuri/riwayat, bukan kerja
-    //      real-time harian seperti Rencana Produksi.
-    //   3. Section baru "LEGACY (ADMIN)" (adminOnly) menampung SEMUA rute lama
-    //      yang digabung di atas apa adanya — TIDAK ADA route atau komponen
-    //      yang dihapus (lihat src/lib/legacyProductionRoutes.js), cuma
-    //      disembunyikan dari menu operasional harian.
-    // State machine, API, migration, flag V2, dan cohort canary TIDAK disentuh
-    // sama sekali oleh redesain ini — murni navigasi & layout.
-    sections: [
-      {
-        section: "OPERASIONAL",
-        items: [
-          { to: "/bengkel/ringkasan",       label: "Ringkasan",       Icon: Gauge },
-          // P9B.1 — "Rencana Produksi" (P9B, papan kolom pipeline) DIGANTI NAMA jadi "Status Produksi" (URL
-          // /bengkel/production-v2 TIDAK berubah — tab tersimpan & bookmark lama tetap valid tanpa redirect apa pun).
-          // "Rencana Produksi" SEKARANG merujuk ke workspace planning P3 yang BARU (Belum Direncanakan/Direncanakan/
-          // Bahan Direservasi) — bukan menu duplikat, dua konsep berbeda: status pipeline vs alokasi sumber daya.
-          { to: "/bengkel/production-v2",   label: "Status Produksi", Icon: CalendarClock },
-          { to: "/bengkel/rencana-produksi", label: "Rencana Produksi", Icon: ClipboardList },
-          { to: "/bengkel/quality-control", label: "Quality Control", Icon: ClipboardCheck },
-          { to: "/bengkel/reports",         label: "Laporan Produksi", Icon: BarChart3 },
-        ],
-      },
-      // P9 UX Realignment — Aplikasi Meja/Corner dan Andon TV adalah MODE KERJA / PERANGKAT (HP PIC, layar TV), bukan
-      // workspace administratif: dipisah dari menu operasional utama supaya "OPERASIONAL" hanya berisi lima halaman kerja
-      // (Ringkasan, Status, Rencana, Quality Control, Laporan). Rute TIDAK berubah.
-      {
-        section: "MODE KERJA & PERANGKAT",
-        items: [
-          { to: "/produksi/meja",           label: "Aplikasi Meja",   Icon: Wrench },
-          { to: "/produksi/corner",         label: "Aplikasi Corner", Icon: Wrench },
-          { to: "/produksi/dokumentasi",    label: "Aplikasi Dokumentasi", Icon: Camera },
-          { to: "/bengkel/andon",           label: "Andon TV",        Icon: LayoutDashboard },
-        ],
-      },
-      {
-        section: "PENGATURAN & ADMINISTRASI",
-        items: [
-          { to: "/bengkel/order-produksi",  label: "Order Produksi",  Icon: ClipboardList },
-          { to: "/bengkel/work-centers",    label: "Work Center",     Icon: MapPin },
-          { to: "/bengkel/operators",       label: "Operator",        Icon: UserCog },
-          { to: "/bengkel/layanan-tahapan", label: "Layanan & Tahapan", Icon: GitBranch },
-          // C1 — biaya operasional NON-STOK (servis mesin, jasa vendor, lembur, dll). Hanya PRODUCTION_LEAD/Finance/Admin; server menegakkan ulang.
-          { to: "/bengkel/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "PRODUCTION_LEAD"], bolehDivisi: ["PRODUCTION"] },
-          { to: "/bengkel/laporan-biaya", label: "Laporan Biaya", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "PRODUCTION_LEAD"], bolehDivisi: ["PRODUCTION"] },
-          { to: "/bengkel/scope-revisions", label: "Komplain & Revisi", Icon: AlertTriangle },
-          // Riwayat = Order Produksi (tab Work Order) pra-filter status Terkirim — bukan halaman baru, lihat ProductionOrdersHub.jsx.
-          { to: "/bengkel/order-produksi?tab=work-order&status=DELIVERED", label: "Riwayat", Icon: Boxes },
-        ],
-      },
-      {
-        section: "LAIN",
-        items: [
-          { to: "/bengkel/materials",       label: "Bahan Produksi",  Icon: ArrowUpFromLine },
-          // P11 — KPI Produksi & Gudang (baca-saja). Sengaja di LAIN: OPERASIONAL tetap lima menu kerja (keputusan UX P9).
-          { to: "/bengkel/kpi",             label: "KPI Produksi",    Icon: Gauge, bolehPeran: ["ADMIN", "OWNER", "PRODUCTION_LEAD"] },
-          // Kasus Komplain (D-116, 11 September 2026) — halaman dibaca
-          // lintas divisi, lihat catatan panjang di section armada di atas.
-          { to: "/komplain",                label: "Kasus Komplain",  Icon: AlertTriangle },
-        ],
-      },
-      // LEGACY (ADMIN) — P8.1: rute V1/lama yang digabung navigasi di atas.
-      // TIDAK dihapus (lihat src/lib/legacyProductionRoutes.js), cuma
-      // disembunyikan dari menu operasional non-admin.
-      {
-        section: "LEGACY (ADMIN)",
-        adminOnly: true,
-        // P8.2 (UI Polish) — accordion, DEFAULT TERTUTUP (laporan owner dari
-        // screenshot live: section ini selalu makan tempat di sidebar admin
-        // walau jarang dibuka). Klik label section untuk buka/tutup.
-        collapsibleDefaultClosed: true,
-        items: [
-          { to: "/bengkel",                 label: "Papan Produksi (lama, V1)", Icon: ClipboardList },
-          { to: "/bengkel/planning",        label: "Rencana Produksi (lama, P3)", Icon: CalendarClock },
-          { to: "/bengkel/workshop",        label: "Antrean Kerja (lama, P5)", Icon: Wrench },
-          { to: "/bengkel/work-orders",     label: "Work Order (lama)", Icon: Boxes },
-          { to: "/bengkel/orders",          label: "Semua Order (lama)", Icon: ClipboardList },
-          { to: "/bengkel/qc",              label: "Inspeksi QC (lama)", Icon: ScanLine },
-          { to: "/bengkel/qc-v2",           label: "Antrean QC V2 (lama)", Icon: ClipboardCheck },
-        ],
-      },
-    ],
+    // P12B.2 (Sidebar Consolidation) — struktur final Production: OPERASIONAL / MODE KERJA (akordeon, default tertutup) / KONTROL & LAPORAN /
+    // ADMINISTRASI. Data menu = lib/productionNav.js (satu sumber, diuji). Section "Legacy (Admin)", Work Center/Operator/Layanan & Tahapan
+    // (kini tab Pengaturan), Pengajuan/Laporan Biaya (tab Biaya Produksi), Riwayat (tab Order Produksi), KPI & Kasus Komplain terpisah
+    // DIHAPUS dari sidebar; URL lamanya dialihkan (lib/legacyProductionRoutes.js). State machine, API, migration, flag V2, cohort: tidak disentuh.
+    sections: PRODUCTION_NAV.map((sec) => ({
+      section: sec.section,
+      ...(sec.collapsible ? { collapsible: true, defaultClosed: !!sec.defaultClosed } : {}),
+      ...(sec.pinBottom ? { pinBottom: true } : {}),
+      items: sec.items.map((it) => ({ ...it, Icon: NAV_ICONS[it.icon] })),
+    })),
   },
   // Workspace ke-5 (SANSS, 1 Agustus 2026) — Gudang dikeluarkan dari Bengkel
   // jadi workspace sendiri. Lihat alasannya di backend constants/permissions.js.
@@ -989,7 +914,7 @@ export default function Layout({ user, onLogout }) {
   // tutup) — status open/closed AKTUAL section itu jadi kebalikan dari
   // default-nya kalau namanya ada di set ini, apa adanya kalau tidak. State
   // sesi saja (tidak disimpan), sama dengan `customizingNav`.
-  const [toggledSections, setToggledSections] = useState(() => new Set());
+  const [toggledSections, setToggledSections] = useState(() => loadToggledSections("bengkel"));
   // Keluar dari mode susun kalau pindah workspace ATAU sidebar disempitkan
   // (SidebarNavSection sengaja tidak mendukung mode compact 72px — tanpa
   // label, tidak ada cara membedakan item mana yang sedang digeser).
@@ -1233,7 +1158,7 @@ export default function Layout({ user, onLogout }) {
             geser, misal Semua Order taruh bawah, Route Planner paling atas".
             HANYA muncul di sidebar divisi (bukan Main Hub) dan HANYA saat
             tidak menyempit — lihat catatan di SidebarNavSection.jsx. */}
-        {!onHub && !collapsed && (
+        {!onHub && !collapsed && divisionKey !== "bengkel" && (
           <button
             type="button"
             onClick={() => setCustomizingNav((v) => !v)}
@@ -1270,8 +1195,9 @@ export default function Layout({ user, onLogout }) {
             // (adminOnly/bolehPeran non-admin) sengaja TIDAK ikut — tidak
             // dirender, jadi tidak relevan untuk status aktif visual.
             const allVisibleItems = sectionsVisible.flatMap((s) => s.items);
-            return sectionsVisible.map(({ section, items: itemsTampil, collapsibleDefaultClosed }) => {
-              const itemsUrut = onHub
+            return sectionsVisible.map(({ section, items: itemsTampil, collapsibleDefaultClosed, collapsible, defaultClosed, pinBottom }) => {
+              // Production (P12B.2): urutan menu mengikuti spesifikasi tetap — urutan tersimpan dari fitur 'Susun ulang' lama diabaikan.
+              const itemsUrut = onHub || divisionKey === "bengkel"
                 ? itemsTampil
                 : applyCustomOrder(itemsTampil, getSectionOrder(divisionKey, section));
               // Accordion (P8.2) — section bertanda `collapsibleDefaultClosed`
@@ -1280,10 +1206,13 @@ export default function Layout({ user, onLogout }) {
               // (72px, sidebar menyempit) selalu tampil penuh tanpa accordion —
               // menyembunyikan section di sidebar sempit cuma membuat ikon-ikon
               // hilang tanpa cara membukanya lagi.
-              const isCollapsible = !!collapsibleDefaultClosed && !onHub && !collapsed;
-              const open = !isCollapsible || toggledSections.has(section);
+              const isCollapsible = (!!collapsibleDefaultClosed || !!collapsible) && !onHub && !collapsed;
+              // P12B.2: section akordeon baru (productionNav) terbuka bila ditandai pengguna ATAU salah satu anaknya aktif; defaultnya tertutup.
+              const open = !isCollapsible || (collapsible
+                ? sectionIsOpen({ collapsible: true, defaultClosed, items: itemsTampil }, { toggled: toggledSections.has(section), activeTo: location.pathname })
+                : toggledSections.has(section));
               return (
-                <div key={section} className="nav-section">
+                <div key={section} className={`nav-section${pinBottom ? " nav-section-bottom" : ""}`}>
                   {isCollapsible ? (
                     <button
                       type="button"
@@ -1292,6 +1221,7 @@ export default function Layout({ user, onLogout }) {
                       onClick={() => setToggledSections((prev) => {
                         const next = new Set(prev);
                         next.has(section) ? next.delete(section) : next.add(section);
+                        saveToggledSections("bengkel", next); // hanya status buka/tutup section (preferensi tampilan), bukan akses
                         return next;
                       })}
                     >

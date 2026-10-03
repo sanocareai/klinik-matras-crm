@@ -2,6 +2,7 @@ import React, { lazy } from "react";
 import { matchPath } from "react-router-dom";
 import { rolesOf } from "../lib/roles.js";
 import { splitPathQuery } from "../lib/splitPathQuery.js";
+import { tabPathFor } from "../lib/legacyProductionRoutes.js";
 import { DemoPage } from "../features/production/demo/DemoControls.jsx";
 
 // D-143 (9 September 2026) — SATU SUMBER KEBENARAN untuk daftar halaman.
@@ -31,16 +32,8 @@ const CoPilot       = lazy(() => import("../pages/CoPilot.jsx"));
 const Portal        = lazy(() => import("../pages/Portal.jsx"));
 const DivisionPage  = lazy(() => import("../pages/DivisionPage.jsx"));
 const Notifications = lazy(() => import("../pages/Notifications.jsx"));
-const Bengkel       = lazy(() => import("../pages/Bengkel.jsx"));
-const ProductionWorkOrders = lazy(() => import("../pages/bengkel/ProductionWorkOrders.jsx"));
 const ProductionUnitDetail = lazy(() => import("../pages/bengkel/ProductionUnitDetail.jsx"));
-const ProductionQcQueue    = lazy(() => import("../pages/bengkel/ProductionQcQueue.jsx"));
 const ProductionMaterialUsage = lazy(() => import("../pages/bengkel/ProductionMaterialUsage.jsx"));
-const ProductionScopeRevisions = lazy(() => import("../pages/bengkel/ProductionScopeRevisions.jsx"));
-const ProductionLaporan = lazy(() => import("../pages/bengkel/ProductionLaporan.jsx"));
-const ProductionOrders  = lazy(() => import("../pages/bengkel/ProductionOrders.jsx"));
-const ProductionWorkCenters = lazy(() => import("../pages/bengkel/ProductionWorkCenters.jsx"));
-const ProductionOperators   = lazy(() => import("../pages/bengkel/ProductionOperators.jsx"));
 const ArmadaDashboard   = lazy(() => import("../pages/armada/ArmadaDashboard.jsx"));
 const ArmadaRingkasan   = lazy(() => import("../pages/armada/ArmadaRingkasan.jsx"));
 const ArmadaJobs        = lazy(() => import("../pages/armada/ArmadaJobs.jsx"));
@@ -91,9 +84,6 @@ const WarehouseInventory   = lazy(() => import("../pages/warehouse/WarehouseInve
 const WarehouseGoodsReceipt = lazy(() => import("../pages/warehouse/WarehouseGoodsReceipt.jsx"));
 const WarehouseUnitCustody = lazy(() => import("../pages/warehouse/WarehouseUnitCustody.jsx"));
 const WarehouseMaterialPickup = lazy(() => import("../pages/warehouse/WarehouseMaterialPickup.jsx"));
-const ProductionPlanning = lazy(() => import("../pages/bengkel/ProductionPlanning.jsx"));
-const ProductionWorkshop = lazy(() => import("../pages/bengkel/ProductionWorkshop.jsx"));
-const ProductionQc = lazy(() => import("../pages/bengkel/ProductionQc.jsx"));
 const WarehouseFinishedGoods = lazy(() => import("../pages/warehouse/WarehouseFinishedGoods.jsx"));
 const WarehouseMaterialIssue = lazy(() => import("../pages/warehouse/WarehouseMaterialIssue.jsx"));
 const WarehouseTransfers = lazy(() => import("../pages/warehouse/WarehouseTransfers.jsx"));
@@ -119,12 +109,15 @@ const ProductionAndon = lazy(() => import("../pages/bengkel/ProductionAndon.jsx"
 const ProductionRingkasan = lazy(() => import("../pages/bengkel/ProductionRingkasan.jsx"));
 const ProductionQcHub = lazy(() => import("../pages/bengkel/ProductionQcHub.jsx"));
 const ProductionOrdersHub = lazy(() => import("../pages/bengkel/ProductionOrdersHub.jsx"));
-const ProductionServiceStages = lazy(() => import("../pages/bengkel/ProductionServiceStages.jsx"));
+// P12B.2 — hub gabungan baru (reuse halaman & endpoint lama): Biaya Produksi, Komplain & Revisi, Pengaturan Produksi.
+const ProductionCostHub = lazy(() => import("../pages/bengkel/ProductionCostHub.jsx"));
+const ProductionComplaintsHub = lazy(() => import("../pages/bengkel/ProductionComplaintsHub.jsx"));
+const ProductionSettings = lazy(() => import("../pages/bengkel/ProductionSettings.jsx"));
 
 // Halaman MANDIRI (P8): dirender App.jsx di luar sidebar/tab desktop — aplikasi PIC (PWA mobile) dan kiosk Andon TV. Tetap wajib login.
 export const STANDALONE_PAGES = [
-  { path: "/produksi/meja", render: () => <WorkerLane lane="TABLE" /> },
-  { path: "/produksi/corner", render: () => <WorkerLane lane="CORNER" /> },
+  { path: "/produksi/meja", render: () => <DemoPage><WorkerLane lane="TABLE" /></DemoPage> },
+  { path: "/produksi/corner", render: () => <DemoPage><WorkerLane lane="CORNER" /></DemoPage> },
   { path: "/produksi/dokumentasi", render: () => <DemoPage><ProductionDocumentation /></DemoPage> },
   { path: "/produksi/ringkasan-saya", render: () => <ProductionKpi /> }, // P11 — ringkasan pekerjaan sendiri (PIC/dokumentasi/QC)
   { path: "/bengkel/andon", render: () => <ProductionAndon /> },
@@ -162,6 +155,9 @@ function isDriverOnlyUser() {
 // kembali ke hasilnya. Pemanggil lama (tanpa "?" sama sekali) berperilaku
 // identik persis seperti sebelumnya.
 export function resolveEntryPath(pathname) {
+  // P12B.2: rute Production lama → halaman kanonis baru SEBELUM dicocokkan (tab tidak pernah menyimpan rute lama).
+  const translated = tabPathFor(pathname);
+  if (translated !== pathname) return resolveEntryPath(translated);
   const { base, search } = splitPathQuery(pathname);
   if (base === "/") return "/portal";
   // /finance (tanpa sub-path) dirujuk PORTALS backend & WorkspaceSwitcher —
@@ -189,17 +185,9 @@ export function RouteFallback() {
 export const PAGES = [
   { path: "/portal",      render: () => <Portal /> },
   { path: "/portal/:key", render: (ctx) => <DivisionPage user={ctx.user} /> },
-  { path: "/bengkel",     render: () => <Bengkel /> },
-  { path: "/bengkel/work-orders", render: () => <ProductionWorkOrders /> },
   { path: "/bengkel/units/:id", render: () => <ProductionUnitDetail /> },
-  { path: "/bengkel/qc", render: () => <ProductionQcQueue /> },
-  { path: "/bengkel/scope-revisions", render: () => <ProductionScopeRevisions /> },
   { path: "/bengkel/materials", render: () => <ProductionMaterialUsage /> },
-  { path: "/bengkel/reports", render: () => <ProductionLaporan /> },
   { path: "/bengkel/kpi", render: () => <DemoPage><ProductionKpi /></DemoPage> },
-  { path: "/bengkel/orders", render: () => <ProductionOrders /> },
-  { path: "/bengkel/work-centers", render: () => <ProductionWorkCenters /> },
-  { path: "/bengkel/operators", render: () => <ProductionOperators /> },
   { path: "/armada/dashboard", render: () => <ArmadaDashboard /> },
   { path: "/armada/ringkasan", render: () => <ArmadaRingkasan /> },
   { path: "/armada/jobs",      render: () => <ArmadaJobs /> },
@@ -234,7 +222,6 @@ export const PAGES = [
   { path: "/finance/journal",        render: () => <FinanceJournal /> },
   { path: "/finance/persediaan-awal", render: () => <FinancePersediaanAwal /> },
   // C1 — Pengajuan Biaya Produksi & Gudang (halaman generik; jenis biaya & tautan dari konfigurasi server)
-  { path: "/bengkel/pengajuan-biaya", render: () => <PengajuanBiayaWorkspace workspace="PRODUKSI" /> },
   { path: "/warehouse/pengajuan-biaya", render: () => <PengajuanBiayaWorkspace workspace="WAREHOUSE" /> },
   // C2 — Marketing, Management, HR-GA: komponen yang SAMA (konfigurasi dari server); hub Finance untuk melihat semua divisi
   { path: "/marketing/pengajuan-biaya", render: () => <PengajuanBiayaWorkspace workspace="MARKETING" /> },
@@ -246,7 +233,6 @@ export const PAGES = [
   // Fase 2 — Laporan Biaya per Divisi: Finance melihat semua; workspace divisi memakai komponen yang sama dikunci ke divisinya (izin di server)
   { path: "/finance/laporan-divisi", render: () => <FinanceLaporanDivisi /> },
   { path: "/armada/laporan-biaya",    render: () => <LaporanBiayaDivisi scope="DELIVERY" judul="Laporan Biaya Delivery" /> },
-  { path: "/bengkel/laporan-biaya",   render: () => <LaporanBiayaDivisi scope="PRODUCTION" judul="Laporan Biaya Produksi" /> },
   { path: "/warehouse/laporan-biaya", render: () => <LaporanBiayaDivisi scope="WAREHOUSE" judul="Laporan Biaya Gudang" /> },
   { path: "/marketing/laporan-biaya", render: () => <LaporanBiayaDivisi scope="MARKETING" judul="Laporan Biaya Marketing" /> },
   { path: "/kendali/laporan-biaya",   render: () => <LaporanBiayaDivisi scope="MANAGEMENT" judul="Laporan Biaya Management" /> },
@@ -260,9 +246,6 @@ export const PAGES = [
   { path: "/warehouse/inventory", render: () => <WarehouseInventory /> },
   { path: "/warehouse/goods-receipt", render: () => <WarehouseGoodsReceipt /> },
   { path: "/warehouse/unit-custody", render: () => <WarehouseUnitCustody /> },
-  { path: "/bengkel/planning", render: () => <ProductionPlanning /> },
-  { path: "/bengkel/workshop", render: () => <ProductionWorkshop /> },
-  { path: "/bengkel/qc-v2", render: () => <ProductionQc /> },
   { path: "/bengkel/production-v2", render: () => <DemoPage><ProductionPlannerV2 /></DemoPage> },
   { path: "/bengkel/production-v2/laporan/:runId", render: () => <ProductionReportV2 /> },
   // P9B.1 — workspace penjadwalan baru, URL sendiri (bukan sub-path production-v2, supaya tidak butuh redirect/D-144).
@@ -271,7 +254,9 @@ export const PAGES = [
   { path: "/bengkel/ringkasan", render: () => <DemoPage><ProductionRingkasan /></DemoPage> },
   { path: "/bengkel/quality-control", render: () => <DemoPage><ProductionQcHub /></DemoPage> },
   { path: "/bengkel/order-produksi", render: () => <ProductionOrdersHub /> },
-  { path: "/bengkel/layanan-tahapan", render: () => <ProductionServiceStages /> },
+  { path: "/bengkel/biaya-produksi", render: () => <ProductionCostHub /> },
+  { path: "/bengkel/komplain-revisi", render: () => <ProductionComplaintsHub /> },
+  { path: "/bengkel/pengaturan", render: () => <ProductionSettings /> },
   { path: "/warehouse/antrean-produksi", render: () => <DemoPage><WarehouseProductionQueue /></DemoPage> },
   { path: "/warehouse/finished-goods", render: () => <WarehouseFinishedGoods /> },
   { path: "/warehouse/material-pickup", render: () => <WarehouseMaterialPickup /> },

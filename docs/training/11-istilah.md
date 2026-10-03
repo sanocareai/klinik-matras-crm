@@ -24,5 +24,5 @@
 | **Barang jadi** | Kasur selesai yang diserahkan Corner ke Gudang |
 | **Tertahan** | Barang jadi belum bisa diterima karena retur sisa belum selesai |
 | **Draf offline** | Foto yang disimpan di HP saat tanpa sinyal, lalu terkirim otomatis |
-| **Mode Demo** | Data contoh read-only untuk Admin/Owner — **bukan** latihan kerja, tidak menyimpan apa pun |
+| **Mode Latihan** | Data contoh sintetis read-only di aplikasi (Admin, Owner, Production Lead, Operator/PIC, QC, Gudang, Dokumenter) — tidak menyimpan apa pun, tidak masuk KPI/export. Sebelumnya bernama "Mode Demo"; **bukan** pengganti latihan di staging |
 | **Staging latihan** | Aplikasi salinan khusus latihan; data fiktif **QA-PV2** |

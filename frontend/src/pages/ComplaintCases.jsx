@@ -86,8 +86,12 @@ function CaseCard({ c, onOpen }) {
   );
 }
 
-export default function ComplaintCases() {
-  const [cases, setCases] = useState([]);
+// `scope` (P12B.2, hub Komplain & Revisi): "aktif" = kasus yang belum SELESAI/DIBATALKAN, "riwayat" = yang sudah SELESAI/DIBATALKAN, kosong = semua
+// (halaman /komplain lintas divisi tidak berubah). Endpoint sama (getComplaintCases); hanya penyaringan tampilan.
+const kasusTutup = (c) => c.status === "SELESAI" || c.status === "DIBATALKAN";
+export default function ComplaintCases({ scope = "" } = {}) {
+  const [allCases, setCases] = useState([]);
+  const cases = useMemo(() => (scope === "aktif" ? allCases.filter((c) => !kasusTutup(c)) : scope === "riwayat" ? allCases.filter(kasusTutup) : allCases), [allCases, scope]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -136,7 +140,7 @@ export default function ComplaintCases() {
   return (
     <PageContainer>
       <PageHeader
-        title="Kasus Komplain"
+        title={scope === "riwayat" ? "Riwayat Komplain" : scope === "aktif" ? "Kasus Komplain Aktif" : "Kasus Komplain"}
         subtitle="Kasus komplain & purna-jual lintas divisi — Sales, Delivery, Produksi, Warehouse, QC."
       />
       <PageBody>

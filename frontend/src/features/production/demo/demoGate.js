@@ -1,14 +1,14 @@
-// Gerbang Mode Demo (P12A) — modul KECIL yang diimpor api.js. TIDAK memuat dataset (itu chunk terpisah, dimuat hanya setelah server
-// mengizinkan ADMIN/OWNER). Kontrak: bila demo aktif → (1) setiap bacaan data Production dilayani dari dataset sintetis, tanpa
+// Gerbang Mode Latihan (P12A; dinamai ulang P12B.2) — modul KECIL yang diimpor api.js. TIDAK memuat dataset (itu chunk terpisah, dimuat hanya setelah server
+// mengizinkan peran latihan — lihat demoRoles.js). Kontrak: bila demo aktif → (1) setiap bacaan data Production dilayani dari dataset sintetis, tanpa
 // menyentuh jaringan; (2) setiap metode bukan GET ditolak SEBELUM fetch; (3) upload/export ditolak. Demo tidak pernah ikut ke KPI/export production.
-export const DEMO_LABEL = "MODE DEMO — bukan data operasional";
+export const DEMO_LABEL = "MODE LATIHAN — bukan data operasional"; // P12B.2: "Mode Demo" → "Mode Latihan"
 export const DEMO_DATA_PREFIXES = Object.freeze(["/production-v2/", "/production-planning/", "/production/", "/inventory/", "/master-data/", "/complaints"]);
 
 export class DemoReadOnlyError extends Error {
-  constructor(what = "Aksi ini") { super(`${what} dinonaktifkan di Mode Demo (hanya-baca, data sintetis).`); this.name = "DemoReadOnlyError"; this.code = "DEMO_READ_ONLY"; }
+  constructor(what = "Aksi ini") { super(`${what} dinonaktifkan di Mode Latihan (hanya-baca, data sintetis).`); this.name = "DemoReadOnlyError"; this.code = "DEMO_READ_ONLY"; }
 }
 export class DemoMissError extends Error {
-  constructor(path) { super(`Data demo untuk ${path} tidak tersedia.`); this.name = "DemoMissError"; this.code = "DEMO_MISS"; }
+  constructor(path) { super(`Data latihan untuk ${path} tidak tersedia.`); this.name = "DemoMissError"; this.code = "DEMO_MISS"; }
 }
 
 let active = false;

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { summaryFromV1, summaryFromV2 } from "../src/features/production/ringkasanModel.js";
+import { PRODUCTION_NAV } from "../src/lib/productionNav.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Komentar dibuang: tes memeriksa KODE, bukan catatan yang (wajar) menyebut komponen lama.
@@ -29,14 +30,16 @@ function loadModel() {
   return new Function("STEP_BY_NO", "bucketStyle", "PRODUCT_TYPE_LABELS", `${src}\nreturn { priorityMeta, dataGaps, materialBadge, stageText, backlogOf, mergeQcWithViews, pipelineChips, mejaLabel, MEJA, humanizeRequest, isGantiKain, mattressInfo, salesNoteOf };`)(STEP_BY_NO, bucketStyle, PRODUCT_TYPE_LABELS);
 }
 
-test("Navigasi Production: OPERASIONAL hanya 5 menu; Aplikasi Meja/Corner/Andon di 'MODE KERJA & PERANGKAT'; Legacy admin-only & tertutup", () => {
-  const prod = LAYOUT.slice(LAYOUT.indexOf("bengkel: {"), LAYOUT.indexOf("// Workspace ke-5"));
-  const operasional = prod.slice(prod.indexOf('section: "OPERASIONAL"'), prod.indexOf('section: "MODE KERJA & PERANGKAT"'));
-  const labels = [...operasional.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(labels, ["Ringkasan", "Status Produksi", "Rencana Produksi", "Quality Control", "Laporan Produksi"]);
-  const mode = prod.slice(prod.indexOf('section: "MODE KERJA & PERANGKAT"'), prod.indexOf('section: "PENGATURAN & ADMINISTRASI"'));
-  for (const l of ["Aplikasi Meja", "Aplikasi Corner", "Andon TV"]) assert.ok(mode.includes(`"${l}"`), l);
-  assert.match(prod, /section: "LEGACY \(ADMIN\)",\s*adminOnly: true,[\s\S]*?collapsibleDefaultClosed: true/);
+test("Navigasi Production (P12B.2): OPERASIONAL 6 menu; MODE KERJA akordeon default tertutup; KONTROL & LAPORAN 3 menu; ADMINISTRASI = Pengaturan; tanpa Legacy", () => {
+  const sec = Object.fromEntries(PRODUCTION_NAV.map((x) => [x.section, x]));
+  assert.deepEqual(PRODUCTION_NAV.map((x) => x.section), ["OPERASIONAL", "MODE KERJA", "KONTROL & LAPORAN", "ADMINISTRASI"]);
+  assert.deepEqual(sec["OPERASIONAL"].items.map((i) => i.label), ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Quality Control", "Bahan Produksi"]);
+  assert.deepEqual(sec["MODE KERJA"].items.map((i) => i.label), ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]);
+  assert.ok(sec["MODE KERJA"].collapsible && sec["MODE KERJA"].defaultClosed, "akordeon, default tertutup");
+  assert.deepEqual(sec["KONTROL & LAPORAN"].items.map((i) => i.label), ["KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]);
+  assert.deepEqual(sec["ADMINISTRASI"].items.map((i) => i.label), ["Pengaturan"]);
+  assert.match(LAYOUT, /PRODUCTION_NAV\.map/, "Layout membangun menu dari lib/productionNav.js");
+  assert.doesNotMatch(LAYOUT, /LEGACY \(ADMIN\)|Inspeksi QC \(lama\)/, "tanpa section Legacy");
 });
 
 test("Ringkasan: SATU dashboard — tidak lagi menumpuk CommandCenterSummary + hero 'Pusat Kendali Produksi' V1", () => {
@@ -102,8 +105,9 @@ test("Kartu unit SAMA dipakai Status, Rencana, dan QC; klik membuka Unit 360", (
   assert.match(CARD, /Buka Unit 360/);
 });
 
-test("QC hub: tab 'Inspeksi QC (lama)' hanya ADMIN (legacy) — staf lain satu pengalaman", () => {
-  assert.match(QC_HUB, /isAdmin &&/);
+test("QC hub (P12B.2): tab 'Inspeksi QC (lama)' DIHAPUS dari UI — satu pengalaman QC untuk semua peran", () => {
+  assert.doesNotMatch(QC_HUB, /Inspeksi QC|ProductionQcQueue|isAdmin/);
+  assert.match(QC_HUB, /<ProductionQc \/>/);
 });
 
 test("Kartu foto-pertama: foto besar di atas, placeholder eksplisit 'Belum ada foto', prioritas merah TIDAK hanya warna (ikon+teks)", () => {

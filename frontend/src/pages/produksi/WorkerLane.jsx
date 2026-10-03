@@ -205,7 +205,7 @@ function StepSheet({ card, next, onClose, onSubmitted }) {
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{error}</div>}
       </div>
       <div className="border-t border-line bg-surface px-3 pt-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-        <button type="button" onClick={submit} disabled={busy}
+        <button type="button" data-mutates onClick={submit} disabled={busy}
           className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-btn bg-accent text-[16px] font-bold text-white disabled:opacity-50">
           {busy ? <><Loader2 size={20} className="animate-spin" aria-hidden /> Mengirim…</> : canRetry ? "Coba Lagi" : actionLabel(next, { stageLabel: card.activeOp?.stageLabel })}
         </button>
@@ -267,7 +267,7 @@ function ShortageSheet({ card, onClose, onDone }) {
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{error}</div>}
       </div>
       <div className="border-t border-line bg-surface px-3 pt-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-        <button type="button" onClick={submit} disabled={busy} className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-btn bg-red text-[16px] font-bold text-white disabled:opacity-50">
+        <button type="button" data-mutates onClick={submit} disabled={busy} className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-btn bg-red text-[16px] font-bold text-white disabled:opacity-50">
           {busy ? "Mengirim…" : `Kirim ke Gudang (${items.length} bahan)`}
         </button>
       </div>
@@ -372,7 +372,7 @@ export default function WorkerLane({ lane = "TABLE" }) {
             <div className="space-y-2">
               <p className="text-[13px] text-ink3">Tindakan berikutnya · Tahap {next.stepNo}</p>
               {next.rework && <p className="rounded-btn bg-orangebg px-3 py-2 text-[13.5px] text-orange">Uji tekstur {String(next.lastVerdict || "").replace("_", " ").toLowerCase()} — sesuaikan lapisan lalu kirim ulang bukti.</p>}
-              <button type="button" data-testid={next.stepNo === 5 ? "open-diagnosis" : undefined} disabled={quickBusy} onClick={() => (isQuickAction(next) ? quick() : setSheet("step"))}
+              <button type="button" data-testid={next.stepNo === 5 ? "open-diagnosis" : undefined} data-mutates={isQuickAction(next) ? "" : undefined} disabled={quickBusy} onClick={() => (isQuickAction(next) ? quick() : setSheet("step"))}
                 className="flex min-h-[64px] w-full items-center justify-center gap-2 rounded-btn bg-accent px-4 text-[17px] font-bold text-white shadow-sm active:scale-[0.99] disabled:opacity-50">
                 {quickBusy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : null}
                 {actionLabel(next, { stageLabel: card.activeOp?.stageLabel })}

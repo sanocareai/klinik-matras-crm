@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, Suspense } from "react";
-import { BrowserRouter, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, useLocation } from "react-router-dom";
+import { legacyRedirectFor } from "./lib/legacyProductionRoutes.js";
+import { deactivateDemo } from "./features/production/demo/demoGate.js";
 import Login from "./pages/Login.jsx";
 import Layout from "./components/Layout.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
@@ -56,6 +58,7 @@ export default function App() {
         .then(({ purgePrincipalDrafts, createIdbAdapter }) => purgePrincipalDrafts(createIdbAdapter(), principal))
         .catch(() => { /* IndexedDB tidak tersedia: tidak ada yang perlu dibersihkan */ });
     }
+    deactivateDemo(); // Mode Latihan selalu mati saat keluar (default OFF untuk pengguna berikutnya)
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     disconnectSocket();
@@ -165,6 +168,10 @@ export default function App() {
 // P8: halaman MANDIRI (aplikasi PIC Table/Corner, Andon TV) tampil tanpa kerangka desktop; sisanya lewat tab + Layout seperti biasa.
 function AppFrame({ tabsCtx, user, onLogout }) {
   const location = useLocation();
+  // P12B.2 — rute Production lama yang digantikan halaman MANDIRI (mis. Antrean Kerja lama → Aplikasi Meja) dialihkan di sini;
+  // yang digantikan halaman biasa dialihkan oleh TabsProvider tanpa membongkar tab (lihat TabsContext.jsx).
+  const legacy = legacyRedirectFor(location.pathname + location.search);
+  if (legacy?.standalone) return <Navigate to={legacy.to} replace />;
   const standalone = standalonePageFor(location.pathname);
   if (standalone) {
     return (

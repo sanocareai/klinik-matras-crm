@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
   DOC_FILTERS, DOC_GROUP_LABEL, DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS, docBatches, docFriendlyError, hasFailed, isRetryableDocError, isUploading, itemsForCorrection, rawMediaUrl, submitState, toSubmitItems,
 } from "../src/features/production/documentation.js";
+import { PRODUCTION_NAV } from "../src/lib/productionNav.js";
 import { DOC_CATEGORIES, DOC_GROUPS, DOC_QUEUE_FILTERS, DOC_SOURCES } from "../../backend/src/lib/domain/productionDocumentation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -78,11 +79,10 @@ test("pesan galat ramah & aturan kunci idempoten: jaringan putus = coba lagi den
   assert.equal(isRetryableDocError({ status: 409 }), false); assert.equal(isRetryableDocError({ status: 403 }), false);
 });
 
-test("menu & route: Aplikasi Dokumentasi di 'MODE KERJA & PERANGKAT' sejajar Aplikasi Meja/Corner/Andon TV; halaman mandiri /produksi/dokumentasi", () => {
-  const section = LAYOUT.slice(LAYOUT.indexOf('section: "MODE KERJA & PERANGKAT"'));
-  const block = section.slice(0, section.indexOf("PENGATURAN & ADMINISTRASI"));
-  for (const label of ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]) assert.ok(block.includes(`label: "${label}"`), label);
-  assert.match(block, /to: "\/produksi\/dokumentasi", +label: "Aplikasi Dokumentasi"/);
+test("menu & route: Aplikasi Dokumentasi di 'MODE KERJA' sejajar Aplikasi Meja/Corner/Andon TV; halaman mandiri /produksi/dokumentasi", () => {
+  const mode = PRODUCTION_NAV.find((sec) => sec.section === "MODE KERJA");
+  assert.deepEqual(mode.items.map((x) => x.label), ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]);
+  assert.equal(mode.items.find((x) => x.label === "Aplikasi Dokumentasi").to, "/produksi/dokumentasi");
   assert.match(REGISTRY, /path: "\/produksi\/dokumentasi", render: \(\) => <DemoPage><ProductionDocumentation \/><\/DemoPage>/); // P12A: dibungkus Mode Demo (admin-only)
   const standalone = REGISTRY.slice(REGISTRY.indexOf("export const STANDALONE_PAGES"), REGISTRY.indexOf("export function standalonePageFor"));
   assert.ok(standalone.includes("/produksi/dokumentasi"), "mandiri (PWA), bukan halaman sidebar");

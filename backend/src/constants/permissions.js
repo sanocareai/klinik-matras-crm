@@ -80,7 +80,7 @@ export const PERMISSIONS = {
   PRODUCTION_REPORT_WAREHOUSE: "production_report:warehouse", // laporan Gudang & bahan terkait (WAREHOUSE + pemegang READ)
   PRODUCTION_REPORT_SELF: "production_report:self", // hanya ringkasan pekerjaan sendiri (PIC/dokumentasi/QC)
   PRODUCTION_TARGET_WRITE: "production_target:write", // P11.1 — mengatur target harian tersimpan historis (ADMIN, OWNER)
-  PRODUCTION_DEMO_VIEW: "production_demo:view", // P12A — Mode Demo (data sintetis frontend, baca-saja) hanya ADMIN, OWNER
+  PRODUCTION_DEMO_VIEW: "production_demo:view", // P12A/P12B.2 — Mode Latihan (data sintetis frontend, baca-saja): ADMIN, OWNER, PRODUCTION_LEAD, PRODUCTION_WORKER, QC_LEAD, WAREHOUSE, PRODUCTION_DOCUMENTER
   // Keputusan owner 4 Oktober 2026: ADMIN/OWNER boleh mengerjakan SEMUA lini produksi (Lead, Meja/Corner, QC, Gudang, Dokumenter).
   // PRODUCTION_EXECUTE_ANY = boleh mengerjakan tahap pada unit yang ditugaskan ke PIC LAIN (melewati pagar operator-yang-ditugaskan);
   // aksi TETAP tercatat atas nama user yang menekan (actor_id), bukan atas nama PIC — jejak audit tetap jujur.
@@ -322,6 +322,7 @@ export const ROLE_PERMISSIONS = {
   // telepon customer maupun harga.
   PRODUCTION_WORKER: [
     P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_MATERIAL_WRITE, P.PRODUCTION_REPORT_SELF,
+    P.PRODUCTION_DEMO_VIEW, // P12B.2 — Mode Latihan (sintetis, baca-saja; tidak memberi akses data nyata apa pun)
     P.CUSTOMER_READ, P.ORDER_READ,
     // D-116 — baca saja: tahu unit yang dikerjakan sedang menangani komplain
     // apa, TIDAK memutuskan status/root cause kasus (itu ranah PRODUCTION_LEAD).
@@ -330,6 +331,7 @@ export const ROLE_PERMISSIONS = {
 
   PRODUCTION_LEAD: [
     P.UNIT_READ, P.UNIT_STAGE_WRITE, P.UNIT_ROUTING_WRITE, P.UNIT_MATERIAL_WRITE, P.SCOPE_REVISION_PROPOSE,
+    P.PRODUCTION_DEMO_VIEW, // P12B.2 — Mode Latihan
     P.CUSTOMER_READ, P.ORDER_READ,
     // ORDER_WRITE (5 September 2026, D-086 — laporan owner: "sales suka
     // lupa ubah status order, semua divisi harus bisa update status order
@@ -360,6 +362,7 @@ export const ROLE_PERMISSIONS = {
 
   QC_LEAD: [
     P.UNIT_READ, P.UNIT_STAGE_WRITE, P.QC_WRITE, P.SCOPE_REVISION_PROPOSE, P.PRODUCTION_REPORT_SELF,
+    P.PRODUCTION_DEMO_VIEW, // P12B.2 — Mode Latihan
     P.CUSTOMER_READ, P.ORDER_READ,
     P.DASHBOARD_READ,
     // D-116 — menautkan hasil QC ulang ke kasus (POST /complaints/:id/link-qc
@@ -369,6 +372,7 @@ export const ROLE_PERMISSIONS = {
 
   WAREHOUSE: [
     P.PRODUCTION_REPORT_WAREHOUSE,
+    P.PRODUCTION_DEMO_VIEW, // P12B.2 — Mode Latihan
     P.INVENTORY_READ, P.INVENTORY_WRITE, P.UNIT_MATERIAL_WRITE,
     P.UNIT_READ,
     // D-116 — mengelola Material Requirement (POST /complaints/:id/material-
@@ -481,6 +485,7 @@ export const ROLE_PERMISSIONS = {
   // pembayaran, jurnal, nomor telepon, UNIT_STAGE_WRITE atau QC_WRITE.
   PRODUCTION_DOCUMENTER: [
     P.UNIT_READ, P.PRODUCTION_DOCUMENTATION_WRITE, P.PRODUCTION_REPORT_SELF,
+    P.PRODUCTION_DEMO_VIEW, // P12B.2 — Mode Latihan
   ],
 
   // APPROVER — penyetuju: membaca dan MEMUTUSKAN (setuju/tolak) pengajuan, tidak

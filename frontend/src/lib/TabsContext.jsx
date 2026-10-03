@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { loadTabs, saveTabs } from "./openTabs.js";
 import { titleFromPath, findTabIndexByPath, dedupeTabs } from "./tabTitles.js";
 import { resolveEntryPath } from "../routes/pageRegistry.jsx";
+import { legacyRedirectFor } from "./legacyProductionRoutes.js";
 
 // D-144 (9 September 2026) — permintaan owner: "workspace SANSS seperti
 // Notion, bisa buka tab banyak sekaligus DALAM 1 app". Dua keputusan
@@ -102,6 +103,12 @@ export function TabsProvider({ pages, ctx, children }) {
     // hilang lagi walau initializer-nya sudah benar. Dua tempat ini
     // (initializer + efek sinkron) HARUS konsisten menyertakan search.
     const path = resolveEntryPath(location.pathname + location.search);
+    // P12B.2 — URL browser berupa rute Production LAMA: tab sudah menyimpan tujuan kanonis (resolveEntryPath), samakan URL-nya juga
+    // (replace, bukan push) supaya bilah alamat/Back tidak membawa pengguna ke halaman yang sudah tidak ada.
+    if (legacyRedirectFor(location.pathname + location.search) && path !== location.pathname + location.search) {
+      skipNextSync.current = true;
+      navigate(path, { replace: true });
+    }
     setTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, path, title: titleFromPath(path) } : t)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
@@ -182,8 +189,16 @@ export function TabsProvider({ pages, ctx, children }) {
     });
   }
 
+  // P12B.2 — hub bertab (Order Produksi, KPI & Laporan, …) menyimpan tab terpilihnya di path TAB AKTIF (?tab=…) supaya bertahan saat
+  // muat ulang / pindah tab dalam-app. replace, bukan push: berpindah subtab tidak menambah riwayat Back.
+  function replaceActivePath(path) {
+    const resolved = resolveEntryPath(path);
+    setTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, path: resolved } : t)));
+    navigate(resolved, { replace: true }); // pathname sama (hanya query) → efek sinkron tidak jalan, jadi TANPA skipNextSync
+  }
+
   const value = useMemo(
-    () => ({ tabs, activeTabId, pages, ctx, openInActiveTab, openNewTab, switchTab, closeTab, closeOthers, reorderTabs }),
+    () => ({ tabs, activeTabId, pages, ctx, openInActiveTab, openNewTab, switchTab, closeTab, closeOthers, reorderTabs, replaceActivePath }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tabs, activeTabId, pages, ctx]
   );

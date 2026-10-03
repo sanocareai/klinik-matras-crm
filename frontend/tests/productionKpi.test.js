@@ -36,9 +36,9 @@ test("kelompok metrik mempertahankan urutan server", () => {
   assert.deepEqual(g.map((x) => [x.group, x.items.map((i) => i.key)]), [["Target", ["a", "c"]], ["Arus", ["b"]]]);
 });
 
-test("tab menurut izin: penuh = 5 tab; Gudang = Gudang saja; PIC/QC/Dokumentasi = Ringkasan Saya; tanpa izin = kosong", () => {
-  assert.deepEqual(tabsFor({ summary: true, stations: true, operators: true, units: true, warehouse: true, self: true }).map((t) => t.key), ["ringkasan", "meja", "pic", "gudang", "laporan"]);
-  assert.deepEqual(tabsFor({ summary: false, stations: false, operators: false, units: false, warehouse: true, self: false }).map((t) => t.key), ["gudang"]);
+test("tab menurut izin: penuh = 7 tab (P12B.2: + Produksi & Export); Gudang = Gudang + Export; PIC/QC/Dokumentasi = Ringkasan Saya; tanpa izin = kosong", () => {
+  assert.deepEqual(tabsFor({ summary: true, stations: true, operators: true, units: true, warehouse: true, self: true }).map((t) => t.key), ["ringkasan", "produksi", "meja", "pic", "gudang", "laporan", "export"]);
+  assert.deepEqual(tabsFor({ summary: false, stations: false, operators: false, units: false, warehouse: true, self: false }).map((t) => t.key), ["gudang", "export"]);
   assert.deepEqual(tabsFor({ warehouse: false, self: true }).map((t) => t.key), ["saya"]);
   assert.deepEqual(tabsFor({}), []); assert.deepEqual(tabsFor(undefined), []);
 });
@@ -79,7 +79,7 @@ test("pagar kode halaman: baca-saja (tanpa metode tulis), semua angka dari serve
   assert.match(registry, /path: "\/bengkel\/kpi"/); assert.match(registry, /path: "\/warehouse\/kpi", render: \(\) => <DemoPage><ProductionKpi defaultTab="gudang" \/><\/DemoPage>/); assert.match(registry, /path: "\/produksi\/ringkasan-saya"/);
   assert.match(page, /makeRange/, "periode memakai skema tanggal standar app");
   assert.match(parts, /DateRangePicker/); assert.doesNotMatch(parts, /type="date"/, "tanpa input tanggal native");
-  assert.match(read("src/components/Topbar.jsx"), /"\/bengkel\/kpi":\s*\["Produksi", "KPI Produksi"\]/);
+  assert.match(read("src/components/Topbar.jsx"), /"\/bengkel\/kpi":\s*\["Produksi", "KPI & Laporan"\]/);
   assert.match(read("src/components/Layout.jsx"), /\/warehouse\/kpi/);
 });
 

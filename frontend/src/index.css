@@ -195,6 +195,11 @@ body {
    melebihi tinggi yang tersedia, `.sidebar-nav` yang scroll (sesuai
    `overflow-y:auto` yang SUDAH ada) — bukan isinya yang gepeng. */
 .nav-section { flex-shrink: 0; }
+/* P12B.2 — nama menu maksimal DUA baris (tidak terpotong satu baris, tidak melebar); section yang di-pin (Pengaturan) menempel di dasar kolom menu,
+   footer pengguna tidak ikut menutup menu (flex-shrink 0, kolom menu yang scroll). */
+.sidebar-link .nav-label { min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; overflow-wrap: anywhere; }
+.nav-section-bottom { margin-top: auto; }
+.sidebar-footer { flex-shrink: 0; }
 .sidebar-nav { flex: 1; display: flex; flex-direction: column; padding: 6px 12px; gap: 1px; overflow-y: auto; min-height: 0; }
 
 .sidebar-link {

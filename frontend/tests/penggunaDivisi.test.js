@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PRODUCTION_NAV } from "../src/lib/productionNav.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baca = (rel) => fs.readFileSync(path.join(__dirname, "..", "src", rel), "utf8");
@@ -35,7 +36,7 @@ test("api.js: setUserDivisions memakai PUT /users/:id/divisions dengan daftar di
 
 test("Layout: menu Pengajuan Biaya mengikuti divisi (bolehDivisi) untuk Marketing, Management, HR-GA, Produksi, Gudang; divisi dimuat dari server", () => {
   const layout = baca("components/Layout.jsx");
-  for (const [rute, div] of [["/marketing/pengajuan-biaya", "MARKETING"], ["/kendali/pengajuan-biaya", "MANAGEMENT"], ["/kendali/pengajuan-hrga", "HR_GA"], ["/bengkel/pengajuan-biaya", "PRODUCTION"], ["/warehouse/pengajuan-biaya", "WAREHOUSE"]]) {
+  for (const [rute, div] of [["/marketing/pengajuan-biaya", "MARKETING"], ["/kendali/pengajuan-biaya", "MANAGEMENT"], ["/kendali/pengajuan-hrga", "HR_GA"], ["/warehouse/pengajuan-biaya", "WAREHOUSE"]]) {
     assert.match(layout, new RegExp(`to: "${rute.replace(/\//g, "\\/")}"[^}]*bolehDivisi: \\["${div}"\\]`), rute);
   }
   assert.match(layout, /api\.getMyPortals\(\)\.then\(\(me\) =>[^)]*divisions/);

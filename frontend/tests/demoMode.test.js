@@ -16,14 +16,14 @@ const snapshot = JSON.parse(read("src/features/production/demo/demoSnapshot.json
 const get = (u) => snapshot.entries.find((e) => e.url === u)?.data;
 
 test("label & gerbang: nonaktif = lewat; aktif = bacaan data Production dari dataset, selain itu normal; non-GET ditolak SEBELUM jaringan", async () => {
-  assert.equal(DEMO_LABEL, "MODE DEMO — bukan data operasional");
+  assert.equal(DEMO_LABEL, "MODE LATIHAN — bukan data operasional");
   assert.equal(demoGate("/production-v2/board", "GET"), null); assert.equal(demoBlock("Unggah"), null); assert.equal(isDemoActive(), false);
   let v = demoVersion(); const seen = []; const un = subscribeDemo(() => seen.push(demoVersion()));
   activateDemo((p) => ({ dari: "demo", p })); assert.equal(isDemoActive(), true); assert.ok(demoVersion() > v);
   assert.deepEqual(await demoGate("/production-v2/command-center", "GET"), { dari: "demo", p: "/production-v2/command-center" });
   for (const p of ["/production/operators", "/inventory/stock", "/master-data/service-catalog", "/production-planning/qc/queue?tab=AWAITING_QC", "/complaints?currentOwner=QC"]) assert.ok(demoGate(p, "GET") instanceof Promise, p);
   assert.equal(demoGate("/auth/me", "GET"), null, "auth/notifikasi tidak berisi data produksi"); assert.equal(demoGate("/conversations/latest-unread?since=x", "GET"), null);
-  for (const m of ["POST", "PATCH", "PUT", "DELETE", "post"]) await assert.rejects(demoGate("/production-v2/plans", m), (e) => e instanceof DemoReadOnlyError && e.code === "DEMO_READ_ONLY" && /dinonaktifkan di Mode Demo/.test(e.message));
+  for (const m of ["POST", "PATCH", "PUT", "DELETE", "post"]) await assert.rejects(demoGate("/production-v2/plans", m), (e) => e instanceof DemoReadOnlyError && e.code === "DEMO_READ_ONLY" && /dinonaktifkan di Mode Latihan/.test(e.message));
   await assert.rejects(demoGate("/auth/login", "POST"), DemoReadOnlyError, "bahkan jalur non-produksi ditolak bila bukan GET");
   await assert.rejects(demoBlock("Export"), DemoReadOnlyError);
   deactivateDemo(); assert.equal(isDemoActive(), false); assert.equal(demoGate("/production-v2/board", "GET"), null); un(); assert.ok(seen.length >= 2);
@@ -135,7 +135,7 @@ test("pagar kode: pembungkus 7 halaman + KPI gudang; api.js memanggil gerbang; a
   assert.match(api, /function uploadWithProgress[\s\S]{0,120}demoBlock/); assert.match(api, /async function requestFormData[\s\S]{0,120}demoBlock/); assert.match(api, /exportProductionReport: async \(qs\) => \{\s*const demo = demoBlock/);
   assert.doesNotMatch(api, /demoSnapshot|demoLoader/, "dataset tidak diimpor statis oleh api.js");
   const ctl = read("src/features/production/demo/DemoControls.jsx");
-  assert.match(ctl, /canUseDemo = \(roles = \[\]\) => roles\.some\(\(r\) => r === "ADMIN" \|\| r === "OWNER"\)/);
+  assert.match(ctl, /canUseDemo = canUseTraining/); // P12B.2: daftar peran ada di demoRoles.js (diuji di trainingMode.test.js)
   assert.match(ctl, /await api\.getDemoAccess\(\)[\s\S]{0,200}import\("\.\/demoLoader\.js"\)/, "izin server dulu, dataset sesudahnya");
   const code = ctl.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n").replace(/\/\/.*$/gm, "");
   assert.doesNotMatch(code, /localStorage\.setItem|sessionStorage|document\.cookie/, "demo tidak disimpan");
@@ -180,9 +180,9 @@ test("audit rilis: snapshot publik 100% sintetis (tanpa /media/, tanda tangan, J
 test("UI demo: catatan 11 vs 12 unit, tooltip Bahasa Indonesia untuk tombol/seret-lepas dinonaktifkan, tombol Excel/PDF & unggah bertanda data-mutates", () => {
   const ctl = read("src/features/production/demo/DemoControls.jsx");
   assert.match(ctl, /Pipeline Status Produksi hanya menampilkan 11 unit karena 1 unit \(QA-PV2-U11\) sudah selesai/); assert.match(ctl, /data-testid="demo-unit-note"/);
-  assert.match(ctl, /DEMO_DISABLED_TIP = "Dinonaktifkan di Mode Demo/); assert.match(ctl, /el\.title = DEMO_DISABLED_TIP/);
+  assert.match(ctl, /DEMO_DISABLED_TIP = "Dinonaktifkan di Mode Latihan/); assert.match(ctl, /el\.title = DEMO_DISABLED_TIP/);
   assert.match(read("src/features/production/PlanCard.jsx"), /title="Tahan lalu seret"/);
-  assert.match(read("src/pages/bengkel/ProductionRencanaWorkspace.jsx"), /Simulasi Mode Demo — .*Tidak disimpan; data awal kembali saat dimuat ulang/);
+  assert.match(read("src/pages/bengkel/ProductionRencanaWorkspace.jsx"), /Simulasi Mode Latihan — .*Tidak disimpan; data awal kembali saat dimuat ulang/);
   assert.match(read("src/features/production/ReportParts.jsx"), /data-mutates disabled=\{disabled \|\| !!busy\} onClick=\{\(\) => go\("xlsx"\)\}/);
   assert.match(read("src/features/production/UnitPhotoThumb.jsx"), /data-mutates onClick=\{\(\) => inputRef\.current\?\.click\(\)\}/);
 });
