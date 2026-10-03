@@ -104,7 +104,7 @@ NEW_MIG="$(sg diff --name-only --diff-filter=A "$PREV_FULL" "$CAND_FULL" -- back
 EXPECT_APPLIED_AFTER=$((EXPECT_APPLIED + 1))
 ok "migrasi baru aditif = 1 ($MIGRATION_NAME); applied pasca-switch yang diharapkan = $EXPECT_APPLIED_AFTER"
 MIG_SQL="$(sg show "${CAND_FULL}:backend/prisma/migrations/${MIGRATION_NAME}/migration.sql")"
-echo "$MIG_SQL" | grep -qiE '\bDROP\b|\bUPDATE\b|\bDELETE\b|ALTER TABLE.*ALTER COLUMN' && die "migration.sql BUKAN aditif murni — STOP"
+printf '%s\n' "$MIG_SQL" | sed -E 's/ON (UPDATE|DELETE) (CASCADE|RESTRICT|SET NULL|SET DEFAULT|NO ACTION)//gi' | grep -qiE '\bDROP\b|\bUPDATE\b|\bDELETE\b|\bINSERT\b|ALTER TABLE.*ALTER COLUMN' && die "migration.sql BUKAN aditif murni — STOP"
 echo "$MIG_SQL" | grep -q $'\r' && die "migration.sql mengandung CRLF"
 ok "migration.sql aditif murni (CREATE TYPE/TABLE/INDEX + FK), LF"
 for f in backend/package-lock.json frontend/package-lock.json backend/package.json frontend/package.json docker-compose.yml docker-compose.release.yml backend/Dockerfile; do cmp -s <(sg show "${PREV_FULL}:$f") <(sg show "${CAND_FULL}:$f") || die "$f berubah di luar ekspektasi"; done
