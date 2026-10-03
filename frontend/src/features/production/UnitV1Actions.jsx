@@ -34,6 +34,8 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
   useEffect(() => { setDraft(draftOf(data.unit)); setServiceId(""); }, [data.unit.id, data.unit.priority, data.unit.productionDueAt, data.unit.serviceId]);
   useEffect(() => { if (canRoute) api.getServiceCatalog().then((d) => setServices(d.services || [])).catch(() => {}); }, [canRoute]);
 
+  // Dua lapis konflik: (1) pra-cek ramah di klien (langsung memberi tahu bidang apa yang berubah), (2) kunci ATOMIK di server — nilai yang dilihat klien dikirim sebagai
+  // expected dan server menulis hanya bila DB masih sama (409 UNIT_CONFLICT bila tidak). Lapis 2 yang menjadi penegak; lapis 1 hanya kenyamanan.
   async function run(section, fields, write, okText) {
     setBusy(section); setMsg({ section: "", kind: "", text: "" });
     try {
@@ -43,12 +45,15 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
       await write();
       onData(await api.getUnitTimeline(unit.id)); onChanged?.();
       setMsg({ section, kind: "ok", text: okText });
-    } catch (e) { setMsg({ section, kind: "error", text: e.message || "Gagal menyimpan" }); } finally { setBusy(""); }
+    } catch (e) {
+      if (e.code === "UNIT_CONFLICT" || e.code === "UNIT_V2_OWNED") { try { onData(await api.getUnitTimeline(unit.id)); } catch { /* biarkan */ } }
+      setMsg({ section, kind: "error", text: e.code === "UNIT_CONFLICT" ? `${e.message} Tampilan dimuat ulang.` : (e.message || "Gagal menyimpan") });
+    } finally { setBusy(""); }
   }
 
-  const saveService = () => run("service", ["service"], () => api.setUnitService(unit.id, serviceId), "Layanan teknis tersimpan.");
+  const saveService = () => run("service", ["service"], () => api.setUnitService(unit.id, serviceId, unit.serviceId ?? null), "Layanan teknis tersimpan.");
   const patch = productionPatchOf(draft, unit);
-  const saveProduction = () => run("production", ["priority", "due"], () => api.updateUnitProduction(unit.id, patch), "Prioritas & target tersimpan.");
+  const saveProduction = () => run("production", ["priority", "due"], () => api.updateUnitProduction(unit.id, { ...patch, expected: { priority: unit.priority || "NORMAL", productionDueAt: unit.productionDueAt || null } }), "Prioritas & target tersimpan.");
   const resolveBlocker = () => run("blocker", ["blocker"], async () => { await api.resolveBlocker(unit.id, data.activeBlocker.id, note.trim() || undefined); setResolving(false); setNote(""); }, "Blokir ditandai selesai.");
   const m = (s) => (msg.section === s ? msg : { kind: "", text: "" });
   const blocker = data.activeBlocker;

@@ -2,6 +2,8 @@ import React from "react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { STAGE_LOG_STATUS } from "@/features/bengkel/unitStatus.js";
 import UnitV1Actions from "./UnitV1Actions.jsx";
+import UnitV1Stage from "./UnitV1Stage.jsx";
+import UnitV1Materials from "./UnitV1Materials.jsx";
 import { V2_SECTIONS_UNAVAILABLE, dash, unitFacts } from "./unitOrderFallbackModel.js";
 
 // P12B.4 — isi drawer Unit 360 untuk unit yang BELUM masuk Production V2 (Unit 360 = 404; cohort tidak diperluas). Membaca data order/unit ASLI
@@ -24,6 +26,8 @@ export default function UnitOrderFallback({ data, error, loading, roles = [], on
         ))}
       </dl>
       <UnitV1Actions data={data} roles={roles} onData={onData} onChanged={onChanged} />
+      <UnitV1Stage data={data} roles={roles} onData={onData} onChanged={onChanged} />
+      <UnitV1Materials unitId={data.unit.id} roles={roles} onChanged={onChanged} />
       {data.productionStatusReason && <p className="m-0 text-[12px] text-ink3">{data.productionStatusReason}</p>}
       <section data-testid="unit-fallback-path">
         <h3 className="m-0 mb-1 text-[13px] font-bold text-ink">Jalur tahap produksi (V1)</h3>

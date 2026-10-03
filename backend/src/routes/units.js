@@ -25,10 +25,16 @@ import { mapRouteStagesToVisualization } from "../lib/domain/productionRouting.j
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services/productionRouting.js";
 import { postStockMovement } from "../services/inventoryLedger.js";
+import { assertUnitNotInV2Cohort, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
 import { prisma } from "../db.js";
 
 export const unitRouter = express.Router();
 unitRouter.use(requireAuth);
+
+// P12B.6 — ID di path wajib UUID: ID rusak (mis. "abc") sebelumnya jatuh ke cast Postgres → 500. Sekarang 400 yang jelas, sebelum query apa pun.
+for (const [name, label] of [["id", "unit"], ["stageId", "tahap"], ["blockerId", "blokir"]]) {
+  unitRouter.param(name, (req, res, next, value) => (UUID_RE.test(String(value)) ? next() : res.status(400).json({ error: `ID ${label} tidak valid`, code: "ID_INVALID" })));
+}
 
 // Upload foto tahap produksi — pola SAMA dengan routes/products.js (multer
 // disk storage + kompresi sudah dilakukan di klien sebelum upload, lihat
@@ -58,7 +64,7 @@ function handleEngineError(err, res) {
   // "stok tidak cukup") juga dijawab 400 yang jelas, bukan bocor ke 500
   // generik di bawah.
   if (typeof err.statusCode === "number") {
-    return res.status(err.statusCode).json({ error: err.message });
+    return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && /^UNIT_/.test(err.code) ? { code: err.code } : {}), ...(err.current ? { current: err.current } : {}) });
   }
   // P2034 = konflik transaksi SERIALIZABLE (Production Core Slice 3I) — dua
   // perintah eksekusi (START/PAUSE/RESUME/COMPLETE) bersamaan pada tahap yang
@@ -191,8 +197,9 @@ unitRouter.post("/:id/stages/:stageId/qc", requirePermission(P.QC_WRITE), async 
 // customer untuk PERUBAHAN harga masih pekerjaan terpisah, belum dibangun.
 unitRouter.patch("/:id/service", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
   try {
-    const { serviceId } = req.body;
+    const { serviceId, expectedServiceId } = req.body;
     if (!serviceId) return res.status(400).json({ error: "serviceId wajib diisi" });
+    if (!UUID_RE.test(String(serviceId))) return res.status(400).json({ error: "serviceId tidak valid", code: "ID_INVALID" });
 
     const service = await prisma.serviceCatalog.findUnique({ where: { id: serviceId } });
     if (!service) return res.status(404).json({ error: "Layanan tidak ditemukan di katalog" });
@@ -204,10 +211,16 @@ unitRouter.patch("/:id/service", requirePermission(P.UNIT_ROUTING_WRITE), async 
     // — sebelum ini penetapan/perubahan layanan unit sama sekali tidak
     // tercatat di mana pun selain updatedAt polos.
     const unit = await prisma.$transaction(async (tx) => {
-      const updated = await tx.unit.update({
-        where: { id: req.params.id },
-        data: { serviceId, serviceLine: service.serviceLine },
-      });
+      // Pagar V2 (P12B.6): unit cohort → layanan teknis lewat Diagnosis (command owner V2), bukan jalur V1 ini.
+      await assertUnitNotInV2Cohort(tx, req.params.id, "layanan teknis");
+      // Konflik ATOMIK: bila klien mengirim expectedServiceId (nilai yang dilihatnya; null = belum ada), tulis hanya jika nilai di DB masih sama (compare-and-set).
+      const guard = expectedServiceId === undefined ? {} : { serviceId: expectedServiceId };
+      const r = await tx.unit.updateMany({ where: { id: req.params.id, ...guard }, data: { serviceId, serviceLine: service.serviceLine } });
+      if (r.count === 0) {
+        const cur = await tx.unit.findUnique({ where: { id: req.params.id }, select: { serviceId: true } });
+        throw new UnitConflictError(["layanan teknis"], { serviceId: cur?.serviceId ?? null });
+      }
+      const updated = await tx.unit.findUniqueOrThrow({ where: { id: req.params.id } });
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.UNIT, entityId: req.params.id,
         eventType: EVENT_TYPES.SERVICE_ASSIGNED, actorId: req.user.id,
@@ -241,7 +254,7 @@ unitRouter.patch("/:id/service", requirePermission(P.UNIT_ROUTING_WRITE), async 
 // mencatat "X -> X" kalau form mengirim nilai yang sama persis.
 unitRouter.patch("/:id/production", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
   try {
-    const { priority, productionDueAt } = req.body;
+    const { priority, productionDueAt, expected } = req.body;
 
     if (priority !== undefined && !PRODUCTION_PRIORITY_VALUES.includes(priority)) {
       return res.status(400).json({ error: `priority harus salah satu dari: ${PRODUCTION_PRIORITY_VALUES.join(", ")}` });
@@ -276,7 +289,22 @@ unitRouter.patch("/:id/production", requirePermission(P.UNIT_ROUTING_WRITE), asy
     }
 
     const unit = await prisma.$transaction(async (tx) => {
-      const updated = await tx.unit.update({ where: { id: req.params.id }, data });
+      // Pagar V2 (P12B.6): unit cohort → prioritas/target diubah di Rencana Produksi (command owner V2).
+      await assertUnitNotInV2Cohort(tx, req.params.id, "prioritas dan target");
+      // Konflik ATOMIK: compare-and-set terhadap nilai yang DILIHAT klien (expected) — tanpa expected, terhadap nilai yang dibaca di atas (menutup lomba baca→tulis).
+      const seen = expected && typeof expected === "object" ? expected : null;
+      const seenDue = seen && "productionDueAt" in seen ? (seen.productionDueAt ? new Date(seen.productionDueAt) : null) : undefined;
+      const guard = {
+        priority: seen && seen.priority !== undefined ? seen.priority : before.priority,
+        productionDueAt: seenDue !== undefined ? seenDue : before.productionDueAt,
+      };
+      const r = await tx.unit.updateMany({ where: { id: req.params.id, ...guard }, data });
+      if (r.count === 0) {
+        const cur = await tx.unit.findUnique({ where: { id: req.params.id }, select: { priority: true, productionDueAt: true } });
+        const changed = [cur?.priority !== guard.priority && "prioritas", String(cur?.productionDueAt?.toISOString?.() ?? null) !== String(guard.productionDueAt?.toISOString?.() ?? null) && "target selesai"].filter(Boolean);
+        throw new UnitConflictError(changed.length ? changed : ["prioritas/target"], { priority: cur?.priority, productionDueAt: cur?.productionDueAt ?? null });
+      }
+      const updated = await tx.unit.findUniqueOrThrow({ where: { id: req.params.id } });
 
       if ("priority" in data) {
         await recordActivity(tx, {
@@ -312,6 +340,7 @@ unitRouter.patch("/:id/production", requirePermission(P.UNIT_ROUTING_WRITE), asy
 // lihat changeUnitRoute().
 unitRouter.post("/:id/route", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
   try {
+    await assertUnitNotInV2Cohort(prisma, req.params.id, "rute produksi");
     const result = await changeUnitRoute(req.params.id, { actorId: req.user.id });
     res.json(result);
   } catch (err) {
@@ -326,6 +355,7 @@ unitRouter.post("/:id/route", requirePermission(P.UNIT_ROUTING_WRITE), async (re
 unitRouter.post("/:id/stages/:stageId/assign", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
   try {
     const { workCenterId, operatorId, note } = req.body;
+    await assertUnitNotInV2Cohort(prisma, req.params.id, "penugasan work center/operator");
     const result = await assignStage(req.params.id, req.params.stageId, {
       workCenterId, operatorId, actorId: req.user.id, note,
     });
@@ -613,6 +643,7 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
     const { materialId, note } = req.body;
     const rawQty = Number(req.body.qty);
     if (!materialId) return res.status(400).json({ error: "Bahan wajib dipilih" });
+    if (!UUID_RE.test(String(materialId))) return res.status(400).json({ error: "ID bahan tidak valid", code: "ID_INVALID" });
     if (!Number.isFinite(rawQty) || rawQty === 0) {
       return res.status(400).json({ error: "Jumlah wajib diisi dan tidak boleh nol" });
     }
@@ -623,6 +654,7 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
 
     const unit = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
+    await assertUnitNotInV2Cohort(prisma, unit.id, "pemakaian bahan");
 
     // rawQty > 0 → pemakaian tambahan (ISSUE, stok berkurang, ledger negatif).
     // rawQty < 0 → koreksi mengurangi (RETURN, stok bertambah, ledger positif).

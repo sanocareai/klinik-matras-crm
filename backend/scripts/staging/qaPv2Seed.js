@@ -172,7 +172,8 @@ async function advance(ctx, W, spec, { unit, order }) {
   if (spec.stage === "diagnosa") { await maybeDocs(ctx, W, spec, run.id); return; }
   // diagnosis + BOM
   await step(meja, 5, DIAG);
-  await kit.patch(A.lead, `/api/units/${unit.id}/service`, { serviceId: W.service.id });
+  // Layanan teknis unit COHORT = hasil Diagnosis (command owner V2); jalur V1 PATCH /units/:id/service DITUTUP (409 UNIT_V2_OWNED) — seeder staging menulis langsung.
+  await prisma.unit.update({ where: { id: unit.id }, data: { serviceId: W.service.id, serviceLine: W.service.serviceLine } });
   const plan = await kit.get(A.lead, `${P}/plans/${planId}`);
   const bom = await kit.post(A.lead, `${P}/plans/${planId}/bom`, { lines: [{ materialId: W.materials["PER-BNL"].id, qty: 1 }, { materialId: W.materials["LTX-05"].id, qty: 2 }], expectedRevision: plan.revision });
   if (spec.stage === "bahan_kurang") {

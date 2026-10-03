@@ -7,9 +7,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PERMISSIONS as P, ROLE_PERMISSIONS } from "../../backend/src/constants/permissions.js";
 import {
-  V1_ROUTING_ROLES, V1_STAGE_ROLES, canResolveBlockerV1, canRouteV1, conflictMessage, detectConflict, draftOf, dueIsoOf, isDraftDirty, productionPatchOf, wibDateOf,
+  V1_ACTION_MATRIX, V1_ASSIGN_ROLES, V1_MATERIAL_ROLES, V1_QC_ROLES, V1_ROUTING_ROLES, V1_STAGE_ROLES, canAssignV1, canMaterialV1, canQcV1, canResolveBlockerV1, canRouteV1, completeFormValid, conflictMessage, detectConflict, draftOf, dueIsoOf,
+  failFormValid, isDraftDirty, needsPhotoOf, pauseFormValid, productionPatchOf, qcFormValid, stageStateOf, wibDateOf,
 } from "../src/features/production/unitV1ActionsModel.js";
-import { PANEL_COPY, isActiveV1, selectV1Units, summarizeV1, topV1Units } from "../src/features/production/nonV2OrdersModel.js";
+import { PANEL_COPY, SOURCE_FILTERS, filterBySource, isActiveV1, selectV1Units, sourceOf, summarizeV1, topV1Units } from "../src/features/production/nonV2OrdersModel.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8");
@@ -75,6 +76,7 @@ test("PAGAR V2: aksi V1 hanya dirender di fallback unit non-V2; drawer cohort & 
   const users = [];
   const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (/\.jsx?$/.test(e.name) && /from "[^"]*UnitV1Actions/.test(fs.readFileSync(p, "utf8")) && !p.endsWith("UnitV1Actions.jsx")) users.push(path.basename(p)); } };
   walk(path.join(here, "..", "src")); assert.deepEqual(users, ["UnitOrderFallback.jsx"]);
+  for (const c of ["UnitV1Stage", "UnitV1Materials"]) { const u2 = []; const w2 = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) w2(p); else if (/\.jsx?$/.test(e.name) && new RegExp(`from "[^"]*${c}`).test(fs.readFileSync(p, "utf8"))) u2.push(path.basename(p)); } }; w2(path.join(here, "..", "src")); assert.deepEqual(u2, ["UnitOrderFallback.jsx"], c); }
   const owners = strip(src("features", "production", "UnitOverviewDrawer.jsx"));
   assert.match(owners, /function V2Owners\(\{ d \}\)/); assert.match(owners, /Layanan teknis diisi lewat <b>Diagnosis<\/b>/); assert.match(owners, /Prioritas dan target diubah di <b>Rencana Produksi<\/b>/);
 });
@@ -107,13 +109,85 @@ test("sumber V1/V2 tanpa duplikasi: unit V2 tidak pernah muncul di panel V1; uni
   assert.match(PANEL_COPY.rencana, /tidak membuat Run/);
 });
 
-test("panel order asli terpasang di Ringkasan, Status Produksi, dan Rencana Produksi; hanya membaca (tanpa Run/backfill/tulis); tersembunyi di Mode Latihan", () => {
-  for (const [f, page] of [["ProductionRingkasan.jsx", "ringkasan"], ["ProductionPlannerV2.jsx", "status"], ["ProductionRencanaWorkspace.jsx", "rencana"]]) {
-    assert.match(src("pages", "bengkel", f), new RegExp(`<NonV2OrdersPanel page="${page}" />`), f);
+test("sumber V1/V2 menyatu di papan/daftar UTAMA dengan badge — bukan panel/workspace kedua", () => {
+  assert.equal(fs.existsSync(path.join(here, "..", "src", "features", "production", "NonV2OrdersPanel.jsx")), false, "panel V1 terpisah dihapus");
+  const hook = strip(src("features", "production", "v1Source.jsx"));
+  assert.deepEqual([...new Set([...hook.matchAll(/\bapi\.(?!js\b)(\w+)/g)].map((m) => m[1]))], ["getWorkOrders"]);
+  assert.doesNotMatch(hook, /api\.(create|update|set|delete|post|patch|record|resolve)\w*/);
+  assert.match(hook, /if \(!demo\) load\(\)/); assert.match(hook, /demo \? \[\] : selectV1Units/, "tersembunyi di Mode Latihan");
+  assert.match(hook, /data-testid="source-badge"/);
+  const planner = strip(src("pages", "bengkel", "ProductionPlannerV2.jsx"));
+  assert.match(planner, /<V1UnitCard key=\{u\.id\} unit=\{u\} onOpen=\{openOverview\} \/>/); assert.match(planner, /\["Unit", "Sumber", "Customer"/); assert.match(planner, /data-testid="v1-row"/);
+  assert.match(planner, /chipsAll/); assert.match(planner, /onChanged=\{reloadV1\}/); assert.doesNotMatch(planner, /NonV2OrdersPanel/);
+  const rencana = strip(src("pages", "bengkel", "ProductionRencanaWorkspace.jsx"));
+  assert.match(rencana, /data-testid="v1-locked"/); assert.match(rencana, /PANEL_COPY\.rencana/); assert.doesNotMatch(rencana, /NonV2OrdersPanel/);
+  assert.doesNotMatch(rencana.slice(rencana.indexOf('data-testid="v1-locked"'), rencana.indexOf('data-testid="meja-grid"')), /onHandleDown|DragHandle|setSchedule|data-mutates/, "unit V1 tidak bisa diseret/dijadwalkan");
+  const ring = strip(src("pages", "bengkel", "ProductionRingkasan.jsx"));
+  assert.match(ring, /data-testid="v1-segment"/); assert.match(ring, /data-testid="v1-attention"/); assert.doesNotMatch(ring, /NonV2OrdersPanel/);
+  const wo = strip(src("pages", "bengkel", "ProductionWorkOrders.jsx"));
+  assert.match(wo, /<SourceBadge source=\{sourceOf\(u\)\}/g); assert.match(wo, /data-testid="order-source-filter"/); assert.match(wo, /filterBySource\(/);
+});
+
+test("filter sumber & badge: sourceOf/filterBySource", () => {
+  const u = [{ id: "a", inProductionV2: true }, { id: "b", inProductionV2: false }, { id: "c" }];
+  assert.deepEqual(u.map(sourceOf), ["V2", "V1", "V1"]);
+  assert.deepEqual(filterBySource(u, "V2").map((x) => x.id), ["a"]); assert.deepEqual(filterBySource(u, "V1").map((x) => x.id), ["b", "c"]); assert.equal(filterBySource(u, "").length, 3);
+  assert.deepEqual(SOURCE_FILTERS.map((f) => f.key), ["", "V2", "V1"]);
+});
+
+test("peran QC/bahan/penugasan = cermin izin backend (QC_WRITE / UNIT_MATERIAL_WRITE / PRODUCTION_ASSIGNMENT_WRITE)", () => {
+  const pairs = [[P.QC_WRITE, V1_QC_ROLES, canQcV1], [P.UNIT_MATERIAL_WRITE, V1_MATERIAL_ROLES, canMaterialV1], [P.PRODUCTION_ASSIGNMENT_WRITE, V1_ASSIGN_ROLES, canAssignV1]];
+  for (const [perm, ui, fn] of pairs) {
+    const server = rolesWith(perm);
+    for (const r of ui) assert.ok(server.includes(r), `${r} memegang ${perm}`);
+    for (const r of server.filter((x) => ["PRODUCTION_WORKER", "PRODUCTION_LEAD", "QC_LEAD", "ADMIN", "OWNER", "WAREHOUSE"].includes(x))) assert.ok(ui.includes(r), `${r} tidak tertinggal`);
+    for (const r of ["SALES", "FINANCE", "DRIVER", "PRODUCTION_DOCUMENTER"]) assert.equal(fn([r]), false, r);
   }
-  const panel = strip(src("features", "production", "NonV2OrdersPanel.jsx"));
-  assert.deepEqual([...new Set([...panel.matchAll(/\bapi\.(?!js\b)(\w+)/g)].map((m) => m[1]))], ["getWorkOrders"]);
-  assert.doesNotMatch(panel, /api\.(create|update|set|delete|post|patch|record|resolve)\w*/);
-  assert.match(panel, /if \(!demo\) load\(\)/); assert.match(panel, /if \(demo \|\| units === false/);
-  assert.match(panel, /<UnitOverviewDrawer unitId=\{openId\} onClose=\{\(\) => setOpenId\(null\)\} onChanged=\{load\} \/>/);
+  assert.equal(canQcV1(["PRODUCTION_WORKER"]), false); assert.equal(canAssignV1(["QC_LEAD"]), false); assert.equal(canMaterialV1(["QC_LEAD"]), false);
+});
+
+test("keadaan tahap → tombol: stageStateOf menurunkan satu keadaan dari timeline; tanpa lewati/rute", () => {
+  const stage = (o = {}) => ({ id: "s1", labelId: "Bongkar", requiresQc: false, requiresPhoto: true, ...o });
+  const mk = (cur, status, extra = {}) => ({ unit: { currentStageId: cur ? "s1" : null }, path: [{ stage: stage(extra.stage), status, isCurrent: !!cur }, { stage: stage({ id: "s2", labelId: "Berikut" }), status: "NOT_STARTED", isCurrent: false }], needsService: false });
+  assert.equal(stageStateOf({ unit: { currentStageId: null }, path: [], needsService: true }).kind, "NEEDS_SERVICE");
+  assert.equal(stageStateOf(mk(false, "NOT_STARTED")).kind, "NOT_STARTED"); assert.equal(stageStateOf(mk(false, "NOT_STARTED")).first.labelId, "Bongkar");
+  assert.equal(stageStateOf(mk(true, "NOT_STARTED")).kind, "READY"); assert.equal(stageStateOf(mk(true, "READY")).kind, "READY");
+  assert.equal(stageStateOf(mk(true, "IN_PROGRESS")).kind, "IN_PROGRESS");
+  assert.equal(stageStateOf(mk(true, "IN_PROGRESS", { stage: { requiresQc: true } })).kind, "IN_PROGRESS_QC");
+  assert.equal(stageStateOf(mk(true, "PAUSED")).kind, "PAUSED"); assert.equal(stageStateOf(mk(true, "BLOCKED")).kind, "BLOCKED");
+  assert.equal(stageStateOf({ unit: { currentStageId: "s9" }, path: [], needsService: false }).kind, "ALL_DONE");
+  assert.equal(needsPhotoOf(stageStateOf(mk(true, "IN_PROGRESS"))), true); assert.equal(needsPhotoOf(stageStateOf(mk(true, "IN_PROGRESS", { stage: { requiresPhoto: false } }))), false);
+  const code = strip(src("features", "production", "UnitV1Stage.jsx"));
+  for (const a of ["startUnitStage", "completeUnitStage", "failUnitStage", "pauseUnitStage", "resumeUnitStage", "recordQcFitTest", "assignUnitStage", "uploadUnitPhotos"]) assert.match(code, new RegExp(`api\\.${a}\\(`), a);
+  assert.doesNotMatch(code, /skipUnitStage|changeUnitRoute|adminBypass|production-v2/, "aksi berisiko tidak dibuka");
+});
+
+test("validasi form tahap: alasan OTHER wajib catatan; QC wajib berat acuan, edukasi bila override, foto bila tahap mewajibkan", () => {
+  assert.equal(failFormValid({ reason: "OTHER", note: "x" }), false); assert.equal(failFormValid({ reason: "OTHER", note: "alasan" }), true); assert.equal(failFormValid({ reason: "MATERIAL_SHORTAGE", note: "" }), true);
+  assert.equal(pauseFormValid({ reason: "OTHER", note: "" }), false); assert.equal(pauseFormValid({ reason: "BREAK", note: "" }), true);
+  assert.equal(qcFormValid({ referenceWeightKg: "70", needsPhoto: false, photos: [] }), false, "verdict wajib dipilih"); assert.equal(qcFormValid({ verdict: "PAS", referenceWeightKg: "", needsPhoto: false, photos: [] }), false); assert.equal(qcFormValid({ verdict: "PAS", referenceWeightKg: "70", needsPhoto: false, photos: [] }), true);
+  assert.equal(qcFormValid({ verdict: "PAS", referenceWeightKg: "70", override: "X", educationGiven: false, needsPhoto: false, photos: [] }), false);
+  assert.equal(qcFormValid({ verdict: "PAS", referenceWeightKg: "70", needsPhoto: true, photos: [] }), false); assert.equal(qcFormValid({ verdict: "PAS", referenceWeightKg: "70", needsPhoto: true, photos: ["u"] }), true);
+  assert.equal(completeFormValid({ needsPhoto: true, photos: [] }), false); assert.equal(completeFormValid({ needsPhoto: false, photos: [] }), true);
+});
+
+test("MATRIKS aksi: setiap aksi halaman lama terdaftar dengan status TERSEDIA/DIBATASI/SENGAJA_DIHENTIKAN + alasan; yang dihentikan tidak punya UI", () => {
+  const byKey = Object.fromEntries(V1_ACTION_MATRIX.map((a) => [a.key, a]));
+  for (const k of ["service", "production", "start", "complete", "pause", "fail", "resolveBlocker", "qc", "material", "assign", "skip", "route", "scopeRevision", "adminBypass"]) assert.ok(byKey[k], k);
+  assert.deepEqual(V1_ACTION_MATRIX.filter((a) => a.status === "SENGAJA_DIHENTIKAN").map((a) => a.key), ["skip", "route", "scopeRevision", "adminBypass"]);
+  for (const a of V1_ACTION_MATRIX.filter((x) => x.status === "SENGAJA_DIHENTIKAN")) { assert.ok(a.note.length > 30, `${a.key}: alasan + guard`); assert.deepEqual(a.roles, []); }
+  for (const a of V1_ACTION_MATRIX.filter((x) => x.status !== "SENGAJA_DIHENTIKAN")) assert.ok(a.roles.length > 0 && a.cohort, a.key);
+  const ui = ["UnitV1Actions.jsx", "UnitV1Stage.jsx", "UnitV1Materials.jsx"].map((f) => strip(src("features", "production", f))).join("\n");
+  for (const a of ["skipUnitStage", "changeUnitRoute", "proposeScopeRevision"]) assert.doesNotMatch(ui, new RegExp(a), a);
+});
+
+test("PlannerV2 RunDrawer dimigrasi: penetapan layanan V1 dihapus (server menutup 409 UNIT_V2_OWNED); diganti penunjuk ke Diagnosis", () => {
+  const planner = strip(src("pages", "bengkel", "ProductionPlannerV2.jsx"));
+  assert.doesNotMatch(planner, /setUnitService/); assert.match(planner, /data-testid="rundrawer-service-owner"/); assert.match(planner, /Isi Diagnosis/);
+  assert.deepEqual([...strip(src("pages", "bengkel", "ProductionPlannerV2.jsx")).matchAll(/api\.(setUnitService|updateUnitProduction)/g)], []);
+  const api = src("api.js");
+  assert.match(api, /setUnitService: \(unitId, serviceId, expectedServiceId\)/); assert.match(api, /expected \? \{ expected \} : \{\}/);
+  const act = strip(src("features", "production", "UnitV1Actions.jsx"));
+  assert.match(act, /unit\.serviceId \?\? null\), "Layanan teknis tersimpan\."/); assert.match(act, /expected: \{ priority: unit\.priority \|\| "NORMAL", productionDueAt: unit\.productionDueAt \|\| null \}/);
+  assert.match(act, /e\.code === "UNIT_CONFLICT"/);
 });

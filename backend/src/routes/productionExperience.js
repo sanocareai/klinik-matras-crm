@@ -21,6 +21,7 @@ import { productionReportsRouter } from "./productionReports.js";
 import { productionTargetsRouter } from "./productionTargets.js";
 import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
+import { UUID_RE } from "../services/unitV2Ownership.js";
 import { BOARD_DEFAULTS } from "../lib/domain/productionBoard.js";
 
 export const productionExperienceRouter = express.Router();
@@ -105,6 +106,7 @@ productionExperienceRouter.get("/runs/:runId/card", requireAnyPermission(...READ
 // ini wajib ada di reader cohort) — unit di luar cohort 404, BUKAN data V2 bocor lewat jalur ini.
 productionExperienceRouter.get("/units/:unitId/overview", requireAnyPermission(...READ_PERMS), async (req, res) => {
   try {
+    if (!UUID_RE.test(String(req.params.unitId))) return res.status(400).json({ error: "ID unit tidak valid", code: "ID_INVALID" }); // P12B.6: bukan 500 dari cast UUID
     const unitIds = await readerCohort();
     if (!unitIds) return res.status(404).json({ error: "Unit 360 tidak tersedia", code: "PRODUCTION_V2_READER_OFF" });
     const overview = await getUnitOverview(prisma, req.params.unitId, { unitIds, canSeeValue: hasPermission(req.user, P.ORDER_PRICE_READ) });

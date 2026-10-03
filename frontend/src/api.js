@@ -716,11 +716,12 @@ export const api = {
   completeUnitStage: (unitId, stageId, { photoUrls, note } = {}) =>
     request(`/units/${unitId}/stages/${stageId}/complete`, { method: "POST", body: JSON.stringify({ photoUrls, note }) }),
   skipUnitStage: (unitId, note) => request(`/units/${unitId}/stages/skip`, { method: "POST", body: JSON.stringify({ note }) }),
-  setUnitService: (unitId, serviceId) => request(`/units/${unitId}/service`, { method: "PATCH", body: JSON.stringify({ serviceId }) }),
+  // expectedServiceId (opsional): nilai yang DILIHAT klien (null = belum ada) — server menulis hanya bila masih sama (konflik atomik, 409 UNIT_CONFLICT).
+  setUnitService: (unitId, serviceId, expectedServiceId) => request(`/units/${unitId}/service`, { method: "PATCH", body: JSON.stringify({ serviceId, ...(expectedServiceId !== undefined ? { expectedServiceId } : {}) }) }),
   // Prioritas & tanggal target produksi (Production Core Slice 1) — TERPISAH
   // dari stage engine, murni metadata perencanaan. Permission UNIT_ROUTING_WRITE.
-  updateUnitProduction: (unitId, { priority, productionDueAt } = {}) =>
-    request(`/units/${unitId}/production`, { method: "PATCH", body: JSON.stringify({ priority, productionDueAt }) }),
+  updateUnitProduction: (unitId, { priority, productionDueAt, expected } = {}) =>
+    request(`/units/${unitId}/production`, { method: "PATCH", body: JSON.stringify({ priority, productionDueAt, ...(expected ? { expected } : {}) }) }),
   getServiceCatalog: () => request("/master-data/service-catalog"),
 
   // ── Production Experience V2 (P8): Planner papan meja, PIC Table/Corner, Andon, antrean Gudang, laporan Sales ──

@@ -28,3 +28,9 @@ test("CLI: perintah 'legacy' terdaftar dan idempoten (dilewati bila unit sudah a
   assert.match(cli, /cmd === "legacy"/); assert.match(cli, /seedLegacyUnits/);
   assert.match(code, /sudah ada — dilewati \(idempoten\)/);
 });
+
+test("lifecycle: unit uji berkode unik ber-prefix QA-PV2, dipilih lewat --lifecycle, tanpa artefak V2", () => {
+  const cli = fs.readFileSync(path.join(here, "..", "scripts", "staging", "qa-pv2.js"), "utf8");
+  assert.match(code, /export (async )?function seedLifecycleUnit/); assert.match(code, /qaCode\(`V1-L\$\{/);
+  assert.match(cli, /--lifecycle/); assert.match(cli, /seedLifecycleUnit/);
+});

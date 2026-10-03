@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock, Hourglass, Loader2, PackageX, PlayCircle, RefreshCw, ShieldCheck, Target, Timer } from "lucide-react";
-import NonV2OrdersPanel from "@/features/production/NonV2OrdersPanel.jsx";
+import { SourceBadge, useV1Units } from "@/features/production/v1Source.jsx";
+import { unitDetailPath } from "@/lib/legacyProductionRoutes.js";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -43,6 +44,8 @@ export default function ProductionRingkasan() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const { v1: orders } = useV1Units();
+  const v1Blocked = useMemo(() => orders.filter((u) => u.productionStatus === "BLOCKED"), [orders]);
   const roles = currentRoles();
   const allowed = roles.some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE"].includes(r));
 
@@ -87,13 +90,19 @@ export default function ProductionRingkasan() {
               {summary.tiles.map((t) => <Tile key={t.key} tile={t} />)}
             </div>
 
-            {summary.pipeline.length > 0 && (
+            {(summary.pipeline.length > 0 || orders.length > 0) && (
               <Card className="p-4" data-testid="pipeline-strip">
                 <div className="mb-2 flex items-center justify-between">
                   <h2 className="m-0 text-[13.5px] font-bold text-ink">Posisi unit di jalur produksi</h2>
                   <Link to="/bengkel/production-v2" className="text-[12.5px] font-semibold text-accent underline">Buka Status Produksi →</Link>
                 </div>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 xl:grid-cols-9">
+                  {orders.length > 0 && (
+                    <Link to="/bengkel/order-produksi?tab=aktif" data-testid="v1-segment" className="min-w-0 rounded-btn border border-dashed border-line bg-inset p-2.5 text-center no-underline hover:bg-hovertint">
+                      <p className="m-0 text-[18px] font-bold tabular-nums text-ink">{orders.length}</p>
+                      <p className="m-0 flex items-center justify-center gap-1 truncate text-[11px] text-ink3" title="Order asli di luar Production V2">Order asli <SourceBadge source="V1" /></p>
+                    </Link>
+                  )}
                   {summary.pipeline.map((s) => (
                     <Link key={s.key} to="/bengkel/production-v2" className="min-w-0 rounded-btn bg-inset p-2.5 text-center no-underline hover:bg-hovertint">
                       <p className={`m-0 text-[18px] font-bold tabular-nums ${s.count ? "text-ink" : "text-ink3"}`}>{s.count}</p>
@@ -104,16 +113,22 @@ export default function ProductionRingkasan() {
               </Card>
             )}
 
-            <NonV2OrdersPanel page="ringkasan" />
-
             <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
               <Card className="min-w-0 overflow-hidden p-0" data-testid="attention-card">
                 <div className="flex items-center gap-2 border-b border-line px-4 py-3"><AlertTriangle size={16} className="text-orange" aria-hidden /><h2 className="m-0 text-[13.5px] font-bold text-ink">Butuh Perhatian</h2>
-                  <span className="ml-auto text-[11.5px] text-ink3">{summary.attention.length} hal</span></div>
-                {summary.attention.length === 0 ? (
+                  <span className="ml-auto text-[11.5px] text-ink3">{summary.attention.length + v1Blocked.length} hal</span></div>
+                {summary.attention.length === 0 && v1Blocked.length === 0 ? (
                   <div className="flex items-center gap-2 px-4 py-6 text-[12.5px] text-green"><ShieldCheck size={18} aria-hidden /> Tidak ada yang butuh perhatian saat ini — operasional produksi berjalan normal.</div>
                 ) : (
                   <ul className="m-0 list-none divide-y divide-line p-0">
+                    {v1Blocked.slice(0, 4).map((u) => (
+                      <li key={`v1-${u.id}`} data-testid="v1-attention" className="flex items-start gap-2.5 px-4 py-3">
+                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red" aria-hidden />
+                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><Badge variant="red">Kritis</Badge><SourceBadge source="V1" />{u.order?.orderNumber && <span className="text-[11px] text-ink3">{u.order.orderNumber}</span>}</div>
+                          <p className="m-0 mt-0.5 break-words text-[12.5px] text-ink2">{u.unitCode}: tahap terhambat (order asli, jalur V1)</p></div>
+                        <Button size="sm" variant="secondary" className="min-h-[40px] shrink-0" asChild><Link to={unitDetailPath(u.id)}>Buka</Link></Button>
+                      </li>
+                    ))}
                     {summary.attention.slice(0, 8).map((a, i) => (
                       <li key={`${a.code}-${a.unitCode}-${i}`} className="flex items-start gap-2.5 px-4 py-3">
                         <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${a.severity === "critical" ? "bg-red" : "bg-orange"}`} aria-hidden />

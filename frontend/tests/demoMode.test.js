@@ -152,7 +152,7 @@ test("pagar kode: pembungkus 7 halaman + KPI gudang; api.js memanggil gerbang; a
 
 test("tombol mutasi di semua halaman Production ditandai data-mutates (dinonaktifkan DemoPage); tab tersimpan tidak membawa ?demo=1", () => {
   const must = [
-    ["src/pages/bengkel/ProductionPlannerV2.jsx", 4], ["src/features/production/ScheduleModals.jsx", 3], ["src/pages/bengkel/ProductionQc.jsx", 10], ["src/pages/bengkel/ProductionRencanaWorkspace.jsx", 10],
+    ["src/pages/bengkel/ProductionPlannerV2.jsx", 3], ["src/features/production/ScheduleModals.jsx", 3], ["src/pages/bengkel/ProductionQc.jsx", 10], ["src/pages/bengkel/ProductionRencanaWorkspace.jsx", 10],
     ["src/pages/warehouse/WarehouseProductionQueue.jsx", 5], ["src/pages/produksi/ProductionDocumentation.jsx", 3], ["src/features/production/DocumentationDraftUi.jsx", 4], ["src/features/production/UnitOverviewDrawer.jsx", 3],
     ["src/features/production/DiagnosisWizard.jsx", 1], ["src/features/production/UnitPhotoThumb.jsx", 1], ["src/features/production/TargetPanel.jsx", 1], ["src/features/production/ReportParts.jsx", 2],
   ];

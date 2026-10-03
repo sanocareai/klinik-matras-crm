@@ -380,8 +380,8 @@ test("QC_WAIVED: hanya QC_WAIVE (ADMIN/OWNER), alasan + audit wajib, tercatat OV
   assert.equal(lead.status, 403, "Production Lead tidak boleh mem-waive QC-nya sendiri");
   const short = await waive(w.admin, { reason: "singkat" }, "t6-short");
   assert.equal(short.status, 400); assert.equal(short.body.code, "QC_WAIVE_REASON_REQUIRED");
-  const adminPass = await inspect(w.admin, p.run.id, passBody(p.revision), "t6-adminpass");
-  assert.equal(adminPass.status, 403); assert.equal(adminPass.body.code, "QC_WRITE_REQUIRED", "ADMIN tidak boleh mencatat PASS (tidak memegang QC_WRITE)");
+  const leadPass = await inspect(w.op, p.run.id, passBody(p.revision), "t6-leadpass");
+  assert.equal(leadPass.status, 403, "Production Lead tidak boleh mencatat PASS (tidak memegang QC_WRITE; ADMIN/OWNER memegangnya sejak 65e7e1f5)");
   assert.equal(await testPrisma.qualityInspection.count(), 0);
 
   const reason = "Owner menyetujui pengiriman tanpa QC karena unit hanya perlu jahit ulang ringan";

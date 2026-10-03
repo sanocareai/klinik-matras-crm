@@ -44,3 +44,15 @@ export async function v2FootprintOf(ctx, unitId) {
     commands: await q(`select count(*)::int c from v2_commands where payload::text like '%${unitId}%'`),
   };
 }
+
+// Unit V1 BARU untuk uji lifecycle penuh di UI (kode unik per pemanggilan; tanpa layanan teknis, belum ada tahap). Bukan bagian dari 3 unit tetap — tak mengganggu idempotensi.
+export async function seedLifecycleUnit(ctx, W) {
+  const { prisma } = ctx; const A = W.accounts;
+  const tag = Date.now().toString(36).toUpperCase();
+  const customer = await prisma.customer.create({ data: { name: `${PREFIX} V1 Lifecycle ${tag}`, city: "Bogor", assignedSalesId: A.sales_kiki?.id ?? null } });
+  const order = await prisma.order.create({ data: { customerId: customer.id, orderNumber: qaCode(`RES-VL${tag}`), value: 1_200_000, category: "LAYANAN", productType: "KASUR_SPRING" } });
+  await prisma.orderItem.create({ data: { orderId: order.id, layananName: "Servis Spring & Busa", harga: 1_200_000, sortOrder: 0 } });
+  const unit = await prisma.unit.create({ data: { unitCode: qaCode(`V1-L${tag}`), orderId: order.id, seq: 1, status: "AWAITING_PICKUP", merk: "Serta", ukuran: "160 x 200" } });
+  ctx.log(`  ${unit.unitCode}: unit V1 lifecycle dibuat (di luar cohort, tanpa Run V2)`);
+  return { code: unit.unitCode, unitId: unit.id };
+}

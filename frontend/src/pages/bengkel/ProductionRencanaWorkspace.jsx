@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { CalendarDays, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardList, PackageCheck, PackageX, RefreshCw, Target, Timer, Undo2, XCircle } from "lucide-react";
-import NonV2OrdersPanel from "@/features/production/NonV2OrdersPanel.jsx";
+import { SourceBadge, V1UnitCard, useV1Units } from "@/features/production/v1Source.jsx";
+import { PANEL_COPY } from "@/features/production/nonV2OrdersModel.js";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -559,6 +560,7 @@ export default function ProductionRencanaWorkspace() {
     setDetail({ runId: view.runId, unit: view.unit, customer: view.customer, plan: null });
   }
 
+  const { v1, reload: reloadV1 } = useV1Units();
   const backlogOver = drag?.resolved?.target?.kind === "backlog" ? drag.resolved.decision?.type : null;
 
   return (
@@ -618,6 +620,17 @@ export default function ProductionRencanaWorkspace() {
                   {upcoming.map((item) => <UpcomingCard key={item.unit.id} item={item} badgeLabel="Forecast kedatangan" onOpen={openOverview} />)}
                 </section>
               )}
+              {v1.length > 0 && (
+                <section data-testid="v1-locked" aria-label="Order asli — jalur V1 (terkunci)" className="flex min-w-0 flex-col gap-2.5 rounded-card border border-dashed border-line bg-surface p-3">
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <h2 className="m-0 flex items-center gap-1.5 text-[13.5px] font-bold text-ink">Order asli <SourceBadge source="V1" /></h2>
+                    <span data-testid="v1-count" className="rounded-chip bg-inset px-2 py-0.5 text-[12px] font-bold tabular-nums text-ink2">{v1.length} unit</span>
+                  </div>
+                  <p className="m-0 px-1 text-[11.5px] text-ink3" data-testid="v1-locked-note">{PANEL_COPY.rencana} Dikerjakan lewat Unit 360 (jalur V1).</p>
+                  {v1.slice(0, 12).map((u) => <V1UnitCard key={u.id} unit={u} onOpen={openOverview} />)}
+                  {v1.length > 12 && <p className="m-0 px-1 text-[11.5px] text-ink3">+{v1.length - 12} unit lainnya di Order Produksi (filter sumber V1).</p>}
+                </section>
+              )}
               </div>
 
               <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2" data-testid="meja-grid">
@@ -629,7 +642,6 @@ export default function ProductionRencanaWorkspace() {
             </div>
           </>
         )}
-        <NonV2OrdersPanel page="rencana" />
       </PageBody>
       {saving && createPortal(<div role="status" data-testid="saving-banner" className="fixed bottom-4 left-1/2 z-[90] -translate-x-1/2 rounded-btn bg-accent px-4 py-2 text-[13px] font-semibold text-white shadow-lg">{saving}</div>, document.body)}
       {drag && createPortal(
@@ -641,7 +653,7 @@ export default function ProductionRencanaWorkspace() {
           <div className="rotate-1"><PlanCard view={drag.view} today={today} tomorrow={tomorrow} /></div>
         </div>, document.body)}
       {detail && <DetailRencana target={detail} refs={refs} materials={refs.materials} stockByMaterial={stockByMaterial} onClose={() => setDetail(null)} onChanged={load} />}
-      {overviewUnitId && <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} manageLabel="Kelola Rencana" onManage={() => openManageFor(overviewUnitId)} />}
+      {overviewUnitId && <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} onChanged={reloadV1} manageLabel="Kelola Rencana" onManage={() => openManageFor(overviewUnitId)} />}
       {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services }} onClose={() => setSchedule(null)} onDone={(msg, meta) => { setSchedule(null); setNotice(msg); applyInitialPosition(meta); }} />}
     </PageContainer>
   );

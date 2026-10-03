@@ -6,7 +6,7 @@
 //   master [--rotate-passwords]               hanya master data + akun
 //   unit --stage=<s> [--station=TABLE_1] [--priority=0|1|2] [--docs=lengkap|kurang]   unit baru pada tahap tertentu
 //   lifecycle                                 satu lifecycle penuh pickup→…→barang jadi (unit baru)
-//   legacy                                    (P12B.5) 3 unit NON-V2 (V1 murni, di luar cohort, tanpa Run) untuk menguji aksi V1 di drawer Unit 360; idempoten
+//   legacy [--lifecycle]                      (P12B.5/6) 3 unit NON-V2 (V1 murni, di luar cohort, tanpa Run) untuk menguji aksi V1 di drawer Unit 360; idempoten. --lifecycle = SATU unit V1 baru (kode unik) untuk lifecycle UI
 //   status                                    ringkasan unit QA-PV2 dan data non-QA-PV2 (harus 0)
 //   training                                  (P12B) master data + 9 unit latihan untuk 7 skenario (S1–S7); jalankan SETELAH 'reset --yes' (jangan campur dengan matriks demo)
 //   credentials [--role=lead,meja1]           (P12B) terbitkan password akun latihan SEKALI-TAMPIL di terminal (tidak disimpan; ulang = password lama batal)
@@ -55,7 +55,7 @@ try {
   } else if (cmd === "legacy") {
     console.log("[qa-pv2] master data + akun…");
     const W = await S.ensureMaster(ctx, {});
-    console.log(JSON.stringify(await L.seedLegacyUnits(ctx, W), null, 1));
+    console.log(JSON.stringify(flag("lifecycle", false) === true ? await L.seedLifecycleUnit(ctx, W) : await L.seedLegacyUnits(ctx, W), null, flag("lifecycle", false) === true ? 0 : 1));
   } else if (cmd === "credentials") {
     const keys = flag("role", null); const issued = await T.issueCredentials(ctx, typeof keys === "string" ? keys.split(",").map((x) => x.trim()) : null);
     console.log("PASSWORD INI TAMPIL SEKALI. Jangan disalin ke chat/repo/log. Menjalankan perintah ini lagi membatalkan password di bawah.");

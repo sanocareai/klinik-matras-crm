@@ -24,3 +24,8 @@ export const PANEL_COPY = Object.freeze({
   status: "Order asli yang belum memakai Production V2 (sumber V1) — tidak punya Run, jadi tidak tampil di pipeline.",
   rencana: "Order asli yang belum memakai Production V2 (sumber V1). Belum bisa dijadwalkan di sini: penjadwalan butuh Run V2, dan slice ini tidak membuat Run otomatis.",
 });
+
+// Sumber satu unit untuk badge (V1/V2) — penanda server; hilang = V1 (server lama / reader OFF).
+export const sourceOf = (u) => (u?.inProductionV2 === true ? "V2" : "V1");
+export const SOURCE_FILTERS = Object.freeze([{ key: "", label: "Semua sumber" }, { key: "V2", label: "V2" }, { key: "V1", label: "V1" }]);
+export const filterBySource = (units = [], key = "") => (key ? (units || []).filter((u) => sourceOf(u) === key) : units || []);

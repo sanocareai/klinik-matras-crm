@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils.js";
 import { formatTanggal, formatDurasiDetik } from "@/utils/formatDate.js";
 import { describeRowCount } from "@/lib/workOrderCounts.js";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import { SourceBadge } from "@/features/production/v1Source.jsx";
+import { SOURCE_FILTERS, filterBySource, sourceOf } from "@/features/production/nonV2OrdersModel.js";
 import {
   UNIT_STATUS_REAL, SERVICE_LINE_REAL, IN_WORKSHOP_STATUSES,
   PRODUCTION_PRIORITY_REAL,
@@ -66,6 +68,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const tabsShown = scope === "riwayat" || scope === "semua" ? [] : scope === "aktif" ? TABS.filter((t) => t.key !== "DELIVERED").map((t) => (t.key === "" ? { ...t, label: "Semua status" } : t)) : TABS;
   const [cari, setCari] = useState("");
   const [fServiceLine, setFServiceLine] = useState("");
+  const [fSource, setFSource] = useState(""); // P12B.6: filter sumber V1/V2 (klien; data sama)
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -101,10 +104,10 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
 
   const rows = useMemo(() => {
     if (!data) return null;
-    if (tab === "__WORKSHOP") return data.units.filter((u) => IN_WORKSHOP_STATUSES.includes(u.status));
-    if (scope === "aktif" && tab === "") return data.units.filter((u) => u.status !== "DELIVERED");
-    return data.units;
-  }, [data, tab, scope]);
+    if (tab === "__WORKSHOP") return filterBySource(data.units.filter((u) => IN_WORKSHOP_STATUSES.includes(u.status)), fSource);
+    if (scope === "aktif" && tab === "") return filterBySource(data.units.filter((u) => u.status !== "DELIVERED"), fSource);
+    return filterBySource(data.units, fSource);
+  }, [data, tab, scope, fSource]);
 
   const countFor = useCallback((key) => {
     if (!data) return null;
@@ -200,6 +203,10 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
             <option value="">Semua lini</option>
             {Object.entries(SERVICE_LINE_REAL).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
           </select>
+          <select value={fSource} onChange={(e) => setFSource(e.target.value)} aria-label="Filter sumber" data-testid="order-source-filter"
+            className="h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent">
+            {SOURCE_FILTERS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
         </div>
 
         {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
@@ -234,7 +241,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                     {loading && <TableSkeletonRows rows={8} cols={5} />}
                     {!loading && rows?.map((u) => (
                       <TR key={u.id} clickable data-testid="order-row" data-unit-code={u.unitCode} onClick={() => setDetailUnit(u)}>
-                        <TD sticky className="whitespace-nowrap font-semibold text-ink">{u.unitCode}</TD>
+                        <TD sticky className="whitespace-nowrap font-semibold text-ink">{u.unitCode} <SourceBadge source={sourceOf(u)} className="ml-1 align-middle" /></TD>
                         <TD truncate>{u.order?.customer?.name || "—"}</TD>
                         <TD>
                           <Badge variant={UNIT_STATUS_REAL[u.status]?.tone || "neutral"}>
@@ -265,6 +272,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                     >
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-[12.5px] font-semibold text-ink">{u.unitCode}</span>
+                        <SourceBadge source={sourceOf(u)} className="shrink-0" />
                         {u.priority && u.priority !== "NORMAL" && (
                           <Badge variant={PRODUCTION_PRIORITY_REAL[u.priority]?.tone || "neutral"} className="shrink-0">
                             {PRODUCTION_PRIORITY_REAL[u.priority]?.label || u.priority}

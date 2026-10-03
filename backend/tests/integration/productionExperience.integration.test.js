@@ -170,7 +170,7 @@ test("lifecycle 12 tahap penuh: custody -> papan -> intake -> diagnosa (menunggu
   assert.equal(blocked.status, 409); assert.equal(blocked.body.code, "STEP_WAITING_SERVICE_NOT_SET");
 
   // Planner menetapkan layanan (V1) + BOM setelah diagnosa nyata; Gudang reservasi + serah bahan.
-  ok(await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id }));
+  await testPrisma.unit.update({ where: { id: unit.id }, data: { serviceId: w.service.id, serviceLine: w.service.serviceLine } }); // layanan teknis cohort = hasil Diagnosis V2; jalur V1 ditutup (409 UNIT_V2_OWNED)
   const issueId = await setBomAndIssue(w, planned.planId);
   c = await card(w, run.id);
   assert.equal(c.next.action, "COMPLETE"); assert.equal(c.next.stepNo, 5);
@@ -290,7 +290,7 @@ test("Menunggu Bahan Baku: operasi dijeda sah (PROCESS_DELAY), muncul di antrean
   const { unit, run } = await acceptedUnit(w);
   const planned = await planOnBoard(w, run.id);
   await throughIntake(w, run.id);
-  ok(await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id }));
+  await testPrisma.unit.update({ where: { id: unit.id }, data: { serviceId: w.service.id, serviceLine: w.service.serviceLine } }); // layanan teknis cohort = hasil Diagnosis V2; jalur V1 ditutup (409 UNIT_V2_OWNED)
   const issueId = await setBomAndIssue(w, planned.planId);
   await pick(w, issueId);
   ok(await step(w, w.nadya, run.id, 5, { payload: DIAG }));
