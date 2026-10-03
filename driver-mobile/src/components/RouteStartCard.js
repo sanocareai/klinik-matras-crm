@@ -10,7 +10,7 @@
 // terima tetap wajib per stop — itu yang penting).
 import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Linking, Alert, ActivityIndicator } from "react-native";
-import { Map, Navigation } from "lucide-react-native";
+import { Map, Navigation, StickyNote, ChevronDown, ChevronUp } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import { api } from "../api";
 import { useTheme } from "../hooks/useTheme";
@@ -24,6 +24,11 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [mode, setMode] = useState("idle"); // idle | starting
   const [photos, setPhotos] = useState([]);
+  // Catatan rute (3 Oktober 2026) — terbuka otomatis pertama kali kartu ini
+  // dirender (per rute, karena RouteStartCard dibuat ulang tiap route.id
+  // beda lewat key={r.route.id} di JobListScreen), driver boleh melipatnya
+  // sendiri kalau sudah dibaca supaya tidak menutupi tombol Mulai Perjalanan.
+  const [notesOpen, setNotesOpen] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [mapBusy, setMapBusy] = useState(false);
@@ -81,6 +86,17 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
           )}
         </View>
       </View>
+
+      {!!route.notes && (
+        <View style={styles.notesBox}>
+          <Pressable style={styles.notesHeader} onPress={() => setNotesOpen((v) => !v)} hitSlop={6}>
+            <StickyNote size={14} color={theme.ORANGE} />
+            <Text style={styles.notesTitle}>Catatan dari Admin</Text>
+            {notesOpen ? <ChevronUp size={16} color={theme.ORANGE} /> : <ChevronDown size={16} color={theme.ORANGE} />}
+          </Pressable>
+          {notesOpen && <Text style={styles.notesText}>{route.notes}</Text>}
+        </View>
+      )}
 
       <Pressable style={styles.mapsBtn} onPress={bukaMaps} disabled={mapBusy}>
         {mapBusy ? <ActivityIndicator size="small" color={theme.ACCENT} /> : <Map size={15} color={theme.ACCENT} />}
@@ -163,6 +179,13 @@ function makeStyles(t) {
     headerRow: { flexDirection: "row", alignItems: "center" },
     code: { color: t.INK, fontSize: 15, fontWeight: "800" },
     sub: { color: t.INK2, fontSize: 12, marginTop: 2 },
+    notesBox: {
+      marginTop: 12, borderRadius: 12, borderWidth: 1,
+      borderColor: t.ORANGE + "40", backgroundColor: t.ORANGE + "1A",
+    },
+    notesHeader: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 10, paddingHorizontal: 12 },
+    notesTitle: { flex: 1, color: t.ORANGE, fontWeight: "800", fontSize: 12.5 },
+    notesText: { color: t.INK, fontSize: 13, lineHeight: 19, paddingHorizontal: 12, paddingBottom: 12 },
     mapsBtn: {
       flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
       marginTop: 12, paddingVertical: 11, borderRadius: 12,

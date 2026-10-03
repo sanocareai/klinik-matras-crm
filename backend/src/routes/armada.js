@@ -803,7 +803,11 @@ const jobInclude = {
   // driverId/helperId/date/updatedAt (22 September 2026) — dipakai GET
   // /armada/my-jobs menyusun snapshot rute per driver (lihat catatan
   // panjang di sana) tanpa query terpisah lagi.
-  route: { select: { id: true, code: true, status: true, driverId: true, helperId: true, date: true, updatedAt: true } },
+  // notes (3 Oktober 2026) — permintaan owner: catatan bebas per rute yang
+  // dispatcher tulis di Route Planner web (jam berangkat, pesan per penerima,
+  // dll — lihat RouteCard.jsx) supaya ikut terlihat driver, bukan cuma
+  // Admin/Owner lewat Delivery Control. Opsional, boleh null.
+  route: { select: { id: true, code: true, status: true, driverId: true, helperId: true, date: true, updatedAt: true, notes: true } },
   // revisionLinks (10 September 2026, kasus Richard RES-30082026-201) —
   // laporan owner: "di rute delivery, jadwal dan penugasan bisa tambah
   // badge ... sebagai penanda" — job pengambilan/pengiriman ULANG hasil
@@ -3943,7 +3947,7 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
         routeMap.set(j.route.id, {
           id: j.route.id, code: j.route.code, status: j.route.status,
           date: j.route.date, driverId: j.route.driverId, helperId: j.route.helperId,
-          updatedAt: j.route.updatedAt, stopIds: [],
+          notes: j.route.notes, updatedAt: j.route.updatedAt, stopIds: [],
         });
       }
       const r = routeMap.get(j.route.id);
@@ -3952,7 +3956,7 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
     }
     const routes = [...routeMap.values()].map((r) => ({
       id: r.id, code: r.code, status: r.status, date: r.date,
-      driverId: r.driverId, helperId: r.helperId,
+      driverId: r.driverId, helperId: r.helperId, notes: r.notes,
       stopCount: r.stopIds.length,
       revision: r.updatedAt.getTime(),
       updatedAt: r.updatedAt,
