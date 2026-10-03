@@ -16,7 +16,7 @@ test("pemetaan redirect wajib sesuai keputusan P12B.2", () => {
   assert.equal(to("/bengkel/planning"), "/bengkel/rencana-produksi"); // Rencana lama/P3 → Rencana Produksi
   assert.equal(to("/bengkel/workshop"), "/produksi/meja");            // Antrean Kerja lama/P5 → Aplikasi Meja
   assert.equal(to("/bengkel/work-orders"), "/bengkel/order-produksi?tab=aktif");
-  assert.equal(to("/bengkel/orders"), "/bengkel/order-produksi?tab=semua");
+  assert.equal(to("/bengkel/orders"), "/bengkel/order-produksi?view=order"); // Semua Order level order → tampilan sekunder Status order
   assert.equal(to("/bengkel/qc"), "/bengkel/quality-control");        // Inspeksi/Antrean QC lama → Quality Control
   assert.equal(to("/bengkel/qc-v2"), "/bengkel/quality-control");
   assert.equal(to("/bengkel/pengajuan-biaya"), "/bengkel/biaya-produksi?tab=pengajuan");
@@ -40,7 +40,8 @@ test("query lama dipertahankan; kunci tab Order Produksi lama (work-order/semua-
   assert.equal(legacyRedirectFor("/bengkel/work-orders?status=DELIVERED").to, "/bengkel/order-produksi?tab=aktif&status=DELIVERED");
   assert.equal(legacyRedirectFor("/bengkel/order-produksi?tab=work-order&status=DELIVERED").to, "/bengkel/order-produksi?tab=riwayat");
   assert.equal(legacyRedirectFor("/bengkel/order-produksi?tab=work-order").to, "/bengkel/order-produksi?tab=aktif");
-  assert.equal(legacyRedirectFor("/bengkel/order-produksi?tab=semua-order").to, "/bengkel/order-produksi?tab=semua");
+  assert.equal(legacyRedirectFor("/bengkel/order-produksi?tab=semua-order").to, "/bengkel/order-produksi?view=order");
+  assert.equal(legacyRedirectFor("/bengkel/order-produksi?tab=semua"), null, "kunci baru (filter Semua) tidak dialihkan");
   assert.equal(legacyRedirectFor("/bengkel/order-produksi?status=DELIVERED").to, "/bengkel/order-produksi?tab=riwayat");
   assert.equal(legacyRedirectFor("/bengkel/order-produksi"), null);
   assert.equal(legacyRedirectFor("/bengkel/order-produksi?tab=aktif"), null, "kunci baru tidak dialihkan");

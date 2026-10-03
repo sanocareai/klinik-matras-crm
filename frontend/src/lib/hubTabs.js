@@ -15,3 +15,16 @@ export function withTabParam(pathWithQuery, key, param = "tab") {
   params.set(param, key);
   return `${base}?${params.toString()}`;
 }
+
+// P12B.3 — varian satu-parameter (filter ringan). `defaultKey` untuk parameter non-"tab" TIDAK ditulis ke URL (URL bersih untuk tampilan bawaan).
+export function pickParam(validKeys, requested, defaultKey) {
+  return validKeys.includes(requested) ? requested : defaultKey;
+}
+export function withParam(pathWithQuery, param, value, defaultKey) {
+  const q = pathWithQuery.indexOf("?");
+  const base = q === -1 ? pathWithQuery : pathWithQuery.slice(0, q);
+  const params = new URLSearchParams(q === -1 ? "" : pathWithQuery.slice(q + 1));
+  if (param !== "tab" && value === defaultKey) params.delete(param); else params.set(param, value);
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}

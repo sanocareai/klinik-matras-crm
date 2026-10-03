@@ -131,7 +131,7 @@ test("hub gabungan memakai halaman & endpoint LAMA: tanpa fetch/api baru, tanpa 
     for (const m of code.matchAll(/\bapi\.(\w+)/g)) assert.match(api, new RegExp(`\\b${m[1]}\\b`), `${f}: api.${m[1]} harus sudah ada`);
   }
   const orders = src("pages", "bengkel", "ProductionOrdersHub.jsx");
-  assert.match(orders, /<ProductionWorkOrders scope="aktif" \/>/); assert.match(orders, /<ProductionOrders \/>/); assert.match(orders, /<ProductionWorkOrders scope="riwayat" \/>/);
+  assert.match(orders, /<ProductionWorkOrders\s+scope=\{scope\}\s+onScopeChange=\{setScope\}/); assert.match(orders, /<ProductionOrders \/>/, "Status order (Semua Order level order) tetap tersedia");
   const cost = src("pages", "bengkel", "ProductionCostHub.jsx");
   assert.match(cost, /<PengajuanBiayaWorkspace workspace="PRODUKSI" embedded view="pengajuan"/); assert.match(cost, /view="status"/); assert.match(cost, /<LaporanBiayaDivisi scope="PRODUCTION"/);
   const comp = src("pages", "bengkel", "ProductionComplaintsHub.jsx");
@@ -139,8 +139,7 @@ test("hub gabungan memakai halaman & endpoint LAMA: tanpa fetch/api baru, tanpa 
 });
 
 test("tab hub sesuai keputusan: Order Produksi, Biaya Produksi, Komplain & Revisi, Pengaturan, KPI & Laporan", async () => {
-  const { ORDER_HUB_TABS } = { ORDER_HUB_TABS: [...src("pages", "bengkel", "ProductionOrdersHub.jsx").matchAll(/label: "([^"]+)"/g)].map((m) => m[1]) };
-  assert.deepEqual(ORDER_HUB_TABS, ["Aktif", "Semua", "Riwayat"]);
+  assert.deepEqual([...src("pages", "bengkel", "ProductionWorkOrders.jsx").matchAll(/\{ key: "(\w+)", label: "(\w+)" \}/g)].filter((m) => ["aktif", "semua", "riwayat"].includes(m[1])).map((m) => m[2]), ["Aktif", "Semua", "Riwayat"]);
   assert.deepEqual([...src("pages", "bengkel", "ProductionCostHub.jsx").matchAll(/label: "([^"]+)"/g)].map((m) => m[1]).slice(0, 3), ["Pengajuan", "Status Pengajuan", "Laporan"]);
   assert.deepEqual([...src("pages", "bengkel", "ProductionComplaintsHub.jsx").matchAll(/label: "([^"]+)"/g)].map((m) => m[1]).slice(0, 3), ["Kasus Aktif", "Revisi Unit", "Riwayat"]);
   assert.deepEqual(SETTINGS_TABS.map((t) => t.label), ["Area Kerja", "Operator & PIC", "Layanan & Tahapan", "Target Produksi", "Tampilan"]);
@@ -156,12 +155,12 @@ test("KPI & Laporan: Ringkasan KPI dan Produksi memakai SATU dokumen ringkasan; 
   assert.match(kpi, /\}, \[kind, qs\]\);/, "pindah antar tab ringkasan tidak memuat ulang");
 });
 
-test("Order Produksi: scope aktif menyembunyikan Terkirim, riwayat hanya Terkirim; default lama tidak berubah", () => {
+test("Order Produksi: scope aktif menyembunyikan Terkirim, riwayat hanya Terkirim, semua tanpa penyaringan; default lama tidak berubah", () => {
   const wo = src("pages", "bengkel", "ProductionWorkOrders.jsx");
   assert.match(wo, /scope === "riwayat" \? "DELIVERED" : initialStatus/);
   assert.match(wo, /scope === "aktif" \? TABS\.filter\(\(t\) => t\.key !== "DELIVERED"\)/);
-  assert.match(wo, /scope === "riwayat" \? \[\]/);
-  assert.match(wo, /export default function ProductionWorkOrders\(\{ initialStatus = "", scope = "" \} = \{\}\)/);
+  assert.match(wo, /scope === "riwayat" \|\| scope === "semua" \? \[\]/);
+  assert.match(wo, /export default function ProductionWorkOrders\(\{ initialStatus = "", scope = "", onScopeChange = null, headerExtra = null \} = \{\}\)/);
   const cc = src("pages", "ComplaintCases.jsx");
   assert.match(cc, /scope === "aktif" \? allCases\.filter\(\(c\) => !kasusTutup\(c\)\) : scope === "riwayat" \? allCases\.filter\(kasusTutup\) : allCases/);
   const pb = src("pages", "pengajuanBiaya", "PengajuanBiayaWorkspace.jsx");

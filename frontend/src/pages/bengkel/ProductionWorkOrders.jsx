@@ -1,5 +1,5 @@
 import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ClipboardList, RefreshCw, ExternalLink } from "lucide-react";
 import { api } from "@/api.js";
@@ -8,13 +8,13 @@ import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { Modal } from "@/components/ui/modal.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatTanggal, formatDurasiDetik } from "@/utils/formatDate.js";
 import { describeRowCount } from "@/lib/workOrderCounts.js";
+import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import {
   UNIT_STATUS_REAL, SERVICE_LINE_REAL, IN_WORKSHOP_STATUSES,
   PRODUCTION_STATUS_REAL, PRODUCTION_PRIORITY_REAL, STAGE_LOG_STATUS,
@@ -54,10 +54,16 @@ const TABS = [
 // "" mempertahankan perilaku lama persis untuk SEMUA pemanggil yang sudah ada.
 // `scope` (P12B.2, hub Order Produksi): "aktif" = semua unit KECUALI Terkirim (tab Terkirim disembunyikan), "riwayat" = hanya Terkirim
 // (tanpa tab status). Kosong = perilaku lama persis. Endpoint & data sama (getWorkOrders); hanya penyaringan tampilan.
-export default function ProductionWorkOrders({ initialStatus = "", scope = "" } = {}) {
+// P12B.3 — `onScopeChange` (opsional): bila diberikan, filter ringan Aktif · Semua · Riwayat tampil di baris saring halaman INI (bukan bilah tab terpisah),
+// `scope` "aktif" | "semua" | "riwayat" dikendalikan pemanggil (default Aktif). "semua" = seluruh unit tanpa penyaringan status.
+export const ORDER_SCOPES = Object.freeze([{ key: "aktif", label: "Aktif" }, { key: "semua", label: "Semua" }, { key: "riwayat", label: "Riwayat" }]);
+export default function ProductionWorkOrders({ initialStatus = "", scope = "", onScopeChange = null, headerExtra = null } = {}) {
   const navigate = useNavigate();
   const [tab, setTab] = useState(scope === "riwayat" ? "DELIVERED" : initialStatus);
-  const tabsShown = scope === "riwayat" ? [] : scope === "aktif" ? TABS.filter((t) => t.key !== "DELIVERED").map((t) => (t.key === "" ? { ...t, label: "Semua Aktif" } : t)) : TABS;
+  const firstScope = useRef(true);
+  // Pindah filter ringan → status rinci kembali ke "semua dalam lingkup itu" (riwayat = Terkirim).
+  useEffect(() => { if (firstScope.current) { firstScope.current = false; return; } setTab(scope === "riwayat" ? "DELIVERED" : ""); }, [scope]);
+  const tabsShown = scope === "riwayat" || scope === "semua" ? [] : scope === "aktif" ? TABS.filter((t) => t.key !== "DELIVERED").map((t) => (t.key === "" ? { ...t, label: "Semua status" } : t)) : TABS;
   const [cari, setCari] = useState("");
   const [fServiceLine, setFServiceLine] = useState("");
   const [data, setData] = useState(null);
@@ -106,19 +112,30 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "" } 
     return map[key] || 0;
   }, [data, scope]);
 
+  const scopeCount = useCallback((key) => {
+    if (!data) return null;
+    const total = data.statusCounts.reduce((n, x) => n + x.count, 0);
+    const delivered = data.statusCounts.find((x) => x.status === "DELIVERED")?.count || 0;
+    return key === "aktif" ? total - delivered : key === "riwayat" ? delivered : total;
+  }, [data]);
+
   const kosong = !loading && rows && rows.length === 0;
   const belumAdaYangDiEngine = rows?.every((u) => !u.currentStage && !u.service);
   const hasActiveFilter = (scope ? false : tab !== "") || !!fServiceLine || !!cari.trim();
+  const subtitle = scope === "riwayat" ? "Unit yang sudah terkirim ke pelanggan." : scope === "aktif" ? "Unit yang masih berjalan — belum terkirim. Klik baris untuk membuka Unit 360." : scope === "semua" ? "Seluruh unit, termasuk yang sudah terkirim. Klik baris untuk membuka Unit 360." : "Seluruh unit kasur beserta status dan tahap pengerjaannya.";
 
   return (
     <PageContainer>
       <PageHeader
-        title={scope === "riwayat" ? "Riwayat Order Produksi" : scope === "aktif" ? "Order Produksi Aktif" : "Work Order"}
-        subtitle={scope === "riwayat" ? "Unit yang sudah terkirim ke pelanggan." : scope === "aktif" ? "Unit yang masih berjalan — belum terkirim." : "Seluruh unit kasur beserta status dan tahap pengerjaannya."}
+        title={onScopeChange || scope ? "Order Produksi" : "Work Order"}
+        subtitle={subtitle}
         actions={
-          <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
-          </Button>
+          <>
+            {headerExtra}
+            <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
+            </Button>
+          </>
         }
       />
 
@@ -132,7 +149,17 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "" } 
           </div>
         )}
 
-        <div role="tablist" aria-label="Saring status unit" className="flex flex-wrap gap-1 border-b border-line pb-2">
+        <div role="tablist" aria-label="Saring status unit" className="flex flex-wrap items-center gap-1 border-b border-line pb-2" data-testid="order-filter">
+          {onScopeChange && ORDER_SCOPES.map((sc) => {
+            const n = scopeCount(sc.key);
+            return (
+              <button key={sc.key} type="button" role="tab" aria-selected={scope === sc.key} data-testid={`order-scope-${sc.key}`} onClick={() => onScopeChange(sc.key)}
+                className={cn("rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors", scope === sc.key ? "bg-accent text-white" : "text-ink2 hover:bg-hovertint")}>
+                {sc.label}{n != null && <span className="ml-1 text-[11px] opacity-80">{n}</span>}
+              </button>
+            );
+          })}
+          {onScopeChange && tabsShown.length > 0 && <span className="mx-1 h-5 w-px bg-line" aria-hidden />}
           {tabsShown.map((t) => {
             const n = countFor(t.key);
             return (
@@ -204,7 +231,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "" } 
                   <TBody>
                     {loading && <TableSkeletonRows rows={8} cols={5} />}
                     {!loading && rows?.map((u) => (
-                      <TR key={u.id} clickable onClick={() => setDetailUnit(u)}>
+                      <TR key={u.id} clickable data-testid="order-row" data-unit-code={u.unitCode} onClick={() => setDetailUnit(u)}>
                         <TD sticky className="whitespace-nowrap font-semibold text-ink">{u.unitCode}</TD>
                         <TD truncate>{u.order?.customer?.name || "—"}</TD>
                         <TD>
@@ -226,11 +253,11 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "" } 
                 </Table>
               </TableWrap>
 
-              <ul className="divide-y divide-line lg:hidden">
+              <ul className="m-0 list-none divide-y divide-line p-0 lg:hidden">
                 {!loading && rows?.map((u) => (
                   <li key={u.id}>
                     <button
-                      type="button"
+                      type="button" data-testid="order-row" data-unit-code={u.unitCode}
                       onClick={() => setDetailUnit(u)}
                       className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
                     >
@@ -265,14 +292,16 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "" } 
         </Card>
       </PageBody>
 
-      {/* Drawer detail (P8.2) — field yang dipangkas dari tabel utama.
-          "Buka Detail Unit Lengkap" tetap mengarah ke halaman lama
-          (/bengkel/units/:id, TIDAK diubah) untuk pengguna yang butuh
-          riwayat/aksi lengkap unit itu. */}
-      <Modal open={!!detailUnit} onOpenChange={(v) => !v && setDetailUnit(null)}
-        title={detailUnit?.unitCode} description={detailUnit?.order?.customer?.name || "—"} className="w-[520px]">
-        {detailUnit && (
-          <div className="space-y-3 px-6 pb-4">
+      {/* Klik baris → Unit 360 (P12B.3). Unit yang BELUM masuk Production V2 (Unit 360 = 404 di server, cohort tidak diperluas) tetap terbaca:
+          fakta order asli + tautan ke halaman detail unit — tanpa pesan galat dan tanpa mewajibkan V2/Mode Latihan. */}
+      <UnitOverviewDrawer
+        unitId={detailUnit?.id || null}
+        onClose={() => setDetailUnit(null)}
+        fallbackTitle={detailUnit?.unitCode || "Detail unit"}
+        fallbackDescription={detailUnit?.order?.customer?.name || "—"}
+        fallback={detailUnit && (
+          <div className="space-y-3 pb-4" data-testid="order-detail-fallback">
+            <p className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Unit ini belum memakai alur Production V2, jadi Unit 360 belum tersedia. Berikut data order aslinya.</p>
             <dl className="m-0 grid grid-cols-2 gap-2 text-[12.5px]">
               {[
                 ["Order", detailUnit.order?.orderNumber || "—"],
@@ -301,12 +330,13 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "" } 
                 )}
               </div>
             )}
+
             <Button size="sm" variant="secondary" onClick={() => navigate(`/bengkel/units/${detailUnit.id}`)}>
-              <ExternalLink size={13} aria-hidden /> Buka Detail Unit Lengkap
+              <ExternalLink size={13} aria-hidden /> Buka Detail Unit
             </Button>
           </div>
         )}
-      </Modal>
+      />
     </PageContainer>
   );
 }

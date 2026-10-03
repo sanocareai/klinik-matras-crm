@@ -8,7 +8,7 @@ export const LEGACY_PRODUCTION_REDIRECTS = Object.freeze({
   "/bengkel/planning": { to: "/bengkel/rencana-produksi", note: "Rencana Produksi (lama, P3) → Rencana Produksi" },
   "/bengkel/workshop": { to: "/produksi/meja", standalone: true, note: "Antrean Kerja (lama, P5) → Aplikasi Meja" },
   "/bengkel/work-orders": { to: "/bengkel/order-produksi?tab=aktif", note: "Work Order (lama) → Order Produksi" },
-  "/bengkel/orders": { to: "/bengkel/order-produksi?tab=semua", note: "Semua Order (lama) → Order Produksi" },
+  "/bengkel/orders": { to: "/bengkel/order-produksi?view=order", note: "Semua Order (lama) → Order Produksi, tampilan Status order" },
   "/bengkel/qc": { to: "/bengkel/quality-control", note: "Inspeksi QC (lama) → Quality Control" },
   "/bengkel/qc-v2": { to: "/bengkel/quality-control", note: "Antrean QC V2 (lama) → Quality Control" },
   "/bengkel/pengajuan-biaya": { to: "/bengkel/biaya-produksi?tab=pengajuan", note: "Pengajuan Biaya → Biaya Produksi" },
@@ -23,7 +23,7 @@ export const LEGACY_PRODUCTION_REDIRECTS = Object.freeze({
 export const STANDALONE_TAB_FALLBACK = "/bengkel/ringkasan";
 
 // Kunci tab hub lama → baru (URL ?tab=… yang sudah terlanjur dibookmark).
-const ORDER_TAB_MAP = { "work-order": "aktif", "semua-order": "semua" };
+const ORDER_TAB_MAP = { "work-order": "aktif", "semua-order": "semua-order" };
 
 // Mengembalikan { to, standalone } untuk path(+query) lama, atau null bila bukan rute lama. Query tambahan dari URL lama dipertahankan
 // (kecuali ?tab/?status Order Produksi yang diterjemahkan ke kunci tab baru).
@@ -41,6 +41,7 @@ export function legacyRedirectFor(pathWithQuery) {
     const p = new URLSearchParams(search);
     const t = p.get("tab");
     if (t && ORDER_TAB_MAP[t]) {
+      if (ORDER_TAB_MAP[t] === "semua-order") return { to: `${base}?view=order`, standalone: false }; // "Semua Order" level order → tampilan sekunder Status order
       const delivered = p.get("status") === "DELIVERED";
       const next = new URLSearchParams();
       next.set("tab", ORDER_TAB_MAP[t] === "aktif" && delivered ? "riwayat" : ORDER_TAB_MAP[t]);
