@@ -7,6 +7,7 @@ import { ProgressBar } from "@/components/ui/progress.jsx";
 import EvidenceCapture from "@/features/production/components/EvidenceCapture.jsx";
 import StepForm from "@/features/production/components/StepForm.jsx";
 import { DiagnosisWizard } from "@/features/production/DiagnosisWizard.jsx";
+import { isGantiKain } from "@/features/production/unitCardModel.js";
 import {
   MEDIA_RULES, STEP_BY_NO, actionLabel, bucketStyle, buildStepPayload, clearDraft, createIntentKeys, formatMinutes, friendlyError,
   isQuickAction, isRetryableError, loadDraft, saveDraft, validateStepForm, waitCopy,
@@ -30,6 +31,14 @@ function UnitHeader({ card }) {
         <Badge variant={style.badge}>{style.label}</Badge>
       </div>
       <p className="text-[13px] text-ink3">{[card.unit.merk, card.unit.ukuran, card.unit.service?.label].filter(Boolean).join(" · ") || "Detail kasur belum dicatat"}</p>
+      {/* P12B: PIC produksi harus melihat apa yang DIJUAL Sales; Ganti Kain krusial (kain harus sesuai permintaan customer). */}
+      <p data-testid="layanan-sales" className="m-0 break-words text-[14px] font-semibold text-ink [overflow-wrap:anywhere]"><span className="font-medium text-ink3">Layanan Sales: </span>{card.customer.salesServices?.length ? card.customer.salesServices.join(" + ") : "belum dicatat Sales"}</p>
+      {isGantiKain({ customer: card.customer }) && (
+        <div data-testid="ganti-kain-note" role="note" className="rounded-btn border border-orange bg-orangebg px-3 py-2 text-[13.5px] font-bold text-orange">
+          <p className="m-0 flex items-start gap-1.5"><Scissors size={15} className="mt-px shrink-0" aria-hidden /> Ganti Kain — pastikan sesuai permintaan customer</p>
+          {!card.customer.request && <p className="m-0 mt-1 text-[13px] font-semibold">Catatan kain belum tersedia — konfirmasi ke Sales</p>}
+        </div>
+      )}
       <dl className="m-0 grid grid-cols-2 gap-2 text-[13px]">
         <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Berat badan</dt><dd className="m-0 font-semibold text-ink">{card.customer.weightKg ? `${card.customer.weightKg} kg` : "—"}</dd></div>
         <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Posisi tidur</dt><dd className="m-0 font-semibold text-ink">{card.customer.sleepPosition || "Belum dicatat Sales"}</dd></div>
