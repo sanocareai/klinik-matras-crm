@@ -211,18 +211,15 @@ function handleErr(err, res) {
   return res.status(500).json({ error: "Server error: " + err.message });
 }
 
-// ⛔ NONAKTIF SEMENTARA (6 September 2026, keputusan owner) — "lagi test
-// sistem ya... nice, tapi untuk sekarang stop dulu broadcast ke grupnya,
-// kita matangkan dulu sistem saat ini". Owner sendiri yang baru tes fitur
-// ini (foto POD otomatis ke grup WA driver) dan MINTA DIPAUSE — bukan
-// ditemukan rusak, sengaja dimatikan sampai owner minta nyalakan lagi.
-// Pola SAMA PERSIS dengan DELIVERY_NOTIF_AKTIF di services/
-// customerNotifications.js (kill-switch satu baris, JANGAN tulis ulang
-// fungsinya) — TIDAK ada hubungannya dengan ringkasan rute publish/edit,
-// itu TIDAK diminta dipause (lihat notifyNatashaText di bawah — target
-// ringkasan rute sekarang chat pribadi Natasha, bukan grup, sejak 6
-// September 2026).
-const POD_BROADCAST_AKTIF = false;
+// DIAKTIFKAN KEMBALI (3 Oktober 2026, keputusan owner): setiap driver
+// menyelesaikan pickup/delivery, bukti fotonya otomatis menjadi dokumentasi
+// informasi di Grup WhatsApp Driver yang sudah diverifikasi admin lewat
+// PUT /api/armada/driver-group. Default aktif; ops tetap punya kill-switch
+// darurat tanpa perlu deploy ulang dengan POD_BROADCAST_AKTIF=false.
+//
+// Flag ini KHUSUS dokumentasi internal. DELIVERY_NOTIF_AKTIF di services/
+// customerNotifications.js tetap terpisah dan tidak ikut dinyalakan.
+const POD_BROADCAST_AKTIF = process.env.POD_BROADCAST_AKTIF !== "false";
 
 // D-018: kirim foto+ringkasan job selesai/gagal ke grup driver yang
 // ditugaskan (Conversation.isDriverGroup). BEST-EFFORT, SELALU dibungkus

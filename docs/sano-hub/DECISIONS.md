@@ -246,6 +246,12 @@ menjelajah Inbox. Meminta driver "pilih grup" tiap job selesai bukan cuma
 gesekan ekstra (bertentangan dengan D-014's "satu tap"), tapi juga butuh
 permission yang sengaja tidak diberikan ke role itu.
 
+**Aktivasi kembali (Gilang, 3 Oktober 2026).** Pause sementara sejak 6
+September dicabut. Dokumentasi bukti pickup/delivery kembali aktif secara
+default dan dikirim ke Grup Driver yang ditetapkan admin. Kill-switch darurat
+tetap tersedia lewat `POD_BROADCAST_AKTIF=false`; flag notifikasi WhatsApp ke
+customer tetap terpisah dan tidak berubah.
+
 ---
 
 ## D-017 — Bug nyata: dua `getMe` di api.js membuat auto-skip Portal rusak total, tanpa error

@@ -123,12 +123,10 @@ export async function notifyDriverRouteChanged(route, { addedCount = 0, removedC
 // (RES-18082026-071): sebelumnya Produksi cuma tahu ada klaim garansi/trial
 // kenyamanan kalau kebetulan buka "Semua Order" dan lihat kolom Revisi,
 // tidak ada dorongan aktif sama sekali. SENGAJA pakai Web Push (browser),
-// BUKAN broadcast grup WhatsApp — owner baru saja minta PAUSE broadcast grup
-// WA (lihat POD_BROADCAST_AKTIF di routes/armada.js, 6 September 2026,
-// "matangkan dulu sistem saat ini") untuk kanal DELIVERY; ini kanal
-// terpisah total (push browser per-user Produksi) jadi tidak melanggar
-// permintaan pause itu, dan tidak butuh "Grup Produksi" yang memang belum
-// ada infrastrukturnya sama sekali.
+// BUKAN broadcast grup WhatsApp: dokumentasi POD internal yang aktif kembali
+// pada 3 Oktober 2026 hanya dikirim ke Grup Driver, sedangkan notifikasi ini
+// perlu menjangkau user Produksi secara langsung dan tidak membutuhkan
+// infrastruktur "Grup Produksi".
 //
 // Dipicu SAAT unit BENAR-BENAR tiba di bengkel (revisi mencapai IN_REWORK,
 // auto-advance di POST /jobs/:id/complete) — BUKAN saat revisi baru
