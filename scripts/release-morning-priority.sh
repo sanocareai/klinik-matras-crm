@@ -12,7 +12,7 @@ umask 077
 
 DEPLOY_SHA="${1:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
-PREV_FULL="6c0e79449ea2e6f0e79e2cc6a9a7f04bb10b5c37"
+PREV_FULL="6c0e7944a263c41a345bd0fd13f6f213be5eaeef"
 CAND_FULL="$DEPLOY_SHA"
 BRANCH="release/morning-priority-pagi-on-6c0e7944"
 TAG="morning-priority"
@@ -73,7 +73,9 @@ ok "mount persisten ada, frontend/.env (kunci Maps asli) tersedia untuk build"
 PHASE=2-ancestry; say "2. Ancestry + scope (branch=$BRANCH)"
 [ -d "$SRC" ] || git init -q --bare "$SRC"
 sg remote get-url origin >/dev/null 2>&1 || sg remote add origin "$REPO_URL"
-sg fetch -q origin "+refs/heads/$BRANCH:refs/cache/mpcand" "+refs/heads/main:refs/cache/main" 2>&1 | tail -3 || true
+sg fetch -q --depth=500 origin "+refs/heads/$BRANCH:refs/cache/mpcand" "+refs/heads/main:refs/cache/main" 2>&1 | tail -3 || true
+sg cat-file -e "${PREV_FULL}^{commit}" 2>/dev/null || sg fetch -q --deepen=5000 origin "+refs/heads/main:refs/cache/main" 2>&1 | tail -3 || true
+sg cat-file -e "${PREV_FULL}^{commit}" 2>/dev/null || die "commit baseline ${EXPECT_PREV_SHORT} tidak ditemukan di cache git bahkan setelah deepen"
 [ "$(sg rev-parse refs/cache/mpcand)" = "$CAND_FULL" ] || die "branch kandidat ($BRANCH) berubah: $(sg rev-parse refs/cache/mpcand)"
 sg merge-base --is-ancestor "$PREV_FULL" "$CAND_FULL" || die "live ($EXPECT_PREV_SHORT) BUKAN ancestor kandidat — STOP"
 ok "live ($EXPECT_PREV_SHORT) TERBUKTI leluhur langsung kandidat — superset bersih"
