@@ -76,8 +76,8 @@ test("fallback unit non-V2 di drawer yang sama: fakta order/unit asli + penjelas
   };
   const facts = Object.fromEntries(unitFacts(timeline));
   assert.equal(facts["Order"], "RES-1"); assert.equal(facts["Pelanggan"], "Vita"); assert.match(facts["Kasur"], /King Koil/);
-  assert.equal(facts["Layanan"], undefined, "tidak menebak layanan"); assert.equal(facts["Target selesai"], null);
-  assert.equal(facts["Prioritas"], "Normal");
+  // layanan, prioritas, dan target TIDAK diduplikasi di fakta — hanya ada di UnitV1Actions
+  for (const k of ["Layanan", "Layanan Teknis", "Prioritas", "Target selesai"]) assert.equal(facts[k], undefined, `${k} tidak diduplikasi di fakta`);
   assert.deepEqual(V2_SECTIONS_UNAVAILABLE.map(([k]) => k), ["Proses", "Bahan", "Dokumentasi", "QC & Handoff", "Aktivitas"]);
   const comp = strip(src("features", "production", "UnitOrderFallback.jsx"));
   assert.match(comp, /belum memakai alur Production V2/); assert.match(comp, /data-testid="unit-v2-notice"/);

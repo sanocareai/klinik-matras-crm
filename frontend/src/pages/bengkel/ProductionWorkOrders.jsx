@@ -296,7 +296,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
 
       {/* Klik baris → Unit 360 di drawer yang SAMA (P12B.4). Unit di luar cohort Production V2 tetap terbaca di drawer ini (fallback data order asli),
           bukan halaman/tab Unit terpisah. */}
-      <UnitOverviewDrawer unitId={openUnitId} onClose={() => setDetailUnit(null)} />
+      <UnitOverviewDrawer unitId={openUnitId} onClose={() => setDetailUnit(null)} onChanged={load} />
     </PageContainer>
   );
 }

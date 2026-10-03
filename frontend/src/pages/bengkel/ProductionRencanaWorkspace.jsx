@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { CalendarDays, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardList, PackageCheck, PackageX, RefreshCw, Target, Timer, Undo2, XCircle } from "lucide-react";
+import NonV2OrdersPanel from "@/features/production/NonV2OrdersPanel.jsx";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -628,6 +629,7 @@ export default function ProductionRencanaWorkspace() {
             </div>
           </>
         )}
+        <NonV2OrdersPanel page="rencana" />
       </PageBody>
       {saving && createPortal(<div role="status" data-testid="saving-banner" className="fixed bottom-4 left-1/2 z-[90] -translate-x-1/2 rounded-btn bg-accent px-4 py-2 text-[13px] font-semibold text-white shadow-lg">{saving}</div>, document.body)}
       {drag && createPortal(

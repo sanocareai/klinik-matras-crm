@@ -47,7 +47,7 @@ test("loading, kosong, dan galat tampil langsung pada daftar", () => {
 test("klik baris/kartu membuka Unit 360 (drawer kanonis), bukan halaman lama; unit non-V2 mendapat fallback data order asli", () => {
   assert.match(WO, /<TR key=\{u\.id\} clickable data-testid="order-row"[^>]*onClick=\{\(\) => setDetailUnit\(u\)\}/);
   assert.match(WO, /data-testid="order-row" data-unit-code=\{u\.unitCode\}\s*onClick=\{\(\) => setDetailUnit\(u\)\}/, "kartu mobile juga");
-  assert.match(WO, /<UnitOverviewDrawer unitId=\{openUnitId\} onClose=\{\(\) => setDetailUnit\(null\)\} \/>/);
+  assert.match(WO, /<UnitOverviewDrawer unitId=\{openUnitId\} onClose=\{\(\) => setDetailUnit\(null\)\} onChanged=\{load\} \/>/);
   assert.doesNotMatch(WO, /<Modal\b|navigate\(|useNavigate/, "tanpa modal ringkas terpisah dan tanpa navigasi ke halaman/tab lain");
   const drawer = strip(src("features", "production", "UnitOverviewDrawer.jsx"));
   assert.match(drawer, /import \{ isOutsideV2 \} from "@\/features\/production\/unit360Availability\.js"/);

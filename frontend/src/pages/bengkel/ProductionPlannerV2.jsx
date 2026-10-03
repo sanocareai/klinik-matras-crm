@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AlertTriangle, CalendarDays, CheckCircle2, ClipboardList, FileText, LayoutGrid, List, PackageX, RefreshCw, Truck } from "lucide-react";
 import { unitDetailPath } from "@/lib/legacyProductionRoutes.js";
+import NonV2OrdersPanel from "@/features/production/NonV2OrdersPanel.jsx";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -266,6 +267,7 @@ export default function ProductionPlannerV2() {
             )}
           </>
         )}
+        <NonV2OrdersPanel page="status" />
       </PageBody>
 
       {drawer && <RunDrawer item={drawer} refs={refs} onClose={() => setDrawer(null)} onSchedule={(i) => { setDrawer(null); setSchedule(i); }} onConfirmArrival={(i) => { setDrawer(null); setArrival(i); }} onChanged={(msg) => { setDrawer(null); setNotice(msg); load(); }} />}

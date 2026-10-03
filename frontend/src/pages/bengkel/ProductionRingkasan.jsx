@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock, Hourglass, Loader2, PackageX, PlayCircle, RefreshCw, ShieldCheck, Target, Timer } from "lucide-react";
+import NonV2OrdersPanel from "@/features/production/NonV2OrdersPanel.jsx";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -102,6 +103,8 @@ export default function ProductionRingkasan() {
                 </div>
               </Card>
             )}
+
+            <NonV2OrdersPanel page="ringkasan" />
 
             <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
               <Card className="min-w-0 overflow-hidden p-0" data-testid="attention-card">

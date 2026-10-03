@@ -394,7 +394,8 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
       include: {
         service: true,
         currentStage: true,
-        order: { select: { id: true, orderNumber: true, status: true, customer: { select: { id: true, name: true, phone: true } } } },
+        // items: HANYA nama layanan (Layanan Dipesan Sales, read-only untuk drawer unit non-V2) — tanpa harga; dikeluarkan dari payload di bawah.
+        order: { select: { id: true, orderNumber: true, status: true, customer: { select: { id: true, name: true, phone: true } }, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } } } },
         qcFitTests: { include: { stage: { select: { id: true, labelId: true } }, testedBy: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } },
         // Snapshot rute produksi (Production Core Slice 4D/4J/4K) — relasi
         // FK langsung di Unit, SATU JOIN, TIDAK butuh batch loader terpisah
@@ -517,8 +518,13 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
         )
       : [];
 
+    const { items: orderItems = [], ...orderBase } = unit.order || {};
+    const salesServices = [...new Set(orderItems.map((i) => i.layananName).filter(Boolean))];
     res.json({
-      unit, path: timeline, qcFitTests: unit.qcFitTests,
+      unit: { ...unit, order: unit.order ? orderBase : unit.order },
+      // Layanan Dipesan (Sales) — order-scoped, READ-ONLY; TERPISAH dari Layanan Teknis Produksi (unit.service, ditetapkan Produksi).
+      salesServices,
+      path: timeline, qcFitTests: unit.qcFitTests,
       needsService: !unit.serviceId,
       productionStatus,
       productionStatusReason: describeProductionStatus(productionStatus, lastLogForCurrentStage, activeBlocker),

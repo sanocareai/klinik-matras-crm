@@ -6,6 +6,7 @@
 //   master [--rotate-passwords]               hanya master data + akun
 //   unit --stage=<s> [--station=TABLE_1] [--priority=0|1|2] [--docs=lengkap|kurang]   unit baru pada tahap tertentu
 //   lifecycle                                 satu lifecycle penuh pickup→…→barang jadi (unit baru)
+//   legacy                                    (P12B.5) 3 unit NON-V2 (V1 murni, di luar cohort, tanpa Run) untuk menguji aksi V1 di drawer Unit 360; idempoten
 //   status                                    ringkasan unit QA-PV2 dan data non-QA-PV2 (harus 0)
 //   training                                  (P12B) master data + 9 unit latihan untuk 7 skenario (S1–S7); jalankan SETELAH 'reset --yes' (jangan campur dengan matriks demo)
 //   credentials [--role=lead,meja1]           (P12B) terbitkan password akun latihan SEKALI-TAMPIL di terminal (tidak disimpan; ulang = password lama batal)
@@ -19,7 +20,7 @@ const [cmd = "help", ...rest] = process.argv.slice(2);
 const flag = (name, def = null) => { const a = rest.find((x) => x === `--${name}` || x.startsWith(`--${name}=`)); return a === undefined ? def : a.includes("=") ? a.split("=").slice(1).join("=") : true; };
 
 if (cmd === "help" || cmd === "--help") {
-  console.log("perintah: seed | master | unit --stage=<s> | lifecycle | training | credentials | status | reset --yes   (lihat komentar kepala berkas)");
+  console.log("perintah: seed | master | unit --stage=<s> | lifecycle | training | legacy | credentials | status | reset --yes   (lihat komentar kepala berkas)");
   process.exit(0);
 }
 try { assertQaPv2Safe(); } catch (e) { console.error(e.message); process.exit(2); } // SEBELUM mengimpor db/Prisma
@@ -28,6 +29,7 @@ const { prisma } = await import("../../src/db.js");
 const { makeKit } = await import("./qaPv2Kit.js");
 const S = await import("./qaPv2Seed.js");
 const T = await import("./qaPv2Training.js");
+const L = await import("./qaPv2Legacy.js");
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const baseUrl = process.env.QA_PV2_BASE_URL || `http://127.0.0.1:${process.env.PORT || 4000}`;
@@ -50,6 +52,10 @@ try {
     const W = await S.ensureMaster(ctx, {});
     console.log(JSON.stringify(await T.seedTraining(ctx, W), null, 1));
     console.log("[qa-pv2] skenario latihan siap. Terbitkan kredensial peserta: qa-pv2.js credentials");
+  } else if (cmd === "legacy") {
+    console.log("[qa-pv2] master data + akun…");
+    const W = await S.ensureMaster(ctx, {});
+    console.log(JSON.stringify(await L.seedLegacyUnits(ctx, W), null, 1));
   } else if (cmd === "credentials") {
     const keys = flag("role", null); const issued = await T.issueCredentials(ctx, typeof keys === "string" ? keys.split(",").map((x) => x.trim()) : null);
     console.log("PASSWORD INI TAMPIL SEKALI. Jangan disalin ke chat/repo/log. Menjalankan perintah ini lagi membatalkan password di bawah.");
