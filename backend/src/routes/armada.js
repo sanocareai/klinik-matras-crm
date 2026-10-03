@@ -37,6 +37,7 @@ import {
   RESCHEDULE_STATUS_LABEL, rescheduleCaseInclude,
 } from "../services/rescheduleCase.js";
 import { notifySalesJobCompleted, notifySalesUnpaidAfterDelivery } from "../services/deliveryCompletionNotify.js";
+import { buildDriverGroupCaption, isPodBroadcastActive } from "../services/driverGroupDocumentation.js";
 import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { bukukanPembayaran } from "../services/finance/hooks.js";
@@ -219,8 +220,6 @@ function handleErr(err, res) {
 //
 // Flag ini KHUSUS dokumentasi internal. DELIVERY_NOTIF_AKTIF di services/
 // customerNotifications.js tetap terpisah dan tidak ikut dinyalakan.
-const POD_BROADCAST_AKTIF = process.env.POD_BROADCAST_AKTIF !== "false";
-
 // D-018: kirim foto+ringkasan job selesai/gagal ke grup driver yang
 // ditugaskan (Conversation.isDriverGroup). BEST-EFFORT, SELALU dibungkus
 // try/catch oleh pemanggil — menyelesaikan job ADALAH kebenaran (Unit/Job
@@ -233,7 +232,7 @@ const POD_BROADCAST_AKTIF = process.env.POD_BROADCAST_AKTIF !== "false";
 // pola yang sama dengan "kepala produksi update ke grup" yang Gilang
 // sebut sebagai praktik biasa, bukan sesuatu yang perlu direview per pesan.
 async function notifyDriverGroup(job, photoUrls, headline) {
-  if (!POD_BROADCAST_AKTIF) return; // diam total — lihat catatan flag di atas
+  if (!isPodBroadcastActive()) return; // diam total — lihat catatan flag di atas
   const group = await prisma.conversation.findFirst({ where: { type: "GROUP", isDriverGroup: true } });
   if (!group) return; // belum ditetapkan — diam-diam, bukan error
 
@@ -241,13 +240,12 @@ async function notifyDriverGroup(job, photoUrls, headline) {
   if (!target) return;
 
   const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
-  const orderNo = job.units[0]?.unit?.order?.orderNumber || job.orderId;
-  const unitList = job.units.map((ju) => ju.unit.unitCode).join(", ");
+  const captionAkhir = buildDriverGroupCaption(job, headline);
 
   const savedMessages = [];
   for (let i = 0; i < photoUrls.length; i++) {
     const isLast = i === photoUrls.length - 1;
-    const caption = isLast ? `${headline}\n*${orderNo}*\n${unitList}` : "";
+    const caption = isLast ? captionAkhir : "";
     try {
       const { result: wahaMsg, session } = await sendWithSessionFallback(group, (s) =>
         sendMedia(
