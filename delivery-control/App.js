@@ -1,11 +1,12 @@
-import React, { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { ActivityIndicator, AppState, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
+import * as Updates from "expo-updates";
 import { SessionProvider, useSession } from "./src/SessionContext";
 import { useTheme } from "./src/theme";
 import LoginScreen from "./src/screens/LoginScreen";
@@ -82,7 +83,39 @@ function ThemedStatusBar() {
   return <StatusBar style={t.statusBar} backgroundColor={t.bg} />;
 }
 
+// Bawaan expo-updates: cek pembaruan OTA cuma sekali saat cold start, dan bundel baru baru DIPAKAI
+// di cold start BERIKUTNYA — pengguna perlu tutup-paksa lalu buka lagi dua kali sebelum lihat perubahan.
+// Di sini dicek+terapkan sendiri di latar belakang (saat dibuka & tiap kembali ke foreground) supaya satu
+// kali buka app sudah cukup; reloadAsync me-restart JS bundle di tempat (bukan restart OS), jadi pengguna
+// yang sedang mengisi form tetap bisa kehilangan progres — risiko diterima untuk app internal admin/owner ini.
+let sedangMemeriksa = false;
+async function periksaPembaruan() {
+  if (__DEV__ || !Updates.isEnabled || sedangMemeriksa) return;
+  sedangMemeriksa = true;
+  try {
+    const { isAvailable } = await Updates.checkForUpdateAsync();
+    if (isAvailable) {
+      await Updates.fetchUpdateAsync();
+      await Updates.reloadAsync();
+    }
+  } catch {
+    // Offline atau EAS tak terjangkau: diam-diam lewati, app tetap jalan dengan bundel yang ada.
+  } finally {
+    sedangMemeriksa = false;
+  }
+}
+
 export default function App() {
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    periksaPembaruan();
+    const sub = AppState.addEventListener("change", (next) => {
+      if (appState.current.match(/inactive|background/) && next === "active") periksaPembaruan();
+      appState.current = next;
+    });
+    return () => sub.remove();
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
