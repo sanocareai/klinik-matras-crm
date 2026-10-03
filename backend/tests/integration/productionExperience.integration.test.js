@@ -36,7 +36,7 @@ async function addCohort(...unitIds) {
 async function world() {
   const [lead, nadya, corner, qc, driver] = await Promise.all([
     createTestUser({ roles: ["PRODUCTION_LEAD"] }),
-    createTestUser({ roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_WORKER"] }), // rangkap Operator + Gudang, TANPA QC_WRITE
+    createTestUser({ roles: ["WAREHOUSE", "PRODUCTION_WORKER"] }), // rangkap Operator + Gudang, bukan ADMIN: sejak 65e7e1f5 ADMIN/OWNER memegang QC_WRITE + PRODUCTION_EXECUTE_ANY (kontraknya diuji di productionQcFinishedGoods & adminAllLines), jadi pagar PIC/QC di sini diuji dengan pengguna biasa
     createTestUser({ roles: ["PRODUCTION_WORKER"] }),
     createTestUser({ roles: ["QC_LEAD"] }),
     createTestUser({ roles: ["DRIVER"] }),
@@ -169,8 +169,19 @@ test("lifecycle 12 tahap penuh: custody -> papan -> intake -> diagnosa (menunggu
   const blocked = await step(w, w.nadya, run.id, 5, {});
   assert.equal(blocked.status, 409); assert.equal(blocked.body.code, "STEP_WAITING_SERVICE_NOT_SET");
 
-  // Planner menetapkan layanan (V1) + BOM setelah diagnosa nyata; Gudang reservasi + serah bahan.
-  await testPrisma.unit.update({ where: { id: unit.id }, data: { serviceId: w.service.id, serviceLine: w.service.serviceLine } }); // layanan teknis cohort = hasil Diagnosis V2; jalur V1 ditutup (409 UNIT_V2_OWNED)
+  // Layanan teknis unit cohort HANYA lewat command Diagnosis (V2); jalur V1 ditutup untuk unit cohort.
+  const v1Try = await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id });
+  assert.equal(v1Try.status, 409); assert.equal(v1Try.body.code, "UNIT_V2_OWNED", "PATCH layanan V1 tidak boleh melewati Diagnosis untuk unit cohort");
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } })).serviceId, null, "penolakan tanpa efek");
+  const diagPhoto = (await media(w.nadya, run.id, "i"))[0];
+  const diag = await w.nadya.api.post(`${V2}/diagnosis/${run.id}/submit`, {
+    expectedRevision: 0, workCenterId: w.wc, photoUrls: [diagPhoto], recommendedServiceId: w.service.id,
+    findings: { general: { condition: "Kasur kempes di tengah", mainDamage: "Fondasi keropos", damageLevel: "SEDANG", teardownNote: "Per karatan" }, foundation: { oldCondition: "Per karatan", action: "REPLACE", size: "180x200", qty: "1" }, layers: [{ oldCondition: "Busa tipis", action: "REPLACE", material: "Busa HD", thickness: "5cm", qty: "2" }], components: { spring: "Ganti per baru" }, serviceNote: "Restorasi penuh fondasi dan lapisan atas sesuai keluhan sakit pinggang" },
+    materials: [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }],
+  }, key(`diag-${++seq}`));
+  assert.equal(diag.status, 201, JSON.stringify(diag.body));
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } })).serviceId, w.service.id, "layanan ditetapkan oleh submitDiagnosis");
+  // Gudang reservasi + serah bahan (BOM sudah ditulis Diagnosis; setBomAndIssue menetapkan ulang baris yang sama).
   const issueId = await setBomAndIssue(w, planned.planId);
   c = await card(w, run.id);
   assert.equal(c.next.action, "COMPLETE"); assert.equal(c.next.stepNo, 5);
@@ -208,7 +219,7 @@ test("lifecycle 12 tahap penuh: custody -> papan -> intake -> diagnosa (menunggu
   // QC resmi hanya pemegang QC_WRITE (Nadya ditolak).
   const qcRun = (await w.qc.api.get(`${P}/qc/runs/${run.id}`)).body;
   const passBody = { expectedRevision: qcRun.revision, result: "PASS", photoUrls: ["/media/job-photos/qc.jpg"], referenceWeightKg: 85, fitVerdict: "PAS", note: "lulus" };
-  assert.equal((await w.nadya.api.post(`${P}/qc/runs/${run.id}/inspect`, passBody, key("nadya-qc"))).status, 403);
+  assert.equal((await w.lead.api.post(`${P}/qc/runs/${run.id}/inspect`, passBody, key("lead-qc"))).status, 403, "Production Lead tidak memegang QC_WRITE");
   ok(await w.qc.api.post(`${P}/qc/runs/${run.id}/inspect`, passBody, key("qc-pass")));
 
   // Tahap 9 milik PIC meja; tahap 10–12 milik PIC Corner.

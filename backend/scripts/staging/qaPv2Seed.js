@@ -48,6 +48,13 @@ export const MATRIX = Object.freeze([
   { n: 12, cust: "Pelanggan 12", city: "Depok", sales: "Ervina", svc: "Upgrade Fondasi Matras Sehat (150kg)", note: "Pickup besok pagi", kg: 80, comp: ["SAKIT_PUNGGUNG"], size: "180 × 200", stage: "akan_masuk", photo: "none", prio: 0, station: null, label: "Akan masuk — pickup terjadwal (forecast)" },
 ]);
 export const STAGE_ORDER = Object.freeze(["akan_masuk", "perjalanan", "tiba", "bongkar", "diagnosa", "bahan_kurang", "fondasi", "lapisan", "lapisan_selesai", "menunggu_qc", "qc_gagal", "corner", "menunggu_retur", "siap_kirim"]);
+const DIAG_FINDINGS = {
+  general: { condition: "Kasur kempes di tengah", mainDamage: "Fondasi keropos", damageLevel: "SEDANG", teardownNote: "Per karatan" },
+  foundation: { oldCondition: "Per karatan", action: "REPLACE", size: "180x200", qty: "1" },
+  layers: [{ oldCondition: "Busa tipis", action: "REPLACE", material: "Busa HD", thickness: "5cm", qty: "2" }],
+  components: { spring: "Ganti per baru" },
+  serviceNote: "Restorasi penuh fondasi dan lapisan atas sesuai keluhan sakit pinggang",
+};
 const DIAG = { diagnosis: "Per tengah lemah dan busa penopang kempes sehingga pinggang melengkung saat tidur.", inputMethod: "TEXT" };
 
 const credsFile = (ctx) => path.resolve(ctx.dataDir, "qa-pv2-credentials.json");
@@ -170,12 +177,14 @@ async function advance(ctx, W, spec, { unit, order }) {
     await step(meja, 4, { heightBeforeCm: 24, heightCompressedCm: 17, testerWeightKg: spec.kg, foundationIssues: ["Per tengah lemah"] }, await media(meja, "v"));
   }
   if (spec.stage === "diagnosa") { await maybeDocs(ctx, W, spec, run.id); return; }
-  // diagnosis + BOM
-  await step(meja, 5, DIAG);
-  // Layanan teknis unit COHORT = hasil Diagnosis (command owner V2); jalur V1 PATCH /units/:id/service DITUTUP (409 UNIT_V2_OWNED) — seeder staging menulis langsung.
-  await prisma.unit.update({ where: { id: unit.id }, data: { serviceId: W.service.id, serviceLine: W.service.serviceLine } });
-  const plan = await kit.get(A.lead, `${P}/plans/${planId}`);
-  const bom = await kit.post(A.lead, `${P}/plans/${planId}/bom`, { lines: [{ materialId: W.materials["PER-BNL"].id, qty: 1 }, { materialId: W.materials["LTX-05"].id, qty: 2 }], expectedRevision: plan.revision });
+  // diagnosis + BOM: layanan teknis unit COHORT hanya lewat command Diagnosis V2 (menulis Unit.serviceId + Planned BOM dalam satu transaksi).
+  // Jalur V1 PATCH /units/:id/service DITUTUP untuk cohort (409 UNIT_V2_OWNED) — seeder TIDAK menulis DB langsung untuk melewatinya.
+  await step(meja, 5, DIAG); // bukti diagnosa tercatat; tahap menunggu layanan
+  await kit.post(meja, `${V2}/diagnosis/${run.id}/submit`, {
+    expectedRevision: 0, workCenterId: W.wc.id, photoUrls: await media(meja, "i"), recommendedServiceId: W.service.id,
+    findings: DIAG_FINDINGS, materials: [{ materialId: W.materials["PER-BNL"].id, qty: 1 }, { materialId: W.materials["LTX-05"].id, qty: 2 }],
+  });
+  const bom = await kit.get(A.lead, `${P}/plans/${planId}`); // revisi rencana setelah BOM dari Diagnosis
   if (spec.stage === "bahan_kurang") {
     await kit.post(meja, `${V2}/runs/${run.id}/material-shortage`, { expectedRevision: await rev(), workCenterId: W.wc.id, items: [{ materialId: W.materials["BSA-D26"].id, qty: 4, note: "Stok gudang tidak cukup" }], note: "Menunggu busa D26 dari supplier" });
     await maybeDocs(ctx, W, spec, run.id); return;

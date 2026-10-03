@@ -191,3 +191,17 @@ test("PlannerV2 RunDrawer dimigrasi: penetapan layanan V1 dihapus (server menutu
   assert.match(act, /unit\.serviceId \?\? null\), "Layanan teknis tersimpan\."/); assert.match(act, /expected: \{ priority: unit\.priority \|\| "NORMAL", productionDueAt: unit\.productionDueAt \|\| null \}/);
   assert.match(act, /e\.code === "UNIT_CONFLICT"/);
 });
+
+test("kepemilikan V2 (P12B.6 final): tab 'Kerja V1' hanya bila server melaporkan V2 TIDAK memegang eksekusi; pemberitahuan jujur; engine & endpoint V1 memakai SATU predikat", () => {
+  const drawer = strip(src("features", "production", "UnitOverviewDrawer.jsx"));
+  assert.match(drawer, /data\?\.ownership\?\.v2ExecutionOwned === false/);
+  assert.match(drawer, /\.\.\.\(v1Workable \? \[\["v1", "Kerja V1"\]\] : \[\]\)/);
+  assert.match(drawer, /tab === "v1" && v1Workable && <UnitOrderFallback v2View/);
+  const fb = strip(src("features", "production", "UnitOrderFallback.jsx"));
+  assert.match(fb, /data-testid="unit-v2-not-owned-notice"/); assert.match(fb, /Production V2 belum memegang eksekusi unit ini/);
+  const be = (...p) => fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "backend", "src", ...p), "utf8");
+  const engine = be("services", "unitStageEngine.js");
+  assert.match(engine, /isUnitV2ExecutionOwned\(tx, unitId\)/); assert.doesNotMatch(engine, /resolveProductionWriterState/);
+  const routes = be("routes", "units.js");
+  assert.doesNotMatch(routes, /assertUnitNotInV2Cohort/); assert.match(routes, /assertUnitNotV2Owned/);
+});

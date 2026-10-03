@@ -1,4 +1,4 @@
-// P12B.6 — (1) pagar server: unit COHORT V2 menolak 409 UNIT_V2_OWNED pada jalur V1 (layanan, prioritas/target, rute, penugasan, bahan); unit non-cohort tetap bisa;
+// P12B.6 — (1) pagar server: unit DIMILIKI V2 (writer ON + Run non-terminal) menolak 409 UNIT_V2_OWNED pada jalur V1 (layanan, prioritas/target, rute, penugasan, bahan, tahap); selain itu jalur V1 tetap bekerja (matriks 5 keadaan di akhir berkas);
 // (2) konflik ATOMIK di DB (compare-and-set) termasuk lomba paralel; (3) ID rusak → 400 bukan 500; (4) lifecycle unit non-cohort via HTTP nyata (tahap, QC, bahan, penugasan,
 // jeda/lanjut, hambatan) dengan izin per peran; (5) NOL artefak V2 dari seluruh aksi V1.
 import "./setup/env.js";
@@ -42,26 +42,6 @@ test("setup: unit non-cohort, unit cohort-reader, unit cohort-writer, unit lifec
   W = await world();
   await flag(V2_FLAGS.PRODUCTION_READER, [W.v2r.id]); await flag(V2_FLAGS.PRODUCTION_WRITER, [W.v2w.id]);
   FOOT0 = await v2Footprint();
-});
-
-test("PAGAR V2: unit cohort (reader ATAU writer) ditolak 409 UNIT_V2_OWNED pada layanan/prioritas/rute/penugasan/bahan; data tidak berubah", async () => {
-  const mat = await createTestMaterial(); await seedBalance(mat.id, 50);
-  for (const unit of [W.v2r, W.v2w]) {
-    const id = unit.id; const lead = W.who.lead.http;
-    const calls = [
-      ["service", () => lead.patch(`/api/units/${id}/service`, { serviceId: W.services[0].id })],
-      ["production", () => lead.patch(`/api/units/${id}/production`, { priority: "URGENT" })],
-      ["route", () => lead.post(`/api/units/${id}/route`, {})],
-      ["assign", () => lead.post(`/api/units/${id}/stages/${randomUUID()}/assign`, { workCenterId: null, operatorId: null })],
-      ["material", () => W.who.worker.http.post(`/api/units/${id}/materials`, { materialId: mat.id, qty: 1 })],
-    ];
-    for (const [name, call] of calls) { const r = await call(); assert.equal(r.status, 409, `${unit.unitCode} ${name}: ${JSON.stringify(r.body)}`); assert.equal(r.body.code, "UNIT_V2_OWNED", `${unit.unitCode} ${name}`); assert.match(r.body.error, /Production V2/); }
-    const after = await testPrisma.unit.findUniqueOrThrow({ where: { id } });
-    assert.equal(after.serviceId, null); assert.equal(after.priority, "NORMAL"); assert.equal(after.productionDueAt, null); assert.equal(after.productionRouteId, null);
-    assert.equal(await testPrisma.stockMovement.count({ where: { unitId: id } }), 0, "tidak ada pemakaian bahan V1 untuk unit cohort");
-  }
-  // pemilik V2 tetap dapat DIBACA (Unit 360 / timeline) — hanya jalur tulis V1 yang ditutup
-  assert.equal((await W.who.lead.http.get(`/api/units/${W.v2r.id}/timeline`)).status, 200);
 });
 
 test("unit NON-cohort tetap bisa lewat jalur V1 (service, production, bahan) — pagar tidak buta", async () => {
@@ -181,4 +161,65 @@ test("NOL artefak V2: seluruh aksi V1 (layanan, prioritas, tahap, QC, bahan, pen
   assert.equal(flags.length, 2);
   assert.ok(flags.every((f) => f.config.unitIds.length === 1), "cohort tidak diperluas (tepat satu unit per flag)");
   assert.deepEqual(flags.map((f) => f.config.unitIds[0]).sort(), [W.v2r.id, W.v2w.id].sort());
+});
+
+// ---- Matriks kepemilikan: SATU definisi (writer ON untuk unit + Run non-terminal) dipakai engine tahap DAN endpoint V1 layanan/prioritas/rute/penugasan/bahan. ----
+test("MATRIKS KEPEMILIKAN: writer OFF, reader-only, cohort tanpa Run → jalur V1 bekerja; Run aktif → V1 ditolak 409; Run terminal → V1 bekerja lagi (tak ada unit terkunci tanpa jalur sah)", async () => {
+  const mat = await createTestMaterial(); await seedBalance(mat.id, 100);
+  let n = 0;
+  const mk = (tag) => testPrisma.unit.create({ data: { unitCode: `OWN-M-${tag}`, orderId: W.v1.orderId, seq: 20 + (++n), status: "AWAITING_PICKUP" } });
+  const U = { off: await mk("OFF"), readerOnly: await mk("RDR"), noRun: await mk("NORUN"), active: await mk("ACT"), done: await mk("DONE"), cancelled: await mk("CNX") };
+  const run = (unit, status) => testPrisma.productionRun.create({ data: { unitId: unit.id, status, kind: "RESTORATION", currentPhase: status === "ACTIVE" ? "PROCESS" : null } });
+  // Unit aktif diberi layanan lewat V1 SEBELUM dimiliki V2 supaya rute/tahap nyata terbentuk (uji penolakan engine di tahap sungguhan).
+  assert.equal((await W.who.lead.http.patch(`/api/units/${U.active.id}/service`, { serviceId: W.services[0].id })).status, 200);
+  const path0 = (await W.who.lead.http.get(`/api/units/${U.active.id}/timeline`)).body.path ?? [];
+  assert.ok(path0.length > 0, "rute unit aktif terbentuk");
+  await run(U.active, "ACTIVE"); await run(U.done, "COMPLETED"); await run(U.cancelled, "CANCELLED");
+  await flag(V2_FLAGS.PRODUCTION_READER, [U.readerOnly.id, U.noRun.id, U.active.id, U.done.id, U.cancelled.id]);
+  await flag(V2_FLAGS.PRODUCTION_WRITER, [U.noRun.id, U.active.id, U.done.id, U.cancelled.id]);
+  const lead = W.who.lead.http; const worker = W.who.worker.http;
+  const owned = (r) => r.status === 409 && r.body?.code === "UNIT_V2_OWNED";
+  const overviewOwnership = async (unit) => { const r = await lead.get(`/api/production-v2/units/${unit.id}/overview`); return { status: r.status, owned: r.body?.ownership?.v2ExecutionOwned }; };
+
+  // Keadaan yang TIDAK dimiliki V2: seluruh jalur V1 bekerja (layanan, prioritas/target, bahan) dan tidak ada penolakan UNIT_V2_OWNED di rute/penugasan/tahap.
+  for (const [name, unit] of Object.entries({ off: U.off, readerOnly: U.readerOnly, noRun: U.noRun, done: U.done, cancelled: U.cancelled })) {
+    const svc = await lead.patch(`/api/units/${unit.id}/service`, { serviceId: W.services[0].id, expectedServiceId: null });
+    assert.equal(svc.status, 200, `${name} service: ${JSON.stringify(svc.body)}`);
+    const prod = await lead.patch(`/api/units/${unit.id}/production`, { priority: "HIGH" });
+    assert.equal(prod.status, 200, `${name} production: ${JSON.stringify(prod.body)}`);
+    const mt = await worker.post(`/api/units/${unit.id}/materials`, { materialId: mat.id, qty: 1 });
+    assert.equal(mt.status, 201, `${name} bahan: ${JSON.stringify(mt.body)}`);
+    for (const [what, r] of [["route", await lead.post(`/api/units/${unit.id}/route`, {})], ["assign", await lead.post(`/api/units/${unit.id}/stages/${randomUUID()}/assign`, { workCenterId: null, operatorId: null })], ["stage", await worker.post(`/api/units/${unit.id}/stages/start`, {})]]) {
+      assert.ok(!owned(r), `${name} ${what} tidak boleh ditolak sebagai milik V2: ${JSON.stringify(r.body)}`);
+      if (what === "stage") assert.equal(r.status, 200, `${name} mulai tahap V1 berjalan: ${JSON.stringify(r.body)}`);
+    }
+  }
+  // Reader cohort: Unit 360 melaporkan V2 TIDAK memegang eksekusi → drawer menawarkan tab "Kerja V1" (kontrak sama dengan guard server).
+  for (const [name, unit] of Object.entries({ readerOnly: U.readerOnly, noRun: U.noRun, done: U.done, cancelled: U.cancelled })) {
+    const ov = await overviewOwnership(unit); assert.equal(ov.status, 200, `${name} overview`); assert.equal(ov.owned, false, `${name} ownership`);
+  }
+  assert.equal((await lead.get(`/api/production-v2/units/${U.off.id}/overview`)).status, 404, "writer/reader OFF: Unit 360 tak tersedia (drawer memakai jalur V1)");
+
+  // Run AKTIF + writer ON: V2 memiliki — SEMUA jalur V1 ditolak 409 UNIT_V2_OWNED tanpa mengubah data.
+  const id = U.active.id;
+  const before = await testPrisma.unit.findUniqueOrThrow({ where: { id } });
+  const logsBefore = await testPrisma.unitStageLog.count({ where: { unitId: id } });
+  const calls = [
+    ["service", () => lead.patch(`/api/units/${id}/service`, { serviceId: W.services[0].id })],
+    ["production", () => lead.patch(`/api/units/${id}/production`, { priority: "URGENT" })],
+    ["route", () => lead.post(`/api/units/${id}/route`, {})],
+    ["assign", () => lead.post(`/api/units/${id}/stages/${randomUUID()}/assign`, { workCenterId: null, operatorId: null })],
+    ["material", () => worker.post(`/api/units/${id}/materials`, { materialId: mat.id, qty: 1 })],
+  ];
+  for (const [name, call] of calls) { const r = await call(); assert.ok(owned(r), `aktif ${name}: ${r.status} ${JSON.stringify(r.body)}`); }
+  const stage = await worker.post(`/api/units/${id}/stages/start`, {});
+  assert.equal(stage.status, 409, "tahap V1 pada unit milik V2 ditolak engine"); assert.match(JSON.stringify(stage.body), /Production V2/);
+  const after = await testPrisma.unit.findUniqueOrThrow({ where: { id } });
+  assert.deepEqual([after.serviceId, after.priority, after.productionDueAt, after.productionRouteId], [before.serviceId, before.priority, before.productionDueAt, before.productionRouteId]);
+  assert.equal(await testPrisma.stockMovement.count({ where: { unitId: id } }), 0);
+  assert.equal(await testPrisma.unitStageLog.count({ where: { unitId: id } }), logsBefore, "penolakan tahap tidak menulis log");
+  const ov = await overviewOwnership(U.active); assert.equal(ov.status, 200); assert.equal(ov.owned, true, "Run aktif + writer ON → V2 memiliki (tab Kerja V1 tidak ditawarkan)");
+
+  // Unit milik V2 tetap DAPAT DIBACA lewat timeline V1.
+  assert.equal((await lead.get(`/api/units/${id}/timeline`)).status, 200);
 });

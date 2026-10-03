@@ -1,8 +1,9 @@
-// P12B.6 — kepemilikan V2 atas unit: unit yang tercantum di cohort Production V2 (reader ATAU writer) dikelola command owner V2. Jalur V1 yang mengubah
-// layanan teknis / prioritas / target / rute / penugasan / bahan DITOLAK 409 (UNIT_V2_OWNED) agar diagnosis, rencana (revision/idempotency/outbox V2), dan
-// Material Issue tidak terlewati. Unit di luar cohort: jalur V1 tetap berlaku. Tahap/QC/blokir dijaga engine sendiri (assertNotV2ExecutionOwned).
-// Definisi cohort = flag yang SAMA dengan Unit 360 (reader) dan command V2 (writer) — tidak ada daftar kedua.
-import { isProductionReaderEnabledFor, isProductionWriterEnabledFor, loadV2Flags, resolveProductionReaderState, resolveProductionWriterState } from "./v2FeatureFlags.js";
+// P12B.6 — kepemilikan V2 atas unit. SATU definisi dipakai engine tahap/QC/blokir (assertNotV2ExecutionOwned) DAN endpoint V1 layanan/prioritas/target/rute/penugasan/bahan:
+//   unit DIMILIKI V2 = flag writer aktif untuk unit itu DAN punya Production Run non-terminal (COMPLETED/CANCELLED = terminal).
+// Alasannya: command owner V2 (Diagnosis, Rencana Produksi, Material Issue, Workshop, QC) semuanya butuh writer ON + Run. Selama salah satunya tidak ada
+// (writer OFF / reader-only / cohort belum punya Run / Run sudah selesai), TIDAK ADA jalur V2 yang sah — jalur V1 tetap bekerja supaya unit tidak terkunci.
+// Selama V2 memilikinya, jalur V1 DITOLAK 409 (UNIT_V2_OWNED) agar diagnosis, rencana (revision/idempotency/outbox V2) dan Material Issue tidak terlewati.
+import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
 export class UnitV2OwnedError extends Error {
   constructor(what) {
@@ -11,13 +12,14 @@ export class UnitV2OwnedError extends Error {
   }
 }
 
-export async function isUnitInV2Cohort(client, unitId) {
-  const flags = await loadV2Flags(client);
-  return isProductionReaderEnabledFor(resolveProductionReaderState(flags), unitId) || isProductionWriterEnabledFor(resolveProductionWriterState(flags), unitId);
+export async function isUnitV2ExecutionOwned(client, unitId) {
+  if (!isProductionWriterEnabledFor(resolveProductionWriterState(await loadV2Flags(client)), unitId)) return false;
+  const run = await client.productionRun.findFirst({ where: { unitId, status: { notIn: ["COMPLETED", "CANCELLED"] } }, select: { id: true } });
+  return !!run;
 }
 
-export async function assertUnitNotInV2Cohort(client, unitId, what = "data ini") {
-  if (await isUnitInV2Cohort(client, unitId)) throw new UnitV2OwnedError(what);
+export async function assertUnitNotV2Owned(client, unitId, what = "data ini") {
+  if (await isUnitV2ExecutionOwned(client, unitId)) throw new UnitV2OwnedError(what);
 }
 
 // Konflik atomik (compare-and-set di DB): nilai yang DILIHAT klien tidak lagi sama saat menulis.

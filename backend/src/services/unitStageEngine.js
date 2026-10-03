@@ -38,7 +38,7 @@ import {
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { syncOrderStatus } from "./orderStatusSync.js";
 import { suggestDeliveryJob } from "./deliveryHandoff.js";
-import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
+import { isUnitV2ExecutionOwned } from "./unitV2Ownership.js";
 
 // Isolation SERIALIZABLE untuk keempat perintah eksekusi inti (START/PAUSE/
 // RESUME/COMPLETE, Production Core Slice 3I) — pola "baca state tahap
@@ -66,11 +66,9 @@ class StageTransitionError extends Error {
 // eksekusi tahapnya hanya boleh lewat command owner V2 (productionWorkshopExecutionCommandService.js), yang memakai varian
 // *InTx di bawah di transaksinya sendiri. Jalur V1 menolak (409) supaya revision/idempotency/outbox V2 tidak bisa dilewati.
 // Flag OFF / unit di luar cohort / unit tanpa run => guard ini no-op dan perilaku V1 IDENTIK (satu baca flag saja).
+// Definisi kepemilikan = SATU fungsi bersama (unitV2Ownership.js) yang juga dipakai guard endpoint V1 layanan/prioritas/rute/penugasan/bahan.
 async function assertNotV2ExecutionOwned(tx, unitId) {
-  const state = resolveProductionWriterState(await loadV2Flags(tx));
-  if (!isProductionWriterEnabledFor(state, unitId)) return;
-  const run = await tx.productionRun.findFirst({ where: { unitId, status: { notIn: ["COMPLETED", "CANCELLED"] } }, select: { id: true } });
-  if (run) {
+  if (await isUnitV2ExecutionOwned(tx, unitId)) {
     throw new StageTransitionError("Unit ini dikelola Production V2 (eksekusi workshop) — gunakan endpoint /api/production-planning/workshop", 409);
   }
 }

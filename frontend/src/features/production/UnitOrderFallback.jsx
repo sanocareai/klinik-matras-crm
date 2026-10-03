@@ -8,18 +8,25 @@ import { V2_SECTIONS_UNAVAILABLE, dash, unitFacts } from "./unitOrderFallbackMod
 
 // P12B.4 — isi drawer Unit 360 untuk unit yang BELUM masuk Production V2 (Unit 360 = 404; cohort tidak diperluas). Membaca data order/unit ASLI
 // (GET /units/:id/timeline, baca-saja) di drawer yang sama — tanpa halaman Unit terpisah, tanpa tab baru. Bagian V2 yang belum ada dijelaskan apa adanya.
-export default function UnitOrderFallback({ data, error, loading, roles = [], onData, onChanged }) {
+export default function UnitOrderFallback({ data, error, loading, roles = [], onData, onChanged, v2View = false }) {
   if (loading) return <div data-testid="unit-fallback-loading" className="space-y-2"><div className="h-6 w-2/3 animate-pulse rounded bg-inset" /><div className="h-24 animate-pulse rounded bg-inset" /></div>;
   if (error) return <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>;
   if (!data) return null;
   const path = data.path || [];
   return (
     <div className="space-y-3 pb-4" data-testid="unit-order-fallback">
+      {v2View ? (
+        <div className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="unit-v2-not-owned-notice">
+          <p className="m-0 font-semibold">Production V2 belum memegang eksekusi unit ini.</p>
+          <p className="m-0 mt-0.5">Belum ada Production Run V2 yang aktif (atau penulisan V2 belum menyala untuk unit ini), jadi pekerjaan dilakukan lewat jalur V1. Begitu Run V2 aktif, jalur ini otomatis terkunci dan pekerjaan pindah ke Diagnosis, Rencana, Meja/Corner, dan QC.</p>
+        </div>
+      ) : (
       <div className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="unit-v2-notice">
         <p className="m-0 font-semibold">Unit ini belum memakai alur Production V2.</p>
         <p className="m-0 mt-0.5">Berikut data order dan unit aslinya (baca-saja). Bagian berikut akan tersedia setelah unit masuk Production V2:</p>
         <ul className="m-0 mt-1 list-disc pl-5">{V2_SECTIONS_UNAVAILABLE.map(([k, d]) => <li key={k}><b>{k}</b> — {d}</li>)}</ul>
       </div>
+      )}
       <dl className="m-0 grid grid-cols-2 gap-2 text-[12.5px]">
         {unitFacts(data).map(([k, v]) => (
           <div key={k} className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">{k}</dt><dd className="m-0 break-words font-semibold text-ink">{dash(v)}</dd></div>

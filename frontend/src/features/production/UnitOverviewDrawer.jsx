@@ -381,6 +381,9 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
   const [legacy, setLegacy] = useState({ data: null, error: "", loading: false });
   const [tab, setTab] = useState("ringkasan");
   const [showDiagnosis, setShowDiagnosis] = useState(false);
+  const [v1Work, setV1Work] = useState({ data: null, error: "", loading: false });
+  // P12B.6: V2 belum memiliki eksekusi unit (writer OFF / reader-only / belum ada Run / Run selesai) -> tab "Kerja V1" (kontrak sama dengan guard server).
+  const v1Workable = data?.ownership?.v2ExecutionOwned === false;
 
   const reload = useCallback(() => {
     if (!unitId) return;
@@ -390,7 +393,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
   useEffect(() => {
     if (!unitId) return undefined;
     let alive = true;
-    setData(null); setError(""); setUnavailable(false); setLegacy({ data: null, error: "", loading: false }); setTab("ringkasan"); setShowDiagnosis(false);
+    setData(null); setError(""); setUnavailable(false); setLegacy({ data: null, error: "", loading: false }); setV1Work({ data: null, error: "", loading: false }); setTab("ringkasan"); setShowDiagnosis(false);
     api.getUnitOverview(unitId).then((res) => { if (alive) setData(res); }).catch((e) => {
       if (!alive) return;
       if (!isOutsideV2(e)) { setError(friendlyError(e)); return; }
@@ -401,6 +404,16 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
     });
     return () => { alive = false; };
   }, [unitId]);
+
+  useEffect(() => {
+    if (tab !== "v1" || !v1Workable || !unitId || v1Work.data || v1Work.loading) return undefined;
+    let alive = true;
+    setV1Work({ data: null, error: "", loading: true });
+    api.getUnitTimeline(unitId)
+      .then((t) => { if (alive) setV1Work({ data: t, error: "", loading: false }); })
+      .catch((e) => { if (alive) setV1Work({ data: null, error: friendlyError(e), loading: false }); });
+    return () => { alive = false; };
+  }, [tab, v1Workable, unitId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // P9D — submit diagnosis (BOM+layanan) lalu tutup tahap 5 lewat jalur SAMA dengan Aplikasi Meja
   // (recordProductionV2Step). Kalau penutupan tahap gagal, diagnosis TETAP tersimpan — muat ulang saja.
@@ -434,7 +447,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
               {onManage && <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] shrink-0" onClick={onManage}>{manageLabel}</Button>}
             </div>
             <div role="tablist" aria-label="Bagian Unit 360" className="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-line">
-              {TABS.map(([k, l]) => (
+              {[...TABS, ...(v1Workable ? [["v1", "Kerja V1"]] : [])].map(([k, l]) => (
                 <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
                   className={`min-h-[44px] shrink-0 whitespace-nowrap border-b-2 px-3 text-[12.5px] font-semibold ${tab === k ? "border-accent text-accent" : "border-transparent text-ink3"}`}>
                   {l}
@@ -448,6 +461,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
               {tab === "dokumentasi" && <Dokumentasi d={data} />}
               {tab === "qc" && <QcHandoff d={data} />}
               {tab === "aktivitas" && <Aktivitas d={data} />}
+              {tab === "v1" && v1Workable && <UnitOrderFallback v2View data={v1Work.data} error={v1Work.error} loading={v1Work.loading} roles={rolesOf(currentUserLocal())} onData={(t) => setV1Work({ data: t, error: "", loading: false })} onChanged={() => { reload(); onChanged?.(); }} />}
             </div>
           </div>
         )}

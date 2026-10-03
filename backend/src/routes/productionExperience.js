@@ -21,7 +21,7 @@ import { productionReportsRouter } from "./productionReports.js";
 import { productionTargetsRouter } from "./productionTargets.js";
 import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
-import { UUID_RE } from "../services/unitV2Ownership.js";
+import { UUID_RE, isUnitV2ExecutionOwned } from "../services/unitV2Ownership.js";
 import { BOARD_DEFAULTS } from "../lib/domain/productionBoard.js";
 
 export const productionExperienceRouter = express.Router();
@@ -111,7 +111,8 @@ productionExperienceRouter.get("/units/:unitId/overview", requireAnyPermission(.
     if (!unitIds) return res.status(404).json({ error: "Unit 360 tidak tersedia", code: "PRODUCTION_V2_READER_OFF" });
     const overview = await getUnitOverview(prisma, req.params.unitId, { unitIds, canSeeValue: hasPermission(req.user, P.ORDER_PRICE_READ) });
     if (!overview) return res.status(404).json({ error: "Unit tidak ditemukan atau di luar cohort", code: "UNIT_NOT_FOUND" });
-    res.json({ readerMode: "COHORT", ...overview });
+    // P12B.6: V2 memiliki eksekusi unit ini (writer ON + Run non-terminal)? Bila TIDAK, tidak ada jalur V2 yang sah -> drawer menawarkan jalur kerja V1 (kontrak sama dgn guard server).
+    res.json({ readerMode: "COHORT", ...overview, ownership: { v2ExecutionOwned: await isUnitV2ExecutionOwned(prisma, req.params.unitId) } });
   } catch (err) { handleErr(err, res); }
 });
 
