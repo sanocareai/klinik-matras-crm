@@ -230,7 +230,10 @@ test("serah-terima (P12C.2): kode penolakan server dikenali = kode guard backend
   assert.match(lane, /const \[handoff, setHandoff\] = useState\(null\)/);
   assert.match(lane, /data-testid="handoff-notice"/); assert.match(lane, /data-testid="handoff-dismiss"/);
   assert.match(lane, /onHandoff=\{onHandoff\}/);
-  assert.match(lane, /jobs\.some\(\(j\) => j\.source === "V1" && j\.unitCode === handoff\.unitCode\)\) setHandoff\(null\)/, "kembali ke antrean -> pesan lama dibersihkan");
+  // dibersihkan HANYA setelah kartu terlihat hilang lalu muncul lagi (saat dipasang kartu belum hilang — dibersihkan seketika = pesan tak pernah terlihat; regresi ditemukan QA browser)
+  assert.match(lane, /if \(!present && !handoff\.gone\) setHandoff\(\(h\) => \(h && !h\.gone \? \{ \.\.\.h, gone: true \} : h\)\)/);
+  assert.match(lane, /else if \(present && handoff\.gone\) setHandoff\(null\)/);
+  assert.doesNotMatch(lane, /jobs\.some\([^)]*\)\) setHandoff\(null\)/, "tidak boleh membersihkan seketika saat kartu masih ada");
   const bar = strip(read("V1Panels.jsx"));
   assert.match(bar, /isHandoffError\(e\)\) onHandoff\?\.\(\)/, "penolakan SERVER (403/409 guard) memicu pesan, bukan hanya penjaga klien");
   assert.match(bar, /g\?\.ok === false\) \{[^\n]*onHandoff\?\.\(\)/, "penjaga klien juga memicu pesan yang sama");

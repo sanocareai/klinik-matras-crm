@@ -37,7 +37,13 @@ export default function WorkerLane({ lane = "TABLE", user: userProp = null, onLo
   const mode = modeOfLane(lane);
   const onHandoff = useCallback((job) => setHandoff(handoffNotice({ unitCode: job?.unitCode, orderNumber: job?.orderNumber })), []);
   // Bila unit itu kembali ke antrean PIC ini (dialihkan balik), pesan lama tidak relevan lagi.
-  useEffect(() => { if (handoff && jobs.some((j) => j.source === "V1" && j.unitCode === handoff.unitCode)) setHandoff(null); }, [jobs, handoff]);
+  // Saat pesan dipasang, kartunya BELUM hilang dari daftar (muat ulang baru menyusul) — jadi pesan hanya dibersihkan setelah kartu terlihat hilang (gone) lalu muncul lagi.
+  useEffect(() => {
+    if (!handoff) return;
+    const present = jobs.some((j) => j.source === "V1" && j.unitCode === handoff.unitCode);
+    if (!present && !handoff.gone) setHandoff((h) => (h && !h.gone ? { ...h, gone: true } : h));
+    else if (present && handoff.gone) setHandoff(null);
+  }, [jobs, handoff]);
 
   const setTab = useCallback((t) => setParams((p) => { const n = new URLSearchParams(p); n.set("t", t); n.delete("job"); return n; }, { replace: true }), [setParams]);
   const openJob = useCallback((job) => setParams((p) => { const n = new URLSearchParams(p); n.set("job", job.key); return n; }), [setParams]);
