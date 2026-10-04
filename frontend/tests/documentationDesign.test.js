@@ -98,6 +98,7 @@ test("aksi utama 'Ambil Foto': bilah aksi lengket hanya bila canWrite; kamera be
   assert.match(d, /<Camera size=\{21\} aria-hidden \/> Ambil Foto/);
   assert.match(d, /accept="image\/\*" capture="environment" hidden disabled=\{!selKey\} onChange=\{onInput\} data-testid="bar-camera"/);
   assert.match(d, /accept="image\/\*" multiple hidden disabled=\{!selKey\} onChange=\{onInput\} data-testid="bar-gallery"/);
+  assert.match(d, /const files = Array\.from\(e\.target\.files \|\| \[\]\); e\.target\.value = ""; pick\(files\)/, "salin FileList sebelum input dikosongkan");
   assert.match(d, /aria-label="Kategori foto"/); assert.match(d, /data-testid="bar-category"/);
   assert.match(d, /role="tablist" aria-label="Kelompok dokumentasi"/);
   assert.match(d, /data-testid="readonly-note"/); assert.match(d, /!detail\.canWrite/);

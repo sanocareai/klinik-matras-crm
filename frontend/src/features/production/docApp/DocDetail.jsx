@@ -106,8 +106,9 @@ export default function DocDetail({ runId, group, onGroup, drafts, resume, onRes
     onResumeConsumed();
   }, [resume, detail]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pick = (files) => { const cat = catOf(selKey); if (cat && files?.length) setCapture({ category: cat, initialFiles: Array.from(files) }); };
-  const onInput = (e) => { const f = e.target.files; e.target.value = ""; pick(f); };
+  const pick = (files) => { const cat = catOf(selKey); if (cat && files.length) setCapture({ category: cat, initialFiles: files }); };
+  // FileList itu HIDUP: mengosongkan value input mengosongkannya juga — salin ke array DULU (bug yang ditemukan QA browser: foto kamera/galeri hilang sebelum sheet terbuka).
+  const onInput = (e) => { const files = Array.from(e.target.files || []); e.target.value = ""; pick(files); };
 
   return (
     <div data-testid="doc-detail" data-run-id={runId}>
