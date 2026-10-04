@@ -39,15 +39,16 @@ test("writer audit P5 gagal: penulis operation run/stage log di luar owner, P5 m
   const forbidden = auditWorkshopExecutionWriters(stock).findings.filter((f) => f.kind === "P5_FORBIDDEN_WRITE").map((f) => f.disposition).sort();
   assert.deepEqual(forbidden, ["FORBIDDEN_materialReservation", "FORBIDDEN_postMaterialIssueCost", "FORBIDDEN_stockMovement"]);
 
-  const noFence = new Map(sources); noFence.set("src/services/unitStageEngine.js", sources.get("src/services/unitStageEngine.js").replaceAll("await assertNotV2ExecutionOwned(tx, unitId);", ""));
+  const noFence = new Map(sources); noFence.set("src/services/unitStageEngine.js", sources.get("src/services/unitStageEngine.js").replaceAll(/await assertNotV2ExecutionOwned\(tx, unitId(?:, [^)]*)?\);/g, ""));
   assert.ok(auditWorkshopExecutionWriters(noFence).findings.some((f) => f.kind === "ENGINE_FENCE"));
 });
 
 test("writer audit P5 memeriksa pagar PER FUNGSI: failStage tanpa pagar dan pagar salah tempat di resolveBlocker (tanpa unitId) terdeteksi", () => {
   const sources = loadBackendSources(backendRoot);
   const engine = sources.get("src/services/unitStageEngine.js");
-  const FENCE = "await assertNotV2ExecutionOwned(tx, unitId);";
   const failStart = engine.indexOf("export async function failStage(");
+  // Bentuk pagar aktual (P12B.6: membawa konteks "apa" + aktor untuk penanda drift) diambil dari source, bukan ditulis ulang.
+  const FENCE = engine.slice(failStart).match(/await assertNotV2ExecutionOwned\(tx, unitId(?:, [^)]*)?\);/)[0];
   const failFence = engine.indexOf(FENCE, failStart);
   assert.ok(failFence > failStart && failFence < engine.indexOf("export async function resolveBlocker("), "failStage harus memuat pagar");
   const misplaced = engine.slice(0, failFence) + engine.slice(failFence + FENCE.length);
@@ -56,4 +57,14 @@ test("writer audit P5 memeriksa pagar PER FUNGSI: failStage tanpa pagar dan paga
   const mutated = new Map(sources); mutated.set("src/services/unitStageEngine.js", misplaced.replace(resolveHead, () => `${resolveHead}    ${FENCE}\n`));
   const dispositions = auditWorkshopExecutionWriters(mutated).findings.filter((f) => !f.ok).map((f) => f.disposition).sort();
   assert.deepEqual(dispositions, ["FENCE_WITHOUT_UNITID_resolveBlocker", "MISSING_FENCE_failStage"]);
+});
+
+// P12B.6 — gerbang tulis V1 meninggalkan penanda drift; resolveBlocker (tanpa padanan V2) HANYA menandai (reject=false), tidak menjadi pagar yang membuat blokir lama tak bisa diselesaikan.
+test("engine: resolveBlocker memakai gerbang hanya-penanda (reject=false); 9 fungsi penulis memakai gerbang yang menolak unit milik V2", () => {
+  const engine = loadBackendSources(backendRoot).get("src/services/unitStageEngine.js");
+  const resolve = engine.slice(engine.indexOf("export async function resolveBlocker("), engine.indexOf("export async function failStage(") > engine.indexOf("export async function resolveBlocker(") ? engine.indexOf("export async function failStage(") : undefined);
+  assert.match(resolve, /assertNotV2ExecutionOwned\(tx, existing\.unitId, "penyelesaian blokir V1", actorId, false\)/);
+  const helper = engine.slice(engine.indexOf("async function assertNotV2ExecutionOwned("), engine.indexOf("/** Ambil seluruh tahap"));
+  assert.match(helper, /guardV1UnitWrite\(tx, unitId, \{ what, actorId, reject \}\)/);
+  assert.match(helper, /reject = true/, "bawaan = menolak");
 });

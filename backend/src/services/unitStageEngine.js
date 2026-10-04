@@ -38,7 +38,7 @@ import {
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { syncOrderStatus } from "./orderStatusSync.js";
 import { suggestDeliveryJob } from "./deliveryHandoff.js";
-import { isUnitV2ExecutionOwned } from "./unitV2Ownership.js";
+import { guardV1UnitWrite, UnitV2OwnedError, UnitConcurrentChangeError } from "./unitV2Ownership.js";
 
 // Isolation SERIALIZABLE untuk keempat perintah eksekusi inti (START/PAUSE/
 // RESUME/COMPLETE, Production Core Slice 3I) — pola "baca state tahap
@@ -67,9 +67,15 @@ class StageTransitionError extends Error {
 // *InTx di bawah di transaksinya sendiri. Jalur V1 menolak (409) supaya revision/idempotency/outbox V2 tidak bisa dilewati.
 // Flag OFF / unit di luar cohort / unit tanpa run => guard ini no-op dan perilaku V1 IDENTIK (satu baca flag saja).
 // Definisi kepemilikan = SATU fungsi bersama (unitV2Ownership.js) yang juga dipakai guard endpoint V1 layanan/prioritas/rute/penugasan/bahan.
-async function assertNotV2ExecutionOwned(tx, unitId) {
-  if (await isUnitV2ExecutionOwned(tx, unitId)) {
-    throw new StageTransitionError("Unit ini dikelola Production V2 (eksekusi workshop) — gunakan endpoint /api/production-planning/workshop", 409);
+// Gerbang ini = gerbang TULIS V1 (guardV1UnitWrite): mengunci baris unit (urutan kunci sama dengan command V2), menolak bila V2 memiliki unit, dan
+// meninggalkan penanda drift bila ada Run non-terminal tetapi V2 tidak memegang eksekusi (writer OFF) — satu transaksi dengan mutasinya.
+async function assertNotV2ExecutionOwned(tx, unitId, what = "tahap produksi", actorId = null, reject = true) {
+  try {
+    await guardV1UnitWrite(tx, unitId, { what, actorId, reject });
+  } catch (err) {
+    if (err instanceof UnitV2OwnedError) throw new StageTransitionError("Unit ini dikelola Production V2 (eksekusi workshop) — gunakan endpoint /api/production-planning/workshop", 409);
+    if (err instanceof UnitConcurrentChangeError) throw new StageTransitionError(err.message, 409);
+    throw err;
   }
 }
 
@@ -348,7 +354,7 @@ export async function resolveNextStageForUnits(units) {
  */
 export async function startStage(unitId, { actorId } = {}) {
   return prisma.$transaction(async (tx) => {
-    await assertNotV2ExecutionOwned(tx, unitId);
+    await assertNotV2ExecutionOwned(tx, unitId, "mulai tahap", actorId);
     return startStageInTx(tx, unitId, { actorId });
   }, EXECUTION_TX_OPTIONS);
 }
@@ -448,7 +454,7 @@ export async function startStageInTx(tx, unitId, { actorId, allowRerunOfLastStag
  */
 export async function recordStageDone(unitId, { actorId, photoUrls = [], note } = {}) {
   return prisma.$transaction(async (tx) => {
-    await assertNotV2ExecutionOwned(tx, unitId);
+    await assertNotV2ExecutionOwned(tx, unitId, "selesai tahap", actorId);
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
     const path = await pathForUnit(tx, unit);
     const { stage, state } = await resolveCurrentTarget(tx, unit, path);
@@ -501,7 +507,7 @@ export async function recordStageDone(unitId, { actorId, photoUrls = [], note } 
  */
 export async function completeStage(unitId, stageId, { actorId, photoUrls = [], note } = {}) {
   return prisma.$transaction(async (tx) => {
-    await assertNotV2ExecutionOwned(tx, unitId);
+    await assertNotV2ExecutionOwned(tx, unitId, "selesai tahap", actorId);
     return completeStageInTx(tx, unitId, stageId, { actorId, photoUrls, note });
   }, EXECUTION_TX_OPTIONS);
 }
@@ -563,7 +569,7 @@ export async function completeStageInTx(tx, unitId, stageId, { actorId, photoUrl
  */
 export async function pauseStage(unitId, stageId, { actorId, reason, note, photoUrls = [] } = {}) {
   return prisma.$transaction(async (tx) => {
-    await assertNotV2ExecutionOwned(tx, unitId);
+    await assertNotV2ExecutionOwned(tx, unitId, "jeda tahap", actorId);
     return pauseStageInTx(tx, unitId, stageId, { actorId, reason, note, photoUrls });
   }, EXECUTION_TX_OPTIONS);
 }
@@ -611,7 +617,7 @@ export async function pauseStageInTx(tx, unitId, stageId, { actorId, reason, not
  */
 export async function resumeStage(unitId, stageId, { actorId } = {}) {
   return prisma.$transaction(async (tx) => {
-    await assertNotV2ExecutionOwned(tx, unitId);
+    await assertNotV2ExecutionOwned(tx, unitId, "lanjut tahap", actorId);
     return resumeStageInTx(tx, unitId, stageId, { actorId });
   }, EXECUTION_TX_OPTIONS);
 }
@@ -763,7 +769,7 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note } 
 
   try {
     return await prisma.$transaction(async (tx) => {
-      await assertNotV2ExecutionOwned(tx, unitId);
+      await assertNotV2ExecutionOwned(tx, unitId, "hambatan/gagal tahap", actorId);
       const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
       const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
 
@@ -840,6 +846,8 @@ export async function resolveBlocker(blockerId, { actorId, resolutionNote } = {}
   return prisma.$transaction(async (tx) => {
     const existing = await tx.productionBlocker.findUnique({ where: { id: blockerId } });
     if (!existing) throw new StageTransitionError("Blokir tidak ditemukan", 404);
+    // Tidak ada padanan V2 untuk menyelesaikan blokir V1 lama: tidak ditolak, tetapi bila Run V2 non-terminal ada, drift dicatat.
+    await assertNotV2ExecutionOwned(tx, existing.unitId, "penyelesaian blokir V1", actorId, false);
 
     const result = await tx.productionBlocker.updateMany({
       where: { id: blockerId, resolvedAt: null },
@@ -865,7 +873,7 @@ export async function resolveBlocker(blockerId, { actorId, resolutionNote } = {}
 /** LEWATI tahap opsional (isOptional=true). Tetap tercatat di ledger. */
 export async function skipStage(unitId, { actorId, note } = {}) {
   return prisma.$transaction(async (tx) => {
-    await assertNotV2ExecutionOwned(tx, unitId);
+    await assertNotV2ExecutionOwned(tx, unitId, "lewati tahap", actorId);
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
     const path = await pathForUnit(tx, unit);
 
@@ -911,7 +919,7 @@ function assertQcFitInput({ verdict, referenceWeightKg, customerPreferenceOverri
 export async function recordQcFitTest(unitId, stageId, opts = {}) {
   assertQcFitInput(opts);
   return prisma.$transaction(async (tx) => {
-    await assertNotV2ExecutionOwned(tx, unitId);
+    await assertNotV2ExecutionOwned(tx, unitId, "QC uji pas", opts.actorId);
     return recordQcFitTestInTx(tx, unitId, stageId, opts);
   });
 }
@@ -1100,7 +1108,7 @@ export async function adminBypassProduction(unitId, { actorId, note } = {}) {
     throw new StageTransitionError("Catatan alasan bypass wajib diisi — ini override manual, harus bisa dipertanggungjawabkan");
   }
   return prisma.$transaction(async (tx) => {
-    await assertNotV2ExecutionOwned(tx, unitId);
+    await assertNotV2ExecutionOwned(tx, unitId, "bypass admin", actorId);
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
     if (["CANCELLED", "DELIVERED", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"].includes(unit.status)) {
       throw new StageTransitionError(`Unit sudah berstatus ${unit.status} — bypass ini cuma untuk unit yang masih tersangkut di produksi`);

@@ -223,3 +223,66 @@ test("MATRIKS KEPEMILIKAN: writer OFF, reader-only, cohort tanpa Run → jalur V
   // Unit milik V2 tetap DAPAT DIBACA lewat timeline V1.
   assert.equal((await lead.get(`/api/units/${id}/timeline`)).status, 200);
 });
+
+// ---- RACE: command V1 bersamaan dengan pembukaan Run V2. Kunci unit tunggal (lockUnitOwnership) di gerbang V1 DAN pembuka Run V2. ----
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function openRunHolding(unitId, ms) { // pembukaan Run V2 NYATA (openProductionIntakeV2) yang menahan kunci unit sebelum commit
+  const { openProductionIntakeV2 } = await import("../../src/services/unitCustodyCommandService.js");
+  return testPrisma.$transaction(async (tx) => { const r = await openProductionIntakeV2(tx, { unitId, actorId: null }); await sleep(ms); return r; }, { timeout: 30000, maxWait: 10000 });
+}
+
+test("RACE deterministik: V1 yang tiba SAAT Run V2 sedang dibuka menunggu kunci unit lalu ditolak; tidak ada tulisan V1 setelah ownership V2 aktif", async () => {
+  const mat = await createTestMaterial(); await seedBalance(mat.id, 100);
+  let n = 0;
+  const mk = (tag) => testPrisma.unit.create({ data: { unitCode: `OWN-R-${tag}`, orderId: W.v1.orderId, seq: 100 + (++n), status: "AWAITING_PICKUP" } });
+  const names = ["service", "production", "route", "assign", "material", "stage"];
+  const U = Object.fromEntries(await Promise.all(names.map(async (k) => [k, await mk(k)])));
+  assert.equal((await W.who.lead.http.patch(`/api/units/${U.stage.id}/service`, { serviceId: W.services[0].id })).status, 200); // rute + tahap nyata untuk uji engine
+  await flag(V2_FLAGS.PRODUCTION_WRITER, Object.values(U).map((u) => u.id)); await flag(V2_FLAGS.PRODUCTION_READER, Object.values(U).map((u) => u.id));
+  const lead = W.who.lead.http; const worker = W.who.worker.http;
+  const calls = {
+    service: (u) => lead.patch(`/api/units/${u.id}/service`, { serviceId: W.services[1].id }),
+    production: (u) => lead.patch(`/api/units/${u.id}/production`, { priority: "URGENT" }),
+    route: (u) => lead.post(`/api/units/${u.id}/route`, {}),
+    assign: (u) => lead.post(`/api/units/${u.id}/stages/${randomUUID()}/assign`, { workCenterId: null, operatorId: null }),
+    material: (u) => worker.post(`/api/units/${u.id}/materials`, { materialId: mat.id, qty: 1 }),
+    stage: (u) => worker.post(`/api/units/${u.id}/stages/start`, {}),
+  };
+  for (const name of names) {
+    const unit = U[name]; const before = await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } });
+    const logs0 = await testPrisma.unitStageLog.count({ where: { unitId: unit.id } });
+    const holder = openRunHolding(unit.id, 900);
+    await sleep(250); // holder sudah memegang kunci unit (Run belum commit)
+    const t0 = Date.now(); const r = await calls[name](unit); const waited = Date.now() - t0;
+    await holder;
+    assert.ok(waited >= 400, `${name}: V1 harus MENUNGGU kunci unit (menunggu ${waited}ms)`);
+    assert.equal(r.status, 409, `${name}: ${JSON.stringify(r.body)}`);
+    if (name !== "stage") assert.equal(r.body.code, "UNIT_V2_OWNED", name); // engine tahap: UNIT_V2_OWNED dipetakan ke pesan engine; wajib 409
+    const after = await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } });
+    assert.deepEqual([after.serviceId, after.priority, after.productionRouteId, after.currentStageId], [before.serviceId, before.priority, before.productionRouteId, before.currentStageId], `${name}: unit tidak berubah`);
+    assert.equal(await testPrisma.unitStageLog.count({ where: { unitId: unit.id } }), logs0, `${name}: tak ada log tahap V1`);
+    assert.equal(await testPrisma.stockMovement.count({ where: { unitId: unit.id } }), 0, `${name}: tak ada pemakaian bahan V1`);
+    assert.equal(await testPrisma.productionRun.count({ where: { unitId: unit.id } }), 1, `${name}: Run V2 terbentuk`);
+    assert.equal(await testPrisma.activityEvent.count({ where: { entityId: unit.id, eventType: "PRODUCTION_V1_WRITE_ON_V2_RUN" } }), 0, `${name}: V1 ditolak bersih, tanpa penanda`);
+  }
+});
+
+test("RACE acak: V1 paralel dengan pembukaan Run V2 — hasil selalu serial (V1 sukses SEBELUM Run, atau ditolak 409); tak pernah 5xx atau tulisan setelah ownership", async () => {
+  const mat = await createTestMaterial(); await seedBalance(mat.id, 100);
+  const units = []; for (let i = 0; i < 8; i++) units.push(await testPrisma.unit.create({ data: { unitCode: `OWN-RR-${i}`, orderId: W.v1.orderId, seq: 200 + i, status: "AWAITING_PICKUP" } }));
+  await flag(V2_FLAGS.PRODUCTION_WRITER, units.map((u) => u.id)); await flag(V2_FLAGS.PRODUCTION_READER, units.map((u) => u.id));
+  const results = await Promise.all(units.map(async (u, i) => {
+    const call = i % 2 === 0 ? W.who.lead.http.patch(`/api/units/${u.id}/service`, { serviceId: W.services[0].id }) : W.who.worker.http.post(`/api/units/${u.id}/materials`, { materialId: mat.id, qty: 1 });
+    const [r] = await Promise.all([call, openRunHolding(u.id, 30)]);
+    return { u, i, r };
+  }));
+  for (const { u, i, r } of results) {
+    assert.ok([200, 201, 409].includes(r.status), `unit ${i}: status tak terduga ${r.status} ${JSON.stringify(r.body)}`);
+    const row = await testPrisma.unit.findUniqueOrThrow({ where: { id: u.id } });
+    const moves = await testPrisma.stockMovement.count({ where: { unitId: u.id } });
+    if (r.status === 409) { assert.equal(r.body.code, "UNIT_V2_OWNED"); assert.equal(i % 2 === 0 ? row.serviceId : moves, i % 2 === 0 ? null : 0, `unit ${i}: ditolak = tak menulis`); }
+    else assert.equal(i % 2 === 0 ? !!row.serviceId : moves === 1, true, `unit ${i}: sukses = tertulis`);
+    assert.equal(await testPrisma.productionRun.count({ where: { unitId: u.id } }), 1);
+    assert.equal(await testPrisma.activityEvent.count({ where: { entityId: u.id, eventType: "PRODUCTION_V1_WRITE_ON_V2_RUN" } }), 0, "V1 yang sukses terjadi SEBELUM Run ada: tanpa penanda drift");
+  }
+});

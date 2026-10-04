@@ -28,7 +28,8 @@ import { validatePauseReason } from "../lib/domain/stageExecution.js";
 import { isLastStage } from "../lib/domain/routing.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
-import { assertNoOpenRunException } from "./productionRunGuards.js";
+import { assertNoOpenRunException, assertNoV1Drift } from "./productionRunGuards.js";
+import { lockUnitOwnership } from "./unitV2Ownership.js";
 import {
   completeStageInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, startStageInTx,
 } from "./unitStageEngine.js";
@@ -140,6 +141,7 @@ export async function loadRunForWrite(tx, runId) {
   await lockRowForUpdate(tx, "production_runs_v2", runId);
   const run = await tx.productionRun.findUnique({ where: { id: runId }, include: RUN_INCLUDE });
   if (TERMINAL_RUN.includes(run.status)) throw workError("Production Run sudah selesai/dibatalkan", 409, "WORKSHOP_RUN_TERMINAL");
+  await assertNoV1Drift(tx, { runId, unitId: run.unitId }); // rollback writer OFF -> aksi V1 -> writer ON: berhenti sampai direkonsiliasi (productionRunGuards.js)
   // P9A (One-Location Production Intake) — unit sudah "Masuk Produksi" (pickup
   // berhasil, kartu tampil di board) TAPI belum dikonfirmasi tiba secara fisik
   // di workshop. SATU-SATUNYA titik gerbang untuk SELURUH command tahap
@@ -273,6 +275,7 @@ export async function registerWorkshopBornRun(prisma, { unitId, actorId, idempot
 
   return prisma.$transaction(async (tx) => {
     await lockRowForUpdate(tx, "units", unitId);
+    await lockUnitOwnership(tx, unitId); // pembukaan Run = pengambilalihan kepemilikan (lihat unitV2Ownership.js)
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
     const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, currentStageId: true, order: { select: { category: true } } } });

@@ -201,7 +201,12 @@ test("kepemilikan V2 (P12B.6 final): tab 'Kerja V1' hanya bila server melaporkan
   assert.match(fb, /data-testid="unit-v2-not-owned-notice"/); assert.match(fb, /Production V2 belum memegang eksekusi unit ini/);
   const be = (...p) => fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "backend", "src", ...p), "utf8");
   const engine = be("services", "unitStageEngine.js");
-  assert.match(engine, /isUnitV2ExecutionOwned\(tx, unitId\)/); assert.doesNotMatch(engine, /resolveProductionWriterState/);
+  assert.match(engine, /guardV1UnitWrite\(tx, unitId/); assert.doesNotMatch(engine, /resolveProductionWriterState/);
   const routes = be("routes", "units.js");
-  assert.doesNotMatch(routes, /assertUnitNotInV2Cohort/); assert.match(routes, /assertUnitNotV2Owned/);
+  assert.doesNotMatch(routes, /assertUnitNotInV2Cohort|assertUnitNotV2Owned\(prisma/); assert.match(routes, /guardV1UnitWrite\(tx, /);
+  // gerbang V1 dijalankan DI DALAM transaksi mutasi (kunci unit -> kepemilikan -> tulis) untuk SEMUA endpoint V1, termasuk rute/penugasan/bahan
+  assert.match(routes, /changeUnitRoute\(req\.params\.id, \{ actorId: req\.user\.id, guardV1:/); assert.match(routes, /guardV1: "penugasan work center\/operator"/);
+  assert.match(routes, /prisma\.\$transaction\(async \(tx\) => \{\s+await guardV1UnitWrite\(tx, unit\.id, \{ what: "pemakaian bahan"/);
+  // peringatan drift (rollback writer OFF -> aksi V1 -> writer ON) tampil di drawer
+  assert.match(drawer, /data-testid="unit-v1-drift-notice"/); assert.match(drawer, /data\.ownership\?\.v1Drift/);
 });

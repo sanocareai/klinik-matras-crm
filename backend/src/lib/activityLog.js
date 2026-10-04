@@ -186,6 +186,9 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_RUN_CANCELLED: "PRODUCTION_RUN_CANCELLED",
   PRODUCTION_RUN_EXCEPTION_OPENED: "PRODUCTION_RUN_EXCEPTION_OPENED",
   PRODUCTION_RUN_EXCEPTION_RESOLVED: "PRODUCTION_RUN_EXCEPTION_RESOLVED",
+  // P12B.6 — aksi V1 yang ditulis saat unit punya Production Run non-terminal TETAPI V2 tidak memegang eksekusi (writer OFF/rollback): penanda drift proyeksi.
+  // Command V2 berhenti (409 PRODUCTION_RUN_V1_DRIFT) sampai Run dibatalkan (rekonsiliasi). Lihat services/unitV2Ownership.js.
+  PRODUCTION_V1_WRITE_ON_V2_RUN: "PRODUCTION_V1_WRITE_ON_V2_RUN",
   // P8 — bukti tahap PIC Table/Corner dan "Menunggu Bahan Baku".
   PRODUCTION_STEP_RECORDED: "PRODUCTION_STEP_RECORDED",
   PRODUCTION_MATERIAL_SHORTAGE_REPORTED: "PRODUCTION_MATERIAL_SHORTAGE_REPORTED",
@@ -433,6 +436,8 @@ export function formatActivitySentence(event) {
       return `Production Run unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.PRODUCTION_RUN_EXCEPTION_OPENED:
       return `Konflik rekonsiliasi dicatat untuk unit ${metadata.unitCode || "—"}: status unit ${metadata.unitStatus || "—"} berbeda dari Production Run yang berjalan`;
+    case EVENT_TYPES.PRODUCTION_V1_WRITE_ON_V2_RUN:
+      return `Aksi V1 (${metadata.what || "—"}) dicatat saat Production Run V2 unit ini masih berjalan — proyeksi V2 perlu direkonsiliasi sebelum command V2 dilanjutkan`;
     case EVENT_TYPES.PRODUCTION_RUN_EXCEPTION_RESOLVED:
       return `Konflik rekonsiliasi unit ${metadata.unitCode || "—"} diselesaikan (${metadata.resolution || "—"})${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.PRODUCTION_STATION_REORDERED:

@@ -106,7 +106,17 @@ test("migration P6 additif: enum value, kolom nullable, tabel baru, trigger, CHE
   assert.equal(sql.includes("\r"), false, "migration harus LF (checksum stabil)");
   const names = fs.readdirSync(path.join(backendRoot, "prisma", "migrations"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
   assert.ok(names.indexOf(MIGRATION) > names.indexOf("20261001080000_production_workshop_execution_v2"), "migration P6 sesudah P5 (P8 boleh menyusul)");
-  assert.equal(new Set(names.map((n) => n.slice(0, 14))).size >= names.length - 3, true);
+  // Kontrak sebenarnya: migration P6 BERSTEMPEL UNIK dan tidak ada tabrakan stempel BARU. Versi lama menghitung "unik >= total - 3" (3 = tabrakan yang kebetulan ada
+  // saat P6 ditulis) sehingga gagal begitu sesi lain menambah tabrakan sah. Kini daftar tabrakan DIKENAL eksplisit: tiap pasangan menyentuh objek DB yang terpisah
+  // (diperiksa 4 Okt 2026), diurutkan deterministik oleh Prisma lewat nama folder penuh, dan TIDAK BOLEH di-rename (sudah dipakai database yang sudah migrate).
+  // Tabrakan stempel BARU di luar daftar ini tetap menggagalkan tes.
+  const KNOWN_SHARED_STAMPS = new Set(["20260801140000", "20260906150000", "20260928090000", "20261013090000", "20261014090000"]);
+  const byStamp = new Map();
+  for (const n of names) byStamp.set(n.slice(0, 14), [...(byStamp.get(n.slice(0, 14)) ?? []), n]);
+  const shared = [...byStamp].filter(([, v]) => v.length > 1);
+  assert.deepEqual(shared.filter(([stamp]) => !KNOWN_SHARED_STAMPS.has(stamp)).map(([stamp, v]) => `${stamp}: ${v.join(" + ")}`), [], "tabrakan stempel migration BARU (selain yang dikenal)");
+  assert.equal(byStamp.get(MIGRATION.slice(0, 14)).length, 1, "stempel migration P6 unik");
+  for (const [, v] of shared) assert.equal(new Set(v).size, v.length, "nama folder penuh berbeda (urutan deterministik)");
 });
 
 test("writer audit P6 pada source aktual: 0 pelanggaran (inspeksi/fit test/exception/custody/completion hanya owner; pagar Order; filter antrean QC V1)", () => {

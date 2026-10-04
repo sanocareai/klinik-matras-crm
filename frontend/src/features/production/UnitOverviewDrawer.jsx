@@ -446,6 +446,12 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
               </div>
               {onManage && <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] shrink-0" onClick={onManage}>{manageLabel}</Button>}
             </div>
+            {data.ownership?.v1Drift && (
+              <div role="alert" data-testid="unit-v1-drift-notice" className="mb-3 shrink-0 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">
+                <p className="m-0 font-semibold">Proyeksi V2 perlu direkonsiliasi.</p>
+                <p className="m-0 mt-0.5">Ada {data.ownership.v1Drift.count} aksi V1 ({(data.ownership.v1Drift.kinds || []).join(", ") || "—"}) yang dikerjakan saat Production V2 tidak memegang eksekusi unit ini. Command V2 (langkah, rencana, bahan, diagnosis) dihentikan sampai Production Run dibatalkan oleh Production Lead; setelah itu unit dikerjakan lewat V1 atau Run baru.</p>
+              </div>
+            )}
             <div role="tablist" aria-label="Bagian Unit 360" className="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-line">
               {[...TABS, ...(v1Workable ? [["v1", "Kerja V1"]] : [])].map(([k, l]) => (
                 <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}

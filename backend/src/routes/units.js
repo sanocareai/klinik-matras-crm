@@ -25,7 +25,7 @@ import { mapRouteStagesToVisualization } from "../lib/domain/productionRouting.j
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services/productionRouting.js";
 import { postStockMovement } from "../services/inventoryLedger.js";
-import { assertUnitNotV2Owned, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
+import { guardV1UnitWrite, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
 import { prisma } from "../db.js";
 
 export const unitRouter = express.Router();
@@ -212,7 +212,7 @@ unitRouter.patch("/:id/service", requirePermission(P.UNIT_ROUTING_WRITE), async 
     // tercatat di mana pun selain updatedAt polos.
     const unit = await prisma.$transaction(async (tx) => {
       // Pagar V2 (P12B.6): unit cohort → layanan teknis lewat Diagnosis (command owner V2), bukan jalur V1 ini.
-      await assertUnitNotV2Owned(tx, req.params.id, "layanan teknis");
+      await guardV1UnitWrite(tx, req.params.id, { what: "layanan teknis", actorId: req.user.id });
       // Konflik ATOMIK: bila klien mengirim expectedServiceId (nilai yang dilihatnya; null = belum ada), tulis hanya jika nilai di DB masih sama (compare-and-set).
       const guard = expectedServiceId === undefined ? {} : { serviceId: expectedServiceId };
       const r = await tx.unit.updateMany({ where: { id: req.params.id, ...guard }, data: { serviceId, serviceLine: service.serviceLine } });
@@ -290,7 +290,7 @@ unitRouter.patch("/:id/production", requirePermission(P.UNIT_ROUTING_WRITE), asy
 
     const unit = await prisma.$transaction(async (tx) => {
       // Pagar V2 (P12B.6): unit cohort → prioritas/target diubah di Rencana Produksi (command owner V2).
-      await assertUnitNotV2Owned(tx, req.params.id, "prioritas dan target");
+      await guardV1UnitWrite(tx, req.params.id, { what: "prioritas dan target", actorId: req.user.id });
       // Konflik ATOMIK: compare-and-set terhadap nilai yang DILIHAT klien (expected) — tanpa expected, terhadap nilai yang dibaca di atas (menutup lomba baca→tulis).
       const seen = expected && typeof expected === "object" ? expected : null;
       const seenDue = seen && "productionDueAt" in seen ? (seen.productionDueAt ? new Date(seen.productionDueAt) : null) : undefined;
@@ -340,8 +340,8 @@ unitRouter.patch("/:id/production", requirePermission(P.UNIT_ROUTING_WRITE), asy
 // lihat changeUnitRoute().
 unitRouter.post("/:id/route", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
   try {
-    await assertUnitNotV2Owned(prisma, req.params.id, "rute produksi");
-    const result = await changeUnitRoute(req.params.id, { actorId: req.user.id });
+    // Gerbang tulis V1 dijalankan DI DALAM transaksi mutasi (kunci unit -> kepemilikan -> tulis), bukan cek terpisah sebelumnya.
+    const result = await changeUnitRoute(req.params.id, { actorId: req.user.id, guardV1: "rute produksi" });
     res.json(result);
   } catch (err) {
     handleEngineError(err, res);
@@ -355,9 +355,8 @@ unitRouter.post("/:id/route", requirePermission(P.UNIT_ROUTING_WRITE), async (re
 unitRouter.post("/:id/stages/:stageId/assign", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
   try {
     const { workCenterId, operatorId, note } = req.body;
-    await assertUnitNotV2Owned(prisma, req.params.id, "penugasan work center/operator");
     const result = await assignStage(req.params.id, req.params.stageId, {
-      workCenterId, operatorId, actorId: req.user.id, note,
+      workCenterId, operatorId, actorId: req.user.id, note, guardV1: "penugasan work center/operator",
     });
     res.json(result);
   } catch (err) {
@@ -654,17 +653,19 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
 
     const unit = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
-    await assertUnitNotV2Owned(prisma, unit.id, "pemakaian bahan");
 
     // rawQty > 0 → pemakaian tambahan (ISSUE, stok berkurang, ledger negatif).
     // rawQty < 0 → koreksi mengurangi (RETURN, stok bertambah, ledger positif).
     const type = rawQty > 0 ? "ISSUE" : "RETURN";
     const ledgerQty = -rawQty;
 
-    const movement = await prisma.$transaction((tx) => postStockMovement(tx, {
-      materialId, type, qty: ledgerQty, unitId: unit.id,
-      note: note || null, createdById: req.user.id,
-    }));
+    const movement = await prisma.$transaction(async (tx) => {
+      await guardV1UnitWrite(tx, unit.id, { what: "pemakaian bahan", actorId: req.user.id }); // kunci unit -> kepemilikan -> tulis, satu transaksi
+      return postStockMovement(tx, {
+        materialId, type, qty: ledgerQty, unitId: unit.id,
+        note: note || null, createdById: req.user.id,
+      });
+    });
     res.status(201).json(movement);
   } catch (err) {
     handleEngineError(err, res);
