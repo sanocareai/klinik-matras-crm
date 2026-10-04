@@ -24,8 +24,10 @@ sama di versi lama vs tidak lagi muncul di versi baru, yang bisa membuktikan itu
   ditambahkan khusus supaya tidak auto-increment)
 - `app.json`: **byte-identik** dengan baseline lapangan (`git diff` kosong) — izin,
   plugin, konfigurasi native semuanya SAMA PERSIS dengan versionCode 6 yang live
-- Link APK: (isi dari `eas build:view c7cbcc35-1dc8-4adb-92fb-41f9f46c3959`,
-  field "Application Archive URL" setelah status `finished`)
+- Status: **finished** (10:37–10:55 UTC, 4 Okt 2026)
+- Fingerprint: `b33ef86c4f7d5f38ac44d226f029834511108f87`
+- Link APK: https://expo.dev/artifacts/eas/lOlotgD3Wpl5jdHCMpHfbPFoh6JVMMI93ExVfhAnSEM.apk
+- Logs: https://expo.dev/accounts/sanocare/projects/sano-driver/builds/c7cbcc35-1dc8-4adb-92fb-41f9f46c3959
 
 ### Baseline lapangan (untuk perbandingan/rollback) — diverifikasi 4 Okt 2026
 - Channel field sungguhan: **`preview`** (SATU-SATUNYA channel yang punya riwayat
