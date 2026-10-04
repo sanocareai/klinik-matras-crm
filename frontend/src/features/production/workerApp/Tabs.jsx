@@ -43,14 +43,13 @@ export function KerjaTab({ jobs, lane, loading, error, readerMode, operator, v1S
 
       {loading && !jobs.length ? (
         <div className="wa-grid" data-testid="kerja-loading">{[1, 2, 3].map((n) => <div key={n} className="wa-card h-72 animate-pulse bg-inset" />)}</div>
-      ) : readerMode === "OFF" ? (
+      ) : readerMode === "OFF" && !jobs.length ? (
         <div className="wa-card p-6 text-center" data-testid="kerja-off"><ClipboardList className="mx-auto mb-2 text-ink3" size={32} aria-hidden /><p className="m-0 font-bold text-ink">Produksi V2 belum aktif</p><p className="m-0 mt-1 text-[13.5px] text-ink2">Gunakan alur Work Order lama sampai Production Lead mengaktifkan V2.</p></div>
       ) : !jobs.length ? (
         <div className="wa-card p-8 text-center" data-testid="kerja-empty">
           <CheckCircle2 className="mx-auto mb-2 text-green" size={36} aria-hidden />
           <p className="m-0 text-[16px] font-bold text-ink">{operator && !operator.all ? "Tidak ada pekerjaan untuk Anda" : "Anda belum terdaftar sebagai operator"}</p>
           <p className="m-0 mt-1 text-[13.5px] text-ink2">{operator && !operator.all ? "Pekerjaan muncul di sini setelah Planner menugaskannya ke Anda." : "Minta Production Lead menambahkan Anda sebagai operator agar antrean muncul."}</p>
-          {lane === "CORNER" && <p className="m-0 mt-2 text-[12.5px] text-ink3">Pekerjaan jalur V1 dikerjakan di Aplikasi Meja Bongkar.</p>}
         </div>
       ) : (
         <div className="space-y-5">

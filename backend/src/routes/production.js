@@ -26,6 +26,7 @@ import { loadCurrentStageAssignments } from "../services/productionRouting.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { prisma } from "../db.js";
+import { listV1WorkerQueue } from "../services/v1WorkerQueue.js";
 import { notifyReadyForDelivery } from "../services/customerNotifications.js";
 
 export const productionRouter = express.Router();
@@ -449,6 +450,17 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
   } catch (err) {
     handleErr(err, res);
   }
+});
+
+// GET /api/production/v1-worker-queue?lane=TABLE|CORNER — antrean pekerjaan V1 milik PIC yang login untuk Aplikasi Meja/Corner (P12C.1). BACA-SAJA.
+// Penugasan sah yang belum dimulai (siap / menunggu prasyarat) + "menunggu penugasan berikutnya" bagi PIC terakhir. Lini Corner dibaca dari tahap Corner KANONIK
+// (lib/domain/v1WorkerQueue.js#laneOfStage), bukan tebakan nama layanan. Permission UNIT_READ; hanya mengembalikan unit milik operator pemanggil.
+productionRouter.get("/v1-worker-queue", requirePermission(P.UNIT_READ), async (req, res) => {
+  try {
+    const lane = String(req.query.lane || "TABLE").toUpperCase();
+    if (!["TABLE", "CORNER"].includes(lane)) return res.status(400).json({ error: "lane harus TABLE atau CORNER", code: "LANE_INVALID" });
+    res.json(await listV1WorkerQueue(prisma, { userId: req.user.id, lane }));
+  } catch (err) { handleErr(err, res); }
 });
 
 // GET /api/production/qc-queue — unit yang currentStage-nya gerbang QC

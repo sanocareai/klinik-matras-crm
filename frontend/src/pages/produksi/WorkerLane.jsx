@@ -30,7 +30,7 @@ export default function WorkerLane({ lane = "TABLE", user: userProp = null, onLo
   const [flash, setFlash] = useState("");
   const [flashErr, setFlashErr] = useState("");
 
-  const { jobs, loading, error, readerMode, operator, v1Status, reload, reloadQueueOnly, refreshV1Unit, retryV1 } = useWorkerJobs({ lane, paused: !!jobKey || !!reportCard });
+  const { jobs, loading, error, readerMode, operator, v1Status, reload, reloadAll, refreshV1Unit, retryV1, fetchV1Queue } = useWorkerJobs({ lane, paused: !!jobKey || !!reportCard });
   const selected = useMemo(() => (jobKey ? jobs.find((j) => j.key === jobKey) || null : null), [jobs, jobKey]);
   const mode = modeOfLane(lane);
 
@@ -59,7 +59,7 @@ export default function WorkerLane({ lane = "TABLE", user: userProp = null, onLo
       {flashErr && <div role="alert" className="mb-3 rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{flashErr}</div>}
 
       {detailOpen ? (
-        selected ? <JobDetail key={selected.key} job={selected} lane={lane} roles={roles} onBack={closeJob} onChanged={reloadQueueOnly} refreshV1Unit={refreshV1Unit} />
+        selected ? <JobDetail key={selected.key} job={selected} lane={lane} roles={roles} onBack={closeJob} onChanged={reloadAll} refreshV1Unit={refreshV1Unit} fetchV1Queue={fetchV1Queue} />
           : loading ? <div className="flex justify-center py-16"><Loader2 className="animate-spin text-accent" size={26} aria-hidden /></div>
             : (
               <div className="wa-card mx-auto max-w-[560px] p-8 text-center" data-testid="job-gone">

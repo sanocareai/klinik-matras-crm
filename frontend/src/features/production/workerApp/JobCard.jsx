@@ -96,6 +96,7 @@ export default function JobCard({ job, onOpen, position = null, variant = "queue
         <SalesNote job={job} />
         <GantiKainNote job={job} compact />
         <ProgressLine job={job} />
+        {job.v1?.wait && <p data-testid="v1-wait-info" className="wa-wrap m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2"><b className="text-ink">{job.v1.wait.title}.</b> {job.v1.wait.text}</p>}
         <div className="flex flex-wrap items-center gap-1.5">
           <StageChip job={job} />
           {job.materialWaiting && <span data-testid="material-waiting" className="inline-flex items-center gap-1 rounded-full bg-redbg px-2.5 py-1 text-[12px] font-bold text-red"><PackageX size={13} aria-hidden /> Menunggu bahan</span>}

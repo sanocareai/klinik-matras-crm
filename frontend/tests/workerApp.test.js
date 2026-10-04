@@ -13,8 +13,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SRC_URL = pathToFileURL(path.join(here, "..", "src") + path.sep).href;
 register("data:text/javascript," + encodeURIComponent(`export async function resolve(spec, ctx, next) { return spec.startsWith("@/") ? next(new URL(spec.slice(2), ${JSON.stringify(SRC_URL)}).href, ctx) : next(spec, ctx); }`));
 const {
-  APP_MODES, NAV_TABS, allowedModes, initialsOf, jobFromV1, jobFromV2, materialRows, modeOfLane, myV1Units, orderJobs, picSummary, primaryActionV1,
-  priorityOfV1, safeText, splitJobs, submitState, tabOf, v1Progress,
+  APP_MODES, NAV_TABS, allowedModes, initialsOf, isV1Actionable, jobFromV1, jobFromV2, materialRows, modeOfLane, orderJobs, picSummary, primaryActionV1,
+  priorityOfV1, safeText, splitJobs, submitState, tabOf, v1Progress, v1WaitInfo,
 } = await import("../src/features/production/workerApp/workerAppModel.js");
 const WA = path.join(here, "..", "src", "features", "production", "workerApp");
 const read = (n) => fs.readFileSync(path.join(WA, n), "utf8");
@@ -27,7 +27,12 @@ const v2Item = (over = {}) => ({
   plan: { priority: 1, stationLabel: "Meja 2", stationSequence: 1 }, progress: { done: 4, total: 12 }, timer: { late: false, elapsedMinutes: 30 }, materialStatus: { key: "SIAP_DIAMBIL" }, shortage: null,
   ...over,
 });
-const wo = (over = {}) => ({ id: "v1u", unitCode: "V1-1", status: "IN_PRODUCTION", inProductionV2: false, merk: "Serta", ukuran: "160x200", priority: "HIGH", executionState: "NOT_STARTED", createdAt: "2026-10-01T00:00:00Z", order: { orderNumber: "RES-9", customer: { name: "Pak Budi" } }, assignedOperator: { id: "op1", name: "Meja 1" }, workCenter: { name: "Workshop" }, ...over });
+// Item antrean V1 dari server (GET /production/v1-worker-queue). `over.unit` menimpa kolom unit; `over.state/stage/...` menimpa keadaan.
+const stg = (id, label, extra = {}) => ({ id, code: id, labelId: label, phase: "INTAKE", requiresPhoto: false, requiresQc: false, lane: "TABLE", ...extra });
+const wo = (over = {}) => ({
+  unit: { id: "v1u", unitCode: "V1-1", status: "IN_PRODUCTION", merk: "Serta", ukuran: "160x200", priority: "HIGH", createdAt: "2026-10-01T00:00:00Z", order: { orderNumber: "RES-9", customer: { name: "Pak Budi" } }, ...(over.unit || {}) },
+  state: "READY", lane: "TABLE", stage: stg("s1", "Uji Sebelum Bongkar"), prerequisite: null, waitingFor: null, ...Object.fromEntries(Object.entries(over).filter(([k]) => k !== "unit")),
+});
 const tl = (statuses, over = {}) => ({
   salesServices: ["Servis Spring & Busa"], salesContext: { request: "Cepat ya", salesName: "Fadlan", photoUrl: null },
   needsService: false, unit: { currentStageId: "s1", order: {} },
@@ -80,38 +85,49 @@ test("menunggu bahan: bucket MENUNGGU_BAHAN atau laporan kekurangan -> materialW
   assert.deepEqual(materialRows([e, d, c, a, b]).map((r) => r.kind), ["SHORTAGE", "WAITING", "STATUS", "NONE", "V1"]);
 });
 
-test("V1: kartu dari work-orders + timeline; progres dari jalur server; TIDAK dipetakan ke 12 langkah V2", () => {
+test("V1: kartu dari antrean server + timeline; keadaan & label dari server; progres dari jalur server; TIDAK dipetakan ke 12 langkah V2", () => {
   const t = tl(["DONE", "DONE", "IN_PROGRESS", "NOT_STARTED"]);
-  const j = jobFromV1(wo({ executionState: "IN_PROGRESS" }), t);
+  const j = jobFromV1(wo({ state: "IN_PROGRESS", stage: stg("s3", "Fondasi") }), t);
   assert.equal(j.source, "V1"); assert.equal(j.key, "v1:v1u");
   assert.deepEqual(j.progress, { done: 2, total: 4, source: "server-v1" }, "dihitung dari path V1 server, bukan 12");
   assert.equal(j.priority.value, 1); assert.equal(j.priority.label, "Tinggi");
   assert.equal(j.note, "Cepat ya"); assert.equal(j.salesName, "Fadlan"); assert.deepEqual(j.salesServices, ["Servis Spring & Busa"]);
-  assert.match(j.stage.label, /^Tahap · /, "label tahap V1 apa adanya dari server");
+  assert.equal(j.stage.label, "Sedang berjalan · Fondasi", "label tahap V1 apa adanya dari server");
   assert.doesNotMatch(j.stage.label, /Langkah \d+/, "bukan label langkah V2");
-  assert.equal(j.active, true);
+  assert.equal(j.active, true); assert.equal(j.v1.actionable, true);
   const bare = jobFromV1(wo(), null);
   assert.equal(bare.progress, null, "belum ada timeline -> progres kosong, bukan angka palsu"); assert.equal(v1Progress(null), null);
   assert.equal(priorityOfV1("CRITICAL").label, "Kritis"); assert.equal(priorityOfV1(undefined).value, 0);
 });
 
-test("unit V1 milik saya: hanya yang ditugaskan ke operator yang sama, status kerja, di luar cohort V2", () => {
-  const units = [wo(), wo({ id: "x2", assignedOperator: { id: "op2" } }), wo({ id: "x3", inProductionV2: true }), wo({ id: "x4", status: "DELIVERED" }), wo({ id: "x5", assignedOperator: null })];
-  assert.deepEqual(myV1Units(units, "op1").map((u) => u.id), ["v1u"]);
-  assert.deepEqual(myV1Units(units, null), []); assert.deepEqual(myV1Units(null, "op1"), []);
+test("V1: siap dikerjakan vs menunggu prasyarat vs menunggu penugasan — dibedakan dari server; hanya siap/berjalan/dijeda yang membuka aksi", () => {
+  const ready = jobFromV1(wo({ state: "READY" }), null);
+  assert.equal(ready.stage.bucketLabel, "Siap dikerjakan"); assert.equal(ready.v1.actionable, true); assert.equal(ready.v1.wait, null); assert.equal(ready.active, false);
+  const pre = jobFromV1(wo({ state: "WAITING_PREREQUISITE", stage: stg("s3", "Uji Fondasi"), prerequisite: { stage: stg("s2", "Bongkar"), state: "READY", assignee: "PIC Lain", assigned: true } }), null);
+  assert.equal(pre.stage.bucketLabel, "Menunggu tahap prasyarat"); assert.equal(pre.v1.actionable, false);
+  assert.match(pre.v1.wait.text, /Bongkar — PIC Lain/); assert.match(pre.v1.wait.text, /giliran Anda/);
+  const unassigned = jobFromV1(wo({ state: "WAITING_PREREQUISITE", prerequisite: { stage: stg("s2", "Bongkar"), state: "READY", assignee: null, assigned: false } }), null);
+  assert.match(unassigned.v1.wait.text, /belum ditugaskan/);
+  const wa = jobFromV1(wo({ state: "WAITING_ASSIGNMENT", stage: stg("s1", "Uji Sebelum Bongkar"), waitingFor: stg("s2", "Bongkar") }), null);
+  assert.equal(wa.stage.bucketLabel, "Menunggu penugasan berikutnya"); assert.equal(wa.v1.actionable, false);
+  assert.match(wa.v1.wait.text, /Bongkar belum ditugaskan/); assert.match(wa.v1.wait.text, /sampai Production Lead menugaskannya/);
+  assert.equal(v1WaitInfo(wo({ state: "READY" })), null);
+  for (const [st, ok] of [["READY", true], ["IN_PROGRESS", true], ["PAUSED", true], ["BLOCKED", false], ["WAITING_PREREQUISITE", false], ["WAITING_ASSIGNMENT", false], [undefined, false]]) assert.equal(isV1Actionable(st), ok, String(st));
 });
 
-test("urutan: yang sedang dikerjakan dulu; V2 mengikuti urutan SERVER (manual menang); V1 sesudah V2 menurut prioritas lalu umur; satu antrean, bukan dua", () => {
+test("urutan: yang sedang dikerjakan dulu; V2 mengikuti urutan SERVER (manual menang); V1 sesudah V2 mengikuti urutan SERVER (tanpa pengurutan ulang klien); satu antrean, bukan dua", () => {
   const q1 = jobFromV2(v2Item({ runId: "q1", bucket: "ANTREAN", activeOp: null, next: { actor: "TABLE", stepNo: 1, action: "START_WITH_EVIDENCE" } }));
   const q2 = jobFromV2(v2Item({ runId: "q2", bucket: "ANTREAN", activeOp: null, plan: { priority: 2, stationLabel: "Meja 2" } }));
   const act = jobFromV2(v2Item({ runId: "act" }));
-  const lo = jobFromV1(wo({ id: "lo", priority: "NORMAL", createdAt: "2026-10-01" }), null);
-  const hi = jobFromV1(wo({ id: "hi", priority: "URGENT", createdAt: "2026-10-03" }), null);
-  const old = jobFromV1(wo({ id: "old", priority: "NORMAL", createdAt: "2026-09-01" }), null);
-  const ordered = orderJobs([lo, q1, hi, q2, act, old]).map((j) => j.id);
-  assert.deepEqual(ordered, ["act", "q1", "q2", "hi", "old", "lo"], "q2 (prioritas 2) TIDAK melompati q1: urutan V2 dari server tidak diubah");
+  const mk = (id, state, priority) => jobFromV1(wo({ state, unit: { id, unitCode: id, priority } }), null);
+  const lo = mk("lo", "READY", "NORMAL"), hi = mk("hi", "READY", "URGENT"), w = mk("w", "WAITING_ASSIGNMENT", "URGENT"), run = mk("run", "IN_PROGRESS", "NORMAL");
+  // urutan masukan = urutan server (berjalan > siap > menunggu; prioritas): klien TIDAK menyusunnya ulang
+  const ordered = orderJobs([lo, q1, hi, q2, act, w, run]).map((j) => j.id);
+  assert.deepEqual(ordered, ["act", "run", "q1", "q2", "lo", "hi", "w"], "q2 tidak melompati q1; V1 menjaga urutan masukan; hanya yang sedang dikerjakan naik");
   const { active, queue } = splitJobs([lo, q1, act]);
   assert.equal(active.id, "act"); assert.equal(queue.length, 2); assert.ok(!queue.includes(active));
+  const noDup = orderJobs([q1, q2, act, lo, hi, w, run]).map((j) => j.key);
+  assert.equal(new Set(noDup).size, noDup.length, "tidak ada kartu ganda");
 });
 
 test("aksi utama V1: satu aksi sesuai keadaan tahap server + izin; QC & blokir TIDAK ada di aplikasi", () => {
@@ -128,6 +144,10 @@ test("aksi utama V1: satu aksi sesuai keadaan tahap server + izin; QC & blokir T
   assert.equal(primaryActionV1(tl([], { needsService: true, path: [] }), W).kind, "NONE");
   assert.equal(primaryActionV1(tl(["READY"]), ["SALES"]).kind, "NONE", "peran tanpa izin tahap: tidak ada tombol");
   assert.equal(primaryActionV1(tl(["READY"]), ["SALES"]).reason.length > 0, true);
+  // keadaan antrean dari server membatasi: menunggu prasyarat/penugasan TIDAK membuka aksi walau timeline tampak siap (tahap berikutnya milik orang lain)
+  for (const st of ["WAITING_PREREQUISITE", "WAITING_ASSIGNMENT", "BLOCKED"]) assert.equal(primaryActionV1(tl(["READY"]), W, { state: st }).kind, "NONE", st);
+  assert.equal(primaryActionV1(tl(["READY"]), W, { state: "READY" }).kind, "START");
+  assert.equal(primaryActionV1(tl(["DONE", "IN_PROGRESS"]), W, { state: "IN_PROGRESS" }).kind, "COMPLETE");
 });
 
 test("offline: kirim dinonaktifkan dengan penjelasan jujur (belum ada yang terkirim); online normal; sibuk menonaktifkan", () => {
@@ -180,6 +200,14 @@ test("komponen: setiap aksi tulis lewat command server yang ada; tidak ada statu
 test("WorkerLane: URL ?t=&job= untuk tautan dalam; Akun memakai user/onLogout dari konteks; V1 hanya di Meja (bukan Corner)", () => {
   const lane = strip(fs.readFileSync(path.join(here, "..", "src", "pages", "produksi", "WorkerLane.jsx"), "utf8"));
   assert.match(lane, /params\.get\("t"\)/); assert.match(lane, /params\.get\("job"\)/); assert.match(lane, /onLogout/);
-  assert.match(strip(read("useWorkerJobs.js")), /if \(lane === "CORNER" \|\| !operatorId\)/, "V1 tidak ditampilkan di Corner (tidak ada konsep Table/Corner di tahap V1)");
+  const hook = strip(read("useWorkerJobs.js"));
+  assert.match(hook, /api\.getV1WorkerQueue\(laneKey\)/, "V1 dari read-model server untuk KEDUA lini (Corner membaca penugasan tahap Corner kanonik)");
+  assert.doesNotMatch(hook, /getWorkOrders|assignedOperator|myV1Units/, "tidak lagi menebak dari daftar work-order");
+  assert.match(hook, /const reloadAll = useCallback\(async \(\) => \{ await Promise\.all\(\[loadQueue\(\{ withV1: false \}\), loadV1\(\)\]\)/, "setelah aksi: V2 dan V1 dimuat ulang");
+  const v1p = strip(read("V1Panels.jsx"));
+  assert.match(v1p, /beforeAction/); assert.match(v1p, /Aksi tidak dikirim|if \(g\?\.ok === false\)/, "penjaga tombol basi sebelum aksi V1");
+  const det = strip(read("JobDetail.jsx"));
+  assert.match(det, /const ok = !!it && isV1Actionable\(it\.state\) && it\.state === v1\.state && it\.stage\?\.id === v1\.stage\?\.id/, "validasi ulang ke server: masih milik PIC ini, tahap & keadaan sama");
+  assert.match(det, /timeline && v1\.actionable && <V1ActionBar/); assert.match(det, /data-testid="v1-info-bar"/, "keadaan menunggu: batang info, bukan tombol");
   assert.match(strip(fs.readFileSync(path.join(here, "..", "src", "App.jsx"), "utf8")), /onLogout: handleLogout/);
 });

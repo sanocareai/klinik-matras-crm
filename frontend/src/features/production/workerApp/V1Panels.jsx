@@ -47,9 +47,11 @@ function PhotoPicker({ unitId, photos, setPhotos, disabled, onError }) {
 }
 
 // Batang aksi lengket: SATU aksi utama sesuai keadaan tahap dari server + aksi sekunder (Jeda/Terhambat) hanya saat tahap berjalan.
-export function V1ActionBar({ job, timeline, roles, onChanged }) {
+// beforeAction (async) = penjaga 'tombol basi': memvalidasi ulang ke server bahwa unit MASIH milik PIC ini pada tahap & keadaan yang sama SEBELUM aksi dikirim
+// (penugasan bisa dialihkan Lead kapan saja). Gagal -> aksi TIDAK dikirim, daftar dimuat ulang.
+export function V1ActionBar({ job, timeline, roles, onChanged, state = null, beforeAction = null }) {
   const online = useOnline();
-  const action = primaryActionV1(timeline, roles);
+  const action = primaryActionV1(timeline, roles, { state });
   const unitId = job.unitId;
   const [sheet, setSheet] = useState(null); // complete | pause | block
   const [busy, setBusy] = useState(false);
@@ -58,11 +60,18 @@ export function V1ActionBar({ job, timeline, roles, onChanged }) {
   const [pauseReason, setPauseReason] = useState("BREAK"); const [blockReason, setBlockReason] = useState("MATERIAL_SHORTAGE");
   useEffect(() => { setSheet(null); setNote(""); setPhotos([]); setMsg({ kind: "", text: "" }); }, [unitId, action.kind, action.stage?.id]);
 
+  const guarded = useCallback(async () => {
+    if (!beforeAction) return true;
+    const g = await beforeAction();
+    if (g?.ok === false) { setSheet(null); setMsg({ kind: "error", text: g.message }); await onChanged?.(); return false; }
+    return true;
+  }, [beforeAction, onChanged]);
+  const openSheet = useCallback(async (kind) => { setBusy(true); try { if (await guarded()) setSheet(kind); } finally { setBusy(false); } }, [guarded]);
   const run = useCallback(async (fn, okText) => {
     setBusy(true); setMsg({ kind: "", text: "" });
-    try { await fn(); setSheet(null); setNote(""); setPhotos([]); setMsg({ kind: "ok", text: okText }); await onChanged?.(); }
+    try { if (!(await guarded())) return; await fn(); setSheet(null); setNote(""); setPhotos([]); setMsg({ kind: "ok", text: okText }); await onChanged?.(); }
     catch (e) { setMsg({ kind: "error", text: e.message || "Gagal" }); await onChanged?.(); } finally { setBusy(false); }
-  }, [onChanged]);
+  }, [onChanged, guarded]);
   const gate = submitState({ online, busy });
   const stage = action.stage;
 
@@ -76,10 +85,10 @@ export function V1ActionBar({ job, timeline, roles, onChanged }) {
         {action.kind === "RESUME" && <button type="button" className="wa-primary" data-mutates data-testid="v1-primary" disabled={gate.disabled} onClick={() => run(() => api.resumeUnitStage(unitId, stage.id), "Tahap dilanjutkan.")}>{busy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : <PlayCircle size={21} aria-hidden />} {action.label}</button>}
         {action.kind === "COMPLETE" && (
           <>
-            <button type="button" className="wa-primary" data-testid="v1-primary" disabled={gate.disabled} onClick={() => setSheet("complete")}><CheckCircle2 size={21} aria-hidden /> {action.label}</button>
+            <button type="button" className="wa-primary" data-testid="v1-primary" disabled={gate.disabled} onClick={() => openSheet("complete")}><CheckCircle2 size={21} aria-hidden /> {action.label}</button>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" data-testid="v1-pause-open" disabled={gate.disabled} onClick={() => setSheet("pause")} className="flex min-h-[48px] items-center justify-center gap-1.5 rounded-btn bg-inset text-[14px] font-bold text-ink2 disabled:opacity-50"><PauseCircle size={17} aria-hidden /> Jeda</button>
-              <button type="button" data-testid="v1-block-open" disabled={gate.disabled} onClick={() => setSheet("block")} className="flex min-h-[48px] items-center justify-center gap-1.5 rounded-btn bg-redbg text-[14px] font-bold text-red disabled:opacity-50"><AlertTriangle size={17} aria-hidden /> Terhambat</button>
+              <button type="button" data-testid="v1-pause-open" disabled={gate.disabled} onClick={() => openSheet("pause")} className="flex min-h-[48px] items-center justify-center gap-1.5 rounded-btn bg-inset text-[14px] font-bold text-ink2 disabled:opacity-50"><PauseCircle size={17} aria-hidden /> Jeda</button>
+              <button type="button" data-testid="v1-block-open" disabled={gate.disabled} onClick={() => openSheet("block")} className="flex min-h-[48px] items-center justify-center gap-1.5 rounded-btn bg-redbg text-[14px] font-bold text-red disabled:opacity-50"><AlertTriangle size={17} aria-hidden /> Terhambat</button>
             </div>
           </>
         )}

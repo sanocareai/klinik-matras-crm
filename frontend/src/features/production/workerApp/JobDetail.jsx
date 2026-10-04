@@ -9,7 +9,7 @@ import { materialBadge } from "@/features/production/unitCardModel.js";
 import { GantiKainNote, JobPhoto, PriorityChip, ProgressLine, SalesNote, SalesServicesLine, SourceChip, StageChip } from "./JobCard.jsx";
 import { V1ActionBar, V1MaterialsPanel } from "./V1Panels.jsx";
 import { ShortageSheet, StepSheet, intentKeys } from "./workerSheets.jsx";
-import { jobFromV1, jobFromV2, submitState } from "./workerAppModel.js";
+import { isV1Actionable, jobFromV1, jobFromV2, submitState } from "./workerAppModel.js";
 
 // Detail pekerjaan: progres dari server, bahan, dokumentasi, dan SATU aksi utama (batang lengket) sesuai kemampuan & tahap.
 //  V2: `next` dari server (aksi cepat / lembar isian / wizard diagnosis); konflik revisi -> muat ulang. V1: keadaan tahap dari timeline server; tahap V1 TIDAK dipetakan ke 12 langkah V2.
@@ -172,13 +172,23 @@ function V2Detail({ job, lane, onBack, onChanged }) {
 }
 
 // ================= V1 =================
-function V1Detail({ job, roles, onChanged, refreshV1Unit }) {
+function V1Detail({ job, roles, onChanged, refreshV1Unit, fetchV1Queue }) {
   const [timeline, setTimeline] = useState(null);
   const [error, setError] = useState("");
   const load = useCallback(async () => { try { const t = await api.getUnitTimeline(job.unitId); setTimeline(t); setError(""); return t; } catch (e) { setError(e.message || "Gagal memuat"); return null; } }, [job.unitId]);
   useEffect(() => { setTimeline(null); load(); }, [load]);
-  const view = timeline ? jobFromV1(job.raw, timeline) : job;
-  const afterChange = async () => { await load(); await refreshV1Unit?.(job.unitId); onChanged?.(); };
+  const view = timeline ? jobFromV1(job.item, timeline) : job;
+  const afterChange = async () => { await load(); await refreshV1Unit?.(job.unitId); await onChanged?.(); };
+  const v1 = job.v1; // keadaan antrean SEGAR dari server (props dari daftar yang dimuat ulang) — bukan salinan lama
+  // Penjaga tombol basi: validasi ulang ke server sebelum aksi apa pun dikirim.
+  const beforeAction = async () => {
+    try {
+      const fresh = await fetchV1Queue?.();
+      const it = fresh?.items?.find((i) => i.unit.id === job.unitId);
+      const ok = !!it && isV1Actionable(it.state) && it.state === v1.state && it.stage?.id === v1.stage?.id;
+      return ok ? { ok: true } : { ok: false, message: "Penugasan atau keadaan tahap sudah berubah — daftar dimuat ulang. Aksi tidak dikirim." };
+    } catch { return { ok: true }; } // tak ada jaringan: server tetap pemutus akhir (aksi gagal aman)
+  };
   const photos = (timeline?.executionHistory || []).flatMap((h) => (h.photoUrls || []).map((u) => ({ url: u, at: h.createdAt, action: h.action })));
 
   return (
@@ -186,7 +196,10 @@ function V1Detail({ job, roles, onChanged, refreshV1Unit }) {
       {error && <div role="alert" className="mb-3 rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{error}</div>}
       <div className="wa-detail">
         <div className="space-y-3.5">
-          <Identity job={view} extra={<p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink3">Order asli (jalur V1). Data pelanggan lain (berat badan, keluhan) belum tercatat di jalur ini.</p>} />
+          <Identity job={view} extra={<>
+            {v1.wait && <div data-testid="v1-wait-panel" role="status" className="rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange"><p className="m-0 font-bold">{v1.wait.title}</p><p className="m-0 mt-0.5">{v1.wait.text}</p></div>}
+            <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">Order asli (jalur V1). Data pelanggan lain (berat badan, keluhan) belum tercatat di jalur ini.</p>
+          </>} />
           {timeline?.activeBlocker && <p className="m-0 flex items-start gap-2 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><AlertTriangle size={15} className="mt-px shrink-0" aria-hidden /> Terhambat: {timeline.productionStatusReason || "ada blokir aktif"}</p>}
         </div>
         <div className="space-y-3.5">
@@ -214,11 +227,16 @@ function V1Detail({ job, roles, onChanged, refreshV1Unit }) {
           )}
         </div>
       </div>
-      {timeline && <V1ActionBar job={view} timeline={timeline} roles={roles} onChanged={afterChange} />}
+      {timeline && v1.actionable && <V1ActionBar job={view} timeline={timeline} roles={roles} onChanged={afterChange} state={v1.state} beforeAction={beforeAction} />}
+      {timeline && !v1.actionable && (
+        <div className="wa-actionbar" data-testid="v1-info-bar"><div className="wa-actionbar-inner">
+          <p data-testid="v1-no-action" className="m-0 rounded-btn bg-inset px-3 py-3 text-[13.5px] font-semibold text-ink2">{v1.wait ? `${v1.wait.title} — belum ada tindakan untuk Anda.` : (v1.state === "BLOCKED" ? "Tahap terhambat — hubungi Production Lead untuk menyelesaikan blokir." : "Belum ada tindakan yang tersedia.")}</p>
+        </div></div>
+      )}
     </div>
   );
 }
 
-export default function JobDetail(props) {
+export default function JobDetail(props) { // props: { job, lane, roles, onChanged, refreshV1Unit, fetchV1Queue }
   return props.job.source === "V1" ? <V1Detail {...props} /> : <V2Detail {...props} />;
 }
