@@ -126,3 +126,11 @@ test("pembersihan Blob & isolasi draf tidak disentuh: documentationDrafts.js tid
   assert.match(read("App.jsx"), /purgePrincipalDrafts/);
   assert.match(DOC_FILES.find(([n]) => n === "DocTabs.jsx")[1], /Keluar menghapus draf milik akun ini dari HP/);
 });
+
+
+test("Mode Latihan (demo): semua pintu masuk unggah/koreksi ditandai data-mutates sehingga dinonaktifkan DemoPage; tidak ada unggah di demo", () => {
+  const d = DOC_FILES.find(([n]) => n === "DocDetail.jsx")[1]; const t = DOC_FILES.find(([n]) => n === "DocTabs.jsx")[1];
+  assert.match(d, /<label className="da-secondary"[^>]*data-mutates>/); assert.match(d, /<label className="wa-primary da-primary-label"[^>]*data-mutates>/);
+  assert.match(d, /data-testid="add-photos" data-mutates/); assert.match(d, /data-testid="correct-batch" data-evidence-id={b.evidenceId} data-mutates/);
+  assert.match(t, /data-testid="kamera-category" data-mutates/);
+});

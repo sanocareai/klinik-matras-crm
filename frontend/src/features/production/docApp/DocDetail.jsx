@@ -176,12 +176,12 @@ export default function DocDetail({ runId, group, onGroup, drafts, resume, onRes
                 return opts.length ? <optgroup key={g} label={DOC_GROUP_LABEL[g]}>{opts.map((c) => <option key={c.key} value={c.key}>{c.label}{c.status === "KURANG" ? ` · kurang ${c.missing}` : ""}</option>)}</optgroup> : null;
               })}
             </select>
-            <label className="da-secondary" aria-disabled={!selKey}>
+            <label className="da-secondary" aria-disabled={!selKey} data-mutates>
               <Images size={18} aria-hidden /> Galeri
               <input type="file" accept="image/*" multiple hidden disabled={!selKey} onChange={onInput} data-testid="bar-gallery" />
             </label>
           </div>
-          <label className="wa-primary da-primary-label" aria-disabled={!selKey}>
+          <label className="wa-primary da-primary-label" aria-disabled={!selKey} data-mutates>
             <Camera size={21} aria-hidden /> Ambil Foto
             <input type="file" accept="image/*" capture="environment" hidden disabled={!selKey} onChange={onInput} data-testid="bar-camera" />
           </label>

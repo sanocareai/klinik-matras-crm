@@ -65,9 +65,9 @@ test("gerbang halaman: peran non-admin yang membuka halaman di luar izinnya TIDA
 
 test("halaman latihan terpasang: seluruh halaman dibungkus DemoPage, termasuk Aplikasi Meja & Corner; data tersedia di snapshot", () => {
   const reg = src("routes", "pageRegistry.jsx");
-  // P12C: Aplikasi Meja/Corner menerima ctx (user/onLogout) untuk tab Akun; Dokumentasi tetap tanpa argumen.
+  // P12C: Aplikasi Meja/Corner menerima ctx (user/onLogout) untuk tab Akun; P12D: Aplikasi Dokumentasi juga (kerangka sama).
   // slotBar: bar Mode Latihan pindah ke tab Akun (aplikasi lantai mobile) — perilaku demo tidak berubah.
-  for (const [to, comp, args, slot] of [["/produksi/meja", "WorkerLane lane=\"TABLE\"", "ctx", " slotBar"], ["/produksi/corner", "WorkerLane lane=\"CORNER\"", "ctx", " slotBar"], ["/produksi/dokumentasi", "ProductionDocumentation", "", ""]]) assert.match(reg, new RegExp(`path: "${to}", render: \\(${args}\\) => <DemoPage${slot}><${comp}`), to);
+  for (const [to, comp, args, slot] of [["/produksi/meja", "WorkerLane lane=\"TABLE\"", "ctx", " slotBar"], ["/produksi/corner", "WorkerLane lane=\"CORNER\"", "ctx", " slotBar"], ["/produksi/dokumentasi", "ProductionDocumentation", "ctx", " slotBar"]]) assert.match(reg, new RegExp(`path: "${to}", render: \\(${args}\\) => <DemoPage${slot}><${comp}`), to);
   for (const to of ["/bengkel/ringkasan", "/bengkel/production-v2", "/bengkel/rencana-produksi", "/bengkel/quality-control", "/bengkel/kpi", "/warehouse/antrean-produksi", "/warehouse/kpi"]) assert.match(reg, new RegExp(`path: "${to}", render: \\(\\) => <DemoPage>`), to);
   const urls = new Set(snapshot.entries.map((e) => e.url));
   for (const u of ["/production-v2/worker/table", "/production-v2/worker/corner"]) assert.ok(urls.has(u), u);

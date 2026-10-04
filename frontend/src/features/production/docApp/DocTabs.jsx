@@ -116,7 +116,7 @@ export function KameraTab({ items, readerMode, canWrite, onCapture }) {
                       {cats.map((c) => {
                         const st = DOC_STATUS[c.status] || DOC_STATUS.MENUNGGU;
                         return (
-                          <button key={c.key} type="button" className="da-cat-btn" disabled={!c.applicable || !detail.canWrite} onClick={() => onCapture(detail, c)} data-testid="kamera-category" data-category={c.key}>
+                          <button key={c.key} type="button" className="da-cat-btn" disabled={!c.applicable || !detail.canWrite} onClick={() => onCapture(detail, c)} data-testid="kamera-category" data-mutates data-category={c.key}>
                             <span className="min-w-0"><span className="wa-wrap block text-[15px] font-bold">{c.label}</span><span className="block text-[12px] tabular-nums text-ink3">{c.count} / min {c.min} foto{c.status === "KURANG" ? ` · kurang ${c.missing}` : ""}</span></span>
                             <span className="flex shrink-0 items-center gap-2"><Badge variant={st.variant}>{st.label}</Badge>{c.applicable && detail.canWrite && <Camera size={18} className="text-accent" aria-hidden />}</span>
                           </button>
