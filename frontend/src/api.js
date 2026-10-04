@@ -713,7 +713,7 @@ export const api = {
   getUnitStatus: (unitId) => request(`/units/${unitId}`),
   getUnitTimeline: (unitId) => request(`/units/${unitId}/timeline`),
   // P12C.1 — antrean V1 milik PIC (penugasan sah termasuk yang belum dimulai; lini Meja/Corner kanonik). BACA-SAJA.
-  getV1WorkerQueue: (lane) => request(`/production/v1-worker-queue?lane=${lane === "CORNER" ? "CORNER" : "TABLE"}`),
+  getV1WorkerQueue: (lane) => request(`/production/v1-worker-queue?lane=${String(lane || "").toUpperCase() === "CORNER" ? "CORNER" : "TABLE"}`),
   startUnitStage: (unitId) => request(`/units/${unitId}/stages/start`, { method: "POST" }),
   completeUnitStage: (unitId, stageId, { photoUrls, note } = {}) =>
     request(`/units/${unitId}/stages/${stageId}/complete`, { method: "POST", body: JSON.stringify({ photoUrls, note }) }),

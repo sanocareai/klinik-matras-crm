@@ -197,11 +197,13 @@ test("komponen: setiap aksi tulis lewat command server yang ada; tidak ada statu
   assert.match(v1, /completeFormValid\(\{ needsPhoto: action\.needsPhoto, photos \}\)/, "foto wajib V1 dari server");
 });
 
-test("WorkerLane: URL ?t=&job= untuk tautan dalam; Akun memakai user/onLogout dari konteks; V1 hanya di Meja (bukan Corner)", () => {
+test("WorkerLane: URL ?t=&job= untuk tautan dalam; Akun memakai user/onLogout dari konteks; V1 di kedua lini (Meja & Corner kanonik dari server)", () => {
   const lane = strip(fs.readFileSync(path.join(here, "..", "src", "pages", "produksi", "WorkerLane.jsx"), "utf8"));
   assert.match(lane, /params\.get\("t"\)/); assert.match(lane, /params\.get\("job"\)/); assert.match(lane, /onLogout/);
   const hook = strip(read("useWorkerJobs.js"));
   assert.match(hook, /api\.getV1WorkerQueue\(laneKey\)/, "V1 dari read-model server untuk KEDUA lini (Corner membaca penugasan tahap Corner kanonik)");
+  // hook mengirim laneKey huruf kecil ("corner"/"table"); klien API wajib menormalkannya, kalau tidak Corner diam-diam membaca antrean Meja (ditemukan QA browser)
+  assert.match(strip(read("../../../api.js")), /getV1WorkerQueue: \(lane\) => request\(`\/production\/v1-worker-queue\?lane=\$\{String\(lane \|\| ""\)\.toUpperCase\(\) === "CORNER" \? "CORNER" : "TABLE"\}`\)/, "lane 'corner' (huruf kecil) harus menjadi CORNER");
   assert.doesNotMatch(hook, /getWorkOrders|assignedOperator|myV1Units/, "tidak lagi menebak dari daftar work-order");
   assert.match(hook, /const reloadAll = useCallback\(async \(\) => \{ await Promise\.all\(\[loadQueue\(\{ withV1: false \}\), loadV1\(\)\]\)/, "setelah aksi: V2 dan V1 dimuat ulang");
   const v1p = strip(read("V1Panels.jsx"));
