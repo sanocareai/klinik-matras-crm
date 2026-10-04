@@ -1,14 +1,15 @@
 import React from "react";
-import { Activity, ArrowLeft, Briefcase, Package, RefreshCw, User, WifiOff } from "lucide-react";
+import { Activity, ArrowLeft, Briefcase, Camera, CloudUpload, Layers, Package, RefreshCw, User, WifiOff } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle.jsx";
 import { useOnline } from "@/components/StandaloneShell.jsx";
 import { NAV_TABS } from "./workerAppModel.js";
 import "./worker-app.css";
 
 // Kerangka aplikasi lantai (mobile-first): header ringkas + bottom navigation (maks. 4). TANPA sidebar desktop. Halaman tetap memakai sesi & tema aplikasi.
-const ICONS = { Briefcase, Package, Activity, User };
+// P12D: kerangka yang SAMA dipakai Aplikasi Dokumentasi lewat prop `tabs` (default = tab Meja/Corner; perilaku Meja/Corner tidak berubah).
+const ICONS = { Briefcase, Package, Activity, User, Layers, Camera, CloudUpload };
 
-export default function WorkerAppShell({ title, subtitle, tab, onTab, badges = {}, onRefresh, refreshing = false, onBack = null, children, hideNav = false, actionPad = false }) {
+export default function WorkerAppShell({ title, subtitle, tab, onTab, badges = {}, tabs = NAV_TABS, onRefresh, refreshing = false, onBack = null, children, hideNav = false, actionPad = false }) {
   const online = useOnline();
   return (
     <div className="wa" data-testid="worker-app">
@@ -40,7 +41,7 @@ export default function WorkerAppShell({ title, subtitle, tab, onTab, badges = {
       {!hideNav && (
         <nav className="wa-nav" aria-label="Navigasi aplikasi" data-testid="worker-nav">
           <div className="wa-nav-inner">
-            {NAV_TABS.map((t) => {
+            {tabs.map((t) => {
               const Icon = ICONS[t.icon];
               const count = badges[t.key];
               return (

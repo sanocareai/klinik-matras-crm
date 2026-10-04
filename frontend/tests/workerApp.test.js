@@ -169,7 +169,7 @@ test("teks panjang & aman: inisial foto kosong, safeText memotong dan menyembuny
 
 test("komponen: bottom nav maks. 4 & tanpa sidebar; kartu foto-pertama memuat semua informasi yang diminta; selektor stabil", () => {
   const shell = strip(read("WorkerAppShell.jsx"));
-  assert.match(shell, /NAV_TABS\.map/); assert.match(shell, /data-testid="worker-nav"/); assert.match(shell, /data-testid=\{`nav-\$\{t\.key\}`\}/);
+  assert.match(shell, /tabs = NAV_TABS/); assert.match(shell, /tabs\.map/); assert.match(shell, /data-testid="worker-nav"/); assert.match(shell, /data-testid=\{`nav-\$\{t\.key\}`\}/);
   assert.doesNotMatch(shell, /Sidebar|sidebar|Layout\.jsx|TabsProvider/, "mode aplikasi: tanpa sidebar desktop");
   const card = strip(read("JobCard.jsx"));
   for (const id of ["job-photo", "job-customer", "job-ids", "layanan-sales", "job-kasur", "sales-note", "sales-name", "ganti-kain-note", "priority-chip", "source-badge", "stage-chip", "job-progress", "material-waiting", "worker-unit-card"]) assert.ok(card.includes(`data-testid="${id}"`), id);

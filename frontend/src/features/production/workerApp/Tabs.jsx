@@ -153,7 +153,7 @@ export function AktivitasTab({ jobs, onOpen }) {
 
 // ---------------------------------------------------------------- Akun
 const ROLE_LABEL = { PRODUCTION_WORKER: "Operator Produksi", PRODUCTION_LEAD: "Production Lead", QC_LEAD: "QC", WAREHOUSE: "Gudang", PRODUCTION_DOCUMENTER: "Dokumenter", ADMIN: "Admin", OWNER: "Owner" };
-export function AkunTab({ user, roles, lane, pathname, onLogout, navigate }) {
+export function AkunTab({ user, roles, lane, pathname, onLogout, navigate, currentKey = null, extra = null, onLeave = null }) {
   const modes = allowedModes(roles);
   const desktopOk = roles.some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r));
   return (
@@ -166,16 +166,17 @@ export function AkunTab({ user, roles, lane, pathname, onLogout, navigate }) {
       <h2 className="mb-2 mt-5 flex items-center gap-2 text-[13px] font-extrabold uppercase tracking-wide text-ink3"><ArrowRightLeft size={14} aria-hidden /> Mode aplikasi</h2>
       <div className="wa-card divide-y divide-line" data-testid="mode-switcher">
         {modes.map((m) => {
-          const current = m.lane ? m.lane === lane : false;
-          return <button key={m.key} type="button" data-testid={`mode-${m.key}`} aria-current={current ? "true" : undefined} disabled={current} onClick={() => navigate(m.to)} className="flex min-h-[56px] w-full items-center justify-between gap-3 px-4 text-left disabled:cursor-default"><span className="text-[15px] font-semibold text-ink">{m.label}</span>{current ? <span className="rounded-full bg-accentbg px-2.5 py-0.5 text-[12px] font-bold text-accent">Aktif</span> : <span className="text-[13px] font-semibold text-accent">Buka</span>}</button>;
+          const current = currentKey ? m.key === currentKey : (m.lane ? m.lane === lane : false); // P12D: Aplikasi Dokumentasi (tanpa lini) menandai modenya lewat currentKey
+          return <button key={m.key} type="button" data-testid={`mode-${m.key}`} aria-current={current ? "true" : undefined} disabled={current} onClick={() => { if (!onLeave || onLeave()) navigate(m.to); }} className="flex min-h-[56px] w-full items-center justify-between gap-3 px-4 text-left disabled:cursor-default"><span className="text-[15px] font-semibold text-ink">{m.label}</span>{current ? <span className="rounded-full bg-accentbg px-2.5 py-0.5 text-[12px] font-bold text-accent">Aktif</span> : <span className="text-[13px] font-semibold text-accent">Buka</span>}</button>;
         })}
         {!modes.length && <p className="m-0 px-4 py-4 text-[13.5px] text-ink2">Peran Anda tidak punya mode aplikasi lantai.</p>}
       </div>
+      {extra}
       <h2 className="mb-2 mt-5 text-[13px] font-extrabold uppercase tracking-wide text-ink3">Pengaturan</h2>
       <div className="wa-card divide-y divide-line">
         <div className="flex min-h-[56px] items-center justify-between px-4"><span className="text-[15px] font-semibold text-ink">Tampilan terang / gelap</span><ThemeToggle /></div>
         <button type="button" onClick={() => window.location.reload()} className="flex min-h-[56px] w-full items-center justify-between px-4 text-left"><span className="text-[15px] font-semibold text-ink">Muat ulang aplikasi</span><RefreshCw size={17} className="text-ink3" aria-hidden /></button>
-        {desktopOk && <Link to={lastActiveTabPath(pathname) || "/portal"} className="flex min-h-[56px] items-center justify-between px-4 text-ink no-underline"><span className="text-[15px] font-semibold">Buka SANSS (desktop)</span><span className="text-[13px] font-semibold text-accent">Buka</span></Link>}
+        {desktopOk && <Link to={lastActiveTabPath(pathname) || "/portal"} onClick={(e) => { if (onLeave && !onLeave()) e.preventDefault(); }} className="flex min-h-[56px] items-center justify-between px-4 text-ink no-underline"><span className="text-[15px] font-semibold">Buka SANSS (desktop)</span><span className="text-[13px] font-semibold text-accent">Buka</span></Link>}
         {onLogout && <button type="button" data-testid="logout" onClick={onLogout} className="flex min-h-[56px] w-full items-center justify-between px-4 text-left text-red"><span className="text-[15px] font-bold">Keluar</span><LogOut size={18} aria-hidden /></button>}
       </div>
       {/* Mode Latihan (hanya peran yang berhak): dipindahkan dari atas header aplikasi ke sini; perilaku demo tidak berubah. */}
