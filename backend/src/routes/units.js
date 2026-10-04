@@ -27,6 +27,7 @@ import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services
 import { postStockMovement } from "../services/inventoryLedger.js";
 import { guardV1UnitWrite, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
 import { prisma } from "../db.js";
+import { signUnitPhotoUrlsBulk } from "./productionUnitPhoto.js";
 
 export const unitRouter = express.Router();
 unitRouter.use(requireAuth);
@@ -424,7 +425,7 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
         service: true,
         currentStage: true,
         // items: HANYA nama layanan (Layanan Dipesan Sales, read-only untuk drawer unit non-V2) — tanpa harga; dikeluarkan dari payload di bawah.
-        order: { select: { id: true, orderNumber: true, status: true, customer: { select: { id: true, name: true, phone: true } }, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } } } },
+        order: { select: { id: true, orderNumber: true, status: true, notes: true, customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { name: true } } } }, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } } } },
         qcFitTests: { include: { stage: { select: { id: true, labelId: true } }, testedBy: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } },
         // Snapshot rute produksi (Production Core Slice 4D/4J/4K) — relasi
         // FK langsung di Unit, SATU JOIN, TIDAK butuh batch loader terpisah
@@ -549,8 +550,12 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
 
     const { items: orderItems = [], ...orderBase } = unit.order || {};
     const salesServices = [...new Set(orderItems.map((i) => i.layananName).filter(Boolean))];
+    // Konteks Sales untuk Aplikasi Meja (jalur V1 setara kartu V2): catatan order, nama Sales, foto unit bertanda tangan. READ-ONLY, tanpa harga.
+    const photoUrl = (await signUnitPhotoUrlsBulk(prisma, [unit.id])).get(unit.id) ?? null;
+    const salesContext = { request: unit.order?.notes ?? null, salesName: unit.order?.customer?.assignedSales?.name ?? null, photoUrl };
     res.json({
       unit: { ...unit, order: unit.order ? orderBase : unit.order },
+      salesContext,
       // Layanan Dipesan (Sales) — order-scoped, READ-ONLY; TERPISAH dari Layanan Teknis Produksi (unit.service, ditetapkan Produksi).
       salesServices,
       path: timeline, qcFitTests: unit.qcFitTests,

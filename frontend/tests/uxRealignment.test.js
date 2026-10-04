@@ -195,7 +195,7 @@ test("Sandbox#1 Revisi Diagnosis tidak lagi kosong: wizard di-seed dari diagnosi
   assert.match(W, /export function serverSeed\(cur\)/);
   assert.match(W, /const seed = local \|\| \(server \? serverSeed\(server\) : null\)/);
   assert.match(W, /filter\(\(m\) => m\.status === "NEEDS_MAPPING"\)/, "hanya bahan manual belum terpetakan yang dibawa");
-  assert.match(read("pages", "produksi", "WorkerLane.jsx"), /current: diagState\.current/);
+  assert.match(read("features", "production", "workerApp", "workerSheets.jsx"), /current: diagState\.current/); // P12C: lembar diagnosis diekstrak dari WorkerLane
   assert.match(read("features", "production", "UnitOverviewDrawer.jsx"), /current: data\.diagnosis\?\.current \?\? null/);
 });
 test("Sandbox#3 PIC/Gudang tidak memicu 403 daftar workshop/operator di Status & Rencana", () => {

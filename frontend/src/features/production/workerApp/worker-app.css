@@ -1,0 +1,67 @@
+/* P12C — Aplikasi Meja/Corner mode aplikasi. Palet = token DS yang sudah ada (putih/off-white, navy, royal blue); mode gelap = tukar token,
+   bukan desain ulang. Hanya hal yang tidak punya token yang didefinisikan di sini (placeholder foto, bilah navigasi bawah). */
+.wa { background: var(--bg-base); color: var(--text-primary); min-height: 100dvh; -webkit-tap-highlight-color: transparent; }
+
+/* Kartu: permukaan putih, sudut besar, satu bayangan lembut (tanpa border; hierarki dari tone + spacing). */
+.wa-card { background: var(--bg-surface); border-radius: 20px; box-shadow: var(--shadow-card); overflow: hidden; }
+.wa-card-press { transition: transform 0.12s ease, box-shadow 0.12s ease; }
+.wa-card-press:active { transform: scale(0.992); }
+.wa-card-press:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Foto-pertama: rasio 16:9, penutup penuh. Foto kosong = gradien navy lembut + inisial (jujur, bukan gambar palsu). */
+.wa-photo { position: relative; aspect-ratio: 16 / 9; width: 100%; background: #0B2454; overflow: hidden; }
+.wa-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.wa-photo-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #0B2454;
+  background: linear-gradient(135deg, #E8F0FF 0%, #D1E0FF 100%); }
+[data-theme="dark"] .wa-photo-empty { color: #AFC9FF; background: linear-gradient(135deg, #0B2454 0%, #14295E 100%); }
+.wa-photo-scrim { position: absolute; inset: auto 0 0 0; height: 56%; background: linear-gradient(to top, rgba(7, 26, 58, 0.62), transparent); pointer-events: none; }
+
+/* Chip di atas foto: selalu terbaca di foto terang/gelap (latar solid semi-pekat + teks putih). */
+.wa-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; line-height: 1.35; }
+.wa-chip-solid { background: rgba(7, 26, 58, 0.78); color: #fff; backdrop-filter: blur(6px); }
+.wa-chip-red { background: #D70015; color: #fff; }
+.wa-chip-orange { background: #C93400; color: #fff; }
+
+/* Bilah navigasi bawah (maks. 4). Mobile: penuh lebar. >=768: kapsul melayang di tengah — tanpa sidebar desktop. */
+.wa-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; justify-content: center;
+  background: color-mix(in srgb, var(--bg-surface) 94%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--hairline); padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); }
+.wa-nav-inner { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; max-width: 560px; gap: 4px; }
+.wa-nav-btn { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; border-radius: 16px;
+  color: var(--text-secondary); font-size: 11.5px; font-weight: 600; background: transparent; border: 0; cursor: pointer; }
+.wa-nav-btn[aria-current="page"] { color: var(--accent); background: var(--accent-bg); font-weight: 700; }
+.wa-nav-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; }
+.wa-badge { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+@media (min-width: 768px) {
+  .wa-nav { left: 50%; right: auto; transform: translateX(-50%); bottom: 16px; width: min(560px, calc(100% - 32px)); border: 0; border-radius: 28px;
+    box-shadow: var(--shadow-popover); padding: 6px 8px; }
+}
+
+/* Tombol aksi utama (satu per layar) dan batang aksi lengket di detail pekerjaan. */
+.wa-primary { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 60px; width: 100%; border: 0; border-radius: 18px; cursor: pointer;
+  background: var(--accent); color: #fff; font-size: 17px; font-weight: 800; box-shadow: 0 6px 18px rgba(20, 87, 217, 0.28); }
+[data-theme="dark"] .wa-primary { background: #2F6BEA; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
+.wa-primary:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+.wa-primary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.wa-actionbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; justify-content: center; padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--bg-surface) 96%, transparent); backdrop-filter: blur(16px); border-top: 1px solid var(--hairline); }
+.wa-actionbar-inner { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 8px; }
+
+/* Tata letak: kolom tunggal di mobile; 2 kolom >=768; 3 kolom >=1280 (maks. lebar 1200 — tidak melebar penuh di layar desktop). */
+.wa-main { margin: 0 auto; width: 100%; max-width: 1200px; padding: 12px 14px calc(104px + env(safe-area-inset-bottom)); }
+.wa-grid { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 768px) { .wa-grid { grid-template-columns: repeat(2, 1fr); } .wa-main { padding-left: 24px; padding-right: 24px; } }
+@media (min-width: 1280px) { .wa-grid { grid-template-columns: repeat(3, 1fr); } }
+.wa-detail { display: grid; gap: 14px; grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 1024px) { .wa-detail { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); } }
+.wa-h1 { font-size: 26px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; color: var(--text-primary); margin: 0; }
+.wa-wrap { overflow-wrap: anywhere; word-break: break-word; }
+@media (prefers-reduced-motion: reduce) { .wa-card-press { transition: none; } }
+
+/* Kartu "Sedang dikerjakan": di >=768 foto di kiri, isi di kanan (satu baris penuh) — tidak timpang di layar lebar. */
+@media (min-width: 768px) {
+  .wa-card-wide { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-column: 1 / -1; }
+  .wa-card-wide .wa-photo { aspect-ratio: auto; height: 100%; min-height: 260px; }
+}
+/* Halaman detail: ruang bawah cukup untuk batang aksi lengket (tombol utama + sekunder) supaya konten terakhir tetap terjangkau. */
+.wa-main-action { padding-bottom: calc(210px + env(safe-area-inset-bottom)); }

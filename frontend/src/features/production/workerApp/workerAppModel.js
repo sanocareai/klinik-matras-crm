@@ -1,0 +1,176 @@
+// P12C — model MURNI Aplikasi Meja/Corner mode aplikasi (tanpa JSX/jaringan, diuji `node --test`).
+// Prinsip: SEMUA nilai (progres, tahap, bahan, aksi berikutnya, urutan) berasal dari server. Modul ini hanya MENERJEMAHKAN ke kartu/aksi.
+//  - Jalur V2: item antrean `GET /production-v2/worker/:lane` (urutan manual/tanggal/meja sudah diurutkan server) + `next` dari server.
+//  - Jalur V1: unit non-cohort yang DITUGASKAN ke operator ini (`GET /production/work-orders` -> assignedOperator.id = operator V2 yang sama) diperkaya
+//    `GET /units/:id/timeline`. Tahap V1 TIDAK pernah dipetakan ke 12 langkah V2 (dua mesin berbeda, label & progres masing-masing dari server).
+import { isGantiKain, materialBadge, mattressInfo, priorityMeta, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
+import { bucketStyle } from "@/features/production/experience.js";
+import { canMaterialV1, canStageV1, needsPhotoOf, stageStateOf } from "@/features/production/unitV1ActionsModel.js";
+
+// Bottom navigation: MAKSIMAL 4 (diuji). Urutan = urutan tampil.
+export const NAV_TABS = Object.freeze([
+  Object.freeze({ key: "kerja", label: "Kerja", icon: "Briefcase" }),
+  Object.freeze({ key: "bahan", label: "Bahan", icon: "Package" }),
+  Object.freeze({ key: "aktivitas", label: "Aktivitas", icon: "Activity" }),
+  Object.freeze({ key: "akun", label: "Akun", icon: "User" }),
+]);
+export const TAB_KEYS = Object.freeze(NAV_TABS.map((t) => t.key));
+export const tabOf = (raw) => (TAB_KEYS.includes(raw) ? raw : "kerja");
+
+// Mode aplikasi lantai. Peran = cermin izin server (sama dengan TRAINING_PAGES); server tetap penegak akses.
+const FLOOR_ROLES = ["PRODUCTION_WORKER", "PRODUCTION_LEAD", "ADMIN", "OWNER"];
+export const APP_MODES = Object.freeze([
+  Object.freeze({ key: "meja", label: "Meja Bongkar", to: "/produksi/meja", lane: "TABLE", roles: FLOOR_ROLES }),
+  Object.freeze({ key: "corner", label: "Meja Corner", to: "/produksi/corner", lane: "CORNER", roles: FLOOR_ROLES }),
+  Object.freeze({ key: "dokumentasi", label: "Dokumentasi", to: "/produksi/dokumentasi", lane: null, roles: Object.freeze(["PRODUCTION_DOCUMENTER", "PRODUCTION_LEAD", "ADMIN", "OWNER"]) }),
+]);
+// Pengguna multi-peran hanya melihat mode yang memang diizinkan perannya (tidak ada tombol yang pasti 403).
+export const allowedModes = (roles = []) => APP_MODES.filter((m) => (roles || []).some((r) => m.roles.includes(r)));
+export const modeOfLane = (lane) => APP_MODES.find((m) => m.lane === (lane === "CORNER" ? "CORNER" : "TABLE"));
+
+// ---- Prioritas ----
+// V2: plan.priority 0/1/2. V1: enum unit.priority. Tidak ada tebakan: CRITICAL V1 diperlakukan setara Mendesak untuk tampilan (label asli tetap).
+const V1_PRIORITY = Object.freeze({ NORMAL: { value: 0, label: "Normal" }, HIGH: { value: 1, label: "Tinggi" }, URGENT: { value: 2, label: "Mendesak" }, CRITICAL: { value: 2, label: "Kritis" } });
+export function priorityOfV1(priority) {
+  const p = V1_PRIORITY[String(priority || "NORMAL").toUpperCase()] || V1_PRIORITY.NORMAL;
+  return { ...priorityMeta(p.value), label: p.label, value: p.value };
+}
+export function priorityOfV2(priority) { const m = priorityMeta(priority ?? 0); return { ...m, value: priority ?? 0 }; }
+
+const dash = (s) => (s && String(s).trim() ? String(s).trim() : null);
+export const kasurLine = (view) => { const m = mattressInfo(view); return [m.jenis, m.merk, m.ukuran].filter(Boolean).join(" · ") || null; };
+
+// ---- Kartu V2 ----
+export function jobFromV2(item) {
+  const customer = item?.customer || {};
+  const view = { customer, unit: item?.unit };
+  const style = bucketStyle(item?.bucket);
+  const waiting = item?.bucket === "MENUNGGU_BAHAN" || !!item?.shortage || item?.next?.wait === "MATERIAL_SHORTAGE";
+  const prog = item?.progress && Number.isFinite(item.progress.total) ? { done: item.progress.done ?? 0, total: item.progress.total, source: "server-v2" } : null;
+  return {
+    key: `v2:${item.runId}`, source: "V2", id: item.runId, unitId: item.unit?.id ?? null, revision: item.revision,
+    unitCode: item.unit?.unitCode ?? "—", orderNumber: customer.orderNumber ?? item.unit?.orderNumber ?? null,
+    customerName: dash(customer.name) || "Customer belum dicatat",
+    photoUrl: item.unit?.photoUrl || null,
+    salesServices: Array.isArray(customer.salesServices) ? customer.salesServices : [],
+    kasur: kasurLine(view),
+    note: salesNoteOf(view), salesName: dash(customer.salesName),
+    gantiKain: isGantiKain(view), gantiKainNoteMissing: isGantiKain(view) && !salesNoteOf(view),
+    priority: priorityOfV2(item.plan?.priority),
+    stage: { label: stageText(item), bucket: item.bucket, tone: style.badge, bucketLabel: style.label },
+    stationLabel: item.plan?.stationLabel ?? null, sequence: item.plan?.stationSequence ?? null,
+    progress: prog, materialWaiting: waiting, material: materialBadge(item), late: !!item.timer?.late,
+    active: ["BONGKAR", "DIAGNOSA", "FONDASI", "LAPISAN", "QC", "CORNER"].includes(item.bucket) && item.next?.action !== "WAIT" && !!item.activeOp,
+    raw: item,
+  };
+}
+
+// ---- Kartu V1 ----
+// `unit` = baris work-orders; `timeline` = GET /units/:id/timeline (null bila belum/ gagal dimuat -> kartu tetap jujur: field yang belum tahu = kosong, bukan tebakan).
+export function v1Progress(timeline) {
+  const path = timeline?.path;
+  if (!Array.isArray(path) || path.length === 0) return null;
+  return { done: path.filter((p) => p.status === "DONE" || p.status === "SKIPPED").length, total: path.length, source: "server-v1" };
+}
+export function jobFromV1(unit, timeline = null) {
+  const sales = Array.isArray(timeline?.salesServices) ? timeline.salesServices : [];
+  const ctx = timeline?.salesContext || {};
+  const customer = { salesServices: sales, request: ctx.request ?? null, productType: null };
+  const view = { customer, unit };
+  const st = timeline ? stageStateOf(timeline) : null;
+  const stageLabel = st?.current?.stage?.labelId || unit.currentStage?.labelId || st?.first?.labelId || null;
+  const exec = unit.executionState || "NOT_STARTED";
+  return {
+    key: `v1:${unit.id}`, source: "V1", id: unit.id, unitId: unit.id,
+    unitCode: unit.unitCode, orderNumber: unit.order?.orderNumber ?? null,
+    customerName: dash(unit.order?.customer?.name) || "Customer belum dicatat",
+    photoUrl: ctx.photoUrl || null,
+    salesServices: sales,
+    kasur: [unit.merk, unit.ukuran].filter(Boolean).join(" · ") || null,
+    note: salesNoteOf(view), salesName: dash(ctx.salesName),
+    gantiKain: isGantiKain(view), gantiKainNoteMissing: isGantiKain(view) && !salesNoteOf(view),
+    priority: priorityOfV1(unit.priority),
+    stage: {
+      label: stageLabel ? `Tahap · ${stageLabel}` : (unit.productionStatusReason || "Belum masuk alur"),
+      bucket: exec, tone: exec === "IN_PROGRESS" ? "accent" : exec === "BLOCKED" ? "red" : exec === "PAUSED" ? "orange" : "neutral",
+      bucketLabel: ({ IN_PROGRESS: "Sedang berjalan", PAUSED: "Dijeda", BLOCKED: "Terhambat", NOT_STARTED: "Belum dimulai", DONE: "Selesai" })[exec] || "Antrean",
+    },
+    stationLabel: unit.workCenter?.name ?? null, sequence: null,
+    progress: v1Progress(timeline), materialWaiting: false, material: null,
+    late: false, active: exec === "IN_PROGRESS",
+    loadedDetail: !!timeline, createdAt: unit.createdAt, raw: unit,
+  };
+}
+
+// Unit V1 yang DITUGASKAN ke operator ini: status kerja, di luar cohort V2 (V2 punya antrean sendiri), ditugaskan ke operator yang sama.
+const V1_WORK_STATUSES = Object.freeze(["RECEIVED", "IN_PRODUCTION"]);
+export function myV1Units(units, operatorId) {
+  if (!operatorId || !Array.isArray(units)) return [];
+  return units.filter((u) => u && u.inProductionV2 === false && V1_WORK_STATUSES.includes(u.status) && u.assignedOperator?.id === operatorId);
+}
+
+// Urutan: yang sedang dikerjakan lebih dulu; sisanya V2 mengikuti urutan SERVER (tanggal > meja > urutan manual, manual menang atas prioritas);
+// V1 setelah V2: prioritas tinggi dulu, lalu yang lebih lama dibuat. Tidak ada pengurutan ulang atas V2.
+export function orderJobs(jobs) {
+  const v2 = jobs.filter((j) => j.source === "V2");
+  const v1 = jobs.filter((j) => j.source === "V1").sort((a, b) => (b.priority.value - a.priority.value) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  const all = [...v2, ...v1];
+  const active = all.filter((j) => j.active);
+  return [...active, ...all.filter((j) => !j.active)];
+}
+export function splitJobs(jobs) {
+  const ordered = orderJobs(jobs);
+  const active = ordered.find((j) => j.active) || null;
+  return { active, queue: ordered.filter((j) => j !== active) };
+}
+
+// Ringkasan PIC untuk beranda: nama operator + meja yang sedang dilayani (dari plan, bukan tebakan).
+export function picSummary(jobs, { lane, user, all } = {}) {
+  const stations = [...new Set(jobs.filter((j) => j.source === "V2").map((j) => j.stationLabel).filter(Boolean))];
+  const centers = [...new Set(jobs.filter((j) => j.source === "V1").map((j) => j.stationLabel).filter(Boolean))];
+  return { name: user?.name || "—", lane, all: !!all, stations, centers };
+}
+
+// ---- Aksi utama V1 (satu aksi; keadaan dari timeline server). Aksi lain (jeda/terhambat) sekunder; putusan QC & penyelesaian blokir BUKAN di aplikasi. ----
+export function primaryActionV1(timeline, roles = []) {
+  const st = stageStateOf(timeline);
+  if (!canStageV1(roles)) return { kind: "NONE", reason: "Hanya tim produksi yang dapat menjalankan tahap." };
+  const label = st.current?.stage?.labelId || st.first?.labelId || null;
+  switch (st.kind) {
+    case "NEEDS_SERVICE": return { kind: "NONE", reason: "Layanan teknis belum ditetapkan — menunggu Production Lead." };
+    case "ALL_DONE": return { kind: "NONE", reason: "Seluruh tahap V1 selesai." };
+    case "NOT_STARTED": case "READY": return { kind: "START", label: label ? `Mulai ${label}` : "Mulai tahap", stage: st.current?.stage || st.first };
+    case "PAUSED": return { kind: "RESUME", label: "Lanjutkan pekerjaan", stage: st.current.stage };
+    case "IN_PROGRESS": return { kind: "COMPLETE", label: label ? `Selesaikan ${label}` : "Selesaikan tahap", stage: st.current.stage, needsPhoto: needsPhotoOf(st), secondary: ["PAUSE", "BLOCK"] };
+    case "IN_PROGRESS_QC": return { kind: "NONE", reason: "Tahap gerbang QC berjalan — putusan hanya oleh QC.", stage: st.current.stage };
+    case "BLOCKED": return { kind: "NONE", reason: "Tahap terhambat — hubungi Production Lead untuk menyelesaikan blokir.", stage: st.current.stage };
+    default: return { kind: "NONE", reason: "Belum ada tindakan yang tersedia." };
+  }
+}
+export const canRecordMaterialV1 = canMaterialV1;
+
+// ---- Offline: aksi TIDAK dianggap berhasil sebelum diterima server ----
+export function submitState({ online, busy }) {
+  if (busy) return { disabled: true, reason: null };
+  if (!online) return { disabled: true, reason: "Offline — kirim saat sinyal kembali. Isian tersimpan di HP ini; belum ada yang terkirim ke server." };
+  return { disabled: false, reason: null };
+}
+
+// ---- Kartu Bahan (tab Bahan): dari server. V2 = status bahan & kekurangan dari item antrean; V1 = tidak ada rencana bahan (pemakaian dicatat di detail). ----
+export function materialRows(jobs) {
+  const rows = jobs.map((j) => {
+    if (j.source === "V2") {
+      const shortage = j.raw?.shortage;
+      return { key: j.key, job: j, kind: shortage ? "SHORTAGE" : j.materialWaiting ? "WAITING" : j.material ? "STATUS" : "NONE", badge: shortage ? { label: "Bahan kurang", tone: "red" } : j.material, items: shortage?.items || [] };
+    }
+    return { key: j.key, job: j, kind: "V1", badge: null, items: [] };
+  });
+  const rank = { SHORTAGE: 0, WAITING: 1, STATUS: 2, NONE: 3, V1: 4 };
+  return rows.sort((a, b) => rank[a.kind] - rank[b.kind]);
+}
+
+// Teks galat -> aman ditampilkan (tidak pernah UUID/kode teknis).
+export const safeText = (v, max = 140) => { const s = String(v ?? "").replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "…"); return s.length > max ? `${s.slice(0, max - 1)}…` : s; };
+
+// Inisial untuk foto kosong (mis. "Ibu Maya Sari" -> "IM").
+export const initialsOf = (name) => String(name || "?").split(/[\s/]+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join("") || "?";

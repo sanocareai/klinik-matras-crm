@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useState, useSyncExternalStore } from "react";
+import React, { Fragment, createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { FlaskConical } from "lucide-react";
 import { api } from "@/api.js";
@@ -18,9 +18,10 @@ export const canUseDemo = canUseTraining;
 function useIsActiveTab() { try { return useTabVisibility(); } catch { return true; } }
 const currentRoles = () => { try { return JSON.parse(localStorage.getItem("user"))?.roles || []; } catch { return []; } };
 
-export function DemoBadge() {
+export function DemoBadge({ top = false }) {
+  // top: aplikasi lantai (bottom navigation di dasar) — lencana di bawah header, bukan menutupi navigasi.
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-3 z-[300] flex justify-center px-3" role="status" aria-live="polite" data-testid="demo-badge">
+    <div className={`pointer-events-none fixed inset-x-0 ${top ? "top-[calc(env(safe-area-inset-top)+64px)]" : "bottom-3"} z-[300] flex justify-center px-3`} role="status" aria-live="polite" data-testid="demo-badge">
       <span className="pointer-events-auto max-w-full rounded-full bg-orange px-4 py-1.5 text-center text-[12.5px] font-bold text-white shadow-lg"><FlaskConical size={13} className="mr-1 inline align-[-2px]" aria-hidden />{DEMO_LABEL}</span>
     </div>
   );
@@ -70,7 +71,15 @@ function DemoBar({ active, onToggle, denied, roles }) {
 }
 
 // Pembungkus halaman: toggle + banner + gerbang. `children` di-remount (key) setiap demo diaktifkan/dimatikan supaya memuat ulang datanya.
-export function DemoPage({ children }) {
+// P12C: aplikasi lantai (mobile) memindahkan bar Mode Latihan ke tab Akun (slotBar) — bar tidak lagi menempel di atas header aplikasi. Perilaku demo TIDAK berubah.
+const DemoCtx = createContext(null);
+export function DemoBarSlot() {
+  const c = useContext(DemoCtx);
+  if (!c?.eligible) return null;
+  return <DemoBar active={c.active} onToggle={c.toggle} denied={c.denied} roles={c.roles} />;
+}
+
+export function DemoPage({ children, slotBar = false }) {
   const [params, setParams] = useSearchParams();
   // State lokal diselaraskan dari ?demo=1 (di sistem tab dalam-app, perubahan HANYA query tidak menggeser lokasi virtual tab).
   const urlWants = params.get("demo") === "1";
@@ -124,9 +133,11 @@ export function DemoPage({ children }) {
   const toggle = () => { const next = !wants; setWantsLocal(next); setParams((p) => { const n = new URLSearchParams(p); if (next) n.set("demo", "1"); else n.delete("demo"); return n; }, { replace: true }); };
   return (
     <>
-      {eligible && <DemoBar active={active} onToggle={toggle} denied={denied} roles={roles} />}
-      {status === "checking" ? <p className="m-0 px-8 py-6 text-[13px] text-ink3" data-testid="demo-checking">Menyiapkan data latihan…</p> : <Fragment key={`${ver}-${active}`}>{children}</Fragment>}
-      {active && <DemoBadge />}
+      {eligible && !slotBar && <DemoBar active={active} onToggle={toggle} denied={denied} roles={roles} />}
+      <DemoCtx.Provider value={{ eligible, active, toggle, denied, roles }}>
+        {status === "checking" ? <p className="m-0 px-8 py-6 text-[13px] text-ink3" data-testid="demo-checking">Menyiapkan data latihan…</p> : <Fragment key={`${ver}-${active}`}>{children}</Fragment>}
+      </DemoCtx.Provider>
+      {active && <DemoBadge top={slotBar} />}
     </>
   );
 }
