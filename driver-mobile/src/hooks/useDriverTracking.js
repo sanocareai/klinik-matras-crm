@@ -17,64 +17,108 @@
 // mana lagi") TETAP jadi gerbang PALING LUAR: Offline = tidak ada pelacakan
 // apa pun, background sekalipun, dan notifikasi foreground service ikut
 // hilang.
-import { useEffect, useRef } from "react";
+//
+// DIROMBAK 4 Oktober 2026 (audit crash Android "Sano Driver telah berhenti"
+// saat app di background — ROOT CAUSE BELUM DIKONFIRMASI lewat logcat
+// sungguhan, lihat laporan audit terpisah). Keputusan lifecycle (gerbang
+// AppState, cek-izin-dulu, serialisasi, abaikan niat basi, status jujur)
+// SEKARANG hidup di lib/trackingLifecycle.js (pure, teruji node:test) — file
+// ini TINGGAL wiring RN tipis: menyambungkan AppState/expo-location asli ke
+// situ, dan menjalankan jalur cadangan timer foreground SELAMA status-nya
+// "foreground-only". Lihat komentar panjang di trackingLifecycle.js untuk
+// alasan lengkap tiap aturan.
+import { useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 import * as Location from "expo-location";
 import { api } from "../api";
 import {
   backgroundTrackingTersedia,
+  sudahBerjalanBackgroundTracking,
   mulaiBackgroundTracking,
   hentikanBackgroundTracking,
-  mintaIzinBackground,
 } from "../lib/backgroundTracking";
+import { createTrackingLifecycle, STATUS } from "../lib/trackingLifecycle";
+
+export { STATUS as DRIVER_TRACKING_STATUS };
 
 const PING_INTERVAL_MS = 2 * 60 * 1000; // jalur cadangan — sama dengan PRD FR-L-06
 
 export function useDriverTracking(jobs, isOnline) {
+  const [status, setStatus] = useState(STATUS.IDLE);
   const timerRef = useRef(null);
 
-  // Jaring pengaman unmount (audit performa "HP panas", 23 September 2026)
-  // — BUG DITEMUKAN: cleanup function effect utama di bawah (yang deps-nya
-  // [isOnline, status job] dan cuma jalan lagi kalau salah satu dari itu
-  // BERUBAH) hanya membersihkan timer cadangan JS, TIDAK PERNAH memanggil
-  // hentikanBackgroundTracking(). Kalau JobListScreen UNMOUNT SAAT
-  // background tracking native (foreground service GPS) sedang aktif —
-  // kasus nyata: driver logout tanpa Offline-kan diri dulu, atau navigasi
-  // keluar layar ini saat masih EN_ROUTE — effect utama tidak pernah
-  // sempat menjalankan cabang "offline, hentikan" di atas, dan service GPS
-  // native TERUS JALAN tanpa batas walau React tree-nya sudah lenyap.
-  // Effect TERPISAH dengan deps kosong ini HANYA jalan sekali saat true
-  // unmount React (logout, navigasi keluar layar ini) — SENGAJA TIDAK
-  // menangani force-close/proses dibunuh OS: itu mematikan seluruh proses
-  // tanpa menjalankan JS apa pun, cleanup React manapun tidak pernah
-  // sempat jalan, tidak ada mekanisme JS yang bisa menutup celah itu.
-  // TIDAK mengganggu logika start/stop normal effect utama di bawah
-  // (hentikanBackgroundTracking() aman dipanggil berulang, sudah idempoten
-  // lewat cek hasStartedLocationUpdatesAsync). `.catch()` di sini murni
-  // jaring tambahan di titik panggil — fungsinya sendiri SUDAH membungkus
-  // isinya dengan try/catch dan tidak pernah reject, tapi cleanup effect
-  // React yang memanggil promise tanpa `.catch()` adalah sumber unhandled
-  // rejection yang umum kalau suatu saat implementasinya berubah.
-  useEffect(() => {
-    return () => { hentikanBackgroundTracking().catch(() => {}); };
-  }, []);
+  // Instance SEKALI per mount (ref, bukan useMemo — identitas useMemo TIDAK
+  // dijamin stabil lintas render oleh React, padahal serialisasi di dalam
+  // lifecycle BUTUH satu instance yang sama sepanjang hidup komponen; pola
+  // "lazy ref init" ini identitasnya dijamin stabil sampai unmount).
+  const lifecycleRef = useRef(null);
+  if (lifecycleRef.current === null) {
+    lifecycleRef.current = createTrackingLifecycle({
+      backgroundTrackingTersedia,
+      sudahBerjalanBackgroundTracking,
+      mulaiBackgroundTracking,
+      hentikanBackgroundTracking,
+      getForegroundPermission: () => Location.getForegroundPermissionsAsync(),
+      requestForegroundPermission: () => Location.requestForegroundPermissionsAsync(),
+      getBackgroundPermission: () => Location.getBackgroundPermissionsAsync(),
+      requestBackgroundPermission: () => Location.requestBackgroundPermissionsAsync(),
+      getAppState: () => AppState.currentState,
+      onStatusChange: setStatus,
+    });
+  }
+  const lifecycle = lifecycleRef.current;
 
+  // Pemicu UTAMA: isOnline berubah, atau status job berubah (termasuk jadi/
+  // tidak lagi EN_ROUTE). lifecycle.update() sendiri yang menyerialkan dan
+  // membaca kondisi TERBARU di setiap titik await — effect ini cuma
+  // melaporkan niat terbaru, bukan menjalankan logikanya langsung.
   useEffect(() => {
     const activeJobIds = (jobs || []).filter((j) => j.status === "EN_ROUTE").map((j) => j.id);
+    lifecycle.update({ isOnline, activeJobIds });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline, (jobs || []).map((j) => `${j.id}:${j.status}`).join(",")]);
 
-    // Offline ATAU tidak ada job berjalan — pastikan SEMUA pelacakan mati,
-    // termasuk background yang mungkin masih hidup dari sesi sebelumnya
-    // (background service tidak ikut mati sendiri saat state React berubah).
-    if (!isOnline || activeJobIds.length === 0) {
-      hentikanBackgroundTracking();
+  // Pemicu KEDUA: AppState kembali ke "active". Niat "mulai tracking" yang
+  // tertunda karena app sedang background (status WAITING_FOR_ACTIVE) dicoba
+  // lagi persis saat ini — TANPA perlu isOnline/job berubah dulu. AppState
+  // berubah ke background TIDAK memicu apa pun di sini (sengaja): tracking
+  // yang sudah jalan harus tetap jalan, lihat lifecycle.update()/
+  // kondisiMasihBerlaku() yang hanya bereaksi pada isOnline/job.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") lifecycle.appStateMenjadiAktif();
+    });
+    return () => sub.remove();
+  }, [lifecycle]);
+
+  // Unmount (logout, navigasi keluar layar — BUKAN app ke background, lihat
+  // di atas) — destroy() masuk ke ANTREAN SERIALISASI YANG SAMA, jadi kalau
+  // ada start yang masih di tengah jalan (mis. menunggu dialog izin), ia
+  // dipastikan berhenti SETELAH start itu selesai menilai dirinya basi,
+  // bukan race terpisah seperti "jaring pengaman" versi lama.
+  useEffect(() => {
+    return () => { lifecycle.destroy(); };
+  }, [lifecycle]);
+
+  // Jalur cadangan foreground-timer — HANYA jalan selagi lifecycle melapor
+  // status "foreground-only" (modul native tak tersedia, atau izin
+  // background ditolak). Timer JS ini SENDIRI cuma bisa jalan selagi app di
+  // foreground (Android membekukannya di background, itulah kenapa jalur
+  // UTAMA pakai expo-task-manager) — jadi aman tanpa gerbang AppState
+  // tambahan di sini.
+  useEffect(() => {
+    if (status !== STATUS.FOREGROUND_ONLY) {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       return undefined;
     }
 
+    const activeJobIds = (jobs || []).filter((j) => j.status === "EN_ROUTE").map((j) => j.id);
     let cancelled = false;
 
     async function tick() {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted" || cancelled) return;
+        const { status: permStatus } = await Location.getForegroundPermissionsAsync();
+        if (permStatus !== "granted" || cancelled) return;
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         if (cancelled) return;
         const ping = {
@@ -87,35 +131,14 @@ export function useDriverTracking(jobs, isOnline) {
       }
     }
 
-    function mulaiTimerCadangan() {
-      if (cancelled || timerRef.current) return;
-      tick(); // ping pertama segera, jangan tunggu 2 menit
-      timerRef.current = setInterval(tick, PING_INTERVAL_MS);
-    }
-
-    (async () => {
-      if (!backgroundTrackingTersedia()) {
-        mulaiTimerCadangan();
-        return;
-      }
-      const izin = await mintaIzinBackground();
-      if (cancelled) return;
-      if (!izin.foreground) return; // izin lokasi ditolak total — tidak ada yang bisa dilakukan
-      if (izin.background) {
-        const jalan = await mulaiBackgroundTracking(activeJobIds);
-        if (!cancelled && jalan) return; // background aktif — timer cadangan tidak perlu
-      }
-      // Izin "sepanjang waktu" ditolak, atau gagal memulai — jalur cadangan.
-      mulaiTimerCadangan();
-    })();
-
+    tick(); // ping pertama segera, jangan tunggu 2 menit
+    timerRef.current = setInterval(tick, PING_INTERVAL_MS);
     return () => {
       cancelled = true;
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOnline, (jobs || []).map((j) => `${j.id}:${j.status}`).join(",")]); // .join lebih murah dari JSON.stringify (13 Sep 2026, audit performa)
+  }, [status, (jobs || []).map((j) => `${j.id}:${j.status}`).join(",")]);
+
+  return status;
 }

@@ -16,7 +16,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { useMyJobs } from "../hooks/useMyJobs";
 import { useIssues } from "../hooks/useIssues";
-import { useDriverTracking } from "../hooks/useDriverTracking";
+import { useDriverTracking, DRIVER_TRACKING_STATUS } from "../hooks/useDriverTracking";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import JobCard from "../components/JobCard";
 import RouteStartCard from "../components/RouteStartCard";
@@ -67,8 +67,16 @@ export default function JobListScreen({ navigation }) {
   // D-034 — kirim ping GPS selama ADA job EN_ROUTE, DAN Online (12 Sep
   // 2026 — gerbang isOnline ditambahkan di hook, lihat catatan panjang di
   // sana). Tidak melakukan apa pun (tidak minta izin lokasi sekalipun)
-  // kalau Offline atau tidak ada job yang sedang berjalan.
-  useDriverTracking(jobs, isOnline);
+  // kalau Offline atau tidak ada job yang sedang berjalan. Status dipakai
+  // di bawah (4 Okt 2026, audit crash background) supaya switch "Online"
+  // tidak pernah berbohong soal apakah posisi SUNGGUH terkirim.
+  const trackingStatus = useDriverTracking(jobs, isOnline);
+  const trackingCaption =
+    trackingStatus === DRIVER_TRACKING_STATUS.ERROR
+      ? "Gagal mengaktifkan pelacakan posisi — coba Offline lalu Online lagi"
+      : trackingStatus === DRIVER_TRACKING_STATUS.FOREGROUND_ONLY
+        ? "Posisi hanya terkirim selama app dibuka (izin \"sepanjang waktu\" belum aktif)"
+        : null;
 
   // Toggle Online/Offline (12 Sep 2026, referensi Gojek/Grab, semi-
   // otomatis) — Offline WAJIB konfirmasi dulu (kalau ada job EN_ROUTE,
@@ -133,7 +141,10 @@ export default function JobListScreen({ navigation }) {
 
         <View style={styles.heroOnlineRow}>
           <View style={[styles.onlineDot, { backgroundColor: isOnline ? "#3DDC84" : "rgba(255,255,255,0.45)" }]} />
-          <Text style={styles.heroOnlineText}>{isOnline ? "Online" : "Offline"}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heroOnlineText}>{isOnline ? "Online" : "Offline"}</Text>
+            {isOnline && trackingCaption ? <Text style={styles.heroTrackingCaption}>{trackingCaption}</Text> : null}
+          </View>
           <Switch
             value={isOnline}
             onValueChange={toggleOnline}
@@ -325,6 +336,7 @@ function makeStyles(t) {
       marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.18)",
     },
     heroOnlineText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
+    heroTrackingCaption: { color: "rgba(255,255,255,0.78)", fontSize: 11, marginTop: 2 },
     onlineDot: { width: 8, height: 8, borderRadius: 4 },
     // paddingBottom 96 (bukan 24) — ruang buat BottomNavBar melayang
     // (fase 2 redesign, lihat BottomNavBar.js) supaya card terakhir tidak

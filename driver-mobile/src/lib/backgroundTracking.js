@@ -153,15 +153,18 @@ export async function hentikanBackgroundTracking() {
   }
 }
 
-// Izin background ("Allow all the time") — di Android 11+ TIDAK bisa
-// diberikan lewat dialog biasa: sistem hanya membuka halaman Setelan, dan
-// user harus memilih sendiri. Karena itu izin foreground diminta DULU
-// (dialog normal), baru background — urutan yang diwajibkan Android; minta
-// background duluan otomatis ditolak tanpa dialog apa pun.
-export async function mintaIzinBackground() {
-  if (!backgroundTrackingTersedia()) return { foreground: false, background: false };
-  const depan = await Location.requestForegroundPermissionsAsync();
-  if (depan.status !== "granted") return { foreground: false, background: false };
-  const belakang = await Location.requestBackgroundPermissionsAsync();
-  return { foreground: true, background: belakang.status === "granted" };
+// Dipakai lib/trackingLifecycle.js untuk membedakan "FGS SUDAH jalan, tinggal
+// perbarui daftar job" (aman dipanggil kapan saja, termasuk dari background —
+// lihat mulaiBackgroundTracking di atas yang no-op start kalau sudah jalan)
+// dari "BELUM jalan, ini start baru" (harus lewat gerbang izin + AppState aktif
+// di trackingLifecycle.js — audit crash Android 3-4 Okt 2026: minta izin/mulai
+// FGS dari background adalah kandidat penyebab utama, lihat komentar di sana).
+export async function sudahBerjalanBackgroundTracking() {
+  if (!backgroundTrackingTersedia()) return false;
+  try {
+    return await Location.hasStartedLocationUpdatesAsync(TUGAS_LOKASI);
+  } catch (err) {
+    console.warn("[backgroundTracking] gagal cek status jalan:", err.message);
+    return false;
+  }
 }
