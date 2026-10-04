@@ -51,7 +51,7 @@ function CategoryBlock({ cat, canWrite, onAdd, onOpenPhoto, onCorrectBatch }) {
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" className="min-h-[44px]" onClick={() => onAdd(cat)} data-testid="add-photos" data-mutates><Plus size={14} aria-hidden /> Tambah foto</Button>
           {batches.map((b) => (
-            <Button key={b.evidenceId} size="sm" variant="ghost" className="min-h-[44px]" onClick={() => onCorrectBatch(cat, b)} data-testid="correct-batch" data-mutates><Pencil size={13} aria-hidden /> Koreksi {fmtDocTime(b.createdAt)} ({b.count})</Button>
+            <Button key={b.evidenceId} size="sm" variant="ghost" className="min-h-[44px]" onClick={() => onCorrectBatch(cat, b)} data-testid="correct-batch" data-evidence-id={b.evidenceId} data-mutates><Pencil size={13} aria-hidden /> Koreksi {fmtDocTime(b.createdAt)} ({b.count})</Button>
           ))}
         </div>
       )}
