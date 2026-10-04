@@ -184,4 +184,3 @@ export function AkunTab({ user, roles, lane, pathname, onLogout, navigate }) {
     </div>
   );
 }
-
