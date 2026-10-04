@@ -83,7 +83,7 @@ function handleEngineError(err, res) {
 // (atau retry tahap yang sedang blocked).
 unitRouter.post("/:id/stages/start", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
-    const result = await startStage(req.params.id, { actorId: req.user.id });
+    const result = await startStage(req.params.id, { actorId: req.user.id, requireAssignedOperator: true });
     res.json(result);
   } catch (err) {
     handleEngineError(err, res);
@@ -95,7 +95,7 @@ unitRouter.post("/:id/stages/:stageId/complete", requirePermission(P.UNIT_STAGE_
   try {
     const { photoUrls, note } = req.body;
     const log = await completeStage(req.params.id, req.params.stageId, {
-      actorId: req.user.id, photoUrls, note,
+      actorId: req.user.id, photoUrls, note, requireAssignedOperator: true,
     });
     res.json(log);
   } catch (err) {
@@ -112,7 +112,7 @@ unitRouter.post("/:id/stages/:stageId/fail", requirePermission(P.UNIT_STAGE_WRIT
   try {
     const { blockReason, note } = req.body;
     const result = await failStage(req.params.id, req.params.stageId, {
-      actorId: req.user.id, blockReason, note,
+      actorId: req.user.id, blockReason, note, requireAssignedOperator: true,
     });
     res.json(result);
   } catch (err) {
@@ -127,7 +127,7 @@ unitRouter.post("/:id/stages/:stageId/pause", requirePermission(P.UNIT_STAGE_WRI
   try {
     const { reason, note } = req.body;
     const result = await pauseStage(req.params.id, req.params.stageId, {
-      actorId: req.user.id, reason, note,
+      actorId: req.user.id, reason, note, requireAssignedOperator: true,
     });
     res.json(result);
   } catch (err) {
@@ -138,7 +138,7 @@ unitRouter.post("/:id/stages/:stageId/pause", requirePermission(P.UNIT_STAGE_WRI
 // POST /api/units/:id/stages/:stageId/resume — LANJUTKAN tahap yang dijeda.
 unitRouter.post("/:id/stages/:stageId/resume", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
-    const result = await resumeStage(req.params.id, req.params.stageId, { actorId: req.user.id });
+    const result = await resumeStage(req.params.id, req.params.stageId, { actorId: req.user.id, requireAssignedOperator: true });
     res.json(result);
   } catch (err) {
     handleEngineError(err, res);

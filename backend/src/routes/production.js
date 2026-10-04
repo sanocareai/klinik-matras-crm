@@ -33,7 +33,7 @@ export const productionRouter = express.Router();
 productionRouter.use(requireAuth);
 
 function handleErr(err, res) {
-  if (err instanceof StageTransitionError) return res.status(err.statusCode).json({ error: err.message });
+  if (err instanceof StageTransitionError) return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && /^UNIT_/.test(err.code) ? { code: err.code } : {}) });
   console.error("Production error:", err);
   return res.status(500).json({ error: "Server error: " + err.message });
 }
@@ -202,7 +202,7 @@ productionRouter.post("/units/:id/done", requirePermission(P.UNIT_STAGE_WRITE), 
   try {
     const { photoUrls, note } = req.body;
     const before = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { status: true } });
-    await recordStageDone(req.params.id, { actorId: req.user.id, photoUrls, note });
+    await recordStageDone(req.params.id, { actorId: req.user.id, photoUrls, note, requireAssignedOperator: true });
     const status = await getUnitStatus(req.params.id);
 
     // FR-N trigger 3/4: "Siap dikirim" — HANYA saat status BENAR-BENAR baru

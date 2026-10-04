@@ -73,7 +73,7 @@ export const PERMISSIONS = {
   PRODUCTION_ASSIGNMENT_WRITE: "production_assignment:write",
   // P10B — mengunggah/mengoreksi DOKUMENTASI foto produksi (Aplikasi Dokumentasi). SENGAJA terpisah dari UNIT_STAGE_WRITE:
   // dokumentasi tidak menyelesaikan tahap. TIDAK diberikan ke PRODUCTION_WORKER (semua worker); hanya PRODUCTION_LEAD dan
-  // peran khusus PRODUCTION_DOCUMENTER. ADMIN/OWNER tidak (pola sama UNIT_STAGE_WRITE: jejak audit jujur).
+  // peran khusus PRODUCTION_DOCUMENTER. ADMIN/OWNER: ya, sejak keputusan owner 4 Okt 2026 (semua lini produksi; lihat ADMIN_PERMS) — bukan lagi "tidak".
   PRODUCTION_DOCUMENTATION_WRITE: "production_documentation:write",
   // P11 — Reporting & KPI Production–Warehouse (BACA-SAJA). Tiga cakupan terpisah; Finance/Sales/Driver TIDAK otomatis mendapat satu pun.
   PRODUCTION_REPORT_READ: "production_report:read", // seluruh laporan Production (ADMIN, OWNER, PRODUCTION_LEAD)

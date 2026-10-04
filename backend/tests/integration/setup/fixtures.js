@@ -35,6 +35,26 @@ export async function createTestUser({ roles = ["WAREHOUSE"] } = {}) {
   return { user, token };
 }
 
+/**
+ * P12C.2 — penegakan penugasan V1 di server: aksi tahap Meja/Corner lewat HTTP hanya untuk PIC yang DITUGASKAN pada tahap sekarang.
+ * Fixture tes yang menjalankan tahap V1 sebagai satu pengguna memanggil ini SEBELUM tiap "mulai": menjadikan pengguna itu operator produksi aktif
+ * dan menugaskannya pada tahap kanonik unit saat ini (upsert, idempoten). Hanya penyiapan data — kontrak guard tidak dilonggarkan di mana pun.
+ */
+export async function assignCurrentStageTo(unitId, userId) {
+  const { pathForUnit, resolveCurrentTarget } = await import("../../../src/services/unitStageEngine.js");
+  const operator = await testPrisma.productionOperator.upsert({ where: { userId }, create: { userId }, update: { active: true } });
+  const unit = await testPrisma.unit.findUniqueOrThrow({ where: { id: unitId } });
+  const path = await pathForUnit(testPrisma, unit);
+  const { stage } = await resolveCurrentTarget(testPrisma, unit, path);
+  if (!stage) throw new Error("assignCurrentStageTo: tahap sekarang tidak terselesaikan");
+  await testPrisma.stageAssignment.upsert({
+    where: { unitId_stageId: { unitId, stageId: stage.id } },
+    create: { unitId, stageId: stage.id, operatorId: operator.id },
+    update: { operatorId: operator.id },
+  });
+  return stage;
+}
+
 export async function createTestMaterial(overrides = {}) {
   return testPrisma.material.create({
     data: {

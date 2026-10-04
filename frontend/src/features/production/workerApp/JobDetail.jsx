@@ -172,7 +172,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
 }
 
 // ================= V1 =================
-function V1Detail({ job, roles, onChanged, refreshV1Unit, fetchV1Queue }) {
+function V1Detail({ job, roles, onChanged, refreshV1Unit, fetchV1Queue, onHandoff }) {
   const [timeline, setTimeline] = useState(null);
   const [error, setError] = useState("");
   const load = useCallback(async () => { try { const t = await api.getUnitTimeline(job.unitId); setTimeline(t); setError(""); return t; } catch (e) { setError(e.message || "Gagal memuat"); return null; } }, [job.unitId]);
@@ -227,7 +227,7 @@ function V1Detail({ job, roles, onChanged, refreshV1Unit, fetchV1Queue }) {
           )}
         </div>
       </div>
-      {timeline && v1.actionable && <V1ActionBar job={view} timeline={timeline} roles={roles} onChanged={afterChange} state={v1.state} beforeAction={beforeAction} />}
+      {timeline && v1.actionable && <V1ActionBar job={view} timeline={timeline} roles={roles} onChanged={afterChange} state={v1.state} beforeAction={beforeAction} onHandoff={() => onHandoff?.(job)} />}
       {timeline && !v1.actionable && (
         <div className="wa-actionbar" data-testid="v1-info-bar"><div className="wa-actionbar-inner">
           <p data-testid="v1-no-action" className="m-0 rounded-btn bg-inset px-3 py-3 text-[13.5px] font-semibold text-ink2">{v1.wait ? `${v1.wait.title} — belum ada tindakan untuk Anda.` : (v1.state === "BLOCKED" ? "Tahap terhambat — hubungi Production Lead untuk menyelesaikan blokir." : "Belum ada tindakan yang tersedia.")}</p>
@@ -237,6 +237,6 @@ function V1Detail({ job, roles, onChanged, refreshV1Unit, fetchV1Queue }) {
   );
 }
 
-export default function JobDetail(props) { // props: { job, lane, roles, onChanged, refreshV1Unit, fetchV1Queue }
+export default function JobDetail(props) { // props: { job, lane, roles, onChanged, refreshV1Unit, fetchV1Queue, onHandoff }
   return props.job.source === "V1" ? <V1Detail {...props} /> : <V2Detail {...props} />;
 }

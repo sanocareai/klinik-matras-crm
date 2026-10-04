@@ -8,7 +8,7 @@ import WorkerAppShell from "@/features/production/workerApp/WorkerAppShell.jsx";
 import { AkunTab, AktivitasTab, BahanTab, KerjaTab } from "@/features/production/workerApp/Tabs.jsx";
 import { ShortageSheet } from "@/features/production/workerApp/workerSheets.jsx";
 import useWorkerJobs from "@/features/production/workerApp/useWorkerJobs.js";
-import { modeOfLane, tabOf } from "@/features/production/workerApp/workerAppModel.js";
+import { HANDOFF_TITLE, handoffNotice, modeOfLane, tabOf } from "@/features/production/workerApp/workerAppModel.js";
 import { rolesOf } from "@/lib/roles.js";
 
 // P12C — Aplikasi Meja / Corner (mode aplikasi, mobile-first). Bottom navigation: Kerja · Bahan · Aktivitas · Akun. Tanpa sidebar desktop.
@@ -29,10 +29,15 @@ export default function WorkerLane({ lane = "TABLE", user: userProp = null, onLo
   const [reportBusy, setReportBusy] = useState(false);
   const [flash, setFlash] = useState("");
   const [flashErr, setFlashErr] = useState("");
+  // Pesan "Pekerjaan sudah dialihkan": disimpan DI SINI (bukan di detail) supaya tetap terlihat setelah antrean dimuat ulang dan kartunya hilang.
+  const [handoff, setHandoff] = useState(null);
 
   const { jobs, loading, error, readerMode, operator, v1Status, reload, reloadAll, refreshV1Unit, retryV1, fetchV1Queue } = useWorkerJobs({ lane, paused: !!jobKey || !!reportCard });
   const selected = useMemo(() => (jobKey ? jobs.find((j) => j.key === jobKey) || null : null), [jobs, jobKey]);
   const mode = modeOfLane(lane);
+  const onHandoff = useCallback((job) => setHandoff(handoffNotice({ unitCode: job?.unitCode, orderNumber: job?.orderNumber })), []);
+  // Bila unit itu kembali ke antrean PIC ini (dialihkan balik), pesan lama tidak relevan lagi.
+  useEffect(() => { if (handoff && jobs.some((j) => j.source === "V1" && j.unitCode === handoff.unitCode)) setHandoff(null); }, [jobs, handoff]);
 
   const setTab = useCallback((t) => setParams((p) => { const n = new URLSearchParams(p); n.set("t", t); n.delete("job"); return n; }, { replace: true }), [setParams]);
   const openJob = useCallback((job) => setParams((p) => { const n = new URLSearchParams(p); n.set("job", job.key); return n; }), [setParams]);
@@ -55,16 +60,22 @@ export default function WorkerLane({ lane = "TABLE", user: userProp = null, onLo
   return (
     <WorkerAppShell title={title} subtitle={subtitle} tab={tab} onTab={setTab} badges={badges} hideNav={detailOpen} actionPad={detailOpen}
       onBack={detailOpen ? closeJob : null} onRefresh={reload} refreshing={loading || reportBusy}>
+      {handoff && (
+        <div role="alert" data-testid="handoff-notice" className="mb-3 flex items-start gap-3 rounded-btn bg-orangebg px-3 py-3 text-[13.5px] text-orange">
+          <div className="min-w-0 flex-1"><p className="m-0 font-bold">{handoff.title}</p><p className="m-0 mt-0.5">{handoff.text}</p></div>
+          <button type="button" data-testid="handoff-dismiss" onClick={() => setHandoff(null)} className="min-h-[40px] shrink-0 rounded-btn px-3 text-[13px] font-bold underline">Mengerti</button>
+        </div>
+      )}
       {flash && <div role="status" className="mb-3 rounded-btn bg-greenbg px-3 py-3 text-[13.5px] font-semibold text-green">{flash}</div>}
       {flashErr && <div role="alert" className="mb-3 rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{flashErr}</div>}
 
       {detailOpen ? (
-        selected ? <JobDetail key={selected.key} job={selected} lane={lane} roles={roles} onBack={closeJob} onChanged={reloadAll} refreshV1Unit={refreshV1Unit} fetchV1Queue={fetchV1Queue} />
+        selected ? <JobDetail key={selected.key} job={selected} lane={lane} roles={roles} onBack={closeJob} onChanged={reloadAll} refreshV1Unit={refreshV1Unit} fetchV1Queue={fetchV1Queue} onHandoff={onHandoff} />
           : loading ? <div className="flex justify-center py-16"><Loader2 className="animate-spin text-accent" size={26} aria-hidden /></div>
             : (
               <div className="wa-card mx-auto max-w-[560px] p-8 text-center" data-testid="job-gone">
-                <p className="m-0 text-[16px] font-bold text-ink">Pekerjaan tidak lagi di antrean Anda</p>
-                <p className="m-0 mt-1 text-[13.5px] text-ink3">Mungkin sudah selesai, dipindahkan ke tim lain, atau ditugaskan ulang.</p>
+                <p className="m-0 text-[16px] font-bold text-ink">{handoff ? HANDOFF_TITLE : "Pekerjaan tidak lagi di antrean Anda"}</p>
+                <p className="m-0 mt-1 text-[13.5px] text-ink3">{handoff ? "Pekerjaan ini kini milik PIC lain. Tidak ada aksi Anda yang terkirim." : "Mungkin sudah selesai, dipindahkan ke tim lain, atau ditugaskan ulang."}</p>
                 <button type="button" onClick={closeJob} className="mt-4 min-h-[48px] rounded-btn bg-accent px-6 text-[15px] font-bold text-white">Kembali ke Pekerjaan Saya</button>
               </div>
             )

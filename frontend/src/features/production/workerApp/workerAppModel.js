@@ -187,5 +187,17 @@ export function materialRows(jobs) {
 // Teks galat -> aman ditampilkan (tidak pernah UUID/kode teknis).
 export const safeText = (v, max = 140) => { const s = String(v ?? "").replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "…"); return s.length > max ? `${s.slice(0, max - 1)}…` : s; };
 
+// Penolakan SERVER karena penugasan/tahap berubah (guard V1 P12C.2): kartu tidak lagi milik PIC ini. Kode dari backend/src/lib/domain/v1StageActor.js.
+export const HANDOFF_CODES = Object.freeze(["UNIT_V1_NOT_YOUR_ASSIGNMENT", "UNIT_V1_STAGE_CHANGED", "UNIT_V1_STAGE_NOT_ASSIGNED"]);
+export const isHandoffError = (e) => !!e && HANDOFF_CODES.includes(e.code);
+export const HANDOFF_TITLE = "Pekerjaan sudah dialihkan";
+// Pesan yang TETAP terlihat setelah antrean dimuat ulang (disimpan di induk, bukan di detail yang ikut hilang bersama kartunya).
+export const handoffNotice = ({ unitCode = "", orderNumber = "" } = {}) => ({
+  key: unitCode || "unit",
+  unitCode,
+  title: HANDOFF_TITLE,
+  text: `${[unitCode, orderNumber].filter(Boolean).join(" · ") || "Unit ini"}: penugasan tahap ini sudah dialihkan ke PIC lain atau tahap sudah berubah. Aksi Anda tidak dikirim dan tidak ada yang berubah.`,
+});
+
 // Inisial untuk foto kosong (mis. "Ibu Maya Sari" -> "IM").
 export const initialsOf = (name) => String(name || "?").split(/[\s/]+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join("") || "?";

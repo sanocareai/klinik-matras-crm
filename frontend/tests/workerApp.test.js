@@ -213,3 +213,26 @@ test("WorkerLane: URL ?t=&job= untuk tautan dalam; Akun memakai user/onLogout da
   assert.match(det, /timeline && v1\.actionable && <V1ActionBar/); assert.match(det, /data-testid="v1-info-bar"/, "keadaan menunggu: batang info, bukan tombol");
   assert.match(strip(fs.readFileSync(path.join(here, "..", "src", "App.jsx"), "utf8")), /onLogout: handleLogout/);
 });
+
+test("serah-terima (P12C.2): kode penolakan server dikenali = kode guard backend; pesan 'Pekerjaan sudah dialihkan' disimpan di induk dan bertahan setelah antrean dimuat ulang", async () => {
+  const { HANDOFF_CODES, HANDOFF_TITLE, handoffNotice, isHandoffError } = await import("../src/features/production/workerApp/workerAppModel.js");
+  const { V1_ACTOR_CODES } = await import(pathToFileURL(path.join(here, "..", "..", "backend", "src", "lib", "domain", "v1StageActor.js")).href);
+  // klien mengenali TEPAT kode guard server untuk "bukan milik Anda lagi" (bukan kode lain seperti UNRESOLVED/NOT_OPERATOR)
+  assert.deepEqual([...HANDOFF_CODES].sort(), [V1_ACTOR_CODES.NOT_YOURS, V1_ACTOR_CODES.CHANGED, V1_ACTOR_CODES.NOT_ASSIGNED].sort());
+  for (const code of HANDOFF_CODES) assert.equal(isHandoffError({ status: 403, code }), true);
+  for (const e of [null, undefined, new Error("x"), { code: "UNIT_V2_OWNED" }, { code: V1_ACTOR_CODES.NOT_OPERATOR }, { code: V1_ACTOR_CODES.UNRESOLVED }]) assert.equal(isHandoffError(e), false);
+  const n = handoffNotice({ unitCode: "U-7", orderNumber: "RES-9" });
+  assert.equal(n.title, "Pekerjaan sudah dialihkan"); assert.equal(HANDOFF_TITLE, "Pekerjaan sudah dialihkan");
+  assert.match(n.text, /U-7 · RES-9/); assert.match(n.text, /Aksi Anda tidak dikirim/);
+  assert.match(handoffNotice({}).text, /^Unit ini:/);
+  // kontrak komponen: state ada di WorkerLane (bukan di detail yang unmount), banner tetap tampil di semua tab/layar, hanya hilang karena 'Mengerti' atau unit kembali ke antrean
+  const lane = strip(fs.readFileSync(path.join(here, "..", "src", "pages", "produksi", "WorkerLane.jsx"), "utf8"));
+  assert.match(lane, /const \[handoff, setHandoff\] = useState\(null\)/);
+  assert.match(lane, /data-testid="handoff-notice"/); assert.match(lane, /data-testid="handoff-dismiss"/);
+  assert.match(lane, /onHandoff=\{onHandoff\}/);
+  assert.match(lane, /jobs\.some\(\(j\) => j\.source === "V1" && j\.unitCode === handoff\.unitCode\)\) setHandoff\(null\)/, "kembali ke antrean -> pesan lama dibersihkan");
+  const bar = strip(read("V1Panels.jsx"));
+  assert.match(bar, /isHandoffError\(e\)\) onHandoff\?\.\(\)/, "penolakan SERVER (403/409 guard) memicu pesan, bukan hanya penjaga klien");
+  assert.match(bar, /g\?\.ok === false\) \{[^\n]*onHandoff\?\.\(\)/, "penjaga klien juga memicu pesan yang sama");
+  assert.match(strip(read("JobDetail.jsx")), /onHandoff=\{\(\) => onHandoff\?\.\(job\)\}/);
+});

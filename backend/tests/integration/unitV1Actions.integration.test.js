@@ -5,7 +5,7 @@ import test from "node:test";
 import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
-import { createTestUser } from "./setup/fixtures.js";
+import { assignCurrentStageTo, createTestUser } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
@@ -115,6 +115,7 @@ test("konflik: perubahan orang lain di antara baca & tulis terdeteksi (bidang ya
 
 test("blokir V1: Worker/Lead/QC/Admin/Owner boleh menyelesaikan (UNIT_STAGE_WRITE); Sales/Finance 403; simpan + baca ulang; resolve ulang tidak 500", async () => {
   const id = W.v1.unit.id;
+  await assignCurrentStageTo(id, W.who.worker.user.id); // P12C.2: aksi tahap hanya untuk PIC yang ditugaskan
   const started = await W.who.worker.http.post(`/api/units/${id}/stages/start`, {});
   assert.equal(started.status, 200, JSON.stringify(started.body));
   const stageId = (await testPrisma.unit.findUniqueOrThrow({ where: { id }, select: { currentStageId: true } })).currentStageId;

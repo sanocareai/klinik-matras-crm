@@ -5,7 +5,7 @@ import { useOnline } from "@/components/StandaloneShell.jsx";
 import { compressImage } from "@/utils/compressImage.js";
 import { BLOCK_REASON_REAL, PAUSE_REASON_REAL } from "@/features/bengkel/unitStatus.js";
 import { canMaterialV1, completeFormValid, failFormValid, pauseFormValid } from "@/features/production/unitV1ActionsModel.js";
-import { primaryActionV1, submitState } from "./workerAppModel.js";
+import { isHandoffError, primaryActionV1, submitState } from "./workerAppModel.js";
 
 // Jalur V1 (unit non-cohort) di Aplikasi Meja: endpoint, izin, dan engine V1 yang SAMA dengan drawer Unit 360 (UnitV1Stage/UnitV1Materials) — tata letak ramah jempol.
 // TIDAK ada: lewati tahap, ubah rute, putusan QC, penyelesaian blokir (itu pekerjaan Lead/QC di Unit 360). Server menegakkan izin & kepemilikan (409 bila V2 memiliki unit).
@@ -49,7 +49,7 @@ function PhotoPicker({ unitId, photos, setPhotos, disabled, onError }) {
 // Batang aksi lengket: SATU aksi utama sesuai keadaan tahap dari server + aksi sekunder (Jeda/Terhambat) hanya saat tahap berjalan.
 // beforeAction (async) = penjaga 'tombol basi': memvalidasi ulang ke server bahwa unit MASIH milik PIC ini pada tahap & keadaan yang sama SEBELUM aksi dikirim
 // (penugasan bisa dialihkan Lead kapan saja). Gagal -> aksi TIDAK dikirim, daftar dimuat ulang.
-export function V1ActionBar({ job, timeline, roles, onChanged, state = null, beforeAction = null }) {
+export function V1ActionBar({ job, timeline, roles, onChanged, state = null, beforeAction = null, onHandoff = null }) {
   const online = useOnline();
   const action = primaryActionV1(timeline, roles, { state });
   const unitId = job.unitId;
@@ -63,15 +63,15 @@ export function V1ActionBar({ job, timeline, roles, onChanged, state = null, bef
   const guarded = useCallback(async () => {
     if (!beforeAction) return true;
     const g = await beforeAction();
-    if (g?.ok === false) { setSheet(null); setMsg({ kind: "error", text: g.message }); await onChanged?.(); return false; }
+    if (g?.ok === false) { setSheet(null); setMsg({ kind: "error", text: g.message }); onHandoff?.(); await onChanged?.(); return false; }
     return true;
   }, [beforeAction, onChanged]);
   const openSheet = useCallback(async (kind) => { setBusy(true); try { if (await guarded()) setSheet(kind); } finally { setBusy(false); } }, [guarded]);
   const run = useCallback(async (fn, okText) => {
     setBusy(true); setMsg({ kind: "", text: "" });
     try { if (!(await guarded())) return; await fn(); setSheet(null); setNote(""); setPhotos([]); setMsg({ kind: "ok", text: okText }); await onChanged?.(); }
-    catch (e) { setMsg({ kind: "error", text: e.message || "Gagal" }); await onChanged?.(); } finally { setBusy(false); }
-  }, [onChanged, guarded]);
+    catch (e) { setSheet(null); setMsg({ kind: "error", text: e.message || "Gagal" }); if (isHandoffError(e)) onHandoff?.(); await onChanged?.(); } finally { setBusy(false); }
+  }, [onChanged, guarded, onHandoff]);
   const gate = submitState({ online, busy });
   const stage = action.stage;
 

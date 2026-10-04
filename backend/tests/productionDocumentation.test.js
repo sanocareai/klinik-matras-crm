@@ -108,11 +108,22 @@ test("flag antrean & filter: Lengkap hanya bila semua kategori berlaku terpenuhi
   assert.equal(matchesDocFilter(gaps.flags, "AFTER_KURANG"), true); assert.equal(matchesDocFilter(gaps.flags, "PROSES_KURANG"), true); assert.equal(matchesDocFilter(gaps.flags, "BEFORE_KURANG"), false);
 });
 
-test("izin: PRODUCTION_DOCUMENTATION_WRITE hanya PRODUCTION_LEAD dan PRODUCTION_DOCUMENTER; TIDAK ke worker, ADMIN/OWNER, QC, Gudang, Finance, Driver; peran khusus tanpa harga/finance/tahap/QC", () => {
+test("izin: PRODUCTION_DOCUMENTATION_WRITE hanya ADMIN, OWNER (keputusan owner 4 Okt 2026: semua lini produksi), PRODUCTION_LEAD, PRODUCTION_DOCUMENTER; SEMUA peran lain ditolak; peran khusus tanpa harga/finance/tahap/QC", () => {
   const holders = Object.entries(ROLE_PERMISSIONS).filter(([, perms]) => perms.includes(P.PRODUCTION_DOCUMENTATION_WRITE)).map(([role]) => role).sort();
-  assert.deepEqual(holders, ["PRODUCTION_DOCUMENTER", "PRODUCTION_LEAD"]);
+  assert.deepEqual(holders, ["ADMIN", "OWNER", "PRODUCTION_DOCUMENTER", "PRODUCTION_LEAD"]);
+  // Bukti penolakan: setiap peran SELAIN empat pemegang di atas TIDAK memiliki izin ini (daftar dihitung dari peta peran, bukan ditulis tangan — peran baru otomatis ikut diperiksa).
+  const allowed = new Set(holders);
+  const denied = Object.keys(ROLE_PERMISSIONS).filter((role) => !allowed.has(role));
+  for (const role of ["PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE", "FINANCE", "ACCOUNTANT", "DRIVER", "HELPER", "LEADER_DRIVER", "DISPATCHER", "SALES", "APPROVER"]) {
+    assert.ok(denied.includes(role), `${role} harus termasuk peran yang ditolak`);
+    assert.equal(ROLE_PERMISSIONS[role].includes(P.PRODUCTION_DOCUMENTATION_WRITE), false, role);
+  }
+  assert.ok(denied.length >= 11, "peran tanpa izin dokumentasi tidak boleh menyusut");
+  // ADMIN/OWNER memegangnya BERSAMA UNIT_STAGE_WRITE & PRODUCTION_EXECUTE_ANY dari keputusan yang sama (bukan izin tersendiri yang bocor).
+  for (const role of ["ADMIN", "OWNER"]) for (const perm of [P.UNIT_STAGE_WRITE, P.PRODUCTION_EXECUTE_ANY]) assert.ok(ROLE_PERMISSIONS[role].includes(perm), `${role} ${perm}`);
   // + P11: ringkasan kinerja milik sendiri (hanya angka pekerjaannya sendiri; bukan laporan Production).
-  assert.deepEqual([...ROLE_PERMISSIONS.PRODUCTION_DOCUMENTER].sort(), [P.PRODUCTION_DOCUMENTATION_WRITE, P.PRODUCTION_REPORT_SELF, P.UNIT_READ].sort());
+  // + P12B.2: Mode Latihan (PRODUCTION_DEMO_VIEW; data sintetis frontend, baca-saja, tanpa akses data nyata). Daftar TETAP tepat — tidak ada izin lain.
+  assert.deepEqual([...ROLE_PERMISSIONS.PRODUCTION_DOCUMENTER].sort(), [P.PRODUCTION_DEMO_VIEW, P.PRODUCTION_DOCUMENTATION_WRITE, P.PRODUCTION_REPORT_SELF, P.UNIT_READ].sort());
   for (const forbidden of [P.UNIT_STAGE_WRITE, P.QC_WRITE, P.ORDER_PRICE_READ, P.PAYMENT_READ, P.FINANCE_READ, P.CUSTOMER_PII_READ, P.INVENTORY_WRITE]) assert.equal(ROLE_PERMISSIONS.PRODUCTION_DOCUMENTER.includes(forbidden), false, forbidden);
   assert.equal(ROLE_PERMISSIONS.PRODUCTION_WORKER.includes(P.PRODUCTION_DOCUMENTATION_WRITE), false);
   assert.ok(PORTALS.find((p) => p.key === "bengkel").roles.includes("PRODUCTION_DOCUMENTER"), "peran khusus bisa membuka workspace Production");
