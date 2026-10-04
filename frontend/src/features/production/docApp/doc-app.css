@@ -18,7 +18,10 @@
 
 /* Bilah aksi detail: Ambil Foto (utama) + pilih kategori + Galeri. */
 .da-bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-.da-select { width: 100%; min-height: 48px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--bg-surface); color: var(--text-primary); padding: 0 12px; font-size: 14px; font-weight: 600; }
+.da-select { width: 100%; min-height: 48px; border: 0; border-radius: 14px; background-color: var(--bg-inset); color: var(--text-primary); padding: 0 40px 0 14px; font-size: 14px; font-weight: 700; appearance: none; -webkit-appearance: none; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238E8E93' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center; }
+.da-select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .da-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--hairline);
   background: var(--bg-surface); color: var(--text-primary); font-size: 14px; font-weight: 700; cursor: pointer; }
 .da-secondary[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }

@@ -38,7 +38,7 @@ function CategoryBlock({ cat, canWrite, onAdd, onOpenPhoto, onCorrectBatch }) {
                   <MediaThumb item={it} alt={it.caption || cat.label} />
                   <span className="da-thumb-chip"><SourceBadge source={it.source} compact /></span>
                 </button>
-                <p className="da-meta" data-testid="thumb-meta">{meta.time} · {meta.actor}</p>
+                <p className="da-meta" data-testid="thumb-meta"><span className="block font-semibold text-ink2">{meta.time}</span><span className="block truncate">{meta.actor}</span></p>
                 {it.caption && <p className="da-meta line-clamp-2 !mt-0.5 !text-ink2">{it.caption}</p>}
               </li>
             );

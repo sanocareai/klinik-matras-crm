@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Camera, CheckCircle2, ChevronRight, CloudOff, Loader2, Search } from "lucide-react";
+import { ArrowLeft, Camera, CheckCircle2, ChevronRight, Loader2, Search } from "lucide-react";
 import { api } from "@/api.js";
 import { Badge } from "@/components/ui/badge.jsx";
 import { DraftPanel } from "@/features/production/DocumentationDraftUi.jsx";
@@ -150,7 +150,6 @@ export function DrafTab({ drafts, onResume, purgeNote, onDismissPurge }) {
           <div key={st} className="wa-card px-1 py-3"><p className="m-0 text-[20px] font-extrabold tabular-nums text-ink" data-count={st}>{countBy(records, st)}</p><p className="m-0 text-[11.5px] font-semibold text-ink3">{label}</p></div>
         ))}
       </div>
-      {!online && <p className="m-0 flex items-center gap-2 rounded-btn bg-orangebg px-3 py-3 text-[13px] text-orange" data-testid="draf-offline"><CloudOff size={15} aria-hidden /> Offline — draf dikirim otomatis saat sinyal kembali.</p>}
       {manager ? <DraftPanel manager={manager} records={records} online={online} onResume={onResume} showEmpty /> : <div className="flex justify-center py-8"><Loader2 className="animate-spin text-accent" size={24} aria-hidden /></div>}
     </div>
   );
