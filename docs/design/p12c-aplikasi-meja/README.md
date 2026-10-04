@@ -1,6 +1,6 @@
 # P12C — Aplikasi Meja / Corner (mode aplikasi) — screenshot review desain
 
-Dihasilkan dari QA browser nyata (puppeteer, klik UI) terhadap staging terisolasi QA-PV2 (data sintetis; bukan production), pada **image kandidat bersih** yang dibangun dari `git archive` commit `508aee11` (764 berkas backend + seluruh `frontend/dist` identik dengan arsip; bukan backend hasil `docker cp`). **99/99 pemeriksaan lulus.**
+Dihasilkan dari QA browser nyata (puppeteer, klik UI) terhadap staging terisolasi QA-PV2 (data sintetis; bukan production), pada **image kandidat bersih** yang dibangun dari `git archive` commit `d80f5e19` (765 berkas backend + seluruh `frontend/dist` identik dengan arsip; bukan backend hasil `docker cp`). **108/108 pemeriksaan lulus.** Guard penugasan V1 di server (P12C.2) aktif pada image ini.
 Viewport 390 (HP), 768 (tablet), 1440 (desktop); terang dan gelap. Bottom navigation: Kerja · Bahan · Aktivitas · Akun. Tanpa sidebar desktop.
 
 > **Keselarasan visual dengan mockup: BELUM TERVERIFIKASI.** Mockup acuan yang disetujui tidak tersedia di repositori maupun sesi ini. Tampilan mengikuti brief tertulis dan token DS yang ada (putih/off-white, navy, royal blue). Screenshot ini bahan review desain, bukan bukti bahwa desain sudah sesuai mockup.
@@ -16,11 +16,12 @@ Viewport 390 (HP), 768 (tablet), 1440 (desktop); terang dan gelap. Bottom naviga
 | Diagnosis (wizard yang sama) | `S6-detail-diagnosa-390-light`, `S6-wizard-390-light` |
 | Menunggu bahan + tab Bahan | `S7-sheet-shortage-390-light`, `S7-bahan-390-light`, `S7-bahan-768-light`, `S7-bahan-1440-dark` |
 | Konflik revisi | `S8-konflik-390-light` |
-| **V1 — siap dikerjakan (penugasan sah, belum dimulai)** | `S9-detail-v1-siap-390-light` |
+| **V1 — kartu siap dikerjakan di daftar, lalu detail dengan tombol Mulai** | `S9s-1-kartu-v1-siap-390-light`, `S9s-2-detail-siap-390-light`, `S9-detail-v1-siap-390-light` |
 | **V1 — selesai tahap + foto → kartu tetap sebagai "Menunggu penugasan berikutnya" untuk PIC terakhir** | `S9-sheet-complete-390-light`, `S9-menunggu-penugasan-390-light`, `S9-daftar-menunggu-390-light` |
 | **V1 — serah-terima ke PIC berikutnya (satu kartu siap, tanpa duplikat)** | `S9-meja2-siap-390-light` (puncak daftar Meja 2; kartu V1-nya ada di bawah dan diverifikasi oleh pemeriksaan QA, tidak tampak di screenshot ini) |
 | **V1 — menunggu tahap prasyarat (bukan siap; tanpa tombol aksi)** | `S13-menunggu-prasyarat-daftar-390-light`, `S13-menunggu-prasyarat-detail-390-light` |
-| **V1 — tombol basi ditolak penjaga (tidak ada tulis, tidak ada log baru)** | `S9s-tombol-basi-390-light` (hasil akhir yang terlihat: layar "tidak lagi di antrean Anda"; pesan penjaga ikut hilang bersama panel) |
+| **Penugasan dialihkan saat detail terbuka (penjaga klien): pesan "Pekerjaan sudah dialihkan", daftar, dan SETELAH refresh antrean pesan tetap terlihat** | `S9s-3-dialihkan-390-light`, `S9s-4-daftar-pesan-390-light`, `S9s-5-setelah-refresh-390-light` |
+| **Guard SERVER lewat UI: klien dengan antrean basi menekan Mulai, server menolak 403 tanpa efek; pesan sama, bertahan setelah refresh** | `S9h-1-ditolak-server-390-light`, `S9h-2-setelah-refresh-390-light` |
 | **Corner — penugasan tahap Corner kanonik (siap; lalu menunggu penugasan berikutnya)** | `S14-corner-v1-siap-390-light`, `S14-corner-menunggu-penugasan-390-light` |
 | V1 — jeda, bahan, terhambat | `S9b-sheet-jeda-390-light`, `S9b-bahan-v1-390-light`, `S9b-terhambat-390-light`, `S12-detail-v1-768-dark` |
 | Offline | `S10-offline-detail-390-light`, `S10-offline-sheet-390-light` |
