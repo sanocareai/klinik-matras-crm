@@ -1058,6 +1058,28 @@ export async function waiveQcGateInTx(tx, unitId, stageId, { actorId, note, defe
   return log;
 }
 
+// Slice 2 (flow adaptasi) — melewati SATU tahap target lewat aksi sah mode adaptasi. Ledger jujur: SATU baris SKIP berkatalog eksplisit "⚠️ SKIPPED — Adaptasi sistem" (bukan COMPLETE,
+// tanpa foto/hasil uji). qcNotPerformed=true (gerbang QC): catatan "QC TIDAK DILAKUKAN" — BUKAN lulus dan BUKAN waive; tidak ada qc_fit_tests yang dikarang.
+// Pemanggil (command V2 adaptasi) menegakkan izin, kebijakan run, dan kepemilikan; fungsi ini menolak tahap yang bukan target / sedang berjalan / terblokir.
+export async function skipStageForAdaptationInTx(tx, unitId, stageId, { actorId, note = null, deferReady = true, qcNotPerformed = false } = {}) {
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  const path = await pathForUnit(tx, unit);
+  const { stage: target, state } = await resolveCurrentTarget(tx, unit, path);
+  if (!target || target.id !== stageId) throw new StageTransitionError("Tahap yang dilewati bukan tahap berikutnya unit ini", 409);
+  if (!["FIRST", "READY"].includes(state)) throw new StageTransitionError(`Tahap "${target.labelId}" tidak dapat dilewati pada keadaan ${state}`, 409);
+  if (qcNotPerformed !== !!target.requiresQc) throw new StageTransitionError(qcNotPerformed ? `Tahap "${target.labelId}" bukan gerbang QC` : `Gerbang QC "${target.labelId}" hanya dicatat \"tidak dilakukan\" lewat Selesaikan Produksi`, 409);
+  const prefix = qcNotPerformed
+    ? "⚠️ QC TIDAK DILAKUKAN — mode adaptasi (bukan lulus, bukan di-waive; tidak ada hasil uji)."
+    : "⚠️ SKIPPED — Adaptasi sistem (tahap dilewati, bukan dikerjakan; tanpa foto/hasil uji).";
+  const log = await tx.unitStageLog.create({ data: { unitId, stageId, action: "SKIP", actorId, note: note ? `${prefix} ${String(note).trim()}` : prefix } });
+  if (unit.status === "RECEIVED" || unit.status === "AWAITING_PICKUP") {
+    await tx.unit.update({ where: { id: unitId }, data: { status: "IN_PRODUCTION" } });
+    await syncOrderStatus(tx, unit.orderId);
+  }
+  await advanceUnitPastStage(tx, unitId, target, { deferReady });
+  return { log, stage: target };
+}
+
 // Seluruh tahap jalur unit sudah selesai (tahap terakhir COMPLETE/SKIP)? Dipakai command V2 sebelum handoff barang jadi.
 export async function isUnitPathDoneInTx(tx, unitId) {
   const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });

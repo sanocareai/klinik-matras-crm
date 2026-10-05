@@ -79,6 +79,7 @@ export const PERMISSIONS = {
   PRODUCTION_REPORT_READ: "production_report:read", // seluruh laporan Production (ADMIN, OWNER, PRODUCTION_LEAD)
   PRODUCTION_REPORT_WAREHOUSE: "production_report:warehouse", // laporan Gudang & bahan terkait (WAREHOUSE + pemegang READ)
   PRODUCTION_REPORT_SELF: "production_report:self", // hanya ringkasan pekerjaan sendiri (PIC/dokumentasi/QC)
+  PRODUCTION_SETTINGS_WRITE: "production_settings:write", // Slice 2 — Pengaturan Admin Production: lokasi workshop bawaan, kebijakan adaptasi bawaan, pemetaan layanan Sales→produksi (ADMIN, OWNER)
   PRODUCTION_TARGET_WRITE: "production_target:write", // P11.1 — mengatur target harian tersimpan historis (ADMIN, OWNER)
   PRODUCTION_DEMO_VIEW: "production_demo:view", // P12A/P12B.2 — Mode Latihan (data sintetis frontend, baca-saja): ADMIN, OWNER, PRODUCTION_LEAD, PRODUCTION_WORKER, QC_LEAD, WAREHOUSE, PRODUCTION_DOCUMENTER
   // Keputusan owner 4 Oktober 2026: ADMIN/OWNER boleh mengerjakan SEMUA lini produksi (Lead, Meja/Corner, QC, Gudang, Dokumenter).
@@ -244,7 +245,7 @@ const ADMIN_PERMS = [
   P.WORK_CENTER_READ, P.WORK_CENTER_WRITE,
   P.PRODUCTION_OPERATOR_READ, P.PRODUCTION_OPERATOR_WRITE,
   P.PRODUCTION_ASSIGNMENT_WRITE,
-  P.PRODUCTION_REPORT_READ, P.PRODUCTION_REPORT_WAREHOUSE, P.PRODUCTION_TARGET_WRITE, P.PRODUCTION_DEMO_VIEW,
+  P.PRODUCTION_REPORT_READ, P.PRODUCTION_REPORT_WAREHOUSE, P.PRODUCTION_TARGET_WRITE, P.PRODUCTION_SETTINGS_WRITE, P.PRODUCTION_DEMO_VIEW,
   // KEPUTUSAN OWNER 4 Oktober 2026 — MENGGANTIKAN larangan D-013/PRD §3 di atas HANYA untuk ADMIN/OWNER: akses ke SEMUA lini produksi.
   // Menambah: eksekusi tahap (UNIT_STAGE_WRITE + PRODUCTION_EXECUTE_ANY), bahan unit, putusan QC (QC_WRITE), stok & penerimaan Gudang
   // (INVENTORY_WRITE), unggah/koreksi dokumentasi foto, ringkasan pribadi, usulan revisi lingkup. Trade-off yang diterima owner: pemisahan

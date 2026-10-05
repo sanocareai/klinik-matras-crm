@@ -8328,6 +8328,17 @@ model V2FeatureFlag {
   @@map("v2_feature_flags")
 }
 
+// Slice 2 — pengaturan Admin Production (satu baris per kunci): workshop_default_location_id, adaptation_default_policy. Bukan flag/cohort.
+model ProductionSetting {
+  key         String   @id @db.VarChar(80)
+  value       Json     @default("{}")
+  updatedById String?  @map("updated_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("production_settings")
+}
+
 model V2MigrationRun {
   id                String                 @id @default(uuid()) @db.Uuid
   kind              String
@@ -8447,6 +8458,8 @@ model ProductionRun {
   reworkRuns           ProductionRun[]          @relation("ProductionRunRework")
   routeSnapshot        Json?                    @map("route_snapshot")
   routeChecksum        String?                  @map("route_checksum")
+  // Slice 2 (flow adaptasi): kebijakan adaptasi EKSPLISIT pada run. NULL = proses lengkap (perilaku lama, tidak diubah); "ADAPTATION_V1" = QC & penerimaan barang jadi tidak wajib.
+  adaptationPolicy     String?                  @map("adaptation_policy") @db.VarChar(40)
   migrationSource      String?                  @map("migration_source")
   migrationSourceId    String?                  @map("migration_source_id")
   migrationRuleVersion String?                  @map("migration_rule_version")
@@ -8577,6 +8590,9 @@ model ProductionOperationRun {
   required     Boolean                   @default(true)
   status       ProductionOperationStatus @default(NOT_STARTED)
   planSnapshot Json                      @default("{}") @map("plan_snapshot")
+  // Slice 2: alasan Tunda Pekerjaan pada pekerjaan di papan (ARAHAN/KENDALA/LAINNYA). BAHAN tidak disimpan di sini (lewat laporan kekurangan bahan).
+  delayKind    String?                   @map("delay_kind") @db.VarChar(20)
+  delayNote    String?                   @map("delay_note")
   startedAt    DateTime?                 @map("started_at")
   completedAt  DateTime?                 @map("completed_at")
   createdAt    DateTime                  @default(now()) @map("created_at")

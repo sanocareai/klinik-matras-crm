@@ -18,13 +18,15 @@
 import { createHash, randomUUID } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import {
-  STEP_BY_NO, deriveNextAction, stepNoForStage, validateStepEvidence,
+  SKIP_REASON, STEP_BY_NO, deriveNextAction, skippedEvidencePayload, stepNoForStage, stepsCoveredByStage, validateStepEvidence,
 } from "../lib/domain/productionSteps.js";
 import { assertNoOpenRunException } from "./productionRunGuards.js";
 import {
-  RUN_INCLUDE, activeOperation, applyCompleteInTx, applyPauseInTx, applyResumeInTx, applyStartInTx, authorizeOperator,
-  bumpRunRevisionInTx, isPostQcStage, loadMaterialFacts, loadRunForWrite, materialReadiness, peekStartIsPostQc, prepareStartInTx, workshopPathOf,
+  RUN_INCLUDE, activeOperation, applyAdaptationFinishInTx, applyAdaptationPolicyInTx, applyCompleteInTx, applyDelayInTx, applyPauseInTx, applyResumeInTx, applySkipStageInTx, applyStartInTx,
+  assertAdaptationRun, authorizeOperator, bumpRunRevisionInTx, finishBlockersOf, isAdaptationRun, isPostQcStage, loadMaterialFacts, loadRunForWrite, materialReadiness, peekStartIsPostQc,
+  prepareSkipInTx, prepareStartInTx, workshopPathOf,
 } from "./productionWorkshopExecutionCommandService.js";
+import { ADAPTATION_POLICY } from "./productionSettingsService.js";
 import { pathForUnit, resolveCurrentTarget } from "./unitStageEngine.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
@@ -133,6 +135,7 @@ export async function loadStepContext(client, run) {
     pathHasModules: !!split?.stages.some((s) => s.phase === "MODULE"),
     materialReady: material.ready,
     diagnosisManualMapped, diagnosisBomHasLines,
+    adaptation: isAdaptationRun(run), // slice 2: QC tidak wajib -> tahap kerja tuntas = siap "Selesaikan Produksi"
   };
   return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, next: deriveNextAction(state) };
 }
@@ -187,7 +190,8 @@ function waitMessage(next) {
     case "AWAITING_QC": return "Unit sedang menunggu QC oleh petugas QC.";
     case "MATERIAL_NOT_READY": return "Bahan dari Gudang belum diserahkan untuk tahap ini.";
     case "MATERIAL_SHORTAGE": return "Unit menunggu bahan baku dari Gudang.";
-    case "SERVICE_NOT_SET": return "Diagnosa sudah dikirim. Menunggu layanan teknis ditetapkan.";
+    case "SERVICE_NOT_SET": return "Diagnosa sudah dikirim. Layanan Sales belum dipetakan ke layanan produksi — Admin perlu memetakannya di Pengaturan Produksi.";
+    case "READY_TO_FINISH": return "Tahap kerja selesai. Tekan Selesaikan Produksi (QC tidak diwajibkan pada mode adaptasi).";
     case "DIAGNOSIS_MANUAL_UNMAPPED": return "Diagnosa sudah dikirim. Menunggu Production Lead memetakan bahan manual ke katalog.";
     case "DIAGNOSIS_BOM_EMPTY": return "Diagnosa sudah dikirim. Planned BOM masih kosong — isi bahan katalog lewat Revisi Diagnosis.";
     case "AWAITING_WAREHOUSE": return "Barang jadi menunggu diterima Gudang.";
@@ -483,6 +487,259 @@ export async function resolveMaterialShortage(prisma, { shortageId, actorId, ide
     });
     const response = { shortageId, status: "RESOLVED", revision };
     await finishCommand(tx, command, revision, response);
+    return { replayed: false, ...response };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// FLOW ADAPTASI (slice 2). Semua command: Idempotency-Key (v2_commands), expectedRevision, kunci unit->run (loadRunForWrite), writer cohort fail-closed, authorizeOperator
+// (PIC yang ditugaskan, atau ADMIN/OWNER lewat PRODUCTION_EXECUTE_ANY), guard konflik/drift. Penulis operasi/fase/run/ledger tahap/unit TETAP helper P5 (apply*InTx);
+// file ini hanya menulis bukti (SKIPPED), retur sisa bahan (lewat service retur), outbox, dan audit.
+// ---------------------------------------------------------------------------
+export const DELAY_KINDS = Object.freeze({
+  ARAHAN: { label: "Menunggu arahan" },
+  KENDALA: { label: "Kendala pengerjaan" },
+  LAINNYA: { label: "Lainnya" },
+});
+
+async function writeSkippedEvidence(tx, { run, stepNo, operationRunId = null, stageId = null, actorId, commandId, note = null }) {
+  return writeEvidence(tx, { run, stepNo, operationRunId, stageId, payload: skippedEvidencePayload(note), media: [], actorId, commandId });
+}
+
+// Lewati SATU tahap (aksi sah mode adaptasi). body: { expectedRevision, workCenterId, note? }. stepNo harus salah satu nomor tahap yang ditutup tahap target.
+export async function skipProductionStep(prisma, { runId, stepNo, actorId, idempotencyKey, expectedRevision, workCenterId, note = null }) {
+  if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
+  const requestedStep = Number(stepNo);
+  if (!STEP_BY_NO[requestedStep]) throw stepError("Tahap tidak dikenal", 400, "STEP_UNKNOWN");
+  assertIdempotencyKey(idempotencyKey);
+  const revisionExpected = assertExpectedRevision(expectedRevision);
+  const cleanNote = typeof note === "string" ? note.trim().slice(0, 300) || null : null;
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "SKIP_PRODUCTION_STEP", runId, stepNo: requestedStep, expectedRevision: revisionExpected, workCenterId: workCenterId || null, note: cleanNote });
+
+  return prisma.$transaction(async (tx) => {
+    const run = await loadRunForWrite(tx, runId);
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    await assertWriterEnabledForUnit(tx, run.unitId);
+    assertAdaptationRun(run);
+    await authorizeOperator(tx, run, actorId, workCenterId, { postQc: false });
+    assertRunRevision(run, revisionExpected);
+    const prepared = await prepareSkipInTx(tx, run); // pra-cek kebijakan, konflik/drift, tahap target boleh dilewati
+    const ctx = await loadStepContext(tx, run);
+    const lastPreQc = ctx.split?.stages.at(-1) ?? null;
+    const covered = stepsCoveredByStage(prepared.stage, { isLastPreQc: !!lastPreQc && lastPreQc.id === prepared.stage.id });
+    if (!covered.includes(requestedStep)) {
+      throw stepError(`Tahap ${requestedStep} bukan tahap yang berikutnya. Tahap berikutnya: ${covered.join(", ") || "—"} (${prepared.stage.labelId}).`, 409, "STEP_OUT_OF_ORDER", { expectedStep: covered[0] ?? null, action: "SKIP" });
+    }
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "SKIP_PRODUCTION_STEP", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
+    const now = new Date();
+    const transition = await applySkipStageInTx(tx, { run, prepared, actorId, note: cleanNote, now });
+    const rows = [];
+    for (const no of covered) {
+      const hasEvidence = ctx.evidence.some((e) => e.stepNo === no);
+      if (hasEvidence) continue; // tahap yang sudah punya bukti tidak ditimpa/digandakan
+      rows.push(await writeSkippedEvidence(tx, { run, stepNo: no, operationRunId: transition.operationRunId, stageId: prepared.stage.id, actorId, commandId: command.id, note: cleanNote }));
+    }
+    await outbox(tx, {
+      eventType: "production.step.skipped", aggregateId: run.id, revision: transition.revision, dedupeKey: `production-step-skipped:${run.id}:${transition.revision}`,
+      payload: { runId: run.id, unitId: run.unitId, stepNos: covered, stageCode: prepared.stage.code, policy: ADAPTATION_POLICY, reason: SKIP_REASON, revision: transition.revision, occurredAt: now.toISOString(), actorId },
+    });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_STEP_SKIPPED, actorId: actorId || null,
+      metadata: { unitCode: run.unit.unitCode, runId: run.id, stepNos: covered, stageLabel: prepared.stage.labelId, reason: SKIP_REASON, note: cleanNote },
+    });
+    const after = await loadRunForWrite(tx, run.id);
+    const afterCtx = await loadStepContext(tx, after);
+    const response = { runId: run.id, revision: after.revision, stepNo: requestedStep, action: "SKIP", skippedSteps: covered, evidenceIds: rows.map((r) => r.id), next: afterCtx.next };
+    await finishCommand(tx, command, after.revision, response);
+    return { replayed: false, ...response };
+  }, { timeout: 20_000 });
+}
+
+// Penghalang & ringkasan untuk "Selesaikan Produksi" (BACA-SAJA; dipakai kartu dan pratinjau). Tidak menulis apa pun.
+export async function previewFinishProduction(prisma, runId) {
+  const run = await prisma.productionRun.findUnique({ where: { id: runId }, include: RUN_INCLUDE });
+  if (!run) throw stepError("Production Run tidak ditemukan", 404, "WORKSHOP_RUN_NOT_FOUND");
+  const ctx = await loadStepContext(prisma, run);
+  const blockers = finishBlockersOf(run, { openShortage: !!ctx.openShortage, exceptionOpen: !!ctx.state.exceptionOpen });
+  const pendingReturns = await prisma.productionMaterialReturn.findMany({ where: { runId, status: "PENDING" }, select: { qty: true, material: { select: { code: true, name: true, unit: true } } } });
+  return {
+    runId, revision: run.revision, adaptation: isAdaptationRun(run), canFinish: blockers.length === 0, blockers,
+    pendingReturns: pendingReturns.map((r) => ({ code: r.material.code, name: r.material.name, unit: r.material.unit ?? null, qty: Number(r.qty) })),
+  };
+}
+
+// Selesaikan Produksi (mode adaptasi): menutup lifecycle yang diperlukan SECARA EKSPLISIT lalu unit Siap Kirim. Retur sisa bahan tetap WAJIB: bila ada sisa yang belum diterima
+// Gudang, antrean retur dibuka dan command berhenti dengan alasan jelas (completed:false) — tidak dilewati diam-diam. body: { expectedRevision, workCenterId }.
+export async function finishProduction(prisma, { runId, actorId, idempotencyKey, expectedRevision, workCenterId }) {
+  if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
+  assertIdempotencyKey(idempotencyKey);
+  const revisionExpected = assertExpectedRevision(expectedRevision);
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "FINISH_PRODUCTION", runId, expectedRevision: revisionExpected, workCenterId: workCenterId || null });
+
+  return prisma.$transaction(async (tx) => {
+    const run = await loadRunForWrite(tx, runId);
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    await assertWriterEnabledForUnit(tx, run.unitId);
+    const ctx = await loadStepContext(tx, run);
+    const blockers = finishBlockersOf(run, { openShortage: !!ctx.openShortage, exceptionOpen: !!ctx.state.exceptionOpen });
+    if (blockers.length) throw stepError(`Produksi belum bisa diselesaikan: ${blockers[0].text}`, 409, `FINISH_${blockers[0].code}`, { blockers });
+    await authorizeOperator(tx, run, actorId, workCenterId, { postQc: false });
+    assertRunRevision(run, revisionExpected);
+    await assertNoOpenRunException(tx, run.id);
+
+    // Retur sisa bahan WAJIB (stok kembali tepat sekali lewat service retur/Gudang). Dibuka lebih dulu; bila masih ada yang PENDING -> berhenti, TANPA menutup lifecycle.
+    await createLeftoverReturnsInTx(tx, { run, actorId, commandId: null });
+    const pending = await tx.productionMaterialReturn.findMany({ where: { runId, status: "PENDING" }, select: { qty: true, material: { select: { code: true, name: true, unit: true } } } });
+    if (pending.length) {
+      return {
+        replayed: false, runId, revision: run.revision, completed: false, waitingFor: "GUDANG_RETUR",
+        message: `Sisa bahan harus diterima Gudang dulu (${pending.map((p) => `${p.material.code} ${Number(p.qty)}`).join(", ")}). Setelah retur diterima, tekan Selesaikan Produksi lagi.`,
+        pendingReturns: pending.map((r) => ({ code: r.material.code, name: r.material.name, unit: r.material.unit ?? null, qty: Number(r.qty) })),
+      };
+    }
+
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "FINISH_PRODUCTION", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
+    const now = new Date();
+    const result = await applyAdaptationFinishInTx(tx, { run, actorId, now });
+    const applicable = applicableStepsFor(ctx.split);
+    const written = [];
+    for (const no of applicable) {
+      if (ctx.evidence.some((e) => e.stepNo === no)) continue;
+      written.push((await writeSkippedEvidence(tx, { run, stepNo: no, actorId, commandId: command.id, note: "Selesaikan Produksi" })).stepNo);
+    }
+    await outbox(tx, {
+      eventType: "production.finished.adaptation", aggregateId: run.id, revision: result.revision, dedupeKey: `production-finished-adaptation:${run.id}:${result.revision}`,
+      payload: { runId: run.id, unitId: run.unitId, policy: ADAPTATION_POLICY, skippedStages: result.skipped.map((s) => s.code), skippedSteps: written, qcNotPerformed: result.qcNotPerformed, revision: result.revision, occurredAt: now.toISOString(), actorId },
+    });
+    if (result.qcNotPerformed) {
+      await recordActivity(tx, {
+        entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_QC_NOT_PERFORMED, actorId: actorId || null,
+        metadata: { unitCode: run.unit.unitCode, runId: run.id, reason: SKIP_REASON },
+      });
+    }
+    if (written.length) {
+      await recordActivity(tx, {
+        entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_STEP_SKIPPED, actorId: actorId || null,
+        metadata: { unitCode: run.unit.unitCode, runId: run.id, stepNos: written, stageLabel: "Selesaikan Produksi", reason: SKIP_REASON },
+      });
+    }
+    await recordActivity(tx, {
+      entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_FINISHED_ADAPTATION, actorId: actorId || null,
+      metadata: { unitCode: run.unit.unitCode, runId: run.id, skippedCount: written.length, skippedStages: result.skipped.map((s) => s.label) },
+    });
+    const response = {
+      runId: run.id, revision: result.revision, completed: true, unitStatus: result.unitStatus, skippedSteps: written, skippedStages: result.skipped.map((s) => ({ code: s.code, label: s.label })),
+      qc: result.qcNotPerformed ? "TIDAK_DILAKUKAN" : "SUDAH_DILAKUKAN", handoffGudang: "TIDAK_DIWAJIBKAN",
+    };
+    await finishCommand(tx, command, result.revision, response);
+    return { replayed: false, ...response };
+  }, { timeout: 30_000 });
+}
+
+// Terapkan kebijakan adaptasi pada run yang sudah berjalan (aksi EKSPLISIT Admin/Lead; run lama tidak pernah diubah otomatis). Tidak mengubah tahap/bukti/stok.
+export async function applyAdaptationPolicy(prisma, { runId, actorId, idempotencyKey, expectedRevision, reason = null }) {
+  if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
+  assertIdempotencyKey(idempotencyKey);
+  const revisionExpected = assertExpectedRevision(expectedRevision);
+  const cleanReason = typeof reason === "string" ? reason.trim().slice(0, 300) || null : null;
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "APPLY_ADAPTATION_POLICY", runId, expectedRevision: revisionExpected, reason: cleanReason });
+  return prisma.$transaction(async (tx) => {
+    const run = await loadRunForWrite(tx, runId);
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    await assertWriterEnabledForUnit(tx, run.unitId);
+    assertRunRevision(run, revisionExpected);
+    await assertNoOpenRunException(tx, run.id);
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "APPLY_ADAPTATION_POLICY", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
+    const applied = await applyAdaptationPolicyInTx(tx, { run });
+    if (applied.changed) {
+      await recordActivity(tx, {
+        entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_ADAPTATION_APPLIED, actorId: actorId || null,
+        metadata: { unitCode: run.unit.unitCode, runId: run.id, reason: cleanReason, policy: ADAPTATION_POLICY },
+      });
+    }
+    const response = { runId, revision: applied.revision, policy: ADAPTATION_POLICY, changed: applied.changed };
+    await finishCommand(tx, command, applied.revision, response);
+    return { replayed: false, ...response };
+  });
+}
+
+// Tunda Pekerjaan pada pekerjaan DI PAPAN dengan alasan Menunggu arahan / Kendala pengerjaan / Lainnya ("Lainnya" wajib keterangan >= 3 huruf). "Menunggu bahan" tetap
+// lewat laporan kekurangan bahan (reportMaterialShortage) karena butuh daftar bahan dan hanya Gudang yang menutupnya. Jeda (PauseReason) TIDAK disamakan.
+export async function delayProductionWork(prisma, { runId, actorId, idempotencyKey, expectedRevision, workCenterId, reason, note = null }) {
+  if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
+  assertIdempotencyKey(idempotencyKey);
+  const revisionExpected = assertExpectedRevision(expectedRevision);
+  const kind = DELAY_KINDS[reason] ? reason : null;
+  if (!kind) throw stepError('Alasan tunda harus "Menunggu arahan", "Kendala pengerjaan", atau "Lainnya" (menunggu bahan lewat laporan bahan kurang)', 400, "DELAY_REASON_INVALID");
+  const cleanNote = typeof note === "string" ? note.trim().slice(0, 300) || null : null;
+  if (kind === "LAINNYA" && (!cleanNote || cleanNote.length < 3)) throw stepError('Alasan "Lainnya" wajib disertai keterangan yang jelas', 400, "DELAY_NOTE_REQUIRED");
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "DELAY_PRODUCTION_WORK", runId, expectedRevision: revisionExpected, workCenterId: workCenterId || null, kind, note: cleanNote });
+  return prisma.$transaction(async (tx) => {
+    const run = await loadRunForWrite(tx, runId);
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    await assertWriterEnabledForUnit(tx, run.unitId);
+    const op = activeOperation(run);
+    if (!op) throw stepError("Tidak ada tahap yang sedang berjalan untuk ditunda", 409, "DELAY_NO_ACTIVE_STAGE");
+    if (op.status !== "ACTIVE") throw stepError("Pekerjaan ini sudah tertunda", 409, "DELAY_ALREADY_DELAYED", { delayKind: op.delayKind ?? null });
+    await authorizeOperator(tx, run, actorId, workCenterId, { postQc: await isPostQcStage(tx, run, op.stageId) });
+    assertRunRevision(run, revisionExpected);
+    await assertNoOpenRunException(tx, run.id);
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "DELAY_PRODUCTION_WORK", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
+    const result = await applyDelayInTx(tx, { run, op, actorId, kind, label: DELAY_KINDS[kind].label, note: cleanNote });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_WORK_DELAYED, actorId: actorId || null,
+      metadata: { unitCode: run.unit.unitCode, runId, reasonKey: kind, reasonLabel: DELAY_KINDS[kind].label, note: cleanNote },
+    });
+    const response = { runId, revision: result.revision, status: "PAUSED", delayKind: kind };
+    await finishCommand(tx, command, result.revision, response);
+    return { replayed: false, ...response };
+  });
+}
+
+// Lanjutkan Pekerjaan (pekerjaan di papan): SATU aksi atomik & idempoten. Menunggu bahan TIDAK bisa dibuka sebelum masalah bahan diselesaikan Gudang (409 RESUME_WAITING_MATERIAL).
+// Pekerjaan yang sudah berjalan -> alreadyActive:true (tidak ada tulisan). expectedRevision opsional (dikirim kartu; bila ada dan basi -> 409).
+export async function resumeProductionWork(prisma, { runId, actorId, idempotencyKey, expectedRevision = null, workCenterId = null }) {
+  if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
+  assertIdempotencyKey(idempotencyKey);
+  const revisionExpected = expectedRevision == null || expectedRevision === "" ? null : assertExpectedRevision(expectedRevision);
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "RESUME_PRODUCTION_WORK", runId, expectedRevision: revisionExpected, workCenterId: workCenterId || null });
+  return prisma.$transaction(async (tx) => {
+    const run = await loadRunForWrite(tx, runId);
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    await assertWriterEnabledForUnit(tx, run.unitId);
+    const op = activeOperation(run);
+    if (!op) throw stepError("Tidak ada pekerjaan yang sedang ditunda", 409, "RESUME_NOTHING_TO_RESUME");
+    const wc = workCenterId || run.plan?.workCenterId || null;
+    await authorizeOperator(tx, run, actorId, wc, { postQc: await isPostQcStage(tx, run, op.stageId) });
+    if (revisionExpected != null) assertRunRevision(run, revisionExpected);
+    await assertNoOpenRunException(tx, run.id);
+    if (op.status === "ACTIVE") {
+      const response = { runId, revision: run.revision, status: "ACTIVE", resumed: false, alreadyActive: true };
+      const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RESUME_PRODUCTION_WORK", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
+      await finishCommand(tx, command, run.revision, response);
+      return { replayed: false, ...response };
+    }
+    const shortage = await tx.productionMaterialShortage.findFirst({ where: { runId, status: "OPEN" }, select: { id: true } });
+    if (shortage) throw stepError("Menunggu bahan: Gudang belum menyelesaikan masalah bahan. Pekerjaan baru bisa dilanjutkan setelah bahan diserahkan.", 409, "RESUME_WAITING_MATERIAL", { shortageId: shortage.id, waitingFor: "GUDANG" });
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RESUME_PRODUCTION_WORK", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
+    const previous = op.delayKind ? DELAY_KINDS[op.delayKind]?.label ?? null : null;
+    const result = await applyResumeInTx(tx, { run, op, actorId });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_WORK_RESUMED, actorId: actorId || null,
+      metadata: { unitCode: run.unit.unitCode, runId, reasonLabel: previous },
+    });
+    const response = { runId, revision: result.revision, status: "ACTIVE", resumed: true, alreadyActive: false };
+    await finishCommand(tx, command, result.revision, response);
     return { replayed: false, ...response };
   });
 }

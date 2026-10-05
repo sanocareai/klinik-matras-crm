@@ -17,6 +17,7 @@ import { BLOCK_REASON_LABEL } from "./domain/productionExceptions.js";
 export const ENTITY_TYPES = Object.freeze({
   UNIT: "unit",
   ORDER: "order",
+  PRODUCTION_SETTING: "production_setting", // Slice 2 — pengaturan Admin Production
   // Audit Gudang & Inventory (12 Sept 2026) — MATERIAL untuk perubahan data
   // master (reorderPoint/kategori/aktif-nonaktif, sebelumnya tidak
   // tercatat SAMA SEKALI), sisanya satu entityType per jenis dokumen
@@ -197,6 +198,14 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_STATION_REORDERED: "PRODUCTION_STATION_REORDERED",
   PRODUCTION_MATERIAL_RETURN_REQUESTED: "PRODUCTION_MATERIAL_RETURN_REQUESTED",
   PRODUCTION_MATERIAL_RETURN_RECEIVED: "PRODUCTION_MATERIAL_RETURN_RECEIVED",
+  // Slice 2 (flow adaptasi): tahap dilewati (SKIPPED), QC tidak dilakukan, produksi diselesaikan lewat adaptasi, kebijakan adaptasi diterapkan, Tunda/Lanjutkan Pekerjaan di papan, pengaturan Admin.
+  PRODUCTION_STEP_SKIPPED: "PRODUCTION_STEP_SKIPPED",
+  PRODUCTION_QC_NOT_PERFORMED: "PRODUCTION_QC_NOT_PERFORMED",
+  PRODUCTION_FINISHED_ADAPTATION: "PRODUCTION_FINISHED_ADAPTATION",
+  PRODUCTION_ADAPTATION_APPLIED: "PRODUCTION_ADAPTATION_APPLIED",
+  PRODUCTION_WORK_DELAYED: "PRODUCTION_WORK_DELAYED",
+  PRODUCTION_WORK_RESUMED: "PRODUCTION_WORK_RESUMED",
+  PRODUCTION_SETTING_CHANGED: "PRODUCTION_SETTING_CHANGED",
   // P10B — Aplikasi Dokumentasi (foto dokumentasi produksi; TIDAK mengubah lifecycle).
   PRODUCTION_DOCUMENTATION_ADDED: "PRODUCTION_DOCUMENTATION_ADDED",
   PRODUCTION_DOCUMENTATION_CORRECTED: "PRODUCTION_DOCUMENTATION_CORRECTED",
@@ -444,6 +453,20 @@ export function formatActivitySentence(event) {
       return `Urutan unit ${metadata.unitCode || "—"} di ${metadata.stationCode || "meja"} diubah manual: posisi ${metadata.from ?? "—"} → ${metadata.to ?? "—"}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_RETURN_REQUESTED:
       return `Sisa bahan unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan) menunggu diterima Gudang`;
+    case EVENT_TYPES.PRODUCTION_STEP_SKIPPED:
+      return `Tahap ${(metadata.stepNos || []).join(", ") || "—"} (${metadata.stageLabel || "—"}) unit ${metadata.unitCode || "—"} DILEWATI — ${metadata.reason || "Adaptasi sistem"} (bukan dikerjakan; tanpa foto/hasil uji)`;
+    case EVENT_TYPES.PRODUCTION_QC_NOT_PERFORMED:
+      return `QC unit ${metadata.unitCode || "—"} TIDAK DILAKUKAN — ${metadata.reason || "Adaptasi sistem"} (bukan lulus/di-waive)`;
+    case EVENT_TYPES.PRODUCTION_FINISHED_ADAPTATION:
+      return `Produksi unit ${metadata.unitCode || "—"} diselesaikan (mode adaptasi): ${metadata.skippedCount ?? 0} tahap dilewati, QC tidak dilakukan, unit Siap Kirim tanpa penerimaan barang jadi Gudang`;
+    case EVENT_TYPES.PRODUCTION_ADAPTATION_APPLIED:
+      return `Mode adaptasi diterapkan pada Production Run unit ${metadata.unitCode || "—"}${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_WORK_DELAYED:
+      return `Pekerjaan unit ${metadata.unitCode || "—"} ditunda: ${metadata.reasonLabel || "—"}${metadata.note ? ` — ${metadata.note}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_WORK_RESUMED:
+      return `Pekerjaan unit ${metadata.unitCode || "—"} dilanjutkan${metadata.reasonLabel ? ` (sebelumnya: ${metadata.reasonLabel})` : ""}`;
+    case EVENT_TYPES.PRODUCTION_SETTING_CHANGED:
+      return `Pengaturan Production "${metadata.label || metadata.key || "—"}" diubah${metadata.to != null ? ` → ${metadata.to}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_RETURN_RECEIVED:
       return `Gudang menerima retur sisa ${metadata.materialCode || "bahan"} ${metadata.qty ?? "—"} dari unit ${metadata.unitCode || "—"}`;
     case EVENT_TYPES.PRODUCTION_DOCUMENTATION_ADDED:

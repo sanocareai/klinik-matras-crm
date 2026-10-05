@@ -15,6 +15,7 @@ import { isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEng
 import { assertNoOpenRunException, assertRunConsistent } from "./productionRunGuards.js";
 import { assertNoPendingReturnsInTx } from "./productionMaterialReturnService.js";
 import { assertPhasesReadyForHandoffDecision, assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
+import { defaultAdaptationPolicy, requireWorkshopDefaultLocation } from "./productionSettingsService.js";
 import {
   isProductionWriterEnabledFor, loadV2Flags, productionWriterEnabledForUnit, resolveProductionWriterState,
 } from "./v2FeatureFlags.js";
@@ -316,7 +317,7 @@ export async function openProductionIntakeV2(tx, { unitId, actorId = null }) {
   const notApplicable = kind === "FULFILLMENT_ONLY" ? new Set(["DIAGNOSIS", "PROCESS", "QC"]) : new Set();
   const run = await tx.productionRun.create({
     data: {
-      unitId, kind, origin: "CUSTODY_PICKUP", status: "ACTIVE", currentPhase: "INTAKE", startedAt: now, revision: 1, parentRunId: last?.id || null,
+      unitId, kind, origin: "CUSTODY_PICKUP", status: "ACTIVE", currentPhase: "INTAKE", startedAt: now, revision: 1, parentRunId: last?.id || null, adaptationPolicy: await defaultAdaptationPolicy(tx),
       phases: {
         create: PHASES.map((phase, index) => ({
           phase, sequence: index + 1,
@@ -369,7 +370,7 @@ export async function openPendingArrivalIntakeV2InTx(tx, { unitId, actorId = nul
   // manual di luar fungsi ini) TETAP revisi 1 — tidak terpengaruh.
   const run = await tx.productionRun.create({
     data: {
-      unitId, kind, origin: "CUSTODY_PICKUP", status: "PENDING_ARRIVAL", currentPhase: null, startedAt: null, revision: 0, parentRunId: last?.id || null,
+      unitId, kind, origin: "CUSTODY_PICKUP", status: "PENDING_ARRIVAL", currentPhase: null, startedAt: null, revision: 0, parentRunId: last?.id || null, adaptationPolicy: await defaultAdaptationPolicy(tx),
       phases: {
         create: PHASES.map((phase, index) => ({
           phase, sequence: index + 1,
@@ -489,7 +490,9 @@ export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotenc
 // baris handoff dan mencocokkan expectedRevision di DALAM transaksinya sendiri
 // — percobaan basi (dua klik "Unit Tiba" bersamaan) otomatis ditolak 409 oleh
 // pemeriksaan revisi itu, bukan oleh fungsi ini.
-export async function confirmUnitArrival(prisma, { unitId, actorId, idempotencyKey, locationId }) {
+// Slice 2: SATU aksi tanpa pilihan lokasi — locationId opsional; bila kosong dipakai lokasi workshop bawaan dari Pengaturan Admin (requireWorkshopDefaultLocation).
+// Belum dikonfigurasi/tidak valid -> 409 berkode (kebutuhan konfigurasi untuk Admin): TIDAK memilih lokasi acak dan TIDAK memalsukan kedatangan.
+export async function confirmUnitArrival(prisma, { unitId, actorId, idempotencyKey, locationId = null }) {
   if (!unitId) throw custodyError("unitId wajib diisi", 400, "UNIT_ID_REQUIRED");
   const handoff = await prisma.unitCustodyHandoff.findFirst({
     where: { unitId, direction: "INBOUND", status: "OFFERED" },
@@ -500,7 +503,8 @@ export async function confirmUnitArrival(prisma, { unitId, actorId, idempotencyK
   // expectedRevision diturunkan dari baris yang SAMA persis dipakai untuk menemukan
   // handoffId (bukan dari klien) — kartu Production tidak perlu tahu/menyimpan
   // revisi custody internal; kunci konkurensi tetap ditegakkan di acceptUnitCustody/decide().
-  return acceptUnitCustody(prisma, { handoffId: handoff.id, actorId, idempotencyKey, expectedRevision: handoff.revision, locationId });
+  const resolvedLocationId = locationId || (await requireWorkshopDefaultLocation(prisma)).id;
+  return acceptUnitCustody(prisma, { handoffId: handoff.id, actorId, idempotencyKey, expectedRevision: handoff.revision, locationId: resolvedLocationId });
 }
 
 export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotencyKey, expectedRevision, reason }) {

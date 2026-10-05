@@ -33,6 +33,7 @@ import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState
 import { authorizeOperator, loadRunForWrite } from "./productionWorkshopExecutionCommandService.js";
 import { loadPlanForWrite, setPlannedBOMInTx, assertPlanBOMLines } from "./productionPlanningCommandService.js";
 import { tryProvisionUnitRoute } from "./productionRouting.js";
+import { resolveProductionServiceForUnit } from "./productionSettingsService.js";
 import { normalizeMedia } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 
@@ -243,7 +244,8 @@ export async function submitDiagnosis(prisma, { runId, actorId, workCenterId, ex
   const validatedFindings = validateFindings(findings, { final: true });
   const media = normalizePhotoUrls(photoUrls, { min: 1 });
   const validatedManual = normalizeManualMaterials(manualMaterials);
-  if (!recommendedServiceId) throw diagError("Layanan teknis wajib dipilih sebelum diagnosis dikirim", 400, "DIAGNOSIS_SERVICE_REQUIRED");
+  // Slice 2: operator TIDAK dimintai layanan teknis. recommendedServiceId (klien lama) tetap diterima bila dikirim; bila kosong, layanan diturunkan dari pemetaan Sales->produksi
+  // kanonis (price_items.production_service_id) atau layanan historis unit. Tanpa itu: 409 DIAGNOSIS_SERVICE_MAPPING_NEEDED (kebutuhan konfigurasi Admin; draf tetap tersimpan).
   const bomLines = Array.isArray(materials) ? materials : [];
   if (bomLines.length) assertPlanBOMLines(bomLines);
 
@@ -251,8 +253,12 @@ export async function submitDiagnosis(prisma, { runId, actorId, workCenterId, ex
     await lockRowForUpdate(tx, "production_runs_v2", runId);
     const { run } = await loadRunAndAuthorize(tx, { runId, actorId, workCenterId });
 
+    const resolvedService = recommendedServiceId
+      ? { serviceId: recommendedServiceId, source: "EXPLICIT" }
+      : await resolveProductionServiceForUnit(tx, run.unit);
+    recommendedServiceId = resolvedService.serviceId;
     const service = await tx.serviceCatalog.findUnique({ where: { id: recommendedServiceId } });
-    if (!service || !service.active) throw diagError("Layanan teknis tidak ditemukan atau nonaktif di katalog", 404, "DIAGNOSIS_SERVICE_NOT_FOUND");
+    if (!service || !service.active) throw diagError("Layanan produksi tidak ditemukan atau nonaktif di katalog — Admin perlu memperbaiki pemetaan di Pengaturan Produksi", 409, "DIAGNOSIS_SERVICE_NOT_FOUND", { needs: "ADMIN_CONFIGURATION" });
 
     const latest = await loadLatestDiagnosis(tx, run.id);
     assertDiagnosisRevision(latest, revisionExpected);
@@ -294,7 +300,7 @@ export async function submitDiagnosis(prisma, { runId, actorId, workCenterId, ex
       await tx.unit.update({ where: { id: run.unitId }, data: { serviceId: recommendedServiceId, serviceLine: service.serviceLine } });
       await recordActivity(tx, {
         entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.SERVICE_ASSIGNED, actorId: actorId || null,
-        metadata: { serviceId: recommendedServiceId, serviceLabel: service.labelId, serviceLine: service.serviceLine, source: "DIAGNOSIS" },
+        metadata: { serviceId: recommendedServiceId, serviceLabel: service.labelId, serviceLine: service.serviceLine, source: "DIAGNOSIS", resolvedBy: resolvedService.source },
       });
       await tryProvisionUnitRoute(tx, run.unitId, recommendedServiceId, actorId || null);
     }
