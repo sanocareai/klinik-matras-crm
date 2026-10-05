@@ -87,6 +87,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
   const [card, setCard] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [finishedMsg, setFinishedMsg] = useState(""); // setelah Selesaikan Produksi kartu hilang dari antrean: tampilkan hasilnya, jangan langsung "tidak lagi di antrean"
   const [sheet, setSheet] = useState(null); // step | shortage | skip | finish | delay
   const [quickBusy, setQuickBusy] = useState(false);
   const sheetRef = useRef(null); sheetRef.current = sheet;
@@ -126,6 +127,18 @@ function V2Detail({ job, lane, onBack, onChanged }) {
   }
   const canShortage = lane === "TABLE" && card && !card.shortage && next?.stepNo && next.stepNo >= 3 && next.stepNo <= 8 && (next.action !== "WAIT" || next.wait === "MATERIAL_NOT_READY");
   const mat = card ? materialBadge(card) : null;
+
+  if (finishedMsg) {
+    return (
+      <div data-testid="worker-unit-detail" data-unit-code={job.unitCode} data-source="V2">
+        <div role="status" data-testid="finish-done" className="rounded-card bg-surface p-5 text-center">
+          <p className="m-0 text-[17px] font-bold text-ink">Produksi selesai</p>
+          <p className="m-0 mt-1 text-[13.5px] text-ink2">{job.unitCode} — {finishedMsg}</p>
+          <button type="button" data-testid="finish-done-back" onClick={() => { onChanged?.(); onBack?.(); }} className="wa-primary mt-4">Kembali ke Pekerjaan Saya</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div data-testid="worker-unit-detail" data-unit-code={job.unitCode} data-source="V2">
@@ -191,7 +204,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
 
       {sheet === "step" && card && next && <StepSheet card={card} next={next} onClose={() => setSheet(null)} onSubmitted={async (result) => { if (result) { setSheet(null); setNotice(result.verdict && result.verdict !== "PAS" ? "Hasil uji tercatat — lanjutkan rework lapisan." : "Tahap tersimpan."); } await afterChange(); }} />}
       {sheet === "skip" && card && next && <SkipSheet card={card} next={next} stageLabel={STEP_BY_NO[next.stepNo]?.label} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); setNotice("Tahap dicatat dilewati (Adaptasi sistem)."); await afterChange(); }} />}
-      {sheet === "finish" && card && <FinishSheet card={card} onClose={() => setSheet(null)} onDone={async (res) => { setSheet(null); setNotice(`Produksi selesai — unit Siap Kirim. QC tidak dilakukan; ${res.skippedSteps?.length ?? 0} tahap dicatat dilewati.`); await afterChange(); }} />}
+      {sheet === "finish" && card && <FinishSheet card={card} onClose={() => setSheet(null)} onDone={(res) => { setSheet(null); setFinishedMsg(`Unit Siap Kirim. QC tidak dilakukan; ${res.skippedSteps?.length ?? 0} tahap dicatat dilewati.`); }} />}
       {sheet === "delay" && card && <DelaySheet card={card} onClose={() => setSheet(null)} onPickMaterial={() => setSheet("shortage")} onDone={async () => { setSheet(null); setNotice("Pekerjaan ditunda."); await afterChange(); }} />}
       {sheet === "shortage" && card && <ShortageSheet card={card} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); setNotice("Gudang sudah diberi tahu."); await afterChange(); }} />}
     </div>

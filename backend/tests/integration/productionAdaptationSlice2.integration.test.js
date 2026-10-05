@@ -296,6 +296,10 @@ test("C. Lifecycle ADAPTASI penuh: Meja -> Corner TANPA putusan QC; Selesaikan P
   const again = ok(await w.nadya.api.post(`${V2}/runs/${run.id}/finish`, { expectedRevision: rev, workCenterId: w.wc, confirm: true }, key("fin-c")));
   assert.equal(again.replayed, true); assert.equal(await testPrisma.v2Command.count(), cmds);
   assert.equal(await testPrisma.domainOutbox.count({ where: { eventType: "production.run.completed", aggregateId: run.id } }), 1);
+  // KPI/laporan unit: adaptasi tanpa tahap dilewati tetap dibedakan dari proses lengkap; QC "Tidak dilakukan" bukan lulus
+  const kpi = ok(await w.lead.api.get(`${V2}/reports/units`));
+  const kRow = kpi.tables[0].rows.find((r) => r.runId === run.id);
+  assert.ok(kRow, "run ada di laporan unit"); assert.equal(kRow.completion, "Adaptasi (semua tahap dikerjakan)"); assert.equal(kRow.skippedSteps, 0); assert.equal(kRow.qcFirst, "Tidak dilakukan");
 });
 
 test("D. Lewati tahap (adaptasi): SKIPPED + actor + alasan 'Adaptasi sistem', tanpa foto/hasil uji; progres dikerjakan/dilewati/tersisa; izin; run tanpa kebijakan ditolak; kebijakan tersimpan per run", async () => {
@@ -394,6 +398,7 @@ test("F. Selesaikan Produksi menutup SEMUA tahap tersisa sebagai DILEWATI (prati
   assert.equal(rep.finalTest, null); assert.equal(rep.finishing, null); assert.deepEqual(rep.textureTests, []); assert.equal(rep.cornerChecklist, null);
   assert.equal(rep.skippedSteps.length, ev.length); assert.ok(rep.skippedSteps.every((s) => s.label && s.reason === "Adaptasi sistem"));
   assert.equal(rep.mediaCount, 0, "tidak ada foto palsu");
+  { const kRow = ok(await w.lead.api.get(`${V2}/reports/units`)).tables[0].rows.find((r) => r.runId === run.id); assert.equal(kRow.completion, "Adaptasi (tahap dilewati)"); assert.ok(kRow.skippedSteps > 0); assert.equal(kRow.qcFirst, "Tidak dilakukan"); }
   assert.doesNotMatch(rep.message, /undefined|Hasil Tekstur|Finishing\s+:/); assert.match(rep.message, /Tahap dilewati \(Adaptasi sistem\)/); assert.match(rep.message, /tidak dilakukan \(mode adaptasi\) — bukan lulus/); assert.match(rep.message, /SIAP KIRIM \(mode adaptasi/);
   // pekerjaan nyata (bukan dilewati) memblokir: tahap 1 dikerjakan -> operasi aktif
   const g = await acceptedUnit(w);

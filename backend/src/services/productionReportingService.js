@@ -234,7 +234,7 @@ export function unitRow(f, now) {
     runId: f.runId, unitId: f.unitId, unitCode: f.unitCode, orderNumber: f.orderNumber, service: f.serviceLabel, station: f.stationCode ? stationLabel(f.stationCode) : null, pic: f.operatorName, corner: f.cornerOperatorName,
     priority: PRIORITY_LABEL[f.priority] || "Normal", status: STATUS_BUCKETS[f.statusBucket], step: f.currentStepNo, planned: f.plannedDate, arrived: iso(f.arrivedAt), started: iso(f.startedAt), finished: iso(f.finishedAt), ready: iso(f.readyAt), target: iso(f.targetCompleteAt),
     tatMin: f.readyAt && f.arrivedAt ? minutesBetween(f.arrivedAt, f.readyAt) : null, late: lateOpen ? "Ya (belum selesai)" : lateFin ? "Ya (selesai terlambat)" : f.targetCompleteAt ? "Tidak" : "—",
-    completion: f.adaptation ? (f.runStatus === "COMPLETED" ? "Adaptasi (tahap dilewati)" : "Mode adaptasi") : "Proses lengkap", skippedSteps: f.skippedSteps ?? 0,
+    completion: f.adaptation ? (f.runStatus === "COMPLETED" ? (f.skippedSteps > 0 ? "Adaptasi (tahap dilewati)" : "Adaptasi (semua tahap dikerjakan)") : "Mode adaptasi") : "Proses lengkap", skippedSteps: f.skippedSteps ?? 0,
     qcFirst: f.qcNotPerformed ? "Tidak dilakukan" : f.qc.first === "PASS" ? "Lulus" : f.qc.first === "FAIL" ? "Gagal" : f.qc.first || "Belum QC", qcFails: f.qc.fails, docPct: f.docs.required ? round1((f.docs.satisfied / f.docs.required) * 100) : null, docMissing: f.docs.missingTotal,
     returnPending: f.returns.pending, wasteQty: Math.round(f.waste.reduce((s, w) => s + w.qty, 0) * 10000) / 10000, extraMaterial: f.extraMaterial ? "Ya" : "Tidak",
     activeMin: f.timing.activeMin, pauseMin: f.timing.pauseMin, blockedMin: f.timing.blockedMin,

@@ -106,3 +106,10 @@ test("Laporan Produksi: tahap dilewati terdaftar; QC 'tidak dilakukan' dan Gudan
   assert.match(p, /data-testid="report-skipped"/); assert.match(p, /Tahap dilewati \(Adaptasi sistem\)/); assert.match(p, /tidak dihitung sebagai pekerjaan/);
   assert.match(p, /report\.qcStatus === "TIDAK_DILAKUKAN" \? "Tidak dilakukan \(mode adaptasi\)"/); assert.match(p, /Tidak diwajibkan \(mode adaptasi\)/);
 });
+
+test("Selesaikan Produksi dari Aplikasi Meja/Corner: hasil ditampilkan (bukan layar 'tidak lagi di antrean'); kembali ke daftar menyegarkan antrean", () => {
+  const d = strip(src("features", "production", "workerApp", "JobDetail.jsx"));
+  assert.match(d, /data-testid="finish-done"/); assert.match(d, /Produksi selesai/); assert.match(d, /Unit Siap Kirim\. QC tidak dilakukan/);
+  assert.match(d, /data-testid="finish-done-back" onClick=\{\(\) => \{ onChanged\?\.\(\); onBack\?\.\(\); \}\}/);
+  assert.doesNotMatch(d, /setNotice\(`Produksi selesai/, "tidak lagi memuat ulang kartu yang sudah selesai");
+});
