@@ -1119,3 +1119,25 @@ test("Klaim Resi: Minta Bukti & Tolak wajib alasan dan diaudit; Sales melengkapi
   const aksi = (await testPrisma.activityEvent.findMany({ where: { entityId: w.anchorId, eventType: "KLAIM_LUNAS" } })).map((e) => e.metadata?.aksi);
   for (const a of ["diajukan", "bukti_diminta", "diajukan_ulang", "ditolak"]) assert.ok(aksi.includes(a), a);
 });
+
+test("GUARD Payment menunggu (Resi): gerbang verifikasi menyala + DP Resi belum diverifikasi → verifikasi penerimaan Resi 409 PAYMENT_MENUNGGU_VERIFIKASI tanpa Payment/jurnal baru; setelah DP diverifikasi, verifikasi jalan", async () => {
+  const w = await dunia();
+  await setSetting(testPrisma, SETTING_KEYS.PAYMENT_VERIFICATION_GATE, "true");
+  await setSetting(testPrisma, SETTING_KEYS.PAYMENT_VERIFICATION_GATE_SINCE, new Date(Date.now() - 86_400_000).toISOString());
+  const dp = await bayarResi(w, { tipe: "DP" });
+  assert.equal(dp.status, 201, JSON.stringify(dp.body));
+  assert.equal((await klaimLama(w)).status, 201);
+  const sebelum = { pay: await testPrisma.payment.count(), jur: await testPrisma.finJournalEntry.count({ where: { source: "PEMBAYARAN_ORDER" } }) };
+
+  const r = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id }, kunci());
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.equal(r.body.code, "PAYMENT_MENUNGGU_VERIFIKASI");
+  assert.match(r.body.error, /Payment [0-9a-f]{8} — Rp540\.000/);
+  assert.match(r.body.error, /Verifikasi, tolak, atau batalkan/);
+  assert.deepEqual({ pay: await testPrisma.payment.count(), jur: await testPrisma.finJournalEntry.count({ where: { source: "PEMBAYARAN_ORDER" } }) }, sebelum, "tanpa perubahan data");
+
+  const payId = (await testPrisma.payment.findFirst()).id;
+  assert.equal((await w.a.post(`/api/finance/pembayaran/${payId}/verifikasi`, {})).status, 201);
+  const ok = await w.a.post(`/api/finance/penerimaan/resi/${w.groupId}/verifikasi`, { mode: "REKENING", cashAccountId: w.bank.id }, kunci());
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+});

@@ -122,3 +122,55 @@ test("Tanpa Payment menunggu, verifikasi penerimaan berjalan seperti biasa (jalu
   assert.equal(r.status, 201, JSON.stringify(r.body));
   assert.equal(await saldoBank(), "3726000.00");
 });
+
+test("Gerbang verifikasi MATI: Payment menunggu SUDAH mengurangi sisa → DP langsung + verifikasi sisa tetap sah (tidak diblokir, total tidak berlipat)", async () => {
+  const w = await dunia();
+  await testPrisma.finSetting.update({ where: { key: "payment_verification_gate" }, data: { value: "false" } });
+  const r1 = await w.cAdmin.post(`/api/orders/${w.order.id}/payments`, { amount: 1_000_000, method: "TRANSFER", cashAccountId: w.bank.id, proofPhotoUrl: "/media/payment-proofs/uji.jpg" });
+  assert.equal(r1.status, 201, JSON.stringify(r1.body));
+  await testPrisma.order.update({ where: { id: w.order.id }, data: { paymentStatus: "LUNAS", paidAt: new Date() } });
+  const r = await w.cFin.post("/api/finance/penerimaan/verifikasi", { orderId: w.order.id, mode: "REKENING", method: "TRANSFER", cashAccountId: w.bank.id, proofPhotoUrl: "/media/finance-receipts/b.jpg" });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.amount, 2_726_000, "hanya sisa, bukan nilai penuh");
+  assert.equal(await saldoBank(), "3726000.00");
+});
+
+test("Paralel: dua verifikasi bersamaan saat Payment menunggu → keduanya 409, tidak ada Payment/jurnal baru; pesan menyebut nomor Payment, nominal, dan tindakan", async () => {
+  const w = await dunia();
+  const id = await paymentMenunggu(w);
+  const [a, b] = await Promise.all([1, 2].map(() => w.cFin.post("/api/finance/penerimaan/verifikasi", { orderId: w.order.id, mode: "REKENING", method: "TRANSFER", cashAccountId: w.bank.id })));
+  assert.deepEqual([a.status, b.status], [409, 409]);
+  assert.ok(a.body.error.includes(`Payment ${id.slice(0, 8)}`), a.body.error);
+  assert.match(a.body.error, /Rp3\.726\.000/);
+  assert.match(a.body.error, /Verifikasi, tolak, atau batalkan/);
+  assert.equal(await testPrisma.payment.count({ where: { orderId: w.order.id } }), 1);
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "PEMBAYARAN_ORDER" } }), 1);
+});
+
+test("Payment DITOLAK (alur Pembayaran › Tolak = batal + jurnal dibalik) tidak memblokir", async () => {
+  const w = await dunia();
+  const id = await paymentMenunggu(w);
+  const t = await w.cFin.post(`/api/finance/pembayaran/${id}/tolak`, { reason: "uang tidak masuk di mutasi bank" });
+  assert.equal(t.status, 200, JSON.stringify(t.body));
+  await testPrisma.order.update({ where: { id: w.order.id }, data: { paymentStatus: "LUNAS", paidAt: new Date() } });
+  const r = await w.cFin.post("/api/finance/penerimaan/verifikasi", { orderId: w.order.id, mode: "REKENING", method: "TRANSFER", cashAccountId: w.bank.id, proofPhotoUrl: "/media/finance-receipts/b.jpg" });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(await saldoBank(), "3726000.00");
+});
+
+test("Order kedua dengan DP langsung menunggu: ditolak 409 lewat fungsi verifikasiPenerimaan yang SAMA dipakai Klaim Lunas (klaimLunas.js memanggilnya); tidak ada Payment/jurnal baru", async () => {
+  const w = await dunia();
+  await paymentMenunggu(w);
+  const customer = await testPrisma.customer.findUnique({ where: { id: w.order.customerId } });
+  const order2 = await testPrisma.order.create({ data: { customerId: customer.id, value: 1_000_000, category: "LAYANAN", orderNumber: "RES-UJI-003", status: "DELIVERED", paymentStatus: "BELUM_BAYAR" } });
+  await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: order2.id, userId: null }));
+  // Payment menunggu untuk order2 (dicatat langsung oleh Finance), lalu klaim Lunas dibuat langsung di basis data (alur Sales memerlukan unggah bukti).
+  const p2 = await w.cAdmin.post(`/api/orders/${order2.id}/payments`, { amount: 1_000_000, method: "TRANSFER", cashAccountId: w.bank.id, proofPhotoUrl: "/media/payment-proofs/uji2.jpg" });
+  assert.equal(p2.status, 201, JSON.stringify(p2.body));
+  await testPrisma.order.update({ where: { id: order2.id }, data: { paymentStatus: "LUNAS", paidAt: new Date() } });
+  const sebelum = { pay: await testPrisma.payment.count(), jur: await testPrisma.finJournalEntry.count() };
+  const r = await w.cFin.post("/api/finance/penerimaan/verifikasi", { orderId: order2.id, mode: "REKENING", method: "TRANSFER", cashAccountId: w.bank.id });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.code, "PAYMENT_MENUNGGU_VERIFIKASI");
+  assert.deepEqual({ pay: await testPrisma.payment.count(), jur: await testPrisma.finJournalEntry.count() }, sebelum);
+});

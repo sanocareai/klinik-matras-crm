@@ -24,6 +24,7 @@ import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
 import { bangunBukti } from "./pembayaran.js";
 import { dasarStatusBayar } from "./tagihanOrder.js";
 import { tanggalCutoff } from "./penerimaanOrder.js";
+import { pembayaranMenungguVerifikasi, pesanPaymentMenunggu, KODE_PAYMENT_MENUNGGU } from "./penerimaanGuard.js";
 import {
   ResiBayarError, resiPembayaranAktif, pastikanAktif, muatGrupResi, pastikanGrupLayak, hitungAlokasiResi, tulisPembayaranResi, muatDibayar,
   rincianAnak, METODE_BAYAR, TIPE_BAYAR, versiGrup,
@@ -222,6 +223,10 @@ export async function verifikasiPenerimaanResi(tx, { groupId, mode = "REKENING",
     }
   }
   const { anchor, aktif } = pastikanGrupLayak(grup, anak);
+  // GUARD PAYMENT MENUNGGU (penerimaanGuard.js): dicek DI BAWAH kunci grup (muatGrupResi kunci:true), atas SEMUA child aktif — Payment langsung ke child maupun
+  // Payment Resi di anchor yang beralokasi ke child. Menolak 409 tanpa menulis apa pun; yang dibatalkan/ditolak/diganti/terverifikasi tidak memblokir.
+  const menunggu = await pembayaranMenungguVerifikasi(tx, aktif.map((o) => o.id));
+  if (menunggu.length > 0) throw new ResiBayarError(pesanPaymentMenunggu(`Resi (anchor ${anchor.orderNumber})`, menunggu), 409, KODE_PAYMENT_MENUNGGU);
   const dibayar = await muatDibayar(tx, aktif);
   if (!klaim && !grup.lunasDiklaimPada && klaimPerOrder(aktif, dibayar, grup).length === 0) {
     throw new ResiBayarError("Resi ini tidak sedang diklaim Lunas (mungkin baru ditolak atau sudah diverifikasi). Muat ulang antrean.", 409, "TIDAK_ADA_KLAIM");
