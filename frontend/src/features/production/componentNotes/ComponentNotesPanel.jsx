@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { History, Pencil, Plus } from "lucide-react";
 import { api } from "@/api.js";
+import { isDemoActive } from "@/features/production/demo/demoGate.js";
 import { BeforeAfterSummary } from "./BeforeAfterSummary.jsx";
 import { ComponentNoteSheet } from "./ComponentNoteSheet.jsx";
 import { NOT_RECORDED, SECTIONS, focusCopy, focusFor, fmtStamp, sectionStatusText } from "./componentNotesModel.js";
@@ -8,21 +9,29 @@ import { NOT_RECORDED, SECTIONS, focusCopy, focusFor, fmtStamp, sectionStatusTex
 // Panel Catatan Komponen — SATU komponen yang sama dipakai Aplikasi Meja, Corner, Dokumentasi, dan Unit 360 (membaca endpoint yang sama; tidak ada input ulang per aplikasi).
 // `stepNo` (opsional) menandai seksi yang relevan dengan tahap berjalan; tidak pernah menjadi syarat tahap. Izin tulis diputuskan SERVER (canWrite).
 export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, showHistory = true, onChanged = null }) {
-  const [data, setData] = useState(null); const [error, setError] = useState(""); const [hidden, setHidden] = useState(false);
+  const [data, setData] = useState(null); const [error, setError] = useState(""); const [unavailable, setUnavailable] = useState(null); // null | "DEMO" | "OUT_OF_COHORT"
   const [sheet, setSheet] = useState(null); const [notice, setNotice] = useState("");
   const load = useCallback(async () => {
     try {
       const d = await api.getComponentNotes(unitId);
-      if (d?.readerMode === "OFF") { setHidden(true); return; }
-      setData(d); setError(""); setHidden(false);
+      if (d?.readerMode === "OFF") { setUnavailable("OUT_OF_COHORT"); return; }
+      setData(d); setError(""); setUnavailable(null);
     } catch (e) {
-      if (e?.code === "DEMO_MISS" || e?.status === 404) { setHidden(true); return; } // Mode Latihan / unit di luar cohort: tidak ada catatan komponen untuk ditampilkan
+      // Jujur, bukan diam: Mode Latihan belum punya data komponen (tanpa jaringan, tanpa formulir/unggah) dan unit di luar jalur V2 tidak punya catatan komponen.
+      if (e?.code === "DEMO_MISS" || isDemoActive()) { setUnavailable("DEMO"); return; }
+      if (e?.status === 404) { setUnavailable("OUT_OF_COHORT"); return; }
       setError("Catatan komponen belum bisa dimuat.");
     }
   }, [unitId]);
-  useEffect(() => { setData(null); setHidden(false); load(); }, [load]);
+  useEffect(() => { setData(null); setUnavailable(null); load(); }, [load]);
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 4000); return () => clearTimeout(t); }, [notice]);
-  if (hidden) return null;
+  if (unavailable) {
+    return (
+      <p role="status" data-testid="component-unavailable" data-reason={unavailable} className="m-0 rounded-btn bg-inset px-3 py-2.5 text-[13px] text-ink3">
+        {unavailable === "DEMO" ? "Mode Latihan: catatan komponen belum punya data latihan — formulir dan unggah foto dinonaktifkan." : "Catatan komponen belum tersedia untuk unit ini (unit belum berada di jalur Production V2)."}
+      </p>
+    );
+  }
   if (error && !data) return <p role="alert" className="m-0 text-[13px] text-ink3" data-testid="component-load-error">{error} <button type="button" onClick={load} className="font-bold underline">Coba lagi</button></p>;
   if (!data) return <div className="h-24 animate-pulse rounded-card bg-inset" data-testid="component-loading" />;
 

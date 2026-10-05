@@ -100,7 +100,8 @@ test("Formulir: simpan = command server dengan expectedVersion + Idempotency-Key
   assert.match(s, /tidak memotong stok dan bukan daftar bahan\/pemakaian/); assert.match(s, /api\.uploadComponentNoteMedia\(unitId, \[file\], onProgress\)/);
   assert.match(picker, /MANUAL_LABEL/); assert.match(picker, /UNKNOWN_LABEL/); assert.match(picker, /api\.searchComponentMaterials/); assert.doesNotMatch(picker + s, /stok:|qty|harga|price/i, "formulir tidak menyentuh stok/harga/qty");
   const panel = strip(src("features", "production", "componentNotes", "ComponentNotesPanel.jsx")); assert.match(panel, /data-mutates onClick=\{\(\) => setSheet\(s\.key\)\}/);
-  assert.match(panel, /DEMO_MISS/, "Mode Latihan tanpa data komponen: panel disembunyikan, bukan galat");
+  assert.match(panel, /DEMO_MISS/); assert.match(panel, /isDemoActive()/); assert.match(panel, /data-testid="component-unavailable"/); assert.match(panel, /Mode Latihan: catatan komponen belum punya data latihan — formulir dan unggah foto dinonaktifkan/);
+  assert.match(panel, /belum berada di jalur Production V2/, "fallback jujur: tidak disembunyikan diam-diam");
 });
 
 test("Ringkasan Sebelum→Sesudah: data belum dicatat tampil 'Belum dicatat'; komponen yang tetap digunakan ditandai; tidak ada hasil karangan", () => {
