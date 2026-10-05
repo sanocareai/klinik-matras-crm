@@ -28,14 +28,29 @@ Bukti QA dihasilkan dari browser nyata (puppeteer, klik UI) + HTTP nyata terhada
 2. `production_operation_runs_v2.delay_kind VARCHAR(20), delay_note TEXT` (nullable).
 3. `CREATE TABLE production_settings (key PK, value JSONB, updated_by_id, created_at, updated_at)`.
 
-**Rehearsal pada DB terisolasi** (`node scripts/production-delivery-v2/slice2-migration-rehearsal.js`, DB unik `km_it_*_test` dihapus di akhir): **12/12** — *clean* (`migrate deploy` dari nol, kolom/tabel ada, `migrate status` up-to-date, objek slice 2 tidak muncul di diff drift) dan *upgrade* (semua migration kecuali slice 2 → isi data produksi-like → deploy slice 2: jumlah baris + sidik tabel lama **identik**, kolom baru NULL, `production_settings` kosong, kebijakan dapat ditulis; **rollback DROP dijalankan pada salinan dan data lama tetap utuh**). Drift lama non-slice-2 (mis. default `activity_events.id`) sudah ada sebelumnya dan tidak diubah.
+**Rehearsal pada DB terisolasi** (`node scripts/production-delivery-v2/slice2-migration-rehearsal.js`, DB unik `km_it_*_test` dihapus di akhir): **12/12** — *clean* (`migrate deploy` dari nol, kolom/tabel ada, `migrate status` up-to-date, objek slice 2 tidak muncul di diff drift) dan *upgrade* (semua migration kecuali slice 2 → isi data produksi-like → deploy slice 2: jumlah baris + sidik tabel lama **identik**, kolom baru NULL, `production_settings` kosong, kebijakan dapat ditulis; `DROP` aditif dijalankan pada salinan dan data lama tetap utuh — **hanya bukti teknis, bukan prosedur production** (lihat Runbook rollback)). Drift lama non-slice-2 (mis. default `activity_events.id`) sudah ada sebelumnya dan tidak diubah.
 
-## Batas rollback
+## Runbook rollback (dikoreksi)
 
-* **Belum ada deploy** — membatalkan = tidak men-deploy / revert commit; production tidak tersentuh.
-* **Setelah (nanti) deploy:** kode lama mengabaikan 3 objek aditif (nullable), rute baru hilang. `DROP` 3 objek (teruji di rehearsal) membuang: kebijakan adaptasi per run, alasan tunda pekerjaan papan, dan setelan Admin (lokasi bawaan, default adaptasi). Data lama utuh.
-* **Tidak dapat/tidak patut dibatalkan setelah dipakai:** bukti `SKIPPED` + ledger `SKIPPED`, catatan "QC tidak dilakukan", run yang sudah `COMPLETED`/unit `READY_FOR_DELIVERY` lewat adaptasi, retur/stok yang sudah diterima Gudang, job Delivery yang sudah ada — semuanya catatan bisnis yang benar, bukan data sementara.
-* **Run adaptasi yang masih berjalan saat rollback kode** (gerbang QC sudah dicatat "tidak dilakukan" tetapi belum ditutup): kode lama tidak mengenal kebijakan itu — selesaikan dulu lewat Selesaikan Produksi sebelum rollback, atau tangani manual oleh Production Lead.
+**Prosedur production = rollback APLIKASI saja; migration aditif `20261016100000` DIPERTAHANKAN.** Tiga objeknya (dua kolom nullable + satu tabel) tidak dibaca/ditulis kode lama dan tidak mengikat data lama. Teruji: kode lama (`c97e4b65`, 215 migration dikenal) dijalankan pada DB yang sudah bermigrasi slice 2 → `prisma migrate deploy` melapor "No pending migrations", server naik, 0 error. Roll-forward berikutnya tidak perlu migrasi ulang.
+
+* **`DROP` kolom/tabel di rehearsal hanya bukti teknis** bahwa objek aditif tidak menyentuh data lama. **Bukan prosedur production — jangan dijalankan**: membuang kebijakan adaptasi per run, alasan tunda, dan setelan Admin yang masih dibutuhkan saat roll-forward.
+* **Belum ada deploy** — membatalkan slice ini sekarang = tidak men-deploy / revert commit.
+* Tidak dapat/tidak patut dibatalkan setelah dipakai: bukti `SKIPPED` + ledger `SKIPPED`, catatan "QC tidak dilakukan", run `COMPLETED`/unit `READY_FOR_DELIVERY` lewat adaptasi, retur/stok yang diterima Gudang, job Delivery — semuanya catatan bisnis yang benar.
+
+### Batas kompatibilitas run adaptasi dan bukti SKIPPED dengan kode lama
+
+Diuji dengan image kode lama pada **salinan DB staging** (sudah bermigrasi + berisi 9 run adaptasi berbagai keadaan); semua endpoint baca 200, 0 error. Hasil:
+
+| Keadaan data (dibuat kode baru) | Perilaku kode lama | Dampak |
+|---|---|---|
+| Run adaptasi **selesai** (`COMPLETED`, unit Siap Kirim, QC/HANDOFF `NOT_APPLICABLE`, tanpa custody barang jadi) | Terbaca normal: bucket SELESAI, progres 12/12 | Aman. Tampilan keliru: tahap `SKIPPED` tampil **dikerjakan**, QC "Belum QC", tanpa penanda dilewati; pada run yang semua tahapnya dilewati, pesan laporan Sales memuat teks `undefined`. Bukti SKIPPED tetap di DB → benar lagi setelah roll-forward. |
+| Run adaptasi **berjalan** (gerbang QC dicatat "tidak dilakukan", Corner jalan) | Kartu/antrean tampil; tahap 9 → "Kirim ke Corner", Corner 10–11 tetap bisa dikerjakan | Tidak ada kerusakan data. Label adaptasi, Lewati, Tunda 4 alasan hilang. |
+| Run dengan tahap awal **dilewati** (SKIPPED) | Tahap itu dianggap selesai; tahap berikutnya bisa dicatat (200) | Tahap dilewati terhitung dikerjakan di progres/KPI lama. |
+| Run adaptasi **siap diselesaikan** (semua tahap tuntas, belum "Selesaikan Produksi") | Tampil sebagai tahap 12 di Corner (11/12); upaya menutup ditolak **409 `CUSTODY_QC_NOT_SATISFIED`** | **Terkunci:** tidak ada pencatatan palsu, tetapi run tidak bisa ditutup di kode lama (tidak ada Selesaikan Produksi; handoff barang jadi menuntut QC lulus/waive). Jalan keluar: roll-forward, atau QC resmi/waive oleh pihak berwenang, atau penanganan manual Production Lead. |
+| Fitur baru | Rute `finish-preview`, `settings`, `skip`, `delay`, `resume-work`, `adaptation` = 404; Unit Tiba lama meminta lokasi; Diagnosis lama meminta layanan teknis | Fitur hilang; data tidak berubah. |
+
+**Urutan aman sebelum rollback:** (1) matikan mode adaptasi untuk run baru; (2) selesaikan lewat Selesaikan Produksi semua run adaptasi yang berjalan (atau tunda rollback); (3) pastikan tidak ada run adaptasi di keadaan "siap diselesaikan"; (4) baru rollback aplikasi tanpa menyentuh migration. Run adaptasi yang tersisa setelah rollback tidak bisa ditutup oleh kode lama (lihat baris terkunci di atas).
 
 ## Matriks gerbang — sebelum / sesudah
 
@@ -44,11 +59,15 @@ Bukti QA dihasilkan dari browser nyata (puppeteer, klik UI) + HTTP nyata terhada
 | Backend unit (`npm test`) | 978/978 | **986/986** |
 | Frontend (`node --test tests/*.test.js`) | 611/611 | **623/623** |
 | Integrasi slice 2 (HTTP nyata, DB terisolasi) | — (baru) | **13/13** (A…L + C2) |
-| Integrasi regresi production/custody/V1 (24 berkas, satu DB terisolasi, berkas berjalan paralel) | lulus pada slice 1 | **235/236** — 1 gagal = interferensi flag global antar berkas paralel (`productionCommandCenter` “reader OFF” membaca `COHORT` dari berkas lain); **lulus 7/7 saat dijalankan sendiri**. Bukan regresi kode. |
+| Integrasi regresi production/custody/V1 (24 berkas, serial, satu DB terisolasi) | lulus pada slice 1 | **236/236**, 0 gagal (finalisasi). Penyebab kegagalan 1 tes pada putaran sebelumnya = tabel `v2_feature_flags` tidak dikosongkan antar-berkas; kini masuk `truncateAll()` (`tests/integration/setup/testDb.js`). |
 | Audit penulis berbasis kepemilikan (dalam unit) | lulus | **lulus** — penutup run (`COMPLETED`) 2→3 pemilik dengan asersi kepemilikan; `production_settings`, `production_service_id`, `delayKind`, skip-engine, `completeAdaptationRunInTx` masing-masing dikunci ke pemilik tunggal |
-| Rehearsal migration clean + upgrade | — | **12/12** |
+| Rehearsal migration clean + upgrade | — | **12/12** (diulang setelah kata-kata skrip diperbarui) |
 | `git diff --check` | bersih | **bersih** |
 | QA browser/HTTP staging | slice 1: API 39/39, UI 71/71 | lihat tabel QA di bawah |
+
+## Identitas runtime: HEAD = kandidat yang diuji
+
+HEAD finalisasi menambah HANYA docs/tes-infrastruktur di atas `4553c7f6`. Bukti: `git rev-parse` pohon `backend` identik (`a6fa4e42…`) dan pohon `frontend/src` identik (`3433844e…`) antara `4553c7f6` dan HEAD; isi container backend staging (`/app/src`, `/app/prisma`, `/app/scripts`, `package.json`) **0 perbedaan** terhadap `git archive` HEAD; build frontend HEAD disalin ke `frontend/dist` yang dilayani staging (hash `index-BD_xB2Kf.js` sama dengan yang diuji). Jadi angka QA yang dikaitkan dengan `4553c7f6` berlaku untuk kode HEAD.
 
 ## Hasil QA staging (image kandidat bersih)
 
@@ -63,6 +82,7 @@ Bukti QA dihasilkan dari browser nyata (puppeteer, klik UI) + HTTP nyata terhada
 | Fase 3 — diagnosis UI, pemetaan UI (4 varian), Unit Tiba sukses | **39/39** | |
 | Fase 4 — butuh konfigurasi (error Unit Tiba) 4 varian + pemulihan | **19/19** | |
 | Fase 5 — PIC Corner menutup produksi (UI, 4 varian) + KPI | 25/29 + 1/1 | 4 gagal = filter teks uji menghapus baris ber-prefix `QA-PV2`; panel terbukti di screenshot dan **diulang dengan teks mentah (lulus)** |
+| Fase 6 — jalur layanan **belum dipetakan** di browser (operator isi Diagnosis → pesan → Admin memetakan di Pengaturan → operator melanjutkan) | **18/18** | percobaan pertama 17/18 pada unit pertama karena asersi memeriksa teks tombol yang salah (bukan perilaku); diulang pada unit baru, lulus. Screenshot S2-50…S2-55. |
 
 **Temuan QA yang menjadi perbaikan produk (semua sudah dikunci tes):**
 1. PIC **Corner** ditolak saat Selesaikan Produksi (otorisasi hanya PIC Meja) → boleh PIC Meja *atau* PIC Corner (integrasi C2).
@@ -100,3 +120,4 @@ Bukti QA dihasilkan dari browser nyata (puppeteer, klik UI) + HTTP nyata terhada
 | `S2-23-unit360-run-lama-*` (4 varian), `S2-24`, `S2-25` | Unit 360 run lama: terapkan adaptasi (konfirmasi) → aktif |
 | `S2-26`, `S2-26a`, `S2-27` | Unit 360 & laporan run adaptasi (dilewati, QC tidak dilakukan, Gudang tidak diwajibkan) |
 | `S2-40-corner-siap-selesaikan-*`, `S2-41-corner-produksi-selesai-*` (4 varian) | PIC Corner: Selesaikan Produksi → panel hasil |
+| `S2-50…S2-55` | Diagnosis tanpa layanan teknis: review sebelum kirim → pesan layanan belum dipetakan (arahan ke Admin) → Admin memetakan di Pengaturan → operator melanjutkan → berhasil |

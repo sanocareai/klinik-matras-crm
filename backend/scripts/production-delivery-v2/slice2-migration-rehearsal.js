@@ -2,8 +2,8 @@
 // Rehearsal migration slice 2 (20261016100000_production_adaptation_slice2) pada DATABASE UNIK TERISOLASI (pola runIsolated: km_it_*_test, dihapus di akhir; tidak menyentuh DB lain).
 //   A. CLEAN  : migrate deploy dari nol -> kolom/tabel baru ada, `migrate status` up-to-date, tidak ada drift terhadap schema.prisma.
 //   B. UPGRADE: migrate deploy SEMUA migration KECUALI slice 2 -> isi data "produksi-like" (run + fase + operasi + bukti + custody) -> deploy slice 2 -> data lama IDENTIK
-//               (sidik per tabel), kolom baru NULL pada baris lama, tabel pengaturan kosong; kebijakan adaptasi dapat ditulis; ROLLBACK terdokumentasi (DROP kolom/tabel) dijalankan pada salinan
-//               dan data lama tetap utuh.
+//               (sidik per tabel), kolom baru NULL pada baris lama, tabel pengaturan kosong; kebijakan adaptasi dapat ditulis; BUKTI TEKNIS (bukan prosedur production): DROP kolom/tabel aditif dijalankan
+//               pada salinan dan data lama tetap utuh. Rollback production = rollback aplikasi; migration aditif DIPERTAHANKAN (lihat docs/design/production-simplifikasi-slice2/README.md).
 //   node scripts/production-delivery-v2/slice2-migration-rehearsal.js
 import "../../tests/integration/setup/env.js";
 import { TEST_DATABASE_URL } from "../../tests/integration/setup/env.js";
@@ -90,12 +90,12 @@ try {
   await cb2.$executeRawUnsafe(`update production_runs_v2 set adaptation_policy='ADAPTATION_V1' where id='${run.id}'::uuid`);
   check("B upgrade: kebijakan adaptasi dapat ditulis per run", (await cb2.$queryRawUnsafe(`select adaptation_policy a from production_runs_v2 where id='${run.id}'::uuid`))[0].a === "ADAPTATION_V1");
   await cb2.$executeRawUnsafe(`update production_runs_v2 set adaptation_policy=null where id='${run.id}'::uuid`);
-  // rollback terdokumentasi pada salinan data (tanpa menyentuh data lama): DROP kolom/tabel aditif
+  // BUKTI TEKNIS saja (BUKAN prosedur production): objek aditif dapat dibuang tanpa mengubah data lama. Production mempertahankan migration saat rollback aplikasi.
   await cb2.$executeRawUnsafe('ALTER TABLE "production_runs_v2" DROP COLUMN "adaptation_policy"');
   await cb2.$executeRawUnsafe('ALTER TABLE "production_operation_runs_v2" DROP COLUMN "delay_kind", DROP COLUMN "delay_note"');
   await cb2.$executeRawUnsafe('DROP TABLE "production_settings"');
   const cb3 = client(b);
-  check("B rollback (DROP aditif): data lama utuh setelah kolom/tabel baru dibuang", (await fingerprint(cb3, "production_step_evidence_v2")) === before.production_step_evidence_v2 && (await fingerprint(cb3, "production_phase_runs_v2")) === before.production_phase_runs_v2 && (await fingerprint(cb3, "units")) === before.units);
+  check("B bukti teknis (bukan prosedur production): data lama utuh walau kolom/tabel aditif dibuang", (await fingerprint(cb3, "production_step_evidence_v2")) === before.production_step_evidence_v2 && (await fingerprint(cb3, "production_phase_runs_v2")) === before.production_phase_runs_v2 && (await fingerprint(cb3, "units")) === before.units);
   await cb3.$disconnect(); await cb2.$disconnect();
 } finally {
   await admin.$disconnect();
