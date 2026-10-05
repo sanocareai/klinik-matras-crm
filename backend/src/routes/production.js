@@ -24,6 +24,7 @@ import {
 import { resolveEffectiveWorkCenterId, OPERATOR_SKILL_LEVELS } from "../lib/domain/productionRouting.js";
 import { loadCurrentStageAssignments } from "../services/productionRouting.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { prisma } from "../db.js";
 import { notifyReadyForDelivery } from "../services/customerNotifications.js";
 
@@ -401,6 +402,9 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
       // tambahan, TIDAK bertambah seiring jumlah unit.
       loadCurrentStageAssignments(units),
     ]);
+    // Sumber V1/V2 per unit (P12B.5): cohort reader yang SAMA dengan Unit 360 (production-v2). READ-ONLY — tidak membuat Run/backfill; reader OFF = semua V1.
+    const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
+    const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
     const unitsWithStatus = units.map((u) => {
       const lastLog = lastLogByUnitId[u.id] || null;
       const blocker = blockerByUnitId[u.id] || null;
@@ -409,7 +413,7 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
         unit: u, lastLog, hasOpenBlocker: !!blocker, currentStageRequiresQc: !!u.currentStage?.requiresQc,
       });
       return {
-        ...u, productionStatus,
+        ...u, inProductionV2: v2Units.has(u.id), productionStatus,
         productionStatusReason: describeProductionStatus(productionStatus, lastLog, blocker),
         // Work Center/Assigned To (Slice 4O) — dari StageAssignment tahap
         // sekarang (batch, di atas), fallback ke defaultWorkCenter tahap

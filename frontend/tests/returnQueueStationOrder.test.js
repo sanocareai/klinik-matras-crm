@@ -51,7 +51,7 @@ test("Rencana: urutan manual lewat seret DAN tombol Naik/Turun, memanggil satu c
   assert.match(RENCANA, /usePlanDrag\(\{/, "seret-lepas pointer (mouse + sentuh) lewat handle");
   assert.match(RENCANA, /case "reorder": reorderStation\(/);
   assert.match(RENCANA, /decideDrop\(\{ view, target, stations: stationsRef\.current, date \}\)/);
-  assert.match(RENCANA, /orderedStationItems\(station\.items\)/);
+  assert.match(RENCANA, /planDisplayOrder\(station\.items\)/);
   assert.doesNotMatch(RENCANA, /\(b\.plan\?\.priority \?\? 0\) - \(a\.plan\?\.priority \?\? 0\)/, "tidak ada sort prioritas lokal yang menimpa urutan manual");
   assert.match(RENCANA, /Urutan diatur manual/); assert.match(RENCANA, /Urutan bawaan: prioritas/);
   assert.match(API, /reorderProductionV2Station:[\s\S]{0,200}\/production-v2\/stations\/reorder/);

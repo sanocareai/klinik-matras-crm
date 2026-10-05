@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { GitBranch, RefreshCw, Loader2, Copy } from "lucide-react";
+import { unitDetailPath } from "@/lib/legacyProductionRoutes.js";
 import { api } from "@/api.js";
 import { rolesOf } from "@/lib/roles.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -254,10 +255,10 @@ export default function ProductionScopeRevisions() {
             )}
 
             <button
-              type="button" onClick={() => navigate(`/bengkel/units/${selected.unitId}`)}
+              type="button" onClick={() => navigate(unitDetailPath(selected.unitId))}
               className="text-[11.5px] font-semibold text-accent hover:underline"
             >
-              Buka Detail Unit →
+              Buka Unit 360 →
             </button>
           </div>
         )}

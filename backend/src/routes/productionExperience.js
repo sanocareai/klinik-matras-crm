@@ -21,6 +21,7 @@ import { productionReportsRouter } from "./productionReports.js";
 import { productionTargetsRouter } from "./productionTargets.js";
 import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
+import { UUID_RE, isUnitV2ExecutionOwned, findV1Drift } from "../services/unitV2Ownership.js";
 import { BOARD_DEFAULTS } from "../lib/domain/productionBoard.js";
 
 export const productionExperienceRouter = express.Router();
@@ -105,22 +106,26 @@ productionExperienceRouter.get("/runs/:runId/card", requireAnyPermission(...READ
 // ini wajib ada di reader cohort) — unit di luar cohort 404, BUKAN data V2 bocor lewat jalur ini.
 productionExperienceRouter.get("/units/:unitId/overview", requireAnyPermission(...READ_PERMS), async (req, res) => {
   try {
+    if (!UUID_RE.test(String(req.params.unitId))) return res.status(400).json({ error: "ID unit tidak valid", code: "ID_INVALID" }); // P12B.6: bukan 500 dari cast UUID
     const unitIds = await readerCohort();
     if (!unitIds) return res.status(404).json({ error: "Unit 360 tidak tersedia", code: "PRODUCTION_V2_READER_OFF" });
     const overview = await getUnitOverview(prisma, req.params.unitId, { unitIds, canSeeValue: hasPermission(req.user, P.ORDER_PRICE_READ) });
     if (!overview) return res.status(404).json({ error: "Unit tidak ditemukan atau di luar cohort", code: "UNIT_NOT_FOUND" });
-    res.json({ readerMode: "COHORT", ...overview });
+    // P12B.6: V2 memiliki eksekusi unit ini (writer ON + Run non-terminal)? Bila TIDAK, tidak ada jalur V2 yang sah -> drawer menawarkan jalur kerja V1 (kontrak sama dgn guard server).
+    const activeRun = await prisma.productionRun.findFirst({ where: { unitId: req.params.unitId, status: { notIn: ["COMPLETED", "CANCELLED"] } }, select: { id: true } });
+    const v1Drift = activeRun ? await findV1Drift(prisma, { runId: activeRun.id, unitId: req.params.unitId }) : null; // aksi V1 saat writer OFF -> command V2 berhenti sampai rekonsiliasi
+    res.json({ readerMode: "COHORT", ...overview, ownership: { v2ExecutionOwned: await isUnitV2ExecutionOwned(prisma, req.params.unitId), v1Drift } });
   } catch (err) { handleErr(err, res); }
 });
 
-// GET /api/production-v2/worker/:lane (table|corner) — antrean milik operator yang login.
+// GET /api/production-v2/worker/:lane (table|corner) — antrean milik operator yang login (ADMIN/OWNER: antrean semua PIC pada lane itu).
 productionExperienceRouter.get("/worker/:lane", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
     const lane = req.params.lane === "corner" ? "CORNER" : req.params.lane === "table" ? "TABLE" : null;
     if (!lane) return res.status(404).json({ error: "Antrean tidak dikenal" });
     const unitIds = await readerCohort();
     if (!unitIds) return inert(res, { items: [], operator: null });
-    res.json({ readerMode: "COHORT", lane, ...(await listWorkerQueue(prisma, { unitIds, userId: req.user.id, lane })) });
+    res.json({ readerMode: "COHORT", lane, ...(await listWorkerQueue(prisma, { unitIds, userId: req.user.id, lane, all: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY) })) });
   } catch (err) { handleErr(err, res); }
 });
 
@@ -309,10 +314,10 @@ productionExperienceRouter.post("/units/:unitId/confirm-arrival", requirePermiss
 productionExperienceRouter.use(productionEvidenceUploadRouter);
 // P10B — Aplikasi Dokumentasi (antrean, matriks, unggah, kirim, koreksi): izin & cohort diperiksa di router.
 productionExperienceRouter.use("/documentation", productionDocumentationRouter);
-// P12A — Mode Demo: server hanya MEMUTUSKAN boleh/tidak (ADMIN/OWNER). Data demo sintetis dimuat frontend setelah 200 dari sini; endpoint ini tidak membaca/menulis database.
+// P12A/P12B.2 — Mode Latihan: server hanya MEMUTUSKAN boleh/tidak (ADMIN, OWNER, Production Lead, Operator/PIC, QC, Gudang, Dokumenter; Sales/Finance/Driver ditolak 403). Data latihan sintetis dimuat frontend setelah 200 dari sini; endpoint ini tidak membaca/menulis database.
 productionExperienceRouter.get("/demo/access", requirePermission(P.PRODUCTION_DEMO_VIEW), (req, res) => {
   res.set("Cache-Control", "no-store");
-  res.json({ allowed: true, readOnly: true, label: "MODE DEMO — bukan data operasional" });
+  res.json({ allowed: true, readOnly: true, label: "MODE LATIHAN — bukan data operasional" });
 });
 // P11 — Reporting & KPI Production–Warehouse (baca-saja; izin & cohort diperiksa di router).
 productionExperienceRouter.use("/targets", productionTargetsRouter);

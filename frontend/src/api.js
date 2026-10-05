@@ -334,6 +334,12 @@ export const api = {
   // backend — batalkan dulu baru bisa dihapus.
   deleteRoute: (id) => request(`/armada/routes/${id}`, { method: "DELETE" }),
 
+  // Usulan Prioritas Pagi (Route Planner -> Produksi, 3 Oktober 2026) — dispatcher mengusulkan order
+  // yang masih Diproses, production_lead/admin menyetujui/menolak. Lihat backend/src/services/morningPriority.js.
+  getMorningPriorityRequests: (params = {}) => request(`/morning-priority-requests${buildQuery(params)}`),
+  requestMorningPriority: (orderId, data = {}) => request("/morning-priority-requests", { method: "POST", body: JSON.stringify({ orderId, ...data }) }), // berlaku langsung
+  dismissMorningPriority: (id) => request(`/morning-priority-requests/${id}/dismiss`, { method: "PATCH" }),
+
   // Proof of Delivery — sisi verifikasi (Delivery Tahap 4)
   // D-085 — sebelumnya cuma terima `status` (string tunggal). Sekarang
   // objek params supaya `from`/`to` (rentang tanggal) bisa ikut, pola SAMA
@@ -710,11 +716,12 @@ export const api = {
   completeUnitStage: (unitId, stageId, { photoUrls, note } = {}) =>
     request(`/units/${unitId}/stages/${stageId}/complete`, { method: "POST", body: JSON.stringify({ photoUrls, note }) }),
   skipUnitStage: (unitId, note) => request(`/units/${unitId}/stages/skip`, { method: "POST", body: JSON.stringify({ note }) }),
-  setUnitService: (unitId, serviceId) => request(`/units/${unitId}/service`, { method: "PATCH", body: JSON.stringify({ serviceId }) }),
+  // expectedServiceId (opsional): nilai yang DILIHAT klien (null = belum ada) — server menulis hanya bila masih sama (konflik atomik, 409 UNIT_CONFLICT).
+  setUnitService: (unitId, serviceId, expectedServiceId) => request(`/units/${unitId}/service`, { method: "PATCH", body: JSON.stringify({ serviceId, ...(expectedServiceId !== undefined ? { expectedServiceId } : {}) }) }),
   // Prioritas & tanggal target produksi (Production Core Slice 1) — TERPISAH
   // dari stage engine, murni metadata perencanaan. Permission UNIT_ROUTING_WRITE.
-  updateUnitProduction: (unitId, { priority, productionDueAt } = {}) =>
-    request(`/units/${unitId}/production`, { method: "PATCH", body: JSON.stringify({ priority, productionDueAt }) }),
+  updateUnitProduction: (unitId, { priority, productionDueAt, expected } = {}) =>
+    request(`/units/${unitId}/production`, { method: "PATCH", body: JSON.stringify({ priority, productionDueAt, ...(expected ? { expected } : {}) }) }),
   getServiceCatalog: () => request("/master-data/service-catalog"),
 
   // ── Production Experience V2 (P8): Planner papan meja, PIC Table/Corner, Andon, antrean Gudang, laporan Sales ──

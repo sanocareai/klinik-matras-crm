@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { summaryFromV1, summaryFromV2 } from "../src/features/production/ringkasanModel.js";
+import { PRODUCTION_NAV } from "../src/lib/productionNav.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Komentar dibuang: tes memeriksa KODE, bukan catatan yang (wajar) menyebut komponen lama.
@@ -29,14 +30,16 @@ function loadModel() {
   return new Function("STEP_BY_NO", "bucketStyle", "PRODUCT_TYPE_LABELS", `${src}\nreturn { priorityMeta, dataGaps, materialBadge, stageText, backlogOf, mergeQcWithViews, pipelineChips, mejaLabel, MEJA, humanizeRequest, isGantiKain, mattressInfo, salesNoteOf };`)(STEP_BY_NO, bucketStyle, PRODUCT_TYPE_LABELS);
 }
 
-test("Navigasi Production: OPERASIONAL hanya 5 menu; Aplikasi Meja/Corner/Andon di 'MODE KERJA & PERANGKAT'; Legacy admin-only & tertutup", () => {
-  const prod = LAYOUT.slice(LAYOUT.indexOf("bengkel: {"), LAYOUT.indexOf("// Workspace ke-5"));
-  const operasional = prod.slice(prod.indexOf('section: "OPERASIONAL"'), prod.indexOf('section: "MODE KERJA & PERANGKAT"'));
-  const labels = [...operasional.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(labels, ["Ringkasan", "Status Produksi", "Rencana Produksi", "Quality Control", "Laporan Produksi"]);
-  const mode = prod.slice(prod.indexOf('section: "MODE KERJA & PERANGKAT"'), prod.indexOf('section: "PENGATURAN & ADMINISTRASI"'));
-  for (const l of ["Aplikasi Meja", "Aplikasi Corner", "Andon TV"]) assert.ok(mode.includes(`"${l}"`), l);
-  assert.match(prod, /section: "LEGACY \(ADMIN\)",\s*adminOnly: true,[\s\S]*?collapsibleDefaultClosed: true/);
+test("Navigasi Production (P12B.2): OPERASIONAL 6 menu; MODE KERJA akordeon default tertutup; KONTROL & LAPORAN 3 menu; ADMINISTRASI = Pengaturan; tanpa Legacy", () => {
+  const sec = Object.fromEntries(PRODUCTION_NAV.map((x) => [x.section, x]));
+  assert.deepEqual(PRODUCTION_NAV.map((x) => x.section), ["OPERASIONAL", "MODE KERJA", "KONTROL & LAPORAN", "ADMINISTRASI"]);
+  assert.deepEqual(sec["OPERASIONAL"].items.map((i) => i.label), ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Quality Control", "Bahan Produksi"]);
+  assert.deepEqual(sec["MODE KERJA"].items.map((i) => i.label), ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]);
+  assert.ok(sec["MODE KERJA"].collapsible && sec["MODE KERJA"].defaultClosed, "akordeon, default tertutup");
+  assert.deepEqual(sec["KONTROL & LAPORAN"].items.map((i) => i.label), ["KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]);
+  assert.deepEqual(sec["ADMINISTRASI"].items.map((i) => i.label), ["Pengaturan"]);
+  assert.match(LAYOUT, /PRODUCTION_NAV\.map/, "Layout membangun menu dari lib/productionNav.js");
+  assert.doesNotMatch(LAYOUT, /LEGACY \(ADMIN\)|Inspeksi QC \(lama\)/, "tanpa section Legacy");
 });
 
 test("Ringkasan: SATU dashboard — tidak lagi menumpuk CommandCenterSummary + hero 'Pusat Kendali Produksi' V1", () => {
@@ -102,8 +105,9 @@ test("Kartu unit SAMA dipakai Status, Rencana, dan QC; klik membuka Unit 360", (
   assert.match(CARD, /Buka Unit 360/);
 });
 
-test("QC hub: tab 'Inspeksi QC (lama)' hanya ADMIN (legacy) — staf lain satu pengalaman", () => {
-  assert.match(QC_HUB, /isAdmin &&/);
+test("QC hub (P12B.2): tab 'Inspeksi QC (lama)' DIHAPUS dari UI — satu pengalaman QC untuk semua peran", () => {
+  assert.doesNotMatch(QC_HUB, /Inspeksi QC|ProductionQcQueue|isAdmin/);
+  assert.match(QC_HUB, /<ProductionQc \/>/);
 });
 
 test("Kartu foto-pertama: foto besar di atas, placeholder eksplisit 'Belum ada foto', prioritas merah TIDAK hanya warna (ikon+teks)", () => {
@@ -227,21 +231,51 @@ test("Sandbox#10 Gudang: retur & waste bisa ditautkan ke unit (unitId) supaya Si
 
 // Revisi kartu Rencana Produksi (2 Okt 2026): layanan cukup dari Sales (tanpa Layanan Teknis), + jenis/merk/ukuran kasur,
 // + catatan Sales, + Ganti Kain berwarna beda (krusial: harus sesuai keinginan customer).
-test("Rencana Produksi: kartu tanpa Layanan Teknis (prop showTechService=false), Status/QC tetap menampilkannya", () => {
+const PLAN = read("features", "production", "PlanCard.jsx");
+test("Rencana Produksi: kartu PlanCard tanpa Layanan Teknis & tanpa harga; Status/QC (UnitCard) tetap menampilkan Layanan Teknis", () => {
   assert.match(CARD, /showTechService = true/);
   assert.match(CARD, /\{showTechService && \(/);
-  assert.equal((RENCANA.match(/showTechService=\{false\}/g) || []).length, 3, "kartu backlog + kartu meja + ghost seret");
-  assert.ok(!/Layanan Teknis/.test(RENCANA), "Rencana tidak menyebut Layanan Teknis sama sekali");
+  assert.ok(!/Layanan Teknis|tech-service|formatRupiah|orderValue/.test(PLAN), "PlanCard: tanpa Layanan Teknis dan tanpa harga");
+  assert.ok(!/Layanan Teknis|formatRupiah|orderValue/.test(RENCANA));
+  assert.equal((RENCANA.match(/<PlanCard /g) || []).length, 3, "backlog + meja + ghost seret");
+  assert.ok(!/<UnitCard /.test(RENCANA), "Rencana tidak lagi memakai UnitCard");
 });
-test("Kartu unit: baris Kasur (jenis·merk·ukuran) & Catatan Sales ada di kartu Production dan kartu Akan Masuk", () => {
+test("Kartu unit: baris Kasur (jenis·merk·ukuran) & Catatan Sales ada di kartu Status/QC/Akan Masuk (UnitCard)", () => {
   assert.match(CARD, /data-testid="mattress-info"/);
   assert.equal((CARD.match(/<MattressLine view=/g) || []).length, 2);
   assert.equal((CARD.match(/<SalesNote view=/g) || []).length, 2);
 });
+test("PlanCard: tiga blok berbeda (Layanan Sales biru · Kasur netral · Catatan Sales kuning + 'Sales: nama'), teks kosong, operasional terpisah, dua kolom via container query", () => {
+  for (const t of ['kind="sales" label="Layanan Sales"', 'kind="kasur" label="Kasur"', 'kind="note" label="Catatan Sales"']) assert.ok(PLAN.includes(t), t);
+  for (const t of ["Layanan belum dicatat Sales", "Data kasur belum lengkap", "Catatan Sales belum tersedia", "Sales: {c.salesName}"]) assert.ok(PLAN.includes(t), t);
+  for (const t of ["Tahap", "Bahan", "Target", "Meja", "PIC usulan", "tahap</span>"]) assert.ok(PLAN.includes(t), t);
+  assert.match(PLAN, /testid="row-stage"/); assert.match(PLAN, /testid="row-material"/, "status bahan terpisah dari nama tahap");
+  assert.match(PLAN, /@container/); assert.match(PLAN, /@\[34rem\]:grid-cols-2/);
+  assert.match(PLAN, /formatTanggal\(plan\.productionDate\)/, "target format Indonesia");
+  assert.match(PLAN, /Urutan \$\{seq\}/);
+  assert.match(PLAN, /h-\[68px\]|variant="plan"/);
+  const css = fs.readFileSync(path.join(__dirname, "..", "src", "index.css"), "utf8");
+  for (const c of [".plan-block-sales", ".plan-block-kasur", ".plan-block-note", ".plan-prio-urgent", ".plan-prio-high", ".plan-prio-normal"]) assert.ok(css.includes(c), c);
+});
+test("Prioritas kanonis: MENDESAK merah tua + api + garis tebal; TINGGI merah terang; NORMAL biru; overdue badge terpisah; tidak diinfer dari catatan", () => {
+  const M = loadModel();
+  const u = M.priorityMeta(2), h = M.priorityMeta(1), n = M.priorityMeta(0);
+  assert.deepEqual([u.label, u.icon, u.badgeClass, u.stripeWidth], ["Mendesak", "urgent", "plan-prio-urgent", 7]);
+  assert.deepEqual([h.label, h.icon, h.badgeClass, h.stripeWidth], ["Tinggi", "high", "plan-prio-high", 5]);
+  assert.deepEqual([n.label, n.icon, n.badgeClass], ["Normal", null, "plan-prio-normal"]);
+  assert.ok(u.stripeWidth > h.stripeWidth && h.stripeWidth > n.stripeWidth, "garis kiri makin tebal makin mendesak");
+  assert.match(PLAN, /view\.timer\?\.late && <Badge variant="red">Terlambat<\/Badge>/, "overdue = badge terpisah");
+  assert.match(PLAN, /priorityMeta\(plan\?\.priority \?\? 0\)/, "prioritas dari plan.priority");
+  assert.ok(!/request|notes|catatan/i.test(PLAN.slice(PLAN.indexOf("const p = priorityMeta"), PLAN.indexOf("const p = priorityMeta") + 80)), "tidak diinfer dari teks");
+});
 test("Ganti Kain: kartu berwarna beda (oranye) + kotak peringatan yang selalu tampil; hanya dikenali dari layanan Sales", () => {
-  assert.match(CARD, /kpi-glass-guard ring-2 ring-orange/);
-  assert.match(CARD, /data-testid="ganti-kain-note"/);
-  assert.match(CARD, /data-ganti-kain=/);
+  // P12A.2: latar kartu NORMAL; penanda = garis kiri oranye + kotak peringatan oranye (bukan tint/ring seluruh kartu)
+  assert.ok(!/GANTI_KAIN_STYLE|kpi-glass-guard|ring-2 ring-orange/.test(CARD) && !/GANTI_KAIN_STYLE|kpi-glass-guard|ring-2 ring-orange/.test(PLAN));
+  for (const src of [CARD, PLAN]) {
+    assert.match(src, /data-testid="ganti-kain-note"/); assert.match(src, /data-ganti-kain=/);
+    assert.ok(src.includes("Ganti Kain — pastikan sesuai permintaan customer")); assert.ok(src.includes("Catatan kain belum tersedia — konfirmasi ke Sales"));
+  }
+  assert.match(CARD, /data-testid="ganti-kain-stripe"[\s\S]{0,120}bg-orange/); assert.match(PLAN, /data-testid="ganti-kain-stripe"/);
   const M = loadModel();
   assert.equal(M.isGantiKain({ customer: { salesServices: ["Ganti Kain"] } }), true);
   assert.equal(M.isGantiKain({ customer: { salesServices: ["Full Service (Service + Tambah Busa + Ganti Kain)"] } }), true);

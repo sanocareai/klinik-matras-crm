@@ -91,6 +91,14 @@ export const ENTITY_TYPES = Object.freeze({
 
 export const EVENT_TYPES = Object.freeze({
   PRIORITY_CHANGED: "PRIORITY_CHANGED",
+  // Usulan Prioritas Pagi (Route Planner -> Produksi, 3 Oktober 2026) — lihat
+  // model MorningPriorityRequest di schema.prisma dan services/morningPriority.js.
+  // Entity-nya ORDER (usulan ini bicara soal order, bukan satu unit tertentu);
+  // perubahan Unit.priority yang terjadi saat disetujui TETAP memakai
+  // PRIORITY_CHANGED di atas, dicatat ber-entity UNIT seperti biasa.
+  MORNING_PRIORITY_REQUESTED: "MORNING_PRIORITY_REQUESTED",
+  MORNING_PRIORITY_APPROVED: "MORNING_PRIORITY_APPROVED",
+  MORNING_PRIORITY_DISMISSED: "MORNING_PRIORITY_DISMISSED",
   DUE_DATE_CHANGED: "DUE_DATE_CHANGED",
   SERVICE_ASSIGNED: "SERVICE_ASSIGNED",
   // Production Core Slice 2 — lifecycle ProductionBlocker.
@@ -178,6 +186,9 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_RUN_CANCELLED: "PRODUCTION_RUN_CANCELLED",
   PRODUCTION_RUN_EXCEPTION_OPENED: "PRODUCTION_RUN_EXCEPTION_OPENED",
   PRODUCTION_RUN_EXCEPTION_RESOLVED: "PRODUCTION_RUN_EXCEPTION_RESOLVED",
+  // P12B.6 — aksi V1 yang ditulis saat unit punya Production Run non-terminal TETAPI V2 tidak memegang eksekusi (writer OFF/rollback): penanda drift proyeksi.
+  // Command V2 berhenti (409 PRODUCTION_RUN_V1_DRIFT) sampai Run dibatalkan (rekonsiliasi). Lihat services/unitV2Ownership.js.
+  PRODUCTION_V1_WRITE_ON_V2_RUN: "PRODUCTION_V1_WRITE_ON_V2_RUN",
   // P8 — bukti tahap PIC Table/Corner dan "Menunggu Bahan Baku".
   PRODUCTION_STEP_RECORDED: "PRODUCTION_STEP_RECORDED",
   PRODUCTION_MATERIAL_SHORTAGE_REPORTED: "PRODUCTION_MATERIAL_SHORTAGE_REPORTED",
@@ -317,6 +328,12 @@ export function formatActivitySentence(event) {
   switch (eventType) {
     case EVENT_TYPES.PRIORITY_CHANGED:
       return `Prioritas diubah dari ${PRIORITY_LABEL[metadata.from] || "Normal"} ke ${PRIORITY_LABEL[metadata.to] || "Normal"}`;
+    case EVENT_TYPES.MORNING_PRIORITY_REQUESTED:
+      return `Ditandai prioritas pagi: ${PRIORITY_LABEL[metadata.suggestedPriority] || metadata.suggestedPriority}${metadata.note ? ` — "${metadata.note}"` : ""}`;
+    case EVENT_TYPES.MORNING_PRIORITY_APPROVED:
+      return `Prioritas pagi diterapkan ke ${metadata.unitCount ?? 0} unit: ${PRIORITY_LABEL[metadata.appliedPriority] || metadata.appliedPriority}`;
+    case EVENT_TYPES.MORNING_PRIORITY_DISMISSED:
+      return "Prioritas pagi dibatalkan";
     case EVENT_TYPES.DUE_DATE_CHANGED:
       return metadata.to
         ? `Target produksi diatur ke ${tanggalSaja(metadata.to)}`
@@ -419,6 +436,8 @@ export function formatActivitySentence(event) {
       return `Production Run unit ${metadata.unitCode || "—"} dibatalkan${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.PRODUCTION_RUN_EXCEPTION_OPENED:
       return `Konflik rekonsiliasi dicatat untuk unit ${metadata.unitCode || "—"}: status unit ${metadata.unitStatus || "—"} berbeda dari Production Run yang berjalan`;
+    case EVENT_TYPES.PRODUCTION_V1_WRITE_ON_V2_RUN:
+      return `Aksi V1 (${metadata.what || "—"}) dicatat saat Production Run V2 unit ini masih berjalan — proyeksi V2 perlu direkonsiliasi sebelum command V2 dilanjutkan`;
     case EVENT_TYPES.PRODUCTION_RUN_EXCEPTION_RESOLVED:
       return `Konflik rekonsiliasi unit ${metadata.unitCode || "—"} diselesaikan (${metadata.resolution || "—"})${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.PRODUCTION_STATION_REORDERED:

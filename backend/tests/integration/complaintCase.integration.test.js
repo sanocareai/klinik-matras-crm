@@ -39,12 +39,16 @@ test.before(async () => {
   await truncateAll();
   server = await startTestServer(buildComplaintTestApp());
 });
+// routing_stages = master data (TIDAK ikut truncateAll): stage fixture dilacak lalu dihapus supaya tidak bocor ke berkas lain di database yang sama.
+const fixtureStageIds = [];
+const dropFixtureStages = async () => { if (fixtureStageIds.length) await testPrisma.routingStage.deleteMany({ where: { id: { in: fixtureStageIds.splice(0) } } }); };
 test.after(async () => {
   await server.close();
   await truncateAll();
+  await dropFixtureStages();
   await testPrisma.$disconnect();
 });
-test.afterEach(async () => { await truncateAll(); });
+test.afterEach(async () => { await truncateAll(); await dropFixtureStages(); });
 
 async function clientAs(roles) {
   const { token, user } = await createTestUser({ roles });
@@ -52,9 +56,11 @@ async function clientAs(roles) {
 }
 
 async function makeRoutingStage() {
-  return testPrisma.routingStage.create({
+  const stage = await testPrisma.routingStage.create({
     data: { code: `qc-${Date.now()}-${Math.random()}`, labelId: "Uji Berat Badan", phase: "MODULE", sequence: 1, requiresQc: true },
   });
+  fixtureStageIds.push(stage.id);
+  return stage;
 }
 
 test("Complaint end-to-end: dibuka SAAT ORDER MASIH DIPRODUKSI (bukan DELIVERED) sampai SELESAI, lintas Sales/Delivery/Produksi/Warehouse/QC", async () => {

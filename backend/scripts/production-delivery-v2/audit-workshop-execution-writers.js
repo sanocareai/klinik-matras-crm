@@ -33,7 +33,9 @@ const FORBIDDEN_IN_P5 = [
 // SETIAP fungsi penulis ledger tahap V1 wajib dipagari — diperiksa PER FUNGSI (bukan sekadar jumlah), dan pagar hanya sah di fungsi yang
 // punya parameter unitId (pagar di fungsi tanpa unitId = ReferenceError saat runtime, mematahkan V1) serta tidak di varian *InTx.
 const FENCED_ENGINE_FUNCTIONS = ["startStage", "recordStageDone", "completeStage", "pauseStage", "resumeStage", "failStage", "skipStage", "recordQcFitTest", "adminBypassProduction"];
-const FENCE_CALL = /await assertNotV2ExecutionOwned\(tx, unitId\)/;
+// P12B.6: gerbang kini membawa konteks (apa yang ditulis + aktor) untuk penanda drift: assertNotV2ExecutionOwned(tx, unitId, "<apa>", actorId). Kontraknya TETAP:
+// dipanggil dengan (tx, unitId, ...) di SETIAP fungsi penulis ledger V1. Pemanggilan bentuk lain (mis. resolveBlocker: existing.unitId, hanya-penanda) BUKAN pagar.
+const FENCE_CALL = /await assertNotV2ExecutionOwned\(tx, unitId(?:, [^)]*)?\)/;
 
 // Badan fungsi top-level: dari "function NAME(" sampai deklarasi top-level berikutnya (tanpa parser; cukup untuk engine ini).
 function functionBodies(text) {

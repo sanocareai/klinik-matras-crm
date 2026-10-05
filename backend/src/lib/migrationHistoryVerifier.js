@@ -1,4 +1,4 @@
-// Verifier riwayat migration — SATU pengecualian checksum historis, sempit dan fail-closed.
+// Verifier riwayat migration — DUA pengecualian checksum historis, masing-masing sempit, ber-pin hash penuh, dan fail-closed (bukan allowlist umum).
 //
 // Latar: 20260707130141_add_lid_mapping diterapkan di produksi dengan isi ASLI (commit 279dda7f).
 // Commit 0019ff81 kemudian mengubah SATU baris (`DROP INDEX` -> `DROP INDEX IF EXISTS`) agar bootstrap
@@ -26,6 +26,16 @@ export const EXCEPTION = Object.freeze({
   requiredIndexes: Object.freeze(["LidMapping_lid_key", "LidMapping_pkey"]),
 });
 
+// Pengecualian #2 (keputusan Owner 4 Okt 2026): 20261007110000_team_broadcast_contacts diterapkan di produksi (1 Okt 2026 02:09 UTC) dari working tree CRLF,
+// sehingga _prisma_migrations.checksum = SHA-256 berkas yang sama dengan setiap LF diganti CRLF. Repo (blob git) LF kanonis. Isi SQL identik; hanya akhir-baris yang beda.
+// Lulus HANYA bila: nama persis ini, baris DB selesai & tidak rolled back, checksum DB = dbChecksumCrlf, berkas repo TANPA satu pun CR dan ber-hash repoChecksumLf, dan
+// konversi LF->CRLF berkas repo menghasilkan persis dbChecksumCrlf. Perubahan satu byte SQL, hash lain, atau migration lain -> gagal. Lihat docs/MIGRATION-HISTORY-TEAM-BROADCAST-CRLF.md.
+export const CRLF_EXCEPTION = Object.freeze({
+  migration: "20261007110000_team_broadcast_contacts",
+  repoChecksumLf: "a61efcfadb06f1c0151de5f8a842aaec25c1955cdd030c917e82b8f05f584395",
+  dbChecksumCrlf: "ed5e993401ab55c0855299a3e7fda2bc3c5e198cd5fcaf1965390e62a9ed82bd",
+});
+
 export const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
 export function readRepoMigrations(dir) {
@@ -35,6 +45,14 @@ export function readRepoMigrations(dir) {
     if (/^\d{14}_/.test(name) && existsSync(f)) out.set(name, readFileSync(f));
   }
   return out;
+}
+
+// Pengecualian #2: berkas repo harus LF kanonis (tanpa CR, hash ber-pin) DAN konversi LF->CRLF harus persis menghasilkan checksum yang diterapkan di produksi.
+export function isAllowedCrlfDiff(repoBuf) {
+  if (repoBuf.includes(13)) return false; // ada CR: bukan LF kanonis
+  if (sha256(repoBuf) !== CRLF_EXCEPTION.repoChecksumLf) return false;
+  const crlf = Buffer.from(repoBuf.toString("utf8").replaceAll("\n", "\r\n"), "utf8");
+  return sha256(crlf) === CRLF_EXCEPTION.dbChecksumCrlf;
 }
 
 // Beda semantik = tepat SATU baris, dan pasangannya persis (asli -> current); sisa byte identik.
@@ -58,6 +76,9 @@ export function isAllowedLidDiff(repoBuf) {
 export function verifyMigrationHistory(repo, applied, indexNames) {
   const errors = [];
   const exceptions = [];
+  const exceptionDetails = []; // untuk dicetak CLI: pengecualian historis DIPAKAI (bukan "tidak ada drift")
+  // Sumber migration wajib LF: berkas ber-CR di repo ditolak (mencegah rilis dari working tree CRLF terulang).
+  for (const [name, buf] of repo) if (buf.includes(13)) errors.push(`${name}: sumber migration mengandung CR — wajib LF (periksa autocrlf/.gitattributes)`);
   // Baris rolled_back (percobaan gagal yang sudah di-resolve) diabaikan Prisma; yang berbahaya = menggantung.
   const live = applied.filter((r) => !r.rolled_back_at);
   const done = live.filter((r) => r.finished_at);
@@ -75,11 +96,23 @@ export function verifyMigrationHistory(repo, applied, indexNames) {
       isAllowedLidDiff(buf)
     ) {
       exceptions.push(r.migration_name);
+      exceptionDetails.push({ migration: r.migration_name, kind: "LID_ONE_LINE", detail: "DROP INDEX -> DROP INDEX IF EXISTS (satu baris)" });
+      continue;
+    }
+    if (
+      r.migration_name === CRLF_EXCEPTION.migration &&
+      r.checksum === CRLF_EXCEPTION.dbChecksumCrlf &&
+      repoSum === CRLF_EXCEPTION.repoChecksumLf &&
+      isAllowedCrlfDiff(buf)
+    ) {
+      exceptions.push(r.migration_name);
+      exceptionDetails.push({ migration: r.migration_name, kind: "CRLF_APPLIED", detail: "DB menyimpan checksum berkas versi CRLF; repo LF kanonis; isi SQL identik" });
       continue;
     }
     errors.push(`${r.migration_name}: checksum drift TIDAK diizinkan (db=${r.checksum.slice(0, 8)} repo=${repoSum.slice(0, 8)})`);
   }
-  if (exceptions.length) {
+  // Invarian skema/normalisasi hanya milik pengecualian LID (pengecualian CRLF tidak menyentuh skema).
+  if (exceptions.includes(EXCEPTION.migration)) {
     const nb = repo.get(EXCEPTION.normalization.migration);
     if (!nb) errors.push(`migration normalisasi ${EXCEPTION.normalization.migration} wajib ada di repo`);
     else if (sha256(nb) !== EXCEPTION.normalization.checksum) errors.push("migration normalisasi: checksum repo tidak normal");
@@ -88,5 +121,5 @@ export function verifyMigrationHistory(repo, applied, indexNames) {
     for (const n of EXCEPTION.requiredIndexes) if (!idx.has(n)) errors.push(`invarian: index ${n} wajib ada`);
   }
   const pending = [...repo.keys()].filter((n) => !doneNames.has(n));
-  return { ok: errors.length === 0, errors, exceptions, pending, checked: done.length };
+  return { ok: errors.length === 0, errors, exceptions, exceptionDetails, pending, checked: done.length };
 }

@@ -106,12 +106,12 @@ test("lifecycle end-to-end baru: pickup → tiba → rencana → diagnosis/BOM �
   assert.equal((await testPrisma.productionMaterialReturn.findFirstOrThrow({ where: { unitId: r2.unitId } })).status, "PENDING");
 });
 
-test("Demo Mode — server: hanya ADMIN/OWNER (200); peran lain 403; tanpa token 401; endpoint tidak menulis apa pun", async () => {
+test("Mode Latihan — server: ADMIN/OWNER/Lead/Operator/QC/Gudang/Dokumenter (200); Sales/Finance/Driver 403; tanpa token 401; endpoint tidak menulis apa pun", async () => {
   const c0 = await count(); const events0 = await testPrisma.domainOutbox.count();
   const who = async (role) => { const u = await createTestUser({ roles: [role] }); return makeClient(server.baseUrl, u.token); };
-  for (const [role, want] of [["ADMIN", 200], ["OWNER", 200], ["PRODUCTION_LEAD", 403], ["WAREHOUSE", 403], ["QC_LEAD", 403], ["PRODUCTION_WORKER", 403], ["PRODUCTION_DOCUMENTER", 403], ["FINANCE", 403], ["SALES", 403], ["DRIVER", 403]]) {
+  for (const [role, want] of [["ADMIN", 200], ["OWNER", 200], ["PRODUCTION_LEAD", 200], ["WAREHOUSE", 200], ["QC_LEAD", 200], ["PRODUCTION_WORKER", 200], ["PRODUCTION_DOCUMENTER", 200], ["FINANCE", 403], ["SALES", 403], ["DRIVER", 403]]) {
     const r = await (await who(role)).get("/api/production-v2/demo/access"); assert.equal(r.status, want, role);
-    if (want === 200) { assert.deepEqual(r.body, { allowed: true, readOnly: true, label: "MODE DEMO — bukan data operasional" }); assert.equal(JSON.stringify(r.body).includes("QA-PV2"), false, "tidak membocorkan dataset"); }
+    if (want === 200) { assert.deepEqual(r.body, { allowed: true, readOnly: true, label: "MODE LATIHAN — bukan data operasional" }); assert.equal(JSON.stringify(r.body).includes("QA-PV2"), false, "tidak membocorkan dataset"); }
   }
   assert.equal((await makeClient(server.baseUrl, null).get("/api/production-v2/demo/access")).status, 401);
   for (const m of ["post", "patch", "delete"]) { const r = await (await who("ADMIN"))[m]("/api/production-v2/demo/access", {}); assert.ok([404, 405].includes(r.status), `${m} → ${r.status}`); }

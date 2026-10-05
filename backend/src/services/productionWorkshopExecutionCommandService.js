@@ -21,12 +21,15 @@
 //  - P5 TIDAK menulis stock_movements, reservasi, atau HPP/jurnal (diaudit).
 //  - Writer di balik production_v2_writer (cohort unitIds, fail-closed); reader production_v2_reader menggerbang bacaan.
 import { createHash } from "node:crypto";
+import { PERMISSIONS as P } from "../constants/permissions.js";
+import { hasPermission } from "../middleware/authorize.js";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { validatePauseReason } from "../lib/domain/stageExecution.js";
 import { isLastStage } from "../lib/domain/routing.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
-import { assertNoOpenRunException } from "./productionRunGuards.js";
+import { assertNoOpenRunException, assertNoV1Drift } from "./productionRunGuards.js";
+import { lockUnitOwnership } from "./unitV2Ownership.js";
 import {
   completeStageInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, startStageInTx,
 } from "./unitStageEngine.js";
@@ -138,6 +141,7 @@ export async function loadRunForWrite(tx, runId) {
   await lockRowForUpdate(tx, "production_runs_v2", runId);
   const run = await tx.productionRun.findUnique({ where: { id: runId }, include: RUN_INCLUDE });
   if (TERMINAL_RUN.includes(run.status)) throw workError("Production Run sudah selesai/dibatalkan", 409, "WORKSHOP_RUN_TERMINAL");
+  await assertNoV1Drift(tx, { runId, unitId: run.unitId }); // rollback writer OFF -> aksi V1 -> writer ON: berhenti sampai direkonsiliasi (productionRunGuards.js)
   // P9A (One-Location Production Intake) — unit sudah "Masuk Produksi" (pickup
   // berhasil, kartu tampil di board) TAPI belum dikonfirmasi tiba secara fisik
   // di workshop. SATU-SATUNYA titik gerbang untuk SELURUH command tahap
@@ -175,9 +179,24 @@ export function assertAssignedCornerOperator(plan, operator, workCenterId) {
   if (!workCenterId || workCenterId !== expected) throw workError("Workshop Corner tidak sesuai dengan penugasan rencana", 422, "WORKSHOP_WORK_CENTER_MISMATCH");
 }
 
+// Keputusan owner 4 Oktober 2026: ADMIN/OWNER (izin PRODUCTION_EXECUTE_ANY) boleh mengerjakan tahap pada unit PIC mana pun.
+// Pagar yang TETAP berlaku: rencana wajib sudah ditugaskan (operator+workshop) dan workshop harus sesuai penugasan.
+// Yang dilewati HANYA "anda harus PIC yang ditugaskan". Aksi tetap tercatat atas actor_id user penekan (bukan PIC) — jejak audit jujur.
+export const mayExecuteAnyUnit = (user) => hasPermission(user, P.PRODUCTION_EXECUTE_ANY);
+export function assertOverridePlanAndWorkCenter(plan, workCenterId, { postQc = false } = {}) {
+  if (!plan.operatorId || !plan.workCenterId) throw workError("Rencana belum memiliki operator/workshop", 409, "WORKSHOP_PLAN_NOT_ASSIGNED");
+  const expected = postQc ? (plan.cornerWorkCenterId || plan.workCenterId) : plan.workCenterId;
+  if (!workCenterId || workCenterId !== expected) throw workError("Workshop tidak sesuai dengan penugasan rencana", 422, "WORKSHOP_WORK_CENTER_MISMATCH");
+}
+
 export async function authorizeOperator(tx, run, actorId, workCenterId, { postQc = false } = {}) {
   const plan = run.plan;
   if (!plan || plan.status === "CANCELLED") throw workError("Production Run belum memiliki rencana aktif", 409, "WORKSHOP_NO_PLAN");
+  const actor = actorId ? await tx.user.findUnique({ where: { id: actorId }, select: { role: true, active: true, roles: { select: { role: true } } } }) : null;
+  if (actor?.active && mayExecuteAnyUnit({ role: actor.role, roles: [actor.role, ...(actor.roles || []).map((r) => r.role)] })) {
+    assertOverridePlanAndWorkCenter(plan, workCenterId, { postQc });
+    return plan;
+  }
   const operator = actorId ? await tx.productionOperator.findUnique({ where: { userId: actorId } }) : null;
   if (postQc) assertAssignedCornerOperator(plan, operator, workCenterId);
   else assertAssignedOperator(plan, operator, workCenterId);
@@ -256,6 +275,7 @@ export async function registerWorkshopBornRun(prisma, { unitId, actorId, idempot
 
   return prisma.$transaction(async (tx) => {
     await lockRowForUpdate(tx, "units", unitId);
+    await lockUnitOwnership(tx, unitId); // pembukaan Run = pengambilalihan kepemilikan (lihat unitV2Ownership.js)
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
     const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, currentStageId: true, order: { select: { category: true } } } });

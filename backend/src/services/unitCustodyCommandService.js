@@ -10,6 +10,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
+import { lockUnitOwnership } from "./unitV2Ownership.js";
 import { isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEngine.js";
 import { assertNoOpenRunException, assertRunConsistent } from "./productionRunGuards.js";
 import { assertNoPendingReturnsInTx } from "./productionMaterialReturnService.js";
@@ -287,6 +288,7 @@ const PHASES = ["INTAKE", "DIAGNOSIS", "PROCESS", "QC", "HANDOFF"];
 
 export async function openProductionIntakeV2(tx, { unitId, actorId = null }) {
   await lockRowForUpdate(tx, "units", unitId);
+  await lockUnitOwnership(tx, unitId); // pembukaan/aktivasi Run = pengambilalihan kepemilikan: serial terhadap gerbang tulis V1 (unitV2Ownership.js)
   const now = new Date();
   const active = await tx.productionRun.findFirst({ where: { unitId, status: { notIn: ["COMPLETED", "CANCELLED"] } }, orderBy: { createdAt: "desc" } });
   if (active) {
@@ -346,6 +348,8 @@ export async function openProductionIntakeV2(tx, { unitId, actorId = null }) {
 // idempotency-nya berasal dari idempotency offerOne sendiri (dedup lewat
 // deliveryJobId_unitId SEBELUM fungsi ini pernah dipanggil, lihat offerOne).
 export async function openPendingArrivalIntakeV2InTx(tx, { unitId, actorId = null }) {
+  await lockRowForUpdate(tx, "units", unitId);
+  await lockUnitOwnership(tx, unitId); // lihat openProductionIntakeV2
   const now = new Date();
   const active = await tx.productionRun.findFirst({ where: { unitId, status: { notIn: ["COMPLETED", "CANCELLED"] } }, orderBy: { createdAt: "desc" } });
   if (active) return { run: active, opened: false }; // sudah ada run non-terminal (PENDING_ARRIVAL/ACTIVE/BLOCKED) — tidak menduplikasi.

@@ -12,11 +12,15 @@ import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
 import { DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS } from "@/features/production/documentation.js";
 import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
 import { humanizeRequest } from "@/features/production/unitCardModel.js";
+import { rolesOf } from "@/lib/roles.js";
+import { isOutsideV2 } from "@/features/production/unit360Availability.js";
+import UnitOrderFallback from "@/features/production/UnitOrderFallback.jsx";
 
 // P9C — Unit 360: satu drawer kanonis (setara "detail Resi") dibuka dari kartu Status Produksi MAUPUN Rencana
 // Produksi — komponen ini TIDAK peduli dari halaman mana ia dipanggil, hanya butuh unitId. Deep-link (?unit=)
 // diurus PEMANGGIL (ProductionPlannerV2.jsx/ProductionRencanaWorkspace.jsx), bukan di sini, supaya "kembali ke
 // tab asal" bekerja persis sesuai konvensi tab masing-masing halaman.
+function currentUserLocal() { try { return JSON.parse(localStorage.getItem("user")); } catch { return null; } }
 export const bd = (v, fallback = "Belum dicatat") => (v === null || v === undefined || v === "" ? fallback : v);
 export const bdArr = (v) => (Array.isArray(v) && v.length ? v.join(", ") : "Belum dicatat");
 export const fmtDT = (d) => (d ? new Date(d).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "Belum dicatat");
@@ -46,6 +50,26 @@ const TABS = [
   ["dokumentasi", "Dokumentasi"], ["qc", "QC & Handoff"], ["aktivitas", "Aktivitas"],
 ];
 
+// P12B.5 — unit COHORT V2: perubahan hanya lewat pemilik perintah V2 (tidak ada jalur V1 di drawer ini → tidak ada bypass diagnosis/QC/custody).
+// Prioritas & target = rencana (Rencana Produksi); layanan teknis = Diagnosis (tab Proses); hambatan = Menunggu Bahan Baku / Gudang.
+function V2Owners({ d }) {
+  const t = d.identity.target;
+  return (
+    <div className="rounded-btn border border-line p-3" data-testid="v2-owners">
+      <p className="m-0 mb-2 text-[12.5px] font-bold text-ink">Prioritas, target, dan hambatan</p>
+      <dl className="m-0 mb-2 grid grid-cols-2 gap-2 text-[12px] sm:grid-cols-3">
+        <Field label="Prioritas" value={t.priorityLabel || "Normal"} />
+        <Field label="Target selesai" value={t.targetCompleteAt ? fmtD(t.targetCompleteAt) : null} />
+      </dl>
+      <ul className="m-0 list-disc space-y-0.5 pl-5 text-[11.5px] text-ink3">
+        <li>Layanan teknis diisi lewat <b>Diagnosis</b> (tab Proses).</li>
+        <li>Prioritas dan target diubah di <b>Rencana Produksi</b>.</li>
+        <li>Hambatan bahan dicatat lewat <b>Menunggu Bahan Baku</b> dan diselesaikan Gudang.</li>
+      </ul>
+    </div>
+  );
+}
+
 function Ringkasan({ d }) {
   return (
     <div className="space-y-3">
@@ -65,6 +89,7 @@ function Ringkasan({ d }) {
         {d.identity.target.priority > 0 && <Badge variant={priorityTone(d.identity.target.priority)}>{d.identity.target.priorityLabel}</Badge>}
         {d.identity.target.late && <Badge variant="red">Terlambat</Badge>}
       </div>
+      <V2Owners d={d} />
       <OrderField label="Keluhan Customer" field={d.salesContext.complaints} format={bdArr} />
       <OrderField label="Layanan Dipesan (Sales)" field={d.salesContext.salesServices} format={bdArr} />
       <OrderField label="Request Customer" field={d.salesContext.request} format={(v) => bd(humanizeRequest(v))} />
@@ -347,11 +372,18 @@ function Aktivitas({ d }) {
 // Konstanta modul (identitas stabil) — selector uji yang stabil untuk dialog Unit 360.
 const UNIT_DIALOG_PROPS = { "data-testid": "unit-overview-dialog" };
 
-export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "Kelola" }) {
+// P12B.4 — unit di LUAR cohort Production V2 (Unit 360 = 404; cohort tidak diperluas) tetap terbuka di drawer yang SAMA: data order/unit asli (baca-saja,
+// GET /units/:id/timeline) + penjelasan jujur bagian V2 yang belum tersedia (UnitOrderFallback). Tidak ada halaman/tab Unit terpisah.
+export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "Kelola", onChanged }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [unavailable, setUnavailable] = useState(false);
+  const [legacy, setLegacy] = useState({ data: null, error: "", loading: false });
   const [tab, setTab] = useState("ringkasan");
   const [showDiagnosis, setShowDiagnosis] = useState(false);
+  const [v1Work, setV1Work] = useState({ data: null, error: "", loading: false });
+  // P12B.6: V2 belum memiliki eksekusi unit (writer OFF / reader-only / belum ada Run / Run selesai) -> tab "Kerja V1" (kontrak sama dengan guard server).
+  const v1Workable = data?.ownership?.v2ExecutionOwned === false;
 
   const reload = useCallback(() => {
     if (!unitId) return;
@@ -361,10 +393,27 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
   useEffect(() => {
     if (!unitId) return undefined;
     let alive = true;
-    setData(null); setError(""); setTab("ringkasan"); setShowDiagnosis(false);
-    api.getUnitOverview(unitId).then((res) => { if (alive) setData(res); }).catch((e) => { if (alive) setError(friendlyError(e)); });
+    setData(null); setError(""); setUnavailable(false); setLegacy({ data: null, error: "", loading: false }); setV1Work({ data: null, error: "", loading: false }); setTab("ringkasan"); setShowDiagnosis(false);
+    api.getUnitOverview(unitId).then((res) => { if (alive) setData(res); }).catch((e) => {
+      if (!alive) return;
+      if (!isOutsideV2(e)) { setError(friendlyError(e)); return; }
+      setUnavailable(true); setLegacy({ data: null, error: "", loading: true });
+      api.getUnitTimeline(unitId)
+        .then((t) => { if (alive) setLegacy({ data: t, error: "", loading: false }); })
+        .catch((e2) => { if (alive) setLegacy({ data: null, error: friendlyError(e2), loading: false }); });
+    });
     return () => { alive = false; };
   }, [unitId]);
+
+  useEffect(() => {
+    if (tab !== "v1" || !v1Workable || !unitId || v1Work.data || v1Work.loading) return undefined;
+    let alive = true;
+    setV1Work({ data: null, error: "", loading: true });
+    api.getUnitTimeline(unitId)
+      .then((t) => { if (alive) setV1Work({ data: t, error: "", loading: false }); })
+      .catch((e) => { if (alive) setV1Work({ data: null, error: friendlyError(e), loading: false }); });
+    return () => { alive = false; };
+  }, [tab, v1Workable, unitId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // P9D — submit diagnosis (BOM+layanan) lalu tutup tahap 5 lewat jalur SAMA dengan Aplikasi Meja
   // (recordProductionV2Step). Kalau penutupan tahap gagal, diagnosis TETAP tersimpan — muat ulang saja.
@@ -381,12 +430,13 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
 
   return (
     <Modal open={!!unitId} onOpenChange={(v) => !v && onClose()} contentProps={UNIT_DIALOG_PROPS}
-      title={data ? `${data.identity.unitCode}${data.identity.orderNumber ? ` · ${data.identity.orderNumber}` : ""}` : "Unit 360"}
-      description={data ? (data.customer.name?.value || "Pelanggan belum dicatat") : undefined}
+      title={data ? `${data.identity.unitCode}${data.identity.orderNumber ? ` · ${data.identity.orderNumber}` : ""}` : unavailable ? (legacy.data?.unit?.unitCode ? `${legacy.data.unit.unitCode}${legacy.data.unit.order?.orderNumber ? ` · ${legacy.data.unit.order.orderNumber}` : ""}` : "Detail unit") : "Unit 360"}
+      description={data ? (data.customer.name?.value || "Pelanggan belum dicatat") : unavailable ? (legacy.data?.unit?.order?.customer?.name || undefined) : undefined}
       className="flex w-[900px] flex-col max-sm:!h-full max-sm:!max-h-full max-sm:!w-full max-sm:!max-w-full max-sm:!translate-x-0 max-sm:!translate-y-0 max-sm:!rounded-none max-sm:!top-0 max-sm:!left-0">
       <div className="flex min-h-0 flex-1 flex-col px-6 pb-4">
         {error && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
-        {!data && !error && <div data-testid="unit-overview-loading" className="space-y-2"><div className="h-6 w-2/3 animate-pulse rounded bg-inset" /><div className="h-24 animate-pulse rounded bg-inset" /></div>}
+        {unavailable && <div data-testid="unit-overview-fallback"><UnitOrderFallback data={legacy.data} error={legacy.error} loading={legacy.loading} roles={rolesOf(currentUserLocal())} onData={(t) => setLegacy({ data: t, error: "", loading: false })} onChanged={onChanged} /></div>}
+        {!data && !error && !unavailable && <div data-testid="unit-overview-loading" className="space-y-2"><div className="h-6 w-2/3 animate-pulse rounded bg-inset" /><div className="h-24 animate-pulse rounded bg-inset" /></div>}
         {data && (
           <div data-testid="unit-overview-ready" className="flex min-h-0 flex-1 flex-col">
             <div className="mb-3 flex shrink-0 items-center gap-3">
@@ -396,8 +446,14 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
               </div>
               {onManage && <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] shrink-0" onClick={onManage}>{manageLabel}</Button>}
             </div>
+            {data.ownership?.v1Drift && (
+              <div role="alert" data-testid="unit-v1-drift-notice" className="mb-3 shrink-0 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">
+                <p className="m-0 font-semibold">Proyeksi V2 perlu direkonsiliasi.</p>
+                <p className="m-0 mt-0.5">Ada {data.ownership.v1Drift.count} aksi V1 ({(data.ownership.v1Drift.kinds || []).join(", ") || "—"}) yang dikerjakan saat Production V2 tidak memegang eksekusi unit ini. Command V2 (langkah, rencana, bahan, diagnosis) dihentikan sampai Production Run dibatalkan oleh Production Lead; setelah itu unit dikerjakan lewat V1 atau Run baru.</p>
+              </div>
+            )}
             <div role="tablist" aria-label="Bagian Unit 360" className="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-line">
-              {TABS.map(([k, l]) => (
+              {[...TABS, ...(v1Workable ? [["v1", "Kerja V1"]] : [])].map(([k, l]) => (
                 <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
                   className={`min-h-[44px] shrink-0 whitespace-nowrap border-b-2 px-3 text-[12.5px] font-semibold ${tab === k ? "border-accent text-accent" : "border-transparent text-ink3"}`}>
                   {l}
@@ -411,6 +467,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
               {tab === "dokumentasi" && <Dokumentasi d={data} />}
               {tab === "qc" && <QcHandoff d={data} />}
               {tab === "aktivitas" && <Aktivitas d={data} />}
+              {tab === "v1" && v1Workable && <UnitOrderFallback v2View data={v1Work.data} error={v1Work.error} loading={v1Work.loading} roles={rolesOf(currentUserLocal())} onData={(t) => setV1Work({ data: t, error: "", loading: false })} onChanged={() => { reload(); onChanged?.(); }} />}
             </div>
           </div>
         )}

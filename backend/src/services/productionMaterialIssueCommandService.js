@@ -24,6 +24,7 @@ import { AccountError } from "./finance/accounts.js";
 import { cancelSupplementalInTx, loadPlanForWrite, releaseReservationsInTx } from "./productionPlanningCommandService.js";
 import { generateIssueCode } from "../routes/materialIssue.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
+import { assertNoV1Drift } from "./productionRunGuards.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 
@@ -93,6 +94,8 @@ async function loadIssueForWrite(tx, issueId) {
   await lockRowForUpdate(tx, "material_issues", issueId);
   const issue = await tx.materialIssue.findUnique({ where: { id: issueId }, include: ISSUE_INCLUDE });
   if (!issue || !issue.productionPlanId) throw issueError("Permintaan pengambilan bahan tidak ditemukan", 404, "MATERIAL_ISSUE_NOT_FOUND");
+  const planRun = await tx.productionRunPlan.findUnique({ where: { id: issue.productionPlanId }, select: { run: { select: { id: true, unitId: true } } } });
+  if (planRun?.run) await assertNoV1Drift(tx, { runId: planRun.run.id, unitId: planRun.run.unitId }); // rollback writer OFF -> aksi V1 -> writer ON
   return issue;
 }
 

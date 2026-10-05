@@ -4,7 +4,7 @@
 
 export const WORKSPACES_UI = {
   PRODUKSI: {
-    judul: "Pengajuan Biaya Produksi", division: "PRODUKSI", jalur: "/bengkel/pengajuan-biaya", singkat: "Produksi",
+    judul: "Pengajuan Biaya Produksi", division: "PRODUKSI", jalur: "/bengkel/biaya-produksi?tab=pengajuan", singkat: "Produksi",
     ringkas: "Servis mesin, alat kerja kecil, jasa vendor/tukang, lembur, dan kebutuhan produksi mendesak yang bukan stok.",
     tautan: ["order", "unit", "machine"],
   },

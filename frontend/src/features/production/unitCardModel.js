@@ -6,9 +6,11 @@ import { PRODUCT_TYPE_LABELS } from "@/utils/format.js";
 
 // Prioritas: merah untuk Tinggi/Mendesak TIDAK hanya lewat warna — ada ikon + teks + penanda tepi (lihat UnitCard).
 export function priorityMeta(priority) {
-  if (priority === 2) return { key: "URGENT", label: "Mendesak", tone: "red", icon: "urgent", edge: "border-l-[4px] border-l-red" };
-  if (priority === 1) return { key: "HIGH", label: "Tinggi", tone: "red", icon: "high", edge: "border-l-[4px] border-l-red" };
-  return { key: "NORMAL", label: "Normal", tone: "neutral", icon: null, edge: "border-l-[4px] border-l-transparent" };
+  // Nilai KANONIS dari plan.priority (0/1/2) — tidak pernah disimpulkan dari catatan/teks. Overdue = badge TERPISAH, bukan perubahan prioritas.
+  // Tanda tidak hanya warna: label + ikon + garis kiri (lebar berbeda). Kelas .plan-* ada di index.css.
+  if (priority === 2) return { key: "URGENT", label: "Mendesak", tone: "red", icon: "urgent", edge: "border-l-[4px] border-l-red", badgeClass: "plan-prio-urgent", stripeClass: "plan-stripe-urgent", stripeWidth: 7 };
+  if (priority === 1) return { key: "HIGH", label: "Tinggi", tone: "red", icon: "high", edge: "border-l-[4px] border-l-red", badgeClass: "plan-prio-high", stripeClass: "plan-stripe-high", stripeWidth: 5 };
+  return { key: "NORMAL", label: "Normal", tone: "neutral", icon: null, edge: "border-l-[4px] border-l-transparent", badgeClass: "plan-prio-normal", stripeClass: "plan-stripe-normal", stripeWidth: 4 };
 }
 
 // Kekurangan data yang MEMANG relevan di kartu. Tidak menebak: hanya menyebut yang terbukti kosong di view.

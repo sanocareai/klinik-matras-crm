@@ -36,7 +36,7 @@ async function addCohort(...unitIds) {
 async function world() {
   const [lead, nadya, corner, qc, driver] = await Promise.all([
     createTestUser({ roles: ["PRODUCTION_LEAD"] }),
-    createTestUser({ roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_WORKER"] }), // rangkap Operator + Gudang, TANPA QC_WRITE
+    createTestUser({ roles: ["WAREHOUSE", "PRODUCTION_WORKER"] }), // rangkap Operator + Gudang, bukan ADMIN: sejak 65e7e1f5 ADMIN/OWNER memegang QC_WRITE + PRODUCTION_EXECUTE_ANY (kontraknya diuji di productionQcFinishedGoods & adminAllLines), jadi pagar PIC/QC di sini diuji dengan pengguna biasa
     createTestUser({ roles: ["PRODUCTION_WORKER"] }),
     createTestUser({ roles: ["QC_LEAD"] }),
     createTestUser({ roles: ["DRIVER"] }),
@@ -169,8 +169,19 @@ test("lifecycle 12 tahap penuh: custody -> papan -> intake -> diagnosa (menunggu
   const blocked = await step(w, w.nadya, run.id, 5, {});
   assert.equal(blocked.status, 409); assert.equal(blocked.body.code, "STEP_WAITING_SERVICE_NOT_SET");
 
-  // Planner menetapkan layanan (V1) + BOM setelah diagnosa nyata; Gudang reservasi + serah bahan.
-  ok(await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id }));
+  // Layanan teknis unit cohort HANYA lewat command Diagnosis (V2); jalur V1 ditutup untuk unit cohort.
+  const v1Try = await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id });
+  assert.equal(v1Try.status, 409); assert.equal(v1Try.body.code, "UNIT_V2_OWNED", "PATCH layanan V1 tidak boleh melewati Diagnosis untuk unit cohort");
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } })).serviceId, null, "penolakan tanpa efek");
+  const diagPhoto = (await media(w.nadya, run.id, "i"))[0];
+  const diag = await w.nadya.api.post(`${V2}/diagnosis/${run.id}/submit`, {
+    expectedRevision: 0, workCenterId: w.wc, photoUrls: [diagPhoto], recommendedServiceId: w.service.id,
+    findings: { general: { condition: "Kasur kempes di tengah", mainDamage: "Fondasi keropos", damageLevel: "SEDANG", teardownNote: "Per karatan" }, foundation: { oldCondition: "Per karatan", action: "REPLACE", size: "180x200", qty: "1" }, layers: [{ oldCondition: "Busa tipis", action: "REPLACE", material: "Busa HD", thickness: "5cm", qty: "2" }], components: { spring: "Ganti per baru" }, serviceNote: "Restorasi penuh fondasi dan lapisan atas sesuai keluhan sakit pinggang" },
+    materials: [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }],
+  }, key(`diag-${++seq}`));
+  assert.equal(diag.status, 201, JSON.stringify(diag.body));
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } })).serviceId, w.service.id, "layanan ditetapkan oleh submitDiagnosis");
+  // Gudang reservasi + serah bahan (BOM sudah ditulis Diagnosis; setBomAndIssue menetapkan ulang baris yang sama).
   const issueId = await setBomAndIssue(w, planned.planId);
   c = await card(w, run.id);
   assert.equal(c.next.action, "COMPLETE"); assert.equal(c.next.stepNo, 5);
@@ -208,7 +219,7 @@ test("lifecycle 12 tahap penuh: custody -> papan -> intake -> diagnosa (menunggu
   // QC resmi hanya pemegang QC_WRITE (Nadya ditolak).
   const qcRun = (await w.qc.api.get(`${P}/qc/runs/${run.id}`)).body;
   const passBody = { expectedRevision: qcRun.revision, result: "PASS", photoUrls: ["/media/job-photos/qc.jpg"], referenceWeightKg: 85, fitVerdict: "PAS", note: "lulus" };
-  assert.equal((await w.nadya.api.post(`${P}/qc/runs/${run.id}/inspect`, passBody, key("nadya-qc"))).status, 403);
+  assert.equal((await w.lead.api.post(`${P}/qc/runs/${run.id}/inspect`, passBody, key("lead-qc"))).status, 403, "Production Lead tidak memegang QC_WRITE");
   ok(await w.qc.api.post(`${P}/qc/runs/${run.id}/inspect`, passBody, key("qc-pass")));
 
   // Tahap 9 milik PIC meja; tahap 10–12 milik PIC Corner.
@@ -290,7 +301,7 @@ test("Menunggu Bahan Baku: operasi dijeda sah (PROCESS_DELAY), muncul di antrean
   const { unit, run } = await acceptedUnit(w);
   const planned = await planOnBoard(w, run.id);
   await throughIntake(w, run.id);
-  ok(await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id }));
+  await testPrisma.unit.update({ where: { id: unit.id }, data: { serviceId: w.service.id, serviceLine: w.service.serviceLine } }); // layanan teknis cohort = hasil Diagnosis V2; jalur V1 ditutup (409 UNIT_V2_OWNED)
   const issueId = await setBomAndIssue(w, planned.planId);
   await pick(w, issueId);
   ok(await step(w, w.nadya, run.id, 5, { payload: DIAG }));
@@ -392,4 +403,54 @@ test("cohort & peran: unit non-cohort tetap V1 (tanpa artefak V2), reader OFF = 
   assert.equal((await fetch(`${server.baseUrl}${raw}`, { headers: { Authorization: `Bearer ${w.lead.token}` } })).status, 200);
   await setCohort(born[0] ? (await testPrisma.productionRun.findUniqueOrThrow({ where: { id: born[0] } })).unitId : "x");
   assert.equal((await fetch(`${server.baseUrl}${raw}`, { headers: { Authorization: `Bearer ${w.lead.token}` } })).status, 403, "bukti unit di luar reader cohort tidak terlihat");
+});
+
+// P12B.6 — rollback writer OFF -> aksi V1 -> writer ON pada Run non-terminal. Proyeksi V2 tidak dijamin sama dengan state V1 -> command V2 harus berhenti, bukan lanjut diam-diam.
+test("ROLLBACK writer OFF -> aksi V1 -> writer ON: V2 mendeteksi drift (409 PRODUCTION_RUN_V1_DRIFT) di langkah/rencana/bahan dan berhenti; hanya pembatalan Run yang merekonsiliasi", async () => {
+  const w = await world();
+  const { unit, run } = await acceptedUnit(w);
+  const planned = await planOnBoard(w, run.id);
+  await throughIntake(w, run.id);
+  const projection = async () => ({
+    run: (await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).revision,
+    ops: (await testPrisma.productionOperationRun.findMany({ where: { runId: run.id }, orderBy: { sequence: "asc" } })).map((o) => `${o.sequence}:${o.status}`).join(","),
+    evidence: await evidenceCount(run.id), commands: Number((await testPrisma.$queryRawUnsafe("select count(*)::int c from v2_commands"))[0].c),
+  });
+  const markers = () => testPrisma.activityEvent.count({ where: { entityId: unit.id, eventType: "PRODUCTION_V1_WRITE_ON_V2_RUN" } });
+  const P0 = await projection();
+
+  // (a) writer ON + Run aktif: V1 ditolak, tanpa penanda.
+  assert.equal((await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id })).status, 409);
+  assert.equal(await markers(), 0);
+
+  // (b) ROLLBACK: writer OFF (reader tetap). V1 bekerja (jalur kerja sah) tetapi meninggalkan penanda drift di transaksi yang sama.
+  await setFlag(V2_FLAGS.PRODUCTION_WRITER, null);
+  assert.equal((await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id })).status, 200);
+  assert.equal((await w.lead.api.patch(`/api/units/${unit.id}/production`, { priority: "HIGH" })).status, 200);
+  const mat = await createTestMaterial({ name: `Drift ${++seq}` }); await seedBalance(mat.id, 5);
+  assert.equal((await w.corner.api.post(`/api/units/${unit.id}/materials`, { materialId: mat.id, qty: 1 })).status, 201);
+  assert.equal(await markers(), 3, "satu penanda per aksi V1 yang berhasil");
+  const failed = await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id, expectedServiceId: null }); // CAS usang -> 409, TIDAK menulis penanda (transaksi rollback)
+  assert.equal(failed.status, 409); assert.equal(await markers(), 3, "mutasi V1 yang gagal tidak meninggalkan penanda (satu transaksi)");
+  const mk = await testPrisma.activityEvent.findFirstOrThrow({ where: { entityId: unit.id, eventType: "PRODUCTION_V1_WRITE_ON_V2_RUN" } });
+  assert.equal(mk.metadata.runId, run.id);
+
+  // (c) writer ON kembali: seluruh command V2 yang menyentuh Run berhenti 409 PRODUCTION_RUN_V1_DRIFT; proyeksi V2 TIDAK berubah satu byte pun.
+  await addCohort(unit.id);
+  const drift = (r, label) => { assert.equal(r.status, 409, `${label}: ${JSON.stringify(r.body)}`); assert.equal(r.body.code, "PRODUCTION_RUN_V1_DRIFT", label); assert.equal(r.body.details?.count ?? r.body.count, 3, label); };
+  drift(await step(w, w.nadya, run.id, 5, { payload: DIAG }), "langkah tahap 5");
+  const plan = (await w.lead.api.get(`${P}/plans/${planned.planId}`)).body;
+  drift(await w.lead.api.post(`${P}/plans/${planned.planId}/bom`, { lines: [{ materialId: w.fondasi.id, qty: 1 }], expectedRevision: plan.revision }, key(`drift-bom-${++seq}`)), "BOM rencana");
+  drift(await w.nadya.api.post(`${V2}/diagnosis/${run.id}/draft`, { expectedRevision: 0, workCenterId: w.wc, findings: {}, photoUrls: [] }), "draft diagnosis");
+  assert.deepEqual(await projection(), P0, "proyeksi V2 tidak berubah: tidak ada lanjutan diam-diam");
+  const ov = (await w.lead.api.get(`${V2}/units/${unit.id}/overview`)).body;
+  assert.equal(ov.ownership.v2ExecutionOwned, true); assert.equal(ov.ownership.v1Drift.count, 3, "Unit 360 menampilkan drift");
+  assert.equal((await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id })).status, 409, "V1 kembali ditolak karena V2 memiliki unit lagi");
+
+  // (d) rekonsiliasi = batalkan Run (command resmi, tidak memakai gerbang drift). Setelah itu V2 tidak memiliki unit: V1 bekerja lagi tanpa penanda baru.
+  const cancel = await w.lead.api.post(`${P}/qc/runs/${run.id}/cancel`, { expectedRevision: (await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).revision, reason: "Rekonsiliasi drift V1 setelah rollback writer" }, key(`drift-cancel-${++seq}`));
+  assert.equal(cancel.status, 200, JSON.stringify(cancel.body));
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).status, "CANCELLED");
+  assert.equal((await w.lead.api.patch(`/api/units/${unit.id}/production`, { priority: "NORMAL" })).status, 200);
+  assert.equal(await markers(), 3, "Run terminal: aksi V1 tidak lagi menandai drift");
 });

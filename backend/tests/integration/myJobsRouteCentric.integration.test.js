@@ -60,11 +60,11 @@ async function buatOrder(customerId) {
   });
 }
 
-async function buatRoute({ driverId, helperId = null, date = HARI_INI, status = "PUBLISHED" }) {
+async function buatRoute({ driverId, helperId = null, date = HARI_INI, status = "PUBLISHED", notes = null }) {
   no += 1;
   return testPrisma.route.create({
     data: {
-      code: `TES-RTE-${no}`, date: toDateOnly(date), driverId, helperId, status,
+      code: `TES-RTE-${no}`, date: toDateOnly(date), driverId, helperId, status, notes,
       publishedAt: status === "DRAFT" ? null : new Date(),
     },
   });
@@ -113,6 +113,34 @@ test("Skenario 1+12 (fixture RTE-220926-01 persis): 1 route, driver+helper, 8 st
   assert.equal(resAgung.body.routes[0].stopCount, 8, "routes[].stopCount HARUS sama dgn jumlah job di array jobs untuk rute itu — satu sumber angka, bukan 2 hitungan terpisah");
   const stopUntukRuteIni = resAgung.body.jobs.filter((j) => j.route?.id === route.id).length;
   assert.equal(resAgung.body.routes[0].stopCount, stopUntukRuteIni, "displayedCount === renderedStops.length");
+});
+
+test("Catatan rute (3 Okt 2026): Route.notes ikut terkirim di routes[] (snapshot) DAN jobs[].route (per-job)", async () => {
+  const driver = await driverUser("Driver Catatan Tes");
+  const cust = await buatCustomer();
+  const routeAda = await buatRoute({ driverId: driver.user.id, notes: "selesai loading dan brgkt jam 8\nADE NATALIA jangan terlalu sore" });
+  const orderAda = await buatOrder(cust.id);
+  await buatJob({ orderId: orderAda.id, routeId: routeAda.id, driverId: driver.user.id, sequence: 1 });
+
+  const client = makeClient(server.baseUrl, driver.token);
+  const res = await client.get("/api/armada/my-jobs");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.routes.length, 1);
+  assert.equal(res.body.routes[0].notes, "selesai loading dan brgkt jam 8\nADE NATALIA jangan terlalu sore", "routes[].notes harus persis sama dengan Route.notes di database, termasuk baris baru");
+  assert.equal(res.body.jobs[0].route.notes, routeAda.notes, "jobs[].route.notes (dipakai jalur Penjadwalan lain yang memakai jobInclude yang sama) harus ikut terisi juga");
+});
+
+test("Catatan rute (3 Okt 2026): rute yang belum ditulisi dispatcher balik notes null, bukan error/undefined", async () => {
+  const driver = await driverUser("Driver Tanpa Catatan Tes");
+  const cust = await buatCustomer();
+  const route = await buatRoute({ driverId: driver.user.id });
+  const order = await buatOrder(cust.id);
+  await buatJob({ orderId: order.id, routeId: route.id, driverId: driver.user.id, sequence: 1 });
+
+  const client = makeClient(server.baseUrl, driver.token);
+  const res = await client.get("/api/armada/my-jobs");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.routes[0].notes, null);
 });
 
 test("Skenario 2: dua driver dalam SATU rute (crew) menerima payload snapshot yang IDENTIK (sama set job ID)", async () => {

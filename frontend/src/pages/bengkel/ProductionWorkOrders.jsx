@@ -1,23 +1,24 @@
 import { formatUkuranLabel } from "@/utils/ukuranKasur.js";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ClipboardList, RefreshCw, ExternalLink } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ClipboardList, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { Modal } from "@/components/ui/modal.jsx";
 import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatTanggal, formatDurasiDetik } from "@/utils/formatDate.js";
 import { describeRowCount } from "@/lib/workOrderCounts.js";
+import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import { SourceBadge } from "@/features/production/v1Source.jsx";
+import { SOURCE_FILTERS, filterBySource, sourceOf } from "@/features/production/nonV2OrdersModel.js";
 import {
   UNIT_STATUS_REAL, SERVICE_LINE_REAL, IN_WORKSHOP_STATUSES,
-  PRODUCTION_STATUS_REAL, PRODUCTION_PRIORITY_REAL, STAGE_LOG_STATUS,
+  PRODUCTION_PRIORITY_REAL,
 } from "@/features/bengkel/unitStatus.js";
 
 // "Elapsed" per baris (Production Core Slice 3P) — STATIS per-muat, BUKAN
@@ -52,11 +53,22 @@ const TABS = [
 // `initialStatus` (P8.1, opsional) — tab awal saat dibuka dari luar (mis.
 // menu "Riwayat" via ProductionOrdersHub.jsx, pra-filter "Terkirim"). Default
 // "" mempertahankan perilaku lama persis untuk SEMUA pemanggil yang sudah ada.
-export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
-  const navigate = useNavigate();
-  const [tab, setTab] = useState(initialStatus);
+// `scope` (P12B.2, hub Order Produksi): "aktif" = semua unit KECUALI Terkirim (tab Terkirim disembunyikan), "riwayat" = hanya Terkirim
+// (tanpa tab status). Kosong = perilaku lama persis. Endpoint & data sama (getWorkOrders); hanya penyaringan tampilan.
+// P12B.3 — `onScopeChange` (opsional): bila diberikan, filter ringan Aktif · Semua · Riwayat tampil di baris saring halaman INI (bukan bilah tab terpisah),
+// `scope` "aktif" | "semua" | "riwayat" dikendalikan pemanggil (default Aktif). "semua" = seluruh unit tanpa penyaringan status.
+export const ORDER_SCOPES = Object.freeze([{ key: "aktif", label: "Aktif" }, { key: "semua", label: "Semua" }, { key: "riwayat", label: "Riwayat" }]);
+// `unitId`/`onUnitChange` (P12B.4): unit yang sedang dibuka di drawer Unit 360 dikendalikan pemanggil (?unit= di URL, bertahan saat muat ulang & bisa di-bookmark).
+// Tanpa keduanya, state lokal. Klik baris TIDAK membuat tab/halaman baru.
+export default function ProductionWorkOrders({ initialStatus = "", scope = "", onScopeChange = null, headerExtra = null, unitId: unitIdProp, onUnitChange = null } = {}) {
+  const [tab, setTab] = useState(scope === "riwayat" ? "DELIVERED" : initialStatus);
+  const firstScope = useRef(true);
+  // Pindah filter ringan → status rinci kembali ke "semua dalam lingkup itu" (riwayat = Terkirim).
+  useEffect(() => { if (firstScope.current) { firstScope.current = false; return; } setTab(scope === "riwayat" ? "DELIVERED" : ""); }, [scope]);
+  const tabsShown = scope === "riwayat" || scope === "semua" ? [] : scope === "aktif" ? TABS.filter((t) => t.key !== "DELIVERED").map((t) => (t.key === "" ? { ...t, label: "Semua status" } : t)) : TABS;
   const [cari, setCari] = useState("");
   const [fServiceLine, setFServiceLine] = useState("");
+  const [fSource, setFSource] = useState(""); // P12B.6: filter sumber V1/V2 (klien; data sama)
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -66,7 +78,9 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
   // (Order, Kasur, Lini, Layanan, Eksekusi, Prioritas, Target, Update
   // Terakhir, Progres) pindah ke drawer ini, dibuka lewat klik baris —
   // TIDAK ada data yang hilang, cuma dipindah dari tabel ke drawer.
-  const [detailUnit, setDetailUnit] = useState(null);
+  const [localUnitId, setLocalUnitId] = useState(null);
+  const openUnitId = onUnitChange ? (unitIdProp || null) : localUnitId;
+  const setDetailUnit = (u) => (onUnitChange ? onUnitChange(u?.id || null) : setLocalUnitId(u?.id || null));
 
   const load = useCallback(() => {
     setLoading(true);
@@ -90,31 +104,43 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
 
   const rows = useMemo(() => {
     if (!data) return null;
-    if (tab === "__WORKSHOP") return data.units.filter((u) => IN_WORKSHOP_STATUSES.includes(u.status));
-    return data.units;
-  }, [data, tab]);
+    if (tab === "__WORKSHOP") return filterBySource(data.units.filter((u) => IN_WORKSHOP_STATUSES.includes(u.status)), fSource);
+    if (scope === "aktif" && tab === "") return filterBySource(data.units.filter((u) => u.status !== "DELIVERED"), fSource);
+    return filterBySource(data.units, fSource);
+  }, [data, tab, scope, fSource]);
 
   const countFor = useCallback((key) => {
     if (!data) return null;
     const map = Object.fromEntries(data.statusCounts.map((s) => [s.status, s.count]));
-    if (key === "") return data.statusCounts.reduce((n, s) => n + s.count, 0);
+    if (key === "") return data.statusCounts.reduce((n, s) => n + (scope === "aktif" && s.status === "DELIVERED" ? 0 : s.count), 0);
     if (key === "__WORKSHOP") return IN_WORKSHOP_STATUSES.reduce((n, s) => n + (map[s] || 0), 0);
     return map[key] || 0;
+  }, [data, scope]);
+
+  const scopeCount = useCallback((key) => {
+    if (!data) return null;
+    const total = data.statusCounts.reduce((n, x) => n + x.count, 0);
+    const delivered = data.statusCounts.find((x) => x.status === "DELIVERED")?.count || 0;
+    return key === "aktif" ? total - delivered : key === "riwayat" ? delivered : total;
   }, [data]);
 
   const kosong = !loading && rows && rows.length === 0;
   const belumAdaYangDiEngine = rows?.every((u) => !u.currentStage && !u.service);
-  const hasActiveFilter = tab !== "" || !!fServiceLine || !!cari.trim();
+  const hasActiveFilter = (scope ? false : tab !== "") || !!fServiceLine || !!cari.trim();
+  const subtitle = scope === "riwayat" ? "Unit yang sudah terkirim ke pelanggan." : scope === "aktif" ? "Unit yang masih berjalan — belum terkirim. Klik baris untuk membuka Unit 360." : scope === "semua" ? "Seluruh unit, termasuk yang sudah terkirim. Klik baris untuk membuka Unit 360." : "Seluruh unit kasur beserta status dan tahap pengerjaannya.";
 
   return (
     <PageContainer>
       <PageHeader
-        title="Work Order"
-        subtitle="Seluruh unit kasur beserta status dan tahap pengerjaannya."
+        title={onScopeChange || scope ? "Order Produksi" : "Work Order"}
+        subtitle={subtitle}
         actions={
-          <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
-          </Button>
+          <>
+            {headerExtra}
+            <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
+            </Button>
+          </>
         }
       />
 
@@ -128,8 +154,18 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
           </div>
         )}
 
-        <div role="tablist" aria-label="Saring status unit" className="flex flex-wrap gap-1 border-b border-line pb-2">
-          {TABS.map((t) => {
+        <div role="tablist" aria-label="Saring status unit" className="flex flex-wrap items-center gap-1 border-b border-line pb-2" data-testid="order-filter">
+          {onScopeChange && ORDER_SCOPES.map((sc) => {
+            const n = scopeCount(sc.key);
+            return (
+              <button key={sc.key} type="button" role="tab" aria-selected={scope === sc.key} data-testid={`order-scope-${sc.key}`} onClick={() => onScopeChange(sc.key)}
+                className={cn("rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors", scope === sc.key ? "bg-accent text-white" : "text-ink2 hover:bg-hovertint")}>
+                {sc.label}{n != null && <span className="ml-1 text-[11px] opacity-80">{n}</span>}
+              </button>
+            );
+          })}
+          {onScopeChange && tabsShown.length > 0 && <span className="mx-1 h-5 w-px bg-line" aria-hidden />}
+          {tabsShown.map((t) => {
             const n = countFor(t.key);
             return (
               <button
@@ -167,6 +203,10 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
             <option value="">Semua lini</option>
             {Object.entries(SERVICE_LINE_REAL).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
           </select>
+          <select value={fSource} onChange={(e) => setFSource(e.target.value)} aria-label="Filter sumber" data-testid="order-source-filter"
+            className="h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent">
+            {SOURCE_FILTERS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
         </div>
 
         {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
@@ -200,8 +240,8 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
                   <TBody>
                     {loading && <TableSkeletonRows rows={8} cols={5} />}
                     {!loading && rows?.map((u) => (
-                      <TR key={u.id} clickable onClick={() => setDetailUnit(u)}>
-                        <TD sticky className="whitespace-nowrap font-semibold text-ink">{u.unitCode}</TD>
+                      <TR key={u.id} clickable data-testid="order-row" data-unit-code={u.unitCode} onClick={() => setDetailUnit(u)}>
+                        <TD sticky className="whitespace-nowrap font-semibold text-ink">{u.unitCode} <SourceBadge source={sourceOf(u)} className="ml-1 align-middle" /></TD>
                         <TD truncate>{u.order?.customer?.name || "—"}</TD>
                         <TD>
                           <Badge variant={UNIT_STATUS_REAL[u.status]?.tone || "neutral"}>
@@ -222,16 +262,17 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
                 </Table>
               </TableWrap>
 
-              <ul className="divide-y divide-line lg:hidden">
+              <ul className="m-0 list-none divide-y divide-line p-0 lg:hidden">
                 {!loading && rows?.map((u) => (
                   <li key={u.id}>
                     <button
-                      type="button"
+                      type="button" data-testid="order-row" data-unit-code={u.unitCode}
                       onClick={() => setDetailUnit(u)}
                       className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
                     >
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-[12.5px] font-semibold text-ink">{u.unitCode}</span>
+                        <SourceBadge source={sourceOf(u)} className="shrink-0" />
                         {u.priority && u.priority !== "NORMAL" && (
                           <Badge variant={PRODUCTION_PRIORITY_REAL[u.priority]?.tone || "neutral"} className="shrink-0">
                             {PRODUCTION_PRIORITY_REAL[u.priority]?.label || u.priority}
@@ -261,48 +302,9 @@ export default function ProductionWorkOrders({ initialStatus = "" } = {}) {
         </Card>
       </PageBody>
 
-      {/* Drawer detail (P8.2) — field yang dipangkas dari tabel utama.
-          "Buka Detail Unit Lengkap" tetap mengarah ke halaman lama
-          (/bengkel/units/:id, TIDAK diubah) untuk pengguna yang butuh
-          riwayat/aksi lengkap unit itu. */}
-      <Modal open={!!detailUnit} onOpenChange={(v) => !v && setDetailUnit(null)}
-        title={detailUnit?.unitCode} description={detailUnit?.order?.customer?.name || "—"} className="w-[520px]">
-        {detailUnit && (
-          <div className="space-y-3 px-6 pb-4">
-            <dl className="m-0 grid grid-cols-2 gap-2 text-[12.5px]">
-              {[
-                ["Order", detailUnit.order?.orderNumber || "—"],
-                ["Kasur", [detailUnit.merk, formatUkuranLabel(detailUnit.ukuran)].filter(Boolean).join(" · ") || "—"],
-                ["Lini", detailUnit.serviceLine ? SERVICE_LINE_REAL[detailUnit.serviceLine]?.label : "—"],
-                ["Layanan", detailUnit.service?.labelId || "—"],
-                ["Prioritas", detailUnit.priority && detailUnit.priority !== "NORMAL" ? (PRODUCTION_PRIORITY_REAL[detailUnit.priority]?.label || detailUnit.priority) : "Normal"],
-                ["Target", detailUnit.productionDueAt ? formatTanggal(detailUnit.productionDueAt) : "—"],
-                ["Update Terakhir", formatTanggal(detailUnit.updatedAt)],
-                ["Progres", detailUnit.productionStatus ? (PRODUCTION_STATUS_REAL[detailUnit.productionStatus]?.label || detailUnit.productionStatus) : "—"],
-              ].map(([k, v]) => (
-                <div key={k} className="rounded-btn bg-inset px-3 py-2">
-                  <dt className="m-0 text-ink3">{k}</dt>
-                  <dd className="m-0 truncate font-semibold text-ink" title={typeof v === "string" ? v : undefined}>{v}</dd>
-                </div>
-              ))}
-            </dl>
-            {detailUnit.executionState && detailUnit.executionState !== "NOT_STARTED" && (
-              <div className="flex items-center gap-1.5 rounded-btn bg-inset px-3 py-2 text-[12.5px]">
-                <span className="text-ink3">Eksekusi:</span>
-                <Badge variant={STAGE_LOG_STATUS[detailUnit.executionState]?.tone || "neutral"}>
-                  {STAGE_LOG_STATUS[detailUnit.executionState]?.label || detailUnit.executionState}
-                </Badge>
-                {detailUnit.currentSegmentStartedAt && (
-                  <span className="text-[11px] text-ink3">{formatDurasiDetik(elapsedSejak(detailUnit.currentSegmentStartedAt))}</span>
-                )}
-              </div>
-            )}
-            <Button size="sm" variant="secondary" onClick={() => navigate(`/bengkel/units/${detailUnit.id}`)}>
-              <ExternalLink size={13} aria-hidden /> Buka Detail Unit Lengkap
-            </Button>
-          </div>
-        )}
-      </Modal>
+      {/* Klik baris → Unit 360 di drawer yang SAMA (P12B.4). Unit di luar cohort Production V2 tetap terbaca di drawer ini (fallback data order asli),
+          bukan halaman/tab Unit terpisah. */}
+      <UnitOverviewDrawer unitId={openUnitId} onClose={() => setDetailUnit(null)} onChanged={load} />
     </PageContainer>
   );
 }

@@ -108,7 +108,7 @@ test("Export Excel Order: kolom Ukuran/Konfigurasi berisi ukuran AKTUAL, bukan h
 test("Formatter bersama dipakai di detail/daftar order, Produksi, Delivery, unit, dan revisi", () => {
   const perluKasur = ["features/orders/OrderTimelineDrawer.jsx", "pages/b2b/B2BOrders.jsx", "pages/Orders.jsx", "features/inbox/components/CustomerPanel/orderSummary.js", "features/armada/jobStatus.js"];
   for (const f of perluKasur) { const s = baca(f); assert.match(s, /formatUkuranKasur/, f); assert.doesNotMatch(s, /\{info\.ukuranKasur \|\| <span/, f); }
-  const perluLabel = ["pages/bengkel/ProductionWorkOrders.jsx", "pages/bengkel/ProductionUnitDetail.jsx", "pages/Bengkel.jsx", "features/armada/components/JobDetailDrawer.jsx", "features/armada/components/RevisionDetailDrawer.jsx"];
+  const perluLabel = ["pages/bengkel/ProductionWorkOrders.jsx", "features/production/unitOrderFallbackModel.js", "features/armada/components/JobDetailDrawer.jsx", "features/armada/components/RevisionDetailDrawer.jsx"];
   for (const f of perluLabel) { const s = baca(f); assert.match(s, /formatUkuranLabel\(/, f); assert.doesNotMatch(s, /\bu\.ukuran\b(?!\))|unit\.ukuran\b(?!\))/, f + ": tidak boleh menampilkan Unit.ukuran mentah"); }
   // ringkasan produk (Delivery/Inbox) memakai info penuh, bukan string ukuran mentah
   const os = baca("features/inbox/components/CustomerPanel/orderSummary.js");

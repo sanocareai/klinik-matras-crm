@@ -380,8 +380,8 @@ test("QC_WAIVED: hanya QC_WAIVE (ADMIN/OWNER), alasan + audit wajib, tercatat OV
   assert.equal(lead.status, 403, "Production Lead tidak boleh mem-waive QC-nya sendiri");
   const short = await waive(w.admin, { reason: "singkat" }, "t6-short");
   assert.equal(short.status, 400); assert.equal(short.body.code, "QC_WAIVE_REASON_REQUIRED");
-  const adminPass = await inspect(w.admin, p.run.id, passBody(p.revision), "t6-adminpass");
-  assert.equal(adminPass.status, 403); assert.equal(adminPass.body.code, "QC_WRITE_REQUIRED", "ADMIN tidak boleh mencatat PASS (tidak memegang QC_WRITE)");
+  const leadPass = await inspect(w.op, p.run.id, passBody(p.revision), "t6-leadpass");
+  assert.equal(leadPass.status, 403, "Production Lead tidak boleh mencatat PASS (tidak memegang QC_WRITE; ADMIN/OWNER memegangnya sejak 65e7e1f5)");
   assert.equal(await testPrisma.qualityInspection.count(), 0);
 
   const reason = "Owner menyetujui pengiriman tanpa QC karena unit hanya perlu jahit ulang ringan";
@@ -950,4 +950,29 @@ test("unit non-cohort tetap V1: flag ON dengan config rusak/tanpa cohort tidak m
   }
   const orderA = await sales.post(`/api/orders/${inCohort.unit.orderId}/cancel`, { reason: "batal" });
   assert.equal(orderA.status, 200, JSON.stringify(orderA.body));
+});
+
+test("kontrak QC_WRITE (65e7e1f5): ADMIN & OWNER boleh memutus PASS atas nama pengguna penekan; Lead/Gudang/Worker (tanpa QC_WRITE) ditolak tanpa efek", async () => {
+  const w = await world();
+  const owner = await createTestUser({ roles: ["OWNER"] });
+  const worker = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
+  const p1 = await toAwaitingQc(w);
+  const denied = { lead: w.op, gudang: w.gudang, worker: { api: makeClient(server.baseUrl, worker.token) } };
+  for (const [name, who] of Object.entries(denied)) {
+    const r = await inspect(who, p1.run.id, passBody(p1.revision), `qw-deny-${name}`);
+    assert.equal(r.status, 403, `${name} tidak memegang QC_WRITE: ${JSON.stringify(r.body)}`);
+  }
+  assert.equal(await testPrisma.qualityInspection.count(), 0, "penolakan tidak meninggalkan inspeksi");
+  assert.equal(await testPrisma.qcFitTest.count(), 0);
+
+  const adminPass = await inspect(w.admin, p1.run.id, passBody(p1.revision), "qw-admin");
+  assert.equal(adminPass.status, 200, JSON.stringify(adminPass.body)); assert.equal(adminPass.body.result, "PASS");
+  const i1 = await testPrisma.qualityInspection.findFirstOrThrow({ where: { runId: p1.run.id } });
+  assert.equal(i1.result, "PASS"); assert.equal(i1.inspectorId, w.admin.user.id, "aktor = ADMIN penekan, bukan dipalsukan sebagai QC");
+
+  const p2 = await toAwaitingQc(w);
+  const ownerPass = await inspect({ api: makeClient(server.baseUrl, owner.token) }, p2.run.id, passBody(p2.revision), "qw-owner");
+  assert.equal(ownerPass.status, 200, JSON.stringify(ownerPass.body));
+  const i2 = await testPrisma.qualityInspection.findFirstOrThrow({ where: { runId: p2.run.id } });
+  assert.equal(i2.result, "PASS"); assert.equal(i2.inspectorId, owner.user.id);
 });

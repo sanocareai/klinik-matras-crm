@@ -44,6 +44,7 @@ import { internalRouter } from "./routes/internal.js";
 import { sseRouter }      from "./routes/sse.js";
 import { adminRouter }    from "./routes/admin.js";
 import { unitRouter }     from "./routes/units.js";
+import { morningPriorityRouter } from "./routes/morningPriority.js";
 import { productionRouter } from "./routes/production.js";
 import { activityRouter } from "./routes/activity.js";
 import { armadaRouter }     from "./routes/armada.js";
@@ -235,6 +236,7 @@ app.use("/api/knowledge",    knowledgeRouter);
 // endpointnya ada tapi tidak ada satu pun akun yang bisa memakainya sampai
 // role diberikan lewat UserRole. Lihat docs/sano-hub/PHASE-0.md.
 app.use("/api/units",        unitRouter);
+app.use("/api/morning-priority-requests", morningPriorityRouter);
 app.use("/api/production",   productionRouter);
 app.use("/api/activity",     activityRouter);
 app.use("/api/complaints",   complaintsRouter);

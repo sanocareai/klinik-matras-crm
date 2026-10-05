@@ -5,6 +5,7 @@
 //    state yang tidak konsisten atau yang punya exception rekonsiliasi OPEN.
 //  - findV2OwnedUnitIds / assertOrderUnitsNotV2Owned: pagar jalur V1 di sisi Sales/Order (dropdown status, batalkan, buka kembali) untuk
 //    unit COHORT yang punya run aktif. Writer OFF / non-cohort / tanpa run => tidak ada efek (perilaku V1 identik).
+import { findV1Drift } from "./unitV2Ownership.js";
 import { PRODUCTION_WRITER_MODE, isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
 export const RUN_TERMINAL_STATUSES = Object.freeze(["COMPLETED", "CANCELLED"]);
@@ -57,6 +58,24 @@ export async function assertNoOpenRunException(tx, runId) {
   const open = await tx.productionRunException.findFirst({ where: { runId, status: "OPEN" }, select: { id: true, kind: true } });
   if (open) {
     throw guardError("Production Run ini punya konflik rekonsiliasi yang belum diselesaikan — selesaikan dulu sebelum melanjutkan.", 409, "PRODUCTION_RUN_EXCEPTION_OPEN", { exceptionId: open.id, kind: open.kind });
+  }
+  await assertNoV1Drift(tx, { runId });
+}
+
+// Rollback writer OFF -> aksi V1 -> writer ON kembali: aksi V1 yang ditulis saat Run non-terminal ada (penanda PRODUCTION_V1_WRITE_ON_V2_RUN, satu transaksi dengan
+// mutasinya) membuat proyeksi V2 (operasi, Planned BOM, reservasi, rencana) TIDAK lagi dijamin sama dengan state V1. SELURUH command V2 yang memuat run/plan/issue
+// berhenti (409) — tidak ada yang melanjutkan state lama diam-diam. Rekonsiliasi = batalkan Run (CANCEL_RUN, command resmi QC/Run — loader-nya sengaja TIDAK
+// memakai gerbang ini); unit lalu dikerjakan lewat V1 dan Run baru dibuka lewat alur custody/rework yang sah. Menerima + menyinkronkan state V1 ke proyeksi V2
+// BELUM ada (butuh keputusan desain) — tidak ditebak di sini.
+export async function assertNoV1Drift(tx, { runId, unitId = null }) {
+  const uid = unitId ?? (await tx.productionRun.findUnique({ where: { id: runId }, select: { unitId: true } }))?.unitId;
+  if (!uid) return;
+  const drift = await findV1Drift(tx, { runId, unitId: uid });
+  if (drift) {
+    throw guardError(
+      "Production Run ini punya aksi V1 yang dikerjakan saat V2 tidak memegang eksekusi (writer dimatikan) — proyeksi V2 bisa berbeda dari state V1. Command V2 dihentikan sampai direkonsiliasi (batalkan Run lalu lanjutkan lewat V1/Run baru).",
+      409, "PRODUCTION_RUN_V1_DRIFT", { runId, count: drift.count, kinds: drift.kinds, lastAt: drift.lastAt },
+    );
   }
 }
 

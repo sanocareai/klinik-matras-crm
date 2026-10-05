@@ -48,18 +48,20 @@ export default function ProductionKpi({ defaultTab = DEFAULT_TAB }) {
   const tab = tabs.find((t) => t.key === tabKey) || tabs[0] || null;
   const setTab = (key) => { setTabKey(key); setParams((p) => { const n = new URLSearchParams(p); n.set("tab", key); return n; }, { replace: true }); };
 
-  const qs = useMemo(() => reportQuery(period, filters, tab?.key === "ringkasan" ? { granularity } : {}), [period, filters, granularity, tab?.key]);
+  const qs = useMemo(() => reportQuery(period, filters, tab?.kind === "summary" ? { granularity } : {}), [period, filters, granularity, tab?.kind]);
   const baseQs = useMemo(() => reportQuery(period, filters), [period, filters]);
 
+  // Bergantung pada JENIS dokumen (bukan objek tab): Ringkasan KPI & Produksi memakai dokumen ringkasan yang sama — pindah di antaranya tidak memuat ulang.
+  const kind = tab?.kind;
   const load = useCallback(() => {
-    if (!tab) return;
+    if (!kind || kind === "export") { setDoc(null); setLoading(false); return; } // tab Export hanya berisi tombol unduh, tanpa muat data
     const mine = ++seq.current;
     setLoading(true); setError("");
-    api.getProductionReport(tab.kind === "mine" ? "my-summary" : tab.kind, qs)
+    api.getProductionReport(kind === "mine" ? "my-summary" : kind, qs)
       .then((d) => { if (mine === seq.current) setDoc(d); })
       .catch((e) => { if (mine === seq.current) { setError(e.message); setDoc(null); } })
       .finally(() => { if (mine === seq.current) setLoading(false); });
-  }, [tab, qs]);
+  }, [kind, qs]);
   useEffect(() => { load(); }, [load]);
 
   const openList = (title, path, exportExtra) => setDrill({ title, load: () => api.getProductionReportList(path, baseQs), exportExtra });
@@ -83,7 +85,7 @@ export default function ProductionKpi({ defaultTab = DEFAULT_TAB }) {
   return (
     <PageContainer fluid>
       <PageHeader
-        title="KPI Produksi & Gudang"
+        title="KPI & Laporan"
         subtitle={readOnlyHint || "Satu kontrak metrik untuk dashboard, daftar unit, dan export. Hanya Produksi V2 dalam cohort."}
         actions={<Button variant="ghost" size="sm" onClick={load} disabled={loading || !tab}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>}
       />
@@ -100,23 +102,26 @@ export default function ProductionKpi({ defaultTab = DEFAULT_TAB }) {
 
         {showFilters && !off && (
           <FilterBar meta={meta} range={range} onRange={setRange} filters={filters} onFilters={setFilters} onReset={() => setFilters(emptyFilters())}
-            granularity={granularity} onGranularity={tab?.key === "ringkasan" ? setGranularity : undefined} show={filterShow} />
+            granularity={granularity} onGranularity={tab?.kind === "summary" ? setGranularity : undefined} show={filterShow} />
         )}
 
         {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red" role="alert">{error}</div>}
         {off && <OffNotice message={off} />}
         {loading && !doc && <p className="m-0 text-[12.5px] text-ink3">Memuat laporan…</p>}
 
-        {doc && !off && tab?.kind !== "mine" && doc.kind === tab?.kind && (
+        {tab?.kind === "export" && !off && <ExportPanel tabs={tabs} period={period} filters={filters} />}
+
+        {doc && !off && tab?.kind !== "mine" && tab?.kind !== "export" && doc.kind === tab?.kind && (
           <div className={`min-w-0 space-y-4 ${loading ? "opacity-60" : ""}`} data-testid={`panel-${tab.key}`}>
             <CoverageBar doc={doc} />
-            {tab.key === "ringkasan" && <SummaryPanel doc={doc} granularity={granularity} onMetric={openMetric} onUnit={setUnitId} />}
+            {tab.key === "ringkasan" && <SummaryPanel part="kpi" doc={doc} granularity={granularity} onMetric={openMetric} onUnit={setUnitId} />}
+            {tab.key === "produksi" && <SummaryPanel part="produksi" doc={doc} granularity={granularity} onMetric={openMetric} onUnit={setUnitId} />}
             {tab.key === "ringkasan" && <TargetPanel canWrite={!!meta?.capabilities?.targetWrite} onChanged={load} />}
             {tab.key === "meja" && <StationsPanel doc={doc} onList={openList} onUnit={setUnitId} />}
             {tab.key === "pic" && <OperatorsPanel doc={doc} onList={openList} />}
             {tab.key === "gudang" && <WarehousePanel doc={doc} onList={openWarehouseList} />}
             {tab.key === "laporan" && <UnitsPanel doc={doc} onUnit={setUnitId} />}
-            {exportKind && <Card className="p-3"><ExportButtons report={exportKind} period={period} filters={filters} extra={tab.key === "ringkasan" ? { granularity } : {}} label={`Unduh laporan ${tab.label}`} /></Card>}
+            {exportKind && <Card className="p-3"><ExportButtons report={exportKind} period={period} filters={filters} extra={tab.kind === "summary" ? { granularity } : {}} label={`Unduh laporan ${tab.label}`} /></Card>}
             <Definitions doc={doc} />
           </div>
         )}
@@ -130,12 +135,13 @@ export default function ProductionKpi({ defaultTab = DEFAULT_TAB }) {
 }
 
 // ---------------------------------------------------------------- panel ---------------------------------------------------------------------
-function SummaryPanel({ doc, granularity, onMetric, onUnit }) {
+function SummaryPanel({ doc, granularity, onMetric, onUnit, part = "kpi" }) {
   const groups = groupMetrics(doc.metrics);
   const table = (key) => doc.tables.find((t) => t.key === key);
+  // P12B.2: dokumen yang sama dipecah — "Ringkasan KPI" = kartu metrik; "Produksi" = tren + tabel perhatian/bahan.
   return (
     <>
-      {groups.map((g) => (
+      {part === "kpi" && groups.map((g) => (
         <section key={g.group} className="min-w-0" data-testid={`group-${g.group}`}>
           <h3 className="m-0 mb-2 text-[13.5px] font-bold text-ink">{g.group}</h3>
           <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-5">
@@ -143,11 +149,31 @@ function SummaryPanel({ doc, granularity, onMetric, onUnit }) {
           </div>
         </section>
       ))}
-      <TrendChart table={table("trend")} granularity={granularity} />
-      <ReportTable table={table("trend")} />
-      <ReportTable table={table("attention")} onUnit={onUnit} />
-      <ReportTable table={table("materials")} />
+      {part === "produksi" && (
+        <>
+          <TrendChart table={table("trend")} granularity={granularity} />
+          <ReportTable table={table("trend")} />
+          <ReportTable table={table("attention")} onUnit={onUnit} />
+          <ReportTable table={table("materials")} />
+        </>
+      )}
     </>
+  );
+}
+
+// Tab Export — hanya mengumpulkan tombol unduh laporan yang SUDAH ADA (kontrak, periode, dan filter yang sama dengan layar).
+function ExportPanel({ tabs, period, filters }) {
+  const items = tabs.filter((t) => EXPORTABLE[t.key]);
+  return (
+    <div className="space-y-3" data-testid="panel-export">
+      <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2">Unduhan memakai periode dan filter di atas — angkanya identik dengan layar. Produksi V2 dalam cohort saja.</p>
+      {items.map((t) => (
+        <Card key={t.key} className="p-3" data-testid={`export-${t.key}`}>
+          <h3 className="m-0 mb-2 text-[13.5px] font-bold text-ink">{t.label}</h3>
+          <ExportButtons report={EXPORTABLE[t.key]} period={period} filters={filters} extra={t.kind === "summary" ? { granularity: "day" } : {}} label={`Unduh laporan ${t.label}`} />
+        </Card>
+      ))}
+    </div>
   );
 }
 

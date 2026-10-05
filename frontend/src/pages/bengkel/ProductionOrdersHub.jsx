@@ -1,51 +1,40 @@
-import React, { useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import ProductionWorkOrders from "./ProductionWorkOrders.jsx";
+import React from "react";
+import { ArrowLeft, ListChecks } from "lucide-react";
+import { Button } from "@/components/ui/button.jsx";
+import { useHubParam, useOpenParam } from "@/hooks/useHubParam.js";
+import ProductionWorkOrders, { ORDER_SCOPES } from "./ProductionWorkOrders.jsx";
 import ProductionOrders from "./ProductionOrders.jsx";
 
-// Order Produksi (P8.1, UI & Navigation Consolidation) — hub navigasi untuk
-// "Work Order" + "Semua Order" LAMA (dua halaman TERPISAH sebelumnya, dua
-// menu sidebar sendiri-sendiri). Digabung jadi SATU menu dengan tab, TANPA
-// mengubah komponen/data di baliknya sama sekali — keduanya dirender apa
-// adanya (masing-masing sudah punya PageContainer/PageHeader sendiri, jadi
-// tab strip di sini SENGAJA di LUAR PageContainer manapun, bukan menyisipkan
-// PageContainer baru yang akan dobel padding). Route lama
-// (/bengkel/work-orders, /bengkel/orders) TETAP ADA (lihat Layout.jsx
-// section "LEGACY (ADMIN)").
+// Order Produksi (P12B.3) — klik menu LANGSUNG menampilkan daftar order asli yang aktif: tanpa halaman perantara, pemilihan mode, wizard, atau
+// langkah pembuka. Aktif · Semua · Riwayat adalah filter ringan di baris saring halaman yang sama (default Aktif; ?tab= bertahan saat muat ulang).
+// Klik baris membuka Unit 360. Membaca order asli TIDAK butuh Production V2 aktif maupun Mode Latihan (daftar = endpoint lama getWorkOrders).
 //
-// Menu "Riwayat" (Pengaturan & Administrasi) mengarah ke sini dengan
-// ?tab=work-order&status=DELIVERED — BUKAN halaman baru, cuma tab Work Order
-// pra-filter status "Terkirim" (riwayat unit yang sudah selesai dikirim).
-const TABS = [
-  { key: "work-order", label: "Work Order" },
-  { key: "semua-order", label: "Semua Order" },
-];
+// "Semua Order" level order (pembaruan status order oleh Production, D-086) tetap tersedia sebagai tampilan sekunder (?view=order) lewat tombol
+// "Status order" — bukan langkah wajib dan bukan bagian dari filter di atas.
+export const ORDER_SCOPE_KEYS = ORDER_SCOPES.map((s) => s.key);
 
 export default function ProductionOrdersHub() {
-  const [params] = useSearchParams();
-  const initialTab = params.get("tab") === "semua-order" ? "semua-order" : "work-order";
-  const initialStatus = params.get("status") || "";
-  const [tab, setTab] = useState(initialTab);
+  const [scope, setScope] = useHubParam("tab", ORDER_SCOPE_KEYS, "aktif");
+  const [view, setView] = useHubParam("view", ["units", "order"], "units");
+  const [unitId, setUnitId] = useOpenParam("unit"); // ?unit=<id> → drawer Unit 360 terbuka (bookmark/muat ulang/tab lama aman)
 
-  return (
-    <div>
-      <div role="tablist" aria-label="Tampilan Order Produksi" className="flex gap-1 border-b border-line px-4 pt-4 md:px-8 md:pt-6">
-        {TABS.map((t) => (
-          <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-semibold ${tab === t.key ? "border-accent text-accent" : "border-transparent text-ink3 hover:text-ink2"}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {/* Kedua komponen dirender APA ADANYA, hanya disembunyikan lewat CSS
-          (bukan unmount) supaya filter/scroll yang belum disimpan tidak
-          hilang saat berpindah tab — pola sama dengan TabbedContent.jsx. */}
-      <div className={tab === "work-order" ? "" : "hidden"}>
-        <ProductionWorkOrders initialStatus={initialStatus} />
-      </div>
-      <div className={tab === "semua-order" ? "" : "hidden"}>
+  if (view === "order") {
+    return (
+      <div>
+        <div className="px-4 pt-4 md:px-8 md:pt-6">
+          <Button variant="ghost" size="sm" onClick={() => setView("units")} data-testid="order-back-to-units"><ArrowLeft size={14} aria-hidden /> Kembali ke daftar order produksi</Button>
+        </div>
         <ProductionOrders />
       </div>
-    </div>
+    );
+  }
+  return (
+    <ProductionWorkOrders
+      scope={scope}
+      onScopeChange={setScope}
+      unitId={unitId}
+      onUnitChange={setUnitId}
+      headerExtra={<Button variant="ghost" size="sm" onClick={() => setView("order")} data-testid="order-open-status"><ListChecks size={14} aria-hidden /> Status order</Button>}
+    />
   );
 }

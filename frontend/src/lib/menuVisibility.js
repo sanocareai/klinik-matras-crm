@@ -25,5 +25,7 @@ export function filterMenuByPermission(division, { roles = [], divisiSaya = [] }
 export function visibleSections(sections, isAdmin) {
   return sections
     .filter((s) => !s.adminOnly || isAdmin)
-    .map((s) => ({ ...s, items: s.items.filter((i) => !i.adminOnly || isAdmin) }));
+    .map((s) => ({ ...s, items: s.items.filter((i) => !i.adminOnly || isAdmin) }))
+    // P12B.2: section yang SELURUH menunya tersaring (mis. ADMINISTRASI untuk Operator) tidak ditampilkan — tanpa judul section kosong.
+    .filter((s) => s.items.length > 0);
 }

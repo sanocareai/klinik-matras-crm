@@ -27,6 +27,7 @@ import { lockMaterialBalance, lockRowForUpdate, RESERVED_STATUSES } from "./inve
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 import { BOARD_DEFAULTS, assertStationCapacity, formatProductionDate, normalizeScheduleInput, parseProductionDate, workWindowFor } from "../lib/domain/productionBoard.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
+import { assertNoV1Drift } from "./productionRunGuards.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const EPSILON = 1e-6;
@@ -198,6 +199,7 @@ export async function loadPlanForWrite(tx, planId) {
     },
   });
   if (!plan) throw planError("Rencana produksi tidak ditemukan", 404, "PLAN_NOT_FOUND");
+  await assertNoV1Drift(tx, { runId: plan.run.id, unitId: plan.run.unitId }); // rollback writer OFF -> aksi V1 -> writer ON: berhenti sampai direkonsiliasi
   return plan;
 }
 

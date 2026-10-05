@@ -13,6 +13,7 @@
 
 import { prisma } from "../db.js";
 import { StageTransitionError } from "./unitStageEngine.js";
+import { guardV1UnitWrite } from "./unitV2Ownership.js";
 import { buildUnitPath } from "../lib/domain/routing.js";
 import { buildRouteStageSnapshot, canReplaceRoute, deriveSkillWarning } from "../lib/domain/productionRouting.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
@@ -108,8 +109,9 @@ export async function tryProvisionUnitRoute(tx, unitId, serviceId, actorId) {
  * resolusi rute barunya BEDA dari yang sekarang. Scope Revision adalah
  * konsep TERPISAH (Slice 4R) — endpoint ini TIDAK dipakai untuk itu.
  */
-export async function changeUnitRoute(unitId, { actorId } = {}) {
+export async function changeUnitRoute(unitId, { actorId, guardV1 = null } = {}) {
   return prisma.$transaction(async (tx) => {
+    if (guardV1) await guardV1UnitWrite(tx, unitId, { what: guardV1, actorId }); // gerbang tulis V1 (P12B.6): kunci unit + kepemilikan di transaksi yang SAMA dengan mutasi
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
     if (!unit.serviceId) {
       throw new StageTransitionError("Unit belum punya layanan — tetapkan layanan dulu (PATCH /units/:id/service) sebelum rute bisa ditentukan");
@@ -152,8 +154,9 @@ export async function changeUnitRoute(unitId, { actorId } = {}) {
  * sebagai `skillWarning` untuk ditampilkan ke supervisor, assignment tetap
  * tersimpan.
  */
-export async function assignStage(unitId, stageId, { workCenterId, operatorId, actorId, note } = {}) {
+export async function assignStage(unitId, stageId, { workCenterId, operatorId, actorId, note, guardV1 = null } = {}) {
   return prisma.$transaction(async (tx) => {
+    if (guardV1) await guardV1UnitWrite(tx, unitId, { what: guardV1, actorId });
     const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
     await tx.unit.findUniqueOrThrow({ where: { id: unitId }, select: { id: true } });
 

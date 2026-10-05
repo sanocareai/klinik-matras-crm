@@ -1,2 +1,6 @@
 # Script bash HARUS pakai LF (bukan CRLF) agar bisa dijalankan di Linux VPS
 *.sh text eol=lf
+
+# Migration Prisma HARUS LF: checksum _prisma_migrations dihitung dari byte berkas. 20261007110000_team_broadcast_contacts pernah diterapkan di produksi dari
+# working tree CRLF (checksum DB != blob LF) — lihat docs/MIGRATION-HISTORY-TEAM-BROADCAST-CRLF.md. Jangan pernah rilis dari checkout CRLF.
+backend/prisma/migrations/**/migration.sql text eol=lf

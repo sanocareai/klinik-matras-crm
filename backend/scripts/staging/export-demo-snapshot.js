@@ -25,6 +25,8 @@ const add = (u) => urls.add(u);
 add("/production-v2/command-center");
 for (let d = -3; d <= 3; d += 1) add(`/production-v2/board?date=${wibDate(d)}`);
 for (const u of ["/production/work-centers", "/production/operators", "/master-data/service-catalog", "/inventory/materials?active=true", "/inventory/stock", "/complaints?currentOwner=QC", "/production-v2/warehouse/queue", "/production-v2/targets", "/production-v2/reports/meta"]) add(u);
+// P12B.2: antrean Aplikasi Meja/Corner (OWNER melihat semua PIC) untuk Mode Latihan peran Operator/PIC Corner.
+add("/production-v2/worker/table"); add("/production-v2/worker/corner");
 add("/production-planning/qc/queue"); for (const t of QC_QUEUE_TABS) add(`/production-planning/qc/queue?tab=${t}`);
 for (const f of DOC_QUEUE_FILTERS) add(`/production-v2/documentation/queue?filter=${f}`);
 // --- laporan KPI (periode bawaan UI: 30 hari terakhir) ---

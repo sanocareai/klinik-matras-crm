@@ -7,6 +7,7 @@ import { ProgressBar } from "@/components/ui/progress.jsx";
 import EvidenceCapture from "@/features/production/components/EvidenceCapture.jsx";
 import StepForm from "@/features/production/components/StepForm.jsx";
 import { DiagnosisWizard } from "@/features/production/DiagnosisWizard.jsx";
+import { isGantiKain } from "@/features/production/unitCardModel.js";
 import {
   MEDIA_RULES, STEP_BY_NO, actionLabel, bucketStyle, buildStepPayload, clearDraft, createIntentKeys, formatMinutes, friendlyError,
   isQuickAction, isRetryableError, loadDraft, saveDraft, validateStepForm, waitCopy,
@@ -30,6 +31,14 @@ function UnitHeader({ card }) {
         <Badge variant={style.badge}>{style.label}</Badge>
       </div>
       <p className="text-[13px] text-ink3">{[card.unit.merk, card.unit.ukuran, card.unit.service?.label].filter(Boolean).join(" · ") || "Detail kasur belum dicatat"}</p>
+      {/* P12B: PIC produksi harus melihat apa yang DIJUAL Sales; Ganti Kain krusial (kain harus sesuai permintaan customer). */}
+      <p data-testid="layanan-sales" className="m-0 break-words text-[14px] font-semibold text-ink [overflow-wrap:anywhere]"><span className="font-medium text-ink3">Layanan Sales: </span>{card.customer.salesServices?.length ? card.customer.salesServices.join(" + ") : "belum dicatat Sales"}</p>
+      {isGantiKain({ customer: card.customer }) && (
+        <div data-testid="ganti-kain-note" role="note" className="rounded-btn border border-orange bg-orangebg px-3 py-2 text-[13.5px] font-bold text-orange">
+          <p className="m-0 flex items-start gap-1.5"><Scissors size={15} className="mt-px shrink-0" aria-hidden /> Ganti Kain — pastikan sesuai permintaan customer</p>
+          {!card.customer.request && <p className="m-0 mt-1 text-[13px] font-semibold">Catatan kain belum tersedia — konfirmasi ke Sales</p>}
+        </div>
+      )}
       <dl className="m-0 grid grid-cols-2 gap-2 text-[13px]">
         <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Berat badan</dt><dd className="m-0 font-semibold text-ink">{card.customer.weightKg ? `${card.customer.weightKg} kg` : "—"}</dd></div>
         <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Posisi tidur</dt><dd className="m-0 font-semibold text-ink">{card.customer.sleepPosition || "Belum dicatat Sales"}</dd></div>
@@ -196,7 +205,7 @@ function StepSheet({ card, next, onClose, onSubmitted }) {
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{error}</div>}
       </div>
       <div className="border-t border-line bg-surface px-3 pt-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-        <button type="button" onClick={submit} disabled={busy}
+        <button type="button" data-mutates onClick={submit} disabled={busy}
           className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-btn bg-accent text-[16px] font-bold text-white disabled:opacity-50">
           {busy ? <><Loader2 size={20} className="animate-spin" aria-hidden /> Mengirim…</> : canRetry ? "Coba Lagi" : actionLabel(next, { stageLabel: card.activeOp?.stageLabel })}
         </button>
@@ -258,7 +267,7 @@ function ShortageSheet({ card, onClose, onDone }) {
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{error}</div>}
       </div>
       <div className="border-t border-line bg-surface px-3 pt-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-        <button type="button" onClick={submit} disabled={busy} className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-btn bg-red text-[16px] font-bold text-white disabled:opacity-50">
+        <button type="button" data-mutates onClick={submit} disabled={busy} className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-btn bg-red text-[16px] font-bold text-white disabled:opacity-50">
           {busy ? "Mengirim…" : `Kirim ke Gudang (${items.length} bahan)`}
         </button>
       </div>
@@ -363,7 +372,7 @@ export default function WorkerLane({ lane = "TABLE" }) {
             <div className="space-y-2">
               <p className="text-[13px] text-ink3">Tindakan berikutnya · Tahap {next.stepNo}</p>
               {next.rework && <p className="rounded-btn bg-orangebg px-3 py-2 text-[13.5px] text-orange">Uji tekstur {String(next.lastVerdict || "").replace("_", " ").toLowerCase()} — sesuaikan lapisan lalu kirim ulang bukti.</p>}
-              <button type="button" data-testid={next.stepNo === 5 ? "open-diagnosis" : undefined} disabled={quickBusy} onClick={() => (isQuickAction(next) ? quick() : setSheet("step"))}
+              <button type="button" data-testid={next.stepNo === 5 ? "open-diagnosis" : undefined} data-mutates={isQuickAction(next) ? "" : undefined} disabled={quickBusy} onClick={() => (isQuickAction(next) ? quick() : setSheet("step"))}
                 className="flex min-h-[64px] w-full items-center justify-center gap-2 rounded-btn bg-accent px-4 text-[17px] font-bold text-white shadow-sm active:scale-[0.99] disabled:opacity-50">
                 {quickBusy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : null}
                 {actionLabel(next, { stageLabel: card.activeOp?.stageLabel })}

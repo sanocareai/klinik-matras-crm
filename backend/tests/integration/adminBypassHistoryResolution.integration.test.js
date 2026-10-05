@@ -7,14 +7,18 @@ import {
   resolveAdminBypassHistory,
 } from "../../scripts/production-delivery-v2/resolve-admin-bypass-history.js";
 
-test.beforeEach(async () => { await truncateAll(); });
-test.afterEach(async () => { await truncateAll(); });
-test.after(async () => { await testPrisma.$disconnect(); });
+// routing_stages = master data (TIDAK ikut truncateAll). Stage fixture ber-prefix ini WAJIB dihapus setelah tes supaya tidak bocor ke berkas lain yang
+// membaca daftar tahap (mis. tes QC P6 yang memeriksa kode tahap) saat dijalankan di database yang sama.
+const FIXTURE_STAGE_PREFIX = "admin-bypass-history-";
+const dropFixtureStages = () => testPrisma.routingStage.deleteMany({ where: { code: { startsWith: FIXTURE_STAGE_PREFIX } } });
+test.beforeEach(async () => { await truncateAll(); await dropFixtureStages(); });
+test.afterEach(async () => { await truncateAll(); await dropFixtureStages(); });
+test.after(async () => { await dropFixtureStages(); await testPrisma.$disconnect(); });
 
 test("lima KEEP_V1 diselesaikan atomik, idempoten, searchable, tanpa fabrikasi bukti", async () => {
   const stage = await testPrisma.routingStage.create({
     data: {
-      code: `admin-bypass-history-${Date.now()}`,
+      code: `${FIXTURE_STAGE_PREFIX}${Date.now()}`,
       labelId: "Administrative history",
       phase: "FINISH",
       sequence: 999,

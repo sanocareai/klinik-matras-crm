@@ -75,9 +75,12 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone }) {
       ? { productionDate: null, stationCode: null, priority: form.priority }
       : { ...form, priority: Number(form.priority), cornerOperatorId: form.cornerOperatorId || undefined };
     try {
-      if (plan) await api.scheduleProductionV2Plan(plan.id, { ...body, expectedRevision: plan.revision });
-      else await api.planProductionV2Unit({ runId: target.runId, ...body });
-      onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}.`);
+      let result;
+      if (plan) result = await api.scheduleProductionV2Plan(plan.id, { ...body, expectedRevision: plan.revision });
+      else result = await api.planProductionV2Unit({ runId: target.runId, ...body });
+      // Argumen ke-2 (P12A.3): info penempatan agar pemanggil bisa menetapkan POSISI AWAL menurut prioritas (bukan auto-reorder).
+      onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}.`,
+        unschedule ? null : { planId: plan?.id ?? result?.planId ?? result?.id ?? null, stationCode: form.stationCode, productionDate: form.productionDate, priority: Number(form.priority) });
     } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
   }
 

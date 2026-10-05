@@ -142,7 +142,7 @@ async function runToFinish(w, { usedLapisan = 1 } = {}) {
   const planned = await planOnBoard(w, run.id);
   await throughIntake(w, run.id);
   ok(await step(w, w.nadya, run.id, 5, { payload: DIAG }));
-  ok(await w.lead.api.patch(`/api/units/${unit.id}/service`, { serviceId: w.service.id }));
+  await testPrisma.unit.update({ where: { id: unit.id }, data: { serviceId: w.service.id, serviceLine: w.service.serviceLine } }); // layanan teknis cohort = hasil Diagnosis V2; jalur V1 ditutup (409 UNIT_V2_OWNED)
   const issueId = await setBomAndIssue(w, planned.planId);
   ok(await step(w, w.nadya, run.id, 5, {}));
   await pick(w, issueId);

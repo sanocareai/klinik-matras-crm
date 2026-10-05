@@ -360,7 +360,7 @@ export default function Gudang() {
 
   const roles = currentRoles();
   const allowed = roles.some((r) => ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE"].includes(r));
-  const canWrite = roles.includes("WAREHOUSE");
+  const canWrite = roles.some((r) => ["WAREHOUSE", "ADMIN", "OWNER"].includes(r)); // keputusan owner 4 Okt 2026: ADMIN/OWNER memegang INVENTORY_WRITE
 
   const load = useCallback(async () => {
     try {
@@ -416,9 +416,9 @@ export default function Gudang() {
         )}
       >
         <div className="mt-2 flex gap-2">
-          <button onClick={() => navigate("/bengkel")}
+          <button onClick={() => navigate("/bengkel/production-v2")}
             className="rounded-chip px-3 py-1 text-[13px] font-medium text-ink2 hover:bg-hovertint">
-            Papan Produksi
+            Status Produksi
           </button>
           <button className="rounded-chip bg-accentbg px-3 py-1 text-[13px] font-medium text-accent">
             Gudang

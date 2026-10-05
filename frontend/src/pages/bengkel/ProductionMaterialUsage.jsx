@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Boxes, RefreshCw } from "lucide-react";
+import { unitDetailPath } from "@/lib/legacyProductionRoutes.js";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -98,7 +99,7 @@ export default function ProductionMaterialUsage() {
                 <TBody>
                   {loading && <TableSkeletonRows rows={8} cols={8} />}
                   {!loading && movements?.map((m) => (
-                    <TR key={m.id} clickable onClick={() => navigate(`/bengkel/units/${m.unit.id}`)}>
+                    <TR key={m.id} clickable onClick={() => navigate(unitDetailPath(m.unit.id))}>
                       <TD className="text-ink2">{formatTanggalJam(m.createdAt)}</TD>
                       <TD className="font-semibold text-ink">{m.unit?.unitCode || "—"}</TD>
                       <TD className="text-ink2">{m.unit?.order?.orderNumber || "—"}</TD>
