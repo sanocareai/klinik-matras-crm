@@ -24,6 +24,7 @@ import { listBacklog, parseBacklogQuery } from "../services/productionBacklog.js
 import { getDiagnosisState, mapManualMaterial, saveDiagnosisDraft, submitDiagnosis } from "../services/productionDiagnosisCommandService.js";
 import { productionEvidenceUploadRouter } from "./productionEvidenceMedia.js";
 import { productionDocumentationRouter } from "./productionDocumentation.js";
+import { productionComponentNotesRouter } from "./productionComponentNotes.js";
 import { productionReportsRouter } from "./productionReports.js";
 import { productionTargetsRouter } from "./productionTargets.js";
 import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
@@ -418,6 +419,7 @@ productionExperienceRouter.post("/units/:unitId/confirm-arrival", requirePermiss
 productionExperienceRouter.use(productionEvidenceUploadRouter);
 // P10B — Aplikasi Dokumentasi (antrean, matriks, unggah, kirim, koreksi): izin & cohort diperiksa di router.
 productionExperienceRouter.use("/documentation", productionDocumentationRouter);
+productionExperienceRouter.use("/component-notes", productionComponentNotesRouter); // slice 3 — Catatan Komponen kanonis per unit
 // P12A/P12B.2 — Mode Latihan: server hanya MEMUTUSKAN boleh/tidak (ADMIN, OWNER, Production Lead, Operator/PIC, QC, Gudang, Dokumenter; Sales/Finance/Driver ditolak 403). Data latihan sintetis dimuat frontend setelah 200 dari sini; endpoint ini tidak membaca/menulis database.
 productionExperienceRouter.get("/demo/access", requirePermission(P.PRODUCTION_DEMO_VIEW), (req, res) => {
   res.set("Cache-Control", "no-store");

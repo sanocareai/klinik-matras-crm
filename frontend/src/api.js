@@ -807,6 +807,16 @@ export const api = {
     request(`/production-v2/documentation/runs/${runId}/submit`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   correctProductionV2Documentation: (runId, data, idempotencyKey = mutationKey("p10b-doc-fix")) =>
     request(`/production-v2/documentation/runs/${runId}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Slice 3 — Catatan Komponen kanonis per unit (Sebelum -> Sesudah): satu data untuk Meja, Corner, Dokumentasi, Unit 360, laporan. Informasi saja (tanpa stok/BOM/lifecycle).
+  getComponentNotes: (unitId) => request(`/production-v2/component-notes/units/${unitId}`),
+  searchComponentMaterials: (q = "") => request(`/production-v2/component-notes/materials?q=${encodeURIComponent(q)}`),
+  uploadComponentNoteMedia: (unitId, files, onProgress) => {
+    const fd = new FormData();
+    for (const file of files) fd.append("files", file);
+    return uploadWithProgress(`/production-v2/component-notes/units/${unitId}/upload`, fd, onProgress);
+  },
+  saveComponentNote: (unitId, section, data, idempotencyKey = mutationKey("s3-component")) =>
+    request(`/production-v2/component-notes/units/${unitId}/sections/${section}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // P11 — Reporting & KPI Production–Warehouse (BACA-SAJA). `qs` = query string yang SAMA untuk layar, drill-down, dan export.
   // P12A — server hanya memutuskan boleh/tidak (ADMIN/OWNER); dataset demo dimuat frontend setelah 200.
   getDemoAccess: () => request("/production-v2/demo/access"),

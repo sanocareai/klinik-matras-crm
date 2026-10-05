@@ -16,6 +16,7 @@ import { humanizeRequest } from "@/features/production/unitCardModel.js";
 import { rolesOf } from "@/lib/roles.js";
 import { isOutsideV2 } from "@/features/production/unit360Availability.js";
 import UnitOrderFallback from "@/features/production/UnitOrderFallback.jsx";
+import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 
 // P9C — Unit 360: satu drawer kanonis (setara "detail Resi") dibuka dari kartu Status Produksi MAUPUN Rencana
 // Produksi — komponen ini TIDAK peduli dari halaman mana ia dipanggil, hanya butuh unitId. Deep-link (?unit=)
@@ -356,6 +357,7 @@ function Dokumentasi({ d }) {
   return (
     <div className="space-y-4">
       <MatriksDokumentasi matrix={d.documentation} />
+      <div className="space-y-2 rounded-card border border-line p-3" data-testid="unit360-component-notes"><p className="m-0 text-[12.5px] font-bold text-ink">Catatan Komponen — Sebelum → Sesudah</p><ComponentNotesPanel unitId={d.identity.unitId} unitCode={d.identity.unitCode} /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">Before</p><MediaGrid items={d.evidence.before} empty="Belum ada dokumentasi before." /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">Proses</p><MediaGrid items={d.evidence.process} empty="Belum ada dokumentasi proses." /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">After</p><MediaGrid items={d.evidence.after} empty="Belum ada dokumentasi after." /></div>

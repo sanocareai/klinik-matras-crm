@@ -209,6 +209,9 @@ export const EVENT_TYPES = Object.freeze({
   // P10B — Aplikasi Dokumentasi (foto dokumentasi produksi; TIDAK mengubah lifecycle).
   PRODUCTION_DOCUMENTATION_ADDED: "PRODUCTION_DOCUMENTATION_ADDED",
   PRODUCTION_DOCUMENTATION_CORRECTED: "PRODUCTION_DOCUMENTATION_CORRECTED",
+  // Slice 3 — Catatan Komponen kanonis per unit (informasi; tidak mengubah stok/lifecycle).
+  PRODUCTION_COMPONENT_RECORDED: "PRODUCTION_COMPONENT_RECORDED",
+  PRODUCTION_COMPONENT_CORRECTED: "PRODUCTION_COMPONENT_CORRECTED",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -473,6 +476,10 @@ export function formatActivitySentence(event) {
       return `Dokumentasi ${metadata.categoryLabel || metadata.category || "produksi"} unit ${metadata.unitCode || "—"}: ${metadata.count ?? 0} foto ditambahkan (${metadata.source || "Manual"})`;
     case EVENT_TYPES.PRODUCTION_DOCUMENTATION_CORRECTED:
       return `Dokumentasi ${metadata.categoryLabel || metadata.category || "produksi"} unit ${metadata.unitCode || "—"} dikoreksi — ${metadata.reason || "tanpa alasan"}`;
+    case EVENT_TYPES.PRODUCTION_COMPONENT_RECORDED:
+      return `Catatan komponen unit ${metadata.unitCode || "—"}: ${metadata.sectionLabel || metadata.section || "—"} dicatat (versi ${metadata.version ?? 1}${metadata.mediaCount ? `, ${metadata.mediaCount} foto` : ""})`;
+    case EVENT_TYPES.PRODUCTION_COMPONENT_CORRECTED:
+      return `Catatan komponen unit ${metadata.unitCode || "—"}: ${metadata.sectionLabel || metadata.section || "—"} dikoreksi (versi ${metadata.version ?? "—"}) — ${metadata.reason || "tanpa alasan"}`;
     case EVENT_TYPES.PRODUCTION_STEP_RECORDED:
       return `Tahap ${metadata.stepNo ?? "—"} (${metadata.stepLabel || "—"}) unit ${metadata.unitCode || "—"} tercatat${metadata.verdict ? ` — hasil ${metadata.verdict}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_SHORTAGE_REPORTED:

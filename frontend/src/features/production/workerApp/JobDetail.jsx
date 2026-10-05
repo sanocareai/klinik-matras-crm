@@ -12,6 +12,7 @@ import { STEP_BY_NO } from "@/features/production/experience.js";
 import { V1ActionBar, V1MaterialsPanel } from "./V1Panels.jsx";
 import { ShortageSheet, StepSheet, intentKeys } from "./workerSheets.jsx";
 import { DelaySheet, FinishSheet, SkipSheet } from "./adaptationSheets.jsx";
+import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 import { isV1Actionable, jobFromV1, jobFromV2, submitState } from "./workerAppModel.js";
 
 // Detail pekerjaan: progres dari server, bahan, dokumentasi, dan SATU aksi utama (batang lengket) sesuai kemampuan & tahap.
@@ -168,6 +169,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
                 {canDelay && <button type="button" data-testid="open-delay" onClick={() => setSheet("delay")} className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-btn bg-redbg text-[15px] font-bold text-red"><PackageX size={19} aria-hidden /> {DELAY_ACTION_LABEL}</button>}
                 {!canDelay && canShortage && <button type="button" data-testid="open-shortage" onClick={() => setSheet("shortage")} className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-btn bg-redbg text-[15px] font-bold text-red"><PackageX size={19} aria-hidden /> {DELAY_ACTION_LABEL}</button>}
               </Section>
+              <Section title="Catatan Komponen" testid="section-komponen"><ComponentNotesPanel unitId={card.unit.id} unitCode={card.unit.unitCode} stepNo={next?.stepNo ?? null} /></Section>
               <Section title="Dokumentasi" testid="section-dokumentasi"><EvidenceList evidence={card.evidence} /></Section>
             </>
           )}

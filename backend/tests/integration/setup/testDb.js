@@ -31,6 +31,7 @@ const TABLES_TO_TRUNCATE = [
   "stock_adjustment_requests", "replenishment_requests",
   "materials",
   "storage_locations", "warehouses",
+  "unit_component_entries_v2", // slice 3 — catatan komponen kanonis (append-only; FK ke units): kosongkan antar berkas tes
   "v2_feature_flags", // flag/cohort V2 (tanpa FK; baris kosong = OFF): dikosongkan agar flag yang dinyalakan satu berkas tidak bocor ke berkas berikutnya pada DB yang sama
   "production_settings", // slice 2 — pengaturan Admin Production (tanpa FK): kosongkan antar tes agar kebijakan/lokasi bawaan tidak bocor
   "production_daily_targets_v2", // P11.1 — append-only, tanpa FK: harus dikosongkan eksplisit antar tes

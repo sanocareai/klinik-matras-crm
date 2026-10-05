@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { friendlyError } from "@/features/production/experience.js";
+import { BeforeAfterSummary } from "@/features/production/componentNotes/BeforeAfterSummary.jsx";
 
 // Paket Laporan Produksi V2 (P8E) — before · proses · after untuk Sales. Media bertanda tangan (akses aman, kedaluwarsa 60 menit).
 // Status broadcast dibaca dari outbox: selama pengirim otomatis belum aktif, status jujur "Menunggu pengirim" (PENDING) — tidak pernah
@@ -84,6 +85,18 @@ export default function ProductionReportV2() {
           {report.textureTests.length > 1 && <p className="text-ink2"><b>Riwayat uji tekstur:</b> {report.textureTests.map((t) => VERDICT[t.verdict]).join(" → ")}</p>}
           {report.finishing && <p className="text-ink2"><b>Finishing:</b> {STYLE[report.finishing.mattressStyle]} · kain {report.finishing.fabricSpec} · list {report.finishing.borderColor}</p>}
         </Card>
+        {report.components && (
+          <Card className="space-y-3 p-4" data-testid="report-components">
+            <p className="font-bold text-ink">Komponen: Sebelum → Sesudah</p>
+            <BeforeAfterSummary comparison={report.components.comparison} />
+            {report.components.mediaCount > 0 && (
+              <div className="space-y-3">
+                <Gallery title="Foto komponen — sebelum dibongkar" items={report.components.media.before.map((m) => ({ ...m, url: m.previewUrl, stepLabel: "Catatan komponen", documentation: true }))} />
+                <Gallery title="Foto komponen — sesudah" items={report.components.media.after.map((m) => ({ ...m, url: m.previewUrl, stepLabel: "Catatan komponen", documentation: true }))} />
+              </div>
+            )}
+          </Card>
+        )}
         <Card className="space-y-4 p-4">
           <Gallery title="Before" items={report.media.before} />
           <Gallery title="Proses" items={report.media.process} />

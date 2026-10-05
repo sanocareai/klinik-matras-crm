@@ -10,6 +10,7 @@ import {
   DOC_GROUP_KEYS, DOC_GROUP_LABEL, DOC_STATUS, docBatches, docCompleteness, docFriendlyError, fmtDocTime, groupStats, suggestCategory, thumbMeta,
 } from "@/features/production/documentation.js";
 import { JobPhoto } from "@/features/production/workerApp/JobCard.jsx";
+import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 import { Lightbox, MediaThumb, MissingChips, SourceBadge } from "./DocUi.jsx";
 import "./doc-app.css";
 
@@ -142,6 +143,7 @@ export default function DocDetail({ runId, group, onGroup, drafts, resume, onRes
                 </div>
               </div>
             </div>
+            <section className="wa-card space-y-3 p-4" data-testid="doc-component-notes" aria-label="Catatan komponen"><p className="m-0 text-[16px] font-extrabold text-ink">Catatan Komponen</p><ComponentNotesPanel unitId={detail.unit.id} unitCode={detail.unit.unitCode} showHistory /></section>
             {!detail.canWrite && <p className="m-0 flex items-start gap-2 rounded-btn bg-inset px-3 py-3 text-[13px] text-ink2" data-testid="readonly-note"><AlertTriangle size={15} className="mt-px shrink-0" aria-hidden /> Anda hanya bisa melihat dokumentasi (tanpa izin mengirim, atau dokumentasi unit ini belum aktif).</p>}
           </div>
           <div className="space-y-3.5">

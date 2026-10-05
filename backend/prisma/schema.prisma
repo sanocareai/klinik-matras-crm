@@ -1746,6 +1746,7 @@ model Unit {
   materialIssues    MaterialIssue[]
   complaintCases    ComplaintCase[]
   productionRunsV2  ProductionRun[]
+  componentEntries  UnitComponentEntry[]
   custodyHandoffs   UnitCustodyHandoff[]
   productionRunExceptions ProductionRunException[]
   productionMaterialShortages ProductionMaterialShortage[]
@@ -8326,6 +8327,27 @@ model V2FeatureFlag {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("v2_feature_flags")
+}
+
+// Slice 3 — Catatan Komponen kanonis per unit (Sebelum -> Sesudah). APPEND-ONLY: koreksi = baris versi baru (alasan wajib), baris lama tidak diubah/dihapus.
+// Tiga seksi per unit (LAYERS_BEFORE, FOUNDATION_BEFORE, AFTER), masing-masing versinya sendiri. INFORMASI saja: bukan BOM/pemakaian/retur, tidak menyentuh stok maupun lifecycle.
+model UnitComponentEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  unitId    String   @map("unit_id") @db.Uuid
+  unit      Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  runId     String?  @map("run_id") @db.Uuid
+  section   String   @db.VarChar(24)
+  version   Int
+  payload   Json     @default("{}")
+  media     Json     @default("[]")
+  reason    String?
+  actorId   String?  @map("actor_id")
+  commandId String?  @map("command_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([unitId, section, version])
+  @@index([unitId, createdAt])
+  @@map("unit_component_entries_v2")
 }
 
 // Slice 2 — pengaturan Admin Production (satu baris per kunci): workshop_default_location_id, adaptation_default_policy. Bukan flag/cohort.

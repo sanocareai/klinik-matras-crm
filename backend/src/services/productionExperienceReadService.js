@@ -2,6 +2,7 @@
 // BACA-SAJA. Semua keadaan tahap diturunkan dari data P1–P6 + bukti P8 lewat loadStepContext (sumber yang sama dengan command) —
 // tidak ada status UI yang disimpan terpisah. Pemanggil (routes) wajib memfilter unitIds dari reader cohort; unit di luar cohort tidak pernah
 // dimuat. Data customer seperlunya: nama, berat badan, keluhan, request — tanpa telepon/alamat.
+import { componentMessageLines, getComponentReportBlock } from "./productionComponentNoteService.js";
 import {
   ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, isSkippedEvidence, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
@@ -579,6 +580,7 @@ export function buildReportMessage(report) {
   if (report.finalTest) lines.push(`• Uji Akhir    : Diuji beban ${report.finalTest.testerWeightKg} kg -> Hasil Tekstur ${VERDICT_LABEL[report.finalTest.verdict] || report.finalTest.verdict}`);
   if (report.finishing) lines.push(`• Finishing    : Model ${STYLE_LABEL[report.finishing.mattressStyle] || report.finishing.mattressStyle} | Kain ${report.finishing.fabricSpec} | List ${report.finishing.borderColor}`);
   lines.push("");
+  lines.push(...componentMessageLines(report.components?.comparison));
   if (report.skippedSteps?.length) lines.push(`• Tahap dilewati (Adaptasi sistem): ${report.skippedSteps.map((s) => s.label).join(", ")} — tidak dikerjakan, tanpa foto/hasil uji`);
   if (report.qcStatus === "TIDAK_DILAKUKAN") lines.push("• QC          : tidak dilakukan (mode adaptasi) — bukan lulus");
   lines.push("");
@@ -623,6 +625,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     where: { eventType: "production.report.ready", aggregateId: run.id }, orderBy: { id: "desc" },
     select: { status: true, deliveredAt: true, attempts: true, lastError: true, createdAt: true },
   });
+  const components = await getComponentReportBlock(prisma, run.unitId); // slice 3: catatan komponen kanonis (unit) — perbandingan Sebelum→Sesudah, belum dicatat disebut jelas
   const documentation = await buildRunDocumentation(prisma, run, ctx);
   const docBuckets = documentationBuckets(documentation);
   const report = {
@@ -651,6 +654,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     cornerChecklist: latestOf(evidence, 11)?.payload?.checklist ?? null,
     media: { before: [...mediaOf([1, 2, 3]), ...docBuckets.before], process: [...mediaOf([4, 6, 7]), ...docBuckets.process], after: [...mediaOf([8, 9, 11, 12]), ...docBuckets.after] },
     documentation,
+    components,
     handoffStatus: fg?.status ?? null,
     broadcast: outboxRow
       ? { status: outboxRow.status, deliveredAt: outboxRow.deliveredAt, attempts: outboxRow.attempts, lastError: outboxRow.lastError, queuedAt: outboxRow.createdAt, consumerAvailable: false }

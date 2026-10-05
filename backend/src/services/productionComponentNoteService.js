@@ -1,0 +1,237 @@
+// Simplifikasi Production slice 3 — Catatan Komponen kanonis per unit (Sebelum -> Sesudah): command tulis + bacaan.
+//
+// KEPEMILIKAN: satu-satunya penulis tabel unit_component_entries_v2. Append-only (koreksi = versi baru dengan alasan; baris lama tidak pernah diubah).
+// INFORMASI/DOKUMENTASI saja: TIDAK menulis stok, reservasi, BOM, material issue, pemakaian, retur, fase/status run/unit, maupun revisi run (diaudit di tes).
+// Command: Idempotency-Key per (actor, kunci) lewat v2_commands + hash isi (replay = respons sama, isi beda = 409). Baris unit dikunci SEBELUM replay-check
+// sehingga dua penulis bersamaan serial; expectedVersion per seksi menolak penimpaan diam-diam (409 COMPONENT_VERSION_CONFLICT). Writer cohort fail-closed.
+import { createHash, randomUUID } from "node:crypto";
+import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
+import { lockRowForUpdate } from "./inventoryLedger.js";
+import { isProductionReaderEnabledFor, isProductionWriterEnabledFor, loadV2Flags, resolveProductionReaderState, resolveProductionWriterState } from "./v2FeatureFlags.js";
+import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
+import { mediaKindOf } from "../lib/domain/productionSteps.js";
+import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
+import {
+  COMPONENT_SECTIONS, COMPONENT_SECTION_KEYS, LIMITS, MATERIAL_KINDS, buildComparison, componentError, normalizeMediaItems, normalizeSectionData, materialLabel,
+} from "../lib/domain/productionComponents.js";
+
+const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// JSON kanonis (kunci terurut): jsonb Postgres mengurutkan ulang kunci, jadi perbandingan isi tidak boleh bergantung pada urutan kunci.
+const canon = (v) => JSON.stringify(v, (_k, val) => (val && typeof val === "object" && !Array.isArray(val) ? Object.fromEntries(Object.entries(val).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : val));
+const hash = (v) => createHash("sha256").update(JSON.stringify(v ?? null)).digest("hex");
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Baca
+// ---------------------------------------------------------------------------------------------------------------------------
+function signedMedia(media) {
+  return (Array.isArray(media) ? media : []).map((m) => ({ url: m.url, kind: m.kind || "image", caption: m.caption ?? null, order: m.order ?? null, previewUrl: signEvidenceUrl(m.url) }));
+}
+
+const entryView = (row, actors) => ({
+  version: row.version, data: row.payload, media: signedMedia(row.media), at: row.createdAt, runId: row.runId,
+  actor: row.actorId ? { id: row.actorId, name: actors.get(row.actorId) ?? null } : null, correctionReason: row.reason ?? null,
+});
+
+/** Entri versi terbaru per seksi (dalam satu bacaan). */
+export async function loadComponentEntries(client, unitId) {
+  const rows = await client.unitComponentEntry.findMany({ where: { unitId }, orderBy: [{ section: "asc" }, { version: "asc" }] });
+  const actorIds = [...new Set(rows.map((r) => r.actorId).filter(Boolean))];
+  const users = actorIds.length ? await client.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
+  const actors = new Map(users.map((u) => [u.id, u.name]));
+  const current = {}; const history = [];
+  for (const row of rows) {
+    current[row.section] = row; // urut naik -> yang terakhir = terbaru
+    history.push(row);
+  }
+  return { current, history, actors };
+}
+
+/** Saran (read-only, TIDAK tersimpan) dari bahan yang dipakai di tahap 6/7 — hanya mempermudah mengisi "Sesudah"; bukan data komponen sampai disimpan operator. */
+async function loadSuggestions(client, unitId) {
+  const run = await client.productionRun.findFirst({ where: { unitId, status: { not: "CANCELLED" } }, orderBy: { createdAt: "desc" }, select: { id: true } });
+  if (!run) return { foundation: [], layers: [] };
+  const rows = await client.productionStepEvidence.findMany({ where: { runId: run.id, stepNo: { in: [6, 7] }, stepCode: { not: { startsWith: "DOC_" } } }, orderBy: { createdAt: "asc" } });
+  const latest = new Map();
+  for (const r of rows) if (!(r.payload && r.payload.outcome === "SKIPPED")) latest.set(r.stepNo, r);
+  const ids = new Set();
+  for (const r of latest.values()) for (const m of r.payload?.materials || []) if (m?.materialId) ids.add(m.materialId);
+  const mats = ids.size ? await client.material.findMany({ where: { id: { in: [...ids] } }, select: { id: true, code: true, name: true, unit: true } }) : [];
+  const byId = new Map(mats.map((m) => [m.id, m]));
+  const toRef = (m) => { const x = byId.get(m.materialId); return x ? { kind: MATERIAL_KINDS.CATALOG, materialId: x.id, code: x.code, name: x.name, unit: x.unit } : null; };
+  const pick = (stepNo) => (latest.get(stepNo)?.payload?.materials || []).map(toRef).filter(Boolean);
+  return { foundation: pick(6), layers: pick(7) };
+}
+
+/** Bacaan kanonis satu unit (dipakai Meja, Corner, Dokumentasi, Unit 360, laporan). Cohort/izin diputuskan pemanggil (route). */
+export async function getComponentNotes(client, unitId, { includeSuggestions = true } = {}) {
+  if (!UUID.test(String(unitId))) return null;
+  const unit = await client.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true } });
+  if (!unit) return null;
+  const { current, history, actors } = await loadComponentEntries(client, unitId);
+  const sections = Object.fromEntries(COMPONENT_SECTION_KEYS.map((k) => [k, current[k] ? entryView(current[k], actors) : null]));
+  const comparison = buildComparison({
+    layersBefore: sections.LAYERS_BEFORE ? { data: sections.LAYERS_BEFORE.data, version: sections.LAYERS_BEFORE.version } : null,
+    foundationBefore: sections.FOUNDATION_BEFORE ? { data: sections.FOUNDATION_BEFORE.data, version: sections.FOUNDATION_BEFORE.version } : null,
+    after: sections.AFTER ? { data: sections.AFTER.data, version: sections.AFTER.version } : null,
+  });
+  return {
+    unitId: unit.id, unitCode: unit.unitCode, sections, comparison,
+    history: history.map((r) => ({
+      section: r.section, sectionLabel: COMPONENT_SECTIONS[r.section]?.label ?? r.section, version: r.version, at: r.createdAt, runId: r.runId, reason: r.reason ?? null,
+      actor: r.actorId ? { id: r.actorId, name: actors.get(r.actorId) ?? null } : null, mediaCount: Array.isArray(r.media) ? r.media.length : 0, data: r.payload,
+      superseded: current[r.section]?.version !== r.version,
+    })),
+    suggestions: includeSuggestions ? await loadSuggestions(client, unitId) : undefined,
+  };
+}
+
+/** Ringkasan untuk laporan run: perbandingan + foto before/after (URL bertanda tangan). */
+export async function getComponentReportBlock(client, unitId) {
+  const notes = await getComponentNotes(client, unitId, { includeSuggestions: false });
+  if (!notes) return null;
+  const { sections } = notes;
+  const before = [...(sections.LAYERS_BEFORE?.media ?? []), ...(sections.FOUNDATION_BEFORE?.media ?? [])];
+  const after = sections.AFTER?.media ?? [];
+  return { comparison: notes.comparison, status: notes.comparison.status, media: { before, after }, mediaCount: before.length + after.length };
+}
+
+/** Teks ringkas "Sebelum -> Sesudah" untuk pesan Sales. Data belum dicatat disebut jelas, bukan dikarang. */
+export function componentMessageLines(comparison) {
+  if (!comparison?.recordedAny) return [];
+  const lines = ["🧩 KOMPONEN SEBELUM → SESUDAH:"];
+  const f = comparison.foundation;
+  if (f) lines.push(`• Fondasi : ${f.before ? [f.before.systemLabel, f.before.material].filter(Boolean).join(" · ") : "belum dicatat"} → ${f.final ? `${f.final.label} (${f.actionLabel})` : "belum dicatat"}`);
+  for (const l of comparison.layers) {
+    const b = l.before ? `${l.before.material || "—"}${l.before.thicknessCm ? ` ${l.before.thicknessCm} cm` : ""}` : "belum dicatat";
+    const a = l.final ? `${l.final.label}${l.final.thicknessCm ? ` ${l.final.thicknessCm} cm` : ""} (${l.actionLabel})` : (l.outcome === "NOT_IN_FINAL" ? "tidak tercatat di hasil akhir" : "belum dicatat");
+    lines.push(`• Lapisan ${l.order}: ${b} → ${a}`);
+  }
+  if (comparison.kept.length) lines.push(`• Tetap digunakan: ${comparison.kept.join("; ")}`);
+  for (const g of comparison.gaps) lines.push(`• ${g.text}`);
+  return lines;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Tulis
+// ---------------------------------------------------------------------------------------------------------------------------
+async function writerGate(tx, unitId) {
+  const state = resolveProductionWriterState(await loadV2Flags(tx));
+  if (!isProductionWriterEnabledFor(state, unitId)) throw componentError("Produksi V2 tidak aktif untuk unit ini; catatan komponen belum bisa disimpan", 503, "COMPONENT_WRITER_OFF");
+}
+
+/** Untuk route unggah foto: kenali unit + writer cohort SEBELUM menerima berkas apa pun. */
+export async function assertCanUploadComponentMedia(prisma, { unitId }) {
+  if (!UUID.test(String(unitId))) throw componentError("Unit tidak ditemukan", 404, "COMPONENT_UNIT_NOT_FOUND");
+  const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { id: true } });
+  if (!unit) throw componentError("Unit tidak ditemukan", 404, "COMPONENT_UNIT_NOT_FOUND");
+  await writerGate(prisma, unitId);
+  return unit;
+}
+
+async function otherUnitUsesFile(tx, unitId, url) {
+  const needle = JSON.stringify([{ url }]);
+  const a = await tx.$queryRaw`SELECT 1 AS x FROM production_step_evidence_v2 e JOIN production_runs_v2 r ON r.id = e.run_id WHERE r.unit_id <> ${unitId}::uuid AND e.media @> ${needle}::jsonb LIMIT 1`;
+  if (a.length) return true;
+  const b = await tx.$queryRaw`SELECT 1 AS x FROM unit_component_entries_v2 c WHERE c.unit_id <> ${unitId}::uuid AND c.media @> ${needle}::jsonb LIMIT 1`;
+  return b.length > 0;
+}
+
+// Ganti ref katalog dengan snapshot server (kode/nama/satuan); bahan harus ada & aktif. Tidak ada klien yang bisa memalsukan nama katalog.
+async function resolveMaterialRefs(tx, data) {
+  const refs = [];
+  const visit = (holder, key) => { if (holder?.[key]?.kind === MATERIAL_KINDS.CATALOG) refs.push([holder, key]); };
+  visit(data, "material");
+  for (const l of data.layers || []) visit(l, "material");
+  visit(data.foundation, "material");
+  if (!refs.length) return data;
+  const ids = [...new Set(refs.map(([h, k]) => h[k].materialId))];
+  const mats = await tx.material.findMany({ where: { id: { in: ids }, active: true }, select: { id: true, code: true, name: true, unit: true } });
+  const byId = new Map(mats.map((m) => [m.id, m]));
+  for (const [h, k] of refs) {
+    const m = byId.get(h[k].materialId);
+    if (!m) throw componentError("Bahan katalog tidak ditemukan atau tidak aktif — pilih bahan lain atau “Bahan manual”", 422, "COMPONENT_MATERIAL_NOT_FOUND");
+    h[k] = { kind: MATERIAL_KINDS.CATALOG, materialId: m.id, code: m.code, name: m.name, unit: m.unit };
+  }
+  return data;
+}
+
+/**
+ * Simpan satu seksi (versi baru). expectedVersion = versi terakhir yang dilihat klien (0 = belum ada). Koreksi (expectedVersion >= 1) wajib beralasan.
+ * Isi sama dengan versi terkini -> tidak menulis baris baru (unchanged:true). Respons replay identik tanpa penulisan.
+ */
+export async function recordComponentSection(prisma, { unitId, section, actor, idempotencyKey, expectedVersion, data, media = [], reason = null }) {
+  if (!idempotencyKey || !IDEMPOTENCY_KEY.test(idempotencyKey)) throw componentError("Idempotency-Key wajib diisi (12-128 karakter)", 400, "IDEMPOTENCY_KEY_INVALID");
+  if (!UUID.test(String(unitId))) throw componentError("Unit tidak ditemukan", 404, "COMPONENT_UNIT_NOT_FOUND");
+  if (!COMPONENT_SECTIONS[section]) throw componentError("Seksi catatan komponen tidak dikenal", 400, "COMPONENT_SECTION_INVALID");
+  const exp = Number(expectedVersion);
+  if (!Number.isInteger(exp) || exp < 0) throw componentError("expectedVersion wajib diisi (0 bila belum ada catatan)", 400, "COMPONENT_VERSION_REQUIRED");
+  const normalized = normalizeSectionData(section, data);
+  const items = normalizeMediaItems(media, { kindOf: mediaKindOf });
+  const correcting = exp >= 1;
+  const cleanReason = typeof reason === "string" ? reason.trim() : "";
+  if (correcting && cleanReason.length < LIMITS.REASON_MIN) throw componentError(`Alasan koreksi wajib diisi (minimal ${LIMITS.REASON_MIN} karakter)`, 400, "COMPONENT_REASON_REQUIRED");
+  if (cleanReason.length > LIMITS.REASON_MAX) throw componentError(`Alasan koreksi terlalu panjang (maksimal ${LIMITS.REASON_MAX} karakter)`, 400, "COMPONENT_REASON_TOO_LONG");
+  const actorKey = actor.id || "SYSTEM";
+  const requestHash = hash({ commandType: "COMPONENT_RECORD", unitId, section, expectedVersion: exp, data: normalized, media: items.map((i) => [i.url, i.caption]), reason: correcting ? cleanReason : null });
+
+  return prisma.$transaction(async (tx) => {
+    await lockRowForUpdate(tx, "units", unitId);
+    const replay = await tx.v2Command.findUnique({ where: { actorId_idempotencyKey: { actorId: actorKey, idempotencyKey } } });
+    if (replay) {
+      if (replay.requestHash !== requestHash) throw componentError("Idempotency-Key dipakai untuk isi berbeda", 409, "IDEMPOTENCY_CONFLICT");
+      if (replay.status !== "APPLIED") throw componentError("Perintah masih diproses", 409, "COMMAND_IN_PROGRESS");
+      return { replayed: true, ...replay.response };
+    }
+    const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true } });
+    if (!unit) throw componentError("Unit tidak ditemukan", 404, "COMPONENT_UNIT_NOT_FOUND");
+    await writerGate(tx, unitId);
+    const latest = await tx.unitComponentEntry.findFirst({ where: { unitId, section }, orderBy: { version: "desc" } });
+    const currentVersion = latest?.version ?? 0;
+    if (exp !== currentVersion) {
+      throw componentError("Catatan ini sudah diubah orang lain — muat ulang lalu periksa sebelum menyimpan", 409, "COMPONENT_VERSION_CONFLICT", { currentVersion, expectedVersion: exp });
+    }
+    for (const it of items) {
+      if (!evidenceFileExists(it.url)) throw componentError("Ada foto yang belum selesai terunggah — unggah ulang lalu simpan", 422, "COMPONENT_MEDIA_NOT_FOUND");
+      if (await otherUnitUsesFile(tx, unitId, it.url)) throw componentError("Foto ini sudah dipakai sebagai bukti unit lain dan tidak bisa dipakai di sini", 409, "COMPONENT_MEDIA_OTHER_UNIT");
+    }
+    const resolved = await resolveMaterialRefs(tx, normalized);
+    const mediaJson = items.map((i) => ({ url: i.url, kind: i.kind, caption: i.caption, order: i.order }));
+    const command = await tx.v2Command.create({
+      data: { domain: "PRODUCTION", actorId: actorKey, idempotencyKey, commandType: "COMPONENT_RECORD", aggregateType: "Unit", aggregateId: unitId, expectedRevision: exp, requestHash },
+    });
+
+    // Tanpa perubahan bermakna -> tidak ada versi baru (jangan menggandakan histori dengan salinan identik).
+    if (latest && canon(latest.payload) === canon(resolved) && canon(latest.media) === canon(mediaJson)) {
+      const response = { unitId, section, version: latest.version, unchanged: true };
+      await tx.v2Command.update({ where: { id: command.id }, data: { status: "APPLIED", appliedRevision: latest.version, response, completedAt: new Date() } });
+      return { replayed: false, ...response };
+    }
+
+    const run = await tx.productionRun.findFirst({ where: { unitId, status: { not: "CANCELLED" } }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    const row = await tx.unitComponentEntry.create({
+      data: { id: randomUUID(), unitId, runId: run?.id ?? null, section, version: currentVersion + 1, payload: resolved, media: mediaJson, reason: correcting ? cleanReason : null, actorId: actor.id || null, commandId: command.id },
+    });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: unitId, eventType: correcting ? EVENT_TYPES.PRODUCTION_COMPONENT_CORRECTED : EVENT_TYPES.PRODUCTION_COMPONENT_RECORDED, actorId: actor.id || null,
+      metadata: { unitCode: unit.unitCode, runId: run?.id ?? null, section, sectionLabel: COMPONENT_SECTIONS[section].label, version: row.version, mediaCount: mediaJson.length, ...(correcting ? { reason: cleanReason } : {}) },
+    });
+    const response = { unitId, section, version: row.version, corrected: correcting, unchanged: false, mediaCount: mediaJson.length };
+    await tx.v2Command.update({ where: { id: command.id }, data: { status: "APPLIED", appliedRevision: row.version, response, completedAt: new Date() } });
+    return { replayed: false, ...response };
+  });
+}
+
+/** Pencarian katalog bahan untuk formulir (tanpa harga/stok): hanya id, kode, nama, satuan. */
+export async function searchComponentMaterials(client, q) {
+  const needle = String(q || "").trim().slice(0, 60);
+  const where = { active: true, ...(needle ? { OR: [{ code: { contains: needle, mode: "insensitive" } }, { name: { contains: needle, mode: "insensitive" } }] } : {}) };
+  const rows = await client.material.findMany({ where, orderBy: [{ name: "asc" }], take: 25, select: { id: true, code: true, name: true, unit: true } });
+  return rows.map((m) => ({ kind: MATERIAL_KINDS.CATALOG, materialId: m.id, code: m.code, name: m.name, unit: m.unit, label: materialLabel({ kind: MATERIAL_KINDS.CATALOG, code: m.code, name: m.name }) }));
+}
+
+// Cohort baca: pemanggil memastikan unit ada di reader cohort sebelum membaca.
+export async function isUnitReadable(prisma, unitId) {
+  const state = resolveProductionReaderState(await loadV2Flags(prisma));
+  return isProductionReaderEnabledFor(state, unitId);
+}
