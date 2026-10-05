@@ -32,9 +32,11 @@
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
 import { kunciKanonis } from "./urutanKunci.js";
 import { PILIH_TAGIHAN, dasarStatusBayar } from "./tagihanOrder.js";
-import { paidForOrder } from "./allocation.js";
+import { paidForOrder, isPaymentCounted } from "./allocation.js";
 import { getVerificationGate } from "./settings.js";
 import { tanggalCutoff, tanggalWIB } from "./cutoff.js";
+import { orderMilikSalesWhere } from "./skopPembayaran.js";
+import { pembayaranMenungguVerifikasi, pesanPaymentMenunggu, KODE_PAYMENT_MENUNGGU } from "./penerimaanGuard.js";
 import { bukukanPembayaran } from "./hooks.js";
 import { postJournal, findEntryByKey, toBookDate } from "./journal.js";
 import { resolveAccount, SYSTEM_KEYS } from "./accounts.js";
@@ -54,18 +56,20 @@ export { tanggalCutoff };
  * `sisa` = nilai order dikurangi yang sudah tercatat (rumus yang SAMA dengan
  * status bayar di CRM: paidForOrder — alokasi, gerbang, dan refund ikut).
  */
-export async function daftarLunasBelumDicatat(db) {
+export async function daftarLunasBelumDicatat(db, { salesId = null } = {}) {
+  // salesId terisi = skop SALES (skopPembayaran.js): hanya order MILIK Sales itu. Finance/Admin/Owner memanggil tanpa salesId (semua).
   // Resi Gabungan Fase 3A: saat pembayaran Resi AKTIF, child dari Resi BARU tampil sebagai SATU antrean Resi (penerimaanResi.js), bukan baris per order.
   // Flag MATI / groupId NULL / group BACKFILL_BUNDLE: daftar ini IDENTIK dengan perilaku lama.
   const resiOn = await resiPembayaranAktif(db);
   const [orders, gate, cutoff] = await Promise.all([
     db.order.findMany({
-      where: { paymentStatus: "LUNAS", value: { gt: 0 }, status: { not: "CANCELLED" }, ...(resiOn && { OR: [{ groupId: null }, { group: { source: { not: "BARU" } } }] }) },
+      where: { paymentStatus: "LUNAS", value: { gt: 0 }, status: { not: "CANCELLED" }, ...(salesId && { AND: [orderMilikSalesWhere(salesId)] }), ...(resiOn && { OR: [{ groupId: null }, { group: { source: { not: "BARU" } } }] }) },
       select: {
         ...PILIH_TAGIHAN,
         id: true, orderNumber: true, value: true, paidAt: true, status: true, createdAt: true,
         customer: { select: { id: true, name: true, assignedSales: { select: { id: true, name: true } } } },
         _count: { select: { payments: true } },
+        payments: { where: { cancelledAt: null, verifications: { none: {} } }, select: { amount: true, createdAt: true } },
       },
       orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
       take: 2000,
@@ -105,6 +109,8 @@ export async function daftarLunasBelumDicatat(db) {
       customerId: o.customer?.id || null, customerName: o.customer?.name || "—",
       salesName: o.customer?.assignedSales?.name || null,
       nilaiOrder: dasarStatusBayar(o), sudahDicatat: moneyToNumber(dibayar), sisa: moneyToNumber(sisa),
+      // Payment aktif yang belum diverifikasi: bila ada, verifikasi penerimaan DITOLAK server (guard) — selesaikan di menu Pembayaran dulu.
+      pembayaranMenunggu: (() => { const m = o.payments.filter((p) => !isPaymentCounted({ createdAt: p.createdAt, cancelledAt: null, verifications: [] }, gate)); return { jumlah: m.length, total: m.reduce((x, p) => x + Number(p.amount), 0) }; })(),
       lunasSejak: tglLunas,
       // Tanpa paidAt (order lama sebelum 30 Agt 2026) tidak ada bukti kapan
       // uangnya masuk — perlakukan sebagai lama.
@@ -188,6 +194,10 @@ export async function verifikasiPenerimaan(tx, { orderId, mode, method = "TRANSF
   if (!klaim && order.paymentStatus !== "LUNAS") throw err(`Order ${order.orderNumber} sudah tidak berstatus Lunas di CRM (mungkin baru diubah sales). Muat ulang halaman ini.`, 409);
 
   const gate = await getVerificationGate(tx);
+  // GUARD PAYMENT MENUNGGU (penerimaanGuard.js): dicek DI BAWAH kunci baris order (kunciKanonis di atas), dalam transaksi yang sama dengan penulisan Payment.
+  // Payment aktif yang belum diverifikasi menolak 409 tanpa menulis apa pun; yang dibatalkan/ditolak/diganti/terverifikasi tidak memblokir.
+  const menunggu = await pembayaranMenungguVerifikasi(tx, orderId);
+  if (menunggu.length > 0) throw Object.assign(err(pesanPaymentMenunggu(`Order ${order.orderNumber}`, menunggu), 409), { code: KODE_PAYMENT_MENUNGGU });
   const sisa = toMoney(dasarStatusBayar(order)).minus(await paidForOrder(tx, orderId, gate));
   if (sisa.lessThanOrEqualTo(0)) throw err(`Order ${order.orderNumber} sudah tercatat lunas penuh, tidak ada yang perlu diverifikasi lagi`, 409);
   const nominal = amount === null || amount === "" || amount === undefined ? sisa : toMoney(amount, { field: "Nominal" });

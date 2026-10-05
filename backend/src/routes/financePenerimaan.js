@@ -12,6 +12,7 @@ import { daftarKlaimLunasResi, detailKlaimResi, pratinjauVerifikasiResi, verifik
 import { wajibIdempotencyKey } from "../middleware/idempotency.js";
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { handleFinanceError } from "./finance.js";
+import { skopPembayaran } from "../services/finance/skopPembayaran.js";
 import { daftarKlaimFinance, detailKlaimFinance, mintaBuktiKlaim, tolakKlaim, verifikasiKlaim, ringkasKlaimMenunggu, KlaimError } from "../services/finance/klaimLunas.js";
 import { BerkasError } from "../services/finance/klaimLunasBerkas.js";
 
@@ -40,10 +41,13 @@ function cekBuktiBanyak(daftar) {
   return [...new Set(daftar)];
 }
 
+// SKOP (skopPembayaran.js): Finance/Admin/Owner = semua; SALES = hanya order/Resi MILIKNYA (filter di server); peran lain 403.
 financePenerimaanRouter.get("/penerimaan/lunas-belum-dicatat", requirePermission(P.PAYMENT_READ), async (req, res) => {
   try {
-    const daftar = await daftarLunasBelumDicatat(prisma);
-    const resi = await daftarKlaimLunasResi(prisma); // Fase 3A: kosong bila RESI_PEMBAYARAN_AKTIF mati
+    const skop = skopPembayaran(req.user);
+    if (!skop) return res.status(403).json({ error: "Anda tidak punya izin melihat antrean ini" });
+    const daftar = await daftarLunasBelumDicatat(prisma, { salesId: skop.salesId ?? null });
+    const resi = await daftarKlaimLunasResi(prisma, { salesId: skop.salesId ?? null }); // Fase 3A: kosong bila RESI_PEMBAYARAN_AKTIF mati
     res.json(resi.aktif ? { ...daftar, resi: resi.items, ringkasResi: { jumlah: resi.jumlah, total: resi.total } } : daftar);
   } catch (e) {
     handleFinanceError(e, res);
@@ -167,7 +171,9 @@ financePenerimaanRouter.post("/penerimaan/klaim-lunas/:id/verifikasi", requirePe
 // Detail satu Resi (BACA-SAJA): total, ongkir tambahan, child, sisa, klaim, pembayaran tercatat (rekening + bukti bertanda tangan).
 financePenerimaanRouter.get("/penerimaan/resi/:groupId", requirePermission(P.PAYMENT_READ), async (req, res) => {
   try {
-    res.json(await detailKlaimResi(prisma, { groupId: req.params.groupId }));
+    const skop = skopPembayaran(req.user);
+    if (!skop) return res.status(403).json({ error: "Anda tidak punya izin melihat Resi ini" });
+    res.json(await detailKlaimResi(prisma, { groupId: req.params.groupId, salesId: skop.salesId ?? null }));
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -175,7 +181,9 @@ financePenerimaanRouter.get("/penerimaan/resi/:groupId", requirePermission(P.PAY
 
 financePenerimaanRouter.get("/penerimaan/resi/:groupId/pratinjau", requirePermission(P.PAYMENT_READ), async (req, res) => {
   try {
-    res.json(await pratinjauVerifikasiResi(prisma, { groupId: req.params.groupId, amount: req.query.amount ?? null }));
+    const skop = skopPembayaran(req.user);
+    if (!skop) return res.status(403).json({ error: "Anda tidak punya izin melihat Resi ini" });
+    res.json(await pratinjauVerifikasiResi(prisma, { groupId: req.params.groupId, amount: req.query.amount ?? null, salesId: skop.salesId ?? null }));
   } catch (e) {
     handleFinanceError(e, res);
   }
