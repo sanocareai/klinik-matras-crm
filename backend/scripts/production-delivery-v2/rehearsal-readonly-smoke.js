@@ -21,14 +21,17 @@ await check("papan produksi (getProductionBoard)", async () => { const r = await
 await check("command center", async () => { const r = await getProductionCommandCenter(prisma, { unitIds }); assert(r && r.kpi, "kpi"); return `columns=${(r.columns || []).length}`; });
 await check("andon", async () => { const r = await getAndonBoard(prisma, { date: today, unitIds }); assert(r, "andon"); });
 for (const lane of ["TABLE", "CORNER"]) await check(`antrean pekerja ${lane}`, async () => { const r = await listWorkerQueue(prisma, { unitIds, userId: "rehearsal-none", lane, all: true }); assert(r && Array.isArray(r.items ?? r), "items"); return `items=${(r.items ?? r).length}`; });
-const runs = unitIds.length ? await prisma.productionRun.findMany({ where: { unitId: { in: unitIds } }, select: { id: true, unitId: true, status: true, adaptationPolicy: true } }) : [];
-out.push(`run cohort: ${runs.length} (adaptasi: ${runs.filter((r) => r.adaptationPolicy).length})`);
+// Cohort production bisa nyaris kosong; agar read-model diuji pada data NYATA, sampel run dari seluruh DB (tiap status; hingga 12 per status) dibaca dengan cohort = unit sampel (baca-saja).
+const sampleRuns = await prisma.$queryRawUnsafe("select id::text, unit_id::text as \"unitId\", status::text, adaptation_policy as \"adaptationPolicy\" from (select r.*, row_number() over (partition by r.status order by r.created_at desc) rn from production_runs_v2 r) x where rn <= 12 order by status");
+const runs = [...new Map([...(unitIds.length ? await prisma.productionRun.findMany({ where: { unitId: { in: unitIds } }, select: { id: true, unitId: true, status: true, adaptationPolicy: true } }) : []), ...sampleRuns].map((r) => [r.id, r])).values()];
+const scope = [...new Set([...unitIds, ...runs.map((r) => r.unitId)])];
+out.push(`run diuji: ${runs.length} (sampel nyata per status: ${[...new Set(runs.map((r) => r.status))].join("/")}; adaptasi: ${runs.filter((r) => r.adaptationPolicy).length})`);
 for (const run of runs) {
-  await check(`kartu run ${run.id.slice(0, 8)}`, async () => { const c = await getRunCard(prisma, run.id, { unitIds }); assert(c && c.runId === run.id, "kartu"); assert(c.progress && "skipped" in c.progress, "progres tanpa skipped/remaining (kontrak slice 2)"); return `bucket=${c.bucket} adaptation=${!!c.adaptation}`; });
-  await check(`laporan run ${run.id.slice(0, 8)}`, async () => { const r = await getProductionReport(prisma, run.id, { unitIds }); assert(r && r.components && r.components.comparison, "blok komponen"); assert(!/undefined/.test(r.message), "pesan berisi undefined"); return `ready=${r.ready} komponenTercatat=${r.components.comparison.recordedAny}`; });
+  await check(`kartu run ${run.id.slice(0, 8)}`, async () => { const c = await getRunCard(prisma, run.id, { unitIds: scope }); assert(c && c.runId === run.id, "kartu"); assert(c.progress && "skipped" in c.progress, "progres tanpa skipped/remaining (kontrak slice 2)"); return `bucket=${c.bucket} adaptation=${!!c.adaptation}`; });
+  await check(`laporan run ${run.id.slice(0, 8)}`, async () => { const r = await getProductionReport(prisma, run.id, { unitIds: scope }); assert(r && r.components && r.components.comparison, "blok komponen"); assert(!/undefined/.test(r.message), "pesan berisi undefined"); return `ready=${r.ready} komponenTercatat=${r.components.comparison.recordedAny}`; });
 }
-for (const unitId of unitIds.slice(0, 20)) {
-  await check(`Unit 360 ${unitId.slice(0, 8)}`, async () => { const o = await getUnitOverview(prisma, unitId, { unitIds }); assert(o === null || o.identity, "identity"); return o ? `unit=${o.identity.unitCode} qcStatus=${o.production?.qcStatus}` : "unit tidak punya run"; });
+for (const unitId of scope.slice(0, 40)) {
+  await check(`Unit 360 ${unitId.slice(0, 8)}`, async () => { const o = await getUnitOverview(prisma, unitId, { unitIds: scope }); assert(o === null || o.identity, "identity"); return o ? `unit=${o.identity.unitCode} qcStatus=${o.production?.qcStatus}` : "unit tidak punya run"; });
   await check(`catatan komponen ${unitId.slice(0, 8)}`, async () => { const n = await getComponentNotes(prisma, unitId); assert(n && n.comparison && n.comparison.gaps.length === 3, "unit lama harus 'belum dicatat' (3 celah, tidak ada data karangan)"); return "kosong: 3 celah"; });
 }
 await check("objek slice 2/3 pada salinan: kosong/NULL (tanpa backfill)", async () => {
