@@ -22,7 +22,7 @@ import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specPenjualanKaryawan } from "@/features/finance/detailSpecs.js";
 import { adminSaatIni } from "@/features/finance/aksiMenu.jsx";
-import { totalItems, metodeButuhRekening, LABEL_METODE_PJK } from "@/features/finance/penjualanKaryawanLogic.js";
+import { totalItems, normalisasiJumlah, metodeButuhRekening, LABEL_METODE_PJK } from "@/features/finance/penjualanKaryawanLogic.js";
 
 // PENJUALAN KARYAWAN — input MANUAL di luar Order. Karyawan non-Sales menjual ke kerabat; tidak membuat Order/Customer, tidak masuk produksi atau delivery.
 // Pendapatan diakui saat dicatat dan tagihannya jadi Piutang Karyawan milik karyawan penjual; pelunasan = tunai/transfer ke rekening atau potong gaji.
@@ -340,7 +340,7 @@ function ModalPenjualanBaru({ open, onClose, aksi, cutoff }) {
 
   const total = totalItems(f.items);
   const bayarTotal = f.pembayaran.reduce((a, b) => a + (Number(b.amount) || 0), 0);
-  const itemsValid = f.items.length > 0 && f.items.every((i) => i.name.trim() && Number(i.quantity) >= 1 && Number(i.unitPrice) > 0);
+  const itemsValid = f.items.length > 0 && f.items.every((i) => i.name.trim() && normalisasiJumlah(i.quantity) !== null && Number(i.unitPrice) > 0);
   const bayarValid = f.pembayaran.every((b) => Number(b.amount) > 0 && (!rekeningWajib(b, cutoff) || b.cashAccountId));
   const valid = f.sellerId && f.buyerName.trim().length >= 2 && itemsValid && bayarValid && bayarTotal <= total;
   const setItem = (i, patch) => set("items", f.items.map((it, n) => (n === i ? { ...it, ...patch } : it)));
@@ -358,7 +358,7 @@ function ModalPenjualanBaru({ open, onClose, aksi, cutoff }) {
             disabled={!valid}
             onClick={() => aksi(() => api.createPenjualanKaryawan({
               date: f.date, sellerId: f.sellerId, buyerName: f.buyerName.trim(), notes: f.notes.trim() || undefined,
-              items: f.items.map((i) => ({ name: i.name.trim(), quantity: Number(i.quantity), unitPrice: Number(i.unitPrice) })),
+              items: f.items.map((i) => ({ name: i.name.trim(), quantity: normalisasiJumlah(i.quantity), unitPrice: Number(i.unitPrice) })), // jumlah dikirim sebagai teks bertitik ("1.6")
               pembayaran: f.pembayaran.map(bodyBayar),
             }))}
           >Catat Penjualan</TombolAksi>
@@ -385,7 +385,7 @@ function ModalPenjualanBaru({ open, onClose, aksi, cutoff }) {
           {f.items.map((it, i) => (
             <div key={i} className="grid grid-cols-[1fr_72px_140px_auto] items-end gap-2 max-sm:grid-cols-2">
               <Field label={i === 0 ? "Nama item" : undefined} className="max-sm:col-span-2"><Input value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} placeholder="mis. Kasur Sano 160×200" /></Field>
-              <Field label={i === 0 ? "Jumlah" : undefined}><Input type="number" min={1} value={it.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} /></Field>
+              <Field label={i === 0 ? "Jumlah" : undefined}><Input type="text" inputMode="decimal" value={it.quantity} aria-invalid={normalisasiJumlah(it.quantity) === null} title="Boleh pecahan, mis. 1,6 (maks 3 angka di belakang koma)" onChange={(e) => setItem(i, { quantity: e.target.value })} /></Field>
               <Field label={i === 0 ? "Harga satuan" : undefined}><InputUang value={it.unitPrice} onChange={(v) => setItem(i, { unitPrice: v })} /></Field>
               <Button size="sm" variant="neutral" disabled={f.items.length === 1} aria-label="Hapus item" onClick={() => set("items", f.items.filter((_, n) => n !== i))}><Trash2 size={13} /></Button>
             </div>

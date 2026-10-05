@@ -7968,8 +7968,9 @@ model FinPenjualanKaryawanItem {
   penjualanId String               @map("penjualan_id") @db.Uuid
   penjualan   FinPenjualanKaryawan @relation(fields: [penjualanId], references: [id], onDelete: Restrict)
 
-  name      String
-  quantity  Int
+  name String
+  // Jumlah boleh PECAHAN (mis. 1,6 meter/kg bahan) — Decimal(12,3), 0 < jumlah (CHECK di migrasi). Aturan pembulatan subtotal: services/finance/penjualanKaryawanManual.js.
+  quantity  Decimal @db.Decimal(12, 3)
   unitPrice Decimal @map("unit_price") @db.Decimal(18, 2)
   sortOrder Int     @default(0) @map("sort_order")
 
