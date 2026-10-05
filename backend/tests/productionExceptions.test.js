@@ -119,9 +119,9 @@ test("validateBlockReason: seluruh BLOCK_REASON_VALUES diterima (kecuali OTHER b
 });
 
 test('validateBlockReason: OTHER tanpa catatan bermakna ditolak', () => {
-  assert.match(validateBlockReason({ reason: "OTHER", note: null }), /catatan yang jelas/);
-  assert.match(validateBlockReason({ reason: "OTHER", note: "  " }), /catatan yang jelas/);
-  assert.match(validateBlockReason({ reason: "OTHER", note: "ab" }), /catatan yang jelas/);
+  assert.match(validateBlockReason({ reason: "OTHER", note: null }), /keterangan yang jelas/);
+  assert.match(validateBlockReason({ reason: "OTHER", note: "  " }), /keterangan yang jelas/);
+  assert.match(validateBlockReason({ reason: "OTHER", note: "ab" }), /keterangan yang jelas/);
 });
 
 test('validateBlockReason: OTHER dengan catatan bermakna diterima', () => {

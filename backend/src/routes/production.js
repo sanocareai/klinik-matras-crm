@@ -28,6 +28,8 @@ import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } fro
 import { prisma } from "../db.js";
 import { listV1WorkerQueue } from "../services/v1WorkerQueue.js";
 import { notifyReadyForDelivery } from "../services/customerNotifications.js";
+import { DISPLAY_STATUS_UNIT_FILTER, displayStatusCountsOf, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 
 export const productionRouter = express.Router();
 productionRouter.use(requireAuth);
@@ -355,8 +357,16 @@ productionRouter.get("/orders/:orderId/documentation", requirePermission(P.UNIT_
 productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req, res) => {
   try {
     const { status, serviceLine, q } = req.query;
+    // Simplifikasi slice 1 — paginasi + filter status tampilan di SERVER (sebelumnya berhenti di 500 unit). Tanpa page/pageSize: halaman 1 berukuran 100
+    // (bukan seluruh daftar) dan respons memuat total/hasMore supaya pemanggil tahu masih ada sisanya. displayStatus = Pengambilan|Diproses|Siap Kirim|Terkirim.
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 100, 1), 200);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const displayFilter = String(req.query.displayStatus || "").toUpperCase();
+    const displayUnitStatuses = DISPLAY_STATUS_UNIT_FILTER[displayFilter] || null;
     const where = {
       ...(status && { status }),
+      ...(displayUnitStatuses && !status ? { status: { in: displayUnitStatuses } } : {}),
+      ...(req.query.real === "1" ? { order: { status: { not: "CANCELLED" }, customer: { pipelineStage: { not: "SPAM" }, isInternalStaff: false } } } : {}),
       ...(serviceLine && { serviceLine }),
       ...(q?.trim() && {
         OR: [
@@ -384,13 +394,16 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
         order: {
           select: {
             id: true, orderNumber: true, status: true,
+            items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, // Layanan Sales (satu-satunya layanan yang ditampilkan)
             customer: { select: { id: true, name: true } },
           },
         },
       },
-      orderBy: [{ createdAt: "desc" }],
-      take: 500,
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
     });
+    const totalMatching = await prisma.unit.count({ where });
 
     // productionStatus level-UNIT (Production Core Slice 1/2) — DUA query
     // batch, lihat catatan di GET /board soal isReworkTarget TIDAK dihitung
@@ -406,7 +419,9 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     // Sumber V1/V2 per unit (P12B.5): cohort reader yang SAMA dengan Unit 360 (production-v2). READ-ONLY — tidak membuat Run/backfill; reader OFF = semua V1.
     const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
     const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
+    const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
     const unitsWithStatus = units.map((u) => {
+      const prio = priorityDisplay({ stored: u.priority, complaintCases: complaintsByUnit.get(u.id) || [] });
       const lastLog = lastLogByUnitId[u.id] || null;
       const blocker = blockerByUnitId[u.id] || null;
       const assignment = assignmentByUnitId[u.id] || null;
@@ -415,6 +430,10 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
       });
       return {
         ...u, inProductionV2: v2Units.has(u.id), productionStatus,
+        // Kosakata sederhana (slice 1): status order/unit, keberadaan fisik, prioritas Normal·Tinggi·Komplain (Komplain dari ComplaintCase resmi). Enum mentah tetap ada di atas.
+        orderStatusDisplay: displayStatusOfOrder(u.order?.status), unitStatusDisplay: displayStatusOfUnit(u.status),
+        presence: physicalPresenceOf({ unitStatus: u.status, runStatus: null, runOrigin: null, inboundAccepted: false }),
+        priorityDisplay: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
         productionStatusReason: describeProductionStatus(productionStatus, lastLog, blocker),
         // Work Center/Assigned To (Slice 4O) — dari StageAssignment tahap
         // sekarang (batch, di atas), fallback ke defaultWorkCenter tahap
@@ -446,6 +465,9 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     res.json({
       units: unitsWithStatus,
       statusCounts: statusCounts.map((s) => ({ status: s.status, count: s._count._all })),
+      // Hitungan per status TAMPILAN (Pengambilan/Diproses/Siap Kirim/Terkirim) dari hitungan di atas — sumber sama, satu kosakata.
+      displayStatusCounts: displayStatusCountsOf(statusCounts.map((s) => ({ status: s.status, count: s._count._all }))),
+      page, pageSize, total: totalMatching, hasMore: (page - 1) * pageSize + units.length < totalMatching,
     });
   } catch (err) {
     handleErr(err, res);

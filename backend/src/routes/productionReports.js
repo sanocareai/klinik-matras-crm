@@ -74,7 +74,7 @@ productionReportsRouter.get("/meta", async (req, res) => {
     if (!unitIds) return res.json({ ...OFF(), ...base });
     const meta = { ...base, readerMode: "COHORT", targetPerHari: BOARD_DEFAULTS.dailyTarget, targetNote: "Target harian = konfigurasi sistem (belum ada target tercatat).",
       stations: BOARD_DEFAULTS.stations.map((code) => ({ code, label: stationLabel(code) })), capacityPerStation: BOARD_DEFAULTS.capacityPerStation,
-      statuses: Object.entries(STATUS_BUCKETS).map(([key, label]) => ({ key, label })), priorities: Object.entries(PRIORITY_LABEL).map(([key, label]) => ({ key: Number(key), label })), qcFilters: QC_FILTERS, docFilters: DOC_FILTERS,
+      statuses: Object.entries(STATUS_BUCKETS).map(([key, label]) => ({ key, label })), priorities: [{ key: 0, label: PRIORITY_LABEL[0] }, { key: 1, label: PRIORITY_LABEL[1] }], qcFilters: QC_FILTERS, docFilters: DOC_FILTERS,
       metrics: METRICS.map((m) => ({ key: m.key, group: m.group, label: m.label, unit: m.unit, kind: m.kind, formula: m.formula, basis: m.basis === "snapshot" ? "Posisi saat ini" : (DATE_BASES[m.basis] || m.basis), note: m.note || null })) };
     if (c.full) {
       const ctx = await buildReportContext(prisma, { unitIds, query: {} });

@@ -341,13 +341,13 @@ export function formatActivitySentence(event) {
     case EVENT_TYPES.SERVICE_ASSIGNED:
       return `Layanan produksi ditetapkan: ${metadata.serviceLabel || "—"}`;
     case EVENT_TYPES.PRODUCTION_BLOCKED: {
-      const label = BLOCK_REASON_LABEL[metadata.reason] || metadata.reason || "Unknown reason";
-      return metadata.note ? `Production blocked — ${label}: ${metadata.note}` : `Production blocked — ${label}`;
+      const label = (BLOCK_REASON_LABEL[metadata.reason] || metadata.reason || "alasan belum tercatat").toLowerCase();
+      return metadata.note ? `Pekerjaan tertunda — ${label}: ${metadata.note}` : `Pekerjaan tertunda — ${label}`;
     }
     case EVENT_TYPES.PRODUCTION_BLOCKER_RESOLVED:
       return metadata.resolutionNote
-        ? `Production blocker resolved — ${metadata.resolutionNote}`
-        : "Production blocker resolved";
+        ? `Pekerjaan dilanjutkan — ${metadata.resolutionNote}`
+        : "Pekerjaan dilanjutkan";
     case EVENT_TYPES.STAGE_STARTED:
       return `${metadata.stage || "Tahap"} started`;
     case EVENT_TYPES.STAGE_PAUSED: {

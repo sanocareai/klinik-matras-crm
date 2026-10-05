@@ -4,6 +4,8 @@
 import { pathForUnit, resolveCurrentTarget } from "./unitStageEngine.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "./v2FeatureFlags.js";
 import { deriveV1WorkItem, lastPicOperatorId, laneOfStage, rankV1Items } from "../lib/domain/v1WorkerQueue.js";
+import { displayStatusOfOrder, displayStatusOfUnit, priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 
 const WORK_STATUSES = ["RECEIVED", "IN_PRODUCTION"];
 const stageView = (s) => (s ? { id: s.id, code: s.code, labelId: s.labelId, phase: s.phase, requiresPhoto: !!s.requiresPhoto, requiresQc: !!s.requiresQc, lane: laneOfStage(s) } : null);
@@ -22,9 +24,9 @@ export async function listV1WorkerQueue(prisma, { userId, lane }) {
   const units = await prisma.unit.findMany({
     where: { id: { in: candidateIds.filter((id) => !v2Units.has(id)) }, status: { in: WORK_STATUSES } },
     select: {
-      id: true, unitCode: true, merk: true, ukuran: true, status: true, priority: true, productionDueAt: true, createdAt: true, serviceId: true, currentStageId: true,
+      id: true, orderId: true, unitCode: true, merk: true, ukuran: true, status: true, priority: true, productionDueAt: true, createdAt: true, serviceId: true, currentStageId: true,
       service: { select: { id: true, code: true, labelId: true } },
-      order: { select: { orderNumber: true, customer: { select: { name: true } } } },
+      order: { select: { orderNumber: true, status: true, customer: { select: { name: true } } } },
     },
   });
   if (!units.length) return { operator: { id: operator.id }, lane: wantLane, items: [] };
@@ -40,6 +42,7 @@ export async function listV1WorkerQueue(prisma, { userId, lane }) {
   for (const a of assignRows) { if (!assignByUnit.has(a.unitId)) assignByUnit.set(a.unitId, new Map()); assignByUnit.get(a.unitId).set(a.stageId, { operatorId: a.operatorId, operatorName: a.operator?.user?.name ?? null }); }
   for (const l of doneLogs) { const k = `${l.unitId}:${l.stageId}`; if (!actorByUnitStage.has(k)) actorByUnitStage.set(k, l.actorId); } // log terbaru menang (urut desc)
 
+  const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
   const pathCache = new Map();
   const items = [];
   for (const unit of units) {
@@ -54,7 +57,7 @@ export async function listV1WorkerQueue(prisma, { userId, lane }) {
     });
     if (!derived || derived.lane !== wantLane) continue; // QC bukan lantai Meja/Corner; lini lain tidak ikut
     items.push({
-      unit: { id: unit.id, unitCode: unit.unitCode, merk: unit.merk, ukuran: unit.ukuran, status: unit.status, priority: unit.priority, productionDueAt: unit.productionDueAt, createdAt: unit.createdAt, serviceLabel: unit.service?.labelId ?? null, order: { orderNumber: unit.order?.orderNumber ?? null, customer: { name: unit.order?.customer?.name ?? null } } },
+      unit: { priorityDisplay: (() => { const p = priorityDisplay({ stored: unit.priority, complaintCases: complaintsByUnit.get(unit.id) || [] }); return { key: p.key, label: p.label, rank: p.rank, complaintCases: p.complaintCases }; })(), orderStatusDisplay: displayStatusOfOrder(unit.order?.status), unitStatusDisplay: displayStatusOfUnit(unit.status), id: unit.id, unitCode: unit.unitCode, merk: unit.merk, ukuran: unit.ukuran, status: unit.status, priority: unit.priority, productionDueAt: unit.productionDueAt, createdAt: unit.createdAt, serviceLabel: unit.service?.labelId ?? null, order: { orderNumber: unit.order?.orderNumber ?? null, customer: { name: unit.order?.customer?.name ?? null } } },
       state: derived.state, lane: derived.lane, stage: stageView(derived.stage),
       prerequisite: derived.prerequisite ? { stage: stageView(derived.prerequisite.stage), state: derived.prerequisite.state, assignee: derived.prerequisite.assignee, assigned: derived.prerequisite.assigned } : null,
       waitingFor: derived.waitingFor ? stageView(derived.waitingFor) : null,

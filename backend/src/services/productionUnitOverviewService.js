@@ -15,7 +15,9 @@ import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customer
 import { loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
-import { PRIORITY_LABEL, formatProductionDate, stationLabel } from "../lib/domain/productionBoard.js";
+import { formatProductionDate, stationLabel } from "../lib/domain/productionBoard.js";
+import { displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 import { STEP_BY_NO } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny } from "../routes/productionUnitPhoto.js";
@@ -185,7 +187,8 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
   const photoUrl = await signUnitPhotoUrlIfAny(prisma, unit.id);
   const order = unit.order;
   const warnings = [];
-  if (!unit.serviceId) warnings.push({ code: "LAYANAN_BELUM", text: "Layanan unit belum ditetapkan (ditetapkan setelah diagnosa)" });
+  const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, [{ id: unit.id, orderId: unit.orderId }]);
+  const prioNoRun = priorityDisplay({ stored: unit.priority ?? "NORMAL", complaintCases: complaintsByUnit.get(unit.id) || [] });
   if (!pickup.exists) warnings.push({ code: "CUSTODY_TIDAK_DITEMUKAN", text: "Tidak ada catatan custody masuk untuk unit ini" });
   warnings.push({ code: "BELUM_ADA_RUN", text: "Unit belum masuk proses produksi (belum ada Production Run)" });
 
@@ -193,7 +196,10 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
     identity: {
       unitId: unit.id, unitCode: unit.unitCode, orderId: unit.orderId, orderNumber: order?.orderNumber ?? null,
       merk: unit.merk, ukuran: unit.ukuran, status: unit.status, photoUrl,
-      target: { productionDate: null, priority: null, priorityLabel: null, targetCompleteAt: null, late: false },
+      orderStatus: displayStatusOfOrder(order?.status) || null, unitStatus: displayStatusOfUnit(unit.status) || null,
+      presence: physicalPresenceOf({ unitStatus: unit.status, runStatus: null, runOrigin: null, inboundAccepted: pickup?.status === "ACCEPTED" }),
+      priority: { key: prioNoRun.key, label: prioNoRun.label, rank: prioNoRun.rank, complaintCases: prioNoRun.complaintCases },
+      target: { productionDate: null, priority: null, priorityLabel: prioNoRun.label, targetCompleteAt: null, late: false },
       pic: { table: null, corner: null }, station: { code: null, label: "Belum dijadwalkan" },
       bucket: "ANTREAN", bucketLabel: "Belum masuk produksi",
     },
@@ -233,11 +239,11 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
 // sama persis dengan yang sudah datang lewat run.unit.order (RUN_VIEW_INCLUDE), diukur nyata: 4 query
 // SQL duplikat per request (diagnostik P9C audit N+1/query-count, 30 Sep 2026).
 const UNIT_FULL_SELECT = {
-  id: true, unitCode: true, orderId: true, serviceId: true, status: true, merk: true, ukuran: true,
+  id: true, unitCode: true, orderId: true, serviceId: true, status: true, priority: true, merk: true, ukuran: true,
   service: { select: { code: true, labelId: true } },
   order: {
     select: {
-      orderNumber: true, category: true, productLine: true, productType: true, beratBadan: true, notes: true,
+      orderNumber: true, status: true, category: true, productLine: true, productType: true, beratBadan: true, notes: true,
       complaintCategory: true, customerPromiseDate: true, value: true,
       weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
       items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } },
@@ -287,6 +293,9 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
   const customer = customerOf(run);
   const warnings = warningsOf(run, ctx, materialStatus);
   const indicators = indicatorsOf(run, ctx, materialStatus);
+  const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, [{ id: unitId, orderId: run.unit.orderId }]);
+  const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaintsByUnit.get(unitId) || [] });
+  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED");
 
   const mediaOf = (stepNos) => ctx.evidence.filter((e) => stepNos.includes(e.stepNo))
     .flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url), source: sourceOfStep(e.stepNo) })))
@@ -308,9 +317,12 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
     identity: {
       unitId: run.unit.id, unitCode: run.unit.unitCode, orderId: run.unit.orderId, orderNumber: customer.orderNumber,
       merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, photoUrl,
+      orderStatus: displayStatusOfOrder(run.unit.order?.status) || null, unitStatus: displayStatusOfUnit(run.unit.status) || null,
+      presence: physicalPresenceOf({ unitStatus: run.unit.status, runStatus: run.status, runOrigin: run.origin, inboundAccepted }),
+      priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
       target: {
         productionDate: run.plan?.productionDate ? formatProductionDate(run.plan.productionDate) : null,
-        priority: run.plan?.priority ?? null, priorityLabel: run.plan ? (PRIORITY_LABEL[run.plan.priority] || "Normal") : null,
+        priority: run.plan?.priority ?? null, priorityLabel: prio.label,
         targetCompleteAt: run.plan?.targetCompleteAt ?? null,
         late: !!(run.plan?.targetCompleteAt && !TERMINAL_RUN.includes(run.status) && run.currentPhase !== "HANDOFF" && new Date(run.plan.targetCompleteAt).getTime() < now.getTime()),
       },
@@ -334,7 +346,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
     planning: run.plan ? {
       planId: run.plan.id, status: run.plan.status, revision: run.plan.revision,
       productionDate: formatProductionDate(run.plan.productionDate), stationCode: run.plan.stationCode, stationLabel: stationLabel(run.plan.stationCode),
-      priority: run.plan.priority, priorityLabel: PRIORITY_LABEL[run.plan.priority] || "Normal",
+      priority: run.plan.priority, priorityLabel: prio.label,
       workCenter: run.plan.workCenter, operator: run.plan.operator ? { id: run.plan.operator.id, name: nameOf(run.plan.operator) } : null,
       cornerWorkCenter: run.plan.cornerWorkCenter, cornerOperator: run.plan.cornerOperator ? { id: run.plan.cornerOperator.id, name: nameOf(run.plan.cornerOperator) } : null,
       materialReservedAt: run.plan.materialReservedAt, targetStartAt: run.plan.targetStartAt, targetCompleteAt: run.plan.targetCompleteAt,

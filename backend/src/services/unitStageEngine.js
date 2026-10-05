@@ -666,7 +666,7 @@ export async function resumeStageInTx(tx, unitId, stageId, { actorId } = {}) {
 
   if (last?.action === "FAIL") {
     throw new StageTransitionError(
-      `Tahap "${stage.labelId}" sedang terhambat (blocked) — selesaikan blokirnya dulu lalu gunakan "Mulai Lagi", bukan Lanjutkan`
+      `Tahap "${stage.labelId}" sedang tertunda — pilih "Lanjutkan Pekerjaan" (mulai lagi) setelah kendalanya selesai, bukan Lanjutkan jeda`
     );
   }
   if (!last || last.action !== "PAUSE") {
@@ -812,7 +812,7 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note, r
       // lebih jelas dibanding "tidak ada tahap yang sedang berjalan" kalau
       // ternyata ada jalur yang belum terpikirkan.
       if (!isProductionEligible(unit.status)) {
-        throw new StageTransitionError("Unit ini sudah selesai/dibatalkan secara produksi — tidak bisa membuka blokir baru");
+        throw new StageTransitionError("Unit ini sudah selesai/dibatalkan secara produksi — tidak bisa menunda pekerjaan lagi");
       }
 
       const open = await findOpenWork(tx, unitId, stageId);
@@ -857,7 +857,7 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note, r
     // (lihat migration.sql) — dua "Tandai Terhambat" bersamaan untuk unit
     // yang sama, race window sudah ditutup DB, bukan kode ini.
     if (err.code === "P2002") {
-      throw new StageTransitionError("Unit ini sudah punya blokir produksi yang masih terbuka", 409);
+      throw new StageTransitionError("Pekerjaan unit ini sudah ditunda dan belum dilanjutkan", 409);
     }
     throw err;
   }
@@ -878,7 +878,7 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note, r
 export async function resolveBlocker(blockerId, { actorId, resolutionNote } = {}) {
   return prisma.$transaction(async (tx) => {
     const existing = await tx.productionBlocker.findUnique({ where: { id: blockerId } });
-    if (!existing) throw new StageTransitionError("Blokir tidak ditemukan", 404);
+    if (!existing) throw new StageTransitionError("Data penundaan pekerjaan tidak ditemukan", 404);
     // Tidak ada padanan V2 untuk menyelesaikan blokir V1 lama: tidak ditolak, tetapi bila Run V2 non-terminal ada, drift dicatat.
     await assertNotV2ExecutionOwned(tx, existing.unitId, "penyelesaian blokir V1", actorId, false);
 
@@ -890,7 +890,7 @@ export async function resolveBlocker(blockerId, { actorId, resolutionNote } = {}
       },
     });
     if (result.count === 0) {
-      throw new StageTransitionError("Blokir ini sudah diselesaikan sebelumnya dan tidak bisa diubah lagi", 409);
+      throw new StageTransitionError("Pekerjaan ini sudah dilanjutkan sebelumnya dan tidak bisa diubah lagi", 409);
     }
 
     await recordActivity(tx, {

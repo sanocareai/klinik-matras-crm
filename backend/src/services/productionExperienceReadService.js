@@ -6,13 +6,15 @@ import {
   ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
 import { listMaterialReturns } from "./productionMaterialReturnService.js";
-import { BOARD_DEFAULTS, PRIORITY_LABEL, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
+import { BOARD_DEFAULTS, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
 import { applicableStepsFor, loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
+import { delayReasonOfBlock, displayStatusOfOrder, displayStatusOfUnit, isFinishedUnitStatus, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 export const COMPLAINT_LABEL = Object.freeze({
@@ -29,11 +31,11 @@ export const RUN_VIEW_INCLUDE = {
       service: { select: { code: true, labelId: true } },
       order: {
         select: {
-          orderNumber: true, category: true, productType: true, beratBadan: true, notes: true, complaintCategory: true, customerPromiseDate: true,
+          orderNumber: true, status: true, category: true, productType: true, beratBadan: true, notes: true, complaintCategory: true, customerPromiseDate: true,
           // P9 UX — nama layanan yang DIPESAN di Sales (snapshot OrderItem.layananName). SENGAJA hanya nama: harga tidak di-select.
           items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } },
           weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
-          customer: { select: { name: true, city: true, assignedSales: { select: { id: true, name: true } } } },
+          customer: { select: { name: true, city: true, pipelineStage: true, isInternalStaff: true, assignedSales: { select: { id: true, name: true } } } },
         },
       },
     },
@@ -104,7 +106,6 @@ export function indicatorsOf(run, ctx, materialStatus) {
 export function warningsOf(run, ctx, materialStatus) {
   const w = [];
   if (!run.plan?.operatorId) w.push({ code: "OPERATOR_BELUM", text: "PIC meja belum ditetapkan" });
-  if (!run.unit.serviceId) w.push({ code: "LAYANAN_BELUM", text: "Layanan unit belum ditetapkan (ditetapkan setelah diagnosa)" });
   const diagnosed = ctx.evidence.some((e) => e.stepNo === 5);
   if (diagnosed && !run.plan?.bomLines.length) w.push({ code: "BOM_BELUM", text: "Diagnosa selesai — BOM belum dibuat" });
   if (["BOM_BELUM_ADA", "BELUM_DIRESERVASI", "MENUNGGU_DISIAPKAN", "SIAP_DIAMBIL"].includes(materialStatus.key) && diagnosed) w.push({ code: "BAHAN_BELUM", text: materialStatus.label });
@@ -135,7 +136,7 @@ export function customerOf(run) {
   };
 }
 
-export function toRunView(run, ctx, { now = new Date(), photoUrl = null } = {}) {
+export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complaints = [] } = {}) {
   const shortage = ctx.openShortage;
   const materialStatus = materialStatusOf(run.plan, ctx.material, shortage);
   const steps = stepStatuses(ctx);
@@ -145,15 +146,22 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null } = {}) 
   const op = ctx.state.activeOp;
   const next = ctx.next;
   const bucket = andonBucketOf({ next, started });
+  const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaints });
+  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED");
   return {
     runId: run.id, revision: run.revision, status: run.status, currentPhase: run.currentPhase, origin: run.origin,
+    // Tiga sumbu terpisah (simplifikasi slice 1): status order, keberadaan fisik, tahap (next/bucket). service (teknis) tetap ada di payload sebagai data historis; UI hanya menampilkan Layanan Sales.
+    orderStatus: displayStatusOfOrder(run.unit.order?.status) || null,
+    unitStatus: displayStatusOfUnit(run.unit.status) || null,
+    presence: physicalPresenceOf({ unitStatus: run.unit.status, runStatus: run.status, runOrigin: run.origin, inboundAccepted }),
+    priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
     unit: { id: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null, photoUrl },
     customer: customerOf(run),
     plan: run.plan ? {
       id: run.plan.id, status: run.plan.status, revision: run.plan.revision,
       productionDate: formatProductionDate(run.plan.productionDate), stationCode: run.plan.stationCode, stationLabel: stationLabel(run.plan.stationCode),
       stationSequence: run.plan.stationSequence ?? null,
-      priority: run.plan.priority, priorityLabel: PRIORITY_LABEL[run.plan.priority] || "Normal",
+      priority: run.plan.priority, priorityLabel: prio.label, priorityKey: prio.key, priorityRank: prio.complaintCases.length ? 3 : (run.plan.priority ?? 0), // rank untuk URUTAN bawaan: Komplain > nilai tersimpan (Mendesak lama tetap di atas Tinggi)
       workCenter: run.plan.workCenter, cornerWorkCenter: run.plan.cornerWorkCenter,
       operator: run.plan.operator ? { id: run.plan.operator.id, userId: run.plan.operator.userId, name: nameOf(run.plan.operator) } : null,
       cornerOperator: run.plan.cornerOperator ? { id: run.plan.cornerOperator.id, userId: run.plan.cornerOperator.userId, name: nameOf(run.plan.cornerOperator) } : null,
@@ -178,13 +186,14 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null } = {}) 
   };
 }
 
-async function loadRuns(prisma, where) {
+export async function loadRuns(prisma, where) {
   return prisma.productionRun.findMany({ where, include: RUN_VIEW_INCLUDE, orderBy: [{ createdAt: "asc" }] });
 }
-async function viewsOf(prisma, runs, opts) {
+export async function viewsOf(prisma, runs, opts) {
   const photoByUnit = await signUnitPhotoUrlsBulk(prisma, runs.map((r) => r.unitId));
+  const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, runs.map((r) => ({ id: r.unitId, orderId: r.unit?.orderId ?? null })));
   const views = [];
-  for (const run of runs) views.push(toRunView(run, await loadStepContext(prisma, run), { ...opts, photoUrl: photoByUnit.get(run.unitId) ?? null }));
+  for (const run of runs) views.push(toRunView(run, await loadStepContext(prisma, run), { ...opts, photoUrl: photoByUnit.get(run.unitId) ?? null, complaints: complaintsByUnit.get(run.unitId) || [] }));
   return views;
 }
 
@@ -230,15 +239,19 @@ export async function getProductionBoard(prisma, { date, unitIds, config = BOARD
     listAwaitingArrivalNoRunUnits(prisma, unitIds),
   ]);
   const scheduled = await viewsOf(prisma, scheduledRuns, { now });
-  const unscheduled = await viewsOf(prisma, unscheduledRuns, { now });
+  const unscheduledAll = await viewsOf(prisma, unscheduledRuns, { now });
+  // Siap Kirim/Terkirim (status unit) tidak tampil di meja maupun backlog; datanya tetap utuh dan KPI hari itu tetap menghitung seluruh rencana.
+  const workable = (v) => !isFinishedUnitStatus(v.unit.status);
+  const unscheduled = unscheduledAll.filter(workable);
   const stations = config.stations.map((code) => {
-    const items = scheduled.filter((v) => v.plan?.stationCode === code).sort((a, b) => compareStationOrder(a.plan, b.plan));
+    const items = scheduled.filter((v) => v.plan?.stationCode === code && workable(v)).sort((a, b) => compareStationOrder(a.plan, b.plan));
     const operatorNames = [...new Set(items.map((v) => v.plan?.operator?.name).filter(Boolean))];
     return { code, label: stationLabel(code), capacity: config.capacityPerStation, count: items.length, operatorNames, items };
   });
   const completed = scheduled.filter((v) => ["HANDOFF", "SELESAI"].includes(v.bucket)).length;
   return {
     date: formatProductionDate(day), config: { dailyTarget: config.dailyTarget, stations: config.stations, capacityPerStation: config.capacityPerStation },
+    hiddenFinished: scheduled.filter((v) => !workable(v)).length,
     kpi: { target: config.dailyTarget, planned: scheduled.length, completed, waitingMaterial: scheduled.filter((v) => v.bucket === "MENUNGGU_BAHAN").length, late: scheduled.filter((v) => v.timer.late).length },
     stations,
     unscheduled: {
@@ -304,7 +317,8 @@ export async function getProductionCommandCenter(prisma, { unitIds, now = new Da
       orderBy: [{ scheduledDate: "asc" }],
     }),
   ]);
-  const views = await viewsOf(prisma, activeRuns, { now });
+  const viewsAll = await viewsOf(prisma, activeRuns, { now });
+  const views = viewsAll.filter((v) => !isFinishedUnitStatus(v.unit.status)); // Siap Kirim/Terkirim tidak tampil di papan/backlog
   const completedToday = await viewsOf(prisma, completedTodayRuns, { now });
 
   let valueByOrderId = new Map();
@@ -437,7 +451,7 @@ export async function listWorkerQueue(prisma, { unitIds, userId, lane, all = fal
     unitId: { in: unitIds }, status: { notIn: TERMINAL_RUN },
     plan: { is: { ...planWhere, status: { not: "CANCELLED" } } },
   });
-  const views = await viewsOf(prisma, runs, { now });
+  const views = (await viewsOf(prisma, runs, { now })).filter((v) => !isFinishedUnitStatus(v.unit.status));
   const items = views
     .filter((v) => (lane === "CORNER"
       ? v.next?.actor === "CORNER" || (v.next?.stepNo >= 10 && v.next?.stepNo <= 12)
@@ -463,7 +477,7 @@ export async function getAndonBoard(prisma, { date, unitIds, config = BOARD_DEFA
       items: s.items.map((v) => ({
         runId: v.runId, unitCode: v.unit.unitCode, customerName: v.customer.name, merk: v.unit.merk, ukuran: v.unit.ukuran,
         bucket: v.bucket, bucketLabel: v.bucketLabel, stepNo: v.next?.stepNo ?? null, stepLabel: v.next?.stepNo ? STEP_BY_NO[v.next.stepNo]?.label : null,
-        progress: v.progress, timer: v.timer, priority: v.plan?.priority ?? 0, operatorName: v.plan?.operator?.name ?? null,
+        progress: v.progress, timer: v.timer, priority: v.plan?.priorityRank ?? 0, priorityLabel: v.plan?.priorityLabel ?? "Normal", operatorName: v.plan?.operator?.name ?? null,
         cornerName: v.plan?.cornerOperator?.name ?? null, shortage: v.shortage ? v.shortage.items.map((i) => i.name) : null,
       })),
     })),

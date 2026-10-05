@@ -14,6 +14,7 @@ import {
   getAndonBoard, getProductionBoard, getProductionCommandCenter, getProductionReport, getRunCard, getWarehouseProductionQueue, listWorkerQueue,
 } from "../services/productionExperienceReadService.js";
 import { getUnitOverview } from "../services/productionUnitOverviewService.js";
+import { listBacklog, parseBacklogQuery } from "../services/productionBacklog.js";
 import { getDiagnosisState, mapManualMaterial, saveDiagnosisDraft, submitDiagnosis } from "../services/productionDiagnosisCommandService.js";
 import { productionEvidenceUploadRouter } from "./productionEvidenceMedia.js";
 import { productionDocumentationRouter } from "./productionDocumentation.js";
@@ -63,6 +64,17 @@ productionExperienceRouter.get("/board", requireAnyPermission(...READ_PERMS), as
     const unitIds = await readerCohort();
     if (!unitIds) return inert(res, { stations: [], unscheduled: { plans: [], units: [] } });
     res.json({ readerMode: "COHORT", ...(await getProductionBoard(prisma, { date: req.query.date ? String(req.query.date) : null, unitIds })) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/backlog?status=DIPROSES|PENGAMBILAN&q=&page=&pageSize= — backlog "Belum Dijadwalkan" Rencana Produksi (simplifikasi slice 1).
+// Filter & paginasi di SERVER (tanpa batas 500). Default: unit dari order nyata berstatus Diproses; Siap Kirim/Terkirim tidak pernah masuk. Baca-saja.
+// Unit di luar cohort reader tetap tampil sebagai kartu ringkas (schedulable=false) — tidak ada tombol jadwal; izin tidak berubah (READ_PERMS).
+productionExperienceRouter.get("/backlog", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const state = resolveProductionReaderState(await loadV2Flags(prisma));
+    const cohortUnitIds = state.mode === PRODUCTION_READER_MODE.OFF ? [] : [...state.unitIds];
+    res.json({ readerMode: cohortUnitIds.length ? "COHORT" : "OFF", ...(await listBacklog(prisma, { cohortUnitIds, ...parseBacklogQuery(req.query) })) });
   } catch (err) { handleErr(err, res); }
 });
 
