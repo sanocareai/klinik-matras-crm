@@ -87,9 +87,9 @@ Saat ini di production: **0 run adaptasi** (mode adaptasi default OFF, cohort 1 
 
 | Gerbang | Hasil |
 |---|---|
-| Backend unit (`npm test`) | **1008/1008** |
-| Frontend | **635/635** |
-| Integrasi penuh (SEMUA berkas `*.integration.test.js`, serial, satu DB terisolasi) | INTEGRASI_PENUH |
+| Backend unit (`npm test`) | **1008/1008** (pada HEAD final) |
+| Frontend | **635/635** (pada HEAD final) |
+| Integrasi penuh (SEMUA 149 berkas `*.integration.test.js`, serial, satu DB terisolasi, tanpa beban lain) | **1327/1334 lulus; 7 gagal — SEMUA 7 gagal identik pada `origin/main` murni (`1a783034`, node_modules terpisah), jadi bukan dari kandidat: 0 kegagalan baru.** Lihat rincian di bawah tabel. |
 | Mobile (`belumDibalasStore`) | **tidak dijalankan di sini** — dependensi `mobile/node_modules` (zustand) tidak terpasang pada worktree ini; berkas milik rilis Inbox di `main`, tidak diubah kandidat |
 | Rehearsal restore production (VPS) | OK (lihat §6) |
 | Matriks cohort/non-cohort | 16/16 |
@@ -98,9 +98,19 @@ Saat ini di production: **0 run adaptasi** (mode adaptasi default OFF, cohort 1 
 | Lifecycle sederhana (UI + DB): Unit Tiba 1 klik → Lewati Tahap → Selesaikan Produksi → Siap Kirim | **14/14** — tanpa QC/custody palsu, stok tidak bergerak, tepat 1 job Delivery, selesai ulang ditolak, laporan QC "tidak dilakukan" |
 | Mutasi sumber audit pembaca bukti (slice 3) | lulus |
 
+**7 kegagalan integrasi — semuanya bawaan baseline (diverifikasi, bukan diasumsikan):**
+| Berkas / tes | Di kandidat | Di `origin/main` murni |
+|---|---|---|
+| `exportKomplainAktif` — includeActiveComplaint | gagal | gagal identik |
+| `financeFase1ResiInventory` — RESI satu Payment ke 3 child | gagal | gagal identik |
+| `koreksiPembayaran` — 3 tes (Resi koreksi nominal, Blokir tambahan, paidAt Resi) | gagal | gagal identik (21/24 lulus di kedua sisi) |
+| `productionPlanning` — 2 tes pertama | gagal **hanya** bila berjalan setelah `expenseSubmissionProduksiGudang` | gagal identik pada urutan yang sama; **lulus 15/15 bila berjalan sendiri**. Penyebab terbukti: berkas Finance meninggalkan `work_centers` kode `WC-1…`, tes planning memakai kode yang sama → `Unique constraint (code)`. Polusi lintas-berkas lama, bukan regresi. |
+
+Penyebab empat kegagalan Finance/Orders (export komplain, Resi ×4) **belum dianalisis** (dugaan: bergantung jam/zona waktu karena dijalankan pukul 01–04 WIB — belum diverifikasi); itu area divisi Finance dan tidak disentuh. Berkas-berkas production yang menjadi cakupan kandidat (production*, unitCustody*, unitV1*, v1*, delivery lintas-batas) lulus penuh bila dijalankan sebagai kelompok (246/246 pada putaran slice 3 + berkas izin baru).
+
 ## 9. Keputusan
 
-**GO-BERSYARAT** — kandidat **siap rilis secara teknis**; ini bukan perintah deploy. Syarat sebelum eksekusi:
+**GO-BERSYARAT** — kandidat **siap rilis secara teknis**; ini bukan perintah deploy. SHA kandidat: lihat commit terakhir branch (kode `backend/`, `frontend/src`, `prisma` identik dengan image yang diuji `d1977cae`; commit sesudahnya hanya dokumen). Syarat sebelum eksekusi:
 1. **Freeze ulang di jam deploy**: `main`/live bergerak dua kali selama persiapan; jalankan `release-production-v2.sh --preflight-only` dan rehearsal lagi pada SHA kandidat terakhir (skrip menolak bila live/main berubah).
 2. Rilis memakai skrip bergerbang (`release-production-v2.sh`: backup + verifikasi restore + pre-switch + rollback tag); jangan manual.
 3. Pastikan **tidak ada** run adaptasi non-terminal sebelum rollback apa pun (§7).
