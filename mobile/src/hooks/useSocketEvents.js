@@ -39,6 +39,7 @@ export function useSocketEvents() {
         message.content || (message.mediaType ? `[${message.mediaType}]` : undefined),
         message.createdAt,
         message.direction === "INBOUND" ? 1 : 0,
+        message.direction,
       );
     }
 

@@ -86,7 +86,12 @@ export const useConversationStore = create((set) => ({
   // Update ringan saat ada pesan baru masuk/keluar — dorong preview +
   // timestamp + unread ke atas tanpa refetch. Hanya berlaku untuk percakapan
   // yang SUDAH ada di cache (percakapan baru menunggu fetch/tab berikutnya).
-  bumpConversation: (id, preview, ts, unreadDelta = 0) => set((state) => {
+  //
+  // direction ("INBOUND" | "OUTBOUND", opsional): arah pesan yang baru tiba. BUG YANG DIPERBAIKI (5 Okt 2026, "chat yang sudah dibalas masih
+  // muncul di Belum Dibalas"): isUnanswered/unansweredMinutes cuma diisi dari hasil fetch server dan TIDAK PERNAH diperbarui oleh pesan baru,
+  // jadi chat yang baru dibalas tetap tersangkut di tab "Belum Dibalas" (dan chat yang baru dijawab pelanggan tidak masuk) sampai daftar
+  // di-refresh. Definisi sama dengan server (GET /conversations): belum dibalas = pesan TERAKHIR berarah INBOUND.
+  bumpConversation: (id, preview, ts, unreadDelta = 0, direction) => set((state) => {
     const existing = state.conversationsById[id];
     if (!existing) return {};
     const updated = {
@@ -94,6 +99,10 @@ export const useConversationStore = create((set) => ({
       lastMessageAt: ts || new Date().toISOString(),
       unread: unreadDelta > 0 ? true : existing.unread,
       unreadCount: unreadDelta > 0 ? (existing.unreadCount || 0) + unreadDelta : existing.unreadCount,
+      ...(direction === "INBOUND" || direction === "OUTBOUND" ? {
+        isUnanswered: direction === "INBOUND",
+        unansweredMinutes: direction === "INBOUND" ? 0 : null,
+      } : {}),
     };
     const conversationsById = { ...state.conversationsById, [id]: updated };
     // Percakapan yang sudah paling atas (dan tidak ada yang dipin di atasnya) tidak perlu sort ulang.
