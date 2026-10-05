@@ -335,7 +335,7 @@ export const ANDON_BUCKETS = Object.freeze([
   { key: "ANTREAN", label: "Antrean", tone: "neutral" },
   { key: "BONGKAR", label: "Proses Bongkar", tone: "info" },
   { key: "DIAGNOSA", label: "Diagnosa", tone: "info" },
-  { key: "MENUNGGU_BAHAN", label: "Menunggu Bahan", tone: "danger" },
+  { key: "MENUNGGU_BAHAN", label: "Tertunda — menunggu bahan", tone: "danger" },
   { key: "FONDASI", label: "Fondasi Baru", tone: "info" },
   { key: "LAPISAN", label: "Lapisan Baru", tone: "info" },
   { key: "QC", label: "QC / Rework", tone: "warning" },

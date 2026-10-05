@@ -163,3 +163,11 @@ test("satu bagian 'Pekerjaan' di Unit 360 memakai endpoint/ownership/permission 
   const allowed = new Set(["getServiceCatalog", "getUnitTimeline", "setUnitService", "updateUnitProduction", "resolveBlocker", "uploadUnitPhotos", "startUnitStage", "completeUnitStage", "failUnitStage", "pauseUnitStage", "resumeUnitStage", "recordQcFitTest", "assignUnitStage", "getWorkCenters", "getProductionOperators", "getUnitMaterials", "getMaterials", "addUnitMaterial"]);
   for (const c of calls) assert.ok(allowed.has(c), `endpoint tak dikenal: ${c}`);
 });
+
+test("kolom/penanda pekerjaan menunggu bahan memakai 'Tertunda — menunggu bahan' di frontend & backend (Andon, kartu, laporan)", async () => {
+  const { bucketStyle } = await import("../src/features/production/experience.js");
+  const { ANDON_BUCKETS } = await import("../../backend/src/lib/domain/productionSteps.js");
+  assert.equal(bucketStyle("MENUNGGU_BAHAN").label, "Tertunda — menunggu bahan");
+  assert.equal(ANDON_BUCKETS.find((b) => b.key === "MENUNGGU_BAHAN").label, "Tertunda — menunggu bahan");
+  assert.equal(L.delayStatusText("MATERIAL_SHORTAGE"), "Tertunda — menunggu bahan");
+});

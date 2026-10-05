@@ -50,7 +50,7 @@ export const BUCKET_STYLE = Object.freeze({
   ANTREAN: { label: "Antrean", badge: "neutral", tv: "bg-inset text-ink2", dot: "bg-ink3" },
   BONGKAR: { label: "Proses Bongkar", badge: "accent", tv: "bg-accentbg text-accent", dot: "bg-accent" },
   DIAGNOSA: { label: "Diagnosa", badge: "accent", tv: "bg-accentbg text-accent", dot: "bg-accent" },
-  MENUNGGU_BAHAN: { label: "Menunggu Bahan", badge: "red", tv: "bg-red text-white", dot: "bg-red" },
+  MENUNGGU_BAHAN: { label: "Tertunda — menunggu bahan", badge: "red", tv: "bg-red text-white", dot: "bg-red" },
   FONDASI: { label: "Fondasi Baru", badge: "accent", tv: "bg-accentbg text-accent", dot: "bg-accent" },
   LAPISAN: { label: "Lapisan Baru", badge: "accent", tv: "bg-accentbg text-accent", dot: "bg-accent" },
   QC: { label: "QC / Rework", badge: "orange", tv: "bg-orange text-white", dot: "bg-orange" },
