@@ -594,6 +594,16 @@ export async function previewFinishProduction(prisma, runId) {
   };
 }
 
+// Penutup boleh PIC Meja ATAU PIC Corner yang ditugaskan (tahap terakhir dikerjakan Corner, jadi PIC Corner adalah pihak yang paling wajar menutup); selain keduanya ditolak seperti biasa.
+// Pesan galat yang dilempar adalah galat PIC Meja (jalur utama) bila keduanya gagal.
+async function authorizeFinishOperator(tx, run, actorId, workCenterId) {
+  try { return await authorizeOperator(tx, run, actorId, workCenterId, { postQc: false }); }
+  catch (error) {
+    if (!["WORKSHOP_OPERATOR_MISMATCH", "WORKSHOP_WORK_CENTER_MISMATCH"].includes(error.code) || !run.plan?.cornerOperatorId) throw error;
+    try { return await authorizeOperator(tx, run, actorId, workCenterId, { postQc: true }); } catch { throw error; }
+  }
+}
+
 // Selesaikan Produksi (mode adaptasi): menutup lifecycle yang diperlukan SECARA EKSPLISIT lalu unit Siap Kirim. Retur sisa bahan tetap WAJIB: bila ada sisa yang belum diterima
 // Gudang, antrean retur dibuka dan command berhenti dengan alasan jelas (completed:false) — tidak dilewati diam-diam. body: { expectedRevision, workCenterId }.
 export async function finishProduction(prisma, { runId, actorId, idempotencyKey, expectedRevision, workCenterId }) {
@@ -612,7 +622,7 @@ export async function finishProduction(prisma, { runId, actorId, idempotencyKey,
     const ctx = await loadStepContext(tx, run);
     const blockers = finishBlockersOf(run, { openShortage: !!ctx.openShortage, exceptionOpen: !!ctx.state.exceptionOpen });
     if (blockers.length) throw stepError(`Produksi belum bisa diselesaikan: ${blockers[0].text}`, 409, `FINISH_${blockers[0].code}`, { blockers });
-    await authorizeOperator(tx, run, actorId, workCenterId, { postQc: false });
+    await authorizeFinishOperator(tx, run, actorId, workCenterId);
     assertRunRevision(run, revisionExpected);
     await assertNoOpenRunException(tx, run.id);
 

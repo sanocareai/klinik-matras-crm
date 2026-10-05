@@ -85,6 +85,8 @@ test("Unit 360: mode adaptasi terlihat (progres, QC tidak dilakukan); penerapan 
   assert.match(d, /QC tidak dilakukan \(mode adaptasi\) — bukan lulus dan bukan di-waive/);
   assert.match(d, /canApply, onApplied|if \(!canApply \|\| \["COMPLETED", "CANCELLED"\]\.includes\(p\.runStatus\)\) return null/);
   assert.doesNotMatch(d, /useEffect\([^)]*applyProductionV2Adaptation/, "tidak pernah diterapkan otomatis");
+  assert.match(d, /data-testid="adaptation-apply-confirm"/); assert.match(d, /data-testid="adaptation-apply-yes"/);
+  assert.match(d, /data-testid="adaptation-apply-btn" onClick=\{\(\) => setAsk\(true\)\}/, "tombol pertama hanya membuka konfirmasi (tidak menerapkan)");
 });
 
 test("Pengaturan Alur Kerja: tab terdaftar; menulis hanya bila server mengizinkan; lokasi tidak dipilih otomatis", () => {
@@ -97,4 +99,10 @@ test("Pengaturan Alur Kerja: tab terdaftar; menulis hanya bila server mengizinka
 test("worker V1: kartu tertunda menampilkan 'Tertunda — <alasan>' dari server dan membuka aksi Lanjutkan", () => {
   const j = jobFromV1({ state: "BLOCKED", stage: { id: "s1", labelId: "Bongkar" }, unit: { id: "u", unitCode: "U", priority: "NORMAL", status: "IN_PRODUCTION", order: { orderNumber: "R", customer: { name: "C" } } } }, { activeBlocker: { reason: "AWAITING_CUSTOMER" }, path: [] });
   assert.match(j.stage.label, /^Tertunda — menunggu arahan/); assert.equal(j.v1.actionable, true);
+});
+
+test("Laporan Produksi: tahap dilewati terdaftar; QC 'tidak dilakukan' dan Gudang 'tidak diwajibkan' (bukan lulus/diterima, bukan strip kosong)", () => {
+  const p = strip(src("pages", "bengkel", "ProductionReportV2.jsx"));
+  assert.match(p, /data-testid="report-skipped"/); assert.match(p, /Tahap dilewati \(Adaptasi sistem\)/); assert.match(p, /tidak dihitung sebagai pekerjaan/);
+  assert.match(p, /report\.qcStatus === "TIDAK_DILAKUKAN" \? "Tidak dilakukan \(mode adaptasi\)"/); assert.match(p, /Tidak diwajibkan \(mode adaptasi\)/);
 });

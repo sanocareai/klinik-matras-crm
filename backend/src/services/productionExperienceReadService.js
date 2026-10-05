@@ -108,7 +108,7 @@ export function indicatorsOf(run, ctx, materialStatus) {
 export function warningsOf(run, ctx, materialStatus) {
   const w = [];
   if (!run.plan?.operatorId) w.push({ code: "OPERATOR_BELUM", text: "PIC meja belum ditetapkan" });
-  const diagnosed = ctx.evidence.some((e) => e.stepNo === 5);
+  const diagnosed = ctx.evidence.some((e) => e.stepNo === 5 && !isSkippedEvidence(e)); // tahap dilewati (adaptasi) bukan diagnosa yang selesai
   if (diagnosed && !run.plan?.bomLines.length) w.push({ code: "BOM_BELUM", text: "Diagnosa selesai — BOM belum dibuat" });
   if (["BOM_BELUM_ADA", "BELUM_DIRESERVASI", "MENUNGGU_DISIAPKAN", "SIAP_DIAMBIL"].includes(materialStatus.key) && diagnosed) w.push({ code: "BAHAN_BELUM", text: materialStatus.label });
   if (ctx.openShortage) w.push({ code: "KEKURANGAN", text: "Menunggu bahan baku dari Gudang" });
@@ -579,10 +579,15 @@ export function buildReportMessage(report) {
   if (report.finalTest) lines.push(`• Uji Akhir    : Diuji beban ${report.finalTest.testerWeightKg} kg -> Hasil Tekstur ${VERDICT_LABEL[report.finalTest.verdict] || report.finalTest.verdict}`);
   if (report.finishing) lines.push(`• Finishing    : Model ${STYLE_LABEL[report.finishing.mattressStyle] || report.finishing.mattressStyle} | Kain ${report.finishing.fabricSpec} | List ${report.finishing.borderColor}`);
   lines.push("");
+  if (report.skippedSteps?.length) lines.push(`• Tahap dilewati (Adaptasi sistem): ${report.skippedSteps.map((s) => s.label).join(", ")} — tidak dikerjakan, tanpa foto/hasil uji`);
+  if (report.qcStatus === "TIDAK_DILAKUKAN") lines.push("• QC          : tidak dilakukan (mode adaptasi) — bukan lulus");
+  lines.push("");
   lines.push(`📸 PAKET DOKUMENTASI BEFORE - PROSES - AFTER (${report.mediaCount} MEDIA):`);
   lines.push(`🔗 ${report.reportPath}`);
   lines.push("");
-  lines.push(report.handoffStatus === "ACCEPTED"
+  lines.push(report.adaptation && report.status === "COMPLETED" && !report.handoffStatus
+    ? "Status saat ini: SIAP KIRIM (mode adaptasi — QC dan penerimaan barang jadi Gudang tidak diwajibkan). Silakan konfirmasi jadwal kirim ke customer."
+    : report.handoffStatus === "ACCEPTED"
     ? "Status saat ini: READY FOR DELIVERY HANDOFF. Silakan konfirmasi jadwal kirim ke customer."
     : "Status saat ini: menunggu diterima Gudang (barang jadi). Jadwal kirim dikonfirmasi setelah Gudang menerima.");
   return lines.join("\n");
@@ -592,7 +597,9 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
   const run = await prisma.productionRun.findFirst({ where: { id: runId, unitId: { in: unitIds } }, include: RUN_VIEW_INCLUDE });
   if (!run) return null;
   const ctx = await loadStepContext(prisma, run);
-  const evidence = ctx.evidence;
+  // Bukti SKIPPED (mode adaptasi) BUKAN pekerjaan: tidak boleh mengisi PIC, hasil uji, bahan, finishing, media, maupun status "siap". Dilaporkan terpisah sebagai tahap dilewati.
+  const skippedEvidence = ctx.evidence.filter((e) => isSkippedEvidence(e));
+  const evidence = ctx.evidence.filter((e) => !isSkippedEvidence(e));
   const materialIds = [...new Set(evidence.filter((e) => [6, 7, 10].includes(e.stepNo)).flatMap((e) => (e.payload?.materials || []).map((m) => m.materialId)))];
   const materials = materialIds.length ? await prisma.material.findMany({ where: { id: { in: materialIds } }, select: { id: true, code: true, name: true, unit: true } }) : [];
   const matById = new Map(materials.map((m) => [m.id, m]));
@@ -602,7 +609,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     for (const r of rows) latestPerOp.set(r.operationRunId || r.id, r);
     return [...latestPerOp.values()].flatMap((e) => (e.payload?.materials || []).map((m) => ({ ...m, code: matById.get(m.materialId)?.code ?? "—", name: matById.get(m.materialId)?.name ?? "—", uom: matById.get(m.materialId)?.unit ?? null })));
   };
-  const actorIds = [...new Set(evidence.map((e) => e.actorId).filter(Boolean))];
+  const actorIds = [...new Set(ctx.evidence.map((e) => e.actorId).filter(Boolean))];
   const actors = actorIds.length ? await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
   const actorName = new Map(actors.map((a) => [a.id, a.name]));
   const tableActor = latestOf(evidence, 5)?.actorId || latestOf(evidence, 1)?.actorId;
@@ -620,7 +627,9 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
   const docBuckets = documentationBuckets(documentation);
   const report = {
     runId: run.id, status: run.status, reportPath: `/bengkel/production-v2/laporan/${run.id}`,
-    ready: !!latestOf(evidence, 12),
+    ready: !!latestOf(evidence, 12) || (!!run.adaptationPolicy && run.status === "COMPLETED"),
+    adaptation: !!run.adaptationPolicy,
+    skippedSteps: [...new Map(skippedEvidence.map((e) => [e.stepNo, e])).values()].sort((a, b) => a.stepNo - b.stepNo).map((e) => ({ stepNo: e.stepNo, label: STEP_BY_NO[e.stepNo]?.label ?? `Tahap ${e.stepNo}`, reason: e.payload?.reason ?? null, at: e.createdAt, by: actorName.get(e.actorId) ?? null })),
     unit: { unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, service: run.unit.service?.labelId ?? null },
     order: { orderNumber: run.unit.order?.orderNumber ?? null, customerName: run.unit.order?.customer?.name ?? null, complaints: (run.unit.order?.complaintCategory || []).map((c) => COMPLAINT_LABEL[c] || c), request: run.unit.order?.notes ?? null, weightKg: run.unit.order?.beratBadan ?? null },
     pic: {
@@ -637,6 +646,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     textureTests: finalTests.map((e) => ({ version: e.version, verdict: e.payload?.verdict, testerWeightKg: e.payload?.testerWeightKg, at: e.createdAt })),
     finalTest: finalPass ? finalPass.payload : null,
     qc: ctx.latestInspection ? { result: ctx.latestInspection.result, version: ctx.latestInspection.version, at: ctx.latestInspection.inspectedAt } : null,
+    qcStatus: ctx.latestInspection ? "DILAKUKAN" : (run.adaptationPolicy && run.operations.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed) ? "TIDAK_DILAKUKAN" : "BELUM"),
     finishing: latestOf(evidence, 10)?.payload ?? null,
     cornerChecklist: latestOf(evidence, 11)?.payload?.checklist ?? null,
     media: { before: [...mediaOf([1, 2, 3]), ...docBuckets.before], process: [...mediaOf([4, 6, 7]), ...docBuckets.process], after: [...mediaOf([8, 9, 11, 12]), ...docBuckets.after] },

@@ -162,7 +162,7 @@ function DiagnosisPanel({ d, onOpenWizard }) {
 
 // Mode adaptasi (slice 2): kebijakan tersimpan PER RUN; run lama tidak berubah otomatis. Penerapan pada run berjalan = aksi eksplisit pemegang izin (server menegakkan).
 function AdaptationPanel({ d, canApply, onApplied }) {
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [ask, setAsk] = useState(false);
   const p = d.production;
   if (p.adaptation) {
     return (
@@ -182,7 +182,18 @@ function AdaptationPanel({ d, canApply, onApplied }) {
     <div data-testid="adaptation-apply" className="rounded-btn border border-line p-3 text-[12.5px]">
       <p className="m-0 font-semibold text-ink">Proses lengkap (QC wajib)</p>
       <p className="m-0 mt-0.5 text-ink3">Run ini memakai alur lengkap. Mode adaptasi hanya diterapkan atas keputusan eksplisit dan tidak mengubah tahap/bukti yang sudah ada.</p>
-      <Button size="sm" variant="secondary" className="mt-2" data-mutates data-testid="adaptation-apply-btn" disabled={busy} onClick={apply}>{busy ? "Menerapkan…" : "Terapkan mode adaptasi untuk unit ini"}</Button>
+      {!ask ? (
+        <Button size="sm" variant="secondary" className="mt-2" data-testid="adaptation-apply-btn" onClick={() => setAsk(true)}>Terapkan mode adaptasi untuk unit ini</Button>
+      ) : (
+        <div data-testid="adaptation-apply-confirm" className="mt-2 rounded-btn bg-orangebg px-3 py-2 text-orange">
+          <p className="m-0 font-semibold">Terapkan pada unit ini saja?</p>
+          <p className="m-0 mt-0.5">Tahap boleh dilewati dan QC tidak lagi diwajibkan untuk run ini. Tahap dan bukti yang sudah ada tidak diubah, dan unit lain tidak terpengaruh.</p>
+          <div className="mt-2 flex gap-2">
+            <Button size="sm" data-mutates data-testid="adaptation-apply-yes" disabled={busy} onClick={apply}>{busy ? "Menerapkan…" : "Ya, terapkan"}</Button>
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => setAsk(false)}>Batal</Button>
+          </div>
+        </div>
+      )}
       {err && <p role="alert" className="m-0 mt-1 text-red">{err}</p>}
     </div>
   );

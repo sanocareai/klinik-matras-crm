@@ -65,8 +65,15 @@ export default function ProductionReportV2() {
         <div className="grid gap-3 md:grid-cols-3">
           <Card className="space-y-1 p-4 text-[12.5px]"><p className="font-bold text-ink">Unit</p><p className="text-ink2">{[report.unit.merk, report.unit.ukuran].filter(Boolean).join(" · ") || "—"}</p><p className="text-ink2">{report.unit.service || "Layanan —"}</p><p className="text-ink3">{report.pic.station}</p></Card>
           <Card className="space-y-1 p-4 text-[12.5px]"><p className="font-bold text-ink">PIC</p><p className="text-ink2">Meja: {report.pic.table || "—"}</p><p className="text-ink2">Corner: {report.pic.corner || "—"}</p><p className="text-ink2">Sales: {report.pic.sales || "—"}</p></Card>
-          <Card className="space-y-1 p-4 text-[12.5px]"><p className="font-bold text-ink">Hasil</p><p className="text-ink2">Uji akhir: {report.finalTest ? `${VERDICT[report.finalTest.verdict]} (${report.finalTest.testerWeightKg} kg)` : "—"}</p><p className="text-ink2">QC: {report.qc ? (report.qc.result === "PASS" ? "Lulus" : report.qc.result) : "—"}</p><p className="text-ink2">Gudang: {report.handoffStatus === "ACCEPTED" ? "Diterima" : report.handoffStatus ? "Menunggu diterima" : "—"}</p></Card>
+          <Card className="space-y-1 p-4 text-[12.5px]"><p className="font-bold text-ink">Hasil</p><p className="text-ink2">Uji akhir: {report.finalTest ? `${VERDICT[report.finalTest.verdict]} (${report.finalTest.testerWeightKg} kg)` : "—"}</p><p className="text-ink2" data-testid="report-qc">QC: {report.qc ? (report.qc.result === "PASS" ? "Lulus" : report.qc.result) : report.qcStatus === "TIDAK_DILAKUKAN" ? "Tidak dilakukan (mode adaptasi)" : "—"}</p><p className="text-ink2">Gudang: {report.handoffStatus === "ACCEPTED" ? "Diterima" : report.handoffStatus ? "Menunggu diterima" : report.adaptation && report.status === "COMPLETED" ? "Tidak diwajibkan (mode adaptasi)" : "—"}</p></Card>
         </div>
+        {report.skippedSteps?.length > 0 && (
+          <Card className="space-y-1 p-4 text-[12.5px]" data-testid="report-skipped">
+            <p className="font-bold text-ink">Tahap dilewati (Adaptasi sistem)</p>
+            <p className="text-ink3">Tahap berikut tidak dikerjakan — tanpa foto atau hasil uji, dan tidak dihitung sebagai pekerjaan.</p>
+            <ul className="m-0 list-none space-y-0.5 p-0">{report.skippedSteps.map((s) => <li key={s.stepNo} className="text-ink2">{s.stepNo}. {s.label} — Dilewati{s.by ? ` oleh ${s.by}` : ""}</li>)}</ul>
+          </Card>
+        )}
         <Card className="space-y-2 p-4 text-[13px]">
           <p className="font-bold text-ink">Ringkasan diagnosa</p>
           {report.order.complaints.length > 0 && <p className="text-ink2"><b>Keluhan:</b> {report.order.complaints.join(", ")}</p>}

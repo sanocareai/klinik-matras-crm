@@ -277,7 +277,7 @@ test("C. Lifecycle ADAPTASI penuh: Meja -> Corner TANPA putusan QC; Selesaikan P
   const noConfirm = await finishPost(w, w.nadya, run.id, { confirm: false });
   assert.equal(noConfirm.status, 400); assert.equal(noConfirm.body.code, "FINISH_CONFIRM_REQUIRED");
   assert.deepEqual({ ev: await evidenceCount(run.id), cmds: await testPrisma.v2Command.count() }, before);
-  assert.equal((await finishPost(w, w.corner, run.id)).status, 403, "bukan PIC yang ditugaskan");
+  assert.equal((await finishPost(w, w.driver, run.id)).status, 403, "bukan PIC yang ditugaskan (Meja maupun Corner)");
   const rev = (await card(w, run.id)).revision;
   const done = ok(await w.nadya.api.post(`${V2}/runs/${run.id}/finish`, { expectedRevision: rev, workCenterId: w.wc, confirm: true }, key("fin-c")));
   assert.deepEqual([done.completed, done.unitStatus, done.qc, done.handoffGudang], [true, "READY_FOR_DELIVERY", "SUDAH_DILAKUKAN", "TIDAK_DIWAJIBKAN"].map((v, i) => (i === 2 ? "TIDAK_DILAKUKAN" : v)));
@@ -357,6 +357,19 @@ test("E. Retur tertunda: sisa bahan wajib kembali ke Gudang sebelum produksi dis
   assert.equal(await testPrisma.stockMovement.count({ where: { materialIssueId: issueId } }), 2, "ISSUE tidak berubah");
 });
 
+test("C2. PIC Corner yang ditugaskan juga boleh menutup (tahap terakhir dikerjakan Corner); PIC Meja tetap boleh; non-PIC ditolak tanpa tulisan", async () => {
+  const w = await world(); await enableAdaptationDefault();
+  const { unit, run } = await toFinishReady(w, { usedLapisan: 2 });
+  const before = { ev: await evidenceCount(run.id), cmds: await testPrisma.v2Command.count() };
+  assert.equal((await finishPost(w, w.driver, run.id, { tag: "fin-c2-no" })).status, 403);
+  assert.equal((await finishPost(w, w.qc, run.id, { tag: "fin-c2-qc" })).status, 403);
+  assert.deepEqual({ ev: await evidenceCount(run.id), cmds: await testPrisma.v2Command.count() }, before, "penolakan tidak menulis apa pun");
+  const done = ok(await finishPost(w, w.corner, run.id, { tag: "fin-c2-ok" }));
+  assert.equal(done.completed, true); assert.equal(done.unitStatus, "READY_FOR_DELIVERY");
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } })).status, "READY_FOR_DELIVERY");
+  assert.equal(await testPrisma.unitCustodyHandoff.count({ where: { unitId: unit.id, direction: "FINISHED_GOODS" } }), 0, "tanpa custody ACCEPTED palsu");
+});
+
 test("F. Selesaikan Produksi menutup SEMUA tahap tersisa sebagai DILEWATI (pratinjau menyebutnya); yang sudah dilewati tidak digandakan; tanpa foto/hasil/QC/custody palsu; operasi aktif memblokir", async () => {
   const w = await world(); await enableAdaptationDefault();
   const { unit, run } = await acceptedUnit(w);
@@ -375,6 +388,13 @@ test("F. Selesaikan Produksi menutup SEMUA tahap tersisa sebagai DILEWATI (prati
   assert.equal(await testPrisma.unitCustodyHandoff.count({ where: { unitId: unit.id, direction: "FINISHED_GOODS" } }), 0);
   assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).status, "COMPLETED");
   assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } })).status, "READY_FOR_DELIVERY");
+  // Laporan run: bukti SKIPPED bukan pekerjaan — tanpa PIC/hasil/finishing palsu, QC "tidak dilakukan", tahap dilewati terdaftar, pesan Sales tidak berisi nilai kosong
+  const rep = ok(await w.lead.api.get(`${V2}/runs/${run.id}/report`));
+  assert.equal(rep.adaptation, true); assert.equal(rep.ready, true); assert.equal(rep.qcStatus, "TIDAK_DILAKUKAN"); assert.equal(rep.qc, null);
+  assert.equal(rep.finalTest, null); assert.equal(rep.finishing, null); assert.deepEqual(rep.textureTests, []); assert.equal(rep.cornerChecklist, null);
+  assert.equal(rep.skippedSteps.length, ev.length); assert.ok(rep.skippedSteps.every((s) => s.label && s.reason === "Adaptasi sistem"));
+  assert.equal(rep.mediaCount, 0, "tidak ada foto palsu");
+  assert.doesNotMatch(rep.message, /undefined|Hasil Tekstur|Finishing\s+:/); assert.match(rep.message, /Tahap dilewati \(Adaptasi sistem\)/); assert.match(rep.message, /tidak dilakukan \(mode adaptasi\) — bukan lulus/); assert.match(rep.message, /SIAP KIRIM \(mode adaptasi/);
   // pekerjaan nyata (bukan dilewati) memblokir: tahap 1 dikerjakan -> operasi aktif
   const g = await acceptedUnit(w);
   await planOnBoard(w, g.run.id, { station: "TABLE_3" });
