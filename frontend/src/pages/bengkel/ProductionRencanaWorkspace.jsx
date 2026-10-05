@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { CalendarDays, CalendarClock, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardList, PackageCheck, PackageX, RefreshCw, Target, Timer, Undo2, XCircle } from "lucide-react";
-import { SourceBadge, V1UnitCard, useV1Units } from "@/features/production/v1Source.jsx";
-import { PANEL_COPY } from "@/features/production/nonV2OrdersModel.js";
+import BacklogCard from "@/features/production/BacklogCard.jsx";
+import useBacklog, { BACKLOG_STATUS_TABS } from "@/features/production/useBacklog.js";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
@@ -44,7 +44,7 @@ function AssignSection({ target, refs, onSaved, onError }) {
   const [form, setForm] = useState(() => ({
     productionDate: fmtShort(plan?.productionDate) || wibDate(1),
     stationCode: plan?.stationCode || refs.stations[0] || "TABLE_1",
-    priority: plan?.priority ?? 0,
+    priority: Math.min(plan?.priority ?? 0, 1), // pilihan pengguna hanya Normal/Tinggi
     workCenterId: plan?.workCenter?.id || refs.workCenters[0]?.id || "",
     operatorId: plan?.operator?.id || "",
     cornerOperatorId: plan?.cornerOperator?.id || "",
@@ -396,9 +396,12 @@ export default function ProductionRencanaWorkspace() {
     setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete("unit"); return next; }, { replace: true });
   }, [setSearchParams]);
 
+  // Backlog dari SERVER (filter+paginasi); Mode Latihan memakai Command Center sintetis. Hanya unit yang punya rencana (schedulable) bisa dijadwalkan/diseret.
+  const bl = useBacklog({ demoColumns: cc?.columns });
+  const blRef = useRef(bl); blRef.current = bl;
   const load = useCallback(() => {
     setLoading(true); setError("");
-    return Promise.all([api.getProductionV2Board(date), api.getProductionV2CommandCenter()])
+    return Promise.all([api.getProductionV2Board(date), api.getProductionV2CommandCenter(), blRef.current.reload()])
       .then(([b, c]) => { setBoard(b); setCc(c); })
       .catch((e) => setError(friendlyError(e))).finally(() => setLoading(false));
   }, [date]);
@@ -416,7 +419,7 @@ export default function ProductionRencanaWorkspace() {
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(t); }, [notice]);
 
   const stockByMaterial = useMemo(() => new Map(refs.stock.map((row) => [row.materialId, row])), [refs.stock]);
-  const backlog = useMemo(() => backlogOf(cc?.columns), [cc]);
+  const backlog = bl.schedulableViews;
   const upcoming = useMemo(() => cc?.columns?.find((c) => c.key === "AKAN_MASUK")?.items || [], [cc]); // forecast read-only (bukan WIP)
   const stations = board?.stations || [];
   const findView = (runId) => backlog.find((v) => v.runId === runId) || stations.flatMap((s) => s.items).find((v) => v.runId === runId);
@@ -560,7 +563,6 @@ export default function ProductionRencanaWorkspace() {
     setDetail({ runId: view.runId, unit: view.unit, customer: view.customer, plan: null });
   }
 
-  const { v1, reload: reloadV1 } = useV1Units();
   const backlogOver = drag?.resolved?.target?.kind === "backlog" ? drag.resolved.decision?.type : null;
 
   return (
@@ -600,15 +602,32 @@ export default function ProductionRencanaWorkspace() {
                 className={`flex min-w-0 flex-col gap-2.5 rounded-card bg-inset p-3 xl:max-h-[calc(100vh-260px)] xl:overflow-y-auto ${backlogOver === "unschedule" ? "ring-2 ring-accent" : drag ? "ring-1 ring-line" : ""}`}>
                 <div className="flex items-center justify-between px-1">
                   <h2 className="m-0 text-[14px] font-bold text-ink">Belum Dijadwalkan</h2>
-                  <span data-testid="backlog-count" className="rounded-chip bg-surface px-2 py-0.5 text-[12px] font-bold tabular-nums text-ink2">{backlog.length} unit</span>
+                  <span data-testid="backlog-count" className="rounded-chip bg-surface px-2 py-0.5 text-[12px] font-bold tabular-nums text-ink2">{bl.total} unit</span>
                 </div>
+                {!bl.demo && (
+                  <div className="space-y-2 px-1" data-testid="backlog-filters">
+                    <div role="tablist" aria-label="Saring status backlog" className="flex gap-1.5">
+                      {BACKLOG_STATUS_TABS.map((t) => (
+                        <button key={t.key} type="button" role="tab" aria-selected={bl.status === t.key} data-testid={`backlog-status-${t.key}`} onClick={() => bl.setStatus(t.key)}
+                          className={`min-h-[36px] rounded-chip px-3 text-[12.5px] font-semibold ${bl.status === t.key ? "bg-accent text-white" : "bg-surface text-ink2"}`}>
+                          {t.label}<span className="ml-1 tabular-nums opacity-80">{bl.counts?.[t.key] ?? 0}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <input type="search" value={bl.q} onChange={(e) => bl.setQ(e.target.value)} placeholder="Cari customer, resi, atau unit" aria-label="Cari di backlog" data-testid="backlog-search"
+                      className="min-h-[38px] w-full rounded-btn border border-line bg-surface px-3 text-[13px] text-ink" />
+                  </div>
+                )}
+                {bl.error && <p role="alert" className="m-0 rounded-btn bg-redbg px-2 py-1.5 text-[12px] text-red" data-testid="backlog-error">{bl.error}</p>}
                 {drag && <p data-testid="backlog-drop-hint" className={`m-0 rounded-btn px-2 py-1.5 text-[12px] font-semibold ${backlogOver === "unschedule" ? "bg-accentbg text-accent" : "bg-surface text-ink3"}`}>Lepas di sini untuk mengembalikan ke Belum Dijadwalkan</p>}
-                {backlog.length === 0 && !loading && <p className="rounded-card border-2 border-dashed border-line p-5 text-center text-[12px] text-ink3">Semua unit sudah dijadwalkan.</p>}
-                {backlog.map((v) => (
-                  <PlanCard key={v.runId} view={v} today={today} tomorrow={tomorrow} dragging={drag?.view?.runId === v.runId} onOpen={(x) => openOverview(x.unit.id)}
-                    handle={<DragHandle unitCode={v.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, v)} />}
-                    footer={<Button size="sm" data-mutates className="min-h-[44px] w-full" disabled={busy} onClick={() => setSchedule(v)}><CalendarDays size={13} aria-hidden /> Jadwalkan</Button>} />
-                ))}
+                {bl.items.length === 0 && !loading && !bl.loading && <p data-testid="backlog-empty" className="rounded-card border-2 border-dashed border-line p-5 text-center text-[12px] text-ink3">{bl.q ? "Tidak ada unit yang cocok." : "Tidak ada unit yang menunggu jadwal."}</p>}
+                {bl.items.map((it) => (it.schedulable && it.view ? (
+                  <PlanCard key={it.view.runId} view={it.view} today={today} tomorrow={tomorrow} dragging={drag?.view?.runId === it.view.runId} onOpen={(x) => openOverview(x.unit.id)}
+                    handle={<DragHandle unitCode={it.view.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, it.view)} />}
+                    footer={<Button size="sm" data-mutates className="min-h-[44px] w-full" disabled={busy} onClick={() => setSchedule(it.view)}><CalendarDays size={13} aria-hidden /> Jadwalkan</Button>} />
+                ) : <BacklogCard key={it.unitId} item={it} onOpen={openOverview} />))}
+                {bl.hasMore && <Button size="sm" variant="secondary" className="min-h-[44px] w-full" data-testid="backlog-more" disabled={bl.loading} onClick={bl.loadMore}>{bl.loading ? "Memuat…" : `Muat lagi (${Math.max(0, bl.total - bl.items.length)} tersisa)`}</Button>}
+                {bl.truncated && <p role="note" className="m-0 text-[11.5px] text-orange" data-testid="backlog-truncated">Daftar sangat panjang — persempit dengan pencarian.</p>}
               </section>
               {upcoming.length > 0 && (
                 <section data-testid="upcoming-forecast" aria-label="Akan Masuk — Pickup Terjadwal" className="flex min-w-0 flex-col gap-2.5 rounded-card border border-dashed border-line bg-surface p-3">
@@ -618,17 +637,6 @@ export default function ProductionRencanaWorkspace() {
                   </div>
                   <p className="m-0 px-1 text-[11.5px] text-ink3">Perkiraan kedatangan (forecast). Hanya-baca: belum bisa dijadwalkan atau diseret sampai unit tiba, dan tidak dihitung sebagai WIP, target, atau selesai.</p>
                   {upcoming.map((item) => <UpcomingCard key={item.unit.id} item={item} badgeLabel="Forecast kedatangan" onOpen={openOverview} />)}
-                </section>
-              )}
-              {v1.length > 0 && (
-                <section data-testid="v1-locked" aria-label="Order asli — jalur V1 (terkunci)" className="flex min-w-0 flex-col gap-2.5 rounded-card border border-dashed border-line bg-surface p-3">
-                  <div className="flex items-center justify-between gap-2 px-1">
-                    <h2 className="m-0 flex items-center gap-1.5 text-[13.5px] font-bold text-ink">Order asli <SourceBadge source="V1" /></h2>
-                    <span data-testid="v1-count" className="rounded-chip bg-inset px-2 py-0.5 text-[12px] font-bold tabular-nums text-ink2">{v1.length} unit</span>
-                  </div>
-                  <p className="m-0 px-1 text-[11.5px] text-ink3" data-testid="v1-locked-note">{PANEL_COPY.rencana} Dikerjakan lewat Unit 360 (jalur V1).</p>
-                  {v1.slice(0, 12).map((u) => <V1UnitCard key={u.id} unit={u} onOpen={openOverview} />)}
-                  {v1.length > 12 && <p className="m-0 px-1 text-[11.5px] text-ink3">+{v1.length - 12} unit lainnya di Order Produksi (filter sumber V1).</p>}
                 </section>
               )}
               </div>
@@ -653,7 +661,7 @@ export default function ProductionRencanaWorkspace() {
           <div className="rotate-1"><PlanCard view={drag.view} today={today} tomorrow={tomorrow} /></div>
         </div>, document.body)}
       {detail && <DetailRencana target={detail} refs={refs} materials={refs.materials} stockByMaterial={stockByMaterial} onClose={() => setDetail(null)} onChanged={load} />}
-      {overviewUnitId && <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} onChanged={reloadV1} manageLabel="Kelola Rencana" onManage={() => openManageFor(overviewUnitId)} />}
+      {overviewUnitId && <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} onChanged={load} manageLabel="Kelola Rencana" onManage={() => openManageFor(overviewUnitId)} />}
       {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services }} onClose={() => setSchedule(null)} onDone={(msg, meta) => { setSchedule(null); setNotice(msg); applyInitialPosition(meta); }} />}
     </PageContainer>
   );

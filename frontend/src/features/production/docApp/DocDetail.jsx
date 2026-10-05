@@ -129,7 +129,6 @@ export default function DocDetail({ runId, group, onGroup, drafts, resume, onRes
                 <p className="wa-wrap m-0 text-[13.5px] text-ink3">{detail.customerName || "Customer"} · Resi {detail.orderNumber || "—"}</p>
                 <div className="space-y-0.5 text-[12.5px] text-ink3">
                   <p className="wa-wrap m-0">Layanan Sales: <span className="font-semibold text-ink2">{detail.services.sales.length ? detail.services.sales.join(", ") : "—"}</span></p>
-                  <p className="wa-wrap m-0">Layanan teknis: <span className="font-semibold text-ink2">{detail.services.technical || "belum ditetapkan"}</span></p>
                 </div>
                 <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-ink3">
                   <span className="rounded-full bg-accentbg px-2.5 py-0.5 font-bold text-accent">{detail.step ? `Tahap ${detail.step.stepNo}: ${detail.step.label}` : detail.bucketLabel}</span>
@@ -143,7 +142,7 @@ export default function DocDetail({ runId, group, onGroup, drafts, resume, onRes
                 </div>
               </div>
             </div>
-            {!detail.canWrite && <p className="m-0 flex items-start gap-2 rounded-btn bg-inset px-3 py-3 text-[13px] text-ink2" data-testid="readonly-note"><AlertTriangle size={15} className="mt-px shrink-0" aria-hidden /> Anda hanya bisa melihat dokumentasi (tanpa izin mengirim, atau Produksi V2 belum aktif untuk unit ini).</p>}
+            {!detail.canWrite && <p className="m-0 flex items-start gap-2 rounded-btn bg-inset px-3 py-3 text-[13px] text-ink2" data-testid="readonly-note"><AlertTriangle size={15} className="mt-px shrink-0" aria-hidden /> Anda hanya bisa melihat dokumentasi (tanpa izin mengirim, atau dokumentasi unit ini belum aktif).</p>}
           </div>
           <div className="space-y-3.5">
             <div role="tablist" aria-label="Kelompok dokumentasi" className="da-seg" data-testid="doc-groups">

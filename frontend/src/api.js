@@ -206,6 +206,7 @@ export const api = {
   // Daftar SELURUH unit (Production Tahap 1) — lebih lebar dari /board yang
   // sengaja cuma menampilkan unit yang ada di bengkel hari ini.
   getWorkOrders: (params = {}) => {
+    // page/pageSize/displayStatus/real dipakai server (paginasi + filter status tampilan); tanpa page = halaman 1 berukuran 100 beserta total/hasMore.
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/work-orders${qs ? `?${qs}` : ""}`);
   },
@@ -731,6 +732,8 @@ export const api = {
   getProductionV2Board: (date) => request(`/production-v2/board${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   // P9B — Ringkasan Produksi + kolom pipeline Rencana Produksi: SATU payload dipakai kedua halaman.
   getProductionV2CommandCenter: () => request("/production-v2/command-center"),
+  // Backlog Rencana Produksi (slice 1): filter + paginasi di server. status = DIPROSES (default) | PENGAMBILAN.
+  getProductionV2Backlog: ({ status = "DIPROSES", q = "", page = 1, pageSize = 25 } = {}) => request(`/production-v2/backlog?status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
   getProductionV2Andon: (date) => request(`/production-v2/andon${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   getProductionV2Card: (runId) => request(`/production-v2/runs/${runId}/card`),
   // P9C — Unit 360: satu bacaan kanonis per unit (setara detail Resi), dipakai kartu Status Produksi & Rencana Produksi.

@@ -33,7 +33,6 @@ export default function DocUnitCard({ item, onOpen }) {
         </div>
         <div className="space-y-0.5 text-[12.5px] text-ink3">
           <p className="wa-wrap m-0">Layanan Sales: <span className="font-semibold text-ink2">{item.services.sales.length ? item.services.sales.join(", ") : "—"}</span></p>
-          <p className="wa-wrap m-0">Layanan teknis: <span className="font-semibold text-ink2">{item.services.technical || "belum ditetapkan"}</span></p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
           <span className="rounded-full bg-accentbg px-2.5 py-0.5 font-bold text-accent">{item.step ? `Tahap ${item.step.stepNo}: ${item.step.label}` : item.bucketLabel}</span>

@@ -361,8 +361,9 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     // (bukan seluruh daftar) dan respons memuat total/hasMore supaya pemanggil tahu masih ada sisanya. displayStatus = Pengambilan|Diproses|Siap Kirim|Terkirim.
     const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 100, 1), 200);
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const displayFilter = String(req.query.displayStatus || "").toUpperCase();
-    const displayUnitStatuses = DISPLAY_STATUS_UNIT_FILTER[displayFilter] || null;
+    // displayStatus boleh daftar dipisah koma (mis. PENGAMBILAN,DIPROSES,SIAP_KIRIM untuk "Aktif" = semua kecuali Terkirim).
+    const displayFilter = String(req.query.displayStatus || "").toUpperCase().split(",").filter((k) => k in DISPLAY_STATUS_UNIT_FILTER);
+    const displayUnitStatuses = displayFilter.length ? [...new Set(displayFilter.flatMap((k) => DISPLAY_STATUS_UNIT_FILTER[k]))] : null;
     const where = {
       ...(status && { status }),
       ...(displayUnitStatuses && !status ? { status: { in: displayUnitStatuses } } : {}),

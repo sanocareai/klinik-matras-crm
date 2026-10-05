@@ -11,7 +11,7 @@ export function summarizeV1(units = []) {
   for (const u of active) byStatus.set(u.status, (byStatus.get(u.status) || 0) + 1);
   return { total: active.length, blocked: active.filter(BLOCKED).length, byStatus: [...byStatus].map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count) };
 }
-const PRIORITY_RANK = { CRITICAL: 0, URGENT: 1, HIGH: 2, NORMAL: 3 };
+const PRIORITY_RANK = { CRITICAL: 0, URGENT: 1, HIGH: 2, NORMAL: 3 }; // peringkat urutan saja (label tampilan: Normal/Tinggi/Komplain)
 // Terhambat dulu, lalu prioritas, lalu urutan server (terbaru).
 export function topV1Units(units = [], limit = 8) {
   const active = selectV1Units(units).map((u, i) => ({ u, i }));
@@ -19,13 +19,4 @@ export function topV1Units(units = [], limit = 8) {
   return active.slice(0, limit).map((x) => x.u);
 }
 
-export const PANEL_COPY = Object.freeze({
-  ringkasan: "Order asli yang belum memakai Production V2 (sumber V1). Tidak masuk angka KPI V2 di atas.",
-  status: "Order asli yang belum memakai Production V2 (sumber V1) — tidak punya Run, jadi tidak tampil di pipeline.",
-  rencana: "Order asli yang belum memakai Production V2 (sumber V1). Belum bisa dijadwalkan di sini: penjadwalan butuh Run V2, dan slice ini tidak membuat Run otomatis.",
-});
-
-// Sumber satu unit untuk badge (V1/V2) — penanda server; hilang = V1 (server lama / reader OFF).
-export const sourceOf = (u) => (u?.inProductionV2 === true ? "V2" : "V1");
-export const SOURCE_FILTERS = Object.freeze([{ key: "", label: "Semua sumber" }, { key: "V2", label: "V2" }, { key: "V1", label: "V1" }]);
-export const filterBySource = (units = [], key = "") => (key ? (units || []).filter((u) => sourceOf(u) === key) : units || []);
+// (label sumber V1/V2 dan salinan panel dihapus pada simplifikasi slice 1: pengguna tidak lagi melihat jalur teknis.)

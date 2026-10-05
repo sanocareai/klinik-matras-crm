@@ -3,6 +3,7 @@ import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { PRIORITIES, friendlyError, stationCapacity } from "@/features/production/experience.js";
+import { priorityOf, rankOfView } from "@/features/production/productionLabels.js";
 
 // P9 UX Realignment — modal jadwal & konfirmasi kedatangan dipindah dari ProductionPlannerV2.jsx supaya dipakai BERSAMA
 // Status Produksi (jalan pintas dari Unit 360) dan Rencana Produksi (fallback tombol Jadwalkan/Pindahkan untuk drag-drop).
@@ -57,7 +58,7 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone }) {
   const [form, setForm] = useState(() => ({
     productionDate: plan?.productionDate || date,
     stationCode: target.presetStation || plan?.stationCode || board.stations.find((s) => !stationCapacity(s).full)?.code || board.config.stations[0],
-    priority: plan?.priority ?? 0,
+    priority: Math.min(plan?.priority ?? 0, 1), // pilihan pengguna hanya Normal/Tinggi (nilai lama Mendesak tampil Tinggi)
     workCenterId: plan?.workCenter?.id || refs.workCenters[0]?.id || "",
     operatorId: plan?.operator?.id || "",
     cornerOperatorId: plan?.cornerOperator?.id || "",
@@ -80,7 +81,7 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone }) {
       else result = await api.planProductionV2Unit({ runId: target.runId, ...body });
       // Argumen ke-2 (P12A.3): info penempatan agar pemanggil bisa menetapkan POSISI AWAL menurut prioritas (bukan auto-reorder).
       onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}.`,
-        unschedule ? null : { planId: plan?.id ?? result?.planId ?? result?.id ?? null, stationCode: form.stationCode, productionDate: form.productionDate, priority: Number(form.priority) });
+        unschedule ? null : { planId: plan?.id ?? result?.planId ?? result?.id ?? null, stationCode: form.stationCode, productionDate: form.productionDate, priority: Math.max(Number(form.priority), rankOfView(target) >= 3 ? 3 : 0) }); // peringkat urutan: Komplain tetap di atas
     } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
   }
 
@@ -102,6 +103,7 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone }) {
         </label>
         <label className="text-[12.5px] text-ink3">Prioritas
           <select className={field} value={form.priority} onChange={(e) => set({ priority: e.target.value })}>{PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}</select>
+          {priorityOf(target).key === "COMPLAINT" && <span data-testid="complaint-note" className="mt-1 block text-[12px] font-semibold text-red">Komplain — otomatis dari kasus {priorityOf(target).complaintCases.map((c) => c.caseNumber).join(", ") || "resmi"}; urutan meja manual tetap berlaku.</span>}
         </label>
         <label className="text-[12.5px] text-ink3">Workshop
           <select className={field} value={form.workCenterId} onChange={(e) => set({ workCenterId: e.target.value })}>

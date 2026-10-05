@@ -33,18 +33,17 @@ export function KerjaTab({ jobs, lane, loading, error, readerMode, operator, v1S
       {jobs.length > 0 && (
         <p className="m-0 mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-semibold text-ink2" data-testid="jobs-summary">
           <span>{jobs.length} pekerjaan</span>
-          {jobs.some((j) => j.materialWaiting) && <span className="text-red">{jobs.filter((j) => j.materialWaiting).length} menunggu bahan</span>}
+          {jobs.some((j) => j.materialWaiting) && <span className="text-red">{jobs.filter((j) => j.materialWaiting).length} tertunda — menunggu bahan</span>}
           {jobs.some((j) => j.late) && <span className="text-orange">{jobs.filter((j) => j.late).length} terlambat</span>}
-          {jobs.some((j) => j.source === "V1") && <span>{jobs.filter((j) => j.source === "V1").length} jalur V1</span>}
         </p>
       )}
       {error && <div role="alert" data-testid="kerja-error" className="mb-3 flex items-center justify-between gap-3 rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red"><span className="min-w-0">{safeText(error)}</span><button type="button" onClick={onReload} className="shrink-0 rounded-btn px-3 py-2 font-bold underline">Coba lagi</button></div>}
-      {v1Status === "error" && <div role="status" data-testid="v1-error" className="mb-3 flex items-center justify-between gap-3 rounded-btn bg-orangebg px-3 py-3 text-[13px] text-orange"><span>Pekerjaan jalur V1 belum bisa dimuat. Antrean V2 tetap tampil.</span><button type="button" onClick={onRetryV1} className="shrink-0 font-bold underline">Muat ulang V1</button></div>}
+      {v1Status === "error" && <div role="status" data-testid="v1-error" className="mb-3 flex items-center justify-between gap-3 rounded-btn bg-orangebg px-3 py-3 text-[13px] text-orange"><span>Sebagian pekerjaan belum bisa dimuat. Pekerjaan lain tetap tampil.</span><button type="button" onClick={onRetryV1} className="shrink-0 font-bold underline">Muat ulang</button></div>}
 
       {loading && !jobs.length ? (
         <div className="wa-grid" data-testid="kerja-loading">{[1, 2, 3].map((n) => <div key={n} className="wa-card h-72 animate-pulse bg-inset" />)}</div>
       ) : readerMode === "OFF" && !jobs.length ? (
-        <div className="wa-card p-6 text-center" data-testid="kerja-off"><ClipboardList className="mx-auto mb-2 text-ink3" size={32} aria-hidden /><p className="m-0 font-bold text-ink">Produksi V2 belum aktif</p><p className="m-0 mt-1 text-[13.5px] text-ink2">Gunakan alur Work Order lama sampai Production Lead mengaktifkan V2.</p></div>
+        <div className="wa-card p-6 text-center" data-testid="kerja-off"><ClipboardList className="mx-auto mb-2 text-ink3" size={32} aria-hidden /><p className="m-0 font-bold text-ink">Antrean kerja belum aktif</p><p className="m-0 mt-1 text-[13.5px] text-ink2">Hubungi Production Lead untuk mengaktifkan antrean kerja.</p></div>
       ) : !jobs.length ? (
         <div className="wa-card p-8 text-center" data-testid="kerja-empty">
           <CheckCircle2 className="mx-auto mb-2 text-green" size={36} aria-hidden />
@@ -86,17 +85,17 @@ export function BahanTab({ jobs, loading, onOpen, onReport, canReport }) {
               <div className="w-24 shrink-0 self-start overflow-hidden rounded-btn"><JobPhoto job={r.job} /></div>
               <div className="min-w-0 flex-1 space-y-1.5">
                 <p className="wa-wrap m-0 line-clamp-2 text-[15px] font-extrabold text-ink">{r.job.customerName}</p>
-                <p className="m-0 truncate text-[12.5px] text-ink3">{r.job.unitCode} · {r.job.source}</p>
-                {r.kind === "SHORTAGE" && <div className="rounded-btn bg-redbg px-2.5 py-2 text-[12.5px] text-red"><p className="m-0 font-bold">Bahan kurang — Gudang diberi tahu</p><ul className="m-0 mt-1 list-disc pl-4">{r.items.map((i) => <li key={i.materialId}>{i.name}{i.qty ? ` — ${i.qty}` : ""}</li>)}</ul></div>}
-                {r.kind === "WAITING" && <p className="m-0 rounded-btn bg-redbg px-2.5 py-2 text-[12.5px] font-bold text-red">Menunggu bahan</p>}
+                <p className="m-0 truncate text-[12.5px] text-ink3">{[r.job.unitCode, r.job.status?.label].filter(Boolean).join(" · ")}</p>
+                {r.kind === "SHORTAGE" && <div className="rounded-btn bg-redbg px-2.5 py-2 text-[12.5px] text-red"><p className="m-0 font-bold">Tertunda — menunggu bahan. Gudang sudah diberi tahu.</p><ul className="m-0 mt-1 list-disc pl-4">{r.items.map((i) => <li key={i.materialId}>{i.name}{i.qty ? ` — ${i.qty}` : ""}</li>)}</ul></div>}
+                {r.kind === "WAITING" && <p className="m-0 rounded-btn bg-redbg px-2.5 py-2 text-[12.5px] font-bold text-red">Tertunda — menunggu bahan</p>}
                 {r.kind === "STATUS" && r.badge && <p className="m-0 text-[13px] font-semibold text-ink2">{r.badge.label}</p>}
                 {r.kind === "NONE" && <p className="m-0 text-[12.5px] text-ink3">Rencana bahan belum ada (muncul setelah diagnosis).</p>}
-                {r.kind === "V1" && <p className="m-0 text-[12.5px] text-ink3">Jalur V1: pemakaian bahan dicatat di detail pekerjaan.</p>}
+                {r.kind === "V1" && <p className="m-0 text-[12.5px] text-ink3">Pemakaian bahan dicatat di detail pekerjaan.</p>}
               </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => onOpen(r.job)} className="flex min-h-[48px] items-center justify-center rounded-btn bg-accentbg px-3 text-center text-[14px] font-bold text-accent">Buka pekerjaan</button>
-                {r.job.source === "V2" && canReport && r.kind !== "SHORTAGE" ? <button type="button" data-testid="bahan-report" onClick={() => onReport(r.job)} className="flex min-h-[48px] items-center justify-center rounded-btn bg-redbg px-3 text-center text-[14px] font-bold text-red">Menunggu Bahan Baku</button> : <span />}
+                {r.job.source === "V2" && canReport && r.kind !== "SHORTAGE" ? <button type="button" data-testid="bahan-report" onClick={() => onReport(r.job)} className="flex min-h-[48px] items-center justify-center rounded-btn bg-redbg px-3 text-center text-[14px] font-bold text-red">Tunda Pekerjaan</button> : <span />}
               </div>
             </li>
           ))}

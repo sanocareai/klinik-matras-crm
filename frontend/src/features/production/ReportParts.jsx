@@ -28,7 +28,7 @@ export function CoverageBar({ doc }) {
       <p className="m-0 mt-2 flex items-start gap-1.5 text-[11.5px] text-ink3">
         <Info size={13} className="mt-0.5 shrink-0" aria-hidden />
         <span>
-          Data dibuat {wibStamp(doc.generatedAt)}. Target harian {doc.targetPerHari} unit/hari — {doc.targetNote} Hanya Produksi V2 dalam cohort; V1 tidak termasuk.
+          Data dibuat {wibStamp(doc.generatedAt)}. Target harian {doc.targetPerHari} unit/hari — {doc.targetNote} Hanya unit yang sudah masuk rencana produksi; unit yang belum berencana tidak termasuk.
           Persentase/rata-rata dengan sampel &lt; {doc.minSample} ditampilkan “Data belum cukup”.
           {doc.filters?.length ? ` Filter aktif: ${doc.filters.join("; ")}.` : " Tanpa filter."}
         </span>

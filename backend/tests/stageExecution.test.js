@@ -50,7 +50,7 @@ test("validatePauseReason: reason kosong ditolak", () => {
 test("validatePauseReason: reason berbentuk BlockReason ditolak dengan pesan pengarah ke Block Production", () => {
   for (const blockerLike of ["MATERIAL_SHORTAGE", "AWAITING_CUSTOMER_APPROVAL", "MACHINE_DOWN", "AWAITING_CUSTOMER", "AWAITING_OPERATOR", "AWAITING_TOOL"]) {
     const err = validatePauseReason({ reason: blockerLike, note: null });
-    assert.match(err, /BLOKIR|Block Production|Tandai Terhambat/i, `reason "${blockerLike}" harus ditolak sebagai pause`);
+    assert.match(err, /Tunda Pekerjaan/, `reason "${blockerLike}" harus ditolak sebagai pause`);
   }
 });
 

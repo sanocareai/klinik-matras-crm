@@ -26,6 +26,8 @@ import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js
 import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services/productionRouting.js";
 import { postStockMovement } from "../services/inventoryLedger.js";
 import { guardV1UnitWrite, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
+import { priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { prisma } from "../db.js";
 import { signUnitPhotoUrlsBulk } from "./productionUnitPhoto.js";
 
@@ -553,8 +555,12 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
     // Konteks Sales untuk Aplikasi Meja (jalur V1 setara kartu V2): catatan order, nama Sales, foto unit bertanda tangan. READ-ONLY, tanpa harga.
     const photoUrl = (await signUnitPhotoUrlsBulk(prisma, [unit.id])).get(unit.id) ?? null;
     const salesContext = { request: unit.order?.notes ?? null, salesName: unit.order?.customer?.assignedSales?.name ?? null, photoUrl };
+    // Prioritas tampilan (Normal/Tinggi/Komplain): Komplain dari ComplaintCase resmi yang masih terbuka — bukan dari teks/bendera order.
+    const complaintsForUnit = await loadOpenComplaintsByUnit(prisma, [{ id: unit.id, orderId: unit.orderId }]);
+    const prioDisplay = priorityDisplay({ stored: unit.priority, complaintCases: complaintsForUnit.get(unit.id) || [] });
     res.json({
       unit: { ...unit, order: unit.order ? orderBase : unit.order },
+      priorityDisplay: { key: prioDisplay.key, label: prioDisplay.label, rank: prioDisplay.rank, complaintCases: prioDisplay.complaintCases },
       salesContext,
       // Layanan Dipesan (Sales) — order-scoped, READ-ONLY; TERPISAH dari Layanan Teknis Produksi (unit.service, ditetapkan Produksi).
       salesServices,

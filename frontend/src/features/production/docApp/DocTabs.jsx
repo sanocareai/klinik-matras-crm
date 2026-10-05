@@ -38,11 +38,11 @@ export function UnitTab({ data, items, loading, filter, onFilter, q, onQ, onOpen
         {loading && !data ? (
           <div className="wa-grid">{[1, 2, 3].map((n) => <div key={n} className="h-72 animate-pulse rounded-card bg-inset" />)}</div>
         ) : data?.readerMode === "OFF" ? (
-          <div className="wa-card p-8 text-center" data-testid="doc-reader-off"><Camera className="mx-auto mb-2 text-ink3" size={32} aria-hidden /><p className="m-0 font-bold text-ink">Produksi V2 belum aktif</p><p className="m-0 mt-1 text-[13.5px] text-ink3">Antrean dokumentasi terisi setelah Production V2 diaktifkan untuk unit terkait.</p></div>
+          <div className="wa-card p-8 text-center" data-testid="doc-reader-off"><Camera className="mx-auto mb-2 text-ink3" size={32} aria-hidden /><p className="m-0 font-bold text-ink">Dokumentasi belum aktif</p><p className="m-0 mt-1 text-[13.5px] text-ink3">Antrean dokumentasi terisi setelah Production Lead mengaktifkannya untuk unit terkait.</p></div>
         ) : items.length === 0 ? (
           <div className="wa-card p-8 text-center" data-testid="doc-empty"><CheckCircle2 className="mx-auto mb-2 text-green" size={32} aria-hidden />
             <p className="m-0 font-bold text-ink">{qDebounced || filter !== "ALL" ? "Tidak ada unit yang cocok" : "Belum ada unit untuk didokumentasikan"}</p>
-            <p className="m-0 mt-1 text-[13.5px] text-ink3">{qDebounced || filter !== "ALL" ? "Ubah kata kunci atau saringan." : "Unit cohort Produksi V2 akan muncul di sini."}</p></div>
+            <p className="m-0 mt-1 text-[13.5px] text-ink3">{qDebounced || filter !== "ALL" ? "Ubah kata kunci atau saringan." : "Unit yang sudah masuk rencana produksi akan muncul di sini."}</p></div>
         ) : (
           <div className="wa-grid" data-testid="doc-list">{items.map((item) => <DocUnitCard key={item.runId} item={item} onOpen={onOpen} />)}</div>
         )}
@@ -72,7 +72,7 @@ export function KameraTab({ items, readerMode, canWrite, onCapture }) {
     <div data-testid="tab-kamera" className="mx-auto max-w-[640px]">
       <h1 className="wa-h1 mb-1">Kamera</h1>
       <p className="m-0 mb-4 text-[14px] text-ink3">{runId ? "Pilih kategori foto, lalu ambil foto atau pilih dari galeri." : "Pilih unit yang akan difoto. Unit yang paling kurang dokumentasinya di atas."}</p>
-      {readerMode === "OFF" && <div className="wa-card p-6 text-center text-[14px] text-ink3" data-testid="kamera-reader-off">Produksi V2 belum aktif — belum ada unit untuk difoto.</div>}
+      {readerMode === "OFF" && <div className="wa-card p-6 text-center text-[14px] text-ink3" data-testid="kamera-reader-off">Dokumentasi belum aktif — belum ada unit untuk difoto.</div>}
       {!runId && readerMode !== "OFF" && (
         <div className="space-y-3">
           <SearchBox value={q} onChange={setQ} testid="kamera-search" />
@@ -105,7 +105,7 @@ export function KameraTab({ items, readerMode, canWrite, onCapture }) {
           {detail && (
             <>
               <div className="wa-card p-4"><p className="wa-wrap m-0 text-[17px] font-extrabold text-ink" data-testid="kamera-unit-title">{detail.customerName || "Customer"} · {detail.unit.unitCode}</p><p className="m-0 mt-0.5 text-[12.5px] text-ink3">Resi {detail.orderNumber || "—"} · Dokumentasi {detail.totals.satisfied}/{detail.totals.required} foto</p></div>
-              {!detail.canWrite && <p className="m-0 rounded-btn bg-inset px-3 py-3 text-[13px] text-ink2" data-testid="kamera-readonly">Anda hanya bisa melihat dokumentasi unit ini (tanpa izin mengirim, atau Produksi V2 belum aktif untuk unit ini).</p>}
+              {!detail.canWrite && <p className="m-0 rounded-btn bg-inset px-3 py-3 text-[13px] text-ink2" data-testid="kamera-readonly">Anda hanya bisa melihat dokumentasi unit ini (tanpa izin mengirim, atau dokumentasi unit ini belum aktif).</p>}
               {DOC_GROUP_KEYS.map((g) => {
                 const cats = detail.categories.filter((c) => c.group === g);
                 if (!cats.length) return null;

@@ -91,9 +91,10 @@ test("menu & route: Aplikasi Dokumentasi di 'MODE KERJA' sejajar Aplikasi Meja/C
 });
 
 test("layar: filter 6 status + counts, pencarian customer/resi/unit, kartu lengkap, kamera-first + galeri, pratinjau/keterangan/urutan/hapus, tombol tulis hanya bila canWrite", () => {
+  assert.doesNotMatch(PAGE, /services.technical|Layanan teknis/, "Slice 1: hanya Layanan Sales yang tampil");
   assert.match(PAGE, /aria-label="Cari customer, resi, atau kode unit"/);
   assert.match(PAGE, /role="tablist" aria-label="Saring antrean dokumentasi"/); assert.match(PAGE, /data\?\.counts\?\.\[f\.key\]/);
-  for (const needle of ["item.unit.photoUrl", "item.customerName", "item.orderNumber", "item.services.sales", "item.services.technical", "item.step", "item.station", "item.pic.table", "item.progress", "item.docs.missing", "doc-summary"]) assert.ok(PAGE.includes(needle), needle);
+  for (const needle of ["item.unit.photoUrl", "item.customerName", "item.orderNumber", "item.services.sales", "item.step", "item.station", "item.pic.table", "item.progress", "item.docs.missing", "doc-summary"]) assert.ok(PAGE.includes(needle), needle);
   assert.match(PAGE, /<EvidenceCapture[\s\S]{0,600}imagesOnly withCaption reorderable/);
   assert.match(PAGE, /api\.uploadProductionV2Documentation\(runId, \[blob\], onProgress\)/);
   assert.match(PAGE, /canWrite && \(\s*<div className="flex flex-wrap gap-2">/);

@@ -9,6 +9,7 @@ import {
   MEDIA_RULES, STEP_BY_NO, actionLabel, buildStepPayload, clearDraft, createIntentKeys, friendlyError, isRetryableError, loadDraft, saveDraft, validateStepForm,
 } from "@/features/production/experience.js";
 import { submitState } from "./workerAppModel.js";
+import { DELAY_ACTION_LABEL, DELAY_QUESTION, DELAY_REASONS, delayStatusText } from "@/features/production/productionLabels.js";
 
 // Lembar isian layar-penuh Aplikasi Meja/Corner (diekstrak dari WorkerLane lama; kontrak server TIDAK berubah):
 //  - tahap 5 = DiagnosisWizard (command Diagnosis terpisah) lalu menutup tahap lewat recordProductionV2Step yang sama;
@@ -58,7 +59,7 @@ function DiagnosisStepSheet({ card, onClose, onSubmitted }) {
     try {
       const closeResult = await api.recordProductionV2Step(card.runId, 5, {
         expectedRevision: card.revision, workCenterId: card.workCenterId,
-        payload: { diagnosis: result.serviceLabel ? `Layanan teknis: ${result.serviceLabel}` : "Diagnosis dikirim", inputMethod: "TEXT" }, media: [],
+        payload: { diagnosis: "Diagnosis dikirim", inputMethod: "TEXT" }, media: [],
       }, intentKeys.keyFor(card.runId, 5, card.revision));
       intentKeys.release(card.runId, 5, card.revision);
       onSubmitted(closeResult);
@@ -170,10 +171,15 @@ export function ShortageSheet({ card, onClose, onDone }) {
   }
   const gate = submitState({ online, busy });
   return (
-    <div role="dialog" aria-modal="true" aria-label="Menunggu Bahan Baku" className="fixed inset-0 z-50 flex flex-col bg-base">
-      <SheetHeader onClose={onClose} subtitle={card.unit.unitCode} title="Menunggu Bahan Baku" />
+    <div role="dialog" aria-modal="true" aria-label={DELAY_ACTION_LABEL} className="fixed inset-0 z-50 flex flex-col bg-base">
+      <SheetHeader onClose={onClose} subtitle={card.unit.unitCode} title={DELAY_ACTION_LABEL} />
       <div className="flex-1 space-y-3 overflow-y-auto px-3 py-4">
-        <p className="rounded-btn bg-orangebg px-3 py-2 text-[13.5px] text-orange">Pekerjaan dijeda dan Gudang langsung melihat daftar ini. Lanjutkan setelah bahan diserahkan.</p>
+        <div data-testid="delay-reason-block" className="space-y-1.5">
+          <p className="m-0 text-[13.5px] font-semibold text-ink">{DELAY_QUESTION}</p>
+          <p className="m-0"><span data-testid="delay-reason-chip" className="inline-flex min-h-[40px] items-center rounded-full bg-accentbg px-4 text-[14px] font-bold text-accent">{DELAY_REASONS.BAHAN.label}</span></p>
+          <p className="m-0 text-[12.5px] text-ink3">Untuk pekerjaan di papan produksi, alasan yang tersedia hanya menunggu bahan. Alasan lain: hubungi Production Lead.</p>
+        </div>
+        <p className="rounded-btn bg-orangebg px-3 py-2 text-[13.5px] text-orange">Pekerjaan tampil sebagai “{delayStatusText("MATERIAL_SHORTAGE")}” dan Gudang langsung melihat daftar ini. Pekerjaan bisa dilanjutkan setelah Gudang menyerahkan bahan.</p>
         <input aria-label="Cari bahan" className="block w-full rounded-btn border border-line bg-surface px-3 py-3 text-[15px] text-ink" placeholder="Cari bahan…" value={query} onChange={(e) => setQuery(e.target.value)} />
         <ul className="m-0 list-none space-y-2 p-0">
           {bomFirst.slice(0, 40).map((m) => {

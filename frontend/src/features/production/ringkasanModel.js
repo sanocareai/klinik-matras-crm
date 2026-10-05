@@ -3,7 +3,7 @@
 // Tidak ada KPI baru dihitung di sini — setiap angka adalah angka server apa adanya (atau jumlah item kolom yang sama).
 
 const STATUS = "/bengkel/production-v2";
-const QC = "/bengkel/quality-control";
+const QC = null; // halaman QC disembunyikan sementara (slice 1): angka tetap tampil, tanpa tautan
 const countOf = (columns, key) => columns?.find((c) => c.key === key)?.count ?? 0;
 
 export function summaryFromV2(cc) {
@@ -41,7 +41,7 @@ export function summaryFromV1(v1) {
       { key: "active", label: "Sedang dikerjakan", value: s.inProgress ?? 0, tone: "neutral" },
       { key: "queue", label: "Antre", value: f.queued ?? 0, tone: "neutral" },
       { key: "late", label: "Terlambat", value: tracked ? (s.overdue ?? 0) : "—", tone: tracked && s.overdue > 0 ? "red" : "neutral" },
-      { key: "material", label: "Terhambat", value: s.blocked ?? 0, tone: s.blocked > 0 ? "red" : "neutral" },
+      { key: "material", label: "Pekerjaan tertunda", value: s.blocked ?? 0, tone: s.blocked > 0 ? "red" : "neutral" },
       { key: "qc", label: "Menunggu QC", value: f.waitingQc ?? 0, tone: f.waitingQc > 0 ? "orange" : "neutral", to: QC },
     ],
     pipeline: [],

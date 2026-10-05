@@ -34,7 +34,7 @@ async function readerCohort() {
   const ids = [...state.unitIds];
   return ids.length ? ids : null;
 }
-const OFF = (extra = {}) => ({ readerMode: "OFF", message: "Produksi V2 belum aktif — laporan terisi setelah Production V2 diaktifkan untuk unit terkait.", ...extra });
+const OFF = (extra = {}) => ({ readerMode: "OFF", message: "Laporan produksi belum aktif — laporan terisi setelah Production Lead mengaktifkannya untuk unit terkait.", ...extra });
 const query = (req) => ({ from: req.query.from, to: req.query.to, station: req.query.station, operator: req.query.operator, step: req.query.step, status: req.query.status, priority: req.query.priority, service: req.query.service, qc: req.query.qc, docs: req.query.docs, granularity: req.query.granularity });
 
 // Dokumen laporan menurut jenis + izin. Satu fungsi dipakai JSON dan export -> layar = berkas.

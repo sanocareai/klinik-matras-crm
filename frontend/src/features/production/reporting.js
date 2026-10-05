@@ -114,7 +114,7 @@ export const EXPORTABLE = { ringkasan: "summary", meja: "stations", pic: "operat
 
 // Pesan ramah untuk reader OFF / non-cohort.
 export function offMessage(doc) {
-  if (doc?.readerMode === "OFF") return doc.message || "Produksi V2 belum aktif — laporan terisi setelah Production V2 diaktifkan untuk unit terkait.";
+  if (doc?.readerMode === "OFF") return doc.message || "Laporan produksi belum aktif — laporan terisi setelah Production Lead mengaktifkannya untuk unit terkait.";
   return null;
 }
 
@@ -122,10 +122,10 @@ export function offMessage(doc) {
 export function coverageChips(doc) {
   const c = doc?.coverage; if (!c) return [];
   return [
-    { key: "cohort", label: "Unit cohort V2", value: c.cohortUnits },
-    { key: "runs", label: "Run V2 dalam cohort", value: c.runsInCohort },
+    { key: "cohort", label: "Unit dalam rencana produksi", value: c.cohortUnits },
+    { key: "runs", label: "Run dalam rencana produksi", value: c.runsInCohort },
     { key: "filtered", label: "Setelah filter", value: c.runsAfterFilters },
-    { key: "total", label: "Total unit V2 di sistem", value: c.totalV2Units },
+    { key: "total", label: "Total unit berencana produksi di sistem", value: c.totalV2Units },
     { key: "period", label: "Periode", value: `${c.period.from} s/d ${c.period.to} (${c.period.days} hari)` },
     { key: "tz", label: "Zona waktu", value: c.timezone },
   ];

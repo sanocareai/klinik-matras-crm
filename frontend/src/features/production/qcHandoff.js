@@ -52,14 +52,14 @@ export const QC_MODES = Object.freeze([
 export const MIN_WAIVE_REASON = 10;
 
 export const CONFLICT_KIND_LABEL = Object.freeze({
-  UNIT_CANCELLED: "Unit dibatalkan manual di V1",
-  UNIT_MARKED_READY: "Unit ditandai siap kirim manual di V1",
-  UNIT_SHIPPED: "Unit sudah dikirim/keluar gudang di V1",
+  UNIT_CANCELLED: "Unit dibatalkan manual (di luar rencana produksi)",
+  UNIT_MARKED_READY: "Unit ditandai Siap Kirim manual (di luar rencana produksi)",
+  UNIT_SHIPPED: "Unit sudah dikirim/keluar gudang (di luar rencana produksi)",
 });
 
 export const RESOLUTION_LABEL = Object.freeze({
-  RESTORE_UNIT_STATUS: { label: "Pulihkan status unit", hint: "Kembalikan unit ke status produksi (IN_PRODUCTION/RECEIVED); run V2 dilanjutkan." },
-  CANCEL_RUN: { label: "Batalkan Production Run", hint: "Run ditutup sebagai dibatalkan; status unit V1 tidak diubah." },
+  RESTORE_UNIT_STATUS: { label: "Pulihkan status unit", hint: "Kembalikan unit ke status Diproses; rencana produksi dilanjutkan." },
+  CANCEL_RUN: { label: "Batalkan Production Run", hint: "Run ditutup sebagai dibatalkan; status unit tidak diubah." },
   ACCEPT_OVERRIDE: { label: "Terima override (tanpa QC/custody)", hint: "Run ditutup TANPA bukti QC/custody. Hanya ADMIN/OWNER (QC_WAIVE)." },
   NO_LONGER_APPLICABLE: { label: "Tidak berlaku lagi", hint: "Status unit sudah konsisten; tutup catatan konflik." },
 });
@@ -146,12 +146,12 @@ export function qcErrorMessage(error) {
     case "QC_REVISION_CONFLICT":
     case "QC_EXCEPTION_REVISION_CONFLICT": return "Data sudah berubah (mungkin diproses petugas lain) — muat ulang detail.";
     case "QC_NOT_AWAITING": return "Run ini tidak sedang menunggu QC (mungkin sudah diputuskan petugas lain).";
-    case "PRODUCTION_RUN_INCONSISTENT": return "Status unit tidak konsisten dengan Production Run (kemungkinan diubah manual di V1). Catat konflik lalu selesaikan lewat rekonsiliasi.";
+    case "PRODUCTION_RUN_INCONSISTENT": return "Status unit tidak konsisten dengan Production Run (kemungkinan diubah manual di luar rencana produksi). Catat konflik lalu selesaikan lewat rekonsiliasi.";
     case "PRODUCTION_RUN_EXCEPTION_OPEN": return "Ada konflik rekonsiliasi yang belum diselesaikan untuk run ini.";
     case "QC_WAIVE_FORBIDDEN": return "Hanya pihak berwenang (ADMIN/OWNER) yang boleh mem-waive QC atau menerima override.";
     case "QC_WRITE_REQUIRED": return "Anda tidak berwenang memutuskan hasil QC.";
     case "PLAN_MATERIAL_SHORTAGE": return `Stok bahan tambahan tidak cukup — QC belum dicatat. ${error.message || ""}`.trim();
-    case "QC_WRITER_OFF": return "QC V2 belum aktif untuk unit ini.";
+    case "QC_WRITER_OFF": return "QC belum aktif untuk unit ini.";
     case "QC_REWORK_MATERIAL_EXISTS": return "Bahan tambahan untuk inspeksi ini sudah diajukan.";
     case "QC_REWORK_ALREADY_STARTED": return "Rework sudah dimulai; bahan tambahan tidak dapat diajukan lagi.";
     case "QC_NO_REJECTION": return "Tidak ada penolakan Gudang yang perlu ditindaklanjuti untuk run ini.";
@@ -164,7 +164,7 @@ export function qcErrorMessage(error) {
 export function emptyStateCopy({ readerMode, tab }) {
   if (readerMode === "OFF") {
     return {
-      title: "Antrean QC V2 belum diaktifkan",
+      title: "Antrean QC belum diaktifkan",
       description: "Fitur ini sedang dalam tahap uji coba (canary). Hubungi Admin bila Anda seharusnya sudah melihat antrean di sini.",
       belumAktif: true,
     };

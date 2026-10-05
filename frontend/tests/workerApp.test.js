@@ -97,7 +97,8 @@ test("V1: kartu dari antrean server + timeline; keadaan & label dari server; pro
   assert.equal(j.active, true); assert.equal(j.v1.actionable, true);
   const bare = jobFromV1(wo(), null);
   assert.equal(bare.progress, null, "belum ada timeline -> progres kosong, bukan angka palsu"); assert.equal(v1Progress(null), null);
-  assert.equal(priorityOfV1("CRITICAL").label, "Kritis"); assert.equal(priorityOfV1(undefined).value, 0);
+  assert.equal(priorityOfV1({ priority: "CRITICAL" }).label, "Tinggi", "Mendesak/Kritis lama tampil Tinggi"); assert.equal(priorityOfV1({}).value, 0);
+  assert.equal(priorityOfV1({ priorityDisplay: { key: "COMPLAINT", label: "Komplain" } }).value, 3, "Komplain hanya dari kasus resmi server");
 });
 
 test("V1: siap dikerjakan vs menunggu prasyarat vs menunggu penugasan — dibedakan dari server; hanya siap/berjalan/dijeda yang membuka aksi", () => {
@@ -172,7 +173,7 @@ test("komponen: bottom nav maks. 4 & tanpa sidebar; kartu foto-pertama memuat se
   assert.match(shell, /tabs = NAV_TABS/); assert.match(shell, /tabs\.map/); assert.match(shell, /data-testid="worker-nav"/); assert.match(shell, /data-testid=\{`nav-\$\{t\.key\}`\}/);
   assert.doesNotMatch(shell, /Sidebar|sidebar|Layout\.jsx|TabsProvider/, "mode aplikasi: tanpa sidebar desktop");
   const card = strip(read("JobCard.jsx"));
-  for (const id of ["job-photo", "job-customer", "job-ids", "layanan-sales", "job-kasur", "sales-note", "sales-name", "ganti-kain-note", "priority-chip", "source-badge", "stage-chip", "job-progress", "material-waiting", "worker-unit-card"]) assert.ok(card.includes(`data-testid="${id}"`), id);
+  for (const id of ["job-photo", "job-customer", "job-ids", "layanan-sales", "job-kasur", "sales-note", "sales-name", "ganti-kain-note", "priority-chip", "status-chip", "stage-chip", "job-progress", "material-waiting", "worker-unit-card"]) assert.ok(card.includes(`data-testid="${id}"`), id);
   assert.match(card, /Foto belum ada/); assert.match(card, /onError=\{\(\) => setBroken\(true\)\}/, "foto gagal dimuat -> placeholder, bukan ikon rusak");
   assert.match(card, /Ganti Kain — pastikan sesuai permintaan customer/); assert.match(card, /Progres belum tersedia dari server/);
   assert.doesNotMatch(card, /orderValue|formatRupiah|harga/i, "tanpa harga");

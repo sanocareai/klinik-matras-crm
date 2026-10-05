@@ -19,8 +19,9 @@ test("12 tahap: urut, Table 1–9 / Corner 10–12, aturan media cermin server (
 
 // P9B — prioritas & badge tanggal target adalah field TERPISAH (permintaan eksplisit): prioritas URGENT/HIGH/NORMAL
 // tidak boleh berubah warna karena tanggal target, dan sebaliknya.
-test("P9B: priorityTone URGENT=merah/HIGH=oranye/NORMAL=netral; targetDateBadge terlambat/hari-ini-belum-mulai/besok", () => {
-  assert.equal(priorityTone(2), "red");
+test("P9B (Slice 1): priorityTone Komplain=merah / Tinggi(+Mendesak lama)=oranye / Normal=netral; targetDateBadge terlambat/hari-ini-belum-mulai/besok", () => {
+  assert.equal(priorityTone(3), "red");
+  assert.equal(priorityTone(2), "orange", "Mendesak lama tampil Tinggi");
   assert.equal(priorityTone(1), "orange");
   assert.equal(priorityTone(0), "neutral");
   assert.equal(priorityTone(undefined), "neutral");

@@ -25,7 +25,7 @@ const flat = (m) => m.flatMap((s) => s.labels);
 
 test("struktur final: urutan section & menu persis sesuai keputusan", () => {
   assert.deepEqual(PRODUCTION_NAV.map((s) => [s.section, s.items.map((i) => i.label)]), [
-    ["OPERASIONAL", ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Quality Control", "Bahan Produksi"]],
+    ["OPERASIONAL", ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Bahan Produksi"]], // Slice 1: menu QC disembunyikan sementara (rute & halaman tetap ada)
     ["MODE KERJA", ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]],
     ["KONTROL & LAPORAN", ["KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]],
     ["ADMINISTRASI", ["Pengaturan"]],
@@ -53,7 +53,7 @@ test("ikon: satu ikon per menu, tidak ada duplikat, dan semuanya terpetakan di L
 
 test("matriks menu per peran (ADMIN/OWNER, Lead, Operator, QC, Gudang, Dokumenter, Finance, Sales)", () => {
   const ALL = flat(menuFor(["ADMIN"]));
-  assert.equal(ALL.length, 14, "ADMIN: seluruh 14 menu");
+  assert.equal(ALL.length, 13, "ADMIN: seluruh 13 menu (tanpa QC yang disembunyikan sementara)");
   assert.deepEqual(flat(menuFor(["OWNER"])), ALL, "OWNER = ADMIN");
   // Production Lead: semuanya (KPI, Biaya, Pengaturan sesuai gerbang peran)
   assert.deepEqual(flat(menuFor(["PRODUCTION_LEAD"])), ALL);
@@ -62,7 +62,7 @@ test("matriks menu per peran (ADMIN/OWNER, Lead, Operator, QC, Gudang, Dokumente
     const m = menuFor([role]);
     const labels = flat(m);
     for (const hidden of ["KPI & Laporan", "Biaya Produksi", "Pengaturan"]) assert.ok(!labels.includes(hidden), `${role} tidak melihat ${hidden}`);
-    assert.ok(labels.includes("Komplain & Revisi") && labels.includes("Quality Control"), `${role} tetap melihat menu kerja`);
+    assert.ok(labels.includes("Komplain & Revisi") && !labels.includes("Quality Control"), `${role} tetap melihat menu kerja`);
     assert.ok(!m.some((s) => s.section === "ADMINISTRASI"), `${role}: tanpa section ADMINISTRASI`);
   }
   // Finance: Biaya Produksi ya (gerbang peran lama), Pengaturan/KPI tidak. Sales: tidak ada ketiganya.
@@ -157,9 +157,9 @@ test("KPI & Laporan: Ringkasan KPI dan Produksi memakai SATU dokumen ringkasan; 
 
 test("Order Produksi: scope aktif menyembunyikan Terkirim, riwayat hanya Terkirim, semua tanpa penyaringan; default lama tidak berubah", () => {
   const wo = src("pages", "bengkel", "ProductionWorkOrders.jsx");
-  assert.match(wo, /scope === "riwayat" \? "DELIVERED" : initialStatus/);
-  assert.match(wo, /scope === "aktif" \? TABS\.filter\(\(t\) => t\.key !== "DELIVERED"\)/);
-  assert.match(wo, /scope === "riwayat" \|\| scope === "semua" \? \[\]/);
+  assert.match(wo, /if \(scope === "riwayat"\) return "TERKIRIM";/);
+  assert.match(wo, /scope === "aktif" \? DISPLAY_STATUS_TABS\.filter\(\(t\) => t\.key !== "TERKIRIM"\)/);
+  assert.match(wo, /scope === "riwayat" \? \[\] :/);
   assert.match(wo, /export default function ProductionWorkOrders\(\{ initialStatus = "", scope = "", onScopeChange = null, headerExtra = null, unitId: unitIdProp, onUnitChange = null \} = \{\}\)/);
   const cc = src("pages", "ComplaintCases.jsx");
   assert.match(cc, /scope === "aktif" \? allCases\.filter\(\(c\) => !kasusTutup\(c\)\) : scope === "riwayat" \? allCases\.filter\(kasusTutup\) : allCases/);

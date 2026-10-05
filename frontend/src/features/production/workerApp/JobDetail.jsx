@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { STAGE_LOG_STATUS } from "@/features/bengkel/unitStatus.js";
 import { actionLabel, formatMinutes, friendlyError, isQuickAction, isRetryableError, waitCopy } from "@/features/production/experience.js";
 import { materialBadge } from "@/features/production/unitCardModel.js";
-import { GantiKainNote, JobPhoto, PriorityChip, ProgressLine, SalesNote, SalesServicesLine, SourceChip, StageChip } from "./JobCard.jsx";
+import { GantiKainNote, JobPhoto, PriorityChip, ProgressLine, SalesNote, SalesServicesLine, StageChip, StatusChip } from "./JobCard.jsx";
+import { DELAY_ACTION_LABEL, delayStatusText, resumeInfo } from "@/features/production/productionLabels.js";
 import { V1ActionBar, V1MaterialsPanel } from "./V1Panels.jsx";
 import { ShortageSheet, StepSheet, intentKeys } from "./workerSheets.jsx";
 import { isV1Actionable, jobFromV1, jobFromV2, submitState } from "./workerAppModel.js";
@@ -27,7 +28,7 @@ function Identity({ job, extra = null }) {
     <div className="wa-card" data-testid="job-identity">
       <div className="relative"><JobPhoto job={job} />
         <div className="absolute left-3 top-3 flex flex-wrap gap-1.5"><PriorityChip priority={job.priority} /></div>
-        <div className="absolute right-3 top-3"><SourceChip source={job.source} /></div>
+        <div className="absolute right-3 top-3"><StatusChip job={job} /></div>
       </div>
       <div className="space-y-2.5 p-4">
         <p data-testid="job-customer" className="wa-wrap m-0 text-[22px] font-extrabold leading-snug text-ink">{job.customerName}</p>
@@ -135,9 +136,9 @@ function V2Detail({ job, lane, onBack, onChanged }) {
                 <StepList steps={card.steps} lane={lane} />
               </Section>
               <Section title="Bahan" testid="section-bahan" aside={card.shortage ? <Badge variant="red">Bahan kurang</Badge> : mat ? <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${TONE[mat.tone] || TONE.neutral}`}>{mat.label}</span> : null}>
-                {card.shortage && <div className="mb-3 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><p className="m-0 font-bold">Menunggu bahan dari Gudang</p><ul className="m-0 mt-1 list-disc pl-5">{card.shortage.items.map((i) => <li key={i.materialId}>{i.name}{i.qty ? ` — ${i.qty}` : ""}</li>)}</ul></div>}
+                {card.shortage && <div className="mb-3 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><p className="m-0 font-bold" data-testid="delay-status">{delayStatusText("MATERIAL_SHORTAGE")}</p><p className="m-0 mt-0.5 text-[12.5px]" data-testid="resume-who">{resumeInfo({ source: "SHORTAGE", reason: "MATERIAL_SHORTAGE", canResume: false }).text}</p><ul className="m-0 mt-1 list-disc pl-5">{card.shortage.items.map((i) => <li key={i.materialId}>{i.name}{i.qty ? ` — ${i.qty}` : ""}</li>)}</ul></div>}
                 {card.bom?.length ? <ul className="m-0 list-none space-y-1.5 p-0" data-testid="bom-list">{card.bom.map((b) => <li key={b.id} className="flex items-center justify-between gap-2 rounded-btn bg-inset px-3 py-2 text-[14px]"><span className="min-w-0 truncate font-semibold text-ink">{b.name}{b.supplemental ? " (tambahan)" : ""}</span><span className="shrink-0 tabular-nums text-ink2">{b.qty} {b.uom}</span></li>)}</ul> : <p className="m-0 text-[13.5px] text-ink3">{card.materialStatus?.label || "Rencana bahan belum dibuat"} — rencana bahan muncul setelah diagnosis.</p>}
-                {canShortage && <button type="button" data-testid="open-shortage" onClick={() => setSheet("shortage")} className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-btn bg-redbg text-[15px] font-bold text-red"><PackageX size={19} aria-hidden /> Menunggu Bahan Baku</button>}
+                {canShortage && <button type="button" data-testid="open-shortage" onClick={() => setSheet("shortage")} className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-btn bg-redbg text-[15px] font-bold text-red"><PackageX size={19} aria-hidden /> {DELAY_ACTION_LABEL}</button>}
               </Section>
               <Section title="Dokumentasi" testid="section-dokumentasi"><EvidenceList evidence={card.evidence} /></Section>
             </>
@@ -198,9 +199,9 @@ function V1Detail({ job, roles, onChanged, refreshV1Unit, fetchV1Queue, onHandof
         <div className="space-y-3.5">
           <Identity job={view} extra={<>
             {v1.wait && <div data-testid="v1-wait-panel" role="status" className="rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange"><p className="m-0 font-bold">{v1.wait.title}</p><p className="m-0 mt-0.5">{v1.wait.text}</p></div>}
-            <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">Order asli (jalur V1). Data pelanggan lain (berat badan, keluhan) belum tercatat di jalur ini.</p>
+            <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">Data pelanggan lain (berat badan, keluhan) belum tercatat untuk unit ini.</p>
           </>} />
-          {timeline?.activeBlocker && <p className="m-0 flex items-start gap-2 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><AlertTriangle size={15} className="mt-px shrink-0" aria-hidden /> Terhambat: {timeline.productionStatusReason || "ada blokir aktif"}</p>}
+          {timeline?.activeBlocker && <p className="m-0 flex items-start gap-2 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><AlertTriangle size={15} className="mt-px shrink-0" aria-hidden /> <span data-testid="delay-status">{delayStatusText(timeline.activeBlocker.reason, timeline.activeBlocker.note)}</span></p>}
         </div>
         <div className="space-y-3.5">
           {!timeline ? <div className="space-y-3"><div className="h-28 animate-pulse rounded-card bg-inset" /><div className="h-28 animate-pulse rounded-card bg-inset" /></div> : (
@@ -208,7 +209,7 @@ function V1Detail({ job, roles, onChanged, refreshV1Unit, fetchV1Queue, onHandof
               <Section title="Progres" testid="section-progres">
                 <div className="mb-3"><ProgressLine job={view} /></div>
                 {timeline.path?.length ? (
-                  <ol className="m-0 list-none space-y-1 p-0" aria-label="Tahap V1">
+                  <ol className="m-0 list-none space-y-1 p-0" aria-label="Tahap pengerjaan">
                     {timeline.path.map((p, i) => (
                       <li key={p.stage.id} className={`flex items-center gap-3 rounded-btn px-3 py-2 text-[13.5px] ${p.isCurrent ? "bg-accentbg font-semibold text-accent" : "text-ink2"}`}>
                         <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${p.status === "DONE" ? "bg-green text-white" : p.isCurrent ? "bg-accent text-white" : "bg-inset text-ink3"}`}>{p.status === "DONE" ? <CheckCircle2 size={14} aria-hidden /> : i + 1}</span>
@@ -217,11 +218,11 @@ function V1Detail({ job, roles, onChanged, refreshV1Unit, fetchV1Queue, onHandof
                       </li>
                     ))}
                   </ol>
-                ) : <p className="m-0 text-[13.5px] text-ink3">Jalur tahap belum tersusun — layanan teknis belum ditetapkan.</p>}
+                ) : <p className="m-0 text-[13.5px] text-ink3">Tahap pengerjaan belum tersusun — rute pengerjaan belum ditentukan.</p>}
               </Section>
               <Section title="Bahan" testid="section-bahan"><V1MaterialsPanel unitId={job.unitId} roles={roles} onChanged={onChanged} /></Section>
               <Section title="Dokumentasi" testid="section-dokumentasi">
-                {photos.length ? <div className="flex flex-wrap gap-2" data-testid="evidence-list">{photos.slice(-12).map((p) => <img key={p.url} src={p.url} alt="Dokumentasi tahap" loading="lazy" className="h-20 w-20 rounded-btn object-cover" />)}</div> : <p className="m-0 text-[13.5px] text-ink3" data-testid="evidence-empty">Belum ada foto dokumentasi V1.</p>}
+                {photos.length ? <div className="flex flex-wrap gap-2" data-testid="evidence-list">{photos.slice(-12).map((p) => <img key={p.url} src={p.url} alt="Dokumentasi tahap" loading="lazy" className="h-20 w-20 rounded-btn object-cover" />)}</div> : <p className="m-0 text-[13.5px] text-ink3" data-testid="evidence-empty">Belum ada foto dokumentasi.</p>}
               </Section>
             </>
           )}
@@ -230,7 +231,7 @@ function V1Detail({ job, roles, onChanged, refreshV1Unit, fetchV1Queue, onHandof
       {timeline && v1.actionable && <V1ActionBar job={view} timeline={timeline} roles={roles} onChanged={afterChange} state={v1.state} beforeAction={beforeAction} onHandoff={() => onHandoff?.(job)} />}
       {timeline && !v1.actionable && (
         <div className="wa-actionbar" data-testid="v1-info-bar"><div className="wa-actionbar-inner">
-          <p data-testid="v1-no-action" className="m-0 rounded-btn bg-inset px-3 py-3 text-[13.5px] font-semibold text-ink2">{v1.wait ? `${v1.wait.title} — belum ada tindakan untuk Anda.` : (v1.state === "BLOCKED" ? "Tahap terhambat — hubungi Production Lead untuk menyelesaikan blokir." : "Belum ada tindakan yang tersedia.")}</p>
+          <p data-testid="v1-no-action" className="m-0 rounded-btn bg-inset px-3 py-3 text-[13.5px] font-semibold text-ink2">{v1.wait ? `${v1.wait.title} — belum ada tindakan untuk Anda.` : (v1.state === "BLOCKED" ? resumeInfo({ source: "BLOCKER", reason: timeline?.activeBlocker?.reason, canResume: false }).text : "Belum ada tindakan yang tersedia.")}</p>
         </div></div>
       )}
     </div>

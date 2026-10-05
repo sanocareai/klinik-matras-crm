@@ -389,7 +389,7 @@ export const COMMAND_CENTER_COLUMNS = Object.freeze([
   { key: "LAPISAN", label: "Lapisan Jadi" },
   { key: "UJI_TEKSTUR", label: "Uji Tekstur Sebelum Corner" },
   { key: "CORNER", label: "Corner" },
-  { key: "SIAP_KIRIM", label: "Siap Kirim" },
+  { key: "SIAP_KIRIM", label: "Serah ke Gudang" }, // tahap kerja (unit Diproses menunggu Gudang) — BUKAN status Siap Kirim (itu status order/unit)
 ]);
 
 // view: hasil toRunView (punya .plan, .next, .bucket). Mengembalikan null untuk SELESAI (sudah diserahkan tuntas —

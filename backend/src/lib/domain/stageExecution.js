@@ -46,7 +46,7 @@ const BLOCKER_LIKE_REASONS = new Set([
 export function validatePauseReason({ reason, note }) {
   if (!reason) return "Alasan jeda wajib diisi";
   if (BLOCKER_LIKE_REASONS.has(reason)) {
-    return 'Alasan ini adalah BLOKIR operasional, bukan jeda terkendali — gunakan "Tandai Terhambat" (Block Production), bukan Jeda';
+    return 'Alasan ini bukan jeda terkendali, melainkan pekerjaan yang tertunda — gunakan "Tunda Pekerjaan", bukan Jeda';
   }
   if (!PAUSE_REASON_VALUES.includes(reason)) {
     return `Alasan jeda harus salah satu dari: ${PAUSE_REASON_VALUES.join(", ")}`;

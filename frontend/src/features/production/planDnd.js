@@ -6,6 +6,7 @@
 //   - productionDate:null + stationCode:null = kembali ke Belum Dijadwalkan.
 // Sisipan pada posisi tertentu = jadwalkan (ke bawah) lalu urutkan; keduanya lewat command yang sama dengan tombol Jadwalkan/Pindahkan/▲▼.
 import { stationCapacity } from "@/features/production/experience.js";
+import { rankOfView } from "@/features/production/productionLabels.js";
 import { orderedStationItems } from "@/features/production/stationOrder.js";
 
 // Gerak minimal (px) sebelum sentuhan/klik pada handle dianggap SERET. Di bawah ini = ketukan biasa -> tidak ada yang berpindah.
@@ -28,12 +29,12 @@ export const planDisplayOrder = (items) => { const o = orderedStationItems(items
 
 // ---- Prioritas vs urutan manual (P12A.3) ----
 // ATURAN: stationSequence/urutan manual SELALU menang di meja. Prioritas HANYA (1) mengurutkan backlog, (2) menentukan posisi AWAL unit yang
-// masuk meja tanpa posisi eksplisit (tombol Jadwalkan), dan (3) memicu peringatan non-blocking bila Mendesak/Tinggi berada di bawah Normal.
+// masuk meja tanpa posisi eksplisit (tombol Jadwalkan), dan (3) memicu peringatan non-blocking bila Komplain/Tinggi berada di bawah Normal.
 // TIDAK PERNAH mengurutkan ulang meja secara otomatis.
-export const priorityOf = (v) => v?.plan?.priority ?? 0;
+export const priorityOf = (v) => rankOfView(v); // peringkat: Komplain > Tinggi (termasuk Mendesak lama) > Normal
 
 // Indeks posisi awal untuk unit berprioritas `priority` di daftar `others` (urutan tampil meja, TANPA unit itu; unit 12/12 terkunci diabaikan):
-// tepat setelah item terakhir yang prioritasnya >= priority (Normal -> paling bawah; Mendesak -> di depan semua yang lebih rendah).
+// tepat setelah item terakhir yang prioritasnya >= priority (Normal -> paling bawah; Komplain -> di depan semua yang lebih rendah).
 export function priorityInsertIndex(others, priority) {
   const movable = (others || []).filter((v) => !isPlanComplete(v));
   let last = -1;

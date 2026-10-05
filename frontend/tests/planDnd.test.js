@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { orderedStationItems } from "../src/features/production/stationOrder.js";
 import { stationCapacity, friendlyError } from "../src/features/production/experience.js";
+import { rankOfView } from "../src/features/production/productionLabels.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const raw = (...p) => fs.readFileSync(path.join(__dirname, "..", "src", ...p), "utf8");
@@ -19,7 +20,7 @@ const STATUS = read("pages", "bengkel", "ProductionPlannerV2.jsx");
 
 function loadDnd() {
   const src = DND_SRC.replace(/^import .*$/gm, "").replace(/^export /gm, "");
-  return new Function("stationCapacity", "orderedStationItems", `${src}\nreturn { DRAG_THRESHOLD_PX, dragMoved, insertIndexAt, listWithInserted, decideDrop, describeTarget, isPlanComplete, planDisplayOrder, priorityInsertIndex, priorityInversion, priorityOf };`)(stationCapacity, orderedStationItems);
+  return new Function("stationCapacity", "rankOfView", "orderedStationItems", `${src}\nreturn { DRAG_THRESHOLD_PX, dragMoved, insertIndexAt, listWithInserted, decideDrop, describeTarget, isPlanComplete, planDisplayOrder, priorityInsertIndex, priorityInversion, priorityOf };`)(stationCapacity, rankOfView, orderedStationItems);
 }
 const D = loadDnd();
 
@@ -220,16 +221,16 @@ test("urutan manual SELALU menang: planDisplayOrder tidak mengurutkan ulang menu
 test("prioritas hanya menentukan POSISI AWAL (tombol Jadwalkan): setelah item terakhir berprioritas >= miliknya; 12/12 diabaikan", () => {
   const n1 = prio(1, 0, 1), h = prio(2, 1, 2), n2 = prio(3, 0, 3), done12 = { ...prio(4, 0, 4), progress: { done: 12, total: 12 } };
   const others = D.planDisplayOrder([n1, h, n2, done12]);
-  assert.equal(D.priorityInsertIndex(others, 2), 0, "Mendesak masuk paling atas");
+  assert.equal(D.priorityInsertIndex(others, 3), 0, "Komplain masuk paling atas");
   assert.equal(D.priorityInsertIndex(others, 1), 2, "Tinggi: setelah Tinggi terakhir (di antara H dan N)");
   assert.equal(D.priorityInsertIndex(others, 0), 3, "Normal: paling bawah, di atas unit 12/12 terkunci");
-  assert.equal(D.priorityInsertIndex([], 2), 0);
+  assert.equal(D.priorityInsertIndex([], 3), 0);
   assert.match(RENCANA_RAW, /priorityInsertIndex\(others, meta\.priority\)/);
   assert.match(RENCANA_RAW, /hasManualOrder\(ordered\)/, "urutan manual yang ada tidak diubah; tanpa urutan manual, urutan bawaan server sudah cukup");
-  assert.match(read("features", "production", "ScheduleModals.jsx"), /priority: Number\(form\.priority\) \}\)/, "modal meneruskan info penempatan");
+  assert.match(read("features", "production", "ScheduleModals.jsx"), /priority: Math\.max\(Number\(form\.priority\), rankOfView\(target\) >= 3 \? 3 : 0\) \}\)/, "modal meneruskan info penempatan (Komplain turunan ikut menentukan posisi awal)");
 });
 
-test("peringatan inversi prioritas non-blocking: Mendesak/Tinggi di bawah prioritas lebih rendah; tanpa inversi = kosong; 12/12 tidak dihitung", () => {
+test("peringatan inversi prioritas non-blocking: Komplain/Tinggi di bawah prioritas lebih rendah; tanpa inversi = kosong; 12/12 tidak dihitung", () => {
   assert.deepEqual(D.priorityInversion([prio(1, 0, 1), prio(2, 2, 2)]), ["U2"], "Mendesak di bawah Normal");
   assert.deepEqual(D.priorityInversion([prio(1, 0, 1), prio(2, 1, 2), prio(3, 2, 3)]), ["U2", "U3"]);
   assert.deepEqual(D.priorityInversion([prio(1, 2, 1), prio(2, 1, 2), prio(3, 0, 3)]), [], "Mendesak → Tinggi → Normal = tidak ada peringatan");

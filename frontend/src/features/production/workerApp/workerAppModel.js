@@ -3,7 +3,8 @@
 //  - Jalur V2: item antrean `GET /production-v2/worker/:lane` (urutan manual/tanggal/meja sudah diurutkan server) + `next` dari server.
 //  - Jalur V1: unit non-cohort yang DITUGASKAN ke operator ini (`GET /production/work-orders` -> assignedOperator.id = operator V2 yang sama) diperkaya
 //    `GET /units/:id/timeline`. Tahap V1 TIDAK pernah dipetakan ke 12 langkah V2 (dua mesin berbeda, label & progres masing-masing dari server).
-import { isGantiKain, materialBadge, mattressInfo, priorityMeta, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
+import { isGantiKain, materialBadge, mattressInfo, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
+import { delayStatusText, priorityOf, resumeInfo, statusOf, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
 import { bucketStyle } from "@/features/production/experience.js";
 import { canMaterialV1, canStageV1, needsPhotoOf, stageStateOf } from "@/features/production/unitV1ActionsModel.js";
 
@@ -28,14 +29,10 @@ export const APP_MODES = Object.freeze([
 export const allowedModes = (roles = []) => APP_MODES.filter((m) => (roles || []).some((r) => m.roles.includes(r)));
 export const modeOfLane = (lane) => APP_MODES.find((m) => m.lane === (lane === "CORNER" ? "CORNER" : "TABLE"));
 
-// ---- Prioritas ----
-// V2: plan.priority 0/1/2. V1: enum unit.priority. Tidak ada tebakan: CRITICAL V1 diperlakukan setara Mendesak untuk tampilan (label asli tetap).
-const V1_PRIORITY = Object.freeze({ NORMAL: { value: 0, label: "Normal" }, HIGH: { value: 1, label: "Tinggi" }, URGENT: { value: 2, label: "Mendesak" }, CRITICAL: { value: 2, label: "Kritis" } });
-export function priorityOfV1(priority) {
-  const p = V1_PRIORITY[String(priority || "NORMAL").toUpperCase()] || V1_PRIORITY.NORMAL;
-  return { ...priorityMeta(p.value), label: p.label, value: p.value };
-}
-export function priorityOfV2(priority) { const m = priorityMeta(priority ?? 0); return { ...m, value: priority ?? 0 }; }
+// ---- Prioritas: Normal · Tinggi · Komplain (Komplain hanya dari kasus komplain resmi yang dikirim server) ----
+// Nilai tersimpan lama (Mendesak/Kritis) tampil "Tinggi"; enum/histori tidak diubah. `value` = peringkat urut (bukan label).
+export function priorityOfV1(unit) { const p = priorityOf(unit); return { ...p, value: p.key === "COMPLAINT" ? 3 : p.key === "HIGH" ? 1 : 0 }; }
+export function priorityOfV2(item) { const p = priorityOf(item); return { ...p, value: p.key === "COMPLAINT" ? 3 : p.key === "HIGH" ? 1 : 0 }; }
 
 const dash = (s) => (s && String(s).trim() ? String(s).trim() : null);
 export const kasurLine = (view) => { const m = mattressInfo(view); return [m.jenis, m.merk, m.ukuran].filter(Boolean).join(" · ") || null; };
@@ -56,7 +53,8 @@ export function jobFromV2(item) {
     kasur: kasurLine(view),
     note: salesNoteOf(view), salesName: dash(customer.salesName),
     gantiKain: isGantiKain(view), gantiKainNoteMissing: isGantiKain(view) && !salesNoteOf(view),
-    priority: priorityOfV2(item.plan?.priority),
+    priority: priorityOfV2(item),
+    status: viewStatus(item), presence: viewPresence(item),
     stage: { label: stageText(item), bucket: item.bucket, tone: style.badge, bucketLabel: style.label },
     stationLabel: item.plan?.stationLabel ?? null, sequence: item.plan?.stationSequence ?? null,
     progress: prog, materialWaiting: waiting, material: materialBadge(item), late: !!item.timer?.late,
@@ -69,7 +67,7 @@ export function jobFromV2(item) {
 // `item` = baris antrean V1 dari server (GET /production/v1-worker-queue): { unit, state, stage, prerequisite, waitingFor }; `timeline` = GET /units/:id/timeline
 // (null bila belum dimuat -> field yang belum diketahui kosong, bukan tebakan). Keadaan (siap / berjalan / menunggu prasyarat / menunggu penugasan) SELALU dari server.
 export const V1_STATE_LABEL = Object.freeze({
-  READY: "Siap dikerjakan", IN_PROGRESS: "Sedang berjalan", PAUSED: "Dijeda", BLOCKED: "Terhambat",
+  READY: "Siap dikerjakan", IN_PROGRESS: "Sedang berjalan", PAUSED: "Dijeda", BLOCKED: "Tertunda",
   WAITING_PREREQUISITE: "Menunggu tahap prasyarat", WAITING_ASSIGNMENT: "Menunggu penugasan berikutnya",
 });
 const V1_STATE_TONE = Object.freeze({ READY: "accent", IN_PROGRESS: "accent", PAUSED: "orange", BLOCKED: "red", WAITING_PREREQUISITE: "orange", WAITING_ASSIGNMENT: "neutral" });
@@ -101,10 +99,11 @@ export function jobFromV1(item, timeline = null) {
   const customer = { salesServices: sales, request: ctx.request ?? null, productType: null };
   const view = { customer, unit };
   const stageLabel = item.stage?.labelId || null;
-  const info = V1_STATE_LABEL[item.state] || "Antrean";
+  const delayText = item.state === "BLOCKED" && timeline?.activeBlocker ? delayStatusText(timeline.activeBlocker.reason, timeline.activeBlocker.note) : null;
+  const info = delayText || V1_STATE_LABEL[item.state] || "Antrean";
   const wait = v1WaitInfo(item);
   return {
-    key: `v1:${unit.id}`, source: "V1", id: unit.id, unitId: unit.id,
+    key: `v1:${unit.id}`, source: "V1", id: unit.id, unitId: unit.id, // "source" = istilah internal kode; tidak pernah ditampilkan
     unitCode: unit.unitCode, orderNumber: unit.order?.orderNumber ?? null,
     customerName: dash(unit.order?.customer?.name) || "Customer belum dicatat",
     photoUrl: ctx.photoUrl || null,
@@ -112,7 +111,8 @@ export function jobFromV1(item, timeline = null) {
     kasur: [unit.merk, unit.ukuran].filter(Boolean).join(" · ") || null,
     note: salesNoteOf(view), salesName: dash(ctx.salesName),
     gantiKain: isGantiKain(view), gantiKainNoteMissing: isGantiKain(view) && !salesNoteOf(view),
-    priority: priorityOfV1(unit.priority),
+    priority: priorityOfV1(unit),
+    status: statusOf({ unitStatusDisplay: unit.unitStatusDisplay, status: unit.status }), presence: null,
     stage: { label: stageLabel ? `${info} · ${stageLabel}` : info, bucket: item.state, tone: V1_STATE_TONE[item.state] || "neutral", bucketLabel: info },
     v1: { state: item.state, stage: item.stage, prerequisite: item.prerequisite || null, waitingFor: item.waitingFor || null, actionable: isV1Actionable(item.state), wait },
     stationLabel: null, sequence: null,
@@ -146,19 +146,19 @@ export function picSummary(jobs, { lane, user, all } = {}) {
 export function primaryActionV1(timeline, roles = [], { state = null } = {}) {
   // Keadaan antrean dari server (bila diberikan) membatasi: menunggu prasyarat/penugasan tidak membuka aksi apa pun.
   if (state && !isV1Actionable(state)) {
-    return { kind: "NONE", reason: state === "BLOCKED" ? "Tahap terhambat — hubungi Production Lead untuk menyelesaikan blokir." : "Belum giliran Anda — lihat keterangan di atas." };
+    return { kind: "NONE", reason: state === "BLOCKED" ? resumeInfo({ source: "BLOCKER", reason: timeline?.activeBlocker?.reason, canResume: false }).text : "Belum giliran Anda — lihat keterangan di atas." };
   }
   const st = stageStateOf(timeline);
   if (!canStageV1(roles)) return { kind: "NONE", reason: "Hanya tim produksi yang dapat menjalankan tahap." };
   const label = st.current?.stage?.labelId || st.first?.labelId || null;
   switch (st.kind) {
-    case "NEEDS_SERVICE": return { kind: "NONE", reason: "Layanan teknis belum ditetapkan — menunggu Production Lead." };
-    case "ALL_DONE": return { kind: "NONE", reason: "Seluruh tahap V1 selesai." };
+    case "NEEDS_SERVICE": return { kind: "NONE", reason: "Rute pengerjaan belum ditentukan — menunggu Production Lead." };
+    case "ALL_DONE": return { kind: "NONE", reason: "Seluruh tahap selesai." };
     case "NOT_STARTED": case "READY": return { kind: "START", label: label ? `Mulai ${label}` : "Mulai tahap", stage: st.current?.stage || st.first };
-    case "PAUSED": return { kind: "RESUME", label: "Lanjutkan pekerjaan", stage: st.current.stage };
+    case "PAUSED": return { kind: "RESUME", label: "Lanjutkan Pekerjaan", stage: st.current.stage };
     case "IN_PROGRESS": return { kind: "COMPLETE", label: label ? `Selesaikan ${label}` : "Selesaikan tahap", stage: st.current.stage, needsPhoto: needsPhotoOf(st), secondary: ["PAUSE", "BLOCK"] };
     case "IN_PROGRESS_QC": return { kind: "NONE", reason: "Tahap gerbang QC berjalan — putusan hanya oleh QC.", stage: st.current.stage };
-    case "BLOCKED": return { kind: "NONE", reason: "Tahap terhambat — hubungi Production Lead untuk menyelesaikan blokir.", stage: st.current.stage };
+    case "BLOCKED": return { kind: "NONE", reason: resumeInfo({ source: "BLOCKER", reason: timeline?.activeBlocker?.reason, canResume: false }).text, stage: st.current.stage };
     default: return { kind: "NONE", reason: "Belum ada tindakan yang tersedia." };
   }
 }

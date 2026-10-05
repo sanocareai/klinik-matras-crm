@@ -3,6 +3,7 @@ import { AlertTriangle, Clock, ImageOff, PackageX, Scissors } from "lucide-react
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { formatMinutes } from "@/features/production/experience.js";
 import { initialsOf } from "./workerAppModel.js";
+import { delayStatusText, presenceTone } from "@/features/production/productionLabels.js";
 
 // Foto-pertama: foto unit mengisi bagian atas kartu; foto kosong/gagal dimuat = placeholder navy dengan inisial customer (jujur, bukan gambar palsu).
 export function JobPhoto({ job, className = "" }) {
@@ -24,13 +25,20 @@ export function JobPhoto({ job, className = "" }) {
 }
 
 export function PriorityChip({ priority }) {
-  if (!priority || priority.value <= 0) return null;
-  const cls = priority.value >= 2 ? "wa-chip-red" : "wa-chip-orange";
+  if (!priority || priority.key === "NORMAL" || !priority.key) return null;
+  const cls = priority.key === "COMPLAINT" ? "wa-chip-red" : "wa-chip-orange";
   return <span data-testid="priority-chip" className={`wa-chip ${cls}`}><AlertTriangle size={12} aria-hidden /> {priority.label}</span>;
 }
 
-export function SourceChip({ source }) {
-  return <span data-testid="source-badge" data-source={source} className="wa-chip wa-chip-solid" title={source === "V2" ? "Alur Production V2" : "Alur Production V1 (order asli)"}>{source}</span>;
+// Status order/unit (Pengambilan · Diproses · Siap Kirim · Terkirim) + keberadaan fisik bila belum tiba — TANPA label sumber teknis.
+export function StatusChip({ job }) {
+  if (!job.status) return null;
+  return (
+    <span className="flex flex-wrap justify-end gap-1.5">
+      <span data-testid="status-chip" className="wa-chip wa-chip-solid">{job.status.label}</span>
+      {job.presence?.key === "NOT_ARRIVED" && <span data-testid="presence-chip" data-tone={presenceTone(job.presence)} className="wa-chip wa-chip-orange">{job.presence.label}</span>}
+    </span>
+  );
 }
 
 // Peringatan Ganti Kain: layanan krusial (kain harus persis permintaan customer) — dikenali dari layanan DIPESAN di Sales, bukan tebakan teks bebas.
@@ -83,7 +91,7 @@ export default function JobCard({ job, onOpen, position = null, variant = "queue
       <div className="relative">
         <JobPhoto job={job} />
         <div className="absolute left-3 top-3 flex max-w-[70%] flex-wrap gap-1.5"><PriorityChip priority={job.priority} />{position != null && <span className="wa-chip wa-chip-solid">#{position}</span>}</div>
-        <div className="absolute right-3 top-3"><SourceChip source={job.source} /></div>
+        <div className="absolute right-3 top-3"><StatusChip job={job} /></div>
         <div className="absolute bottom-3 left-3 right-3 flex flex-wrap items-center gap-1.5">{job.stationLabel && <span className="wa-chip wa-chip-solid">{job.stationLabel}</span>}</div>
       </div>
       <div className="space-y-2.5 p-4">
@@ -99,7 +107,7 @@ export default function JobCard({ job, onOpen, position = null, variant = "queue
         {job.v1?.wait && <p data-testid="v1-wait-info" className="wa-wrap m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2"><b className="text-ink">{job.v1.wait.title}.</b> {job.v1.wait.text}</p>}
         <div className="flex flex-wrap items-center gap-1.5">
           <StageChip job={job} />
-          {job.materialWaiting && <span data-testid="material-waiting" className="inline-flex items-center gap-1 rounded-full bg-redbg px-2.5 py-1 text-[12px] font-bold text-red"><PackageX size={13} aria-hidden /> Menunggu bahan</span>}
+          {job.materialWaiting && <span data-testid="material-waiting" className="inline-flex items-center gap-1 rounded-full bg-redbg px-2.5 py-1 text-[12px] font-bold text-red"><PackageX size={13} aria-hidden /> {delayStatusText("MATERIAL_SHORTAGE")}</span>}
           {!job.materialWaiting && job.material && <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-semibold ${TONE[job.material.tone] || TONE.neutral}`}>{job.material.label}</span>}
           {job.late && <span className="inline-flex items-center gap-1 rounded-full bg-orangebg px-2.5 py-1 text-[12px] font-bold text-orange"><Clock size={13} aria-hidden /> Terlambat</span>}
         </div>

@@ -27,7 +27,7 @@ const CONFLICT_FIELDS = { service: (t) => t?.unit?.serviceId ?? null, priority: 
 export function detectConflict(loaded, latest, fields = Object.keys(CONFLICT_FIELDS)) {
   return fields.filter((f) => CONFLICT_FIELDS[f] && CONFLICT_FIELDS[f](loaded) !== CONFLICT_FIELDS[f](latest));
 }
-export const FIELD_LABEL = { service: "layanan teknis", priority: "prioritas", due: "target selesai", blocker: "blokir produksi" };
+export const FIELD_LABEL = { service: "rute pengerjaan", priority: "prioritas", due: "target selesai", blocker: "penundaan pekerjaan" };
 export const conflictMessage = (fields) => `Data unit sudah diubah orang lain (${fields.map((f) => FIELD_LABEL[f] || f).join(", ")}). Tampilan dimuat ulang — periksa lalu simpan lagi.`;
 
 // ---------------------------------------------------------------------------------------------------------------------------------------
@@ -66,13 +66,13 @@ export const completeFormValid = ({ needsPhoto, photos }) => !needsPhoto || (pho
 
 // MATRIKS KEPUTUSAN — setiap aksi halaman Unit lama: TERSEDIA (di drawer non-V2), DIBATASI (peran/syarat), atau SENGAJA DIHENTIKAN (alasan + guard yang dibutuhkan bila dibuka lagi).
 export const V1_ACTION_MATRIX = Object.freeze([
-  { key: "service", label: "Tetapkan layanan teknis", status: "TERSEDIA", roles: V1_ROUTING_ROLES, api: "PATCH /units/:id/service", cohort: "Diagnosis (V2)" },
+  { key: "service", label: "Tetapkan rute pengerjaan (hanya bila belum ada)", status: "TERSEDIA", roles: V1_ROUTING_ROLES, api: "PATCH /units/:id/service", cohort: "Diagnosis (V2)" },
   { key: "production", label: "Prioritas & target produksi", status: "TERSEDIA", roles: V1_ROUTING_ROLES, api: "PATCH /units/:id/production", cohort: "Rencana Produksi (V2)" },
   { key: "start", label: "Mulai tahap", status: "TERSEDIA", roles: V1_STAGE_ROLES, api: "POST /units/:id/stages/start", cohort: "Aplikasi Meja/Corner (V2)" },
   { key: "complete", label: "Selesaikan tahap + foto/catatan (dokumentasi V1)", status: "TERSEDIA", roles: V1_STAGE_ROLES, api: "POST /units/:id/stages/:id/complete", cohort: "Aplikasi Meja/Corner + Dokumentasi (V2)" },
   { key: "pause", label: "Jeda / lanjutkan tahap", status: "TERSEDIA", roles: V1_STAGE_ROLES, api: "POST …/pause · …/resume", cohort: "Aplikasi Meja (V2)" },
-  { key: "fail", label: "Tandai terhambat", status: "TERSEDIA", roles: V1_STAGE_ROLES, api: "POST …/fail", cohort: "Menunggu Bahan Baku (V2)" },
-  { key: "resolveBlocker", label: "Selesaikan blokir", status: "TERSEDIA", roles: V1_STAGE_ROLES, api: "POST /units/:id/blockers/:id/resolve", cohort: "Gudang menutup kekurangan (V2)" },
+  { key: "fail", label: "Tunda Pekerjaan", status: "TERSEDIA", roles: V1_STAGE_ROLES, api: "POST …/fail", cohort: "Tunda Pekerjaan — Menunggu bahan (papan produksi)" },
+  { key: "resolveBlocker", label: "Lanjutkan Pekerjaan", status: "TERSEDIA", roles: V1_STAGE_ROLES, api: "POST /units/:id/blockers/:id/resolve", cohort: "Gudang menutup kekurangan (V2)" },
   { key: "qc", label: "Putusan QC (Uji Berat Badan)", status: "DIBATASI", roles: V1_QC_ROLES, api: "POST …/qc", cohort: "Antrean QC (V2)", note: "hanya QC_WRITE; hanya saat tahap gerbang QC berjalan" },
   { key: "material", label: "Catat pemakaian bahan", status: "DIBATASI", roles: V1_MATERIAL_ROLES, api: "POST /units/:id/materials", cohort: "Material Issue (V2)", note: "menulis ledger stok (negatif ditolak server)" },
   { key: "assign", label: "Tugaskan work center / operator", status: "DIBATASI", roles: V1_ASSIGN_ROLES, api: "POST …/assign", cohort: "Rencana Produksi (V2)", note: "hanya saat ada tahap berjalan/siap" },

@@ -10,7 +10,7 @@ import {
   V1_ACTION_MATRIX, V1_ASSIGN_ROLES, V1_MATERIAL_ROLES, V1_QC_ROLES, V1_ROUTING_ROLES, V1_STAGE_ROLES, canAssignV1, canMaterialV1, canQcV1, canResolveBlockerV1, canRouteV1, completeFormValid, conflictMessage, detectConflict, draftOf, dueIsoOf,
   failFormValid, isDraftDirty, needsPhotoOf, pauseFormValid, productionPatchOf, qcFormValid, stageStateOf, wibDateOf,
 } from "../src/features/production/unitV1ActionsModel.js";
-import { PANEL_COPY, SOURCE_FILTERS, filterBySource, isActiveV1, selectV1Units, sourceOf, summarizeV1, topV1Units } from "../src/features/production/nonV2OrdersModel.js";
+import { isActiveV1, selectV1Units, summarizeV1, topV1Units } from "../src/features/production/nonV2OrdersModel.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8");
@@ -62,7 +62,7 @@ test("deteksi konflik: bidang yang berubah di antara baca & tulis dilaporkan; ya
   assert.deepEqual(detectConflict(base, { ...base, activeBlocker: null }, ["blocker"]), ["blocker"]);
   assert.deepEqual(detectConflict(base, { ...base, activeBlocker: { id: "b2" } }, ["blocker"]), ["blocker"], "blokir baru ≠ blokir yang dilihat");
   assert.deepEqual(detectConflict({ unit: { priority: undefined } }, { unit: { priority: "NORMAL" } }, ["priority"]), [], "undefined = NORMAL");
-  assert.match(conflictMessage(["priority", "due"]), /prioritas, target selesai/); assert.match(conflictMessage(["blocker"]), /blokir produksi/);
+  assert.match(conflictMessage(["priority", "due"]), /prioritas, target selesai/); assert.match(conflictMessage(["blocker"]), /penundaan pekerjaan/); assert.doesNotMatch(conflictMessage(["blocker"]), /Pekerjaan Tertunda/, "pesan konflik sistem tidak dilabeli Pekerjaan Tertunda");
 });
 
 test("PAGAR V2: aksi V1 hanya dirender di fallback unit non-V2; drawer cohort & V2Owners tidak punya jalur tulis V1 (tanpa bypass diagnosis/QC/custody)", () => {
@@ -78,17 +78,17 @@ test("PAGAR V2: aksi V1 hanya dirender di fallback unit non-V2; drawer cohort & 
   walk(path.join(here, "..", "src")); assert.deepEqual(users, ["UnitOrderFallback.jsx"]);
   for (const c of ["UnitV1Stage", "UnitV1Materials"]) { const u2 = []; const w2 = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) w2(p); else if (/\.jsx?$/.test(e.name) && new RegExp(`from "[^"]*${c}`).test(fs.readFileSync(p, "utf8"))) u2.push(path.basename(p)); } }; w2(path.join(here, "..", "src")); assert.deepEqual(u2, ["UnitOrderFallback.jsx"], c); }
   const owners = strip(src("features", "production", "UnitOverviewDrawer.jsx"));
-  assert.match(owners, /function V2Owners\(\{ d \}\)/); assert.match(owners, /Layanan teknis diisi lewat <b>Diagnosis<\/b>/); assert.match(owners, /Prioritas dan target diubah di <b>Rencana Produksi<\/b>/);
+  assert.match(owners, /function V2Owners\(\{ d \}\)/); assert.doesNotMatch(owners, /Layanan teknis diisi lewat/); assert.match(owners, /Prioritas Normal\/Tinggi dan target diubah di <b>Rencana Produksi<\/b>/);
 });
 
-test("Layanan Sales read-only terpisah dari Layanan Teknis: label & sumber berbeda, Sales tidak pernah menjadi nilai default layanan teknis", () => {
+test("Slice 1: hanya Layanan Sales yang tampil; layanan teknis historis tidak ditampilkan; pemilih rute hanya bila rute BELUM ada; Sales tidak pernah menjadi nilai default layanan teknis", () => {
   const v1 = src("features", "production", "UnitV1Actions.jsx");
-  assert.match(v1, /Layanan Dipesan \(Sales\)[\s\S]{0,200}ORDER · baca-saja/); assert.match(v1, /Layanan Teknis \(Produksi\)/);
-  assert.match(v1, /data\.salesServices/); assert.match(v1, /unit\.service\?\.labelId \|\| "Belum ditetapkan"/);
+  assert.match(v1, /Layanan Dipesan \(Sales\)[\s\S]{0,200}ORDER · baca-saja/); assert.doesNotMatch(v1, /Layanan Teknis \(Produksi\)|labelId \|\| "Belum ditetapkan"/);
+  assert.match(v1, /data\.salesServices/); assert.match(v1, /\{!unit\.service && \(canRoute/);
   assert.doesNotMatch(strip(v1), /setServiceId\(.*salesServices/, "tidak menyalin layanan Sales ke layanan teknis");
 });
 
-test("sumber V1/V2 tanpa duplikasi: unit V2 tidak pernah muncul di panel V1; unit terkirim bukan 'aktif'; urutan terhambat → prioritas", () => {
+test("unit di luar rencana papan tanpa duplikasi: unit berencana tidak muncul di daftar 'belum masuk papan'; unit terkirim bukan 'aktif'; urutan tertunda → prioritas", () => {
   const units = [
     { id: "a", unitCode: "A", status: "AWAITING_PICKUP", inProductionV2: true },
     { id: "b", unitCode: "B", status: "AWAITING_PICKUP", inProductionV2: false, priority: "NORMAL" },
@@ -105,34 +105,24 @@ test("sumber V1/V2 tanpa duplikasi: unit V2 tidak pernah muncul di panel V1; uni
   const s = summarizeV1(units); assert.equal(s.total, 4); assert.equal(s.blocked, 1);
   assert.equal(s.byStatus.reduce((n, x) => n + x.count, 0), 4);
   assert.deepEqual(summarizeV1([]), { total: 0, blocked: 0, byStatus: [] });
-  for (const k of ["ringkasan", "status", "rencana"]) assert.match(PANEL_COPY[k], /sumber V1/);
-  assert.match(PANEL_COPY.rencana, /tidak membuat Run/);
 });
 
-test("sumber V1/V2 menyatu di papan/daftar UTAMA dengan badge — bukan panel/workspace kedua", () => {
+test("unit di luar rencana papan menyatu di papan/daftar UTAMA tanpa label sumber — bukan panel/workspace kedua", () => {
   assert.equal(fs.existsSync(path.join(here, "..", "src", "features", "production", "NonV2OrdersPanel.jsx")), false, "panel V1 terpisah dihapus");
   const hook = strip(src("features", "production", "v1Source.jsx"));
   assert.deepEqual([...new Set([...hook.matchAll(/\bapi\.(?!js\b)(\w+)/g)].map((m) => m[1]))], ["getWorkOrders"]);
   assert.doesNotMatch(hook, /api\.(create|update|set|delete|post|patch|record|resolve)\w*/);
   assert.match(hook, /if \(!demo\) load\(\)/); assert.match(hook, /demo \? \[\] : selectV1Units/, "tersembunyi di Mode Latihan");
-  assert.match(hook, /data-testid="source-badge"/);
+  assert.doesNotMatch(hook, /source-badge|SourceBadge|>V1<|>V2</, "tanpa label sumber");
   const planner = strip(src("pages", "bengkel", "ProductionPlannerV2.jsx"));
-  assert.match(planner, /<V1UnitCard key=\{u\.id\} unit=\{u\} onOpen=\{openOverview\} \/>/); assert.match(planner, /\["Unit", "Sumber", "Customer"/); assert.match(planner, /data-testid="v1-row"/);
+  assert.match(planner, /<V1UnitCard key=\{u\.id\} unit=\{u\} onOpen=\{openOverview\} \/>/); assert.match(planner, /\["Unit", "Customer", "Layanan Sales", "Status"/); assert.doesNotMatch(planner, /"Sumber"|SourceBadge/); assert.match(planner, /data-testid="v1-row"/);
   assert.match(planner, /chipsAll/); assert.match(planner, /onChanged=\{reloadV1\}/); assert.doesNotMatch(planner, /NonV2OrdersPanel/);
   const rencana = strip(src("pages", "bengkel", "ProductionRencanaWorkspace.jsx"));
-  assert.match(rencana, /data-testid="v1-locked"/); assert.match(rencana, /PANEL_COPY\.rencana/); assert.doesNotMatch(rencana, /NonV2OrdersPanel/);
-  assert.doesNotMatch(rencana.slice(rencana.indexOf('data-testid="v1-locked"'), rencana.indexOf('data-testid="meja-grid"')), /onHandleDown|DragHandle|setSchedule|data-mutates/, "unit V1 tidak bisa diseret/dijadwalkan");
+  assert.doesNotMatch(rencana, /NonV2OrdersPanel|PANEL_COPY/);
   const ring = strip(src("pages", "bengkel", "ProductionRingkasan.jsx"));
-  assert.match(ring, /data-testid="v1-segment"/); assert.match(ring, /data-testid="v1-attention"/); assert.doesNotMatch(ring, /NonV2OrdersPanel/);
+  assert.match(ring, /data-testid="v1-attention"/); assert.doesNotMatch(ring, /NonV2OrdersPanel|source-badge|SourceBadge/);
   const wo = strip(src("pages", "bengkel", "ProductionWorkOrders.jsx"));
-  assert.match(wo, /<SourceBadge source=\{sourceOf\(u\)\}/g); assert.match(wo, /data-testid="order-source-filter"/); assert.match(wo, /filterBySource\(/);
-});
-
-test("filter sumber & badge: sourceOf/filterBySource", () => {
-  const u = [{ id: "a", inProductionV2: true }, { id: "b", inProductionV2: false }, { id: "c" }];
-  assert.deepEqual(u.map(sourceOf), ["V2", "V1", "V1"]);
-  assert.deepEqual(filterBySource(u, "V2").map((x) => x.id), ["a"]); assert.deepEqual(filterBySource(u, "V1").map((x) => x.id), ["b", "c"]); assert.equal(filterBySource(u, "").length, 3);
-  assert.deepEqual(SOURCE_FILTERS.map((f) => f.key), ["", "V2", "V1"]);
+  assert.doesNotMatch(wo, /SourceBadge|sourceOf|order-source-filter|filterBySource/, "tanpa label/filter sumber");
 });
 
 test("peran QC/bahan/penugasan = cermin izin backend (QC_WRITE / UNIT_MATERIAL_WRITE / PRODUCTION_ASSIGNMENT_WRITE)", () => {
@@ -181,24 +171,24 @@ test("MATRIKS aksi: setiap aksi halaman lama terdaftar dengan status TERSEDIA/DI
   for (const a of ["skipUnitStage", "changeUnitRoute", "proposeScopeRevision"]) assert.doesNotMatch(ui, new RegExp(a), a);
 });
 
-test("PlannerV2 RunDrawer dimigrasi: penetapan layanan V1 dihapus (server menutup 409 UNIT_V2_OWNED); diganti penunjuk ke Diagnosis", () => {
+test("PlannerV2 RunDrawer: penetapan layanan V1 dihapus (server menutup 409 UNIT_V2_OWNED) dan layanan teknis tidak ditampilkan (Slice 1)", () => {
   const planner = strip(src("pages", "bengkel", "ProductionPlannerV2.jsx"));
-  assert.doesNotMatch(planner, /setUnitService/); assert.match(planner, /data-testid="rundrawer-service-owner"/); assert.match(planner, /Isi Diagnosis/);
+  assert.doesNotMatch(planner, /setUnitService/); assert.doesNotMatch(planner, /rundrawer-service-owner|Layanan teknis|Jenis layanan/);
   assert.deepEqual([...strip(src("pages", "bengkel", "ProductionPlannerV2.jsx")).matchAll(/api\.(setUnitService|updateUnitProduction)/g)], []);
   const api = src("api.js");
   assert.match(api, /setUnitService: \(unitId, serviceId, expectedServiceId\)/); assert.match(api, /expected \? \{ expected \} : \{\}/);
   const act = strip(src("features", "production", "UnitV1Actions.jsx"));
-  assert.match(act, /unit\.serviceId \?\? null\), "Layanan teknis tersimpan\."/); assert.match(act, /expected: \{ priority: unit\.priority \|\| "NORMAL", productionDueAt: unit\.productionDueAt \|\| null \}/);
+  assert.match(act, /unit\.serviceId \?\? null\), "Rute pengerjaan tersimpan\."/); assert.match(act, /expected: \{ priority: unit\.priority \|\| "NORMAL", productionDueAt: unit\.productionDueAt \|\| null \}/);
   assert.match(act, /e\.code === "UNIT_CONFLICT"/);
 });
 
-test("kepemilikan V2 (P12B.6 final): tab 'Kerja V1' hanya bila server melaporkan V2 TIDAK memegang eksekusi; pemberitahuan jujur; engine & endpoint V1 memakai SATU predikat", () => {
+test("kepemilikan (Slice 1): aksi pekerjaan langsung hanya di dalam tab 'Pekerjaan' bila server melaporkan papan TIDAK memegang eksekusi; tanpa tab 'Kerja V1'; engine & endpoint V1 memakai SATU predikat", () => {
   const drawer = strip(src("features", "production", "UnitOverviewDrawer.jsx"));
   assert.match(drawer, /data\?\.ownership\?\.v2ExecutionOwned === false/);
-  assert.match(drawer, /\.\.\.\(v1Workable \? \[\["v1", "Kerja V1"\]\] : \[\]\)/);
-  assert.match(drawer, /tab === "v1" && v1Workable && <UnitOrderFallback v2View/);
+  assert.doesNotMatch(drawer, /Kerja V1|\["v1"/);
+  assert.match(drawer, /tab === "pekerjaan" && \(/); assert.match(drawer, /\{v1Workable && <div data-testid="pekerjaan-actions"><UnitOrderFallback v2View/);
   const fb = strip(src("features", "production", "UnitOrderFallback.jsx"));
-  assert.match(fb, /data-testid="unit-v2-not-owned-notice"/); assert.match(fb, /Production V2 belum memegang eksekusi unit ini/);
+  assert.match(fb, /data-testid="unit-v2-not-owned-notice"/); assert.match(fb, /Unit ini belum punya rencana di papan produksi/);
   const be = (...p) => fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "backend", "src", ...p), "utf8");
   const engine = be("services", "unitStageEngine.js");
   assert.match(engine, /guardV1UnitWrite\(tx, unitId/); assert.doesNotMatch(engine, /resolveProductionWriterState/);

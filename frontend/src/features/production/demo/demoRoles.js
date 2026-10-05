@@ -37,14 +37,14 @@ export function pageAllowedForTraining(roles = [], pathname = "") {
 export const TRAINING_CHECKLISTS = Object.freeze({
   PRODUCTION_LEAD: { title: "Production Lead", items: [
     "Jadwal — tempatkan unit ke meja dan tanggal di Rencana Produksi (geser kartu; di Mode Latihan hanya simulasi lokal).",
-    "Prioritas — pahami urutan Normal / Tinggi / Mendesak dan baca peringatan bila urutan manual membalik prioritas.",
+    "Prioritas — pahami urutan Normal / Tinggi / Komplain dan baca peringatan bila urutan manual membalik prioritas.",
     "Meja — periksa isi tiap meja (maksimal 3 unit) dan urutan manual yang menang atas prioritas.",
     "Target — lihat target harian di Pengaturan → Target Produksi (hanya Admin/Owner yang mengubahnya).",
   ] },
   PRODUCTION_WORKER: { title: "Operator Meja", items: [
     "Antrean — buka Aplikasi Meja dan kenali unit yang ditugaskan kepada Anda.",
     "Diagnosis — isi hasil bongkar, temuan, dan foto/video pada tahap diagnosis.",
-    "Bahan — periksa bahan yang diserahkan Gudang; laporkan kekurangan lewat Menunggu Bahan Baku.",
+    "Bahan — periksa bahan yang diserahkan Gudang; laporkan kekurangan lewat Tunda Pekerjaan (Menunggu bahan).",
     "Bukti — lengkapi foto/video yang diminta tiap tahap sebelum menandai selesai.",
   ] },
   CORNER: { title: "PIC Corner", items: [

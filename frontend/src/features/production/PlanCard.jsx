@@ -5,6 +5,7 @@ import { ProgressBar } from "@/components/ui/progress.jsx";
 import { targetDateBadge } from "@/features/production/experience.js";
 import { dataGaps, isGantiKain, materialBadge, mattressInfo, mejaLabel, priorityMeta, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
 import { isPlanComplete } from "@/features/production/planDnd.js";
+import { delayStatusText, rankOfView, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
 import { UnitPhoto } from "@/features/production/UnitCard.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 
@@ -56,7 +57,9 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
   if (!view) return null;
   const c = view.customer || {};
   const plan = view.plan || null;
-  const p = priorityMeta(plan?.priority ?? 0);
+  const p = priorityMeta(rankOfView(view));
+  const status = viewStatus(view);
+  const presence = viewPresence(view);
   const gantiKain = isGantiKain(view);
   const complete = isPlanComplete(view);
   const m = mattressInfo(view);
@@ -117,6 +120,8 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
           </div>
 
           <div className="min-w-0 space-y-1.5" data-testid="plan-ops">
+            <Row label="Status" testid="row-status"><Badge variant={status.tone}>{status.label}</Badge>{status.detail && <span className="ml-1.5 text-[12px] text-ink3">{status.detail}</span>}</Row>
+            {presence && <Row label="Posisi" testid="row-presence"><span className={presence.key === "NOT_ARRIVED" ? "font-semibold text-orange" : ""}>{presence.label}</span></Row>}
             <Row label="Tahap" testid="row-stage">{stageText(view)}</Row>
             <Row label="Bahan" testid="row-material">{mat ? <Badge variant={mat.tone}>{mat.label}</Badge> : <span className="text-ink3">—</span>}</Row>
             <Row label="Target" testid="row-target">
@@ -134,7 +139,7 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
                 <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-ink2">{view.progress.done}/{view.progress.total} tahap</span>
               </div>
             )}
-            {view.shortage && <p className="m-0 flex items-center gap-1 text-[12.5px] font-medium text-red"><PackageX size={13} aria-hidden /> Menunggu bahan: {view.shortage.items?.map((i) => i.name).join(", ")}</p>}
+            {view.shortage && <p data-testid="delay-status" className="m-0 flex items-center gap-1 text-[12.5px] font-medium text-red"><PackageX size={13} aria-hidden /> {delayStatusText("MATERIAL_SHORTAGE")}: {view.shortage.items?.map((i) => i.name).join(", ")}</p>}
             {gaps.length > 0 && (
               <ul data-testid="data-gaps" className="m-0 flex list-none flex-wrap gap-1 p-0">
                 {gaps.map((g) => <li key={g} className="inline-flex items-center gap-1 rounded-chip bg-orangebg px-1.5 py-0.5 text-[11.5px] font-medium text-orange"><AlertTriangle size={11} aria-hidden /> {g}</li>)}

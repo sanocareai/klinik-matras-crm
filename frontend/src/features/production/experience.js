@@ -61,9 +61,10 @@ export const BUCKET_STYLE = Object.freeze({
 });
 export const bucketStyle = (key) => BUCKET_STYLE[key] || BUCKET_STYLE.ANTREAN;
 
-export const PRIORITIES = Object.freeze([{ value: 0, label: "Normal" }, { value: 1, label: "Tinggi" }, { value: 2, label: "Mendesak" }]);
-// value 0=NORMAL(netral) 1=HIGH/Tinggi(oranye) 2=URGENT/Mendesak(merah) — dipakai badge kartu & pemilih prioritas.
-export const priorityTone = (priority) => (priority === 2 ? "red" : priority === 1 ? "orange" : "neutral");
+// Pilihan pengguna hanya Normal/Tinggi. Komplain = turunan ComplaintCase resmi (bukan pilihan); nilai lama Mendesak tersimpan apa adanya, tampil Tinggi.
+export const PRIORITIES = Object.freeze([{ value: 0, label: "Normal" }, { value: 1, label: "Tinggi" }]);
+// peringkat: 3=Komplain(merah) 1/2=Tinggi(oranye) 0=Normal(netral) — dipakai badge kartu.
+export const priorityTone = (priority) => (priority >= 3 ? "red" : priority >= 1 ? "orange" : "neutral");
 
 // P9B.1 — kolom pipeline Status Produksi (Command Center). Label & urutan HARUS sama dengan backend
 // (lib/domain/productionSteps.js#COMMAND_CENTER_COLUMNS) — dipertahankan sebagai daftar statis di sini karena murni
@@ -115,11 +116,11 @@ export function waitCopy(next) {
     // kartu Planner diklik (server menegakkan ulang, bukan cuma UI).
     case "PENDING_ARRIVAL": return { title: "Menunggu konfirmasi kedatangan", text: "Unit sudah masuk produksi (pickup berhasil) tapi belum dikonfirmasi tiba di workshop. Konfirmasi kedatangan dulu di Rencana Produksi sebelum tahap ini bisa dimulai." };
     case "AWAITING_QC": return { title: "Menunggu QC", text: "Petugas QC akan menguji unit ini. Anda bisa lanjut ke unit lain." };
-    case "MATERIAL_NOT_READY": return { title: "Bahan belum turun", text: "Gudang belum menyerahkan bahan untuk tahap berikutnya. Tekan “Menunggu Bahan Baku” bila bahan dibutuhkan sekarang." };
-    case "MATERIAL_SHORTAGE": return { title: "Menunggu bahan baku", text: "Laporan kekurangan bahan sudah terkirim ke Gudang. Lanjutkan setelah bahan diserahkan." };
+    case "MATERIAL_NOT_READY": return { title: "Bahan belum turun", text: "Gudang belum menyerahkan bahan untuk tahap berikutnya. Tekan “Tunda Pekerjaan” (Menunggu bahan) bila bahan dibutuhkan sekarang." };
+    case "MATERIAL_SHORTAGE": return { title: "Tertunda — menunggu bahan", text: "Laporan kekurangan bahan sudah terkirim ke Gudang. Yang bertindak: Gudang. Pekerjaan bisa dilanjutkan setelah bahan diserahkan." };
     case "SERVICE_NOT_SET": return { title: "Menunggu keputusan layanan", text: "Diagnosa sudah terkirim. Production Lead perlu menetapkan layanan unit sebelum pekerjaan dilanjutkan." };
     case "DIAGNOSIS_MANUAL_UNMAPPED": return { title: "Menunggu pemetaan bahan manual", text: "Diagnosa sudah terkirim. Production Lead perlu memetakan bahan manual ke katalog (Unit 360 > Bahan) sebelum pekerjaan dilanjutkan." };
-    case "DIAGNOSIS_BOM_EMPTY": return { title: "Planned BOM masih kosong", text: "Diagnosa sudah terkirim tetapi belum ada bahan katalog. Buka Unit 360 > Proses > Revisi Diagnosis dan isi bahan yang dibutuhkan." };
+    case "DIAGNOSIS_BOM_EMPTY": return { title: "Rencana bahan masih kosong", text: "Diagnosa sudah terkirim tetapi belum ada bahan katalog. Buka Unit 360 > Pekerjaan > Revisi Diagnosis dan isi bahan yang dibutuhkan." };
     case "AWAITING_WAREHOUSE": return { title: "Menunggu Gudang", text: "Barang jadi sudah diserahkan dan menunggu diterima Gudang." };
     case "HANDOFF_REJECTED": return { title: "Ditolak Gudang", text: "Barang jadi ditolak Gudang. Production Lead akan menentukan tindak lanjut." };
     case "EXCEPTION_OPEN": return { title: "Perlu tindakan Production Lead", text: "Ada konflik data pada unit ini. Hubungi Production Lead." };
@@ -139,18 +140,18 @@ export function friendlyError(error) {
   if (code.startsWith("STEP_WAITING_")) return error.message;
   if (code === "WORKSHOP_OPERATOR_MISMATCH") return "Unit ini ditugaskan ke PIC lain. Minta Production Lead memindahkan tugas bila perlu.";
   if (code === "WORKSHOP_WORK_CENTER_MISMATCH") return "Meja/workshop tidak sesuai penugasan. Muat ulang kartu.";
-  if (code === "STEP_WRITER_OFF" || code === "EVIDENCE_WRITER_OFF") return "Produksi V2 belum aktif untuk unit ini. Gunakan alur lama atau hubungi Production Lead.";
+  if (code === "STEP_WRITER_OFF" || code === "EVIDENCE_WRITER_OFF") return "Pekerjaan unit ini belum bisa dicatat dari aplikasi ini. Hubungi Production Lead.";
   if (code === "STEP_MEDIA_NOT_FOUND") return "Ada foto/video yang belum selesai terunggah. Unggah ulang lalu kirim.";
   if (code === "EVIDENCE_TOO_LARGE") return "Berkas terlalu besar (video maks. 80 MB, foto maks. 15 MB). Rekam lebih singkat.";
   if (code === "IDEMPOTENCY_CONFLICT") return "Isian berubah setelah terkirim. Muat ulang kartu lalu kirim sebagai isian baru.";
-  if (code === "SHORTAGE_ALREADY_OPEN") return "Laporan menunggu bahan untuk unit ini masih terbuka di Gudang.";
+  if (code === "SHORTAGE_ALREADY_OPEN") return "Pekerjaan ini sudah tertunda karena menunggu bahan — Gudang masih menanganinya.";
   if (code === "PLAN_STATION_FULL") return `Meja sudah penuh (maks. ${error.detail?.capacity ?? 3} unit per meja). Kartu dikembalikan — pilih meja lain atau keluarkan unit dari meja itu.`;
   if (code === "PLAN_REVISION_CONFLICT") return "Rencana unit ini sudah diubah orang lain. Kartu dikembalikan dan tampilan dimuat ulang — coba lagi.";
   if (code === "STATION_ORDER_STALE") return "Isi meja berubah saat Anda menyeret (ada unit masuk/keluar). Kartu dikembalikan dan tampilan dimuat ulang — atur ulang urutannya.";
   if (code === "STATION_ORDER_INVALID") return "Urutan tidak valid. Tampilan dimuat ulang — coba lagi.";
   if (code === "PLAN_STATION_INVALID") return "Meja tujuan tidak dikenal. Muat ulang halaman.";
   if (error.status === 403) return "Anda tidak punya akses untuk aksi ini.";
-  if (error.status === 503) return "Layanan produksi V2 tidak aktif untuk unit ini.";
+  if (error.status === 503) return "Fitur ini belum aktif untuk unit ini.";
   return error.message || "Terjadi kesalahan. Coba lagi.";
 }
 

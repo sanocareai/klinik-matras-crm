@@ -183,7 +183,7 @@ test("kolom Status Produksi (P9B.1): keadaan fisik, bukan status jadwal; tanpa m
   assert.equal(commandCenterColumn({ bucket: "LAPISAN", ...withPlan, next: { stepNo: 8 } }), "LAPISAN", "lapisan selesai, uji tekstur belum dikirim -> Lapisan Jadi");
   assert.equal(commandCenterColumn({ bucket: "QC", ...withPlan, next: { stepNo: 9 } }), "UJI_TEKSTUR");
   assert.equal(commandCenterColumn({ bucket: "QC", ...withPlan, next: { stepNo: 7, wait: "AWAITING_QC" } }), "UJI_TEKSTUR", "rework menunggu QC tetap di uji tekstur walau stepNo pemicu-nya 7");
-  assert.deepEqual(COMMAND_CENTER_COLUMNS.map((c) => c.label), ["Akan Masuk — Pickup Terjadwal", "Dalam Perjalanan", "Tiba / Belum Mulai", "Tahap Bongkar", "Uji Fondasi", "Fondasi Jadi", "Lapisan Jadi", "Uji Tekstur Sebelum Corner", "Corner", "Siap Kirim"]);
+  assert.deepEqual(COMMAND_CENTER_COLUMNS.map((c) => c.label), ["Akan Masuk — Pickup Terjadwal", "Dalam Perjalanan", "Tiba / Belum Mulai", "Tahap Bongkar", "Uji Fondasi", "Fondasi Jadi", "Lapisan Jadi", "Uji Tekstur Sebelum Corner", "Corner", "Serah ke Gudang"]);
   assert.ok(!COMMAND_CENTER_COLUMNS.some((c) => c.key === "QC"), "kolom QC dilebur");
   assert.equal(commandCenterColumn({ bucket: "CORNER", ...withPlan, next: { stepNo: 11 } }), "CORNER");
   assert.equal(commandCenterColumn({ bucket: "HANDOFF", ...withPlan, next: { stepNo: 12, wait: "AWAITING_WAREHOUSE" } }), "SIAP_KIRIM");

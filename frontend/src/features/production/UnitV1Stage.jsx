@@ -3,7 +3,8 @@ import { AlertTriangle, Camera, CheckCircle2, Loader2, PauseCircle, PlayCircle, 
 import { api } from "@/api.js";
 import { compressImage } from "@/utils/compressImage.js";
 import { Button } from "@/components/ui/button.jsx";
-import { BLOCK_REASON_REAL, FIT_VERDICT_REAL, PAUSE_REASON_REAL, PREFERENCE_OVERRIDE_REAL } from "@/features/bengkel/unitStatus.js";
+import { FIT_VERDICT_REAL, PAUSE_REASON_REAL, PREFERENCE_OVERRIDE_REAL } from "@/features/bengkel/unitStatus.js";
+import { DELAY_ACTION_LABEL, DELAY_QUESTION, DELAY_REASON_OPTIONS, RESUME_ACTION_LABEL, blockReasonFor, delayFormValid, delayReasonOfBlock } from "@/features/production/productionLabels.js";
 import { canAssignV1, canQcV1, canStageV1, completeFormValid, failFormValid, needsPhotoOf, pauseFormValid, qcFormValid, stageStateOf } from "./unitV1ActionsModel.js";
 
 // P12B.6 — pekerjaan harian V1 untuk unit NON-V2 di drawer Unit 360: mulai/selesaikan tahap (+foto & catatan = dokumentasi V1), jeda/lanjut, terhambat, putusan QC, penugasan.
@@ -40,7 +41,7 @@ export default function UnitV1Stage({ data, roles, onData, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ kind: "", text: "" });
   const [note, setNote] = useState(""); const [photos, setPhotos] = useState([]);
-  const [reason, setReason] = useState("MATERIAL_SHORTAGE"); const [pauseReason, setPauseReason] = useState("BREAK");
+  const [reason, setReason] = useState("BAHAN"); // kunci alasan sederhana (BAHAN/ARAHAN/KENDALA/LAINNYA) — dipetakan ke enum yang sudah ada saat dikirim const [pauseReason, setPauseReason] = useState("BREAK");
   const [qc, setQc] = useState({ verdict: "", weight: "", override: "", education: false }) // verdict WAJIB dipilih eksplisit (tanpa bawaan) — putusan QC tidak boleh lolos karena nilai awal;
   const [assign, setAssign] = useState({ open: false, wc: "", op: "", refs: null });
   useEffect(() => { setMode(null); setNote(""); setPhotos([]); }, [unit.id, unit.currentStageId, cur?.status]);
@@ -59,12 +60,12 @@ export default function UnitV1Stage({ data, roles, onData, onChanged }) {
 
   let body;
   if (!canStage && !canQc) body = <p className="m-0 text-[12px] text-ink3">Hanya tim produksi/QC yang dapat menjalankan tahap.</p>;
-  else if (st.kind === "NEEDS_SERVICE") body = <p className="m-0 text-[12px] text-ink3">Tetapkan layanan teknis dulu sebelum tahap dapat dimulai.</p>;
+  else if (st.kind === "NEEDS_SERVICE") body = <p className="m-0 text-[12px] text-ink3">Rute pengerjaan belum ditentukan — minta Production Lead menentukannya dulu sebelum pekerjaan dimulai.</p>;
   else if (st.kind === "ALL_DONE") body = <p className="m-0 text-[12.5px] text-green">Seluruh tahap selesai.</p>;
   else if (!canStage) body = <p className="m-0 text-[12px] text-ink3">Tahap saat ini: <b>{label || st.first?.labelId}</b>. Hanya tim produksi/QC yang dapat menjalankannya.</p>;
   else if (st.kind === "NOT_STARTED") body = <Button size="sm" className="w-full" data-testid="v1-stage-start" disabled={busy} onClick={() => run(() => api.startUnitStage(unit.id), "Tahap dimulai.")}>{busy ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />} Mulai {st.first?.labelId}</Button>;
   else if (st.kind === "READY") body = <div className="space-y-2"><p className="m-0 text-[12.5px] text-ink2">Tahap berikutnya: <b>{label}</b></p><Button size="sm" className="w-full" data-testid="v1-stage-start" disabled={busy} onClick={() => run(() => api.startUnitStage(unit.id), "Tahap dimulai.")}>{busy ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />} Mulai tahap</Button></div>;
-  else if (st.kind === "BLOCKED") body = <div className="space-y-2"><p className="m-0 rounded-btn bg-redbg px-2.5 py-2 text-[12px] text-red">Tahap "{label}" terhambat. Selesaikan blokir di bagian Blokir Produksi, lalu mulai lagi.</p><Button size="sm" className="w-full" data-testid="v1-stage-start" disabled={busy} onClick={() => run(() => api.startUnitStage(unit.id), "Tahap dimulai lagi.")}>{busy ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />} Mulai lagi</Button></div>;
+  else if (st.kind === "BLOCKED") body = <div className="space-y-2"><p data-testid="v1-delayed-note" className="m-0 rounded-btn bg-redbg px-2.5 py-2 text-[12px] text-red">Pekerjaan "{label}" tertunda{data.activeBlocker ? ` — ${delayReasonOfBlock(data.activeBlocker.reason).label.toLowerCase()}` : ""}. Pilih "{RESUME_ACTION_LABEL}" setelah kendalanya selesai.</p><Button size="sm" className="w-full" data-testid="v1-stage-start" disabled={busy} onClick={() => run(() => api.startUnitStage(unit.id), "Pekerjaan dilanjutkan.")}>{busy ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />} {RESUME_ACTION_LABEL}</Button></div>;
   else if (st.kind === "PAUSED") body = <div className="space-y-2"><p className="m-0 rounded-btn bg-orangebg px-2.5 py-2 text-[12px] text-orange">Tahap "{label}" sedang dijeda.</p><Button size="sm" className="w-full" data-testid="v1-stage-resume" disabled={busy} onClick={() => run(() => api.resumeUnitStage(unit.id, stage.id), "Tahap dilanjutkan.")}>{busy ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />} Lanjutkan</Button></div>;
   else if (st.kind === "IN_PROGRESS_QC") {
     body = !canQc ? <p className="m-0 text-[12.5px] text-ink3" data-testid="v1-qc-denied">Tahap gerbang QC <b>{label}</b> berjalan — putusan hanya oleh QC.</p> : (
@@ -90,9 +91,9 @@ export default function UnitV1Stage({ data, roles, onData, onChanged }) {
     </div>
   ); else if (mode === "fail") body = (
     <div className="space-y-2" data-testid="v1-fail-form">
-      <label className="block text-[11.5px] font-semibold text-ink2">Alasan hambatan *<select data-testid="v1-fail-reason" className={`${INPUT} mt-1`} value={reason} onChange={(e) => setReason(e.target.value)}>{Object.entries(BLOCK_REASON_REAL).map(([k, r]) => <option key={k} value={k}>{r.label}</option>)}</select></label>
-      <textarea data-testid="v1-fail-note" rows={2} className={INPUT} placeholder={reason === "OTHER" ? "Jelaskan alasannya *" : "Catatan (opsional)"} value={note} onChange={(e) => setNote(e.target.value)} />
-      <div className="flex gap-2"><Button size="sm" variant="ghost" className="flex-1" onClick={() => setMode(null)}>Batal</Button><Button size="sm" variant="destructive" className="flex-1" data-testid="v1-fail-save" disabled={busy || !failFormValid({ reason, note })} onClick={() => run(() => api.failUnitStage(unit.id, stage.id, { blockReason: reason, note }), "Tahap ditandai terhambat.")}>{busy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} Tandai terhambat</Button></div>
+      <label className="block text-[11.5px] font-semibold text-ink2">{DELAY_QUESTION} *<select data-testid="v1-fail-reason" className={`${INPUT} mt-1`} value={reason} onChange={(e) => setReason(e.target.value)}>{DELAY_REASON_OPTIONS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></label>
+      <textarea data-testid="v1-fail-note" rows={2} className={INPUT} placeholder={reason === "LAINNYA" ? "Jelaskan alasannya *" : "Keterangan (opsional)"} value={note} onChange={(e) => setNote(e.target.value)} />
+      <div className="flex gap-2"><Button size="sm" variant="ghost" className="flex-1" onClick={() => setMode(null)}>Batal</Button><Button size="sm" variant="destructive" className="flex-1" data-testid="v1-fail-save" disabled={busy || !delayFormValid({ key: reason, note })} onClick={() => run(() => api.failUnitStage(unit.id, stage.id, { blockReason: blockReasonFor(reason), note }), "Pekerjaan ditunda.")}>{busy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} {DELAY_ACTION_LABEL}</Button></div>
     </div>
   ); else if (mode === "pause") body = (
     <div className="space-y-2" data-testid="v1-pause-form">
@@ -104,12 +105,12 @@ export default function UnitV1Stage({ data, roles, onData, onChanged }) {
     <div className="space-y-2"><p className="m-0 text-[12.5px] text-ink2">Sedang berjalan: <b>{label}</b></p>
       <Button size="sm" className="w-full" data-testid="v1-stage-complete" onClick={() => setMode("complete")}><CheckCircle2 size={14} /> Tandai selesai</Button>
       <Button size="sm" variant="secondary" className="w-full" data-testid="v1-stage-pause" onClick={() => setMode("pause")}><PauseCircle size={14} /> Jeda</Button>
-      <Button size="sm" variant="ghost" className="w-full" data-testid="v1-stage-fail" onClick={() => setMode("fail")}><AlertTriangle size={14} /> Tandai terhambat</Button></div>
+      <Button size="sm" variant="ghost" className="w-full" data-testid="v1-stage-fail" onClick={() => setMode("fail")}><AlertTriangle size={14} /> {DELAY_ACTION_LABEL}</Button></div>
   );
 
   return (
     <section className="rounded-btn border border-line p-3" data-testid="v1-stage">
-      <h3 className="m-0 mb-2 text-[13px] font-bold text-ink">Tahap & QC (V1)</h3>
+      <h3 className="m-0 mb-2 text-[13px] font-bold text-ink">Pekerjaan</h3>
       <div className="space-y-2">
         {body}
         <Msg kind={msg.kind} testid="v1-stage-msg">{msg.text}</Msg>

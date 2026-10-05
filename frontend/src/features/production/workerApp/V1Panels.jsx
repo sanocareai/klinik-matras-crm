@@ -3,8 +3,9 @@ import { AlertTriangle, Camera, CheckCircle2, Loader2, PauseCircle, PlayCircle, 
 import { api } from "@/api.js";
 import { useOnline } from "@/components/StandaloneShell.jsx";
 import { compressImage } from "@/utils/compressImage.js";
-import { BLOCK_REASON_REAL, PAUSE_REASON_REAL } from "@/features/bengkel/unitStatus.js";
-import { canMaterialV1, completeFormValid, failFormValid, pauseFormValid } from "@/features/production/unitV1ActionsModel.js";
+import { PAUSE_REASON_REAL } from "@/features/bengkel/unitStatus.js";
+import { DELAY_ACTION_LABEL, DELAY_QUESTION, DELAY_REASON_OPTIONS, blockReasonFor, delayFormValid } from "@/features/production/productionLabels.js";
+import { canMaterialV1, completeFormValid, pauseFormValid } from "@/features/production/unitV1ActionsModel.js";
 import { isHandoffError, primaryActionV1, submitState } from "./workerAppModel.js";
 
 // Jalur V1 (unit non-cohort) di Aplikasi Meja: endpoint, izin, dan engine V1 yang SAMA dengan drawer Unit 360 (UnitV1Stage/UnitV1Materials) — tata letak ramah jempol.
@@ -57,7 +58,7 @@ export function V1ActionBar({ job, timeline, roles, onChanged, state = null, bef
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ kind: "", text: "" });
   const [note, setNote] = useState(""); const [photos, setPhotos] = useState([]);
-  const [pauseReason, setPauseReason] = useState("BREAK"); const [blockReason, setBlockReason] = useState("MATERIAL_SHORTAGE");
+  const [pauseReason, setPauseReason] = useState("BREAK"); const [blockReason, setBlockReason] = useState("BAHAN"); // kunci alasan sederhana; dipetakan ke enum yang sudah ada saat dikirim
   useEffect(() => { setSheet(null); setNote(""); setPhotos([]); setMsg({ kind: "", text: "" }); }, [unitId, action.kind, action.stage?.id]);
 
   const guarded = useCallback(async () => {
@@ -88,14 +89,14 @@ export function V1ActionBar({ job, timeline, roles, onChanged, state = null, bef
             <button type="button" className="wa-primary" data-testid="v1-primary" disabled={gate.disabled} onClick={() => openSheet("complete")}><CheckCircle2 size={21} aria-hidden /> {action.label}</button>
             <div className="grid grid-cols-2 gap-2">
               <button type="button" data-testid="v1-pause-open" disabled={gate.disabled} onClick={() => openSheet("pause")} className="flex min-h-[48px] items-center justify-center gap-1.5 rounded-btn bg-inset text-[14px] font-bold text-ink2 disabled:opacity-50"><PauseCircle size={17} aria-hidden /> Jeda</button>
-              <button type="button" data-testid="v1-block-open" disabled={gate.disabled} onClick={() => openSheet("block")} className="flex min-h-[48px] items-center justify-center gap-1.5 rounded-btn bg-redbg text-[14px] font-bold text-red disabled:opacity-50"><AlertTriangle size={17} aria-hidden /> Terhambat</button>
+              <button type="button" data-testid="v1-block-open" disabled={gate.disabled} onClick={() => openSheet("block")} className="flex min-h-[48px] items-center justify-center gap-1.5 rounded-btn bg-redbg text-[14px] font-bold text-red disabled:opacity-50"><AlertTriangle size={17} aria-hidden /> {DELAY_ACTION_LABEL}</button>
             </div>
           </>
         )}
       </div></div>
 
       {sheet === "complete" && (
-        <Sheet title={action.label} subtitle={`Jalur V1 · ${job.unitCode}`} onClose={() => setSheet(null)} footer={<>
+        <Sheet title={action.label} subtitle={job.unitCode} onClose={() => setSheet(null)} footer={<>
           {!online && <OfflineNote />}
           <button type="button" className="wa-primary" data-mutates data-testid="v1-complete-save" disabled={gate.disabled || !completeFormValid({ needsPhoto: action.needsPhoto, photos })}
             onClick={() => run(() => api.completeUnitStage(unitId, stage.id, { photoUrls: photos, note: note.trim() || undefined }), "Tahap selesai.")}>{busy ? <><Loader2 size={20} className="animate-spin" aria-hidden /> Mengirim…</> : "Kirim — tandai selesai"}</button></>}>
@@ -106,7 +107,7 @@ export function V1ActionBar({ job, timeline, roles, onChanged, state = null, bef
         </Sheet>
       )}
       {sheet === "pause" && (
-        <Sheet title="Jeda tahap" subtitle={`Jalur V1 · ${job.unitCode}`} onClose={() => setSheet(null)} footer={<>
+        <Sheet title="Jeda tahap" subtitle={job.unitCode} onClose={() => setSheet(null)} footer={<>
           {!online && <OfflineNote />}
           <button type="button" className="wa-primary" data-mutates data-testid="v1-pause-save" disabled={gate.disabled || !pauseFormValid({ reason: pauseReason, note })}
             onClick={() => run(() => api.pauseUnitStage(unitId, stage.id, { reason: pauseReason, note: note.trim() || undefined }), "Tahap dijeda.")}>Jeda sekarang</button></>}>
@@ -116,12 +117,12 @@ export function V1ActionBar({ job, timeline, roles, onChanged, state = null, bef
         </Sheet>
       )}
       {sheet === "block" && (
-        <Sheet title="Tandai terhambat" subtitle={`Jalur V1 · ${job.unitCode}`} onClose={() => setSheet(null)} footer={<>
+        <Sheet title={DELAY_ACTION_LABEL} subtitle={job.unitCode} onClose={() => setSheet(null)} footer={<>
           {!online && <OfflineNote />}
-          <button type="button" className="flex min-h-[60px] w-full items-center justify-center rounded-[18px] bg-red text-[17px] font-extrabold text-white disabled:opacity-50" data-mutates data-testid="v1-block-save" disabled={gate.disabled || !failFormValid({ reason: blockReason, note })}
-            onClick={() => run(() => api.failUnitStage(unitId, stage.id, { blockReason, note: note.trim() || undefined }), "Hambatan tercatat — Lead akan menindaklanjuti.")}>Catat hambatan</button></>}>
-          <label className="block text-[13px] font-semibold text-ink2">Alasan hambatan *<select className={`${FIELD} mt-1`} value={blockReason} onChange={(e) => setBlockReason(e.target.value)}>{Object.entries(BLOCK_REASON_REAL).map(([k, r]) => <option key={k} value={k}>{r.label}</option>)}</select></label>
-          <textarea rows={3} className={FIELD} placeholder={blockReason === "OTHER" ? "Jelaskan alasannya *" : "Catatan (opsional)"} value={note} onChange={(e) => setNote(e.target.value)} />
+          <button type="button" className="flex min-h-[60px] w-full items-center justify-center rounded-[18px] bg-red text-[17px] font-extrabold text-white disabled:opacity-50" data-mutates data-testid="v1-block-save" disabled={gate.disabled || !delayFormValid({ key: blockReason, note })}
+            onClick={() => run(() => api.failUnitStage(unitId, stage.id, { blockReason: blockReasonFor(blockReason), note: note.trim() || undefined }), "Pekerjaan ditunda — Production Lead akan menindaklanjuti.")}>{DELAY_ACTION_LABEL}</button></>}>
+          <label className="block text-[13px] font-semibold text-ink2">{DELAY_QUESTION} *<select data-testid="v1-block-reason" className={`${FIELD} mt-1`} value={blockReason} onChange={(e) => setBlockReason(e.target.value)}>{DELAY_REASON_OPTIONS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></label>
+          <textarea data-testid="v1-block-note" rows={3} className={FIELD} placeholder={blockReason === "LAINNYA" ? "Jelaskan alasannya *" : "Keterangan (opsional)"} value={note} onChange={(e) => setNote(e.target.value)} />
           {msg.kind === "error" && <p role="alert" className="m-0 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red">{msg.text}</p>}
         </Sheet>
       )}
@@ -147,7 +148,7 @@ export function V1MaterialsPanel({ unitId, roles, onChanged }) {
   const totals = usage?.totals || [];
   return (
     <div data-testid="v1-materials" className="space-y-3">
-      <p className="m-0 text-[12.5px] text-ink3">Jalur V1 tidak punya rencana bahan; pemakaian dicatat langsung dan stok gudang berkurang otomatis.</p>
+      <p className="m-0 text-[12.5px] text-ink3">Pekerjaan ini belum punya rencana bahan; pemakaian dicatat langsung dan stok gudang berkurang otomatis.</p>
       {usage && (totals.length ? <ul className="m-0 list-none space-y-1.5 p-0">{totals.map((t) => <li key={t.material.id} className="flex items-center justify-between rounded-btn bg-inset px-3 py-2 text-[14px]"><span className="min-w-0 truncate font-semibold text-ink">{t.material.name}</span><span className="shrink-0 tabular-nums text-ink2">{t.usedQty} {t.material.unit || ""}</span></li>)}</ul> : <p className="m-0 text-[13.5px] text-ink3">Belum ada pemakaian bahan.</p>)}
       {canWrite ? (
         <div className="space-y-2 rounded-btn bg-inset p-3">

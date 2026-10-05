@@ -88,7 +88,7 @@ export default function ProductionAndon() {
       </header>
 
       {error && !data && <p role="alert" className="rounded-xl bg-redbg p-6 text-[24px] text-red">{error}</p>}
-      {data?.readerMode === "OFF" && <p className="rounded-xl bg-surface p-10 text-center text-[28px] text-ink3">Produksi V2 belum aktif untuk papan ini.</p>}
+      {data?.readerMode === "OFF" && <p className="rounded-xl bg-surface p-10 text-center text-[28px] text-ink3">Papan ini belum aktif.</p>}
 
       {data?.stations?.length > 0 && (
         <div className="grid min-h-0 flex-1 grid-cols-4 gap-5">
