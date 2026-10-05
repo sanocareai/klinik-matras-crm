@@ -150,7 +150,7 @@ test("lifecycle 12 tahap penuh: custody -> papan -> intake -> diagnosa (menunggu
   const cardOnBoard = t1.items[0];
   assert.equal(cardOnBoard.customer.weightKg, 85); assert.deepEqual(cardOnBoard.customer.complaints, ["Sakit pinggang"]); assert.equal(cardOnBoard.customer.request, "Minta tekstur firm");
   assert.equal(cardOnBoard.next.stepNo, 1); assert.equal(cardOnBoard.bucket, "ANTREAN");
-  assert.ok(cardOnBoard.warnings.some((x) => x.code === "LAYANAN_BELUM"));
+  assert.ok(!cardOnBoard.warnings.some((x) => x.code === "LAYANAN_BELUM"), "Slice 1: layanan teknis tidak ditampilkan — tidak ada peringatan layanan teknis di kartu");
   assert.equal(JSON.stringify(board).includes("phone"), false, "tanpa nomor telepon customer");
 
   // Tahap tidak bisa dilewati.

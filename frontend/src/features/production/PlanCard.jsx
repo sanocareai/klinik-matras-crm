@@ -79,7 +79,7 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
 
   return (
     <article data-testid="unit-card" data-card="plan" data-drag-card data-unit-code={view.unit.unitCode} data-priority={p.key} data-ganti-kain={gantiKain ? "true" : undefined} data-complete={complete ? "true" : undefined}
-      className={`@container relative w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-sm ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${complete ? "opacity-60" : ""} ${dragging ? "opacity-40" : ""}`}>
+      className={`@container relative w-full min-w-0 shrink-0 overflow-hidden rounded-card bg-surface shadow-sm ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${complete ? "opacity-60" : ""} ${dragging ? "opacity-40" : ""}`}>
       <span aria-hidden data-testid="priority-stripe" className={`absolute inset-y-0 left-0 ${p.stripeClass}`} />
       {gantiKain && <span aria-hidden data-testid="ganti-kain-stripe" className="absolute inset-y-0 w-1 bg-orange" style={{ left: p.stripeWidth }} />}
       {showHandle && <div className="absolute right-2 top-2 z-10">{handle}</div>}

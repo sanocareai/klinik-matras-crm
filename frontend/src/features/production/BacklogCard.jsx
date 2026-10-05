@@ -11,7 +11,7 @@ export default function BacklogCard({ item, onOpen }) {
   const pr = priorityOf({ priority: c.priority });
   const meta = priorityMeta(pr.key === "COMPLAINT" ? 3 : pr.key === "HIGH" ? 1 : 0);
   return (
-    <article data-testid="backlog-card" data-unit-code={c.unit.unitCode} data-priority={pr.key} className="relative w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-sm">
+    <article data-testid="backlog-card" data-unit-code={c.unit.unitCode} data-priority={pr.key} className="relative w-full min-w-0 shrink-0 overflow-hidden rounded-card bg-surface shadow-sm">
       <span aria-hidden className={`absolute inset-y-0 left-0 ${meta.stripeClass}`} />
       <button type="button" onClick={() => onOpen?.(c.unit.id)} aria-label={`Buka Unit 360 ${c.unit.unitCode}`} className="flex w-full min-w-0 items-start gap-3 py-3 pl-5 pr-3 text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
         <UnitPhoto photoUrl={c.unit.photoUrl} variant="plan" />

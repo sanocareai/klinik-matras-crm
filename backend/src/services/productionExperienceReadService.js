@@ -288,7 +288,6 @@ function attentionItemsFrom(views, { today }) {
     // Data Sales penting belum lengkap — definisi konservatif: berat badan customer (satu-satunya field kuantitatif wajib
     // untuk diagnosa/fondasi yang SUDAH dimodelkan Order.beratBadan) belum diisi.
     if (v.customer.weightKg == null) push(v, "warning", "DATA_SALES_BELUM_LENGKAP", `${label}: berat badan customer belum diisi Sales`);
-    if (v.warnings.some((w) => w.code === "LAYANAN_BELUM")) push(v, "warning", "LAYANAN_BELUM", `${label}: unit belum punya layanan terpetakan`);
     // PIC/meja belum ada — HANYA untuk unit yang SUDAH dijadwalkan ke meja+tanggal tapi PIC belum ditetapkan (unit yang
     // memang belum dijadwalkan sama sekali sudah terhitung tersendiri di KPI "Belum Dijadwalkan", tidak diulang di sini).
     if (v.plan?.stationCode && !v.plan?.operator) push(v, "warning", "PIC_BELUM_ADA", `${label}: sudah dijadwalkan tapi PIC meja belum ditetapkan`);

@@ -142,7 +142,7 @@ export function matchesFilters(fact, f) {
   if (f.operator && fact.operatorId !== f.operator && fact.cornerOperatorId !== f.operator) return false;
   if (f.step != null && fact.currentStepNo !== f.step) return false;
   if (f.status && fact.statusBucket !== f.status) return false;
-  if (f.priority != null && (f.priority >= 1 ? (fact.priority ?? 0) < 1 : (fact.priority ?? 0) !== 0)) return false; // Tinggi mencakup nilai lama Mendesak (2)
+  if (f.priority != null && (f.priority >= 1 ? !(fact.priority >= 1) : fact.priority !== 0)) return false; // Tinggi mencakup nilai lama Mendesak (2); Normal = tepat 0 (unit tanpa rencana tidak ikut, seperti semula)
   if (f.service && fact.serviceCode !== f.service) return false;
   if (f.qc === "PASS" && fact.qc.first !== "PASS") return false;
   if (f.qc === "FAIL" && !(fact.qc.fails > 0)) return false;
