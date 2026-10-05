@@ -73,7 +73,7 @@ LIVE_ROWS="$(psql_live -At -c "select count(*) from units") $(psql_live -At -c "
 say "3. Kode kandidat pada SALINAN: verifier → migrate deploy → verifier → status → smoke → kesiapan rollback"
 NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$BE")"
 PW="$(grep -E '^DATABASE_URL=' "$PERSIST/backend/.env" | sed -E 's#^DATABASE_URL=[^:]+://[^:]+:([^@]+)@.*#\1#')"; [ -n "$PW" ] || die "password DB tidak terbaca"
-printf 'DATABASE_URL=postgresql://%s:%s@postgres:5432/%s\nNODE_ENV=production\nDISABLE_BACKGROUND_JOBS=1\n' "$DB_USER" "$PW" "$TEMP_DB" > "$WORK/rehearsal.env"; chmod 600 "$WORK/rehearsal.env"; unset PW
+printf 'DATABASE_URL=postgresql://%s:%s@postgres:5432/%s\nNODE_ENV=production\nDISABLE_BACKGROUND_JOBS=1\nJWT_SECRET=rehearsal-only-bukan-rahasia\n' "$DB_USER" "$PW" "$TEMP_DB" > "$WORK/rehearsal.env"; chmod 600 "$WORK/rehearsal.env"; unset PW
 cat > "$WORK/run.sh" <<'INNER'
 set -e
 echo "-- prisma generate (skema kandidat)"; npx prisma generate 2>&1 | grep -E "Generated|error" || true
