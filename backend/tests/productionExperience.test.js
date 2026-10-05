@@ -240,8 +240,18 @@ test("audit READER P10B: semua pembaca production_step_evidence_v2 teraudit; bar
   const readers = report.findings.filter((f) => f.kind === "STEP_EVIDENCE_READER" || f.kind === "STEP_EVIDENCE_SQL_READER");
   assert.ok(readers.length >= 4, "pembaca Prisma + SQL terdeteksi: " + readers.map((r) => r.file + ":" + r.disposition).join(","));
   assert.deepEqual([...new Set(readers.map((r) => r.file))].sort(), [
-    "src/routes/productionEvidenceMedia.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionReportingService.js", "src/services/productionStepCommandService.js",
+    "src/routes/productionEvidenceMedia.js", "src/services/productionComponentNoteService.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionReportingService.js", "src/services/productionStepCommandService.js",
   ]);
+  // slice 3: pembaca Catatan Komponen = TINJAUAN bersyarat (bukan sekadar allowlist): filter DOC_ wajib, SQL hanya kolom media, tanpa penulisan lifecycle/stok/BOM/retur.
+  const CMP = "src/services/productionComponentNoteService.js";
+  const cmpSrc = loadBackendSources(backendRoot);
+  const noDocFilter = new Map(cmpSrc); noDocFilter.set(CMP, cmpSrc.get(CMP).replace(/stepCode: { not: { startsWith: "DOC_" } }/, "stepCode: undefined"));
+  assert.ok(auditProductionExperienceWriters(noDocFilter).findings.some((f) => f.disposition === "MISSING_DOC_FILTER_component_notes"), "saran komponen tanpa filter DOC_ = pelanggaran");
+  const sqlPayload = new Map(cmpSrc); sqlPayload.set(CMP, cmpSrc.get(CMP).replace("e.media @>", "e.payload @>").replace("e.media @>", "e.payload @>"));
+  assert.ok(auditProductionExperienceWriters(sqlPayload).findings.some((f) => f.disposition === "COMPONENT_SQL_READER_MUST_BE_MEDIA_ONLY"), "SQL komponen membaca payload = pelanggaran");
+  const stockWrite = new Map(cmpSrc); stockWrite.set(CMP, cmpSrc.get(CMP) + "\nawait tx.stockMovement.create({ data: {} });\nawait tx.plannedBOMLine.create({ data: {} });\nawait tx.productionRun.update({ where: {}, data: {} });\n");
+  const sw = auditProductionExperienceWriters(stockWrite).findings.filter((f) => !f.ok).map((f) => f.disposition);
+  assert.ok(sw.includes("FORBIDDEN_stockMovement") && sw.includes("FORBIDDEN_plannedBOMLine") && sw.includes("FORBIDDEN_productionRun"), sw.join(","));
   assert.equal(report.findings.filter((f) => !f.ok).length, 0);
   const sources = loadBackendSources(backendRoot);
   const STEP = "src/services/productionStepCommandService.js";

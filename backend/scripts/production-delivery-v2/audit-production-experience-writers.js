@@ -6,6 +6,9 @@
 //  1b. READER production_step_evidence_v2 (P10B): baris dokumentasi (DOC_*) TIDAK BOLEH dihitung sebagai lifecycle. Semua pembaca Prisma/SQL
 //     tabel itu di src/ harus berada di allowlist (STEP, MATERIAL_RETURN, DOC_SERVICE; SQL mentah: MEDIA route + DOC_SERVICE) dan pembaca
 //     lifecycle (STEP/MATERIAL_RETURN) WAJIB menyaring DOC_* (isDocumentationRow / NOT startsWith DOC_). Pembaca baru = pelanggaran sampai ditinjau.
+//  1c. Catatan Komponen (slice 3, productionComponentNoteService): pembaca TINJAUAN bersyarat — Prisma: hanya bahan terpakai tahap 6/7 untuk SARAN, WAJIB menyaring DOC_*;
+//     SQL mentah: HANYA pemeriksaan pemakaian ulang berkas lintas unit (kolom media saja, bukan payload). Tidak boleh menulis lifecycle/stok/BOM/retur (sama seperti command
+//     dokumentasi) dan tidak boleh memanggil helper lifecycle.
 //  2. production_material_shortages_v2: HANYA command owner P8.
 //  3. Command P8 TIDAK menulis langsung operasi/run/fase/ledger tahap/unit/stok/reservasi/HPP/jurnal — transisi lewat helper P5 (apply*InTx).
 //  4. Command P8 wajib memakai deriveNextAction + validateStepEvidence + helper P5 (applyStartInTx/applyCompleteInTx/applyPauseInTx/applyResumeInTx).
@@ -30,14 +33,15 @@ const ROUTE = "src/routes/productionExperience.js";
 const MEDIA = "src/routes/productionEvidenceMedia.js";
 const DOC_SERVICE = "src/services/productionDocumentationService.js";
 const MATERIAL_RETURN = "src/services/productionMaterialReturnService.js";
+const COMPONENT_SERVICE = "src/services/productionComponentNoteService.js";
 const REPORT_SERVICE = "src/services/productionReportingService.js";
 const REPORT_ROUTE = "src/routes/productionReports.js";
 const REPORT_FILES = ["src/lib/domain/productionMetrics.js", "src/services/productionReportingRouting.js", REPORT_SERVICE, "src/services/productionReportExport.js", REPORT_ROUTE];
 const TARGET_SERVICE = "src/services/productionTargetService.js";
 const TARGET_ROUTE = "src/routes/productionTargets.js";
 const REPORT_PURE_IMPORTS = new Set(["workshopPathOf", "applicableStepsFor"]); // fungsi murni (tanpa prisma/tx) dari modul command
-const READER_ALLOW = new Set(["src/services/productionStepCommandService.js", MATERIAL_RETURN, DOC_SERVICE, REPORT_SERVICE]);
-const SQL_READER_ALLOW = new Set([MEDIA, DOC_SERVICE]);
+const READER_ALLOW = new Set(["src/services/productionStepCommandService.js", MATERIAL_RETURN, DOC_SERVICE, REPORT_SERVICE, COMPONENT_SERVICE]);
+const SQL_READER_ALLOW = new Set([MEDIA, DOC_SERVICE, COMPONENT_SERVICE]);
 const READ_OPS = "(findMany|findFirst|findFirstOrThrow|findUnique|findUniqueOrThrow|count|aggregate|groupBy)";
 const DOC_READ = "src/services/productionDocumentationRead.js";
 const DOC_ROUTE = "src/routes/productionDocumentation.js";
@@ -103,6 +107,16 @@ export function auditProductionExperienceWriters(files) {
   if (matReturn && new RegExp(String.raw`\.productionStepEvidence\.${READ_OPS}`).test(matReturn) && !/startsWith:\s*"DOC_"/.test(matReturn)) add(MATERIAL_RETURN, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_material_return", false);
   if (!/allEvidence\.filter\(\(e\) => !isDocumentationRow\(e\)\)/.test(step)) add(STEP, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_loadStepContext", false);
   if (!/NOT:\s*\{\s*stepCode:\s*\{\s*startsWith:\s*DOC_STEP_CODE_PREFIX/.test(step)) add(STEP, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_writeEvidence_version", false);
+  // Catatan Komponen (slice 3): pembaca bersyarat + tidak menulis lifecycle/stok/BOM/retur + tidak memanggil helper lifecycle.
+  const compSvc = stripComments((files.get(COMPONENT_SERVICE) || "").replace(/\r\n/g, "\n"));
+  if (compSvc) {
+    if (new RegExp(String.raw`\.productionStepEvidence\.${READ_OPS}`).test(compSvc) && !/startsWith:\s*"DOC_"/.test(compSvc)) add(COMPONENT_SERVICE, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_component_notes", false);
+    if (/production_step_evidence_v2/.test(compSvc) && !/e\.media @>/.test(compSvc)) add(COMPONENT_SERVICE, null, "", "COMPONENT_SQL_READER", "COMPONENT_SQL_READER_MUST_BE_MEDIA_ONLY", false);
+    for (const [name, regex] of FORBIDDEN_IN_STEP) for (const match of compSvc.matchAll(new RegExp(regex.source, "g"))) add(COMPONENT_SERVICE, match.index, compSvc, "COMPONENT_FORBIDDEN_WRITE", `FORBIDDEN_${name}`, false);
+    for (const model of ["plannedBOMLine", "productionMaterialReturn", "productionMaterialShortage"]) for (const match of compSvc.matchAll(writeRegex(model))) add(COMPONENT_SERVICE, match.index, compSvc, "COMPONENT_FORBIDDEN_WRITE", `FORBIDDEN_${model}`, false);
+    const compHelper = LIFECYCLE_HELPERS.exec(compSvc);
+    if (compHelper) add(COMPONENT_SERVICE, compHelper.index, compSvc, "COMPONENT_LIFECYCLE_HELPER", `FORBIDDEN_${compHelper[1]}`, false);
+  }
   // Command dokumentasi: tidak menulis lifecycle, tidak memanggil helper lifecycle, dan menulis HANYA baris DOC_ (docStepCode).
   const docSvc = stripComments((files.get(DOC_SERVICE) || "").replace(/\r\n/g, "\n"));
   if (docSvc) {
