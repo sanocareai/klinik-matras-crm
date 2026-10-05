@@ -41,6 +41,7 @@ import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { bukukanPembayaran } from "../services/finance/hooks.js";
 import { verifikasiPembayaran } from "../services/finance/pembayaran.js";
+import { skopPembayaran, orderMilikSalesWhere, paymentMilikSalesWhere } from "../services/finance/skopPembayaran.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB, isJobVisibleToDriverApp, VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, routePath, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
@@ -5474,6 +5475,17 @@ armadaRouter.get("/payments", requirePermission(P.PAYMENT_READ), async (req, res
   try {
     const { driverId, date, orderId } = req.query;
     const where = {};
+    // SKOP (services/finance/skopPembayaran.js): SALES memegang PAYMENT_READ tetapi hanya boleh melihat pembayaran order MILIKNYA — filter di server, tidak melebar
+    // lewat driverId/date/orderId. orderId milik orang lain dijawab 404 (sama dengan order yang tidak ada). Peran lain tanpa Finance/Sales = 403.
+    const skop = skopPembayaran(req.user);
+    if (!skop) return res.status(403).json({ error: "Anda tidak punya izin melihat pembayaran" });
+    if (skop.salesId) {
+      if (orderId) {
+        const milik = await prisma.order.findFirst({ where: { id: String(orderId), ...orderMilikSalesWhere(skop.salesId) }, select: { id: true } });
+        if (!milik) return res.status(404).json({ error: "Order tidak ditemukan" });
+      }
+      where.AND = [paymentMilikSalesWhere(skop.salesId)];
+    }
     if (driverId) where.recordedById = driverId;
     if (orderId) where.orderId = orderId;
     if (date) {

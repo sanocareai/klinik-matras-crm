@@ -35,6 +35,7 @@ import { PILIH_TAGIHAN, dasarStatusBayar } from "./tagihanOrder.js";
 import { paidForOrder, isPaymentCounted } from "./allocation.js";
 import { getVerificationGate } from "./settings.js";
 import { tanggalCutoff, tanggalWIB } from "./cutoff.js";
+import { orderMilikSalesWhere } from "./skopPembayaran.js";
 import { pembayaranMenungguVerifikasi, pesanPaymentMenunggu, KODE_PAYMENT_MENUNGGU } from "./penerimaanGuard.js";
 import { bukukanPembayaran } from "./hooks.js";
 import { postJournal, findEntryByKey, toBookDate } from "./journal.js";
@@ -55,13 +56,14 @@ export { tanggalCutoff };
  * `sisa` = nilai order dikurangi yang sudah tercatat (rumus yang SAMA dengan
  * status bayar di CRM: paidForOrder — alokasi, gerbang, dan refund ikut).
  */
-export async function daftarLunasBelumDicatat(db) {
+export async function daftarLunasBelumDicatat(db, { salesId = null } = {}) {
+  // salesId terisi = skop SALES (skopPembayaran.js): hanya order MILIK Sales itu. Finance/Admin/Owner memanggil tanpa salesId (semua).
   // Resi Gabungan Fase 3A: saat pembayaran Resi AKTIF, child dari Resi BARU tampil sebagai SATU antrean Resi (penerimaanResi.js), bukan baris per order.
   // Flag MATI / groupId NULL / group BACKFILL_BUNDLE: daftar ini IDENTIK dengan perilaku lama.
   const resiOn = await resiPembayaranAktif(db);
   const [orders, gate, cutoff] = await Promise.all([
     db.order.findMany({
-      where: { paymentStatus: "LUNAS", value: { gt: 0 }, status: { not: "CANCELLED" }, ...(resiOn && { OR: [{ groupId: null }, { group: { source: { not: "BARU" } } }] }) },
+      where: { paymentStatus: "LUNAS", value: { gt: 0 }, status: { not: "CANCELLED" }, ...(salesId && { AND: [orderMilikSalesWhere(salesId)] }), ...(resiOn && { OR: [{ groupId: null }, { group: { source: { not: "BARU" } } }] }) },
       select: {
         ...PILIH_TAGIHAN,
         id: true, orderNumber: true, value: true, paidAt: true, status: true, createdAt: true,

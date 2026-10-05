@@ -24,6 +24,7 @@ import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
 import { bangunBukti } from "./pembayaran.js";
 import { dasarStatusBayar } from "./tagihanOrder.js";
 import { tanggalCutoff } from "./penerimaanOrder.js";
+import { grupMilikSalesWhere, galatTidakDitemukan } from "./skopPembayaran.js";
 import { pembayaranMenungguVerifikasi, pesanPaymentMenunggu, KODE_PAYMENT_MENUNGGU } from "./penerimaanGuard.js";
 import {
   ResiBayarError, resiPembayaranAktif, pastikanAktif, muatGrupResi, pastikanGrupLayak, hitungAlokasiResi, tulisPembayaranResi, muatDibayar,
@@ -92,12 +93,15 @@ async function bentukItem(db, grup, anak, { denganPembayaran = true } = {}) {
 }
 
 /** Antrean Finance: Resi (group BARU) yang diklaim Lunas (level Resi, atau klaim per order lama pada child-nya) dan sisanya belum tercatat. */
-export async function daftarKlaimLunasResi(db) {
+export async function daftarKlaimLunasResi(db, { salesId = null } = {}) {
   if (!(await resiPembayaranAktif(db))) return { aktif: false, items: [], jumlah: 0, total: 0 };
   const grupList = await db.orderGroup.findMany({
     where: {
       source: "BARU",
-      OR: [{ lunasDiklaimPada: { not: null } }, { orders: { some: { paymentStatus: "LUNAS", status: { not: "CANCELLED" } } } }],
+      AND: [
+        { OR: [{ lunasDiklaimPada: { not: null } }, { orders: { some: { paymentStatus: "LUNAS", status: { not: "CANCELLED" } } } }] },
+        ...(salesId ? [grupMilikSalesWhere(salesId)] : []), // skop SALES (skopPembayaran.js): hanya Resi yang berisi order miliknya
+      ],
     },
     select: { id: true, customer: { select: { assignedSales: { select: { name: true } } } } },
     orderBy: { lunasDiklaimPada: { sort: "asc", nulls: "last" } },
@@ -119,16 +123,28 @@ export async function daftarKlaimLunasResi(db) {
   return { aktif: true, items, jumlah: items.length, total: items.reduce((s, i) => s + i.sisa, 0) };
 }
 
+/**
+ * Skop SALES untuk baca detail/pratinjau Resi: Resi yang bukan miliknya DAN Resi yang tidak ada dijawab SAMA (404) — keberadaan Resi orang lain tidak bocor.
+ * salesId null (Finance/Admin/Owner) = tanpa pembatasan.
+ */
+async function pastikanResiMilik(db, groupId, salesId) {
+  if (!salesId) return;
+  const ada = await db.orderGroup.findFirst({ where: { id: String(groupId), ...grupMilikSalesWhere(salesId) }, select: { id: true } });
+  if (!ada) throw galatTidakDitemukan("Resi");
+}
+
 /** Detail satu Resi untuk Finance (BACA-SAJA). */
-export async function detailKlaimResi(db, { groupId }) {
+export async function detailKlaimResi(db, { groupId, salesId = null }) {
   await pastikanAktif(db);
+  await pastikanResiMilik(db, groupId, salesId);
   const { grup, anak } = await muatGrupResi(db, groupId);
   return bentukItem(db, grup, anak);
 }
 
 /** Pratinjau alokasi verifikasi (BACA-SAJA). Nominal default = seluruh sisa tagihan Resi. */
-export async function pratinjauVerifikasiResi(db, { groupId, amount = null }) {
+export async function pratinjauVerifikasiResi(db, { groupId, amount = null, salesId = null }) {
   await pastikanAktif(db);
+  await pastikanResiMilik(db, groupId, salesId);
   const { grup, anak } = await muatGrupResi(db, groupId);
   const { aktif } = pastikanGrupLayak(grup, anak);
   const hitung = hitungAlokasiResi({ anak: aktif, dibayar: await muatDibayar(db, aktif), tipe: TIPE_BAYAR.TAGIHAN, nominal: amount, grup });
