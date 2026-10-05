@@ -143,6 +143,32 @@ test("Catatan rute (3 Okt 2026): rute yang belum ditulisi dispatcher balik notes
   assert.equal(res.body.routes[0].notes, null);
 });
 
+test("Penugasan komplain (6 Okt 2026): job dari kasus komplain yang sudah ada driver tapi BELUM masuk rute tampil di my-jobs; tanpa driver tidak", async () => {
+  const driver = await driverUser("Driver Komplain Tes");
+  const other = await driverUser("Driver Lain Tes");
+  const cust = await buatCustomer();
+  const order = await buatOrder(cust.id);
+  no += 1;
+  const kase = await testPrisma.complaintCase.create({
+    data: { caseNumber: `CMP-TES-${no}-${Date.now()}`, orderId: order.id, category: "LAINNYA", description: "Tes penugasan komplain", status: "DIKIRIM_ULANG" },
+  });
+  const jobDriver = await testPrisma.job.create({
+    data: { type: "DELIVERY", orderId: order.id, complaintCaseId: kase.id, driverId: driver.user.id, scheduledDate: toDateOnly(HARI_INI), status: "ASSIGNED" },
+  });
+  const jobKosong = await testPrisma.job.create({
+    data: { type: "DELIVERY", orderId: order.id, complaintCaseId: kase.id, scheduledDate: toDateOnly(HARI_INI), status: "UNSCHEDULED" },
+  });
+
+  const res = await makeClient(server.baseUrl, driver.token).get("/api/armada/my-jobs");
+  assert.equal(res.status, 200);
+  const ids = res.body.jobs.map((j) => j.id);
+  assert.ok(ids.includes(jobDriver.id), "komplain yang sudah ada driver harus tampil walau belum di rute");
+  assert.ok(!ids.includes(jobKosong.id), "komplain tanpa driver tidak boleh tampil ke siapa pun");
+
+  const lain = await makeClient(server.baseUrl, other.token).get("/api/armada/my-jobs");
+  assert.ok(!lain.body.jobs.map((j) => j.id).includes(jobDriver.id), "driver lain tidak boleh melihat penugasan orang lain");
+});
+
 test("Skenario 2: dua driver dalam SATU rute (crew) menerima payload snapshot yang IDENTIK (sama set job ID)", async () => {
   const a = await driverUser("Crew A");
   const b = await driverUser("Crew B");

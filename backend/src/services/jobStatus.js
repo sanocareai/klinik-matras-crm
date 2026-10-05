@@ -138,6 +138,10 @@ export const JOB_STATUS_SETTLED_FOR_DRIVER_APP = ["COMPLETED", "FAILED", "RESCHE
 // belum tuntas SELALU disembunyikan.
 export function isJobVisibleToDriverApp(job) {
   if (JOB_STATUS_SETTLED_FOR_DRIVER_APP.includes(job.status)) return true;
+  // Penugasan komplain/reschedule dari Penjadwalan (driver sudah diisi, belum
+  // dimasukkan ke rute) sengaja ditampilkan: penandanya eksplisit (caseId),
+  // bukan kesimpulan dari routeId kosong.
+  if ((job.complaintCaseId || job.rescheduleCaseId) && (job.driverId || job.helperId)) return true;
   if (!job.route) return false;
   return VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP.includes(job.route.status);
 }

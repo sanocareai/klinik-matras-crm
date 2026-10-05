@@ -63,6 +63,24 @@ for (const jobStatus of JOB_STATUS_SETTLED_FOR_DRIVER_APP) {
   });
 }
 
+// ── Penugasan komplain/reschedule tanpa rute (permintaan owner 6 Okt 2026:
+// "komplain sudah diatur driver tapi tidak muncul di app driver") — penanda
+// eksplisit caseId + driver/helper sudah cukup, tanpa perlu rute.
+for (const jobStatus of JOB_STATUS_AKTIF) {
+  test(`komplain ${jobStatus} + driver, tanpa rute → TAMPIL`, () => {
+    assert.equal(isJobVisibleToDriverApp(job({ status: jobStatus, route: null, complaintCaseId: "c1", driverId: "d1" })), true);
+  });
+  test(`reschedule ${jobStatus} + helper saja, tanpa rute → TAMPIL`, () => {
+    assert.equal(isJobVisibleToDriverApp(job({ status: jobStatus, route: null, rescheduleCaseId: "r1", driverId: null, helperId: "h1" })), true);
+  });
+  test(`komplain ${jobStatus} tanpa driver/helper, tanpa rute → DISEMBUNYIKAN (belum ditugaskan)`, () => {
+    assert.equal(isJobVisibleToDriverApp(job({ status: jobStatus, route: null, complaintCaseId: "c1", driverId: null, helperId: null })), false);
+  });
+  test(`job ${jobStatus} TANPA caseId tapi punya driver, tanpa rute → tetap DISEMBUNYIKAN (regresi orphan)`, () => {
+    assert.equal(isJobVisibleToDriverApp(job({ status: jobStatus, route: null, complaintCaseId: null, rescheduleCaseId: null, driverId: "d1" })), false);
+  });
+}
+
 // ── Status TIDAK DIKENAL (bukan bagian enum Prisma sama sekali) — jaring pengaman ──
 test("job.status STRING SEMBARANG (bukan enum) + rute PUBLISHED → tetap TAMPIL (gerbang driverId sudah cukup)", () => {
   assert.equal(isJobVisibleToDriverApp(job({ status: "STATUS_BARU_DARI_MASA_DEPAN", route: { id: "r", status: "PUBLISHED" } })), true);
