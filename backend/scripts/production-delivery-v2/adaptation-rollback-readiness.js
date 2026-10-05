@@ -20,8 +20,9 @@ function classify(run, skipped) {
   const active = ops.find((o) => ["ACTIVE", "PAUSED"].includes(o.status));
   const qcGateSkipped = ops.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed);
   if (run.status === "PENDING_ARRIVAL") return { key: "PENDING_ARRIVAL", note: "belum tiba — aman" };
-  if (active) return { key: "STAGE_RUNNING", note: `tahap ${active.stageCode} ${active.status} — selesaikan/lanjutkan dulu` };
-  if (qcGateSkipped) return { key: "LOCKED_UNDER_OLD_CODE", note: "gerbang QC dicatat tidak dilakukan — di kode lama TIDAK bisa ditutup (409 CUSTODY_QC_NOT_SATISFIED)" };
+  // Gerbang QC sudah dicatat "tidak dilakukan": di kode lama run ini berhenti di tahap 12 (409 CUSTODY_QC_NOT_SATISFIED) — terkunci, walau Corner masih mengerjakan tahap 10–11.
+  if (qcGateSkipped) return { key: "LOCKED_UNDER_OLD_CODE", note: active ? `Corner masih ${active.stageCode} ${active.status}; di kode lama akan TERKUNCI di tahap 12 (409 CUSTODY_QC_NOT_SATISFIED)` : "siap diselesaikan; di kode lama TIDAK bisa ditutup (409 CUSTODY_QC_NOT_SATISFIED)" };
+  if (active) return { key: "STAGE_RUNNING", note: `tahap ${active.stageCode} ${active.status} — sebelum gerbang QC; kode lama menunggu QC resmi seperti proses lengkap` };
   if (skipped > 0) return { key: "HAS_SKIPPED_STAGES", note: "ada tahap dilewati — kode lama menganggapnya dikerjakan; tahap berikutnya tetap bisa dikerjakan" };
   return { key: "ADAPTATION_NO_SKIP", note: "kebijakan adaptasi aktif tanpa tahap dilewati — kode lama berproses normal" };
 }
@@ -41,10 +42,12 @@ const table = runs.map((r) => ({ run: r.id, unit: r.unit.unitCode, status: r.sta
 for (const t of table) console.log(`  ${t.unit.padEnd(14)} run=${t.run} ${t.status}/${t.phase} rev=${t.revision} dilewati=${t.skipped} → ${t.key}: ${t.note}`);
 
 if (!FINISH) {
-  const blocking = table.filter((t) => ["LOCKED_UNDER_OLD_CODE", "STAGE_RUNNING"].includes(t.key)).length;
-  console.log(blocking || table.length ? `\nHASIL: ${table.length} run adaptasi non-terminal (${blocking} menghalangi rollback). Selesaikan lewat "Selesaikan Produksi" (UI) atau --finish, atau tunda rollback.` : "\nHASIL: tidak ada run adaptasi non-terminal — rollback aplikasi tidak mengunci apa pun. (Bukti SKIPPED/QC 'tidak dilakukan' pada run selesai tetap utuh; hanya tampilannya keliru di kode lama.)");
+  const blocking = table.filter((t) => t.key === "LOCKED_UNDER_OLD_CODE").length;
+  console.log(blocking ? `\nHASIL: ${table.length} run adaptasi non-terminal; ${blocking} akan TERKUNCI di kode lama (menghalangi rollback). Selesaikan lewat "Selesaikan Produksi" (UI) atau --finish, atau tunda rollback.`
+    : table.length ? `\nHASIL: ${table.length} run adaptasi non-terminal, tidak ada yang terkunci di kode lama (tetap sebaiknya diselesaikan sebelum rollback).`
+      : "\nHASIL: tidak ada run adaptasi non-terminal — rollback aplikasi tidak mengunci apa pun. (Bukti SKIPPED/QC 'tidak dilakukan' pada run selesai tetap utuh; hanya tampilannya keliru di kode lama.)");
   await prisma.$disconnect();
-  process.exit(table.length ? 1 : 0);
+  process.exit(blocking ? 1 : 0);
 }
 
 const actorId = arg("actor"); const wanted = String(arg("run") || "").split(",").map((s) => s.trim()).filter(Boolean);

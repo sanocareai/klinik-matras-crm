@@ -13,7 +13,7 @@ test("skrip kesiapan rollback: tanpa penulisan langsung (ORM/SQL); penulisan han
   assert.doesNotMatch(code, /\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/, "tanpa ORM tulis");
   assert.doesNotMatch(code, /\$executeRaw|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|DROP\s|TRUNCATE/i, "tanpa SQL tulis");
   assert.equal((code.match(/finishProduction\(/g) || []).length, 1, "satu pemanggilan command resmi");
-  assert.match(code, /if \(!FINISH\) \{[\s\S]*process\.exit\(table\.length \? 1 : 0\)/, "mode default berhenti sebelum penulisan");
+  assert.match(code, /if \(!FINISH\) \{[\s\S]*process\.exit\(blocking \? 1 : 0\)/, "mode default berhenti sebelum penulisan");
   assert.match(code, /if \(!YES\) \{ console\.log\("  \(pratinjau saja/, "tanpa --yes = pratinjau");
   assert.match(code, /\["ADMIN", "OWNER"\]\.includes\(actor\.role\)/);
   assert.match(code, /LOCKED_UNDER_OLD_CODE/); assert.match(code, /CUSTODY_QC_NOT_SATISFIED/);
