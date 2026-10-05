@@ -160,7 +160,7 @@ test("satu bagian 'Pekerjaan' di Unit 360 memakai endpoint/ownership/permission 
   assert.match(drawer, /data\?\.ownership\?\.v2ExecutionOwned === false/, "aksi langsung hanya bila server melaporkan papan tidak memegang eksekusi");
   const actions = ["UnitV1Actions.jsx", "UnitV1Stage.jsx", "UnitV1Materials.jsx"].map((f) => strip(read("features", "production", f))).join("\n");
   const calls = new Set([...actions.matchAll(/\bapi\.(?!js\b)(\w+)/g)].map((m) => m[1]));
-  const allowed = new Set(["getServiceCatalog", "getUnitTimeline", "setUnitService", "updateUnitProduction", "resolveBlocker", "uploadUnitPhotos", "startUnitStage", "completeUnitStage", "failUnitStage", "pauseUnitStage", "resumeUnitStage", "recordQcFitTest", "assignUnitStage", "getWorkCenters", "getProductionOperators", "getUnitMaterials", "getMaterials", "addUnitMaterial"]);
+  const allowed = new Set(["getServiceCatalog", "getUnitTimeline", "setUnitService", "updateUnitProduction", "resumeProductionWork", "uploadUnitPhotos", "startUnitStage", "completeUnitStage", "failUnitStage", "pauseUnitStage", "recordQcFitTest", "assignUnitStage", "getWorkCenters", "getProductionOperators", "getUnitMaterials", "getMaterials", "addUnitMaterial"]);
   for (const c of calls) assert.ok(allowed.has(c), `endpoint tak dikenal: ${c}`);
 });
 

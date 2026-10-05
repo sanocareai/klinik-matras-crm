@@ -63,7 +63,7 @@ test("kartu V2: semua nilai dari server (foto, Sales, kasur, catatan + nama Sale
   assert.equal(j.note, "Minta tekstur firm"); assert.equal(j.salesName, "Kiki");
   assert.equal(j.priority.value, 1); assert.equal(j.priority.label, "Tinggi");
   assert.equal(j.stage.label, "Langkah 5 · Diagnosa");
-  assert.deepEqual(j.progress, { done: 4, total: 12, source: "server-v2" });
+  assert.deepEqual(j.progress, { done: 4, skipped: 0, remaining: 0, total: 12, source: "server-v2" });
   assert.equal(j.gantiKain, false); assert.equal(j.active, true);
 });
 
@@ -101,7 +101,7 @@ test("V1: kartu dari antrean server + timeline; keadaan & label dari server; pro
   assert.equal(priorityOfV1({ priorityDisplay: { key: "COMPLAINT", label: "Komplain" } }).value, 3, "Komplain hanya dari kasus resmi server");
 });
 
-test("V1: siap dikerjakan vs menunggu prasyarat vs menunggu penugasan — dibedakan dari server; hanya siap/berjalan/dijeda yang membuka aksi", () => {
+test("V1: siap dikerjakan vs menunggu prasyarat vs menunggu penugasan — dibedakan dari server; hanya siap/berjalan/dijeda/tertunda (Lanjutkan Pekerjaan) yang membuka aksi", () => {
   const ready = jobFromV1(wo({ state: "READY" }), null);
   assert.equal(ready.stage.bucketLabel, "Siap dikerjakan"); assert.equal(ready.v1.actionable, true); assert.equal(ready.v1.wait, null); assert.equal(ready.active, false);
   const pre = jobFromV1(wo({ state: "WAITING_PREREQUISITE", stage: stg("s3", "Uji Fondasi"), prerequisite: { stage: stg("s2", "Bongkar"), state: "READY", assignee: "PIC Lain", assigned: true } }), null);
@@ -113,7 +113,7 @@ test("V1: siap dikerjakan vs menunggu prasyarat vs menunggu penugasan — dibeda
   assert.equal(wa.stage.bucketLabel, "Menunggu penugasan berikutnya"); assert.equal(wa.v1.actionable, false);
   assert.match(wa.v1.wait.text, /Bongkar belum ditugaskan/); assert.match(wa.v1.wait.text, /sampai Production Lead menugaskannya/);
   assert.equal(v1WaitInfo(wo({ state: "READY" })), null);
-  for (const [st, ok] of [["READY", true], ["IN_PROGRESS", true], ["PAUSED", true], ["BLOCKED", false], ["WAITING_PREREQUISITE", false], ["WAITING_ASSIGNMENT", false], [undefined, false]]) assert.equal(isV1Actionable(st), ok, String(st));
+  for (const [st, ok] of [["READY", true], ["IN_PROGRESS", true], ["PAUSED", true], ["BLOCKED", true], ["WAITING_PREREQUISITE", false], ["WAITING_ASSIGNMENT", false], [undefined, false]]) assert.equal(isV1Actionable(st), ok, String(st));
 });
 
 test("urutan: yang sedang dikerjakan dulu; V2 mengikuti urutan SERVER (manual menang); V1 sesudah V2 mengikuti urutan SERVER (tanpa pengurutan ulang klien); satu antrean, bukan dua", () => {
@@ -137,8 +137,10 @@ test("aksi utama V1: satu aksi sesuai keadaan tahap server + izin; QC & blokir T
   assert.equal(primaryActionV1(tl(["READY", "NOT_STARTED"]), W).kind, "START");
   const run = primaryActionV1(tl(["DONE", "IN_PROGRESS"]), W);
   assert.equal(run.kind, "COMPLETE"); assert.equal(run.needsPhoto, true, "tahap ke-2 wajib foto -> dari server"); assert.deepEqual(run.secondary, ["PAUSE", "BLOCK"]);
-  assert.equal(primaryActionV1(tl(["PAUSED"]), W).kind, "RESUME");
-  const blocked = primaryActionV1(tl(["BLOCKED"]), W); assert.equal(blocked.kind, "NONE"); assert.match(blocked.reason, /Production Lead/);
+  assert.equal(primaryActionV1(tl(["PAUSED"]), W).kind, "RESUME_WORK", "SATU aksi Lanjutkan Pekerjaan (server atomik)");
+  const blocked = primaryActionV1(tl(["BLOCKED"]), W); assert.equal(blocked.kind, "RESUME_WORK"); assert.equal(blocked.label, "Lanjutkan Pekerjaan");
+  const mat = tl(["BLOCKED"]); mat.activeBlocker = { reason: "MATERIAL_SHORTAGE" };
+  const blockedMat = primaryActionV1(mat, W); assert.equal(blockedMat.kind, "NONE"); assert.match(blockedMat.reason, /Gudang/, "menunggu bahan: tidak ada tombol palsu, jelaskan siapa yang bertindak");
   const qc = tl(["IN_PROGRESS"]); qc.path[0].stage.requiresQc = true;
   const q = primaryActionV1(qc, W); assert.equal(q.kind, "NONE"); assert.match(q.reason, /QC/);
   assert.equal(primaryActionV1(tl(["DONE"]), W).kind, "NONE");
@@ -146,7 +148,7 @@ test("aksi utama V1: satu aksi sesuai keadaan tahap server + izin; QC & blokir T
   assert.equal(primaryActionV1(tl(["READY"]), ["SALES"]).kind, "NONE", "peran tanpa izin tahap: tidak ada tombol");
   assert.equal(primaryActionV1(tl(["READY"]), ["SALES"]).reason.length > 0, true);
   // keadaan antrean dari server membatasi: menunggu prasyarat/penugasan TIDAK membuka aksi walau timeline tampak siap (tahap berikutnya milik orang lain)
-  for (const st of ["WAITING_PREREQUISITE", "WAITING_ASSIGNMENT", "BLOCKED"]) assert.equal(primaryActionV1(tl(["READY"]), W, { state: st }).kind, "NONE", st);
+  for (const st of ["WAITING_PREREQUISITE", "WAITING_ASSIGNMENT"]) assert.equal(primaryActionV1(tl(["READY"]), W, { state: st }).kind, "NONE", st);
   assert.equal(primaryActionV1(tl(["READY"]), W, { state: "READY" }).kind, "START");
   assert.equal(primaryActionV1(tl(["DONE", "IN_PROGRESS"]), W, { state: "IN_PROGRESS" }).kind, "COMPLETE");
 });
@@ -193,7 +195,7 @@ test("komponen: setiap aksi tulis lewat command server yang ada; tidak ada statu
   assert.match(sheets, /submitState\(\{ online, busy \}\)/); assert.match(sheets, /disabled=\{gate\.disabled\}/); assert.match(sheets, /data-testid="offline-submit-note"/);
   assert.match(sheets, /validateStepForm\(stepNo, form, \{ mediaItems: media \}\)/, "foto wajib divalidasi sebelum kirim");
   const v1 = strip(read("V1Panels.jsx"));
-  for (const call of ["api.startUnitStage", "api.resumeUnitStage", "api.completeUnitStage", "api.pauseUnitStage", "api.failUnitStage", "api.addUnitMaterial"]) assert.ok(v1.includes(call), call);
+  for (const call of ["api.startUnitStage", "api.resumeProductionWork", "api.completeUnitStage", "api.pauseUnitStage", "api.failUnitStage", "api.addUnitMaterial"]) assert.ok(v1.includes(call), call);
   assert.doesNotMatch(v1, /skipUnitStage|changeUnitRoute|recordQcFitTest|resolveBlocker|assignUnitStage/, "aksi berisiko/QC/penugasan TIDAK ada di aplikasi lantai");
   assert.match(v1, /completeFormValid\(\{ needsPhoto: action\.needsPhoto, photos \}\)/, "foto wajib V1 dari server");
 });

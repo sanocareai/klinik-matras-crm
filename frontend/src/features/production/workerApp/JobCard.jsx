@@ -3,7 +3,7 @@ import { AlertTriangle, Clock, ImageOff, PackageX, Scissors } from "lucide-react
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { formatMinutes } from "@/features/production/experience.js";
 import { initialsOf } from "./workerAppModel.js";
-import { delayStatusText, presenceTone } from "@/features/production/productionLabels.js";
+import { delayKindText, delayStatusText, presenceTone, progressText } from "@/features/production/productionLabels.js";
 
 // Foto-pertama: foto unit mengisi bagian atas kartu; foto kosong/gagal dimuat = placeholder navy dengan inisial customer (jujur, bukan gambar palsu).
 export function JobPhoto({ job, className = "" }) {
@@ -74,7 +74,7 @@ export function ProgressLine({ job }) {
   const { done, total } = job.progress;
   return (
     <div data-testid="job-progress" data-source={job.progress.source}>
-      <div className="mb-1 flex justify-between text-[12.5px] text-ink2"><span>{done} dari {total} tahap</span>{job.raw?.timer?.elapsedMinutes ? <span className="flex items-center gap-1"><Clock size={13} aria-hidden /> {formatMinutes(job.raw.timer.elapsedMinutes)}{job.late ? " · terlambat" : ""}</span> : null}</div>
+      <div className="mb-1 flex justify-between text-[12.5px] text-ink2"><span data-testid="progress-text">{progressText(job.progress)}</span>{job.raw?.timer?.elapsedMinutes ? <span className="flex items-center gap-1"><Clock size={13} aria-hidden /> {formatMinutes(job.raw.timer.elapsedMinutes)}{job.late ? " · terlambat" : ""}</span> : null}</div>
       <ProgressBar value={total ? (done / total) * 100 : 0} variant={job.late ? "danger" : "accent"} />
     </div>
   );
@@ -107,6 +107,8 @@ export default function JobCard({ job, onOpen, position = null, variant = "queue
         {job.v1?.wait && <p data-testid="v1-wait-info" className="wa-wrap m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2"><b className="text-ink">{job.v1.wait.title}.</b> {job.v1.wait.text}</p>}
         <div className="flex flex-wrap items-center gap-1.5">
           <StageChip job={job} />
+          {job.delayKind && <span data-testid="delay-kind-chip" className="inline-flex items-center rounded-full bg-redbg px-2.5 py-1 text-[12px] font-bold text-red">{delayKindText(job.delayKind, job.delayNote)}</span>}
+          {job.progress?.skipped > 0 && <span data-testid="skipped-chip" className="inline-flex items-center rounded-full bg-inset px-2.5 py-1 text-[12px] font-semibold text-ink2">{job.progress.skipped} dilewati</span>}
           {job.materialWaiting && <span data-testid="material-waiting" className="inline-flex items-center gap-1 rounded-full bg-redbg px-2.5 py-1 text-[12px] font-bold text-red"><PackageX size={13} aria-hidden /> {delayStatusText("MATERIAL_SHORTAGE")}</span>}
           {!job.materialWaiting && job.material && <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-semibold ${TONE[job.material.tone] || TONE.neutral}`}>{job.material.label}</span>}
           {job.late && <span className="inline-flex items-center gap-1 rounded-full bg-orangebg px-2.5 py-1 text-[12px] font-bold text-orange"><Clock size={13} aria-hidden /> Terlambat</span>}

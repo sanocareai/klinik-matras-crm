@@ -27,13 +27,13 @@ import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { validatePauseReason } from "../lib/domain/stageExecution.js";
 import { isLastStage } from "../lib/domain/routing.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
-import { offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
+import { completeAdaptationRunInTx, offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
 import { assertNoOpenRunException, assertNoV1Drift } from "./productionRunGuards.js";
 import { lockUnitOwnership } from "./unitV2Ownership.js";
 import {
-  completeStageInTx, markUnitReadyForDeliveryInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, skipStageForAdaptationInTx, startStageInTx,
+  completeStageInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, skipStageForAdaptationInTx, startStageInTx,
 } from "./unitStageEngine.js";
-import { PHASE_TERMINAL_STATUSES, assertRunPhasesTerminal, isStrictLifecycleRun, transitionPhases } from "./productionPhaseLifecycle.js";
+import { PHASE_TERMINAL_STATUSES, isStrictLifecycleRun, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 import { ADAPTATION_POLICY, defaultAdaptationPolicy } from "./productionSettingsService.js";
 
@@ -495,19 +495,21 @@ export async function applyCompleteInTx(tx, { run, op, actorId, note = null, pho
   await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "COMPLETED", completedAt: now } });
   const unit = await tx.unit.findUniqueOrThrow({ where: { id: run.unitId }, select: { currentStageId: true, status: true } });
   const path = await pathForUnit(tx, run.unit);
+  const adaptation = isAdaptationRun(run);
   const handoffReady = isLastStage(path, op.stageId);
   const next = !handoffReady && unit.currentStageId ? path.find((s) => s.id === unit.currentStageId) : null;
   // Mode adaptasi (slice 2): QC tidak wajib — tahap kerja terakhir TIDAK memindahkan run ke fase QC; run tetap di PROCESS menunggu "Selesaikan Produksi".
   const awaitingQc = !!next?.requiresQc && !isAdaptationRun(run);
   // Penutupan PROCESS dan pembukaan HANDOFF dalam SATU transisi atomik (hanya satu fase berjalan).
   const phaseUpdates = [];
-  if (awaitingQc || handoffReady) phaseUpdates.push({ phase: "PROCESS", data: { status: "COMPLETED", completedAt: now } });
-  if (handoffReady) phaseUpdates.push({ phase: "HANDOFF", data: { status: "ACTIVE", startedAt: now, reason: null } });
+  if (awaitingQc || (handoffReady && !adaptation)) phaseUpdates.push({ phase: "PROCESS", data: { status: "COMPLETED", completedAt: now } });
+  if (handoffReady && !adaptation) phaseUpdates.push({ phase: "HANDOFF", data: { status: "ACTIVE", startedAt: now, reason: null } });
   if (phaseUpdates.length) await transitionPhases(tx, run.id, phaseUpdates);
-  const revision = await bumpRun(tx, run, awaitingQc ? { currentPhase: "QC" } : handoffReady ? { currentPhase: "HANDOFF" } : {});
+  const revision = await bumpRun(tx, run, awaitingQc ? { currentPhase: "QC" } : (handoffReady && !adaptation) ? { currentPhase: "HANDOFF" } : {});
   // Handoff barang jadi HANYA setelah tahap `finished` (terakhir) selesai; QC wajib sudah lulus/di-waive (divalidasi offerFinishedGoodsCustodyInTx,
   // kesalahan apa pun me-rollback seluruh penyelesaian tahap ini).
-  const handoff = handoffReady ? await offerFinishedGoodsCustodyInTx(tx, { runId: run.id, actorId }) : null;
+  // Mode adaptasi: TIDAK ada penawaran barang jadi/custody (penerimaan Gudang tidak diwajibkan); penutupan lewat "Selesaikan Produksi".
+  const handoff = handoffReady && !adaptation ? await offerFinishedGoodsCustodyInTx(tx, { runId: run.id, actorId }) : null;
   await outbox(tx, {
     eventType: "production.stage.completed", aggregateId: run.id, revision, dedupeKey: `production-stage-completed:${run.id}:${revision}`,
     payload: { runId: run.id, unitId: run.unitId, stageId: op.stageId, awaitingQc, handoffReady, revision, occurredAt: now.toISOString(), actorId },
@@ -548,11 +550,10 @@ export async function prepareSkipInTx(tx, run) {
   const process = assertProcessApplicable(run);
   if (activeOperation(run)) throw workError("Masih ada tahap berjalan/ditunda pada run ini; selesaikan atau lanjutkan tahap tersebut dulu", 409, "WORKSHOP_STAGE_ALREADY_ACTIVE");
   const path = await pathForUnit(tx, run.unit);
-  const { postQcStages } = workshopPathOf(path);
   const { stage, state } = await resolveCurrentTarget(tx, run.unit, path);
   if (!stage || !["FIRST", "READY"].includes(state)) throw workError("Tidak ada tahap yang dapat dilewati pada keadaan ini", 409, "WORKSHOP_SKIP_NOT_AVAILABLE", { state });
-  if (stage.requiresQc || postQcStages.some((s) => s.id === stage.id)) {
-    throw workError('Tahap ini hanya ditutup lewat "Selesaikan Produksi" (QC dicatat tidak dilakukan)', 409, "WORKSHOP_SKIP_USE_FINISH", { stageCode: stage.code });
+  if (stage.requiresQc) {
+    throw workError('Gerbang QC tidak dilewati sendiri: dicatat "tidak dilakukan" saat Kirim ke Corner (tahap 9) atau lewat Selesaikan Produksi', 409, "WORKSHOP_SKIP_USE_FINISH", { stageCode: stage.code });
   }
   if (stage.phase === "INTAKE") assertPlanReadyForIntake(run.plan);
   return { process, stage };
@@ -628,16 +629,21 @@ export async function applyAdaptationFinishInTx(tx, { run, actorId, now = new Da
     else phaseUpdates.push({ phase: phase.phase, data: { status: "NOT_APPLICABLE", reason: "Dilewati — Selesaikan Produksi (mode adaptasi)" } });
   }
   if (phaseUpdates.length) await transitionPhases(tx, run.id, phaseUpdates);
-  await assertRunPhasesTerminal(tx, run.id, { requireHandoffCompleted: false });
-  const completed = await tx.productionRun.findUniqueOrThrow({ where: { id: run.id }, select: { revision: true } });
-  const revision = completed.revision + 1;
-  await tx.productionRun.update({ where: { id: run.id }, data: { status: "COMPLETED", completedAt: now, revision } });
-  await viaEngine(() => markUnitReadyForDeliveryInTx(tx, run.unitId));
-  await outbox(tx, {
-    eventType: "production.run.completed", aggregateId: run.id, revision, dedupeKey: `production-run-completed:${run.id}:${revision}`,
-    payload: { runId: run.id, unitId: run.unitId, completionKind: "ADAPTATION", policy: ADAPTATION_POLICY, skippedStages: skipped.map((s) => s.code), qcNotPerformed, revision, occurredAt: now.toISOString(), actorId },
-  });
-  return { runId: run.id, revision, skipped, qcNotPerformed, unitStatus: "READY_FOR_DELIVERY" };
+  // Penutupan run + pelepasan ke Delivery = milik custody service (ownership run COMPLETED/READY_FOR_DELIVERY); P5 hanya menutup fase dan memanggilnya.
+  const closed = await viaEngine(() => completeAdaptationRunInTx(tx, { runId: run.id, actorId, now }));
+  return { runId: run.id, revision: closed.revision, skipped, qcNotPerformed, unitStatus: closed.unitStatus };
+}
+
+// Gerbang QC pada run adaptasi: dicatat TIDAK DILAKUKAN (ledger SKIP berkatalog + operasi SKIPPED). Dipanggil saat tahap 9 (Kirim ke Corner). Unit maju ke tahap Corner.
+export async function applyQcNotPerformedInTx(tx, { run, actorId, now = new Date() }) {
+  assertAdaptationRun(run);
+  const path = await pathForUnit(tx, run.unit);
+  const { stage, state } = await resolveCurrentTarget(tx, run.unit, path);
+  if (!stage?.requiresQc || !["FIRST", "READY"].includes(state)) throw workError("Unit tidak sedang berada di gerbang QC", 409, "WORKSHOP_QC_GATE_NOT_CURRENT", { state });
+  if (activeOperation(run)) throw workError("Masih ada tahap berjalan/ditunda pada run ini", 409, "WORKSHOP_STAGE_ALREADY_ACTIVE");
+  await viaEngine(() => skipStageForAdaptationInTx(tx, run.unitId, stage.id, { actorId, note: "Kirim ke Corner.", deferReady: true, qcNotPerformed: true }));
+  await recordSkippedOperation(tx, { run, stage, now, qcNotPerformed: true });
+  return { stage: { id: stage.id, code: stage.code, label: stage.labelId } };
 }
 
 // Tunda Pekerjaan pada pekerjaan di papan (ARAHAN/KENDALA/LAINNYA): jeda SAH P5 (PROCESS_DELAY) + penanda alasan di operasi. BAHAN tetap lewat laporan kekurangan bahan.

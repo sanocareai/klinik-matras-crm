@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { bucketStyle, initials, targetDateBadge } from "@/features/production/experience.js";
 import { dataGaps, isGantiKain, materialBadge, mattressInfo, mejaLabel, priorityMeta, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
-import { delayStatusText, presenceTone, rankOfView, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
+import { delayStatusText, presenceTone, progressText, rankOfView, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
 
 // P9 UX Realignment — SATU kartu unit untuk Status Produksi, Rencana Produksi (backlog + slot meja), dan Quality
 // Control. Klik kartu = buka Unit 360 (aksi utama); aksi sekunder (Jadwalkan/Pindahkan, Putusan QC, Unit Tiba) ada di
@@ -145,7 +145,7 @@ export function UnitCard({
       {view.progress && (
         <div className="flex items-center gap-2">
           <div className="flex-1"><ProgressBar value={progress} variant={view.shortage ? "warning" : "accent"} /></div>
-          <span className="shrink-0 text-[12px] text-ink3 tabular-nums">{view.progress.done}/{view.progress.total} tahap</span>
+          <span className="shrink-0 text-[12px] text-ink3 tabular-nums">{progressText(view.progress)}</span>
         </div>
       )}
       {qcBadge}

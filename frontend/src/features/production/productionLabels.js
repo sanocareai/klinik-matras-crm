@@ -88,6 +88,26 @@ export function resumeInfo({ source, reason, canResume }) {
   return { kind: "WAIT", who: "Production Lead", text: "Hubungi Production Lead agar pekerjaan bisa dilanjutkan." };
 }
 
+// ---- Slice 2: progres "dikerjakan / dilewati / tersisa" & flow adaptasi --------------------------------------------------------------------------------
+// Tahap dilewati (mode adaptasi) BUKAN pekerjaan: tidak dihitung sebagai dikerjakan. Tanpa tahap dilewati -> bentuk lama "x/y tahap".
+export const SKIP_LABEL = "Dilewati";
+export const SKIP_REASON_LABEL = "Adaptasi sistem";
+export const FINISH_ACTION_LABEL = "Selesaikan Produksi";
+export const SKIP_ACTION_LABEL = "Lewati Tahap";
+export function progressText(p) {
+  const done = p?.done ?? 0; const total = p?.total ?? 0; const skipped = p?.skipped ?? 0;
+  if (!skipped) return `${done}/${total} tahap`;
+  return `${done} dikerjakan · ${skipped} dilewati · ${p?.remaining ?? Math.max(0, total - done - skipped)} tersisa`;
+}
+/** Pekerjaan di papan 12/12 = semua tahap dikerjakan ATAU dilewati. */
+export const progressComplete = (p) => (p?.total ?? 0) > 0 && (p.done ?? 0) + (p.skipped ?? 0) >= p.total;
+/** Alasan tunda yang tersimpan pada operasi di papan (ARAHAN/KENDALA/LAINNYA) -> teks status kartu. */
+export function delayKindText(kind, note = null) {
+  const r = DELAY_REASONS[kind]; if (!r) return null;
+  const extra = kind === "LAINNYA" && String(note || "").trim() ? String(note).trim().slice(0, 80) : null;
+  return `Tertunda — ${extra || r.label.toLowerCase()}`;
+}
+
 // ---- Peringkat urutan (bukan label): Komplain (3) > nilai tersimpan Mendesak lama (2) > Tinggi (1) > Normal (0) ----------------------------------------------
 // Dipakai untuk urutan bawaan/peringatan inversi. Urutan MANUAL meja tetap menang atas peringkat apa pun (lihat stationOrder.js / planDnd.js).
 export const rankOfView = (view) => view?.plan?.priorityRank ?? (view?.priority?.key === "COMPLAINT" ? 3 : view?.plan?.priority ?? 0);

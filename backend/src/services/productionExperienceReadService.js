@@ -3,7 +3,7 @@
 // tidak ada status UI yang disimpan terpisah. Pemanggil (routes) wajib memfilter unitIds dari reader cohort; unit di luar cohort tidak pernah
 // dimuat. Data customer seperlunya: nama, berat badan, keluhan, request — tanpa telepon/alamat.
 import {
-  ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, stepNoForStage,
+  ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, isSkippedEvidence, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
 import { listMaterialReturns } from "./productionMaterialReturnService.js";
 import { BOARD_DEFAULTS, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
@@ -79,6 +79,7 @@ export function stepStatuses(ctx) {
     const e = recorded.get(step.no);
     let status;
     if (!applicable.includes(step.no)) status = "NA";
+    else if (e && isSkippedEvidence(e)) status = "SKIPPED"; // dilewati (mode adaptasi) — BUKAN dikerjakan; tanpa foto/hasil uji
     else if (next.wait === "COMPLETED") status = "DONE";
     else if (step.no === next.stepNo && next.action !== "WAIT") status = "CURRENT";
     else if (step.no === next.stepNo && next.action === "WAIT" && !e) status = "WAITING";
@@ -98,7 +99,8 @@ export function indicatorsOf(run, ctx, materialStatus) {
     bom: run.plan?.bomLines.length ? "OK" : "BELUM",
     material: materialStatus.key,
     workshop: ctx.state.activeOp ? (ctx.state.activeOp.status === "PAUSED" ? "DIJEDA" : "BERJALAN") : (run.operations.length ? "MENUNGGU" : "BELUM_MULAI"),
-    qc: qc ? (qc.result === "PASS" ? "LULUS" : qc.result === "FAIL_REWORK" ? "REWORK" : qc.result === "OVERRIDDEN" ? "WAIVED" : qc.result) : "BELUM",
+    qc: qc ? (qc.result === "PASS" ? "LULUS" : qc.result === "FAIL_REWORK" ? "REWORK" : qc.result === "OVERRIDDEN" ? "WAIVED" : qc.result)
+      : (run.adaptationPolicy && run.operations.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed) ? "TIDAK_DILAKUKAN" : "BELUM"),
     handoff: fg ? fg.status : "BELUM",
   };
 }
@@ -169,9 +171,14 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
       bomCount: run.plan.bomLines.length,
     } : null,
     next, bucket, bucketLabel: ANDON_BUCKETS.find((b) => b.key === bucket)?.label ?? bucket,
-    progress: { done: applicable.filter((s) => s.status === "DONE").length, total: applicable.length },
+    // Progres membedakan dikerjakan (done) / dilewati (skipped) / tersisa (remaining). KPI & kunci 12/12 hanya menghitung "done" sebagai pekerjaan.
+    progress: (() => {
+      const worked = applicable.filter((s) => s.status === "DONE").length; const skipped = applicable.filter((s) => s.status === "SKIPPED").length;
+      return { done: worked, skipped, remaining: applicable.length - worked - skipped, total: applicable.length };
+    })(),
+    adaptation: run.adaptationPolicy ? { policy: run.adaptationPolicy } : null,
     steps,
-    activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt } : null,
+    activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt, delayKind: op.delayKind ?? null, delayNote: op.delayNote ?? null } : null,
     timer: {
       startedAt: firstStart, stepStartedAt: op?.startedAt ?? null,
       elapsedMinutes: firstStart ? minutesBetween(firstStart, TERMINAL_RUN.includes(run.status) ? run.completedAt || now : now) : 0,

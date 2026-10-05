@@ -70,7 +70,8 @@ test("PAGAR V2: aksi V1 hanya dirender di fallback unit non-V2; drawer cohort & 
   assert.doesNotMatch(drawer, /setUnitService|updateUnitProduction|resolveBlocker|startUnitStage|completeUnitStage|recordQcFitTest|UnitV1Actions/, "drawer V2 tanpa API V1");
   assert.match(drawer, /\{unavailable && <div data-testid="unit-overview-fallback"><UnitOrderFallback /);
   const v1 = strip(src("features", "production", "UnitV1Actions.jsx"));
-  for (const api of ["setUnitService", "updateUnitProduction", "resolveBlocker"]) assert.match(v1, new RegExp(`api\\.${api}\\(`), api);
+  for (const api of ["setUnitService", "updateUnitProduction"]) assert.match(v1, new RegExp(`api\\.${api}\\(`), api);
+  assert.doesNotMatch(v1, /api\.resolveBlocker\(/, "slice 2: SATU aksi Lanjutkan (resume-work) — tombol selesaikan-blokir terpisah dihapus");
   assert.doesNotMatch(v1, /startUnitStage|completeUnitStage|failUnitStage|recordQcFitTest|skipUnitStage|assignUnitStage|changeUnitRoute|production-v2|recordProductionV2Step/, "tidak ada tahap/QC/custody/V2");
   // UnitV1Actions hanya diimpor oleh fallback
   const users = [];
@@ -148,7 +149,7 @@ test("keadaan tahap → tombol: stageStateOf menurunkan satu keadaan dari timeli
   assert.equal(stageStateOf({ unit: { currentStageId: "s9" }, path: [], needsService: false }).kind, "ALL_DONE");
   assert.equal(needsPhotoOf(stageStateOf(mk(true, "IN_PROGRESS"))), true); assert.equal(needsPhotoOf(stageStateOf(mk(true, "IN_PROGRESS", { stage: { requiresPhoto: false } }))), false);
   const code = strip(src("features", "production", "UnitV1Stage.jsx"));
-  for (const a of ["startUnitStage", "completeUnitStage", "failUnitStage", "pauseUnitStage", "resumeUnitStage", "recordQcFitTest", "assignUnitStage", "uploadUnitPhotos"]) assert.match(code, new RegExp(`api\\.${a}\\(`), a);
+  for (const a of ["startUnitStage", "completeUnitStage", "failUnitStage", "pauseUnitStage", "resumeProductionWork", "recordQcFitTest", "assignUnitStage", "uploadUnitPhotos"]) assert.match(code, new RegExp(`api\\.${a}\\(`), a);
   assert.doesNotMatch(code, /skipUnitStage|changeUnitRoute|adminBypass|production-v2/, "aksi berisiko tidak dibuka");
 });
 

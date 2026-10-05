@@ -50,8 +50,8 @@ test("DiagnosisWizard: bahan katalog (search) DAN bahan manual/noncatalog terpis
   assert.match(WIZARD, /placeholder="Kenapa tidak ada di katalog\?"/);
 });
 
-test("DiagnosisWizard: layanan teknis dipilih dari katalog (getServiceCatalog), TIDAK menampilkan field harga/HPP", () => {
-  assert.match(WIZARD, /api\.getServiceCatalog\(\)/);
+test("DiagnosisWizard (slice 2): operator TIDAK memilih layanan teknis lagi (tanpa katalog/dropdown/recommendedServiceId); tidak menampilkan field harga/HPP", () => {
+  assert.doesNotMatch(WIZARD, /getServiceCatalog|recommendedServiceId|Layanan teknis \*|Pilih layanan teknis/);
   assert.doesNotMatch(WIZARD, /referenceUnitCost|referenceStockValue|HPP/i);
 });
 
@@ -106,7 +106,7 @@ test("WorkerLane: selector stabil kartu antrean, detail unit, request-khusus, da
   assert.match(WORKER_LANE, /data-testid="worker-unit-card" data-unit-code=\{job\.unitCode\}/);
   assert.match(WORKER_LANE, /data-testid="worker-unit-detail"/);
   assert.match(WORKER_LANE, /data-testid="sales-note"/, "catatan/request Sales (selector stabil pengganti request-khusus)");
-  assert.match(WORKER_LANE, /data-testid=\{next\.stepNo === 5 \? "open-diagnosis" : "v2-primary"\}/);
+  assert.match(WORKER_LANE, /data-testid=\{next\.action === "RESUME" \? "resume-work" : next\.stepNo === 5 \? "open-diagnosis" : "v2-primary"\}/);
 });
 
 test("WorkerLane: teks bebas Sales (Request khusus/Keluhan) tidak melebar — min-w-0 + break-words + overflow-wrap:anywhere", () => {
@@ -139,7 +139,8 @@ test("Unit 360: panel memakai diagnosisCtaLabel + hasLocalDraft dan badge status
 
 // Regresi bug yang ditemukan QA visual: /master-data/service-catalog mengembalikan { services: [...] } (semua pemanggil lain
 // membaca .services); wizard sempat membaca d.items sehingga dropdown "Layanan teknis" SELALU kosong dan submit UI 400.
-test("DiagnosisWizard: dropdown layanan teknis membaca { services } dari /master-data/service-catalog", () => {
-  assert.ok(WIZARD.includes("setServices(Array.isArray(d?.services) ? d.services : [])"));
+test("DiagnosisWizard (slice 2): tidak ada dropdown layanan teknis — pemetaan Sales->produksi dikelola Admin (Pengaturan Produksi)", () => {
+  assert.ok(!WIZARD.includes("setServices"));
   assert.ok(!WIZARD.includes("d?.items"));
+  assert.match(WIZARD, /pemetaan Layanan Sales yang dikelola Admin/);
 });

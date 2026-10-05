@@ -14,7 +14,7 @@ import { resolveUnitPhotosBulk } from "./productionUnitPhotoService.js";
 import { usedQtyByMaterial } from "./productionUnitOverviewService.js";
 import { applicableStepsFor } from "./productionStepCommandService.js";
 import { BOARD_DEFAULTS, PRIORITY_LABEL, stationLabel } from "../lib/domain/productionBoard.js";
-import { STEP_BY_NO, stepNoForStage } from "../lib/domain/productionSteps.js";
+import { STEP_BY_NO, isSkippedEvidence, stepNoForStage } from "../lib/domain/productionSteps.js";
 import { buildDocumentationMatrix, deriveNextStepNo, isDocumentationRow, LEGACY_PHOTO_PREFIX, parseDocRows } from "../lib/domain/productionDocumentation.js";
 import {
   DATE_BASES, METRICS, MIN_SAMPLE, SLA, SLA_NOTE, STATUS_BUCKETS, activeFilterLabels, bucketKey, computeMetrics, drillRows, formatMinutes, inPeriod, keyInPeriod,
@@ -98,7 +98,10 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
     const fgAccepted = fg.filter((h) => h.status === "ACCEPTED" && h.acceptedAt).sort((a, b) => b.acceptedAt - a.acceptedAt)[0];
     const fgOffered = fg.filter((h) => h.status === "OFFERED").sort((a, b) => b.offeredAt - a.offeredAt)[0];
     const handoffPhase = run.phases.find((p) => p.phase === "HANDOFF");
-    const step12 = stepEv.filter((e) => e.stepNo === 12).at(-1);
+    // Tahap yang DILEWATI (mode adaptasi) bukan pekerjaan: tidak dihitung sebagai penyelesaian tahap 12 maupun durasi; QC tidak dilakukan bukan lulus/gagal.
+    const step12 = stepEv.filter((e) => e.stepNo === 12 && !isSkippedEvidence(e)).at(-1);
+    const skippedSteps = [...new Set(stepEv.filter(isSkippedEvidence).map((e) => e.stepNo))].length;
+    const qcNotPerformed = !!run.adaptationPolicy && run.operations.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed) && run.inspections.filter((q) => q.result !== "PENDING").length === 0;
     const finishedAt = step12?.createdAt ?? handoffPhase?.startedAt ?? null;
     const readyAt = fgAccepted?.acceptedAt ?? (run.status === "COMPLETED" ? run.completedAt : null) ?? null;
     const arrivedAt = inbound?.acceptedAt ?? (run.origin === "WORKSHOP_BORN" ? run.createdAt : null);
@@ -160,6 +163,7 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
       operatorId: plan?.operator?.id ?? null, operatorName: plan?.operator?.user?.name ?? null, cornerOperatorId: plan?.cornerOperator?.id ?? null, cornerOperatorName: plan?.cornerOperator?.user?.name ?? null,
       currentStepNo: deriveNextStepNo(recorded) && !finishedAt ? Math.min(12, deriveNextStepNo(recorded)) : (recorded.size ? Math.max(...recorded) : (run.status === "PENDING_ARRIVAL" ? null : 1)),
       statusBucket, delayReason, waitingMaterial: openShortage || waitingIssue, openException: run.exceptions.length > 0,
+      adaptation: !!run.adaptationPolicy, skippedSteps, qcNotPerformed,
       qc, docs: { required: matrix.totals.required, satisfied: matrix.totals.satisfied, missingTotal: matrix.missingTotal, lengkap: matrix.flags.lengkap, photos: matrix.totals.photos },
       materials, extraMaterial: materials.some((m) => m.supplemental) || planIssues.some((i) => i.reworkInspectionId), waste,
       returns: { pending: pendingRet.length, partial: retRows.filter((r) => r.status === "RECEIVED" && r.receivedQty != null && Number(r.receivedQty) < Number(r.qty) - 1e-9).length, done: retRows.filter((r) => r.status === "RECEIVED").length, oldestPendingAt: pendingRet.map((r) => r.requestedAt).sort((a, b) => a - b)[0] ?? null },
@@ -219,6 +223,7 @@ export const UNIT_COLUMNS = [
   { key: "status", header: "Status", tipe: "teks" }, { key: "step", header: "Tahap", tipe: "angka" },
   { key: "planned", header: "Direncanakan", tipe: "tanggal" }, { key: "arrived", header: "Masuk", tipe: "waktu" }, { key: "started", header: "Mulai", tipe: "waktu" }, { key: "finished", header: "Selesai", tipe: "waktu" }, { key: "ready", header: "Siap Kirim", tipe: "waktu" },
   { key: "target", header: "Target Selesai", tipe: "waktu" }, { key: "tatMin", header: "TAT Masuk→Siap (mnt)", tipe: "angka" }, { key: "late", header: "Terlambat", tipe: "teks" },
+  { key: "completion", header: "Cara Selesai", tipe: "teks" }, { key: "skippedSteps", header: "Tahap Dilewati", tipe: "angka" },
   { key: "qcFirst", header: "QC Pertama", tipe: "teks" }, { key: "qcFails", header: "QC Gagal (x)", tipe: "angka" }, { key: "docPct", header: "Dokumentasi (%)", tipe: "angka" }, { key: "docMissing", header: "Foto Kurang", tipe: "angka" },
   { key: "returnPending", header: "Retur Pending", tipe: "angka" }, { key: "wasteQty", header: "Waste (qty)", tipe: "angka" }, { key: "extraMaterial", header: "Tambahan Bahan", tipe: "teks" },
   { key: "activeMin", header: "Aktif (mnt)", tipe: "angka" }, { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Tertunda (mnt)", tipe: "angka" },
@@ -229,7 +234,8 @@ export function unitRow(f, now) {
     runId: f.runId, unitId: f.unitId, unitCode: f.unitCode, orderNumber: f.orderNumber, service: f.serviceLabel, station: f.stationCode ? stationLabel(f.stationCode) : null, pic: f.operatorName, corner: f.cornerOperatorName,
     priority: PRIORITY_LABEL[f.priority] || "Normal", status: STATUS_BUCKETS[f.statusBucket], step: f.currentStepNo, planned: f.plannedDate, arrived: iso(f.arrivedAt), started: iso(f.startedAt), finished: iso(f.finishedAt), ready: iso(f.readyAt), target: iso(f.targetCompleteAt),
     tatMin: f.readyAt && f.arrivedAt ? minutesBetween(f.arrivedAt, f.readyAt) : null, late: lateOpen ? "Ya (belum selesai)" : lateFin ? "Ya (selesai terlambat)" : f.targetCompleteAt ? "Tidak" : "—",
-    qcFirst: f.qc.first === "PASS" ? "Lulus" : f.qc.first === "FAIL" ? "Gagal" : f.qc.first || "Belum QC", qcFails: f.qc.fails, docPct: f.docs.required ? round1((f.docs.satisfied / f.docs.required) * 100) : null, docMissing: f.docs.missingTotal,
+    completion: f.adaptation ? (f.runStatus === "COMPLETED" ? "Adaptasi (tahap dilewati)" : "Mode adaptasi") : "Proses lengkap", skippedSteps: f.skippedSteps ?? 0,
+    qcFirst: f.qcNotPerformed ? "Tidak dilakukan" : f.qc.first === "PASS" ? "Lulus" : f.qc.first === "FAIL" ? "Gagal" : f.qc.first || "Belum QC", qcFails: f.qc.fails, docPct: f.docs.required ? round1((f.docs.satisfied / f.docs.required) * 100) : null, docMissing: f.docs.missingTotal,
     returnPending: f.returns.pending, wasteQty: Math.round(f.waste.reduce((s, w) => s + w.qty, 0) * 10000) / 10000, extraMaterial: f.extraMaterial ? "Ya" : "Tidak",
     activeMin: f.timing.activeMin, pauseMin: f.timing.pauseMin, blockedMin: f.timing.blockedMin,
   };

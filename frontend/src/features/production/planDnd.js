@@ -23,7 +23,7 @@ export function listWithInserted(ids, id, index) {
 }
 
 // Unit 12/12 (semua tahap selesai): terkunci — tidak bisa diseret/dipindah, selalu di urutan paling bawah meja.
-export const isPlanComplete = (v) => (v?.progress?.total ?? 0) > 0 && (v.progress.done ?? 0) >= v.progress.total;
+export const isPlanComplete = (v) => (v?.progress?.total ?? 0) > 0 && (v.progress.done ?? 0) + (v.progress.skipped ?? 0) >= v.progress.total;
 // Urutan tampil di meja = urutan server (manual > prioritas bawaan), LALU unit 12/12 dikunci di bawah (stabil). Dipakai render DAN keputusan drop.
 export const planDisplayOrder = (items) => { const o = orderedStationItems(items); return [...o.filter((v) => !isPlanComplete(v)), ...o.filter(isPlanComplete)]; };
 

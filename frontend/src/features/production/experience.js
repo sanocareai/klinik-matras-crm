@@ -117,6 +117,7 @@ export function waitCopy(next) {
     case "PENDING_ARRIVAL": return { title: "Menunggu konfirmasi kedatangan", text: "Unit sudah masuk produksi (pickup berhasil) tapi belum dikonfirmasi tiba di workshop. Konfirmasi kedatangan dulu di Rencana Produksi sebelum tahap ini bisa dimulai." };
     case "AWAITING_QC": return { title: "Menunggu QC", text: "Petugas QC akan menguji unit ini. Anda bisa lanjut ke unit lain." };
     case "MATERIAL_NOT_READY": return { title: "Bahan belum turun", text: "Gudang belum menyerahkan bahan untuk tahap berikutnya. Tekan “Tunda Pekerjaan” (Menunggu bahan) bila bahan dibutuhkan sekarang." };
+    case "READY_TO_FINISH": return { title: "Siap diselesaikan", text: "Semua tahap kerja tuntas. Tekan Selesaikan Produksi — QC tidak diwajibkan pada mode adaptasi (dicatat tidak dilakukan, bukan lulus)." };
     case "MATERIAL_SHORTAGE": return { title: "Tertunda — menunggu bahan", text: "Laporan kekurangan bahan sudah terkirim ke Gudang. Yang bertindak: Gudang. Pekerjaan bisa dilanjutkan setelah bahan diserahkan." };
     case "SERVICE_NOT_SET": return { title: "Menunggu keputusan layanan", text: "Diagnosa sudah terkirim. Production Lead perlu menetapkan layanan unit sebelum pekerjaan dilanjutkan." };
     case "DIAGNOSIS_MANUAL_UNMAPPED": return { title: "Menunggu pemetaan bahan manual", text: "Diagnosa sudah terkirim. Production Lead perlu memetakan bahan manual ke katalog (Unit 360 > Bahan) sebelum pekerjaan dilanjutkan." };

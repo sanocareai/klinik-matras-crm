@@ -28,8 +28,6 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
   const [draft, setDraft] = useState(() => draftOf(unit));
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState({ section: "", kind: "", text: "" });
-  const [resolving, setResolving] = useState(false);
-  const [note, setNote] = useState("");
 
   // Draf mengikuti data terbaru dari server (setelah simpan / muat ulang karena konflik).
   useEffect(() => { setDraft(draftOf(data.unit)); setServiceId(""); }, [data.unit.id, data.unit.priority, data.unit.productionDueAt, data.unit.serviceId]);
@@ -55,7 +53,6 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
   const saveService = () => run("service", ["service"], () => api.setUnitService(unit.id, serviceId, unit.serviceId ?? null), "Rute pengerjaan tersimpan.");
   const patch = productionPatchOf(draft, unit);
   const saveProduction = () => run("production", ["priority", "due"], () => api.updateUnitProduction(unit.id, { ...patch, expected: { priority: unit.priority || "NORMAL", productionDueAt: unit.productionDueAt || null } }), "Prioritas & target tersimpan.");
-  const resolveBlocker = () => run("blocker", ["blocker"], async () => { await api.resolveBlocker(unit.id, data.activeBlocker.id, note.trim() || undefined); setResolving(false); setNote(""); }, "Pekerjaan dilanjutkan.");
   const m = (s) => (msg.section === s ? msg : { kind: "", text: "" });
   const blocker = data.activeBlocker;
 
@@ -105,15 +102,7 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
             <div className="flex items-center gap-2"><Badge variant="red" data-testid="v1-delay-status">Tertunda — {delayReasonOfBlock(blocker.reason).label.toLowerCase()}</Badge>{blocker.stage?.labelId && <span className="text-[12px] text-ink3">tahap {blocker.stage.labelId}</span>}</div>
             {blocker.note && <p className="m-0 text-[12.5px] text-ink2">{blocker.note}</p>}
             <p className="m-0 text-[11.5px] text-ink3">Ditunda {formatTanggalJam(blocker.openedAt)}{blocker.openedBy?.name ? ` oleh ${blocker.openedBy.name}` : ""} · {formatDurasiMenit(Math.max(0, Math.floor((Date.now() - new Date(blocker.openedAt).getTime()) / 60000)))}</p>
-            {!canResolve ? <p className="m-0 text-[11.5px] text-ink3" data-testid="v1-resume-who">{resumeInfo({ source: "BLOCKER", reason: blocker.reason, canResume: false }).text}</p> : !resolving ? (
-              <Button size="sm" variant="secondary" data-testid="v1-blocker-open" onClick={() => setResolving(true)}>{RESUME_ACTION_LABEL}</Button>
-            ) : (
-              <div className="space-y-2">
-                <textarea data-testid="v1-blocker-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Bagaimana kendala ini diselesaikan? (opsional)" className="w-full rounded-btn border border-border bg-surface px-2.5 py-2 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent" />
-                <div className="flex gap-2"><Button size="sm" variant="ghost" className="flex-1" onClick={() => { setResolving(false); setNote(""); }}>Batal</Button>
-                  <Button size="sm" className="flex-1" data-testid="v1-blocker-confirm" onClick={resolveBlocker} disabled={!!busy}>{busy === "blocker" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} {RESUME_ACTION_LABEL}</Button></div>
-              </div>
-            )}
+            <p className="m-0 text-[11.5px] text-ink3" data-testid="v1-resume-who">{resumeInfo({ source: "BLOCKER", reason: blocker.reason, canResume: canResolve && blocker.reason !== "MATERIAL_SHORTAGE" }).kind === "BUTTON" ? `Tekan "${RESUME_ACTION_LABEL}" di bagian Pekerjaan setelah kendalanya selesai.` : resumeInfo({ source: "BLOCKER", reason: blocker.reason, canResume: false }).text}</p>
           </div>
         )}
         <Msg kind={m("blocker").kind} testid="v1-blocker-msg">{m("blocker").text}</Msg>

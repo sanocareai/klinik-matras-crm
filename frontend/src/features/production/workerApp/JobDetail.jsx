@@ -7,9 +7,11 @@ import { STAGE_LOG_STATUS } from "@/features/bengkel/unitStatus.js";
 import { actionLabel, formatMinutes, friendlyError, isQuickAction, isRetryableError, waitCopy } from "@/features/production/experience.js";
 import { materialBadge } from "@/features/production/unitCardModel.js";
 import { GantiKainNote, JobPhoto, PriorityChip, ProgressLine, SalesNote, SalesServicesLine, StageChip, StatusChip } from "./JobCard.jsx";
-import { DELAY_ACTION_LABEL, delayStatusText, resumeInfo } from "@/features/production/productionLabels.js";
+import { DELAY_ACTION_LABEL, FINISH_ACTION_LABEL, RESUME_ACTION_LABEL, SKIP_ACTION_LABEL, SKIP_LABEL, delayKindText, delayStatusText, resumeInfo } from "@/features/production/productionLabels.js";
+import { STEP_BY_NO } from "@/features/production/experience.js";
 import { V1ActionBar, V1MaterialsPanel } from "./V1Panels.jsx";
 import { ShortageSheet, StepSheet, intentKeys } from "./workerSheets.jsx";
+import { DelaySheet, FinishSheet, SkipSheet } from "./adaptationSheets.jsx";
 import { isV1Actionable, jobFromV1, jobFromV2, submitState } from "./workerAppModel.js";
 
 // Detail pekerjaan: progres dari server, bahan, dokumentasi, dan SATU aksi utama (batang lengket) sesuai kemampuan & tahap.
@@ -49,10 +51,11 @@ function StepList({ steps, lane }) {
   return (
     <ol className="m-0 list-none space-y-1 p-0" aria-label="Tahap">
       {mine.map((s) => (
-        <li key={s.no} className={`flex items-center gap-3 rounded-btn px-3 py-2 text-[13.5px] ${s.status === "CURRENT" ? "bg-accentbg font-semibold text-accent" : s.status === "NA" ? "text-ink3 line-through" : "text-ink2"}`}>
+        <li key={s.no} data-step-status={s.status} className={`flex items-center gap-3 rounded-btn px-3 py-2 text-[13.5px] ${s.status === "CURRENT" ? "bg-accentbg font-semibold text-accent" : s.status === "NA" ? "text-ink3 line-through" : s.status === "SKIPPED" ? "bg-inset text-ink3" : "text-ink2"}`}>
           <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${s.status === "DONE" ? "bg-green text-white" : s.status === "CURRENT" ? "bg-accent text-white" : "bg-inset text-ink3"}`}>{s.status === "DONE" ? <CheckCircle2 size={14} aria-hidden /> : s.no}</span>
           <span className="flex-1">{s.label}</span>
           {s.status === "NA" && <span className="text-[11px]">tidak berlaku</span>}
+          {s.status === "SKIPPED" && <span data-testid="step-skipped" className="text-[11px] font-semibold">{SKIP_LABEL}</span>}
           {s.status === "WAITING" && <span className="text-[11px] text-orange">menunggu</span>}
         </li>
       ))}
@@ -84,7 +87,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
   const [card, setCard] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [sheet, setSheet] = useState(null); // step | shortage
+  const [sheet, setSheet] = useState(null); // step | shortage | skip | finish | delay
   const [quickBusy, setQuickBusy] = useState(false);
   const sheetRef = useRef(null); sheetRef.current = sheet;
   const loadCard = useCallback(async () => { try { setCard(await api.getProductionV2Card(job.id)); setError(""); } catch (e) { setError(friendlyError(e)); } }, [job.id]);
@@ -109,6 +112,17 @@ function V2Detail({ job, lane, onBack, onChanged }) {
       if (!isRetryableError(e)) intentKeys.release(card.runId, next.stepNo, card.revision);
       setError(friendlyError(e)); loadCard();
     } finally { setQuickBusy(false); }
+  }
+  // Flow adaptasi (slice 2)
+  const adaptation = !!card?.adaptation;
+  const canSkip = adaptation && mineNow && !card.activeOp && ["START_WITH_EVIDENCE", "START", "START_CORNER", "FINISH"].includes(next?.action);
+  const canFinish = adaptation && !!next && !["PENDING_ARRIVAL", "COMPLETED", "RUN_CANCELLED"].includes(next.wait);
+  const readyToFinish = next?.wait === "READY_TO_FINISH";
+  const canDelay = mineNow && card?.activeOp?.status === "ACTIVE";
+  async function resumeWork() {
+    setQuickBusy(true); setError("");
+    try { await api.resumeProductionWork(card.unit.id, { expectedRevision: card.revision }); setNotice("Pekerjaan dilanjutkan."); await afterChange(); }
+    catch (e) { setError(friendlyError(e)); loadCard(); } finally { setQuickBusy(false); }
   }
   const canShortage = lane === "TABLE" && card && !card.shortage && next?.stepNo && next.stepNo >= 3 && next.stepNo <= 8 && (next.action !== "WAIT" || next.wait === "MATERIAL_NOT_READY");
   const mat = card ? materialBadge(card) : null;
@@ -138,7 +152,8 @@ function V2Detail({ job, lane, onBack, onChanged }) {
               <Section title="Bahan" testid="section-bahan" aside={card.shortage ? <Badge variant="red">Bahan kurang</Badge> : mat ? <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${TONE[mat.tone] || TONE.neutral}`}>{mat.label}</span> : null}>
                 {card.shortage && <div className="mb-3 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><p className="m-0 font-bold" data-testid="delay-status">{delayStatusText("MATERIAL_SHORTAGE")}</p><p className="m-0 mt-0.5 text-[12.5px]" data-testid="resume-who">{resumeInfo({ source: "SHORTAGE", reason: "MATERIAL_SHORTAGE", canResume: false }).text}</p><ul className="m-0 mt-1 list-disc pl-5">{card.shortage.items.map((i) => <li key={i.materialId}>{i.name}{i.qty ? ` — ${i.qty}` : ""}</li>)}</ul></div>}
                 {card.bom?.length ? <ul className="m-0 list-none space-y-1.5 p-0" data-testid="bom-list">{card.bom.map((b) => <li key={b.id} className="flex items-center justify-between gap-2 rounded-btn bg-inset px-3 py-2 text-[14px]"><span className="min-w-0 truncate font-semibold text-ink">{b.name}{b.supplemental ? " (tambahan)" : ""}</span><span className="shrink-0 tabular-nums text-ink2">{b.qty} {b.uom}</span></li>)}</ul> : <p className="m-0 text-[13.5px] text-ink3">{card.materialStatus?.label || "Rencana bahan belum dibuat"} — rencana bahan muncul setelah diagnosis.</p>}
-                {canShortage && <button type="button" data-testid="open-shortage" onClick={() => setSheet("shortage")} className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-btn bg-redbg text-[15px] font-bold text-red"><PackageX size={19} aria-hidden /> {DELAY_ACTION_LABEL}</button>}
+                {canDelay && <button type="button" data-testid="open-delay" onClick={() => setSheet("delay")} className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-btn bg-redbg text-[15px] font-bold text-red"><PackageX size={19} aria-hidden /> {DELAY_ACTION_LABEL}</button>}
+                {!canDelay && canShortage && <button type="button" data-testid="open-shortage" onClick={() => setSheet("shortage")} className="mt-3 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-btn bg-redbg text-[15px] font-bold text-red"><PackageX size={19} aria-hidden /> {DELAY_ACTION_LABEL}</button>}
               </Section>
               <Section title="Dokumentasi" testid="section-dokumentasi"><EvidenceList evidence={card.evidence} /></Section>
             </>
@@ -153,7 +168,8 @@ function V2Detail({ job, lane, onBack, onChanged }) {
           {mineNow ? (
             <>
               {next.rework && <p className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange">Uji tekstur {String(next.lastVerdict || "").replace("_", " ").toLowerCase()} — sesuaikan lapisan lalu kirim ulang bukti.</p>}
-              <button type="button" className="wa-primary" data-testid={next.stepNo === 5 ? "open-diagnosis" : "v2-primary"} data-mutates={isQuickAction(next) ? "" : undefined} disabled={gate.disabled && isQuickAction(next)} onClick={() => (isQuickAction(next) ? quick() : setSheet("step"))}>
+              {card.activeOp?.status === "PAUSED" && card.activeOp.delayKind && <p data-testid="delay-kind-note" className="m-0 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><b>{delayKindText(card.activeOp.delayKind, card.activeOp.delayNote)}.</b> Tekan “{RESUME_ACTION_LABEL}” setelah kendalanya selesai.</p>}
+              <button type="button" className="wa-primary" data-testid={next.action === "RESUME" ? "resume-work" : next.stepNo === 5 ? "open-diagnosis" : "v2-primary"} data-mutates={next.action === "RESUME" || isQuickAction(next) ? "" : undefined} disabled={gate.disabled && (next.action === "RESUME" || isQuickAction(next))} onClick={() => (next.action === "RESUME" ? resumeWork() : isQuickAction(next) ? quick() : setSheet("step"))}>
                 {quickBusy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : null}{actionLabel(next, { stageLabel: card.activeOp?.stageLabel })}
               </button>
             </>
@@ -161,12 +177,22 @@ function V2Detail({ job, lane, onBack, onChanged }) {
             <div data-testid="v2-wait" className="rounded-btn bg-inset px-3 py-3">
               <p className="m-0 text-[14.5px] font-bold text-ink">{next?.action === "WAIT" ? waitCopy(next).title : "Tahap berikutnya milik tim lain"}</p>
               <p className="m-0 mt-0.5 text-[13px] text-ink3">{next?.action === "WAIT" ? waitCopy(next).text : lane === "CORNER" ? "Unit masih dikerjakan di meja bongkar." : "Unit sedang di meja Corner."}</p>
+              {readyToFinish && <button type="button" data-mutates data-testid="open-finish-primary" onClick={() => setSheet("finish")} className="wa-primary mt-3">{FINISH_ACTION_LABEL}</button>}
+            </div>
+          )}
+          {(canSkip || (canFinish && !readyToFinish)) && (
+            <div className="grid grid-cols-2 gap-2">
+              {canSkip ? <button type="button" data-mutates data-testid="open-skip" onClick={() => setSheet("skip")} className="flex min-h-[48px] items-center justify-center rounded-btn bg-inset text-[14px] font-bold text-ink2">{SKIP_ACTION_LABEL}</button> : <span />}
+              {canFinish && !readyToFinish ? <button type="button" data-mutates data-testid="open-finish" onClick={() => setSheet("finish")} className="flex min-h-[48px] items-center justify-center rounded-btn bg-inset text-[14px] font-bold text-ink2">{FINISH_ACTION_LABEL}</button> : <span />}
             </div>
           )}
         </div></div>
       )}
 
       {sheet === "step" && card && next && <StepSheet card={card} next={next} onClose={() => setSheet(null)} onSubmitted={async (result) => { if (result) { setSheet(null); setNotice(result.verdict && result.verdict !== "PAS" ? "Hasil uji tercatat — lanjutkan rework lapisan." : "Tahap tersimpan."); } await afterChange(); }} />}
+      {sheet === "skip" && card && next && <SkipSheet card={card} next={next} stageLabel={STEP_BY_NO[next.stepNo]?.label} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); setNotice("Tahap dicatat dilewati (Adaptasi sistem)."); await afterChange(); }} />}
+      {sheet === "finish" && card && <FinishSheet card={card} onClose={() => setSheet(null)} onDone={async (res) => { setSheet(null); setNotice(`Produksi selesai — unit Siap Kirim. QC tidak dilakukan; ${res.skippedSteps?.length ?? 0} tahap dicatat dilewati.`); await afterChange(); }} />}
+      {sheet === "delay" && card && <DelaySheet card={card} onClose={() => setSheet(null)} onPickMaterial={() => setSheet("shortage")} onDone={async () => { setSheet(null); setNotice("Pekerjaan ditunda."); await afterChange(); }} />}
       {sheet === "shortage" && card && <ShortageSheet card={card} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); setNotice("Gudang sudah diberi tahu."); await afterChange(); }} />}
     </div>
   );

@@ -32,20 +32,26 @@ export function computeLeftovers({ issued, used, wasted, returned }) {
   return out.sort((a, b) => a.materialId.localeCompare(b.materialId));
 }
 
-export async function createLeftoverReturnsInTx(tx, { run, actorId, commandId = null }) {
-  const plan = await tx.productionRunPlan.findUnique({ where: { runId: run.id }, select: { id: true } });
-  if (!plan) return { created: 0 };
+// Sisa bahan run saat ini (BACA-SAJA; dipakai pembuatan retur DAN pratinjau "Selesaikan Produksi"). null bila run belum punya rencana.
+export async function computeRunLeftovers(client, run) {
+  const plan = await client.productionRunPlan.findUnique({ where: { runId: run.id }, select: { id: true } });
+  if (!plan) return null;
   const [issueLines, evidence, moves] = await Promise.all([
-    tx.materialIssueLine.findMany({ where: { materialIssue: { productionPlanId: plan.id, status: "ISSUED" } }, select: { materialId: true, issuedQty: true } }),
-    tx.productionStepEvidence.findMany({ where: { runId: run.id, stepNo: { in: [6, 7, 10] }, NOT: { stepCode: { startsWith: "DOC_" } } }, select: { payload: true } }),
-    tx.stockMovement.findMany({ where: { unitId: run.unitId, type: { in: ["WASTE", "RETURN"] } }, select: { materialId: true, type: true, qty: true } }),
+    client.materialIssueLine.findMany({ where: { materialIssue: { productionPlanId: plan.id, status: "ISSUED" } }, select: { materialId: true, issuedQty: true } }),
+    client.productionStepEvidence.findMany({ where: { runId: run.id, stepNo: { in: [6, 7, 10] }, NOT: { stepCode: { startsWith: "DOC_" } } }, select: { payload: true } }),
+    client.stockMovement.findMany({ where: { unitId: run.unitId, type: { in: ["WASTE", "RETURN"] } }, select: { materialId: true, type: true, qty: true } }),
   ]);
   const sum = (m, id, v) => m.set(id, (m.get(id) || 0) + v);
   const issued = new Map(), used = new Map(), wasted = new Map(), returned = new Map();
   for (const l of issueLines) sum(issued, l.materialId, Number(l.issuedQty || 0));
   for (const e of evidence) for (const l of e.payload?.materials || []) sum(used, l.materialId, Number(l.qty || 0));
   for (const m of moves) sum(m.type === "WASTE" ? wasted : returned, m.materialId, Math.abs(Number(m.qty)));
-  const leftovers = computeLeftovers({ issued, used, wasted, returned });
+  return computeLeftovers({ issued, used, wasted, returned });
+}
+
+export async function createLeftoverReturnsInTx(tx, { run, actorId, commandId = null }) {
+  const leftovers = await computeRunLeftovers(tx, run);
+  if (!leftovers) return { created: 0 };
   for (const l of leftovers) {
     const existing = await tx.productionMaterialReturn.findUnique({ where: { runId_materialId: { runId: run.id, materialId: l.materialId } } });
     if (!existing) {

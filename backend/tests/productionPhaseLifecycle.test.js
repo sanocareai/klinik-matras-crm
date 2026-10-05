@@ -110,7 +110,9 @@ test("audit writer fase pada source aktual: 0 pelanggaran; mutasi hanya di helpe
   const report = runPhaseLifecycleWriterAudit(backendRoot);
   assert.equal(report.totals.violations, 0, JSON.stringify(report.findings.filter((f) => !f.ok)));
   assert.ok(report.totals.mutations >= 1 && report.findings.filter((f) => f.kind === "PHASE_MUTATION").every((f) => f.file === "src/services/productionPhaseLifecycle.js"));
-  assert.equal(report.totals.runCompletions, 2);
+  // 3 penutup run: custody (barang jadi) + P6 (override V1) + custody (completeAdaptationRunInTx, slice 2 — hanya run ADAPTATION_V1, fase QC/HANDOFF NOT_APPLICABLE). Ketiganya dijaga assertRunPhasesTerminal dan berada di owner custody/P6.
+  assert.equal(report.totals.runCompletions, 3);
+  assert.ok(report.findings.filter((f) => f.kind === "RUN_COMPLETION").every((f) => /unitCustodyCommandService|productionQcHandoffCommandService/.test(f.file)), "penutup run hanya di owner custody/P6");
   assert.equal(report.totals.rawSqlWrites, 0);
 });
 

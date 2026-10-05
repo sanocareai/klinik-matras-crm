@@ -142,7 +142,7 @@ test("tab hub sesuai keputusan: Order Produksi, Biaya Produksi, Komplain & Revis
   assert.deepEqual([...src("pages", "bengkel", "ProductionWorkOrders.jsx").matchAll(/\{ key: "(\w+)", label: "(\w+)" \}/g)].filter((m) => ["aktif", "semua", "riwayat"].includes(m[1])).map((m) => m[2]), ["Aktif", "Semua", "Riwayat"]);
   assert.deepEqual([...src("pages", "bengkel", "ProductionCostHub.jsx").matchAll(/label: "([^"]+)"/g)].map((m) => m[1]).slice(0, 3), ["Pengajuan", "Status Pengajuan", "Laporan"]);
   assert.deepEqual([...src("pages", "bengkel", "ProductionComplaintsHub.jsx").matchAll(/label: "([^"]+)"/g)].map((m) => m[1]).slice(0, 3), ["Kasus Aktif", "Revisi Unit", "Riwayat"]);
-  assert.deepEqual(SETTINGS_TABS.map((t) => t.label), ["Area Kerja", "Operator & PIC", "Layanan & Tahapan", "Target Produksi", "Tampilan"]);
+  assert.deepEqual(SETTINGS_TABS.map((t) => t.label), ["Area Kerja", "Operator & PIC", "Layanan & Tahapan", "Alur Kerja", "Target Produksi", "Tampilan"]);
   assert.deepEqual(KPI_TABS.map((t) => t.label), ["Ringkasan KPI", "Produksi", "Meja", "PIC", "Gudang", "Laporan Unit", "Export"]);
   assert.deepEqual(tabsFor({ summary: true, stations: true, operators: true, units: true, warehouse: true }).map((t) => t.label), KPI_TABS.map((t) => t.label));
 });
@@ -170,7 +170,7 @@ test("Order Produksi: scope aktif menyembunyikan Terkirim, riwayat hanya Terkiri
 // ---------------------------------------------------------------- Pengaturan ---------------------------------------------------------------
 test("Pengaturan: ADMIN/OWNER semua tab; Production Lead sesuai izin bawaan; peran lain tidak melihat menu maupun tab", () => {
   const keys = (roles) => settingsTabsFor(roles).map((t) => t.key);
-  const ALL = ["area-kerja", "operator", "layanan", "target", "tampilan"];
+  const ALL = ["area-kerja", "operator", "layanan", "alur-kerja", "target", "tampilan"];
   assert.deepEqual(keys(["ADMIN"]), ALL); assert.deepEqual(keys(["OWNER"]), ALL);
   assert.deepEqual(keys(["PRODUCTION_LEAD"]), ALL, "Lead memegang work_center/operator/route/report:read bawaan");
   for (const r of ["PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE", "PRODUCTION_DOCUMENTER", "SALES", "FINANCE", "DRIVER"]) { assert.deepEqual(keys([r]), [], r); assert.equal(canOpenSettings([r]), false, r); }
@@ -182,9 +182,12 @@ test("Pengaturan: ADMIN/OWNER semua tab; Production Lead sesuai izin bawaan; per
   assert.match(page, /<ThemeToggle \/>/); assert.match(page, /resetSidebarPreferences\("bengkel"\)/);
 });
 
-test("Pengaturan tidak memperluas permission backend (tanpa perubahan izin untuk membuka tab)", () => {
-  const perms = fs.readFileSync(path.join(here, "..", "..", "backend", "src", "constants", "permissions.js"), "utf8");
-  assert.doesNotMatch(perms, /production_settings|PRODUCTION_SETTINGS/i);
+test("Pengaturan Alur Kerja (slice 2): izin tulis BARU hanya ADMIN/OWNER; membuka tab tetap izin lama; Lead hanya melihat", async () => {
+  const { PERMISSIONS: P, ROLE_PERMISSIONS } = await import("../../backend/src/constants/permissions.js");
+  const holders = Object.entries(ROLE_PERMISSIONS).filter(([, ps]) => ps.includes(P.PRODUCTION_SETTINGS_WRITE)).map(([r]) => r).sort();
+  assert.deepEqual(holders, ["ADMIN", "OWNER"], "hanya Admin/Owner menulis pengaturan");
+  const page = strip(src("pages", "bengkel", "ProductionWorkflowSettings.jsx"));
+  assert.match(page, /const canWrite = !!s\?\.canWrite/); assert.match(page, /disabled=\{!canWrite/);
 });
 
 // ---------------------------------------------------------------- persistensi tab ----------------------------------------------------------

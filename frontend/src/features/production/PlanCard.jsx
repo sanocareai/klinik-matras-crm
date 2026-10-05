@@ -5,7 +5,7 @@ import { ProgressBar } from "@/components/ui/progress.jsx";
 import { targetDateBadge } from "@/features/production/experience.js";
 import { dataGaps, isGantiKain, materialBadge, mattressInfo, mejaLabel, priorityMeta, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
 import { isPlanComplete } from "@/features/production/planDnd.js";
-import { delayStatusText, rankOfView, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
+import { delayStatusText, progressText, rankOfView, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
 import { UnitPhoto } from "@/features/production/UnitCard.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 
@@ -136,7 +136,7 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
             {view.progress && (
               <div className="flex items-center gap-2 pt-0.5" data-testid="row-progress">
                 <div className="flex-1"><ProgressBar value={progress} variant={view.shortage ? "warning" : "accent"} /></div>
-                <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-ink2">{view.progress.done}/{view.progress.total} tahap</span>
+                <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-ink2">{progressText(view.progress)}</span>
               </div>
             )}
             {view.shortage && <p data-testid="delay-status" className="m-0 flex items-center gap-1 text-[12.5px] font-medium text-red"><PackageX size={13} aria-hidden /> {delayStatusText("MATERIAL_SHORTAGE")}: {view.shortage.items?.map((i) => i.name).join(", ")}</p>}

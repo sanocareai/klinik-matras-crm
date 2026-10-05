@@ -43,7 +43,7 @@ export function jobFromV2(item) {
   const view = { customer, unit: item?.unit };
   const style = bucketStyle(item?.bucket);
   const waiting = item?.bucket === "MENUNGGU_BAHAN" || !!item?.shortage || item?.next?.wait === "MATERIAL_SHORTAGE";
-  const prog = item?.progress && Number.isFinite(item.progress.total) ? { done: item.progress.done ?? 0, total: item.progress.total, source: "server-v2" } : null;
+  const prog = item?.progress && Number.isFinite(item.progress.total) ? { done: item.progress.done ?? 0, skipped: item.progress.skipped ?? 0, remaining: item.progress.remaining ?? 0, total: item.progress.total, source: "server-v2" } : null;
   return {
     key: `v2:${item.runId}`, source: "V2", id: item.runId, unitId: item.unit?.id ?? null, revision: item.revision,
     unitCode: item.unit?.unitCode ?? "—", orderNumber: customer.orderNumber ?? item.unit?.orderNumber ?? null,
@@ -57,6 +57,7 @@ export function jobFromV2(item) {
     status: viewStatus(item), presence: viewPresence(item),
     stage: { label: stageText(item), bucket: item.bucket, tone: style.badge, bucketLabel: style.label },
     stationLabel: item.plan?.stationLabel ?? null, sequence: item.plan?.stationSequence ?? null,
+    adaptation: !!item?.adaptation, delayKind: item?.activeOp?.status === "PAUSED" ? (item.activeOp.delayKind ?? null) : null, delayNote: item?.activeOp?.delayNote ?? null,
     progress: prog, materialWaiting: waiting, material: materialBadge(item), late: !!item.timer?.late,
     active: ["BONGKAR", "DIAGNOSA", "FONDASI", "LAPISAN", "QC", "CORNER"].includes(item.bucket) && item.next?.action !== "WAIT" && !!item.activeOp,
     raw: item,
@@ -71,8 +72,8 @@ export const V1_STATE_LABEL = Object.freeze({
   WAITING_PREREQUISITE: "Menunggu tahap prasyarat", WAITING_ASSIGNMENT: "Menunggu penugasan berikutnya",
 });
 const V1_STATE_TONE = Object.freeze({ READY: "accent", IN_PROGRESS: "accent", PAUSED: "orange", BLOCKED: "red", WAITING_PREREQUISITE: "orange", WAITING_ASSIGNMENT: "neutral" });
-// Hanya tiga keadaan ini yang membuka aksi (mulai / selesaikan / lanjutkan); sisanya informasi saja.
-export const V1_ACTIONABLE = Object.freeze(["READY", "IN_PROGRESS", "PAUSED"]);
+// Hanya keadaan ini yang membuka aksi (mulai / selesaikan / lanjutkan); sisanya informasi saja.
+export const V1_ACTIONABLE = Object.freeze(["READY", "IN_PROGRESS", "PAUSED", "BLOCKED"]); // slice 2: BLOCKED (tertunda) dapat dilanjutkan lewat SATU aksi Lanjutkan Pekerjaan
 export const isV1Actionable = (state) => V1_ACTIONABLE.includes(state);
 
 export function v1Progress(timeline) {
@@ -146,6 +147,7 @@ export function picSummary(jobs, { lane, user, all } = {}) {
 export function primaryActionV1(timeline, roles = [], { state = null } = {}) {
   // Keadaan antrean dari server (bila diberikan) membatasi: menunggu prasyarat/penugasan tidak membuka aksi apa pun.
   if (state && !isV1Actionable(state)) {
+    if (state === "BLOCKED" && timeline?.activeBlocker?.reason !== "MATERIAL_SHORTAGE") return { kind: "RESUME_WORK", label: "Lanjutkan Pekerjaan" };
     return { kind: "NONE", reason: state === "BLOCKED" ? resumeInfo({ source: "BLOCKER", reason: timeline?.activeBlocker?.reason, canResume: false }).text : "Belum giliran Anda — lihat keterangan di atas." };
   }
   const st = stageStateOf(timeline);
@@ -155,10 +157,10 @@ export function primaryActionV1(timeline, roles = [], { state = null } = {}) {
     case "NEEDS_SERVICE": return { kind: "NONE", reason: "Rute pengerjaan belum ditentukan — menunggu Production Lead." };
     case "ALL_DONE": return { kind: "NONE", reason: "Seluruh tahap selesai." };
     case "NOT_STARTED": case "READY": return { kind: "START", label: label ? `Mulai ${label}` : "Mulai tahap", stage: st.current?.stage || st.first };
-    case "PAUSED": return { kind: "RESUME", label: "Lanjutkan Pekerjaan", stage: st.current.stage };
+    case "PAUSED": return { kind: "RESUME_WORK", label: "Lanjutkan Pekerjaan", stage: st.current.stage };
     case "IN_PROGRESS": return { kind: "COMPLETE", label: label ? `Selesaikan ${label}` : "Selesaikan tahap", stage: st.current.stage, needsPhoto: needsPhotoOf(st), secondary: ["PAUSE", "BLOCK"] };
     case "IN_PROGRESS_QC": return { kind: "NONE", reason: "Tahap gerbang QC berjalan — putusan hanya oleh QC.", stage: st.current.stage };
-    case "BLOCKED": return { kind: "NONE", reason: resumeInfo({ source: "BLOCKER", reason: timeline?.activeBlocker?.reason, canResume: false }).text, stage: st.current.stage };
+    case "BLOCKED": return timeline?.activeBlocker?.reason === "MATERIAL_SHORTAGE" ? { kind: "NONE", reason: resumeInfo({ source: "BLOCKER", reason: "MATERIAL_SHORTAGE", canResume: false }).text, stage: st.current.stage } : { kind: "RESUME_WORK", label: "Lanjutkan Pekerjaan", stage: st.current.stage };
     default: return { kind: "NONE", reason: "Belum ada tindakan yang tersedia." };
   }
 }

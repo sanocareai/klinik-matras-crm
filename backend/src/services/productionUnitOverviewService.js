@@ -220,7 +220,7 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
     service: { code: unit.service?.code ?? null, label: unit.service?.labelId ?? null, set: !!unit.serviceId },
     pickup,
     planning: null,
-    production: { runId: null, runStatus: null, currentPhase: null, started: false, steps: [], progress: { done: 0, total: 12 }, timer: null, activeOp: null },
+    production: { runId: null, runStatus: null, currentPhase: null, started: false, steps: [], progress: { done: 0, skipped: 0, remaining: 12, total: 12 }, adaptation: null, qcStatus: "BELUM", timer: null, activeOp: null },
     materials: { lines: [], shortageOpen: false, shortageItems: [] },
     evidence: { before: [], process: [], after: [] },
     qc: [],
@@ -353,13 +353,19 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
     } : null,
     production: {
       runId: run.id, revision: run.revision, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
-      steps, progress: { done: applicableSteps.filter((s) => s.status === "DONE").length, total: applicableSteps.length },
+      // dikerjakan (done) / dilewati (skipped) / tersisa (remaining) — tahap dilewati (mode adaptasi) bukan pekerjaan.
+      steps, progress: (() => {
+        const worked = applicableSteps.filter((s) => s.status === "DONE").length; const skipped = applicableSteps.filter((s) => s.status === "SKIPPED").length;
+        return { done: worked, skipped, remaining: applicableSteps.length - worked - skipped, total: applicableSteps.length };
+      })(),
+      adaptation: run.adaptationPolicy ? { policy: run.adaptationPolicy } : null,
+      qcStatus: ctx.latestInspection ? "DILAKUKAN" : (run.adaptationPolicy && run.operations.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed) ? "TIDAK_DILAKUKAN" : "BELUM"),
       timer: {
         startedAt: firstStart, stepStartedAt: op?.startedAt ?? null,
         elapsedMinutes: firstStart ? minutesBetween(firstStart, TERMINAL_RUN.includes(run.status) ? run.completedAt || now : now) : 0,
         stepElapsedMinutes: op?.startedAt ? minutesBetween(op.startedAt, now) : 0,
       },
-      activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt } : null,
+      activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt, delayKind: op.delayKind ?? null, delayNote: op.delayNote ?? null } : null,
       indicators,
     },
     materials,

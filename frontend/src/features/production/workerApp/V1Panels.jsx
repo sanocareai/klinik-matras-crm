@@ -83,7 +83,7 @@ export function V1ActionBar({ job, timeline, roles, onChanged, state = null, bef
         {!online && <OfflineNote />}
         {action.kind === "NONE" && <p data-testid="v1-no-action" className="m-0 rounded-btn bg-inset px-3 py-3 text-[13.5px] font-semibold text-ink2">{action.reason}</p>}
         {action.kind === "START" && <button type="button" className="wa-primary" data-mutates data-testid="v1-primary" disabled={gate.disabled} onClick={() => run(() => api.startUnitStage(unitId), "Tahap dimulai.")}>{busy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : <PlayCircle size={21} aria-hidden />} {action.label}</button>}
-        {action.kind === "RESUME" && <button type="button" className="wa-primary" data-mutates data-testid="v1-primary" disabled={gate.disabled} onClick={() => run(() => api.resumeUnitStage(unitId, stage.id), "Tahap dilanjutkan.")}>{busy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : <PlayCircle size={21} aria-hidden />} {action.label}</button>}
+        {action.kind === "RESUME_WORK" && <button type="button" className="wa-primary" data-mutates data-testid="v1-primary" disabled={gate.disabled} onClick={() => run(() => api.resumeProductionWork(unitId), "Pekerjaan dilanjutkan.")}>{busy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : <PlayCircle size={21} aria-hidden />} {action.label}</button>}
         {action.kind === "COMPLETE" && (
           <>
             <button type="button" className="wa-primary" data-testid="v1-primary" disabled={gate.disabled} onClick={() => openSheet("complete")}><CheckCircle2 size={21} aria-hidden /> {action.label}</button>

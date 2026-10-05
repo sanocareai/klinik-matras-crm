@@ -8,7 +8,7 @@ import { ProgressBar } from "@/components/ui/progress.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import { friendlyError } from "@/features/production/experience.js";
-import { DELAY_TITLE, delayStatusText, presenceTone, priorityOf, resumeInfo, statusOf } from "@/features/production/productionLabels.js";
+import { DELAY_TITLE, SKIP_LABEL, delayKindText, delayStatusText, presenceTone, priorityOf, progressText, resumeInfo, statusOf } from "@/features/production/productionLabels.js";
 import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
 import { DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS } from "@/features/production/documentation.js";
 import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
@@ -160,19 +160,49 @@ function DiagnosisPanel({ d, onOpenWizard }) {
   );
 }
 
-function Proses({ d, onOpenDiagnosis }) {
+// Mode adaptasi (slice 2): kebijakan tersimpan PER RUN; run lama tidak berubah otomatis. Penerapan pada run berjalan = aksi eksplisit pemegang izin (server menegakkan).
+function AdaptationPanel({ d, canApply, onApplied }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const p = d.production;
+  if (p.adaptation) {
+    return (
+      <div data-testid="adaptation-panel" className="rounded-btn border border-line p-3 text-[12.5px]">
+        <p className="m-0 font-semibold text-ink">Mode adaptasi aktif untuk run ini</p>
+        <p className="m-0 mt-0.5 text-ink3">Tahap boleh dilewati (dicatat “{SKIP_LABEL}”, alasan Adaptasi sistem). QC {p.qcStatus === "TIDAK_DILAKUKAN" ? "tidak dilakukan (bukan lulus)" : p.qcStatus === "DILAKUKAN" ? "dilakukan" : "tidak diwajibkan"}; penerimaan barang jadi Gudang tidak diwajibkan.</p>
+      </div>
+    );
+  }
+  if (!canApply || ["COMPLETED", "CANCELLED"].includes(p.runStatus)) return null;
+  async function apply() {
+    setBusy(true); setErr("");
+    try { await api.applyProductionV2Adaptation(p.runId, { expectedRevision: p.revision, reason: "Diterapkan dari Unit 360" }); onApplied(); }
+    catch (e) { setErr(friendlyError(e)); } finally { setBusy(false); }
+  }
+  return (
+    <div data-testid="adaptation-apply" className="rounded-btn border border-line p-3 text-[12.5px]">
+      <p className="m-0 font-semibold text-ink">Proses lengkap (QC wajib)</p>
+      <p className="m-0 mt-0.5 text-ink3">Run ini memakai alur lengkap. Mode adaptasi hanya diterapkan atas keputusan eksplisit dan tidak mengubah tahap/bukti yang sudah ada.</p>
+      <Button size="sm" variant="secondary" className="mt-2" data-mutates data-testid="adaptation-apply-btn" disabled={busy} onClick={apply}>{busy ? "Menerapkan…" : "Terapkan mode adaptasi untuk unit ini"}</Button>
+      {err && <p role="alert" className="m-0 mt-1 text-red">{err}</p>}
+    </div>
+  );
+}
+
+function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
   if (!d.production.runId) return <p className="text-[12.5px] text-ink3">Unit belum masuk proses produksi (belum ada Production Run).</p>;
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <div className="flex-1"><ProgressBar value={d.production.progress.total ? (d.production.progress.done / d.production.progress.total) * 100 : 0} /></div>
-        <span className="shrink-0 text-[11px] text-ink3 tabular-nums">{d.production.progress.done} dari {d.production.progress.total} tahap</span>
+        <span data-testid="overview-progress" className="shrink-0 text-[11px] text-ink3 tabular-nums">{progressText(d.production.progress)}</span>
       </div>
+      <AdaptationPanel d={d} canApply={canApplyAdaptation} onApplied={() => onChanged?.()} />
       <ol className="m-0 grid list-none grid-cols-1 gap-1 p-0 sm:grid-cols-2">
         {d.production.steps.map((s) => (
           <li key={s.no} className={`flex min-h-[44px] items-center gap-2 rounded-btn px-3 py-2 text-[12.5px] ${s.status === "DONE" ? "bg-greenbg text-green" : s.status === "CURRENT" ? "bg-accentbg font-semibold text-accent" : s.status === "WAITING" ? "bg-orangebg text-orange" : s.status === "NA" ? "text-ink3 line-through" : "bg-inset text-ink3"}`}>
             {s.status === "DONE" ? <CheckCircle2 size={14} aria-hidden /> : <span className="w-4 shrink-0 text-center tabular-nums">{s.no}</span>}
             <span className="min-w-0 flex-1 truncate">{s.label}</span>
+            {s.status === "SKIPPED" && <span data-testid="step-skipped" className="shrink-0 text-[10.5px] font-semibold text-ink3">{SKIP_LABEL}</span>}
             {s.actor && <span className="shrink-0 text-[10px] text-ink3">{s.actor}</span>}
           </li>
         ))}
@@ -180,7 +210,7 @@ function Proses({ d, onOpenDiagnosis }) {
       {d.production.activeOp && (
         <div className="rounded-btn border border-line p-3 text-[12.5px]">
           <p className="m-0 text-ink3">Sedang berjalan</p>
-          <p className="m-0 font-semibold text-ink">{d.production.activeOp.stageLabel} — {d.production.activeOp.status}</p>
+          <p className="m-0 font-semibold text-ink">{d.production.activeOp.stageLabel} — {d.production.activeOp.status === "PAUSED" && d.production.activeOp.delayKind ? delayKindText(d.production.activeOp.delayKind, d.production.activeOp.delayNote) : d.production.activeOp.status}</p>
         </div>
       )}
       <DiagnosisPanel d={d} onOpenWizard={onOpenDiagnosis} />
@@ -325,7 +355,7 @@ function Dokumentasi({ d }) {
 function QcHandoff({ d }) {
   return (
     <div className="space-y-3">
-      {d.qc.length === 0 ? <p className="text-[12.5px] text-ink3">Belum ada inspeksi QC.</p> : d.qc.map((q) => (
+      {d.qc.length === 0 ? <p data-testid="qc-none" className="text-[12.5px] text-ink3">{d.production.qcStatus === "TIDAK_DILAKUKAN" ? "QC tidak dilakukan (mode adaptasi) — bukan lulus dan bukan di-waive." : "Belum ada inspeksi QC."}</p> : d.qc.map((q) => (
         <div key={q.version} className="rounded-btn border border-line p-3">
           <div className="flex items-center justify-between">
             <p className="m-0 text-[12.5px] font-bold text-ink">Versi {q.version} — {q.resultLabel}</p>
@@ -468,7 +498,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
               {tab === "ringkasan" && <Ringkasan d={data} />}
               {tab === "pekerjaan" && (
                 <div className="space-y-3">
-                  <Proses d={data} onOpenDiagnosis={() => setShowDiagnosis(true)} />
+                  <Proses d={data} onOpenDiagnosis={() => setShowDiagnosis(true)} canApplyAdaptation={rolesOf(currentUserLocal()).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r))} onChanged={() => { reload(); onChanged?.(); }} />
                   {v1Workable && <div data-testid="pekerjaan-actions"><UnitOrderFallback v2View data={v1Work.data} error={v1Work.error} loading={v1Work.loading} roles={rolesOf(currentUserLocal())} onData={(t) => setV1Work({ data: t, error: "", loading: false })} onChanged={() => { reload(); onChanged?.(); }} /></div>}
                 </div>
               )}

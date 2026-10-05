@@ -6,6 +6,7 @@ export const SETTINGS_TABS = Object.freeze([
   { key: "area-kerja", label: "Area Kerja", roles: MANAGERS },
   { key: "operator", label: "Operator & PIC", roles: MANAGERS },
   { key: "layanan", label: "Layanan & Tahapan", roles: MANAGERS },
+  { key: "alur-kerja", label: "Alur Kerja", roles: MANAGERS }, // slice 2 — lokasi workshop bawaan, mode adaptasi, pemetaan layanan Sales (tulis hanya Admin/Owner; server menegakkan)
   { key: "target", label: "Target Produksi", roles: MANAGERS },
   { key: "tampilan", label: "Tampilan", roles: MANAGERS },
 ]);

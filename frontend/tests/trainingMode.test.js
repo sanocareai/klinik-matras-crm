@@ -123,7 +123,10 @@ test("tombol aksi Aplikasi Meja/Corner bertanda data-mutates (dinonaktifkan di M
   const sheets = src("features", "production", "workerApp", "workerSheets.jsx");
   assert.equal((sheets.match(/data-mutates/g) || []).length, 2, "kirim tahap, kirim kekurangan bahan");
   assert.match(sheets, /<button type="button" data-mutates onClick=\{submit\} disabled=\{gate\.disabled\}/);
-  assert.match(src("features", "production", "workerApp", "JobDetail.jsx"), /data-mutates=\{isQuickAction\(next\) \? "" : undefined\}/);
+  assert.match(src("features", "production", "workerApp", "JobDetail.jsx"), /data-mutates=\{next\.action === "RESUME" \|\| isQuickAction\(next\) \? "" : undefined\}/);
+  // slice 2: setiap tombol kirim pada lembar adaptasi (lewati / selesaikan / tunda) juga bertanda data-mutates
+  const ad = src("features", "production", "workerApp", "adaptationSheets.jsx");
+  for (const id of ["skip-confirm", "finish-confirm", "delay-confirm"]) assert.match(ad, new RegExp("data-mutates data-testid=\"" + id + "\""), id);
   const v1 = src("features", "production", "workerApp", "V1Panels.jsx");
   for (const id of ["v1-primary", "v1-complete-save", "v1-pause-save", "v1-block-save", "v1-material-save"]) assert.match(v1, new RegExp(`data-mutates[^>]*data-testid="${id}"`), id);
   for (const open of ["v1-pause-open", "v1-block-open"]) assert.doesNotMatch(v1.match(new RegExp(`<button[^>]*data-testid="${open}"[^>]*>`))[0], /data-mutates/, `${open}: hanya membuka lembar`);

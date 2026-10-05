@@ -173,7 +173,7 @@ test("Kontrak layanan (Slice 1): Unit 360 hanya menampilkan 'Layanan Sales' (bad
 test("Kontrak layanan: wizard menampilkan Layanan Dipesan (Sales) hanya-baca & menegaskan layanan teknis tidak mengubah order", () => {
   const W = read("features", "production", "DiagnosisWizard.jsx");
   assert.match(W, /data-testid="sales-ordered-service"/);
-  assert.match(W, /tidak mengubah order, item, atau harga/);
+  assert.doesNotMatch(W, /Layanan teknis/, "slice 2: tidak ada pilihan layanan teknis");
 });
 test("humanizeRequest: JSON intake Sales jadi kalimat terbaca; teks biasa & JSON tak dikenal tidak diubah", () => {
   const { humanizeRequest } = loadModel();
@@ -248,7 +248,7 @@ test("Kartu unit: baris Kasur (jenis·merk·ukuran) & Catatan Sales ada di kartu
 test("PlanCard: tiga blok berbeda (Layanan Sales biru · Kasur netral · Catatan Sales kuning + 'Sales: nama'), teks kosong, operasional terpisah, dua kolom via container query", () => {
   for (const t of ['kind="sales" label="Layanan Sales"', 'kind="kasur" label="Kasur"', 'kind="note" label="Catatan Sales"']) assert.ok(PLAN.includes(t), t);
   for (const t of ["Layanan belum dicatat Sales", "Data kasur belum lengkap", "Catatan Sales belum tersedia", "Sales: {c.salesName}"]) assert.ok(PLAN.includes(t), t);
-  for (const t of ["Tahap", "Bahan", "Target", "Meja", "PIC usulan", "tahap</span>"]) assert.ok(PLAN.includes(t), t);
+  for (const t of ["Tahap", "Bahan", "Target", "Meja", "PIC usulan", "progressText(view.progress)"]) assert.ok(PLAN.includes(t), t);
   assert.match(PLAN, /testid="row-stage"/); assert.match(PLAN, /testid="row-material"/, "status bahan terpisah dari nama tahap");
   assert.match(PLAN, /@container/); assert.match(PLAN, /@\[34rem\]:grid-cols-2/);
   assert.match(PLAN, /formatTanggal\(plan\.productionDate\)/, "target format Indonesia");

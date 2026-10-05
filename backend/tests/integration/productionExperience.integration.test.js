@@ -259,7 +259,7 @@ test("lifecycle 12 tahap penuh: custody -> papan -> intake -> diagnosa (menunggu
   const phases = await testPrisma.productionPhaseRun.findMany({ where: { runId: run.id } });
   assert.ok(phases.every((p) => ["COMPLETED", "NOT_APPLICABLE", "CANCELLED"].includes(p.status)), JSON.stringify(phases.map((p) => [p.phase, p.status])));
   const finalCard = await card(w, run.id);
-  assert.equal(finalCard.bucket, "SELESAI"); assert.deepEqual(finalCard.progress, { done: 12, total: 12 });
+  assert.equal(finalCard.bucket, "SELESAI"); assert.deepEqual(finalCard.progress, { done: 12, skipped: 0, remaining: 0, total: 12 });
   assert.equal(await testPrisma.stockMovement.count({ where: { materialIssueId: issueId } }), 2, "stok keluar SEKALI per bahan saat Gudang menyerahkan, tidak digandakan oleh bukti");
 
   // Bukti immutable di database.

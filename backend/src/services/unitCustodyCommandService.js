@@ -494,6 +494,11 @@ export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotenc
 // Belum dikonfigurasi/tidak valid -> 409 berkode (kebutuhan konfigurasi untuk Admin): TIDAK memilih lokasi acak dan TIDAK memalsukan kedatangan.
 export async function confirmUnitArrival(prisma, { unitId, actorId, idempotencyKey, locationId = null }) {
   if (!unitId) throw custodyError("unitId wajib diisi", 400, "UNIT_ID_REQUIRED");
+  // Ulangan kunci yang SAMA setelah berhasil (handoff sudah ACCEPTED): kembalikan respons tersimpan (idempoten), bukan 404.
+  if (idempotencyKey && actorId) {
+    const prior = await prisma.v2Command.findUnique({ where: { actorId_idempotencyKey: { actorId, idempotencyKey } } });
+    if (prior?.commandType === "ACCEPT_CUSTODY" && prior.status === "APPLIED" && prior.response?.unitId === unitId) return { replayed: true, ...prior.response };
+  }
   const handoff = await prisma.unitCustodyHandoff.findFirst({
     where: { unitId, direction: "INBOUND", status: "OFFERED" },
     orderBy: { offeredAt: "desc" },
@@ -505,6 +510,32 @@ export async function confirmUnitArrival(prisma, { unitId, actorId, idempotencyK
   // revisi custody internal; kunci konkurensi tetap ditegakkan di acceptUnitCustody/decide().
   const resolvedLocationId = locationId || (await requireWorkshopDefaultLocation(prisma)).id;
   return acceptUnitCustody(prisma, { handoffId: handoff.id, actorId, idempotencyKey, expectedRevision: handoff.revision, locationId: resolvedLocationId });
+}
+
+// Slice 2 (flow adaptasi) — penutupan run TANPA custody barang jadi. OWNERSHIP: penutupan run (COMPLETED) dan pelepasan unit ke Delivery (READY_FOR_DELIVERY) tetap hanya milik service ini
+// (custody) dan P6; command adaptasi (productionStepCommandService/P5) hanya memanggil fungsi ini. Syarat keras: run berkebijakan ADAPTATION_V1, ACTIVE, tidak ada exception terbuka, semua fase terminal
+// (QC & HANDOFF berstatus NOT_APPLICABLE — bukan COMPLETED palsu), seluruh tahap jalur tuntas (markUnitReadyForDeliveryInTx). Tidak membuat custody ACCEPTED; saran job Delivery idempoten (tanpa job ganda).
+export async function completeAdaptationRunInTx(tx, { runId, actorId = null, now = new Date() }) {
+  await lockRowForUpdate(tx, "production_runs_v2", runId);
+  const run = await tx.productionRun.findUnique({ where: { id: runId }, include: { phases: true, unit: { select: { id: true, unitCode: true, orderId: true, status: true } } } });
+  if (!run) throw custodyError("Production Run tidak ditemukan", 404, "CUSTODY_RUN_NOT_FOUND");
+  if (run.adaptationPolicy !== "ADAPTATION_V1") throw custodyError("Penutupan tanpa penerimaan barang jadi hanya untuk run mode adaptasi", 409, "ADAPTATION_NOT_ENABLED");
+  if (run.status !== "ACTIVE") throw custodyError("Production Run tidak aktif", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run.status });
+  assertRunConsistent(run, run.unit);
+  await assertNoOpenRunException(tx, run.id);
+  for (const phase of ["QC", "HANDOFF"]) {
+    if (run.phases.find((p) => p.phase === phase)?.status === "COMPLETED") throw custodyError(`Fase ${phase} tidak boleh COMPLETED pada penutupan adaptasi`, 409, "ADAPTATION_PHASE_INVALID");
+  }
+  await assertRunPhasesTerminal(tx, run.id, { requireHandoffCompleted: false });
+  const revision = run.revision + 1;
+  await tx.productionRun.update({ where: { id: run.id }, data: { status: "COMPLETED", completedAt: now, revision } });
+  await markUnitReadyForDeliveryInTx(tx, run.unitId);
+  await outbox(tx, {
+    domain: "PRODUCTION", eventType: "production.run.completed", aggregateType: "ProductionRun", aggregateId: run.id, revision,
+    dedupeKey: `production-run-completed:${run.id}:${revision}`,
+    payload: { runId: run.id, unitId: run.unitId, completionKind: "ADAPTATION", policy: run.adaptationPolicy, revision, occurredAt: now.toISOString(), actorId },
+  });
+  return { runId: run.id, revision, unitStatus: "READY_FOR_DELIVERY" };
 }
 
 export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotencyKey, expectedRevision, reason }) {

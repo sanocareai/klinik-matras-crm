@@ -7,7 +7,13 @@ import { requireAuth } from "../middleware/auth.js";
 import { hasPermission, requireAnyPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { createProductionPlan, reorderStationPlans, scheduleProductionPlan } from "../services/productionPlanningCommandService.js";
-import { recordProductionStep, reportMaterialShortage, resolveMaterialShortage } from "../services/productionStepCommandService.js";
+import {
+  applyAdaptationPolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
+} from "../services/productionStepCommandService.js";
+import { resumeWork } from "../services/productionResumeService.js";
+import {
+  getProductionSettings, inspectWorkshopDefaultLocation, listServiceMappings, setAdaptationDefault, setServiceMapping, setWorkshopDefaultLocation,
+} from "../services/productionSettingsService.js";
 import { receiveMaterialReturn } from "../services/productionMaterialReturnService.js";
 import { confirmUnitArrival, listReceivingLocations } from "../services/unitCustodyCommandService.js";
 import {
@@ -219,6 +225,92 @@ productionExperienceRouter.post("/runs/:runId/steps/:stepNo", requirePermission(
       expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId, payload: req.body?.payload ?? {}, media: req.body?.media ?? [],
     }));
   } catch (err) { handleErr(err, res); }
+});
+
+// ---- Slice 2: flow adaptasi (tahap dilewati, Selesaikan Produksi, Tunda/Lanjutkan, Pengaturan Admin) ----------------------------------------------
+// Izin: tahap/tunda/lanjutkan = UNIT_STAGE_WRITE (PIC yang ditugaskan; ADMIN/OWNER lewat PRODUCTION_EXECUTE_ANY — ditegakkan authorizeOperator di command). Kebijakan adaptasi pada run = UNIT_ROUTING_WRITE
+// (Lead) atau PRODUCTION_SETTINGS_WRITE (Admin/Owner). Pengaturan = PRODUCTION_SETTINGS_WRITE; Lead boleh MELIHAT (UNIT_ROUTING_WRITE).
+async function assertRunInCohort(res, runId) {
+  const unitIds = await readerCohort();
+  if (!unitIds) { inert(res, {}); return false; }
+  const run = await prisma.productionRun.findUnique({ where: { id: runId }, select: { unitId: true } });
+  if (!run || !unitIds.includes(run.unitId)) { res.status(404).json({ error: "Run tidak ditemukan atau di luar cohort", code: "RUN_NOT_FOUND" }); return false; }
+  return true;
+}
+
+// POST /api/production-v2/runs/:runId/steps/:stepNo/skip { expectedRevision, workCenterId, note? } — lewati tahap (mode adaptasi): dicatat SKIPPED, alasan "Adaptasi sistem".
+productionExperienceRouter.post("/runs/:runId/steps/:stepNo/skip", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    res.json(await skipProductionStep(prisma, {
+      runId: req.params.runId, stepNo: Number(req.params.stepNo), actorId: req.user.id, idempotencyKey: idem(req),
+      expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId, note: req.body?.note,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/runs/:runId/finish-preview — pratinjau "Selesaikan Produksi" (tahap tersisa, yang akan dicatat dilewati, retur sisa bahan). BACA-SAJA.
+productionExperienceRouter.get("/runs/:runId/finish-preview", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.json({ readerMode: "COHORT", ...(await previewFinishProduction(prisma, req.params.runId)) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/runs/:runId/finish { expectedRevision, workCenterId, confirm: true } — Selesaikan Produksi. Konfirmasi eksplisit WAJIB (confirm === true).
+productionExperienceRouter.post("/runs/:runId/finish", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    if (req.body?.confirm !== true) return res.status(400).json({ error: "Konfirmasi eksplisit diperlukan: tahap yang tersisa akan dicatat DILEWATI dan QC dicatat tidak dilakukan", code: "FINISH_CONFIRM_REQUIRED" });
+    res.json(await finishProduction(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/runs/:runId/adaptation { expectedRevision, reason? } — terapkan kebijakan adaptasi pada SATU run (eksplisit; run lama tidak berubah otomatis).
+productionExperienceRouter.post("/runs/:runId/adaptation", requireAnyPermission(P.UNIT_ROUTING_WRITE, P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try {
+    res.json(await applyAdaptationPolicy(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, reason: req.body?.reason }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/runs/:runId/delay { expectedRevision, workCenterId, reason: ARAHAN|KENDALA|LAINNYA, note? } — Tunda Pekerjaan di papan (menunggu bahan tetap lewat /shortage).
+productionExperienceRouter.post("/runs/:runId/delay", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    res.json(await delayProductionWork(prisma, {
+      runId: req.params.runId, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId, reason: req.body?.reason, note: req.body?.note,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/units/:unitId/resume-work { expectedRevision? } — SATU aksi "Lanjutkan Pekerjaan" atomik+idempoten (di papan maupun di luar papan).
+productionExperienceRouter.post("/units/:unitId/resume-work", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.params.unitId))) return res.status(400).json({ error: "ID unit tidak valid", code: "ID_INVALID" });
+    res.json(await resumeWork(prisma, { unitId: req.params.unitId, user: req.user, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/arrival-config — keadaan lokasi workshop bawaan untuk tombol "Unit Tiba di Workshop" (tanpa pilihan lokasi).
+productionExperienceRouter.get("/arrival-config", requirePermission(P.UNIT_STAGE_WRITE), async (_req, res) => {
+  try {
+    const s = await inspectWorkshopDefaultLocation(prisma);
+    res.json({ configured: s.configured, valid: s.valid, problem: s.problem, locationCode: s.valid ? s.location.code : null, needs: s.valid ? null : "ADMIN_CONFIGURATION" });
+  } catch (err) { handleErr(err, res); }
+});
+
+// Pengaturan Admin Production
+productionExperienceRouter.get("/settings", requireAnyPermission(P.PRODUCTION_SETTINGS_WRITE, P.UNIT_ROUTING_WRITE), async (req, res) => {
+  try { res.json({ canWrite: hasPermission(req.user, P.PRODUCTION_SETTINGS_WRITE), ...(await getProductionSettings(prisma)) }); } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.put("/settings/workshop-location", requirePermission(P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try { res.json(await setWorkshopDefaultLocation(prisma, { locationId: req.body?.locationId, actorId: req.user.id })); } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.put("/settings/adaptation-default", requirePermission(P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try { res.json(await setAdaptationDefault(prisma, { enabled: req.body?.enabled, actorId: req.user.id })); } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.get("/settings/service-mappings", requireAnyPermission(P.PRODUCTION_SETTINGS_WRITE, P.UNIT_ROUTING_WRITE), async (_req, res) => {
+  try { res.json(await listServiceMappings(prisma)); } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.put("/settings/service-mappings/:priceItemId", requirePermission(P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try { res.json(await setServiceMapping(prisma, { priceItemId: req.params.priceItemId, serviceId: req.body?.serviceId ?? null, actorId: req.user.id })); } catch (err) { handleErr(err, res); }
 });
 
 // ---- P9D: Diagnosis Produksi + Planned BOM Terpadu -----------------------------------------------------------------------------

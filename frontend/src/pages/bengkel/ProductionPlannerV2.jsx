@@ -19,7 +19,7 @@ import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
 import MorningPriorityApprovalPanel from "@/features/production/MorningPriorityApprovalPanel.jsx";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import { UnitCard, UpcomingCard, PicChips } from "@/features/production/UnitCard.jsx";
-import { ArrivalModal, ScheduleModal } from "@/features/production/ScheduleModals.jsx";
+import { ScheduleModal } from "@/features/production/ScheduleModals.jsx";
 import { mejaLabel, pipelineChips, stageText } from "@/features/production/unitCardModel.js";
 
 // Status Produksi (P9 UX Realignment) — HANYA pipeline: di mana posisi setiap unit sekarang. BUKAN planner: tidak ada
@@ -119,7 +119,15 @@ export default function ProductionPlannerV2() {
   const [mobileCol, setMobileCol] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [schedule, setSchedule] = useState(null);
-  const [arrival, setArrival] = useState(null);
+  // Slice 2: "Unit Tiba di Workshop" = SATU aksi, tanpa pilihan lokasi (lokasi workshop bawaan dari Pengaturan Admin). Belum dikonfigurasi -> pesan kebutuhan konfigurasi untuk Admin; tidak ada tiba palsu.
+  const [arrivalBusy, setArrivalBusy] = useState(false);
+  const setArrival = async (item) => {
+    if (arrivalBusy) return;
+    setArrivalBusy(true); setError("");
+    try { await api.confirmProductionV2UnitArrival(item.unit.id, {}); setNotice(`${item.unit.unitCode} tercatat tiba di workshop.`); load(); }
+    catch (e) { setError(e.code === "WORKSHOP_DEFAULT_LOCATION_NOT_CONFIGURED" || e.code === "WORKSHOP_DEFAULT_LOCATION_INVALID" ? e.message : friendlyError(e)); }
+    finally { setArrivalBusy(false); }
+  };
   const today = wibDate(0);
   const tomorrow = wibDate(1);
 
@@ -276,7 +284,6 @@ export default function ProductionPlannerV2() {
         <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} onChanged={reloadV1} manageLabel="Kelola Jadwal"
           onManage={() => { const item = allItems.find((i) => i.unit.id === overviewUnitId && i.runId); closeOverview(); if (item) setDrawer(item); }} />
       )}
-      {arrival && <ArrivalModal target={arrival} onClose={() => setArrival(null)} onDone={(msg) => { setArrival(null); setNotice(msg); load(); }} />}
       {schedule && board && (
         <ScheduleModal target={schedule} board={board} date={today} refs={refs} onClose={() => setSchedule(null)} onDone={(msg) => { setSchedule(null); setNotice(msg); load(); }} />
       )}

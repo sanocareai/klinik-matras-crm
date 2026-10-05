@@ -335,8 +335,10 @@ export function deriveNextAction(state) {
 
   const target = state.target;
   if (!target) return wait("NONE", "NO_TARGET");
-  // Mode adaptasi: QC tidak wajib — tahap kerja tuntas, tinggal "Selesaikan Produksi" (QC dicatat tidak dilakukan, bukan lulus).
-  if (target.requiresQc) return state.adaptation ? wait("TABLE", "READY_TO_FINISH", { stepNo: 8 }) : wait("QC", "AWAITING_QC", { stepNo: 8 });
+  // Mode adaptasi: semua tahap sudah tuntas -> tinggal "Selesaikan Produksi" (pratinjau + konfirmasi). Tidak ada tahap yang diulang.
+  if (state.adaptation && target.done) return wait("TABLE", "READY_TO_FINISH", { stepNo: 12 });
+  // Mode adaptasi: Meja -> Corner TETAP berjalan tanpa putusan QC. Tahap 9 "Kirim ke Corner" (bukti foto) mencatat gerbang QC sebagai TIDAK DILAKUKAN (bukan lulus, bukan di-waive).
+  if (target.requiresQc) return state.adaptation ? { actor: "TABLE", stepNo: 9, action: "HANDOFF", qcNotPerformed: true } : wait("QC", "AWAITING_QC", { stepNo: 8 });
   if (target.isPostQc) {
     if (target.code === "corner_sewing") {
       if (!state.step9SinceQc) return { actor: "TABLE", stepNo: 9, action: "HANDOFF" };
