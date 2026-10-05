@@ -28,7 +28,7 @@ export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, sh
   if (unavailable) {
     return (
       <p role="status" data-testid="component-unavailable" data-reason={unavailable} className="m-0 rounded-btn bg-inset px-3 py-2.5 text-[13px] text-ink3">
-        {unavailable === "DEMO" ? "Mode Latihan: catatan komponen belum punya data latihan — formulir dan unggah foto dinonaktifkan." : "Catatan komponen belum tersedia untuk unit ini (unit belum berada di jalur Production V2)."}
+        {unavailable === "DEMO" ? "Mode Latihan: catatan komponen belum punya data latihan — formulir dan unggah foto dinonaktifkan." : "Catatan komponen belum tersedia untuk unit ini (unit ini belum memakai alur kerja baru Production)."}
       </p>
     );
   }
