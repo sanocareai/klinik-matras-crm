@@ -1,5 +1,7 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
+import { prisma } from "./db.js";
+import { statusBelumDibalas } from "./utils/belumDibalas.js";
 
 // Singleton Socket.IO server — di-init sekali dari index.js (attach ke http.Server
 // yang sama dengan Express), lalu dipakai dari webhooks.js/conversations.js lewat
@@ -83,10 +85,25 @@ export function emitMessageDeleted(conversationId, messageId) {
 // conversation:update — SLIM payload untuk daftar percakapan (kolom kiri),
 // broadcast ke SEMUA client (bukan cuma room percakapan itu) karena daftar
 // percakapan siapa saja bisa perlu tahu urutan/preview/badge terbaru.
-export function emitConversationUpdate(conv) {
+//
+// isUnanswered/unansweredMinutes (5 Okt 2026): payload ini dulu TIDAK membawa status "belum dibalas", jadi daftar di aplikasi (tab "Belum Dibalas")
+// tidak pernah tahu bahwa chat sudah dibalas — terutama balasan yang diketik dari WhatsApp di HP (hanya event ini yang sampai ke daftar; message:new
+// cuma ke room chat yang sedang dibuka). Dihitung dari pesan TERAKHIR (definisi sama dengan GET /conversations). Gagal membaca = field dihilangkan
+// (klien mempertahankan nilai lamanya), event tetap terkirim.
+export async function emitConversationUpdate(conv) {
   if (!io || !conv) return;
+  let belumDibalas = {};
+  try {
+    const terakhir = await prisma.message.findFirst({
+      where: { conversationId: conv.id }, orderBy: { createdAt: "desc" }, select: { direction: true, createdAt: true },
+    });
+    belumDibalas = statusBelumDibalas(terakhir);
+  } catch (e) {
+    console.warn("[socket] gagal menghitung isUnanswered untuk", conv.id, e.message);
+  }
   io.emit("conversation:update", {
     id: conv.id,
+    ...belumDibalas,
     lastMessagePreview: conv.lastMessagePreview,
     unreadCount: conv.unreadCount,
     // BUG (Task 2d): `unread` (boolean) sebelumnya TIDAK ikut di slim
