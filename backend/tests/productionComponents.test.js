@@ -87,6 +87,9 @@ test("perbandingan lengkap: dipertahankan/diperbaiki/diganti, fromOrder, kompone
   // REPAIR memakai bahan lama bila tidak ada bahan baru
   const rep = buildComparison({ layersBefore: before, after: entry({ layers: [{ action: "REPAIR", fromOrder: 1, material: null, thicknessCm: null }] }) });
   assert.equal(rep.layers[0].outcome, "REPAIRED"); assert.match(rep.layers[0].final.label, /Busa A \(A\) \(diperbaiki\)/); assert.equal(rep.layers[0].final.thicknessCm, 5);
+  // sistem fondasi "Tidak diketahui" tidak dicetak bila bahan hasil sudah jelas; tanpa bahan tetap jujur "Tidak diketahui"
+  assert.equal(buildComparison({ after: entry({ foundation: { action: "REPLACE", system: "TIDAK_DIKETAHUI", material: cat("Pocket", "PS") }, layers: [] }) }).foundation.final.label, "Pocket (PS)");
+  assert.equal(buildComparison({ after: entry({ foundation: { action: "REPLACE", system: "TIDAK_DIKETAHUI", material: null }, layers: [] }) }).foundation.final.label, "Tidak diketahui");
   // KEEP tanpa data sebelum: tidak dikarang
   const keep = buildComparison({ after: entry({ foundation: { action: "KEEP" }, layers: [{ action: "KEEP" }] }) });
   assert.match(keep.layers[0].final.label, /bahan lama belum dicatat/); assert.equal(keep.layers[0].before, null); assert.equal(keep.layers[0].beforeRecorded, false); assert.match(keep.foundation.final.label, /fondasi lama belum dicatat/);

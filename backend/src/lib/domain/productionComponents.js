@@ -222,8 +222,8 @@ export function buildComparison({ layersBefore = null, foundationBefore = null, 
     let final = null; let outcome = "UNRECORDED";
     if (fa) {
       outcome = fa.action === "KEEP" ? "KEPT" : fa.action === "REPAIR" ? "REPAIRED" : "REPLACED";
-      const sysTxt = fa.system ? systemLabel(fa.system) : null;
-      const baseBefore = beforeView ? [beforeView.systemLabel, beforeView.material].filter(Boolean).join(" · ") : null;
+      const sysTxt = fa.system && fa.system !== "TIDAK_DIKETAHUI" ? systemLabel(fa.system) : null; // sistem “Tidak diketahui” tidak dicetak bila bahan sudah jelas
+      const baseBefore = beforeView ? [beforeView.system === "TIDAK_DIKETAHUI" ? null : beforeView.systemLabel, beforeView.material].filter(Boolean).join(" · ") || beforeView.systemLabel : null;
       if (fa.action === "KEEP") final = { label: baseBefore || "Dipertahankan (fondasi lama belum dicatat)", source: "KEPT" };
       else if (fa.action === "REPAIR") final = { label: [sysTxt, materialLabel(fa.material)].filter(Boolean).join(" · ") || (baseBefore ? `${baseBefore} (diperbaiki)` : "Diperbaiki (belum dicatat)"), source: "REPAIRED" };
       else final = { label: [sysTxt, materialLabel(fa.material)].filter(Boolean).join(" · ") || UNKNOWN_LABEL, source: "NEW" };
