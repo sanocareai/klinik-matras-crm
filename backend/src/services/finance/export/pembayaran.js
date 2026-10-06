@@ -197,8 +197,10 @@ async function ambil(db, { user, filter, periode, ids, filterLabel }) {
   if (!hanyaKlaim) {
     // Periode layar selalu terkirim; bila tidak (pemanggil lain) → bulan berjalan, sama dengan default layar (rentangDariQuery).
     const { rentangDariQuery } = await import("../../../routes/finance.js");
-    const { fromStr, toStr } = rentangDariQuery({ from: periode.from ?? filter.from, to: periode.to ?? filter.to });
+    let { fromStr, toStr } = rentangDariQuery({ from: periode.from ?? filter.from, to: periode.to ?? filter.to });
     periodeLabel = `${tanggalIndonesiaPendek(fromStr)} – ${tanggalIndonesiaPendek(toStr)}`;
+    // Antrean "Perlu Verifikasi" (Payment menunggu + klaim) TIDAK terikat periode — sama dengan layar (FinancePayments.jsx): Payment menunggu dari bulan lalu tetap ikut.
+    if (status === "belum_verifikasi" && sertakanKlaim && punyaIzinKlaim) { fromStr = "2000-01-01"; toStr = "2100-01-01"; periodeLabel = "Semua periode (antrean tidak terikat periode)"; }
     const saringan = saringanDari(filter);
     if (status === "belum_verifikasi" && sertakanKlaim && punyaIzinKlaim) {
       // TAB "PERLU VERIFIKASI FINANCE" = antrean gabungan (Payment menunggu + klaim Sales): Ringkasan, Payment Menunggu, Klaim Lunas Sales. BUKAN sheet "Uang Masuk".
