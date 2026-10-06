@@ -77,6 +77,9 @@ const TAB = [
 const LABEL_CARA_BAYAR = { TRANSFER: "Transfer", CASH: "Tunai", QRIS: "QRIS", CARD: "Kartu" };
 const LABEL_JENIS = { DP: "DP", CICILAN: "Cicilan", PELUNASAN: "Pelunasan" };
 
+// Rentang lebar untuk antrean "Perlu Verifikasi" (tidak terikat periode) — SAMA dengan yang dipakai server untuk export antrean (export/pembayaran.js).
+const SEMUA_PERIODE = { from: "2000-01-01", to: "2100-01-01" };
+
 export default function FinancePayments() {
   const [tab, setTab] = useState("perlu");
   const [periode, setPeriode] = useState(periodeDefault);
@@ -108,7 +111,9 @@ export default function FinancePayments() {
     try {
       // Kartu angka di atas selalu menghitung SEMUA pembayaran periode ini, apa pun tab yang dibuka.
       const [tabData, semua] = await Promise.all([
-        api.getFinanceCustomerPayments({ ...periode, status: tab === "perlu" ? "belum_verifikasi" : tab }),
+        // Tab "Perlu Verifikasi" = antrean pekerjaan: Payment menunggu dari PERIODE MANA PUN (bukan hanya bulan terpilih) — kalau tidak, Payment akhir bulan lalu yang belum
+        // diverifikasi hilang dari antrean begitu bulan berganti (kasus RES-21092026-130, 30 Sep → tak terlihat di Oktober). Kartu angka tetap per periode (query ke-2).
+        api.getFinanceCustomerPayments(tab === "perlu" ? { from: SEMUA_PERIODE.from, to: SEMUA_PERIODE.to, status: "belum_verifikasi" } : { ...periode, status: tab }),
         tab === "" ? null : api.getFinanceCustomerPayments({ ...periode, status: "" }),
       ]);
       setData(tabData);
@@ -255,7 +260,7 @@ export default function FinancePayments() {
 
       {tab === "perlu" && <h3 className="mt-1 text-[14px] font-semibold text-ink">1. Klaim Lunas dari Sales</h3>}
       {(tab === "lunas_crm" || tab === "perlu") && <LunasBelumDicatat ringkas={tab === "perlu"} onTampil={setKlaimIds} />}
-      {tab === "perlu" && <h3 className="mt-3 text-[14px] font-semibold text-ink">2. Pembayaran tercatat, menunggu verifikasi</h3>}
+      {tab === "perlu" && <h3 className="mt-3 text-[14px] font-semibold text-ink">2. Pembayaran tercatat, menunggu verifikasi <span className="text-[12px] font-normal text-ink3">(semua periode)</span></h3>}
 
       <FilterBar
         className={tab === "lunas_crm" ? "hidden" : undefined}
