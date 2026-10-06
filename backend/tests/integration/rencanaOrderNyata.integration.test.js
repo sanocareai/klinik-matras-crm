@@ -56,9 +56,9 @@ async function mkOperator(role = "PRODUCTION_WORKER", { active = true } = {}) {
 }
 
 // Order nyata Diproses + unit(s) + job pickup (single/multi/none/nojob). `photo`: "single" | "multi" | "none" (job tanpa foto) | "nojob".
-async function mkReal({ photo = "single", unitStatus = "RECEIVED", orderStatus = "PROCESSING", stage = "NEW", staff = false, extra = 0 } = {}) {
+async function mkReal({ photo = "single", unitStatus = "RECEIVED", orderStatus = "PROCESSING", stage = "NEW", staff = false, extra = 0, category = "LAYANAN" } = {}) {
   const customer = await testPrisma.customer.create({ data: { name: `Bu Rencana ${++seq}`, pipelineStage: stage, isInternalStaff: staff } });
-  const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `ORD-RN-${++seq}`, value: 1_000_000, category: "LAYANAN", status: orderStatus } });
+  const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `ORD-RN-${++seq}`, value: 1_000_000, category, status: orderStatus } });
   const mk = (n) => testPrisma.unit.create({ data: { unitCode: `RN-${seq}-${n}`, orderId: order.id, seq: n + 1, status: unitStatus, merk: "Serta", ukuran: "160x200" } });
   const unit = await mk(0); const others = []; for (let i = 1; i <= extra; i += 1) others.push(await mk(i));
   let job = null; let photoFile = null;
@@ -209,6 +209,24 @@ test("kedatangan fisik tetap EKSPLISIT: unit dengan pickup memakai custody biasa
   const early = await mkReal({ photo: "nojob", unitStatus: "AWAITING_PICKUP", orderStatus: "PICKUP" });
   await addCohort(early.unit.id); await testPrisma.productionRun.create({ data: { unitId: early.unit.id, kind: "RESTORATION", origin: "CUSTODY_PICKUP", status: "PENDING_ARRIVAL", revision: 0, phases: { create: ["INTAKE", "DIAGNOSIS", "PROCESS", "QC", "HANDOFF"].map((phase, i) => ({ phase, sequence: i + 1, status: "NOT_STARTED" })) } } });
   const bad = await w.admin.api.post(`${V2}/units/${early.unit.id}/confirm-arrival`, { locationId: w.rcv.id }, idem("arr-early")); assert.equal(bad.status, 409); assert.equal(bad.body.code, "CUSTODY_ARRIVAL_UNIT_STATUS");
+});
+
+test("unit BARU/SEWA tanpa pickup LAHIR di workshop (jalur resmi): Run WORKSHOP_BORN ACTIVE, tanpa handoff, sudah di workshop; LAYANAN tanpa pickup tetap menunggu kedatangan; BARU dengan pickup nyata mengikuti custody", async () => {
+  const born = await mkReal({ photo: "nojob", category: "BARU" }); const layanan = await mkReal({ photo: "nojob" }); const baruPick = await mkReal({ photo: "single", category: "BARU" }); const op = await mkOperator();
+  await setCohort(born.unit.id, layanan.unit.id, baruPick.unit.id);
+  const r = await schedule(born.unit, op); assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.body.origin, "WORKSHOP_BORN"); assert.equal(r.body.onboarded, true); assert.equal(r.body.viaCustody, false);
+  const run = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: born.unit.id }, include: { plan: true } });
+  assert.equal(run.origin, "WORKSHOP_BORN"); assert.equal(run.status, "ACTIVE"); assert.equal(run.currentPhase, "PROCESS"); assert.equal(run.plan.status, "PLANNED");
+  assert.equal(await testPrisma.unitCustodyHandoff.count({ where: { unitId: born.unit.id } }), 0, "tidak ada custody yang dikarang");
+  assert.equal(await testPrisma.activityEvent.count({ where: { entityId: born.unit.id, eventType: "PRODUCTION_RUN_ONBOARDED_RENCANA" } }), 1);
+  const lay = await schedule(layanan.unit, op, { stationCode: "TABLE_2" }); assert.equal(lay.status, 201); assert.equal(lay.body.origin, "CUSTODY_PICKUP");
+  assert.equal((await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: layanan.unit.id } })).status, "PENDING_ARRIVAL");
+  const bp = await schedule(baruPick.unit, op, { stationCode: "TABLE_3" }); assert.equal(bp.status, 201); assert.equal(bp.body.origin, "CUSTODY_PICKUP"); assert.equal(bp.body.viaCustody, true);
+  const items = (await w.lead.api.get(`${V2}/board?date=${DATE}`)).body.stations.flatMap((st) => st.items);
+  assert.equal(items.find((v) => v.unit.id === born.unit.id).presence.key, "ARRIVED_CONFIRMED", "dibuat di workshop = sudah di workshop");
+  assert.equal(items.find((v) => v.unit.id === layanan.unit.id).presence.key, "NOT_ARRIVED");
+  // lahir di workshop hanya sekali: penjadwalan ulang memakai Run yang sama
+  const again = await schedule(born.unit, op, { stationCode: "TABLE_4" }); assert.equal(again.status, 201); assert.equal(again.body.onboarded, false); assert.equal(await testPrisma.productionRun.count({ where: { unitId: born.unit.id } }), 1);
 });
 
 test("ATOMIK + kapasitas: Meja penuh / PIC tidak valid menggagalkan SELURUH perintah — tidak ada Run yatim, tidak ada handoff, unit tetap bisa dijadwalkan", async () => {

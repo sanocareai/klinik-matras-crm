@@ -50,6 +50,7 @@ const SPECS = [
   { key: "04", kind: "single", unitStatus: "RECEIVED" }, { key: "05", kind: "single", unitStatus: "IN_PRODUCTION" }, { key: "06", kind: "single", unitStatus: "RECEIVED" },
   { key: "07", kind: "multi", units: 3, unitStatus: "RECEIVED" }, { key: "08", kind: "nojob", unitStatus: "RECEIVED" }, { key: "09", kind: "nojob", unitStatus: "IN_PRODUCTION" },
   { key: "10", kind: "nophoto", unitStatus: "RECEIVED" },
+  { key: "11", kind: "born", unitStatus: "RECEIVED", category: "BARU" }, { key: "12", kind: "born", unitStatus: "RECEIVED", category: "BARU" }, // kasur BARU dibuat di workshop: tanpa pickup (seperti 6 unit NEW-* di production)
   { key: "X1", kind: "v1progress", unitStatus: "IN_PRODUCTION" }, { key: "X2", kind: "ready", unitStatus: "READY_FOR_DELIVERY", orderStatus: "READY" }, { key: "X3", kind: "pickup", unitStatus: "AWAITING_PICKUP", orderStatus: "PICKUP" },
   { key: "X4", kind: "spam", unitStatus: "RECEIVED", stage: "SPAM" }, { key: "X5", kind: "staff", unitStatus: "RECEIVED", staff: true },
 ];
@@ -77,7 +78,7 @@ async function ensureOrder(M, spec, idx) {
   const existing = await prisma.order.findFirst({ where: { orderNumber }, include: { units: true } });
   if (existing) return existing;
   const customer = await prisma.customer.create({ data: { name: `Pelanggan RN ${spec.key}`, pipelineStage: spec.stage || "NEW", isInternalStaff: !!spec.staff } });
-  const order = await prisma.order.create({ data: { customerId: customer.id, orderNumber, value: 1_500_000, category: "LAYANAN", status: spec.orderStatus || "PROCESSING", beratBadan: 60 + idx } });
+  const order = await prisma.order.create({ data: { customerId: customer.id, orderNumber, value: 1_500_000, category: spec.category || "LAYANAN", status: spec.orderStatus || "PROCESSING", beratBadan: 60 + idx } });
   await prisma.orderItem.create({ data: { orderId: order.id, layananName: SERVICES[idx % SERVICES.length], harga: 1_500_000, sortOrder: 0 } });
   const n = spec.units || 1; const units = [];
   for (let i = 0; i < n; i += 1) units.push(await prisma.unit.create({ data: { unitCode: `${PREFIX}-U${spec.key}${n > 1 ? `-${i + 1}` : ""}`, orderId: order.id, seq: i + 1, status: spec.unitStatus, merk: ["Serta", "King Koil", "Comforta", "Spring Air"][idx % 4], ukuran: ["160x200", "180x200", "120x200"][idx % 3], ...(spec.priority ? { priority: spec.priority } : {}) } }));

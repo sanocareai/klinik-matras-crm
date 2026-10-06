@@ -119,7 +119,7 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
       if (plan) result = await api.scheduleProductionV2Plan(plan.id, { ...body, expectedRevision: plan.revision });
       else result = await api.planProductionV2Unit(target.onboardUnitId ? { unitId: target.onboardUnitId, ...body } : { runId: target.runId, ...body }); // onboarding: Run dibuka di transaksi yang sama
       // Argumen ke-2 (P12A.3): info penempatan agar pemanggil bisa menetapkan POSISI AWAL menurut prioritas (bukan auto-reorder).
-      onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}${result?.onboarded ? " — Run produksi dibuka (unit belum tiba di workshop; konfirmasi \"Unit Tiba\" tetap diperlukan)" : ""}.`,
+      onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}${result?.onboarded ? (result.origin === "WORKSHOP_BORN" ? " — Run produksi dibuka (unit dibuat di workshop)" : " — Run produksi dibuka (unit belum tiba di workshop; konfirmasi \"Unit Tiba\" tetap diperlukan)") : ""}.`,
         unschedule ? null : { planId: plan?.id ?? result?.planId ?? result?.id ?? null, stationCode: form.stationCode, productionDate: form.productionDate, priority: Math.max(Number(form.priority), rankOfView(target) >= 3 ? 3 : 0) }); // peringkat urutan: Komplain tetap di atas
     } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
   }

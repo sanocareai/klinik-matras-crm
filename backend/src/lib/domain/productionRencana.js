@@ -23,6 +23,7 @@ export const RENCANA_EXCEPTION = Object.freeze({
   ORDER_NOT_PROCESSING: "ORDER_NOT_PROCESSING",
   HAS_V1_PROGRESS: "HAS_V1_PROGRESS",
   PARTIAL_ACTIVATION: "PARTIAL_ACTIVATION",
+  RUN_OUTSIDE_COHORT: "RUN_OUTSIDE_COHORT", // Run lama (custody/backfill) di luar cohort V2 — bukan tugas Rencana
 });
 
 const FINISHED_UNIT = ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"];
@@ -51,7 +52,8 @@ export function classifyRencanaUnit(u) {
   const activated = !!u.readerEnabled && !!u.writerEnabled;
   if (u.hasActiveRun) {
     if (activated) return act(A.SCHEDULE, null, "Sudah punya Run produksi — siap dijadwalkan.", "Klik Jadwalkan atau seret ke Meja.");
-    return act(A.EXCEPTION, E.PARTIAL_ACTIVATION, "Unit sudah punya Run produksi, tetapi aktivasi V2-nya belum lengkap (reader dan writer harus sama-sama mencakup unit ini).", "Minta Owner melengkapi aktivasi (lihat Aktivasi Rencana).");
+    if (!!u.readerEnabled !== !!u.writerEnabled) return act(A.EXCEPTION, E.PARTIAL_ACTIVATION, "Unit sudah punya Run produksi, tetapi aktivasi V2-nya belum lengkap (reader dan writer harus sama-sama mencakup unit ini).", "Minta Owner melengkapi aktivasi (lihat Aktivasi Rencana).");
+    return act(A.EXCEPTION, E.RUN_OUTSIDE_COHORT, "Unit sudah punya Run produksi lama (hasil custody/backfill) di luar cohort V2 — tidak diaktifkan dari Rencana Produksi.", "Pengaktifannya keputusan terpisah Owner/tim sistem (mengubah kepemilikan V2 atas unit yang sudah berjalan).");
   }
   if (PICKUP_UNIT.includes(u.unitStatus)) return act(A.WAIT_PICKUP, null, "Unit belum diambil dari pelanggan / belum sampai — belum bisa dijadwalkan.", "Dijadwalkan setelah masuk Diproses (pickup selesai).");
   if (u.orderStatus !== "PROCESSING" || !ONBOARD_UNIT_STATUSES.includes(u.unitStatus)) {
@@ -60,7 +62,7 @@ export function classifyRencanaUnit(u) {
   if ((u.stageLogCount || 0) > 0 || u.hasCurrentStage) {
     return act(A.EXCEPTION, E.HAS_V1_PROGRESS, "Unit sudah punya progres produksi lama (V1). Riwayatnya harus dipindahkan oleh backfill resmi agar tidak hilang — bukan lewat tombol Jadwalkan.", "Minta tim sistem menjalankan backfill unit ini, lalu muat ulang.");
   }
-  if (activated) return act(A.ONBOARD_SCHEDULE, null, "Siap dijadwalkan — Jadwalkan akan membuka Run produksi (belum tiba) lalu menjadwalkannya.", "Klik Jadwalkan atau seret ke Meja.");
+  if (activated) return act(A.ONBOARD_SCHEDULE, null, "Siap dijadwalkan — Jadwalkan membuka Run produksi unit ini lalu menjadwalkannya (satu langkah).", "Klik Jadwalkan atau seret ke Meja.");
   if (u.readerEnabled !== u.writerEnabled) {
     return act(A.EXCEPTION, E.PARTIAL_ACTIVATION, "Aktivasi V2 unit ini belum lengkap (hanya reader atau hanya writer).", "Minta Owner melengkapi aktivasi (lihat Aktivasi Rencana).");
   }

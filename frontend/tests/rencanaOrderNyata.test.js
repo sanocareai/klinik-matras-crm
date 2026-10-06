@@ -63,6 +63,7 @@ test("formulir Jadwalkan: unit tanpa Run dikirim sebagai unitId (Run dibuka serv
   assert.match(SCHEDULE, /target\.onboardUnitId \? \{ unitId: target\.onboardUnitId, \.\.\.body \} : \{ runId: target\.runId, \.\.\.body \}/);
   assert.match(SCHEDULE, /suggestedPriority/);
   assert.match(SCHEDULE, /Run produksi dibuka \(unit belum tiba di workshop/, "pesan sukses jujur: belum tiba");
+  assert.match(SCHEDULE, /result\.origin === "WORKSHOP_BORN" \? " — Run produksi dibuka \(unit dibuat di workshop\)"/, "unit BARU/SEWA lahir di workshop: tidak ada klaim 'belum tiba'");
   assert.match(API, /planProductionV2Unit: \(data, idempotencyKey = mutationKey\("p8-plan"\)\)/);
 });
 

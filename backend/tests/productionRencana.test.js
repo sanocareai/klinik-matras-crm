@@ -40,7 +40,8 @@ test("kelayakan: Siap Kirim/Terkirim/dibatalkan/SPAM/staf TIDAK masuk Rencana (a
 test("kelayakan: Run aktif TIDAK dibuat ganda — di cohort = SCHEDULE (pakai Run itu); di luar cohort = pengecualian, bukan onboarding", () => {
   assert.equal(classifyRencanaUnit({ ...base, hasActiveRun: true, readerEnabled: true, writerEnabled: true }).action, A.SCHEDULE);
   const r = classifyRencanaUnit({ ...base, hasActiveRun: true });
-  assert.equal(r.action, A.EXCEPTION); assert.equal(r.code, E.PARTIAL_ACTIVATION);
+  assert.equal(r.action, A.EXCEPTION); assert.equal(r.code, E.RUN_OUTSIDE_COHORT, "Run lama (custody/backfill) di luar cohort: bukan tugas Rencana, bukan 'aktivasi sebagian'");
+  assert.equal(classifyRencanaUnit({ ...base, hasActiveRun: true, readerEnabled: true }).code, E.PARTIAL_ACTIVATION, "hanya reader/writer = aktivasi sebagian, dengan Run pun");
 });
 
 test("kelayakan: progres/riwayat V1 dipertahankan — unit dengan stage log atau tahap berjalan TIDAK di-onboard dari tombol Jadwalkan", () => {

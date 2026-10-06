@@ -20,6 +20,7 @@ import {
 } from "./v2FeatureFlags.js";
 import { assertIdempotencyKey, createProductionPlanInTx, scheduleProductionPlanInTx } from "./productionPlanningCommandService.js";
 import { offerUnitCustody, openPendingArrivalIntakeV2InTx } from "./unitCustodyCommandService.js";
+import { BORN_CATEGORIES, BORN_UNIT_STATUSES, registerWorkshopBornRunInTx } from "./productionWorkshopExecutionCommandService.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 const hash = (value) => createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
@@ -28,7 +29,7 @@ const rencanaError = (message, statusCode, code, details) => Object.assign(new E
 // Kolom Unit yang dibutuhkan klasifikasi — dipakai backlog (bulk), command (satu unit), dan daftar eligibility.
 export const RENCANA_UNIT_SELECT = {
   id: true, unitCode: true, status: true, currentStageId: true,
-  order: { select: { id: true, orderNumber: true, status: true, customer: { select: { name: true, pipelineStage: true, isInternalStaff: true } } } },
+  order: { select: { id: true, orderNumber: true, status: true, category: true, customer: { select: { name: true, pipelineStage: true, isInternalStaff: true } } } },
   _count: { select: { stageLogs: true } },
   productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, status: true, plan: { select: { id: true, stationCode: true, status: true } } }, take: 1, orderBy: { createdAt: "desc" } },
 };
@@ -53,13 +54,24 @@ function errorForClassification(cls) {
 
 // Buka Run untuk unit eligible di DALAM transaksi pemanggil. Unit SUDAH dikunci (baris + kepemilikan) oleh pemanggil. Mengembalikan Run non-terminal yang sudah ada tanpa membuat baru
 // (cegah Run ganda; index unik parsial production_runs_v2_active_unit_key menjaga di DB).
-export async function openRencanaRunInTx(tx, { unitId, actorId = null }) {
+export async function openRencanaRunInTx(tx, { unitId, actorId = null, idempotencyKey = null }) {
   const row = await tx.unit.findUnique({ where: { id: unitId }, select: RENCANA_UNIT_SELECT });
   if (!row) throw rencanaError("Unit tidak ditemukan", 404, "RENCANA_UNIT_NOT_FOUND");
   const cls = classifyUnitRow(row, cohortStatesOf(await loadV2Flags(tx)));
-  if (cls.action === RENCANA_ACTION.SCHEDULE) return { runId: row.productionRunsV2[0].id, onboarded: false, viaCustody: false, jobId: null };
+  if (cls.action === RENCANA_ACTION.SCHEDULE) return { runId: row.productionRunsV2[0].id, onboarded: false, viaCustody: false, jobId: null, origin: null };
   if (cls.action !== RENCANA_ACTION.ONBOARD_SCHEDULE) throw errorForClassification(cls);
 
+  // Unit BARU/SEWA tanpa pickup/custody/riwayat V1 = LAHIR di workshop (jalur resmi P5: Run WORKSHOP_BORN, sudah di workshop — tidak ada "kedatangan" yang perlu dikonfirmasi).
+  const anyPickup = await tx.jobUnit.count({ where: { unitId, job: { type: "PICKUP" } } });
+  const anyInbound = await tx.unitCustodyHandoff.count({ where: { unitId, direction: "INBOUND" } });
+  if (BORN_CATEGORIES.includes(row.order?.category) && BORN_UNIT_STATUSES.includes(row.status) && !anyPickup && !anyInbound && idempotencyKey) {
+    const born = await registerWorkshopBornRunInTx(tx, { unitId, actorId, idempotencyKey: `${idempotencyKey}:born` });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_RUN_ONBOARDED_RENCANA, actorId: actorId || null,
+      metadata: { unitCode: row.unitCode, runId: born.runId, viaCustody: false, jobId: null, origin: "WORKSHOP_BORN" },
+    });
+    return { runId: born.runId, onboarded: true, viaCustody: false, jobId: null, origin: "WORKSHOP_BORN" };
+  }
   const job = (await tx.job.findMany({
     where: { type: "PICKUP", status: "COMPLETED", units: { some: { unitId } } },
     select: { id: true }, orderBy: [{ completedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }], take: 1,
@@ -73,9 +85,9 @@ export async function openRencanaRunInTx(tx, { unitId, actorId = null }) {
   if (!run) run = (await openPendingArrivalIntakeV2InTx(tx, { unitId, actorId })).run;
   await recordActivity(tx, {
     entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_RUN_ONBOARDED_RENCANA, actorId: actorId || null,
-    metadata: { unitCode: row.unitCode, runId: run.id, viaCustody, jobId: job?.id ?? null },
+    metadata: { unitCode: row.unitCode, runId: run.id, viaCustody, jobId: job?.id ?? null, origin: "CUSTODY_PICKUP" },
   });
-  return { runId: run.id, onboarded: true, viaCustody, jobId: job?.id ?? null };
+  return { runId: run.id, onboarded: true, viaCustody, jobId: job?.id ?? null, origin: "CUSTODY_PICKUP" };
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +113,7 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
     const command = await tx.v2Command.create({
       data: { domain: "PRODUCTION", actorId: actor, idempotencyKey, commandType: "RENCANA_PLAN_SCHEDULE_UNIT", aggregateType: "Unit", aggregateId: unitId, requestHash },
     });
-    const opened = await openRencanaRunInTx(tx, { unitId, actorId });
+    const opened = await openRencanaRunInTx(tx, { unitId, actorId, idempotencyKey });
     let plan = await tx.productionRunPlan.findUnique({ where: { runId: opened.runId }, select: { id: true, revision: true, status: true } });
     let created = false;
     if (plan?.status === "CANCELLED") throw rencanaError("Rencana unit ini sudah dibatalkan dan satu Run hanya boleh punya satu rencana — hubungi tim sistem untuk membuka ulang.", 409, "RENCANA_PLAN_CANCELLED");
@@ -114,7 +126,7 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
       productionDate: input.productionDate, stationCode: input.stationCode, priority: input.priority,
       workCenterId: input.workCenterId, operatorId: input.operatorId, cornerWorkCenterId: input.cornerWorkCenterId, cornerOperatorId: input.cornerOperatorId,
     });
-    const response = { ...scheduled, runId: opened.runId, onboarded: opened.onboarded, viaCustody: opened.viaCustody, created };
+    const response = { ...scheduled, runId: opened.runId, onboarded: opened.onboarded, viaCustody: opened.viaCustody, origin: opened.origin, created };
     await tx.v2Command.update({ where: { id: command.id }, data: { status: "APPLIED", appliedRevision: scheduled.revision, response, completedAt: new Date() } });
     return { ...response, replayed: false };
   }, { timeout: 20_000, maxWait: 10_000 });
