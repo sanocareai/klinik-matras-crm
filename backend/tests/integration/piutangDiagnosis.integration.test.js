@@ -11,6 +11,9 @@ import { makeClient } from "./setup/httpClient.js";
 import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/finance/accounts.js";
 import { postRevenueRecognition, postPaymentReceived } from "../../src/services/finance/posting/orderRevenue.js";
 import { umurPiutang } from "../../src/services/finance/reports.js";
+import { postJournal } from "../../src/services/finance/journal.js";
+import { resolveAccount } from "../../src/services/finance/accounts.js";
+import { PREFIX_KUNCI_PENYESUAIAN } from "../../src/services/finance/piutangDiagnosis.js";
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -136,4 +139,65 @@ test("izin: SALES 403, tanpa login 401; tanpa data → bentuk respons tetap utuh
   assert.equal(r.body.rekonsiliasi.selisih, 0);
   assert.equal(r.body.belumDiakui.jumlah, 0);
   assert.ok(r.body.kategori.TAGIHAN_SAH);
+});
+
+test("keringanan lunas (pengecualian): sisa tagihan riil tampil walau status CRM LUNAS, dengan posisi di buku yang jujur", async () => {
+  const { kelola, diakui, bayar, a, admin } = await siapkan();
+  const kunci = (o, dicabutAt = null) => testPrisma.orderPaidAtPengecualian.create({ data: { orderId: o.id, paidAtDikunci: new Date("2026-09-30T05:00:00Z"), alasan: "Keringanan target September (uji)", createdById: admin.user.id, dicabutAt } });
+
+  // (a) diserahkan sebelum pembukuan: tanpa jurnal sama sekali, belum bayar → piutang riil yang TIDAK ada di buku (kasus Hotel Discovery)
+  const hotel = await kelola("Hotel", { value: 1_000_000, paymentStatus: "LUNAS" });
+  await kunci(hotel);
+  // (b) belum diserahkan, baru dibayar separuh (terverifikasi) → belum jadi piutang menurut buku (kasus Susi)
+  const susi = await kelola("Susi", { value: 4_500_000, status: "SHIPPING", paymentStatus: "LUNAS" });
+  await bayar(susi, 2_250_000, { verifikasi: true });
+  await kunci(susi);
+  // (c) pendapatan sudah diakui, belum dibayar → sudah tercatat sebagai piutang
+  const diakuiBelumBayar = await kelola("Diakui", { value: 800_000, paymentStatus: "LUNAS" });
+  await diakui(diakuiBelumBayar);
+  await kunci(diakuiBelumBayar);
+  // (d) sudah dibayar penuh & terverifikasi → bukan keringanan yang tersisa; (e) pengecualian sudah dicabut → tidak dihitung
+  const lunasPenuh = await kelola("Lunas Penuh", { value: 600_000, paymentStatus: "LUNAS" });
+  await bayar(lunasPenuh, 600_000, { verifikasi: true });
+  await kunci(lunasPenuh);
+  const dicabut = await kelola("Dicabut", { value: 900_000, paymentStatus: "LUNAS" });
+  await kunci(dicabut, new Date());
+
+  const r = await a.get("/api/finance/reports/receivables/diagnosis");
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const k = r.body.keringananLunas;
+  const per = Object.fromEntries(k.baris.map((b) => [b.customerName, b]));
+  assert.deepEqual(Object.keys(per).sort(), ["Diakui", "Hotel", "Susi"]);
+  assert.equal(per.Hotel.posisiBuku, "BELUM_DI_BUKU");
+  assert.equal(per.Hotel.sisaTagihan, 1_000_000);
+  assert.equal(per.Susi.posisiBuku, "BELUM_DISERAHKAN");
+  assert.equal(per.Susi.sisaTagihan, 2_250_000);
+  assert.equal(per.Susi.terbayarTerverifikasi, 2_250_000);
+  assert.equal(per.Diakui.posisiBuku, "SUDAH_DI_BUKU");
+  assert.equal(per.Diakui.sisaTagihan, 800_000);
+  assert.equal(k.jumlah, 3);
+  assert.equal(k.totalSisa, 4_050_000);
+  assert.equal(k.totalBelumDiBuku, 1_000_000);
+  assert.equal(k.totalSudahDiBuku, 800_000);
+  assert.equal(k.totalBelumDiserahkan, 2_250_000);
+});
+
+test("jurnal penyesuaian pengakuan ikut dihitung sebagai 'diakui' — order yang sudah disesuaikan tidak lagi dituduh nilai-berubah", async () => {
+  const { kelola, diakui, admin, a } = await siapkan();
+  const o = await kelola("Sudah Disesuaikan", { value: 2_000_000 });
+  await diakui(o);
+  await testPrisma.order.update({ where: { id: o.id }, data: { value: 1_200_000 } });
+  const sebelum = (await a.get("/api/finance/reports/receivables/diagnosis")).body.baris.find((b) => b.orderId === o.id);
+  assert.equal(sebelum.kategori, "NILAI_BEDA_PENGAKUAN");
+
+  await testPrisma.$transaction(async (tx) => {
+    const piutang = await resolveAccount(tx, SYSTEM_KEYS.PIUTANG_USAHA);
+    const pendapatan = await resolveAccount(tx, SYSTEM_KEYS.PENDAPATAN_LAYANAN);
+    await postJournal(tx, { date: new Date("2026-10-06"), description: "uji penyesuaian", source: "MANUAL", idempotencyKey: `${PREFIX_KUNCI_PENYESUAIAN}${o.id}:1200000`, userId: admin.user.id,
+      lines: [{ accountId: pendapatan.id, debit: 800_000, orderId: o.id }, { accountId: piutang.id, credit: 800_000, orderId: o.id }] });
+  });
+  const sesudah = (await a.get("/api/finance/reports/receivables/diagnosis")).body.baris.find((b) => b.orderId === o.id);
+  assert.equal(sesudah.saldoPiutang, 1_200_000);
+  assert.equal(sesudah.diakui, 1_200_000);
+  assert.equal(sesudah.kategori, "TAGIHAN_SAH");
 });

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { barisRekonsiliasi, saringDiagnosis, teksUmurPengakuan, URUTAN_KATEGORI } from "../src/features/finance/diagnosisPiutangLogic.js";
+import { barisRekonsiliasi, saringDiagnosis, teksUmurPengakuan, URUTAN_KATEGORI, LABEL_POSISI_BUKU } from "../src/features/finance/diagnosisPiutangLogic.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const KATEGORI = {
@@ -63,4 +63,11 @@ test("layar memakai endpoint & komponen diagnosis (tidak menghitung saldo di kli
   assert.match(halaman, /<DiagnosisPiutang \/>/);
   const komponen = fs.readFileSync(path.join(dir, "../src/features/finance/DiagnosisPiutang.jsx"), "utf8");
   assert.doesNotMatch(komponen, /api\.(post|put|patch|delete|create|update)/i, "komponen ini hanya membaca");
+});
+
+test("keringanan lunas: setiap posisi buku dari server punya label & catatan; 'belum tercatat di buku' ditandai merah", () => {
+  for (const k of ["BELUM_DI_BUKU", "SUDAH_DI_BUKU", "BELUM_DISERAHKAN", "DIAKUI_TANPA_SALDO"]) {
+    assert.ok(LABEL_POSISI_BUKU[k]?.label && LABEL_POSISI_BUKU[k]?.catatan, k);
+  }
+  assert.equal(LABEL_POSISI_BUKU.BELUM_DI_BUKU.varian, "red");
 });

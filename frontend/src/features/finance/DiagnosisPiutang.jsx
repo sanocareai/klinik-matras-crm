@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { api } from "@/api.js";
 import { Uang, formatUang, JudulKartu } from "@/features/finance/shared.jsx";
-import { barisRekonsiliasi, saringDiagnosis, teksUmurPengakuan, VARIAN_TINGKAT } from "@/features/finance/diagnosisPiutangLogic.js";
+import { barisRekonsiliasi, saringDiagnosis, teksUmurPengakuan, VARIAN_TINGKAT, LABEL_POSISI_BUKU } from "@/features/finance/diagnosisPiutangLogic.js";
 
 // DIAGNOSIS PIUTANG — menjelaskan kenapa saldo Piutang Usaha (neraca) sebesar itu: tiap order bersaldo masuk satu kategori dengan alasan + tindakan,
 // dan semua kategori menjumlah kembali ke saldo neraca. Hanya membaca; tidak ada tombol yang mengubah data.
@@ -14,6 +14,7 @@ export default function DiagnosisPiutang() {
   const [kategori, setKategori] = useState("");
   const [semua, setSemua] = useState(false);
   const [lihatBelumDiakui, setLihatBelumDiakui] = useState(false);
+  const [lihatKeringanan, setLihatKeringanan] = useState(true);
 
   const muat = useCallback(async () => {
     setError(null);
@@ -35,6 +36,7 @@ export default function DiagnosisPiutang() {
 
   const perluTindakan = rek.baris.filter((b) => b.kode !== "TAGIHAN_SAH");
   const belum = data.belumDiakui;
+  const kr = data.keringananLunas;
 
   return (
     <Card className="overflow-hidden">
@@ -112,6 +114,43 @@ export default function DiagnosisPiutang() {
               </li>
             ))}
           </ul>
+        )}
+
+        {kr && kr.jumlah > 0 && (
+          <div className="border-t border-border pt-3">
+            <button type="button" className="text-[13px] font-medium text-accent hover:underline" onClick={() => setLihatKeringanan(!lihatKeringanan)}>
+              {lihatKeringanan ? "Sembunyikan" : "Lihat"} order lunas karena keringanan yang uangnya belum diterima ({kr.jumlah} order, sisa {formatUang(kr.totalSisa)})
+            </button>
+            {lihatKeringanan && (
+              <div className="mt-2 space-y-2 text-[13px] text-ink2">
+                <p>
+                  Order ini <strong>dihitung lunas</strong> (Pengecualian Tgl Lunas, keputusan Owner) untuk target sales, tetapi uang pelanggannya belum diterima — jadi secara
+                  bisnis tetap <strong>tagihan ke pelanggan</strong>. Order seperti ini tidak tampil di daftar piutang karena statusnya Lunas di CRM, dan yang sudah diserahkan sebelum
+                  pembukuan tidak punya jurnal piutang sama sekali. <strong>{formatUang(kr.totalBelumDiBuku)}</strong> di antaranya belum tercatat di buku.
+                </p>
+                <ul className="space-y-2">
+                  {kr.baris.map((b) => {
+                    const pos = LABEL_POSISI_BUKU[b.posisiBuku] ?? { label: b.posisiBuku, varian: "neutral", catatan: "" };
+                    return (
+                      <li key={b.orderId} className="rounded-lg border border-border p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-medium text-ink">{b.orderNumber} · {b.customerName}</p>
+                            <p className="text-[12px] text-ink3">{[b.salesName, b.orderStatus, `nilai ${formatUang(b.nilaiTagihan)}`, b.terbayarTerverifikasi > 0 && `terbayar ${formatUang(b.terbayarTerverifikasi)}`].filter(Boolean).join(" · ")}</p>
+                          </div>
+                          <div className="text-right">
+                            <Uang value={b.sisaTagihan} className="text-[14px] font-bold" />
+                            <div className="mt-0.5"><Badge variant={pos.varian}>{pos.label}</Badge></div>
+                          </div>
+                        </div>
+                        <p className="mt-1 text-[12px] text-ink3">{pos.catatan}</p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
 
         <div className="border-t border-border pt-3">

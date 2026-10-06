@@ -19,6 +19,9 @@ import { STATUS_PENGAKUAN } from "./posting/orderRevenue.js";
 import { tanggalCutoff, sebelumCutoff, tampilCutoff } from "./cutoff.js";
 import { catatanLaporan } from "./reports.js";
 
+/** Kunci idempoten jurnal penyesuaian pengakuan pendapatan (scripts/penyesuaianPengakuanPendapatan.js): "<prefix><orderId>:<tagihan>". Ikut dihitung sebagai "diakui". */
+export const PREFIX_KUNCI_PENYESUAIAN = "PENYESUAIAN_PENGAKUAN:";
+
 export const KATEGORI_PIUTANG = Object.freeze({
   TAGIHAN_SAH: { label: "Tagihan sah", tingkat: "tagih" },
   LUNAS_TANPA_PAYMENT: { label: "Lunas di CRM, belum ada pembayaran", tingkat: "periksa" },
@@ -70,6 +73,44 @@ export function jelaskanPiutangOrder({ saldo, diakui, tagihan, paymentStatus, ba
   };
 }
 
+/**
+ * KERINGANAN LUNAS (Pengecualian Tgl Lunas, keputusan Owner): order yang DIHITUNG lunas untuk target Sales padahal uang pelanggan belum (seluruhnya) diterima. Dari
+ * sisi uang itu tetap TAGIHAN ke pelanggan, tetapi tidak pernah tampil sebagai piutang karena (a) status CRM-nya LUNAS dan (b) order yang diserahkan sebelum pembukuan
+ * tidak punya jurnal pendapatan/piutang sama sekali. Bagian ini menjumlahkan sisa tagihan riilnya dan menyebut apakah sudah tercatat di buku.
+ */
+async function keringananLunas(db, saldoPerOrder) {
+  const rows = await db.orderPaidAtPengecualian.findMany({
+    where: { dicabutAt: null },
+    select: { alasan: true, order: { select: { ...PILIH_TAGIHAN, orderNumber: true, paymentStatus: true, customer: { select: { name: true, assignedSales: { select: { name: true } } } } } } },
+  });
+  const ids = rows.map((r) => r.order.id);
+  const bayar = ids.length ? await db.payment.groupBy({ by: ["orderId"], where: { orderId: { in: ids }, cancelledAt: null, verifications: { some: {} } }, _sum: { amount: true } }) : [];
+  const dibayar = new Map(bayar.map((b) => [b.orderId, b._sum.amount ?? 0]));
+  const diakui = new Set(ids.length ? (await db.finJournalEntry.findMany({ where: { source: "PENGAKUAN_PENDAPATAN", status: "POSTED", sourceId: { in: ids } }, select: { sourceId: true } })).map((e) => e.sourceId) : []);
+  const baris = rows.map((r) => {
+    const o = r.order;
+    const tagihan = tagihanOrder(o);
+    const terbayar = dibayar.get(o.id) ?? 0;
+    const sisa = Math.max(tagihan - terbayar, 0);
+    const saldoBuku = saldoPerOrder.get(o.id) ?? 0;
+    const diserahkan = STATUS_PENGAKUAN.includes(o.status);
+    const posisiBuku = !diserahkan ? "BELUM_DISERAHKAN" : diakui.has(o.id) && saldoBuku > 0 ? "SUDAH_DI_BUKU" : diakui.has(o.id) ? "DIAKUI_TANPA_SALDO" : "BELUM_DI_BUKU";
+    return {
+      orderId: o.id, orderNumber: o.orderNumber, customerName: o.customer?.name ?? "—", salesName: o.customer?.assignedSales?.name ?? null, orderStatus: o.status,
+      nilaiTagihan: tagihan, terbayarTerverifikasi: terbayar, sisaTagihan: sisa, saldoPiutangBuku: saldoBuku, posisiBuku, alasan: r.alasan,
+    };
+  }).filter((b) => b.sisaTagihan > 0).sort((a, b) => b.sisaTagihan - a.sisaTagihan);
+  const jumlahPer = (k) => baris.filter((b) => b.posisiBuku === k).reduce((s, b) => s + b.sisaTagihan, 0);
+  return {
+    jumlah: baris.length,
+    totalSisa: baris.reduce((s, b) => s + b.sisaTagihan, 0),
+    totalBelumDiBuku: jumlahPer("BELUM_DI_BUKU"),
+    totalSudahDiBuku: jumlahPer("SUDAH_DI_BUKU"),
+    totalBelumDiserahkan: jumlahPer("BELUM_DISERAHKAN"),
+    baris,
+  };
+}
+
 const kosongAngka = () => Object.fromEntries(Object.keys(KATEGORI_PIUTANG).map((k) => [k, { jumlah: 0, total: 0 }]));
 
 export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
@@ -78,7 +119,7 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
   const cutoff = await tanggalCutoff(db);
   const cutoffTeks = tampilCutoff(cutoff);
   const catatan = await catatanLaporan(db);
-  const kosong = { perTanggal: to, neraca: 0, rekonsiliasi: { perKategori: kosongAngka(), selisih: 0 }, baris: [], belumDiakui: { jumlah: 0, total: 0, perStatus: [], sudahDiserahBelumDiakui: [] }, kategori: KATEGORI_PIUTANG, catatan };
+  const kosong = { perTanggal: to, neraca: 0, rekonsiliasi: { perKategori: kosongAngka(), selisih: 0 }, baris: [], belumDiakui: { jumlah: 0, total: 0, perStatus: [], sudahDiserahBelumDiakui: [] }, keringananLunas: { jumlah: 0, totalSisa: 0, totalBelumDiBuku: 0, totalSudahDiBuku: 0, totalBelumDiserahkan: 0, baris: [] }, kategori: KATEGORI_PIUTANG, catatan };
   if (!akun) return kosong;
 
   const grouped = await db.finJournalLine.groupBy({
@@ -91,7 +132,7 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
     .filter((g) => !g.saldo.isZero());
   const ids = bersaldo.map((b) => b.orderId);
 
-  const [orders, pengakuan, payments] = ids.length ? await Promise.all([
+  const [orders, pengakuan, payments, penyesuaian] = ids.length ? await Promise.all([
     db.order.findMany({
       where: { id: { in: ids } },
       select: { ...PILIH_TAGIHAN, orderNumber: true, paymentStatus: true, paidAt: true, customer: { select: { id: true, name: true, assignedSales: { select: { name: true } } } } },
@@ -102,9 +143,12 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
       select: { sourceId: true, date: true, lines: { where: { accountId: akun.id }, select: { debit: true } } },
     }),
     db.payment.findMany({ where: { orderId: { in: ids }, cancelledAt: null }, select: { orderId: true, amount: true, createdAt: true, verifications: { select: { id: true } } } }),
-  ]) : [[], [], []];
+    // Penyesuaian pengakuan pendapatan (nilai order diedit sesudah diakui): net debit−kredit piutang per order menambah/mengurangi total yang dianggap diakui.
+    db.finJournalLine.findMany({ where: { accountId: akun.id, orderId: { in: ids }, entry: { status: "POSTED", idempotencyKey: { startsWith: PREFIX_KUNCI_PENYESUAIAN } } }, select: { orderId: true, debit: true, credit: true } }),
+  ]) : [[], [], [], []];
   const orderById = new Map(orders.map((o) => [o.id, o]));
   const pengakuanById = new Map(pengakuan.map((e) => [e.sourceId, { tanggal: e.date, diakui: e.lines.reduce((s, l) => s + Number(l.debit), 0) }]));
+  for (const l of penyesuaian) { const p = pengakuanById.get(l.orderId); if (p) p.diakui += Number(l.debit) - Number(l.credit); }
   const bayarById = new Map();
   for (const p of payments) {
     const b = bayarById.get(p.orderId) ?? { total: 0, jumlah: 0, terverifikasi: 0, paling_awal: null };
@@ -167,6 +211,7 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
       sudahDiserahBelumDiakui: belum.filter((k) => STATUS_PENGAKUAN.includes(k.status))
         .map((k) => ({ orderId: k.id, orderNumber: k.orderNumber, customerName: k.customer?.name ?? "—", orderStatus: k.status, nilaiTagihan: tagihanOrder(k) })),
     },
+    keringananLunas: await keringananLunas(db, new Map(baris.map((b) => [b.orderId, b.saldoPiutang]))),
     kategori: KATEGORI_PIUTANG,
     catatan,
   };

@@ -23,6 +23,14 @@ export function saringDiagnosis(baris, { hanyaTindakan = true, kategori = "" } =
   return (baris ?? []).filter((b) => (!kategori || b.kategori === kategori) && (kategori || !hanyaTindakan || b.kategori !== "TAGIHAN_SAH"));
 }
 
+/** Posisi order keringanan-lunas di buku besar (dari server): apakah tagihannya sudah tercatat sebagai piutang. */
+export const LABEL_POSISI_BUKU = {
+  BELUM_DI_BUKU: { label: "Belum tercatat di buku", varian: "red", catatan: "Sudah diserahkan sebelum pembukuan; pendapatan/piutangnya tidak pernah dijurnal." },
+  SUDAH_DI_BUKU: { label: "Sudah tercatat sebagai piutang", varian: "neutral", catatan: "Termasuk saldo Piutang Usaha di neraca." },
+  BELUM_DISERAHKAN: { label: "Belum diserahkan", varian: "neutral", catatan: "Belum jadi piutang menurut buku (pendapatan diakui saat diserahkan)." },
+  DIAKUI_TANPA_SALDO: { label: "Diakui, saldo piutang 0", varian: "orange", catatan: "Pendapatan sudah diakui tetapi piutangnya sudah nol — periksa." },
+};
+
 /** Teks umur pengakuan, mis. "diakui 12 hari lalu" / "diakui hari ini"; null kalau tidak diketahui. */
 export function teksUmurPengakuan(hari) {
   if (hari == null || !Number.isFinite(hari)) return null;
