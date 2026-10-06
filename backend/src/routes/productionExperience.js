@@ -7,6 +7,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { hasPermission, requireAnyPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { createProductionPlan, reorderStationPlans, scheduleProductionPlan } from "../services/productionPlanningCommandService.js";
+import { cohortStatesOf, getPlanningRefs, listRencanaEligibility, planAndScheduleUnit } from "../services/productionRencanaService.js";
 import {
   applyAdaptationPolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
 } from "../services/productionStepCommandService.js";
@@ -79,9 +80,9 @@ productionExperienceRouter.get("/board", requireAnyPermission(...READ_PERMS), as
 // Unit di luar cohort reader tetap tampil sebagai kartu ringkas (schedulable=false) — tidak ada tombol jadwal; izin tidak berubah (READ_PERMS).
 productionExperienceRouter.get("/backlog", requireAnyPermission(...READ_PERMS), async (req, res) => {
   try {
-    const state = resolveProductionReaderState(await loadV2Flags(prisma));
-    const cohortUnitIds = state.mode === PRODUCTION_READER_MODE.OFF ? [] : [...state.unitIds];
-    res.json({ readerMode: cohortUnitIds.length ? "COHORT" : "OFF", ...(await listBacklog(prisma, { cohortUnitIds, ...parseBacklogQuery(req.query) })) });
+    const states = cohortStatesOf(await loadV2Flags(prisma));
+    const readerOn = states.reader.mode !== PRODUCTION_READER_MODE.OFF && states.reader.unitIds.size > 0;
+    res.json({ readerMode: readerOn ? "COHORT" : "OFF", ...(await listBacklog(prisma, { states, ...parseBacklogQuery(req.query) })) });
   } catch (err) { handleErr(err, res); }
 });
 
@@ -176,6 +177,9 @@ productionExperienceRouter.post("/plans", requirePermission(P.PRODUCTION_ASSIGNM
   try {
     const key = idem(req);
     if (!key || key.length > 110) return res.status(400).json({ error: "Idempotency-Key wajib diisi (12-110 karakter)", code: "IDEMPOTENCY_KEY_INVALID" });
+    if (!req.body?.runId && req.body?.unitId) { // order nyata (Rencana): buka Run bila perlu + rencana + jadwal = SATU transaksi; tombol Jadwalkan & seret-lepas memakai pintu ini
+      return res.status(201).json(await planAndScheduleUnit(prisma, { unitId: req.body.unitId, actorId: req.user.id, idempotencyKey: key, input: req.body }));
+    }
     const created = await createProductionPlan(prisma, { runId: req.body?.runId, actorId: req.user.id, idempotencyKey: `${key}:create` });
     const scheduled = await scheduleProductionPlan(prisma, {
       planId: created.planId, actorId: req.user.id, idempotencyKey: `${key}:schedule`, expectedRevision: created.revision,
@@ -185,6 +189,16 @@ productionExperienceRouter.post("/plans", requirePermission(P.PRODUCTION_ASSIGNM
     });
     res.status(201).json({ ...scheduled, created: !created.replayed });
   } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/planning/refs — workshop + PIC yang SAH untuk penjadwalan (dihitung server, dengan alasan + tautan bila kosong). Izin = izin menjadwalkan.
+productionExperienceRouter.get("/planning/refs", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try { res.json(await getPlanningRefs(prisma, { canRegisterOperator: hasPermission(req.user, P.PRODUCTION_OPERATOR_WRITE) })); } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/planning/eligibility — unit nyata eligible + pengecualiannya + status aktivasi cohort (baca-saja; Admin/Owner/Kepala Produksi).
+productionExperienceRouter.get("/planning/eligibility", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try { res.json(await listRencanaEligibility(prisma, { limit: Number(req.query.limit) || 500 })); } catch (err) { handleErr(err, res); }
 });
 
 // POST /api/production-v2/plans/:id/schedule { expectedRevision, productionDate|null, stationCode|null, priority, workCenterId, operatorId, ... }

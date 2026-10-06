@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -53,13 +54,51 @@ export function ArrivalModal({ target, onClose, onDone }) {
   );
 }
 
-export function ScheduleModal({ target, board, date, refs, onClose, onDone }) {
+// Alasan + tindakan bila workshop/PIC kosong (dari GET /production-v2/planning/refs): TIDAK pernah kosong tanpa penjelasan. Akun produksi yang belum jadi PIC bisa didaftarkan
+// (izin PRODUCTION_OPERATOR_WRITE) — aksi eksplisit pengguna, bukan otomatis.
+function RefsProblems({ refs, workCenterId, onRegistered, setError }) {
+  const [busyId, setBusyId] = useState("");
+  const problems = (refs.problems || []).filter((p) => p.severity !== "info" || refs.operators.length < 2);
+  if (!problems.length && !(refs.candidates || []).length) return null;
+  async function register(c) {
+    setBusyId(c.userId); setError("");
+    try { await api.createProductionOperator({ userId: c.userId, primaryWorkCenterId: workCenterId || undefined }); await onRegistered?.(); }
+    catch (e) { setError(friendlyError(e)); } finally { setBusyId(""); }
+  }
+  return (
+    <div data-testid="refs-problems" className="space-y-2 sm:col-span-2">
+      {problems.map((p) => (
+        <div key={p.code} data-testid={`refs-problem-${p.code}`} role="note" className={`rounded-btn px-3 py-2 text-[12.5px] ${p.severity === "info" ? "bg-inset text-ink2" : "bg-orangebg text-orange"}`}>
+          <p className="m-0">{p.message}</p>
+          {p.link && <Link to={p.link} className="mt-1 inline-block font-semibold underline" data-testid={`refs-link-${p.code}`}>{p.linkLabel || "Buka pengaturan"}</Link>}
+        </div>
+      ))}
+      {(refs.candidates || []).length > 0 && (
+        <div data-testid="refs-candidates" className="rounded-btn border border-line px-3 py-2">
+          <p className="m-0 text-[12px] font-semibold text-ink2">Akun produksi aktif yang belum terdaftar sebagai PIC</p>
+          <ul className="m-0 mt-1 list-none space-y-1 p-0">
+            {refs.candidates.map((c) => (
+              <li key={c.userId} className="flex items-center justify-between gap-2 text-[12.5px] text-ink">
+                <span className="min-w-0 truncate">{c.name}</span>
+                {refs.canRegisterOperator
+                  ? <Button size="sm" variant="neutral" data-mutates data-testid="register-pic" disabled={!!busyId} onClick={() => register(c)}>{busyId === c.userId ? "Mendaftarkan…" : "Daftarkan sebagai PIC"}</Button>
+                  : <span className="text-[11.5px] text-ink3">minta Admin/Kepala Produksi</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRefsChanged = null }) {
   const plan = target.plan;
   const [form, setForm] = useState(() => ({
     productionDate: plan?.productionDate || date,
     stationCode: target.presetStation || plan?.stationCode || board.stations.find((s) => !stationCapacity(s).full)?.code || board.config.stations[0],
-    priority: Math.min(plan?.priority ?? 0, 1), // pilihan pengguna hanya Normal/Tinggi (nilai lama Mendesak tampil Tinggi)
-    workCenterId: plan?.workCenter?.id || refs.workCenters[0]?.id || "",
+    priority: Math.min(plan?.priority ?? target.suggestedPriority ?? 0, 1), // pilihan pengguna hanya Normal/Tinggi (nilai lama Mendesak tampil Tinggi)
+    workCenterId: plan?.workCenter?.id || refs.defaultWorkCenterId || refs.workCenters[0]?.id || "",
     operatorId: plan?.operator?.id || "",
     cornerOperatorId: plan?.cornerOperator?.id || "",
   }));
@@ -78,15 +117,16 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone }) {
     try {
       let result;
       if (plan) result = await api.scheduleProductionV2Plan(plan.id, { ...body, expectedRevision: plan.revision });
-      else result = await api.planProductionV2Unit({ runId: target.runId, ...body });
+      else result = await api.planProductionV2Unit(target.onboardUnitId ? { unitId: target.onboardUnitId, ...body } : { runId: target.runId, ...body }); // onboarding: Run dibuka di transaksi yang sama
       // Argumen ke-2 (P12A.3): info penempatan agar pemanggil bisa menetapkan POSISI AWAL menurut prioritas (bukan auto-reorder).
-      onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}.`,
+      onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}${result?.onboarded ? " — Run produksi dibuka (unit belum tiba di workshop; konfirmasi \"Unit Tiba\" tetap diperlukan)" : ""}.`,
         unschedule ? null : { planId: plan?.id ?? result?.planId ?? result?.id ?? null, stationCode: form.stationCode, productionDate: form.productionDate, priority: Math.max(Number(form.priority), rankOfView(target) >= 3 ? 3 : 0) }); // peringkat urutan: Komplain tetap di atas
     } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
   }
 
+  const refsLoading = refs.loaded === false;
   return (
-    <Modal open onOpenChange={(v) => !v && onClose()} title={plan ? `Jadwal ${unitCode}` : `Rencanakan ${unitCode}`} description="Tanggal produksi, meja bongkar, dan PIC. Kapasitas meja dijaga server."
+    <Modal open onOpenChange={(v) => !v && onClose()} title={plan ? `Jadwal ${unitCode}` : `Rencanakan ${unitCode}`} description={target.onboardUnitId ? "Tanggal produksi, Meja, PIC, dan prioritas. Menyimpan akan membuka Run produksi unit ini (belum tiba) lalu menjadwalkannya — satu langkah." : "Tanggal produksi, meja bongkar, dan PIC. Kapasitas meja dijaga server."}
       footer={
         <div className="flex w-full flex-wrap justify-end gap-2">
           {plan?.stationCode && <Button variant="neutral" data-mutates disabled={busy} onClick={() => submit(true)}>Keluarkan dari papan</Button>}
@@ -112,15 +152,17 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone }) {
         </label>
         <label className="text-[12.5px] text-ink3">PIC meja (bongkar & restorasi)
           <select className={field} value={form.operatorId} onChange={(e) => set({ operatorId: e.target.value })}>
-            <option value="">— pilih —</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.user?.name || o.employeeCode}</option>)}
+            <option value="">— pilih —</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
           </select>
         </label>
         <label className="text-[12.5px] text-ink3">PIC Corner (jahit) — opsional
           <select className={field} value={form.cornerOperatorId} onChange={(e) => set({ cornerOperatorId: e.target.value })}>
-            <option value="">Sama dengan PIC meja</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.user?.name || o.employeeCode}</option>)}
+            <option value="">Sama dengan PIC meja</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
           </select>
         </label>
-        {refs.operators.length === 0 && <p className="sm:col-span-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Belum ada operator aktif. Tambahkan di Tim & Area Kerja → Operators.</p>}
+        {refsLoading && <p data-testid="refs-loading" className="sm:col-span-2 text-[12.5px] text-ink3">Memuat daftar workshop dan PIC…</p>}
+        {!refsLoading && refs.problems ? <RefsProblems refs={refs} workCenterId={form.workCenterId} onRegistered={onRefsChanged} setError={setError} />
+          : (refs.operators.length === 0 && <p className="sm:col-span-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Belum ada operator aktif. Tambahkan di Pengaturan Produksi → Operator.</p>)}
         {error && <p role="alert" className="sm:col-span-2 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
       </div>
     </Modal>

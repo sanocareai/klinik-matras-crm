@@ -14,7 +14,7 @@ import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
-import { delayReasonOfBlock, displayStatusOfOrder, displayStatusOfUnit, isFinishedUnitStatus, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { arrivalConfirmedByStaff, delayReasonOfBlock, displayStatusOfOrder, displayStatusOfUnit, isFinishedUnitStatus, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -150,7 +150,7 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
   const next = ctx.next;
   const bucket = andonBucketOf({ next, started });
   const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaints });
-  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED");
+  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases);
   return {
     runId: run.id, revision: run.revision, status: run.status, currentPhase: run.currentPhase, origin: run.origin,
     // Tiga sumbu terpisah (simplifikasi slice 1): status order, keberadaan fisik, tahap (next/bucket). service (teknis) tetap ada di payload sebagai data historis; UI hanya menampilkan Layanan Sales.

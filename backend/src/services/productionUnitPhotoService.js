@@ -13,6 +13,10 @@
 //      mengaitkan satu entri proofPhotoUrls ke satu unit tertentu (termasuk sibling unit dalam order/job yang
 //      sama), jadi unit-unit itu TIDAK PERNAH mendapat foto pickup (jatuh ke langkah 2/3), sekalipun Job-nya
 //      punya foto.
+//   1b. (Rencana Produksi order nyata) Foto pickup dari JOB PICKUP milik unit ini sendiri (JobUnit), walau unit belum punya handoff custody
+//      V2 (unit di luar cohort/tanpa Run — fotonya tetap terlihat di Delivery, jadi kartu Rencana harus bisa menampilkannya). Aturan atribusi
+//      SAMA persis dengan langkah 1: HANYA bila job itu punya TEPAT SATU JobUnit dan punya proofPhotoUrls; job multi-unit TIDAK PERNAH
+//      diatribusikan (hasilnya "ambigu" — lihat diagnoseUnitPhotosBulk, dipakai kartu untuk MENJELASKAN, bukan menebak). Job TERBARU menang.
 //   2. Unggahan manual Production (unit_photos, PRODUCTION_MANUAL) TERBARU yang belum di-supersede — hanya
 //      relevan bila langkah 1 kosong. Bila langkah 1 KEMUDIAN tersedia (mis. custody yang tadinya belum ada
 //      offer akhirnya di-offer), resolusi otomatis pindah ke DRIVER_PICKUP pada request berikutnya TANPA
@@ -38,6 +42,17 @@ function jobPhotoFilename(url) {
   return filename;
 }
 
+// Job PICKUP milik unit (via JobUnit) yang punya foto bukti — terbaru dulu. Dasar langkah 1b + diagnosis.
+const PICKUP_PHOTO_JOB_SELECT = { id: true, proofPhotoUrls: true, completedAt: true, createdAt: true, units: { select: { id: true }, take: 2 } };
+function attributablePickup(job) {
+  if (!job || job.units.length !== 1 || job.proofPhotoUrls.length === 0) return null;
+  const filename = jobPhotoFilename(job.proofPhotoUrls[0]);
+  if (!filename) return null;
+  const mimeType = JOB_PHOTO_EXT_MIME[filename.split(".").pop()?.toLowerCase()] || null;
+  return mimeType ? { source: "DRIVER_PICKUP", jobPhotoFilename: filename, mimeType } : null;
+}
+const jobTime = (j) => (j.completedAt ?? j.createdAt).getTime();
+
 // Resolusi kanonis (dipakai read-model kartu DAN endpoint sajikan foto) — mengembalikan deskriptor internal,
 // TIDAK PERNAH sebuah path filesystem/URL mentah ke pemanggil di luar module ini.
 export async function resolveUnitPhoto(prisma, unitId) {
@@ -55,6 +70,13 @@ export async function resolveUnitPhoto(prisma, unitId) {
       if (mimeType) return { source: "DRIVER_PICKUP", jobPhotoFilename: filename, mimeType };
     }
   }
+  // 1b. Job PICKUP milik unit sendiri (tanpa handoff custody V2): job terbaru yang punya foto; hanya single-unit yang diatribusikan.
+  const pickupJob = (await prisma.job.findMany({
+    where: { type: "PICKUP", units: { some: { unitId } }, proofPhotoUrls: { isEmpty: false } },
+    select: PICKUP_PHOTO_JOB_SELECT, orderBy: [{ completedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }], take: 1,
+  }))[0];
+  const fromJob = attributablePickup(pickupJob);
+  if (fromJob) return fromJob;
   const manual = await prisma.unitPhoto.findFirst({
     where: { unitId, source: "PRODUCTION_MANUAL", supersededAt: null },
     orderBy: { createdAt: "desc" },
@@ -62,6 +84,40 @@ export async function resolveUnitPhoto(prisma, unitId) {
   });
   if (manual) return { source: "PRODUCTION_MANUAL", storageKey: manual.storageKey, mimeType: manual.mimeType };
   return null;
+}
+
+// Job PICKUP berfoto TERBARU per unit (satu query untuk semua unit). `units` memuat SEMUA unit job (job pickup kecil) — dipakai untuk menentukan
+// single-unit vs multi-unit (atribusi hanya bila tepat satu).
+async function newestPickupPhotoJobByUnit(prisma, unitIds) {
+  const jobs = await prisma.job.findMany({
+    where: { type: "PICKUP", proofPhotoUrls: { isEmpty: false }, units: { some: { unitId: { in: unitIds } } } },
+    select: { id: true, proofPhotoUrls: true, completedAt: true, createdAt: true, units: { select: { unitId: true } } },
+  });
+  const wanted = new Set(unitIds);
+  const out = new Map();
+  for (const job of jobs.sort((a, b) => jobTime(b) - jobTime(a))) {
+    for (const { unitId } of job.units) if (wanted.has(unitId) && !out.has(unitId)) out.set(unitId, job);
+  }
+  return out;
+}
+
+// Diagnosis BACA-SAJA mengapa kartu tidak punya foto pickup — untuk MENJELASKAN ke pengguna (tidak pernah menebak atribusi):
+//   AMBIGUOUS  = pickup berfoto ada, tetapi job itu memuat >1 unit (tidak bisa dipastikan foto milik unit yang mana)
+//   NO_PHOTO   = ada job pickup untuk unit ini tetapi belum ada foto bukti (belum selesai/driver belum mengunggah)
+//   NO_PICKUP  = unit ini tidak punya job pickup sama sekali (mis. diantar sendiri / dibuat di workshop)
+export async function diagnoseUnitPhotosBulk(prisma, unitIds) {
+  const ids = [...new Set(unitIds)].filter(Boolean);
+  const out = new Map(ids.map((id) => [id, { status: "NO_PICKUP", jobUnitCount: null }]));
+  if (ids.length === 0) return out;
+  const withPhoto = await newestPickupPhotoJobByUnit(prisma, ids);
+  for (const [unitId, job] of withPhoto) out.set(unitId, attributablePickup(job) ? { status: "OK", jobUnitCount: 1 } : { status: "AMBIGUOUS", jobUnitCount: job.units.length });
+  const rest = ids.filter((id) => !withPhoto.has(id));
+  if (rest.length) {
+    const jobs = await prisma.job.findMany({ where: { type: "PICKUP", units: { some: { unitId: { in: rest } } } }, select: { units: { select: { unitId: true } } } });
+    const restSet = new Set(rest);
+    for (const job of jobs) for (const { unitId } of job.units) if (restSet.has(unitId)) out.set(unitId, { status: "NO_PHOTO", jobUnitCount: job.units.length });
+  }
+  return out;
 }
 
 // Versi BATCH dari resolveUnitPhoto() — dipakai read-model kartu (Status Produksi/Rencana Produksi, bisa
@@ -98,6 +154,11 @@ export async function resolveUnitPhotosBulk(prisma, unitIds) {
     const mimeType = JOB_PHOTO_EXT_MIME[ext] || null;
     if (mimeType) pickupByUnit.set(h.unitId, { source: "DRIVER_PICKUP", jobPhotoFilename: filename, mimeType });
   }
+
+  // 1b. Job PICKUP milik unit sendiri (tanpa handoff custody V2) — hanya untuk unit yang belum dapat foto dari custody.
+  const needJob = ids.filter((id) => !pickupByUnit.has(id));
+  const jobByUnit = needJob.length ? await newestPickupPhotoJobByUnit(prisma, needJob) : new Map();
+  for (const [unitId, job] of jobByUnit) { const d = attributablePickup(job); if (d) pickupByUnit.set(unitId, d); }
 
   for (const id of ids) {
     const pickup = pickupByUnit.get(id);

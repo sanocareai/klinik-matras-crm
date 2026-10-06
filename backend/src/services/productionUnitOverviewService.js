@@ -16,7 +16,7 @@ import { loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { formatProductionDate, stationLabel } from "../lib/domain/productionBoard.js";
-import { displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { arrivalConfirmedByStaff, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 import { STEP_BY_NO } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
@@ -295,7 +295,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
   const indicators = indicatorsOf(run, ctx, materialStatus);
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, [{ id: unitId, orderId: run.unit.orderId }]);
   const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaintsByUnit.get(unitId) || [] });
-  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED");
+  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases);
 
   const mediaOf = (stepNos) => ctx.evidence.filter((e) => stepNos.includes(e.stepNo))
     .flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url), source: sourceOfStep(e.stepNo) })))

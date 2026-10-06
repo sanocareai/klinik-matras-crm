@@ -67,6 +67,19 @@ export function backlogOf(columns) {
   return out.sort((a, b) => rankOfView(b) - rankOfView(a));
 }
 
+// View sintetis dari kartu backlog yang BELUM punya Run tetapi boleh dijadwalkan (onboarding): dipakai mesin seret (ghost + keputusan drop) dan formulir Jadwalkan.
+// `runId` sintetis ("unit:<id>") hanya pengenal klien; server menerima `unitId` (POST /production-v2/plans) dan membuka Run di transaksi yang sama dengan penjadwalan.
+export function viewOfOnboardCard(item) {
+  const c = item?.card; if (!c) return null;
+  return {
+    runId: `unit:${c.unit.id}`, onboardUnitId: c.unit.id, plan: null,
+    suggestedPriority: c.priority?.key === "NORMAL" ? 0 : 1,
+    unit: { id: c.unit.id, unitCode: c.unit.unitCode, merk: c.unit.merk ?? null, ukuran: c.unit.ukuran ?? null, photoUrl: c.unit.photoUrl ?? null },
+    customer: { name: c.customer?.name ?? null, orderNumber: c.customer?.orderNumber ?? null, salesServices: c.customer?.salesServices || [] },
+    priority: c.priority, unitStatus: c.unitStatus, orderStatus: c.orderStatus, presence: c.presence, bucket: null, next: null, progress: null,
+  };
+}
+
 // Pemetaan item kartu QC (antrean P6) -> view Command Center yang sama (lewat runId) supaya kartu QC = kartu Status.
 export function mergeQcWithViews(queueItems, columns) {
   const byRun = new Map();

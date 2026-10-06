@@ -16,6 +16,7 @@ import { assertNoOpenRunException, assertRunConsistent } from "./productionRunGu
 import { assertNoPendingReturnsInTx } from "./productionMaterialReturnService.js";
 import { assertPhasesReadyForHandoffDecision, assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import { defaultAdaptationPolicy, requireWorkshopDefaultLocation } from "./productionSettingsService.js";
+import { ARRIVAL_NO_CUSTODY_REASON } from "../lib/domain/productionDisplay.js";
 import {
   isProductionWriterEnabledFor, loadV2Flags, productionWriterEnabledForUnit, resolveProductionWriterState,
 } from "./v2FeatureFlags.js";
@@ -504,12 +505,66 @@ export async function confirmUnitArrival(prisma, { unitId, actorId, idempotencyK
     orderBy: { offeredAt: "desc" },
     select: { id: true, revision: true },
   });
-  if (!handoff) throw custodyError("Tidak ada unit yang menunggu konfirmasi kedatangan untuk unit ini", 404, "CUSTODY_NOT_OFFERED_FOR_UNIT");
+  if (!handoff) {
+    // Rencana Produksi order nyata: unit tanpa pickup tercatat (tidak ada Job pickup -> tidak ada handoff INBOUND) yang Run-nya dibuka saat Jadwalkan.
+    // Kedatangan fisik TETAP harus dikonfirmasi petugas (lokasi wajib/bawaan Admin) — bukan disimpulkan dari status Diproses.
+    const noCustody = await confirmArrivalWithoutCustody(prisma, { unitId, actorId, idempotencyKey, locationId });
+    if (noCustody) return noCustody;
+    throw custodyError("Tidak ada unit yang menunggu konfirmasi kedatangan untuk unit ini", 404, "CUSTODY_NOT_OFFERED_FOR_UNIT");
+  }
   // expectedRevision diturunkan dari baris yang SAMA persis dipakai untuk menemukan
   // handoffId (bukan dari klien) — kartu Production tidak perlu tahu/menyimpan
   // revisi custody internal; kunci konkurensi tetap ditegakkan di acceptUnitCustody/decide().
   const resolvedLocationId = locationId || (await requireWorkshopDefaultLocation(prisma)).id;
   return acceptUnitCustody(prisma, { handoffId: handoff.id, actorId, idempotencyKey, expectedRevision: handoff.revision, locationId: resolvedLocationId });
+}
+
+// Penanda kedatangan tanpa handoff custody: lihat ARRIVAL_NO_CUSTODY_REASON (lib/domain/productionDisplay.js) — dibaca read-model presence.
+
+// Hanya bila: ada Run PENDING_ARRIVAL, unit sudah Diproses (RECEIVED/IN_PRODUCTION), dan unit TIDAK punya handoff INBOUND aktif/diterima sama sekali (kalau ada, jalur custody
+// biasa yang berlaku). Mengembalikan null bila tidak berlaku (pemanggil melempar 404 lama). Idempoten lewat v2_commands; Run PENDING_ARRIVAL -> ACTIVE (sama persis
+// openProductionIntakeV2 dipakai penerimaan custody) + lokasi unit diproyeksikan.
+async function confirmArrivalWithoutCustody(prisma, { unitId, actorId, idempotencyKey, locationId }) {
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "CONFIRM_ARRIVAL_NO_CUSTODY", unitId, locationId: locationId || null });
+  const prior = idempotencyKey && actorId ? await prisma.v2Command.findUnique({ where: { actorId_idempotencyKey: { actorId: actor, idempotencyKey } } }) : null;
+  const pending = prior ? null : await prisma.productionRun.findFirst({ where: { unitId, status: "PENDING_ARRIVAL" }, select: { id: true } });
+  if (!prior && !pending) return null;
+  assertIdempotencyKey(idempotencyKey);
+  if (prior) {
+    if (prior.commandType !== "CONFIRM_ARRIVAL_NO_CUSTODY") return null;
+    if (prior.requestHash !== requestHash) throw custodyError("Idempotency-Key dipakai untuk payload berbeda", 409, "IDEMPOTENCY_CONFLICT");
+    if (prior.status !== "APPLIED") throw custodyError("Command masih diproses", 409, "COMMAND_IN_PROGRESS");
+    return { replayed: true, ...prior.response };
+  }
+  if (!pending) return null;
+  const resolvedLocationId = locationId || (await requireWorkshopDefaultLocation(prisma)).id;
+  return prisma.$transaction(async (tx) => {
+    await lockRowForUpdate(tx, "units", unitId);
+    await lockUnitOwnership(tx, unitId);
+    const run = await tx.productionRun.findFirst({ where: { unitId, status: "PENDING_ARRIVAL" } });
+    if (!run) return null;
+    if (!await productionWriterEnabledForUnit(tx, unitId)) throw custodyError("Custody V2 tidak aktif untuk unit ini; gunakan alur V1", 503, "CUSTODY_WRITER_OFF");
+    const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true } });
+    if (!["RECEIVED", "IN_PRODUCTION"].includes(unit?.status)) {
+      throw custodyError("Unit belum berstatus Diproses; kedatangan hanya dikonfirmasi lewat serah-terima pickup", 409, "CUSTODY_ARRIVAL_UNIT_STATUS", { status: unit?.status ?? null });
+    }
+    const inbound = await tx.unitCustodyHandoff.count({ where: { unitId, direction: "INBOUND", status: { in: ACTIVE_STATUSES } } });
+    if (inbound > 0) return null;
+    const location = await tx.storageLocation.findUnique({ where: { id: resolvedLocationId } });
+    assertLocationAllowed("INBOUND", location);
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "CONFIRM_ARRIVAL_NO_CUSTODY", aggregateId: unitId, requestHash });
+    const opened = (await openProductionIntakeV2(tx, { unitId, actorId: actor })).run;
+    await transitionPhases(tx, opened.id, [{ phase: "INTAKE", data: { reason: ARRIVAL_NO_CUSTODY_REASON } }]); // satu-satunya penulis fase (audit writer fase)
+    await tx.unit.update({ where: { id: unitId }, data: { storageLocation: location.code } });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY, actorId: actorId || null,
+      metadata: { unitCode: unit.unitCode, runId: opened.id, locationCode: location.code },
+    });
+    const response = { unitId, status: "ACCEPTED", revision: opened.revision, locationId: location.id, productionRunId: opened.id, custody: false };
+    await finishCommand(tx, command, opened.revision, response);
+    return { replayed: false, ...response };
+  });
 }
 
 // Slice 2 (flow adaptasi) — penutupan run TANPA custody barang jadi. OWNERSHIP: penutupan run (COMPLETED) dan pelepasan unit ke Delivery (READY_FOR_DELIVERY) tetap hanya milik service ini
