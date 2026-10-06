@@ -703,7 +703,7 @@ export default function ProductionRencanaWorkspace() {
       {activationOpen && <RencanaActivationModal onClose={() => setActivationOpen(false)} />}
       {detail && <DetailRencana target={detail} refs={refs} materials={refs.materials} stockByMaterial={stockByMaterial} onClose={() => setDetail(null)} onChanged={load} />}
       {overviewUnitId && <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} onChanged={load} manageLabel="Kelola Rencana" onManage={() => openManageFor(overviewUnitId)} />}
-      {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services, problems: refs.problems, candidates: refs.candidates, canRegisterOperator: refs.canRegisterOperator, defaultWorkCenterId: refs.defaultWorkCenterId, loaded: refs.loaded }} onRefsChanged={loadRefs} onClose={() => setSchedule(null)} onDone={(msg, meta) => { setSchedule(null); setNotice(msg); applyInitialPosition(meta); }} />}
+      {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services, problems: refs.problems, candidates: refs.candidates, canRegisterOperator: refs.canRegisterOperator, defaultWorkCenterId: refs.defaultWorkCenterId, loaded: refs.loaded }} onRefsChanged={loadRefs} onStale={load} onClose={() => setSchedule(null)} onDone={(msg, meta) => { setSchedule(null); setNotice(msg); applyInitialPosition(meta); }} />}
     </PageContainer>
   );
 }

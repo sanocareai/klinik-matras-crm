@@ -89,3 +89,10 @@ test("ringkasan & aktivasi: hitungan dari server; modal aktivasi baca-saja denga
   assert.doesNotMatch(ACTIVATION, /\.post\(|method: "POST"|method: "PUT"/, "modal aktivasi tidak pernah menulis apa pun");
   assert.match(ACTIVATION, /TIDAK terjadi otomatis/);
 });
+
+test("konflik papan basi: galat penuh/revisi memuat ulang papan di belakang formulir dan memindahkan pilihan dari Meja yang kini penuh", () => {
+  assert.match(SCHEDULE, /const STALE_CODES = \["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE"\]/);
+  assert.match(SCHEDULE, /if \(STALE_CODES\.includes\(e\?\.code\)\) onStale\?\.\(\)/);
+  assert.match(SCHEDULE, /stationCapacity\(cur\)\.full && cur\.code !== plan\?\.stationCode/, "Meja rencana ini sendiri tidak dianggap penuh");
+  assert.match(RENCANA, /onStale=\{load\}/);
+});

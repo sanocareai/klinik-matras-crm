@@ -54,6 +54,8 @@ export function ArrivalModal({ target, onClose, onDone }) {
   );
 }
 
+const STALE_CODES = ["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE"];
+
 // Alasan + tindakan bila workshop/PIC kosong (dari GET /production-v2/planning/refs): TIDAK pernah kosong tanpa penjelasan. Akun produksi yang belum jadi PIC bisa didaftarkan
 // (izin PRODUCTION_OPERATOR_WRITE) — aksi eksplisit pengguna, bukan otomatis.
 function RefsProblems({ refs, workCenterId, onRegistered, setError }) {
@@ -92,7 +94,7 @@ function RefsProblems({ refs, workCenterId, onRegistered, setError }) {
   );
 }
 
-export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRefsChanged = null }) {
+export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRefsChanged = null, onStale = null }) {
   const plan = target.plan;
   const [form, setForm] = useState(() => ({
     productionDate: plan?.productionDate || date,
@@ -121,8 +123,19 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
       // Argumen ke-2 (P12A.3): info penempatan agar pemanggil bisa menetapkan POSISI AWAL menurut prioritas (bukan auto-reorder).
       onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}${result?.onboarded ? (result.origin === "WORKSHOP_BORN" ? " — Run produksi dibuka (unit dibuat di workshop)" : " — Run produksi dibuka (unit belum tiba di workshop; konfirmasi \"Unit Tiba\" tetap diperlukan)") : ""}.`,
         unschedule ? null : { planId: plan?.id ?? result?.planId ?? result?.id ?? null, stationCode: form.stationCode, productionDate: form.productionDate, priority: Math.max(Number(form.priority), rankOfView(target) >= 3 ? 3 : 0) }); // peringkat urutan: Komplain tetap di atas
-    } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
+    } catch (e) {
+      setError(friendlyError(e));
+      // Papan basi (Meja sudah penuh / revisi berubah / isi Meja berubah): muat ulang papan di belakang formulir supaya pilihan Meja ikut diperbarui.
+      if (STALE_CODES.includes(e?.code)) onStale?.();
+    } finally { setBusy(false); }
   }
+
+  // Setelah papan dimuat ulang: bila Meja terpilih kini penuh (bukan Meja rencana ini sendiri), pindah ke Meja pertama yang masih lega.
+  useEffect(() => {
+    const cur = board.stations.find((s) => s.code === form.stationCode);
+    if (cur && stationCapacity(cur).full && cur.code !== plan?.stationCode) { const alt = board.stations.find((s) => !stationCapacity(s).full); if (alt) set({ stationCode: alt.code }); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board]);
 
   const refsLoading = refs.loaded === false;
   return (
