@@ -18,7 +18,7 @@ declare -A MIGRASI_TERAUDIT=()
 NEW_MIGRATION=""   # rilis KODE SAJA: tidak ada migrasi
 # Berkas yang BOLEH berbeda dari baseline: hanya area Finance + skrip/tes-nya. Apa pun di luar ini (Production, Delivery, Inbox, schema, migration,
 # package-lock) = berhenti — supaya pekerjaan workspace lain yang sudah live tidak pernah tertimpa.
-ALLOWED_RE='^(backend/src/(routes/orders\.js|services/(invoice|invoicePdf)\.js)|backend/tests/(invoiceDp\.test\.js|integration/invoiceJenisTagihan\.integration\.test\.js)|frontend/src/(api\.js|features/orders/InvoicePanel\.jsx)|frontend/tests/invoiceJenisTagihan\.test\.js|mobile/(src/(api\.js|components/order/OrderInvoiceTab\.js)|__tests__/invoiceJenisTagihan\.test\.mjs)|scripts/release-invoice-dp\.sh)$'  # EKSPLISIT; mobile/ hanya tercatat di repo (tidak dideploy, OTA terpisah)
+ALLOWED_RE='^(backend/src/(routes/orders\.js|services/(invoice|invoicePdf)\.js)|backend/tests/(invoiceDp\.test\.js|integration/invoiceJenisTagihan\.integration\.test\.js)|frontend/src/(api\.js|features/orders/(InvoicePanel\.jsx|invoiceDpLogic\.js))|frontend/tests/(invoiceJenisTagihan|invoiceDpLogic)\.test\.js|mobile/(src/(api\.js|components/order/OrderInvoiceTab\.js|lib/invoiceDp\.js)|__tests__/invoiceJenisTagihan\.test\.mjs)|scripts/release-invoice-dp\.sh)$'  # EKSPLISIT; mobile/ hanya tercatat di repo (tidak dideploy, OTA terpisah)
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
@@ -198,7 +198,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 for s1 in "Ajukan Klaim Lunas" "Klaim Lunas Berbukti dari Sales" "Kenapa angka Finance dan Sales berbeda?" "Laporan Biaya Divisi" "Isi Diagnosis" "Sales per Stage" "Rencana Produksi" "Status Produksi"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN fitur live: $s1"; done
-for s2 in "Ajukan Pembayaran DP" "Jenis pembayaran" "Setelah diverifikasi Finance, order berstatus Lunas" "Gagal memuat daftar percakapan" "Catat Pembayaran dari Foto" "Saya sudah mencocokkan nominal dan tanggal dengan mutasi rekening" "Total / Pelunasan"; do [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat fitur yang diharapkan: $s2"; done
+for s2 in "Ajukan Pembayaran DP" "Jenis pembayaran" "Setelah diverifikasi Finance, order berstatus Lunas" "Gagal memuat daftar percakapan" "Catat Pembayaran dari Foto" "Saya sudah mencocokkan nominal dan tanggal dengan mutasi rekening" "Total / Pelunasan" "Persen (%)"; do [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat fitur yang diharapkan: $s2"; done
 if [ "$NEW_INDEX" = "$PREV_INDEX" ]; then
   # Boleh identik HANYA bila kandidat tidak mengubah berkas frontend (rilis backend saja).
   ! sg diff --name-only "$BASE_SHA" "$DEPLOY_SHA" | grep -q '^frontend/' || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"

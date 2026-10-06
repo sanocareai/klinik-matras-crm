@@ -12,6 +12,7 @@ import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
 import { useResiAktif } from "@/features/resi/useResiAktif.js";
 import { DP_PERSEN } from "@/features/resi/logika.js";
+import { MODE_DP, hitungDpDariInput, isianAwalDp, gantiModeDp } from "./invoiceDpLogic.js";
 
 // ─── PANEL INVOICE (31 Agustus 2026) ────────────────────────────────────────
 // Komponen ini SENGAJA tidak menghitung apa pun. Seluruh nominal & status
@@ -138,6 +139,7 @@ export default function InvoicePanel({ orderId, onChanged }) {
   const [jenis, setJenis] = useState(null);
   const [formDp, setFormDp] = useState(false);
   const [dpDraft, setDpDraft] = useState("");
+  const [dpMode, setDpMode] = useState(MODE_DP.PERSEN); // DP diisi dalam PERSEN dari total atau langsung NOMINAL (Rp); yang disimpan selalu nominal
 
   useEffect(() => {
     if (!orderId) return;
@@ -281,25 +283,29 @@ export default function InvoicePanel({ orderId, onChanged }) {
     }
   }
 
-  // Pilih DP: bila DP sudah disepakati → langsung; bila belum → minta nominal DP (saran 30% dari total, sama dengan Resi), disimpan sebagai
+  // Pilih DP: bila DP sudah disepakati → langsung; bila belum → form (default 30% dari total, bisa diganti ke nominal), disimpan sebagai
   // "DP disepakati" order (satu-satunya tempat kesepakatan DP disimpan).
+  function bukaFormDp(dpTarget = null) {
+    const awalIsi = isianAwalDp({ total: view?.nominal?.totalTagihan || 0, dpTarget });
+    setDpMode(awalIsi.mode); setDpDraft(awalIsi.nilai); setFormDp(true); setError(null);
+  }
   function pilihDp() {
     const n = view?.nominal;
     if (n?.bisaDP) return gantiJenis("DP");
-    if (!(n?.dpTarget > 0)) {
-      setDpDraft(String(Math.round(((n?.totalTagihan || 0) * DP_PERSEN) / 100)));
-      setFormDp(true);
-    }
+    if (!(n?.dpTarget > 0)) bukaFormDp();
+  }
+  function ubahModeDp(ke) {
+    if (ke === dpMode) return;
+    setDpDraft(gantiModeDp({ dari: dpMode, ke, nilai: dpDraft, total: view?.nominal?.totalTagihan || 0 }));
+    setDpMode(ke);
   }
 
   async function simpanDp() {
-    const n = Number(dpDraft);
-    const total = view?.nominal?.totalTagihan || 0;
-    if (!Number.isInteger(n) || n <= 0) { setError("Nominal DP harus bilangan bulat lebih dari 0"); return; }
-    if (total > 0 && n >= total) { setError("DP harus lebih kecil dari total tagihan"); return; }
+    const hitung = hitungDpDariInput({ mode: dpMode, nilai: dpDraft, total: view?.nominal?.totalTagihan || 0 });
+    if (!hitung.ok) { setError(hitung.galat); return; }
     setAksi("SIMPAN_DP");
     try {
-      await api.updateOrder(view.orders?.[0]?.id || orderId, { dpTarget: n });
+      await api.updateOrder(view.orders?.[0]?.id || orderId, { dpTarget: hitung.nominal });
       const r = await api.getOrderInvoice(orderId, "DP");
       setView(r); setJenis("DP"); setFormDp(false); setError(null);
       onChanged?.(r);
@@ -524,22 +530,42 @@ export default function InvoicePanel({ orderId, onChanged }) {
             {orders.length > 1 && !nominal.bisaDP && (
               <p className="mt-1.5 text-[11px] text-ink3">Invoice gabungan: atur "DP disepakati" di tiap order untuk menagih DP.</p>
             )}
-            {formDp && (
-              <div className="mt-2 flex flex-col gap-1.5" data-testid="form-dp-invoice">
-                <label htmlFor="invoice-dp-nominal" className="text-[11px] font-medium text-ink2">
-                  Nominal DP yang disepakati (Rp) <span className="text-ink3">— saran {DP_PERSEN}% dari total</span>
-                </label>
-                <div className="flex gap-1.5">
-                  <input
-                    id="invoice-dp-nominal" inputMode="numeric" value={dpDraft} onChange={(e) => setDpDraft(e.target.value.replace(/[^0-9]/g, ""))}
-                    className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-[13px] tabular-nums text-ink outline-none focus:border-accent"
-                  />
-                  <button type="button" onClick={simpanDp} disabled={!!aksi} data-testid="simpan-dp-invoice"
-                    className="h-9 rounded-lg bg-accent px-3 text-[12px] font-semibold text-white disabled:opacity-50">Simpan & Pakai</button>
-                  <button type="button" onClick={() => setFormDp(false)} disabled={!!aksi}
-                    className="h-9 rounded-lg bg-surface px-3 text-[12px] font-semibold text-ink2">Batal</button>
+            {formDp && (() => {
+              const hitung = hitungDpDariInput({ mode: dpMode, nilai: dpDraft, total: nominal.totalTagihan });
+              return (
+                <div className="mt-2 flex flex-col gap-1.5" data-testid="form-dp-invoice">
+                  <div className="flex items-center justify-between gap-2">
+                    <label htmlFor="invoice-dp-nilai" className="text-[11px] font-medium text-ink2">DP yang disepakati</label>
+                    <div className="flex gap-1" role="radiogroup" aria-label="Isi DP dalam">
+                      {[[MODE_DP.PERSEN, "Persen (%)"], [MODE_DP.NOMINAL, "Nominal (Rp)"]].map(([k, label]) => (
+                        <button key={k} type="button" role="radio" aria-checked={dpMode === k} data-testid={"dp-mode-" + k} onClick={() => ubahModeDp(k)}
+                          className={cn("h-7 rounded-md border px-2 text-[11px] font-semibold", dpMode === k ? "border-accent bg-accentbg text-accent" : "border-line bg-surface text-ink2")}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input
+                      id="invoice-dp-nilai" inputMode={dpMode === MODE_DP.PERSEN ? "decimal" : "numeric"} value={dpDraft}
+                      onChange={(e) => setDpDraft(e.target.value.replace(dpMode === MODE_DP.PERSEN ? /[^0-9.,]/g : /[^0-9]/g, ""))}
+                      placeholder={dpMode === MODE_DP.PERSEN ? "mis. 30" : "mis. 1500000"}
+                      className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-[13px] tabular-nums text-ink outline-none focus:border-accent"
+                    />
+                    <button type="button" onClick={simpanDp} disabled={!!aksi || !hitung.ok} data-testid="simpan-dp-invoice"
+                      className="h-9 rounded-lg bg-accent px-3 text-[12px] font-semibold text-white disabled:opacity-50">Simpan & Pakai</button>
+                    <button type="button" onClick={() => setFormDp(false)} disabled={!!aksi}
+                      className="h-9 rounded-lg bg-surface px-3 text-[12px] font-semibold text-ink2">Batal</button>
+                  </div>
+                  <p className={cn("text-[11px]", hitung.ok ? "text-ink3" : "text-red")} data-testid="pratinjau-dp" role={hitung.ok ? undefined : "alert"}>
+                    {hitung.ok
+                      ? <>= <strong className="text-ink">{formatRupiah(hitung.nominal)}</strong> ({String(hitung.persen).replace(".", ",")}% dari total {formatRupiah(nominal.totalTagihan)})</>
+                      : hitung.galat}
+                  </p>
                 </div>
-              </div>
+              );
+            })()}
+            {!formDp && nominal.modeDP && orders.length === 1 && (
+              <button type="button" onClick={() => bukaFormDp(nominal.dpTarget)} disabled={!!aksi} data-testid="ubah-dp-invoice"
+                className="mt-1.5 text-[11px] font-semibold text-accent hover:underline">Ubah DP ({formatRupiah(nominal.dpTarget)})</button>
             )}
           </div>
         )}

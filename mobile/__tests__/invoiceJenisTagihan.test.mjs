@@ -24,10 +24,17 @@ test("Tab Invoice mobile: PDF & kirim memakai jenis yang tampil; nama berkas PDF
   assert.match(tab, /sendOrderInvoice\(orderId, jenisKirim\)/);
 });
 
-test("Tab Invoice mobile: DP belum disepakati → form dengan saran 30%, simpan ke dpTarget; Total tidak menghapus dpTarget", () => {
-  assert.match(tab, /const DP_PERSEN = 30;/);
-  assert.match(tab, /api\.updateOrder\(view\.order\?\.id \|\| orderId, \{ dpTarget: n \}\)/);
+test("Tab Invoice mobile: DP belum disepakati → form Persen/Nominal (default 30%), simpan nominal hasil hitung; Total tidak menghapus dpTarget", () => {
+  assert.match(tab, /from "\.\.\/\.\.\/lib\/invoiceDp"/);
+  assert.match(tab, /testID=\{`dp-mode-\$\{k\}`\}/);
+  assert.match(tab, /api\.updateOrder\(view\.order\?\.id \|\| orderId, \{ dpTarget: hitung\.nominal \}\)/);
+  assert.match(tab, /testID="pratinjau-dp"/);
   assert.doesNotMatch(tab, /dpTarget: null/);
+});
+
+test("Tab Invoice mobile: DP yang sudah disepakati bisa diubah dari tab Invoice", () => {
+  assert.match(tab, /!formDp && nominal\.modeDP \?/);
+  assert.match(tab, /testID="ubah-dp-invoice"/);
 });
 
 test("Tab Invoice mobile: headline 'Tagihan DP' di mode DP (sebelumnya hanya baris 'DP disepakati')", () => {

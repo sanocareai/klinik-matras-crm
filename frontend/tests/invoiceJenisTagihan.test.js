@@ -27,11 +27,17 @@ test("Panel: PDF, kirim WA, dan salin memakai jenis yang SEDANG TAMPIL (dokumen 
   assert.match(panel, /\*TAGIHAN DP: /);
 });
 
-test("Panel: DP belum disepakati → form nominal dengan saran DP_PERSEN, disimpan ke dpTarget order; tidak ada penghapusan dpTarget", () => {
-  assert.match(panel, /setDpDraft\(String\(Math\.round\(\(\(n\?\.totalTagihan \|\| 0\) \* DP_PERSEN\) \/ 100\)\)\)/);
-  assert.match(panel, /api\.updateOrder\(view\.orders\?\.\[0\]\?\.id \|\| orderId, \{ dpTarget: n \}\)/);
+test("Panel: DP belum disepakati → form Persen/Nominal (default 30%), nominal hasil hitung disimpan ke dpTarget; tidak ada penghapusan dpTarget", () => {
+  assert.match(panel, /import \{ MODE_DP, hitungDpDariInput, isianAwalDp, gantiModeDp \} from "\.\/invoiceDpLogic\.js"/);
+  assert.match(panel, /data-testid=\{"dp-mode-" \+ k\}/);
+  assert.match(panel, /api\.updateOrder\(view\.orders\?\.\[0\]\?\.id \|\| orderId, \{ dpTarget: hitung\.nominal \}\)/);
+  assert.match(panel, /data-testid="pratinjau-dp"/);
   assert.doesNotMatch(panel, /dpTarget: null/, "memilih Total tidak boleh menghapus kesepakatan DP");
-  assert.match(panel, /DP harus lebih kecil dari total tagihan/);
+});
+
+test("Panel: DP yang sudah disepakati bisa DIUBAH dari tab Invoice (hanya invoice tunggal, saat mode DP)", () => {
+  assert.match(panel, /!formDp && nominal\.modeDP && orders\.length === 1/);
+  assert.match(panel, /data-testid="ubah-dp-invoice"/);
 });
 
 test("Panel: 'DP terpenuhi' hanya bila DP memang terpenuhi (bukan karena Sales memilih Total)", () => {
