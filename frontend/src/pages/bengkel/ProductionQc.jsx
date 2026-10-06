@@ -314,7 +314,7 @@ function RunDetailModal({ runId, onClose, onChanged }) {
               <ol className="divide-y divide-line rounded-card border border-line">
                 {run.stages.map((s) => (
                   <li key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 text-[12.5px]">
-                    <span className="text-ink">{s.order}. {s.label}{s.isQcGate ? " · gerbang QC" : ""}</span>
+                    <span className="text-ink">{s.order}. {s.isQcGate && run.qcProfile === "GENERIC" ? "Pemeriksaan Hasil" : s.label}{s.isQcGate ? " · gerbang QC" : ""}</span>
                     <Badge variant={s.status === "COMPLETED" ? "success" : s.status === "AWAITING_QC" ? "warning" : s.status === "ACTIVE" ? "info" : "neutral"}>{STAGE_STATUS_LABEL[s.status] || s.status}</Badge>
                   </li>
                 ))}

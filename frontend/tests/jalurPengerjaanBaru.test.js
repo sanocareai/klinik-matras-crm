@@ -92,4 +92,5 @@ test("lembar bukti & detail pekerja memakai label per jalur (card.track)", () =>
   assert.match(src("features", "production", "components", "StepForm.jsx"), /data-testid="racikan-fields"/);
   assert.match(src("pages", "bengkel", "ProductionQc.jsx"), /qc-generic-note/);
   assert.match(src("pages", "bengkel", "ProductionQc.jsx"), /qc-racikan/);
+  assert.match(src("pages", "bengkel", "ProductionQc.jsx"), /run\.qcProfile === "GENERIC" \? "Pemeriksaan Hasil"/, "gerbang QC divan/sofa tidak bernama Uji Berat Badan");
 });
