@@ -1,10 +1,10 @@
-// PENYESUAIAN PENGAKUAN PENDAPATAN — 4 order yang nilainya diedit SESUDAH pendapatan diakui (instruksi Owner 6 Okt 2026: dibukukan di OKTOBER).
+// PENYESUAIAN PENGAKUAN PENDAPATAN — 5 order yang nilainya diedit SESUDAH pendapatan diakui (instruksi Owner 6 Okt 2026: dibukukan di OKTOBER).
 // postRevenueRecognition mengakui pendapatan SEKALI saat order diserahkan; edit nilai order sesudahnya tidak menyesuaikan jurnal, sehingga Piutang Usaha menyimpang
-// sebesar selisih nilai. Pada keempat order ini uang yang DIVERIFIKASI sama persis dengan nilai order sekarang (bukti nilai akhir yang disepakati pelanggan).
+// sebesar selisih nilai. Pada kelima order ini uang yang DIVERIFIKASI sama persis dengan nilai order sekarang (untuk order gratis: tidak ada uang, nilai 0) (bukti nilai akhir yang disepakati pelanggan).
 //
 //   selisih = tagihan sekarang (value + ongkir) − total yang diakui + penyesuaian sebelumnya
 //   selisih > 0 : Dr Piutang Usaha / Cr Pendapatan (kurang diakui)      selisih < 0 : Dr Pendapatan / Cr Piutang Usaha (kelebihan diakui)
-//   Akibat: piutang tiap order → 0; Kas/Bank, Payment, order tidak tersentuh. Pendapatan neto +Rp1.300.000 (4-1100: +100.000, 4-1200: +1.200.000).
+//   Akibat: piutang tiap order → 0; Kas/Bank, Payment, order tidak tersentuh. Pendapatan neto +Rp1.100.000 (4-1100: +100.000, 4-1200: +1.200.000, pendapatan sewa: −200.000).
 //
 //   node scripts/penyesuaianPengakuanPendapatan.js                           # PRATINJAU (tidak menulis apa pun)
 //   KOREKSI_BACKUP_OK=1 node scripts/penyesuaianPengakuanPendapatan.js --apply
@@ -27,6 +27,8 @@ const TARGET = [
   { nomor: "RES-19082026-093", selisih: -100_000 },
   { nomor: "RES-13092026-080", selisih: 1_000_000 },
   { nomor: "NEW-10092026-011", selisih: 1_200_000 },
+  // Kasur sewa Stanley: diakui 200.000 (2 Okt) lalu nilai order jadi 0 karena GRATIS (dikonfirmasi pelanggan & Owner 6 Okt 2026) → tidak ada uang yang diharapkan.
+  { nomor: "SWS-30092026-019", selisih: -200_000 },
 ];
 const rp = (v) => `Rp${Number(v).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 class Berhenti extends Error {}
