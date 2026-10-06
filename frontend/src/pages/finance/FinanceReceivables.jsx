@@ -26,6 +26,7 @@ import {
   StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
+import DiagnosisPiutang from "@/features/finance/DiagnosisPiutang.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
@@ -206,8 +207,9 @@ export default function FinanceReceivables() {
           <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
             <p className="text-[13px] leading-relaxed text-ink">
               <strong>{data.menungguVerifikasi.jumlah} order ({formatUang(data.menungguVerifikasi.total)})</strong> sudah
-              ditandai <strong>Lunas</strong> oleh sales dan <strong>tidak dihitung sebagai piutang</strong> di bawah — tinggal
-              diverifikasi finance (rekening + bukti). Angka ini masih tercatat di Piutang Usaha pada neraca sampai diverifikasi.
+              ditandai <strong>Lunas</strong> oleh sales dan <strong>tidak dihitung sebagai piutang</strong> di bawah — belum
+              selesai dicatat finance (pembayaran + bukti); sebagian belum punya catatan pembayaran sama sekali. Angka ini masih tercatat di Piutang Usaha pada neraca sampai diverifikasi.
+              Penyebab per order ada di kartu “Diagnosis Piutang” di bawah.
             </p>
             <Button size="sm" onClick={() => navigate("/finance/payments")}>Buka antrean verifikasi</Button>
           </CardContent>
@@ -220,6 +222,8 @@ export default function FinanceReceivables() {
         di sini sama sekali: uang yang sudah dibayar untuk order itu masih berstatus <strong>uang muka</strong>
         {" "}(kewajiban kita ke customer), belum jadi tagihan.
       </Penjelasan>
+
+      <DiagnosisPiutang />
 
       {/* Ember umur — dipakai juga sebagai filter, jadi angka & daftarnya tidak terpisah. */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">

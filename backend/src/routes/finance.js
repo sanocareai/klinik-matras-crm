@@ -48,6 +48,7 @@ import {
 } from "../services/finance/reports.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { ambilDaftarJurnal, bentukJurnal } from "../services/finance/jurnalRead.js";
+import { diagnosisPiutang } from "../services/finance/piutangDiagnosis.js";
 // hitungNominal & statusEfektif DIPAKAI ULANG dari services/invoice.js —
 // BUKAN dihitung ulang di sini. Itu satu-satunya tempat arti nominal
 // invoice didefinisikan (harga final per item, ongkir ditagihkan,
@@ -1105,6 +1106,16 @@ financeRouter.get("/reports/receivables", requirePermission(P.FINANCE_READ), asy
   try {
     const { to } = rentangDariQuery(req.query);
     res.json(await umurPiutang(prisma, { to }));
+  } catch (err) {
+    handleFinanceError(err, res);
+  }
+});
+
+// Diagnosis piutang: alasan + tindakan per order bersaldo, direkonsiliasi ke saldo neraca. Hanya baca.
+financeRouter.get("/reports/receivables/diagnosis", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const { to } = rentangDariQuery(req.query);
+    res.json(await diagnosisPiutang(prisma, { to }));
   } catch (err) {
     handleFinanceError(err, res);
   }

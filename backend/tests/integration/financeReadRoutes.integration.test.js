@@ -75,6 +75,7 @@ const ENDPOINTS = [
   "/reports/cash-flow",
   `/reports/ledger/${idAcak}`,
   "/reports/receivables",
+  "/reports/receivables/diagnosis",
   "/reports/payables",
   "/dashboard",
   "/expenses",
