@@ -2,7 +2,7 @@
 // klien hanya menyaring dan memberi label — tidak menghitung ulang saldo.
 
 /** Urutan tampil kategori di tabel rekonsiliasi: yang butuh tindakan di atas, tagihan sah terakhir. */
-export const URUTAN_KATEGORI = ["NILAI_BEDA_PENGAKUAN", "PAYMENT_BELUM_MENUTUP", "LUNAS_TANPA_PAYMENT", "KREDIT_LAINNYA", "TAGIHAN_SAH"];
+export const URUTAN_KATEGORI = ["ORDER_DIBATALKAN", "NILAI_BEDA_PENGAKUAN", "PAYMENT_BELUM_MENUTUP", "LUNAS_TANPA_PAYMENT", "KREDIT_LAINNYA", "TAGIHAN_SAH"];
 
 /** Warna Badge menurut tingkat tindakan dari server: tagih = netral (normal), periksa = oranye, koreksi = merah. */
 export const VARIAN_TINGKAT = { tagih: "neutral", periksa: "orange", koreksi: "red" };

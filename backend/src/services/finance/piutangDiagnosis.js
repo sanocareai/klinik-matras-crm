@@ -6,6 +6,7 @@
 // kembali ke saldo neraca (rekonsiliasi). Kontrak umurPiutang() TIDAK diubah — dipakai export, dashboard, dan klien mobile.
 //
 // KATEGORI (urutan prioritas):
+//   ORDER_DIBATALKAN         order sudah DIBATALKAN tetapi jurnal pengakuannya belum dibalik → piutang semu (normalnya otomatis dibalik saat pembatalan; ini sisa pembatalan lama).
 //   NILAI_BEDA_PENGAKUAN     pendapatan diakui SEKALI saat order diserahkan (postRevenueRecognition idempoten); kalau nilai order diedit sesudahnya, jurnal
 //                            TIDAK ikut berubah → saldo piutang menyimpang sebesar selisih nilai.
 //   KREDIT_LAINNYA           saldo kredit tanpa selisih nilai (lebih bayar / refund / alokasi) — perlu diperiksa manual.
@@ -23,6 +24,7 @@ import { catatanLaporan } from "./reports.js";
 export const PREFIX_KUNCI_PENYESUAIAN = "PENYESUAIAN_PENGAKUAN:";
 
 export const KATEGORI_PIUTANG = Object.freeze({
+  ORDER_DIBATALKAN: { label: "Order dibatalkan, piutang belum dibalik", tingkat: "koreksi" },
   TAGIHAN_SAH: { label: "Tagihan sah", tingkat: "tagih" },
   LUNAS_TANPA_PAYMENT: { label: "Lunas di CRM, belum ada pembayaran", tingkat: "periksa" },
   PAYMENT_BELUM_MENUTUP: { label: "Pembayaran belum menutup piutang", tingkat: "periksa" },
@@ -34,7 +36,14 @@ const rp = (n) => `Rp${Math.round(Number(n)).toLocaleString("id-ID")}`;
 const hariAntara = (a, b) => Math.floor((a - b) / 86400000);
 
 /** Kategori + penjelasan + tindakan untuk SATU order. Murni (tanpa DB) supaya bisa dites langsung. */
-export function jelaskanPiutangOrder({ saldo, diakui, tagihan, paymentStatus, bayarAktif, bayarSebelumSaldoAwal, cutoffTeks }) {
+export function jelaskanPiutangOrder({ saldo, diakui, tagihan, paymentStatus, bayarAktif, bayarSebelumSaldoAwal, cutoffTeks, dibatalkan = false }) {
+  if (dibatalkan) {
+    return {
+      kategori: "ORDER_DIBATALKAN",
+      penjelasan: `Order ini sudah DIBATALKAN, tetapi jurnal pengakuan pendapatannya belum dibalik sehingga ${saldo >= 0 ? "piutang" : "saldo kredit"} ${rp(Math.abs(saldo))} masih tercatat di buku. Tidak ditagihkan ke pelanggan.`,
+      tindakan: "Balik jurnal pengakuannya (Finance Admin, skrip koreksi pembatalan). Pembatalan order yang baru otomatis membalik jurnalnya.",
+    };
+  }
   const selisih = diakui == null ? 0 : tagihan - diakui;
   if (diakui != null && Math.abs(selisih) >= 1) {
     return {
@@ -168,7 +177,7 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
     // Resi Gabungan: tagihan per order tidak sebanding dengan jurnal per order → jangan menuduh "nilai berubah".
     const bandingkan = o && !resiBaru(o) && pg;
     const j = jelaskanPiutangOrder({
-      saldo, diakui: bandingkan ? pg.diakui : null, tagihan, paymentStatus: o?.paymentStatus,
+      saldo, diakui: bandingkan ? pg.diakui : null, tagihan, paymentStatus: o?.paymentStatus, dibatalkan: o?.status === "CANCELLED",
       bayarAktif, bayarSebelumSaldoAwal: bayarAktif.paling_awal ? sebelumCutoff(bayarAktif.paling_awal, cutoff) : false, cutoffTeks,
     });
     perKategori[j.kategori].jumlah += 1;
