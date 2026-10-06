@@ -62,20 +62,35 @@ export function kekuranganForm(form, bukti = [], { sisa = null } = {}) {
   return k;
 }
 
-/** Tombol "Ajukan Klaim Lunas" aktif HANYA bila isian lengkap, tidak ada unggahan yang masih berjalan, dan tidak sedang mengirim. */
-export function bisaDiajukan(form, bukti = [], { mengirim = false, sisa = null } = {}) {
+/** Tombol "Ajukan Klaim Lunas" aktif HANYA bila isian lengkap, tidak ada unggahan yang masih berjalan, tidak sedang mengirim, dan Sales sudah menyatakan memverifikasi. */
+export function bisaDiajukan(form, bukti = [], { mengirim = false, sisa = null, sudahVerifikasi = false } = {}) {
   if (mengirim) return false;
   if (bukti.some((b) => b.status === "mengunggah")) return false;
-  return kekuranganForm(form, bukti, { sisa }).length === 0;
+  if (kekuranganForm(form, bukti, { sisa }).length !== 0) return false;
+  return sudahVerifikasi === true;
 }
 
 /** Alasan singkat mengapa tombol nonaktif (untuk teks bantu di bawah tombol). null = aktif. */
-export function alasanNonaktif(form, bukti = [], { mengirim = false, sisa = null } = {}) {
+export function alasanNonaktif(form, bukti = [], { mengirim = false, sisa = null, sudahVerifikasi = false } = {}) {
   if (mengirim) return "Sedang mengirim…";
   if (bukti.some((b) => b.status === "mengunggah")) return "Menunggu unggahan bukti selesai…";
   const k = kekuranganForm(form, bukti, { sisa });
-  return k.length ? k[0].pesan : null;
+  if (k.length) return k[0].pesan;
+  return sudahVerifikasi === true ? null : PESAN_BELUM_VERIFIKASI;
 }
+
+// ── KONFIRMASI VERIFIKASI SALES (6 Okt 2026) ─────────────────────────────────────────────────────────────────────────
+// Sales WAJIB menyatakan sudah memverifikasi pembayarannya sebelum mengajukan: nominal & tanggal dicocokkan dengan mutasi rekening / uang tunai benar-benar
+// diterima. Murni gerbang UI (server tidak punya kolom untuk ini dan tetap menegakkan semua aturan klaim) — tujuannya mencegah pengajuan "asal ajukan" dari
+// foto bukti di chat tanpa dicek. Kosong di awal setiap dialog dibuka dan DIKOSONGKAN lagi bila nominal/tanggal/metode/rekening berubah (yang dicek harus
+// angka final yang diajukan).
+export const LABEL_VERIFIKASI_UANG = "Saya sudah mencocokkan nominal dan tanggal dengan mutasi rekening / catatan pembayaran";
+export const LABEL_VERIFIKASI_TUNAI = "Saya sudah memastikan uang tunai ini benar-benar diterima";
+export const PESAN_BELUM_VERIFIKASI = "Centang konfirmasi bahwa pembayaran sudah Anda verifikasi";
+export const labelVerifikasi = (method) => (method === "CASH" ? LABEL_VERIFIKASI_TUNAI : LABEL_VERIFIKASI_UANG);
+/** Field yang bila berubah membatalkan konfirmasi verifikasi. */
+export const FIELD_PEMBATAL_VERIFIKASI = Object.freeze(["amount", "paymentDate", "method", "cashAccountId"]);
+
 
 /** Berkas yang diizinkan diunggah (cermin batas server: JPG/PNG/WEBP/PDF, maks 8 MB). Mengembalikan pesan galat atau null. */
 export function cekBerkas(file) {
