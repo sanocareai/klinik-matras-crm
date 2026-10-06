@@ -10,6 +10,7 @@ import {
   METODE_KLAIM, STATUS_KLAIM_LABEL, STATUS_BISA_DIEDIT, MAKS_BUKTI, TIPE_BUKTI_DITERIMA,
   bisaDiajukan, alasanNonaktif, cekBerkas, formDariKlaim, buktiDariKlaim, hariIniWIB,
   JENIS_BAYAR, nominalOtomatis, jenisDariNominal, dampakNominal,
+  labelVerifikasi, FIELD_PEMBATAL_VERIFIKASI,
 } from "./klaimLunasLogic.js";
 
 // KLAIM LUNAS SALES (web). Sales TIDAK lagi menandai order "Lunas" sendiri: di sini Sales mengajukan klaim berisi tanggal, nominal, metode, rekening,
@@ -42,6 +43,7 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
   const [mengirim, setMengirim] = useState(false);
   const [galat, setGalat] = useState("");
   const [sorot, setSorot] = useState(false);
+  const [sudahVerifikasi, setSudahVerifikasi] = useState(false); // konfirmasi Sales: pembayaran sudah dicocokkan (lihat klaimLunasLogic.js)
   const idKlaim = useRef(null);
   const membuatDraft = useRef(null); // janji pembuatan draft yang sedang berjalan — unggahan paralel menunggu yang sama (tidak membuat dua draft)
   idKlaim.current = klaim?.id || null;
@@ -78,6 +80,9 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
   }, [open, form.method]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // Konfirmasi hanya berlaku untuk angka yang SAAT ITU tampil — mengubah nominal/tanggal/metode/rekening membatalkannya.
+  const kunciVerifikasi = FIELD_PEMBATAL_VERIFIKASI.map((k) => String(form[k] ?? "")).join("|");
+  useEffect(() => { setSudahVerifikasi(false); }, [kunciVerifikasi, klaim?.id]);
   const bisaDiedit = !klaim || STATUS_BISA_DIEDIT.includes(klaim.status);
   const menunggu = klaim?.status === "SUBMITTED";
 
@@ -160,7 +165,7 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
   }
 
   async function ajukan() {
-    if (!bisaDiajukan(form, bukti, { mengirim })) return;
+    if (!bisaDiajukan(form, bukti, { mengirim, sudahVerifikasi })) return;
     setMengirim(true); setGalat("");
     try {
       const id = await pastikanDraft();
@@ -179,8 +184,8 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
   }
 
   const sisaTagihan = info?.sisa ?? null;
-  const aktifTombol = bisaDiedit && bisaDiajukan(form, bukti, { mengirim, sisa: sisaTagihan });
-  const bantu = bisaDiedit ? alasanNonaktif(form, bukti, { mengirim, sisa: sisaTagihan }) : null;
+  const aktifTombol = bisaDiedit && bisaDiajukan(form, bukti, { mengirim, sisa: sisaTagihan, sudahVerifikasi });
+  const bantu = bisaDiedit ? alasanNonaktif(form, bukti, { mengirim, sisa: sisaTagihan, sudahVerifikasi }) : null;
   const dampak = dampakNominal(form.amount, { sisa: sisaTagihan ?? 0 });
   // Memilih jenis mengisi nominal otomatis (Pelunasan = sisa; DP = kekurangan DP disepakati bila ada); mengetik nominal menyesuaikan jenis.
   const pilihJenis = (j) => setForm((f) => ({ ...f, jenis: j, amount: nominalOtomatis(j, { sisa: info?.sisa ?? 0, dibayar: info?.dibayar ?? 0, dpTarget: resiGroupId ? null : (order?.dpTarget ?? null) }) }));
@@ -330,6 +335,19 @@ export default function KlaimLunasDialog({ open, order, resiGroupId = null, onCl
             <label className={labelCls} htmlFor="klaim-catatan">Catatan pembayaran</label>
             <textarea id="klaim-catatan" rows={2} maxLength={1000} className={cn(inputCls, "h-auto py-2")} placeholder="Mis. transfer BCA a.n. pelanggan, dicek di mutasi pukul 10.15" value={form.note} onChange={(e) => set("note", e.target.value)} disabled={!bisaDiedit} />
           </div>
+
+          {bisaDiedit && (
+            <label className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 transition-colors", sudahVerifikasi ? "border-accent bg-accentbg" : "border-line bg-surface")} data-testid="konfirmasi-verifikasi-label">
+              <input
+                type="checkbox" checked={sudahVerifikasi} onChange={(e) => setSudahVerifikasi(e.target.checked)} disabled={mengirim}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent,#2563eb)]" data-testid="konfirmasi-verifikasi"
+              />
+              <span className="text-[12.5px] leading-snug text-ink">
+                <strong>{labelVerifikasi(form.method)}</strong>
+                <span className="mt-0.5 block text-[11px] text-ink3">Ubah nominal, tanggal, metode, atau rekening akan mengosongkan centang ini.</span>
+              </span>
+            </label>
+          )}
 
         </div>
       )}
