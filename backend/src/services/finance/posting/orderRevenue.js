@@ -87,8 +87,9 @@ export const STATUS_PENGAKUAN = Object.freeze(["DELIVERED", "SEWA_DIKIRIM", "SEW
 
 /** Apakah pendapatan order ini SUDAH diakui (dan jurnalnya belum dibatalkan)? */
 export async function pendapatanSudahDiakui(tx, orderId) {
-  const entry = await findEntryByKey(tx, KEY.revenue(orderId));
-  return Boolean(entry && entry.status === "POSTED");
+  // Berawalan kunci: pengakuan pertama (KEY.revenue) ATAU pengakuan ULANG sesudah order dibatalkan lalu dibuka lagi (KEY.revenue + ":ULANG:n").
+  const entry = await tx.finJournalEntry.findFirst({ where: { idempotencyKey: { startsWith: KEY.revenue(orderId) }, status: "POSTED" }, select: { id: true } });
+  return Boolean(entry);
 }
 
 /**
@@ -248,8 +249,12 @@ export async function postRevenueRecognition(tx, { orderId, userId = null, date 
   });
   if (!order) throw new Error(`Order ${orderId} tidak ditemukan`);
 
-  const sudahAda = await findEntryByKey(tx, KEY.revenue(orderId));
-  if (sudahAda) return { posted: true, entry: sudahAda, created: false };
+  // Pengakuan AKTIF (POSTED) → tidak ada yang dilakukan. Bila pengakuan sebelumnya sudah DIBALIK (order dibatalkan lalu dibuka lagi), pengakuan baru memakai
+  // kunci ber-sufiks supaya tidak bentrok dengan kunci unik jurnal lama (sebelumnya order yang dibuka lagi diam-diam TIDAK diakui ulang).
+  const aktifAda = await tx.finJournalEntry.findFirst({ where: { idempotencyKey: { startsWith: KEY.revenue(orderId) }, status: "POSTED" }, include: { lines: { orderBy: { lineNo: "asc" } } } });
+  if (aktifAda) return { posted: true, entry: aktifAda, created: false };
+  const pernah = await tx.finJournalEntry.count({ where: { idempotencyKey: { startsWith: KEY.revenue(orderId) } } });
+  const kunciPengakuan = pernah === 0 ? KEY.revenue(orderId) : `${KEY.revenue(orderId)}:ULANG:${pernah}`;
 
   const nilaiLayanan = toMoney(order.value || 0);
   const ongkir = toMoney(order.ongkir || 0);
@@ -333,7 +338,7 @@ export async function postRevenueRecognition(tx, { orderId, userId = null, date 
         (order.customer?.name ? ` — ${order.customer.name}` : ""),
       source: "PENGAKUAN_PENDAPATAN",
       sourceId: orderId,
-      idempotencyKey: KEY.revenue(orderId),
+      idempotencyKey: kunciPengakuan,
       lines,
       userId,
     });

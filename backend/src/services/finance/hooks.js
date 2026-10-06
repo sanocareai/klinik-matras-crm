@@ -92,6 +92,37 @@ export async function bukukanPengakuanPendapatan(tx, { orderId, status = null, u
 }
 
 /**
+ * Order DIBATALKAN → balik jurnal pengakuan pendapatannya (Dr Piutang / Cr Pendapatan [+ ongkir]) supaya piutang & pendapatannya hilang dari buku.
+ *
+ * Sebelum ini TIDAK ada hook pembatalan: order yang sudah diakui lalu dibatalkan tetap menyimpan piutang di neraca (laporan 6 Okt 2026: 7 order batal masih muncul di Piutang,
+ * Rp4.650.000). checkCancelBlockers menolak pembatalan bila sudah ada pembayaran aktif, jadi order yang sampai ke sini TIDAK punya uang masuk — cukup membalik pengakuannya.
+ * Pembalik bertanggal HARI INI (periode berjalan), bukan tanggal pengakuan asli. Mencakup juga piutang awal (kunci pengakuan yang sama, sumber SALDO_AWAL).
+ * Aman dipanggil di dalam transaksi pembatalan; idempoten (tidak ada pengakuan POSTED → tidak ada yang dilakukan).
+ */
+export async function batalkanPengakuanPendapatan(tx, { orderId, reason, userId = null }) {
+  const aktif = await tx.finJournalEntry.findFirst({
+    where: { idempotencyKey: { startsWith: KEY.revenue(orderId) }, status: "POSTED" },
+    select: { id: true, entryNumber: true },
+  });
+  if (!aktif) return { reversed: false, reason: "tidak_ada_pengakuan" };
+  try {
+    const reversal = await reverseJournal(tx, { entryId: aktif.id, reason: `Order dibatalkan${reason ? ` — ${reason}` : ""}`, userId });
+    return { reversed: true, reversal };
+  } catch (err) {
+    if (!bolehDitelan(err)) throw err;
+    // Umumnya periode hari ini ditutup. Pembatalan order tetap berlaku; bukunya menyimpan pekerjaan yang harus dibereskan admin.
+    await recordPostingGap(tx, {
+      source: "PENGAKUAN_PENDAPATAN",
+      sourceId: orderId,
+      reason: "PEMBATALAN_GAGAL",
+      detail: `Order dibatalkan tetapi jurnal pengakuan pendapatannya (${aktif.entryNumber}) belum bisa dibalik: ${err.message}`,
+      metadata: { orderId, entryNumber: aktif.entryNumber },
+    });
+    return { reversed: false, gap: true, reason: "pembalikan_ditolak" };
+  }
+}
+
+/**
  * Batalkan jurnal sebuah pembayaran yang baru saja ditandai batal di CRM
  * (POST /orders/:id/payments/:paymentId/cancel).
  *

@@ -25,7 +25,7 @@ import { moneyToNumber } from "../services/finance/money.js";
 import { resiBaru, dasarStatusBayar, PILIH_TAGIHAN } from "../services/finance/tagihanOrder.js";
 // D-180 — jembatan ke buku besar. Lihat catatan panjang di hooks.js: modul
 // finance TIDAK PERNAH boleh menjatuhkan pencatatan pembayaran/order.
-import { bukukanPembayaran, batalkanJurnalPembayaran, bukukanPengakuanPendapatan } from "../services/finance/hooks.js";
+import { bukukanPembayaran, batalkanJurnalPembayaran, bukukanPengakuanPendapatan, batalkanPengakuanPendapatan } from "../services/finance/hooks.js";
 import { normalisasiJenis, buildInvoiceView, setInvoiceLifecycle, attachOrderToInvoice, detachInvoiceFromBundle } from "../services/invoice.js";
 import { renderInvoicePdf } from "../services/invoicePdf.js";
 import { buildWarrantyView, markWarrantySent, WARRANTY_YEARS_VALID } from "../services/warranty.js";
@@ -459,6 +459,8 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
             actorId: req.user?.id || null,
             reason: statusOverrideNote?.trim() || "Dibatalkan melalui perubahan status Sales",
           });
+          // Buku besar: order batal tidak boleh menyimpan piutang/pendapatan — balik jurnal pengakuannya (tidak ada pembayaran aktif; sudah dijaga checkCancelBlockers).
+          await batalkanPengakuanPendapatan(tx, { orderId: updated.id, reason: statusOverrideNote?.trim() || "perubahan status Sales", userId: req.user?.id || null });
         } else if (status === "DELIVERED") {
           const unitEnRoute = await tx.unit.findFirst({
             where: {
@@ -2367,6 +2369,8 @@ orderRouter.post("/:id/cancel", async (req, res) => {
       await tx.orderStatusTransition.create({
         data: { orderId: result.id, fromStatus: order.status, toStatus: "CANCELLED", changedById: req.user?.id || null },
       });
+      // Buku besar: balik jurnal pengakuan pendapatan order ini (tidak ada pembayaran aktif; sudah dijaga checkCancelBlockers).
+      await batalkanPengakuanPendapatan(tx, { orderId: result.id, reason: reason?.trim() || "salah input", userId: req.user?.id || null });
       return result;
     });
 

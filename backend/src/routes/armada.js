@@ -40,6 +40,8 @@ import { notifySalesJobCompleted, notifySalesUnpaidAfterDelivery } from "../serv
 import { traceRoute } from "../services/routeTracking.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { bukukanPembayaran } from "../services/finance/hooks.js";
+import { kunciKanonis } from "../services/finance/urutanKunci.js";
+import { pastikanNominalPembayaranLapangan } from "../services/finance/nominalPembayaranLapangan.js";
 import { verifikasiPembayaran } from "../services/finance/pembayaran.js";
 import { skopPembayaran, orderMilikSalesWhere, paymentMilikSalesWhere } from "../services/finance/skopPembayaran.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
@@ -202,7 +204,8 @@ class ArmadaError extends Error {
 }
 function handleErr(err, res) {
   if (err instanceof ArmadaError) return res.status(err.statusCode).json({ error: err.message });
-  if (Number.isInteger(err?.statusCode)) return res.status(err.statusCode).json({ error: err.message });
+  // `code` ikut dikirim bila galat membawanya (mis. NominalPembayaranError) supaya klien bisa meminta konfirmasi, bukan sekadar menampilkan pesan.
+  if (Number.isInteger(err?.statusCode)) return res.status(err.statusCode).json({ error: err.message, ...(err.code && typeof err.code === "string" && { code: err.code }) });
   if (adalahGalatInfraDb(err)) return kirimGalatInfraDb(res, err, "[armada]");
   if (err?.code === "P2010" && err?.meta?.code === "55P03") {
     return res.status(409).json({ error: "Aksi sedang diproses di perangkat lain. Muat ulang status lalu coba lagi." });
@@ -5434,7 +5437,7 @@ armadaRouter.post("/jobs/:id/payment", requireAnyPermission(P.JOB_WRITE, P.JOB_O
     if (job.type !== "DELIVERY") {
       throw new ArmadaError("Pembayaran hanya dicatat di job pengiriman");
     }
-    const { amount, method, proofPhotoUrl } = req.body;
+    const { amount, method, proofPhotoUrl, konfirmasiNominalKecil } = req.body;
     const amountInt = Number(amount);
     if (!Number.isInteger(amountInt) || amountInt <= 0) {
       throw new ArmadaError("Jumlah pembayaran wajib angka bulat lebih dari 0");
@@ -5447,6 +5450,9 @@ armadaRouter.post("/jobs/:id/payment", requireAnyPermission(P.JOB_WRITE, P.JOB_O
     }
 
     const payment = await prisma.$transaction(async (tx) => {
+      // Kunci order dulu (satu pembayaran per saat), lalu pengaman nominal: ditolak bila melebihi sisa tagihan, dan nominal sangat kecil wajib dikonfirmasi.
+      await kunciKanonis(tx, { orderIds: [job.orderId] });
+      await pastikanNominalPembayaranLapangan(tx, { orderId: job.orderId, amount: amountInt, konfirmasiNominalKecil });
       const p = await tx.payment.create({
         data: {
           orderId: job.orderId, jobId: job.id, amount: amountInt, method,

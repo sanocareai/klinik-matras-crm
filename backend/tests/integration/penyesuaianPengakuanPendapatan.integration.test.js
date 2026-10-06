@@ -19,6 +19,7 @@ const KASUS = [
   { nomor: "RES-19082026-093", kategori: "LAYANAN", diakui: 1_150_000, nilai: 1_050_000 },
   { nomor: "RES-13092026-080", kategori: "LAYANAN", diakui: 250_000, nilai: 1_250_000 },
   { nomor: "NEW-10092026-011", kategori: "BARU", diakui: 2_800_000, nilai: 4_000_000 },
+  { nomor: "SWS-30092026-019", kategori: "SEWA", diakui: 200_000, nilai: 0 }, // sewa gratis: tanpa Payment
 ];
 async function dunia({ uangBeda = false } = {}) {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
@@ -31,6 +32,7 @@ async function dunia({ uangBeda = false } = {}) {
     const o = await testPrisma.order.create({ data: { customerId: customer.id, value: k.diakui, category: k.kategori, orderNumber: k.nomor, status: "DELIVERED", paymentStatus: "LUNAS" } });
     await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: o.id, userId: owner.id }));
     await testPrisma.order.update({ where: { id: o.id }, data: { value: k.nilai } });
+    if (k.nilai === 0) { out.push(o); continue; }
     const p = await testPrisma.payment.create({ data: { orderId: o.id, amount: uangBeda && k.nomor === "RES-13092026-080" ? k.nilai - 1 : k.nilai, method: "TRANSFER", cashAccountId: bank.id, recordedById: owner.id } });
     await testPrisma.paymentVerification.create({ data: { paymentId: p.id, verifiedById: owner.id } });
     await testPrisma.$transaction((tx) => postPaymentReceived(tx, { paymentId: p.id, userId: owner.id }));
@@ -45,10 +47,10 @@ const jalankan = (args, env = {}, tanggal = "--tanggal=2026-10-06") => {
 async function foto() {
   const per = async (where) => { const a = await testPrisma.finJournalLine.aggregate({ where: { ...where, entry: { status: { in: ["POSTED", "REVERSED"] } } }, _sum: { debit: true, credit: true } }); return Number(a._sum.debit ?? 0) - Number(a._sum.credit ?? 0); };
   const akun = async (key) => testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS[key] } });
-  const piutang = await akun("PIUTANG_USAHA"); const layanan = await akun("PENDAPATAN_LAYANAN"); const produk = await akun("PENDAPATAN_PRODUK");
+  const piutang = await akun("PIUTANG_USAHA"); const layanan = await akun("PENDAPATAN_LAYANAN"); const produk = await akun("PENDAPATAN_PRODUK"); const sewa = await akun("PENDAPATAN_SEWA");
   const orders = await testPrisma.order.findMany({ select: { orderNumber: true, paymentStatus: true, value: true } });
   return {
-    kas: await per({ cashAccountId: { not: null } }), piutang: await per({ accountId: piutang.id }), layanan: -(await per({ accountId: layanan.id })), produk: -(await per({ accountId: produk.id })),
+    kas: await per({ cashAccountId: { not: null } }), piutang: await per({ accountId: piutang.id }), layanan: 0 - (await per({ accountId: layanan.id })), produk: 0 - (await per({ accountId: produk.id })), sewa: 0 - (await per({ accountId: sewa.id })),
     jurnal: await testPrisma.finJournalEntry.count(), payment: await testPrisma.payment.count(), orders: orders.sort((x, y) => x.orderNumber.localeCompare(y.orderNumber)),
   };
 }
@@ -56,7 +58,7 @@ async function foto() {
 test("pratinjau tidak menulis; apply tanpa KOREKSI_BACKUP_OK ditolak; tanggal di luar Oktober 2026 ditolak", async () => {
   await dunia();
   const sebelum = await foto();
-  assert.equal(sebelum.piutang, 800_000 + 100_000 - 1_000_000 - 1_200_000);
+  assert.equal(sebelum.piutang, 800_000 + 100_000 - 1_000_000 - 1_200_000 + 200_000);
   const p = jalankan([]);
   assert.equal(p.kode, 0, p.out);
   assert.match(p.out, /PRATINJAU/);
@@ -70,18 +72,19 @@ test("pratinjau tidak menulis; apply tanpa KOREKSI_BACKUP_OK ditolak; tanggal di
   assert.deepEqual(await foto(), sebelum);
 });
 
-test("apply: piutang 4 order jadi 0; pendapatan neto +1.300.000; kas/Payment/order tidak berubah; 4 jurnal; idempoten", async () => {
+test("apply: piutang 5 order jadi 0; pendapatan neto +1.100.000; kas/Payment/order tidak berubah; 5 jurnal; idempoten", async () => {
   const { orders } = await dunia();
   const sebelum = await foto();
   const a = jalankan(["--apply"], { KOREKSI_BACKUP_OK: "1" });
   assert.equal(a.kode, 0, a.out);
-  assert.match(a.out, /DIBUAT 4 jurnal/);
+  assert.match(a.out, /DIBUAT 5 jurnal/);
   const sesudah = await foto();
   assert.equal(sesudah.piutang, 0);
   assert.equal(sesudah.kas, sebelum.kas);
   assert.equal(sesudah.layanan, sebelum.layanan - 800_000 - 100_000 + 1_000_000, "4-1100 Layanan: −800.000 −100.000 +1.000.000");
   assert.equal(sesudah.produk, sebelum.produk + 1_200_000, "4-1200 Produk: +1.200.000");
-  assert.equal(sesudah.jurnal, sebelum.jurnal + 4);
+  assert.equal(sesudah.sewa, sebelum.sewa - 200_000, "Pendapatan Sewa: −200.000 (sewa gratis)");
+  assert.equal(sesudah.jurnal, sebelum.jurnal + 5);
   assert.equal(sesudah.payment, sebelum.payment);
   assert.deepEqual(sesudah.orders, sebelum.orders);
   for (const o of orders) {

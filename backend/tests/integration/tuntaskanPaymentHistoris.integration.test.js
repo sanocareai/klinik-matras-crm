@@ -15,18 +15,19 @@ const akar = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 test.afterEach(async () => { await truncateAll(); });
 test.after(async () => { await truncateAll(); await testPrisma.$disconnect(); });
 
-async function dunia({ tanggalBayar = "2026-09-11T05:00:00Z" } = {}) {
+async function dunia({ tanggalBayar = "2026-09-11T05:00:00Z", paidAt = null } = {}) {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
   const akunBank = await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.BANK } });
   const pt = await testPrisma.finCashAccount.create({ data: { name: "PT Sano", kind: "BANK", accountId: akunBank.id } });
   const owner = await testPrisma.user.create({ data: { name: "OWNER (Admin)", email: `owner-${Date.now()}@example.test`, passwordHash: "x", role: "ADMIN" } });
   const customer = await testPrisma.customer.create({ data: { name: "Stanley" } });
-  const order = await testPrisma.order.create({ data: { customerId: customer.id, value: 6_450_000, category: "BARU", orderNumber: "NEW-07092026-008", status: "DELIVERED", paymentStatus: "LUNAS", paidAt: new Date(tanggalBayar) } });
+  const order = await testPrisma.order.create({ data: { customerId: customer.id, value: 6_450_000, category: "BARU", orderNumber: "NEW-07092026-008", status: "DELIVERED", paymentStatus: "LUNAS", paidAt: new Date(paidAt ?? tanggalBayar) } });
   const payment = await testPrisma.payment.create({ data: { orderId: order.id, amount: 6_450_000, method: "TRANSFER", recordedById: owner.id, createdAt: new Date(tanggalBayar) } });
   await testPrisma.paymentVerification.create({ data: { paymentId: payment.id, verifiedById: owner.id } });
   await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: order.id, userId: owner.id }));
   return { pt, owner, order, payment };
 }
+const hariWIB = (iso) => new Date(new Date(iso).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 const jalankan = (args, env = {}) => {
   try { return { kode: 0, out: execFileSync(process.execPath, ["scripts/tuntaskanPaymentHistoris.js", ...args], { cwd: akar, env: { ...process.env, ...env }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; }
   catch (e) { return { kode: e.status, out: String(e.stdout) + String(e.stderr) }; }
@@ -86,4 +87,14 @@ test("Payment bertanggal SETELAH saldo awal dan order tak dikenal ditolak tanpa 
   const x = jalankan(["--order=TIDAK-ADA"]);
   assert.equal(x.kode, 2);
   assert.match(x.out, /tidak ditemukan/);
+});
+
+test("paidAt order bertanggal sama (WIB) tetapi jam berbeda dari tanggal terima Payment → lolos; tanggal WIB tetap, jam diselaraskan fungsi resmi", async () => {
+  const { order } = await dunia({ paidAt: "2026-09-11T02:12:08Z" }); // 09.12 WIB; Payment 12.00 WIB hari yang sama (kasus Stanley produksi)
+  const a = jalankan(["--order=NEW-07092026-008", "--apply"], { TUNTAS_OK: "1" });
+  assert.equal(a.kode, 0, a.out);
+  const o = await testPrisma.order.findUnique({ where: { id: order.id } });
+  assert.equal(o.paymentStatus, "LUNAS");
+  assert.equal(hariWIB(o.paidAt.toISOString()), "2026-09-11");
+  assert.equal((await foto(order.id)).piutangOrder, 0);
 });

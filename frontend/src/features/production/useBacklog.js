@@ -14,7 +14,7 @@ export default function useBacklog({ demoColumns = null } = {}) {
   const [status, setStatus] = useState("DIPROSES");
   const [q, setQ] = useState("");
   const [qDebounced, setQDebounced] = useState("");
-  const [state, setState] = useState({ items: [], total: 0, counts: {}, hasMore: false, page: 0, readerMode: null, loading: true, error: "", truncated: false });
+  const [state, setState] = useState({ items: [], total: 0, counts: {}, rencanaCounts: {}, hasMore: false, page: 0, readerMode: null, loading: true, error: "", truncated: false });
   const reqRef = useRef(0);
   const demo = isDemoActive();
 
@@ -32,7 +32,7 @@ export default function useBacklog({ demoColumns = null } = {}) {
         acc = acc.concat(last.items || []);
         if (!last.hasMore) break;
       }
-      setState({ items: acc, total: last?.total ?? acc.length, counts: last?.counts || {}, hasMore: !!last?.hasMore, page: Math.max(1, Math.ceil(acc.length / BACKLOG_PAGE_SIZE)), readerMode: last?.readerMode ?? null, loading: false, error: "", truncated: !!last?.truncated });
+      setState({ items: acc, total: last?.total ?? acc.length, counts: last?.counts || {}, rencanaCounts: last?.rencanaCounts || {}, hasMore: !!last?.hasMore, page: Math.max(1, Math.ceil(acc.length / BACKLOG_PAGE_SIZE)), readerMode: last?.readerMode ?? null, loading: false, error: "", truncated: !!last?.truncated });
     } catch (e) { if (id === reqRef.current) setState((s) => ({ ...s, loading: false, error: friendlyError(e) })); }
   }, [status, qDebounced]);
 
@@ -47,7 +47,7 @@ export default function useBacklog({ demoColumns = null } = {}) {
     try {
       const r = await api.getProductionV2Backlog({ status, q: qDebounced, page: next, pageSize: BACKLOG_PAGE_SIZE });
       if (id !== reqRef.current) return;
-      setState((s) => ({ ...s, items: s.items.concat(r.items || []), total: r.total, counts: r.counts || s.counts, hasMore: !!r.hasMore, page: next, loading: false, truncated: !!r.truncated }));
+      setState((s) => ({ ...s, items: s.items.concat(r.items || []), total: r.total, counts: r.counts || s.counts, rencanaCounts: r.rencanaCounts || s.rencanaCounts, hasMore: !!r.hasMore, page: next, loading: false, truncated: !!r.truncated }));
     } catch (e) { if (id === reqRef.current) setState((s) => ({ ...s, loading: false, error: friendlyError(e) })); }
   }, [demo, state.loading, state.hasMore, state.page, status, qDebounced]);
 
@@ -57,6 +57,6 @@ export default function useBacklog({ demoColumns = null } = {}) {
   return {
     status, setStatus, q, setQ, items, schedulableViews, reload, loadMore,
     total: demo ? demoItems.length : state.total, counts: demo ? { DIPROSES: demoItems.length, PENGAMBILAN: 0 } : state.counts, hasMore: demo ? false : state.hasMore,
-    loading: demo ? false : state.loading, error: demo ? "" : state.error, truncated: state.truncated, demo, readerMode: state.readerMode,
+    loading: demo ? false : state.loading, error: demo ? "" : state.error, truncated: state.truncated, demo, readerMode: state.readerMode, rencanaCounts: demo ? {} : state.rencanaCounts,
   };
 }

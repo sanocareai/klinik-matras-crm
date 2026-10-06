@@ -8,6 +8,7 @@
 import { prisma } from "../src/db.js";
 import { tuntaskanPembayaranHistoris, daftarKlasifikasiHistoris, LABEL_HISTORIS } from "../src/services/finance/pembayaranHistoris.js";
 import { toMoney } from "../src/services/finance/money.js";
+import { tanggalWIB } from "../src/services/finance/cutoff.js";
 
 const APPLY = process.argv.includes("--apply");
 const NOMOR = (process.argv.find((a) => a.startsWith("--order=")) ?? "").slice("--order=".length).trim();
@@ -30,7 +31,8 @@ async function foto(db, orderId) {
   return {
     saldo, piutang: toMoney(pa._sum.debit ?? 0).minus(toMoney(pa._sum.credit ?? 0)), piutangOrder: toMoney(po._sum.debit ?? 0).minus(toMoney(po._sum.credit ?? 0)),
     seimbang: toMoney(ner._sum.debit).equals(toMoney(ner._sum.credit)), jurnal: await db.finJournalEntry.count(), payment: await db.payment.count(),
-    status: o.paymentStatus, paidAt: o.paidAt?.toISOString() ?? null,
+    // Fungsi resmi menyelaraskan jam paidAt ke tanggal terima Payment (12.00 WIB); yang harus TETAP adalah status dan TANGGAL (WIB), bukan jam.
+    status: o.paymentStatus, paidAt: o.paidAt ? tanggalWIB(o.paidAt) : null,
   };
 }
 
@@ -56,7 +58,7 @@ async function main() {
   const a = await foto(prisma, p.order.id);
   console.log(`Sebelum : piutang order ${rp(a.piutangOrder)}; Piutang Usaha ${rp(a.piutang)}; ${Object.entries(a.saldo).map(([n, v]) => `${n} ${rp(v)}`).join(" | ")}`);
   const lawan = p.k.lawan;
-  console.log(`Harapan : ${lawan === "PIUTANG" ? `+1 jurnal non-kas Dr Laba Ditahan / Cr Piutang ${rp(p.payment.amount)} → piutang order ${rp(a.piutangOrder.minus(p.payment.amount))}` : "tanpa jurnal baru (hanya audit)"}; Kas/Bank TIDAK berubah; status & tanggal lunas order TIDAK berubah.`);
+  console.log(`Harapan : ${lawan === "PIUTANG" ? `+1 jurnal non-kas Dr Laba Ditahan / Cr Piutang ${rp(p.payment.amount)} → piutang order ${rp(a.piutangOrder.minus(p.payment.amount))}` : "tanpa jurnal baru (hanya audit)"}; Kas/Bank TIDAK berubah; status & tanggal (WIB) lunas order TIDAK berubah (jam disesuaikan ke 12.00 WIB oleh fungsi resmi).`);
   if (!APPLY) { console.log("\nPRATINJAU. Jalankan: TUNTAS_OK=1 node scripts/tuntaskanPaymentHistoris.js --order=" + NOMOR + " --apply"); return; }
   if (process.env.TUNTAS_OK !== "1") throw new Error("Menolak --apply: set TUNTAS_OK=1 (setelah backup tervalidasi)");
   const aktor = await prisma.user.findFirst({ where: { name: "OWNER (Admin)", role: "ADMIN", active: true }, select: { id: true } });
@@ -72,7 +74,7 @@ async function main() {
     for (const n of Object.keys(sebelum.saldo)) if (!sesudah.saldo[n].equals(sebelum.saldo[n])) throw new Error(`INVARIAN GAGAL: saldo ${n} berubah — rollback`);
     if (q.k.lawan === "PIUTANG" && !sesudah.piutangOrder.equals(sebelum.piutangOrder.minus(q.payment.amount))) throw new Error("INVARIAN GAGAL: piutang order tidak turun sebesar Payment — rollback");
     if (q.k.lawan === "PIUTANG" && !sesudah.piutang.equals(sebelum.piutang.minus(q.payment.amount))) throw new Error("INVARIAN GAGAL: saldo Piutang Usaha total — rollback");
-    if (sesudah.status !== sebelum.status || sesudah.paidAt !== sebelum.paidAt) throw new Error("INVARIAN GAGAL: status/tanggal lunas order berubah — rollback");
+    if (sesudah.status !== sebelum.status || sesudah.paidAt !== sebelum.paidAt) throw new Error("INVARIAN GAGAL: status/tanggal (WIB) lunas order berubah — rollback");
     if (sesudah.jurnal !== sebelum.jurnal + (q.k.lawan ? 1 : 0) || sesudah.payment !== sebelum.payment || !sesudah.seimbang) throw new Error("INVARIAN GAGAL: jumlah jurnal/Payment/neraca — rollback");
     return { r, sebelum, sesudah };
   }, { timeout: 60_000, maxWait: 20_000 });

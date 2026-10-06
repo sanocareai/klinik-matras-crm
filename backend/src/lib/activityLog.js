@@ -178,6 +178,9 @@ export const EVENT_TYPES = Object.freeze({
   // Eksekusi Workshop V2 (P5): unit BARU/SEWA didaftarkan lahir di workshop; run selesai tahap workshop -> menunggu QC.
   PRODUCTION_WORKSHOP_RUN_REGISTERED: "PRODUCTION_WORKSHOP_RUN_REGISTERED",
   PRODUCTION_WORKSHOP_AWAITING_QC: "PRODUCTION_WORKSHOP_AWAITING_QC",
+  // Rencana Produksi order nyata: Run dibuka (belum tiba) saat Jadwalkan; kedatangan fisik tanpa custody dikonfirmasi eksplisit.
+  PRODUCTION_RUN_ONBOARDED_RENCANA: "PRODUCTION_RUN_ONBOARDED_RENCANA",
+  PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY: "PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY",
   // QC V2, rework, barang jadi, dan rekonsiliasi override V1 (P6). Detail (hasil, inspeksi, alasan) ada di metadata.
   PRODUCTION_QC_RECORDED: "PRODUCTION_QC_RECORDED",
   PRODUCTION_QC_WAIVED: "PRODUCTION_QC_WAIVED",
@@ -432,6 +435,10 @@ export function formatActivitySentence(event) {
       return `Gudang menyerahkan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan, stok berkurang)`;
     case EVENT_TYPES.PRODUCTION_WORKSHOP_RUN_REGISTERED:
       return `Unit ${metadata.unitCode || "—"} (${metadata.category || "—"}) didaftarkan lahir di workshop tanpa pickup`;
+    case EVENT_TYPES.PRODUCTION_RUN_ONBOARDED_RENCANA:
+      return metadata.origin === "WORKSHOP_BORN" ? `Unit ${metadata.unitCode || "—"} dimasukkan ke Rencana Produksi (Run dibuka — unit dibuat di workshop, tanpa pickup)` : `Unit ${metadata.unitCode || "—"} dimasukkan ke Rencana Produksi (Run dibuka, belum tiba di workshop${metadata.viaCustody ? "; mengikuti pickup yang sudah tercatat" : "; tanpa pickup tercatat"})`;
+    case EVENT_TYPES.PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY:
+      return `Kedatangan unit ${metadata.unitCode || "—"} di workshop dikonfirmasi petugas (lokasi ${metadata.locationCode || "—"}; tanpa serah-terima custody karena tidak ada pickup tercatat)`;
     case EVENT_TYPES.PRODUCTION_WORKSHOP_AWAITING_QC:
       return `Seluruh tahap workshop unit ${metadata.unitCode || "—"} selesai — menunggu QC`;
     case EVENT_TYPES.PRODUCTION_QC_RECORDED:

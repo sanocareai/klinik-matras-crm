@@ -39,10 +39,10 @@ import { ADAPTATION_POLICY, defaultAdaptationPolicy } from "./productionSettings
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
-const BORN_CATEGORIES = ["BARU", "SEWA"];
+export const BORN_CATEGORIES = ["BARU", "SEWA"];
 // Unit lahir di workshop = baru dibuat: status RECEIVED, belum punya tahap/log produksi V1. Unit yang sudah berjalan/selesai di V1
 // (legacy) atau punya jalur pickup/custody TIDAK boleh dimasukkan ke V2 lewat jalur ini.
-const BORN_UNIT_STATUSES = ["RECEIVED"];
+export const BORN_UNIT_STATUSES = ["RECEIVED"];
 
 function workError(message, statusCode, code, details) {
   return Object.assign(new Error(message), { statusCode, code, ...(details ? { details } : {}) });
@@ -269,13 +269,18 @@ async function bumpRun(tx, run, data) {
 // 0. Unit BARU/SEWA yang lahir di workshop TANPA pickup -> Production Run WORKSHOP_BORN (kanonis; bukan migrationSource).
 //    Tidak membuat custody apa pun: custody barang jadi baru lahir setelah QC/P6.
 // ---------------------------------------------------------------------------
-export async function registerWorkshopBornRun(prisma, { unitId, actorId, idempotencyKey }) {
+export async function registerWorkshopBornRun(prisma, args) {
+  return prisma.$transaction((tx) => registerWorkshopBornRunInTx(tx, args));
+}
+
+// Varian di dalam transaksi pemanggil (Rencana Produksi: buka Run + rencana + jadwal = SATU commit). Isi command TIDAK berubah.
+export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempotencyKey }) {
   if (!unitId) throw workError("unitId wajib diisi", 400, "WORKSHOP_UNIT_REQUIRED");
   assertIdempotencyKey(idempotencyKey);
   const actor = actorId || "SYSTEM";
   const requestHash = hash({ commandType: "REGISTER_WORKSHOP_RUN", unitId });
 
-  return prisma.$transaction(async (tx) => {
+  return (async () => {
     await lockRowForUpdate(tx, "units", unitId);
     await lockUnitOwnership(tx, unitId); // pembukaan Run = pengambilalihan kepemilikan (lihat unitV2Ownership.js)
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
@@ -316,7 +321,7 @@ export async function registerWorkshopBornRun(prisma, { unitId, actorId, idempot
     const response = { runId: run.id, unitId, origin: "WORKSHOP_BORN", status: "ACTIVE", revision: 1 };
     await finishCommand(tx, command, 1, response);
     return { replayed: false, ...response };
-  });
+  })();
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,267 @@
+{
+ "at": "2026-10-06T07:03:30.003Z",
+ "total": 52,
+ "failed": 0,
+ "results": [
+  {
+   "name": "S1.0 kartu U01 punya tombol Jadwalkan + handle seret (aksi jelas)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S1.1 kartu non-aktif TIDAK punya handle/instruksi seret dan tidak bertuliskan 'Belum bisa dijadwalkan'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S1.2 modal menjelaskan PIC kosong (alasan + akun yang belum terdaftar)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S1.3 tautan ke Pengaturan > Operator",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S1.4 pilihan PIC masih kosong (hanya placeholder) SEBELUM didaftarkan",
+   "ok": true,
+   "extra": "— pilih —"
+  },
+  {
+   "name": "S1.5 setelah didaftarkan, 2 PIC muncul di pilihan",
+   "ok": true,
+   "extra": "— pilih —|QA-RN Corner Citra|QA-RN Meja Andi"
+  },
+  {
+   "name": "S1.6 DB: 2 profil operator terbentuk dari aksi pengguna (bukan otomatis)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.0 tanggal terisi bawaan (hari ini WIB)",
+   "ok": true,
+   "extra": "2026-10-06"
+  },
+  {
+   "name": "S2.1 pesan sukses jujur: Run dibuka, unit BELUM tiba",
+   "ok": true,
+   "extra": "QA-RN-U01 dijadwalkan ke Meja 1 — Run produksi dibuka (unit belum tiba di workshop; konfirmasi \"Unit Tiba\" tetap diperlukan)."
+  },
+  {
+   "name": "S2.2 kartu U01 pindah ke Meja 1",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.3 kartu U01 hilang dari Belum Dijadwalkan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.4 posisi fisik di kartu Meja: 'Belum tiba di workshop' (Diproses ≠ bukti tiba)",
+   "ok": true,
+   "extra": "Posisi\nBelum tiba di workshop"
+  },
+  {
+   "name": "S2.5 DB: tepat 1 Run PENDING_ARRIVAL, rencana PLANNED di TABLE_1, prioritas Tinggi, handoff custody OFFERED dari pickup nyata",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.6 DB: tidak ada tahap yang dimulai",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.7 reload: U01 tetap di Meja 1, tidak muncul lagi di backlog",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.1 modal aktivasi menampilkan perintah konkret untuk unit yang menunggu",
+   "ok": true,
+   "extra": "RENCANA_BACKUP_OK=1 node scripts/production-delivery-v2/activate-rencana-units.js --unit-codes=QA-RN"
+  },
+  {
+   "name": "S3.2 daftar menjelaskan pengecualian (progres V1) dan unit eligible",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.3 cohort aktif tertulis 1 unit; tidak ada tombol yang mengubahnya",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.4 dry-run tidak menulis (cohort tetap 2: U01 saja)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.5 --apply tanpa konfirmasi backup ditolak",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.6 --apply berhasil; reader+writer = 6 unit",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.7 unit pengecualian (progres V1) ditolak skrip dengan alasannya",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.8 DB: tidak ada Run baru karena aktivasi (Run baru lahir saat Jadwalkan)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.9 UI: U02–U06 kini punya Jadwalkan + handle; U07/U08 tetap menunggu",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S4.1 lepas di Meja 2 membuka formulir yang SAMA dengan Meja 2 terpilih",
+   "ok": true,
+   "extra": "Meja 2 (0/3 unit)"
+  },
+  {
+   "name": "S4.2 prioritas usulan = Tinggi (unit U02 berprioritas Tinggi)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S4.3 U02 berada di Meja 2 setelah respons server",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S4.4 DB: 1 Run per unit (total 2) tanpa ganda",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S5.1 seret SENTUH: U03 berada di Meja 3",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S5.2 ketukan di handle tidak menjadwalkan apa pun",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S6.1 fallback tombol: U04 berada di Meja 4",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S7.1 Meja 1 terisi 3/3",
+   "ok": true,
+   "extra": "QA-RN-U01,QA-RN-U05,QA-RN-U06"
+  },
+  {
+   "name": "S7.2 kolom Meja 1 menandai 'penuh'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S7.3 lepas di Meja penuh ditolak dengan pesan jelas (formulir tidak terbuka)",
+   "ok": true,
+   "extra": "Meja 1 sudah penuh (3/3 unit). Pilih meja lain."
+  },
+  {
+   "name": "S7.4 DB tidak berubah (tidak ada Run baru dari penolakan)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S8.0 papan basi memperlihatkan Meja 4 = 1/3",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S8.1 sesi lain menjadwalkan QA-RN-U08 ke Meja 4",
+   "ok": true,
+   "extra": "201"
+  },
+  {
+   "name": "S8.2 sesi lain menjadwalkan QA-RN-U09 ke Meja 4",
+   "ok": true,
+   "extra": "201"
+  },
+  {
+   "name": "S8.3 server menolak 409 (Meja penuh) dan pesan Bahasa Indonesia tampil",
+   "ok": true,
+   "extra": "Meja sudah penuh (maks. 3 unit per meja). Kartu dikembalikan — pilih meja lain atau keluarkan unit dari meja itu."
+  },
+  {
+   "name": "S8.4 DB: U10 TIDAK punya Run (rollback total) dan Meja 4 tetap 3",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S8.5 papan dimuat ulang di belakang formulir: Meja 4 tampil penuh dan tidak bisa dipilih",
+   "ok": true,
+   "extra": "[\"Meja 1 (3/3 unit — penuh)\",\"Meja 2 (1/3 unit)\",\"Meja 3 (1/3 unit)\",\"Meja 4 (3/3 unit — penuh)\"]"
+  },
+  {
+   "name": "S8.6 formulir otomatis pindah dari Meja penuh ke Meja yang masih lega",
+   "ok": true,
+   "extra": "Meja 2 (1/3 unit)"
+  },
+  {
+   "name": "S8.7 percobaan ulang berhasil: U10 terjadwal (satu Run, tepat 1)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S11.1 pesan: unit dibuat di workshop (tanpa klaim 'belum tiba')",
+   "ok": true,
+   "extra": "QA-RN-U11 dijadwalkan ke Meja 2 — Run produksi dibuka (unit dibuat di workshop)."
+  },
+  {
+   "name": "S11.2 DB: Run WORKSHOP_BORN ACTIVE, tanpa handoff custody",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S11.3 kartu Meja: posisi 'Sudah tiba di workshop' (dibuat di workshop)",
+   "ok": true,
+   "extra": "Po i i\nSudah tiba di work hop"
+  },
+  {
+   "name": "S9.1 papan: 3+3+1+3 = 10 unit; unit Siap Kirim/SPAM/staf tidak ada",
+   "ok": true,
+   "extra": "QA-RN-U01,QA-RN-U05,QA-RN-U06,QA-RN-U02,QA-RN-U10,QA-RN-U11,QA-RN-U03,QA-RN-U04,QA-RN-U08,QA-RN-U09"
+  },
+  {
+   "name": "S9.2 DB: Run per unit tepat 1 (10 unit, 10 Run); 9 PENDING_ARRIVAL + 1 WORKSHOP_BORN ACTIVE; 0 tahap dimulai",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S9.3 DB: handoff custody HANYA untuk unit terjadwal yang punya pickup nyata (U01–U06 + U10 yang punya job pickup = 7; U08/U09 tanpa pickup = 0)",
+   "ok": true,
+   "extra": "7"
+  },
+  {
+   "name": "S9.4 DB: tidak ada perubahan cohort di luar skrip (flag reader=writer)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S10.1 HP 390px: tidak ada scroll horizontal halaman",
+   "ok": true,
+   "extra": "selisih=0"
+  },
+  {
+   "name": "Konsol: tidak ada galat JS/halaman; satu-satunya log jaringan = 409 konflik yang DISENGAJA di S8",
+   "ok": true,
+   "extra": "Failed to load resource: the server responded with a status of 409 (Conflict)"
+  }
+ ]
+}

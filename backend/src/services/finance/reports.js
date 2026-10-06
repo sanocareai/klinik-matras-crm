@@ -549,7 +549,11 @@ function emberUmur(hariLewat) {
  * memverifikasi & mencatat rekeningnya (Pembayaran & Verifikasi). Jumlahnya
  * dilaporkan terpisah di `menungguVerifikasi` supaya angka piutang di
  * halaman ini tetap bisa direkonsiliasi ke saldo Piutang Usaha di neraca:
- * neraca = piutang di daftar + menungguVerifikasi.
+ * neraca = piutang di daftar + menungguVerifikasi + dibatalkan.
+ *
+ * Order yang sudah DIBATALKAN TIDAK PERNAH tampil sebagai piutang (6 Okt 2026). Normalnya jurnal pengakuannya otomatis dibalik saat pembatalan
+ * (hooks.js#batalkanPengakuanPendapatan) sehingga saldonya nol; kalau masih ada saldo (pembatalan lama / pembalikan ditolak periode tertutup),
+ * dilaporkan di `dibatalkan` — bukan di daftar — supaya tetap bisa direkonsiliasi dan segera dibereskan.
  *
  * Bedanya penting: order yang belum diserahkan TIDAK punya piutang sama
  * sekali (uangnya masih uang muka), dan order yang sudah dilunasi saldonya
@@ -563,7 +567,7 @@ export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
   });
   // Bentuk respons kosong SAMA dengan yang berisi (total + ringkasan berupa angka): klien (web & mobile)
   // tidak boleh menebak-nebak kunci yang hilang saat belum ada piutang.
-  if (!akunPiutang) return { perTanggal: to, baris: [], ringkasan: ringkasanKosongAngka(), total: 0, ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
+  if (!akunPiutang) return { perTanggal: to, baris: [], ringkasan: ringkasanKosongAngka(), total: 0, ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, dibatalkan: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
 
   const grouped = await db.finJournalLine.groupBy({
     by: ["orderId"],
@@ -580,7 +584,7 @@ export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
     .filter((g) => g.saldo.greaterThan(0));
 
   if (bersaldo.length === 0) {
-    return { perTanggal: to, baris: [], ringkasan: ringkasanKosongAngka(), total: 0, ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
+    return { perTanggal: to, baris: [], ringkasan: ringkasanKosongAngka(), total: 0, ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, dibatalkan: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
   }
 
   const orders = await db.order.findMany({
@@ -593,14 +597,16 @@ export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
   });
   const byId = new Map(orders.map((o) => [o.id, o]));
 
-  const lunasDiCrm = bersaldo.filter((b) => byId.get(b.orderId)?.paymentStatus === "LUNAS");
+  const batal = bersaldo.filter((b) => byId.get(b.orderId)?.status === "CANCELLED");
+  const dibatalkan = { jumlah: batal.length, total: moneyToNumber(batal.length ? sumMoney(batal.map((b) => b.saldo)) : ZERO) };
+  const lunasDiCrm = bersaldo.filter((b) => byId.get(b.orderId)?.status !== "CANCELLED" && byId.get(b.orderId)?.paymentStatus === "LUNAS");
   const menungguVerifikasi = {
     jumlah: lunasDiCrm.length,
     total: moneyToNumber(lunasDiCrm.length ? sumMoney(lunasDiCrm.map((b) => b.saldo)) : ZERO),
   };
 
   const ringkasan = ringkasanKosong();
-  const baris = bersaldo.filter((b) => byId.get(b.orderId)?.paymentStatus !== "LUNAS").map((b) => {
+  const baris = bersaldo.filter((b) => byId.get(b.orderId)?.status !== "CANCELLED" && byId.get(b.orderId)?.paymentStatus !== "LUNAS").map((b) => {
     const o = byId.get(b.orderId);
     // Tanpa jatuh tempo eksplisit di invoice, umur dihitung dari tanggal
     // order dibuat — dinyatakan apa adanya lewat `sumberJatuhTempo` supaya
@@ -633,6 +639,7 @@ export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
     ringkasan: Object.fromEntries(Object.entries(ringkasan).map(([k, v]) => [k, moneyToNumber(v)])),
     total: moneyToNumber(baris.length ? sumMoney(baris.map((b) => b.sisaTagihan)) : ZERO),
     menungguVerifikasi,
+    dibatalkan,
     ember: EMBER_UMUR,
     catatan: await catatanLaporan(db),
   };
