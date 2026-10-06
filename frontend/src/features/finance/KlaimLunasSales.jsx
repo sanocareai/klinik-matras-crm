@@ -11,6 +11,7 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
 import { Uang, formatUang, JudulKartu, Pilihan, InputUang, tanggalPendek } from "@/features/finance/shared.jsx";
 import { STATUS_KLAIM_LABEL } from "@/features/klaim/klaimLunasLogic.js";
+import { pesanGalatKlaim } from "@/features/finance/pesanGalatKlaim.js";
 
 // KLAIM LUNAS DARI SALES — antrean klaim BERBUKTI (1 Okt 2026). Sales tidak lagi menandai order Lunas sendiri: klaim masuk ke sini lengkap dengan
 // tanggal, nominal, metode, rekening, catatan, dan Bukti Pembayaran. Finance memilih: Verifikasi (membuat TEPAT SATU Payment resmi dari klaim ini,
@@ -39,8 +40,14 @@ export default function KlaimLunasSales({ onBerubah }) {
   }, []);
   useEffect(() => { muat(); }, [muat]);
 
+  // Mengembalikan true bila berhasil. Dialog memakai hasilnya untuk MELEPAS status "sibuk" saat gagal (403 tanpa izin, 409 versi berbeda, jaringan) —
+  // sebelumnya tombol & penutup dialog terkunci selamanya setelah galat sehingga seluruh halaman tampak membeku di balik lapisan gelap.
   async function jalankan(fn) {
-    try { await fn(); setModal(null); setPesan(null); await muat(); onBerubah?.(); } catch (e) { setPesan(e.message); }
+    setPesan(null);
+    try { await fn(); } catch (e) { setPesan(pesanGalatKlaim(e)); return false; }
+    setModal(null);
+    try { await muat(); onBerubah?.(); } catch { /* daftar dimuat ulang oleh muat(); galat muat sudah ditangani di sana */ }
+    return true;
   }
 
   if (galat) return <Card><CardContent className="py-6 text-center text-[13px] text-red">{galat}</CardContent></Card>;
@@ -48,7 +55,7 @@ export default function KlaimLunasSales({ onBerubah }) {
 
   return (
     <>
-      {pesan && (
+      {pesan && !modal && (
         <Card className="bg-redbg">
           <CardContent className="flex items-center justify-between gap-3 py-3">
             <p className="text-[13px] text-ink">{pesan}</p>
@@ -157,13 +164,13 @@ export default function KlaimLunasSales({ onBerubah }) {
       </Card>
 
       <ModalAlasan
-        modal={modal && modal.jenis !== "verifikasi" ? modal : null} onClose={() => setModal(null)}
+        modal={modal && modal.jenis !== "verifikasi" ? modal : null} onClose={() => { setPesan(null); setModal(null); }} galat={pesan}
         onKirim={(alasan) => jalankan(() => (modal.jenis === "minta"
           ? api.mintaBuktiKlaimLunas(modal.klaim.id, { alasan, versi: modal.klaim.version })
           : api.tolakKlaimLunas(modal.klaim.id, { alasan, versi: modal.klaim.version })))}
       />
       <ModalVerifikasiKlaim
-        modal={modal?.jenis === "verifikasi" ? modal : null} rekening={rekening} onClose={() => setModal(null)}
+        modal={modal?.jenis === "verifikasi" ? modal : null} rekening={rekening} onClose={() => { setPesan(null); setModal(null); }} galat={pesan}
         onKirim={(body) => jalankan(() => api.verifikasiKlaimLunas(modal.klaim.id, { ...body, versi: modal.klaim.version }))}
       />
     </>
@@ -180,7 +187,11 @@ function BuktiMini({ b }) {
   );
 }
 
-function ModalAlasan({ modal, onClose, onKirim }) {
+function GalatDialog({ galat }) {
+  return galat ? <p role="alert" className="mt-2 rounded-lg bg-redbg px-3 py-2 text-[12.5px] leading-snug text-red">{galat}</p> : null;
+}
+
+function ModalAlasan({ modal, onClose, onKirim, galat }) {
   const [alasan, setAlasan] = useState("");
   const [sibuk, setSibuk] = useState(false);
   useEffect(() => { if (modal) { setAlasan(modal.jenis === "minta" ? "Mohon kirim bukti transfer/pembayaran yang jelas" : ""); setSibuk(false); } }, [modal]);
@@ -194,7 +205,7 @@ function ModalAlasan({ modal, onClose, onKirim }) {
       description={`Order ${modal.klaim.order.orderNumber || ""} — ${modal.klaim.order.customerName}`}
       footer={<>
         <Button variant="neutral" onClick={onClose} disabled={sibuk}>Batal</Button>
-        <Button disabled={!sah || sibuk} onClick={() => { setSibuk(true); onKirim(alasan.trim()); }}>{tolak ? "Tolak Klaim" : "Kirim Permintaan"}</Button>
+        <Button disabled={!sah || sibuk} onClick={async () => { setSibuk(true); const ok = await onKirim(alasan.trim()); if (!ok) setSibuk(false); }}>{tolak ? "Tolak Klaim" : "Kirim Permintaan"}</Button>
       </>}
     >
       <Field label="Alasan (wajib, dilihat Sales)" hint={tolak ? "Status order tidak berubah — klaim hanya ditutup dan Sales bisa memperbaikinya." : "Sales akan melengkapi bukti lalu mengajukan ulang."}>
@@ -203,11 +214,12 @@ function ModalAlasan({ modal, onClose, onKirim }) {
           className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
         />
       </Field>
+      <GalatDialog galat={galat} />
     </Modal>
   );
 }
 
-function ModalVerifikasiKlaim({ modal, rekening, onClose, onKirim }) {
+function ModalVerifikasiKlaim({ modal, rekening, onClose, onKirim, galat }) {
   const k = modal?.klaim;
   const [f, setF] = useState({ method: "TRANSFER", cashAccountId: "", date: "", amount: "" });
   const [sibuk, setSibuk] = useState(false);
@@ -229,7 +241,7 @@ function ModalVerifikasiKlaim({ modal, rekening, onClose, onKirim }) {
         <Button variant="neutral" onClick={onClose} disabled={sibuk}>Batal</Button>
         <Button
           disabled={!sah || sibuk}
-          onClick={() => { setSibuk(true); onKirim({ method: f.method, cashAccountId: f.cashAccountId || undefined, date: f.date, amount: nominal }); }}
+          onClick={async () => { setSibuk(true); const ok = await onKirim({ method: f.method, cashAccountId: f.cashAccountId || undefined, date: f.date, amount: nominal }); if (!ok) setSibuk(false); }}
         >
           <CheckCircle2 size={14} /> Verifikasi &amp; Catat Pembayaran
         </Button>
@@ -252,6 +264,7 @@ function ModalVerifikasiKlaim({ modal, rekening, onClose, onKirim }) {
           <Field label="Masuk ke rekening"><Pilihan value={f.cashAccountId} onChange={(v) => set("cashAccountId", v)}><option value="">Pilih rekening…</option>{rekening.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Pilihan></Field>
         </div>
         <p className="text-[11px] text-ink3">Tanggal sebelum 18 Sep 2026 (saldo awal) tidak menambah saldo rekening — server mengalihkannya otomatis.</p>
+        <GalatDialog galat={galat} />
       </div>
     </Modal>
   );
