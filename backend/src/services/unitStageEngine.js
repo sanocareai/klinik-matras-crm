@@ -42,7 +42,7 @@ import { guardV1UnitWrite, UnitV2OwnedError, UnitConcurrentChangeError } from ".
 import { PERMISSIONS as P } from "../constants/permissions.js";
 import { hasPermission } from "../middleware/authorize.js";
 import { decideV1StageActor } from "../lib/domain/v1StageActor.js";
-import { BUILD_CATEGORIES, BUILD_STAGE_CODE } from "../lib/domain/productionBuildTrack.js";
+import { BUILD_CATEGORIES, BUILD_STAGE_CODE, classifyProduct } from "../lib/domain/productionBuildTrack.js";
 
 // Isolation SERIALIZABLE untuk keempat perintah eksekusi inti (START/PAUSE/
 // RESUME/COMPLETE, Production Core Slice 3I) — pola "baca state tahap
@@ -118,10 +118,19 @@ export async function unitUsesBuildTrack(client, unitId) {
 
 /** Versi BULK (satu query) untuk pemanggil yang menyaring banyak unit: himpunan id unit yang memakai jalur pengerjaan. */
 export async function buildTrackUnitIds(client, unitIds) {
+  return new Set((await buildTrackUnits(client, unitIds)).keys());
+}
+/** Sama dengan buildTrackUnitIds tetapi mengembalikan Map unitId -> klasifikasi produk kanonis (alur KASUR/NON_KASUR) — satu query. */
+export async function buildTrackUnits(client, unitIds) {
   const ids = [...new Set((unitIds || []).filter(Boolean))];
-  if (!ids.length) return new Set();
-  const rows = await client.productionRun.findMany({ where: { unitId: { in: ids }, origin: "WORKSHOP_BORN", unit: { order: { category: { in: [...BUILD_CATEGORIES] } } } }, select: { unitId: true }, distinct: ["unitId"] });
-  return new Set(rows.map((r) => r.unitId));
+  const out = new Map();
+  if (!ids.length) return out;
+  const rows = await client.productionRun.findMany({
+    where: { unitId: { in: ids }, origin: "WORKSHOP_BORN", unit: { order: { category: { in: [...BUILD_CATEGORIES] } } } },
+    select: { unitId: true, unit: { select: { order: { select: { productLine: true, productType: true } } } } }, distinct: ["unitId"],
+  });
+  for (const r of rows) out.set(r.unitId, classifyProduct(r.unit?.order || {}));
+  return out;
 }
 
 /** Ambil seluruh tahap INTAKE/FINISH global + tahap MODULE milik satu layanan (atau, jalur pengerjaan: tanpa INTAKE + tahap Pengerjaan Pesanan). */
@@ -990,8 +999,11 @@ export async function recordQcFitTest(unitId, stageId, opts = {}) {
 // deferReady (lihat advanceUnitPastStage). Fence V2 hanya ada di pembungkus V1 di atas.
 export async function recordQcFitTestInTx(tx, unitId, stageId, {
   actorId, verdict, referenceWeightKg, customerPreferenceOverride, educationGiven, note, photoUrls = [], reworkStageId = null, deferReady = false,
+  generic = false, genericPassed = false,
 } = {}) {
-  assertQcFitInput({ verdict, referenceWeightKg, customerPreferenceOverride, educationGiven });
+  // generic = pemeriksaan hasil NON-kasur (divan/sofa) oleh PIC QC: TANPA uji berat badan/tekstur kasur — tidak ada baris qc_fit_tests yang dikarang
+  // (verdict/berat acuan tidak ada); lulus/gagal dari keputusan QC. Selebihnya (ledger tahap, gerbang, rework eksplisit) identik.
+  if (!generic) assertQcFitInput({ verdict, referenceWeightKg, customerPreferenceOverride, educationGiven });
   const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
   if (!stage.requiresQc) {
     throw new StageTransitionError(`Tahap "${stage.labelId}" bukan gerbang QC`);
@@ -1004,7 +1016,7 @@ export async function recordQcFitTestInTx(tx, unitId, stageId, {
     throw new StageTransitionError(`Tahap "${stage.labelId}" wajib foto sebelum bisa diselesaikan`);
   }
 
-  const test = await tx.qcFitTest.create({
+  const test = generic ? null : await tx.qcFitTest.create({
     data: {
       unitId, stageId, verdict, referenceWeightKg,
       customerPreferenceOverride: customerPreferenceOverride ?? null,
@@ -1013,9 +1025,9 @@ export async function recordQcFitTestInTx(tx, unitId, stageId, {
     },
   });
 
-  const lulus = verdict === "PAS" || !!customerPreferenceOverride;
+  const lulus = generic ? !!genericPassed : (verdict === "PAS" || !!customerPreferenceOverride);
   if (lulus) {
-    await finishStageInternal(tx, unitId, stage, open, { actorId, photoUrls, note: `QC: ${verdict}`, deferReady });
+    await finishStageInternal(tx, unitId, stage, open, { actorId, photoUrls, note: generic ? "QC: LULUS (pemeriksaan hasil non-kasur)" : `QC: ${verdict}`, deferReady });
     return { test, result: "PASSED" };
   }
 
@@ -1046,7 +1058,7 @@ export async function recordQcFitTestInTx(tx, unitId, stageId, {
   await tx.unitStageLog.create({
     data: {
       unitId, stageId, action: "FAIL", actorId, blockReason: "QUALITY_ISSUE",
-      note: `QC gagal: ${verdict}`, startedAt: trueStartedAt, endedAt: reworkNow,
+      note: generic ? "QC gagal (pemeriksaan hasil non-kasur)" : `QC gagal: ${verdict}`, startedAt: trueStartedAt, endedAt: reworkNow,
       durationSeconds: timing.timingKnown ? timing.touchSeconds : null,
     },
   });

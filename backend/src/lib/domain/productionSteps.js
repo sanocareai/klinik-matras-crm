@@ -170,16 +170,20 @@ export function validateStepEvidence(stepNo, input, ctx = {}) {
       const inputMethod = p.inputMethod === "VOICE" ? "VOICE" : "TEXT";
       return { media, payload: { diagnosis: text(p.diagnosis, 10, "Penjelasan diagnosa", 4000), inputMethod } };
     }
-    case 6:
-      requireMedia(media, { label, video: true });
-      return {
-        media,
-        payload: {
-          // Jalur pengerjaan (pesanan BARU): bahan dari Gudang BOLEH kosong (pemakaian dicatat sesuai pekerjaan nyata); jalur restorasi tetap wajib.
-          materials: normalizeMaterialLines(p.materials, { ...ctx, required: !ctx.buildTrack, label }),
-          note: text(p.note, 3, ctx.buildTrack ? "Penjelasan pengerjaan" : "Penjelasan isi fondasi"),
-        },
-      };
+    case 6: {
+      // Jalur pengerjaan (pesanan BARU/custom): foto ATAU video hasil pengerjaan (video tidak wajib — itu khas uji fondasi restorasi); jalur restorasi tetap wajib video.
+      requireMedia(media, { label, video: !ctx.buildTrack });
+      // Bahan dari Gudang BOLEH kosong pada jalur pengerjaan (pemakaian dicatat sesuai pekerjaan nyata); jalur restorasi tetap wajib.
+      const base = { materials: normalizeMaterialLines(p.materials, { ...ctx, required: !ctx.buildTrack, label }), note: text(p.note, 3, ctx.buildTrack ? "Penjelasan pengerjaan" : "Penjelasan isi fondasi") };
+      // Kasur custom: racikan fondasi/lapisan (ditentukan PIC Meja bersama PIC QC) wajib tercatat — minimal salah satu. Produk non-kasur (divan/sofa) tidak memakai racikan kasur.
+      if (ctx.buildTrack && ctx.productFlow !== "NON_KASUR") {
+        const r = p.racikan && typeof p.racikan === "object" && !Array.isArray(p.racikan) ? p.racikan : {};
+        const fondasi = optionalText(r.fondasi, "Racikan fondasi", 400); const lapisan = optionalText(r.lapisan, "Racikan lapisan", 400);
+        if ((fondasi?.length ?? 0) < 3 && (lapisan?.length ?? 0) < 3) throw invalid(`${label}: isi racikan fondasi dan/atau lapisan (minimal 3 karakter)`);
+        base.racikan = { fondasi: fondasi || null, lapisan: lapisan || null };
+      }
+      return { media, payload: base };
+    }
     case 7:
       requireMedia(media, { label });
       return {
@@ -309,6 +313,8 @@ export function deriveNextAction(state) {
       if (state.openShortage) return wait("WAREHOUSE", "MATERIAL_SHORTAGE", { stepNo, pausedActor: actor });
       return { actor, stepNo, action: "RESUME" };
     }
+    // Produk NON-kasur pada jalur pengerjaan (divan/sofa): tanpa uji tekstur PIC (tahap 8) — satu kiriman bukti pengerjaan menutup tahap lalu menunggu pemeriksaan hasil PIC QC.
+    if (state.buildTrack && state.productFlow === "NON_KASUR" && op.stagePhase === "MODULE") return { actor, stepNo, action: "COMPLETE" };
     if (op.isLastPreQc && op.stagePhase === "MODULE") {
       // Bukti diurutkan kronologis (`order`). Hasil uji TERLALU KERAS/EMPUK setelah bukti modul terakhir = rework: bukti modul wajib diulang.
       const verdict = latestTextureVerdict(state.opEvidence);
@@ -417,6 +423,8 @@ export const COMMAND_CENTER_COLUMNS = Object.freeze([
   { key: "AKAN_MASUK", label: "Akan Masuk — Pickup Terjadwal" },
   { key: "DALAM_PERJALANAN", label: "Dalam Perjalanan" },
   { key: "TIBA_BELUM_MULAI", label: "Tiba / Belum Mulai" },
+  { key: "PENGERJAAN", label: "Pengerjaan Pesanan" }, // jalur pengerjaan (BARU/custom): bukan "Fondasi Jadi" — tidak ada tahap bongkar/uji fondasi
+  { key: "UJI_HASIL", label: "Uji Hasil Sebelum Corner" }, // jalur pengerjaan: uji tekstur PIC (kasur) / pemeriksaan hasil QC, sebelum Corner
   { key: "BONGKAR", label: "Tahap Bongkar" },
   { key: "UJI_FONDASI", label: "Uji Fondasi" },
   { key: "FONDASI", label: "Fondasi Jadi" },
@@ -447,11 +455,15 @@ export function commandCenterColumn(view) {
   if (view.bucket === "DALAM_PERJALANAN") return "DALAM_PERJALANAN";
   // Bucket semantik (QC/HANDOFF) diperiksa LEBIH DULU dari stepNo mentah: rework yang menunggu QC bisa terpicu dari
   // stepNo 7/8 (uji tekstur gagal) tapi TETAP harus jatuh ke kolom uji tekstur, bukan Fondasi/Lapisan Jadi.
-  if (view.bucket === "QC") return "UJI_TEKSTUR";
+  if (view.bucket === "QC") return view.track === "BUILD" ? "UJI_HASIL" : "UJI_TEKSTUR";
   if (view.bucket === "HANDOFF") return "SIAP_KIRIM";
   const stepNo = view.next?.stepNo;
-  // Jalur pengerjaan (BARU/custom): belum mulai = Tiba / Belum Mulai; Pengerjaan Pesanan berjalan = kolom Fondasi (tidak ada kolom bongkar/uji fondasi untuk jalur ini).
-  if (view.track === "BUILD" && stepNo === 6) return view.bucket === "ANTREAN" || view.bucket === "TERHENTI" ? "TIBA_BELUM_MULAI" : "FONDASI";
+  // Jalur pengerjaan (BARU/custom): belum mulai = Tiba / Belum Mulai; Pengerjaan Pesanan berjalan = kolom Pengerjaan Pesanan (BUKAN "Fondasi Jadi" sebelum ada fondasi selesai);
+  // uji tekstur PIC / pemeriksaan hasil QC / Kirim ke Corner = Uji Hasil. Tahap Corner (>=10) tetap kolom Corner.
+  if (view.track === "BUILD") {
+    if (stepNo === 6) return view.bucket === "ANTREAN" || view.bucket === "TERHENTI" ? "TIBA_BELUM_MULAI" : "PENGERJAAN";
+    if (stepNo === 8 || stepNo === 9) return "UJI_HASIL";
+  }
   if (stepNo === 9) return "UJI_TEKSTUR";
   if (stepNo === 8) return "LAPISAN";
   if (stepNo === 7) return "FONDASI";

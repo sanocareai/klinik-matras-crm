@@ -81,7 +81,8 @@ export function canRecordInspection(run) {
 
 // Validasi form (mirror server; pesan Indonesia). form: { mode, photoUrls, referenceWeightKg, fitVerdict, customerPreferenceOverride, educationGiven,
 // note, reworkStageId, reason, materials:[{materialId, qty}] }.
-export function validateInspectionForm(form) {
+export function validateInspectionForm(form, { profile = "KASUR" } = {}) {
+  if (profile === "GENERIC") return validateGenericInspection(form);
   const errors = [];
   const photos = form.photoUrls || [];
   if (form.mode === "WAIVED") {
@@ -110,9 +111,40 @@ export function validateInspectionForm(form) {
   return { valid: errors.length === 0, errors };
 }
 
+// Profil GENERIC = pemeriksaan hasil produk NON-kasur (divan/sofa) oleh PIC QC: foto + catatan + lulus/gagal; TANPA berat acuan/uji berat badan/tekstur kasur (server menolak bila dikirim).
+function validateGenericInspection(form) {
+  const errors = [];
+  if (form.mode === "WAIVED") {
+    if (String(form.reason || "").trim().length < MIN_WAIVE_REASON) errors.push(`Alasan waive wajib diisi (minimal ${MIN_WAIVE_REASON} karakter)`);
+    return { valid: errors.length === 0, errors };
+  }
+  if ((form.photoUrls || []).length === 0) errors.push("Foto bukti wajib untuk hasil Lulus/Gagal");
+  if (form.mode === "FAIL") {
+    if (String(form.note || "").trim().length < 3) errors.push("Catatan temuan wajib diisi (minimal 3 karakter)");
+    if (!form.reworkStageId) errors.push("Tahap rework wajib dipilih");
+    const seen = new Set();
+    for (const line of form.materials || []) {
+      if (!line.materialId) errors.push("Pilih bahan untuk setiap baris bahan tambahan");
+      else if (seen.has(line.materialId)) errors.push("Satu bahan tidak boleh muncul dua kali");
+      seen.add(line.materialId);
+      if (!(Number(line.qty) > 0)) errors.push("Jumlah bahan tambahan harus lebih dari nol");
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
 // Body yang dikirim ke server dari state form (hanya field yang relevan per mode).
-export function buildInspectionBody(form, expectedRevision) {
+export function buildInspectionBody(form, expectedRevision, { profile = "KASUR" } = {}) {
   const base = { expectedRevision, result: form.mode };
+  if (profile === "GENERIC" && form.mode !== "WAIVED") {
+    const body = { ...base, photoUrls: form.photoUrls || [], note: String(form.note || "").trim() || undefined };
+    if (form.mode === "FAIL") {
+      body.reworkStageId = form.reworkStageId;
+      const materials = (form.materials || []).filter((m) => m.materialId).map((m) => ({ materialId: m.materialId, qty: Number(m.qty) }));
+      if (materials.length) body.supplementalMaterials = materials;
+    }
+    return body;
+  }
   if (form.mode === "WAIVED") return { ...base, reason: String(form.reason || "").trim() };
   const body = { ...base, photoUrls: form.photoUrls || [], referenceWeightKg: Number(form.referenceWeightKg), note: String(form.note || "").trim() || undefined };
   if (form.mode === "PASS") {

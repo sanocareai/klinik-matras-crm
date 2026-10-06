@@ -183,8 +183,18 @@ test("kolom Status Produksi (P9B.1): keadaan fisik, bukan status jadwal; tanpa m
   assert.equal(commandCenterColumn({ bucket: "LAPISAN", ...withPlan, next: { stepNo: 8 } }), "LAPISAN", "lapisan selesai, uji tekstur belum dikirim -> Lapisan Jadi");
   assert.equal(commandCenterColumn({ bucket: "QC", ...withPlan, next: { stepNo: 9 } }), "UJI_TEKSTUR");
   assert.equal(commandCenterColumn({ bucket: "QC", ...withPlan, next: { stepNo: 7, wait: "AWAITING_QC" } }), "UJI_TEKSTUR", "rework menunggu QC tetap di uji tekstur walau stepNo pemicu-nya 7");
-  assert.deepEqual(COMMAND_CENTER_COLUMNS.map((c) => c.label), ["Akan Masuk — Pickup Terjadwal", "Dalam Perjalanan", "Tiba / Belum Mulai", "Tahap Bongkar", "Uji Fondasi", "Fondasi Jadi", "Lapisan Jadi", "Uji Tekstur Sebelum Corner", "Corner", "Serah ke Gudang"]);
+  assert.deepEqual(COMMAND_CENTER_COLUMNS.map((c) => c.label), ["Akan Masuk — Pickup Terjadwal", "Dalam Perjalanan", "Tiba / Belum Mulai", "Pengerjaan Pesanan", "Uji Hasil Sebelum Corner", "Tahap Bongkar", "Uji Fondasi", "Fondasi Jadi", "Lapisan Jadi", "Uji Tekstur Sebelum Corner", "Corner", "Serah ke Gudang"]);
   assert.ok(!COMMAND_CENTER_COLUMNS.some((c) => c.key === "QC"), "kolom QC dilebur");
+  // Jalur pengerjaan (BARU/custom): tidak ada fondasi lama/uji fondasi — Pengerjaan Pesanan BUKAN "Fondasi Jadi"/"Uji Fondasi" sebelum fondasi selesai.
+  const build = { track: "BUILD", ...withPlan };
+  assert.equal(commandCenterColumn({ ...build, bucket: "ANTREAN", next: { stepNo: 6, action: "START" } }), "TIBA_BELUM_MULAI", "belum mulai = Tiba / Belum Mulai");
+  assert.equal(commandCenterColumn({ ...build, bucket: "FONDASI", next: { stepNo: 6, action: "EVIDENCE" } }), "PENGERJAAN", "sedang dikerjakan = Pengerjaan Pesanan, bukan Uji Fondasi/Fondasi Jadi");
+  assert.equal(commandCenterColumn({ ...build, bucket: "FONDASI", next: { stepNo: 6, wait: "MATERIAL_SHORTAGE" } }), "PENGERJAAN");
+  assert.equal(commandCenterColumn({ ...build, bucket: "LAPISAN", next: { stepNo: 8, action: "TEST" } }), "UJI_HASIL", "uji tekstur PIC (kasur)");
+  assert.equal(commandCenterColumn({ ...build, bucket: "QC", next: { wait: "AWAITING_QC", stepNo: 8 } }), "UJI_HASIL", "menunggu pemeriksaan QC");
+  assert.equal(commandCenterColumn({ ...build, bucket: "QC", next: { stepNo: 9, action: "HANDOFF" } }), "UJI_HASIL");
+  assert.equal(commandCenterColumn({ ...build, bucket: "CORNER", next: { stepNo: 10 } }), "CORNER");
+  assert.equal(commandCenterColumn({ bucket: "FONDASI", ...withPlan, next: { stepNo: 6 } }), "UJI_FONDASI", "jalur lama tidak berubah");
   assert.equal(commandCenterColumn({ bucket: "CORNER", ...withPlan, next: { stepNo: 11 } }), "CORNER");
   assert.equal(commandCenterColumn({ bucket: "HANDOFF", ...withPlan, next: { stepNo: 12, wait: "AWAITING_WAREHOUSE" } }), "SIAP_KIRIM");
   assert.equal(commandCenterColumn({ bucket: "SELESAI", ...withPlan, next: { wait: "COMPLETED" } }), null, "SELESAI dikeluarkan dari papan aktif (tetap terhitung KPI selesai hari ini)");

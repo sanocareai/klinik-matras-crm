@@ -9,7 +9,7 @@
 //   unit_custody_handoffs_v2 (tiba = INBOUND diterima; barang jadi = FINISHED_GOODS) · production_run_exceptions_v2.
 // V1 TIDAK dibaca sama sekali. Tidak ada harga/pembayaran/HPP. Tidak ada tulisan apa pun (read-only; dijaga writer audit).
 import { loadStepContextRouting } from "./productionReportingRouting.js";
-import { buildTrackUnitIds } from "./unitStageEngine.js";
+import { buildTrackUnits } from "./unitStageEngine.js";
 import { formatCell } from "./productionReportExport.js";
 import { resolveUnitPhotosBulk } from "./productionUnitPhotoService.js";
 import { usedQtyByMaterial } from "./productionUnitOverviewService.js";
@@ -67,7 +67,7 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
   const planIds = runs.map((r) => r.plan?.id).filter(Boolean);
   const uIds = [...new Set(runs.map((r) => r.unitId))];
   const serviceIds = [...new Set(runs.map((r) => r.unit.serviceId).filter(Boolean))];
-  const buildUnits = await buildTrackUnitIds(prisma, uIds); // jalur pengerjaan (pesanan BARU/custom): tahap berlaku berbeda dari restorasi
+  const buildUnits = await buildTrackUnits(prisma, uIds); // Map unitId -> klasifikasi produk // jalur pengerjaan (pesanan BARU/custom): tahap berlaku berbeda dari restorasi
 
   const [evidence, stageLogs, routing, issues, diagnoses, returns, moves, photos] = await Promise.all([
     prisma.productionStepEvidence.findMany({ where: { runId: { in: runIds } }, orderBy: [{ createdAt: "asc" }, { version: "asc" }], select: { id: true, runId: true, stepNo: true, stepCode: true, version: true, payload: true, media: true, actorId: true, createdAt: true } }),
@@ -147,7 +147,7 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
     const diag = diagByRun.get(run.id);
     const qcUrls = [...new Set(run.inspections.flatMap((q) => q.items.flatMap((i) => (i.photoUrls || []).filter((u) => LEGACY_PHOTO_PREFIX.test(u)))))];
     const matrix = buildDocumentationMatrix({
-      applicableSteps: applicableStepsFor(split), recordedSteps: recorded, nextStepNo: deriveNextStepNo(recorded), started: run.status !== "PENDING_ARRIVAL" && (run.operations.length > 0 || stepEv.length > 0),
+      applicableSteps: applicableStepsFor(split, buildUnits.get(run.unitId)?.flow ?? "KASUR"), recordedSteps: recorded, nextStepNo: deriveNextStepNo(recorded), started: run.status !== "PENDING_ARRIVAL" && (run.operations.length > 0 || stepEv.length > 0),
       run: { origin: run.origin, status: run.status }, qcDone: run.inspections.length > 0, stepMedia,
       extra: { pickupPhoto: photos.get(run.unitId) ? { url: "pickup" } : null, diagnosisPhotos: (diag?.photoUrls || []).map((u) => ({ url: u, kind: "image" })), qcPhotos: qcUrls.map((u) => ({ url: u, kind: "image" })) },
       docRows: parseDocRows(docEv),

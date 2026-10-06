@@ -175,6 +175,13 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
         <div className="space-y-3">
           <p className={labelCls}>{card?.track === "BUILD" ? "Bahan dari Gudang yang dipakai (opsional)" : "Bahan dari Gudang yang dipakai"}</p>
           <MaterialLines issued={issued} value={form.materials} onChange={(materials) => set({ materials })} emptyText="Belum ada bahan yang diserahkan Gudang untuk unit ini." />
+          {stepNo === 6 && card?.track === "BUILD" && card?.product?.flow !== "NON_KASUR" && (
+            <div className="space-y-2" data-testid="racikan-fields">
+              <p className={labelCls}>Racikan kasur (fondasi &amp; lapisan)</p>
+              <input aria-label="Racikan fondasi" className={field} placeholder="Fondasi — mis. pocket spring 25 cm + penguat pinggir" value={form.racikanFondasi || ""} onChange={(e) => set({ racikanFondasi: e.target.value })} />
+              <input aria-label="Racikan lapisan" className={field} placeholder="Lapisan — mis. latex 3 cm + busa D23 2 cm" value={form.racikanLapisan || ""} onChange={(e) => set({ racikanLapisan: e.target.value })} />
+            </div>
+          )}
           <div><label htmlFor="s67" className={labelCls}>{stepNo === 6 ? (card?.track === "BUILD" ? "Penjelasan pengerjaan pesanan" : "Penjelasan isi fondasi") : "Catatan lapisan (opsional)"}</label>
             <textarea id="s67" rows={2} className={field} value={form.note || ""} onChange={(e) => set({ note: e.target.value })} /></div>
         </div>

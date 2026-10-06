@@ -232,7 +232,15 @@ function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
         </div>
       )}
       {d.production.track === "BUILD"
-        ? <p data-testid="build-track-note" className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">Pesanan baru/custom: dikerjakan langsung dari spesifikasi &amp; layanan pesanan Sales. Pickup, bongkar, pencatatan komponen sebelum perbaikan, dan Diagnosis tidak berlaku.</p>
+        ? (
+          <div className="space-y-2">
+            <p data-testid="build-track-note" className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">Pesanan baru/custom: dikerjakan langsung dari spesifikasi &amp; layanan pesanan Sales. Pickup, bongkar, pencatatan komponen sebelum perbaikan, dan Diagnosis tidak berlaku.{d.production.product?.flow === "NON_KASUR" ? " Produk non-kasur: tanpa uji tekstur/berat badan kasur." : ""}</p>
+            {d.production.product?.flow !== "NON_KASUR" && (
+              <p data-testid="overview-racikan" className="m-0 rounded-btn border border-line px-3 py-2 text-[12.5px] text-ink2"><span className="text-ink3">Racikan: </span>{[d.production.racikan?.fondasi && `Fondasi — ${d.production.racikan.fondasi}`, d.production.racikan?.lapisan && `Lapisan — ${d.production.racikan.lapisan}`].filter(Boolean).join(" · ") || "belum dicatat"}</p>
+            )}
+            {d.production.product?.problem && <p data-testid="overview-product-problem" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Jenis produk: {d.production.product.problem}</p>}
+          </div>
+        )
         : <DiagnosisPanel d={d} onOpenWizard={onOpenDiagnosis} />}
     </div>
   );

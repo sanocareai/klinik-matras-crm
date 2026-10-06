@@ -20,10 +20,16 @@ export const STEP_BY_NO = Object.freeze(Object.fromEntries(STEPS.map((s) => [s.n
 
 // Jalur PENGERJAAN (pesanan BARU/custom, view.track === "BUILD"): tahap 6 = "Pengerjaan Pesanan"; tahap 1–5 & 7 tidak berlaku (server menandai NA).
 export const BUILD_TRACK = "BUILD";
-export const BUILD_STEP = Object.freeze({ no: 6, label: "Pengerjaan Pesanan", actor: "TABLE", hint: "Video hasil pengerjaan sesuai spesifikasi & layanan pesanan Sales. Catat bahan Gudang yang dipakai bila ada." });
+export const BUILD_STEP = Object.freeze({ no: 6, label: "Pengerjaan Pesanan", actor: "TABLE", hint: "Foto/video hasil pengerjaan sesuai spesifikasi & layanan pesanan Sales. Catat bahan Gudang yang dipakai bila ada." });
+export const BUILD_STEP_KASUR_HINT = "Catat racikan fondasi/lapisan yang dipakai (bersama PIC QC), foto/video hasil pengerjaan, dan bahan Gudang yang dipakai bila ada.";
 /** Label bucket menurut jalur: pada jalur pengerjaan bucket "Fondasi Baru" bernama "Pengerjaan Pesanan". */
 export const bucketLabelOf = (bucket, track) => (track === BUILD_TRACK && bucket === "FONDASI" ? BUILD_STEP.label : bucketStyle(bucket).label);
 export const stepOf = (no, track) => (track === BUILD_TRACK && no === 6 ? BUILD_STEP : STEP_BY_NO[no]);
+/** Alur produk jalur pengerjaan: "KASUR" (racikan + uji tekstur/berat badan) atau "NON_KASUR" (divan/sofa: tanpa uji kasur). Dari klasifikasi KANONIS server (card.product.flow). */
+export const productFlowOf = (card) => (card?.track === BUILD_TRACK ? card?.product?.flow || "KASUR" : null);
+export const isNonKasur = (card) => productFlowOf(card) === "NON_KASUR";
+/** Aturan media per tahap menurut jalur: tahap 6 jalur pengerjaan = foto ATAU video (video wajib hanya pada jalur restorasi). */
+export const mediaRuleFor = (stepNo, track) => (track === BUILD_TRACK && stepNo === 6 ? { min: 1, video: false } : MEDIA_RULES[stepNo] || { min: 0, video: false });
 
 export const OLD_MATERIALS = Object.freeze([
   { value: "PER", label: "Per / Spring" }, { value: "BUSA", label: "Busa" }, { value: "REBONDED", label: "Rebonded" },
@@ -79,7 +85,7 @@ export const priorityTone = (priority) => (priority >= 3 ? "red" : priority >= 1
 // "Belum Dijadwalkan"/"Dijadwalkan" DIHAPUS sebagai kolom (status jadwal sekarang badge kartu, bukan kolom) —
 // diganti "Dalam Perjalanan"/"Tiba / Belum Mulai" yang mencerminkan KEADAAN FISIK unit, bukan status jadwalnya.
 export const COMMAND_CENTER_COLUMNS = Object.freeze([
-  "AKAN_MASUK", "DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "BONGKAR", "UJI_FONDASI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "CORNER", "SIAP_KIRIM",
+  "AKAN_MASUK", "DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "PENGERJAAN", "UJI_HASIL", "BONGKAR", "UJI_FONDASI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "CORNER", "SIAP_KIRIM",
 ]);
 
 // Badge tanggal target (terpisah dari badge prioritas): besok=oranye, hari ini & belum mulai=merah, sudah lewat=merah "Terlambat".
@@ -164,8 +170,8 @@ export function friendlyError(error) {
 }
 
 // Validasi awal form tahap (cermin kontrak server). Mengembalikan pesan galat atau null.
-export function validateStepForm(stepNo, form, { mediaItems = [], track } = {}) {
-  const rule = MEDIA_RULES[stepNo] || { min: 0, video: false };
+export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = "KASUR" } = {}) {
+  const rule = mediaRuleFor(stepNo, track);
   const done = mediaItems.filter((m) => m.status === "done");
   if (mediaItems.some((m) => m.status === "uploading")) return "Tunggu unggahan selesai.";
   if (mediaItems.some((m) => m.status === "error")) return "Ada unggahan gagal — coba lagi atau hapus.";
@@ -186,7 +192,10 @@ export function validateStepForm(stepNo, form, { mediaItems = [], track } = {}) 
     }
     case 5: return (f.diagnosis || "").trim().length >= 10 ? null : "Tulis penjelasan diagnosa (minimal 10 karakter).";
     case 6:
-      if (track === BUILD_TRACK) return (f.note || "").trim().length >= 3 ? null : "Jelaskan pengerjaan pesanan."; // bahan opsional pada jalur pengerjaan
+      if (track === BUILD_TRACK) { // bahan opsional pada jalur pengerjaan; kasur custom wajib mencatat racikan fondasi dan/atau lapisan
+        if (flow !== "NON_KASUR" && (f.racikanFondasi || "").trim().length < 3 && (f.racikanLapisan || "").trim().length < 3) return "Isi racikan fondasi dan/atau lapisan.";
+        return (f.note || "").trim().length >= 3 ? null : "Jelaskan pengerjaan pesanan.";
+      }
       if (!(f.materials || []).some((m) => num(m.qty) > 0)) return "Pilih bahan Gudang yang dipakai.";
       return (f.note || "").trim().length >= 3 ? null : "Jelaskan isi fondasi baru.";
     case 7: return (f.materials || []).some((m) => num(m.qty) > 0) ? null : "Pilih bahan Gudang yang dipakai.";
@@ -205,7 +214,7 @@ export function validateStepForm(stepNo, form, { mediaItems = [], track } = {}) 
 }
 
 // Payload server dari form UI (angka dinormalisasi, field kosong dibuang).
-export function buildStepPayload(stepNo, form) {
+export function buildStepPayload(stepNo, form, { track, flow = "KASUR" } = {}) {
   const f = form || {};
   const num = (v) => Number(String(v ?? "").replace(",", "."));
   const lines = (list) => (list || []).filter((m) => num(m.qty) > 0).map((m) => ({ materialId: m.materialId, qty: num(m.qty) }));
@@ -215,7 +224,11 @@ export function buildStepPayload(stepNo, form) {
     case 3: return { oldMaterials: (f.oldMaterials || []).map((type) => ({ type, note: f.oldMaterialNotes?.[type]?.trim() || undefined })), note: f.note?.trim() || undefined };
     case 4: return { heightBeforeCm: num(f.heightBeforeCm), heightCompressedCm: num(f.heightCompressedCm), testerWeightKg: num(f.testerWeightKg), foundationIssues: (f.foundationIssues || []).filter(Boolean), note: f.note?.trim() || undefined };
     case 5: return { diagnosis: (f.diagnosis || "").trim(), inputMethod: f.inputMethod === "VOICE" ? "VOICE" : "TEXT" };
-    case 6: return { materials: lines(f.materials), note: (f.note || "").trim() };
+    case 6: {
+      const base = { materials: lines(f.materials), note: (f.note || "").trim() };
+      if (track === BUILD_TRACK && flow !== "NON_KASUR") base.racikan = { fondasi: (f.racikanFondasi || "").trim() || undefined, lapisan: (f.racikanLapisan || "").trim() || undefined };
+      return base;
+    }
     case 7: return { materials: lines(f.materials), note: f.note?.trim() || undefined };
     case 8: return { verdict: f.verdict, testerWeightKg: num(f.testerWeightKg), note: f.note?.trim() || undefined };
     case 9: return { note: f.note?.trim() || undefined };

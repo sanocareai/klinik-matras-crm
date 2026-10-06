@@ -34,7 +34,7 @@ import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState
 import { isDocumentationRow, DOC_STEP_CODE_PREFIX } from "../lib/domain/productionDocumentation.js";
 import { computeRunLeftovers, createLeftoverReturnsInTx } from "./productionMaterialReturnService.js";
 import { allManualMaterialsMapped, diagnosisBomValid } from "./productionDiagnosisCommandService.js";
-import { pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
+import { buildApplicableSteps, classifyProduct, pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -119,6 +119,11 @@ export async function loadStepContext(client, run) {
   // Mode adaptasi: tidak ada inspeksi QC; tahap 9 tercatat = serah ke Corner sudah dilakukan.
   const step9SinceQc = isAdaptationRun(run) ? evidence.some((e) => e.stepNo === 9 && !isSkippedEvidence(e)) : qcAt != null && evidence.some((e) => e.stepNo === 9 && new Date(e.createdAt).getTime() >= qcAt);
   const ordered = evidence.map((e, index) => ({ ...e, order: index }));
+  // Jalur pengerjaan: alur produk (KASUR / NON_KASUR) dari klasifikasi KANONIS pesanan (lini + jenis produk), bukan nama/awalan resi. BELUM_JELAS memakai alur KASUR dan dilaporkan.
+  const buildTrack = pathHasBuildStage(split?.stages);
+  const product = buildTrack
+    ? classifyProduct((await client.order.findUnique({ where: { id: run.unit.orderId }, select: { productLine: true, productType: true } })) || {})
+    : null;
   const state = {
     runStatus: run.status, currentPhase: run.currentPhase, unitStatus: run.unit.status,
     handoffPhaseStatus: run.phases.find((p) => p.phase === "HANDOFF")?.status ?? null,
@@ -135,7 +140,8 @@ export async function loadStepContext(client, run) {
     openShortage: !!openShortage,
     serviceSet: !!run.unit.serviceId,
     pathHasModules: !!split?.stages.some((s) => s.phase === "MODULE"),
-    buildTrack: pathHasBuildStage(split?.stages),
+    buildTrack,
+    productFlow: product?.flow ?? null, productClass: product?.productClass ?? null, productProblem: product?.problem ?? null,
     materialReady: material.ready,
     diagnosisManualMapped, diagnosisBomHasLines,
     adaptation: isAdaptationRun(run), // slice 2: QC tidak wajib -> tahap kerja tuntas = siap "Selesaikan Produksi"
@@ -144,15 +150,23 @@ export async function loadStepContext(client, run) {
 }
 
 // Nomor tahap yang berlaku untuk jalur unit (untuk "x dari 12"): tahap 6/7 hanya bila jalurnya punya modul terkait.
-export function applicableStepsFor(split) {
+export function applicableStepsFor(split, productFlow = "KASUR") {
   // Jalur pengerjaan (pesanan BARU): bongkar, pencatatan komponen lama, uji fondasi lama, dan diagnosa kerusakan TIDAK BERLAKU (status NA di tampilan, bukan dikerjakan).
-  const steps = new Set(pathHasBuildStage(split?.stages) ? [8, 9, 10, 11, 12] : [1, 2, 3, 4, 5, 8, 9, 10, 11, 12]);
+  // Produk non-kasur (divan/sofa): uji tekstur kasur (tahap 8) juga tidak berlaku.
+  if (pathHasBuildStage(split?.stages)) return buildApplicableSteps(productFlow);
+  const steps = new Set([1, 2, 3, 4, 5, 8, 9, 10, 11, 12]);
   for (const stage of split?.stages || []) {
     const n = stepNoForStage(stage);
     if (n === 6 || n === 7) steps.add(n);
   }
   if (!split?.stages.some((s) => s.phase === "MODULE")) { steps.add(6); steps.add(7); } // layanan belum ditetapkan: tampilkan lengkap
   return [...steps].sort((a, b) => a - b);
+}
+
+// Ringkasan pengerjaan terakhir (bukti tahap 6) untuk pembaca lain (mis. layar QC): racikan + penjelasan. Pembaca bukti tetap SATU pintu di file ini (audit pembaca P10B).
+export async function loadBuildSummary(client, runId) {
+  const row = await client.productionStepEvidence.findFirst({ where: { runId, stepNo: 6, stepCode: { not: { startsWith: DOC_STEP_CODE_PREFIX } } }, orderBy: { version: "desc" }, select: { payload: true } });
+  return row && !isSkippedEvidence(row) ? { racikan: row.payload?.racikan ?? null, note: row.payload?.note ?? null } : { racikan: null, note: null };
 }
 
 // Bahan yang sudah DISERAHKAN Gudang untuk rencana ini (issue ISSUED), per material.
@@ -238,7 +252,7 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
 
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_PRODUCTION_STEP", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
-    const evidenceCtx = { issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack };
+    const evidenceCtx = { issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow };
     let evidence = null;
     let transition = null;
     let autoStarted = null;
@@ -538,7 +552,9 @@ export async function skipProductionStep(prisma, { runId, stepNo, actorId, idemp
     const prepared = await prepareSkipInTx(tx, run); // pra-cek kebijakan, konflik/drift, tahap target boleh dilewati
     const ctx = await loadStepContext(tx, run);
     const lastPreQc = ctx.split?.stages.at(-1) ?? null;
-    const covered = stepsCoveredByStage(prepared.stage, { isLastPreQc: !!lastPreQc && lastPreQc.id === prepared.stage.id });
+    const coveredAll = stepsCoveredByStage(prepared.stage, { isLastPreQc: !!lastPreQc && lastPreQc.id === prepared.stage.id });
+    // Jalur pengerjaan: hanya tahap yang BERLAKU yang ditutup SKIPPED (tahap tidak berlaku tetap NA, tidak dikarang sebagai "dilewati").
+    const covered = ctx.state.buildTrack ? coveredAll.filter((n) => applicableStepsFor(ctx.split, ctx.state.productFlow).includes(n)) : coveredAll;
     if (!covered.includes(requestedStep)) {
       throw stepError(`Tahap ${requestedStep} bukan tahap yang berikutnya. Tahap berikutnya: ${covered.join(", ") || "—"} (${prepared.stage.labelId}).`, 409, "STEP_OUT_OF_ORDER", { expectedStep: covered[0] ?? null, action: "SKIP" });
     }
@@ -580,7 +596,7 @@ export async function previewFinishProduction(prisma, runId) {
   const done = ctx.state.target?.done === true;
   const idx = done ? path.length : (curId ? path.findIndex((s) => s.id === curId) : 0);
   const remainingStages = path.slice(Math.max(0, idx)).map((s) => ({ id: s.id, code: s.code, label: s.labelId, isQcGate: !!s.requiresQc }));
-  const applicable = applicableStepsFor(ctx.split);
+  const applicable = applicableStepsFor(ctx.split, ctx.state?.productFlow ?? "KASUR");
   const recorded = new Set(ctx.evidence.map((e) => e.stepNo));
   const willSkipSteps = applicable.filter((n) => !recorded.has(n)).map((n) => ({ no: n, label: STEP_BY_NO[n].label }));
   const doneSteps = ctx.evidence.filter((e) => !isSkippedEvidence(e)).map((e) => e.stepNo);
@@ -643,7 +659,7 @@ export async function finishProduction(prisma, { runId, actorId, idempotencyKey,
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "FINISH_PRODUCTION", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
     const result = await applyAdaptationFinishInTx(tx, { run, actorId, now });
-    const applicable = applicableStepsFor(ctx.split);
+    const applicable = applicableStepsFor(ctx.split, ctx.state?.productFlow ?? "KASUR");
     const written = [];
     for (const no of applicable) {
       if (ctx.evidence.some((e) => e.stepNo === no)) continue;

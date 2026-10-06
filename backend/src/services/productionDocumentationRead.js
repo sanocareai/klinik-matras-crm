@@ -43,7 +43,7 @@ export async function buildRunDocumentation(prisma, run, ctx) {
   }));
   const started = run.status !== "PENDING_ARRIVAL" && ((run.operations?.length ?? 0) > 0 || evidence.length > 0);
   const matrix = buildDocumentationMatrix({
-    applicableSteps: applicableStepsFor(ctx.split),
+    applicableSteps: applicableStepsFor(ctx.split, ctx.state?.productFlow ?? "KASUR"),
     recordedSteps: new Set(evidence.map((e) => e.stepNo)),
     nextStepNo: deriveNextStepNo(new Set(evidence.map((e) => e.stepNo))),
     started,

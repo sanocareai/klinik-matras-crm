@@ -19,7 +19,7 @@ import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import {
-  isUnitPathDoneInTx, recordQcFitTestInTx, reopenStageBeforeQcInTx, restoreUnitStatusInTx, startStageInTx, waiveQcGateInTx, pathForUnit,
+  isUnitPathDoneInTx, recordQcFitTestInTx, reopenStageBeforeQcInTx, restoreUnitStatusInTx, startStageInTx, waiveQcGateInTx, pathForUnit, buildTrackUnits,
 } from "./unitStageEngine.js";
 import { cancelOfferedFinishedGoodsCustodyInTx, offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
 import { assertPlanBOMLines, loadPlanForWrite, reserveSupplementalInTx } from "./productionPlanningCommandService.js";
@@ -28,6 +28,7 @@ import { getWorkshopRun, workshopPathOf } from "./productionWorkshopExecutionCom
 import {
   ALLOWED_RESOLUTIONS, RUN_OWNED_STATUSES, RUN_TERMINAL_STATUSES, assertNoOpenRunException, assertRunConsistent, detectRunInconsistency,
 } from "./productionRunGuards.js";
+import { loadBuildSummary } from "./productionStepCommandService.js";
 import { assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
@@ -62,7 +63,8 @@ export function assertRunRevision(run, expectedRevision) {
 const cleanUrls = (value) => (Array.isArray(value) ? value.map((u) => String(u ?? "").trim()).filter(Boolean) : []);
 
 // Validasi + normalisasi input inspeksi (murni; diuji unit). Mengembalikan objek ternormalisasi atau melempar galat 400/422 berkode.
-export function validateInspectionInput(input = {}) {
+// generic = pemeriksaan hasil NON-kasur (divan/sofa, jalur pengerjaan): TANPA berat acuan/uji berat badan — keputusan lulus/gagal + foto + catatan saja.
+export function validateInspectionInput(input = {}, { generic = false } = {}) {
   const result = String(input.result ?? "").toUpperCase();
   if (!RESULT_TO_DB[result]) throw qcError("Hasil QC harus PASS, FAIL, atau WAIVED", 400, "QC_RESULT_INVALID");
   const photoUrls = cleanUrls(input.photoUrls);
@@ -78,9 +80,11 @@ export function validateInspectionInput(input = {}) {
   }
 
   if (photoUrls.length === 0) throw qcError("Foto bukti wajib untuk PASS/FAIL", 400, "QC_EVIDENCE_REQUIRED");
-  const weight = Number(input.referenceWeightKg);
-  if (!Number.isInteger(weight) || weight <= 0) throw qcError("Berat acuan (kg, bilangan bulat > 0) wajib diisi", 400, "QC_WEIGHT_REQUIRED");
-  out.referenceWeightKg = weight;
+  if (!generic) {
+    const weight = Number(input.referenceWeightKg);
+    if (!Number.isInteger(weight) || weight <= 0) throw qcError("Berat acuan (kg, bilangan bulat > 0) wajib diisi", 400, "QC_WEIGHT_REQUIRED");
+    out.referenceWeightKg = weight;
+  }
 
   const items = [];
   if (input.items != null) {
@@ -96,6 +100,17 @@ export function validateInspectionInput(input = {}) {
       if (!label) throw qcError(`Label butir ${code} wajib diisi`, 400, "QC_ITEMS_INVALID");
       items.push({ itemCode: code, label, result: itemResult, note: String(item?.note ?? "").trim() || null, photoUrls: cleanUrls(item?.photoUrls) });
     });
+  }
+
+  if (generic) {
+    if (input.customerPreferenceOverride || input.fitVerdict) throw qcError("Produk non-kasur tidak memakai uji berat badan/tekstur kasur", 422, "QC_GENERIC_NO_FIT");
+    if (items.some((item) => item.result === "NOT_OK") && result === "PASS") throw qcError("PASS tidak boleh memuat butir checklist NOT_OK", 422, "QC_ITEM_CONTRADICTS");
+    if (result === "PASS") return { ...out, generic: true, fitVerdict: null, customerPreferenceOverride: null, educationGiven: false, items, supplementalMaterials: [] };
+    if (note.length < 3) throw qcError("Catatan temuan wajib diisi untuk FAIL (minimal 3 karakter)", 400, "QC_NOTE_REQUIRED");
+    if (!input.reworkStageId) throw qcError("Tahap rework wajib ditentukan secara eksplisit", 400, "QC_REWORK_STAGE_REQUIRED");
+    const supplementalMaterials = Array.isArray(input.supplementalMaterials) ? input.supplementalMaterials.map((l) => ({ materialId: l?.materialId, qty: Number(l?.qty) })) : [];
+    if (supplementalMaterials.length) assertPlanBOMLines(supplementalMaterials);
+    return { ...out, generic: true, fitVerdict: null, reworkStageId: input.reworkStageId, items, supplementalMaterials };
   }
 
   if (result === "PASS") {
@@ -188,7 +203,10 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
   if (!runId) throw qcError("runId wajib diisi", 400, "QC_RUN_ID_REQUIRED");
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
-  const data = validateInspectionInput(input);
+  // Profil QC ditentukan SERVER dari jenis produk kanonis (bukan dari isian klien): NON-kasur pada jalur pengerjaan = pemeriksaan hasil tanpa uji berat badan.
+  const pre = await prisma.productionRun.findUnique({ where: { id: runId }, select: { unitId: true } });
+  const generic = pre ? (await buildTrackUnits(prisma, [pre.unitId])).get(pre.unitId)?.flow === "NON_KASUR" : false;
+  const data = validateInspectionInput(input, { generic });
   if (data.result === "WAIVED" ? !canWaive : !canInspect) {
     throw qcError(data.result === "WAIVED" ? "Hanya pihak berwenang (QC_WAIVE) yang boleh mem-waive QC" : "Anda tidak berwenang memutuskan hasil QC (QC_WRITE)", 403, data.result === "WAIVED" ? "QC_WAIVE_FORBIDDEN" : "QC_WRITE_REQUIRED");
   }
@@ -227,6 +245,7 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
       fit = await viaEngine(() => recordQcFitTestInTx(tx, run.unitId, qcStage.id, {
         actorId, verdict: data.fitVerdict, referenceWeightKg: data.referenceWeightKg, customerPreferenceOverride: data.customerPreferenceOverride,
         educationGiven: data.educationGiven, note: data.note || null, photoUrls: data.photoUrls, reworkStageId: data.result === "FAIL" ? data.reworkStageId : null, deferReady: true,
+        ...(data.generic ? { generic: true, genericPassed: data.result === "PASS" } : {}),
       }));
       if ((data.result === "PASS") !== (fit.result === "PASSED")) throw qcError("Hasil uji berat badan tidak konsisten dengan keputusan QC", 422, "QC_VERDICT_INVALID");
       reworkStage = fit.reworkStage ?? null;
@@ -665,12 +684,16 @@ export async function listQcQueue(prisma, { tab = "AWAITING_QC", unitIds = null,
     },
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }], take: 200,
   });
-  return runs
+  const selected = runs
     .map((run) => ({ run, state: stateOf(run) }))
     .filter(({ state }) => state === tab)
-    .slice(0, Math.min(Math.max(Number(limit) || 100, 1), 200))
+    .slice(0, Math.min(Math.max(Number(limit) || 100, 1), 200));
+  const builds = await buildTrackUnits(prisma, selected.map(({ run }) => run.unitId));
+  return selected
     .map(({ run, state }) => ({
       runId: run.id, revision: run.revision, state, origin: run.origin, currentPhase: run.currentPhase,
+      // Jalur pengerjaan (BARU/custom): profil QC dari jenis produk kanonis — KASUR (uji berat badan) atau GENERIC (pemeriksaan hasil divan/sofa, tanpa uji berat badan).
+      track: builds.has(run.unitId) ? "BUILD" : "RESTORATION", qcProfile: builds.get(run.unitId)?.flow === "NON_KASUR" ? "GENERIC" : "KASUR", productClass: builds.get(run.unitId)?.productClass ?? null,
       unit: { id: run.unit.id, unitCode: run.unit.unitCode, status: run.unit.status, orderNumber: run.unit.order?.orderNumber ?? null, category: run.unit.order?.category ?? null },
       workCenter: run.plan?.workCenter ?? null, operator: run.plan?.operator ? { id: run.plan.operator.id, name: run.plan.operator.user?.name ?? null } : null,
       lastInspection: run.inspections[0] ? { version: run.inspections[0].version, result: run.inspections[0].result, disposition: run.inspections[0].disposition, inspectedAt: run.inspections[0].inspectedAt } : null,
@@ -702,8 +725,13 @@ export async function getQcRun(prisma, runId) {
   });
   const found = detectRunInconsistency({ run, unit: run.unit });
   const conflictOpen = run.exceptions.find((e) => e.status === "OPEN") || null;
+  const build = (await buildTrackUnits(prisma, [run.unitId])).get(run.unitId) ?? null;
+  const buildSummary = build ? await loadBuildSummary(prisma, runId) : null;
+  const orderSpec = build ? await prisma.order.findFirst({ where: { units: { some: { id: run.unitId } } }, select: { notes: true, productType: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } } } }) : null;
   return {
     ...base, state: stateOf({ ...run, exceptions: run.exceptions }),
+    track: build ? "BUILD" : "RESTORATION", qcProfile: build?.flow === "NON_KASUR" ? "GENERIC" : "KASUR", productClass: build?.productClass ?? null, productClassProblem: build?.problem ?? null,
+    ...(build ? { racikan: buildSummary?.racikan ?? null, buildNote: buildSummary?.note ?? null, salesServices: (orderSpec?.items || []).map((i) => i.layananName), salesNotes: orderSpec?.notes ?? null } : {}),
     inspections: run.inspections.map((i) => ({
       id: i.id, version: i.version, result: i.result, disposition: i.disposition, overrideReason: i.overrideReason, inspectedAt: i.inspectedAt, inspector: nameById.get(i.inspectorId) ?? null, qcFitTestId: i.qcFitTestId,
       items: i.items.map((item) => ({ itemCode: item.itemCode, label: item.label, result: item.result, note: item.note, photoUrls: item.photoUrls })),
