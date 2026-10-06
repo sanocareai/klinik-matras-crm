@@ -173,9 +173,9 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
     case 7:
       return (
         <div className="space-y-3">
-          <p className={labelCls}>Bahan dari Gudang yang dipakai</p>
+          <p className={labelCls}>{card?.track === "BUILD" ? "Bahan dari Gudang yang dipakai (opsional)" : "Bahan dari Gudang yang dipakai"}</p>
           <MaterialLines issued={issued} value={form.materials} onChange={(materials) => set({ materials })} emptyText="Belum ada bahan yang diserahkan Gudang untuk unit ini." />
-          <div><label htmlFor="s67" className={labelCls}>{stepNo === 6 ? "Penjelasan isi fondasi" : "Catatan lapisan (opsional)"}</label>
+          <div><label htmlFor="s67" className={labelCls}>{stepNo === 6 ? (card?.track === "BUILD" ? "Penjelasan pengerjaan pesanan" : "Penjelasan isi fondasi") : "Catatan lapisan (opsional)"}</label>
             <textarea id="s67" rows={2} className={field} value={form.note || ""} onChange={(e) => set({ note: e.target.value })} /></div>
         </div>
       );

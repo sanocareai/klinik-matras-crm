@@ -219,6 +219,7 @@ function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
           <li key={s.no} className={`flex min-h-[44px] items-center gap-2 rounded-btn px-3 py-2 text-[12.5px] ${s.status === "DONE" ? "bg-greenbg text-green" : s.status === "CURRENT" ? "bg-accentbg font-semibold text-accent" : s.status === "WAITING" ? "bg-orangebg text-orange" : s.status === "NA" ? "text-ink3 line-through" : "bg-inset text-ink3"}`}>
             {s.status === "DONE" ? <CheckCircle2 size={14} aria-hidden /> : <span className="w-4 shrink-0 text-center tabular-nums">{s.no}</span>}
             <span className="min-w-0 flex-1 truncate">{s.label}</span>
+            {s.status === "NA" && <span data-testid="step-na" title={s.naReason || undefined} className="shrink-0 text-[10.5px] font-semibold text-ink3 no-underline">tidak berlaku</span>}
             {s.status === "SKIPPED" && <span data-testid="step-skipped" className="shrink-0 text-[10.5px] font-semibold text-ink3">{SKIP_LABEL}</span>}
             {s.actor && <span className="shrink-0 text-[10px] text-ink3">{s.actor}</span>}
           </li>
@@ -230,7 +231,9 @@ function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
           <p className="m-0 font-semibold text-ink">{d.production.activeOp.stageLabel} — {d.production.activeOp.status === "PAUSED" && d.production.activeOp.delayKind ? delayKindText(d.production.activeOp.delayKind, d.production.activeOp.delayNote) : d.production.activeOp.status}</p>
         </div>
       )}
-      <DiagnosisPanel d={d} onOpenWizard={onOpenDiagnosis} />
+      {d.production.track === "BUILD"
+        ? <p data-testid="build-track-note" className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">Pesanan baru/custom: dikerjakan langsung dari spesifikasi &amp; layanan pesanan Sales. Pickup, bongkar, pencatatan komponen sebelum perbaikan, dan Diagnosis tidak berlaku.</p>
+        : <DiagnosisPanel d={d} onOpenWizard={onOpenDiagnosis} />}
     </div>
   );
 }

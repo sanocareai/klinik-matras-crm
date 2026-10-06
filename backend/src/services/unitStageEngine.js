@@ -42,6 +42,7 @@ import { guardV1UnitWrite, UnitV2OwnedError, UnitConcurrentChangeError } from ".
 import { PERMISSIONS as P } from "../constants/permissions.js";
 import { hasPermission } from "../middleware/authorize.js";
 import { decideV1StageActor } from "../lib/domain/v1StageActor.js";
+import { BUILD_CATEGORIES, BUILD_STAGE_CODE } from "../lib/domain/productionBuildTrack.js";
 
 // Isolation SERIALIZABLE untuk keempat perintah eksekusi inti (START/PAUSE/
 // RESUME/COMPLETE, Production Core Slice 3I) — pola "baca state tahap
@@ -106,8 +107,33 @@ export async function assertV1StageActorInTx(tx, unitId, { actorId, stageId = nu
   return decision;
 }
 
-/** Ambil seluruh tahap INTAKE/FINISH global + tahap MODULE milik satu layanan. */
-async function loadRoutingData(tx, serviceId) {
+/**
+ * Unit memakai jalur PENGERJAAN PESANAN (pesanan BARU/custom yang lahir di workshop)? Ditentukan dari jenis unit kanonis (Order.category) + Run WORKSHOP_BORN —
+ * bukan awalan nomor resi. Run apa pun (termasuk yang sudah selesai) menentukannya, supaya riwayat unit tetap terbaca di jalur yang sama.
+ */
+export async function unitUsesBuildTrack(client, unitId) {
+  if (!unitId) return false;
+  return !!(await client.productionRun.findFirst({ where: { unitId, origin: "WORKSHOP_BORN", unit: { order: { category: { in: [...BUILD_CATEGORIES] } } } }, select: { id: true } }));
+}
+
+/** Versi BULK (satu query) untuk pemanggil yang menyaring banyak unit: himpunan id unit yang memakai jalur pengerjaan. */
+export async function buildTrackUnitIds(client, unitIds) {
+  const ids = [...new Set((unitIds || []).filter(Boolean))];
+  if (!ids.length) return new Set();
+  const rows = await client.productionRun.findMany({ where: { unitId: { in: ids }, origin: "WORKSHOP_BORN", unit: { order: { category: { in: [...BUILD_CATEGORIES] } } } }, select: { unitId: true }, distinct: ["unitId"] });
+  return new Set(rows.map((r) => r.unitId));
+}
+
+/** Ambil seluruh tahap INTAKE/FINISH global + tahap MODULE milik satu layanan (atau, jalur pengerjaan: tanpa INTAKE + tahap Pengerjaan Pesanan). */
+async function loadRoutingData(tx, serviceId, { build = false } = {}) {
+  if (build) {
+    const [buildStage, finishStages] = await Promise.all([
+      tx.routingStage.findFirst({ where: { code: BUILD_STAGE_CODE, active: true } }),
+      tx.routingStage.findMany({ where: { phase: "FINISH", active: true } }),
+    ]);
+    if (!buildStage) throw new Error("Tahap \"Pengerjaan Pesanan\" belum tersedia di master routing (migrasi 20261018100000_production_build_stage belum diterapkan)");
+    return { intakeStages: [], finishStages, moduleStages: [buildStage] };
+  }
   const [intakeStages, finishStages, moduleMappings] = await Promise.all([
     tx.routingStage.findMany({ where: { phase: "INTAKE", active: true } }),
     tx.routingStage.findMany({ where: { phase: "FINISH", active: true } }),
@@ -124,8 +150,9 @@ async function loadRoutingData(tx, serviceId) {
 }
 
 /** Bangun jalur penuh unit ini. Lempar error jelas kalau layanan belum ditetapkan tapi dibutuhkan. */
-export async function pathForUnit(tx, unit) {
-  const { intakeStages, finishStages, moduleStages } = await loadRoutingData(tx, unit.serviceId);
+export async function pathForUnit(tx, unit, { build } = {}) {
+  const useBuild = build ?? await unitUsesBuildTrack(tx, unit.id); // `build` = petunjuk pemanggil BULK (tanpa query per unit); tanpa petunjuk dideteksi dari DB
+  const { intakeStages, finishStages, moduleStages } = await loadRoutingData(tx, unit.serviceId, { build: useBuild });
   return buildUnitPath(intakeStages, moduleStages, finishStages);
 }
 

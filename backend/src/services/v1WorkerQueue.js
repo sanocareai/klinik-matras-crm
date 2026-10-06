@@ -1,7 +1,7 @@
 // P12C.1 — antrean pekerjaan V1 per PIC untuk Aplikasi Meja/Corner. BACA-SAJA: tidak menulis apa pun, tidak membuat Run/rencana/antrean baru.
 // Kandidat unit = unit yang punya StageAssignment ke operator ini (penugasan sah, termasuk yang BELUM dimulai); keadaan diturunkan dari engine V1
 // (resolveCurrentTarget) + penugasan tahap hilir/sebelumnya (lib/domain/v1WorkerQueue.js). Unit di cohort reader V2 TIDAK dimuat di sini (antrean V2 yang memuatnya).
-import { pathForUnit, resolveCurrentTarget } from "./unitStageEngine.js";
+import { buildTrackUnitIds, pathForUnit, resolveCurrentTarget } from "./unitStageEngine.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "./v2FeatureFlags.js";
 import { deriveV1WorkItem, lastPicOperatorId, laneOfStage, rankV1Items } from "../lib/domain/v1WorkerQueue.js";
 import { displayStatusOfOrder, displayStatusOfUnit, priorityDisplay } from "../lib/domain/productionDisplay.js";
@@ -44,10 +44,13 @@ export async function listV1WorkerQueue(prisma, { userId, lane }) {
 
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
   const pathCache = new Map();
+  const buildUnits = await buildTrackUnitIds(prisma, unitIds);
   const items = [];
   for (const unit of units) {
-    if (!pathCache.has(unit.serviceId ?? "none")) pathCache.set(unit.serviceId ?? "none", await pathForUnit(prisma, unit));
-    const path = pathCache.get(unit.serviceId ?? "none");
+    const build = buildUnits.has(unit.id); // jalur pengerjaan tidak bergantung layanan: kunci cache memuat jalurnya
+    const cacheKey = build ? "build" : (unit.serviceId ?? "none");
+    if (!pathCache.has(cacheKey)) pathCache.set(cacheKey, await pathForUnit(prisma, unit, { build }));
+    const path = pathCache.get(cacheKey);
     const target = await resolveCurrentTarget(prisma, unit, path);
     const assignments = assignByUnit.get(unit.id) || new Map();
     const completedActorByStage = new Map(path.map((s) => [s.id, actorByUnitStage.get(`${unit.id}:${s.id}`) ?? null]));

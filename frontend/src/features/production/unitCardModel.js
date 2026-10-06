@@ -1,7 +1,7 @@
 // P9 UX Realignment — model MURNI untuk kartu unit yang SAMA dipakai Status Produksi, Rencana Produksi, dan Quality
 // Control (satu kartu, satu bahasa visual). Tanpa React/DOM supaya bisa diuji langsung. Semua angka/label berasal dari
 // view Command Center yang sudah dikirim server — modul ini hanya MENERJEMAHKAN, tidak menghitung KPI sendiri.
-import { STEP_BY_NO, bucketStyle } from "@/features/production/experience.js";
+import { bucketLabelOf, stepOf } from "@/features/production/experience.js";
 import { PRODUCT_TYPE_LABELS } from "@/utils/format.js";
 import { rankOfView } from "@/features/production/productionLabels.js";
 
@@ -43,8 +43,8 @@ export function materialBadge(view) {
 // Tahap yang sedang/ berikutnya dikerjakan ("Langkah 5 · Diagnosa"), atau label bucket bila tidak ada tahap.
 export function stageText(view) {
   const n = view?.next?.stepNo;
-  if (n && STEP_BY_NO[n]) return `Langkah ${n} · ${STEP_BY_NO[n].label}`;
-  return bucketStyle(view?.bucket).label;
+  if (n && stepOf(n, view?.track)) return `Langkah ${n} · ${stepOf(n, view?.track).label}`;
+  return bucketLabelOf(view?.bucket, view?.track);
 }
 
 export const MEJA = Object.freeze(["TABLE_1", "TABLE_2", "TABLE_3", "TABLE_4"]);

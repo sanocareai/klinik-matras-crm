@@ -6,7 +6,7 @@ import EvidenceCapture from "@/features/production/components/EvidenceCapture.js
 import StepForm from "@/features/production/components/StepForm.jsx";
 import { DiagnosisWizard } from "@/features/production/DiagnosisWizard.jsx";
 import {
-  MEDIA_RULES, STEP_BY_NO, actionLabel, buildStepPayload, clearDraft, createIntentKeys, friendlyError, isRetryableError, loadDraft, saveDraft, validateStepForm,
+  MEDIA_RULES, stepOf, actionLabel, buildStepPayload, clearDraft, createIntentKeys, friendlyError, isRetryableError, loadDraft, saveDraft, validateStepForm,
 } from "@/features/production/experience.js";
 import { submitState } from "./workerAppModel.js";
 import { DELAY_ACTION_LABEL, DELAY_QUESTION, DELAY_REASONS, delayStatusText } from "@/features/production/productionLabels.js";
@@ -84,7 +84,7 @@ export function StepSheet({ card, next, onClose, onSubmitted }) {
 
 function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
   const online = useOnline();
-  const step = STEP_BY_NO[stepNo];
+  const step = stepOf(stepNo, card.track);
   const draft = useMemo(() => loadDraft(storage, card.runId, stepNo), [card.runId, stepNo]);
   const [form, setForm] = useState(() => draft?.form || {});
   const [media, setMedia] = useState(() => (draft?.media || []).filter((m) => m.status === "done"));
@@ -99,7 +99,7 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
   }, [form, media, card.runId, stepNo]);
 
   async function submit() {
-    const invalid = validateStepForm(stepNo, form, { mediaItems: media });
+    const invalid = validateStepForm(stepNo, form, { mediaItems: media, track: card.track });
     if (invalid) { setError(invalid); return; }
     setBusy(true); setError(""); setCanRetry(false);
     const key = intentKeys.keyFor(card.runId, stepNo, card.revision);
@@ -135,7 +135,7 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
         {!online && <OfflineNote />}
         <button type="button" data-mutates onClick={submit} disabled={gate.disabled}
           className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-btn bg-accent text-[16px] font-bold text-white disabled:opacity-50">
-          {busy ? <><Loader2 size={20} className="animate-spin" aria-hidden /> Mengirim…</> : canRetry ? "Coba Lagi" : actionLabel(next, { stageLabel: card.activeOp?.stageLabel })}
+          {busy ? <><Loader2 size={20} className="animate-spin" aria-hidden /> Mengirim…</> : canRetry ? "Coba Lagi" : actionLabel(next, { stageLabel: card.activeOp?.stageLabel, track: card.track })}
         </button>
       </div>
     </div>

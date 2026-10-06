@@ -34,6 +34,7 @@ import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState
 import { isDocumentationRow, DOC_STEP_CODE_PREFIX } from "../lib/domain/productionDocumentation.js";
 import { computeRunLeftovers, createLeftoverReturnsInTx } from "./productionMaterialReturnService.js";
 import { allManualMaterialsMapped, diagnosisBomValid } from "./productionDiagnosisCommandService.js";
+import { pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -134,6 +135,7 @@ export async function loadStepContext(client, run) {
     openShortage: !!openShortage,
     serviceSet: !!run.unit.serviceId,
     pathHasModules: !!split?.stages.some((s) => s.phase === "MODULE"),
+    buildTrack: pathHasBuildStage(split?.stages),
     materialReady: material.ready,
     diagnosisManualMapped, diagnosisBomHasLines,
     adaptation: isAdaptationRun(run), // slice 2: QC tidak wajib -> tahap kerja tuntas = siap "Selesaikan Produksi"
@@ -143,7 +145,8 @@ export async function loadStepContext(client, run) {
 
 // Nomor tahap yang berlaku untuk jalur unit (untuk "x dari 12"): tahap 6/7 hanya bila jalurnya punya modul terkait.
 export function applicableStepsFor(split) {
-  const steps = new Set([1, 2, 3, 4, 5, 8, 9, 10, 11, 12]);
+  // Jalur pengerjaan (pesanan BARU): bongkar, pencatatan komponen lama, uji fondasi lama, dan diagnosa kerusakan TIDAK BERLAKU (status NA di tampilan, bukan dikerjakan).
+  const steps = new Set(pathHasBuildStage(split?.stages) ? [8, 9, 10, 11, 12] : [1, 2, 3, 4, 5, 8, 9, 10, 11, 12]);
   for (const stage of split?.stages || []) {
     const n = stepNoForStage(stage);
     if (n === 6 || n === 7) steps.add(n);
@@ -235,7 +238,7 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
 
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_PRODUCTION_STEP", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
-    const evidenceCtx = { issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map() };
+    const evidenceCtx = { issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack };
     let evidence = null;
     let transition = null;
     let autoStarted = null;

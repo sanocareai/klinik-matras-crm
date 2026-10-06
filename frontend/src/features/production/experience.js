@@ -18,6 +18,13 @@ export const STEPS = Object.freeze([
 ]);
 export const STEP_BY_NO = Object.freeze(Object.fromEntries(STEPS.map((s) => [s.no, s])));
 
+// Jalur PENGERJAAN (pesanan BARU/custom, view.track === "BUILD"): tahap 6 = "Pengerjaan Pesanan"; tahap 1–5 & 7 tidak berlaku (server menandai NA).
+export const BUILD_TRACK = "BUILD";
+export const BUILD_STEP = Object.freeze({ no: 6, label: "Pengerjaan Pesanan", actor: "TABLE", hint: "Video hasil pengerjaan sesuai spesifikasi & layanan pesanan Sales. Catat bahan Gudang yang dipakai bila ada." });
+/** Label bucket menurut jalur: pada jalur pengerjaan bucket "Fondasi Baru" bernama "Pengerjaan Pesanan". */
+export const bucketLabelOf = (bucket, track) => (track === BUILD_TRACK && bucket === "FONDASI" ? BUILD_STEP.label : bucketStyle(bucket).label);
+export const stepOf = (no, track) => (track === BUILD_TRACK && no === 6 ? BUILD_STEP : STEP_BY_NO[no]);
+
 export const OLD_MATERIALS = Object.freeze([
   { value: "PER", label: "Per / Spring" }, { value: "BUSA", label: "Busa" }, { value: "REBONDED", label: "Rebonded" },
   { value: "KAIN", label: "Kain" }, { value: "LATEX", label: "Latex" }, { value: "KAPUK", label: "Kapuk" }, { value: "LAINNYA", label: "Lainnya" },
@@ -86,9 +93,9 @@ export function targetDateBadge(view, today, tomorrow) {
 }
 
 // Teks tombol aksi utama untuk kartu pekerja.
-export function actionLabel(next, { stageLabel } = {}) {
+export function actionLabel(next, { stageLabel, track } = {}) {
   if (!next) return null;
-  const step = STEP_BY_NO[next.stepNo];
+  const step = stepOf(next.stepNo, track);
   switch (next.action) {
     case "START_WITH_EVIDENCE": return "Mulai: Foto Sebelum Bongkar";
     case "START": return `Mulai ${stageLabel || step?.label || "Tahap"}`;
@@ -157,7 +164,7 @@ export function friendlyError(error) {
 }
 
 // Validasi awal form tahap (cermin kontrak server). Mengembalikan pesan galat atau null.
-export function validateStepForm(stepNo, form, { mediaItems = [] } = {}) {
+export function validateStepForm(stepNo, form, { mediaItems = [], track } = {}) {
   const rule = MEDIA_RULES[stepNo] || { min: 0, video: false };
   const done = mediaItems.filter((m) => m.status === "done");
   if (mediaItems.some((m) => m.status === "uploading")) return "Tunggu unggahan selesai.";
@@ -179,6 +186,7 @@ export function validateStepForm(stepNo, form, { mediaItems = [] } = {}) {
     }
     case 5: return (f.diagnosis || "").trim().length >= 10 ? null : "Tulis penjelasan diagnosa (minimal 10 karakter).";
     case 6:
+      if (track === BUILD_TRACK) return (f.note || "").trim().length >= 3 ? null : "Jelaskan pengerjaan pesanan."; // bahan opsional pada jalur pengerjaan
       if (!(f.materials || []).some((m) => num(m.qty) > 0)) return "Pilih bahan Gudang yang dipakai.";
       return (f.note || "").trim().length >= 3 ? null : "Jelaskan isi fondasi baru.";
     case 7: return (f.materials || []).some((m) => num(m.qty) > 0) ? null : "Pilih bahan Gudang yang dipakai.";
@@ -277,7 +285,7 @@ export function canDropOn(station, item) {
 // Indikator ringkas untuk kartu Planner.
 const IND = Object.freeze({
   custody: { label: "Custody", ok: ["OK", "LAHIR_DI_WORKSHOP"] },
-  service: { label: "Layanan", ok: ["OK"] },
+  service: { label: "Layanan", ok: ["OK", "TIDAK_BERLAKU"] }, // TIDAK_BERLAKU = jalur pengerjaan (layanan Sales jadi acuan, bukan layanan teknis)
   bom: { label: "BOM", ok: ["OK"] },
   material: { label: "Bahan", ok: ["SUDAH_DISERAHKAN"], bad: ["KEKURANGAN"] },
   workshop: { label: "Workshop", ok: ["BERJALAN"], bad: ["DIJEDA"] },

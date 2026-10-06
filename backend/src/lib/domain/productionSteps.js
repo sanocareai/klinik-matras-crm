@@ -17,6 +17,8 @@
 //  11  Jahit Selesai            = SELESAI corner_sewing (foto/video + checklist)
 //  12  Konfirmasi Selesai       = (foto kasur selesai) MULAI+SELESAI finished -> penawaran barang jadi ke Gudang (P6) + event laporan (outbox, PENDING)
 
+import { stepLabelFor } from "./productionBuildTrack.js";
+
 export const STEP_ACTOR = Object.freeze({ TABLE: "TABLE", CORNER: "CORNER" });
 
 export const STEPS = Object.freeze([
@@ -126,7 +128,7 @@ export function validateStepEvidence(stepNo, input, ctx = {}) {
   if (!step) throw stepError("Tahap tidak dikenal", 400, "STEP_UNKNOWN");
   const p = input?.payload && typeof input.payload === "object" && !Array.isArray(input.payload) ? input.payload : {};
   const media = normalizeMedia(input?.media);
-  const label = `Tahap ${stepNo} (${step.label})`;
+  const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrack)})`; // jalur pengerjaan: tahap 6 = Pengerjaan Pesanan
   switch (stepNo) {
     case 1:
       requireMedia(media, { label });
@@ -173,8 +175,9 @@ export function validateStepEvidence(stepNo, input, ctx = {}) {
       return {
         media,
         payload: {
-          materials: normalizeMaterialLines(p.materials, { ...ctx, required: true, label }),
-          note: text(p.note, 3, "Penjelasan isi fondasi"),
+          // Jalur pengerjaan (pesanan BARU): bahan dari Gudang BOLEH kosong (pemakaian dicatat sesuai pekerjaan nyata); jalur restorasi tetap wajib.
+          materials: normalizeMaterialLines(p.materials, { ...ctx, required: !ctx.buildTrack, label }),
+          note: text(p.note, 3, ctx.buildTrack ? "Penjelasan pengerjaan" : "Penjelasan isi fondasi"),
         },
       };
     case 7:
@@ -349,7 +352,8 @@ export function deriveNextAction(state) {
   }
   if (target.code === "pre_teardown_test") return { actor: "TABLE", stepNo: 1, action: "START_WITH_EVIDENCE" };
   const stepNo = stepNoForStage(target);
-  if (target.phase === "MODULE" && !state.materialReady) {
+  // Jalur pengerjaan (pesanan BARU): unit langsung dapat dikerjakan setelah dijadwalkan + PIC ditentukan; BOM/serah bahan tetap tersedia tetapi TIDAK menahan mulai.
+  if (target.phase === "MODULE" && !state.materialReady && !state.buildTrack) {
     return state.openShortage ? wait("WAREHOUSE", "MATERIAL_SHORTAGE", { stepNo }) : wait("WAREHOUSE", "MATERIAL_NOT_READY", { stepNo });
   }
   return { actor: "TABLE", stepNo, action: "START" };
@@ -374,7 +378,7 @@ export const ANDON_BUCKETS = Object.freeze([
   { key: "TERHENTI", label: "Perlu Tindakan", tone: "danger" },
 ]);
 
-export function andonBucketOf({ next, started, rework = false }) {
+export function andonBucketOf({ next, started, rework = false, buildTrack = false }) {
   if (!next) return "ANTREAN";
   if (next.wait === "PENDING_ARRIVAL") return "DALAM_PERJALANAN";
   if (next.wait === "COMPLETED") return "SELESAI";
@@ -383,6 +387,7 @@ export function andonBucketOf({ next, started, rework = false }) {
   if (next.wait === "AWAITING_WAREHOUSE") return "HANDOFF";
   if (next.wait === "AWAITING_QC" || rework || next.rework) return "QC";
   if (next.stepNo === 1 && !started) return "ANTREAN";
+  if (buildTrack && next.stepNo === 6 && !started) return "ANTREAN"; // jalur pengerjaan: tahap pertama = Pengerjaan Pesanan (tahap 6)
   if (next.stepNo >= 10) return "CORNER";
   if (next.stepNo === 9) return "QC";
   if (next.stepNo === 8 || next.stepNo === 7) return "LAPISAN";
@@ -445,6 +450,8 @@ export function commandCenterColumn(view) {
   if (view.bucket === "QC") return "UJI_TEKSTUR";
   if (view.bucket === "HANDOFF") return "SIAP_KIRIM";
   const stepNo = view.next?.stepNo;
+  // Jalur pengerjaan (BARU/custom): belum mulai = Tiba / Belum Mulai; Pengerjaan Pesanan berjalan = kolom Fondasi (tidak ada kolom bongkar/uji fondasi untuk jalur ini).
+  if (view.track === "BUILD" && stepNo === 6) return view.bucket === "ANTREAN" || view.bucket === "TERHENTI" ? "TIBA_BELUM_MULAI" : "FONDASI";
   if (stepNo === 9) return "UJI_TEKSTUR";
   if (stepNo === 8) return "LAPISAN";
   if (stepNo === 7) return "FONDASI";

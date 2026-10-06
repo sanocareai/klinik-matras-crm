@@ -8,7 +8,7 @@ import { actionLabel, formatMinutes, friendlyError, isQuickAction, isRetryableEr
 import { materialBadge } from "@/features/production/unitCardModel.js";
 import { GantiKainNote, JobPhoto, PriorityChip, ProgressLine, SalesNote, SalesServicesLine, StageChip, StatusChip } from "./JobCard.jsx";
 import { DELAY_ACTION_LABEL, FINISH_ACTION_LABEL, RESUME_ACTION_LABEL, SKIP_ACTION_LABEL, SKIP_LABEL, delayKindText, delayStatusText, resumeInfo } from "@/features/production/productionLabels.js";
-import { STEP_BY_NO } from "@/features/production/experience.js";
+import { stepOf } from "@/features/production/experience.js";
 import { V1ActionBar, V1MaterialsPanel } from "./V1Panels.jsx";
 import { ShortageSheet, StepSheet, intentKeys } from "./workerSheets.jsx";
 import { DelaySheet, FinishSheet, SkipSheet } from "./adaptationSheets.jsx";
@@ -185,7 +185,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
               {next.rework && <p className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange">Uji tekstur {String(next.lastVerdict || "").replace("_", " ").toLowerCase()} — sesuaikan lapisan lalu kirim ulang bukti.</p>}
               {card.activeOp?.status === "PAUSED" && card.activeOp.delayKind && <p data-testid="delay-kind-note" className="m-0 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><b>{delayKindText(card.activeOp.delayKind, card.activeOp.delayNote)}.</b> Tekan “{RESUME_ACTION_LABEL}” setelah kendalanya selesai.</p>}
               <button type="button" className="wa-primary" data-testid={next.action === "RESUME" ? "resume-work" : next.stepNo === 5 ? "open-diagnosis" : "v2-primary"} data-mutates={next.action === "RESUME" || isQuickAction(next) ? "" : undefined} disabled={gate.disabled && (next.action === "RESUME" || isQuickAction(next))} onClick={() => (next.action === "RESUME" ? resumeWork() : isQuickAction(next) ? quick() : setSheet("step"))}>
-                {quickBusy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : null}{actionLabel(next, { stageLabel: card.activeOp?.stageLabel })}
+                {quickBusy ? <Loader2 size={20} className="animate-spin" aria-hidden /> : null}{actionLabel(next, { stageLabel: card.activeOp?.stageLabel, track: card.track })}
               </button>
             </>
           ) : (
@@ -205,7 +205,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
       )}
 
       {sheet === "step" && card && next && <StepSheet card={card} next={next} onClose={() => setSheet(null)} onSubmitted={async (result) => { if (result) { setSheet(null); setNotice(result.verdict && result.verdict !== "PAS" ? "Hasil uji tercatat — lanjutkan rework lapisan." : "Tahap tersimpan."); } await afterChange(); }} />}
-      {sheet === "skip" && card && next && <SkipSheet card={card} next={next} stageLabel={STEP_BY_NO[next.stepNo]?.label} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); setNotice("Tahap dicatat dilewati (Adaptasi sistem)."); await afterChange(); }} />}
+      {sheet === "skip" && card && next && <SkipSheet card={card} next={next} stageLabel={stepOf(next.stepNo, card.track)?.label} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); setNotice("Tahap dicatat dilewati (Adaptasi sistem)."); await afterChange(); }} />}
       {sheet === "finish" && card && <FinishSheet card={card} onClose={() => setSheet(null)} onDone={(res) => { setSheet(null); setFinishedMsg(`Unit Siap Kirim. QC tidak dilakukan; ${res.skippedSteps?.length ?? 0} tahap dicatat dilewati.`); }} />}
       {sheet === "delay" && card && <DelaySheet card={card} onClose={() => setSheet(null)} onPickMaterial={() => setSheet("shortage")} onDone={async () => { setSheet(null); setNotice("Pekerjaan ditunda."); await afterChange(); }} />}
       {sheet === "shortage" && card && <ShortageSheet card={card} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); setNotice("Gudang sudah diberi tahu."); await afterChange(); }} />}

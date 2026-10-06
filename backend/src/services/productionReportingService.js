@@ -9,6 +9,7 @@
 //   unit_custody_handoffs_v2 (tiba = INBOUND diterima; barang jadi = FINISHED_GOODS) · production_run_exceptions_v2.
 // V1 TIDAK dibaca sama sekali. Tidak ada harga/pembayaran/HPP. Tidak ada tulisan apa pun (read-only; dijaga writer audit).
 import { loadStepContextRouting } from "./productionReportingRouting.js";
+import { buildTrackUnitIds } from "./unitStageEngine.js";
 import { formatCell } from "./productionReportExport.js";
 import { resolveUnitPhotosBulk } from "./productionUnitPhotoService.js";
 import { usedQtyByMaterial } from "./productionUnitOverviewService.js";
@@ -66,6 +67,7 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
   const planIds = runs.map((r) => r.plan?.id).filter(Boolean);
   const uIds = [...new Set(runs.map((r) => r.unitId))];
   const serviceIds = [...new Set(runs.map((r) => r.unit.serviceId).filter(Boolean))];
+  const buildUnits = await buildTrackUnitIds(prisma, uIds); // jalur pengerjaan (pesanan BARU/custom): tahap berlaku berbeda dari restorasi
 
   const [evidence, stageLogs, routing, issues, diagnoses, returns, moves, photos] = await Promise.all([
     prisma.productionStepEvidence.findMany({ where: { runId: { in: runIds } }, orderBy: [{ createdAt: "asc" }, { version: "asc" }], select: { id: true, runId: true, stepNo: true, stepCode: true, version: true, payload: true, media: true, actorId: true, createdAt: true } }),
@@ -140,7 +142,7 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
     const waste = mv.filter((m) => m.type === "WASTE").map((m) => ({ materialId: m.materialId, qty: Math.abs(Number(m.qty)) }));
 
     // --- dokumentasi (matriks kanonis, sama dengan Aplikasi Dokumentasi/Unit 360)
-    const split = routing.pathFor(unit.serviceId);
+    const split = routing.pathFor(unit.serviceId, { build: buildUnits.has(run.unitId) });
     const stepMedia = new Map(); for (const e of stepEv) stepMedia.set(e.stepNo, [...(stepMedia.get(e.stepNo) || []), ...(Array.isArray(e.media) ? e.media : []).map((m) => ({ url: m.url, kind: m.kind || "image" }))]);
     const diag = diagByRun.get(run.id);
     const qcUrls = [...new Set(run.inspections.flatMap((q) => q.items.flatMap((i) => (i.photoUrls || []).filter((u) => LEGACY_PHOTO_PREFIX.test(u)))))];

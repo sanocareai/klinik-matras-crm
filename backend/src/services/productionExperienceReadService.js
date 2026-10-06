@@ -11,6 +11,7 @@ import { BOARD_DEFAULTS, compareStationOrder, formatProductionDate, parseProduct
 import { applicableStepsFor, loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
+import { BUILD_NA_REASON, BUILD_STAGE_LABEL, stepLabelFor } from "../lib/domain/productionBuildTrack.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
@@ -86,7 +87,8 @@ export function stepStatuses(ctx) {
     else if (step.no === next.stepNo && next.action === "WAIT" && !e) status = "WAITING";
     else if (e) status = "DONE";
     else status = "PENDING";
-    return { no: step.no, code: step.code, label: step.label, actor: step.actor, status, at: e?.createdAt ?? null, version: e?.version ?? null };
+    // Jalur pengerjaan: tahap 6 bernama "Pengerjaan Pesanan"; tahap yang tidak berlaku mencatat alasannya ("tidak berlaku", BUKAN dikerjakan).
+    return { no: step.no, code: step.code, label: stepLabelFor(step.no, step.label, ctx.state?.buildTrack), actor: step.actor, status, at: e?.createdAt ?? null, version: e?.version ?? null, ...(status === "NA" && ctx.state?.buildTrack ? { naReason: BUILD_NA_REASON } : {}) };
   });
 }
 
@@ -96,8 +98,9 @@ export function indicatorsOf(run, ctx, materialStatus) {
   const qc = ctx.latestInspection;
   return {
     custody: inbound ? (inbound.status === "ACCEPTED" ? "OK" : inbound.status) : (run.origin === "WORKSHOP_BORN" ? "LAHIR_DI_WORKSHOP" : "BELUM"),
-    service: run.unit.serviceId ? "OK" : "BELUM",
-    bom: run.plan?.bomLines.length ? "OK" : "BELUM",
+    // Jalur pengerjaan: layanan teknis TIDAK dipilih (spesifikasi Sales = acuan) dan BOM opsional — tampil "TIDAK_BERLAKU"/"OPSIONAL", bukan "BELUM".
+    service: ctx.state?.buildTrack ? "TIDAK_BERLAKU" : (run.unit.serviceId ? "OK" : "BELUM"),
+    bom: run.plan?.bomLines.length ? "OK" : (ctx.state?.buildTrack ? "OPSIONAL" : "BELUM"),
     material: materialStatus.key,
     workshop: ctx.state.activeOp ? (ctx.state.activeOp.status === "PAUSED" ? "DIJEDA" : "BERJALAN") : (run.operations.length ? "MENUNGGU" : "BELUM_MULAI"),
     qc: qc ? (qc.result === "PASS" ? "LULUS" : qc.result === "FAIL_REWORK" ? "REWORK" : qc.result === "OVERRIDDEN" ? "WAIVED" : qc.result)
@@ -148,11 +151,12 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
   const firstStart = run.operations[0]?.startedAt ?? null;
   const op = ctx.state.activeOp;
   const next = ctx.next;
-  const bucket = andonBucketOf({ next, started });
+  const bucket = andonBucketOf({ next, started, buildTrack: !!ctx.state?.buildTrack });
   const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaints });
   const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases);
   return {
     runId: run.id, revision: run.revision, status: run.status, currentPhase: run.currentPhase, origin: run.origin,
+    track: ctx.state?.buildTrack ? "BUILD" : "RESTORATION", // BUILD = pesanan BARU/custom (Pengerjaan Pesanan); RESTORATION = jalur lama
     // Tiga sumbu terpisah (simplifikasi slice 1): status order, keberadaan fisik, tahap (next/bucket). service (teknis) tetap ada di payload sebagai data historis; UI hanya menampilkan Layanan Sales.
     orderStatus: displayStatusOfOrder(run.unit.order?.status) || null,
     unitStatus: displayStatusOfUnit(run.unit.status) || null,
@@ -171,7 +175,7 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
       targetStartAt: run.plan.targetStartAt, targetCompleteAt: run.plan.targetCompleteAt,
       bomCount: run.plan.bomLines.length,
     } : null,
-    next, bucket, bucketLabel: ANDON_BUCKETS.find((b) => b.key === bucket)?.label ?? bucket,
+    next, bucket, bucketLabel: ctx.state?.buildTrack && bucket === "FONDASI" ? BUILD_STAGE_LABEL : (ANDON_BUCKETS.find((b) => b.key === bucket)?.label ?? bucket),
     // Progres membedakan dikerjakan (done) / dilewati (skipped) / tersisa (remaining). KPI & kunci 12/12 hanya menghitung "done" sebagai pekerjaan.
     progress: (() => {
       const worked = applicable.filter((s) => s.status === "DONE").length; const skipped = applicable.filter((s) => s.status === "SKIPPED").length;
@@ -483,7 +487,7 @@ export async function getAndonBoard(prisma, { date, unitIds, config = BOARD_DEFA
       code: s.code, label: s.label, capacity: s.capacity, operatorNames: s.operatorNames,
       items: s.items.map((v) => ({
         runId: v.runId, unitCode: v.unit.unitCode, customerName: v.customer.name, merk: v.unit.merk, ukuran: v.unit.ukuran,
-        bucket: v.bucket, bucketLabel: v.bucketLabel, stepNo: v.next?.stepNo ?? null, stepLabel: v.next?.stepNo ? STEP_BY_NO[v.next.stepNo]?.label : null,
+        bucket: v.bucket, bucketLabel: v.bucketLabel, stepNo: v.next?.stepNo ?? null, stepLabel: v.next?.stepNo ? stepLabelFor(v.next.stepNo, STEP_BY_NO[v.next.stepNo]?.label, v.track === "BUILD") : null,
         progress: v.progress, timer: v.timer, priority: v.plan?.priorityRank ?? 0, priorityLabel: v.plan?.priorityLabel ?? "Normal", operatorName: v.plan?.operator?.name ?? null,
         cornerName: v.plan?.cornerOperator?.name ?? null, shortage: v.shortage ? v.shortage.items.map((i) => i.name) : null,
       })),

@@ -30,6 +30,7 @@ import { lockRowForUpdate } from "./inventoryLedger.js";
 import { completeAdaptationRunInTx, offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
 import { assertNoOpenRunException, assertNoV1Drift } from "./productionRunGuards.js";
 import { lockUnitOwnership } from "./unitV2Ownership.js";
+import { BUILD_CATEGORIES, BUILD_NA_REASON, pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
 import {
   completeStageInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, skipStageForAdaptationInTx, startStageInTx,
 } from "./unitStageEngine.js";
@@ -302,7 +303,7 @@ export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempot
 
     const now = new Date();
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "REGISTER_WORKSHOP_RUN", aggregateId: unitId, requestHash });
-    const na = "Unit lahir di workshop (tanpa pickup)";
+    const na = BUILD_CATEGORIES.includes(unit.order.category) ? BUILD_NA_REASON : "Unit lahir di workshop (tanpa pickup)";
     const phases = [["INTAKE", "NOT_APPLICABLE", na], ["DIAGNOSIS", "NOT_APPLICABLE", na], ["PROCESS", "NOT_STARTED", null], ["QC", "NOT_STARTED", null], ["HANDOFF", "NOT_STARTED", null]];
     const run = await tx.productionRun.create({
       data: {
@@ -379,7 +380,8 @@ export async function prepareStartInTx(tx, run) {
   // targetState DONE dengan fase PROCESS masih ACTIVE = tahap terakhir dijalankan ULANG (rework setelah penolakan Gudang); yang benar-benar selesai
   // sudah ditolak assertProcessApplicable (PROCESS COMPLETED -> AWAITING_QC/IN_HANDOFF).
   if (!stage || !executable.some((s) => s.id === stage.id)) throw workError("Tahap unit sekarang tidak ada di jalur workshop — perlu penanganan Production Lead", 409, "WORKSHOP_STAGE_MISMATCH");
-  if (stage.phase === "INTAKE") assertPlanReadyForIntake(run.plan);
+  // Jalur pengerjaan (pesanan BARU/custom): spesifikasi Sales = acuan; cukup rencana DITUGASKAN (jadwal + PIC) — bahan tercatat sesuai pekerjaan nyata, bukan gerbang mulai.
+  if (stage.phase === "INTAKE" || pathHasBuildStage(path)) assertPlanReadyForIntake(run.plan);
   else await assertMaterialIssued(tx, run.plan);
   return { process, stage, isPostQc: postQcStages.some((s) => s.id === stage.id) };
 }
@@ -560,7 +562,7 @@ export async function prepareSkipInTx(tx, run) {
   if (stage.requiresQc) {
     throw workError('Gerbang QC tidak dilewati sendiri: dicatat "tidak dilakukan" saat Kirim ke Corner (tahap 9) atau lewat Selesaikan Produksi', 409, "WORKSHOP_SKIP_USE_FINISH", { stageCode: stage.code });
   }
-  if (stage.phase === "INTAKE") assertPlanReadyForIntake(run.plan);
+  if (stage.phase === "INTAKE" || pathHasBuildStage(path)) assertPlanReadyForIntake(run.plan);
   return { process, stage };
 }
 

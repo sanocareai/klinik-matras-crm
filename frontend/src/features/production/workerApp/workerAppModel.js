@@ -5,7 +5,7 @@
 //    `GET /units/:id/timeline`. Tahap V1 TIDAK pernah dipetakan ke 12 langkah V2 (dua mesin berbeda, label & progres masing-masing dari server).
 import { isGantiKain, materialBadge, mattressInfo, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
 import { delayStatusText, priorityOf, resumeInfo, statusOf, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
-import { bucketStyle } from "@/features/production/experience.js";
+import { bucketLabelOf, bucketStyle } from "@/features/production/experience.js";
 import { canMaterialV1, canStageV1, needsPhotoOf, stageStateOf } from "@/features/production/unitV1ActionsModel.js";
 
 // Bottom navigation: MAKSIMAL 4 (diuji). Urutan = urutan tampil.
@@ -55,7 +55,7 @@ export function jobFromV2(item) {
     gantiKain: isGantiKain(view), gantiKainNoteMissing: isGantiKain(view) && !salesNoteOf(view),
     priority: priorityOfV2(item),
     status: viewStatus(item), presence: viewPresence(item),
-    stage: { label: stageText(item), bucket: item.bucket, tone: style.badge, bucketLabel: style.label },
+    stage: { label: stageText(item), bucket: item.bucket, tone: style.badge, bucketLabel: bucketLabelOf(item?.bucket, item?.track) },
     stationLabel: item.plan?.stationLabel ?? null, sequence: item.plan?.stationSequence ?? null,
     adaptation: !!item?.adaptation, delayKind: item?.activeOp?.status === "PAUSED" ? (item.activeOp.delayKind ?? null) : null, delayNote: item?.activeOp?.delayNote ?? null,
     progress: prog, materialWaiting: waiting, material: materialBadge(item), late: !!item.timer?.late,
