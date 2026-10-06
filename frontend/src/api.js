@@ -1594,6 +1594,7 @@ export const api = {
   getFinanceCashFlow: (params = {}) => request(`/finance/reports/cash-flow${qsFinance(params)}`),
   getFinanceLedger: (accountId, params = {}) => request(`/finance/reports/ledger/${accountId}${qsFinance(params)}`),
   getFinanceReceivables: (params = {}) => request(`/finance/reports/receivables${qsFinance(params)}`),
+  getFinancePiutangDiagnosis: (params = {}) => request(`/finance/reports/receivables/diagnosis${qsFinance(params)}`),
   getFinancePayables: (params = {}) => request(`/finance/reports/payables${qsFinance(params)}`),
 
   // Pengeluaran & reimbursement
