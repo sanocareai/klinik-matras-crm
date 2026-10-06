@@ -102,14 +102,16 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
   const requestHash = hash({ commandType: "RENCANA_PLAN_SCHEDULE_UNIT", unitId, ...data, productionDate: formatProductionDate(data.productionDate) });
 
   return prisma.$transaction(async (tx) => {
+    // Kunci unit LEBIH DULU, baru cari replay: dua permintaan bersamaan dengan kunci yang sama diserialkan di sini — yang kalah menunggu lalu MELIHAT command yang sudah commit
+    // (replay), bukan menabrak unique key sebagai "duplikat". Urutan kunci sama dengan pembuka Run lain: unit -> run -> plan.
+    await lockRowForUpdate(tx, "units", unitId);
+    await lockUnitOwnership(tx, unitId);
     const replay = await tx.v2Command.findUnique({ where: { actorId_idempotencyKey: { actorId: actor, idempotencyKey } } });
     if (replay) {
       if (replay.requestHash !== requestHash) throw rencanaError("Idempotency-Key dipakai untuk payload berbeda", 409, "IDEMPOTENCY_CONFLICT");
       if (replay.status !== "APPLIED") throw rencanaError("Command masih diproses", 409, "COMMAND_IN_PROGRESS");
       return { ...replay.response, replayed: true };
     }
-    await lockRowForUpdate(tx, "units", unitId);
-    await lockUnitOwnership(tx, unitId); // urutan kunci sama dengan pembuka Run lain: unit -> run -> plan
     const command = await tx.v2Command.create({
       data: { domain: "PRODUCTION", actorId: actor, idempotencyKey, commandType: "RENCANA_PLAN_SCHEDULE_UNIT", aggregateType: "Unit", aggregateId: unitId, requestHash },
     });

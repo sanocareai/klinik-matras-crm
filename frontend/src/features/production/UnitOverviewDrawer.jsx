@@ -119,7 +119,12 @@ function Ringkasan({ d }) {
             <Field label="Tiba di workshop" value={d.pickup.arrivedAtWorkshop ? fmtDT(d.pickup.arrivedAtWorkshop) : null} />
             <Field label="Status custody" value={d.pickup.custodyStatusLabel} />
           </dl>
-        ) : <p className="m-0 text-[12px] text-ink3">Belum ada catatan custody masuk untuk unit ini.</p>}
+        ) : (
+          <div className="space-y-1">
+            <p className="m-0 text-[12px] text-ink3">Belum ada catatan pickup/custody masuk untuk unit ini.</p>
+            {d.pickup.staffArrival && <p data-testid="staff-arrival" className="m-0 text-[12px] text-ink2">Kedatangan di workshop dikonfirmasi petugas{d.pickup.staffArrival.confirmedByName ? ` ${d.pickup.staffArrival.confirmedByName}` : ""} pada {fmtDT(d.pickup.staffArrival.confirmedAt)}{d.pickup.staffArrival.locationCode ? ` · lokasi ${d.pickup.staffArrival.locationCode}` : ""} (bukan bukti pickup).</p>}
+          </div>
+        )}
         {d.pickup.exists && d.pickup.isSingleUnitJob === false && (
           <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink3"><AlertTriangle size={12} aria-hidden /> Job pickup ini membawa lebih dari satu unit — foto pickup tidak diatribusikan otomatis ke unit manapun.</p>
         )}

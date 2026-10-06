@@ -90,6 +90,13 @@ test("ringkasan & aktivasi: hitungan dari server; modal aktivasi baca-saja denga
   assert.match(ACTIVATION, /TIDAK terjadi otomatis/);
 });
 
+test("Unit 360: kedatangan yang dikonfirmasi petugas tanpa pickup dibaca dari catatan asli (siapa/kapan/lokasi) dan diberi label 'bukan bukti pickup'", () => {
+  const DRAWER = read("features", "production", "UnitOverviewDrawer.jsx");
+  assert.match(DRAWER, /data-testid="staff-arrival"/);
+  assert.match(DRAWER, /dikonfirmasi petugas/); assert.match(DRAWER, /\(bukan bukti pickup\)/);
+  assert.match(DRAWER, /d\.pickup\.staffArrival\.confirmedByName/);
+});
+
 test("konflik papan basi: galat penuh/revisi memuat ulang papan di belakang formulir dan memindahkan pilihan dari Meja yang kini penuh", () => {
   assert.match(SCHEDULE, /const STALE_CODES = \["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE"\]/);
   assert.match(SCHEDULE, /if \(STALE_CODES\.includes\(e\?\.code\)\) onStale\?\.\(\)/);

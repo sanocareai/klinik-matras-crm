@@ -58,9 +58,13 @@ async function loadPickup(prisma, unitId) {
     },
   });
   if (!handoff) {
+    // Tanpa handoff: kedatangan bisa tetap dikonfirmasi PETUGAS (unit order nyata tanpa pickup tercatat). Dibaca dari catatan aktivitas asli (siapa, kapan, lokasi) — bukan bukti pickup/custody.
+    const ev = await prisma.activityEvent.findFirst({ where: { entityType: "unit", entityId: unitId, eventType: "PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY" }, orderBy: { createdAt: "desc" }, select: { actorId: true, createdAt: true, metadata: true } });
+    const who = ev?.actorId ? await prisma.user.findUnique({ where: { id: ev.actorId }, select: { name: true } }) : null;
     return {
       exists: false, custodyStatus: null, custodyStatusLabel: null,
       job: null, isSingleUnitJob: null, pickupCompletedAt: null, arrivedAtWorkshop: null,
+      staffArrival: ev ? { confirmedAt: ev.createdAt, confirmedByName: who?.name ?? null, locationCode: ev.metadata?.locationCode ?? null } : null,
     };
   }
   const job = handoff.deliveryJob;
