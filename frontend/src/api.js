@@ -1111,10 +1111,12 @@ export const api = {
   getOrderTimeline: (orderId) => request(`/orders/${orderId}/timeline`),
   // Invoice (31 Agustus 2026) — nominal & status SELALU dari backend
   // (services/invoice.js), UI tidak pernah menghitung tagihan sendiri.
-  getOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice`),
-  updateOrderInvoice: (orderId, data) =>
-    request(`/orders/${orderId}/invoice`, { method: "PATCH", body: JSON.stringify(data) }),
-  sendOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice/send`, { method: "POST" }),
+  // jenis (opsional): "DP" | "TOTAL" — jenis tagihan dokumen (6 Okt 2026); kosong = otomatis (DP bila DP disepakati & belum terpenuhi).
+  getOrderInvoice: (orderId, jenis) => request(`/orders/${orderId}/invoice${jenis ? `?jenis=${jenis}` : ""}`),
+  updateOrderInvoice: (orderId, data, jenis) =>
+    request(`/orders/${orderId}/invoice${jenis ? `?jenis=${jenis}` : ""}`, { method: "PATCH", body: JSON.stringify(data) }),
+  sendOrderInvoice: (orderId, jenis) =>
+    request(`/orders/${orderId}/invoice/send`, { method: "POST", body: JSON.stringify({ jenis: jenis || undefined }) }),
   // Gabung invoice lintas-order (2 Sep 2026) — lihat services/invoice.js.
   getMergeableOrders: (orderId) => request(`/orders/${orderId}/invoice/mergeable`),
   attachOrderToInvoice: (orderId, targetOrderId) =>
@@ -1124,8 +1126,8 @@ export const api = {
   // PDF = FILE, bukan JSON — sama alasan dengan exportCustomersVCard di atas:
   // di-fetch manual dengan header Bearer, <a href> polos tidak bisa membawa
   // otorisasi (endpoint ini dijaga requireAuth di backend).
-  getOrderInvoicePdf: async (orderId) => {
-    const res = await fetch(BASE + `/orders/${orderId}/invoice/pdf`, { headers: authHeaders() });
+  getOrderInvoicePdf: async (orderId, jenis) => {
+    const res = await fetch(BASE + `/orders/${orderId}/invoice/pdf${jenis ? `?jenis=${jenis}` : ""}`, { headers: authHeaders() });
     if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
     if (!res.ok) {
       let msg = "Gagal membuat PDF invoice";

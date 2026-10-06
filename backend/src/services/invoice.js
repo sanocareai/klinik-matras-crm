@@ -162,10 +162,31 @@ export async function ensureInvoiceForOrder(tx, { orderId, userId = null }) {
   }
 }
 
+// ── JENIS TAGIHAN: DP atau TOTAL (6 Okt 2026) ────────────────────────────────────────────────────────────────────────
+// BUG YANG DIPERBAIKI: mode DP dulu hanya aktif bila SUDAH ada pembayaran di ledger (dpKurang mensyaratkan adaLedger), jadi invoice DP justru tidak
+// muncul pada saat paling dibutuhkan — sebelum customer membayar DP sama sekali (laporan Owner 16 Sep: "customer kadang mau invoice DP dulu").
+// Aturan sekarang (satu fungsi murni, dipakai invoice tunggal & gabungan):
+//  - DP "bisa ditagih" bila dpTarget terisi, dan yang sudah dibayar belum mencapainya. Order berstatus DP manual TANPA nominal tercatat
+//    (dibayarTidakRinci) dikecualikan — jumlah yang sudah masuk tidak diketahui, jangan ditebak.
+//  - jenis yang diminta pemanggil: "DP" | "TOTAL" | kosong. Kosong = otomatis (DP bila bisa ditagih). "DP" yang tidak bisa ditagih jatuh ke TOTAL.
+//  - dpTarget TIDAK PERNAH diubah/dihapus oleh pilihan jenis — memilih TOTAL hanya mengganti tampilan dokumen.
+export const JENIS_TAGIHAN = Object.freeze(["DP", "TOTAL"]);
+export function normalisasiJenis(v) {
+  const x = String(v ?? "").toUpperCase();
+  return JENIS_TAGIHAN.includes(x) ? x : null;
+}
+export function tentukanJenisTagihan({ dpTarget, dibayar, dibayarTidakRinci = false, jenis = null }) {
+  const target = Number(dpTarget) > 0 ? Number(dpTarget) : 0;
+  const dpKurang = target && !dibayarTidakRinci ? Math.max(target - (dibayar || 0), 0) : 0;
+  const bisaDP = dpKurang > 0;
+  const jenisTagihan = normalisasiJenis(jenis) === "TOTAL" ? "TOTAL" : (bisaDP ? "DP" : "TOTAL");
+  return { dpKurang, bisaDP, jenisTagihan, modeDP: jenisTagihan === "DP" };
+}
+
 // Hitung seluruh nominal tagihan dari data yang SUDAH ada. Tidak menyentuh DB
 // (murni, gampang dites & dipanggil ulang) — pemanggil yang menyediakan order
 // (beserta items/promo) dan daftar payment-nya.
-export function hitungNominal(order, payments = []) {
+export function hitungNominal(order, payments = [], { jenis = null } = {}) {
   const totalLayanan = order.value || 0; // = SUM(items.harga), harga FINAL
   const ongkir = order.ongkir || 0;
   const ongkirKlaimGaransi = order.ongkirKlaimGaransi || 0;
@@ -226,7 +247,7 @@ export function hitungNominal(order, payments = []) {
   // sendiri sudah tidak pasti (dibayarTidakRinci untuk kasus DP), jadi
   // membandingkannya ke target akan mengarang kepastian yang tidak ada.
   const dpTarget = order.dpTarget || null;
-  const dpKurang = dpTarget && adaLedger ? Math.max(dpTarget - dibayar, 0) : 0;
+  const { dpKurang, bisaDP, jenisTagihan, modeDP } = tentukanJenisTagihan({ dpTarget, dibayar, dibayarTidakRinci, jenis });
 
   // modeDP (16 Sep 2026, laporan owner: "customer kadang mau invoice DP
   // dulu") — sebelumnya invoice SELALU menampilkan TOTAL = nilai order
@@ -243,7 +264,6 @@ export function hitungNominal(order, payments = []) {
   // penuh seperti sebelum fitur ini ada. Dipakai invoicePdf.js &
   // InvoicePanel.jsx (frontend) — DUA tempat itu WAJIB dijaga konsisten,
   // supaya PDF yang dikirim & yang dilihat sales di panel tidak beda.
-  const modeDP = dpKurang > 0;
 
   return {
     totalLayanan,
@@ -265,6 +285,9 @@ export function hitungNominal(order, payments = []) {
     dpTarget,
     dpKurang,
     modeDP,
+    // bisaDP: DP memang bisa ditagih (UI menawarkan pilihan DP hanya bila true); jenisTagihan: yang DIPAKAI dokumen ini ("DP" | "TOTAL").
+    bisaDP,
+    jenisTagihan,
   };
 }
 
@@ -313,7 +336,7 @@ export function statusEfektif({ invoice, nominal, now = new Date() }) {
 // terisi). Bentuk return-nya PERSIS yang dulu dikembalikan buildInvoiceView
 // sebelum fitur gabung invoice ada — supaya kasus order tunggal (99% hari
 // ini) nol perubahan.
-async function buildSingleOrderView(orderId, { userId = null, autoCreate = true } = {}) {
+async function buildSingleOrderView(orderId, { userId = null, autoCreate = true, jenis = null } = {}) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: {
@@ -344,7 +367,7 @@ async function buildSingleOrderView(orderId, { userId = null, autoCreate = true 
   // (pembayaran Resi di anchor, transfer gabungan) = hanya bagian untuk order ini — sebelumnya anchor menagih lunas seluruh DP Resi dan child 0.
   // Entri dibatalkan tetap TIDAK ikut dihitung/ditampilkan (cancelledAt: null di dalam helper).
   order.payments = await kontribusiPembayaranOrder(prisma, order.id);
-  const nominal = hitungNominal(order, order.payments);
+  const nominal = hitungNominal(order, order.payments, { jenis });
   const status = statusEfektif({ invoice, nominal });
   const { merkKasur, ukuranKasur } = parseOrderNotesForInvoice(order.notes);
 
@@ -446,7 +469,8 @@ export async function buildInvoiceView(orderId, opts = {}) {
 // promo per order yang tiap satu sudah diresolusi dengan benar sendiri-
 // sendiri. Urutan anggota: primary duluan (index 0), lalu bundledInvoices
 // sesuai urutan attach (createdAt implisit).
-export async function buildCombinedInvoiceView(primaryInvoiceId, { userId = null } = {}) {
+export async function buildCombinedInvoiceView(primaryInvoiceId, opts = {}) {
+  const { userId = null } = opts;
   const primaryRow = await prisma.invoice.findUnique({
     where: { id: primaryInvoiceId },
     include: {
@@ -499,7 +523,8 @@ export async function buildCombinedInvoiceView(primaryInvoiceId, { userId = null
   const totalTagihan = jumlah((n) => n.totalTagihan);
   const dibayar = jumlah((n) => n.dibayar);
   const dpTargetSum = jumlah((n) => n.dpTarget);
-  const dpKurangSum = semuaLedger && dpTargetSum ? Math.max(dpTargetSum - dibayar, 0) : 0;
+  const tidakRinciGabungan = validViews.some((v) => v.nominal.dibayarTidakRinci);
+  const { dpKurang: dpKurangSum, bisaDP, jenisTagihan, modeDP } = tentukanJenisTagihan({ dpTarget: dpTargetSum, dibayar, dibayarTidakRinci: tidakRinciGabungan, jenis: opts?.jenis });
 
   const nominal = {
     totalLayanan: jumlah((n) => n.totalLayanan),
@@ -520,7 +545,9 @@ export async function buildCombinedInvoiceView(primaryInvoiceId, { userId = null
     // modeDP — SAMA turunan dgn buildSingleOrderView (lihat catatan di
     // sana): true selama dibayar belum mencapai jumlah dpTarget SEMUA
     // anggota bundle (dpTarget per-order dijumlahkan di atas).
-    modeDP: dpKurangSum > 0,
+    modeDP,
+    bisaDP,
+    jenisTagihan,
   };
 
   const status = statusEfektif({ invoice: primaryRow, nominal });

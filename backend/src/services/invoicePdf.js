@@ -114,7 +114,15 @@ const PERUSAHAAN = {
     "Harga sudah termasuk biaya antar-jemput (Free Delivery). Tidak ada pembayaran di muka. " +
     "Pembayaran lunas dilakukan saat serah terima barang di lokasi pelanggan (COD/Transfer saat " +
     "barang sampai). Harap periksa kondisi barang sebelum melakukan pembayaran.",
+  // Invoice DP (6 Okt 2026): kalimat "Tidak ada pembayaran di muka" di atas BERTENTANGAN dengan dokumen yang justru menagih DP. Teks ini dipakai
+  // HANYA saat nominal.modeDP. Redaksi final = keputusan Owner; kalimat pelunasan saat serah terima dipertahankan dari teks aslinya.
+  syaratKetentuanDP:
+    "Harga sudah termasuk biaya antar-jemput (Free Delivery). DP dibayarkan sebesar Tagihan DP pada invoice ini; " +
+    "sisa pembayaran dilunasi saat serah terima barang di lokasi pelanggan (COD/Transfer saat barang sampai). " +
+    "Harap periksa kondisi barang sebelum melakukan pembayaran.",
 };
+
+const teksSyarat = (nominal) => (nominal?.modeDP ? PERUSAHAAN.syaratKetentuanDP : PERUSAHAAN.syaratKetentuan);
 
 function formatRupiah(n) {
   return `Rp${Math.round(n || 0).toLocaleString("id-ID")}`;
@@ -490,7 +498,7 @@ export function renderInvoicePdf(view) {
     const bawahKananX = kartuKananX;
 
     doc.fontSize(9).font(FONT_TEKS);
-    const tinggiSyarat = doc.heightOfString(PERUSAHAAN.syaratKetentuan, { width: bawahKiriW - padKartu * 2 });
+    const tinggiSyarat = doc.heightOfString(teksSyarat(nominal), { width: bawahKiriW - padKartu * 2 });
     const syaratTinggi = 44 + tinggiSyarat;
 
     // Perkiraan tinggi blok KANAN (rincian total) — cuma dipakai utk
@@ -504,7 +512,7 @@ export function renderInvoicePdf(view) {
       estimasiKananTinggi += 18 * 2 + 18; // sudah dibayar? + Sisa DP + info total order
     } else {
       if (nominal.dibayar > 0 || nominal.dibayarTidakRinci) estimasiKananTinggi += 18 * 2;
-      if (nominal.dpTarget > 0 && nominal.sumber === "ledger") estimasiKananTinggi += 18;
+      if (nominal.dpTarget > 0 && nominal.sumber === "ledger" && !nominal.bisaDP) estimasiKananTinggi += 18;
     }
     if (payments && payments.length > 1) estimasiKananTinggi += 19 + payments.length * 13;
     if (invoice.dueDate) estimasiKananTinggi += 36;
@@ -519,7 +527,7 @@ export function renderInvoicePdf(view) {
     doc.fontSize(11).font(FONT_JUDUL).fillColor(GELAP)
       .text("SYARAT & KETENTUAN", kartuKiriX + padKartu + 32, y + padKartu + 8, { width: bawahKiriW - padKartu * 2 - 32 });
     doc.fontSize(9).font(FONT_TEKS).fillColor(ABU)
-      .text(PERUSAHAAN.syaratKetentuan, kartuKiriX + padKartu, y + padKartu + 32, { width: bawahKiriW - padKartu * 2 });
+      .text(teksSyarat(nominal), kartuKiriX + padKartu, y + padKartu + 32, { width: bawahKiriW - padKartu * 2 });
 
     // Kartu kanan — rincian total.
     let yr = y + 6;
@@ -575,7 +583,7 @@ export function renderInvoicePdf(view) {
       // modeDP ada (kasus "kurang" sekarang jadi headline di atas, bukan
       // di sini lagi) — MURNI catatan riwayat bahwa DP sudah dipenuhi,
       // cuma tampil kalau ledger-nya ada.
-      if (nominal.dpTarget > 0 && nominal.sumber === "ledger") {
+      if (nominal.dpTarget > 0 && nominal.sumber === "ledger" && !nominal.bisaDP) {
         yr += 4;
         doc.fontSize(8.5).font(FONT_TEKS).fillColor("#16a34a")
           .text(`DP disepakati ${formatRupiah(nominal.dpTarget)} — terpenuhi`, bawahKananX, yr, { width: bawahKananW, align: "right" });

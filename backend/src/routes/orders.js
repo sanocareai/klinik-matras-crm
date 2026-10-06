@@ -26,7 +26,7 @@ import { resiBaru, dasarStatusBayar, PILIH_TAGIHAN } from "../services/finance/t
 // D-180 — jembatan ke buku besar. Lihat catatan panjang di hooks.js: modul
 // finance TIDAK PERNAH boleh menjatuhkan pencatatan pembayaran/order.
 import { bukukanPembayaran, batalkanJurnalPembayaran, bukukanPengakuanPendapatan } from "../services/finance/hooks.js";
-import { buildInvoiceView, setInvoiceLifecycle, attachOrderToInvoice, detachInvoiceFromBundle } from "../services/invoice.js";
+import { normalisasiJenis, buildInvoiceView, setInvoiceLifecycle, attachOrderToInvoice, detachInvoiceFromBundle } from "../services/invoice.js";
 import { renderInvoicePdf } from "../services/invoicePdf.js";
 import { buildWarrantyView, markWarrantySent, WARRANTY_YEARS_VALID } from "../services/warranty.js";
 import { renderWarrantyPdf } from "../services/warrantyPdf.js";
@@ -1454,7 +1454,8 @@ orderRouter.get("/", async (req, res) => {
 // (tidak ada backfill massal — invoice lahir saat pertama kali dibuka).
 orderRouter.get("/:id/invoice", async (req, res) => {
   try {
-    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
+    // ?jenis=DP|TOTAL (6 Okt 2026) — jenis tagihan dokumen; kosong = otomatis. Lihat tentukanJenisTagihan() di services/invoice.js.
+    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null, jenis: normalisasiJenis(req.query.jenis) });
     if (!view) return res.status(404).json({ error: "Order tidak ditemukan" });
     res.json(view);
   } catch (err) {
@@ -1494,7 +1495,7 @@ orderRouter.patch("/:id/invoice", async (req, res) => {
       await setInvoiceLifecycle(req.params.id, lifecycleStatus);
     }
 
-    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null }));
+    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null, jenis: normalisasiJenis(req.query.jenis) }));
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     console.error("patch invoice error:", err);
@@ -1507,7 +1508,7 @@ orderRouter.patch("/:id/invoice", async (req, res) => {
 // berkali-kali sebelum benar-benar dikirim ke customer.
 orderRouter.get("/:id/invoice/pdf", async (req, res) => {
   try {
-    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
+    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null, jenis: normalisasiJenis(req.query.jenis) });
     if (!view) return res.status(404).json({ error: "Order tidak ditemukan" });
     const buffer = await renderInvoicePdf(view);
     res.setHeader("Content-Type", "application/pdf");
@@ -1637,7 +1638,8 @@ orderRouter.post("/:id/invoice/detach", async (req, res) => {
 // benar sampai ke WhatsApp customer, bukan sekadar tombol diklik.
 orderRouter.post("/:id/invoice/send", async (req, res) => {
   try {
-    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
+    // body.jenis (DP|TOTAL): dokumen yang DIKIRIM harus sama dengan yang dipilih Sales di layar.
+    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null, jenis: normalisasiJenis(req.body?.jenis) });
     if (!view) return res.status(404).json({ error: "Order tidak ditemukan" });
     if (!view.customer.id) {
       return res.status(400).json({ error: "Order ini tidak punya pelanggan yang valid." });
@@ -1658,7 +1660,10 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
     if (!target) return res.status(400).json({ error: "Nomor WhatsApp pelanggan tidak tersedia." });
 
     const buffer = await renderInvoicePdf(view);
-    const filename = `${view.invoice.invoiceNumber}.pdf`;
+    // Invoice DP & TOTAL diberi nama berkas berbeda: berkas yang sama dipakai ulang oleh bubble chat di CRM (mediaUrl), jadi mengirim TOTAL
+    // belakangan tidak boleh menimpa PDF DP yang sudah terkirim sebelumnya.
+    const jenisTagihan = view.nominal.jenisTagihan;
+    const filename = jenisTagihan === "DP" ? `${view.invoice.invoiceNumber}-DP.pdf` : `${view.invoice.invoiceNumber}.pdf`;
     fs.writeFileSync(path.join(invoicePdfsDir, filename), buffer);
     const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
     const fileUrl = `${BACKEND_INTERNAL_URL}/media/invoice-pdfs/${filename}`;
@@ -1690,6 +1695,7 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
       `Halo ${namaSapaan}, berikut invoice untuk pesanan Anda 🙏\n` +
       `Terima kasih sudah mempercayakan tidur sehat Anda kepada Klinik Matras — Ahlinya Kasur Sehat.\n\n` +
       `Invoice No: ${view.invoice.invoiceNumber}\n` +
+      (jenisTagihan === "DP" ? `Jenis tagihan: *DP (uang muka)* — Rp${Number(view.nominal.dpKurang || 0).toLocaleString("id-ID")}\n` : "") +
       // Gabung invoice lintas-order (2 Sep 2026) — pakai view.orders[]
       // (SEMUA order dalam bundle), bukan view.order (cuma primary).
       // Bug nyata: caption WA cuma nyebut 1 order padahal invoice-nya
@@ -1730,7 +1736,7 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
 
     await setInvoiceLifecycle(req.params.id, "SENT");
 
-    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null }));
+    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null, jenis: normalisasiJenis(req.body?.jenis) }));
   } catch (err) {
     console.error("[invoice/send] error:", err);
     res.status(500).json({ error: "Gagal mengirim invoice" });
