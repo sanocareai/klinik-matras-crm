@@ -1,0 +1,250 @@
+{
+ "at": "2026-10-06T16:51:16.320Z",
+ "pass": 48,
+ "fail": 0,
+ "results": [
+  {
+   "name": "[390-light] Meja: kartu K2 tampil dengan layanan Sales",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-light] Meja: tahap tertulis Pengerjaan Pesanan; tanpa Bongkar/Diagnosa/Uji Fondasi",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-light] Meja: detail menampilkan spesifikasi Sales + 'tidak berlaku' pada tahap bongkar",
+   "ok": true,
+   "extra": "6x"
+  },
+  {
+   "name": "[390-light] Meja: tombol 'Kirim Bukti Pengerjaan Pesanan' membuka lembar bukti",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-light] Lembar bukti: kolom racikan fondasi & lapisan + bahan opsional",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-light] Lembar bukti: kirim tanpa isian ditolak di UI (racikan/bukti wajib)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-light] QC kasur QA-BT-K3: spesifikasi + racikan + berat acuan/uji berat badan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-light] QC divan QA-BT-D1: pemeriksaan hasil, TANPA berat acuan/uji berat badan/racikan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-light] Rencana: kolom 'Pengerjaan Pesanan' dan 'Uji Hasil' tersedia",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-light] Unit 360 K2: tab Proses menjelaskan jalur pesanan, tanpa panel Diagnosis",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-light] Laporan sofa: spesifikasi Sales; tanpa diagnosa/bongkar; QC tidak dilakukan jujur",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-light] Laporan kasur K1: racikan fondasi/lapisan + bahan dipakai + spesifikasi Sales; tanpa diagnosa/bongkar",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] Meja: kartu K2 tampil dengan layanan Sales",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] Meja: tahap tertulis Pengerjaan Pesanan; tanpa Bongkar/Diagnosa/Uji Fondasi",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] Meja: detail menampilkan spesifikasi Sales + 'tidak berlaku' pada tahap bongkar",
+   "ok": true,
+   "extra": "6x"
+  },
+  {
+   "name": "[390-dark] Meja: tombol 'Kirim Bukti Pengerjaan Pesanan' membuka lembar bukti",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] Lembar bukti: kolom racikan fondasi & lapisan + bahan opsional",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] Lembar bukti: kirim tanpa isian ditolak di UI (racikan/bukti wajib)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] QC kasur QA-BT-K3: spesifikasi + racikan + berat acuan/uji berat badan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] QC divan QA-BT-D1: pemeriksaan hasil, TANPA berat acuan/uji berat badan/racikan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] Rencana: kolom 'Pengerjaan Pesanan' dan 'Uji Hasil' tersedia",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] Unit 360 K2: tab Proses menjelaskan jalur pesanan, tanpa panel Diagnosis",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] Laporan sofa: spesifikasi Sales; tanpa diagnosa/bongkar; QC tidak dilakukan jujur",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[390-dark] Laporan kasur K1: racikan fondasi/lapisan + bahan dipakai + spesifikasi Sales; tanpa diagnosa/bongkar",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] Meja: kartu K2 tampil dengan layanan Sales",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] Meja: tahap tertulis Pengerjaan Pesanan; tanpa Bongkar/Diagnosa/Uji Fondasi",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] Meja: detail menampilkan spesifikasi Sales + 'tidak berlaku' pada tahap bongkar",
+   "ok": true,
+   "extra": "6x"
+  },
+  {
+   "name": "[1440-light] Meja: tombol 'Kirim Bukti Pengerjaan Pesanan' membuka lembar bukti",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] Lembar bukti: kolom racikan fondasi & lapisan + bahan opsional",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] Lembar bukti: kirim tanpa isian ditolak di UI (racikan/bukti wajib)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] QC kasur QA-BT-K3: spesifikasi + racikan + berat acuan/uji berat badan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] QC divan QA-BT-D1: pemeriksaan hasil, TANPA berat acuan/uji berat badan/racikan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] Rencana: kolom 'Pengerjaan Pesanan' dan 'Uji Hasil' tersedia",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] Unit 360 K2: tab Proses menjelaskan jalur pesanan, tanpa panel Diagnosis",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] Laporan sofa: spesifikasi Sales; tanpa diagnosa/bongkar; QC tidak dilakukan jujur",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-light] Laporan kasur K1: racikan fondasi/lapisan + bahan dipakai + spesifikasi Sales; tanpa diagnosa/bongkar",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] Meja: kartu K2 tampil dengan layanan Sales",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] Meja: tahap tertulis Pengerjaan Pesanan; tanpa Bongkar/Diagnosa/Uji Fondasi",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] Meja: detail menampilkan spesifikasi Sales + 'tidak berlaku' pada tahap bongkar",
+   "ok": true,
+   "extra": "6x"
+  },
+  {
+   "name": "[1440-dark] Meja: tombol 'Kirim Bukti Pengerjaan Pesanan' membuka lembar bukti",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] Lembar bukti: kolom racikan fondasi & lapisan + bahan opsional",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] Lembar bukti: kirim tanpa isian ditolak di UI (racikan/bukti wajib)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] QC kasur QA-BT-K3: spesifikasi + racikan + berat acuan/uji berat badan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] QC divan QA-BT-D1: pemeriksaan hasil, TANPA berat acuan/uji berat badan/racikan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] Rencana: kolom 'Pengerjaan Pesanan' dan 'Uji Hasil' tersedia",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] Unit 360 K2: tab Proses menjelaskan jalur pesanan, tanpa panel Diagnosis",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] Laporan sofa: spesifikasi Sales; tanpa diagnosa/bongkar; QC tidak dilakukan jujur",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "[1440-dark] Laporan kasur K1: racikan fondasi/lapisan + bahan dipakai + spesifikasi Sales; tanpa diagnosa/bongkar",
+   "ok": true,
+   "extra": ""
+  }
+ ],
+ "consoleErrors": [
+  "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+ ]
+}
