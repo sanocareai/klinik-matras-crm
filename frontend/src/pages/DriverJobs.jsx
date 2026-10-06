@@ -222,7 +222,19 @@ function PaymentSection({ job, onChanged, onQueued }) {
     setBusy(true);
     setErr("");
     try {
-      const { queued } = await submitOrQueue(job.id, "payment", { amount: amountInt, method }, photo ? [photo] : []);
+      const kirim = (konfirmasiNominalKecil) => submitOrQueue(job.id, "payment", { amount: amountInt, method, ...(konfirmasiNominalKecil && { konfirmasiNominalKecil: true }) }, photo ? [photo] : []);
+      let hasil;
+      try {
+        hasil = await kirim(false);
+      } catch (e1) {
+        // Server menahan nominal yang sangat kecil (mis. salah ketik "1" untuk Rp1.200.000): tanya dulu, kirim ulang hanya bila driver menegaskan.
+        if (e1?.code !== "NOMINAL_KECIL_PERLU_KONFIRMASI") throw e1;
+        if (!window.confirm(`${e1.message}
+
+Tekan OK bila memang segitu, Batal untuk memperbaiki angkanya.`)) { setBusy(false); return; }
+        hasil = await kirim(true);
+      }
+      const { queued } = hasil;
       setOpen(false);
       setAmount(""); setMethod("CASH"); setPhoto(null);
       if (queued) {

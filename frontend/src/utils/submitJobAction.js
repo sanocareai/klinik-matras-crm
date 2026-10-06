@@ -60,6 +60,8 @@ export async function performSubmit(jobId, action, payload, photoFiles = [], sig
   if (action === "payment") {
     return api.recordJobPayment(jobId, {
       amount: payload.amount, method: payload.method, proofPhotoUrl: proofPhotoUrls[0] || null,
+      // Pengaman nominal (6 Okt 2026): server menolak nominal sangat kecil kecuali pengguna sudah mengonfirmasi.
+      ...(payload.konfirmasiNominalKecil && { konfirmasiNominalKecil: true }),
     });
   }
   // Lapor revisi di lokasi (18 September 2026) — lihat catatan panjang di
