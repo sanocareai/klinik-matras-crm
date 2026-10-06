@@ -87,6 +87,19 @@ export function parseCsv(textRaw) {
   return { baris, pemisah };
 }
 
+/**
+ * Nilai satu sel Excel. Tanggal tetap Date, angka tetap angka; formula → hasilnya; teks KAYA (richText — dipakai ekspor Mandiri untuk SEMUA sel) dan hyperlink → teks biasa.
+ * Tanpa ini sel rich text sampai ke parser sebagai objek dan seluruh baris ditolak ("Tanggal 01/09/26 tidak terbaca").
+ */
+function nilaiSel(cell) {
+  const v = cell.type === 6 /* formula */ ? cell.result : cell.value;
+  if (v instanceof Date || v == null || typeof v !== "object") return v;
+  if (Array.isArray(v.richText)) return v.richText.map((r) => r.text).join("");
+  if (v.text != null) return String(v.text);
+  if (v.result != null) return v.result instanceof Date ? v.result : String(v.result);
+  return v;
+}
+
 /** Baca berkas → { format, baris: any[][] } (semua baris apa adanya, termasuk judul/kop di atas tabel). */
 export async function bacaBerkas(buffer, namaBerkas = "") {
   if (!buffer || !buffer.length) throw new ParseError("Berkas kosong", 400, "BERKAS_KOSONG");
@@ -102,7 +115,7 @@ export async function bacaBerkas(buffer, namaBerkas = "") {
     const baris = [];
     ws.eachRow({ includeEmpty: false }, (row) => {
       const nilai = [];
-      row.eachCell({ includeEmpty: true }, (cell, col) => { nilai[col - 1] = cell.value instanceof Date ? cell.value : (cell.type === 6 /* formula */ ? cell.result : cell.value); });
+      row.eachCell({ includeEmpty: true }, (cell, col) => { nilai[col - 1] = nilaiSel(cell); });
       for (let i = 0; i < nilai.length; i += 1) if (nilai[i] === undefined) nilai[i] = null;
       if (nilai.some((x) => x != null && teks(x).trim() !== "")) baris[row.number - 1] = nilai; // nomor baris = nomor baris di Excel
     });
@@ -249,7 +262,7 @@ export const normalisasiTeks = (v) => rapikan(v).toLowerCase();
  *  baris[i] = { noBaris (nomor di berkas, 1-based), tanggal, tanggalEfektif, deskripsi, referensi, debit, kredit, saldo, raw }
  *  Baris yang seluruh kolom kuncinya kosong (mis. baris "Saldo awal/Total" tanpa tanggal) dilewati dengan catatan, bukan galat; baris bertanggal tetapi nominalnya tidak terbaca = galat.
  */
-export function parseBaris(rows, headerIdx, pemetaan) {
+export function parseBaris(rows, headerIdx, pemetaan, deskripsiTambahan = []) {
   const header = rows[headerIdx].map((c) => rapikan(c));
   const baris = []; const galat = []; const dilewati = [];
   for (let r = headerIdx + 1; r < rows.length; r += 1) {
@@ -293,7 +306,8 @@ export function parseBaris(rows, headerIdx, pemetaan) {
       saldo = (s.tanda < 0 ? "-" : "") + s.nilai;
     }
     const tglEfektif = pemetaan.tanggalEfektif != null ? parseTanggal(sel("tanggalEfektif")) : null;
-    const deskripsi = rapikan(sel("deskripsi"));
+    // Keterangan = kolom utama + kolom keterangan tambahan (Mandiri punya DUA kolom "Description": uraian & catatan pengirim). Tanda kutip pembungkus sel dibuang.
+    const deskripsi = [sel("deskripsi"), ...deskripsiTambahan.map((i) => row[i])].map((x) => rapikan(x).replace(/^"+|"+$/g, "").trim()).filter(Boolean).join(" | ");
     if (!deskripsi) { galat.push({ noBaris, pesan: "Keterangan kosong" }); continue; }
     const raw = {};
     header.forEach((h, i) => { const v = row[i]; raw[h || `kolom_${i + 1}`] = v instanceof Date ? v.toISOString().slice(0, 10) : (v == null ? null : (typeof v === "object" ? teks(v) : v)); });
@@ -345,7 +359,9 @@ export async function telaahBerkas(buffer, namaBerkas, pemetaanManual = null) {
   const headers = rows[idx] || [];
   const otomatis = deteksiPemetaan(headers);
   const pemetaan = validasiPemetaan(pemetaanManual?.kolom ?? otomatis, Math.max(headers.length, ...rows.slice(idx).map((r) => r.length)));
-  const hasil = parseBaris(rows, idx, pemetaan);
+  // Kolom lain yang JUGA dikenali sebagai keterangan (bukan yang sudah dipetakan) ikut digabung — hanya pada pemetaan otomatis.
+  const tambahan = pemetaanManual?.kolom ? [] : headers.map((h, i) => [h, i]).filter(([h, i]) => i !== pemetaan.deskripsi && skorKolom(teks(h)).deskripsi >= 3 && !Object.values(pemetaan).includes(i)).map(([, i]) => i);
+  const hasil = parseBaris(rows, idx, pemetaan, tambahan);
   if (hasil.baris.length > MAKS_BARIS) throw new ParseError(`Berkas memuat ${hasil.baris.length.toLocaleString("id-ID")} baris (maks ${MAKS_BARIS.toLocaleString("id-ID")}). Pecah per periode.`, 413, "BARIS_TERLALU_BANYAK");
-  return { format, headers: headers.map((h) => rapikan(h)), barisJudul: idx, pemetaan, pemetaanOtomatis: otomatis, ...hasil, rantaiSaldo: periksaRantaiSaldo(hasil.baris), totalBarisBerkas: rows.length };
+  return { format, headers: headers.map((h) => rapikan(h)), barisJudul: idx, pemetaan, pemetaanOtomatis: otomatis, deskripsiTambahan: tambahan, ...hasil, rantaiSaldo: periksaRantaiSaldo(hasil.baris), totalBarisBerkas: rows.length };
 }
