@@ -23,7 +23,8 @@ import { simulateDrop } from "@/features/production/planDndSim.js";
 import { isDemoActive } from "@/features/production/demo/demoGate.js";
 import { usePlanDrag } from "@/features/production/usePlanDrag.js";
 import { ScheduleModal } from "@/features/production/ScheduleModals.jsx";
-import { MEJA, backlogOf, mattressInfo, mejaLabel } from "@/features/production/unitCardModel.js";
+import { MEJA, backlogOf, mattressInfo, mejaLabel, viewOfOnboardCard } from "@/features/production/unitCardModel.js";
+import RencanaActivationModal from "@/features/production/RencanaActivationModal.jsx";
 import { hasManualOrder, moveStep } from "@/features/production/stationOrder.js";
 import { rolesOf } from "@/lib/roles.js";
 
@@ -36,8 +37,10 @@ import { rolesOf } from "@/lib/roles.js";
 
 const fmtShort = (iso) => (iso ? new Date(iso).toISOString().slice(0, 10) : null);
 const shiftDate = (d, days) => new Date(new Date(`${d}T00:00:00Z`).getTime() + days * 86400_000).toISOString().slice(0, 10);
-const user = (() => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } })();
-const canUploadPhoto = rolesOf(user).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r));
+// Dibaca SAAT RENDER (bukan saat modul dimuat): login ulang/ganti peran tanpa muat ulang halaman tidak boleh membekukan peran lama. Izin sebenarnya tetap ditegakkan server.
+const readUser = () => { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } };
+// Pemegang izin menjadwalkan (PRODUCTION_ASSIGNMENT_WRITE) = Admin/Owner/Kepala Produksi. PIC/Gudang tidak memanggil daftar workshop/PIC (403 + galat konsol).
+const canManagePlanning = () => rolesOf(readUser()).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r));
 
 function AssignSection({ target, refs, onSaved, onError }) {
   const plan = target.plan;
@@ -83,12 +86,12 @@ function AssignSection({ target, refs, onSaved, onError }) {
         </label>
         <label className="text-[11.5px] text-ink3">PIC meja
           <select className={field} value={form.operatorId} onChange={(e) => set({ operatorId: e.target.value })}>
-            <option value="">— pilih —</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.user?.name || o.employeeCode}</option>)}
+            <option value="">— pilih —</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
           </select>
         </label>
         <label className="text-[11.5px] text-ink3">PIC Corner — opsional
           <select className={field} value={form.cornerOperatorId} onChange={(e) => set({ cornerOperatorId: e.target.value })}>
-            <option value="">Sama dengan PIC meja</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.user?.name || o.employeeCode}</option>)}
+            <option value="">Sama dengan PIC meja</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
           </select>
         </label>
       </div>
@@ -233,7 +236,7 @@ function DetailRencana({ target, refs, materials, stockByMaterial, onClose, onCh
             ["Layanan Sales", (c.salesServices?.length ? c : target.customer || {}).salesServices?.join(" + ") || "Belum tercatat"], ["Kasur", [mattress.jenis, mattress.merk, mattress.ukuran].filter(Boolean).join(" · ") || "Belum dicatat"]]
             .map(([k, v]) => <div key={k} className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">{k}</dt><dd className="m-0 font-semibold text-ink">{v}</dd></div>)}
         </dl>
-        <UnitPhotoPanel unitId={unit.id} photoUrl={unit.photoUrl} canUpload={canUploadPhoto}
+        <UnitPhotoPanel unitId={unit.id} photoUrl={unit.photoUrl} canUpload={canManagePlanning()}
           onUploaded={(photoUrl) => { setCurrent((c) => ({ ...c, unit: { ...c.unit, photoUrl } })); setNotice("Foto identitas unit disimpan."); }} />
         <AssignSection target={current} refs={refs} onSaved={applySaved} onError={setError} />
         <BOMSection plan={current.plan} materials={materials} stockByMaterial={stockByMaterial} onSaved={applySaved} onError={setError} />
@@ -294,7 +297,7 @@ function InsertLine() {
 // Tombol aksi kartu: kontras tinggi di terang & gelap (bukan varian "secondary" biru-di-atas-biru).
 const ACTION_BTN = "min-h-[44px] border border-line bg-inset text-ink hover:bg-hovertint";
 
-function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onHandleDown, today, tomorrow, busy = false }) {
+function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onHandleDown, today, tomorrow, busy = false, hasDraggable = true }) {
   const cap = stationCapacity(station);
   // Urutan tampil = urutan server (manual > prioritas bawaan), unit 12/12 terkunci di paling bawah.
   const items = planDisplayOrder(station.items);
@@ -361,11 +364,31 @@ function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onHandle
       {valid && insertAt === seen && <InsertLine />}
       {Array.from({ length: slots }).map((_, i) => (
         <div key={i} data-testid="meja-slot" className={`flex min-h-[72px] items-center justify-center rounded-card border-2 border-dashed px-2 text-center text-[11.5px] ${valid ? "border-accent bg-accentbg/40 text-accent" : "border-line text-ink3"}`}>
-          {valid ? `Lepas di sini → ${station.label}` : `+ Seret unit (⋮⋮) ke ${station.label}`}
+          {valid ? `Lepas di sini → ${station.label}` : hasDraggable ? `+ Seret unit (⋮⋮) ke ${station.label}, atau pakai tombol Jadwalkan` : `${station.label} kosong — belum ada unit yang bisa dijadwalkan`}
         </div>
       ))}
       {saving && <p className="sr-only" role="status">Menyimpan…</p>}
     </section>
+  );
+}
+
+// Ringkasan keadaan backlog (dari server): berapa yang siap dijadwalkan, menunggu aktivasi Owner, belum diambil, dan pengecualian — supaya "kenapa kartu ini tidak bisa" tidak perlu ditebak.
+function RencanaSummary({ counts, canOpen, onOpen }) {
+  const c = counts || {};
+  const ready = (c.SCHEDULE || 0) + (c.ONBOARD_SCHEDULE || 0);
+  const wait = c.AWAIT_ACTIVATION || 0; const pickup = c.WAIT_PICKUP || 0; const exc = c.EXCEPTION || 0;
+  if (!(wait || pickup || exc)) return null;
+  const chip = "rounded-chip px-2 py-0.5 text-[11.5px] font-semibold";
+  return (
+    <div data-testid="rencana-summary" className="space-y-1.5 px-1">
+      <div className="flex flex-wrap gap-1.5">
+        <span className={`${chip} bg-greenbg text-green`} data-testid="sum-ready">Siap dijadwalkan {ready}</span>
+        {wait > 0 && <span className={`${chip} bg-orangebg text-orange`} data-testid="sum-await">Menunggu aktivasi Owner {wait}</span>}
+        {pickup > 0 && <span className={`${chip} bg-inset text-ink2`} data-testid="sum-pickup">Belum diambil {pickup}</span>}
+        {exc > 0 && <span className={`${chip} bg-redbg text-red`} data-testid="sum-exception">Pengecualian {exc}</span>}
+      </div>
+      {canOpen && <button type="button" onClick={onOpen} data-testid="open-activation" className="text-[12px] font-semibold text-accent underline">Lihat aktivasi &amp; pengecualian</button>}
+    </div>
   );
 }
 
@@ -374,7 +397,8 @@ export default function ProductionRencanaWorkspace() {
   const dateInputRef = useRef(null);
   const [board, setBoard] = useState(null);
   const [cc, setCc] = useState(null);
-  const [refs, setRefs] = useState({ workCenters: [], operators: [], materials: [], stock: [], stations: [...MEJA], services: [] });
+  const [refs, setRefs] = useState({ workCenters: [], operators: [], candidates: [], problems: [], links: null, canRegisterOperator: false, defaultWorkCenterId: null, loaded: false, forbidden: false, materials: [], stock: [], stations: [...MEJA], services: [] });
+  const [activationOpen, setActivationOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -406,12 +430,24 @@ export default function ProductionRencanaWorkspace() {
       .catch((e) => setError(friendlyError(e))).finally(() => setLoading(false));
   }, [date]);
   useEffect(() => { load(); }, [load]);
+  // Workshop + PIC dari SATU endpoint server (izin menjadwalkan, alasan + tautan bila kosong). Tidak ada tebakan peran di browser dan tidak ada galat yang ditelan diam-diam:
+  // 403 = tidak berhak menjadwalkan (tombol tetap ada, formulir menjelaskan); galat lain ditampilkan sebagai masalah di formulir.
+  const loadRefs = useCallback(async () => {
+    if (!canManagePlanning()) { setRefs((p) => ({ ...p, loaded: true, forbidden: true, problems: [{ code: "NO_PERMISSION", message: "Anda tidak punya izin menjadwalkan produksi. Minta Admin atau Kepala Produksi." }] })); return; }
+    try {
+      const r = await api.getPlanningRefs();
+      setRefs((p) => ({ ...p, workCenters: r.workCenters || [], operators: r.operators || [], candidates: r.candidates || [], problems: r.problems || [], links: r.links || null, canRegisterOperator: !!r.canRegisterOperator, defaultWorkCenterId: r.defaultWorkCenterId || null, loaded: true, forbidden: false }));
+    } catch (e) {
+      const forbidden = e?.status === 403;
+      setRefs((p) => ({ ...p, workCenters: [], operators: [], candidates: [], loaded: true, forbidden, problems: forbidden
+        ? [{ code: "NO_PERMISSION", message: "Anda tidak punya izin menjadwalkan produksi. Minta Admin atau Kepala Produksi." }]
+        : [{ code: "REFS_ERROR", message: `Daftar workshop/PIC gagal dimuat: ${friendlyError(e)}` }] }));
+    }
+  }, []);
+  useEffect(() => { loadRefs(); }, [loadRefs]);
+  // Bahan & stok hanya untuk Kelola Rencana (BOM). Terpisah dari workshop/PIC: kegagalannya tidak boleh mengosongkan pilihan PIC.
   useEffect(() => {
-    // Peran tanpa hak menjadwalkan (PIC/Gudang) tidak boleh memanggil daftar workshop/operator (403 + galat konsol).
-    if (!canUploadPhoto) { Promise.all([api.getMaterials({ active: "true" }), api.getStock()]).then(([m, s]) => setRefs((r) => ({ ...r, materials: m || [], stock: s || [] }))).catch(() => {}); return; }
-    Promise.all([api.getWorkCenters(), api.getProductionOperators(), api.getMaterials({ active: "true" }), api.getStock()])
-      .then(([w, o, m, s]) => setRefs((r) => ({ ...r, workCenters: (w.workCenters || []).filter((x) => x.active !== false), operators: (o.operators || []).filter((x) => x.active !== false), materials: m || [], stock: s || [] })))
-      .catch(() => {});
+    Promise.all([api.getMaterials({ active: "true" }), api.getStock()]).then(([m, st]) => setRefs((r) => ({ ...r, materials: m || [], stock: st || [] }))).catch(() => {});
   }, []);
   // Galat drag/urutan muncul di atas halaman; pengguna biasanya sedang menggulir di kartu meja — bawa galat ke pandangan.
   const alertRef = useRef(null);
@@ -420,6 +456,7 @@ export default function ProductionRencanaWorkspace() {
 
   const stockByMaterial = useMemo(() => new Map(refs.stock.map((row) => [row.materialId, row])), [refs.stock]);
   const backlog = bl.schedulableViews;
+  const hasDraggable = backlog.length > 0 || bl.items.some((it) => it.rencana?.onboardable) || (board?.stations || []).some((st) => st.items.length > 0);
   const upcoming = useMemo(() => cc?.columns?.find((c) => c.key === "AKAN_MASUK")?.items || [], [cc]); // forecast read-only (bukan WIP)
   const stations = board?.stations || [];
   const findView = (runId) => backlog.find((v) => v.runId === runId) || stations.flatMap((s) => s.items).find((v) => v.runId === runId);
@@ -618,6 +655,7 @@ export default function ProductionRencanaWorkspace() {
                       className="min-h-[38px] w-full rounded-btn border border-line bg-surface px-3 text-[13px] text-ink" />
                   </div>
                 )}
+                {!bl.demo && <RencanaSummary counts={bl.rencanaCounts} canOpen={!refs.forbidden} onOpen={() => setActivationOpen(true)} />}
                 {bl.error && <p role="alert" className="m-0 rounded-btn bg-redbg px-2 py-1.5 text-[12px] text-red" data-testid="backlog-error">{bl.error}</p>}
                 {drag && <p data-testid="backlog-drop-hint" className={`m-0 rounded-btn px-2 py-1.5 text-[12px] font-semibold ${backlogOver === "unschedule" ? "bg-accentbg text-accent" : "bg-surface text-ink3"}`}>Lepas di sini untuk mengembalikan ke Belum Dijadwalkan</p>}
                 {bl.items.length === 0 && !loading && !bl.loading && <p data-testid="backlog-empty" className="rounded-card border-2 border-dashed border-line p-5 text-center text-[12px] text-ink3">{bl.q ? "Tidak ada unit yang cocok." : "Tidak ada unit yang menunggu jadwal."}</p>}
@@ -625,7 +663,9 @@ export default function ProductionRencanaWorkspace() {
                   <PlanCard key={it.view.runId} view={it.view} today={today} tomorrow={tomorrow} dragging={drag?.view?.runId === it.view.runId} onOpen={(x) => openOverview(x.unit.id)}
                     handle={<DragHandle unitCode={it.view.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, it.view)} />}
                     footer={<Button size="sm" data-mutates className="min-h-[44px] w-full" disabled={busy} onClick={() => setSchedule(it.view)}><CalendarDays size={13} aria-hidden /> Jadwalkan</Button>} />
-                ) : <BacklogCard key={it.unitId} item={it} onOpen={openOverview} />))}
+                ) : <BacklogCard key={it.unitId} item={it} onOpen={openOverview} busy={busy} dragging={drag?.view?.onboardUnitId === it.unitId}
+                  onSchedule={(item) => setSchedule(viewOfOnboardCard(item))}
+                  handle={it.rencana?.onboardable ? <DragHandle unitCode={it.card.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, viewOfOnboardCard(it))} /> : null} />))}
                 {bl.hasMore && <Button size="sm" variant="secondary" className="min-h-[44px] w-full" data-testid="backlog-more" disabled={bl.loading} onClick={bl.loadMore}>{bl.loading ? "Memuat…" : `Muat lagi (${Math.max(0, bl.total - bl.items.length)} tersisa)`}</Button>}
                 {bl.truncated && <p role="note" className="m-0 text-[11.5px] text-orange" data-testid="backlog-truncated">Daftar sangat panjang — persempit dengan pencarian.</p>}
               </section>
@@ -644,7 +684,7 @@ export default function ProductionRencanaWorkspace() {
               <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2" data-testid="meja-grid">
                 {(stations.length ? stations : (cfg?.stations || MEJA).map((code) => ({ code, label: mejaLabel(code), capacity: 3, count: 0, items: [], operatorNames: [] }))).map((s) => (
                   <MejaColumn key={s.code} station={s} drag={drag} saving={!!saving} onHandleDown={onHandleDown}
-                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} onReorder={reorderStation} busy={busy} today={today} tomorrow={tomorrow} />
+                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} onReorder={reorderStation} busy={busy} today={today} tomorrow={tomorrow} hasDraggable={hasDraggable} />
                 ))}
               </div>
             </div>
@@ -660,9 +700,10 @@ export default function ProductionRencanaWorkspace() {
           </p>
           <div className="rotate-1"><PlanCard view={drag.view} today={today} tomorrow={tomorrow} /></div>
         </div>, document.body)}
+      {activationOpen && <RencanaActivationModal onClose={() => setActivationOpen(false)} />}
       {detail && <DetailRencana target={detail} refs={refs} materials={refs.materials} stockByMaterial={stockByMaterial} onClose={() => setDetail(null)} onChanged={load} />}
       {overviewUnitId && <UnitOverviewDrawer unitId={overviewUnitId} onClose={closeOverview} onChanged={load} manageLabel="Kelola Rencana" onManage={() => openManageFor(overviewUnitId)} />}
-      {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services }} onClose={() => setSchedule(null)} onDone={(msg, meta) => { setSchedule(null); setNotice(msg); applyInitialPosition(meta); }} />}
+      {schedule && board && <ScheduleModal target={schedule} board={board} date={date} refs={{ workCenters: refs.workCenters, operators: refs.operators, services: refs.services, problems: refs.problems, candidates: refs.candidates, canRegisterOperator: refs.canRegisterOperator, defaultWorkCenterId: refs.defaultWorkCenterId, loaded: refs.loaded }} onRefsChanged={loadRefs} onStale={load} onClose={() => setSchedule(null)} onDone={(msg, meta) => { setSchedule(null); setNotice(msg); applyInitialPosition(meta); }} />}
     </PageContainer>
   );
 }

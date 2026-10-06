@@ -187,7 +187,8 @@ test("humanizeRequest: JSON intake Sales jadi kalimat terbaca; teks biasa & JSON
 test("Rencana: MejaColumn menerima onHandleDown & drag; kartu meja dan backlog punya handle seret (antar-meja / balik ke backlog)", () => {
   assert.match(RENCANA, /<MejaColumn [\s\S]*?onHandleDown=\{onHandleDown\}/);
   assert.ok(RENCANA.includes("handle={<DragHandle unitCode={v.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, v)} />}"));
-  assert.equal((RENCANA.match(/<DragHandle /g) || []).length, 2, "backlog + meja");
+  assert.equal((RENCANA.match(/<DragHandle /g) || []).length, 3, "backlog (kartu rencana) + backlog (order nyata siap onboarding) + meja");
+  assert.ok(RENCANA.includes("onPointerDown={(e) => onHandleDown(e, viewOfOnboardCard(it))}"), "kartu order nyata memakai mesin seret yang SAMA (view sintetis)");
 });
 
 // ---- Temuan sandbox QA (fix/production-v2-sandbox-findings) ----
@@ -201,7 +202,9 @@ test("Sandbox#1 Revisi Diagnosis tidak lagi kosong: wizard di-seed dari diagnosi
 });
 test("Sandbox#3 PIC/Gudang tidak memicu 403 daftar workshop/operator di Status & Rencana", () => {
   assert.match(STATUS, /if \(!canRoute\) return;/);
-  assert.match(RENCANA, /if \(!canUploadPhoto\) \{/);
+  assert.match(RENCANA, /if \(!canManagePlanning\(\)\) \{ setRefs/, "peran tanpa izin menjadwalkan tidak memanggil getPlanningRefs");
+  assert.match(RENCANA, /const readUser = \(\) =>/, "peran dibaca SAAT dipakai, bukan dibekukan saat modul dimuat");
+  assert.doesNotMatch(RENCANA, /^const user = \(\(\) =>/m, "tidak ada snapshot localStorage tingkat modul");
 });
 test("Sandbox#5/#6 Rencana: reservasi tampil kode·nama (bukan UUID) dan ada tombol 'Ajukan Pengambilan Bahan' di UI baru", () => {
   assert.match(RENCANA, /matLabel\(r\.materialId\)/);

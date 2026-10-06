@@ -11,6 +11,10 @@ import { displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priority
 import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 import { loadRuns, viewsOf } from "./productionExperienceReadService.js";
 import { signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
+import { diagnoseUnitPhotosBulk } from "./productionUnitPhotoService.js";
+import { RENCANA_ACTION, photoNoteOf } from "../lib/domain/productionRencana.js";
+import { classifyUnitRow, cohortStatesOf } from "./productionRencanaService.js";
+import { loadV2Flags } from "./v2FeatureFlags.js";
 
 export const BACKLOG_STATUSES = Object.freeze(["DIPROSES", "PENGAMBILAN"]);
 const UNIT_STATUS_FOR = Object.freeze({ DIPROSES: ["RECEIVED", "IN_PRODUCTION"], PENGAMBILAN: ["AWAITING_PICKUP", "IN_TRANSIT_IN"] });
@@ -45,13 +49,24 @@ function whereFor(status, q) {
   };
 }
 
-export async function listBacklog(prisma, { cohortUnitIds = null, status = "DIPROSES", page = 1, pageSize = BACKLOG_PAGE_SIZE_DEFAULT, q = "", now = new Date() } = {}) {
+// `states` = { reader, writer } hasil cohortStatesOf(flags) — kelayakan tiap unit (onboarding/aktivasi) dihitung dari flag SEBENARNYA. `cohortUnitIds` (lama) hanya untuk
+// pemanggil/tes lama: dianggap cohort reader DAN writer sekaligus. Tanpa keduanya, flag dibaca dari DB.
+function statesFrom({ states, cohortUnitIds }) {
+  if (states) return states;
+  const ids = new Set((cohortUnitIds || []).map((x) => String(x).toLowerCase()));
+  const cohort = { mode: ids.size ? "COHORT" : "OFF", unitIds: ids, diagnostic: null };
+  return { reader: cohort, writer: cohort };
+}
+
+export async function listBacklog(prisma, { cohortUnitIds = null, states = null, status = "DIPROSES", page = 1, pageSize = BACKLOG_PAGE_SIZE_DEFAULT, q = "", now = new Date() } = {}) {
   const where = whereFor(status, q);
-  const cohort = new Set(cohortUnitIds || []);
+  const st = states || (cohortUnitIds ? statesFrom({ cohortUnitIds }) : cohortStatesOf(await loadV2Flags(prisma)));
+  const cohort = new Set([...st.reader.unitIds].filter((id) => st.writer.unitIds.has(id))); // Run + jadwal butuh reader DAN writer
   const rows = await prisma.unit.findMany({
     where, take: BACKLOG_MAX_CANDIDATES + 1,
     select: {
-      id: true, orderId: true, createdAt: true, priority: true,
+      id: true, orderId: true, createdAt: true, priority: true, status: true, currentStageId: true, _count: { select: { stageLogs: true } },
+      order: { select: { status: true, customer: { select: { pipelineStage: true, isInternalStaff: true } } } },
       productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, plan: { select: { priority: true } } } },
     },
   });
@@ -59,7 +74,10 @@ export async function listBacklog(prisma, { cohortUnitIds = null, status = "DIPR
   const candidates = truncated ? rows.slice(0, BACKLOG_MAX_CANDIDATES) : rows;
   const complaints = await loadOpenComplaintsByUnit(prisma, candidates.map((r) => ({ id: r.id, orderId: r.orderId })));
   const storedById = new Map();
+  const classById = new Map();
+  const rencanaCounts = {};
   const ranked = candidates.map((r) => {
+    const cls = classifyUnitRow(r, st); classById.set(r.id, cls); rencanaCounts[cls.action] = (rencanaCounts[cls.action] || 0) + 1;
     const stored = Math.max(storedPriorityLevel(r.priority), ...r.productionRunsV2.map((run) => storedPriorityLevel(run.plan?.priority ?? 0)), 0);
     storedById.set(r.id, stored);
     return { id: r.id, createdAt: r.createdAt.getTime(), rank: complaints.has(r.id) ? 2 : stored };
@@ -89,14 +107,21 @@ export async function listBacklog(prisma, { cohortUnitIds = null, status = "DIPR
     for (const v of await viewsOf(prisma, runs, { now })) viewByRun.set(v.runId, v);
   }
   const photos = await signUnitPhotoUrlsBulk(prisma, pageIds);
+  const noPhotoIds = pageIds.filter((id) => !photos.get(id));
+  const photoDiag = noPhotoIds.length ? await diagnoseUnitPhotosBulk(prisma, noPhotoIds) : new Map();
   const items = pageIds.map((id) => {
     const u = byId.get(id); if (!u) return null;
     const run = u.productionRunsV2[0] || null;
     const view = run && cohort.has(u.id) ? viewByRun.get(run.id) || null : null;
     const prio = priorityDisplay({ stored: storedById.get(id) ?? 0, complaintCases: complaints.get(u.id) || [] });
+    const cls = classById.get(id);
     return {
       unitId: u.id, schedulable: !!view, view,
+      // Aksi berikutnya yang JELAS per kartu (server = otoritas): SCHEDULE | ONBOARD_SCHEDULE (Jadwalkan membuka Run) | AWAIT_ACTIVATION | WAIT_PICKUP | EXCEPTION.
+      // `onboardable` = kartu boleh dijadwalkan/diseret walau belum punya Run; `view` null — formulir jadwal mengirim unitId.
+      rencana: { action: view ? RENCANA_ACTION.SCHEDULE : cls.action, code: cls.code, message: cls.message, next: cls.next, onboardable: !view && cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE },
       card: {
+        photoNote: photoNoteOf({ photoUrl: photos.get(u.id) ?? null, diagnosis: photoDiag.get(u.id) }),
         unit: { id: u.id, unitCode: u.unitCode, merk: u.merk, ukuran: u.ukuran, photoUrl: photos.get(u.id) ?? null },
         customer: { name: u.order?.customer?.name ?? null, orderNumber: u.order?.orderNumber ?? null, salesServices: (u.order?.items || []).map((i) => i.layananName).filter(Boolean) },
         orderStatus: displayStatusOfOrder(u.order?.status), unitStatus: displayStatusOfUnit(u.status),
@@ -105,5 +130,5 @@ export async function listBacklog(prisma, { cohortUnitIds = null, status = "DIPR
       },
     };
   }).filter(Boolean);
-  return { status, page, pageSize, total, hasMore: offset + pageIds.length < total, truncated, counts, items };
+  return { status, page, pageSize, total, hasMore: offset + pageIds.length < total, truncated, counts, rencanaCounts, items };
 }

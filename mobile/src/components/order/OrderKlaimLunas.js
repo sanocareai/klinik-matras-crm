@@ -10,7 +10,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Modal, View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, StyleSheet, Image, KeyboardAvoidingView, Platform, Linking,
 } from "react-native";
-import { BadgeCheck, Camera, FileText, X, AlertCircle, FileWarning, RefreshCw } from "lucide-react-native";
+import { BadgeCheck, Camera, FileText, X, AlertCircle, FileWarning, RefreshCw, CheckSquare, Square } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import NetInfo from "@react-native-community/netinfo";
@@ -25,6 +25,7 @@ import {
   bisaDiajukan, alasanNonaktif, cekBerkas, formDariKlaim, buktiDariKlaim, bodyDariForm,
   JENIS_BAYAR, nominalOtomatis, jenisDariNominal, dampakNominal,
   simpanDrafLokal, bacaDrafLokal, hapusDrafLokal,
+  labelVerifikasi, FIELD_PEMBATAL_VERIFIKASI,
 } from "../../lib/klaimLunas";
 
 function kunciUnik() {
@@ -116,6 +117,7 @@ export function KlaimLunasSheet({ order, onClose, onChanged }) {
   const [galat, setGalat] = useState("");
   const idKlaim = useRef(null);
   const membuatDraft = useRef(null);
+  const [sudahVerifikasi, setSudahVerifikasi] = useState(false); // konfirmasi Sales: pembayaran sudah dicocokkan (lihat lib/klaimLunas.js)
   const kunciAjukan = useRef(kunciUnik()); // satu kunci per niat mengajukan — ketuk ganda / ulang jaringan tidak menggandakan
   idKlaim.current = klaim?.id || null;
 
@@ -255,7 +257,7 @@ export function KlaimLunasSheet({ order, onClose, onChanged }) {
   }
 
   async function ajukan() {
-    if (!bisaDiajukan(form, bukti, { mengirim, online, sisa: info?.sisa ?? null })) return;
+    if (!bisaDiajukan(form, bukti, { mengirim, online, sisa: info?.sisa ?? null, sudahVerifikasi })) return;
     setMengirim(true); setGalat("");
     try {
       const id = await pastikanDraft();
@@ -281,8 +283,11 @@ export function KlaimLunasSheet({ order, onClose, onChanged }) {
     ]);
   }
 
-  const aktifTombol = bisaDiedit && bisaDiajukan(form, bukti, { mengirim, online, sisa: info?.sisa ?? null });
-  const bantu = bisaDiedit ? alasanNonaktif(form, bukti, { mengirim, online, sisa: info?.sisa ?? null }) : null;
+  const aktifTombol = bisaDiedit && bisaDiajukan(form, bukti, { mengirim, online, sisa: info?.sisa ?? null, sudahVerifikasi });
+  const bantu = bisaDiedit ? alasanNonaktif(form, bukti, { mengirim, online, sisa: info?.sisa ?? null, sudahVerifikasi }) : null;
+  // Konfirmasi hanya berlaku untuk angka yang SAAT ITU tampil — mengubah nominal/tanggal/metode/rekening membatalkannya.
+  const kunciVerifikasi = FIELD_PEMBATAL_VERIFIKASI.map((k) => String(form[k] ?? "")).join("|");
+  useEffect(() => { setSudahVerifikasi(false); }, [kunciVerifikasi, klaim?.id]);
   const dampak = dampakNominal(form.amount, { sisa: info?.sisa ?? 0 });
   const tombolAjukan = form.jenis === "DP" ? "Ajukan Pembayaran DP" : "Ajukan Klaim Lunas";
   const adaUnggahan = bukti.some((b) => b.status === STATUS_BUKTI.MENGUNGGAH);
@@ -375,6 +380,19 @@ export function KlaimLunasSheet({ order, onClose, onChanged }) {
                 </View>
                 {bisaDiedit ? <Text style={styles.muted}>Foto transfer / struk QRIS / foto tunai, atau PDF. Bisa lebih dari satu. Maks. 8 MB per berkas.</Text> : null}
 
+                {bisaDiedit ? (
+                  <TouchableOpacity
+                    style={[styles.verif, sudahVerifikasi && styles.verifOn]} onPress={() => setSudahVerifikasi((v) => !v)} disabled={mengirim}
+                    accessibilityRole="checkbox" accessibilityState={{ checked: sudahVerifikasi }} testID="konfirmasi-verifikasi"
+                  >
+                    {sudahVerifikasi ? <CheckSquare size={20} color={tokens.color.accent} strokeWidth={2.2} /> : <Square size={20} color={tokens.color.textMuted} strokeWidth={2} />}
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.verifText}>{labelVerifikasi(form.method)}</Text>
+                      <Text style={styles.muted}>Ubah nominal, tanggal, metode, atau rekening akan mengosongkan centang ini.</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+
                 {galat ? <Text style={[styles.muted, { color: tokens.color.danger }]} accessibilityRole="alert">{galat}</Text> : null}
                 {bantu ? <Text style={styles.muted} testID="alasan-nonaktif">Belum bisa diajukan: {bantu}</Text> : null}
               </>
@@ -416,6 +434,12 @@ function BuktiKecil({ b, tokens, styles, onRetry }) {
 
 function createStyles(t) {
   return StyleSheet.create({
+    verif: {
+      flexDirection: "row", alignItems: "flex-start", padding: 12, marginTop: 10, borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: t.color.border, backgroundColor: t.color.subtle,
+    },
+    verifOn: { borderColor: t.color.accent },
+    verifText: { fontSize: 13, fontWeight: "600", color: t.color.textPrimary, lineHeight: 18 },
     card: { ...t.glass.surface, borderRadius: 12, padding: 12, gap: 10, marginTop: 10 },
     head: { flexDirection: "row", alignItems: "center", gap: 6 },
     title: { fontSize: 11, fontWeight: "700", color: t.color.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },

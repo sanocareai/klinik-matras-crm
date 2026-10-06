@@ -743,6 +743,9 @@ export const api = {
   getProductionV2Report: (runId) => request(`/production-v2/runs/${runId}/report`),
   planProductionV2Unit: (data, idempotencyKey = mutationKey("p8-plan")) =>
     request("/production-v2/plans", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Rencana order nyata: workshop + PIC yang sah (dihitung server, dengan alasan + tautan bila kosong) dan daftar eligibility/aktivasi (Admin/Owner/Kepala Produksi).
+  getPlanningRefs: () => request("/production-v2/planning/refs"),
+  getRencanaEligibility: () => request("/production-v2/planning/eligibility"),
   scheduleProductionV2Plan: (planId, data, idempotencyKey = mutationKey("p8-schedule")) =>
     request(`/production-v2/plans/${planId}/schedule`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // Urutan manual unit per meja (drag-drop / naik-turun) — daftar LENGKAP plan id di slot menurut urutan baru.
