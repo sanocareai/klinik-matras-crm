@@ -154,7 +154,9 @@ test("derivasi NON-kasur: tanpa uji tekstur — satu kiriman bukti menutup Penge
   assert.deepEqual(deriveNextAction(base({ productFlow: "NON_KASUR", activeOp: op })), { actor: "TABLE", stepNo: 6, action: "COMPLETE" });
   assert.deepEqual(deriveNextAction(base({ productFlow: "KASUR", activeOp: op })), { actor: "TABLE", stepNo: 6, action: "EVIDENCE", rework: false, lastVerdict: null });
   assert.deepEqual(deriveNextAction(base({ productFlow: "NON_KASUR", target: { code: BUILD_STAGE_CODE, phase: "MODULE", sequence: 10 } })), { actor: "TABLE", stepNo: 6, action: "START" });
-  assert.equal(deriveNextAction(base({ productFlow: "NON_KASUR", target: { code: "fit_test", phase: "FINISH", requiresQc: true } })).wait, "AWAITING_QC");
+  const qcWait = deriveNextAction(base({ productFlow: "NON_KASUR", target: { code: "fit_test", phase: "FINISH", requiresQc: true } }));
+  assert.equal(qcWait.wait, "AWAITING_QC"); assert.equal(qcWait.stepNo, null, "divan/sofa: tidak menyebut tahap 8 (uji tekstur kasur)");
+  assert.equal(deriveNextAction(base({ productFlow: "KASUR", target: { code: "fit_test", phase: "FINISH", requiresQc: true } })).stepNo, 8);
   assert.equal(deriveNextAction(base({ productFlow: "NON_KASUR", adaptation: true, target: { code: "fit_test", phase: "FINISH", requiresQc: true } })).qcNotPerformed, true, "adaptasi: QC boleh tidak dilakukan");
 });
 
