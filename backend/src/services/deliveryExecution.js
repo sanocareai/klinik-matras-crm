@@ -29,6 +29,32 @@ export function requireIdempotencyKey(req) {
   return key;
 }
 
+const SUMBER_DIKENAL = new Set(["WEB", "DRIVER_APP"]);
+
+// Histori Waktu Route & Stop (7 Okt 2026) — occurredAt = waktu KEJADIAN
+// menurut klien (device clock saat tombol ditekan), BEDA dari createdAt
+// DeliveryExecutionEvent (waktu server commit, @default(now()) saat insert).
+// Untuk aksi yang SEMPAT mengantre offline, klien mengirim waktu TAP ASLI
+// (driver-mobile: item.createdAt dari executionQueue.js, direkam saat
+// enqueue — BUKAN saat akhirnya terkirim). TIDAK PERNAH menolak nilai yang
+// kelihatan janggal (jam device rusak tetap aksi sah, lihat
+// services/routeTimeline.js#evaluateEventTiming yang MELABELI, bukan
+// memblokir) — kalau klien tidak mengirim apa pun/tidak valid, default ke
+// SEKARANG (fakta nyata: server menerima aksi ini sekarang), bukan nilai
+// karangan yang lain.
+export function resolveClientTiming(req) {
+  const raw = req.body?.occurredAt;
+  let occurredAt = null;
+  if (raw != null) {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) occurredAt = d;
+  }
+  if (!occurredAt) occurredAt = new Date();
+  const rawSource = typeof req.body?.clientPlatform === "string" ? req.body.clientPlatform.toUpperCase() : null;
+  const source = rawSource && SUMBER_DIKENAL.has(rawSource) ? rawSource : null;
+  return { occurredAt, source };
+}
+
 export function normalizeProofLocation(value) {
   if (value == null) return null; // GPS best-effort: izin ditolak tidak memblokir.
   const lat = Number(value.lat);
@@ -92,8 +118,8 @@ export async function findExecutionReplay(tx, idempotencyKey, actorId, action, {
   return event;
 }
 
-export function createExecutionEvent(tx, { idempotencyKey, action, actorId, jobId = null, routeId = null, payload = null }) {
+export function createExecutionEvent(tx, { idempotencyKey, action, actorId, jobId = null, routeId = null, payload = null, occurredAt = null, source = null }) {
   return tx.deliveryExecutionEvent.create({
-    data: { idempotencyKey, action, actorId, jobId, routeId, payload },
+    data: { idempotencyKey, action, actorId, jobId, routeId, payload, occurredAt, source },
   });
 }

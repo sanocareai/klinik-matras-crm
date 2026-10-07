@@ -4090,10 +4090,11 @@ model RoutePrepChecklistProof {
   item    RoutePrepChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   itemRevision Int     @map("item_revision")
-  // /media/job-photos/... — storage & static-serving SAMA PERSIS dengan foto
-  // bukti job lain (keamanan akses = nama file tak-tertebak, lihat
-  // index.js#/media/job-photos), BUKAN mekanisme baru. NULL kalau item ini
-  // photoRequired=false (bukti cukup "ditandai selesai" tanpa lampiran).
+  // NAMA BERKAS POLOS di data/checklist-proof-photos (audit keamanan 7 Okt
+  // 2026) — BUKAN path publik, dir ini TIDAK PERNAH di-mount express.static.
+  // Satu-satunya jalan baca: GET /media/checklist-proof/:proofId dengan
+  // Bearer+kepemilikan rute ATAU URL bertanda-tangan umur pendek (lihat
+  // routes/checklistProofMedia.js). NULL kalau item ini photoRequired=false.
   photoUrl String? @map("photo_url")
   note     String?
 
@@ -4128,6 +4129,31 @@ model DeliveryExecutionEvent {
   route          Route?   @relation(fields: [routeId], references: [id], onDelete: SetNull)
   payload        Json?
   createdAt      DateTime @default(now()) @map("created_at")
+
+  // Histori Waktu Route & Stop (7 Okt 2026) — DUA jam yang SENGAJA dipisah:
+  //   createdAt  = waktu SERVER menerima & commit baris ini (sudah ada sejak
+  //                awal, tidak pernah berubah artinya).
+  //   occurredAt = waktu KEJADIAN menurut klien (device clock saat driver
+  //                menekan tombol). Untuk aksi online biasa keduanya SELALU
+  //                hampir sama (klien mengirim occurredAt=sekarang persis
+  //                sebelum request dikirim). Untuk aksi yang SEMPAT mengantre
+  //                offline (lihat driver-mobile/src/lib/executionQueue.js
+  //                item.createdAt — waktu item MASUK antrean, BUKAN waktu
+  //                sinkron), occurredAt tetap waktu TAP ASLI di lapangan,
+  //                createdAt baru terisi saat antrean akhirnya terkirim —
+  //                selisih besar antara keduanya ITULAH "sinkronisasi
+  //                terlambat", dihitung MURNI dari dua kolom ini saat baca
+  //                (lib/routeTimeline.js), TIDAK disimpan sebagai flag
+  //                terpisah supaya ambang batas bisa diubah kelak tanpa
+  //                migrasi data. NULLABLE murni untuk baris LAMA (sebelum
+  //                kolom ini ada) — TIDAK di-backfill (jangan mengarang nilai
+  //                yang sebenarnya tidak pernah direkam); baris baru SELALU
+  //                terisi (endpoint men-default ke waktu server saat ini
+  //                kalau klien tidak mengirim, bukan nilai palsu).
+  occurredAt DateTime? @map("occurred_at")
+  // "WEB" | "DRIVER_APP" — deklarasi klien sendiri (bukan ditebak dari User-
+  // Agent/header yang gampang tidak ada/salah). NULLABLE untuk baris lama.
+  source     String?   @map("source")
 
   @@index([jobId, createdAt])
   @@index([routeId, createdAt])

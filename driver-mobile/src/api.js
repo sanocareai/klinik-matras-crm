@@ -201,6 +201,13 @@ function executionMeta(data, meta = {}) {
     ...(meta.readerMode === "V2" && Number.isInteger(meta.baseRouteRevision)
       ? { expectedRouteRevision: meta.baseRouteRevision }
       : {}),
+    // Histori Waktu Route & Stop (7 Okt 2026) — occurredAt = waktu TAP ASLI
+    // di device (meta.occurredAt, dari item.createdAt saat enqueue ke
+    // antrean offline — lihat executionQueue.js#enqueueExecution), BUKAN
+    // waktu baru dibuat di sini. Untuk aksi yang langsung terkirim (online),
+    // occurredAt sudah di-set executionQueue.js tepat sebelum panggilan ini.
+    clientPlatform: "DRIVER_APP",
+    ...(meta.occurredAt ? { occurredAt: meta.occurredAt } : {}),
   };
 }
 
@@ -257,6 +264,9 @@ export const api = {
   // mendukung header kustom per-panggilan (headers-nya tetap hardcode
   // Authorization/X-Device-Id, lihat definisinya di atas).
   getRoutePrepChecklist: (routeId) => request(`/armada/routes/${routeId}/prep-checklist`),
+  // Histori Waktu Route & Stop (7 Okt 2026) — ISO UTC apa adanya, lihat
+  // src/lib/routeTimelineFormat.js untuk pelabelan WIB + Indonesia.
+  getRouteTimeline: (routeId) => request(`/armada/routes/${routeId}/timeline`),
   submitRoutePrepChecklistProof: (routeId, itemId, file, { note, idempotencyKey } = {}) =>
     uploadFile(`/armada/routes/${routeId}/prep-checklist/items/${itemId}/proof`, file, { ...(note && { note }), idempotencyKey }, "photo"),
   // Item TANPA foto wajib ("cek kondisi kasur" dkk) — tidak ada file untuk

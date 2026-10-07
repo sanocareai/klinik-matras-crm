@@ -337,6 +337,11 @@ export const api = {
   // sebagai expectedRevision di tiap tambah/edit item — konkurensi
   // optimistik, lihat catatan panjang services/routePrepChecklist.js.
   getRoutePrepChecklist: (routeId) => request(`/armada/routes/${routeId}/prep-checklist`),
+  // Histori Waktu Route & Stop (7 Okt 2026) — ISO UTC apa adanya; konversi
+  // WIB + label Indonesia + hitung durasi adalah tanggung jawab
+  // utils/formatDate.js & features/armada/routeTimelineFormat.js (BUKAN backend,
+  // lihat catatan panjang di services/routeTimeline.js).
+  getRouteTimeline: (routeId) => request(`/armada/routes/${routeId}/timeline`),
   addRoutePrepChecklistItem: (routeId, data) =>
     request(`/armada/routes/${routeId}/prep-checklist/items`, { method: "POST", body: JSON.stringify(data) }),
   updateRoutePrepChecklistItem: (routeId, itemId, data) =>
@@ -415,7 +420,12 @@ export const api = {
 
   // Kendala & Reschedule (Delivery Tahap 5)
   getIssues: (status) => request(`/armada/issues${status ? `?status=${status}` : ""}`),
-  rescheduleIssue: (jobId, data) => request(`/armada/issues/${jobId}/reschedule`, { method: "POST", body: JSON.stringify(data) }),
+  // Idempotency-Key (7 Okt 2026, Histori Waktu Route & Stop) — endpoint ini
+  // SEBELUMNYA tanpa proteksi retry sama sekali (lihat catatan panjang di
+  // backend routes/armada.js). occurredAt = waktu klik SEKARANG (aksi
+  // dispatcher web, tidak pernah mengantre offline seperti aksi driver).
+  rescheduleIssue: (jobId, data, idempotencyKey = mutationKey("reschedule")) =>
+    request(`/armada/issues/${jobId}/reschedule`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ ...data, occurredAt: new Date().toISOString(), clientPlatform: "WEB" }) }),
   // Catatan reschedule retroaktif untuk job yang SUDAH Selesai (6 September
   // 2026) — TERPISAH dari rescheduleIssue di atas (itu buat job Gagal,
   // ganti tanggal/driver & menyalakan job lagi). Ini murni catatan, tidak

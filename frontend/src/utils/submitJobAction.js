@@ -27,17 +27,23 @@ export async function uploadBlobs(jobId, blobs) {
 // yang sudah tahu ini lagi memproses antrean).
 export async function performSubmit(jobId, action, payload, photoFiles = [], signatureBlob = null) {
   const idempotencyKey = payload.idempotencyKey || createIdempotencyKey();
+  // Histori Waktu Route & Stop (7 Okt 2026) — occurredAt = waktu TAP ASLI
+  // (ditetapkan SEKALI di submitOrQueue sebelum percobaan pertama, lihat
+  // di bawah, dan DIBEKUKAN di payload yang sama kalau sempat mengantre
+  // offline — syncQueue.js mengirim ulang `entry.payload` APA ADANYA, jadi
+  // retry otomatis membawa waktu tap asli, bukan waktu kirim ulang).
+  const timing = { occurredAt: payload.occurredAt, clientPlatform: "WEB" };
   // Foto wajib di start/arrive juga (8 September 2026, dokumentasi tiap
   // tahap) — upload dulu (pola SAMA dengan complete/fail di bawah), baru
   // kirim URL-nya ke server. Validasi "wajib minimal 1" ada di backend
   // (& di UI lewat disabled tombol) — di sini murni upload+kirim.
   if (action === "start") {
     const startPhotoUrls = await uploadBlobs(jobId, photoFiles);
-    return api.startArmadaJob(jobId, { proofPhotoUrls: startPhotoUrls }, idempotencyKey);
+    return api.startArmadaJob(jobId, { proofPhotoUrls: startPhotoUrls, ...timing }, idempotencyKey);
   }
   if (action === "arrive") {
     const arrivalPhotoUrls = await uploadBlobs(jobId, photoFiles);
-    return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls, location: payload.location }, idempotencyKey);
+    return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls, location: payload.location, ...timing }, idempotencyKey);
   }
 
   const proofPhotoUrls = await uploadBlobs(jobId, photoFiles);
@@ -49,12 +55,12 @@ export async function performSubmit(jobId, action, payload, photoFiles = [], sig
 
   if (action === "complete") {
     return api.completeArmadaJob(jobId, {
-      proofPhotoUrls, signatureUrl, recipientName: payload.recipientName, note: payload.note, location: payload.location,
+      proofPhotoUrls, signatureUrl, recipientName: payload.recipientName, note: payload.note, location: payload.location, ...timing,
     }, idempotencyKey);
   }
   if (action === "fail") {
     return api.failArmadaJob(jobId, {
-      failureReason: payload.failureReason, failurePhotoUrls: proofPhotoUrls, note: payload.note, location: payload.location,
+      failureReason: payload.failureReason, failurePhotoUrls: proofPhotoUrls, note: payload.note, location: payload.location, ...timing,
     }, idempotencyKey);
   }
   if (action === "payment") {
@@ -78,7 +84,15 @@ export async function performSubmit(jobId, action, payload, photoFiles = [], sig
 // ulang otomatis begitu online lagi, supaya driver tetap bisa lanjut
 // bekerja tanpa menunggu sinyal.
 export async function submitOrQueue(jobId, action, payload, photoFiles = [], signatureBlob = null) {
-  const durablePayload = { ...payload, idempotencyKey: payload.idempotencyKey || createIdempotencyKey() };
+  const durablePayload = {
+    ...payload,
+    idempotencyKey: payload.idempotencyKey || createIdempotencyKey(),
+    // Dibekukan SEKALI di sini (bukan di performSubmit) — kalau percobaan
+    // pertama gagal karena jaringan dan masuk antrean, retry berikutnya
+    // (syncQueue.js) memakai objek payload yang SAMA, jadi waktu tap asli
+    // tidak pernah tertimpa waktu kirim ulang.
+    occurredAt: payload.occurredAt || new Date().toISOString(),
+  };
   try {
     const result = await performSubmit(jobId, action, durablePayload, photoFiles, signatureBlob);
     return { queued: false, result };

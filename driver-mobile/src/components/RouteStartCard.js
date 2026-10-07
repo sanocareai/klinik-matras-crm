@@ -11,8 +11,9 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Linking, Alert, ActivityIndicator } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { ClipboardList, Map, Navigation } from "lucide-react-native";
+import { ClipboardList, Clock, Map, Navigation } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
+import RouteTimeline from "./RouteTimeline";
 import { api } from "../api";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
@@ -32,6 +33,7 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
   const [mapBusy, setMapBusy] = useState(false);
   const [checking, setChecking] = useState(false);
   const [checklistBusy, setChecklistBusy] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
   const pending = queue.find((item) => item.routeId === route.id && item.action === "route-start");
 
   function bukaPersiapanPerjalanan() {
@@ -190,6 +192,13 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
           </View>
         </View>
       )}
+
+      {/* Histori Waktu Route & Stop (7 Okt 2026) — collapsible, padanan web. */}
+      <Pressable style={styles.mapsBtn} onPress={() => setTimelineOpen((v) => !v)}>
+        <Clock size={15} color={theme.ACCENT} />
+        <Text style={styles.mapsBtnText}>{timelineOpen ? "Sembunyikan Histori Waktu" : "Lihat Histori Waktu"}</Text>
+      </Pressable>
+      {timelineOpen && <RouteTimeline routeId={route.id} />}
     </View>
   );
 }

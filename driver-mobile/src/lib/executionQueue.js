@@ -163,6 +163,11 @@ export function createExecutionQueue({ storage, fs, api: client }) {
       deviceId: item.deviceId,
       baseRevision: item.baseRevision,
       baseRouteRevision: item.baseRouteRevision,
+      // Histori Waktu Route & Stop (7 Okt 2026) — item.createdAt = waktu
+      // item MASUK antrean (saat driver menekan tombol), bukan waktu kirim.
+      // Untuk aksi yang tidak pernah mengantre (langsung sukses), ini tetap
+      // "waktu tap", cuma selisihnya ke waktu server nyaris nol.
+      occurredAt: item.createdAt,
     };
     if (item.action === "route-start") {
       return client.startRoute(item.routeId, { proofPhotoUrls: item.uploadedUrls }, item.idempotencyKey, meta);

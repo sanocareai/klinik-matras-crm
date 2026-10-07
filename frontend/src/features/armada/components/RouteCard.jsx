@@ -14,6 +14,7 @@ import { formatTanggal } from "@/utils/formatDate.js";
 import QuickChatModal from "./QuickChatModal.jsx";
 import { isAdminUser } from "@/lib/roles.js";
 import RoutePrepChecklistAdminModal from "./RoutePrepChecklistAdminModal.jsx";
+import RouteTimelineModal from "./RouteTimelineModal.jsx";
 
 // Pesan konfirmasi default (8 September 2026) — dipakai mengisi kotak
 // teks QuickChatModal begitu ikon chat diklik, supaya admin delivery
@@ -70,6 +71,7 @@ export default function RouteCard({
   const [draggingStopId, setDraggingStopId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
   // Edit rute setelah diterbitkan (redesain Route Planner, Sep 2026) — null
   // = terkunci seperti biasa. String = SEDANG diedit darurat, isinya alasan
   // yang diminta sekali di awal (window.prompt, pola sama dengan confirm()
@@ -455,6 +457,21 @@ export default function RouteCard({
         </button>
         {checklistOpen && (
           <RoutePrepChecklistAdminModal route={route} open={checklistOpen} onOpenChange={setChecklistOpen} />
+        )}
+
+        {/* Histori Waktu Route & Stop (7 Okt 2026) — tersedia begitu rute
+            punya minimal 1 event (lihat GET /routes/:id/timeline); tombol
+            SELALU tampil (tidak tahu dulu ada event atau tidak tanpa fetch
+            — modal sendiri yang menampilkan "Tidak tersedia" per milestone). */}
+        <button
+          type="button"
+          onClick={() => setTimelineOpen(true)}
+          className="mb-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-chip border border-border text-[11px] font-semibold text-ink2 transition-colors hover:border-accent hover:text-accent"
+        >
+          <Clock size={13} /> Histori Waktu
+        </button>
+        {timelineOpen && (
+          <RouteTimelineModal route={route} open={timelineOpen} onOpenChange={setTimelineOpen} />
         )}
 
         {isEditable ? (

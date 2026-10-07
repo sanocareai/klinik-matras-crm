@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Home, Loader2, Map as MapIcon, MapPin,
+  AlertTriangle, Camera, CheckCircle2, Clock as ClockIcon, CloudOff, Eraser, Home, Loader2, Map as MapIcon, MapPin,
   Navigation, Phone, RefreshCw, Truck, Wallet, WifiOff, X,
 } from "lucide-react";
 // PRA-ADA (bug ditemukan saat QA browser nyata Checklist Persiapan
@@ -25,6 +25,7 @@ import { useMyJobs } from "@/features/armada/hooks/useMyJobs.js";
 import { mapsUrl } from "@/features/armada/jobStatus.js";
 import { SalesBadge, ProductBadge } from "@/features/armada/components/JobBadges.jsx";
 import RoutePrepChecklistDriverPanel from "@/features/armada/components/RoutePrepChecklistDriverPanel.jsx";
+import RouteTimeline from "@/features/armada/components/RouteTimeline.jsx";
 import { ISSUE_STATUS } from "@/features/armada/issueStatus.js";
 import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
@@ -609,6 +610,7 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
   // terlepas dari state ini) — default true supaya rute TANPA checklist
   // tidak pernah tertahan menunggu panel ini selesai memuat.
   const [checklistReady, setChecklistReady] = useState(true);
+  const [timelineOpen, setTimelineOpen] = useState(false);
 
   async function openMaps() {
     setMapBusy(true);
@@ -632,7 +634,7 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
     setErr("");
     try {
       const urls = await uploadBlobs(sampleJobId, photos);
-      await api.startRoute(route.id, { proofPhotoUrls: urls });
+      await api.startRoute(route.id, { proofPhotoUrls: urls, occurredAt: new Date().toISOString(), clientPlatform: "WEB" });
       setMode("idle");
       setPhotos([]);
       onChanged();
@@ -687,6 +689,21 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
       )}
 
       {err && <p className="mt-2 text-[11px] text-red">{err}</p>}
+
+      {/* Histori Waktu Route & Stop (7 Okt 2026) — collapsible, bukan modal
+          (ruang layar driver web lebih sempit daripada admin desktop). */}
+      <button
+        type="button"
+        onClick={() => setTimelineOpen((v) => !v)}
+        className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-border text-[11px] font-semibold text-ink2"
+      >
+        <ClockIcon className="h-3.5 w-3.5" /> {timelineOpen ? "Sembunyikan Histori Waktu" : "Lihat Histori Waktu"}
+      </button>
+      {timelineOpen && (
+        <div className="mt-2">
+          <RouteTimeline routeId={route.id} />
+        </div>
+      )}
     </Card>
   );
 }

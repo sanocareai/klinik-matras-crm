@@ -21,7 +21,7 @@ import { ACTIVE_JOB_STATUSES } from "./jobStatus.js";
 // pendapatannya tidak pernah masuk buku". Fungsi ini sendiri yang memutuskan
 // status mana yang layak diakui (STATUS_PENGAKUAN) & idempoten per order.
 import { bukukanPengakuanPendapatan } from "./finance/hooks.js";
-import { SETTLED_JOB_STATUSES } from "./deliveryExecution.js";
+import { SETTLED_JOB_STATUSES, createExecutionEvent } from "./deliveryExecution.js";
 import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryCommandService.js";
 import { V2_FLAGS } from "./v2FeatureFlags.js";
 
@@ -95,7 +95,17 @@ export function computeOrderStatus(units) {
 // HANYA menyentuh rute PUBLISHED (bukan DRAFT — belum ada apa pun untuk
 // "selesai", dan bukan CANCELLED — sudah status akhir sendiri) yang punya
 // minimal 1 job — rute kosong tidak relevan ditandai selesai.
-export async function syncRouteCompletionStatus(tx, routeId) {
+// actor = { id, occurredAt, source } OPSIONAL (7 Okt 2026, Histori Waktu
+// Route & Stop) — HANYA diisi oleh dua pemanggil armada.js (POST
+// /jobs/:id/complete & /fail) yang punya req.user/waktu klien NYATA dari
+// aksi driver yang baru saja menuntaskan stop TERAKHIR rute ini. Dua
+// pemanggil orderStatusSync.js sendiri (kaskade admin menutup order massal)
+// SENGAJA TIDAK mengirim actor — momen itu bukan "driver menuntaskan stop
+// di lapangan" yang punya waktu kejadian nyata, jadi TIDAK menulis
+// DeliveryExecutionEvent sama sekali (jangan mengarang actor/waktu kejadian
+// untuk kaskade administratif; linimasa rute itu cukup menampilkan "Tidak
+// tersedia" untuk ROUTE_COMPLETED, tetap jujur).
+export async function syncRouteCompletionStatus(tx, routeId, actor = null) {
   if (!routeId) return;
   const route = await tx.route.findUnique({ where: { id: routeId }, select: { status: true } });
   if (!route || !["PUBLISHED", "IN_PROGRESS"].includes(route.status)) return;
@@ -104,6 +114,12 @@ export async function syncRouteCompletionStatus(tx, routeId) {
   const semuaTuntas = jobs.every((j) => SETTLED_JOB_STATUSES.includes(j.status));
   if (semuaTuntas) {
     await tx.route.update({ where: { id: routeId }, data: { status: "COMPLETED", completedAt: new Date() } });
+    if (actor?.id) {
+      await createExecutionEvent(tx, {
+        idempotencyKey: `route-completed:${routeId}`, action: "ROUTE_COMPLETED", actorId: actor.id, routeId,
+        payload: { status: "COMPLETED" }, occurredAt: actor.occurredAt || null, source: actor.source || null,
+      });
+    }
   }
 }
 

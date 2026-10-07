@@ -94,7 +94,9 @@ test("gerbang: item wajib tanpa bukti menahan start; setelah bukti foto terkirim
 
   const bukti = await kirimBukti(f.driver.token, f.route.id, itemId);
   assert.equal(bukti.status, 201, JSON.stringify(bukti.body));
-  assert.ok(bukti.body.photoUrl.startsWith("/media/job-photos/"));
+  // photoUrl SEKARANG URL bertanda-tangan ke /media/checklist-proof (audit
+  // keamanan) — BUKAN lagi path /media/job-photos/ statis-publik.
+  assert.match(bukti.body.photoUrl, /^\/media\/checklist-proof\/[0-9a-f-]{36}\?exp=\d+&sig=[0-9a-f]+$/);
 
   const sekarang = await startRoute(f.driverApi, f.route.id);
   assert.equal(sekarang.status, 200, JSON.stringify(sekarang.body));
@@ -368,4 +370,91 @@ test("URL/path foto arbitrer: endpoint proof TIDAK PERNAH menerima photoUrl dari
   // menerima photoUrl dari body sebagai pengganti upload nyata).
   assert.equal(res.status, 400, JSON.stringify(body));
   assert.doesNotMatch(body.error || "", /foto-milik-orang-lain/);
+});
+
+// ── Akses langsung URL foto checklist (audit keamanan, 7 Okt 2026) ─────────
+// "Verifikasi juga akses URL foto checklist langsung: tanpa login, driver
+// lain, dan pengguna berwenang. Perbaiki jika bukti bisa bocor." — foto
+// checklist TIDAK LAGI disajikan express.static tanpa auth (lihat
+// lib/checklistProofPhotoStore.js & routes/checklistProofMedia.js); satu-
+// satunya jalan baca adalah endpoint ini (Bearer+kepemilikan rute ATAU URL
+// bertanda-tangan), diverifikasi langsung lewat HTTP, bukan cuma baca kode.
+
+test("akses langsung URL foto checklist: TANPA login (tanpa Bearer, tanpa tanda tangan) ditolak 401", async () => {
+  const f = await fixtureRoute();
+  const buat = await tambahItem(f.dispatcherApi, f.route.id, { title: "Tali", required: true, photoRequired: true });
+  const bukti = await kirimBukti(f.driver.token, f.route.id, buat.body.item.id);
+  const proofId = bukti.body.id;
+
+  const res = await fetch(`${server.baseUrl}/media/checklist-proof/${proofId}`);
+  assert.equal(res.status, 401, JSON.stringify(await res.json().catch(() => null)));
+});
+
+test("akses langsung URL foto checklist: driver LAIN (Bearer sah, bukan pemilik rute, bukan JOB_WRITE) ditolak 403", async () => {
+  const f = await fixtureRoute();
+  const buat = await tambahItem(f.dispatcherApi, f.route.id, { title: "Tali", required: true, photoRequired: true });
+  const bukti = await kirimBukti(f.driver.token, f.route.id, buat.body.item.id);
+  const proofId = bukti.body.id;
+
+  const res = await fetch(`${server.baseUrl}/media/checklist-proof/${proofId}`, {
+    headers: { Authorization: `Bearer ${f.otherDriver.token}` },
+  });
+  assert.equal(res.status, 403, JSON.stringify(await res.json().catch(() => null)));
+});
+
+test("akses langsung URL foto checklist: pengguna BERWENANG (pemilik rute via Bearer, dan dispatcher via Bearer) berhasil 200 dengan isi gambar nyata", async () => {
+  const f = await fixtureRoute();
+  const buat = await tambahItem(f.dispatcherApi, f.route.id, { title: "Tali", required: true, photoRequired: true });
+  const bukti = await kirimBukti(f.driver.token, f.route.id, buat.body.item.id);
+  const proofId = bukti.body.id;
+
+  const sebagaiDriver = await fetch(`${server.baseUrl}/media/checklist-proof/${proofId}`, {
+    headers: { Authorization: `Bearer ${f.driver.token}` },
+  });
+  assert.equal(sebagaiDriver.status, 200);
+  assert.equal(sebagaiDriver.headers.get("content-type"), "image/jpeg");
+  const bytes = Buffer.from(await sebagaiDriver.arrayBuffer());
+  assert.ok(bytes.length > 0, "isi berkas harus benar-benar terkirim, bukan respons kosong");
+
+  const sebagaiDispatcher = await fetch(`${server.baseUrl}/media/checklist-proof/${proofId}`, {
+    headers: { Authorization: `Bearer ${f.dispatcher.token}` },
+  });
+  assert.equal(sebagaiDispatcher.status, 200);
+});
+
+test("akses langsung URL foto checklist: URL bertanda-tangan dari GET /prep-checklist berhasil TANPA Bearer sama sekali (dipakai <img src>)", async () => {
+  const f = await fixtureRoute();
+  const buat = await tambahItem(f.dispatcherApi, f.route.id, { title: "Tali", required: true, photoRequired: true });
+  await kirimBukti(f.driver.token, f.route.id, buat.body.item.id);
+
+  const daftar = await f.driverApi.get(CHK(f.route.id));
+  const signedUrl = daftar.body.items[0].bukti.photoUrl;
+  assert.match(signedUrl, /^\/media\/checklist-proof\/[0-9a-f-]{36}\?exp=\d+&sig=[0-9a-f]+$/);
+
+  const res = await fetch(`${server.baseUrl}${signedUrl}`); // TANPA header Authorization sama sekali
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "image/jpeg");
+});
+
+test("akses langsung URL foto checklist: tanda tangan rusak/dipalsukan ditolak 403, exp kedaluwarsa ditolak 403", async () => {
+  const f = await fixtureRoute();
+  const buat = await tambahItem(f.dispatcherApi, f.route.id, { title: "Tali", required: true, photoRequired: true });
+  const bukti = await kirimBukti(f.driver.token, f.route.id, buat.body.item.id);
+  const proofId = bukti.body.id;
+
+  const palsu = await fetch(`${server.baseUrl}/media/checklist-proof/${proofId}?exp=9999999999&sig=0000000000000000000000000000000000000000000000000000000000000000`);
+  assert.equal(palsu.status, 403);
+
+  const kedaluwarsa = await fetch(`${server.baseUrl}/media/checklist-proof/${proofId}?exp=1&sig=0000000000000000000000000000000000000000000000000000000000000000`);
+  assert.equal(kedaluwarsa.status, 403);
+});
+
+test("akses langsung URL foto checklist: jalur lama /media/job-photos TIDAK LAGI menyimpan/menyajikan bukti checklist", async () => {
+  const f = await fixtureRoute();
+  const buat = await tambahItem(f.dispatcherApi, f.route.id, { title: "Tali", required: true, photoRequired: true });
+  const bukti = await kirimBukti(f.driver.token, f.route.id, buat.body.item.id);
+  // photoUrl POST sekarang URL /media/checklist-proof bertanda-tangan, BUKAN
+  // lagi nama berkas /media/job-photos — pemeriksaan ini mengunci kontrak
+  // itu supaya tidak diam-diam kembali ke jalur lama yang tanpa auth.
+  assert.doesNotMatch(bukti.body.photoUrl, /\/media\/job-photos\//);
 });

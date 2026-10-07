@@ -89,6 +89,8 @@ import { productionPlanningRouter } from "./routes/productionPlanning.js";
 import { productionExperienceRouter } from "./routes/productionExperience.js";
 import { productionEvidencePathRouter } from "./routes/productionEvidenceMedia.js";
 import { productionUnitPhotoPathRouter } from "./routes/productionUnitPhoto.js";
+import { checklistProofMediaPathRouter } from "./routes/checklistProofMedia.js";
+import { ensureChecklistProofPhotoDir } from "./lib/checklistProofPhotoStore.js";
 import { stockAdjustmentRouter } from "./routes/stockAdjustment.js";
 import { replenishmentRouter } from "./routes/replenishment.js";
 import { warehouseReportsRouter } from "./routes/warehouseReports.js";
@@ -155,6 +157,7 @@ mkdirSync(invoicePdfsDir, { recursive: true });
 mkdirSync(warrantyPdfsDir, { recursive: true });
 mkdirSync(routeSheetsDir, { recursive: true });
 mkdirSync(driverAppBundlesDir, { recursive: true });
+ensureChecklistProofPhotoDir();
 
 // Pengaman terakhir — BUKAN pengganti try/catch di tiap route (yang tetap
 // wajib, supaya error jadi respons HTTP yang jelas ke user, bukan cuma log).
@@ -200,6 +203,7 @@ app.use("/media/bukti-pembayaran", financePaymentProofsPathRouter);
 app.use("/media/klaim-lunas", klaimLunasFilePathRouter); // Bukti Pembayaran klaim Sales: TIDAK statis — Bearer pemilik/Finance atau URL bertanda-tangan
 app.use("/media/production-evidence", productionEvidencePathRouter); // bukti tahap produksi V2: Bearer+reader cohort atau URL bertanda-tangan // bukti pembayaran: Bearer atau URL bertanda-tangan (S5)
 app.use("/media/unit-photo", productionUnitPhotoPathRouter); // P9B.1 foto identitas unit: Bearer+reader cohort atau URL bertanda-tangan (pola sama dengan production-evidence)
+app.use("/media/checklist-proof", checklistProofMediaPathRouter); // Checklist Persiapan Perjalanan: Bearer+kepemilikan rute atau URL bertanda-tangan (audit keamanan 7 Okt 2026)
 app.use("/media/products", express.static(productsDir));
 app.use("/media/invoice-pdfs", express.static(invoicePdfsDir));
 app.use("/media/warranty-pdfs", express.static(warrantyPdfsDir));

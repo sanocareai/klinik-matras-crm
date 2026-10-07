@@ -20,6 +20,11 @@ backend/data/driver-app-bundles/*
 # P9B.1 — foto identitas unit manual (unggahan runtime, pola sama dengan dir data/ lain di atas)
 backend/data/unit-photo-evidence/*
 !backend/data/unit-photo-evidence/.gitkeep
+# Bukti foto Checklist Persiapan Perjalanan (audit keamanan 7 Okt 2026) —
+# dir TERPISAH dari job-photos, TIDAK di-mount express.static (lihat
+# lib/checklistProofPhotoStore.js & routes/checklistProofMedia.js).
+backend/data/checklist-proof-photos/*
+!backend/data/checklist-proof-photos/.gitkeep
 
 # Capacitor Android — keystore JANGAN di-commit (simpan terpisah di tempat aman)
 frontend/android/release.keystore
