@@ -237,7 +237,7 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
     case 12:
       return (
         <div className="space-y-2">
-          <Toggle checked={form.confirm} onChange={(v) => set({ confirm: v })}>Jahitan selesai & kasur siap diserahkan ke Gudang</Toggle>
+          <Toggle checked={form.confirm} onChange={(v) => set({ confirm: v })}>{card?.track === "BUILD" ? "Pekerjaan selesai & produk siap diserahkan ke Gudang" : "Jahitan selesai & kasur siap diserahkan ke Gudang"}</Toggle>
           <p className="text-[12.5px] text-ink3">Setelah dikonfirmasi, unit ditawarkan ke Gudang (belum siap kirim sampai Gudang menerima). Laporan untuk Sales disiapkan otomatis.</p>
         </div>
       );
