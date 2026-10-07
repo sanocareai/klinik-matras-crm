@@ -120,28 +120,33 @@ export async function unitUsesBuildTrack(client, unitId) {
 export async function buildTrackUnitIds(client, unitIds) {
   return new Set((await buildTrackUnits(client, unitIds)).keys());
 }
-/** Sama dengan buildTrackUnitIds tetapi mengembalikan Map unitId -> klasifikasi produk kanonis (alur KASUR/NON_KASUR) — satu query. */
+/**
+ * Sama dengan buildTrackUnitIds tetapi mengembalikan Map unitId -> klasifikasi produk kanonis (alur KASUR/NON_KASUR/UNCONFIRMED) + pengaturan Run terbaru
+ * (kebutuhan Corner yang dikonfirmasi, PIC Bahan) — satu query. Run TERBARU unit yang menentukan (riwayat lama tidak menggeser jalur).
+ */
 export async function buildTrackUnits(client, unitIds) {
   const ids = [...new Set((unitIds || []).filter(Boolean))];
   const out = new Map();
   if (!ids.length) return out;
   const rows = await client.productionRun.findMany({
     where: { unitId: { in: ids }, origin: "WORKSHOP_BORN", unit: { order: { category: { in: [...BUILD_CATEGORIES] } } } },
-    select: { unitId: true, unit: { select: { order: { select: { productLine: true, productType: true } } } } }, distinct: ["unitId"],
+    select: { unitId: true, unit: { select: { order: { select: { productLine: true, productType: true } } } }, buildSetting: { select: { cornerRequired: true, cornerReason: true, materialOperatorId: true } } },
+    orderBy: { createdAt: "desc" }, distinct: ["unitId"],
   });
-  for (const r of rows) out.set(r.unitId, classifyProduct(r.unit?.order || {}));
+  for (const r of rows) out.set(r.unitId, { ...classifyProduct(r.unit?.order || {}), cornerRequired: r.buildSetting?.cornerRequired ?? null, cornerReason: r.buildSetting?.cornerReason ?? null, materialOperatorId: r.buildSetting?.materialOperatorId ?? null });
   return out;
 }
 
 /** Ambil seluruh tahap INTAKE/FINISH global + tahap MODULE milik satu layanan (atau, jalur pengerjaan: tanpa INTAKE + tahap Pengerjaan Pesanan). */
-async function loadRoutingData(tx, serviceId, { build = false } = {}) {
+async function loadRoutingData(tx, serviceId, { build = false, noCorner = false } = {}) {
   if (build) {
     const [buildStage, finishStages] = await Promise.all([
       tx.routingStage.findFirst({ where: { code: BUILD_STAGE_CODE, active: true } }),
       tx.routingStage.findMany({ where: { phase: "FINISH", active: true } }),
     ]);
     if (!buildStage) throw new Error("Tahap \"Pengerjaan Pesanan\" belum tersedia di master routing (migrasi 20261018100000_production_build_stage belum diterapkan)");
-    return { intakeStages: [], finishStages, moduleStages: [buildStage] };
+    // Corner dikonfirmasi TIDAK diperlukan pada rencana -> tahap Jahit Corner tidak ada di jalur (dicatat "tidak berlaku", bukan selesai palsu); Finish tetap.
+    return { intakeStages: [], finishStages: noCorner ? finishStages.filter((st) => st.code !== "corner_sewing") : finishStages, moduleStages: [buildStage] };
   }
   const [intakeStages, finishStages, moduleMappings] = await Promise.all([
     tx.routingStage.findMany({ where: { phase: "INTAKE", active: true } }),
@@ -159,9 +164,14 @@ async function loadRoutingData(tx, serviceId, { build = false } = {}) {
 }
 
 /** Bangun jalur penuh unit ini. Lempar error jelas kalau layanan belum ditetapkan tapi dibutuhkan. */
-export async function pathForUnit(tx, unit, { build } = {}) {
-  const useBuild = build ?? await unitUsesBuildTrack(tx, unit.id); // `build` = petunjuk pemanggil BULK (tanpa query per unit); tanpa petunjuk dideteksi dari DB
-  const { intakeStages, finishStages, moduleStages } = await loadRoutingData(tx, unit.serviceId, { build: useBuild });
+export async function pathForUnit(tx, unit, { build, noCorner } = {}) {
+  // `build`/`noCorner` = petunjuk pemanggil BULK (tanpa query per unit); tanpa petunjuk dideteksi dari DB (Run terbaru unit + pengaturan Corner-nya).
+  let useBuild = build; let skipCorner = noCorner ?? false;
+  if (useBuild === undefined) {
+    const info = (await buildTrackUnits(tx, [unit.id])).get(unit.id);
+    useBuild = !!info; skipCorner = info?.cornerRequired === false;
+  }
+  const { intakeStages, finishStages, moduleStages } = await loadRoutingData(tx, unit.serviceId, { build: useBuild, noCorner: skipCorner });
   return buildUnitPath(intakeStages, moduleStages, finishStages);
 }
 

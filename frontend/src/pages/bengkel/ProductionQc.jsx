@@ -130,7 +130,9 @@ function MaterialRows({ rows, onChange, disabled }) {
 }
 
 function InspectionForm({ run, busy, onSubmit, onError }) {
-  const generic = run.qcProfile === "GENERIC"; // divan/sofa (jalur pengerjaan): pemeriksaan hasil tanpa uji berat badan/tekstur kasur
+  const generic = run.qcProfile === "GENERIC";
+  const unconfirmed = run.qcProfile === "UNCONFIRMED"; // jenis produk belum jelas: TIDAK ada fallback ke uji kasur — keputusan ditahan sampai Sales mengonfirmasi jenis pada order
+  const cornerHeld = run.track === "BUILD" && run.cornerRequired == null; // Corner harus dikonfirmasi Lead pada rencana sebelum QC lulus/waive // divan/sofa (jalur pengerjaan): pemeriksaan hasil tanpa uji berat badan/tekstur kasur
   const [form, setForm] = useState({ mode: "PASS", photoUrls: [], referenceWeightKg: "", fitVerdict: "PAS", customerPreferenceOverride: "", educationGiven: false, note: "", reworkStageId: "", reason: "", materials: [] });
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const stages = reworkStageOptions(run);
@@ -143,6 +145,8 @@ function InspectionForm({ run, busy, onSubmit, onError }) {
   };
   return (
     <section aria-label="Catat hasil QC" className="space-y-3 rounded-card border border-line p-3">
+      {unconfirmed && <p data-testid="qc-unconfirmed-hold" role="alert" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange"><b>Putusan QC ditahan.</b> Jenis produk belum jelas{run.productClassProblem ? ` — ${run.productClassProblem}` : ""}. Uji berat badan kasur tidak dipakai sebagai cadangan; minta Sales memperbaiki jenis produk pada order.</p>}
+      {cornerHeld && <p data-testid="qc-corner-hold" role="alert" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange"><b>Lulus/Waive ditahan.</b> Kebutuhan Corner belum dikonfirmasi pada rencana — Production Lead mengonfirmasinya di Unit 360 › Proses. (Gagal/rework tetap bisa dicatat.)</p>}
       <h3 className="text-[12.5px] font-bold text-ink">{generic ? "Catat Pemeriksaan Hasil" : "Catat Hasil QC"}</h3>
       {generic && <p data-testid="qc-generic-note" className="m-0 rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2">Produk non-kasur (divan/sofa): periksa hasil pengerjaan terhadap spesifikasi pesanan. Tidak ada uji berat badan/tekstur kasur.</p>}
       <div role="tablist" aria-label="Jenis hasil QC" className="flex gap-1">
@@ -201,7 +205,7 @@ function InspectionForm({ run, busy, onSubmit, onError }) {
           )}
         </div>
       )}
-      <Button size="sm" data-mutates onClick={submit} disabled={busy}><ClipboardCheck size={14} /> {busy ? "Menyimpan…" : mode === "PASS" ? "Simpan — Lulus" : mode === "FAIL" ? "Simpan — Gagal (Buka Rework)" : "Simpan — Waive QC"}</Button>
+      <Button size="sm" data-mutates onClick={submit} disabled={busy || (unconfirmed && mode !== "WAIVED") || (cornerHeld && mode !== "FAIL")}><ClipboardCheck size={14} /> {busy ? "Menyimpan…" : mode === "PASS" ? "Simpan — Lulus" : mode === "FAIL" ? "Simpan — Gagal (Buka Rework)" : "Simpan — Waive QC"}</Button>
     </section>
   );
 }
@@ -291,7 +295,7 @@ function RunDetailModal({ runId, onClose, onChanged }) {
               <Badge variant={badge.variant}>{badge.label}</Badge>
               <span className="text-[12px] text-ink3">Revisi run {run.revision}</span>
               {run.origin === "WORKSHOP_BORN" && <Badge variant="accent">Lahir di Workshop</Badge>}
-              {run.track === "BUILD" && <Badge variant="neutral">{run.qcProfile === "GENERIC" ? "Pesanan non-kasur" : "Pesanan kasur"}</Badge>}
+              {run.track === "BUILD" && <Badge variant="neutral">{run.qcProfile === "GENERIC" ? "Pesanan non-kasur" : run.qcProfile === "UNCONFIRMED" ? "Jenis produk belum jelas" : "Pesanan kasur"}</Badge>}
             </div>
             {run.track === "BUILD" && (
               <section aria-label="Spesifikasi pesanan" data-testid="qc-build-spec" className="space-y-1 rounded-card border border-line p-3 text-[12.5px]">
@@ -300,6 +304,7 @@ function RunDetailModal({ runId, onClose, onChanged }) {
                 {run.salesNotes && <p className="m-0 text-ink2"><span className="text-ink3">Catatan Sales: </span>{run.salesNotes}</p>}
                 {run.qcProfile !== "GENERIC" && <p data-testid="qc-racikan" className="m-0 text-ink2"><span className="text-ink3">Racikan: </span>{[run.racikan?.fondasi && `Fondasi — ${run.racikan.fondasi}`, run.racikan?.lapisan && `Lapisan — ${run.racikan.lapisan}`].filter(Boolean).join(" · ") || "belum dicatat"}</p>}
                 {run.buildNote && <p className="m-0 text-ink2"><span className="text-ink3">Pengerjaan: </span>{run.buildNote}</p>}
+                <p data-testid="qc-corner-info" className="m-0 text-ink2"><span className="text-ink3">Corner: </span>{run.cornerRequired == null ? "belum dikonfirmasi" : run.cornerRequired ? "diperlukan" : `tidak diperlukan — ${run.cornerReason || ""}`}</p>
                 {run.productClassProblem && <p data-testid="qc-product-problem" className="m-0 rounded-btn bg-orangebg px-2 py-1 text-orange">Jenis produk: {run.productClassProblem}</p>}
               </section>
             )}

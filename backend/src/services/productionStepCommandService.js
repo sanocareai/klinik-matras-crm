@@ -119,11 +119,22 @@ export async function loadStepContext(client, run) {
   // Mode adaptasi: tidak ada inspeksi QC; tahap 9 tercatat = serah ke Corner sudah dilakukan.
   const step9SinceQc = isAdaptationRun(run) ? evidence.some((e) => e.stepNo === 9 && !isSkippedEvidence(e)) : qcAt != null && evidence.some((e) => e.stepNo === 9 && new Date(e.createdAt).getTime() >= qcAt);
   const ordered = evidence.map((e, index) => ({ ...e, order: index }));
-  // Jalur pengerjaan: alur produk (KASUR / NON_KASUR) dari klasifikasi KANONIS pesanan (lini + jenis produk), bukan nama/awalan resi. BELUM_JELAS memakai alur KASUR dan dilaporkan.
+  // Jalur pengerjaan: alur produk (KASUR / NON_KASUR / UNCONFIRMED) dari klasifikasi KANONIS pesanan (lini + jenis produk), bukan nama/awalan resi. Jenis belum jelas = UNCONFIRMED
+  // (uji/racikan khusus kasur ditahan + kebutuhan konfirmasi ditampilkan); TIDAK ada fallback ke alur kasur. Plus pengaturan Run (PIC Bahan, kebutuhan Corner) dan catatan racikan/pemakaian terbaru.
   const buildTrack = pathHasBuildStage(split?.stages);
   const product = buildTrack
     ? classifyProduct((await client.order.findUnique({ where: { id: run.unit.orderId }, select: { productLine: true, productType: true } })) || {})
     : null;
+  const [buildSetting, buildRecord] = buildTrack
+    ? await Promise.all([
+      client.productionRunBuildSetting.findUnique({ where: { runId: run.id }, include: { materialOperator: { select: { id: true, userId: true, active: true, user: { select: { name: true } } } } } }),
+      client.productionBuildMaterialRecord.findFirst({ where: { runId: run.id }, orderBy: { version: "desc" } }),
+    ])
+    : [null, null];
+  const buildView = buildTrack ? await toBuildView(client, buildSetting, buildRecord) : null;
+  const lastStep6 = evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1);
+  const hasRacikan = (r) => !!r && ((String(r.fondasi || "").trim().length >= 3) || (String(r.lapisan || "").trim().length >= 3));
+  const racikanRecorded = buildTrack && (evidence.some((e) => e.stepNo === 6 && !isSkippedEvidence(e) && hasRacikan(e.payload?.racikan)) || hasRacikan(buildRecord?.racikan));
   const state = {
     runStatus: run.status, currentPhase: run.currentPhase, unitStatus: run.unit.status,
     handoffPhaseStatus: run.phases.find((p) => p.phase === "HANDOFF")?.status ?? null,
@@ -142,18 +153,20 @@ export async function loadStepContext(client, run) {
     pathHasModules: !!split?.stages.some((s) => s.phase === "MODULE"),
     buildTrack,
     productFlow: product?.flow ?? null, productClass: product?.productClass ?? null, productProblem: product?.problem ?? null,
+    cornerRequired: buildTrack ? (buildSetting?.cornerRequired ?? null) : null, cornerReason: buildSetting?.cornerReason ?? null,
+    materialOperatorId: buildSetting?.materialOperatorId ?? null, racikanRecorded, lastStep6Version: lastStep6?.version ?? null,
     materialReady: material.ready,
     diagnosisManualMapped, diagnosisBomHasLines,
     adaptation: isAdaptationRun(run), // slice 2: QC tidak wajib -> tahap kerja tuntas = siap "Selesaikan Produksi"
   };
-  return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, next: deriveNextAction(state) };
+  return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, buildSetting, buildRecord, buildView, next: deriveNextAction(state) };
 }
 
 // Nomor tahap yang berlaku untuk jalur unit (untuk "x dari 12"): tahap 6/7 hanya bila jalurnya punya modul terkait.
 export function applicableStepsFor(split, productFlow = "KASUR") {
   // Jalur pengerjaan (pesanan BARU): bongkar, pencatatan komponen lama, uji fondasi lama, dan diagnosa kerusakan TIDAK BERLAKU (status NA di tampilan, bukan dikerjakan).
-  // Produk non-kasur (divan/sofa): uji tekstur kasur (tahap 8) juga tidak berlaku.
-  if (pathHasBuildStage(split?.stages)) return buildApplicableSteps(productFlow);
+  // Produk non-kasur (divan/sofa): uji tekstur kasur (tahap 8) juga tidak berlaku. Corner tidak diperlukan (dikonfirmasi pada rencana) = jalur tanpa tahap Jahit Corner -> tahap 9–11 tidak berlaku.
+  if (pathHasBuildStage(split?.stages)) return buildApplicableSteps(productFlow, { corner: (split?.postQcStages || []).some((st) => st.code === "corner_sewing") });
   const steps = new Set([1, 2, 3, 4, 5, 8, 9, 10, 11, 12]);
   for (const stage of split?.stages || []) {
     const n = stepNoForStage(stage);
@@ -163,14 +176,34 @@ export function applicableStepsFor(split, productFlow = "KASUR") {
   return [...steps].sort((a, b) => a - b);
 }
 
+// Tampilan pengaturan Run + catatan racikan/pemakaian terbaru (jalur pengerjaan) — nama bahan dilengkapi sekali jalan.
+async function toBuildView(client, setting, record) {
+  const lines = Array.isArray(record?.materials) ? record.materials : [];
+  const mats = lines.length ? await client.material.findMany({ where: { id: { in: lines.map((l) => l.materialId) } }, select: { id: true, code: true, name: true, unit: true } }) : [];
+  const byId = new Map(mats.map((m) => [m.id, m]));
+  return {
+    materialOperator: setting?.materialOperator ? { id: setting.materialOperator.id, userId: setting.materialOperator.userId, name: setting.materialOperator.user?.name ?? null, active: setting.materialOperator.active } : null,
+    corner: { required: setting?.cornerRequired ?? null, reason: setting?.cornerReason ?? null, confirmed: setting?.cornerRequired != null },
+    record: record ? {
+      version: record.version, racikan: record.racikan ?? null, note: record.note ?? null, at: record.createdAt, by: record.actorId ?? null,
+      materials: lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty), code: byId.get(l.materialId)?.code ?? null, name: byId.get(l.materialId)?.name ?? null, uom: byId.get(l.materialId)?.unit ?? null })),
+    } : null,
+  };
+}
+
 // Ringkasan pengerjaan terakhir (bukti tahap 6) untuk pembaca lain (mis. layar QC): racikan + penjelasan. Pembaca bukti tetap SATU pintu di file ini (audit pembaca P10B).
 export async function loadBuildSummary(client, runId) {
-  const row = await client.productionStepEvidence.findFirst({ where: { runId, stepNo: 6, stepCode: { not: { startsWith: DOC_STEP_CODE_PREFIX } } }, orderBy: { version: "desc" }, select: { payload: true } });
-  return row && !isSkippedEvidence(row) ? { racikan: row.payload?.racikan ?? null, note: row.payload?.note ?? null } : { racikan: null, note: null };
+  const [row, record] = await Promise.all([
+    client.productionStepEvidence.findFirst({ where: { runId, stepNo: 6, stepCode: { not: { startsWith: DOC_STEP_CODE_PREFIX } } }, orderBy: { version: "desc" }, select: { payload: true } }),
+    client.productionBuildMaterialRecord.findFirst({ where: { runId }, orderBy: { version: "desc" }, select: { racikan: true, note: true } }),
+  ]);
+  const ev = row && !isSkippedEvidence(row) ? row.payload : null;
+  // Racikan: dari bukti PIC Meja bila ada, kalau tidak dari catatan PIC Bahan (versi terbaru).
+  return { racikan: ev?.racikan ?? record?.racikan ?? null, note: ev?.note ?? record?.note ?? null };
 }
 
 // Bahan yang sudah DISERAHKAN Gudang untuk rencana ini (issue ISSUED), per material.
-async function issuedQtyByMaterial(tx, planId) {
+export async function issuedQtyByMaterial(tx, planId) {
   if (!planId) return new Map();
   const lines = await tx.materialIssueLine.findMany({ where: { materialIssue: { productionPlanId: planId, status: "ISSUED" } }, select: { materialId: true, issuedQty: true } });
   const map = new Map();
@@ -252,7 +285,7 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
 
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_PRODUCTION_STEP", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
-    const evidenceCtx = { issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow };
+    const evidenceCtx = { issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord) };
     let evidence = null;
     let transition = null;
     let autoStarted = null;

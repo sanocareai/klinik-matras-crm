@@ -2224,6 +2224,7 @@ model ProductionOperator {
   stageAssignments StageAssignment[]
   productionPlans  ProductionRunPlan[] @relation("PlanOperator")
   cornerPlans      ProductionRunPlan[] @relation("PlanCornerOperator")
+  buildMaterialSettings ProductionRunBuildSetting[]
 
   @@map("production_operators")
 }
@@ -8503,6 +8504,8 @@ model ProductionRun {
   custodyHandoffs      UnitCustodyHandoff[]
   plan                 ProductionRunPlan?
   exceptions           ProductionRunException[]
+  buildSetting         ProductionRunBuildSetting?
+  buildMaterialRecords ProductionBuildMaterialRecord[]
 
   @@unique([migrationSource, migrationSourceId])
   @@index([unitId, status])
@@ -9668,4 +9671,40 @@ model FinCashCount {
 
   @@index([cashAccountId, countDate])
   @@map("fin_cash_counts")
+}
+
+// Jalur Pengerjaan Pesanan (BARU/custom): pengaturan per Run — PIC Bahan per pekerjaan + kebutuhan Corner yang dikonfirmasi pada rencana. Ditulis HANYA oleh
+// services/productionBuildCommandService.js (bukan penulis rencana P3 / bukti P8).
+model ProductionRunBuildSetting {
+  id                 String              @id @default(uuid()) @db.Uuid
+  runId              String              @unique @map("run_id") @db.Uuid
+  run                ProductionRun       @relation(fields: [runId], references: [id], onDelete: Restrict)
+  materialOperatorId String?             @map("material_operator_id") @db.Uuid
+  materialOperator   ProductionOperator? @relation(fields: [materialOperatorId], references: [id], onDelete: SetNull)
+  cornerRequired     Boolean?            @map("corner_required") // NULL = belum dikonfirmasi; FALSE wajib beralasan (CHECK)
+  cornerReason       String?             @map("corner_reason")
+  revision           Int                 @default(1)
+  updatedById        String?             @map("updated_by_id")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @default(now()) @map("updated_at")
+
+  @@index([materialOperatorId])
+  @@map("production_run_build_settings_v2")
+}
+
+// Catatan racikan + pemakaian aktual oleh PIC Bahan. Append-only (trigger); versi tertinggi = keadaan sekarang. Tidak menulis stok.
+model ProductionBuildMaterialRecord {
+  id        String        @id @default(uuid()) @db.Uuid
+  runId     String        @map("run_id") @db.Uuid
+  run       ProductionRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  version   Int
+  actorId   String?       @map("actor_id")
+  racikan   Json?
+  materials Json          @default("[]")
+  note      String?
+  commandId String?       @map("command_id") @db.Uuid
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@unique([runId, version])
+  @@map("production_build_material_records_v2")
 }

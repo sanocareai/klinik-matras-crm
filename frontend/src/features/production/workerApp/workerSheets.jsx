@@ -6,7 +6,7 @@ import EvidenceCapture from "@/features/production/components/EvidenceCapture.js
 import StepForm from "@/features/production/components/StepForm.jsx";
 import { DiagnosisWizard } from "@/features/production/DiagnosisWizard.jsx";
 import {
-  BUILD_STEP_KASUR_HINT, mediaRuleFor, productFlowOf, stepOf, actionLabel, buildStepPayload, clearDraft, createIntentKeys, friendlyError, isRetryableError, loadDraft, saveDraft, validateStepForm,
+  BUILD_STEP_KASUR_HINT, materialsByPic, mediaRuleFor, productFlowOf, stepOf, actionLabel, buildStepPayload, clearDraft, createIntentKeys, friendlyError, isRetryableError, loadDraft, saveDraft, validateStepForm,
 } from "@/features/production/experience.js";
 import { submitState } from "./workerAppModel.js";
 import { DELAY_ACTION_LABEL, DELAY_QUESTION, DELAY_REASONS, delayStatusText } from "@/features/production/productionLabels.js";
@@ -19,7 +19,7 @@ import { DELAY_ACTION_LABEL, DELAY_QUESTION, DELAY_REASONS, delayStatusText } fr
 export const intentKeys = createIntentKeys();
 const storage = typeof window !== "undefined" ? window.localStorage : null;
 
-function OfflineNote() {
+export function OfflineNote() {
   return (
     <p role="status" data-testid="offline-submit-note" className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] font-semibold text-orange">
       <WifiOff size={15} className="mt-px shrink-0" aria-hidden /> {submitState({ online: false, busy: false }).reason}
@@ -27,7 +27,7 @@ function OfflineNote() {
   );
 }
 
-function SheetHeader({ onClose, subtitle, title }) {
+export function SheetHeader({ onClose, subtitle, title }) {
   return (
     <div className="flex items-center gap-2 border-b border-line bg-surface px-3 py-2" style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
       <button type="button" onClick={onClose} aria-label="Tutup" className="flex h-11 w-11 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint"><X size={20} aria-hidden /></button>
@@ -86,8 +86,9 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
   const online = useOnline();
   const step = stepOf(stepNo, card.track);
   const flow = productFlowOf(card) || "KASUR";
+  const byPic = stepNo === 6 && materialsByPic(card);
   const rule = mediaRuleFor(stepNo, card.track);
-  const stepHint = card.track === "BUILD" && stepNo === 6 && flow !== "NON_KASUR" ? BUILD_STEP_KASUR_HINT : step?.hint;
+  const stepHint = card.track === "BUILD" && stepNo === 6 && flow === "KASUR" && !byPic ? BUILD_STEP_KASUR_HINT : step?.hint;
   const draft = useMemo(() => loadDraft(storage, card.runId, stepNo), [card.runId, stepNo]);
   const [form, setForm] = useState(() => draft?.form || {});
   const [media, setMedia] = useState(() => (draft?.media || []).filter((m) => m.status === "done"));
@@ -102,14 +103,14 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
   }, [form, media, card.runId, stepNo]);
 
   async function submit() {
-    const invalid = validateStepForm(stepNo, form, { mediaItems: media, track: card.track, flow });
+    const invalid = validateStepForm(stepNo, form, { mediaItems: media, track: card.track, flow, byPic });
     if (invalid) { setError(invalid); return; }
     setBusy(true); setError(""); setCanRetry(false);
     const key = intentKeys.keyFor(card.runId, stepNo, card.revision);
     try {
       const result = await api.recordProductionV2Step(card.runId, stepNo, {
         expectedRevision: card.revision, workCenterId: card.workCenterId,
-        payload: buildStepPayload(stepNo, form, { track: card.track, flow }), media: media.filter((m) => m.status === "done").map((m) => m.url),
+        payload: buildStepPayload(stepNo, form, { track: card.track, flow, byPic }), media: media.filter((m) => m.status === "done").map((m) => m.url),
       }, key);
       intentKeys.release(card.runId, stepNo, card.revision);
       clearDraft(storage, card.runId, stepNo);

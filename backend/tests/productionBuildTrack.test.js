@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BUILD_CATEGORIES, BUILD_NA_STEPS, BUILD_STAGE_CODE, BUILD_STAGE_LABEL, NON_KASUR_NA_REASON, buildApplicableSteps, classifyProduct, isBuildTrack, isNonKasurFlow, pathHasBuildStage, stepLabelFor } from "../src/lib/domain/productionBuildTrack.js";
+import { BUILD_CATEGORIES, BUILD_NA_STEPS, BUILD_STAGE_CODE, BUILD_STAGE_LABEL, NON_KASUR_NA_REASON, buildApplicableSteps, classifyProduct, isBuildTrack, isNonKasurFlow, isUnconfirmedFlow, pathHasBuildStage, stepLabelFor } from "../src/lib/domain/productionBuildTrack.js";
 import { validateInspectionInput } from "../src/services/productionQcHandoffCommandService.js";
 import { STEPS, deriveNextAction, stepNoForStage, validateStepEvidence } from "../src/lib/domain/productionSteps.js";
 import { applicableStepsFor } from "../src/services/productionStepCommandService.js";
@@ -78,15 +78,17 @@ test("derivasi: unit build langsung bisa DIKERJAKAN (START tahap 6) tanpa bahan,
   assert.equal(wait.wait, "MATERIAL_NOT_READY");
 });
 
-test("derivasi: setelah mulai -> bukti tahap 6 -> uji tekstur (8) -> QC -> Kirim ke Corner -> Corner -> Finish", () => {
+test("derivasi KASUR: setelah mulai -> bukti tahap 6 -> uji tekstur (8) -> QC -> Kirim ke Corner -> Corner -> Finish (Corner dikonfirmasi diperlukan)", () => {
   const op = { stageCode: BUILD_STAGE_CODE, stagePhase: "MODULE", stageSequence: 10, status: "ACTIVE", isLastPreQc: true };
-  assert.deepEqual(deriveNextAction(base({ activeOp: op })), { actor: "TABLE", stepNo: 6, action: "EVIDENCE", rework: false, lastVerdict: null });
+  const k = (over = {}) => base({ productFlow: "KASUR", cornerRequired: true, ...over });
+  assert.deepEqual(deriveNextAction(k({ activeOp: op })), { actor: "TABLE", stepNo: 6, action: "EVIDENCE", rework: false, lastVerdict: null });
   const ev6 = { stepNo: 6, order: 1, payload: {} };
-  assert.deepEqual(deriveNextAction(base({ activeOp: op, opEvidence: [ev6] })), { actor: "TABLE", stepNo: 8, action: "TEST" });
-  assert.equal(deriveNextAction(base({ target: { code: "fit_test", phase: "FINISH", requiresQc: true } })).wait, "AWAITING_QC");
-  assert.equal(deriveNextAction(base({ target: { code: "corner_sewing", phase: "FINISH", isPostQc: true } })).stepNo, 9);
-  assert.equal(deriveNextAction(base({ step9SinceQc: true, target: { code: "corner_sewing", phase: "FINISH", isPostQc: true } })).stepNo, 10);
-  assert.equal(deriveNextAction(base({ target: { code: "finished", phase: "FINISH", isPostQc: true } })).action, "FINISH");
+  assert.deepEqual(deriveNextAction(k({ activeOp: op, opEvidence: [ev6] })), { actor: "TABLE", stepNo: 8, action: "TEST" });
+  assert.equal(deriveNextAction(k({ target: { code: "fit_test", phase: "FINISH", requiresQc: true } })).wait, "AWAITING_QC");
+  assert.equal(deriveNextAction(k({ target: { code: "corner_sewing", phase: "FINISH", isPostQc: true } })).stepNo, 9);
+  assert.equal(deriveNextAction(k({ step9SinceQc: true, target: { code: "corner_sewing", phase: "FINISH", isPostQc: true } })).stepNo, 10);
+  assert.equal(deriveNextAction(k({ target: { code: "finished", phase: "FINISH", isPostQc: true } })).action, "FINISH");
+  assert.equal(deriveNextAction(k({ target: { code: "finished", phase: "FINISH", isPostQc: true } })).actor, "CORNER");
 });
 
 test("bukti tahap 6 jalur pengerjaan KASUR: racikan wajib, bahan OPSIONAL, foto cukup; restorasi tetap mewajibkan bahan+video", () => {
@@ -116,7 +118,7 @@ test("bukti tahap 6 NON-kasur (divan/sofa): tanpa racikan kasur; penjelasan + fo
   assert.equal(ok.payload.materials.length, 0);
 });
 
-test("klasifikasi produk KANONIS (lini + jenis), bukan nama/awalan resi; konflik dan data kurang dilaporkan, tidak ditebak", () => {
+test("klasifikasi produk KANONIS (lini + jenis), bukan nama/awalan resi; TANPA fallback ke kasur: jenis belum jelas = UNCONFIRMED + kebutuhan konfirmasi", () => {
   const c = (productLine, productType) => classifyProduct({ productLine, productType });
   for (const t of ["KASUR_SPRING", "KASUR_BUSA", "MULTIBED", "KASUR_2IN1_ATAS", "KASUR_2IN1_BAWAH", "KASUR_SEHAT", "KASUR_2IN1", "KASUR_LAINNYA"]) {
     assert.deepEqual([c("KASUR", t).productClass, c("KASUR", t).flow, c("KASUR", t).problem], ["KASUR", "KASUR", null], t);
@@ -126,15 +128,13 @@ test("klasifikasi produk KANONIS (lini + jenis), bukan nama/awalan resi; konflik
   }
   assert.equal(c("SOFA", null).productClass, "NON_KASUR", "lini eksplisit non-kasur cukup");
   assert.equal(c("DIVAN", null).flow, "NON_KASUR");
-  const bawaan = c("KASUR", null);
-  assert.deepEqual([bawaan.productClass, bawaan.flow], ["KASUR", "KASUR"]); assert.match(bawaan.problem, /Jenis kasur belum diisi/, "lini KASUR bawaan tanpa jenis dilaporkan");
-  const konflik = c("KASUR", "SOFA_L");
-  assert.deepEqual([konflik.productClass, konflik.flow], ["BELUM_JELAS", "KASUR"], "konflik: alur kasur dipakai (gerbang mutu tidak dilonggarkan) + dilaporkan"); assert.match(konflik.problem, /tidak sesuai/);
-  assert.equal(c("DIVAN", "KASUR_SPRING").productClass, "BELUM_JELAS");
-  assert.equal(c(null, null).productClass, "BELUM_JELAS");
-  assert.equal(c("KASUR", "JENIS_BARU_TAK_DIKENAL").productClass, "BELUM_JELAS");
-  assert.equal(classifyProduct({}).flow, "KASUR");
-  assert.equal(isNonKasurFlow("NON_KASUR"), true); assert.equal(isNonKasurFlow("KASUR"), false);
+  // Tidak ada fallback ke kasur: semua kasus kurang/konflik = UNCONFIRMED dengan penjelasan
+  const unconfirmed = [c("KASUR", null), c("KASUR", "SOFA_L"), c("DIVAN", "KASUR_SPRING"), c(null, null), c("KASUR", "JENIS_BARU_TAK_DIKENAL"), classifyProduct({})];
+  for (const u of unconfirmed) { assert.deepEqual([u.productClass, u.flow], ["BELUM_JELAS", "UNCONFIRMED"]); assert.ok(u.problem && u.problem.length > 10, "alasan konfirmasi disebut"); }
+  assert.match(c("KASUR", null).problem, /Jenis kasur belum diisi/);
+  assert.match(c("KASUR", "SOFA_L").problem, /tidak sesuai/);
+  assert.equal(isNonKasurFlow("NON_KASUR"), true); assert.equal(isNonKasurFlow("KASUR"), false); assert.equal(isNonKasurFlow("UNCONFIRMED"), false);
+  assert.equal(isUnconfirmedFlow("UNCONFIRMED"), true);
 });
 
 test("tahap berlaku per alur produk: kasur 6,8–12; non-kasur 6,9–12 (uji tekstur tidak berlaku); jalur restorasi tidak terpengaruh", () => {
@@ -151,13 +151,61 @@ test("tahap berlaku per alur produk: kasur 6,8–12; non-kasur 6,9–12 (uji tek
 
 test("derivasi NON-kasur: tanpa uji tekstur — satu kiriman bukti menutup Pengerjaan Pesanan lalu menunggu pemeriksaan QC; kasur tetap EVIDENCE -> TEST", () => {
   const op = { stageCode: BUILD_STAGE_CODE, stagePhase: "MODULE", stageSequence: 10, status: "ACTIVE", isLastPreQc: true };
-  assert.deepEqual(deriveNextAction(base({ productFlow: "NON_KASUR", activeOp: op })), { actor: "TABLE", stepNo: 6, action: "COMPLETE" });
-  assert.deepEqual(deriveNextAction(base({ productFlow: "KASUR", activeOp: op })), { actor: "TABLE", stepNo: 6, action: "EVIDENCE", rework: false, lastVerdict: null });
+  assert.deepEqual(deriveNextAction(base({ productFlow: "NON_KASUR", cornerRequired: true, activeOp: op })), { actor: "TABLE", stepNo: 6, action: "COMPLETE" });
+  assert.deepEqual(deriveNextAction(base({ productFlow: "KASUR", cornerRequired: true, activeOp: op })), { actor: "TABLE", stepNo: 6, action: "EVIDENCE", rework: false, lastVerdict: null });
   assert.deepEqual(deriveNextAction(base({ productFlow: "NON_KASUR", target: { code: BUILD_STAGE_CODE, phase: "MODULE", sequence: 10 } })), { actor: "TABLE", stepNo: 6, action: "START" });
-  const qcWait = deriveNextAction(base({ productFlow: "NON_KASUR", target: { code: "fit_test", phase: "FINISH", requiresQc: true } }));
+  const qcWait = deriveNextAction(base({ productFlow: "NON_KASUR", cornerRequired: true, target: { code: "fit_test", phase: "FINISH", requiresQc: true } }));
   assert.equal(qcWait.wait, "AWAITING_QC"); assert.equal(qcWait.stepNo, null, "divan/sofa: tidak menyebut tahap 8 (uji tekstur kasur)");
-  assert.equal(deriveNextAction(base({ productFlow: "KASUR", target: { code: "fit_test", phase: "FINISH", requiresQc: true } })).stepNo, 8);
-  assert.equal(deriveNextAction(base({ productFlow: "NON_KASUR", adaptation: true, target: { code: "fit_test", phase: "FINISH", requiresQc: true } })).qcNotPerformed, true, "adaptasi: QC boleh tidak dilakukan");
+  assert.equal(deriveNextAction(base({ productFlow: "KASUR", cornerRequired: true, target: { code: "fit_test", phase: "FINISH", requiresQc: true } })).stepNo, 8);
+  assert.equal(deriveNextAction(base({ productFlow: "NON_KASUR", cornerRequired: true, adaptation: true, target: { code: "fit_test", phase: "FINISH", requiresQc: true } })).qcNotPerformed, true, "adaptasi: QC boleh tidak dilakukan");
+});
+
+test("jenis produk belum jelas (UNCONFIRMED): pengerjaan boleh mulai, tetapi bukti/uji khusus kasur DITAHAN dengan kebutuhan konfirmasi; tanpa fallback ke kasur", () => {
+  const op = { stageCode: BUILD_STAGE_CODE, stagePhase: "MODULE", stageSequence: 10, status: "ACTIVE", isLastPreQc: true };
+  assert.deepEqual(deriveNextAction(base({ productFlow: "UNCONFIRMED", target: { code: BUILD_STAGE_CODE, phase: "MODULE", sequence: 10 } })), { actor: "TABLE", stepNo: 6, action: "START" });
+  const w = deriveNextAction(base({ productFlow: "UNCONFIRMED", productProblem: "Jenis kasur belum diisi", activeOp: op }));
+  assert.deepEqual([w.action, w.wait, w.actor, w.stepNo, w.problem], ["WAIT", "PRODUCT_TYPE_UNCONFIRMED", "SALES", 6, "Jenis kasur belum diisi"]);
+  const ctx = { issuedQtyByMaterial: new Map(), buildTrack: true, productFlow: "UNCONFIRMED" };
+  assert.throws(() => validateStepEvidence(6, { media: [IMG], payload: { note: "Pengerjaan", racikan: { fondasi: "Pocket spring" } } }, ctx), (e) => e.statusCode === 409 && e.code === "STEP_WAITING_PRODUCT_TYPE_UNCONFIRMED");
+  assert.deepEqual(buildApplicableSteps("UNCONFIRMED"), [6, 8, 9, 10, 11, 12], "tahap 8 tetap tercatat berlaku-belum-jelas (ditahan), bukan dihapus");
+});
+
+test("PIC Bahan per pekerjaan: racikan dicatat PIC Bahan lebih dulu (PIC Meja menunggu); pemakaian bahan tidak ganda di bukti PIC Meja", () => {
+  const op = { stageCode: BUILD_STAGE_CODE, stagePhase: "MODULE", stageSequence: 10, status: "ACTIVE", isLastPreQc: true };
+  const w = deriveNextAction(base({ productFlow: "KASUR", cornerRequired: true, materialOperatorId: "op-bahan", racikanRecorded: false, activeOp: op }));
+  assert.deepEqual([w.action, w.wait, w.actor], ["WAIT", "RACIKAN_NOT_RECORDED", "MATERIAL_PIC"]);
+  assert.equal(deriveNextAction(base({ productFlow: "KASUR", cornerRequired: true, materialOperatorId: "op-bahan", racikanRecorded: true, activeOp: op })).action, "EVIDENCE");
+  const ctx = { issuedQtyByMaterial: new Map([["m1", 5]]), buildTrack: true, productFlow: "KASUR", racikanRecorded: true, materialsByPic: true };
+  const ok = validateStepEvidence(6, { media: [IMG], payload: { note: "Pengerjaan sesuai racikan PIC Bahan" } }, ctx);
+  assert.equal("racikan" in ok.payload, false, "racikan dari catatan PIC Bahan memenuhi syarat; tidak dipaksa diisi ulang");
+  assert.throws(() => validateStepEvidence(6, { media: [IMG], payload: { note: "x yy", materials: [{ materialId: "m1", qty: 1 }] } }, ctx), (e) => e.statusCode === 409 && e.code === "STEP_MATERIAL_BY_MATERIAL_PIC");
+  assert.throws(() => validateStepEvidence(6, { media: [IMG], payload: { note: "x yy" } }, { ...ctx, racikanRecorded: false }), (e) => e.code === "STEP_EVIDENCE_INVALID", "tanpa racikan dari mana pun tetap ditolak untuk kasur");
+});
+
+test("Corner mengikuti kebutuhan yang DIKONFIRMASI pada rencana, bukan jenis produk: belum dikonfirmasi menahan; tidak perlu = tahap 9–11 tidak berlaku beralasan", () => {
+  const gate = { code: "fit_test", phase: "FINISH", requiresQc: true };
+  for (const flow of ["KASUR", "NON_KASUR"]) {
+    const w = deriveNextAction(base({ productFlow: flow, cornerRequired: null, target: gate }));
+    assert.deepEqual([w.action, w.wait, w.actor, w.stepNo], ["WAIT", "CORNER_NOT_CONFIRMED", "PLANNER", 9], flow + ": Corner belum dikonfirmasi");
+    assert.equal(deriveNextAction(base({ productFlow: flow, cornerRequired: true, target: gate })).wait, "AWAITING_QC", flow + ": Corner diperlukan -> jalur normal");
+  }
+  // Tidak diperlukan + adaptasi: tidak ada pemicu "Kirim ke Corner" -> Selesaikan Produksi; QC dicatat tidak dilakukan lewat penutupan.
+  const fin = deriveNextAction(base({ productFlow: "NON_KASUR", cornerRequired: false, adaptation: true, target: gate }));
+  assert.deepEqual([fin.wait, fin.stepNo], ["READY_TO_FINISH", 12]);
+  // Tidak diperlukan, tanpa adaptasi: setelah QC langsung Finish oleh PIC Meja (bukan Corner)
+  const finish = deriveNextAction(base({ productFlow: "KASUR", cornerRequired: false, target: { code: "finished", phase: "FINISH", isPostQc: true } }));
+  assert.deepEqual([finish.actor, finish.stepNo, finish.action], ["TABLE", 12, "FINISH"]);
+  // Tahap berlaku: jalur tanpa corner_sewing -> 9–11 TIDAK BERLAKU
+  const noCorner = workshopPathOf(buildUnitPath([], [BUILD], FINISH.filter((st) => st.code !== "corner_sewing")));
+  assert.deepEqual(noCorner.postQcStages.map((st) => st.code), ["finished"]);
+  assert.deepEqual(applicableStepsFor(noCorner, "KASUR"), [6, 8, 12]);
+  assert.deepEqual(applicableStepsFor(noCorner, "NON_KASUR"), [6, 12]);
+  assert.deepEqual(applicableStepsFor(build, "NON_KASUR"), [6, 9, 10, 11, 12], "dengan Corner: divan/sofa tetap melewati Corner");
+  assert.deepEqual(buildApplicableSteps("KASUR", { corner: false }), [6, 8, 12]);
+  const next = deriveNextAction(base({ productFlow: "NON_KASUR", cornerRequired: false, target: { code: BUILD_STAGE_CODE, phase: "MODULE", sequence: 10 } }));
+  const steps = stepStatuses({ split: noCorner, evidence: [], next, state: { buildTrack: true, productFlow: "NON_KASUR", cornerRequired: false, cornerReason: "Tidak ada pekerjaan kain" } });
+  for (const n of [9, 10, 11]) { const st = steps.find((x) => x.no === n); assert.equal(st.status, "NA"); assert.match(st.naReason, /Corner tidak diperlukan — Tidak ada pekerjaan kain/); }
+  assert.equal(steps.find((x) => x.no === 12).status, "PENDING", "Finish tetap dikerjakan, bukan NA");
 });
 
 test("QC generik NON-kasur: tanpa berat acuan/uji berat badan; foto wajib; FAIL wajib catatan + tahap rework; fitVerdict ditolak; kasur tetap wajib berat acuan", () => {
@@ -200,4 +248,34 @@ test("indikator kartu: layanan teknis TIDAK_BERLAKU, BOM OPSIONAL pada jalur pen
   assert.equal(r.bom, "BELUM");
   run.plan.bomLines = [{}];
   assert.equal(indicatorsOf(run, { state: { buildTrack: true, activeOp: null }, latestInspection: null }, mat).bom, "OK", "BOM yang dibuat tetap tampil");
+});
+
+// Audit penulis: pengaturan Run + catatan bahan HANYA ditulis productionBuildCommandService; service itu tidak menulis stok/reservasi/issue/jurnal/rencana/bukti/tahap.
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+test("audit penulis jalur pengerjaan: dua tabel baru hanya ditulis satu service; tanpa tulis stok/rencana/bukti; migrasi aditif + append-only + LF", () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src");
+  const files = [];
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (p.endsWith(".js")) files.push(p); } };
+  walk(root);
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const OWNER = "services/productionBuildCommandService.js";
+  const writers = [];
+  for (const p of files) {
+    const rel = path.relative(root, p).replace(/\\/g, "/"); const t = strip(fs.readFileSync(p, "utf8"));
+    if (/\.(productionRunBuildSetting|productionBuildMaterialRecord)\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/.test(t)) writers.push(rel);
+    if (/production_run_build_settings_v2|production_build_material_records_v2/.test(t) && /\$executeRaw/.test(t)) writers.push(rel + "#RAW");
+  }
+  assert.deepEqual(writers, [OWNER], "penulis tunggal");
+  const svc = strip(fs.readFileSync(path.join(root, OWNER), "utf8"));
+  for (const forbidden of [/\.stockMovement\.(create|update|delete|upsert)/, /\.materialReservation\.(create|update|delete|upsert)/, /\.materialIssue(Line)?\.(create|update|delete|upsert)/, /\.productionRunPlan\.(create|update|delete|upsert)/, /\.productionStepEvidence\.(create|update|delete|upsert)/, /\.unitStageLog\.(create|update|delete)/, /\.productionOperationRun\.(create|update|delete)/, /\.productionPhaseRun\.(create|update)/, /postStockMovement|postMaterialIssueCost|journalEntry/]) {
+    assert.doesNotMatch(svc, forbidden, String(forbidden));
+  }
+  assert.match(svc, /bumpRunRevisionInTx/, "revisi Run lewat helper P5, bukan tulis langsung");
+  assert.doesNotMatch(svc, /\.productionRun\.(update|create)/);
+  const mig = fs.readFileSync(path.resolve(root, "../prisma/migrations/20261019100000_production_build_plan_settings/migration.sql"), "utf8");
+  assert.doesNotMatch(mig.replace(/^--.*$/gm, ""), /\bDROP\b|\bDELETE\s+FROM\b|\bUPDATE\s+"/i, "migrasi aditif");
+  assert.match(mig, /BEFORE UPDATE OR DELETE ON "production_build_material_records_v2"/, "catatan append-only");
+  assert.match(mig, /corner_reason_check/); assert.doesNotMatch(mig, /\r/, "LF");
 });

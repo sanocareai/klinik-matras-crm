@@ -117,6 +117,7 @@ const ProductionSettings = lazy(() => import("../pages/bengkel/ProductionSetting
 export const STANDALONE_PAGES = [
   { path: "/produksi/meja", render: (ctx) => <DemoPage slotBar><WorkerLane lane="TABLE" user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> },
   { path: "/produksi/corner", render: (ctx) => <DemoPage slotBar><WorkerLane lane="CORNER" user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> },
+  { path: "/produksi/bahan", render: (ctx) => <DemoPage slotBar><WorkerLane lane="MATERIAL" user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> }, // PIC Bahan per pekerjaan
   { path: "/produksi/dokumentasi", render: (ctx) => <DemoPage slotBar><ProductionDocumentation user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> },
   { path: "/produksi/ringkasan-saya", render: () => <ProductionKpi /> }, // P11 — ringkasan pekerjaan sendiri (PIC/dokumentasi/QC)
   { path: "/bengkel/andon", render: () => <ProductionAndon /> },

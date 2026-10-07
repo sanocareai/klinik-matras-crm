@@ -19,12 +19,12 @@ export async function loadStepContextRouting(prisma, serviceIds) {
     stageById,
     // null bila jalur tidak valid (mis. tanpa gerbang QC) — applicableStepsFor menerima null (tampilan lengkap).
     // build = unit jalur pengerjaan (pesanan BARU/custom): tanpa INTAKE & tanpa layanan; hanya tahap Pengerjaan Pesanan + FINISH.
-    pathFor(serviceId, { build = false } = {}) {
-      const key = build ? "@build" : (serviceId || "-");
+    pathFor(serviceId, { build = false, noCorner = false } = {}) {
+      const key = build ? (noCorner ? "@build-nocorner" : "@build") : (serviceId || "-");
       if (!cache.has(key)) {
         try {
           const buildStage = stages.find((s) => s.code === BUILD_STAGE_CODE && s.active);
-          cache.set(key, workshopPathOf(build ? buildUnitPath([], buildStage ? [buildStage] : [], finish) : buildUnitPath(intake, modulesBy.get(serviceId) || [], finish)));
+          cache.set(key, workshopPathOf(build ? buildUnitPath([], buildStage ? [buildStage] : [], noCorner ? finish.filter((st) => st.code !== "corner_sewing") : finish) : buildUnitPath(intake, modulesBy.get(serviceId) || [], finish)));
         } catch { cache.set(key, null); }
       }
       return cache.get(key);

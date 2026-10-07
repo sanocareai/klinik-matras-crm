@@ -11,6 +11,7 @@ import { DELAY_ACTION_LABEL, FINISH_ACTION_LABEL, RESUME_ACTION_LABEL, SKIP_ACTI
 import { stepOf } from "@/features/production/experience.js";
 import { V1ActionBar, V1MaterialsPanel } from "./V1Panels.jsx";
 import { ShortageSheet, StepSheet, intentKeys } from "./workerSheets.jsx";
+import MaterialRecordSheet from "./materialSheet.jsx";
 import { DelaySheet, FinishSheet, SkipSheet } from "./adaptationSheets.jsx";
 import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 import { isV1Actionable, jobFromV1, jobFromV2, submitState } from "./workerAppModel.js";
@@ -48,7 +49,7 @@ function Identity({ job, extra = null }) {
 }
 
 function StepList({ steps, lane }) {
-  const mine = steps.filter((s) => (lane === "CORNER" ? s.no >= 9 : s.no <= 9));
+  const mine = steps.filter((s) => (lane === "CORNER" ? s.no >= 9 : lane === "MATERIAL" ? true : s.no <= 9));
   return (
     <ol className="m-0 list-none space-y-1 p-0" aria-label="Tahap">
       {mine.map((s) => (
@@ -82,6 +83,23 @@ function OfflineNote() {
   return <p role="status" className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] font-semibold text-orange"><WifiOff size={15} className="mt-px shrink-0" aria-hidden /> {submitState({ online: false, busy: false }).reason}</p>;
 }
 
+// Ringkasan jalur Pengerjaan Pesanan: PIC Bahan, kebutuhan Corner (dikonfirmasi pada rencana), racikan + pemakaian terbaru, dan kebutuhan konfirmasi jenis produk.
+function BuildInfo({ card }) {
+  const b = card.build; if (!b) return null;
+  const corner = b.corner?.confirmed ? (b.corner.required ? "Diperlukan" : `Tidak diperlukan — ${b.corner.reason || ""}`) : "Belum dikonfirmasi Lead";
+  return (
+    <Section title="Pengerjaan Pesanan" testid="section-build">
+      <dl className="m-0 space-y-2 text-[13.5px]">
+        {card.product?.problem && <div data-testid="build-product-problem" className="rounded-btn bg-orangebg px-3 py-2 text-orange"><dt className="m-0 font-bold">Jenis produk perlu dikonfirmasi</dt><dd className="m-0">{card.product.problem}. Minta Sales memperbaiki pada order.</dd></div>}
+        <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">PIC Bahan</dt><dd className="m-0 font-semibold text-ink" data-testid="build-material-pic">{b.materialOperator?.name || "Belum ditugaskan"}</dd></div>
+        <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Corner</dt><dd className="m-0 font-semibold text-ink" data-testid="build-corner">{corner}</dd></div>
+        {card.product?.flow !== "NON_KASUR" && <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Racikan</dt><dd className="m-0 font-semibold text-ink" data-testid="build-racikan">{card.racikan ? [card.racikan.fondasi && `Fondasi — ${card.racikan.fondasi}`, card.racikan.lapisan && `Lapisan — ${card.racikan.lapisan}`].filter(Boolean).join(" · ") : "Belum dicatat"}</dd></div>}
+        {b.record?.materials?.length > 0 && <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Bahan dipakai (versi {b.record.version})</dt><dd className="m-0 font-semibold text-ink" data-testid="build-usage">{b.record.materials.map((m) => `${m.name || m.code} ${m.qty}`).join(", ")}</dd></div>}
+      </dl>
+    </Section>
+  );
+}
+
 // ================= V2 =================
 function V2Detail({ job, lane, onBack, onChanged }) {
   const online = useOnline();
@@ -99,7 +117,8 @@ function V2Detail({ job, lane, onBack, onChanged }) {
 
   const view = card ? jobFromV2(card) : job;
   const next = card?.next;
-  const mineNow = !!next && next.action !== "WAIT" && (lane === "CORNER" ? next.actor === "CORNER" : next.actor === "TABLE");
+  const materialLane = lane === "MATERIAL";
+  const mineNow = !!next && next.action !== "WAIT" && !materialLane && (lane === "CORNER" ? next.actor === "CORNER" : next.actor === "TABLE");
   const gate = submitState({ online, busy: quickBusy });
   const afterChange = async () => { await loadCard(); onChanged?.(); };
 
@@ -163,6 +182,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
                 <div className="mb-3"><ProgressLine job={view} /></div>
                 <StepList steps={card.steps} lane={lane} />
               </Section>
+              {card.track === "BUILD" && <BuildInfo card={card} />}
               <Section title="Catatan Komponen" testid="section-komponen"><ComponentNotesPanel unitId={card.unit.id} unitCode={card.unit.unitCode} stepNo={next?.stepNo ?? null} /></Section>
               <Section title="Bahan" testid="section-bahan" aside={card.shortage ? <Badge variant="red">Bahan kurang</Badge> : mat ? <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${TONE[mat.tone] || TONE.neutral}`}>{mat.label}</span> : null}>
                 {card.shortage && <div className="mb-3 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><p className="m-0 font-bold" data-testid="delay-status">{delayStatusText("MATERIAL_SHORTAGE")}</p><p className="m-0 mt-0.5 text-[12.5px]" data-testid="resume-who">{resumeInfo({ source: "SHORTAGE", reason: "MATERIAL_SHORTAGE", canResume: false }).text}</p><ul className="m-0 mt-1 list-disc pl-5">{card.shortage.items.map((i) => <li key={i.materialId}>{i.name}{i.qty ? ` — ${i.qty}` : ""}</li>)}</ul></div>}
@@ -180,7 +200,9 @@ function V2Detail({ job, lane, onBack, onChanged }) {
       {card && (
         <div className="wa-actionbar" data-testid="v2-actionbar"><div className="wa-actionbar-inner">
           {!online && <OfflineNote />}
-          {mineNow ? (
+          {materialLane ? (
+            <button type="button" className="wa-primary" data-testid="open-material-record" data-mutates onClick={() => setSheet("material")}>Catat Racikan &amp; Bahan</button>
+          ) : mineNow ? (
             <>
               {next.rework && <p className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange">Uji tekstur {String(next.lastVerdict || "").replace("_", " ").toLowerCase()} — sesuaikan lapisan lalu kirim ulang bukti.</p>}
               {card.activeOp?.status === "PAUSED" && card.activeOp.delayKind && <p data-testid="delay-kind-note" className="m-0 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><b>{delayKindText(card.activeOp.delayKind, card.activeOp.delayNote)}.</b> Tekan “{RESUME_ACTION_LABEL}” setelah kendalanya selesai.</p>}
@@ -205,6 +227,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
       )}
 
       {sheet === "step" && card && next && <StepSheet card={card} next={next} onClose={() => setSheet(null)} onSubmitted={async (result) => { if (result) { setSheet(null); setNotice(result.verdict && result.verdict !== "PAS" ? "Hasil uji tercatat — lanjutkan rework lapisan." : "Tahap tersimpan."); } await afterChange(); }} />}
+      {sheet === "material" && card && <MaterialRecordSheet card={card} onClose={() => setSheet(null)} onSubmitted={async (result) => { setSheet(null); if (result) setNotice(result.changed === false ? "Tidak ada perubahan." : `Racikan & bahan tersimpan (versi ${result.version}).`); await afterChange(); }} />}
       {sheet === "skip" && card && next && <SkipSheet card={card} next={next} stageLabel={stepOf(next.stepNo, card.track)?.label} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); setNotice("Tahap dicatat dilewati (Adaptasi sistem)."); await afterChange(); }} />}
       {sheet === "finish" && card && <FinishSheet card={card} onClose={() => setSheet(null)} onDone={(res) => { setSheet(null); setFinishedMsg(`Unit Siap Kirim. QC tidak dilakukan; ${res.skippedSteps?.length ?? 0} tahap dicatat dilewati.`); }} />}
       {sheet === "delay" && card && <DelaySheet card={card} onClose={() => setSheet(null)} onPickMaterial={() => setSheet("shortage")} onDone={async () => { setSheet(null); setNotice("Pekerjaan ditunda."); await afterChange(); }} />}

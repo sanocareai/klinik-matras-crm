@@ -289,7 +289,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
   const applicableSteps = steps.filter((s) => s.status !== "NA");
   const [pickup, materials, qc, diagnosis] = await Promise.all([
     loadPickup(prisma, unitId),
-    loadMaterials(prisma, run.plan, { evidence: ctx.evidence, unitId }),
+    loadMaterials(prisma, run.plan, { evidence: [...ctx.evidence, ...(ctx.buildRecord ? [{ stepNo: 6, payload: { materials: ctx.buildRecord.materials } }] : [])], unitId }),
     loadQc(prisma, run.id),
     getDiagnosisState(prisma, run.id),
   ]);
@@ -358,7 +358,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
     } : null,
     production: {
       runId: run.id, revision: run.revision, track: ctx.state.buildTrack ? "BUILD" : "RESTORATION", product: ctx.state.buildTrack ? { class: ctx.state.productClass, flow: ctx.state.productFlow, problem: ctx.state.productProblem } : null,
-      racikan: ctx.state.buildTrack ? (ctx.evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1)?.payload?.racikan ?? null) : null, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
+      racikan: ctx.state.buildTrack ? (ctx.evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1)?.payload?.racikan ?? ctx.buildRecord?.racikan ?? null) : null, build: ctx.buildView ?? null, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
       // dikerjakan (done) / dilewati (skipped) / tersisa (remaining) — tahap dilewati (mode adaptasi) bukan pekerjaan.
       steps, progress: (() => {
         const worked = applicableSteps.filter((s) => s.status === "DONE").length; const skipped = applicableSteps.filter((s) => s.status === "SKIPPED").length;

@@ -352,18 +352,24 @@ export async function startWorkshopStage(prisma, { runId, actorId, idempotencyKe
   });
 }
 
+// Tahap pasca-QC yang dikerjakan PIC CORNER. Jalur pengerjaan TANPA tahap Jahit Corner (Corner dikonfirmasi tidak diperlukan pada rencana): Finish dikerjakan PIC Meja,
+// jadi bukan "tahap Corner" untuk otorisasi PIC maupun penetapan operator operasi.
+function isCornerPostQcStage(path, stageId) {
+  const { postQcStages } = workshopPathOf(path);
+  if (!postQcStages.some((st) => st.id === stageId)) return false;
+  return !(pathHasBuildStage(path) && !path.some((st) => st.code === "corner_sewing"));
+}
 // Tahap berikutnya pasca-QC? (tanpa melempar; dipakai memilih pihak yang berwenang sebelum validasi penuh)
 export async function peekStartIsPostQc(tx, run) {
   try {
     const path = await pathForUnit(tx, run.unit);
-    const { postQcStages } = workshopPathOf(path);
     const { stage } = await resolveCurrentTarget(tx, run.unit, path);
-    return !!stage && postQcStages.some((s) => s.id === stage.id);
+    return !!stage && isCornerPostQcStage(path, stage.id);
   } catch { return false; }
 }
 export async function isPostQcStage(tx, run, stageId) {
   try {
-    return workshopPathOf(await pathForUnit(tx, run.unit)).postQcStages.some((s) => s.id === stageId);
+    return isCornerPostQcStage(await pathForUnit(tx, run.unit), stageId);
   } catch { return false; }
 }
 
@@ -383,7 +389,7 @@ export async function prepareStartInTx(tx, run) {
   // Jalur pengerjaan (pesanan BARU/custom): spesifikasi Sales = acuan; cukup rencana DITUGASKAN (jadwal + PIC) — bahan tercatat sesuai pekerjaan nyata, bukan gerbang mulai.
   if (stage.phase === "INTAKE" || pathHasBuildStage(path)) assertPlanReadyForIntake(run.plan);
   else await assertMaterialIssued(tx, run.plan);
-  return { process, stage, isPostQc: postQcStages.some((s) => s.id === stage.id) };
+  return { process, stage, isPostQc: isCornerPostQcStage(path, stage.id) };
 }
 
 // Terapkan mulai tahap (engine V1 *InTx + operasi V2 + fase + revisi + outbox). Pemanggil sudah mengunci unit->run dan memvalidasi.

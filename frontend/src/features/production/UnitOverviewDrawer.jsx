@@ -12,6 +12,7 @@ import { DELAY_TITLE, SKIP_LABEL, delayKindText, delayStatusText, presenceTone, 
 import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
 import { DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS } from "@/features/production/documentation.js";
 import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
+import BuildPlanPanel from "@/features/production/BuildPlanPanel.jsx";
 import { humanizeRequest } from "@/features/production/unitCardModel.js";
 import { rolesOf } from "@/lib/roles.js";
 import { isOutsideV2 } from "@/features/production/unit360Availability.js";
@@ -234,11 +235,11 @@ function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
       {d.production.track === "BUILD"
         ? (
           <div className="space-y-2">
-            <p data-testid="build-track-note" className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">Pesanan baru/custom: dikerjakan langsung dari spesifikasi &amp; layanan pesanan Sales. Pickup, bongkar, pencatatan komponen sebelum perbaikan, dan Diagnosis tidak berlaku.{d.production.product?.flow === "NON_KASUR" ? " Produk non-kasur: tanpa uji tekstur/berat badan kasur." : ""}</p>
+            <BuildPlanPanel d={d} canPlan={canApplyAdaptation} onChanged={onChanged} />
+            <p data-testid="build-track-note" className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">Pesanan baru/custom: dikerjakan langsung dari spesifikasi &amp; layanan pesanan Sales. Pickup, bongkar, pencatatan komponen sebelum perbaikan, dan Diagnosis tidak berlaku.{d.production.product?.flow === "NON_KASUR" ? " Produk non-kasur: tanpa uji tekstur/berat badan kasur." : ""}{d.production.build?.corner?.confirmed && d.production.build.corner.required === false ? ` Corner tidak diperlukan — ${d.production.build.corner.reason}.` : ""}</p>
             {d.production.product?.flow !== "NON_KASUR" && (
               <p data-testid="overview-racikan" className="m-0 rounded-btn border border-line px-3 py-2 text-[12.5px] text-ink2"><span className="text-ink3">Racikan: </span>{[d.production.racikan?.fondasi && `Fondasi — ${d.production.racikan.fondasi}`, d.production.racikan?.lapisan && `Lapisan — ${d.production.racikan.lapisan}`].filter(Boolean).join(" · ") || "belum dicatat"}</p>
             )}
-            {d.production.product?.problem && <p data-testid="overview-product-problem" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Jenis produk: {d.production.product.problem}</p>}
           </div>
         )
         : <DiagnosisPanel d={d} onOpenWizard={onOpenDiagnosis} />}

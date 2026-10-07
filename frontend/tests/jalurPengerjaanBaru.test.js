@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BUILD_STEP, STEP_BY_NO, actionLabel, bucketLabelOf, buildStepPayload, indicatorList, isNonKasur, mediaRuleFor, productFlowOf, stepOf, validateStepForm } from "../src/features/production/experience.js";
+import { BUILD_STEP, STEP_BY_NO, actionLabel, bucketLabelOf, buildStepPayload, indicatorList, buildMaterialRecordBody, isNonKasur, isUnconfirmed, materialsByPic, mediaRuleFor, productFlowOf, stepOf, validateMaterialRecord, validateStepForm, waitCopy } from "../src/features/production/experience.js";
 import { buildInspectionBody, validateInspectionForm } from "../src/features/production/qcHandoff.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,7 +49,7 @@ test("aturan media per jalur & alur produk dari klasifikasi server", () => {
   assert.deepEqual(mediaRuleFor(6, "BUILD"), { min: 1, video: false });
   assert.deepEqual(mediaRuleFor(6, undefined), { min: 1, video: true });
   assert.equal(productFlowOf({ track: "BUILD", product: { flow: "NON_KASUR" } }), "NON_KASUR");
-  assert.equal(productFlowOf({ track: "BUILD" }), "KASUR", "klasifikasi belum ada -> alur kasur (tidak melonggarkan)");
+  assert.equal(productFlowOf({ track: "BUILD" }), "UNCONFIRMED", "klasifikasi belum ada -> TIDAK ada fallback ke kasur");
   assert.equal(productFlowOf({ track: "RESTORATION" }), null);
   assert.equal(isNonKasur({ track: "BUILD", product: { flow: "NON_KASUR" } }), true);
 });
@@ -93,4 +93,53 @@ test("lembar bukti & detail pekerja memakai label per jalur (card.track)", () =>
   assert.match(src("pages", "bengkel", "ProductionQc.jsx"), /qc-generic-note/);
   assert.match(src("pages", "bengkel", "ProductionQc.jsx"), /qc-racikan/);
   assert.match(src("pages", "bengkel", "ProductionQc.jsx"), /run\.qcProfile === "GENERIC" \? "Pemeriksaan Hasil"/, "gerbang QC divan/sofa tidak bernama Uji Berat Badan");
+});
+
+test("jenis belum jelas (UNCONFIRMED): tanpa fallback kasur — bukti tahap 6 ditolak di UI, kebutuhan konfirmasi dijelaskan", () => {
+  const IMGM = { status: "done", kind: "image", url: "/media/x.jpg" };
+  assert.equal(isUnconfirmed({ track: "BUILD", product: { flow: "UNCONFIRMED" } }), true);
+  assert.equal(isUnconfirmed({ track: "BUILD" }), true, "klasifikasi belum ada = belum jelas");
+  assert.match(validateStepForm(6, { note: "Selesai", racikanFondasi: "Pocket spring" }, { mediaItems: [IMGM], track: "BUILD", flow: "UNCONFIRMED" }), /Jenis produk belum jelas/);
+  const w = waitCopy({ wait: "PRODUCT_TYPE_UNCONFIRMED", problem: "Lini produk (KASUR) tidak sesuai jenis produk (SOFA_L)" });
+  assert.match(w.title, /perlu dikonfirmasi/); assert.match(w.text, /tidak sesuai jenis produk/); assert.match(w.text, /tidak mengubah order/);
+  assert.match(waitCopy({ wait: "CORNER_NOT_CONFIRMED" }).title, /Corner belum dikonfirmasi/);
+  assert.match(waitCopy({ wait: "RACIKAN_NOT_RECORDED" }).title, /PIC Bahan/);
+});
+
+test("PIC Bahan: PIC Meja tidak mengisi ulang racikan/bahan (satu sumber); validasi & body pencatatan mengikuti server", () => {
+  const IMGM = { status: "done", kind: "image", url: "/media/x.jpg" };
+  const card = { track: "BUILD", product: { flow: "KASUR" }, build: { materialOperator: { id: "op", name: "Febri" } } };
+  assert.equal(materialsByPic(card), true); assert.equal(materialsByPic({ track: "BUILD", build: { record: { version: 1 } } }), true); assert.equal(materialsByPic({ track: "BUILD", build: {} }), false); assert.equal(materialsByPic({ track: "RESTORATION" }), false);
+  assert.equal(validateStepForm(6, { note: "Selesai" }, { mediaItems: [IMGM], track: "BUILD", flow: "KASUR", byPic: true }), null, "racikan dari PIC Bahan");
+  assert.match(validateStepForm(6, { note: "Selesai" }, { mediaItems: [IMGM], track: "BUILD", flow: "KASUR", byPic: false }), /racikan/i);
+  const p = buildStepPayload(6, { note: "ok", materials: [{ materialId: "m", qty: "2" }], racikanFondasi: "PS" }, { track: "BUILD", flow: "KASUR", byPic: true });
+  assert.deepEqual(p, { materials: [], note: "ok" }, "tidak mengirim bahan/racikan bila dicatat PIC Bahan");
+  const issued = [{ materialId: "m1", name: "Pocket Spring", qty: 2 }, { materialId: "m2", name: "Latex", qty: 3 }];
+  const good = { racikanFondasi: "Pocket spring 25 cm", racikanLapisan: "", materials: [{ materialId: "m1", qty: "1" }], note: "" };
+  assert.equal(validateMaterialRecord(good, { flow: "KASUR", issued }), null);
+  assert.match(validateMaterialRecord({ ...good, materials: [{ materialId: "m1", qty: "5" }] }, { flow: "KASUR", issued }), /melebihi yang diserahkan Gudang/);
+  assert.match(validateMaterialRecord({ ...good, materials: [{ materialId: "zzz", qty: "1" }] }, { flow: "KASUR", issued }), /dari bahan yang diserahkan Gudang/);
+  assert.match(validateMaterialRecord({ racikanFondasi: "", racikanLapisan: "", materials: [] }, { flow: "KASUR", issued }), /Isi racikan/);
+  assert.match(validateMaterialRecord({ racikanFondasi: "ab", materials: [{ materialId: "m1", qty: "1" }] }, { flow: "KASUR", issued }), /minimal 3/);
+  assert.match(validateMaterialRecord(good, { flow: "UNCONFIRMED", issued }), /Jenis produk belum jelas/, "racikan kasur ditahan");
+  assert.equal(validateMaterialRecord({ materials: [{ materialId: "m1", qty: "1" }] }, { flow: "UNCONFIRMED", issued }), null, "pemakaian bahan tetap bisa dicatat");
+  assert.equal(validateMaterialRecord({ materials: [{ materialId: "m1", qty: "1" }] }, { flow: "NON_KASUR", issued }), null);
+  assert.deepEqual(buildMaterialRecordBody(good, { flow: "KASUR", revision: 7 }), { expectedRevision: 7, materials: [{ materialId: "m1", qty: 1 }], racikan: { fondasi: "Pocket spring 25 cm", lapisan: undefined } });
+  assert.equal("racikan" in buildMaterialRecordBody(good, { flow: "NON_KASUR", revision: 7 }), false, "non-kasur tidak mengirim racikan");
+});
+
+test("UI jalur pengerjaan: antrean/lembar PIC Bahan, panel rencana (Corner + PIC Bahan) di Unit 360, QC menahan putusan bila jenis belum jelas / Corner belum dikonfirmasi", () => {
+  const sheet = src("features", "production", "workerApp", "materialSheet.jsx");
+  assert.match(sheet, /api\.recordProductionV2BuildMaterials\(card\.runId, body, key\)/, "command resmi, bukan status lokal");
+  assert.match(sheet, /material-record-submit/); assert.match(sheet, /intentKeysMaterial\.keyFor/, "Idempotency-Key per niat");
+  assert.match(src("features", "production", "workerApp", "JobDetail.jsx"), /open-material-record/); assert.match(src("features", "production", "workerApp", "JobDetail.jsx"), /lane === "MATERIAL"/);
+  assert.match(src("routes", "pageRegistry.jsx"), /path: "\/produksi\/bahan"/);
+  assert.match(src("features", "production", "workerApp", "useWorkerJobs.js"), /lane === "MATERIAL" \? "material"/);
+  const panel = src("features", "production", "BuildPlanPanel.jsx");
+  assert.match(panel, /confirmProductionV2BuildCorner/); assert.match(panel, /setProductionV2BuildMaterialOperator/); assert.match(panel, /build-corner-save/); assert.match(panel, /build-pic-save/);
+  assert.match(panel, /Corner tidak diperlukan wajib beralasan/); assert.match(panel, /Produksi tidak mengubah order/);
+  assert.match(src("features", "production", "UnitOverviewDrawer.jsx"), /<BuildPlanPanel d=\{d\} canPlan=\{canApplyAdaptation\}/);
+  const qc = src("pages", "bengkel", "ProductionQc.jsx");
+  assert.match(qc, /qc-unconfirmed-hold/); assert.match(qc, /qc-corner-hold/); assert.match(qc, /unconfirmed && mode !== "WAIVED"/);
+  assert.match(src("pages", "bengkel", "ProductionPlannerV2.jsx"), /\{canRoute && <MorningPriorityApprovalPanel \/>\}/, "403 morning-priority: tidak diminta oleh peran tanpa izin");
 });

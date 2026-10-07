@@ -12,13 +12,14 @@ import {
   applyAdaptationPolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
 } from "../services/productionStepCommandService.js";
 import { resumeWork } from "../services/productionResumeService.js";
+import { confirmBuildCorner, recordBuildMaterials, setBuildMaterialOperator } from "../services/productionBuildCommandService.js";
 import {
   getProductionSettings, inspectWorkshopDefaultLocation, listServiceMappings, setAdaptationDefault, setServiceMapping, setWorkshopDefaultLocation,
 } from "../services/productionSettingsService.js";
 import { receiveMaterialReturn } from "../services/productionMaterialReturnService.js";
 import { confirmUnitArrival, listReceivingLocations } from "../services/unitCustodyCommandService.js";
 import {
-  getAndonBoard, getProductionBoard, getProductionCommandCenter, getProductionReport, getRunCard, getWarehouseProductionQueue, listWorkerQueue,
+  getAndonBoard, getProductionBoard, getProductionCommandCenter, getProductionReport, getRunCard, getWarehouseProductionQueue, listMaterialQueue, listWorkerQueue,
 } from "../services/productionExperienceReadService.js";
 import { getUnitOverview } from "../services/productionUnitOverviewService.js";
 import { listBacklog, parseBacklogQuery } from "../services/productionBacklog.js";
@@ -135,6 +136,41 @@ productionExperienceRouter.get("/units/:unitId/overview", requireAnyPermission(.
     const activeRun = await prisma.productionRun.findFirst({ where: { unitId: req.params.unitId, status: { notIn: ["COMPLETED", "CANCELLED"] } }, select: { id: true } });
     const v1Drift = activeRun ? await findV1Drift(prisma, { runId: activeRun.id, unitId: req.params.unitId }) : null; // aksi V1 saat writer OFF -> command V2 berhenti sampai rekonsiliasi
     res.json({ readerMode: "COHORT", ...overview, ownership: { v2ExecutionOwned: await isUnitV2ExecutionOwned(prisma, req.params.unitId), v1Drift } });
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/worker/material — antrean PIC BAHAN (jalur pengerjaan): pekerjaan yang PIC Bahan-nya = operator yang login (ADMIN/OWNER: semuanya). Otorisasi PIC di command.
+// Didaftarkan SEBELUM /worker/:lane. Izin rute = salah satu izin produksi/gudang yang sudah ada (tidak ada izin/peran baru).
+productionExperienceRouter.get("/worker/material", requireAnyPermission(P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const unitIds = await readerCohort();
+    if (!unitIds) return inert(res, { items: [], operator: null });
+    res.json({ readerMode: "COHORT", lane: "MATERIAL", ...(await listMaterialQueue(prisma, { unitIds, userId: req.user.id, all: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY) })) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// ---- Jalur Pengerjaan Pesanan: PIC Bahan per pekerjaan, kebutuhan Corner, catatan racikan/pemakaian bahan ------------------------------------------
+// Penetapan PIC Bahan & konfirmasi Corner = izin penjadwalan (PRODUCTION_ASSIGNMENT_WRITE: Lead/Admin/Owner). Catat racikan/pemakaian = PIC Bahan yang ditugaskan (ditegakkan
+// command) atau ADMIN/OWNER lewat PRODUCTION_EXECUTE_ANY; izin rute hanya pintu masuk (tidak memberi peran baru).
+productionExperienceRouter.post("/runs/:runId/build/material-operator", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.json(await setBuildMaterialOperator(prisma, { runId: req.params.runId, operatorId: req.body?.operatorId ?? null, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision }));
+  } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.post("/runs/:runId/build/corner", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.json(await confirmBuildCorner(prisma, { runId: req.params.runId, required: req.body?.required, reason: req.body?.reason ?? null, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision }));
+  } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.post("/runs/:runId/build/materials", requireAnyPermission(P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.json(await recordBuildMaterials(prisma, {
+      runId: req.params.runId, actorId: req.user.id, canExecuteAny: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY), idempotencyKey: idem(req),
+      expectedRevision: req.body?.expectedRevision, racikan: req.body?.racikan ?? null, materials: req.body?.materials ?? [], note: req.body?.note ?? null,
+    }));
   } catch (err) { handleErr(err, res); }
 });
 

@@ -60,6 +60,8 @@ export function assertRunRevision(run, expectedRevision) {
   }
 }
 
+// Profil pemeriksaan QC menurut alur produk: KASUR (uji berat badan) | GENERIC (divan/sofa) | UNCONFIRMED (jenis belum jelas: ditahan). Jalur lama (bukan BUILD) = KASUR.
+const qcProfileOf = (info) => (!info ? "KASUR" : info.flow === "NON_KASUR" ? "GENERIC" : info.flow === "UNCONFIRMED" ? "UNCONFIRMED" : "KASUR");
 const cleanUrls = (value) => (Array.isArray(value) ? value.map((u) => String(u ?? "").trim()).filter(Boolean) : []);
 
 // Validasi + normalisasi input inspeksi (murni; diuji unit). Mengembalikan objek ternormalisasi atau melempar galat 400/422 berkode.
@@ -205,7 +207,10 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
   const revisionExpected = assertExpectedRevision(expectedRevision);
   // Profil QC ditentukan SERVER dari jenis produk kanonis (bukan dari isian klien): NON-kasur pada jalur pengerjaan = pemeriksaan hasil tanpa uji berat badan.
   const pre = await prisma.productionRun.findUnique({ where: { id: runId }, select: { unitId: true } });
-  const generic = pre ? (await buildTrackUnits(prisma, [pre.unitId])).get(pre.unitId)?.flow === "NON_KASUR" : false;
+  const preInfo = pre ? (await buildTrackUnits(prisma, [pre.unitId])).get(pre.unitId) : null;
+  // Jenis produk belum jelas: TIDAK ada uji berat badan kasur maupun pemeriksaan generik (tanpa fallback ke kasur) sampai jenis dikonfirmasi pada order.
+  if (preInfo?.flow === "UNCONFIRMED" && String(input.result ?? "").toUpperCase() !== "WAIVED") throw qcError(preInfo.problem || "Jenis produk belum jelas — konfirmasi jenis produk dulu", 409, "QC_PRODUCT_TYPE_UNCONFIRMED");
+  const generic = preInfo?.flow === "NON_KASUR";
   const data = validateInspectionInput(input, { generic });
   if (data.result === "WAIVED" ? !canWaive : !canInspect) {
     throw qcError(data.result === "WAIVED" ? "Hanya pihak berwenang (QC_WAIVE) yang boleh mem-waive QC" : "Anda tidak berwenang memutuskan hasil QC (QC_WRITE)", 403, data.result === "WAIVED" ? "QC_WAIVE_FORBIDDEN" : "QC_WRITE_REQUIRED");
@@ -222,6 +227,12 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
     assertRunConsistent(run, run.unit);
     await assertNoOpenRunException(tx, run.id);
     assertRunRevision(run, revisionExpected);
+    // Jalur pengerjaan: pengujian khusus kasur DITAHAN sampai jenis produk kanonis jelas; jalur setelah QC (Corner) harus sudah dikonfirmasi pada rencana sebelum QC lulus/di-waive.
+    const buildInfo = (await buildTrackUnits(tx, [run.unitId])).get(run.unitId);
+    if (buildInfo) {
+      if (buildInfo.flow === "UNCONFIRMED" && data.result !== "WAIVED") throw qcError(buildInfo.problem || "Jenis produk belum jelas — konfirmasi jenis produk dulu", 409, "QC_PRODUCT_TYPE_UNCONFIRMED");
+      if (buildInfo.cornerRequired == null && data.result !== "FAIL") throw qcError("Kebutuhan Corner belum dikonfirmasi pada rencana — Lead perlu mengonfirmasinya sebelum QC diputuskan", 409, "QC_CORNER_NOT_CONFIRMED");
+    }
     const process = phaseOf(run, "PROCESS");
     if (run.status !== "ACTIVE" || run.currentPhase !== "QC" || process?.status !== "COMPLETED" || phaseOf(run, "QC")?.status !== "NOT_STARTED" || activeOperation(run)) {
       throw qcError("Inspeksi QC hanya untuk run yang sedang menunggu QC (semua tahap sebelum gerbang selesai)", 409, "QC_NOT_AWAITING", { currentPhase: run.currentPhase, status: run.status });
@@ -693,7 +704,7 @@ export async function listQcQueue(prisma, { tab = "AWAITING_QC", unitIds = null,
     .map(({ run, state }) => ({
       runId: run.id, revision: run.revision, state, origin: run.origin, currentPhase: run.currentPhase,
       // Jalur pengerjaan (BARU/custom): profil QC dari jenis produk kanonis — KASUR (uji berat badan) atau GENERIC (pemeriksaan hasil divan/sofa, tanpa uji berat badan).
-      track: builds.has(run.unitId) ? "BUILD" : "RESTORATION", qcProfile: builds.get(run.unitId)?.flow === "NON_KASUR" ? "GENERIC" : "KASUR", productClass: builds.get(run.unitId)?.productClass ?? null,
+      track: builds.has(run.unitId) ? "BUILD" : "RESTORATION", qcProfile: qcProfileOf(builds.get(run.unitId)), productClass: builds.get(run.unitId)?.productClass ?? null, productClassProblem: builds.get(run.unitId)?.problem ?? null, cornerRequired: builds.get(run.unitId)?.cornerRequired ?? null,
       unit: { id: run.unit.id, unitCode: run.unit.unitCode, status: run.unit.status, orderNumber: run.unit.order?.orderNumber ?? null, category: run.unit.order?.category ?? null },
       workCenter: run.plan?.workCenter ?? null, operator: run.plan?.operator ? { id: run.plan.operator.id, name: run.plan.operator.user?.name ?? null } : null,
       lastInspection: run.inspections[0] ? { version: run.inspections[0].version, result: run.inspections[0].result, disposition: run.inspections[0].disposition, inspectedAt: run.inspections[0].inspectedAt } : null,
@@ -730,7 +741,7 @@ export async function getQcRun(prisma, runId) {
   const orderSpec = build ? await prisma.order.findFirst({ where: { units: { some: { id: run.unitId } } }, select: { notes: true, productType: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } } } }) : null;
   return {
     ...base, state: stateOf({ ...run, exceptions: run.exceptions }),
-    track: build ? "BUILD" : "RESTORATION", qcProfile: build?.flow === "NON_KASUR" ? "GENERIC" : "KASUR", productClass: build?.productClass ?? null, productClassProblem: build?.problem ?? null,
+    track: build ? "BUILD" : "RESTORATION", qcProfile: qcProfileOf(build), productClass: build?.productClass ?? null, productClassProblem: build?.problem ?? null, cornerRequired: build?.cornerRequired ?? null, cornerReason: build?.cornerReason ?? null,
     ...(build ? { racikan: buildSummary?.racikan ?? null, buildNote: buildSummary?.note ?? null, salesServices: (orderSpec?.items || []).map((i) => i.layananName), salesNotes: orderSpec?.notes ?? null } : {}),
     inspections: run.inspections.map((i) => ({
       id: i.id, version: i.version, result: i.result, disposition: i.disposition, overrideReason: i.overrideReason, inspectedAt: i.inspectedAt, inspector: nameById.get(i.inspectorId) ?? null, qcFitTestId: i.qcFitTestId,

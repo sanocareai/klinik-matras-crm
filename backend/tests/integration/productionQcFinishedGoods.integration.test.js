@@ -75,11 +75,17 @@ async function acceptedUnit() {
 // Unit BARU/SEWA lahir di workshop (tanpa pickup) -> run WORKSHOP_BORN lewat command P5.
 async function bornUnit(w, category) {
   const customer = await testPrisma.customer.create({ data: { name: `Pelanggan ${category}` } });
-  const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `P6B-${++seq}`, value: 1000, category } });
+  // Jenis produk kanonis harus jelas (tanpa fallback ke kasur): BARU diberi jenis kasur eksplisit.
+  const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `P6B-${++seq}`, value: 1000, category, ...(category === "BARU" ? { productLine: "KASUR", productType: "KASUR_SPRING" } : {}) } });
   const unit = await testPrisma.unit.create({ data: { unitCode: `UNIT-P6B-${++seq}`, orderId: order.id, seq: 1, status: "RECEIVED" } });
   await addCohort(unit.id);
   const reg = await w.op.api.post(W, { unitId: unit.id }, key(`born-${++seq}`));
   assert.equal(reg.status, 201, JSON.stringify(reg.body));
+  // Jalur pengerjaan (BARU): kebutuhan Corner dikonfirmasi pada rencana sebelum QC diputuskan.
+  if (category === "BARU") {
+    const cr = await w.op.api.post(`/api/production-v2/runs/${reg.body.runId}/build/corner`, { expectedRevision: reg.body.revision, required: true }, key(`corner-${++seq}`));
+    assert.equal(cr.status, 200, JSON.stringify(cr.body));
+  }
   return { unit, run: await testPrisma.productionRun.findUniqueOrThrow({ where: { id: reg.body.runId } }) };
 }
 
@@ -155,7 +161,8 @@ const snapshot = async (runId, unitId) => ({
 
 async function toAwaitingQc(w, opts) {
   const p = await prepare(w, opts);
-  const at = await runToAwaitingQc(w, p.run.id, 1);
+  const rev0 = (await testPrisma.productionRun.findUniqueOrThrow({ where: { id: p.run.id }, select: { revision: true } })).revision; // jalur BARU: konfirmasi Corner pada rencana sudah menaikkan revisi
+  const at = await runToAwaitingQc(w, p.run.id, rev0);
   return { ...p, revision: at.revision };
 }
 // Lifecycle lengkap dari AWAITING_QC sampai unit siap kirim (dipakai lintas tipe unit).

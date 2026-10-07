@@ -88,7 +88,7 @@ export function stepStatuses(ctx) {
     else if (e) status = "DONE";
     else status = "PENDING";
     // Jalur pengerjaan: tahap 6 bernama "Pengerjaan Pesanan"; tahap yang tidak berlaku mencatat alasannya ("tidak berlaku", BUKAN dikerjakan).
-    return { no: step.no, code: step.code, label: stepLabelFor(step.no, step.label, ctx.state?.buildTrack), actor: step.actor, status, at: e?.createdAt ?? null, version: e?.version ?? null, ...(status === "NA" && ctx.state?.buildTrack ? { naReason: step.no === 8 ? NON_KASUR_NA_REASON : BUILD_NA_REASON } : {}) };
+    return { no: step.no, code: step.code, label: stepLabelFor(step.no, step.label, ctx.state?.buildTrack), actor: step.actor, status, at: e?.createdAt ?? null, version: e?.version ?? null, ...(status === "NA" && ctx.state?.buildTrack ? { naReason: step.no === 8 ? NON_KASUR_NA_REASON : [9, 10, 11].includes(step.no) ? `Corner tidak diperlukan — ${ctx.state.cornerReason || "dikonfirmasi pada rencana"}` : BUILD_NA_REASON } : {}) };
   });
 }
 
@@ -160,7 +160,9 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
     track: ctx.state?.buildTrack ? "BUILD" : "RESTORATION", // BUILD = pesanan BARU/custom (Pengerjaan Pesanan); RESTORATION = jalur lama
     // Klasifikasi produk kanonis (jalur BUILD): KASUR (uji tekstur/berat badan, racikan) | NON_KASUR (divan/sofa) | BELUM_JELAS (alur kasur dipakai, dilaporkan). `problem` = alasan klasifikasi kurang.
     product: ctx.state?.buildTrack ? { class: ctx.state.productClass, flow: ctx.state.productFlow, problem: ctx.state.productProblem } : null,
-    racikan: ctx.state?.buildTrack ? (ctx.evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1)?.payload?.racikan ?? null) : null,
+    racikan: ctx.state?.buildTrack ? (ctx.evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1)?.payload?.racikan ?? ctx.buildRecord?.racikan ?? null) : null,
+    // Pengaturan jalur pengerjaan: PIC Bahan per pekerjaan, kebutuhan Corner yang dikonfirmasi pada rencana, catatan racikan/pemakaian terbaru.
+    build: ctx.buildView ?? null,
     // Tiga sumbu terpisah (simplifikasi slice 1): status order, keberadaan fisik, tahap (next/bucket). service (teknis) tetap ada di payload sebagai data historis; UI hanya menampilkan Layanan Sales.
     orderStatus: displayStatusOfOrder(run.unit.order?.status) || null,
     unitStatus: displayStatusOfUnit(run.unit.status) || null,
@@ -469,12 +471,26 @@ export async function listWorkerQueue(prisma, { unitIds, userId, lane, all = fal
   const views = (await viewsOf(prisma, runs, { now })).filter((v) => !isFinishedUnitStatus(v.unit.status));
   const items = views
     .filter((v) => (lane === "CORNER"
-      ? v.next?.actor === "CORNER" || (v.next?.stepNo >= 10 && v.next?.stepNo <= 12)
-      : v.next?.stepNo == null || v.next.stepNo <= 9 || v.next?.wait === "AWAITING_QC"))
+      ? v.next?.actor === "CORNER" || (v.next?.stepNo >= 10 && v.next?.stepNo <= 12 && !(v.track === "BUILD" && v.build?.corner?.required === false))
+      // Jalur pengerjaan TANPA Corner: Finish (tahap 12) dikerjakan PIC Meja, jadi tetap di antrean Meja.
+      : v.next?.stepNo == null || v.next.stepNo <= 9 || v.next?.wait === "AWAITING_QC" || (v.track === "BUILD" && v.build?.corner?.required === false && v.next?.actor === "TABLE")))
     // Hari lebih awal dulu, lalu per meja, lalu urutan meja (manual menang atas prioritas — sama dengan papan Rencana).
     .sort((a, b) => String(a.plan?.productionDate || "9999").localeCompare(String(b.plan?.productionDate || "9999"))
       || String(a.plan?.stationCode || "").localeCompare(String(b.plan?.stationCode || ""))
       || compareStationOrder(a.plan, b.plan));
+  return { operator: all ? { id: null, all: true } : { id: operator.id }, items };
+}
+
+// Antrean PIC BAHAN (jalur pengerjaan): pekerjaan yang PIC Bahan-nya = operator yang login (ADMIN/OWNER: semua pekerjaan yang punya PIC Bahan).
+export async function listMaterialQueue(prisma, { unitIds, userId, all = false, now = new Date() }) {
+  const operator = !all && userId ? await prisma.productionOperator.findUnique({ where: { userId }, select: { id: true, active: true } }) : null;
+  if (!all && (!operator || !operator.active)) return { operator: null, items: [] };
+  const runs = await loadRuns(prisma, {
+    unitId: { in: unitIds }, status: { notIn: TERMINAL_RUN },
+    buildSetting: { is: all ? { materialOperatorId: { not: null } } : { materialOperatorId: operator.id } },
+  });
+  const views = (await viewsOf(prisma, runs, { now })).filter((v) => !isFinishedUnitStatus(v.unit.status) && v.track === "BUILD");
+  const items = views.sort((a, b) => String(a.plan?.productionDate || "9999").localeCompare(String(b.plan?.productionDate || "9999")) || String(a.plan?.stationCode || "").localeCompare(String(b.plan?.stationCode || "")));
   return { operator: all ? { id: null, all: true } : { id: operator.id }, items };
 }
 
@@ -580,6 +596,8 @@ function buildTrackReportMessage(report, lines) {
   if (b.racikan?.fondasi) lines.push(`• Racikan Fondasi : ${b.racikan.fondasi}`);
   if (b.racikan?.lapisan) lines.push(`• Racikan Lapisan : ${b.racikan.lapisan}`);
   if (b.note) lines.push(`• Pengerjaan : ${b.note}`);
+  if (b.materialOperator) lines.push(`• PIC Bahan : ${b.materialOperator}`);
+  if (b.corner?.confirmed) lines.push(b.corner.required ? "• Corner : diperlukan (dikonfirmasi pada rencana)" : `• Corner : tidak diperlukan — ${b.corner.reason || "dikonfirmasi pada rencana"}`);
   if (report.materials.foundation.length) lines.push(`• Bahan dipakai : ${report.materials.foundation.map((m) => `${m.name} (${m.code})`).join(" + ")}`);
   if (report.finalTest) lines.push(`• Uji PIC Meja : Diuji beban ${report.finalTest.testerWeightKg} kg -> Hasil Tekstur ${VERDICT_LABEL[report.finalTest.verdict] || report.finalTest.verdict}`);
   if (report.finishing) lines.push(`• Finishing    : Model ${STYLE_LABEL[report.finishing.mattressStyle] || report.finishing.mattressStyle} | Kain ${report.finishing.fabricSpec} | List ${report.finishing.borderColor}`);
@@ -672,7 +690,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     adaptation: !!run.adaptationPolicy,
     track: ctx.state.buildTrack ? "BUILD" : "RESTORATION",
     product: ctx.state.buildTrack ? { class: ctx.state.productClass, flow: ctx.state.productFlow, problem: ctx.state.productProblem } : null,
-    build: ctx.state.buildTrack ? { racikan: latestOf(evidence, 6)?.payload?.racikan ?? null, note: latestOf(evidence, 6)?.payload?.note ?? null, salesServices: (run.unit.order?.items || []).map((i) => i.layananName).filter(Boolean), productType: run.unit.order?.productType ?? null } : null,
+    build: ctx.state.buildTrack ? { racikan: latestOf(evidence, 6)?.payload?.racikan ?? ctx.buildRecord?.racikan ?? null, materialOperator: ctx.buildView?.materialOperator?.name ?? null, corner: ctx.buildView?.corner ?? null, note: latestOf(evidence, 6)?.payload?.note ?? null, salesServices: (run.unit.order?.items || []).map((i) => i.layananName).filter(Boolean), productType: run.unit.order?.productType ?? null } : null,
     skippedSteps: [...new Map(skippedEvidence.map((e) => [e.stepNo, e])).values()].sort((a, b) => a.stepNo - b.stepNo).map((e) => ({ stepNo: e.stepNo, label: STEP_BY_NO[e.stepNo]?.label ?? `Tahap ${e.stepNo}`, reason: e.payload?.reason ?? null, at: e.createdAt, by: actorName.get(e.actorId) ?? null })),
     unit: { unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, service: run.unit.service?.labelId ?? null },
     order: { orderNumber: run.unit.order?.orderNumber ?? null, customerName: run.unit.order?.customer?.name ?? null, complaints: (run.unit.order?.complaintCategory || []).map((c) => COMPLAINT_LABEL[c] || c), request: run.unit.order?.notes ?? null, weightKg: run.unit.order?.beratBadan ?? null },
@@ -686,7 +704,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     oldMaterials: latestOf(evidence, 3)?.payload?.oldMaterials ?? [],
     measurement,
     diagnosis: latestOf(evidence, 5)?.payload?.diagnosis ?? null,
-    materials: { foundation: linesOf(6), layer: linesOf(7), finishing: linesOf(10) },
+    materials: { foundation: [...linesOf(6), ...(ctx.buildView?.record?.materials || []).map((m) => ({ materialId: m.materialId, qty: m.qty, code: m.code ?? "—", name: m.name ?? "—", uom: m.uom ?? null }))], layer: linesOf(7), finishing: linesOf(10) },
     textureTests: finalTests.map((e) => ({ version: e.version, verdict: e.payload?.verdict, testerWeightKg: e.payload?.testerWeightKg, at: e.createdAt })),
     finalTest: finalPass ? finalPass.payload : null,
     qc: ctx.latestInspection ? { result: ctx.latestInspection.result, version: ctx.latestInspection.version, at: ctx.latestInspection.inspectedAt } : null,

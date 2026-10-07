@@ -17,7 +17,7 @@
 //  11  Jahit Selesai            = SELESAI corner_sewing (foto/video + checklist)
 //  12  Konfirmasi Selesai       = (foto kasur selesai) MULAI+SELESAI finished -> penawaran barang jadi ke Gudang (P6) + event laporan (outbox, PENDING)
 
-import { stepLabelFor } from "./productionBuildTrack.js";
+import { CORNER_UNCONFIRMED_WAIT, PRODUCT_FLOW, PRODUCT_UNCONFIRMED_WAIT, stepLabelFor } from "./productionBuildTrack.js";
 
 export const STEP_ACTOR = Object.freeze({ TABLE: "TABLE", CORNER: "CORNER" });
 
@@ -128,7 +128,8 @@ export function validateStepEvidence(stepNo, input, ctx = {}) {
   if (!step) throw stepError("Tahap tidak dikenal", 400, "STEP_UNKNOWN");
   const p = input?.payload && typeof input.payload === "object" && !Array.isArray(input.payload) ? input.payload : {};
   const media = normalizeMedia(input?.media);
-  const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrack)})`; // jalur pengerjaan: tahap 6 = Pengerjaan Pesanan
+  const PRODUCT_UNCONFIRMED_WAIT_CODE = "STEP_WAITING_" + PRODUCT_UNCONFIRMED_WAIT;
+const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrack)})`; // jalur pengerjaan: tahap 6 = Pengerjaan Pesanan
   switch (stepNo) {
     case 1:
       requireMedia(media, { label });
@@ -173,14 +174,23 @@ export function validateStepEvidence(stepNo, input, ctx = {}) {
     case 6: {
       // Jalur pengerjaan (pesanan BARU/custom): foto ATAU video hasil pengerjaan (video tidak wajib — itu khas uji fondasi restorasi); jalur restorasi tetap wajib video.
       requireMedia(media, { label, video: !ctx.buildTrack });
+      if (ctx.buildTrack && ctx.productFlow === PRODUCT_FLOW.UNCONFIRMED) {
+        throw stepError("Jenis produk belum jelas pada order — konfirmasi jenis produk dulu (Sales memperbaiki order) sebelum bukti pengerjaan dikirim", 409, PRODUCT_UNCONFIRMED_WAIT_CODE);
+      }
+      // PIC Bahan per pekerjaan (jalur pengerjaan): pemakaian & racikan dicatat PIC Bahan lewat command resminya — satu sumber, tidak ada hitung ganda di bukti PIC Meja.
+      const p6Materials = Array.isArray(p.materials) ? p.materials : [];
+      if (ctx.buildTrack && ctx.materialsByPic && p6Materials.length) {
+        throw stepError("Pemakaian bahan pekerjaan ini dicatat PIC Bahan — kosongkan daftar bahan pada bukti pengerjaan", 409, "STEP_MATERIAL_BY_MATERIAL_PIC");
+      }
       // Bahan dari Gudang BOLEH kosong pada jalur pengerjaan (pemakaian dicatat sesuai pekerjaan nyata); jalur restorasi tetap wajib.
       const base = { materials: normalizeMaterialLines(p.materials, { ...ctx, required: !ctx.buildTrack, label }), note: text(p.note, 3, ctx.buildTrack ? "Penjelasan pengerjaan" : "Penjelasan isi fondasi") };
-      // Kasur custom: racikan fondasi/lapisan (ditentukan PIC Meja bersama PIC QC) wajib tercatat — minimal salah satu. Produk non-kasur (divan/sofa) tidak memakai racikan kasur.
-      if (ctx.buildTrack && ctx.productFlow !== "NON_KASUR") {
+      // Kasur custom: racikan fondasi/lapisan (ditentukan PIC Meja bersama PIC QC) wajib tercatat — dari bukti ini ATAU dari catatan PIC Bahan. Non-kasur (divan/sofa) tidak memakai racikan kasur.
+      if (ctx.buildTrack && ctx.productFlow === PRODUCT_FLOW.KASUR) {
         const r = p.racikan && typeof p.racikan === "object" && !Array.isArray(p.racikan) ? p.racikan : {};
         const fondasi = optionalText(r.fondasi, "Racikan fondasi", 400); const lapisan = optionalText(r.lapisan, "Racikan lapisan", 400);
-        if ((fondasi?.length ?? 0) < 3 && (lapisan?.length ?? 0) < 3) throw invalid(`${label}: isi racikan fondasi dan/atau lapisan (minimal 3 karakter)`);
-        base.racikan = { fondasi: fondasi || null, lapisan: lapisan || null };
+        const given = (fondasi?.length ?? 0) >= 3 || (lapisan?.length ?? 0) >= 3;
+        if (!given && !ctx.racikanRecorded) throw invalid(`${label}: isi racikan fondasi dan/atau lapisan (minimal 3 karakter)`);
+        if (given) base.racikan = { fondasi: fondasi || null, lapisan: lapisan || null };
       }
       return { media, payload: base };
     }
@@ -313,8 +323,14 @@ export function deriveNextAction(state) {
       if (state.openShortage) return wait("WAREHOUSE", "MATERIAL_SHORTAGE", { stepNo, pausedActor: actor });
       return { actor, stepNo, action: "RESUME" };
     }
-    // Produk NON-kasur pada jalur pengerjaan (divan/sofa): tanpa uji tekstur PIC (tahap 8) — satu kiriman bukti pengerjaan menutup tahap lalu menunggu pemeriksaan hasil PIC QC.
-    if (state.buildTrack && state.productFlow === "NON_KASUR" && op.stagePhase === "MODULE") return { actor, stepNo, action: "COMPLETE" };
+    if (state.buildTrack && op.stagePhase === "MODULE") {
+      // Jenis produk kanonis belum jelas: bukti pengerjaan/uji khusus kasur DITAHAN (pekerjaan fisik boleh berjalan) sampai Sales mengonfirmasi jenis pada order.
+      if (state.productFlow === PRODUCT_FLOW.UNCONFIRMED) return wait("SALES", PRODUCT_UNCONFIRMED_WAIT, { stepNo, problem: state.productProblem ?? null });
+      // Produk NON-kasur (divan/sofa): tanpa uji tekstur PIC (tahap 8) — satu kiriman bukti menutup tahap lalu menunggu pemeriksaan hasil PIC QC.
+      if (state.productFlow === PRODUCT_FLOW.NON_KASUR) return { actor, stepNo, action: "COMPLETE" };
+      // Kasur dengan PIC Bahan: racikan dicatat PIC Bahan lebih dulu (PIC Meja menutup pengerjaan setelahnya).
+      if (state.materialOperatorId && !state.racikanRecorded) return wait("MATERIAL_PIC", "RACIKAN_NOT_RECORDED", { stepNo });
+    }
     if (op.isLastPreQc && op.stagePhase === "MODULE") {
       // Bukti diurutkan kronologis (`order`). Hasil uji TERLALU KERAS/EMPUK setelah bukti modul terakhir = rework: bukti modul wajib diulang.
       const verdict = latestTextureVerdict(state.opEvidence);
@@ -347,14 +363,24 @@ export function deriveNextAction(state) {
   // Mode adaptasi: semua tahap sudah tuntas -> tinggal "Selesaikan Produksi" (pratinjau + konfirmasi). Tidak ada tahap yang diulang.
   if (state.adaptation && target.done) return wait("TABLE", "READY_TO_FINISH", { stepNo: 12 });
   // Mode adaptasi: Meja -> Corner TETAP berjalan tanpa putusan QC. Tahap 9 "Kirim ke Corner" (bukti foto) mencatat gerbang QC sebagai TIDAK DILAKUKAN (bukan lulus, bukan di-waive).
-  // Produk non-kasur (jalur pengerjaan) tidak punya tahap 8 (uji tekstur kasur): menunggu pemeriksaan hasil PIC QC tanpa nomor tahap.
-  if (target.requiresQc) return state.adaptation ? { actor: "TABLE", stepNo: 9, action: "HANDOFF", qcNotPerformed: true } : wait("QC", "AWAITING_QC", { stepNo: state.buildTrack && state.productFlow === "NON_KASUR" ? null : 8 });
+  if (target.requiresQc) {
+    if (state.buildTrack) {
+      // Kebutuhan Corner harus DIKONFIRMASI pada rencana sebelum gerbang QC dilewati (jalur Corner ditentukan olehnya; tidak diasumsikan dari jenis produk).
+      if (state.cornerRequired == null) return wait("PLANNER", CORNER_UNCONFIRMED_WAIT, { stepNo: 9 });
+      // Corner tidak diperlukan + adaptasi: tidak ada tahap "Kirim ke Corner" sebagai pemicu — QC dicatat tidak dilakukan lewat Selesaikan Produksi.
+      if (state.cornerRequired === false && state.adaptation) return wait("TABLE", "READY_TO_FINISH", { stepNo: 12 });
+    }
+    // Produk non-kasur (jalur pengerjaan) tidak punya tahap 8 (uji tekstur kasur): menunggu pemeriksaan hasil PIC QC tanpa nomor tahap.
+    return state.adaptation ? { actor: "TABLE", stepNo: 9, action: "HANDOFF", qcNotPerformed: true } : wait("QC", "AWAITING_QC", { stepNo: state.buildTrack && state.productFlow === PRODUCT_FLOW.NON_KASUR ? null : 8 });
+  }
   if (target.isPostQc) {
     if (target.code === "corner_sewing") {
+      if (state.buildTrack && state.cornerRequired == null) return wait("PLANNER", CORNER_UNCONFIRMED_WAIT, { stepNo: 9 });
       if (!state.step9SinceQc) return { actor: "TABLE", stepNo: 9, action: "HANDOFF" };
       return { actor: "CORNER", stepNo: 10, action: "START_CORNER" };
     }
-    if (target.code === "finished") return { actor: "CORNER", stepNo: 12, action: "FINISH" };
+    // Tanpa Corner (dikonfirmasi pada rencana): Finish dikonfirmasi PIC Meja (tahap Jahit Corner tidak ada di jalur).
+    if (target.code === "finished") return { actor: state.buildTrack && state.cornerRequired === false ? "TABLE" : "CORNER", stepNo: 12, action: "FINISH" };
     return { actor: "CORNER", stepNo: stepNoForStage(target), action: "START" };
   }
   if (target.code === "pre_teardown_test") return { actor: "TABLE", stepNo: 1, action: "START_WITH_EVIDENCE" };

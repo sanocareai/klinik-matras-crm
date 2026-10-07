@@ -203,6 +203,10 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_MATERIAL_RETURN_RECEIVED: "PRODUCTION_MATERIAL_RETURN_RECEIVED",
   // Slice 2 (flow adaptasi): tahap dilewati (SKIPPED), QC tidak dilakukan, produksi diselesaikan lewat adaptasi, kebijakan adaptasi diterapkan, Tunda/Lanjutkan Pekerjaan di papan, pengaturan Admin.
   PRODUCTION_STEP_SKIPPED: "PRODUCTION_STEP_SKIPPED",
+  // Jalur Pengerjaan Pesanan: PIC Bahan per pekerjaan, kebutuhan Corner, catatan racikan/pemakaian bahan.
+  PRODUCTION_BUILD_MATERIAL_OPERATOR_SET: "PRODUCTION_BUILD_MATERIAL_OPERATOR_SET",
+  PRODUCTION_BUILD_CORNER_CONFIRMED: "PRODUCTION_BUILD_CORNER_CONFIRMED",
+  PRODUCTION_BUILD_MATERIALS_RECORDED: "PRODUCTION_BUILD_MATERIALS_RECORDED",
   PRODUCTION_QC_NOT_PERFORMED: "PRODUCTION_QC_NOT_PERFORMED",
   PRODUCTION_FINISHED_ADAPTATION: "PRODUCTION_FINISHED_ADAPTATION",
   PRODUCTION_ADAPTATION_APPLIED: "PRODUCTION_ADAPTATION_APPLIED",
@@ -463,6 +467,12 @@ export function formatActivitySentence(event) {
       return `Urutan unit ${metadata.unitCode || "—"} di ${metadata.stationCode || "meja"} diubah manual: posisi ${metadata.from ?? "—"} → ${metadata.to ?? "—"}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_RETURN_REQUESTED:
       return `Sisa bahan unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan) menunggu diterima Gudang`;
+    case EVENT_TYPES.PRODUCTION_BUILD_MATERIAL_OPERATOR_SET:
+      return metadata.operatorName ? `PIC Bahan unit ${metadata.unitCode || "—"} ditetapkan: ${metadata.operatorName}` : `PIC Bahan unit ${metadata.unitCode || "—"} dilepas`;
+    case EVENT_TYPES.PRODUCTION_BUILD_CORNER_CONFIRMED:
+      return metadata.required ? `Corner unit ${metadata.unitCode || "—"} dikonfirmasi DIPERLUKAN` : `Corner unit ${metadata.unitCode || "—"} dikonfirmasi TIDAK diperlukan — ${metadata.reason || "tanpa alasan"}`;
+    case EVENT_TYPES.PRODUCTION_BUILD_MATERIALS_RECORDED:
+      return `Racikan/pemakaian bahan unit ${metadata.unitCode || "—"} dicatat (versi ${metadata.version ?? "—"}, ${metadata.materialCount ?? 0} bahan)`;
     case EVENT_TYPES.PRODUCTION_STEP_SKIPPED:
       return `Tahap ${(metadata.stepNos || []).join(", ") || "—"} (${metadata.stageLabel || "—"}) unit ${metadata.unitCode || "—"} DILEWATI — ${metadata.reason || "Adaptasi sistem"} (bukan dikerjakan; tanpa foto/hasil uji)`;
     case EVENT_TYPES.PRODUCTION_QC_NOT_PERFORMED:

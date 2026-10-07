@@ -23,11 +23,13 @@ const FLOOR_ROLES = ["PRODUCTION_WORKER", "PRODUCTION_LEAD", "ADMIN", "OWNER"];
 export const APP_MODES = Object.freeze([
   Object.freeze({ key: "meja", label: "Meja Bongkar", to: "/produksi/meja", lane: "TABLE", roles: FLOOR_ROLES }),
   Object.freeze({ key: "corner", label: "Meja Corner", to: "/produksi/corner", lane: "CORNER", roles: FLOOR_ROLES }),
+  // PIC Bahan per pekerjaan (jalur Pengerjaan Pesanan): hanya pekerjaan yang ditugaskan kepadanya oleh Lead; otorisasi ditegakkan server per pekerjaan (bukan peran baru).
+  Object.freeze({ key: "bahan", label: "PIC Bahan", to: "/produksi/bahan", lane: "MATERIAL", roles: FLOOR_ROLES }),
   Object.freeze({ key: "dokumentasi", label: "Dokumentasi", to: "/produksi/dokumentasi", lane: null, roles: Object.freeze(["PRODUCTION_DOCUMENTER", "PRODUCTION_LEAD", "ADMIN", "OWNER"]) }),
 ]);
 // Pengguna multi-peran hanya melihat mode yang memang diizinkan perannya (tidak ada tombol yang pasti 403).
 export const allowedModes = (roles = []) => APP_MODES.filter((m) => (roles || []).some((r) => m.roles.includes(r)));
-export const modeOfLane = (lane) => APP_MODES.find((m) => m.lane === (lane === "CORNER" ? "CORNER" : "TABLE"));
+export const modeOfLane = (lane) => APP_MODES.find((m) => m.lane === (lane === "CORNER" || lane === "MATERIAL" ? lane : "TABLE"));
 
 // ---- Prioritas: Normal · Tinggi · Komplain (Komplain hanya dari kasus komplain resmi yang dikirim server) ----
 // Nilai tersimpan lama (Mendesak/Kritis) tampil "Tinggi"; enum/histori tidak diubah. `value` = peringkat urut (bukan label).

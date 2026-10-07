@@ -15,7 +15,7 @@ import { allowedModes, initialsOf, materialRows, picSummary, safeText, splitJobs
 export function KerjaTab({ jobs, lane, loading, error, readerMode, operator, v1Status, onRetryV1, onOpen, onReload, user }) {
   const { active, queue } = useMemo(() => splitJobs(jobs), [jobs]);
   const pic = picSummary(jobs, { lane, user, all: operator?.all });
-  const laneTitle = lane === "CORNER" ? "Meja Corner" : "Meja Bongkar";
+  const laneTitle = lane === "CORNER" ? "Meja Corner" : lane === "MATERIAL" ? "PIC Bahan" : "Meja Bongkar";
   return (
     <div data-testid="tab-kerja">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2">

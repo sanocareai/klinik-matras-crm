@@ -754,6 +754,13 @@ export const api = {
   // Antrean retur sisa bahan: Gudang menerima fisik sisa bahan dari produksi (stok RETURN tertaut unit).
   receiveProductionV2MaterialReturn: (id, data, idempotencyKey = mutationKey("pv2-return-receive")) =>
     request(`/production-v2/material-returns/${id}/receive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Jalur Pengerjaan Pesanan: PIC Bahan per pekerjaan, kebutuhan Corner (dikonfirmasi pada rencana), catatan racikan/pemakaian bahan.
+  setProductionV2BuildMaterialOperator: (runId, data, idempotencyKey = mutationKey("pv2-build-pic")) =>
+    request(`/production-v2/runs/${runId}/build/material-operator`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  confirmProductionV2BuildCorner: (runId, data, idempotencyKey = mutationKey("pv2-build-corner")) =>
+    request(`/production-v2/runs/${runId}/build/corner`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  recordProductionV2BuildMaterials: (runId, data, idempotencyKey) =>
+    request(`/production-v2/runs/${runId}/build/materials`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   recordProductionV2Step: (runId, stepNo, data, idempotencyKey) =>
     request(`/production-v2/runs/${runId}/steps/${stepNo}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // P9D — Diagnosis Produksi + Planned BOM Terpadu.

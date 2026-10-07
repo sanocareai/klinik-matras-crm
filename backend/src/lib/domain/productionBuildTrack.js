@@ -30,34 +30,52 @@ export const pathHasBuildStage = (stages) => (stages || []).some((s) => s.code =
 // ---------------------------------------------------------------------------
 // Klasifikasi produk KANONIS (bukan nama layanan, bukan awalan resi): Order.productLine (KASUR|SOFA|DIVAN) + Order.productType (enum ProductType).
 // Menentukan apakah unit menjalani uji khas KASUR (uji tekstur PIC, uji berat badan QC, racikan fondasi/lapisan) atau tidak (divan/sofa).
-// productLine BERNILAI BAWAAN KASUR di skema, jadi jenis yang eksplisit (productType) didahulukan dan konflik lini<->jenis dilaporkan, tidak ditebak.
+// TIDAK ADA fallback "ambigu = kasur": bila jenis kanonis belum jelas, alurnya UNCONFIRMED — pengujian/racikan khusus kasur DITAHAN dan kebutuhan konfirmasi
+// jenis produk ditampilkan. Order Sales TIDAK diubah diam-diam; perbaikan dilakukan Sales pada order, lalu klasifikasi dibaca ulang.
+// productLine BERNILAI BAWAAN KASUR di skema, sehingga lini KASUR TANPA jenis tidak dianggap bukti kasur (bisa saja belum diisi).
 // ---------------------------------------------------------------------------
 export const PRODUCT_CLASS = Object.freeze({ KASUR: "KASUR", NON_KASUR: "NON_KASUR", BELUM_JELAS: "BELUM_JELAS" });
+export const PRODUCT_FLOW = Object.freeze({ KASUR: "KASUR", NON_KASUR: "NON_KASUR", UNCONFIRMED: "UNCONFIRMED" });
 const FAMILY_OF_TYPE = Object.freeze({
   KASUR_SPRING: "KASUR", KASUR_BUSA: "KASUR", MULTIBED: "KASUR", KASUR_2IN1_ATAS: "KASUR", KASUR_2IN1_BAWAH: "KASUR", KASUR_SEHAT: "KASUR", KASUR_2IN1: "KASUR", KASUR_LAINNYA: "KASUR",
   SOFABED: "SOFA", SOFA_L: "SOFA", SOFA_1_SEATER: "SOFA", SOFA_2_SEATER: "SOFA", SOFA_3_SEATER: "SOFA",
   DIVAN_UTAMA: "DIVAN", DIVAN_SANDARAN: "DIVAN",
 });
+const UNCONFIRMED = (problem) => ({ productClass: PRODUCT_CLASS.BELUM_JELAS, flow: PRODUCT_FLOW.UNCONFIRMED, family: null, basis: null, problem });
 
 /**
- * @returns {{productClass: "KASUR"|"NON_KASUR"|"BELUM_JELAS", flow: "KASUR"|"NON_KASUR", family: string|null, basis: "JENIS"|"LINI"|null, problem: string|null}}
- * flow = alur yang DIJALANKAN. BELUM_JELAS memakai alur KASUR (gerbang mutu tidak dilonggarkan karena data kurang) dan wajib dilaporkan lewat `problem`.
+ * @returns {{productClass: "KASUR"|"NON_KASUR"|"BELUM_JELAS", flow: "KASUR"|"NON_KASUR"|"UNCONFIRMED", family: string|null, basis: "JENIS"|"LINI"|null, problem: string|null}}
+ * flow = alur yang boleh dijalankan. UNCONFIRMED = jenis kanonis belum jelas (konflik/kosong/tak dikenal): `problem` menjelaskan apa yang perlu dikonfirmasi.
  */
 export function classifyProduct({ productLine = null, productType = null } = {}) {
   const typeFamily = productType ? FAMILY_OF_TYPE[productType] ?? null : null;
   const line = productLine || null;
-  if (productType && !typeFamily) return { productClass: PRODUCT_CLASS.BELUM_JELAS, flow: "KASUR", family: null, basis: null, problem: `Jenis produk "${productType}" belum dikenali sistem` };
-  if (typeFamily && line && typeFamily !== line) {
-    return { productClass: PRODUCT_CLASS.BELUM_JELAS, flow: "KASUR", family: null, basis: null, problem: `Lini produk (${line}) tidak sesuai jenis produk (${productType}) — Sales perlu memperbaiki pesanan` };
-  }
-  let family = null; let basis = null; let problem = null;
+  if (productType && !typeFamily) return UNCONFIRMED(`Jenis produk "${productType}" belum dikenali sistem — perlu konfirmasi jenis produk`);
+  if (typeFamily && line && typeFamily !== line) return UNCONFIRMED(`Lini produk (${line}) tidak sesuai jenis produk (${productType}) — Sales perlu memperbaiki jenis produk pada order`);
+  let family = null; let basis = null;
   if (typeFamily) { family = typeFamily; basis = "JENIS"; }
   else if (line === "SOFA" || line === "DIVAN") { family = line; basis = "LINI"; }
-  else if (line === "KASUR") { family = "KASUR"; basis = "LINI"; problem = "Jenis kasur belum diisi Sales (klasifikasi hanya dari lini produk bawaan)"; }
-  if (!family) return { productClass: PRODUCT_CLASS.BELUM_JELAS, flow: "KASUR", family: null, basis: null, problem: "Lini/jenis produk pesanan belum tercatat" };
+  else if (line === "KASUR") return UNCONFIRMED("Jenis kasur belum diisi pada order (lini KASUR adalah nilai bawaan, bukan bukti) — Sales perlu mengonfirmasi jenis produk");
+  if (!family) return UNCONFIRMED("Lini/jenis produk pesanan belum tercatat — Sales perlu mengonfirmasi jenis produk");
   const productClass = family === "KASUR" ? PRODUCT_CLASS.KASUR : PRODUCT_CLASS.NON_KASUR;
-  return { productClass, flow: productClass === PRODUCT_CLASS.NON_KASUR ? "NON_KASUR" : "KASUR", family, basis, problem };
+  return { productClass, flow: productClass === PRODUCT_CLASS.NON_KASUR ? PRODUCT_FLOW.NON_KASUR : PRODUCT_FLOW.KASUR, family, basis, problem: null };
 }
-export const isNonKasurFlow = (flow) => flow === PRODUCT_CLASS.NON_KASUR;
-/** Nomor tahap yang berlaku pada jalur pengerjaan menurut alur produk. */
-export const buildApplicableSteps = (flow) => (isNonKasurFlow(flow) ? [6, 9, 10, 11, 12] : [6, 8, 9, 10, 11, 12]);
+export const isNonKasurFlow = (flow) => flow === PRODUCT_FLOW.NON_KASUR;
+export const isUnconfirmedFlow = (flow) => flow === PRODUCT_FLOW.UNCONFIRMED;
+export const PRODUCT_UNCONFIRMED_WAIT = "PRODUCT_TYPE_UNCONFIRMED";
+
+/**
+ * Nomor tahap yang berlaku pada jalur pengerjaan menurut alur produk + kebutuhan Corner.
+ * Corner TIDAK diturunkan dari jenis produk: ia mengikuti kebutuhan pengerjaan/kain yang DIKONFIRMASI pada rencana (cornerRequired true|false|null=belum).
+ * corner === false -> tahap 9 (Kirim ke Corner), 10, 11 TIDAK BERLAKU (alasan tercatat), bukan "selesai".
+ * Tahap 8 (uji tekstur kasur): berlaku untuk KASUR dan UNCONFIRMED (ditahan sampai jenis jelas), tidak berlaku untuk NON_KASUR.
+ */
+export function buildApplicableSteps(flow, { corner = true } = {}) {
+  const steps = [6];
+  if (!isNonKasurFlow(flow)) steps.push(8);
+  if (corner !== false) steps.push(9, 10, 11);
+  steps.push(12);
+  return steps;
+}
+export const BUILD_CORNER_NA_STEPS = Object.freeze([9, 10, 11]);
+export const CORNER_UNCONFIRMED_WAIT = "CORNER_NOT_CONFIRMED";
