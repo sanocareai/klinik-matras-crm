@@ -871,7 +871,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         <DeliveryTimeline
           orderStatus={order.status}
           orderCategory={order.category}
-          job={[order.deliveryJob, order.pickupJob].find((j) => j && ["EN_ROUTE", "ARRIVED"].includes(j.status))}
+          job={[order.deliveryJob, order.pickupJob, order.complaintDeliveryJob, order.complaintPickupJob].find((j) => j && ["EN_ROUTE", "ARRIVED"].includes(j.status))}
           className="mt-2"
         />
         {/* Tanggal pengambilan/pengiriman (D-040, 31 Agustus 2026 — laporan
@@ -904,6 +904,19 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         {!order.deliveryJob?.scheduledDate && order.deliveryJob?.driverName && (
           <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
             Dikirim oleh {order.deliveryJob.driverName}
+          </p>
+        )}
+        {/* Jadwal KOMPLAIN/revisi (7 Okt 2026) — baris TERPISAH, tidak menimpa jadwal order asli di atas. */}
+        {order.complaintPickupJob?.scheduledDate && (
+          <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+            Pengambilan komplain: {formatTanggal(order.complaintPickupJob.scheduledDate)}
+            {order.complaintPickupJob.driverName && ` · ${order.complaintPickupJob.driverName}`}
+          </p>
+        )}
+        {order.complaintDeliveryJob?.scheduledDate && (
+          <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-muted)" }}>
+            Pengiriman komplain: {formatTanggal(order.complaintDeliveryJob.scheduledDate)}
+            {order.complaintDeliveryJob.driverName && ` · ${order.complaintDeliveryJob.driverName}`}
           </p>
         )}
 
